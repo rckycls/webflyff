@@ -168,6 +168,19 @@ describe('tokenize', () => {
     ]);
   });
 
+  it('gives each token the character offset of its first character, comments and strings included', () => {
+    const text = 'ab // c\r\n/* d */ 12 "x y" ,';
+    expect(tokenize(text).map((t) => [t.text, t.offset])).toEqual([
+      ['ab', 0],
+      ['12', 17],
+      ['x y', 20], // a string's offset is its opening quote
+      [',', 26],
+    ]);
+    for (const t of tokenize(text)) {
+      expect(text.startsWith(t.kind === 'string' ? `"${t.text}"` : t.text, t.offset)).toBe(true);
+    }
+  });
+
   it('numbers lines from 1, counting through comments', () => {
     const tokens = tokenize('a\r\nb // x\r\n/* y\r\nz */ c\n\nd');
     expect(tokens.map((t) => [t.text, t.line])).toEqual([
@@ -188,7 +201,12 @@ describe('tokenize', () => {
   it('throws a FormatError on an unterminated string, naming the line', () => {
     const err = thrown(() => tokenize('ok\r\n"abc\r\nnext', 'x.inc'));
     expect(err.file).toBe('x.inc');
-    expect(err.message).toContain('line 2');
+    expect(err.unit).toBe('char');
+    expect(err.offset).toBe(4); // the opening quote of "abc, after "ok" and CR LF
+    expect(err.line).toBe(2);
+    expect(err.message).toContain('x.inc @ char');
+    expect(err.message).toContain('(line 2)');
+    expect(err.message).not.toContain('byte');
     expect(err.cppRef).toContain('CScanner::GetToken');
   });
 
@@ -204,9 +222,9 @@ describe('TokenStream', () => {
       'size 30, 30\nambient 0x808080\ncamera 5063.999 240.888 4095.910  0.393  0.191\nrevival 0 "" // c';
     const s = new TokenStream(tokenize(text));
 
-    expect(s.next()).toEqual({ kind: 'ident', text: 'size', line: 1 });
+    expect(s.next()).toEqual({ kind: 'ident', text: 'size', line: 1, offset: 0 });
     expect(s.number()).toBe(30);
-    expect(s.peek()).toEqual({ kind: 'symbol', text: ',', line: 1 });
+    expect(s.peek()).toEqual({ kind: 'symbol', text: ',', line: 1, offset: 7 });
     s.expect(',');
     expect(s.number()).toBe(30);
 
@@ -260,9 +278,48 @@ describe('TokenStream', () => {
   it('throws a FormatError for an unknown define, naming the identifier and line', () => {
     const err = thrown(() => new TokenStream(tokenize('\nNOPE'), new Map([['OTHER', 1]]), 'a.wld').number());
     expect(err.file).toBe('a.wld');
-    expect(err.message).toContain('NOPE');
-    expect(err.message).toContain('line 2');
+    expect(err.message).toContain('unknown define "NOPE"');
     expect(err.cppRef).toContain('CScanner::GetNumber');
+  });
+
+  // R9: a script's byte offset is lost when it is decoded, so errors say "char" and also give the line.
+  it('reports a failed read at the offending token: unit "char", its character offset and its line', () => {
+    const text = 'size 30\r\nambient oops\r\ncamera 5';
+    const stream = new TokenStream(tokenize(text), new Map(), 'World.inc');
+    stream.next(); // size
+    stream.number(); // 30
+    stream.next(); // ambient
+    const err = thrown(() => stream.number()); // "oops" is not a define
+    expect(err.unit).toBe('char');
+    expect(err.offset).toBe(text.indexOf('oops'));
+    expect(err.line).toBe(2);
+    expect(err.reader).toBe('TokenStream');
+    expect(err.message).toContain(`World.inc @ char ${text.indexOf('oops')} (line 2)`);
+    expect(err.message).not.toContain('byte');
+  });
+
+  it('reports a read past the last token at the end of that token, on its line', () => {
+    const text = 'a\r\n\r\n"str"';
+    const stream = new TokenStream(tokenize(text), new Map(), 'e.inc');
+    stream.next();
+    stream.next();
+    const err = thrown(() => stream.number());
+    expect(err.unit).toBe('char');
+    expect(err.offset).toBe(text.length);
+    expect(err.line).toBe(3);
+    expect(err.message).toContain('found the end of the script');
+  });
+
+  it('counts decoded characters, not file bytes, for a UTF-16LE script', () => {
+    const units = Array.from('ok 가 zz', (c) => c.charCodeAt(0));
+    const bytes = new Uint8Array([0xff, 0xfe, ...units.flatMap((u) => [u & 0xff, u >> 8])]);
+    const stream = new TokenStream(tokenize(decodeScript(bytes)), new Map(), 'u.inc');
+    stream.next(); // ok
+    stream.next(); // 가
+    const err = thrown(() => stream.number()); // zz is not a define
+    expect(err.unit).toBe('char');
+    expect(err.offset).toBe(5); // five characters in; in the file that is byte 12 (BOM plus ten bytes)
+    expect(err.line).toBe(1);
   });
 
   it('throws a FormatError when number() meets a string, a symbol, a malformed number or the end', () => {

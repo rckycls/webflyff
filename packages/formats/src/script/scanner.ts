@@ -19,6 +19,8 @@ export interface Token {
   text: string;
   /** 1-based line the token starts on. */
   line: number;
+  /** Index of the token's first character in the decoded text (the opening quote, for a string). */
+  offset: number;
 }
 
 const TOKEN_REF = 'Source/_Common/scanner.cpp:575 CScanner::GetToken';
@@ -103,14 +105,14 @@ export function tokenize(text: string, file = '<script>'): Token[] {
   let start = 0; // where the token being read begins
 
   const symbol = (length: number): void => {
-    tokens.push({ kind: 'symbol', text: text.slice(start, start + length), line });
+    tokens.push({ kind: 'symbol', text: text.slice(start, start + length), line, offset: start });
     pos = start + length;
   };
   // Identifiers and numbers both run from their first character up to the next delimiter.
   const word = (kind: 'ident' | 'number'): void => {
     let end = start + 1;
     while (!isDelimiter(at(end))) end++;
-    tokens.push({ kind, text: text.slice(start, end), line });
+    tokens.push({ kind, text: text.slice(start, end), line, offset: start });
     pos = end;
   };
 
@@ -159,14 +161,16 @@ export function tokenize(text: string, file = '<script>'): Token[] {
       let end = start + 1;
       while (at(end) !== CH.quote && !isLineEnd(at(end))) end++;
       if (at(end) !== CH.quote) {
-        throw new FormatError(`unterminated string starting at line ${line}`, {
+        throw new FormatError('unterminated string', {
           file,
           offset: start,
+          unit: 'char',
+          line,
           reader: 'tokenize',
           cppRef: TOKEN_REF,
         });
       }
-      tokens.push({ kind: 'string', text: text.slice(start + 1, end), line });
+      tokens.push({ kind: 'string', text: text.slice(start + 1, end), line, offset: start });
       pos = end + 1;
     } else if (c === CH.zero && d === CH.x) word('number'); // hex; only a lower-case x counts
     else if (isDigit(c)) word('number');
@@ -193,8 +197,8 @@ const NO_DEFINES: ReadonlyMap<string, number> = new Map();
 
 /**
  * Reads typed values out of a token list, like the `GetNumber` / `GetHex` family on CScanner.
- * Every failure is a FormatError naming the file, the line and the C++ function. Since tokens carry no byte
- * offset, the error's `offset` is the index of the offending token in the list.
+ * Every failure is a FormatError naming the file, the C++ function, and the offending token's line and character
+ * offset in the decoded text (`unit: 'char'`; a script's byte offset is not known once it has been decoded).
  */
 export class TokenStream {
   private pos = 0;
@@ -247,7 +251,9 @@ export class TokenStream {
       index = this.pos;
       tok = this.next();
     }
-    if (tok === undefined) return this.fail(index, 'expected a number', NUMBER_REF);
+    if (tok === undefined) {
+      return this.fail(index, `expected a number, found ${this.describe(index)}`, NUMBER_REF);
+    }
 
     let value: number | undefined;
     if (tok.kind === 'number') {
@@ -257,12 +263,12 @@ export class TokenStream {
       } else {
         value = parseDecimalToken(tok.text);
       }
-      if (value === undefined) return this.fail(index, 'malformed number', NUMBER_REF);
+      if (value === undefined) return this.fail(index, `malformed number "${tok.text}"`, NUMBER_REF);
     } else if (tok.kind === 'ident') {
       value = this.defines.get(tok.text);
       if (value === undefined) return this.fail(index, `unknown define "${tok.text}"`, NUMBER_REF);
     } else {
-      return this.fail(index, 'expected a number', NUMBER_REF);
+      return this.fail(index, `expected a number, found ${this.describe(index)}`, NUMBER_REF);
     }
     return negative ? 0 - value : value;
   }
@@ -272,7 +278,9 @@ export class TokenStream {
     const index = this.pos;
     const tok = this.next();
     const value = tok !== undefined && tok.kind === 'number' ? parseHexToken(tok.text) : undefined;
-    if (value === undefined) return this.fail(index, 'expected a hex number (0x…)', HEX_REF);
+    if (value === undefined) {
+      return this.fail(index, `expected a hex number (0x…), found ${this.describe(index)}`, HEX_REF);
+    }
     return value;
   }
 
@@ -280,7 +288,9 @@ export class TokenStream {
   string(): string {
     const index = this.pos;
     const tok = this.next();
-    if (tok === undefined || tok.kind !== 'string') return this.fail(index, 'expected a string', TOKEN_REF);
+    if (tok === undefined || tok.kind !== 'string') {
+      return this.fail(index, `expected a string, found ${this.describe(index)}`, TOKEN_REF);
+    }
     return tok.text;
   }
 
@@ -289,13 +299,22 @@ export class TokenStream {
     const index = this.pos;
     const tok = this.next();
     if (tok === undefined || tok.kind !== 'symbol' || tok.text !== sym) {
-      this.fail(index, `expected "${sym}"`, TOKEN_REF);
+      this.fail(index, `expected "${sym}", found ${this.describe(index)}`, TOKEN_REF);
     }
   }
 
-  private fail(index: number, message: string, cppRef: string): never {
+  private describe(index: number): string {
     const tok = this.tokens[index];
-    const where = tok === undefined ? 'at the end of the script' : `at line ${tok.line}, ${tok.kind} "${tok.text}"`;
-    throw new FormatError(`${message} ${where}`, { file: this.file, offset: index, reader: 'TokenStream', cppRef });
+    return tok === undefined ? 'the end of the script' : `${tok.kind} "${tok.text}"`;
+  }
+
+  /** Throws at the token at `index`, or at the end of the last token when the list has run out. */
+  private fail(index: number, message: string, cppRef: string): never {
+    const ctx = { file: this.file, unit: 'char', reader: 'TokenStream', cppRef } as const;
+    const tok = this.tokens[index];
+    if (tok !== undefined) throw new FormatError(message, { ...ctx, offset: tok.offset, line: tok.line });
+    const last = this.tokens[this.tokens.length - 1];
+    const end = last === undefined ? 0 : last.offset + last.text.length + (last.kind === 'string' ? 2 : 0);
+    throw new FormatError(message, { ...ctx, offset: end, line: last?.line ?? 1 });
   }
 }

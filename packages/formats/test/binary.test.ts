@@ -36,6 +36,25 @@ describe('BinaryReader', () => {
     expect(fe.cppRef).toBe(ctx.cppRef);
   });
 
+  it('a binary reader error is still rendered in bytes, with no line', () => {
+    const r = new BinaryReader(new Uint8Array([1, 2, 3, 4, 5]), ctx);
+    r.u16();
+    let error: unknown;
+    try {
+      r.u32();
+    } catch (e) {
+      error = e;
+    }
+    const fe = error as FormatError;
+    expect(fe).toBeInstanceOf(FormatError);
+    expect(fe.unit).toBe('byte');
+    expect(fe.offset).toBe(2);
+    expect(fe.line).toBeUndefined();
+    expect(fe.message).toContain('test/file.bin @ byte 2:');
+    expect(fe.message).not.toContain('char');
+    expect(fe.message).not.toContain('line');
+  });
+
   it('expectEnd throws when bytes remain', () => {
     const r = new BinaryReader(new Uint8Array([1, 2, 3, 4]), ctx);
     r.u16();
