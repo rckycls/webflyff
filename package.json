@@ -1,0 +1,20 @@
+{
+  "name": "flyffweb",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "tools/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "test": "vitest run",
+    "test:corpus": "vitest run --config vitest.corpus.config.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  }
+}

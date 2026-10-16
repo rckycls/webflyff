@@ -1,0 +1,24 @@
+# FlyffWeb
+
+A browser client for FlyFF. Node 24+ and npm 11+. Run `npm install` once in this folder.
+
+## Layout
+
+npm workspaces: `packages/*`, `tools/*`, `apps/*`.
+
+| Folder | What |
+| --- | --- |
+| `packages/formats` | `@flyffweb/formats`: `BinaryReader`, `FormatError` and the readers for FlyFF binary formats. Every reader names the C++ function it copies. |
+| `tools/convert` | Node converter from the client files to web assets (added in a later task). |
+| `apps/viewer` | Vite + Three.js viewer (added in a later task). |
+
+## Client folder
+
+Tests that read real game files need the FlyFF client folder. By default it is `../Client` (next to this folder); set `FLYFF_CLIENT` to use another path. It is read-only: nothing here writes into it. Without it, those tests are skipped with "Client/ not found — set FLYFF_CLIENT".
+
+## Scripts
+
+| Script | What |
+| --- | --- |
+| `npm test` | Unit tests (`vitest run`). Every `*.test.ts` in all workspaces except `*.corpus.test.ts` and `e2e/`. |
+| `npm run test:corpus` | Corpus tests (`vitest run --config vitest.corpus.config.ts`). Read every real client file of a format; slow (10 minute timeout) and needs the client folder. |
