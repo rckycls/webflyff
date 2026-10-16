@@ -1,0 +1,167 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`skeletons (.chr) and motions (.ani) > Mvr_male_GenStand.ani summary 1`] = `
+{
+  "boneCount": 30,
+  "events": [],
+  "firstKeyOfTrack0": {
+    "position": [
+      0.0003,
+      0.7535,
+      0,
+    ],
+    "rotation": [
+      0,
+      0.7077,
+      0,
+      0.7065,
+    ],
+  },
+  "fps": 30,
+  "frameAttributes": [],
+  "frameCount": 41,
+  "id": -894566962,
+  "keyedTracks": 25,
+  "path": null,
+  "perSlerp": 0.5,
+  "version": 10,
+}
+`;
+
+exports[`skeletons (.chr) and motions (.ani) > mvr_male.chr summary 1`] = `
+{
+  "bones": [
+    "-1 Bip02",
+    "0 Bip02 Pelvis",
+    "1 Bip02 Spine",
+    "2 Bip02 Spine1",
+    "3 Bip02 Spine2",
+    "4 Bip02 Neck",
+    "5 Bip02 Head",
+    "6 Bip02 Ponytail1",
+    "7 Bip02 Ponytail11",
+    "8 Bip02 Ponytail12",
+    "5 Bip02 L Clavicle",
+    "10 Bip02 L UpperArm",
+    "11 Bip02 L ForeArm",
+    "12 Bip02 L Hand",
+    "5 Bip02 R Clavicle",
+    "14 Bip02 R UpperArm",
+    "15 Bip02 R ForeArm",
+    "16 Bip02 R Hand",
+    "4 Bone05",
+    "18 Bone06",
+    "19 Bone07",
+    "4 Bone01",
+    "21 Bone02",
+    "22 Bone03",
+    "2 Bip02 L Thigh",
+    "24 Bip02 L Calf",
+    "25 Bip02 L Foot",
+    "2 Bip02 R Thigh",
+    "27 Bip02 R Calf",
+    "28 Bip02 R Foot",
+  ],
+  "eventParents": [
+    4,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+  ],
+  "events": [
+    [
+      0.16484808921813965,
+      0.0029557396192103624,
+      -0.0687486082315445,
+    ],
+    [
+      0,
+      0,
+      0,
+    ],
+    [
+      0,
+      0,
+      0,
+    ],
+    [
+      0,
+      0,
+      0,
+    ],
+    [
+      0,
+      0,
+      0,
+    ],
+    [
+      0,
+      0,
+      0,
+    ],
+    [
+      0,
+      0,
+      0,
+    ],
+    [
+      0,
+      0,
+      0,
+    ],
+  ],
+  "hands": [
+    17,
+    13,
+    16,
+    12,
+  ],
+  "id": -1191403572,
+  "sendVS": false,
+  "version": 7,
+}
+`;
+
+exports[`skeletons (.chr) and motions (.ani) > scan summary 1`] = `
+{
+  "motions": {
+    "boneCounts": {
+      "max": 75,
+      "min": 1,
+    },
+    "count": 2931,
+    "defaultTracks": 12687,
+    "events": {
+      "0": 2925,
+      "1": 6,
+    },
+    "flaggedFrames": 2062,
+    "frameCounts": {
+      "max": 191,
+      "min": 5,
+    },
+    "keyCount": 3344785,
+    "keyedTracks": 74346,
+    "perSlerp": {
+      "max": 0.7599997520446777,
+      "min": 0.4950000047683716,
+    },
+    "withPath": 1,
+  },
+  "skeletons": {
+    "boneCounts": {
+      "max": 75,
+      "min": 2,
+    },
+    "count": 303,
+    "sendVS": {
+      "0": 129,
+      "1": 174,
+    },
+  },
+}
+`;

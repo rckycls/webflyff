@@ -29,3 +29,7 @@ export { readTerrainIndex } from './inc/terrainIndex';
 export type { TerrainTexture } from './inc/terrainIndex';
 export { modelFileName, readModelIndex } from './inc/modelIndex';
 export type { ModelElem } from './inc/modelIndex';
+export { readChr } from './model/chr';
+export type { Bone, Skeleton } from './model/chr';
+export { motionFps, readAni, readTm } from './model/ani';
+export type { BoneTrack, Motion, MotionFrameAttribute, MotionKey } from './model/ani';
