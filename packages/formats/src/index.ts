@@ -5,3 +5,6 @@ export type { ReaderContext, Vec3 } from './binary/BinaryReader';
 export { decryptByte, readResIndex, readResFile } from './res/res';
 export type { ResEntry, ResPack } from './res/res';
 export { ResPacks } from './res/ResPacks';
+export { decodeScript, tokenize, TokenStream } from './script/scanner';
+export type { Token } from './script/scanner';
+export { parseDefines } from './script/defines';
