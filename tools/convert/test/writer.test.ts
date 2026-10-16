@@ -155,3 +155,107 @@ describe('AssetWriter', () => {
     expect(new AssetWriter(outDir).pathOf('models/nope.glb')).toBeUndefined();
   });
 });
+
+describe('AssetWriter.finish merges into an existing index.json', () => {
+  async function readIndex(): Promise<AssetIndex> {
+    return JSON.parse(await fs.readFile(path.join(outDir, 'index.json'), 'utf8')) as AssetIndex;
+  }
+
+  /** One converter run: a new writer on the same folder writes `entries` and finishes. */
+  async function runOnce(
+    entries: Record<string, number[]>,
+    warn: (message: string) => void = () => {},
+  ): Promise<Record<string, string>> {
+    const writer = new AssetWriter(outDir, undefined, warn);
+    const hashed: Record<string, string> = {};
+    for (const [key, bytes] of Object.entries(entries)) hashed[key] = await writer.write(key, new Uint8Array(bytes), key);
+    await writer.finish();
+    return hashed;
+  }
+
+  it('keeps the keys of an earlier run that this run did not write', async () => {
+    const first = await runOnce({ 'models/a.glb': [1], 'textures/b.png': [2] });
+    const second = await runOnce({ 'worlds/c.bin': [3] });
+
+    const index = await readIndex();
+    expect(index.version).toBe(1);
+    expect(index.files).toEqual({
+      'models/a.glb': first['models/a.glb'],
+      'textures/b.png': first['textures/b.png'],
+      'worlds/c.bin': second['worlds/c.bin'],
+    });
+    expect(Object.keys(index.files)).toEqual(['models/a.glb', 'textures/b.png', 'worlds/c.bin']);
+  });
+
+  it('replaces the entry of a key this run wrote again, and keeps the others', async () => {
+    const first = await runOnce({ 'models/a.glb': [1], 'textures/b.png': [2] });
+    const second = await runOnce({ 'models/a.glb': [9, 9] });
+
+    expect(second['models/a.glb']).not.toBe(first['models/a.glb']);
+    expect((await readIndex()).files).toEqual({
+      'models/a.glb': second['models/a.glb'],
+      'textures/b.png': first['textures/b.png'],
+    });
+  });
+
+  it('drops an entry whose hashed file was deleted between the runs', async () => {
+    const first = await runOnce({ 'models/a.glb': [1], 'textures/b.png': [2] });
+    await fs.rm(path.join(outDir, ...first['textures/b.png']!.split('/')));
+    const second = await runOnce({ 'worlds/c.bin': [3] });
+
+    expect((await readIndex()).files).toEqual({
+      'models/a.glb': first['models/a.glb'],
+      'worlds/c.bin': second['worlds/c.bin'],
+    });
+  });
+
+  it.each([
+    ['text that is not JSON', 'this is { not json'],
+    ['JSON of the wrong shape', JSON.stringify(['models/a.glb'])],
+    ['an index of another version', JSON.stringify({ version: 2, files: { 'models/a.glb': 'models/a.0123456789.glb' } })],
+    ['an index whose files are not a map', JSON.stringify({ version: 1, files: 'nope' })],
+  ])('treats %s as empty, warns, and writes a fresh index', async (_name, content) => {
+    await fs.writeFile(path.join(outDir, 'index.json'), content);
+    const warnings: string[] = [];
+    const second = await runOnce({ 'worlds/c.bin': [3] }, (m) => warnings.push(m));
+
+    expect((await readIndex()).files).toEqual({ 'worlds/c.bin': second['worlds/c.bin'] });
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('index.json');
+  });
+
+  it('does not warn when there is no index.json yet', async () => {
+    const warnings: string[] = [];
+    await runOnce({ 'worlds/c.bin': [3] }, (m) => warnings.push(m));
+    expect(warnings).toEqual([]);
+  });
+
+  it('drops an entry that is not a hashed path inside the output folder', async () => {
+    const kept = await runOnce({ 'models/a.glb': [1] });
+    const index = await readIndex();
+    index.files['evil'] = '../outside.bin';
+    index.files['absolute'] = path.join(outDir, 'models', ...kept['models/a.glb']!.split('/').slice(1));
+    index.files['number'] = 5 as unknown as string;
+    await fs.writeFile(path.join(outDir, 'index.json'), JSON.stringify(index));
+
+    await runOnce({ 'worlds/c.bin': [3] });
+    expect(Object.keys((await readIndex()).files)).toEqual(['models/a.glb', 'worlds/c.bin']);
+  });
+
+  it('writes the merged index atomically: a failed rename leaves the old index.json as it was', async () => {
+    const first = await runOnce({ 'models/a.glb': [1] });
+    const before = await fs.readFile(path.join(outDir, 'index.json'), 'utf8');
+    const failing = {
+      ...fs,
+      rename: async () => {
+        throw new Error('disk on fire');
+      },
+    } as unknown as typeof fs;
+    const writer = new AssetWriter(outDir, failing);
+    await expect(writer.finish()).rejects.toThrow('disk on fire');
+
+    expect(await fs.readFile(path.join(outDir, 'index.json'), 'utf8')).toBe(before);
+    expect(JSON.parse(before).files).toEqual({ 'models/a.glb': first['models/a.glb'] });
+    expect(await exists(path.join(outDir, 'index.json.tmp'))).toBe(false);
+  });
+});

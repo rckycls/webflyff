@@ -253,6 +253,31 @@ describe('run', () => {
     expect(report.totals).toMatchObject({ ok: 1, failed: 0 });
   });
 
+  it('keeps the entries of an earlier run in index.json (a partial --only run must not wipe them)', async () => {
+    const writes = (key: string, byte: number): Stage => ({
+      name: 'models',
+      async run({ writer }) {
+        await writer.write(key, new Uint8Array([byte]), key);
+      },
+    });
+    await run({ client: clientDir, out: outDir, jobs: 1, stages: [writes('models/a.glb', 1)], log });
+    await run({ client: clientDir, out: outDir, jobs: 1, only: 'wd*', stages: [writes('worlds/c.bin', 3)], log });
+
+    const index = JSON.parse(await fs.readFile(path.join(outDir, 'index.json'), 'utf8')) as AssetIndex;
+    expect(Object.keys(index.files)).toEqual(['models/a.glb', 'worlds/c.bin']);
+  });
+
+  it('reports an unreadable index.json as a warning in report.json and carries on', async () => {
+    await fs.writeFile(path.join(outDir, 'index.json'), 'garbage{');
+    expect(await run({ client: clientDir, out: outDir, jobs: 1, log })).toBe(0);
+
+    const report = JSON.parse(await fs.readFile(path.join(outDir, 'report.json'), 'utf8'));
+    expect(report.warnings).toHaveLength(1);
+    expect(report.warnings[0]).toMatchObject({ kind: 'index', source: path.join(outDir, 'index.json') });
+    expect(report.totals.warn).toBe(1);
+    expect(JSON.parse(await fs.readFile(path.join(outDir, 'index.json'), 'utf8'))).toEqual({ version: 1, files: {} });
+  });
+
   it('refuses to write into the client folder', async () => {
     const before = await fs.readdir(clientDir);
     await expect(run({ client: clientDir, out: path.join(clientDir, 'dist'), jobs: 1, log })).rejects.toThrow(

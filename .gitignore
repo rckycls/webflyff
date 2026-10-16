@@ -1,4 +1,7 @@
 node_modules/
 dist/
+.vitest/
+.vite/
+coverage/
 test-results/
 playwright-report/

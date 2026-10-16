@@ -28,9 +28,13 @@ function hashedKey(logicalKey: string, bytes: Uint8Array): string {
   return `${logicalKey.slice(0, dot)}.${hash}${logicalKey.slice(dot)}`;
 }
 
+/** A relative path with `/` separators and no empty, `.` or `..` parts: it cannot leave the folder it is joined to. */
+function isRelativePath(p: string): boolean {
+  return !p.includes('\\') && !p.split('/').some((s) => s === '' || s === '.' || s === '..');
+}
+
 function checkLogicalKey(logicalKey: string): void {
-  const segments = logicalKey.split('/');
-  if (logicalKey.includes('\\') || segments.some((s) => s === '' || s === '.' || s === '..')) {
+  if (!isRelativePath(logicalKey)) {
     throw new Error(
       `invalid logical key "${logicalKey}": expected a relative path with "/" separators and no empty, "." or ".." parts`,
     );
@@ -47,9 +51,11 @@ export class AssetWriter {
   /** Logical key to hashed path, for writes that completed. */
   private readonly written = new Map<string, string>();
 
+  /** `warn` is told about an existing index.json that could not be used (see `finish`); it defaults to the console. */
   constructor(
     private readonly outDir: string,
     private readonly fs: FsPromises = fsPromises,
+    private readonly warn: (message: string) => void = (message) => console.warn(message),
   ) {}
 
   /**
@@ -81,11 +87,59 @@ export class AssetWriter {
     return this.written.get(logicalKey);
   }
 
-  /** Writes `index.json` (an `AssetIndex`) listing everything written, sorted by logical key. */
+  /**
+   * Writes `index.json` (an `AssetIndex`), sorted by logical key. It merges into the index an earlier run left in
+   * `outDir`, so a partial run (`--only`) does not wipe the rest: the keys written in this run win, earlier entries
+   * whose hashed file still exists are kept, and earlier entries whose file is gone are dropped. An index.json that
+   * is missing counts as empty; one that cannot be read or parsed counts as empty too, with a warning.
+   */
   async finish(): Promise<void> {
+    const merged = await this.earlierEntries();
+    for (const [key, hashed] of this.written) merged.set(key, hashed);
     const files: Record<string, string> = {};
-    for (const key of [...this.written.keys()].sort()) files[key] = this.written.get(key)!;
+    for (const key of [...merged.keys()].sort()) files[key] = merged.get(key)!;
     const index: AssetIndex = { version: 1, files };
     await writeAtomic(this.fs, path.join(this.outDir, 'index.json'), JSON.stringify(index));
+  }
+
+  /** The entries of the existing index.json that this run did not write again and whose file is still there. */
+  private async earlierEntries(): Promise<Map<string, string>> {
+    const kept = new Map<string, string>();
+    const indexPath = path.join(this.outDir, 'index.json');
+
+    let text: string;
+    try {
+      text = await this.fs.readFile(indexPath, 'utf8');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        const reason = error instanceof Error ? error.message : String(error);
+        this.warn(`${indexPath} could not be read, so it is replaced: ${reason}`);
+      }
+      return kept;
+    }
+
+    let files: unknown;
+    try {
+      const parsed: unknown = JSON.parse(text);
+      const isIndex = typeof parsed === 'object' && parsed !== null && (parsed as { version?: unknown }).version === 1;
+      files = isIndex ? (parsed as { files?: unknown }).files : undefined;
+    } catch {
+      files = undefined;
+    }
+    if (typeof files !== 'object' || files === null || Array.isArray(files)) {
+      this.warn(`${indexPath} is not a version 1 asset index, so it is replaced`);
+      return kept;
+    }
+
+    for (const [key, hashed] of Object.entries(files)) {
+      if (this.written.has(key) || typeof hashed !== 'string') continue;
+      if (!isRelativePath(key) || !isRelativePath(hashed)) continue;
+      const exists = await this.fs.access(path.join(this.outDir, ...hashed.split('/'))).then(
+        () => true,
+        () => false,
+      );
+      if (exists) kept.set(key, hashed);
+    }
+    return kept;
   }
 }

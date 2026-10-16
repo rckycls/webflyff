@@ -66,8 +66,9 @@ export async function run(opts: RunOptions): Promise<number> {
   }
 
   const client = await ClientFs.open(opts.client);
-  const writer = new AssetWriter(outDir);
   const report = new Report();
+  const indexPath = path.join(outDir, 'index.json');
+  const writer = new AssetWriter(outDir, undefined, (message) => report.warn('index', indexPath, message));
   const ctx: StageContext = {
     client,
     writer,
