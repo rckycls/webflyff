@@ -738,6 +738,10 @@ interface BmpSpec {
   headerSize?: number;
   /** Bytes between the info header and the pixel array. */
   gap?: number;
+  /** BITMAPFILEHEADER.bfSize; the real file length by default. */
+  fileSize?: number;
+  /** BITMAPINFOHEADER.biSizeImage; the length of `pixels` by default. */
+  sizeImage?: number;
   pixels: Uint8Array | number[];
 }
 
@@ -748,7 +752,7 @@ function bmpBytes(s: BmpSpec): Uint8Array {
   return new Bytes()
     .u8(0x42)
     .u8(0x4d) // "BM"
-    .u32(offBits + pixels.length)
+    .u32(s.fileSize ?? offBits + pixels.length)
     .u32(0) // reserved
     .u32(offBits)
     .u32(s.headerSize ?? 40)
@@ -757,7 +761,7 @@ function bmpBytes(s: BmpSpec): Uint8Array {
     .u16(1) // planes
     .u16(s.bitCount ?? 24)
     .u32(s.compression ?? 0)
-    .u32(pixels.length)
+    .u32(s.sizeImage ?? pixels.length)
     .i32(0)
     .i32(0)
     .u32(0)
@@ -800,6 +804,54 @@ describe('readBmp', () => {
     expect(allPixels(image.data)).toEqual([RED]);
   });
 
+  describe('writer padding after the last row (all 16 shipped bitmaps end with 2 zero bytes)', () => {
+    // A 1x1 24-bit row is 4 bytes (B, G, R and 1 byte of row padding).
+    const row = [...BGR_RED, 0];
+    const padded = (extra: number[], spec: Partial<BmpSpec> = {}): Uint8Array =>
+      bmpBytes({ width: 1, height: 1, pixels: [...row, ...extra], ...spec });
+
+    it('accepts 1 to 3 zero bytes that the file size and image size declare', () => {
+      for (const extra of [[0], [0, 0], [0, 0, 0]]) {
+        expect(allPixels(readBmp(padded(extra), 'a.bmp').data)).toEqual([RED]);
+      }
+    });
+
+    it('accepts them when biSizeImage is 0, as 11 shipped files have it', () => {
+      expect(allPixels(readBmp(padded([0, 0], { sizeImage: 0 }), 'a.bmp').data)).toEqual([RED]);
+    });
+
+    it('rejects a non-zero padding byte', () => {
+      for (const extra of [[0, 1], [1, 0], [7]]) {
+        expect(thrown(() => readBmp(padded(extra), 'a.bmp')).message).toMatch(/not all zero/);
+      }
+    });
+
+    it('rejects zero padding when bfSize is not the file length', () => {
+      const short = thrown(() => readBmp(padded([0, 0], { fileSize: 14 + 40 + 4 }), 'a.bmp'));
+      expect(short.message).toMatch(/bfSize/);
+      expect(() => readBmp(padded([0, 0], { fileSize: 14 + 40 + 6 + 1 }), 'a.bmp')).toThrow(FormatError);
+    });
+
+    it('rejects 4 or more zero bytes, which are not row-alignment padding', () => {
+      const error = thrown(() => readBmp(padded([0, 0, 0, 0]), 'a.bmp'));
+      expect(error.message).toMatch(/4 bytes left/);
+      expect(() => readBmp(padded(new Array<number>(8).fill(0)), 'a.bmp')).toThrow(FormatError);
+    });
+
+    it('rejects zero padding when a non-zero biSizeImage is not what the file holds after the pixel array offset', () => {
+      // 6 bytes after offset 54, but the image size says 4 (rows only) or 8.
+      for (const sizeImage of [4, 8]) {
+        const error = thrown(() => readBmp(padded([0, 0], { sizeImage }), 'a.bmp'));
+        expect(error.message).toMatch(/biSizeImage/);
+      }
+    });
+
+    it('measures biSizeImage from the pixel array offset, not from the end of the headers', () => {
+      const bytes = padded([0, 0], { gap: 8, sizeImage: 6 });
+      expect(allPixels(readBmp(bytes, 'a.bmp').data)).toEqual([RED]);
+    });
+  });
+
   describe('rejects what it cannot decode', () => {
     const good = (): Uint8Array => bmpBytes({ width: 1, height: 1, pixels: [...BGR_RED, 0] });
 
@@ -835,8 +887,8 @@ describe('readBmp', () => {
     });
 
     it('fails on bytes after the pixel array', () => {
-      const error = thrown(() => readBmp(bmpBytes({ width: 1, height: 1, pixels: [...BGR_RED, 0, 0, 0] }), 'a.bmp'));
-      expect(error.message).toMatch(/2 bytes left/);
+      const error = thrown(() => readBmp(bmpBytes({ width: 1, height: 1, pixels: [...BGR_RED, 0, 1, 2, 3, 4] }), 'a.bmp'));
+      expect(error.message).toMatch(/4 bytes left/);
     });
 
     it('fails on a pixel array offset inside the headers', () => {
