@@ -1,0 +1,119 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`terrain tiles, object records and dyo > WdMadrigal01-04.lnd summary 1`] = `
+{
+  "firstObject": null,
+  "layerTextureIds": [
+    0,
+    9,
+  ],
+  "maxHeight": 0,
+  "minHeight": 0,
+  "objectCount": 0,
+  "version": 3,
+  "x": 1,
+  "y": 4,
+}
+`;
+
+exports[`terrain tiles, object records and dyo > WdMadrigal12-12.lnd summary (a tile with objects and SFX objects) 1`] = `
+{
+  "enabledPatchesPerLayer": [
+    181,
+    167,
+    142,
+    64,
+    136,
+    204,
+    13,
+    6,
+    80,
+    17,
+  ],
+  "firstObject": {
+    "ai": 0,
+    "ai2": 2,
+    "angle": 182.3828887939453,
+    "axis": [
+      -54,
+      0,
+      0,
+    ],
+    "extraBytes": 0,
+    "index": 89,
+    "motion": 4294967295,
+    "objType": 0,
+    "position": [
+      228.072265625,
+      100.9671630859375,
+      384.32080078125,
+    ],
+    "scale": [
+      0.7000002861022949,
+      0.7000002861022949,
+      0.7000002861022949,
+    ],
+    "type": 0,
+  },
+  "firstObjectMatrix": [
+    -0.6994,
+    0,
+    -0.0291,
+    0,
+    0.0235,
+    0.4114,
+    -0.5658,
+    0,
+    0.0171,
+    -0.5663,
+    -0.4111,
+    0,
+    228.0723,
+    100.9672,
+    384.3208,
+    1,
+  ],
+  "firstSfxObject": {
+    "ai": 0,
+    "ai2": 2,
+    "angle": 125.47777557373047,
+    "axis": [
+      0,
+      0,
+      0,
+    ],
+    "extraBytes": 0,
+    "index": 1909,
+    "motion": 4294967295,
+    "objType": 3,
+    "position": [
+      366.1416015625,
+      51.463653564453125,
+      150.04638671875,
+    ],
+    "scale": [
+      1,
+      1,
+      1,
+    ],
+    "type": 3,
+  },
+  "layerTextureIds": [
+    0,
+    65,
+    89,
+    7,
+    3,
+    85,
+    145,
+    6,
+    59,
+    57,
+  ],
+  "objectCount": 1800,
+  "sfxObjectCount": 5,
+  "version": 3,
+  "x": 12,
+  "y": 12,
+}
+`;

@@ -10,6 +10,21 @@ export type { Token } from './script/scanner';
 export { loadDefines, parseDefines } from './script/defines';
 export { readWld } from './world/wld';
 export type { WorldInfo } from './world/wld';
+export { OT, objectLocalMatrix, readObjRecord } from './world/obj';
+export type { WorldObjectRecord } from './world/obj';
+export {
+  HGT,
+  MAP_SIZE,
+  MAX_LAYER,
+  NUM_PATCHES_PER_SIDE,
+  PATCH_SIZE,
+  cleanHeight,
+  heightFlag,
+  landFileName,
+  readLnd,
+} from './world/lnd';
+export type { LandLayer, LandTile } from './world/lnd';
+export { readDyo } from './world/dyo';
 export { readTerrainIndex } from './inc/terrainIndex';
 export type { TerrainTexture } from './inc/terrainIndex';
 export { modelFileName, readModelIndex } from './inc/modelIndex';
