@@ -1,22 +1,9 @@
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
 import { expect, it } from 'vitest';
-import { ResPacks, TokenStream, decodeScript, parseDefines, tokenize } from '../../src/index';
-import { clientRoot, describeClient } from '../helpers/client';
-
-const PACKS = ['data.res', 'dataSub1.res', 'dataSub2.res'];
-
-function loadPacks(): ResPacks {
-  return ResPacks.fromBuffers(
-    PACKS.map((file) => {
-      const buf = readFileSync(path.join(clientRoot()!, file));
-      return { file, bytes: new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength) };
-    }),
-  );
-}
+import { TokenStream, decodeScript, parseDefines, tokenize } from '../../src/index';
+import { describeClient, loadClientPacks } from '../helpers/client';
 
 describeClient('define*.h tables', () => {
-  const packs = loadPacks();
+  const packs = loadClientPacks();
   const headers = packs.list().filter((name) => /^define.*\.h$/i.test(name));
   const texts = new Map(headers.map((name) => [name, decodeScript(packs.read(name))]));
 

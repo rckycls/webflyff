@@ -6,7 +6,8 @@
 // web client can read tables the C++ would silently leave out. Like the C++, `#if` / `#else` / `#endif` lines
 // are not evaluated: every `#define` in the file counts, in order.
 
-import { parseHexToken, tokenize } from './scanner';
+import type { ResPacks } from '../res/ResPacks';
+import { TokenStream, decodeScript, parseHexToken, tokenize } from './scanner';
 import type { Token } from './scanner';
 
 /** Thrown inside `evaluate` when a value is not something this module can compute. Never leaves the module. */
@@ -17,19 +18,10 @@ class Unevaluable extends Error {}
  * Integers are 32-bit, as in the C++ (`int`). Throws Unevaluable for anything else.
  */
 function evaluate(tokens: Token[], defines: ReadonlyMap<string, number>): number {
-  let pos = 0;
-
-  const accept = (sym: string): boolean => {
-    const tok = tokens[pos];
-    if (tok !== undefined && tok.kind === 'symbol' && tok.text === sym) {
-      pos++;
-      return true;
-    }
-    return false;
-  };
+  const ts = new TokenStream(tokens);
 
   const primary = (): number => {
-    const tok = tokens[pos++];
+    const tok = ts.next();
     if (tok === undefined) throw new Unevaluable('expression ends early');
     if (tok.kind === 'number') {
       if (tok.text.startsWith('0x')) {
@@ -48,41 +40,41 @@ function evaluate(tokens: Token[], defines: ReadonlyMap<string, number>): number
     }
     if (tok.kind === 'symbol' && tok.text === '(') {
       const value = or();
-      if (!accept(')')) throw new Unevaluable('missing )');
+      if (!ts.accept(')')) throw new Unevaluable('missing )');
       return value;
     }
     throw new Unevaluable(`unexpected ${tok.kind} ${tok.text}`);
   };
 
   const unary = (): number => {
-    if (accept('-')) return 0 - unary();
-    if (accept('+')) return unary();
+    if (ts.accept('-')) return 0 - unary();
+    if (ts.accept('+')) return unary();
     return primary();
   };
 
   const additive = (): number => {
     let value = unary();
     for (;;) {
-      if (accept('+')) value = (value + unary()) | 0;
-      else if (accept('-')) value = (value - unary()) | 0;
+      if (ts.accept('+')) value = (value + unary()) | 0;
+      else if (ts.accept('-')) value = (value - unary()) | 0;
       else return value;
     }
   };
 
   const shift = (): number => {
     let value = additive();
-    while (accept('<<')) value = value << additive();
+    while (ts.accept('<<')) value = value << additive();
     return value;
   };
 
   const or = (): number => {
     let value = shift();
-    while (accept('|')) value = value | shift();
+    while (ts.accept('|')) value = value | shift();
     return value;
   };
 
   const value = or();
-  if (pos !== tokens.length) throw new Unevaluable('extra tokens after the value');
+  if (!ts.done()) throw new Unevaluable('extra tokens after the value');
   return value;
 }
 
@@ -129,3 +121,16 @@ export function parseDefines(
 
 /** Names skipped by the most recent `parseDefines` call, in file order. */
 parseDefines.lastSkipped = [] as string[];
+
+/**
+ * Every `define*.h` in the packs, merged into one table (CProject::LoadDefines, ProjectCmn.cpp:704, loads these
+ * headers into the one CScript::m_defines map). Headers are read in pack order, then index order, and each is
+ * decoded by its own encoding; a name already defined keeps its first value.
+ */
+export function loadDefines(packs: ResPacks): Map<string, number> {
+  const defines = new Map<string, number>();
+  for (const name of packs.list()) {
+    if (/^define.*\.h$/i.test(name)) parseDefines(decodeScript(packs.read(name)), defines, name);
+  }
+  return defines;
+}

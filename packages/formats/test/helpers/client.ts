@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, it } from 'vitest';
+import { ResPacks } from '../../src/index';
 
 // This file is FlyffWeb/packages/formats/test/helpers/client.ts, so FlyffWeb is four levels up.
 const FLYFFWEB_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../..');
@@ -25,6 +26,27 @@ export function describeClient(name: string, fn: () => void): void {
     return;
   }
   describe(name, fn);
+}
+
+const PACK_FILES = ['data.res', 'dataSub1.res', 'dataSub2.res'];
+let clientPacks: ResPacks | undefined;
+
+/**
+ * The client's three `.res` packs, indexed as one `ResPacks`. Read from disk on the first call, then cached for
+ * the rest of the test file.
+ */
+export function loadClientPacks(): ResPacks {
+  if (clientPacks === undefined) {
+    const root = clientRoot();
+    if (root === null) throw new Error(MISSING_MESSAGE);
+    clientPacks = ResPacks.fromBuffers(
+      PACK_FILES.map((file) => {
+        const buf = readFileSync(path.join(root, file));
+        return { file, bytes: new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength) };
+      }),
+    );
+  }
+  return clientPacks;
 }
 
 export interface ClientFileResult {

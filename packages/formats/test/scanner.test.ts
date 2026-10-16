@@ -1,17 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { FormatError, TokenStream, decodeScript, parseDefines, tokenize } from '../src/index';
+import { TokenStream, decodeScript, parseDefines, tokenize } from '../src/index';
 import type { Token } from '../src/index';
-
-/** Runs `fn`, which must throw a FormatError, and returns it. */
-function thrown(fn: () => unknown): FormatError {
-  try {
-    fn();
-  } catch (e) {
-    expect(e).toBeInstanceOf(FormatError);
-    return e as FormatError;
-  }
-  throw new Error('expected a FormatError, but nothing was thrown');
-}
+import { thrown } from './helpers/thrown';
 
 /** Tokens as [kind, text] pairs, so a test reads like the script it tokenizes. */
 function pairs(text: string): [Token['kind'], string][] {
@@ -348,6 +338,45 @@ describe('TokenStream', () => {
     thrown(() => s.expect('}')); // "x" is not a symbol
     thrown(() => new TokenStream(tokenize('x')).expect('x')); // an ident is not a symbol
     thrown(() => new TokenStream([]).expect(';'));
+  });
+
+  it('accept() consumes the next token only when it is that symbol', () => {
+    const s = new TokenStream(tokenize('( x ) )'));
+    expect(s.accept('(')).toBe(true);
+    expect(s.accept(')')).toBe(false); // the next token is the ident x
+    expect(s.next()?.text).toBe('x'); // a failed accept consumes nothing
+    expect(s.accept(')')).toBe(true);
+    expect(s.accept(')')).toBe(true);
+    expect(s.accept(')')).toBe(false); // end of the script
+    // only symbols count: the string "(" and the ident ( are not the symbol (
+    expect(new TokenStream(tokenize('"("')).accept('(')).toBe(false);
+    expect(new TokenStream(tokenize('x')).accept('x')).toBe(false);
+  });
+
+  it('word() returns the next token text whatever its kind, strings without their quotes', () => {
+    const s = new TokenStream(tokenize('abc 12 0x1F "a b" "" {'));
+    expect([s.word(), s.word(), s.word(), s.word(), s.word(), s.word()]).toEqual([
+      'abc',
+      '12',
+      '0x1F',
+      'a b',
+      '',
+      '{',
+    ]);
+    expect(s.done()).toBe(true);
+  });
+
+  it('word() throws a FormatError at the end of the script, at the end of the last token', () => {
+    const text = 'size\n"x"';
+    const s = new TokenStream(tokenize(text), new Map(), 'w.wld');
+    s.word();
+    s.word();
+    const err = thrown(() => s.word());
+    expect(err.unit).toBe('char');
+    expect(err.offset).toBe(text.length);
+    expect(err.line).toBe(2);
+    expect(err.message).toContain('found the end of the script');
+    thrown(() => new TokenStream([]).word());
   });
 
   it('mark() and reset() rewind the stream', () => {

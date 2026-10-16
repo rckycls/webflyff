@@ -303,6 +303,25 @@ export class TokenStream {
     }
   }
 
+  /** Consumes the next token and returns true if it is the symbol `sym`; otherwise consumes nothing. */
+  accept(sym: string): boolean {
+    const tok = this.tokens[this.pos];
+    if (tok === undefined || tok.kind !== 'symbol' || tok.text !== sym) return false;
+    this.pos++;
+    return true;
+  }
+
+  /**
+   * CScanner::GetToken where the C++ takes the token text whatever its kind (`script.token`): a name, a number
+   * as written, a symbol, or the contents of a string without its quotes. Throws at the end of the script.
+   */
+  word(): string {
+    const index = this.pos;
+    const tok = this.next();
+    if (tok === undefined) return this.fail(index, 'expected a token, found the end of the script', TOKEN_REF);
+    return tok.text;
+  }
+
   private describe(index: number): string {
     const tok = this.tokens[index];
     return tok === undefined ? 'the end of the script' : `${tok.kind} "${tok.text}"`;
