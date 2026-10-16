@@ -121,7 +121,9 @@ export class BinaryReader {
   /** A copy of the next n bytes (does not alias the input buffer). */
   bytes(n: number): Uint8Array {
     this.needArray(n, 1);
-    const out = this.source.slice(this.offset, this.offset + n);
+    // Not `source.slice`: on a Node Buffer that returns a view, not a copy.
+    const out = new Uint8Array(n);
+    out.set(this.source.subarray(this.offset, this.offset + n));
     this.offset += n;
     return out;
   }
