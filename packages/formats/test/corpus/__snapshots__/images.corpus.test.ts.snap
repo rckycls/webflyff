@@ -1,0 +1,40 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`textures (.dds, .tga, .bmp) > scan summary 1`] = `
+{
+  "bmp": {
+    "facts": {
+      "24-bit, compression 0": 16,
+    },
+    "files": 16,
+  },
+  "dds": {
+    "facts": {
+      "cube map": 1,
+      "format A1R5G5B5": 116,
+      "format A8R8G8B8": 4,
+      "format DXT1": 5151,
+      "format DXT3": 239,
+      "format DXT5": 14,
+      "format R5G6B5": 113,
+      "mips 1": 188,
+      "mips 10": 1850,
+      "mips 11": 177,
+      "mips 3": 3,
+      "mips 7": 43,
+      "mips 8": 485,
+      "mips 9": 2891,
+    },
+    "files": 5637,
+    "largest": "1024x1024",
+  },
+  "tga": {
+    "facts": {
+      "type 2, 24-bit, descriptor 0x0": 19,
+      "type 2, 32-bit, descriptor 0x8": 2,
+    },
+    "files": 21,
+    "largest": "128x128",
+  },
+}
+`;
