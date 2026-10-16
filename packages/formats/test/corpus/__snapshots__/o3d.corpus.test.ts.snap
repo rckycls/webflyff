@@ -1,0 +1,111 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`models (.o3d) > Obj_ AzriaThicket01.o3d summary 1`] = `
+{
+  "bbMax": [
+    0.8664,
+    0.8713,
+    2.3266,
+  ],
+  "bbMin": [
+    -1.9435,
+    -0.2359,
+    -1.7607,
+  ],
+  "internalName": "Obj_ AzriaThicket01.o3d",
+  "lodCount": 1,
+  "nameMatches": true,
+  "objects": [
+    [
+      "normal 320 vertices / 480 indices",
+    ],
+  ],
+  "textures": [
+    [
+      [
+        "Obj_ AzriaThicket011.dds",
+        "Obj_ AzriaThicket01.dds",
+      ],
+    ],
+  ],
+  "version": 22,
+}
+`;
+
+exports[`models (.o3d) > Part_mVag01Upper.o3d summary 1`] = `
+{
+  "bbMax": [
+    0.5021,
+    1.3011,
+    0.1443,
+  ],
+  "bbMin": [
+    -0.5024,
+    -0.0496,
+    -0.2441,
+  ],
+  "internalName": "Part_mVag01Upper.o3d",
+  "lodCount": 3,
+  "nameMatches": true,
+  "objects": [
+    [
+      "skin 444 vertices / 2076 indices",
+    ],
+    [
+      "skin 410 vertices / 1656 indices",
+    ],
+    [
+      "skin 391 vertices / 1380 indices",
+    ],
+  ],
+  "textures": [
+    [
+      [
+        "Part_mVag01Upper.dds",
+      ],
+    ],
+    [
+      [
+        "Part_mVag01Upper.dds",
+      ],
+    ],
+    [
+      [
+        "Part_mVag01Upper.dds",
+      ],
+    ],
+  ],
+  "version": 20,
+}
+`;
+
+exports[`models (.o3d) > scan summary 1`] = `
+{
+  "count": 4205,
+  "emptyTextures": 209,
+  "endBeforeAttributeCount": 2810,
+  "kinds": {
+    "normal": 4577,
+    "skin": 5133,
+  },
+  "nonUnitNormals": 5062,
+  "normals": 2572934,
+  "skinPalettes": {
+    "blocks": 151,
+    "none": 465,
+    "object": 4517,
+  },
+  "skinVertices": 1577756,
+  "versions": {
+    "20": 1377,
+    "21": 1203,
+    "22": 1623,
+  },
+  "withBones": 35,
+  "withCollision": 1145,
+  "withFrameAttributes": 16,
+  "withFrames": 130,
+  "withLod": 1919,
+  "withMotion": 31,
+}
+`;

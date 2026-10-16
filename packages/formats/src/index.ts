@@ -33,3 +33,5 @@ export { readChr } from './model/chr';
 export type { Bone, Skeleton } from './model/chr';
 export { motionFps, readAni, readTm } from './model/ani';
 export type { BoneTrack, Motion, MotionFrameAttribute, MotionKey } from './model/ani';
+export { NO_BONE, readO3d } from './model/o3d';
+export type { GmObject, GmObjectKind, MaterialBlock, O3dMaterial, O3dModel, Rgba } from './model/o3d';

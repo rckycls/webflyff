@@ -105,6 +105,32 @@ export function motionFps(perSlerp: number): number {
 }
 
 /**
+ * Reads `frameCount` TM_ANIMATION keys (D3DXQUATERNION x, y, z, w, then D3DXVECTOR3), as ReadTM reads a keyed bone
+ * and CObject3D::LoadTMAni (Object3D.cpp:1494) reads the keys of an animated mesh object.
+ */
+export function readMotionKeys(r: BinaryReader, frameCount: number): MotionKey[] {
+  const raw = r.f32Array(frameCount * KEY_FLOATS);
+  const keys: MotionKey[] = [];
+  for (let f = 0; f < frameCount; f++) {
+    const at = f * KEY_FLOATS;
+    keys.push({
+      rotation: [raw[at], raw[at + 1], raw[at + 2], raw[at + 3]],
+      position: [raw[at + 4], raw[at + 5], raw[at + 6]],
+    });
+  }
+  return keys;
+}
+
+/** Reads `frameCount` MOTION_ATTR entries { DWORD attr; int soundId; float frame }, one per frame. */
+export function readFrameAttributes(r: BinaryReader, frameCount: number): MotionFrameAttribute[] {
+  const attributes: MotionFrameAttribute[] = [];
+  for (let f = 0; f < frameCount; f++) {
+    attributes.push({ attr: r.u32(), soundId: r.i32(), frame: r.f32() });
+  }
+  return attributes;
+}
+
+/**
  * Reads what CMotion::ReadTM reads from `r`, which stands just past the path in `readAni` (or past the base bone
  * matrices in a model file): one header and one animation per bone. The reader is left at the byte after the last
  * bone's animation.
@@ -138,15 +164,7 @@ export function readTm(r: BinaryReader, boneCount: number, frameCount: number): 
   let keyedFrames = 0;
   for (let i = 0; i < boneCount; i++) {
     if (r.i32() === HAS_KEYS) {
-      const raw = r.f32Array(frameCount * KEY_FLOATS);
-      const keys: MotionKey[] = [];
-      for (let f = 0; f < frameCount; f++) {
-        const at = f * KEY_FLOATS;
-        keys.push({
-          rotation: [raw[at], raw[at + 1], raw[at + 2], raw[at + 3]],
-          position: [raw[at + 4], raw[at + 5], raw[at + 6]],
-        });
-      }
+      const keys = readMotionKeys(r, frameCount);
       keyedFrames += frameCount;
       tracks.push({ ...headers[i], keys, defaultTm: null });
     } else {
@@ -187,10 +205,7 @@ export function readAni(bytes: Uint8Array, file: string): Motion {
 
   const tracks = readTm(r, boneCount, frameCount);
 
-  const frameAttributes: MotionFrameAttribute[] = [];
-  for (let f = 0; f < frameCount; f++) {
-    frameAttributes.push({ attr: r.u32(), soundId: r.i32(), frame: r.f32() });
-  }
+  const frameAttributes = readFrameAttributes(r, frameCount);
 
   const eventCount = r.i32();
   if (eventCount < 0 || eventCount > MAX_EVENTS) {
