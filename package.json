@@ -9,7 +9,8 @@
   ],
   "scripts": {
     "test": "vitest run",
-    "test:corpus": "vitest run --config vitest.corpus.config.ts"
+    "test:corpus": "vitest run --config vitest.corpus.config.ts",
+    "convert": "tsx tools/convert/src/cli.ts"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
