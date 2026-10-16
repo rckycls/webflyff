@@ -2,6 +2,8 @@
 
 A browser client for FlyFF. Node 24+ and npm 11+. Run `npm install` once in this folder.
 
+The converter's texture stage also needs [KTX-Software](https://github.com/KhronosGroup/KTX-Software/releases) 4.3 or newer (`ktx`). It looks for `ktx` in the `KTX_BIN` environment variable, then on the `PATH`, then in `C:\Program Files\KTX-Software\bin\ktx.exe`.
+
 ## Layout
 
 npm workspaces: `packages/*`, `tools/*`, `apps/*`.
@@ -9,7 +11,7 @@ npm workspaces: `packages/*`, `tools/*`, `apps/*`.
 | Folder | What |
 | --- | --- |
 | `packages/formats` | `@flyffweb/formats`: `BinaryReader`, `FormatError` and the readers for FlyFF binary formats. Every reader names the C++ function it copies. |
-| `tools/convert` | `@flyffweb/convert`: Node converter from the read-only client folder to hashed web assets in `dist/assets`. CLI, client index, atomic writer and report are in; the texture, model and world stages arrive in later tasks. |
+| `tools/convert` | `@flyffweb/convert`: Node converter from the read-only client folder to hashed web assets in `dist/assets`. CLI, client index, atomic writer, report and the texture stage (to `.ktx2`) are in; the model and world stages arrive in later tasks. |
 | `apps/viewer` | Vite + Three.js viewer (added in a later task). |
 
 ## Client folder

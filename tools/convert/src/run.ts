@@ -3,6 +3,7 @@ import path from 'node:path';
 import { ClientFs } from './ClientFs';
 import { AssetWriter } from './output/AssetWriter';
 import { Report } from './output/Report';
+import { texturesStage } from './textures/convertTexture';
 import { UserError } from './util';
 
 /** Everything a stage needs. `only` and `jobs` are for the stage to apply (`matchesOnly`, `runLimited`). */
@@ -28,7 +29,7 @@ export interface Stage {
  * The stages a normal run executes, in this order: textures, then models, then worlds. Each of tasks 11 to 13 adds
  * its stage here.
  */
-export const DEFAULT_STAGES: readonly Stage[] = [];
+export const DEFAULT_STAGES: readonly Stage[] = [texturesStage];
 
 export interface RunOptions {
   /** The client folder (read-only). */
