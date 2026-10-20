@@ -11,7 +11,7 @@ npm workspaces: `packages/*`, `tools/*`, `apps/*`.
 | Folder | What |
 | --- | --- |
 | `packages/formats` | `@flyffweb/formats`: `BinaryReader`, `FormatError` and the readers for FlyFF binary formats. Every reader names the C++ function it copies. |
-| `tools/convert` | `@flyffweb/convert`: Node converter from the read-only client folder to hashed web assets in `dist/assets`. CLI, client index, atomic writer, report and the texture stage (to `.ktx2`) are in; the model and world stages arrive in later tasks. |
+| `tools/convert` | `@flyffweb/convert`: Node converter from the read-only client folder to hashed web assets in `dist/assets`. CLI, client index, atomic writer, report, the texture stage (to `.ktx2`) and the model stage (`.o3d` models, `.chr` skeletons and `.ani` motions to `.glb`) are in; the world stage arrives in a later task. |
 | `apps/viewer` | Vite + Three.js viewer (added in a later task). |
 
 ## Client folder

@@ -1,6 +1,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { ClientFs } from './ClientFs';
+import { modelsStage } from './models/modelsStage';
 import { AssetWriter } from './output/AssetWriter';
 import { Report } from './output/Report';
 import { texturesStage } from './textures/convertTexture';
@@ -29,7 +30,7 @@ export interface Stage {
  * The stages a normal run executes, in this order: textures, then models, then worlds. Each of tasks 11 to 13 adds
  * its stage here.
  */
-export const DEFAULT_STAGES: readonly Stage[] = [texturesStage];
+export const DEFAULT_STAGES: readonly Stage[] = [texturesStage, modelsStage];
 
 export interface RunOptions {
   /** The client folder (read-only). */
