@@ -35,11 +35,17 @@ function reasonOf(failure: unknown): string {
 const defaultSleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * `fetch`, retried. A rejected fetch and any non-2xx status count as a failed attempt (a 404 is retried like the
- * rest: the viewer only asks for files its index lists, so a missing one is a server problem that may pass).
- * Resolves with the first response whose status is ok; throws `AssetLoadError` after the last failure.
+ * A download, retried as a whole: the request AND `read` of its body are one attempt. A connection that drops while
+ * the body is coming (common on phones) rejects `read`, and that is retried like a failed request, with the same
+ * backoff. A rejected fetch, any non-2xx status and a rejected `read` count as a failed attempt (a 404 is retried like
+ * the rest: the viewer only asks for files its index lists, so a missing one is a server problem that may pass).
+ * Resolves with what `read` returns for the first attempt that works; throws `AssetLoadError` after the last failure.
  */
-export async function fetchWithRetry(url: string, opts: FetchRetryOptions = {}): Promise<Response> {
+export async function fetchRead<T>(
+  url: string,
+  read: (response: Response) => Promise<T>,
+  opts: FetchRetryOptions = {},
+): Promise<T> {
   const { retries = 3, baseDelayMs = 500, fetchFn = fetch, sleep = defaultSleep, init } = opts;
 
   let failure: unknown;
@@ -47,7 +53,7 @@ export async function fetchWithRetry(url: string, opts: FetchRetryOptions = {}):
     if (attempt > 0) await sleep(baseDelayMs * 2 ** (attempt - 1));
     try {
       const response = init === undefined ? await fetchFn(url) : await fetchFn(url, init);
-      if (response.ok) return response;
+      if (response.ok) return await read(response);
       failure = new Error(`HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ''}`);
       void response.body?.cancel().catch(() => {});
     } catch (error) {
@@ -55,4 +61,12 @@ export async function fetchWithRetry(url: string, opts: FetchRetryOptions = {}):
     }
   }
   throw new AssetLoadError(url, retries + 1, failure);
+}
+
+/**
+ * `fetch`, retried, resolving with the response once its status is ok. The body is the caller's to read, and a failure
+ * there is not retried: use `fetchRead` for anything whose body is read.
+ */
+export function fetchWithRetry(url: string, opts: FetchRetryOptions = {}): Promise<Response> {
+  return fetchRead(url, async (response) => response, opts);
 }

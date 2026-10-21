@@ -54,17 +54,40 @@ export interface View {
 
 export type ViewFactory = (ctx: ViewContext) => View;
 
+/** What the router needs from the page, so it can be driven without a browser. */
+export interface RouterHost {
+  /** `location.hash`. */
+  hash(): string;
+  /** Calls `listener` on every `hashchange`. */
+  onHashChange(listener: () => void): void;
+  /** The route now on screen (the page marks it, for the nav bar). */
+  routeShown(name: RouteName): void;
+}
+
+const browserHost: RouterHost = {
+  hash: () => window.location.hash,
+  onHashChange: (listener) => window.addEventListener('hashchange', listener),
+  routeShown: (name) => {
+    document.body.dataset.route = name;
+  },
+};
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export class Router {
   private view: View | null = null;
 
   constructor(
     private readonly base: Omit<ViewContext, 'route'>,
     private readonly factories: Record<RouteName, ViewFactory>,
+    private readonly host: RouterHost = browserHost,
   ) {}
 
   /** Shows the route in the address bar now, and follows it from here on. */
   start(): void {
-    window.addEventListener('hashchange', () => this.show());
+    this.host.onHashChange(() => this.show());
     this.show();
   }
 
@@ -73,11 +96,25 @@ export class Router {
     return this.view;
   }
 
+  /**
+   * Swaps the view for the one the hash names. Whatever a view's `dispose` or factory throws goes to the overlay
+   * (a phone has no console), and the router stays usable: the old view is dropped either way, so it is never
+   * disposed twice, and a factory that failed leaves no view (the shell clears the canvas) until the next route.
+   */
   private show(): void {
-    const route = parseRoute(window.location.hash);
-    this.view?.dispose();
+    const route = parseRoute(this.host.hash());
+    const old = this.view;
     this.view = null;
-    document.body.dataset.route = route.name;
-    this.view = this.factories[route.name]({ ...this.base, route });
+    try {
+      old?.dispose();
+    } catch (error) {
+      this.base.overlay.error(`the previous view did not dispose cleanly: ${messageOf(error)}`);
+    }
+    this.host.routeShown(route.name);
+    try {
+      this.view = this.factories[route.name]({ ...this.base, route });
+    } catch (error) {
+      this.base.overlay.error(`${route.name} view failed to start: ${messageOf(error)}`);
+    }
   }
 }

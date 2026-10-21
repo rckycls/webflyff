@@ -1,7 +1,7 @@
 // Loading models and textures. Models are glb files without images: each material names its texture's logical key in
 // `extras.texture`, which GLTFLoader copies to `material.userData.texture`. `applyTextures` resolves those keys through
 // one ref-counted `TextureCache`, so models that share a texture share one download and one GPU copy (global
-// constraints). Everything downloaded goes through `fetchWithRetry`.
+// constraints). Everything downloaded goes through `fetchRead`, which retries the body read too.
 
 import type { Material, Mesh, Object3D, Texture, WebGLRenderer } from 'three';
 import { RepeatWrapping } from 'three';
@@ -11,7 +11,7 @@ import { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js';
 import type { Overlay } from '../overlay/Overlay';
 import { textureGpuBytes } from '../overlay/gpuMemory';
 import type { AssetStore } from './AssetStore';
-import { fetchWithRetry } from './fetchWithRetry';
+import { fetchRead } from './fetchWithRetry';
 import type { FetchRetryOptions } from './fetchWithRetry';
 import { checkerTexture } from './placeholder';
 
@@ -36,8 +36,7 @@ export async function loadGltf(store: AssetStore, gltf: GLTFLoader, key: string)
 
 /** Downloads a `.ktx2` (with retries) and transcodes it for this GPU. This is the `load` a `TextureCache` wants. */
 export async function loadKtx2(ktx2: KTX2Loader, url: string, retry: FetchRetryOptions = {}): Promise<Texture> {
-  const response = await fetchWithRetry(url, retry);
-  const buffer = await response.arrayBuffer();
+  const buffer = await fetchRead(url, (response) => response.arrayBuffer(), retry);
   return new Promise<Texture>((resolve, reject) => {
     ktx2.parse(buffer, (texture) => resolve(texture), reject);
   });

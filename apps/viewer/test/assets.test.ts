@@ -2,9 +2,10 @@ import { BoxGeometry, DataTexture, Group, Mesh, MeshStandardMaterial, RGBAFormat
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { encodeTileBin } from '@flyffweb/formats';
 import type { AssetIndex, WebTile, WorldManifest } from '@flyffweb/formats';
+import type { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js';
 import { AssetStore } from '../src/assets/AssetStore';
-import { AssetLoadError, fetchWithRetry } from '../src/assets/fetchWithRetry';
-import { TextureCache, applyTextures } from '../src/assets/loaders';
+import { AssetLoadError, fetchRead, fetchWithRetry } from '../src/assets/fetchWithRetry';
+import { TextureCache, applyTextures, loadKtx2 } from '../src/assets/loaders';
 import { checkerTexture } from '../src/assets/placeholder';
 
 const noSleep = async (): Promise<void> => {};
@@ -75,6 +76,62 @@ describe('fetchWithRetry', () => {
     expect((failure as AssetLoadError).attempts).toBe(2);
     expect(sleep.mock.calls.map(([ms]) => ms)).toEqual([10]);
     expect(fetchFn).toHaveBeenCalledWith('/x', { cache: 'no-cache' });
+  });
+});
+
+/** A 200 response whose body fails while it is being read, as a connection dropped mid-file does. */
+function brokenBody(): Response {
+  return new Response(
+    new ReadableStream({
+      start(controller) {
+        controller.error(new TypeError('connection reset'));
+      },
+    }),
+  );
+}
+
+describe('fetchRead', () => {
+  it('retries when the body read fails, and returns what the second read gives', async () => {
+    const fetchFn = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(brokenBody())
+      .mockResolvedValueOnce(new Response('whole file'));
+    const sleep = vi.fn(async (_ms: number) => {});
+
+    const text = await fetchRead('/assets/a.glb', (response) => response.text(), { fetchFn, sleep });
+
+    expect(text).toBe('whole file');
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+    expect(sleep.mock.calls.map(([ms]) => ms)).toEqual([500]);
+  });
+
+  it('gives up with AssetLoadError after 4 attempts when every body read fails', async () => {
+    const fetchFn = vi.fn<typeof fetch>().mockImplementation(async () => brokenBody());
+    const sleep = vi.fn(async (_ms: number) => {});
+
+    const failure = await fetchRead('/assets/a.glb', (response) => response.arrayBuffer(), { fetchFn, sleep }).catch(
+      (e: unknown) => e,
+    );
+
+    expect(failure).toBeInstanceOf(AssetLoadError);
+    expect((failure as AssetLoadError).attempts).toBe(4);
+    expect((failure as AssetLoadError).message).toContain('connection reset');
+    expect(fetchFn).toHaveBeenCalledTimes(4);
+    expect(sleep.mock.calls.map(([ms]) => ms)).toEqual([500, 1000, 2000]);
+  });
+
+  it('retries a read that throws, a bad status first, and calls read once per ok response', async () => {
+    const fetchFn = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response('', { status: 502 }))
+      .mockResolvedValueOnce(new Response('{"broken'))
+      .mockResolvedValueOnce(new Response('{"fine":true}'));
+    const read = vi.fn((response: Response) => response.json() as Promise<{ fine: boolean }>);
+
+    const json = await fetchRead('/x.json', read, { fetchFn, sleep: noSleep });
+
+    expect(json).toEqual({ fine: true });
+    expect(read).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -181,6 +238,58 @@ describe('AssetStore', () => {
     await expect(store.tile('wdtest', 0, 0)).rejects.toBeInstanceOf(AssetLoadError);
     fail = false;
     expect(await store.tile('wdtest', 0, 0)).not.toBeNull();
+  });
+
+  /** `real`, except that the first download of `url` has a body that fails midway. */
+  function dropFirstBody(real: ReturnType<typeof fakeFetch>, url: string) {
+    let dropped = false;
+    return vi.fn<typeof fetch>(async (input, init) => {
+      if (String(input) === url && !dropped) {
+        dropped = true;
+        return brokenBody();
+      }
+      return real(input, init);
+    });
+  }
+
+  it('retries the index, bytes, json and tiles when the connection drops while the body is read', async () => {
+    const sleep = vi.fn(async (_ms: number) => {});
+    const real = fakeFetch(routes());
+    const count = (fetchFn: ReturnType<typeof fakeFetch>, url: string): number =>
+      fetchFn.mock.calls.filter(([input]) => String(input) === url).length;
+
+    const indexFetch = dropFirstBody(real, '/assets/index.json');
+    await AssetStore.load('/assets/', { fetchFn: indexFetch, sleep });
+    expect(count(indexFetch, '/assets/index.json')).toBe(2);
+
+    const glb = '/assets/models/a.1111111111.glb';
+    const withGlb = await AssetStore.load('/assets/', { fetchFn: dropFirstBody(real, glb), sleep });
+    expect(Array.from(await withGlb.bytes('models/a.glb'))).toEqual([1, 2, 3]);
+
+    const manifestUrl = '/assets/worlds/wdtest/manifest.4444444444.json';
+    const withManifest = await AssetStore.load('/assets/', { fetchFn: dropFirstBody(real, manifestUrl), sleep });
+    expect(await withManifest.json<WorldManifest>('worlds/wdtest/manifest.json')).toMatchObject({ name: 'WdTest' });
+
+    const tileUrl = '/assets/worlds/wdtest/tiles/0_0.5555555555.bin';
+    const tileFetch = dropFirstBody(real, tileUrl);
+    const withTile = await AssetStore.load('/assets/', { fetchFn: tileFetch, sleep });
+    expect((await withTile.tile('wdtest', 0, 0))!.heights[0]).toBe(12.5);
+    expect(count(tileFetch, tileUrl)).toBe(2);
+  });
+
+  it('rejects with AssetLoadError (4 attempts) when a body never arrives whole', async () => {
+    const real = fakeFetch(routes());
+    const glb = '/assets/models/a.1111111111.glb';
+    const fetchFn = vi.fn<typeof fetch>(async (input, init) =>
+      String(input) === glb ? brokenBody() : real(input, init),
+    );
+    const store = await AssetStore.load('/assets/', { fetchFn, sleep: noSleep });
+
+    const failure = await store.bytes('models/a.glb').catch((e: unknown) => e);
+
+    expect(failure).toBeInstanceOf(AssetLoadError);
+    expect((failure as AssetLoadError).attempts).toBe(4);
+    expect(fetchFn.mock.calls.filter(([input]) => String(input) === glb)).toHaveLength(4);
   });
 });
 
@@ -397,5 +506,39 @@ describe('applyTextures', () => {
 
     expect(dispose).toHaveBeenCalledTimes(1);
     expect(cache.size()).toBe(0);
+  });
+});
+
+describe('loadKtx2', () => {
+  it('retries a download whose body fails, then hands the whole buffer to the transcoder', async () => {
+    const texture = rgbaTexture();
+    const parse = vi.fn((_buffer: ArrayBuffer, onLoad: (t: Texture) => void) => onLoad(texture));
+    const ktx2 = { parse } as unknown as KTX2Loader;
+    const fetchFn = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(brokenBody())
+      .mockResolvedValueOnce(new Response(new Blob([new Uint8Array([9, 8, 7])])));
+
+    const loaded = await loadKtx2(ktx2, '/assets/textures/a.abcdef0123.ktx2', { fetchFn, sleep: noSleep });
+
+    expect(loaded).toBe(texture);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+    expect(parse).toHaveBeenCalledTimes(1);
+    expect(Array.from(new Uint8Array(parse.mock.calls[0]![0]))).toEqual([9, 8, 7]);
+  });
+
+  it('rejects with AssetLoadError when the body never arrives, and with what the transcoder rejects', async () => {
+    const ktx2 = { parse: vi.fn() } as unknown as KTX2Loader;
+    const down = vi.fn<typeof fetch>().mockImplementation(async () => brokenBody());
+    const failure = await loadKtx2(ktx2, '/x.ktx2', { fetchFn: down, sleep: noSleep }).catch((e: unknown) => e);
+    expect(failure).toBeInstanceOf(AssetLoadError);
+    expect((failure as AssetLoadError).attempts).toBe(4);
+
+    const bad = {
+      parse: (_buffer: ArrayBuffer, _ok: unknown, onError: (e: unknown) => void) => onError(new Error('not ktx2')),
+    } as unknown as KTX2Loader;
+    const fine = vi.fn<typeof fetch>(async () => new Response('x'));
+    await expect(loadKtx2(bad, '/y.ktx2', { fetchFn: fine, sleep: noSleep })).rejects.toThrow('not ktx2');
+    expect(fine).toHaveBeenCalledTimes(1);
   });
 });

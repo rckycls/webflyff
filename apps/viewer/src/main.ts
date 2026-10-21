@@ -5,6 +5,7 @@ import { WebGLRenderer } from 'three';
 import { AssetStore } from './assets/AssetStore';
 import { TextureCache, createLoaders, loadKtx2 } from './assets/loaders';
 import { Overlay } from './overlay/Overlay';
+import { installContextLossHandlers, installGlobalErrorHandlers } from './overlay/errorHandlers';
 import { Router } from './router';
 import type { RouteName, ViewFactory } from './router';
 import { installTestHooks } from './testHooks';
@@ -21,6 +22,8 @@ const VIEWS: Record<RouteName, ViewFactory> = {
 };
 
 const overlay = new Overlay(document.body);
+// Before anything else can fail: whatever nothing catches still ends up on screen.
+installGlobalErrorHandlers(window, overlay);
 let router: Router | null = null;
 
 function messageOf(error: unknown): string {
@@ -37,6 +40,7 @@ function createRenderer(container: HTMLElement): WebGLRenderer {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setClearColor(CLEAR_COLOR);
+  installContextLossHandlers(renderer.domElement, overlay);
   container.append(renderer.domElement);
   window.addEventListener('resize', () => renderer.setSize(window.innerWidth, window.innerHeight));
   return renderer;

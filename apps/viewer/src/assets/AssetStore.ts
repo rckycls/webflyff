@@ -5,8 +5,12 @@
 
 import { decodeTileBin } from '@flyffweb/formats';
 import type { AssetIndex, WebTile, WorldManifest } from '@flyffweb/formats';
-import { fetchWithRetry } from './fetchWithRetry';
+import { fetchRead } from './fetchWithRetry';
 import type { FetchRetryOptions } from './fetchWithRetry';
+
+// The body is read inside the retry (`fetchRead`), so a connection that drops mid-file is retried too.
+const readJson = async <T>(response: Response): Promise<T> => (await response.json()) as T;
+const readBytes = async (response: Response): Promise<Uint8Array> => new Uint8Array(await response.arrayBuffer());
 
 export class AssetStore {
   /** World web name to its manifest. A failed fetch is dropped so that the next call tries again. */
@@ -23,8 +27,7 @@ export class AssetStore {
   static async load(base = '/assets/', retry: FetchRetryOptions = {}): Promise<AssetStore> {
     const root = base.endsWith('/') ? base : `${base}/`;
     const url = `${root}index.json`;
-    const response = await fetchWithRetry(url, { ...retry, init: { cache: 'no-cache' } });
-    const index = (await response.json()) as Partial<AssetIndex>;
+    const index = await fetchRead(url, readJson<Partial<AssetIndex>>, { ...retry, init: { cache: 'no-cache' } });
     if (index.version !== 1 || typeof index.files !== 'object' || index.files === null) {
       throw new Error(`${url} is not an asset index this viewer reads (version ${String(index.version)}, expected 1)`);
     }
@@ -42,13 +45,11 @@ export class AssetStore {
   }
 
   async json<T>(key: string): Promise<T> {
-    const response = await fetchWithRetry(this.require(key), this.retry);
-    return (await response.json()) as T;
+    return fetchRead(this.require(key), readJson<T>, this.retry);
   }
 
   async bytes(key: string): Promise<Uint8Array> {
-    const response = await fetchWithRetry(this.require(key), this.retry);
-    return new Uint8Array(await response.arrayBuffer());
+    return fetchRead(this.require(key), readBytes, this.retry);
   }
 
   /** A world's manifest by its web name (`worlds/<webName>/manifest.json`; `manifest.name` is for display only). */
@@ -69,8 +70,7 @@ export class AssetStore {
     if (!Object.hasOwn(tiles, key)) return null;
     // The manifest's paths are hashed paths relative to the assets folder, like the index's.
     const url = this.base + tiles[key]!;
-    const response = await fetchWithRetry(url, this.retry);
-    return decodeTileBin(new Uint8Array(await response.arrayBuffer()), url);
+    return decodeTileBin(await fetchRead(url, readBytes, this.retry), url);
   }
 
   private require(key: string): string {
