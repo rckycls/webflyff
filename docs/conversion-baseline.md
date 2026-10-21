@@ -101,6 +101,27 @@ What it means for the viewer:
 
 The script that measured this is a throwaway kept outside the repository.
 
+## Viewer soak test
+
+The memory target of the viewer (global constraints: after a 10-minute loop walk, memory within 10% of its starting level), measured by the end-to-end test `apps/viewer/e2e/soak.spec.ts` (Task 19). The player runs laps at 12 m/s around a closed 600 m square centred on Madrigal's start (2,400 m a lap), so tiles stream in and out the whole time. Memory is what the overlay reports: `gpuBytes + (jsHeapBytes ?? 0)`. The baseline is the sample after the first lap, the final value the sample after the last lap, each taken standing on the same corner 5 s after arriving, after a `gc()`.
+
+| | |
+| --- | --- |
+| Date | 2026-10-22 |
+| Command | `npm run test:soak` (from `FlyffWeb/`; project `soak`: headless Chromium, SwiftShader software WebGL, 1280 x 720, `--enable-precise-memory-info --js-flags=--expose-gc`) |
+| Machine | the converter's (AMD Ryzen 7 5700U, Windows 11, Node 24.19.0); software WebGL ran the viewer at 2.5 to 2.8 fps |
+| Result | **passed**: baseline 296.9 MB, final 297.3 MB, **ratio 1.001** (limit 1.10), 3 laps in 653 s, no errors in the overlay |
+
+| Lap | Time | Memory | GPU estimate | JS heap | Tiles loaded |
+| --- | --- | --- | --- | --- | --- |
+| 1 (baseline) | 241 s | 296.9 MB | 128.2 MB | 168.8 MB | 25 |
+| 2 | 447 s | 287.0 MB | 128.2 MB | 158.8 MB | 25 |
+| 3 (final) | 653 s | 297.3 MB | 128.2 MB | 169.1 MB | 25 |
+
+(MB here are binary, 1 MiB.) The GPU estimate is the same to the digit at every lap and the loaded tiles are the same 25, so what the viewer adds up for tiles and textures is given back each time. The JS heap moves by about 10 MB from lap to lap after a garbage collection and ends where it began. It is 57% of the total and the GPU estimate 43%; the estimate is only what the viewer itself counts (terrain, character and model geometry, textures), not what the browser's driver really holds. The walk is time-based (`Route.step(dt)`), so slow software frames do not shorten it: the lap lengths are real metres at 12 m/s.
+
+To try the test out quickly: `SOAK_MINUTES=1 SOAK_SIDE=150 npm run test:soak` (two laps of a 150 m square, about 2 minutes). The real run uses neither.
+
 ## Reproducing
 
 ```

@@ -15,6 +15,11 @@
 // The sky and the fog are `bgColor`, a D3DCOLOR (0xAARRGGBB), and the fog is linear from `fog.start` to `fog.end`;
 // nothing past the fog's end can be seen, so the camera's far plane is there.
 //
+// `x`, `z` and `yaw` start it somewhere else, in the numbers a player sees: `x` and `z` are the client's coordinates
+// (D3D, the ones /pos shows; web z is -z), both or neither, and `yaw` is the direction it faces in degrees, 0 facing
+// north (D3D +z), 90 east (+x), 180 south, turning clockwise seen from above (the heading of player.ts, in degrees).
+// Without them it starts as above. The compare page's spots are such addresses.
+//
 // `paused=1` stands the character still in the first frame of its standing motion and ignores the keys and the
 // joystick, for pictures (`walkRoute` still walks).
 
@@ -72,18 +77,58 @@ export interface WorldParams {
   /** Visible tiles around the player's (1: 3 x 3). */
   radius: number;
   paused: boolean;
+  /** The start position in the client's (D3D) x, or null for the manifest's. Set together with `z`. */
+  x: number | null;
+  /** The start position in the client's (D3D) z; the web z is its negative. */
+  z: number | null;
+  /** The direction it faces in degrees (0 north, 90 east, clockwise), or null for the manifest's. */
+  yaw: number | null;
 }
 
-/** Reads `world` (default wdmadrigal), `radius` (a whole number 0 to 4, default 1) and `paused` (`1` or `true`). */
+/** A number written in an address, or null for nothing, an empty value, or anything that is not a finite number. */
+function numberParam(params: URLSearchParams, name: string): number | null {
+  const given = params.get(name);
+  // Number('') is 0: an empty value is no value
+  if (given === null || given.trim() === '') return null;
+  const value = Number(given);
+  return Number.isFinite(value) ? value : null;
+}
+
+/**
+ * Reads `world` (default wdmadrigal), `radius` (a whole number 0 to 4, default 1), `paused` (`1` or `true`), and the
+ * start: `x` and `z` (the client's coordinates; only used together) and `yaw` (degrees).
+ */
 export function readWorldParams(params: URLSearchParams): WorldParams {
   const given = params.get('radius');
   // Number('') is 0: an empty value is no value
   const radius = given === null || given.trim() === '' ? DEFAULT_RADIUS : Number(given);
   const paused = params.get('paused');
+  const x = numberParam(params, 'x');
+  const z = numberParam(params, 'z');
+  const both = x !== null && z !== null;
   return {
     world: params.get('world') || DEFAULT_WORLD,
     radius: Number.isInteger(radius) && radius >= 0 && radius <= MAX_RADIUS ? radius : DEFAULT_RADIUS,
     paused: paused === '1' || paused === 'true',
+    x: both ? x : null,
+    z: both ? z : null,
+    yaw: numberParam(params, 'yaw'),
+  };
+}
+
+/**
+ * Where the player starts, in web coordinates (x, z, and the heading in radians as player.ts has it): the client's
+ * `x` and `z` of the address with z negated, or the manifest camera's position; the address's `yaw` in degrees, or
+ * the camera's yaw (angleX, see the top of this file). Heading 0 faces D3D +z, the same as a yaw of 0.
+ */
+export function startPose(
+  params: Pick<WorldParams, 'x' | 'z' | 'yaw'>,
+  camera: Pick<WorldManifest['camera'], 'position' | 'angleX'>,
+): { x: number; z: number; heading: number } {
+  return {
+    x: params.x ?? camera.position[0],
+    z: params.z === null ? camera.position[2] : 0 - params.z,
+    heading: params.yaw === null ? camera.angleX : (params.yaw * Math.PI) / 180,
   };
 }
 
@@ -221,11 +266,11 @@ export const worldView: ViewFactory = (ctx) => {
     if (manifest.fog.end > NEAR) camera.far = manifest.fog.end;
     camera.updateProjectionMatrix();
 
-    const [x, , z] = manifest.camera.position;
-    player.x = x;
-    player.z = z;
-    // angleX is the editor camera's yaw (see the top of the file)
-    player.heading = manifest.camera.angleX;
+    // the editor camera's angleX is its yaw (see the top of the file), unless the address says otherwise
+    const pose = startPose(params, manifest.camera);
+    player.x = pose.x;
+    player.z = pose.z;
+    player.heading = pose.heading;
 
     const tiles = new TileStreamer(params.world, manifest, store, scene, {
       textures: ctx.textures,

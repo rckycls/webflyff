@@ -1,6 +1,7 @@
 // Playwright, for the viewer's end-to-end tests (`e2e/`). Three projects:
 //   dev   the dev server (`npm run dev:viewer`): every test not tagged @prod or @soak
-//   soak  the same server: tests tagged @soak, 15 minutes each (`npm run test:soak`)
+//   soak  the same server: tests tagged @soak, 20 minutes each (`npm run test:soak`); Chromium also gets precise heap
+//         numbers and `gc()`, so the memory the soak test reads is what is held, not what is waiting to be collected
 //   prod  a production build (`vite build`, then `vite preview`): tests tagged @prod. Download sizes are only what a
 //         device would get from minified code, so the first-load budget is measured here.
 // Chromium draws with SwiftShader (software WebGL), so the pictures do not depend on the machine's GPU.
@@ -17,6 +18,7 @@ const flyffwebRoot = path.resolve(viewerRoot, '../..');
 
 const DEV_URL = 'http://localhost:5173/';
 const PREVIEW_URL = 'http://localhost:4173/';
+const SOFTWARE_GL = ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'];
 
 /** The projects `--project <name>` / `--project=<name>` name in `argv`, or null when none is named (all run). */
 function namedProjects(argv: readonly string[]): Set<string> | null {
@@ -45,11 +47,19 @@ export default defineConfig({
   use: {
     browserName: 'chromium',
     viewport: { width: 1280, height: 720 },
-    launchOptions: { args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'] },
+    launchOptions: { args: SOFTWARE_GL },
   },
   projects: [
     { name: 'dev', grepInvert: /@prod|@soak/, use: { baseURL: DEV_URL } },
-    { name: 'soak', grep: /@soak/, timeout: 15 * 60_000, use: { baseURL: DEV_URL } },
+    {
+      name: 'soak',
+      grep: /@soak/,
+      timeout: 20 * 60_000,
+      use: {
+        baseURL: DEV_URL,
+        launchOptions: { args: [...SOFTWARE_GL, '--enable-precise-memory-info', '--js-flags=--expose-gc'] },
+      },
+    },
     { name: 'prod', grep: /@prod/, use: { baseURL: PREVIEW_URL } },
   ],
   webServer: [

@@ -5,23 +5,32 @@ import { WebGLRenderer } from 'three';
 import { AssetStore } from './assets/AssetStore';
 import { TextureCache, createLoaders, loadKtx2 } from './assets/loaders';
 import { characterView } from './character/CharacterView';
+import { compareView } from './compare/ComparePage';
 import { Overlay } from './overlay/Overlay';
 import { installContextLossHandlers, installGlobalErrorHandlers } from './overlay/errorHandlers';
 import { Router } from './router';
 import type { RouteName, ViewFactory } from './router';
 import { installTestHooks } from './testHooks';
-import { placeholderView } from './views/placeholder';
 import { worldView } from './world/WorldView';
 
 const CLEAR_COLOR = 0x101418;
 const MAX_PIXEL_RATIO = 2;
 
-/** The views, by route. Each later piece replaces its placeholder. */
+/** The views, by route. */
 const VIEWS: Record<RouteName, ViewFactory> = {
   character: characterView,
   world: worldView,
-  compare: placeholderView('compare'),
+  compare: compareView,
 };
+
+// The compare page shows the viewer in a frame; a viewer in a frame leaves its nav bar out (index.html), so the
+// picture is only the picture.
+try {
+  if (window.self !== window.top) document.body.dataset.embedded = '1';
+} catch {
+  // a frame that cannot ask is a frame
+  document.body.dataset.embedded = '1';
+}
 
 const overlay = new Overlay(document.body);
 // Before anything else can fail: whatever nothing catches still ends up on screen.

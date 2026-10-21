@@ -1,0 +1,30 @@
+[
+  {
+    "id": "character-male-default",
+    "kind": "character",
+    "route": "#/character?gender=male&paused=1&frame=0",
+    "reference": "compare/refs/character-male-default.png",
+    "note": "The default male (head 01, hair 01, vagrant upper, hand and foot) standing still, first frame of mvr_male_genstand. In the Windows client: a new vagrant with no equipment standing still, the whole body in view, seen from the front."
+  },
+  {
+    "id": "world-start",
+    "kind": "world",
+    "route": "#/world?world=wdmadrigal&paused=1",
+    "reference": "compare/refs/world-start.png",
+    "note": "Madrigal at the start the viewer uses: the world file's editor camera, a ravine about 2 km west of Flaris (client x 5064, z 4096). In the Windows client: stand at x 5064, z 4096 facing the way the viewer does (yaw about 11 degrees, a little east of north), default camera distance."
+  },
+  {
+    "id": "flaris-plaza",
+    "kind": "world",
+    "route": "#/world?world=wdmadrigal&x=6968&z=3328&yaw=180&paused=1",
+    "reference": "compare/refs/flaris-plaza.png",
+    "note": "Flaris town square at client x 6968, z 3328, facing south (yaw 180). In the Windows client: stand at 6968, 3328, turn to face south, default camera distance, character standing still."
+  },
+  {
+    "id": "flaris-plaza-east",
+    "kind": "world",
+    "route": "#/world?world=wdmadrigal&x=6968&z=3328&yaw=90&paused=1",
+    "reference": "compare/refs/flaris-plaza-east.png",
+    "note": "The same place, turned to face east (yaw 90). In the Windows client: stand at 6968, 3328, turn to face east, default camera distance, character standing still."
+  }
+]
