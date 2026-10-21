@@ -11,6 +11,7 @@ import { Router } from './router';
 import type { RouteName, ViewFactory } from './router';
 import { installTestHooks } from './testHooks';
 import { placeholderView } from './views/placeholder';
+import { worldView } from './world/WorldView';
 
 const CLEAR_COLOR = 0x101418;
 const MAX_PIXEL_RATIO = 2;
@@ -18,7 +19,7 @@ const MAX_PIXEL_RATIO = 2;
 /** The views, by route. Each later piece replaces its placeholder. */
 const VIEWS: Record<RouteName, ViewFactory> = {
   character: characterView,
-  world: placeholderView('world'),
+  world: worldView,
   compare: placeholderView('compare'),
 };
 

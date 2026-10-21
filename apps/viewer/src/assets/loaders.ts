@@ -28,7 +28,11 @@ export function createLoaders(renderer: WebGLRenderer): { gltf: GLTFLoader; ktx2
 }
 
 /** Downloads a glb (with retries) and parses it; its images, if it had any, would resolve against nothing. */
-export async function loadGltf(store: AssetStore, gltf: GLTFLoader, key: string): Promise<GLTF> {
+export async function loadGltf(
+  store: Pick<AssetStore, 'bytes'>,
+  gltf: Pick<GLTFLoader, 'parseAsync'>,
+  key: string,
+): Promise<GLTF> {
   const bytes = await store.bytes(key);
   const whole = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength;
   return gltf.parseAsync((whole ? bytes : bytes.slice()).buffer as ArrayBuffer, '');
