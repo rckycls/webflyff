@@ -24,8 +24,11 @@
 // (`renderOrder`), all after the opaque ones, which gives the C++'s order; the opaque ones never overlap.
 //
 // Colour: D3D computes in the colour numbers as stored, with no sRGB step, and blends the same way. The shader does
-// too, so it decodes the (sRGB flagged) layer texture back to those numbers, writes its result without three.js'
-// output conversion, and mixes the fog in the same space. That is what makes the ground look like the client's.
+// too, so it decodes the (sRGB flagged) layer texture back to those numbers and writes its result without three.js'
+// output conversion, straight to the canvas. That is what makes the ground look like the client's. The fog is
+// three.js' own chunk: for a canvas it hands the shader `fogColor` already in the output colour space (WebGLMaterials
+// refreshFogUniforms, three@0.186), which is the space this shader works in, so `new Fog(hex)` fades to that hex, like
+// every other material and the clear colour.
 //
 // Vertex lighting (the diffuse of stage 0) comes from `TerrainLighting`, which the world view owns and updates with the
 // time of day (CWorld::SetLight, World3D.cpp:1778-2010); unlit (diffuse 1) until it does.
@@ -129,14 +132,8 @@ const FRAGMENT_SHADER = /* glsl */ `
       gl_FragColor = vec4(colour, 1.0);
     #endif
 
-    #ifdef USE_FOG
-      #ifdef FOG_EXP2
-        float fogFactor = 1.0 - exp(-fogDensity * fogDensity * vFogDepth * vFogDepth);
-      #else
-        float fogFactor = smoothstep(fogNear, fogFar, vFogDepth);
-      #endif
-      gl_FragColor.rgb = mix(gl_FragColor.rgb, toStored(fogColor), fogFactor);
-    #endif
+    // the fog colour is already an output-space colour (see the header), so it is mixed as it comes
+    #include <fog_fragment>
   }
 `;
 

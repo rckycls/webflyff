@@ -464,6 +464,25 @@ describe('TerrainTile', () => {
     expect(terrain.gpuBytes()).toBe(attributes + indices + 2 * 128 * 128 * 4);
   });
 
+  it('mixes the fog in three.js\' own way: fogColor arrives in output space and is not encoded a second time', async () => {
+    // For a canvas, WebGLMaterials.refreshFogUniforms converts the Fog's colour to renderer.outputColorSpace before it
+    // reaches the shader, and this shader works in (and writes) that space, so the chunk's plain mix is right and a
+    // toStored(fogColor) would lighten the far ground (0x808080 would fade to about 0xbc).
+    const tile = makeTile({ layers: [{ texture: 0, patches: 'all' }, { texture: 1, patches: [0] }] });
+    const terrain = new TerrainTile(tile, manifest, { textures: fakeTextures().cache });
+    await terrain.ready;
+    for (const mesh of terrain.group.children as Mesh[]) {
+      const material = mesh.material as ShaderMaterial;
+      expect(material.fog).toBe(true);
+      expect(material.uniforms.fogColor).toBeDefined();
+      expect(material.fragmentShader).toContain('#include <fog_fragment>');
+      expect(material.fragmentShader).not.toContain('fogColor');
+      // the texture is the only thing that goes through the stored-space conversion
+      expect(material.fragmentShader.match(/toStored\(/g)).toHaveLength(2); // its definition and the one use
+      expect(material.fragmentShader).toContain('toStored(texture2D(uTexture');
+    }
+  });
+
   it('keeps the vertex indices in 16 bits: the tile has 16641 vertices', async () => {
     const tile = makeTile({ layers: [{ texture: 0, patches: 'all' }] });
     const terrain = new TerrainTile(tile, manifest, { textures: fakeTextures().cache });
