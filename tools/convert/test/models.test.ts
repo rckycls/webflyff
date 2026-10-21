@@ -33,7 +33,6 @@ import { Report } from '../src/output/Report';
 import type { StageContext } from '../src/run';
 import { DEFAULT_STAGES } from '../src/run';
 import { textureKey } from '../src/textures/convertTexture';
-import { invert } from '../src/models/gltf';
 import { ALPHA_REF, buildModelGlb, materialState, skinInfluences } from '../src/models/modelGlb';
 import { buildMotionGlb } from '../src/models/motionGlb';
 import { NAME_MISMATCH_WARNING, modelsStage } from '../src/models/modelsStage';
@@ -390,10 +389,68 @@ describe('buildModelGlb (synthetic models)', () => {
     });
     await expect(buildModelGlb(o3dModel([[skin]]), null, noTextures)).rejects.toThrow(/skeleton/);
   });
+
+  const skinObject = (): GmObject =>
+    gmObject({ kind: 'skin', skinWeights: Float32Array.from([1, 0, 1, 0, 1, 0]), skinJoints: new Uint16Array(6) });
+
+  it('a LOD with skinned and static objects keeps the static ones in a child node and mesh lod<k>_static', async () => {
+    const model = o3dModel([[skinObject(), gmObject()]]);
+    const doc = await readGlb(await buildModelGlb(model, chainSkeleton(['Root']), noTextures));
+    const lod0 = doc.getRoot().listScenes()[0]!.listChildren().find((n) => n.getName() === 'lod0')!;
+    expect(lod0.getMesh()!.getName()).toBe('lod0');
+    expect(lod0.getSkin()).not.toBeNull();
+    const children = lod0.listChildren().map((n) => [n.getName(), n.getMesh()?.getName()]);
+    expect(children).toEqual([['lod0_static', 'lod0_static']]);
+  });
+
+  it('an object with TM keys hung from a bone becomes a node under that joint, animated by "tm"', async () => {
+    const pose: MotionKey = { position: [0, 0, 0], rotation: [0, 0, 0, 1] };
+    const flag = gmObject({ parentId: 1, parentType: 2, tmFrames: [pose, pose] });
+    const model = o3dModel([[flag]], { frameCount: 2 });
+    const doc = await readGlb(await buildModelGlb(model, chainSkeleton(['Root', 'Hand']), noTextures));
+    const node = doc.getRoot().listNodes().find((n) => n.getName() === 'lod0_0')!;
+    expect(node.getParentNode()!.getName()).toBe('Hand');
+    expect(node.getMesh()).not.toBeNull();
+    const [tm] = doc.getRoot().listAnimations();
+    expect(tm!.getName()).toBe('tm');
+    expect(tm!.listChannels().every((c) => c.getTargetNode() === node)).toBe(true);
+  });
+
+  it('inverse bind matrices get an exact last row 0, 0, 0, 1 (stored ones are off by float rounding)', async () => {
+    const skel = chainSkeleton(['Root']);
+    skel.bones[0]!.inverseTm[3] = 1e-7;
+    skel.bones[0]!.inverseTm[15] = 0.99999994;
+    const doc = await readGlb(await buildModelGlb(o3dModel([[skinObject()]]), skel, noTextures));
+    const ibm = Array.from(skinsOf(doc)[0]!.getInverseBindMatrices()!.getArray()!);
+    expect([ibm[3], ibm[7], ibm[11], ibm[15]]).toEqual([0, 0, 0, 1]);
+  });
+
+  it('light objects: extras.light, double-sided, opaque whatever their flags; no material is metallic', async () => {
+    const lamp = gmObject({ light: true, blocks: [block({ effect: 2 })] });
+    const doc = await readGlb(await buildModelGlb(o3dModel([[lamp]]), null, (n) => `textures/${n}`));
+    const [material] = doc.getRoot().listMaterials();
+    expect(material!.getExtras()).toEqual({ texture: 'textures/Tex.dds', effect: 2, light: true });
+    expect([material!.getAlphaMode(), material!.getDoubleSided()]).toEqual(['OPAQUE', true]);
+    expect([material!.getMetallicFactor(), material!.getRoughnessFactor()]).toEqual([0, 1]);
+  });
 });
 
 function skinsOf(doc: Document) {
   return doc.getRoot().listSkins();
+}
+
+/** Sets every channel's node to its value at `frame` (a constant channel's value holds at every frame). */
+function poseAt(doc: Document, frame: number): void {
+  for (const channel of doc.getRoot().listAnimations()[0]!.listChannels()) {
+    const output = channel.getSampler()!.getOutput()!;
+    const size = output.getElementSize();
+    const at = Math.min(frame, output.getCount() - 1);
+    const value = Array.from(output.getArray()!.slice(at * size, (at + 1) * size));
+    const node = channel.getTargetNode()!;
+    if (channel.getTargetPath() === 'rotation') node.setRotation(value as [number, number, number, number]);
+    else if (channel.getTargetPath() === 'translation') node.setTranslation(value as [number, number, number]);
+    else node.setScale(value as [number, number, number]);
+  }
 }
 
 describe('buildSkeletonGlb / buildMotionGlb (synthetic)', () => {
@@ -432,14 +489,41 @@ describe('buildSkeletonGlb / buildMotionGlb (synthetic)', () => {
     events: [],
   });
 
-  it('a motion glb has the skeleton node names and one animation with a channel pair per keyed track', async () => {
+  it('a motion glb has the skeleton node names and one animation driving every bone track (R27, R28)', async () => {
     const skel = chainSkeleton(['Root', 'Bone11', 'Bone11']);
-    const doc = await readGlb(await buildMotionGlb(skel, motionOf(4, [track(4), track(0), track(4)]), 'test_walk'));
+    // a track without keys: its defaultTm scales by 2 and moves to z 5
+    const still = { ...track(0), defaultTm: Float32Array.from([2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 2, 0, 0, 0, 5, 1]) };
+    const doc = await readGlb(await buildMotionGlb(skel, motionOf(4, [track(4), still, track(4)]), 'test_walk'));
     expect(doc.getRoot().listNodes().map((n) => n.getName())).toEqual([SKELETON_NODE, 'Root', 'Bone11#1', 'Bone11#2']);
     const [animation] = doc.getRoot().listAnimations();
     expect(animation!.getName()).toBe('test_walk');
-    const targets = animation!.listChannels().map((c) => `${c.getTargetNode()!.getName()}.${c.getTargetPath()}`);
-    expect(targets).toEqual(['Root.translation', 'Root.rotation', 'Bone11#2.translation', 'Bone11#2.rotation']);
+    const channels = animation!.listChannels();
+    expect(channels.map((c) => `${c.getTargetNode()!.getName()}.${c.getTargetPath()}`)).toEqual(
+      ['Root', 'Bone11#1', 'Bone11#2'].flatMap((n) => [`${n}.translation`, `${n}.rotation`, `${n}.scale`]),
+    );
+    const times = (i: number): number[] => Array.from(channels[i]!.getSampler()!.getInput()!.getArray()!);
+    const values = (i: number): number[] => Array.from(channels[i]!.getSampler()!.getOutput()!.getArray()!);
+    // keyed: a sample per frame, and scale 1 held for the whole clip
+    closeTo(times(0), [0, 1 / 30, 2 / 30, 3 / 30]);
+    closeTo(values(0), [0, 0, 0, 1, 0, 0, 2, 0, 0, 3, 0, 0]);
+    closeTo(times(2), [0, 3 / 30]);
+    closeTo(values(2), [1, 1, 1, 1, 1, 1]);
+    // without keys: the defaultTm (web space), held from 0 to the clip's end
+    closeTo(times(3), [0, 3 / 30]);
+    closeTo(values(3), [0, 0, -5, 0, 0, -5]);
+    closeTo(values(4), [0, 0, 0, 1, 0, 0, 0, 1]);
+    closeTo(values(5), [2, 2, 2, 2, 2, 2]);
+  });
+
+  it('R28: a keyed bone whose rest scale is not 1 plays at scale 1, as the client builds keyed bones', async () => {
+    const skel = chainSkeleton(['Root', 'Big']);
+    skel.bones[1]!.tm = Float32Array.from([2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 2, 0, 0, 1, 0, 1]); // rest scale 2
+    const doc = await readGlb(await buildMotionGlb(skel, motionOf(2, [track(2), track(2)]), 'm'));
+    const big = doc.getRoot().listNodes().find((n) => n.getName() === 'Big')!;
+    closeTo(big.getScale() as number[], [2, 2, 2]);
+    poseAt(doc, 1);
+    const world = worldOf(big);
+    closeTo([0, 1, 2].map((c) => Math.hypot(world[c * 4]!, world[c * 4 + 1]!, world[c * 4 + 2]!)), [1, 1, 1]);
   });
 
   it('a motion with more bone tracks than its skeleton has bones is refused', async () => {
@@ -517,14 +601,14 @@ describeClient('models: real client files', () => {
     expect(Array.from(first.slice(0, 3))).toEqual(Array.from(flipWinding(source.slice(0, 3))));
   });
 
-  it('Mvr_male_GenStand: one animation, translation + rotation per keyed track, (frames - 1) / fps long', async () => {
+  it('Mvr_male_GenStand: one animation, translation, rotation, scale per track, (frames - 1) / fps long', async () => {
     const skel = loadChr('mvr_male.chr');
     const motion = readAni(fileBytes(modelPath('Mvr_male_GenStand.ani')), 'Mvr_male_GenStand.ani');
     const doc = await readGlb(await buildMotionGlb(skel, motion, 'mvr_male_genstand'));
     const animations = doc.getRoot().listAnimations();
     expect(animations.length).toBe(1);
-    const keyed = motion.tracks.filter((t) => t.keys !== null).length;
-    expect(animations[0]!.listChannels().length).toBe(keyed * 2);
+    // R27, R28: every track drives its bone, keyed or not
+    expect(animations[0]!.listChannels().length).toBe(motion.tracks.length * 3);
     const duration = Math.max(...animations[0]!.listSamplers().map((s) => s.getInput()!.getMax([])[0]!));
     expect(Math.abs(duration - (motion.frameCount - 1) / motionFps(motion.perSlerp))).toBeLessThan(1e-4);
     expect(doc.getRoot().listNodes().map((n) => n.getName())).toEqual([SKELETON_NODE, ...boneNodeNames(skel)]);
@@ -533,12 +617,16 @@ describeClient('models: real client files', () => {
   it('a GenStand frame posed through the motion glb gives the bone matrices CMotion::AnimateBone gives', async () => {
     const skel = loadChr('mvr_male.chr');
     const motion = readAni(fileBytes(modelPath('Mvr_male_GenStand.ani')), 'Mvr_male_GenStand.ani');
+    // R ForeArm has no keys in GenStand: the client holds it at its defaultTm, which is not the skeleton's rest pose
+    const foreArm = skel.bones.findIndex((b) => b.name === 'Bip02 R ForeArm');
+    expect(motion.tracks[foreArm]!.keys).toBeNull();
     const frame = 7;
-    // D3DX, row vectors (Bone.cpp:656): keyed local = D3DXMatrixRotationQuaternion(q) * translation(p), world = local
-    // * parent world. Bones without keys keep the skeleton's rest pose in the glb, so use that here too.
+    // AnimateBone (Bone.cpp:656), D3DX row vectors: keyed local = D3DXMatrixRotationQuaternion(q) * translation(p),
+    // unkeyed local = the track's defaultTm (Bone.cpp:773); world = local * parent world.
     const world: number[][] = [];
     skel.bones.forEach((bone, i) => {
-      const key = motion.tracks[i]!.keys?.[frame];
+      const track = motion.tracks[i]!;
+      const key = track.keys?.[frame];
       let local: number[];
       if (key !== undefined) {
         const [x, y, z, w] = key.rotation;
@@ -550,20 +638,12 @@ describeClient('models: real client files', () => {
           ...[px, py, pz, 1],
         ];
       } else {
-        // rest: tm relative to the parent's tm (a matrix inverse does not depend on the memory order)
-        const parent = skel.bones[bone.parent];
-        const tm = Array.from(bone.tm);
-        local = parent === undefined ? tm : rowMultiply(tm, invert(Array.from(parent.tm)));
+        local = Array.from(track.defaultTm!);
       }
       world[i] = bone.parent === -1 ? local : rowMultiply(local, world[bone.parent]!);
     });
     const doc = await readGlb(await buildMotionGlb(skel, motion, 'm'));
-    for (const channel of doc.getRoot().listAnimations()[0]!.listChannels()) {
-      const size = channel.getTargetPath() === 'rotation' ? 4 : 3;
-      const value = Array.from(channel.getSampler()!.getOutput()!.getArray()!.slice(frame * size, (frame + 1) * size));
-      if (size === 4) channel.getTargetNode()!.setRotation(value as [number, number, number, number]);
-      else channel.getTargetNode()!.setTranslation(value as [number, number, number]);
-    }
+    poseAt(doc, frame);
     const joints = doc.getRoot().listNodes().slice(1);
     joints.forEach((joint, i) => closeTo(worldOf(joint), Array.from(toWebMatrix(Float32Array.from(world[i]!))), 4));
   });
@@ -587,7 +667,9 @@ describeClient('models: real client files', () => {
     }
     expect(found).toBeDefined();
     const doc = await readGlb(await buildModelGlb(found!, null, noTextures));
-    expect(doc.getRoot().listAnimations().map((a) => a.getName())).toContain('bones');
+    const bones = doc.getRoot().listAnimations().find((a) => a.getName() === 'bones');
+    expect(bones).toBeDefined();
+    expect(bones!.listChannels().length).toBe(found!.motion!.length * 3); // R27, R28: every bone track
     expect(skinsOf(doc).every((s) => s.listJoints()[0]!.getName() === 'bone0')).toBe(true);
   });
 

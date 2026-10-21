@@ -7,11 +7,11 @@
 
 import { Document, MathUtils, NodeIO } from '@gltf-transform/core';
 import type { Accessor, GLTF, Node, TypedArray } from '@gltf-transform/core';
-import { toWebMatrix } from '@flyffweb/formats';
+import { toWebMatrix, toWebPosition, toWebQuaternion } from '@flyffweb/formats';
 
 export type Mat4 = number[];
-type Vec3 = [number, number, number];
-type Quat = [number, number, number, number];
+export type Vec3 = [number, number, number];
+export type Quat = [number, number, number, number];
 
 const io = new NodeIO();
 
@@ -152,4 +152,22 @@ export function setTransform(node: Node, m: Mat4): Node {
   const s: Vec3 = [1, 1, 1];
   MathUtils.decompose(m as unknown as Parameters<typeof MathUtils.decompose>[0], t, r, s);
   return node.setTranslation(t).setRotation(normalizeQuaternion(r)).setScale(s);
+}
+
+/**
+ * A D3DXMATRIX as web-space translation, rotation and scale: decomposed as stored (its memory order, read
+ * column-major, is the matrix for column vectors), then converted with the handedness functions, the rotation
+ * normalized. The last row is taken as 0, 0, 0, 1 (see `webMatrix`).
+ */
+export function d3dTrs(d3d: Float32Array): { translation: Vec3; rotation: Quat; scale: Vec3 } {
+  const m = Array.from(d3d);
+  m[3] = 0;
+  m[7] = 0;
+  m[11] = 0;
+  m[15] = 1;
+  const t: Vec3 = [0, 0, 0];
+  const r: Quat = [0, 0, 0, 1];
+  const s: Vec3 = [1, 1, 1];
+  MathUtils.decompose(m as unknown as Parameters<typeof MathUtils.decompose>[0], t, r, s);
+  return { translation: toWebPosition(t), rotation: normalizeQuaternion(toWebQuaternion(r)), scale: s };
 }

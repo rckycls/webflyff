@@ -22,8 +22,8 @@
 //   The collision mesh is left out.
 //
 // Animations: "tm" (object TM keys) and "bones" (the model's own bone motion), frame i at i / motionFps(perSlerp).
-// Joints whose bones have no keys get no channel (R19); keyed nodes animate translation and rotation only, as the
-// C++ builds them (no scale).
+// "bones" drives every joint as a motion glb does (motionGlb.ts, R27/R28: keys with scale 1, or the track's defaultTm).
+// A keyed object node animates translation and rotation; its rest scale is already 1, as the C++ builds it.
 //
 // Coordinates: positions and normals through the handedness conversion (z negated), matrices through toWebMatrix,
 // quaternions through toWebQuaternion and then normalized (R17), indices through flipWinding; uvs unchanged.
@@ -51,8 +51,8 @@ import {
   writeGlb,
 } from './gltf';
 import type { Mat4 } from './gltf';
-import { addKeyAnimation, keyedJoints } from './motionGlb';
-import type { KeyedNode } from './motionGlb';
+import { addKeyAnimation, boneTargets, fromKeys } from './motionGlb';
+import type { AnimatedNode } from './motionGlb';
 import { addJointNodes, chrJoints } from './skeletonGlb';
 
 /** D3DRS_ALPHAREF 0xb0 (SetState, Object3D.cpp:2801), as glTF's alphaCutoff; the client tests GREATEREQUAL. */
@@ -279,7 +279,7 @@ export async function buildModelGlb(
   const rig = addRig(doc, model, skeleton);
   const materials = new Materials(doc, textureKey);
   let skin: Skin | undefined;
-  const tmTargets: KeyedNode[] = [];
+  const tmTargets: AnimatedNode[] = [];
 
   const sharedSkin = (): Skin => {
     if (skin === undefined) {
@@ -404,13 +404,13 @@ export async function buildModelGlb(
       const node = nodeFor(j);
       const mesh = addMesh(`${lodName}_${j}`, [movedPart(object, IDENTITY)]);
       if (mesh !== null) node.setMesh(mesh);
-      if (object.tmFrames !== null) tmTargets.push({ node, keys: object.tmFrames });
+      if (object.tmFrames !== null) tmTargets.push({ node, ...fromKeys(object.tmFrames), scale: null });
     });
   });
 
-  addKeyAnimation(doc, 'tm', tmTargets, model.perSlerp);
+  addKeyAnimation(doc, 'tm', tmTargets, model.frameCount, model.perSlerp);
   if (model.motion !== null && rig !== null) {
-    addKeyAnimation(doc, 'bones', keyedJoints(model.motion, rig.nodes), model.perSlerp);
+    addKeyAnimation(doc, 'bones', boneTargets(model.motion, rig.nodes), model.frameCount, model.perSlerp);
   }
   return writeGlb(doc);
 }

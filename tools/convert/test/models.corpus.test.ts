@@ -120,7 +120,7 @@ async function runSweep(): Promise<Sweep> {
 }
 
 describeClient('models stage over every file of Client/Model', () => {
-  it('converts every skeleton, motion and model Neuz loads, and the validator finds no errors', async () => {
+  it('converts every skeleton, motion and model Neuz loads; the validator finds no errors or warnings', async () => {
     const s = await runSweep();
     console.log(
       `converted ${JSON.stringify(s.converted)}, ${(s.bytesOut / 1048576).toFixed(1)} MB of glb, ` +
@@ -128,6 +128,7 @@ describeClient('models stage over every file of Client/Model', () => {
     );
     expect(s.failures).toEqual([]);
     expect(Object.fromEntries(s.errors)).toEqual({});
+    expect(Object.fromEntries(s.warnings)).toEqual({});
     expect(s.converted).toEqual({ skeletons: 303, motions: 2928, models: 4192 });
   });
 
