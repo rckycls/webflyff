@@ -10,7 +10,11 @@
   "scripts": {
     "test": "vitest run",
     "test:corpus": "vitest run --config vitest.corpus.config.ts",
-    "convert": "tsx tools/convert/src/cli.ts"
+    "convert": "tsx tools/convert/src/cli.ts",
+    "copy-basis": "node scripts/copy-basis.mjs",
+    "dev:viewer": "npm run copy-basis && vite --config apps/viewer/vite.config.ts --host",
+    "build:viewer": "vite build --config apps/viewer/vite.config.ts",
+    "preview:viewer": "npm run copy-basis && vite preview --config apps/viewer/vite.config.ts --host"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",

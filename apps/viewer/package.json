@@ -1,0 +1,17 @@
+{
+  "name": "@flyffweb/viewer",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@flyffweb/formats": "*",
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@types/compression": "^1.8.1",
+    "@types/three": "^0.186.0",
+    "compression": "^1.8.2",
+    "sirv": "^3.0.2",
+    "vite": "^8.3.4"
+  }
+}

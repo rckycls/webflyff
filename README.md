@@ -12,7 +12,7 @@ npm workspaces: `packages/*`, `tools/*`, `apps/*`.
 | --- | --- |
 | `packages/formats` | `@flyffweb/formats`: `BinaryReader`, `FormatError` and the readers for FlyFF binary formats. Every reader names the C++ function it copies. |
 | `tools/convert` | `@flyffweb/convert`: Node converter from the read-only client folder to hashed web assets in `dist/assets`. CLI, client index, atomic writer, report, the texture stage (to `.ktx2`), the model stage (`.o3d` models, `.chr` skeletons and `.ani` motions to `.glb`) and the world stage (each `World/<name>` folder to a `manifest.json` and one `.bin` tile per `.lnd`) are in. |
-| `apps/viewer` | Vite + Three.js viewer (added in a later task). |
+| `apps/viewer` | `@flyffweb/viewer`: Vite + Three.js viewer. The shell is in (routes `#/character`, `#/world`, `#/compare`, the asset store and texture cache, the measurement overlay and `window.__viewer`); the views themselves come later. Reads the converter output through `/assets/` and the Basis transcoder through `/basis/`. |
 
 ## Client folder
 
@@ -25,6 +25,9 @@ Tests that read real game files need the FlyFF client folder. By default it is `
 | `npm test` | Unit tests (`vitest run`). Every `*.test.ts` in all workspaces except `*.corpus.test.ts` and `e2e/`. |
 | `npm run test:corpus` | Corpus tests (`vitest run --config vitest.corpus.config.ts`). Read every real client file of a format; slow (10 minute timeout) and needs the client folder. |
 | `npm run convert -- [options]` | Runs the converter (`tools/convert`). `--help` lists the options. Defaults: client from `FLYFF_CLIENT` or `../Client`, output in `dist/assets`. |
+| `npm run dev:viewer` | Copies the Basis transcoder into `dist/basis` (`npm run copy-basis`) and starts the viewer on http://localhost:5173/, also on the network (`--host`, for phones and tablets). Needs a converted `dist/assets`. |
+| `npm run build:viewer` | Builds the viewer into `apps/viewer/dist`. `dist/assets` is not copied: a Vite plugin (`apps/viewer/vite.serveDist.ts`) serves it in place, in the dev server and in preview, compressed. |
+| `npm run preview:viewer` | Serves that build on http://localhost:4173/ the same way. |
 
 ## Converting the client
 
