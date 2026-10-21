@@ -738,7 +738,7 @@ describeClient('models stage on a small client copy', () => {
   }
 
   it('runs after the textures stage', () => {
-    expect(DEFAULT_STAGES.map((s) => s.name)).toEqual(['textures', 'models']);
+    expect(DEFAULT_STAGES.map((s) => s.name).slice(0, 2)).toEqual(['textures', 'models']);
   });
 
   it('writes models, skeletons and motions under their logical keys', async () => {

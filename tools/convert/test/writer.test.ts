@@ -259,3 +259,81 @@ describe('AssetWriter.finish merges into an existing index.json', () => {
     expect(await exists(path.join(outDir, 'index.json.tmp'))).toBe(false);
   });
 });
+
+describe('AssetWriter.pathOf and the index.json of an earlier run (R32)', () => {
+  /** One converter run: a new writer on the same folder writes `entries` and finishes. */
+  async function earlierRun(entries: Record<string, number[]>): Promise<Record<string, string>> {
+    const writer = new AssetWriter(outDir);
+    const hashed: Record<string, string> = {};
+    for (const [key, bytes] of Object.entries(entries)) hashed[key] = await writer.write(key, new Uint8Array(bytes), key);
+    await writer.finish();
+    return hashed;
+  }
+
+  it('returns the hashed path of a key an earlier run wrote', async () => {
+    const earlier = await earlierRun({ 'models/a.glb': [1], 'textures/b.ktx2': [2] });
+    const writer = new AssetWriter(outDir);
+    expect(writer.pathOf('models/a.glb')).toBe(earlier['models/a.glb']);
+    expect(writer.pathOf('textures/b.ktx2')).toBe(earlier['textures/b.ktx2']);
+    expect(writer.pathOf('models/never.glb')).toBeUndefined();
+  });
+
+  it('does not return a key whose hashed file was deleted after that run', async () => {
+    const earlier = await earlierRun({ 'models/a.glb': [1], 'textures/b.ktx2': [2] });
+    await fs.rm(path.join(outDir, ...earlier['textures/b.ktx2']!.split('/')));
+    const writer = new AssetWriter(outDir);
+    expect(writer.pathOf('textures/b.ktx2')).toBeUndefined();
+    expect(writer.pathOf('models/a.glb')).toBe(earlier['models/a.glb']);
+  });
+
+  it('prefers what this run wrote: before the write the old path, after it the new one', async () => {
+    const earlier = await earlierRun({ 'models/a.glb': [1] });
+    const writer = new AssetWriter(outDir);
+    expect(writer.pathOf('models/a.glb')).toBe(earlier['models/a.glb']);
+    const now = await writer.write('models/a.glb', new Uint8Array([9, 9]), 'A.o3d');
+    expect(now).not.toBe(earlier['models/a.glb']);
+    expect(writer.pathOf('models/a.glb')).toBe(now);
+  });
+
+  it('reads index.json once: a key added to it later is not seen by a writer that already looked', async () => {
+    const earlier = await earlierRun({ 'models/a.glb': [1] });
+    const writer = new AssetWriter(outDir);
+    expect(writer.pathOf('models/a.glb')).toBe(earlier['models/a.glb']);
+    const index = JSON.parse(await fs.readFile(path.join(outDir, 'index.json'), 'utf8')) as AssetIndex;
+    index.files['models/late.glb'] = earlier['models/a.glb']!;
+    await fs.writeFile(path.join(outDir, 'index.json'), JSON.stringify(index));
+    expect(writer.pathOf('models/late.glb')).toBeUndefined();
+  });
+
+  it('ignores an entry that is not a relative path inside the output folder', async () => {
+    await earlierRun({ 'models/a.glb': [1] });
+    const index = JSON.parse(await fs.readFile(path.join(outDir, 'index.json'), 'utf8')) as AssetIndex;
+    index.files['models/evil.glb'] = '../outside.glb';
+    await fs.writeFile(path.join(outDir, 'index.json'), JSON.stringify(index));
+    expect(new AssetWriter(outDir).pathOf('models/evil.glb')).toBeUndefined();
+  });
+
+  it('keeps the earlier keys in the index when the run only looked them up and wrote something else', async () => {
+    const earlier = await earlierRun({ 'models/a.glb': [1] });
+    const writer = new AssetWriter(outDir);
+    expect(writer.pathOf('models/a.glb')).toBeDefined();
+    const world = await writer.write('worlds/w/manifest.json', new Uint8Array([3]), 'w.wld');
+    await writer.finish();
+    const index = JSON.parse(await fs.readFile(path.join(outDir, 'index.json'), 'utf8')) as AssetIndex;
+    expect(index.files).toEqual({ 'models/a.glb': earlier['models/a.glb'], 'worlds/w/manifest.json': world });
+  });
+
+  it.each([
+    ['pathOf', async (w: AssetWriter) => void w.pathOf('models/a.glb')],
+    ['finish', async (w: AssetWriter) => w.finish()],
+  ])('an unusable index.json is warned about once, whether %s sees it first', async (_first, first) => {
+    await fs.writeFile(path.join(outDir, 'index.json'), 'this is { not json');
+    const warnings: string[] = [];
+    const writer = new AssetWriter(outDir, undefined, (m) => warnings.push(m));
+    await first(writer);
+    expect(writer.pathOf('models/a.glb')).toBeUndefined();
+    await writer.finish();
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('index.json');
+  });
+});

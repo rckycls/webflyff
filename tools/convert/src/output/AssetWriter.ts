@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { promises as fsPromises } from 'node:fs';
+import { existsSync, promises as fsPromises, readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { AssetIndex } from '@flyffweb/formats';
 import { writeAtomic } from './atomicWrite';
@@ -50,8 +50,13 @@ export class AssetWriter {
   private readonly sources = new Map<string, string>();
   /** Logical key to hashed path, for writes that completed. */
   private readonly written = new Map<string, string>();
+  /** The usable entries of the index.json found in `outDir` when it was first needed; see `earlierIndex`. */
+  private earlier: Map<string, string> | undefined;
 
-  /** `warn` is told about an existing index.json that could not be used (see `finish`); it defaults to the console. */
+  /**
+   * `warn` is told about an existing index.json that could not be used (see `pathOf` and `finish`); it defaults to
+   * the console.
+   */
   constructor(
     private readonly outDir: string,
     private readonly fs: FsPromises = fsPromises,
@@ -82,9 +87,16 @@ export class AssetWriter {
     return hashed;
   }
 
-  /** The hashed path written for `logicalKey` in this run, or undefined. */
+  /**
+   * The hashed path of `logicalKey`: the one written in this run, else the one the index.json of an earlier run in
+   * `outDir` names, provided that file still exists (R32: an `--only` run still links what a full run converted).
+   * Undefined when neither has it. The earlier index is read once, on the first call that needs it.
+   */
   pathOf(logicalKey: string): string | undefined {
-    return this.written.get(logicalKey);
+    const now = this.written.get(logicalKey);
+    if (now !== undefined) return now;
+    const before = this.earlierIndex().get(logicalKey);
+    return before !== undefined && existsSync(path.join(this.outDir, ...before.split('/'))) ? before : undefined;
   }
 
   /**
@@ -94,7 +106,15 @@ export class AssetWriter {
    * is missing counts as empty; one that cannot be read or parsed counts as empty too, with a warning.
    */
   async finish(): Promise<void> {
-    const merged = await this.earlierEntries();
+    const merged = new Map<string, string>();
+    for (const [key, hashed] of this.earlierIndex()) {
+      if (this.written.has(key)) continue;
+      const exists = await this.fs.access(path.join(this.outDir, ...hashed.split('/'))).then(
+        () => true,
+        () => false,
+      );
+      if (exists) merged.set(key, hashed);
+    }
     for (const [key, hashed] of this.written) merged.set(key, hashed);
     const files: Record<string, string> = {};
     for (const key of [...merged.keys()].sort()) files[key] = merged.get(key)!;
@@ -102,14 +122,20 @@ export class AssetWriter {
     await writeAtomic(this.fs, path.join(this.outDir, 'index.json'), JSON.stringify(index));
   }
 
-  /** The entries of the existing index.json that this run did not write again and whose file is still there. */
-  private async earlierEntries(): Promise<Map<string, string>> {
+  /**
+   * The entries of the index.json in `outDir` whose key and path are plain relative paths, read the first time this
+   * is called and kept: `pathOf` and `finish` see the same index, and an unusable file is warned about once. It reads
+   * synchronously because `pathOf` is synchronous. It does not check that the files exist.
+   */
+  private earlierIndex(): Map<string, string> {
+    if (this.earlier !== undefined) return this.earlier;
     const kept = new Map<string, string>();
+    this.earlier = kept;
     const indexPath = path.join(this.outDir, 'index.json');
 
     let text: string;
     try {
-      text = await this.fs.readFile(indexPath, 'utf8');
+      text = readFileSync(indexPath, 'utf8');
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
         const reason = error instanceof Error ? error.message : String(error);
@@ -132,13 +158,7 @@ export class AssetWriter {
     }
 
     for (const [key, hashed] of Object.entries(files)) {
-      if (this.written.has(key) || typeof hashed !== 'string') continue;
-      if (!isRelativePath(key) || !isRelativePath(hashed)) continue;
-      const exists = await this.fs.access(path.join(this.outDir, ...hashed.split('/'))).then(
-        () => true,
-        () => false,
-      );
-      if (exists) kept.set(key, hashed);
+      if (typeof hashed === 'string' && isRelativePath(key) && isRelativePath(hashed)) kept.set(key, hashed);
     }
     return kept;
   }

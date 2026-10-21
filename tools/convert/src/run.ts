@@ -6,6 +6,7 @@ import { AssetWriter } from './output/AssetWriter';
 import { Report } from './output/Report';
 import { texturesStage } from './textures/convertTexture';
 import { UserError } from './util';
+import { worldsStage } from './world/convertWorld';
 
 /** Everything a stage needs. `only` and `jobs` are for the stage to apply (`matchesOnly`, `runLimited`). */
 export interface StageContext {
@@ -27,10 +28,10 @@ export interface Stage {
 }
 
 /**
- * The stages a normal run executes, in this order: textures, then models, then worlds. Each of tasks 11 to 13 adds
- * its stage here.
+ * The stages a normal run executes, in this order: textures, then models, then worlds. A model names its textures
+ * only if they were written before it, and a world links the textures and models written before it.
  */
-export const DEFAULT_STAGES: readonly Stage[] = [texturesStage, modelsStage];
+export const DEFAULT_STAGES: readonly Stage[] = [texturesStage, modelsStage, worldsStage];
 
 export interface RunOptions {
   /** The client folder (read-only). */
