@@ -5,5 +5,5 @@
     "types": ["node"],
     "allowImportingTsExtensions": true
   },
-  "include": ["vite.config.ts", "vite.serveDist.ts", "src", "test"]
+  "include": ["vite.config.ts", "vite.serveDist.ts", "playwright.config.ts", "src", "test", "e2e"]
 }

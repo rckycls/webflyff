@@ -12,7 +12,7 @@ npm workspaces: `packages/*`, `tools/*`, `apps/*`.
 | --- | --- |
 | `packages/formats` | `@flyffweb/formats`: `BinaryReader`, `FormatError` and the readers for FlyFF binary formats. Every reader names the C++ function it copies. |
 | `tools/convert` | `@flyffweb/convert`: Node converter from the read-only client folder to hashed web assets in `dist/assets`. CLI, client index, atomic writer, report, the texture stage (to `.ktx2`), the model stage (`.o3d` models, `.chr` skeletons and `.ani` motions to `.glb`) and the world stage (each `World/<name>` folder to a `manifest.json` and one `.bin` tile per `.lnd`) are in. |
-| `apps/viewer` | `@flyffweb/viewer`: Vite + Three.js viewer. The shell is in (routes `#/character`, `#/world`, `#/compare`, the asset store and texture cache, the measurement overlay and `window.__viewer`); the views themselves come later. Reads the converter output through `/assets/` and the Basis transcoder through `/basis/`. |
+| `apps/viewer` | `@flyffweb/viewer`: Vite + Three.js viewer. The shell is in (routes `#/character`, `#/world`, `#/compare`, the asset store and texture cache, the measurement overlay and `window.__viewer`) and the character view (`#/character?gender=male&head=…&motion=…&frame=0&paused=1`: player parts re-bound to one skeleton, one looping motion, a dropdown per slot); the world and compare views come later. End-to-end tests (Playwright) are in `apps/viewer/e2e`. Reads the converter output through `/assets/` and the Basis transcoder through `/basis/`. |
 
 ## Client folder
 
@@ -28,6 +28,8 @@ Tests that read real game files need the FlyFF client folder. By default it is `
 | `npm run dev:viewer` | Copies the Basis transcoder into `dist/basis` (`npm run copy-basis`) and starts the viewer on http://localhost:5173/, also on the network (`--host`, for phones and tablets). Needs a converted `dist/assets`. |
 | `npm run build:viewer` | Builds the viewer into `apps/viewer/dist`. `dist/assets` is not copied: a Vite plugin (`apps/viewer/vite.serveDist.ts`) serves it in place, in the dev server and in preview, compressed. |
 | `npm run preview:viewer` | Serves that build on http://localhost:4173/ the same way. |
+| `npm run test:e2e` | End-to-end tests in Chromium (software WebGL, 1280x720): project `dev` against the dev server (picture tests, baselines in `apps/viewer/e2e/__screenshots__`), project `prod` against a fresh build in preview (tests tagged @prod, such as the 15 MB first-load budget). Starts the servers it needs. Needs a converted `dist/assets` and, once, `npx playwright install chromium`. `-- character` runs one file; `-- --update-snapshots` rewrites the baselines. |
+| `npm run test:soak` | The long tests tagged @soak (project `soak`, 15 minutes each) against the dev server. |
 
 ## Converting the client
 

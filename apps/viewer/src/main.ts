@@ -4,6 +4,7 @@
 import { WebGLRenderer } from 'three';
 import { AssetStore } from './assets/AssetStore';
 import { TextureCache, createLoaders, loadKtx2 } from './assets/loaders';
+import { characterView } from './character/CharacterView';
 import { Overlay } from './overlay/Overlay';
 import { installContextLossHandlers, installGlobalErrorHandlers } from './overlay/errorHandlers';
 import { Router } from './router';
@@ -16,7 +17,7 @@ const MAX_PIXEL_RATIO = 2;
 
 /** The views, by route. Each later piece replaces its placeholder. */
 const VIEWS: Record<RouteName, ViewFactory> = {
-  character: placeholderView('character'),
+  character: characterView,
   world: placeholderView('world'),
   compare: placeholderView('compare'),
 };

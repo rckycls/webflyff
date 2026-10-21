@@ -14,7 +14,9 @@
     "copy-basis": "node scripts/copy-basis.mjs",
     "dev:viewer": "npm run copy-basis && vite --config apps/viewer/vite.config.ts --host",
     "build:viewer": "vite build --config apps/viewer/vite.config.ts",
-    "preview:viewer": "npm run copy-basis && vite preview --config apps/viewer/vite.config.ts --host"
+    "preview:viewer": "npm run copy-basis && vite preview --config apps/viewer/vite.config.ts --host",
+    "test:e2e": "playwright test -c apps/viewer/playwright.config.ts --project=dev --project=prod",
+    "test:soak": "playwright test -c apps/viewer/playwright.config.ts --project=soak"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
