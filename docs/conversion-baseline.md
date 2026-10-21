@@ -110,15 +110,17 @@ The memory target of the viewer (global constraints: after a 10-minute loop walk
 | Date | 2026-10-22 |
 | Command | `npm run test:soak` (from `FlyffWeb/`; project `soak`: headless Chromium, SwiftShader software WebGL, 1280 x 720, `--enable-precise-memory-info --js-flags=--expose-gc`) |
 | Machine | the converter's (AMD Ryzen 7 5700U, Windows 11, Node 24.19.0); software WebGL ran the viewer at 2.5 to 2.8 fps |
-| Result | **passed**: baseline 296.9 MB, final 297.3 MB, **ratio 1.001** (limit 1.10), 3 laps in 653 s, no errors in the overlay |
+| Result | **passed**: baseline 296.6 MB, final 297.3 MB, **ratio 1.002** (limit 1.10), 3 laps in 653 s, no errors in the overlay (the first run, before the test checked its own preconditions, gave 296.9 MB to 297.3 MB, ratio 1.001) |
 
 | Lap | Time | Memory | GPU estimate | JS heap | Tiles loaded |
 | --- | --- | --- | --- | --- | --- |
-| 1 (baseline) | 241 s | 296.9 MB | 128.2 MB | 168.8 MB | 25 |
-| 2 | 447 s | 287.0 MB | 128.2 MB | 158.8 MB | 25 |
+| 1 (baseline) | 241 s | 296.6 MB | 128.2 MB | 168.4 MB | 25 |
+| 2 | 447 s | 297.3 MB | 128.2 MB | 169.1 MB | 25 |
 | 3 (final) | 653 s | 297.3 MB | 128.2 MB | 169.1 MB | 25 |
 
-(MB here are binary, 1 MiB.) The GPU estimate is the same to the digit at every lap and the loaded tiles are the same 25, so what the viewer adds up for tiles and textures is given back each time. The JS heap moves by about 10 MB from lap to lap after a garbage collection and ends where it began. It is 57% of the total and the GPU estimate 43%; the estimate is only what the viewer itself counts (terrain, character and model geometry, textures), not what the browser's driver really holds. The walk is time-based (`Route.step(dt)`), so slow software frames do not shorten it: the lap lengths are real metres at 12 m/s.
+(MB here are binary, 1 MiB.) The GPU estimate is the same to the digit at every lap and the loaded tiles are the same 25, so what the viewer adds up for tiles and textures is given back each time. The JS heap is read after a garbage collection and moved by up to 10 MB from lap to lap in the first run (158.8 to 169.1 MB) and by under 1 MB in the second. It is 57% of the total and the GPU estimate 43%; the estimate is only what the viewer itself counts (terrain, character and model geometry, textures), not what the browser's driver really holds. The walk is time-based (`Route.step(dt)`), so slow software frames do not shorten it: the lap lengths are real metres at 12 m/s.
+
+The test checks that it measures what it says: `gc()` exists (`--expose-gc`), `jsHeapBytes` is not null and not the same value at every lap (without `--enable-precise-memory-info` Chromium reports a stale constant: 16,100,000 bytes here while the heap was about 168 MB, which would have left only the GPU bookkeeping to decide the ratio), every leg of 600 m takes at least 90% of 50 s (the player really walked it), and each lap loads more than the 25 tiles around one spot and different tiles at different corners (the streamer really streamed). Each was seen to fail when broken: no `--expose-gc`, no `--enable-precise-memory-info`, and a `walkRoute` that returns at once.
 
 To try the test out quickly: `SOAK_MINUTES=1 SOAK_SIDE=150 npm run test:soak` (two laps of a 150 m square, about 2 minutes). The real run uses neither.
 

@@ -9,6 +9,11 @@
 // loaded each time. The soak project starts Chromium with `--js-flags=--expose-gc` (playwright.config.ts) and the test
 // collects garbage before a sample: the heap number is then what is still held, not what is waiting to be collected.
 //
+// The test checks that it measures what it says it measures: that `gc()` and the heap number are there (without the
+// flags `usedJSHeapSize` is a constant 10,000,000 and the heap half of the metric goes dead), that the heap numbers move
+// at all, that every leg of a lap takes about as long as its distance at the running speed (the player really walked it)
+// and that each lap's tiles change (the streamer really streamed). A soak that passed without these would pass for nothing.
+//
 // The player moves with the frame's own duration (`Route.step(dt)`), so under software WebGL, at a few frames a second,
 // a lap takes as long as it would on a fast machine and the ten minutes are ten minutes of walking.
 //
@@ -28,6 +33,10 @@ const RUN_SPEED = 12;
 const LIMIT = 1.1;
 /** Time on the corner before a sample, for the tiles around it to arrive and the ones behind to go. */
 const SETTLE_MS = 5_000;
+/** A leg must take at least this share of distance / speed, or the player did not really walk it. */
+const MIN_LEG_SHARE = 0.9;
+/** The tiles around the player when it stands still: 3 x 3 visible and the ring outside them, 5 x 5. */
+const TILES_AROUND = 25;
 
 interface Sample {
   lap: number;
@@ -46,8 +55,8 @@ const mb = (bytes: number): string => (bytes / (1024 * 1024)).toFixed(1);
 
 async function sample(page: Page, lap: number, began: number): Promise<Sample> {
   await page.waitForTimeout(SETTLE_MS);
-  // present because the soak project starts Chromium with --expose-gc; a run without it still works, with a noisier heap
-  await page.evaluate(() => (window as unknown as { gc?: () => void }).gc?.());
+  // the test has checked that gc exists (the soak project starts Chromium with --expose-gc)
+  await page.evaluate(() => (window as unknown as { gc: () => void }).gc());
   const stats = await page.evaluate(() => window.__viewer!.stats());
   return {
     lap,
@@ -68,31 +77,68 @@ test('ten minutes of laps around a square keep memory within 10% of the first la
 
   await page.goto('/#/world?world=wdmadrigal');
   await page.evaluate(() => window.__viewer!.ready());
+  // the heap is read after a gc(), and `gc` only exists with --expose-gc: a run without the soak project's flags is no soak
+  expect(
+    await page.evaluate(() => typeof (window as unknown as { gc?: unknown }).gc),
+    'window.gc is missing: run the soak through the soak project (npm run test:soak), which starts Chromium with --expose-gc',
+  ).toBe('function');
 
   // the square, around the start; corner A is where every lap begins and ends
   const [cx, y, cz] = madrigal().camera.position;
   const half = SIDE / 2;
   const a: Vec3 = [cx - half, y, cz - half];
-  const lap: Vec3[] = [
+  const corners: Vec3[] = [
     [cx + half, y, cz - half],
     [cx + half, y, cz + half],
     [cx - half, y, cz + half],
     a,
   ];
-  const walk = (points: Vec3[]) =>
-    page.evaluate(([p, speed]) => window.__viewer!.walkRoute(p, speed), [points, RUN_SPEED] as const);
+
+  /** Walks to `to` and returns the seconds it took. */
+  const walk = async (to: Vec3): Promise<number> => {
+    const started = Date.now();
+    await page.evaluate(([p, speed]) => window.__viewer!.walkRoute([p], speed), [to, RUN_SPEED] as const);
+    return (Date.now() - started) / 1000;
+  };
+
+  /**
+   * One lap as four legs, stats at each corner. Checks that the legs take about distance / speed (the player walked
+   * them: a walkRoute that returned at once would not) and that the lap's tiles are more than the 25 around one spot and
+   * differ from corner to corner (the streamer streamed).
+   */
+  const runLap = async (n: number): Promise<void> => {
+    const tilesOfLap = new Set<string>();
+    const tilesAtCorner: string[] = [];
+    for (const [i, corner] of corners.entries()) {
+      const seconds = await walk(corner);
+      expect(seconds, `lap ${n}, leg ${i + 1}: ${SIDE} m at ${RUN_SPEED} m/s took ${seconds.toFixed(1)} s`).toBeGreaterThanOrEqual(
+        (MIN_LEG_SHARE * SIDE) / RUN_SPEED,
+      );
+      const { loadedTiles } = await page.evaluate(() => window.__viewer!.stats());
+      loadedTiles.forEach((tile) => tilesOfLap.add(tile));
+      tilesAtCorner.push([...loadedTiles].sort().join(','));
+    }
+    expect(tilesOfLap.size, `lap ${n}: tiles loaded over the lap`).toBeGreaterThan(TILES_AROUND);
+    expect(new Set(tilesAtCorner).size, `lap ${n}: the same tiles at every corner`).toBeGreaterThan(1);
+  };
 
   const began = Date.now();
-  await walk([a]);
+  // the way to corner A: from the start (the middle), half a diagonal
+  const toA = await walk(a);
+  expect(toA, `the way to the first corner took ${toA.toFixed(1)} s`).toBeGreaterThanOrEqual(
+    (MIN_LEG_SHARE * Math.hypot(half, half)) / RUN_SPEED,
+  );
 
   const samples: Sample[] = [];
   let laps = 0;
   // at least two laps, so there is a baseline and a later sample; then until the time is up
   while (laps < 2 || Date.now() - began < MINUTES * 60_000) {
-    await walk(lap);
+    await runLap(laps + 1);
     laps++;
     const s = await sample(page, laps, began);
     samples.push(s);
+    // the heap half of the metric must be there from the start
+    if (laps === 1) expect(s.jsHeapBytes, 'jsHeapBytes is null: this browser has no performance.memory').not.toBeNull();
     console.log(
       `soak lap ${s.lap} at ${s.at} s: memory ${mb(s.memory)} MB (gpu ${mb(s.gpuBytes)}, heap ` +
         `${s.jsHeapBytes === null ? 'n/a' : mb(s.jsHeapBytes)}), ${s.tiles} tiles, ${s.fps.toFixed(1)} fps`,
@@ -110,5 +156,10 @@ test('ten minutes of laps around a square keep memory within 10% of the first la
 
   expect(samples.flatMap((s) => s.errors)).toEqual([]);
   expect(laps).toBeGreaterThanOrEqual(2);
+  // ... and live: not stuck on one constant (Chrome's coarse, stale value)
+  expect(
+    new Set(samples.map((s) => s.jsHeapBytes)).size,
+    `the heap read ${samples.map((s) => s.jsHeapBytes).join(', ')} at every lap: it is not being measured (--enable-precise-memory-info)`,
+  ).toBeGreaterThan(1);
   expect(final.memory, summary).toBeLessThanOrEqual(baseline.memory * LIMIT);
 });

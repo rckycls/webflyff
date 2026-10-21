@@ -49,7 +49,7 @@ Compare by eye, spot by spot:
 - light and shade (see below);
 - the character: pose, size on screen, the camera's height and distance behind it.
 
-**One known point to watch: the sun.** The client lights terrain and models with the sun direction it uses at noon, and the viewer copies that exactly (ruling R50; the code and the C++ it follows are in `apps/viewer/src/world/lighting.ts`). At noon that sun is below the horizon for the lighting, so flat ground gets the ambient light alone and only slopes and walls react to the sun. If shading in the comparison looks **inverted** (faces that are bright in the client are dark in the viewer, or the other way round), say so: the sun direction is the first thing to check.
+**One known point to watch: the sun.** The client lights terrain and models with the sun direction it uses at noon, and the viewer copies that exactly (ruling R50; the code and the C++ it follows are in `apps/viewer/src/world/lighting.ts`). The client's noon sun is the D3D light `Direction = (0, +0.707, -0.707)`, which shines downward; the vector D3D lights a surface with is `L = -Direction = (0, -0.707, +0.707)`, pointing down, and the viewer uses exactly that (in its own frame, where z is negated: `(0, -0.707, -0.707)` toward the sun). So at noon the sun is below the horizon for the lighting: flat ground gets the ambient light alone and only slopes and walls react to the sun. If shading in the comparison looks **inverted** (faces that are bright in the client are dark in the viewer, or the other way round), say so: the sun direction is the first thing to check. "Flip" then means switching to the lit-from-above convention that the client's own continent branch (`__BS_CHANGING_ENVIR`, World3D.cpp:1822-1824) uses, `SetDir(-(0, 0.707, 0.707))`, i.e. `L = (0, +0.707, +0.707)`: in `lighting.ts` that is the sign of the y component of `towardSun`, a one-line change.
 
 ### After you approve the comparisons
 
@@ -84,12 +84,12 @@ On each device:
 
 1. Open `#/character` and check that the character animates (a dropdown per slot changes its parts).
 2. Open the Flaris plaza: `http://<address>:5173/#/world?world=wdmadrigal&x=6968&z=3328&yaw=180`. Stand still for **1 minute** and read `fps` in the overlay.
-3. Walk around Flaris and out of town for a few minutes: the joystick on a touch screen (a full push runs), or `WASD` / the arrow keys with `Shift` to run. Watch the ground: **any gap or hole in the terrain** counts. Note the highest `heap` plus `gpu (est)` you see: that is the peak memory.
+3. Walk around Flaris and out of town for a few minutes: the joystick on a touch screen (a full push runs), or `WASD` / the arrow keys with `Shift` to run. Watch the ground: **any gap or hole in the terrain** counts. Note the highest `gpu (est)` you see and the highest `heap` (see "Memory in Chrome" below for how far the heap number can be trusted): together they are the peak memory.
 4. Look at the `errors:` lines at the end.
 
 Fill in one row per device:
 
-| Device | Browser | fps in Flaris after 1 minute standing | Peak memory shown (MB) | Ground gaps seen (yes / no) | Errors in the overlay |
+| Device | Browser | fps in Flaris after 1 minute standing | Peak memory shown (MB), as heap + gpu | Ground gaps seen (yes / no) | Errors in the overlay |
 | --- | --- | --- | --- | --- | --- |
 | iPhone | Safari | | | | |
 | Android phone | Chrome | | | | |
@@ -97,9 +97,16 @@ Fill in one row per device:
 | Android tablet | Chrome | | | | |
 | PC (built-in graphics) | Chrome | | | | |
 
+**Memory in Chrome and Edge: the heap number is a lower bound.** Unless Chrome is started with `--enable-precise-memory-info`, it reports `usedJSHeapSize` coarsely and can hold it at a stale value (in plain Chromium it sat at a fixed value, 10,000,000 bytes in one run and 16,100,000 in another, while the heap was really about 168 MB). The automated soak test starts its Chromium with that flag; **Chrome on Android cannot be started with it**, so the `heap` in the overlay of an Android phone or tablet, and of any desktop Chrome or Edge you did not start that way, can be too low and can sit still. If it never changes while you walk (typically 9.5 or 15.4 MB), it is the stale value. Treat it as a lower bound, and get a real figure like this:
+
+- **Desktop Chrome or Edge:** press `Shift` + `Esc` for the browser's Task manager and read the viewer tab's *JavaScript memory* column (right-click the header to add it), or open DevTools (`F12`) > More tools > *Performance monitor* and read *JS heap size*. Or close every Chrome window and start it with the flag: `chrome.exe --enable-precise-memory-info http://localhost:5173/` (Edge: `msedge.exe`), after which the overlay's `heap` is exact.
+- **Android phone or tablet:** turn on USB debugging, plug it into the PC, open `chrome://inspect/#devices` in desktop Chrome, click *inspect* under the viewer's tab, and use *Performance monitor* (*JS heap size*) or the *Memory* panel there, with the viewer running on the device.
+
+The `gpu (est)` number is the same on every browser and does not depend on any flag: it is the number to compare devices by, and to use for the 10% check. Add the real heap to it when you have one.
+
 **Memory in Safari and Firefox.** Only Chrome and Edge report the JS heap. Safari and Firefox show `heap n/a`, so for them the peak memory is the `gpu (est)` number alone: write it down as such. (That number is an estimate the viewer adds up itself, and the real total on those browsers is larger. A device that is near the limit on the estimate alone is a fail.)
 
-**The 10-minute walk, by hand, on the weakest device.** The automated soak test does this on the PC. On the weakest device, note `heap` plus `gpu (est)` after the first minute, walk a closed loop around the same few streets for 10 minutes, and note it again. Write both numbers under the table.
+**The 10-minute walk, by hand, on the weakest device.** The automated soak test does this on the PC. On the weakest device, note `gpu (est)` (and the real heap, if you can get one, see above) after the first minute, walk a closed loop around the same few streets for 10 minutes, and note them again. Write both sets of numbers under the table. The `gpu (est)` figures alone are enough to compare: a heap read from the stale value would make the check meaningless.
 
 ## 3. Pass and fail
 
@@ -111,7 +118,7 @@ Judged on the **weakest** test device, against the project's targets:
 | No missing ground while running | the table's "ground gaps" column, plus the automated 1,200 m run |
 | At least 30 fps on phones and tablets in Flaris | the table, on the four devices |
 | At least 60 fps on a PC with built-in graphics | the table, PC row |
-| At most about 400 MB of JS heap plus estimated GPU memory | the table's peak memory (Safari and Firefox: the GPU estimate alone) |
+| At most about 400 MB of JS heap plus estimated GPU memory | the table's peak memory: the real heap (see "Memory in Chrome and Edge") plus the GPU estimate; Safari and Firefox: the GPU estimate alone |
 | After a 10-minute loop walk, memory within 10% of its starting level | automated: `npm run test:soak` (numbers in [conversion-baseline.md](conversion-baseline.md)); by hand on the weakest device, from the two numbers under the table |
 
 Any `errors:` line in the overlay that you cannot explain is a fail too: send a photo of the overlay.
