@@ -1,0 +1,135 @@
+--- a/Source/_Network/Misc/Include/dos2.h
++++ b/Source/_Network/Misc/Include/dos2.h
+@@ -20,6 +20,7 @@
+ #define	MAX_ADDR	1024
+ #undef MAX_HIT
+ #define	MAX_HIT		50
++#define	MAX_EXEMPT	8
+ 
+ class CDos2 : public map<u_long, PCONNECTIONREQUEST2>
+ {
+@@ -27,6 +28,7 @@
+ 	CDos2();
+ 	virtual	~CDos2();
+ 	int		IsOver( u_long addr );
++	static	BOOL	AddExempt( const char* lpszAddr );	// the addresses of WebSocket gateways (ini 'Gateway' lines): never counted, never refused
+ private:
+ 	CTimer	m_timer;
+ 	DWORD	m_adwAddr[MAX_ADDR];
+@@ -35,6 +37,9 @@
+ 	void	Add( u_long addr );
+ 	PCONNECTIONREQUEST2		Get( u_long addr );
+ 	void	Release( void );
++	static	BOOL	IsExempt( u_long addr );
++	static	u_long	s_aExempt[MAX_EXEMPT];
++	static	int		s_nExempt;
+ };
+ 
+ #endif	// __DOS2_H__
+--- a/Source/_Network/Misc/Src/dos2.cpp
++++ b/Source/_Network/Misc/Src/dos2.cpp
+@@ -1,6 +1,45 @@
+ #include "stdafx.h"
+ #include "dos2.h"
+ 
++u_long	CDos2::s_aExempt[MAX_EXEMPT];
++int		CDos2::s_nExempt	= 0;
++
++// A dotted IPv4 address "a.b.c.d": digits and exactly three dots, at most 15 characters.
++static BOOL IsDottedIPv4( const char* lpszAddr )
++{
++	int nDots	= 0;
++	int nLen	= lstrlen( lpszAddr );
++	if( nLen < 7 || nLen > 15 )
++		return FALSE;
++	for( int i = 0; i < nLen; i++ )
++	{
++		if( lpszAddr[i] == '.' )
++			nDots++;
++		else if( lpszAddr[i] < '0' || lpszAddr[i] > '9' )
++			return FALSE;
++	}
++	return( nDots == 3 && inet_addr( lpszAddr ) != INADDR_NONE );
++}
++
++// Filled while the ini file is read, before the listen thread starts, and only read after that: no lock.
++BOOL CDos2::AddExempt( const char* lpszAddr )
++{
++	if( s_nExempt >= MAX_EXEMPT || !IsDottedIPv4( lpszAddr ) )
++		return FALSE;
++	s_aExempt[s_nExempt++]	= inet_addr( lpszAddr );
++	return TRUE;
++}
++
++BOOL CDos2::IsExempt( u_long addr )
++{
++	for( int i = 0; i < s_nExempt; i++ )
++	{
++		if( s_aExempt[i] == addr )
++			return TRUE;
++	}
++	return FALSE;
++}
++
+ CDos2::CDos2()
+ {
+ 	m_pPool		= new MemPooler<CONNECTIONREQUEST2>( 1024 );
+@@ -36,6 +75,9 @@
+ 
+ int CDos2::IsOver( u_long addr )
+ {
++	if( IsExempt( addr ) )
++		return 0;
++
+ 	Release();
+ 
+ 	PCONNECTIONREQUEST2 ptr		= Get( addr );
+--- a/Source/CERTIFIER/DPCertifier.cpp
++++ b/Source/CERTIFIER/DPCertifier.cpp
+@@ -9,6 +9,9 @@
+ #endif	// __TRACE1027
+ 
+ #include "user.h"
++#ifdef __DOS1101
++#include "dos2.h"
++#endif	// __DOS1101
+ 
+ extern	CDPAccountClient	g_dpAccountClient;
+ extern	CDbManager			g_DbManager;
+@@ -94,6 +97,9 @@
+ 	}
+ 	lstrcpy( m_aszGateway[m_nGateway], lpszAddr );
+ 	m_nGateway++;
++#ifdef __DOS1101
++	CDos2::AddExempt( lpszAddr );	// a gateway also skips the connection-flood limiter
++#endif	// __DOS1101
+ }
+ 
+ BOOL CDPCertifier::IsGateway( DPID dpid )
+--- a/Source/LOGINSERVER/LoginServer.cpp
++++ b/Source/LOGINSERVER/LoginServer.cpp
+@@ -11,6 +11,9 @@
+ #include "dpcoreclient.h"
+ #include "mytrace.h"
+ #include "user.h"
++#ifdef __DOS1101
++#include "dos2.h"
++#endif	// __DOS1101
+ 
+ 			// nprotect관련 _Network폴더에 
+ 
+@@ -265,6 +268,14 @@
+ 				strcpy(g_szMSG_VER, s.Token);
+ 			}
+ #endif
++#ifdef __DOS1101
++			else if( s.Token == "Gateway" )	// a WebSocket gateway's address: it skips the connection-flood limiter
++			{
++				s.GetToken();
++				if( !CDos2::AddExempt( s.Token ) )
++					Error( "Gateway %s not added", (LPCTSTR)s.Token );
++			}
++#endif	// __DOS1101
+ 			else if( s.Token == "NPROTECT" )
+ 			{
+ 				g_bNProtectAuth = TRUE;
