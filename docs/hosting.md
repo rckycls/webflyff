@@ -23,7 +23,7 @@ Players use only the browser client. Neuz (the Windows client) is not part of a 
 
 - A Windows machine that runs the 7 game servers, with a public IPv4 address, and the ability to open one port (443) to the internet. If the machine sits behind a home router, you need to be able to set up a port forward on it.
 - A domain name you control, with a **sub-domain just for the game**, for example `play.example.com`.
-- [Node.js](https://nodejs.org/) 24 LTS or newer, with npm.
+- [Node.js](https://nodejs.org/) v24 or higher (the LTS version), with npm 11 or higher (it comes with Node).
 - The `FlyffWeb` folder on that machine, **inside the server folder** (next to `Program` and `Client`), the same way it is on your PC.
 - Two small free programs you download in the steps below: **Caddy** and **NSSM** (it runs a program as a Windows service, so it starts with Windows and restarts if it stops).
 
@@ -47,7 +47,7 @@ $FlyffWeb = 'D:\FlyFF\Blouflash VS22 V15\FlyffWeb'
 
 If you close the window, open a new one and run that line again. You should see nothing printed. Check it with `Test-Path "$FlyffWeb\package.json"`, which must print `True`.
 
-Steps 6 to 8 need PowerShell **as administrator** (right-click PowerShell, "Run as administrator").
+Steps 6 to 8 (and "Updating later") need PowerShell **as administrator** (right-click PowerShell, "Run as administrator"). **An administrator window is a new window, so set `$FlyffWeb` again in it** with the line above before you use it.
 
 ## Step 1. Point the name at the machine (DNS)
 
@@ -66,14 +66,14 @@ nslookup play.example.com
 
 ## Step 2. Install Node.js
 
-Install Node.js 24 LTS from nodejs.org (the installer's defaults are fine; it puts Node in `C:\Program Files\nodejs`). Open a **new** PowerShell window, set `$FlyffWeb` again, and check:
+Install the LTS version of Node.js from nodejs.org. It must be v24 or higher. The installer's defaults are fine; it puts Node in `C:\Program Files\nodejs`. Open a **new** PowerShell window, set `$FlyffWeb` again, and check:
 
 ```
 node --version
 npm --version
 ```
 
-Success: `v24.` followed by numbers, and `11.` followed by numbers.
+Success: Node prints `v24` or a higher number (for example `v24.19.0`), and npm prints `11` or a higher number (for example `11.17.0`).
 
 ## Step 3. Build
 
@@ -137,13 +137,13 @@ You must **build again whenever the domain or `NEUZ_IPSET` changes**, and after 
 
 Without this step the site works, but every browser player looks like one player to the servers: one player's typo in a password blocks everyone for 15 seconds (three typos: 15 minutes), and `IPCut.ini` bans cannot single anyone out.
 
-Follow **[server-patches/README.md](../server-patches/README.md)**: build the patched `Certifier.exe` (on your PC, where Visual Studio is), put it in `Program\` on the hosted machine, and add this line at the end of `Program\Certifier.ini`:
+Follow **[server-patches/README.md](../server-patches/README.md)**: build the patched `Certifier.exe` (on your PC, where Visual Studio is), and on the hosted machine stop the certifier, copy the new file over `Program\2. Certifier.exe` **keeping that name** (back up the old one first, as that README says), and add this line at the end of `Program\Certifier.ini`:
 
 ```
 Gateway "127.0.0.1"
 ```
 
-Press Enter after `HEARTBEAT` first, as that README explains. Then restart the certifier.
+Press Enter after `HEARTBEAT` first, as that README explains. Then start the certifier again.
 
 Success: after a wrong password on one phone, a second phone can still log in at once. (With the old certifier it could not, for 15 seconds: the lockout is per address, and without the patch every browser player has the gateway's address.)
 
@@ -195,7 +195,7 @@ Stop it with `Ctrl` + `C`. The next step runs it as a service instead.
 
 ## Step 6. The gateway as a Windows service
 
-1. Download NSSM from [nssm.cc/download](https://nssm.cc/download), unzip it, and copy `win64\nssm.exe` to `C:\Windows\System32`. Open a new administrator PowerShell and run `nssm` on its own: it prints a few lines that start with `NSSM: The non-sucking service manager`, with its version.
+1. Download NSSM from [nssm.cc/download](https://nssm.cc/download), unzip it, and copy `win64\nssm.exe` to `C:\Windows\System32`. Open a new administrator PowerShell. **In this new window, set `$FlyffWeb` again** (the `$FlyffWeb = '...'` line from "Names used below"), and check it with `Test-Path "$FlyffWeb\package.json"`, which must print `True`. Without it, the `AppDirectory` line below gets an empty value and the service cannot find its files. Then run `nssm` on its own: it prints a few lines that start with `NSSM: The non-sucking service manager`, with its version.
 2. Check where `node.exe` is. This must print `C:\Program Files\nodejs\node.exe`; if it prints another path, use that path in the first `nssm` line below:
 
 ```
@@ -223,11 +223,12 @@ nssm start flyff-gateway
 nssm status flyff-gateway
 Get-Content C:\flyff-logs\gateway.log
 Test-NetConnection 127.0.0.1 -Port 8090
+nssm get flyff-gateway AppDirectory
 ```
 
-Success: `SERVICE_RUNNING`; the log's last line is `gateway listening on ws://127.0.0.1:8090`; and `TcpTestSucceeded : True`.
+Success: `SERVICE_RUNNING`; the log's last line is `gateway listening on ws://127.0.0.1:8090`; `TcpTestSucceeded : True`; and the last command prints your `FlyffWeb` folder. If it prints something else (for example `C:\Program Files\nodejs`, or nothing), the service will not find its files: set `$FlyffWeb`, run the `AppDirectory` line again, and `nssm restart flyff-gateway`.
 
-From now on the gateway starts with Windows and NSSM starts it again if it stops. After a change to `gateway.config.json` or an update of the code, run `nssm restart flyff-gateway`.
+From now on the gateway starts with Windows and NSSM starts it again if it stops. After a change to `gateway.config.json`, run `nssm restart flyff-gateway`. To update the code, follow [Updating later](#updating-later): the service has to be stopped first.
 
 The log has one line when a connection opens and one when it closes, with the time, the **player's** address, the server route, the bytes each way and a close code. It never holds a packet's contents (those contain password hashes).
 
@@ -247,14 +248,24 @@ Optionally also port 80, only so that `http://play.example.com` redirects to HTT
 New-NetFirewallRule -DisplayName "FlyffWeb HTTP redirect" -Direction Inbound -Protocol TCP -LocalPort 80 -Action Allow
 ```
 
-**Close the game servers' ports.** Windows blocks incoming connections by default, but when a program first runs, Windows may have asked "allow this app?" and an answer of Allow created a rule that opens its ports. For the servers that would put **23000, 28000, 5400** (and the servers' other ports) on the internet. Look for such rules:
+**Close the game servers' ports.** Windows blocks incoming connections by default, but when a program first runs, Windows may have asked "allow this app?" and an answer of Allow created a rule that opens its ports. For the servers that would put **23000, 28000, 5400** (and the servers' other ports) on the internet.
+
+First, make sure the firewall is switched on for all three kinds of network:
+
+```
+Get-NetFirewallProfile | Format-Table Name, Enabled
+```
+
+Success: three rows, `Domain`, `Private` and `Public`, each with `Enabled` showing `True`. If one shows `False`, switch it on: `Set-NetFirewallProfile -Profile Domain,Private,Public -Enabled True`.
+
+Then take a quick look for stray rules:
 
 ```
 Get-NetFirewallApplicationFilter | Where-Object { $_.Program -like '*\Program\*' } | Get-NetFirewallRule | Format-Table DisplayName, Enabled, Direction, Action -AutoSize
-Get-NetFirewallPortFilter | Where-Object { $_.LocalPort -in '23000','28000','5400' } | Get-NetFirewallRule | Format-Table DisplayName, Enabled, Direction, Action -AutoSize
+Get-NetFirewallPortFilter | Where-Object { @($_.LocalPort) | Where-Object { $_ -in '23000','28000','5400' } } | Get-NetFirewallRule | Format-Table DisplayName, Enabled, Direction, Action -AutoSize
 ```
 
-Success: both print nothing. If a rule shows up with `Enabled True`, `Direction Inbound`, `Action Allow`, disable it with `Disable-NetFirewallRule -DisplayName "<the name shown>"`. (The first command looks for rules for any program in a folder called `Program`; if your servers are somewhere else, change the `*\Program\*` part.)
+Success: both print nothing. If a rule shows up with `Enabled True`, `Direction Inbound`, `Action Allow`, disable it with `Disable-NetFirewallRule -DisplayName "<the name shown>"`. (The first command looks for rules for any program in a folder called `Program`; if your servers are somewhere else, change the `*\Program\*` part.) This is only a quick look: it does not see a rule that opens a whole range of ports, such as `20000-30000`. **The real check is step 9.4, from outside.**
 
 The gateway still reaches the servers, because connections from the machine to itself (`127.0.0.1`) are not filtered by the firewall.
 
@@ -277,6 +288,7 @@ play.example.com {
 		reverse_proxy 127.0.0.1:8090
 	}
 	handle /assets/* {
+		respond /assets/report.json 404
 		root * "D:/FlyFF/Blouflash VS22 V15/FlyffWeb/dist"
 		file_server
 	}
@@ -292,6 +304,7 @@ What it does:
 
 - `/connect/*` goes to the gateway. Caddy passes WebSocket connections through by itself and adds the player's address in the `X-Forwarded-For` header, which is what the gateway reads (because of `trustedProxies`).
 - `/assets/*` is read from `FlyffWeb\dist`, so `/assets/x` is the file `FlyffWeb\dist\assets\x`: where `npm run convert` writes.
+- The `respond /assets/report.json 404` line keeps one file private. `npm run convert` leaves a `report.json` in that folder, and it holds the folder paths of the computer that did the converting. Everything else in `dist\assets` is meant to be public, so only this file is blocked: a visitor who asks for it gets "not found". The line sits inside the `/assets/*` block, before `file_server`, so it takes effect before the file is served. Step 9 checks it.
 - Everything else is read from `FlyffWeb\apps\client\dist`: the lobby page, and its files under `/client/`. A path with no file behind it gets `index.html`.
 
 Save it as **`Caddyfile` with no `.txt` at the end**: `dir C:\caddy` must list `Caddyfile`, not `Caddyfile.txt`.
@@ -344,19 +357,34 @@ Test-NetConnection play.example.com -Port 5400
 
 Success: `TcpTestSucceeded : True` for 443 and `False` for the other three.
 
-## Updating later
-
-After a new version of the code (a `git pull` in `FlyffWeb`, or a copied-in folder):
+5. Check that the one private file is not served. (This works from any computer. `curl.exe` comes with Windows.)
 
 ```
+curl.exe -s -o NUL -w "%{http_code}" https://play.example.com/assets/report.json
+```
+
+Success: it prints `404`. Any other number, `200` especially, means the `respond /assets/report.json 404` line is missing or in the wrong place in the Caddyfile.
+
+## Updating later
+
+After a new version of the code (a `git pull` in `FlyffWeb`, or a copied-in folder). **Stop the gateway first.** The service runs from the `node_modules` folder, and `npm ci` deletes that folder first; Windows does not let it delete files that a running program is using, so `npm ci` fails and can leave the folder half-removed. While the gateway is stopped, players see "Cannot reach the game gateway.", so pick a quiet time. It takes a minute or two.
+
+Open PowerShell **as administrator**, set `$FlyffWeb` again in it (the line from "Names used below"), then:
+
+```
+nssm stop flyff-gateway
+nssm status flyff-gateway
 cd $FlyffWeb
 npm ci
 $env:VITE_GATEWAY_URL = 'wss://play.example.com'; $env:VITE_CERTIFIER_ADDRESS = '172.31.238.55:23000'; npm run build:client
 Remove-Item Env:VITE_GATEWAY_URL, Env:VITE_CERTIFIER_ADDRESS
-nssm restart flyff-gateway
+nssm start flyff-gateway
+nssm status flyff-gateway
 ```
 
-Caddy reads the new files from disk straight away; it needs no restart. A phone that had the page open should reload it.
+Success: the first `nssm status` says `SERVICE_STOPPED` (if it says anything else, wait a few seconds and ask again before you go on), `npm ci` and the build end without red `npm error` lines, and the last `nssm status` says `SERVICE_RUNNING`. If you also changed `gateway.config.json`, the start picks it up.
+
+Caddy reads the new client files from disk straight away; it needs no restart. A phone that had the page open should reload it. (If you ever start the gateway by hand with `npm run gateway` instead, stop it with `Ctrl` + `C` before `npm ci` for the same reason.)
 
 ## Known limit before a public launch
 
