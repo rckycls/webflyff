@@ -17,6 +17,10 @@ export const CloseCode = {
   FORBIDDEN_PACKET: 4006,
   /** Too many connections from one address. */
   TOO_MANY_CONNECTIONS: 4007,
+  /** Too many new connections from one address in the last minute. */
+  TOO_MANY_NEW_CONNECTIONS: 4008,
+  /** The gateway already has as many open connections as it takes in all. */
+  GATEWAY_FULL: 4009,
 } as const;
 
 export type CloseCode = (typeof CloseCode)[keyof typeof CloseCode];

@@ -302,6 +302,19 @@ describe('LoginFlow, failures while logging in', () => {
     clock.advance(60000);
     expect(events).toHaveLength(4);
   });
+
+  it('refuses an account over 32 characters or with a space inside, which the rebuilt certifier drops', async () => {
+    const { events, flow, net } = start();
+    for (const account of ['w'.repeat(33), 'web tester']) await flow.login(account, 'password1');
+    expect(events).toEqual(Array.from({ length: 2 }, () => ({ type: 'error', message: 'Login details incorrect.  Please try again.' })));
+    expect(() => net.channel(CERTIFIER)).toThrow();
+  });
+
+  it('sends an account of 32 characters, the longest the database holds', async () => {
+    const { flow, net } = start();
+    await flow.login('w'.repeat(32), 'password1');
+    expect(() => net.channel(CERTIFIER)).not.toThrow();
+  });
 });
 
 describe('LoginFlow, failures while listing characters', () => {

@@ -8,7 +8,7 @@ export interface PacketChannel {
   /** Closes the connection. `onClose` still fires afterwards, with the code the close ended with. */
   close(): void;
   onPacket: (body: Uint8Array) => void;
-  /** Called once when the connection has ended, with the WebSocket close code (the gateway's own are 4001-4007). */
+  /** Called once when the connection has ended, with the WebSocket close code (the gateway's own are 4001-4009). */
   onClose: (code: number) => void;
 }
 

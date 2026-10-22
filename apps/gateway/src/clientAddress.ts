@@ -31,3 +31,11 @@ export function resolveClientAddress(
   if (header === undefined) return peer;
   return normalizeIPv4(header.split(',').at(-1)!.trim());
 }
+
+/**
+ * The address a log line names for a connection: the player's (`resolved`, from `resolveClientAddress`) when it could
+ * be told, otherwise the direct peer's in plain IPv4, otherwise `unknown`. Never anything else the browser sent.
+ */
+export function shownAddress(resolved: string | undefined, remote: string | undefined): string {
+  return resolved ?? normalizeIPv4(remote) ?? 'unknown';
+}

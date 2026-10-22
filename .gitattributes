@@ -1,1 +1,2 @@
 server-patches/*.patch binary
+server-patches/tests/*.sh text eol=lf
