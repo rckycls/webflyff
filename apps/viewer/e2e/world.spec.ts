@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Vec3 } from '@flyffweb/formats';
+import { tileOf, tilesInRange } from '@flyffweb/scene';
 import type {} from '../src/testHooks'; // window.__viewer
-import { tileOf, tilesInRange } from '../src/world/tileStreamer';
 import { madrigal, spots } from './data';
 
 test('world flaris start', async ({ page }) => {

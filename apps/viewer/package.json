@@ -5,6 +5,7 @@
   "type": "module",
   "dependencies": {
     "@flyffweb/formats": "*",
+    "@flyffweb/scene": "*",
     "three": "^0.186.1"
   },
   "devDependencies": {

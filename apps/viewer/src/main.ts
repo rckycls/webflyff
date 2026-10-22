@@ -1,14 +1,20 @@
 // The shell: overlay first (so anything that goes wrong shows on screen), then the renderer, the asset index, the
 // loaders and the texture cache, then the router. One renderer and canvas serve every route.
 
+import {
+  AssetStore,
+  Overlay,
+  TextureCache,
+  createLoaders,
+  installContextLossHandlers,
+  installGlobalErrorHandlers,
+  installShaderErrorHandler,
+  loadKtx2,
+  trackDrawingBuffer,
+} from '@flyffweb/scene';
 import { WebGLRenderer } from 'three';
-import { AssetStore } from './assets/AssetStore';
-import { TextureCache, createLoaders, loadKtx2 } from './assets/loaders';
 import { characterView } from './character/CharacterView';
 import { compareView } from './compare/ComparePage';
-import { Overlay } from './overlay/Overlay';
-import { installContextLossHandlers, installGlobalErrorHandlers, installShaderErrorHandler } from './overlay/errorHandlers';
-import { trackDrawingBuffer } from './overlay/gpuMemory';
 import { Router } from './router';
 import type { RouteName, ViewFactory } from './router';
 import { installTestHooks, registerRenderer } from './testHooks';

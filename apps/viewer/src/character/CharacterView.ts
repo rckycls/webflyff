@@ -6,6 +6,21 @@
 // `paused=1` holds the pose at `frame` (0 by default) and stops everything else that moves with time (orbit damping),
 // and the camera frames the character from its bounds in that pose: the picture tests rely on it.
 
+import {
+  GENDERS,
+  NO_PART,
+  PART_SLOTS,
+  assembleCharacter,
+  geometryBytes,
+  loadGltf,
+  loopMotion,
+  motionKey,
+  partKey,
+  partsBySlot,
+  readCharacterParams,
+  skeletonKey,
+} from '@flyffweb/scene';
+import type { AssembledCharacter, CharacterParams, Gender, PartSlot } from '@flyffweb/scene';
 import type { WebGLRenderer } from 'three';
 import {
   AmbientLight,
@@ -22,13 +37,7 @@ import {
 } from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { loadGltf } from '../assets/loaders';
-import { geometryBytes } from '../overlay/gpuMemory';
 import type { ViewContext, ViewFactory } from '../router';
-import { assembleCharacter, loopMotion } from './assemble';
-import type { AssembledCharacter } from './assemble';
-import { GENDERS, NO_PART, PART_SLOTS, motionKey, partKey, partsBySlot, readCharacterParams, skeletonKey } from './parts';
-import type { CharacterParams, Gender, PartSlot } from './parts';
 
 const FOV_DEGREES = 30;
 /** Room left around the character when it is framed. */

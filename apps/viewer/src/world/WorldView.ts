@@ -27,6 +27,31 @@
 
 import { MAP_SIZE } from '@flyffweb/formats';
 import type { Vec3, WorldManifest } from '@flyffweb/formats';
+import {
+  CHASE_PITCH,
+  DEFAULT_MALE,
+  DEFAULT_MOTION,
+  Joystick,
+  KeyboardInput,
+  ObjectPool,
+  PART_SLOTS,
+  Route,
+  TerrainLighting,
+  TileStreamer,
+  assembleCharacter,
+  chaseCamera,
+  combineIntents,
+  d3dColor,
+  geometryBytes,
+  loadGltf,
+  loopMotion,
+  motionKey,
+  noonLight,
+  partKey,
+  skeletonKey,
+  steer,
+} from '@flyffweb/scene';
+import type { AssembledCharacter, Gait, PlayerState } from '@flyffweb/scene';
 import type { AnimationAction, WebGLRenderer } from 'three';
 import {
   AmbientLight,
@@ -41,21 +66,8 @@ import {
   Vector2,
 } from 'three';
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { loadGltf } from '../assets/loaders';
-import { assembleCharacter, loopMotion } from '../character/assemble';
-import type { AssembledCharacter } from '../character/assemble';
-import { DEFAULT_MALE, DEFAULT_MOTION, PART_SLOTS, motionKey, partKey, skeletonKey } from '../character/parts';
-import { Joystick } from '../input/joystick';
-import { KeyboardInput, combineIntents } from '../input/keyboard';
-import { geometryBytes } from '../overlay/gpuMemory';
 import type { ViewFactory } from '../router';
 import { registerLoadedTiles, registerWalkRoute } from '../testHooks';
-import { TerrainLighting } from './TerrainTile';
-import { d3dColor, noonLight } from './lighting';
-import { ObjectPool } from './objects';
-import { CHASE_PITCH, Route, chaseCamera, steer } from './player';
-import type { Gait, PlayerState } from './player';
-import { TileStreamer } from './tileStreamer';
 
 export const DEFAULT_WORLD = 'wdmadrigal';
 const DEFAULT_RADIUS = 1;

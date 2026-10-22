@@ -2,12 +2,10 @@
 // question mark, the world view reading `world=<web name>` (`#/world?world=wdmadrigal`). The router builds a view per
 // route from the factories it is given and keeps exactly one alive.
 
+import type { AssetStore, Overlay, TextureCache } from '@flyffweb/scene';
 import type { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js';
 import type { WebGLRenderer } from 'three';
-import type { AssetStore } from './assets/AssetStore';
-import type { TextureCache } from './assets/loaders';
-import type { Overlay } from './overlay/Overlay';
 
 export type RouteName = 'character' | 'world' | 'compare';
 
