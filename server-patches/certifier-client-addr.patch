@@ -1,0 +1,266 @@
+--- a/Source/_Network/MsgHdr.h
++++ b/Source/_Network/MsgHdr.h
+@@ -62,6 +62,7 @@
+ #define	PACKETTYPE_SRVR_LIST	(DWORD)0x000000fd
+ #define PACKETTYPE_ERROR	(DWORD)0x000000fe
+ #define	PACKETTYPE_PLAYERID	(DWORD)0x000000ff
++#define	PACKETTYPE_GATEWAY_CLIENT_ADDR	(DWORD)0x000000e0
+ 
+ //#define	PACKETTYPE_RETRY_CERT	(DWORD)0x00000ff0
+ //#define	PACKETTYPE_PLAYER_JOINED	(DWORD)0x00000ff1
+--- a/Source/CERTIFIER/user.h
++++ b/Source/CERTIFIER/user.h
+@@ -22,9 +22,13 @@
+ 	void SetAccount( const char* szAccount )
+ 		{	strncpy( m_pszAccount, szAccount, MAX_ACCOUNT );	m_pszAccount[MAX_ACCOUNT-1]		= '\0';		}
+ 	const char*	GetAccount( void )	{	return m_pszAccount;	}
++	void SetClientAddr( const char* szAddr )
++		{	strncpy( m_szClientAddr, szAddr, 16 );	m_szClientAddr[15]	= '\0';	}
++	const char*	GetClientAddr( void )	{	return m_szClientAddr;	}
+ 
+ private:
+ 	char	m_pszAccount[MAX_ACCOUNT];
++	char	m_szClientAddr[16];	// the player's address sent by a gateway before CERTIFY, else empty
+ };
+ 
+ class CUserMng : public map<DPID, CUser*>
+--- a/Source/CERTIFIER/user.cpp
++++ b/Source/CERTIFIER/user.cpp
+@@ -13,6 +13,7 @@
+ {
+ 	m_dwTick	= GetTickCount();
+ 	*m_pszAccount	= '\0';
++	*m_szClientAddr	= '\0';
+ }
+ 
+ CUserMng::CUserMng()
+--- a/Source/CERTIFIER/DPCertifier.h
++++ b/Source/CERTIFIER/DPCertifier.h
+@@ -41,6 +41,9 @@
+ 	char	m_szResVer[100];
+ #endif	// __SECURITY_0628
+ 	map<u_long, LPSERVER_DESC>	m_2ServersetPtr;
++private:
++	char	m_aszGateway[8][16];	// Certifier.ini "Gateway" addresses
++	int		m_nGateway;
+ public:
+ //	Constructions
+ 	CDPCertifier();
+@@ -67,6 +70,10 @@
+ #endif	// __GPAUTH
+ 	void	SendHdr( DWORD dwHdr, DPID dpid );
+ 	void	SetLimitation( int nLimit );
++	void	AddGateway( const char* lpszAddr );
++	BOOL	IsGateway( DPID dpid );
++	void	GetClientAddr( DPID dpid, LPSTR lpAddr );
++	DWORD	GetClientAddr( DPID dpid );
+ 
+ 	USES_PFNENTRIES;
+ 
+@@ -78,6 +85,7 @@
+ 	void	OnCloseExistingConnection( CAr & ar, DPID dpid, LPBYTE lpBuf, u_long uBufSize );
+ 	void	OnKeepAlive( CAr & ar, DPID dpid, LPBYTE lpBuf, u_long uBufSize );
+ 	void	OnError( CAr & ar, DPID dpid, LPBYTE lpBuf, u_long uBufSize );
++	void	OnGatewayClientAddr( CAr & ar, DPID dpid, LPBYTE lpBuf, u_long uBufSize );
+ };
+ 
+ inline void CDPCertifier::SendHdr( DWORD dwHdr, DPID dpid )
+--- a/Source/CERTIFIER/DPCertifier.cpp
++++ b/Source/CERTIFIER/DPCertifier.cpp
+@@ -37,6 +37,8 @@
+ {
+ 	m_dwSizeofServerset		= 0;
+ 	*m_szVer	= '\0';
++	memset( m_aszGateway, 0, sizeof(m_aszGateway) );
++	m_nGateway	= 0;
+ #ifdef __SECURITY_0628
+ 	*m_szResVer		= '\0';
+ #endif	// __SECURITY_0628
+@@ -47,6 +49,7 @@
+ 	ON_MSG( PACKETTYPE_CLOSE_EXISTING_CONNECTION, &CDPCertifier::OnCloseExistingConnection );
+ 	ON_MSG( PACKETTYPE_KEEP_ALIVE, &CDPCertifier::OnKeepAlive );
+ 	ON_MSG( PACKETTYPE_ERROR, &CDPCertifier::OnError );
++	ON_MSG( PACKETTYPE_GATEWAY_CLIENT_ADDR, &CDPCertifier::OnGatewayClientAddr );
+ }
+ 
+ CDPCertifier::~CDPCertifier()
+@@ -63,6 +66,79 @@
+ //	}
+ }
+ 
++// A dotted IPv4 address "a.b.c.d": digits and exactly three dots, at most 15 characters.
++static BOOL IsDottedIPv4( const char* lpszAddr )
++{
++	int nDots	= 0;
++	int nLen	= lstrlen( lpszAddr );
++	if( nLen < 7 || nLen > 15 )
++		return FALSE;
++	for( int i = 0; i < nLen; i++ )
++	{
++		if( lpszAddr[i] == '.' )
++			nDots++;
++		else if( lpszAddr[i] < '0' || lpszAddr[i] > '9' )
++			return FALSE;
++	}
++	return( nDots == 3 && inet_addr( lpszAddr ) != INADDR_NONE );
++}
++
++// Certifier.ini 'Gateway "a.b.c.d"' (repeatable, at most 8): the WebSocket gateways that may
++// tell us a browser player's real address. With no Gateway line, no address is ever accepted.
++void CDPCertifier::AddGateway( const char* lpszAddr )
++{
++	if( m_nGateway >= 8 || !IsDottedIPv4( lpszAddr ) )
++	{
++		Error( "Gateway %s not added", lpszAddr );
++		return;
++	}
++	lstrcpy( m_aszGateway[m_nGateway], lpszAddr );
++	m_nGateway++;
++}
++
++BOOL CDPCertifier::IsGateway( DPID dpid )
++{
++	DWORD dwAddr	= GetPlayerAddr( dpid );
++	if( dwAddr == 0 )
++		return FALSE;
++	for( int i = 0; i < m_nGateway; i++ )
++	{
++		if( inet_addr( m_aszGateway[i] ) == dwAddr )
++			return TRUE;
++	}
++	return FALSE;
++}
++
++// The player's address: the one a gateway sent (OnGatewayClientAddr), else the socket's.
++void CDPCertifier::GetClientAddr( DPID dpid, LPSTR lpAddr )
++{
++	char szAddr[16]	= { 0, };
++	{
++		CMclAutoLock	Lock( CUserMng::GetInstance()->m_AddRemoveLock );
++		CUser* pUser	= CUserMng::GetInstance()->GetUser( dpid );
++		if( pUser )
++			lstrcpy( szAddr, pUser->GetClientAddr() );
++	}
++	if( szAddr[0] != '\0' )
++		lstrcpy( lpAddr, szAddr );
++	else
++		GetPlayerAddr( dpid, lpAddr );
++}
++
++DWORD CDPCertifier::GetClientAddr( DPID dpid )
++{
++	char szAddr[16]	= { 0, };
++	{
++		CMclAutoLock	Lock( CUserMng::GetInstance()->m_AddRemoveLock );
++		CUser* pUser	= CUserMng::GetInstance()->GetUser( dpid );
++		if( pUser )
++			lstrcpy( szAddr, pUser->GetClientAddr() );
++	}
++	if( szAddr[0] != '\0' )
++		return inet_addr( szAddr );
++	return GetPlayerAddr( dpid );
++}
++
+ void CDPCertifier::SysMessageHandler( LPDPMSG_GENERIC lpMsg, DWORD dwMsgSize, DPID dpid )
+ {
+ 	switch( lpMsg->dwType )
+@@ -227,6 +303,29 @@
+ 	DestroyPlayer( dpid );
+ }
+ 
++// Sent by a gateway as the first packet of a browser player's connection: the player's
++// dotted IPv4 address. Accepted only from a listed gateway and only before CERTIFY.
++void CDPCertifier::OnGatewayClientAddr( CAr & ar, DPID dpid, LPBYTE lpBuf, u_long uBufSize )
++{
++	char szAddr[16]	= { 0, };
++	ar.ReadString( szAddr, 16 );
++
++	if( IsGateway( dpid ) && IsDottedIPv4( szAddr ) )
++	{
++		CMclAutoLock	Lock( CUserMng::GetInstance()->m_AddRemoveLock );
++		CUser* pUser	= CUserMng::GetInstance()->GetUser( dpid );
++		if( pUser && pUser->GetAccount()[0] == '\0' )
++		{
++			pUser->SetClientAddr( szAddr );
++			return;
++		}
++	}
++
++	char szPeer[16]	= { 0, };
++	GetPlayerAddr( dpid, szPeer );
++	Error( "GATEWAY_CLIENT_ADDR refused from %s", szPeer );
++}
++
+ void CDPCertifier::OnCertify( CAr & ar, DPID dpid, LPBYTE lpBuf, u_long uBufSize )
+ {
+ 	char pszVer[32]	= { 0, };
+@@ -297,7 +396,7 @@
+ 		ar.ReadString( pszSessionPwd, MAX_SESSION_PWD );
+ 	lstrcpy( pData->AccountInfo.szSessionPwd, pszSessionPwd );
+ #endif	// __TWN_LOGIN0816
+-	pData->dwIP         = GetPlayerAddr( dpid );
++	pData->dwIP         = GetClientAddr( dpid );
+ 	pData->dpId			= dpid;
+ 	pData->nQueryMode	= CERTIFY;
+ 	g_DbManager.PostQ( pData );
+--- a/Source/CERTIFIER/DBManager.cpp
++++ b/Source/CERTIFIER/DBManager.cpp
+@@ -100,7 +100,7 @@
+ void CDbManager::DBQryAccount( char* qryAccount, LPDB_OVERLAPPED_PLUS pData )
+ {
+ 	char lpAddr[16] = {0,};
+-	g_dpCertifier.GetPlayerAddr( pData->dpId, lpAddr );
++	g_dpCertifier.GetClientAddr( pData->dpId, lpAddr );
+ 
+ 	if( GetLanguage() == LANG_TWN )
+ 		wsprintf( qryAccount, "LOGIN_STR @iaccount='%s', @ipassword='%s', @isession='%s', @i_IPAddress='%s'", 
+@@ -194,7 +194,7 @@
+ #endif//__BILLING0712
+ 
+ 	char lpAddr[16]	= { 0, };
+-	g_dpCertifier.GetPlayerAddr( pData->dpId, lpAddr );				
++	g_dpCertifier.GetClientAddr( pData->dpId, lpAddr );				
+ 
+ #ifdef __GPAUTH_02
+ #ifdef __EUROPE_0514
+@@ -487,7 +487,7 @@
+ 		}
+ 	}
+ 	char sAddr[16]	= { 0,};
+-	g_dpCertifier.GetPlayerAddr( pov->dpId, sAddr );
++	g_dpCertifier.GetClientAddr( pov->dpId, sAddr );
+ 	
+ 	GPAUTH_RESULT r;
+ //	GetGPAuthResult( s_sUrl, 1, ( GetLanguage() == LANG_GER? 1: 2 ), pov->AccountInfo.szAccount, pov->AccountInfo.szPassword, sAddr, r );
+@@ -534,7 +534,7 @@
+ 	GPAUTH_RESULT r;
+ 
+ 	char sAddr[16]	= { 0,};
+-	g_dpCertifier.GetPlayerAddr( pov->dpId, sAddr );
++	g_dpCertifier.GetClientAddr( pov->dpId, sAddr );
+ 
+ //	GetGPAuthResult( s_sUrl, 1, ( GetLanguage() == LANG_GER? 1: 2 ), pov->AccountInfo.szAccount, pov->AccountInfo.szPassword, sAddr, r );
+ 	GetGPAuthResult( s_sUrl, 1, ( GetLanguage() == LANG_FRE? 1: 2 ), pov->AccountInfo.szAccount, pov->AccountInfo.szPassword, sAddr, r );
+@@ -833,7 +833,7 @@
+ 	DWORD dwHeaderSize = 255;
+ 	
+ 	char sAddr[16]	= { 0,};
+-	g_dpCertifier.GetPlayerAddr( pov->dpId, sAddr );
++	g_dpCertifier.GetClientAddr( pov->dpId, sAddr );
+ 	
+ 	sprintf( pszSendMsg, "/api/aeonsoft/auth.asp?ID=%s&PW=%s&IP=%s", pov->AccountInfo.szAccount, pov->AccountInfo.szPassword, sAddr );
+ 	strHeaders	= "Content-Type: application/x-www-form-urlencoded";
+--- a/Source/CERTIFIER/certifier.cpp
++++ b/Source/CERTIFIER/certifier.cpp
+@@ -223,6 +223,11 @@
+ 			{
+ 				hb.Init();
+ 			}
++			else if( s.Token == "Gateway" )
++			{
++				s.GetToken();
++				g_dpCertifier.AddGateway( s.Token );
++			}
+ #ifdef __JAPAN_AUTH
+ 			else if( s.Token == "WebCertURL" )
+ 			{

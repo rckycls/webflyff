@@ -1,0 +1,421 @@
+import http from 'node:http';
+import net from 'node:net';
+import { afterEach, expect, it, vi } from 'vitest';
+import { WebSocket, type ClientOptions } from 'ws';
+import { bytesToHex, encodeGatewayClientAddr } from '@flyffweb/protocol';
+import { startFakeFlyffServer, type FakeFlyffServer, type FakeFlyffServerOptions } from '@flyffweb/testkit';
+import { DEFAULT_LIMITS, type GatewayConfig, type Limits } from '../src/config';
+import { startGateway, type Gateway } from '../src/server';
+
+const ORIGIN = 'http://app.test';
+const CERTIFIER = '172.31.238.55:23000';
+const LOGIN = '172.31.238.55:28000';
+
+// Everything a test opens is closed here, newest first: browsers, then the gateway, then the fake server.
+const cleanups: Array<() => Promise<void>> = [];
+afterEach(async () => {
+  vi.restoreAllMocks();
+  for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
+});
+
+interface Browser {
+  ws: WebSocket;
+  /** Binary messages received so far. */
+  messages: Uint8Array[];
+  /** The code the connection was closed with. */
+  closed: Promise<number>;
+}
+
+interface Setup {
+  fake: FakeFlyffServer;
+  gateway: Gateway;
+  /** What the gateway wrote to its log. */
+  logs: string[];
+  url(path: string): string;
+  /** Connects to `/connect/<route>` as a browser from the allowed origin, and resolves once the WebSocket is open. */
+  browser(route?: string, options?: ClientOptions): Promise<Browser>;
+}
+
+interface SetupOptions extends Partial<Pick<GatewayConfig, 'trustedProxies' | 'sendClientAddr'>> {
+  limits?: Partial<Limits>;
+  fake?: FakeFlyffServerOptions;
+  /** Where the login route leads (default: the fake server). */
+  loginPort?: number;
+}
+
+/** A fake server, and a gateway whose certifier and login routes lead to it. */
+async function setup(options: SetupOptions = {}): Promise<Setup> {
+  const fake = await startFakeFlyffServer(options.fake);
+  cleanups.push(() => fake.close());
+  const logs: string[] = [];
+  const gateway = await startGateway(
+    {
+      listen: { host: '127.0.0.1', port: 0 },
+      allowedOrigins: [ORIGIN],
+      trustedProxies: options.trustedProxies ?? [],
+      sendClientAddr: options.sendClientAddr ?? false,
+      routes: {
+        [CERTIFIER]: { host: '127.0.0.1', port: fake.port, role: 'certifier' },
+        [LOGIN]: { host: '127.0.0.1', port: options.loginPort ?? fake.port, role: 'login' },
+      },
+      limits: { ...DEFAULT_LIMITS, ...options.limits },
+    },
+    { info: (line) => { logs.push(line); } },
+  );
+  cleanups.push(() => gateway.close());
+
+  const url = (path: string) => `ws://127.0.0.1:${gateway.port}${path}`;
+  return {
+    fake,
+    gateway,
+    logs,
+    url,
+    async browser(route = LOGIN, clientOptions = {}) {
+      const ws = new WebSocket(url(`/connect/${route}`), { origin: ORIGIN, ...clientOptions });
+      cleanups.push(async () => { ws.terminate(); });
+      const messages: Uint8Array[] = [];
+      ws.on('message', (data: Buffer) => messages.push(new Uint8Array(data)));
+      const closed = new Promise<number>((resolve) => ws.once('close', (code) => resolve(code)));
+      await new Promise<void>((resolve, reject) => {
+        ws.once('open', () => resolve());
+        ws.once('error', reject);
+      });
+      return { ws, messages, closed };
+    },
+  };
+}
+
+/** The HTTP status the gateway answers an upgrade request with, when it does not upgrade. */
+function refusedWith(url: string, options: ClientOptions = {}): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(url, options);
+    ws.once('unexpected-response', (_request, response) => {
+      response.resume();
+      resolve(response.statusCode!);
+    });
+    ws.once('open', () => {
+      ws.terminate();
+      reject(new Error('the gateway accepted the upgrade'));
+    });
+    ws.once('error', reject);
+  });
+}
+
+const keepAlive = new Uint8Array([0x18, 0, 0, 0]);
+const closeLines = (logs: string[]) => logs.filter((line) => line.startsWith('close '));
+/** A browser behind the trusted proxy 127.0.0.1, at `address`. */
+const from = (address: string): ClientOptions => ({ headers: { 'X-Forwarded-For': address } });
+
+it.each([
+  ['no Origin header', undefined],
+  ['an Origin that is not listed', 'http://evil.test'],
+  ['an Origin that is listed but for a trailing slash', `${ORIGIN}/`],
+])('answers an upgrade with 403, and connects nowhere, for %s', async (_name, origin) => {
+  const t = await setup();
+  await expect(refusedWith(t.url(`/connect/${LOGIN}`), { origin })).resolves.toBe(403);
+  expect(t.fake.connections).toBe(0);
+  expect(t.logs).toEqual(['refused 127.0.0.1 origin']);
+});
+
+it.each([
+  ['a path that is not /connect/', '/'],
+  ['a route with no port', '/connect/172.31.238.55'],
+  ['a route with a path behind it', `/connect/${LOGIN}/more`],
+  ['a route that is not valid percent-encoding', '/connect/%zz:1'],
+  ['a route with a space', '/connect/1.2.3.4%20:1'],
+  ['a route with a control character', '/connect/1.2.3.4%00:1'],
+  ['a route that is not ASCII', '/connect/%C3%A9.test:1'],
+  // Decoded, this would end the route and write a close line of its own into the log, if it were ever logged.
+  [
+    'a route with an encoded newline, that would forge a log line',
+    '/connect/x%0Aclose%201.2.3.4%20172.31.238.55:23000%20code=1000%20up=0%20down=0%0A:1',
+  ],
+  ['a route with an encoded carriage return', '/connect/x%0D%0Aopen%201.2.3.4%20k:1'],
+])('answers an upgrade with 404 for %s', async (_name, path) => {
+  const t = await setup();
+  await expect(refusedWith(t.url(path), { origin: ORIGIN })).resolves.toBe(404);
+  expect(t.fake.connections).toBe(0);
+  expect(t.logs).toEqual(['refused 127.0.0.1 path']);
+});
+
+it('never writes the path a browser asked for', async () => {
+  const t = await setup();
+  await expect(refusedWith(t.url('/nope-SECRET'), { origin: ORIGIN })).resolves.toBe(404);
+  expect(t.logs).toEqual(['refused 127.0.0.1 path']);
+  for (const line of t.logs) expect(line).not.toContain('SECRET');
+});
+
+it('answers a request that is not an upgrade with 404', async () => {
+  const t = await setup();
+  const response = await fetch(`http://127.0.0.1:${t.gateway.port}/connect/${LOGIN}`);
+  expect(response.status).toBe(404);
+  await response.arrayBuffer();
+});
+
+it('answers an upgrade with 400 when the player\'s address cannot be told', async () => {
+  const t = await setup({ trustedProxies: ['127.0.0.1'] });
+  const headers = { 'X-Forwarded-For': 'not-an-address' };
+  await expect(refusedWith(t.url(`/connect/${LOGIN}`), { origin: ORIGIN, headers })).resolves.toBe(400);
+  expect(t.fake.connections).toBe(0);
+  expect(t.logs).toEqual(['refused 127.0.0.1 address']); // the proxy's own address, since the player's is unknown
+});
+
+it('takes the route percent-encoded, and ignores a query string', async () => {
+  const t = await setup();
+  const encoded = await t.browser(encodeURIComponent(LOGIN));
+  encoded.ws.send(keepAlive);
+  const withQuery = await t.browser(`${LOGIN}?cache=1`);
+  withQuery.ws.send(keepAlive);
+  await t.fake.waitForBodies(2);
+  expect(t.fake.crcErrors).toBe(0);
+});
+
+it('accepts the upgrade for a route that is not in the table, then closes it with 4003', async () => {
+  const t = await setup();
+  const browser = await t.browser('9.9.9.9:23000');
+  await expect(browser.closed).resolves.toBe(4003);
+  expect(t.fake.connections).toBe(0);
+  // One refusal line and no open line, written before the close frame went out.
+  expect(t.logs).toEqual(['refused 127.0.0.1 route']);
+});
+
+it('never writes the route a browser asked for', async () => {
+  const t = await setup();
+  const browser = await t.browser('Some-Host.test:65535');
+  await expect(browser.closed).resolves.toBe(4003);
+  expect(t.logs).toEqual(['refused 127.0.0.1 route']);
+  for (const line of t.logs) expect(line).not.toContain('Some-Host');
+});
+
+it('closes the connection over the per-address limit with 4007, and takes a new one when a slot is free again', async () => {
+  const t = await setup({ limits: { maxConnectionsPerAddress: 2 } });
+  const first = await t.browser();
+  await t.browser();
+  const third = await t.browser();
+  await expect(third.closed).resolves.toBe(4007);
+  // The refused connection has a refusal line and no open line; the two that were relayed have an open line each.
+  expect(t.logs).toEqual([`open 127.0.0.1 ${LOGIN}`, `open 127.0.0.1 ${LOGIN}`, 'refused 127.0.0.1 per-address']);
+
+  first.ws.close(1000);
+  await expect.poll(() => closeLines(t.logs)).toHaveLength(1); // the slot is given back before the line is written
+  expect(closeLines(t.logs)[0]).toBe(`close 127.0.0.1 ${LOGIN} code=1000 up=0 down=0`);
+  const fourth = await t.browser();
+  fourth.ws.send(keepAlive);
+  await t.fake.waitForBodies(1);
+  expect(fourth.ws.readyState).toBe(WebSocket.OPEN);
+});
+
+it('closes with 4009 at maxConnections, before any per-address check', async () => {
+  const t = await setup({ trustedProxies: ['127.0.0.1'], limits: { maxConnections: 2, maxConnectionsPerAddress: 1 } });
+  await t.browser(LOGIN, from('10.0.0.1'));
+  await t.browser(LOGIN, from('10.0.0.2'));
+  const third = await t.browser(LOGIN, from('10.0.0.1'));
+  await expect(third.closed).resolves.toBe(4009); // not 4007: the total is checked first
+  expect(t.logs).toContain('refused 10.0.0.1 full');
+  await expect.poll(() => t.fake.connections).toBe(2);
+});
+
+it('closes with 4008 over maxNewConnectionsPerAddressPerMinute, counting each address apart', async () => {
+  const t = await setup({ trustedProxies: ['127.0.0.1'], limits: { maxNewConnectionsPerAddressPerMinute: 2 } });
+  for (let n = 1; n <= 2; n++) {
+    const browser = await t.browser(LOGIN, from('10.0.0.1'));
+    browser.ws.send(keepAlive);
+    await t.fake.waitForBodies(n);
+    browser.ws.close(1000);
+  }
+  await expect.poll(() => closeLines(t.logs)).toHaveLength(2); // closed: it is the new ones that count, not the open
+  const third = await t.browser(LOGIN, from('10.0.0.1'));
+  await expect(third.closed).resolves.toBe(4008);
+  const other = await t.browser(LOGIN, from('10.0.0.2'));
+  other.ws.send(keepAlive);
+  await t.fake.waitForBodies(3);
+  expect(t.logs).toContain('refused 10.0.0.1 rate');
+  expect(t.fake.connections).toBe(3);
+});
+
+it('does not count a connection refused with 4007 against the per-minute limit', async () => {
+  const t = await setup({ limits: { maxConnectionsPerAddress: 1, maxNewConnectionsPerAddressPerMinute: 2 } });
+  const first = await t.browser();
+  const second = await t.browser();
+  await expect(second.closed).resolves.toBe(4007);
+  first.ws.close(1000);
+  await expect.poll(() => closeLines(t.logs)).toHaveLength(1);
+  const third = await t.browser(); // the second new connection of the minute that was let through
+  third.ws.send(keepAlive);
+  await t.fake.waitForBodies(1);
+  expect(third.ws.readyState).toBe(WebSocket.OPEN);
+});
+
+it('gives the total slot back when a relay ends', async () => {
+  const t = await setup({ limits: { maxConnections: 1 } });
+  const first = await t.browser();
+  first.ws.close(1000);
+  await expect.poll(() => closeLines(t.logs)).toHaveLength(1); // the slot is given back before the line is written
+  const second = await t.browser();
+  second.ws.send(keepAlive);
+  await t.fake.waitForBodies(1);
+  expect(second.ws.readyState).toBe(WebSocket.OPEN);
+});
+
+it('gives the total slot back when the server is down, so a retry gets 4001 again and never 4009', async () => {
+  const closedPort = await new Promise<number>((resolve) => {
+    const probe = net.createServer().listen(0, '127.0.0.1', () => {
+      const { port } = probe.address() as { port: number };
+      probe.close(() => resolve(port));
+    });
+  });
+  const t = await setup({ loginPort: closedPort, limits: { maxConnections: 1 } });
+  for (let n = 1; n <= 2; n++) {
+    const browser = await t.browser();
+    await expect(browser.closed).resolves.toBe(4001);
+    await expect.poll(() => closeLines(t.logs)).toHaveLength(n);
+  }
+  expect(t.logs.filter((line) => line.startsWith('refused '))).toEqual([]);
+});
+
+it('writes the repeat lines of the refusal log when the gateway closes, and never the origin a browser sent', async () => {
+  const t = await setup();
+  for (let n = 0; n < 2; n++) {
+    await expect(refusedWith(t.url(`/connect/${LOGIN}`), { origin: 'http://evil.test' })).resolves.toBe(403);
+  }
+  expect(t.logs).toEqual(['refused 127.0.0.1 origin']);
+  await t.gateway.close();
+  expect(t.logs).toEqual(['refused 127.0.0.1 origin', 'refused 127.0.0.1 origin x1 more in the last minute']);
+  for (const line of t.logs) expect(line).not.toContain('evil');
+});
+
+it('closes with 4004 on the packet that goes over maxPacketsPerSecond', async () => {
+  // Room to hold all six, so that it is the rate, not the packets held before the protocol ID, that ends it.
+  const t = await setup({ limits: { maxPacketsPerSecond: 5, maxHeldPackets: 10 } });
+  const browser = await t.browser();
+  for (let n = 1; n <= 6; n++) browser.ws.send(new Uint8Array([0xfc, n, 0, 0]));
+  await expect(browser.closed).resolves.toBe(4004);
+  await expect.poll(() => closeLines(t.logs)[0]).toMatch(/^close 127\.0\.0\.1 172\.31\.238\.55:28000 code=4004 up=\d+ down=0$/);
+  expect(t.fake.received.length).toBeLessThanOrEqual(5); // the sixth never went through
+});
+
+it.each([
+  ['relays a packet of 16384 bytes', 16384, undefined],
+  ['closes with 4004, from the relay, on a packet one byte over', 16385, 4004],
+  ['closes with 1009, from the WebSocket library, on a longer packet', 16386, 1009],
+])('%s', async (_name, size, code) => {
+  const t = await setup();
+  const browser = await t.browser();
+  browser.ws.send(new Uint8Array(size));
+  if (code === undefined) {
+    await t.fake.waitForBodies(1);
+    expect(t.fake.received[0]!.byteLength).toBe(size);
+    return;
+  }
+  await expect(browser.closed).resolves.toBe(code);
+  await expect.poll(() => closeLines(t.logs)).toEqual([`close 127.0.0.1 ${LOGIN} code=${code} up=0 down=0`]);
+  expect(t.fake.received).toEqual([]);
+});
+
+it('terminates a browser that does not answer pings, and with it the TCP connection (a phone that fell asleep)', async () => {
+  const t = await setup({ limits: { pingIntervalMs: 50, pongTimeoutMs: 150 } });
+  const browser = await t.browser(LOGIN, { autoPong: false });
+  await expect(browser.closed).resolves.toBe(1006);
+  // The server end of the TCP connection went too, so the certifier or login server does not keep the session.
+  await expect.poll(() => t.fake.connectionsClosed).toBe(1);
+  expect(t.fake.connections).toBe(1);
+  await expect.poll(() => closeLines(t.logs)).toEqual([`close 127.0.0.1 ${LOGIN} code=1006 up=0 down=0`]);
+});
+
+it('keeps a browser that answers its pings, well past the pong timeout', async () => {
+  const t = await setup({ limits: { pingIntervalMs: 10, pongTimeoutMs: 300 } });
+  const browser = await t.browser();
+  let pings = 0;
+  await new Promise<void>((resolve) => browser.ws.on('ping', () => { if (++pings === 40) resolve(); })); // 400 ms and more
+  expect(browser.ws.readyState).toBe(WebSocket.OPEN);
+  expect(t.fake.connectionsClosed).toBe(0);
+});
+
+it('sends the address in X-Forwarded-For to the certifier when the direct peer is a trusted proxy', async () => {
+  const t = await setup({ trustedProxies: ['127.0.0.1'], sendClientAddr: true });
+  await t.browser(CERTIFIER, { headers: { 'X-Forwarded-For': '10.0.0.7' } });
+  await t.fake.waitForBodies(1);
+  expect(bytesToHex(t.fake.received[0]!)).toBe(bytesToHex(encodeGatewayClientAddr('10.0.0.7')));
+});
+
+it('sends the peer\'s own address, and ignores X-Forwarded-For, when the peer is not a trusted proxy', async () => {
+  const t = await setup({ sendClientAddr: true });
+  await t.browser(CERTIFIER, { headers: { 'X-Forwarded-For': '10.0.0.7' } });
+  await t.fake.waitForBodies(1);
+  expect(bytesToHex(t.fake.received[0]!)).toBe(bytesToHex(encodeGatewayClientAddr('127.0.0.1')));
+});
+
+it('logs one line when a connection opens and one when it closes, and never what the packets hold', async () => {
+  const t = await setup({ fake: { onBody: (body, reply) => reply(body) } });
+  const browser = await t.browser();
+  const body = new Uint8Array([0xfc, 0, 0, 0, ...Buffer.from('SECRETHASH')]); // 14 bytes
+  browser.ws.send(body);
+  await expect.poll(() => browser.messages.length).toBe(1); // it went to the server and came back
+  browser.ws.close(1000);
+  await expect.poll(() => t.logs.length).toBe(2);
+
+  expect(t.logs).toEqual([`open 127.0.0.1 ${LOGIN}`, `close 127.0.0.1 ${LOGIN} code=1000 up=14 down=14`]);
+  const hex = bytesToHex(Buffer.from('SECRETHASH'));
+  for (const line of t.logs) {
+    expect(line).not.toContain('SECRETHASH');
+    expect(line.toLowerCase()).not.toContain(hex);
+    expect(line).not.toContain(Buffer.from('SECRETHASH').toString('base64'));
+  }
+});
+
+it('stops accepting, ends the open connections and their TCP sides on close, and can be closed twice', async () => {
+  const t = await setup();
+  const browser = await t.browser();
+  browser.ws.send(keepAlive);
+  await t.fake.waitForBodies(1);
+
+  await Promise.all([t.gateway.close(), t.gateway.close()]);
+  await expect(browser.closed).resolves.toBe(1006);
+  await expect.poll(() => t.fake.connectionsClosed).toBe(1);
+  await expect(refusedWith(t.url(`/connect/${LOGIN}`), { origin: ORIGIN })).rejects.toThrow(/ECONNREFUSED/);
+  expect(closeLines(t.logs)).toHaveLength(1);
+});
+
+it('logs, and keeps serving, an error of the HTTP server after it is listening (an accept error such as EMFILE)', async () => {
+  const servers: http.Server[] = [];
+  const realCreateServer = http.createServer.bind(http) as (...args: unknown[]) => http.Server;
+  vi.spyOn(http, 'createServer').mockImplementation(((...args: unknown[]) => {
+    const server = realCreateServer(...args);
+    servers.push(server);
+    return server;
+  }) as typeof http.createServer);
+  const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const t = await setup();
+  expect(servers).toHaveLength(1);
+
+  // With no 'error' listener left, emitting one throws, which is what would take the process down.
+  expect(() => servers[0]!.emit('error', Object.assign(new Error('accept EMFILE'), { code: 'EMFILE' }))).not.toThrow();
+  expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('accept EMFILE'));
+
+  const browser = await t.browser();
+  browser.ws.send(keepAlive);
+  await t.fake.waitForBodies(1);
+  expect(browser.ws.readyState).toBe(WebSocket.OPEN);
+});
+
+it('closes with 1011, logs nothing and gives both slots back when the relay cannot start', async () => {
+  const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const t = await setup({ limits: { maxConnections: 1, maxConnectionsPerAddress: 1 } });
+  const realConnect = net.connect as (...args: unknown[]) => net.Socket;
+  // The browser side connects with net.connect too; only the relay's call, to the fake server's port, fails.
+  const connect = vi.spyOn(net, 'connect').mockImplementation(((...args: unknown[]) => {
+    if ((args[0] as { port?: number } | undefined)?.port === t.fake.port) throw new Error('boom');
+    return realConnect(...args);
+  }) as typeof net.connect);
+
+  const failed = await t.browser();
+  await expect(failed.closed).resolves.toBe(1011);
+  expect(t.logs).toEqual([]); // no open line without a close line
+  expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('boom'));
+
+  connect.mockRestore();
+  const next = await t.browser(); // the one slot is free again
+  next.ws.send(keepAlive);
+  await t.fake.waitForBodies(1);
+  expect(t.logs).toEqual([`open 127.0.0.1 ${LOGIN}`]);
+});

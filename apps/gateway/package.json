@@ -1,0 +1,14 @@
+{
+  "name": "@flyffweb/gateway",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@flyffweb/protocol": "*",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@flyffweb/testkit": "*",
+    "@types/ws": "^8.18.1"
+  }
+}

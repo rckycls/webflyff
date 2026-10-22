@@ -1,0 +1,263 @@
+--- a/Source/CERTIFIER/AccountMgr.h
++++ b/Source/CERTIFIER/AccountMgr.h
+@@ -9,6 +9,9 @@
+ #pragma once
+ #endif // _MSC_VER > 1000
+ 
++#include <map>
++#include <string>
++
+ 
+ enum ACCOUNT_CHECK {
+ 	CHECK_OK,				// 틀린 적이 없거나, 처음 
+@@ -16,25 +19,33 @@
+ 	CHECK_3TIMES_ERROR,		// 3회 틀림 
+ };
+ 
+-struct ACCOUNT_CACHE 
++struct ACCOUNT_CACHE
+ {
+-	DWORD	m_dwIP;
+ 	int		m_nError;
+-	time_t	m_tmError;
++	time_t	m_tmError;		// when the last wrong password came
+ };
+ 
++typedef	pair< DWORD, string >	ACCOUNT_KEY;	// player address, lower-cased account name
++
++const int	MAX_ACCOUNT_CACHE	= 20000;			// pairs kept per DB worker thread
++const long	ACCOUNT_CACHE_KEEP	= 24 * 60 * 60;	// seconds a count is kept after the last wrong password
++
+ 
+ class CAccountMgr
+ {
+ public:
+-	list< ACCOUNT_CACHE* >	m_cache;		// LRU로 유지되는 캐쉬 정보 
+-
+-public:
+ 	CAccountMgr();
+ 	~CAccountMgr();
+ 
+-	ACCOUNT_CHECK	Check( DWORD dwIP );
+-	void			SetError( int nError );
++	ACCOUNT_CHECK	Check( DWORD dwIP, const char* lpszAccount );
++	void			SetError( int nError );		// for the pair of the last Check
++	size_t			Size( void ) const	{	return m_cache.size();	}
++	static	BOOL		IsAccountName( const char* lpszAccount );	// a name the count can key on (AccountMgr.cpp)
++
++private:
++	map< ACCOUNT_KEY, ACCOUNT_CACHE >	m_cache;	// the pairs with at least one wrong password
++	ACCOUNT_KEY		m_lastKey;
++	void			MakeRoom( time_t tmCur );
+ };
+ 
+ #endif // !defined(AFX_ACCOUNTMGR_H__57A5D903_C611_4722_99DD_AAA9FB5A8D57__INCLUDED_)
+--- a/Source/CERTIFIER/AccountMgr.cpp
++++ b/Source/CERTIFIER/AccountMgr.cpp
+@@ -24,76 +24,99 @@
+ 
+ CAccountMgr::~CAccountMgr()
+ {
+-	list< ACCOUNT_CACHE* >::iterator it;
+-	for( it = m_cache.begin(); it != m_cache.end(); ++it )
+-		safe_delete( *it );
+ }
+ 
+ //////////////////////////////////////////////////////////////////////
+ 
+-ACCOUNT_CHECK CAccountMgr::Check( DWORD dwIP )
++// A name the wrong-password count can key on: 1 to 32 characters, each printable ASCII other than a space. The
++// database compares names with trailing spaces ignored, cuts a value longer than its VARCHAR(32), and its collation
++// may take other characters as equal: each such variant would reach the same account with a count of its own.
++BOOL CAccountMgr::IsAccountName( const char* lpszAccount )
++{
++	int nLen	= lstrlen( lpszAccount );
++	if( nLen < 1 || nLen > 32 )
++		return FALSE;
++	for( int i = 0; i < nLen; i++ )
++	{
++		if( (unsigned char)lpszAccount[i] < 0x21 || (unsigned char)lpszAccount[i] > 0x7e )
++			return FALSE;
++	}
++	return TRUE;
++}
++
++// The wrong-password count of one player address and account; OnCertify has lower-cased the account name. One
++// account always goes to the same DB worker thread, so this thread's CAccountMgr holds every count of its accounts.
++ACCOUNT_CHECK CAccountMgr::Check( DWORD dwIP, const char* lpszAccount )
+ {
+ 	time_t	tmCur = time( NULL );
+ 
+-	// 캐쉬에서 찾는다.
+-	list< ACCOUNT_CACHE* >::iterator it;
+-	for( it = m_cache.begin(); it != m_cache.end(); ++it )
++	m_lastKey	= ACCOUNT_KEY( dwIP, lpszAccount );
++	map< ACCOUNT_KEY, ACCOUNT_CACHE >::iterator it	= m_cache.find( m_lastKey );
++	if( it == m_cache.end() )
++		return CHECK_OK;
++
++	ACCOUNT_CACHE & info	= it->second;
++	long nSec	= (long)( tmCur - info.m_tmError );
++	if( nSec > ACCOUNT_CACHE_KEEP )
+ 	{
+-		ACCOUNT_CACHE* pInfo = *it;
+-		if( pInfo->m_dwIP == dwIP )
+-		{
+-			ACCOUNT_CHECK result = CHECK_OK;
+-
+-			if( pInfo->m_nError >= 3 )
+-			{
+-				long nSec = tmCur - pInfo->m_tmError;
+-				if( nSec <= (15 * 60) )
+-					result = CHECK_3TIMES_ERROR;
+-			}
+-			else if( pInfo->m_nError >= 1 && ::GetLanguage() != LANG_KOR )
+-			{
+-				long nSec = tmCur - pInfo->m_tmError;
+-				if( nSec <= 15 )
+-					result = CHECK_1TIMES_ERROR;
+-			}
+-
+-			m_cache.erase( it );
+-			m_cache.push_front( pInfo );		// 사용된 것은 앞으로 
+-			return result;
+-		}
++		m_cache.erase( it );
++		return CHECK_OK;
+ 	}
+-	
+-	// MAX보다 크면 - LRU를 재사용 
+-	//     or       - new로 넣는다. 
+-	ACCOUNT_CACHE* pInfo = NULL; 
+-	if( m_cache.size() < 3 )
+-		pInfo = new ACCOUNT_CACHE;
+-	else
+-	{
+-		pInfo = m_cache.back();					// 가장 덜 사용된 것은 맨 뒤에 남아 있다.
+-		m_cache.pop_back();
+-	}
+-
+-	pInfo->m_nError  = 0;
+-	pInfo->m_dwIP    = dwIP;
+-	pInfo->m_tmError = tmCur;
+-
+-	m_cache.push_front( pInfo );
+ 
++	if( info.m_nError >= 3 )
++	{
++		if( nSec <= (15 * 60) )
++			return CHECK_3TIMES_ERROR;
++	}
++	else if( info.m_nError >= 1 && ::GetLanguage() != LANG_KOR )
++	{
++		if( nSec <= 15 )
++			return CHECK_1TIMES_ERROR;
++	}
+ 	return CHECK_OK;
+ }
+ 
+-
++// For the pair of the last Check: a wrong password (nError > 0) adds 1 to its count, a good login (0) forgets it.
+ void CAccountMgr::SetError( int nError )
+ {
+-	ACCOUNT_CACHE* pInfo = m_cache.front();		// MRU
+-	
+-	if( nError > 0 )
+-		++pInfo->m_nError; 
+-	else
+-		pInfo->m_nError = 0; 
++	if( nError <= 0 )
++	{
++		m_cache.erase( m_lastKey );
++		return;
++	}
+ 
+-	pInfo->m_tmError = time( NULL );
++	time_t	tmCur = time( NULL );
++	map< ACCOUNT_KEY, ACCOUNT_CACHE >::iterator it	= m_cache.find( m_lastKey );
++	if( it == m_cache.end() )
++	{
++		if( (int)m_cache.size() >= MAX_ACCOUNT_CACHE )
++			MakeRoom( tmCur );
++		ACCOUNT_CACHE info	= { 0, tmCur };
++		it	= m_cache.insert( make_pair( m_lastKey, info ) ).first;
++	}
++	++it->second.m_nError;
++	it->second.m_tmError	= tmCur;
++}
++
++// Room for one more pair: every pair older than ACCOUNT_CACHE_KEEP goes, or, when there is none, the oldest one.
++void CAccountMgr::MakeRoom( time_t tmCur )
++{
++	BOOL bRemoved	= FALSE;
++	map< ACCOUNT_KEY, ACCOUNT_CACHE >::iterator oldest	= m_cache.end();
++	for( map< ACCOUNT_KEY, ACCOUNT_CACHE >::iterator it = m_cache.begin(); it != m_cache.end(); )
++	{
++		if( tmCur - it->second.m_tmError > ACCOUNT_CACHE_KEEP )
++		{
++			it	= m_cache.erase( it );
++			bRemoved	= TRUE;
++			continue;
++		}
++		if( oldest == m_cache.end() || it->second.m_tmError < oldest->second.m_tmError )
++			oldest	= it;
++		++it;
++	}
++	if( !bRemoved && oldest != m_cache.end() )
++		m_cache.erase( oldest );
+ }
+ 
+ /*
+--- a/Source/CERTIFIER/DBManager.cpp
++++ b/Source/CERTIFIER/DBManager.cpp
+@@ -216,7 +216,7 @@
+ 	ACCOUNT_CHECK result = CHECK_OK;
+ 	if( pData->dwIP )
+ 	{
+-		result = accountMgr.Check( pData->dwIP );
++		result = accountMgr.Check( pData->dwIP, pData->AccountInfo.szAccount );
+ 		switch( result )
+ 		{
+ 		case CHECK_1TIMES_ERROR:
+@@ -473,7 +473,7 @@
+ 	ACCOUNT_CHECK result	= CHECK_OK;
+ 	if( pov->dwIP )
+ 	{
+-		result	= mgr.Check( pov->dwIP );
++		result	= mgr.Check( pov->dwIP, pov->AccountInfo.szAccount );
+ 		switch( result )
+ 		{
+ 			case CHECK_1TIMES_ERROR:
+@@ -775,7 +775,7 @@
+ 	ACCOUNT_CHECK result	= CHECK_OK;
+ 	if( pov->dwIP )
+ 	{
+-		result	= mgr.Check( pov->dwIP );
++		result	= mgr.Check( pov->dwIP, pov->AccountInfo.szAccount );
+ 		switch( result )
+ 		{
+ 			case CHECK_1TIMES_ERROR:
+--- a/Source/CERTIFIER/DPCertifier.cpp
++++ b/Source/CERTIFIER/DPCertifier.cpp
+@@ -2,6 +2,7 @@
+ #include "dpaccountclient.h"
+ #include "dpcertifier.h"
+ #include "dbmanager.h"
++#include "AccountMgr.h"
+ #include "..\Resource\Lang.h"
+ 
+ #ifdef __TRACE1027
+@@ -378,6 +379,13 @@
+ 	{
+ 		DestroyPlayer( dpid );
+ 		return;
++	}
++	// A name the database would match to another account (trailing spaces, over 32 characters, other
++	// characters its collation may take as equal) would get a wrong-password count of its own.
++	if( !CAccountMgr::IsAccountName( pszAccount ) )
++	{
++		DestroyPlayer( dpid );
++		return;
+ 	}
+ 
+ #ifdef __EUROPE_0514

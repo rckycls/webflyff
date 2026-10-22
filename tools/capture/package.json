@@ -1,0 +1,12 @@
+{
+  "name": "@flyffweb/capture",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@flyffweb/protocol": "*"
+  },
+  "devDependencies": {
+    "@flyffweb/testkit": "*"
+  }
+}

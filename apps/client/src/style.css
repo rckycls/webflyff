@@ -1,0 +1,381 @@
+/* The lobby: one column, made for a phone and left as it is on a desktop. */
+
+:root {
+  color-scheme: light dark;
+  --bg: #f3f5f8;
+  --surface: #ffffff;
+  --text: #1a1d21;
+  --muted: #56616d;
+  --border: #b9c2cc;
+  --accent: #2f6db0;
+  --on-accent: #ffffff;
+  --danger: #b3261e;
+  --on-danger: #ffffff;
+  --alert-bg: #fdecea;
+  --alert-text: #7f1912;
+  --status-bg: #e6eef8;
+  --ring: #0b5cd5;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #101418;
+    --surface: #1a2027;
+    --text: #e6e9ed;
+    --muted: #9aa5b1;
+    --border: #3a4552;
+    --accent: #3b6ea8;
+    --on-accent: #ffffff;
+    --danger: #c5392f;
+    --on-danger: #ffffff;
+    --alert-bg: #3a1c1a;
+    --alert-text: #ffb4ab;
+    --status-bg: #1d2a38;
+    --ring: #8ab4e8;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  /* a phone turning sideways must not enlarge the text */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.45 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+#app {
+  max-width: 30rem;
+  min-height: 100vh;
+  min-height: 100dvh;
+  margin: 0 auto;
+  /* 16 px at the sides, more where a notch or a rounded corner is */
+  padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom))
+    max(16px, env(safe-area-inset-left));
+}
+
+h1 {
+  margin: 8px 0 16px;
+  font-size: 1.75rem;
+  line-height: 1.2;
+}
+
+h2 {
+  margin: 0 0 16px;
+  font-size: 1.25rem;
+  line-height: 1.3;
+}
+
+h3 {
+  margin: 0 0 8px;
+  font-size: 1.05rem;
+}
+
+/* Moved to by script when a screen changes; not something to click, so no ring. */
+h2:focus {
+  outline: none;
+}
+
+p {
+  margin: 0 0 16px;
+}
+
+/* Forms ----------------------------------------------------------------------------------------------------------- */
+
+.field {
+  display: block;
+  margin: 0 0 16px;
+}
+
+.label {
+  display: block;
+  margin: 0 0 6px;
+  font-weight: 600;
+}
+
+fieldset.plain {
+  min-width: 0;
+  /* the browser gives a fieldset 2 px at the sides, which would put it out of line with the rest */
+  margin-inline: 0;
+  padding: 0;
+  border: 0;
+}
+
+fieldset.plain > legend {
+  padding: 0;
+}
+
+input[type='text'],
+input[type='password'] {
+  display: block;
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  /* 16 px: below that, iOS zooms the page in when an input is focused */
+  font: inherit;
+  font-size: 16px;
+}
+
+input:focus-visible,
+button:focus-visible {
+  outline: 3px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.hint {
+  color: var(--muted);
+}
+
+/* Buttons --------------------------------------------------------------------------------------------------------- */
+
+.btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.btn.primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.btn.danger {
+  border-color: var(--danger);
+  background: var(--danger);
+  color: var(--on-danger);
+}
+
+.btn.danger-outline {
+  width: auto;
+  min-width: 88px;
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+@media (prefers-color-scheme: dark) {
+  .btn.danger-outline {
+    color: #ff9b92;
+  }
+}
+
+.btn:disabled,
+fieldset:disabled .btn {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.actions {
+  display: grid;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+/* Messages -------------------------------------------------------------------------------------------------------- */
+
+.alert {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border-left: 4px solid var(--danger);
+  border-radius: 6px;
+  background: var(--alert-bg);
+  color: var(--alert-text);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.status {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border-radius: 6px;
+  background: var(--status-bg);
+}
+
+.notice:empty {
+  display: none;
+}
+
+/*
+ * Empty, the status line is out of sight but not out of the accessibility tree: `display: none` would remove the live
+ * region, and a text put into a region that was not there before is often not announced.
+ */
+.status:empty {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Servers and channels -------------------------------------------------------------------------------------------- */
+
+.list {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.server {
+  margin: 0 0 24px;
+}
+
+.server > h3 {
+  overflow-wrap: anywhere;
+}
+
+.channel {
+  justify-content: space-between;
+  gap: 12px;
+  text-align: left;
+}
+
+.channel-name {
+  overflow-wrap: anywhere;
+}
+
+.channel-state {
+  flex: none;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+/* A channel that cannot be picked: dashed and quiet, but still readable (the word says why). */
+.channel[aria-disabled='true'] {
+  border-style: dashed;
+  background: transparent;
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.channel[aria-disabled='true'] .channel-state {
+  font-weight: 600;
+}
+
+/* Characters ------------------------------------------------------------------------------------------------------ */
+
+.slot {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.slot-number {
+  display: block;
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.slot-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.slot-info {
+  display: grid;
+  min-width: 0;
+}
+
+.slot-name {
+  overflow-wrap: anywhere;
+}
+
+/* An empty slot is one wide button. */
+.slot-create {
+  border-style: dashed;
+}
+
+/* Create ---------------------------------------------------------------------------------------------------------- */
+
+.segmented {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.segmented label {
+  position: relative;
+  display: block;
+}
+
+/* The radio is there for the keyboard and screen readers; the label beside it is what is drawn and tapped. */
+.segmented input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.segmented span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  font-weight: 600;
+}
+
+.segmented input:checked + span {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.segmented input:focus-visible + span {
+  outline: 3px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.stepper {
+  display: grid;
+  grid-template-columns: 56px 1fr 56px;
+  gap: 8px;
+  align-items: center;
+}
+
+.stepper-button {
+  padding: 0;
+  font-size: 1.5rem;
+}
+
+.stepper-value {
+  text-align: center;
+  font-weight: 600;
+}
