@@ -10,7 +10,7 @@
  
  enum ACCOUNT_CHECK {
  	CHECK_OK,				// 틀린 적이 없거나, 처음 
-@@ -16,25 +19,32 @@
+@@ -16,25 +19,33 @@
  	CHECK_3TIMES_ERROR,		// 3회 틀림 
  };
  
@@ -43,6 +43,7 @@
 +	ACCOUNT_CHECK	Check( DWORD dwIP, const char* lpszAccount );
 +	void			SetError( int nError );		// for the pair of the last Check
 +	size_t			Size( void ) const	{	return m_cache.size();	}
++	static	BOOL		IsAccountName( const char* lpszAccount );	// a name the count can key on (AccountMgr.cpp)
 +
 +private:
 +	map< ACCOUNT_KEY, ACCOUNT_CACHE >	m_cache;	// the pairs with at least one wrong password
@@ -53,7 +54,7 @@
  #endif // !defined(AFX_ACCOUNTMGR_H__57A5D903_C611_4722_99DD_AAA9FB5A8D57__INCLUDED_)
 --- a/Source/CERTIFIER/AccountMgr.cpp
 +++ b/Source/CERTIFIER/AccountMgr.cpp
-@@ -24,76 +24,83 @@
+@@ -24,76 +24,99 @@
  
  CAccountMgr::~CAccountMgr()
  {
@@ -65,6 +66,22 @@
  //////////////////////////////////////////////////////////////////////
  
 -ACCOUNT_CHECK CAccountMgr::Check( DWORD dwIP )
++// A name the wrong-password count can key on: 1 to 32 characters, each printable ASCII other than a space. The
++// database compares names with trailing spaces ignored, cuts a value longer than its VARCHAR(32), and its collation
++// may take other characters as equal: each such variant would reach the same account with a count of its own.
++BOOL CAccountMgr::IsAccountName( const char* lpszAccount )
++{
++	int nLen	= lstrlen( lpszAccount );
++	if( nLen < 1 || nLen > 32 )
++		return FALSE;
++	for( int i = 0; i < nLen; i++ )
++	{
++		if( (unsigned char)lpszAccount[i] < 0x21 || (unsigned char)lpszAccount[i] > 0x7e )
++			return FALSE;
++	}
++	return TRUE;
++}
++
 +// The wrong-password count of one player address and account; OnCertify has lower-cased the account name. One
 +// account always goes to the same DB worker thread, so this thread's CAccountMgr holds every count of its accounts.
 +ACCOUNT_CHECK CAccountMgr::Check( DWORD dwIP, const char* lpszAccount )
@@ -220,3 +237,27 @@
  		switch( result )
  		{
  			case CHECK_1TIMES_ERROR:
+--- a/Source/CERTIFIER/DPCertifier.cpp
++++ b/Source/CERTIFIER/DPCertifier.cpp
+@@ -2,6 +2,7 @@
+ #include "dpaccountclient.h"
+ #include "dpcertifier.h"
+ #include "dbmanager.h"
++#include "AccountMgr.h"
+ #include "..\Resource\Lang.h"
+ 
+ #ifdef __TRACE1027
+@@ -378,6 +379,13 @@
+ 	{
+ 		DestroyPlayer( dpid );
+ 		return;
++	}
++	// A name the database would match to another account (trailing spaces, over 32 characters, other
++	// characters its collation may take as equal) would get a wrong-password count of its own.
++	if( !CAccountMgr::IsAccountName( pszAccount ) )
++	{
++		DestroyPlayer( dpid );
++		return;
+ 	}
+ 
+ #ifdef __EUROPE_0514

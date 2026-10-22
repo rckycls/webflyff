@@ -196,6 +196,23 @@ static void TestFullMapDropsExpiredPairsFirst()
 	CHECK( mgr.Check( A, "late" ) == CHECK_3TIMES_ERROR, "but its count was kept" );
 }
 
+// The database compares account names with trailing spaces ignored and cuts a value longer than VARCHAR(32), and its
+// collation may treat non-ASCII or control characters as equal to others: each such variant of a name would get a
+// count of its own. OnCertify refuses every name IsAccountName refuses.
+static void TestAccountNameRule()
+{
+	CHECK( CAccountMgr::IsAccountName( "acc1" ) == TRUE, "a plain name" );
+	CHECK( CAccountMgr::IsAccountName( "Ab-c_9.x" ) == TRUE, "letters, digits and punctuation" );
+	char sz[40];
+	memset( sz, 'w', 32 );	sz[32]	= '\0';
+	CHECK( CAccountMgr::IsAccountName( sz ) == TRUE, "32 characters, the database's length" );
+	memset( sz, 'w', 33 );	sz[33]	= '\0';
+	CHECK( CAccountMgr::IsAccountName( sz ) == FALSE, "33 characters: the database would cut it to another name" );
+	const char* bad[]	= { "", "acc1 ", " acc1", "my acc", "acc1\t", "acc\x01" "1", "acc1\x7f", "\xa3\xe1" "cc1", "acc\xe9" };
+	for( int i = 0; i < (int)( sizeof(bad) / sizeof(bad[0]) ); i++ )
+		CHECK( CAccountMgr::IsAccountName( bad[i] ) == FALSE, "a space, a control or a non-ASCII character, or nothing" );
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 int main()
@@ -211,6 +228,7 @@ int main()
 	TestKoreanHasNoShortBlock();
 	TestFullMapDropsTheOldestFirst();
 	TestFullMapDropsExpiredPairsFirst();
+	TestAccountNameRule();
 
 	if( s_nFailed > 0 )
 	{

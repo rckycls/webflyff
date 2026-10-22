@@ -69,31 +69,43 @@ The certifier remembers wrong passwords in 8 login threads (the account name dec
   - a good login clears the count.
 - **The count isn't pushed out by other logins any more.** It's kept until a good login, or for 24 hours after the last wrong password.
 - **A memory cap:** at most 20,000 counts per login thread, 160,000 in all. When it's full, counts older than 24 hours go first, then the oldest one.
-- **What you chose:** someone else's typos never block a player, even on a shared address. The other side of that: one address can try 3 passwords on **every** account. The gateway's limits slow that down, but don't stop it.
+- **Account names the count can't tell apart are refused.** The database treats `acc1`, `acc1 ` (with a space at the end) and a name cut off after 32 characters as the same account, so each spelling would get a count of its own and allow 3 more tries. The certifier now closes the connection, as it already does for a name with an apostrophe, when the account name:
+  - is longer than 32 characters;
+  - has a space anywhere in it;
+  - has a control character or anything outside plain ASCII (letters, digits and punctuation).
 
-Files changed: `AccountMgr.h`, `AccountMgr.cpp` and `DBManager.cpp` in `Source\CERTIFIER\`.
+  No real account is affected. The portal registers 4 to 32 letters, digits, dashes and underscores, and the browser client trims the name and says "Login details incorrect." for such names without sending them.
+- **What you chose:** someone else's typos never block a player, even on a shared address. The other side of that: one address can try 3 passwords on **every** account. The gateway's limits hardly slow that down, because one connection can send many tries a second; the database is the real limit.
+
+Files changed: `AccountMgr.h`, `AccountMgr.cpp`, `DBManager.cpp` and `DPCertifier.cpp` in `Source\CERTIFIER\`.
 
 ## Apply them (only for a fresh copy of Source)
 
 **On this PC they're already in `Source\`.** Skip to "Build".
 
-Open Git Bash in the server folder (`Blouflash VS22 V15`, the folder that holds `Source`, `Program` and `FlyffWeb`). Do these steps for each patch, in the order of the table at the top.
+Open Git Bash in the server folder (`Blouflash VS22 V15`, the folder that holds `Source`, `Program` and `FlyffWeb`).
 
-1. Check whether it's already applied (here for patch 1; use each patch's own name):
+1. **Find out which are already in.** Run these checks in this order. A check that prints nothing means that patch is in; one that prints errors means it isn't.
 
    ```
-   git apply -R --check -p1 FlyffWeb/server-patches/certifier-client-addr.patch
+   git apply -R --check -p1 FlyffWeb/server-patches/certifier-lockout.patch
+   git apply -R --check -p1 FlyffWeb/server-patches/flood-limiter-gateway.patch
    ```
 
-   If this prints nothing, it's already applied: go on to the next patch. If it prints errors, go on to step 2.
+   - If the second check prints nothing, patches 2 **and** 1 are in: patch 2 builds on patch 1, and once patch 2 is in, patch 1's own check prints errors even though patch 1 is there. Don't run it.
+   - Only if the second check printed errors, check patch 1:
 
-2. Apply it:
+     ```
+     git apply -R --check -p1 FlyffWeb/server-patches/certifier-client-addr.patch
+     ```
+
+2. **Apply the ones that aren't in,** in the order of the table at the top (1, then 2, then 3). For example, for patch 1:
 
    ```
    git apply -p1 FlyffWeb/server-patches/certifier-client-addr.patch
    ```
 
-   If this prints nothing, it worked. One warning about "trailing whitespace" is normal for patch 1. If it says "patch does not apply", the files in `Source\` differ from the ones the patch was made against, and nothing was changed.
+   If this prints nothing, or only warnings about "trailing whitespace" (normal), it worked. If it says "patch does not apply", the files in `Source\` differ from the ones the patch was made against, and nothing was changed.
 
 To remove them from `Source\` again, run the same command with `-R`, in the reverse order (patch 3 first).
 
@@ -154,7 +166,7 @@ Each should end with `Build succeeded.` The new exes are `Output\Certifier\Relea
    - Use the same address or addresses as the `Gateway` lines in `Certifier.ini`, and the same rule: only addresses of this PC.
 5. Start the login server.
 6. Confirm Neuz can still log in: log in with Neuz, pick a server and reach the character list.
-7. Look in the error log, a file named like `error_20261022.txt` in the `Program` folder (the servers that run from that folder share it). There must be no `Gateway … not added` line. If there is, the address in that line was mistyped: fix it in `LoginServer.ini` and restart the login server.
+7. Look in the error log, a file named like `error_20261022.txt` in the `Program` folder (the servers that run from that folder share it). There must be no `Gateway … not added` line. If there is, the address in that line was mistyped, or there are more than 8 `Gateway` lines. Both the certifier and the login server write this line, so look at the address it names in both `Certifier.ini` and `LoginServer.ini`, fix it, and restart that server.
 
 ## Undo
 

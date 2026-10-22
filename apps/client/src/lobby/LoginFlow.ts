@@ -42,15 +42,16 @@ const PING_INTERVAL_MS = 10000;
 const CHANGE_CHANNEL_PAUSE_MS = 1000;
 /** The WebSocket close code of a connection that never opened. */
 const GATEWAY_UNREACHABLE = 1006;
-/** `MAX_ACCOUNT` (42) is the C++ buffer, which holds the terminator too. */
-const MAX_ACCOUNT_LENGTH = 41;
+/** The database's `VARCHAR(32)`; the rebuilt certifier drops a longer name (`CAccountMgr::IsAccountName`). */
+const MAX_ACCOUNT_LENGTH = 32;
 
 /**
  * CERTIFY for the account, and the password hash it carries; `undefined` for an account the certifier would drop
- * without an answer (empty, or with an apostrophe: `CDPCertifier::OnCertify`) or that the wire cannot carry.
+ * without an answer (`CDPCertifier::OnCertify`: empty, with an apostrophe, and with the rebuilt certifier also over 32
+ * characters or with a space inside) or that the wire cannot carry.
  */
 function prepareCertify(account: string, password: string): { hash: string; certify: Uint8Array } | undefined {
-  if (account === '' || account.length > MAX_ACCOUNT_LENGTH || account.includes("'")) return undefined;
+  if (account === '' || account.length > MAX_ACCOUNT_LENGTH || account.includes("'") || account.includes(' ')) return undefined;
   try {
     const hash = hashPassword(password);
     return { hash, certify: encodeCertify(account, hash) };

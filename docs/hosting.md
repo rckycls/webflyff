@@ -153,7 +153,7 @@ Follow **[server-patches/README.md](../server-patches/README.md)**. Build the ne
 
 Success:
 
-- After a wrong password on one phone, a second phone can still log in to its own account at once. (With the old certifier it could not, for 15 seconds: without the patch every browser player has the gateway's address.)
+- Type a wrong password for a test account on a phone on Wi-Fi. Then, at once, log in to **the same account** on a second phone on mobile data (Wi-Fi off). It must reach the server list. (If the certifier still saw every browser player at the gateway's address, the second phone would get "Cannot log into account for 15 seconds".)
 - The error log in `Program` (a file named like `error_20261022.txt`) has no `GATEWAY_CLIENT_ADDR refused` line and no `Gateway … not added` line.
 
 ## Step 5. The gateway: config and first run
@@ -425,9 +425,10 @@ All browser players reach the servers from the gateway's address. Once the new c
 
 **What is still not covered:**
 
+- **A few addresses can fill the gateway.** The total cap is 1000 open connections, and one address may hold 32, so about 32 addresses (32 × 32 = 1024) that each open 32 connections and keep them open fill it. After that every new player gets "The game is full right now". Such connections cost the attacker little: the servers keep a connection that sends a keep-alive now and then. This is the price of the generous per-address limit. If it happens, the gateway log shows many `open` lines from a few addresses and then `refused … full` lines. You can lower `maxConnectionsPerAddress` (8 or 16 still covers a family or a small café), raise `maxConnections` if the machine has room, or both (see [Limits players can meet](#limits-players-can-meet)).
 - **A flood from thousands of addresses at once** (a DDoS). The gateway's limits work per address, and its total cap only stops new connections once 1000 are open, which keeps real players out too. Stopping such a flood needs a service in front of the machine, such as Cloudflare.
-- **Players behind one shared address share its limits.** An internet café, or a mobile carrier that puts many players behind one address, gives them 32 open and 60 new connections a minute between them. If that becomes a problem, raise `limits.maxConnectionsPerAddress` and `limits.maxNewConnectionsPerAddressPerMinute` in `gateway.config.json`.
-- **Password guessing across accounts.** You chose to count wrong passwords per address and account, so nobody is blocked by someone else's typos. The other side: one address can try 3 passwords on every account, and the gateway's limits only slow that down.
+- **Players behind one shared address share its limits.** An internet café, or a mobile carrier that puts many players behind one address, gives them 32 open and 60 new connections a minute between them. If that becomes a problem, raise `maxConnectionsPerAddress` and `maxNewConnectionsPerAddressPerMinute` (see [Limits players can meet](#limits-players-can-meet)).
+- **Password guessing across accounts.** You chose to count wrong passwords per address and account, so nobody is blocked by someone else's typos. The other side: one address can try 3 passwords on every account. The gateway's limits hardly slow that down, because one connection can send many tries a second; the database is the real limit.
 
 **Until step 4 is done,** the old limiter still counts every browser player as one. A busy server cuts them all off at the same moment, and nobody can log in for about 10 minutes; in the gateway log, many connections close at once, usually with code `4002` ("server closed") or `4001` ("server unreachable"). With a few test devices this is fine, because quick, separate logins do not reach 50. But repeated quick logins and live-test runs add up, because the count never goes down: if all logins suddenly fail for about 10 minutes, wait it out, or restart the certifier and the login server to clear it. Do not run `npm run test:live` in a loop.
 
@@ -441,7 +442,19 @@ All browser players reach the servers from the gateway's address. Once the new c
 
 A login uses 2 connections (the certifier, then the login server) and a channel change 2 more, so one player stays far below these. Players on one shared network (a family on one Wi-Fi, a café, a mobile carrier that shares addresses) share the per-address limits.
 
-**The certifier's password lockout:** one wrong password blocks that account from that address for 15 seconds, and three for 15 minutes. After that, each further wrong password blocks it for 15 minutes again, until a good login, or until 24 hours pass without a wrong password. With the old certifier, all browser players share one address and so one lockout.
+**To change a limit,** add a `limits` part to `gateway.config.json`, at the same level as `routes`, with only the limits you change. For example (the `...` stands for your routes, which stay as they are; note the comma after the `routes` part):
+
+```json
+  "routes": {
+    ...
+  },
+  "limits": { "maxConnectionsPerAddress": 16, "maxConnections": 2000 }
+}
+```
+
+Then run `nssm restart flyff-gateway`. A misspelt limit name stops the gateway with a message that names it. A limit written outside the `limits` part is ignored without a word, so check that it sits inside.
+
+**The certifier's password lockout:** one wrong password blocks that account from that address for 15 seconds, and three for 15 minutes. After that, each further wrong password blocks it for 15 minutes again, until a good login, or until 24 hours pass without a wrong password. With the old certifier, all browser players share one address and so one lockout. The new certifier also refuses account names longer than 32 characters or with a space in them. No real account has one, and the lobby says "Login details incorrect." for them.
 
 ## Bandwidth
 
@@ -459,9 +472,9 @@ When the machine's upload becomes the limit, move `/assets/` to a CDN (a service
 | "The game server is not reachable. Try again later." | The gateway is running but cannot connect to the certifier or the login server: are the servers running? Do `routes` point at the ports they listen on? |
 | "Too many connections from your network." | 32 open connections from one address, see [Limits players can meet](#limits-players-can-meet). Wait a moment, or close other tabs. The gateway log shows `refused <address> per-address`. |
 | "Too many connection attempts from your network. Wait a minute and try again." | 60 new connections from one address in a minute. Wait a minute. If a whole café or carrier shares the address, raise `limits.maxNewConnectionsPerAddressPerMinute`. The gateway log shows `refused <address> rate`. |
-| "The game is full right now. Try again in a few minutes." | The gateway has 1000 open connections (`limits.maxConnections`). The gateway log shows `refused <address> full`. Raise it if the machine has room; if the log shows many unknown addresses, it may be a flood, see [Before a public launch](#before-a-public-launch). |
+| "The game is full right now. Try again in a few minutes." | The gateway has 1000 open connections (`limits.maxConnections`). The gateway log shows `refused <address> full`. If the `open` lines before it come from many different addresses, you have many players: raise the limit if the machine has room. If they come from a few addresses again and again, someone is holding connections to fill the gateway: lower `maxConnectionsPerAddress`, see [Before a public launch](#before-a-public-launch). |
 | "Wrong Password. Cannot log into account for 15 seconds." | The lockout, see above. Wait. |
 | Everyone disconnected at once, nobody can log in for about 10 minutes | The servers' connection-flood limiter: the old certifier or login server is still running, or `Certifier.ini` or `LoginServer.ini` has no `Gateway` line. See step 4 and [Before a public launch](#before-a-public-launch). |
-| The error log in `Program` has `Gateway … not added` | A `Gateway` line in `LoginServer.ini` is not a plain IPv4 address (a typo, say), or there are more than 8 of them. Fix it and restart the login server. |
+| The error log in `Program` has `Gateway … not added` | A `Gateway` line in `Certifier.ini` or `LoginServer.ini` (both servers write this line) is not a plain IPv4 address (a typo, say), or there are more than 8 of them. Find the address the line names in those two files, fix it, and restart that server. |
 | Every line in the gateway log shows `127.0.0.1` | `trustedProxies` does not list `127.0.0.1`, or Caddy is not the one passing the connection. |
 | The certifier's error log has `GATEWAY_CLIENT_ADDR refused from ...` | The patched certifier does not list the address the gateway connects from. Read the "When to add a second line" note in [server-patches/README.md](../server-patches/README.md). Never add an address you do not recognise. |
