@@ -1,6 +1,8 @@
 # Device testing and comparison with the Windows client
 
-For the owner. Three jobs, none of which the automated tests can do for you:
+For the owner. This file has two parts. The first is Piece 1, the viewer. The second, at the end, is [Piece 2: lobby](#piece-2-lobby), the login, channel and character screens.
+
+Piece 1 has three jobs, none of which the automated tests can do for you:
 
 1. [Take reference screenshots](#1-reference-screenshots-from-the-windows-client) in the Windows client and compare them with the viewer on the compare page.
 2. [Run the viewer on your four devices](#2-run-the-viewer-on-your-devices) and fill in the results table.
@@ -124,3 +126,134 @@ Judged on the **weakest** test device, against the project's targets:
 | After a 10-minute loop walk, memory within 10% of its starting level | automated: `npm run test:soak` (numbers in [conversion-baseline.md](conversion-baseline.md)); by hand on the weakest device, from the two numbers under the table |
 
 Any `errors:` line in the overlay that you cannot explain is a fail too: send a photo of the overlay.
+
+# Piece 2: lobby
+
+For the owner. The lobby is the first real page of the browser client: log in, pick a server and channel, see your characters, create one and delete one. This part of the file checks it on your four devices, over your Wi-Fi, with the PC running the game servers, the gateway and the client.
+
+The automated side is `npm test` (including the gateway tests) and `npm run test:e2e:client` (the lobby in Chromium and in WebKit as an iPhone, against pretend servers). What they cannot tell you is whether a real phone, over real Wi-Fi, gets through your real servers. That is this checklist.
+
+To put the lobby on the internet instead, see [hosting.md](hosting.md).
+
+## Run the live test first
+
+Before you take a phone out, run the live test on the PC. It starts its own gateway and drives the real login flow against your real servers with a test account. If the servers, the gateway or the login flow are broken, it says so with the usual cause, without a phone's Wi-Fi getting in the way, and a phone test would only show you the same failure.
+
+1. Start the game servers (the 7 programs in `Program\`).
+2. In `FlyffWeb/`, in PowerShell (in Git Bash use `cp` and forward slashes instead of `Copy-Item`), make your local settings file. Git ignores it, so your test account's password never gets committed:
+
+   ```
+   Copy-Item apps\client\test\live.config.example.json apps\client\test\live.config.json
+   notepad apps\client\test\live.config.json
+   ```
+
+3. Fill in `account`, `password` and `bankPin`: a **throwaway test account** with at least one empty character slot. The test creates a character named `WebTest` and three digits with that Bank PIN, then deletes it. The long `_comment` at the top of the file explains every setting. Leave the others as they are, except:
+   - `certifierPatched`: set to `true` only when the rebuilt `Certifier.exe` is running and `Certifier.ini` has the `Gateway "127.0.0.1"` line (see [server-patches/README.md](../server-patches/README.md)). That switches on the check that one player's wrong password does not block another player.
+   - `bannedTestAddress`: leave `null`, unless you added an address to `Program\IPCut.ini` and restarted the account server.
+4. Run it:
+
+   ```
+   npm run test:live
+   ```
+
+   Success: it ends with a line like `Tests  3 passed | 2 skipped (5)` and no `failed`. Tests for settings you left off show as `skipped`; that is fine. With both settings on, all 5 pass. A failure prints what it expected and what happened, with a hint about the usual cause.
+
+The test uses port 8091 for its own gateway, so it does not matter whether `npm run gateway` is running. Wait at least **15 seconds between runs**, and do not run it in a loop: it sends a wrong password on purpose, and the servers' connection limiter never forgets (see "When something goes wrong" below).
+
+## Start the gateway and the client
+
+On the PC, in `FlyffWeb/`.
+
+1. **Find the PC's Wi-Fi address.** In a Command Prompt run `ipconfig` and read the **IPv4 Address** of the Wi-Fi adapter, as in "Connect" in the Piece 1 part above. The phone will open `http://<that address>:5174`.
+
+2. **Make the gateway's settings file** (git ignores it):
+
+   ```
+   Copy-Item apps\gateway\gateway.config.example.json apps\gateway\gateway.config.json
+   notepad apps\gateway\gateway.config.json
+   ```
+
+   The example already lists `http://localhost:5174` and `http://192.168.100.159:5174` (the PC's Wi-Fi address when the file was written) under `allowedOrigins`. **The address you will type on the phone must be in that list, exactly:** `http://`, the PC's address, `:5174`, and no slash at the end. If the PC's address is now different, change the second entry to it, for example:
+
+   ```
+   "allowedOrigins": ["http://localhost:5174", "http://192.168.1.20:5174"],
+   ```
+
+   The gateway refuses a page that is not listed. Home routers sometimes give the PC a new address after a restart: if the phone stops working one day, check this first.
+
+3. **Start the gateway,** in one PowerShell window:
+
+   ```
+   npm run gateway
+   ```
+
+   Success: it prints `gateway listening on ws://0.0.0.0:8090` and stays running. It prints a line for every connection (`open ...` and `close ...`), with the device's address; you will use that below. A mistake in the settings file makes it print `gateway: cannot use ...` with the reason and stop.
+
+4. **Start the client,** in a second PowerShell window:
+
+   ```
+   npm run dev:client
+   ```
+
+   Success: it prints a `Local:` address (`http://localhost:5174/`) and one or more `Network:` addresses. The `Network:` address that matches your Wi-Fi address is the one for the phone.
+
+5. **Try it on the PC first.** Open `http://localhost:5174` in a browser on the PC. You should see **FlyFF**, with a **Log in** form. Log in with a test account: you should reach "Choose a channel". If that fails, fix it here, not on a phone (see "When something goes wrong").
+
+6. **Windows Firewall** may ask, once for each program, whether to let *Node.js JavaScript Runtime* talk on the network. Allow it on **Private networks** only, as in "Connect" above. The gateway (port 8090) and the client (port 5174) both need to be reachable from the phone.
+
+The page finds the gateway by itself: it connects to `ws://<the address in the browser's address bar>:8090`. Nothing to set on the phone.
+
+Both programs answer anyone on your network. Use a trusted home network, use throwaway test accounts (this test setup uses plain `http`, so the password hash travels unencrypted over your Wi-Fi), and stop both windows with `Ctrl` + `C` when you are done.
+
+## Steps on each device
+
+Devices to test: **iPhone**, **Android phone**, **iPad**, **Android tablet**. Browsers: Safari on the iPhone and iPad (iOS / iPadOS 16 or newer), Chrome on the Android devices. Do the PC with Chrome as well, as a reference.
+
+Put the device on the **same Wi-Fi** as the PC (not a guest network), and open `http://<PC Wi-Fi address>:5174`. You should see **FlyFF** and a **Log in** form with Account and Password. A phone has no console: anything that goes wrong shows as a red message on the page. The gateway window shows what the gateway saw.
+
+Do these in order on each device, and write the result in the table below:
+
+1. **Layout.** The page fits the screen width with no sideways scrolling; you can read every label and tap every button. Turn the device sideways and back once.
+2. **Log in** with a test account. Success: the heading **Choose a channel**, the server's name, and its channels, each with its player count. A channel marked **Offline** or **Full** cannot be picked.
+3. **Pick a channel** that is not Offline or Full. Success: the heading **Your characters**, with three slots; each shows a character (name, level, job) or **Empty — Create**.
+4. **Create a character.** Tap **Empty — Create** on an empty slot. Type a name of 4 to 16 letters and digits, starting with a letter (for example `PhoneTest1`; use a different name on each device). Pick Male or Female, change Hair and Head with the + and − buttons, type a Bank PIN of 4 digits (not `0000`) twice, and tap **Create**. Success: back at **Your characters**, with the new character in the slot, under the name you typed.
+5. **Delete it.** Tap **Delete** beside it, type its Bank PIN, and tap **Delete**. Success: the slot says **Empty — Create** again.
+6. **Wrong password, once.** Tap **Log out**, then log in with the right account and a **wrong** password. Success: you stay on the login form and a red message appears, for example "Login details incorrect.  Please try again." Then **wait 15 seconds** and log in with the right password: it must work. Do not try more than one wrong password in a row: three wrong passwords block that address for 15 minutes.
+   - With the old certifier, the 15 seconds block **every** browser device (they all look like one address to it), so do this step on one device at a time.
+   - With the rebuilt certifier, only this device is blocked. To check that: during the 15 seconds after a wrong password on one device, log in on another device with the right password. It must work.
+7. **Two devices at the same time.** Use two devices and two different test accounts, one each. Log in on both at the same time, pick a channel on both, and get both to **Your characters**; then create a character on one while the other stays open. Success: both work, and the gateway window shows an `open` line for each device with **its own address** (for example `open 192.168.1.31 172.31.238.55:23000` and `open 192.168.1.47 172.31.238.55:23000`).
+   - Optional: log in with the **same** account on both. The second device may show **Already connected** with **Disconnect it** and **Cancel**. That is the server's own question, not a fault. Tap **Disconnect it**, then log in again.
+
+## Results
+
+Fill in one row per device, `pass` or `fail`. The last column is for anything odd you saw, and for the exact text of a red message.
+
+| Device | Browser | 1. Layout | 2. Log in, channels | 3. Characters | 4. Create | 5. Delete | 6. Wrong password | 7. Two at once | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| iPhone | Safari | | | | | | | | |
+| Android phone | Chrome | | | | | | | | |
+| iPad | Safari | | | | | | | | |
+| Android tablet | Chrome | | | | | | | | |
+| PC | Chrome | | | | | | | | |
+
+## Pass and fail
+
+The lobby passes when **every cell is `pass` on every one of the four devices**. A step fails when:
+
+- it does not end as the step says;
+- the page stays on a progress message ("Logging in…", "Loading the characters…") for more than about 30 seconds;
+- a red message appears that you cannot explain with this page: send a photo of the screen and of the gateway window;
+- part of the page cannot be read or tapped.
+
+## When something goes wrong
+
+| What you see | What it means and what to do |
+| --- | --- |
+| The page does not open at all on the device | The device is not on the same Wi-Fi, the Wi-Fi keeps devices apart (guest network), or Windows Firewall blocks Node.js: see "Connect" in the Piece 1 part above. Check that `npm run dev:client` is running. |
+| **"Cannot reach the game gateway."** when you log in | The page cannot talk to the gateway. Check, in this order: (1) `npm run gateway` is running and printed `gateway listening`; (2) the address in the phone's address bar, `http://<address>:5174`, is **exactly** in `allowedOrigins` in `apps/gateway/gateway.config.json` (then restart the gateway: it reads the file once, when it starts); (3) Windows Firewall lets Node.js through on Private networks, for port 8090 as well. A clue: when you tap **Log in** the gateway window should print an `open` line. If it prints nothing, the request never got in: the origin, the firewall or the address is wrong. |
+| **"This server address is not allowed."** | The address the servers hand out is not a key under `routes` in the gateway settings. The example has the three routes for `172.31.238.55`; change them if your servers advertise another address. |
+| **"The game server is not reachable. Try again later."** | The gateway is running but cannot reach the certifier or the login server. Are the game servers running? The gateway window shows `close ... code=4001` for it. |
+| **"Too many connections from your network."** | The gateway allows 8 open connections from one address. Close other tabs of the page on that device, wait a few seconds, and reload. |
+| **"Wrong Password. Cannot log into account for 15 seconds."** | The certifier's lockout after a wrong password: wait 15 seconds. After three wrong passwords in a row it is 15 minutes, with "Wrong Passwords 3 times. Cannot log into account for 15 minutes." |
+| **"Already connected"** | The account is logged in somewhere else, or its last session is still closing. Tap **Disconnect it** and log in again, or use another test account. |
+| **Every login fails at once, on every device, and it lasts about 10 minutes** | The game servers' own connection-flood limiter (in the certifier and the login server). It counts connections from one address that come less than 200 milliseconds apart, and never forgets them. After 50, it cuts every connection from that address and refuses it for about 10 minutes. With the gateway, all browser players share the gateway's address. Repeated quick logins, and repeated `npm run test:live` runs, add up. **Wait about 10 minutes**, or restart the certifier and the login server. This is a known limit that must be fixed in the servers before a public launch: see [hosting.md](hosting.md#known-limit-before-a-public-launch). |
