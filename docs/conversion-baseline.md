@@ -103,22 +103,26 @@ The script that measured this is a throwaway kept outside the repository.
 
 ## Viewer soak test
 
-The memory target of the viewer (global constraints: after a 10-minute loop walk, memory within 10% of its starting level), measured by the end-to-end test `apps/viewer/e2e/soak.spec.ts` (Task 19). The player runs laps at 12 m/s around a closed 600 m square centred on Madrigal's start (2,400 m a lap), so tiles stream in and out the whole time. Memory is what the overlay reports: `gpuBytes + (jsHeapBytes ?? 0)`. The baseline is the sample after the first lap, the final value the sample after the last lap, each taken standing on the same corner 5 s after arriving, after a `gc()`.
+The memory target of the viewer (global constraints: after a 10-minute loop walk, memory within 10% of its starting level), measured by the end-to-end test `apps/viewer/e2e/soak.spec.ts` (Task 19). The player runs laps at 12 m/s around a closed 600 m square centred on Madrigal's start (2,400 m a lap), so tiles stream in and out the whole time. Memory is what the overlay reports: `gpuBytes + (jsHeapBytes ?? 0)`. The baseline is the sample after the first lap, the final value the sample after the last lap, each taken standing on the same corner 5 s after arriving, after a `gc()`. Since the final-review fixes the test also requires three.js' own counts (`renderer.info`: geometries and textures on the GPU, shader programs) to be the same at the end of the last lap as at the baseline.
 
 | | |
 | --- | --- |
-| Date | 2026-10-22 |
+| Date | 2026-10-22 (after the final-review fixes) |
 | Command | `npm run test:soak` (from `FlyffWeb/`; project `soak`: headless Chromium, SwiftShader software WebGL, 1280 x 720, `--enable-precise-memory-info --js-flags=--expose-gc`) |
-| Machine | the converter's (AMD Ryzen 7 5700U, Windows 11, Node 24.19.0); software WebGL ran the viewer at 2.5 to 2.8 fps |
-| Result | **passed**: baseline 296.6 MB, final 297.3 MB, **ratio 1.002** (limit 1.10), 3 laps in 653 s, no errors in the overlay (the first run, before the test checked its own preconditions, gave 296.9 MB to 297.3 MB, ratio 1.001) |
+| Machine | the converter's (AMD Ryzen 7 5700U, Windows 11, Node 24.19.0); software WebGL ran the viewer at 2.4 to 3.1 fps |
+| Result | **passed**: baseline 272.7 MB, final 272.6 MB, **ratio 1.000** (limit 1.10), 3 laps in 656 s, three.js counts equal (729 geometries, 330 textures, 10 programs at every lap), no errors in the overlay |
 
-| Lap | Time | Memory | GPU estimate | JS heap | Tiles loaded |
-| --- | --- | --- | --- | --- | --- |
-| 1 (baseline) | 241 s | 296.6 MB | 128.2 MB | 168.4 MB | 25 |
-| 2 | 447 s | 297.3 MB | 128.2 MB | 169.1 MB | 25 |
-| 3 (final) | 653 s | 297.3 MB | 128.2 MB | 169.1 MB | 25 |
+| Lap | Time | Memory | GPU estimate | JS heap | Tiles loaded | three.js geometries / textures / programs |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 (baseline) | 242 s | 272.7 MB | 156.3 MB | 116.4 MB | 25 | 729 / 330 / 10 |
+| 2 | 449 s | 272.6 MB | 156.3 MB | 116.3 MB | 25 | 729 / 330 / 10 |
+| 3 (final) | 656 s | 272.6 MB | 156.3 MB | 116.3 MB | 25 | 729 / 330 / 10 |
 
-(MB here are binary, 1 MiB.) The GPU estimate is the same to the digit at every lap and the loaded tiles are the same 25, so what the viewer adds up for tiles and textures is given back each time. The JS heap is read after a garbage collection and moved by up to 10 MB from lap to lap in the first run (158.8 to 169.1 MB) and by under 1 MB in the second. It is 57% of the total and the GPU estimate 43%; the estimate is only what the viewer itself counts (terrain, character and model geometry, textures), not what the browser's driver really holds. The walk is time-based (`Route.step(dt)`), so slow software frames do not shorten it: the lap lengths are real metres at 12 m/s.
+(MB here are binary, 1 MiB.) The GPU estimate is the same to the digit at every lap and the loaded tiles are the same 25, so what the viewer adds up for tiles and textures is given back each time, and three.js' own counts agree. The estimate now includes the canvas's drawing buffer, 1280 x 720 x 8 bytes x 4 samples = 28.1 MB, which is all of its rise from the first run's 128.2 MB. The JS heap fell from 168.4 MB to 116.4 MB, because the viewer now lets go of each texture's transcoded levels and each terrain light map once they are on the GPU (and the tile streamer keeps only a tile's heights). The heap is 43% of the total and the GPU estimate 57%; the estimate is what the viewer itself counts (terrain, character and model geometry, textures, drawing buffer), not what the browser's driver really holds. The walk is time-based (`Route.step(dt)`), so slow software frames do not shorten it: the lap lengths are real metres at 12 m/s.
+
+The first run of the test (Task 19, before these fixes): baseline 296.6 MB (GPU 128.2, heap 168.4), final 297.3 MB, ratio 1.002, 3 laps in 653 s.
+
+Do not edit files under `apps/viewer` while the soak runs on the dev server: Vite reloads the page and the test fails with "Execution context was destroyed".
 
 The test checks that it measures what it says: `gc()` exists (`--expose-gc`), `jsHeapBytes` is not null and not the same value at every lap (without `--enable-precise-memory-info` Chromium reports a stale constant: 16,100,000 bytes here while the heap was about 168 MB, which would have left only the GPU bookkeeping to decide the ratio), every leg of 600 m takes at least 90% of 50 s (the player really walked it), and each lap loads more than the 25 tiles around one spot and different tiles at different corners (the streamer really streamed). Each was seen to fail when broken: no `--expose-gc`, no `--enable-precise-memory-info`, and a `walkRoute` that returns at once.
 

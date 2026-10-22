@@ -18,9 +18,11 @@ npm run dev:viewer
 
 It needs the converted assets in `dist/assets` (`npm run convert`, about 7 minutes, once). It prints a `Local:` address for this PC (`http://localhost:5173/`) and one or more `Network:` addresses for other devices.
 
+The server answers anyone on your network (`--host`), and it serves everything in `dist/assets`, including `report.json` with the folder paths of this PC. Run it on a trusted home network only, and stop it (`Ctrl` + `C`) when you are done testing.
+
 ## 1. Reference screenshots from the Windows client
 
-The compare page is `http://localhost:5173/#/compare`. It lists four spots. Opening one shows the viewer standing on that spot next to your screenshot of the same view in the Windows client (one above the other on a narrow screen). A spot without a screenshot says `no screenshot yet: put apps/viewer/compare/refs/<spot>.png here`.
+The compare page is `http://localhost:5173/#/compare`. It lists four spots. Opening one shows the viewer standing on that spot next to your screenshot of the same view in the Windows client (one above the other on a narrow screen). A spot without a screenshot says `no screenshot yet: put apps/viewer/compare/refs/<spot>.png here`. The screenshots load only on the dev server (`npm run dev:viewer`), not on a production build in `npm run preview:viewer`.
 
 ### How to take each screenshot
 
@@ -49,17 +51,17 @@ Compare by eye, spot by spot:
 - light and shade (see below);
 - the character: pose, size on screen, the camera's height and distance behind it.
 
-**One known point to watch: the sun.** The client lights terrain and models with the sun direction it uses at noon, and the viewer copies that exactly (ruling R50; the code and the C++ it follows are in `apps/viewer/src/world/lighting.ts`). The client's noon sun is the D3D light `Direction = (0, +0.707, -0.707)`. A D3D `Direction` is the way the light travels, so this light travels **upward** (and toward -z). The vector D3D lights a surface with, from the surface toward the light, is `L = -Direction = (0, -0.707, +0.707)`, which points **down**, and the viewer uses exactly that (in its own frame, where z is negated: `(0, -0.707, -0.707)` toward the sun). So at noon the client lights surfaces from below: flat ground (normal up) gets the ambient light alone, and only faces that look downward or sideways react to the sun. If shading in the comparison looks **inverted** (faces that are bright in the client are dark in the viewer, or the other way round), say so: the sun direction is the first thing to check. "Flip" then means switching to the lit-from-above convention that the client's own continent branch (`__BS_CHANGING_ENVIR`, World3D.cpp:1822-1824) uses, `SetDir(-(0, 0.707, 0.707))`, i.e. `L = (0, +0.707, +0.707)`. In the viewer that is two small edits: the sign of the y component of `towardSun` in `lighting.ts`, and the expectation that pins it, `light.sunDirection[1]` in `apps/viewer/test/player.test.ts` (line 152).
+**One known point to watch: the sun.** The client lights terrain and models with the sun direction it uses at noon, and the viewer copies that exactly (ruling R50; the code and the C++ it follows are in `apps/viewer/src/world/lighting.ts`). The client's noon sun is the D3D light `Direction = (0, +0.707, -0.707)`. A D3D `Direction` is the way the light travels, so this light travels **upward** (and toward -z). The vector D3D lights a surface with, from the surface toward the light, is `L = -Direction = (0, -0.707, +0.707)`, which points **down**, and the viewer uses exactly that (in its own frame, where z is negated: `(0, -0.707, -0.707)` toward the sun). So at noon the client lights surfaces from below and from the north: a face reacts to the sun only when its normal points more toward north than up (in D3D numbers, `n.z > n.y`). That is north-facing walls (facing higher z) and undersides. Flat ground (normal up) and east-, west- and south-facing walls get the ambient light alone. The `flaris-plaza` spot faces south, so the walls in front of you there face north: those are the ones the sun lights. (In `flaris-plaza-east` you look at west-facing walls, which stay at the ambient light.) If shading in the comparison looks **inverted** (faces that are bright in the client are dark in the viewer, or the other way round), say so: the sun direction is the first thing to check. "Flip" then means switching to the lit-from-above convention that the client's own continent branch (`__BS_CHANGING_ENVIR`, World3D.cpp:1822-1824) uses, `SetDir(-(0, 0.707, 0.707))`, i.e. `L = (0, +0.707, +0.707)`. In the viewer that is two small edits: the sign of the y component of `towardSun` in `lighting.ts`, and the expectation that pins it, `light.sunDirection[1]` in `apps/viewer/test/player.test.ts` (line 152).
 
 ### After you approve the comparisons
 
-The pictures the viewer is checked against are the Playwright baselines in `apps/viewer/e2e/__screenshots__/`. They exist for all four spots (`character.spec.ts/character-male-default.png`, `world.spec.ts/world-flaris-start.png` for `world-start`, `world-flaris-plaza.png`, `world-flaris-plaza-east.png`), but they were rendered by the viewer itself, not approved by anyone. Once you are happy with the comparisons, make them the approved baselines:
+The pictures the viewer is checked against are the Playwright baselines in `apps/viewer/e2e/__screenshots__/`. They exist for all four spots (`character.spec.ts/character-male-default.png`, `world.spec.ts/world-flaris-start.png` for `world-start`, `world-flaris-plaza.png`, `world-flaris-plaza-east.png`), but they were rendered by the viewer itself, not approved by anyone. Once you are happy with the comparisons, make them the approved baselines. Run this in `FlyffWeb/`:
 
 ```
 npx playwright test -c apps/viewer/playwright.config.ts --project=dev --update-snapshots
 ```
 
-and commit the changed pictures (and your `compare/refs/*.png`).
+It rewrites only the baselines whose pictures changed; the others stay as they are. Then commit the changed pictures (and your `compare/refs/*.png`).
 
 ## 2. Run the viewer on your devices
 
@@ -102,7 +104,7 @@ Fill in one row per device:
 - **Desktop Chrome or Edge:** press `Shift` + `Esc` for the browser's Task manager and read the viewer tab's *JavaScript memory* column (right-click the header to add it), or open DevTools (`F12`) > More tools > *Performance monitor* and read *JS heap size*. Or close every Chrome window and start it with the flag: `chrome.exe --enable-precise-memory-info http://localhost:5173/` (Edge: `msedge.exe`), after which the overlay's `heap` is exact.
 - **Android phone or tablet:** turn on USB debugging, plug it into the PC, open `chrome://inspect/#devices` in desktop Chrome, click *inspect* under the viewer's tab, and use *Performance monitor* (*JS heap size*) or the *Memory* panel there, with the viewer running on the device.
 
-The `gpu (est)` number is the same on every browser and does not depend on any flag: it is the number to compare devices by, and to use for the 10% check. Add the real heap to it when you have one.
+The `gpu (est)` number is the same on every browser and does not depend on any flag: it is the number to compare devices by, and to use for the 10% check. Add the real heap to it when you have one. It adds up the textures and geometry the viewer has uploaded and the canvas's own drawing buffer (colour and depth for every pixel, times the antialiasing samples), so it is higher on a screen with more pixels. The viewer lets go of its copy of a texture once it is on the GPU, so if the overlay ever says the WebGL context was lost, reload the page.
 
 **Memory in Safari and Firefox.** Only Chrome and Edge report the JS heap. Safari and Firefox show `heap n/a`, so for them the peak memory is the `gpu (est)` number alone: write it down as such. (That number is an estimate the viewer adds up itself, and the real total on those browsers is larger. A device that is near the limit on the estimate alone is a fail.)
 
