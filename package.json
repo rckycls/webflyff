@@ -10,8 +10,9 @@
   "scripts": {
     "test": "vitest run",
     "test:corpus": "vitest run --config vitest.corpus.config.ts",
-    "typecheck": "tsc --noEmit -p packages/formats && tsc --noEmit -p packages/protocol && tsc --noEmit -p packages/protocol/tsconfig.test.json && tsc --noEmit -p tools/convert && tsc --noEmit -p apps/viewer && tsc --noEmit -p apps/viewer/tsconfig.node.json",
+    "typecheck": "tsc --noEmit -p packages/formats && tsc --noEmit -p packages/protocol && tsc --noEmit -p packages/protocol/tsconfig.test.json && tsc --noEmit -p packages/testkit && tsc --noEmit -p tools/convert && tsc --noEmit -p tools/capture && tsc --noEmit -p apps/viewer && tsc --noEmit -p apps/viewer/tsconfig.node.json",
     "convert": "tsx tools/convert/src/cli.ts",
+    "capture": "tsx tools/capture/src/cli.ts",
     "dev:viewer": "vite --config apps/viewer/vite.config.ts --host",
     "build:viewer": "vite build --config apps/viewer/vite.config.ts",
     "preview:viewer": "vite preview --config apps/viewer/vite.config.ts --host",

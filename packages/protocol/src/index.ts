@@ -7,3 +7,5 @@ export { crc32 } from './framing/crc32';
 export { CLIENT_HEADER_SIZE, ClientFrameReader, encodeClientFrame } from './framing/clientFrame';
 export { SERVER_HEADER_SIZE, ServerFrameReader, encodeServerFrame } from './framing/serverFrame';
 export { encodeProtocolIdBody, readProtocolId } from './framing/protocolId';
+export { parseRecording } from './recording';
+export type { RecordedPacket, Recording } from './recording';
