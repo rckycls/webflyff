@@ -312,7 +312,7 @@ afterAll(async () => {
 
 // ---- The tests -------------------------------------------------------------------------------------------------
 
-it('logs in, lists, creates and deletes a character', async () => {
+it('logs in, lists, creates and deletes a character, then changes the channel', async () => {
   const s = session();
   await s.flow.login(config.account, config.password);
   const { servers } = await s.expect('serverList', LOGIN_WAIT_MS);
@@ -355,7 +355,26 @@ it('logs in, lists, creates and deletes a character', async () => {
   } catch (error) {
     throw new Error(`Deleting ${name} (slot ${createdSlot}) failed, so it may still be on the test account; delete it by hand. ${(error as Error).message}`, { cause: error });
   }
-});
+
+  // Change channel, as Neuz's Back button does it: the login-server connection closes, which ends the login on the
+  // servers, so the flow waits a second and logs in again for a new server list and auth key. Its two connections
+  // (certifier, then login server) keep the same spacing as every other one.
+  try {
+    s.flow.changeChannel();
+    const again = await s.expect('serverList', LOGIN_WAIT_MS);
+    const next = again.servers.find(isOpenChannel);
+    if (next === undefined) throw new Error(`the new server list has no channel that is enabled and not full (${again.servers.length} entries)`);
+    await s.flow.selectChannel(next);
+    const listed = await s.expect('characters');
+    expect(listed.characters.map((c) => `${c.slot}:${c.name}`)).toEqual(characters.map((c) => `${c.slot}:${c.name}`));
+  } catch (error) {
+    throw new Error(
+      `Change channel failed (logging in, creating and deleting worked). An "alreadyConnected" here means the servers `
+      + `still held the login a second after its connection closed. ${(error as Error).message}`,
+      { cause: error },
+    );
+  }
+}, 120000); // two logins: the waits above add up to more than the usual 60 s when a server is slow
 
 it('a wrong password shows the login error', async () => {
   const s = session();
