@@ -30,6 +30,11 @@ export function openWebSocketChannel(gatewayUrl: string): OpenChannel {
       // The gateway sends binary messages only.
       if (event.data instanceof ArrayBuffer) channel.onPacket(new Uint8Array(event.data));
     };
+    // A socket that fails before it opens is over, so the wait ends at the error. A browser follows the error with a
+    // close event, but WebKit on Windows (Playwright's WebKit build) never does; the promise settles once either way.
+    socket.onerror = () => {
+      if (!opened) reject(new Error('the gateway could not be reached'));
+    };
     socket.onclose = (event) => {
       // A socket that never opened is a gateway that could not be reached, or that refused the upgrade (an origin it
       // does not allow, a path it does not serve); the browser reports both as code 1006.

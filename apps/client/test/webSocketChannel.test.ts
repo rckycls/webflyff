@@ -1,6 +1,6 @@
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WebSocketServer } from 'ws';
 import type { WebSocket as ServerSocket } from 'ws';
 import { bytesToHex } from '@flyffweb/protocol';
@@ -10,6 +10,7 @@ import { openWebSocketChannel } from '../src/net/webSocketChannel';
 let server: WebSocketServer | undefined;
 
 afterEach(async () => {
+  vi.unstubAllGlobals();
   if (server === undefined) return;
   for (const client of server.clients) client.terminate();
   await new Promise<void>((resolve) => server!.close(() => resolve()));
@@ -81,5 +82,25 @@ describe('openWebSocketChannel', () => {
   it('rejects when the gateway refuses the upgrade, as it does for an origin it does not allow', async () => {
     const { url } = await gateway({ verifyClient: () => false });
     await expect(openWebSocketChannel(url)('172.31.238.55:23000')).rejects.toThrow();
+  });
+
+  it('rejects at the error of a socket that never opens, even when the engine reports no close after it', async () => {
+    // WebKit on Windows (Playwright's build) fires `error` for a refused connection and never `close`.
+    class SilentSocket {
+      static readonly OPEN = 1;
+      readyState = 0;
+      binaryType = '';
+      onopen: (() => void) | null = null;
+      onclose: (() => void) | null = null;
+      onmessage: (() => void) | null = null;
+      onerror: (() => void) | null = null;
+      constructor() {
+        queueMicrotask(() => this.onerror?.());
+      }
+      send(): void {}
+      close(): void {}
+    }
+    vi.stubGlobal('WebSocket', SilentSocket);
+    await expect(openWebSocketChannel('ws://127.0.0.1:9')('172.31.238.55:23000')).rejects.toThrow();
   });
 });

@@ -10,7 +10,7 @@
   "scripts": {
     "test": "vitest run",
     "test:corpus": "vitest run --config vitest.corpus.config.ts",
-    "typecheck": "tsc --noEmit -p packages/formats && tsc --noEmit -p packages/protocol && tsc --noEmit -p packages/protocol/tsconfig.test.json && tsc --noEmit -p packages/testkit && tsc --noEmit -p tools/convert && tsc --noEmit -p tools/capture && tsc --noEmit -p apps/gateway && tsc --noEmit -p apps/client && tsc --noEmit -p apps/viewer && tsc --noEmit -p apps/viewer/tsconfig.node.json",
+    "typecheck": "tsc --noEmit -p packages/formats && tsc --noEmit -p packages/protocol && tsc --noEmit -p packages/protocol/tsconfig.test.json && tsc --noEmit -p packages/testkit && tsc --noEmit -p tools/convert && tsc --noEmit -p tools/capture && tsc --noEmit -p apps/gateway && tsc --noEmit -p apps/client && tsc --noEmit -p apps/client/tsconfig.node.json && tsc --noEmit -p apps/viewer && tsc --noEmit -p apps/viewer/tsconfig.node.json",
     "convert": "tsx tools/convert/src/cli.ts",
     "capture": "tsx tools/capture/src/cli.ts",
     "gateway": "tsx apps/gateway/src/main.ts --config apps/gateway/gateway.config.json",
@@ -18,7 +18,10 @@
     "build:viewer": "vite build --config apps/viewer/vite.config.ts",
     "preview:viewer": "vite preview --config apps/viewer/vite.config.ts --host",
     "test:e2e": "playwright test -c apps/viewer/playwright.config.ts --project=dev --project=prod",
-    "test:soak": "playwright test -c apps/viewer/playwright.config.ts --project=soak"
+    "test:soak": "playwright test -c apps/viewer/playwright.config.ts --project=soak",
+    "dev:client": "vite --config apps/client/vite.config.ts --host",
+    "build:client": "vite build --config apps/client/vite.config.ts",
+    "test:e2e:client": "playwright test -c apps/client/playwright.config.ts"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
