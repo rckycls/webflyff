@@ -7,5 +7,10 @@ export { crc32 } from './framing/crc32';
 export { CLIENT_HEADER_SIZE, ClientFrameReader, encodeClientFrame } from './framing/clientFrame';
 export { SERVER_HEADER_SIZE, ServerFrameReader, encodeServerFrame } from './framing/serverFrame';
 export { encodeProtocolIdBody, readProtocolId } from './framing/protocolId';
+export { md5Hex } from './crypto/md5';
+export { aes128CbcDecrypt, aes128CbcEncrypt } from './crypto/aes128';
+export {
+  CERTIFY_BLOCK_BYTES, CERTIFY_KEY_TEXT, PASSWORD_SALT, deleteKey, encryptCertifyPassword, hashPassword,
+} from './crypto/password';
 export { parseRecording } from './recording';
 export type { RecordedPacket, Recording } from './recording';
