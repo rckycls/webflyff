@@ -17,7 +17,13 @@ function unavailableReason(channel: ServerEntry): string | undefined {
   return undefined;
 }
 
-function channelButton(channel: ServerEntry, onSelect: (channel: ServerEntry) => void): HTMLElement {
+interface ChannelButton {
+  button: HTMLElement;
+  /** Whether the channel itself (offline, full) rules it out, whatever the screen is doing. */
+  unavailable: boolean;
+}
+
+function channelButton(channel: ServerEntry, pick: (channel: ServerEntry) => void): ChannelButton {
   const reason = unavailableReason(channel);
   const count = channel.maxPlayers > 0 ? `${channel.playerCount} / ${channel.maxPlayers}` : `${channel.playerCount} online`;
   // `aria-disabled`, not `disabled`: a disabled button drops out of the keyboard order and a screen reader skips it,
@@ -29,23 +35,41 @@ function channelButton(channel: ServerEntry, onSelect: (channel: ServerEntry) =>
     h('span', { class: 'channel-state' }, reason ?? count),
   );
   button.addEventListener('click', () => {
-    if (reason === undefined) onSelect(channel);
+    if (reason === undefined) pick(channel);
   });
-  return button;
+  return { button, unavailable: reason !== undefined };
 }
 
 export function serverView({ servers, onSelect, onLogout }: ServerViewOptions): View {
+  const buttons: ChannelButton[] = [];
+  let busy = false;
+  // One channel at a time: while the characters of the picked one are awaited, the others do nothing, so a double tap
+  // cannot open a second connection. `idle` (an error came back) makes the open ones pickable again.
+  const setBusy = (value: boolean): void => {
+    busy = value;
+    for (const { button, unavailable } of buttons) {
+      if (value || unavailable) button.setAttribute('aria-disabled', 'true');
+      else button.removeAttribute('aria-disabled');
+    }
+  };
+  const pick = (channel: ServerEntry): void => {
+    if (busy) return;
+    setBusy(true);
+    onSelect(channel);
+  };
   const sections = servers
     .filter((server) => server.parent === NULL_ID)
     .map((server) => {
       const channels = servers.filter((entry) => entry.parent === server.id);
+      const items = channels.map((channel) => channelButton(channel, pick));
+      buttons.push(...items);
       return h(
         'section',
         { class: 'server' },
         h('h3', {}, server.name),
         channels.length === 0
           ? h('p', { class: 'hint' }, 'No channels.')
-          : h('ul', { class: 'list' }, ...channels.map((channel) => h('li', {}, channelButton(channel, onSelect)))),
+          : h('ul', { class: 'list' }, ...items.map(({ button }) => h('li', {}, button))),
       );
     });
   const logout = h('button', { type: 'button', class: 'btn' }, 'Log out');
@@ -57,5 +81,10 @@ export function serverView({ servers, onSelect, onLogout }: ServerViewOptions): 
     ...(sections.length === 0 ? [h('p', { class: 'hint' }, 'No servers are available.')] : sections),
     h('div', { class: 'actions' }, logout),
   );
-  return { element };
+  return {
+    element,
+    idle() {
+      setBusy(false);
+    },
+  };
 }

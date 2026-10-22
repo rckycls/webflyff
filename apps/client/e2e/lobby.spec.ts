@@ -126,7 +126,7 @@ async function expectPhoneFriendly(page: Page): Promise<void> {
 
 test.describe('the lobby against scripted servers', () => {
   test('lists servers and channels; an offline or a full channel cannot be picked', async ({ page }) => {
-    const sent = await playGateway(page, { certifier: listing([FLYFF, OPEN_CHANNEL, OFFLINE_CHANNEL, FULL_CHANNEL]) });
+    await playGateway(page, { certifier: listing([FLYFF, OPEN_CHANNEL, OFFLINE_CHANNEL, FULL_CHANNEL]) });
     await logIn(page);
     await expect(page.getByRole('heading', { name: 'Choose a channel' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'FlyFF', level: 3 })).toBeVisible();
@@ -142,12 +142,48 @@ test.describe('the lobby against scripted servers', () => {
     await expect(full).toHaveAttribute('aria-disabled', 'true');
     await expect(full).toContainText('Full');
 
-    // Tapping them does nothing: no connection to the login server is made.
+    // Tapping them does nothing. Picking a channel sets the status line at once, before anything is sent, so an empty
+    // status line right after the taps shows they were not taken as picks.
     // (`force`: Playwright would wait for an `aria-disabled` button to become enabled, which is what a tap does not do.)
     await offline.click({ force: true });
     await full.click({ force: true });
+    await expect(page.getByRole('status')).toBeEmpty();
     await expect(page.getByRole('heading', { name: 'Choose a channel' })).toBeVisible();
-    expect(sent.filter((s) => s.port === Port.LOGIN)).toEqual([]);
+  });
+
+  test('takes one tap on a channel, and frees the channels again if the server refuses', async ({ page }) => {
+    const waiting: Reply[] = [];
+    const sent = await playGateway(page, {
+      certifier: listing([FLYFF, OPEN_CHANNEL, { ...OPEN_CHANNEL, id: 4, name: 'Channel 4' }]),
+      // The login server answers only when the test says so.
+      login: ({ type }, reply) => {
+        if (type === PacketType.GETPLAYERLIST) waiting.push(reply);
+      },
+    });
+    await logIn(page);
+    const channel1 = page.getByRole('button', { name: /Channel 1/ });
+    const channel4 = page.getByRole('button', { name: /Channel 4/ });
+    await channel1.dblclick();
+    await expect(page.getByRole('status')).toHaveText('Loading the characters…');
+    // While the answer is awaited no channel can be picked: the second tap was dropped and the others are quiet too.
+    await expect(channel1).toHaveAttribute('aria-disabled', 'true');
+    await expect(channel4).toHaveAttribute('aria-disabled', 'true');
+    await channel4.click({ force: true });
+    await expect.poll(() => waiting.length).toBe(1);
+
+    // "Server capacity has been reached": the message is shown, the status line is empty, the channels can be tried again.
+    waiting[0]!(errorPacket(108));
+    await expect(page.getByRole('alert')).toHaveText('Server capacity has been reached.');
+    await expect(page.getByRole('status')).toBeEmpty();
+    await expect(channel1).not.toHaveAttribute('aria-disabled', 'true');
+    await expect(channel4).not.toHaveAttribute('aria-disabled', 'true');
+
+    await channel4.click();
+    await expect.poll(() => waiting.length).toBe(2);
+    waiting[1]!(playerList([WEBBY]));
+    await expect(page.getByRole('heading', { name: 'Your characters' })).toBeVisible();
+    // Two picks in all (channel 1, then channel 4), so two requests: the double tap and the taps while waiting added none.
+    expect(sent.filter((s) => s.type === PacketType.GETPLAYERLIST)).toHaveLength(2);
   });
 
   test('shows text from the server as text, not as markup', async ({ page }) => {
@@ -193,15 +229,18 @@ test.describe('the lobby against scripted servers', () => {
     const create = page.getByRole('button', { name: 'Create', exact: true });
     await create.click();
     await expect(page.getByRole('alert')).toHaveText('Enter name.');
+    // A submit that is sent disables the button at once; it is still enabled, so nothing was sent.
+    await expect(create).toBeEnabled();
     await page.getByLabel('Name').fill('WebTest1');
     await page.getByLabel('Bank PIN', { exact: true }).fill('12');
     await create.click();
     await expect(page.getByRole('alert')).toHaveText('The Bank PIN should be a 4 digit number.');
+    await expect(create).toBeEnabled();
     await page.getByLabel('Bank PIN', { exact: true }).fill('1234');
     await page.getByLabel('Confirm Bank PIN').fill('1235');
     await create.click();
     await expect(page.getByRole('alert')).toHaveText('Bank PINs do not match.');
-    expect(sent.filter((s) => s.type === PacketType.CREATE_PLAYER)).toEqual([]);
+    await expect(create).toBeEnabled();
 
     // Female, hair 2, head 5 (one step back from 1 wraps around).
     await page.getByRole('radio', { name: 'Female' }).check();
@@ -246,13 +285,15 @@ test.describe('the lobby against scripted servers', () => {
     await expectPhoneFriendly(page);
 
     const pin = page.getByLabel('Bank PIN');
+    const confirm = page.getByRole('button', { name: 'Delete', exact: true });
     await pin.fill('abcd');
-    await page.getByRole('button', { name: 'Delete', exact: true }).click();
+    await confirm.click();
     await expect(page.getByRole('alert')).toHaveText('The Bank PIN should be a 4 digit number.');
-    expect(sent.filter((s) => s.type === PacketType.DEL_PLAYER)).toEqual([]);
+    // A submit that is sent disables the button at once; it is still enabled, so nothing was sent.
+    await expect(confirm).toBeEnabled();
 
     await pin.fill('1234');
-    await page.getByRole('button', { name: 'Delete', exact: true }).click();
+    await confirm.click();
     await expect(page.getByRole('heading', { name: 'Your characters' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Empty — Create' })).toHaveCount(3);
     const packet = sent.find((s) => s.type === PacketType.DEL_PLAYER)!;

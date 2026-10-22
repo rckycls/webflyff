@@ -13,5 +13,7 @@ export default defineConfig({
   build: {
     // The same target as the viewer: Safari 16.0 instead of Vite's default 16.4, because the spec's browsers include iOS / iPadOS 16.
     target: ['chrome111', 'edge111', 'firefox114', 'safari16'],
+    // /assets/ is the converter's output on the hosted site, so the build's own files must not go there too.
+    assetsDir: 'client',
   },
 });

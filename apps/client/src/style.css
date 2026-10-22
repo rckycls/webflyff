@@ -215,9 +215,23 @@ fieldset:disabled .btn {
   background: var(--status-bg);
 }
 
-.status:empty,
 .notice:empty {
   display: none;
+}
+
+/*
+ * Empty, the status line is out of sight but not out of the accessibility tree: `display: none` would remove the live
+ * region, and a text put into a region that was not there before is often not announced.
+ */
+.status:empty {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 
 /* Servers and channels -------------------------------------------------------------------------------------------- */
