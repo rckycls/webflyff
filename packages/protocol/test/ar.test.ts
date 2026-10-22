@@ -65,6 +65,18 @@ describe('ArWriter / ArReader', () => {
     expect(() => r.bytes(-1)).toThrow(ProtocolError);
     expect(() => r.bytes(1.5)).toThrow(ProtocolError);
   });
+  it('reports its position and lets a reader skip the rest on purpose', () => {
+    const r = new ArReader(new Uint8Array(10));
+    expect(r.position()).toBe(0);
+    r.u32();
+    expect(r.position()).toBe(4);
+    expect(r.remaining()).toBe(6);
+    r.skipRest();
+    expect(r.position()).toBe(10);
+    expect(r.remaining()).toBe(0);
+    expect(() => r.expectEnd()).not.toThrow();
+    expect(() => r.u8()).toThrow(ProtocolError);
+  });
   it('refuses to write text the server cannot take', () => {
     expect(() => new ArWriter().string('café')).toThrow(ProtocolError);
   });

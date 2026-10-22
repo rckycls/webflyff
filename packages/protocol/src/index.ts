@@ -30,6 +30,8 @@ export {
   decodeWorldPacket, encodeDestPos, encodeJoin, encodePlayerBehavior, encodePlayerMoved, encodeWorldKeepAlive,
 } from './messages/world';
 export type { JoinRequest, MoveReport, WorldPacket } from './messages/world';
+export { readBundle } from './bundle';
+export type { BundleMessage, BundleResult, MessageHeader, MessageReader } from './bundle';
 export { CloseCode } from './gatewayCloseCodes';
 export { parseRecording } from './recording';
 export type { RecordedPacket, Recording } from './recording';

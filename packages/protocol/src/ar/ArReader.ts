@@ -20,6 +20,19 @@ export class ArReader {
     return this.source.byteLength - this.offset;
   }
 
+  /** Bytes read so far: where the next read starts. */
+  position(): number {
+    return this.offset;
+  }
+
+  /**
+   * Marks everything left as read, for a reader that deliberately stops short of the end of its data (a message
+   * whose last fields the browser has no use for). `remaining()` is 0 afterwards and `expectEnd()` passes.
+   */
+  skipRest(): void {
+    this.offset = this.source.byteLength;
+  }
+
   u8(): number {
     this.need(1);
     return this.view.getUint8(this.offset++);
