@@ -147,7 +147,7 @@ Before you take a phone out, run the live test on the PC. It starts its own gate
    notepad apps\client\test\live.config.json
    ```
 
-3. Fill in `account`, `password` and `bankPin`: a **throwaway test account** with at least one empty character slot. The test creates a character named `WebTest` and three digits with that Bank PIN, then deletes it. The long `_comment` at the top of the file explains every setting. Leave the others as they are, except:
+3. Fill in `account`, `password` and `bankPin`: a **throwaway test account** with at least one empty character slot. The test creates a character named `WebTest` and three digits with that Bank PIN, deletes it, then changes the channel and lists the characters again. The long `_comment` at the top of the file explains every setting. Leave the others as they are, except:
    - `certifierPatched`: set to `true` only when the rebuilt `Certifier.exe` is running and `Certifier.ini` has the `Gateway "127.0.0.1"` line (see [server-patches/README.md](../server-patches/README.md)). That switches on the check that one player's wrong password does not block another player.
    - `bannedTestAddress`: leave `null`, unless you added an address to `Program\IPCut.ini` and restarted the account server.
 4. Run it:
@@ -218,23 +218,25 @@ Do these in order on each device, and write the result in the table below:
 3. **Pick a channel** that is not Offline or Full. Success: the heading **Your characters**, with three slots; each shows a character (name, level, job) or **Empty — Create**.
 4. **Create a character.** Tap **Empty — Create** on an empty slot. Type a name of 4 to 16 letters and digits, starting with a letter (for example `PhoneTest1`; use a different name on each device). Pick Male or Female, change Hair and Head with the + and − buttons, type a Bank PIN of 4 digits (not `0000`) twice, and tap **Create**. Success: back at **Your characters**, with the new character in the slot, under the name you typed.
 5. **Delete it.** Tap **Delete** beside it, type its Bank PIN, and tap **Delete**. Success: the slot says **Empty — Create** again.
-6. **Wrong password, once.** Tap **Log out**, then log in with the right account and a **wrong** password. Success: you stay on the login form and a red message appears, for example "Login details incorrect.  Please try again." Then **wait 15 seconds** and log in with the right password: it must work. Do not try more than one wrong password in a row: three wrong passwords block that address for 15 minutes.
+6. **Stay a while.** Wait **3 minutes** on **Your characters** without tapping anything, with the screen kept on (set the auto-lock to 5 minutes or more for this step; a device that sleeps drops its connection, which is a different test). Then create a character as in step 4, and delete it again as in step 5. Success: both still work. The login server drops a connection that stays silent for 90 seconds, so this checks that the page keeps it alive.
+7. **Change channel.** On **Your characters**, tap **Change channel**. Success: the login form shows "Logging in…" for a moment, then **Choose a channel** appears. Pick a channel again: **Your characters**, with the same characters as before.
+8. **Wrong password, once.** Tap **Log out**, then log in with the right account and a **wrong** password. Success: you stay on the login form and a red message appears, for example "Login details incorrect.  Please try again." Then **wait 15 seconds** and log in with the right password: it must work. Do not try more than one wrong password in a row: three wrong passwords block that address for 15 minutes.
    - With the old certifier, the 15 seconds block **every** browser device (they all look like one address to it), so do this step on one device at a time.
    - With the rebuilt certifier, only this device is blocked. To check that: during the 15 seconds after a wrong password on one device, log in on another device with the right password. It must work.
-7. **Two devices at the same time.** Use two devices and two different test accounts, one each. Log in on both at the same time, pick a channel on both, and get both to **Your characters**; then create a character on one while the other stays open. Success: both work, and the gateway window shows an `open` line for each device with **its own address** (for example `open 192.168.1.31 172.31.238.55:23000` and `open 192.168.1.47 172.31.238.55:23000`).
+9. **Two devices at the same time.** Use two devices and two different test accounts, one each. Log in on both at the same time, pick a channel on both, and get both to **Your characters**; then create a character on one while the other stays open. Success: both work, and the gateway window shows an `open` line for each device with **its own address** (for example `open 192.168.1.31 172.31.238.55:23000` and `open 192.168.1.47 172.31.238.55:23000`).
    - Optional: log in with the **same** account on both. The second device may show **Already connected** with **Disconnect it** and **Cancel**. That is the server's own question, not a fault. Tap **Disconnect it**, then log in again.
 
 ## Results
 
 Fill in one row per device, `pass` or `fail`. The last column is for anything odd you saw, and for the exact text of a red message.
 
-| Device | Browser | 1. Layout | 2. Log in, channels | 3. Characters | 4. Create | 5. Delete | 6. Wrong password | 7. Two at once | Notes |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| iPhone | Safari | | | | | | | | |
-| Android phone | Chrome | | | | | | | | |
-| iPad | Safari | | | | | | | | |
-| Android tablet | Chrome | | | | | | | | |
-| PC | Chrome | | | | | | | | |
+| Device | Browser | 1. Layout | 2. Log in, channels | 3. Characters | 4. Create | 5. Delete | 6. Stay a while | 7. Change channel | 8. Wrong password | 9. Two at once | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| iPhone | Safari | | | | | | | | | | |
+| Android phone | Chrome | | | | | | | | | | |
+| iPad | Safari | | | | | | | | | | |
+| Android tablet | Chrome | | | | | | | | | | |
+| PC | Chrome | | | | | | | | | | |
 
 ## Pass and fail
 
@@ -255,5 +257,5 @@ The lobby passes when **every cell is `pass` on every one of the four devices**.
 | **"The game server is not reachable. Try again later."** | The gateway is running but cannot reach the certifier or the login server. Are the game servers running? The gateway window shows `close ... code=4001` for it. |
 | **"Too many connections from your network."** | The gateway allows 8 open connections from one address. Close other tabs of the page on that device, wait a few seconds, and reload. |
 | **"Wrong Password. Cannot log into account for 15 seconds."** | The certifier's lockout after a wrong password: wait 15 seconds. After three wrong passwords in a row it is 15 minutes, with "Wrong Passwords 3 times. Cannot log into account for 15 minutes." |
-| **"Already connected"** | The account is logged in somewhere else, or its last session is still closing. Tap **Disconnect it** and log in again, or use another test account. |
+| **"Already connected"** | The account is logged in somewhere else, or its last session is still closing (this can also follow **Change channel**, if the servers are slow to let go of the old session). Tap **Disconnect it** and log in again, or use another test account. |
 | **Every login fails at once, on every device, and it lasts about 10 minutes** | The game servers' own connection-flood limiter (in the certifier and the login server). It counts connections from one address that come less than 200 milliseconds apart, and never forgets them. After 50, it cuts every connection from that address and refuses it for about 10 minutes. With the gateway, all browser players share the gateway's address. Repeated quick logins, and repeated `npm run test:live` runs, add up. **Wait about 10 minutes**, or restart the certifier and the login server. This is a known limit that must be fixed in the servers before a public launch: see [hosting.md](hosting.md#known-limit-before-a-public-launch). |
