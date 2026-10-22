@@ -10,7 +10,7 @@
   "scripts": {
     "test": "vitest run",
     "test:corpus": "vitest run --config vitest.corpus.config.ts",
-    "typecheck": "tsc --noEmit -p packages/formats && tsc --noEmit -p packages/protocol && tsc --noEmit -p packages/protocol/tsconfig.test.json && tsc --noEmit -p packages/testkit && tsc --noEmit -p tools/convert && tsc --noEmit -p tools/capture && tsc --noEmit -p apps/gateway && tsc --noEmit -p apps/viewer && tsc --noEmit -p apps/viewer/tsconfig.node.json",
+    "typecheck": "tsc --noEmit -p packages/formats && tsc --noEmit -p packages/protocol && tsc --noEmit -p packages/protocol/tsconfig.test.json && tsc --noEmit -p packages/testkit && tsc --noEmit -p tools/convert && tsc --noEmit -p tools/capture && tsc --noEmit -p apps/gateway && tsc --noEmit -p apps/client && tsc --noEmit -p apps/viewer && tsc --noEmit -p apps/viewer/tsconfig.node.json",
     "convert": "tsx tools/convert/src/cli.ts",
     "capture": "tsx tools/capture/src/cli.ts",
     "gateway": "tsx apps/gateway/src/main.ts --config apps/gateway/gateway.config.json",

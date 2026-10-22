@@ -1,0 +1,15 @@
+{
+  "name": "@flyffweb/client",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@flyffweb/protocol": "*"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "@types/ws": "^8.18.1",
+    "vite": "^8.3.4",
+    "ws": "^8.18.3"
+  }
+}
