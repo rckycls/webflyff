@@ -10,5 +10,7 @@ it('has the close codes of the gateway contract (spec section 4.3)', () => {
     BAD_SERVER_DATA: 4005,
     FORBIDDEN_PACKET: 4006,
     TOO_MANY_CONNECTIONS: 4007,
+    TOO_MANY_NEW_CONNECTIONS: 4008,
+    GATEWAY_FULL: 4009,
   });
 });

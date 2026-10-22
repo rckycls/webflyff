@@ -11,7 +11,12 @@ export interface Limits {
   /** The largest body a browser may send. */
   maxPacketBytes: number;
   maxPacketsPerSecond: number;
+  /** Open connections of one player address. */
   maxConnectionsPerAddress: number;
+  /** New connections of one player address in any 60 seconds. */
+  maxNewConnectionsPerAddressPerMinute: number;
+  /** Open connections in all. */
+  maxConnections: number;
   /** The largest body a server may send. */
   maxServerBodyBytes: number;
   connectTimeoutMs: number;
@@ -24,7 +29,9 @@ export interface Limits {
 export const DEFAULT_LIMITS: Limits = Object.freeze({
   maxPacketBytes: 16384,
   maxPacketsPerSecond: 100,
-  maxConnectionsPerAddress: 8,
+  maxConnectionsPerAddress: 32,
+  maxNewConnectionsPerAddressPerMinute: 60,
+  maxConnections: 1000,
   maxServerBodyBytes: 1048576,
   connectTimeoutMs: 10000,
   pingIntervalMs: 30000,

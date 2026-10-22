@@ -1,5 +1,53 @@
 import { expect, it } from 'vitest';
-import { AddressCounter, RateWindow } from '../src/limits';
+import { AddressCounter, AddressRate, RateWindow } from '../src/limits';
+
+it('RateWindow takes a window length other than a second', () => {
+  let now = 0;
+  const window = new RateWindow(2, () => now, 60000);
+  expect([window.allow(), window.allow()]).toEqual([true, true]);
+  now = 59999; expect(window.allow()).toBe(false);
+  now = 60000; expect(window.allow()).toBe(true);
+});
+
+it('RateWindow is idle once every call it recorded has left the window', () => {
+  let now = 0;
+  const window = new RateWindow(2, () => now, 60000);
+  expect(window.isIdle()).toBe(true);
+  window.allow();
+  expect(window.isIdle()).toBe(false);
+  now = 59999; expect(window.isIdle()).toBe(false);
+  now = 60000; expect(window.isIdle()).toBe(true);
+});
+
+it('AddressRate allows maxPerWindow calls per address and counts addresses apart', () => {
+  let now = 0;
+  const rate = new AddressRate(2, 60000, () => now);
+  expect([rate.allow('a'), rate.allow('a'), rate.allow('a')]).toEqual([true, true, false]);
+  expect(rate.allow('b')).toBe(true);
+  now = 60000; expect(rate.allow('a')).toBe(true);
+});
+
+it('AddressRate does not count a refused call against the address', () => {
+  let now = 0;
+  const rate = new AddressRate(1, 60000, () => now);
+  expect(rate.allow('a')).toBe(true);
+  now = 30000; expect(rate.allow('a')).toBe(false);
+  now = 60000; expect(rate.allow('a')).toBe(true); // the refusal at 30000 did not push this back
+});
+
+it('AddressRate forgets an address whose window is idle, sweeping at most once a window', () => {
+  let now = 0;
+  const rate = new AddressRate(5, 60000, () => now);
+  rate.allow('a');
+  now = 30000; rate.allow('b');
+  expect(rate.size).toBe(2);
+  now = 60000; rate.allow('c'); // 'a' is idle and swept; 'b' and 'c' stay
+  expect(rate.size).toBe(2);
+  now = 90000; rate.allow('d'); // 'b' is idle now, but the last sweep was less than a window ago
+  expect(rate.size).toBe(3);
+  now = 120000; rate.allow('e'); // 'b' is swept, and so is 'c', exactly one window old; 'd' and 'e' stay
+  expect(rate.size).toBe(2);
+});
 
 it('RateWindow allows maxPerSecond calls in a second, refuses the next, and allows again once the second is over', () => {
   let now = 0;

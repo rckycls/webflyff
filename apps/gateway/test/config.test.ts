@@ -22,7 +22,9 @@ it('has the limits of the global constraints as its defaults', () => {
   expect(DEFAULT_LIMITS).toEqual({
     maxPacketBytes: 16384,
     maxPacketsPerSecond: 100,
-    maxConnectionsPerAddress: 8,
+    maxConnectionsPerAddress: 32,
+    maxNewConnectionsPerAddressPerMinute: 60,
+    maxConnections: 1000,
     maxServerBodyBytes: 1048576,
     connectTimeoutMs: 10000,
     pingIntervalMs: 30000,
@@ -39,6 +41,14 @@ it('fills in the default limits when the file has none', () => {
 it('takes the limits it is given and defaults the rest', () => {
   const config = parseConfig({ ...example(), limits: { maxPacketsPerSecond: 5, connectTimeoutMs: 250 } });
   expect(config.limits).toEqual({ ...DEFAULT_LIMITS, maxPacketsPerSecond: 5, connectTimeoutMs: 250 });
+});
+
+it('takes the total cap and the per-minute limit like any other limit', () => {
+  const config = parseConfig({ ...example(), limits: { maxConnections: 5, maxNewConnectionsPerAddressPerMinute: 2 } });
+  expect(config.limits).toEqual({ ...DEFAULT_LIMITS, maxConnections: 5, maxNewConnectionsPerAddressPerMinute: 2 });
+  expect(() => parseConfig({ ...example(), limits: { maxConnections: 0 } })).toThrow(
+    'limits.maxConnections must be a whole number from 1 to 9007199254740991',
+  );
 });
 
 it('does not hand out the shared defaults object to be changed', () => {

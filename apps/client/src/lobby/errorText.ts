@@ -59,6 +59,8 @@ const CLOSE_TEXTS: ReadonlyMap<number, string> = new Map([
   [CloseCode.BAD_SERVER_DATA, 'The server sent data the game could not read.'],
   [CloseCode.FORBIDDEN_PACKET, 'Disconnected: the game sent a forbidden packet.'],
   [CloseCode.TOO_MANY_CONNECTIONS, 'Too many connections from your network.'],
+  [CloseCode.TOO_MANY_NEW_CONNECTIONS, 'Too many connection attempts from your network. Wait a minute and try again.'],
+  [CloseCode.GATEWAY_FULL, 'The game is full right now. Try again in a few minutes.'],
 ]);
 
 /** Shown when the lobby itself went wrong (a bug, not an answer of a server); the player starts over. */
