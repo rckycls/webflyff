@@ -48,8 +48,9 @@ This replaces two Piece 1 assumptions: that browser and Windows players share th
 | Protocol ID | The server's first packet has 8 data bytes: `0x00000000`, then the ID. | `Source/_Network/Net/Src/dpsock.cpp:727-735` |
 | Password | The hash is `md5("kikugalanet" + password)`, written as 32 hex characters (`NEUZ_PHASH`). CERTIFY carries it encrypted:<br>• AES-128-CBC (Rijndael with a 16-byte block)<br>• key `"dldhsvmflvm"`, zero-padded to 16 bytes<br>• zero IV, reset for every message<br>• over a 672-byte (16 × `MAX_PASSWORD`) zero-padded buffer<br>GETPLAYERLIST and CREATE_PLAYER carry the hash unencrypted. | `Source/Neuz/Neuz.cpp:1148-1158`, `Source/Neuz/DPCertified.cpp:122-165`, `Source/_Common/Rijndael.cpp:936-942`, `Source/_Network/CmnHdr.h:485` |
 | Protocol version | `"20100412"` (`NEUZ_MSGVR`). | `Source/_Common/ServerCommon.h:10` |
-| Build flags | • Client and servers: `__VER 15`, `__CRC`, `__PROTOCOL0910`, `__PROTOCOL1021`.<br>• Client and certifier: `__ENCRYPT_PASSWORD`, `__GPAUTH_01`, `__GPAUTH_02`, `__EUROPE_0514`, `__TWN_LOGIN0816`.<br>• Client only: `__2ND_PASSWORD_SYSTEM`, `__RT_1025`.<br>• The certifier also defines `__SECURITY_0628`, which adds the resource version to CERTIFY. The client's main-server section doesn't define it, and the recording settles which is right. | `Source/Neuz/VersionCommon.h`, `Source/CERTIFIER/VersionCommon.h` |
-| How the servers use the player's address | The certifier keys its lockout on the socket address: one wrong password blocks for 15 s, three block for 15 min. It passes the same address on to:<br>• the account server, for the `IPCut.ini` ban ranges and, when the `TEST` line is removed from `AccountServer.ini`, the `pmttd.ini` permitted addresses;<br>• the `LOGIN_STR` login log. | `Source/CERTIFIER/AccountMgr.cpp:35-83`, `Source/CERTIFIER/DPCertifier.cpp:300`, `Source/CERTIFIER/DBManager.cpp:103-111,197-210`, `Source/AccountServer/dpsrvr.cpp:134-153` |
+| Build flags | • Client and servers: `__VER 15`, `__CRC`, `__PROTOCOL0910`, `__PROTOCOL1021`.<br>• Client and certifier: `__ENCRYPT_PASSWORD`, `__GPAUTH_01`, `__GPAUTH_02`, `__EUROPE_0514`, `__TWN_LOGIN0816`.<br>• Client only: `__2ND_PASSWORD_SYSTEM`, `__RT_1025`.<br>• `__SECURITY_0628`, which would add the resource version to CERTIFY, is defined only in the certifier's internal-server section. These builds define `__MAINSERVER`, so CERTIFY carries no resource version.<br>• The client, certifier and login server are built with language 1 (English), so the German, French, Thai and Taiwanese fields stay switched off. The client's code page is 1252. | `Source/Neuz/VersionCommon.h`, `Source/CERTIFIER/VersionCommon.h`, `IDS_LANG` / `IDS_CODEPAGE` in `Source/CERTIFIER/certifier.rc` and `Source/Neuz/WinMain.rc` |
+| Packet prefix | Packets the client sends to the login server are built with `BEFORESENDSOLE`, so they start with a 4-byte `DPID_UNKNOWN` (`0xFFFFFFFF`) before the packet type. Certifier packets and every server reply start with the type. | `Source/_Network/Net/Include/dpmng.h:27-36`, `Source/Neuz/DPLoginClient.cpp` |
+| How the servers use the player's address | The certifier keys its lockout on the socket address: one wrong password blocks for 15 s, three block for 15 min. It passes the same address on to:<br>• the account server, for the `IPCut.ini` ban ranges and, when the `TEST` line is removed from `AccountServer.ini`, the `pmttd.ini` permitted addresses;<br>• the `LOGIN_STR` procedure, which uses it only for its PC-café check (`USP_PCZoneIP_Check`) and doesn't store it. | `Source/CERTIFIER/AccountMgr.cpp:35-83`, `Source/CERTIFIER/DPCertifier.cpp:300`, `Source/CERTIFIER/DBManager.cpp:103-111,197-210`, `Source/AccountServer/dpsrvr.cpp:134-153`, `Database.sql:1030` |
 | GM IP lookup | The core server takes the player's address from the cache server's own connection. | `Source/CORESERVER/DPCacheSrvr.cpp:222` |
 | Unknown packets | The certifier ignores packet types it has no handler for. | `Source/CERTIFIER/DPCertifier.cpp:85-102` |
 | Server source | `Source/` isn't tracked by git (bakbak-flyff's `.gitignore`). Visual Studio 2022 is installed on the development PC. | — |
@@ -62,7 +63,7 @@ This replaces two Piece 1 assumptions: that browser and Windows players share th
 
 | Part | Runs in | Contents |
 |---|---|---|
-| `packages/protocol` | browser and Node | `ar/`: reader and writer with the same layout as C++ `CAr` (little-endian; strings as a 32-bit length plus bytes). `framing/`: CRC32, the client frame writer, the server frame reader, protocol-ID detection. `crypto/`: MD5 and AES-128-CBC in plain TypeScript, because WebCrypto is unavailable on plain-HTTP pages such as the Wi-Fi test setup. `packetTypes.ts`: numbers copied from `MsgHdr.h`. `messages/`: one module per packet (section 4.5). `text.ts`: CP949 decoding through `TextDecoder('euc-kr')`, as `packages/formats` already does. No Node-only APIs anywhere. |
+| `packages/protocol` | browser and Node | `ar/`: reader and writer with the same layout as C++ `CAr` (little-endian; strings as a 32-bit length plus bytes). `framing/`: CRC32, the client frame writer, the server frame reader, protocol-ID detection. `crypto/`: MD5 and AES-128-CBC in plain TypeScript, because WebCrypto is unavailable on plain-HTTP pages such as the Wi-Fi test setup. `packetTypes.ts`: numbers copied from `MsgHdr.h`. `messages/`: one module per packet (section 4.5). `text.ts`: decoding through `TextDecoder('windows-1252')`, the client's code page. No Node-only APIs anywhere. |
 | `apps/gateway` | Node | HTTP server with WebSocket upgrade and origin check, route table, one WebSocket paired with one TCP connection, limits, real-address handling, connection log, config loading. `gateway.config.example.json` is committed; `gateway.config.json` stays local. |
 | `apps/client` | browser (Vite) | The start of the real game client. Piece 2 adds the lobby: login, server and channel, character list, a create form, delete with confirmation. Plain HTML and CSS, usable on a phone. `src/net/` holds the WebSocket connection wrapper and the login flow. Piece 3 adds the world here, reusing code from the viewer, which stays as a developer tool. |
 | `tools/capture` | Node, development only | A recording relay for one Neuz session. It writes each packet with its direction, type and body as hex into `packages/protocol/test/fixtures/`. |
@@ -98,7 +99,7 @@ This replaces two Piece 1 assumptions: that browser and Windows players share th
 
 ### 4.3 Browser ↔ gateway contract
 
-- **Messages:** binary WebSocket messages only. Each carries one complete packet body, starting with its 4-byte packet type. The browser never sees framing or checksums.
+- **Messages:** binary WebSocket messages only. Each carries one complete packet body, exactly as `CAr` holds it. Certifier packets and server replies start with the 4-byte packet type; packets the client sends to the login server start with `DPID_UNKNOWN`, then the type. The browser never sees framing or checksums.
 - **Close codes:** each one maps to a plain message in the lobby (section 6).
 
 | Code | Meaning |
@@ -115,7 +116,6 @@ This replaces two Piece 1 assumptions: that browser and Windows players share th
 
 1. **Log in.**
    - The lobby connects to the certifier at the configured address and sends CERTIFY: version, account (trimmed, lower case), and the encrypted password block.
-   - If the certifier needs the resource version (`__SECURITY_0628`), the lobby includes it.
    - It answers KEEP_ALIVE for as long as the connection is open.
    - With no reply within 20 s, it shows a timeout.
 2. **Pick a channel.**
@@ -124,7 +124,7 @@ This replaces two Piece 1 assumptions: that browser and Windows players share th
    - ERROR or ERROR_STRING ends the login with a message.
    - For an already-logged-in account, the lobby offers "close the other connection" (CLOSE_EXISTING_CONNECTION), as Neuz does.
 3. **Character list.**
-   - The lobby connects to the chosen channel's login server address and sends GETPLAYERLIST: version, auth key, account, password hash, channel ID.
+   - The lobby connects to port 28000 at the address of the channel's parent server, as Neuz does. It sends QUERYTICKCOUNT, then GETPLAYERLIST: version, auth key, account, password hash, channel ID.
    - The answer is PLAYER_LIST. The lobby checks that its auth key matches and shows up to 3 slots with name, level and job.
    - It closes the certifier connection at the point Neuz does; the recording shows when that is.
 4. **Create.**
@@ -193,9 +193,9 @@ This replaces two Piece 1 assumptions: that browser and Windows players share th
   - `npm run test:live` isn't part of `npm test`. It needs the servers running and reads an untracked `live.config.json` holding a test account.
   - Through the gateway it logs in, lists characters, creates `WebTest<n>` and deletes it.
   - With the rebuilt certifier, it also checks:
-    - 3 wrong passwords from simulated address A don't block address B;
-    - the login log shows the real address.
-  - It uses a trusted-proxy setup so it can simulate two addresses.
+    - a wrong password from simulated address A doesn't block address B. With one shared address, B would get the 15-second block;
+    - optionally, an address listed in `IPCut.ini` is refused while others get in.
+  - It uses a trusted-proxy setup so it can simulate several addresses.
 - **Devices:** a Piece 2 section in `docs/device-testing.md` covers the lobby on the 4 test devices over Wi-Fi, with two devices logged in at the same time.
 
 ---
@@ -218,7 +218,7 @@ This replaces two Piece 1 assumptions: that browser and Windows players share th
 
 1. On a phone over Wi-Fi and on desktop Chrome, the lobby logs in, shows servers and channels, and lists, creates and deletes characters.
 2. All recorded-packet tests, unit tests and gateway tests pass.
-3. The rebuilt certifier locks out per player and logs real addresses.
+3. The rebuilt certifier applies its lockout, and the account server its `IPCut.ini` bans, per real player address.
 4. A wrong password, an unreachable server and a banned account each show a clear message.
 5. `docs/hosting.md` is written.
 
