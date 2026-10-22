@@ -12,5 +12,11 @@ export { aes128CbcDecrypt, aes128CbcEncrypt } from './crypto/aes128';
 export {
   CERTIFY_BLOCK_BYTES, CERTIFY_KEY_TEXT, PASSWORD_SALT, deleteKey, encryptCertifyPassword, hashPassword,
 } from './crypto/password';
+export { DPID_UNKNOWN, MAX_CHARACTER_SLOTS, NULL_ID, PacketType, Port, PROTOCOL_VERSION } from './constants';
+export {
+  decodeCertifierMessage, encodeCertify, encodeCloseExistingConnection, encodeErrorReply, encodeGatewayClientAddr,
+  encodeKeepAlive,
+} from './messages/certifier';
+export type { CertifierMessage, ServerEntry } from './messages/certifier';
 export { parseRecording } from './recording';
 export type { RecordedPacket, Recording } from './recording';
