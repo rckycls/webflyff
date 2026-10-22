@@ -1,5 +1,5 @@
-// Serves the converter's output to the viewer: `FlyffWeb/dist/assets` at `/assets/` and `FlyffWeb/dist/basis` (the
-// Basis transcoder, `npm run copy-basis`) at `/basis/`, in the dev server and in `vite preview`.
+// Serves the converter's output to the viewer: `FlyffWeb/dist/assets` at `/assets/`, in the dev server and in
+// `vite preview`. (The Basis transcoder is not here: Vite serves and bundles the one three.js ships, see loaders.ts.)
 //
 // Not Vite's `publicDir`: that folder is ~1 GB and `vite build` would copy it into the build. Here the files stay where
 // the converter wrote them.
@@ -52,7 +52,7 @@ export function resolveDistRequest(url: string, mounts: readonly Mount[]): DistR
 }
 
 /** Worth compressing: text-like or uncompressed binary. `.ktx2` is supercompressed already. */
-const COMPRESSIBLE = /\.(json|bin|glb|wasm|js)$/i;
+const COMPRESSIBLE = /\.(json|bin|glb)$/i;
 
 function shouldCompress(req: IncomingMessage): boolean {
   if (req.headers.range) return false; // a compressed partial body would not be the range that was asked for
@@ -66,7 +66,7 @@ const HASHED = /\.[0-9a-f]{10}\.[a-z0-9]+$/;
 
 function setCacheHeaders(res: ServerResponse, pathname: string): void {
   if (HASHED.test(pathname)) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-  // Everything else (index.json, the transcoder) keeps sirv's `no-cache`: revalidated with its ETag every time.
+  // Everything else (index.json, report.json) keeps sirv's `no-cache`: revalidated with its ETag every time.
 }
 
 export function createDistMiddleware(mounts: readonly Mount[]): Connect.NextHandleFunction {
@@ -96,15 +96,12 @@ export function createDistMiddleware(mounts: readonly Mount[]): Connect.NextHand
 }
 
 export interface ServeDistOptions {
-  /** `FlyffWeb/dist`: its `assets` and `basis` folders are served. */
+  /** `FlyffWeb/dist`: its `assets` folder is served. */
   distDir: string;
 }
 
 export function serveDist(options: ServeDistOptions): Plugin {
-  const middleware = createDistMiddleware([
-    { prefix: '/assets/', dir: path.join(options.distDir, 'assets') },
-    { prefix: '/basis/', dir: path.join(options.distDir, 'basis') },
-  ]);
+  const middleware = createDistMiddleware([{ prefix: '/assets/', dir: path.join(options.distDir, 'assets') }]);
   return {
     name: 'flyffweb-serve-dist',
     configureServer(server) {

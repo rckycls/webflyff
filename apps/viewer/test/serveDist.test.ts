@@ -13,7 +13,7 @@ const FLYFFWEB = path.resolve(import.meta.dirname, '../..', '..');
 describe('resolveDistRequest', () => {
   const mounts: Mount[] = [
     { prefix: '/assets/', dir: path.join(FLYFFWEB, 'dist', 'assets') },
-    { prefix: '/basis/', dir: path.join(FLYFFWEB, 'dist', 'basis') },
+    { prefix: '/other/', dir: path.join(FLYFFWEB, 'dist', 'other') },
   ];
 
   it('maps /assets/index.json to dist/assets/index.json', () => {
@@ -27,14 +27,14 @@ describe('resolveDistRequest', () => {
     });
   });
 
-  it('maps a nested path and /basis/ to its own folder, and ignores the query', () => {
+  it('maps a nested path, and a second mount to its own folder, and ignores the query', () => {
     expect(resolveDistRequest('/assets/worlds/wdmadrigal/tiles/0_0.b9fe1fe6be.bin?x=1', mounts)).toMatchObject({
       kind: 'file',
       file: path.join(FLYFFWEB, 'dist', 'assets', 'worlds', 'wdmadrigal', 'tiles', '0_0.b9fe1fe6be.bin'),
     });
-    expect(resolveDistRequest('/basis/basis_transcoder.wasm', mounts)).toMatchObject({
+    expect(resolveDistRequest('/other/x.json', mounts)).toMatchObject({
       kind: 'file',
-      file: path.join(FLYFFWEB, 'dist', 'basis', 'basis_transcoder.wasm'),
+      file: path.join(FLYFFWEB, 'dist', 'other', 'x.json'),
     });
   });
 
@@ -49,7 +49,7 @@ describe('resolveDistRequest', () => {
     for (const url of [
       '/assets/../package.json',
       '/assets/../../package.json',
-      '/assets/a/../../basis/x',
+      '/assets/a/../../other/x',
       '/assets/%2e%2e/package.json',
       '/assets/%2E%2E%2Fpackage.json',
       '/assets/..%2fpackage.json',
@@ -84,18 +84,15 @@ describe('createDistMiddleware', () => {
   beforeAll(async () => {
     tmp = mkdtempSync(path.join(tmpdir(), 'flyffweb-serve-'));
     mkdirSync(path.join(tmp, 'assets', 'models'), { recursive: true });
-    mkdirSync(path.join(tmp, 'basis'));
+    mkdirSync(path.join(tmp, 'assets', 'worlds'));
     const big = JSON.stringify({ version: 1, files: Object.fromEntries(Array.from({ length: 200 }, (_, i) => [`k${i}`, `v${i}`])) });
     writeFileSync(path.join(tmp, 'assets', 'index.json'), big);
     writeFileSync(path.join(tmp, 'assets', 'models', 'a.1111111111.glb'), Buffer.alloc(4096, 7));
     writeFileSync(path.join(tmp, 'assets', 'models', 'tex.2222222222.ktx2'), Buffer.alloc(4096, 9));
+    writeFileSync(path.join(tmp, 'assets', 'worlds', '0_0.3333333333.bin'), Buffer.alloc(4096, 5));
     writeFileSync(path.join(tmp, 'secret.txt'), 'secret');
-    writeFileSync(path.join(tmp, 'basis', 'basis_transcoder.js'), '// transcoder\n'.repeat(200));
 
-    const middleware = createDistMiddleware([
-      { prefix: '/assets/', dir: path.join(tmp, 'assets') },
-      { prefix: '/basis/', dir: path.join(tmp, 'basis') },
-    ]);
+    const middleware = createDistMiddleware([{ prefix: '/assets/', dir: path.join(tmp, 'assets') }]);
     server = http.createServer((req, res) =>
       middleware(req, res, () => {
         res.statusCode = 418;
@@ -145,11 +142,11 @@ describe('createDistMiddleware', () => {
     expect(JSON.parse(res.body.toString()).version).toBe(1);
   });
 
-  it('compresses glb and the transcoder, but not ktx2 (already supercompressed)', async () => {
+  it('compresses glb and tiles, but not ktx2 (already supercompressed)', async () => {
     const accept = { 'accept-encoding': 'gzip' };
 
     expect((await get('/assets/models/a.1111111111.glb', accept)).headers['content-encoding']).toBe('gzip');
-    expect((await get('/basis/basis_transcoder.js', accept)).headers['content-encoding']).toBe('gzip');
+    expect((await get('/assets/worlds/0_0.3333333333.bin', accept)).headers['content-encoding']).toBe('gzip');
     const ktx2 = await get('/assets/models/tex.2222222222.ktx2', accept);
     expect(ktx2.headers['content-encoding']).toBeUndefined();
     expect(ktx2.body.length).toBe(4096);
@@ -187,5 +184,17 @@ describe('serveDist plugin', () => {
 
     expect(server.middlewares.use).toHaveBeenCalledTimes(2);
     for (const [handler] of server.middlewares.use.mock.calls) expect(typeof handler).toBe('function');
+  });
+
+  it('serves /assets/ only: /basis/ is left to Vite (the transcoder is the one three.js ships)', () => {
+    const plugin = serveDist({ distDir: path.join(FLYFFWEB, 'dist') });
+    const server = { middlewares: { use: vi.fn() } };
+    (plugin.configureServer as (s: unknown) => void)(server);
+    const middleware = server.middlewares.use.mock.calls[0]![0] as (req: unknown, res: unknown, next: () => void) => void;
+    const next = vi.fn();
+
+    middleware({ url: '/basis/basis_transcoder.wasm', headers: {} }, {}, next);
+
+    expect(next).toHaveBeenCalledTimes(1);
   });
 });

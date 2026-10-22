@@ -78,7 +78,6 @@ export default defineConfig({
     ...(runs('prod')
       ? [
           {
-            // preview:viewer copies the Basis transcoder (copy-basis) before it serves.
             command: 'npm run build:viewer && npm run preview:viewer -- --port 4173 --strictPort',
             url: PREVIEW_URL,
             cwd: flyffwebRoot,

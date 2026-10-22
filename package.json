@@ -10,11 +10,11 @@
   "scripts": {
     "test": "vitest run",
     "test:corpus": "vitest run --config vitest.corpus.config.ts",
+    "typecheck": "tsc --noEmit -p packages/formats && tsc --noEmit -p tools/convert && tsc --noEmit -p apps/viewer && tsc --noEmit -p apps/viewer/tsconfig.node.json",
     "convert": "tsx tools/convert/src/cli.ts",
-    "copy-basis": "node scripts/copy-basis.mjs",
-    "dev:viewer": "npm run copy-basis && vite --config apps/viewer/vite.config.ts --host",
+    "dev:viewer": "vite --config apps/viewer/vite.config.ts --host",
     "build:viewer": "vite build --config apps/viewer/vite.config.ts",
-    "preview:viewer": "npm run copy-basis && vite preview --config apps/viewer/vite.config.ts --host",
+    "preview:viewer": "vite preview --config apps/viewer/vite.config.ts --host",
     "test:e2e": "playwright test -c apps/viewer/playwright.config.ts --project=dev --project=prod",
     "test:soak": "playwright test -c apps/viewer/playwright.config.ts --project=soak"
   },
