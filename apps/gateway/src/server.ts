@@ -3,11 +3,15 @@ import type { AddressInfo } from 'node:net';
 import type { Duplex } from 'node:stream';
 import { WebSocketServer, type WebSocket } from 'ws';
 import { CloseCode } from '@flyffweb/protocol';
-import { resolveClientAddress } from './clientAddress';
+import { resolveClientAddress, shownAddress } from './clientAddress';
 import type { GatewayConfig } from './config';
-import { AddressCounter } from './limits';
+import { AddressCounter, AddressRate } from './limits';
 import { consoleLogger, type Logger } from './log';
+import { RefusalLog, type RefusalReason } from './refusalLog';
 import { startRelay } from './relay';
+
+/** The window of `maxNewConnectionsPerAddressPerMinute`. */
+const NEW_CONNECTIONS_WINDOW_MS = 60000;
 
 export interface Gateway {
   /** The port the gateway listens on; the one the system picked when the config asked for 0. */
@@ -53,18 +57,27 @@ const closeLine = (address: string, routeKey: string, code: number, up: number, 
  *
  * An upgrade request is refused before the upgrade when its `Origin` is missing or not in `allowedOrigins` (403),
  * when the path is not `/connect/<address>:<port>` (404) or when the player's address cannot be told (400). Past
- * that the WebSocket opens, and is closed again with 4003 when `<address>:<port>` is not in the route table and
- * with 4007 when the player's address already has `maxConnectionsPerAddress` connections. Anything else is
- * relayed (`startRelay`).
+ * that the WebSocket opens, and is closed again, in this order of checks, with:
+ * - 4003 when `<address>:<port>` is not in the route table;
+ * - 4009 when the gateway already has `maxConnections` open connections;
+ * - 4007 when the player's address already has `maxConnectionsPerAddress` of them;
+ * - 4008 when the player's address has made `maxNewConnectionsPerAddressPerMinute` in the last 60 seconds.
+ * Anything else is relayed (`startRelay`), and only such a connection counts towards those limits: a refused one
+ * never reaches a server.
  *
  * Writes to `log` one line when a relay starts, `open <address> <routeKey>`, and one when it ends,
- * `close <address> <routeKey> code=<code> up=<bytes> down=<bytes>`. A connection closed with 4003 or 4007 gets the
- * close line alone, with `up=0 down=0`. A refused upgrade (403, 404, 400) is not logged. Nothing a packet holds is
- * ever logged: the password hash is in those.
+ * `close <address> <routeKey> code=<code> up=<bytes> down=<bytes>`. Every refusal goes to a `RefusalLog`, which
+ * writes `refused <address> <reason>` once per address and reason a minute and sums the rest. Nothing a packet
+ * holds is ever logged, because the password hash is in those, and nothing else a browser sent either: not its
+ * origin, path or route.
  */
 export async function startGateway(config: GatewayConfig, log: Logger = consoleLogger): Promise<Gateway> {
   const { limits } = config;
   const counter = new AddressCounter(limits.maxConnectionsPerAddress);
+  const rate = new AddressRate(limits.maxNewConnectionsPerAddressPerMinute, NEW_CONNECTIONS_WINDOW_MS);
+  const refusals = new RefusalLog(log);
+  /** Connections that passed every check, until their relay is over. */
+  let open = 0;
   // One byte of room over the largest packet: a packet that is one byte too big reaches the relay, which answers it
   // with 4004; anything longer is cut by `ws` itself, which closes with 1009.
   const wss = new WebSocketServer({ noServer: true, maxPayload: limits.maxPacketBytes + 1 });
@@ -77,12 +90,22 @@ export async function startGateway(config: GatewayConfig, log: Logger = consoleL
 
   const onConnection = (ws: WebSocket, routeKey: string, address: string): void => {
     ws.on('error', () => {}); // `ws` closes the connection after an error by itself; this keeps it from throwing
-    const refuseWith = (code: number): void => {
-      log.info(closeLine(address, routeKey, code, 0, 0));
+    const refuseWith = (code: number, reason: RefusalReason): void => {
+      refusals.refused(address, reason);
       ws.close(code);
     };
-    if (!Object.hasOwn(config.routes, routeKey)) return refuseWith(CloseCode.NOT_ALLOWED);
-    if (!counter.acquire(address)) return refuseWith(CloseCode.TOO_MANY_CONNECTIONS);
+    if (!Object.hasOwn(config.routes, routeKey)) return refuseWith(CloseCode.NOT_ALLOWED, 'route');
+    if (open >= limits.maxConnections) return refuseWith(CloseCode.GATEWAY_FULL, 'full');
+    if (!counter.acquire(address)) return refuseWith(CloseCode.TOO_MANY_CONNECTIONS, 'per-address');
+    if (!rate.allow(address)) {
+      counter.release(address);
+      return refuseWith(CloseCode.TOO_MANY_NEW_CONNECTIONS, 'rate');
+    }
+    open++;
+    const giveBack = (): void => {
+      open--;
+      counter.release(address);
+    };
 
     let relay: ReturnType<typeof startRelay>;
     try {
@@ -93,15 +116,15 @@ export async function startGateway(config: GatewayConfig, log: Logger = consoleL
         limits,
       });
     } catch (error) {
-      // Not a case a browser can cause, but it must not leave the slot taken or throw out of the upgrade listener.
-      counter.release(address);
+      // Not a case a browser can cause, but it must not leave the slots taken or throw out of the upgrade listener.
+      giveBack();
       console.error(`gateway: could not start a relay for ${address} ${routeKey}: ${(error as Error).message}`);
       ws.close(1011); // internal error
       return;
     }
     log.info(`open ${address} ${routeKey}`);
     const life = relay.done.then((result) => {
-      counter.release(address);
+      giveBack();
       log.info(closeLine(address, routeKey, result.closeCode, result.bytesUp, result.bytesDown));
       relays.delete(life);
     });
@@ -109,24 +132,34 @@ export async function startGateway(config: GatewayConfig, log: Logger = consoleL
   };
 
   server.on('upgrade', (request, socket, head) => {
-    const origin = request.headers.origin;
-    if (origin === undefined || !config.allowedOrigins.includes(origin)) return refuse(socket, 403);
-    const routeKey = requestedRoute(request.url);
-    if (routeKey === undefined) return refuse(socket, 404);
+    // Worked out first, so that a refusal before the upgrade can name it too.
     const address = resolveClientAddress(request.socket.remoteAddress, request.headers['x-forwarded-for'], config.trustedProxies);
-    if (address === undefined) return refuse(socket, 400);
+    const refuseUpgrade = (status: 400 | 403 | 404, reason: RefusalReason): void => {
+      refusals.refused(shownAddress(address, request.socket.remoteAddress), reason);
+      refuse(socket, status);
+    };
+    const origin = request.headers.origin;
+    if (origin === undefined || !config.allowedOrigins.includes(origin)) return refuseUpgrade(403, 'origin');
+    const routeKey = requestedRoute(request.url);
+    if (routeKey === undefined) return refuseUpgrade(404, 'path');
+    if (address === undefined) return refuseUpgrade(400, 'address');
     wss.handleUpgrade(request, socket, head, (ws) => onConnection(ws, routeKey, address));
   });
 
-  await new Promise<void>((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(config.listen.port, config.listen.host, () => {
-      server.off('error', reject);
-      // Once listening, an error (an accept that fails for lack of file handles, say) is no reason to stop serving.
-      server.on('error', (error) => console.error(`gateway: server error: ${error.message}`));
-      resolve();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(config.listen.port, config.listen.host, () => {
+        server.off('error', reject);
+        // Once listening, an error (an accept that fails for lack of file handles, say) is no reason to stop serving.
+        server.on('error', (error) => console.error(`gateway: server error: ${error.message}`));
+        resolve();
+      });
     });
-  });
+  } catch (error) {
+    refusals.close(); // its period timer would outlive a gateway that never started
+    throw error;
+  }
 
   let closing: Promise<void> | undefined;
   return {
@@ -139,6 +172,7 @@ export async function startGateway(config: GatewayConfig, log: Logger = consoleL
         wss.close();
         await Promise.all(relays);
         await stopped;
+        refusals.close(); // writes the repeat lines still pending
       })();
       return closing;
     },

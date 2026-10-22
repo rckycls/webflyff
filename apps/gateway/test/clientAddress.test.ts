@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeIPv4, resolveClientAddress } from '../src/clientAddress';
+import { normalizeIPv4, resolveClientAddress, shownAddress } from '../src/clientAddress';
+
+describe('shownAddress', () => {
+  it('shows the player\'s address when it can be told', () => {
+    expect(shownAddress('10.0.0.7', '127.0.0.1')).toBe('10.0.0.7');
+  });
+
+  it('falls back to the direct peer in plain IPv4, and to "unknown" when that is not IPv4 either', () => {
+    expect(shownAddress(undefined, '::ffff:127.0.0.1')).toBe('127.0.0.1');
+    expect(shownAddress(undefined, '::1')).toBe('unknown');
+    expect(shownAddress(undefined, undefined)).toBe('unknown');
+  });
+});
 
 describe('normalizeIPv4', () => {
   it('unwraps an IPv4-mapped IPv6 address and refuses any other IPv6 address', () => {
