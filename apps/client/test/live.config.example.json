@@ -1,0 +1,27 @@
+{
+  "_comment": [
+    "Copy this file to live.config.json in this folder (git ignores that name), fill in a TEST account, start the game servers, then run: npm run test:live",
+    "Two limits of the servers can lock you out if you run this too often. (1) The certifier blocks an address for 15 seconds after one wrong password, and for 15 minutes after three in a row; a good login clears the count. A run sends one wrong password from this PC and one from the simulated address 10.0.0.1, so wait 15 seconds between runs. (2) The servers' accept limiter counts connections from one address that arrive less than 200 ms apart; after 50 of them it cuts every connection from that address for about 10 minutes, and the count never decays. The test keeps its connections 300 ms apart and ends each flow before the next, but do not loop it.",
+    "gateway: the test runs this gateway inside its own process. listen.port must be free (8091 does not clash with a gateway on 8090). trustedProxies must list 127.0.0.1, because the test simulates other addresses with X-Forwarded-For.",
+    "certifierPatched: set true only when the rebuilt Certifier.exe (server-patches/README.md) is running and Certifier.ini has a Gateway \"127.0.0.1\" line. It turns on the test that a wrong password from one address does not block another.",
+    "bannedTestAddress: an address you added to Program/IPCut.ini (restart the account server afterwards), for example \"10.0.0.99\", or null. It turns on the banned-address test, which also needs certifierPatched.",
+    "account, password, bankPin: a throwaway account with at least one empty character slot. The test creates WebTest and 3 digits in the first empty slot with this Bank PIN, then deletes it."
+  ],
+  "gateway": {
+    "listen": { "host": "127.0.0.1", "port": 8091 },
+    "allowedOrigins": ["http://live.test"],
+    "trustedProxies": ["127.0.0.1"],
+    "sendClientAddr": true,
+    "routes": {
+      "172.31.238.55:23000": { "host": "127.0.0.1", "port": 23000, "role": "certifier" },
+      "172.31.238.55:28000": { "host": "127.0.0.1", "port": 28000, "role": "login" },
+      "172.31.238.55:5400":  { "host": "127.0.0.1", "port": 5400,  "role": "cache" }
+    }
+  },
+  "certifierAddress": "172.31.238.55:23000",
+  "account": "webtest",
+  "password": "change-me",
+  "bankPin": "1234",
+  "certifierPatched": false,
+  "bannedTestAddress": null
+}
