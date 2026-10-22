@@ -207,7 +207,9 @@ describe.skipIf(!hasRecording())('recorded Neuz session, login port', () => {
   it('re-encodes GETPLAYERLIST byte for byte', () => {
     const body = bodyOfType(PacketType.GETPLAYERLIST, 'GETPLAYERLIST');
     const channelId = new DataView(body.buffer, body.byteOffset).getUint32(body.length - 4, true);
-    expect(bytesToHex(encodeGetPlayerList(authKey, rec.account, hashPassword(rec.password), channelId))).toBe(bytesToHex(body));
+    // Neuz sends the account lower-cased (`_tcslwr( g_Neuz.m_szAccount )` in Neuz.cpp); the recording holds it as typed.
+    const account = rec.account.trim().toLowerCase();
+    expect(bytesToHex(encodeGetPlayerList(authKey, account, hashPassword(rec.password), channelId))).toBe(bytesToHex(body));
   });
   it('re-encodes CREATE_PLAYER and DEL_PLAYER byte for byte', () => {
     const create = bodyOfType(PacketType.CREATE_PLAYER, 'CREATE_PLAYER');

@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
-  ArReader, ArWriter, DPID_UNKNOWN, PacketType, PROTOCOL_VERSION, aes128CbcDecrypt, bytesToHex, decodeCertifierMessage,
+  ArReader, ArWriter, DPID_UNKNOWN, PacketType, Port, PROTOCOL_VERSION, aes128CbcDecrypt, bytesToHex, decodeCertifierMessage,
   encodeCertify, encodeCloseExistingConnection, encodeErrorReply, encodeGatewayClientAddr, encodeKeepAlive,
   encodeProtocolIdBody, hashPassword, hexToBytes,
 } from '../src';
@@ -112,18 +112,23 @@ describe('fixture helpers', () => {
 });
 
 // Needs test/fixtures/neuz-login.json, which the owner records from a real Neuz login. Without it the block is
-// skipped (reported as skipped, not as a failure) instead of the whole file failing to load.
+// skipped (reported as skipped, not as a failure) instead of the whole file failing to load. Once the file exists, a
+// list that is empty or a packet that is missing fails with a message naming it, so nothing here passes by comparing nothing.
 describe.skipIf(!hasRecording())('recorded Neuz session, certifier port', () => {
   let rec: Recording;
   beforeAll(() => { rec = loadRecording(); });
-  it('decodes every server body to a known message', () => {
-    for (const p of packetsFor(rec, 23000, 's2c')) {
-      expect(decodeCertifierMessage(hexToBytes(p.hex)).type).not.toBe('unknown');
-    }
+  it('decodes every server body to a known message, the server list among them', () => {
+    const messages = packetsFor(rec, Port.CERTIFIER, 's2c').map((p) => decodeCertifierMessage(hexToBytes(p.hex)));
+    expect(messages.length, 'the recording has no packets from the certifier').toBeGreaterThan(0);
+    for (const m of messages) expect(m.type).not.toBe('unknown');
+    expect(messages.map((m) => m.type), 'the recording has no SRVR_LIST from the certifier').toContain('serverList');
   });
   it('re-encodes CERTIFY: same fields, block decrypts to the same password hash', () => {
-    const recorded = hexToBytes(packetsFor(rec, 23000, 'c2s').find((p) => typeOf(hexToBytes(p.hex)) === PacketType.CERTIFY)!.hex);
-    const ours = encodeCertify(rec.account, hashPassword(rec.password));
+    const packet = packetsFor(rec, Port.CERTIFIER, 'c2s').find((p) => typeOf(hexToBytes(p.hex)) === PacketType.CERTIFY);
+    if (packet === undefined) throw new Error('the recording has no CERTIFY packet from the client on the certifier port');
+    const recorded = hexToBytes(packet.hex);
+    // Neuz lower-cases the account it sends (`_tcslwr( g_Neuz.m_szAccount )` in Neuz.cpp); the recording holds it as typed.
+    const ours = encodeCertify(rec.account.trim().toLowerCase(), hashPassword(rec.password));
     expect(bytesToHex(recorded.subarray(0, recorded.length - 672))).toBe(bytesToHex(ours.subarray(0, ours.length - 672)));
     const key = new Uint8Array(16); key.set(new TextEncoder().encode('dldhsvmflvm'));
     const plain = aes128CbcDecrypt(key, new Uint8Array(16), recorded.subarray(recorded.length - 672));
