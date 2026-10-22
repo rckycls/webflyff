@@ -2,7 +2,7 @@
 
 For the owner. This guide puts the browser client on a real web address, for example `https://play.example.com`, so a player can open it on a phone from anywhere. It is written ahead of time: no hosted machine exists yet, so **no step here has been carried out on a real machine**. Where something does not behave the way this guide says, write down what you saw and what you expected, and ask Claude.
 
-Read [Known limit before a public launch](#known-limit-before-a-public-launch) before you tell anyone the address.
+Read [Before a public launch](#before-a-public-launch) before you tell anyone the address.
 
 ## How the parts fit
 
@@ -133,19 +133,28 @@ Where the files go: the client's own files are under `apps\client\dist\client\` 
 
 You must **build again whenever the domain or `NEUZ_IPSET` changes**, and after every update of the client's code.
 
-## Step 4. The certifier: show each player's real address
+## Step 4. The certifier and the login server
 
-Without this step the site works, but every browser player looks like one player to the servers: one player's typo in a password blocks everyone for 15 seconds (three typos: 15 minutes), and `IPCut.ini` bans cannot single anyone out.
+Without this step the site works, but the servers treat every browser player as one player, because they all arrive from the gateway's address:
 
-Follow **[server-patches/README.md](../server-patches/README.md)**: build the patched `Certifier.exe` (on your PC, where Visual Studio is), and on the hosted machine stop the certifier, copy the new file over `Program\2. Certifier.exe` **keeping that name** (back up the old one first, as that README says), and add this line at the end of `Program\Certifier.ini`:
+- one player's typo in a password blocks everyone for 15 seconds (three typos: 15 minutes), and `IPCut.ini` bans cannot single anyone out;
+- on a busy server, the connection-flood limiter cuts off every browser player at once (see [Before a public launch](#before-a-public-launch)).
 
-```
-Gateway "127.0.0.1"
-```
+Follow **[server-patches/README.md](../server-patches/README.md)**. Build the new `Certifier.exe` and `LoginServer.exe` on your PC, where Visual Studio is; the new certifier holds all three certifier changes, so one swap covers them. Then, on the hosted machine (back up each old exe first, as that README says):
 
-Press Enter after `HEARTBEAT` first, as that README explains. Then start the certifier again.
+1. **The certifier:** stop it, copy the new file over `Program\2. Certifier.exe` **keeping that name**, and add this line at the end of `Program\Certifier.ini`:
 
-Success: after a wrong password on one phone, a second phone can still log in at once. (With the old certifier it could not, for 15 seconds: the lockout is per address, and without the patch every browser player has the gateway's address.)
+   ```
+   Gateway "127.0.0.1"
+   ```
+
+   Press Enter after `HEARTBEAT` first, as that README explains. Then start the certifier again.
+2. **The login server:** stop it, copy the new file over `Program\5. Login.exe` **keeping that name**, and add the same `Gateway "127.0.0.1"` line at the end of `Program\LoginServer.ini`. Press Enter after the last line, `//NPROTECT`, first: a line typed straight after it becomes part of that comment and is ignored. Then start the login server again.
+
+Success:
+
+- After a wrong password on one phone, a second phone can still log in to its own account at once. (With the old certifier it could not, for 15 seconds: without the patch every browser player has the gateway's address.)
+- The error log in `Program` (a file named like `error_20261022.txt`) has no `GATEWAY_CLIENT_ADDR refused` line and no `Gateway … not added` line.
 
 ## Step 5. The gateway: config and first run
 
@@ -231,6 +240,24 @@ Success: `SERVICE_RUNNING`; the log's last line is `gateway listening on ws://12
 From now on the gateway starts with Windows and NSSM starts it again if it stops. After a change to `gateway.config.json`, run `nssm restart flyff-gateway`. To update the code, follow [Updating later](#updating-later): the service has to be stopped first.
 
 The log has one line when a connection opens and one when it closes, with the time, the **player's** address, the server route, the bytes each way and a close code. It never holds a packet's contents (those contain password hashes).
+
+Refused connections get `refused` lines instead, at most one per address and reason each minute, so that a flood cannot fill the log:
+
+- `refused 203.0.113.5 rate`: the first refusal of that address, for that reason, in the current minute.
+- `refused 203.0.113.5 rate x37 more in the last minute`: at the end of the minute, how many more there were.
+- `refused 412 more connections from other addresses in the last minute`: past 50 addresses in one minute, the rest are only counted.
+
+| Reason | Why the connection was refused |
+| --- | --- |
+| `origin` | The page address is not in `allowedOrigins`, or the browser sent none. The first thing to look for when the lobby says it cannot reach the gateway. |
+| `path` | It did not ask for `/connect/<address>:<port>`. Not the lobby: usually a program scanning the internet. |
+| `address` | The player's address could not be told (check `trustedProxies`). The line shows Caddy's address instead. |
+| `route` | It asked for a server address that is not in `routes`. |
+| `per-address` | That address already has 32 open connections. |
+| `rate` | That address opened 60 connections in the last minute. |
+| `full` | The gateway already has 1000 open connections. |
+
+A `refused` line never holds what the browser sent, such as its page address or path: only the address and the reason.
 
 ## Step 7. Open port 443
 
@@ -386,21 +413,35 @@ Success: the first `nssm status` says `SERVICE_STOPPED` (if it says anything els
 
 Caddy reads the new client files from disk straight away; it needs no restart. A phone that had the page open should reload it. (If you ever start the gateway by hand with `npm run gateway` instead, stop it with `Ctrl` + `C` before `npm ci` for the same reason.)
 
-## Known limit before a public launch
+## Before a public launch
 
-**The game servers can lock out every browser player at once.** The certifier and the login server have a built-in connection-flood limiter. It counts connections from **one address** that arrive less than 200 milliseconds apart, and it never forgets them. After 50, it cuts every connection from that address and refuses it for about 10 minutes.
+All browser players reach the servers from the gateway's address. Once the new certifier and login server are in place with their `Gateway` lines (step 4), the servers and the gateway handle that:
 
-With the gateway, **all players reach the servers from the gateway's address**, so they all count as one. A busy public server will trip the limiter.
+- **The servers' connection-flood limiter no longer counts the gateway.** It counts connections from one address that arrive less than 200 milliseconds apart, never forgets them, and at 50 cuts every connection from that address for up to 10 minutes. The certifier and the login server now skip it for the address in their `Gateway` lines. Before, all browser players counted as one address, and a busy server cut them all off at once.
+- **The gateway limits each player instead,** by their real address: at most 60 new connections a minute and 32 open ones per address, and 1000 open connections in all. See [Limits players can meet](#limits-players-can-meet).
+- **The wrong-password lockout keeps working on a busy server.** The certifier remembers every address and account that typed a wrong password, for 24 hours, instead of only the last 3 addresses in each login thread.
 
-- **What you will see:** every browser player is disconnected at the same moment, and nobody can log in for about 10 minutes. In the gateway log, many connections close at the same moment (usually with code `4002`, "server closed", or `4001`, "server unreachable").
-- **For testing with a few devices, this is fine:** quick, separate logins do not reach 50.
-- **It must be fixed in the servers' network code before a public launch.** That fix is a follow-up task. It is **not done yet**: do not announce the address to the public until it is.
-- **If it happens while you test:** repeated quick logins and live-test runs add up, because the count never goes down. If all logins suddenly fail for about 10 minutes, wait it out, or restart the certifier and the login server to clear it. Do not run `npm run test:live` in a loop.
+**Announce the address only when** both new exes and both `Gateway` lines are in place (step 4) and step 9's checks pass.
 
-Two smaller limits, so they do not surprise you:
+**What is still not covered:**
 
-- **The gateway allows 8 open connections per player address.** A player over that gets "Too many connections from your network." Players on one shared network (a family on one Wi-Fi, a mobile carrier that shares addresses) share the 8. It is the `limits.maxConnectionsPerAddress` setting if you ever need more.
-- **The certifier's password lockout:** one wrong password blocks an address for 15 seconds, and three in a row for 15 minutes. With the patched certifier (step 4) this is **per player**. With the old certifier all browser players share one address and so one lockout.
+- **A flood from thousands of addresses at once** (a DDoS). The gateway's limits work per address, and its total cap only stops new connections once 1000 are open, which keeps real players out too. Stopping such a flood needs a service in front of the machine, such as Cloudflare.
+- **Players behind one shared address share its limits.** An internet café, or a mobile carrier that puts many players behind one address, gives them 32 open and 60 new connections a minute between them. If that becomes a problem, raise `limits.maxConnectionsPerAddress` and `limits.maxNewConnectionsPerAddressPerMinute` in `gateway.config.json`.
+- **Password guessing across accounts.** You chose to count wrong passwords per address and account, so nobody is blocked by someone else's typos. The other side: one address can try 3 passwords on every account, and the gateway's limits only slow that down.
+
+**Until step 4 is done,** the old limiter still counts every browser player as one. A busy server cuts them all off at the same moment, and nobody can log in for about 10 minutes; in the gateway log, many connections close at once, usually with code `4002` ("server closed") or `4001` ("server unreachable"). With a few test devices this is fine, because quick, separate logins do not reach 50. But repeated quick logins and live-test runs add up, because the count never goes down: if all logins suddenly fail for about 10 minutes, wait it out, or restart the certifier and the login server to clear it. Do not run `npm run test:live` in a loop.
+
+### Limits players can meet
+
+| Limit | Setting (`limits` in `gateway.config.json`) | Default | What the player sees |
+| --- | --- | --- | --- |
+| Open connections per address | `maxConnectionsPerAddress` | 32 | "Too many connections from your network." |
+| New connections per address in a minute | `maxNewConnectionsPerAddressPerMinute` | 60 | "Too many connection attempts from your network. Wait a minute and try again." |
+| Open connections in all | `maxConnections` | 1000 | "The game is full right now. Try again in a few minutes." |
+
+A login uses 2 connections (the certifier, then the login server) and a channel change 2 more, so one player stays far below these. Players on one shared network (a family on one Wi-Fi, a café, a mobile carrier that shares addresses) share the per-address limits.
+
+**The certifier's password lockout:** one wrong password blocks that account from that address for 15 seconds, and three for 15 minutes. After that, each further wrong password blocks it for 15 minutes again, until a good login, or until 24 hours pass without a wrong password. With the old certifier, all browser players share one address and so one lockout.
 
 ## Bandwidth
 
@@ -416,8 +457,11 @@ When the machine's upload becomes the limit, move `/assets/` to a CDN (a service
 | The page loads, but login says "Cannot reach the game gateway." | The gateway is not running (`nssm status flyff-gateway`), or `allowedOrigins` does not match the page address exactly (`https://play.example.com`, no slash at the end), or the client was built without `VITE_GATEWAY_URL` (check with the `Select-String` command in step 3b). After fixing the config, `nssm restart flyff-gateway`. |
 | "This server address is not allowed." | `VITE_CERTIFIER_ADDRESS`, or the address the servers hand out, is not a key in `routes`. They must match exactly, port included. |
 | "The game server is not reachable. Try again later." | The gateway is running but cannot connect to the certifier or the login server: are the servers running? Do `routes` point at the ports they listen on? |
-| "Too many connections from your network." | 8 connections per address, see above. Wait a moment, or close other tabs. |
+| "Too many connections from your network." | 32 open connections from one address, see [Limits players can meet](#limits-players-can-meet). Wait a moment, or close other tabs. The gateway log shows `refused <address> per-address`. |
+| "Too many connection attempts from your network. Wait a minute and try again." | 60 new connections from one address in a minute. Wait a minute. If a whole café or carrier shares the address, raise `limits.maxNewConnectionsPerAddressPerMinute`. The gateway log shows `refused <address> rate`. |
+| "The game is full right now. Try again in a few minutes." | The gateway has 1000 open connections (`limits.maxConnections`). The gateway log shows `refused <address> full`. Raise it if the machine has room; if the log shows many unknown addresses, it may be a flood, see [Before a public launch](#before-a-public-launch). |
 | "Wrong Password. Cannot log into account for 15 seconds." | The lockout, see above. Wait. |
-| Everyone disconnected at once, nobody can log in for about 10 minutes | The connection-flood limiter, see [Known limit before a public launch](#known-limit-before-a-public-launch). |
+| Everyone disconnected at once, nobody can log in for about 10 minutes | The servers' connection-flood limiter: the old certifier or login server is still running, or `Certifier.ini` or `LoginServer.ini` has no `Gateway` line. See step 4 and [Before a public launch](#before-a-public-launch). |
+| The error log in `Program` has `Gateway … not added` | A `Gateway` line in `LoginServer.ini` is not a plain IPv4 address (a typo, say), or there are more than 8 of them. Fix it and restart the login server. |
 | Every line in the gateway log shows `127.0.0.1` | `trustedProxies` does not list `127.0.0.1`, or Caddy is not the one passing the connection. |
 | The certifier's error log has `GATEWAY_CLIENT_ADDR refused from ...` | The patched certifier does not list the address the gateway connects from. Read the "When to add a second line" note in [server-patches/README.md](../server-patches/README.md). Never add an address you do not recognise. |

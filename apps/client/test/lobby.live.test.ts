@@ -5,14 +5,17 @@
 // TEST account. The servers must be running.
 //
 // Two limits of the servers can lock you out if you run this too often:
-//  - The certifier blocks an address for 15 seconds after one wrong password and for 15 minutes after three in a row
-//    (a good login clears the count). One run sends a wrong password from this PC and, with the rebuilt certifier,
-//    one from the simulated address 10.0.0.1. Run again within 15 seconds and the first login is refused with
+//  - The certifier blocks the test account from an address for 15 seconds after one wrong password and for 15 minutes
+//    after three in a row (a good login clears the count; the rebuilt certifier counts per address and account). One
+//    run sends a wrong password from this PC and, with the rebuilt certifier, one from the simulated address
+//    10.0.0.1. Run again within 15 seconds and the first login is refused with
 //    "Wrong Password. Cannot log into account for 15 seconds".
-//  - The servers' accept limiter counts connections from one address that arrive less than 200 ms apart. After 50 of
-//    them it cuts every connection from that address (here: this PC, the gateway's address) for about 10 minutes,
-//    and the count never decays. So every connection below waits until 300 ms after the one before, and every flow
-//    ends, with its connections closed, before the next starts. Keep it that way, and do not loop the test.
+//  - Until the certifier and the login server are rebuilt with flood-limiter-gateway.patch and list this PC in a
+//    `Gateway` line (server-patches/README.md), their accept limiter counts connections from one address that arrive
+//    less than 200 ms apart. After 50 of them it cuts every connection from that address (here: this PC, the
+//    gateway's address) for about 10 minutes, and the count never decays. So every connection below waits until
+//    300 ms after the one before, and every flow ends, with its connections closed, before the next starts. Keep it
+//    that way, and do not loop the test.
 import { readFileSync } from 'node:fs';
 import { connect } from 'node:net';
 import { fileURLToPath } from 'node:url';
