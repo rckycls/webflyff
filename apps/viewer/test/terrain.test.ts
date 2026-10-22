@@ -381,6 +381,24 @@ describe('TerrainTile', () => {
     expect(lights.map((l) => (l.image.data as Uint8Array)[3]).sort((a, b) => a! - b!)).toEqual([77, 128]);
   });
 
+  it("lets go of each light map's pixels once it is on the GPU, and keeps the geometry and the byte count", async () => {
+    const tile = makeTile({ layers: [{ texture: 0, patches: 'all' }] });
+    const terrain = new TerrainTile(tile, manifest, { textures: fakeTextures().cache });
+    await terrain.ready;
+    const bytes = terrain.gpuBytes();
+    const mesh = terrain.group.children[0] as Mesh;
+    const light = uniformValue(mesh.material as ShaderMaterial, 'uLight') as DataTexture;
+    expect(light.image.data).not.toBeNull();
+
+    // what WebGLTextures does right after the upload
+    light.onUpdate!(light);
+
+    expect(light.image.data).toBeNull();
+    expect([light.image.width, light.image.height]).toEqual([128, 128]);
+    expect(mesh.geometry.getAttribute('position').array).toHaveLength(16641 * 3);
+    expect(terrain.gpuBytes()).toBe(bytes);
+  });
+
   it('shows nothing until every layer texture has arrived, then shows the ground', async () => {
     const tile = makeTile({ layers: [{ texture: 0, patches: 'all' }, { texture: 1, patches: [0] }] });
     const textures = fakeTextures();

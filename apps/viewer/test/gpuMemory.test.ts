@@ -16,8 +16,16 @@ import {
   RGB_S3TC_DXT1_Format,
   UnsignedByteType,
 } from 'three';
-import { describe, expect, it } from 'vitest';
-import { geometryBytes, gpuFormatName, textureBytes, textureGpuBytes } from '../src/overlay/gpuMemory';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  contextDrawingBufferBytes,
+  drawingBufferBytes,
+  geometryBytes,
+  gpuFormatName,
+  textureBytes,
+  textureGpuBytes,
+  trackDrawingBuffer,
+} from '../src/overlay/gpuMemory';
 
 describe('textureBytes', () => {
   it('counts a mipmapped rgba8 texture as 4/3 of its base level, floored', () => {
@@ -83,6 +91,63 @@ describe('geometryBytes', () => {
 
   it('is zero for an empty geometry', () => {
     expect(geometryBytes(new BufferGeometry())).toBe(0);
+  });
+});
+
+/** The parts of a WebGL context the drawing-buffer estimate reads, with a canvas the test resizes. */
+function fakeContext(width: number, height: number, samples: number) {
+  const SAMPLES = 0x80a9 as const;
+  return {
+    SAMPLES,
+    drawingBufferWidth: width,
+    drawingBufferHeight: height,
+    getParameter: vi.fn((name: number) => (name === SAMPLES ? samples : null)),
+  };
+}
+
+describe('drawingBufferBytes', () => {
+  it('counts 4 bytes of colour and 4 of depth and stencil per pixel, for every sample', () => {
+    // a 1280 x 720 canvas, antialiased with 4 samples
+    expect(drawingBufferBytes(1280, 720, 4)).toBe(1280 * 720 * 8 * 4);
+  });
+
+  it('counts one sample when the canvas is not antialiased (SAMPLES 0)', () => {
+    expect(drawingBufferBytes(100, 50, 0)).toBe(100 * 50 * 8);
+    expect(drawingBufferBytes(100, 50, 1)).toBe(100 * 50 * 8);
+  });
+
+  it('reads the size and the samples from the context', () => {
+    // a phone: 390 x 844 css pixels at a pixel ratio of 2
+    const gl = fakeContext(780, 1688, 4);
+    expect(contextDrawingBufferBytes(gl)).toBe(780 * 1688 * 8 * 4);
+    expect(gl.getParameter).toHaveBeenCalledWith(gl.SAMPLES);
+  });
+});
+
+describe('trackDrawingBuffer', () => {
+  it('adds the drawing buffer to the estimate, and only the change after a resize', () => {
+    const gl = fakeContext(1280, 720, 4);
+    const overlay = { addGpuBytes: vi.fn<(n: number) => void>() };
+    const update = trackDrawingBuffer(gl, overlay);
+
+    update();
+    expect(overlay.addGpuBytes).toHaveBeenLastCalledWith(1280 * 720 * 32);
+
+    gl.drawingBufferWidth = 640;
+    update();
+    expect(overlay.addGpuBytes).toHaveBeenLastCalledWith(-640 * 720 * 32);
+
+    const total = overlay.addGpuBytes.mock.calls.reduce((sum, [n]) => sum + n, 0);
+    expect(total).toBe(640 * 720 * 32);
+  });
+
+  it('adds nothing when the size did not change', () => {
+    const gl = fakeContext(10, 10, 0);
+    const overlay = { addGpuBytes: vi.fn<(n: number) => void>() };
+    const update = trackDrawingBuffer(gl, overlay);
+    update();
+    update();
+    expect(overlay.addGpuBytes).toHaveBeenCalledTimes(1);
   });
 });
 

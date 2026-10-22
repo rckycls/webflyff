@@ -66,8 +66,11 @@ export interface StreamerDeps {
 /** One tile the streamer holds. */
 interface Entry {
   key: string;
-  /** Null until it arrives (and for a tile that is flat ground). */
-  data: WebTile | null;
+  /**
+   * The tile's heights, for `heightAt`; null until it arrives (and for a tile that is flat ground). Only the heights:
+   * the rest of the tile (light maps above all) is on the GPU or in the object pool by then, and would only take memory.
+   */
+  heights: Pick<WebTile, 'heights'> | null;
   terrain: TerrainTile | null;
   placeholder: Mesh | null;
   objects: Group | null;
@@ -131,10 +134,10 @@ export class TileStreamer {
     const entry = this.entries.get(tileKey(x, y));
     if (entry === undefined) return null;
     if (entry.placeholder !== null) return 0;
-    if (entry.data === null) return null;
+    if (entry.heights === null) return null;
     const side = MAP_SIZE * this.manifest.mpu;
     // tile-local D3D coordinates: web z is -z
-    return sampleHeight(entry.data, pos[0] - x * side, 0 - pos[2] - y * side, this.manifest.mpu);
+    return sampleHeight(entry.heights, pos[0] - x * side, 0 - pos[2] - y * side, this.manifest.mpu);
   }
 
   /** Resolves once the visible tiles of the last `update` have their ground and objects on screen. Never rejects. */
@@ -160,7 +163,7 @@ export class TileStreamer {
     const [x, y] = key.split('_').map(Number) as [number, number];
     const entry: Entry = {
       key,
-      data: null,
+      heights: null,
       terrain: null,
       placeholder: null,
       objects: null,
@@ -187,7 +190,7 @@ export class TileStreamer {
   }
 
   private async show(entry: Entry, tile: WebTile): Promise<void> {
-    entry.data = tile;
+    entry.heights = { heights: tile.heights };
     const terrain = new TerrainTile(tile, this.manifest, { textures: this.deps.textures, lighting: this.deps.lighting });
     entry.terrain = terrain;
     entry.bytes = terrain.gpuBytes();
@@ -235,6 +238,6 @@ export class TileStreamer {
     entry.terrain = null;
     entry.objects = null;
     entry.placeholder = null;
-    entry.data = null;
+    entry.heights = null;
   }
 }

@@ -1,6 +1,7 @@
 // Estimates of what the viewer holds on the GPU. WebGL cannot report it, so the overlay adds up what was uploaded:
 // textures by the format the device actually transcoded them to (KTX2Loader picks ASTC, BC, ETC or plain rgba8 per
-// device), geometry by its array sizes.
+// device), geometry by its array sizes, and the canvas's own drawing buffer (colour and depth, times the antialiasing
+// samples).
 
 import type { BufferGeometry, Texture } from 'three';
 import {
@@ -80,4 +81,38 @@ export function geometryBytes(g: BufferGeometry): number {
   let total = 0;
   for (const array of arrays) total += array.byteLength;
   return total;
+}
+
+/**
+ * The canvas's drawing buffer: 4 bytes of colour and 4 of depth and stencil per pixel, for every sample when it is
+ * antialiased (`samples` is the context's SAMPLES: 0 without antialiasing, often 4 with it).
+ */
+export function drawingBufferBytes(width: number, height: number, samples: number): number {
+  return width * height * (4 + 4) * Math.max(1, samples);
+}
+
+/** The parts of a WebGL context the drawing-buffer estimate reads. */
+export type DrawingBufferContext = Pick<
+  WebGLRenderingContext,
+  'drawingBufferWidth' | 'drawingBufferHeight' | 'getParameter' | 'SAMPLES'
+>;
+
+/** `drawingBufferBytes` of a live context, at its current size. */
+export function contextDrawingBufferBytes(gl: DrawingBufferContext): number {
+  const samples: unknown = gl.getParameter(gl.SAMPLES);
+  return drawingBufferBytes(gl.drawingBufferWidth, gl.drawingBufferHeight, typeof samples === 'number' ? samples : 0);
+}
+
+/**
+ * Keeps the drawing buffer in the overlay's estimate. Call the returned function once at the start and after every
+ * resize (the buffer follows the canvas size times the pixel ratio); it adds the change since the last call.
+ */
+export function trackDrawingBuffer(gl: DrawingBufferContext, overlay: { addGpuBytes(n: number): void }): () => void {
+  let counted = 0;
+  return () => {
+    const bytes = contextDrawingBufferBytes(gl);
+    if (bytes === counted) return;
+    overlay.addGpuBytes(bytes - counted);
+    counted = bytes;
+  };
 }

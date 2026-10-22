@@ -32,6 +32,10 @@
 //
 // Vertex lighting (the diffuse of stage 0) comes from `TerrainLighting`, which the world view owns and updates with the
 // time of day (CWorld::SetLight, World3D.cpp:1778-2010); unlit (diffuse 1) until it does.
+//
+// Memory: a light map's pixels (64 KiB a layer, up to 33 layers a tile) are let go of once they are on the GPU
+// (`onUpdate`); the tile streamer keeps only a tile's heights, so nothing else holds them. A lost WebGL context cannot
+// get them back: the overlay then says to reload the page. The geometry is kept (three needs it to draw).
 
 import type { WebTile, WorldManifest } from '@flyffweb/formats';
 import type { IUniform, Texture } from 'three';
@@ -169,6 +173,10 @@ function lightTexture(rgba: Uint8Array): DataTexture {
   texture.wrapS = texture.wrapT = ClampToEdgeWrapping;
   texture.generateMipmaps = false;
   texture.needsUpdate = true;
+  // three calls onUpdate right after the upload: from then on the GPU has the pixels
+  texture.onUpdate = () => {
+    texture.image.data = null;
+  };
   return texture;
 }
 

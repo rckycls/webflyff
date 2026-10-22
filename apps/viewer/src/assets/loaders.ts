@@ -1,7 +1,12 @@
 // Loading models and textures. Models are glb files without images: each material names its texture's logical key in
 // `extras.texture`, which GLTFLoader copies to `material.userData.texture`. `applyTextures` resolves those keys through
 // one ref-counted `TextureCache`, so models that share a texture share one download and one GPU copy (global
-// constraints). Everything downloaded goes through `fetchRead`, which retries the body read too.
+// constraints). Everything downloaded goes through `fetchRead`, which retries the body read too, except the Basis
+// transcoder, which KTX2Loader downloads itself; `readyTranscoder` gives that the same retries.
+//
+// Memory: once a texture is on the GPU, its CPU copy goes (`onUpdate` empties `mipmaps`, where three keeps the
+// transcoded levels after upload). The texture cannot be uploaded again after that, which only a lost WebGL context
+// would ask for: the overlay then says to reload the page.
 
 import type { Material, Mesh, Object3D, Texture, WebGLRenderer } from 'three';
 import { RepeatWrapping } from 'three';
@@ -11,20 +16,49 @@ import { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js';
 import type { Overlay } from '../overlay/Overlay';
 import { textureGpuBytes } from '../overlay/gpuMemory';
 import type { AssetStore } from './AssetStore';
-import { fetchRead } from './fetchWithRetry';
+import { fetchRead, withRetries } from './fetchWithRetry';
 import type { FetchRetryOptions } from './fetchWithRetry';
 import { checkerTexture } from './placeholder';
 
-/** Where the Basis transcoder (`basis_transcoder.js` and `.wasm`) is served from (`npm run copy-basis` fills it). */
-export const BASIS_PATH = '/basis/';
-
 /**
  * The loaders every view shares. `ktx2` is ready to transcode for this renderer's GPU (ASTC, BC, ETC or plain rgba8),
- * which needs the renderer, hence it is made here and not per view.
+ * which needs the renderer, hence it is made here and not per view. Its Basis transcoder is the one three.js ships
+ * (`three/examples/jsm/libs/basis`): KTX2Loader finds it next to itself (`new URL(..., import.meta.url)`), and Vite
+ * serves it in development and copies it, hashed, into the build.
  */
 export function createLoaders(renderer: WebGLRenderer): { gltf: GLTFLoader; ktx2: KTX2Loader } {
-  const ktx2 = new KTX2Loader().setTranscoderPath(BASIS_PATH).detectSupport(renderer);
+  const ktx2 = new KTX2Loader().detectSupport(renderer);
   return { gltf: new GLTFLoader(), ktx2 };
+}
+
+const transcoders = new WeakMap<KTX2Loader, Promise<void>>();
+
+/**
+ * Resolves once `ktx2`'s Basis transcoder is downloaded, retried like every other download. KTX2Loader downloads it
+ * itself (`init`), with no time limit, and keeps a failed download for good (`transcoderPending`), after which every
+ * texture would fail for the rest of the session; so each attempt starts over from `transcoderPending = null`. (After
+ * a failure KTX2Loader then warns about "multiple active KTX2 loaders": it counts each fresh start as a loader.) Only
+ * `loadKtx2` parses, and only after this has resolved, so no other download can be under way. One download per loader
+ * is shared by every texture; one that failed every attempt is forgotten, so the next texture tries again.
+ */
+export function readyTranscoder(ktx2: KTX2Loader, retry: FetchRetryOptions = {}): Promise<void> {
+  let ready = transcoders.get(ktx2);
+  if (ready === undefined) {
+    ready = withRetries(
+      'the Basis transcoder',
+      () => {
+        ktx2.transcoderPending = null;
+        return ktx2.init();
+      },
+      retry,
+    );
+    const settled = ready;
+    transcoders.set(ktx2, settled);
+    settled.catch(() => {
+      if (transcoders.get(ktx2) === settled) transcoders.delete(ktx2);
+    });
+  }
+  return ready;
 }
 
 /** Downloads a glb (with retries) and parses it; its images, if it had any, would resolve against nothing. */
@@ -38,9 +72,15 @@ export async function loadGltf(
   return gltf.parseAsync((whole ? bytes : bytes.slice()).buffer as ArrayBuffer, '');
 }
 
-/** Downloads a `.ktx2` (with retries) and transcodes it for this GPU. This is the `load` a `TextureCache` wants. */
+/**
+ * Downloads a `.ktx2` (with retries) and transcodes it for this GPU. This is the `load` a `TextureCache` wants. The
+ * file and the transcoder (the first time) download side by side.
+ */
 export async function loadKtx2(ktx2: KTX2Loader, url: string, retry: FetchRetryOptions = {}): Promise<Texture> {
-  const buffer = await fetchRead(url, (response) => response.arrayBuffer(), retry);
+  const [buffer] = await Promise.all([
+    fetchRead(url, (response) => response.arrayBuffer(), retry),
+    readyTranscoder(ktx2, retry),
+  ]);
   return new Promise<Texture>((resolve, reject) => {
     ktx2.parse(buffer, (texture) => resolve(texture), reject);
   });
@@ -105,8 +145,13 @@ export class TextureCache {
       texture: this.loadTexture(key).then((texture) => {
         entry.loaded = texture;
         if (texture !== checkerTexture()) {
+          // counted from the mip levels, which are let go of below
           entry.bytes = textureGpuBytes(texture);
           this.overlay.addGpuBytes(entry.bytes);
+          // three calls onUpdate right after the upload; from then on the GPU has the levels and the CPU copy can go
+          texture.onUpdate = () => {
+            texture.mipmaps = [];
+          };
         }
         return texture;
       }),

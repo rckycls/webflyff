@@ -1,4 +1,15 @@
-import { BoxGeometry, DataTexture, Group, Mesh, MeshStandardMaterial, RGBAFormat, Texture, UnsignedByteType } from 'three';
+import {
+  BoxGeometry,
+  CompressedTexture,
+  DataTexture,
+  Group,
+  Mesh,
+  MeshStandardMaterial,
+  RGBAFormat,
+  RGBA_BPTC_Format,
+  Texture,
+  UnsignedByteType,
+} from 'three';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { encodeTileBin } from '@flyffweb/formats';
 import type { AssetIndex, WebTile, WorldManifest } from '@flyffweb/formats';
@@ -75,7 +86,126 @@ describe('fetchWithRetry', () => {
 
     expect((failure as AssetLoadError).attempts).toBe(2);
     expect(sleep.mock.calls.map(([ms]) => ms)).toEqual([10]);
-    expect(fetchFn).toHaveBeenCalledWith('/x', { cache: 'no-cache' });
+    expect(fetchFn).toHaveBeenCalledWith('/x', expect.objectContaining({ cache: 'no-cache' }));
+  });
+});
+
+/**
+ * Timeout signals the test fires by hand: `timeoutSignal` hands out one per attempt and records the time it was asked
+ * for; `fire(i)` makes the attempt that got the i-th signal time out.
+ */
+function manualTimeouts() {
+  const controllers: AbortController[] = [];
+  const asked: number[] = [];
+  return {
+    asked,
+    timeoutSignal: (ms: number): AbortSignal => {
+      asked.push(ms);
+      const controller = new AbortController();
+      controllers.push(controller);
+      return controller.signal;
+    },
+    fire: (i: number): void => controllers[i]!.abort(new DOMException('signal timed out', 'TimeoutError')),
+    /** Every attempt so far times out (one that has already finished does not notice). */
+    fireAll: (): void => {
+      for (const controller of controllers) controller.abort(new DOMException('signal timed out', 'TimeoutError'));
+    },
+  };
+}
+
+/** A fetch that never answers on its own: it rejects only when the signal it was given aborts, as a stalled request does. */
+const stalledFetch = () =>
+  vi.fn<typeof fetch>(
+    (_input, init) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(init.signal!.reason));
+      }),
+  );
+
+describe('fetchRead: a download that hangs', () => {
+  it('gives every attempt its own 20 s timeout, and fetch the signal it fires', async () => {
+    const timeouts = manualTimeouts();
+    const fetchFn = stalledFetch();
+
+    const pending = fetchRead('/x', (r) => r.text(), {
+      fetchFn,
+      sleep: noSleep,
+      retries: 0,
+      timeoutSignal: timeouts.timeoutSignal,
+    }).catch((e: unknown) => e);
+    await vi.waitFor(() => expect(fetchFn).toHaveBeenCalledTimes(1));
+
+    expect(timeouts.asked).toEqual([20_000]);
+    const signal = fetchFn.mock.calls[0]![1]!.signal!;
+    expect(signal.aborted).toBe(false);
+    timeouts.fire(0);
+    // the request itself is aborted, not only given up on
+    expect(signal.aborted).toBe(true);
+    expect(await pending).toBeInstanceOf(AssetLoadError);
+  });
+
+  it('counts a timed-out attempt as failed and retries it; AssetLoadError after 4 attempts', async () => {
+    const timeouts = manualTimeouts();
+    const fetchFn = stalledFetch();
+    const sleep = vi.fn(async (_ms: number) => {});
+    // each attempt times out as soon as it has started
+    const timeoutSignal = (ms: number): AbortSignal => {
+      const signal = timeouts.timeoutSignal(ms);
+      queueMicrotask(() => timeouts.fire(timeouts.asked.length - 1));
+      return signal;
+    };
+
+    const failure = await fetchRead('/assets/t.ktx2', (r) => r.arrayBuffer(), { fetchFn, sleep, timeoutSignal }).catch(
+      (e: unknown) => e,
+    );
+
+    expect(failure).toBeInstanceOf(AssetLoadError);
+    expect((failure as AssetLoadError).attempts).toBe(4);
+    expect((failure as AssetLoadError).message).toMatch(/no answer within 20 s/);
+    expect(fetchFn).toHaveBeenCalledTimes(4);
+    expect(sleep.mock.calls.map(([ms]) => ms)).toEqual([500, 1000, 2000]);
+  });
+
+  it('times out a body read that stalls, and the retry that answers wins', async () => {
+    const timeouts = manualTimeouts();
+    const fetchFn = vi.fn<typeof fetch>(async () => new Response('whole file'));
+    let reads = 0;
+    // the first read never finishes; the second does
+    const read = (response: Response): Promise<string> =>
+      ++reads === 1 ? new Promise<string>(() => {}) : response.text();
+    const sleep = vi.fn(async (_ms: number) => {});
+
+    const pending = fetchRead('/x', read, { fetchFn, sleep, timeoutSignal: timeouts.timeoutSignal });
+    await vi.waitFor(() => expect(reads).toBe(1));
+    timeouts.fire(0);
+
+    expect(await pending).toBe('whole file');
+    expect(fetchFn).toHaveBeenCalledTimes(2);
+    expect(sleep.mock.calls.map(([ms]) => ms)).toEqual([500]);
+  });
+
+  it('honours timeoutMs, and stops at once without retrying when the caller aborts', async () => {
+    const timeouts = manualTimeouts();
+    const fetchFn = stalledFetch();
+    const caller = new AbortController();
+    const sleep = vi.fn(async (_ms: number) => {});
+
+    const pending = fetchRead('/x', (r) => r.text(), {
+      fetchFn,
+      sleep,
+      timeoutMs: 5_000,
+      timeoutSignal: timeouts.timeoutSignal,
+      init: { signal: caller.signal },
+    }).catch((e: unknown) => e);
+    await vi.waitFor(() => expect(fetchFn).toHaveBeenCalledTimes(1));
+    caller.abort(new Error('the view went away'));
+
+    const failure = await pending;
+    expect(failure).not.toBeInstanceOf(AssetLoadError);
+    expect((failure as Error).message).toBe('the view went away');
+    expect(timeouts.asked).toEqual([5_000]);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
   });
 });
 
@@ -189,7 +319,7 @@ describe('AssetStore', () => {
     const fetchFn = fakeFetch(routes());
     const store = await AssetStore.load('/assets', { fetchFn, sleep: noSleep });
 
-    expect(fetchFn).toHaveBeenCalledWith('/assets/index.json', { cache: 'no-cache' });
+    expect(fetchFn).toHaveBeenCalledWith('/assets/index.json', expect.objectContaining({ cache: 'no-cache' }));
     expect(store.url('models/a.glb')).toBe('/assets/models/a.1111111111.glb');
   });
 
@@ -397,6 +527,28 @@ describe('TextureCache', () => {
     expect(overlay.addGpuBytes).toHaveBeenLastCalledWith(-64);
   });
 
+  it('lets go of the CPU copy once the texture is on the GPU, and still gives back what it counted', async () => {
+    const store = await storeWithTextures('textures/a.ktx2');
+    const overlay = overlayStub();
+    const levels = [64, 32, 16, 8, 4, 2, 1].map((s) => ({ data: new Uint8Array(s * s), width: s, height: s }));
+    const texture = new CompressedTexture(levels, 64, 64, RGBA_BPTC_Format);
+    const cache = new TextureCache(store, async () => texture, overlay);
+
+    await cache.acquire('textures/a.ktx2');
+    const counted = Math.floor((64 * 64 * 4) / 3); // bc7 with its mip chain
+    expect(overlay.addGpuBytes).toHaveBeenLastCalledWith(counted);
+    // still there until it is uploaded
+    expect(texture.mipmaps).toHaveLength(7);
+
+    // what WebGLTextures does right after the upload
+    texture.onUpdate!(texture);
+    expect(texture.mipmaps).toEqual([]);
+
+    cache.release('textures/a.ktx2');
+    expect(overlay.addGpuBytes).toHaveBeenLastCalledWith(-counted);
+    expect(overlay.addGpuBytes.mock.calls.reduce((sum, [n]) => sum + n, 0)).toBe(0);
+  });
+
   it('never disposes the shared board, and ignores releases it does not know', async () => {
     const store = await storeWithTextures('textures/x.ktx2');
     const overlay = overlayStub();
@@ -509,11 +661,99 @@ describe('applyTextures', () => {
   });
 });
 
+/**
+ * KTX2Loader's transcoder loading as three r186 does it: `init()` starts the download once and keeps the promise in
+ * `transcoderPending`, a failed one too, until someone sets it back to null. The first `failures` downloads fail.
+ */
+function fakeTranscoderLoader(failures: number, texture: Texture = rgbaTexture()) {
+  let downloads = 0;
+  const loader = {
+    transcoderPending: null as Promise<void> | null,
+    init: vi.fn((): Promise<void> => {
+      if (loader.transcoderPending === null) {
+        loader.transcoderPending =
+          ++downloads <= failures ? Promise.reject(new TypeError('Failed to fetch basis_transcoder.wasm')) : Promise.resolve();
+      }
+      return loader.transcoderPending;
+    }),
+    parse: vi.fn((_buffer: ArrayBuffer, onLoad: (t: Texture) => void) => onLoad(texture)),
+    downloads: () => downloads,
+  };
+  return loader;
+}
+
+describe('loadKtx2: the Basis transcoder', () => {
+  const fine = () => vi.fn<typeof fetch>(async () => new Response('x'));
+
+  it('is loaded before the first texture is parsed, and only once', async () => {
+    const loader = fakeTranscoderLoader(0);
+    const ktx2 = loader as unknown as KTX2Loader;
+
+    await loadKtx2(ktx2, '/a.ktx2', { fetchFn: fine(), sleep: noSleep });
+    await loadKtx2(ktx2, '/b.ktx2', { fetchFn: fine(), sleep: noSleep });
+
+    expect(loader.downloads()).toBe(1);
+    expect(loader.parse).toHaveBeenCalledTimes(2);
+  });
+
+  it('is downloaded again after a failure, with the backoff, instead of failing every texture for the session', async () => {
+    const texture = rgbaTexture();
+    const loader = fakeTranscoderLoader(2, texture);
+    const sleep = vi.fn(async (_ms: number) => {});
+
+    const loaded = await loadKtx2(loader as unknown as KTX2Loader, '/a.ktx2', { fetchFn: fine(), sleep });
+
+    expect(loaded).toBe(texture);
+    expect(loader.downloads()).toBe(3);
+    expect(sleep.mock.calls.map(([ms]) => ms)).toEqual([500, 1000]);
+  });
+
+  it('fails the texture with AssetLoadError after 4 attempts, and the next texture tries again', async () => {
+    const loader = fakeTranscoderLoader(Number.POSITIVE_INFINITY);
+    const ktx2 = loader as unknown as KTX2Loader;
+
+    const failure = await loadKtx2(ktx2, '/a.ktx2', { fetchFn: fine(), sleep: noSleep }).catch((e: unknown) => e);
+
+    expect(failure).toBeInstanceOf(AssetLoadError);
+    expect((failure as AssetLoadError).attempts).toBe(4);
+    expect((failure as AssetLoadError).message).toMatch(/Basis transcoder.*Failed to fetch basis_transcoder\.wasm/);
+    expect(loader.parse).not.toHaveBeenCalled();
+
+    await loadKtx2(ktx2, '/b.ktx2', { fetchFn: fine(), sleep: noSleep }).catch(() => {});
+    expect(loader.downloads()).toBe(8);
+  });
+
+  it('times out a transcoder download that hangs, and tries again', async () => {
+    const timeouts = manualTimeouts();
+    let downloads = 0;
+    const loader = {
+      transcoderPending: null as Promise<void> | null,
+      init(): Promise<void> {
+        // the first download never ends; the second works
+        loader.transcoderPending ??= ++downloads === 1 ? new Promise<void>(() => {}) : Promise.resolve();
+        return loader.transcoderPending;
+      },
+      parse: (_buffer: ArrayBuffer, onLoad: (t: Texture) => void) => onLoad(rgbaTexture()),
+    };
+
+    const pending = loadKtx2(loader as unknown as KTX2Loader, '/a.ktx2', {
+      fetchFn: fine(),
+      sleep: noSleep,
+      timeoutSignal: timeouts.timeoutSignal,
+    });
+    await vi.waitFor(() => expect(downloads).toBe(1));
+    timeouts.fireAll();
+
+    await expect(pending).resolves.toBeInstanceOf(Texture);
+    expect(downloads).toBe(2);
+  });
+});
+
 describe('loadKtx2', () => {
   it('retries a download whose body fails, then hands the whole buffer to the transcoder', async () => {
     const texture = rgbaTexture();
     const parse = vi.fn((_buffer: ArrayBuffer, onLoad: (t: Texture) => void) => onLoad(texture));
-    const ktx2 = { parse } as unknown as KTX2Loader;
+    const ktx2 = { parse, init: async () => {} } as unknown as KTX2Loader;
     const fetchFn = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(brokenBody())
@@ -528,7 +768,7 @@ describe('loadKtx2', () => {
   });
 
   it('rejects with AssetLoadError when the body never arrives, and with what the transcoder rejects', async () => {
-    const ktx2 = { parse: vi.fn() } as unknown as KTX2Loader;
+    const ktx2 = { parse: vi.fn(), init: async () => {} } as unknown as KTX2Loader;
     const down = vi.fn<typeof fetch>().mockImplementation(async () => brokenBody());
     const failure = await loadKtx2(ktx2, '/x.ktx2', { fetchFn: down, sleep: noSleep }).catch((e: unknown) => e);
     expect(failure).toBeInstanceOf(AssetLoadError);
@@ -536,6 +776,7 @@ describe('loadKtx2', () => {
 
     const bad = {
       parse: (_buffer: ArrayBuffer, _ok: unknown, onError: (e: unknown) => void) => onError(new Error('not ktx2')),
+      init: async () => {},
     } as unknown as KTX2Loader;
     const fine = vi.fn<typeof fetch>(async () => new Response('x'));
     await expect(loadKtx2(bad, '/y.ktx2', { fetchFn: fine, sleep: noSleep })).rejects.toThrow('not ktx2');

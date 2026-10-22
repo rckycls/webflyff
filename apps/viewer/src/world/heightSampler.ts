@@ -12,7 +12,7 @@ const SIDE = MAP_SIZE + 1;
  * world's meters per unit. 0 outside the tile, as the C++ returns. (At the far edge, x or z = 128 cells, the cell is
  * the last one with the weight at its far corner; the C++ reads a neighbour it then multiplies by 0.)
  */
-export function sampleHeight(tile: WebTile, localX: number, localZ: number, mpu: number): number {
+export function sampleHeight(tile: Pick<WebTile, 'heights'>, localX: number, localZ: number, mpu: number): number {
   const x = localX / mpu;
   const z = localZ / mpu;
   if (x < 0 || x > MAP_SIZE || z < 0 || z > MAP_SIZE) return 0;
