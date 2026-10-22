@@ -157,7 +157,7 @@ C++ paths are relative to the server folder (`Blouflash VS22 V15/`), which holds
 **Name tags:**
 - Above every mover, the player's own included, drawn in the 3D view at head height.
 - Text and colours follow `CMover::RenderName`.
-- Tags show within 40 m and fade out over the last 10 m, so a busy town stays readable on a phone. Both distances can be changed at the milestone 1 device test.
+- Tags show as far as Neuz shows them (`CWorld::Render`, `Source/_Common/World3D.cpp:1265-1300`): 40 m from the camera for monsters and NPCs that aren't peaceful, 100 m for players and peaceful NPCs. Tags of transparent movers (GM invisibility) aren't drawn. Unlike Neuz's hard cut, they fade out over their last 10 m, so a busy town stays readable on a phone. The distances can be changed at the milestone 1 device test.
 
 **Motions:**
 - Standing, walking and running follow each mover's state.
@@ -167,6 +167,7 @@ C++ paths are relative to the server folder (`Blouflash VS22 V15/`), which holds
 - `data/movers.json`: per mover index, the model and skeleton, motion files by motion ID, speed, and English name.
 - `data/items.json`: per item ID with a worn model, the part model for each sex, named as `CModelMng::MakeModelName` builds it.
 - `data/npcs.json`: per character key, the name and look from `character.inc`.
+- `data/nameColors.json`: the player name colours `CMover::RenderName` takes from `PKSetting.inc` (normal, chaotic, PK-ready).
 
 The browser loads models and motions on demand and caches them, as the viewer does.
 
