@@ -18,11 +18,14 @@
 // `x`, `z` and `yaw` start it somewhere else, in the numbers a player sees: `x` and `z` are the client's coordinates
 // (D3D, the ones /pos shows; web z is -z), both or neither, and `yaw` is the direction it faces in degrees, 0 facing
 // north (D3D +z), 90 east (+x), 180 south, turning clockwise seen from above (the heading of player.ts, in degrees).
-// Without them it starts as above. The compare page's spots are such addresses.
+// Without them it starts as above. The compare page's spots are such addresses. An `x`, `z` off the world (a typo,
+// another world's numbers) is reported on the overlay and the player starts at the world's own start instead, still
+// facing `yaw` if one was given: on the world there is ground to stand on, off it there would be nothing at all.
 //
 // `paused=1` stands the character still in the first frame of its standing motion and ignores the keys and the
 // joystick, for pictures (`walkRoute` still walks).
 
+import { MAP_SIZE } from '@flyffweb/formats';
 import type { Vec3, WorldManifest } from '@flyffweb/formats';
 import type { AnimationAction, WebGLRenderer } from 'three';
 import {
@@ -130,6 +133,25 @@ export function startPose(
     z: params.z === null ? camera.position[2] : 0 - params.z,
     heading: params.yaw === null ? camera.angleX : (params.yaw * Math.PI) / 180,
   };
+}
+
+/**
+ * Null when the address's start is on the world (or it gives none), else what the overlay says about it. The world
+ * runs from 0 to `size * 128 * mpu` in the client's x and z (128 cells a tile, `mpu` metres a cell).
+ */
+export function outsideWorld(
+  params: Pick<WorldParams, 'x' | 'z'>,
+  manifest: Pick<WorldManifest, 'name' | 'size' | 'mpu'>,
+): string | null {
+  if (params.x === null || params.z === null) return null;
+  const width = manifest.size[0] * MAP_SIZE * manifest.mpu;
+  const depth = manifest.size[1] * MAP_SIZE * manifest.mpu;
+  const { x, z } = params;
+  if (x >= 0 && x < width && z >= 0 && z < depth) return null;
+  return (
+    `the start x ${x}, z ${z} is off ${manifest.name} (x 0 to ${width}, z 0 to ${depth}); ` +
+    "starting at the world's own start instead"
+  );
 }
 
 function messageOf(error: unknown): string {
@@ -267,7 +289,9 @@ export const worldView: ViewFactory = (ctx) => {
     camera.updateProjectionMatrix();
 
     // the editor camera's angleX is its yaw (see the top of the file), unless the address says otherwise
-    const pose = startPose(params, manifest.camera);
+    const outside = outsideWorld(params, manifest);
+    if (outside !== null) overlay.error(`world ${params.world}: ${outside}`);
+    const pose = startPose(outside === null ? params : { ...params, x: null, z: null }, manifest.camera);
     player.x = pose.x;
     player.z = pose.z;
     player.heading = pose.heading;

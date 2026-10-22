@@ -27,8 +27,11 @@ const REDRAW_SECONDS = 0.25;
 const MAX_ERRORS = 100;
 const SHOWN_ERRORS = 5;
 
+// The page reaches under the notch (viewport-fit=cover in index.html), and in landscape the notch of an iPhone or iPad
+// is at the top left: the padding keeps the text clear of it by the safe-area insets (0 where there is no notch).
 const BOX_STYLE =
-  'position:fixed;top:0;left:0;z-index:1000;max-width:min(100vw,34rem);box-sizing:border-box;padding:6px 8px;' +
+  'position:fixed;top:0;left:0;z-index:1000;max-width:min(100vw,34rem);box-sizing:border-box;' +
+  'padding:max(6px, env(safe-area-inset-top)) 8px 6px max(8px, env(safe-area-inset-left));' +
   'background:rgba(0,0,0,.65);color:#e6e6e6;pointer-events:none;';
 const TEXT_STYLE = 'margin:0;font:11px/1.4 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;word-break:break-word;';
 const BUTTON_STYLE = 'pointer-events:auto;margin-top:4px;font:11px ui-monospace,Menlo,Consolas,monospace;';

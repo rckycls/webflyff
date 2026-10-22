@@ -7,10 +7,11 @@ import { TextureCache, createLoaders, loadKtx2 } from './assets/loaders';
 import { characterView } from './character/CharacterView';
 import { compareView } from './compare/ComparePage';
 import { Overlay } from './overlay/Overlay';
-import { installContextLossHandlers, installGlobalErrorHandlers } from './overlay/errorHandlers';
+import { installContextLossHandlers, installGlobalErrorHandlers, installShaderErrorHandler } from './overlay/errorHandlers';
+import { trackDrawingBuffer } from './overlay/gpuMemory';
 import { Router } from './router';
 import type { RouteName, ViewFactory } from './router';
-import { installTestHooks } from './testHooks';
+import { installTestHooks, registerRenderer } from './testHooks';
 import { worldView } from './world/WorldView';
 
 const CLEAR_COLOR = 0x101418;
@@ -48,12 +49,20 @@ function createRenderer(container: HTMLElement): WebGLRenderer {
   } catch (error) {
     throw new Error(`WebGL is not available: ${messageOf(error)}`, { cause: error });
   }
+  installShaderErrorHandler(renderer, overlay);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setClearColor(CLEAR_COLOR);
   installContextLossHandlers(renderer.domElement, overlay);
   container.append(renderer.domElement);
-  window.addEventListener('resize', () => renderer.setSize(window.innerWidth, window.innerHeight));
+  // the canvas's own colour and depth buffers are GPU memory too, and they follow its size
+  const countDrawingBuffer = trackDrawingBuffer(renderer.getContext(), overlay);
+  countDrawingBuffer();
+  window.addEventListener('resize', () => {
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    countDrawingBuffer();
+  });
+  registerRenderer(renderer);
   return renderer;
 }
 

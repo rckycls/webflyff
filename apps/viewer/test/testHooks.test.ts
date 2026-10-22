@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Overlay, OverlaySnapshot } from '../src/overlay/Overlay';
-import { createViewerHooks, installTestHooks, registerLoadedTiles, registerWalkRoute } from '../src/testHooks';
+import {
+  createViewerHooks,
+  installTestHooks,
+  registerLoadedTiles,
+  registerRenderer,
+  registerWalkRoute,
+} from '../src/testHooks';
 
 const SNAPSHOT: OverlaySnapshot = {
   fps: 60,
@@ -19,6 +25,7 @@ const overlay = { snapshot: () => SNAPSHOT } as unknown as Overlay;
 afterEach(() => {
   registerWalkRoute(null);
   registerLoadedTiles(null);
+  registerRenderer(null);
   Reflect.deleteProperty(globalThis, '__viewer');
 });
 
@@ -47,11 +54,25 @@ describe('window.__viewer', () => {
 
   it('stats is the overlay snapshot plus the loaded tiles, empty without a world view', () => {
     const hooks = createViewerHooks(overlay, Promise.resolve());
-    expect(hooks.stats()).toEqual({ ...SNAPSHOT, loadedTiles: [] });
+    expect(hooks.stats()).toEqual({ ...SNAPSHOT, loadedTiles: [], renderer: null });
 
     registerLoadedTiles(() => ['wdmadrigal/0_0', 'wdmadrigal/1_0']);
     expect(hooks.stats().loadedTiles).toEqual(['wdmadrigal/0_0', 'wdmadrigal/1_0']);
     expect(hooks.stats().fps).toBe(60);
+  });
+
+  it("stats has the renderer's own counts of geometries, textures and programs once the shell registers it", () => {
+    const hooks = createViewerHooks(overlay, Promise.resolve());
+    expect(hooks.stats().renderer).toBeNull();
+
+    const info = { memory: { geometries: 12, textures: 34 }, programs: [{}, {}, {}] as WebGLProgram[] | null };
+    registerRenderer({ info } as unknown as Parameters<typeof registerRenderer>[0]);
+    expect(hooks.stats().renderer).toEqual({ geometries: 12, textures: 34, programs: 3 });
+
+    // read when asked, not when registered
+    info.memory.textures = 30;
+    info.programs = null;
+    expect(hooks.stats().renderer).toEqual({ geometries: 12, textures: 30, programs: 0 });
   });
 
   it('ready waits for the shell and then for the view', async () => {

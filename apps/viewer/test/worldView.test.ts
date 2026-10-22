@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { forwardOf } from '../src/world/player';
-import { readWorldParams, startPose } from '../src/world/WorldView';
+import { outsideWorld, readWorldParams, startPose } from '../src/world/WorldView';
 
 describe('readWorldParams', () => {
   it('defaults to Madrigal, radius 1, playing, and the manifest start', () => {
@@ -101,5 +101,38 @@ describe('startPose', () => {
     expect(facing(90)[1]).toBeCloseTo(0, 12);
     expect(facing(180)[0]).toBeCloseTo(0, 12);
     expect(facing(180)[1]).toBeCloseTo(1, 12);
+  });
+});
+
+describe('outsideWorld', () => {
+  // WdMadrigal: 30 x 30 tiles of 128 cells, 4 m each, so x and z run from 0 to 15360
+  const madrigal = { name: 'WdMadrigal', size: [30, 30] as [number, number], mpu: 4 };
+
+  it('is null for a start on the world, and when the address gives none', () => {
+    expect(outsideWorld({ x: 6968, z: 3328 }, madrigal)).toBeNull();
+    expect(outsideWorld({ x: 0, z: 0 }, madrigal)).toBeNull();
+    expect(outsideWorld({ x: 15359.5, z: 15359.5 }, madrigal)).toBeNull();
+    expect(outsideWorld({ x: null, z: null }, madrigal)).toBeNull();
+  });
+
+  it("says which start is off the world and how far the world goes, for x or z off either edge", () => {
+    for (const [x, z] of [
+      [-1, 100],
+      [100, -0.5],
+      [15360, 100],
+      [100, 20000],
+    ] as const) {
+      const message = outsideWorld({ x, z }, madrigal);
+      expect(message, `x ${x}, z ${z}`).toContain(`x ${x}, z ${z}`);
+      expect(message).toContain('WdMadrigal');
+      expect(message).toMatch(/x 0 to 15360, z 0 to 15360/);
+    }
+  });
+
+  it('measures each side by its own number of tiles and the world MPU', () => {
+    const narrow = { name: 'DuNarrow', size: [10, 2] as [number, number], mpu: 2 };
+
+    expect(outsideWorld({ x: 2000, z: 400 }, narrow)).toBeNull();
+    expect(outsideWorld({ x: 2000, z: 600 }, narrow)).toMatch(/x 0 to 2560, z 0 to 512/);
   });
 });

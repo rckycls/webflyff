@@ -3,7 +3,9 @@
 // tiles stream in and out the whole time, so anything the streamer, the object pool or the texture cache fails to give
 // back shows up as growth. Memory is what the overlay reports: the GPU estimate plus the JS heap (`gpuBytes +
 // jsHeapBytes`, the heap counting as 0 where the browser has none). The baseline is taken after the first lap, when
-// everything a lap needs has been loaded once, and the end of the last lap must stay within 110% of it.
+// everything a lap needs has been loaded once, and the end of the last lap must stay within 110% of it. three.js' own
+// counts (`renderer.info`: geometries and textures on the GPU, shader programs) must be the same at the end of the last
+// lap as at the baseline: they catch a GPU leak that the viewer's own byte count would not see.
 //
 // Every sample is taken standing on the same corner, after the tiles around it have settled, so the same tiles are
 // loaded each time. The soak project starts Chromium with `--js-flags=--expose-gc` (playwright.config.ts) and the test
@@ -22,7 +24,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import type { Vec3 } from '@flyffweb/formats';
-import type {} from '../src/testHooks'; // window.__viewer
+import type { RendererCounts } from '../src/testHooks'; // and window.__viewer
 import { madrigal } from './data';
 
 const MINUTES = Number(process.env.SOAK_MINUTES ?? 10);
@@ -47,6 +49,8 @@ interface Sample {
   /** gpuBytes + (jsHeapBytes ?? 0) */
   memory: number;
   tiles: number;
+  /** three.js' own counts of what is on the GPU, not the viewer's */
+  renderer: RendererCounts | null;
   fps: number;
   errors: string[];
 }
@@ -65,6 +69,7 @@ async function sample(page: Page, lap: number, began: number): Promise<Sample> {
     jsHeapBytes: stats.jsHeapBytes,
     memory: stats.gpuBytes + (stats.jsHeapBytes ?? 0),
     tiles: stats.loadedTiles.length,
+    renderer: stats.renderer,
     fps: stats.fps,
     errors: stats.errors,
   };
@@ -141,7 +146,8 @@ test('ten minutes of laps around a square keep memory within 10% of the first la
     if (laps === 1) expect(s.jsHeapBytes, 'jsHeapBytes is null: this browser has no performance.memory').not.toBeNull();
     console.log(
       `soak lap ${s.lap} at ${s.at} s: memory ${mb(s.memory)} MB (gpu ${mb(s.gpuBytes)}, heap ` +
-        `${s.jsHeapBytes === null ? 'n/a' : mb(s.jsHeapBytes)}), ${s.tiles} tiles, ${s.fps.toFixed(1)} fps`,
+        `${s.jsHeapBytes === null ? 'n/a' : mb(s.jsHeapBytes)}), ${s.tiles} tiles, ${s.fps.toFixed(1)} fps, ` +
+        `renderer ${JSON.stringify(s.renderer)}`,
     );
   }
 
@@ -162,4 +168,7 @@ test('ten minutes of laps around a square keep memory within 10% of the first la
     `the heap read ${samples.map((s) => s.jsHeapBytes).join(', ')} at every lap: it is not being measured (--enable-precise-memory-info)`,
   ).toBeGreaterThan(1);
   expect(final.memory, summary).toBeLessThanOrEqual(baseline.memory * LIMIT);
+  // what three.js holds: the same at the same corner, lap after lap
+  expect(baseline.renderer, 'stats() has no renderer counts').not.toBeNull();
+  expect(final.renderer, `three.js renderer counts at corner A, lap ${final.lap} against lap 1`).toEqual(baseline.renderer);
 });

@@ -170,3 +170,14 @@ describe('Overlay device button', () => {
     expect(overlay.snapshot().device).toBe('TestAgent/1.0');
   });
 });
+
+describe('Overlay placement', () => {
+  it('keeps clear of the notch: the top-left corner of the screen is under it on a phone or iPad turned sideways', () => {
+    // index.html asks for viewport-fit=cover, so the page reaches under the notch and the safe-area insets say how far
+    const { root } = overlayOn();
+    const box = root.find('div').style.cssText;
+
+    expect(box).toContain('position:fixed;top:0;left:0;');
+    expect(box).toContain('padding:max(6px, env(safe-area-inset-top)) 8px 6px max(8px, env(safe-area-inset-left));');
+  });
+});
