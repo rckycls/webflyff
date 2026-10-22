@@ -32,13 +32,10 @@ export type WorldMessage =
 export type MessageOf<T extends WorldMessage['type']> = Extract<WorldMessage, { type: T }>;
 
 /**
- * One worn part, as ADD_OBJ fills `m_aEquipInfo[part]`: `part` is a `PARTS_*` index (`Resource/defineNeuz.h`).
- * - Another player or an NPC: `itemId` is the item's ID (`m_dwItemId`, sent as a `u_short`). Only a player's parts
- *   carry `flag` (`m_byFlag`); an NPC's is 0.
- * - The player's own character: `itemId` is `m_aEquipInfo[part].dwId`, which on the world server holds the
- *   inventory's object ID of the item, not the item's ID (`CMover::NormalizePlayerData`,
- *   `_Network/Objects/Obj.cpp:494`, and `DoEquip`, `_Common/MoverEquip.cpp:736`). Neuz dresses its own player from
- *   the inventory instead (`RedoEquip( FALSE )`), which the browser does not read. `flag` is 0.
+ * One worn part of another player or of an NPC, as ADD_OBJ lists it into `m_aEquipInfo[part]`: `part` is a
+ * `PARTS_*` index (`Resource/defineNeuz.h`) and `itemId` the item's ID (`m_dwItemId`, sent as a `u_short`). Only a
+ * player's parts carry `flag` (`m_byFlag`); an NPC's is 0. The player's own character has no such list: see
+ * `AddedPlayer.equipmentObjectIds`.
  */
 export interface WornPart { part: number; itemId: number; flag: number }
 
@@ -70,8 +67,17 @@ export interface AddedPlayer {
   pkPropensity: number;
   /** `m_nHonor`, the chosen honour title (-1 for none), whose text Neuz shows in the name tag. */
   honor: number;
-  /** Another player: the parts METHOD_EXCLUDE_ITEM lists. The own character: each part not `NULL_ID` (`WornPart`). */
+  /** Another player: the parts METHOD_EXCLUDE_ITEM lists, with item IDs. The own character: `[]`. */
   worn: WornPart[];
+  /**
+   * The own character: `m_aEquipInfo[i].dwId` for each of the `MAX_HUMAN_PARTS` (31) parts, in array order, `NULL_ID`
+   * where the part wears nothing. Another player: `[]`. These are the inventory's object IDs of the worn items, not
+   * item IDs: the database server sets them from `m_Inventory.m_apIndex` (`CMover::NormalizePlayerData`,
+   * `_Network/Objects/Obj.cpp:494-506`) and `DoEquip` from `m_dwObjId` (`_Common/MoverEquip.cpp:736`); Neuz dresses its
+   * own player from the inventory (`RedoEquip( FALSE )`). They are read again in Piece 5, when the inventory is
+   * decoded. In Piece 3 the own look comes from the lobby's PLAYER_LIST equipment instead.
+   */
+  equipmentObjectIds: number[];
   /** `m_vtInfo.GetTitle()`, the title of the player's private shop (another player only; '' for the own character). */
   shopTitle: string;
 }

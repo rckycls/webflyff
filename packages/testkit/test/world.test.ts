@@ -134,14 +134,16 @@ const moverBase = {
 const otherPlayer: AddedMover = {
   ...moverBase, index: 11, scale: 1, angle: 90.5, objectId: 31, isPlayer: true,
   player: {
-    ...player, self: false, shopTitle: 'Cheap swords',
+    ...player, self: false, shopTitle: 'Cheap swords', equipmentObjectIds: [],
     worn: [{ part: 2, itemId: 500, flag: 0 }, { part: 10, itemId: 21, flag: 1 }, { part: 27, itemId: 4100, flag: 0 }],
   },
 };
 const ownPlayer: AddedMover = {
   ...moverBase, index: 11, scale: 1, angle: -45.5, objectId: 32, isPlayer: true,
   player: {
-    ...player, self: true, shopTitle: '', worn: [{ part: 2, itemId: 7, flag: 0 }, { part: 13, itemId: 0, flag: 0 }],
+    ...player, self: true, shopTitle: '', worn: [],
+    // m_aEquipInfo[i].dwId: inventory object IDs at parts 2 and 13, NULL_ID elsewhere.
+    equipmentObjectIds: Array.from({ length: 31 }, (_, i) => (i === 2 ? 7 : i === 13 ? 0 : NULL_ID)),
   },
 };
 const monster: AddedMover = {
@@ -196,6 +198,11 @@ it('the ADD_OBJ writers refuse a mover of the other kind', () => {
   expect(() => writeAddPlayer(33, monster)).toThrow(/not a player/);
   expect(() => writeAddNpc(31, otherPlayer)).toThrow(/not an NPC or a monster/);
   expect(() => writeAddMonster(33, { ...monster, isPlayer: true })).toThrow(/isPlayer is true/);
-  const tooFar = { ...ownPlayer.player!, worn: [{ part: 31, itemId: 1, flag: 0 }] };
-  expect(() => writeAddSelf(32, { ...ownPlayer, player: tooFar })).toThrow(/part 31/);
+  const own = ownPlayer.player!;
+  const short = { ...own, equipmentObjectIds: own.equipmentObjectIds.slice(1) };
+  expect(() => writeAddSelf(32, { ...ownPlayer, player: short })).toThrow(/31 equipment object IDs, not 30/);
+  const dressed = { ...own, worn: [{ part: 2, itemId: 500, flag: 0 }] };
+  expect(() => writeAddSelf(32, { ...ownPlayer, player: dressed })).toThrow(/worn must be \[\]/);
+  const withIds = { ...otherPlayer.player!, equipmentObjectIds: own.equipmentObjectIds };
+  expect(() => writeAddPlayer(31, { ...otherPlayer, player: withIds })).toThrow(/equipmentObjectIds must be \[\]/);
 });

@@ -87,7 +87,7 @@ function playerCommon(w: ArWriter, name: string, guild: boolean, party: boolean)
   return repeat(w, SM_MAX, (x, i) => x.u32(i * 1000)); // m_dwSMTime
 }
 
-/** What every player value below shares; `worn` and `shopTitle` are set per test. */
+/** What every player value below shares; `worn`, `equipmentObjectIds` and `shopTitle` are set per test. */
 const playerBase = {
   name: 'Hero', sex: 1, skinSet: 2, hairMesh: 3, hairColor: 0xff112233, headMesh: 4, playerId: 777, job: 9, level: 65,
   authorization: 0x46, mode: 0x10, stateMode: 0x20, pkTime: 5000, pkValue: 3, pkPropensity: 100, honor: 6,
@@ -116,7 +116,7 @@ describe('ADD_OBJ (OnAddObj)', () => {
         index: 11, scale: 1, pos, angle: 90.5, objectId: OTHER,
         motion: 0x15, isPlayer: true, hitPoint: 1234, state: 0x11, stateFlag: 0x2, belligerence: 0, sfxId: NULL_ID,
         player: {
-          ...playerBase, self: false, shopTitle: 'Cheap swords',
+          ...playerBase, self: false, shopTitle: 'Cheap swords', equipmentObjectIds: [],
           worn: [
             { part: 2, itemId: 500, flag: 0 }, { part: 10, itemId: 21, flag: 1 }, { part: 27, itemId: 4100, flag: 0 },
           ],
@@ -174,6 +174,14 @@ describe('ADD_OBJ (OnAddObj)', () => {
     });
   });
 
+  /**
+   * The own character's `m_aEquipInfo[i].dwId`, one per part: inventory object IDs (7, 0 and 41 at parts 2, 10 and
+   * 13), `NULL_ID` where the part wears nothing.
+   */
+  const ownEquipment = Array.from(
+    { length: MAX_HUMAN_PARTS }, (_, i) => (i === 2 ? 7 : i === 10 ? 0 : i === 13 ? 41 : NULL_ID),
+  );
+
   /** The player's own character (METHOD_NONE), through the equipment IDs, then 50 bytes standing for the rest. */
   function selfFields(): Uint8Array {
     const w = objectHead(11, 100, 0, PLAYER)
@@ -194,8 +202,7 @@ describe('ADD_OBJ (OnAddObj)', () => {
       .u8(1).u16(51) // m_nCheckedQuestSize (__IMPROVE_QUEST_INTERFACE), then WORDs
       .u32(0) // m_idMurderer
       .i16(5).i16(0); // (short)m_nRemainGP, (short)0
-    // m_aEquipInfo[i].dwId: the inventory's object ID of what each part wears, NULL_ID where it wears nothing.
-    repeat(w, MAX_HUMAN_PARTS, (x, i) => x.u32(i === 2 ? 7 : i === 10 ? 0 : i === 13 ? 41 : NULL_ID));
+    for (const id of ownEquipment) w.u32(id); // m_aEquipInfo[i].dwId
     // The skills, the inventory, the banks and the rest, which the reader leaves alone.
     return w.bytes(new Uint8Array(50).fill(0xcd)).toBytes();
   }
@@ -206,14 +213,19 @@ describe('ADD_OBJ (OnAddObj)', () => {
       index: 11, scale: 1, pos, angle: 0, objectId: PLAYER,
       motion: 0x15, isPlayer: true, hitPoint: 500, state: 0x1, stateFlag: 0, belligerence: 0, sfxId: NULL_ID,
       player: {
-        ...playerBase, self: true, shopTitle: '',
-        worn: [{ part: 2, itemId: 7, flag: 0 }, { part: 10, itemId: 0, flag: 0 }, { part: 13, itemId: 41, flag: 0 }],
+        ...playerBase, self: true, shopTitle: '', worn: [], equipmentObjectIds: ownEquipment,
       },
     },
   };
 
   it("reads the player's own character up to its equipment and skips the rest", () => {
-    expect(readOne(PLAYER, selfFields())).toEqual(self);
+    const own = readOne(PLAYER, selfFields());
+    expect(own).toEqual(self);
+    // No worn parts: the 31 IDs are the inventory's object IDs, kept apart from item IDs.
+    const player = own.type === 'addMover' ? own.mover.player : undefined;
+    expect(player?.worn).toEqual([]);
+    expect(player?.equipmentObjectIds).toHaveLength(MAX_HUMAN_PARTS);
+    expect(player?.equipmentObjectIds).toEqual(ownEquipment);
     // Without the table the reader has to stop the bundle there; with it the next message is still read.
     expect(readOne(PLAYER, selfFields(), false)).toEqual(self);
     const result = readBundle(body([

@@ -207,10 +207,14 @@ function npcOf(m: AddedMover): AddedNpc {
 /**
  * ADD_OBJ of another player, as the world server writes it for anyone but that player (METHOD_EXCLUDE_ITEM,
  * `ObjSerializeOpt.cpp:278-317`): the shop title, the worn parts with their flags, no pet (`NULL_ID` and ''),
- * then no buffs.
+ * then no buffs. Another player has no equipment object IDs on the wire, so `equipmentObjectIds` must be `[]`.
  */
 export function writeAddPlayer(objectId: number, p: AddedMover): ScriptMessage {
   const player = playerOf(p, false);
+  if (player.equipmentObjectIds.length !== 0) {
+    throw new Error(`mover ${p.objectId} is another player: its equipmentObjectIds must be [], not `
+      + `${player.equipmentObjectIds.length} IDs`);
+  }
   const w = playerStart(p, player).string(player.shopTitle).u8(player.worn.length);
   for (const part of player.worn) w.u8(part.part).u16(part.itemId).u8(part.flag);
   return scripted(objectId, MessageType.ADD_OBJ, w.u32(NULL_ID).string('').u32(0));
@@ -218,19 +222,21 @@ export function writeAddPlayer(objectId: number, p: AddedMover): ScriptMessage {
 
 /**
  * ADD_OBJ of the player's own character (METHOD_NONE, `ObjSerializeOpt.cpp:198-236`), up to its equipment IDs:
- * `worn` goes in `m_aEquipInfo[part].dwId` and every other part is `NULL_ID`. The world server goes on with the
- * skills, the inventory, the banks and the rest (:237-276), then the buffs; the browser skips all of that, so the
- * script ends the message after the equipment. The bundle's player object ID must be `objectId`, as `CUser::Open`
- * makes it (`User.cpp:315`).
+ * `equipmentObjectIds` (one per part, the inventory's object IDs or `NULL_ID`) go in `m_aEquipInfo[i].dwId`; the
+ * own character lists no worn parts, so `worn` must be `[]`. The world server goes on with the skills, the
+ * inventory, the banks and the rest (:237-276), then the buffs; the browser skips all of that, so the script ends
+ * the message after the equipment. The bundle's player object ID must be `objectId`, as `CUser::Open` makes it
+ * (`User.cpp:315`).
  */
 export function writeAddSelf(objectId: number, p: AddedMover): ScriptMessage {
   const player = playerOf(p, true);
-  const equipment: number[] = new Array<number>(MAX_HUMAN_PARTS).fill(NULL_ID);
-  for (const part of player.worn) {
-    if (!Number.isInteger(part.part) || part.part < 0 || part.part >= MAX_HUMAN_PARTS) {
-      throw new Error(`part ${part.part} is outside 0..${MAX_HUMAN_PARTS - 1}`);
-    }
-    equipment[part.part] = part.itemId;
+  if (player.equipmentObjectIds.length !== MAX_HUMAN_PARTS) {
+    throw new Error(`the own character needs ${MAX_HUMAN_PARTS} equipment object IDs, not `
+      + `${player.equipmentObjectIds.length}`);
+  }
+  if (player.worn.length !== 0) {
+    throw new Error(`the own character's worn parts are not on the wire: worn must be [], not `
+      + `${player.worn.length} parts`);
   }
   const w = playerStart(p, player)
     .u16(0).u16(0) // (u_short)m_nManaPoint, (u_short)m_nFatiguePoint
@@ -240,7 +246,7 @@ export function writeAddSelf(objectId: number, p: AddedMover): ScriptMessage {
   w.u32(0).vec3([0, 0, 0]) // m_idMarkingWorld, m_vMarkingPos
     .u8(0).u8(0).u8(0) // no quests, no completed quests, no checked quests
     .u32(0).i16(0).i16(0); // m_idMurderer, (short)m_nRemainGP, (short)0
-  for (const id of equipment) w.u32(id);
+  for (const id of player.equipmentObjectIds) w.u32(id); // m_aEquipInfo[i].dwId
   return scripted(objectId, MessageType.ADD_OBJ, w);
 }
 

@@ -1,6 +1,6 @@
 import type { ArReader } from '../ar/ArReader';
 import type { MessageHeader } from '../bundle';
-import { NULL_ID, ObjectType } from '../constants';
+import { ObjectType } from '../constants';
 import type { AddedMover, AddedNpc, AddedPlayer, MessageOf, WornPart } from './types';
 
 /** `MAX_HUMAN_PARTS` (`Resource/defineNeuz.h:62`): the length of `m_aEquipInfo`. */
@@ -131,7 +131,7 @@ function readPlayer(r: ArReader, self: boolean): AddedPlayer {
     self, name, sex, skinSet, hairMesh, hairColor, headMesh, playerId, job, level, authorization, mode, stateMode,
     pkTime, pkValue, pkPropensity, honor,
   };
-  if (self) return { ...base, worn: readOwnEquipment(r), shopTitle: '' };
+  if (self) return { ...base, worn: [], equipmentObjectIds: readOwnEquipment(r), shopTitle: '' };
 
   // METHOD_EXCLUDE_ITEM (:641-676)
   const shopTitle = r.string(MAX_VENDORNAME); // ReadString( szPVendor, MAX_VENDORNAME )
@@ -145,14 +145,14 @@ function readPlayer(r: ArReader, self: boolean): AddedPlayer {
   }
   r.u32(); // dwPetId (__VER >= 9, __PET_0410)
   r.string(MAX_PET_NAME); // szPetName (__PET_1024)
-  return { ...base, worn, shopTitle };
+  return { ...base, worn, equipmentObjectIds: [], shopTitle };
 }
 
 /**
- * METHOD_NONE (ObjSerializeOpt.cpp:509-559), the own character, through `m_aEquipInfo[i].dwId`: each part's ID
- * that is not `NULL_ID` is a worn part (see `WornPart` for what that ID is).
+ * METHOD_NONE (ObjSerializeOpt.cpp:509-559), the own character, through `m_aEquipInfo[i].dwId`: the 31 IDs as they
+ * are, which are inventory object IDs, not item IDs (see `AddedPlayer.equipmentObjectIds`).
  */
-function readOwnEquipment(r: ArReader): WornPart[] {
+function readOwnEquipment(r: ArReader): number[] {
   r.u16(); // (u_short&)m_nManaPoint
   r.u16(); // (u_short&)m_nFatiguePoint
   r.i32(); // m_nTutorialState (__VER >= 12, __MOD_TUTORIAL)
@@ -172,12 +172,9 @@ function readOwnEquipment(r: ArReader): WornPart[] {
   r.u32(); // m_idMurderer
   r.i16(); // n1, m_nRemainGP
   r.i16(); // n2, unused
-  const worn: WornPart[] = [];
-  for (let part = 0; part < MAX_HUMAN_PARTS; part++) {
-    const itemId = r.u32(); // m_aEquipInfo[i].dwId
-    if (itemId !== NULL_ID) worn.push({ part, itemId, flag: 0 });
-  }
-  return worn;
+  const equipmentObjectIds: number[] = [];
+  for (let i = 0; i < MAX_HUMAN_PARTS; i++) equipmentObjectIds.push(r.u32()); // m_aEquipInfo[i].dwId
+  return equipmentObjectIds;
 }
 
 /** The NPC branch (ObjSerializeOpt.cpp:689-755), which monsters take too. */
