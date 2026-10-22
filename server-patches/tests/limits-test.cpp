@@ -4,6 +4,8 @@
 #include "stdafx.h"
 #include <stdio.h>
 #include "dos2.h"
+#include "AccountMgr.h"
+#include "..\Resource\lang.h"
 
 DWORD	g_dwTestTick	= 1000;
 time_t	g_tTestTime		= 1000000;
@@ -65,12 +67,150 @@ static void TestAddExemptRefusesBadAddresses()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+// Wrong-password count (CAccountMgr)
+
+static const DWORD	A	= inet_addr( "198.51.100.1" );
+static const DWORD	B	= inet_addr( "198.51.100.2" );
+static const time_t	T	= 1000000;
+
+// What Certify does with a wrong password: Check, then count it (whatever Check answered).
+static void Wrong( CAccountMgr & mgr, DWORD dwIP, const char* lpszAccount )
+{
+	mgr.Check( dwIP, lpszAccount );
+	mgr.SetError( 1 );
+}
+
+// 3 wrong passwords at g_tTestTime.
+static void Wrong3( CAccountMgr & mgr, DWORD dwIP, const char* lpszAccount )
+{
+	for( int i = 0; i < 3; i++ )
+		Wrong( mgr, dwIP, lpszAccount );
+}
+
+// The full map of the two tests below: (A, "first") 3 wrong at T, (A, "second") 3 wrong at T + 1, and one wrong at
+// T + 2 for each of MAX_ACCOUNT_CACHE - 2 other accounts.
+static void Fill( CAccountMgr & mgr )
+{
+	g_tTestTime	= T;		Wrong3( mgr, A, "first" );
+	g_tTestTime	= T + 1;	Wrong3( mgr, A, "second" );
+	g_tTestTime	= T + 2;
+	char sz[16];
+	for( int i = 0; i < MAX_ACCOUNT_CACHE - 2; i++ )
+	{
+		wsprintf( sz, "n%d", i );
+		Wrong( mgr, A, sz );
+	}
+}
+
+static void TestOneWrongBlocksOnlyThatPair()
+{
+	g_tTestTime	= T;
+	CAccountMgr mgr;
+	Wrong( mgr, A, "acc1" );
+	g_tTestTime	= T + 10;
+	CHECK( mgr.Check( A, "acc1" ) == CHECK_1TIMES_ERROR, "one wrong blocks that pair for 15 s" );
+	CHECK( mgr.Check( B, "acc1" ) == CHECK_OK, "the same account from another address" );
+	CHECK( mgr.Check( A, "acc2" ) == CHECK_OK, "another account from the same address" );
+	CHECK( mgr.Size() == 1, "Check never adds a pair" );
+	g_tTestTime	= T + 16;
+	CHECK( mgr.Check( A, "acc1" ) == CHECK_OK, "free after 16 s" );
+}
+
+static void TestThreeWrongBlockFifteenMinutesAndAgain()
+{
+	CAccountMgr mgr;
+	g_tTestTime	= T;		Wrong( mgr, A, "acc1" );
+	g_tTestTime	= T + 16;	Wrong( mgr, A, "acc1" );
+	g_tTestTime	= T + 32;	Wrong( mgr, A, "acc1" );
+	g_tTestTime	= T + 33;
+	CHECK( mgr.Check( A, "acc1" ) == CHECK_3TIMES_ERROR, "three wrong block" );
+	g_tTestTime	= T + 32 + 900;
+	CHECK( mgr.Check( A, "acc1" ) == CHECK_3TIMES_ERROR, "still blocked 15 min after the last" );
+	g_tTestTime	= T + 32 + 901;
+	CHECK( mgr.Check( A, "acc1" ) == CHECK_OK, "free after 15 min" );
+	mgr.SetError( 1 );
+	CHECK( mgr.Check( A, "acc1" ) == CHECK_3TIMES_ERROR, "the next wrong blocks 15 min again" );
+}
+
+static void TestGoodLoginClears()
+{
+	g_tTestTime	= T;
+	CAccountMgr mgr;
+	Wrong3( mgr, A, "acc1" );
+	g_tTestTime	= T + 901;
+	CHECK( mgr.Check( A, "acc1" ) == CHECK_OK, "free after the block" );
+	mgr.SetError( 0 );		// a good login
+	CHECK( mgr.Size() == 0, "a good login forgets the pair" );
+	Wrong( mgr, A, "acc1" );
+	CHECK( mgr.Check( A, "acc1" ) == CHECK_1TIMES_ERROR, "the count started over" );
+}
+
+static void TestForgottenAfterOneDay()
+{
+	g_tTestTime	= T;
+	CAccountMgr mgr;
+	Wrong3( mgr, A, "acc1" );
+	Wrong3( mgr, B, "acc1" );
+	g_tTestTime	= T + 86400;
+	Wrong( mgr, A, "acc1" );
+	CHECK( mgr.Check( A, "acc1" ) == CHECK_3TIMES_ERROR, "kept for 24 h" );
+	g_tTestTime	= T + 86401;
+	Wrong( mgr, B, "acc1" );
+	CHECK( mgr.Check( B, "acc1" ) == CHECK_1TIMES_ERROR, "forgotten after 24 h, started over" );
+}
+
+static void TestKoreanHasNoShortBlock()
+{
+	g_tTestTime		= T;
+	g_nTestLanguage	= LANG_KOR;
+	CAccountMgr mgr;
+	Wrong( mgr, A, "acc1" );
+	CHECK( mgr.Check( A, "acc1" ) == CHECK_OK, "no 15 s block in Korean" );
+	g_nTestLanguage	= 1;
+}
+
+static void TestFullMapDropsTheOldestFirst()
+{
+	CAccountMgr mgr;
+	Fill( mgr );
+	CHECK( mgr.Size() == MAX_ACCOUNT_CACHE, "the map is full" );
+	g_tTestTime	= T + 60;
+	Wrong( mgr, A, "new" );
+	CHECK( mgr.Size() == MAX_ACCOUNT_CACHE, "a full map stays at its cap" );
+	CHECK( mgr.Check( A, "first" ) == CHECK_OK, "the oldest pair is dropped" );
+	CHECK( mgr.Check( A, "second" ) == CHECK_3TIMES_ERROR, "the next oldest is kept" );
+	CHECK( mgr.Check( A, "new" ) == CHECK_1TIMES_ERROR, "the new pair is counted" );
+}
+
+static void TestFullMapDropsExpiredPairsFirst()
+{
+	CAccountMgr mgr;
+	Fill( mgr );
+	g_tTestTime	= T + 3600;
+	Wrong3( mgr, A, "late" );			// the map is full: "first" goes
+	g_tTestTime	= T + 86400 + 3;
+	Wrong( mgr, A, "new" );				// everything from T + 1 and T + 2 is over 24 h old
+	CHECK( mgr.Size() == 2, "every expired pair is removed at once" );
+	CHECK( mgr.Check( A, "late" ) == CHECK_OK, "its block is long over" );
+	mgr.SetError( 1 );
+	CHECK( mgr.Check( A, "late" ) == CHECK_3TIMES_ERROR, "but its count was kept" );
+}
+
+////////////////////////////////////////////////////////////////////////////////
 
 int main()
 {
 	TestExemptAddressIsNeverRefused();
 	TestUnlistedAddressIsBlockedAsToday();
-	TestAddExemptRefusesBadAddresses();		// last: it fills the static skip list
+	TestAddExemptRefusesBadAddresses();		// last of the CDos2 tests: it fills the static skip list
+
+	TestOneWrongBlocksOnlyThatPair();
+	TestThreeWrongBlockFifteenMinutesAndAgain();
+	TestGoodLoginClears();
+	TestForgottenAfterOneDay();
+	TestKoreanHasNoShortBlock();
+	TestFullMapDropsTheOldestFirst();
+	TestFullMapDropsExpiredPairsFirst();
 
 	if( s_nFailed > 0 )
 	{
