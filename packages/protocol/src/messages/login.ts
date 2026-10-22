@@ -64,6 +64,15 @@ export function encodeDeletePlayer(
   return w.toBytes();
 }
 
+/**
+ * PRE_JOIN (`CDPLoginClient::SendPreJoin`, `Neuz/DPLoginClient.cpp:187`, `__2ND_PASSWORD_SYSTEM`): the account, the
+ * character's ID and name, then the "secret number" (`nSecretNum`, an `int`; the browser always sends 0). The slot
+ * argument of the C++ function is kept by the client and is not sent.
+ */
+export function encodePreJoin(account: string, playerId: number, name: string): Uint8Array {
+  return clientPacket(PacketType.PRE_JOIN).string(account).u32(playerId).string(name).i32(0).toBytes();
+}
+
 /** One entry of PLAYER_LIST, in the order `CDPLoginClient::OnPlayerList` reads it. */
 export interface CharacterSummary {
   slot: number;
@@ -107,6 +116,7 @@ export type LoginMessage =
   | { type: 'queryTickCount'; sentAt: number; tickCount: bigint }
   | { type: 'ping'; sentAt: number }
   | { type: 'oneHourNotify' }
+  | { type: 'preJoin' }
   | { type: 'loginNumPad'; numPadId: number }
   | { type: 'loginProtect'; ok: boolean; numPadId: number }
   | { type: 'unknown'; packetType: number };
@@ -204,6 +214,10 @@ export function decodeLoginMessage(body: Uint8Array): LoginMessage {
     case PacketType.ONE_HOUR_NOTIFY:
       r.expectEnd();
       return { type: 'oneHourNotify' };
+    case PacketType.PRE_JOIN:
+      // CDPLoginClient::OnPreJoin (Neuz/DPLoginClient.cpp:204) reads nothing: the answer is the bare type.
+      r.expectEnd();
+      return { type: 'preJoin' };
     case PacketType.LOGIN_PROTECT_NUMPAD: {
       const numPadId = r.u32();
       r.expectEnd();

@@ -12,16 +12,24 @@ export { aes128CbcDecrypt, aes128CbcEncrypt } from './crypto/aes128';
 export {
   CERTIFY_BLOCK_BYTES, CERTIFY_KEY_TEXT, PASSWORD_SALT, deleteKey, encryptCertifyPassword, hashPassword,
 } from './crypto/password';
-export { DPID_UNKNOWN, MAX_CHARACTER_SLOTS, NULL_ID, PacketType, Port, PROTOCOL_VERSION } from './constants';
+export {
+  BUNDLE_MARKER, DPID_UNKNOWN, MAX_CHARACTER_SLOTS, MessageType, NULL_ID, PacketType, Port, PROTOCOL_VERSION,
+} from './constants';
+export type { Vec3 } from './constants';
 export {
   decodeCertifierMessage, encodeCertify, encodeCloseExistingConnection, encodeErrorReply, encodeGatewayClientAddr,
   encodeKeepAlive,
 } from './messages/certifier';
 export type { CertifierMessage, ServerEntry } from './messages/certifier';
 export {
-  decodeLoginMessage, encodeCreatePlayer, encodeDeletePlayer, encodeGetPlayerList, encodePing, encodeQueryTickCount,
+  decodeLoginMessage, encodeCreatePlayer, encodeDeletePlayer, encodeGetPlayerList, encodePing, encodePreJoin,
+  encodeQueryTickCount,
 } from './messages/login';
 export type { CharacterSummary, LoginMessage, NewCharacter, SlotMessenger } from './messages/login';
+export {
+  decodeWorldPacket, encodeDestPos, encodeJoin, encodePlayerBehavior, encodePlayerMoved, encodeWorldKeepAlive,
+} from './messages/world';
+export type { JoinRequest, MoveReport, WorldPacket } from './messages/world';
 export { CloseCode } from './gatewayCloseCodes';
 export { parseRecording } from './recording';
 export type { RecordedPacket, Recording } from './recording';
