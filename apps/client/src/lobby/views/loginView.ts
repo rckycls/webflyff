@@ -4,10 +4,12 @@ import type { View } from './dom';
 export interface LoginViewOptions {
   /** What to put in the account field, for a player coming back to the form. The password is never kept. */
   account: string;
+  /** True while the lobby logs in by itself (Change channel): the form starts disabled, as after a tap on Log in. */
+  busy?: boolean;
   onLogin(account: string, password: string): void;
 }
 
-export function loginView({ account, onLogin }: LoginViewOptions): View {
+export function loginView({ account, busy = false, onLogin }: LoginViewOptions): View {
   // Phone keyboards: no capital letter or correction on the account, which the lobby lower-cases anyway.
   const accountInput = h('input', {
     type: 'text', name: 'account', value: account, autocomplete: 'username', autocapitalize: 'none', autocorrect: 'off',
@@ -20,7 +22,7 @@ export function loginView({ account, onLogin }: LoginViewOptions): View {
   // A disabled fieldset disables everything in it, so a second tap cannot start a second login.
   const fields = h(
     'fieldset',
-    { class: 'plain' },
+    { class: 'plain', disabled: busy },
     h('label', { class: 'field' }, h('span', { class: 'label' }, 'Account'), accountInput),
     h('label', { class: 'field' }, h('span', { class: 'label' }, 'Password'), passwordInput),
     h('div', { class: 'actions' }, submit),

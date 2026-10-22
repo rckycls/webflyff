@@ -1,11 +1,11 @@
 import {
   CloseCode, NULL_ID, Port, ProtocolError, decodeCertifierMessage, decodeLoginMessage, deleteKey, encodeCertify,
   encodeCloseExistingConnection, encodeCreatePlayer, encodeDeletePlayer, encodeErrorReply, encodeGetPlayerList,
-  encodeKeepAlive, encodeQueryTickCount, hashPassword,
+  encodeKeepAlive, encodePing, encodeQueryTickCount, hashPassword,
 } from '@flyffweb/protocol';
 import type { CharacterSummary, NewCharacter, ServerEntry, SlotMessenger } from '@flyffweb/protocol';
 import type { OpenChannel, PacketChannel } from '../net/PacketChannel';
-import { ServerError, closeText, errorText } from './errorText';
+import { ServerError, UNEXPECTED_PROBLEM, closeText, errorText } from './errorText';
 import { isCharacterSlot, isValidAppearance, validateBankPin, validateCharacterName } from './validation';
 
 /** What the lobby views are told. After `error` or `closed` from the certifier phase, every connection is already closed. */
@@ -33,6 +33,13 @@ const systemClock: FlowClock = {
 /** How long the certifier gets to answer (Neuz: `m_dwTimeOutDis`, 20 s). */
 const CERTIFY_TIMEOUT_MS = 20000;
 const TIMEOUT_TEXT = 'The server did not answer in time.';
+/**
+ * How often the login server is pinged (Neuz: `CDPLoginClient`'s `m_timer`, 10 s). It drops a connection that sent
+ * no PING for 90 s, checking once a minute (`CUserMng::DestroyAbnormalPlayer`).
+ */
+const PING_INTERVAL_MS = 10000;
+/** How long Change channel waits between closing the login server and connecting to the certifier (Neuz: `Sleep( 1000 )`). */
+const CHANGE_CHANNEL_PAUSE_MS = 1000;
 /** The WebSocket close code of a connection that never opened. */
 const GATEWAY_UNREACHABLE = 1006;
 /** `MAX_ACCOUNT` (42) is the C++ buffer, which holds the terminator too. */
@@ -85,7 +92,10 @@ export class LoginFlow {
   private offeredCloseExisting = false;
   /** True once the certifier's closing is no news: the server list is in, or the other session was asked to close. */
   private certifierQuiet = false;
+  /** The timer of the step in flight: the certifier's 20 s to answer, or the pause of `changeChannel` before that. */
   private timer: ReturnType<typeof setTimeout> | undefined;
+  /** The next PING, set while a login-server connection is attached. */
+  private pingTimer: ReturnType<typeof setTimeout> | undefined;
   /** Bumped whenever the work in flight is given up, so a channel that finishes opening later is closed, not used. */
   private epoch = 0;
 
@@ -114,11 +124,40 @@ export class LoginFlow {
     }
     this.account = typed;
     this.passwordHash = prepared.hash;
-    this.startTimer();
-    const channel = await this.openChannel(this.certifierAddress, epoch);
-    if (channel === undefined) return;
-    this.attach('certifier', channel);
-    channel.send(prepared.certify);
+    await this.certify(prepared.certify, epoch);
+  }
+
+  /**
+   * Back to the server list for another channel, the way Neuz's Back button does it. Once the login-server connection
+   * closes, the servers forget the login and its auth key lists no characters again: the account server takes one
+   * GETPLAYERLIST per login (`CDPDBSrvr::OnGetPlayerList`). So the connection is closed and, after a second's pause,
+   * the flow logs in again with the account and password hash it holds. The answer comes as it does for `login`: a
+   * `serverList` with a new auth key, or `alreadyConnected`, `error` or `closed`; the certifier gets 20 s from the end
+   * of the pause. The server list and the characters held until now are forgotten at once. Does nothing without a
+   * server list; `login` or `dispose` during the pause calls it off.
+   */
+  changeChannel(): void {
+    if (this.authKey === undefined) return;
+    const epoch = ++this.epoch;
+    this.stopTimer();
+    this.closeLoginServer();
+    this.closeCertifier();
+    this.offeredCloseExisting = false;
+    this.certifierQuiet = false;
+    this.authKey = undefined;
+    this.servers = [];
+    this.characters = [];
+    this.messengers = [];
+    // The account and hash already went into a CERTIFY once, so this cannot throw.
+    const certify = encodeCertify(this.account, this.passwordHash);
+    this.timer = this.clock.setTimeout(() => {
+      this.timer = undefined;
+      this.certify(certify, epoch).catch((error: unknown) => {
+        // `certify` reports a gateway it cannot reach itself; anything else it throws is a bug.
+        console.error('Change channel could not log in again:', error);
+        if (epoch === this.epoch) this.fail({ type: 'error', message: UNEXPECTED_PROBLEM });
+      });
+    }, CHANGE_CHANNEL_PAUSE_MS);
   }
 
   /**
@@ -138,7 +177,8 @@ export class LoginFlow {
   /**
    * Lists the characters on a channel of the server list: connects to the channel's parent server, as Neuz does.
    * Does nothing without a server list or for a channel that is not in it. The characters of an earlier channel are
-   * forgotten at once, so nothing meant for the new server can name one of theirs.
+   * forgotten at once, so nothing meant for the new server can name one of theirs. While the connection is open it
+   * gets a PING every 10 s, as from Neuz: the login server drops a connection that sends none for 90 s.
    */
   async selectChannel(channel: ServerEntry): Promise<void> {
     const server = this.servers.find((s) => s.id === channel.parent && s.parent === NULL_ID);
@@ -151,6 +191,7 @@ export class LoginFlow {
     const login = await this.openChannel(`${server.address}:${Port.LOGIN}`, epoch);
     if (login === undefined) return;
     this.attach('loginServer', login);
+    this.startPing();
     login.send(encodeQueryTickCount(this.clock.now()));
     login.send(encodeGetPlayerList(authKey, this.account, this.passwordHash, channel.id));
   }
@@ -220,6 +261,15 @@ export class LoginFlow {
       }
       this.fail({ type: 'closed', message: closeText(code) });
     };
+  }
+
+  /** Connects to the certifier and sends CERTIFY. The certifier gets 20 s from here; the wait for the gateway counts. */
+  private async certify(certify: Uint8Array, epoch: number): Promise<void> {
+    this.startTimer();
+    const channel = await this.openChannel(this.certifierAddress, epoch);
+    if (channel === undefined) return;
+    this.attach('certifier', channel);
+    channel.send(certify);
   }
 
   /** Opens a channel; `undefined` when the flow gave up meanwhile (the channel is closed) or the gateway could not be reached (reported). */
@@ -351,13 +401,32 @@ export class LoginFlow {
     this.timer = undefined;
   }
 
+  /** Sets the next PING to the login server, 10 s from now; each one sets the next. */
+  private startPing(): void {
+    this.stopPing();
+    this.pingTimer = this.clock.setTimeout(() => {
+      this.pingTimer = undefined;
+      const loginServer = this.loginServer;
+      if (loginServer === undefined) return;
+      loginServer.send(encodePing(this.clock.now()));
+      this.startPing();
+    }, PING_INTERVAL_MS);
+  }
+
+  private stopPing(): void {
+    if (this.pingTimer !== undefined) this.clock.clearTimeout(this.pingTimer);
+    this.pingTimer = undefined;
+  }
+
   private closeCertifier(): void {
     const channel = this.certifier;
     this.certifier = undefined;
     channel?.close();
   }
 
+  /** Closes the login-server connection, if there is one, and stops its pings. */
   private closeLoginServer(): void {
+    this.stopPing();
     const channel = this.loginServer;
     this.loginServer = undefined;
     channel?.close();

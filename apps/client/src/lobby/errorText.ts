@@ -61,6 +61,9 @@ const CLOSE_TEXTS: ReadonlyMap<number, string> = new Map([
   [CloseCode.TOO_MANY_CONNECTIONS, 'Too many connections from your network.'],
 ]);
 
+/** Shown when the lobby itself went wrong (a bug, not an answer of a server); the player starts over. */
+export const UNEXPECTED_PROBLEM = 'Something went wrong. Please try again.';
+
 /** The message for the close code of a WebSocket: the gateway's own codes, and 1006 and the rest as "cannot reach". */
 export function closeText(code: number): string {
   return CLOSE_TEXTS.get(code) ?? 'Cannot reach the game gateway.';

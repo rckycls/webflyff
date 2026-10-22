@@ -1,4 +1,5 @@
 import type { CharacterSummary, ServerEntry } from '@flyffweb/protocol';
+import { UNEXPECTED_PROBLEM } from './errorText';
 import type { LobbyEvent, LoginFlow } from './LoginFlow';
 import { alertElement, alreadyConnectedView } from './views/messageView';
 import { characterView } from './views/characterView';
@@ -17,9 +18,6 @@ type Screen = 'login' | 'alreadyConnected' | 'servers' | 'characters' | 'create'
  * ends the login, and the player goes back to the login form.
  */
 const SESSION_SCREENS: ReadonlySet<Screen> = new Set<Screen>(['servers', 'characters', 'create', 'delete']);
-
-/** Shown when the flow's promise rejects, which it is not meant to do; the player starts over. */
-const UNEXPECTED_PROBLEM = 'Something went wrong. Please try again.';
 
 /**
  * The lobby page: one screen at a time in `root`, driven by the `LobbyEvent`s of the flow (hand them to `handle`)
@@ -77,8 +75,9 @@ export class LobbyApp {
     }
   }
 
-  private showLogin(alert?: string, status?: string): void {
-    this.show('login', loginView({ account: this.account, onLogin: (account, password) => this.login(account, password) }), alert, status);
+  /** The login form; `busy` while the lobby logs in by itself (Change channel), so the form cannot start another login. */
+  private showLogin(alert?: string, status?: string, busy = false): void {
+    this.show('login', loginView({ account: this.account, busy, onLogin: (account, password) => this.login(account, password) }), alert, status);
   }
 
   private showServers(): void {
@@ -94,7 +93,7 @@ export class LobbyApp {
       characters: this.characters,
       onCreate: (slot) => this.showCreate(slot),
       onDelete: (character) => this.showDelete(character),
-      onChangeChannel: () => this.showServers(),
+      onChangeChannel: () => this.changeChannel(),
       onLogout: () => this.logout(),
     }));
   }
@@ -136,6 +135,16 @@ export class LobbyApp {
     this.setAlert(undefined);
     this.status.textContent = 'Loading the characters…';
     this.run(this.flow.selectChannel(channel));
+  }
+
+  /**
+   * Another channel. The login server forgets the login once its connection closes, so the flow logs in again for a
+   * new server list, and the player sees what Neuz's Back button shows: the login form, busy, until the list comes.
+   * An error or a close then lands on the login form, as for any login.
+   */
+  private changeChannel(): void {
+    this.showLogin(undefined, 'Logging in…', true);
+    this.flow.changeChannel();
   }
 
   /** Leaves the session: every connection is closed, and the login form is shown. */

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   ArReader, ArWriter, NULL_ID, PacketType, bytesToHex, deleteKey, encodeCertify, encodeCloseExistingConnection, encodeCreatePlayer,
-  encodeDeletePlayer, encodeErrorReply, encodeGetPlayerList, encodeKeepAlive, encodeQueryTickCount, hashPassword,
+  encodeDeletePlayer, encodeErrorReply, encodeGetPlayerList, encodeKeepAlive, encodePing, encodeQueryTickCount, hashPassword,
 } from '@flyffweb/protocol';
 import type { NewCharacter, ServerEntry } from '@flyffweb/protocol';
 import { LoginFlow } from '../src/lobby/LoginFlow';
@@ -440,23 +440,200 @@ describe('LoginFlow, creating and deleting characters', () => {
   });
 });
 
-describe('LoginFlow, selecting another channel', () => {
-  it('forgets the characters of the earlier channel, so none of their ids is sent to the new server', async () => {
-    const { events, flow, net, login, channel } = await atCharacterList();
-    const oldSent = login.sent.length;
-    const pending = flow.selectChannel(channel);
-    flow.deleteCharacter(0, '1234'); // the new server has not answered yet: no connection to send on
-    await pending;
-    flow.deleteCharacter(0, '1234'); // connected, but the new list is not in
-    expect(events.at(-1)).toEqual({ type: 'error', message: 'Oops. Try again.' });
-    expect(login.sent).toHaveLength(oldSent);
-    expect(login.closed).toBe(true);
+describe('LoginFlow, keeping the login server connection', () => {
+  it('pings the login server every 10 seconds with the time, as Neuz does', async () => {
+    const { login, cert, clock } = await atCharacterList();
+    const sentBefore = login.sent.length;
+    clock.advance(9999);
+    expect(login.sent).toHaveLength(sentBefore);
+    clock.advance(1);
+    clock.advance(20000);
+    // The flow's clock started at 1000 and the channel was picked then.
+    expect(login.sent.slice(sentBefore).map(hex)).toEqual([11000, 21000, 31000].map((t) => hex(encodePing(t))));
+    expect(cert.sent.map((b) => new ArReader(b).u32())).toEqual([PacketType.CERTIFY]);
+    expect(clock.pending()).toBe(1);
+  });
+
+  it('pings from the moment the connection is there, before the character list is in', async () => {
+    const { flow, net, clock, channel } = await atServerList();
+    await flow.selectChannel(channel);
+    clock.advance(10000);
+    expect(net.channel(LOGIN_SERVER).sent.map(typeOfClientBody)).toEqual([PacketType.QUERYTICKCOUNT, PacketType.GETPLAYERLIST, PacketType.PING]);
+  });
+
+  it.each([
+    ['the player logs out', (s: Awaited<ReturnType<typeof atCharacterList>>) => s.flow.dispose()],
+    ['the login server closes the connection', (s: Awaited<ReturnType<typeof atCharacterList>>) => s.login.drop(4002)],
+    ['the login server sends a list that is not for this login', (s: Awaited<ReturnType<typeof atCharacterList>>) => s.login.push(playerListFor(8))],
+  ])('stops pinging when %s, and leaves no timer behind', async (_why, end) => {
+    const s = await atCharacterList();
+    const sentBefore = s.login.sent.length;
+    end(s);
+    s.clock.advance(60000);
+    await flushMicrotasks();
+    expect(s.login.sent).toHaveLength(sentBefore);
+    expect(s.clock.pending()).toBe(0);
+  });
+
+  it('pings only the connection of the channel picked last, with one timer', async () => {
+    const { flow, net, login, clock, channel } = await atCharacterList();
+    clock.advance(5000);
+    await flow.selectChannel(channel);
     const fresh = net.channel(LOGIN_SERVER);
     expect(fresh).not.toBe(login);
+    const oldSent = login.sent.length;
+    clock.advance(5000); // the old connection's ping would be due now
+    expect(login.sent).toHaveLength(oldSent);
     expect(fresh.sent.map(typeOfClientBody)).toEqual([PacketType.QUERYTICKCOUNT, PacketType.GETPLAYERLIST]);
-    fresh.push(playerListFor(7));
+    clock.advance(5000);
+    expect(hex(fresh.sent.at(-1)!)).toBe(hex(encodePing(16000)));
+    expect(clock.pending()).toBe(1);
+  });
+});
+
+describe('LoginFlow, changing the channel', () => {
+  it('closes the login server, waits a second, and logs in again with the stored hash for a new server list', async () => {
+    const { events, flow, net, login, cert, clock, channel } = await atCharacterList();
+    flow.changeChannel();
+    expect(login.closed).toBe(true);
+    // Neuz's Back button waits a second (`Sleep( 1000 )`) before it connects to the certifier again.
+    clock.advance(999);
+    await flushMicrotasks();
+    expect(net.targets).toEqual([CERTIFIER, LOGIN_SERVER]);
+    clock.advance(1);
+    await flushMicrotasks();
+    expect(net.targets).toEqual([CERTIFIER, LOGIN_SERVER, CERTIFIER]);
+    const again = net.channel(CERTIFIER);
+    expect(again).not.toBe(cert);
+    expect(again.sent.map(hex)).toEqual([hex(encodeCertify('webtester', HASH))]);
+
+    // The answer is a server list with a new auth key, taken like the first one; the close of the old connection is not reported.
+    again.push(serverListFor('webtester', 8));
+    expect(events.map((e) => e.type)).toEqual(['serverList', 'characters', 'serverList']);
+    await flow.selectChannel(channel);
+    const fresh = net.channel(LOGIN_SERVER);
+    expect(fresh).not.toBe(login);
+    expect(hex(fresh.sent[1]!)).toBe(hex(encodeGetPlayerList(8, 'webtester', HASH, 1)));
+    fresh.push(playerListFor(8));
+    expect(events.map((e) => e.type)).toEqual(['serverList', 'characters', 'serverList', 'characters']);
+    expect(again.closed).toBe(true);
     flow.deleteCharacter(0, '1234');
-    expect(typeOfClientBody(fresh.sent.at(-1)!)).toBe(PacketType.DEL_PLAYER);
+    expect(hex(fresh.sent.at(-1)!)).toBe(hex(encodeDeletePlayer('webtester', HASH, deleteKey('1234'), 500, 8, [900])));
+  });
+
+  it('forgets the old list and auth key at once, so nothing more goes to the old servers', async () => {
+    const { events, flow, net, login, clock, channel } = await atCharacterList();
+    const sentBefore = login.sent.length;
+    flow.changeChannel();
+    await flow.selectChannel(channel);
+    flow.createCharacter(NEW_CHARACTER);
+    flow.deleteCharacter(0, '1234');
+    flow.changeChannel(); // already changing: no second login
+    clock.advance(1000);
+    await flushMicrotasks();
+    expect(net.targets).toEqual([CERTIFIER, LOGIN_SERVER, CERTIFIER]);
+    expect(login.sent).toHaveLength(sentBefore);
+    expect(net.channel(CERTIFIER).sent).toHaveLength(1);
+    expect(events.map((e) => e.type)).toEqual(['serverList', 'characters']);
+  });
+
+  it('times out the new login after 20 seconds, counted from the end of the pause', async () => {
+    const { events, flow, net, clock } = await atCharacterList();
+    flow.changeChannel();
+    clock.advance(1000);
+    await flushMicrotasks();
+    const again = net.channel(CERTIFIER);
+    clock.advance(19999);
+    expect(events.map((e) => e.type)).toEqual(['serverList', 'characters']);
+    clock.advance(1);
+    expect(events.at(-1)).toEqual({ type: 'error', message: 'The server did not answer in time.' });
+    expect(again.closed).toBe(true);
+    expect(clock.pending()).toBe(0);
+  });
+
+  it('is called off by logging out during the pause', async () => {
+    const { events, flow, net, clock } = await atCharacterList();
+    flow.changeChannel();
+    flow.dispose();
+    clock.advance(60000);
+    await flushMicrotasks();
+    expect(net.targets).toEqual([CERTIFIER, LOGIN_SERVER]);
+    expect(events.map((e) => e.type)).toEqual(['serverList', 'characters']);
+    expect(clock.pending()).toBe(0);
+  });
+
+  it('is called off by a new login during the pause', async () => {
+    const { flow, net, clock } = await atCharacterList();
+    flow.changeChannel();
+    await flow.login('Other', 'password2');
+    clock.advance(1000);
+    await flushMicrotasks();
+    expect(net.targets).toEqual([CERTIFIER, LOGIN_SERVER, CERTIFIER]);
+    expect(net.channel(CERTIFIER).sent.map(hex)).toEqual([hex(encodeCertify('other', hashPassword('password2')))]);
+  });
+
+  it('does nothing before there is a server list', async () => {
+    const { events, flow, net, clock } = start();
+    flow.changeChannel(); // no login at all
+    await flow.login('webtester', 'password1');
+    const cert = net.channel(CERTIFIER);
+    flow.changeChannel(); // logged in, no list yet
+    clock.advance(1000);
+    await flushMicrotasks();
+    expect(net.targets).toEqual([CERTIFIER]);
+    expect(cert.closed).toBe(false);
+    cert.push(serverListFor('webtester', 7));
+    expect(events.map((e) => e.type)).toEqual(['serverList']);
+  });
+
+  it('closes a login-server connection that finishes opening after the change', async () => {
+    const net = fakeChannels();
+    const clock = fakeClock(1000);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const events: LobbyEvent[] = [];
+    const open = async (target: string) => {
+      if (target === LOGIN_SERVER) await gate;
+      return net.open(target);
+    };
+    const flow = new LoginFlow(open, CERTIFIER, (e) => events.push(e), clock);
+    await flow.login('webtester', 'password1');
+    net.channel(CERTIFIER).push(serverListFor('webtester', 7));
+    const picking = flow.selectChannel((events[0] as EventOf<'serverList'>).servers[1]!);
+    flow.changeChannel();
+    release();
+    await picking;
+    expect(net.channel(LOGIN_SERVER).closed).toBe(true);
+    expect(net.channel(LOGIN_SERVER).sent).toEqual([]);
+    clock.advance(1000);
+    await flushMicrotasks();
+    expect(net.channel(CERTIFIER).sent.map(hex)).toEqual([hex(encodeCertify('webtester', HASH))]);
+    expect(clock.pending()).toBe(1); // the certify timeout, and no ping
+  });
+
+  it('ends the session with a message, not a stray rejection, when logging in again throws', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const net = fakeChannels();
+    const clock = fakeClock(1000);
+    const events: LobbyEvent[] = [];
+    let certifiers = 0;
+    const open = async (target: string) => {
+      const channel = await net.open(target);
+      if (target === CERTIFIER && ++certifiers === 2) channel.send = () => { throw new Error('a bug'); };
+      return channel;
+    };
+    const flow = new LoginFlow(open, CERTIFIER, (e) => events.push(e), clock);
+    await flow.login('webtester', 'password1');
+    net.channel(CERTIFIER).push(serverListFor('webtester', 7));
+    await flow.selectChannel((events[0] as EventOf<'serverList'>).servers[1]!);
+    net.channel(LOGIN_SERVER).push(playerListFor(7));
+    flow.changeChannel();
+    clock.advance(1000);
+    await flushMicrotasks();
+    expect(events.at(-1)).toEqual({ type: 'error', message: 'Something went wrong. Please try again.' });
+    expect(logged).toHaveBeenCalledTimes(1);
+    expect(net.channel(CERTIFIER).closed).toBe(true);
+    expect(clock.pending()).toBe(0);
   });
 });
 
@@ -564,6 +741,25 @@ describe('LoginFlow, starting over and stopping', () => {
     expect(events).toEqual([{ type: 'error', message: 'The server did not answer in time.' }]);
     expect(vi.getTimerCount()).toBe(0);
     await flow.login('webtester', 'password1');
+    flow.dispose();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('pings on the system clock and leaves no timer behind', async () => {
+    vi.useFakeTimers();
+    const net = fakeChannels();
+    const events: LobbyEvent[] = [];
+    const flow = new LoginFlow(net.open, CERTIFIER, (e) => events.push(e));
+    await flow.login('webtester', 'password1');
+    net.channel(CERTIFIER).push(serverListFor('webtester', 7));
+    expect(vi.getTimerCount()).toBe(0);
+    await flow.selectChannel((events[0] as EventOf<'serverList'>).servers[1]!);
+    const login = net.channel(LOGIN_SERVER);
+    login.push(playerListFor(7));
+    expect(vi.getTimerCount()).toBe(1);
+    vi.advanceTimersByTime(10000);
+    expect(typeOfClientBody(login.sent.at(-1)!)).toBe(PacketType.PING);
+    expect(vi.getTimerCount()).toBe(1);
     flow.dispose();
     expect(vi.getTimerCount()).toBe(0);
   });

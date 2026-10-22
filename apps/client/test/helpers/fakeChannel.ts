@@ -18,10 +18,13 @@ export interface FakeChannels {
   open: OpenChannel;
   /** The channel most recently opened for `target`; throws when nothing was opened for it. */
   channel(target: string): FakeChannel;
+  /** The target of every channel opened so far, in order. */
+  targets: string[];
 }
 
 export function fakeChannels(): FakeChannels {
   const opened = new Map<string, FakeChannel>();
+  const targets: string[] = [];
   const open: OpenChannel = (target) => {
     const channel: FakeChannel = {
       sent: [],
@@ -44,10 +47,12 @@ export function fakeChannels(): FakeChannels {
       },
     };
     opened.set(target, channel);
+    targets.push(target);
     return Promise.resolve(channel);
   };
   return {
     open,
+    targets,
     channel(target) {
       const channel = opened.get(target);
       if (channel === undefined) throw new Error(`no channel was opened for ${target}`);
@@ -59,6 +64,8 @@ export function fakeChannels(): FakeChannels {
 /** A clock whose time only moves when the test calls `advance`. */
 export interface FakeClock extends FlowClock {
   advance(ms: number): void;
+  /** How many timers are set and have neither run nor been cleared. */
+  pending(): number;
 }
 
 export function fakeClock(start: number): FakeClock {
@@ -75,6 +82,7 @@ export function fakeClock(start: number): FakeClock {
       timers.delete(id);
     }) as unknown as typeof clearTimeout,
     now: () => time,
+    pending: () => timers.size,
     advance(ms) {
       const until = time + ms;
       for (;;) {

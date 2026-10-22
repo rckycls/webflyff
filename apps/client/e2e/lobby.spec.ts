@@ -1,7 +1,8 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import {
-  ArWriter, NULL_ID, PacketType, Port, bytesToHex, deleteKey, encodeCreatePlayer, encodeDeletePlayer, hashPassword,
+  ArWriter, NULL_ID, PacketType, Port, bytesToHex, deleteKey, encodeCertify, encodeCreatePlayer, encodeDeletePlayer,
+  hashPassword,
 } from '@flyffweb/protocol';
 import { hairColorFor } from '../src/lobby/appearance';
 
@@ -64,9 +65,10 @@ const errorPacket = (code: number): Buffer => Buffer.from(new ArWriter().u32(Pac
 
 const WEBBY: CharacterRow = { slot: 0, name: 'Webby', level: 15, playerId: 500 };
 
-/** A packet the page sent: the port it went to, its type and its whole body. */
+/** A packet the page sent: the port it went to, the connection it came on (1, 2, ... in the order opened), its type and its whole body. */
 interface Sent {
   port: number;
+  connection: number;
   type: number;
   body: Buffer;
 }
@@ -78,13 +80,15 @@ type Respond = (sent: Sent, reply: Reply, close: (code: number) => void) => void
 /** Plays the gateway: `certifier` and `login` answer what the page sends to each server. Returns everything the page has sent so far, in order. */
 async function playGateway(page: Page, servers: { certifier?: Respond; login?: Respond }): Promise<Sent[]> {
   const sent: Sent[] = [];
+  let connections = 0;
   await page.routeWebSocket(/\/connect\//, (ws) => {
     const port = Number(new URL(ws.url()).pathname.split(':').pop());
+    const connection = ++connections;
     const respond = port === Port.LOGIN ? servers.login : servers.certifier;
     ws.onMessage((message) => {
       const body = Buffer.from(message as Buffer);
       // Packets to the login server start with DPID_UNKNOWN; the certifier's start with the type.
-      const entry = { port, type: body.readUInt32LE(port === Port.LOGIN ? 4 : 0), body };
+      const entry = { port, connection, type: body.readUInt32LE(port === Port.LOGIN ? 4 : 0), body };
       sent.push(entry);
       respond?.(entry, (packet) => ws.send(packet), (code) => void ws.close({ code }));
     });
@@ -300,6 +304,36 @@ test.describe('the lobby against scripted servers', () => {
     expect(bytesToHex(new Uint8Array(packet.body))).toBe(
       bytesToHex(encodeDeletePlayer('webtester', HASH, deleteKey('1234'), 500, AUTH_KEY, [])),
     );
+  });
+
+  test('changes the channel by logging in again, as the game does', async ({ page }) => {
+    const sent = await playGateway(page, {
+      certifier: listing([FLYFF, OPEN_CHANNEL, { ...OPEN_CHANNEL, id: 4, name: 'Channel 4' }]),
+      login: ({ type }, reply) => {
+        if (type === PacketType.GETPLAYERLIST) reply(playerList([WEBBY]));
+      },
+    });
+    await logIn(page);
+    await page.getByRole('button', { name: /Channel 1/ }).click();
+    await expect(page.getByRole('heading', { name: 'Your characters' })).toBeVisible();
+
+    // The login server forgets the login when its connection closes, so the lobby logs in again for a new server
+    // list, showing the login form busy meanwhile, as the game's Back button does.
+    await page.getByRole('button', { name: 'Change channel' }).click();
+    await expect(page.getByRole('status')).toHaveText('Logging in…');
+    await expect(page.getByRole('button', { name: 'Log in' })).toBeDisabled();
+    await expect(page.getByRole('heading', { name: 'Choose a channel' })).toBeVisible();
+    await page.getByRole('button', { name: /Channel 4/ }).click();
+    await expect(page.getByRole('heading', { name: 'Your characters' })).toBeVisible();
+
+    const certifies = sent.filter((s) => s.type === PacketType.CERTIFY);
+    expect(certifies).toHaveLength(2);
+    expect(certifies[1]!.connection).not.toBe(certifies[0]!.connection);
+    expect(bytesToHex(new Uint8Array(certifies[1]!.body))).toBe(bytesToHex(encodeCertify('webtester', HASH)));
+    // One character list per login, each on its own connection: channel 1, then channel 4.
+    const lists = sent.filter((s) => s.type === PacketType.GETPLAYERLIST);
+    expect(lists.map((s) => s.body.readUInt32LE(s.body.length - 4))).toEqual([1, 4]);
+    expect(lists[1]!.connection).not.toBe(lists[0]!.connection);
   });
 
   test('offers to disconnect an account that is logged in elsewhere', async ({ page }) => {
