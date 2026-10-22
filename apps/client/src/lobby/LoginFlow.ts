@@ -38,9 +38,12 @@ const GATEWAY_UNREACHABLE = 1006;
 /** `MAX_ACCOUNT` (42) is the C++ buffer, which holds the terminator too. */
 const MAX_ACCOUNT_LENGTH = 41;
 
-/** CERTIFY for the account, and the password hash it carries; `undefined` for an account or password the wire cannot carry. */
+/**
+ * CERTIFY for the account, and the password hash it carries; `undefined` for an account the certifier would drop
+ * without an answer (empty, or with an apostrophe: `CDPCertifier::OnCertify`) or that the wire cannot carry.
+ */
 function prepareCertify(account: string, password: string): { hash: string; certify: Uint8Array } | undefined {
-  if (account.length > MAX_ACCOUNT_LENGTH) return undefined;
+  if (account === '' || account.length > MAX_ACCOUNT_LENGTH || account.includes("'")) return undefined;
   try {
     const hash = hashPassword(password);
     return { hash, certify: encodeCertify(account, hash) };
@@ -78,6 +81,10 @@ export class LoginFlow {
   private messengers: SlotMessenger[] = [];
   private certifier: PacketChannel | undefined;
   private loginServer: PacketChannel | undefined;
+  /** True after ERROR 103, until the player answers the "close the other connection" prompt. */
+  private offeredCloseExisting = false;
+  /** True once the certifier's closing is no news: the server list is in, or the other session was asked to close. */
+  private certifierQuiet = false;
   private timer: ReturnType<typeof setTimeout> | undefined;
   /** Bumped whenever the work in flight is given up, so a channel that finishes opening later is closed, not used. */
   private epoch = 0;
@@ -102,7 +109,7 @@ export class LoginFlow {
     const prepared = prepareCertify(typed, password);
     if (prepared === undefined) {
       // No such account can exist, so say what the server would.
-      this.emit({ type: 'error', message: errorText(ServerError.FLYFF_PASSWORD) });
+      this.notify({ type: 'error', message: errorText(ServerError.FLYFF_PASSWORD) });
       return;
     }
     this.account = typed;
@@ -114,23 +121,33 @@ export class LoginFlow {
     channel.send(prepared.certify);
   }
 
-  /** The player agreed to disconnect the account's other session (after `alreadyConnected`). The answer is the server list or an error. */
+  /**
+   * The player agreed to disconnect the account's other session. Only valid after `alreadyConnected`; otherwise it
+   * does nothing. The certifier sends no answer to this, so nothing is awaited and no event follows (Neuz waits a
+   * second and lets the player log in again): the view goes back to the login form and the player logs in again.
+   * The certifier channel stays open until then (`login` or `dispose` closes it), so the packet is not cut off.
+   */
   closeExistingConnection(): void {
-    if (this.certifier === undefined) return;
+    if (!this.offeredCloseExisting || this.certifier === undefined) return;
+    this.offeredCloseExisting = false;
+    this.certifierQuiet = true;
+    this.stopTimer();
     this.certifier.send(encodeCloseExistingConnection(this.account, this.passwordHash));
-    this.startTimer();
   }
 
-  /** Lists the characters on a channel of the server list: connects to the channel's parent server, as Neuz does. */
+  /**
+   * Lists the characters on a channel of the server list: connects to the channel's parent server, as Neuz does.
+   * Does nothing without a server list or for a channel that is not in it. The characters of an earlier channel are
+   * forgotten at once, so nothing meant for the new server can name one of theirs.
+   */
   async selectChannel(channel: ServerEntry): Promise<void> {
     const server = this.servers.find((s) => s.id === channel.parent && s.parent === NULL_ID);
     const authKey = this.authKey;
-    if (server === undefined || authKey === undefined) {
-      this.emit({ type: 'error', message: errorText(ServerError.CERT_GENERAL) });
-      return;
-    }
+    if (server === undefined || authKey === undefined) return;
     const epoch = ++this.epoch;
     this.closeLoginServer();
+    this.characters = [];
+    this.messengers = [];
     const login = await this.openChannel(`${server.address}:${Port.LOGIN}`, epoch);
     if (login === undefined) return;
     this.attach('loginServer', login);
@@ -151,7 +168,7 @@ export class LoginFlow {
     const character = { ...c, name: c.name.trim() };
     const problem = createProblem(character);
     if (problem !== undefined) {
-      this.emit({ type: 'error', message: problem });
+      this.notify({ type: 'error', message: problem });
       return;
     }
     loginServer.send(encodeCreatePlayer(this.account, this.passwordHash, character, authKey));
@@ -168,12 +185,12 @@ export class LoginFlow {
     if (loginServer === undefined || authKey === undefined) return;
     const character = isCharacterSlot(slot) ? this.characters.find((c) => c.slot === slot) : undefined;
     if (character === undefined) {
-      this.emit({ type: 'error', message: errorText(ServerError.NO_SUCH_GROUP) });
+      this.notify({ type: 'error', message: errorText(ServerError.NO_SUCH_GROUP) });
       return;
     }
     const problem = validateBankPin(bankPin, bankPin);
     if (problem !== undefined) {
-      this.emit({ type: 'error', message: problem });
+      this.notify({ type: 'error', message: problem });
       return;
     }
     const friendIds = this.messengers.find((m) => m.slot === slot)?.friends.map((f) => f.id) ?? [];
@@ -195,6 +212,12 @@ export class LoginFlow {
     channel.onClose = (code) => {
       if (this[role] !== channel) return;
       this[role] = undefined; // already over; nothing to close
+      // Neuz does not tell the player when the certifier drops after the server list (`CheckNofityDisconnected`):
+      // the auth key and the list stay good for the login server. Before the list, a drop ends the login.
+      if (role === 'certifier' && this.certifierQuiet) {
+        this.stopTimer();
+        return;
+      }
       this.fail({ type: 'closed', message: closeText(code) });
     };
   }
@@ -230,13 +253,17 @@ export class LoginFlow {
         }
         this.authKey = message.authKey;
         this.servers = message.servers;
-        this.emit({ type: 'serverList', servers: message.servers });
+        this.offeredCloseExisting = false;
+        this.certifierQuiet = true;
+        this.notify({ type: 'serverList', servers: message.servers });
         break;
       case 'error':
         this.stopTimer();
         // The channel stays open: the player may ask to close the other session (`closeExistingConnection`).
-        if (message.code === ServerError.DUPLICATE_ACCOUNT) this.emit({ type: 'alreadyConnected' });
-        else this.fail({ type: 'error', message: errorText(message.code) });
+        if (message.code === ServerError.DUPLICATE_ACCOUNT) {
+          this.offeredCloseExisting = true;
+          this.notify({ type: 'alreadyConnected' });
+        } else this.fail({ type: 'error', message: errorText(message.code) });
         break;
       case 'errorString':
         this.stopTimer();
@@ -263,11 +290,11 @@ export class LoginFlow {
         // The certifier is closed once the character list is in. The recording that shows when Neuz does it is not
         // made yet; if it differs, move this line.
         this.closeCertifier();
-        this.emit({ type: 'characters', characters: message.characters });
+        this.notify({ type: 'characters', characters: message.characters });
         break;
       case 'error':
         // Not the end of the session: a name in use or a wrong Bank PIN is answered the same way, and Neuz stays on its screen.
-        this.emit({ type: 'error', message: errorText(message.code) });
+        this.notify({ type: 'error', message: errorText(message.code) });
         break;
       case 'unknown':
         this.warnUnknown(message.packetType);
@@ -286,6 +313,18 @@ export class LoginFlow {
   private warnUnknown(packetType: number): void {
     // Neuz ignores a type it has no handler for.
     console.warn(`unknown packet 0x${packetType.toString(16).padStart(8, '0')}`);
+  }
+
+  /**
+   * Tells the listener. A listener that throws is its own bug, not the server's: it is logged and the flow carries on,
+   * so the throw cannot escape the channel callback this runs in, nor be taken for a bad packet.
+   */
+  private notify(event: LobbyEvent): void {
+    try {
+      this.emit(event);
+    } catch (error) {
+      console.error(`a lobby listener threw on a ${event.type} event:`, error);
+    }
   }
 
   /** Runs the handling of one packet; whatever it throws (a body the decoders reject) ends the session instead of escaping the channel's callback. */
@@ -327,7 +366,7 @@ export class LoginFlow {
   /** Ends the session with an event. Everything is closed first, so a view that reacts by starting over finds a clean flow. */
   private fail(event: LobbyEvent): void {
     this.reset();
-    this.emit(event);
+    this.notify(event);
   }
 
   private reset(): void {
@@ -335,6 +374,8 @@ export class LoginFlow {
     this.stopTimer();
     this.closeCertifier();
     this.closeLoginServer();
+    this.offeredCloseExisting = false;
+    this.certifierQuiet = false;
     this.account = '';
     this.passwordHash = '';
     this.authKey = undefined;

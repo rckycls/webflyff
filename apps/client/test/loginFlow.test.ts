@@ -84,10 +84,20 @@ describe('LoginFlow, the happy path', () => {
     expect(events.map((e) => e.type)).toEqual(['serverList', 'characters']);
   });
 
-  it('refuses a channel whose parent server is not in the list', async () => {
+  it('does nothing for a channel whose parent server is not in the list', async () => {
     const { events, flow, net } = await atServerList();
     await flow.selectChannel({ parent: 99, id: 5, name: 'Channel 5', address: '', adult: 0, playerCount: 0, enabled: 1, maxPlayers: 500 });
-    expect(events.at(-1)).toEqual({ type: 'error', message: 'Server Verification Error' });
+    expect(events.map((e) => e.type)).toEqual(['serverList']);
+    expect(() => net.channel(LOGIN_SERVER)).toThrow();
+  });
+
+  it('does nothing when a channel is selected before there is a server list', async () => {
+    const { events, flow, net } = start();
+    const channel: ServerEntry = { parent: 1, id: 1, name: 'Channel 1', address: '', adult: 0, playerCount: 0, enabled: 1, maxPlayers: 500 };
+    await flow.selectChannel(channel); // no login at all
+    await flow.login('webtester', 'password1');
+    await flow.selectChannel(channel); // logged in, no list yet
+    expect(events).toEqual([]);
     expect(() => net.channel(LOGIN_SERVER)).toThrow();
   });
 
@@ -170,19 +180,59 @@ describe('LoginFlow, failures while logging in', () => {
     expect(cert.closed).toBe(false);
     flow.closeExistingConnection();
     expect(hex(cert.sent.at(-1)!)).toBe(hex(encodeCloseExistingConnection('webtester', HASH)));
-    // The answer to it can be silent too, so the flow waits for it with the same 20 seconds.
-    clock.advance(20000);
-    expect(events.at(-1)).toEqual({ type: 'error', message: 'The server did not answer in time.' });
+    // The certifier never answers it: no event, no timeout, and the channel stays open so the packet is not cut off.
+    clock.advance(60000);
+    expect(events).toEqual([{ type: 'alreadyConnected' }]);
+    expect(cert.closed).toBe(false);
   });
 
-  it('continues to the server list after the other connection was closed', async () => {
+  it('sends the request to close the other connection once, and only after ERROR 103', async () => {
+    const { flow, net } = start();
+    await flow.login('webtester', 'password1');
+    const cert = net.channel(CERTIFIER);
+    flow.closeExistingConnection(); // nothing was offered yet
+    cert.push(serverListFor('webtester', 7));
+    flow.closeExistingConnection(); // the login worked
+    expect(cert.sent).toHaveLength(1);
+
+    const second = start();
+    await second.flow.login('webtester', 'password1');
+    const cert2 = second.net.channel(CERTIFIER);
+    cert2.push(new ArWriter().u32(PacketType.ERROR).i32(103).toBytes());
+    second.flow.closeExistingConnection();
+    second.flow.closeExistingConnection();
+    expect(cert2.sent.map((b) => new ArReader(b).u32())).toEqual([PacketType.CERTIFY, PacketType.CLOSE_EXISTING_CONNECTION]);
+  });
+
+  it('leaves the channel open after the request to close the other connection, and the next login closes it', async () => {
+    const { flow, net } = start();
+    await flow.login('webtester', 'password1');
+    const old = net.channel(CERTIFIER);
+    old.push(new ArWriter().u32(PacketType.ERROR).i32(103).toBytes());
+    flow.closeExistingConnection();
+    expect(old.closed).toBe(false);
+    await flow.login('webtester', 'password1');
+    expect(old.closed).toBe(true);
+    expect(net.channel(CERTIFIER)).not.toBe(old);
+  });
+
+  it('does not report the certifier closing after the request to close the other connection', async () => {
     const { events, flow, net } = start();
     await flow.login('webtester', 'password1');
     const cert = net.channel(CERTIFIER);
     cert.push(new ArWriter().u32(PacketType.ERROR).i32(103).toBytes());
     flow.closeExistingConnection();
-    cert.push(serverListFor('webtester', 9));
-    expect(events.map((e) => e.type)).toEqual(['alreadyConnected', 'serverList']);
+    cert.drop(4002);
+    expect(events).toEqual([{ type: 'alreadyConnected' }]);
+  });
+
+  it('reports the certifier closing while the other-connection prompt is showing', async () => {
+    const { events, flow, net } = start();
+    await flow.login('webtester', 'password1');
+    const cert = net.channel(CERTIFIER);
+    cert.push(new ArWriter().u32(PacketType.ERROR).i32(103).toBytes());
+    cert.drop(4002);
+    expect(events).toEqual([{ type: 'alreadyConnected' }, { type: 'closed', message: 'Disconnected from the server.' }]);
   });
 
   it('replies to ERROR_STRING, shows its text and closes', async () => {
@@ -243,6 +293,15 @@ describe('LoginFlow, failures while logging in', () => {
     ]);
     expect(() => net.channel(CERTIFIER)).toThrow();
   });
+
+  it('refuses an empty account or one with an apostrophe, which the certifier drops without an answer', async () => {
+    const { events, flow, net, clock } = start();
+    for (const account of ['', '   ', "o'brien", "'"]) await flow.login(account, 'password1');
+    expect(events).toEqual(Array.from({ length: 4 }, () => ({ type: 'error', message: 'Login details incorrect.  Please try again.' })));
+    expect(() => net.channel(CERTIFIER)).toThrow();
+    clock.advance(60000);
+    expect(events).toHaveLength(4);
+  });
 });
 
 describe('LoginFlow, failures while listing characters', () => {
@@ -264,10 +323,24 @@ describe('LoginFlow, failures while listing characters', () => {
     expect(cert.closed).toBe(true);
   });
 
-  it('reports the certifier closing while the player is choosing a channel', async () => {
-    const { events, cert } = await atServerList();
+  it('says nothing when the certifier closes after the server list, as Neuz does, and still lists the characters', async () => {
+    const { events, cert, flow, net, channel, clock } = await atServerList();
     cert.drop(4002);
-    expect(events.at(-1)).toEqual({ type: 'closed', message: 'Disconnected from the server.' });
+    clock.advance(60000);
+    expect(events.map((e) => e.type)).toEqual(['serverList']);
+    await flow.selectChannel(channel);
+    net.channel(LOGIN_SERVER).push(playerListFor(7));
+    expect(events.map((e) => e.type)).toEqual(['serverList', 'characters']);
+  });
+
+  it('accepts the character list when the certifier closed while the login server was answering', async () => {
+    const { events, cert, flow, net, channel } = await atServerList();
+    await flow.selectChannel(channel);
+    cert.drop(4002);
+    expect(events.map((e) => e.type)).toEqual(['serverList']);
+    net.channel(LOGIN_SERVER).push(playerListFor(7));
+    expect(events.map((e) => e.type)).toEqual(['serverList', 'characters']);
+    expect(net.channel(LOGIN_SERVER).closed).toBe(false);
   });
 
   it('shows an error from the login server and keeps the connection for another try', async () => {
@@ -364,6 +437,65 @@ describe('LoginFlow, creating and deleting characters', () => {
     flow.deleteCharacter(0, '');
     expect(events.at(-1)).toEqual({ type: 'error', message: 'Enter the Bank PIN to continue.' });
     expect(login.sent).toHaveLength(sentBefore);
+  });
+});
+
+describe('LoginFlow, selecting another channel', () => {
+  it('forgets the characters of the earlier channel, so none of their ids is sent to the new server', async () => {
+    const { events, flow, net, login, channel } = await atCharacterList();
+    const oldSent = login.sent.length;
+    const pending = flow.selectChannel(channel);
+    flow.deleteCharacter(0, '1234'); // the new server has not answered yet: no connection to send on
+    await pending;
+    flow.deleteCharacter(0, '1234'); // connected, but the new list is not in
+    expect(events.at(-1)).toEqual({ type: 'error', message: 'Oops. Try again.' });
+    expect(login.sent).toHaveLength(oldSent);
+    expect(login.closed).toBe(true);
+    const fresh = net.channel(LOGIN_SERVER);
+    expect(fresh).not.toBe(login);
+    expect(fresh.sent.map(typeOfClientBody)).toEqual([PacketType.QUERYTICKCOUNT, PacketType.GETPLAYERLIST]);
+    fresh.push(playerListFor(7));
+    flow.deleteCharacter(0, '1234');
+    expect(typeOfClientBody(fresh.sent.at(-1)!)).toBe(PacketType.DEL_PLAYER);
+  });
+});
+
+describe('LoginFlow, a listener that throws', () => {
+  function throwing() {
+    const net = fakeChannels();
+    const seen: string[] = [];
+    const flow = new LoginFlow(net.open, CERTIFIER, (e) => { seen.push(e.type); throw new Error('view bug'); }, fakeClock(0));
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    return { net, seen, flow, logged };
+  }
+
+  it('is logged and not blamed on the server, and the flow carries on', async () => {
+    const { net, seen, flow, logged } = throwing();
+    await flow.login('webtester', 'password1');
+    const cert = net.channel(CERTIFIER);
+    expect(() => cert.push(serverListFor('webtester', 7))).not.toThrow();
+    expect(seen).toEqual(['serverList']);
+    expect(cert.closed).toBe(false);
+    expect(logged).toHaveBeenCalledTimes(1);
+    await flow.selectChannel({ parent: 1, id: 1, name: 'Channel 1', address: '', adult: 0, playerCount: 0, enabled: 1, maxPlayers: 500 });
+    expect(net.channel(LOGIN_SERVER).sent).toHaveLength(2);
+  });
+
+  it('does not escape when the server closes a channel', async () => {
+    const { net, seen, flow, logged } = throwing();
+    await flow.login('webtester', 'password1');
+    expect(() => net.channel(CERTIFIER).drop(4002)).not.toThrow();
+    expect(seen).toEqual(['closed']);
+    expect(logged).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not escape when it was told about a packet that could not be read', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { net, seen, flow, logged } = throwing();
+    await flow.login('webtester', 'password1');
+    expect(() => net.channel(CERTIFIER).push(new Uint8Array([1, 2]))).not.toThrow();
+    expect(seen).toEqual(['error']);
+    expect(logged).toHaveBeenCalledTimes(1);
   });
 });
 
