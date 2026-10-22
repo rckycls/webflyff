@@ -1,7 +1,12 @@
 import { expect, it } from 'vitest';
-import { ArWriter, BUNDLE_MARKER, MessageType, PacketType, bytesToHex, readBundle } from '@flyffweb/protocol';
-import type { MessageReader } from '@flyffweb/protocol';
-import { encodeBundle } from '../src';
+import {
+  ArWriter, BUNDLE_MARKER, MessageType, PacketType, WORLD_READERS, bytesToHex, readBundle,
+} from '@flyffweb/protocol';
+import type { MessageReader, MoveReport, Vec3, WorldMessage } from '@flyffweb/protocol';
+import {
+  encodeBundle, writeDelObj, writeDestAngle, writeDestPos, writeMotion, writeMoverAngle, writeMoverBehavior,
+  writeMoverMoved, writeReplace, writeSetDestObj, writeSetPos, writeSetPosAngle, writeWorldReadInfo,
+} from '../src';
 
 it('encodeBundle writes the table', () => {
   const bytes = encodeBundle(PacketType.SNAPSHOT, 0x1234, [
@@ -54,4 +59,64 @@ it('what it writes is read back by readBundle, with and without the table', () =
   expect(plain).toMatchObject({
     indexed: false, stoppedAt: MessageType.DEL_OBJ, messages: [{ objectId: 7, value: 99 }],
   });
+});
+
+// Positions, deltas and angles are exactly representable as floats, so they read back unchanged.
+const pos: Vec3 = [6968.5, 100.25, 3328.5];
+const delta: Vec3 = [0.5, 0, -1.25];
+const move: MoveReport = {
+  pos, delta, angle: 90.5, state: 0x11, stateFlag: 0x2, motion: 0x15, motionEx: -1, loop: 3, motionOption: 4,
+  tick: 123456789012n,
+};
+
+it('every writer decodes to what it was given', () => {
+  // One entry per writer: the message it makes, the type it must carry and what the reader must make of it.
+  const cases: [string, ReturnType<typeof writeMoverMoved>, number, WorldMessage][] = [
+    ['writeMoverMoved', writeMoverMoved(11, move), MessageType.MOVERMOVED, { type: 'moverMoved', move }],
+    ['writeMoverBehavior', writeMoverBehavior(12, move), MessageType.MOVERBEHAVIOR, { type: 'moverBehavior', move }],
+    [
+      'writeMoverAngle', writeMoverAngle(13, pos, delta, 45.5, -10.25, 0.75, 2.5, 555n), MessageType.MOVERANGLE,
+      { type: 'moverAngle', pos, delta, angle: 45.5, angleX: -10.25, accPower: 0.75, turnAngle: 2.5, tick: 555n },
+    ],
+    ['writeDestPos', writeDestPos(14, pos, true), MessageType.DESTPOS, { type: 'destPos', pos, forward: true }],
+    ['writeDestPos (backward)', writeDestPos(15, pos, false), MessageType.DESTPOS, { type: 'destPos', pos, forward: false }],
+    ['writeDestAngle', writeDestAngle(16, 135.5, true), MessageType.DESTANGLE, { type: 'destAngle', angle: 135.5, left: true }],
+    [
+      'writeDestAngle (right)', writeDestAngle(17, -45.25, false), MessageType.DESTANGLE,
+      { type: 'destAngle', angle: -45.25, left: false },
+    ],
+    [
+      'writeSetDestObj', writeSetDestObj(18, 0xabcd, 3.5), MessageType.MOVERSETDESTOBJ,
+      { type: 'setDestObj', targetId: 0xabcd, range: 3.5 },
+    ],
+    ['writeMotion', writeMotion(19, 0x2a), MessageType.MOTION, { type: 'motion', message: 0x2a }],
+    ['writeSetPos', writeSetPos(20, pos), MessageType.SETPOS, { type: 'setPos', pos }],
+    ['writeSetPosAngle', writeSetPosAngle(21, pos, -90.5), MessageType.SETPOSANGLE, { type: 'setPosAngle', pos, angle: -90.5 }],
+    ['writeDelObj', writeDelObj(22), MessageType.DEL_OBJ, { type: 'delObj' }],
+    ['writeWorldReadInfo', writeWorldReadInfo(23, 1, pos), MessageType.WORLD_READINFO, { type: 'worldReadInfo', worldId: 1, pos }],
+    ['writeReplace', writeReplace(24, 0x2a, pos), MessageType.REPLACE, { type: 'replace', worldId: 0x2a, pos }],
+  ];
+  for (const [name, message, type, expected] of cases) {
+    expect(message.type, name).toBe(type);
+    for (const index of [true, false]) {
+      const result = readBundle(encodeBundle(PacketType.SNAPSHOT, 7, [message], { index }), WORLD_READERS);
+      expect(result.skipped, name).toEqual([]);
+      expect(result.mismatched, name).toEqual([]);
+      expect(result.messages, name).toEqual([{ objectId: message.objectId, type, value: expected }]);
+    }
+  }
+  // All of them in one bundle, as a JOIN or SNAPSHOT carries them.
+  const all = readBundle(encodeBundle(PacketType.JOIN, 7, cases.map(([, message]) => message)), WORLD_READERS);
+  expect(all.mismatched).toEqual([]);
+  expect(all.messages.map((m) => m.value)).toEqual(cases.map(([, , , expected]) => expected));
+});
+
+it('writes the fields in the order of the C++ handlers', () => {
+  expect(bytesToHex(writeDestPos(1, [1, 2, 3], true).fields))
+    .toBe(bytesToHex(new ArWriter().vec3([1, 2, 3]).u8(1).toBytes()));
+  expect(bytesToHex(writeDestAngle(1, 2.5, true).fields)).toBe(bytesToHex(new ArWriter().f32(2.5).u8(1).toBytes()));
+  expect(bytesToHex(writeSetDestObj(1, 9, 2.5).fields)).toBe(bytesToHex(new ArWriter().u32(9).f32(2.5).toBytes()));
+  expect(bytesToHex(writeReplace(1, 5, [1, 2, 3]).fields))
+    .toBe(bytesToHex(new ArWriter().u32(5).vec3([1, 2, 3]).toBytes()));
+  expect(writeDelObj(3)).toEqual({ objectId: 3, type: MessageType.DEL_OBJ, fields: new Uint8Array(0) });
 });
