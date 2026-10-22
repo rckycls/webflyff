@@ -71,6 +71,7 @@ C++ paths are relative to the server folder (`Blouflash VS22 V15/`), which holds
 - **Behaviour that changes on purpose:**
   - Other players' logins no longer push a count out.
   - A wrong password on one account no longer blocks a different account from the same address, even when both accounts land on the same thread.
+- **Account names the count can't tell apart are refused (added after the final review).** `LOGIN_STR` takes `VARCHAR(32)` and compares with trailing spaces ignored, and its collation may take other characters as equal. So `acc1`, `acc1 ` and a padded name over 32 characters all reach account `acc1`, each with a count of its own, which would allow unlimited guessing. `OnCertify` therefore closes the connection, as for an apostrophe, unless `CAccountMgr::IsAccountName` accepts the name: 1 to 32 characters, each printable ASCII other than a space. The lobby refuses the same names before sending. Portal-registered names (4 to 32 letters, digits, dashes and underscores) are not affected. This adds `DPCertifier.cpp` to `certifier-lockout.patch`.
 
 ### 3.3 Gateway limits
 
