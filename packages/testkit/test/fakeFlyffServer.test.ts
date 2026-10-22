@@ -128,3 +128,16 @@ it('close() hangs up on connected clients, stops listening and can be called twi
   await expect.poll(() => refused.closed).toBe(true);
   expect(refused.bodies).toEqual([]);
 });
+
+it('delayIdMs holds the protocol-ID frame back, while client frames are already read and checked', async () => {
+  server = await startFakeFlyffServer({ protocolId: 7, delayIdMs: 500 });
+  const startedAt = performance.now();
+  const a = connect(server.port);
+  a.socket.write(encodeClientFrame(new Uint8Array([1, 2]), 7));
+  await server.waitForBodies(1);
+  expect(a.bodies).toEqual([]); // the 500 ms are far from over
+  await expect.poll(() => a.bodies.length).toBe(1);
+  expect(performance.now() - startedAt).toBeGreaterThanOrEqual(450); // timers may fire a little early, never by this much
+  expect(readProtocolId(a.bodies[0]!)).toBe(7);
+  expect(server.crcErrors).toBe(0);
+});

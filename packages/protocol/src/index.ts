@@ -22,5 +22,6 @@ export {
   decodeLoginMessage, encodeCreatePlayer, encodeDeletePlayer, encodeGetPlayerList, encodeQueryTickCount,
 } from './messages/login';
 export type { CharacterSummary, LoginMessage, NewCharacter, SlotMessenger } from './messages/login';
+export { CloseCode } from './gatewayCloseCodes';
 export { parseRecording } from './recording';
 export type { RecordedPacket, Recording } from './recording';

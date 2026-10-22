@@ -7,6 +7,11 @@ const DEFAULT_PROTOCOL_ID = 0x0badc0de;
 export interface FakeFlyffServerOptions {
   /** The protocol ID the server announces and checks client checksums with. Default: an arbitrary fixed number. */
   protocolId?: number;
+  /**
+   * Waits this many milliseconds after accepting a connection before sending the protocol-ID frame (default: none),
+   * to test clients that talk before the ID arrives. Client frames are read and checked meanwhile.
+   */
+  delayIdMs?: number;
   /** Called for every client body that passed its checksums. `reply` sends a body back on that same connection. */
   onBody?: (body: Uint8Array, reply: (body: Uint8Array) => void) => void;
 }
@@ -33,8 +38,8 @@ export interface FakeFlyffServer {
 
 /**
  * A stand-in for a FlyFF server on 127.0.0.1, for tests. On accept it sends the protocol-ID body, the way the
- * real servers do; after that it reads client frames, checks their checksums against the protocol ID and hands
- * the bodies to `onBody`.
+ * real servers do (after `delayIdMs`, if set). It reads client frames, checks their checksums against the
+ * protocol ID and hands the bodies to `onBody`.
  */
 export async function startFakeFlyffServer(options: FakeFlyffServerOptions = {}): Promise<FakeFlyffServer> {
   const protocolId = options.protocolId ?? DEFAULT_PROTOCOL_ID;
@@ -62,7 +67,15 @@ export async function startFakeFlyffServer(options: FakeFlyffServerOptions = {})
     const reply = (body: Uint8Array): void => {
       if (!socket.destroyed) socket.write(encodeServerFrame(body));
     };
-    socket.write(encodeServerFrame(encodeProtocolIdBody(protocolId)));
+    const sendProtocolId = (): void => {
+      if (!socket.destroyed) socket.write(encodeServerFrame(encodeProtocolIdBody(protocolId)));
+    };
+    if (options.delayIdMs) {
+      const timer = setTimeout(sendProtocolId, options.delayIdMs);
+      socket.on('close', () => clearTimeout(timer));
+    } else {
+      sendProtocolId();
+    }
     socket.on('data', (chunk: Buffer) => {
       let bodies: Uint8Array[];
       try {
