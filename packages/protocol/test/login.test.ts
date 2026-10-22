@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
   ArReader, ArWriter, DPID_UNKNOWN, PacketType, Port, bytesToHex, decodeCertifierMessage, decodeLoginMessage,
-  deleteKey, encodeCreatePlayer, encodeDeletePlayer, encodeGetPlayerList, encodeQueryTickCount, hashPassword,
+  deleteKey, encodeCreatePlayer, encodeDeletePlayer, encodeGetPlayerList, encodePing, encodeQueryTickCount, hashPassword,
   hexToBytes, PROTOCOL_VERSION,
 } from '../src';
 import type { NewCharacter, Recording } from '../src';
@@ -131,6 +131,11 @@ describe('login encoders', () => {
     expect(bytesToHex(encodeQueryTickCount(5))).toBe('ffffffff0b00000005000000');
     expect(bytesToHex(encodeQueryTickCount(0x1_0000_0005))).toBe('ffffffff0b00000005000000');
     expect(bytesToHex(encodeQueryTickCount(-1))).toBe('ffffffff0b000000ffffffff');
+  });
+  it('writes PING as the prefix, the type and the time', () => {
+    expect(bytesToHex(encodePing(5))).toBe('ffffffff1400000005000000');
+    expect(bytesToHex(encodePing(0x1_0000_0005))).toBe('ffffffff1400000005000000');
+    expect(bytesToHex(encodePing(-1))).toBe('ffffffff14000000ffffffff');
   });
   it('writes GETPLAYERLIST as version, auth key, account, hash, channel', () => {
     const r = new ArReader(encodeGetPlayerList(0xfffffff0, 'webtester', hashPassword('password1'), 3));

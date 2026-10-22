@@ -19,7 +19,7 @@ export {
 } from './messages/certifier';
 export type { CertifierMessage, ServerEntry } from './messages/certifier';
 export {
-  decodeLoginMessage, encodeCreatePlayer, encodeDeletePlayer, encodeGetPlayerList, encodeQueryTickCount,
+  decodeLoginMessage, encodeCreatePlayer, encodeDeletePlayer, encodeGetPlayerList, encodePing, encodeQueryTickCount,
 } from './messages/login';
 export type { CharacterSummary, LoginMessage, NewCharacter, SlotMessenger } from './messages/login';
 export { CloseCode } from './gatewayCloseCodes';

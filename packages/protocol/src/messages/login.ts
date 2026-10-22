@@ -13,6 +13,15 @@ export function encodeQueryTickCount(timeMs: number): Uint8Array {
   return clientPacket(PacketType.QUERYTICKCOUNT).u32(timeMs >>> 0).toBytes();
 }
 
+/**
+ * PING (`CDPLoginClient::Ping`): the client's `GetCurrentTime()` (`GetTickCount`), wrapped to 32 bits like the C++
+ * DWORD. Neuz sends it every 10 s; the login server drops a connection that sent none for 90 s
+ * (`CUserMng::DestroyAbnormalPlayer`).
+ */
+export function encodePing(timeMs: number): Uint8Array {
+  return clientPacket(PacketType.PING).u32(timeMs >>> 0).toBytes();
+}
+
 /** GETPLAYERLIST (`CDPLoginClient::SendGetPlayerList`): asks for the account's characters on one channel. */
 export function encodeGetPlayerList(authKey: number, account: string, passwordHash: string, channelId: number): Uint8Array {
   return clientPacket(PacketType.GETPLAYERLIST).string(PROTOCOL_VERSION).u32(authKey).string(account)
