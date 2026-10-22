@@ -1,4 +1,6 @@
-import { afterEach, expect, it } from 'vitest';
+import http from 'node:http';
+import net from 'node:net';
+import { afterEach, expect, it, vi } from 'vitest';
 import { WebSocket, type ClientOptions } from 'ws';
 import { bytesToHex, encodeGatewayClientAddr } from '@flyffweb/protocol';
 import { startFakeFlyffServer, type FakeFlyffServer, type FakeFlyffServerOptions } from '@flyffweb/testkit';
@@ -12,6 +14,7 @@ const LOGIN = '172.31.238.55:28000';
 // Everything a test opens is closed here, newest first: browsers, then the gateway, then the fake server.
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => {
+  vi.restoreAllMocks();
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
@@ -115,9 +118,20 @@ it.each([
   ['a route with no port', '/connect/172.31.238.55'],
   ['a route with a path behind it', `/connect/${LOGIN}/more`],
   ['a route that is not valid percent-encoding', '/connect/%zz:1'],
+  ['a route with a space', '/connect/1.2.3.4%20:1'],
+  ['a route with a control character', '/connect/1.2.3.4%00:1'],
+  ['a route that is not ASCII', '/connect/%C3%A9.test:1'],
+  // Decoded, this would end the route and write a close line of its own into the log, if it were ever logged.
+  [
+    'a route with an encoded newline, that would forge a log line',
+    '/connect/x%0Aclose%201.2.3.4%20172.31.238.55:23000%20code=1000%20up=0%20down=0%0A:1',
+  ],
+  ['a route with an encoded carriage return', '/connect/x%0D%0Aopen%201.2.3.4%20k:1'],
 ])('answers an upgrade with 404 for %s', async (_name, path) => {
   const t = await setup();
   await expect(refusedWith(t.url(path), { origin: ORIGIN })).resolves.toBe(404);
+  expect(t.fake.connections).toBe(0);
+  expect(t.logs).toEqual([]);
 });
 
 it('answers a request that is not an upgrade with 404', async () => {
@@ -149,7 +163,15 @@ it('accepts the upgrade for a route that is not in the table, then closes it wit
   const browser = await t.browser('9.9.9.9:23000');
   await expect(browser.closed).resolves.toBe(4003);
   expect(t.fake.connections).toBe(0);
-  expect(t.logs).toEqual([]);
+  // One close line and no open line, written before the close frame went out.
+  expect(t.logs).toEqual(['close 127.0.0.1 9.9.9.9:23000 code=4003 up=0 down=0']);
+});
+
+it('logs a route that is not in the table as it was asked for, when it is only letters, digits, dots and hyphens', async () => {
+  const t = await setup();
+  const browser = await t.browser('Some-Host.test:65535');
+  await expect(browser.closed).resolves.toBe(4003);
+  expect(t.logs).toEqual(['close 127.0.0.1 Some-Host.test:65535 code=4003 up=0 down=0']);
 });
 
 it('closes the connection over the per-address limit with 4007, and takes a new one when a slot is free again', async () => {
@@ -158,9 +180,12 @@ it('closes the connection over the per-address limit with 4007, and takes a new 
   await t.browser();
   const third = await t.browser();
   await expect(third.closed).resolves.toBe(4007);
+  // The refused connection has a close line and no open line; the two that were relayed have an open line each.
+  expect(t.logs).toEqual([`open 127.0.0.1 ${LOGIN}`, `open 127.0.0.1 ${LOGIN}`, `close 127.0.0.1 ${LOGIN} code=4007 up=0 down=0`]);
 
   first.ws.close(1000);
-  await expect.poll(() => closeLines(t.logs).length).toBe(1); // the slot is given back before the line is written
+  await expect.poll(() => closeLines(t.logs)).toHaveLength(2); // the slot is given back before the line is written
+  expect(closeLines(t.logs)[1]).toBe(`close 127.0.0.1 ${LOGIN} code=1000 up=0 down=0`);
   const fourth = await t.browser();
   fourth.ws.send(keepAlive);
   await t.fake.waitForBodies(1);
@@ -257,4 +282,48 @@ it('stops accepting, ends the open connections and their TCP sides on close, and
   await expect.poll(() => t.fake.connectionsClosed).toBe(1);
   await expect(refusedWith(t.url(`/connect/${LOGIN}`), { origin: ORIGIN })).rejects.toThrow(/ECONNREFUSED/);
   expect(closeLines(t.logs)).toHaveLength(1);
+});
+
+it('logs, and keeps serving, an error of the HTTP server after it is listening (an accept error such as EMFILE)', async () => {
+  const servers: http.Server[] = [];
+  const realCreateServer = http.createServer.bind(http) as (...args: unknown[]) => http.Server;
+  vi.spyOn(http, 'createServer').mockImplementation(((...args: unknown[]) => {
+    const server = realCreateServer(...args);
+    servers.push(server);
+    return server;
+  }) as typeof http.createServer);
+  const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const t = await setup();
+  expect(servers).toHaveLength(1);
+
+  // With no 'error' listener left, emitting one throws, which is what would take the process down.
+  expect(() => servers[0]!.emit('error', Object.assign(new Error('accept EMFILE'), { code: 'EMFILE' }))).not.toThrow();
+  expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('accept EMFILE'));
+
+  const browser = await t.browser();
+  browser.ws.send(keepAlive);
+  await t.fake.waitForBodies(1);
+  expect(browser.ws.readyState).toBe(WebSocket.OPEN);
+});
+
+it('closes with 1011, logs nothing and gives the slot back when the relay cannot start', async () => {
+  const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const t = await setup({ limits: { maxConnectionsPerAddress: 1 } });
+  const realConnect = net.connect as (...args: unknown[]) => net.Socket;
+  // The browser side connects with net.connect too; only the relay's call, to the fake server's port, fails.
+  const connect = vi.spyOn(net, 'connect').mockImplementation(((...args: unknown[]) => {
+    if ((args[0] as { port?: number } | undefined)?.port === t.fake.port) throw new Error('boom');
+    return realConnect(...args);
+  }) as typeof net.connect);
+
+  const failed = await t.browser();
+  await expect(failed.closed).resolves.toBe(1011);
+  expect(t.logs).toEqual([]); // no open line without a close line
+  expect(consoleError).toHaveBeenCalledWith(expect.stringContaining('boom'));
+
+  connect.mockRestore();
+  const next = await t.browser(); // the one slot is free again
+  next.ws.send(keepAlive);
+  await t.fake.waitForBodies(1);
+  expect(t.logs).toEqual([`open 127.0.0.1 ${LOGIN}`]);
 });

@@ -239,10 +239,14 @@ it('closes with 4001 when the TCP connection is made but no protocol ID arrives 
 
 it('keeps the connection, well past connectTimeoutMs, once the protocol ID arrived in time', async () => {
   const server = await fakeServer();
-  const h = await harness(relayOptions(server.port, 'login', { limits: { ...DEFAULT_LIMITS, connectTimeoutMs: 40 } }));
+  // The timeout is long enough for the accept, the ID and its reading to happen within it, even on a loaded machine.
+  const h = await harness(relayOptions(server.port, 'login', { limits: { ...DEFAULT_LIMITS, connectTimeoutMs: 400 } }));
   h.client.send(keepAlive);
-  await server.waitForBodies(1); // the relay has the protocol ID
-  await new Promise((resolve) => setTimeout(resolve, 200)); // five times the timeout: only an uncleared timer could end it
+  await Promise.race([ // the relay has the protocol ID, or the precondition failed and it is closed already
+    server.waitForBodies(1),
+    h.closed.then(({ code }) => { throw new Error(`closed with ${code} before the protocol ID was taken in`); }),
+  ]);
+  await new Promise((resolve) => setTimeout(resolve, 1200)); // three times the timeout: only an uncleared timer could end it
   expect(h.client.readyState).toBe(h.client.OPEN);
   expect(server.connectionsClosed).toBe(0);
 });
