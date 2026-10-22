@@ -14,6 +14,15 @@ describe('ArWriter / ArReader', () => {
     expect(r.string(16)).toBe('Hi');
     expect(() => r.expectEnd()).not.toThrow();
   });
+  it('reads and writes a short (i16) little-endian, keeping its sign', () => {
+    const bytes = new ArWriter().i16(-455).i16(0x7fff).i16(-0x8000).toBytes();
+    expect(bytesToHex(bytes)).toBe('39fe' + 'ff7f' + '0080');
+    const r = new ArReader(bytes);
+    expect([r.i16(), r.i16(), r.i16()]).toEqual([-455, 0x7fff, -0x8000]);
+    expect(() => r.i16()).toThrow(ProtocolError);
+    // The same two bytes as a WORD: only the reading decides the sign, as in the C++ casts.
+    expect(new ArReader(new ArWriter().u16(0xfe39).toBytes()).i16()).toBe(-455);
+  });
   it('rejects a string longer than the C++ buffer allows', () => {
     const r = new ArReader(new ArWriter().string('abcdefghijklmnop').toBytes()); // 16 bytes
     expect(() => r.string(16)).toThrow(ProtocolError); // CAr allows bufSize - 1 = 15

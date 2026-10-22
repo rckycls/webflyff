@@ -1,5 +1,6 @@
 import type { MessageReader } from '../bundle';
 import { MessageType } from '../constants';
+import { readAddObj } from './addObj';
 import {
   readDestAngle, readDestPos, readMotion, readMoverAngle, readMoverBehavior, readMoverMoved, readSetDestObj,
 } from './movement';
@@ -8,11 +9,11 @@ import type { WorldMessage } from './types';
 
 /**
  * The readers of the bundle messages the browser understands, by message type, for `readBundle`. Each copies
- * one `CDPClient::On*` handler that `CDPClient::OnSnapshot` (`Neuz/DPClient.cpp:366`) dispatches to. ADD_OBJ is
- * added with its reader in a later task.
+ * one `CDPClient::On*` handler that `CDPClient::OnSnapshot` (`Neuz/DPClient.cpp:366`) dispatches to.
  */
 export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
   new Map<number, MessageReader<WorldMessage>>([
+    [MessageType.ADD_OBJ, readAddObj],
     [MessageType.MOVERMOVED, readMoverMoved],
     [MessageType.MOVERBEHAVIOR, readMoverBehavior],
     [MessageType.MOVERANGLE, readMoverAngle],

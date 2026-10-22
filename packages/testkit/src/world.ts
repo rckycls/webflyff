@@ -1,5 +1,5 @@
-import { ArWriter, BUNDLE_MARKER, MessageType, ProtocolError } from '@flyffweb/protocol';
-import type { MoveReport, Vec3 } from '@flyffweb/protocol';
+import { ArWriter, BUNDLE_MARKER, MessageType, NULL_ID, ObjectType, ProtocolError } from '@flyffweb/protocol';
+import type { AddedMover, AddedNpc, AddedPlayer, MoveReport, Vec3 } from '@flyffweb/protocol';
 
 /** One message of a scripted bundle. `fields` are the bytes after the object ID and the type, built by the caller. */
 export interface ScriptMessage {
@@ -126,4 +126,133 @@ export function writeWorldReadInfo(objectId: number, worldId: number, pos: Vec3)
  */
 export function writeReplace(objectId: number, worldId: number, pos: Vec3): ScriptMessage {
   return scripted(objectId, MessageType.REPLACE, new ArWriter().u32(worldId).vec3(pos));
+}
+
+// ADD_OBJ: `CUser::AddAddObj` (`WORLDSERVER/User.cpp:664`) and the storing side of `CMover::Serialize`
+// (`_Common/ObjSerializeOpt.cpp:97`). The fields the browser does not keep are written as a mover with nothing
+// in them would have them: no guild, no party, no pet, no buffs, zero stats.
+
+/** `MAX_HUMAN_PARTS` (`Resource/defineNeuz.h:62`), `SM_MAX` (`_Network/CmnHdr.h:503`), `MAX_JOB` (`defineJob.h:90`). */
+const MAX_HUMAN_PARTS = 31;
+const SM_MAX = 26;
+const MAX_JOB = 32;
+
+/**
+ * `AddAddObj` writes `(BYTE)pCtrl->GetType() << pCtrl->GetIndex()` in front of `Serialize`; then `CObj::Serialize`
+ * (`ObjSerializeOpt.cpp:22-31`: the type and index again, `(u_short)( m_vScale.x * 100.0f )`, `m_vPos`,
+ * `(short)( m_fAngle * 10.0f )`, both products in float and cut towards zero), `CCtrl::Serialize`
+ * (`ObjSerialize.cpp:21`) and the shared part of `CMover::Serialize` (:104-111).
+ */
+function moverStart(m: AddedMover): ArWriter {
+  return new ArWriter()
+    .u8(ObjectType.MOVER).u32(m.index)
+    .u8(ObjectType.MOVER).u32(m.index)
+    .u16(Math.trunc(Math.fround(Math.fround(m.scale) * 100)))
+    .vec3(m.pos)
+    .i16(Math.trunc(Math.fround(Math.fround(m.angle) * 10)))
+    .u32(m.objectId)
+    .u16(m.motion).u8(m.isPlayer ? 1 : 0).i32(m.hitPoint).u32(m.state).u32(m.stateFlag).u8(m.belligerence)
+    .u32(m.sfxId);
+}
+
+/** The player part every method writes (`ObjSerializeOpt.cpp:115-196`). */
+function playerStart(m: AddedMover, p: AddedPlayer): ArWriter {
+  const w = moverStart(m)
+    .string(p.name).u8(p.sex).u8(p.skinSet).u8(p.hairMesh).u32(p.hairColor).u8(p.headMesh).u32(p.playerId).u8(p.job)
+    .u16(0).u16(0).u16(0).u16(0) // m_nStr, m_nSta, m_nDex, m_nInt
+    .u16(p.level)
+    .i32(0).i32(0) // m_nFuel, m_tmAccFuel
+    .u8(0) // m_idGuild > 0 is false: no guild and war IDs follow
+    .u32(0) // m_idGuildCloak
+    .u8(0) // m_idparty > 0 is false
+    .u8(p.authorization).u32(p.mode).u32(p.stateMode)
+    .u32(0) // no ride item
+    .u32(p.pkTime).i32(p.pkValue).u32(p.pkPropensity).u32(0) // m_dwPKExp
+    .i32(0).u8(0) // m_nFame, m_nDuel
+    .i32(p.honor);
+  for (let i = 0; i < MAX_HUMAN_PARTS; i++) w.i32(0); // m_aEquipInfo[i].nOption
+  w.i32(0); // m_nGuildCombatState
+  for (let i = 0; i < SM_MAX; i++) w.u32(0); // m_dwSMTime
+  return w;
+}
+
+/** The NPC part (`ObjSerializeOpt.cpp:321-351`) and an empty buff list. */
+function npcFields(m: AddedMover, n: AddedNpc): ArWriter {
+  const w = moverStart(m).u8(n.hairMesh).u32(n.hairColor).u8(n.headMesh).string(n.characterKey).u8(n.worn.length);
+  for (const part of n.worn) w.u8(part.part).u16(part.itemId);
+  return w.u8(n.activeAttack).u8(n.movePattern).u8(n.moveEvent).i32(n.moveEventCount).f32(n.speedFactor)
+    .u32(0); // m_buffs.Serialize: no buffs
+}
+
+function playerOf(m: AddedMover, self: boolean): AddedPlayer {
+  if (!m.isPlayer || m.player === undefined) {
+    throw new Error(`mover ${m.objectId} is not a player: it needs isPlayer true and a player part`);
+  }
+  if (m.player.self !== self) {
+    throw new Error(self
+      ? `mover ${m.objectId} is another player: write it with writeAddPlayer`
+      : `mover ${m.objectId} is the own character: write it with writeAddSelf`);
+  }
+  return m.player;
+}
+
+function npcOf(m: AddedMover): AddedNpc {
+  if (m.isPlayer || m.npc === undefined) {
+    throw new Error(`mover ${m.objectId} is not an NPC or a monster: it needs isPlayer false and an npc part `
+      + `(isPlayer is ${m.isPlayer})`);
+  }
+  return m.npc;
+}
+
+/**
+ * ADD_OBJ of another player, as the world server writes it for anyone but that player (METHOD_EXCLUDE_ITEM,
+ * `ObjSerializeOpt.cpp:278-317`): the shop title, the worn parts with their flags, no pet (`NULL_ID` and ''),
+ * then no buffs.
+ */
+export function writeAddPlayer(objectId: number, p: AddedMover): ScriptMessage {
+  const player = playerOf(p, false);
+  const w = playerStart(p, player).string(player.shopTitle).u8(player.worn.length);
+  for (const part of player.worn) w.u8(part.part).u16(part.itemId).u8(part.flag);
+  return scripted(objectId, MessageType.ADD_OBJ, w.u32(NULL_ID).string('').u32(0));
+}
+
+/**
+ * ADD_OBJ of the player's own character (METHOD_NONE, `ObjSerializeOpt.cpp:198-236`), up to its equipment IDs:
+ * `worn` goes in `m_aEquipInfo[part].dwId` and every other part is `NULL_ID`. The world server goes on with the
+ * skills, the inventory, the banks and the rest (:237-276), then the buffs; the browser skips all of that, so the
+ * script ends the message after the equipment. The bundle's player object ID must be `objectId`, as `CUser::Open`
+ * makes it (`User.cpp:315`).
+ */
+export function writeAddSelf(objectId: number, p: AddedMover): ScriptMessage {
+  const player = playerOf(p, true);
+  const equipment: number[] = new Array<number>(MAX_HUMAN_PARTS).fill(NULL_ID);
+  for (const part of player.worn) {
+    if (!Number.isInteger(part.part) || part.part < 0 || part.part >= MAX_HUMAN_PARTS) {
+      throw new Error(`part ${part.part} is outside 0..${MAX_HUMAN_PARTS - 1}`);
+    }
+    equipment[part.part] = part.itemId;
+  }
+  const w = playerStart(p, player)
+    .u16(0).u16(0) // (u_short)m_nManaPoint, (u_short)m_nFatiguePoint
+    .i32(0).i32(0).u32(0) // m_nTutorialState, m_nFxp, dwGold
+    .i64(0n).i32(0).i32(0).i64(0n).i32(0); // m_nExp1, m_nSkillLevel, m_nSkillPoint, m_nDeathExp, m_nDeathLevel
+  for (let i = 0; i < MAX_JOB; i++) w.u32(0); // dwJobLv
+  w.u32(0).vec3([0, 0, 0]) // m_idMarkingWorld, m_vMarkingPos
+    .u8(0).u8(0).u8(0) // no quests, no completed quests, no checked quests
+    .u32(0).i16(0).i16(0); // m_idMurderer, (short)m_nRemainGP, (short)0
+  for (const id of equipment) w.u32(id);
+  return scripted(objectId, MessageType.ADD_OBJ, w);
+}
+
+/** ADD_OBJ of a monster: to `CMover::Serialize` a monster is an NPC, so this is `writeAddNpc`. */
+export function writeAddMonster(objectId: number, m: AddedMover): ScriptMessage {
+  return scripted(objectId, MessageType.ADD_OBJ, npcFields(m, npcOf(m)));
+}
+
+/**
+ * ADD_OBJ of an NPC (`ObjSerializeOpt.cpp:319-352`). The world server lists worn parts only for an NPC that
+ * `IsEquipableNPC()`; the script writes whatever `worn` holds.
+ */
+export function writeAddNpc(objectId: number, n: AddedMover): ScriptMessage {
+  return scripted(objectId, MessageType.ADD_OBJ, npcFields(n, npcOf(n)));
 }

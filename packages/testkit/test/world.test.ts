@@ -1,11 +1,12 @@
 import { expect, it } from 'vitest';
 import {
-  ArWriter, BUNDLE_MARKER, MessageType, PacketType, WORLD_READERS, bytesToHex, readBundle,
+  ArWriter, BUNDLE_MARKER, MessageType, NULL_ID, PacketType, WORLD_READERS, bytesToHex, readBundle,
 } from '@flyffweb/protocol';
-import type { MessageReader, MoveReport, Vec3, WorldMessage } from '@flyffweb/protocol';
+import type { AddedMover, MessageReader, MoveReport, Vec3, WorldMessage } from '@flyffweb/protocol';
 import {
-  encodeBundle, writeDelObj, writeDestAngle, writeDestPos, writeMotion, writeMoverAngle, writeMoverBehavior,
-  writeMoverMoved, writeReplace, writeSetDestObj, writeSetPos, writeSetPosAngle, writeWorldReadInfo,
+  encodeBundle, writeAddMonster, writeAddNpc, writeAddPlayer, writeAddSelf, writeDelObj, writeDestAngle, writeDestPos,
+  writeMotion, writeMoverAngle, writeMoverBehavior, writeMoverMoved, writeReplace, writeSetDestObj, writeSetPos,
+  writeSetPosAngle, writeWorldReadInfo,
 } from '../src';
 
 it('encodeBundle writes the table', () => {
@@ -119,4 +120,82 @@ it('writes the fields in the order of the C++ handlers', () => {
   expect(bytesToHex(writeReplace(1, 5, [1, 2, 3]).fields))
     .toBe(bytesToHex(new ArWriter().u32(5).vec3([1, 2, 3]).toBytes()));
   expect(writeDelObj(3)).toEqual({ objectId: 3, type: MessageType.DEL_OBJ, fields: new Uint8Array(0) });
+});
+
+// One mover of each kind, with values the C++ casts keep (a scale × 100 and an angle × 10 that are whole numbers).
+const looks = { hairMesh: 3, hairColor: 0xff112233, headMesh: 4 };
+const player = {
+  ...looks, name: 'Hero', sex: 1, skinSet: 2, playerId: 777, job: 9, level: 65, authorization: 0x46, mode: 0x10,
+  stateMode: 0x20, pkTime: 5000, pkValue: -3, pkPropensity: 100, honor: 6,
+};
+const moverBase = {
+  pos, motion: 0x15, hitPoint: 1234, state: 0x11, stateFlag: 0x2, belligerence: 0, sfxId: NULL_ID,
+};
+const otherPlayer: AddedMover = {
+  ...moverBase, index: 11, scale: 1, angle: 90.5, objectId: 31, isPlayer: true,
+  player: {
+    ...player, self: false, shopTitle: 'Cheap swords',
+    worn: [{ part: 2, itemId: 500, flag: 0 }, { part: 10, itemId: 21, flag: 1 }, { part: 27, itemId: 4100, flag: 0 }],
+  },
+};
+const ownPlayer: AddedMover = {
+  ...moverBase, index: 11, scale: 1, angle: -45.5, objectId: 32, isPlayer: true,
+  player: {
+    ...player, self: true, shopTitle: '', worn: [{ part: 2, itemId: 7, flag: 0 }, { part: 13, itemId: 0, flag: 0 }],
+  },
+};
+const monster: AddedMover = {
+  ...moverBase, index: 20, scale: 1.5, angle: 180, objectId: 33, isPlayer: false, belligerence: 1,
+  npc: {
+    hairMesh: 0, hairColor: 0, headMesh: 0, characterKey: '', worn: [],
+    activeAttack: 1, movePattern: 0, moveEvent: 0, moveEventCount: 0, speedFactor: 1,
+  },
+};
+const humanNpc: AddedMover = {
+  ...moverBase, index: 11, scale: 2.5, angle: 0, objectId: 34, isPlayer: false,
+  npc: {
+    ...looks, characterKey: 'MaFl_Bobochan',
+    worn: [{ part: 2, itemId: 502, flag: 0 }, { part: 10, itemId: 22, flag: 0 }],
+    activeAttack: 0, movePattern: 2, moveEvent: 99, moveEventCount: -1, speedFactor: 0.5,
+  },
+};
+
+it('each ADD_OBJ writer decodes to what it was given', () => {
+  // The own character is the one whose object ID is the bundle's player object ID.
+  const cases: [string, ReturnType<typeof writeAddPlayer>, number, AddedMover][] = [
+    ['writeAddPlayer', writeAddPlayer(31, otherPlayer), 7, otherPlayer],
+    ['writeAddSelf', writeAddSelf(32, ownPlayer), 32, ownPlayer],
+    ['writeAddMonster', writeAddMonster(33, monster), 7, monster],
+    ['writeAddNpc', writeAddNpc(34, humanNpc), 7, humanNpc],
+  ];
+  for (const [name, message, playerObjectId, mover] of cases) {
+    expect(message.type, name).toBe(MessageType.ADD_OBJ);
+    expect(message.objectId, name).toBe(mover.objectId);
+    for (const index of [true, false]) {
+      const result = readBundle(encodeBundle(PacketType.JOIN, playerObjectId, [message], { index }), WORLD_READERS);
+      expect(result.skipped, name).toEqual([]);
+      expect(result.mismatched, name).toEqual([]);
+      expect(result.messages, name).toEqual([
+        { objectId: mover.objectId, type: MessageType.ADD_OBJ, value: { type: 'addMover', mover } },
+      ]);
+    }
+  }
+  // A JOIN as the world server starts it: the own character first (`CUser::Open`), then what is in view.
+  const inView = [ownPlayer, otherPlayer, monster, humanNpc];
+  const join = readBundle(encodeBundle(PacketType.JOIN, 32, [
+    writeAddSelf(32, ownPlayer), writeAddPlayer(31, otherPlayer), writeAddMonster(33, monster),
+    writeAddNpc(34, humanNpc),
+  ]), WORLD_READERS);
+  expect(join.mismatched).toEqual([]);
+  expect(join.messages.map((m) => m.value)).toEqual(inView.map((mover) => ({ type: 'addMover', mover })));
+});
+
+it('the ADD_OBJ writers refuse a mover of the other kind', () => {
+  expect(() => writeAddPlayer(31, ownPlayer)).toThrow(/own character/);
+  expect(() => writeAddSelf(32, otherPlayer)).toThrow(/another player/);
+  expect(() => writeAddPlayer(33, monster)).toThrow(/not a player/);
+  expect(() => writeAddNpc(31, otherPlayer)).toThrow(/not an NPC or a monster/);
+  expect(() => writeAddMonster(33, { ...monster, isPlayer: true })).toThrow(/isPlayer is true/);
+  const tooFar = { ...ownPlayer.player!, worn: [{ part: 31, itemId: 1, flag: 0 }] };
+  expect(() => writeAddSelf(32, { ...ownPlayer, player: tooFar })).toThrow(/part 31/);
 });

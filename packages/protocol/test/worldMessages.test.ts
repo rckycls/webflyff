@@ -158,7 +158,7 @@ const SAMPLES: [number, Uint8Array][] = [
 
 describe('WORLD_READERS', () => {
   it('has a reader for each movement and place message type', () => {
-    // ADD_OBJ is added with its reader in a later task.
+    // ADD_OBJ has its own tests (addObj.test.ts).
     for (const [type] of SAMPLES) expect(WORLD_READERS.has(type), `type 0x${type.toString(16)}`).toBe(true);
   });
 

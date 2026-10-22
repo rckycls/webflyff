@@ -45,6 +45,14 @@ export class ArReader {
     return v;
   }
 
+  /** A `short`: the two bytes of a WORD read with their sign (`CAr::operator>>( short& )` reads a WORD). */
+  i16(): number {
+    this.need(2);
+    const v = this.view.getInt16(this.offset, true);
+    this.offset += 2;
+    return v;
+  }
+
   u32(): number {
     this.need(4);
     const v = this.view.getUint32(this.offset, true);

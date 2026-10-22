@@ -13,7 +13,8 @@ export {
   CERTIFY_BLOCK_BYTES, CERTIFY_KEY_TEXT, PASSWORD_SALT, deleteKey, encryptCertifyPassword, hashPassword,
 } from './crypto/password';
 export {
-  BUNDLE_MARKER, DPID_UNKNOWN, MAX_CHARACTER_SLOTS, MessageType, NULL_ID, PacketType, Port, PROTOCOL_VERSION,
+  BUNDLE_MARKER, DPID_UNKNOWN, MAX_CHARACTER_SLOTS, MessageType, NULL_ID, ObjectType, PacketType, Port,
+  PROTOCOL_VERSION,
 } from './constants';
 export type { Vec3 } from './constants';
 export {
@@ -33,7 +34,7 @@ export type { JoinRequest, MoveReport, WorldPacket } from './messages/world';
 export { readBundle } from './bundle';
 export type { BundleMessage, BundleResult, MessageHeader, MessageReader } from './bundle';
 export { WORLD_READERS } from './world/readers';
-export type { WorldMessage } from './world/types';
+export type { AddedMover, AddedNpc, AddedPlayer, WorldMessage, WornPart } from './world/types';
 export { CloseCode } from './gatewayCloseCodes';
 export { parseRecording } from './recording';
 export type { RecordedPacket, Recording } from './recording';

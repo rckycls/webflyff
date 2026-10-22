@@ -69,6 +69,19 @@ export const MessageType = {
   WORLD_READINFO: 0x9910,
 } as const;
 
+/** The object types (`OT_*` in `Resource/define.h:80-88`) that ADD_OBJ starts with, as a `BYTE`. */
+export const ObjectType = {
+  OBJ: 0,
+  ANI: 1,
+  CTRL: 2,
+  SFX: 3,
+  ITEM: 4,
+  MOVER: 5,
+  REGION: 6,
+  SHIP: 7,
+  PATH: 8,
+} as const;
+
 /**
  * The last four bytes of a bundle's table of contents: the bytes "TOC1" read as a little-endian `u32`. The
  * table is added to server bundles by the world-snapshot-index patch (`server-patches/`).

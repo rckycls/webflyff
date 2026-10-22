@@ -25,6 +25,13 @@ export class ArWriter {
     return this;
   }
 
+  /** A `short`, which `CAr::operator<<( short )` writes as a WORD. */
+  i16(value: number): this {
+    const at = this.reserve(2);
+    this.view.setInt16(at, value, true);
+    return this;
+  }
+
   u32(value: number): this {
     const at = this.reserve(4);
     this.view.setUint32(at, value, true);
