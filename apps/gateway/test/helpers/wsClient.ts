@@ -1,7 +1,6 @@
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import { WebSocket, WebSocketServer } from 'ws';
-import type { Logger } from '../../src/log';
 import { startRelay, type RelayOptions, type RelayResult } from '../../src/relay';
 
 export interface RelayHarness {
@@ -13,25 +12,24 @@ export interface RelayHarness {
   closed: Promise<{ code: number }>;
   /** Resolves when the relay is done with the connection. */
   result: Promise<RelayResult>;
-  /** What the relay wrote to its logger. */
-  logs: string[];
+  /** Resolves once the relay has handled every message the browser sent before this call (a ping goes through behind them). */
+  flush(): Promise<void>;
   /** Closes the browser, the WebSocket server and, through the relay, the TCP side. Safe to call twice. */
   close(): Promise<void>;
 }
 
 /**
  * Runs `startRelay` for one WebSocket connection: a `WebSocketServer` on a free loopback port hands every
- * connection to the relay, and a browser-side `WebSocket` connects to it and is returned ready to use.
+ * connection to the relay, and a browser-side `WebSocket` connects to it and is returned ready to use. The server
+ * cuts messages the way the gateway's does, one byte over the largest packet.
  */
-export async function relayHarness(opts: Omit<RelayOptions, 'log'>): Promise<RelayHarness> {
-  const logs: string[] = [];
-  const log: Logger = { info: (line) => { logs.push(line); } };
+export async function relayHarness(opts: RelayOptions): Promise<RelayHarness> {
   let relayDone!: (result: RelayResult) => void;
   const result = new Promise<RelayResult>((resolve) => { relayDone = resolve; });
 
-  const wss = new WebSocketServer({ host: '127.0.0.1', port: 0 });
+  const wss = new WebSocketServer({ host: '127.0.0.1', port: 0, maxPayload: opts.limits.maxPacketBytes + 1 });
   wss.on('connection', (ws) => {
-    void startRelay(ws, { ...opts, log }).done.then(relayDone);
+    void startRelay(ws, opts).done.then(relayDone);
   });
   await once(wss, 'listening');
 
@@ -57,7 +55,14 @@ export async function relayHarness(opts: Omit<RelayOptions, 'log'>): Promise<Rel
     messages,
     closed,
     result,
-    logs,
+    flush() {
+      // The relay's WebSocket reads the stream in order and answers a ping when it gets to it, so the pong
+      // proves that the messages before the ping were delivered to the relay.
+      return new Promise((resolve) => {
+        client.once('pong', () => resolve());
+        client.ping();
+      });
+    },
     close() {
       closing ??= (async () => {
         client.terminate();

@@ -8,10 +8,10 @@ export interface FakeFlyffServerOptions {
   /** The protocol ID the server announces and checks client checksums with. Default: an arbitrary fixed number. */
   protocolId?: number;
   /**
-   * Waits this many milliseconds after accepting a connection before sending the protocol-ID frame (default: none),
-   * to test clients that talk before the ID arrives. Client frames are read and checked meanwhile.
+   * Keeps the protocol-ID frame back until `releaseProtocolId()` is called (default: it goes out on accept), to test
+   * clients that talk before the ID arrives, deterministically. Client frames are read and checked meanwhile.
    */
-  delayIdMs?: number;
+  holdProtocolId?: boolean;
   /** Called for every client body that passed its checksums. `reply` sends a body back on that same connection. */
   onBody?: (body: Uint8Array, reply: (body: Uint8Array) => void) => void;
 }
@@ -24,10 +24,17 @@ export interface FakeFlyffServer {
   readonly received: Uint8Array[];
   /** Connections accepted so far. */
   readonly connections: number;
+  /** Accepted connections that have ended since, whichever side ended them. */
+  readonly connectionsClosed: number;
   /** Client frames refused for a bad marker or checksum so far. The offending connection is destroyed. */
   readonly crcErrors: number;
   /** Sends a body to the newest connection that is still open. Throws when no client is connected. */
   send(body: Uint8Array): void;
+  /**
+   * Sends the protocol-ID frame that `holdProtocolId` kept back, on every open connection still waiting for it, and
+   * from now on on accept. Does nothing without `holdProtocolId`, or when called again.
+   */
+  releaseProtocolId(): void;
   /** Destroys every open connection. The server keeps listening. */
   dropClients(): void;
   /** Resolves once `received` holds at least `n` bodies. */
@@ -38,7 +45,7 @@ export interface FakeFlyffServer {
 
 /**
  * A stand-in for a FlyFF server on 127.0.0.1, for tests. On accept it sends the protocol-ID body, the way the
- * real servers do (after `delayIdMs`, if set). It reads client frames, checks their checksums against the
+ * real servers do (unless `holdProtocolId` keeps it back). It reads client frames, checks their checksums against the
  * protocol ID and hands the bodies to `onBody`.
  */
 export async function startFakeFlyffServer(options: FakeFlyffServerOptions = {}): Promise<FakeFlyffServer> {
@@ -46,7 +53,10 @@ export async function startFakeFlyffServer(options: FakeFlyffServerOptions = {})
   const received: Uint8Array[] = [];
   const open: net.Socket[] = []; // in accept order, so the last one is the newest
   const waiters: { n: number; resolve: () => void }[] = [];
+  const waitingForId = new Set<() => void>(); // the send of every open connection that is still held back
+  let idReleased = !options.holdProtocolId;
   let connections = 0;
+  let connectionsClosed = 0;
   let crcErrors = 0;
 
   const notifyWaiters = (): void => {
@@ -59,6 +69,7 @@ export async function startFakeFlyffServer(options: FakeFlyffServerOptions = {})
     connections++;
     open.push(socket);
     socket.on('close', () => {
+      connectionsClosed++;
       const at = open.indexOf(socket);
       if (at >= 0) open.splice(at, 1);
     });
@@ -70,11 +81,11 @@ export async function startFakeFlyffServer(options: FakeFlyffServerOptions = {})
     const sendProtocolId = (): void => {
       if (!socket.destroyed) socket.write(encodeServerFrame(encodeProtocolIdBody(protocolId)));
     };
-    if (options.delayIdMs) {
-      const timer = setTimeout(sendProtocolId, options.delayIdMs);
-      socket.on('close', () => clearTimeout(timer));
-    } else {
+    if (idReleased) {
       sendProtocolId();
+    } else {
+      waitingForId.add(sendProtocolId);
+      socket.on('close', () => waitingForId.delete(sendProtocolId));
     }
     socket.on('data', (chunk: Buffer) => {
       let bodies: Uint8Array[];
@@ -108,11 +119,17 @@ export async function startFakeFlyffServer(options: FakeFlyffServerOptions = {})
     protocolId,
     received,
     get connections() { return connections; },
+    get connectionsClosed() { return connectionsClosed; },
     get crcErrors() { return crcErrors; },
     send(body) {
       const newest = open[open.length - 1];
       if (!newest) throw new Error('no client is connected to the fake server');
       newest.write(encodeServerFrame(body));
+    },
+    releaseProtocolId() {
+      idReleased = true;
+      for (const sendProtocolId of waitingForId) sendProtocolId();
+      waitingForId.clear();
     },
     dropClients() {
       for (const socket of [...open]) socket.destroy();

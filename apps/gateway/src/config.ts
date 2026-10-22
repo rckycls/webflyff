@@ -47,6 +47,10 @@ export interface GatewayConfig {
 
 const ROLES: readonly RouteTarget['role'][] = ['certifier', 'login', 'cache'];
 
+/** Node fires a timer set for more than this many milliseconds (2^31 - 1, about 24.8 days) after 1 ms instead. */
+const MAX_TIMER_MS = 2147483647;
+const TIMER_LIMITS: ReadonlySet<keyof Limits> = new Set(['connectTimeoutMs', 'pingIntervalMs', 'pongTimeoutMs']);
+
 type JsonObject = Record<string, unknown>;
 
 function isObject(value: unknown): value is JsonObject {
@@ -97,8 +101,8 @@ function route(value: unknown, path: string): RouteTarget {
 
 /**
  * Checks the contents of a `gateway.config.json` and returns them, with the limits it leaves out set to
- * `DEFAULT_LIMITS`. A value of the wrong shape throws an `Error` that names its path in the file, for example
- * `routes["172.31.238.55:23000"].port`.
+ * `DEFAULT_LIMITS`. A value of the wrong shape, or a limit the gateway does not have, throws an `Error` that names
+ * its path in the file, for example `routes["172.31.238.55:23000"].port`.
  */
 export function parseConfig(json: unknown): GatewayConfig {
   const root = object(json, 'config');
@@ -107,11 +111,16 @@ export function parseConfig(json: unknown): GatewayConfig {
   if (typeof root.sendClientAddr !== 'boolean') throw new Error('sendClientAddr must be true or false');
 
   const limitValues = root.limits === undefined ? {} : object(root.limits, 'limits');
+  // A misspelt limit would otherwise leave the default in force without a word.
+  for (const name of Object.keys(limitValues)) {
+    if (!Object.hasOwn(DEFAULT_LIMITS, name)) throw new Error(`limits.${name} is not a limit of the gateway`);
+  }
   const limits: Limits = { ...DEFAULT_LIMITS };
   for (const name of Object.keys(DEFAULT_LIMITS) as Array<keyof Limits>) {
     if (limitValues[name] === undefined) continue;
     // Holding no packets at all is a valid setting; every other limit needs at least 1.
-    limits[name] = integer(limitValues[name], `limits.${name}`, name === 'maxHeldPackets' ? 0 : 1);
+    const min = name === 'maxHeldPackets' ? 0 : 1;
+    limits[name] = integer(limitValues[name], `limits.${name}`, min, TIMER_LIMITS.has(name) ? MAX_TIMER_MS : undefined);
   }
 
   return {

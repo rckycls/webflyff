@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { expect, it } from 'vitest';
 import { DEFAULT_LIMITS, parseConfig } from '../src/config';
 
@@ -99,4 +101,25 @@ it('names the limit that is not a usable number', () => {
   expect(() => parseConfig({ ...example(), limits: [] })).toThrow(/limits/);
   // Holding nothing is a valid (strict) setting.
   expect(parseConfig({ ...example(), limits: { maxHeldPackets: 0 } }).limits.maxHeldPackets).toBe(0);
+});
+
+it('caps the timer limits at the largest delay Node honours, because a longer one fires after 1 ms', () => {
+  const LARGEST = 2147483647;
+  for (const name of ['connectTimeoutMs', 'pingIntervalMs', 'pongTimeoutMs'] as const) {
+    expect(parseConfig({ ...example(), limits: { [name]: LARGEST } }).limits[name], name).toBe(LARGEST);
+    expect(() => parseConfig({ ...example(), limits: { [name]: LARGEST + 1 } }), name).toThrow(new RegExp(`limits\.${name}`));
+  }
+  // Only timers have that cap.
+  expect(parseConfig({ ...example(), limits: { maxServerBodyBytes: 2 ** 40 } }).limits.maxServerBodyBytes).toBe(2 ** 40);
+});
+
+it('names a limit that does not exist, because a misspelt one would silently leave the default in force', () => {
+  expect(() => parseConfig({ ...example(), limits: { maxPacketsPerSec: 5 } })).toThrow(/limits\.maxPacketsPerSec/);
+  expect(() => parseConfig({ ...example(), limits: { maxPacketBytes: 100, extra: 1 } })).toThrow(/limits\.extra/);
+  expect(() => parseConfig({ ...example(), limits: { toString: 1 } })).toThrow(/limits\.toString/);
+});
+
+it('reads the committed example config, which holds the same values as the shape above', () => {
+  const file = fileURLToPath(new URL('../gateway.config.example.json', import.meta.url));
+  expect(parseConfig(JSON.parse(readFileSync(file, 'utf8')))).toEqual({ ...example(), limits: DEFAULT_LIMITS });
 });

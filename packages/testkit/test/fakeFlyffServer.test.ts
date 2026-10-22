@@ -129,15 +129,44 @@ it('close() hangs up on connected clients, stops listening and can be called twi
   expect(refused.bodies).toEqual([]);
 });
 
-it('delayIdMs holds the protocol-ID frame back, while client frames are already read and checked', async () => {
-  server = await startFakeFlyffServer({ protocolId: 7, delayIdMs: 500 });
-  const startedAt = performance.now();
+it('holdProtocolId keeps the protocol-ID frame back until releaseProtocolId, for connections waiting and later ones', async () => {
+  server = await startFakeFlyffServer({
+    protocolId: 7,
+    holdProtocolId: true,
+    onBody: (body, reply) => reply(new Uint8Array([9, ...body])),
+  });
   const a = connect(server.port);
-  a.socket.write(encodeClientFrame(new Uint8Array([1, 2]), 7));
-  await server.waitForBodies(1);
-  expect(a.bodies).toEqual([]); // the 500 ms are far from over
+  a.socket.write(encodeClientFrame(new Uint8Array([1, 2]), 7)); // client frames are read and checked meanwhile
   await expect.poll(() => a.bodies.length).toBe(1);
-  expect(performance.now() - startedAt).toBeGreaterThanOrEqual(450); // timers may fire a little early, never by this much
-  expect(readProtocolId(a.bodies[0]!)).toBe(7);
+  // One TCP stream keeps its order: the reply is the first body because no protocol ID went out before it.
+  expect([...a.bodies[0]!]).toEqual([9, 1, 2]);
   expect(server.crcErrors).toBe(0);
+
+  server.releaseProtocolId();
+  await expect.poll(() => a.bodies.length).toBe(2);
+  expect(readProtocolId(a.bodies[1]!)).toBe(7);
+
+  server.releaseProtocolId(); // releasing again sends nothing more
+  const b = connect(server.port); // a connection after the release gets the ID at once
+  await expect.poll(() => b.bodies.length).toBe(1);
+  expect(readProtocolId(b.bodies[0]!)).toBe(7);
+  b.socket.write(encodeClientFrame(new Uint8Array([3]), 7));
+  await expect.poll(() => b.bodies.length).toBe(2);
+  expect(a.bodies).toHaveLength(2);
+});
+
+it('connectionsClosed counts accepted connections that ended, whichever side ended them', async () => {
+  server = await startFakeFlyffServer();
+  expect(server.connectionsClosed).toBe(0);
+  const a = connect(server.port);
+  const b = connect(server.port);
+  const c = connect(server.port);
+  await expect.poll(() => [a.bodies.length, b.bodies.length, c.bodies.length]).toEqual([1, 1, 1]);
+  expect(server.connectionsClosed).toBe(0);
+
+  a.socket.destroy(); // the client leaves
+  await expect.poll(() => server!.connectionsClosed).toBe(1);
+  server.dropClients(); // the server ends the rest
+  await expect.poll(() => server!.connectionsClosed).toBe(3);
+  expect(server.connections).toBe(3);
 });

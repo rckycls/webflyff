@@ -3,25 +3,26 @@ import type { WebSocket } from 'ws';
 import {
   CloseCode, PacketType, ProtocolError, ServerFrameReader, encodeClientFrame, encodeGatewayClientAddr, readProtocolId,
 } from '@flyffweb/protocol';
+import { normalizeIPv4 } from './clientAddress';
 import type { Limits, RouteTarget } from './config';
-import type { Logger } from './log';
+import { RateWindow } from './limits';
+
+/** The close code for a connection that ended without a close frame. */
+const ABNORMAL_CLOSURE = 1006;
 
 export interface RelayOptions {
   route: RouteTarget;
-  /** The `address:port` the browser asked for; for log lines. */
-  routeKey: string;
-  /** The player's real IPv4 address, sent to certifier routes when `sendClientAddr` is on. */
+  /** The player's real IPv4 address (dotted, no IPv6 form), sent to certifier routes when `sendClientAddr` is on. */
   clientAddress: string;
   sendClientAddr: boolean;
   limits: Limits;
-  /** The relay itself writes nothing to it, and never packet contents; the server around it logs open and close. */
-  log: Logger;
 }
 
 export interface RelayResult {
   /**
    * The code the connection ended with: one of `CloseCode` when the gateway ended it, otherwise the code the
-   * browser closed with (1005 when it gave none, 1006 when it vanished).
+   * browser closed with (1005 when it gave none), or the one `ws` closed it with after a message it could not take
+   * (1007, 1009), or 1006 when the browser vanished or stopped answering pings.
    */
   closeCode: number;
   /** Packet body bytes passed from the browser to the server. Not counted: frame headers, the client address. */
@@ -43,6 +44,19 @@ function isClientAddrPacket(body: Uint8Array): boolean {
 }
 
 /**
+ * The code `ws` closes the connection with after an error in what it received (1002 protocol error, 1007 text that
+ * is not UTF-8, 1009 message too big). `ws` keeps it in a symbol property of the error. Its 'close' event cannot
+ * tell: it reports the code of a close frame it received, and after such an error that is 1006.
+ */
+function closeCodeOfWsError(error: Error): number {
+  for (const key of Object.getOwnPropertySymbols(error)) {
+    const value = (error as unknown as Record<symbol, unknown>)[key];
+    if (key.description === 'status-code' && typeof value === 'number') return value;
+  }
+  return ABNORMAL_CLOSURE;
+}
+
+/**
  * Pairs one open WebSocket with one new TCP connection to a FlyFF server and relays packets between them. Each
  * binary WebSocket message is one packet body, framed for the server on the way out; each server frame is
  * unframed into one message on the way back.
@@ -50,17 +64,29 @@ function isClientAddrPacket(body: Uint8Array): boolean {
  * - The server's first body is its protocol ID, which the client frames' checksums need. The relay reads it and
  *   never passes it on. Browser packets that arrive earlier are held (`maxHeldPackets`) and sent after it.
  * - On a certifier route with `sendClientAddr`, the first packet sent is the client address (spec section 5).
- * - The connection ends, with the matching `CloseCode`, when the TCP connection fails or does not complete in
- *   `connectTimeoutMs` (4001), the server ends it (4002), the server sends bytes that are not frames or a first
- *   packet that is not a protocol ID (4005), or the browser sends a text message or a client-address packet
- *   (4006), a packet over `maxPacketBytes`, or too many before the protocol ID (4004). When the browser leaves
+ * - The connection ends, with the matching `CloseCode`, when the TCP connection fails or the server's protocol ID
+ *   has not arrived `connectTimeoutMs` after the call (4001; the real servers send it as soon as they accept), the
+ *   server ends it (4002), the server sends bytes that are not frames or a first packet that is not a protocol ID
+ *   (4005), or the browser sends a text message or a client-address packet (4006), a packet over `maxPacketBytes`,
+ *   more than `maxPacketsPerSecond` packets, or too many before the protocol ID (4004). When the browser leaves
  *   first, the TCP connection is destroyed.
+ * - A browser that sleeps leaves a WebSocket that never closes: every `pingIntervalMs` the relay pings it, and if no
+ *   pong comes within `pongTimeoutMs` of the first unanswered ping, the WebSocket is terminated and, with it, the
+ *   TCP connection, so the server does not keep the session.
+ *
+ * Throws, before anything is opened, when `clientAddress` is not a dotted IPv4 address. It writes no log: the
+ * caller knows the address and the route and, from `done`, the code and the byte counts.
  *
  * `done` resolves once the connection is over and the TCP socket is gone.
  */
 export function startRelay(ws: WebSocket, opts: RelayOptions): { done: Promise<RelayResult> } {
   const { route, limits } = opts;
+  if (normalizeIPv4(opts.clientAddress) !== opts.clientAddress) {
+    // It goes into a packet when the protocol ID arrives; a bad value must not wait to throw inside a socket listener.
+    throw new Error(`clientAddress must be a dotted IPv4 address, not ${JSON.stringify(opts.clientAddress)}`);
+  }
   const reader = new ServerFrameReader(limits.maxServerBodyBytes);
+  const rate = new RateWindow(limits.maxPacketsPerSecond);
   /** Browser bodies that came before the protocol ID, oldest first. */
   const held: Uint8Array[] = [];
   let protocolId: number | undefined;
@@ -77,6 +103,21 @@ export function startRelay(ws: WebSocket, opts: RelayOptions): { done: Promise<R
   let resolveDone!: (result: RelayResult) => void;
   const done = new Promise<RelayResult>((resolve) => { resolveDone = resolve; });
 
+  // The timers are made before `finish`, which clears them, so that it never reads one that is not made yet. They
+  // only fire later, when `finish` exists too.
+  /** Runs until the server's protocol ID has arrived. */
+  const connectTimer = setTimeout(() => finish(CloseCode.SERVER_UNREACHABLE), limits.connectTimeoutMs);
+  let pongTimer: NodeJS.Timeout | undefined;
+  const pingTimer = setInterval(() => {
+    if (ws.readyState !== ws.OPEN) return;
+    ws.ping();
+    // Runs from the first ping that gets no answer, and is cancelled by any pong.
+    pongTimer ??= setTimeout(() => {
+      finish(ABNORMAL_CLOSURE, false); // nobody is listening for a close code
+      ws.terminate();
+    }, limits.pongTimeoutMs);
+  }, limits.pingIntervalMs);
+
   /**
    * Ends the connection with `code`: the TCP socket is destroyed, and the WebSocket is closed with `code`
    * unless the browser's side is the one that already ended. Only the first call has any effect.
@@ -86,12 +127,12 @@ export function startRelay(ws: WebSocket, opts: RelayOptions): { done: Promise<R
     finished = true;
     closeCode = code;
     clearTimeout(connectTimer);
+    clearInterval(pingTimer);
+    clearTimeout(pongTimer);
     held.length = 0;
     tcp.destroy();
     if (closeWebSocket && ws.readyState === ws.OPEN) ws.close(code);
   };
-
-  const connectTimer = setTimeout(() => finish(CloseCode.SERVER_UNREACHABLE), limits.connectTimeoutMs);
 
   /** Passes a browser body to the server. Only once the protocol ID is known. */
   const forward = (body: Uint8Array): void => {
@@ -111,16 +152,14 @@ export function startRelay(ws: WebSocket, opts: RelayOptions): { done: Promise<R
       finish(CloseCode.BAD_SERVER_DATA);
       return;
     }
+    clearTimeout(connectTimer);
     if (opts.sendClientAddr && route.role === 'certifier') {
       tcp.write(encodeClientFrame(encodeGatewayClientAddr(opts.clientAddress), protocolId));
     }
     for (const early of held.splice(0)) forward(early);
   };
 
-  tcp.once('connect', () => {
-    connected = true;
-    clearTimeout(connectTimer);
-  });
+  tcp.once('connect', () => { connected = true; });
   tcp.on('data', (chunk: Buffer) => {
     if (finished) return;
     let bodies: Uint8Array[];
@@ -146,6 +185,10 @@ export function startRelay(ws: WebSocket, opts: RelayOptions): { done: Promise<R
 
   ws.on('message', (data, isBinary) => {
     if (finished) return;
+    if (!rate.allow()) {
+      finish(CloseCode.LIMIT);
+      return;
+    }
     if (!isBinary) {
       finish(CloseCode.FORBIDDEN_PACKET);
       return;
@@ -163,8 +206,13 @@ export function startRelay(ws: WebSocket, opts: RelayOptions): { done: Promise<R
       finish(CloseCode.LIMIT);
     }
   });
-  // The browser left, or its connection broke (`ws` closes it and reports 'close' next): the server side goes too.
-  ws.on('error', () => finish(1006, false));
+  ws.on('pong', () => {
+    clearTimeout(pongTimer);
+    pongTimer = undefined;
+  });
+  // The browser left, or its connection broke or sent what `ws` will not take: the server side goes too. After an
+  // error `ws` has sent its own close code and then reports 1006, so the code is taken from the error.
+  ws.on('error', (error) => finish(closeCodeOfWsError(error), false));
   ws.on('close', (code) => finish(code, false));
 
   return { done };

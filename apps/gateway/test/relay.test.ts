@@ -1,11 +1,12 @@
 import net from 'node:net';
+import type { WebSocket } from 'ws';
 import { afterEach, expect, it, vi } from 'vitest';
 import {
   ArWriter, CloseCode, DPID_UNKNOWN, bytesToHex, encodeGatewayClientAddr, encodeProtocolIdBody, encodeServerFrame,
 } from '@flyffweb/protocol';
 import { startFakeFlyffServer, type FakeFlyffServerOptions } from '@flyffweb/testkit';
 import { DEFAULT_LIMITS } from '../src/config';
-import type { RelayOptions } from '../src/relay';
+import { startRelay, type RelayOptions } from '../src/relay';
 import { relayHarness } from './helpers/wsClient';
 
 // Everything a test opens is closed here, newest first: browser and relay before the servers they talk to.
@@ -16,7 +17,6 @@ afterEach(async () => {
 });
 
 type Role = RelayOptions['route']['role'];
-type HarnessOptions = Omit<RelayOptions, 'log'>;
 
 async function fakeServer(options?: FakeFlyffServerOptions) {
   const server = await startFakeFlyffServer(options);
@@ -25,10 +25,9 @@ async function fakeServer(options?: FakeFlyffServerOptions) {
 }
 
 /** Options for a relay to `port` as a `role` route; `sendClientAddr` is off unless a test turns it on. */
-function relayOptions(port: number, role: Role, over: Partial<HarnessOptions> = {}): HarnessOptions {
+function relayOptions(port: number, role: Role, over: Partial<RelayOptions> = {}): RelayOptions {
   return {
     route: { host: '127.0.0.1', port, role },
-    routeKey: 'k',
     clientAddress: '10.0.0.9',
     sendClientAddr: false,
     limits: DEFAULT_LIMITS,
@@ -36,7 +35,7 @@ function relayOptions(port: number, role: Role, over: Partial<HarnessOptions> = 
   };
 }
 
-async function harness(options: HarnessOptions) {
+async function harness(options: RelayOptions) {
   const h = await relayHarness(options);
   cleanups.push(() => h.close());
   return h;
@@ -70,7 +69,7 @@ const keepAlive = new Uint8Array([0x18, 0, 0, 0]);
 it('sends the client address first on certifier routes, then relays both ways', async () => {
   const server = await startFakeFlyffServer({ onBody: (b, reply) => { if (b[0] === 0xfc) reply(new Uint8Array([0xfd, 0, 0, 0])); } });
   cleanups.push(() => server.close());
-  const h = await harness({ route: { host: '127.0.0.1', port: server.port, role: 'certifier' }, routeKey: 'k', clientAddress: '10.0.0.9', sendClientAddr: true, limits: DEFAULT_LIMITS });
+  const h = await harness({ route: { host: '127.0.0.1', port: server.port, role: 'certifier' }, clientAddress: '10.0.0.9', sendClientAddr: true, limits: DEFAULT_LIMITS });
   h.client.send(new Uint8Array([0xfc, 0, 0, 0]));          // may arrive before the protocol ID: must be held
   await server.waitForBodies(2);
   expect(bytesToHex(server.received[0]!)).toBe(bytesToHex(encodeGatewayClientAddr('10.0.0.9')));
@@ -150,9 +149,13 @@ it('closes with 4004 on a packet one byte over the limit, and relays one at the 
 });
 
 it('holds up to four packets sent before the protocol ID and sends them in order', async () => {
-  const server = await fakeServer({ delayIdMs: 150 });
+  const server = await fakeServer({ holdProtocolId: true });
   const h = await harness(relayOptions(server.port, 'certifier', { sendClientAddr: true }));
   for (let n = 1; n <= 4; n++) h.client.send(new Uint8Array([0xfc, n, 0, 0]));
+  await h.flush(); // the relay has all four, and the server has not announced its protocol ID
+  expect(server.received).toEqual([]);
+
+  server.releaseProtocolId();
   await server.waitForBodies(5);
   expect(server.received.map(bytesToHex)).toEqual([clientAddr('10.0.0.9'), 'fc010000', 'fc020000', 'fc030000', 'fc040000']);
   expect(server.crcErrors).toBe(0);
@@ -162,16 +165,36 @@ it('holds up to four packets sent before the protocol ID and sends them in order
 });
 
 it('closes with 4004 when a fifth packet arrives before the protocol ID', async () => {
-  const server = await fakeServer({ delayIdMs: 1000 });
+  const server = await fakeServer({ holdProtocolId: true });
   const h = await harness(relayOptions(server.port, 'login'));
   for (let n = 1; n <= 5; n++) h.client.send(new Uint8Array([0xfc, n, 0, 0]));
   await expect(h.closed).resolves.toEqual({ code: CloseCode.LIMIT });
   await expect(h.result).resolves.toMatchObject({ closeCode: 4004, bytesUp: 0 });
-  expect(server.received).toEqual([]); // the held ones were dropped with the connection, not sent late
+  server.releaseProtocolId(); // too late for this connection: the held packets went with it, they are not sent late
+  await expect.poll(() => server.connectionsClosed).toBe(1);
+  expect(server.received).toEqual([]);
+});
+
+it.each<{ name: string; send: (client: WebSocket) => void; code: number }>([
+  { name: 'a client-address packet', send: (c) => c.send(encodeGatewayClientAddr('1.1.1.1')), code: CloseCode.FORBIDDEN_PACKET },
+  {
+    name: 'a client-address packet after DPID_UNKNOWN',
+    send: (c) => c.send(new ArWriter().u32(DPID_UNKNOWN).bytes(encodeGatewayClientAddr('1.1.1.1')).toBytes()),
+    code: CloseCode.FORBIDDEN_PACKET,
+  },
+  { name: 'a text message', send: (c) => c.send('hello'), code: CloseCode.FORBIDDEN_PACKET },
+  { name: 'a packet over the size limit', send: (c) => c.send(new Uint8Array(16385)), code: CloseCode.LIMIT },
+])('closes with $code on $name sent before the protocol ID', async ({ send, code }) => {
+  const server = await fakeServer({ holdProtocolId: true });
+  const h = await harness(relayOptions(server.port, 'login'));
+  send(h.client);
+  await expect(h.closed).resolves.toEqual({ code });
+  await expect(h.result).resolves.toMatchObject({ closeCode: code, bytesUp: 0 });
+  expect(server.received).toEqual([]);
 });
 
 it('holds nothing when maxHeldPackets is 0', async () => {
-  const server = await fakeServer({ delayIdMs: 1000 });
+  const server = await fakeServer({ holdProtocolId: true });
   const h = await harness(relayOptions(server.port, 'login', { limits: { ...DEFAULT_LIMITS, maxHeldPackets: 0 } }));
   h.client.send(keepAlive);
   await expect(h.closed).resolves.toEqual({ code: CloseCode.LIMIT });
@@ -205,6 +228,25 @@ it('closes with 4001 when the TCP connection does not complete within connectTim
   expect(connect).toHaveBeenCalledWith(expect.objectContaining({ host: '127.0.0.1', port: NEVER_CONNECTS }));
 });
 
+it('closes with 4001 when the TCP connection is made but no protocol ID arrives within connectTimeoutMs', async () => {
+  const server = await fakeServer({ holdProtocolId: true });
+  const h = await harness(relayOptions(server.port, 'login', { limits: { ...DEFAULT_LIMITS, connectTimeoutMs: 100 } }));
+  await expect(h.closed).resolves.toEqual({ code: CloseCode.SERVER_UNREACHABLE });
+  await expect(h.result).resolves.toEqual({ closeCode: 4001, bytesUp: 0, bytesDown: 0 });
+  await expect.poll(() => server.connectionsClosed).toBe(1); // it did connect, and the relay hung up on it
+  expect(server.connections).toBe(1);
+});
+
+it('keeps the connection, well past connectTimeoutMs, once the protocol ID arrived in time', async () => {
+  const server = await fakeServer();
+  const h = await harness(relayOptions(server.port, 'login', { limits: { ...DEFAULT_LIMITS, connectTimeoutMs: 40 } }));
+  h.client.send(keepAlive);
+  await server.waitForBodies(1); // the relay has the protocol ID
+  await new Promise((resolve) => setTimeout(resolve, 200)); // five times the timeout: only an uncleared timer could end it
+  expect(h.client.readyState).toBe(h.client.OPEN);
+  expect(server.connectionsClosed).toBe(0);
+});
+
 it('closes with 4002 when the server drops the connection', async () => {
   const server = await fakeServer();
   const h = await harness(relayOptions(server.port, 'login'));
@@ -230,13 +272,28 @@ it('closes with 4002, and does not throw, when the server leaves in the middle o
 it.each([
   ['a first body that is not a protocol ID', encodeServerFrame(new Uint8Array([1, 2, 3]))],
   ['a first body of 8 bytes that does not start with zero', encodeServerFrame(new ArWriter().u32(1).u32(PROTOCOL_ID).toBytes())],
-  ['a byte that is not a frame marker after the protocol ID', Buffer.concat([idFrame, hex('41')])],
-  ['a frame longer than the limit after the protocol ID', Buffer.concat([idFrame, hex('5effffff7f')])],
+  ['a first byte that is not a frame marker', hex('41')],
 ])('closes with 4005 on %s', async (_name, bytes) => {
   const { port } = await rawServer((socket) => socket.write(bytes));
   const h = await harness(relayOptions(port, 'login'));
   await expect(h.closed).resolves.toEqual({ code: CloseCode.BAD_SERVER_DATA });
   await expect(h.result).resolves.toMatchObject({ closeCode: 4005 });
+  expect(h.messages).toEqual([]);
+});
+
+it.each([
+  ['a byte that is not a frame marker', hex('41')],
+  ['a frame longer than the limit', hex('5effffff7f')],
+])('closes with 4005 on %s after the protocol ID was taken in', async (_name, bytes) => {
+  // The bad bytes are a chunk of their own: in the same chunk as the ID the reader would drop the ID along with them.
+  const { port } = await rawServer((socket) => {
+    socket.write(idFrame);
+    socket.once('data', () => socket.write(bytes)); // the relay sends the browser's packet only once it has the ID
+  });
+  const h = await harness(relayOptions(port, 'login'));
+  h.client.send(keepAlive);
+  await expect(h.closed).resolves.toEqual({ code: CloseCode.BAD_SERVER_DATA });
+  await expect(h.result).resolves.toMatchObject({ closeCode: 4005, bytesUp: 4 });
   expect(h.messages).toEqual([]);
 });
 
@@ -281,4 +338,39 @@ it('counts the body bytes it relayed each way, and nothing else', async () => {
   // Not counted: the 8-byte protocol-ID body, the injected client-address packet, the 13-byte frame headers.
   await expect(h.result).resolves.toEqual({ closeCode: 1000, bytesUp: 8, bytesDown: 10 });
   expect(server.received).toHaveLength(3); // client address and the two packets
+});
+
+it('records the code ws closes a browser with when it cuts a message: too big (1009)', async () => {
+  const server = await fakeServer();
+  const h = await harness(relayOptions(server.port, 'login'));
+  h.client.send(new Uint8Array(16386)); // one byte more than reaches the relay's own size check
+  await expect(h.closed).resolves.toEqual({ code: 1009 });
+  await expect(h.result).resolves.toMatchObject({ closeCode: 1009 });
+});
+
+it('records the code ws closes a browser with when it cuts a message: text that is not UTF-8 (1007)', async () => {
+  const server = await fakeServer();
+  const h = await harness(relayOptions(server.port, 'login'));
+  h.client.send(Buffer.from([0xff, 0xfe]), { binary: false });
+  await expect(h.closed).resolves.toEqual({ code: 1007 });
+  await expect(h.result).resolves.toMatchObject({ closeCode: 1007 });
+});
+
+it('records 1006 when the browser vanishes without a close', async () => {
+  const server = await fakeServer();
+  const h = await harness(relayOptions(server.port, 'login'));
+  h.client.send(keepAlive);
+  await server.waitForBodies(1);
+  h.client.terminate();
+  await expect(h.result).resolves.toMatchObject({ closeCode: 1006 });
+  await expect.poll(() => server.connectionsClosed).toBe(1);
+});
+
+it('throws at once, and opens no connection, for a client address that is not dotted IPv4', () => {
+  const connect = vi.spyOn(net, 'connect');
+  const ws = {} as WebSocket; // never touched: the address is checked first
+  for (const clientAddress of ['', 'localhost', '::1', '::ffff:10.0.0.9', '1.2.3', '256.0.0.1', '010.0.0.9', '10.0.0.9\n']) {
+    expect(() => startRelay(ws, relayOptions(1, 'certifier', { clientAddress })), JSON.stringify(clientAddress)).toThrow(/clientAddress/);
+  }
+  expect(connect).not.toHaveBeenCalled();
 });
