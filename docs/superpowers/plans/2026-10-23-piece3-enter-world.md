@@ -17,6 +17,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-23-piece3-enter-world-design.md`. Read it first; this plan argues from it. Section numbers below (§) are the spec's.
 
+**Execution:** approved by the owner on 2026-10-23, to be run **subagent-driven** (superpowers:subagent-driven-development).
+
 **Where work happens:**
 - `$WEB`: the FlyffWeb worktree on branch `piece3-world` (on this PC `C:/Users/silec/Desktop/FlyFF/Bakbak/FlyffWeb-worktrees/piece3-world`). Every commit goes here.
 - `$SERVER`: the server folder (`C:/Users/silec/Desktop/FlyFF/Bakbak/Blouflash VS22 V15`), which holds `Source/`, `Output/`, `Program/` and `Client/`. `Source/` isn't tracked by git.
