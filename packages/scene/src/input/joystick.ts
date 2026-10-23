@@ -8,19 +8,31 @@ import { NO_INTENT } from './keyboard';
 export const JOYSTICK_RADIUS = 60;
 /** A push shorter than this share of the radius does nothing, so a resting thumb does not creep. */
 const DEAD_ZONE = 0.15;
+/** A push under way lasts down to this share (6 px), so a thumb resting on the dead zone's edge does not start and stop. */
+const DEAD_ZONE_HELD = 0.1;
 /** A push this long (as a share of the radius) or longer runs. */
 const FULL = 0.95;
+/**
+ * Running lasts down to this share (51 px), so a thumb resting at the edge of the base does not switch between walking
+ * and running every frame (each switch is a packet to the server).
+ */
+const FULL_HELD = 0.85;
 const KNOB = 48;
 /** Above the nav bar. */
 const BOTTOM = 56;
 const LEFT = 16;
 
-/** The intent of the knob pushed `(dx, dy)` pixels from the base's centre (y down, as on screen). */
-export function joystickIntent(dx: number, dy: number, radius = JOYSTICK_RADIUS): MoveIntent {
+/**
+ * The intent of the knob pushed `(dx, dy)` pixels from the base's centre (y down, as on screen). `previous` is the
+ * intent of the push before (none for a new touch): a push already under way keeps going a little below the dead zone,
+ * and a run keeps running a little below a full push.
+ */
+export function joystickIntent(dx: number, dy: number, previous: MoveIntent = NO_INTENT, radius = JOYSTICK_RADIUS): MoveIntent {
   const length = Math.hypot(dx, dy) / radius;
-  if (length < DEAD_ZONE) return { ...NO_INTENT };
+  const pushing = previous.forward !== 0 || previous.turn !== 0;
+  if (length < (pushing ? DEAD_ZONE_HELD : DEAD_ZONE)) return { ...NO_INTENT };
   const scale = Math.min(length, 1) / length / radius;
-  return { forward: 0 - dy * scale, turn: dx * scale, run: length >= FULL };
+  return { forward: 0 - dy * scale, turn: dx * scale, run: length >= (previous.run ? FULL_HELD : FULL) };
 }
 
 /**
@@ -66,6 +78,16 @@ export class Joystick {
     return this.current;
   }
 
+  /**
+   * Lets go, as if the finger had lifted: for a page that lost focus or was hidden, where the finger's pointerup may never
+   * come. That finger moves the knob no more; the next touch does.
+   */
+  reset(): void {
+    this.pointer = null;
+    this.current = { ...NO_INTENT };
+    this.knob.style.transform = '';
+  }
+
   dispose(): void {
     this.container.removeEventListener('pointerdown', this.onTouch);
     this.base.removeEventListener('pointerdown', this.onDown);
@@ -93,7 +115,7 @@ export class Joystick {
     const box = this.base.getBoundingClientRect();
     const dx = event.clientX - (box.left + box.width / 2);
     const dy = event.clientY - (box.top + box.height / 2);
-    this.current = joystickIntent(dx, dy);
+    this.current = joystickIntent(dx, dy, this.current);
     // the knob follows the finger, but stays on the base
     const length = Math.hypot(dx, dy);
     const k = length > JOYSTICK_RADIUS ? JOYSTICK_RADIUS / length : 1;
@@ -101,9 +123,6 @@ export class Joystick {
   };
 
   private readonly onUp = (event: PointerEvent): void => {
-    if (event.pointerId !== this.pointer) return;
-    this.pointer = null;
-    this.current = { ...NO_INTENT };
-    this.knob.style.transform = '';
+    if (event.pointerId === this.pointer) this.reset();
   };
 }

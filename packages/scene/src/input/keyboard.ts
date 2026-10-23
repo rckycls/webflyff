@@ -30,7 +30,7 @@ export class KeyboardInput {
     this.down.delete((event as KeyboardEvent).code);
   };
   /** A key let go while the page had no focus never sends its keyup. */
-  private readonly onBlur = (): void => this.down.clear();
+  private readonly onBlur = (): void => this.reset();
 
   /** `target` is usually `window`. */
   constructor(private readonly target: Listen) {
@@ -46,6 +46,11 @@ export class KeyboardInput {
       turn: Number(any(RIGHT)) - Number(any(LEFT)),
       run: any(RUN),
     };
+  }
+
+  /** Lets go of every key, as losing the focus does: for a page that was hidden without losing it first. */
+  reset(): void {
+    this.down.clear();
   }
 
   dispose(): void {

@@ -11,11 +11,41 @@ export interface Desired {
   walk: boolean;
 }
 
-/** The sign of each axis picks the message; a positive turn is right (the keyboard's D), a negative one left (A). */
-export function desiredFrom(intent: MoveIntent): Desired {
+/** Nothing pressed: standing, not turning, walk mode. */
+export const STANDING: Readonly<Desired> = { move: 'stand', turn: 'none', walk: true };
+
+/**
+ * An axis counts once it is this share of the push (its part of the push's length) or more. That cuts the joystick into
+ * eight sectors, as the keys are: within about 24 degrees of straight up the stick only walks, within about 24 degrees of
+ * straight sideways it only turns, and in between it does both, as W and D together. LTURN and RTURN turn 4 degrees a
+ * step, so a turn the thumb did not mean would circle the character; and a share, unlike a fixed length, lets a gentle
+ * push walk as surely as a full one.
+ */
+const AXIS_ON = 0.4;
+/** An axis that counts goes on counting down to this share (about 17 degrees), so a thumb on a sector's edge does not flip. */
+const AXIS_OFF = 0.3;
+
+/** One axis as -1, 0 or 1, from its value, the push's length and what it was the frame before. */
+function axis(value: number, length: number, was: -1 | 0 | 1): -1 | 0 | 1 {
+  if (length === 0) return 0;
+  const share = value / length;
+  if (was !== 0 && share * was >= AXIS_OFF) return was;
+  return share >= AXIS_ON ? 1 : share <= -AXIS_ON ? -1 : 0;
+}
+
+/**
+ * What the keys and the joystick ask for: a positive forward is forward (the keyboard's W), a positive turn right (D).
+ * `previous` is what the frame before asked for: an axis that counted goes on counting a little past its sector's
+ * edge (`AXIS_OFF`), so a thumb resting on the edge does not send a PLAYERMOVED every frame. The keys give -1, 0 or 1
+ * on each axis, all or nothing, so they turn on and off exactly as before.
+ */
+export function desiredFrom(intent: MoveIntent, previous: Readonly<Desired> = STANDING): Desired {
+  const length = Math.hypot(intent.forward, intent.turn);
+  const move = axis(intent.forward, length, previous.move === 'forward' ? 1 : previous.move === 'back' ? -1 : 0);
+  const turn = axis(intent.turn, length, previous.turn === 'right' ? 1 : previous.turn === 'left' ? -1 : 0);
   return {
-    move: intent.forward > 0 ? 'forward' : intent.forward < 0 ? 'back' : 'stand',
-    turn: intent.turn > 0 ? 'right' : intent.turn < 0 ? 'left' : 'none',
+    move: move > 0 ? 'forward' : move < 0 ? 'back' : 'stand',
+    turn: turn > 0 ? 'right' : turn < 0 ? 'left' : 'none',
     walk: !intent.run,
   };
 }
