@@ -123,14 +123,23 @@ export function parseDefines(
 parseDefines.lastSkipped = [] as string[];
 
 /**
- * Every `define*.h` in the packs, merged into one table (CProject::LoadDefines, ProjectCmn.cpp:704, loads these
- * headers into the one CScript::m_defines map). Headers are read in pack order, then index order, and each is
- * decoded by its own encoding; a name already defined keeps its first value.
+ * The headers CProject::LoadDefines loads that are not named `define*.h`: `lang.h` (the `LANG_*` that
+ * character.inc uses), `resdata.h` and `WndStyle.h` (ProjectCmn.cpp:708-734).
+ */
+const OTHER_HEADERS = /^(lang|resdata|wndstyle)\.h$/i;
+
+/**
+ * Every `define*.h` in the packs, plus `lang.h`, `ResData.h` and `WndStyle.h` (see OTHER_HEADERS), merged into
+ * one table (CProject::LoadDefines, ProjectCmn.cpp:706, loads these headers into the one CScript::m_defines
+ * map). Headers are read in pack order, then index order, and each is decoded by its own encoding; a name already
+ * defined keeps its first value.
  */
 export function loadDefines(packs: ResPacks): Map<string, number> {
   const defines = new Map<string, number>();
   for (const name of packs.list()) {
-    if (/^define.*\.h$/i.test(name)) parseDefines(decodeScript(packs.read(name)), defines, name);
+    if (/^define.*\.h$/i.test(name) || OTHER_HEADERS.test(name)) {
+      parseDefines(decodeScript(packs.read(name)), defines, name);
+    }
   }
   return defines;
 }

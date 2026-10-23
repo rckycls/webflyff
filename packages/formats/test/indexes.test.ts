@@ -27,7 +27,8 @@ describe('loadDefines', () => {
         files: [
           // CP949: the first line is a comment holding the two bytes b0 a1 of one Korean character
           { name: 'define.h', data: [...bytes('// '), 0xb0, 0xa1, ...bytes(script('', '#define A 1', '#define B 2'))] },
-          { name: 'lang.h', data: bytes(script('#define NOT_A_DEFINE_HEADER 9')) },
+          { name: 'language.h', data: bytes(script('#define NOT_A_DEFINE_HEADER 9')) },
+          { name: 'Lang.H', data: bytes(script('#define LANG_X 5')) },
           { name: 'Terrain.inc', data: bytes(script('#define NOT_A_HEADER_EITHER 9')) },
           { name: 'defineFlash', data: bytes(script('#define NOT_A_HEADER_NO_DOT_H 9')) },
         ],
@@ -42,18 +43,23 @@ describe('loadDefines', () => {
           { name: 'defineItem.h', data: bytes(script('#define B 3', '#define II_X A')) },
           { name: 'DEFINEWORLD.H', data: utf16(script('#define WI_ONE 1')) },
           { name: 'definequest.h', data: bytes(script('#define QUEST_X (A | 4)')) },
+          { name: 'ResData.h', data: bytes(script('#define APP_X 6')) },
+          { name: 'wndstyle.h', data: bytes(script('#define WND_X 7')) },
         ],
       }),
     },
   ]);
 
-  it('merges every define*.h of the packs, in pack order, and nothing else', () => {
+  it('merges every define*.h of the packs, and lang.h, ResData.h and WndStyle.h, in pack order, and nothing else', () => {
     expect(Object.fromEntries(loadDefines(packs))).toEqual({
       A: 1,
       B: 2, // the first definition wins, as in CScript's map::insert
       II_X: 1, // resolved through a define of an earlier header
       WI_ONE: 1, // a header is decoded by its own encoding
       QUEST_X: 5,
+      LANG_X: 5, // CProject::LoadDefines also loads these three (ProjectCmn.cpp:708-734)
+      APP_X: 6,
+      WND_X: 7,
     });
   });
 });
@@ -331,11 +337,12 @@ describe('readModelIndex', () => {
       '  }',
       '}',
     );
+    const none = { part: '', motions: [] };
     expect(readModelIndex(text, DEFINES)).toEqual([
-      { type: 0, id: 1215, name: 'RustiaGate02', modelType: 1, extra: [0, 0, 0, 1, 0, 0, 0, 1] },
-      { type: 0, id: 1194, name: 'RustiaHut02', modelType: 2, extra: [0, 0, 0, 1, 0, 0, 0, 1] },
+      { type: 0, id: 1215, name: 'RustiaGate02', modelType: 1, extra: [0, 0, 0, 1, 0, 0, 0, 1], ...none },
+      { type: 0, id: 1194, name: 'RustiaHut02', modelType: 2, extra: [0, 0, 0, 1, 0, 0, 0, 1], ...none },
       // extra is bFly, dwDistant, bPick, fScale, bTrans, bShadow, nTextureEx, bRenderFlag
-      { type: 0, id: 1182, name: 'EveXmasTree2', modelType: 1, extra: [1, 2, 3, 0.5, 4, 5, 6, 7] },
+      { type: 0, id: 1182, name: 'EveXmasTree2', modelType: 1, extra: [1, 2, 3, 0.5, 4, 5, 6, 7], ...none },
     ]);
   });
 
@@ -356,10 +363,11 @@ describe('readModelIndex', () => {
       '  "GenMatSuitbox" II_ARM_M_KIN_HELMET_SET_34 MODELTYPE_MESH mKinSet06Cap 0 MD_NEAR 0 1.0f 0 1 ATEX_NONE 1',
       '}',
     );
+    const none = { part: '', motions: [] };
     expect(readModelIndex(text, DEFINES)).toEqual([
-      { type: 2, id: 18, name: 'rain', modelType: 3, extra: [0, 1, 0, 1, 0, 1, 0, 1] },
-      { type: 2, id: 1100, name: 'Chest', modelType: 2, extra: [0, 3, 0, 1.5, 0, 1, 0, 1] },
-      { type: 4, id: 4034, name: 'GenMatSuitbox', modelType: 1, extra: [0, 1, 0, 1, 0, 1, 0, 1] },
+      { type: 2, id: 18, name: 'rain', modelType: 3, extra: [0, 1, 0, 1, 0, 1, 0, 1], ...none },
+      { type: 2, id: 1100, name: 'Chest', modelType: 2, extra: [0, 3, 0, 1.5, 0, 1, 0, 1], ...none },
+      { type: 4, id: 4034, name: 'GenMatSuitbox', modelType: 1, part: 'mKinSet06Cap', extra: [0, 1, 0, 1, 0, 1, 0, 1], motions: [] },
     ]);
   });
 
@@ -457,7 +465,7 @@ describe('readModelIndex', () => {
 
 describe('modelFileName', () => {
   function elem(type: number, name: string, modelType: number): ModelElem {
-    return { type, id: 1, name, modelType, extra: [] };
+    return { type, id: 1, name, modelType, part: '', extra: [], motions: [] };
   }
 
   // CModelMng::MakeModelName (ModelMng.cpp:63); g_szRoot (ModelMng.cpp:5); MODELTYPE_* are Model.h:10-15.

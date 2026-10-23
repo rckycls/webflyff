@@ -7,7 +7,8 @@
 //
 // An entry may be followed by a motion list `{ "motion" id ... }`. The C++ reads the numbers with CScript::
 // GetNumber, so ids, model types and flags may be define names (`MODELTYPE_MESH`, `II_GOLD_SEED1`, `MD_NEAR`).
-// Names and parts are the token's text, quoted or not: mdlDyna.inc writes the mover names and some parts bare.
+// Names, parts and motion names are the token's text, quoted or not: mdlDyna.inc writes the mover names and some
+// parts bare.
 //
 // The loop below follows the C++ token for token, including how it tells a folder from an entry (read one token
 // ahead, then rewind with SetMark / GoMark).
@@ -26,10 +27,21 @@ export interface ModelElem {
   /** MODELTYPE_* (Source/_Common/Model.h:10): 1 mesh, 2 animated mesh, 3 billboard, 4 sfx. */
   modelType: number;
   /**
+   * `szPart`: the text after the model type, '' for `""`. For an item it names the model of the body part the item
+   * shows when worn: `male/female` when the two sexes differ (`mvag01upper/fvag01upper`), one name when they
+   * share it.
+   */
+  part: string;
+  /**
    * The numbers after the part name, in file order: bFly, dwDistant, bPick, fScale, bTrans, bShadow, nTextureEx,
-   * bRenderFlag. (The part name and motion lists are read but not kept.)
+   * bRenderFlag.
    */
   extra: number[];
+  /**
+   * The entry's motion list `{ "GenStand" MTI_STAND ... }`, in file order: the motion's name (the start of its
+   * file name) and its `MTI_*` id. Empty when the entry has no list. A name may appear under several ids.
+   */
+  motions: { id: number; name: string }[];
 }
 
 /** CModelMng's g_szRoot (ModelMng.cpp:5), indexed by object type. */
@@ -114,7 +126,7 @@ export function readModelIndex(
         fail(`object id ${id} of "${nameTok.text}" is not allowed: ids start at 1`, idTok);
       }
       const modelType = ts.number();
-      ts.word(); // szPart: the token's text, whatever its kind
+      const part = ts.word(); // szPart: the token's text, whatever its kind
       const extra = [
         ts.number(), // bFly
         ts.number(), // dwDistant
@@ -127,16 +139,18 @@ export function readModelIndex(
       ];
 
       getToken(); // object name, or { for a motion list, or }
+      const motions: ModelElem['motions'] = [];
       if (curIs('{')) {
         getToken(); // motion name or }
         while (!curIs('}')) {
-          ts.number(); // the motion's MTI_* id
+          const motionName = cur.text;
+          motions.push({ id: ts.number(), name: motionName }); // the motion's MTI_* id
           getToken(); // motion name or }
         }
         getToken(); // object name or }
       }
 
-      elems.push({ type, id, name: nameTok.text, modelType, extra });
+      elems.push({ type, id, name: nameTok.text, modelType, part, extra, motions });
     }
   }
 
