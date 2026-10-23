@@ -28,6 +28,7 @@ import { lookOf } from './render/looks';
 import { loadMoverModel } from './render/moverModels';
 import { nameTagOf } from './render/nameTags';
 import type { ActionMover } from './sim/ActionMover';
+import { terrainGround } from './sim/collision';
 import { FixedStepper, STEPS_PER_SECOND } from './sim/stepper';
 import { WorldSession } from './WorldSession';
 import type { WorldEvent } from './WorldSession';
@@ -186,8 +187,11 @@ export class WorldScreen {
       this.end(NOT_AVAILABLE_TEXT);
       return;
     }
-    // the rules stand the movers on the terrain once its tile is in (`groundAt` is in D3D x, z; web z is -z)
-    this.world = new WorldState(this.data!, this.entry.clock, (x, z) => this.stage?.heightAt([x, 0, 0 - z]) ?? null);
+    // the rules stand the movers on the terrain once its tile is in (the ground is in D3D x, z; web z is -z); the
+    // stage's objects and land attributes are not part of this ground yet
+    this.world = new WorldState(
+      this.data!, this.entry.clock, terrainGround((x, z) => this.stage?.heightAt([x, 0, 0 - z]) ?? null),
+    );
     this.entered = pos;
     this.apply(messages);
     void this.openStage(folder, services).catch((error: unknown) => this.fail(error));

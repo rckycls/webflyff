@@ -5,6 +5,8 @@ import type { WebMover } from '@flyffweb/formats';
 import { ServerClock } from '../src/net/serverClock';
 import { GameDataMissingError, loadGameData } from '../src/world/gameData';
 import type { GameData } from '../src/world/gameData';
+import { terrainGround } from '../src/world/sim/collision';
+import type { Ground } from '../src/world/sim/collision';
 import { ActMsg, AniLoop, Mti, ObjSta, ObjStaF } from '../src/world/sim/constants';
 import { WorldState } from '../src/world/WorldState';
 
@@ -42,11 +44,13 @@ function gameData(): GameData {
 }
 
 /** A world on a clock that stands at `START_MS` until the test moves `time.now`; the ground is flat at height 0. */
-function newWorld(data: GameData = gameData()): { world: WorldState; time: { now: number }; clock: ServerClock } {
+function newWorld(
+  data: GameData = gameData(), ground: Ground = terrainGround(() => 0),
+): { world: WorldState; time: { now: number }; clock: ServerClock } {
   const time = { now: START_MS };
   const clock = new ServerClock(() => time.now);
   clock.start(START_MS, SERVER_TICK);
-  return { world: new WorldState(data, clock, () => 0), time, clock };
+  return { world: new WorldState(data, clock, ground), time, clock };
 }
 
 // ---- ADD_OBJ payloads ---------------------------------------------------------------------------------------------
@@ -326,6 +330,23 @@ describe('WorldState: stepping', () => {
     expect(world.movers.get(3)!.act.body.pos).toEqual([100, 0, 100]);
     expect(world.movers.get(1)!.act.body.pos[2]).toBeCloseTo(100, 4); // along x only
     expect(world.movers.get(1)!.added.pos).toEqual([100, 0, 100]); // the ADD_OBJ record is not the mover's position
+  });
+
+  it('players, monsters and NPCs all collide with the ground they are given', () => {
+    // CMover::Process runs ProcessCollisionGround for every mover on the ground (Mover.cpp:3884), and its exceptions
+    // are overruled (ActionMoverCollision.cpp:193). A wall across x = 101.5, facing -x (two triangles, D3D, identity):
+    const wall = {
+      triangles: new Float32Array([
+        101.5, 0, 110, 101.5, 3, 110, 101.5, 0, 90, 101.5, 3, 110, 101.5, 3, 90, 101.5, 0, 90,
+      ]),
+      matrix: new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]),
+    };
+    const { world } = newWorld(gameData(), { terrainHeight: () => 0, landAttr: () => 0, objectsNear: () => [wall] });
+    add(world, playerOf(1, 'Runner', { state: ObjSta.FMOVE, angle: 90 }));
+    add(world, npcOf(2, 20, '', { state: ObjSta.FMOVE, angle: 90 })); // the Aibatt, 0.1 a step
+    add(world, npcOf(3, 11, 'MaFl_Mikyel', { state: ObjSta.FMOVE, angle: 90 }));
+    steps(world, 40); // 4 m free; each stops where its knee test (6.5 steps, 0.65) reaches the wall
+    for (const id of [1, 2, 3]) near(world.movers.get(id)!.act.body.pos[0], 100.9, 1e-3);
   });
 
   it('a mover runs at its speed times its speed factor, as CMover::GetSpeed gives it', () => {

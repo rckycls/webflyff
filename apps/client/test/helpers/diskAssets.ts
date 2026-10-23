@@ -1,8 +1,10 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { MAP_SIZE, decodeTileBin } from '@flyffweb/formats';
+import { MAP_SIZE, decodeTileBin, heightFlag } from '@flyffweb/formats';
 import type { AssetIndex, WebTile, WorldManifest } from '@flyffweb/formats';
 import { sampleHeight } from '@flyffweb/scene';
+import { terrainGround } from '../../src/world/sim/collision';
+import type { Ground } from '../../src/world/sim/collision';
 
 /** The worktree's converted assets (`npm run convert`), which the world screen's dev server serves too. */
 export const ASSETS_DIR = fileURLToPath(new URL('../../../../dist/assets/', import.meta.url));
@@ -51,8 +53,9 @@ export class DiskAssets {
 }
 
 /**
- * The ground under a D3D x, z of one converted world (`CLandscape::GetHeight`), which the movers' steps stand on as the
- * screen's `stage.heightAt` does; `null` where the world has no tile, and the mover then stays where it is.
+ * The ground under a D3D x, z of one converted world, which the movers' steps stand on as the screen's ground does:
+ * the terrain's height (`CLandscape::GetHeight`), `null` where the world has no tile (the mover then stays where it
+ * is), and the land's attributes; no objects.
  */
 export class Terrain {
   private readonly tiles = new Map<string, WebTile | null>();
@@ -63,6 +66,28 @@ export class Terrain {
   }
 
   readonly heightAt = (x: number, z: number): number | null => {
+    const at = this.tileAt(x, z);
+    return at === null ? null : sampleHeight(at.tile, at.localX, at.localZ, this.manifest.mpu);
+  };
+
+  /**
+   * `CWorld::GetHeightAttribute` (`World.cpp:1717-1735`) and `CLandscape::GetHeightAttribute` (`lod.cpp:1633-1649`):
+   * the `HATTR_*` of the `HGT_*` flag on the height at the corner of the cell (in whole cells); 0 off the tiles,
+   * where the C++'s -1 stops nothing either. (The tile's `landAttr` bytes, `m_aLandAttr`, are read by nothing.)
+   */
+  readonly landAttrAt = (x: number, z: number): number => {
+    const at = this.tileAt(x, z);
+    if (at === null) return 0;
+    const cx = Math.trunc(at.localX / this.manifest.mpu);
+    const cz = Math.trunc(at.localZ / this.manifest.mpu);
+    if (cx < 0 || cx > MAP_SIZE || cz < 0 || cz > MAP_SIZE) return 0;
+    return heightFlag(at.tile.heights[cx + cz * (MAP_SIZE + 1)]!);
+  };
+
+  /** What `WorldState` takes: this terrain and its attributes, without objects. */
+  readonly ground: Ground = terrainGround(this.heightAt, this.landAttrAt);
+
+  private tileAt(x: number, z: number): { tile: WebTile; localX: number; localZ: number } | null {
     const tx = Math.floor(x / this.side);
     const tz = Math.floor(z / this.side);
     const key = `${tx}_${tz}`;
@@ -71,6 +96,6 @@ export class Terrain {
       tile = Object.hasOwn(this.manifest.tiles, key) ? this.assets.tile(this.manifest.tiles[key]!) : null;
       this.tiles.set(key, tile);
     }
-    return tile === null ? null : sampleHeight(tile, x - tx * this.side, z - tz * this.side, this.manifest.mpu);
-  };
+    return tile === null ? null : { tile, localX: x - tx * this.side, localZ: z - tz * this.side };
+  }
 }

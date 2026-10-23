@@ -1,4 +1,6 @@
 import type { MoveReport, Vec3 } from '@flyffweb/protocol';
+import { NO_CEILING, collideMove, overHeight, processUnderCollision, vecLength } from './collision';
+import type { Ground } from './collision';
 import { ActMsg, AniLoop, Mti, ObjSta, ObjStaF } from './constants';
 
 /**
@@ -51,13 +53,13 @@ const GRAVITY = f32(0.005);
 const MOVED_HEIGHT = f32(0.001);
 /** `-0.1f`: falling faster than this takes the falling state (`ActionMoverCollision.cpp:308`). */
 const FALLING_SPEED = f32(-0.1);
-/**
- * `COLL_TEST_DIR` (`ActionMoverCollision.cpp:146`): the move is made 6.5 times longer for the collision test, then
- * `D3DXVECTOR3::operator /=` brings it back by multiplying by `1.0f / 6.5f` (`d3dx9math.inl:349-356`), a round trip
- * that can change the last bit.
- */
-const COLL_TEST_DIR = 6.5;
-const INV_COLL_TEST_DIR = f32(1 / COLL_TEST_DIR);
+/** `pPos->y + 1.0f` (`ActionMoverCollision.cpp:292`): the ground is looked for from 1 over the feet down. */
+const UNDER_FROM = 1;
+/** `1.5f` (:368-382): the head, which a ceiling stops; then `m_vDelta.y = -0.01f`. */
+const HEAD_HEIGHT = 1.5;
+const CEILING_BOUNCE = f32(-0.01);
+/** `__FIX_COLLISION` (:225-232): a slid move longer than `0.15f` a step becomes the mover's delta. */
+const FIX_COLLISION_LENGTH = f32(0.15);
 
 const copy = (v: Vec3): Vec3 => [v[0], v[1], v[2]];
 const toFloats = (v: Vec3): Vec3 => [f32(v[0]), f32(v[1]), f32(v[2])];
@@ -85,11 +87,11 @@ function moveSpeed(moveState: number, walk: boolean, speed: number): number | un
  * between the server's messages, so a copy that keeps them moves others as their own clients do.
  *
  * Copied: the messages in `ActMsg` (`ProcessActMsg1`); the states `STAND`, `FMOVE`, `BMOVE`, `SIT`, `LTURN` and
- * `RTURN` (`ProcessState1`), and `SJUMP3`/`SJUMP4`, the falling and landing that the terrain height leads to; the
- * position and height part of `ProcessCollisionGround` on terrain only; `PresupposePos`; `CMover::ActionForceSet`.
+ * `RTURN` (`ProcessState1`), and `SJUMP3`/`SJUMP4`, the falling and landing that the ground's height leads to;
+ * `ProcessCollisionGround`, with the collision rules of `collision.ts`; `PresupposePos`; `CMover::ActionForceSet`.
  * Left out: flying (`IsFly`, flying NPCs), attacks, damage, collecting, jumping on purpose, the `MVRF_NOMOVE` and
- * `CHS_LOOT` blocks (no buffs here), object collision, `HATTR_*` and the world's edge (`CWorld::ClipX`/`ClipZ`);
- * `__Y_INTERFACE_VER3` (strafing) and `__X15` are off in Neuz's build. Positions, deltas and speeds are floats (`f32`).
+ * `CHS_LOOT` blocks (no buffs here) and the world's edge (`CWorld::ClipX`/`ClipZ`); `__Y_INTERFACE_VER3` (strafing)
+ * and `__X15` are off in Neuz's build. Positions, deltas and speeds are floats (`f32`).
  */
 export class ActionMover {
   /** `m_dwState`: `OBJSTA_*` bits. */
@@ -114,7 +116,7 @@ export class ActionMover {
   /** `CMover::ClearDest` (`Mover.h:1008`), which `STOP` calls. The destination is not kept here: its owner sets this. */
   clearDest: () => void = () => {};
 
-  /** `m_bGround`: 1 standing on the ground. (2, sliding, comes from object collision, which is not copied.) */
+  /** `m_bGround`: 1 standing on the ground, 2 landed on a face steep enough to slide off. */
   private ground = 0;
   /** `m_bMove`: this step moves in x or z. */
   private moved = false;
@@ -135,28 +137,35 @@ export class ActionMover {
 
   /**
    * One step of `CMover::Process` (`Source/_Common/Mover.cpp:3802-3906`) after `ProcessMove`: `ProcessPreAction`,
-   * `ProcessAction` (the states), `ProcessCollision` (the move and the terrain height), then `SetPos` only if there is
-   * land there (`GetWorld()->GetLandscape( vPos )`): `groundAt` gives the terrain height, or `null` where there is
-   * none, and then the mover stays where it was (the C++ also measures the height there, from no land; that is
-   * skipped). Without `groundAt` the mover keeps its height, as on a flat floor.
+   * `ProcessAction` (the states), `ProcessCollision` (`ProcessCollisionGround`, `ActionMoverCollision.cpp:127-389`:
+   * the move against the objects and the land, then the height), then `SetPos` only if there is land there
+   * (`GetWorld()->GetLandscape( vPos )`, a `terrainHeight` that is not null); otherwise the mover stays where it was.
+   * Where the move ends on no land the height part is skipped (the C++ measures it from no land, then does not place
+   * the mover). Every mover on the ground collides alike (`collideMove`). Without `ground` nothing is in the way and
+   * the mover keeps its height, as on a flat floor.
    */
-  step(groundAt?: (x: number, z: number) => number | null): void {
+  step(ground?: Ground): void {
     const pos = toFloats(this.body.pos);
     this.deltaAccu = [0, 0, 0];
     this.processAction(pos);
-    // ProcessCollisionGround (ActionMoverCollision.cpp:135-274): the move in x and z, through the collision test's
-    // x6.5 and back. Milestone 2 puts the object collision (the knee-height test, CWorld::ProcessCollision, which
-    // gives the vector back unchanged where nothing is hit) between the two, and the HATTR_* checks after each axis.
+    const dy = this.deltaAccu[1]; // vDelta, the function's own copy of m_vDeltaAccu (:131)
     if (this.moved) {
-      const dx = f32(f32(this.deltaAccu[0] * COLL_TEST_DIR) * INV_COLL_TEST_DIR);
-      const dz = f32(f32(this.deltaAccu[2] * COLL_TEST_DIR) * INV_COLL_TEST_DIR);
-      pos[0] = f32(pos[0] + dx);
-      pos[2] = f32(pos[2] + dz);
+      const { hit, move } = collideMove(pos, this.deltaAccu, ground);
+      // __FIX_COLLISION (:225-232); the height below still goes by vDelta
+      if (hit && vecLength(move) > FIX_COLLISION_LENGTH) {
+        this.deltaAccu[1] = this.delta[1] = 0;
+        this.delta[0] = move[0];
+        this.delta[2] = move[2];
+      }
     }
-    const height = groundAt ? groundAt(pos[0], pos[2]) : pos[1];
-    if (height !== null) this.processHeight(pos, f32(height));
+    const onLand = (): boolean => ground === undefined || ground.terrainHeight(pos[0], pos[2]) !== null;
+    let placed = onLand();
+    if (placed) {
+      this.processHeight(pos, dy, ground);
+      placed = onLand(); // a slide may have moved it
+    }
     this.posLast = copy(pos);
-    if (height !== null) this.body.pos = pos;
+    if (placed) this.body.pos = pos;
   }
 
   /**
@@ -248,16 +257,19 @@ export class ActionMover {
   }
 
   /**
-   * The height part of `CActionMover::ProcessCollisionGround` (`ActionMoverCollision.cpp:276-388`) on terrain only:
-   * `ProcessUnderCollision` gives the terrain's `height` (objects under the mover, and sliding down slopes steeper
-   * than 112 degrees, need the shapes); `OnActDrop` (PLAYERCORR, QUERYGETPOS) and landing on ships are left out.
-   * Going up, nothing is above the mover without objects (`GetOverHeight`).
+   * The height part of `CActionMover::ProcessCollisionGround` (`ActionMoverCollision.cpp:276-388`), `dy` being the
+   * step's fall or rise. Coming down, `ProcessUnderCollision` gives the height of the objects and terrain under the
+   * mover, and the point a steep face slides it to; going up, the ceiling is `GetOverHeightForPlayer` for a player and
+   * `GetOverHeight` for others (`__BOUND_BOX_COLLISION`, :364-373). `OnActDrop` (PLAYERCORR, QUERYGETPOS), landing on
+   * ships and `__JEFF_11_6`'s returning NPC (a speed factor over 1.9, which does not slide; the factor is the rules',
+   * `SimMover.speedFactor`) are left out.
    */
-  private processHeight(pos: Vec3, height: number): void {
-    const dy = this.deltaAccu[1];
+  private processHeight(pos: Vec3, dy: number, ground: Ground | undefined): void {
     if ((this.state & ObjSta.DMG_ALL) === ObjSta.DISAPPEAR) return;
     if (dy < 0) {
       if (this.ground === 1) return;
+      const slide: Vec3 = [0, 0, 0];
+      const height = ground ? processUnderCollision(slide, [pos[0], f32(pos[1] + UNDER_FROM), pos[2]], ground) : pos[1];
       pos[1] = f32(pos[1] + dy);
       let landing = false;
       if ((this.state & ObjSta.JUMP_ALL) === ObjSta.SJUMP3) {
@@ -272,12 +284,25 @@ export class ActionMover {
         landing = true;
       }
       if (landing) {
-        pos[1] = height;
-        this.ground = 1;
+        if (slide[1] !== 0) {
+          pos[0] = slide[0];
+          pos[1] = slide[1];
+          pos[2] = slide[2];
+          this.ground = 2;
+        } else {
+          pos[1] = height;
+          this.ground = 1;
+        }
         this.delta[1] = 0;
       }
     } else if (dy > 0) {
+      const head: Vec3 = [pos[0], f32(pos[1] + HEAD_HEIGHT), pos[2]];
+      const ceiling = ground ? overHeight(head, ground, this.body.isPlayer === true) : NO_CEILING;
       pos[1] = f32(pos[1] + dy);
+      if (f32(pos[1] + HEAD_HEIGHT) > ceiling) {
+        pos[1] = f32(ceiling - HEAD_HEIGHT);
+        this.delta[1] = CEILING_BOUNCE;
+      }
     }
   }
 

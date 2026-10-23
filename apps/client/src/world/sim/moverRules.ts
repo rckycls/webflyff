@@ -1,6 +1,7 @@
 import type { MoveReport, Vec3 } from '@flyffweb/protocol';
 import { wrapAngle } from './ActionMover';
 import type { ActionMover } from './ActionMover';
+import type { Ground } from './collision';
 import { ActMsg, MAX_CORR_SIZE_45, ObjSta, ObjStaF } from './constants';
 
 /**
@@ -293,17 +294,15 @@ export function setDestAngle(m: SimMover, angle: number, left: boolean): void {
 
 /**
  * One 60 Hz step of `CMover::Process` (`Mover.cpp:3488-3906`) for any mover: `ProcessMove`, then `act.step()` at
- * `GetSpeed`. `find` is `prj.GetCtrl` for the followed object; `groundAt` goes to `act.step`. Left out of `Process`:
+ * `GetSpeed`. `find` is `prj.GetCtrl` for the followed object; `ground` goes to `act.step`. Left out of `Process`:
  * `m_nCorr` (the active mover's `SetDestObj` sends), `ProcessAI`, `ProcessMovePattern` and the drawing.
  */
-export function stepMover(
-  m: SimMover, find: (objectId: number) => SimMover | undefined, groundAt?: (x: number, z: number) => number | null,
-): void {
+export function stepMover(m: SimMover, find: (objectId: number) => SimMover | undefined, ground?: Ground): void {
   processMove(m, find);
   const body = m.act.body;
   const own = body.speed;
   body.speed = getSpeed(m);
-  m.act.step(groundAt);
+  m.act.step(ground);
   body.speed = own;
 }
 

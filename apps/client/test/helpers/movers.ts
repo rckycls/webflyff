@@ -1,6 +1,7 @@
 import type { AddedMover, AddedNpc, AddedPlayer } from '@flyffweb/protocol';
 import { ServerClock } from '../../src/net/serverClock';
 import type { GameData } from '../../src/world/gameData';
+import { terrainGround } from '../../src/world/sim/collision';
 import { WorldState } from '../../src/world/WorldState';
 import type { Mover } from '../../src/world/WorldState';
 
@@ -48,7 +49,7 @@ export function addedNpc(objectId: number, index: number, npc: Partial<AddedNpc>
 
 /** The mover `WorldState` makes of an ADD_OBJ, as the world screen would hold it. */
 export function moverFrom(added: AddedMover, data: GameData = gameDataOf()): Mover {
-  const world = new WorldState(data, new ServerClock(() => 0), () => 0);
+  const world = new WorldState(data, new ServerClock(() => 0), terrainGround(() => 0));
   world.apply(added.objectId, { type: 'addMover', mover: added });
   const mover = world.movers.get(added.objectId);
   if (mover === undefined) throw new Error('the world kept no mover');

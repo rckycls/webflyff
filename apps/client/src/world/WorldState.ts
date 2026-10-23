@@ -2,6 +2,7 @@ import type { AddedMover, Vec3, WorldMessage } from '@flyffweb/protocol';
 import type { ServerClock } from '../net/serverClock';
 import type { GameData } from './gameData';
 import { ActionMover, wrapAngle } from './sim/ActionMover';
+import type { Ground } from './sim/collision';
 import { ActMsg, ObjStaF } from './sim/constants';
 import { applyDestPos, applyMotion, applyMoved, setDestAngle, setDestObj, stepMover } from './sim/moverRules';
 import type { SimMover } from './sim/moverRules';
@@ -50,10 +51,11 @@ export class WorldState {
   /** `prj.GetCtrl`, for the rules that follow an object. */
   private readonly find = (objectId: number): Mover | undefined => this.byId.get(objectId);
 
+  /** `ground` is the world the movers stand on and collide with (D3D coordinates). */
   constructor(
     private readonly data: GameData,
     private readonly clock: ServerClock,
-    private readonly groundAt: (x: number, z: number) => number | null,
+    private readonly ground: Ground,
   ) {}
 
   get movers(): ReadonlyMap<number, Mover> {
@@ -110,11 +112,15 @@ export class WorldState {
     }
   }
 
-  /** One 60 Hz step of the rules for every mover in view, except fliers. */
+  /**
+   * One 60 Hz step of the rules for every mover in view, except fliers. Players, monsters and NPCs collide alike:
+   * `CMover::Process` runs `ProcessCollisionGround` for every mover on the ground (`Mover.cpp:3884`), and its
+   * exceptions are overruled (`ActionMoverCollision.cpp:193`).
+   */
   step(): void {
     for (const m of this.byId.values()) {
       if (m.act.stateFlag & ObjStaF.FLY) continue;
-      stepMover(m, this.find, this.groundAt);
+      stepMover(m, this.find, this.ground);
     }
   }
 

@@ -434,7 +434,7 @@ class Player {
   /** The JOIN bundle: the world the player is in, with the movers in view, standing on its terrain. */
   private begin(event: EnteredEvent): void {
     const terrain = terrainOf(event.worldId);
-    this.world = new WorldState(gameData!, this.entry!.clock, terrain.heightAt);
+    this.world = new WorldState(gameData!, this.entry!.clock, terrain.ground);
     this.entered = event;
     this.apply(event.messages);
     this.playing = true;

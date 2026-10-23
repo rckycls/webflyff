@@ -2,9 +2,14 @@ import { describe, expect, it } from 'vitest';
 import type { MoveReport, Vec3 } from '@flyffweb/protocol';
 import { ActionMover, wrapAngle } from '../../src/world/sim/ActionMover';
 import type { MoverBody } from '../../src/world/sim/ActionMover';
+import { terrainGround } from '../../src/world/sim/collision';
 import { ActMsg, AniLoop, MAX_CORR_SIZE_45, Mti, ObjSta, ObjStaF } from '../../src/world/sim/constants';
 
+/** A terrain's height under D3D x, z (null where there is none): these tests' grounds have no objects. */
 type GroundAt = (x: number, z: number) => number | null;
+
+/** Flat terrain at height 0. */
+const FLAT = terrainGround(() => 0);
 
 /** A mover at `pos` facing `angle`, whose `CMover::GetSpeed` is 0.1 per step (the plan's test speed). */
 function mover(angle: number, pos: Vec3 = [0, 0, 0], extra: Partial<MoverBody> = {}): ActionMover {
@@ -12,7 +17,7 @@ function mover(angle: number, pos: Vec3 = [0, 0, 0], extra: Partial<MoverBody> =
 }
 
 function steps(act: ActionMover, n: number, groundAt?: GroundAt): void {
-  for (let i = 0; i < n; i++) act.step(groundAt);
+  for (let i = 0; i < n; i++) act.step(groundAt && terrainGround(groundAt));
 }
 
 /** Within 1e-5, the plan's tolerance for distances. */
@@ -109,14 +114,14 @@ describe('ActionMover', () => {
     const act = mover(90, [0, 2, 0]);
     act.sendActMsg(ActMsg.FORWARD);
     for (let i = 0; i < 30; i++) {
-      act.step(uphill);
+      act.step(terrainGround(uphill));
       near(act.body.pos[1], uphill(act.body.pos[0], act.body.pos[2])!);
       expect(act.delta[1]).toBe(0);
     }
     const downhill: GroundAt = (x) => 20 - 0.3 * x;
     act.forceSet({ ...act.report(0n), pos: [0, 20, 0] });
     for (let i = 0; i < 30; i++) {
-      act.step(downhill);
+      act.step(terrainGround(downhill));
       near(act.body.pos[1], downhill(act.body.pos[0], act.body.pos[2])!);
     }
     near(act.body.pos[0], 3);
@@ -275,7 +280,7 @@ describe('ActionMover: the rest of the copied rules', () => {
     const act = mover(0, [0, 5, 0], { isPlayer: true });
     const seen = new Set<number>();
     for (let i = 0; i < 80; i++) {
-      act.step(flat);
+      act.step(terrainGround(flat));
       seen.add(act.state & ObjSta.JUMP_ALL);
       if (act.state & ObjSta.JUMP_ALL) expect(act.sendActMsg(ActMsg.FORWARD)).toBe(false);
     }
@@ -291,7 +296,7 @@ describe('ActionMover: the rest of the copied rules', () => {
   it('a monster falls and lands without the falling state', () => {
     const act = mover(0, [0, 5, 0]);
     for (let i = 0; i < 80; i++) {
-      act.step(() => 0);
+      act.step(FLAT);
       expect(act.state & ObjSta.JUMP_ALL).toBe(0);
       // m_vDelta.y -= 0.005f six times in floats (in doubles it would round to -0.029999999329447746)
       if (i === 5) expect(act.delta[1]).toBe(-0.029999997466802597);
@@ -303,14 +308,14 @@ describe('ActionMover: the rest of the copied rules', () => {
   it('lands at once on ground within 0.25 under its feet, and falls to ground further down', () => {
     // ProcessCollisionGround (ActionMoverCollision.cpp:306-323): after gravity's first 0.005, ground 0.245 down is caught
     const low = mover(0, [0, 0.2, 0]);
-    low.step(() => 0);
+    low.step(FLAT);
     expect(low.body.pos[1]).toBe(0);
     // From 0.3 the fall is 0.005, 0.01, 0.015, 0.02 in floats: at step 4 the float y is 0.25000003, still above
     // 0.25 (in doubles it would be 0.24999999999999997 and land a step early); step 5 lands.
     const high = mover(0, [0, 0.3, 0]);
     const ys: number[] = [];
     for (let i = 0; i < 5; i++) {
-      high.step(() => 0);
+      high.step(FLAT);
       ys.push(high.body.pos[1]);
       if (i === 0) near(high.delta[1], -0.005);
     }
@@ -348,7 +353,7 @@ describe('ActionMover: the rest of the copied rules', () => {
     steps(act, 3, () => 0);
     expect(act.body.pos[1]).toBe(0);
     act.body.pos[1] = 5; // as SetPos would put it there
-    act.step(() => 0);
+    act.step(FLAT);
     expect(act.body.pos[1]).toBe(Math.fround(5 - Math.fround(0.005)));
     steps(act, 60, () => 0);
     expect(act.body.pos[1]).toBe(0);
@@ -409,7 +414,7 @@ describe('ActionMover: the rest of the copied rules', () => {
     expect(act.sendActMsg(ActMsg.TURNMOVE, 30)).toBe(true);
     // a falling player is turned, but FORWARD refuses to run
     const falling = mover(0, [0, 5, 0], { isPlayer: true });
-    for (let i = 0; i < 60 && (falling.state & ObjSta.JUMP_ALL) === 0; i++) falling.step(() => 0);
+    for (let i = 0; i < 60 && (falling.state & ObjSta.JUMP_ALL) === 0; i++) falling.step(FLAT);
     expect(falling.state & ObjSta.JUMP_ALL).toBe(ObjSta.SJUMP3);
     expect(falling.sendActMsg(ActMsg.TURNMOVE, 45)).toBe(true);
     expect(falling.body.angle).toBe(wrapAngle(45));
