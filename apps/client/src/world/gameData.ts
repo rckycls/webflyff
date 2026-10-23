@@ -34,6 +34,9 @@ const withHides = (item: WebItemModel): WebItemModel => ({
   ...item, exclusive: item.exclusive ?? NO_PART, baseIgnore: item.baseIgnore ?? NO_PART,
 });
 
+/** A mover of a movers.json from before the converter kept `flying` (`dwFlying`) lacks it: it does not fly. */
+const withFlying = (mover: WebMover): WebMover => ({ ...mover, flying: mover.flying ?? false });
+
 /**
  * The asset index lists none of `keys`: the game files on the server were converted by a version older than these
  * catalogs (`npm run convert -- --only data` makes them).
@@ -64,7 +67,7 @@ export async function loadGameData(store: Pick<AssetStore, 'json' | 'url'>): Pro
     store.json<WebWorlds>(GAME_DATA_KEYS.worlds),
   ]);
   return {
-    movers: new Map(movers.map((mover) => [mover.index, mover])),
+    movers: new Map(movers.map((mover) => [mover.index, withFlying(mover)])),
     items: new Map(items.map((item) => [item.id, withHides(item)])),
     npcs: new Map(npcs.map((npc) => [npc.key.toLowerCase(), npc])),
     nameColors,

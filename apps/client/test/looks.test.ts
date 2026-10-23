@@ -22,7 +22,7 @@ const item = (
 const worn = (part: number, itemId: number, flag = 0): WornPart => ({ part, itemId, flag });
 
 const mover = (index: number, name: string, model: string | null, skeleton: string | null, motions: Record<string, string> = {}): WebMover => ({
-  index, name, speed: 0.1, ai: 2, model, skeleton, motions,
+  index, name, speed: 0.1, ai: 2, flying: false, model, skeleton, motions,
 });
 const MALE_MOTIONS = {
   0: 'motions/mvr_male/mvr_male_genstand.glb', 3: 'motions/mvr_male/mvr_male_genwalk.glb', 5: 'motions/mvr_male/mvr_male_genrun.glb',

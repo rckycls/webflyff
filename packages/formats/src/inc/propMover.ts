@@ -5,7 +5,7 @@
 //   dwID  szName  dwAI  dwStr ... fSpeed ...  (the columns are listed in MOVER_COLUMNS, in the order of the C++)
 //
 // Of the 83 columns this keeps the id (the `MI_*` define, which `mdlDyna.inc` also uses to find the mover's
-// model), the name, the AI (`AII_*`) and the speed; the rest are read and dropped. Build flags of the client:
+// model), the name, the AI (`AII_*`), the speed and whether it flies (`dwFlying`); the rest are read and dropped. Build flags of the client:
 // `__VER >= 9` (fFrame, dwOrthograde) and `__S1108_BACK_END_SYSTEM` (dwUseable), both on in Neuz/VersionCommon.h.
 
 import { ScriptReader } from '../script/cscript';
@@ -19,6 +19,11 @@ export interface MoverProp {
   speed: number;
   /** `dwAI`: an `AII_*` value (AII_MOVER, AII_MONSTER ...). */
   ai: number;
+  /**
+   * `dwFlying == 1`: a flying monster (`OBJTYPE_FLYING`, CMover::InitProp, Mover.cpp:1538), which
+   * CActionMover::ProcessCollision moves with the flying rules (`IsFly() || pProp->dwFlying == 1`, ActionMover.cpp:183).
+   */
+  flying: boolean;
 }
 
 const READER = 'readPropMover';
@@ -87,6 +92,7 @@ export function readPropMover(
 
     let ai = 0;
     let speed = 0;
+    let flying = false;
     for (const [column, kind] of MOVER_COLUMNS) {
       if (kind === 'float') {
         const value = r.float(column);
@@ -96,11 +102,12 @@ export function readPropMover(
       } else {
         const value = r.number(column);
         if (column === 'dwAI') ai = value;
+        else if (column === 'dwFlying') flying = value === 1;
       }
     }
     r.token('the last column'); // the column after dwSndIdle2, which the C++ reads and drops
 
-    movers.push({ index, name, speed, ai });
+    movers.push({ index, name, speed, ai, flying });
   }
 
   return movers;

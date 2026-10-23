@@ -7,7 +7,7 @@ import { addedNpc, addedPlayer, gameDataOf, moverFrom } from './helpers/movers';
 const colors = { general: 0xfff0f0f0, chaotic: 0xff010203, ready: 0xff040506 };
 const titles = new Map([[3, 'Hero of Flaris']]);
 
-const mover = (index: number, name: string): WebMover => ({ index, name, speed: 0.1, ai: 2, model: null, skeleton: null, motions: {} });
+const mover = (index: number, name: string): WebMover => ({ index, name, speed: 0.1, ai: 2, flying: false, model: null, skeleton: null, motions: {} });
 const data = gameDataOf({
   movers: new Map([[21, mover(21, 'Aibatt')], [40, mover(40, 'Clerk')]]),
   npcs: new Map([['mafl_mikyel', { key: 'MaFl_Mikyel', name: 'Mikyel' }]]),

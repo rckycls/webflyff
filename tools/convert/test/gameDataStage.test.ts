@@ -83,12 +83,13 @@ const DEFINES = script(
 const MOVER_CELLS = tabs(
   'MI_MALE IDS_PROPMOVER_TXT_000002 AII_MOVER 10 10 10 10 10 10 = BELLI_PEACEFUL = = 65 = = 1 = = = = = = = = = = = = = = = = = = = = 0 130 0 = 0 0 = 0.1 = 0 = = = 0 0 0 0 0 0 = = = = = = 0 0 = = 0 II_WEA_HAN_HAND VT_ITEM = = = = = = = = SND_ITEM_ANIMAL SND_PC_DMGWANB = = = IDS_PROPMOVER_TXT_000003',
 ).split('\t');
-const moverRow = (id: string, name: string, ai: string, speed: string): string => {
+const moverRow = (id: string, name: string, ai: string, speed: string, flying = '0'): string => {
   const cells = [...MOVER_CELLS];
   cells[0] = id;
   cells[1] = name;
   cells[2] = ai;
   cells[44] = speed;
+  cells[46] = flying; // dwFlying
   return cells.join('\t');
 };
 
@@ -157,7 +158,7 @@ const PACKED: Record<string, string> = {
     moverRow('MI_MALE', 'IDS_PROPMOVER_TXT_000002', 'AII_MOVER', '0.1'),
     moverRow('MI_FEMALE', 'IDS_PROPMOVER_TXT_000004', 'AII_MOVER', '0.1'),
     moverRow('MI_AIBATT1', 'IDS_PROPMOVER_TXT_000006', 'AII_MONSTER', '0.075'),
-    moverRow('MI_ORPHAN', 'IDS_PROPMOVER_TXT_000008', 'AII_MONSTER', '0.2'),
+    moverRow('MI_ORPHAN', 'IDS_PROPMOVER_TXT_000008', 'AII_MONSTER', '0.2', '1'),
   ),
   'propItem.txt.txt': script(
     'IDS_PROPITEM_TXT_000790\tCotton Suit',
@@ -316,6 +317,7 @@ describe('the game-data stage', () => {
         name: 'Male',
         speed: 0.1,
         ai: 1,
+        flying: false,
         model: null,
         skeleton: 'skeletons/mvr_male.glb',
         motions: {
@@ -328,6 +330,7 @@ describe('the game-data stage', () => {
         name: 'Female',
         speed: 0.1,
         ai: 1,
+        flying: false,
         model: null,
         skeleton: 'skeletons/mvr_female.glb',
         motions: { '0': 'motions/mvr_female/mvr_female_genstand.glb' },
@@ -337,6 +340,7 @@ describe('the game-data stage', () => {
         name: 'Small Aibatt',
         speed: 0.075,
         ai: 2,
+        flying: false,
         model: 'models/mvr_aibatt1.glb',
         skeleton: 'skeletons/mvr_aibatt1.glb',
         motions: {
@@ -347,7 +351,8 @@ describe('the game-data stage', () => {
           // (motion 7, "Aibatt1Big_run", is the file mvr_Aibatt1Big_run.ani: no skeleton fits its name, so it is left out)
         },
       },
-      { index: 21, name: 'Orphan', speed: 0.2, ai: 2, model: null, skeleton: null, motions: {} },
+      // a flying monster (dwFlying 1)
+      { index: 21, name: 'Orphan', speed: 0.2, ai: 2, flying: true, model: null, skeleton: null, motions: {} },
     ]);
 
     // items: only the model entries with a part; 504 has no ItemProp, 505 has no part
@@ -492,7 +497,7 @@ describe('the game-data stage', () => {
     await client();
     const run = await runData();
     const orphan = (await catalog<WebMover[]>(run, GAME_DATA_KEYS.movers)).find((mover) => mover.index === 21)!;
-    expect(orphan).toEqual({ index: 21, name: 'Orphan', speed: 0.2, ai: 2, model: null, skeleton: null, motions: {} });
+    expect(orphan).toEqual({ index: 21, name: 'Orphan', speed: 0.2, ai: 2, flying: true, model: null, skeleton: null, motions: {} });
     expect(run.report.warnings.some((w) => w.message.includes('21') && w.message.includes('mdlDyna.inc'))).toBe(true);
   });
 

@@ -82,6 +82,7 @@ describeClient('game data readers on the client packs', () => {
     expect(col('szName')).toBe(1);
     expect(col('dwAI')).toBe(2);
     expect(col('fSpeed')).toBe(44);
+    expect(col('bFlying')).toBe(46); // the file's name for MoverProp::dwFlying
     rows.forEach((cells, i) => {
       const mover = movers[i];
       expect(cells.length, cells[0]).toBe(rows[0].length); // every row has the same number of columns
@@ -89,6 +90,7 @@ describeClient('game data readers on the client packs', () => {
       expect(mover.name, cells[0]).toBe(resolve(cells[1]));
       expect(mover.ai, cells[0]).toBe(defines.get(cells[2]));
       expect(mover.speed, cells[0]).toBeCloseTo(parseFloat(cells[44]) || 0, 6);
+      expect(mover.flying, cells[0]).toBe(parseInt(cells[46], 10) === 1);
     });
 
     const byIndex = new Map(movers.map((m) => [m.index, m]));
@@ -99,8 +101,12 @@ describeClient('game data readers on the client packs', () => {
     expect(male!.speed).toBeGreaterThan(0);
     expect(female!.speed).toBeGreaterThan(0);
     expect(male!.ai).toBe(defines.get('AII_MOVER'));
+    // the flying monsters (dwFlying 1), which Neuz moves with the flying rules: the Mothbees among them
+    const flying = movers.filter((m) => m.flying).map((m) => m.name);
+    expect(flying).toContain('Mothbee');
+    expect(flying).not.toContain('Male');
     const withSpeed = movers.filter((m) => m.speed > 0).length;
-    console.log(`propMover.txt: ${movers.length} movers (${withSpeed} with a speed above 0); male speed ${male!.speed}`);
+    console.log(`propMover.txt: ${movers.length} movers (${withSpeed} with a speed above 0, ${flying.length} flying); male speed ${male!.speed}`);
   });
 
   it('propItem.txt: every row up to version 15 is read, with its id, name and body slot', () => {

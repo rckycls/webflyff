@@ -173,6 +173,7 @@ function buildMovers(env: Env, read: Reading): WebMover[] {
         name: prop.name,
         speed: prop.speed,
         ai: prop.ai,
+        flying: prop.flying,
         model: null,
         skeleton: null,
         motions: {},

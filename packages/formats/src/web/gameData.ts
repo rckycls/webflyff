@@ -18,6 +18,11 @@ export interface WebMover {
    */
   ai: number;
   /**
+   * `MoverProp::dwFlying == 1`: a flying monster, which Neuz moves with the flying rules (ActionMover.cpp:183), not the
+   * ground's. A movers.json written before the converter kept it has none: the client reads that as false.
+   */
+  flying: boolean;
+  /**
    * Logical key of the body model (`models/mvr_<name>.glb`, CModelMng::MakeModelName). Null for the player bodies
    * MI_MALE and MI_FEMALE, which Neuz assembles from parts (CMover::LoadModel, Mover.cpp:1427), and for a mover whose
    * model was not converted.

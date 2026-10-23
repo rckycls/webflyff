@@ -22,6 +22,11 @@ export interface Mover extends SimMover {
   added: AddedMover;
   /** `CMover::m_szName`: the player's own, the character's from `character.inc`, or the monster's from `propMover.txt`. '' where unknown. */
   name: string;
+  /**
+   * A flying monster (`propMover.txt`'s `dwFlying` 1), which Neuz moves with the flying rules whatever its state flag
+   * (`IsFly() || pProp->dwFlying == 1`, `ActionMover.cpp:183`): a flier to `step` (Ruling 43).
+   */
+  flying: boolean;
 }
 
 /**
@@ -39,8 +44,8 @@ export interface WorldChanges {
 /**
  * The movers in view, and the messages that move them: `CDPClient`'s handlers for ADD_OBJ, DEL_OBJ and the mover
  * messages (`Source/Neuz/DPClient.cpp`), with the ground rules of `sim/` doing what `CMover` does with each. Keys are the
- * message's object ID, as `prj.GetCtrl( objid )` looks them up. Fliers are placed but never stepped (the ground rules
- * leave flying out), and the objects that are not movers are not kept.
+ * message's object ID, as `prj.GetCtrl( objid )` looks them up. Fliers (those flying now, and the flying monsters) are
+ * placed but never stepped (the ground rules leave flying out), and the objects that are not movers are not kept.
  */
 export class WorldState {
   private readonly byId = new Map<number, Mover>();
@@ -116,13 +121,15 @@ export class WorldState {
   }
 
   /**
-   * One 60 Hz step of the rules for every mover in view, except fliers. Players, monsters and NPCs collide alike:
-   * `CMover::Process` runs `ProcessCollisionGround` for every mover on the ground (`Mover.cpp:3884`), and its
-   * exceptions are overruled (`ActionMoverCollision.cpp:193`).
+   * One 60 Hz step of the rules for every mover in view, except fliers: a mover flying (`OBJSTAF_FLY`) or a flying
+   * monster (`Mover.flying`), which `CActionMover::ProcessCollision` moves with `ProcessCollisionFly`
+   * (`ActionMover.cpp:176-191`). Players, monsters and NPCs collide alike: `CMover::Process` runs
+   * `ProcessCollisionGround` for every other mover (`Mover.cpp:3884`), and its exceptions are overruled
+   * (`ActionMoverCollision.cpp:193`).
    */
   step(): void {
     for (const m of this.byId.values()) {
-      if (m.act.stateFlag & ObjStaF.FLY) continue;
+      if (m.act.stateFlag & ObjStaF.FLY || m.flying) continue;
       stepMover(m, this.find, this.ground);
     }
   }
@@ -196,6 +203,7 @@ export class WorldState {
     }
     return {
       objectId, act, dest: null, corr: null, speedFactor, isSelf: added.player?.self === true, kind, added, name,
+      flying: prop?.flying === true,
     };
   }
 

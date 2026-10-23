@@ -170,6 +170,7 @@ describeClient('the game-data stage on the real client', () => {
       expect(mover.name).toBe(byIndex.get(mover.index)!.name);
       expect(mover.speed).toBe(byIndex.get(mover.index)!.speed);
       expect(mover.ai).toBe(byIndex.get(mover.index)!.ai);
+      expect(mover.flying).toBe(byIndex.get(mover.index)!.flying);
       for (const key of [mover.model, mover.skeleton, ...Object.values(mover.motions)]) {
         if (key !== null) expect(writer.pathOf(key), `${mover.name}: ${key}`).toBeDefined();
       }

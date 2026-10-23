@@ -23,8 +23,8 @@ const AII_MOVER = 1;
 const AII_MONSTER = 2;
 const AII_CLOCKWORKS = 4;
 
-const moverProp = (index: number, name: string, speed: number, ai = AII_MOVER): WebMover => ({
-  index, name, speed, ai, model: null, skeleton: null, motions: {},
+const moverProp = (index: number, name: string, speed: number, ai = AII_MOVER, flying = false): WebMover => ({
+  index, name, speed, ai, flying, model: null, skeleton: null, motions: {},
 });
 
 function gameData(): GameData {
@@ -33,6 +33,7 @@ function gameData(): GameData {
       [11, moverProp(11, 'Male', 0.1)],
       [20, moverProp(20, 'Aibatt', 0.2, AII_MONSTER)],
       [21, moverProp(21, 'Clockworks', 0.2, AII_CLOCKWORKS)], // the same table speed as the Aibatt
+      [22, moverProp(22, 'Mothbee', 0.2, AII_MONSTER, true)], // dwFlying 1
     ]),
     items: new Map(),
     // keyed by the lower-cased key, as CProject::GetCharacter looks it up
@@ -413,6 +414,22 @@ describe('WorldState: stepping', () => {
     near(world.movers.get(2)!.act.body.pos[0], 101);
   });
 
+  it('a flying monster (dwFlying 1) is a flier too: placed but not stepped, so the ground does not pull it down', () => {
+    // CActionMover::ProcessCollision (ActionMover.cpp:183): IsFly() || pProp->dwFlying == 1 moves with the flying rules
+    const { world } = newWorld(gameData(), terrainGround(() => -5));
+    add(world, npcOf(1, 22, '', { state: ObjSta.FMOVE, angle: 90 }));
+    add(world, npcOf(2, 20, '', { state: ObjSta.FMOVE, angle: 90 }));
+    steps(world, 10);
+    expect(world.movers.get(1)!.flying).toBe(true);
+    expect(world.movers.get(1)!.act.body.pos).toEqual([100, 0, 100]);
+    expect(world.movers.get(2)!.flying).toBe(false);
+    near(world.movers.get(2)!.act.body.pos[0], 101); // the Aibatt runs on, at half its table speed
+    expect(world.movers.get(2)!.act.body.pos[1]).toBeLessThan(0); // and falls toward the ground
+    // a message that places it still does (SETPOS)
+    world.apply(1, { type: 'setPos', pos: [120, 3, 100] });
+    expect(world.movers.get(1)!.act.body.pos).toEqual([120, 3, 100]);
+  });
+
   it('a mover follows the mover it is sent after, found by object ID, and stops in range', () => {
     const { world } = newWorld();
     add(world, playerOf(1, 'Follower'));
@@ -625,6 +642,21 @@ describe('loadGameData', () => {
     // world id (WI_*) to the web folder: numbers, not the JSON's text
     expect([...data.worlds]).toEqual([[1, 'wdmadrigal'], [40, 'wdheaven06'], [41, 'wdheaven06_1']]);
     expect(data.worlds.get(1)).toBe('wdmadrigal');
+  });
+
+  it('a mover of a movers.json from before the converter kept dwFlying is not flying', async () => {
+    const old = { index: 20, name: 'Aibatt', speed: 0.2, ai: AII_MONSTER, model: null, skeleton: null, motions: {} };
+    const files: Record<string, unknown> = {
+      [GAME_DATA_KEYS.movers]: [old, moverProp(22, 'Mothbee', 0.2, AII_MONSTER, true)],
+      [GAME_DATA_KEYS.items]: [],
+      [GAME_DATA_KEYS.npcs]: [],
+      [GAME_DATA_KEYS.nameColors]: { general: 0xffffffff, chaotic: 0xffff0000, ready: 0xffffc0cb },
+      [GAME_DATA_KEYS.honorTitles]: {},
+      [GAME_DATA_KEYS.worlds]: {},
+    };
+    const data = await loadGameData(storeOf(files));
+    expect(data.movers.get(20)!.flying).toBe(false);
+    expect(data.movers.get(22)!.flying).toBe(true);
   });
 
   it('a catalog the asset index does not list means game files from an older version, named, and nothing is fetched', async () => {

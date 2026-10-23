@@ -215,15 +215,30 @@ describe('readPropMover', () => {
   it('reads the id, the name (through the string table), the AI and the speed of each row', () => {
     const text = script(DEFAULT, MALE, AIBATT1);
     expect(readPropMover(HEADER + text, DEFINES, STRINGS, 'propMover.txt')).toEqual([
-      { index: 10, name: 'Default', speed: 0.1, ai: 1 },
-      { index: 11, name: 'Male', speed: 0.1, ai: 1 },
-      { index: 20, name: 'Small Aibatt', speed: 0.075, ai: 2 },
+      { index: 10, name: 'Default', speed: 0.1, ai: 1, flying: false },
+      { index: 11, name: 'Male', speed: 0.1, ai: 1, flying: false },
+      { index: 20, name: 'Small Aibatt', speed: 0.075, ai: 2, flying: false },
     ]);
   });
 
   it('takes a name that is not an IDS key as it is, and an id written as a number', () => {
     const text = script(AIBATT1.replace('MI_AIBATT1', '77').replace('IDS_PROPMOVER_TXT_000006', '"Plain Name"'));
-    expect(readPropMover(text, DEFINES, STRINGS)).toEqual([{ index: 77, name: 'Plain Name', speed: 0.075, ai: 2 }]);
+    expect(readPropMover(text, DEFINES, STRINGS)).toEqual([{ index: 77, name: 'Plain Name', speed: 0.075, ai: 2, flying: false }]);
+  });
+
+  it('reads dwFlying, the column after fSpeed and dwShelter: 1 is a flying monster, anything else is not', () => {
+    // CMover::InitProp (Mover.cpp:1538) and CActionMover::ProcessCollision (ActionMover.cpp:183) ask for dwFlying == 1
+    const cells = AIBATT1.split('\t');
+    expect(cells[44]).toBe('0.075'); // fSpeed; dwShelter is next, then dwFlying
+    const flying = (value: string): boolean => {
+      const row = [...cells];
+      row[46] = value;
+      return readPropMover(script(row.join('\t')), DEFINES, STRINGS)[0]!.flying;
+    };
+    expect(flying('1')).toBe(true);
+    expect(flying('0')).toBe(false);
+    expect(flying('2')).toBe(false);
+    expect(flying('=')).toBe(false);
   });
 
   it('skips a stray 0 between rows, as the C++ does', () => {
