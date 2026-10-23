@@ -261,3 +261,88 @@ The lobby passes when **every cell is `pass` on every one of the four devices**.
 | **"Wrong Password. Cannot log into account for 15 seconds."** | The certifier's lockout after a wrong password: wait 15 seconds. After three wrong passwords in a row it is 15 minutes, with "Wrong Passwords 3 times. Cannot log into account for 15 minutes." |
 | **"Already connected"** | The account is logged in somewhere else, or its last session is still closing (this can also follow **Change channel**, if the servers are slow to let go of the old session). Tap **Disconnect it** and log in again, or use another test account. |
 | **Every login fails at once, on every device, and it lasts about 10 minutes** | The game servers' own connection-flood limiter (in the certifier and the login server). It counts connections from one address that come less than 200 milliseconds apart, and never forgets them. After 50, it cuts every connection from that address and refuses it for about 10 minutes. Until the new certifier and login server are in place with their `Gateway` lines ([server-patches/README.md](../server-patches/README.md)), all browser players count as the gateway's one address, so repeated quick logins, and repeated `npm run test:live` runs, add up. **Wait about 10 minutes**, or restart the certifier and the login server. See [hosting.md](hosting.md#before-a-public-launch). |
+
+# Piece 3, milestone 1: the world
+
+For the owner. **Enter** on a character now opens the 3D world where the character was saved: the other players, the monsters and the NPCs around it, each with a name tag, moving by the Windows client's own rules. This part checks it on your four devices, two at a time, over your Wi-Fi, with the PC running the game servers, the gateway and the client.
+
+The automated side is `npm test`, `npm run test:e2e:client` (the world against pretend servers, in Chromium and WebKit) and the live world test below. None of it needs Neuz, and nothing here asks you to run Neuz next to the servers.
+
+## Before you start
+
+1. **Put the new world and cache servers in service**, and add the `Gateway "127.0.0.1"` line to `Program\CacheServer.ini`: follow "Put them in service" in [server-patches/README.md](../server-patches/README.md) (read its note about the world server first). The browser works with the old ones too, but then it reads only part of what the world server sends, and this checklist would fail for that reason alone.
+2. **The game files.** `dist/assets` must hold a conversion made with this version (it adds `data/worlds.json` and new fields in the other catalogs). If you are not sure, run `npm run convert -- --only data` in `FlyffWeb/` (a few seconds; the full `npm run convert` is only needed when the `Client` folder changed).
+3. **Two throwaway test accounts,** each with a character, or with an empty slot (the live test then makes a character and deletes it at the end). Use characters saved in Flaris; a new character starts there.
+
+## Run the live world test first
+
+As for the lobby: if the servers, the patches or the world session are broken, the PC shows it here, with no phone in the way.
+
+1. Start the game servers (the 7 programs in `Program\`).
+2. Open `apps\client\test\live.config.json` (made in the Piece 2 part above) and add the `world` section with the two accounts, as the `_comment` at the top of `live.config.example.json` explains.
+3. Run it:
+
+   ```
+   npm run test:live:world
+   ```
+
+   Success: no `failed`. It checks that both players enter Flaris and see each other, that the one who runs and stops is seen standing within 1 metre of where it says it stands, that every packet from the world server had its table of contents and no message was misread, and that both can leave and enter again.
+
+The same care as for `npm run test:live` applies: wait at least 15 seconds between runs, and never run it in a loop.
+
+## Start the gateway and the client
+
+As in the Piece 2 part ("Start the gateway and the client"): `npm run gateway` in one window, `npm run dev:client` in another, and the phone's address in `allowedOrigins`. Then, on the PC first, open `http://localhost:5174`, log in, pick a channel and tap **Enter** on a character: after "Entering the world…" you should see the character from behind, in the world, with a **Leave** button at the top right and the overlay at the top left. If that fails, fix it on the PC, not on a phone (see "When something goes wrong" below).
+
+**Moving:** on a touch screen, the joystick at the bottom left (a push walks, a full push runs); on a keyboard, `W` / `S` or the up and down arrows walk forward and back, `A` / `D` or the left and right arrows turn, and holding `Shift` runs.
+
+## Steps, two devices at a time
+
+Pair the devices (for example the iPhone with the Android tablet, then the iPad with the Android phone), one test account each. Do these in order and write the result in the table below. Read the overlay as in "Measure" in the Piece 1 part (`fps`, `heap`, `gpu (est)` and `errors:`), plus one new line, `messages skipped N   mismatched N`.
+
+1. **Enter.** Log in on both devices, pick the same channel, and tap **Enter** on a character saved in Flaris. Success: both show the world within about 30 seconds of tapping **Enter** (the first time on a device takes longest), and `mismatched` is 0.
+2. **See each other.** Walk the two characters close to each other. Success: each device shows the other player, with its name above it. Walk one of them in a circle: the other device shows it walking the same way, without jumping from place to place, and it stops where it stopped on its own device.
+3. **Monsters.** Walk out of town, through the gate, to where the monsters are. Success: monsters stand, wander about and turn, each with a name tag, and their legs move as they walk.
+4. **NPCs.** In town, find a few shopkeepers. Success: they stand in their places, dressed, with their names above them.
+5. **Name tags fade.** Walk away from a monster: its tag fades and is gone at about 40 metres from the camera. A player's or a shopkeeper's tag lasts to about 100 metres. Success: tags fade instead of popping, and they are readable up close.
+6. **Speed and memory.** At the edge of town near the gate, with about 20 monsters and the other player in view, stand still for 1 minute and read `fps`; then walk for a few minutes and note the highest `heap` and `gpu (est)`.
+7. **The 10-minute walk** (on the weakest device): note `gpu (est)` (and the real heap, if you have one, as in the Piece 1 part) after the first minute, walk a closed loop around the same few streets for 10 minutes, and note them again.
+8. **Leave.** Tap **Leave**. Success: back at the **Log in** form, and on the other device the character disappears.
+9. **Sleep.** Enter again, then put the phone to sleep (press its power button) for a minute and wake it. Success: the page shows "The connection to the game was lost." and the **Log in** form, and logging in again works (if it says "The game closed the connection. If this character was still in the game from an earlier session, wait a moment and try again.", wait a moment and try again).
+
+## Results
+
+| Device | Browser | 1. Enter | 2. See each other | 3. Monsters | 4. NPCs | 5. Name tags | 6. fps after 1 minute | 6. Peak memory (MB), heap + gpu | 8. Leave | 9. Sleep | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| iPhone | Safari | | | | | | | | | | |
+| Android phone | Chrome | | | | | | | | | | |
+| iPad | Safari | | | | | | | | | | |
+| Android tablet | Chrome | | | | | | | | | | |
+| PC | Chrome | | | | | | | | | | |
+
+Under the table, write the two sets of numbers from step 7 and which device it was.
+
+## Pass and fail
+
+Milestone 1 passes when every cell of steps 1-5, 8 and 9 is `pass` on every device, and the weakest device meets these targets:
+
+| Target | How it is checked |
+| --- | --- |
+| At least 30 fps in Flaris with about 20 monsters and 5 players in view | step 6 (with two players here: note how many movers were in view) |
+| At most about 400 MB of JS heap plus estimated GPU memory | step 6, read as in the Piece 1 part |
+| After a 10-minute walk, memory within 10% of its starting level | step 7 |
+
+If the weakest device misses a target, write down by how much: the fixes (a shorter view distance for movers, fewer far-away details) are chosen from these numbers. Any `errors:` line in the overlay, or a `mismatched` number above 0, that you cannot explain is a fail too: send a photo of the overlay.
+
+## When something goes wrong in the world
+
+| What you see | What it means and what to do |
+| --- | --- |
+| "Entering the world…" for a long time, then "The server did not answer in time." | The login server or the cache server did not answer. Are all 7 servers running? Is there a `cache` route (port 5400) in `apps/gateway/gateway.config.json`? The gateway window shows an `open` line for `…:5400` when the browser reaches the cache server. |
+| "The game closed the connection. If this character was still in the game from an earlier session, wait a moment and try again." | The world server refused the character, usually because its last session (a closed tab, a phone that slept) is still being closed. Wait a moment and log in again. |
+| "The connection to the game was lost." | A connection closed while playing. Expected after sleep (step 9); otherwise look in the gateway window for `close` lines, and check that the servers are still running. |
+| "Moving to another map isn't supported yet." | The character went through a portal or was moved to another map. Only one map per session works so far. Log in again. |
+| "This map isn't available in the browser yet." | The character is saved on a map that was not converted, or `dist/assets` is older than this version: run `npm run convert -- --only data` (see "Before you start"). |
+| Other players or monsters are missing, or stand still, and `skipped` grows fast | The old world server is still running (see "Before you start"). |
+| A plain stand-in figure instead of a character or monster | Its model was not converted, or failed to load: the overlay's `errors:` line names it. Send a photo. |
+| The other player jumps from place to place, or stops somewhere other than where it stopped on its own device | Write down what each device showed: that is what the movement rules of this milestone are checked for. |

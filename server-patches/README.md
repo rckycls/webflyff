@@ -237,7 +237,7 @@ Read the two points about the world server under "Put them in service" first.
 2. Back up `Program\7. World.exe`. For example, copy it to `Program\7. World.exe.before-toc`. (If that backup already exists from an earlier swap, keep the old one.)
 3. Copy `Output\WorldServer\Release\WorldServer.exe` over `Program\7. World.exe`, keeping the name `7. World.exe`.
 4. Start the world server. There's nothing to set: no `.ini` line.
-5. Confirm Neuz still plays as before: log in with Neuz, enter the world, walk around, and watch other players and monsters move. If Neuz can't enter the world after the restart, stop all the servers and start them again in their usual order (`1. Account.exe` to `7. World.exe`).
+5. Confirm the game still plays: in the browser, log in, tap **Enter** on a character, walk around, and watch the monsters move; the overlay's `mismatched` number must stay at 0. (Neuz reads the new bundles as before. If you have a PC that can run Neuz while the servers run elsewhere, entering the world with Neuz too is a good extra check; it is not required.) If nobody can enter the world after the restart, stop all the servers and start them again in their usual order (`1. Account.exe` to `7. World.exe`).
 
 ### The cache server
 
@@ -255,7 +255,7 @@ Read the points about the cache server under "Put them in service" first.
    - **Press Enter after the last line first.** The file ends with `Port "5400"` and no line break. If you type straight after it, the two settings run together on one line.
    - Use the same address or addresses as the `Gateway` lines in `Certifier.ini`, and the same rule: only addresses of this PC. A listed address can claim any address for the players it brings in, so **never add an address you don't recognise.** Up to 8 `Gateway` lines are allowed.
 5. Start the cache server.
-6. Confirm Neuz still plays as before: log in with Neuz and enter the world. If Neuz can't enter the world after the restart, stop all the servers and start them again in their usual order (`1. Account.exe` to `7. World.exe`).
+6. Confirm the game still plays: in the browser, log in and tap **Enter** on a character. (Neuz never sends the new packet, so it is not affected; a Neuz check on another PC is a good extra, not required.) If nobody can enter the world after the restart, stop all the servers and start them again in their usual order (`1. Account.exe` to `7. World.exe`).
 7. Look in the error log in the `Program` folder:
    - There must be no `Gateway … not added` line. If there is, the address in it was mistyped in `CacheServer.ini`, or there are more than 8 `Gateway` lines. Fix it and restart the cache server.
    - After a browser player has entered the world, there must be no `GATEWAY_CLIENT_ADDR refused from <address>` line. If there is one with this PC's own `ipconfig` address, the gateway connects to the cache server through that address: add a second line with it, as for the certifier.
