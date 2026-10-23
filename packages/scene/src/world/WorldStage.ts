@@ -133,7 +133,7 @@ export class WorldStage {
       shapes.activate();
       this.world = {
         ...tileLand(this.manifest, (tx, tz) => streamer.tileData(tx, tz)),
-        objectsNear: (x, z) => shapes.objectsNear(x, z),
+        objectsNear: (x, z, range) => shapes.objectsNear(x, z, range),
       };
     }
     return this.world;

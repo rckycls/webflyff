@@ -50,14 +50,15 @@ export interface Ground {
   landAttr(x: number, z: number): number;
   /**
    * The tiles' world objects (`OT_OBJ`) with collision meshes around (x, z), in the order
-   * `FOR_LINKMAP( this, vPos, pObj, 5, CObj::linkStatic, ... )` (`World.h:865-904`) visits them, which the rules
-   * depend on (the first one hit wins): link level by link level (0 to 6: an object is linked at the first level
-   * whose cell is wider than it, in the cell its position is in, `Obj.cpp:974-1020`, `lod.cpp:1439-1481`), then the
-   * level's cells row by row (z, then x), then each cell's objects in its list's order. That is the camera's reach
-   * (`nRange` 5, `IntersectObjLine2`); it holds the movers' (`nRange` 0, the 2 x 2 cells of each level nearest the
-   * point), so the movers' rules also see the objects of the cells between, which the C++ does not test.
+   * `FOR_LINKMAP( this, vPos, pObj, nRange, CObj::linkStatic, ... )` (`World.h:865-904`) visits them with `range` as
+   * its `nRange`, which the rules depend on (the first one hit wins): link level by link level (0 to 6: an object is
+   * linked at the first level whose cell is wider than it, in the cell its position is in, `Obj.cpp:974-1020`,
+   * `lod.cpp:1439-1481`), then the level's cells row by row (z, then x), then each cell's objects in its list's order.
+   * Each level's cells are the point's, the one beside it on the side of its middle the point is on, and `range` cells
+   * of level 0 more each way: the movers' rules ask with 0 (`ProcessCollision`, `ProcessUnderCollision`,
+   * `GetOverHeight`: the 2 x 2 cells of each level nearest the point), the chase camera with 5 (`IntersectObjLine2`).
    */
-  objectsNear(x: number, z: number): readonly CollisionObject[];
+  objectsNear(x: number, z: number, range: number): readonly CollisionObject[];
   /**
    * `CWorld::GetLandTri` (`World.cpp:1251-1353`): the land's triangle under (x, z), its three corners (9 floats, world
    * coordinates) into `out`, as `landTriangle` makes it from the tiles' heights; false where no land is loaded
@@ -89,17 +90,23 @@ export function landTriangle(
   const glz = f32(cz - Math.trunc(cz));
   const h00 = height(lx, lz, gx, gz);
   if (h00 === null) return false;
-  // the corners, numbered as the C++'s comments do: 0 (gx, gz), 1 (gx + 1, gz), 2 (gx, gz + 1), 3 (gx + 1, gz + 1)
-  const order = (gx + gz) % 2 === 0 ? (glx > glz ? [0, 3, 1] : [0, 2, 3]) : (f32(glx + glz) < 1 ? [0, 2, 1] : [1, 2, 3]);
-  order.forEach((k, n) => {
+  const order = (gx + gz) % 2 === 0 ? (glx > glz ? EVEN_UNDER : EVEN_OVER) : (f32(glx + glz) < 1 ? ODD_UNDER : ODD_OVER);
+  for (let n = 0; n < 3; n++) {
+    const k = order[n]!;
     const ox = k & 1;
     const oz = k >> 1;
     out[n * 3] = (gx + ox + lx * MAP_SIZE) * mpu;
     out[n * 3 + 1] = k === 0 ? h00 : height(lx, lz, gx + ox, gz + oz) ?? 0;
     out[n * 3 + 2] = (gz + oz + lz * MAP_SIZE) * mpu;
-  });
+  }
   return true;
 }
+
+// `landTriangle`'s corners, numbered as the C++'s comments do: 0 (gx, gz), 1 (gx + 1, gz), 2 (gx, gz + 1), 3 (gx + 1, gz + 1)
+const EVEN_UNDER: readonly number[] = [0, 3, 1];
+const EVEN_OVER: readonly number[] = [0, 2, 3];
+const ODD_UNDER: readonly number[] = [0, 2, 1];
+const ODD_OVER: readonly number[] = [1, 2, 3];
 
 /** What the land of a `Ground` reads from a tile: its raw heights, `HGT_*` flags still added (`WebTile.heights`). */
 export type TileHeights = Pick<WebTile, 'heights'>;
@@ -151,11 +158,11 @@ export function tileLand(
   };
 
   /** `CWorld::GetLandTri` (`landTriangle`) on the heights without their flags (`GetHeight( DWORD, DWORD )`). */
-  const landTri = (x: number, z: number, out: Float32Array): boolean =>
-    landTriangle(x, z, mpu, (lx, lz, gx, gz) => {
-      const tile = tileAt(lx, lz);
-      return tile === null ? null : cleanHeight(tile.heights[gx + gz * cells]!);
-    }, out);
+  const cleanHeightAt = (lx: number, lz: number, gx: number, gz: number): number | null => {
+    const tile = tileAt(lx, lz);
+    return tile === null ? null : cleanHeight(tile.heights[gx + gz * cells]!);
+  };
+  const landTri = (x: number, z: number, out: Float32Array): boolean => landTriangle(x, z, mpu, cleanHeightAt, out);
 
   return { terrainHeight, landAttr, landTri };
 }

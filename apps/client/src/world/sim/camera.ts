@@ -2,7 +2,6 @@ import type { Vec3 } from '@flyffweb/protocol';
 import type { Ground } from './collision';
 import { add, dot, normalize, scale, sub, toFloats, vecLength } from './d3dx';
 import { findTouchTriLine, touchedBy } from './object3d';
-import type { Line } from './object3d';
 
 /**
  * The chase camera kept out of the terrain and the world's objects: `CWorld::CheckBound` (`Source/_Common/World3D.cpp`)
@@ -10,6 +9,9 @@ import type { Line } from './object3d';
  */
 
 const f32 = Math.fround;
+
+/** FOR_LINKMAP's `nRange` in `IntersectObjLine2` (`nRange = 5;`, `WorldIntersect.cpp:849-850`): the camera's reach. */
+export const CAMERA_LINK_RANGE = 5;
 
 /** `CheckBound` (`World3D.cpp:1697`, `__FIX_PICKING`): the camera keeps this far over the terrain. */
 const CAMERA_OVER_TERRAIN = f32(0.6);
@@ -62,12 +64,13 @@ export function cameraBound(target: Vec3, camera: Vec3, ground: Ground): Vec3 {
  */
 function intersectObjLine2(from: Vec3, to: Vec3, ground: Ground): Vec3 | null {
   const dir = sub(to, from);
-  let line: Line = [from, to];
+  let lineStart = from;
+  let lineEnd = to;
   let hit: Vec3 | null = null;
   let shortest = 0;
-  for (const obj of ground.objectsNear(from[0], from[2])) {
+  for (const obj of ground.objectsNear(from[0], from[2], CAMERA_LINK_RANGE)) {
     if (obj.trans) continue;
-    const inv = touchedBy(obj, line);
+    const inv = touchedBy(obj, lineStart, lineEnd);
     if (inv === null) continue;
     const t = findTouchTriLine(obj, inv, from, to);
     if (t === null) continue;
@@ -76,7 +79,8 @@ function intersectObjLine2(from: Vec3, to: Vec3, ground: Ground): Vec3 | null {
     // Segment3 (xUtil3D.cpp:296-302): the middle and half the length, then Origin -/+ Extent * Direction
     const middle = scale(add(from, to), 0.5);
     const reach = scale(to, f32(vecLength(dir) * 0.5));
-    line = [sub(middle, reach), add(middle, reach)];
+    lineStart = sub(middle, reach);
+    lineEnd = add(middle, reach);
   }
   return hit;
 }

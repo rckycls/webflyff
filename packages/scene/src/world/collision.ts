@@ -39,10 +39,18 @@ const NO_MODEL = 0xffff;
 const MAX_LINKLEVEL = 7;
 /** `CLandscape::m_nWidthLinkMap` (`lod.cpp:253-266`): the link cells across a tile at each level. */
 const LINK_WIDTHS: readonly number[] = [128, 64, 32, 16, 8, 4, 2];
-/** `nRange` of the camera's `IntersectObjLine2` (`WorldIntersect.cpp:851`): the reach of `objectsNear`. */
-const LINK_RANGE = 5;
 /** `objectsNear` keeps this many answers, until the objects change. */
 const MEMO_SIZE = 256;
+
+/** An answer of `objectsNear` and what FOR_LINKMAP read from its point and range. */
+interface Answer {
+  linkX: number;
+  linkZ: number;
+  atX: number;
+  atZ: number;
+  range: number;
+  objects: readonly CollisionObject[];
+}
 
 const NO_OBJECTS: readonly CollisionObject[] = Object.freeze([]);
 
@@ -136,8 +144,12 @@ export class CollisionShapes {
   /** By `y * world width + x`. */
   private readonly tiles = new Map<number, TileRecord>();
   private active = false;
-  /** `objectsNear`'s answers, by what FOR_LINKMAP reads from the point; emptied whenever the links change. */
-  private readonly memo = new Map<string, readonly CollisionObject[]>();
+  /**
+   * `objectsNear`'s answers, by a number made of the whole meters of the point and the range (the movers ask at every
+   * step, so it is not a string), each with all that FOR_LINKMAP reads to tell two that share a number apart; emptied
+   * whenever the links change.
+   */
+  private readonly memo = new Map<number, Answer>();
 
   constructor(
     private readonly store: Pick<AssetStore, 'url' | 'bytes'>,
@@ -180,21 +192,26 @@ export class CollisionShapes {
   }
 
   /**
-   * `Ground.objectsNear`: the objects around D3D (x, z), as `FOR_LINKMAP( this, vPos, pObj, 5, CObj::linkStatic, ... )`
-   * visits them (`World.h:865-904`, the client's `#else`): link level by link level, the level's cells around the
-   * point row by row and column by column, in the loaded tiles, then each cell's list. Its cells: the point's cell of
-   * the level, `nRange` 5 cells of level 0 each way taken in the level's cells, and one more cell on the side of the
-   * cell the point is nearer to (`_nX`, `_nZ`); clipped to the world.
+   * `Ground.objectsNear`: the objects around D3D (x, z), as `FOR_LINKMAP( this, vPos, pObj, nRange, CObj::linkStatic,
+   * ... )` visits them (`World.h:865-904`, the client's `#else`) with `range` its `nRange`: link level by link level,
+   * the level's cells around the point row by row and column by column, in the loaded tiles, then each cell's list. Its
+   * cells: the point's cell of the level, `range` cells of level 0 each way taken in the level's cells, and one more
+   * cell on the side of the cell's middle the point is on (`_nX`, `_nZ`); clipped to the world.
    */
-  objectsNear(x: number, z: number): readonly CollisionObject[] {
+  objectsNear(x: number, z: number, range: number): readonly CollisionObject[] {
     const { mpu, size } = this.manifest;
     const linkX = Math.trunc(f32(x / mpu)); // (int)( _vPos.x / m_iMPU )
     const linkZ = Math.trunc(f32(z / mpu));
     const atX = Math.trunc(x); // (int)( _vPos.x )
     const atZ = Math.trunc(z);
-    const key = `${linkX} ${linkZ} ${atX} ${atZ}`;
+    const key = (atX * 65536 + atZ) * 16 + range;
     const known = this.memo.get(key);
-    if (known !== undefined) return known;
+    if (
+      known !== undefined && known.atX === atX && known.atZ === atZ && known.linkX === linkX && known.linkZ === linkZ
+      && known.range === range
+    ) {
+      return known.objects;
+    }
 
     const found: CollisionObject[] = [];
     for (let level = 0; level < MAX_LINKLEVEL; level++) {
@@ -205,10 +222,10 @@ export class CollisionShapes {
       const half = Math.trunc((unit * mpu) / 2);
       const nX = atX - Math.trunc(linkX / unit) * unit * mpu > half ? 1 : 0;
       const nZ = atZ - Math.trunc(linkZ / unit) * unit * mpu > half ? 1 : 0;
-      const xMin = Math.max(0, Math.trunc((linkX - LINK_RANGE) / unit) + (nX - 1));
-      const zMin = Math.max(0, Math.trunc((linkZ - LINK_RANGE) / unit) + (nZ - 1));
-      const xMax = Math.min(maxWidth - 1, Math.trunc((linkX + LINK_RANGE) / unit) + nX);
-      const zMax = Math.min(maxHeight - 1, Math.trunc((linkZ + LINK_RANGE) / unit) + nZ);
+      const xMin = Math.max(0, Math.trunc((linkX - range) / unit) + (nX - 1));
+      const zMin = Math.max(0, Math.trunc((linkZ - range) / unit) + (nZ - 1));
+      const xMax = Math.min(maxWidth - 1, Math.trunc((linkX + range) / unit) + nX);
+      const zMax = Math.min(maxHeight - 1, Math.trunc((linkZ + range) / unit) + nZ);
       for (let j = zMin; j <= zMax; j++) {
         for (let k = xMin; k <= xMax; k++) {
           const links = this.tiles.get(this.indexOf(Math.trunc(k / widthLink), Math.trunc(j / widthLink)))?.links;
@@ -218,10 +235,10 @@ export class CollisionShapes {
       }
     }
 
-    const answer = found.length === 0 ? NO_OBJECTS : Object.freeze(found);
+    const objects = found.length === 0 ? NO_OBJECTS : Object.freeze(found);
     if (this.memo.size >= MEMO_SIZE) this.memo.clear();
-    this.memo.set(key, answer);
-    return answer;
+    this.memo.set(key, { linkX, linkZ, atX, atZ, range, objects });
+    return objects;
   }
 
   /** The models' shapes held: downloaded, or on their way. */

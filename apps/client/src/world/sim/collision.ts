@@ -1,8 +1,7 @@
 import type { Vec3 } from '@flyffweb/protocol';
 import type { CollisionObject, Ground } from '@flyffweb/scene';
-import { add, calcSlideVec, dot, faceNormal, normalize, scale, set, toFloats, touchRayTri, vecLength } from './d3dx';
+import { add, calcSlideVec, dot, faceNormalTo, normalizeTo, scale, set, toFloats, touchRayTri, vecLength } from './d3dx';
 import { findTouchTriLine, slideVectorUnder, slideVectorXZ2, touchedBy, touchesBox } from './object3d';
-import type { Line } from './object3d';
 
 /**
  * Neuz's collision of movers on the ground with the world's objects and land: the parts of
@@ -42,6 +41,13 @@ export function terrainGround(terrainHeight: Ground['terrainHeight'], landAttr: 
   return { terrainHeight, landAttr, objectsNear: () => NO_OBJECTS };
 }
 
+/**
+ * FOR_LINKMAP's `nRange` in `ProcessCollision`, `ProcessUnderCollision`, `GetOverHeight` and `GetOverHeightForPlayer`
+ * (`int nRange = 0;`, `WorldIntersect.cpp:505`, `:1243`, `:416`, `:365`): the movers test the objects of the 2 x 2
+ * cells of each link level nearest the point (`Ground.objectsNear`).
+ */
+const MOVER_LINK_RANGE = 0;
+
 /** `vKneePos.y += 0.4f` (`ActionMoverCollision.cpp:140`): the height a move is tested at. */
 const KNEE_HEIGHT = f32(0.4);
 /**
@@ -53,6 +59,14 @@ const COLL_TEST_DIR = 6.5;
 const INV_COLL_TEST_DIR = f32(1 / COLL_TEST_DIR);
 /** `ProcessUnderCollision`'s `vDir( 0.0f, -1.5f, 0.0f )` (`WorldIntersect.cpp:1235`): how far under the point it looks. */
 const UNDER_REACH = f32(-1.5);
+const UNDER: Vec3 = [0, UNDER_REACH, 0];
+/** Straight down, which a face's normal is held against (`D3DXVECTOR3( 0.0f, -1.0f, 0.0f )`). */
+const DOWN: Vec3 = [0, -1, 0];
+/** `GetOverHeight`'s `vEnd = vPos + D3DXVECTOR3( 0.0f, 1.0f, 0.0f )`: how far over the point it looks. */
+const OVER: Vec3 = [0, 1, 0];
+/** `ProcessUnderCollision`'s land triangle and its normal, scratch for each call: it runs on every mover's every step. */
+const landTri = new Float32Array(9);
+const landNormal: Vec3 = [0, 0, 0];
 /** `fMaxY = -65535.0f`: no floor found yet. */
 const NO_FLOOR = -65535;
 /**
@@ -124,9 +138,10 @@ export function processCollision(out: Vec3, pos: Vec3, dir: Vec3, ground: Ground
 function collide(out: Vec3, pos: Vec3, dir: Vec3, ground: Ground, slideCount: number): boolean {
   const end = add(pos, dir);
   set(out, dir);
-  const line: Line = [pos, end];
-  for (const obj of ground.objectsNear(pos[0], pos[2])) {
-    const inv = touchedBy(obj, line);
+  const objects = ground.objectsNear(pos[0], pos[2], MOVER_LINK_RANGE);
+  for (let k = 0; k < objects.length; k++) {
+    const obj = objects[k]!;
+    const inv = touchedBy(obj, pos, end);
     if (inv === null) continue;
     const slide = slideVectorXZ2(obj, inv, pos, end);
     if (slide === null) continue;
@@ -155,15 +170,17 @@ export function collideMove(pos: Vec3, deltaAccu: Vec3, ground?: Ground): { hit:
   const move: Vec3 = [f32(deltaAccu[0] * COLL_TEST_DIR), 0, f32(deltaAccu[2] * COLL_TEST_DIR)];
   const hit = ground !== undefined && vecLength(move) !== 0 && processCollision(move, knee, move, ground);
   const back = scale(move, INV_COLL_TEST_DIR);
-  const blocks = (x: number, z: number): boolean => {
-    const attr = ground?.landAttr(x, z);
-    return attr === HAttr.NOWALK || attr === HAttr.NOMOVE;
-  };
   pos[0] = f32(pos[0] + back[0]);
-  if (blocks(pos[0], pos[2])) pos[0] = f32(pos[0] - back[0]);
+  if (blocks(ground, pos[0], pos[2])) pos[0] = f32(pos[0] - back[0]);
   pos[2] = f32(pos[2] + back[2]);
-  if (blocks(pos[0], pos[2])) pos[2] = f32(pos[2] - back[2]);
+  if (blocks(ground, pos[0], pos[2])) pos[2] = f32(pos[2] - back[2]);
   return { hit, move: back };
+}
+
+/** `HATTR_NOWALK` and `HATTR_NOMOVE` land stop a move (`ActionMoverCollision.cpp:235-268`). */
+function blocks(ground: Ground | undefined, x: number, z: number): boolean {
+  const attr = ground?.landAttr(x, z);
+  return attr === HAttr.NOWALK || attr === HAttr.NOMOVE;
 }
 
 /**
@@ -182,13 +199,13 @@ export function collideMove(pos: Vec3, deltaAccu: Vec3, ground?: Ground): { hit:
  */
 export function processUnderCollision(out: Vec3, pos: Vec3, ground: Ground): number {
   const from = toFloats(pos);
-  const down: Vec3 = [0, UNDER_REACH, 0];
-  const end = add(from, down);
-  const line: Line = [from, end];
+  const end = add(from, UNDER);
   const slide: Vec3 = [0, 0, 0];
   let maxY = NO_FLOOR;
-  for (const obj of ground.objectsNear(from[0], from[2])) {
-    const inv = touchedBy(obj, line);
+  const objects = ground.objectsNear(from[0], from[2], MOVER_LINK_RANGE);
+  for (let k = 0; k < objects.length; k++) {
+    const obj = objects[k]!;
+    const inv = touchedBy(obj, from, end);
     if (inv === null) continue;
     const y = slideVectorUnder(slide, obj, inv, from, end);
     if (y !== null && y > maxY) {
@@ -197,12 +214,12 @@ export function processUnderCollision(out: Vec3, pos: Vec3, ground: Ground): num
     }
   }
   let land: number | null;
-  const tri = new Float32Array(9);
-  const t = ground.landTri?.(from[0], from[2], tri) ? touchRayTri(tri, 0, from, down) : null;
+  const tri = landTri;
+  const t = ground.landTri?.(from[0], from[2], tri) ? touchRayTri(tri, 0, from, UNDER) : null;
   if (t !== null) {
     land = f32(from[1] + f32(t * UNDER_REACH));
-    const n = normalize(faceNormal(tri, 0));
-    if (dot(n, [0, -1, 0]) > LAND_SLIDE_COSINE) {
+    const n = normalizeTo(landNormal, faceNormalTo(landNormal, tri, 0));
+    if (dot(n, DOWN) > LAND_SLIDE_COSINE) {
       const intersect: Vec3 = [from[0], land, from[2]];
       const dir = calcSlideVec([0, LAND_SLIDE_FALL, 0], n);
       const mpu = f32(Math.max(tri[0]!, tri[3]!, tri[6]!) - Math.min(tri[0]!, tri[3]!, tri[6]!)); // the cell, m_iMPU
@@ -229,14 +246,15 @@ export function processUnderCollision(out: Vec3, pos: Vec3, ground: Ground): num
  */
 export function overHeight(pos: Vec3, ground: Ground, forPlayer = false): number {
   const from = toFloats(pos);
-  const end = add(from, [0, 1, 0]);
-  const line: Line = [from, end];
+  const end = add(from, OVER);
   let found: { obj: CollisionObject; inv: Float32Array } | undefined;
-  for (const obj of ground.objectsNear(from[0], from[2])) {
-    const inv = touchedBy(obj, line);
+  const objects = ground.objectsNear(from[0], from[2], MOVER_LINK_RANGE);
+  for (let k = 0; k < objects.length; k++) {
+    const obj = objects[k]!;
+    const inv = touchedBy(obj, from, end);
     if (inv === null) continue;
     found = { obj, inv };
-    if (!forPlayer || !touchesBox(obj, inv, [from, from])) break;
+    if (!forPlayer || !touchesBox(obj, inv, from, from)) break;
   }
   if (found === undefined) return NO_CEILING;
   const t = findTouchTriLine(found.obj, found.inv, from, end);

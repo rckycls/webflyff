@@ -2,7 +2,7 @@ import type { Vec3 } from '@flyffweb/protocol';
 import type { CollisionObject } from './collision';
 import {
   add, calcSlideVec, dot, faceNormal, inverse, normalize, scale, set, sub, touchRayTri, touchesAabb, transformCoord,
-  vecLength, withoutTranslation,
+  transformCoordTo, vecLength, withoutTranslation,
 } from './d3dx';
 import type { Matrix } from './d3dx';
 
@@ -11,6 +11,10 @@ import type { Matrix } from './d3dx';
  * `CObject3D` functions the collision rules call (`Source/_Common/ModelObject.cpp`, `Object3D.cpp`), on the collision
  * mesh (`bCollObj` TRUE, `mTM = mWorld`). Neuz moves the line into the model's space with the inverse of the world
  * matrix rather than the triangles into the world (`D3DXVec3TransformCoord` of both ends, e.g. `Object3D.cpp:1736`).
+ *
+ * A line is its two ends, `start` and `end`, in the world. The box test and the line in the model's space are made in
+ * scratch vectors of this module (`boxStart`, `boxEnd`, `linePos`, `lineDir`), which each function here uses only
+ * while it runs: they are on every mover's every step.
  */
 
 const f32 = Math.fround;
@@ -24,9 +28,6 @@ const REFLECTED_PART = f32(0.2);
  */
 const SLIDE_COSINE = f32(-0.1908);
 const SLIDE_FALL = f32(-0.01);
-
-/** A line as the box tests take it: its two ends in the world. */
-export type Line = readonly [Vec3, Vec3];
 
 /**
  * The bounds of each collision mesh, `[minX, minY, minZ, maxX, maxY, maxZ]`, worked out once; null for no
@@ -84,24 +85,33 @@ function rotationOf(matrix: Float32Array): Float32Array {
  * ends from a `Segment3` (`xUtil3D.cpp:296-302`), which can move them by a float step; against the tight stand-in a
  * line along a face would then miss, so the ends are taken as they are.
  */
-export function touchesBox(obj: CollisionObject, inv: Matrix, [start, end]: Line): boolean {
+export function touchesBox(obj: CollisionObject, inv: Matrix, start: Vec3, end: Vec3): boolean {
   const box = boxOf(obj.triangles);
-  return box !== null && touchesAabb(box, transformCoord(start, inv), transformCoord(end, inv));
+  return box !== null && touchesAabb(box, transformCoordTo(boxStart, start, inv), transformCoordTo(boxEnd, end, inv));
 }
+
+const boxStart: Vec3 = [0, 0, 0];
+const boxEnd: Vec3 = [0, 0, 0];
 
 /**
  * The object's inverse world matrix when the line touches its box, else null. (An object whose matrix has no inverse
  * is skipped: see `inverse`.)
  */
-export function touchedBy(obj: CollisionObject, line: Line): Float32Array | null {
+export function touchedBy(obj: CollisionObject, start: Vec3, end: Vec3): Float32Array | null {
   const inv = inverseOf(obj.matrix);
-  return inv !== null && touchesBox(obj, inv, line) ? inv : null;
+  return inv !== null && touchesBox(obj, inv, start, end) ? inv : null;
 }
 
-/** The line from `pos` to `end` in the model's space. */
-function modelLine(inv: Matrix, pos: Vec3, end: Vec3): { pos: Vec3; dir: Vec3 } {
-  const p = transformCoord(pos, inv);
-  return { pos: p, dir: sub(transformCoord(end, inv), p) };
+/** The line from `pos` to `end` in the model's space: from `linePos` along `lineDir` (`sub` of the two ends). */
+const linePos: Vec3 = [0, 0, 0];
+const lineDir: Vec3 = [0, 0, 0];
+
+function modelLine(inv: Matrix, pos: Vec3, end: Vec3): void {
+  transformCoordTo(linePos, pos, inv);
+  transformCoordTo(lineDir, end, inv);
+  lineDir[0] = f32(lineDir[0] - linePos[0]);
+  lineDir[1] = f32(lineDir[1] - linePos[1]);
+  lineDir[2] = f32(lineDir[2] - linePos[2]);
 }
 
 /**
@@ -109,9 +119,9 @@ function modelLine(inv: Matrix, pos: Vec3, end: Vec3): { pos: Vec3; dir: Vec3 } 
  * first triangle in the mesh's order (not the nearest) that it meets, or null.
  */
 export function findTouchTriLine(obj: CollisionObject, inv: Matrix, pos: Vec3, end: Vec3): number | null {
-  const line = modelLine(inv, pos, end);
+  modelLine(inv, pos, end);
   for (let i = 0; i + 9 <= obj.triangles.length; i += 9) {
-    const t = touchRayTri(obj.triangles, i, line.pos, line.dir);
+    const t = touchRayTri(obj.triangles, i, linePos, lineDir);
     if (t !== null && t >= 0 && t < 1) return t;
   }
   return null;
@@ -151,10 +161,10 @@ export function intersectRayTri(obj: CollisionObject, orig: Vec3, dir: Vec3): nu
  * way along it, and gives its reflection off the face times 0.2f (:1754-1791).
  */
 export function slideVectorXZ2(obj: CollisionObject, inv: Matrix, pos: Vec3, end: Vec3): Vec3 | null {
-  const line = modelLine(inv, pos, end);
+  modelLine(inv, pos, end);
   const tris = obj.triangles;
   for (let i = 0; i + 9 <= tris.length; i += 9) {
-    const t = touchRayTri(tris, i, line.pos, line.dir);
+    const t = touchRayTri(tris, i, linePos, lineDir);
     if (t === null) continue;
     const dir = sub(end, pos);
     const dirLength = vecLength(dir);
@@ -179,10 +189,10 @@ export function slideVectorXZ2(obj: CollisionObject, inv: Matrix, pos: Vec3, end
  * as it is; a steeper one puts into `out` the point a fall of 0.01f slides to along it.
  */
 export function slideVectorUnder(out: Vec3, obj: CollisionObject, inv: Matrix, pos: Vec3, end: Vec3): number | null {
-  const line = modelLine(inv, pos, end);
+  modelLine(inv, pos, end);
   const tris = obj.triangles;
   for (let i = 0; i + 9 <= tris.length; i += 9) {
-    const t = touchRayTri(tris, i, line.pos, line.dir);
+    const t = touchRayTri(tris, i, linePos, lineDir);
     if (t === null || !(t >= 0 && t < 1)) continue;
     const intersect = add(pos, scale(sub(end, pos), t));
     const n = transformCoord(normalize(faceNormal(tris, i)), rotationOf(obj.matrix));

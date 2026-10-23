@@ -1,6 +1,7 @@
 import type { Vec3 } from '@flyffweb/protocol';
 import type { CollisionObject, Ground } from './collision';
 import { add, cross, dot, intersectTri, normalize, scale, sub, vecLength } from './d3dx';
+import { CAMERA_LINK_RANGE } from './camera';
 import { intersectRayTri } from './object3d';
 
 /**
@@ -36,8 +37,8 @@ const NO_STEP = f32(0.000001);
  * from below stops that row of cells, `__FIX_PICKING`).
  *
  * The objects (`PickObject` with `bOnlyTopPick`): those whose model picks (`CollisionObject.pick`, mdlObj.inc's
- * `bPick`) around each of the ray's points (`objectsNear`), each at the nearest of its triangles the ray meets
- * ahead. Then whichever of the two is nearer the camera (:2427-2455); an object only where no land is met.
+ * `bPick`) around each of the ray's points (`objectsNear` with the camera's reach, `nRange` 5, standing in for the
+ * objects on screen that `PickObject` goes through), each at the nearest of its triangles the ray meets ahead. Then whichever of the two is nearer the camera (:2427-2455); an object only where no land is met.
  */
 export function clientPointToVector(orig: Vec3, dir: Vec3, ground: Ground, mpu: number): Vec3 | null {
   const step = scale(dir, f32(mpu * 2));
@@ -51,7 +52,7 @@ export function clientPointToVector(orig: Vec3, dir: Vec3, ground: Ground, mpu: 
   let at = orig; // vPickRayCur
   do {
     at = add(at, step);
-    for (const object of ground.objectsNear(at[0], at[2])) if (object.pick) objects.add(object);
+    for (const object of ground.objectsNear(at[0], at[2], CAMERA_LINK_RANGE)) if (object.pick) objects.add(object);
     if (ground.terrainHeight(at[0], at[2]) === null) continue; // VecInWorld, GetLandscape, isVisibile
     for (let z = -mpu; z <= mpu; z += mpu) {
       for (let x = -mpu; x <= mpu; x += mpu) {

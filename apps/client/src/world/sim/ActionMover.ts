@@ -61,6 +61,8 @@ const HEAD_HEIGHT = 1.5;
 const CEILING_BOUNCE = f32(-0.01);
 /** `__FIX_COLLISION` (:225-232): a slid move longer than `0.15f` a step becomes the mover's delta. */
 const FIX_COLLISION_LENGTH = f32(0.15);
+/** The groups of states whose states are copied, in `ProcessAction`'s order (the look, attack, damage and action ones are not). */
+const STATE_GROUPS: readonly number[] = [ObjSta.MOVE_ALL, ObjSta.TURN_ALL, ObjSta.JUMP_ALL];
 
 const copy = (v: Vec3): Vec3 => [v[0], v[1], v[2]];
 const toFloats = (v: Vec3): Vec3 => [f32(v[0]), f32(v[1]), f32(v[2])];
@@ -153,7 +155,8 @@ export class ActionMover {
    * the mover keeps its height, as on a flat floor.
    *
    * `collided` is `ProcessCollision`'s answer where the mover was placed, for `OnActCollision` (`Mover.cpp:3899-3905`):
-   * the move met an object or steep land (`CWorld::ProcessCollision`), or the head a ceiling (:378-382).
+   * the move met an object (`CWorld::ProcessCollision`, which tests the objects only: steep land slides the mover in
+   * the height part and is no collision), or the head a ceiling (:378-382).
    */
   step(ground?: Ground): { collided: boolean } {
     const pos = toFloats(this.body.pos);
@@ -252,9 +255,9 @@ export class ActionMover {
     if (this.state === 0) {
       this.processActMsg1(ActMsg.STAND, 0, 0);
     } else {
-      // the groups whose states are copied, in ProcessAction's order; the look, attack, damage and action states are not
       const speed = f32(this.body.speed);
-      for (const group of [ObjSta.MOVE_ALL, ObjSta.TURN_ALL, ObjSta.JUMP_ALL]) {
+      for (let i = 0; i < STATE_GROUPS.length; i++) {
+        const group = STATE_GROUPS[i]!;
         if (this.state & group) this.processState1(this.state & group, speed);
       }
     }

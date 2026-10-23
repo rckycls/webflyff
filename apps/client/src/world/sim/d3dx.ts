@@ -5,6 +5,10 @@ import type { Vec3 } from '@flyffweb/protocol';
  * `ActionMover.ts`): D3DX's vector and matrix functions, and FlyFF's own line tests (`Source/_Common/xUtil3D.cpp`).
  * D3DX's code is in its DLL and not known: `D3DXVec3TransformCoord` and `D3DXVec3Normalize` are written as Wine's
  * d3dx9 writes them and `D3DXMatrixInverse` by cofactors, so the last bit may differ.
+ *
+ * The functions the rules call at every step for every mover (the line transforms, the face normal, the normalize) also
+ * come as `...To( out, ... )`, which write into `out` (it may be an argument) instead of making a new vector: the same
+ * float operations in the same order, without the garbage.
  */
 
 const f32 = Math.fround;
@@ -33,8 +37,20 @@ export const vecLength = (v: Vec3): number => f32(Math.sqrt(dot(v, v)));
 
 /** `D3DXVec3Normalize`: the vector over its length; a zero vector stays zero, as in Wine's d3dx9. */
 export function normalize(v: Vec3): Vec3 {
+  return normalizeTo([0, 0, 0], v);
+}
+
+/** `normalize` into `out`, which may be `v`. */
+export function normalizeTo(out: Vec3, v: Vec3): Vec3 {
   const length = vecLength(v);
-  return length === 0 ? [0, 0, 0] : [f32(v[0] / length), f32(v[1] / length), f32(v[2] / length)];
+  if (length === 0) {
+    out[0] = out[1] = out[2] = 0;
+  } else {
+    out[0] = f32(v[0] / length);
+    out[1] = f32(v[1] / length);
+    out[2] = f32(v[2] / length);
+  }
+  return out;
 }
 
 /** A `D3DXMATRIX`'s 16 floats in memory order: `m[r * 4 + c]` is `_(r+1)(c+1)`, and a row vector multiplies it. */
@@ -42,8 +58,19 @@ export type Matrix = ArrayLike<number>;
 
 /** `D3DXVec3TransformCoord`: `( v, 1 ) * m`, over its w. */
 export function transformCoord(v: Vec3, m: Matrix): Vec3 {
+  return transformCoordTo([0, 0, 0], v, m);
+}
+
+/** `transformCoord` into `out`, which may be `v`. */
+export function transformCoordTo(out: Vec3, v: Vec3, m: Matrix): Vec3 {
   const w = column(v, m, 3);
-  return [f32(column(v, m, 0) / w), f32(column(v, m, 1) / w), f32(column(v, m, 2) / w)];
+  const x = column(v, m, 0);
+  const y = column(v, m, 1);
+  const z = column(v, m, 2);
+  out[0] = f32(x / w);
+  out[1] = f32(y / w);
+  out[2] = f32(z / w);
+  return out;
 }
 
 /** `x * m._1c + y * m._2c + z * m._3c + m._4c`, left to right in floats. */
@@ -148,9 +175,18 @@ const MIN_DET = f32(0.0001);
 
 /** The normal of the triangle at `i`, `cross( v1 - v0, v2 - v0 )`, not normalized. */
 export function faceNormal(tris: ArrayLike<number>, i: number): Vec3 {
-  const corner = (k: number): Vec3 => [tris[i + k]!, tris[i + k + 1]!, tris[i + k + 2]!];
-  const v0 = corner(0);
-  return cross(sub(corner(3), v0), sub(corner(6), v0));
+  return faceNormalTo([0, 0, 0], tris, i);
+}
+
+/** `faceNormal` into `out`: `sub` of the corners and `cross`, term by term. */
+export function faceNormalTo(out: Vec3, tris: ArrayLike<number>, i: number): Vec3 {
+  const x0 = tris[i]!, y0 = tris[i + 1]!, z0 = tris[i + 2]!;
+  const ax = f32(tris[i + 3]! - x0), ay = f32(tris[i + 4]! - y0), az = f32(tris[i + 5]! - z0);
+  const bx = f32(tris[i + 6]! - x0), by = f32(tris[i + 7]! - y0), bz = f32(tris[i + 8]! - z0);
+  out[0] = f32(f32(ay * bz) - f32(az * by));
+  out[1] = f32(f32(az * bx) - f32(ax * bz));
+  out[2] = f32(f32(ax * by) - f32(ay * bx));
+  return out;
 }
 
 /** `IsTouchAABB_Line` (`xUtil3D.cpp:127-203`): whether the line from `v1` to `v2` touches the box, in floats. */

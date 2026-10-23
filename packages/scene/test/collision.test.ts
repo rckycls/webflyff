@@ -96,7 +96,7 @@ describe('CollisionShapes', () => {
     // the tree has no collision file; the wall's is downloaded once for both walls
     expect(downloads()).toEqual(['collision/obj_box.bin', 'collision/obj_wall.bin']);
     expect(shapes.shapeCount()).toBe(2);
-    const near = shapes.objectsNear(12, 10);
+    const near = shapes.objectsNear(12, 10, 5);
     expect(near.map(positionOf)).toEqual([[10, 0, 10], [14, 0, 10], [16, 0, 10]]);
     expect(near[0]!.triangles).toBe(near[1]!.triangles); // one decoded shape for both walls
     expect(Array.from(near[0]!.triangles)).toEqual(SHAPES['collision/obj_wall.bin']);
@@ -104,7 +104,7 @@ describe('CollisionShapes', () => {
     shapes.releaseTile('0_0');
 
     expect(shapes.shapeCount()).toBe(0);
-    expect(shapes.objectsNear(12, 10)).toEqual([]);
+    expect(shapes.objectsNear(12, 10, 5)).toEqual([]);
   });
 
   it('keeps a shape that another loaded tile still uses, and downloads it once', async () => {
@@ -117,7 +117,7 @@ describe('CollisionShapes', () => {
     shapes.releaseTile('0_0');
 
     expect(shapes.shapeCount()).toBe(1); // the box is let go, the wall stays for tile 1_0
-    expect(shapes.objectsNear(TILE_METERS + 10, 10).map(positionOf)).toEqual([[TILE_METERS + 10, 0, 10]]);
+    expect(shapes.objectsNear(TILE_METERS + 10, 10, 5).map(positionOf)).toEqual([[TILE_METERS + 10, 0, 10]]);
     shapes.releaseTile('1_0');
     expect(shapes.shapeCount()).toBe(0);
   });
@@ -136,7 +136,7 @@ describe('CollisionShapes', () => {
     await settled;
 
     expect(shapes.shapeCount()).toBe(0);
-    expect(shapes.objectsNear(10, 10)).toEqual([]);
+    expect(shapes.objectsNear(10, 10, 5)).toEqual([]);
   });
 
   it('objectsNear returns the shapes of the tiles around the point', async () => {
@@ -146,13 +146,33 @@ describe('CollisionShapes', () => {
     await shapes.place(tile(1, 0, [placedAt(BOX, TILE_METERS + 2, 0, 10), placedAt(WALL, TILE_METERS + 400, 0, 10)]));
 
     // both sides of the tiles' border, the nearer cells' first (column by column); in D3D, the tile's web matrix mirrored back
-    const border = shapes.objectsNear(TILE_METERS, 10);
+    const border = shapes.objectsNear(TILE_METERS, 10, 5);
     expect(border.map(positionOf)).toEqual([[TILE_METERS - 2, 0, 10], [TILE_METERS + 2, 0, 10]]);
     expect(Array.from(border[0]!.matrix)).toEqual(Array.from(d3dAt(TILE_METERS - 2, 0, 10)));
-    expect(shapes.objectsNear(TILE_METERS + 400, 10).map(positionOf)).toEqual([[TILE_METERS + 400, 0, 10]]);
+    expect(shapes.objectsNear(TILE_METERS + 400, 10, 5).map(positionOf)).toEqual([[TILE_METERS + 400, 0, 10]]);
     // beyond the camera's reach, and where no tile is loaded
-    expect(shapes.objectsNear(TILE_METERS + 200, 10)).toEqual([]);
-    expect(shapes.objectsNear(3 * TILE_METERS, 10)).toEqual([]);
+    expect(shapes.objectsNear(TILE_METERS + 200, 10, 5)).toEqual([]);
+    expect(shapes.objectsNear(3 * TILE_METERS, 10, 5)).toEqual([]);
+  });
+
+  it('objectsNear reaches nRange cells of level 0 each way: 0 for the movers, 5 for the camera, each answer kept apart', async () => {
+    const { shapes } = setup();
+    shapes.activate();
+    await shapes.place(tile(0, 0, [placedAt(WALL, 10, 0, 10), placedAt(WALL, 26, 0, 10), placedAt(WALL, 10, 0, 2)]));
+
+    // (10, 10) is 2 m into level 0's cell (2, 2), not past its middle: nRange 0 takes cells 1 and 2 in x and in z
+    // (FOR_LINKMAP's _nX, _nZ), so not the objects 4 cells east (cell 6) or 2 cells north (cell 0)
+    expect(shapes.objectsNear(10, 10, 0).map(positionOf)).toEqual([[10, 0, 10]]);
+    // nRange 5 takes 5 cells more each way (clipped to the world): row 0 first, then row 2 west to east
+    expect(shapes.objectsNear(10, 10, 5).map(positionOf)).toEqual([[10, 0, 2], [10, 0, 10], [26, 0, 10]]);
+    // the answers are kept by range: the same point asked again gives each its own
+    expect(shapes.objectsNear(10, 10, 0).map(positionOf)).toEqual([[10, 0, 10]]);
+    // the other cell is the one on the side of the cell's middle the point is on, in whole meters ((int)_vPos.x): 7 is
+    // past the middle of cell 1 (6), so cells 1 and 2; 6 is not, so cells 0 and 1; 11, past cell 2's (10), cells 2 and 3
+    expect(shapes.objectsNear(7, 7, 0).map(positionOf)).toEqual([[10, 0, 10]]);
+    expect(shapes.objectsNear(6, 6, 0)).toEqual([]);
+    expect(shapes.objectsNear(11, 11, 0).map(positionOf)).toEqual([[10, 0, 10]]);
+    expect(shapes.objectsNear(11, 1, 0).map(positionOf)).toEqual([[10, 0, 2]]);
   });
 
   it('lists the objects as FOR_LINKMAP visits them: by link level, then row by row, then each cell\'s list', async () => {
@@ -167,7 +187,7 @@ describe('CollisionShapes', () => {
     await shapes.place(tile(0, 0, placed.map((p) => p.object)));
     const names = new Map(placed.map((p) => [[p.x, 0, p.z].join(), p.name]));
 
-    const order = shapes.objectsNear(10, 10).map((o) => names.get(positionOf(o).join()));
+    const order = shapes.objectsNear(10, 10, 5).map((o) => names.get(positionOf(o).join()));
 
     // level 0: row 1 (E), row 2 (the cell's head A, then the later ones last first: C, B), row 3 (D); then level 3
     expect(order).toEqual(['E', 'A', 'C', 'B', 'D', 'big']);
@@ -178,13 +198,13 @@ describe('CollisionShapes', () => {
     shapes.activate();
     await shapes.place(tile(0, 0, [placedAt(GLASS, 10, 0, 10), placedAt(WALL, 12, 0, 10)]));
 
-    expect(shapes.objectsNear(10, 10).map((o) => o.trans)).toEqual([true, false]);
+    expect(shapes.objectsNear(10, 10, 5).map((o) => o.trans)).toEqual([true, false]);
 
     // a manifest written before modelTrans: nothing is see-through
     const old = setup(makeManifest(null));
     old.shapes.activate();
     await old.shapes.place(tile(0, 0, [placedAt(GLASS, 10, 0, 10)]));
-    expect(old.shapes.objectsNear(10, 10).map((o) => o.trans)).toEqual([false]);
+    expect(old.shapes.objectsNear(10, 10, 5).map((o) => o.trans)).toEqual([false]);
   });
 
   it("a pickable model's object comes out with pick: true", async () => {
@@ -192,23 +212,23 @@ describe('CollisionShapes', () => {
     shapes.activate();
     await shapes.place(tile(0, 0, [placedAt(GLASS, 10, 0, 10), placedAt(WALL, 12, 0, 10)]));
 
-    expect(shapes.objectsNear(10, 10).map((o) => o.pick)).toEqual([false, true]);
+    expect(shapes.objectsNear(10, 10, 5).map((o) => o.pick)).toEqual([false, true]);
 
     // a manifest written before modelPick: nothing is pickable
     const old = setup(makeManifest(undefined, null));
     old.shapes.activate();
     await old.shapes.place(tile(0, 0, [placedAt(WALL, 10, 0, 10)]));
-    expect(old.shapes.objectsNear(10, 10).map((o) => o.pick)).toEqual([false]);
+    expect(old.shapes.objectsNear(10, 10, 5).map((o) => o.pick)).toEqual([false]);
   });
 
   it('downloads nothing before activate, then the shapes of the tiles it was given', async () => {
     const { shapes, downloads } = setup();
     await shapes.place(tile(0, 0, [placedAt(WALL, 10, 0, 10)]));
     expect(downloads()).toEqual([]);
-    expect(shapes.objectsNear(10, 10)).toEqual([]);
+    expect(shapes.objectsNear(10, 10, 5)).toEqual([]);
 
     shapes.activate();
-    await vi.waitFor(() => expect(shapes.objectsNear(10, 10)).toHaveLength(1));
+    await vi.waitFor(() => expect(shapes.objectsNear(10, 10, 5)).toHaveLength(1));
     expect(downloads()).toEqual(['collision/obj_wall.bin']);
   });
 
@@ -223,7 +243,7 @@ describe('CollisionShapes', () => {
     expect(overlay.error).toHaveBeenCalledWith(
       'shape collision/obj_box.bin: could not load collision/obj_box.bin after 4 attempts: HTTP 503',
     );
-    expect(shapes.objectsNear(12, 10).map(positionOf)).toEqual([[10, 0, 10]]);
+    expect(shapes.objectsNear(12, 10, 5).map(positionOf)).toEqual([[10, 0, 10]]);
   });
 });
 
@@ -301,7 +321,7 @@ describe('WorldStage.ground', () => {
     const ground = stage.ground();
 
     expect(ground).toBe(stage.ground());
-    await vi.waitFor(() => expect(ground.objectsNear(10, 10)).toHaveLength(1));
+    await vi.waitFor(() => expect(ground.objectsNear(10, 10, 5)).toHaveLength(1));
     expect(fake.downloads()).toEqual(['collision/obj_wall.bin']);
     stage.dispose();
   });
@@ -319,7 +339,7 @@ describe('WorldStage.ground', () => {
     expect(terrainHeight(10, 10)).toBe(5);
     expect(landAttr(2.5 * MPU, 3.5 * MPU)).toBe(1);
     expect(landTri!(1, 1, new Float32Array(9))).toBe(true);
-    expect(objectsNear(10, 10).map(positionOf)).toEqual([[10, 5, 10]]);
+    expect(objectsNear(10, 10, 5).map(positionOf)).toEqual([[10, 5, 10]]);
     // tile 1_0 is flat ground (the world has none there): height 0, no land attributes, no objects
     expect(terrainHeight(TILE_METERS + 10, 10)).toBe(0);
     expect(landAttr(TILE_METERS + 10, 10)).toBe(0);
@@ -334,16 +354,16 @@ describe('WorldStage.ground', () => {
     const ground = stage.ground();
     stage.focus(web(10, 10));
     await stage.ready();
-    expect(ground.objectsNear(10, 10)).toHaveLength(1);
+    expect(ground.objectsNear(10, 10, 5)).toHaveLength(1);
 
     stage.focus(web(3 * TILE_METERS + 10, 10)); // tiles 2_0 to 3_1: 0_0 leaves
     await stage.ready();
 
-    expect(ground.objectsNear(10, 10)).toEqual([]);
+    expect(ground.objectsNear(10, 10, 5)).toEqual([]);
     // the shape was let go: coming back downloads it again
     stage.focus(web(10, 10));
     await stage.ready();
-    expect(ground.objectsNear(10, 10)).toHaveLength(1);
+    expect(ground.objectsNear(10, 10, 5)).toHaveLength(1);
     expect(fake.downloads()).toEqual(['collision/obj_wall.bin', 'collision/obj_wall.bin']);
     stage.dispose();
   });

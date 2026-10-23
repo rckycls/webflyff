@@ -86,7 +86,7 @@ export class WorldScreen {
   private readonly ground: Ground = {
     terrainHeight: (x, z) => this.stage?.ground().terrainHeight(x, z) ?? null,
     landAttr: (x, z) => this.stage?.ground().landAttr(x, z) ?? HAttr.NONE,
-    objectsNear: (x, z) => this.stage?.ground().objectsNear(x, z) ?? [],
+    objectsNear: (x, z, range) => this.stage?.ground().objectsNear(x, z, range) ?? [],
     landTri: (x, z, out) => this.stage?.ground().landTri?.(x, z, out) ?? false,
   };
   private views: MoverViews | undefined;

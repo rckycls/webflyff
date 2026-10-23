@@ -558,12 +558,33 @@ describe('collision: the land\'s triangles (CWorld::GetLandTri, ProcessUnderColl
       inner: foot,
       terrainHeight(x: number, z: number) { return this.inner.terrainHeight(x, z); },
       landAttr(x: number, z: number) { return this.inner.landAttr(x, z); },
-      objectsNear(x: number, z: number) { return this.inner.objectsNear(x, z); },
+      objectsNear(x: number, z: number, range: number) { return this.inner.objectsNear(x, z, range); },
       landTri(x: number, z: number, out: Float32Array) { return this.inner.landTri!(x, z, out); },
     };
     const out: Vec3 = [0, 0, 0];
     near(processUnderCollision(out, [7.95, 0.15 + 1, 20.5], methods), 0.15);
     expect(out).toEqual([8, 0, 20.5]);
+  });
+});
+
+// ---- the objects' reach -------------------------------------------------------------------------------------------
+
+describe("collision: the objects' reach (FOR_LINKMAP's nRange)", () => {
+  it('the movers ask for the objects within nRange 0, the camera within 5, as their CWorld functions do', () => {
+    const asked: number[] = [];
+    const g: Ground = { ...ground([]), objectsNear: (_x, _z, range) => { asked.push(range); return []; } };
+    processCollision([1, 0, 0], [0, 0.4, 0], [1, 0, 0], g); // ProcessCollision: nRange 0 (WorldIntersect.cpp:505)
+    processUnderCollision([0, 0, 0], [0, 1, 0], g); // ProcessUnderCollision: 0 (:1243)
+    overHeight([0, 1.5, 0], g); // GetOverHeight: 0 (:416)
+    overHeight([0, 1.5, 0], g, true); // GetOverHeightForPlayer: 0 (:365)
+    expect(asked).toEqual([0, 0, 0, 0]);
+    asked.length = 0;
+    const act = running(90, [0, 0, 0]);
+    act.step(g); // a step: the move (ProcessCollision) and the height (ProcessUnderCollision)
+    expect(asked).toEqual([0, 0]);
+    asked.length = 0;
+    cameraBound([0, 1, 0], [-4, 3, 0], g); // IntersectObjLine2: 5 (:849-850)
+    expect(asked).toEqual([5]);
   });
 });
 
