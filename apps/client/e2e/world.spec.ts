@@ -113,6 +113,11 @@ const byTheWall = createWorldScript({
   playerObjectId: SELF_ID, worldId: MADRIGAL, pos: BY_THE_WALL,
   self: writeAddSelf(SELF_ID, { ...self, pos: BY_THE_WALL, angle: 270 }), others: [],
 });
+/** Webby on the same spot facing east (angle 90: D3D +x), the house's east wall 5.5 m behind it. */
+const backToTheWall = createWorldScript({
+  playerObjectId: SELF_ID, worldId: MADRIGAL, pos: BY_THE_WALL,
+  self: writeAddSelf(SELF_ID, { ...self, pos: BY_THE_WALL, angle: 90 }), others: [],
+});
 
 /** Another player, who comes into view 3 m east of Webby once Webby is in the world, dressed as a vagrant. */
 const BOB_ID = 9003;
@@ -477,6 +482,18 @@ test.describe('the world screen against scripted servers', () => {
 
     expect(own[0]).toBeGreaterThan(WALL_X); // it stopped in front of the wall
     expect(own[2]).toBeCloseTo(BY_THE_WALL[2], 1); // head on, it does not slide along it
+  });
+
+  test("the chase camera stays out of the house behind the player (CheckBound on the stage's objects)", async ({ page }) => {
+    await playGateway(page, backToTheWall);
+    await enterFlaris(page);
+    // 16 m behind Webby (15.65 m out, 12 degrees up) the camera would be at x 6988.3, inside the house: the line to it
+    // meets the wall 5.5 m behind Webby, 2.5 m up, and the camera stays there, in front of it
+    const cameraX = async () => (await page.evaluate(() => window.__client!.camera()))[0];
+    await expect.poll(cameraX).toBeGreaterThan(WALL_X - 0.05);
+    await page.waitForTimeout(500);
+    expect(await cameraX()).toBeGreaterThan(WALL_X - 0.05);
+    expect(await cameraX()).toBeLessThan(BY_THE_WALL[0] - 4);
   });
 
   // The chase camera looks south over Webby from 16 m north of it: a tap below the middle of the screen is on the square

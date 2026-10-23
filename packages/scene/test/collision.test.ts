@@ -348,6 +348,38 @@ describe('WorldStage.ground', () => {
     stage.dispose();
   });
 
+  it("gives no land of a tile until its shapes are linked, so a mover on a bridge's deck stays put instead of falling", async () => {
+    // the wall's collision file comes only when the test lets it
+    const fake = stageServices(makeManifest(), { '0_0': landTile(0, 0, [placedAt(WALL, 10, 5, 10)]) });
+    let arrive!: () => void;
+    const held = new Promise<void>((resolve) => {
+      arrive = resolve;
+    });
+    const bytes = fake.store.bytes.getMockImplementation()!;
+    fake.store.bytes.mockImplementation(async (key: string) => {
+      if (key.startsWith('collision/')) await held;
+      return bytes(key);
+    });
+    const stage = await WorldStage.open('wdtest', fake.services, 1);
+    const ground = stage.ground();
+    stage.focus(web(10, 10));
+    await vi.waitFor(() => expect(stage.heightAt(web(10, 10))).toBe(5)); // the tile is in, its shapes are not
+
+    // the rules see no land there yet (a mover there stays where it is, as on land not loaded)...
+    expect(ground.terrainHeight(10, 10)).toBeNull();
+    expect(ground.landTri!(1, 1, new Float32Array(9))).toBe(false);
+    expect(ground.objectsNear(10, 10, 0)).toEqual([]);
+    // ...while flat ground, which places no shapes, is land at once
+    expect(ground.terrainHeight(TILE_METERS + 10, 10)).toBe(0);
+
+    arrive();
+    await stage.ready();
+    expect(ground.terrainHeight(10, 10)).toBe(5);
+    expect(ground.landTri!(1, 1, new Float32Array(9))).toBe(true);
+    expect(ground.objectsNear(10, 10, 0).map(positionOf)).toEqual([[10, 5, 10]]);
+    stage.dispose();
+  });
+
   it("frees a tile's shapes when the tile leaves", async () => {
     const fake = stageServices(makeManifest(), { '0_0': landTile(0, 0, [placedAt(WALL, 10, 5, 10)]) });
     const stage = await WorldStage.open('wdtest', fake.services, 0);

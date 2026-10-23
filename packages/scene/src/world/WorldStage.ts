@@ -123,16 +123,19 @@ export class WorldStage {
 
   /**
    * The world as the movement rules read it (`Ground`), in D3D x and z: the land of the tiles that are in (flat ground
-   * has height 0) and the collision shapes of their objects. The first call starts the shapes' downloads: at once for
-   * the tiles already in, and with each tile after, which `ready` then waits for too; they go with their tile. The
-   * viewer never asks, so it downloads none. The same object at every call; its members are closures.
+   * has height 0) and the collision shapes of their objects. A tile's land counts only once its objects' shapes are
+   * linked (`CollisionShapes.linked`): a mover on a bridge whose tile has just come in (a SETPOS onto it, or a mover
+   * coming into view there) stays where it is, as on land not loaded, instead of falling through the deck (Ruling 45).
+   * The first call starts the shapes' downloads: at once for the tiles already in, and with each tile after, which
+   * `ready` then waits for too; they go with their tile. The viewer never asks, so it downloads none. The same object at
+   * every call; its members are closures.
    */
   ground(): Ground {
     if (this.world === undefined) {
       const { streamer, shapes } = this;
       shapes.activate();
       this.world = {
-        ...tileLand(this.manifest, (tx, tz) => streamer.tileData(tx, tz)),
+        ...tileLand(this.manifest, (tx, tz) => (shapes.linked(tx, tz) ? streamer.tileData(tx, tz) : null)),
         objectsNear: (x, z, range) => shapes.objectsNear(x, z, range),
       };
     }

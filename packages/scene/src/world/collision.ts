@@ -241,6 +241,17 @@ export class CollisionShapes {
     return objects;
   }
 
+  /**
+   * Whether the objects of tile (x, z), D3D x and z over the tile's side, are linked (their shapes in, or failed), so
+   * that its land can be stood on together with them: Neuz loads a tile's land and objects together. True for a tile
+   * that placed nothing here (flat ground, a tile not in range), false for one whose shapes are on their way or not
+   * asked for yet (`activate`).
+   */
+  linked(x: number, z: number): boolean {
+    const record = this.tiles.get(this.indexOf(x, z));
+    return record === undefined || record.links !== null;
+  }
+
   /** The models' shapes held: downloaded, or on their way. */
   shapeCount(): number {
     return this.shapes.size;

@@ -9,7 +9,7 @@
 import { toWebPosition } from '@flyffweb/formats';
 import type { Vec3 } from '@flyffweb/formats';
 import type { BundleMessage, WorldMessage } from '@flyffweb/protocol';
-import { CHASE_PITCH, Joystick, KeyboardInput, WorldStage, chaseCamera, combineIntents, loadGltf, loopMotion } from '@flyffweb/scene';
+import { Joystick, KeyboardInput, WorldStage, combineIntents, loadGltf, loopMotion } from '@flyffweb/scene';
 import type { Ground, LoopedMotion, SceneServices } from '@flyffweb/scene';
 import { Vector2 } from 'three';
 import { UNEXPECTED_PROBLEM } from '../lobby/errorText';
@@ -17,6 +17,8 @@ import type { WorldEntry } from '../lobby/LoginFlow';
 import { h } from '../lobby/views/dom';
 import type { OpenChannel } from '../net/PacketChannel';
 import { registerWorld } from '../testHooks';
+import { BackCamera } from './backCamera';
+import type { ChaseView } from './backCamera';
 import { TapToWalk } from './controls';
 import { GameDataMissingError } from './gameData';
 import type { GameData } from './gameData';
@@ -29,7 +31,6 @@ import { lookOf } from './render/looks';
 import { MoveMark } from './render/moveMark';
 import { loadMoverModel } from './render/moverModels';
 import { nameTagOf } from './render/nameTags';
-import { cameraBound } from './sim/camera';
 import { HAttr } from './sim/collision';
 import { FixedStepper, STEPS_PER_SECOND } from './sim/stepper';
 import { WorldSession } from './WorldSession';
@@ -97,6 +98,8 @@ export class WorldScreen {
   private mark: MoveMark | undefined;
   /** The own character's driving: the controls each rules step, the moves sent, the stop. */
   private ownMover: OwnMover | undefined;
+  /** The chase camera behind the own mover, which follows it once a rules step. */
+  private readonly backCamera = new BackCamera();
   private readonly stepper = new FixedStepper();
   private paused = false;
   private lastTime = 0;
@@ -140,6 +143,7 @@ export class WorldScreen {
       ready: () => this.shown,
       movers: () => [...(this.world?.movers.values() ?? [])].map((m) => ({ objectId: m.objectId, name: m.name, pos: [...m.act.body.pos] })),
       stats: () => ({ ...this.session.stats, errors: this.page?.overlay.snapshot().errors ?? [] }),
+      camera: () => toWebPosition(this.backCamera.view?.position ?? [0, 0, 0]),
       pause: () => {
         this.paused = true;
         this.views?.freeze();
@@ -305,19 +309,15 @@ export class WorldScreen {
       const views = this.views!;
       this.syncViews();
       const steps = this.paused ? 0 : this.stepper.advance(dt);
-      for (let i = 0; i < steps; i++) this.step(world, views);
+      for (let i = 0; i < steps; i++) this.step(world, stage, views);
       views.update(world.movers, steps / STEPS_PER_SECOND);
       // the mark goes once the walk to its point is over: arrived, or ended by a key, a stop or the server
       this.mark!.follow(world.self()?.dest?.pos ?? null);
 
-      // the back camera behind the own mover: heading = pi - angle in radians (global constraints), kept out of the
-      // land and the objects by CWorld::CheckBound (cameraBound), which works in D3D: the mirror (web z is -z) both ways
-      const at = this.ownAt();
-      stage.focus(at);
-      const heading = Math.PI - ((world.self()?.act.body.angle ?? 0) * Math.PI) / 180;
-      const camera = chaseCamera(at, heading, CHASE_PITCH);
-      const eye = cameraBound(toWebPosition(camera.target), toWebPosition(camera.position), stage.ground());
-      stage.setCamera(toWebPosition(eye), camera.target);
+      // the map around the own mover, and the chase camera of the last rules step (of now, before the first)
+      stage.focus(this.ownAt());
+      const view = this.backCamera.view ?? this.follow(world, stage);
+      stage.setCamera(view.position, view.target);
       this.tags!.update(stage.camera, renderer.getSize(drawingSize).y, (objectId) => views.placeOf(objectId));
 
       const { tiles, models } = stage.counts();
@@ -334,15 +334,25 @@ export class WorldScreen {
 
   /**
    * One rules step: a tap, then the keys and the joystick, to the own mover (`OwnMover.control`, in `ControlGround`'s
-   * order); then every mover's step (the own one's included), the PLAYERCORR it may have led to, and the views'.
+   * order); then every mover's step (the own one's included), the PLAYERCORR it may have led to, the views', and the
+   * chase camera's (`CWorld::Process` processes the camera at each `FrameMove`, `World.cpp:924-935`).
    */
-  private step(world: WorldState, views: MoverViews): void {
+  private step(world: WorldState, stage: WorldStage, views: MoverViews): void {
     const own = world.self();
     const tap = this.tap!.take();
     if (own !== undefined) this.ownMover!.control(own, combineIntents(this.keyboard!.intent(), this.joystick!.intent()), tap);
     world.step();
     this.ownMover!.corrected(own);
     views.step(world.movers);
+    this.follow(world, stage);
+  }
+
+  /**
+   * The chase camera behind the own mover (or where the player entered, while it is not in view), kept out of the
+   * stage's land and objects and eased back out after a hit (`BackCamera`).
+   */
+  private follow(world: WorldState, stage: WorldStage): ChaseView {
+    return this.backCamera.follow(this.ownAt(), world.self()?.act.body.angle ?? 0, stage.ground());
   }
 
   /** The D3D point a tap at (`ndcX`, `ndcY`) sends the own mover to (`pickOnStage`), from the camera as last drawn. */

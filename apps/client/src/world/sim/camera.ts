@@ -16,19 +16,33 @@ export const CAMERA_LINK_RANGE = 5;
 /** `CheckBound` (`World3D.cpp:1697`, `__FIX_PICKING`): the camera keeps this far over the terrain. */
 const CAMERA_OVER_TERRAIN = f32(0.6);
 
+/** What `CWorld::CheckBound` gives: whether the camera was pulled in (`bCrash`), to where (`vOut`), and `fLength`. */
+export interface Bound {
+  crash: boolean;
+  /** The nearer of the land's and the objects' finds; where the camera would be when nothing is in the way. */
+  out: Vec3;
+  /** The distance from the look-at point to `out`. */
+  length: number;
+}
+
+/** `checkBound`'s position alone. */
+export function cameraBound(target: Vec3, camera: Vec3, ground: Ground): Vec3 {
+  return checkBound(target, camera, ground).out;
+}
+
 /**
- * `CWorld::CheckBound( &m_vPos, &m_vLookAt, ... )` (`World3D.cpp:1658-1777`): where the chase camera goes so that it
- * stays out of the terrain and the objects between it and `target` (`m_vLookAt`, which `CBackCamera::Process` puts
- * 0.4 over the mover, `Camera.cpp:388`): `camera` itself when nothing is in the way, else the nearer of the two finds.
- * Its distance from `target` is `CheckBound`'s `fLength` either way. The camera's easing back after a hit
- * (`m_bStart`, `m_fLength2`, `Camera.cpp:398-423`) is the camera's.
+ * `CWorld::CheckBound( &m_vPos, &m_vLookAt, &m_vOutPos, &fLength )` (`World3D.cpp:1658-1777`): where the chase camera
+ * goes so that it stays out of the terrain and the objects between it and `target` (`m_vLookAt`, which
+ * `CBackCamera::Process` puts 0.4 over the mover, `Camera.cpp:388`): `camera` itself when nothing is in the way, else
+ * the nearer of the two finds, and its distance from `target` (`fLength`, the whole distance when nothing is in the
+ * way). The camera's easing back after a hit (`m_bStart`, `m_fLength2`, `Camera.cpp:393-440`) is `BackCamera`'s.
  *
  * The terrain: from 1 out toward the camera, a point every 0.1 for 10 times the distance (so up to 1 past the camera)
  * is tested against the terrain's height + 0.6 (`GetLandHeight`, 0 where no land is loaded). The water test (keeping
  * the camera out of water the mover is above, :1674-1721) is left out: `Ground` has no water. The objects:
  * `IntersectObjLine2` below.
  */
-export function cameraBound(target: Vec3, camera: Vec3, ground: Ground): Vec3 {
+export function checkBound(target: Vec3, camera: Vec3, ground: Ground): Bound {
   const dest = toFloats(target); // vDest
   const eye = toFloats(camera); // vPos
   const towards = sub(eye, dest);
@@ -45,12 +59,14 @@ export function cameraBound(target: Vec3, camera: Vec3, ground: Ground): Vec3 {
     }
   }
   const object = intersectObjLine2(dest, eye, ground);
-  if (land !== null && object !== null) {
-    const toLand = sub(land, dest);
-    const toObject = sub(object, dest);
-    return dot(toLand, toLand) < dot(toObject, toObject) ? land : object;
+  const toLand = land === null ? null : sub(land, dest); // vDist1
+  const toObject = object === null ? null : sub(object, dest); // vDist2
+  if (toLand !== null && toObject !== null && !(dot(toLand, toLand) < dot(toObject, toObject))) {
+    return { crash: true, out: object!, length: vecLength(toObject) };
   }
-  return land ?? object ?? eye;
+  if (toLand !== null) return { crash: true, out: land!, length: vecLength(toLand) };
+  if (toObject !== null) return { crash: true, out: object!, length: vecLength(toObject) };
+  return { crash: false, out: eye, length };
 }
 
 /**

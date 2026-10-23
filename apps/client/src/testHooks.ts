@@ -24,6 +24,8 @@ export interface ClientHooks {
   ready(): Promise<void>;
   movers(): ClientMover[];
   stats(): ClientStats;
+  /** Where the chase camera looks from, in the client's (D3D) coordinates, as last drawn ([0, 0, 0] before). */
+  camera(): Vec3;
   /** Stops the rules and holds every model at the first frame of its motion, for pictures. Drawing goes on. */
   pause(): void;
 }
@@ -52,6 +54,7 @@ export function createClientHooks(): ClientHooks {
     ready: async () => current().ready(),
     movers: () => current().movers(),
     stats: () => current().stats(),
+    camera: () => current().camera(),
     pause: () => current().pause(),
   };
 }
