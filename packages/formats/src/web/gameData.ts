@@ -43,6 +43,17 @@ export interface WebItemModel {
   id: number;
   /** `ItemProp::dwParts`: the body slot the item takes, a `PARTS_*` number (-1 for an item that is worn nowhere). */
   part: number;
+  /**
+   * `ItemProp::dwExclusive`: the slot (`PARTS_*`) whose bare default model this item takes off (CMover::UpdateParts,
+   * MoverEquip.cpp:300-333), -1 for none. PARTS_LOWER_BODY for every suit and fashion body, so no bare legs show under it.
+   */
+  exclusive: number;
+  /**
+   * `ItemProp::dwBasePartsIgnore`: the base slot this item hides while worn (CMover::Render, MoverRender.cpp:400-505),
+   * -1 for none. PARTS_HAIR for a helmet or hat that covers the hair; PARTS_HEAD (which also hides the hair) for a hat
+   * that covers the head.
+   */
+  baseIgnore: number;
   /** Logical key of the part model a man wears (`models/part_<...>.glb`, CModelMng::MakePartsName); null if none. */
   male: string | null;
   /** Logical key of the part model a woman wears; the same as `male` when the entry has one name for both. */

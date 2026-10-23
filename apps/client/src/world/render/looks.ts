@@ -17,16 +17,16 @@ export interface MoverLook {
   parts: string[];
   /** The motion file the mover plays for an `MTI_*` motion: its standing motion for one it lacks, null if it has none. */
   motion: (motionId: number) => string | null;
-  /** `m_dwHairColor` as ADD_OBJ sends it (0xAARRGGBB), for the scene to tint the hair part with; null where the mover has no hair part. */
+  /** `m_dwHairColor` as ADD_OBJ sends it (0xAARRGGBB), for the scene to tint the hair part with; null if the mover has none. */
   hairColor: number | null;
 }
 
-/** `MI_MALE` and `MI_FEMALE` (`Resource/defineObj.h:954-955`): the bodies of players and human NPCs, which have no model of their own. */
+/** `MI_MALE` and `MI_FEMALE` (`Resource/defineObj.h:954-955`): the bodies of players and human NPCs, with no model of their own. */
 const MI_MALE = 11;
 const MI_FEMALE = 12;
-/** `SEX_MALE` (`Resource/define.h:74`). `PARTSMESH_*( nSex )` test `nSex == SEX_MALE` only, so any other value is a woman. */
+/** `SEX_MALE` (`Resource/define.h:74`). `PARTSMESH_*( nSex )` test `nSex == SEX_MALE` only: any other value is a woman. */
 const SEX_MALE = 0;
-/** `CItemElem::expired` (`_Common/Item.h:119`), a bit of an equipped part's flag: the item shows nothing (`MoverEquip.cpp:322,346`). */
+/** `CItemElem::expired` (`_Common/Item.h:119`), a bit of a worn part's flag: the item shows nothing (`MoverEquip.cpp:322,346`). */
 const ITEM_EXPIRED = 0x01;
 
 /** `PARTS_*` (`Resource/defineNeuz.h:24-61`): the slots of a body that the rules below use. */
@@ -35,7 +35,7 @@ const Parts = {
   BOOTS: 29, CLOAK2: 30,
 } as const;
 
-/** What a slot shows with no item in it: `PARTSMESH_UPPER`, `_LOWER`, `_HAND` and `_FOOT` (`MoverEquip.cpp:75-78`, used at :426-445). */
+/** What a slot shows with no item: `PARTSMESH_UPPER`, `_LOWER`, `_HAND` and `_FOOT` (`MoverEquip.cpp:75-78`, used at :426-445). */
 const BARE_BODY = [
   [Parts.UPPER_BODY, 'upper'], [Parts.LOWER_BODY, 'lower'], [Parts.HAND, 'hand'], [Parts.FOOT, 'foot'],
 ] as const;
@@ -67,28 +67,89 @@ interface Dressing {
   worn: readonly WornPart[];
 }
 
+/** NULL_ID, written `=` in `propItem.txt`: no `dwExclusive` (`!= NULL_ID`, `MoverEquip.cpp:328`) or `dwBasePartsIgnore` (`!= -1`). */
+const NO_PART = -1;
+
+/** An item worn in a slot, with the columns of its row that `UpdateParts` and `CMover::Render` read. */
+interface Equipped {
+  /** The part model for the wearer's sex; null if the catalog has none. */
+  model: string | null;
+  exclusive: number;
+  baseIgnore: number;
+  expired: boolean;
+}
+
 /**
- * `UpdateParts` with `bIfParts` on (a player's `MoverProp` has it): the hair and head meshes (`:293-298`, numbered from
- * 1), the worn item in each other slot (`:334-366`; an expired one counts as none), and in an empty upper body, lower
- * body, hand or foot slot the bare body part (`:426-445`). An item that takes the lower body off (`dwExclusive`, `:300-333`)
- * leaves its default out: every upper-body and fashion-body item of `propItem.txt` has it, and no other item that is
- * drawn does. Items with no model for the sex, or not in the catalog, are left out like a slot without an item.
+ * What is worn, by slot (`m_aEquipInfo[i]`): the entries of `worn` whose item the catalog knows, but not the head and hair
+ * slots (`UpdateParts` skips them, `MoverEquip.cpp:306,338`). An `items.json` written before the converter kept
+ * `exclusive` and `baseIgnore` lacks them; that reads as NULL_ID, what a `=` cell in the table means.
+ */
+function equippedBy(worn: readonly WornPart[], gender: Gender, data: GameData): Map<number, Equipped> {
+  const equipped = new Map<number, Equipped>();
+  for (const w of worn) {
+    const item = data.items.get(w.itemId);
+    if (item === undefined || w.part === Parts.HEAD || w.part === Parts.HAIR) continue;
+    equipped.set(w.part, {
+      model: item[gender],
+      exclusive: item.exclusive ?? NO_PART,
+      baseIgnore: item.baseIgnore ?? NO_PART,
+      expired: (w.flag & ITEM_EXPIRED) !== 0,
+    });
+  }
+  return equipped;
+}
+
+/**
+ * The slots `CMover::Render` hides for the worn cap and fashion hat (`MoverRender.cpp:394-511`, the same for the own
+ * character from the inventory and for others from `m_aEquipInfo`). The cap hides the slot its `dwBasePartsIgnore` names,
+ * expired or not (no flag is tested for it, `:403,:462`). A fashion hat that is not expired (`:413,:471`) decides next:
+ * with a `dwBasePartsIgnore` of its own it hides that slot as well, and PARTS_HEAD the hair too (`:416-421`); with none,
+ * what the cap hid shows again (`:423-427`).
+ */
+function hiddenSlots(equipped: ReadonlyMap<number, Equipped>): Set<number> {
+  const hidden = new Set<number>();
+  const cap = equipped.get(Parts.CAP);
+  if (cap !== undefined && cap.baseIgnore !== NO_PART) hidden.add(cap.baseIgnore);
+  const hat = equipped.get(Parts.HAT);
+  if (hat !== undefined && !hat.expired) {
+    if (hat.baseIgnore !== NO_PART) {
+      if (hat.baseIgnore === Parts.HEAD) hidden.add(Parts.HAIR);
+      hidden.add(hat.baseIgnore);
+    } else if (cap !== undefined) {
+      hidden.delete(cap.baseIgnore);
+    }
+  }
+  return hidden;
+}
+
+/**
+ * `UpdateParts` with `bIfParts` on (a player's `MoverProp` has it) and `OverCoatItemRenderCheck`, then the parts hidden at
+ * render time:
+ * - the hair and head meshes, numbered from 1 (`MoverEquip.cpp:293-298`);
+ * - the model of each worn item that is not expired, in its slot (`:334-366`);
+ * - in an empty upper body, lower body, hand or foot slot the bare body part (`:426-445`), unless a worn item names the
+ *   slot in `dwExclusive` (`:300-333`): its bare part is not loaded. An item worn in that slot still shows;
+ * - a worn fashion slot (hat, cloth, glove, boots, second cloak) takes the part of the armour slot it covers away
+ *   (`Mover.cpp:9122-9150`);
+ * - the slots `hiddenSlots` names are dropped.
+ * An item the catalog lacks, or has no model for the sex, is as no item: the bare part shows.
  */
 function humanLook({ gender, hairMesh, headMesh, hairColor, worn }: Dressing, data: GameData): MoverLook {
+  const equipped = equippedBy(worn, gender, data);
+  const taken = new Set<number>(); // abExclusiveParts
   const slots = new Map<number, string>();
   slots.set(Parts.HEAD, partKey(`part_${gender}head${twoDigits(headMesh + 1)}`));
   slots.set(Parts.HAIR, partKey(`part_${gender}hair${twoDigits(hairMesh + 1)}`));
-  for (const w of worn) {
-    if (w.part === Parts.HEAD || w.part === Parts.HAIR || (w.flag & ITEM_EXPIRED) !== 0) continue; // :306,:338,:346
-    const key = data.items.get(w.itemId)?.[gender];
-    if (key) slots.set(w.part, key);
+  for (const [slot, item] of equipped) {
+    if (item.expired) continue; // :322,:346: an expired item is none
+    if (item.exclusive !== NO_PART) taken.add(item.exclusive);
+    if (item.model) slots.set(slot, item.model);
   }
-  const coversLower = slots.has(Parts.UPPER_BODY) || slots.has(Parts.CLOTH);
   for (const [slot, name] of BARE_BODY) {
-    if (slot === Parts.LOWER_BODY && coversLower) continue;
-    if (!slots.has(slot)) slots.set(slot, partKey(`part_${gender}${name}`));
+    if (!taken.has(slot) && !slots.has(slot)) slots.set(slot, partKey(`part_${gender}${name}`));
   }
   for (const [armour, overcoat] of OVERCOATS) if (slots.has(overcoat)) slots.delete(armour);
+  for (const slot of hiddenSlots(equipped)) slots.delete(slot);
 
   const parts = [...slots].sort(([a], [b]) => a - b).map(([, key]) => key);
   // the body mover's motions are the gender's; the viewer's standing motion stands in where the game data lacks them
@@ -101,7 +162,7 @@ function humanLook({ gender, hairMesh, headMesh, hairColor, worn }: Dressing, da
   };
 }
 
-/** The own character's item ids as `m_aEquipInfo`: each in the slot its item takes (`ItemProp::dwParts`); ids the catalog lacks are skipped. */
+/** The own character's item ids as `m_aEquipInfo`: each in the slot its item takes (`dwParts`); ids the catalog lacks are skipped. */
 function ownWorn(itemIds: readonly number[], data: GameData): WornPart[] {
   return itemIds.flatMap((itemId) => {
     const item = data.items.get(itemId);

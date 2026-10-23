@@ -53,6 +53,7 @@ const DEFINES = script(
   '#define JOB_VAGRANT 0',
   '#define TRUE 1',
   '#define SEX_MALE 0',
+  '#define PARTS_HAIR 1',
   '#define PARTS_UPPER_BODY 2',
   '#define PARTS_LOWER_BODY 3',
   '#define _NONE 0',
@@ -77,15 +78,17 @@ const moverRow = (id: string, name: string, ai: string, speed: string): string =
   return cells.join('\t');
 };
 
-/** The columns of a shipped propItem.txt row (II_ARM_M_VAG_SUIT01): id, name and body slot change. */
+/** The columns of a shipped propItem.txt row (II_ARM_M_VAG_SUIT01): id, name, body slot and the parts it hides change. */
 const ITEM_CELLS = tabs(
   '6 II_ARM_M_VAG_SUIT01 IDS_PROPITEM_TXT_000790 1 1 IK1_ARMOR IK2_ARMOR IK3_SUIT JOB_VAGRANT TRUE = SEX_MALE 12 9000000 100 180 = = PARTS_UPPER_BODY = 1 PARTS_LOWER_BODY = 1 2 1 1 = = = 8 10 _NONE 0 0 0 = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = = 0 0 0 0 0 0 = = = = = = = = = = = = 1 = = = """itm_mVag01Upper.dds""" 0 """""" IDS_PROPITEM_TXT_000791',
 ).split('\t');
-const itemRow = (id: string, name: string, parts: string): string => {
+const itemRow = (id: string, name: string, parts: string, exclusive = 'PARTS_LOWER_BODY', baseIgnore = '='): string => {
   const cells = [...ITEM_CELLS];
   cells[1] = id;
   cells[2] = name;
   cells[18] = parts;
+  cells[21] = exclusive; // dwExclusive
+  cells[22] = baseIgnore; // dwBasePartsIgnore
   return cells.join('\t');
 };
 
@@ -151,7 +154,7 @@ const PACKED: Record<string, string> = {
   'propItem.txt': script(
     '//ver6\t//dwID\tszName',
     itemRow('II_ARM_M_VAG_SUIT01', 'IDS_PROPITEM_TXT_000790', 'PARTS_UPPER_BODY'),
-    itemRow('503', 'IDS_PROPITEM_TXT_000792', 'PARTS_LOWER_BODY'),
+    itemRow('503', 'IDS_PROPITEM_TXT_000792', 'PARTS_LOWER_BODY', '=', 'PARTS_HAIR'),
     // 504 has a model entry and no row here
     itemRow('505', 'IDS_PROPITEM_TXT_000793', '='),
   ),
@@ -320,8 +323,14 @@ describe('the game-data stage', () => {
 
     // items: only the model entries with a part; 504 has no ItemProp, 505 has no part
     expect(await catalog<WebItemModel[]>(run, GAME_DATA_KEYS.items)).toEqual([
-      { id: 502, part: 2, male: 'models/part_mvag01upper.glb', female: 'models/part_fvag01upper.glb' },
-      { id: 503, part: 3, male: 'models/part_mvag02upper.glb', female: 'models/part_mvag02upper.glb' },
+      {
+        id: 502, part: 2, exclusive: 3, baseIgnore: -1,
+        male: 'models/part_mvag01upper.glb', female: 'models/part_fvag01upper.glb',
+      },
+      {
+        id: 503, part: 3, exclusive: -1, baseIgnore: 1,
+        male: 'models/part_mvag02upper.glb', female: 'models/part_mvag02upper.glb',
+      },
     ]);
 
     // NPCs: file order over the three files; MAFL_MIKYEL of the second file replaces MaFl_Mikyel (same lower-case key)
@@ -365,7 +374,9 @@ describe('the game-data stage', () => {
     await client();
     const run = await runData({ converted: CONVERTED.filter((key) => key !== 'models/part_fvag01upper.glb') });
     const items = await catalog<WebItemModel[]>(run, GAME_DATA_KEYS.items);
-    expect(items[0]).toEqual({ id: 502, part: 2, male: 'models/part_mvag01upper.glb', female: null });
+    expect(items[0]).toEqual({
+      id: 502, part: 2, exclusive: 3, baseIgnore: -1, male: 'models/part_mvag01upper.glb', female: null,
+    });
     const warning = run.report.warnings.find((w) => w.message.includes('part_fvag01upper'));
     expect(warning).toBeDefined();
     expect(warning!.kind).toBe('data');

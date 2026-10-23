@@ -6,10 +6,16 @@ import { lookOf } from '../src/world/render/looks';
 import { MI_FEMALE, MI_MALE, addedNpc, addedPlayer, gameDataOf, moverFrom } from './helpers/movers';
 
 /** `PARTS_*` (`Resource/defineNeuz.h:24-61`). */
-const PARTS = { HEAD: 0, HAIR: 1, UPPER: 2, HAND: 4, FOOT: 5, CAP: 6, HAT: 26, CLOTH: 27 };
+const PARTS = { HEAD: 0, HAIR: 1, UPPER: 2, LOWER: 3, HAND: 4, FOOT: 5, CAP: 6, HAT: 26, CLOTH: 27 };
+/** NULL_ID, `=` in propItem.txt: no `dwExclusive` or `dwBasePartsIgnore`. */
+const NONE = -1;
 
-const item = (id: number, part: number, male: string | null, female: string | null = male): WebItemModel => ({
-  id, part, male, female,
+/** An item of items.json; `hides` is what propItem.txt says in `dwExclusive` and `dwBasePartsIgnore`. */
+const item = (
+  id: number, part: number, male: string | null, female: string | null = male,
+  hides: { exclusive?: number; baseIgnore?: number } = {},
+): WebItemModel => ({
+  id, part, exclusive: hides.exclusive ?? NONE, baseIgnore: hides.baseIgnore ?? NONE, male, female,
 });
 const worn = (part: number, itemId: number, flag = 0): WornPart => ({ part, itemId, flag });
 
@@ -32,15 +38,24 @@ const data = gameDataOf({
     [23, mover(23, 'Lost', null, null)],
   ]),
   items: new Map([
-    // the vagrant clothes a new character starts in (jobItem.inc: II_ARM_M_VAG_SUIT01, GAUNTLET01, BOOTS01)
-    [502, item(502, PARTS.UPPER, 'models/part_mvag01upper.glb')],
+    // the vagrant clothes a new character starts in (jobItem.inc: II_ARM_M_VAG_SUIT01, GAUNTLET01, BOOTS01); like
+    // every suit of propItem.txt the upper takes the bare lower body off
+    [502, item(502, PARTS.UPPER, 'models/part_mvag01upper.glb', undefined, { exclusive: PARTS.LOWER })],
     [506, item(506, PARTS.HAND, 'models/part_mvag01hand.glb')],
     [510, item(510, PARTS.FOOT, 'models/part_mvag01foot.glb')],
-    [700, item(700, PARTS.UPPER, 'models/part_mmer01upper.glb', 'models/part_fmer01upper.glb')],
-    [710, item(710, PARTS.CAP, 'models/part_mcap01cap.glb')],
-    [730, item(730, PARTS.HAT, 'models/part_mhat01hat.glb')],
-    [720, item(720, PARTS.CLOTH, 'models/part_mfas01cloth.glb')],
+    [700, item(700, PARTS.UPPER, 'models/part_mmer01upper.glb', 'models/part_fmer01upper.glb', { exclusive: PARTS.LOWER })],
+    [710, item(710, PARTS.CAP, 'models/part_mcap01cap.glb', undefined, { baseIgnore: PARTS.HAIR })], // a helmet
+    [711, item(711, PARTS.CAP, 'models/part_mcap02cap.glb')], // a circlet: the hair shows
+    [730, item(730, PARTS.HAT, 'models/part_mhat01hat.glb', undefined, { baseIgnore: PARTS.HAIR })],
+    [731, item(731, PARTS.HAT, 'models/part_mhat02hat.glb')],
+    [732, item(732, PARTS.HAT, 'models/part_mhat03hat.glb', undefined, { baseIgnore: PARTS.HEAD })], // covers the head too
+    [720, item(720, PARTS.CLOTH, 'models/part_mfas01cloth.glb', undefined, { exclusive: PARTS.LOWER })],
     [740, item(740, PARTS.UPPER, null)], // listed, but no model for either sex
+    [750, item(750, PARTS.UPPER, 'models/part_mglv01upper.glb', undefined, { exclusive: PARTS.HAND })], // a long sleeve: no bare hand
+    [760, item(760, PARTS.UPPER, 'models/part_mshr01upper.glb')], // a short top: the bare lower body stays
+    // items.json from before the converter kept the two fields
+    [770, { id: 770, part: PARTS.UPPER, male: 'models/part_mold01upper.glb', female: null } as WebItemModel],
+    [771, { id: 771, part: PARTS.CAP, male: 'models/part_mold02cap.glb', female: null } as WebItemModel],
   ]),
 });
 
@@ -104,15 +119,93 @@ describe('lookOf: players', () => {
 
   it('an overcoat hides the armour it covers', () => {
     // OverCoatItemRenderCheck: PARTS_HAT over PARTS_CAP, PARTS_CLOTH over PARTS_UPPER_BODY
-    const look = lookOf(player([worn(PARTS.UPPER, 700), worn(PARTS.CAP, 710), worn(PARTS.HAT, 730), worn(PARTS.CLOTH, 720)]), data);
+    const look = lookOf(player([worn(PARTS.UPPER, 700), worn(PARTS.CAP, 711), worn(PARTS.HAT, 731), worn(PARTS.CLOTH, 720)]), data);
     expect(look?.parts).toEqual([
       'models/part_malehead01.glb', 'models/part_malehair01.glb', 'models/part_malehand.glb', 'models/part_malefoot.glb',
-      'models/part_mhat01hat.glb', 'models/part_mfas01cloth.glb',
+      'models/part_mhat02hat.glb', 'models/part_mfas01cloth.glb',
     ]);
     // an expired overcoat is not drawn, and the armour shows again
-    const expired = lookOf(player([worn(PARTS.CAP, 710), worn(PARTS.HAT, 730, 0x01)]), data);
-    expect(expired?.parts).toContain('models/part_mcap01cap.glb');
-    expect(expired?.parts).not.toContain('models/part_mhat01hat.glb');
+    const expired = lookOf(player([worn(PARTS.CAP, 711), worn(PARTS.HAT, 731, 0x01)]), data);
+    expect(expired?.parts).toContain('models/part_mcap02cap.glb');
+    expect(expired?.parts).not.toContain('models/part_mhat02hat.glb');
+  });
+
+  describe('the parts a worn item hides', () => {
+    const HAIR = 'models/part_malehair01.glb';
+    const HEAD = 'models/part_malehead01.glb';
+    const partsOf = (...items: WornPart[]): string[] => lookOf(player(items), data)?.parts ?? [];
+
+    it('a helmet that hides the hair gives no hair part', () => {
+      // dwBasePartsIgnore = PARTS_HAIR: MoverRender.cpp:400-406 hides the hair element
+      const parts = partsOf(worn(PARTS.CAP, 710));
+      expect(parts).not.toContain(HAIR);
+      expect(parts).toContain(HEAD);
+      expect(parts).toContain('models/part_mcap01cap.glb');
+    });
+
+    it('a cap that does not hide the hair keeps it', () => {
+      expect(partsOf(worn(PARTS.CAP, 711))).toContain(HAIR);
+    });
+
+    it('a fashion hat hides the hair when its row says so, and keeps it when not', () => {
+      expect(partsOf(worn(PARTS.HAT, 730))).not.toContain(HAIR);
+      expect(partsOf(worn(PARTS.HAT, 731))).toContain(HAIR);
+    });
+
+    it('a hat that covers the head hides the head and the hair', () => {
+      // :418-421: dwBasePartsIgnore == PARTS_HEAD hides PARTS_HAIR as well
+      const parts = partsOf(worn(PARTS.HAT, 732));
+      expect(parts).not.toContain(HEAD);
+      expect(parts).not.toContain(HAIR);
+      expect(parts).toContain('models/part_mhat03hat.glb');
+    });
+
+    it('a fashion hat decides over the cap under it: it shows the hair a helmet hid, and hides what a circlet showed', () => {
+      expect(partsOf(worn(PARTS.CAP, 710), worn(PARTS.HAT, 731))).toContain(HAIR); // :423-427 un-hides it
+      expect(partsOf(worn(PARTS.CAP, 710), worn(PARTS.HAT, 730))).not.toContain(HAIR);
+      expect(partsOf(worn(PARTS.CAP, 711), worn(PARTS.HAT, 730))).not.toContain(HAIR);
+      // an expired hat is not looked at (:413), so the cap decides
+      expect(partsOf(worn(PARTS.CAP, 710), worn(PARTS.HAT, 731, 0x01))).not.toContain(HAIR);
+    });
+
+    it('an expired cap still hides the hair, as Neuz checks no flag there', () => {
+      // the cap is not drawn (UpdateParts skips it), but MoverRender.cpp:403,462 hides what it ignores all the same
+      const parts = partsOf(worn(PARTS.CAP, 710, 0x01));
+      expect(parts).not.toContain(HAIR);
+      expect(parts).not.toContain('models/part_mcap01cap.glb');
+    });
+
+    it('an exclusive item takes the bare part it names off', () => {
+      // 750 names PARTS_HAND: no bare hand, but the bare lower body and foot stay (it names no PARTS_LOWER_BODY)
+      expect(partsOf(worn(PARTS.UPPER, 750))).toEqual([
+        HEAD, HAIR, 'models/part_mglv01upper.glb', 'models/part_malelower.glb', 'models/part_malefoot.glb',
+      ]);
+      // the slot it names still shows an item worn in it (UpdateParts loads the item before it asks abExclusiveParts)
+      expect(partsOf(worn(PARTS.UPPER, 750), worn(PARTS.HAND, 506))).toContain('models/part_mvag01hand.glb');
+    });
+
+    it('the lower body goes only under an item whose row names it', () => {
+      expect(partsOf(worn(PARTS.UPPER, 760))).toContain('models/part_malelower.glb');
+      expect(partsOf(worn(PARTS.UPPER, 700))).not.toContain('models/part_malelower.glb');
+      expect(partsOf(worn(PARTS.CLOTH, 720))).not.toContain('models/part_malelower.glb');
+    });
+
+    it('an expired item takes nothing off', () => {
+      expect(partsOf(worn(PARTS.UPPER, 700, 0x01))).toContain('models/part_malelower.glb');
+    });
+
+    it('an items.json without the two fields hides nothing, as an "=" cell does', () => {
+      const parts = partsOf(worn(PARTS.UPPER, 770), worn(PARTS.CAP, 771));
+      expect(parts).toContain('models/part_malelower.glb');
+      expect(parts).toContain(HAIR);
+      expect(parts).toContain('models/part_mold01upper.glb');
+    });
+
+    it('hides the hair of the own character too, from the character list', () => {
+      const own = moverFrom(addedPlayer(7, { self: true }), data);
+      expect(lookOf(own, data, [710])?.parts).not.toContain(HAIR);
+      expect(lookOf(own, data, [711])?.parts).toContain(HAIR);
+    });
   });
 
   it("the player's own character is dressed from the character list's item ids, each in the slot its item says", () => {

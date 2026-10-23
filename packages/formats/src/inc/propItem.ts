@@ -4,8 +4,9 @@
 //
 //   version  dwID  szName  dwNum dwPackMax ... dwParts ...  (the columns are listed in ITEM_COLUMNS)  icon  quest ...
 //
-// Of the 124 columns this keeps the id (`II_*`), the name and `dwParts`, the body slot a worn item takes
-// (`PARTS_*` of defineNeuz.h: PARTS_UPPER_BODY, PARTS_RWEAPON ...); the rest are read and dropped. Build flags of
+// Of the 124 columns this keeps the id (`II_*`), the name, `dwParts`, the body slot a worn item takes
+// (`PARTS_*` of defineNeuz.h: PARTS_UPPER_BODY, PARTS_RWEAPON ...), and the two columns that say which other parts
+// a worn item hides, `dwExclusive` and `dwBasePartsIgnore`; the rest are read and dropped. Build flags of
 // the client: `__PROP_0827` (three dest params), `__CLIENT`, `__VER` 15, all on in Neuz/VersionCommon.h.
 
 import { ScriptReader } from '../script/cscript';
@@ -23,6 +24,17 @@ export interface ItemProp {
    * PARTS_RWEAPON 10 ... defineNeuz.h:24-41). -1 (NULL_ID, written `=`) for an item that is not worn.
    */
   parts: number;
+  /**
+   * `dwExclusive`: the body slot whose bare default this item takes off when worn (`CMover::UpdateParts`,
+   * `MoverEquip.cpp:300-333`), a `PARTS_*` number: PARTS_LOWER_BODY for a suit or a fashion body, PARTS_LWEAPON for a
+   * two-hander. -1 (NULL_ID, written `=`) for none.
+   */
+  exclusive: number;
+  /**
+   * `dwBasePartsIgnore`: the base part this item hides while it is worn (`CMover::Render`, `MoverRender.cpp:400-505`):
+   * PARTS_HAIR for a helmet or a hat that covers the hair, PARTS_HEAD for one that covers the head too. -1 for none.
+   */
+  baseIgnore: number;
 }
 
 const READER = 'readPropItem';
@@ -101,6 +113,8 @@ export function readPropItem(
     let name = trimRight(r.token('szName').text);
 
     let parts = 0;
+    let exclusive = 0;
+    let baseIgnore = 0;
     let kind2 = 0;
     let referStat1 = 0;
     for (const [column, kind] of ITEM_COLUMNS) {
@@ -110,6 +124,8 @@ export function readPropItem(
       }
       const value = r.number(column);
       if (column === 'dwParts') parts = value;
+      else if (column === 'dwExclusive') exclusive = value;
+      else if (column === 'dwBasePartsIgnore') baseIgnore = value;
       else if (column === 'dwItemKind2') kind2 = value;
       else if (column === 'dwReferStat1') referStat1 = value;
     }
@@ -127,7 +143,7 @@ export function readPropItem(
         const from = Math.max(0, at - 1); // CString::Delete(nFind - 1, 2)
         name = name.slice(0, from) + name.slice(from + 2);
       }
-      items.push({ id, name, parts });
+      items.push({ id, name, parts, exclusive, baseIgnore });
     }
     version = r.numberOrEnd('the version');
   }

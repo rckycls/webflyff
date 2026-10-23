@@ -272,7 +272,14 @@ function buildItems(env: Env, read: Reading): WebItemModel[] {
           `so it shows nothing for ${sexes.join(' and ')}`,
       );
     }
-    items.push({ id: elem.id, part: prop.parts, male: keys.male, female: keys.female });
+    items.push({
+      id: elem.id,
+      part: prop.parts,
+      exclusive: prop.exclusive,
+      baseIgnore: prop.baseIgnore,
+      male: keys.male,
+      female: keys.female,
+    });
   }
   return items;
 }

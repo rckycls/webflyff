@@ -176,7 +176,11 @@ describeClient('the game-data stage on the real client', () => {
     const withPart = dyna.filter((e) => e.type === OT.ITEM && e.part !== '' && props.has(e.id));
     expect(items.map((i) => i.id)).toEqual(withPart.map((e) => e.id).sort((a, b) => a - b));
     expect(items.length).toBeGreaterThan(1000);
-    for (const item of items) expect(item.part).toBe(props.get(item.id)!.parts);
+    for (const item of items) {
+      expect(item.part).toBe(props.get(item.id)!.parts);
+      expect(item.exclusive).toBe(props.get(item.id)!.exclusive);
+      expect(item.baseIgnore).toBe(props.get(item.id)!.baseIgnore);
+    }
 
     // a part with a slash: the text before it for a man, after it for a woman
     const two = items.find((i) => i.id === twoSex.id)!;
@@ -191,6 +195,8 @@ describeClient('the game-data stage on the real client', () => {
     expect(suit).toEqual({
       id: 502,
       part: defines.get('PARTS_UPPER_BODY'),
+      exclusive: defines.get('PARTS_LOWER_BODY'),
+      baseIgnore: -1,
       male: 'models/part_mvag01upper.glb',
       female: 'models/part_mvag01upper.glb',
     });

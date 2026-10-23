@@ -114,11 +114,15 @@ describeClient('game data readers on the client packs', () => {
     expect(itemCol('dwID')).toBe(1);
     expect(itemCol('szName')).toBe(2);
     expect(itemCol('dwParts')).toBe(18);
+    expect(itemCol('dwExclusive')).toBe(21);
+    expect(itemCol('dwBasePartsIgnore')).toBe(22);
     const partsValues = new Set([...defines].filter(([name]) => name.startsWith('PARTS_')).map(([, value]) => value));
     rows.forEach((cells, i) => {
       const item = items[i];
       expect(item.id, cells[1]).toBe(defines.get(cells[1]));
       expect(item.parts, cells[1]).toBe(asNumber(cells[18]));
+      expect(item.exclusive, cells[1]).toBe(asNumber(cells[21]));
+      expect(item.baseIgnore, cells[1]).toBe(asNumber(cells[22]));
       // the name is the string-table text, trimmed, without the " @" of an ultimate weapon
       const named = resolve(cells[2]).trimEnd();
       expect(item.name === named || item.name === named.replace(/ @$/, ''), cells[1]).toBe(true);
@@ -127,11 +131,19 @@ describeClient('game data readers on the client packs', () => {
     });
 
     const suit = items.find((i) => i.id === defines.get('II_ARM_M_VAG_SUIT01'));
-    expect(suit).toEqual({ id: 502, name: 'Cotton Suit', parts: defines.get('PARTS_UPPER_BODY') });
+    expect(suit).toEqual({
+      id: 502,
+      name: 'Cotton Suit',
+      parts: defines.get('PARTS_UPPER_BODY'),
+      exclusive: defines.get('PARTS_LOWER_BODY'),
+      baseIgnore: -1,
+    });
     expect(items.find((i) => i.id === defines.get('II_WEA_SWO_SUHOUM'))).toEqual({
       id: 22368,
       name: 'Ultimate Guardian Sword',
       parts: defines.get('PARTS_RWEAPON'),
+      exclusive: -1,
+      baseIgnore: -1,
     });
     const worn = items.filter((i) => i.parts !== -1);
     const repeated = items.length - new Set(items.map((i) => i.id)).size;

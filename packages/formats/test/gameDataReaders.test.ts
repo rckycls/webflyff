@@ -276,8 +276,11 @@ describe('readPropItem', () => {
     ['JOB_MERCENARY', 1],
     ['TRUE', 1],
     ['SEX_MALE', 0],
+    ['PARTS_HEAD', 0],
+    ['PARTS_HAIR', 1],
     ['PARTS_UPPER_BODY', 2],
     ['PARTS_LOWER_BODY', 3],
+    ['PARTS_CAP', 6],
     ['PARTS_RWEAPON', 10],
     ['HD_ONE', 1],
     ['WT_MELEE_SWD', 1],
@@ -315,13 +318,23 @@ describe('readPropItem', () => {
   );
   const HEADER = script('//ver6\t//dwID\tszName', '//\t\t');
 
-  it('reads the id, the name (through the string table) and the body slot (dwParts) of each row', () => {
+  it('reads the id, the name (through the string table), the body slot (dwParts) and the parts it hides of each row', () => {
     const items = readPropItem(HEADER + script(DEFAULT, SUIT, SWORD), DEFINES, STRINGS, 'propItem.txt');
     expect(items).toEqual([
-      { id: 10, name: '', parts: -1 }, // "=" is NULL_ID: the item is worn nowhere
-      { id: 502, name: 'Cotton Suit', parts: 2 }, // PARTS_UPPER_BODY
-      { id: 22368, name: 'Ultimate Guardian Sword', parts: 10 }, // PARTS_RWEAPON; the " @" of an ultimate is dropped
+      { id: 10, name: '', parts: -1, exclusive: -1, baseIgnore: -1 }, // "=" is NULL_ID: worn nowhere, hides nothing
+      { id: 502, name: 'Cotton Suit', parts: 2, exclusive: 3, baseIgnore: -1 }, // PARTS_UPPER_BODY, takes PARTS_LOWER_BODY off
+      // PARTS_RWEAPON; the " @" of an ultimate is dropped
+      { id: 22368, name: 'Ultimate Guardian Sword', parts: 10, exclusive: -1, baseIgnore: -1 },
     ]);
+  });
+
+  it('reads dwBasePartsIgnore, the base part a worn item hides', () => {
+    // the suit's slots (dwParts dwPartsub bPartsFile dwExclusive dwBasePartsIgnore) as a helmet that covers the hair
+    const helmet = SUIT.replace(row('PARTS_UPPER_BODY = 1 PARTS_LOWER_BODY ='), row('PARTS_CAP = 1 = PARTS_HAIR'));
+    expect(helmet).not.toBe(SUIT);
+    expect(readPropItem(script(helmet), DEFINES, STRINGS)[0]).toEqual({
+      id: 502, name: 'Cotton Suit', parts: 6, exclusive: -1, baseIgnore: 1,
+    });
   });
 
   it('drops the " @" mark only from the names of ultimate weapons', () => {
