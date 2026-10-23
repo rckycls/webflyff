@@ -270,6 +270,8 @@ The automated side is `npm test`, `npm run test:e2e:client` (the world against p
 
 ## Before you start
 
+**Servers in a Hyper-V virtual machine?** Set the VM up with [servers-in-a-vm.md](servers-in-a-vm.md) first. Then everything below that touches the servers happens in the VM (the server swap, the gateway and the live world test), and the client on your PC is started with the VM's gateway address, as that guide's step 5 says.
+
 1. **Put the new world and cache servers in service**, and add the `Gateway "127.0.0.1"` line to `Program\CacheServer.ini`: follow "Put them in service" in [server-patches/README.md](../server-patches/README.md) (read its note about the world server first). With the old world server the browser still enters the world, but it reads only part of what that server sends: other players, monsters and NPCs can be missing or stand still, and this checklist would fail for that reason alone. The overlay tells you which world server is running (step 1 below).
 2. **The game files.** `dist/assets` must hold a conversion made with this version (it adds `data/worlds.json` and new fields in the other catalogs). If you are not sure, run `npm run convert -- --only data` in `FlyffWeb/` (a few seconds; the full `npm run convert` is only needed when the `Client` folder changed).
 3. **Two throwaway test accounts,** each with a character, or with an empty slot (the live test then makes a character and deletes it at the end). Use characters saved in Flaris; a new character starts there.

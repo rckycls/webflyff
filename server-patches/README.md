@@ -181,6 +181,8 @@ Each should end with `Build succeeded.` The new exes are `Output\Certifier\Relea
 
 ## Put them in service
 
+**Servers in a Hyper-V virtual machine?** Do these steps in the VM's `Program` folder, with the new exes copied from `Output\` on your PC; the `Gateway "127.0.0.1"` lines are right when the gateway runs in the VM too ([docs/servers-in-a-vm.md](../docs/servers-in-a-vm.md)).
+
 **Before you swap an exe,** confirm that `Source\` matches the server that's running now. A new exe is built from everything in its project and the shared code it uses, not only from these patches.
 
 - **On this PC, all four matched before these changes:**
