@@ -8,6 +8,9 @@ import type { SimMover } from './sim/moverRules';
 
 const f32 = Math.fround;
 
+/** `AII_MONSTER` (`Resource/defineNeuz.h:6`): the `dwAI` of a monster in `propMover.txt`. */
+const AII_MONSTER = 2;
+
 export type MoverKind = 'player' | 'monster' | 'npc';
 
 /** A mover in view: the rules' `SimMover` (kept as one object for its whole life) and what ADD_OBJ said about it. */
@@ -22,8 +25,8 @@ export interface Mover extends SimMover {
 
 /**
  * What changed in view since the last `takeChanges`. A caller applies `removed` first, then `added`:
- * - `removed` holds the ID of every mover that left or was replaced, once. It may hold an ID the caller never saw (a
- *   mover that came and went between two calls), which has nothing to drop.
+ * - `removed` holds the ID of every mover that left, once. It may hold an ID the caller never saw (a mover that came
+ *   and went between two calls), which has nothing to drop.
  * - `added` holds the movers that came and are still in view, in the order they came. A mover that came and went
  *   between two calls is left out.
  */
@@ -69,7 +72,7 @@ export class WorldState {
       return;
     }
     if (message.type === 'delObj') {
-      this.drop(objectId); // OnRemoveObj (:1643): the object is deleted
+      this.remove(objectId); // OnRemoveObj (:1643): the object is deleted
       return;
     }
     const m = this.byId.get(objectId);
@@ -125,19 +128,20 @@ export class WorldState {
   }
 
   /**
-   * ADD_OBJ of a mover (`OnAddObj`, :1053). An ID already in view is replaced by the new one. Neuz keeps the old object
-   * when it is in a world (:1081-1104: it reads the new one into a throwaway object and cancels the old one's pending
-   * deletion), which would leave this state as it was; the server has sent the whole mover again, so the new one is taken.
+   * ADD_OBJ of a mover (`OnAddObj`, :1053). An ID already in view keeps its mover and the new data is dropped: for an
+   * object that is in a world `OnAddObj` reads the new one into a throwaway object and cancels the old one's pending
+   * deletion (:1081-1104). After a DEL_OBJ the ID is free, so the next ADD_OBJ adds a new mover.
    */
   private add(objectId: number, added: AddedMover): void {
-    this.drop(objectId);
+    if (this.byId.has(objectId)) return;
     const mover = this.build(objectId, added);
     this.byId.set(objectId, mover);
     if (mover.isSelf) this.own = mover;
     this.pendingAdded.push(mover);
   }
 
-  private drop(objectId: number): void {
+  /** `OnRemoveObj` (:1643): the object is deleted. */
+  private remove(objectId: number): void {
     const old = this.byId.get(objectId);
     if (old === undefined) return;
     this.byId.delete(objectId);
@@ -149,13 +153,16 @@ export class WorldState {
    * The mover `CMover::Serialize` makes of an ADD_OBJ (`ObjSerializeOpt.cpp:364-400`): the motion, the state flag
    * (`ClearStateFlag`, then `AddStateFlag( dw2 )`) and the state (`__ForceSetState( dw1 )`), at the position and angle
    * of the object (`CObj::Serialize`). Its speed is `CMover::GetSpeed( m_fSpeed )` (`MoverParam.cpp:3262`): `m_fSpeed`
-   * is the mover's `fSpeed` (`CreateObj.cpp:644`, `Mover.cpp:1521`) times `m_fSpeedFactor`, which is 1 (`Mover.cpp:517`)
-   * unless the NPC part of the ADD_OBJ sends one (`ObjSerializeOpt.cpp:753`), a float product; no buff changes it here.
+   * is the mover's `fSpeed`, halved for a monster (`CreateObj.cpp:644-649`: `dwAI == AII_MONSTER`; a player's is set
+   * again from `fSpeed` alone, `Mover.cpp:1521`), times `m_fSpeedFactor`, which is 1 (`Mover.cpp:517`) unless the NPC
+   * part of the ADD_OBJ sends one (`ObjSerializeOpt.cpp:753`); floats throughout, and no buff changes it here.
    */
   private build(objectId: number, added: AddedMover): Mover {
     const prop = this.data.movers.get(added.index);
     const speedFactor = added.npc?.speedFactor ?? 1;
-    const speed = f32(f32(prop?.speed ?? 0) * f32(speedFactor));
+    const tableSpeed = f32(prop?.speed ?? 0);
+    const halved = !added.isPlayer && prop?.ai === AII_MONSTER;
+    const speed = f32((halved ? f32(tableSpeed / 2) : tableSpeed) * f32(speedFactor));
     const act = new ActionMover({ pos: added.pos, angle: added.angle, speed, isPlayer: added.isPlayer });
     act.motion = added.motion;
     act.stateFlag = added.stateFlag >>> 0;

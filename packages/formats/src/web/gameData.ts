@@ -13,6 +13,11 @@ export interface WebMover {
   /** `MoverProp::fSpeed`, as the table gives it (CMover::GetSpeed starts from it). */
   speed: number;
   /**
+   * `MoverProp::dwAI`, an `AII_*` value (`defineNeuz.h`: AII_MOVER 1, AII_MONSTER 2 ...). CreateObj halves the speed of
+   * an AII_MONSTER (CreateObj.cpp:644-649), so the client needs it to move a monster as Neuz does.
+   */
+  ai: number;
+  /**
    * Logical key of the body model (`models/mvr_<name>.glb`, CModelMng::MakeModelName). Null for the player bodies
    * MI_MALE and MI_FEMALE, which Neuz assembles from parts (CMover::LoadModel, Mover.cpp:1427), and for a mover whose
    * model was not converted.

@@ -283,6 +283,7 @@ describe('the game-data stage', () => {
         index: 11,
         name: 'Male',
         speed: 0.1,
+        ai: 1,
         model: null,
         skeleton: 'skeletons/mvr_male.glb',
         motions: {
@@ -294,6 +295,7 @@ describe('the game-data stage', () => {
         index: 12,
         name: 'Female',
         speed: 0.1,
+        ai: 1,
         model: null,
         skeleton: 'skeletons/mvr_female.glb',
         motions: { '0': 'motions/mvr_female/mvr_female_genstand.glb' },
@@ -302,6 +304,7 @@ describe('the game-data stage', () => {
         index: 20,
         name: 'Small Aibatt',
         speed: 0.075,
+        ai: 2,
         model: 'models/mvr_aibatt1.glb',
         skeleton: 'skeletons/mvr_aibatt1.glb',
         motions: {
@@ -312,7 +315,7 @@ describe('the game-data stage', () => {
           // (motion 7, "Aibatt1Big_run", is the file mvr_Aibatt1Big_run.ani: no skeleton fits its name, so it is left out)
         },
       },
-      { index: 21, name: 'Orphan', speed: 0.2, model: null, skeleton: null, motions: {} },
+      { index: 21, name: 'Orphan', speed: 0.2, ai: 2, model: null, skeleton: null, motions: {} },
     ]);
 
     // items: only the model entries with a part; 504 has no ItemProp, 505 has no part
@@ -422,7 +425,7 @@ describe('the game-data stage', () => {
     await client();
     const run = await runData();
     const orphan = (await catalog<WebMover[]>(run, GAME_DATA_KEYS.movers)).find((mover) => mover.index === 21)!;
-    expect(orphan).toEqual({ index: 21, name: 'Orphan', speed: 0.2, model: null, skeleton: null, motions: {} });
+    expect(orphan).toEqual({ index: 21, name: 'Orphan', speed: 0.2, ai: 2, model: null, skeleton: null, motions: {} });
     expect(run.report.warnings.some((w) => w.message.includes('21') && w.message.includes('mdlDyna.inc'))).toBe(true);
   });
 

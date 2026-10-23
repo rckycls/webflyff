@@ -16,16 +16,21 @@ const f32 = Math.fround;
 const SERVER_TICK = 1_000_000_000_000n;
 const START_MS = 1000;
 
-const moverProp = (index: number, name: string, speed: number): WebMover => ({
-  index, name, speed, model: null, skeleton: null, motions: {},
+/** `dwAI` values of Resource/defineNeuz.h. */
+const AII_MOVER = 1;
+const AII_MONSTER = 2;
+const AII_CLOCKWORKS = 4;
+
+const moverProp = (index: number, name: string, speed: number, ai = AII_MOVER): WebMover => ({
+  index, name, speed, ai, model: null, skeleton: null, motions: {},
 });
 
 function gameData(): GameData {
   return {
     movers: new Map([
       [11, moverProp(11, 'Male', 0.1)],
-      [20, moverProp(20, 'Aibatt', 0.2)],
-      [21, moverProp(21, 'Clockworks', 0.15)],
+      [20, moverProp(20, 'Aibatt', 0.2, AII_MONSTER)],
+      [21, moverProp(21, 'Clockworks', 0.2, AII_CLOCKWORKS)], // the same table speed as the Aibatt
     ]),
     items: new Map(),
     // keyed by the lower-cased key, as CProject::GetCharacter looks it up
@@ -141,20 +146,51 @@ describe('WorldState: what is in view', () => {
     expect([...world.movers.keys()]).toEqual([2]);
   });
 
-  it('ADD_OBJ for a present ID replaces it, once', () => {
+  it('ADD_OBJ for a present ID keeps the mover in view', () => {
+    const { world } = newWorld();
+    add(world, playerOf(5, 'Old', { state: ObjSta.FMOVE, angle: 90 }));
+    const old = world.movers.get(5)!;
+    world.takeChanges();
+    steps(world, 10); // under way, so the sim state is not the ADD_OBJ's
+    const pos = [...old.act.body.pos];
+    expect(pos[0]).toBeGreaterThan(100.5);
+
+    // OnAddObj reads the new data into a throwaway object when the ID is in the world (:1081-1104)
+    add(world, playerOf(5, 'New', { pos: [120, 0, 100], state: 0, angle: 0 }));
+    expect(world.movers.size).toBe(1);
+    expect(world.movers.get(5)).toBe(old);
+    expect(old.name).toBe('Old');
+    expect(old.added.player?.name).toBe('Old');
+    expect(old.act.body.pos).toEqual(pos);
+    expect(old.act.state).toBe(ObjSta.FMOVE);
+    expect(world.takeChanges()).toEqual({ added: [], removed: [] });
+  });
+
+  it('a repeated ADD_OBJ of the own character keeps it too', () => {
+    const { world } = newWorld();
+    add(world, playerOf(7, 'Me', {}, true));
+    const me = world.self();
+    world.takeChanges();
+    add(world, playerOf(7, 'Me again', {}, true));
+    expect(world.self()).toBe(me);
+    expect(world.movers.get(7)).toBe(me);
+    expect(world.takeChanges()).toEqual({ added: [], removed: [] });
+  });
+
+  it('DEL_OBJ then ADD_OBJ for the same ID adds a new mover', () => {
     const { world } = newWorld();
     add(world, playerOf(5, 'Old'));
     const old = world.movers.get(5)!;
     world.takeChanges();
 
+    world.apply(5, { type: 'delObj' });
     add(world, playerOf(5, 'New', { pos: [120, 0, 100] }));
     const fresh = world.movers.get(5)!;
-    expect(world.movers.size).toBe(1);
     expect(fresh).not.toBe(old);
     expect([fresh.name, fresh.act.body.pos]).toEqual(['New', [120, 0, 100]]);
 
     const changes = world.takeChanges();
-    expect(changes.removed).toEqual([5]);
+    expect(changes.removed).toEqual([5]); // once
     expect(changes.added).toEqual([fresh]);
     expect(changes.added[0]).toBe(fresh);
     expect(world.takeChanges()).toEqual({ added: [], removed: [] });
@@ -248,10 +284,13 @@ describe('WorldState: takeChanges', () => {
     expect(world.takeChanges()).toEqual({ added: [], removed: [3] });
   });
 
-  it('replacing twice between two calls adds only the last', () => {
+  it('removing and adding an ID twice between two calls leaves the last mover, and the ID in removed once', () => {
     const { world } = newWorld();
     add(world, playerOf(4, 'One'));
+    world.takeChanges();
+    world.apply(4, { type: 'delObj' });
     add(world, playerOf(4, 'Two'));
+    world.apply(4, { type: 'delObj' });
     add(world, playerOf(4, 'Three'));
     const changes = world.takeChanges();
     expect(changes.removed).toEqual([4]);
@@ -265,7 +304,7 @@ describe('WorldState: stepping', () => {
   it('step moves every mover', () => {
     const { world } = newWorld();
     add(world, playerOf(1, 'Runner', { state: ObjSta.FMOVE, angle: 90 })); // 0.1 a step to +x
-    add(world, npcOf(2, 20, '', { state: ObjSta.FMOVE, angle: 90 })); // 0.2 a step
+    add(world, npcOf(2, 21, '', { state: ObjSta.FMOVE, angle: 90 })); // 0.2 a step
     add(world, playerOf(3, 'Stander'));
     steps(world, 10);
     near(world.movers.get(1)!.act.body.pos[0], 101);
@@ -281,12 +320,45 @@ describe('WorldState: stepping', () => {
     add(world, npcOf(2, 21, '', { state: ObjSta.FMOVE, angle: 90 }, 1.5));
     const [player, monster] = [world.movers.get(1)!, world.movers.get(2)!];
     expect(player.act.body.speed).toBe(f32(0.1));
-    expect(monster.act.body.speed).toBe(f32(f32(0.15) * f32(1.5))); // a float product, as the C++ makes it
+    expect(monster.act.body.speed).toBe(f32(f32(0.2) * f32(1.5))); // a float product, as the C++ makes it
     expect(player.speedFactor).toBe(1);
     expect(monster.speedFactor).toBe(1.5);
     steps(world, 20);
     near(player.act.body.pos[0], 102);
-    near(monster.act.body.pos[0], 100 + 20 * 0.225);
+    near(monster.act.body.pos[0], 100 + 20 * 0.3);
+  });
+
+  it('a monster (ai AII_MONSTER) walks at half its table speed, then times its speed factor (CreateObj, GetSpeed)', () => {
+    const { world } = newWorld();
+    // the Aibatt (ai 2) and the Clockworks (ai 4) have the same table speed, 0.2
+    add(world, npcOf(1, 20, '', { state: ObjSta.FMOVE, angle: 90 }));
+    add(world, npcOf(2, 21, '', { state: ObjSta.FMOVE, angle: 90 }));
+    add(world, npcOf(3, 20, '', { state: ObjSta.FMOVE, angle: 90 }, 1.5));
+    const [monster, other, quick] = [world.movers.get(1)!, world.movers.get(2)!, world.movers.get(3)!];
+    expect(other.act.body.speed).toBe(f32(0.2));
+    expect(monster.act.body.speed).toBe(f32(f32(0.2) / 2)); // CreateObj.cpp:649: m_fSpeed /= 2.0F
+    expect(monster.act.body.speed).toBe(other.act.body.speed / 2);
+    expect(quick.act.body.speed).toBe(f32(f32(f32(0.2) / 2) * f32(1.5))); // the halving first, then the factor
+    steps(world, 20);
+    near(monster.act.body.pos[0], 100 + 20 * 0.1);
+    near(other.act.body.pos[0], 100 + 20 * 0.2);
+    near(quick.act.body.pos[0], 100 + 20 * 0.15);
+  });
+
+  it('a player is not halved, and a mover whose table has no ai runs at its table speed', () => {
+    const data = gameData();
+    data.movers.set(31, moverProp(31, 'Body with a monster ai', 0.1, AII_MONSTER));
+    const { world } = newWorld(data);
+    add(world, playerOf(1, 'Player'));
+    add(world, playerOf(2, 'Odd player', { index: 31 })); // Mover.cpp:1521 sets a player's m_fSpeed from fSpeed alone
+    expect(world.movers.get(1)!.act.body.speed).toBe(f32(0.1));
+    expect(world.movers.get(2)!.act.body.speed).toBe(f32(0.1));
+    const old = moverProp(30, 'Old table', 0.2);
+    delete (old as Partial<WebMover>).ai; // a data file the converter wrote before it kept the ai
+    data.movers.set(30, old);
+    const { world: other } = newWorld(data);
+    add(other, npcOf(2, 30));
+    expect(other.movers.get(2)!.act.body.speed).toBe(f32(0.2));
   });
 
   it('a flier is placed but not stepped', () => {
@@ -452,7 +524,7 @@ describe('WorldState: the messages and the rules (OnMoverMoved and the others)',
 describe('loadGameData', () => {
   it('loadGameData reads the game-data keys', async () => {
     const files: Record<string, unknown> = {
-      [GAME_DATA_KEYS.movers]: [moverProp(11, 'Male', 0.1), moverProp(20, 'Aibatt', 0.2)],
+      [GAME_DATA_KEYS.movers]: [moverProp(11, 'Male', 0.1), moverProp(20, 'Aibatt', 0.2, AII_MONSTER)],
       [GAME_DATA_KEYS.items]: [
         { id: 500, part: 6, male: 'models/part_mvag02cap.glb', female: 'models/part_fvag02cap.glb' },
       ],

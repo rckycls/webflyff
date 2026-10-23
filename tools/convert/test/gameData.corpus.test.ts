@@ -143,6 +143,7 @@ describeClient('the game-data stage on the real client', () => {
     const aibatt = movers.find((m) => m.index === defines.get('MI_AIBATT1'))!;
     expect(aibatt.name).toBe('Small Aibatt');
     expect(aibatt.speed).toBeCloseTo(0.075, 6);
+    expect(aibatt.ai).toBe(defines.get('AII_MONSTER'));
     expect(aibatt.model).toBe('models/mvr_aibatt.glb');
     expect(aibatt.skeleton).toBe('skeletons/mvr_aibatt.glb');
     expect(aibatt.motions['0']).toBe('motions/mvr_aibatt/mvr_aibatt_stand.glb');
@@ -159,6 +160,7 @@ describeClient('the game-data stage on the real client', () => {
     for (const mover of movers) {
       expect(mover.name).toBe(byIndex.get(mover.index)!.name);
       expect(mover.speed).toBe(byIndex.get(mover.index)!.speed);
+      expect(mover.ai).toBe(byIndex.get(mover.index)!.ai);
       for (const key of [mover.model, mover.skeleton, ...Object.values(mover.motions)]) {
         if (key !== null) expect(writer.pathOf(key), `${mover.name}: ${key}`).toBeDefined();
       }

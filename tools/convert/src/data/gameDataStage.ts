@@ -169,6 +169,7 @@ function buildMovers(env: Env, read: Reading): WebMover[] {
         index: prop.index,
         name: prop.name,
         speed: prop.speed,
+        ai: prop.ai,
         model: null,
         skeleton: null,
         motions: {},
