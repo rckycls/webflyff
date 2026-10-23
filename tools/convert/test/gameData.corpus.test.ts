@@ -18,9 +18,18 @@ import {
   readModelIndex,
   readPropItem,
   readPropMover,
+  readWorldInc,
   webName,
 } from '@flyffweb/formats';
-import type { ModelElem, WebHonorTitles, WebItemModel, WebMover, WebNameColors, WebNpc } from '@flyffweb/formats';
+import type {
+  ModelElem,
+  WebHonorTitles,
+  WebItemModel,
+  WebMover,
+  WebNameColors,
+  WebNpc,
+  WebWorlds,
+} from '@flyffweb/formats';
 import { clientRoot, describeClient, loadClientPacks } from '../../../packages/formats/test/helpers/client';
 import { ClientFs } from '../src/ClientFs';
 import { gameDataStage } from '../src/data/gameDataStage';
@@ -91,9 +100,9 @@ describeClient('the game-data stage on the real client', () => {
     if (out !== undefined) await fs.rm(out, { recursive: true, force: true });
   });
 
-  it('writes the five catalogs without a failure, and the index lists them', () => {
+  it('writes the six catalogs without a failure, and the index lists them', () => {
     expect(report.failures).toEqual([]);
-    expect(report.kinds.data).toMatchObject({ ok: 5, failed: 0 });
+    expect(report.kinds.data).toMatchObject({ ok: 6, failed: 0 });
     for (const key of Object.values(GAME_DATA_KEYS)) expect(writer.pathOf(key), key).toMatch(/^data\//);
   });
 
@@ -222,5 +231,36 @@ describeClient('the game-data stage on the real client', () => {
     expect(Object.keys(honor)).toHaveLength(titles.size);
     expect(honor['0']).toBe('Master Collector');
     expect(honor['-1']).toBeUndefined();
+  });
+
+  it('maps each world id of World.inc to the web folder the worlds stage writes for it', async () => {
+    const worlds = await catalog<WebWorlds>(GAME_DATA_KEYS.worlds);
+    const listed = readWorldInc(script('World.inc'), defines, 'World.inc');
+    expect(Object.keys(worlds)).toHaveLength(new Set(listed.map((world) => world.id)).size);
+    expect(Object.keys(worlds).length).toBeGreaterThan(50);
+    for (const world of listed) expect(worlds[String(world.id)], `world ${world.id}`).toBe(webName(world.fileName));
+
+    // WI_WORLD_MADRIGAL is the world a new character starts in: WdMadrigal, converted as worlds/wdmadrigal/
+    const madrigal = defines.get('WI_WORLD_MADRIGAL')!;
+    expect(madrigal).toBe(1);
+    expect(worlds[String(madrigal)]).toBe('wdmadrigal');
+    // WI_DUNGEON_SECRET_1 to _16 are instances of one folder
+    expect(worlds[String(defines.get('WI_DUNGEON_SECRET_1'))]).toBe('wdheaven06_1');
+    expect(worlds[String(defines.get('WI_DUNGEON_SECRET_16'))]).toBe('wdheaven06_1');
+
+    // every folder the worlds stage converts (a folder of World/ that holds a .wld) is the folder of some world id
+    const worldsDir = client.find('', 'World')!;
+    const folders = [...new Set(client.list('World', /\.wld$/i, true).map((wld) => path.dirname(wld)))]
+      .filter((folder) => path.dirname(folder) === worldsDir)
+      .map((folder) => path.basename(folder));
+    expect(folders.length).toBeGreaterThan(30);
+    expect(folders).toContain('WdMadrigal');
+    const named = new Set(Object.values(worlds));
+    const unnamed = folders.filter((folder) => !named.has(webName(folder)));
+    if (unnamed.length > 0) {
+      console.warn(`world folders converted but with no world id in World.inc, so Neuz cannot open them by id: ${unnamed.join(', ')}`);
+    }
+    // defineWorld.h has WI_DUNGEON_SM_IVILIS (231) for WdIvilisTemple, but World.inc has no line for it
+    expect(unnamed).toEqual(['WdIvilisTemple']);
   });
 });

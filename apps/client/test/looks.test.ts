@@ -285,6 +285,7 @@ describe('lookOf: the stored item catalog', () => {
       [GAME_DATA_KEYS.npcs]: [],
       [GAME_DATA_KEYS.nameColors]: { general: 0xffffffff, chaotic: 0xffff0000, ready: 0xffffc0cb },
       [GAME_DATA_KEYS.honorTitles]: {},
+      [GAME_DATA_KEYS.worlds]: {},
     };
     const old = await loadGameData({ json: async <T>(key: string): Promise<T> => files[key] as T });
     expect(old.items.get(770)).toMatchObject({ exclusive: -1, baseIgnore: -1 });

@@ -16,6 +16,7 @@ export function gameDataOf(parts: Partial<GameData> = {}): GameData {
     npcs: new Map(),
     nameColors: { general: 0xffffffff, chaotic: 0xffff0000, ready: 0xffffc0cb },
     honorTitles: new Map(),
+    worlds: new Map(),
     ...parts,
   };
 }

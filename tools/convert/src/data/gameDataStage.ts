@@ -6,6 +6,7 @@
 //   data/npcs.json         every character of character.inc and its two sister files (WebNpc[])
 //   data/nameColors.json   the three player name colours of PKSetting.inc (WebNameColors)
 //   data/honorTitles.json  honour id to title text of honorList.txt (WebHonorTitles)
+//   data/worlds.json       world id to the web folder name of its world, from World.inc (WebWorlds)
 //
 // It runs after the models stage. A catalog names a model, skeleton or motion by its logical key, the way the models
 // stage writes it (`webName` of the real file's base name), and only when `writer.pathOf(key)` says the file was
@@ -31,6 +32,7 @@ import {
   readPkSetting,
   readPropItem,
   readPropMover,
+  readWorldInc,
   webName,
 } from '@flyffweb/formats';
 import type {
@@ -41,6 +43,7 @@ import type {
   WebMover,
   WebNameColors,
   WebNpc,
+  WebWorlds,
 } from '@flyffweb/formats';
 import type { ClientFs } from '../ClientFs';
 import { skeletonOfMotion } from '../models/skeletonFor';
@@ -284,7 +287,7 @@ function buildItems(env: Env, read: Reading): WebItemModel[] {
   return items;
 }
 
-// ---- NPCs, name colours, honour titles ---------------------------------------------------------------------------
+// ---- NPCs, name colours, honour titles, worlds -------------------------------------------------------------------
 
 function buildNpcs(env: Env, read: Reading): WebNpc[] {
   // CProject::LoadCharacter keys the map by the lower-cased key and SetAt replaces: the later character wins whole
@@ -304,6 +307,21 @@ function buildNameColors(env: Env, read: Reading): WebNameColors {
 function buildHonorTitles(env: Env, read: Reading): WebHonorTitles {
   const titles = readHonorTitles(read.text('honorList.txt'), env.defines, env.strings, 'honorList.txt');
   return Object.fromEntries([...titles].sort((a, b) => a[0] - b[0]).map(([id, title]) => [String(id), title]));
+}
+
+function buildWorlds(env: Env, read: Reading): WebWorlds {
+  // CWorldMng::LoadScript stores each world with CFixedArray::SetAtGrow (worldmng.cpp:359), which overwrites the slot of
+  // an id it has already read: the later world wins whole
+  const fileNames = new Map<number, string>();
+  for (const world of readWorldInc(read.text('World.inc'), env.defines, 'World.inc')) {
+    fileNames.set(world.id, world.fileName);
+  }
+  // A slot with no file name is not a valid WORLD (worldmng.h:13 IsValid), so Neuz cannot open it. Any other is opened
+  // from the folder World/<m_szFileName> (CWorldMng::Open, worldmng.cpp:274; the case of the name does not matter to the
+  // file system), and the worlds stage writes that folder as worlds/<webName(folder)>/ (convertWorld.ts), so webName of
+  // the file name is its web name.
+  const valid = [...fileNames].filter(([, fileName]) => fileName !== '');
+  return Object.fromEntries(valid.sort((a, b) => a[0] - b[0]).map(([id, fileName]) => [String(id), webName(fileName)]));
 }
 
 // ---- the stage ---------------------------------------------------------------------------------------------------
@@ -350,6 +368,7 @@ export const gameDataStage: Stage = {
       { key: GAME_DATA_KEYS.npcs, source: 'character.inc', build: (read) => buildNpcs(env, read) },
       { key: GAME_DATA_KEYS.nameColors, source: 'PKSetting.inc', build: (read) => buildNameColors(env, read) },
       { key: GAME_DATA_KEYS.honorTitles, source: 'honorList.txt', build: (read) => buildHonorTitles(env, read) },
+      { key: GAME_DATA_KEYS.worlds, source: 'World.inc', build: (read) => buildWorlds(env, read) },
     ];
     for (const { key, source, build } of catalogs) {
       try {

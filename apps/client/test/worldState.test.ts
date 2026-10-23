@@ -37,6 +37,7 @@ function gameData(): GameData {
     npcs: new Map([['mafl_mikyel', { key: 'MaFl_Mikyel', name: 'Mikyel' }]]),
     nameColors: { general: 0xffffffff, chaotic: 0xffff0000, ready: 0xffffc0cb },
     honorTitles: new Map(),
+    worlds: new Map(),
   };
 }
 
@@ -531,6 +532,7 @@ describe('loadGameData', () => {
       [GAME_DATA_KEYS.npcs]: [{ key: 'MaFl_Mikyel', name: 'Mikyel' }, { key: 'MaDa_Cooky', name: 'Cooky' }],
       [GAME_DATA_KEYS.nameColors]: { general: 0xffffffff, chaotic: 0xffff0000, ready: 0xffffc0cb },
       [GAME_DATA_KEYS.honorTitles]: { '0': 'Master Collector', '12': 'Entrepreneur' },
+      [GAME_DATA_KEYS.worlds]: { '1': 'wdmadrigal', '40': 'wdheaven06', '41': 'wdheaven06_1' },
     };
     const asked: string[] = [];
     const data = await loadGameData({
@@ -550,6 +552,26 @@ describe('loadGameData', () => {
     expect(data.npcs.get('mafl_mikyel')).toEqual({ key: 'MaFl_Mikyel', name: 'Mikyel' });
     expect(data.nameColors).toEqual({ general: 0xffffffff, chaotic: 0xffff0000, ready: 0xffffc0cb });
     expect([...data.honorTitles]).toEqual([[0, 'Master Collector'], [12, 'Entrepreneur']]);
+    // world id (WI_*) to the web folder: numbers, not the JSON's text
+    expect([...data.worlds]).toEqual([[1, 'wdmadrigal'], [40, 'wdheaven06'], [41, 'wdheaven06_1']]);
+    expect(data.worlds.get(1)).toBe('wdmadrigal');
+  });
+
+  it('fails loudly when the worlds catalog is not in the asset index, as for every catalog', async () => {
+    const files: Record<string, unknown> = {
+      [GAME_DATA_KEYS.movers]: [],
+      [GAME_DATA_KEYS.items]: [],
+      [GAME_DATA_KEYS.npcs]: [],
+      [GAME_DATA_KEYS.nameColors]: { general: 1, chaotic: 2, ready: 3 },
+      [GAME_DATA_KEYS.honorTitles]: {},
+    };
+    const store = {
+      json: async <T>(key: string): Promise<T> => {
+        if (!(key in files)) throw new Error(`no such asset: ${key}`);
+        return files[key] as T;
+      },
+    };
+    await expect(loadGameData(store)).rejects.toThrow('no such asset: data/worlds.json');
   });
 
   it('a character defined twice keeps the later one, as CProject::LoadCharacter does', async () => {
@@ -559,6 +581,7 @@ describe('loadGameData', () => {
       [GAME_DATA_KEYS.npcs]: [{ key: 'Abc', name: 'First' }, { key: 'aBC', name: 'Second' }],
       [GAME_DATA_KEYS.nameColors]: { general: 1, chaotic: 2, ready: 3 },
       [GAME_DATA_KEYS.honorTitles]: {},
+      [GAME_DATA_KEYS.worlds]: {},
     };
     const data = await loadGameData({ json: async <T>(key: string): Promise<T> => files[key] as T });
     expect(data.npcs.size).toBe(1);

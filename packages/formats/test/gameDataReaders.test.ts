@@ -9,6 +9,7 @@ import {
   readPropItem,
   readPropMover,
   readStringTable,
+  readWorldInc,
 } from '../src/index';
 import { buildPack } from './helpers/packs';
 import { thrown } from './helpers/thrown';
@@ -701,5 +702,108 @@ describe('readHonorTitles', () => {
   it('throws a FormatError for an undefined group name or a row that stops early', () => {
     thrown(() => readHonorTitles(script(row('0 HI_MISSING HS_STR 1 IDS_TITLE_TXT_0001')), DEFINES, STRINGS));
     thrown(() => readHonorTitles(script(row('0 HI_COUNT_CHECK HS_STR')), DEFINES, STRINGS));
+  });
+});
+
+describe('readWorldInc', () => {
+  const DEFINES = new Map([
+    ['WI_WORLD_TEST', 0],
+    ['WI_WORLD_MADRIGAL', 1],
+    ['WI_DUNGEON_SECRET_0', 40],
+    ['WI_DUNGEON_SECRET_1', 41],
+  ]);
+
+  // World.inc as shipped: `WI_* "folder"` lines (a trailing // is allowed), then `WI_* SetTitle ( IDS_* );` blocks.
+  const WORLD_INC = script(
+    '// World Script',
+    '',
+    'WI_WORLD_TEST     "WdTest"',
+    'WI_WORLD_MADRIGAL "WdMadrigal" ',
+    'WI_DUNGEON_SECRET_0\t"WdHeaven06"//',
+    '',
+    'WI_WORLD_TEST\tSetTitle',
+    '(',
+    '\tIDS_WORLD_INC_000000',
+    ');',
+    '',
+    'WI_WORLD_MADRIGAL\tSetTitle',
+    '(',
+    '\tIDS_WORLD_INC_000001',
+    ');',
+  );
+
+  it('reads the id (through the defines) and the file name of each world, in file order, and skips SetTitle blocks', () => {
+    expect(readWorldInc(WORLD_INC, DEFINES)).toEqual([
+      { id: 0, fileName: 'WdTest' },
+      { id: 1, fileName: 'WdMadrigal' },
+      { id: 40, fileName: 'WdHeaven06' },
+    ]);
+  });
+
+  it('takes an id written as a number, and keeps the file name as written', () => {
+    const text = script('7 "WdSeven"', 'WI_WORLD_MADRIGAL "wDmAdRiGaL"', '0x10 "WdHex"');
+    expect(readWorldInc(text, DEFINES)).toEqual([
+      { id: 7, fileName: 'WdSeven' },
+      { id: 1, fileName: 'wDmAdRiGaL' },
+      { id: 16, fileName: 'WdHex' },
+    ]);
+  });
+
+  it('returns a repeated id each time, in file order (CFixedArray::SetAtGrow keeps the last)', () => {
+    const text = script('WI_WORLD_TEST "WdTest"', 'WI_WORLD_TEST "WdTestAgain"', 'WI_WORLD_MADRIGAL "WdMadrigal"');
+    expect(readWorldInc(text, DEFINES).map((w) => [w.id, w.fileName])).toEqual([
+      [0, 'WdTest'],
+      [0, 'WdTestAgain'],
+      [1, 'WdMadrigal'],
+    ]);
+  });
+
+  it('keeps an empty file name, which CWorldMng treats as no world (WORLD::IsValid)', () => {
+    expect(readWorldInc(script('WI_WORLD_TEST ""'), DEFINES)).toEqual([{ id: 0, fileName: '' }]);
+  });
+
+  it('returns nothing for a file of comments', () => {
+    expect(readWorldInc(script('// World Script', '/* nothing */'), DEFINES)).toEqual([]);
+  });
+
+  it('stops at the first } where an id should be, as the C++ brace count does, and ignores what follows', () => {
+    const text = script('WI_WORLD_TEST "WdTest"', '}', 'WI_WORLD_MADRIGAL "WdMadrigal"');
+    expect(readWorldInc(text, DEFINES)).toEqual([{ id: 0, fileName: 'WdTest' }]);
+    // a } read in place of an id after a sign counts too (GetNumber leaves the last token it read in `token`)
+    expect(readWorldInc(script('WI_WORLD_TEST "WdTest"', '-', '}', '1 "WdOne"'), DEFINES)).toEqual([
+      { id: 0, fileName: 'WdTest' },
+    ]);
+    // a } anywhere else is a file name or a title token, nothing more
+    expect(readWorldInc(script('WI_WORLD_TEST "}"', 'WI_WORLD_MADRIGAL "WdMadrigal"'), DEFINES)).toHaveLength(2);
+  });
+
+  it('reads a SetTitle block of a world already defined, token for token: ( , the text, ) and ;', () => {
+    const text = script(
+      'WI_WORLD_TEST "WdTest"',
+      'WI_WORLD_TEST SetTitle ( "Test World" ) ;',
+      'WI_WORLD_MADRIGAL "WdMadrigal"',
+      'WI_WORLD_MADRIGAL SetTitle ( IDS_WORLD_INC_000001 );',
+    );
+    expect(readWorldInc(text, DEFINES).map((w) => w.fileName)).toEqual(['WdTest', 'WdMadrigal']);
+  });
+
+  it('throws a FormatError, with the file and line, for a SetTitle of a world never defined', () => {
+    const text = script('WI_WORLD_TEST "WdTest"', 'WI_WORLD_MADRIGAL SetTitle ( IDS_WORLD_INC_000001 );');
+    const err = thrown(() => readWorldInc(text, DEFINES, 'World.inc'));
+    expect(err.file).toBe('World.inc');
+    expect(err.line).toBe(2);
+    expect(err.message).toContain('SetTitle');
+  });
+
+  it('throws for a name that is not defined where an id is read (the C++ logs "Not Found" and reads 0)', () => {
+    const err = thrown(() => readWorldInc(script('WI_WORLD_MISSING "WdMissing"'), DEFINES, 'World.inc'));
+    expect(err.message).toContain('WI_WORLD_MISSING');
+    expect(err.file).toBe('World.inc');
+  });
+
+  it('throws for a negative id (the C++ would write before the start of its array), or a script that ends early', () => {
+    thrown(() => readWorldInc(script('-3 "WdBelow"'), DEFINES));
+    thrown(() => readWorldInc(script('WI_WORLD_TEST'), DEFINES)); // no file name
+    thrown(() => readWorldInc(script('WI_WORLD_TEST "WdTest"', 'WI_WORLD_TEST SetTitle ('), DEFINES)); // the block stops
   });
 });

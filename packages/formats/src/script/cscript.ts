@@ -101,6 +101,15 @@ export class ScriptReader {
     return this.pos >= this.tokens.length;
   }
 
+  /**
+   * The last token read, as CScript::GetToken left it in `token` (a name replaced by a define has the text of its value,
+   * and a number read after its sign is the token after the sign); undefined before the first read.
+   */
+  lastToken(): ScriptToken | undefined {
+    const tok = this.tokens[this.pos - 1];
+    return tok === undefined ? undefined : this.replace(tok);
+  }
+
   /** CScript::GetToken, or undefined at the end of the script. */
   tokenOrEnd(): ScriptToken | undefined {
     const tok = this.tokens[this.pos];

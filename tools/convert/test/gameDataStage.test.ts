@@ -6,7 +6,15 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { GAME_DATA_KEYS } from '@flyffweb/formats';
-import type { ModelElem, WebHonorTitles, WebItemModel, WebMover, WebNameColors, WebNpc } from '@flyffweb/formats';
+import type {
+  ModelElem,
+  WebHonorTitles,
+  WebItemModel,
+  WebMover,
+  WebNameColors,
+  WebNpc,
+  WebWorlds,
+} from '@flyffweb/formats';
 import { ClientFs } from '../src/ClientFs';
 import { gameDataStage, makeMotionName, makePartsName } from '../src/data/gameDataStage';
 import { AssetWriter } from '../src/output/AssetWriter';
@@ -63,6 +71,12 @@ const DEFINES = script(
   '#define HS_COLLECT 51',
   '#define MONSTER_TITLE_MAX 70',
   '#define MMI_DIALOG 0',
+  '#define WI_WORLD_TEST 0',
+  '#define WI_WORLD_MADRIGAL 1',
+  '#define WI_WORLD_GUILDHOUSE 5',
+  '#define WI_DUNGEON_SECRET_0 40',
+  '#define WI_DUNGEON_SECRET_1 41',
+  '#define WI_DUNGEON_SECRET_2 42',
 );
 
 /** The columns of a shipped propMover.txt row (MI_MALE), which the tests re-use: id, name, AI and speed change. */
@@ -188,6 +202,20 @@ const PACKED: Record<string, string> = {
     tabs('0 HI_ELASPED_TIME HS_COLLECT 1440 IDS_TITLE_TXT_0001 //collection'),
     tabs('3 HI_HUNT_MONSTER 1012 15000 IDS_TITLE_TXT_0002'),
   ),
+  // the folders keep the case the file writes (the client's own names mix it) and webName lower-cases them
+  'World.inc': script(
+    '// World Script',
+    'WI_WORLD_TEST "WdTest"',
+    'WI_WORLD_MADRIGAL "WdMadrigal" ',
+    'WI_WORLD_GUILDHOUSE "Wd Guild House"',
+    'WI_DUNGEON_SECRET_0\t"WdHeaven06"//',
+    'WI_DUNGEON_SECRET_1\t"WdHeaven06_1"',
+    'WI_DUNGEON_SECRET_2\t"WdHeaven06_1"',
+    'WI_WORLD_TEST\tSetTitle',
+    '(',
+    '\tIDS_WORLD_INC_000000',
+    ');',
+  ),
 };
 
 const CHR_FILES = ['Model/Mvr_male.chr', 'Model/Mvr_female.chr', 'Model/Mvr_Aibatt1.chr'];
@@ -263,7 +291,7 @@ describe('the game-data stage', () => {
     expect(DEFAULT_STAGES.map((s) => s.name)).toEqual(['textures', 'models', 'worlds', 'data']);
   });
 
-  it('writes the four catalogs (and the honour titles), each once, under its hashed name', async () => {
+  it('writes the six catalogs, each once, under its hashed name', async () => {
     await client();
     const run = await runData();
     expect(run.report.failures).toEqual([]);
@@ -274,11 +302,12 @@ describe('the game-data stage', () => {
       'data/movers.json',
       'data/nameColors.json',
       'data/npcs.json',
+      'data/worlds.json',
     ]);
     for (const key of Object.values(GAME_DATA_KEYS)) {
       expect(run.writer.pathOf(key), key).toMatch(/^data\/[a-zA-Z]+\.[0-9a-f]{10}\.json$/);
     }
-    expect(run.report.kinds.data).toMatchObject({ ok: 5, failed: 0 });
+    expect(run.report.kinds.data).toMatchObject({ ok: 6, failed: 0 });
 
     // movers: by index; a player body has no model; the speed is the table's
     expect(await catalog<WebMover[]>(run, GAME_DATA_KEYS.movers)).toEqual([
@@ -349,6 +378,33 @@ describe('the game-data stage', () => {
       '0': 'Master Collector',
       '3': 'Taiga Hunter',
     });
+
+    // worlds: the id (the WI_* value) to the web folder name, webName of the file name World.inc gives it; the SetTitle
+    // block adds nothing, and two ids may share a folder
+    expect(await catalog<WebWorlds>(run, GAME_DATA_KEYS.worlds)).toEqual({
+      '0': 'wdtest',
+      '1': 'wdmadrigal',
+      '5': 'wd-guild-house',
+      '40': 'wdheaven06',
+      '41': 'wdheaven06_1',
+      '42': 'wdheaven06_1',
+    });
+  });
+
+  it('a world id defined twice keeps the later file name, and one with no file name is left out', async () => {
+    // CFixedArray::SetAtGrow replaces the slot (worldmng.cpp:359); a slot with no file name is not a valid WORLD
+    await client({
+      'World.inc': script(
+        'WI_WORLD_TEST "WdTest"',
+        'WI_WORLD_MADRIGAL "WdMadrigal"',
+        'WI_WORLD_TEST "WdTestAgain"',
+        'WI_WORLD_GUILDHOUSE "WdGuildHouse"',
+        'WI_WORLD_GUILDHOUSE ""',
+      ),
+    });
+    const run = await runData();
+    expect(run.report.failures).toEqual([]);
+    expect(await catalog<WebWorlds>(run, GAME_DATA_KEYS.worlds)).toEqual({ '0': 'wdtestagain', '1': 'wdmadrigal' });
   });
 
   it('a part with a slash gives the male and female names', async () => {
@@ -498,10 +554,19 @@ describe('the game-data stage', () => {
     expect(run.report.failures).toHaveLength(1);
     expect(run.report.failures[0]).toMatchObject({ kind: 'data', source: 'PKSetting.inc' });
     expect(run.writer.pathOf(GAME_DATA_KEYS.nameColors)).toBeUndefined();
-    for (const key of [GAME_DATA_KEYS.movers, GAME_DATA_KEYS.items, GAME_DATA_KEYS.npcs, GAME_DATA_KEYS.honorTitles]) {
-      expect(run.writer.pathOf(key), key).toBeDefined();
-    }
-    expect(run.report.kinds.data).toMatchObject({ ok: 4, failed: 1 });
+    const written = [GAME_DATA_KEYS.movers, GAME_DATA_KEYS.items, GAME_DATA_KEYS.npcs, GAME_DATA_KEYS.honorTitles];
+    for (const key of [...written, GAME_DATA_KEYS.worlds]) expect(run.writer.pathOf(key), key).toBeDefined();
+    expect(run.report.kinds.data).toMatchObject({ ok: 5, failed: 1 });
+  });
+
+  it('a World.inc that cannot be read fails the worlds catalog with its name, the others are written', async () => {
+    await client({ 'World.inc': script('WI_WORLD_TEST "WdTest"', 'WI_WORLD_MADRIGAL SetTitle ( IDS_WORLD_INC_000001 );') });
+    const run = await runData();
+    expect(run.report.failures).toHaveLength(1);
+    expect(run.report.failures[0]).toMatchObject({ kind: 'data', source: 'World.inc' });
+    expect(run.writer.pathOf(GAME_DATA_KEYS.worlds)).toBeUndefined();
+    expect(run.writer.pathOf(GAME_DATA_KEYS.honorTitles)).toBeDefined();
+    expect(run.report.kinds.data).toMatchObject({ ok: 5, failed: 1 });
   });
 
   it('a file missing from the packs fails its catalog with the resource name', async () => {

@@ -77,6 +77,14 @@ export type WebNameColors = PkColors;
 /** Honour id (a decimal string) to the title text (`honorList.txt`), what CTitleManager::GetTitle returns. */
 export type WebHonorTitles = Record<string, string>;
 
+/**
+ * World id (a decimal string, the `WI_*` value the world server names a character's world by) to the web folder name of
+ * that world: `webName` of the `m_szFileName` World.inc gives it (`CWorldMng::Open`, worldmng.cpp:206, opens the folder of
+ * that name under `World/`), which is the folder the worlds stage writes `worlds/<name>/manifest.json` in. It lists every
+ * world of World.inc, converted or not; a world was converted if its manifest is in the asset index.
+ */
+export type WebWorlds = Record<string, string>;
+
 /** The logical keys of the catalogs in the asset index. */
 export const GAME_DATA_KEYS = {
   movers: 'data/movers.json',
@@ -84,4 +92,5 @@ export const GAME_DATA_KEYS = {
   npcs: 'data/npcs.json',
   nameColors: 'data/nameColors.json',
   honorTitles: 'data/honorTitles.json',
+  worlds: 'data/worlds.json',
 } as const;

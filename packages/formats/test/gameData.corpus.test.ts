@@ -10,6 +10,7 @@ import {
   readPropItem,
   readPropMover,
   readStringTable,
+  readWorldInc,
 } from '../src/index';
 import { describeClient, loadClientPacks } from './helpers/client';
 
@@ -200,6 +201,24 @@ describeClient('game data readers on the client packs', () => {
     expect(titles.get(-1)).toBeUndefined(); // GetTitle(-1) is NULL
     expect([...titles.values()].every((title) => title !== '' && !title.startsWith('IDS'))).toBe(true);
     console.log(`honorList.txt: ${titles.size} titles`);
+  });
+
+  it('World.inc: every world line is read, through the WI_* ids of defineWorld.h', () => {
+    const text = scriptText('World.inc');
+    const worlds = readWorldInc(text, defines, 'World.inc');
+    // an independent reading: outside the comments, a line `WI_NAME "folder"` is a world, a `WI_NAME SetTitle` block is not
+    const lines = [...withoutComments(text).matchAll(/^[ \t]*(\w+)[ \t]+"([^"]*)"/gm)];
+    expect(lines.length).toBeGreaterThan(50);
+    expect(worlds).toEqual(lines.map((line) => ({ id: defines.get(line[1])!, fileName: line[2] })));
+    expect(worlds.every((world) => Number.isInteger(world.id) && world.id >= 0 && world.fileName !== '')).toBe(true);
+    expect(new Set(worlds.map((world) => world.id)).size).toBe(worlds.length); // no id is defined twice
+
+    expect(defines.get('WI_WORLD_MADRIGAL')).toBe(1);
+    expect(worlds.find((world) => world.id === 1)).toEqual({ id: 1, fileName: 'WdMadrigal' });
+    // WI_DUNGEON_SECRET_1 to _16 share a folder
+    const secret = worlds.filter((world) => world.fileName === 'WdHeaven06_1');
+    expect(secret.length).toBe(16);
+    console.log(`World.inc: ${worlds.length} worlds, ids ${Math.min(...worlds.map((w) => w.id))}..${Math.max(...worlds.map((w) => w.id))}`);
   });
 
   it('mdlDyna.inc keeps the part text and the motion list of every entry', () => {
