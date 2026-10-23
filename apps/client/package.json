@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@flyffweb/protocol": "*"
+    "@flyffweb/formats": "*",
+    "@flyffweb/protocol": "*",
+    "@flyffweb/scene": "*"
   },
   "devDependencies": {
     "@flyffweb/gateway": "*",
