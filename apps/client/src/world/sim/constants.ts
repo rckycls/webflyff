@@ -58,6 +58,8 @@ export const ActMsg = {
   STOP_TURN: 10,
   MODE_WALK: 20,
   MODE_RUN: 21,
+  /** Turn to the angle in the first parameter and run (`CMover::ProcessMove` sends it toward a destination). */
+  TURNMOVE: 47,
 } as const;
 
 /** `MTI_*` (`Resource/defineNeuz.h:352-374`): the motion a mover plays (`CMover::m_dwMotion`). */

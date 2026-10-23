@@ -394,6 +394,36 @@ describe('ActionMover: the rest of the copied rules', () => {
     expect(act.motion).toBe(Mti.RUN);
   });
 
+  it('TURNMOVE turns to a whole-degree angle and runs, unless already running at it', () => {
+    const act = mover(0);
+    act.sendActMsg(ActMsg.LTURN);
+    expect(act.sendActMsg(ActMsg.TURNMOVE, 90)).toBe(true);
+    expect(act.body.angle).toBe(90);
+    expect(act.state).toBe(ObjSta.FMOVE); // STOP_TURN, then FORWARD
+    expect(act.motion).toBe(Mti.RUN);
+    // FMOVE and (int)GetAngle() == nParam1: nothing to do (ActionMoverMsg.cpp:254)
+    expect(act.sendActMsg(ActMsg.TURNMOVE, 90)).toBe(false);
+    // 30 is held as 29.998...: (int) gives 29, so each TURNMOVE 30 sets it again
+    expect(act.sendActMsg(ActMsg.TURNMOVE, 30)).toBe(true);
+    expect(act.body.angle).toBe(wrapAngle(30));
+    expect(act.sendActMsg(ActMsg.TURNMOVE, 30)).toBe(true);
+    // a falling player is turned, but FORWARD refuses to run
+    const falling = mover(0, [0, 5, 0], { isPlayer: true });
+    for (let i = 0; i < 60 && (falling.state & ObjSta.JUMP_ALL) === 0; i++) falling.step(() => 0);
+    expect(falling.state & ObjSta.JUMP_ALL).toBe(ObjSta.SJUMP3);
+    expect(falling.sendActMsg(ActMsg.TURNMOVE, 45)).toBe(true);
+    expect(falling.body.angle).toBe(wrapAngle(45));
+    expect(falling.state & ObjSta.MOVE_ALL).not.toBe(ObjSta.FMOVE);
+  });
+
+  it('forceSet says whether ForcedSet took the state', () => {
+    const act = mover(0);
+    expect(act.forceSet({ ...act.report(0n), state: ObjSta.FMOVE })).toBe(true);
+    act.sendActMsg(ActMsg.STOP);
+    act.sendActMsg(ActMsg.SITDOWN);
+    expect(act.forceSet({ ...act.report(0n), state: ObjSta.STAND, stateFlag: 0 })).toBe(false);
+  });
+
   it('report gives what SendPlayerBehavior sends', () => {
     const act = mover(90, [1, 2, 3]);
     act.sendActMsg(ActMsg.FORWARD);

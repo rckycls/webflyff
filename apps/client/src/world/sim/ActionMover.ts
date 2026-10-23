@@ -130,7 +130,7 @@ export class ActionMover {
 
   /** `CActionMover::SendActMsg` (`ActionMover.cpp:337`) on the ground: true when `ProcessActMsg1` returns 1. */
   sendActMsg(msg: number, ...params: number[]): boolean {
-    return this.processActMsg1(msg, params[2] ?? 0) === 1;
+    return this.processActMsg1(msg, params[0] ?? 0, params[2] ?? 0) === 1;
   }
 
   /**
@@ -189,15 +189,17 @@ export class ActionMover {
   /**
    * `CMover::ActionForceSet` (`Source/_Common/MoverParam.cpp:3321-3339`): the mover takes a reported move as it is.
    * Its first lines (`m_uRemnantCorrFrm = 0`, `ClearDestPos`, `ClearDestAngle`) and `DefaultSet`'s `m_fCrrSpd = 0`
-   * belong to the correction and the destination, which the caller keeps.
+   * belong to the correction and the destination, which the caller keeps (`moverRules.ts`). True when `ForcedSet`
+   * took the state, which is when it calls `DefaultSet`.
    */
-  forceSet(m: MoveReport): void {
+  forceSet(m: MoveReport): boolean {
     this.body.pos = toFloats(m.pos);
     this.body.angle = wrapAngle(m.angle);
     // CActionMover::ForcedSet (ActionMoverMsg.cpp:35-60): it does not take a change into or out of flying or sitting
     const from = this.stateFlag;
     const to = m.stateFlag;
-    if ((from & ObjStaF.FLY) === (to & ObjStaF.FLY) && (from & ObjStaF.SIT) === (to & ObjStaF.SIT)) {
+    const took = (from & ObjStaF.FLY) === (to & ObjStaF.FLY) && (from & ObjStaF.SIT) === (to & ObjStaF.SIT);
+    if (took) {
       this.delta = toFloats(m.delta);
       this.state = m.state >>> 0;
       this.stateFlag = to >>> 0;
@@ -205,6 +207,7 @@ export class ActionMover {
     }
     this.motion = NO_MOTION;
     this.setMotion(m.motion, m.loop, m.motionOption);
+    return took;
   }
 
   /**
@@ -224,7 +227,7 @@ export class ActionMover {
   private processAction(vPos: Vec3): void {
     this.delta[0] = this.delta[2] = 0;
     if (this.state === 0) {
-      this.processActMsg1(ActMsg.STAND, 0);
+      this.processActMsg1(ActMsg.STAND, 0, 0);
     } else {
       // the groups whose states are copied, in ProcessAction's order; the look, attack, damage and action states are not
       const speed = f32(this.body.speed);
@@ -279,7 +282,7 @@ export class ActionMover {
   }
 
   /** `CActionMover::ProcessActMsg1` (`ActionMoverMsg.cpp:101-1170`) for the messages in `ActMsg`. */
-  private processActMsg1(msg: number, param3: number): number {
+  private processActMsg1(msg: number, param1: number, param3: number): number {
     const moveState = this.state & ObjSta.MOVE_ALL;
     switch (msg) {
       case ActMsg.STAND: // :108-134
@@ -303,7 +306,7 @@ export class ActionMover {
         if (this.stateFlag & ObjStaF.SIT) return 0;
         if (param3 === 0 && this.isBusy()) return 0;
         this.stateFlag |= ObjStaF.SIT;
-        this.processActMsg1(ActMsg.STOP, 0);
+        this.processActMsg1(ActMsg.STOP, 0, 0);
         this.setMotion(Mti.SIT, AniLoop.CONT);
         this.setState(ObjSta.MOVE_ALL, ObjSta.SIT);
         return 1;
@@ -345,6 +348,15 @@ export class ActionMover {
         this.setState(ObjSta.TURN_ALL, turn);
         return 1;
       }
+      case ActMsg.TURNMOVE: // :253-274 (the MVRF_NOMOVE and CHS_LOOT tests need buffs; SetAngleX is a flying NPC's)
+        if (moveState === ObjSta.FMOVE && Math.trunc(this.body.angle) === param1) return 0;
+        if (this.state & ObjSta.DMG_FLY_ALL) return 0;
+        if (this.state & ObjSta.ATK_ALL) return -2;
+        if (this.inDamage()) return -3;
+        this.body.angle = wrapAngle(param1);
+        this.processActMsg1(ActMsg.STOP_TURN, 0, 0);
+        this.processActMsg1(ActMsg.FORWARD, 0, 0);
+        return 1;
       case ActMsg.STOP_TURN: // :453-456
         if ((this.state & ObjSta.TURN_ALL) === 0) return 0;
         this.setState(ObjSta.TURN_ALL, 0);
