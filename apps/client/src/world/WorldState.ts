@@ -25,10 +25,10 @@ export interface Mover extends SimMover {
 
 /**
  * What changed in view since the last `takeChanges`. A caller applies `removed` first, then `added`:
- * - `removed` holds the ID of every mover that left, once. It may hold an ID the caller never saw (a mover that came
- *   and went between two calls), which has nothing to drop.
- * - `added` holds the movers that came and are still in view, in the order they came. A mover that came and went
- *   between two calls is left out.
+ * - `removed` holds, once, the ID of every mover that left and that an earlier call handed out in `added`.
+ * - `added` holds the movers that came and are still in view, in the order they came.
+ * A mover that came and went between two calls is in neither: the caller never saw it. An ID can be in both, for a
+ * mover handed out that left and another that came with its ID.
  */
 export interface WorldChanges {
   added: Mover[];
@@ -105,7 +105,7 @@ export class WorldState {
       case 'setPosAngle':
         this.setPosAngle(m, message.pos, message.angle);
         break;
-      default: // addOther, worldReadInfo, replace: the objects that are not movers and the world changes are not kept here
+      default: // addOther, environmentSetting, worldReadInfo, replace: objects that are not movers and world changes are not kept here
         break;
     }
   }
@@ -120,11 +120,10 @@ export class WorldState {
 
   /** The changes since the last call (see `WorldChanges`). */
   takeChanges(): WorldChanges {
-    const added = this.pendingAdded.filter((m) => this.byId.get(m.objectId) === m);
-    const removed = [...this.pendingRemoved];
+    const changes = { added: this.pendingAdded, removed: [...this.pendingRemoved] };
     this.pendingAdded = [];
     this.pendingRemoved = new Set();
-    return { added, removed };
+    return changes;
   }
 
   /**
@@ -140,13 +139,18 @@ export class WorldState {
     this.pendingAdded.push(mover);
   }
 
-  /** `OnRemoveObj` (:1643): the object is deleted. */
+  /**
+   * `OnRemoveObj` (:1643): the object is deleted. A mover that came since the last `takeChanges` leaves the changes
+   * without a trace, so a hidden tab, which takes none, keeps neither its mover nor its ID.
+   */
   private remove(objectId: number): void {
     const old = this.byId.get(objectId);
     if (old === undefined) return;
     this.byId.delete(objectId);
     if (old === this.own) this.own = undefined;
-    this.pendingRemoved.add(objectId);
+    const unseen = this.pendingAdded.indexOf(old);
+    if (unseen >= 0) this.pendingAdded.splice(unseen, 1);
+    else this.pendingRemoved.add(objectId);
   }
 
   /**

@@ -6,6 +6,7 @@ import { loopMotion } from '@flyffweb/scene';
 import type { AssembledCharacter, LoopedMotion } from '@flyffweb/scene';
 import { MoverViews } from '../src/world/render/MoverViews';
 import type { MoverLook } from '../src/world/render/looks';
+import { loadMoverModel } from '../src/world/render/moverModels';
 import { ActMsg, Mti } from '../src/world/sim/constants';
 import type { Mover, WorldChanges } from '../src/world/WorldState';
 import { addedNpc, addedPlayer, moverFrom } from './helpers/movers';
@@ -42,7 +43,8 @@ interface Rig {
 }
 
 function rig(
-  loadModel: (look: MoverLook) => Promise<AssembledCharacter | Object3D> = async () => fakeModel(),
+  loadModel: (look: MoverLook, report: (message: string) => void) => Promise<AssembledCharacter | Object3D> =
+    async () => fakeModel(),
   lookFor: (mover: Mover) => MoverLook | null = () => look,
 ): Rig {
   const scene = new Scene();
@@ -88,7 +90,7 @@ describe('MoverViews', () => {
     await r.views.settled();
     r.views.update(r.movers, 0);
 
-    expect(r.load).toHaveBeenCalledWith(look);
+    expect(r.load).toHaveBeenCalledWith(look, expect.any(Function));
     expect(inScene(r.scene, model.root)).toBe(true);
     const holder = model.root.parent!;
     expect(holder.position.toArray()).toEqual(toWebPosition(aibatt.act.body.pos));
@@ -138,6 +140,54 @@ describe('MoverViews', () => {
     expect(r.overlay.error).toHaveBeenCalledTimes(1);
     expect(r.overlay.error.mock.calls[0]![0]).toContain('models/mvr_lost.glb');
     expect(r.load).toHaveBeenCalledTimes(1);
+  });
+
+  it('a model that throws as it is put on screen gets the placeholder, and the overlay says why; the rest goes on', async () => {
+    const broken = fakeModel();
+    broken.mixer.clipAction = () => {
+      throw new Error('the motion does not fit the skeleton');
+    };
+    const good = fakeModel();
+    const r = rig(vi.fn().mockResolvedValueOnce(broken).mockResolvedValueOnce(good));
+    r.add(moverFrom(addedNpc(7, 21)));
+    r.add(moverFrom(addedNpc(8, 21)));
+    // settles, so the world screen's loading is not ended by one bad model
+    await expect(r.views.settled()).resolves.toBeUndefined();
+
+    expect(r.overlay.error).toHaveBeenCalledTimes(1);
+    expect(r.overlay.error.mock.calls[0]![0]).toMatch(/^mover 21.*: the motion does not fit the skeleton$/);
+    expect(broken.release).toHaveBeenCalledTimes(1);
+    expect(inScene(r.scene, broken.root)).toBe(false);
+    expect(r.scene.getObjectByName('mover 7')!.getObjectByName('placeholder')).toBeDefined();
+    expect(r.views.placeOf(7)!.head[1]).toBeCloseTo(r.views.placeOf(7)!.at[1] + 1.8, 6);
+    // the GPU estimate holds the good model alone (the two are the same box): whatever the broken one added is taken back
+    const gpu = r.overlay.addGpuBytes.mock.calls.map(([n]) => n as number);
+    expect(gpu.reduce((a, b) => a + b, 0)).toBe(gpu.find((n) => n > 0));
+    expect(inScene(r.scene, good.root)).toBe(true);
+    expect(r.views.count()).toBe(1);
+  });
+
+  it('says nothing on the overlay once disposed: a model that fails after it, or a part error of one still loading', async () => {
+    const failing = later();
+    const reporting = later();
+    let reportPart!: (message: string) => void;
+    const r = rig(vi.fn()
+      .mockReturnValueOnce(failing.promise.then(() => {
+        throw new Error('asset "models/mvr_lost.glb" is not in the asset index');
+      }))
+      .mockImplementationOnce((_look: MoverLook, report: (message: string) => void) => {
+        reportPart = report;
+        return reporting.promise;
+      }));
+    r.add(moverFrom(addedNpc(7, 21)));
+    r.add(moverFrom(addedNpc(8, 21)));
+    r.views.dispose();
+    failing.resolve(fakeModel());
+    reportPart('part models/part_lost.glb: not in the asset index');
+    reporting.resolve(fakeModel());
+    await r.views.settled();
+
+    expect(r.overlay.error).not.toHaveBeenCalled();
   });
 
   it('removing a mover releases its textures', async () => {
@@ -228,5 +278,22 @@ describe('MoverViews', () => {
     expect(loaded.release).toHaveBeenCalledTimes(1);
     expect(late.release).toHaveBeenCalledTimes(1);
     expect(r.scene.children).toEqual([]);
+  });
+});
+
+describe('loadMoverModel', () => {
+  it('says each part it cannot load to the report it is given, and rejects when none loads', async () => {
+    const services = {
+      store: { bytes: async (key: string): Promise<Uint8Array> => { throw new Error(`${key} is not in the asset index`); } },
+      loaders: { gltf: {} },
+      textures: {},
+    } as unknown as Parameters<typeof loadMoverModel>[0];
+    const report = vi.fn();
+    const twoParts: MoverLook = { ...look, parts: ['models/part_a.glb', 'models/part_b.glb'] };
+    await expect(loadMoverModel(services)(twoParts, report)).rejects.toThrow(/none of its parts could be loaded/);
+    expect(report.mock.calls.map(([message]) => message as string).sort()).toEqual([
+      'part models/part_a.glb: models/part_a.glb is not in the asset index',
+      'part models/part_b.glb: models/part_b.glb is not in the asset index',
+    ]);
   });
 });

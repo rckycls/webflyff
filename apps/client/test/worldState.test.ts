@@ -3,7 +3,7 @@ import type { AddedMover, MoveReport, Vec3, WorldMessage } from '@flyffweb/proto
 import { GAME_DATA_KEYS } from '@flyffweb/formats';
 import type { WebMover } from '@flyffweb/formats';
 import { ServerClock } from '../src/net/serverClock';
-import { loadGameData } from '../src/world/gameData';
+import { GameDataMissingError, loadGameData } from '../src/world/gameData';
 import type { GameData } from '../src/world/gameData';
 import { ActMsg, AniLoop, Mti, ObjSta, ObjStaF } from '../src/world/sim/constants';
 import { WorldState } from '../src/world/WorldState';
@@ -266,23 +266,36 @@ describe('WorldState: takeChanges', () => {
     expect(second.added.map((m) => m.objectId)).toEqual([3]);
   });
 
-  it('a mover added and removed between two calls is in removed only, so removed-then-added never leaves it behind', () => {
+  it('a mover added and removed between two calls is in neither list: the caller never saw it', () => {
     const { world } = newWorld();
     add(world, playerOf(1, 'Alice'));
     world.takeChanges();
     add(world, playerOf(2, 'Bob'));
     world.apply(2, { type: 'delObj' });
-    const changes = world.takeChanges();
-    expect(changes.added).toEqual([]);
-    expect(changes.removed).toEqual([2]); // the caller never saw ID 2; dropping an unknown ID does nothing
+    expect(world.takeChanges()).toEqual({ added: [], removed: [] });
 
-    // removed, added again, removed: once in removed, and not added
+    // handed out, removed, added again, removed: the one handed out is in removed, once, and the other in neither
     add(world, playerOf(3, 'Carol'));
     world.takeChanges();
     world.apply(3, { type: 'delObj' });
     add(world, playerOf(3, 'Carol again'));
     world.apply(3, { type: 'delObj' });
     expect(world.takeChanges()).toEqual({ added: [], removed: [3] });
+  });
+
+  it('movers coming and going while nobody takes the changes (a hidden tab) leave nothing behind', () => {
+    const { world } = newWorld();
+    add(world, playerOf(1, 'Alice'));
+    world.takeChanges();
+    for (let id = 100; id < 1100; id++) {
+      add(world, playerOf(id, `Passer-by ${id}`));
+      world.apply(id, { type: 'delObj' });
+    }
+    add(world, playerOf(2, 'Bob'));
+    world.apply(1, { type: 'delObj' });
+    const changes = world.takeChanges();
+    expect(changes.removed).toEqual([1]);
+    expect(changes.added.map((m) => m.name)).toEqual(['Bob']);
   });
 
   it('removing and adding an ID twice between two calls leaves the last mover, and the ID in removed once', () => {
@@ -522,6 +535,23 @@ describe('WorldState: the messages and the rules (OnMoverMoved and the others)',
 
 // ---- the game data ------------------------------------------------------------------------------------------------
 
+/**
+ * An asset store over `files`, as `loadGameData` uses one: `url` answers for the keys the index lists, `json` reads
+ * them (and notes each key asked for). `unreadable` keys are listed but cannot be read, as after three failed tries.
+ */
+function storeOf(files: Record<string, unknown>, unreadable: string[] = []) {
+  const asked: string[] = [];
+  return {
+    asked,
+    url: (key: string): string | null => (key in files || unreadable.includes(key) ? `/assets/${key}` : null),
+    json: async <T>(key: string): Promise<T> => {
+      asked.push(key);
+      if (!(key in files)) throw new Error(`no ${key}`);
+      return files[key] as T;
+    },
+  };
+}
+
 describe('loadGameData', () => {
   it('loadGameData reads the game-data keys', async () => {
     const files: Record<string, unknown> = {
@@ -534,16 +564,10 @@ describe('loadGameData', () => {
       [GAME_DATA_KEYS.honorTitles]: { '0': 'Master Collector', '12': 'Entrepreneur' },
       [GAME_DATA_KEYS.worlds]: { '1': 'wdmadrigal', '40': 'wdheaven06', '41': 'wdheaven06_1' },
     };
-    const asked: string[] = [];
-    const data = await loadGameData({
-      json: async <T>(key: string): Promise<T> => {
-        asked.push(key);
-        if (!(key in files)) throw new Error(`no such asset: ${key}`);
-        return files[key] as T;
-      },
-    });
+    const store = storeOf(files);
+    const data = await loadGameData(store);
 
-    expect(asked.sort()).toEqual(Object.values(GAME_DATA_KEYS).sort());
+    expect(store.asked.sort()).toEqual(Object.values(GAME_DATA_KEYS).sort());
     expect([...data.movers.keys()]).toEqual([11, 20]); // numbers, not the JSON's text
     expect(data.movers.get(20)!.name).toBe('Aibatt');
     expect([...data.items.keys()]).toEqual([500]);
@@ -557,39 +581,37 @@ describe('loadGameData', () => {
     expect(data.worlds.get(1)).toBe('wdmadrigal');
   });
 
-  it('fails loudly when the worlds catalog is not in the asset index, as for every catalog', async () => {
-    const files: Record<string, unknown> = {
+  it('a catalog the asset index does not list means game files from an older version, named, and nothing is fetched', async () => {
+    const store = storeOf({
       [GAME_DATA_KEYS.movers]: [],
       [GAME_DATA_KEYS.items]: [],
       [GAME_DATA_KEYS.npcs]: [],
       [GAME_DATA_KEYS.nameColors]: { general: 1, chaotic: 2, ready: 3 },
-      [GAME_DATA_KEYS.honorTitles]: {},
-    };
-    const store = {
-      json: async <T>(key: string): Promise<T> => {
-        if (!(key in files)) throw new Error(`no such asset: ${key}`);
-        return files[key] as T;
-      },
-    };
-    await expect(loadGameData(store)).rejects.toThrow('no such asset: data/worlds.json');
+    });
+    const failure = await loadGameData(store).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(GameDataMissingError);
+    expect((failure as GameDataMissingError).keys).toEqual([GAME_DATA_KEYS.honorTitles, GAME_DATA_KEYS.worlds]);
+    expect((failure as Error).message).toContain('data/worlds.json');
+    expect(store.asked).toEqual([]);
   });
 
   it('a character defined twice keeps the later one, as CProject::LoadCharacter does', async () => {
-    const files: Record<string, unknown> = {
+    const data = await loadGameData(storeOf({
       [GAME_DATA_KEYS.movers]: [],
       [GAME_DATA_KEYS.items]: [],
       [GAME_DATA_KEYS.npcs]: [{ key: 'Abc', name: 'First' }, { key: 'aBC', name: 'Second' }],
       [GAME_DATA_KEYS.nameColors]: { general: 1, chaotic: 2, ready: 3 },
       [GAME_DATA_KEYS.honorTitles]: {},
       [GAME_DATA_KEYS.worlds]: {},
-    };
-    const data = await loadGameData({ json: async <T>(key: string): Promise<T> => files[key] as T });
+    }));
     expect(data.npcs.size).toBe(1);
     expect(data.npcs.get('abc')!.name).toBe('Second');
   });
 
-  it('fails when a catalog cannot be loaded', async () => {
-    const store = { json: async <T>(key: string): Promise<T> => { throw new Error(`no ${key}`); } };
-    await expect(loadGameData(store)).rejects.toThrow(/no data\//);
+  it('fails when a catalog cannot be loaded, and that is not the out-of-date failure', async () => {
+    const failure = await loadGameData(storeOf({}, Object.values(GAME_DATA_KEYS))).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure).not.toBeInstanceOf(GameDataMissingError);
+    expect((failure as Error).message).toMatch(/^no data\//);
   });
 });

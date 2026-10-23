@@ -1,22 +1,18 @@
 // The movers in view on screen: a model per mover, placed and turned where the rules put it and playing the motion they
 // set, or a placeholder figure when its model cannot be had. Models load on demand, through the page's asset store and
-// texture cache (`loadMoverModel`); motions too, each file once for every mover that plays it.
+// texture cache (`loadMoverModel`, `moverModels.ts`); motions too, each file once for every mover that plays it.
 //
 // The drawn pose is Neuz's `m_vScrPos` / `m_fScrAngle`: the own character is drawn where the rules have it, any other
 // mover follows its rules position a step behind, an eighth of the way per step (`CMover::Interpolate`), which smooths
 // the jumps a server correction makes. A model's motion goes on a frame per step as `CModel::FrameMove` does, and
 // `CActionMover`'s `IsEndFrame` asks it whether a one-play motion (sitting down, getting up) has played to its end.
 
-import { applyTextures, assembleCharacter, d3dColor, geometryBytes, loadGltf, noonLight, partSlot } from '@flyffweb/scene';
-import type { AssembledCharacter, LoopedMotion, Overlay, SceneServices } from '@flyffweb/scene';
+import { geometryBytes } from '@flyffweb/scene';
+import type { AssembledCharacter, LoopedMotion, Overlay } from '@flyffweb/scene';
 import { toWebPosition } from '@flyffweb/formats';
 import type { Vec3 } from '@flyffweb/formats';
-import type { AnimationAction, Material, Object3D, Scene, Texture } from 'three';
-import {
-  AnimationMixer, Box3, CapsuleGeometry, Color, Group, LoopOnce, LoopRepeat, Mesh, MeshBasicMaterial, MeshLambertMaterial,
-  SRGBColorSpace,
-} from 'three';
-import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import type { AnimationAction, Object3D, Scene } from 'three';
+import { Box3, CapsuleGeometry, Group, LoopOnce, LoopRepeat, Mesh, MeshLambertMaterial } from 'three';
 import { AniLoop } from '../sim/constants';
 import { STEPS_PER_SECOND } from '../sim/stepper';
 import type { Mover, WorldChanges } from '../WorldState';
@@ -64,8 +60,10 @@ interface View {
 /**
  * The views of the movers in view, kept in step with `WorldState`: `sync` with its changes each frame, `step` after each
  * of its steps, `update` before drawing. `load` gives the model of a look (rejecting when it cannot be had: the mover is
- * then the placeholder, and the overlay says why, once); `lookFor` is `lookOf` with the game data; `loadMotion` gives a
- * motion file, looped as the client loops it.
+ * then the placeholder, and the overlay says why, once), and says to `report` what it left out; `lookFor` is `lookOf`
+ * with the game data; `loadMotion` gives a motion file, looped as the client loops it. A model that throws as it is put
+ * on screen is the placeholder too. Once disposed, nothing more is said on the overlay: it is the page's, and the next
+ * entry's errors are listed there.
  */
 export class MoverViews {
   private readonly views = new Map<number, View>();
@@ -79,7 +77,7 @@ export class MoverViews {
 
   constructor(
     private readonly scene: Scene,
-    private readonly load: (look: MoverLook) => Promise<AssembledCharacter | Object3D>,
+    private readonly load: (look: MoverLook, report: (message: string) => void) => Promise<AssembledCharacter | Object3D>,
     private readonly overlay: Pick<Overlay, 'error' | 'addGpuBytes'>,
     private readonly lookFor: (mover: Mover) => MoverLook | null,
     private readonly loadMotion: (key: string) => Promise<LoopedMotion>,
@@ -199,20 +197,27 @@ export class MoverViews {
     this.track((async () => {
       let loaded: AssembledCharacter | Object3D;
       try {
-        loaded = await this.load(look);
+        loaded = await this.load(look, this.report);
       } catch (error) {
-        this.overlay.error(`${moverLabel(mover)}: ${messageOf(error)}`);
+        this.report(`${moverLabel(mover)}: ${messageOf(error)}`);
         if (!view.gone) this.showPlaceholder(view);
         return;
       }
-      // the motion it is in, so that it is drawn in it from the first frame
-      const key = look.motion(mover.act.motion);
-      if (key !== null) await this.clip(key).ready;
-      if (view.gone) {
-        if ('release' in loaded) loaded.release();
-        return;
+      try {
+        // the motion it is in, so that it is drawn in it from the first frame
+        const key = look.motion(mover.act.motion);
+        if (key !== null) await this.clip(key).ready;
+        if (view.gone) {
+          if ('release' in loaded) loaded.release();
+          return;
+        }
+        this.attach(view, loaded);
+      } catch (error) {
+        // a model that cannot be put on screen is let go, and the mover is the placeholder, as for one that cannot be had
+        this.report(`${moverLabel(mover)}: ${messageOf(error)}`);
+        this.detach(view, loaded);
+        if (!view.gone) this.showPlaceholder(view);
       }
-      this.attach(view, loaded);
     })());
   }
 
@@ -224,10 +229,12 @@ export class MoverViews {
     view.head = Math.max(0, new Box3().setFromObject(root).max.y);
     view.holder.add(root);
     if (model === null) return;
+    let bytes = 0;
     root.traverse((object) => {
-      if (object instanceof Mesh) view.bytes += geometryBytes(object.geometry);
+      if (object instanceof Mesh) bytes += geometryBytes(object.geometry);
     });
-    this.overlay.addGpuBytes(view.bytes);
+    this.overlay.addGpuBytes(bytes);
+    view.bytes = bytes;
     view.model = model;
     const act = view.mover.act;
     view.motion = { id: act.motion, option: act.motionOption, loop: act.loop };
@@ -235,6 +242,19 @@ export class MoverViews {
     act.isEndFrame = () => this.isEndFrame(view);
     this.play(view);
     model.mixer.update(0);
+  }
+
+  /** Takes back what `attach` did of a model that threw on the way, and lets the model go. */
+  private detach(view: View, loaded: AssembledCharacter | Object3D): void {
+    ('release' in loaded ? loaded.root : loaded).removeFromParent();
+    if (view.bytes !== 0) this.overlay.addGpuBytes(-view.bytes);
+    view.bytes = 0;
+    view.model = null;
+    view.head = null;
+    view.action = null;
+    view.actionKey = null;
+    view.mover.act.isEndFrame = () => true;
+    if ('release' in loaded) loaded.release();
   }
 
   private showPlaceholder(view: View): void {
@@ -314,9 +334,7 @@ export class MoverViews {
         (motion) => {
           entry.motion = motion;
         },
-        (error: unknown) => {
-          if (!this.disposed) this.overlay.error(`motion ${key}: ${messageOf(error)}`);
-        },
+        (error: unknown) => this.report(`motion ${key}: ${messageOf(error)}`),
       ).finally(() => {
         entry.loading = false;
       }));
@@ -326,11 +344,21 @@ export class MoverViews {
     return clip;
   }
 
+  /**
+   * Keeps a load in `pending` until it settles. Whatever it throws is said on the overlay instead: nothing goes
+   * unhandled, and `settled` never rejects, so one bad model cannot end the entry.
+   */
   private track(work: Promise<void>): Promise<void> {
-    this.pending.add(work);
-    void work.finally(() => this.pending.delete(work));
-    return work;
+    const settled = work.catch((error: unknown) => this.report(`mover views: ${messageOf(error)}`));
+    this.pending.add(settled);
+    void settled.finally(() => this.pending.delete(settled));
+    return settled;
   }
+
+  /** Says `message` on the overlay, unless the views are disposed: the overlay is the page's, and outlives this entry. */
+  private readonly report = (message: string): void => {
+    if (!this.disposed) this.overlay.error(message);
+  };
 }
 
 /**
@@ -366,95 +394,4 @@ function interpolate(view: View): void {
 /** How the overlay names a mover: its `MI_*` index and its name. */
 function moverLabel(mover: Mover): string {
   return `mover ${mover.added.index}${mover.name === '' ? '' : ` (${mover.name})`}`;
-}
-
-/**
- * How bright the hair is lit: `fblack` of `CModelObject::Render` (`ModelObject.cpp:1158-1167`), the mean of the light's
- * diffuse colour times `g_fHairLight` (1.5, `ModelGlobal.cpp:41`) times 0.6, and at least 0.3 (`__BS_FIX_HAIR_AMBIENT`).
- * The light is the world's at noon (`noonLight`): 0.99.
- */
-function hairLight(): number {
-  const diffuse = noonLight().sunColor;
-  return Math.max(0.3, ((diffuse * 1.5 * 3) / 3) * 0.6);
-}
-
-/**
- * Neuz draws the hair part unlit: diffuse 0 and ambient the hair colour times `hairLight`, at most 1
- * (`CModelObject::Render`, `ModelObject.cpp:1147-1175`, after `CMover::Render` put the colour in the hair's
- * `m_fAmbient`, `MoverRender.cpp:348-360`). So its materials become unlit ones of that colour over the same texture.
- */
-function tintHair(lod: Object3D, hairColor: number): void {
-  const light = hairLight();
-  const [r, g, b] = d3dColor(hairColor).map((c) => Math.min(c * light, 1)) as [number, number, number];
-  const color = new Color().setRGB(r, g, b, SRGBColorSpace);
-  lod.traverse((object) => {
-    if (!(object instanceof Mesh)) return;
-    const tint = (old: Material): Material => {
-      const { map } = old as Material & { map?: Texture | null };
-      const unlit = new MeshBasicMaterial({
-        name: old.name, map: map ?? null, color, transparent: old.transparent, opacity: old.opacity, alphaTest: old.alphaTest,
-        side: old.side, depthWrite: old.depthWrite,
-      });
-      old.dispose(); // its texture is the cache's: the assembled character gives it back
-      return unlit;
-    };
-    object.material = Array.isArray(object.material) ? object.material.map(tint) : tint(object.material);
-  });
-}
-
-/**
- * The model of a look, from the page's asset store: the skeleton with every part re-bound to it (`assembleCharacter`),
- * the hair tinted as Neuz tints it, or for a model with no skeleton its `lod0` as it is. A part that cannot be had is
- * left out and said on the overlay; a skeleton, or every part, that cannot be had rejects.
- */
-export function loadMoverModel(
-  services: Pick<SceneServices, 'store' | 'loaders' | 'textures'>,
-  overlay: Pick<Overlay, 'error'>,
-): (look: MoverLook) => Promise<AssembledCharacter> {
-  const { store, loaders, textures } = services;
-  const glb = (key: string): Promise<GLTF> => loadGltf(store, loaders.gltf, key);
-  return async (look) => {
-    const skeleton = look.skeleton === null ? null : glb(look.skeleton);
-    // awaited below, once the parts are in; until then a failure must not count as unhandled
-    skeleton?.catch(() => {});
-    const parts = await Promise.all(look.parts.map(async (key) => {
-      try {
-        return { key, gltf: await glb(key) };
-      } catch (error) {
-        overlay.error(`part ${key}: ${messageOf(error)}`);
-        return null;
-      }
-    }));
-    const loaded = parts.flatMap((part) => (part === null ? [] : [part]));
-    if (loaded.length === 0) throw new Error(`none of its parts could be loaded (${look.parts.join(', ')})`);
-    if (skeleton === null) return plainModel(loaded[0]!.gltf, textures);
-    const hair = loaded.find((part) => partSlot(part.key) === 'hair')?.gltf.scene.getObjectByName('lod0');
-    const character = await assembleCharacter(await skeleton, loaded.map((part) => part.gltf), textures);
-    if (hair !== undefined && look.hairColor !== null) tintHair(hair, look.hairColor);
-    return character;
-  };
-}
-
-/** A model that is not animated: its `lod0` with its textures, and a mixer that has nothing to play. */
-async function plainModel(gltf: GLTF, textures: SceneServices['textures']): Promise<AssembledCharacter> {
-  const lod = gltf.scene.getObjectByName('lod0');
-  if (lod === undefined) throw new Error('the model has no "lod0" node');
-  const root = new Group();
-  root.add(lod);
-  const keys = await applyTextures(lod, textures);
-  let released = false;
-  return {
-    root,
-    mixer: new AnimationMixer(root),
-    release() {
-      if (released) return;
-      released = true;
-      for (const key of keys) textures.release(key);
-      root.traverse((object) => {
-        if (!(object instanceof Mesh)) return;
-        object.geometry.dispose();
-        for (const material of Array.isArray(object.material) ? object.material : [object.material]) material.dispose();
-      });
-    },
-  };
 }

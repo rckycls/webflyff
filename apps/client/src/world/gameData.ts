@@ -35,12 +35,26 @@ const withHides = (item: WebItemModel): WebItemModel => ({
 });
 
 /**
+ * The asset index lists none of `keys`: the game files on the server were converted by a version older than these
+ * catalogs (`npm run convert -- --only data` makes them).
+ */
+export class GameDataMissingError extends Error {
+  constructor(readonly keys: string[]) {
+    super(`the asset index has no ${keys.join(', ')}: the game files are older than this version`);
+    this.name = 'GameDataMissingError';
+  }
+}
+
+/**
  * Loads the six catalogs. The converter writes the movers, items and characters as arrays of records that carry
  * their own id or key (`gameDataStage.ts`), and the honour titles and worlds as objects keyed by the id as text. A
  * repeated id or key keeps the later record, as `CProject::LoadCharacter`'s `SetAt` does. A catalog that is not in the
- * asset index fails the load.
+ * asset index fails the load with a `GameDataMissingError`, before anything is fetched; one that cannot be fetched
+ * fails it with the download's error.
  */
-export async function loadGameData(store: Pick<AssetStore, 'json'>): Promise<GameData> {
+export async function loadGameData(store: Pick<AssetStore, 'json' | 'url'>): Promise<GameData> {
+  const missing = Object.values(GAME_DATA_KEYS).filter((key) => store.url(key) === null);
+  if (missing.length > 0) throw new GameDataMissingError(missing);
   const [movers, items, npcs, nameColors, honorTitles, worlds] = await Promise.all([
     store.json<WebMover[]>(GAME_DATA_KEYS.movers),
     store.json<WebItemModel[]>(GAME_DATA_KEYS.items),

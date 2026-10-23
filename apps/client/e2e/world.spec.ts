@@ -11,9 +11,11 @@ import type { Page } from '@playwright/test';
 import { MAP_SIZE, decodeTileBin } from '@flyffweb/formats';
 import type { AssetIndex, WorldManifest } from '@flyffweb/formats';
 import { ArReader, ArWriter, NULL_ID, PacketType, Port } from '@flyffweb/protocol';
-import type { AddedMover, AddedNpc, AddedPlayer, Vec3 } from '@flyffweb/protocol';
+import type { AddedMover, AddedNpc, AddedPlayer, MoveReport, Vec3 } from '@flyffweb/protocol';
 import { sampleHeight } from '@flyffweb/scene';
-import { createWorldScript, writeAddMonster, writeAddNpc, writeAddSelf } from '@flyffweb/testkit';
+import {
+  createWorldScript, writeAddMonster, writeAddNpc, writeAddPlayer, writeAddSelf, writeDelObj, writeMoverMoved,
+} from '@flyffweb/testkit';
 import type {} from '../src/testHooks'; // window.__client
 
 const ASSETS = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../dist/assets');
@@ -26,8 +28,9 @@ test.beforeAll(() => {
 });
 
 // Ruling 3: WebKit runs these where it draws WebGL. Playwright's WebKit draws Flaris on this PC (checked with a picture
-// of the iPhone 13 page); where a WebKit build has no WebGL the world screen ends at once with "Something went wrong",
-// these fail at `ready()`, and they are to be skipped in that project, naming that reason. The picture is Chromium's only.
+// of the iPhone 13 page); where a WebKit build has no WebGL the world screen ends at once with "This browser can't show
+// the 3D world", these fail at `ready()`, and they are to be skipped in that project, naming that reason. The picture is
+// Chromium's only.
 
 /** `WI_WORLD_MADRIGAL` (`Resource/defineWorld.h`): Flaris is in Madrigal. */
 const MADRIGAL = 1;
@@ -38,6 +41,9 @@ const MI_AIBATT = 21;
 /** `OBJSTA_STAND` (`MoverMsg.h`), `OBJSTA_FMOVE`, `OBJSTA_MOVE_ALL`, `BELLI_PEACEFUL` (`defineAttribute.h:203`). */
 const OBJSTA_STAND = 0x01;
 const OBJSTA_FMOVE = 0x04;
+/** `MTI_RUN` (`Resource/defineNeuz.h`) and `ANILOOP_LOOP` (`_Common/Obj.h:28`). */
+const MTI_RUN = 5;
+const ANILOOP_LOOP = 0x04;
 const OBJSTA_MOVE_ALL = 0xff;
 const BELLI_PEACEFUL = 1;
 /** `MAX_HUMAN_PARTS` (`Resource/defineNeuz.h:62`): the own character's equipment object IDs. */
@@ -95,6 +101,19 @@ const flaris = createWorldScript({
   self: writeAddSelf(SELF_ID, self), others: [writeAddMonster(MONSTER_ID, aibatt), writeAddNpc(NPC_ID, julia)],
 });
 
+/** Another player, who comes into view 3 m east of Webby once Webby is in the world, dressed as a vagrant. */
+const BOB_ID = 9003;
+const BOB_AT: Vec3 = [6971, groundAt(6971, 3328), 3328];
+const bob: AddedMover = {
+  ...BASE, index: MI_MALE, pos: BOB_AT, angle: 0, objectId: BOB_ID, isPlayer: true,
+  player: {
+    ...SELF_PLAYER, self: false, name: 'Bob', playerId: 501, equipmentObjectIds: [],
+    worn: MALE_VAGRANT.map((itemId, i) => ({ part: [2, 4, 5][i]!, itemId, flag: 0 })),
+  },
+};
+/** A message of a type the browser has no reader for. */
+const UNREAD = { objectId: SELF_ID, type: 0x7777, fields: new Uint8Array([1, 2, 3]) };
+
 // The lobby's side, as lobby.spec.ts scripts it: a server list, the clock, the cache address and the characters.
 const AUTH_KEY = 7;
 
@@ -129,16 +148,25 @@ interface Gateway {
   closed: number[];
   /** Ends the cache connection the way the gateway does, with a close code. */
   closeCache(code: number): Promise<void>;
+  /** Sends a packet to the page on the cache connection, as the world server does between the page's packets. */
+  pushCache(packet: Uint8Array): void;
 }
 
 /** Plays the gateway and the four servers behind it: the certifier, the login server and the cache server with Flaris. */
 async function playGateway(page: Page): Promise<Gateway> {
-  const gateway: Gateway = { sent: [], closed: [], closeCache: async () => {} };
+  const gateway: Gateway = {
+    sent: [], closed: [], closeCache: async () => {}, pushCache: () => {
+      throw new Error('no cache connection yet');
+    },
+  };
   let connections = 0;
   await page.routeWebSocket(/\/connect\//, (ws) => {
     const port = Number(new URL(ws.url()).pathname.split(':').pop());
     const connection = ++connections;
-    if (port === Port.CACHE) gateway.closeCache = (code) => ws.close({ code });
+    if (port === Port.CACHE) {
+      gateway.closeCache = (code) => ws.close({ code });
+      gateway.pushCache = (packet) => ws.send(Buffer.from(packet));
+    }
     ws.onClose(() => gateway.closed.push(connection));
     ws.onMessage((message) => {
       const body = Buffer.from(message as Buffer);
@@ -165,18 +193,34 @@ async function playGateway(page: Page): Promise<Gateway> {
   return gateway;
 }
 
-/** Logs in, picks Channel 1 and enters with Webby; resolves once the world is on screen. */
-async function enterFlaris(page: Page): Promise<void> {
+/** Logs in, picks Channel 1 and taps Enter on Webby. */
+async function tapEnter(page: Page): Promise<void> {
   await page.goto('/');
   await page.getByLabel('Account').fill('webtester');
   await page.getByLabel('Password').fill('password1');
   await page.getByRole('button', { name: 'Log in' }).click();
   await page.getByRole('button', { name: /Channel 1/ }).click();
   await page.getByRole('button', { name: 'Enter Webby' }).click();
+}
+
+/** Logs in, picks Channel 1 and taps Enter on Webby; resolves on the loading screen. */
+async function startEntering(page: Page): Promise<void> {
+  await tapEnter(page);
   await expect(page.getByText('Entering the world…')).toBeVisible();
+}
+
+/** Logs in, picks Channel 1 and enters with Webby; resolves once the world is on screen. */
+async function enterFlaris(page: Page): Promise<void> {
+  await startEntering(page);
   await page.evaluate(() => window.__client!.ready());
   await expect(page.getByRole('button', { name: 'Leave' })).toBeVisible();
 }
+
+/** The PLAYERMOVED packets the page sent so far. */
+const movesOf = (gateway: Gateway): Sent[] => gateway.sent.filter((s) => s.port === Port.CACHE && s.type === PacketType.PLAYERMOVED);
+
+/** The state in a PLAYERMOVED (`CDPClient::SendPlayerMoved`): after DPID_UNKNOWN, the type, the position, the delta and the angle. */
+const movedState = (moved: Sent): number => moved.body.readUInt32LE(4 + 4 + 12 + 12 + 4);
 
 test.describe('the world screen against scripted servers', () => {
   test('enters Flaris from the character list', async ({ page }) => {
@@ -191,6 +235,110 @@ test.describe('the world screen against scripted servers', () => {
     const stats = await page.evaluate(() => window.__client!.stats());
     // skipped: the JOIN's game timer, which stands for the messages of CUser::Open that nothing reads
     expect(stats).toMatchObject({ bundles: 1, indexed: 1, skipped: 1, mismatched: 0, errors: [] });
+  });
+
+  test('bundles after entering: a player comes into view, runs, and leaves', async ({ page }) => {
+    const gateway = await playGateway(page);
+    await enterFlaris(page);
+    const bobAt = async () => (await page.evaluate(() => window.__client!.movers())).find((m) => m.objectId === BOB_ID)?.pos;
+
+    gateway.pushCache(flaris.later([writeAddPlayer(BOB_ID, bob)]));
+    await expect.poll(async () => (await page.evaluate(() => window.__client!.movers())).map((m) => m.name)).toContain('Bob');
+    expect(await bobAt()).toEqual(BOB_AT);
+
+    // Bob runs south (angle 0: D3D -z), behind a message nothing reads: the table of contents lets the run through
+    const run: MoveReport = {
+      pos: BOB_AT, delta: [0, 0, 0], angle: 0, state: OBJSTA_FMOVE, stateFlag: 0, motion: MTI_RUN, motionEx: 0,
+      loop: ANILOOP_LOOP, motionOption: 0, tick: 123456789n,
+    };
+    gateway.pushCache(flaris.later([UNREAD, writeMoverMoved(BOB_ID, run)]));
+    await expect.poll(async () => (await bobAt())?.[2] ?? Infinity).toBeLessThan(BOB_AT[2] - 1);
+
+    gateway.pushCache(flaris.later([writeDelObj(BOB_ID)]));
+    await expect.poll(async () => (await page.evaluate(() => window.__client!.movers())).map((m) => m.objectId))
+      .not.toContain(BOB_ID);
+    // the JOIN's game timer and the unread message are skipped; every message read ended where the table said
+    expect(await page.evaluate(() => window.__client!.stats()))
+      .toMatchObject({ bundles: 4, indexed: 4, skipped: 2, mismatched: 0, errors: [] });
+  });
+
+  // A hidden page runs no frames, and a lost focus may swallow the key's or the finger's let-go: either way the screen
+  // stops the player at once, or the server's copy of it would run on.
+  const hiding = [
+    ['the page is hidden', () => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+      document.dispatchEvent(new Event('visibilitychange'));
+    }],
+    ['the window loses the focus', () => {
+      window.dispatchEvent(new Event('blur'));
+    }],
+  ] as const;
+  for (const [what, hide] of hiding) {
+    test(`stops the walking player at once when ${what}`, async ({ page }) => {
+      const gateway = await playGateway(page);
+      await enterFlaris(page);
+      await page.keyboard.down('KeyW');
+      await expect.poll(() => movesOf(gateway).length).toBeGreaterThan(0);
+      expect(movedState(movesOf(gateway).at(-1)!) & OBJSTA_MOVE_ALL).toBe(OBJSTA_FMOVE);
+      // the rules stop stepping: from here on, the frame loop sends nothing
+      await page.evaluate(() => window.__client!.pause());
+      const before = movesOf(gateway).length;
+
+      await page.evaluate(hide);
+      await expect.poll(() => movesOf(gateway).length).toBe(before + 1);
+      expect(movedState(movesOf(gateway).at(-1)!) & OBJSTA_MOVE_ALL).toBe(OBJSTA_STAND);
+      await page.keyboard.up('KeyW');
+    });
+  }
+
+  test('Leave on the loading screen returns to the login form', async ({ page }) => {
+    // the map's tiles never come, so the screen stays on "Entering the world…"
+    await page.route(/\/assets\/worlds\/.*\/tiles\//, () => {});
+    const tileAsked = page.waitForRequest(/\/assets\/worlds\/.*\/tiles\//);
+    const gateway = await playGateway(page);
+    await startEntering(page);
+    await tileAsked;
+    await expect(page.getByText('Entering the world…')).toBeVisible();
+    await page.getByRole('button', { name: 'Leave' }).click();
+
+    await expect(page.getByRole('button', { name: 'Log in' })).toBeEnabled();
+    await expect(page.getByRole('alert')).toHaveCount(0);
+    await expect(page.getByText('Entering the world…')).toHaveCount(0);
+    const login = gateway.sent.find((s) => s.port === Port.LOGIN)!.connection;
+    const cache = gateway.sent.find((s) => s.port === Port.CACHE)!.connection;
+    await expect.poll(() => gateway.closed).toEqual(expect.arrayContaining([login, cache]));
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+  });
+
+  test('game files older than the client end the entry with their own message', async ({ page }) => {
+    // an asset index from before the game-data catalogs this version reads
+    await page.route(/\/assets\/index\.json/, async (route) => {
+      const response = await route.fetch();
+      const index = (await response.json()) as AssetIndex;
+      const files: Record<string, string> = { ...index.files };
+      delete files['data/worlds.json'];
+      await route.fulfill({ response, json: { ...index, files } });
+    });
+    await playGateway(page);
+    await startEntering(page);
+
+    await expect(page.getByRole('alert')).toHaveText('The game files on the server are out of date.');
+    await expect(page.getByRole('button', { name: 'Log in' })).toBeEnabled();
+  });
+
+  test('a browser without WebGL is told so', async ({ page }) => {
+    await page.addInitScript(() => {
+      const real = HTMLCanvasElement.prototype.getContext;
+      HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, ...args: unknown[]) {
+        return String(args[0]).startsWith('webgl') ? null : (real as (...a: unknown[]) => unknown).apply(this, args);
+      } as unknown as typeof real;
+    });
+    await playGateway(page);
+    // the screen ends as it opens, so the loading screen may be gone before a test could see it
+    await tapEnter(page);
+
+    await expect(page.getByRole('alert')).toHaveText("This browser can't show the 3D world (WebGL is off or not supported).");
+    await expect(page.getByRole('button', { name: 'Log in' })).toBeEnabled();
   });
 
   test('shows a monster and an NPC with name tags', async ({ page, browserName }) => {

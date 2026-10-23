@@ -8,25 +8,26 @@
 import { toWebPosition } from '@flyffweb/formats';
 import type { Vec3 } from '@flyffweb/formats';
 import type { BundleMessage, WorldMessage } from '@flyffweb/protocol';
-import {
-  CHASE_PITCH, Joystick, KeyboardInput, Overlay, WorldStage, chaseCamera, combineIntents, createRenderer,
-  installGlobalErrorHandlers, loadGltf, loadSceneServices, loopMotion,
-} from '@flyffweb/scene';
+import { CHASE_PITCH, Joystick, KeyboardInput, WorldStage, chaseCamera, combineIntents, loadGltf, loopMotion } from '@flyffweb/scene';
 import type { LoopedMotion, SceneServices } from '@flyffweb/scene';
 import { Vector2 } from 'three';
-import type { WebGLRenderer } from 'three';
 import { UNEXPECTED_PROBLEM } from '../lobby/errorText';
 import type { WorldEntry } from '../lobby/LoginFlow';
 import { h } from '../lobby/views/dom';
 import type { OpenChannel } from '../net/PacketChannel';
 import { registerWorld } from '../testHooks';
-import { desiredFrom, driveOwnMover, movedReport } from './controls';
-import { loadGameData } from './gameData';
+import { STANDING, desiredFrom, driveOwnMover, movedReport } from './controls';
+import type { Desired } from './controls';
+import { GameDataMissingError } from './gameData';
 import type { GameData } from './gameData';
-import { MoverViews, loadMoverModel } from './render/MoverViews';
+import { NoWebGLError, page3d, sceneAssets } from './page3d';
+import type { Page3d } from './page3d';
+import { MoverViews } from './render/MoverViews';
 import { NameTagLayer } from './render/NameTagLayer';
 import { lookOf } from './render/looks';
+import { loadMoverModel } from './render/moverModels';
 import { nameTagOf } from './render/nameTags';
+import type { ActionMover } from './sim/ActionMover';
 import { FixedStepper, STEPS_PER_SECOND } from './sim/stepper';
 import { WorldSession } from './WorldSession';
 import type { WorldEvent } from './WorldSession';
@@ -34,49 +35,21 @@ import { WorldState } from './WorldState';
 
 const LOADING_TEXT = 'Entering the world…';
 const NOT_AVAILABLE_TEXT = "This map isn't available in the browser yet.";
+const NO_WEBGL_TEXT = "This browser can't show the 3D world (WebGL is off or not supported).";
+const OUT_OF_DATE_TEXT = 'The game files on the server are out of date.';
+const TOO_SLOW_TEXT = 'The game files took too long to load. Check the connection and try again.';
+/** How long the map around the player and the models in view may take to load before the entry gives up. */
+const LOAD_LIMIT_MS = 60_000;
 /** The tiles shown around the player: 3 x 3, as the viewer's world view by default. */
 const RADIUS = 1;
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
-/** The page's renderer and overlay: made by the first world screen, kept for the next ones (one WebGL context a page). */
-interface Page3d {
-  /** Holds the canvas and the overlay; each world screen puts it on screen and takes it off again. */
-  holder: HTMLElement;
-  overlay: Overlay;
-  renderer: WebGLRenderer;
-}
-
-let page: Page3d | undefined;
-let assets: Promise<{ services: SceneServices; data: GameData }> | undefined;
-
-/** The page's renderer and overlay; throws (and keeps nothing, to try again next time) without WebGL. */
-function page3d(doc: Document): Page3d {
-  if (page === undefined) {
-    const holder = doc.createElement('div');
-    holder.className = 'world-view';
-    const overlay = new Overlay(holder);
-    const renderer = createRenderer(holder, overlay);
-    // whatever nothing catches still ends up on the overlay, as in the viewer
-    installGlobalErrorHandlers(window, overlay);
-    page = { holder, overlay, renderer };
-  }
-  return page;
-}
-
-/** The asset index, the loaders and the game data, loaded once a page; a failure is forgotten, so the next entry tries again. */
-function sceneAssets(p: Page3d): Promise<{ services: SceneServices; data: GameData }> {
-  if (assets === undefined) {
-    const loading = (async () => {
-      const services = await loadSceneServices(p.renderer, p.overlay);
-      return { services, data: await loadGameData(services.store) };
-    })();
-    assets = loading;
-    loading.catch(() => {
-      if (assets === loading) assets = undefined;
-    });
-  }
-  return assets;
+/** The text an entry that failed ends with: its cause, where the player or the owner can do something about it. */
+function endingOf(error: unknown): string {
+  if (error instanceof NoWebGLError) return NO_WEBGL_TEXT;
+  if (error instanceof GameDataMissingError) return OUT_OF_DATE_TEXT;
+  return UNEXPECTED_PROBLEM;
 }
 
 /** A motion glb, looped as the client loops it (`loopMotion`). */
@@ -91,6 +64,7 @@ const drawingSize = new Vector2();
 export class WorldScreen {
   private readonly session: WorldSession;
   private readonly element: HTMLElement;
+  private readonly leaveButton: HTMLButtonElement;
   private readonly unregister: () => void;
   private over = false;
   private page: Page3d | undefined;
@@ -106,10 +80,17 @@ export class WorldScreen {
   private tags: NameTagLayer | undefined;
   private keyboard: KeyboardInput | undefined;
   private joystick: Joystick | undefined;
+  /** What the controls asked for at the last step, which the joystick's sectors hold on to (`desiredFrom`). */
+  private desired: Desired = STANDING;
   private readonly stepper = new FixedStepper();
   private paused = false;
   private lastTime = 0;
+  /** The page was hidden: the next frame owes nothing for the time it was away. */
+  private away = false;
+  private loadTimer: ReturnType<typeof setTimeout> | undefined;
   private lastError = '';
+  /** The errors of applying a bundle said on the overlay, so that one that comes with every bundle is listed once. */
+  private readonly reported = new Set<string>();
   private readonly shown: Promise<void>;
   private resolveShown!: () => void;
   private rejectShown!: (error: Error) => void;
@@ -135,7 +116,10 @@ export class WorldScreen {
       this.rejectShown = reject;
     });
     this.shown.catch(() => {}); // only `ready()` callers care
-    this.element = h('div', { class: 'world' }, h('p', { class: 'world-status', role: 'status' }, LOADING_TEXT));
+    // Leave is there from the start, so that a loading screen that hangs has a way out
+    this.leaveButton = h('button', { type: 'button', class: 'world-leave' }, 'Leave');
+    this.leaveButton.addEventListener('click', () => this.leave());
+    this.element = h('div', { class: 'world' }, h('p', { class: 'world-status', role: 'status' }, LOADING_TEXT), this.leaveButton);
     root.append(this.element);
     this.unregister = registerWorld({
       ready: () => this.shown,
@@ -176,6 +160,8 @@ export class WorldScreen {
   }
 
   private handle(event: WorldEvent): void {
+    // an ending while the waiting events are handled (the map is not available) ends the ones after it too
+    if (this.over) return;
     if (event.type === 'entered') {
       try {
         this.enter(event.worldId, event.pos, event.messages);
@@ -183,7 +169,12 @@ export class WorldScreen {
         this.fail(error);
       }
     } else if (event.type === 'messages') {
-      this.apply(event.messages);
+      try {
+        this.apply(event.messages);
+      } catch (error) {
+        // the error is the browser's, not the server's: the overlay lists it (spec §4) and the world goes on
+        this.reportOnce(`world: ${messageOf(error)}`, error);
+      }
     }
   }
 
@@ -233,25 +224,32 @@ export class WorldScreen {
     const data = this.data!;
     const equipment = this.entry.character.equipment;
     this.views = new MoverViews(
-      stage.scene, loadMoverModel(services, overlay), overlay, (mover) => lookOf(mover, data, equipment),
+      stage.scene, loadMoverModel(services), overlay, (mover) => lookOf(mover, data, equipment),
       (key) => loadMotion(services, key),
     );
     this.tags = new NameTagLayer(stage.scene, this.element.ownerDocument);
     this.syncViews();
     stage.focus(this.ownAt());
-    await Promise.all([stage.ready(), this.views.settled()]);
-    if (!this.over) this.showWorld();
+    // a download that stalls must not hold the loading screen for good
+    const late = new Promise<'late'>((resolve) => {
+      this.loadTimer = setTimeout(() => resolve('late'), LOAD_LIMIT_MS);
+    });
+    const loaded = await Promise.race([Promise.all([stage.ready(), this.views.settled()]), late]);
+    clearTimeout(this.loadTimer);
+    if (this.over) return;
+    if (loaded === 'late') this.end(TOO_SLOW_TEXT);
+    else this.showWorld();
   }
 
   /** The world is ready to be seen: the map, the controls, and the frame loop. */
   private showWorld(): void {
     const { holder, renderer } = this.page!;
     const doc = this.element.ownerDocument;
-    const leave = h('button', { type: 'button', class: 'world-leave' }, 'Leave');
-    leave.addEventListener('click', () => this.leave());
-    this.element.replaceChildren(holder, leave);
+    this.element.replaceChildren(holder, this.leaveButton);
     this.keyboard = new KeyboardInput(doc.defaultView ?? window);
     this.joystick = new Joystick(this.element);
+    doc.addEventListener('visibilitychange', this.onVisibility);
+    (doc.defaultView ?? window).addEventListener('blur', this.onBlur);
     this.lastTime = performance.now();
     renderer.setAnimationLoop((now) => this.frame(now));
     this.resolveShown();
@@ -272,7 +270,9 @@ export class WorldScreen {
   }
 
   private frame(now: number): void {
-    const dt = (now - this.lastTime) / 1000;
+    // the first frame after the page was hidden owes nothing for the time it was away: no steps replay it
+    const dt = this.away ? 0 : (now - this.lastTime) / 1000;
+    this.away = false;
     this.lastTime = now;
     const { overlay, renderer } = this.page!;
     overlay.frame(dt);
@@ -295,7 +295,7 @@ export class WorldScreen {
 
       const { tiles, models } = stage.counts();
       overlay.setCounts({ tiles, models: models + views.count(), textures: this.services!.textures.size() });
-      overlay.setMessageCounts(this.session.stats.skipped, this.session.stats.mismatched);
+      overlay.setMessageCounts(this.session.stats);
       stage.render();
     } catch (error) {
       // a frame that throws every frame must not fill the overlay with the same line sixty times a second
@@ -306,27 +306,67 @@ export class WorldScreen {
   }
 
   /**
-   * One rules step: the keys and the joystick to the own mover (`driveOwnMover`), its moves sent as `ControlGround`
-   * sends them, PLAYERMOVED then PLAYERBEHAVIOR (`WndWorldControlPlayer.cpp:557-559`; stopping after a run, or the first
-   * idle step of a mover the server started running, sends both); then every mover's step (the own one's included),
-   * then the views'.
+   * One rules step: the keys and the joystick to the own mover (`drive`); then every mover's step (the own one's
+   * included), then the views'.
    */
   private step(world: WorldState, views: MoverViews): void {
     const own = world.self();
     if (own !== undefined) {
-      const intent = combineIntents(this.keyboard!.intent(), this.joystick!.intent());
-      const { moved, behavior } = driveOwnMover(own.act, desiredFrom(intent));
-      if (moved) this.session.sendMoved(movedReport(own.act, this.entry.clock.tick()));
-      if (behavior) this.session.sendBehavior(own.act.report(this.entry.clock.tick()));
+      this.desired = desiredFrom(combineIntents(this.keyboard!.intent(), this.joystick!.intent()), this.desired);
+      this.drive(own.act, this.desired);
     }
     world.step();
     views.step(world.movers);
   }
 
+  /**
+   * What the controls ask of the own mover (`driveOwnMover`), its moves sent as `ControlGround` sends them, PLAYERMOVED
+   * then PLAYERBEHAVIOR (`WndWorldControlPlayer.cpp:557-559`; stopping after a run, or the first idle step of a mover the
+   * server started running, sends both).
+   */
+  private drive(act: ActionMover, desired: Desired): void {
+    const { moved, behavior } = driveOwnMover(act, desired);
+    if (moved) this.session.sendMoved(movedReport(act, this.entry.clock.tick()));
+    if (behavior) this.session.sendBehavior(act.report(this.entry.clock.tick()));
+  }
+
+  /** The page is hidden (another tab, the home screen, a phone going to sleep): no frame runs until it shows again. */
+  private readonly onVisibility = (): void => {
+    if (this.element.ownerDocument.visibilityState !== 'hidden') return;
+    this.away = true;
+    this.stopOwnMover();
+  };
+
+  private readonly onBlur = (): void => this.stopOwnMover();
+
+  /**
+   * The page lost the focus or is hidden: a key's or the finger's let-go may never come, and a hidden page runs no frame
+   * to send a stop. The server's copy of the player would run on, and once it is 1000 units from where the player
+   * stands the server takes none of the player's moves (`CDPSrvr::OnPlayerMoved`, `DPSrvr.cpp:12524-12529`). So the
+   * controls let go and the player stops now, its moves sent from here rather than from the frame loop.
+   */
+  private stopOwnMover(): void {
+    this.keyboard?.reset();
+    this.joystick?.reset();
+    this.desired = STANDING;
+    const own = this.world?.self();
+    if (own !== undefined) this.drive(own.act, STANDING);
+  }
+
+  /** Says an error on the overlay, and in the console with its stack, once for each message. */
+  private reportOnce(message: string, error: unknown): void {
+    if (this.reported.has(message)) return;
+    this.reported.add(message);
+    console.error(message, error);
+    this.page?.overlay.error(message);
+  }
+
   private fail(error: unknown): void {
     if (this.over) return;
-    console.error('the world screen failed:', error);
-    this.end(UNEXPECTED_PROBLEM);
+    const ending = endingOf(error);
+    // an ending with its own text says all there is; anything else is a bug, logged for whoever looks into it
+    if (ending === UNEXPECTED_PROBLEM) console.error('the world screen failed:', error);
+    this.end(ending);
   }
 
   /** Closes the connections and everything on screen, once, then tells the lobby. */
@@ -334,7 +374,11 @@ export class WorldScreen {
     if (this.over) return;
     this.over = true;
     this.session.leave();
+    clearTimeout(this.loadTimer);
     this.page?.renderer.setAnimationLoop(null);
+    const doc = this.element.ownerDocument;
+    doc.removeEventListener('visibilitychange', this.onVisibility);
+    (doc.defaultView ?? window).removeEventListener('blur', this.onBlur);
     this.keyboard?.dispose();
     this.joystick?.dispose();
     this.views?.dispose();

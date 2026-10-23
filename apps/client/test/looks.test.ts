@@ -287,7 +287,10 @@ describe('lookOf: the stored item catalog', () => {
       [GAME_DATA_KEYS.honorTitles]: {},
       [GAME_DATA_KEYS.worlds]: {},
     };
-    const old = await loadGameData({ json: async <T>(key: string): Promise<T> => files[key] as T });
+    const old = await loadGameData({
+      url: (key) => (key in files ? key : null),
+      json: async <T>(key: string): Promise<T> => files[key] as T,
+    });
     expect(old.items.get(770)).toMatchObject({ exclusive: -1, baseIgnore: -1 });
     const parts = lookOf(moverFrom(addedPlayer(1, { worn: [worn(PARTS.UPPER, 770), worn(PARTS.CAP, 771)] }), old), old)?.parts;
     expect(parts).toContain('models/part_malelower.glb'); // nothing takes it off

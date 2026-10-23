@@ -24,6 +24,11 @@ export class DiskAssets {
     return Object.hasOwn(this.files, key);
   }
 
+  /** What `AssetStore.url` gives `loadGameData`: the file's path, or null when the index does not list the key. */
+  url(key: string): string | null {
+    return this.has(key) ? ASSETS_DIR + this.files[key]! : null;
+  }
+
   /** What `AssetStore.json` gives `loadGameData`. */
   json<T>(key: string): Promise<T> {
     return Promise.resolve(this.readJson<T>(key));
