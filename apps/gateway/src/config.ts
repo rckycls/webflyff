@@ -47,7 +47,10 @@ export interface GatewayConfig {
   trustedProxies: string[];
   /** Advertised `address:port` to where the server really is. */
   routes: Record<string, RouteTarget>;
-  /** Whether certifier routes get the player's real address (spec section 5). */
+  /**
+   * Whether certifier and cache routes get the player's real address as their first packet (spec section 5; the
+   * cache server's in the piece 3 spec, section 3.3). Unpatched servers ignore it.
+   */
   sendClientAddr: boolean;
   limits: Limits;
 }

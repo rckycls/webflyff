@@ -1,7 +1,8 @@
 import net from 'node:net';
 import type { WebSocket } from 'ws';
 import {
-  CloseCode, PacketType, ProtocolError, ServerFrameReader, encodeClientFrame, encodeGatewayClientAddr, readProtocolId,
+  ArWriter, CloseCode, DPID_UNKNOWN, PacketType, ProtocolError, ServerFrameReader, encodeClientFrame,
+  encodeGatewayClientAddr, readProtocolId,
 } from '@flyffweb/protocol';
 import { normalizeIPv4 } from './clientAddress';
 import type { Limits, RouteTarget } from './config';
@@ -12,7 +13,10 @@ const ABNORMAL_CLOSURE = 1006;
 
 export interface RelayOptions {
   route: RouteTarget;
-  /** The player's real IPv4 address (dotted, no IPv6 form), sent to certifier routes when `sendClientAddr` is on. */
+  /**
+   * The player's real IPv4 address (dotted, no IPv6 form), sent to certifier and cache routes when `sendClientAddr`
+   * is on.
+   */
   clientAddress: string;
   sendClientAddr: boolean;
   limits: Limits;
@@ -44,6 +48,17 @@ function isClientAddrPacket(body: Uint8Array): boolean {
 }
 
 /**
+ * The client-address packet as the route's server reads it. The certifier reads the type first
+ * (`CDPCertifier::UserMessageHandler`, Source/CERTIFIER/DPCertifier.cpp:170). The cache server skips a sender ID
+ * before the type (`CDPCacheSrvr::UserMessageHandler`, Source/CACHESERVER/DPCacheSrvr.cpp:82), so there it goes
+ * after `DPID_UNKNOWN`, like every packet Neuz sends it (`BEFORESENDSOLE`).
+ */
+function clientAddrPacket(role: 'certifier' | 'cache', address: string): Uint8Array {
+  const packet = encodeGatewayClientAddr(address);
+  return role === 'cache' ? new ArWriter().u32(DPID_UNKNOWN).bytes(packet).toBytes() : packet;
+}
+
+/**
  * The code `ws` closes the connection with after an error in what it received (1002 protocol error, 1007 text that
  * is not UTF-8, 1009 message too big). `ws` keeps it in a symbol property of the error. Its 'close' event cannot
  * tell: it reports the code of a close frame it received, and after such an error that is 1006.
@@ -63,7 +78,8 @@ function closeCodeOfWsError(error: Error): number {
  *
  * - The server's first body is its protocol ID, which the client frames' checksums need. The relay reads it and
  *   never passes it on. Browser packets that arrive earlier are held (`maxHeldPackets`) and sent after it.
- * - On a certifier route with `sendClientAddr`, the first packet sent is the client address (spec section 5).
+ * - On a certifier or cache route with `sendClientAddr`, the first packet sent is the client address (spec section
+ *   5; the cache server's in the piece 3 spec, section 3.3).
  * - The connection ends, with the matching `CloseCode`, when the TCP connection fails or the server's protocol ID
  *   has not arrived `connectTimeoutMs` after the call (4001; the real servers send it as soon as they accept), the
  *   server ends it (4002), the server sends bytes that are not frames or a first packet that is not a protocol ID
@@ -153,8 +169,8 @@ export function startRelay(ws: WebSocket, opts: RelayOptions): { done: Promise<R
       return;
     }
     clearTimeout(connectTimer);
-    if (opts.sendClientAddr && route.role === 'certifier') {
-      tcp.write(encodeClientFrame(encodeGatewayClientAddr(opts.clientAddress), protocolId));
+    if (opts.sendClientAddr && (route.role === 'certifier' || route.role === 'cache')) {
+      tcp.write(encodeClientFrame(clientAddrPacket(route.role, opts.clientAddress), protocolId));
     }
     for (const early of held.splice(0)) forward(early);
   };
