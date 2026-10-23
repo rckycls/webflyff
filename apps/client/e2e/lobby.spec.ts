@@ -119,8 +119,8 @@ const enterable = (characters: CharacterRow[]): Respond => ({ type, body }, repl
   }
 };
 
-async function logIn(page: Page): Promise<void> {
-  await page.goto('/');
+async function logIn(page: Page, path = '/'): Promise<void> {
+  await page.goto(path);
   await page.getByLabel('Account').fill(' WebTester ');
   await page.getByLabel('Password').fill('password1');
   await page.getByRole('button', { name: 'Log in' }).click();
@@ -382,6 +382,45 @@ test.describe('the lobby against scripted servers', () => {
     const loginConnection = sent.find((s) => s.port === Port.LOGIN)!.connection;
     await expect.poll(() => closed).toContain(loginConnection);
     await expectPhoneFriendly(page);
+  });
+
+  // This runs on a test page (e2e/lobbyHarness.html: the lobby as main.ts wires it, with a stand-in world that keeps every
+  // `done` the lobby gives), so the `done` of an earlier entry can be called late, which no real world screen would do on purpose.
+  test('a done left over from an earlier entry does not touch a later world', async ({ page }) => {
+    await playGateway(page, { certifier: listing([FLYFF, OPEN_CHANNEL]), login: enterable([WEBBY]) });
+    const callDone = (entry: number, message: string) => page.evaluate(
+      ([i, m]) => (globalThis as unknown as { lobbyDones: ((message?: string) => void)[] }).lobbyDones[i!]!(m),
+      [entry, message] as const,
+    );
+    const enterTheWorld = async () => {
+      await page.getByRole('button', { name: /Channel 1/ }).click();
+      await page.getByRole('button', { name: 'Enter Webby' }).click();
+      await expect(page.locator('#world')).toHaveText('In the world as Webby');
+    };
+
+    await logIn(page, '/e2e/lobbyHarness.html');
+    await enterTheWorld();
+    await callDone(0, 'The first world is over.');
+    await expect(page.getByRole('alert')).toHaveText('The first world is over.');
+    await expect(page.getByRole('button', { name: 'Log in' })).toBeEnabled();
+
+    // Another entry. The first one's done is called again, late: the second world stays, and the page is not touched.
+    await page.getByLabel('Password').fill('password1');
+    await page.getByRole('button', { name: 'Log in' }).click();
+    await enterTheWorld();
+    await callDone(0, 'The first world again.');
+    await expect(page.locator('#world')).toHaveText('In the world as Webby');
+    await expect(page.getByRole('button', { name: 'Log in' })).toHaveCount(0);
+    await expect(page.getByRole('alert')).toHaveCount(0);
+
+    // The second entry's own done brings the lobby back, once: a repeat, or the first one's again, changes nothing.
+    await callDone(1, 'The second world is over.');
+    await expect(page.getByRole('alert')).toHaveText('The second world is over.');
+    await expect(page.getByRole('button', { name: 'Log in' })).toBeEnabled();
+    await callDone(1, 'Twice.');
+    await callDone(0, 'The first world, a third time.');
+    await expect(page.getByRole('alert')).toHaveText('The second world is over.');
+    await expect(page.locator('#world')).toHaveCount(0);
   });
 
   test('stays on the characters when the login server has not given what the world needs', async ({ page }) => {

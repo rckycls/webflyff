@@ -35,8 +35,12 @@ export class LobbyApp {
   /** Progress text for a screen reader and the eye ("Logging in…"); empty when there is none. */
   private readonly status = h('p', { class: 'status', role: 'status' });
   private readonly stage = h('div', { class: 'stage' });
-  /** True from the hand-over to the world until its `done`; a `done` called twice, or late, is ignored. */
-  private inWorld = false;
+  /**
+   * The entry the player is in the world with, from the hand-over until its `done` runs. Each entry's `done` is tied to
+   * its own token, so only the first `done` of the current entry acts: a repeated one, or one left over from an earlier
+   * entry, must not bring the lobby back over a later world.
+   */
+  private world: object | undefined;
 
   /**
    * `onEnter` takes over when the player enters the world with a character: it gets the `WorldEntry` (the lobby has let go of
@@ -181,10 +185,11 @@ export class LobbyApp {
     this.setAlert(undefined);
     this.status.textContent = '';
     this.stage.replaceChildren();
-    this.inWorld = true;
+    const world = {};
+    this.world = world;
     this.onEnter(entry, (message) => {
-      if (!this.inWorld) return;
-      this.inWorld = false;
+      if (this.world !== world) return;
+      this.world = undefined;
       this.mount();
       this.showLogin(message);
       // Back from the world: keyboard and screen-reader users start at the top of the form, as on any later screen.
