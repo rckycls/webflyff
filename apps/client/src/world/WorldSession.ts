@@ -33,7 +33,8 @@ const JOIN_TIMEOUT_MS = 25000;
 
 const LOST_TEXT = 'The connection to the game was lost.';
 // The world server closes both sessions when it finds the character already in the world (`CDPSrvr::OnAddUser`) and says nothing why.
-const JOIN_CLOSED_TEXT =
+// Exported for the live world test, which tries again when a session ends with it.
+export const JOIN_CLOSED_TEXT =
   'The game closed the connection. If this character was still in the game from an earlier session, wait a moment and try again.';
 const REPLACE_TEXT = "Moving to another map isn't supported yet.";
 const BAD_DATA_TEXT = closeText(CloseCode.BAD_SERVER_DATA);

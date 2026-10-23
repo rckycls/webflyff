@@ -12,43 +12,38 @@
 // What is real and what is not: the gateway, the channels, LoginFlow, WorldSession, WorldState, the movement rules and
 // the packets are the client's own. What the world screen adds (the 3D view, the keys, the frame loop) is replaced by
 // a loop of 60 rules steps a second from the real clock, run for both players, and by a walker that presses "run
-// forward" for 3 s. The game data (the movers' speeds, the world folders) is read from the worktree's dist/assets through
-// a store that reads files, and the ground height from the same folder's tiles, so the walker stands on the terrain as
-// the screen would put it.
+// forward" for 3 s and then lets go of the keys with the run key still held, so that the stop goes out as PLAYERMOVED
+// alone (no MODE_WALK PLAYERBEHAVIOR with it, which would carry the position by itself). The game data (the movers'
+// speeds, the world folders) is read from the worktree's dist/assets through a store that reads files, and the ground
+// height from the same folder's tiles, so the walker stands on the terrain as the screen would put it.
 //
-// The servers' connection-flood limiter (see lobby.live.test.ts) counts connections from this PC that arrive less than
-// 200 ms apart, and cuts them all after 50. Every connection below, the lobby's and the world's, waits until 300 ms after
-// the one before; keep it that way, and do not loop the test.
-import { existsSync, readFileSync } from 'node:fs';
-import { connect } from 'node:net';
-import { fileURLToPath } from 'node:url';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, onTestFailed } from 'vitest';
-import { MAP_SIZE, decodeTileBin } from '@flyffweb/formats';
-import type { AssetIndex, WebTile, WorldManifest } from '@flyffweb/formats';
-import { CloseCode, NULL_ID } from '@flyffweb/protocol';
-import type { BundleMessage, CharacterSummary, ServerEntry, WorldMessage } from '@flyffweb/protocol';
-import { sampleHeight } from '@flyffweb/scene';
-import { parseConfig } from '@flyffweb/gateway/src/config';
-import type { GatewayConfig } from '@flyffweb/gateway/src/config';
-import { startGateway } from '@flyffweb/gateway/src/server';
+// The servers' accept limiter (helpers/connectGap.ts explains it): every connection below waits until 300 ms after the
+// one before, the lobby's and the world's alike; keep it that way, and do not loop the test.
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import type { WorldManifest } from '@flyffweb/formats';
+import { CloseCode } from '@flyffweb/protocol';
+import type { BundleMessage, CharacterSummary, WorldMessage } from '@flyffweb/protocol';
 import type { Gateway } from '@flyffweb/gateway/src/server';
-import { JOB_VAGRANT, Sex, hairColorFor } from '../src/lobby/appearance';
-import { closeText, errorText } from '../src/lobby/errorText';
-import { LoginFlow, TIMEOUT_TEXT } from '../src/lobby/LoginFlow';
-import type { LobbyEvent, WorldEntry } from '../src/lobby/LoginFlow';
-import { validateBankPin } from '../src/lobby/validation';
-import type { OpenChannel, PacketChannel } from '../src/net/PacketChannel';
+import { closeText } from '../src/lobby/errorText';
+import { TIMEOUT_TEXT } from '../src/lobby/LoginFlow';
+import type { WorldEntry } from '../src/lobby/LoginFlow';
 import { desiredFrom, driveOwnMover, movedReport } from '../src/world/controls';
 import type { Desired } from '../src/world/controls';
 import { loadGameData } from '../src/world/gameData';
 import type { GameData } from '../src/world/gameData';
 import { ObjSta } from '../src/world/sim/constants';
 import { FixedStepper } from '../src/world/sim/stepper';
-import { WorldSession } from '../src/world/WorldSession';
+import { JOIN_CLOSED_TEXT, WorldSession } from '../src/world/WorldSession';
 import type { WorldEvent } from '../src/world/WorldSession';
 import { WorldState } from '../src/world/WorldState';
 import type { Mover } from '../src/world/WorldState';
-import { openNodeChannel } from './helpers/nodeChannel';
+import { checkReachable } from './helpers/connectGap';
+import { ASSETS_DIR, DiskAssets, Terrain } from './helpers/diskAssets';
+import { CONFIG_PATH, loadConfigFile, parseGatewaySettings, requireBankPin, requireText } from './helpers/liveConfig';
+import type { GatewaySettings } from './helpers/liveConfig';
+import { printGatewayLogOnFailure, startLiveGateway } from './helpers/liveGateway';
+import { Link } from './helpers/liveLink';
+import { LOGIN_WAIT_MS, LiveLobby, UnexpectedEvent, isOpenChannel, newVagrant } from './helpers/liveLobby';
 
 // ---- The config ------------------------------------------------------------------------------------------------
 
@@ -59,15 +54,10 @@ interface Account {
   bankPin: string;
 }
 
-interface WorldLiveConfig {
-  gateway: GatewayConfig;
-  /** The certifier's advertised `address:port`, a key of `gateway.routes`. */
-  certifierAddress: string;
+interface WorldLiveConfig extends GatewaySettings {
   /** The walker's account, then the observer's. */
   accounts: [Account, Account];
 }
-
-const CONFIG_PATH = fileURLToPath(new URL('./live.config.json', import.meta.url));
 
 const HOW_TO_SET_UP =
   'Copy apps/client/test/live.config.example.json to apps/client/test/live.config.json (if you have not yet) and add its '
@@ -77,31 +67,12 @@ const HOW_TO_SET_UP =
 function parseAccount(json: unknown, where: string): Account {
   if (typeof json !== 'object' || json === null || Array.isArray(json)) throw new Error(`${where} must be an object`);
   const item = json as Record<string, unknown>;
-  const text = (name: string): string => {
-    const value = item[name];
-    if (typeof value !== 'string' || value === '') throw new Error(`${where}.${name} must be a non-empty string`);
-    return value;
-  };
-  const bankPin = text('bankPin');
-  const pinProblem = validateBankPin(bankPin, bankPin);
-  if (pinProblem !== undefined) throw new Error(`${where}.bankPin: ${pinProblem}`);
-  return { account: text('account'), password: text('password'), bankPin };
+  return { account: requireText(item, 'account', `${where}.`), password: requireText(item, 'password', `${where}.`), bankPin: requireBankPin(item, `${where}.`) };
 }
 
-/** Checks the settings this test reads (anything else in the file, `_comment` and the lobby test's fields included, is ignored). */
+/** Checks the `world` section (anything else in the file, `_comment` and the lobby test's fields included, is ignored). */
 function parseWorldConfig(root: Record<string, unknown>): WorldLiveConfig {
-  let gateway: GatewayConfig;
-  try {
-    gateway = parseConfig(root.gateway);
-  } catch (error) {
-    throw new Error(`gateway: ${(error as Error).message}`);
-  }
-  const certifierAddress = root.certifierAddress;
-  if (typeof certifierAddress !== 'string' || certifierAddress === '') throw new Error('certifierAddress must be a non-empty string');
-  const certifierRoute = Object.hasOwn(gateway.routes, certifierAddress) ? gateway.routes[certifierAddress] : undefined;
-  if (certifierRoute?.role !== 'certifier') throw new Error(`certifierAddress ${certifierAddress} must be a route of gateway.routes with the role "certifier"`);
-  if (gateway.allowedOrigins.length === 0) throw new Error('gateway.allowedOrigins must hold an origin for the test to connect as');
-
+  const base = parseGatewaySettings(root);
   const world = root.world;
   if (typeof world !== 'object' || world === null || Array.isArray(world)) throw new Error('world must be an object');
   const list = (world as Record<string, unknown>).accounts;
@@ -109,30 +80,20 @@ function parseWorldConfig(root: Record<string, unknown>): WorldLiveConfig {
   const accounts: [Account, Account] = [parseAccount(list[0], 'world.accounts[0]'), parseAccount(list[1], 'world.accounts[1]')];
   // The login lower-cases the account, so these two would be one.
   if (accounts[0].account.trim().toLowerCase() === accounts[1].account.trim().toLowerCase()) throw new Error('world.accounts must be two different accounts');
-  return { gateway, certifierAddress, accounts };
+  return { ...base, accounts };
 }
 
 /** The settings, or why the test is skipped: no live.config.json, or none with a `world` section. A file that is broken stops the run. */
 function loadSetup(): { config: WorldLiveConfig; skip?: undefined } | { config?: undefined; skip: string } {
-  let source: string;
-  try {
-    source = readFileSync(CONFIG_PATH, 'utf8');
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { skip: `${CONFIG_PATH} does not exist` };
-    throw error;
-  }
-  try {
-    const root: unknown = JSON.parse(source);
-    if (typeof root !== 'object' || root === null || Array.isArray(root)) throw new Error('the file must hold a JSON object');
-    if (!Object.hasOwn(root, 'world')) return { skip: `${CONFIG_PATH} has no "world" section` };
-    return { config: parseWorldConfig(root as Record<string, unknown>) };
-  } catch (error) {
-    throw new Error(`Live world test: cannot use ${CONFIG_PATH}: ${(error as Error).message}`);
-  }
+  const loaded = loadConfigFile('Live world test', (root) => (
+    Object.hasOwn(root, 'world') ? { config: parseWorldConfig(root) } : { skip: `${CONFIG_PATH} has no "world" section` }
+  ));
+  return loaded ?? { skip: `${CONFIG_PATH} does not exist` };
 }
 
 // Read while the file is collected: the skip below depends on it, and a broken file stops the run here, at once.
 const { config, skip } = loadSetup();
+// The text is also in the suite's title, but a reporter that lists no skipped tests (vitest's default) shows only this.
 if (skip !== undefined) console.warn(`Live world test skipped: ${skip}. ${HOW_TO_SET_UP}`);
 
 /** The settings, for the code that runs only when the tests are not skipped. */
@@ -143,11 +104,6 @@ function settings(): WorldLiveConfig {
 
 // ---- Timing, places and numbers --------------------------------------------------------------------------------
 
-/** The accept limiter counts arrivals less than 200 ms apart; stay well clear of that. */
-const CONNECT_GAP_MS = 300;
-/** How long a flow gets for an answer that needs the database (the certifier's own timeout, 20 s, fires first). */
-const LOGIN_WAIT_MS = 25000;
-const WAIT_MS = 15000;
 /** The login server has sent the character list, but CACHE_ADDR and the clock's answer may still be on their way. */
 const HANDOVER_WAIT_MS = 5000;
 /** Entering ends by itself with a text: the 1 s pause, 15 s for PRE_JOIN and 25 s for JOIN. This is only the safety net. */
@@ -168,117 +124,25 @@ const REST_MS = 500;
  */
 const REENTER_WAIT_MS = 30000;
 const REENTER_EVERY_MS = 3000;
-/** The part of the world server's JOIN text that says "wait" (`WorldSession`: JOIN_CLOSED_TEXT). */
-const WAIT_AND_TRY_AGAIN = 'wait a moment and try again';
 /** `WI_WORLD_MADRIGAL` (`Resource/defineWorld.h`): Flaris is in Madrigal. */
 const MADRIGAL = 1;
 /** The walker must have run at least this far in its 3 s (a run is 6 m a second at the player's table speed), or "stopped within 1 m" would prove nothing. */
 const MIN_RUN_M = 10;
 /** The observer's walker must be this close (D3D x and z) to where the walker's own mover stands. */
 const WITHIN_M = 1;
+/** PLAYERMOVED goes out when the run starts and when it stops; the observer must have applied at least these two MOVERMOVED. */
+const MIN_MOVES_APPLIED = 2;
 
 /** No keys: stand, in walk mode (what the screen sends with nothing pressed). */
 const STAND = desiredFrom({ forward: 0, turn: 0, run: false });
 /** Forward with the run key held. */
 const RUN_FORWARD = desiredFrom({ forward: 1, turn: 0, run: true });
+/** Forward let go with the run key still held: the stop is PLAYERMOVED alone, since the mover is not walking and has no mode to change. */
+const STOP_RUNNING = desiredFrom({ forward: 0, turn: 0, run: true });
 
 const sleep = (ms: number): Promise<void> => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-let lastConnectAt = 0;
-
-/** Resolves once at least `CONNECT_GAP_MS` have passed since the previous connection was started. */
-async function waitForConnectGap(): Promise<void> {
-  const wait = lastConnectAt + CONNECT_GAP_MS - Date.now();
-  lastConnectAt = Date.now() + Math.max(0, wait); // takes the slot at once, so two callers cannot share one
-  if (wait > 0) await sleep(wait);
-}
-
-/** A bare connection to the certifier's real address, so that servers which are not running are reported as such and not as a failed login. */
-function checkReachable(host: string, port: number): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const socket = connect({ host, port });
-    const fail = (why: string): void => {
-      socket.destroy();
-      reject(new Error(
-        `Live world test: the certifier is not reachable at ${host}:${port} (${why}). Start the game servers (the certifier and `
-        + 'the others in Program\\), check the routes in live.config.json, and run `npm run test:live:world` again.',
-      ));
-    };
-    socket.setTimeout(3000, () => fail('no answer within 3 s'));
-    socket.once('error', (error) => fail(error.message));
-    socket.once('connect', () => {
-      socket.destroy();
-      resolve();
-    });
-  });
-}
-
 // ---- The converted game files ----------------------------------------------------------------------------------
-
-/** The worktree's converted assets (`npm run convert`), which the world screen's dev server serves too. */
-const ASSETS_DIR = fileURLToPath(new URL('../../../dist/assets/', import.meta.url));
-
-/** `dist/assets` read from the disk instead of fetched: the same logical keys, through the same `index.json`. */
-class DiskAssets {
-  private constructor(private readonly files: Readonly<Record<string, string>>) {}
-
-  static open(): DiskAssets {
-    const indexPath = `${ASSETS_DIR}index.json`;
-    if (!existsSync(indexPath)) throw new Error(`Live world test: ${indexPath} is missing: run \`npm run convert\` first (the test reads the game data from it).`);
-    const index = JSON.parse(readFileSync(indexPath, 'utf8')) as Partial<AssetIndex>;
-    if (index.version !== 1 || typeof index.files !== 'object' || index.files === null) throw new Error(`${indexPath} is not an asset index this test reads`);
-    return new DiskAssets(index.files);
-  }
-
-  has(key: string): boolean {
-    return Object.hasOwn(this.files, key);
-  }
-
-  /** What `AssetStore.json` gives `loadGameData`. */
-  json<T>(key: string): Promise<T> {
-    return Promise.resolve(this.readJson<T>(key));
-  }
-
-  readJson<T>(key: string): T {
-    return JSON.parse(readFileSync(this.path(key), 'utf8')) as T;
-  }
-
-  /** A tile by the hashed path the world's manifest names. */
-  tile(hashedPath: string): WebTile {
-    const path = ASSETS_DIR + hashedPath;
-    return decodeTileBin(new Uint8Array(readFileSync(path)), path);
-  }
-
-  private path(key: string): string {
-    if (!this.has(key)) throw new Error(`asset "${key}" is not in ${ASSETS_DIR}index.json`);
-    return ASSETS_DIR + this.files[key]!;
-  }
-}
-
-/**
- * The ground under a D3D x, z of one converted world (`CLandscape::GetHeight`), which the movers' steps stand on as the
- * screen's `stage.heightAt` does; `null` where the world has no tile, and the mover then stays where it is.
- */
-class Terrain {
-  private readonly tiles = new Map<string, WebTile | null>();
-  private readonly side: number;
-
-  constructor(private readonly assets: DiskAssets, private readonly manifest: WorldManifest) {
-    this.side = MAP_SIZE * manifest.mpu;
-  }
-
-  readonly heightAt = (x: number, z: number): number | null => {
-    const tx = Math.floor(x / this.side);
-    const tz = Math.floor(z / this.side);
-    const key = `${tx}_${tz}`;
-    let tile = this.tiles.get(key);
-    if (tile === undefined) {
-      tile = Object.hasOwn(this.manifest.tiles, key) ? this.assets.tile(this.manifest.tiles[key]!) : null;
-      this.tiles.set(key, tile);
-    }
-    return tile === null ? null : sampleHeight(tile, x - tx * this.side, z - tz * this.side, this.manifest.mpu);
-  };
-}
 
 let assets: DiskAssets | undefined;
 let gameData: GameData | undefined;
@@ -302,23 +166,26 @@ function terrainOf(worldId: number): Terrain {
 // ---- Connections and the lobby ---------------------------------------------------------------------------------
 
 let gateway: Gateway | undefined;
-const gatewayLog: string[] = [];
+let gatewayLog: string[] = [];
 
-/** The account is logged in on the servers already: a session that has only just closed, or a game client. Worth trying again soon. */
+/** The world server turned the character away because it still holds it from the session before: worth trying again soon. */
 class StillInGame extends Error {}
 
-/** Why an event the test waited for did not come: what came instead, and what usually causes it. */
-function explain(event: LobbyEvent): string {
-  const said = 'message' in event ? `${event.type} ("${event.message}")` : event.type;
-  let hint = '';
-  if (event.type === 'closed' && event.message === closeText(CloseCode.SERVER_UNREACHABLE)) {
-    hint = 'The gateway could not connect to the server. Is it running, and do the routes in live.config.json point at where it listens?';
-  } else if (event.type === 'error' && (event.message === errorText(134) || event.message === errorText(135))) {
-    hint = 'The certifier blocks this address after an earlier wrong password (15 seconds, or 15 minutes after three in a row): wait and run again.';
-  } else if (event.type === 'error' && event.message === errorText(120)) {
-    hint = 'Check account and password in the "world" section of live.config.json. (A wrong password also blocks this address for 15 seconds.)';
+/**
+ * The account is logged in on the servers already (a game client, or a session that has only just closed): the certifier
+ * answers a login with that, and the flow reports `alreadyConnected`. Worth trying again soon, like `StillInGame`.
+ */
+const isStillInGame = (error: unknown): boolean =>
+  error instanceof StillInGame || (error instanceof UnexpectedEvent && error.event.type === 'alreadyConnected');
+
+/** A `LiveLobby` on its own `Link` to the in-process gateway. */
+class Lobby extends LiveLobby {
+  /** The characters of the channel the flow picked, once they have come. */
+  characters: CharacterSummary[] = [];
+
+  constructor() {
+    super(new Link(gateway!.port, settings().gateway.allowedOrigins[0]!), settings().certifierAddress);
   }
-  return hint === '' ? said : `${said}\n${hint}`;
 }
 
 /** What it usually means when a world session ends before the player is in. */
@@ -330,118 +197,14 @@ function explainEnd(message: string): string {
   return message;
 }
 
-/**
- * One player's connections to the gateway, all of them: the certifier's and the login server's for the lobby, then the login
- * server's (handed over) and the cache server's for the world. Each opens 300 ms after the previous connection of any
- * player, and `closed` waits until every one of them has really closed.
- */
-class Link {
-  /** One per connection opened; settles when that connection has really closed. */
-  private readonly ended: Promise<void>[] = [];
-  private readonly raw: OpenChannel = openNodeChannel(`ws://127.0.0.1:${gateway!.port}`, { origin: settings().gateway.allowedOrigins[0]! });
-
-  readonly open: OpenChannel = async (target) => {
-    await waitForConnectGap();
-    try {
-      return this.watch(await this.raw(target));
-    } catch (error) {
-      // The flow reports only "cannot reach the gateway"; the reason is here.
-      console.error(`live world test: could not open ${target} through the gateway: ${(error as Error).message}`);
-      throw error;
-    }
-  };
-
-  async closed(): Promise<void> {
-    await new Promise<void>((resolve) => {
-      const timer = setTimeout(resolve, 5000); // the gateway's own close at the end of the run cuts whatever is left
-      void Promise.all(this.ended).then(() => {
-        clearTimeout(timer);
-        resolve();
-      });
-    });
-  }
-
-  /** The same channel, remembering when it closes. */
-  private watch(channel: PacketChannel): PacketChannel {
-    let closed!: () => void;
-    this.ended.push(new Promise<void>((resolve) => { closed = resolve; }));
-    const watched: PacketChannel = {
-      send: (body) => channel.send(body),
-      close: () => channel.close(),
-      onPacket: () => {},
-      onClose: () => {},
-    };
-    channel.onPacket = (body) => watched.onPacket(body);
-    channel.onClose = (code) => {
-      closed();
-      watched.onClose(code);
-    };
-    return watched;
-  }
-}
-
-/** One `LoginFlow` on its own `Link`, with its events queued for the test to take one by one. */
-class Lobby {
-  readonly link = new Link();
-  readonly flow: LoginFlow;
-  /** The characters of the channel the flow picked, once they have come. */
-  characters: CharacterSummary[] = [];
-  private readonly queue: LobbyEvent[] = [];
-  private waiting: ((event: LobbyEvent) => void) | undefined;
-
-  constructor() {
-    this.flow = new LoginFlow(this.link.open, settings().certifierAddress, (event) => this.onEvent(event));
-  }
-
-  /** Takes the next event, in order, and fails with what happened instead unless it is a `type` event. */
-  async expect<T extends LobbyEvent['type']>(type: T, timeoutMs = WAIT_MS): Promise<Extract<LobbyEvent, { type: T }>> {
-    const event = await this.take(`a ${type} event`, timeoutMs);
-    if (event.type === 'alreadyConnected' && type !== 'alreadyConnected') {
-      throw new StillInGame('the account is logged in on the servers already (a game client, or a session that has only just closed)');
-    }
-    if (event.type !== type) throw new Error(`expected a ${type} event, but the flow reported ${explain(event)}`);
-    return event as Extract<LobbyEvent, { type: T }>;
-  }
-
-  /** Ends the flow and waits until every connection it opened has closed, so the next one starts clean. */
-  async end(): Promise<void> {
-    this.flow.dispose();
-    await this.link.closed();
-  }
-
-  private take(wanted: string, timeoutMs: number): Promise<LobbyEvent> {
-    const queued = this.queue.shift();
-    if (queued !== undefined) return Promise.resolve(queued);
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.waiting = undefined;
-        reject(new Error(`expected ${wanted}, but the flow said nothing for ${timeoutMs / 1000} s`));
-      }, timeoutMs);
-      this.waiting = (event) => {
-        clearTimeout(timer);
-        resolve(event);
-      };
-    });
-  }
-
-  private onEvent(event: LobbyEvent): void {
-    const waiting = this.waiting;
-    this.waiting = undefined;
-    if (waiting !== undefined) waiting(event);
-    else this.queue.push(event);
-  }
-}
-
-/** The first channel (an entry with a parent server) that is enabled and not full, as the lobby offers it. */
-const isOpenChannel = (e: ServerEntry): boolean =>
-  e.parent !== NULL_ID && e.enabled !== 0 && !(e.maxPlayers > 0 && e.playerCount >= e.maxPlayers);
-
 // ---- A player in the world -------------------------------------------------------------------------------------
 
 type EnteredEvent = Extract<WorldEvent, { type: 'entered' }>;
 
 /** The world session ended with this text before the player was in. */
 class EndedBeforeEntering extends Error {}
+
+const asError = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));
 
 /**
  * One account's player: logs in, picks (or makes) its character, enters, and then, like the world screen, runs the rules
@@ -451,8 +214,8 @@ class EndedBeforeEntering extends Error {}
 class Player {
   /** The character it plays: the account's first, or the one the test made. */
   character: CharacterSummary | undefined;
-  /** Set when the test made the character: it is deleted at the end. */
-  created: { name: string; slot: number } | undefined;
+  /** Set when the test made the character: it is deleted at the end. The slot is known once the list that holds it has come. */
+  created: { name: string; slot?: number } | undefined;
   session: WorldSession | undefined;
   world: WorldState | undefined;
   entered: EnteredEvent | undefined;
@@ -462,17 +225,33 @@ class Player {
   steps = 0;
   /** The text of the `ended` event, if the session has ended. */
   endedWith: string | undefined;
+  /** What went wrong in handling the session's events, which nothing else would report once the player is in. */
+  failure: Error | undefined;
   /** In the world and stepping. */
   playing = false;
 
   private entry: WorldEntry | undefined;
   private lobby: Lobby | undefined;
   private finishEntering: { resolve: () => void; reject: (error: Error) => void } | undefined;
+  /** MOVERMOVED messages applied, by the object they moved. */
+  private readonly movesApplied = new Map<number, number>();
 
-  constructor(readonly role: 'walker' | 'observer', readonly login: Account) {}
+  /** `nameStart` keeps the made character's three digits apart from the other player's (this one's are `nameStart` to `nameStart` + 499). */
+  constructor(readonly role: 'walker' | 'observer', readonly login: Account, private readonly nameStart: number) {}
 
   get name(): string {
     return this.character?.name ?? `the ${this.role}`;
+  }
+
+  /** The player's object ID in the world. */
+  get objectId(): number {
+    if (this.entered === undefined) throw new Error(`${this.role} has not entered the world`);
+    return this.entered.playerObjectId;
+  }
+
+  /** How many MOVERMOVED messages about `objectId` this player has applied. */
+  movesAppliedTo(objectId: number): number {
+    return this.movesApplied.get(objectId) ?? 0;
   }
 
   /** The mover of the other player named `name` in this player's view, if the world server has told it of one. */
@@ -497,10 +276,17 @@ class Player {
     return ` Only ${stats.indexed} of ${stats.bundles} bundles of the ${this.role} had a table of contents: is the rebuilt WorldServer (world-snapshot-index.patch) running?`;
   }
 
+  /** Throws if handling the session's events failed or the session has ended: nothing a test waits for can come then. */
+  check(): void {
+    if (this.failure !== undefined) throw new Error(`the ${this.role}'s handling of the world's messages failed: ${this.failure.message}`, { cause: this.failure });
+    if (this.endedWith !== undefined) throw new Error(`the ${this.role}'s world session ended: ${this.endedWith}`);
+  }
+
   /** Logs in, lists the characters and picks the character, makes one if the account has none, and enters the world. */
   async enter(): Promise<void> {
     this.playing = false;
     this.endedWith = undefined;
+    this.failure = undefined;
     this.world = undefined;
     this.entered = undefined;
     const lobby = await this.logIn();
@@ -546,7 +332,7 @@ class Player {
         const lobby = await this.logIn();
         try {
           const character = lobby.characters.find((c) => c.name === made.name);
-          if (character === undefined) return; // gone already
+          if (character === undefined) return; // gone already, or never made
           lobby.flow.deleteCharacter(character.slot, this.login.bankPin);
           const after = await lobby.expect('characters');
           if (after.characters.some((c) => c.name === made.name)) throw new Error('the character is still in the list');
@@ -556,7 +342,8 @@ class Player {
       });
       this.created = undefined;
     } catch (error) {
-      throw new Error(`Deleting ${made.name} (slot ${made.slot}) of the account ${this.login.account} failed, so it may still be on the test account; delete it by hand. ${(error as Error).message}`, { cause: error });
+      const where = made.slot === undefined ? '' : ` (slot ${made.slot})`;
+      throw new Error(`Deleting ${made.name}${where} of the account ${this.login.account} failed, so it may still be on the test account; delete it by hand. ${(error as Error).message}`, { cause: error });
     }
   }
 
@@ -579,24 +366,14 @@ class Player {
 
   /** The account has no character: makes `WebWalk` and 3 digits in the first slot, to be deleted at the end. */
   private async makeCharacter(lobby: Lobby): Promise<CharacterSummary[]> {
-    const name = `WebWalk${String(Math.floor(Math.random() * 1000)).padStart(3, '0')}`;
-    lobby.flow.createCharacter({
-      slot: 0,
-      name,
-      face: 0,
-      costume: 0,
-      skinSet: 0,
-      hairMesh: 0,
-      hairColor: hairColorFor(Sex.MALE, 0),
-      sex: Sex.MALE,
-      job: JOB_VAGRANT,
-      headMesh: 0,
-      bankPin: Number(this.login.bankPin),
-    });
+    const name = `WebWalk${String(this.nameStart + Math.floor(Math.random() * 500)).padStart(3, '0')}`;
+    lobby.flow.createCharacter(newVagrant(0, name, this.login.bankPin));
+    // Kept before the list is awaited, so that a list that comes late (or never) still gets the character deleted, found by its name.
+    this.created = { name };
     const { characters } = await lobby.expect('characters');
     const made = characters.find((c) => c.name === name);
     if (made === undefined) throw new Error(`the character ${name} is not in the list after it was made`);
-    this.created = { name, slot: made.slot };
+    this.created.slot = made.slot;
     return characters;
   }
 
@@ -625,7 +402,7 @@ class Player {
       await entering;
     } catch (error) {
       if (error instanceof EndedBeforeEntering) {
-        if (error.message.includes(WAIT_AND_TRY_AGAIN)) throw new StillInGame(error.message);
+        if (error.message === JOIN_CLOSED_TEXT) throw new StillInGame(error.message, { cause: error });
         throw new Error(`the world session of ${this.role} ${this.name} ended before it was in: ${explainEnd(error.message)}`, { cause: error });
       }
       throw error;
@@ -648,8 +425,9 @@ class Player {
         this.apply(event.messages);
       }
     } catch (error) {
-      // WorldSession would only log a throw from here; the test must hear it.
-      this.finishEntering?.reject(error instanceof Error ? error : new Error(String(error)));
+      // WorldSession would only log a throw from here: keep it, for `check` and the waits to report, entering or not.
+      this.failure ??= asError(error);
+      this.finishEntering?.reject(asError(error));
     }
   }
 
@@ -671,6 +449,7 @@ class Player {
         if (self !== undefined) world.apply(self.objectId, { type: 'setPos', pos: value.pos });
         continue;
       }
+      if (value.type === 'moverMoved') this.movesApplied.set(objectId, this.movesAppliedTo(objectId) + 1);
       world.apply(objectId, value);
     }
   }
@@ -684,7 +463,7 @@ class Player {
   }
 }
 
-/** Runs `attempt` again every few seconds while it fails with `StillInGame`, for up to `REENTER_WAIT_MS` in all. */
+/** Runs `attempt` again every few seconds while it fails as `isStillInGame` says, for up to `REENTER_WAIT_MS` in all. */
 async function retryWhileStillInGame(attempt: () => Promise<void>): Promise<void> {
   const deadline = Date.now() + REENTER_WAIT_MS;
   for (;;) {
@@ -692,8 +471,8 @@ async function retryWhileStillInGame(attempt: () => Promise<void>): Promise<void
       await attempt();
       return;
     } catch (error) {
-      if (!(error instanceof StillInGame) || Date.now() + REENTER_EVERY_MS > deadline) {
-        if (error instanceof StillInGame) throw new Error(`still turned away after ${REENTER_WAIT_MS / 1000} s: ${error.message}`, { cause: error });
+      if (!isStillInGame(error) || Date.now() + REENTER_EVERY_MS > deadline) {
+        if (isStillInGame(error)) throw new Error(`still turned away after ${REENTER_WAIT_MS / 1000} s: ${(error as Error).message}`, { cause: error });
         throw error;
       }
       await sleep(REENTER_EVERY_MS);
@@ -738,7 +517,7 @@ class RulesLoop {
     try {
       for (let i = 0; i < steps; i++) for (const player of this.players()) player.step();
     } catch (error) {
-      this.failure = error instanceof Error ? error : new Error(String(error));
+      this.failure = asError(error);
       console.error('live world test: a rules step failed:', error);
       this.stop();
     }
@@ -751,11 +530,22 @@ let walker: Player;
 let observer: Player;
 const loop = new RulesLoop(() => [walker, observer]);
 
-/** Polls `done` until it holds; `why` says what was seen instead if it does not within `timeoutMs`. */
-async function waitUntil(what: string, timeoutMs: number, done: () => boolean, why: () => string = () => ''): Promise<void> {
+/** Throws if the rules loop failed, or either player's events failed to be handled or its session has ended. */
+function checkWell(): void {
+  loop.check();
+  walker.check();
+  observer.check();
+}
+
+/**
+ * Polls `done` until it holds, checking all the while that nothing has failed (`checkWell`); `why` says what was seen
+ * instead if it does not within `timeoutMs`.
+ */
+async function waitUntil(what: string, timeoutMs: number, done: () => boolean, why: () => string): Promise<void> {
   const deadline = Date.now() + timeoutMs;
-  while (!done()) {
-    loop.check();
+  for (;;) {
+    checkWell();
+    if (done()) return;
     if (Date.now() > deadline) throw new Error(`${what}: not within ${timeoutMs / 1000} s. ${why()}`);
     await sleep(20);
   }
@@ -763,40 +553,38 @@ async function waitUntil(what: string, timeoutMs: number, done: () => boolean, w
 
 /** Both players, who must be in the world: the tests after the first need what it did. */
 function bothInWorld(): [Player, Player] {
+  checkWell();
   for (const player of [walker, observer]) {
-    if (player.endedWith !== undefined) throw new Error(`the ${player.role}'s world session ended: ${player.endedWith}`);
     if (!player.playing) throw new Error(`the ${player.role} is not in the world: the first test did not get both players in`);
   }
   return [walker, observer];
 }
 
+/** The state of a mover as a short text, for a failure message. */
+const stateText = (m: Pick<Mover, 'act' | 'corr' | 'dest'>): string =>
+  `at ${m.act.body.pos.map((v) => v.toFixed(2)).join(', ')} in state 0x${m.act.state.toString(16)}, ${m.corr?.remnant ?? 0} correction steps left${m.dest?.pos == null ? '' : ', walking to a point'}`;
+
+/** Standing, with no correction running and no point to walk to. */
+const stands = (m: Mover): boolean =>
+  (m.act.state & ObjSta.MOVE_ALL) === ObjSta.STAND && (m.corr?.remnant ?? 0) === 0 && (m.dest?.pos ?? null) === null;
+
 // ---- The tests -------------------------------------------------------------------------------------------------
 
-describe.skipIf(config === undefined)('live world', () => {
+describe.skipIf(config === undefined)(skip === undefined ? 'live world' : `live world (skipped: ${skip}. ${HOW_TO_SET_UP})`, () => {
   beforeAll(async () => {
     const live = settings();
     const certifier = live.gateway.routes[live.certifierAddress]!;
-    await checkReachable(certifier.host, certifier.port);
-    lastConnectAt = Date.now();
+    await checkReachable('Live world test', certifier.host, certifier.port, 'npm run test:live:world');
 
     assets = DiskAssets.open();
     gameData = await loadGameData(assets);
-    walker = new Player('walker', live.accounts[0]);
-    observer = new Player('observer', live.accounts[1]);
-
-    try {
-      gateway = await startGateway(live.gateway, { info: (line) => { gatewayLog.push(line); } });
-    } catch (error) {
-      const { host, port } = live.gateway.listen;
-      throw new Error(`Live world test: the gateway cannot listen on ${host}:${port}: ${(error as Error).message}. Is the port taken? Change gateway.listen.port in live.config.json.`);
-    }
+    walker = new Player('walker', live.accounts[0], 0);
+    observer = new Player('observer', live.accounts[1], 500);
+    ({ gateway, log: gatewayLog } = await startLiveGateway('Live world test', live.gateway));
   });
 
   beforeEach(() => {
-    onTestFailed(() => {
-      // What the gateway saw (addresses, routes, close codes; never packet contents) often explains a failure.
-      console.error(`Gateway log so far:\n${gatewayLog.join('\n')}`);
-    });
+    printGatewayLogOnFailure(gatewayLog);
   });
 
   afterAll(async () => {
@@ -837,42 +625,57 @@ describe.skipIf(config === undefined)('live world', () => {
 
   it('the observer sees the walker stop within 1 m of where the walker says it stands', async () => {
     const [runner, watcher] = bothInWorld();
-    const own = runner.world!.self()!;
+    const own = runner.world!.self();
+    if (own === undefined) throw new Error(`the walker's own character is not among its movers in view: ${runner.inView()}`);
     const from = [...own.act.body.pos];
+    const movesBefore = watcher.movesAppliedTo(runner.objectId);
+    const stepsBefore = runner.steps;
 
-    // 3 s of "run forward" (180 steps), then no keys: the first idle step stands the mover and sends the stop.
-    runner.desired = RUN_FORWARD;
-    const stopAt = runner.steps + RUN_STEPS;
-    await waitUntil('the walker running for 3 s', 10000, () => runner.steps >= stopAt);
-    runner.desired = STAND;
-    await waitUntil('the walker standing', 5000, () => (own.act.state & ObjSta.MOVE_ALL) === ObjSta.STAND);
+    try {
+      // 3 s of "run forward" (180 steps), then forward let go with the run key still held: the first idle step stands the
+      // mover and sends PLAYERMOVED, and nothing else (no mode changes), so the stop rides on PLAYERMOVED alone.
+      runner.desired = RUN_FORWARD;
+      await waitUntil('the walker running for 3 s', 10000, () => runner.steps >= stepsBefore + RUN_STEPS,
+        () => `the walker took ${runner.steps - stepsBefore} of ${RUN_STEPS} rules steps: is the rules loop running?`);
+      runner.desired = STOP_RUNNING;
+      await waitUntil('the walker standing', 5000, () => (own.act.state & ObjSta.MOVE_ALL) === ObjSta.STAND,
+        () => `the walker is ${stateText(own)}.`);
 
-    // The observer's walker is settled once the stop has come through the server: it stands, no correction has steps left
-    // (a spent correction's action stays in `corr` until the next move; `remnant` is what runs) and no point is being walked to.
-    const settled = (m: Mover | undefined): boolean =>
-      m !== undefined && (m.act.state & ObjSta.MOVE_ALL) === ObjSta.STAND && (m.corr?.remnant ?? 0) === 0 && (m.dest?.pos ?? null) === null;
-    const seen = (): Mover | undefined => watcher.sees(runner.name);
-    await waitUntil(
-      'the observer seeing the walker stand',
-      SETTLE_MS,
-      () => settled(seen()),
-      () => {
-        const m = seen();
-        return m === undefined ? `${watcher.inView()}.${watcher.tableHint()}` : `The observer's walker is at ${m.act.body.pos.map((v) => v.toFixed(2)).join(', ')} in state 0x${m.act.state.toString(16)}, ${m.corr?.remnant ?? 0} correction steps left${m.dest?.pos == null ? '' : ', walking to a point'}.`;
-      },
-    );
-    await sleep(REST_MS);
+      // The observer's walker is settled once the stop has come through the server: it stands, no correction has steps left
+      // (a spent correction's action stays in `corr` until the next move; `remnant` is what runs) and no point is being walked to.
+      const seen = (): Mover | undefined => watcher.sees(runner.name);
+      await waitUntil(
+        'the observer seeing the walker stand',
+        SETTLE_MS,
+        () => {
+          const m = seen();
+          return m !== undefined && stands(m);
+        },
+        () => {
+          const m = seen();
+          return m === undefined ? `${watcher.inView()}.${watcher.tableHint()}` : `The observer's walker is ${stateText(m)}. The observer applied ${watcher.movesAppliedTo(runner.objectId) - movesBefore} MOVERMOVED of it.`;
+        },
+      );
+      await sleep(REST_MS);
+      checkWell();
 
-    // D3D x and z; the heights are not compared.
-    const says = own.act.body.pos;
-    const sees = seen()!.act.body.pos;
-    const ran = Math.hypot(says[0] - from[0]!, says[2] - from[2]!);
-    const apart = Math.hypot(says[0] - sees[0], says[2] - sees[2]);
-    expect(ran, `the walker ran only ${ran.toFixed(1)} m in 3 s (from ${from.map((v) => v.toFixed(1)).join(', ')} to ${says.map((v) => v.toFixed(1)).join(', ')})`).toBeGreaterThan(MIN_RUN_M);
-    expect(
-      apart,
-      `the walker says it stands at (${says[0].toFixed(2)}, ${says[2].toFixed(2)}) and the observer sees it at (${sees[0].toFixed(2)}, ${sees[2].toFixed(2)}): ${apart.toFixed(2)} m apart`,
-    ).toBeLessThanOrEqual(WITHIN_M);
+      const stood = seen();
+      if (stood === undefined) throw new Error(`the observer lost sight of the walker while they rested. ${watcher.inView()}`);
+      // D3D x and z; the heights are not compared.
+      const says = own.act.body.pos;
+      const sees = stood.act.body.pos;
+      const ran = Math.hypot(says[0] - from[0]!, says[2] - from[2]!);
+      const apart = Math.hypot(says[0] - sees[0], says[2] - sees[2]);
+      const moves = watcher.movesAppliedTo(runner.objectId) - movesBefore;
+      expect(ran, `the walker ran only ${ran.toFixed(1)} m in 3 s (from ${from.map((v) => v.toFixed(1)).join(', ')} to ${says.map((v) => v.toFixed(1)).join(', ')})`).toBeGreaterThan(MIN_RUN_M);
+      expect(moves, `the observer applied ${moves} MOVERMOVED of the walker, not the ${MIN_MOVES_APPLIED} (start and stop) the PLAYERMOVED packets make: the server did not pass them on`).toBeGreaterThanOrEqual(MIN_MOVES_APPLIED);
+      expect(
+        apart,
+        `the walker says it stands at (${says[0].toFixed(2)}, ${says[2].toFixed(2)}) and the observer sees it at (${sees[0].toFixed(2)}, ${sees[2].toFixed(2)}): ${apart.toFixed(2)} m apart`,
+      ).toBeLessThanOrEqual(WITHIN_M);
+    } finally {
+      runner.desired = STAND;
+    }
   }, 60000);
 
   it('every bundle had a table and no reader mismatched', () => {
