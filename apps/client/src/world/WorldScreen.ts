@@ -9,7 +9,7 @@ import { toWebPosition } from '@flyffweb/formats';
 import type { Vec3 } from '@flyffweb/formats';
 import type { BundleMessage, WorldMessage } from '@flyffweb/protocol';
 import { CHASE_PITCH, Joystick, KeyboardInput, WorldStage, chaseCamera, combineIntents, loadGltf, loopMotion } from '@flyffweb/scene';
-import type { LoopedMotion, SceneServices } from '@flyffweb/scene';
+import type { Ground, LoopedMotion, SceneServices } from '@flyffweb/scene';
 import { Vector2 } from 'three';
 import { UNEXPECTED_PROBLEM } from '../lobby/errorText';
 import type { WorldEntry } from '../lobby/LoginFlow';
@@ -28,7 +28,8 @@ import { lookOf } from './render/looks';
 import { loadMoverModel } from './render/moverModels';
 import { nameTagOf } from './render/nameTags';
 import type { ActionMover } from './sim/ActionMover';
-import { terrainGround } from './sim/collision';
+import { cameraBound } from './sim/camera';
+import { HAttr } from './sim/collision';
 import { FixedStepper, STEPS_PER_SECOND } from './sim/stepper';
 import { WorldSession } from './WorldSession';
 import type { WorldEvent } from './WorldSession';
@@ -77,6 +78,16 @@ export class WorldScreen {
   /** Where WORLD_READINFO put the player: the camera looks there until the own mover is in view. */
   private entered: Vec3 = [0, 0, 0];
   private stage: WorldStage | undefined;
+  /**
+   * The world the rules move the movers in (D3D x, z): the stage's (`WorldStage.ground`: the land of its tiles and
+   * their objects' collision shapes) once the stage is open; no land and nothing in the way before.
+   */
+  private readonly ground: Ground = {
+    terrainHeight: (x, z) => this.stage?.ground().terrainHeight(x, z) ?? null,
+    landAttr: (x, z) => this.stage?.ground().landAttr(x, z) ?? HAttr.NONE,
+    objectsNear: (x, z) => this.stage?.ground().objectsNear(x, z) ?? [],
+    landTri: (x, z, out) => this.stage?.ground().landTri?.(x, z, out) ?? false,
+  };
   private views: MoverViews | undefined;
   private tags: NameTagLayer | undefined;
   private keyboard: KeyboardInput | undefined;
@@ -187,11 +198,8 @@ export class WorldScreen {
       this.end(NOT_AVAILABLE_TEXT);
       return;
     }
-    // the rules stand the movers on the terrain once its tile is in (the ground is in D3D x, z; web z is -z); the
-    // stage's objects and land attributes are not part of this ground yet
-    this.world = new WorldState(
-      this.data!, this.entry.clock, terrainGround((x, z) => this.stage?.heightAt([x, 0, 0 - z]) ?? null),
-    );
+    // the rules stand the movers on the stage's land and objects once their tiles are in (`ground`)
+    this.world = new WorldState(this.data!, this.entry.clock, this.ground);
     this.entered = pos;
     this.apply(messages);
     void this.openStage(folder, services).catch((error: unknown) => this.fail(error));
@@ -233,6 +241,8 @@ export class WorldScreen {
     );
     this.tags = new NameTagLayer(stage.scene, this.element.ownerDocument);
     this.syncViews();
+    // the objects' collision shapes come with the tiles from here on, and `ready` waits for them
+    stage.ground();
     stage.focus(this.ownAt());
     // a download that stalls must not hold the loading screen for good
     const late = new Promise<'late'>((resolve) => {
@@ -289,12 +299,14 @@ export class WorldScreen {
       for (let i = 0; i < steps; i++) this.step(world, views);
       views.update(world.movers, steps / STEPS_PER_SECOND);
 
-      // the back camera behind the own mover: heading = pi - angle in radians (global constraints)
+      // the back camera behind the own mover: heading = pi - angle in radians (global constraints), kept out of the
+      // land and the objects by CWorld::CheckBound (cameraBound), which works in D3D: the mirror (web z is -z) both ways
       const at = this.ownAt();
       stage.focus(at);
       const heading = Math.PI - ((world.self()?.act.body.angle ?? 0) * Math.PI) / 180;
-      const camera = chaseCamera(at, heading, CHASE_PITCH, (x, z) => stage.heightAt([x, 0, z]));
-      stage.setCamera(camera.position, camera.target);
+      const camera = chaseCamera(at, heading, CHASE_PITCH);
+      const eye = cameraBound(toWebPosition(camera.target), toWebPosition(camera.position), stage.ground());
+      stage.setCamera(toWebPosition(eye), camera.target);
       this.tags!.update(stage.camera, renderer.getSize(drawingSize).y, (objectId) => views.placeOf(objectId));
 
       const { tiles, models } = stage.counts();

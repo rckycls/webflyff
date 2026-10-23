@@ -1,7 +1,9 @@
 // The map of a world on screen: the scene with its light, sky and fog, the camera, and the terrain tiles and the objects
 // they place, streamed in around a point (tileStreamer.ts, objects.ts). The viewer's world view and the game client's
 // world screen both stand a character on it; where that character is, how it moves and where the camera looks from
-// are theirs (`focus` and `setCamera`), and so is anything else they add to `scene`.
+// are theirs (`focus` and `setCamera`), and so is anything else they add to `scene`. The game client's movement rules
+// also read the world from it (`ground`: the land of the tiles that are in and their objects' collision shapes,
+// ground.ts and collision.ts), which the viewer never asks for.
 //
 // The light is the client's at noon (lighting.ts). The terrain is lit by its own shader in D3D's numbers
 // (`TerrainLighting`); three.js lights do the models. Intensity pi undoes three's 1 / pi Lambert factor, so a light of
@@ -24,6 +26,9 @@ import {
 import type { WebGLRenderer } from 'three';
 import type { SceneServices } from '../boot';
 import { TerrainLighting } from './TerrainTile';
+import { CollisionShapes } from './collision';
+import { tileLand } from './ground';
+import type { Ground } from './ground';
 import { d3dColor, noonLight } from './lighting';
 import { ObjectPool } from './objects';
 import { TileStreamer } from './tileStreamer';
@@ -53,7 +58,10 @@ export class WorldStage {
   private readonly ambient: AmbientLight;
   private readonly sun: DirectionalLight;
   private readonly pool: ObjectPool;
+  private readonly shapes: CollisionShapes;
   private readonly streamer: TileStreamer;
+  /** What `ground` gives, once asked for. */
+  private world: Ground | undefined;
 
   /**
    * The stage of the world with the web name `world`, showing the tiles within `radius` of the focus (1: 3 x 3; the
@@ -92,9 +100,11 @@ export class WorldStage {
     this.scene.add(this.ambient, this.sun);
 
     this.pool = new ObjectPool(store, loaders, textures, overlay);
+    this.shapes = new CollisionShapes(store, manifest, overlay);
     this.streamer = new TileStreamer(world, manifest, store, this.scene, {
       textures,
       objects: this.pool,
+      shapes: this.shapes,
       overlay,
       lighting,
       radius,
@@ -111,7 +121,28 @@ export class WorldStage {
     return this.streamer.heightAt(at);
   }
 
-  /** Resolves once the tiles of the last `focus` are on screen, ground and objects. Never rejects. */
+  /**
+   * The world as the movement rules read it (`Ground`), in D3D x and z: the land of the tiles that are in (flat ground
+   * has height 0) and the collision shapes of their objects. The first call starts the shapes' downloads: at once for
+   * the tiles already in, and with each tile after, which `ready` then waits for too; they go with their tile. The
+   * viewer never asks, so it downloads none. The same object at every call; its members are closures.
+   */
+  ground(): Ground {
+    if (this.world === undefined) {
+      const { streamer, shapes } = this;
+      shapes.activate();
+      this.world = {
+        ...tileLand(this.manifest, (tx, tz) => streamer.tileData(tx, tz)),
+        objectsNear: (x, z) => shapes.objectsNear(x, z),
+      };
+    }
+    return this.world;
+  }
+
+  /**
+   * Resolves once the tiles of the last `focus` are on screen, ground and objects (and, once `ground` was asked for,
+   * their collision shapes). Never rejects.
+   */
   ready(): Promise<void> {
     return this.streamer.ready();
   }
@@ -146,6 +177,7 @@ export class WorldStage {
   /** Gives back the tiles, the objects' models and their textures. Whatever was added to `scene` is the caller's to remove. */
   dispose(): void {
     this.streamer.dispose();
+    this.shapes.dispose();
     this.pool.dispose();
     this.sun.dispose();
     this.ambient.dispose();

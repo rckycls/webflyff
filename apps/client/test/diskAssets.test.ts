@@ -12,7 +12,7 @@ const SIDE = 129;
 function terrainOf(heights: Float32Array): Terrain {
   const tile: WebTile = { x: 1, y: 0, heights, water: new Uint8Array(512), landAttr: new Uint8Array(256), layers: [], objects: [] };
   const assets = { tile: (path: string) => (path === 'tiles/1_0.bin' ? tile : undefined) } as unknown as DiskAssets;
-  const manifest = { mpu: MPU, tiles: { '1_0': 'tiles/1_0.bin' } } as unknown as WorldManifest;
+  const manifest = { mpu: MPU, size: [2, 1], tiles: { '1_0': 'tiles/1_0.bin' } } as unknown as WorldManifest;
   return new Terrain(assets, manifest);
 }
 

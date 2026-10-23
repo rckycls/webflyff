@@ -101,6 +101,18 @@ const flaris = createWorldScript({
   self: writeAddSelf(SELF_ID, self), others: [writeAddMonster(MONSTER_ID, aibatt), writeAddNpc(NPC_ID, julia)],
 });
 
+/**
+ * A house east of Flaris' square (mdlObj.inc's `MaSaHo25`, object 2441 of tile 13_6, at client 6995.6, 3330.6): the
+ * east wall of its ground floor stands at client x 6998.5, from z 3325.4 to 3331.6 and 3.6 m up. Webby stands 5.5 m
+ * east of it, facing west (angle 270: D3D -x), where the way to it is open and the land flat (height 100) and walkable.
+ */
+const WALL_X = 6998.5;
+const BY_THE_WALL: Vec3 = [7004, groundAt(7004, 3328.5), 3328.5];
+const byTheWall = createWorldScript({
+  playerObjectId: SELF_ID, worldId: MADRIGAL, pos: BY_THE_WALL,
+  self: writeAddSelf(SELF_ID, { ...self, pos: BY_THE_WALL, angle: 270 }), others: [],
+});
+
 /** Another player, who comes into view 3 m east of Webby once Webby is in the world, dressed as a vagrant. */
 const BOB_ID = 9003;
 const BOB_AT: Vec3 = [6971, groundAt(6971, 3328), 3328];
@@ -152,8 +164,11 @@ interface Gateway {
   pushCache(packet: Uint8Array): void;
 }
 
-/** Plays the gateway and the four servers behind it: the certifier, the login server and the cache server with Flaris. */
-async function playGateway(page: Page): Promise<Gateway> {
+/**
+ * Plays the gateway and the four servers behind it: the certifier, the login server and the cache server with Flaris
+ * (`world`: Webby on the square, with the Aibatt and Julia, unless another script is given).
+ */
+async function playGateway(page: Page, world = flaris): Promise<Gateway> {
   const gateway: Gateway = {
     sent: [], closed: [], closeCache: async () => {}, pushCache: () => {
       throw new Error('no cache connection yet');
@@ -184,9 +199,9 @@ async function playGateway(page: Page): Promise<Gateway> {
           reply(new ArWriter().u32(PacketType.CACHE_ADDR).string('172.31.238.55').toBytes());
           reply(playerList());
         }
-        flaris.answer('login', body).forEach(reply);
+        world.answer('login', body).forEach(reply);
       } else {
-        flaris.answer('cache', body).forEach(reply);
+        world.answer('cache', body).forEach(reply);
       }
     });
   });
@@ -378,6 +393,22 @@ test.describe('the world screen against scripted servers', () => {
     for (let i = 0; i < 22; i++) z = Math.fround(z + delta[2]);
     expect(pos[2]).toBe(z);
     expect(pos[0]).toBe(SQUARE[0]);
+  });
+
+  test('walking into a Flaris wall stops the player', async ({ page }) => {
+    await playGateway(page, byTheWall);
+    await enterFlaris(page);
+    const ownAt = async () => (await page.evaluate(() => window.__client!.movers())).find((m) => m.objectId === SELF_ID)!.pos;
+    await page.keyboard.down('KeyW');
+    // it runs west up to the wall (SwiftShader's first frames are slow, so the time this takes is not known)
+    await expect.poll(async () => (await ownAt())[0], { timeout: 60_000 }).toBeLessThan(WALL_X + 1);
+    // then 2 s more of forward: through the wall it would run on into the house (the Male's 0.1 a step is 6 m/s)
+    await page.waitForTimeout(2000);
+    const own = await ownAt();
+    await page.keyboard.up('KeyW');
+
+    expect(own[0]).toBeGreaterThan(WALL_X); // it stopped in front of the wall
+    expect(own[2]).toBeCloseTo(BY_THE_WALL[2], 1); // head on, it does not slide along it
   });
 
   test('Leave returns to the login form', async ({ page }) => {

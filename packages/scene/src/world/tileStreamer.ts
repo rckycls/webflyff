@@ -5,6 +5,9 @@
 //
 // A tile the world does not have, or whose download failed, becomes flat ground at height 0 and an error on the
 // overlay (global constraints: missing tile -> flat ground, never a hole).
+//
+// Each tile's objects go to the object pool (objects.ts) and, where there are some, to the collision shapes
+// (collision.ts), and are taken back from both when the tile goes.
 
 import type { Vec3, WebTile, WorldManifest } from '@flyffweb/formats';
 import { MAP_SIZE } from '@flyffweb/formats';
@@ -15,6 +18,7 @@ import type { TextureCache } from '../assets/loaders';
 import type { Overlay } from '../overlay/Overlay';
 import { TerrainTile } from './TerrainTile';
 import type { TerrainLighting } from './TerrainTile';
+import type { CollisionShapes } from './collision';
 import { sampleHeight } from './heightSampler';
 import type { ObjectPool } from './objects';
 
@@ -24,6 +28,12 @@ export interface TilePosition {
 }
 
 export const tileKey = (x: number, y: number): string => `${x}_${y}`;
+
+/** What the streamer keeps of a tile that is in (`tileData`): its heights and its objects, not its light maps. */
+export type TileData = Pick<WebTile, 'x' | 'y' | 'heights' | 'objects'>;
+
+/** The heights of flat ground: 0 at every corner, without flags. */
+const FLAT_HEIGHTS = new Float32Array((MAP_SIZE + 1) * (MAP_SIZE + 1));
 
 /** The tile under a web position: `floor(x / (128 mpu))`, `floor(-z / (128 mpu))`. */
 export function tileOf(pos: Vec3, mpu: number): TilePosition {
@@ -56,6 +66,8 @@ export function tilesInRange(
 export interface StreamerDeps {
   textures: Pick<TextureCache, 'acquire' | 'release'>;
   objects: Pick<ObjectPool, 'place' | 'releaseTile'>;
+  /** Given each tile's objects too, where there are some; a tile is not ready until what they place for it is in. */
+  shapes?: Pick<CollisionShapes, 'place' | 'releaseTile'>;
   overlay: Pick<Overlay, 'error' | 'addGpuBytes'>;
   /** Shared by every tile; each tile is unlit without it. */
   lighting?: TerrainLighting;
@@ -67,16 +79,17 @@ export interface StreamerDeps {
 interface Entry {
   key: string;
   /**
-   * The tile's heights, for `heightAt`; null until it arrives (and for a tile that is flat ground). Only the heights:
-   * the rest of the tile (light maps above all) is on the GPU or in the object pool by then, and would only take memory.
+   * The tile's heights and objects, for `heightAt` and `tileData`; null until it arrives. Flat ground has flat
+   * heights and no objects. Only these: the rest of the tile (light maps above all) is on the GPU or in the object
+   * pool by then, and would only take memory.
    */
-  heights: Pick<WebTile, 'heights'> | null;
+  data: TileData | null;
   terrain: TerrainTile | null;
   placeholder: Mesh | null;
   objects: Group | null;
   /** The ground is on screen: the terrain's textures are in, or the tile is flat ground. */
   loaded: boolean;
-  /** Ground and objects are on screen (or failed). Never rejects. */
+  /** Ground and objects are on screen, and the collision shapes in (or failed). Never rejects. */
   settled: Promise<void>;
   /** What was added to the overlay's GPU estimate for the ground. */
   bytes: number;
@@ -131,16 +144,25 @@ export class TileStreamer {
   /** The ground height at `pos` (CLandscape::GetHeight, see sampleHeight), or null while its tile has not arrived. */
   heightAt(pos: Vec3): number | null {
     const { x, y } = tileOf(pos, this.manifest.mpu);
-    const entry = this.entries.get(tileKey(x, y));
-    if (entry === undefined) return null;
-    if (entry.placeholder !== null) return 0;
-    if (entry.heights === null) return null;
+    const data = this.tileData(x, y);
+    if (data === null) return null;
     const side = MAP_SIZE * this.manifest.mpu;
     // tile-local D3D coordinates: web z is -z
-    return sampleHeight(entry.heights, pos[0] - x * side, 0 - pos[2] - y * side, this.manifest.mpu);
+    return sampleHeight(data, pos[0] - x * side, 0 - pos[2] - y * side, this.manifest.mpu);
   }
 
-  /** Resolves once the visible tiles of the last `update` have their ground and objects on screen. Never rejects. */
+  /**
+   * Tile (x, y), x with D3D x and y with D3D z, as the streamer keeps it: its raw heights (`HGT_*` flags added) and
+   * its objects; flat ground has height 0 and no objects. Null while it has not arrived, and for a tile not in range.
+   */
+  tileData(x: number, y: number): TileData | null {
+    return this.entries.get(tileKey(x, y))?.data ?? null;
+  }
+
+  /**
+   * Resolves once the visible tiles of the last `update` have their ground and objects on screen (and the shapes
+   * what they were placing for them). Never rejects.
+   */
   async ready(): Promise<void> {
     const pending = this.visible.flatMap((key) => this.entries.get(key)?.settled ?? []);
     await Promise.all(pending);
@@ -163,7 +185,7 @@ export class TileStreamer {
     const [x, y] = key.split('_').map(Number) as [number, number];
     const entry: Entry = {
       key,
-      heights: null,
+      data: null,
       terrain: null,
       placeholder: null,
       objects: null,
@@ -190,7 +212,8 @@ export class TileStreamer {
   }
 
   private async show(entry: Entry, tile: WebTile): Promise<void> {
-    entry.heights = { heights: tile.heights };
+    const data: TileData = { x: tile.x, y: tile.y, heights: tile.heights, objects: tile.objects };
+    entry.data = data;
     const terrain = new TerrainTile(tile, this.manifest, { textures: this.deps.textures, lighting: this.deps.lighting });
     entry.terrain = terrain;
     entry.bytes = terrain.gpuBytes();
@@ -205,7 +228,9 @@ export class TileStreamer {
       entry.objects = group;
       this.scene.add(group);
     });
-    await Promise.all([ground, objects]).catch((error: unknown) => {
+    // the shapes keep `data`, not `tile`, whose light maps are let go of
+    const shapes = this.deps.shapes?.place(data);
+    await Promise.all([ground, objects, shapes]).catch((error: unknown) => {
       this.deps.overlay.error(`tile ${entry.key}: ${error instanceof Error ? error.message : String(error)}`);
     });
   }
@@ -218,6 +243,7 @@ export class TileStreamer {
     mesh.position.set((x + 0.5) * side, 0, -(y + 0.5) * side);
     // the plane is shared by every flat tile and is a few bytes: not counted
     entry.placeholder = mesh;
+    entry.data = { x, y, heights: FLAT_HEIGHTS, objects: [] };
     this.scene.add(mesh);
     entry.loaded = true;
   }
@@ -229,8 +255,9 @@ export class TileStreamer {
     if (entry.terrain !== null) {
       this.scene.remove(entry.terrain.group);
       entry.terrain.dispose();
-      // place() was called with the terrain: the pool holds the tile's models until told
+      // place() was called with the terrain: the pool holds the tile's models until told, and the shapes theirs
       this.deps.objects.releaseTile(entry.key);
+      this.deps.shapes?.releaseTile(entry.key);
     }
     if (entry.objects !== null) this.scene.remove(entry.objects);
     if (entry.placeholder !== null) this.scene.remove(entry.placeholder);
@@ -238,6 +265,6 @@ export class TileStreamer {
     entry.terrain = null;
     entry.objects = null;
     entry.placeholder = null;
-    entry.heights = null;
+    entry.data = null;
   }
 }

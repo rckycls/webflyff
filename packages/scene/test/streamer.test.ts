@@ -4,6 +4,7 @@ import { Group, Mesh, Scene, Texture } from 'three';
 import { describe, expect, it, vi } from 'vitest';
 import { TerrainTile } from '../src/world/TerrainTile';
 import { TileStreamer, tileOf, tilesInRange } from '../src/world/tileStreamer';
+import type { TileData } from '../src/world/tileStreamer';
 
 const SIDE = MAP_SIZE + 1;
 const PATCHES = NUM_PATCHES_PER_SIDE * NUM_PATCHES_PER_SIDE;
@@ -98,13 +99,14 @@ function setup({ missing = [], failing = [], held = [], instantTextures = true, 
     }),
     releaseTile: vi.fn((_key: string) => {}),
   };
+  const shapes = { place: vi.fn(async (_t: TileData) => {}), releaseTile: vi.fn((_key: string) => {}) };
   const overlay = { error: vi.fn((_message: string) => {}), addGpuBytes: vi.fn((_n: number) => {}) };
   const textures = fakeTextures(instantTextures);
   const scene = new Scene();
-  const streamer = new TileStreamer('wdtest', makeManifest(), store, scene, { textures, objects, overlay });
+  const streamer = new TileStreamer('wdtest', makeManifest(), store, scene, { textures, objects, shapes, overlay });
   const gpuBytes = () => overlay.addGpuBytes.mock.calls.reduce((sum, [n]) => sum + n, 0);
   const release = (key: string) => heldDownloads.get(key)?.();
-  return { store, objects, groups, overlay, textures, scene, streamer, gpuBytes, release };
+  return { store, objects, shapes, groups, overlay, textures, scene, streamer, gpuBytes, release };
 }
 
 const requested = (store: { tile: { mock: { calls: [string, number, number][] } } }): string[] =>
@@ -235,6 +237,31 @@ describe('TileStreamer', () => {
     expect(streamer.heightAt([3 * TILE_METERS + 40, 0, -(4 * TILE_METERS + 24)])).toBeCloseTo(10 + 12);
     // a tile not loaded (far away) has no height yet
     expect(streamer.heightAt(middleOf(20, 20))).toBeNull();
+  });
+
+  it("keeps each tile's heights and objects (tileData), and gives its objects to the shapes as it comes and goes", async () => {
+    const tile = (x: number, y: number): WebTile => ({ ...makeTile(x, y, () => 7), objects: [{ model: 0, matrix: new Float32Array(16) }] });
+    const { streamer, shapes } = setup({ missing: ['11_10'], tile });
+    streamer.update(middleOf(10, 10));
+    expect(streamer.tileData(10, 10)).toBeNull(); // not here yet
+    await flush();
+
+    const data = streamer.tileData(10, 10)!;
+    expect([data.x, data.y, data.heights[0], data.objects.length]).toEqual([10, 10, 7, 1]);
+    expect(data).not.toHaveProperty('layers'); // the light maps are let go of
+    // flat ground: height 0 and no objects, which the shapes are not given
+    const flat = streamer.tileData(11, 10)!;
+    expect([flat.x, flat.y, Math.max(...flat.heights), flat.objects.length]).toEqual([11, 10, 0, 0]);
+    expect(shapes.place).toHaveBeenCalledTimes(24);
+    expect(shapes.place.mock.calls.find(([t]) => t.x === 10 && t.y === 10)![0]).toBe(data);
+
+    streamer.update(middleOf(13, 10));
+    await flush();
+
+    expect(streamer.tileData(8, 10)).toBeNull();
+    expect(new Set(shapes.releaseTile.mock.calls.map(([key]) => key))).toEqual(
+      new Set([8, 9, 10].flatMap((x) => [8, 9, 10, 11, 12].map((y) => `${x}_${y}`))),
+    );
   });
 
   it('unloads what goes out of range: ground disposed, textures and objects given back, nothing asked twice', async () => {

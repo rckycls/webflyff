@@ -551,6 +551,20 @@ describe('collision: the land\'s triangles (CWorld::GetLandTri, ProcessUnderColl
     near(processUnderCollision(out, [7.95, 0.15 + 1, 20.5], foot), 0.15);
     expect(out).toEqual([8, 0, 20.5]);
   });
+
+  it("calls the ground's landTri on the ground, so a Ground whose methods use `this` slides too", () => {
+    const foot = land((gx) => (gx <= 2 ? 3 * (2 - gx) * MPU : 0));
+    const methods = {
+      inner: foot,
+      terrainHeight(x: number, z: number) { return this.inner.terrainHeight(x, z); },
+      landAttr(x: number, z: number) { return this.inner.landAttr(x, z); },
+      objectsNear(x: number, z: number) { return this.inner.objectsNear(x, z); },
+      landTri(x: number, z: number, out: Float32Array) { return this.inner.landTri!(x, z, out); },
+    };
+    const out: Vec3 = [0, 0, 0];
+    near(processUnderCollision(out, [7.95, 0.15 + 1, 20.5], methods), 0.15);
+    expect(out).toEqual([8, 0, 20.5]);
+  });
 });
 
 // ---- the camera ---------------------------------------------------------------------------------------------------

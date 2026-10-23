@@ -1,9 +1,10 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { MAP_SIZE, cleanHeight, decodeTileBin, heightFlag } from '@flyffweb/formats';
+import { decodeTileBin } from '@flyffweb/formats';
 import type { AssetIndex, WebTile, WorldManifest } from '@flyffweb/formats';
-import { sampleHeight } from '@flyffweb/scene';
-import { landTriangle, terrainGround } from '../../src/world/sim/collision';
+import { tileLand } from '@flyffweb/scene';
+import type { TileLand } from '@flyffweb/scene';
+import { terrainGround } from '../../src/world/sim/collision';
 import type { Ground } from '../../src/world/sim/collision';
 
 /** The worktree's converted assets (`npm run convert`), which the world screen's dev server serves too. */
@@ -53,55 +54,25 @@ export class DiskAssets {
 }
 
 /**
- * The ground under a D3D x, z of one converted world, which the movers' steps stand on as the screen's ground does:
- * the terrain's height (`CLandscape::GetHeight`), `null` where the world has no tile (the mover then stays where it
- * is), the land's attributes and its triangles; no objects.
+ * The ground under a D3D x, z of one converted world, which the movers' steps stand on as the screen's ground does
+ * (`tileLand`, which the world screen's stage stands on too): the terrain's height (`CLandscape::GetHeight`), `null`
+ * where the world has no tile (the mover then stays where it is), the land's attributes (the `HGT_*` flags of the
+ * heights) and its triangles; no objects.
  */
 export class Terrain {
   private readonly tiles = new Map<string, WebTile | null>();
-  private readonly side: number;
+  readonly heightAt: TileLand['terrainHeight'];
+  readonly landAttrAt: TileLand['landAttr'];
+  readonly landTriAt: TileLand['landTri'];
+  /** What `WorldState` takes: this terrain, its attributes and its triangles, without objects. */
+  readonly ground: Ground;
 
   constructor(private readonly assets: DiskAssets, private readonly manifest: WorldManifest) {
-    this.side = MAP_SIZE * manifest.mpu;
-  }
-
-  readonly heightAt = (x: number, z: number): number | null => {
-    const at = this.tileAt(x, z);
-    return at === null ? null : sampleHeight(at.tile, at.localX, at.localZ, this.manifest.mpu);
-  };
-
-  /**
-   * `CWorld::GetHeightAttribute` (`World.cpp:1717-1735`) and `CLandscape::GetHeightAttribute` (`lod.cpp:1633-1649`):
-   * the `HATTR_*` of the `HGT_*` flag on the height at the corner of the cell (in whole cells); 0 off the tiles,
-   * where the C++'s -1 stops nothing either. (The tile's `landAttr` bytes, `m_aLandAttr`, are read by nothing.)
-   */
-  readonly landAttrAt = (x: number, z: number): number => {
-    const at = this.tileAt(x, z);
-    if (at === null) return 0;
-    const cx = Math.trunc(at.localX / this.manifest.mpu);
-    const cz = Math.trunc(at.localZ / this.manifest.mpu);
-    if (cx < 0 || cx > MAP_SIZE || cz < 0 || cz > MAP_SIZE) return 0;
-    return heightFlag(at.tile.heights[cx + cz * (MAP_SIZE + 1)]!);
-  };
-
-  /**
-   * `CWorld::GetLandTri` (`landTriangle`) on the tiles' heights, without their `HGT_*` flags
-   * (`CLandscape::GetHeight( DWORD, DWORD )`): the land's triangle under (x, z), or false off the tiles.
-   */
-  readonly landTriAt = (x: number, z: number, out: Float32Array): boolean =>
-    landTriangle(x, z, this.manifest.mpu, (lx, lz, gx, gz) => {
-      const tile = this.tileOf(lx, lz);
-      return tile === null ? null : cleanHeight(tile.heights[gx + gz * (MAP_SIZE + 1)]!);
-    }, out);
-
-  /** What `WorldState` takes: this terrain, its attributes and its triangles, without objects. */
-  readonly ground: Ground = { ...terrainGround(this.heightAt, this.landAttrAt), landTri: this.landTriAt };
-
-  private tileAt(x: number, z: number): { tile: WebTile; localX: number; localZ: number } | null {
-    const tx = Math.floor(x / this.side);
-    const tz = Math.floor(z / this.side);
-    const tile = this.tileOf(tx, tz);
-    return tile === null ? null : { tile, localX: x - tx * this.side, localZ: z - tz * this.side };
+    const land = tileLand(manifest, (tx, tz) => this.tileOf(tx, tz));
+    this.heightAt = land.terrainHeight;
+    this.landAttrAt = land.landAttr;
+    this.landTriAt = land.landTri;
+    this.ground = { ...terrainGround(land.terrainHeight, land.landAttr), landTri: land.landTri };
   }
 
   private tileOf(tx: number, tz: number): WebTile | null {
