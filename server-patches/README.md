@@ -95,7 +95,7 @@ The browser client reads only the messages it needs so far (players and monsters
 - **A bundle grows by 4 bytes per message, plus 6.**
 - **Neuz isn't affected.** It reads only the counted messages and nothing after them, so it never reads the table.
 - **There's no setting and no switch.** Every bundle gets the table. To stop it, put the old exe back (see "Undo").
-- **The browser works with either exe.** With the old exe it reads each bundle in order, and drops the rest of a bundle from the first message it doesn't read.
+- **With the old exe, the browser enters the world but sees only part of it.** Without the table it reads each bundle in order, and drops the rest of a bundle from the first message it doesn't read. Entering still works, because the first bundle starts with messages it reads (the season, the map and position, then the player's own character), and the player can walk. But other players, monsters and NPCs can be missing, stand still, or stay on screen after they have gone, because their messages often come after one it doesn't read. The overlay shows which exe is running: on its line `bundles N   indexed N   messages skipped N   mismatched N`, `indexed` stays at 0 with the old exe and equals `bundles` with the new one.
 - **None of the 277 places in the world server that add a message changes.** The message counter (`CSnapshot::cb`, a `short`) becomes a small class that behaves like that `short` and also notes where each message starts. `CUser::Notify` adds the table just before it sends the bundle. The existing rewind after sending removes the table again, together with the messages.
 
 Files changed: `Snapshot.h`, `Snapshot.cpp` and `User.cpp` in `Source\WORLDSERVER\`.
@@ -210,7 +210,7 @@ Each should end with `Build succeeded.` The new exes are `Output\Certifier\Relea
    - **Only ever list an address that belongs to this PC:** `127.0.0.1`, or this PC's own address as shown by `ipconfig` (the "IPv4 Address" lines). **Never add an address you don't recognise,** even if it shows up in a `GATEWAY_CLIENT_ADDR refused from <address>` log line. Anyone who can reach the certifier can send that packet and cause that log line. A listed address can claim to be any player's address and skips the flood limiter. That would let a stranger get around the wrong-password lockout, which allows unlimited password guessing, get around `IPCut.ini` bans and other address checks, and flood the certifier.
    - **When to add a second line.** Each time a browser player logs in, the log may show `refused from` followed by this PC's own `ipconfig` address. That means the gateway connects through that address instead of `127.0.0.1`. Those players can still log in, but they all share one address. In that case, add a second line with that address: `Gateway "<that address>"`. Up to 8 `Gateway` lines are allowed.
 5. Start the certifier.
-6. Confirm Neuz can still log in: log in with Neuz and reach the server list.
+6. Confirm logging in still works: in the browser, log in and reach the server list. (Neuz logs in to the new certifier as before. If you have a PC that can run Neuz while the servers run elsewhere, logging in with Neuz too is a good extra check; it is not required.)
 
 ### The login server
 
@@ -226,7 +226,7 @@ Each should end with `Build succeeded.` The new exes are `Output\Certifier\Relea
    - **Press Enter after the last line first.** The file ends with `//NPROTECT` and no line break. If you type straight after it, the line becomes part of that comment and is quietly ignored.
    - Use the same address or addresses as the `Gateway` lines in `Certifier.ini`, and the same rule: only addresses of this PC.
 5. Start the login server.
-6. Confirm Neuz can still log in: log in with Neuz, pick a server and reach the character list.
+6. Confirm logging in still works: in the browser, log in, pick a server and reach the character list. (Neuz logs in to the new login server as before; a Neuz check on another PC is a good extra, not required.)
 7. Look in the error log, a file named like `error_20261022.txt` in the `Program` folder (the servers that run from that folder share it). There must be no `Gateway … not added` line. If there is, the address in that line was mistyped, or there are more than 8 `Gateway` lines. Both the certifier and the login server write this line, so look at the address it names in both `Certifier.ini` and `LoginServer.ini`, fix it, and restart that server.
 
 ### The world server
@@ -237,7 +237,7 @@ Read the two points about the world server under "Put them in service" first.
 2. Back up `Program\7. World.exe`. For example, copy it to `Program\7. World.exe.before-toc`. (If that backup already exists from an earlier swap, keep the old one.)
 3. Copy `Output\WorldServer\Release\WorldServer.exe` over `Program\7. World.exe`, keeping the name `7. World.exe`.
 4. Start the world server. There's nothing to set: no `.ini` line.
-5. Confirm the game still plays: in the browser, log in, tap **Enter** on a character, walk around, and watch the monsters move; the overlay's `mismatched` number must stay at 0. (Neuz reads the new bundles as before. If you have a PC that can run Neuz while the servers run elsewhere, entering the world with Neuz too is a good extra check; it is not required.) If nobody can enter the world after the restart, stop all the servers and start them again in their usual order (`1. Account.exe` to `7. World.exe`).
+5. Confirm the game still plays: in the browser, log in, tap **Enter** on a character, walk around, and watch the monsters move; on the overlay, `indexed` must equal `bundles` (the new exe is the one running) and `mismatched` must stay at 0. (Neuz reads the new bundles as before. If you have a PC that can run Neuz while the servers run elsewhere, entering the world with Neuz too is a good extra check; it is not required.) If nobody can enter the world after the restart, stop all the servers and start them again in their usual order (`1. Account.exe` to `7. World.exe`).
 
 ### The cache server
 
@@ -262,4 +262,4 @@ Read the points about the cache server under "Put them in service" first.
 
 ## Undo
 
-Stop the server, copy its backup back (`Program\2. Certifier.exe.before-gateway` to `Program\2. Certifier.exe`, `Program\5. Login.exe.before-gateway` to `Program\5. Login.exe`, `Program\7. World.exe.before-toc` to `Program\7. World.exe`, or `Program\6. Cache.exe.before-gateway` to `Program\6. Cache.exe`), and start it again. The old exes ignore the `Gateway` lines, so they can stay in the `.ini` files. The world server has no setting, so nothing else needs undoing: the browser reads the old exe's bundles without the table.
+Stop the server, copy its backup back (`Program\2. Certifier.exe.before-gateway` to `Program\2. Certifier.exe`, `Program\5. Login.exe.before-gateway` to `Program\5. Login.exe`, `Program\7. World.exe.before-toc` to `Program\7. World.exe`, or `Program\6. Cache.exe.before-gateway` to `Program\6. Cache.exe`), and start it again. The old exes ignore the `Gateway` lines, so they can stay in the `.ini` files. The world server has no setting, so nothing else needs undoing. With the old world server back, the browser still enters the world, but sees only part of it (see "What it changes" in section 4).

@@ -139,7 +139,7 @@ Without this step the site works, but the servers treat every browser player as 
 
 - one player's typo in a password blocks everyone for 15 seconds (three typos: 15 minutes), and `IPCut.ini` bans cannot single anyone out;
 - on a busy server, the connection-flood limiter cuts off every browser player at once (see [Before a public launch](#before-a-public-launch));
-- the world server's packets have no table of contents, so the browser drops the rest of a packet at the first message it doesn't read (other players and monsters can then be missing or stand still);
+- the world server's packets have no table of contents, so the browser drops the rest of a packet at the first message it doesn't read: players still enter the world and can walk, but other players and monsters can be missing, stand still or stay on screen after they have gone (the overlay's `indexed` number stays at 0);
 - the cache server, the core server and the world server record every browser player at the gateway's address.
 
 Follow **[server-patches/README.md](../server-patches/README.md)**. Build the new `Certifier.exe`, `LoginServer.exe`, `WorldServer.exe` and `CacheServer.exe` on your PC, where Visual Studio is; the new certifier holds all three certifier changes, so one swap covers them. Then, on the hosted machine (back up each old exe first, as that README says):
@@ -158,7 +158,7 @@ Follow **[server-patches/README.md](../server-patches/README.md)**. Build the ne
 Success:
 
 - Type a wrong password for a test account on a phone on Wi-Fi. Then, at once, log in to **the same account** on a second phone on mobile data (Wi-Fi off). It must reach the server list. (If the certifier still saw every browser player at the gateway's address, the second phone would get "Cannot log into account for 15 seconds".)
-- Enter the world on a phone: on the overlay's line `messages skipped N   mismatched N`, `mismatched` stays at 0 (`skipped` counts the messages the browser doesn't use yet and grows; that is normal), and other players and monsters move.
+- Enter the world on a phone: on the overlay's line `bundles N   indexed N   messages skipped N   mismatched N`, `indexed` is the same number as `bundles` (every packet had its table of contents, so the new world server is the one running), `mismatched` stays at 0 (`skipped` counts the messages the browser doesn't use yet and grows; that is normal), and other players and monsters move.
 - The error log in `Program` (a file named like `error_20261022.txt`) has no `GATEWAY_CLIENT_ADDR refused` line and no `Gateway … not added` line, also after a browser player has entered the world.
 
 ## Step 5. The gateway: config and first run
@@ -465,7 +465,7 @@ Then run `nssm restart flyff-gateway`. A misspelt limit name stops the gateway w
 
 The game files are served from this machine, over this machine's internet connection. A player downloads many megabytes the first time they enter the world (the target is at most 15 MB until the character is on screen), more as they walk into new areas and meet new monsters, and every player does that over your upload speed. The lobby itself is a few kilobytes and uses none of these files.
 
-When the machine's upload becomes the limit, move `/assets/` to a CDN (a service that serves files from servers close to the player): upload `dist\assets` there, and send `/assets/*` to it instead of to the `file_server` in the Caddyfile. Also worth doing then: compress the `.json`, `.bin` and `.glb` files, as the viewer's server does (`apps/viewer/vite.serveDist.ts`).
+When the machine's upload becomes the limit, move `/assets/` to a CDN (a service that serves files from servers close to the player): upload `dist\assets` there, and send `/assets/*` to it instead of to the `file_server` in the Caddyfile. Also worth doing then: compress the `.json`, `.bin` and `.glb` files, as the viewer's server does (`packages/scene/vite/serveDist.ts`).
 
 ## Troubleshooting
 
@@ -484,7 +484,10 @@ When the machine's upload becomes the limit, move `/assets/` to a CDN (a service
 | "The connection to the game was lost." | A connection closed while playing: the phone slept or lost its network, the gateway was restarted, or a server stopped. Log in again. There is no automatic reconnect yet. |
 | "Moving to another map isn't supported yet." | The character walked through a portal or was moved to another map by the server. Only one map per session works so far. Log in again. |
 | "This map isn't available in the browser yet." | The character is saved on a map that was not converted, or the game files on the server are older than the game data (`npm run convert` again, step 3a). |
-| Other players and monsters are missing or stand still, and the overlay's `skipped` number grows quickly | The old world server is running: its packets have no table of contents (step 4). |
+| "The game files on the server are out of date." | `dist\assets` was converted by an older version of FlyffWeb and lacks the game data this one reads (such as `data/worlds.json`). In `$FlyffWeb`, run `npm run convert -- --only data` (a few seconds), then enter again. |
+| "The game files took too long to load. Check the connection and try again." | The map and the characters around the player did not arrive within a minute. On a slow phone connection, try again (the second time is quicker: the browser keeps what it already downloaded). If it happens on every device, check the machine's upload (see [Bandwidth](#bandwidth)) and that Caddy serves `/assets/`. |
+| "This browser can't show the 3D world (WebGL is off or not supported)." | The browser has no WebGL 2, which the 3D world needs. Update the browser (on iPhone and iPad: iOS / iPadOS 16 or newer). In Chrome on a PC, turn on "Use graphics acceleration when available" in Settings → System and restart Chrome. Logging in and the character list work without it. |
+| Other players and monsters are missing or stand still, and on the overlay `indexed` stays at 0 while `bundles` grows | The old world server is running: its packets have no table of contents (step 4). With the new one, `indexed` equals `bundles`; a `skipped` number that grows is then normal. |
 | The error log in `Program` has `GATEWAY_CLIENT_ADDR refused from ...` after a player entered the world | The new cache server does not list the address the gateway connects from in `CacheServer.ini`: as for the certifier, read the "When to add a second line" note in [server-patches/README.md](../server-patches/README.md). |
 | Everyone disconnected at once, nobody can log in for about 10 minutes | The servers' connection-flood limiter: the old certifier or login server is still running, or `Certifier.ini` or `LoginServer.ini` has no `Gateway` line. See step 4 and [Before a public launch](#before-a-public-launch). |
 | The error log in `Program` has `Gateway … not added` | A `Gateway` line in `Certifier.ini` or `LoginServer.ini` (both servers write this line) is not a plain IPv4 address (a typo, say), or there are more than 8 of them. Find the address the line names in those two files, fix it, and restart that server. |
