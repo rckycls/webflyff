@@ -341,12 +341,20 @@ describe('WorldState: stepping', () => {
       ]),
       matrix: new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]),
     };
-    const { world } = newWorld(gameData(), { terrainHeight: () => 0, landAttr: () => 0, objectsNear: () => [wall] });
-    add(world, playerOf(1, 'Runner', { state: ObjSta.FMOVE, angle: 90 }));
-    add(world, npcOf(2, 20, '', { state: ObjSta.FMOVE, angle: 90 })); // the Aibatt, 0.1 a step
-    add(world, npcOf(3, 11, 'MaFl_Mikyel', { state: ObjSta.FMOVE, angle: 90 }));
-    steps(world, 40); // 4 m free; each stops where its knee test (6.5 steps, 0.65) reaches the wall
-    for (const id of [1, 2, 3]) near(world.movers.get(id)!.act.body.pos[0], 100.9, 1e-3);
+    const walled = newWorld(gameData(), { terrainHeight: () => 0, landAttr: () => 0, objectsNear: () => [wall] }).world;
+    const free = newWorld().world;
+    for (const world of [walled, free]) {
+      add(world, playerOf(1, 'Runner', { state: ObjSta.FMOVE, angle: 90 }));
+      add(world, npcOf(2, 20, '', { state: ObjSta.FMOVE, angle: 90 })); // the Aibatt, 0.1 a step
+      add(world, npcOf(3, 11, 'MaFl_Mikyel', { state: ObjSta.FMOVE, angle: 90 }));
+    }
+    // each runs 0.1 a step: after 9 steps (x 100.9) its knee test, 6.5 steps (0.65) long, reaches the wall, and it stops
+    steps(walled, 40);
+    steps(free, 9);
+    for (const id of [1, 2, 3]) {
+      expect(walled.movers.get(id)!.act.body.pos).toEqual(free.movers.get(id)!.act.body.pos);
+      near(walled.movers.get(id)!.act.body.pos[0], 100.9);
+    }
   });
 
   it('a mover runs at its speed times its speed factor, as CMover::GetSpeed gives it', () => {

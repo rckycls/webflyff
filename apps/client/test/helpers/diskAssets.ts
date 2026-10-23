@@ -1,9 +1,9 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { MAP_SIZE, decodeTileBin, heightFlag } from '@flyffweb/formats';
+import { MAP_SIZE, cleanHeight, decodeTileBin, heightFlag } from '@flyffweb/formats';
 import type { AssetIndex, WebTile, WorldManifest } from '@flyffweb/formats';
 import { sampleHeight } from '@flyffweb/scene';
-import { terrainGround } from '../../src/world/sim/collision';
+import { landTriangle, terrainGround } from '../../src/world/sim/collision';
 import type { Ground } from '../../src/world/sim/collision';
 
 /** The worktree's converted assets (`npm run convert`), which the world screen's dev server serves too. */
@@ -55,7 +55,7 @@ export class DiskAssets {
 /**
  * The ground under a D3D x, z of one converted world, which the movers' steps stand on as the screen's ground does:
  * the terrain's height (`CLandscape::GetHeight`), `null` where the world has no tile (the mover then stays where it
- * is), and the land's attributes; no objects.
+ * is), the land's attributes and its triangles; no objects.
  */
 export class Terrain {
   private readonly tiles = new Map<string, WebTile | null>();
@@ -84,18 +84,33 @@ export class Terrain {
     return heightFlag(at.tile.heights[cx + cz * (MAP_SIZE + 1)]!);
   };
 
-  /** What `WorldState` takes: this terrain and its attributes, without objects. */
-  readonly ground: Ground = terrainGround(this.heightAt, this.landAttrAt);
+  /**
+   * `CWorld::GetLandTri` (`landTriangle`) on the tiles' heights, without their `HGT_*` flags
+   * (`CLandscape::GetHeight( DWORD, DWORD )`): the land's triangle under (x, z), or false off the tiles.
+   */
+  readonly landTriAt = (x: number, z: number, out: Float32Array): boolean =>
+    landTriangle(x, z, this.manifest.mpu, (lx, lz, gx, gz) => {
+      const tile = this.tileOf(lx, lz);
+      return tile === null ? null : cleanHeight(tile.heights[gx + gz * (MAP_SIZE + 1)]!);
+    }, out);
+
+  /** What `WorldState` takes: this terrain, its attributes and its triangles, without objects. */
+  readonly ground: Ground = { ...terrainGround(this.heightAt, this.landAttrAt), landTri: this.landTriAt };
 
   private tileAt(x: number, z: number): { tile: WebTile; localX: number; localZ: number } | null {
     const tx = Math.floor(x / this.side);
     const tz = Math.floor(z / this.side);
+    const tile = this.tileOf(tx, tz);
+    return tile === null ? null : { tile, localX: x - tx * this.side, localZ: z - tz * this.side };
+  }
+
+  private tileOf(tx: number, tz: number): WebTile | null {
     const key = `${tx}_${tz}`;
     let tile = this.tiles.get(key);
     if (tile === undefined) {
       tile = Object.hasOwn(this.manifest.tiles, key) ? this.assets.tile(this.manifest.tiles[key]!) : null;
       this.tiles.set(key, tile);
     }
-    return tile === null ? null : { tile, localX: x - tx * this.side, localZ: z - tz * this.side };
+    return tile;
   }
 }

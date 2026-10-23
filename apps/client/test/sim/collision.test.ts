@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import type { Vec3 } from '@flyffweb/protocol';
 import { ActionMover } from '../../src/world/sim/ActionMover';
 import type { MoverBody } from '../../src/world/sim/ActionMover';
+import { cameraBound } from '../../src/world/sim/camera';
 import {
-  HAttr, NO_CEILING, cameraBound, overHeight, processCollision, processUnderCollision, terrainGround,
+  HAttr, NO_CEILING, landTriangle, overHeight, processCollision, processUnderCollision, terrainGround,
 } from '../../src/world/sim/collision';
 import type { CollisionObject, Ground } from '../../src/world/sim/collision';
 import { ActMsg, ObjSta } from '../../src/world/sim/constants';
@@ -55,6 +56,27 @@ function ground(
   landAttr: (x: number, z: number) => number = () => HAttr.NONE,
 ): Ground {
   return { terrainHeight: terrain, landAttr, objectsNear: () => objects };
+}
+
+/** The cell size of the hand-made land below (a world's MPU). */
+const MPU = 4;
+
+/**
+ * Hand-made land: one tile whose corner (gx, gz) is at height `h(gx, gz)`, with its triangles (`landTriangle`, the
+ * copy of GetLandTri) and the bilinear height between corners (CLandscape::GetHeight).
+ */
+function land(h: (gx: number, gz: number) => number, objects: CollisionObject[] = []): Ground {
+  const bilinear = (x: number, z: number): number => {
+    const [fx, fz] = [x / MPU, z / MPU];
+    const [px, pz] = [Math.floor(fx), Math.floor(fz)];
+    const [dx, dz] = [fx - px, fz - pz];
+    return h(px, pz) * (1 - dx) * (1 - dz) + h(px + 1, pz) * dx * (1 - dz) + h(px, pz + 1) * (1 - dx) * dz
+      + h(px + 1, pz + 1) * dx * dz;
+  };
+  return {
+    terrainHeight: bilinear, landAttr: () => HAttr.NONE, objectsNear: () => objects,
+    landTri: (x, z, out) => landTriangle(x, z, MPU, (lx, lz, gx, gz) => (lx === 0 && lz === 0 ? h(gx, gz) : null), out),
+  };
 }
 
 /** A mover at `pos` facing `angle`, running 0.1 a step (the sim tests' speed). */
@@ -139,13 +161,14 @@ describe('collision: walls (ProcessCollisionGround, CWorld::ProcessCollision, CO
       steps(act, 400, g);
       const at = act.body.pos;
       // the second step meets both walls (0.43 away, the line reaches 0.46); the first one listed gives the slide,
-      // along it toward the other wall, at (1 - t) of the line; once that slide reaches the other wall (within 0.03)
-      // the second test meets it too, and two hits are no move: stopped both ways
+      // along it toward the other wall, at (1 - t) of the line, 0.00467 a step; once that slide reaches the other
+      // wall (within 0.0303, so past z -0.9697) the second test meets it too, and two hits are no move: stopped both
+      // ways, after 86 steps of sliding (the mirror images of each other, to the bit)
       if (order[0] === a) {
         expect(at[0]).toBe(f32(0.5 + dx));
-        near(at[2], -0.972, 1e-3);
+        expect(at[2]).toBe(-0.9719995260238647);
       } else {
-        near(at[0], 0.972, 1e-3);
+        expect(at[0]).toBe(0.9719995260238647);
         expect(at[2]).toBe(f32(-0.5 + dz));
       }
       steps(act, 10, g);
@@ -324,6 +347,29 @@ describe('collision: height (ProcessCollisionGround :276-388, CWorld::ProcessUnd
     expect(act.body.pos[1]).toBe(0);
   });
 
+  it('stairs: a riser under the knee is run over, and its tread lands the mover on it', () => {
+    // two steps of 0.3: risers at x 1 and 3 (facing the mover, under the knee's 0.4 over the feet), treads at 0.3 and
+    // 0.6. On a tread the test under the feet (from 1 over them) finds it above them: the fall of the step (0.005)
+    // is within 0.25 of it, so the landing branch puts the mover on it (ActionMoverCollision.cpp:322-347)
+    const stairs = ground([
+      object([...wallX(1, 0, 0.3, -5, 5), ...slopeX(1, 0.3, 3, 0.3, -5, 5)]),
+      object([...wallX(3, 0.3, 0.6, -5, 5), ...slopeX(3, 0.6, 5, 0.6, -5, 5)]),
+    ]);
+    const act = running(90);
+    const heights: number[] = [];
+    for (let i = 0; i < 45; i++) {
+      act.step(stairs);
+      const y = act.body.pos[1];
+      if (heights.at(-1) !== y) heights.push(y);
+      expect(act.delta[1]).toBe(0); // landed every step
+    }
+    near(act.body.pos[0], 4.5);
+    // onto the first tread from the ground: 1 + t * -1.5 where the line from 1 meets 0.3f, t = 0.7 / 1.5 in floats;
+    // standing on it, from 1.3 the next steps meet it at t = 1 / 1.5, which gives 0.3f to the bit; the second step
+    // likewise gives 0.6f at once
+    expect(heights).toEqual([0, 0.2999999523162842, f32(0.3), f32(0.6)]);
+  });
+
   it('a mover keeps terrain height where no object is', () => {
     const uphill = (x: number): number => 2 + 0.3 * x;
     // a wall far away, and a roof above the 1.0 the test under the feet reaches
@@ -349,8 +395,8 @@ describe('collision: height (ProcessCollisionGround :276-388, CWorld::ProcessUnd
     expect(processUnderCollision(slide, [6, 4, 0], ground([bridge], () => -3))).toBe(-3);
   });
 
-  it('a face steeper than 101 degrees under the feet slides the mover off it (m_bGround 2)', () => {
-    // a face whose normal is n = (-9.8, 1.7, 0) / 9.946 (y 0.171, under cos(101) = 0.1908 of straight up):
+  it('a face steeper than about 79 degrees under the feet slides the mover off it (m_bGround 2)', () => {
+    // a face 80 degrees steep, whose normal is n = (-9.8, 1.7, 0) / 9.946 (y 0.171, under 0.1908 = -cos 101 degrees):
     // SlideVectorUnder (Object3D.cpp:2011-2021) gives the point the fall (0, -0.01f, 0) slides to along it,
     // (0, -0.01, 0) - n (n . (0, -0.01, 0)) = (-0.0016840, -0.0097079, 0) from where the line meets it
     const steep = object([[[0, 0, 5], [0.17, 0.98, 5], [0.17, 0.98, -5]], [[0, 0, 5], [0.17, 0.98, -5], [0, 0, -5]]]);
@@ -403,6 +449,110 @@ describe('collision: height (ProcessCollisionGround :276-388, CWorld::ProcessUnd
   });
 });
 
+// ---- the land's triangles -----------------------------------------------------------------------------------------
+
+describe('collision: the land\'s triangles (CWorld::GetLandTri, ProcessUnderCollision :1324-1374)', () => {
+  /** The triangle `landTriangle` gives at (x, z), as its three corners. */
+  function triAt(h: (gx: number, gz: number) => number, x: number, z: number, lx = 0): Vec3[] {
+    const out = new Float32Array(9);
+    const height = (tx: number, tz: number, gx: number, gz: number): number | null => (tx === lx && tz === 0 ? h(gx, gz) : null);
+    expect(landTriangle(x, z, MPU, height, out)).toBe(true);
+    return [[out[0]!, out[1]!, out[2]!], [out[3]!, out[4]!, out[5]!], [out[6]!, out[7]!, out[8]!]];
+  }
+
+  it('the diagonal split picks the right triangle', () => {
+    // heights that tell the corners apart: (gx, gz) -> 10 gx + gz
+    const h = (gx: number, gz: number): number => 10 * gx + gz;
+    const c = (gx: number, gz: number, lx = 0): Vec3 => [(gx + lx * 128) * MPU, h(gx, gz), gz * MPU];
+    // cell (0, 0), gx + gz even, cut from (0, 0) to (1, 1): below it 0, 3, 1; on and above it 0, 2, 3
+    expect(triAt(h, 3, 1)).toEqual([c(0, 0), c(1, 1), c(1, 0)]);
+    expect(triAt(h, 1, 3)).toEqual([c(0, 0), c(0, 1), c(1, 1)]);
+    expect(triAt(h, 2, 2)).toEqual([c(0, 0), c(0, 1), c(1, 1)]); // glx > glz is false on the cut
+    // cell (1, 0), odd, cut from (1, 0) to (0, 1) of the cell: before it 0, 2, 1; on and after it 1, 2, 3
+    expect(triAt(h, 5, 1)).toEqual([c(1, 0), c(1, 1), c(2, 0)]);
+    expect(triAt(h, 7, 3)).toEqual([c(2, 0), c(1, 1), c(2, 1)]);
+    expect(triAt(h, 6, 2)).toEqual([c(2, 0), c(1, 1), c(2, 1)]);
+    // in the next tile along x the cells count from its own corner, and the corners are world positions
+    expect(triAt(h, 128 * MPU + 3, 1, 1)).toEqual([c(0, 0, 1), c(1, 1, 1), c(1, 0, 1)]);
+    // no tile, or off the world's low edge: nothing
+    expect(landTriangle(3, 1, MPU, () => null, new Float32Array(9))).toBe(false);
+    expect(landTriangle(-1, 1, MPU, () => 0, new Float32Array(9))).toBe(false);
+  });
+
+  it('a mover stands on the land\'s triangle, not on the blend of the corners', () => {
+    // one corner of the cell raised by 1: at (3, 1) the triangle (0, 3, 1) is at z / 4 = 0.25, the blend at 0.1875
+    const bump = land((gx, gz) => (gx === 1 && gz === 1 ? 1 : 0));
+    const act = mover(0, [3, 0.3, 1]); // within 0.25 + a step's fall over both: it lands at once
+    act.step(bump);
+    near(act.body.pos[1], 0.25, 1e-6);
+    expect(bump.terrainHeight(3, 1)).toBe(0.1875);
+    // the terrain-only ground stands it on the blend, as before
+    const plain = mover(0, [3, 0.3, 1]);
+    plain.step(terrainGround(bump.terrainHeight));
+    expect(plain.body.pos[1]).toBe(0.1875);
+  });
+
+  it('a flat triangle gives the same height as before', () => {
+    const flat = land(() => 2.5);
+    const act = running(45, [10, 2.5, 10]);
+    const plain = running(45, [10, 2.5, 10]);
+    for (let i = 0; i < 40; i++) {
+      act.step(flat);
+      plain.step(terrainGround(() => 2.5));
+      expect(act.body.pos).toEqual(plain.body.pos);
+    }
+  });
+
+  // land rising 3 a unit along x (71.6 degrees, steeper than about 68): its normal n = (-3, 1, 0) / 3.162, and the
+  // fall (0, -0.2f, 0) slides along it by (0, -0.2, 0) - n (n . (0, -0.2, 0)) = (-0.06, -0.18, 0) a step
+  const steep = land((gx) => 3 * gx * MPU);
+
+  it('a steep slope slides a standing mover down', () => {
+    const act = mover(90, [20, 60, 20]);
+    let x = 20;
+    for (let i = 0; i < 10; i++) {
+      act.step(steep);
+      near(act.body.pos[0] - x, -0.06);
+      near(act.body.pos[1], 3 * act.body.pos[0], 1e-4); // on the slope
+      expect(act.delta[1]).toBe(0); // landed (on sliding land, m_bGround 2), and the next step falls and slides again
+      x = act.body.pos[0];
+    }
+  });
+
+  it('a walker cannot climb a steep slope; a runner nets less', () => {
+    const walker = running(90, [20, 60, 20]);
+    walker.sendActMsg(ActMsg.MODE_WALK);
+    const runner = running(90, [20, 60, 20]);
+    let [w, r] = [20, 20];
+    for (let i = 0; i < 10; i++) {
+      walker.step(steep);
+      runner.step(steep);
+      near(walker.body.pos[0] - w, 0.025 - 0.06); // a walk is a quarter of the run
+      near(runner.body.pos[0] - r, 0.1 - 0.06);
+      [w, r] = [walker.body.pos[0], runner.body.pos[0]];
+    }
+  });
+
+  it('land up to about 68 degrees does not slide, nor does land without triangles', () => {
+    // slope 2 (63.4 degrees): its normal is (-2, 1, 0) / 2.236, 0.447 of straight up, above 0.37864
+    const act = mover(90, [20, 40, 20]);
+    steps(act, 10, land((gx) => 2 * gx * MPU));
+    expect(act.body.pos).toEqual([20, 40, 20]);
+    const plain = mover(90, [20, 60, 20]);
+    steps(plain, 10, terrainGround(steep.terrainHeight));
+    expect(plain.body.pos).toEqual([20, 60, 20]);
+  });
+
+  it('the slide stops where it meets the land at the foot of the slope (FindTouchLandTri)', () => {
+    // down 3 a unit to x = 8, flat after: from 0.05 before the foot the slide (0.06, -0.18) would go 0.13 under the
+    // flat land; the line along it meets the flat cell's triangle at the foot instead
+    const foot = land((gx) => (gx <= 2 ? 3 * (2 - gx) * MPU : 0));
+    const out: Vec3 = [0, 0, 0];
+    near(processUnderCollision(out, [7.95, 0.15 + 1, 20.5], foot), 0.15);
+    expect(out).toEqual([8, 0, 20.5]);
+  });
+});
+
 // ---- the camera ---------------------------------------------------------------------------------------------------
 
 describe('collision: the camera (CWorld::CheckBound)', () => {
@@ -410,6 +560,17 @@ describe('collision: the camera (CWorld::CheckBound)', () => {
     const wall = object(wallX(-2, 0, 10, -5, 5, 1)); // facing +x, toward the player
     expect(cameraBound([0, 1, 0], [-4, 3, 0], ground([wall]))).toEqual([-2, 2, 0]);
     expect(cameraBound([0, 1, 0], [-4, 3, 0], ground([]))).toEqual([-4, 3, 0]);
+  });
+
+  it('the camera passes through a see-through model, which movers still collide with', () => {
+    // IntersectObjLine2( ..., TRUE ) skips a model with m_bTrans (WorldIntersect.cpp:854-855)
+    const glass = { ...object(wallX(-2, 0, 10, -5, 5, 1)), trans: true };
+    const opaque = object(wallX(-1, 0, 10, -5, 5, 1));
+    expect(cameraBound([0, 1, 0], [-4, 3, 0], ground([glass]))).toEqual([-4, 3, 0]);
+    expect(cameraBound([0, 1, 0], [-4, 3, 0], ground([glass, opaque]))).toEqual([-1, 1.5, 0]);
+    const act = running(270, [-1, 0, 0]); // running -x into the glass, which faces +x: stopped 0.6 short, as by any wall
+    steps(act, 20, ground([glass]));
+    near(act.body.pos[0], -1.4);
   });
 
   it('the camera is kept 0.6 over the terrain', () => {

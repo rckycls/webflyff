@@ -1,7 +1,8 @@
 import type { MoveReport, Vec3 } from '@flyffweb/protocol';
-import { NO_CEILING, collideMove, overHeight, processUnderCollision, vecLength } from './collision';
+import { NO_CEILING, collideMove, overHeight, processUnderCollision } from './collision';
 import type { Ground } from './collision';
 import { ActMsg, AniLoop, Mti, ObjSta, ObjStaF } from './constants';
+import { vecLength } from './d3dx';
 
 /**
  * The part of `CMover` the ground rules move: its position, its angle and its speed. Positions are D3D coordinates
