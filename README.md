@@ -83,13 +83,14 @@ Converts the whole client folder into web assets in `dist/assets` (git-ignored, 
 npm run convert
 ```
 
-It runs three stages in order: textures (to `.ktx2`), models (`.chr` skeletons, `.ani` motions and `.o3d` models to `.glb`), then worlds (a `manifest.json` per world and one `.bin` tile per `.lnd`). The client folder is only read. On the real client this takes about 7 minutes and writes about 970 MiB (15,364 files, plus `index.json` and `report.json`); [docs/conversion-baseline.md](docs/conversion-baseline.md) has the numbers of the first full run. The texture stage needs `ktx` (see the top of this file); without it the texture stage records one failure ("KTX-Software" in `report.json`), converts no texture, and the run exits 1.
+It runs four stages in order: textures (to `.ktx2`), models (`.chr` skeletons, `.ani` motions and `.o3d` models to `.glb`), worlds (a `manifest.json` per world and one `.bin` tile per `.lnd`), then data (the JSON catalogs `data/movers.json`, `items.json`, `npcs.json`, `nameColors.json` and `honorTitles.json`, built from the game scripts in the resource packs and naming the models, skeletons and motions the earlier stages converted). The client folder is only read. On the real client this takes about 7 minutes and writes about 970 MiB (15,364 files, plus `index.json` and `report.json`); [docs/conversion-baseline.md](docs/conversion-baseline.md) has the numbers of the first full run. The texture stage needs `ktx` (see the top of this file); without it the texture stage records one failure ("KTX-Software" in `report.json`), converts no texture, and the run exits 1.
 
 Useful options (`npm run convert -- --help` lists all):
 
 ```
 npm run convert -- --jobs 8                    # files converted in parallel (default: CPU count - 1)
 npm run convert -- --only WdMadrigal           # one world; also matches model and texture base names, with * as a wildcard
+npm run convert -- --only data                 # just the game-data catalogs (the data stage matches the name "data")
 npm run convert -- --client "D:/FlyFF/Client"  # another client folder (or set FLYFF_CLIENT)
 npm run convert -- --out "D:/flyff-assets"     # another output folder (never inside the client folder)
 ```

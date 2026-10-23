@@ -57,3 +57,5 @@ export { webName } from './web/webName';
 export { argbToRgba, decodeTileBin, encodeTileBin } from './web/tileBin';
 export type { WebTile, WebTileLayer, WebTileObject } from './web/tileBin';
 export type { AssetIndex, WorldManifest } from './web/manifest';
+export { GAME_DATA_KEYS } from './web/gameData';
+export type { WebHonorTitles, WebItemModel, WebMover, WebNameColors, WebNpc } from './web/gameData';

@@ -1,6 +1,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { ClientFs } from './ClientFs';
+import { gameDataStage } from './data/gameDataStage';
 import { modelsStage } from './models/modelsStage';
 import { AssetWriter } from './output/AssetWriter';
 import { Report } from './output/Report';
@@ -28,10 +29,11 @@ export interface Stage {
 }
 
 /**
- * The stages a normal run executes, in this order: textures, then models, then worlds. A model names its textures
- * only if they were written before it, and a world links the textures and models written before it.
+ * The stages a normal run executes, in this order: textures, then models, then worlds, then data. A model names its
+ * textures only if they were written before it, a world links the textures and models written before it, and the
+ * game-data catalogs name the models, skeletons and motions written before them.
  */
-export const DEFAULT_STAGES: readonly Stage[] = [texturesStage, modelsStage, worldsStage];
+export const DEFAULT_STAGES: readonly Stage[] = [texturesStage, modelsStage, worldsStage, gameDataStage];
 
 export interface RunOptions {
   /** The client folder (read-only). */
