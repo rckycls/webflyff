@@ -7,7 +7,7 @@
 
 import { toWebPosition } from '@flyffweb/formats';
 import type { Vec3 } from '@flyffweb/formats';
-import type { BundleMessage, MoveReport, WorldMessage } from '@flyffweb/protocol';
+import type { BundleMessage, WorldMessage } from '@flyffweb/protocol';
 import {
   CHASE_PITCH, Joystick, KeyboardInput, Overlay, WorldStage, chaseCamera, combineIntents, createRenderer,
   installGlobalErrorHandlers, loadGltf, loadSceneServices, loopMotion,
@@ -20,15 +20,13 @@ import type { WorldEntry } from '../lobby/LoginFlow';
 import { h } from '../lobby/views/dom';
 import type { OpenChannel } from '../net/PacketChannel';
 import { registerWorld } from '../testHooks';
-import { desiredFrom, driveOwnMover } from './controls';
+import { desiredFrom, driveOwnMover, movedReport } from './controls';
 import { loadGameData } from './gameData';
 import type { GameData } from './gameData';
 import { MoverViews, loadMoverModel } from './render/MoverViews';
 import { NameTagLayer } from './render/NameTagLayer';
 import { lookOf } from './render/looks';
 import { nameTagOf } from './render/nameTags';
-import type { ActionMover } from './sim/ActionMover';
-import { MAX_CORR_SIZE_45 } from './sim/constants';
 import { FixedStepper, STEPS_PER_SECOND } from './sim/stepper';
 import { WorldSession } from './WorldSession';
 import type { WorldEvent } from './WorldSession';
@@ -86,15 +84,6 @@ async function loadMotion(services: SceneServices, key: string): Promise<LoopedM
   const clip = (await loadGltf(services.store, services.loaders.gltf, key)).animations[0];
   if (clip === undefined) throw new Error('the file has no animation');
   return loopMotion(clip);
-}
-
-/**
- * PLAYERMOVED as `CDPClient::SendPlayerMoved` builds it (`Neuz/DPClient.cpp:10081-10108`): the state as it is, with the
- * position, the move per step and the angle `PresupposePos` predicts `MAX_CORR_SIZE_45` steps ahead. (PLAYERBEHAVIOR,
- * `SendPlayerBehavior`, :10113, sends `report` as it is.)
- */
-function movedReport(act: ActionMover, tick: bigint): MoveReport {
-  return { ...act.report(tick), ...act.presuppose(MAX_CORR_SIZE_45) };
 }
 
 const drawingSize = new Vector2();

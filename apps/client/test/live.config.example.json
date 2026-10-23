@@ -5,7 +5,8 @@
     "gateway: the test runs this gateway inside its own process. listen.port must be free (8091 does not clash with a gateway on 8090). trustedProxies must list 127.0.0.1, because the test simulates other addresses with X-Forwarded-For.",
     "certifierPatched: set true only when the rebuilt Certifier.exe (server-patches/README.md) is running and Certifier.ini has a Gateway \"127.0.0.1\" line. It turns on the test that a wrong password from one address does not block another.",
     "bannedTestAddress: an address you added to Program/IPCut.ini (restart the account server afterwards), for example \"10.0.0.99\", or null. It turns on the banned-address test, which also needs certifierPatched.",
-    "account, password, bankPin: a throwaway account with at least one empty character slot. The test creates WebTest and 3 digits in the first empty slot with this Bank PIN, then deletes it."
+    "account, password, bankPin: a throwaway account with at least one empty character slot. The test creates WebTest and 3 digits in the first empty slot with this Bank PIN, then deletes it.",
+    "world: the world test (npm run test:live:world) is skipped without this section. accounts: two throwaway accounts with their Bank PINs; the first walks, the second watches. Each uses its first character, which must stand in Flaris within sight of the other's (a new character does); an account without a character gets WebWalk and 3 digits, made first and deleted at the end with its Bank PIN. It also needs gateway and certifierAddress above, and the servers running with the rebuilt WorldServer (world-snapshot-index.patch) and CacheServer (cache-client-addr.patch, with a Gateway \"127.0.0.1\" line in CacheServer.ini so the cache server takes the player's real address from the gateway). The converted game files must be in dist/assets (npm run convert). Leaving takes the world server a moment to save the character, so entering again straight after is turned away for a few seconds; the test waits up to 30 s for that. Run it once, not in a loop (the flood limit above counts its connections too)."
   ],
   "gateway": {
     "listen": { "host": "127.0.0.1", "port": 8091 },
@@ -23,5 +24,11 @@
   "password": "change-me",
   "bankPin": "1234",
   "certifierPatched": false,
-  "bannedTestAddress": null
+  "bannedTestAddress": null,
+  "world": {
+    "accounts": [
+      { "account": "webwalk1", "password": "change-me", "bankPin": "1234" },
+      { "account": "webwalk2", "password": "change-me", "bankPin": "1234" }
+    ]
+  }
 }

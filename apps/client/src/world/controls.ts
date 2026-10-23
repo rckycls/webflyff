@@ -1,6 +1,7 @@
+import type { MoveReport } from '@flyffweb/protocol';
 import type { MoveIntent } from '@flyffweb/scene';
 import type { ActionMover } from './sim/ActionMover';
-import { ActMsg, ObjSta, ObjStaF } from './sim/constants';
+import { ActMsg, MAX_CORR_SIZE_45, ObjSta, ObjStaF } from './sim/constants';
 
 /** What the keys or the joystick ask of the own mover this frame. */
 export interface Desired {
@@ -61,4 +62,13 @@ export function driveOwnMover(act: ActionMover, desired: Desired): { moved: bool
   }
 
   return { moved, behavior };
+}
+
+/**
+ * PLAYERMOVED as `CDPClient::SendPlayerMoved` builds it (`Neuz/DPClient.cpp:10081-10108`): the state as it is, with the
+ * position, the move per step and the angle `PresupposePos` predicts `MAX_CORR_SIZE_45` steps ahead. (PLAYERBEHAVIOR,
+ * `SendPlayerBehavior`, :10113, sends `report` as it is.)
+ */
+export function movedReport(act: ActionMover, tick: bigint): MoveReport {
+  return { ...act.report(tick), ...act.presuppose(MAX_CORR_SIZE_45) };
 }
