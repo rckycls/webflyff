@@ -7,12 +7,21 @@ import { ActMsg, MAX_CORR_SIZE_45, ObjSta, ObjStaF } from './sim/constants';
 export interface Desired {
   move: 'stand' | 'forward' | 'back';
   turn: 'none' | 'left' | 'right';
-  /** Walk mode asked for. Neuz toggles it with a key; here the player holds it: running is held, walking is the rest. */
+  /**
+   * Walk mode asked for. Neuz toggles it with a key, and the mode stays until the key is pressed again; here the player
+   * holds it while moving or turning (running is held, walking is the rest), and with nothing held the mode stays as it
+   * was (`desiredFrom`), so a walk to a tapped point goes in the mode the last move had.
+   */
   walk: boolean;
 }
 
-/** Nothing pressed: standing, not turning, walk mode. */
+/** Nothing pressed: standing, not turning, walk mode (the rest before any input, when the mover's mode is not known). */
 export const STANDING: Readonly<Desired> = { move: 'stand', turn: 'none', walk: true };
+
+/** Nothing pressed, in the mode the mover has: the rest before the first input, which asks for no change of mode. */
+export function restingIn(act: ActionMover): Desired {
+  return { move: 'stand', turn: 'none', walk: (act.stateFlag & ObjStaF.WALK) !== 0 };
+}
 
 /**
  * An axis counts once it is this share of the push (its part of the push's length) or more. That cuts the joystick into
@@ -38,6 +47,10 @@ function axis(value: number, length: number, was: -1 | 0 | 1): -1 | 0 | 1 {
  * `previous` is what the frame before asked for: an axis that counted goes on counting a little past its sector's
  * edge (`AXIS_OFF`), so a thumb resting on the edge does not send a PLAYERMOVED every frame. The keys give -1, 0 or 1
  * on each axis, all or nothing, so they turn on and off exactly as before.
+ *
+ * The mode: walking, or running with the run key (or a full push of the joystick) held, while a move or a turn is asked
+ * for. With neither, the mode is `previous`'s: letting go, or the run key alone, changes no mode (no MODE_WALK or
+ * MODE_RUN), so a walk to a tapped point keeps the mode the last move had and nothing cancels it (Ruling 40).
  */
 export function desiredFrom(intent: MoveIntent, previous: Readonly<Desired> = STANDING): Desired {
   const length = Math.hypot(intent.forward, intent.turn);
@@ -46,7 +59,7 @@ export function desiredFrom(intent: MoveIntent, previous: Readonly<Desired> = ST
   return {
     move: move > 0 ? 'forward' : move < 0 ? 'back' : 'stand',
     turn: turn > 0 ? 'right' : turn < 0 ? 'left' : 'none',
-    walk: !intent.run,
+    walk: move === 0 && turn === 0 ? previous.walk : !intent.run,
   };
 }
 
@@ -65,7 +78,7 @@ export function desiredFrom(intent: MoveIntent, previous: Readonly<Desired> = ST
  * running. The walk key's toggle (:526-545) becomes `desired.walk`, which sends MODE_WALK or MODE_RUN only where the
  * mover's walk flag differs.
  */
-export function driveOwnMover(act: ActionMover, desired: Desired, emptyDest = true): { moved: boolean; behavior: boolean } {
+export function driveOwnMover(act: ActionMover, desired: Desired, emptyDest: boolean): { moved: boolean; behavior: boolean } {
   let moved = false;
   let behavior = false;
 
@@ -126,7 +139,7 @@ const TAP_HOLD_MS = 300;
  * Neuz sets the destination as the button goes down, and drags with it held turn the camera. Here a press is a tap
  * only if it is let go within 300 ms and 8 px of where it went down, so that a drag or a held finger walks nowhere; the
  * point is the one it went down at. Only the main button and a lone finger tap: a second finger ends the first one's
- * tap.
+ * tap. An error `pick` throws goes to `report` (the overlay), and the tap gives nothing; without `report` it is thrown.
  */
 export class TapToWalk {
   private press: { pointerId: number; x: number; y: number; time: number } | null = null;
@@ -135,6 +148,7 @@ export class TapToWalk {
   constructor(
     private readonly canvas: HTMLElement,
     private readonly pick: (ndcX: number, ndcY: number) => Vec3 | null,
+    private readonly report?: (error: unknown) => void,
   ) {
     canvas.addEventListener('pointerdown', this.onDown);
     canvas.addEventListener('pointermove', this.onMove);
@@ -181,7 +195,14 @@ export class TapToWalk {
     if (moved(press, event) || event.timeStamp - press.time > TAP_HOLD_MS) return;
     const box = this.canvas.getBoundingClientRect();
     if (!(box.width > 0 && box.height > 0)) return;
-    const point = this.pick(((press.x - box.left) / box.width) * 2 - 1, 1 - ((press.y - box.top) / box.height) * 2);
+    let point: Vec3 | null;
+    try {
+      point = this.pick(((press.x - box.left) / box.width) * 2 - 1, 1 - ((press.y - box.top) / box.height) * 2);
+    } catch (error) {
+      if (this.report === undefined) throw error;
+      this.report(error);
+      return;
+    }
     if (point !== null) this.dest = point;
   };
 

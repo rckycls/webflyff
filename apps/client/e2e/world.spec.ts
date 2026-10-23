@@ -254,13 +254,24 @@ async function ownAt(page: Page): Promise<Vec3> {
 
 const distanceXZ = (a: Vec3, b: Vec3): number => Math.hypot(a[0] - b[0], a[2] - b[2]);
 
-/** Clicks (or, on a phone, taps) the world's drawing at `x`, `y` (shares of its width and height). */
+/**
+ * Taps the world's drawing at `x`, `y` (shares of its width and height): with a finger in the phone project (iPhone 13,
+ * touch pointer events), with the mouse on the desktop.
+ */
 async function tapWorld(page: Page, x: number, y: number): Promise<void> {
   const box = (await page.locator('.world-view canvas').boundingBox())!;
-  await page.mouse.click(box.x + box.width * x, box.y + box.height * y);
+  const at = { x: box.x + box.width * x, y: box.y + box.height * y };
+  if (test.info().project.use.hasTouch === true) await page.touchscreen.tap(at.x, at.y);
+  else await page.mouse.click(at.x, at.y);
 }
 
-/** The state in a PLAYERMOVED (`CDPClient::SendPlayerMoved`): after DPID_UNKNOWN, the type, the position, the delta and the angle. */
+/** The packets of `type` the page sent on the cache connection so far. */
+const sentOf = (gateway: Gateway, type: number): Sent[] => gateway.sent.filter((s) => s.port === Port.CACHE && s.type === type);
+
+/**
+ * The state in a PLAYERMOVED (`CDPClient::SendPlayerMoved`) or a PLAYERCORR (`SendPlayerCorr`, the same fields): after
+ * DPID_UNKNOWN, the type, the position, the delta and the angle.
+ */
 const movedState = (moved: Sent): number => moved.body.readUInt32LE(4 + 4 + 12 + 12 + 4);
 
 test.describe('the world screen against scripted servers', () => {
@@ -455,17 +466,20 @@ test.describe('the world screen against scripted servers', () => {
     await expect.poll(async () => distanceXZ(await ownAt(page), dest!.pos), { timeout: 60_000 }).toBeLessThan(0.3);
     await page.waitForTimeout(1000);
     expect(distanceXZ(await ownAt(page), dest!.pos)).toBeLessThan(0.3);
-    // no STAND cut the walk short on the way: the walk to a point sends no move of its own
+    // no STAND cut the walk short on the way, and no change of mode went out at rest or on the way (Ruling 40): the
+    // walk to a point sends nothing of its own
     expect(movesOf(gateway)).toEqual([]);
+    expect(sentOf(gateway, PacketType.PLAYERBEHAVIOR)).toEqual([]);
   });
 
   test('pressing a turn key cancels it', async ({ page }) => {
     const gateway = await playGateway(page);
     await enterFlaris(page);
-    await tapWorld(page, 0.5, 0.9);
+    // as far behind Webby as the screen shows (about 8 m: it runs there in under 1.5 s), and the key goes down soon after it starts
+    await tapWorld(page, 0.5, 0.97);
     await expect.poll(() => destPosOf(gateway).length).toBe(1);
     const dest = destPosOf(gateway)[0]!.pos;
-    await expect.poll(async () => distanceXZ(await ownAt(page), SQUARE), { timeout: 60_000 }).toBeGreaterThan(1);
+    await expect.poll(async () => distanceXZ(await ownAt(page), SQUARE), { timeout: 60_000, intervals: [20] }).toBeGreaterThan(0.5);
 
     // the turn is a move (LTURN answers 1): ClearDest, then PLAYERMOVED; with the walk over, the next step stands
     await page.keyboard.down('KeyA');
@@ -476,6 +490,27 @@ test.describe('the world screen against scripted servers', () => {
     await page.waitForTimeout(1000);
     expect(await ownAt(page)).toEqual(stopped);
     expect(distanceXZ(stopped, dest)).toBeGreaterThan(1);
+  });
+
+  test('a tap-walk into a Flaris wall stops there and sends one PLAYERCORR, standing', async ({ page }) => {
+    // Webby faces the house's east wall 5.5 m away; a tap above the middle of the screen is on the land behind the wall
+    // (the house's model is not pickable: the ray goes through it), so the walk there meets the wall
+    const gateway = await playGateway(page, byTheWall);
+    await enterFlaris(page);
+    await tapWorld(page, 0.5, 0.45);
+    await expect.poll(() => destPosOf(gateway).length).toBe(1);
+    expect(destPosOf(gateway)[0]!.pos[0]).toBeLessThan(WALL_X);
+
+    // OnActCollision with m_nCorr -1: ClearDest, STAND and SendPlayerCorr, once
+    await expect.poll(() => sentOf(gateway, PacketType.PLAYERCORR).length, { timeout: 60_000 }).toBe(1);
+    await page.waitForTimeout(1000);
+    const corrs = sentOf(gateway, PacketType.PLAYERCORR);
+    expect(corrs).toHaveLength(1);
+    expect(movedState(corrs[0]!)).toBe(OBJSTA_STAND);
+    expect(movesOf(gateway)).toEqual([]);
+    const own = await ownAt(page);
+    expect(own[0]).toBeGreaterThan(WALL_X);
+    expect(own[0]).toBeLessThan(BY_THE_WALL[0] - 4);
   });
 
   test('Leave returns to the login form', async ({ page }) => {

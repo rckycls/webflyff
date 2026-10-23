@@ -32,6 +32,16 @@ describe('MoveMark', () => {
     expect(marks(scene)).toEqual([]);
   });
 
+  it('takes its point in floats, as the destination keeps it (setDestPos), whatever the caller gives', () => {
+    const scene = new Scene();
+    const mark = new MoveMark(scene);
+    mark.show([0.1, 1.3, 0.7]);
+    const f32 = Math.fround;
+    mark.follow([f32(0.1), f32(1.3), f32(0.7)]);
+    expect(marks(scene)).toHaveLength(1);
+    expect(marks(scene)[0]!.position.toArray()).toEqual([f32(0.1), f32(1.3) + 0.05, -f32(0.7)]);
+  });
+
   it('a new tap moves the one mark; dispose takes it away', () => {
     const scene = new Scene();
     const mark = new MoveMark(scene);

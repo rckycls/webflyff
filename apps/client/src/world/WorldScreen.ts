@@ -17,10 +17,10 @@ import type { WorldEntry } from '../lobby/LoginFlow';
 import { h } from '../lobby/views/dom';
 import type { OpenChannel } from '../net/PacketChannel';
 import { registerWorld } from '../testHooks';
-import { STANDING, TapToWalk, desiredFrom, driveOwnMover, movedReport } from './controls';
-import type { Desired } from './controls';
+import { TapToWalk } from './controls';
 import { GameDataMissingError } from './gameData';
 import type { GameData } from './gameData';
+import { OwnMover, pickOnStage } from './ownMover';
 import { NoWebGLError, page3d, sceneAssets } from './page3d';
 import type { Page3d } from './page3d';
 import { MoverViews } from './render/MoverViews';
@@ -29,16 +29,12 @@ import { lookOf } from './render/looks';
 import { MoveMark } from './render/moveMark';
 import { loadMoverModel } from './render/moverModels';
 import { nameTagOf } from './render/nameTags';
-import { pickGround } from './render/picking';
 import { cameraBound } from './sim/camera';
 import { HAttr } from './sim/collision';
-import { MAX_CORR_SIZE_45 } from './sim/constants';
-import { isEmptyDest, setDestPos } from './sim/moverRules';
 import { FixedStepper, STEPS_PER_SECOND } from './sim/stepper';
 import { WorldSession } from './WorldSession';
 import type { WorldEvent } from './WorldSession';
 import { WorldState } from './WorldState';
-import type { Mover } from './WorldState';
 
 const LOADING_TEXT = 'Entering the world…';
 const NOT_AVAILABLE_TEXT = "This map isn't available in the browser yet.";
@@ -99,8 +95,8 @@ export class WorldScreen {
   private joystick: Joystick | undefined;
   private tap: TapToWalk | undefined;
   private mark: MoveMark | undefined;
-  /** What the controls asked for at the last step, which the joystick's sectors hold on to (`desiredFrom`). */
-  private desired: Desired = STANDING;
+  /** The own character's driving: the controls each rules step, the moves sent, the stop. */
+  private ownMover: OwnMover | undefined;
   private readonly stepper = new FixedStepper();
   private paused = false;
   private lastTime = 0;
@@ -270,8 +266,11 @@ export class WorldScreen {
     this.keyboard = new KeyboardInput(doc.defaultView ?? window);
     this.joystick = new Joystick(this.element);
     // on the canvas: the joystick is an element of its own over it, and its touches never reach it
-    this.tap = new TapToWalk(renderer.domElement, (x, y) => this.pick(x, y));
+    this.tap = new TapToWalk(
+      renderer.domElement, (x, y) => this.pick(x, y), (error) => this.reportOnce(`tap: ${messageOf(error)}`, error),
+    );
     this.mark = new MoveMark(this.stage!.scene);
+    this.ownMover = new OwnMover(this.session, this.entry.clock, this.mark);
     doc.addEventListener('visibilitychange', this.onVisibility);
     (doc.defaultView ?? window).addEventListener('blur', this.onBlur);
     this.lastTime = performance.now();
@@ -334,60 +333,23 @@ export class WorldScreen {
   }
 
   /**
-   * One rules step: a tap, then the keys and the joystick, to the own mover (`walkTo`, `drive`), in `ControlGround`'s
-   * order; then every mover's step (the own one's included), the PLAYERCORR it may have led to, and the views'.
+   * One rules step: a tap, then the keys and the joystick, to the own mover (`OwnMover.control`, in `ControlGround`'s
+   * order); then every mover's step (the own one's included), the PLAYERCORR it may have led to, and the views'.
    */
   private step(world: WorldState, views: MoverViews): void {
     const own = world.self();
-    const dest = this.tap!.take();
-    if (own !== undefined) {
-      if (dest !== null) this.walkTo(own, dest);
-      this.desired = desiredFrom(combineIntents(this.keyboard!.intent(), this.joystick!.intent()), this.desired);
-      this.drive(own, this.desired);
-    }
+    const tap = this.tap!.take();
+    if (own !== undefined) this.ownMover!.control(own, combineIntents(this.keyboard!.intent(), this.joystick!.intent()), tap);
     world.step();
-    const corr = own?.corrReport;
-    if (corr) {
-      // CMover::OnActCollision / OnActDrop's SendPlayerCorr, with the clock's tick
-      own.corrReport = null;
-      this.session.sendCorr({ ...corr, tick: this.entry.clock.tick() });
-    }
+    this.ownMover!.corrected(own);
     views.step(world.movers);
   }
 
-  /** The D3D point a tap at (`ndcX`, `ndcY`) sends the own mover to (`pickGround`), from the camera as last drawn. */
+  /** The D3D point a tap at (`ndcX`, `ndcY`) sends the own mover to (`pickOnStage`), from the camera as last drawn. */
   private pick(ndcX: number, ndcY: number): Vec3 | null {
     const { stage, views } = this;
     if (stage === undefined || views === undefined) return null;
-    const self = this.world?.self()?.objectId;
-    return pickGround(stage.camera, ndcX, ndcY, stage.ground(), stage.manifest.mpu, (ray) => views.nearestHit(ray, self));
-  }
-
-  /**
-   * A tap's part of `ControlGround` (`WndWorldControlPlayer.cpp:313-361`): `SetDestPos( vRayEnd )` and
-   * `m_nCorr = -1`, so that the walk there ends where it meets something or starts to fall (`stepMover`); the SNAPSHOT
-   * with DESTPOS, forward (`SendSnapshot( TRUE )`, which first stands a sitting player up: Piece 3 has no sitting);
-   * and the mark.
-   */
-  private walkTo(own: Mover, pos: Vec3): void {
-    setDestPos(own, pos, true);
-    own.nCorr = -1;
-    this.session.sendDestPos(pos, true);
-    this.mark!.show(pos);
-  }
-
-  /**
-   * What the controls ask of the own mover (`driveOwnMover`), its moves sent as `ControlGround` sends them, PLAYERMOVED
-   * then PLAYERBEHAVIOR (`WndWorldControlPlayer.cpp:557-559`; stopping after a run, or the first idle step of a mover the
-   * server started running, sends both). A PLAYERMOVED's `PresupposePos` sets `m_nCorr` (`ActionMover.cpp:438`).
-   */
-  private drive(own: Mover, desired: Desired): void {
-    const { moved, behavior } = driveOwnMover(own.act, desired, isEmptyDest(own));
-    if (moved) {
-      this.session.sendMoved(movedReport(own.act, this.entry.clock.tick()));
-      own.nCorr = MAX_CORR_SIZE_45;
-    }
-    if (behavior) this.session.sendBehavior(own.act.report(this.entry.clock.tick()));
+    return pickOnStage(stage, views, this.world?.self(), ndcX, ndcY);
   }
 
   /** The page is hidden (another tab, the home screen, a phone going to sleep): no frame runs until it shows again. */
@@ -403,18 +365,14 @@ export class WorldScreen {
    * The page lost the focus or is hidden: a key's or the finger's let-go may never come, and a hidden page runs no frame
    * to send a stop. The server's copy of the player would run on, and once it is 1000 units from where the player
    * stands the server takes none of the player's moves (`CDPSrvr::OnPlayerMoved`, `DPSrvr.cpp:12524-12529`). So the
-   * controls let go and the player stops now, its moves sent from here rather than from the frame loop. A walk to a
-   * tapped point ends too, as a key's move ends it (`ClearDest`), and a tap not yet taken is dropped.
+   * controls let go and the player stops now, its moves sent from here rather than from the frame loop
+   * (`OwnMover.stop`: a walk to a tapped point ends too), and a tap not yet taken is dropped.
    */
   private stopOwnMover(): void {
     this.keyboard?.reset();
     this.joystick?.reset();
     this.tap?.reset();
-    this.desired = STANDING;
-    const own = this.world?.self();
-    if (own === undefined) return;
-    own.act.clearDest();
-    this.drive(own, STANDING);
+    this.ownMover?.stop(this.world?.self());
   }
 
   /** Says an error on the overlay, and in the console with its stack, once for each message. */

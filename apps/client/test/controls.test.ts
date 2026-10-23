@@ -5,7 +5,7 @@ import { toWebPosition } from '@flyffweb/formats';
 import type { Vec3 } from '@flyffweb/formats';
 import { NO_INTENT, joystickIntent } from '@flyffweb/scene';
 import type { MoveIntent } from '@flyffweb/scene';
-import { STANDING, TapToWalk, desiredFrom, driveOwnMover } from '../src/world/controls';
+import { STANDING, TapToWalk, desiredFrom, driveOwnMover, restingIn } from '../src/world/controls';
 import type { Desired } from '../src/world/controls';
 import { pickGround } from '../src/world/render/picking';
 import { ActionMover } from '../src/world/sim/ActionMover';
@@ -56,9 +56,30 @@ describe('desiredFrom', () => {
   it('the keys are on or off whatever was asked before: the stick\'s memory never holds a key that was let go', () => {
     expect(desiredFrom(intent(1, 1, false))).toEqual(desired('forward', 'right', true));
     expect(desiredFrom(intent(-1, -1, true))).toEqual(desired('back', 'left', false));
-    expect(desiredFrom(intent(0, 0, false), desired('forward', 'right', false))).toEqual(STANDING);
+    // letting go keeps the mode the move had (Ruling 40)
+    expect(desiredFrom(intent(0, 0, false), desired('forward', 'right', false))).toEqual(desired('stand', 'none', false));
     expect(desiredFrom(intent(1, 0, false), desired('back', 'left', true))).toEqual(desired('forward', 'none', true));
     expect(desiredFrom(intent(0, 1, false), desired('forward', 'left', true))).toEqual(desired('stand', 'right', true));
+  });
+
+  it('with no move or turn held the mode is the one before: letting go or the run key alone asks for no change (Ruling 40)', () => {
+    // after a run, at rest, and the run key let go at rest: still running
+    expect(desiredFrom(intent(0, 0, false), desired('forward', 'none', false)).walk).toBe(false);
+    expect(desiredFrom(intent(0, 0, false), desired('stand', 'none', false)).walk).toBe(false);
+    // the run key alone at rest does not run
+    expect(desiredFrom(intent(0, 0, true), desired('stand', 'none', true)).walk).toBe(true);
+    // a move or a turn takes the mode it is held with
+    expect(desiredFrom(intent(0, 1, false), desired('stand', 'none', false)).walk).toBe(true);
+    expect(desiredFrom(intent(1, 0, true), desired('stand', 'none', true)).walk).toBe(false);
+    // a full push of the joystick runs, and its mode stays once the thumb lifts
+    const ran = desiredFrom(joystickIntent(0, -60));
+    expect(ran.walk).toBe(false);
+    expect(desiredFrom(NO_INTENT, ran)).toEqual(desired('stand', 'none', false));
+  });
+
+  it('restingIn: nothing held, in the mode the mover has', () => {
+    expect(restingIn(ownMover(true))).toEqual(desired('stand', 'none', true));
+    expect(restingIn(ownMover(false))).toEqual(desired('stand', 'none', false));
   });
 });
 
@@ -78,7 +99,7 @@ function thumb(points: [number, number][]): { asked: Desired[]; moved: number; b
     push = joystickIntent(dx, dy, push);
     last = desiredFrom(push, last);
     asked.push(last);
-    const sent = driveOwnMover(act, last);
+    const sent = driveOwnMover(act, last, true);
     moved += Number(sent.moved);
     behavior += Number(sent.behavior);
     act.step();
@@ -160,13 +181,13 @@ describe('driveOwnMover', () => {
   it('a forward push walks, a full push runs', () => {
     // the player ran before: a half push is a walk, so MODE_WALK goes out with the move
     const act = ownMover(false);
-    expect(driveOwnMover(act, desiredFrom(joystickIntent(0, -30)))).toEqual({ moved: true, behavior: true });
+    expect(driveOwnMover(act, desiredFrom(joystickIntent(0, -30)), true)).toEqual({ moved: true, behavior: true });
     expect(act.stateFlag & ObjStaF.WALK).toBeTruthy();
     for (let i = 0; i < 60; i++) act.step();
     expect(act.body.pos[0]).toBeCloseTo(1.5, 4);
 
     // pushing on to the end of the stick runs: only the behavior changes, the move is already on
-    expect(driveOwnMover(act, desiredFrom(joystickIntent(0, -60)))).toEqual({ moved: false, behavior: true });
+    expect(driveOwnMover(act, desiredFrom(joystickIntent(0, -60)), true)).toEqual({ moved: false, behavior: true });
     expect(act.stateFlag & ObjStaF.WALK).toBeFalsy();
     const before = act.body.pos[0];
     for (let i = 0; i < 60; i++) act.step();
@@ -176,83 +197,101 @@ describe('driveOwnMover', () => {
   it('starting to run sends moved and behavior once, holding it sends nothing', () => {
     const act = ownMover(true);
     const run = desired('forward', 'none', false);
-    expect(driveOwnMover(act, run)).toEqual({ moved: true, behavior: true });
+    expect(driveOwnMover(act, run, true)).toEqual({ moved: true, behavior: true });
     expect(act.state & ObjSta.MOVE_ALL).toBe(ObjSta.FMOVE);
     expect(act.stateFlag & ObjStaF.WALK).toBe(0);
     for (let i = 0; i < 3; i++) {
       act.step();
-      expect(driveOwnMover(act, run)).toEqual(NOTHING);
+      expect(driveOwnMover(act, run, true)).toEqual(NOTHING);
     }
   });
 
   it('turning while running sends moved', () => {
     const act = ownMover(false);
     const run = desired('forward', 'none', false);
-    driveOwnMover(act, run);
-    expect(driveOwnMover(act, desired('forward', 'right', false))).toEqual({ moved: true, behavior: false });
+    driveOwnMover(act, run, true);
+    expect(driveOwnMover(act, desired('forward', 'right', false), true)).toEqual({ moved: true, behavior: false });
     expect(act.state & ObjSta.TURN_ALL).toBe(ObjSta.RTURN);
     // the turn is held: nothing more to send, and it keeps turning right
     act.step();
-    expect(driveOwnMover(act, desired('forward', 'right', false))).toEqual(NOTHING);
+    expect(driveOwnMover(act, desired('forward', 'right', false), true)).toEqual(NOTHING);
     // and it turns the other way when the player does
-    expect(driveOwnMover(act, desired('forward', 'left', false))).toEqual({ moved: true, behavior: false });
+    expect(driveOwnMover(act, desired('forward', 'left', false), true)).toEqual({ moved: true, behavior: false });
     expect(act.state & ObjSta.TURN_ALL).toBe(ObjSta.LTURN);
   });
 
   it('walks backward with a back push, and sends moved once', () => {
     const act = ownMover(false);
     const back = desired('back', 'none', false);
-    expect(driveOwnMover(act, back)).toEqual({ moved: true, behavior: false });
+    expect(driveOwnMover(act, back, true)).toEqual({ moved: true, behavior: false });
     expect(act.state & ObjSta.MOVE_ALL).toBe(ObjSta.BMOVE);
     act.step();
-    expect(driveOwnMover(act, back)).toEqual(NOTHING);
+    expect(driveOwnMover(act, back, true)).toEqual(NOTHING);
   });
 
   it('going from back to forward sends FORWARD, which is moved', () => {
     const act = ownMover(false);
-    driveOwnMover(act, desired('back', 'none', false));
-    expect(driveOwnMover(act, desired('forward', 'none', false))).toEqual({ moved: true, behavior: false });
+    driveOwnMover(act, desired('back', 'none', false), true);
+    expect(driveOwnMover(act, desired('forward', 'none', false), true)).toEqual({ moved: true, behavior: false });
     expect(act.state & ObjSta.MOVE_ALL).toBe(ObjSta.FMOVE);
   });
 
   it('releasing forward sends STAND, which is moved', () => {
     const act = ownMover(false);
-    driveOwnMover(act, desired('forward', 'none', false));
+    driveOwnMover(act, desired('forward', 'none', false), true);
     act.step();
-    expect(driveOwnMover(act, desired('stand', 'none', false))).toEqual({ moved: true, behavior: false });
+    expect(driveOwnMover(act, desired('stand', 'none', false), true)).toEqual({ moved: true, behavior: false });
     expect(act.state & ObjSta.MOVE_ALL).toBe(ObjSta.STAND);
     // standing already: STAND answers 0, so nothing is sent
     act.step();
-    expect(driveOwnMover(act, desired('stand', 'none', false))).toEqual(NOTHING);
+    expect(driveOwnMover(act, desired('stand', 'none', false), true)).toEqual(NOTHING);
   });
 
   it('releasing a turn sends STOP_TURN, which is moved', () => {
     const act = ownMover(false);
-    driveOwnMover(act, desired('stand', 'left', false));
+    driveOwnMover(act, desired('stand', 'left', false), true);
     expect(act.state & ObjSta.TURN_ALL).toBe(ObjSta.LTURN);
     act.step();
-    expect(driveOwnMover(act, desired('stand', 'none', false))).toEqual({ moved: true, behavior: false });
+    expect(driveOwnMover(act, desired('stand', 'none', false), true)).toEqual({ moved: true, behavior: false });
     expect(act.state & ObjSta.TURN_ALL).toBe(0);
     // no turn left to stop: STOP_TURN answers 0
-    expect(driveOwnMover(act, desired('stand', 'none', false))).toEqual(NOTHING);
+    expect(driveOwnMover(act, desired('stand', 'none', false), true)).toEqual(NOTHING);
   });
 
   it('stopping a turn while the move goes on is moved', () => {
     const act = ownMover(false);
-    driveOwnMover(act, desired('forward', 'left', false));
+    driveOwnMover(act, desired('forward', 'left', false), true);
     act.step();
-    expect(driveOwnMover(act, desired('forward', 'none', false))).toEqual({ moved: true, behavior: false });
+    expect(driveOwnMover(act, desired('forward', 'none', false), true)).toEqual({ moved: true, behavior: false });
     expect(act.state & ObjSta.TURN_ALL).toBe(0);
   });
 
-  it('switching to walk while standing sends behavior only', () => {
+  it('standing, nothing held and the run key alone change no mode; a turn takes the mode it is held with (Ruling 40)', () => {
+    // the server has the player standing, running: the first idle step, from the mover's own mode, sends nothing
     const act = ownMover(false);
-    driveOwnMover(act, desired('stand', 'none', false));
-    act.step();
-    expect(driveOwnMover(act, desired('stand', 'none', true))).toEqual({ moved: false, behavior: true });
+    act.state = ObjSta.STAND;
+    let asked = desiredFrom(intent(0, 0, false), restingIn(act));
+    expect(driveOwnMover(act, asked, true)).toEqual(NOTHING);
+    asked = desiredFrom(intent(0, 0, true), asked);
+    expect(driveOwnMover(act, asked, true)).toEqual(NOTHING);
+    expect(act.stateFlag & ObjStaF.WALK).toBe(0);
+    // turning in place without the run key walks: the turn and the mode go out together
+    asked = desiredFrom(intent(0, -1, false), asked);
+    expect(driveOwnMover(act, asked, true)).toEqual({ moved: true, behavior: true });
     expect(act.stateFlag & ObjStaF.WALK).toBeTruthy();
-    // and back to running
-    expect(driveOwnMover(act, desired('stand', 'none', false))).toEqual({ moved: false, behavior: true });
+    // letting go stops the turn and keeps walk mode
+    act.step();
+    asked = desiredFrom(intent(0, 0, false), asked);
+    expect(driveOwnMover(act, asked, true)).toEqual({ moved: true, behavior: false });
+    expect(act.stateFlag & ObjStaF.WALK).toBeTruthy();
+  });
+
+  it('an explicit change of mode while standing sends behavior only', () => {
+    const act = ownMover(false);
+    act.state = ObjSta.STAND;
+    expect(driveOwnMover(act, desired('stand', 'none', true), true)).toEqual({ moved: false, behavior: true });
+    expect(act.stateFlag & ObjStaF.WALK).toBeTruthy();
+    expect(driveOwnMover(act, desired('stand', 'none', false), true)).toEqual({ moved: false, behavior: true });
     expect(act.stateFlag & ObjStaF.WALK).toBe(0);
   });
 
@@ -265,7 +304,7 @@ describe('driveOwnMover', () => {
       if (msg === ActMsg.STAND) sent++;
       return send(msg, ...params);
     };
-    driveOwnMover(act, desired('stand', 'none', false));
+    driveOwnMover(act, desired('stand', 'none', false), true);
     expect(sent).toBe(0);
     expect(act.state).toBe(ObjSta.SJUMP3);
   });
@@ -275,7 +314,7 @@ describe('driveOwnMover', () => {
     expect(act.sendActMsg(ActMsg.SITDOWN)).toBe(true);
     act.step();
     expect(act.state & ObjSta.MOVE_ALL).toBe(ObjSta.SIT);
-    expect(driveOwnMover(act, desired('stand', 'none', false))).toEqual(NOTHING);
+    expect(driveOwnMover(act, desired('stand', 'none', false), true)).toEqual(NOTHING);
     expect(act.state & ObjSta.MOVE_ALL).toBe(ObjSta.SIT);
     expect(act.stateFlag & ObjStaF.SIT).toBeTruthy();
   });
@@ -284,14 +323,14 @@ describe('driveOwnMover', () => {
     const act = ownMover(false);
     act.sendActMsg(ActMsg.SITDOWN);
     act.step();
-    expect(driveOwnMover(act, desired('forward', 'none', false))).toEqual(NOTHING);
+    expect(driveOwnMover(act, desired('forward', 'none', false), true)).toEqual(NOTHING);
     expect(act.state & ObjSta.MOVE_ALL).toBe(ObjSta.SIT);
   });
 
   it('moves before it turns before it changes gait: one call, one state', () => {
     // from standing and walking, a full-stick push right and forward sends all three, and the state shows all three
     const act = ownMover(true);
-    expect(driveOwnMover(act, desired('forward', 'right', false))).toEqual({ moved: true, behavior: true });
+    expect(driveOwnMover(act, desired('forward', 'right', false), true)).toEqual({ moved: true, behavior: true });
     expect(act.state & ObjSta.MOVE_ALL).toBe(ObjSta.FMOVE);
     expect(act.state & ObjSta.TURN_ALL).toBe(ObjSta.RTURN);
     expect(act.stateFlag & ObjStaF.WALK).toBe(0);
@@ -443,6 +482,24 @@ describe('TapToWalk', () => {
     canvas.fire('pointerdown', 100, 50, 200);
     canvas.fire('pointerup', 100, 50, 210);
     expect(tap.take()).toBeNull();
+  });
+
+  it('a pick that throws gives nothing, and its error goes to report (or is thrown without one)', () => {
+    const canvas = new FakeCanvas();
+    const report = vi.fn();
+    const tap = new TapToWalk(canvas as unknown as HTMLElement, () => {
+      throw new Error('no ground');
+    }, report);
+    canvas.fire('pointerdown', 100, 50, 0);
+    canvas.fire('pointerup', 100, 50, 10);
+    expect(report).toHaveBeenCalledWith(new Error('no ground'));
+    expect(tap.take()).toBeNull();
+
+    const { canvas: other } = tapToWalk(() => {
+      throw new Error('no ground');
+    });
+    other.fire('pointerdown', 100, 50, 0);
+    expect(() => other.fire('pointerup', 100, 50, 10)).toThrow('no ground');
   });
 
   it('reset forgets a press under way and a tap not yet taken; dispose stops listening', () => {

@@ -17,6 +17,8 @@ const SEGMENTS = 32;
 const COLOR = 0xfff0a0;
 const OPACITY = 0.85;
 
+const f32 = Math.fround;
+
 export class MoveMark {
   private ring: Mesh<RingGeometry, MeshBasicMaterial> | null = null;
   /** The D3D point the mark is on, while it is shown. */
@@ -24,7 +26,10 @@ export class MoveMark {
 
   constructor(private readonly scene: Scene) {}
 
-  /** Shows the mark on the D3D point `pos`, in place of the last one. */
+  /**
+   * Shows the mark on the D3D point `pos`, in place of the last one. The point is kept in floats, as the destination
+   * keeps it (`setDestPos`), so that `follow` finds it whatever the caller gave.
+   */
   show(pos: Vec3): void {
     // made on the first tap: a world screen nobody taps on draws exactly as before
     this.ring ??= new Mesh(
@@ -35,10 +40,11 @@ export class MoveMark {
     );
     this.ring.name = 'move mark';
     this.ring.renderOrder = 1;
-    const [x, y, z] = toWebPosition(pos);
+    const at: Vec3 = [f32(pos[0]), f32(pos[1]), f32(pos[2])];
+    const [x, y, z] = toWebPosition(at);
     this.ring.position.set(x, y + LIFT, z);
     this.scene.add(this.ring);
-    this.at = [pos[0], pos[1], pos[2]];
+    this.at = at;
   }
 
   /** Takes the mark away unless the own mover is still on its way to the mark's point (`dest`, D3D, or null). */

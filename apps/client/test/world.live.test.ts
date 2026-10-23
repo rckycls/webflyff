@@ -32,6 +32,7 @@ import type { Desired } from '../src/world/controls';
 import { loadGameData } from '../src/world/gameData';
 import type { GameData } from '../src/world/gameData';
 import { ObjSta } from '../src/world/sim/constants';
+import { isEmptyDest } from '../src/world/sim/moverRules';
 import { FixedStepper } from '../src/world/sim/stepper';
 import { JOIN_CLOSED_TEXT, WorldSession } from '../src/world/WorldSession';
 import type { WorldEvent } from '../src/world/WorldSession';
@@ -133,12 +134,12 @@ const WITHIN_M = 1;
 /** PLAYERMOVED goes out when the run starts and when it stops; the observer must have applied at least these two MOVERMOVED. */
 const MIN_MOVES_APPLIED = 2;
 
-/** No keys: stand, in walk mode (what the screen sends with nothing pressed). */
+/** No keys, in walk mode: the walker starts walking (the screen would keep the mode the server gave it). */
 const STAND = desiredFrom({ forward: 0, turn: 0, run: false });
 /** Forward with the run key held. */
 const RUN_FORWARD = desiredFrom({ forward: 1, turn: 0, run: true });
-/** Forward let go with the run key still held: the stop is PLAYERMOVED alone, since the mover is not walking and has no mode to change. */
-const STOP_RUNNING = desiredFrom({ forward: 0, turn: 0, run: true });
+/** Forward let go after the run: the stop is PLAYERMOVED alone, since with no key held the mode stays (Ruling 40). */
+const STOP_RUNNING = desiredFrom({ forward: 0, turn: 0, run: true }, RUN_FORWARD);
 
 const sleep = (ms: number): Promise<void> => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -310,7 +311,7 @@ class Player {
     if (!this.playing || world === undefined || session === undefined || entry === undefined) return;
     const own = world.self();
     if (own !== undefined) {
-      const { moved, behavior } = driveOwnMover(own.act, this.desired);
+      const { moved, behavior } = driveOwnMover(own.act, this.desired, isEmptyDest(own));
       if (moved) session.sendMoved(movedReport(own.act, entry.clock.tick()));
       if (behavior) session.sendBehavior(own.act.report(entry.clock.tick()));
     }
