@@ -12,6 +12,8 @@ export type WorldMessage =
   /** ADD_OBJ of any other object (`OT_ITEM`, `OT_CTRL`, ...), which the browser does not read past its type. */
   | { type: 'addOther'; objectType: number }
   | { type: 'delObj' }
+  /** The season (`SEASON_*`, `Resource/define.h:269-274`), from which Neuz picks some trees' models; the browser keeps it nowhere. */
+  | { type: 'environmentSetting'; season: number }
   | { type: 'worldReadInfo'; worldId: number; pos: Vec3 }
   | { type: 'moverMoved'; move: MoveReport }
   | { type: 'moverBehavior'; move: MoveReport }

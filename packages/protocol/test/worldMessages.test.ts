@@ -140,8 +140,30 @@ describe('place messages', () => {
   });
 });
 
+describe('the environment setting', () => {
+  it('ENVIRONMENTALL is OnEnvironmentSetting: the season as an int', () => {
+    // int nSeason = SEASON_NONE; ar >> nSeason; (__ENVIRONMENT_EFFECT is on)
+    expect(MessageType.ENVIRONMENTALL).toBe(0x0063);
+    expect(readOne(MessageType.ENVIRONMENTALL, new ArWriter().i32(3).toBytes())).toEqual({ type: 'environmentSetting', season: 3 });
+    expect(readOne(MessageType.ENVIRONMENTALL, new ArWriter().i32(-1).toBytes())).toEqual({ type: 'environmentSetting', season: -1 });
+  });
+
+  it('lets a JOIN without a table of contents be read on past it, as CUser::Open starts the JOIN with it', () => {
+    // CUser::Open (WORLDSERVER/User.cpp:308-349): the environment setting, then WORLD_READINFO, then the own ADD_OBJ
+    const result = readBundle(body([
+      { objectId: PLAYER, type: MessageType.ENVIRONMENTALL, fields: new ArWriter().i32(0).toBytes() },
+      { objectId: PLAYER, type: MessageType.WORLD_READINFO, fields: new ArWriter().u32(1).vec3(pos).toBytes() },
+    ], false), WORLD_READERS);
+    expect(result.messages.map((m) => m.value)).toEqual([
+      { type: 'environmentSetting', season: 0 }, { type: 'worldReadInfo', worldId: 1, pos },
+    ]);
+    expect(result.stoppedAt).toBeNull();
+  });
+});
+
 /** Fields that each reader takes whole, for the tests that run over every type. */
 const SAMPLES: [number, Uint8Array][] = [
+  [MessageType.ENVIRONMENTALL, new ArWriter().i32(2).toBytes()],
   [MessageType.MOVERMOVED, moveFields(move)],
   [MessageType.MOVERBEHAVIOR, moveFields(move)],
   [MessageType.MOVERANGLE, new ArWriter().vec3(pos).vec3(delta).f32(1).f32(2).f32(3).f32(4).i64(5n).toBytes()],
@@ -157,7 +179,7 @@ const SAMPLES: [number, Uint8Array][] = [
 ];
 
 describe('WORLD_READERS', () => {
-  it('has a reader for each movement and place message type', () => {
+  it('has a reader for each movement, place and environment message type', () => {
     // ADD_OBJ has its own tests (addObj.test.ts).
     for (const [type] of SAMPLES) expect(WORLD_READERS.has(type), `type 0x${type.toString(16)}`).toBe(true);
   });

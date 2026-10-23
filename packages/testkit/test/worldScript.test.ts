@@ -1,12 +1,22 @@
 import { expect, it } from 'vitest';
 import {
-  ArWriter, DPID_UNKNOWN, MessageType, PacketType, WORLD_READERS, bytesToHex, encodeJoin, encodePlayerMoved, encodePreJoin,
-  encodeWorldKeepAlive, readBundle,
+  ArWriter, DPID_UNKNOWN, MessageType, NULL_ID, PacketType, WORLD_READERS, bytesToHex, encodeJoin, encodePlayerMoved,
+  encodePreJoin, encodeWorldKeepAlive, readBundle,
 } from '@flyffweb/protocol';
-import type { MoveReport } from '@flyffweb/protocol';
-import { createWorldScript, writeDelObj, writeSetPos } from '../src';
+import type { AddedMover, MoveReport } from '@flyffweb/protocol';
+import { GAMETIMER, createWorldScript, writeAddSelf, writeDelObj, writeSetPos } from '../src';
 
-const SELF = { objectId: 9, type: MessageType.SETPOS, fields: new ArWriter().vec3([1, 2, 3]).toBytes() };
+/** The own character, wearing nothing. */
+const OWN: AddedMover = {
+  index: 11, scale: 1, pos: [6968, 100, 3328], angle: 0, objectId: 9, motion: 0, isPlayer: true, hitPoint: 100, state: 1,
+  stateFlag: 0, belligerence: 0, sfxId: 0,
+  player: {
+    self: true, name: 'Webby', sex: 0, skinSet: 0, hairMesh: 0, hairColor: 0, headMesh: 0, playerId: 500, job: 0, level: 15,
+    authorization: 0x46, mode: 0, stateMode: 0, pkTime: 0, pkValue: 0, pkPropensity: 0, honor: -1, worn: [],
+    equipmentObjectIds: new Array<number>(31).fill(NULL_ID), shopTitle: '',
+  },
+};
+const SELF = writeAddSelf(9, OWN);
 const OTHER = writeSetPos(10, [4, 5, 6]);
 const script = (index?: boolean) => createWorldScript({
   playerObjectId: 9, worldId: 1, pos: [6968, 100, 3328], self: SELF, others: [OTHER], ...(index === undefined ? {} : { index }),
@@ -23,7 +33,7 @@ it('answers PRE_JOIN on the login connection with a PRE_JOIN of no fields', () =
   expect(script().answer('cache', encodePreJoin('webtester', 500, 'Webby'))).toEqual([]);
 });
 
-it('answers JOIN with the JOIN bundle: WORLD_READINFO, the own ADD_OBJ, then the others', () => {
+it('answers JOIN with the JOIN bundle in CUser::Open\'s order: the environment, WORLD_READINFO, the own ADD_OBJ, the rest', () => {
   const [bundle, ...rest] = script().answer('cache', join);
   expect(rest).toEqual([]);
   expect(new DataView(bundle!.buffer, bundle!.byteOffset).getUint32(0, true)).toBe(PacketType.JOIN);
@@ -31,11 +41,22 @@ it('answers JOIN with the JOIN bundle: WORLD_READINFO, the own ADD_OBJ, then the
   expect(read.playerObjectId).toBe(9);
   expect(read.indexed).toBe(true);
   expect(read.messages.map((m) => [m.objectId, m.value])).toEqual([
+    [9, { type: 'environmentSetting', season: 0 }],
     [9, { type: 'worldReadInfo', worldId: 1, pos: [6968, 100, 3328] }],
-    [9, { type: 'setPos', pos: [1, 2, 3] }],
+    [9, { type: 'addMover', mover: OWN }],
     [10, { type: 'setPos', pos: [4, 5, 6] }],
   ]);
-  expect(readBundle(script(false).answer('cache', join)[0]!, WORLD_READERS).indexed).toBe(false);
+  // the game timer, standing for the rest of CUser::Open's messages, which the browser has no reader for
+  expect(read.skipped).toEqual([GAMETIMER]);
+  expect(read.mismatched).toEqual([]);
+});
+
+it('without the table, the JOIN bundle is read up to the own character and the rest of it is dropped, as from the old exe', () => {
+  const read = readBundle(script(false).answer('cache', join)[0]!, WORLD_READERS);
+  expect(read.indexed).toBe(false);
+  expect(read.messages.map((m) => m.value.type)).toEqual(['environmentSetting', 'worldReadInfo', 'addMover']);
+  // the own ADD_OBJ's reader skips the rest of its message, which without a table is the rest of the bundle
+  expect(read).toMatchObject({ skipped: [], mismatched: [], stoppedAt: null });
 });
 
 it('answers nothing else', () => {

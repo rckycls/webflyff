@@ -189,7 +189,8 @@ test.describe('the world screen against scripted servers', () => {
       [SELF_ID, 'Webby'], [MONSTER_ID, 'Aibatt'], [NPC_ID, 'Julia'],
     ]);
     const stats = await page.evaluate(() => window.__client!.stats());
-    expect(stats).toMatchObject({ bundles: 1, indexed: 1, skipped: 0, mismatched: 0, errors: [] });
+    // skipped: the JOIN's game timer, which stands for the messages of CUser::Open that nothing reads
+    expect(stats).toMatchObject({ bundles: 1, indexed: 1, skipped: 1, mismatched: 0, errors: [] });
   });
 
   test('shows a monster and an NPC with name tags', async ({ page, browserName }) => {

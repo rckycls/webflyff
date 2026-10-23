@@ -56,6 +56,8 @@ export const MAX_CHARACTER_SLOTS = 3;
 export const MessageType = {
   SETPOSANGLE: 0x000e,
   SETPOS: 0x0010,
+  /** With `__ENVIRONMENT_EFFECT` on, the season: the first message of the JOIN bundle (`CUser::Open`). */
+  ENVIRONMENTALL: 0x0063,
   MOTION: 0x0098,
   DESTPOS: 0x00c1,
   MOVERSETDESTOBJ: 0x00c2,

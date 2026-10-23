@@ -4,7 +4,9 @@ import {
   encodePlayerMoved, encodePreJoin, encodeWorldKeepAlive,
 } from '@flyffweb/protocol';
 import type { AddedMover, CharacterSummary, MoveReport, SlotMessenger, Vec3 } from '@flyffweb/protocol';
-import { encodeBundle, writeAddSelf, writeDestPos, writeReplace, writeSetPos, writeWorldReadInfo } from '@flyffweb/testkit';
+import {
+  encodeBundle, writeAddSelf, writeDestPos, writeEnvironmentSetting, writeGameTimer, writeReplace, writeSetPos, writeWorldReadInfo,
+} from '@flyffweb/testkit';
 import type { ScriptMessage } from '@flyffweb/testkit';
 import type { WorldEntry } from '../src/lobby/LoginFlow';
 import type { OpenChannel } from '../src/net/PacketChannel';
@@ -207,10 +209,19 @@ describe('WorldSession, entering', () => {
     ]);
   });
 
-  it('enters from a bundle without a table of contents too', async () => {
-    const { cache, events } = await atJoin();
-    cache.push(joinBundle([], { index: false }));
-    expect(events).toMatchObject([{ type: 'entered', worldId: FLARIS, playerObjectId: OWN }]);
+  it('enters from a bundle without a table of contents too, as the old World.exe sends it', async () => {
+    const { cache, events, session } = await atJoin();
+    // CUser::Open (WORLDSERVER/User.cpp:308-349): the environment setting, WORLD_READINFO, the own ADD_OBJ, then the game
+    // timer and the rest, which nothing reads; and the server adds the movers in view in the bundles that follow.
+    cache.push(encodeBundle(PacketType.JOIN, OWN, [
+      writeEnvironmentSetting(OWN, 0), writeWorldReadInfo(OWN, FLARIS, POS), writeAddSelf(OWN, SELF), writeGameTimer(OWN, 12.5),
+    ], { index: false }));
+    expect(events).toMatchObject([{ type: 'entered', worldId: FLARIS, pos: POS, playerObjectId: OWN }]);
+    const entered = events[0] as EventOf<'entered'>;
+    expect(entered.messages.map((m) => m.value.type)).toEqual(['environmentSetting', 'worldReadInfo', 'addMover']);
+    // the own ADD_OBJ's reader skips the rest of its message, which without a table is the rest of the bundle: the game
+    // timer is dropped with it, unseen, so nothing counts as skipped
+    expect(session.stats).toEqual({ bundles: 1, indexed: 0, skipped: 0, mismatched: 0, unknownPackets: 0 });
   });
 
   it('takes the world from WORLD_READINFO, not from the character list', async () => {

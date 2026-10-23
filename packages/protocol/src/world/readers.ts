@@ -1,6 +1,7 @@
 import type { MessageReader } from '../bundle';
 import { MessageType } from '../constants';
 import { readAddObj } from './addObj';
+import { readEnvironmentSetting } from './environment';
 import {
   readDestAngle, readDestPos, readMotion, readMoverAngle, readMoverBehavior, readMoverMoved, readSetDestObj,
 } from './movement';
@@ -26,4 +27,5 @@ export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
     [MessageType.DEL_OBJ, readDelObj],
     [MessageType.WORLD_READINFO, readWorldReadInfo],
     [MessageType.REPLACE, readReplace],
+    [MessageType.ENVIRONMENTALL, readEnvironmentSetting],
   ]);

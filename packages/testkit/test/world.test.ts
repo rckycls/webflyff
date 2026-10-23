@@ -4,9 +4,9 @@ import {
 } from '@flyffweb/protocol';
 import type { AddedMover, MessageReader, MoveReport, Vec3, WorldMessage } from '@flyffweb/protocol';
 import {
-  encodeBundle, writeAddMonster, writeAddNpc, writeAddPlayer, writeAddSelf, writeDelObj, writeDestAngle, writeDestPos,
-  writeMotion, writeMoverAngle, writeMoverBehavior, writeMoverMoved, writeReplace, writeSetDestObj, writeSetPos,
-  writeSetPosAngle, writeWorldReadInfo,
+  GAMETIMER, encodeBundle, writeAddMonster, writeAddNpc, writeAddPlayer, writeAddSelf, writeDelObj, writeDestAngle,
+  writeDestPos, writeEnvironmentSetting, writeGameTimer, writeMotion, writeMoverAngle, writeMoverBehavior, writeMoverMoved,
+  writeReplace, writeSetDestObj, writeSetPos, writeSetPosAngle, writeWorldReadInfo,
 } from '../src';
 
 it('encodeBundle writes the table', () => {
@@ -96,6 +96,10 @@ it('every writer decodes to what it was given', () => {
     ['writeDelObj', writeDelObj(22), MessageType.DEL_OBJ, { type: 'delObj' }],
     ['writeWorldReadInfo', writeWorldReadInfo(23, 1, pos), MessageType.WORLD_READINFO, { type: 'worldReadInfo', worldId: 1, pos }],
     ['writeReplace', writeReplace(24, 0x2a, pos), MessageType.REPLACE, { type: 'replace', worldId: 0x2a, pos }],
+    [
+      'writeEnvironmentSetting', writeEnvironmentSetting(25, 3), MessageType.ENVIRONMENTALL,
+      { type: 'environmentSetting', season: 3 },
+    ],
   ];
   for (const [name, message, type, expected] of cases) {
     expect(message.type, name).toBe(type);
@@ -120,6 +124,16 @@ it('writes the fields in the order of the C++ handlers', () => {
   expect(bytesToHex(writeReplace(1, 5, [1, 2, 3]).fields))
     .toBe(bytesToHex(new ArWriter().u32(5).vec3([1, 2, 3]).toBytes()));
   expect(writeDelObj(3)).toEqual({ objectId: 3, type: MessageType.DEL_OBJ, fields: new Uint8Array(0) });
+  expect(bytesToHex(writeEnvironmentSetting(1, 4).fields)).toBe(bytesToHex(new ArWriter().i32(4).toBytes()));
+});
+
+it('writeGameTimer writes the time as a double, a message the browser has no reader for', () => {
+  const timer = writeGameTimer(9, 0.5);
+  expect(timer.type).toBe(GAMETIMER);
+  expect(GAMETIMER).toBe(0x0096);
+  expect(bytesToHex(timer.fields)).toBe('000000000000e03f'); // 0.5 as a little-endian double
+  expect(WORLD_READERS.has(GAMETIMER)).toBe(false);
+  expect(readBundle(encodeBundle(PacketType.JOIN, 9, [timer]), WORLD_READERS).skipped).toEqual([GAMETIMER]);
 });
 
 // One mover of each kind, with values the C++ casts keep (a scale × 100 and an angle × 10 that are whole numbers).

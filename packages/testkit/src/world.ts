@@ -128,6 +128,28 @@ export function writeReplace(objectId: number, worldId: number, pos: Vec3): Scri
   return scripted(objectId, MessageType.REPLACE, new ArWriter().u32(worldId).vec3(pos));
 }
 
+/**
+ * ENVIRONMENTALL: `CUser::AddEnvironmentSetting` (`WORLDSERVER/User.cpp:1576-1584`, `__ENVIRONMENT_EFFECT` on), the
+ * first message of the JOIN bundle: `CEnvironment::GetSeason()`, an `int` (`SEASON_*`).
+ */
+export function writeEnvironmentSetting(objectId: number, season: number): ScriptMessage {
+  return scripted(objectId, MessageType.ENVIRONMENTALL, new ArWriter().i32(season));
+}
+
+/** `SNAPSHOTTYPE_GAMETIMER` (`_Network/MsgHdr.h:1057`): a message type the browser has no reader for. */
+export const GAMETIMER = 0x0096;
+
+/**
+ * GAMETIMER: `CUser::AddGameTimer` (`WORLDSERVER/User.cpp:1210-1218`), the `double` game time, which `CUser::Open` sends
+ * right after the own ADD_OBJ (:327). The browser does not read it: a script puts it where the real server puts the
+ * messages nothing reads.
+ */
+export function writeGameTimer(objectId: number, time: number): ScriptMessage {
+  const fields = new Uint8Array(8);
+  new DataView(fields.buffer).setFloat64(0, time, true);
+  return { objectId, type: GAMETIMER, fields };
+}
+
 // ADD_OBJ: `CUser::AddAddObj` (`WORLDSERVER/User.cpp:664`) and the storing side of `CMover::Serialize`
 // (`_Common/ObjSerializeOpt.cpp:97`). The fields the browser does not keep are written as a mover with nothing
 // in them would have them: no guild, no party, no pet, no buffs, zero stats.

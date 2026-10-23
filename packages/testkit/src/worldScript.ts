@@ -1,7 +1,10 @@
 import { ArReader, ArWriter, PacketType } from '@flyffweb/protocol';
 import type { Vec3 } from '@flyffweb/protocol';
-import { encodeBundle, writeWorldReadInfo } from './world';
+import { encodeBundle, writeEnvironmentSetting, writeGameTimer, writeWorldReadInfo } from './world';
 import type { ScriptMessage } from './world';
+
+/** `SEASON_NONE` (`Resource/define.h:270`). */
+const SEASON_NONE = 0;
 
 /** What the pretend servers put in the JOIN bundle. */
 export interface WorldScriptOptions {
@@ -36,10 +39,14 @@ export interface WorldScript {
  * - PRE_JOIN is answered with a PRE_JOIN of no fields, as `CDPCoreClient::OnPreJoin` has the login server do once the
  *   core server lets the character in (`g_dpLoginSrvr.SendHdr( PACKETTYPE_PRE_JOIN, ... )`,
  *   `LOGINSERVER/DPCoreClient.cpp:103`).
- * - JOIN is answered with the bundle `CUser::Open` makes the first (`WORLDSERVER/User.cpp:308-349`): typed JOIN, the
- *   player's object ID in its header, WORLD_READINFO, the own ADD_OBJ; then, unlike the real server, which adds them in
- *   the snapshots that follow, the ADD_OBJs of the movers in view. The environment, game timer, task bar and the rest
- *   of `CUser::Open`'s messages are left out: the browser reads none of them.
+ * - JOIN is answered with the bundle `CUser::Open` makes the first (`WORLDSERVER/User.cpp:308-349`), in its order:
+ *   typed JOIN, the player's object ID in its header, the environment setting (the season, `SEASON_NONE`),
+ *   WORLD_READINFO, the own ADD_OBJ, then the game timer, which stands for the rest of `CUser::Open`'s messages (the
+ *   task bar, the environment, friends, guilds and so on) that the browser has no reader for. Then, unlike the real
+ *   server, which adds them in the snapshots that follow, the ADD_OBJs of the movers in view.
+ * - Without the table of contents (`index: false`, the old World.exe) the browser reads that bundle up to the own
+ *   ADD_OBJ, whose reader skips the rest of its message, and with it the rest of the bundle: the movers in view of a
+ *   script without a table are never seen. Send them with `later` instead, as the real server does.
  */
 export function createWorldScript(o: WorldScriptOptions): WorldScript {
   const index = o.index ?? true;
@@ -51,8 +58,12 @@ export function createWorldScript(o: WorldScriptOptions): WorldScript {
       const type = r.u32();
       if (role === 'login' && type === PacketType.PRE_JOIN) return [new ArWriter().u32(PacketType.PRE_JOIN).toBytes()];
       if (role === 'cache' && type === PacketType.JOIN) {
-        const messages = [writeWorldReadInfo(o.playerObjectId, o.worldId, o.pos), o.self, ...o.others];
-        return [encodeBundle(PacketType.JOIN, o.playerObjectId, messages, { index })];
+        const own = o.playerObjectId;
+        const messages = [
+          writeEnvironmentSetting(own, SEASON_NONE), writeWorldReadInfo(own, o.worldId, o.pos), o.self, writeGameTimer(own, 0),
+          ...o.others,
+        ];
+        return [encodeBundle(PacketType.JOIN, own, messages, { index })];
       }
       return [];
     },
