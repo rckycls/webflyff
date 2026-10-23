@@ -6,3 +6,5 @@ export {
   writeSetPosAngle, writeWorldReadInfo,
 } from './world';
 export type { ScriptMessage } from './world';
+export { createWorldScript } from './worldScript';
+export type { WorldScript, WorldScriptOptions } from './worldScript';

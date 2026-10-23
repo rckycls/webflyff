@@ -371,17 +371,14 @@ test.describe('the lobby against scripted servers', () => {
     await expect(page.getByRole('listitem').filter({ hasText: 'Third' }).getByRole('button', { name: 'Enter Third' })).toHaveText('Enter');
     await expectPhoneFriendly(page);
 
-    // The world screen is not built yet: the interim handler closes the login-server connection and sends the player
-    // back to the login form with a message, which shows the lobby handed over (and the login connection with it).
+    // The lobby's screens go and the world screen takes over, with the login-server connection still open: the world
+    // session pings it and sends PRE_JOIN on it (world.spec.ts enters the world).
     await page.getByRole('button', { name: 'Enter Third' }).click();
-    await expect(page.getByRole('alert')).toHaveText("Entering the world isn't built yet.");
-    await expect(page.getByRole('button', { name: 'Log in' })).toBeEnabled();
-    await expect(page.getByRole('heading', { name: 'Log in' })).toBeFocused();
-    await expect(page.getByLabel('Account')).toHaveValue('WebTester');
-    await expect(page.getByRole('status')).toBeEmpty();
+    await expect(page.getByText('Entering the world…')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Your characters' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /^Enter/ })).toHaveCount(0);
     const loginConnection = sent.find((s) => s.port === Port.LOGIN)!.connection;
-    await expect.poll(() => closed).toContain(loginConnection);
-    await expectPhoneFriendly(page);
+    expect(closed).not.toContain(loginConnection);
   });
 
   // This runs on a test page (e2e/lobbyHarness.html: the lobby as main.ts wires it, with a stand-in world that keeps every

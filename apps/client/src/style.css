@@ -384,3 +384,52 @@ fieldset:disabled .btn {
   text-align: center;
   font-weight: 600;
 }
+
+/* The world screen ------------------------------------------------------------------------------------------------ */
+
+/* Over the whole page, under the notch too: the 3D view fills the screen. */
+.world {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  overflow: hidden;
+  background: #101418;
+  color: #e6e9ed;
+  /* the joystick and the canvas take the touches; the page must not scroll or zoom under them */
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.world-view canvas {
+  display: block;
+}
+
+.world-status {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.world-leave {
+  position: absolute;
+  top: max(12px, env(safe-area-inset-top));
+  right: max(12px, env(safe-area-inset-right));
+  z-index: 1001;
+  min-width: 88px;
+  min-height: 48px;
+  padding: 10px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #ffffff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}

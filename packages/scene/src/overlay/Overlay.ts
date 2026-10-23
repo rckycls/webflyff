@@ -52,6 +52,8 @@ export class Overlay {
   private nextFrame = 0;
   private sinceRedraw = 0;
   private counts = { tiles: 0, models: 0, textures: 0 };
+  /** The game client's bundle messages it could not read; null (no line) until it says. */
+  private messageCounts: { skipped: number; mismatched: number } | null = null;
   private gpuBytes = 0;
   private errors: string[] = [];
   private device = deviceLabel();
@@ -85,6 +87,14 @@ export class Overlay {
 
   setCounts(c: { tiles: number; models: number; textures: number }): void {
     this.counts = { tiles: c.tiles, models: c.models, textures: c.textures };
+  }
+
+  /**
+   * The world's bundle messages that were skipped (of a type nothing reads) and that did not end where the bundle's table
+   * of contents says (spec §4): a line of their own, from the first call on.
+   */
+  setMessageCounts(skipped: number, mismatched: number): void {
+    this.messageCounts = { skipped, mismatched };
   }
 
   /** Adds to the GPU estimate; a negative number takes bytes back when something is disposed. */
@@ -130,6 +140,9 @@ export class Overlay {
       `tiles ${s.tiles}   models ${s.models}   textures ${s.textures}`,
       `device: ${s.device}`,
     ];
+    if (this.messageCounts !== null) {
+      lines.push(`messages skipped ${this.messageCounts.skipped}   mismatched ${this.messageCounts.mismatched}`);
+    }
     if (s.errors.length > 0) {
       lines.push(`errors: ${s.errors.length}`);
       for (const message of s.errors.slice(-SHOWN_ERRORS)) lines.push(`! ${message}`);

@@ -141,6 +141,17 @@ describe('Overlay.frame', () => {
 
     expect(root.find('pre').textContent).toContain('world wdx: tile 3_4 failed');
   });
+
+  it('shows the skipped and mismatched messages once the game client gives them', () => {
+    const { overlay, root } = overlayOn();
+    const text = root.find('pre');
+    overlay.frame(0.3);
+    expect(text.textContent).not.toContain('messages');
+
+    overlay.setMessageCounts(4, 1);
+    overlay.frame(0.3);
+    expect(text.textContent).toContain('messages skipped 4   mismatched 1');
+  });
 });
 
 describe('Overlay device button', () => {
