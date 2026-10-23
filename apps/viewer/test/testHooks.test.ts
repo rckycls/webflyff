@@ -1,5 +1,5 @@
+import type { Overlay, OverlaySnapshot } from '@flyffweb/scene';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { Overlay, OverlaySnapshot } from '../src/overlay/Overlay';
 import {
   createViewerHooks,
   installTestHooks,

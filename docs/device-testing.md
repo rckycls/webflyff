@@ -53,7 +53,7 @@ Compare by eye, spot by spot:
 - light and shade (see below);
 - the character: pose, size on screen, the camera's height and distance behind it.
 
-**One known point to watch: the sun.** The client lights terrain and models with the sun direction it uses at noon, and the viewer copies that exactly (ruling R50; the code and the C++ it follows are in `apps/viewer/src/world/lighting.ts`). The client's noon sun is the D3D light `Direction = (0, +0.707, -0.707)`. A D3D `Direction` is the way the light travels, so this light travels **upward** (and toward -z). The vector D3D lights a surface with, from the surface toward the light, is `L = -Direction = (0, -0.707, +0.707)`, which points **down**, and the viewer uses exactly that (in its own frame, where z is negated: `(0, -0.707, -0.707)` toward the sun). So at noon the client lights surfaces from below and from the north: a face reacts to the sun only when its normal points more toward north than up (in D3D numbers, `n.z > n.y`). That is north-facing walls (facing higher z) and undersides. Flat ground (normal up) and east-, west- and south-facing walls get the ambient light alone. The `flaris-plaza` spot faces south, so the walls in front of you there face north: those are the ones the sun lights. (In `flaris-plaza-east` you look at west-facing walls, which stay at the ambient light.) If shading in the comparison looks **inverted** (faces that are bright in the client are dark in the viewer, or the other way round), say so: the sun direction is the first thing to check. "Flip" then means switching to the lit-from-above convention that the client's own continent branch (`__BS_CHANGING_ENVIR`, World3D.cpp:1822-1824) uses, `SetDir(-(0, 0.707, 0.707))`, i.e. `L = (0, +0.707, +0.707)`. In the viewer that is two small edits: the sign of the y component of `towardSun` in `lighting.ts`, and the expectation that pins it, `light.sunDirection[1]` in `apps/viewer/test/player.test.ts` (line 152).
+**One known point to watch: the sun.** The client lights terrain and models with the sun direction it uses at noon, and the viewer copies that exactly (ruling R50; the code and the C++ it follows are in `packages/scene/src/world/lighting.ts`). The client's noon sun is the D3D light `Direction = (0, +0.707, -0.707)`. A D3D `Direction` is the way the light travels, so this light travels **upward** (and toward -z). The vector D3D lights a surface with, from the surface toward the light, is `L = -Direction = (0, -0.707, +0.707)`, which points **down**, and the viewer uses exactly that (in its own frame, where z is negated: `(0, -0.707, -0.707)` toward the sun). So at noon the client lights surfaces from below and from the north: a face reacts to the sun only when its normal points more toward north than up (in D3D numbers, `n.z > n.y`). That is north-facing walls (facing higher z) and undersides. Flat ground (normal up) and east-, west- and south-facing walls get the ambient light alone. The `flaris-plaza` spot faces south, so the walls in front of you there face north: those are the ones the sun lights. (In `flaris-plaza-east` you look at west-facing walls, which stay at the ambient light.) If shading in the comparison looks **inverted** (faces that are bright in the client are dark in the viewer, or the other way round), say so: the sun direction is the first thing to check. "Flip" then means switching to the lit-from-above convention that the client's own continent branch (`__BS_CHANGING_ENVIR`, World3D.cpp:1822-1824) uses, `SetDir(-(0, 0.707, 0.707))`, i.e. `L = (0, +0.707, +0.707)`. In the viewer that is two small edits: the sign of the y component of `towardSun` in `lighting.ts`, and the expectation that pins it, `light.sunDirection[1]` in `packages/scene/test/player.test.ts` (line 152).
 
 ### After you approve the comparisons
 
@@ -261,3 +261,141 @@ The lobby passes when **every cell is `pass` on every one of the four devices**.
 | **"Wrong Password. Cannot log into account for 15 seconds."** | The certifier's lockout after a wrong password: wait 15 seconds. After three wrong passwords in a row it is 15 minutes, with "Wrong Passwords 3 times. Cannot log into account for 15 minutes." |
 | **"Already connected"** | The account is logged in somewhere else, or its last session is still closing (this can also follow **Change channel**, if the servers are slow to let go of the old session). Tap **Disconnect it** and log in again, or use another test account. |
 | **Every login fails at once, on every device, and it lasts about 10 minutes** | The game servers' own connection-flood limiter (in the certifier and the login server). It counts connections from one address that come less than 200 milliseconds apart, and never forgets them. After 50, it cuts every connection from that address and refuses it for about 10 minutes. Until the new certifier and login server are in place with their `Gateway` lines ([server-patches/README.md](../server-patches/README.md)), all browser players count as the gateway's one address, so repeated quick logins, and repeated `npm run test:live` runs, add up. **Wait about 10 minutes**, or restart the certifier and the login server. See [hosting.md](hosting.md#before-a-public-launch). |
+
+# Piece 3, milestone 1: the world
+
+For the owner. **Enter** on a character now opens the 3D world where the character was saved: the other players, the monsters and the NPCs around it, each with a name tag, moving by the Windows client's own rules. This part checks it on your four devices, two at a time, over your Wi-Fi, with the PC running the game servers, the gateway and the client.
+
+The automated side is `npm test`, `npm run test:e2e:client` (the world against pretend servers, in Chromium and WebKit) and the live world test below. None of it needs Neuz, and nothing here asks you to run Neuz next to the servers.
+
+## Before you start
+
+**Servers in a Hyper-V virtual machine?** Set the VM up with [servers-in-a-vm.md](servers-in-a-vm.md) first. Then everything below that touches the servers happens in the VM (the server swap, the gateway and the live world test), and the client on your PC is started with the VM's gateway address, as that guide's step 6 says.
+
+1. **Put the new world and cache servers in service**, and add the `Gateway "127.0.0.1"` line to `Program\CacheServer.ini`: follow "Put them in service" in [server-patches/README.md](../server-patches/README.md) (read its note about the world server first). With the old world server the browser still enters the world, but it reads only part of what that server sends: other players, monsters and NPCs can be missing or stand still, and this checklist would fail for that reason alone. The overlay tells you which world server is running (step 1 below).
+2. **The game files.** `dist/assets` must hold a conversion made with this version (it adds `data/worlds.json` and new fields in the other catalogs). If you are not sure, run `npm run convert -- --only data` in `FlyffWeb/` (a few seconds; the full `npm run convert` is only needed when the `Client` folder changed).
+3. **Two throwaway test accounts,** each with a character, or with an empty slot (the live test then makes a character and deletes it at the end). Use characters saved in Flaris; a new character starts there.
+
+## Run the live world test first
+
+As for the lobby: if the servers, the patches or the world session are broken, the PC shows it here, with no phone in the way.
+
+1. Start the game servers (the 7 programs in `Program\`).
+2. Open `apps\client\test\live.config.json` (made in the Piece 2 part above) and add the `world` section with the two accounts, as the `_comment` at the top of `live.config.example.json` explains.
+3. Run it:
+
+   ```
+   npm run test:live:world
+   ```
+
+   Success: no `failed`. It checks that both players enter Flaris and see each other, that the one who runs and stops is seen standing within 1 metre of where it says it stands, that every packet from the world server had its table of contents and no message was misread, and that both can leave and enter again.
+
+The same care as for `npm run test:live` applies: wait at least 15 seconds between runs, and never run it in a loop.
+
+## Start the gateway and the client
+
+As in the Piece 2 part ("Start the gateway and the client"): `npm run gateway` in one window, `npm run dev:client` in another, and the phone's address in `allowedOrigins`. Then, on the PC first, open `http://localhost:5174`, log in, pick a channel and tap **Enter** on a character: after "Entering the world…" (which has a **Leave** button too, to give up) you should see the character from behind, in the world, with the **Leave** button at the top right and the overlay at the top left. If that fails, fix it on the PC, not on a phone (see "When something goes wrong" below).
+
+**Moving:** on a touch screen, the joystick at the bottom left (a push walks, a full push runs); on a keyboard, `W` / `S` or the up and down arrows walk forward and back, `A` / `D` or the left and right arrows turn, and holding `Shift` runs.
+
+## Steps, two devices at a time
+
+Pair the devices (for example the iPhone with the Android tablet, then the iPad with the Android phone), one test account each. Do these in order and write the result in the table below. Read the overlay as in "Measure" in the Piece 1 part (`fps`, `heap`, `gpu (est)` and `errors:`), plus one new line, `bundles N   indexed N   messages skipped N   mismatched N`: the packets the world server sent, how many of them had their table of contents, and the messages in them the browser skipped (it doesn't use them yet; this number grows, and that is normal) or misread.
+
+1. **Enter.** Log in on both devices, pick the same channel, and tap **Enter** on a character saved in Flaris. Success: both show the world within about 30 seconds of tapping **Enter** (the first time on a device takes longest), `indexed` is the same number as `bundles` (so the new world server is running), and `mismatched` is 0.
+2. **See each other.** Walk the two characters close to each other. Success: each device shows the other player, with its name above it. Walk one of them in a circle: the other device shows it walking the same way, without jumping from place to place, and it stops where it stopped on its own device.
+3. **Monsters.** Walk out of town, through the gate, to where the monsters are. Success: monsters stand, wander about and turn, each with a name tag, and their legs move as they walk.
+4. **NPCs.** In town, find a few shopkeepers. Success: they stand in their places, dressed, with their names above them.
+5. **Name tags fade.** Walk away from a monster: its tag fades and is gone at about 40 metres from the camera. A player's or a shopkeeper's tag lasts to about 100 metres. Success: tags fade instead of popping, and they are readable up close.
+6. **Speed and memory.** At the edge of town near the gate, with about 20 monsters and the other player in view, stand still for 1 minute and read `fps`; then walk for a few minutes and note the highest `heap` and `gpu (est)`.
+7. **The 10-minute walk** (on the weakest device): note `gpu (est)` (and the real heap, if you have one, as in the Piece 1 part) after the first minute, walk a closed loop around the same few streets for 10 minutes, and note them again.
+8. **Leave.** Tap **Leave**. Success: back at the **Log in** form, and on the other device the character disappears.
+9. **Sleep.** Enter again, then put the phone to sleep (press its power button) for about 3 minutes and wake it. (Not less: the cache server and the gateway each notice a connection that has gone quiet only after about a minute, so a shorter sleep may not end it.) Success: the page shows "The connection to the game was lost." and the **Log in** form, and logging in again works (if it says "The game closed the connection. If this character was still in the game from an earlier session, wait a moment and try again.", wait a moment and try again).
+
+## Results
+
+| Device | Browser | 1. Enter | 2. See each other | 3. Monsters | 4. NPCs | 5. Name tags | 6. fps after 1 minute | 6. Peak memory (MB), heap + gpu | 8. Leave | 9. Sleep | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| iPhone | Safari | | | | | | | | | | |
+| Android phone | Chrome | | | | | | | | | | |
+| iPad | Safari | | | | | | | | | | |
+| Android tablet | Chrome | | | | | | | | | | |
+| PC | Chrome | | | | | | | | | | |
+
+Under the table, write the two sets of numbers from step 7 and which device it was.
+
+## Pass and fail
+
+Milestone 1 passes when every cell of steps 1-5, 8 and 9 is `pass` on every device, and the weakest device meets these targets:
+
+| Target | How it is checked |
+| --- | --- |
+| At least 30 fps in Flaris with about 20 monsters and 5 players in view | step 6 (with two players here: note how many movers were in view) |
+| At most about 400 MB of JS heap plus estimated GPU memory | step 6, read as in the Piece 1 part |
+| After a 10-minute walk, memory within 10% of its starting level | step 7 |
+
+If the weakest device misses a target, write down by how much: the fixes (a shorter view distance for movers, fewer far-away details) are chosen from these numbers. Any `errors:` line in the overlay, or a `mismatched` number above 0, that you cannot explain is a fail too: send a photo of the overlay.
+
+## When something goes wrong in the world
+
+| What you see | What it means and what to do |
+| --- | --- |
+| "Entering the world…" for a long time, then "The server did not answer in time." | The login server or the cache server did not answer. Are all 7 servers running? Is there a `cache` route (port 5400) in `apps/gateway/gateway.config.json`? The gateway window shows an `open` line for `…:5400` when the browser reaches the cache server. |
+| "The game closed the connection. If this character was still in the game from an earlier session, wait a moment and try again." | The world server refused the character, usually because its last session (a closed tab, a phone that slept) is still being closed. Wait a moment and log in again. |
+| "The connection to the game was lost." | A connection closed while playing. Expected after sleep (step 9); otherwise look in the gateway window for `close` lines, and check that the servers are still running. |
+| "Moving to another map isn't supported yet." | The character went through a portal or was moved to another map. Only one map per session works so far. Log in again. |
+| "This map isn't available in the browser yet." | The character is saved on a map that was not converted, or `dist/assets` is older than this version: run `npm run convert -- --only data` (see "Before you start"). |
+| "The game files on the server are out of date." | `dist/assets` was converted by an older version and lacks the game data this one reads. Run `npm run convert -- --only data` in `FlyffWeb/` (a few seconds) and enter again. |
+| "The game files took too long to load. Check the connection and try again." | The map and the characters around the player did not arrive within a minute. Check the device's Wi-Fi and try again; the second try is quicker. If it happens on the PC too, check that `npm run dev:client` is still running. |
+| "This browser can't show the 3D world (WebGL is off or not supported)." | The browser has no WebGL 2, which the 3D world needs. Update the browser (on iPhone and iPad: iOS / iPadOS 16 or newer). In Chrome on a PC, turn on "Use graphics acceleration when available" in Settings → System and restart Chrome. |
+| Other players or monsters are missing, or stand still, and on the overlay `indexed` stays at 0 while `bundles` grows | The old world server is still running (see "Before you start"). With the new one, `indexed` equals `bundles`. |
+| A plain stand-in figure instead of a character or monster | Its model was not converted, or failed to load: the overlay's `errors:` line names it. Send a photo. |
+| The other player jumps from place to place, or stops somewhere other than where it stopped on its own device | Write down what each device showed: that is what the movement rules of this milestone are checked for. |
+
+# Piece 3, milestone 2: collision and tap to walk
+
+For the owner. Milestone 2 adds the Windows client's collision: buildings, fences and steep slopes stop you, you slide along walls, bridges and stairs carry you, and the camera stays out of walls. It also adds tap (or click) to walk. You chose to test milestones 1 and 2 together, so do this part at the same sitting, right after the milestone 1 steps above, with the same two devices and accounts.
+
+The automated side: `npm test` (the collision rules against hand-made walls, corners, bridges, stairs and slopes, the camera easing back out from a wall, and the picking), `npm run test:e2e:client` (walking into a Flaris wall, the camera kept out of a Flaris house, tapping the ground, cancelling a tap, the correction sent after bumping into a wall, and another player's correction arriving) and the corpus tests (every collision shape of the real models, and movers crossing Madrigal's real bridges). What they cannot tell you is how it feels on a real phone. That is this checklist.
+
+**Before you start:** the converted game files must include the collision shapes and the new world manifests. If `dist/assets` was converted before this milestone, run `npm run convert` once (about 7 minutes). If it was converted during this milestone, before this version, `npm run convert -- --only data` is enough (a few seconds): it marks the flying monsters, such as the Mothbees.
+
+**Tapping:** on a touch screen, tap the ground once (a quick tap; a drag turns nothing into a walk). On a PC, click the ground with the left mouse button. A small ring marks the spot.
+
+## Steps, two devices at a time
+
+Device A walks; device B watches the same character. Swap roles for the second pair of devices.
+
+1. **Walls.** On A, walk straight into a building in Flaris. Success: the character stops at the wall instead of walking into it. Walk into it at an angle: it slides along the wall. B sees the same: the character stops at the wall, not inside it.
+2. **Fences and corners.** Walk into a fence, and into the inside corner of two walls. Success: it stops, and in the corner it stops both ways.
+3. **Bridges and stairs.** Walk over a bridge and up a flight of steps, in or around Flaris. Success: the character walks on top of them, not through them, and comes down the other side. B sees it at the same height.
+4. **Steep slopes.** Walking (the keys without Shift, or the joystick pushed only part of the way), try to go up a steep hillside or cliff. Success: you can't climb it; on very steep ground the character slides back down. Running (Shift, or the joystick pushed all the way), the character can still work its way up a steep slope slowly, as in the Windows client: that is not a fail.
+5. **The camera.** Walk along a building with the camera behind you, and turn so a wall comes between the camera and the character. Success: the camera moves in front of the wall instead of showing the inside of the building. Some trees and fences, and most lamps, are see-through for the camera, as in the Windows client: it stays where it is behind those, while the other trees and fences stop it as a wall does. When the wall is out of the way again the camera glides back out over a moment, rather than jumping.
+6. **Tap to walk.** Tap a spot on the ground across the square. Success: the ring appears there, the character walks (or runs, if it was running) to it and stops on the ring, and the ring goes. B sees the character walk there and stop at the same spot.
+7. **Tap behind a wall.** Tap a spot behind a building, so the straight path runs into it. Success: the character walks until it reaches the wall and stops there; B sees it stop there too, not run on the spot.
+8. **Cancel a tap.** Tap a far spot, and while the character walks there turn with the joystick (or press a turn key, A or D). Success: the walk stops at once and the ring goes. Going straight forward at the pace the walk already has does not cancel it, as in the Windows client: a walk to a tapped spot goes at the pace of your last move (before your first move, at the pace the character was saved with, normally running), so while it runs there Shift+W or the joystick pushed all the way up leaves it alone, and while it walks there W alone or a part push does. W alone while it runs there changes the pace to walking, and a change of pace does cancel it: the walk stops and the ring goes, which is right too.
+9. **Taps that do nothing.** Tap another player, a monster or a shopkeeper. Success: nothing happens (choosing a target comes with Piece 4). Tap the trunk of a tree or a fence: the character walks to the ground behind it, as in the Windows client, where only some objects can be tapped.
+
+## Results
+
+| Device | Browser | 1. Walls | 2. Fences, corners | 3. Bridges, stairs | 4. Slopes | 5. Camera | 6. Tap to walk | 7. Tap behind a wall | 8. Cancel | 9. Taps that do nothing | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| iPhone | Safari | | | | | | | | | | |
+| Android phone | Chrome | | | | | | | | | | |
+| iPad | Safari | | | | | | | | | | |
+| Android tablet | Chrome | | | | | | | | | | |
+| PC | Chrome | | | | | | | | | | |
+
+## Pass and fail
+
+Milestone 2 passes when every cell is `pass` on every device and milestone 1's checklist above passed at the same sitting. Also note, on the weakest device, the overlay's `fps` in Flaris again: collision adds work every step, and the 30 fps target still applies.
+
+## When something goes wrong in milestone 2
+
+| What you see | What it means and what to do |
+| --- | --- |
+| The character walks through every building | The converted files have no collision shapes: run `npm run convert` (see "Before you start" above), then reload the page. |
+| It stops in front of something that isn't there, or walks through a wall it should hit | Write down where (the nearest landmark) and take a photo: that is what this milestone checks. |
+| A tap does nothing on the ground | The tap was a drag (the finger moved more than a few pixels or stayed down longer than a third of a second), or it landed on a player, monster or NPC. Tap again, quickly. |
+| On B, the character keeps running on into a wall or a house after A stopped there | B moves its copy of the character by the same rules, so it stops at the same wall by itself. Where A had told the server just before that it would be further on, A's browser sends a correction as it bumps, the server passes it on, and B puts the character back where A stopped: on a slow connection B may show it a step or two into the wall for a moment first, which is expected. If it stays inside, or runs on, the correction did not arrive or was not applied: write down what each device showed. |
+| The Mothbees and other flying monsters walk on the ground or stand stuck against walls | The game data was converted before this version: run `npm run convert -- --only data` (a few seconds) and reload the page. Flying monsters stay where the server last put them; their flying comes with a later piece. |

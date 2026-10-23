@@ -1,7 +1,8 @@
-// The world view, `#/world?world=wdmadrigal&radius=1&paused=1`: a player character walks a world. Terrain tiles stream
-// in around it (tileStreamer.ts) with the objects they place (objects.ts); it walks with WASD / the arrow keys or the
-// on-screen joystick (Shift or a full push runs) and stands on the ground (sampleHeight, as CWorld::GetLandHeight);
-// a chase camera follows it as the client's back camera does. The light is the client's at noon (lighting.ts).
+// The world view, `#/world?world=wdmadrigal&radius=1&paused=1`: a player character walks a world. The map is a
+// WorldStage (WorldStage.ts: the light, the sky and the fog, and the terrain tiles that stream in around the player with
+// the objects they place); the view adds the character, which walks with WASD / the arrow keys or the on-screen
+// joystick (Shift or a full push runs) and stands on the ground (sampleHeight, as CWorld::GetLandHeight), and a chase
+// camera that follows it as the client's back camera does.
 //
 // It starts where the world's editor camera was (`manifest.camera`), facing the way that camera looked. That
 // `camera` line (`x y z angle angleX`) is written by the world editor and not read by the client, so its meaning
@@ -11,9 +12,6 @@
 // D3DXQuaternionRotationYawPitchRoll, Camera.cpp:463, which takes radians); in degrees both would be next to nothing.
 // The player faces the yaw (D3D: +z turned toward +x, the heading convention of player.ts); the chase camera keeps
 // the client's own pitch, since the editor's is that of a camera high above the ground.
-//
-// The sky and the fog are `bgColor`, a D3DCOLOR (0xAARRGGBB), and the fog is linear from `fog.start` to `fog.end`;
-// nothing past the fog's end can be seen, so the camera's far plane is there.
 //
 // `x`, `z` and `yaw` start it somewhere else, in the numbers a player sees: `x` and `z` are the client's coordinates
 // (D3D, the ones /pos shows; web z is -z), both or neither, and `yaw` is the direction it faces in degrees, 0 facing
@@ -27,43 +25,37 @@
 
 import { MAP_SIZE } from '@flyffweb/formats';
 import type { Vec3, WorldManifest } from '@flyffweb/formats';
-import type { AnimationAction, WebGLRenderer } from 'three';
 import {
-  AmbientLight,
-  Color,
-  DirectionalLight,
-  Fog,
-  LoopOnce,
-  PerspectiveCamera,
-  SRGBColorSpace,
-  Scene,
-  SkinnedMesh,
-  Vector2,
-} from 'three';
+  CHASE_PITCH,
+  DEFAULT_MALE,
+  DEFAULT_MOTION,
+  Joystick,
+  KeyboardInput,
+  PART_SLOTS,
+  Route,
+  WorldStage,
+  assembleCharacter,
+  chaseCamera,
+  combineIntents,
+  geometryBytes,
+  loadGltf,
+  loopMotion,
+  motionKey,
+  partKey,
+  skeletonKey,
+  steer,
+} from '@flyffweb/scene';
+import type { AssembledCharacter, Gait, PlayerState } from '@flyffweb/scene';
+import type { AnimationAction } from 'three';
+import { LoopOnce, SkinnedMesh } from 'three';
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { loadGltf } from '../assets/loaders';
-import { assembleCharacter, loopMotion } from '../character/assemble';
-import type { AssembledCharacter } from '../character/assemble';
-import { DEFAULT_MALE, DEFAULT_MOTION, PART_SLOTS, motionKey, partKey, skeletonKey } from '../character/parts';
-import { Joystick } from '../input/joystick';
-import { KeyboardInput, combineIntents } from '../input/keyboard';
-import { geometryBytes } from '../overlay/gpuMemory';
 import type { ViewFactory } from '../router';
 import { registerLoadedTiles, registerWalkRoute } from '../testHooks';
-import { TerrainLighting } from './TerrainTile';
-import { d3dColor, noonLight } from './lighting';
-import { ObjectPool } from './objects';
-import { CHASE_PITCH, Route, chaseCamera, steer } from './player';
-import type { Gait, PlayerState } from './player';
-import { TileStreamer } from './tileStreamer';
 
 export const DEFAULT_WORLD = 'wdmadrigal';
 const DEFAULT_RADIUS = 1;
 const MAX_RADIUS = 4;
 
-/** The client's field of view, pi / 4 at zoom level 0 (CWorld::Projection, World3D.cpp:64), and near plane (:51). */
-const FOV_DEGREES = 45;
-const NEAR = 0.5;
 /** A frame longer than this (a tab in the background) moves the player as if it took this long. */
 const MAX_STEP_SECONDS = 1;
 /** The character's motions, by gait. */
@@ -158,11 +150,6 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** A grey of `level` as D3D stores it (0 to 1, more for an overbright light), in three.js' working colour space. */
-function grey(level: number): Color {
-  return new Color().setRGB(level, level, level, SRGBColorSpace);
-}
-
 interface Walk {
   route: Route;
   resolve: () => void;
@@ -173,28 +160,13 @@ export const worldView: ViewFactory = (ctx) => {
   const { renderer, store, overlay } = ctx;
   const params = readWorldParams(ctx.route.params);
 
-  const scene = new Scene();
-  const camera = new PerspectiveCamera(FOV_DEGREES, aspectOf(renderer), NEAR, 1000);
-
-  // The terrain is lit by its own shader in D3D's numbers; three.js lights do the models. Intensity pi undoes three's
-  // 1 / pi Lambert factor, so a light of level 1 gives the texture as it is, as in D3D.
-  const light = noonLight();
-  const lighting = new TerrainLighting();
-  lighting.ambient.setScalar(light.ambient);
-  lighting.sunColor.setScalar(light.sunColor);
-  lighting.sunDirection.set(...light.sunDirection);
-  const ambient = new AmbientLight(grey(light.ambient), Math.PI);
-  const sun = new DirectionalLight(grey(light.sunColor), Math.PI);
-  sun.position.set(...light.sunDirection);
-  scene.add(ambient, sun);
-
   const keyboard = new KeyboardInput(window);
   const joystick = new Joystick(ctx.container);
-  const pool = new ObjectPool(store, ctx.loaders, ctx.textures, overlay);
 
   const player: PlayerState = { x: 0, z: 0, heading: 0 };
   let height = 0;
-  let streamer: TileStreamer | null = null;
+  /** Null until the world's manifest has arrived (and for good when it cannot be had). */
+  let stage: WorldStage | null = null;
   let character: AssembledCharacter | null = null;
   let characterParts = 0;
   let characterBytes = 0;
@@ -203,7 +175,7 @@ export const worldView: ViewFactory = (ctx) => {
   let walk: Walk | null = null;
   let disposed = false;
 
-  registerLoadedTiles(() => streamer?.loaded() ?? []);
+  registerLoadedTiles(() => stage?.loadedTiles() ?? []);
   registerWalkRoute((points, speed) => {
     if (!(speed > 0)) return Promise.reject(new Error(`walkRoute: speed ${speed} is not a positive number`));
     walk?.reject(new Error('walkRoute: a newer route replaced this one'));
@@ -222,7 +194,8 @@ export const worldView: ViewFactory = (ctx) => {
     }
   };
 
-  const loadCharacter = async (): Promise<void> => {
+  /** Loads the character and stands it on `onto`'s scene. */
+  const loadCharacter = async (onto: WorldStage): Promise<void> => {
     const partKeys = PART_SLOTS.flatMap((slot) => {
       const stem = DEFAULT_MALE[slot];
       return stem === undefined ? [] : [partKey(stem)];
@@ -254,7 +227,7 @@ export const worldView: ViewFactory = (ctx) => {
       if (object instanceof SkinnedMesh) characterBytes += geometryBytes(object.geometry);
     });
     overlay.addGpuBytes(characterBytes);
-    scene.add(assembled.root);
+    onto.scene.add(assembled.root);
 
     gaits.forEach((g, i) => {
       const clip = motions[i]?.animations[0];
@@ -273,41 +246,31 @@ export const worldView: ViewFactory = (ctx) => {
   };
 
   const start = async (): Promise<void> => {
-    let manifest: WorldManifest;
+    let opened: WorldStage;
     try {
-      manifest = await store.manifest(params.world);
+      opened = await WorldStage.open(params.world, ctx, params.radius);
     } catch (error) {
       overlay.error(`world ${params.world}: ${messageOf(error)}`);
       return;
     }
-    if (disposed) return;
-
-    const sky = new Color().setRGB(...d3dColor(manifest.bgColor), SRGBColorSpace);
-    scene.background = sky;
-    scene.fog = new Fog(sky, manifest.fog.start, manifest.fog.end);
-    if (manifest.fog.end > NEAR) camera.far = manifest.fog.end;
-    camera.updateProjectionMatrix();
+    if (disposed) {
+      opened.dispose();
+      return;
+    }
 
     // the editor camera's angleX is its yaw (see the top of the file), unless the address says otherwise
-    const outside = outsideWorld(params, manifest);
+    const outside = outsideWorld(params, opened.manifest);
     if (outside !== null) overlay.error(`world ${params.world}: ${outside}`);
-    const pose = startPose(outside === null ? params : { ...params, x: null, z: null }, manifest.camera);
+    const pose = startPose(outside === null ? params : { ...params, x: null, z: null }, opened.manifest.camera);
     player.x = pose.x;
     player.z = pose.z;
     player.heading = pose.heading;
 
-    const tiles = new TileStreamer(params.world, manifest, store, scene, {
-      textures: ctx.textures,
-      objects: pool,
-      overlay,
-      lighting,
-      radius: params.radius,
-    });
-    streamer = tiles;
+    stage = opened;
     const at: Vec3 = [player.x, 0, player.z];
-    tiles.update(at);
-    await Promise.all([tiles.ready(), loadCharacter()]);
-    height = tiles.heightAt(at) ?? 0;
+    opened.focus(at);
+    await Promise.all([opened.ready(), loadCharacter(opened)]);
+    height = opened.heightAt(at) ?? 0;
   };
 
   const ready = start().catch((error: unknown) => overlay.error(`world: ${messageOf(error)}`));
@@ -325,48 +288,45 @@ export const worldView: ViewFactory = (ctx) => {
   return {
     ready,
     frame(dt) {
-      const aspect = aspectOf(renderer);
-      if (aspect !== camera.aspect) {
-        camera.aspect = aspect;
-        camera.updateProjectionMatrix();
+      const current = stage;
+      // nothing to draw until the world's manifest is in (or ever, if it cannot be had)
+      if (current === null) {
+        renderer.clear();
+        return;
       }
-      if (streamer !== null) {
-        const step = Math.min(Math.max(dt, 0), MAX_STEP_SECONDS);
-        let next: Gait = 'stand';
-        let arrived: Walk | null = null;
-        if (walk !== null) {
-          if (walk.route.step(player, step)) {
-            arrived = walk;
-            walk = null;
-          } else next = walk.route.gait;
-        } else if (!params.paused) {
-          next = steer(player, combineIntents(keyboard.intent(), joystick.intent()), step);
-        }
-
-        const at: Vec3 = [player.x, height, player.z];
-        streamer.update(at);
-        height = streamer.heightAt(at) ?? height;
-        at[1] = height;
-
-        if (character !== null) {
-          character.root.position.set(at[0], at[1], at[2]);
-          // the model faces +z; heading 0 faces -z
-          character.root.rotation.y = Math.PI - player.heading;
-          setGait(next);
-          if (!params.paused) character.mixer.update(step);
-        }
-        const ground = streamer;
-        const view = chaseCamera(at, player.heading, CHASE_PITCH, (gx, gz) => ground.heightAt([gx, 0, gz]));
-        camera.position.set(...view.position);
-        camera.lookAt(...view.target);
-        pool.update(view.position);
-        // resolved once the tiles around the end point are asked for
-        arrived?.resolve();
+      const step = Math.min(Math.max(dt, 0), MAX_STEP_SECONDS);
+      let next: Gait = 'stand';
+      let arrived: Walk | null = null;
+      if (walk !== null) {
+        if (walk.route.step(player, step)) {
+          arrived = walk;
+          walk = null;
+        } else next = walk.route.gait;
+      } else if (!params.paused) {
+        next = steer(player, combineIntents(keyboard.intent(), joystick.intent()), step);
       }
-      renderer.render(scene, camera);
+
+      const at: Vec3 = [player.x, height, player.z];
+      current.focus(at);
+      height = current.heightAt(at) ?? height;
+      at[1] = height;
+
+      if (character !== null) {
+        character.root.position.set(at[0], at[1], at[2]);
+        // the model faces +z; heading 0 faces -z
+        character.root.rotation.y = Math.PI - player.heading;
+        setGait(next);
+        if (!params.paused) character.mixer.update(step);
+      }
+      const view = chaseCamera(at, player.heading, CHASE_PITCH, (gx, gz) => current.heightAt([gx, 0, gz]));
+      current.setCamera(view.position, view.target);
+      // resolved once the tiles around the end point are asked for
+      arrived?.resolve();
+      current.render();
     },
     counts() {
-      return { tiles: streamer?.count() ?? 0, models: pool.modelCount() + characterParts };
+      const { tiles, models } = stage?.counts() ?? { tiles: 0, models: 0 };
+      return { tiles, models: models + characterParts };
     },
     dispose() {
       disposed = true;
@@ -376,24 +336,14 @@ export const worldView: ViewFactory = (ctx) => {
       walk = null;
       keyboard.dispose();
       joystick.dispose();
-      streamer?.dispose();
-      streamer = null;
-      pool.dispose();
+      stage?.dispose();
       if (character !== null) {
-        scene.remove(character.root);
+        character.root.removeFromParent();
         character.release();
         overlay.addGpuBytes(-characterBytes);
         character = null;
       }
-      sun.dispose();
-      ambient.dispose();
+      stage = null;
     },
   };
 };
-
-const drawingSize = new Vector2();
-
-function aspectOf(renderer: WebGLRenderer): number {
-  const size = renderer.getSize(drawingSize);
-  return size.y > 0 ? size.x / size.y : 1;
-}

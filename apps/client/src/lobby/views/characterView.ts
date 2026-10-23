@@ -7,6 +7,8 @@ export interface CharacterViewOptions {
   characters: CharacterSummary[];
   /** The player picked an empty slot. */
   onCreate(slot: number): void;
+  /** The player pressed Enter on a character. */
+  onEnter(character: CharacterSummary): void;
   onDelete(character: CharacterSummary): void;
   onChangeChannel(): void;
   onLogout(): void;
@@ -19,6 +21,8 @@ function slotItem(slot: number, character: CharacterSummary | undefined, options
     create.addEventListener('click', () => options.onCreate(slot));
     return h('li', { class: 'slot' }, label, create);
   }
+  const enter = h('button', { type: 'button', class: 'btn primary slot-enter', 'aria-label': `Enter ${character.name}` }, 'Enter');
+  enter.addEventListener('click', () => options.onEnter(character));
   const remove = h('button', { type: 'button', class: 'btn danger-outline', 'aria-label': `Delete ${character.name}` }, 'Delete');
   remove.addEventListener('click', () => options.onDelete(character));
   return h(
@@ -31,6 +35,7 @@ function slotItem(slot: number, character: CharacterSummary | undefined, options
       h('div', { class: 'slot-info' }, h('strong', { class: 'slot-name' }, character.name), h('span', {}, `Level ${character.level} · Job ${character.job}`)),
       remove,
     ),
+    enter,
   );
 }
 

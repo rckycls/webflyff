@@ -182,7 +182,8 @@ describe('run', () => {
       },
     };
     expect(await run({ client: clientDir, out: outDir, jobs: 1, stages: [quiet], log })).toBe(0);
-    expect(await run({ client: clientDir, out: outDir, jobs: 1, log })).toBe(0);
+    // (the default stages need a real client's game data, which this near-empty client has not: no stages at all)
+    expect(await run({ client: clientDir, out: outDir, jobs: 1, stages: [], log })).toBe(0);
     expect(logged.join('\n')).toContain('0 failed');
   });
 
@@ -269,7 +270,7 @@ describe('run', () => {
 
   it('reports an unreadable index.json as a warning in report.json and carries on', async () => {
     await fs.writeFile(path.join(outDir, 'index.json'), 'garbage{');
-    expect(await run({ client: clientDir, out: outDir, jobs: 1, log })).toBe(0);
+    expect(await run({ client: clientDir, out: outDir, jobs: 1, stages: [], log })).toBe(0);
 
     const report = JSON.parse(await fs.readFile(path.join(outDir, 'report.json'), 'utf8'));
     expect(report.warnings).toHaveLength(1);

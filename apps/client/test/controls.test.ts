@@ -1,0 +1,550 @@
+import { BoxGeometry, Mesh, PerspectiveCamera } from 'three';
+import type { Raycaster } from 'three';
+import { describe, expect, it, vi } from 'vitest';
+import { toWebPosition } from '@flyffweb/formats';
+import type { Vec3 } from '@flyffweb/formats';
+import { NO_INTENT, joystickIntent } from '@flyffweb/scene';
+import type { MoveIntent } from '@flyffweb/scene';
+import { STANDING, TapToWalk, desiredFrom, driveOwnMover, restingIn } from '../src/world/controls';
+import type { Desired } from '../src/world/controls';
+import { pickGround } from '../src/world/render/picking';
+import { ActionMover } from '../src/world/sim/ActionMover';
+import { terrainGround } from '../src/world/sim/collision';
+import { ActMsg, ObjSta, ObjStaF } from '../src/world/sim/constants';
+import { setDestPos } from '../src/world/sim/moverRules';
+import type { SimMover } from '../src/world/sim/moverRules';
+
+/** An own mover at the origin facing 90 degrees, running 0.1 a step; `walking` is the server's starting mode. */
+function ownMover(walking: boolean): ActionMover {
+  const act = new ActionMover({ pos: [0, 0, 0], angle: 90, speed: 0.1 });
+  if (walking) act.stateFlag |= ObjStaF.WALK;
+  return act;
+}
+
+const intent = (forward: number, turn: number, run: boolean): MoveIntent => ({ forward, turn, run });
+const desired = (move: Desired['move'], turn: Desired['turn'], walk: boolean): Desired => ({ move, turn, walk });
+const NOTHING = { moved: false, behavior: false };
+
+describe('desiredFrom', () => {
+  it('reads forward and back from the sign of forward', () => {
+    expect(desiredFrom(intent(1, 0, false)).move).toBe('forward');
+    expect(desiredFrom(intent(0.2, 0, false)).move).toBe('forward');
+    expect(desiredFrom(intent(-1, 0, false)).move).toBe('back');
+    expect(desiredFrom(intent(0, 0, false)).move).toBe('stand');
+  });
+
+  it('turns right for a positive turn and left for a negative one', () => {
+    expect(desiredFrom(intent(0, 1, false)).turn).toBe('right');
+    expect(desiredFrom(intent(0, -0.5, false)).turn).toBe('left');
+    expect(desiredFrom(intent(0, 0, false)).turn).toBe('none');
+  });
+
+  it('walks unless running', () => {
+    expect(desiredFrom(intent(1, 0, false)).walk).toBe(true);
+    expect(desiredFrom(intent(1, 0, true)).walk).toBe(false);
+  });
+
+  it('a forward push walks, a full push runs', () => {
+    expect(desiredFrom(joystickIntent(0, -30))).toEqual(desired('forward', 'none', true));
+    expect(desiredFrom(joystickIntent(0, -60))).toEqual(desired('forward', 'none', false));
+  });
+
+  it('a push inside the dead zone asks for nothing', () => {
+    expect(desiredFrom(joystickIntent(2, -2))).toEqual(desired('stand', 'none', true));
+  });
+
+  it('the keys are on or off whatever was asked before: the stick\'s memory never holds a key that was let go', () => {
+    expect(desiredFrom(intent(1, 1, false))).toEqual(desired('forward', 'right', true));
+    expect(desiredFrom(intent(-1, -1, true))).toEqual(desired('back', 'left', false));
+    // letting go keeps the mode the move had (Ruling 40)
+    expect(desiredFrom(intent(0, 0, false), desired('forward', 'right', false))).toEqual(desired('stand', 'none', false));
+    expect(desiredFrom(intent(1, 0, false), desired('back', 'left', true))).toEqual(desired('forward', 'none', true));
+    expect(desiredFrom(intent(0, 1, false), desired('forward', 'left', true))).toEqual(desired('stand', 'right', true));
+  });
+
+  it('with no move or turn held the mode is the one before: letting go or the run key alone asks for no change (Ruling 40)', () => {
+    // after a run, at rest, and the run key let go at rest: still running
+    expect(desiredFrom(intent(0, 0, false), desired('forward', 'none', false)).walk).toBe(false);
+    expect(desiredFrom(intent(0, 0, false), desired('stand', 'none', false)).walk).toBe(false);
+    // the run key alone at rest does not run
+    expect(desiredFrom(intent(0, 0, true), desired('stand', 'none', true)).walk).toBe(true);
+    // a move or a turn takes the mode it is held with
+    expect(desiredFrom(intent(0, 1, false), desired('stand', 'none', false)).walk).toBe(true);
+    expect(desiredFrom(intent(1, 0, true), desired('stand', 'none', true)).walk).toBe(false);
+    // a full push of the joystick runs, and its mode stays once the thumb lifts
+    const ran = desiredFrom(joystickIntent(0, -60));
+    expect(ran.walk).toBe(false);
+    expect(desiredFrom(NO_INTENT, ran)).toEqual(desired('stand', 'none', false));
+  });
+
+  it('restingIn: nothing held, in the mode the mover has', () => {
+    expect(restingIn(ownMover(true))).toEqual(desired('stand', 'none', true));
+    expect(restingIn(ownMover(false))).toEqual(desired('stand', 'none', false));
+  });
+});
+
+/**
+ * A thumb on the joystick, one frame per point: each push through `joystickIntent` (which remembers the last one, as the
+ * `Joystick` does) and `desiredFrom` (which remembers the last `Desired`, as the world screen does), then into the own
+ * mover a step at a time. Returns what each frame asked for and how many PLAYERMOVED and PLAYERBEHAVIOR it would send.
+ */
+function thumb(points: [number, number][]): { asked: Desired[]; moved: number; behavior: number } {
+  const act = ownMover(true);
+  let push: MoveIntent = { ...NO_INTENT };
+  let last = STANDING;
+  const asked: Desired[] = [];
+  let moved = 0;
+  let behavior = 0;
+  for (const [dx, dy] of points) {
+    push = joystickIntent(dx, dy, push);
+    last = desiredFrom(push, last);
+    asked.push(last);
+    const sent = driveOwnMover(act, last, true);
+    moved += Number(sent.moved);
+    behavior += Number(sent.behavior);
+    act.step();
+  }
+  return { asked, moved, behavior };
+}
+
+/** `n` frames alternating between two points. */
+const jitter = (a: [number, number], b: [number, number], n = 60): [number, number][] =>
+  Array.from({ length: n }, (_, i) => (i % 2 === 0 ? a : b));
+/** How many frames asked for something else than the frame before, by `key`. */
+const switches = (asked: Desired[], key: keyof Desired): number =>
+  asked.filter((d, i) => i > 0 && d[key] !== asked[i - 1]![key]).length;
+
+describe('desiredFrom: the joystick', () => {
+  it('a push nearly straight up walks straight, with no turn', () => {
+    expect(desiredFrom(joystickIntent(3, -50))).toEqual(desired('forward', 'none', true));
+    expect(desiredFrom(joystickIntent(-3, -50))).toEqual(desired('forward', 'none', true));
+    expect(desiredFrom(joystickIntent(3, 50))).toEqual(desired('back', 'none', true));
+  });
+
+  it('a push nearly straight sideways turns in place, with no move', () => {
+    expect(desiredFrom(joystickIntent(50, -3))).toEqual(desired('stand', 'right', true));
+    expect(desiredFrom(joystickIntent(-50, 3))).toEqual(desired('stand', 'left', true));
+  });
+
+  it('a diagonal push walks and turns, as W and D together', () => {
+    expect(desiredFrom(joystickIntent(35, -35))).toEqual(desired('forward', 'right', true));
+    expect(desiredFrom(joystickIntent(-35, 35))).toEqual(desired('back', 'left', true));
+  });
+
+  it('a gentle push walks however short it is, once it is out of the dead zone', () => {
+    expect(desiredFrom(joystickIntent(0, -10))).toEqual(desired('forward', 'none', true));
+    expect(desiredFrom(joystickIntent(10, 0))).toEqual(desired('stand', 'right', true));
+  });
+
+  it('a thumb wobbling across straight up does not turn', () => {
+    const { asked, moved } = thumb(jitter([1, -50], [-1, -50]));
+    expect(new Set(asked.map((d) => d.turn))).toEqual(new Set(['none']));
+    expect(moved).toBe(1); // the first FORWARD
+  });
+
+  it('a thumb on the edge between walking straight and turning switches once, not every frame', () => {
+    // 20 px across and 46 up is just short of where turning starts, 21 px just past it
+    expect(desiredFrom(joystickIntent(20, -46)).turn).toBe('none');
+    expect(desiredFrom(joystickIntent(21, -46)).turn).toBe('right');
+    const { asked, moved } = thumb(jitter([20, -46], [21, -46]));
+    expect(switches(asked, 'turn')).toBe(1);
+    expect(moved).toBe(2); // FORWARD, then RTURN once
+  });
+
+  it('a thumb on the edge between turning in place and walking switches once, not every frame', () => {
+    expect(desiredFrom(joystickIntent(46, -20)).move).toBe('stand');
+    expect(desiredFrom(joystickIntent(46, -21)).move).toBe('forward');
+    const { asked, moved } = thumb(jitter([46, -20], [46, -21]));
+    expect(switches(asked, 'move')).toBe(1);
+    expect(moved).toBe(2); // RTURN, then FORWARD once
+  });
+
+  it('a push held at the run threshold, 1 px either side, does not switch between walking and running every frame', () => {
+    // 57 px is 0.95 of the 60 px radius, where running starts
+    expect(desiredFrom(joystickIntent(0, -56)).walk).toBe(true);
+    expect(desiredFrom(joystickIntent(0, -58)).walk).toBe(false);
+    const { asked, behavior } = thumb(jitter([0, -56], [0, -58]));
+    expect(switches(asked, 'walk')).toBe(1);
+    expect(behavior).toBe(1); // MODE_RUN once
+  });
+
+  it('a thumb on the edge of the dead zone does not start and stop every frame', () => {
+    // 9 px is 0.15 of the radius, the dead zone's edge: 10 px starts a walk, 8 px would not
+    expect(desiredFrom(joystickIntent(0, -8)).move).toBe('stand');
+    const { asked, moved } = thumb(jitter([0, -10], [0, -8]));
+    expect(switches(asked, 'move')).toBe(0);
+    expect(moved).toBe(1); // the first FORWARD
+  });
+});
+
+describe('driveOwnMover', () => {
+  it('a forward push walks, a full push runs', () => {
+    // the player ran before: a half push is a walk, so MODE_WALK goes out with the move
+    const act = ownMover(false);
+    expect(driveOwnMover(act, desiredFrom(joystickIntent(0, -30)), true)).toEqual({ moved: true, behavior: true });
+    expect(act.stateFlag & ObjStaF.WALK).toBeTruthy();
+    for (let i = 0; i < 60; i++) act.step();
+    expect(act.body.pos[0]).toBeCloseTo(1.5, 4);
+
+    // pushing on to the end of the stick runs: only the behavior changes, the move is already on
+    expect(driveOwnMover(act, desiredFrom(joystickIntent(0, -60)), true)).toEqual({ moved: false, behavior: true });
+    expect(act.stateFlag & ObjStaF.WALK).toBeFalsy();
+    const before = act.body.pos[0];
+    for (let i = 0; i < 60; i++) act.step();
+    expect(act.body.pos[0] - before).toBeCloseTo(6, 4);
+  });
+
+  it('starting to run sends moved and behavior once, holding it sends nothing', () => {
+    const act = ownMover(true);
+    const run = desired('forward', 'none', false);
+    expect(driveOwnMover(act, run, true)).toEqual({ moved: true, behavior: true });
+    expect(act.state & ObjSta.MOVE_ALL).toBe(ObjSta.FMOVE);
+    expect(act.stateFlag & ObjStaF.WALK).toBe(0);
+    for (let i = 0; i < 3; i++) {
+      act.step();
+      expect(driveOwnMover(act, run, true)).toEqual(NOTHING);
+    }
+  });
+
+  it('turning while running sends moved', () => {
+    const act = ownMover(false);
+    const run = desired('forward', 'none', false);
+    driveOwnMover(act, run, true);
+    expect(driveOwnMover(act, desired('forward', 'right', false), true)).toEqual({ moved: true, behavior: false });
+    expect(act.state & ObjSta.TURN_ALL).toBe(ObjSta.RTURN);
+    // the turn is held: nothing more to send, and it keeps turning right
+    act.step();
+    expect(driveOwnMover(act, desired('forward', 'right', false), true)).toEqual(NOTHING);
+    // and it turns the other way when the player does
+    expect(driveOwnMover(act, desired('forward', 'left', false), true)).toEqual({ moved: true, behavior: false });
+    expect(act.state & ObjSta.TURN_ALL).toBe(ObjSta.LTURN);
+  });
+
+  it('walks backward with a back push, and sends moved once', () => {
+    const act = ownMover(false);
+    const back = desired('back', 'none', false);
+    expect(driveOwnMover(act, back, true)).toEqual({ moved: true, behavior: false });
+    expect(act.state & ObjSta.MOVE_ALL).toBe(ObjSta.BMOVE);
+    act.step();
+    expect(driveOwnMover(act, back, true)).toEqual(NOTHING);
+  });
+
+  it('going from back to forward sends FORWARD, which is moved', () => {
+    const act = ownMover(false);
+    driveOwnMover(act, desired('back', 'none', false), true);
+    expect(driveOwnMover(act, desired('forward', 'none', false), true)).toEqual({ moved: true, behavior: false });
+    expect(act.state & ObjSta.MOVE_ALL).toBe(ObjSta.FMOVE);
+  });
+
+  it('releasing forward sends STAND, which is moved', () => {
+    const act = ownMover(false);
+    driveOwnMover(act, desired('forward', 'none', false), true);
+    act.step();
+    expect(driveOwnMover(act, desired('stand', 'none', false), true)).toEqual({ moved: true, behavior: false });
+    expect(act.state & ObjSta.MOVE_ALL).toBe(ObjSta.STAND);
+    // standing already: STAND answers 0, so nothing is sent
+    act.step();
+    expect(driveOwnMover(act, desired('stand', 'none', false), true)).toEqual(NOTHING);
+  });
+
+  it('releasing a turn sends STOP_TURN, which is moved', () => {
+    const act = ownMover(false);
+    driveOwnMover(act, desired('stand', 'left', false), true);
+    expect(act.state & ObjSta.TURN_ALL).toBe(ObjSta.LTURN);
+    act.step();
+    expect(driveOwnMover(act, desired('stand', 'none', false), true)).toEqual({ moved: true, behavior: false });
+    expect(act.state & ObjSta.TURN_ALL).toBe(0);
+    // no turn left to stop: STOP_TURN answers 0
+    expect(driveOwnMover(act, desired('stand', 'none', false), true)).toEqual(NOTHING);
+  });
+
+  it('stopping a turn while the move goes on is moved', () => {
+    const act = ownMover(false);
+    driveOwnMover(act, desired('forward', 'left', false), true);
+    act.step();
+    expect(driveOwnMover(act, desired('forward', 'none', false), true)).toEqual({ moved: true, behavior: false });
+    expect(act.state & ObjSta.TURN_ALL).toBe(0);
+  });
+
+  it('standing, nothing held and the run key alone change no mode; a turn takes the mode it is held with (Ruling 40)', () => {
+    // the server has the player standing, running: the first idle step, from the mover's own mode, sends nothing
+    const act = ownMover(false);
+    act.state = ObjSta.STAND;
+    let asked = desiredFrom(intent(0, 0, false), restingIn(act));
+    expect(driveOwnMover(act, asked, true)).toEqual(NOTHING);
+    asked = desiredFrom(intent(0, 0, true), asked);
+    expect(driveOwnMover(act, asked, true)).toEqual(NOTHING);
+    expect(act.stateFlag & ObjStaF.WALK).toBe(0);
+    // turning in place without the run key walks: the turn and the mode go out together
+    asked = desiredFrom(intent(0, -1, false), asked);
+    expect(driveOwnMover(act, asked, true)).toEqual({ moved: true, behavior: true });
+    expect(act.stateFlag & ObjStaF.WALK).toBeTruthy();
+    // letting go stops the turn and keeps walk mode
+    act.step();
+    asked = desiredFrom(intent(0, 0, false), asked);
+    expect(driveOwnMover(act, asked, true)).toEqual({ moved: true, behavior: false });
+    expect(act.stateFlag & ObjStaF.WALK).toBeTruthy();
+  });
+
+  it('an explicit change of mode while standing sends behavior only', () => {
+    const act = ownMover(false);
+    act.state = ObjSta.STAND;
+    expect(driveOwnMover(act, desired('stand', 'none', true), true)).toEqual({ moved: false, behavior: true });
+    expect(act.stateFlag & ObjStaF.WALK).toBeTruthy();
+    expect(driveOwnMover(act, desired('stand', 'none', false), true)).toEqual({ moved: false, behavior: true });
+    expect(act.stateFlag & ObjStaF.WALK).toBe(0);
+  });
+
+  it('does not send STAND while jumping', () => {
+    const act = ownMover(false);
+    act.state = ObjSta.SJUMP3;
+    let sent = 0;
+    const send = act.sendActMsg.bind(act);
+    act.sendActMsg = (msg: number, ...params: number[]): boolean => {
+      if (msg === ActMsg.STAND) sent++;
+      return send(msg, ...params);
+    };
+    driveOwnMover(act, desired('stand', 'none', false), true);
+    expect(sent).toBe(0);
+    expect(act.state).toBe(ObjSta.SJUMP3);
+  });
+
+  it('does not send STAND while sitting', () => {
+    const act = ownMover(false);
+    expect(act.sendActMsg(ActMsg.SITDOWN)).toBe(true);
+    act.step();
+    expect(act.state & ObjSta.MOVE_ALL).toBe(ObjSta.SIT);
+    expect(driveOwnMover(act, desired('stand', 'none', false), true)).toEqual(NOTHING);
+    expect(act.state & ObjSta.MOVE_ALL).toBe(ObjSta.SIT);
+    expect(act.stateFlag & ObjStaF.SIT).toBeTruthy();
+  });
+
+  it('a forward push while sitting changes nothing and sends nothing', () => {
+    const act = ownMover(false);
+    act.sendActMsg(ActMsg.SITDOWN);
+    act.step();
+    expect(driveOwnMover(act, desired('forward', 'none', false), true)).toEqual(NOTHING);
+    expect(act.state & ObjSta.MOVE_ALL).toBe(ObjSta.SIT);
+  });
+
+  it('moves before it turns before it changes gait: one call, one state', () => {
+    // from standing and walking, a full-stick push right and forward sends all three, and the state shows all three
+    const act = ownMover(true);
+    expect(driveOwnMover(act, desired('forward', 'right', false), true)).toEqual({ moved: true, behavior: true });
+    expect(act.state & ObjSta.MOVE_ALL).toBe(ObjSta.FMOVE);
+    expect(act.state & ObjSta.TURN_ALL).toBe(ObjSta.RTURN);
+    expect(act.stateFlag & ObjStaF.WALK).toBe(0);
+  });
+});
+
+/** An own mover at (100, 0, 100) facing 90 degrees and walking, on its way to a point 10 m ahead (`setDestPos`). */
+function walkingToAPoint(): SimMover {
+  const m: SimMover = {
+    objectId: 1, act: new ActionMover({ pos: [100, 0, 100], angle: 90, speed: 0.1 }), dest: null, corr: null,
+    speedFactor: 1, isSelf: true,
+  };
+  m.act.stateFlag |= ObjStaF.WALK;
+  setDestPos(m, [110, 0, 100], true);
+  // CMover::ProcessMove's TURNMOVE: it goes there
+  m.act.sendActMsg(ActMsg.TURNMOVE, 90);
+  return m;
+}
+
+describe('driveOwnMover with a destination (WndWorldControlPlayer.cpp:450-465, :548-553)', () => {
+  it('sends no STAND while the own mover walks to its destination, and keeps it', () => {
+    const m = walkingToAPoint();
+    for (let i = 0; i < 10; i++) {
+      expect(driveOwnMover(m.act, STANDING, false)).toEqual(NOTHING);
+      m.act.step();
+    }
+    expect(m.act.state & ObjSta.MOVE_ALL).toBe(ObjSta.FMOVE);
+    expect(m.dest?.pos).toEqual([110, 0, 100]);
+  });
+
+  it('a key that sends a move clears the destination', () => {
+    const m = walkingToAPoint();
+    expect(driveOwnMover(m.act, desired('forward', 'left', true), false)).toEqual({ moved: true, behavior: false });
+    expect(m.dest).toBeNull();
+    // with the destination gone, letting go stands the mover as before
+    expect(driveOwnMover(m.act, STANDING, true)).toEqual({ moved: true, behavior: false });
+    expect(m.act.state & ObjSta.MOVE_ALL).toBe(ObjSta.STAND);
+  });
+
+  it('a gait change alone clears it too (fBehavior)', () => {
+    const m = walkingToAPoint();
+    expect(driveOwnMover(m.act, desired('stand', 'none', false), false)).toEqual({ moved: false, behavior: true });
+    expect(m.dest).toBeNull();
+  });
+
+  it('forward, which the walk is already, sends nothing and keeps it, as in Neuz (FORWARD answers 0)', () => {
+    const m = walkingToAPoint();
+    expect(driveOwnMover(m.act, desired('forward', 'none', true), false)).toEqual(NOTHING);
+    expect(m.dest?.pos).toEqual([110, 0, 100]);
+  });
+});
+
+/** Just enough of a canvas for `TapToWalk`: its listeners and a 200 x 100 px box at (10, 20). */
+class FakeCanvas {
+  readonly listeners = new Map<string, (event: unknown) => void>();
+  addEventListener(type: string, listener: (event: unknown) => void): void {
+    this.listeners.set(type, listener);
+  }
+  removeEventListener(type: string, listener: (event: unknown) => void): void {
+    if (this.listeners.get(type) === listener) this.listeners.delete(type);
+  }
+  getBoundingClientRect(): { left: number; top: number; width: number; height: number } {
+    return { left: 10, top: 20, width: 200, height: 100 };
+  }
+  /** A pointer event at (x, y) on the page, `time` ms in; by default the main mouse button or the first finger. */
+  fire(type: string, x: number, y: number, time: number, extra: Record<string, unknown> = {}): void {
+    this.listeners.get(type)?.({ pointerId: 1, isPrimary: true, button: 0, clientX: x, clientY: y, timeStamp: time, ...extra });
+  }
+}
+
+function tapToWalk(pick: (ndcX: number, ndcY: number) => Vec3 | null = () => [1, 2, 3]) {
+  const canvas = new FakeCanvas();
+  const spy = vi.fn(pick);
+  const tap = new TapToWalk(canvas as unknown as HTMLElement, spy);
+  return { canvas, pick: spy, tap };
+}
+
+describe('TapToWalk', () => {
+  it('a tap gives the picked point', () => {
+    const { canvas, pick, tap } = tapToWalk();
+    expect(tap.take()).toBeNull();
+    // pressed in the middle of the canvas, let go 2 px away 100 ms later
+    canvas.fire('pointerdown', 110, 70, 1000);
+    canvas.fire('pointerup', 112, 70, 1100);
+    expect(pick).toHaveBeenCalledTimes(1);
+    expect(pick).toHaveBeenCalledWith(0, 0);
+    expect(tap.take()).toEqual([1, 2, 3]);
+    // once: the next take has nothing new
+    expect(tap.take()).toBeNull();
+
+    // the corners: x from -1 (left) to 1, y from 1 (top) to -1, where the press was
+    canvas.fire('pointerdown', 10, 20, 2000);
+    canvas.fire('pointerup', 10, 20, 2010);
+    canvas.fire('pointerdown', 210, 120, 3000);
+    canvas.fire('pointerup', 210, 120, 3010);
+    expect(pick.mock.calls.slice(1)).toEqual([[-1, 1], [1, -1]]);
+    expect(tap.take()).toEqual([1, 2, 3]);
+  });
+
+  it('a drag is not a tap', () => {
+    const { canvas, pick, tap } = tapToWalk();
+    // moved more than 8 px on the way, though let go where it started
+    canvas.fire('pointerdown', 100, 50, 0);
+    canvas.fire('pointermove', 109, 50, 50);
+    canvas.fire('pointerup', 100, 50, 100);
+    // let go more than 8 px away
+    canvas.fire('pointerdown', 100, 50, 1000);
+    canvas.fire('pointerup', 106, 56, 1100);
+    // held longer than 300 ms
+    canvas.fire('pointerdown', 100, 50, 2000);
+    canvas.fire('pointerup', 100, 50, 2301);
+    expect(pick).not.toHaveBeenCalled();
+    expect(tap.take()).toBeNull();
+
+    // 8 px and 300 ms are still a tap
+    canvas.fire('pointerdown', 100, 50, 3000);
+    canvas.fire('pointermove', 108, 50, 3100);
+    canvas.fire('pointerup', 100, 58, 3300);
+    expect(pick).toHaveBeenCalledTimes(1);
+    expect(tap.take()).toEqual([1, 2, 3]);
+  });
+
+  it("only the main button or a lone finger taps: not another button, a pinch, a cancel or another pointer's let-go", () => {
+    const { canvas, pick } = tapToWalk();
+    canvas.fire('pointerdown', 100, 50, 0, { button: 2 });
+    canvas.fire('pointerup', 100, 50, 10, { button: 2 });
+    // a pinch: the second finger ends the first one's tap, and is none itself
+    canvas.fire('pointerdown', 100, 50, 100, { pointerId: 5 });
+    canvas.fire('pointerdown', 150, 50, 110, { pointerId: 6, isPrimary: false });
+    canvas.fire('pointerup', 150, 50, 150, { pointerId: 6, isPrimary: false });
+    canvas.fire('pointerup', 100, 50, 160, { pointerId: 5 });
+    canvas.fire('pointerdown', 100, 50, 200);
+    canvas.fire('pointercancel', 100, 50, 210);
+    canvas.fire('pointerup', 100, 50, 220);
+    canvas.fire('pointerdown', 100, 50, 300, { pointerId: 7 });
+    canvas.fire('pointerup', 100, 50, 310, { pointerId: 8 });
+    expect(pick).not.toHaveBeenCalled();
+  });
+
+  it('a tap that picks nothing gives nothing, and leaves a tap not yet taken as it is', () => {
+    let point: Vec3 | null = [4, 5, 6];
+    const { canvas, tap } = tapToWalk(() => point);
+    canvas.fire('pointerdown', 100, 50, 0);
+    canvas.fire('pointerup', 100, 50, 10);
+    point = null;
+    canvas.fire('pointerdown', 100, 50, 100);
+    canvas.fire('pointerup', 100, 50, 110);
+    expect(tap.take()).toEqual([4, 5, 6]);
+    canvas.fire('pointerdown', 100, 50, 200);
+    canvas.fire('pointerup', 100, 50, 210);
+    expect(tap.take()).toBeNull();
+  });
+
+  it('a pick that throws gives nothing, and its error goes to report (or is thrown without one)', () => {
+    const canvas = new FakeCanvas();
+    const report = vi.fn();
+    const tap = new TapToWalk(canvas as unknown as HTMLElement, () => {
+      throw new Error('no ground');
+    }, report);
+    canvas.fire('pointerdown', 100, 50, 0);
+    canvas.fire('pointerup', 100, 50, 10);
+    expect(report).toHaveBeenCalledWith(new Error('no ground'));
+    expect(tap.take()).toBeNull();
+
+    const { canvas: other } = tapToWalk(() => {
+      throw new Error('no ground');
+    });
+    other.fire('pointerdown', 100, 50, 0);
+    expect(() => other.fire('pointerup', 100, 50, 10)).toThrow('no ground');
+  });
+
+  it('reset forgets a press under way and a tap not yet taken; dispose stops listening', () => {
+    const { canvas, pick, tap } = tapToWalk();
+    canvas.fire('pointerdown', 100, 50, 0);
+    canvas.fire('pointerup', 100, 50, 10);
+    canvas.fire('pointerdown', 100, 50, 100);
+    tap.reset();
+    canvas.fire('pointerup', 100, 50, 110);
+    expect(tap.take()).toBeNull();
+    expect(pick).toHaveBeenCalledTimes(1);
+    tap.dispose();
+    expect(canvas.listeners.size).toBe(0);
+  });
+
+  it('a tap on a mover gives nothing', () => {
+    // flat land at height 5 (D3D); the camera 10 m over (100, 100), looking straight down at it
+    const ground = terrainGround(() => 5);
+    const camera = new PerspectiveCamera(45, 2, 0.5, 1000);
+    camera.position.set(...toWebPosition([100, 15, 100]));
+    camera.lookAt(...toWebPosition([100, 5, 100.001]));
+    camera.updateMatrixWorld();
+    // a mover 1.8 m tall standing on that spot
+    const mover = new Mesh(new BoxGeometry(0.6, 1.8, 0.6));
+    mover.position.set(...toWebPosition([100, 5.9, 100]));
+    mover.updateMatrixWorld();
+    let moverThere = false;
+    const moverAt = (raycaster: Raycaster): number | null =>
+      moverThere ? (raycaster.intersectObject(mover)[0]?.distance ?? null) : null;
+    const { canvas, tap } = tapToWalk((x, y) => pickGround(camera, x, y, ground, 4, moverAt));
+
+    canvas.fire('pointerdown', 110, 70, 0);
+    canvas.fire('pointerup', 110, 70, 10);
+    const point = tap.take()!;
+    expect(point[0]).toBeCloseTo(100, 3);
+    expect(point[1]).toBeCloseTo(5, 4);
+    expect(point[2]).toBeCloseTo(100, 2);
+
+    moverThere = true;
+    canvas.fire('pointerdown', 110, 70, 100);
+    canvas.fire('pointerup', 110, 70, 110);
+    expect(tap.take()).toBeNull();
+    // beside the mover, the ground is picked as before
+    canvas.fire('pointerdown', 170, 70, 200);
+    canvas.fire('pointerup', 170, 70, 210);
+    expect(tap.take()).not.toBeNull();
+  });
+});

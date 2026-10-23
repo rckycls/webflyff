@@ -1,21 +1,15 @@
 // The shell: overlay first (so anything that goes wrong shows on screen), then the renderer, the asset index, the
-// loaders and the texture cache, then the router. One renderer and canvas serve every route.
+// loaders and the texture cache (@flyffweb/scene's boot helpers), then the router. One renderer and canvas serve every
+// route.
 
-import { WebGLRenderer } from 'three';
-import { AssetStore } from './assets/AssetStore';
-import { TextureCache, createLoaders, loadKtx2 } from './assets/loaders';
+import { Overlay, createRenderer, installGlobalErrorHandlers, loadSceneServices } from '@flyffweb/scene';
+import type { SceneServices } from '@flyffweb/scene';
 import { characterView } from './character/CharacterView';
 import { compareView } from './compare/ComparePage';
-import { Overlay } from './overlay/Overlay';
-import { installContextLossHandlers, installGlobalErrorHandlers, installShaderErrorHandler } from './overlay/errorHandlers';
-import { trackDrawingBuffer } from './overlay/gpuMemory';
 import { Router } from './router';
 import type { RouteName, ViewFactory } from './router';
 import { installTestHooks, registerRenderer } from './testHooks';
 import { worldView } from './world/WorldView';
-
-const CLEAR_COLOR = 0x101418;
-const MAX_PIXEL_RATIO = 2;
 
 /** The views, by route. */
 const VIEWS: Record<RouteName, ViewFactory> = {
@@ -42,37 +36,14 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function createRenderer(container: HTMLElement): WebGLRenderer {
-  let renderer: WebGLRenderer;
-  try {
-    renderer = new WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-  } catch (error) {
-    throw new Error(`WebGL is not available: ${messageOf(error)}`, { cause: error });
-  }
-  installShaderErrorHandler(renderer, overlay);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, MAX_PIXEL_RATIO));
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setClearColor(CLEAR_COLOR);
-  installContextLossHandlers(renderer.domElement, overlay);
-  container.append(renderer.domElement);
-  // the canvas's own colour and depth buffers are GPU memory too, and they follow its size
-  const countDrawingBuffer = trackDrawingBuffer(renderer.getContext(), overlay);
-  countDrawingBuffer();
-  window.addEventListener('resize', () => {
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    countDrawingBuffer();
-  });
-  registerRenderer(renderer);
-  return renderer;
-}
-
 async function boot(): Promise<void> {
   const container = document.getElementById('app');
   if (container === null) throw new Error('index.html has no #app');
-  const renderer = createRenderer(container);
+  const renderer = createRenderer(container, overlay);
+  registerRenderer(renderer);
 
   // The frame loop starts before the index arrives, so the overlay is alive while assets load.
-  let textures: TextureCache | null = null;
+  let services: SceneServices | null = null;
   let lastError = '';
   let lastTime = performance.now();
   renderer.setAnimationLoop((now) => {
@@ -86,7 +57,7 @@ async function boot(): Promise<void> {
     }
     try {
       view.frame(dt);
-      overlay.setCounts({ tiles: 0, models: 0, ...view.counts?.(), textures: textures?.size() ?? 0 });
+      overlay.setCounts({ tiles: 0, models: 0, ...view.counts?.(), textures: services?.textures.size() ?? 0 });
     } catch (error) {
       // A view that throws every frame must not fill the overlay with the same line sixty times a second.
       const message = `view: ${messageOf(error)}`;
@@ -95,10 +66,8 @@ async function boot(): Promise<void> {
     }
   });
 
-  const store = await AssetStore.load();
-  const loaders = createLoaders(renderer);
-  textures = new TextureCache(store, (url) => loadKtx2(loaders.ktx2, url), overlay);
-  router = new Router({ container, renderer, store, loaders, textures, overlay }, VIEWS);
+  services = await loadSceneServices(renderer, overlay);
+  router = new Router({ container, ...services }, VIEWS);
   router.start();
 }
 

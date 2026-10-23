@@ -32,6 +32,19 @@ export interface WorldManifest {
   terrainTextures: string[];
   /** Logical keys; `WebTileObject.model` indexes this. */
   models: string[];
+  /**
+   * Parallel to `models`: the model turns see-through between the camera and the player (`MODELELEM::m_bTrans`, the
+   * `bTrans` column of mdlObj.inc, `CModelMng::LoadScript`, ModelMng.cpp:398), so the chase camera's object test
+   * passes through it. Missing in a manifest written before it existed; a missing entry is false.
+   */
+  modelTrans?: boolean[];
+  /**
+   * Parallel to `models`: a click on the model sets a destination on it (`MODELELEM::m_bPick`, the `bPick` column of
+   * mdlObj.inc, `CModelMng::LoadScript`, ModelMng.cpp:396, which `CWorld::PickObject`'s `bOnlyTopPick` reads); a click
+   * on any other model goes through it to what is behind. Missing in a manifest written before it existed; a missing
+   * entry is false.
+   */
+  modelPick?: boolean[];
   /** Tile `"x_y"` to its hashed path. A tile the world does not have is simply absent. */
   tiles: Record<string, string>;
 }

@@ -1,0 +1,102 @@
+--- a/Source/WORLDSERVER/Snapshot.h
++++ b/Source/WORLDSERVER/Snapshot.h
+@@ -7,6 +7,36 @@
+ //#include "BLQueue.h"
+ #include "mempooler.h"
+ #include <DPlay.h>
++#include <vector>
++
++// FlyffWeb (world-snapshot-index.patch): the message count of a bundle, in place of the short it was. It reads,
++// compares and is written into a CAr like that short. Each cb++ also records where the new message starts in the
++// snapshot's ar, for the table of contents that CSnapshot::AppendIndex appends. Setting it to 0 clears the starts.
++#define	SNAPSHOT_INDEX_MARKER	(DWORD)0x31434F54	// the bytes "TOC1"
++
++class CSnapshotCount
++{
++public:
++	explicit	CSnapshotCount( CAr & ar ) : m_ar( ar ), m_cb( 0 )	{}
++
++	CSnapshotCount&	operator=( int n )	{	m_cb	= (short)n;	if( n == 0 )	Clear();	return *this;	}
++	operator short() const	{	return m_cb;	}
++	short	operator++( int )	{	m_auStart.push_back( m_ar.GetOffset() );	return m_cb++;	}
++
++	int		Count( void ) const		{	return (int)m_auStart.size();	}
++	u_long	Start( int i ) const	{	return m_auStart[i];	}
++	void	Clear( void )			{	m_auStart.clear();	}
++
++private:
++	CAr&	m_ar;
++	short	m_cb;
++	std::vector<u_long>	m_auStart;	// each message's ar.GetOffset() at its cb++
++
++	CSnapshotCount( const CSnapshotCount & );	// not copied: m_ar is its own snapshot's
++	CSnapshotCount&	operator=( const CSnapshotCount & );
++};
++
++inline CAr& operator<<( CAr & ar, const CSnapshotCount & cb )	{	return ar << (short)cb;	}
+ 
+ class CSnapshot
+ {
+@@ -17,7 +47,7 @@
+ 	DPID	dpidCache;
+ 	DPID	dpidUser;
+ 	CAr		ar;
+-	short	cb;
++	CSnapshotCount	cb;		// FlyffWeb: was short cb (world-snapshot-index.patch)
+ public:
+ 	// Constructions
+ 	CSnapshot();
+@@ -26,6 +56,7 @@
+ 
+ 	// Operations
+ 	void	SetSnapshot( OBJID objid, DWORD dwHdr );
++	void	AppendIndex( u_long uFirst );	// FlyffWeb
+ 	void	Flush( void )
+ 		{
+ 			dpidCache	= dpidUser	= DPID_UNKNOWN;
+--- a/Source/WORLDSERVER/Snapshot.cpp
++++ b/Source/WORLDSERVER/Snapshot.cpp
+@@ -2,12 +2,14 @@
+ #include "Snapshot.h"
+ 
+ CSnapshot::CSnapshot()
++: cb( ar )	// FlyffWeb: cb records the starts of ar's messages
+ {
+ 	dpidCache	= dpidUser	= DPID_UNKNOWN;
+ 	cb	= 0;
+ }
+ 
+ CSnapshot::CSnapshot( DPID idCache, DPID idUser, OBJID objid, DWORD dwHdr )
++: cb( ar )	// FlyffWeb
+ {
+ 	SetSnapshot( objid, dwHdr );	
+ }
+@@ -23,4 +25,17 @@
+ 	cb	= 0;
+ 	ar.Flush();
+ 	ar << dpidUser << dwHdr << objid << cb;
++}
++
++// FlyffWeb (world-snapshot-index.patch): the table of contents for the browser client, after the last message:
++// each message's start counted from uFirst (CUser::Notify passes the first byte after the count field), the count
++// again (u16) and SNAPSHOT_INDEX_MARKER. Neuz reads only the counted messages, so it never reads this. The ReelIn
++// after sending removes it with the messages.
++void CSnapshot::AppendIndex( u_long uFirst )
++{
++	int nCount	= cb.Count();
++	for( int i = 0; i < nCount; i++ )
++		ar << (DWORD)( cb.Start( i ) - uFirst );
++	ar << (WORD)nCount;
++	ar << SNAPSHOT_INDEX_MARKER;
+ }
+\ No newline at end of file
+--- a/Source/WORLDSERVER/User.cpp
++++ b/Source/WORLDSERVER/User.cpp
+@@ -596,6 +596,7 @@
+ 
+ 	if( m_Snapshot.cb > 0 )
+ 	{
++		m_Snapshot.AppendIndex( uOffset );	// FlyffWeb: the table of contents (world-snapshot-index.patch)
+ 		lpBuf	= m_Snapshot.ar.GetBuffer( &nBufSize );
+ 		*(UNALIGNED WORD*)( lpBuf + sizeof(DPID) + sizeof(DWORD) + sizeof(OBJID) )	= m_Snapshot.cb;
+ 		g_DPSrvr.Send( (LPVOID)lpBuf, nBufSize, m_Snapshot.dpidCache );

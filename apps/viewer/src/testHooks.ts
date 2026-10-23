@@ -4,8 +4,8 @@
 // the renderer's own counts).
 
 import type { Vec3 } from '@flyffweb/formats';
+import type { Overlay, OverlaySnapshot } from '@flyffweb/scene';
 import type { WebGLRenderer } from 'three';
-import type { Overlay, OverlaySnapshot } from './overlay/Overlay';
 
 export type WalkRoute = (points: Vec3[], speed: number) => Promise<void>;
 

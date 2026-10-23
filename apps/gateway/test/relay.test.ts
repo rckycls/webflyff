@@ -64,6 +64,12 @@ const PROTOCOL_ID = 0x1234;
 const idFrame = encodeServerFrame(encodeProtocolIdBody(PROTOCOL_ID));
 const hex = (text: string) => Buffer.from(text, 'hex');
 const clientAddr = (address: string) => bytesToHex(encodeGatewayClientAddr(address));
+/**
+ * The client address as it goes to a cache server: after `DPID_UNKNOWN`, like every packet to it, because
+ * `CDPCacheSrvr::UserMessageHandler` (Source/CACHESERVER/DPCacheSrvr.cpp:82) skips a sender ID before the type.
+ */
+const cacheClientAddr = (address: string) =>
+  bytesToHex(new ArWriter().u32(DPID_UNKNOWN).bytes(encodeGatewayClientAddr(address)).toBytes());
 const keepAlive = new Uint8Array([0x18, 0, 0, 0]);
 
 it('sends the client address first on certifier routes, then relays both ways', async () => {
@@ -78,11 +84,22 @@ it('sends the client address first on certifier routes, then relays both ways', 
   expect(server.crcErrors).toBe(0);
 });
 
+it('sends the client address first on cache routes', async () => {
+  const server = await fakeServer();
+  const h = await harness(relayOptions(server.port, 'cache', { sendClientAddr: true }));
+  h.client.send(new ArWriter().u32(DPID_UNKNOWN).u32(0x18).toBytes()); // may arrive before the protocol ID: must be held
+  await server.waitForBodies(2);
+  // DPID_UNKNOWN, GATEWAY_CLIENT_ADDR, then the CAr string: length 8, "10.0.0.9".
+  expect(bytesToHex(server.received[0]!)).toBe('ffffffff' + 'e0000000' + '08000000' + '31302e302e302e39');
+  expect(server.received.map(bytesToHex)).toEqual([cacheClientAddr('10.0.0.9'), 'ffffffff18000000']);
+  expect(server.crcErrors).toBe(0);
+});
+
 it.each<{ name: string; role: Role; sendClientAddr: boolean }>([
-  { name: 'a login route', role: 'login', sendClientAddr: true },
-  { name: 'a cache route', role: 'cache', sendClientAddr: true },
-  { name: 'a certifier route with sendClientAddr off', role: 'certifier', sendClientAddr: false },
-])('sends no client address on $name', async ({ role, sendClientAddr }) => {
+  { name: 'login routes', role: 'login', sendClientAddr: true },
+  { name: 'certifier routes with sendClientAddr off', role: 'certifier', sendClientAddr: false },
+  { name: 'cache routes with sendClientAddr off', role: 'cache', sendClientAddr: false },
+])('never sends the client address on $name', async ({ role, sendClientAddr }) => {
   const server = await fakeServer();
   const h = await harness(relayOptions(server.port, role, { sendClientAddr }));
   h.client.send(new Uint8Array([0xfc, 0, 0, 0]));
@@ -93,24 +110,26 @@ it.each<{ name: string; role: Role; sendClientAddr: boolean }>([
   expect(server.crcErrors).toBe(0);
 });
 
-for (const role of ['certifier', 'login'] as const) {
+for (const role of ['certifier', 'login', 'cache'] as const) {
   const shapes = {
     'a client-address packet': encodeGatewayClientAddr('1.1.1.1'),
     'a client-address packet after DPID_UNKNOWN': new ArWriter().u32(DPID_UNKNOWN).bytes(encodeGatewayClientAddr('1.1.1.1')).toBytes(),
     'just the packet type': new Uint8Array([0xe0, 0, 0, 0]),
   };
+  // The gateway's own client address, as this route gets it (none on login routes).
+  const own = { certifier: clientAddr('10.0.0.9'), login: undefined, cache: cacheClientAddr('10.0.0.9') }[role];
   for (const [name, forged] of Object.entries(shapes)) {
     it(`closes with 4006 on a browser that sends ${name} (${role} route)`, async () => {
       const server = await fakeServer();
-      const h = await harness(relayOptions(server.port, role, { sendClientAddr: role === 'certifier' }));
+      const h = await harness(relayOptions(server.port, role, { sendClientAddr: own !== undefined }));
       h.client.send(keepAlive);
-      const before = role === 'certifier' ? 2 : 1; // the gateway's own client address, then the keep-alive
+      const before = own !== undefined ? 2 : 1; // the gateway's own client address, then the keep-alive
       await server.waitForBodies(before);
       h.client.send(forged);
       await expect(h.closed).resolves.toEqual({ code: CloseCode.FORBIDDEN_PACKET });
       await expect(h.result).resolves.toMatchObject({ closeCode: 4006 });
       expect(server.received).toHaveLength(before); // nothing the browser forged got through
-      if (role === 'certifier') expect(bytesToHex(server.received[0]!)).toBe(clientAddr('10.0.0.9'));
+      if (own !== undefined) expect(bytesToHex(server.received[0]!)).toBe(own);
     });
   }
 }

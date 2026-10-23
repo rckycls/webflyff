@@ -1,5 +1,5 @@
+import { forwardOf } from '@flyffweb/scene';
 import { describe, expect, it } from 'vitest';
-import { forwardOf } from '../src/world/player';
 import { outsideWorld, readWorldParams, startPose } from '../src/world/WorldView';
 
 describe('readWorldParams', () => {

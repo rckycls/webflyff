@@ -1,0 +1,274 @@
+--- /dev/null
++++ b/Source/CACHESERVER/GatewayAddr.h
+@@ -0,0 +1,34 @@
++#ifndef __GATEWAYADDR_H__
++#define __GATEWAYADDR_H__
++
++// FlyffWeb (cache-client-addr.patch): the rules for the player's real address that a WebSocket gateway sends in
++// PACKETTYPE_GATEWAY_CLIENT_ADDR (CDPCacheSrvr::OnGatewayClientAddr). They are kept apart from the network code,
++// so that the test program (FlyffWeb/server-patches/tests/cache-test.cpp) builds them alone.
++
++#define	MAX_GATEWAY		8
++
++// CacheServer.ini 'Gateway "a.b.c.d"' (repeatable, at most MAX_GATEWAY): the gateways that may tell us a browser
++// player's real address. With no Gateway line, no address is ever accepted. Filled while Script reads the ini file,
++// before the server starts, and only read after that: no lock.
++// The same rules as CDPCertifier::AddGateway and IsGateway (CERTIFIER/DPCertifier.cpp:92 and :106).
++class CGatewayList
++{
++public:
++	CGatewayList();
++	BOOL	Add( const char* lpszAddr );			// FALSE, and nothing added, for a bad address or a ninth one
++	BOOL	IsListed( const char* lpszAddr ) const;	// lpszAddr as GetPlayerAddr writes it (Net/Src/serversock.cpp:469)
++	int		GetCount( void ) const	{	return m_nAddr;	}
++private:
++	u_long	m_aAddr[MAX_GATEWAY];	// inet_addr of each listed address
++	int		m_nAddr;
++};
++
++// A dotted IPv4 address "a.b.c.d": digits and exactly three dots, at most 15 characters.
++// Copied from IsDottedIPv4 (CERTIFIER/DPCertifier.cpp:74, certifier-client-addr.patch).
++BOOL	IsDottedIPv4( const char* lpszAddr );
++
++// Whether CDPCacheSrvr::OnGatewayClientAddr takes szAddr as the player's address: the connection's own address
++// (szPeer) is a listed gateway, the player hasn't sent JOIN yet (bJoined), and szAddr is a dotted IPv4 address.
++BOOL	AcceptClientAddr( const CGatewayList & gateways, const char* szPeer, BOOL bJoined, const char* szAddr );
++
++#endif	// __GATEWAYADDR_H__
+--- /dev/null
++++ b/Source/CACHESERVER/GatewayAddr.cpp
+@@ -0,0 +1,57 @@
++#include "stdafx.h"
++#include "GatewayAddr.h"
++
++// FlyffWeb (cache-client-addr.patch): see GatewayAddr.h.
++
++// Copied from IsDottedIPv4 (CERTIFIER/DPCertifier.cpp:74, certifier-client-addr.patch).
++BOOL IsDottedIPv4( const char* lpszAddr )
++{
++	int nDots	= 0;
++	int nLen	= lstrlen( lpszAddr );
++	if( nLen < 7 || nLen > 15 )
++		return FALSE;
++	for( int i = 0; i < nLen; i++ )
++	{
++		if( lpszAddr[i] == '.' )
++			nDots++;
++		else if( lpszAddr[i] < '0' || lpszAddr[i] > '9' )
++			return FALSE;
++	}
++	return( nDots == 3 && inet_addr( lpszAddr ) != INADDR_NONE );
++}
++
++CGatewayList::CGatewayList()
++{
++	memset( m_aAddr, 0, sizeof(m_aAddr) );
++	m_nAddr	= 0;
++}
++
++// As CDPCertifier::AddGateway (CERTIFIER/DPCertifier.cpp:92), which also logs the refusal: Script does that here.
++BOOL CGatewayList::Add( const char* lpszAddr )
++{
++	if( m_nAddr >= MAX_GATEWAY || !IsDottedIPv4( lpszAddr ) )
++		return FALSE;
++	m_aAddr[m_nAddr++]	= inet_addr( lpszAddr );
++	return TRUE;
++}
++
++// As CDPCertifier::IsGateway (CERTIFIER/DPCertifier.cpp:106), which compares inet_addr of each listed address with the
++// connection's address. An address that isn't dotted IPv4 (an empty one, when GetPlayerAddr fails) is never listed.
++BOOL CGatewayList::IsListed( const char* lpszAddr ) const
++{
++	if( !IsDottedIPv4( lpszAddr ) )
++		return FALSE;
++	u_long uAddr	= inet_addr( lpszAddr );
++	for( int i = 0; i < m_nAddr; i++ )
++	{
++		if( m_aAddr[i] == uAddr )
++			return TRUE;
++	}
++	return FALSE;
++}
++
++// As CDPCertifier::OnGatewayClientAddr (CERTIFIER/DPCertifier.cpp:315), with JOIN in place of CERTIFY.
++BOOL AcceptClientAddr( const CGatewayList & gateways, const char* szPeer, BOOL bJoined, const char* szAddr )
++{
++	return( !bJoined && gateways.IsListed( szPeer ) && IsDottedIPv4( szAddr ) );
++}
+--- a/Source/CACHESERVER/Player.h
++++ b/Source/CACHESERVER/Player.h
+@@ -32,7 +32,14 @@
+ 	u_long GetWar( void )	{	return m_idWar;	}
+ 	BYTE	GetSlot( void )		{	return m_nSlot;		}
+ 	void	Join( CAr & ar );
+-	void	SetAddr( CDPMng* pdpMng )	{	pdpMng->GetPlayerAddr( GetNetworkId(), m_lpAddr );	}
++	// FlyffWeb (cache-client-addr.patch): the player's address a gateway sent (CDPCacheSrvr::OnGatewayClientAddr),
++	// else the connection's own address, as before.
++	void	SetAddr( CDPMng* pdpMng )
++		{	if( *m_szClientAddr != '\0' )	lstrcpy( m_lpAddr, m_szClientAddr );	else	pdpMng->GetPlayerAddr( GetNetworkId(), m_lpAddr );	}
++	void	SetClientAddr( const char* szAddr )
++		{	strncpy( m_szClientAddr, szAddr, 16 );	m_szClientAddr[15]	= '\0';	}
++	BOOL	IsJoined( void )	{	return m_bJoined;	}
++	void	SetJoined( void )	{	m_bJoined	= TRUE;	}
+ private:
+ 	const	DWORD	m_dwSerial;
+ 	const	DPID	m_dpid;
+@@ -51,6 +58,9 @@
+ 	u_long	m_idGuild;
+ 	u_long	m_idWar;
+ 	BYTE	m_nSlot;
++	// FlyffWeb (cache-client-addr.patch), set here rather than in the constructor in Player.cpp:
++	char	m_szClientAddr[16]	= { 0, };	// the player's address sent by a gateway before JOIN, else empty
++	BOOL	m_bJoined	= FALSE;	// set by OnAddConnection (JOIN): no GATEWAY_CLIENT_ADDR is taken after it
+ };
+ 
+ typedef	map<DPID, CPlayer*>	MPP;
+--- a/Source/CACHESERVER/DPCacheSrvr.h
++++ b/Source/CACHESERVER/DPCacheSrvr.h
+@@ -28,6 +28,7 @@
+ 	void	OnAddConnection( CAr & ar, DPID dpid, LPBYTE lpBuf, u_long uBufSize );
+ 	void	OnRemoveConnection( DPID dpid );
+ 	void	OnKeepAlive( CAr & ar, DPID dpid, LPBYTE, u_long );
++	void	OnGatewayClientAddr( CAr & ar, DPID dpid, LPBYTE, u_long );	// FlyffWeb (cache-client-addr.patch)
+ };
+ 
+ 
+--- a/Source/CACHESERVER/DPCacheSrvr.cpp
++++ b/Source/CACHESERVER/DPCacheSrvr.cpp
+@@ -3,6 +3,7 @@
+ #include "DPCoreClient.h"
+ #include "DPCacheSrvr.h"
+ #include "Player.h"
++#include "GatewayAddr.h"	// FlyffWeb (cache-client-addr.patch)
+ #ifdef __TRACE1027
+ 
+ #endif	// __TRACE1027
+@@ -15,6 +16,7 @@
+ 
+ extern	CDPClientArray	g_DPClientArray;
+ extern	CDPCoreClient	g_DPCoreClient;
++extern	CGatewayList	g_GatewayList;	// FlyffWeb: CacheServer.ini Gateway lines (cache-client-addr.patch)
+ 
+ #include "messenger.h"
+ 
+@@ -27,6 +29,7 @@
+ 	BEGIN_MSG;
+ 	ON_MSG( PACKETTYPE_JOIN, &CDPCacheSrvr::OnAddConnection );
+ 	ON_MSG( PACKETTYPE_KEEP_ALIVE, &CDPCacheSrvr::OnKeepAlive );
++	ON_MSG( PACKETTYPE_GATEWAY_CLIENT_ADDR, &CDPCacheSrvr::OnGatewayClientAddr );	// FlyffWeb
+ }
+ 
+ CDPCacheSrvr::~CDPCacheSrvr()
+@@ -154,6 +157,7 @@
+ 	CPlayer* pPlayer	= CPlayerMng::Instance()->GetPlayer( dpid );
+ 	if( pPlayer )
+ 	{
++		pPlayer->SetJoined();	// FlyffWeb: no GATEWAY_CLIENT_ADDR is taken after JOIN (cache-client-addr.patch)
+ 		pPlayer->SetAddr( this );
+ 		pPlayer->Join( ar );
+ 		CRTMessenger rtmessenger;
+@@ -200,4 +204,29 @@
+ 		pPlayer->SetAlive( TRUE );
+ }
+ 
++// FlyffWeb (cache-client-addr.patch): sent by a WebSocket gateway as the first packet of a browser player's
++// connection, after DPID_UNKNOWN like every packet to this server: the player's dotted IPv4 address. Taken only
++// from a listed gateway (CacheServer.ini Gateway lines) and only before JOIN (AcceptClientAddr, GatewayAddr.cpp).
++// OnAddConnection's SetAddr then makes it the player's address, which goes to the core server
++// (CDPCoreClient::SendAddPlayer, DPCoreClient.cpp:101) and to the world server (CDPClient::SendJoin, DPClient.cpp:92)
++// in place of the gateway's address. As CDPCertifier::OnGatewayClientAddr (CERTIFIER/DPCertifier.cpp:315).
++void CDPCacheSrvr::OnGatewayClientAddr( CAr & ar, DPID dpid, LPBYTE, u_long )
++{
++	char szAddr[16]	= { 0, };
++	ar.ReadString( szAddr, 16 );		// a longer string is read as an empty one (CAr::ReadString), which is refused
++	char szPeer[16]	= { 0, };
++	GetPlayerAddr( dpid, szPeer );		// the connection's own address; it stays empty if it can't be read
++
++	{
++		CMclAutoLock	Lock( CPlayerMng::Instance()->m_AddRemoveLock );
++		CPlayer* pPlayer	= CPlayerMng::Instance()->GetPlayer( dpid );
++		if( pPlayer && AcceptClientAddr( g_GatewayList, szPeer, pPlayer->IsJoined(), szAddr ) )
++		{
++			pPlayer->SetClientAddr( szAddr );
++			return;
++		}
++	}
++	Error( "GATEWAY_CLIENT_ADDR refused from %s", szPeer );
++}
++
+ CDPCacheSrvr	g_DPCacheSrvr;
+\ No newline at end of file
+--- a/Source/CACHESERVER/CacheServer.cpp
++++ b/Source/CACHESERVER/CacheServer.cpp
+@@ -11,6 +11,7 @@
+ #include "DPCacheSrvr.h"
+ #include "MyTrace.h"
+ #include "player.h"
++#include "GatewayAddr.h"	// FlyffWeb (cache-client-addr.patch)
+ 
+ #include "..\Resource\Lang.h"
+ 
+@@ -35,6 +36,7 @@
+ char					g_szCoreAddr[16];
+ HWND					hMainWnd;
+ u_short					g_uPort = PN_CACHESRVR;
++CGatewayList			g_GatewayList;	// FlyffWeb: CacheServer.ini Gateway lines (cache-client-addr.patch)
+ 
+ ATOM				MyRegisterClass(HINSTANCE hInstance);
+ LRESULT CALLBACK	WndProc(HWND, UINT, WPARAM, LPARAM);
+@@ -249,6 +251,12 @@
+ 			{
+ 				g_uPort = s.GetNumber();		
+ 			}
++			else if( s.Token == "Gateway" )	// FlyffWeb (cache-client-addr.patch): a WebSocket gateway's address, at most 8
++			{
++				s.GetToken();
++				if( !g_GatewayList.Add( s.Token ) )
++					Error( "Gateway %s not added", (LPCTSTR)s.Token );
++			}
+ 			s.GetToken();
+ 		}
+ 		return TRUE;
+--- a/Source/CACHESERVER/CacheServer.vcxproj
++++ b/Source/CACHESERVER/CacheServer.vcxproj
+@@ -108,6 +108,10 @@
+       <Optimization Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">MaxSpeed</Optimization>
+       <BrowseInformation Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</BrowseInformation>
+     </ClCompile>
++    <ClCompile Include="GatewayAddr.cpp">
++      <Optimization Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">MaxSpeed</Optimization>
++      <BrowseInformation Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</BrowseInformation>
++    </ClCompile>
+     <ClCompile Include="..\_Common\memtrace.cpp">
+       <Optimization Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">MaxSpeed</Optimization>
+       <BrowseInformation Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">true</BrowseInformation>
+@@ -231,6 +235,7 @@
+     <ClInclude Include="DPCacheSrvr.h" />
+     <ClInclude Include="DPClient.h" />
+     <ClInclude Include="DPCoreClient.h" />
++    <ClInclude Include="GatewayAddr.h" />
+     <ClInclude Include="..\_Common\memtrace.h" />
+     <ClInclude Include="..\_Common\messenger.h" />
+     <ClInclude Include="packetlog.h" />
+--- a/Source/CACHESERVER/CacheServer.vcxproj.filters
++++ b/Source/CACHESERVER/CacheServer.vcxproj.filters
+@@ -51,6 +51,9 @@
+     <ClCompile Include="DPCoreClient.cpp">
+       <Filter>Source Files</Filter>
+     </ClCompile>
++    <ClCompile Include="GatewayAddr.cpp">
++      <Filter>Source Files</Filter>
++    </ClCompile>
+     <ClCompile Include="..\_Common\memtrace.cpp">
+       <Filter>Source Files</Filter>
+     </ClCompile>
+@@ -157,6 +160,9 @@
+     <ClInclude Include="DPCoreClient.h">
+       <Filter>Header Files</Filter>
+     </ClInclude>
++    <ClInclude Include="GatewayAddr.h">
++      <Filter>Header Files</Filter>
++    </ClInclude>
+     <ClInclude Include="..\_Common\memtrace.h">
+       <Filter>Header Files</Filter>
+     </ClInclude>

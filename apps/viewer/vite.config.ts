@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { serveDist } from '@flyffweb/scene/vite/serveDist.ts';
 import { defineConfig } from 'vite';
-import { serveDist } from './vite.serveDist.ts';
 
 // This file is FlyffWeb/apps/viewer/vite.config.ts. The root scripts run Vite from FlyffWeb with `--config` pointing here,
 // so the root is set explicitly: index.html and src/ are next to this file.

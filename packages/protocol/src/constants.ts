@@ -1,6 +1,7 @@
 /**
- * Packet types of the certifier and login ports, copied from `Source/_Network/MsgHdr.h`. A body starts with its
- * type as a `u32`; some server packets put `DPID_UNKNOWN` in front of it (see `typeOf` in the test helpers).
+ * Packet types of the certifier, login and cache (game) ports, copied from `Source/_Network/MsgHdr.h`. A body
+ * starts with its type as a `u32`; some server packets put `DPID_UNKNOWN` in front of it (see `typeOf` in the
+ * test helpers).
  */
 export const PacketType = {
   QUERYTICKCOUNT: 0x0b,
@@ -18,6 +19,20 @@ export const PacketType = {
   CERTIFY: 0xfc,
   SRVR_LIST: 0xfd,
   ERROR: 0xfe,
+  /** `PACKETTYPE_JOIN`: the client's JOIN to the cache server, and the server's answer (a first snapshot bundle). */
+  JOIN: 0x0000ff00,
+  /** `PACKETTYPE_PRE_JOIN`: the client asks the login server to let the character in; the server's answer has no fields. */
+  PRE_JOIN: 0x0000ff05,
+  /** `PACKETTYPE_REPLACE`: the server moves the player to another world. */
+  REPLACE: 0x00ff0f00,
+  /** `PACKETTYPE_SNAPSHOT`: a bundle of object messages (server) or of the player's own messages (client). */
+  SNAPSHOT: 0xffffff00,
+  /** `PACKETTYPE_PLAYERMOVED`: the client reports where its player is going. */
+  PLAYERMOVED: 0xffffff01,
+  /** `PACKETTYPE_PLAYERBEHAVIOR`: the client reports its player's state after a change. */
+  PLAYERBEHAVIOR: 0xffffff02,
+  /** `PACKETTYPE_PLAYERCORR`: the client corrects its player's state where a walk met something or began to fall. */
+  PLAYERCORR: 0xffffff05,
   ERROR_STRING: 0x70000003,
   LOGIN_PROTECT_NUMPAD: 0x88100200,
   LOGIN_PROTECT_CERT: 0x88100201,
@@ -35,3 +50,49 @@ export const Port = { CERTIFIER: 23000, LOGIN: 28000, CACHE: 5400 } as const;
 
 /** Characters one account can hold (`MAX_CHARACTER_LIST` in `ProjectCmn.h`). */
 export const MAX_CHARACTER_SLOTS = 3;
+
+/**
+ * The message types inside a SNAPSHOT bundle (`SNAPSHOTTYPE_*` in `Source/_Network/MsgHdr.h`), each a `WORD` after
+ * the object ID.
+ */
+export const MessageType = {
+  SETPOSANGLE: 0x000e,
+  SETPOS: 0x0010,
+  /** With `__ENVIRONMENT_EFFECT` on, the season: the first message of the JOIN bundle (`CUser::Open`). */
+  ENVIRONMENTALL: 0x0063,
+  MOTION: 0x0098,
+  DESTPOS: 0x00c1,
+  MOVERSETDESTOBJ: 0x00c2,
+  DESTANGLE: 0x00c3,
+  /** The correction another client sent of its player (PLAYERCORR), which the world server passes on (`AddMoverCorr`). */
+  MOVERCORR: 0x00c8,
+  MOVERMOVED: 0x00ca,
+  MOVERBEHAVIOR: 0x00cb,
+  MOVERANGLE: 0x00ce,
+  ADD_OBJ: 0x00f0,
+  DEL_OBJ: 0x00f1,
+  REPLACE: 0x00f2,
+  WORLD_READINFO: 0x9910,
+} as const;
+
+/** The object types (`OT_*` in `Resource/define.h:80-88`) that ADD_OBJ starts with, as a `BYTE`. */
+export const ObjectType = {
+  OBJ: 0,
+  ANI: 1,
+  CTRL: 2,
+  SFX: 3,
+  ITEM: 4,
+  MOVER: 5,
+  REGION: 6,
+  SHIP: 7,
+  PATH: 8,
+} as const;
+
+/**
+ * The last four bytes of a bundle's table of contents: the bytes "TOC1" read as a little-endian `u32`. The
+ * table is added to server bundles by the world-snapshot-index patch (`server-patches/`).
+ */
+export const BUNDLE_MARKER = 0x31434f54;
+
+/** A position or a delta: x, y, z as `D3DXVECTOR3` holds them (D3D coordinates, as on the wire). */
+export type Vec3 = [number, number, number];

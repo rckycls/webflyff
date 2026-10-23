@@ -650,6 +650,212 @@ describe('LoginFlow, changing the channel', () => {
   });
 });
 
+const CACHE_ADDRESS = '172.31.238.55';
+const cacheAddrFor = (address: string) => new ArWriter().u32(PacketType.CACHE_ADDR).string(address).toBytes();
+const tickCountFor = (sentAt: number, tick: bigint) => new ArWriter().u32(PacketType.QUERYTICKCOUNT).u32(sentAt).i64(tick).toBytes();
+/** One character of a PLAYER_LIST, without the list around it. */
+const characterRow = (slot: number, name: string, playerId: number) => new ArWriter()
+  .i32(slot).i32(0).u32(1).u32(11).string(name).vec3([0, 0, 0])
+  .u32(playerId).u32(0).u32(0).u32(0).u32(0).u32(2).u32(0).u32(1).u8(0).i32(0).i32(15).u32(0)
+  .i32(15).i32(15).i32(15).i32(15).u32(0).i32(0).toBytes();
+
+/**
+ * The character list as a real login server sends it (`CDPLoginSrvr::OnQueryTickCount`, then on GETPLAYERLIST the
+ * CACHE_ADDR and the PLAYER_LIST): the clock answer 40 ms after the request, the cache address, the characters.
+ */
+async function atEnterableList() {
+  const s = await atServerList();
+  await s.flow.selectChannel(s.channel);
+  const login = s.net.channel(LOGIN_SERVER);
+  s.clock.advance(40);
+  login.push(tickCountFor(1000, 777n));
+  login.push(cacheAddrFor(CACHE_ADDRESS));
+  login.push(playerListFor(7));
+  return { ...s, login };
+}
+
+describe('LoginFlow, handing over to the world', () => {
+  it('handOver gives the entry and leaves the login channel open', async () => {
+    const { flow, login, clock } = await atEnterableList();
+    const entry = flow.handOver(0)!;
+    expect(entry).toBeDefined();
+    expect(entry.login).toBe(login);
+    expect(entry.cacheTarget).toBe('172.31.238.55:5400');
+    expect([entry.account, entry.passwordHash, entry.authKey, entry.channelId]).toEqual(['webtester', HASH, 7, 1]);
+    expect(entry.character).toMatchObject({ slot: 0, playerId: 500, name: 'Webby' });
+    expect(entry.messenger).toEqual({ slot: 0, state: 0, friends: [{ id: 900, blocked: 0, state: 1 }] });
+    // The clock started 40 ms after the request: half of that is added to the server's tick, and it runs on the flow's clock.
+    expect(entry.clock.started).toBe(true);
+    expect(entry.clock.tick()).toBe(777n + 40n * 5000n);
+    clock.advance(25);
+    expect(entry.clock.tick()).toBe(777n + 40n * 5000n + 25n * 10000n);
+    await flushMicrotasks();
+    expect(login.closed).toBe(false);
+  });
+
+  it('gives no messenger for a slot that has none', async () => {
+    const s = await atServerList();
+    await s.flow.selectChannel(s.channel);
+    const login = s.net.channel(LOGIN_SERVER);
+    login.push(tickCountFor(1000, 1n));
+    login.push(cacheAddrFor(CACHE_ADDRESS));
+    login.push(new Uint8Array([...new ArWriter().u32(PacketType.PLAYER_LIST).u32(7).i32(1).toBytes(), ...characterRow(0, 'Webby', 500), 0, 0, 0, 0]));
+    expect(s.flow.handOver(0)).toMatchObject({ messenger: undefined, character: { playerId: 500 } });
+  });
+
+  it('hands over the character of the slot asked for, with that slot\'s messenger and the cache address of the list', async () => {
+    const s = await atServerList();
+    await s.flow.selectChannel(s.channel);
+    const login = s.net.channel(LOGIN_SERVER);
+    login.push(tickCountFor(1000, 1n));
+    login.push(cacheAddrFor('10.0.0.7'));
+    login.push(new Uint8Array([
+      ...new ArWriter().u32(PacketType.PLAYER_LIST).u32(7).i32(2).toBytes(),
+      ...characterRow(0, 'First', 500),
+      ...characterRow(2, 'Third', 502),
+      // Two messengers, slots 0 and 2: the slot byte, the state, the friends.
+      ...new ArWriter().i32(2).u8(0).u32(0).i32(0).u8(2).u32(5).i32(1).u32(77).i32(0).u32(1).toBytes(),
+    ]));
+    const entry = s.flow.handOver(2)!;
+    expect(entry.cacheTarget).toBe('10.0.0.7:5400');
+    expect(entry.character).toMatchObject({ slot: 2, name: 'Third', playerId: 502 });
+    expect(entry.messenger).toEqual({ slot: 2, state: 5, friends: [{ id: 77, blocked: 0, state: 1 }] });
+  });
+
+  it('takes the channel id from the last pick', async () => {
+    const { flow, net } = start();
+    await flow.login('webtester', 'password1');
+    const row = (parent: number, id: number, name: string, address: string) =>
+      new ArWriter().u32(parent).u32(id).string(name).string(address).i32(0).i32(0).i32(1).i32(500).toBytes();
+    net.channel(CERTIFIER).push(new Uint8Array([
+      ...new ArWriter().u32(PacketType.SRVR_LIST).u32(7).u8(0).string('webtester').u32(3).toBytes(),
+      ...row(NULL_ID, 1, 'FlyFF', '172.31.238.55'),
+      ...row(1, 4, 'Channel 4', ''),
+      ...row(1, 9, 'Channel 9', ''),
+    ]));
+    const pick = (id: number): ServerEntry => ({ parent: 1, id, name: `Channel ${id}`, address: '', adult: 0, playerCount: 0, enabled: 1, maxPlayers: 500 });
+    await flow.selectChannel(pick(4));
+    await flow.selectChannel(pick(9));
+    const login = net.channel(LOGIN_SERVER);
+    login.push(tickCountFor(1000, 1n));
+    login.push(cacheAddrFor(CACHE_ADDRESS));
+    login.push(playerListFor(7));
+    expect(flow.handOver(0)!.channelId).toBe(9);
+  });
+
+  it('lets go of the login channel: the flow neither reports nor closes it afterwards', async () => {
+    const { events, flow, login } = await atEnterableList();
+    const before = events.length;
+    flow.handOver(0);
+    // The channel is the world session's now: what it delivers, the flow's own end and the channel's drop leave the flow silent.
+    login.push(new ArWriter().u32(PacketType.ERROR).i32(120).toBytes());
+    flow.dispose();
+    flow.changeChannel();
+    login.drop(4002);
+    await flushMicrotasks();
+    expect(events).toHaveLength(before);
+    expect(login.closed).toBe(false);
+  });
+
+  it('handOver stops the flow\'s PING', async () => {
+    const { flow, login, clock } = await atEnterableList();
+    const sentBefore = login.sent.length;
+    flow.handOver(0);
+    clock.advance(60000);
+    expect(login.sent).toHaveLength(sentBefore);
+    expect(clock.pending()).toBe(0);
+  });
+
+  it('handOver is undefined before CACHE_ADDR, and leaves the flow as it was', async () => {
+    const s = await atServerList();
+    await s.flow.selectChannel(s.channel);
+    const login = s.net.channel(LOGIN_SERVER);
+    login.push(tickCountFor(1000, 777n));
+    login.push(playerListFor(7));
+    expect(s.flow.handOver(0)).toBeUndefined();
+    // Nothing was given up: the PING goes on, and the address arriving later makes the hand-over work.
+    const sentBefore = login.sent.length;
+    s.clock.advance(10000);
+    expect(login.sent).toHaveLength(sentBefore + 1);
+    login.push(cacheAddrFor(CACHE_ADDRESS));
+    expect(s.flow.handOver(0)).toBeDefined();
+  });
+
+  it('handOver is undefined before the QUERYTICKCOUNT answer', async () => {
+    const s = await atServerList();
+    await s.flow.selectChannel(s.channel);
+    const login = s.net.channel(LOGIN_SERVER);
+    login.push(cacheAddrFor(CACHE_ADDRESS));
+    login.push(playerListFor(7));
+    expect(s.flow.handOver(0)).toBeUndefined();
+    login.push(tickCountFor(1000, 777n));
+    expect(s.flow.handOver(0)).toBeDefined();
+  });
+
+  it('handOver is undefined for an empty cache address', async () => {
+    const s = await atServerList();
+    await s.flow.selectChannel(s.channel);
+    const login = s.net.channel(LOGIN_SERVER);
+    login.push(tickCountFor(1000, 777n));
+    login.push(cacheAddrFor(''));
+    login.push(playerListFor(7));
+    expect(s.flow.handOver(0)).toBeUndefined();
+  });
+
+  it('handOver is undefined for an empty slot, or one that does not exist', async () => {
+    const { flow } = await atEnterableList();
+    for (const slot of [1, 2, 3, -1, 0.5, Number.NaN]) expect(flow.handOver(slot), String(slot)).toBeUndefined();
+    expect(flow.handOver(0)).toBeDefined(); // the refusals gave nothing up
+  });
+
+  it('a second handOver is undefined', async () => {
+    const { flow, login } = await atEnterableList();
+    expect(flow.handOver(0)).toBeDefined();
+    expect(flow.handOver(0)).toBeUndefined();
+    expect(login.closed).toBe(false);
+  });
+
+  it('handOver is undefined without a login, and after dispose', async () => {
+    expect(start().flow.handOver(0)).toBeUndefined();
+    const { flow } = await atEnterableList();
+    flow.dispose();
+    expect(flow.handOver(0)).toBeUndefined();
+  });
+
+  it('forgets the address and the clock of an earlier connection when a channel is picked again', async () => {
+    const { flow, net, login, channel } = await atEnterableList();
+    await flow.selectChannel(channel);
+    const fresh = net.channel(LOGIN_SERVER);
+    expect(fresh).not.toBe(login);
+    // The new connection has not answered yet, and a late answer on the old one does not count.
+    fresh.push(playerListFor(7));
+    login.push(tickCountFor(1000, 1n));
+    login.push(cacheAddrFor(CACHE_ADDRESS));
+    expect(flow.handOver(0)).toBeUndefined();
+    fresh.push(tickCountFor(1000, 2n));
+    fresh.push(cacheAddrFor('10.0.0.9'));
+    expect(flow.handOver(0)).toMatchObject({ login: fresh, cacheTarget: '10.0.0.9:5400' });
+  });
+
+  it('is undefined after Change channel, until a new connection has answered', async () => {
+    const { flow, clock } = await atEnterableList();
+    flow.changeChannel();
+    expect(flow.handOver(0)).toBeUndefined();
+    clock.advance(1000);
+    await flushMicrotasks();
+    expect(flow.handOver(0)).toBeUndefined();
+  });
+
+  it('can log in again after a hand-over', async () => {
+    const { flow, net, events } = await atEnterableList();
+    flow.handOver(0);
+    await flow.login('webtester', 'password1');
+    const cert = net.channel(CERTIFIER);
+    cert.push(serverListFor('webtester', 9));
+    expect(events.at(-1)).toMatchObject({ type: 'serverList' });
+  });
+});
+
 describe('LoginFlow, a listener that throws', () => {
   function throwing() {
     const net = fakeChannels();

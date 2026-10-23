@@ -1,4 +1,4 @@
-# Hosting guide: putting the lobby on the internet
+# Hosting guide: putting the client on the internet
 
 For the owner. This guide puts the browser client on a real web address, for example `https://play.example.com`, so a player can open it on a phone from anywhere. It is written ahead of time: no hosted machine exists yet, so **no step here has been carried out on a real machine**. Where something does not behave the way this guide says, write down what you saw and what you expected, and ask Claude.
 
@@ -94,7 +94,7 @@ npm run convert
 
 This turns the game's `Client` folder into web files in `$FlyffWeb\dist\assets`. It takes about 7 minutes, writes about 970 MiB and needs KTX-Software (see the top of [README.md](../README.md#flyffweb)). If the `Client` folder is not next to `FlyffWeb`, add `-- --client "D:/path/to/Client"`.
 
-The lobby itself does **not** use these files yet: the first thing that does is the world in Piece 3. You can skip this step now and run it later; the Caddyfile in step 8 already serves the folder.
+The world (Piece 3) reads these files: without them a player can log in, but **Enter** fails. The Caddyfile in step 8 serves the folder at `/assets/`. Run this again whenever the game's `Client` folder changes, so the browser sees the same game data as the servers.
 
 Success: `Total: N ok, N warn, 0 failed` at the end.
 
@@ -133,14 +133,16 @@ Where the files go: the client's own files are under `apps\client\dist\client\` 
 
 You must **build again whenever the domain or `NEUZ_IPSET` changes**, and after every update of the client's code.
 
-## Step 4. The certifier and the login server
+## Step 4. The new servers: certifier, login, world and cache
 
-Without this step the site works, but the servers treat every browser player as one player, because they all arrive from the gateway's address:
+Without this step the site works, but the servers treat every browser player as one player, because they all arrive from the gateway's address, and the browser reads only part of the world:
 
 - one player's typo in a password blocks everyone for 15 seconds (three typos: 15 minutes), and `IPCut.ini` bans cannot single anyone out;
-- on a busy server, the connection-flood limiter cuts off every browser player at once (see [Before a public launch](#before-a-public-launch)).
+- on a busy server, the connection-flood limiter cuts off every browser player at once (see [Before a public launch](#before-a-public-launch));
+- the world server's packets have no table of contents, so the browser drops the rest of a packet at the first message it doesn't read: players still enter the world and can walk, but other players and monsters can be missing, stand still or stay on screen after they have gone (the overlay's `indexed` number stays at 0);
+- the cache server, the core server and the world server record every browser player at the gateway's address.
 
-Follow **[server-patches/README.md](../server-patches/README.md)**. Build the new `Certifier.exe` and `LoginServer.exe` on your PC, where Visual Studio is; the new certifier holds all three certifier changes, so one swap covers them. Then, on the hosted machine (back up each old exe first, as that README says):
+Follow **[server-patches/README.md](../server-patches/README.md)**. Build the new `Certifier.exe`, `LoginServer.exe`, `WorldServer.exe` and `CacheServer.exe` on your PC, where Visual Studio is; the new certifier holds all three certifier changes, so one swap covers them. Then, on the hosted machine (back up each old exe first, as that README says):
 
 1. **The certifier:** stop it, copy the new file over `Program\2. Certifier.exe` **keeping that name**, and add this line at the end of `Program\Certifier.ini`:
 
@@ -150,11 +152,14 @@ Follow **[server-patches/README.md](../server-patches/README.md)**. Build the ne
 
    Press Enter after `HEARTBEAT` first, as that README explains. Then start the certifier again.
 2. **The login server:** stop it, copy the new file over `Program\5. Login.exe` **keeping that name**, and add the same `Gateway "127.0.0.1"` line at the end of `Program\LoginServer.ini`. Press Enter after the last line, `//NPROTECT`, first: a line typed straight after it becomes part of that comment and is ignored. Then start the login server again.
+3. **The world server:** stop it (everyone in the game is disconnected), copy the new file over `Program\7. World.exe` **keeping that name**, and start it again. It has no setting. Read that README's note about the world server first: the new exe also holds a later change to `DPSrvr.cpp`.
+4. **The cache server:** stop it (everyone in the game is disconnected), copy the new file over `Program\6. Cache.exe` **keeping that name**, and add the same `Gateway "127.0.0.1"` line at the end of `Program\CacheServer.ini`. Press Enter after the last line, `Port "5400"`, first. Then start the cache server again.
 
 Success:
 
 - Type a wrong password for a test account on a phone on Wi-Fi. Then, at once, log in to **the same account** on a second phone on mobile data (Wi-Fi off). It must reach the server list. (If the certifier still saw every browser player at the gateway's address, the second phone would get "Cannot log into account for 15 seconds".)
-- The error log in `Program` (a file named like `error_20261022.txt`) has no `GATEWAY_CLIENT_ADDR refused` line and no `Gateway … not added` line.
+- Enter the world on a phone: on the overlay's line `bundles N   indexed N   messages skipped N   mismatched N`, `indexed` is the same number as `bundles` (every packet had its table of contents, so the new world server is the one running), `mismatched` stays at 0 (`skipped` counts the messages the browser doesn't use yet and grows; that is normal), and other players and monsters move.
+- The error log in `Program` (a file named like `error_20261022.txt`) has no `GATEWAY_CLIENT_ADDR refused` line and no `Gateway … not added` line, also after a browser player has entered the world.
 
 ## Step 5. The gateway: config and first run
 
@@ -187,7 +192,7 @@ What each line does:
 - `allowedOrigins` is the page address players load, exactly: `https://`, the name, **no** slash at the end, no port. A browser from any other page is refused. This is the line to check first when the lobby says it cannot reach the gateway.
 - `trustedProxies` is `127.0.0.1`, which is Caddy. The gateway believes the player's address only when it comes from a listed proxy. Never put anything else there.
 - `sendClientAddr` is `true`: the gateway tells the (patched) certifier each player's real address. The old certifier ignores it, so this is safe to leave on.
-- `routes` maps each address the servers advertise to where the server really listens. The names (before the colon) are your `NEUZ_IPSET`.
+- `routes` maps each address the servers advertise to where the server really listens. The names (before the colon) are your `NEUZ_IPSET`. The `cache` route (port 5400) is the one a player uses from **Enter** on: the whole game goes through it. With `sendClientAddr` on, the gateway sends the player's address on it too, for the new cache server.
 
 The file must be valid JSON: straight double quotes, commas between entries, no comments.
 
@@ -364,14 +369,14 @@ Success: `SERVICE_RUNNING`.
 ## Step 9. Check it from outside
 
 1. On a phone **on mobile data** (Wi-Fi off), open `https://play.example.com`. You should see the **FlyFF** heading and a **Log in** form, with the padlock showing a valid certificate.
-2. Log in with a test account, pick a channel, and look at the character list.
+2. Log in with a test account, pick a channel, and look at the character list. Then tap **Enter** on a character: after "Entering the world…" the world opens around the character, with a **Leave** button.
 3. On the machine, look at the end of the gateway's log:
 
 ```
 Get-Content C:\flyff-logs\gateway.log -Tail 6
 ```
 
-Success: lines like `2026-...Z open 203.0.113.5 172.31.238.55:23000`, where the address after `open` is the **phone's** public address. If every line shows `127.0.0.1`, the gateway does not know the players' real addresses: check `trustedProxies` and that Caddy sits in front.
+Success: lines like `2026-...Z open 203.0.113.5 172.31.238.55:23000` (and, after **Enter**, one for `172.31.238.55:5400`), where the address after `open` is the **phone's** public address. If every line shows `127.0.0.1`, the gateway does not know the players' real addresses: check `trustedProxies` and that Caddy sits in front.
 
 4. From a computer on **another network** (for example a laptop on the phone's hotspot), check the closed ports. Each of these takes about 20 seconds to give up:
 
@@ -421,7 +426,7 @@ All browser players reach the servers from the gateway's address. Once the new c
 - **The gateway limits each player instead,** by their real address: at most 60 new connections a minute and 32 open ones per address, and 1000 open connections in all. See [Limits players can meet](#limits-players-can-meet).
 - **The wrong-password lockout keeps working on a busy server.** The certifier remembers every address and account that typed a wrong password, for 24 hours, instead of only the last 3 addresses in each login thread.
 
-**Announce the address only when** both new exes and both `Gateway` lines are in place (step 4) and step 9's checks pass.
+**Announce the address only when** the four new exes and the three `Gateway` lines are in place (step 4) and step 9's checks pass.
 
 **What is still not covered:**
 
@@ -440,7 +445,7 @@ All browser players reach the servers from the gateway's address. Once the new c
 | New connections per address in a minute | `maxNewConnectionsPerAddressPerMinute` | 60 | "Too many connection attempts from your network. Wait a minute and try again." |
 | Open connections in all | `maxConnections` | 1000 | "The game is full right now. Try again in a few minutes." |
 
-A login uses 2 connections (the certifier, then the login server) and a channel change 2 more, so one player stays far below these. Players on one shared network (a family on one Wi-Fi, a café, a mobile carrier that shares addresses) share the per-address limits.
+A login uses 2 connections (the certifier, then the login server), a channel change 2 more, and entering the world 1 more (the cache server; the login-server connection stays open while playing), so one player stays far below these. Players on one shared network (a family on one Wi-Fi, a café, a mobile carrier that shares addresses) share the per-address limits.
 
 **To change a limit,** add a `limits` part to `gateway.config.json`, at the same level as `routes`, with only the limits you change. For example (the `...` stands for your routes, which stay as they are; note the comma after the `routes` part):
 
@@ -458,9 +463,9 @@ Then run `nssm restart flyff-gateway`. A misspelt limit name stops the gateway w
 
 ## Bandwidth
 
-The game files are served from this machine, over this machine's internet connection. A player downloads many megabytes the first time they enter the world (the target is at most 15 MB until the character is on screen), and every player does that over your upload speed. The lobby of Piece 2 is a few kilobytes and uses none of these files.
+The game files are served from this machine, over this machine's internet connection. A player downloads many megabytes the first time they enter the world (the target is at most 15 MB until the character is on screen), more as they walk into new areas and meet new monsters, and every player does that over your upload speed. The lobby itself is a few kilobytes and uses none of these files.
 
-When the machine's upload becomes the limit, move `/assets/` to a CDN (a service that serves files from servers close to the player): upload `dist\assets` there, and send `/assets/*` to it instead of to the `file_server` in the Caddyfile. Also worth doing then: compress the `.json`, `.bin` and `.glb` files, as the viewer's server does (`apps/viewer/vite.serveDist.ts`).
+When the machine's upload becomes the limit, move `/assets/` to a CDN (a service that serves files from servers close to the player): upload `dist\assets` there, and send `/assets/*` to it instead of to the `file_server` in the Caddyfile. Also worth doing then: compress the `.json`, `.bin` and `.glb` files, as the viewer's server does (`packages/scene/vite/serveDist.ts`).
 
 ## Troubleshooting
 
@@ -474,6 +479,16 @@ When the machine's upload becomes the limit, move `/assets/` to a CDN (a service
 | "Too many connection attempts from your network. Wait a minute and try again." | 60 new connections from one address in a minute. Wait a minute. If a whole café or carrier shares the address, raise `limits.maxNewConnectionsPerAddressPerMinute`. The gateway log shows `refused <address> rate`. |
 | "The game is full right now. Try again in a few minutes." | The gateway has 1000 open connections (`limits.maxConnections`). The gateway log shows `refused <address> full`. If the `open` lines before it come from many different addresses, you have many players: raise the limit if the machine has room. If they come from a few addresses again and again, someone is holding connections to fill the gateway: lower `maxConnectionsPerAddress`, see [Before a public launch](#before-a-public-launch). |
 | "Wrong Password. Cannot log into account for 15 seconds." | The lockout, see above. Wait. |
+| **Enter** stays on "Entering the world…", then "The server did not answer in time." | The login server did not answer the browser's request to enter (15 seconds), or the cache server did not answer (25 seconds). Are the cache server (`6. Cache.exe`), the core server and the world server running? Does `routes` have the `cache` route (step 5)? The gateway log shows an `open` line for `…:5400` when the browser reaches the cache server. |
+| "The game closed the connection. If this character was still in the game from an earlier session, wait a moment and try again." | The world server refused the character, usually because it is still in the game from a session that has just ended (a closed tab, a phone that slept), and it says nothing about why. The server lets the old session go after a short while. Wait a moment, log in again and tap **Enter**. |
+| "The connection to the game was lost." | A connection closed while playing: the phone slept or lost its network, the gateway was restarted, or a server stopped. Log in again. There is no automatic reconnect yet. |
+| "Moving to another map isn't supported yet." | The character walked through a portal or was moved to another map by the server. Only one map per session works so far. Log in again. |
+| "This map isn't available in the browser yet." | The character is saved on a map that was not converted, or the game files on the server are older than the game data (`npm run convert` again, step 3a). |
+| "The game files on the server are out of date." | `dist\assets` was converted by an older version of FlyffWeb and lacks the game data this one reads (such as `data/worlds.json`). In `$FlyffWeb`, run `npm run convert -- --only data` (a few seconds), then enter again. |
+| "The game files took too long to load. Check the connection and try again." | The map and the characters around the player did not arrive within a minute. On a slow phone connection, try again (the second time is quicker: the browser keeps what it already downloaded). If it happens on every device, check the machine's upload (see [Bandwidth](#bandwidth)) and that Caddy serves `/assets/`. |
+| "This browser can't show the 3D world (WebGL is off or not supported)." | The browser has no WebGL 2, which the 3D world needs. Update the browser (on iPhone and iPad: iOS / iPadOS 16 or newer). In Chrome on a PC, turn on "Use graphics acceleration when available" in Settings → System and restart Chrome. Logging in and the character list work without it. |
+| Other players and monsters are missing or stand still, and on the overlay `indexed` stays at 0 while `bundles` grows | The old world server is running: its packets have no table of contents (step 4). With the new one, `indexed` equals `bundles`; a `skipped` number that grows is then normal. |
+| The error log in `Program` has `GATEWAY_CLIENT_ADDR refused from ...` after a player entered the world | The new cache server does not list the address the gateway connects from in `CacheServer.ini`: as for the certifier, read the "When to add a second line" note in [server-patches/README.md](../server-patches/README.md). |
 | Everyone disconnected at once, nobody can log in for about 10 minutes | The servers' connection-flood limiter: the old certifier or login server is still running, or `Certifier.ini` or `LoginServer.ini` has no `Gateway` line. See step 4 and [Before a public launch](#before-a-public-launch). |
 | The error log in `Program` has `Gateway … not added` | A `Gateway` line in `Certifier.ini` or `LoginServer.ini` (both servers write this line) is not a plain IPv4 address (a typo, say), or there are more than 8 of them. Find the address the line names in those two files, fix it, and restart that server. |
 | Every line in the gateway log shows `127.0.0.1` | `trustedProxies` does not list `127.0.0.1`, or Caddy is not the one passing the connection. |

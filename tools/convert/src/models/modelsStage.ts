@@ -5,6 +5,10 @@
 //   motions/<skeleton web name>/<web name>.glb   the joints plus one animation (motionGlb.ts)
 //   models/<web name>.glb                 meshes, materials, skin and object animations (modelGlb.ts)
 //
+// and, for each model with a collision mesh, a hashed `.bin` file under the glb's own name:
+//
+//   collision/<web name>.bin              the collision mesh's triangles (collisionFiles.ts, collisionBin.ts)
+//
 // A model needs its skeleton's `.chr` even when `--only` leaves that file out; skeletons are read on demand, once.
 // It runs after the textures stage: a material names its texture's logical key only when that texture was written in
 // this run (R2), else null with a warning.
@@ -22,6 +26,7 @@ import type { Report } from '../output/Report';
 import type { Stage } from '../run';
 import { textureKey } from '../textures/convertTexture';
 import { matchesOnly, runLimited } from '../util';
+import { writeCollision } from './collisionFiles';
 import { buildModelGlb } from './modelGlb';
 import { buildMotionGlb } from './motionGlb';
 import { skeletonFor, skeletonOfMotion } from './skeletonFor';
@@ -158,7 +163,11 @@ export async function convertModel(src: string, ctx: ModelsContext): Promise<voi
     );
   }
   await ctx.writer.write(`models/${webName(base)}.glb`, glb, src);
+  // The same stem as the glb, so the model's key leads to its collision file.
+  const collisionBytes = await writeCollision(model.collision, webName(base), ctx.writer, src);
   ctx.report.ok('models', src, bytes.length, glb.length);
+  // The model's bytes were counted with the glb.
+  if (collisionBytes !== null) ctx.report.ok('collision', src, 0, collisionBytes);
 }
 
 export const modelsStage: Stage = {

@@ -1,8 +1,8 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
   ArReader, ArWriter, DPID_UNKNOWN, PacketType, Port, bytesToHex, decodeCertifierMessage, decodeLoginMessage,
-  deleteKey, encodeCreatePlayer, encodeDeletePlayer, encodeGetPlayerList, encodePing, encodeQueryTickCount, hashPassword,
-  hexToBytes, PROTOCOL_VERSION,
+  deleteKey, encodeCreatePlayer, encodeDeletePlayer, encodeGetPlayerList, encodePing, encodePreJoin, encodeQueryTickCount,
+  hashPassword, hexToBytes, PROTOCOL_VERSION,
 } from '../src';
 import type { NewCharacter, Recording } from '../src';
 import { decodeCreatePlayer, decodeDeletePlayer } from './helpers/clientDecoders';
@@ -61,6 +61,10 @@ describe('login message decoding', () => {
     });
     expect(m.messengers).toEqual([{ slot: 2, state: 0xfffffff1, friends: [{ id: 0xfffffff2, blocked: -1, state: 0xfffffff3 }] }]);
   });
+  it('decodeLoginMessage reads PRE_JOIN', () => {
+    expect(decodeLoginMessage(new ArWriter().u32(0xff05).toBytes())).toEqual({ type: 'preJoin' });
+    expect(PacketType.PRE_JOIN).toBe(0xff05);
+  });
   it('decodes the other replies', () => {
     expect(decodeLoginMessage(new ArWriter().u32(PacketType.ERROR).i32(133).toBytes())).toEqual({ type: 'error', code: 133 });
     expect(decodeLoginMessage(new ArWriter().u32(PacketType.CACHE_ADDR).string('172.31.238.55').toBytes()))
@@ -89,6 +93,7 @@ describe('login message decoding', () => {
       new ArWriter().u32(PacketType.QUERYTICKCOUNT).u32(1).i64(2n).toBytes(),
       new ArWriter().u32(PacketType.PING).u32(1).toBytes(),
       new ArWriter().u32(PacketType.ONE_HOUR_NOTIFY).toBytes(),
+      new ArWriter().u32(PacketType.PRE_JOIN).toBytes(),
       new ArWriter().u32(PacketType.LOGIN_PROTECT_NUMPAD).u32(1).toBytes(),
       new ArWriter().u32(PacketType.LOGIN_PROTECT_CERT).i32(1).u32(1).toBytes(),
     ];
@@ -147,6 +152,17 @@ describe('login encoders', () => {
     expect(r.string(33)).toBe(hashPassword('password1'));
     expect(r.u32()).toBe(3);
     r.expectEnd();
+  });
+  it("encodePreJoin writes CDPLoginClient::SendPreJoin's fields", () => {
+    const expected = new ArWriter().u32(DPID_UNKNOWN).u32(0xff05).string('webtester').u32(7).string('Hero').i32(0).toBytes();
+    expect(bytesToHex(encodePreJoin('webtester', 7, 'Hero'))).toBe(bytesToHex(expected));
+    // An ID above 2^31 stays unsigned.
+    expect(bytesToHex(encodePreJoin('a', 0xfffffff0, 'B'))).toBe(bytesToHex(
+      new ArWriter().u32(DPID_UNKNOWN).u32(0xff05).string('a').u32(0xfffffff0).string('B').i32(0).toBytes()));
+  });
+  it('refuses a non-ASCII account or character name in PRE_JOIN', () => {
+    expect(() => encodePreJoin('wébtester', 7, 'Hero')).toThrow();
+    expect(() => encodePreJoin('webtester', 7, 'Héro')).toThrow();
   });
   it('writes CREATE_PLAYER with one byte per small field and the hair colour as an unsigned word', () => {
     const c: NewCharacter = { slot: 1, name: 'Ab', face: 2, costume: 3, skinSet: 4, hairMesh: 5, hairColor: 0xff966455, sex: 1, job: 0, headMesh: 6, bankPin: 1234 };
