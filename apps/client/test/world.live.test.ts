@@ -9,30 +9,33 @@
 // from the gateway). Each account uses its first character; an account without one gets `WebWalk` and three digits,
 // made first and deleted at the end. Without a `world` section (or without live.config.json) the tests are skipped.
 //
-// What is real and what is not: the gateway, the channels, LoginFlow, WorldSession, WorldState, the movement rules and
-// the packets are the client's own. What the world screen adds (the 3D view, the keys, the frame loop) is replaced by
-// a loop of 60 rules steps a second from the real clock, run for both players, and by a walker that presses "run
-// forward" for 3 s and then lets go of the keys with the run key still held, so that the stop goes out as PLAYERMOVED
-// alone (no MODE_WALK PLAYERBEHAVIOR with it, which would carry the position by itself). The game data (the movers'
-// speeds, the world folders) is read from the worktree's dist/assets through a store that reads files, and the ground
-// height from the same folder's tiles, so the walker stands on the terrain as the screen would put it.
+// What is real and what is not: the gateway, the channels, LoginFlow, WorldSession, WorldState, the movement rules, the
+// own mover's driving (`OwnMover`, as the world screen drives it: the controls each step, the moves it sends, a tap's
+// DESTPOS and `m_nCorr`, the PLAYERCORR a step may owe) and the packets are the client's own. What the world screen
+// adds (the 3D view, the keys, the pointer, the frame loop) is replaced by a loop of 60 rules steps a second from the
+// real clock, run for both players, and by a walker that presses "run forward" for 3 s and then lets go of forward
+// (with nothing held the mode stays as it was, Ruling 40, so the stop goes out as PLAYERMOVED alone, without a mode
+// change's PLAYERBEHAVIOR, which would carry the position by itself), and then taps a point 8 m ahead of it. The game
+// data (the movers' speeds, the world folders) is read from the worktree's dist/assets through a store that reads
+// files, and the ground from the same folder's tiles (the terrain, without the objects), so the walker stands on the
+// terrain as the screen would put it: the run and the tap need open ground ahead of the walker's character.
 //
 // The servers' accept limiter (helpers/connectGap.ts explains it): every connection below waits until 300 ms after the
 // one before, the lobby's and the world's alike; keep it that way, and do not loop the test.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { WorldManifest } from '@flyffweb/formats';
 import { CloseCode } from '@flyffweb/protocol';
-import type { BundleMessage, CharacterSummary, WorldMessage } from '@flyffweb/protocol';
+import type { BundleMessage, CharacterSummary, MoveReport, Vec3, WorldMessage } from '@flyffweb/protocol';
+import type { MoveIntent } from '@flyffweb/scene';
 import type { Gateway } from '@flyffweb/gateway/src/server';
 import { closeText } from '../src/lobby/errorText';
 import { TIMEOUT_TEXT } from '../src/lobby/LoginFlow';
 import type { WorldEntry } from '../src/lobby/LoginFlow';
-import { desiredFrom, driveOwnMover, movedReport } from '../src/world/controls';
-import type { Desired } from '../src/world/controls';
 import { loadGameData } from '../src/world/gameData';
 import type { GameData } from '../src/world/gameData';
 import { ObjSta } from '../src/world/sim/constants';
-import { isEmptyDest } from '../src/world/sim/moverRules';
+import { OwnMover } from '../src/world/ownMover';
+import type { OwnMoverSession } from '../src/world/ownMover';
 import { FixedStepper } from '../src/world/sim/stepper';
 import { JOIN_CLOSED_TEXT, WorldSession } from '../src/world/WorldSession';
 import type { WorldEvent } from '../src/world/WorldSession';
@@ -133,13 +136,17 @@ const MIN_RUN_M = 10;
 const WITHIN_M = 1;
 /** PLAYERMOVED goes out when the run starts and when it stops; the observer must have applied at least these two MOVERMOVED. */
 const MIN_MOVES_APPLIED = 2;
+/** How far ahead of the walker the tap is: open ground there, as the screen would pick it on the land. */
+const TAP_M = 8;
+/** A walk of 8 m at the run's 6 m a second takes under 2 s; the walker stands within this. */
+const TAP_WALK_MS = 10000;
 
-/** No keys, in walk mode: the walker starts walking (the screen would keep the mode the server gave it). */
-const STAND = desiredFrom({ forward: 0, turn: 0, run: false });
+/** No keys: the mode stays as it is (the server's at first), as on the world screen (Ruling 40). */
+const STAND: MoveIntent = { forward: 0, turn: 0, run: false };
 /** Forward with the run key held. */
-const RUN_FORWARD = desiredFrom({ forward: 1, turn: 0, run: true });
-/** Forward let go after the run: the stop is PLAYERMOVED alone, since with no key held the mode stays (Ruling 40). */
-const STOP_RUNNING = desiredFrom({ forward: 0, turn: 0, run: true }, RUN_FORWARD);
+const RUN_FORWARD: MoveIntent = { forward: 1, turn: 0, run: true };
+/** Forward let go after the run: the stop is PLAYERMOVED alone, since with no move held the mode stays (Ruling 40). */
+const STOP_RUNNING: MoveIntent = { forward: 0, turn: 0, run: true };
 
 const sleep = (ms: number): Promise<void> => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -209,8 +216,9 @@ const asError = (error: unknown): Error => (error instanceof Error ? error : new
 
 /**
  * One account's player: logs in, picks (or makes) its character, enters, and then, like the world screen, runs the rules
- * 60 steps a second with the controls in `desired`, sending its moves as `ControlGround` does. It keeps its own
- * `WorldState`, the movers in view of its session, which the other player's moves reach through the server.
+ * 60 steps a second with the keys in `intent` and a `tap`, driving its own mover with the world screen's `OwnMover`.
+ * It keeps its own `WorldState`, the movers in view of its session, which the other player's moves reach through the
+ * server.
  */
 class Player {
   /** The character it plays: the account's first, or the one the test made. */
@@ -220,8 +228,13 @@ class Player {
   session: WorldSession | undefined;
   world: WorldState | undefined;
   entered: EnteredEvent | undefined;
-  /** What the keys would ask of the own mover this step. */
-  desired: Desired = STAND;
+  /** What the keys would ask of the own mover each step. */
+  intent: MoveIntent = STAND;
+  /** A tap on the land, at this D3D point, that the next step takes (`TapToWalk.take`). */
+  tap: Vec3 | null = null;
+  /** What the own mover's driving sent since the player entered: the DESTPOS points and the PLAYERCORR states. */
+  readonly sentDestPos: Vec3[] = [];
+  readonly sentCorr: MoveReport[] = [];
   /** Rules steps taken since the first entry. */
   steps = 0;
   /** The text of the `ended` event, if the session has ended. */
@@ -233,9 +246,13 @@ class Player {
 
   private entry: WorldEntry | undefined;
   private lobby: Lobby | undefined;
+  /** The own mover's driving, as the world screen's, for the session the player is in. */
+  private ownMover: OwnMover | undefined;
   private finishEntering: { resolve: () => void; reject: (error: Error) => void } | undefined;
   /** MOVERMOVED messages applied, by the object they moved. */
   private readonly movesApplied = new Map<number, number>();
+  /** DESTPOS messages applied, by the object they sent somewhere. */
+  private readonly destsApplied = new Map<number, number>();
 
   /** `nameStart` keeps the made character's three digits apart from the other player's (this one's are `nameStart` to `nameStart` + 499). */
   constructor(readonly role: 'walker' | 'observer', readonly login: Account, private readonly nameStart: number) {}
@@ -253,6 +270,11 @@ class Player {
   /** How many MOVERMOVED messages about `objectId` this player has applied. */
   movesAppliedTo(objectId: number): number {
     return this.movesApplied.get(objectId) ?? 0;
+  }
+
+  /** How many DESTPOS messages about `objectId` this player has applied. */
+  destsAppliedTo(objectId: number): number {
+    return this.destsApplied.get(objectId) ?? 0;
   }
 
   /** The mover of the other player named `name` in this player's view, if the world server has told it of one. */
@@ -305,17 +327,19 @@ class Player {
     }
   }
 
-  /** One rules step, as the world screen takes it: the controls to the own mover and its moves sent, then every mover's step. */
+  /**
+   * One rules step, as the world screen takes it (`WorldScreen.step`): a tap, then the keys, to the own mover
+   * (`OwnMover.control`), its moves sent; then every mover's step, and the PLAYERCORR it may owe.
+   */
   step(): void {
-    const { world, session, entry } = this;
-    if (!this.playing || world === undefined || session === undefined || entry === undefined) return;
+    const { world, ownMover } = this;
+    if (!this.playing || world === undefined || ownMover === undefined) return;
     const own = world.self();
-    if (own !== undefined) {
-      const { moved, behavior } = driveOwnMover(own.act, this.desired, isEmptyDest(own));
-      if (moved) session.sendMoved(movedReport(own.act, entry.clock.tick()));
-      if (behavior) session.sendBehavior(own.act.report(entry.clock.tick()));
-    }
+    const tap = this.tap;
+    this.tap = null;
+    if (own !== undefined) ownMover.control(own, this.intent, tap);
     world.step();
+    ownMover.corrected(own);
     this.steps++;
   }
 
@@ -432,11 +456,28 @@ class Player {
     }
   }
 
-  /** The JOIN bundle: the world the player is in, with the movers in view, standing on its terrain. */
+  /** The JOIN bundle: the world the player is in, with the movers in view, standing on its terrain; the own mover's driving. */
   private begin(event: EnteredEvent): void {
     const terrain = terrainOf(event.worldId);
+    const session = this.session!;
     this.world = new WorldState(gameData!, this.entry!.clock, terrain.ground);
     this.entered = event;
+    this.sentDestPos.length = 0;
+    this.sentCorr.length = 0;
+    // the session's sends, counted on the way (the world screen's mark of the tapped point is not drawn here)
+    const sends: OwnMoverSession = {
+      sendMoved: (move) => session.sendMoved(move),
+      sendBehavior: (move) => session.sendBehavior(move),
+      sendDestPos: (pos, forward) => {
+        this.sentDestPos.push([...pos]);
+        session.sendDestPos(pos, forward);
+      },
+      sendCorr: (move) => {
+        this.sentCorr.push(move);
+        session.sendCorr(move);
+      },
+    };
+    this.ownMover = new OwnMover(sends, this.entry!.clock, { show: () => {} });
     this.apply(event.messages);
     this.playing = true;
   }
@@ -451,6 +492,7 @@ class Player {
         continue;
       }
       if (value.type === 'moverMoved') this.movesApplied.set(objectId, this.movesAppliedTo(objectId) + 1);
+      if (value.type === 'destPos') this.destsApplied.set(objectId, this.destsAppliedTo(objectId) + 1);
       world.apply(objectId, value);
     }
   }
@@ -633,12 +675,12 @@ describe.skipIf(config === undefined)(skip === undefined ? 'live world' : `live 
     const stepsBefore = runner.steps;
 
     try {
-      // 3 s of "run forward" (180 steps), then forward let go with the run key still held: the first idle step stands the
-      // mover and sends PLAYERMOVED, and nothing else (no mode changes), so the stop rides on PLAYERMOVED alone.
-      runner.desired = RUN_FORWARD;
+      // 3 s of "run forward" (180 steps), then forward let go: the first idle step stands the mover and sends PLAYERMOVED,
+      // and nothing else (with nothing held the mode stays), so the stop rides on PLAYERMOVED alone.
+      runner.intent = RUN_FORWARD;
       await waitUntil('the walker running for 3 s', 10000, () => runner.steps >= stepsBefore + RUN_STEPS,
         () => `the walker took ${runner.steps - stepsBefore} of ${RUN_STEPS} rules steps: is the rules loop running?`);
-      runner.desired = STOP_RUNNING;
+      runner.intent = STOP_RUNNING;
       await waitUntil('the walker standing', 5000, () => (own.act.state & ObjSta.MOVE_ALL) === ObjSta.STAND,
         () => `the walker is ${stateText(own)}.`);
 
@@ -675,8 +717,57 @@ describe.skipIf(config === undefined)(skip === undefined ? 'live world' : `live 
         `the walker says it stands at (${says[0].toFixed(2)}, ${says[2].toFixed(2)}) and the observer sees it at (${sees[0].toFixed(2)}, ${sees[2].toFixed(2)}): ${apart.toFixed(2)} m apart`,
       ).toBeLessThanOrEqual(WITHIN_M);
     } finally {
-      runner.desired = STAND;
+      runner.intent = STAND;
     }
+  }, 60000);
+
+  it('the observer sees the walker walk to a point it tapped 8 m ahead, and stand within 1 m of it', async () => {
+    const [runner, watcher] = bothInWorld();
+    const own = runner.world!.self();
+    if (own === undefined) throw new Error(`the walker's own character is not among its movers in view: ${runner.inView()}`);
+    const destsBefore = watcher.destsAppliedTo(runner.objectId);
+    // 8 m ahead in the way the walker faces (D3D (sin, -cos) of the angle), on the terrain: where a tap there would land
+    const theta = (own.act.body.angle * Math.PI) / 180;
+    const x = own.act.body.pos[0] + Math.sin(theta) * TAP_M;
+    const z = own.act.body.pos[2] - Math.cos(theta) * TAP_M;
+    const point: Vec3 = [x, terrainOf(runner.entered!.worldId).heightAt(x, z) ?? own.act.body.pos[1], z];
+
+    // the tap: SetDestPos, m_nCorr -1 and the client SNAPSHOT with DESTPOS (OwnMover); the walker walks there in its mode
+    runner.tap = point;
+    await waitUntil('the walker standing at the tapped point', TAP_WALK_MS, () => runner.sentDestPos.length > 0 && stands(own),
+      () => `the walker is ${stateText(own)}, ${Math.hypot(own.act.body.pos[0] - x, own.act.body.pos[2] - z).toFixed(2)} m from the point.`);
+
+    // the server passes the DESTPOS on: the observer's copy walks there on its own and stands
+    const seen = (): Mover | undefined => watcher.sees(runner.name);
+    await waitUntil(
+      'the observer seeing the walker stand at the point',
+      SETTLE_MS,
+      () => {
+        const m = seen();
+        return m !== undefined && watcher.destsAppliedTo(runner.objectId) > destsBefore && stands(m);
+      },
+      () => {
+        const m = seen();
+        return m === undefined ? `${watcher.inView()}.` : `The observer's walker is ${stateText(m)}. The observer applied ${watcher.destsAppliedTo(runner.objectId) - destsBefore} DESTPOS of it.`;
+      },
+    );
+    await sleep(REST_MS);
+    checkWell();
+
+    const stood = seen();
+    if (stood === undefined) throw new Error(`the observer lost sight of the walker while they rested. ${watcher.inView()}`);
+    const says = own.act.body.pos;
+    const sees = stood.act.body.pos;
+    const fromPoint = Math.hypot(says[0] - x, says[2] - z);
+    const apart = Math.hypot(says[0] - sees[0], says[2] - sees[2]);
+    expect(runner.sentDestPos, 'the walker sent one DESTPOS, of the tapped point').toEqual([point]);
+    // open ground: the walk met nothing and did not fall, so it owed no PLAYERCORR
+    expect(runner.sentCorr, `the walker's tap-walk ended where it met something or fell (PLAYERCORR): ${runner.sentCorr.length} sent`).toEqual([]);
+    expect(fromPoint, `the walker stands ${fromPoint.toFixed(2)} m from the point it tapped`).toBeLessThanOrEqual(WITHIN_M);
+    expect(
+      apart,
+      `the walker says it stands at (${says[0].toFixed(2)}, ${says[2].toFixed(2)}) and the observer sees it at (${sees[0].toFixed(2)}, ${sees[2].toFixed(2)}): ${apart.toFixed(2)} m apart`,
+    ).toBeLessThanOrEqual(WITHIN_M);
   }, 60000);
 
   it('every bundle had a table and no reader mismatched', () => {
