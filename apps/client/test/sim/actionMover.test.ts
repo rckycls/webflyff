@@ -82,10 +82,12 @@ describe('ActionMover', () => {
     const predicted = act.presuppose(MAX_CORR_SIZE_45);
     expect(act.body.pos).toEqual([100, 5, 200]);
     steps(act, 22);
-    for (let i = 0; i < 3; i++) expect(predicted.pos[i]).toBeCloseTo(act.body.pos[i]!, 9);
+    // Equal to the bit here. In general a step's x6.5 round trip (which PresupposePos does not make) can change the
+    // last bit of the x/z move, in Neuz as here, and the float position may or may not absorb it.
+    expect(predicted.pos).toEqual(act.body.pos);
     expect(predicted.angle).toBe(act.body.angle);
-    expect(predicted.delta[0]).toBeCloseTo(act.delta[0], 12);
-    expect(predicted.delta[2]).toBeCloseTo(act.delta[2], 12);
+    expect(predicted.delta[0]).toBe(act.delta[0]);
+    expect(predicted.delta[2]).toBe(act.delta[2]);
   });
 
   it('angle 0 runs toward lower D3D z', () => {
@@ -130,7 +132,7 @@ describe('ActionMover', () => {
     act.forceSet(m);
     expect(act.body.pos).toEqual([10, 2, -5]);
     expect(act.body.pos).not.toBe(pos);
-    expect(act.delta).toEqual([0.05, 0, -0.08]);
+    expect(act.delta).toEqual([Math.fround(0.05), 0, Math.fround(-0.08)]); // m_vDelta is a D3DXVECTOR3 of floats
     expect(act.body.angle).toBe(wrapAngle(-30));
     expect(act.body.angle).toBeCloseTo(330, 2);
     expect(act.state).toBe(ObjSta.FMOVE | ObjSta.LTURN);
@@ -291,6 +293,8 @@ describe('ActionMover: the rest of the copied rules', () => {
     for (let i = 0; i < 80; i++) {
       act.step(() => 0);
       expect(act.state & ObjSta.JUMP_ALL).toBe(0);
+      // m_vDelta.y -= 0.005f six times in floats (in doubles it would round to -0.029999999329447746)
+      if (i === 5) expect(act.delta[1]).toBe(-0.029999997466802597);
     }
     expect(act.body.pos[1]).toBe(0);
     expect(act.delta[1]).toBe(0);
@@ -301,15 +305,53 @@ describe('ActionMover: the rest of the copied rules', () => {
     const low = mover(0, [0, 0.2, 0]);
     low.step(() => 0);
     expect(low.body.pos[1]).toBe(0);
+    // From 0.3 the fall is 0.005, 0.01, 0.015, 0.02 in floats: at step 4 the float y is 0.25000003, still above
+    // 0.25 (in doubles it would be 0.24999999999999997 and land a step early); step 5 lands.
     const high = mover(0, [0, 0.3, 0]);
-    high.step(() => 0);
-    near(high.body.pos[1], 0.295);
-    near(high.delta[1], -0.005);
-    high.step(() => 0);
-    near(high.body.pos[1], 0.285);
-    steps(high, 3, () => 0); // 0.27, then 0.25 (about), then 0.225 at the latest is within 0.25: landed
-    expect(high.body.pos[1]).toBe(0);
+    const ys: number[] = [];
+    for (let i = 0; i < 5; i++) {
+      high.step(() => 0);
+      ys.push(high.body.pos[1]);
+      if (i === 0) near(high.delta[1], -0.005);
+    }
+    near(ys[0]!, 0.295);
+    near(ys[1]!, 0.285);
+    near(ys[2]!, 0.27);
+    expect(ys[3]).toBe(0.2500000298023224);
+    expect(ys[4]).toBe(0);
     expect(high.delta[1]).toBe(0);
+  });
+
+  it('runs in float steps at real world coordinates, as Neuz does', () => {
+    // at x = 6968.5 floats are 1/2048 apart, so each 0.1f step adds 205 of them, 0.10009765625: 60.0586 in 600 steps
+    // where doubles would make 60. z (3200) does not see the float cos(90 degrees)'s 4e-9 at all.
+    const act = new ActionMover({ pos: [6968.5, 0, 3200], angle: 90, speed: Math.fround(0.1) });
+    act.sendActMsg(ActMsg.FORWARD);
+    steps(act, 600, () => 0);
+    expect(act.body.pos[0]).toBe(7028.55859375);
+    expect(act.body.pos[2]).toBe(3200);
+  });
+
+  it('moves through the collision test\'s x6.5 and back, which PresupposePos does not', () => {
+    // at angle 30 (held as 29.998...) sinf * 0.1f is 0.0499972365796566; x 6.5f, then x (1.0f / 6.5f), it is one bit more
+    const act = mover(30);
+    act.sendActMsg(ActMsg.FORWARD);
+    const predicted = act.presuppose(1);
+    act.step();
+    expect(predicted.pos[0]).toBe(0.0499972365796566);
+    expect(act.delta[0]).toBe(0.0499972365796566);
+    expect(act.body.pos[0]).toBe(0.0499972403049469);
+  });
+
+  it('falls when its height is changed in place, as m_vPosLast is its own copy', () => {
+    const act = mover(0);
+    steps(act, 3, () => 0);
+    expect(act.body.pos[1]).toBe(0);
+    act.body.pos[1] = 5; // as SetPos would put it there
+    act.step(() => 0);
+    expect(act.body.pos[1]).toBe(Math.fround(5 - Math.fround(0.005)));
+    steps(act, 60, () => 0);
+    expect(act.body.pos[1]).toBe(0);
   });
 
   it('does not move where there is no ground', () => {
@@ -357,7 +399,7 @@ describe('ActionMover: the rest of the copied rules', () => {
     act.sendActMsg(ActMsg.FORWARD);
     act.step();
     const r = act.report(123n);
-    expect(r.pos[0]).toBeCloseTo(1.1, 9);
+    expect(r.pos[0]).toBe(Math.fround(1 + Math.fround(0.1)));
     expect(r.pos.slice(1)).toEqual([2, 3]);
     expect(r.pos).not.toBe(act.body.pos);
     expect(r.delta).toEqual(act.delta);

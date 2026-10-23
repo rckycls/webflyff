@@ -7,7 +7,10 @@ import { ActMsg, AniLoop, Mti, ObjSta, ObjStaF } from './constants';
  * `CActionMover` changes its `m_pMover`.
  */
 export interface MoverBody {
-  /** `m_vPos`. Each step and `forceSet` put a new array here. */
+  /**
+   * `m_vPos`, floats. The constructor, each step and `forceSet` put a new array here; writing into it in place (as
+   * `SetPos` does) is fine, as the rules keep their own copy of the last position.
+   */
   pos: Vec3;
   /** `m_fAngle`, always as `CObj::SetAngle` stores it (`wrapAngle`): the `ActionMover` wraps the one it is given. */
   angle: number;
@@ -29,10 +32,52 @@ export function wrapAngle(angle: number): number {
   return Math.fround((360 / 65536) * (Math.trunc(Math.fround(angle) * (65536 / 360)) & 65535));
 }
 
-/** `D3DXToRadian`. */
-const radians = (degrees: number): number => degrees * (Math.PI / 180);
+/**
+ * The C++ keeps positions, deltas, angles and speeds in `float`s (`D3DXVECTOR3`, `FLOAT`), and over a few seconds
+ * that moves a mover measurably differently from doubles (5.9 cm in 10 s at x = 7000). So every store into one of
+ * them, and every product, sum or constant on the way, is rounded to a float here. One float operation done in
+ * doubles and then rounded gives the float result exactly (a double has more than twice a float's precision);
+ * `sinf`/`cosf` are taken as the rounded double `sin`/`cos`, which a C runtime may miss by one unit in rare cases.
+ */
+const f32 = Math.fround;
+
+/** `D3DXToRadian( degree )`: `(degree) * (D3DX_PI / 180.0f)` with `D3DX_PI` `3.141592654f` (`d3dx9math.h:28-31`). */
+const RADIANS_PER_DEGREE = f32(f32(3.141592654) / 180);
+const radians = (degrees: number): number => f32(degrees * RADIANS_PER_DEGREE);
+
+/** `0.005f`, the fall a step adds to `m_vDelta.y` (`ActionMover.cpp:294`). */
+const GRAVITY = f32(0.005);
+/** `0.001f`, the height change that takes a mover off the ground (`ActionMover.cpp:284`). */
+const MOVED_HEIGHT = f32(0.001);
+/** `-0.1f`: falling faster than this takes the falling state (`ActionMoverCollision.cpp:308`). */
+const FALLING_SPEED = f32(-0.1);
+/**
+ * `COLL_TEST_DIR` (`ActionMoverCollision.cpp:146`): the move is made 6.5 times longer for the collision test, then
+ * `D3DXVECTOR3::operator /=` brings it back by multiplying by `1.0f / 6.5f` (`d3dx9math.inl:349-356`), a round trip
+ * that can change the last bit.
+ */
+const COLL_TEST_DIR = 6.5;
+const INV_COLL_TEST_DIR = f32(1 / COLL_TEST_DIR);
 
 const copy = (v: Vec3): Vec3 => [v[0], v[1], v[2]];
+const toFloats = (v: Vec3): Vec3 => [f32(v[0]), f32(v[1]), f32(v[2])];
+
+/**
+ * `m_vDelta.x = sinf( fTheta ) * s; m_vDelta.z = -cosf( fTheta ) * s;` in floats, the move of `FMOVE` and `BMOVE`
+ * (`ActionMoverState.cpp:212-230`, `:256-257`) and of `PresupposePos` (`ActionMover.cpp:377-387`, whose `sin`/`cos`
+ * of a `float` are the float overloads).
+ */
+function moveDelta(out: Vec3, theta: number, s: number): void {
+  out[0] = f32(f32(Math.sin(theta)) * s);
+  out[2] = f32(-f32(Math.cos(theta)) * s);
+}
+
+/** The `s` of `moveDelta` for a move state: `fSpeed` running, `fSpeed/4.0f` walking, `-fSpeed/5.0f` backward. */
+function moveSpeed(moveState: number, walk: boolean, speed: number): number | undefined {
+  if (moveState === ObjSta.FMOVE) return walk ? f32(speed / 4) : speed;
+  if (moveState === ObjSta.BMOVE) return f32(-speed / 5);
+  return undefined;
+}
 
 /**
  * `CActionMover` on the ground (`Source/_AIInterface/ActionMover*.cpp`): the action messages that change a mover's
@@ -44,7 +89,7 @@ const copy = (v: Vec3): Vec3 => [v[0], v[1], v[2]];
  * position and height part of `ProcessCollisionGround` on terrain only; `PresupposePos`; `CMover::ActionForceSet`.
  * Left out: flying (`IsFly`, flying NPCs), attacks, damage, collecting, jumping on purpose, the `MVRF_NOMOVE` and
  * `CHS_LOOT` blocks (no buffs here), object collision, `HATTR_*` and the world's edge (`CWorld::ClipX`/`ClipZ`);
- * `__Y_INTERFACE_VER3` (strafing) and `__X15` are off in Neuz's build. Numbers are doubles where the C++ has floats.
+ * `__Y_INTERFACE_VER3` (strafing) and `__X15` are off in Neuz's build. Positions, deltas and speeds are floats (`f32`).
  */
 export class ActionMover {
   /** `m_dwState`: `OBJSTA_*` bits. */
@@ -75,10 +120,11 @@ export class ActionMover {
   private moved = false;
   /** `m_vDeltaAccu`: the step's movement (`m_vDelta`), which the collision step adds. */
   private deltaAccu: Vec3 = [0, 0, 0];
-  /** `m_vPosLast`: where the last step put the mover. */
+  /** `m_vPosLast`: where the last step put the mover, a copy of its own (`ActionMover.cpp:192`). */
   private posLast: Vec3 = [0, 0, 0];
 
   constructor(readonly body: MoverBody) {
+    body.pos = toFloats(body.pos);
     body.angle = wrapAngle(body.angle);
   }
 
@@ -95,18 +141,21 @@ export class ActionMover {
    * skipped). Without `groundAt` the mover keeps its height, as on a flat floor.
    */
   step(groundAt?: (x: number, z: number) => number | null): void {
-    const pos = copy(this.body.pos);
+    const pos = toFloats(this.body.pos);
     this.deltaAccu = [0, 0, 0];
     this.processAction(pos);
-    // ProcessCollisionGround (ActionMoverCollision.cpp:135-274): the move in x and z. Milestone 2 puts the object
-    // collision here (the knee-height test vector, ProcessCollision) and the HATTR_* checks after each axis.
+    // ProcessCollisionGround (ActionMoverCollision.cpp:135-274): the move in x and z, through the collision test's
+    // x6.5 and back. Milestone 2 puts the object collision (the knee-height test, CWorld::ProcessCollision, which
+    // gives the vector back unchanged where nothing is hit) between the two, and the HATTR_* checks after each axis.
     if (this.moved) {
-      pos[0] += this.deltaAccu[0];
-      pos[2] += this.deltaAccu[2];
+      const dx = f32(f32(this.deltaAccu[0] * COLL_TEST_DIR) * INV_COLL_TEST_DIR);
+      const dz = f32(f32(this.deltaAccu[2] * COLL_TEST_DIR) * INV_COLL_TEST_DIR);
+      pos[0] = f32(pos[0] + dx);
+      pos[2] = f32(pos[2] + dz);
     }
-    const height = groundAt ? groundAt(pos[0], pos[2]) : this.body.pos[1];
-    if (height !== null) this.processHeight(pos, height);
-    this.posLast = pos;
+    const height = groundAt ? groundAt(pos[0], pos[2]) : pos[1];
+    if (height !== null) this.processHeight(pos, f32(height));
+    this.posLast = copy(pos);
     if (height !== null) this.body.pos = pos;
   }
 
@@ -116,31 +165,23 @@ export class ActionMover {
    * (`ClipX`/`ClipZ`) and `m_nCorr` are left out.
    */
   presuppose(frames: number): { pos: Vec3; delta: Vec3; angle: number } {
-    const v = copy(this.body.pos);
-    let f = this.body.angle;
-    const speed = this.body.speed;
+    const v = toFloats(this.body.pos);
+    let f = f32(this.body.angle);
     const moveState = this.state & ObjSta.MOVE_ALL;
     const turnState = this.state & ObjSta.TURN_ALL;
-    const vDelta: Vec3 = [0, this.delta[1], 0];
+    const s = moveSpeed(moveState, (this.stateFlag & ObjStaF.WALK) !== 0, f32(this.body.speed));
+    const vDelta: Vec3 = [0, f32(this.delta[1]), 0];
     for (let i = 0; i < frames; i++) {
-      const theta = radians(f);
-      if (moveState === ObjSta.FMOVE) {
-        const s = this.stateFlag & ObjStaF.WALK ? speed / 4 : speed;
-        vDelta[0] = Math.sin(theta) * s;
-        vDelta[2] = -Math.cos(theta) * s;
-      } else if (moveState === ObjSta.BMOVE) {
-        vDelta[0] = Math.sin(theta) * (-speed / 5);
-        vDelta[2] = -Math.cos(theta) * (-speed / 5);
-      }
+      if (s !== undefined) moveDelta(vDelta, radians(f), s);
       if (turnState === ObjSta.LTURN) {
-        f += 4;
-        if (f > 360) f -= 360;
+        f = f32(f + 4);
+        if (f > 360) f = f32(f - 360);
       } else if (turnState === ObjSta.RTURN) {
-        f -= 4;
-        if (f < 0) f += 360;
+        f = f32(f - 4);
+        if (f < 0) f = f32(f + 360);
       }
-      v[0] += vDelta[0];
-      v[2] += vDelta[2];
+      v[0] = f32(v[0] + vDelta[0]);
+      v[2] = f32(v[2] + vDelta[2]);
     }
     return { pos: v, delta: vDelta, angle: f };
   }
@@ -151,13 +192,13 @@ export class ActionMover {
    * belong to the correction and the destination, which the caller keeps.
    */
   forceSet(m: MoveReport): void {
-    this.body.pos = copy(m.pos);
+    this.body.pos = toFloats(m.pos);
     this.body.angle = wrapAngle(m.angle);
     // CActionMover::ForcedSet (ActionMoverMsg.cpp:35-60): it does not take a change into or out of flying or sitting
     const from = this.stateFlag;
     const to = m.stateFlag;
     if ((from & ObjStaF.FLY) === (to & ObjStaF.FLY) && (from & ObjStaF.SIT) === (to & ObjStaF.SIT)) {
-      this.delta = copy(m.delta);
+      this.delta = toFloats(m.delta);
       this.state = m.state >>> 0;
       this.stateFlag = to >>> 0;
       this.motionEx = m.motionEx;
@@ -186,7 +227,7 @@ export class ActionMover {
       this.processActMsg1(ActMsg.STAND, 0);
     } else {
       // the groups whose states are copied, in ProcessAction's order; the look, attack, damage and action states are not
-      const speed = this.body.speed;
+      const speed = f32(this.body.speed);
       for (const group of [ObjSta.MOVE_ALL, ObjSta.TURN_ALL, ObjSta.JUMP_ALL]) {
         if (this.state & group) this.processState1(this.state & group, speed);
       }
@@ -194,13 +235,13 @@ export class ActionMover {
     // m_vDeltaE, the outside force, is always zero here
     this.moved = this.delta[0] !== 0 || this.delta[2] !== 0;
     if (this.delta[1] !== 0 || this.moved) this.ground = 0;
-    else if (Math.abs(vPos[1] - this.posLast[1]) > 0.001) this.ground = 0;
+    else if (Math.abs(f32(vPos[1] - this.posLast[1])) > MOVED_HEIGHT) this.ground = 0;
     // gravity, except while vanishing after death
     if ((this.state & ObjSta.DMG_ALL) !== ObjSta.DISAPPEAR && this.ground !== 1) {
-      this.delta[1] -= 0.005;
+      this.delta[1] = f32(this.delta[1] - GRAVITY);
       if (this.delta[1] < -0.5) this.delta[1] = -0.5;
     }
-    for (let i = 0; i < 3; i++) this.deltaAccu[i] += this.delta[i]!;
+    for (let i = 0; i < 3; i++) this.deltaAccu[i] = f32(this.deltaAccu[i]! + this.delta[i]!);
   }
 
   /**
@@ -214,13 +255,13 @@ export class ActionMover {
     if ((this.state & ObjSta.DMG_ALL) === ObjSta.DISAPPEAR) return;
     if (dy < 0) {
       if (this.ground === 1) return;
-      pos[1] += dy;
+      pos[1] = f32(pos[1] + dy);
       let landing = false;
       if ((this.state & ObjSta.JUMP_ALL) === ObjSta.SJUMP3) {
         if (pos[1] < height) landing = true;
-      } else if (pos[1] - 0.25 > height) {
+      } else if (f32(pos[1] - 0.25) > height) {
         // falling fast enough: a player takes the falling state (__SYS_COLLECTING, __BS_FIXED_KNOCKBACK)
-        if (dy < -0.1 && (this.state & ObjSta.COLLECT) === 0 && this.body.isPlayer
+        if (dy < FALLING_SPEED && (this.state & ObjSta.COLLECT) === 0 && this.body.isPlayer
           && (this.state & ObjSta.DMG_FLY_ALL) === 0) {
           this.setState(ObjSta.JUMP_ALL, ObjSta.SJUMP3);
         }
@@ -233,7 +274,7 @@ export class ActionMover {
         this.delta[1] = 0;
       }
     } else if (dy > 0) {
-      pos[1] += dy;
+      pos[1] = f32(pos[1] + dy);
     }
   }
 
@@ -344,17 +385,14 @@ export class ActionMover {
         break;
       case ObjSta.FMOVE: { // :194-241, not flying
         const walk = (this.stateFlag & ObjStaF.WALK) !== 0;
-        const s = walk ? speed / 4 : speed;
-        this.delta[0] = Math.sin(theta) * s;
-        this.delta[2] = -Math.cos(theta) * s;
+        moveDelta(this.delta, theta, moveSpeed(ObjSta.FMOVE, walk, speed)!);
         if (this.state !== ObjSta.FMOVE) break;
         this.setMotion(walk ? Mti.WALK : Mti.RUN);
         break;
       }
       case ObjSta.BMOVE: // :254-263
         if (this.state & ObjSta.DMG_ALL) break;
-        this.delta[0] = Math.sin(theta) * (-speed / 5);
-        this.delta[2] = -Math.cos(theta) * (-speed / 5);
+        moveDelta(this.delta, theta, moveSpeed(ObjSta.BMOVE, false, speed)!);
         if (this.state !== ObjSta.BMOVE) break;
         this.setMotion(Mti.BACK);
         break;
