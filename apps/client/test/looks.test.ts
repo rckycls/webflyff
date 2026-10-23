@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { WornPart } from '@flyffweb/protocol';
+import { GAME_DATA_KEYS } from '@flyffweb/formats';
 import type { WebItemModel, WebMover } from '@flyffweb/formats';
 import { DEFAULT_MALE, partKey } from '@flyffweb/scene';
+import { loadGameData } from '../src/world/gameData';
 import { lookOf } from '../src/world/render/looks';
 import { MI_FEMALE, MI_MALE, addedNpc, addedPlayer, gameDataOf, moverFrom } from './helpers/movers';
 
@@ -53,9 +55,10 @@ const data = gameDataOf({
     [740, item(740, PARTS.UPPER, null)], // listed, but no model for either sex
     [750, item(750, PARTS.UPPER, 'models/part_mglv01upper.glb', undefined, { exclusive: PARTS.HAND })], // a long sleeve: no bare hand
     [760, item(760, PARTS.UPPER, 'models/part_mshr01upper.glb')], // a short top: the bare lower body stays
-    // items.json from before the converter kept the two fields
-    [770, { id: 770, part: PARTS.UPPER, male: 'models/part_mold01upper.glb', female: null } as WebItemModel],
-    [771, { id: 771, part: PARTS.CAP, male: 'models/part_mold02cap.glb', female: null } as WebItemModel],
+    // made for women only: a man wears nothing of them, not even what they take off or hide
+    [780, item(780, PARTS.UPPER, null, 'models/part_fsuit01upper.glb', { exclusive: PARTS.LOWER })],
+    [781, item(781, PARTS.CAP, null, 'models/part_fhelm01cap.glb', { baseIgnore: PARTS.HAIR })],
+    [790, item(790, -1, 'models/part_mnowhere.glb')], // an item that is worn nowhere (dwParts is NULL_ID)
   ]),
 });
 
@@ -194,11 +197,16 @@ describe('lookOf: players', () => {
       expect(partsOf(worn(PARTS.UPPER, 700, 0x01))).toContain('models/part_malelower.glb');
     });
 
-    it('an items.json without the two fields hides nothing, as an "=" cell does', () => {
-      const parts = partsOf(worn(PARTS.UPPER, 770), worn(PARTS.CAP, 771));
-      expect(parts).toContain('models/part_malelower.glb');
-      expect(parts).toContain(HAIR);
-      expect(parts).toContain('models/part_mold01upper.glb');
+    it('an item with no model for the sex is as no item, what it takes off or hides included', () => {
+      const bare = partsOf();
+      expect(partsOf(worn(PARTS.UPPER, 780), worn(PARTS.CAP, 781))).toEqual(bare);
+      const woman = moverFrom(
+        addedPlayer(1, { sex: 1, worn: [worn(PARTS.UPPER, 780), worn(PARTS.CAP, 781)] }, { index: MI_FEMALE }), data,
+      );
+      expect(lookOf(woman, data)?.parts).toEqual([
+        'models/part_femalehead01.glb', 'models/part_fsuit01upper.glb', 'models/part_femalehand.glb',
+        'models/part_femalefoot.glb', 'models/part_fhelm01cap.glb',
+      ]); // no lower body under the suit, no hair under the helmet
     });
 
     it('hides the hair of the own character too, from the character list', () => {
@@ -217,12 +225,73 @@ describe('lookOf: players', () => {
     ]);
     // without the list it shows the bare body
     expect(lookOf(own, data)?.parts).toEqual(lookOf(player([]), data)?.parts);
+    // an item worn nowhere has no slot to show in
+    expect(lookOf(own, data, [790])?.parts).toEqual(lookOf(player([]), data)?.parts);
     // another player is dressed from what its ADD_OBJ lists, not from the own character's list
     expect(lookOf(player([worn(PARTS.UPPER, 700)]), data, [502])?.parts).toContain('models/part_mmer01upper.glb');
   });
 
-  it('gives the hair colour ADD_OBJ sent', () => {
-    expect(lookOf(player([], { hairColor: 0xff8a5a3c }), data)?.hairColor).toBe(0xff8a5a3c);
+});
+
+describe('lookOf: hair colour', () => {
+  // CMover::SetHairColor (MoverEquip.cpp:193-221), called for both ADD_OBJ branches (ObjSerializeOpt.cpp:432,:694)
+  const hairOf = (hairColor: number, hairMesh = 0): number | null | undefined =>
+    lookOf(player([], { hairColor, hairMesh }), data)?.hairColor;
+
+  it('keeps the colour ADD_OBJ sent', () => {
+    expect(hairOf(0xff8a5a3c)).toBe(0xff8a5a3c);
+  });
+
+  it('comes out with alpha 0xff, as D3DCOLOR_COLORVALUE( r, g, b, 1.0f ) makes it', () => {
+    expect(hairOf(0x008a5a3c)).toBe(0xff8a5a3c);
+    expect(hairOf(0x808a5a3c)).toBe(0xff8a5a3c);
+    expect(hairOf(0x00000000)).toBe(0xff000000);
+  });
+
+  it('turns white into the default colour of the hair mesh, by sex', () => {
+    // nMaleHairColor[3] = { 199, 156, 100 }, nFeMaleHairColor[2] = { 147, 118, 103 }, the later rows { 100, 100, 100 }
+    expect(hairOf(0xffffffff, 3)).toBe(0xffc79c64);
+    expect(hairOf(0xffffffff, 7)).toBe(0xff646464);
+    const woman = lookOf(moverFrom(addedPlayer(2, { sex: 1, hairMesh: 2, hairColor: 0xffffffff }, { index: MI_FEMALE }), data), data);
+    expect(woman?.hairColor).toBe(0xff937667);
+  });
+
+  it('counts white by its colour channels, whatever the alpha', () => {
+    expect(hairOf(0x00ffffff, 3)).toBe(0xffc79c64);
+    expect(hairOf(0xfffefefe, 3)).toBe(0xfffefefe); // a hair short of white stays
+  });
+
+  it('keeps white for a hair mesh past the table, where the C++ would read beyond it', () => {
+    expect(hairOf(0xffffffff, 10)).toBe(0xffffffff);
+  });
+
+  it('treats a human NPC the same way, by its body', () => {
+    const hairOfNpc = (index: number, hairMesh: number, hairColor: number): number | null | undefined =>
+      lookOf(moverFrom(addedNpc(5, index, { characterKey: 'MaFl_Npc', hairMesh, hairColor }), data), data)?.hairColor;
+    expect(hairOfNpc(MI_FEMALE, 2, 0xffffffff)).toBe(0xff937667);
+    expect(hairOfNpc(MI_MALE, 3, 0xffffffff)).toBe(0xffc79c64);
+    expect(hairOfNpc(MI_FEMALE, 2, 0x00112233)).toBe(0xff112233);
+  });
+});
+
+describe('lookOf: the stored item catalog', () => {
+  it('an items.json from before exclusive and baseIgnore loads as hiding nothing, as an "=" cell does', async () => {
+    const files: Record<string, unknown> = {
+      [GAME_DATA_KEYS.movers]: [],
+      [GAME_DATA_KEYS.items]: [
+        { id: 770, part: PARTS.UPPER, male: 'models/part_mold01upper.glb', female: null },
+        { id: 771, part: PARTS.CAP, male: 'models/part_mold02cap.glb', female: null },
+      ],
+      [GAME_DATA_KEYS.npcs]: [],
+      [GAME_DATA_KEYS.nameColors]: { general: 0xffffffff, chaotic: 0xffff0000, ready: 0xffffc0cb },
+      [GAME_DATA_KEYS.honorTitles]: {},
+    };
+    const old = await loadGameData({ json: async <T>(key: string): Promise<T> => files[key] as T });
+    expect(old.items.get(770)).toMatchObject({ exclusive: -1, baseIgnore: -1 });
+    const parts = lookOf(moverFrom(addedPlayer(1, { worn: [worn(PARTS.UPPER, 770), worn(PARTS.CAP, 771)] }), old), old)?.parts;
+    expect(parts).toContain('models/part_malelower.glb'); // nothing takes it off
+    expect(parts).toContain('models/part_malehair01.glb'); // nothing hides it
+    expect(parts).toContain('models/part_mold01upper.glb');
   });
 });
 
@@ -245,6 +314,23 @@ describe('lookOf: human NPCs', () => {
     const look = lookOf(moverFrom(addedNpc(5, MI_MALE, { characterKey: 'MaFl_Male' }), data), data);
     expect(look?.parts[0]).toBe('models/part_malehead01.glb');
     expect(look?.skeleton).toBe('skeletons/mvr_male.glb');
+  });
+});
+
+describe('lookOf: disguised players', () => {
+  // CMover::IsDisguise (Mover.cpp:8932): a player whose index is not MI_MALE or MI_FEMALE; it is the mover it was turned into
+  it('is drawn from the model of the mover it was turned into, not dressed', () => {
+    const disguised = moverFrom(addedPlayer(1, { worn: [worn(PARTS.UPPER, 502)], hairColor: 0xffffffff }, { index: 21 }), data);
+    expect(disguised.kind).toBe('player');
+    const look = lookOf(disguised, data);
+    expect(look?.parts).toEqual(['models/mvr_aibatt.glb']);
+    expect(look?.skeleton).toBe('skeletons/mvr_aibatt.glb');
+    expect(look?.hairColor).toBeNull();
+    expect(look?.motion(3)).toBe('motions/mvr_aibatt/mvr_aibatt_walk.glb');
+  });
+
+  it('gives null when the model it was turned into was not converted', () => {
+    expect(lookOf(moverFrom(addedPlayer(1, {}, { index: 23 }), data), data)).toBeNull();
   });
 });
 

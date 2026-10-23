@@ -1,7 +1,9 @@
 import type { WornPart } from '@flyffweb/protocol';
 import { DEFAULT_MOTION, motionKey, partKey, skeletonKey } from '@flyffweb/scene';
 import type { Gender } from '@flyffweb/scene';
+import { Sex, defaultHairRgb } from '../../lobby/appearance';
 import { Mti } from '../sim/constants';
+import { NO_PART } from '../gameData';
 import type { GameData } from '../gameData';
 import type { Mover } from '../WorldState';
 
@@ -17,15 +19,16 @@ export interface MoverLook {
   parts: string[];
   /** The motion file the mover plays for an `MTI_*` motion: its standing motion for one it lacks, null if it has none. */
   motion: (motionId: number) => string | null;
-  /** `m_dwHairColor` as ADD_OBJ sends it (0xAARRGGBB), for the scene to tint the hair part with; null if the mover has none. */
+  /**
+   * `m_dwHairColor` as `CMover::SetHairColor` leaves it (0xAARRGGBB, always opaque; see `drawnHairColor`), for the scene
+   * to tint the hair part with. Null if the mover has no hair part.
+   */
   hairColor: number | null;
 }
 
 /** `MI_MALE` and `MI_FEMALE` (`Resource/defineObj.h:954-955`): the bodies of players and human NPCs, with no model of their own. */
 const MI_MALE = 11;
 const MI_FEMALE = 12;
-/** `SEX_MALE` (`Resource/define.h:74`). `PARTSMESH_*( nSex )` test `nSex == SEX_MALE` only: any other value is a woman. */
-const SEX_MALE = 0;
 /** `CItemElem::expired` (`_Common/Item.h:119`), a bit of a worn part's flag: the item shows nothing (`MoverEquip.cpp:322,346`). */
 const ITEM_EXPIRED = 0x01;
 
@@ -59,6 +62,25 @@ function motionOf(table: MotionTable, stand: string | null): (motionId: number) 
 /** `"%02d"`. */
 const twoDigits = (n: number): string => String(n).padStart(2, '0');
 
+/**
+ * The hair colour as `CMover::SetHairColor( m_dwHairColor )` leaves it, which both ADD_OBJ branches call
+ * (`ObjSerializeOpt.cpp:432,:694`): `MoverEquip.cpp:193-221`. A hair colour of white (every channel 1.0f) is replaced by
+ * the default of the hair mesh from the table of the sex, `nMaleHairColor` or `nFeMaleHairColor` (`:200-218`, `Sex.MALE`
+ * picks the men's); the colour is then packed opaque (`D3DCOLOR_COLORVALUE( r, g, b, 1.0f )`, `:220`), so the alpha
+ * ADD_OBJ sent does not matter. The replacement is compiled in because `__Y_HAIR_BUG_FIX` is off for `__MAINSERVER`: it
+ * is defined at `Neuz/VersionCommon.h:312`, inside the `__INTERNALSERVER` block (:261-406). A channel survives the C++'s
+ * `byte / 255.f * 255.f` unchanged (true for every byte), so the bytes are used as they are. A hair mesh past the
+ * table's 10 rows is read beyond the table by the C++; here white stays white.
+ */
+function drawnHairColor(gender: Gender, hairMesh: number, sent: number): number {
+  let rgb = sent & 0xffffff;
+  if (rgb === 0xffffff) {
+    const row = defaultHairRgb(gender === 'male' ? Sex.MALE : Sex.FEMALE, hairMesh);
+    if (row !== undefined) rgb = (row[0] << 16) | (row[1] << 8) | row[2];
+  }
+  return (0xff000000 | rgb) >>> 0;
+}
+
 interface Dressing {
   gender: Gender;
   hairMesh: number;
@@ -67,34 +89,28 @@ interface Dressing {
   worn: readonly WornPart[];
 }
 
-/** NULL_ID, written `=` in `propItem.txt`: no `dwExclusive` (`!= NULL_ID`, `MoverEquip.cpp:328`) or `dwBasePartsIgnore` (`!= -1`). */
-const NO_PART = -1;
-
 /** An item worn in a slot, with the columns of its row that `UpdateParts` and `CMover::Render` read. */
 interface Equipped {
-  /** The part model for the wearer's sex; null if the catalog has none. */
-  model: string | null;
+  /** The part model for the wearer's sex. */
+  model: string;
+  /** `dwExclusive` (`!= NULL_ID`, `MoverEquip.cpp:328`) and `dwBasePartsIgnore` (`!= -1`, `MoverRender.cpp:403`); `NO_PART` for none. */
   exclusive: number;
   baseIgnore: number;
   expired: boolean;
 }
 
 /**
- * What is worn, by slot (`m_aEquipInfo[i]`): the entries of `worn` whose item the catalog knows, but not the head and hair
- * slots (`UpdateParts` skips them, `MoverEquip.cpp:306,338`). An `items.json` written before the converter kept
- * `exclusive` and `baseIgnore` lacks them; that reads as NULL_ID, what a `=` cell in the table means.
+ * What is worn, by slot (`m_aEquipInfo[i]`): the entries of `worn` whose item the catalog knows and has a model of for
+ * the sex (any other is as no item, what it takes off or hides included), but not the head and hair slots
+ * (`UpdateParts` skips them, `MoverEquip.cpp:306,338`).
  */
 function equippedBy(worn: readonly WornPart[], gender: Gender, data: GameData): Map<number, Equipped> {
   const equipped = new Map<number, Equipped>();
   for (const w of worn) {
     const item = data.items.get(w.itemId);
-    if (item === undefined || w.part === Parts.HEAD || w.part === Parts.HAIR) continue;
-    equipped.set(w.part, {
-      model: item[gender],
-      exclusive: item.exclusive ?? NO_PART,
-      baseIgnore: item.baseIgnore ?? NO_PART,
-      expired: (w.flag & ITEM_EXPIRED) !== 0,
-    });
+    const model = item?.[gender];
+    if (item === undefined || !model || w.part === Parts.HEAD || w.part === Parts.HAIR) continue;
+    equipped.set(w.part, { model, exclusive: item.exclusive, baseIgnore: item.baseIgnore, expired: (w.flag & ITEM_EXPIRED) !== 0 });
   }
   return equipped;
 }
@@ -143,7 +159,7 @@ function humanLook({ gender, hairMesh, headMesh, hairColor, worn }: Dressing, da
   for (const [slot, item] of equipped) {
     if (item.expired) continue; // :322,:346: an expired item is none
     if (item.exclusive !== NO_PART) taken.add(item.exclusive);
-    if (item.model) slots.set(slot, item.model);
+    slots.set(slot, item.model);
   }
   for (const [slot, name] of BARE_BODY) {
     if (!taken.has(slot) && !slots.has(slot)) slots.set(slot, partKey(`part_${gender}${name}`));
@@ -158,15 +174,18 @@ function humanLook({ gender, hairMesh, headMesh, hairColor, worn }: Dressing, da
     skeleton: skeletonKey(gender),
     parts,
     motion: motionOf(body?.motions ?? {}, motionKey(gender, DEFAULT_MOTION[gender])),
-    hairColor,
+    hairColor: drawnHairColor(gender, hairMesh, hairColor),
   };
 }
 
-/** The own character's item ids as `m_aEquipInfo`: each in the slot its item takes (`dwParts`); ids the catalog lacks are skipped. */
+/**
+ * The own character's item ids as `m_aEquipInfo`: each in the slot its item takes (`dwParts`). Ids the catalog lacks are
+ * skipped, and so are items worn nowhere (`dwParts` is NULL_ID, -1 here).
+ */
 function ownWorn(itemIds: readonly number[], data: GameData): WornPart[] {
   return itemIds.flatMap((itemId) => {
     const item = data.items.get(itemId);
-    return item === undefined ? [] : [{ part: item.part, itemId, flag: 0 }];
+    return item === undefined || item.part < 0 ? [] : [{ part: item.part, itemId, flag: 0 }];
   });
 }
 
@@ -175,26 +194,30 @@ function ownWorn(itemIds: readonly number[], data: GameData): WornPart[] {
  * - A player is dressed from its ADD_OBJ: sex, head and hair meshes, hair colour and the worn parts. The own character's
  *   ADD_OBJ lists no item ids (`AddedPlayer.equipmentObjectIds` are inventory object ids), so it is dressed from
  *   `ownEquipment`, the item ids of the character list, as Neuz's character select dresses it.
- * - An NPC whose body is `MI_MALE` or `MI_FEMALE` is dressed the same way from the NPC part of its ADD_OBJ, its sex
- *   from the body.
- * - Any other NPC and a monster are the model and skeleton of their `propMover.txt` entry.
+ * - An NPC whose body is `MI_MALE` or `MI_FEMALE` is dressed the same way from the NPC part of its ADD_OBJ. Its sex comes
+ *   from the body here. Neuz never sets an NPC's sex: it stays `SEX_FEMALE` from the constructor (`Mover.cpp:243`) and the
+ *   NPC branch of `Serialize` reads none (`ObjSerializeOpt.cpp:689-695`), so `UpdateParts( GetSex(), ... )` and
+ *   `SetHairColor` would use the women's parts and table for a male body too. The body is what the data means.
+ * - A player disguised as another mover (`IsDisguise`, `Mover.cpp:8932`: its index is neither body) is not dressed
+ *   (`Mover.cpp:8918` only does for the two bodies): like a monster or any other NPC, it is the model and skeleton of
+ *   its `propMover.txt` entry.
  * The skin set picks a texture of the bare body parts (`PARTSTEX_UPPER`, `MoverEquip.cpp:81`), which the converted
  * models do not offer, so it is not part of the look.
  */
 export function lookOf(mover: Mover, data: GameData, ownEquipment: readonly number[] = []): MoverLook | null {
   const { added } = mover;
-  if (mover.kind === 'player') {
-    const player = added.player;
-    if (player === undefined) return null;
-    return humanLook({
-      gender: player.sex === SEX_MALE ? 'male' : 'female',
-      hairMesh: player.hairMesh,
-      headMesh: player.headMesh,
-      hairColor: player.hairColor,
-      worn: mover.isSelf ? ownWorn(ownEquipment, data) : player.worn,
-    }, data);
-  }
   if (added.index === MI_MALE || added.index === MI_FEMALE) {
+    const player = added.player;
+    if (mover.kind === 'player') {
+      if (player === undefined) return null;
+      return humanLook({
+        gender: player.sex === Sex.MALE ? 'male' : 'female',
+        hairMesh: player.hairMesh,
+        headMesh: player.headMesh,
+        hairColor: player.hairColor,
+        worn: mover.isSelf ? ownWorn(ownEquipment, data) : player.worn,
+      }, data);
+    }
     const npc = added.npc;
     return humanLook({
       gender: added.index === MI_MALE ? 'male' : 'female',

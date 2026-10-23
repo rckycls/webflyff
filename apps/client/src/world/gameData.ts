@@ -2,6 +2,9 @@ import { GAME_DATA_KEYS } from '@flyffweb/formats';
 import type { WebHonorTitles, WebItemModel, WebMover, WebNameColors, WebNpc } from '@flyffweb/formats';
 import type { AssetStore } from '@flyffweb/scene';
 
+/** NULL_ID, written `=` in `propItem.txt`: the `exclusive` and `baseIgnore` of an item that takes off and hides nothing. */
+export const NO_PART = -1;
+
 /**
  * The converter's game-data catalogs (`data/*.json`), looked up the way Neuz looks the same things up.
  */
@@ -18,6 +21,14 @@ export interface GameData {
 }
 
 /**
+ * An item of an items.json from before the converter kept `exclusive` and `baseIgnore` lacks them. That reads as the `=`
+ * cell of the table, NULL_ID: the item takes off and hides nothing.
+ */
+const withHides = (item: WebItemModel): WebItemModel => ({
+  ...item, exclusive: item.exclusive ?? NO_PART, baseIgnore: item.baseIgnore ?? NO_PART,
+});
+
+/**
  * Loads the five catalogs. The converter writes the movers, items and characters as arrays of records that carry
  * their own id or key (`gameDataStage.ts`), and the honour titles as an object keyed by the id as text. A repeated
  * id or key keeps the later record, as `CProject::LoadCharacter`'s `SetAt` does.
@@ -32,7 +43,7 @@ export async function loadGameData(store: Pick<AssetStore, 'json'>): Promise<Gam
   ]);
   return {
     movers: new Map(movers.map((mover) => [mover.index, mover])),
-    items: new Map(items.map((item) => [item.id, item])),
+    items: new Map(items.map((item) => [item.id, withHides(item)])),
     npcs: new Map(npcs.map((npc) => [npc.key.toLowerCase(), npc])),
     nameColors,
     honorTitles: new Map(Object.entries(honorTitles).map(([id, title]) => [Number(id), title])),
