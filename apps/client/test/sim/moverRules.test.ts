@@ -5,7 +5,7 @@ import { HAttr } from '../../src/world/sim/collision';
 import type { CollisionObject, Ground } from '../../src/world/sim/collision';
 import { ActMsg, AniLoop, MAX_CORR_SIZE_45, Mti, ObjSta, ObjStaF } from '../../src/world/sim/constants';
 import {
-  applyDestPos, applyMotion, applyMoved, isEmptyDest, setDestAngle, setDestObj, setDestPos, stepMover,
+  applyDestPos, applyMotion, applyMoved, applyMoverCorr, isEmptyDest, setDestAngle, setDestObj, setDestPos, stepMover,
 } from '../../src/world/sim/moverRules';
 import type { SimMover } from '../../src/world/sim/moverRules';
 
@@ -202,6 +202,64 @@ describe('moverRules: corrections (CDPClient::OnMoverMoved, __SYNC_1217)', () =>
     standing.act.step();
     applyMoved(standing, { ...turning, state: ObjSta.FMOVE | ObjSta.LTURN }, 617, false);
     expect(standing.dest).toMatchObject({ pos: [100, 0, 100], angle: -1 });
+  });
+});
+
+describe('moverRules: MOVERCORR (CDPClient::OnMoverCorr, DPClient.cpp:8929-8955)', () => {
+  it('a correction is taken at once: the point, the angle and the correction under way go, and the mover stays there', () => {
+    // the mover runs to a reported point (a correction with an action, OnMoverMoved) and turns to an angle
+    const m = sim(1, [100, 0, 100], 0);
+    applyMoved(m, report([105, 0, 100]), 617, false);
+    setDestAngle(m, 45, true);
+    steps(m, 3);
+    expect(m.corr?.action).not.toBeNull();
+    expect(m.dest?.pos).toEqual([105, 0, 100]);
+
+    // the walker met a wall on its own screen: it stands where it stopped (PLAYERCORR, passed on as MOVERCORR)
+    const stood = report([101.5, 0, 100.25], 90, { state: ObjSta.STAND, motion: Mti.STAND, delta: [0, 0, 0] });
+    applyMoverCorr(m, stood);
+    expect(m.act.body.pos).toEqual([101.5, 0, 100.25]);
+    expect(m.act.body.angle).toBe(90);
+    expect(m.act.state).toBe(ObjSta.STAND);
+    // ClearDestPos, ClearDestAngle and the memset of m_CorrAction; ActionForceSet ends the steps and the speed
+    expect(m.dest).toBeNull();
+    expect(m.corr).toBeNull();
+    steps(m, 30);
+    expect(m.act.body.pos).toEqual([101.5, 0, 100.25]);
+  });
+
+  it('a correction that runs on is taken as it is, and the mover runs on from there', () => {
+    const m = sim(1, [100, 0, 100], 0);
+    applyMoverCorr(m, report([102, 0, 100]));
+    expect(m.act.body.pos).toEqual([102, 0, 100]);
+    expect(m.act.state).toBe(ObjSta.FMOVE);
+    steps(m, 5);
+    expect(m.act.body.pos).toEqual(afterForceSet(report([102, 0, 100]), 5).body.pos);
+  });
+
+  it('an object followed is followed on, from range 0 (SetDestObj( objidDest, 0.0f, FALSE ))', () => {
+    const m = sim(1, [100, 0, 100], 0);
+    const target = sim(2, [110, 0, 100], 0);
+    setDestObj(m, 2, 3);
+    setDestAngle(m, 45, true);
+    applyMoverCorr(m, report([101, 0, 100], 90, { state: ObjSta.STAND, motion: Mti.STAND, delta: [0, 0, 0] }));
+    expect(m.act.body.pos).toEqual([101, 0, 100]);
+    expect(m.dest).toMatchObject({ pos: null, targetId: 2, range: 0, angle: -1 });
+    // it goes after the target again, and stops within range 0 (which counts as 1)
+    const { find } = world(m, target);
+    for (let i = 0; i < 200 && m.dest; i++) stepMover(m, find);
+    const gap = 110 - m.act.body.pos[0];
+    expect(gap).toBeLessThan(1);
+    expect(gap).toBeGreaterThan(0.85);
+  });
+
+  it('a flier ignores it (IsFly)', () => {
+    const m = sim(1, [100, 0, 100], 0);
+    m.act.stateFlag = ObjStaF.FLY;
+    setDestPos(m, [105, 0, 100], true);
+    applyMoverCorr(m, report([101, 0, 100], 90, { stateFlag: ObjStaF.FLY }));
+    expect(m.act.body.pos).toEqual([100, 0, 100]);
+    expect(m.dest?.pos).toEqual([105, 0, 100]);
   });
 });
 

@@ -17,6 +17,8 @@ export type WorldMessage =
   | { type: 'worldReadInfo'; worldId: number; pos: Vec3 }
   | { type: 'moverMoved'; move: MoveReport }
   | { type: 'moverBehavior'; move: MoveReport }
+  /** Another player's correction of itself (its PLAYERCORR, `CDPSrvr::OnPlayerCorr`), passed on by the world server. */
+  | { type: 'moverCorr'; move: MoveReport }
   | {
     type: 'moverAngle'; pos: Vec3; delta: Vec3; angle: number; angleX: number; accPower: number; turnAngle: number;
     tick: bigint;

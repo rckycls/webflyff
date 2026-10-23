@@ -3,7 +3,8 @@ import { MessageType } from '../constants';
 import { readAddObj } from './addObj';
 import { readEnvironmentSetting } from './environment';
 import {
-  readDestAngle, readDestPos, readMotion, readMoverAngle, readMoverBehavior, readMoverMoved, readSetDestObj,
+  readDestAngle, readDestPos, readMotion, readMoverAngle, readMoverBehavior, readMoverCorr, readMoverMoved,
+  readSetDestObj,
 } from './movement';
 import { readDelObj, readReplace, readSetPos, readSetPosAngle, readWorldReadInfo } from './place';
 import type { WorldMessage } from './types';
@@ -17,6 +18,7 @@ export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
     [MessageType.ADD_OBJ, readAddObj],
     [MessageType.MOVERMOVED, readMoverMoved],
     [MessageType.MOVERBEHAVIOR, readMoverBehavior],
+    [MessageType.MOVERCORR, readMoverCorr],
     [MessageType.MOVERANGLE, readMoverAngle],
     [MessageType.DESTPOS, readDestPos],
     [MessageType.DESTANGLE, readDestAngle],

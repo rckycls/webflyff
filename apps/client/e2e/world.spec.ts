@@ -14,7 +14,7 @@ import { ArReader, ArWriter, MessageType, NULL_ID, PacketType, Port } from '@fly
 import type { AddedMover, AddedNpc, AddedPlayer, MoveReport, Vec3 } from '@flyffweb/protocol';
 import { sampleHeight } from '@flyffweb/scene';
 import {
-  createWorldScript, writeAddMonster, writeAddNpc, writeAddPlayer, writeAddSelf, writeDelObj, writeMoverMoved,
+  createWorldScript, writeAddMonster, writeAddNpc, writeAddPlayer, writeAddSelf, writeDelObj, writeMoverCorr, writeMoverMoved,
 } from '@flyffweb/testkit';
 import type {} from '../src/testHooks'; // window.__client
 
@@ -41,7 +41,8 @@ const MI_AIBATT = 21;
 /** `OBJSTA_STAND` (`MoverMsg.h`), `OBJSTA_FMOVE`, `OBJSTA_MOVE_ALL`, `BELLI_PEACEFUL` (`defineAttribute.h:203`). */
 const OBJSTA_STAND = 0x01;
 const OBJSTA_FMOVE = 0x04;
-/** `MTI_RUN` (`Resource/defineNeuz.h`) and `ANILOOP_LOOP` (`_Common/Obj.h:28`). */
+/** `MTI_STAND`, `MTI_RUN` (`Resource/defineNeuz.h`) and `ANILOOP_LOOP` (`_Common/Obj.h:28`). */
+const MTI_STAND = 0;
 const MTI_RUN = 5;
 const ANILOOP_LOOP = 0x04;
 const OBJSTA_MOVE_ALL = 0xff;
@@ -312,6 +313,36 @@ test.describe('the world screen against scripted servers', () => {
     // the JOIN's game timer and the unread message are skipped; every message read ended where the table said
     expect(await page.evaluate(() => window.__client!.stats()))
       .toMatchObject({ bundles: 4, indexed: 4, skipped: 2, mismatched: 0, errors: [] });
+  });
+
+  test("another player's correction puts it where its own client stopped it (MOVERCORR)", async ({ page }) => {
+    const gateway = await playGateway(page);
+    await enterFlaris(page);
+    const bobAt = async () => (await page.evaluate(() => window.__client!.movers())).find((m) => m.objectId === BOB_ID)?.pos;
+    gateway.pushCache(flaris.later([writeAddPlayer(BOB_ID, bob)]));
+    await expect.poll(async () => (await bobAt()) !== undefined).toBe(true);
+
+    // Bob runs south (angle 0: D3D -z): the browser runs it on toward where its PLAYERMOVED says it will be
+    const run: MoveReport = {
+      pos: BOB_AT, delta: [0, 0, 0], angle: 0, state: OBJSTA_FMOVE, stateFlag: 0, motion: MTI_RUN, motionEx: 0,
+      loop: ANILOOP_LOOP, motionOption: 0, tick: 123456789n,
+    };
+    gateway.pushCache(flaris.later([writeMoverMoved(BOB_ID, run)]));
+    await expect.poll(async () => (await bobAt())?.[2] ?? Infinity).toBeLessThan(BOB_AT[2] - 0.5);
+
+    // Bob's own client stopped it 2 m on, where it met something, and corrected it (PLAYERCORR): the world server passes
+    // that on as MOVERCORR, which puts Bob there, standing, at once
+    const stopped: Vec3 = [BOB_AT[0], BOB_AT[1], Math.fround(BOB_AT[2] - 2)];
+    gateway.pushCache(flaris.later([writeMoverCorr(BOB_ID, {
+      ...run, pos: stopped, state: OBJSTA_STAND, motion: MTI_STAND, tick: 123456790n,
+    })]));
+    await expect.poll(async () => (await bobAt())?.[2]).toBe(stopped[2]);
+    await page.waitForTimeout(1000);
+    const at = (await bobAt())!;
+    expect([at[0], at[2]]).toEqual([stopped[0], stopped[2]]); // (its height is the land's under it)
+    expect(at[1]).toBeCloseTo(stopped[1], 1);
+    // the JOIN's game timer is the one message skipped; MOVERCORR is read, and ends where the table says
+    expect(await page.evaluate(() => window.__client!.stats())).toMatchObject({ skipped: 1, mismatched: 0, errors: [] });
   });
 
   // A hidden page runs no frames, and a lost focus may swallow the key's or the finger's let-go: either way the screen

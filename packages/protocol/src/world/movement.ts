@@ -32,6 +32,15 @@ export function readMoverBehavior(r: ArReader): MessageOf<'moverBehavior'> {
 }
 
 /**
+ * MOVERCORR: `CDPClient::OnMoverCorr` (`Neuz/DPClient.cpp:8929-8955`), the same fields as MOVERMOVED in the same order,
+ * as `CUserMng::AddMoverCorr` (`WORLDSERVER/User.cpp:4971-4993`) writes them: the player's own PLAYERCORR, which
+ * `CDPSrvr::OnPlayerCorr` (`DPSrvr.cpp:12872-12918`) applies and passes on to everyone else in view.
+ */
+export function readMoverCorr(r: ArReader): MessageOf<'moverCorr'> {
+  return { type: 'moverCorr', move: readMoveReport(r) };
+}
+
+/**
  * MOVERANGLE: `CDPClient::OnMoverAngle` (`Neuz/DPClient.cpp:8887`, a flying mover): `ar >> v >> vd >> f >>
  * fAngleX >> fAccPower >> fTurnAngle`, then `nTickCount` (`__int64`).
  */

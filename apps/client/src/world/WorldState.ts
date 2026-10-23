@@ -4,7 +4,7 @@ import type { GameData } from './gameData';
 import { ActionMover, wrapAngle } from './sim/ActionMover';
 import type { Ground } from './sim/collision';
 import { ActMsg, ObjStaF } from './sim/constants';
-import { applyDestPos, applyMotion, applyMoved, setDestAngle, setDestObj, stepMover } from './sim/moverRules';
+import { applyDestPos, applyMotion, applyMoved, applyMoverCorr, setDestAngle, setDestObj, stepMover } from './sim/moverRules';
 import type { SimMover } from './sim/moverRules';
 
 const f32 = Math.fround;
@@ -85,6 +85,9 @@ export class WorldState {
         break;
       case 'moverBehavior': // OnMoverBehavior (:8653)
         applyMoved(m, message.move, this.clock.offsetMs(message.move.tick), true);
+        break;
+      case 'moverCorr': // OnMoverCorr (:8929): another player's PLAYERCORR, passed on
+        applyMoverCorr(m, message.move);
         break;
       case 'moverAngle':
         // OnMoverAngle (:8887) starts with `if( IsFly() == FALSE ) return;`: it is the flier's correction

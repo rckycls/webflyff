@@ -249,6 +249,25 @@ export function applyMoved(m: SimMover, move: MoveReport, offsetMs: number, beha
 }
 
 /**
+ * `CDPClient::OnMoverCorr` (`DPClient.cpp:8929-8955`), the MOVERCORR message: another player's PLAYERCORR (its own
+ * client stopped it where it met something or started to fall, `OnActCollision` / `OnActDrop`), which the world server
+ * applies and passes on (`CDPSrvr::OnPlayerCorr`, `CUserMng::AddMoverCorr`). A flier ignores it. `ClearDestPos`,
+ * `ClearDestAngle` and the memset of `m_CorrAction`; then the correction taken at once (`ActionForceSet`), and the
+ * object it was following (`GetDestId`, kept from before) followed on from range 0 (`SetDestObj( objidDest, 0.0f,
+ * FALSE )`: with `NULL_ID` that is no object).
+ */
+export function applyMoverCorr(m: SimMover, move: MoveReport): void {
+  if (m.act.stateFlag & ObjStaF.FLY) return; // IsFly()
+  clearDestPos(m);
+  clearDestAngle(m);
+  dropCorrAction(m);
+  const followed = m.dest?.targetId ?? null;
+  actionForceSet(m, move);
+  if (followed === null) clearDestObj(m);
+  else setDestObj(m, followed, 0);
+}
+
+/**
  * `CDPClient::OnSetDestPos` (`DPClient.cpp:3731-3762`), the DESTPOS message: `DefaultSet`, then
  * `BehaviorActionForceSet` (`MoverParam.cpp:3303-3318`), which takes the correction's action only when its
  * `fBehavior` is set (only the commented-out correction of `OnMoverBehavior` set it) and always drops it, then

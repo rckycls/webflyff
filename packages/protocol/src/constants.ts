@@ -64,6 +64,8 @@ export const MessageType = {
   DESTPOS: 0x00c1,
   MOVERSETDESTOBJ: 0x00c2,
   DESTANGLE: 0x00c3,
+  /** The correction another client sent of its player (PLAYERCORR), which the world server passes on (`AddMoverCorr`). */
+  MOVERCORR: 0x00c8,
   MOVERMOVED: 0x00ca,
   MOVERBEHAVIOR: 0x00cb,
   MOVERANGLE: 0x00ce,

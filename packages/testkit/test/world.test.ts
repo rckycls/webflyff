@@ -5,8 +5,8 @@ import {
 import type { AddedMover, MessageReader, MoveReport, Vec3, WorldMessage } from '@flyffweb/protocol';
 import {
   GAMETIMER, encodeBundle, writeAddMonster, writeAddNpc, writeAddPlayer, writeAddSelf, writeDelObj, writeDestAngle,
-  writeDestPos, writeEnvironmentSetting, writeGameTimer, writeMotion, writeMoverAngle, writeMoverBehavior, writeMoverMoved,
-  writeReplace, writeSetDestObj, writeSetPos, writeSetPosAngle, writeWorldReadInfo,
+  writeDestPos, writeEnvironmentSetting, writeGameTimer, writeMotion, writeMoverAngle, writeMoverBehavior, writeMoverCorr,
+  writeMoverMoved, writeReplace, writeSetDestObj, writeSetPos, writeSetPosAngle, writeWorldReadInfo,
 } from '../src';
 
 it('encodeBundle writes the table', () => {
@@ -75,6 +75,7 @@ it('every writer decodes to what it was given', () => {
   const cases: [string, ReturnType<typeof writeMoverMoved>, number, WorldMessage][] = [
     ['writeMoverMoved', writeMoverMoved(11, move), MessageType.MOVERMOVED, { type: 'moverMoved', move }],
     ['writeMoverBehavior', writeMoverBehavior(12, move), MessageType.MOVERBEHAVIOR, { type: 'moverBehavior', move }],
+    ['writeMoverCorr', writeMoverCorr(26, move), MessageType.MOVERCORR, { type: 'moverCorr', move }],
     [
       'writeMoverAngle', writeMoverAngle(13, pos, delta, 45.5, -10.25, 0.75, 2.5, 555n), MessageType.MOVERANGLE,
       { type: 'moverAngle', pos, delta, angle: 45.5, angleX: -10.25, accPower: 0.75, turnAngle: 2.5, tick: 555n },

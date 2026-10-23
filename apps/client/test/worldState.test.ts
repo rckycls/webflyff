@@ -519,6 +519,23 @@ describe('WorldState: the messages and the rules (OnMoverMoved and the others)',
     expect(world.movers.get(1)!.act.body.pos).toEqual([100, 0, 100]);
   });
 
+  it('MOVERCORR puts the mover where the correction says, its point to run to gone (OnMoverCorr)', () => {
+    const { world } = newWorld();
+    add(world, playerOf(1, 'Runner'));
+    const runner = world.movers.get(1)!;
+    world.apply(1, { type: 'moverMoved', move: report([100, 0, 80]) });
+    steps(world, 5);
+    expect(runner.dest?.pos).toEqual([100, 0, 80]);
+
+    world.apply(1, { type: 'moverCorr', move: report([100, 0, 98.5], { state: ObjSta.STAND, motion: Mti.STAND, delta: [0, 0, 0] }) });
+    expect(runner.act.body.pos).toEqual([100, 0, 98.5]);
+    expect(runner.dest).toBeNull();
+    expect(runner.corr).toBeNull();
+    steps(world, 30);
+    expect(runner.act.body.pos).toEqual([100, 0, 98.5]);
+    expect(runner.act.state & ObjSta.MOVE_ALL).toBe(ObjSta.STAND);
+  });
+
   it('MOVERANGLE changes nothing on the ground, as OnMoverAngle returns for a mover that is not flying', () => {
     const { world } = newWorld();
     add(world, playerOf(1, 'Walker', { angle: 30 }));

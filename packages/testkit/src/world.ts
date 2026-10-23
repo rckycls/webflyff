@@ -69,6 +69,15 @@ export function writeMoverBehavior(objectId: number, move: MoveReport): ScriptMe
   return scripted(objectId, MessageType.MOVERBEHAVIOR, moveFields(move));
 }
 
+/**
+ * MOVERCORR: `CUserMng::AddMoverCorr` (`WORLDSERVER/User.cpp:4971-4993`): `v`, `vd`, `f`, the state, the state flag, the
+ * motion, `nMotionEx`, `nLoop`, the motion option and the tick, as MOVERMOVED's. (The server writes none for a mover in
+ * `OBJSTA_DMG_FLY`; the script writes what it is given.)
+ */
+export function writeMoverCorr(objectId: number, move: MoveReport): ScriptMessage {
+  return scripted(objectId, MessageType.MOVERCORR, moveFields(move));
+}
+
 /** MOVERANGLE: `CUserMng::AddMoverAngle` (`WORLDSERVER/User.cpp:4952`). */
 export function writeMoverAngle(
   objectId: number, pos: Vec3, delta: Vec3, angle: number, angleX: number, accPower: number, turnAngle: number,

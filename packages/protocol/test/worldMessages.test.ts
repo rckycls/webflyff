@@ -59,6 +59,12 @@ describe('movement messages', () => {
     expect(readOne(MessageType.MOVERBEHAVIOR, moveFields(move))).toEqual({ type: 'moverBehavior', move });
   });
 
+  it('MOVERCORR is OnMoverCorr: the fields AddMoverCorr writes, those of MOVERMOVED in the same order', () => {
+    // CUserMng::AddMoverCorr: ar << v << vd << f; ar << dwState << dwStateFlag << dwMotion << nMotionEx;
+    // ar << nLoop << dwMotionOption << nTickCount;
+    expect(readOne(MessageType.MOVERCORR, moveFields(move))).toEqual({ type: 'moverCorr', move });
+  });
+
   it('MOVERMOVED keeps a negative angle, a negative motionEx and a 64-bit tick whole', () => {
     const odd: MoveReport = { ...move, angle: -270.25, motionEx: -2147483648, loop: -7, tick: 9007199254740993n };
     expect(readOne(MessageType.MOVERMOVED, moveFields(odd))).toEqual({ type: 'moverMoved', move: odd });
@@ -166,6 +172,7 @@ const SAMPLES: [number, Uint8Array][] = [
   [MessageType.ENVIRONMENTALL, new ArWriter().i32(2).toBytes()],
   [MessageType.MOVERMOVED, moveFields(move)],
   [MessageType.MOVERBEHAVIOR, moveFields(move)],
+  [MessageType.MOVERCORR, moveFields(move)],
   [MessageType.MOVERANGLE, new ArWriter().vec3(pos).vec3(delta).f32(1).f32(2).f32(3).f32(4).i64(5n).toBytes()],
   [MessageType.DESTPOS, new ArWriter().vec3(pos).u8(1).toBytes()],
   [MessageType.DESTANGLE, new ArWriter().f32(1).u8(1).toBytes()],

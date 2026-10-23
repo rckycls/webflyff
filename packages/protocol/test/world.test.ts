@@ -33,7 +33,7 @@ describe('world constants', () => {
   it('copies the snapshot message types of MsgHdr.h', () => {
     expect(MessageType).toEqual({
       SETPOSANGLE: 0x000e, SETPOS: 0x0010, ENVIRONMENTALL: 0x0063, MOTION: 0x0098, DESTPOS: 0x00c1, MOVERSETDESTOBJ: 0x00c2,
-      DESTANGLE: 0x00c3, MOVERMOVED: 0x00ca, MOVERBEHAVIOR: 0x00cb, MOVERANGLE: 0x00ce, ADD_OBJ: 0x00f0, DEL_OBJ: 0x00f1,
+      DESTANGLE: 0x00c3, MOVERCORR: 0x00c8, MOVERMOVED: 0x00ca, MOVERBEHAVIOR: 0x00cb, MOVERANGLE: 0x00ce, ADD_OBJ: 0x00f0, DEL_OBJ: 0x00f1,
       REPLACE: 0x00f2, WORLD_READINFO: 0x9910,
     });
     expect(BUNDLE_MARKER).toBe(0x31434f54);
