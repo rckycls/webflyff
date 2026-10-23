@@ -13,4 +13,8 @@ const flow = new LoginFlow(
   clientConfig.certifierAddress,
   (event) => app?.handle(event),
 );
-app = new LobbyApp(root, flow);
+app = new LobbyApp(root, flow, (entry, done) => {
+  // The world screen comes later. Until then the player is sent back to the login form, with the login-server connection closed.
+  entry.login.close();
+  done("Entering the world isn't built yet.");
+});

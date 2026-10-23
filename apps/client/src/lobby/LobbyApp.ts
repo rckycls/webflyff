@@ -1,6 +1,6 @@
 import type { CharacterSummary, ServerEntry } from '@flyffweb/protocol';
 import { UNEXPECTED_PROBLEM } from './errorText';
-import type { LobbyEvent, LoginFlow } from './LoginFlow';
+import type { LobbyEvent, LoginFlow, WorldEntry } from './LoginFlow';
 import { alertElement, alreadyConnectedView } from './views/messageView';
 import { characterView } from './views/characterView';
 import { createView } from './views/createView';
@@ -35,10 +35,27 @@ export class LobbyApp {
   /** Progress text for a screen reader and the eye ("Logging in…"); empty when there is none. */
   private readonly status = h('p', { class: 'status', role: 'status' });
   private readonly stage = h('div', { class: 'stage' });
+  /** True from the hand-over to the world until its `done`; a `done` called twice, or late, is ignored. */
+  private inWorld = false;
 
-  constructor(root: HTMLElement, private readonly flow: LoginFlow) {
-    root.replaceChildren(h('header', {}, h('h1', {}, 'FlyFF')), this.notice, this.status, this.stage);
+  /**
+   * `onEnter` takes over when the player enters the world with a character: it gets the `WorldEntry` (the lobby has let go of
+   * it, the login-server connection included) and `done`, which brings the lobby back to the login form with a message
+   * (or none) once the world is over. The lobby's stage is empty when `onEnter` is called, so the world screen may fill
+   * `root` as it likes; `done` puts the lobby's page back.
+   */
+  constructor(
+    private readonly root: HTMLElement,
+    private readonly flow: LoginFlow,
+    private readonly onEnter: (entry: WorldEntry, done: (message?: string) => void) => void,
+  ) {
+    this.mount();
     this.showLogin();
+  }
+
+  /** Puts the lobby's frame in the page. */
+  private mount(): void {
+    this.root.replaceChildren(h('header', {}, h('h1', {}, 'FlyFF')), this.notice, this.status, this.stage);
   }
 
   /** What the flow reports. */
@@ -92,6 +109,7 @@ export class LobbyApp {
     this.show('characters', characterView({
       characters: this.characters,
       onCreate: (slot) => this.showCreate(slot),
+      onEnter: (character) => this.enter(character),
       onDelete: (character) => this.showDelete(character),
       onChangeChannel: () => this.changeChannel(),
       onLogout: () => this.logout(),
@@ -145,6 +163,33 @@ export class LobbyApp {
   private changeChannel(): void {
     this.showLogin(undefined, 'Logging in…', true);
     this.flow.changeChannel();
+  }
+
+  /**
+   * Enter on a character: the flow hands over what the world needs, and the world takes the page. If the flow cannot
+   * (the login server has not sent the cache address or the clock yet), the player stays and is told so.
+   */
+  private enter(character: CharacterSummary): void {
+    const entry = this.flow.handOver(character.slot);
+    if (entry === undefined) {
+      this.setAlert(UNEXPECTED_PROBLEM);
+      return;
+    }
+    // Nothing of the lobby is left to answer: the flow reports no more, and the screens are gone.
+    this.screen = 'login';
+    this.view = undefined;
+    this.setAlert(undefined);
+    this.status.textContent = '';
+    this.stage.replaceChildren();
+    this.inWorld = true;
+    this.onEnter(entry, (message) => {
+      if (!this.inWorld) return;
+      this.inWorld = false;
+      this.mount();
+      this.showLogin(message);
+      // Back from the world: keyboard and screen-reader users start at the top of the form, as on any later screen.
+      this.stage.querySelector<HTMLElement>('h2')?.focus();
+    });
   }
 
   /** Leaves the session: every connection is closed, and the login form is shown. */

@@ -312,6 +312,11 @@ fieldset:disabled .btn {
   overflow-wrap: anywhere;
 }
 
+/* Enter is the slot's main action: one wide button under the character. */
+.slot-enter {
+  margin-top: 12px;
+}
+
 /* An empty slot is one wide button. */
 .slot-create {
   border-style: dashed;

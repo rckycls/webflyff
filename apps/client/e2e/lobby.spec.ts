@@ -62,6 +62,8 @@ function playerList(characters: CharacterRow[]): Buffer {
 }
 
 const errorPacket = (code: number): Buffer => Buffer.from(new ArWriter().u32(PacketType.ERROR).i32(code).toBytes());
+const cacheAddr = (address: string): Buffer => Buffer.from(new ArWriter().u32(PacketType.CACHE_ADDR).string(address).toBytes());
+const tickCount = (sentAt: number, tick: bigint): Buffer => Buffer.from(new ArWriter().u32(PacketType.QUERYTICKCOUNT).u32(sentAt).i64(tick).toBytes());
 
 const WEBBY: CharacterRow = { slot: 0, name: 'Webby', level: 15, playerId: 500 };
 
@@ -77,14 +79,18 @@ type Reply = (packet: Buffer) => void;
 /** Answers a packet the page sent: `reply` sends a packet back, `close` ends the connection the way the gateway does, with a close code. */
 type Respond = (sent: Sent, reply: Reply, close: (code: number) => void) => void;
 
-/** Plays the gateway: `certifier` and `login` answer what the page sends to each server. Returns everything the page has sent so far, in order. */
-async function playGateway(page: Page, servers: { certifier?: Respond; login?: Respond }): Promise<Sent[]> {
+/**
+ * Plays the gateway: `certifier` and `login` answer what the page sends to each server. Returns everything the page has
+ * sent so far, in order. The connections the page closes are added to `closed`, by the number they were opened as.
+ */
+async function playGateway(page: Page, servers: { certifier?: Respond; login?: Respond }, closed: number[] = []): Promise<Sent[]> {
   const sent: Sent[] = [];
   let connections = 0;
   await page.routeWebSocket(/\/connect\//, (ws) => {
     const port = Number(new URL(ws.url()).pathname.split(':').pop());
     const connection = ++connections;
     const respond = port === Port.LOGIN ? servers.login : servers.certifier;
+    ws.onClose(() => closed.push(connection));
     ws.onMessage((message) => {
       const body = Buffer.from(message as Buffer);
       // Packets to the login server start with DPID_UNKNOWN; the certifier's start with the type.
@@ -99,6 +105,18 @@ async function playGateway(page: Page, servers: { certifier?: Respond; login?: R
 /** A certifier that accepts the login and lists `rows`. */
 const listing = (rows: ServerRow[]): Respond => ({ type }, reply) => {
   if (type === PacketType.CERTIFY) reply(serverList(rows));
+};
+
+/**
+ * A login server as the real one answers (`CDPLoginSrvr`): the clock for QUERYTICKCOUNT, then for GETPLAYERLIST the
+ * cache address and the characters.
+ */
+const enterable = (characters: CharacterRow[]): Respond => ({ type, body }, reply) => {
+  if (type === PacketType.QUERYTICKCOUNT) reply(tickCount(body.readUInt32LE(8), 123456789n));
+  if (type === PacketType.GETPLAYERLIST) {
+    reply(cacheAddr('172.31.238.55'));
+    reply(playerList(characters));
+  }
 };
 
 async function logIn(page: Page): Promise<void> {
@@ -334,6 +352,56 @@ test.describe('the lobby against scripted servers', () => {
     const lists = sent.filter((s) => s.type === PacketType.GETPLAYERLIST);
     expect(lists.map((s) => s.body.readUInt32LE(s.body.length - 4))).toEqual([1, 4]);
     expect(lists[1]!.connection).not.toBe(lists[0]!.connection);
+  });
+
+  test('has an Enter button for each character, and hands the character over to the world', async ({ page }) => {
+    const closed: number[] = [];
+    const sent = await playGateway(page, {
+      certifier: listing([FLYFF, OPEN_CHANNEL]),
+      login: enterable([WEBBY, { slot: 2, name: 'Third', level: 40, playerId: 502 }]),
+    }, closed);
+    await logIn(page);
+    await page.getByRole('button', { name: /Channel 1/ }).click();
+    await expect(page.getByRole('heading', { name: 'Your characters' })).toBeVisible();
+
+    // One Enter on each character and none on the empty slot.
+    const enter = page.getByRole('button', { name: /^Enter/ });
+    await expect(enter).toHaveCount(2);
+    await expect(page.getByRole('listitem').filter({ hasText: 'Webby' }).getByRole('button', { name: 'Enter Webby' })).toHaveText('Enter');
+    await expect(page.getByRole('listitem').filter({ hasText: 'Third' }).getByRole('button', { name: 'Enter Third' })).toHaveText('Enter');
+    await expectPhoneFriendly(page);
+
+    // The world screen is not built yet: the interim handler closes the login-server connection and sends the player
+    // back to the login form with a message, which shows the lobby handed over (and the login connection with it).
+    await page.getByRole('button', { name: 'Enter Third' }).click();
+    await expect(page.getByRole('alert')).toHaveText("Entering the world isn't built yet.");
+    await expect(page.getByRole('button', { name: 'Log in' })).toBeEnabled();
+    await expect(page.getByRole('heading', { name: 'Log in' })).toBeFocused();
+    await expect(page.getByLabel('Account')).toHaveValue('WebTester');
+    await expect(page.getByRole('status')).toBeEmpty();
+    const loginConnection = sent.find((s) => s.port === Port.LOGIN)!.connection;
+    await expect.poll(() => closed).toContain(loginConnection);
+    await expectPhoneFriendly(page);
+  });
+
+  test('stays on the characters when the login server has not given what the world needs', async ({ page }) => {
+    const closed: number[] = [];
+    const sent = await playGateway(page, {
+      certifier: listing([FLYFF, OPEN_CHANNEL]),
+      // The characters, but no CACHE_ADDR and no answer to QUERYTICKCOUNT.
+      login: ({ type }, reply) => {
+        if (type === PacketType.GETPLAYERLIST) reply(playerList([WEBBY]));
+      },
+    }, closed);
+    await logIn(page);
+    await page.getByRole('button', { name: /Channel 1/ }).click();
+    await expect(page.getByRole('heading', { name: 'Your characters' })).toBeVisible();
+    await page.getByRole('button', { name: 'Enter Webby' }).click();
+    await expect(page.getByRole('alert')).toHaveText('Something went wrong. Please try again.');
+    await expect(page.getByRole('heading', { name: 'Your characters' })).toBeVisible();
+    // Nothing was given up: the login-server connection is open, and the characters can still be used.
+    expect(closed).not.toContain(sent.find((s) => s.port === Port.LOGIN)!.connection);
+    await expect(page.getByRole('button', { name: 'Delete Webby' })).toBeEnabled();
   });
 
   test('offers to disconnect an account that is logged in elsewhere', async ({ page }) => {

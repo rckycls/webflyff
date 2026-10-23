@@ -5,6 +5,7 @@ import {
 } from '@flyffweb/protocol';
 import type { CharacterSummary, NewCharacter, ServerEntry, SlotMessenger } from '@flyffweb/protocol';
 import type { OpenChannel, PacketChannel } from '../net/PacketChannel';
+import { ServerClock } from '../net/serverClock';
 import { ServerError, UNEXPECTED_PROBLEM, closeText, errorText } from './errorText';
 import { isCharacterSlot, isValidAppearance, validateBankPin, validateCharacterName } from './validation';
 
@@ -29,6 +30,27 @@ const systemClock: FlowClock = {
   clearTimeout: ((handle: ReturnType<typeof setTimeout> | undefined) => globalThis.clearTimeout(handle)) as typeof clearTimeout,
   now: () => Math.floor(performance.now()),
 };
+
+/**
+ * What entering the world needs, handed over by `LoginFlow.handOver` when the player picks a character. The flow keeps
+ * none of it afterwards; the new owner (the world session) closes `login` when it is done with it.
+ */
+export interface WorldEntry {
+  /** The login-server connection, still open: the world session pings it from now on and sets `onPacket` and `onClose` itself. */
+  login: PacketChannel;
+  /** The cache server, `${cacheAddress}:5400`: the address the login server's CACHE_ADDR gave (`CDPLoginClient::OnCacheAddr`). */
+  cacheTarget: string;
+  account: string;
+  passwordHash: string;
+  authKey: number;
+  /** The id of the channel picked in the server list (the `dwID` of GETPLAYERLIST). */
+  channelId: number;
+  character: CharacterSummary;
+  /** The messenger the login server listed for the character's slot, if it listed one. */
+  messenger: SlotMessenger | undefined;
+  /** The server's clock, started by the login server's QUERYTICKCOUNT answer. */
+  clock: ServerClock;
+}
 
 /** How long the certifier gets to answer (Neuz: `m_dwTimeOutDis`, 20 s). */
 const CERTIFY_TIMEOUT_MS = 20000;
@@ -79,6 +101,10 @@ function createProblem(c: NewCharacter): string | undefined {
  * It does not throw out of a channel callback. A packet it cannot read ends the session with an `error` event.
  * Create and delete errors from the login server (a name already in use, a wrong Bank PIN) are shown with an
  * `error` event too, but the session stays open so the player can try again; call `dispose` to leave it.
+ *
+ * Besides the character list it keeps what entering the world needs (the cache server's address, the server's clock
+ * started by QUERYTICKCOUNT, the channel picked), and `handOver` gives it all to the world session together with the
+ * still-open login-server connection.
  */
 export class LoginFlow {
   private account = '';
@@ -87,6 +113,12 @@ export class LoginFlow {
   private servers: ServerEntry[] = [];
   private characters: CharacterSummary[] = [];
   private messengers: SlotMessenger[] = [];
+  /** The cache server's address from the login server's CACHE_ADDR; `undefined` until it comes. Belongs to the login-server connection. */
+  private cacheAddress: string | undefined;
+  /** Started by the login server's QUERYTICKCOUNT answer; made with the login-server connection. */
+  private serverClock: ServerClock | undefined;
+  /** The id of the channel the login-server connection was opened for. */
+  private channelId: number | undefined;
   private certifier: PacketChannel | undefined;
   private loginServer: PacketChannel | undefined;
   /** True after ERROR 103, until the player answers the "close the other connection" prompt. */
@@ -147,8 +179,7 @@ export class LoginFlow {
     this.certifierQuiet = false;
     this.authKey = undefined;
     this.servers = [];
-    this.characters = [];
-    this.messengers = [];
+    this.forgetChannel();
     // The account and hash already went into a CERTIFY once, so this cannot throw.
     const certify = encodeCertify(this.account, this.passwordHash);
     this.timer = this.clock.setTimeout(() => {
@@ -187,10 +218,12 @@ export class LoginFlow {
     if (server === undefined || authKey === undefined) return;
     const epoch = ++this.epoch;
     this.closeLoginServer();
-    this.characters = [];
-    this.messengers = [];
+    this.forgetChannel();
     const login = await this.openChannel(`${server.address}:${Port.LOGIN}`, epoch);
     if (login === undefined) return;
+    // The clock and the cache address are the new connection's to learn: the server answers each connection by itself.
+    this.channelId = channel.id;
+    this.serverClock = new ServerClock(() => this.clock.now());
     this.attach('loginServer', login);
     this.startPing();
     login.send(encodeQueryTickCount(this.clock.now()));
@@ -237,6 +270,37 @@ export class LoginFlow {
     }
     const friendIds = this.messengers.find((m) => m.slot === slot)?.friends.map((f) => f.id) ?? [];
     loginServer.send(encodeDeletePlayer(this.account, this.passwordHash, deleteKey(bankPin), character.playerId, authKey, friendIds));
+  }
+
+  /**
+   * The player picked the character in `slot`: gives the world session what it needs and lets go of the session. The
+   * PING and the timers stop and everything is forgotten, but the login-server connection is left open for the new owner,
+   * which must set its `onPacket` and `onClose` at once: the flow ignores that channel from here on, and a later
+   * `dispose` does not close it. The flow can start another session with `login`.
+   *
+   * `undefined`, with nothing changed, when there is no character in that slot, or the login server has not yet sent the
+   * cache address or answered QUERYTICKCOUNT (or when the hand-over already happened).
+   */
+  handOver(slot: number): WorldEntry | undefined {
+    const { loginServer: login, authKey, channelId, cacheAddress, serverClock } = this;
+    const character = this.characters.find((c) => c.slot === slot);
+    if (login === undefined || authKey === undefined || channelId === undefined || character === undefined) return undefined;
+    if (cacheAddress === undefined || cacheAddress === '' || serverClock === undefined || !serverClock.started) return undefined;
+    const entry: WorldEntry = {
+      login,
+      cacheTarget: `${cacheAddress}:${Port.CACHE}`,
+      account: this.account,
+      passwordHash: this.passwordHash,
+      authKey,
+      channelId,
+      character,
+      messenger: this.messengers.find((m) => m.slot === slot),
+      clock: serverClock,
+    };
+    // `reset` stops the PING and the timers and closes the connections the flow holds: let the login server go first.
+    this.loginServer = undefined;
+    this.reset();
+    return entry;
   }
 
   /** Closes every connection and forgets the session, without an event. The flow can start another with `login`. */
@@ -350,9 +414,15 @@ export class LoginFlow {
       case 'unknown':
         this.warnUnknown(message.packetType);
         break;
-      // Known packets that nothing in Piece 2 needs.
       case 'cacheAddr':
+        // CDPLoginClient::OnCacheAddr (Neuz/DPLoginClient.cpp:533): kept for the world session, which connects to it.
+        this.cacheAddress = message.address;
+        break;
       case 'queryTickCount':
+        // CDPLoginClient::OnQueryTickCount (Neuz/DPLoginClient.cpp:104-115): the clock starts, or starts again as in Neuz.
+        this.serverClock?.start(message.sentAt, message.tickCount);
+        break;
+      // Known packets that nothing in the lobby needs.
       case 'ping':
       case 'oneHourNotify':
       case 'loginNumPad':
@@ -450,7 +520,15 @@ export class LoginFlow {
     this.passwordHash = '';
     this.authKey = undefined;
     this.servers = [];
+    this.forgetChannel();
+  }
+
+  /** Forgets what belongs to a login-server connection: the characters, the cache address, the clock and the channel. */
+  private forgetChannel(): void {
     this.characters = [];
     this.messengers = [];
+    this.cacheAddress = undefined;
+    this.serverClock = undefined;
+    this.channelId = undefined;
   }
 }
