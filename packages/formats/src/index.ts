@@ -56,6 +56,7 @@ export { readBmp } from './image/bmp';
 export { decodeImage } from './image/decode';
 export { flipWinding, toWebMatrix, toWebPosition, toWebQuaternion } from './web/handedness';
 export { webName } from './web/webName';
+export { collisionKey, decodeCollisionBin, encodeCollisionBin } from './web/collisionBin';
 export { argbToRgba, decodeTileBin, encodeTileBin } from './web/tileBin';
 export type { WebTile, WebTileLayer, WebTileObject } from './web/tileBin';
 export type { AssetIndex, WorldManifest } from './web/manifest';
