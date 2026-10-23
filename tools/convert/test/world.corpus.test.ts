@@ -60,6 +60,8 @@ describeClient('worlds stage on WdMadrigal', () => {
   /** A model of tile 9_7 (by Flaris, 358 objects) that Client/Model has, which the test lets the writer know as the models stage would. */
   let seededKey: string;
   let seededIndex: number;
+  /** Its mdlObj.inc entry's bTrans. */
+  let seededTrans: boolean;
 
   beforeAll(async () => {
     const packs = loadClientPacks();
@@ -72,6 +74,7 @@ describeClient('worlds stage on WdMadrigal', () => {
         if (real === null || !/\.o3d$/i.test(real)) continue;
         seededKey = `models/${webName(path.basename(real).replace(/\.o3d$/i, ''))}.glb`;
         seededIndex = rec.index;
+        seededTrans = elem!.extra[4] !== 0;
         await writer.write(seededKey, bytesOf(1), 'seed');
         return;
       }
@@ -155,6 +158,7 @@ describeClient('worlds stage on WdMadrigal', () => {
 
     const slot = manifest.models.indexOf(seededKey);
     expect(manifest.models).toEqual([seededKey]);
+    expect(manifest.modelTrans).toEqual([seededTrans]);
     expect(slot).toBe(0);
     source.objects.forEach((rec, i) => {
       if (rec.index === seededIndex) expect(tile.objects[i]!.model).toBe(slot);

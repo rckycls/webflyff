@@ -32,6 +32,12 @@ export interface WorldManifest {
   terrainTextures: string[];
   /** Logical keys; `WebTileObject.model` indexes this. */
   models: string[];
+  /**
+   * Parallel to `models`: the model turns see-through between the camera and the player (`MODELELEM::m_bTrans`, the
+   * `bTrans` column of mdlObj.inc, `CModelMng::LoadScript`, ModelMng.cpp:398), so the chase camera's object test
+   * passes through it. Missing in a manifest written before it existed; a missing entry is false.
+   */
+  modelTrans?: boolean[];
   /** Tile `"x_y"` to its hashed path. A tile the world does not have is simply absent. */
   tiles: Record<string, string>;
 }

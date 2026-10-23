@@ -53,7 +53,8 @@ const TERRAIN_INC = `
 `;
 
 // "name" id modelType part fly distant pick scale trans shadow textureEx renderFlag
-const entry = (name: string, id: number, modelType = 1): string => `  "${name}" ${id} ${modelType} "" 0 0 0 1.0 0 0 0 0`;
+const entry = (name: string, id: number, modelType = 1, trans = 0): string =>
+  `  "${name}" ${id} ${modelType} "" 0 0 0 1.0 ${trans} 0 0 0`;
 
 const MDL_OBJ_INC = `
 "obj" 0 {
@@ -62,6 +63,7 @@ ${entry('Rock 02', 2)}
 ${entry('Unconverted', 3)}
 ${entry('NoFile', 4)}
 ${entry('Fx', 5, 4)}
+${entry('Glass', 6, 1, 1)}
 }
 `;
 
@@ -175,6 +177,7 @@ describe('worlds stage on a small hand-made client', () => {
       fog: { start: 70, end: 400, density: 0.25 },
       terrainTextures: [],
       models: [],
+      modelTrans: [],
     });
     expect(manifest.camera.position[0]).toBeCloseTo(5063.999, 3);
     expect(manifest.camera.position[1]).toBeCloseTo(240.888, 3);
@@ -330,6 +333,25 @@ describe('worlds stage on a small hand-made client', () => {
       expect((await tileOf(run, manifest, '0_0')).objects.map((o) => o.model)).toEqual([0, 1, 0]);
       expect((await tileOf(run, manifest, '1_0')).objects.map((o) => o.model)).toEqual([1, 0]);
       expect(run.report.warnings).toEqual([]);
+    });
+
+    it("writes each model's bTrans (mdlObj.inc, ModelMng.cpp:398) as modelTrans, parallel to models", async () => {
+      await client({
+        'World/WdTest/WdTest.wld': wld([1, 1]),
+        'World/WdTest/WdTest00-00.lnd': lndBytes({ objects: objects(6, 1, 6) }),
+        'Model/Obj_Tree01.o3d': 'x',
+        'Model/Obj_Glass.o3d': 'x',
+      });
+      const run = await runWorlds(root, out, {
+        seed: async (writer) => {
+          await seedModel('models/obj_tree01.glb')(writer);
+          await seedModel('models/obj_glass.glb')(writer);
+        },
+      });
+      const manifest = await manifestOf(run, 'wdtest');
+      expect(run.report.failures).toEqual([]);
+      expect(manifest.models).toEqual(['models/obj_glass.glb', 'models/obj_tree01.glb']);
+      expect(manifest.modelTrans).toEqual([true, false]);
     });
 
     it('gives 0xffff and one warning per distinct unresolved name, not per object', async () => {
