@@ -204,7 +204,7 @@ export class WorldState {
    */
   private setPos(m: Mover, pos: Vec3): void {
     m.act.body.pos = [f32(pos[0]), f32(pos[1]), f32(pos[2])];
-    m.act.clearDest(); // bound to the rules' ClearDest once the mover has had a destination; until then there is none
+    m.act.clearDest(); // the rules' ClearDest from its first step or destination on; until then there is none
     m.act.sendActMsg(ActMsg.STOP_TURN);
     m.act.sendActMsg(ActMsg.STAND);
   }

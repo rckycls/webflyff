@@ -141,7 +141,7 @@ export class CollisionShapes {
 
   constructor(
     private readonly store: Pick<AssetStore, 'url' | 'bytes'>,
-    private readonly manifest: Pick<WorldManifest, 'mpu' | 'size' | 'models' | 'modelTrans'>,
+    private readonly manifest: Pick<WorldManifest, 'mpu' | 'size' | 'models' | 'modelTrans' | 'modelPick'>,
     private readonly overlay: Pick<Overlay, 'error'>,
   ) {}
 
@@ -240,8 +240,8 @@ export class CollisionShapes {
   private load(record: TileRecord): void {
     if (record.started) return;
     record.started = true;
-    const { models, modelTrans } = this.manifest;
-    const placed: { key: string; matrix: Float32Array; trans: boolean }[] = [];
+    const { models, modelTrans, modelPick } = this.manifest;
+    const placed: { key: string; matrix: Float32Array; trans: boolean; pick: boolean }[] = [];
     for (const object of record.tile.objects) {
       if (object.model === NO_MODEL) continue;
       const model = models[object.model];
@@ -252,7 +252,10 @@ export class CollisionShapes {
         record.keys.add(key);
         this.acquire(key);
       }
-      placed.push({ key, matrix: toWebMatrix(object.matrix), trans: modelTrans?.[object.model] ?? false });
+      placed.push({
+        key, matrix: toWebMatrix(object.matrix), trans: modelTrans?.[object.model] ?? false,
+        pick: modelPick?.[object.model] ?? false,
+      });
     }
     const keys = [...record.keys];
     const arriving = keys.map((key) => this.shapes.get(key)!.ready);
@@ -266,11 +269,11 @@ export class CollisionShapes {
 
   /** The link lists of a tile's objects, in tile order (see the top of the file). */
   private link(
-    tile: TileObjects, placed: { matrix: Float32Array; trans: boolean; triangles: Float32Array | null }[],
+    tile: TileObjects, placed: { matrix: Float32Array; trans: boolean; pick: boolean; triangles: Float32Array | null }[],
   ): Map<number, CollisionObject[]>[] {
     const links = LINK_WIDTHS.map(() => new Map<number, CollisionObject[]>());
     const bounds = new Map<Float32Array, ReturnType<typeof boundsOf>>();
-    for (const { matrix, trans, triangles } of placed) {
+    for (const { matrix, trans, pick, triangles } of placed) {
       if (triangles === null) continue;
       if (!bounds.has(triangles)) bounds.set(triangles, boundsOf(triangles));
       const box = bounds.get(triangles)!;
@@ -278,7 +281,7 @@ export class CollisionShapes {
       const level = linkLevel(box, matrix, this.manifest.mpu);
       const cell = linkCell(matrix, tile.x, tile.y, level, this.manifest.mpu);
       if (cell === null) continue;
-      const object: CollisionObject = { triangles, matrix, trans };
+      const object: CollisionObject = { triangles, matrix, trans, pick };
       const list = links[level]!.get(cell);
       if (list === undefined) links[level]!.set(cell, [object]);
       else list.splice(1, 0, object); // InsNextNode on the head

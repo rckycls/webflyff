@@ -90,6 +90,25 @@ export function inverse(m: Matrix): Float32Array | null {
   ]);
 }
 
+/**
+ * `D3DXIntersectTri` as Wine's d3dx9 writes it: `orig - v0` through the inverse of the matrix whose rows are
+ * `v1 - v0`, `v2 - v0` and `-dir` (`D3DXVec4Transform`) gives u, v and the distance along `dir`, in its lengths. Both
+ * sides of the triangle count. That distance when the line meets the triangle ahead of `orig` (u, v >= 0, u + v <= 1,
+ * the distance >= 0), else null; null too where the matrix has no inverse.
+ */
+export function intersectTri(v0: Vec3, v1: Vec3, v2: Vec3, orig: Vec3, dir: Vec3): number | null {
+  const e1 = sub(v1, v0);
+  const e2 = sub(v2, v0);
+  const inv = inverse([e1[0], e1[1], e1[2], 0, e2[0], e2[1], e2[2], 0, -dir[0], -dir[1], -dir[2], 0, 0, 0, 0, 1]);
+  if (inv === null) return null;
+  const v = sub(orig, v0); // and w 0
+  const at = (c: number): number => f32(f32(f32(f32(inv[c]! * v[0]) + f32(inv[4 + c]! * v[1])) + f32(inv[8 + c]! * v[2])) + 0);
+  const u = at(0);
+  const w = at(1);
+  const t = at(2);
+  return u >= 0 && w >= 0 && f32(u + w) <= 1 && t >= 0 ? Math.abs(t) : null;
+}
+
 // ---- xUtil3D.cpp --------------------------------------------------------------------------------------------------
 
 /** `CalcSlideVec` (`xUtil3D.cpp:286-292`): `vDir` without its part along the unit normal `vN`. */

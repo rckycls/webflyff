@@ -1,9 +1,10 @@
 // The world screen (spec §3.2, §3.5): "Entering the world…" while the session enters, then the world in 3D with its
 // movers and their name tags, the joystick, a Leave button and the measurement overlay. It wires the parts together:
 // the session's bundles go into `WorldState` as they come; once the world is on screen the frame loop runs the rules'
-// 60 steps a second, the keys and the joystick driving the own mover as `CWndWorld::ControlGround` does and its moves
-// sent as Neuz sends them; and it draws the stage around the own mover, from the chase camera behind it. Every ending
-// closes everything and hands the lobby its message (Ruling 8): nothing that goes wrong here is thrown at the lobby.
+// 60 steps a second, the keys, the joystick and a tap on the world (spec §3.7) driving the own mover as
+// `CWndWorld::ControlGround` does and its moves sent as Neuz sends them; and it draws the stage around the own mover,
+// from the chase camera behind it, with the mark of the point a tap sends it to. Every ending closes everything and
+// hands the lobby its message (Ruling 8): nothing that goes wrong here is thrown at the lobby.
 
 import { toWebPosition } from '@flyffweb/formats';
 import type { Vec3 } from '@flyffweb/formats';
@@ -16,7 +17,7 @@ import type { WorldEntry } from '../lobby/LoginFlow';
 import { h } from '../lobby/views/dom';
 import type { OpenChannel } from '../net/PacketChannel';
 import { registerWorld } from '../testHooks';
-import { STANDING, desiredFrom, driveOwnMover, movedReport } from './controls';
+import { STANDING, TapToWalk, desiredFrom, driveOwnMover, movedReport } from './controls';
 import type { Desired } from './controls';
 import { GameDataMissingError } from './gameData';
 import type { GameData } from './gameData';
@@ -25,15 +26,19 @@ import type { Page3d } from './page3d';
 import { MoverViews } from './render/MoverViews';
 import { NameTagLayer } from './render/NameTagLayer';
 import { lookOf } from './render/looks';
+import { MoveMark } from './render/moveMark';
 import { loadMoverModel } from './render/moverModels';
 import { nameTagOf } from './render/nameTags';
-import type { ActionMover } from './sim/ActionMover';
+import { pickGround } from './render/picking';
 import { cameraBound } from './sim/camera';
 import { HAttr } from './sim/collision';
+import { MAX_CORR_SIZE_45 } from './sim/constants';
+import { isEmptyDest, setDestPos } from './sim/moverRules';
 import { FixedStepper, STEPS_PER_SECOND } from './sim/stepper';
 import { WorldSession } from './WorldSession';
 import type { WorldEvent } from './WorldSession';
 import { WorldState } from './WorldState';
+import type { Mover } from './WorldState';
 
 const LOADING_TEXT = 'Entering the world…';
 const NOT_AVAILABLE_TEXT = "This map isn't available in the browser yet.";
@@ -92,6 +97,8 @@ export class WorldScreen {
   private tags: NameTagLayer | undefined;
   private keyboard: KeyboardInput | undefined;
   private joystick: Joystick | undefined;
+  private tap: TapToWalk | undefined;
+  private mark: MoveMark | undefined;
   /** What the controls asked for at the last step, which the joystick's sectors hold on to (`desiredFrom`). */
   private desired: Desired = STANDING;
   private readonly stepper = new FixedStepper();
@@ -262,6 +269,9 @@ export class WorldScreen {
     this.element.replaceChildren(holder, this.leaveButton);
     this.keyboard = new KeyboardInput(doc.defaultView ?? window);
     this.joystick = new Joystick(this.element);
+    // on the canvas: the joystick is an element of its own over it, and its touches never reach it
+    this.tap = new TapToWalk(renderer.domElement, (x, y) => this.pick(x, y));
+    this.mark = new MoveMark(this.stage!.scene);
     doc.addEventListener('visibilitychange', this.onVisibility);
     (doc.defaultView ?? window).addEventListener('blur', this.onBlur);
     this.lastTime = performance.now();
@@ -298,6 +308,8 @@ export class WorldScreen {
       const steps = this.paused ? 0 : this.stepper.advance(dt);
       for (let i = 0; i < steps; i++) this.step(world, views);
       views.update(world.movers, steps / STEPS_PER_SECOND);
+      // the mark goes once the walk to its point is over: arrived, or ended by a key, a stop or the server
+      this.mark!.follow(world.self()?.dest?.pos ?? null);
 
       // the back camera behind the own mover: heading = pi - angle in radians (global constraints), kept out of the
       // land and the objects by CWorld::CheckBound (cameraBound), which works in D3D: the mirror (web z is -z) both ways
@@ -322,28 +334,60 @@ export class WorldScreen {
   }
 
   /**
-   * One rules step: the keys and the joystick to the own mover (`drive`); then every mover's step (the own one's
-   * included), then the views'.
+   * One rules step: a tap, then the keys and the joystick, to the own mover (`walkTo`, `drive`), in `ControlGround`'s
+   * order; then every mover's step (the own one's included), the PLAYERCORR it may have led to, and the views'.
    */
   private step(world: WorldState, views: MoverViews): void {
     const own = world.self();
+    const dest = this.tap!.take();
     if (own !== undefined) {
+      if (dest !== null) this.walkTo(own, dest);
       this.desired = desiredFrom(combineIntents(this.keyboard!.intent(), this.joystick!.intent()), this.desired);
-      this.drive(own.act, this.desired);
+      this.drive(own, this.desired);
     }
     world.step();
+    const corr = own?.corrReport;
+    if (corr) {
+      // CMover::OnActCollision / OnActDrop's SendPlayerCorr, with the clock's tick
+      own.corrReport = null;
+      this.session.sendCorr({ ...corr, tick: this.entry.clock.tick() });
+    }
     views.step(world.movers);
+  }
+
+  /** The D3D point a tap at (`ndcX`, `ndcY`) sends the own mover to (`pickGround`), from the camera as last drawn. */
+  private pick(ndcX: number, ndcY: number): Vec3 | null {
+    const { stage, views } = this;
+    if (stage === undefined || views === undefined) return null;
+    const self = this.world?.self()?.objectId;
+    return pickGround(stage.camera, ndcX, ndcY, stage.ground(), stage.manifest.mpu, (ray) => views.nearestHit(ray, self));
+  }
+
+  /**
+   * A tap's part of `ControlGround` (`WndWorldControlPlayer.cpp:313-361`): `SetDestPos( vRayEnd )` and
+   * `m_nCorr = -1`, so that the walk there ends where it meets something or starts to fall (`stepMover`); the SNAPSHOT
+   * with DESTPOS, forward (`SendSnapshot( TRUE )`, which first stands a sitting player up: Piece 3 has no sitting);
+   * and the mark.
+   */
+  private walkTo(own: Mover, pos: Vec3): void {
+    setDestPos(own, pos, true);
+    own.nCorr = -1;
+    this.session.sendDestPos(pos, true);
+    this.mark!.show(pos);
   }
 
   /**
    * What the controls ask of the own mover (`driveOwnMover`), its moves sent as `ControlGround` sends them, PLAYERMOVED
    * then PLAYERBEHAVIOR (`WndWorldControlPlayer.cpp:557-559`; stopping after a run, or the first idle step of a mover the
-   * server started running, sends both).
+   * server started running, sends both). A PLAYERMOVED's `PresupposePos` sets `m_nCorr` (`ActionMover.cpp:438`).
    */
-  private drive(act: ActionMover, desired: Desired): void {
-    const { moved, behavior } = driveOwnMover(act, desired);
-    if (moved) this.session.sendMoved(movedReport(act, this.entry.clock.tick()));
-    if (behavior) this.session.sendBehavior(act.report(this.entry.clock.tick()));
+  private drive(own: Mover, desired: Desired): void {
+    const { moved, behavior } = driveOwnMover(own.act, desired, isEmptyDest(own));
+    if (moved) {
+      this.session.sendMoved(movedReport(own.act, this.entry.clock.tick()));
+      own.nCorr = MAX_CORR_SIZE_45;
+    }
+    if (behavior) this.session.sendBehavior(own.act.report(this.entry.clock.tick()));
   }
 
   /** The page is hidden (another tab, the home screen, a phone going to sleep): no frame runs until it shows again. */
@@ -359,14 +403,18 @@ export class WorldScreen {
    * The page lost the focus or is hidden: a key's or the finger's let-go may never come, and a hidden page runs no frame
    * to send a stop. The server's copy of the player would run on, and once it is 1000 units from where the player
    * stands the server takes none of the player's moves (`CDPSrvr::OnPlayerMoved`, `DPSrvr.cpp:12524-12529`). So the
-   * controls let go and the player stops now, its moves sent from here rather than from the frame loop.
+   * controls let go and the player stops now, its moves sent from here rather than from the frame loop. A walk to a
+   * tapped point ends too, as a key's move ends it (`ClearDest`), and a tap not yet taken is dropped.
    */
   private stopOwnMover(): void {
     this.keyboard?.reset();
     this.joystick?.reset();
+    this.tap?.reset();
     this.desired = STANDING;
     const own = this.world?.self();
-    if (own !== undefined) this.drive(own.act, STANDING);
+    if (own === undefined) return;
+    own.act.clearDest();
+    this.drive(own, STANDING);
   }
 
   /** Says an error on the overlay, and in the console with its stack, once for each message. */
@@ -397,6 +445,8 @@ export class WorldScreen {
     (doc.defaultView ?? window).removeEventListener('blur', this.onBlur);
     this.keyboard?.dispose();
     this.joystick?.dispose();
+    this.tap?.dispose();
+    this.mark?.dispose();
     this.views?.dispose();
     this.tags?.dispose();
     this.stage?.dispose();

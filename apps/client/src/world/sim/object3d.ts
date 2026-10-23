@@ -117,6 +117,32 @@ export function findTouchTriLine(obj: CollisionObject, inv: Matrix, pos: Vec3, e
   return null;
 }
 
+/** `fMinDist = 65535.0f` (`Object3D.cpp:2338`): no triangle met yet. */
+const NO_HIT = 65535;
+
+/**
+ * `CObject3D::IntersectRayTri` (`Object3D.cpp:2326-2440`, the non-skin part), here on the collision mesh: the ray
+ * from `orig` along `dir` taken into the model's space (its direction through the inverse without its translation,
+ * :2412-2416), and the distance along it, in lengths of `dir`, to the nearest triangle it meets ahead (`IsTouchRayTri`,
+ * one-sided, `fDist >= 0`), or null. The world point is `orig + distance * dir` (:2434).
+ */
+export function intersectRayTri(obj: CollisionObject, orig: Vec3, dir: Vec3): number | null {
+  const inv = inverseOf(obj.matrix);
+  if (inv === null) return null;
+  const o = transformCoord(orig, inv);
+  const d = transformCoord(dir, withoutTranslation(inv));
+  let nearest = NO_HIT;
+  let found = false;
+  for (let i = 0; i + 9 <= obj.triangles.length; i += 9) {
+    const t = touchRayTri(obj.triangles, i, o, d);
+    if (t !== null && t >= 0 && t < nearest) {
+      nearest = t;
+      found = true;
+    }
+  }
+  return found ? nearest : null;
+}
+
 /**
  * `CObject3D::SlideVectorXZ2` (`Object3D.cpp:1695-1831`, `__FIX_COLLISION`): for the first triangle the line meets,
  * the vector the move becomes, or null. The face's normal is turned into the world without its y, as if the face

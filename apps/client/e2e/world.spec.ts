@@ -10,7 +10,7 @@ import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { MAP_SIZE, decodeTileBin } from '@flyffweb/formats';
 import type { AssetIndex, WorldManifest } from '@flyffweb/formats';
-import { ArReader, ArWriter, NULL_ID, PacketType, Port } from '@flyffweb/protocol';
+import { ArReader, ArWriter, MessageType, NULL_ID, PacketType, Port } from '@flyffweb/protocol';
 import type { AddedMover, AddedNpc, AddedPlayer, MoveReport, Vec3 } from '@flyffweb/protocol';
 import { sampleHeight } from '@flyffweb/scene';
 import {
@@ -234,6 +234,32 @@ async function enterFlaris(page: Page): Promise<void> {
 /** The PLAYERMOVED packets the page sent so far. */
 const movesOf = (gateway: Gateway): Sent[] => gateway.sent.filter((s) => s.port === Port.CACHE && s.type === PacketType.PLAYERMOVED);
 
+/**
+ * The client SNAPSHOTs the page sent so far, as `CDPClient::SendSnapshot` writes one with a DESTPOS: after DPID_UNKNOWN
+ * and the type, the count (1), the message type, the position and the forward flag.
+ */
+function destPosOf(gateway: Gateway): { count: number; type: number; pos: Vec3; forward: number }[] {
+  return gateway.sent.filter((s) => s.port === Port.CACHE && s.type === PacketType.SNAPSHOT).map(({ body }) => {
+    const r = new ArReader(new Uint8Array(body));
+    r.u32();
+    r.u32();
+    return { count: r.u8(), type: r.u16(), pos: r.vec3(), forward: r.u8() };
+  });
+}
+
+/** Where the rules have Webby (D3D). */
+async function ownAt(page: Page): Promise<Vec3> {
+  return (await page.evaluate(() => window.__client!.movers())).find((m) => m.objectId === SELF_ID)!.pos;
+}
+
+const distanceXZ = (a: Vec3, b: Vec3): number => Math.hypot(a[0] - b[0], a[2] - b[2]);
+
+/** Clicks (or, on a phone, taps) the world's drawing at `x`, `y` (shares of its width and height). */
+async function tapWorld(page: Page, x: number, y: number): Promise<void> {
+  const box = (await page.locator('.world-view canvas').boundingBox())!;
+  await page.mouse.click(box.x + box.width * x, box.y + box.height * y);
+}
+
 /** The state in a PLAYERMOVED (`CDPClient::SendPlayerMoved`): after DPID_UNKNOWN, the type, the position, the delta and the angle. */
 const movedState = (moved: Sent): number => moved.body.readUInt32LE(4 + 4 + 12 + 12 + 4);
 
@@ -409,6 +435,47 @@ test.describe('the world screen against scripted servers', () => {
 
     expect(own[0]).toBeGreaterThan(WALL_X); // it stopped in front of the wall
     expect(own[2]).toBeCloseTo(BY_THE_WALL[2], 1); // head on, it does not slide along it
+  });
+
+  // The chase camera looks south over Webby from 16 m north of it: a tap below the middle of the screen is on the square
+  // behind Webby, a few metres north.
+  test('clicking the ground sends DESTPOS and the player walks there', async ({ page }) => {
+    const gateway = await playGateway(page);
+    await enterFlaris(page);
+    await tapWorld(page, 0.5, 0.8);
+
+    // CDPClient::SendSnapshot: one DESTPOS, forward, at a point of the square behind Webby
+    await expect.poll(() => destPosOf(gateway).length).toBe(1);
+    const [dest] = destPosOf(gateway);
+    expect(dest).toMatchObject({ count: 1, type: MessageType.DESTPOS, forward: 1 });
+    expect(dest!.pos[2]).toBeGreaterThan(SQUARE[2] + 1);
+    expect(dest!.pos[1]).toBeCloseTo(groundAt(dest!.pos[0], dest!.pos[2]), 1);
+
+    // it walks there (just past it: the own character arrives once past the point) and stays
+    await expect.poll(async () => distanceXZ(await ownAt(page), dest!.pos), { timeout: 60_000 }).toBeLessThan(0.3);
+    await page.waitForTimeout(1000);
+    expect(distanceXZ(await ownAt(page), dest!.pos)).toBeLessThan(0.3);
+    // no STAND cut the walk short on the way: the walk to a point sends no move of its own
+    expect(movesOf(gateway)).toEqual([]);
+  });
+
+  test('pressing a turn key cancels it', async ({ page }) => {
+    const gateway = await playGateway(page);
+    await enterFlaris(page);
+    await tapWorld(page, 0.5, 0.9);
+    await expect.poll(() => destPosOf(gateway).length).toBe(1);
+    const dest = destPosOf(gateway)[0]!.pos;
+    await expect.poll(async () => distanceXZ(await ownAt(page), SQUARE), { timeout: 60_000 }).toBeGreaterThan(1);
+
+    // the turn is a move (LTURN answers 1): ClearDest, then PLAYERMOVED; with the walk over, the next step stands
+    await page.keyboard.down('KeyA');
+    await expect.poll(() => movesOf(gateway).length).toBeGreaterThan(1);
+    await page.keyboard.up('KeyA');
+    await expect.poll(() => movedState(movesOf(gateway).at(-1)!)).toBe(OBJSTA_STAND);
+    const stopped = await ownAt(page);
+    await page.waitForTimeout(1000);
+    expect(await ownAt(page)).toEqual(stopped);
+    expect(distanceXZ(stopped, dest)).toBeGreaterThan(1);
   });
 
   test('Leave returns to the login form', async ({ page }) => {

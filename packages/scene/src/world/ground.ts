@@ -28,6 +28,11 @@ export interface CollisionObject {
    * the camera's test passes through it (`IntersectObjLine2`'s `bSkipTrans`); movers still collide with it.
    */
   trans?: boolean;
+  /**
+   * A click on the model sets a destination on it (`MODELELEM::m_bPick`, `bPick` in mdlObj.inc): `CWorld::PickObject`
+   * with `bOnlyTopPick` tests only such models, and a click passes through any other to what is behind it.
+   */
+  pick?: boolean;
 }
 
 /** The world around the movers, as the collision rules read it. D3D x and z throughout. */

@@ -116,6 +116,13 @@ export class ActionMover {
   isEndFrame: () => boolean = () => true;
   /** `CMover::ClearDest` (`Mover.h:1008`), which `STOP` calls. The destination is not kept here: its owner sets this. */
   clearDest: () => void = () => {};
+  /**
+   * `CMover::OnActDrop` (`MoverActEvent.cpp:1908-1977`), which `ProcessCollisionGround` calls when the mover starts to
+   * fall (`ActionMoverCollision.cpp:306-319`), before the step puts it where it went. Its owner sets this.
+   */
+  onActDrop: () => void = () => {};
+  /** `CMover::OnActEndJump4` (`MoverActEvent.cpp:2089`), which `CAction::OnEndJumpState` calls as a landing ends. */
+  onEndJump4: () => void = () => {};
 
   /** `m_bGround`: 1 standing on the ground, 2 landed on a face steep enough to slide off. */
   private ground = 0;
@@ -144,14 +151,19 @@ export class ActionMover {
    * Where the move ends on no land the height part is skipped (the C++ measures it from no land, then does not place
    * the mover). Every mover on the ground collides alike (`collideMove`). Without `ground` nothing is in the way and
    * the mover keeps its height, as on a flat floor.
+   *
+   * `collided` is `ProcessCollision`'s answer where the mover was placed, for `OnActCollision` (`Mover.cpp:3899-3905`):
+   * the move met an object or steep land (`CWorld::ProcessCollision`), or the head a ceiling (:378-382).
    */
-  step(ground?: Ground): void {
+  step(ground?: Ground): { collided: boolean } {
     const pos = toFloats(this.body.pos);
     this.deltaAccu = [0, 0, 0];
     this.processAction(pos);
     const dy = this.deltaAccu[1]; // vDelta, the function's own copy of m_vDeltaAccu (:131)
+    let collided = false; // fResult
     if (this.moved) {
       const { hit, move } = collideMove(pos, this.deltaAccu, ground);
+      collided = hit;
       // __FIX_COLLISION (:225-232); the height below still goes by vDelta
       if (hit && vecLength(move) > FIX_COLLISION_LENGTH) {
         this.deltaAccu[1] = this.delta[1] = 0;
@@ -162,17 +174,18 @@ export class ActionMover {
     const onLand = (): boolean => ground === undefined || ground.terrainHeight(pos[0], pos[2]) !== null;
     let placed = onLand();
     if (placed) {
-      this.processHeight(pos, dy, ground);
+      if (this.processHeight(pos, dy, ground)) collided = true;
       placed = onLand(); // a slide may have moved it
     }
     this.posLast = copy(pos);
     if (placed) this.body.pos = pos;
+    return { collided: placed && collided };
   }
 
   /**
    * `CActionMover::PresupposePos` (`ActionMover.cpp:355-439`): where the mover will be `frames` steps on if its move
    * and turn states stay. Its own float angle turns by 4 and wraps at 360, without `SetAngle`. The world's edge
-   * (`ClipX`/`ClipZ`) and `m_nCorr` are left out.
+   * (`ClipX`/`ClipZ`) is left out, and `m_nCorr` is its caller's (`SimMover.nCorr`).
    */
   presuppose(frames: number): { pos: Vec3; delta: Vec3; angle: number } {
     const v = toFloats(this.body.pos);
@@ -261,14 +274,14 @@ export class ActionMover {
    * The height part of `CActionMover::ProcessCollisionGround` (`ActionMoverCollision.cpp:276-388`), `dy` being the
    * step's fall or rise. Coming down, `ProcessUnderCollision` gives the height of the objects and terrain under the
    * mover, and the point a steep face slides it to; going up, the ceiling is `GetOverHeightForPlayer` for a player and
-   * `GetOverHeight` for others (`__BOUND_BOX_COLLISION`, :364-373). `OnActDrop` (PLAYERCORR, QUERYGETPOS), landing on
+   * `GetOverHeight` for others (`__BOUND_BOX_COLLISION`, :364-373). Falling fast enough calls `onActDrop`. Landing on
    * ships and `__JEFF_11_6`'s returning NPC (a speed factor over 1.9, which does not slide; the factor is the rules',
-   * `SimMover.speedFactor`) are left out.
+   * `SimMover.speedFactor`) are left out. True where the head met a ceiling (`fResult = TRUE`, :381).
    */
-  private processHeight(pos: Vec3, dy: number, ground: Ground | undefined): void {
-    if ((this.state & ObjSta.DMG_ALL) === ObjSta.DISAPPEAR) return;
+  private processHeight(pos: Vec3, dy: number, ground: Ground | undefined): boolean {
+    if ((this.state & ObjSta.DMG_ALL) === ObjSta.DISAPPEAR) return false;
     if (dy < 0) {
-      if (this.ground === 1) return;
+      if (this.ground === 1) return false;
       const slide: Vec3 = [0, 0, 0];
       const height = ground ? processUnderCollision(slide, [pos[0], f32(pos[1] + UNDER_FROM), pos[2]], ground) : pos[1];
       pos[1] = f32(pos[1] + dy);
@@ -276,10 +289,12 @@ export class ActionMover {
       if ((this.state & ObjSta.JUMP_ALL) === ObjSta.SJUMP3) {
         if (pos[1] < height) landing = true;
       } else if (f32(pos[1] - 0.25) > height) {
-        // falling fast enough: a player takes the falling state (__SYS_COLLECTING, __BS_FIXED_KNOCKBACK)
-        if (dy < FALLING_SPEED && (this.state & ObjSta.COLLECT) === 0 && this.body.isPlayer
-          && (this.state & ObjSta.DMG_FLY_ALL) === 0) {
-          this.setState(ObjSta.JUMP_ALL, ObjSta.SJUMP3);
+        if (dy < FALLING_SPEED) {
+          // a player takes the falling state (__SYS_COLLECTING, __BS_FIXED_KNOCKBACK); every mover calls OnActDrop
+          if ((this.state & ObjSta.COLLECT) === 0 && this.body.isPlayer && (this.state & ObjSta.DMG_FLY_ALL) === 0) {
+            this.setState(ObjSta.JUMP_ALL, ObjSta.SJUMP3);
+          }
+          this.onActDrop();
         }
       } else {
         landing = true;
@@ -303,8 +318,10 @@ export class ActionMover {
       if (f32(pos[1] + HEAD_HEIGHT) > ceiling) {
         pos[1] = f32(ceiling - HEAD_HEIGHT);
         this.delta[1] = CEILING_BOUNCE;
+        return true;
       }
     }
+    return false;
   }
 
   /** `CActionMover::ProcessActMsg1` (`ActionMoverMsg.cpp:101-1170`) for the messages in `ActMsg`. */
@@ -457,7 +474,7 @@ export class ActionMover {
           this.setMotion(Mti.JUMP4, AniLoop.ONE_PLAY);
         }
         break;
-      case ObjSta.SJUMP4: // :414-437, landed: the state ends at once (OnActEndJump4's destination is the caller's)
+      case ObjSta.SJUMP4: // :414-437, landed: the state ends at once, and with it OnActEndJump4 (resetState)
         this.resetState(ObjSta.JUMP_ALL);
         break;
     }
@@ -488,11 +505,14 @@ export class ActionMover {
 
   /**
    * `CAction::ResetState` (`Action.cpp:163-207`): clears the groups in `mask`. Ending a sitting state takes the
-   * sitting flag off (`OnEndMoveState`, :69-78); the other `OnEnd*` handlers do nothing on the ground here.
+   * sitting flag off (`OnEndMoveState`, :69-78), and ending a landing calls `onEndJump4` once the bits are clear
+   * (`OnEndJumpState( dw )` with the state as it was, :90-99); the other `OnEnd*` handlers do nothing on the ground here.
    */
   private resetState(mask: number): void {
-    if (mask & ObjSta.MOVE_ALL && (this.state & ObjSta.MOVE_ALL) === ObjSta.SIT) this.stateFlag &= ~ObjStaF.SIT;
-    this.state = (this.state & ~mask) >>> 0;
+    const was = this.state;
+    if (mask & ObjSta.MOVE_ALL && (was & ObjSta.MOVE_ALL) === ObjSta.SIT) this.stateFlag &= ~ObjStaF.SIT;
+    this.state = (was & ~mask) >>> 0;
+    if (mask & ObjSta.JUMP_ALL && (was & ObjSta.JUMP_ALL) === ObjSta.SJUMP4) this.onEndJump4();
   }
 
   /** The stop that `OBJMSG_STAND` and `OBJMSG_STOP` make of a forward or backward move (:110-122, :138-150). */

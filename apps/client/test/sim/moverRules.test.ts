@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { MoveReport, Vec3 } from '@flyffweb/protocol';
 import { ActionMover } from '../../src/world/sim/ActionMover';
-import { ActMsg, AniLoop, Mti, ObjSta, ObjStaF } from '../../src/world/sim/constants';
+import { HAttr } from '../../src/world/sim/collision';
+import type { CollisionObject, Ground } from '../../src/world/sim/collision';
+import { ActMsg, AniLoop, MAX_CORR_SIZE_45, Mti, ObjSta, ObjStaF } from '../../src/world/sim/constants';
 import {
-  applyDestPos, applyMotion, applyMoved, setDestAngle, setDestObj, setDestPos, stepMover,
+  applyDestPos, applyMotion, applyMoved, isEmptyDest, setDestAngle, setDestObj, setDestPos, stepMover,
 } from '../../src/world/sim/moverRules';
 import type { SimMover } from '../../src/world/sim/moverRules';
 
@@ -378,5 +380,152 @@ describe('moverRules: destinations (CMover::ProcessMove)', () => {
     steps(m, 2);
     m.act.sendActMsg(ActMsg.STOP);
     expect(m.dest).toBeNull();
+  });
+
+  it('IsEmptyDest: no point and no object followed', () => {
+    const m = sim(1, [100, 0, 100], 0);
+    expect(isEmptyDest(m)).toBe(true);
+    setDestAngle(m, 30, true);
+    expect(isEmptyDest(m)).toBe(true);
+    setDestPos(m, [103, 0, 100], true);
+    expect(isEmptyDest(m)).toBe(false);
+    setDestObj(m, 2, 1);
+    expect(isEmptyDest(m)).toBe(false);
+  });
+});
+
+const IDENTITY = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+
+/** The plane x = `x` from height 0 to 10 and z 90 to 110, facing -x (IsTouchRayTri is one-sided). */
+function wallAt(x: number): CollisionObject {
+  const a: Vec3 = [x, 0, 110];
+  const b: Vec3 = [x, 10, 110];
+  const c: Vec3 = [x, 0, 90];
+  const d: Vec3 = [x, 10, 90];
+  return { triangles: new Float32Array([a, b, c, b, d, c].flat()), matrix: IDENTITY };
+}
+
+/** Land at `height(x, z)` (none where it gives null) and `objects` in the way. */
+function groundOf(objects: CollisionObject[], height: (x: number, z: number) => number | null = () => 0): Ground {
+  return { terrainHeight: height, landAttr: () => HAttr.NONE, objectsNear: () => objects };
+}
+
+/** The player's own character, a player, at `pos` facing +x (angle 90), running 0.1 a step. */
+function self(pos: Vec3, extra: Partial<SimMover> = {}): SimMover {
+  const m: SimMover = {
+    objectId: 1, act: new ActionMover({ pos, angle: 90, speed: f32(0.1), isPlayer: true }), dest: null, corr: null,
+    speedFactor: 1, isSelf: true, ...extra,
+  };
+  m.act.state = ObjSta.STAND;
+  return m;
+}
+
+function stepsOn(m: SimMover, ground: Ground, n: number, until: () => boolean = () => false): number {
+  for (let i = 1; i <= n; i++) {
+    stepMover(m, nobody, ground);
+    if (until()) return i;
+  }
+  return n;
+}
+
+describe('moverRules: m_nCorr, OnActCollision and OnActDrop (MoverActEvent.cpp:1908-1977, 1979-2053)', () => {
+  it('a tap-walk ends where it meets something: the destination goes, the mover stands, and a PLAYERCORR is owed', () => {
+    const ground = groundOf([wallAt(103)]);
+    const m = self([100, 0, 100], { nCorr: -1 });
+    setDestPos(m, [110, 0, 100], true);
+    const n = stepsOn(m, ground, 100, () => m.corrReport != null);
+    expect(n).toBeLessThan(100);
+
+    expect(m.dest).toBeNull();
+    expect(m.act.state & ObjSta.MOVE_ALL).toBe(ObjSta.STAND);
+    expect(m.nCorr).toBe(0);
+    // SendPlayerCorr's fields as they are after the STAND: GetPos(), m_vDelta, the angle, the state
+    const at = m.act.body.pos;
+    expect(at[0]).toBeLessThan(103);
+    expect(m.corrReport).toMatchObject({ pos: at, angle: 90, state: m.act.state, stateFlag: m.act.stateFlag });
+    expect(m.corrReport!.delta).toEqual(m.act.delta);
+
+    // it stays where it stopped, and owes nothing more
+    m.corrReport = null;
+    stepsOn(m, ground, 30);
+    expect(m.act.body.pos).toEqual(at);
+    expect(m.corrReport).toBeNull();
+  });
+
+  it("after a PLAYERMOVED (m_nCorr 22) a collision owes a PLAYERCORR, once, and the move goes on", () => {
+    // the knee's test line is the step's move times 6.5: the wall at 101.5 is met at x 100.85, within 22 steps
+    const ground = groundOf([wallAt(101.5)]);
+    const m = self([100, 0, 100], { nCorr: MAX_CORR_SIZE_45 });
+    m.act.sendActMsg(ActMsg.FORWARD);
+    const n = stepsOn(m, ground, MAX_CORR_SIZE_45, () => m.corrReport != null);
+    expect(n).toBeLessThan(MAX_CORR_SIZE_45);
+    expect(m.nCorr).toBe(0);
+    expect(m.corrReport!.state & ObjSta.MOVE_ALL).toBe(ObjSta.FMOVE);
+    expect(m.act.state & ObjSta.MOVE_ALL).toBe(ObjSta.FMOVE);
+
+    m.corrReport = null;
+    stepsOn(m, ground, 10);
+    expect(m.corrReport).toBeNull();
+    expect(m.act.state & ObjSta.MOVE_ALL).toBe(ObjSta.FMOVE);
+  });
+
+  it('m_nCorr counts down a step at a time: 22 steps after a PLAYERMOVED a collision owes nothing', () => {
+    const ground = groundOf([wallAt(104)]);
+    const m = self([100, 0, 100], { nCorr: MAX_CORR_SIZE_45 });
+    m.act.sendActMsg(ActMsg.FORWARD);
+    stepsOn(m, ground, 1);
+    expect(m.nCorr).toBe(MAX_CORR_SIZE_45 - 1);
+    stepsOn(m, ground, MAX_CORR_SIZE_45 - 1);
+    expect(m.nCorr).toBe(0);
+    // on to the wall: it is met, and nothing is owed
+    stepsOn(m, ground, 40);
+    expect(m.act.body.pos[0]).toBeLessThan(104);
+    expect(m.act.body.pos[0]).toBeGreaterThan(103);
+    expect(m.corrReport ?? null).toBeNull();
+  });
+
+  it('a tap-walk that starts to fall ends there: it falls straight down and stands, owing a PLAYERCORR', () => {
+    // a 10 m drop at x 103
+    const ground = groundOf([], (x) => (x < 103 ? 10 : 0));
+    const m = self([100, 10, 100], { nCorr: -1 });
+    setDestPos(m, [110, 0, 100], true);
+    stepsOn(m, ground, 200, () => m.corrReport != null);
+
+    expect(m.dest).toBeNull();
+    expect(m.nCorr).toBe(0);
+    expect(m.act.state & ObjSta.JUMP_ALL).toBe(ObjSta.SJUMP3);
+    // OnActDrop comes before the step puts the mover where it went: the report has the position it fell from
+    expect(m.corrReport!.pos[1]).toBeGreaterThan(m.act.body.pos[1]);
+    const x = m.act.body.pos[0];
+    expect(x).toBeGreaterThan(103);
+    stepsOn(m, ground, 200, () => m.act.body.pos[1] === 0);
+    expect(m.act.body.pos[0]).toBe(x);
+    expect(m.act.body.pos[1]).toBe(0);
+  });
+
+  it('a mover other than the own character owes nothing and walks on', () => {
+    const ground = groundOf([wallAt(103)]);
+    const m = self([100, 0, 100], { isSelf: false });
+    setDestPos(m, [110, 0, 100], true);
+    stepsOn(m, ground, 60);
+    expect(m.dest?.pos).toEqual([110, 0, 100]);
+    expect(m.corrReport ?? null).toBeNull();
+    expect(m.act.state & ObjSta.MOVE_ALL).toBe(ObjSta.FMOVE);
+  });
+});
+
+describe('moverRules: OnActEndJump4 (MoverActEvent.cpp:2089-2098)', () => {
+  it('a mover that lands on its way to a point takes its sides of the point anew', () => {
+    // the point is 0.5 north of where the mover was: on the south side (m_bPositiveZ false)
+    const m = self([100, 0, 99.5]);
+    setDestPos(m, [110, 0, 100], true);
+    expect(m.dest?.positiveZ).toBe(false);
+    // the mover has come down 0.5 north of it and is landing; facing the point, it has not gone past it
+    m.act.body.pos = [100, 0, 100.5];
+    m.act.state = ObjSta.SJUMP4;
+    stepMover(m, nobody, groundOf([]));
+    expect(m.act.state & ObjSta.JUMP_ALL).toBe(0);
+    expect(m.dest?.positiveZ).toBe(true);
+    expect(m.dest?.pos).toEqual([110, 0, 100]);
   });
 });

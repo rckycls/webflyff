@@ -1,6 +1,7 @@
 import {
   ArReader, CloseCode, MessageType, NULL_ID, ProtocolError, WORLD_READERS, decodeLoginMessage, decodeWorldPacket, encodeDestPos,
-  encodeJoin, encodePing, encodePlayerBehavior, encodePlayerMoved, encodePreJoin, encodeWorldKeepAlive, readBundle,
+  encodeJoin, encodePing, encodePlayerBehavior, encodePlayerCorr, encodePlayerMoved, encodePreJoin, encodeWorldKeepAlive,
+  readBundle,
 } from '@flyffweb/protocol';
 import type { BundleMessage, BundleResult, MoveReport, Vec3, WorldMessage } from '@flyffweb/protocol';
 import { UNEXPECTED_PROBLEM, closeText, errorText } from '../lobby/errorText';
@@ -174,6 +175,14 @@ export class WorldSession {
   /** PLAYERBEHAVIOR (`CDPClient::SendPlayerBehavior`). Sent only while playing. */
   sendBehavior(m: MoveReport): void {
     this.playingCache()?.send(encodePlayerBehavior(m));
+  }
+
+  /**
+   * PLAYERCORR (`CDPClient::SendPlayerCorr`): where a walk met something or began to fall, the own character's state then
+   * (`SimMover.corrReport`). Sent only while playing.
+   */
+  sendCorr(m: MoveReport): void {
+    this.playingCache()?.send(encodePlayerCorr(m));
   }
 
   /** The client's SNAPSHOT with one DESTPOS (`CDPClient::SendSnapshot`): a click-to-move. Sent only while playing. */

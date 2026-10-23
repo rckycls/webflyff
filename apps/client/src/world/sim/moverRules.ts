@@ -79,6 +79,19 @@ export interface SimMover {
   isSelf?: boolean;
   /** `CObj::GetRadius()` (`Obj.cpp:781-790`, from the model's box and scale), for `IsRangeObj`. 0 when not known. */
   radius?: number;
+  /**
+   * `CMover::m_nCorr` (`Mover.h:476`, 0 by default, `Mover.cpp:305`), which the rules read for the own character only:
+   * -1 from a tap on the ground (`WndWorldControlPlayer.cpp:323`), so that the walk there ends where it meets
+   * something or starts to fall; `MAX_CORR_SIZE_45` from each PLAYERMOVED (`PresupposePos`, `ActionMover.cpp:438`),
+   * counted down a step at a time (`Mover.cpp:3524-3525`), within which such a moment is corrected (PLAYERCORR). The
+   * owner sets it; the rules count it down and end it.
+   */
+  nCorr?: number;
+  /**
+   * What `CDPClient::SendPlayerCorr` (`Neuz/DPClient.cpp:10866`) sends, as it was when the rules called it: the own
+   * character's state (`act.report`), tick 0. The owner sends it with the clock's tick and puts null back.
+   */
+  corrReport?: MoveReport | null;
 }
 
 const copy = (v: Vec3): Vec3 => [v[0], v[1], v[2]];
@@ -107,16 +120,22 @@ function getDegree(dest: Vec3, src: Vec3): number {
 }
 
 /**
- * The rules own `act.clearDest` (`OBJMSG_STOP` calls `CMover::ClearDest`) from a mover's first destination on, so a
- * STOP from anyone (a MOTION message, the keyboard) clears what these functions set.
+ * The rules own `act`'s calls into `CMover` from a mover's first destination or step on: `clearDest` (`OBJMSG_STOP`
+ * calls `CMover::ClearDest`, so a STOP from anyone, a MOTION message or the keyboard, clears what these functions set),
+ * `onActDrop` and `onEndJump4`.
  */
 const bound = new WeakMap<ActionMover, SimMover>();
 
+function bind(m: SimMover): void {
+  if (bound.get(m.act) === m) return;
+  bound.set(m.act, m);
+  m.act.clearDest = () => clearDest(m);
+  m.act.onActDrop = () => onActCorr(m);
+  m.act.onEndJump4 = () => onActEndJump4(m);
+}
+
 function destOf(m: SimMover): DestState {
-  if (bound.get(m.act) !== m) {
-    bound.set(m.act, m);
-    m.act.clearDest = () => clearDest(m);
-  }
+  bind(m);
   return (m.dest ??= {
     pos: null, forward: true, positiveX: false, positiveZ: false, targetId: null, range: 0, angle: NO_DEST_ANGLE,
     left: false,
@@ -292,18 +311,54 @@ export function setDestAngle(m: SimMover, angle: number, left: boolean): void {
   tidyDest(m);
 }
 
+/** `CMover::IsEmptyDest` (`Mover.h:1013`): no point to walk to and no object to follow. */
+export function isEmptyDest(m: SimMover): boolean {
+  return m.dest === null || (m.dest.pos === null && m.dest.targetId === null);
+}
+
 /**
- * One 60 Hz step of `CMover::Process` (`Mover.cpp:3488-3906`) for any mover: `ProcessMove`, then `act.step()` at
- * `GetSpeed`. `find` is `prj.GetCtrl` for the followed object; `ground` goes to `act.step`. Left out of `Process`:
- * `m_nCorr` (the active mover's `SetDestObj` sends), `ProcessAI`, `ProcessMovePattern` and the drawing.
+ * One 60 Hz step of `CMover::Process` (`Mover.cpp:3488-3906`) for any mover: `m_nCorr` counted down (:3524-3525),
+ * `ProcessMove`, then `act.step()` at `GetSpeed`, and `OnActCollision` where the step met something (:3899-3905).
+ * `find` is `prj.GetCtrl` for the followed object; `ground` goes to `act.step`. Left out of `Process`: the active
+ * mover's `SetDestObj` sends, `ProcessAI`, `ProcessMovePattern` and the drawing.
  */
 export function stepMover(m: SimMover, find: (objectId: number) => SimMover | undefined, ground?: Ground): void {
+  bind(m);
+  if (m.nCorr !== undefined && m.nCorr > 0) m.nCorr--;
   processMove(m, find);
   const body = m.act.body;
   const own = body.speed;
   body.speed = getSpeed(m);
-  m.act.step(ground);
+  const { collided } = m.act.step(ground);
   body.speed = own;
+  if (collided) onActCorr(m);
+}
+
+/**
+ * The client's `CMover::OnActCollision` and `CMover::OnActDrop` (the `#else` parts of `MoverActEvent.cpp:1979-2053`
+ * and `:1908-1977`), which do the same for the active mover: while `m_nCorr` is set, a walk the player tapped (-1)
+ * ends there, with `ClearDest` and `OBJMSG_STAND`, and either way the state is corrected (`SendPlayerCorr`:
+ * `corrReport`) and `m_nCorr` goes back to 0. (`OnActCollision` also lets go of a held left button,
+ * `m_bLButtonDown = FALSE`: a tap here is over once it is let go.) Another mover on its way somewhere asks the server
+ * where it is (`SendQueryGetPos`), which the browser does not.
+ */
+function onActCorr(m: SimMover): void {
+  if (!m.isSelf || !m.nCorr) return;
+  if (m.nCorr < 0) {
+    clearDest(m);
+    m.act.sendActMsg(ActMsg.STAND);
+  }
+  m.corrReport = m.act.report(0n);
+  m.nCorr = 0;
+}
+
+/**
+ * `CMover::OnActEndJump4` (`MoverActEvent.cpp:2089-2098`): a mover that lands on its way to a point takes its sides of
+ * the point anew, `SetDestPos( GetDestPos(), m_bForward, FALSE )`. (`MI_CLOCKWORK1`'s `OBJMSG_APPEAR` is not copied.)
+ */
+function onActEndJump4(m: SimMover): void {
+  const d = m.dest;
+  if (d?.pos) setDestPos(m, d.pos, d.forward);
 }
 
 /** `CMover::ProcessMove` (`MoverMove.cpp:344-450`) on the ground. */
@@ -313,7 +368,7 @@ function processMove(m: SimMover, find: (objectId: number) => SimMover | undefin
   enforcedGhostCorr(m);
   approachGhostAngle(m);
   const d = m.dest;
-  if (!d || (d.pos === null && d.targetId === null)) return; // IsEmptyDest
+  if (!d || isEmptyDest(m)) return;
   if (act.state & ObjSta.ATK_ALL) return;
   const pos = act.body.pos;
   let destPos: Vec3;

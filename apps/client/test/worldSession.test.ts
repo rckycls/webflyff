@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   ArWriter, MessageType, NULL_ID, PacketType, bytesToHex, encodeDestPos, encodeJoin, encodePing, encodePlayerBehavior,
-  encodePlayerMoved, encodePreJoin, encodeWorldKeepAlive,
+  encodePlayerCorr, encodePlayerMoved, encodePreJoin, encodeWorldKeepAlive,
 } from '@flyffweb/protocol';
 import type { AddedMover, CharacterSummary, MoveReport, SlotMessenger, Vec3 } from '@flyffweb/protocol';
 import {
@@ -316,13 +316,15 @@ describe('WorldSession, answering and pinging', () => {
 });
 
 describe('WorldSession, sending while playing', () => {
-  it('sends PLAYERMOVED, PLAYERBEHAVIOR and DESTPOS to the cache server', async () => {
+  it('sends PLAYERMOVED, PLAYERBEHAVIOR, DESTPOS and PLAYERCORR to the cache server', async () => {
     const { session, cache } = await playing();
     session.sendMoved(MOVE);
     session.sendBehavior(MOVE);
     session.sendDestPos([9, 8, 7], true);
+    session.sendCorr(MOVE);
     expect(cache.sent.slice(1).map(hex)).toEqual([
       hex(encodePlayerMoved(MOVE)), hex(encodePlayerBehavior(MOVE)), hex(encodeDestPos([9, 8, 7], true)),
+      hex(encodePlayerCorr(MOVE)),
     ]);
   });
 
@@ -332,6 +334,7 @@ describe('WorldSession, sending while playing', () => {
     session.sendMoved(MOVE);
     session.sendBehavior(MOVE);
     session.sendDestPos([9, 8, 7], false);
+    session.sendCorr(MOVE);
     expect(cache.sent).toHaveLength(sent);
   });
 
@@ -345,6 +348,7 @@ describe('WorldSession, sending while playing', () => {
       session.sendMoved(MOVE);
       session.sendBehavior(MOVE);
       session.sendDestPos([1, 2, 3], true);
+      session.sendCorr(MOVE);
       expect(cache.sent).toHaveLength(sent);
     }
   });

@@ -34,8 +34,11 @@ const SHAPES: Record<string, number[]> = {
   'collision/obj_big.bin': [-10, 0, 0, 10, 0, 0, 0, 1, 0],
 };
 
-/** `modelTrans` null: a manifest written before it existed. */
-function makeManifest(modelTrans: boolean[] | null = [false, true, false, false, false]): WorldManifest {
+/** `modelTrans` or `modelPick` null: a manifest written before it existed. The wall is the one pickable model. */
+function makeManifest(
+  modelTrans: boolean[] | null = [false, true, false, false, false],
+  modelPick: boolean[] | null = [true, false, false, false, false],
+): WorldManifest {
   return {
     name: 'WdTest',
     size: [4, 4],
@@ -48,6 +51,7 @@ function makeManifest(modelTrans: boolean[] | null = [false, true, false, false,
     terrainTextures: [],
     models: ['models/obj_wall.glb', 'models/obj_glass.glb', 'models/obj_tree.glb', 'models/obj_box.glb', 'models/obj_big.glb'],
     ...(modelTrans === null ? {} : { modelTrans }),
+    ...(modelPick === null ? {} : { modelPick }),
     tiles: {},
   };
 }
@@ -181,6 +185,20 @@ describe('CollisionShapes', () => {
     old.shapes.activate();
     await old.shapes.place(tile(0, 0, [placedAt(GLASS, 10, 0, 10)]));
     expect(old.shapes.objectsNear(10, 10).map((o) => o.trans)).toEqual([false]);
+  });
+
+  it("a pickable model's object comes out with pick: true", async () => {
+    const { shapes } = setup();
+    shapes.activate();
+    await shapes.place(tile(0, 0, [placedAt(GLASS, 10, 0, 10), placedAt(WALL, 12, 0, 10)]));
+
+    expect(shapes.objectsNear(10, 10).map((o) => o.pick)).toEqual([false, true]);
+
+    // a manifest written before modelPick: nothing is pickable
+    const old = setup(makeManifest(undefined, null));
+    old.shapes.activate();
+    await old.shapes.place(tile(0, 0, [placedAt(WALL, 10, 0, 10)]));
+    expect(old.shapes.objectsNear(10, 10).map((o) => o.pick)).toEqual([false]);
   });
 
   it('downloads nothing before activate, then the shapes of the tiles it was given', async () => {

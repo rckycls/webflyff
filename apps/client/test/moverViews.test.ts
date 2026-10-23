@@ -1,4 +1,6 @@
-import { AnimationClip, AnimationMixer, BoxGeometry, Group, Mesh, NumberKeyframeTrack, Object3D, Scene } from 'three';
+import {
+  AnimationClip, AnimationMixer, BoxGeometry, Group, Mesh, NumberKeyframeTrack, Object3D, Raycaster, Scene, Vector3,
+} from 'three';
 import { describe, expect, it, vi } from 'vitest';
 import type { Mock } from 'vitest';
 import { toWebPosition } from '@flyffweb/formats';
@@ -224,6 +226,28 @@ describe('MoverViews', () => {
     }
     r.views.step(r.movers);
     expect(npc.act.isEndFrame()).toBe(true);
+  });
+
+  it('nearestHit: how far along a ray the nearest mover drawn is, model or placeholder, the one left out not counted', async () => {
+    // an NPC 10 m and the own character 15 m south of the origin (D3D -z: web +z), on a ray from 20 m out going north
+    const r = rig(async () => fakeModel(), (mover) => (mover.isSelf ? null : look));
+    r.add(moverFrom(addedNpc(7, 21, {}, { pos: [0, 0, -10] })));
+    r.add(moverFrom(addedPlayer(8, { self: true }, { pos: [0, 0, -15] })));
+    await r.views.settled();
+    r.views.update(r.movers, 0);
+    r.scene.updateMatrixWorld();
+    const ray = new Raycaster(new Vector3(0, 1, 20), new Vector3(0, 0, -1));
+
+    // the box is 1 m deep: its near face 0.5 m before the mover, the placeholder's capsule 0.3 m
+    expect(r.views.nearestHit(ray, 8)).toBeCloseTo(9.5, 5);
+    expect(r.views.nearestHit(ray, undefined)).toBeCloseTo(4.7, 5);
+    // a ray past them meets none
+    expect(r.views.nearestHit(new Raycaster(new Vector3(5, 1, 20), new Vector3(0, 0, -1)), undefined)).toBeNull();
+    // a part not drawn is not met
+    r.scene.getObjectByName('mover 7')!.traverse((o) => {
+      if (o instanceof Mesh) o.visible = false;
+    });
+    expect(r.views.nearestHit(ray, 8)).toBeNull();
   });
 
   it('plays the motion the rules set', async () => {

@@ -1,10 +1,18 @@
-import { describe, expect, it } from 'vitest';
+import { BoxGeometry, Mesh, PerspectiveCamera } from 'three';
+import type { Raycaster } from 'three';
+import { describe, expect, it, vi } from 'vitest';
+import { toWebPosition } from '@flyffweb/formats';
+import type { Vec3 } from '@flyffweb/formats';
 import { NO_INTENT, joystickIntent } from '@flyffweb/scene';
 import type { MoveIntent } from '@flyffweb/scene';
-import { STANDING, desiredFrom, driveOwnMover } from '../src/world/controls';
+import { STANDING, TapToWalk, desiredFrom, driveOwnMover } from '../src/world/controls';
 import type { Desired } from '../src/world/controls';
+import { pickGround } from '../src/world/render/picking';
 import { ActionMover } from '../src/world/sim/ActionMover';
+import { terrainGround } from '../src/world/sim/collision';
 import { ActMsg, ObjSta, ObjStaF } from '../src/world/sim/constants';
+import { setDestPos } from '../src/world/sim/moverRules';
+import type { SimMover } from '../src/world/sim/moverRules';
 
 /** An own mover at the origin facing 90 degrees, running 0.1 a step; `walking` is the server's starting mode. */
 function ownMover(walking: boolean): ActionMover {
@@ -287,5 +295,199 @@ describe('driveOwnMover', () => {
     expect(act.state & ObjSta.MOVE_ALL).toBe(ObjSta.FMOVE);
     expect(act.state & ObjSta.TURN_ALL).toBe(ObjSta.RTURN);
     expect(act.stateFlag & ObjStaF.WALK).toBe(0);
+  });
+});
+
+/** An own mover at (100, 0, 100) facing 90 degrees and walking, on its way to a point 10 m ahead (`setDestPos`). */
+function walkingToAPoint(): SimMover {
+  const m: SimMover = {
+    objectId: 1, act: new ActionMover({ pos: [100, 0, 100], angle: 90, speed: 0.1 }), dest: null, corr: null,
+    speedFactor: 1, isSelf: true,
+  };
+  m.act.stateFlag |= ObjStaF.WALK;
+  setDestPos(m, [110, 0, 100], true);
+  // CMover::ProcessMove's TURNMOVE: it goes there
+  m.act.sendActMsg(ActMsg.TURNMOVE, 90);
+  return m;
+}
+
+describe('driveOwnMover with a destination (WndWorldControlPlayer.cpp:450-465, :548-553)', () => {
+  it('sends no STAND while the own mover walks to its destination, and keeps it', () => {
+    const m = walkingToAPoint();
+    for (let i = 0; i < 10; i++) {
+      expect(driveOwnMover(m.act, STANDING, false)).toEqual(NOTHING);
+      m.act.step();
+    }
+    expect(m.act.state & ObjSta.MOVE_ALL).toBe(ObjSta.FMOVE);
+    expect(m.dest?.pos).toEqual([110, 0, 100]);
+  });
+
+  it('a key that sends a move clears the destination', () => {
+    const m = walkingToAPoint();
+    expect(driveOwnMover(m.act, desired('forward', 'left', true), false)).toEqual({ moved: true, behavior: false });
+    expect(m.dest).toBeNull();
+    // with the destination gone, letting go stands the mover as before
+    expect(driveOwnMover(m.act, STANDING, true)).toEqual({ moved: true, behavior: false });
+    expect(m.act.state & ObjSta.MOVE_ALL).toBe(ObjSta.STAND);
+  });
+
+  it('a gait change alone clears it too (fBehavior)', () => {
+    const m = walkingToAPoint();
+    expect(driveOwnMover(m.act, desired('stand', 'none', false), false)).toEqual({ moved: false, behavior: true });
+    expect(m.dest).toBeNull();
+  });
+
+  it('forward, which the walk is already, sends nothing and keeps it, as in Neuz (FORWARD answers 0)', () => {
+    const m = walkingToAPoint();
+    expect(driveOwnMover(m.act, desired('forward', 'none', true), false)).toEqual(NOTHING);
+    expect(m.dest?.pos).toEqual([110, 0, 100]);
+  });
+});
+
+/** Just enough of a canvas for `TapToWalk`: its listeners and a 200 x 100 px box at (10, 20). */
+class FakeCanvas {
+  readonly listeners = new Map<string, (event: unknown) => void>();
+  addEventListener(type: string, listener: (event: unknown) => void): void {
+    this.listeners.set(type, listener);
+  }
+  removeEventListener(type: string, listener: (event: unknown) => void): void {
+    if (this.listeners.get(type) === listener) this.listeners.delete(type);
+  }
+  getBoundingClientRect(): { left: number; top: number; width: number; height: number } {
+    return { left: 10, top: 20, width: 200, height: 100 };
+  }
+  /** A pointer event at (x, y) on the page, `time` ms in; by default the main mouse button or the first finger. */
+  fire(type: string, x: number, y: number, time: number, extra: Record<string, unknown> = {}): void {
+    this.listeners.get(type)?.({ pointerId: 1, isPrimary: true, button: 0, clientX: x, clientY: y, timeStamp: time, ...extra });
+  }
+}
+
+function tapToWalk(pick: (ndcX: number, ndcY: number) => Vec3 | null = () => [1, 2, 3]) {
+  const canvas = new FakeCanvas();
+  const spy = vi.fn(pick);
+  const tap = new TapToWalk(canvas as unknown as HTMLElement, spy);
+  return { canvas, pick: spy, tap };
+}
+
+describe('TapToWalk', () => {
+  it('a tap gives the picked point', () => {
+    const { canvas, pick, tap } = tapToWalk();
+    expect(tap.take()).toBeNull();
+    // pressed in the middle of the canvas, let go 2 px away 100 ms later
+    canvas.fire('pointerdown', 110, 70, 1000);
+    canvas.fire('pointerup', 112, 70, 1100);
+    expect(pick).toHaveBeenCalledTimes(1);
+    expect(pick).toHaveBeenCalledWith(0, 0);
+    expect(tap.take()).toEqual([1, 2, 3]);
+    // once: the next take has nothing new
+    expect(tap.take()).toBeNull();
+
+    // the corners: x from -1 (left) to 1, y from 1 (top) to -1, where the press was
+    canvas.fire('pointerdown', 10, 20, 2000);
+    canvas.fire('pointerup', 10, 20, 2010);
+    canvas.fire('pointerdown', 210, 120, 3000);
+    canvas.fire('pointerup', 210, 120, 3010);
+    expect(pick.mock.calls.slice(1)).toEqual([[-1, 1], [1, -1]]);
+    expect(tap.take()).toEqual([1, 2, 3]);
+  });
+
+  it('a drag is not a tap', () => {
+    const { canvas, pick, tap } = tapToWalk();
+    // moved more than 8 px on the way, though let go where it started
+    canvas.fire('pointerdown', 100, 50, 0);
+    canvas.fire('pointermove', 109, 50, 50);
+    canvas.fire('pointerup', 100, 50, 100);
+    // let go more than 8 px away
+    canvas.fire('pointerdown', 100, 50, 1000);
+    canvas.fire('pointerup', 106, 56, 1100);
+    // held longer than 300 ms
+    canvas.fire('pointerdown', 100, 50, 2000);
+    canvas.fire('pointerup', 100, 50, 2301);
+    expect(pick).not.toHaveBeenCalled();
+    expect(tap.take()).toBeNull();
+
+    // 8 px and 300 ms are still a tap
+    canvas.fire('pointerdown', 100, 50, 3000);
+    canvas.fire('pointermove', 108, 50, 3100);
+    canvas.fire('pointerup', 100, 58, 3300);
+    expect(pick).toHaveBeenCalledTimes(1);
+    expect(tap.take()).toEqual([1, 2, 3]);
+  });
+
+  it("only the main button or a lone finger taps: not another button, a pinch, a cancel or another pointer's let-go", () => {
+    const { canvas, pick } = tapToWalk();
+    canvas.fire('pointerdown', 100, 50, 0, { button: 2 });
+    canvas.fire('pointerup', 100, 50, 10, { button: 2 });
+    // a pinch: the second finger ends the first one's tap, and is none itself
+    canvas.fire('pointerdown', 100, 50, 100, { pointerId: 5 });
+    canvas.fire('pointerdown', 150, 50, 110, { pointerId: 6, isPrimary: false });
+    canvas.fire('pointerup', 150, 50, 150, { pointerId: 6, isPrimary: false });
+    canvas.fire('pointerup', 100, 50, 160, { pointerId: 5 });
+    canvas.fire('pointerdown', 100, 50, 200);
+    canvas.fire('pointercancel', 100, 50, 210);
+    canvas.fire('pointerup', 100, 50, 220);
+    canvas.fire('pointerdown', 100, 50, 300, { pointerId: 7 });
+    canvas.fire('pointerup', 100, 50, 310, { pointerId: 8 });
+    expect(pick).not.toHaveBeenCalled();
+  });
+
+  it('a tap that picks nothing gives nothing, and leaves a tap not yet taken as it is', () => {
+    let point: Vec3 | null = [4, 5, 6];
+    const { canvas, tap } = tapToWalk(() => point);
+    canvas.fire('pointerdown', 100, 50, 0);
+    canvas.fire('pointerup', 100, 50, 10);
+    point = null;
+    canvas.fire('pointerdown', 100, 50, 100);
+    canvas.fire('pointerup', 100, 50, 110);
+    expect(tap.take()).toEqual([4, 5, 6]);
+    canvas.fire('pointerdown', 100, 50, 200);
+    canvas.fire('pointerup', 100, 50, 210);
+    expect(tap.take()).toBeNull();
+  });
+
+  it('reset forgets a press under way and a tap not yet taken; dispose stops listening', () => {
+    const { canvas, pick, tap } = tapToWalk();
+    canvas.fire('pointerdown', 100, 50, 0);
+    canvas.fire('pointerup', 100, 50, 10);
+    canvas.fire('pointerdown', 100, 50, 100);
+    tap.reset();
+    canvas.fire('pointerup', 100, 50, 110);
+    expect(tap.take()).toBeNull();
+    expect(pick).toHaveBeenCalledTimes(1);
+    tap.dispose();
+    expect(canvas.listeners.size).toBe(0);
+  });
+
+  it('a tap on a mover gives nothing', () => {
+    // flat land at height 5 (D3D); the camera 10 m over (100, 100), looking straight down at it
+    const ground = terrainGround(() => 5);
+    const camera = new PerspectiveCamera(45, 2, 0.5, 1000);
+    camera.position.set(...toWebPosition([100, 15, 100]));
+    camera.lookAt(...toWebPosition([100, 5, 100.001]));
+    camera.updateMatrixWorld();
+    // a mover 1.8 m tall standing on that spot
+    const mover = new Mesh(new BoxGeometry(0.6, 1.8, 0.6));
+    mover.position.set(...toWebPosition([100, 5.9, 100]));
+    mover.updateMatrixWorld();
+    let moverThere = false;
+    const moverAt = (raycaster: Raycaster): number | null =>
+      moverThere ? (raycaster.intersectObject(mover)[0]?.distance ?? null) : null;
+    const { canvas, tap } = tapToWalk((x, y) => pickGround(camera, x, y, ground, 4, moverAt));
+
+    canvas.fire('pointerdown', 110, 70, 0);
+    canvas.fire('pointerup', 110, 70, 10);
+    const point = tap.take()!;
+    expect(point[0]).toBeCloseTo(100, 3);
+    expect(point[1]).toBeCloseTo(5, 4);
+    expect(point[2]).toBeCloseTo(100, 2);
+
+    moverThere = true;
+    canvas.fire('pointerdown', 110, 70, 100);
+    canvas.fire('pointerup', 110, 70, 110);
+    expect(tap.take()).toBeNull();
+    // beside the mover, the ground is picked as before
+    canvas.fire('pointerdown', 170, 70, 200);
+    canvas.fire('pointerup', 170, 70, 210);
+    expect(tap.take()).not.toBeNull();
   });
 });

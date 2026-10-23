@@ -11,7 +11,7 @@ import { geometryBytes } from '@flyffweb/scene';
 import type { AssembledCharacter, LoopedMotion, Overlay } from '@flyffweb/scene';
 import { toWebPosition } from '@flyffweb/formats';
 import type { Vec3 } from '@flyffweb/formats';
-import type { AnimationAction, Object3D, Scene } from 'three';
+import type { AnimationAction, Object3D, Raycaster, Scene } from 'three';
 import { Box3, CapsuleGeometry, Group, LoopOnce, LoopRepeat, Mesh, MeshLambertMaterial } from 'three';
 import { AniLoop } from '../sim/constants';
 import { STEPS_PER_SECOND } from '../sim/stepper';
@@ -146,6 +146,16 @@ export class MoverViews {
     if (view === undefined || view.head === null) return null;
     const at = toWebPosition(view.scrPos);
     return { at, head: [at[0], at[1] + view.head * view.mover.added.scale, at[2]] };
+  }
+
+  /**
+   * How far along `raycaster`'s ray (from its origin, in its units) the nearest mover drawn is, its model or its
+   * placeholder as last drawn, the mover `except` left out; null where the ray meets none. A part not drawn is not met.
+   */
+  nearestHit(raycaster: Raycaster, except: number | undefined): number | null {
+    const holders = [...this.views.values()].filter((view) => view.mover.objectId !== except).map((view) => view.holder);
+    const hit = raycaster.intersectObjects(holders, true).find((h) => drawn(h.object));
+    return hit?.distance ?? null;
   }
 
   /** The movers drawn with their own model. */
@@ -389,6 +399,12 @@ function interpolate(view: View): void {
     if (view.scrAngle > 360) view.scrAngle -= 360;
     else if (view.scrAngle < 0) view.scrAngle += 360;
   }
+}
+
+/** Whether `object` and every parent it has are visible. */
+function drawn(object: Object3D): boolean {
+  for (let o: Object3D | null = object; o !== null; o = o.parent) if (!o.visible) return false;
+  return true;
 }
 
 /** How the overlay names a mover: its `MI_*` index and its name. */
