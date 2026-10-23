@@ -351,3 +351,50 @@ If the weakest device misses a target, write down by how much: the fixes (a shor
 | Other players or monsters are missing, or stand still, and on the overlay `indexed` stays at 0 while `bundles` grows | The old world server is still running (see "Before you start"). With the new one, `indexed` equals `bundles`. |
 | A plain stand-in figure instead of a character or monster | Its model was not converted, or failed to load: the overlay's `errors:` line names it. Send a photo. |
 | The other player jumps from place to place, or stops somewhere other than where it stopped on its own device | Write down what each device showed: that is what the movement rules of this milestone are checked for. |
+
+# Piece 3, milestone 2: collision and tap to walk
+
+For the owner. Milestone 2 adds the Windows client's collision: buildings, fences and steep slopes stop you, you slide along walls, bridges and stairs carry you, and the camera stays out of walls. It also adds tap (or click) to walk. You chose to test milestones 1 and 2 together, so do this part at the same sitting, right after the milestone 1 steps above, with the same two devices and accounts.
+
+The automated side: `npm test` (the collision rules against hand-made walls, corners, bridges, stairs and slopes, and the picking), `npm run test:e2e:client` (walking into a Flaris wall, tapping the ground, cancelling a tap, the correction sent after bumping into a wall) and the converter's corpus tests (every collision shape of the real models). What they cannot tell you is how it feels on a real phone. That is this checklist.
+
+**Before you start:** the converted game files must include the collision shapes and the new world manifests. If `dist/assets` was converted before this milestone, run `npm run convert` once (about 7 minutes).
+
+**Tapping:** on a touch screen, tap the ground once (a quick tap; a drag turns nothing into a walk). On a PC, click the ground with the left mouse button. A small ring marks the spot.
+
+## Steps, two devices at a time
+
+Device A walks; device B watches the same character. Swap roles for the second pair of devices.
+
+1. **Walls.** On A, walk straight into a building in Flaris. Success: the character stops at the wall instead of walking into it. Walk into it at an angle: it slides along the wall. B sees the same: the character stops at the wall, not inside it.
+2. **Fences and corners.** Walk into a fence, and into the inside corner of two walls. Success: it stops, and in the corner it stops both ways.
+3. **Bridges and stairs.** Walk over a bridge and up a flight of steps, in or around Flaris. Success: the character walks on top of them, not through them, and comes down the other side. B sees it at the same height.
+4. **Steep slopes.** Try to walk up a steep hillside or cliff. Success: you can't climb it; on very steep ground the character slides back down.
+5. **The camera.** Walk along a building with the camera behind you, and turn so a wall comes between the camera and the character. Success: the camera moves in front of the wall instead of showing the inside of the building. Fences, lamps and many trees are see-through for the camera, as in the Windows client: it stays where it is behind those.
+6. **Tap to walk.** Tap a spot on the ground across the square. Success: the ring appears there, the character walks (or runs, if it was running) to it and stops on the ring, and the ring goes. B sees the character walk there and stop at the same spot.
+7. **Tap behind a wall.** Tap a spot behind a building, so the straight path runs into it. Success: the character walks until it reaches the wall and stops there; B sees it stop there too, not run on the spot.
+8. **Cancel a tap.** Tap a far spot, and while the character walks there turn with the joystick (or press a turn key, A or D). Success: the walk stops at once and the ring goes. Pushing straight forward while it walks forward does not cancel it, as in the Windows client.
+9. **Taps that do nothing.** Tap another player, a monster or a shopkeeper. Success: nothing happens (choosing a target comes with Piece 4). Tap the trunk of a tree or a fence: the character walks to the ground behind it, as in the Windows client, where only some objects can be tapped.
+
+## Results
+
+| Device | Browser | 1. Walls | 2. Fences, corners | 3. Bridges, stairs | 4. Slopes | 5. Camera | 6. Tap to walk | 7. Tap behind a wall | 8. Cancel | 9. Taps that do nothing | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| iPhone | Safari | | | | | | | | | | |
+| Android phone | Chrome | | | | | | | | | | |
+| iPad | Safari | | | | | | | | | | |
+| Android tablet | Chrome | | | | | | | | | | |
+| PC | Chrome | | | | | | | | | | |
+
+## Pass and fail
+
+Milestone 2 passes when every cell is `pass` on every device and milestone 1's checklist above passed at the same sitting. Also note, on the weakest device, the overlay's `fps` in Flaris again: collision adds work every step, and the 30 fps target still applies.
+
+## When something goes wrong in milestone 2
+
+| What you see | What it means and what to do |
+| --- | --- |
+| The character walks through every building | The converted files have no collision shapes: run `npm run convert` (see "Before you start" above), then reload the page. |
+| It stops in front of something that isn't there, or walks through a wall it should hit | Write down where (the nearest landmark) and take a photo: that is what this milestone checks. |
+| A tap does nothing on the ground | The tap was a drag (the finger moved more than a few pixels or stayed down longer than a third of a second), or it landed on a player, monster or NPC. Tap again, quickly. |
+| On B, the character keeps running into a wall after A stopped there | Write down what each device showed: the browser sends the server a correction when it bumps into a wall, and this means it did not arrive. |
