@@ -37,6 +37,12 @@ Every file the converter writes has its own entry in `index.json` (15,364 entrie
 | worlds | `World/<name>/*.wld` and `*.lnd` | `worlds/<name>/manifest.json` and `worlds/<name>/tiles/<x>_<y>.bin` | 2,267 = 35 manifests + 2,232 tiles |
 | **Total** | | | **15,364** |
 
+The collision shapes came later (Piece 3, milestone 2: commit `4bd746c`, 2026-10-23), from the models stage on the same client, so they are not in the total above:
+
+| Kind | Client input | Output | Count |
+| --- | --- | --- | --- |
+| collision shapes | the collision mesh of each converted `Model/*.o3d` that has one (`CObject3D::m_CollObject`) | `collision/*.bin` (9 floats a triangle, in the model's own space) | 1,144 files, 4.75 MiB (4,983,520 B), 138,304 triangles |
+
 The client has 37 world folders besides `World/TextureMid`. 35 have a `.wld` and were converted. `WdConvert` holds only bitmaps, and `WdLux` holds 25 `.lnd` tiles but no `.wld`, so the converter leaves both out. 2,232 of the 2,257 `.lnd` files in `Client/World` were converted (the 25 left out are `WdLux`'s).
 
 ## Input and output bytes per kind
