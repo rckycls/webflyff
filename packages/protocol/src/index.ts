@@ -28,7 +28,8 @@ export {
 } from './messages/login';
 export type { CharacterSummary, LoginMessage, NewCharacter, SlotMessenger } from './messages/login';
 export {
-  decodeWorldPacket, encodeDestPos, encodeJoin, encodePlayerBehavior, encodePlayerMoved, encodeWorldKeepAlive,
+  decodeWorldPacket, encodeDestPos, encodeJoin, encodePlayerBehavior, encodePlayerCorr, encodePlayerMoved,
+  encodeWorldKeepAlive,
 } from './messages/world';
 export type { JoinRequest, MoveReport, WorldPacket } from './messages/world';
 export { readBundle } from './bundle';

@@ -31,6 +31,8 @@ export const PacketType = {
   PLAYERMOVED: 0xffffff01,
   /** `PACKETTYPE_PLAYERBEHAVIOR`: the client reports its player's state after a change. */
   PLAYERBEHAVIOR: 0xffffff02,
+  /** `PACKETTYPE_PLAYERCORR`: the client corrects its player's state where a walk met something or began to fall. */
+  PLAYERCORR: 0xffffff05,
   ERROR_STRING: 0x70000003,
   LOGIN_PROTECT_NUMPAD: 0x88100200,
   LOGIN_PROTECT_CERT: 0x88100201,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ArWriter, BUNDLE_MARKER, DPID_UNKNOWN, MessageType, PacketType, bytesToHex, decodeWorldPacket, encodeDestPos,
-  encodeJoin, encodePlayerBehavior, encodePlayerMoved, encodeWorldKeepAlive,
+  encodeJoin, encodePlayerBehavior, encodePlayerCorr, encodePlayerMoved, encodeWorldKeepAlive,
 } from '../src';
 import type { JoinRequest, MoveReport, Vec3 } from '../src';
 
@@ -28,6 +28,7 @@ describe('world constants', () => {
     expect(PacketType.SNAPSHOT).toBe(0xffffff00);
     expect(PacketType.PLAYERMOVED).toBe(0xffffff01);
     expect(PacketType.PLAYERBEHAVIOR).toBe(0xffffff02);
+    expect(PacketType.PLAYERCORR).toBe(0xffffff05);
   });
   it('copies the snapshot message types of MsgHdr.h', () => {
     expect(MessageType).toEqual({
@@ -113,6 +114,24 @@ describe('world encoders', () => {
     const view = new DataView(body.buffer, body.byteOffset, body.byteLength);
     expect(view.getFloat32(8, true)).toBe(Math.fround(0.1));
     expect(view.getFloat32(8 + 12 + 12, true)).toBe(Math.fround(359.9));
+  });
+
+  it('encodePlayerCorr writes what SendPlayerCorr writes and OnPlayerCorr reads', () => {
+    // CDPClient::SendPlayerCorr (Neuz/DPClient.cpp:10866-10895): BEFORESENDSOLE( ar, PACKETTYPE_PLAYERCORR, DPID_UNKNOWN ),
+    // then v, vd and f, the state and state flag (DWORD), the motion (DWORD) and m_nMotionEx (int), m_nLoop (int) and the
+    // option (DWORD), and the tick (__int64); CDPSrvr::OnPlayerCorr (WORLDSERVER/DPSrvr.cpp:12888-12893) reads them so
+    const m = move({
+      pos: [6968.5, 100.25, 3328], delta: [0, -0.005, 0.1], angle: 271.5, state: 0x04, stateFlag: 0x01, motion: 5,
+      motionEx: -1, loop: 4, motionOption: 0xfffffffe, tick: 0x0123456789abcdefn,
+    });
+    const expected = new ArWriter().u32(DPID_UNKNOWN).u32(0xffffff05)
+      .vec3([6968.5, 100.25, 3328]).vec3([0, -0.005, 0.1]).f32(271.5)
+      .u32(0x04).u32(0x01)
+      .u32(5).i32(-1)
+      .i32(4).u32(0xfffffffe)
+      .i64(0x0123456789abcdefn).toBytes();
+    expect(hex(encodePlayerCorr(m))).toBe(hex(expected));
+    expect(encodePlayerCorr(m).byteLength).toBe(68);
   });
 
   it('encodeDestPos writes the client SNAPSHOT', () => {

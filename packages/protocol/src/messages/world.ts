@@ -99,6 +99,15 @@ export function encodePlayerBehavior(m: MoveReport): Uint8Array {
 }
 
 /**
+ * PLAYERCORR (`CDPClient::SendPlayerCorr`, `Neuz/DPClient.cpp:10866-10895`): PLAYERBEHAVIOR's fields (`GetPos()`,
+ * `m_vDelta`, `GetAngle()`, the state...) in its order, which `CDPSrvr::OnPlayerCorr` (`WORLDSERVER/DPSrvr.cpp:12872`)
+ * reads.
+ */
+export function encodePlayerCorr(m: MoveReport): Uint8Array {
+  return moveReport(PacketType.PLAYERCORR, m);
+}
+
+/**
  * The client's SNAPSHOT carrying one DESTPOS (`CDPClient::SendSnapshot`, `Neuz/DPClient.cpp:11187`, a click-to-move):
  * the object count (`BYTE`, here 1), the message type (`WORD` `SNAPSHOTTYPE_DESTPOS`), the position, and `fForward`
  * (`BYTE`). The messages have no object ID in front, unlike the server's bundles (`CDPSrvr::OnSnapshot` reads
