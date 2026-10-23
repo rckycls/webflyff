@@ -24,7 +24,7 @@ export interface FlowClock {
   now(): number;
 }
 
-const systemClock: FlowClock = {
+export const systemClock: FlowClock = {
   // Called through the global, not handed over bare: a browser's setTimeout throws "Illegal invocation" as a method of another object.
   setTimeout: ((handler: () => void, ms?: number) => globalThis.setTimeout(handler, ms)) as typeof setTimeout,
   clearTimeout: ((handle: ReturnType<typeof setTimeout> | undefined) => globalThis.clearTimeout(handle)) as typeof clearTimeout,
@@ -54,16 +54,16 @@ export interface WorldEntry {
 
 /** How long the certifier gets to answer (Neuz: `m_dwTimeOutDis`, 20 s). */
 const CERTIFY_TIMEOUT_MS = 20000;
-const TIMEOUT_TEXT = 'The server did not answer in time.';
+export const TIMEOUT_TEXT = 'The server did not answer in time.';
 /**
  * How often the login server is pinged (Neuz: `CDPLoginClient`'s `m_timer`, 10 s). It drops a connection that sent
  * no PING for 90 s, checking once a minute (`CUserMng::DestroyAbnormalPlayer`).
  */
-const PING_INTERVAL_MS = 10000;
+export const PING_INTERVAL_MS = 10000;
 /** How long Change channel waits between closing the login server and connecting to the certifier (Neuz: `Sleep( 1000 )`). */
 const CHANGE_CHANNEL_PAUSE_MS = 1000;
 /** The WebSocket close code of a connection that never opened. */
-const GATEWAY_UNREACHABLE = 1006;
+export const GATEWAY_UNREACHABLE = 1006;
 /** The database's `VARCHAR(32)`; the rebuilt certifier drops a longer name (`CAccountMgr::IsAccountName`). */
 const MAX_ACCOUNT_LENGTH = 32;
 
