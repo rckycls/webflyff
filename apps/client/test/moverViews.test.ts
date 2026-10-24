@@ -20,7 +20,13 @@ function fakeModel(): AssembledCharacter & { release: Mock<() => void> } {
   const joint = new Object3D();
   joint.name = 'joint';
   root.add(box, joint);
-  return { root, mixer: new AnimationMixer(root), release: vi.fn<() => void>() };
+  return {
+    root,
+    mixer: new AnimationMixer(root),
+    grips: null,
+    box: () => ({ min: [-0.5, 0, -0.5], max: [0.5, 2, 0.5] }),
+    release: vi.fn<() => void>(),
+  };
 }
 
 /** A motion of 31 frames at 30 fps, as the converter writes one (frame i at i / 30 s): its last frame is at 1 s. */
@@ -306,6 +312,36 @@ describe('MoverViews', () => {
 });
 
 describe('loadMoverModel', () => {
+  /** Services whose one glb is a scene holding `lod0`, with `extras` on the scene as GLTFLoader leaves them. */
+  function plainServices(extras: Record<string, unknown>): Parameters<typeof loadMoverModel>[0] {
+    const scene = new Group();
+    const lod = new Group();
+    lod.name = 'lod0';
+    scene.add(lod);
+    Object.assign(scene.userData, extras);
+    return {
+      store: { bytes: async (): Promise<Uint8Array> => new Uint8Array(4) },
+      loaders: { gltf: { parseAsync: async () => ({ scene }) } },
+      textures: { acquire: vi.fn(), release: vi.fn() },
+    } as unknown as Parameters<typeof loadMoverModel>[0];
+  }
+  const plain: MoverLook = { ...look, skeleton: null, parts: ['models/mvr_bang.glb'] };
+
+  it('a model with no skeleton has its own box and no grips', async () => {
+    const services = plainServices({ bbMin: [-1.975, -0.002, -1.083], bbMax: [2.268, 3.329, 0.622] });
+
+    const model = await loadMoverModel(services)(plain, vi.fn());
+
+    expect(model.box()).toEqual({ min: [-1.975, -0.002, -1.083], max: [2.268, 3.329, 0.622] });
+    expect(model.grips).toBeNull();
+  });
+
+  it('a model of an older conversion, with no box, has the empty one', async () => {
+    const model = await loadMoverModel(plainServices({}))(plain, vi.fn());
+
+    expect(model.box()).toEqual({ min: [0, 0, 0], max: [0, 0, 0] });
+  });
+
   it('says each part it cannot load to the report it is given, and rejects when none loads', async () => {
     const services = {
       store: { bytes: async (key: string): Promise<Uint8Array> => { throw new Error(`${key} is not in the asset index`); } },

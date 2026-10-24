@@ -33,10 +33,14 @@
 // Materials: no image is embedded. `extras.texture` is the logical key `textureKey` gives for the material's texture
 // name (or null), `extras.effect` the block's XE_* flags, and `extras.light` is true for light objects. Alpha and
 // culling follow CObject3D::SetState (Object3D.cpp:2764), see `materialState`.
+//
+// Box: the scene's extras hold `bbMin` and `bbMax`, the file's own box exactly as stored (D3D space, z not negated;
+// `ModelBoxExtras`). CModelObject::LoadElement (ModelObject.cpp:738-744) unions that box over the parts it loads,
+// and the picking and range rules read it back (`GetRadius`, `IntersectBB`), so it is not converted like a drawing.
 
 import type { Document, Material, Mesh, Node, Skin } from '@gltf-transform/core';
 import { NO_BONE, flipWinding, toWebPosition, toWebQuaternion } from '@flyffweb/formats';
-import type { GmObject, MaterialBlock, MotionKey, O3dModel, Skeleton } from '@flyffweb/formats';
+import type { GmObject, MaterialBlock, ModelBoxExtras, MotionKey, O3dModel, Skeleton } from '@flyffweb/formats';
 import {
   IDENTITY,
   addAccessor,
@@ -264,6 +268,13 @@ class Materials {
   }
 }
 
+/** The scene extras of a model glb: the box of the file, as stored (see the top of this file). */
+function modelBoxExtras(model: O3dModel): ModelBoxExtras {
+  const [minX, minY, minZ] = model.bbMin;
+  const [maxX, maxY, maxZ] = model.bbMax;
+  return { bbMin: [minX, minY, minZ], bbMax: [maxX, maxY, maxZ] };
+}
+
 /**
  * Builds a model glb. `skeleton` is the `.chr` the model is drawn with (see skeletonFor), or null when it uses its own
  * bones or none. `textureKey(name)` gives the logical key of a texture file name as the material stores it, or null
@@ -276,6 +287,7 @@ export async function buildModelGlb(
 ): Promise<Uint8Array> {
   const doc = newDocument();
   const scene = doc.getRoot().getDefaultScene()!;
+  scene.setExtras({ ...modelBoxExtras(model) });
   const rig = addRig(doc, model, skeleton);
   const materials = new Materials(doc, textureKey);
   let skin: Skin | undefined;

@@ -5,7 +5,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { NO_BONE, toWebMatrix, toWebPosition, toWebQuaternion } from '@flyffweb/formats';
+import { NO_BONE, readChr, readO3d, toWebMatrix, toWebPosition, toWebQuaternion } from '@flyffweb/formats';
 import type {
   BoneTrack,
   GmObject,
@@ -247,6 +247,30 @@ describe('buildModelGlb (synthetic models)', () => {
     expect(Array.from(prim.getIndices()!.getArray()!)).toEqual([0, 2, 1]);
   });
 
+  it("writes the file's box on the scene extras in D3D coordinates, not the boxes of its objects", async () => {
+    // CModelObject::LoadElement (ModelObject.cpp:738-743) unions Object3D's m_vBBMin / m_vBBMax, the box stored in the
+    // file header (Object3D.cpp:980), and not the objects' own boxes, which are in object space: these two are far
+    // from the model's box, which holds the second object moved by its TM. z is not negated.
+    const near = gmObject({ bbMin: [0, 0, 0], bbMax: [1, 1, 1] });
+    const moved = gmObject({ bbMin: [0, 0, 0], bbMax: [1, 1, 1], transform: translation(5, 6, 7) });
+    const model = o3dModel([[near, moved], [near], [near]], { bbMin: [-1, 0, -2], bbMax: [6, 7, 8] });
+    const doc = await readGlb(await buildModelGlb(model, null, noTextures));
+    expect(doc.getRoot().listScenes()[0]!.getExtras()).toEqual({ bbMin: [-1, 0, -2], bbMax: [6, 7, 8] });
+  });
+
+  it('writes the box of a model with a skeleton too, and keeps an inverted one as it is stored', async () => {
+    // 82 client models store bbMin above bbMax on an axis (Item_RidRidStiDragon.o3d); the client unions them as they
+    // are, so the glb does not sort them.
+    const skin = gmObject({
+      kind: 'skin',
+      skinWeights: Float32Array.from([1, 0, 1, 0, 1, 0]),
+      skinJoints: new Uint16Array(6),
+    });
+    const model = o3dModel([[skin]], { bbMin: [0.5, -1, 2], bbMax: [-0.5, 1, -2] });
+    const doc = await readGlb(await buildModelGlb(model, chainSkeleton(['Root']), noTextures));
+    expect(doc.getRoot().listScenes()[0]!.getExtras()).toEqual({ bbMin: [0.5, -1, 2], bbMax: [-0.5, 1, -2] });
+  });
+
   it('writes unit normals (a zero normal becomes +Y) and 0 for a texture coordinate that is NaN', async () => {
     const object = gmObject({
       normals: Float32Array.from([0, 0, -2, 0, 0, 0, 3, 0, 0]),
@@ -424,6 +448,31 @@ describe('buildSkeletonGlb / buildMotionGlb (synthetic)', () => {
     expect(doc.getRoot().listMeshes()).toEqual([]);
   });
 
+  it('a skeleton glb carries the hand bones and the four grip matrices of the .chr in its scene extras', async () => {
+    // CBones::LoadBone (Bone.cpp:76) reads m_mLocalRH, m_mLocalShield, m_mLocalKnuckle and m_mLocalLH; CBones::Init
+    // finds the hand bones. The matrices keep the D3DXMATRIX memory order and the handedness of the file.
+    const skel: Skeleton = {
+      ...chainSkeleton(['Root', 'Bip01 L Hand', 'Bip01 R Hand']),
+      rHandIdx: 2,
+      lHandIdx: 1,
+      localRH: translation(1, 2, 3),
+      localLH: translation(4, 5, 6),
+      localShield: translation(7, 8, 9),
+      localKnuckle: translation(10, 11, 12),
+    };
+    const doc = await readGlb(await buildSkeletonGlb(skel));
+    expect(doc.getRoot().listScenes()[0]!.getExtras()).toEqual({
+      grips: {
+        rHand: 2,
+        lHand: 1,
+        localRH: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 2, 3, 1],
+        localLH: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 4, 5, 6, 1],
+        localShield: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 7, 8, 9, 1],
+        localKnuckle: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 10, 11, 12, 1],
+      },
+    });
+  });
+
   const key = (x: number): MotionKey => ({ position: [x, 0, 0], rotation: [0, 0, 0, 1] });
 
   /** A bone track with `frames` keys, or without keys when `frames` is 0. */
@@ -549,6 +598,11 @@ describe('buildSkeletonGlb / buildMotionGlb (synthetic)', () => {
     });
   });
 
+  it('a motion glb has no scene extras: the grips belong to the skeleton glb', async () => {
+    const doc = await readGlb(await buildMotionGlb(chainSkeleton(['Root']), motionOf(1, [track(1)]), 'm'));
+    expect(doc.getRoot().listScenes()[0]!.getExtras()).toEqual({});
+  });
+
   it('a motion with more bone tracks than its skeleton has bones is refused', async () => {
     const motion = motionOf(1, [track(1), track(1)]);
     await expect(buildMotionGlb(chainSkeleton(['Root']), motion, 'm')).rejects.toThrow(/2 bone tracks.*1 bone/);
@@ -616,6 +670,37 @@ describeClient('models stage on a small client copy', () => {
     expect(report.kinds.models!.ok).toBe(2);
     expect(report.kinds.skeletons!.ok).toBe(1);
     expect(report.kinds.motions!.ok).toBe(1);
+  });
+
+  it("mvr_male's skeleton carries its hand bones and grips; a model carries the box of its file", async () => {
+    const { writer } = await runStage();
+    const glbOf = async (key: string) =>
+      readGlb(new Uint8Array(await fs.readFile(path.join(out, writer.pathOf(key)!))));
+
+    const chr = readChr(fileBytes(modelPath('mvr_male.chr')), 'mvr_male.chr');
+    // CBones::Init takes the last bone whose name after "Bip01 " is "R Hand" / "L Hand"
+    expect([chr.rHandIdx, chr.lHandIdx]).toEqual([17, 13]);
+    expect([chr.bones[17]!.name, chr.bones[13]!.name]).toEqual(['Bip02 R Hand', 'Bip02 L Hand']);
+    const skeleton = await glbOf('skeletons/mvr_male.glb');
+    expect(skeleton.getRoot().listScenes()[0]!.getExtras()).toEqual({
+      grips: {
+        rHand: 17,
+        lHand: 13,
+        localRH: Array.from(chr.localRH),
+        localLH: Array.from(chr.localLH),
+        localShield: Array.from(chr.localShield),
+        localKnuckle: Array.from(chr.localKnuckle),
+      },
+    });
+    expect(chr.localRH[12]).toBeCloseTo(0.10551, 5); // not the identity of a file that stores none
+
+    const o3d = readO3d(fileBytes(modelPath('Part_mVag01Upper.o3d')), 'Part_mVag01Upper.o3d');
+    const upper = await glbOf('models/part_mvag01upper.glb');
+    expect(upper.getRoot().listScenes()[0]!.getExtras()).toEqual({
+      bbMin: Array.from(o3d.bbMin),
+      bbMax: Array.from(o3d.bbMax),
+    });
+    expect(o3d.bbMax[1]).toBeGreaterThan(o3d.bbMin[1]);
   });
 
   it('skips with a warning: a stored name not its own, a version Neuz refuses, a motion without skeleton', async () => {

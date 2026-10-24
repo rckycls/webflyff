@@ -1,4 +1,4 @@
-// Skeleton (`.chr`) to glTF: the bone hierarchy as nodes, nothing else.
+// Skeleton (`.chr`) to glTF: the bone hierarchy as nodes, and the hand grips as the scene's extras (`SkeletonGrips`).
 //
 // Rest pose: the client starts every skeleton from the bones' object-space TM (CModelObject::LoadBone,
 // Source/_Common/ModelObject.cpp:548, `m_mUpdateBone[i] = m_pBones[i].m_mTM`), and only CMotion::AnimateBone
@@ -13,7 +13,7 @@
 // skins require one).
 
 import type { Document, Node } from '@gltf-transform/core';
-import type { Skeleton } from '@flyffweb/formats';
+import type { Skeleton, SkeletonExtras, SkeletonGrips } from '@flyffweb/formats';
 import { invert, multiply, newDocument, setTransform, webMatrix, writeGlb } from './gltf';
 import type { Mat4 } from './gltf';
 
@@ -72,9 +72,27 @@ export function addJointNodes(doc: Document, joints: Joint[]): Node[] {
   return nodes;
 }
 
-/** `skel` as a glb holding only its joint nodes. */
+/**
+ * The grips of `skel` for the scene extras of its glb: the hand bones CBones::Init found (`rHandIdx`, `lHandIdx`) and
+ * the four matrices CBones::LoadBone read (Bone.cpp:135-154), as stored: D3DXMATRIX memory order, not converted to the
+ * web's handedness. CModelObject::Render multiplies a held item's matrix by one of them (ModelObject.cpp:1134-1142).
+ */
+export function skeletonGrips(skel: Skeleton): SkeletonGrips {
+  return {
+    rHand: skel.rHandIdx,
+    lHand: skel.lHandIdx,
+    localRH: Array.from(skel.localRH),
+    localLH: Array.from(skel.localLH),
+    localShield: Array.from(skel.localShield),
+    localKnuckle: Array.from(skel.localKnuckle),
+  };
+}
+
+/** `skel` as a glb holding its joint nodes, and its hand grips as the scene's `extras.grips`. */
 export async function buildSkeletonGlb(skel: Skeleton): Promise<Uint8Array> {
   const doc = newDocument();
   addJointNodes(doc, chrJoints(skel));
+  const extras: SkeletonExtras = { grips: skeletonGrips(skel) };
+  doc.getRoot().getDefaultScene()!.setExtras({ ...extras });
   return writeGlb(doc);
 }

@@ -6,11 +6,16 @@
 // same in every glb of a skeleton), so one motion moves them all. A part keeps its own inverse bind matrices: they
 // come from its .chr's Bone.inverseTm, which is not the inverse of the rest pose for 326 of the client's bones, so
 // recomputing them from the shared skeleton would bend those parts.
+//
+// The converter also writes the part's bounding box on the scene of a part glb, and the skeleton's hand grips on the
+// scene of a skeleton glb (`ModelBoxExtras`, `SkeletonGrips`; GLTFLoader puts a scene's extras in its `userData`). The
+// character offers the union of its parts' boxes (`box()`) and the grips (`grips`), both in D3D space: they feed the
+// picking and range rules and the place of a held weapon, not the drawing. A glb of an older conversion has neither.
 
 import type { Material, Object3D } from 'three';
 import { AnimationClip, AnimationMixer, Group, KeyframeTrack, Skeleton, SkinnedMesh } from 'three';
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import type { MotionEvents } from '@flyffweb/formats';
+import type { ModelBoxExtras, MotionEvents, SkeletonGrips, Vec3 } from '@flyffweb/formats';
 import type { TextureCache } from '../assets/loaders';
 import { applyTextures } from '../assets/loaders';
 
@@ -19,19 +24,111 @@ const SKELETON_NODE = 'skeleton';
 /** The most detailed LOD of a model (modelGlb.ts); the character view draws this one. */
 const LOD0 = 'lod0';
 
+/** An axis-aligned box in a model's own D3D space: `CModelObject::m_vMin` and `m_vMax`. */
+export interface ModelBox {
+  min: Vec3;
+  max: Vec3;
+}
+
 export interface AssembledCharacter {
   /** The shared skeleton and every part's lod0. */
   root: Object3D;
   /** An animation mixer on `root`: clips of the skeleton's motions bind to its joints by name. */
   mixer: AnimationMixer;
+  /**
+   * The model's box, in D3D coordinates and the model's own space (scale, rotation and position are the mover's): the
+   * union of the boxes of the loaded parts, as CModelObject::LoadElement builds `m_vMin` / `m_vMax` (see
+   * `unionModelBoxes`). A part of an older conversion has no box and adds nothing; with no box at all it is the empty
+   * box, zero size at the origin. A new object each call.
+   */
+  box(): ModelBox;
+  /**
+   * Where a held item sits (`SkeletonGrips`), from the skeleton glb; null for a skeleton glb of an older conversion,
+   * and for a mover that has no skeleton.
+   */
+  readonly grips: SkeletonGrips | null;
   /** Gives the textures back to the cache and disposes the parts' geometry and materials. Safe to call twice. */
   release(): void;
 }
 
+const isVec3 = (value: unknown): value is Vec3 =>
+  Array.isArray(value) && value.length === 3 && value.every((n) => typeof n === 'number' && Number.isFinite(n));
+
+const isMatrix = (value: unknown): value is number[] =>
+  Array.isArray(value) && value.length === 16 && value.every((n) => typeof n === 'number' && Number.isFinite(n));
+
+const isBoneIndex = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isInteger(value) && value >= 0;
+
+/**
+ * The box a converted model glb carries on its scene (`ModelBoxExtras`), copied; null for a glb without one (an older
+ * conversion). Throws, naming `where`, when it has one that is not in the shape the converter writes.
+ */
+export function modelBoxOf(scene: Pick<Object3D, 'userData'>, where: string): ModelBox | null {
+  const { bbMin, bbMax } = scene.userData as Partial<Record<keyof ModelBoxExtras, unknown>>;
+  if (bbMin === undefined && bbMax === undefined) return null;
+  if (!isVec3(bbMin) || !isVec3(bbMax)) throw new Error(`${where}: its box is not in the shape the converter writes`);
+  return { min: [...bbMin], max: [...bbMax] };
+}
+
+/** A CModelObject's `m_vMin` and `m_vMax` before any part is loaded (ModelObject.cpp:77-78). */
+const EMPTY_MIN = 65535;
+
+/**
+ * The box of a model made of parts with these boxes. CModelObject::LoadElement (ModelObject.cpp:738-743) starts from
+ * 65535 and -65535 and, for each part and each of the six numbers alone, takes the part's minimum when it is lower
+ * and its maximum when it is higher, so a box a file stores inverted (minimum above maximum on an axis; 82 models of
+ * the client) stays inverted. No part (or none that moved the minimum x) leaves the model without a box,
+ * CModel::IsNullBoundBox (Model.h:138): here the empty box, zero size at the origin. A new object each call.
+ */
+export function unionModelBoxes(boxes: readonly ModelBox[]): ModelBox {
+  const min: Vec3 = [EMPTY_MIN, EMPTY_MIN, EMPTY_MIN];
+  const max: Vec3 = [-EMPTY_MIN, -EMPTY_MIN, -EMPTY_MIN];
+  for (const box of boxes) {
+    for (let axis = 0; axis < 3; axis++) {
+      if (box.min[axis]! < min[axis]!) min[axis] = box.min[axis]!;
+      if (box.max[axis]! > max[axis]!) max[axis] = box.max[axis]!;
+    }
+  }
+  return min[0] === EMPTY_MIN ? { min: [0, 0, 0], max: [0, 0, 0] } : { min, max };
+}
+
+/**
+ * The grips a skeleton glb carries on its scene (`SkeletonGrips`), copied; null for a glb without them (an older
+ * conversion). Throws when it has them in a shape the converter does not write.
+ */
+function gripsOf(scene: Pick<Object3D, 'userData'>): SkeletonGrips | null {
+  const written: unknown = scene.userData.grips;
+  if (written === undefined) return null;
+  if (typeof written !== 'object' || written === null) {
+    throw new Error("the skeleton glb's grips are not in the shape the converter writes");
+  }
+  const { rHand, lHand, localRH, localLH, localShield, localKnuckle } = written as Record<keyof SkeletonGrips, unknown>;
+  if (
+    !isBoneIndex(rHand) ||
+    !isBoneIndex(lHand) ||
+    !isMatrix(localRH) ||
+    !isMatrix(localLH) ||
+    !isMatrix(localShield) ||
+    !isMatrix(localKnuckle)
+  ) {
+    throw new Error("the skeleton glb's grips are not in the shape the converter writes");
+  }
+  return {
+    rHand,
+    lHand,
+    localRH: [...localRH],
+    localLH: [...localLH],
+    localShield: [...localShield],
+    localKnuckle: [...localKnuckle],
+  };
+}
+
 /**
  * Assembles `skeleton` (a skeleton glb) and `parts` (part glbs of that skeleton). Resolves once every part has its
- * textures. Throws when the skeleton has no `skeleton` node, a part has no `lod0` node, or a part is skinned to a
- * joint the skeleton does not have; the message names the part by its index in `parts`.
+ * textures. Throws when the skeleton has no `skeleton` node or has grips in a shape the converter does not write, a
+ * part has no `lod0` node, has a box in such a shape, or is skinned to a joint the skeleton does not have; the message
+ * names the part by its index in `parts`.
  */
 export async function assembleCharacter(
   skeleton: Pick<GLTF, 'scene'>,
@@ -42,11 +139,15 @@ export async function assembleCharacter(
   if (joints === undefined) throw new Error(`the skeleton glb has no "${SKELETON_NODE}" node`);
   const bonesByName = new Map<string, Object3D>();
   joints.traverse((joint) => bonesByName.set(joint.name, joint));
+  const grips = gripsOf(skeleton.scene);
 
   // Checked and re-bound before anything is acquired, so a failure leaves nothing to give back.
+  const partBoxes: ModelBox[] = [];
   const lods = parts.map((part, i) => {
     const lod = part.scene.getObjectByName(LOD0);
     if (lod === undefined) throw new Error(`part ${i} has no "${LOD0}" node`);
+    const box = modelBoxOf(part.scene, `part ${i}`);
+    if (box !== null) partBoxes.push(box);
     lod.traverse((object) => {
       if (object instanceof SkinnedMesh) rebind(object, bonesByName, `part ${i}`);
     });
@@ -65,6 +166,13 @@ export async function assembleCharacter(
   return {
     root,
     mixer,
+    grips,
+    box() {
+      // The held item joins here (Task 14): a weapon is loaded into the same CModelObject as the parts, so its box is
+      // unioned into m_vMin / m_vMax like theirs (ModelObject.cpp:735-744, where a comment notes that a human holding
+      // a spear has the spear in the box). Its own box, as its glb carries it, goes into this list.
+      return unionModelBoxes(partBoxes);
+    },
     release() {
       if (released) return;
       released = true;

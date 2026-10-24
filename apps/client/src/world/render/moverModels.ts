@@ -2,7 +2,16 @@
 // skeleton with every part re-bound to it, the hair drawn unlit in its colour, or for a model with no skeleton its
 // `lod0` as it is. `MoverViews` puts what this gives on screen.
 
-import { applyTextures, assembleCharacter, d3dColor, loadGltf, noonLight, partSlot } from '@flyffweb/scene';
+import {
+  applyTextures,
+  assembleCharacter,
+  d3dColor,
+  loadGltf,
+  modelBoxOf,
+  noonLight,
+  partSlot,
+  unionModelBoxes,
+} from '@flyffweb/scene';
 import type { AssembledCharacter, SceneServices } from '@flyffweb/scene';
 import type { Material, Object3D, Texture } from 'three';
 import { AnimationMixer, Color, Group, Mesh, MeshBasicMaterial, SRGBColorSpace } from 'three';
@@ -78,10 +87,14 @@ export function loadMoverModel(
   };
 }
 
-/** A model that is not animated: its `lod0` with its textures, and a mixer that has nothing to play. */
+/**
+ * A model that is not animated: its `lod0` with its textures, a mixer that has nothing to play, its own box and no
+ * grips (it has no skeleton).
+ */
 async function plainModel(gltf: GLTF, textures: SceneServices['textures']): Promise<AssembledCharacter> {
   const lod = gltf.scene.getObjectByName('lod0');
   if (lod === undefined) throw new Error('the model has no "lod0" node');
+  const box = modelBoxOf(gltf.scene, 'the model');
   const root = new Group();
   root.add(lod);
   const keys = await applyTextures(lod, textures);
@@ -89,6 +102,8 @@ async function plainModel(gltf: GLTF, textures: SceneServices['textures']): Prom
   return {
     root,
     mixer: new AnimationMixer(root),
+    grips: null,
+    box: () => unionModelBoxes(box === null ? [] : [box]),
     release() {
       if (released) return;
       released = true;

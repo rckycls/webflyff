@@ -20,8 +20,21 @@ interface ValidatorReport {
 
 const stem = (file: string): string => file.replace(/\.[^.]*$/, '');
 
+/** The extras of the default scene of a glb, read from its JSON chunk without loading the rest. */
+function sceneExtrasOf(glb: Uint8Array): unknown {
+  const jsonLength = new DataView(glb.buffer, glb.byteOffset, glb.byteLength).getUint32(12, true);
+  const json = JSON.parse(new TextDecoder().decode(glb.subarray(20, 20 + jsonLength))) as {
+    scene?: number;
+    scenes: { extras?: unknown }[];
+  };
+  return json.scenes[json.scene ?? 0]!.extras;
+}
+
 interface Sweep {
   converted: Record<'skeletons' | 'motions' | 'models', number>;
+  /** Skeleton and model glbs whose scene extras were compared with their source file, and the ones that differ. */
+  extrasChecked: Record<'skeletons' | 'models', number>;
+  extrasMismatches: string[];
   bytesOut: number;
   skipped: string[];
   failures: string[];
@@ -42,6 +55,8 @@ async function runSweep(): Promise<Sweep> {
   const bytesOf = (name: string): Uint8Array => new Uint8Array(readFileSync(path.join(dir, name)));
   const s: Sweep = {
     converted: { skeletons: 0, motions: 0, models: 0 },
+    extrasChecked: { skeletons: 0, models: 0 },
+    extrasMismatches: [],
     bytesOut: 0,
     skipped: [],
     failures: [],
@@ -64,12 +79,29 @@ async function runSweep(): Promise<Sweep> {
     }
   };
 
+  /** Counts the glb as checked, and as a mismatch unless its scene extras are `expected`. */
+  const checkExtras = (kind: 'skeletons' | 'models', name: string, glb: Uint8Array, expected: unknown): void => {
+    s.extrasChecked[kind]++;
+    if (JSON.stringify(sceneExtrasOf(glb)) !== JSON.stringify(expected)) s.extrasMismatches.push(name);
+  };
+
   const skeletons = new Map<string, Skeleton>();
   for (const name of names.filter((n) => /\.chr$/i.test(n))) {
     try {
       const skel = readChr(bytesOf(name), name);
       skeletons.set(stem(name).toLowerCase(), skel);
-      await validate(name, await buildSkeletonGlb(skel));
+      const glb = await buildSkeletonGlb(skel);
+      await validate(name, glb);
+      checkExtras('skeletons', name, glb, {
+        grips: {
+          rHand: skel.rHandIdx,
+          lHand: skel.lHandIdx,
+          localRH: Array.from(skel.localRH),
+          localLH: Array.from(skel.localLH),
+          localShield: Array.from(skel.localShield),
+          localKnuckle: Array.from(skel.localKnuckle),
+        },
+      });
       s.converted.skeletons++;
     } catch (error) {
       s.failures.push(`${name}: ${error instanceof Error ? error.message : String(error)}`);
@@ -108,7 +140,9 @@ async function runSweep(): Promise<Sweep> {
       }
       const choice = skeletonFor(stem(name), model, (chr) => skeletons.has(chr));
       const skeleton = choice.kind === 'chr' ? skeletons.get(choice.chr)! : null;
-      await validate(name, await buildModelGlb(model, skeleton, (texture) => `textures/${texture.toLowerCase()}.ktx2`));
+      const glb = await buildModelGlb(model, skeleton, (texture) => `textures/${texture.toLowerCase()}.ktx2`);
+      await validate(name, glb);
+      checkExtras('models', name, glb, { bbMin: Array.from(model.bbMin), bbMax: Array.from(model.bbMax) });
       s.converted.models++;
     } catch (error) {
       s.failures.push(`${name}: ${error instanceof Error ? error.message : String(error)}`);
@@ -198,5 +232,55 @@ describeClient('motion events in the converted motions', () => {
 
     const [animation] = (await readGlb(glb)).getRoot().listAnimations();
     expect(animation!.getExtras().events).toEqual({ hit, sound, quake, frames, perSlerp: 0.5 });
+  });
+});
+
+// The model boxes and the skeleton hand grips (the values measured with readO3d and readChr on Client/Model).
+describeClient('model boxes and skeleton grips in the converted files', () => {
+  it('every skeleton glb carries the grips of its .chr and every model glb the box of its file', async () => {
+    const s = await runSweep();
+    expect(s.extrasMismatches).toEqual([]);
+    expect(s.extrasChecked).toEqual({ skeletons: 303, models: 4192 });
+  });
+
+  const dir = (): string => path.join(clientRoot()!, 'Model');
+  const fileOf = (name: string, ext: string): string => {
+    const found = readdirSync(dir()).find((f) => f.toLowerCase() === `${name.toLowerCase()}.${ext}`);
+    if (found === undefined) throw new Error(`Client/Model/${name}.${ext} not found`);
+    return found;
+  };
+  const bytesOf = (file: string): Uint8Array => new Uint8Array(readFileSync(path.join(dir(), file)));
+
+  it('mvr_male and mvr_female: hands are bones 17 (R) and 13 (L) and the grips are the file\'s', async () => {
+    for (const [name, localRH, localLH] of [
+      ['mvr_male', [0.10551, -0.01573, -0.00455], [0.10593, 0.01581, -0.00508]],
+      ['mvr_female', [0.10589, -0.01984, -0.00211], [0.10485, 0.01964, -0.00077]],
+    ] as const) {
+      const doc = await readGlb(await buildSkeletonGlb(readChr(bytesOf(fileOf(name, 'chr')), name)));
+      const { grips } = doc.getRoot().listScenes()[0]!.getExtras() as { grips: Record<string, number | number[]> };
+      expect([grips.rHand, grips.lHand]).toEqual([17, 13]);
+      // the translation row (_41, _42, _43) of the D3DXMATRIX, in the order the file stores it
+      (grips.localRH as number[]).slice(12, 15).forEach((v, i) => expect(v).toBeCloseTo(localRH[i]!, 5));
+      (grips.localLH as number[]).slice(12, 15).forEach((v, i) => expect(v).toBeCloseTo(localLH[i]!, 5));
+      for (const matrix of ['localRH', 'localLH', 'localShield', 'localKnuckle']) {
+        expect(grips[matrix]).toHaveLength(16);
+      }
+    }
+  });
+
+  it.each([
+    ['Mvr_Bang', [-1.975, -0.002, -1.083], [2.268, 3.329, 0.622]],
+    ['Mvr_AiBatt', [-0.534, 0.549, -0.23], [0.489, 1.215, 0.715]],
+  ] as const)('%s (a monster): its glb carries the box of its file, y up and z not negated', async (name, min, max) => {
+    const file = fileOf(name, 'o3d');
+    const model = readO3d(bytesOf(file), file);
+    const chrFiles = readdirSync(dir()).filter((f) => /\.chr$/i.test(f));
+    const chrs = new Map(chrFiles.map((f) => [stem(f).toLowerCase(), f]));
+    const choice = skeletonFor(stem(file), model, (chr) => chrs.has(chr));
+    const skeleton = choice.kind === 'chr' ? readChr(bytesOf(chrs.get(choice.chr)!), choice.chr) : null;
+    const glb = await buildModelGlb(model, skeleton, () => null);
+    const extras = (await readGlb(glb)).getRoot().listScenes()[0]!.getExtras() as { bbMin: number[]; bbMax: number[] };
+    min.forEach((v, i) => expect(extras.bbMin[i]).toBeCloseTo(v, 3));
+    max.forEach((v, i) => expect(extras.bbMax[i]).toBeCloseTo(v, 3));
   });
 });

@@ -167,6 +167,151 @@ describe('assembleCharacter', () => {
   });
 });
 
+/** `part` with the box a converted model glb carries in its scene extras (GLTFLoader puts them in userData). */
+function withBox<T extends { scene: Group }>(part: T, bbMin: number[], bbMax: number[]): T {
+  part.scene.userData.bbMin = bbMin;
+  part.scene.userData.bbMax = bbMax;
+  return part;
+}
+
+describe('the box of an assembled character', () => {
+  const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+  const body = (): ReturnType<typeof partScene> =>
+    withBox(partScene(NAMES, 'textures/body.ktx2'), [-0.5, 0, -0.25], [0.5, 1.5, 0.25]);
+  const hat = (): ReturnType<typeof partScene> =>
+    withBox(partScene(NAMES, 'textures/hat.ktx2'), [-0.25, 1.25, -0.25], [0.25, 1.75, 0.5]);
+
+  it('is the box of the one part there is, in D3D coordinates as the converter wrote it', async () => {
+    const character = await assembleCharacter({ scene: skeletonScene(NAMES).scene }, [body()], fakeCache());
+
+    expect(character.box()).toEqual({ min: [-0.5, 0, -0.25], max: [0.5, 1.5, 0.25] });
+  });
+
+  it('grows with each part: the union of the loaded parts, as CModelObject::LoadElement unions them', async () => {
+    const bodyOnly = await assembleCharacter({ scene: skeletonScene(NAMES).scene }, [body()], fakeCache());
+    const dressed = await assembleCharacter({ scene: skeletonScene(NAMES).scene }, [body(), hat()], fakeCache());
+
+    expect(bodyOnly.box().max[1]).toBe(1.5);
+    expect(dressed.box()).toEqual({ min: [-0.5, 0, -0.25], max: [0.5, 1.75, 0.5] });
+  });
+
+  it('takes each axis on its own from 65535 (ModelObject.cpp:738-743), so a box stored inverted stays', async () => {
+    // 82 client models store bbMin above bbMax on an axis; the C++ compares each of the six numbers alone
+    const inverted = withBox(partScene(NAMES, 't.ktx2'), [0.5, -1, 2], [-0.5, 1, -2]);
+
+    const character = await assembleCharacter({ scene: skeletonScene(NAMES).scene }, [inverted], fakeCache());
+
+    expect(character.box()).toEqual({ min: [0.5, -1, 2], max: [-0.5, 1, -2] });
+  });
+
+  it('adds nothing for a part of an older conversion, which has no box, and is empty without any box', async () => {
+    const older = (): ReturnType<typeof partScene> => partScene(NAMES, 'textures/old.ktx2');
+    const mixed = await assembleCharacter({ scene: skeletonScene(NAMES).scene }, [older(), body()], fakeCache());
+    const none = await assembleCharacter({ scene: skeletonScene(NAMES).scene }, [older()], fakeCache());
+    const nobody = await assembleCharacter({ scene: skeletonScene(NAMES).scene }, [], fakeCache());
+
+    expect(mixed.box()).toEqual({ min: [-0.5, 0, -0.25], max: [0.5, 1.5, 0.25] });
+    // CModel::IsNullBoundBox (Model.h:138): nothing was loaded into the box; a box of zero size at the origin
+    expect(none.box()).toEqual({ min: [0, 0, 0], max: [0, 0, 0] });
+    expect(nobody.box()).toEqual({ min: [0, 0, 0], max: [0, 0, 0] });
+  });
+
+  it('gives a box of its own each time, so a caller cannot change the character', async () => {
+    const character = await assembleCharacter({ scene: skeletonScene(NAMES).scene }, [body()], fakeCache());
+
+    character.box().min[1] = 99;
+    character.box().max.fill(-1);
+
+    expect(character.box()).toEqual({ min: [-0.5, 0, -0.25], max: [0.5, 1.5, 0.25] });
+  });
+
+  it('names the part whose box is not three numbers each, and a part with only one of the two', async () => {
+    const skeleton = skeletonScene(NAMES);
+    const broken = withBox(partScene(NAMES, 't.ktx2'), [0, 0], [1, 1, 1]);
+    const half = partScene(NAMES, 't.ktx2');
+    half.scene.userData.bbMin = [0, 0, 0];
+
+    await expect(assembleCharacter({ scene: skeleton.scene }, [body(), broken], fakeCache())).rejects.toThrow(
+      /part 1.*box/,
+    );
+    await expect(assembleCharacter({ scene: skeletonScene(NAMES).scene }, [half], fakeCache())).rejects.toThrow(
+      /part 0.*box/,
+    );
+  });
+
+  it('is read from the scene extras of a glb as GLTFLoader meets the converter\'s', async () => {
+    const part = await new GLTFLoader().parseAsync(
+      JSON.stringify({
+        asset: { version: '2.0' },
+        nodes: [{ name: 'skeleton' }, { name: 'lod0' }],
+        scenes: [{ nodes: [0, 1], extras: { bbMin: [-1, 0, -2], bbMax: [1, 2, 3] } }],
+        scene: 0,
+      }),
+      '',
+    );
+    const skeleton = skeletonScene(NAMES);
+
+    const character = await assembleCharacter({ scene: skeleton.scene }, [part], fakeCache());
+
+    expect(character.box()).toEqual({ min: [-1, 0, -2], max: [1, 2, 3] });
+  });
+
+  describe('grips', () => {
+    const grips = {
+      rHand: 2,
+      lHand: 1,
+      localRH: identity.map((v, i) => v + i / 100),
+      localLH: identity.map((v, i) => v + i / 50),
+      localShield: identity.map((v, i) => v + i / 25),
+      localKnuckle: identity.map((v, i) => v - i / 100),
+    };
+
+    it('are the hand bones and the four grip matrices the skeleton glb carries', async () => {
+      const skeleton = skeletonScene(NAMES);
+      skeleton.scene.userData.grips = grips;
+
+      const character = await assembleCharacter({ scene: skeleton.scene }, [], fakeCache());
+
+      expect(character.grips).toEqual(grips);
+    });
+
+    it('are null for a skeleton of an older conversion', async () => {
+      const character = await assembleCharacter({ scene: skeletonScene(NAMES).scene }, [], fakeCache());
+
+      expect(character.grips).toBeNull();
+    });
+
+    it('are read from the scene extras of a glb as GLTFLoader meets the converter\'s', async () => {
+      const gltf = await new GLTFLoader().parseAsync(
+        JSON.stringify({
+          asset: { version: '2.0' },
+          nodes: [{ name: 'skeleton' }],
+          scenes: [{ nodes: [0], extras: { grips } }],
+          scene: 0,
+        }),
+        '',
+      );
+
+      const character = await assembleCharacter(gltf, [], fakeCache());
+
+      expect(character.grips).toEqual(grips);
+    });
+
+    it.each([
+      ['a hand that is not a whole number', { ...grips, rHand: 1.5 }],
+      ['a matrix of 15 numbers', { ...grips, localRH: grips.localRH.slice(1) }],
+      ['a matrix with a text in it', { ...grips, localLH: [...grips.localLH.slice(1), 'x'] }],
+      ['a matrix that is missing', { ...grips, localKnuckle: undefined }],
+      ['no object at all', 'grips'],
+    ])('refuse grips with %s', async (_what, written) => {
+      const skeleton = skeletonScene(NAMES);
+      skeleton.scene.userData.grips = written;
+
+      await expect(assembleCharacter({ scene: skeleton.scene }, [], fakeCache())).rejects.toThrow(/grips/);
+    });
+  });
+});
+
 describe('loopMotion', () => {
   const fps = 30;
   /** Three frames of a keyed bone, and a bone held still (keys at 0 and at the last frame, as the converter writes). */
