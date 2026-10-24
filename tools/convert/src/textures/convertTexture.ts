@@ -10,6 +10,11 @@
 // Pipeline for one file: decode (formats package) -> optional box-filter downscale -> temporary PNG -> `ktx create`
 // (ETC1S, or UASTC for names listed in uastc-overrides.json) -> AssetWriter, which hashes the name and writes it
 // atomically.
+//
+// The effects stage reuses `convertTexture` for the textures of the effect files (SFX/Texture, DIR_SFXTEX, path.h:37) under
+// the `textures/sfx/` keys. CSfxTexture::AddTex loads them with ColorKey 0 as well (sfxbase.cpp:3146), so they keep their
+// alpha, the four banner textures of the Piece 4 effects among them, and the PNG carries it to `ktx`. They are not in
+// TEXTURE_FOLDERS: the textures stage converts the two folders whole, the effects stage only what an effect names.
 
 import { randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
@@ -39,18 +44,20 @@ const TEXTURE_FOLDERS = [
   { kind: 'terrain', dir: 'World/TextureMid' },
 ] as const;
 
-type TextureKind = (typeof TEXTURE_FOLDERS)[number]['kind'];
+/** `sfx` is the effects stage's: SFX/Texture, converted per effect and not by the textures stage. */
+export type TextureKind = (typeof TEXTURE_FOLDERS)[number]['kind'] | 'sfx';
 
 /** Where uastc-overrides.json sits: FlyffWeb/tools/convert/, two levels above this file. */
 const DEFAULT_OVERRIDES_FILE = fileURLToPath(new URL('../../uastc-overrides.json', import.meta.url));
 
 /**
  * The logical key of a texture: the web name of its file name, extension included (so `Face.dds` and `Face.tga` stay
- * apart), under `textures/` for model textures and `textures/terrain/` for terrain textures. `fileName` is a bare
- * name such as the one a material or a terrain script gives.
+ * apart), under `textures/` for model textures, `textures/terrain/` for terrain textures and `textures/sfx/` for effect
+ * textures. `fileName` is a bare name such as the one a material, a terrain script or an effect part gives.
  */
 export function textureKey(kind: TextureKind, fileName: string): string {
-  return `textures/${kind === 'terrain' ? 'terrain/' : ''}${webName(fileName)}.ktx2`;
+  const folder = kind === 'terrain' ? 'terrain/' : kind === 'sfx' ? 'sfx/' : '';
+  return `textures/${folder}${webName(fileName)}.ktx2`;
 }
 
 /**
@@ -125,16 +132,21 @@ export function downscaleToFit(image: RgbaImage, maxSize: number | undefined): R
   return current;
 }
 
-/** A PNG for `ktx create`. It only lives a moment, so it is written fast rather than small. */
-function encodePng(image: RgbaImage): Buffer {
+/**
+ * A PNG of the picture (8-bit RGBA). The one `ktx create` reads only lives a moment, so by default it is written fast
+ * rather than small; the UI stage passes `small` for the PNGs it ships (best compression, the best filter per row).
+ */
+export function encodePng(image: RgbaImage, small = false): Buffer {
   const png = new PNG({ width: image.width, height: image.height });
   png.data = Buffer.from(image.data.buffer, image.data.byteOffset, image.data.byteLength);
-  return PNG.sync.write(png, { colorType: 6, deflateLevel: 1, filterType: 0 });
+  return PNG.sync.write(png, { colorType: 6, ...(small ? { deflateLevel: 9, filterType: -1 } : { deflateLevel: 1, filterType: 0 }) });
 }
 
 export interface TextureContext {
   writer: AssetWriter;
   report: Report;
+  /** The report kind a converted file is counted under; `textures` when not set (the effects stage passes `sfxTextures`). */
+  reportKind?: string;
   /** The `ktx` to run (`KtxTool.path`). */
   ktxPath: string;
   /** An existing folder for the temporary files; each call removes what it made. */
@@ -163,7 +175,7 @@ export async function convertTexture(src: string, logicalKey: string, ctx: Textu
     await runKtx(ctx.ktxPath, buildKtxArgs(pngFile, ktx2File, mode));
     const converted = new Uint8Array(await fs.readFile(ktx2File));
     await ctx.writer.write(logicalKey, converted, src);
-    ctx.report.ok('textures', src, bytes.length, converted.length);
+    ctx.report.ok(ctx.reportKind ?? 'textures', src, bytes.length, converted.length);
   } finally {
     await Promise.all([pngFile, ktx2File].map((file) => fs.rm(file, { force: true }).catch(() => {})));
   }

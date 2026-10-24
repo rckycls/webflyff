@@ -2,10 +2,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { ClientFs } from './ClientFs';
 import { gameDataStage } from './data/gameDataStage';
+import { effectsStage } from './effects/effectsStage';
 import { modelsStage } from './models/modelsStage';
 import { AssetWriter } from './output/AssetWriter';
 import { Report } from './output/Report';
 import { texturesStage } from './textures/convertTexture';
+import { uiStage } from './ui/uiStage';
 import { UserError } from './util';
 import { worldsStage } from './world/convertWorld';
 
@@ -29,11 +31,19 @@ export interface Stage {
 }
 
 /**
- * The stages a normal run executes, in this order: textures, then models, then worlds, then data. A model names its
- * textures only if they were written before it, a world links the textures and models written before it, and the
- * game-data catalogs name the models, skeletons and motions written before them.
+ * The stages a normal run executes, in this order: textures, then models, then effects, then UI, then worlds, then data.
+ * A model names its textures only if they were written before it, an effect names the textures it converts itself and the
+ * models of its mesh parts written before it, a world links the textures and models written before it, and the
+ * game-data catalogs name the models, skeletons and motions, and the effect files and icons, written before them.
  */
-export const DEFAULT_STAGES: readonly Stage[] = [texturesStage, modelsStage, worldsStage, gameDataStage];
+export const DEFAULT_STAGES: readonly Stage[] = [
+  texturesStage,
+  modelsStage,
+  effectsStage,
+  uiStage,
+  worldsStage,
+  gameDataStage,
+];
 
 export interface RunOptions {
   /** The client folder (read-only). */

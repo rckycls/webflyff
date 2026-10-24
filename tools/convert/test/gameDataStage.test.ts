@@ -399,8 +399,8 @@ describe('the game-data stage', () => {
     return JSON.parse(await fs.readFile(path.join(run.out, ...hashed!.split('/')), 'utf8')) as T;
   }
 
-  it('runs last among the default stages', () => {
-    expect(DEFAULT_STAGES.map((s) => s.name)).toEqual(['textures', 'models', 'worlds', 'data']);
+  it('runs last among the default stages, after the effects and UI stages whose files it names', () => {
+    expect(DEFAULT_STAGES.map((s) => s.name)).toEqual(['textures', 'models', 'effects', 'ui', 'worlds', 'data']);
   });
 
   it('writes the eleven catalogs, each once, under its hashed name', async () => {

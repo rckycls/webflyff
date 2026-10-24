@@ -35,6 +35,17 @@ describe('matchesOnly', () => {
     expect(matchesOnly('obj_tree', 'obj*tree')).toBe(true);
   });
 
+  it('takes a comma-separated list: a name passes when any of the globs matches it', () => {
+    expect(matchesOnly('effects', 'effects,ui,data')).toBe(true);
+    expect(matchesOnly('ui', 'effects,ui,data')).toBe(true);
+    expect(matchesOnly('data', 'effects,ui,data')).toBe(true);
+    expect(matchesOnly('wdmadrigal', 'effects,ui,data')).toBe(false);
+    expect(matchesOnly('Part_mVag01Upper.o3d', 'wd*,part_m*')).toBe(true);
+    expect(matchesOnly('uidata', 'effects,ui,data')).toBe(false);
+    // a glob is a whole name, so a space beside a comma is part of the glob
+    expect(matchesOnly('ui', 'effects, ui')).toBe(false);
+  });
+
   it('treats every other character literally', () => {
     expect(matchesOnly('a+b', 'a+b')).toBe(true);
     expect(matchesOnly('aab', 'a+b')).toBe(false);

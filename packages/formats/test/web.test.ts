@@ -6,6 +6,7 @@ import {
   encodeTileBin,
   flipWinding,
   objectLocalMatrix,
+  sfxTextureName,
   toWebMatrix,
   toWebPosition,
   toWebQuaternion,
@@ -504,5 +505,34 @@ describe('manifest types', () => {
     // Both files travel as JSON, so they must survive it unchanged; `tsc` checks the shape of the literals above.
     expect(JSON.parse(JSON.stringify(world))).toEqual(world);
     expect(JSON.parse(JSON.stringify(assets))).toEqual(assets);
+  });
+});
+
+// ---- effect texture names ---------------------------------------------------------------------------------
+
+describe('sfxTextureName (GetTextureName, Source/_Common/sfxbase.cpp:21)', () => {
+  it('adds the index to the two characters before the extension', () => {
+    expect(sfxTextureName('babo03.jpg', 5)).toBe('babo08.jpg'); // the example in the C++ comment
+    expect(sfxTextureName('flash07.dds', 0)).toBe('flash07.dds');
+    expect(sfxTextureName('flash07.dds', 2)).toBe('flash09.dds');
+    expect(sfxTextureName('flash09.dds', 1)).toBe('flash10.dds');
+    expect(sfxTextureName('flash99.dds', 1)).toBe('flash100.dds'); // %02d does not cut
+  });
+
+  it('reads the two characters with atoi, so a dash gives a negative number', () => {
+    expect(sfxTextureName('x-5.dds', 4)).toBe('x-1.dds');
+    expect(sfxTextureName('x-5.dds', 5)).toBe('x00.dds');
+    expect(sfxTextureName('x-5.dds', 0)).toBe('x-5.dds');
+    expect(sfxTextureName('x-5.dds', 1)).toBe('x-4.dds');
+    expect(sfxTextureName('x-1.dds', 12)).toBe('x11.dds');
+  });
+
+  it('takes a non-digit as 0 and keeps the rest of the name', () => {
+    expect(sfxTextureName('glowab.dds', 3)).toBe('glow03.dds'); // atoi("ab") is 0: the two letters are replaced
+    expect(sfxTextureName('a5.tga', 2)).toBe('02.tga'); // atoi("a5") is 0, and Left(0) of the name is empty
+  });
+
+  it('cuts a name shorter than six characters the way CString::Left does (to nothing)', () => {
+    expect(sfxTextureName('a.dds', 3)).toBe('03.dds');
   });
 });

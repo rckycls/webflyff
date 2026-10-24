@@ -14,7 +14,8 @@
 //   data/effectsIndex.json XI id to the effect file and scale of its OT_SFX entry in mdlDyna.inc (WebEffectsIndex)
 //
 // It runs after the models stage, and after the effects and UI stages whose files the effects index and the item icons
-// name (`effects/<web name>.json`, `ui/<web name>.png`; this stage does not check that they exist).
+// name (`effects/<web name>.json`, `ui/<web name>.png`, the keys of output/keys.ts; this stage does not check that they
+// exist).
 //
 // A catalog names a model, skeleton or motion by its logical key, the way the models stage writes it (`webName` of the
 // real file's base name), and only when `writer.pathOf(key)` says the file was converted (in this run, or listed in the
@@ -36,7 +37,6 @@ import {
   readCharacterInc,
   readExpTable,
   readHonorTitles,
-  readModelIndex,
   readPkSetting,
   readPropItem,
   readPropJob,
@@ -63,9 +63,12 @@ import type {
 import type { ClientFs } from '../ClientFs';
 import { skeletonOfMotion } from '../models/skeletonFor';
 import type { AssetWriter } from '../output/AssetWriter';
+import { effectKeyOf, iconKeyOf, modelKeyOf, stem } from '../output/keys';
 import type { Report } from '../output/Report';
 import type { Stage, StageContext } from '../run';
 import { matchesOnly } from '../util';
+import { readModelIndexes } from './modelIndexes';
+import type { ModelIndex } from './modelIndexes';
 
 const KIND = 'data';
 const MODEL_DIR = 'Model';
@@ -80,8 +83,6 @@ const MOVER_ROOT = 'mvr';
 /** The root MakePartsName is given for a worn part (MoverEquip.cpp:365, `_T( "part" )`). */
 const PARTS_ROOT = 'part';
 
-/** The models of `mdlObj.inc` and `mdlDyna.inc` the catalogs read, from the packs. */
-const MODEL_INDEXES = ['mdlObj.inc', 'mdlDyna.inc'];
 const CHARACTER_FILES = ['character.inc', 'character-etc.inc', 'character-school.inc'];
 
 export type Sex = 'male' | 'female';
@@ -122,9 +123,6 @@ export function makeMotionName(elem: ModelElem, motion: number, stand = 0): stri
   return `${name}${text}.ani`;
 }
 
-/** `Mvr_male.o3d` -> `Mvr_male`. */
-const stem = (file: string): string => file.replace(/\.[^.]*$/, '');
-
 const plural = (n: number, noun: string): string => `${n} ${noun}${n === 1 ? '' : 's'}`;
 
 /** What the catalogs share. */
@@ -136,12 +134,6 @@ interface Env {
   strings: ReadonlyMap<string, string>;
   /** `<type>:<id>` to entry over mdlObj.inc and mdlDyna.inc; a later entry with the same type and id wins. */
   models(): ModelIndex;
-}
-
-interface ModelIndex {
-  entries: ReadonlyMap<string, ModelElem>;
-  /** Bytes of the files it was read from. */
-  bytes: number;
 }
 
 /** A catalog being built: reads pack files and counts the bytes. */
@@ -161,15 +153,6 @@ class Reading {
 const converted = (env: Env, key: string): string | null => (env.writer.pathOf(key) === undefined ? null : key);
 
 // ---- movers ------------------------------------------------------------------------------------------------------
-
-/** `models/<web name>.glb` of an `.o3d` file name, as the models stage writes it. */
-const modelKeyOf = (o3dFile: string): string => `models/${webName(stem(o3dFile))}.glb`;
-
-/** `effects/<web name>.json` of a `.sfx` file's stem, as the effects stage writes it. */
-export const effectKeyOf = (sfxStem: string): string => `effects/${webName(sfxStem)}.json`;
-
-/** `ui/<web name>.png` of an icon file name (`szIcon`, `itm_WeaSwoWooden.dds`), as the UI stage writes it. */
-export const iconKeyOf = (iconFile: string): string => `ui/${webName(stem(iconFile))}.png`;
 
 function buildMovers(env: Env, read: Reading): WebMover[] {
   const props = readPropMover(read.text('propMover.txt'), env.defines, env.strings, 'propMover.txt');
@@ -480,16 +463,7 @@ export const gameDataStage: Stage = {
         // read once, on first use; a failure is kept and thrown to every catalog that needs the index
         if (modelIndex === undefined) {
           try {
-            const entries = new Map<string, ModelElem>();
-            let bytes = 0;
-            for (const name of MODEL_INDEXES) {
-              const raw = packs.read(name);
-              bytes += raw.length;
-              for (const elem of readModelIndex(decodeScript(raw), env.defines, name)) {
-                entries.set(`${elem.type}:${elem.id}`, elem);
-              }
-            }
-            modelIndex = { entries, bytes };
+            modelIndex = readModelIndexes(packs, env.defines);
           } catch (error) {
             modelIndex = error instanceof Error ? error : new Error(String(error));
           }

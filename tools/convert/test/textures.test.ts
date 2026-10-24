@@ -113,6 +113,12 @@ describe('textureKey', () => {
     expect(textureKey('terrain', 'Bahara_Rockwall01.dds')).toBe('textures/terrain/bahara_rockwall01.dds.ktx2');
   });
 
+  it('puts effect textures under textures/sfx/, with the extension kept like the others', () => {
+    expect(textureKey('sfx', 'sfx_HitSword01-1.dds')).toBe('textures/sfx/sfx_hitsword01-1.dds.ktx2');
+    expect(textureKey('sfx', 'Glow.DDS')).toBe('textures/sfx/glow.dds.ktx2');
+    expect(textureKey('sfx', 'x-5.dds')).not.toBe(textureKey('model', 'x-5.dds'));
+  });
+
   it('turns spaces and odd characters into dashes and lower-cases the extension', () => {
     expect(textureKey('model', 'Obj_ Foo.DDS')).toBe('textures/obj_-foo.dds.ktx2');
     expect(textureKey('terrain', 'Grass #1.TGA')).toBe('textures/terrain/grass--1.tga.ktx2');

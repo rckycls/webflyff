@@ -1,18 +1,21 @@
 /**
  * Whether `name` passes the `--only <glob>` filter. `undefined` passes everything. Otherwise the glob must match the
  * whole base name without its extension (`Part_mVag01Upper.o3d` is compared as `Part_mVag01Upper`; a world folder
- * name has none), ignoring case. `*` stands for any run of characters; every other character is literal.
+ * name has none), ignoring case. `*` stands for any run of characters; every other character is literal. A comma
+ * separates several globs (`effects,ui,data`): the name passes when any of them matches, each as a whole name.
  */
 export function matchesOnly(name: string, only: string | undefined): boolean {
   if (only === undefined) return true;
   const base = name.slice(Math.max(name.lastIndexOf('/'), name.lastIndexOf('\\')) + 1);
   const dot = base.lastIndexOf('.');
   const stem = dot > 0 ? base.slice(0, dot) : base;
-  const pattern = only
-    .split('*')
-    .map((part) => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&'))
-    .join('.*');
-  return new RegExp(`^${pattern}$`, 'is').test(stem);
+  return only.split(',').some((glob) => {
+    const pattern = glob
+      .split('*')
+      .map((part) => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&'))
+      .join('.*');
+    return new RegExp(`^${pattern}$`, 'is').test(stem);
+  });
 }
 
 /**

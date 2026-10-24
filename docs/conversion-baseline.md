@@ -84,6 +84,69 @@ No world warned about an unconverted terrain texture or a layer id missing from 
 
 **0.** `report.json` `failures` is empty and the console summary ends with `Total: 15,364 ok, 166 warn, 0 failed`. (The console summary does not print failure messages; always read `report.json`'s `failures` list to confirm.)
 
+## Effects and UI stages (Piece 4, Task 11)
+
+Two stages came after the first full run: effects (every `.sfx` the model index names, and the textures those effects use) and ui (icons, window pieces, the damage-number sheet and its frame lists). They ran on the real client into the existing `dist/assets` (the earlier stages' files stay in `index.json`, as for any `--only` run).
+
+| | |
+| --- | --- |
+| Date | 2026-10-24 |
+| Commit | Task 11, `feat(convert): effects and UI art stages`, on top of `fcb90a7` |
+| Command | `npm run convert -- --only effects,ui,data --jobs 8` (from `FlyffWeb/`) |
+| Result | exit 0, **0 failures**, 4 warnings from the new stages (the data stage's 81 are its own, from Task 7) |
+| Machine | the same as above (AMD Ryzen 7 5700U, Windows 11, Node 24.19.0, `ktx` v4.4.2) |
+
+`--only effects,ui,data` runs just those three stages: a comma separates globs, and a stage matches its own name (the textures, models and worlds stages found nothing called that and took 0.1 s between them). The data stage ran again only because it names the new files.
+
+| Stage | Time |
+| --- | --- |
+| effects (604 effect files, 1,461 `.ktx2` encodes) | 47.0 s |
+| ui (567 PNGs and the sheets catalog) | 1.2 s |
+| data (run again, for the effect and icon names) | 5.6 s |
+| **Whole run** | **57.5 s** |
+
+The 1,461 textures went at about 31 a second, twice the first run's 15 a second: they are small (the folder is mostly 128 x 128 DXT1), where the model and terrain textures are large. A full run takes about 50 s longer than before (the data stage already ran).
+
+| Kind | Client input | Output | Count |
+| --- | --- | --- | --- |
+| effects | `SFX/*.sfx` named by the OT_SFX entries of `mdlDyna.inc` | `effects/*.json` | 604 (the 652 entries name 604 distinct files that exist, and 17 entries a file that is missing) |
+| effect textures | `SFX/Texture/*.dds` that those effects name, and each frame of a texture animation | `textures/sfx/*.ktx2` | 1,461 (of the folder's 1,979 files; 3 names are missing, see below) |
+| mesh parts | the effects' mesh parts (128 in the whole folder) | kept in the effect files, `model` naming the `models/` key | 118 (all linked to a converted model) |
+| UI pictures | every picture of `Icon/` (483), 83 pieces of `Theme/Default`, `SFX/DmgEffect.dds` | `ui/*.png` | 567 |
+| sheets | `SFX/DmgEffect.inc` (28 frames), `Icon/icon_target.inc` (16 frames) | `data/uiSheets.json` | 1 |
+| **Total** | | | **2,633** |
+
+| Kind | Input | Output | Output / input |
+| --- | --- | --- | --- |
+| effects | 1.08 MiB (1,130,392 B) | 2.64 MiB (2,772,772 B) | 245.3% |
+| effect textures | 24.68 MiB (25,874,988 B) | 5.98 MiB (6,265,927 B) | 24.2% |
+| ui | 4.12 MiB (4,320,496 B) | 0.96 MiB (1,002,058 B) | 23.2% |
+| **Total** | **29.87 MiB (31,325,876 B)** | **9.58 MiB (10,040,757 B)** | **32.1%** |
+
+An effect file is two and a half times its `.sfx`: the `.sfx` stores each number in 4 bytes, the JSON writes it in decimal and names its texture keys. It compresses to 15% (below).
+
+Warnings (all expected):
+
+| Count | Kind | Message |
+| --- | --- | --- |
+| 2 | effects | `test.dds` and `test2.dds` are not in `SFX/Texture`; 118 effects name each (placeholders, `sfx_Item*` and others). Their parts get `texture: null`. |
+| 1 | effects | `sfx_sklblddswsilent12.dds` is not in `SFX/Texture` (named by `Sfx_SklBldOnehandmaster01`). |
+| 1 | ui | 27 JPEG icons (`Icon_CloakSLogo01.jpg` and the rest) are not converted: no JPEG decoder, and no Piece 4 window draws them. |
+
+Every non-null texture, frame and model key in the 604 effect files is in `index.json` (none dangles). Of the 7 missing texture names counted in the research notes for the whole folder, these 3 are the ones the model index's effects name; the other 4 (`magician_fire_casting.dds`, `magician_wind_casting.dds`, `cure1.bmp`, `sfx_sklmerweasupport07.dds`) are named only by `.sfx` files the index does not name.
+
+Compression, measured as for the first run:
+
+| Kind | Files | Raw total | Raw average | gzip total | gzip average | gzip / raw | brotli total | brotli average | brotli / raw |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Effect files (`.json`) | 604 | 2.64 MiB | 4.5 KiB | 0.40 MiB | 0.7 KiB | 15.2% | 0.38 MiB | 0.6 KiB | 14.3% |
+| UI pictures (`.png`) | 567 | 0.95 MiB | 1.7 KiB | 0.92 MiB | 1.7 KiB | 96.6% | 0.92 MiB | 1.7 KiB | 96.9% |
+| Effect textures (`.ktx2`) | 1,461 | 5.98 MiB | 4.2 KiB | 5.58 MiB | 3.9 KiB | 93.4% | 5.50 MiB | 3.9 KiB | 92.1% |
+
+`index.json` is now 19,152 entries and 1.59 MiB raw.
+
+Not in `ui/`: the item icons. `ItemProp::szIcon` is loaded from `Client/Item` (3,215 pictures; `CItemElem`, `Item.cpp:114`), not from `Client/Icon`, so of the 4,998 items with an icon only the 12 whose name is also a name in `Icon/` have a `ui/` file for the `icon` key of `data/itemProps.json`.
+
 ## Compression
 
 Measured over every converted file (not a sample) with Node `zlib`: `gzipSync` at the default level and `brotliCompressSync` at quality 5. This is what a static host that compresses on the fly, or a CDN, would send. Average is per file.
