@@ -445,6 +445,13 @@ describe('readDds uncompressed formats', () => {
     expect(allPixels(dds.image.data)).toEqual([RED, [255, 0, 0, 0], GREEN, BLUE]);
   });
 
+  it('X1R5G5B5: the same 5-5-5 colours with no alpha, so the top bit changes nothing', () => {
+    const pixels = u16s(0x7c00, 0xfc00, 0x03e0, 0x001f, 0x7c1f);
+    const dds = readDds(ddsBytes({ width: 5, height: 1, pixels, ...rgb(16, [0x7c00, 0x03e0, 0x001f, 0]) }), 'a.dds');
+    expect(dds.format).toBe('X1R5G5B5');
+    expect(allPixels(dds.image.data)).toEqual([RED, RED, GREEN, BLUE, [255, 0, 255, 255]]);
+  });
+
   it('A4R4G4B4', () => {
     const pixels = u16s(0x8f00, 0xf0f0, 0x000f);
     const dds = readDds(
@@ -487,11 +494,11 @@ describe('readDds rejects what it cannot decode', () => {
     expect(error.message).toMatch(/0x000000ff/);
   });
 
-  it('names masks that are a known bit count in an unknown layout (X1R5G5B5)', () => {
+  it('names masks that are a known bit count in an unknown layout (X4R4G4B4)', () => {
     const error = thrown(() =>
-      readDds(ddsBytes({ width: 2, height: 1, bitCount: 16, masks: [0x7c00, 0x03e0, 0x001f, 0], pixels: new Uint8Array(4) }), 'a.dds'),
+      readDds(ddsBytes({ width: 2, height: 1, bitCount: 16, masks: [0x0f00, 0x00f0, 0x000f, 0], pixels: new Uint8Array(4) }), 'a.dds'),
     );
-    expect(error.message).toMatch(/0x00007c00/);
+    expect(error.message).toMatch(/0x00000f00/);
   });
 
   it('rejects a wrong magic', () => {

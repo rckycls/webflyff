@@ -106,6 +106,10 @@ describe('the UI stage on a small hand-made client', () => {
     'Icon/icon_target.inc': INC_TARGET,
     'Icon/Photo01.jpg': 'not decoded',
     'Icon/readme.txt': 'not a picture',
+    // item icons (ItemProp::szIcon): Client/Item, with a name that is also one in Client/Icon
+    'Item/itm_Foo.dds': dds(2, 1, [[7, 8, 9, 255], MAGENTA]),
+    'Item/ITM_Bar.TGA': tga32(2, 1, [MAGENTA, [1, 2, 3, 255]]),
+    'Item/items.zip': 'not a picture',
     'SFX/DmgEffect.dds': withMagenta(),
     'SFX/DmgEffect.inc': INC_DMG,
     'SFX/other.dds': solidDds(2, 2, [1, 1, 1, 255]), // another file of SFX: not a UI picture
@@ -146,7 +150,28 @@ describe('the UI stage on a small hand-made client', () => {
     expect(run.writer.pathOf('ui/notinthelist.png')).toBeUndefined();
     expect(run.writer.pathOf('ui/other.png')).toBeUndefined();
     expect(run.writer.pathOf('ui/readme.png')).toBeUndefined();
-    expect(run.report.kinds.ui).toMatchObject({ ok: keys.length + 1, failed: 0 }); // the pictures and the sheets catalog
+    // the two item icons, below, and the sheets catalog
+    expect(run.report.kinds.ui).toMatchObject({ ok: keys.length + 2 + 1, failed: 0 });
+  });
+
+  it('writes the pictures of Client/Item under ui/item/, apart from a Client/Icon file of the same name', async () => {
+    const run = await runUi();
+
+    for (const key of ['ui/item/itm_foo.png', 'ui/item/itm_bar.png']) {
+      expect(run.writer.pathOf(key), key).toMatch(/^ui\/item\/itm_[a-z]+\.[0-9a-f]{10}\.png$/);
+    }
+    // Icon/itm_Foo.TGA and Item/itm_Foo.dds are two pictures with two keys, and no collision
+    expect(run.report.failures).toEqual([]);
+    const icon = await png(run, 'ui/itm_foo.png');
+    const item = await png(run, 'ui/item/itm_foo.png');
+    expect(pixel(icon, 1, 0)).toEqual([4, 5, 6, 255]);
+    expect(pixel(item, 0, 0)).toEqual([7, 8, 9, 255]);
+    // an item icon has the colour key too
+    expect(pixel(item, 1, 0)).toEqual([0, 0, 0, 0]);
+    expect(pixel(await png(run, 'ui/item/itm_bar.png'), 0, 0)).toEqual([0, 0, 0, 0]);
+    // nothing of Client/Item leaks into the plain space, and the zip is not a picture
+    expect(run.writer.pathOf('ui/itm_bar.png')).toBeUndefined();
+    expect(run.writer.pathOf('ui/item/items.png')).toBeUndefined();
   });
 
   it('makes magenta transparent, in a DDS, a TGA and a BMP', async () => {
@@ -238,7 +263,7 @@ describe('the UI stage on a small hand-made client', () => {
 
     it('runs every picture when the glob matches the stage name', async () => {
       const run = await runUi({}, 'ui');
-      expect(run.report.kinds.ui).toMatchObject({ ok: 8 });
+      expect(run.report.kinds.ui).toMatchObject({ ok: 10 });
     });
 
     it('does nothing for a glob that matches no picture', async () => {

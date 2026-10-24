@@ -118,7 +118,12 @@ export interface WebItemProp {
    * whose model was not converted.
    */
   model: string | null;
-  /** Logical key of the icon (`ui/<web name of szIcon>.png`, which the UI stage writes); null for an item with none. */
+  /**
+   * Logical key of the icon (`ui/item/<web name of szIcon>.png`, which the UI stage writes from Client/Item, where
+   * CItemBase::SetTexture loads it, Item.cpp:114); null for an item with none. A pet egg's picture is another file of the
+   * folder, `szIcon` with `_00.`, `_01.` or `_02.` in place of its dot by the pet's level (Item.cpp:92-111), so its key has
+   * no file.
+   */
   icon: string | null;
 }
 

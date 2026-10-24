@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { effectKeyOf, iconKeyOf, modelKeyOf, stem } from '../src/output/keys';
+import { effectKeyOf, iconKeyOf, itemIconKeyOf, modelKeyOf, stem } from '../src/output/keys';
 
 describe('the logical keys the converter stages share', () => {
   it('names an effect by the web name of its .sfx stem', () => {
@@ -9,11 +9,19 @@ describe('the logical keys the converter stages share', () => {
     expect(effectKeyOf('Obj_ Fire')).toBe('effects/obj_-fire.json');
   });
 
-  it('names a UI picture (an icon, a theme piece, a sheet) by the web name of its file name without the extension', () => {
-    expect(iconKeyOf('itm_WeaSwoWooden.dds')).toBe('ui/itm_weaswowooden.png');
+  it('names a UI picture (a Client/Icon icon, a theme piece, a sheet) by the web name of its file name without the extension', () => {
+    expect(iconKeyOf('Skill_VagOneCleanh.dds')).toBe('ui/skill_vagonecleanh.png');
     expect(iconKeyOf('GauEmptyNormal.bmp')).toBe('ui/gauemptynormal.png');
     expect(iconKeyOf('Skill_JstReturn.dds.dds')).toBe('ui/skill_jstreturn.dds.png'); // only the last extension goes
     expect(iconKeyOf('Weird Name.TGA')).toBe('ui/weird-name.png');
+  });
+
+  it('names an item icon (Client/Item) under ui/item/, a key space apart from Client/Icon', () => {
+    expect(itemIconKeyOf('itm_WeaSwoWooden.dds')).toBe('ui/item/itm_weaswowooden.png');
+    expect(itemIconKeyOf('Weird Name.TGA')).toBe('ui/item/weird-name.png');
+    // the same file name in the two folders: two keys
+    expect(itemIconKeyOf('Skill_Couple01.dds')).toBe('ui/item/skill_couple01.png');
+    expect(itemIconKeyOf('Skill_Couple01.dds')).not.toBe(iconKeyOf('Skill_Couple01.dds'));
   });
 
   it('names a model by the web name of its .o3d stem, as the models stage writes it', () => {

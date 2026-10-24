@@ -309,9 +309,9 @@ describeClient('the game-data stage on the real client', () => {
         abilityMin: row.abilityMin, abilityMax: row.abilityMax, weaponType: row.weaponType, attackSpeed: row.attackSpeed,
         attackRange: row.attackRange, destParams: row.destParams, adjParams: row.adjParams, sfxHit: row.sfxObj3,
       });
-      // the icon is the file the table names, as the UI stage writes it
+      // the icon is the file the table names in Client/Item, as the UI stage writes it
       expect(prop.icon, `item ${prop.id} ${row.name}`).toBe(
-        row.icon === '' ? null : `ui/${webName(row.icon.replace(/\.[^.]*$/, ''))}.png`,
+        row.icon === '' ? null : `ui/item/${webName(row.icon.replace(/\.[^.]*$/, ''))}.png`,
       );
     }
     expect(itemProps.filter((p) => p.icon === null).length).toBeGreaterThan(100);
@@ -334,7 +334,7 @@ describeClient('the game-data stage on the real client', () => {
     expect(modelFileName(entry)).toBe('item_WeaSwoWooden.o3d');
     expect(sword.model).toBe('models/item_weaswowooden.glb');
     expect(writer.pathOf(sword.model!)).toBeDefined();
-    expect(sword.icon).toBe('ui/itm_weaswowooden.png');
+    expect(sword.icon).toBe('ui/item/itm_weaswowooden.png');
   });
 
   it("itemProps: a model is a held item's (an OT_ITEM entry with no part), and only the converted ones are named", async () => {

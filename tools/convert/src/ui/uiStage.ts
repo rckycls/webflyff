@@ -3,7 +3,9 @@
 //
 //   ui/<web name>.png      every picture of Client/Icon (skill icons, the target corners, the action button ...), the pieces
 //                          of Client/Theme/Default in THEME_FILES, and Client/SFX/DmgEffect.dds, each under the web name of
-//                          its file name without the last extension (iconKeyOf, the rule the data stage names item icons by)
+//                          its file name without the last extension (iconKeyOf)
+//   ui/item/<web name>.png every picture of Client/Item, the item icons, under the same rule (itemIconKeyOf), which the data
+//                          stage names in `itemProps.icon`
 //   data/uiSheets.json     the frames of SFX/DmgEffect.inc and Icon/icon_target.inc (WebUiSheets)
 //
 // Neuz loads these pictures through D3DX with a colour key: the icons, theme pieces and target corners with 0xffff00ff
@@ -12,10 +14,11 @@
 // all). D3DX turns every pixel of the key colour, alpha included, into transparent black. `applyColorKey` does the same,
 // with the keys read from the sheets' scripts for the files they name and 0xffff00ff for every other picture.
 //
-// Item icons (`ItemProp::szIcon`) are not here: CItemBase::SetTexture loads them from Client/Item (DIR_ITEM, Item.cpp:114),
-// not from Client/Icon, and 3,215 files are not a Piece 4 window's art. The data stage names them by the same key rule,
-// so a stage that converts that folder only has to add it to ICON_FOLDERS (8 of its file names are also names in
-// Client/Icon: those collide, and the second file of each is reported).
+// Item icons (`ItemProp::szIcon`) are loaded from Client/Item (CItemBase::SetTexture, DIR_ITEM, Item.cpp:114), not from
+// Client/Icon, which is where skills (`MakePath( DIR_ICON, ...)`, WndTaskBar.cpp:396) and the sheets load theirs. 8 file
+// names are in both folders (`itm_gengemblad`, `skill_couple01` ...), so the two folders have separate key spaces and
+// nothing collides. (A pet egg's icon is `szIcon` with `_00.`, `_01.` or `_02.` in place of the dot, by the pet's level:
+// CItemBase::SetTexture builds that name at run time, so the key `itemProps.icon` names for an egg has no file.)
 //
 // Client/Icon holds 27 `.jpg` files (cloak logos) and no decoder reads JPEG here; one warning names them. No Piece 4
 // window draws them.
@@ -27,7 +30,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { UI_SHEETS_KEY, decodeImage, decodeScript, readTexturePack } from '@flyffweb/formats';
 import type { RgbaImage, TexturePack, WebUiSheet, WebUiSheets } from '@flyffweb/formats';
-import { iconKeyOf } from '../output/keys';
+import { iconKeyOf, itemIconKeyOf } from '../output/keys';
 import type { Stage, StageContext } from '../run';
 import { encodePng } from '../textures/convertTexture';
 import { matchesOnly, runLimited } from '../util';
@@ -49,8 +52,15 @@ function listed(names: string[]): string {
 const PICTURE = /\.(dds|tga|bmp)$/i;
 const JPEG = /\.jpe?g$/i;
 
-/** DIR_ICON and DIR_THEME (path.h:31, :14). */
-const ICON_FOLDERS = ['Icon'];
+/**
+ * The folders whose pictures are all converted, and the key rule of each: DIR_ICON and DIR_ITEM (path.h:31, :32). Their
+ * key spaces are apart (see the top of this file).
+ */
+const PICTURE_FOLDERS: readonly { dir: string; keyOf: (file: string) => string }[] = [
+  { dir: 'Icon', keyOf: iconKeyOf },
+  { dir: 'Item', keyOf: itemIconKeyOf },
+];
+/** DIR_THEME (path.h:14). */
 const THEME_DIR = 'Theme/Default';
 
 /** `prefix00suffix` to `prefixNNsuffix`, numbered from `from` to `to` with two digits at least. */
@@ -157,6 +167,8 @@ export function applyColorKey(image: RgbaImage, key: number): RgbaImage {
 /** A picture to convert. */
 interface Picture {
   src: string;
+  /** The logical key the PNG is written under. */
+  key: string;
   colorKey: number;
 }
 
@@ -194,10 +206,10 @@ async function readSheet(ctx: StageContext, spec: (typeof SHEETS)[number]): Prom
   return { field: spec.field, script, bytes: raw.length, pack: readTexturePack(text, script, { width, height }), picture, colorKey };
 }
 
-async function convertPicture({ src, colorKey }: Picture, ctx: StageContext): Promise<void> {
+async function convertPicture({ src, key, colorKey }: Picture, ctx: StageContext): Promise<void> {
   const bytes = new Uint8Array(await fs.readFile(src));
   const png = encodePng(applyColorKey(decodeImage(bytes, src), colorKey), true);
-  await ctx.writer.write(iconKeyOf(path.basename(src)), png, src);
+  await ctx.writer.write(key, png, src);
   ctx.report.ok(KIND, src, bytes.length, png.length);
 }
 
@@ -227,26 +239,28 @@ export function createUiStage(options: UiStageOptions = {}): Stage {
       const sheetKeys = new Map(sheets.map((sheet) => [sheet.picture, sheet.colorKey]));
 
       const pictures = new Map<string, Picture>();
-      const add = (src: string): void => {
-        if (wanted(src)) pictures.set(src, { src, colorKey: sheetKeys.get(src) ?? MAGENTA_KEY });
+      const add = (src: string, keyOf: (file: string) => string): void => {
+        if (wanted(src)) {
+          pictures.set(src, { src, key: keyOf(path.basename(src)), colorKey: sheetKeys.get(src) ?? MAGENTA_KEY });
+        }
       };
-      for (const dir of ICON_FOLDERS) for (const src of ctx.client.list(dir, PICTURE)) add(src);
+      for (const { dir, keyOf } of PICTURE_FOLDERS) for (const src of ctx.client.list(dir, PICTURE)) add(src, keyOf);
       for (const name of themeFiles) {
         if (!wanted(name)) continue;
         const src = ctx.client.find(THEME_DIR, name);
         if (src === null) {
           ctx.report.warn(KIND, `${THEME_DIR}/${name}`, `${name} is not in Client/${THEME_DIR}, so it is not converted`);
         } else {
-          add(src);
+          add(src, iconKeyOf);
         }
       }
-      for (const sheet of sheets) add(sheet.picture);
+      for (const sheet of sheets) add(sheet.picture, iconKeyOf);
 
-      const jpegs = ICON_FOLDERS.flatMap((dir) => ctx.client.list(dir, JPEG)).filter(wanted);
+      const jpegs = PICTURE_FOLDERS.flatMap(({ dir }) => ctx.client.list(dir, JPEG)).filter(wanted);
       if (jpegs.length > 0) {
         ctx.report.warn(
           KIND,
-          ICON_FOLDERS[0]!,
+          PICTURE_FOLDERS[0]!.dir,
           `${plural(jpegs.length, 'JPEG icon')} not converted (no decoder reads JPEG, and no Piece 4 window draws them): ` +
             listed(jpegs.map((file) => path.basename(file))),
         );

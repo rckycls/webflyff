@@ -12,10 +12,18 @@ export const stem = (file: string): string => file.replace(/\.[^.]*$/, '');
 export const effectKeyOf = (sfxStem: string): string => `effects/${webName(sfxStem)}.json`;
 
 /**
- * `ui/<web name>.png` of a picture's file name without its last extension, as the UI stage writes it: an icon (`szIcon`,
- * `itm_WeaSwoWooden.dds`), a theme piece (`GauEmptyNormal.bmp`) or a sheet's picture (`DmgEffect.dds`).
+ * `ui/<web name>.png` of a picture's file name without its last extension, as the UI stage writes it for the pictures of
+ * Client/Icon (skill icons, applets, `icon_target.dds`), the theme pieces (`GauEmptyNormal.bmp`) and the sheets
+ * (`DmgEffect.dds`). Item icons have their own key space, `itemIconKeyOf`: 8 file names are in both Client/Icon and
+ * Client/Item.
  */
 export const iconKeyOf = (iconFile: string): string => `ui/${webName(stem(iconFile))}.png`;
+
+/**
+ * `ui/item/<web name>.png` of an item's icon file (`ItemProp::szIcon`, `itm_WeaSwoWooden.dds`), as the UI stage writes the
+ * pictures of Client/Item, where CItemBase::SetTexture loads them from (DIR_ITEM, Item.cpp:114).
+ */
+export const itemIconKeyOf = (iconFile: string): string => `ui/item/${webName(stem(iconFile))}.png`;
 
 /** `models/<web name>.glb` of an `.o3d` file name, as the models stage writes it. */
 export const modelKeyOf = (o3dFile: string): string => `models/${webName(stem(o3dFile))}.glb`;

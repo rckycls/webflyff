@@ -14,8 +14,8 @@
 //   data/effectsIndex.json XI id to the effect file and scale of its OT_SFX entry in mdlDyna.inc (WebEffectsIndex)
 //
 // It runs after the models stage, and after the effects and UI stages whose files the effects index and the item icons
-// name (`effects/<web name>.json`, `ui/<web name>.png`, the keys of output/keys.ts; this stage does not check that they
-// exist).
+// name (`effects/<web name>.json`, `ui/item/<web name>.png`, the keys of output/keys.ts; this stage does not check that
+// they exist).
 //
 // A catalog names a model, skeleton or motion by its logical key, the way the models stage writes it (`webName` of the
 // real file's base name), and only when `writer.pathOf(key)` says the file was converted (in this run, or listed in the
@@ -63,7 +63,7 @@ import type {
 import type { ClientFs } from '../ClientFs';
 import { skeletonOfMotion } from '../models/skeletonFor';
 import type { AssetWriter } from '../output/AssetWriter';
-import { effectKeyOf, iconKeyOf, modelKeyOf, stem } from '../output/keys';
+import { effectKeyOf, itemIconKeyOf, modelKeyOf, stem } from '../output/keys';
 import type { Report } from '../output/Report';
 import type { Stage, StageContext } from '../run';
 import { matchesOnly } from '../util';
@@ -312,7 +312,7 @@ function buildItems(env: Env, read: Reading): WebItemModel[] {
 /**
  * Every item of propItem.txt, with the columns the fight reads. `model` is the held model, which Neuz loads from the
  * item's OT_ITEM entry as `item_<name>.o3d` (CModelMng::MakeModelName, ModelMng.cpp:63). An entry with a part is worn
- * and not held, and buildItems has its part models. `icon` names the file the UI stage writes.
+ * and not held, and buildItems has its part models. `icon` names the file the UI stage writes from Client/Item.
  */
 function buildItemProps(env: Env, read: Reading): WebItemProp[] {
   const props = readItemRows(env, read);
@@ -350,7 +350,7 @@ function buildItemProps(env: Env, read: Reading): WebItemProp[] {
         adjParams: [...prop.adjParams],
         sfxHit: prop.sfxObj3,
         model,
-        icon: prop.icon === '' ? null : iconKeyOf(prop.icon),
+        icon: prop.icon === '' ? null : itemIconKeyOf(prop.icon),
       };
     });
 

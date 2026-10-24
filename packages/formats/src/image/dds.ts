@@ -103,6 +103,22 @@ const RAW_FORMATS: readonly RawFormat[] = [
     },
   },
   {
+    // D3DFMT_X1R5G5B5: the A1R5G5B5 colours with the top bit unused, so every pixel is opaque (4 shipped item icons)
+    name: 'X1R5G5B5',
+    bits: 16,
+    masks: [0x7c00, 0x03e0, 0x001f, 0],
+    convert(src, from, dst, to) {
+      const v = src[from] | (src[from + 1] << 8);
+      const r = (v >> 10) & 31;
+      const g = (v >> 5) & 31;
+      const b = v & 31;
+      dst[to] = (r << 3) | (r >> 2);
+      dst[to + 1] = (g << 3) | (g >> 2);
+      dst[to + 2] = (b << 3) | (b >> 2);
+      dst[to + 3] = 255;
+    },
+  },
+  {
     name: 'A1R5G5B5',
     bits: 16,
     masks: [0x7c00, 0x03e0, 0x001f, 0x8000],

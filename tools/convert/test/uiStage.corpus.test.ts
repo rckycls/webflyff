@@ -6,12 +6,13 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { PNG } from 'pngjs';
 import { afterAll, beforeAll, expect, it } from 'vitest';
-import { decodeScript, readTexturePack } from '@flyffweb/formats';
-import type { WebUiSheets } from '@flyffweb/formats';
-import { clientRoot, describeClient } from '../../../packages/formats/test/helpers/client';
+import { GAME_DATA_KEYS, decodeScript, loadDefines, loadStrings, readPropItem, readTexturePack } from '@flyffweb/formats';
+import type { WebItemProp, WebUiSheets } from '@flyffweb/formats';
+import { clientRoot, describeClient, loadClientPacks } from '../../../packages/formats/test/helpers/client';
 import { ClientFs } from '../src/ClientFs';
+import { gameDataStage } from '../src/data/gameDataStage';
 import { AssetWriter } from '../src/output/AssetWriter';
-import { iconKeyOf } from '../src/output/keys';
+import { iconKeyOf, itemIconKeyOf } from '../src/output/keys';
 import { Report } from '../src/output/Report';
 import { THEME_FILES, uiStage } from '../src/ui/uiStage';
 import { makeTempDir } from './helpers/fakeClient';
@@ -37,6 +38,8 @@ describeClient('the UI stage on the real client', () => {
     await uiStage.run({ client, writer, report, jobs: 8, outDir: out });
     await report.write(out);
     reportJson = JSON.parse(await fs.readFile(path.join(out, 'report.json'), 'utf8')) as ReportJson;
+    // the data stage after it, as in a normal run: itemProps.json names the item icons by key (the models are not needed)
+    await gameDataStage.run({ client, writer, report: new Report(), jobs: 8, outDir: out });
   }, 600_000);
 
   afterAll(async () => {
@@ -46,11 +49,13 @@ describeClient('the UI stage on the real client', () => {
   it('writes every picture without a failure; only the .jpg icons are left out, with one warning', () => {
     expect(reportJson.failures).toEqual([]);
     const pictures = client.list('Icon', /\.(dds|tga|bmp)$/i).length;
+    const itemPictures = client.list('Item', /\.(dds|tga|bmp)$/i).length;
     const jpegs = client.list('Icon', /\.jpe?g$/i).length;
     expect(pictures).toBeGreaterThan(450);
+    expect(itemPictures).toBeGreaterThan(3000);
     expect(jpegs).toBeGreaterThan(0);
-    // every picture of Client/Icon, every piece of the theme list, and DmgEffect.dds
-    expect(reportJson.kinds.ui!.ok).toBe(pictures + THEME_FILES.length + 1 + 1); // + DmgEffect.dds + the sheets catalog
+    // every picture of Client/Icon and Client/Item, every piece of the theme list, DmgEffect.dds and the sheets catalog
+    expect(reportJson.kinds.ui!.ok).toBe(pictures + itemPictures + THEME_FILES.length + 1 + 1);
     expect(reportJson.warnings.filter((w) => w.kind === 'ui')).toHaveLength(1);
     expect(reportJson.warnings[0]!.message).toContain('.jpg');
   });
@@ -61,6 +66,47 @@ describeClient('the UI stage on the real client', () => {
       expect(client.find('Theme/Default', file), file).not.toBeNull();
       expect(writer.pathOf(iconKeyOf(file)), file).toBeDefined();
     }
+  });
+
+  it('writes the item icons under ui/item/: the Wooden Sword icon key of itemProps.json is a written picture', async () => {
+    const hashed = writer.pathOf(GAME_DATA_KEYS.itemProps);
+    expect(hashed).toBeDefined();
+    const props = JSON.parse(await fs.readFile(path.join(out, ...hashed!.split('/')), 'utf8')) as WebItemProp[];
+    const defines = loadDefines(loadClientPacks());
+
+    const sword = props.find((p) => p.id === defines.get('II_WEA_SWO_WOODEN'))!;
+    expect(sword.icon).toBe('ui/item/itm_weaswowooden.png'); // itm_WeaSwoWooden.dds, Client/Item
+    expect(sword.icon).toBe(itemIconKeyOf('itm_WeaSwoWooden.dds'));
+    const icon = await readPng(sword.icon!);
+    expect([icon.width, icon.height]).toEqual([32, 32]);
+    expect(icon.data.some((value, i) => i % 4 === 3 && value === 0)).toBe(true); // the magenta is transparent
+    expect(icon.data.some((value, i) => i % 4 === 3 && value === 255)).toBe(true);
+  });
+
+  it('resolves the icon key of every item whose picture is in Client/Item (4,986 of 4,998)', async () => {
+    const packs = loadClientPacks();
+    const defines = loadDefines(packs);
+    const rows = new Map(
+      readPropItem(decodeScript(packs.read('propItem.txt')), defines, loadStrings(packs), 'propItem.txt').map((row) => [row.id, row]),
+    );
+    const hashed = writer.pathOf(GAME_DATA_KEYS.itemProps)!;
+    const props = JSON.parse(await fs.readFile(path.join(out, ...hashed.split('/')), 'utf8')) as WebItemProp[];
+
+    const withIcon = props.filter((p) => p.icon !== null);
+    const unresolved = withIcon.filter((p) => writer.pathOf(p.icon!) === undefined);
+    expect(withIcon).toHaveLength(4998);
+    expect(withIcon.length - unresolved.length).toBe(4986);
+    // the rest: five quest items whose picture is not in the client, and seven pet eggs, whose picture is named at run
+    // time (szIcon with _00., _01. or _02. in place of the dot, CItemBase::SetTexture, Item.cpp:92-111)
+    const egg = defines.get('IK3_EGG');
+    const eggs = unresolved.filter((p) => p.kind3 === egg);
+    const missing = unresolved.filter((p) => p.kind3 !== egg);
+    expect(eggs).toHaveLength(7);
+    expect(missing).toHaveLength(5);
+    for (const p of missing) expect(client.find('Item', rows.get(p.id)!.icon), p.name).toBeNull();
+    for (const p of eggs) expect(client.find('Item', rows.get(p.id)!.icon.replace('.', '_00.')), p.name).not.toBeNull();
+    // every item icon key is in the item key space
+    expect(withIcon.every((p) => p.icon!.startsWith('ui/item/'))).toBe(true);
   });
 
   it('lists the pieces the Piece 4 windows draw', () => {

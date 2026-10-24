@@ -86,26 +86,26 @@ No world warned about an unconverted terrain texture or a layer id missing from 
 
 ## Effects and UI stages (Piece 4, Task 11)
 
-Two stages came after the first full run: effects (every `.sfx` the model index names, and the textures those effects use) and ui (icons, window pieces, the damage-number sheet and its frame lists). They ran on the real client into the existing `dist/assets` (the earlier stages' files stay in `index.json`, as for any `--only` run).
+Two stages came after the first full run: effects (every `.sfx` the model index names, and the textures those effects use) and ui (icons, window pieces, the damage-number sheet and its frame lists, and the item icons). They ran on the real client into the existing `dist/assets` (the earlier stages' files stay in `index.json`, as for any `--only` run). The effects stage ran first with the ui stage (commit `fdb7f5d`); the ui stage was run again after the item icons moved to `Client/Item` (the fix `fix(convert): item icons come from Client/Item`, ruling R9), so the ui and data rows below are from that second run and the effects rows from the first.
 
-| | |
-| --- | --- |
-| Date | 2026-10-24 |
-| Commit | Task 11, `feat(convert): effects and UI art stages`, on top of `fcb90a7` |
-| Command | `npm run convert -- --only effects,ui,data --jobs 8` (from `FlyffWeb/`) |
-| Result | exit 0, **0 failures**, 4 warnings from the new stages (the data stage's 81 are its own, from Task 7) |
-| Machine | the same as above (AMD Ryzen 7 5700U, Windows 11, Node 24.19.0, `ktx` v4.4.2) |
+| | First run (effects, ui, data) | Second run (ui, data) |
+| --- | --- | --- |
+| Date | 2026-10-24 | 2026-10-24 |
+| Commit | `fdb7f5d` `feat(convert): effects and UI art stages`, on top of `fcb90a7` | `fix(convert): item icons come from Client/Item`, on top of `78eb32e` |
+| Command | `npm run convert -- --only effects,ui,data --jobs 8` (from `FlyffWeb/`) | `npm run convert -- --only ui,data --jobs 8` |
+| Result | exit 0, **0 failures**, 4 warnings from the new stages | exit 0, **0 failures**, 1 warning from the ui stage |
+| Machine | the same as above (AMD Ryzen 7 5700U, Windows 11, Node 24.19.0, `ktx` v4.4.2) | the same |
 
-`--only effects,ui,data` runs just those three stages: a comma separates globs, and a stage matches its own name (the textures, models and worlds stages found nothing called that and took 0.1 s between them). The data stage ran again only because it names the new files.
+`--only effects,ui,data` runs just those three stages: a comma separates globs, and a stage matches its own name (the textures, models and worlds stages found nothing called that and took 0.1 s between them). The data stage ran again only because it names the new files. The second run's `--only ui,data` leaves the effects stage a 0.2 s look at the model index (no effect is called `ui` or `data`).
 
 | Stage | Time |
 | --- | --- |
-| effects (604 effect files, 1,461 `.ktx2` encodes) | 47.0 s |
-| ui (567 PNGs and the sheets catalog) | 1.2 s |
-| data (run again, for the effect and icon names) | 5.6 s |
-| **Whole run** | **57.5 s** |
+| effects (604 effect files, 1,461 `.ktx2` encodes; first run) | 47.0 s |
+| ui (3,784 PNGs and the sheets catalog; second run) | 8.7 s |
+| data (run again, for the effect and icon names; second run) | 5.8 s |
+| **Whole run** | **57.5 s** first (effects 47.0 s, ui 1.2 s without the item icons, data 5.6 s); **18.4 s** second |
 
-The 1,461 textures went at about 31 a second, twice the first run's 15 a second: they are small (the folder is mostly 128 x 128 DXT1), where the model and terrain textures are large. A full run takes about 50 s longer than before (the data stage already ran).
+The 1,461 textures went at about 31 a second, twice the first run's 15 a second: they are small (the folder is mostly 128 x 128 DXT1), where the model and terrain textures are large. The 3,217 item icons are 32 x 32 and go through in about 7.5 s. A full run takes about a minute longer than before (the data stage already ran).
 
 | Kind | Client input | Output | Count |
 | --- | --- | --- | --- |
@@ -113,17 +113,19 @@ The 1,461 textures went at about 31 a second, twice the first run's 15 a second:
 | effect textures | `SFX/Texture/*.dds` that those effects name, and each frame of a texture animation | `textures/sfx/*.ktx2` | 1,461 (of the folder's 1,979 files; 3 names are missing, see below) |
 | mesh parts | the effects' mesh parts (128 in the whole folder) | kept in the effect files, `model` naming the `models/` key | 118 (all linked to a converted model) |
 | UI pictures | every picture of `Icon/` (483), 83 pieces of `Theme/Default`, `SFX/DmgEffect.dds` | `ui/*.png` | 567 |
+| item icons | every picture of `Item/` (3,215 `.dds` and 2 `.tga`; the folder also holds `items.zip`, not a picture) | `ui/item/*.png` | 3,217 |
 | sheets | `SFX/DmgEffect.inc` (28 frames), `Icon/icon_target.inc` (16 frames) | `data/uiSheets.json` | 1 |
-| **Total** | | | **2,633** |
+| **Total** | | | **5,850** |
 
 | Kind | Input | Output | Output / input |
 | --- | --- | --- | --- |
 | effects | 1.08 MiB (1,130,392 B) | 2.64 MiB (2,772,772 B) | 245.3% |
 | effect textures | 24.68 MiB (25,874,988 B) | 5.98 MiB (6,265,927 B) | 24.2% |
-| ui | 4.12 MiB (4,320,496 B) | 0.96 MiB (1,002,058 B) | 23.2% |
-| **Total** | **29.87 MiB (31,325,876 B)** | **9.58 MiB (10,040,757 B)** | **32.1%** |
+| ui (pictures and sheets) | 4.12 MiB (4,320,496 B) | 0.96 MiB (1,002,058 B) | 23.2% |
+| item icons | 7.47 MiB (7,832,246 B) | 4.10 MiB (4,297,747 B) | 54.9% |
+| **Total** | **37.34 MiB (39,158,122 B)** | **13.67 MiB (14,338,504 B)** | **36.6%** |
 
-An effect file is two and a half times its `.sfx`: the `.sfx` stores each number in 4 bytes, the JSON writes it in decimal and names its texture keys. It compresses to 15% (below).
+An effect file is two and a half times its `.sfx`: the `.sfx` stores each number in 4 bytes, the JSON writes it in decimal and names its texture keys. It compresses to 15% (below). The item icons are small 16-bit and DXT pictures; as PNG they come to about half.
 
 Warnings (all expected):
 
@@ -131,9 +133,11 @@ Warnings (all expected):
 | --- | --- | --- |
 | 2 | effects | `test.dds` and `test2.dds` are not in `SFX/Texture`; 118 effects name each (placeholders, `sfx_Item*` and others). Their parts get `texture: null`. |
 | 1 | effects | `sfx_sklblddswsilent12.dds` is not in `SFX/Texture` (named by `Sfx_SklBldOnehandmaster01`). |
-| 1 | ui | 27 JPEG icons (`Icon_CloakSLogo01.jpg` and the rest) are not converted: no JPEG decoder, and no Piece 4 window draws them. |
+| 1 | ui | 27 JPEG icons (`Icon_CloakSLogo01.jpg` and the rest) are not converted: no JPEG decoder, and no Piece 4 window draws them. None is an item icon. |
 
 Every non-null texture, frame and model key in the 604 effect files is in `index.json` (none dangles). Of the 7 missing texture names counted in the research notes for the whole folder, these 3 are the ones the model index's effects name; the other 4 (`magician_fire_casting.dds`, `magician_wind_casting.dds`, `cure1.bmp`, `sfx_sklmerweasupport07.dds`) are named only by `.sfx` files the index does not name.
+
+Item icons (`ItemProp::szIcon`) are loaded from `Client/Item` (`CItemBase::SetTexture`, `Item.cpp:114`), not from `Client/Icon`, so they have their own key space, `ui/item/<name>.png`: 8 file names (`itm_gengemblad`, `itm_gengemdogtooth`, `itm_gengemflower`, `itm_gengemnecklace`, `itm_gengempoisonbag`, `skill_couple01` to `03`) are in both folders. Of the 4,998 items with an icon, **4,986 icon keys in `data/itemProps.json` resolve** to a written file. The other 12: five quest items (`Leygall`, `Radoram`, `Lemeat`, `Steam Woodlock`, `Steam Tears`: `Itm_SysSysQue*.dds`) whose picture is not in the client, and seven pet eggs (the "cage" items), whose picture Neuz names at run time by the pet's level (`szIcon` with `_00.`, `_01.` or `_02.` for the dot; the three files exist for all seven). None of the 12 is held up by a skipped `.jpg`. Four of the `Item/` files are `X1R5G5B5` DDS, which the DDS reader did not know; it does now.
 
 Compression, measured as for the first run:
 
@@ -141,11 +145,10 @@ Compression, measured as for the first run:
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | Effect files (`.json`) | 604 | 2.64 MiB | 4.5 KiB | 0.40 MiB | 0.7 KiB | 15.2% | 0.38 MiB | 0.6 KiB | 14.3% |
 | UI pictures (`.png`) | 567 | 0.95 MiB | 1.7 KiB | 0.92 MiB | 1.7 KiB | 96.6% | 0.92 MiB | 1.7 KiB | 96.9% |
+| Item icons (`.png`) | 3,217 | 4.10 MiB | 1.3 KiB | 4.17 MiB | 1.3 KiB | 101.6% | 4.11 MiB | 1.3 KiB | 100.3% |
 | Effect textures (`.ktx2`) | 1,461 | 5.98 MiB | 4.2 KiB | 5.58 MiB | 3.9 KiB | 93.4% | 5.50 MiB | 3.9 KiB | 92.1% |
 
-`index.json` is now 19,152 entries and 1.59 MiB raw.
-
-Not in `ui/`: the item icons. `ItemProp::szIcon` is loaded from `Client/Item` (3,215 pictures; `CItemBase::SetTexture`, `Item.cpp:114`), not from `Client/Icon`, so of the 4,998 items with an icon only the 12 whose name is also a name in `Icon/` have a `ui/` file for the `icon` key of `data/itemProps.json`.
+`index.json` is now 22,369 entries and 1.82 MiB raw.
 
 ## Compression
 

@@ -528,7 +528,7 @@ describe('the game-data stage', () => {
     expect(props[2]).toEqual({
       id: 505, name: 'Training Sword', kind1: 1, kind2: 2, kind3: 2, handed: 1, part: 10, abilityMin: 3, abilityMax: 4,
       weaponType: 1, attackSpeed: Math.fround(0.085), attackRange: 1, destParams: [14, -1, -1], adjParams: [5, -3, -1],
-      sfxHit: 20, model: 'models/item_weasword.glb', icon: 'ui/itm_weasword.png',
+      sfxHit: 20, model: 'models/item_weasword.glb', icon: 'ui/item/itm_weasword.png',
     });
     expect(props[2]!.attackSpeed).not.toBe(0.085);
 
@@ -536,7 +536,7 @@ describe('the game-data stage', () => {
     expect(props[0]).toEqual({
       id: 502, name: 'Cotton Suit', kind1: 2, kind2: 7, kind3: 18, handed: -1, part: 2, abilityMin: 8, abilityMax: 10,
       weaponType: -1, attackSpeed: -1, attackRange: -1, destParams: [-1, -1, -1], adjParams: [-1, -1, -1],
-      sfxHit: -1, model: null, icon: 'ui/itm_mvag01upper.png',
+      sfxHit: -1, model: null, icon: 'ui/item/itm_mvag01upper.png',
     });
     expect(props[1]).toMatchObject({ id: 503, name: 'Pike Suit', part: 3, model: null });
   });
