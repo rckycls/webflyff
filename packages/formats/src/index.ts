@@ -55,6 +55,8 @@ export { motionFps, readAni, readTm } from './model/ani';
 export type { BoneTrack, Motion, MotionFrameAttribute, MotionKey } from './model/ani';
 export { NO_BONE, readO3d } from './model/o3d';
 export type { GmObject, GmObjectKind, MaterialBlock, O3dMaterial, O3dModel, Rgba } from './model/o3d';
+export { readSfx } from './sfx/sfx';
+export type { SfxFile, SfxKey, SfxParticle, SfxPart, SfxVersion } from './sfx/sfx';
 export type { RgbaImage } from './image/types';
 export { decodeDxt1, decodeDxt3, decodeDxt5 } from './image/dxt';
 export { readDds } from './image/dds';
