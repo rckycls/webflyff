@@ -15,12 +15,12 @@
 // skeleton's in 95 client motions), so track i animates the node named after skeleton bone i.
 //
 // The frames a motion marks (its MOTION_ATTR per frame: a blow lands, a sound plays, the screen shakes) go to the
-// animation's `extras.events`, see `MotionEvents`. GLTFLoader copies them to the clip's `userData`; the client decides
-// what a marked frame does.
+// animation's `extras.events`, see `MotionEvents` (@flyffweb/formats, web/motionEvents.ts). GLTFLoader copies them to
+// the clip's `userData`; the client decides what a marked frame does.
 
 import type { Document, Node } from '@gltf-transform/core';
 import { motionFps, toWebPosition, toWebQuaternion } from '@flyffweb/formats';
-import type { BoneTrack, Motion, MotionKey, Skeleton } from '@flyffweb/formats';
+import type { BoneTrack, Motion, MotionEvents, MotionKey, Skeleton } from '@flyffweb/formats';
 import { addAccessor, d3dTrs, newDocument, normalizeQuaternion, writeGlb } from './gltf';
 import type { Quat, Vec3 } from './gltf';
 import { addJointNodes, chrJoints } from './skeletonGlb';
@@ -29,29 +29,6 @@ import { addJointNodes, chrJoints } from './skeletonGlb';
 const MA_HIT = 0x1;
 const MA_SOUND = 0x2;
 const MA_QUAKE = 0x4;
-
-/**
- * What the frames of a motion do, as `extras.events` of the motion's animation; `loopMotion`
- * (packages/scene/src/character/assemble.ts) reads the same shape. A frame is MOTION_ATTR::m_fFrame, the exact frame
- * number, 0-based: in the client's motions it is the entry's index, except two sound entries half a frame later
- * (mvr_Frinker_die1 at 20.5, mvr_SkelWolf_Atk2 at 30.5). One frame can carry several flags. Each list follows the
- * order of the frames.
- *
- * CMotion::IsAttrHit, IsAttrSound and IsAttrQuake (Bone.h:162-185) tell that a flagged frame went by when the motion
- * moved from `old` to `current` with `old < frame <= current`, looking at the entry of (int)current.
- */
-export interface MotionEvents {
-  /** The frames with MA_HIT: a blow lands. */
-  hit: number[];
-  /** The frames with MA_SOUND and the sound resource id (`m_nSndID`; ModelObject.cpp:1594 plays it when above 0). */
-  sound: [frame: number, sound: number][];
-  /** The frames with MA_QUAKE: the screen shakes. */
-  quake: number[];
-  /** The motion's frame count (`m_nMaxFrame`). */
-  frames: number;
-  /** The motion's `m_fPerSlerp`: frames advanced per 60 Hz tick (`motionFps` gives the frames a second). */
-  perSlerp: number;
-}
 
 /** The frames `motion` marks with MA_HIT, MA_SOUND and MA_QUAKE (CMotion::LoadMotion reads `m_pAttr`, Bone.cpp:559). */
 export function motionEvents(motion: Motion): MotionEvents {

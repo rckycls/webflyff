@@ -68,6 +68,7 @@ export { collisionKey, decodeCollisionBin, encodeCollisionBin } from './web/coll
 export { argbToRgba, decodeTileBin, encodeTileBin } from './web/tileBin';
 export type { WebTile, WebTileLayer, WebTileObject } from './web/tileBin';
 export type { AssetIndex, WorldManifest } from './web/manifest';
+export type { MotionEvents } from './web/motionEvents';
 export { GAME_DATA_KEYS } from './web/gameData';
 export type {
   WebEffectRef,

@@ -10,6 +10,7 @@
 import type { Material, Object3D } from 'three';
 import { AnimationClip, AnimationMixer, Group, KeyframeTrack, Skeleton, SkinnedMesh } from 'three';
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import type { MotionEvents } from '@flyffweb/formats';
 import type { TextureCache } from '../assets/loaders';
 import { applyTextures } from '../assets/loaders';
 
@@ -100,25 +101,6 @@ function rebind(mesh: SkinnedMesh, bonesByName: ReadonlyMap<string, Object3D>, w
   mesh.frustumCulled = false;
 }
 
-/**
- * The frames a motion marks, as the converter writes them to the motion glb's animation extras (`MotionEvents` in
- * tools/convert/src/models/motionGlb.ts, which also tells what a frame number is). CMotion::IsAttrHit, IsAttrSound and
- * IsAttrQuake (Source/_Common/Bone.h:162-185) tell a frame went by when the motion moved from `old` to `current` with
- * `old < frame <= current`.
- */
-export interface MotionEvents {
-  /** The frames with MA_HIT: a blow lands. */
-  hit: number[];
-  /** The frames with MA_SOUND and the sound resource id (the client plays it when above 0). */
-  sound: [frame: number, sound: number][];
-  /** The frames with MA_QUAKE: the screen shakes. */
-  quake: number[];
-  /** The motion's frame count. */
-  frames: number;
-  /** The motion's frames advanced per 60 Hz tick (`motionFps` gives the frames a second). */
-  perSlerp: number;
-}
-
 export interface LoopedMotion {
   /** The clip with frame 0 appended after its last frame. */
   clip: AnimationClip;
@@ -126,7 +108,7 @@ export interface LoopedMotion {
   frames: number;
   /** The clip time of frame `n`, exactly the key time the converter wrote; `n` wraps around `frames`. */
   frameTime(n: number): number;
-  /** The frames the motion marks with a hit, a sound or a quake. */
+  /** The frames the motion marks with a hit, a sound or a quake (`MotionEvents` tells what a frame number is). */
   events: MotionEvents;
 }
 

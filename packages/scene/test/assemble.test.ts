@@ -17,8 +17,8 @@ import {
 } from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { describe, expect, it, vi } from 'vitest';
+import type { MotionEvents } from '@flyffweb/formats';
 import { assembleCharacter, loopMotion } from '../src/character/assemble';
-import type { MotionEvents } from '../src/character/assemble';
 
 /** A chain of bones under a node named `skeleton`, as the converter writes them (names as GLTFLoader leaves them). */
 function skeletonScene(names: string[]): { scene: Group; bones: Bone[] } {
