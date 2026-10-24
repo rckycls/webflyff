@@ -92,6 +92,8 @@ export const MessageType = {
   DEFINEDTEXT1: 0x0094,
   /** A server message that is a text ID and its arguments (`CUser::AddDefinedText`, `User.cpp:2218`). */
   DEFINEDTEXT: 0x0095,
+  /** The own shortcut bars, in the JOIN bundle after the own ADD_OBJ (`CUser::AddTaskBar`, `User.cpp:1232`). */
+  TASKBAR: 0x0097,
   MOTION: 0x0098,
   /** The mover is brought back (`CUserMng::AddHdr`, `User.cpp:5439`). */
   REVIVAL: 0x00a1,
@@ -147,6 +149,38 @@ export const AttackFlag = {
 
 /** The `DST_*` values SETPOINTPARAM names (`Resource/defineAttribute.h:286-288`). */
 export const DstParam = { HP: 38, MP: 39, FP: 40 } as const;
+
+/** The `SHORTCUT_*` kinds a shortcut's `m_dwShortcut` holds (`_Common/ProjectCmn.h:910-923`). */
+export const ShortcutKind = {
+  NONE: 0,
+  ETC: 1,
+  /** `m_dwId` is an `APP_*` window ID (`Resource/ResData.h`). */
+  APPLET: 2,
+  /** `m_dwId` is a `MOT_*` motion. */
+  MOTION: 3,
+  SCRIPT: 4,
+  /** `m_dwId` is the item's object ID in the inventory. */
+  ITEM: 5,
+  /** `m_dwId` is the skill's index in `m_aJobSkill`; `m_dwType` 2 is a party skill. */
+  SKILL: 6,
+  OBJECT: 7,
+  /** The only kind whose shortcut carries a string, in an applet slot or on an item bar. */
+  CHAT: 8,
+  SKILLFUN: 9,
+  EMOTICON: 10,
+  LORDSKILL: 11,
+} as const;
+
+/**
+ * The sizes of the shortcut bars, as `ProjectCmn.h:899-906` defines them (`MAX_SLOT_ITEM_COUNT` is 8 for `__VER >= 11`)
+ * and `DefineCommon.h:10` the string: the applet slots, the item bars, the slots on one item bar, the action slot's
+ * skills, and the `char[128]` of a chat shortcut's text, which holds at most 127 characters.
+ */
+export const MAX_SLOT_APPLET = 18;
+export const MAX_SLOT_ITEM_COUNT = 8;
+export const MAX_SLOT_ITEM = 9;
+export const MAX_SLOT_QUEUE = 5;
+export const MAX_SHORTCUT_STRING = 128;
 
 /** The object types (`OT_*` in `Resource/define.h:80-88`) that ADD_OBJ starts with, as a `BYTE`. */
 export const ObjectType = {

@@ -40,6 +40,8 @@ describe('world constants', () => {
       QUERYGETDESTOBJ: 0x0049, MONSTERPROP: 0x004e, SETSTATE: 0x006a, DEFINEDTEXT1: 0x0094, DEFINEDTEXT: 0x0095,
       REVIVAL: 0x00a1, REVIVAL_TO_LODESTAR: 0x00a2, SET_GROWTH_LEARNING_POINT: 0x00a6, MOVERDEATH: 0x00c7,
       MELEE_ATTACK: 0x00e0,
+      // The shortcut bar of the JOIN bundle.
+      TASKBAR: 0x0097,
     });
     expect(BUNDLE_MARKER).toBe(0x31434f54);
   });

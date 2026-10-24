@@ -6,7 +6,7 @@ export {
   writeMeleeAttack, writeMonsterProp, writeMotion, writeMoverAngle, writeMoverBehavior, writeMoverCorr,
   writeMoverDeath, writeMoverMoved, writeQueryGetDestObj, writeReplace, writeRevival, writeRevivalToLodestar,
   writeSetDestObj, writeSetExperience, writeSetGrowthLearningPoint, writeSetLevel, writeSetPointParam, writeSetPos,
-  writeSetPosAngle, writeSetState, writeWorldReadInfo,
+  writeSetPosAngle, writeSetState, writeTaskBar, writeWorldReadInfo,
 } from './world';
 export type { ScriptMessage } from './world';
 export { createWorldScript } from './worldScript';

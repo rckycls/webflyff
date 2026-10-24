@@ -12,6 +12,7 @@ import {
   readSetDestObj,
 } from './movement';
 import { readDelObj, readReplace, readSetPos, readSetPosAngle, readWorldReadInfo } from './place';
+import { readTaskBar } from './taskBar';
 import type { WorldMessage } from './types';
 
 /**
@@ -50,4 +51,5 @@ export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
     [MessageType.DEFINEDTEXT1, readDefinedText1],
     [MessageType.QUERYGETDESTOBJ, readQueryGetDestObj],
     [MessageType.MONSTERPROP, readMonsterProp],
+    [MessageType.TASKBAR, readTaskBar],
   ]);

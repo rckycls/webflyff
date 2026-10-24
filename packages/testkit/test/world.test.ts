@@ -1,10 +1,10 @@
 import { expect, it } from 'vitest';
 import {
-  ArWriter, AttackFlag, BUNDLE_MARKER, DstParam, MessageType, NULL_ID, PacketType, WORLD_READERS, bytesToHex,
-  readBundle,
+  ArWriter, AttackFlag, BUNDLE_MARKER, DstParam, MessageType, NULL_ID, PacketType, ShortcutKind, WORLD_READERS,
+  bytesToHex, readBundle,
 } from '@flyffweb/protocol';
 import type {
-  AddedMover, MessageReader, MonsterRate, MoveReport, OwnCharacter, SkillSlot, Vec3, WorldMessage,
+  AddedMover, MessageReader, MonsterRate, MoveReport, OwnCharacter, Shortcut, SkillSlot, TaskBar, Vec3, WorldMessage,
 } from '@flyffweb/protocol';
 import {
   GAMETIMER, encodeBundle, writeAddMonster, writeAddNpc, writeAddPlayer, writeAddSelf, writeCorrReq, writeDamage,
@@ -12,7 +12,7 @@ import {
   writeMeleeAttack, writeMonsterProp, writeMotion, writeMoverAngle, writeMoverBehavior, writeMoverCorr,
   writeMoverDeath, writeMoverMoved, writeQueryGetDestObj, writeReplace, writeRevival, writeRevivalToLodestar,
   writeSetDestObj, writeSetExperience, writeSetGrowthLearningPoint, writeSetLevel, writeSetPointParam, writeSetPos,
-  writeSetPosAngle, writeSetState, writeWorldReadInfo,
+  writeSetPosAngle, writeSetState, writeTaskBar, writeWorldReadInfo,
 } from '../src';
 
 it('encodeBundle writes the table', () => {
@@ -80,6 +80,43 @@ const rates: MonsterRate[] = [
   { name: 'Aibatt', hitPoint: 100, attackPower: 101, defence: 102, exp: 103, itemDrop: 104, penya: 105 },
   { name: 'Mushpang', hitPoint: 250, attackPower: 50, defence: 100, exp: 400, itemDrop: 0, penya: 100 },
 ];
+
+const shortcut = (
+  kind: number, id: number, type: number, index: number, userId: number, data: number, text = '',
+): Shortcut => ({ kind, id, type, index, userId, data, text });
+const noShortcut = shortcut(ShortcutKind.NONE, 0, 0, 0, 0, 0);
+
+/** The bar `BASE_VALUE_TBL` gives a new character (`Database.sql:2741-2742`, both sexes). */
+const newCharacterBar: TaskBar = {
+  applets: [
+    { slot: 0, shortcut: shortcut(ShortcutKind.APPLET, 400, 0, 0, 0, 0) },
+    { slot: 1, shortcut: shortcut(ShortcutKind.APPLET, 398, 0, 1, 0, 0) },
+    { slot: 2, shortcut: shortcut(ShortcutKind.APPLET, 2010, 0, 2, 0, 0) },
+    { slot: 3, shortcut: shortcut(ShortcutKind.APPLET, 581, 0, 3, 0, 0) },
+    { slot: 4, shortcut: shortcut(ShortcutKind.MOTION, 25, 0, 4, 0, 0) },
+  ],
+  items: [
+    { bar: 0, slot: 0, shortcut: shortcut(ShortcutKind.ITEM, 45, 0, 0, 0, 1) },
+    { bar: 0, slot: 1, shortcut: shortcut(ShortcutKind.ITEM, 1, 0, 1, 0, 1) },
+    { bar: 0, slot: 2, shortcut: shortcut(ShortcutKind.MOTION, 3, 0, 2, 0, 1) },
+    { bar: 0, slot: 8, shortcut: shortcut(ShortcutKind.MOTION, 2, 0, 8, 0, 1) },
+  ],
+  queue: [],
+  actionPoint: 0,
+};
+/** A character who has used the bars: a chat shortcut in an applet slot and on a later bar, and two queued skills. */
+const busyBar: TaskBar = {
+  applets: [
+    { slot: 0, shortcut: shortcut(ShortcutKind.APPLET, 400, 0, 0, 0, 0) },
+    { slot: 17, shortcut: shortcut(ShortcutKind.CHAT, 0, 0, 17, 0, 0, '/s Hello there') },
+  ],
+  items: [
+    { bar: 0, slot: 0, shortcut: shortcut(ShortcutKind.SKILL, 0, 0, 0, 0, 1) },
+    { bar: 7, slot: 8, shortcut: shortcut(ShortcutKind.CHAT, 0, 0, 8, 0, 1, '/p Party up?') },
+  ],
+  queue: [shortcut(ShortcutKind.SKILL, 0, 0, 0, 0, 2), shortcut(ShortcutKind.SKILL, 1, 0, 1, 0, 2)],
+  actionPoint: 11,
+};
 
 it('every writer decodes to what it was given', () => {
   // One entry per writer: the message it makes, the type it must carry and what the reader must make of it.
@@ -189,6 +226,18 @@ it('every writer decodes to what it was given', () => {
       'writeMonsterProp (empty lists)', writeMonsterProp(NULL_ID, [], []), MessageType.MONSTERPROP,
       { type: 'monsterProp', rates: [], removed: [] },
     ],
+    [
+      "writeTaskBar (a new character's)", writeTaskBar(60, newCharacterBar), MessageType.TASKBAR,
+      { type: 'taskBar', taskBar: newCharacterBar },
+    ],
+    [
+      'writeTaskBar (chat shortcuts and a queue)', writeTaskBar(61, busyBar), MessageType.TASKBAR,
+      { type: 'taskBar', taskBar: busyBar },
+    ],
+    [
+      'writeTaskBar (nothing on it)', writeTaskBar(62, { applets: [], items: [], queue: [], actionPoint: 0 }),
+      MessageType.TASKBAR, { type: 'taskBar', taskBar: { applets: [], items: [], queue: [], actionPoint: 0 } },
+    ],
   ];
   for (const [name, message, type, expected] of cases) {
     expect(message.type, name).toBe(type);
@@ -257,6 +306,68 @@ it('writes the combat, number and text messages in the order the CUser::Add* and
     name: 'Ai', hitPoint: 1, attackPower: 2, defence: 3, exp: 4, itemDrop: 5, penya: 6,
   }], ['Mu']).fields)).toBe(hex(new ArWriter().i32(1).string('Ai').i32(1).i32(2).i32(3).i32(4).i32(5).i32(6)
     .i32(1).string('Mu')));
+});
+
+it('writes the task bar in the order of CUserTaskBar::Serialize', () => {
+  const hex = (w: ArWriter) => bytesToHex(w.toBytes());
+  const bar: TaskBar = {
+    applets: [{ slot: 3, shortcut: shortcut(ShortcutKind.CHAT, 7, 6, 5, 4, 3, 'hi') }],
+    items: [{ bar: 2, slot: 1, shortcut: shortcut(ShortcutKind.ITEM, 9, 8, 7, 6, 5) }],
+    queue: [shortcut(ShortcutKind.SKILL, 12, 11, 10, 9, 2)],
+    actionPoint: 25,
+  };
+  // The applet count, per applet `i` and the six DWORDs (kind, ID, type, index, user ID, data) and, for a chat
+  // shortcut, its string; the item count and per item `i`, `j` and the same; the queue count and per entry `i` and the
+  // six DWORDs, no string; then `m_nActionPoint` (UserTaskBar.cpp:67-122).
+  expect(bytesToHex(writeTaskBar(1, bar).fields)).toBe(hex(new ArWriter()
+    .i32(1).i32(3).u32(8).u32(7).u32(6).u32(5).u32(4).u32(3).string('hi')
+    .i32(1).i32(2).i32(1).u32(5).u32(9).u32(8).u32(7).u32(6).u32(5)
+    .i32(1).i32(0).u32(6).u32(12).u32(11).u32(10).u32(9).u32(2)
+    .i32(25)));
+  expect(writeTaskBar(1, bar).objectId).toBe(1);
+  // Nothing on the bar: the three counts and the action point.
+  expect(bytesToHex(writeTaskBar(1, { applets: [], items: [], queue: [], actionPoint: 0 }).fields))
+    .toBe(hex(new ArWriter().i32(0).i32(0).i32(0).i32(0)));
+});
+
+it('the task bar writer leaves out an empty shortcut, as the C++ loops do, and numbers the queue by position', () => {
+  // `if( m_aSlotApplet[i].m_dwShortcut != SHORTCUT_NONE )` (and the same for the items and the queue).
+  const skill = shortcut(ShortcutKind.SKILL, 1, 0, 2, 0, 2);
+  const withGap = writeTaskBar(1, {
+    applets: [{ slot: 0, shortcut: noShortcut }], items: [{ bar: 0, slot: 0, shortcut: noShortcut }],
+    queue: [skill, noShortcut, skill], actionPoint: 0,
+  });
+  expect(bytesToHex(withGap.fields)).toBe(bytesToHex(new ArWriter()
+    .i32(0).i32(0)
+    .i32(2).i32(0).u32(6).u32(1).u32(0).u32(2).u32(0).u32(2).i32(2).u32(6).u32(1).u32(0).u32(2).u32(0).u32(2)
+    .i32(0).toBytes()));
+  const read = readBundle(encodeBundle(PacketType.JOIN, 7, [withGap]), WORLD_READERS);
+  expect(read.mismatched).toEqual([]);
+  expect(read.messages[0].value).toEqual({
+    type: 'taskBar', taskBar: { applets: [], items: [], queue: [skill, noShortcut, skill], actionPoint: 0 },
+  });
+});
+
+it('the task bar writer refuses what the C++ arrays and the wire format cannot hold', () => {
+  const empty: TaskBar = { applets: [], items: [], queue: [], actionPoint: 0 };
+  const applet = shortcut(ShortcutKind.APPLET, 400, 0, 0, 0, 0);
+  // MAX_SLOT_APPLET 18, MAX_SLOT_ITEM_COUNT 8, MAX_SLOT_ITEM 9, MAX_SLOT_QUEUE 5.
+  expect(() => writeTaskBar(1, { ...empty, applets: [{ slot: 18, shortcut: applet }] })).toThrow(/applet slot 18/);
+  expect(() => writeTaskBar(1, { ...empty, applets: [{ slot: -1, shortcut: applet }] })).toThrow(/applet slot -1/);
+  expect(() => writeTaskBar(1, { ...empty, applets: [{ slot: 1.5, shortcut: applet }] })).toThrow(/applet slot 1.5/);
+  expect(() => writeTaskBar(1, { ...empty, items: [{ bar: 8, slot: 0, shortcut: applet }] })).toThrow(/item bar 8/);
+  expect(() => writeTaskBar(1, { ...empty, items: [{ bar: 0, slot: 9, shortcut: applet }] })).toThrow(/item slot 9/);
+  expect(() => writeTaskBar(1, { ...empty, queue: Array.from({ length: 6 }, () => applet) })).toThrow(/at most 5/);
+  // The string is written for a chat shortcut alone, and into a char[128]: 127 bytes at most.
+  expect(() => writeTaskBar(1, { ...empty, applets: [{ slot: 0, shortcut: { ...applet, text: 'x' } }] }))
+    .toThrow(/only a chat shortcut has a text/);
+  expect(() => writeTaskBar(1, { ...empty, items: [{ bar: 0, slot: 0, shortcut: { ...applet, text: 'x' } }] }))
+    .toThrow(/only a chat shortcut has a text/);
+  const chat = (text: string): Shortcut => shortcut(ShortcutKind.CHAT, 0, 0, 0, 0, 0, text);
+  expect(() => writeTaskBar(1, { ...empty, queue: [chat('x')] })).toThrow(/action slot.*no text/);
+  expect(() => writeTaskBar(1, { ...empty, applets: [{ slot: 0, shortcut: chat('x'.repeat(128)) }] }))
+    .toThrow(/at most 127/);
+  expect(() => writeTaskBar(1, { ...empty, applets: [{ slot: 0, shortcut: chat('x'.repeat(127)) }] })).not.toThrow();
 });
 
 it('the DAMAGE writer refuses a position without AF_FLYING and AF_FLYING without a position', () => {

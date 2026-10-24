@@ -68,7 +68,56 @@ export type WorldMessage =
   /** The server asks the own player whether it follows a target; `fromId` goes back in GETDESTOBJ. */
   | { type: 'queryGetDestObj'; fromId: number }
   /** The monster rates the server sets and the monsters whose rates it clears. */
-  | { type: 'monsterProp'; rates: MonsterRate[]; removed: string[] };
+  | { type: 'monsterProp'; rates: MonsterRate[]; removed: string[] }
+  /** The own shortcut bars: the applet row, the item bars and the action slot, and the action points. */
+  | { type: 'taskBar'; taskBar: TaskBar };
+
+/**
+ * One shortcut (`SHORTCUT`, `_Common/ProjectCmn.h:930-948`) as `CUserTaskBar::Serialize` writes it, the six `DWORD`s in
+ * the order of the wire: `kind` is `m_dwShortcut` (`ShortcutKind`; 0 is an empty slot), `id` `m_dwId` (what `kind`
+ * names, for example the `APP_*` window or the inventory object), `type` `m_dwType`, `index` `m_dwIndex`, `userId`
+ * `m_dwUserId` and `data` `m_dwData` (which Neuz sets to where the shortcut sits: 0 the applet row, 1 an item bar, 2
+ * the action slot).
+ * `text` is `m_szString`, which only a chat shortcut in an applet slot or on an item bar carries, else ''.
+ *
+ * `index` is the value on the wire, which the server keeps from the packet that set the shortcut. Neuz overwrites it
+ * with the slot after it reads (`CWndTaskBar::Serialize`, `_Interface/WndTaskBar.cpp:327`, :381, :392), so code that
+ * wants Neuz's `m_dwIndex` takes the slot from `TaskBar`.
+ */
+export interface Shortcut {
+  kind: number;
+  id: number;
+  type: number;
+  index: number;
+  userId: number;
+  data: number;
+  text: string;
+}
+
+/**
+ * The shortcut bars of the own character (`CUserTaskBar`, `_Interface/UserTaskBar.h:20-26`), as the world server
+ * lists the non-empty slots of each (`CUserTaskBar::Serialize`, `UserTaskBar.cpp:63-125`) and `CWndTaskBar::Serialize`
+ * (`WndTaskBar.cpp:315-400`) reads them. Neuz clears the bars first, so a slot not listed is empty, and a slot listed
+ * twice (which the server does not send) holds the later entry: the lists are in the order of the message.
+ *
+ * Neuz also empties a `SKILL` shortcut in the applet row unless its skill is a `CT_STEP` or `CT_GENERAL` one
+ * (`WndTaskBar.cpp:330-343`); that needs the skill properties, so it is left to the code that draws the bar.
+ */
+export interface TaskBar {
+  /** `m_aSlotApplet`: the slot is 0 to `MAX_SLOT_APPLET` - 1 (17). */
+  applets: Array<{ slot: number; shortcut: Shortcut }>;
+  /** `m_aSlotItem`: the bar is 0 to `MAX_SLOT_ITEM_COUNT` - 1 (7), the slot 0 to `MAX_SLOT_ITEM` - 1 (8). */
+  items: Array<{ bar: number; slot: number; shortcut: Shortcut }>;
+  /**
+   * `m_aSlotQueue`, the action slot's skills: `queue[i]` is slot `i`, up to the last one listed (at most
+   * `MAX_SLOT_QUEUE` of them). The server keeps the skills from slot 0 on with none missing, so these are the skills
+   * 0 to n-1 (Neuz takes the count `m_nCurQueueNum` from the message's count); a slot the message skips is an
+   * empty shortcut (`kind` 0) here, and a queue entry never has a `text`.
+   */
+  queue: Shortcut[];
+  /** `m_nActionPoint`, which follows the queue entries. */
+  actionPoint: number;
+}
 
 /**
  * One monster's rates from MONSTERPROP, as the percent the server holds them (`OnMonsterProp` divides each by 100

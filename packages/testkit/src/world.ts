@@ -1,6 +1,10 @@
-import { ArWriter, AttackFlag, BUNDLE_MARKER, MessageType, NULL_ID, ObjectType, ProtocolError } from '@flyffweb/protocol';
+import {
+  ArWriter, AttackFlag, BUNDLE_MARKER, MAX_SHORTCUT_STRING, MAX_SLOT_APPLET, MAX_SLOT_ITEM, MAX_SLOT_ITEM_COUNT,
+  MAX_SLOT_QUEUE, MessageType, NULL_ID, ObjectType, ProtocolError, ShortcutKind,
+} from '@flyffweb/protocol';
 import type {
-  AddedMover, AddedNpc, AddedPlayer, InventoryItem, MonsterRate, MoveReport, OwnCharacter, SkillSlot, Vec3,
+  AddedMover, AddedNpc, AddedPlayer, InventoryItem, MonsterRate, MoveReport, OwnCharacter, Shortcut, SkillSlot,
+  TaskBar, Vec3,
 } from '@flyffweb/protocol';
 
 /** One message of a scripted bundle. `fields` are the bytes after the object ID and the type, built by the caller. */
@@ -270,6 +274,78 @@ export function writeMonsterProp(
   w.i32(removed.length);
   for (const name of removed) w.string(name);
   return scripted(objectId, MessageType.MONSTERPROP, w);
+}
+
+/** A slot index the C++ arrays hold (`MAX_SLOT_*`): a whole number in `0..count-1`. */
+function checkSlot(what: string, slot: number, count: number): void {
+  if (!Number.isInteger(slot) || slot < 0 || slot >= count) {
+    throw new Error(`${what} ${slot} is outside 0..${count - 1}`);
+  }
+}
+
+/**
+ * One shortcut as `CUserTaskBar::Serialize` writes it (`UserTaskBar.cpp:73-76`, :94-97, :114-115): the six `DWORD`s
+ * (`m_dwShortcut`, `m_dwId`, `m_dwType`, `m_dwIndex`, `m_dwUserId`, `m_dwData`) and, for a chat shortcut of the applet
+ * row or of an item bar, `WriteString( m_szString )`. The queue writes no string. The text of any other shortcut is not
+ * on the wire, so a script that gives one has made a mistake the reader would hide, and the writer refuses it.
+ */
+function writeShortcut(w: ArWriter, where: string, s: Shortcut, hasText: boolean): void {
+  w.u32(s.kind).u32(s.id).u32(s.type).u32(s.index).u32(s.userId).u32(s.data);
+  if (!hasText) {
+    if (s.text !== '') throw new Error(`${where} has a text, but a queue entry carries no text on the wire`);
+    return;
+  }
+  if (s.kind !== ShortcutKind.CHAT) {
+    if (s.text !== '') {
+      throw new Error(`${where} has a text, but only a chat shortcut has a text on the wire (its kind is ${s.kind})`);
+    }
+    return;
+  }
+  if (s.text.length >= MAX_SHORTCUT_STRING) {
+    throw new Error(`${where} has a text of ${s.text.length} characters: a char[${MAX_SHORTCUT_STRING}] holds at most `
+      + `${MAX_SHORTCUT_STRING - 1}`);
+  }
+  w.string(s.text);
+}
+
+/**
+ * TASKBAR: `CUser::AddTaskBar` (`WORLDSERVER/User.cpp:1232`), which is `CUserTaskBar::Serialize` storing
+ * (`_Interface/UserTaskBar.cpp:63-125`): the applet count and per applet its slot and shortcut, the item count and per
+ * item its bar, slot and shortcut, the queue count and per queue entry its slot and shortcut, then the action point.
+ * The C++ loops skip a slot whose `m_dwShortcut` is `SHORTCUT_NONE`, so the writer leaves out the shortcuts of kind 0
+ * as well; `queue[i]` is slot `i`, and an empty one in the middle leaves a gap. The entries go in the order given
+ * (the server's are in slot order). A slot outside the C++ arrays, more than 5 queue entries, or a text where the
+ * wire has none (or too long a one) is refused.
+ */
+export function writeTaskBar(objectId: number, taskBar: TaskBar): ScriptMessage {
+  if (taskBar.queue.length > MAX_SLOT_QUEUE) {
+    throw new Error(`the action slot holds at most ${MAX_SLOT_QUEUE} skills, not ${taskBar.queue.length}`);
+  }
+  const w = new ArWriter();
+  const applets = taskBar.applets.filter((a) => a.shortcut.kind !== ShortcutKind.NONE);
+  w.i32(applets.length);
+  for (const { slot, shortcut } of applets) {
+    checkSlot('applet slot', slot, MAX_SLOT_APPLET);
+    w.i32(slot);
+    writeShortcut(w, `applet ${slot}`, shortcut, true);
+  }
+  const items = taskBar.items.filter((i) => i.shortcut.kind !== ShortcutKind.NONE);
+  w.i32(items.length);
+  for (const { bar, slot, shortcut } of items) {
+    checkSlot('item bar', bar, MAX_SLOT_ITEM_COUNT);
+    checkSlot('item slot', slot, MAX_SLOT_ITEM);
+    w.i32(bar).i32(slot);
+    writeShortcut(w, `item bar ${bar} slot ${slot}`, shortcut, true);
+  }
+  const queue = taskBar.queue.map((shortcut, slot) => ({ slot, shortcut }))
+    .filter((q) => q.shortcut.kind !== ShortcutKind.NONE);
+  w.i32(queue.length);
+  for (const { slot, shortcut } of queue) {
+    w.i32(slot);
+    writeShortcut(w, `action slot ${slot}`, shortcut, false);
+  }
+  w.i32(taskBar.actionPoint);
+  return scripted(objectId, MessageType.TASKBAR, w);
 }
 
 /** `SNAPSHOTTYPE_GAMETIMER` (`_Network/MsgHdr.h:1057`): a message type the browser has no reader for. */
