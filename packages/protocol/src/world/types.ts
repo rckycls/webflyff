@@ -30,7 +30,59 @@ export type WorldMessage =
   | { type: 'motion'; message: number }
   | { type: 'setPos'; pos: Vec3 }
   | { type: 'setPosAngle'; pos: Vec3; angle: number }
-  | { type: 'replace'; worldId: number; pos: Vec3 };
+  | { type: 'replace'; worldId: number; pos: Vec3 }
+  /** Another mover's swing: `OnMeleeAttack` passes `message` (an `OBJMSG_ATK*`) and the rest to `SendActMsg`. */
+  | { type: 'meleeAttack'; message: number; targetId: number; param2: number; param3: number }
+  /**
+   * A hit on the mover the message is about. `hit` is `dwHit` and `flags` the `AF_*` set (`AttackFlag`). `fly` is the
+   * victim's position and angle when `AF_FLYING` is set, else `null`.
+   */
+  | { type: 'damage'; attackerId: number; hit: number; flags: number; fly: { pos: Vec3; angle: number } | null }
+  /** The mover died. `attackerId` is `NULL_ID` when no mover killed it; `message` is an `OBJMSG` (41 or 0). */
+  | { type: 'moverDeath'; attackerId: number; message: number }
+  /** The mover's HP, MP or FP, absolute: `param` is a `DST_*` (`DstParam`). */
+  | { type: 'setPointParam'; param: number; value: number }
+  /**
+   * The own EXP and level. `deathExp` is -1n and `deathLevel` 0xffff when the server has no new value for them, and
+   * Neuz then keeps its own (`OnSetExperience`).
+   */
+  | {
+    type: 'setExperience'; exp: bigint; level: number; skillLevel: number; skillPoint: number; deathExp: bigint;
+    deathLevel: number;
+  }
+  /** Another player's level. */
+  | { type: 'setLevel'; level: number }
+  /** The own stat points (`m_nRemainGP`). */
+  | { type: 'setGrowthLearningPoint'; remainGP: number }
+  /** The own stats and stat points, after the browser spent points (MODIFY_STATUS). */
+  | { type: 'setState'; str: number; sta: number; dex: number; int: number; remainGP: number }
+  /** A monster's position, and the mover that attacked it (`m_idAttacker`). */
+  | { type: 'corrReq'; pos: Vec3; attackerId: number }
+  | { type: 'revival' }
+  | { type: 'revivalToLodestar' }
+  /**
+   * A server message: the text ID (`TID_*`) and its arguments, which Neuz splits into tokens and puts in the text
+   * (`OnDefinedText`). DEFINEDTEXT1 has no arguments, so `args` is ''.
+   */
+  | { type: 'definedText'; textId: number; args: string }
+  /** The server asks the own player whether it follows a target; `fromId` goes back in GETDESTOBJ. */
+  | { type: 'queryGetDestObj'; fromId: number }
+  /** The monster rates the server sets and the monsters whose rates it clears. */
+  | { type: 'monsterProp'; rates: MonsterRate[]; removed: string[] };
+
+/**
+ * One monster's rates from MONSTERPROP, as the percent the server holds them (`OnMonsterProp` divides each by 100
+ * into `m_fHitPoint_Rate` and the rest). `name` is the monster's name in `propMover.txt`.
+ */
+export interface MonsterRate {
+  name: string;
+  hitPoint: number;
+  attackPower: number;
+  defence: number;
+  exp: number;
+  itemDrop: number;
+  penya: number;
+}
 
 /** The member of `WorldMessage` with this `type`, which is what that message's reader returns. */
 export type MessageOf<T extends WorldMessage['type']> = Extract<WorldMessage, { type: T }>;

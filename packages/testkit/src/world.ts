@@ -1,5 +1,5 @@
-import { ArWriter, BUNDLE_MARKER, MessageType, NULL_ID, ObjectType, ProtocolError } from '@flyffweb/protocol';
-import type { AddedMover, AddedNpc, AddedPlayer, MoveReport, Vec3 } from '@flyffweb/protocol';
+import { ArWriter, AttackFlag, BUNDLE_MARKER, MessageType, NULL_ID, ObjectType, ProtocolError } from '@flyffweb/protocol';
+import type { AddedMover, AddedNpc, AddedPlayer, MonsterRate, MoveReport, Vec3 } from '@flyffweb/protocol';
 
 /** One message of a scripted bundle. `fields` are the bytes after the object ID and the type, built by the caller. */
 export interface ScriptMessage {
@@ -143,6 +143,131 @@ export function writeReplace(objectId: number, worldId: number, pos: Vec3): Scri
  */
 export function writeEnvironmentSetting(objectId: number, season: number): ScriptMessage {
   return scripted(objectId, MessageType.ENVIRONMENTALL, new ArWriter().i32(season));
+}
+
+// The combat, number and text messages. `objectId` is the object the message is about, as the C++ writes it
+// (`GETID( pMover )`, or `GetId()` for the messages to a single user).
+
+/** MELEE_ATTACK: `CUserMng::AddMeleeAttack` (`WORLDSERVER/User.cpp:4808`); `message` is an `OBJMSG_ATK*`. */
+export function writeMeleeAttack(
+  objectId: number, message: number, targetId: number, param2: number, param3: number,
+): ScriptMessage {
+  return scripted(
+    objectId, MessageType.MELEE_ATTACK, new ArWriter().u32(message).u32(targetId).i32(param2).i32(param3),
+  );
+}
+
+/**
+ * DAMAGE: `CUserMng::AddDamage` (`WORLDSERVER/User.cpp:4474`): the attacker, the hit and the `AF_*` flags, then the
+ * victim's position and angle when the flags have `AF_FLYING`. The server writes the position exactly then, so the
+ * script refuses a `fly` without the flag and the flag without a `fly`: the reader goes by the flag, and a DAMAGE
+ * that disagrees with itself would be misread.
+ */
+export function writeDamage(
+  objectId: number, attackerId: number, hit: number, flags: number, fly: { pos: Vec3; angle: number } | null = null,
+): ScriptMessage {
+  const flying = (flags & AttackFlag.FLYING) !== 0;
+  if (fly !== null && !flying) {
+    throw new Error(`a DAMAGE with a position needs AF_FLYING in its flags, not 0x${flags.toString(16)}`);
+  }
+  if (fly === null && flying) {
+    throw new Error(`a DAMAGE with AF_FLYING (flags 0x${flags.toString(16)}) needs a position and an angle`);
+  }
+  const w = new ArWriter().u32(attackerId).u32(hit).u32(flags);
+  if (fly !== null) w.vec3(fly.pos).f32(fly.angle);
+  return scripted(objectId, MessageType.DAMAGE, w);
+}
+
+/** MOVERDEATH: `CUserMng::AddMoverDeath` (`WORLDSERVER/User.cpp:4527`); `attackerId` is `NULL_ID` for no attacker. */
+export function writeMoverDeath(objectId: number, attackerId: number, message: number): ScriptMessage {
+  return scripted(objectId, MessageType.MOVERDEATH, new ArWriter().u32(attackerId).u32(message));
+}
+
+/** SETPOINTPARAM: `CUserMng::AddSetPointParam` (`WORLDSERVER/User.cpp:4663`); `param` is a `DST_*`. */
+export function writeSetPointParam(objectId: number, param: number, value: number): ScriptMessage {
+  return scripted(objectId, MessageType.SETPOINTPARAM, new ArWriter().i32(param).i32(value));
+}
+
+/**
+ * SETEXPERIENCE: `CUser::AddSetExperience` (`WORLDSERVER/User.cpp:1139`): the EXP, the level, the skill level and
+ * points (in that order on the wire), the death EXP and the death level. The last two default to what the
+ * C++ defaults them to (`User.h:494`): -1 and 0xffff, which Neuz reads as "no new value".
+ */
+export function writeSetExperience(
+  objectId: number, exp: bigint, level: number, skillLevel: number, skillPoint: number, deathExp = -1n,
+  deathLevel = 0xffff,
+): ScriptMessage {
+  return scripted(
+    objectId, MessageType.SETEXPERIENCE,
+    new ArWriter().i64(exp).u16(level).i32(skillLevel).i32(skillPoint).i64(deathExp).u16(deathLevel),
+  );
+}
+
+/** SETLEVEL: `CUserMng::AddSetLevel` (`WORLDSERVER/User.cpp:4694`). */
+export function writeSetLevel(objectId: number, level: number): ScriptMessage {
+  return scripted(objectId, MessageType.SETLEVEL, new ArWriter().u16(level));
+}
+
+/** SET_GROWTH_LEARNING_POINT: `CUser::AddSetGrowthLearningPoint` (`WORLDSERVER/User.cpp:1161`): the points, then a 0. */
+export function writeSetGrowthLearningPoint(objectId: number, remainGP: number): ScriptMessage {
+  return scripted(objectId, MessageType.SET_GROWTH_LEARNING_POINT, new ArWriter().i32(remainGP).i32(0));
+}
+
+/** SETSTATE: `CUser::AddSetState` (`WORLDSERVER/User.cpp:2429`): the four stats, a 0, then the stat points. */
+export function writeSetState(
+  objectId: number, str: number, sta: number, dex: number, int: number, remainGP: number,
+): ScriptMessage {
+  return scripted(
+    objectId, MessageType.SETSTATE, new ArWriter().i32(str).i32(sta).i32(dex).i32(int).i32(0).i32(remainGP),
+  );
+}
+
+/** CORRREQ: `CUser::AddCorrReq` (`WORLDSERVER/User.cpp:2405`); `objectId` is the monster. */
+export function writeCorrReq(objectId: number, pos: Vec3, attackerId: number): ScriptMessage {
+  return scripted(objectId, MessageType.CORRREQ, new ArWriter().vec3(pos).u32(attackerId));
+}
+
+/** REVIVAL: `CUserMng::AddHdr( pUser, SNAPSHOTTYPE_REVIVAL )` (`User.cpp:5439`, `DPSrvr.cpp:11261`): no fields. */
+export function writeRevival(objectId: number): ScriptMessage {
+  return scripted(objectId, MessageType.REVIVAL, new ArWriter());
+}
+
+/** REVIVAL_TO_LODESTAR: `CUserMng::AddHdr( pUser, SNAPSHOTTYPE_REVIVAL_TO_LODESTAR )` (`DPSrvr.cpp:11357`): no fields. */
+export function writeRevivalToLodestar(objectId: number): ScriptMessage {
+  return scripted(objectId, MessageType.REVIVAL_TO_LODESTAR, new ArWriter());
+}
+
+/**
+ * DEFINEDTEXT: `CUser::AddDefinedText( dwText, lpszFormat, ... )` (`WORLDSERVER/User.cpp:2218`) writes the text ID and
+ * the formatted string (`WriteString`). Without `args` it is DEFINEDTEXT1, `CUser::AddDefinedText( dwText )` (:2264),
+ * the text ID alone, as the server sends a text with no arguments.
+ */
+export function writeDefinedText(objectId: number, textId: number, args?: string): ScriptMessage {
+  if (args === undefined) return scripted(objectId, MessageType.DEFINEDTEXT1, new ArWriter().i32(textId));
+  return scripted(objectId, MessageType.DEFINEDTEXT, new ArWriter().i32(textId).string(args));
+}
+
+/** QUERYGETDESTOBJ: `CUser::AddQueryGetDestObj` (`WORLDSERVER/User.cpp:2348`). */
+export function writeQueryGetDestObj(objectId: number, fromId: number): ScriptMessage {
+  return scripted(objectId, MessageType.QUERYGETDESTOBJ, new ArWriter().u32(fromId));
+}
+
+/**
+ * MONSTERPROP: `CUser::AddMonsterProp` (`WORLDSERVER/User.cpp:6524`): the count, per monster its name and six rates,
+ * then the count of removed names and the names. (`CUserMng::AddMonsterProp`, :5663, writes the same to everyone with
+ * the object ID `NULL_ID`.)
+ */
+export function writeMonsterProp(
+  objectId: number, rates: readonly MonsterRate[], removed: readonly string[],
+): ScriptMessage {
+  const w = new ArWriter().i32(rates.length);
+  for (const rate of rates) {
+    w.string(rate.name).i32(rate.hitPoint).i32(rate.attackPower).i32(rate.defence).i32(rate.exp).i32(rate.itemDrop)
+      .i32(rate.penya);
+  }
+  w.i32(removed.length);
+  for (const name of removed) w.string(name);
+  return scripted(objectId, MessageType.MONSTERPROP, w);
 }
 
 /** `SNAPSHOTTYPE_GAMETIMER` (`_Network/MsgHdr.h:1057`): a message type the browser has no reader for. */

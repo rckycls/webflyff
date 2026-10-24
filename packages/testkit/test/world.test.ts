@@ -1,12 +1,16 @@
 import { expect, it } from 'vitest';
 import {
-  ArWriter, BUNDLE_MARKER, MessageType, NULL_ID, PacketType, WORLD_READERS, bytesToHex, readBundle,
+  ArWriter, AttackFlag, BUNDLE_MARKER, DstParam, MessageType, NULL_ID, PacketType, WORLD_READERS, bytesToHex,
+  readBundle,
 } from '@flyffweb/protocol';
-import type { AddedMover, MessageReader, MoveReport, Vec3, WorldMessage } from '@flyffweb/protocol';
+import type { AddedMover, MessageReader, MonsterRate, MoveReport, Vec3, WorldMessage } from '@flyffweb/protocol';
 import {
-  GAMETIMER, encodeBundle, writeAddMonster, writeAddNpc, writeAddPlayer, writeAddSelf, writeDelObj, writeDestAngle,
-  writeDestPos, writeEnvironmentSetting, writeGameTimer, writeMotion, writeMoverAngle, writeMoverBehavior, writeMoverCorr,
-  writeMoverMoved, writeReplace, writeSetDestObj, writeSetPos, writeSetPosAngle, writeWorldReadInfo,
+  GAMETIMER, encodeBundle, writeAddMonster, writeAddNpc, writeAddPlayer, writeAddSelf, writeCorrReq, writeDamage,
+  writeDefinedText, writeDelObj, writeDestAngle, writeDestPos, writeEnvironmentSetting, writeGameTimer,
+  writeMeleeAttack, writeMonsterProp, writeMotion, writeMoverAngle, writeMoverBehavior, writeMoverCorr,
+  writeMoverDeath, writeMoverMoved, writeQueryGetDestObj, writeReplace, writeRevival, writeRevivalToLodestar,
+  writeSetDestObj, writeSetExperience, writeSetGrowthLearningPoint, writeSetLevel, writeSetPointParam, writeSetPos,
+  writeSetPosAngle, writeSetState, writeWorldReadInfo,
 } from '../src';
 
 it('encodeBundle writes the table', () => {
@@ -70,6 +74,11 @@ const move: MoveReport = {
   tick: 123456789012n,
 };
 
+const rates: MonsterRate[] = [
+  { name: 'Aibatt', hitPoint: 100, attackPower: 101, defence: 102, exp: 103, itemDrop: 104, penya: 105 },
+  { name: 'Mushpang', hitPoint: 250, attackPower: 50, defence: 100, exp: 400, itemDrop: 0, penya: 100 },
+];
+
 it('every writer decodes to what it was given', () => {
   // One entry per writer: the message it makes, the type it must carry and what the reader must make of it.
   const cases: [string, ReturnType<typeof writeMoverMoved>, number, WorldMessage][] = [
@@ -101,6 +110,83 @@ it('every writer decodes to what it was given', () => {
       'writeEnvironmentSetting', writeEnvironmentSetting(25, 3), MessageType.ENVIRONMENTALL,
       { type: 'environmentSetting', season: 3 },
     ],
+    [
+      'writeMeleeAttack', writeMeleeAttack(40, 29, 0xabcd, 0, 0x00010000), MessageType.MELEE_ATTACK,
+      { type: 'meleeAttack', message: 29, targetId: 0xabcd, param2: 0, param3: 0x00010000 },
+    ],
+    [
+      'writeDamage', writeDamage(41, 0x77, 12, AttackFlag.GENERIC | AttackFlag.CRITICAL), MessageType.DAMAGE,
+      { type: 'damage', attackerId: 0x77, hit: 12, flags: 0xc1, fly: null },
+    ],
+    [
+      'writeDamage (miss)', writeDamage(42, 0x77, 0, AttackFlag.MISS), MessageType.DAMAGE,
+      { type: 'damage', attackerId: 0x77, hit: 0, flags: 0x2, fly: null },
+    ],
+    [
+      'writeDamage (flying)', writeDamage(43, 0x77, 40, AttackFlag.GENERIC | AttackFlag.FLYING, { pos, angle: -135.5 }),
+      MessageType.DAMAGE,
+      { type: 'damage', attackerId: 0x77, hit: 40, flags: 0x10000001, fly: { pos, angle: -135.5 } },
+    ],
+    [
+      'writeMoverDeath', writeMoverDeath(44, 0x77, 41), MessageType.MOVERDEATH,
+      { type: 'moverDeath', attackerId: 0x77, message: 41 },
+    ],
+    [
+      'writeMoverDeath (no attacker)', writeMoverDeath(45, NULL_ID, 0), MessageType.MOVERDEATH,
+      { type: 'moverDeath', attackerId: NULL_ID, message: 0 },
+    ],
+    [
+      'writeSetPointParam', writeSetPointParam(46, DstParam.FP, 32), MessageType.SETPOINTPARAM,
+      { type: 'setPointParam', param: 40, value: 32 },
+    ],
+    [
+      'writeSetExperience', writeSetExperience(47, 1234n, 5, 1, 3, 77n, 4), MessageType.SETEXPERIENCE,
+      { type: 'setExperience', exp: 1234n, level: 5, skillLevel: 1, skillPoint: 3, deathExp: 77n, deathLevel: 4 },
+    ],
+    [
+      'writeSetExperience (the defaults of AddSetExperience)', writeSetExperience(48, 14n, 2, 0, 0),
+      MessageType.SETEXPERIENCE,
+      { type: 'setExperience', exp: 14n, level: 2, skillLevel: 0, skillPoint: 0, deathExp: -1n, deathLevel: 0xffff },
+    ],
+    ['writeSetLevel', writeSetLevel(49, 15), MessageType.SETLEVEL, { type: 'setLevel', level: 15 }],
+    [
+      'writeSetGrowthLearningPoint', writeSetGrowthLearningPoint(50, 28), MessageType.SET_GROWTH_LEARNING_POINT,
+      { type: 'setGrowthLearningPoint', remainGP: 28 },
+    ],
+    [
+      'writeSetState', writeSetState(51, 16, 17, 18, 19, 21), MessageType.SETSTATE,
+      { type: 'setState', str: 16, sta: 17, dex: 18, int: 19, remainGP: 21 },
+    ],
+    ['writeCorrReq', writeCorrReq(52, pos, 0x77), MessageType.CORRREQ, { type: 'corrReq', pos, attackerId: 0x77 }],
+    ['writeRevival', writeRevival(53), MessageType.REVIVAL, { type: 'revival' }],
+    [
+      'writeRevivalToLodestar', writeRevivalToLodestar(54), MessageType.REVIVAL_TO_LODESTAR,
+      { type: 'revivalToLodestar' },
+    ],
+    [
+      'writeDefinedText', writeDefinedText(55, 0x1234, 'Aibatt 12'), MessageType.DEFINEDTEXT,
+      { type: 'definedText', textId: 0x1234, args: 'Aibatt 12' },
+    ],
+    [
+      'writeDefinedText (empty arguments)', writeDefinedText(56, 7, ''), MessageType.DEFINEDTEXT,
+      { type: 'definedText', textId: 7, args: '' },
+    ],
+    [
+      'writeDefinedText (no arguments: DEFINEDTEXT1)', writeDefinedText(57, 0x1234), MessageType.DEFINEDTEXT1,
+      { type: 'definedText', textId: 0x1234, args: '' },
+    ],
+    [
+      'writeQueryGetDestObj', writeQueryGetDestObj(58, 0x4242), MessageType.QUERYGETDESTOBJ,
+      { type: 'queryGetDestObj', fromId: 0x4242 },
+    ],
+    [
+      'writeMonsterProp', writeMonsterProp(59, rates, ['Burudeng']), MessageType.MONSTERPROP,
+      { type: 'monsterProp', rates, removed: ['Burudeng'] },
+    ],
+    [
+      'writeMonsterProp (empty lists)', writeMonsterProp(NULL_ID, [], []), MessageType.MONSTERPROP,
+      { type: 'monsterProp', rates: [], removed: [] },
+    ],
   ];
   for (const [name, message, type, expected] of cases) {
     expect(message.type, name).toBe(type);
@@ -126,6 +212,56 @@ it('writes the fields in the order of the C++ handlers', () => {
     .toBe(bytesToHex(new ArWriter().u32(5).vec3([1, 2, 3]).toBytes()));
   expect(writeDelObj(3)).toEqual({ objectId: 3, type: MessageType.DEL_OBJ, fields: new Uint8Array(0) });
   expect(bytesToHex(writeEnvironmentSetting(1, 4).fields)).toBe(bytesToHex(new ArWriter().i32(4).toBytes()));
+});
+
+it('writes the combat, number and text messages in the order the CUser::Add* and CUserMng::Add* functions do', () => {
+  const hex = (w: ArWriter) => bytesToHex(w.toBytes());
+  // CUserMng::AddMeleeAttack: ar << dwAtkMsg << objid << nParam2 << nParam3;
+  expect(bytesToHex(writeMeleeAttack(1, 29, 9, -1, 2).fields)).toBe(hex(new ArWriter().u32(29).u32(9).i32(-1).i32(2)));
+  // CUserMng::AddDamage: ar << objidAttacker << dwHit; ar << dwAtkFlags; then, with AF_FLYING, the position and angle.
+  expect(bytesToHex(writeDamage(1, 9, 5, 1).fields)).toBe(hex(new ArWriter().u32(9).u32(5).u32(1)));
+  expect(bytesToHex(writeDamage(1, 9, 5, 0x10000001, { pos: [1, 2, 3], angle: 4 }).fields))
+    .toBe(hex(new ArWriter().u32(9).u32(5).u32(0x10000001).vec3([1, 2, 3]).f32(4)));
+  // CUserMng::AddMoverDeath: ar << GETID( pAttacker ) << dwMsg;
+  expect(bytesToHex(writeMoverDeath(1, 9, 41).fields)).toBe(hex(new ArWriter().u32(9).u32(41)));
+  // CUserMng::AddSetPointParam: ar << nDstParameter << nValue;
+  expect(bytesToHex(writeSetPointParam(1, 38, 230).fields)).toBe(hex(new ArWriter().i32(38).i32(230)));
+  // CUser::AddSetExperience: ar << nExp1 << wLevel; ar << nSkillLevel << nSkillPoint; ar << nDeathExp << wDeathLevel;
+  expect(bytesToHex(writeSetExperience(1, 5n, 2, 7, 8, 9n, 3).fields))
+    .toBe(hex(new ArWriter().i64(5n).u16(2).i32(7).i32(8).i64(9n).u16(3)));
+  expect(bytesToHex(writeSetExperience(1, 5n, 2, 7, 8).fields))
+    .toBe(hex(new ArWriter().i64(5n).u16(2).i32(7).i32(8).i64(-1n).u16(0xffff)));
+  // CUserMng::AddSetLevel: ar << wLevel;
+  expect(bytesToHex(writeSetLevel(1, 15).fields)).toBe(hex(new ArWriter().u16(15)));
+  // CUser::AddSetGrowthLearningPoint: ar << nRemainGP << (long)0;
+  expect(bytesToHex(writeSetGrowthLearningPoint(1, 28).fields)).toBe(hex(new ArWriter().i32(28).i32(0)));
+  // CUser::AddSetState: ar << nStr << nSta << nDex << nInt; ar << (LONG)0 << nGP;
+  expect(bytesToHex(writeSetState(1, 1, 2, 3, 4, 5).fields)).toBe(hex(new ArWriter().i32(1).i32(2).i32(3).i32(4).i32(0).i32(5)));
+  // CUser::AddCorrReq: ar << pMover->GetPos(); ar << pMover->m_idAttacker;
+  expect(bytesToHex(writeCorrReq(1, [1, 2, 3], 9).fields)).toBe(hex(new ArWriter().vec3([1, 2, 3]).u32(9)));
+  // CUserMng::AddHdr: nothing after the header.
+  expect(writeRevival(3)).toEqual({ objectId: 3, type: MessageType.REVIVAL, fields: new Uint8Array(0) });
+  expect(writeRevivalToLodestar(3)).toEqual({ objectId: 3, type: MessageType.REVIVAL_TO_LODESTAR, fields: new Uint8Array(0) });
+  // CUser::AddDefinedText( dwText, lpszFormat, ... ): ar << dwText; ar.WriteString( szBuffer ); and
+  // CUser::AddDefinedText( dwText ): ar << dwText.
+  expect(bytesToHex(writeDefinedText(1, 9, 'a b').fields)).toBe(hex(new ArWriter().i32(9).string('a b')));
+  expect(writeDefinedText(1, 9, 'a b').type).toBe(MessageType.DEFINEDTEXT);
+  expect(bytesToHex(writeDefinedText(1, 9).fields)).toBe(hex(new ArWriter().i32(9)));
+  expect(writeDefinedText(1, 9).type).toBe(MessageType.DEFINEDTEXT1);
+  // CUser::AddQueryGetDestObj: ar << idFrom;
+  expect(bytesToHex(writeQueryGetDestObj(1, 9).fields)).toBe(hex(new ArWriter().u32(9)));
+  // CUser::AddMonsterProp: the count, per entry the name and the six rates, the count of removed names and the names.
+  expect(bytesToHex(writeMonsterProp(1, [{
+    name: 'Ai', hitPoint: 1, attackPower: 2, defence: 3, exp: 4, itemDrop: 5, penya: 6,
+  }], ['Mu']).fields)).toBe(hex(new ArWriter().i32(1).string('Ai').i32(1).i32(2).i32(3).i32(4).i32(5).i32(6)
+    .i32(1).string('Mu')));
+});
+
+it('the DAMAGE writer refuses a position without AF_FLYING and AF_FLYING without a position', () => {
+  // The reader decides by the flag, so a DAMAGE that disagrees with its own position would be misread.
+  expect(() => writeDamage(1, 9, 5, AttackFlag.GENERIC, { pos, angle: 1 })).toThrow(/needs AF_FLYING/);
+  expect(() => writeDamage(1, 9, 5, AttackFlag.GENERIC | AttackFlag.FLYING)).toThrow(/needs a position/);
+  expect(() => writeDamage(1, 9, 5, AttackFlag.FLYING, null)).toThrow(/needs a position/);
 });
 
 it('writeGameTimer writes the time as a double, a message the browser has no reader for', () => {
