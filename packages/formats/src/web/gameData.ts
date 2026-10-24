@@ -22,6 +22,22 @@ export interface WebMover {
    * ground's. A movers.json written before the converter kept it has none: the client reads that as false.
    */
   flying: boolean;
+  /** `MoverProp::dwLevel`: the mover's level (-1, written `=`, for one that has none). */
+  level: number;
+  /** `MoverProp::dwAddHp`: the base of a monster's maximum HP (CMover::GetMaxOriginHitPoint, MoverParam.cpp:2880). */
+  addHp: number;
+  /** `MoverProp::nExpValue`: the EXP a kill gives (64 bits in the C++; every shipped value is a safe integer). */
+  expValue: number;
+  /** `MoverProp::dwClass`: the rank, a `RANK_*` value (RANK_LOW, RANK_BOSS, RANK_GUARD ...). */
+  rank: number;
+  /** `MoverProp::dwBelligerence`: how it treats a player, a `BELLI_*` value. */
+  belligerence: number;
+  /** `MoverProp::bKillable`, as the table gives it: the C++ tests it against both 0 and 1. */
+  killable: number;
+  /** `MoverProp::dwHideLevel`: 1 for a mover whose level the target bar does not show. */
+  hideLevel: number;
+  /** `MoverProp::eElementType`: the mover's element, an `SAI79::ePropType` value (0 for none). */
+  element: number;
   /**
    * Logical key of the body model (`models/mvr_<name>.glb`, CModelMng::MakeModelName). Null for the player bodies
    * MI_MALE and MI_FEMALE, which Neuz assembles from parts (CMover::LoadModel, Mover.cpp:1427), and for a mover whose
@@ -65,6 +81,47 @@ export interface WebItemModel {
   female: string | null;
 }
 
+/**
+ * One item of `propItem.txt`, with the columns the fight reads (data/itemProps.json, by item id; a repeated id keeps
+ * the last row, as CFixedArray::SetAtGrow does). A -1 is a `=` cell, NULL_ID.
+ */
+export interface WebItemProp {
+  /** The item's id (`II_*`). */
+  id: number;
+  /** `ItemProp::szName`: the English name. */
+  name: string;
+  /** `dwItemKind1`, `dwItemKind2`, `dwItemKind3`: the kinds (`IK1_*`, `IK2_*`, `IK3_*`). */
+  kind1: number;
+  kind2: number;
+  kind3: number;
+  /** `dwHanded`: how the item is held, an `HD_*` value. */
+  handed: number;
+  /** `dwParts`: the body slot the item takes when worn, a `PARTS_*` value (PARTS_RWEAPON 10 for a one-handed weapon). */
+  part: number;
+  /** `dwAbilityMin`, `dwAbilityMax`: a weapon's attack range, an armour's defence range. */
+  abilityMin: number;
+  abilityMax: number;
+  /** `dwWeaponType`: a `WT_*` value. */
+  weaponType: number;
+  /** `fAttackSpeed`, as the C `float` of the table's token (`Math.fround(0.085)`); -1 for `=`. */
+  attackSpeed: number;
+  /** `dwAttackRange`: the reach, an `AR_*` value. */
+  attackRange: number;
+  /** `dwDestParam[0..2]` (`DST_*`) and `nAdjParamVal[0..2]`: what the item changes and by how much. */
+  destParams: number[];
+  adjParams: number[];
+  /** `dwSfxObj3`: the effect shown at the target when the item hits, an `XI_*` id (see WebEffectsIndex), -1 for none. */
+  sfxHit: number;
+  /**
+   * Logical key of the model a held item shows (`models/item_<name>.glb`, CModelMng::MakeModelName of its OT_ITEM entry
+   * in mdlDyna.inc). Null for an item whose entry has a part (it is worn: see WebItemModel), one with no entry, and one
+   * whose model was not converted.
+   */
+  model: string | null;
+  /** Logical key of the icon (`ui/<web name of szIcon>.png`, which the UI stage writes); null for an item with none. */
+  icon: string | null;
+}
+
 /** A non-player character of `character.inc` and its two sister files. */
 export interface WebNpc {
   /**
@@ -90,6 +147,32 @@ export type WebHonorTitles = Record<string, string>;
  */
 export type WebWorlds = Record<string, string>;
 
+/**
+ * A row of the EXP table (`ExpTable.inc`, the `expCharacter` block; data/exp.json, row `level` at index `level`). The
+ * EXPINTEGER columns pass 32 bits (and one reaches past 2^53), so JSON carries them as decimal text: the client parses
+ * them back to `ExpRow` with bigint.
+ */
+export interface WebExpRow {
+  exp1: string;
+  exp2: string;
+  lpPoint: number;
+  limitExp: string;
+}
+
+/** `TID_*` name to the client text (`textClient.inc`): the text, and its colour as unsigned ARGB (data/texts.json). */
+export type WebTexts = Record<string, { text: string; color: number }>;
+
+/** What the effects index says of one effect: its converted file and the `fScale` of its mdlDyna.inc entry. */
+export interface WebEffectRef {
+  /** Logical key of the effect (`effects/<web name of the .sfx file's stem>.json`, which the effects stage writes). */
+  effect: string;
+  /** The entry's `fScale`, a C float: CSfx::SetSfx (SfxObj.cpp:77) loads the effect with CObj::ResetScale (Obj.cpp:390). */
+  scale: number;
+}
+
+/** `XI_*` id (a decimal string) to its effect: the OT_SFX entries of mdlDyna.inc that name a `.sfx` (data/effectsIndex.json). */
+export type WebEffectsIndex = Record<string, WebEffectRef>;
+
 /** The logical keys of the catalogs in the asset index. */
 export const GAME_DATA_KEYS = {
   movers: 'data/movers.json',
@@ -98,4 +181,9 @@ export const GAME_DATA_KEYS = {
   nameColors: 'data/nameColors.json',
   honorTitles: 'data/honorTitles.json',
   worlds: 'data/worlds.json',
+  itemProps: 'data/itemProps.json',
+  jobs: 'data/jobs.json',
+  exp: 'data/exp.json',
+  texts: 'data/texts.json',
+  effectsIndex: 'data/effectsIndex.json',
 } as const;

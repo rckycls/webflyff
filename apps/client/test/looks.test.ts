@@ -5,7 +5,8 @@ import type { WebItemModel, WebMover } from '@flyffweb/formats';
 import { DEFAULT_MALE, partKey } from '@flyffweb/scene';
 import { loadGameData } from '../src/world/gameData';
 import { lookOf } from '../src/world/render/looks';
-import { MI_FEMALE, MI_MALE, addedNpc, addedPlayer, gameDataOf, moverFrom } from './helpers/movers';
+import { catalogFiles } from './helpers/gameDataFiles';
+import { MI_FEMALE, MI_MALE, addedNpc, addedPlayer, gameDataOf, moverFrom, webMoverOf } from './helpers/movers';
 
 /** `PARTS_*` (`Resource/defineNeuz.h:24-61`). */
 const PARTS = { HEAD: 0, HAIR: 1, UPPER: 2, LOWER: 3, HAND: 4, FOOT: 5, CAP: 6, HAT: 26, CLOTH: 27 };
@@ -21,9 +22,8 @@ const item = (
 });
 const worn = (part: number, itemId: number, flag = 0): WornPart => ({ part, itemId, flag });
 
-const mover = (index: number, name: string, model: string | null, skeleton: string | null, motions: Record<string, string> = {}): WebMover => ({
-  index, name, speed: 0.1, ai: 2, flying: false, model, skeleton, motions,
-});
+const mover = (index: number, name: string, model: string | null, skeleton: string | null, motions: Record<string, string> = {}): WebMover =>
+  webMoverOf({ index, name, model, skeleton, motions });
 const MALE_MOTIONS = {
   0: 'motions/mvr_male/mvr_male_genstand.glb', 3: 'motions/mvr_male/mvr_male_genwalk.glb', 5: 'motions/mvr_male/mvr_male_genrun.glb',
 };
@@ -276,17 +276,12 @@ describe('lookOf: hair colour', () => {
 
 describe('lookOf: the stored item catalog', () => {
   it('an items.json from before exclusive and baseIgnore loads as hiding nothing, as an "=" cell does', async () => {
-    const files: Record<string, unknown> = {
-      [GAME_DATA_KEYS.movers]: [],
+    const files = catalogFiles({
       [GAME_DATA_KEYS.items]: [
         { id: 770, part: PARTS.UPPER, male: 'models/part_mold01upper.glb', female: null },
         { id: 771, part: PARTS.CAP, male: 'models/part_mold02cap.glb', female: null },
       ],
-      [GAME_DATA_KEYS.npcs]: [],
-      [GAME_DATA_KEYS.nameColors]: { general: 0xffffffff, chaotic: 0xffff0000, ready: 0xffffc0cb },
-      [GAME_DATA_KEYS.honorTitles]: {},
-      [GAME_DATA_KEYS.worlds]: {},
-    };
+    });
     const old = await loadGameData({
       url: (key) => (key in files ? key : null),
       json: async <T>(key: string): Promise<T> => files[key] as T,

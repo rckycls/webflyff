@@ -7,12 +7,17 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { GAME_DATA_KEYS } from '@flyffweb/formats';
 import type {
+  JobProp,
   ModelElem,
+  WebEffectsIndex,
+  WebExpRow,
   WebHonorTitles,
   WebItemModel,
+  WebItemProp,
   WebMover,
   WebNameColors,
   WebNpc,
+  WebTexts,
   WebWorlds,
 } from '@flyffweb/formats';
 import { ClientFs } from '../src/ClientFs';
@@ -77,20 +82,41 @@ const DEFINES = script(
   '#define WI_DUNGEON_SECRET_0 40',
   '#define WI_DUNGEON_SECRET_1 41',
   '#define WI_DUNGEON_SECRET_2 42',
+  '#define JOB_MERCENARY 1',
+  '#define MODELTYPE_SFX 4',
+  '#define XI_HIT_SWORD01 20',
+  '#define XI_HIT_YOY01 31',
+  '#define XI_GEN_LEVEL_UP01 42',
+  '#define XI_GEN_FLASH01 60',
 );
 
 /** The columns of a shipped propMover.txt row (MI_MALE), which the tests re-use: id, name, AI and speed change. */
 const MOVER_CELLS = tabs(
   'MI_MALE IDS_PROPMOVER_TXT_000002 AII_MOVER 10 10 10 10 10 10 = BELLI_PEACEFUL = = 65 = = 1 = = = = = = = = = = = = = = = = = = = = 0 130 0 = 0 0 = 0.1 = 0 = = = 0 0 0 0 0 0 = = = = = = 0 0 = = 0 II_WEA_HAN_HAND VT_ITEM = = = = = = = = SND_ITEM_ANIMAL SND_PC_DMGWANB = = = IDS_PROPMOVER_TXT_000003',
 ).split('\t');
-const moverRow = (id: string, name: string, ai: string, speed: string, flying = '0'): string => {
+/** Where the fight columns are in a row (MOVER_CELLS has `=` or 0 in them: the player movers fight with nothing). */
+const FIGHT_CELLS = {
+  belligerence: 10, level: 12, rank: 15, addHp: 35, element: 41, hideLevel: 43, expValue: 62, killable: 66,
+} as const;
+const moverRow = (
+  id: string, name: string, ai: string, speed: string, flying = '0',
+  fight: Partial<Record<keyof typeof FIGHT_CELLS, string>> = {},
+): string => {
   const cells = [...MOVER_CELLS];
   cells[0] = id;
   cells[1] = name;
   cells[2] = ai;
   cells[44] = speed;
   cells[46] = flying; // dwFlying
+  for (const [column, text] of Object.entries(fight)) cells[FIGHT_CELLS[column as keyof typeof FIGHT_CELLS]] = text;
   return cells.join('\t');
+};
+
+/** What MOVER_CELLS gives the fight fields of WebMover: BELLI_PEACEFUL, and `=` (-1) or 0 elsewhere. */
+const NO_FIGHT = { level: -1, addHp: -1, expValue: 0, rank: -1, belligerence: 1, killable: 0, hideLevel: -1, element: 0 };
+/** The fight columns of the Orphan's row: a level past the player's, EXP past 32 bits (nExpValue is 64 bits in the C++). */
+const ORPHAN_FIGHT = {
+  level: 85, addHp: 9000, expValue: 5000000000, rank: 3, belligerence: 4, killable: 2, hideLevel: 1, element: 2,
 };
 
 /** The columns of a shipped propItem.txt row (II_ARM_M_VAG_SUIT01): id, name, body slot and the parts it hides change. */
@@ -107,10 +133,53 @@ const itemRow = (id: string, name: string, parts: string, exclusive = 'PARTS_LOW
   return cells.join('\t');
 };
 
+/** A one-handed sword: the columns the combat code reads, in the places propItem.txt keeps them. */
+const WEAPON_CELLS = {
+  kind1: 5, kind2: 6, kind3: 7, handed: 16, parts: 18, abilityMin: 30, abilityMax: 31, weaponType: 39, attackSpeed: 49,
+  attackRange: 51, destParam0: 53, adjParam0: 56, adjParam1: 57, sfxObj3: 81, sfxObj5: 83, sndAttack1: 118, icon: 120,
+} as const;
+const weaponRow = (id: string, name: string): string => {
+  const cells = [...ITEM_CELLS];
+  const set = (column: keyof typeof WEAPON_CELLS, text: string): void => {
+    cells[WEAPON_CELLS[column]] = text;
+  };
+  cells[1] = id;
+  cells[2] = name;
+  set('kind1', '1');
+  set('kind2', '2');
+  set('kind3', '2');
+  set('handed', '1');
+  set('parts', '10');
+  set('abilityMin', '3');
+  set('abilityMax', '4');
+  set('weaponType', '1');
+  set('attackSpeed', '0.085');
+  set('attackRange', '1');
+  set('destParam0', '14');
+  set('adjParam0', '5');
+  set('adjParam1', '-3');
+  set('sfxObj3', 'XI_HIT_SWORD01');
+  set('sfxObj5', '=');
+  set('sndAttack1', '115');
+  set('icon', '"""itm_WeaSword.dds"""');
+  return cells.join('	');
+};
+
 const entry = (name: string, id: string, modelType: string, part = '""'): string =>
   `  "${name}" ${id} ${modelType} ${part} 0 MD_MID 0 1.0f 0 1 ATEX_NONE 1`;
 
+/** An OT_SFX entry; `name` is the file's name as the index writes it (the stage adds `sfx_` when it has no underscore). */
+const sfxEntry = (name: string, id: string, scale: string, modelType = 'MODELTYPE_SFX'): string =>
+  `  "${name}" ${id} ${modelType} "" 0 MD_MID 0 ${scale} 0 1 ATEX_NONE 1`;
+
 const MDL_DYNA = script(
+  '"sfx" 3',
+  '{',
+  sfxEntry('sfx_GenLevelUp01', 'XI_GEN_LEVEL_UP01', '1.0f'),
+  sfxEntry('HitSword01', 'XI_HIT_SWORD01', '0.1f'),
+  sfxEntry('HitYoy01', 'XI_HIT_YOY01', '2.0f'),
+  sfxEntry('Flash01.tga', 'XI_GEN_FLASH01', '1.0f', '3'), // a billboard: a texture, not a .sfx
+  '}',
   '"item" 4',
   '{',
   '  "GenMatSuitbox"',
@@ -157,8 +226,12 @@ const PACKED: Record<string, string> = {
     '//dwID\tszName\tdwAI',
     moverRow('MI_MALE', 'IDS_PROPMOVER_TXT_000002', 'AII_MOVER', '0.1'),
     moverRow('MI_FEMALE', 'IDS_PROPMOVER_TXT_000004', 'AII_MOVER', '0.1'),
-    moverRow('MI_AIBATT1', 'IDS_PROPMOVER_TXT_000006', 'AII_MONSTER', '0.075'),
-    moverRow('MI_ORPHAN', 'IDS_PROPMOVER_TXT_000008', 'AII_MONSTER', '0.2', '1'),
+    moverRow('MI_AIBATT1', 'IDS_PROPMOVER_TXT_000006', 'AII_MONSTER', '0.075', '0', {
+      level: '1', addHp: '120', expValue: '2', rank: '0', belligerence: '2', killable: '1',
+    }),
+    moverRow('MI_ORPHAN', 'IDS_PROPMOVER_TXT_000008', 'AII_MONSTER', '0.2', '1', {
+      level: '85', addHp: '9000', expValue: '5000000000', rank: '3', belligerence: '4', killable: '2', hideLevel: '1', element: '2',
+    }),
   ),
   'propItem.txt.txt': script(
     'IDS_PROPITEM_TXT_000790\tCotton Suit',
@@ -171,7 +244,43 @@ const PACKED: Record<string, string> = {
     itemRow('II_ARM_M_VAG_SUIT01', 'IDS_PROPITEM_TXT_000790', 'PARTS_UPPER_BODY'),
     itemRow('503', 'IDS_PROPITEM_TXT_000792', 'PARTS_LOWER_BODY', '=', 'PARTS_HAIR'),
     // 504 has a model entry and no row here
-    itemRow('505', 'IDS_PROPITEM_TXT_000793', '='),
+    weaponRow('505', 'IDS_PROPITEM_TXT_000793'),
+  ),
+  'propJob.inc': script(
+    '// fAttackSpeed fFactorMaxHP ...',
+    'JOB_VAGRANT 75.0 0.9 0.3 0.3 1.0 1.2 0.5 0.5 4.5 5.5 0.8 3.0 5.0 6.0 0.2 4.2 1.0',
+    'JOB_MERCENARY 80.0 1.1 0.3 0.3 1.0 1.2 0.5 0.5 4.5 5.5 0.8 3.0 5.0 6.0 0.2 4.2 1.0',
+  ),
+  'ExpTable.inc': script(
+    'expCharacter // 1 based',
+    '{',
+    '	0 0 0 0 //0 - not used',
+    '	14 1 2 18 //2',
+    '	369857717768 0 5 9007199254740993',
+    '}',
+    'expLPPoint',
+    '{',
+    '	1 2 3',
+    '}',
+  ),
+  'textClient.txt.txt': script(
+    'IDS_TEXTCLIENT_INC_000156	Press ESC and go back to Lodestar(Town).',
+    'IDS_TEXTCLIENT_INC_000157	"Level up!"',
+    'IDS_TEXTCLIENT_INC_000158	',
+  ),
+  'textClient.inc': script(
+    'TID_GAME_DEATH 0xff00ffff',
+    '{',
+    '	IDS_TEXTCLIENT_INC_000156',
+    '}',
+    'TID_GAME_LEVELUP 0xffffff00',
+    '{',
+    '	IDS_TEXTCLIENT_INC_000157',
+    '}',
+    'TID_EMPTY 0xff000000',
+    '{',
+    '	IDS_TEXTCLIENT_INC_000158',
+    '}',
   ),
   'mdlObj.inc': MDL_OBJ,
   'mdlDyna.inc': MDL_DYNA,
@@ -237,6 +346,8 @@ const CONVERTED = [
   'models/part_fvag01upper.glb',
   'models/part_mvag02upper.glb',
   'models/part_mvag03upper.glb',
+  'models/item_weasword.glb', // item 505, a held item
+  'models/item_genmatsuitbox.glb', // the model of the suits' entries, which have a part: they are worn, not held
 ];
 
 describe('the game-data stage', () => {
@@ -292,25 +403,30 @@ describe('the game-data stage', () => {
     expect(DEFAULT_STAGES.map((s) => s.name)).toEqual(['textures', 'models', 'worlds', 'data']);
   });
 
-  it('writes the six catalogs, each once, under its hashed name', async () => {
+  it('writes the eleven catalogs, each once, under its hashed name', async () => {
     await client();
     const run = await runData();
     expect(run.report.failures).toEqual([]);
 
     expect(Object.values(GAME_DATA_KEYS).sort()).toEqual([
+      'data/effectsIndex.json',
+      'data/exp.json',
       'data/honorTitles.json',
+      'data/itemProps.json',
       'data/items.json',
+      'data/jobs.json',
       'data/movers.json',
       'data/nameColors.json',
       'data/npcs.json',
+      'data/texts.json',
       'data/worlds.json',
     ]);
     for (const key of Object.values(GAME_DATA_KEYS)) {
       expect(run.writer.pathOf(key), key).toMatch(/^data\/[a-zA-Z]+\.[0-9a-f]{10}\.json$/);
     }
-    expect(run.report.kinds.data).toMatchObject({ ok: 6, failed: 0 });
+    expect(run.report.kinds.data).toMatchObject({ ok: 11, failed: 0 });
 
-    // movers: by index; a player body has no model; the speed is the table's
+    // movers: by index; a player body has no model; the speed is the table's; the fight columns are the table's too
     expect(await catalog<WebMover[]>(run, GAME_DATA_KEYS.movers)).toEqual([
       {
         index: 11,
@@ -318,6 +434,7 @@ describe('the game-data stage', () => {
         speed: 0.1,
         ai: 1,
         flying: false,
+        ...NO_FIGHT,
         model: null,
         skeleton: 'skeletons/mvr_male.glb',
         motions: {
@@ -331,6 +448,7 @@ describe('the game-data stage', () => {
         speed: 0.1,
         ai: 1,
         flying: false,
+        ...NO_FIGHT,
         model: null,
         skeleton: 'skeletons/mvr_female.glb',
         motions: { '0': 'motions/mvr_female/mvr_female_genstand.glb' },
@@ -341,6 +459,7 @@ describe('the game-data stage', () => {
         speed: 0.075,
         ai: 2,
         flying: false,
+        level: 1, addHp: 120, expValue: 2, rank: 0, belligerence: 2, killable: 1, hideLevel: -1, element: 0,
         model: 'models/mvr_aibatt1.glb',
         skeleton: 'skeletons/mvr_aibatt1.glb',
         motions: {
@@ -352,7 +471,7 @@ describe('the game-data stage', () => {
         },
       },
       // a flying monster (dwFlying 1)
-      { index: 21, name: 'Orphan', speed: 0.2, ai: 2, flying: true, model: null, skeleton: null, motions: {} },
+      { index: 21, name: 'Orphan', speed: 0.2, ai: 2, flying: true, ...ORPHAN_FIGHT, model: null, skeleton: null, motions: {} },
     ]);
 
     // items: only the model entries with a part; 504 has no ItemProp, 505 has no part
@@ -394,6 +513,120 @@ describe('the game-data stage', () => {
       '41': 'wdheaven06_1',
       '42': 'wdheaven06_1',
     });
+  });
+
+  it('itemProps: a row of propItem.txt per id with the fight columns, the held model and the icon', async () => {
+    await client();
+    const run = await runData();
+    expect(run.report.failures).toEqual([]);
+    const props = await catalog<WebItemProp[]>(run, GAME_DATA_KEYS.itemProps);
+    // every row, by id, whether or not the item shows a model (504 has a model entry and no row)
+    expect(props.map((prop) => prop.id)).toEqual([502, 503, 505]);
+
+    // a sword: dwSfxObj3 is the hit effect (XI_HIT_SWORD01), the attack speed the C float of the token, and the
+    // model entry has no part, so the item is held and the converted item model is its model
+    expect(props[2]).toEqual({
+      id: 505, name: 'Training Sword', kind1: 1, kind2: 2, kind3: 2, handed: 1, part: 10, abilityMin: 3, abilityMax: 4,
+      weaponType: 1, attackSpeed: Math.fround(0.085), attackRange: 1, destParams: [14, -1, -1], adjParams: [5, -3, -1],
+      sfxHit: 20, model: 'models/item_weasword.glb', icon: 'ui/itm_weasword.png',
+    });
+    expect(props[2]!.attackSpeed).not.toBe(0.085);
+
+    // a suit: worn, so its model entry has a part and the item is not held; `=` is -1, as in the other catalogs
+    expect(props[0]).toEqual({
+      id: 502, name: 'Cotton Suit', kind1: 2, kind2: 7, kind3: 18, handed: -1, part: 2, abilityMin: 8, abilityMax: 10,
+      weaponType: -1, attackSpeed: -1, attackRange: -1, destParams: [-1, -1, -1], adjParams: [-1, -1, -1],
+      sfxHit: -1, model: null, icon: 'ui/itm_mvag01upper.png',
+    });
+    expect(props[1]).toMatchObject({ id: 503, name: 'Pike Suit', part: 3, model: null });
+  });
+
+  it('itemProps: a row repeated in propItem.txt keeps the last, and an item with no icon has none', async () => {
+    // CFixedArray::SetAtGrow replaces the slot
+    const bare = itemRow('503', 'IDS_PROPITEM_TXT_000792', 'PARTS_LOWER_BODY').split('	');
+    bare[120] = '""""""'; // szIcon is three tokens, "" name "", and the name is empty
+    await client({
+      'propItem.txt': script(
+        itemRow('503', 'IDS_PROPITEM_TXT_000793', 'PARTS_UPPER_BODY'),
+        weaponRow('505', 'IDS_PROPITEM_TXT_000793'),
+        bare.join('	'),
+      ),
+    });
+    const run = await runData();
+    const props = await catalog<WebItemProp[]>(run, GAME_DATA_KEYS.itemProps);
+    expect(props.map((prop) => prop.id)).toEqual([503, 505]);
+    expect(props[0]).toMatchObject({ id: 503, name: 'Pike Suit', part: 3, icon: null });
+  });
+
+  it('itemProps: a held item whose model was not converted has no model, with one warning that names the item', async () => {
+    await client();
+    const run = await runData({ converted: CONVERTED.filter((key) => key !== 'models/item_weasword.glb') });
+    expect(run.report.failures).toEqual([]);
+    const props = await catalog<WebItemProp[]>(run, GAME_DATA_KEYS.itemProps);
+    expect(props.find((prop) => prop.id === 505)!.model).toBeNull();
+    const warnings = run.report.warnings.filter((w) => w.message.includes('item_weasword'));
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatchObject({ kind: 'data' });
+    expect(warnings[0]!.message).toContain('505');
+    expect(warnings[0]!.message).toContain('held');
+  });
+
+  it('jobs: a JobProp per row of propJob.inc, the floats as C floats', async () => {
+    await client();
+    const run = await runData();
+    const jobs = await catalog<JobProp[]>(run, GAME_DATA_KEYS.jobs);
+    expect(jobs).toHaveLength(2);
+    expect(jobs[0]).toEqual({
+      name: 'JOB_VAGRANT', attackSpeed: 75, factorMaxHP: Math.fround(0.9), factorMaxMP: Math.fround(0.3),
+      factorMaxFP: Math.fround(0.3), factorDef: 1, factorHPRecovery: Math.fround(1.2), factorMPRecovery: 0.5,
+      factorFPRecovery: 0.5, meleeSWD: 4.5, meleeAXE: 5.5, meleeSTAFF: Math.fround(0.8), meleeSTICK: 3,
+      meleeKNUCKLE: 5, magicWAND: 6, blocking: Math.fround(0.2), meleeYOYO: Math.fround(4.2), critical: 1,
+    });
+    expect(jobs[1]).toMatchObject({ name: 'JOB_MERCENARY', attackSpeed: 80, factorMaxHP: Math.fround(1.1) });
+  });
+
+  it('exp: the expCharacter rows with the 64-bit columns as decimal text', async () => {
+    await client();
+    const run = await runData();
+    expect(await catalog<WebExpRow[]>(run, GAME_DATA_KEYS.exp)).toEqual([
+      { exp1: '0', exp2: '0', lpPoint: 0, limitExp: '0' },
+      { exp1: '14', exp2: '1', lpPoint: 2, limitExp: '18' },
+      // past 2^53 the text is still exact
+      { exp1: '369857717768', exp2: '0', lpPoint: 5, limitExp: '9007199254740993' },
+    ]);
+  });
+
+  it('texts: the text and colour of every TID with a text, by its name', async () => {
+    await client();
+    const run = await runData();
+    const texts = await catalog<WebTexts>(run, GAME_DATA_KEYS.texts);
+    // the quotes are taken out of the text (CProject::LoadText) and a TID whose text is empty is not there
+    expect(texts).toEqual({
+      TID_GAME_DEATH: { text: 'Press ESC and go back to Lodestar(Town).', color: 0xff00ffff },
+      TID_GAME_LEVELUP: { text: 'Level up!', color: 0xffffff00 },
+    });
+  });
+
+  it('effectsIndex: the XI id of each OT_SFX entry to its effect file and scale', async () => {
+    await client();
+    const run = await runData();
+    const index = await catalog<WebEffectsIndex>(run, GAME_DATA_KEYS.effectsIndex);
+    // the .sfx file is the entry's name with sfx_ in front unless it has an underscore (MakeModelName); the scale is
+    // the entry's fScale, a C float; the billboard (modelType 3) has no .sfx file and is left out
+    expect(index).toEqual({
+      '20': { effect: 'effects/sfx_hitsword01.json', scale: Math.fround(0.1) },
+      '31': { effect: 'effects/sfx_hityoy01.json', scale: 2 },
+      '42': { effect: 'effects/sfx_genlevelup01.json', scale: 1 },
+    });
+    expect(Object.keys(index)).toEqual(['20', '31', '42']);
+  });
+
+  it('effectsIndex names the file by the shared webName rule, whether or not it exists', async () => {
+    // the effects stage writes effects/<webName>.json; the index only names it
+    await client({ 'mdlDyna.inc': MDL_DYNA.replace('"HitYoy01"', '"Hit Yoy01"') });
+    const run = await runData({ converted: [] });
+    const index = await catalog<WebEffectsIndex>(run, GAME_DATA_KEYS.effectsIndex);
+    expect(index['31']!.effect).toBe('effects/sfx_hit-yoy01.json');
   });
 
   it('a world id defined twice keeps the later file name, and one with no file name is left out', async () => {
@@ -497,7 +730,9 @@ describe('the game-data stage', () => {
     await client();
     const run = await runData();
     const orphan = (await catalog<WebMover[]>(run, GAME_DATA_KEYS.movers)).find((mover) => mover.index === 21)!;
-    expect(orphan).toEqual({ index: 21, name: 'Orphan', speed: 0.2, ai: 2, flying: true, model: null, skeleton: null, motions: {} });
+    expect(orphan).toEqual({
+      index: 21, name: 'Orphan', speed: 0.2, ai: 2, flying: true, ...ORPHAN_FIGHT, model: null, skeleton: null, motions: {},
+    });
     expect(run.report.warnings.some((w) => w.message.includes('21') && w.message.includes('mdlDyna.inc'))).toBe(true);
   });
 
@@ -561,7 +796,7 @@ describe('the game-data stage', () => {
     expect(run.writer.pathOf(GAME_DATA_KEYS.nameColors)).toBeUndefined();
     const written = [GAME_DATA_KEYS.movers, GAME_DATA_KEYS.items, GAME_DATA_KEYS.npcs, GAME_DATA_KEYS.honorTitles];
     for (const key of [...written, GAME_DATA_KEYS.worlds]) expect(run.writer.pathOf(key), key).toBeDefined();
-    expect(run.report.kinds.data).toMatchObject({ ok: 5, failed: 1 });
+    expect(run.report.kinds.data).toMatchObject({ ok: 10, failed: 1 });
   });
 
   it('a World.inc that cannot be read fails the worlds catalog with its name, the others are written', async () => {
@@ -571,7 +806,19 @@ describe('the game-data stage', () => {
     expect(run.report.failures[0]).toMatchObject({ kind: 'data', source: 'World.inc' });
     expect(run.writer.pathOf(GAME_DATA_KEYS.worlds)).toBeUndefined();
     expect(run.writer.pathOf(GAME_DATA_KEYS.honorTitles)).toBeDefined();
-    expect(run.report.kinds.data).toMatchObject({ ok: 5, failed: 1 });
+    expect(run.report.kinds.data).toMatchObject({ ok: 10, failed: 1 });
+  });
+
+  it('a combat table that cannot be read fails its own catalog, with the file it came from; the others are written', async () => {
+    await client({ 'ExpTable.inc': script('expLPPoint', '{', '	1 2 3', '}') }); // no expCharacter block
+    const run = await runData();
+    expect(run.report.failures).toHaveLength(1);
+    expect(run.report.failures[0]).toMatchObject({ kind: 'data', source: 'ExpTable.inc' });
+    expect(run.writer.pathOf(GAME_DATA_KEYS.exp)).toBeUndefined();
+    for (const key of [GAME_DATA_KEYS.itemProps, GAME_DATA_KEYS.jobs, GAME_DATA_KEYS.texts, GAME_DATA_KEYS.effectsIndex]) {
+      expect(run.writer.pathOf(key), key).toBeDefined();
+    }
+    expect(run.report.kinds.data).toMatchObject({ ok: 10, failed: 1 });
   });
 
   it('a file missing from the packs fails its catalog with the resource name', async () => {

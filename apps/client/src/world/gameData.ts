@@ -1,9 +1,27 @@
 import { GAME_DATA_KEYS } from '@flyffweb/formats';
-import type { WebHonorTitles, WebItemModel, WebMover, WebNameColors, WebNpc, WebWorlds } from '@flyffweb/formats';
+import type {
+  ExpRow,
+  JobProp,
+  TextEntry,
+  WebEffectRef,
+  WebEffectsIndex,
+  WebExpRow,
+  WebHonorTitles,
+  WebItemModel,
+  WebItemProp,
+  WebMover,
+  WebNameColors,
+  WebNpc,
+  WebTexts,
+  WebWorlds,
+} from '@flyffweb/formats';
 import type { AssetStore } from '@flyffweb/scene';
 
 /** NULL_ID, written `=` in `propItem.txt`: the `exclusive` and `baseIgnore` of an item that takes off and hides nothing. */
 export const NO_PART = -1;
+
+/** The client texts by `TID_*` name (`textClient.inc`): the text and its ARGB colour, what GETTEXT and GETTEXTCOLOR give. */
+export type Texts = ReadonlyMap<string, TextEntry>;
 
 /**
  * The converter's game-data catalogs (`data/*.json`), looked up the way Neuz looks the same things up.
@@ -24,6 +42,16 @@ export interface GameData {
    * converted if `worlds/<name>/manifest.json` is in the asset index.
    */
   worlds: Map<number, string>;
+  /** Every item of `propItem.txt` by item id (`II_*`), with the columns the fight reads; a repeated id keeps the later row. */
+  itemProps: Map<number, WebItemProp>;
+  /** The jobs of `propJob.inc`, `jobs[JOB_*]` (CProject::m_aPropJob). */
+  jobs: JobProp[];
+  /** The character EXP table of `ExpTable.inc`, `exp[level]` (CProject::m_aExpCharacter), the 64-bit columns as bigint. */
+  exp: ExpRow[];
+  /** The client texts by `TID_*` name. */
+  texts: Texts;
+  /** The effect (converted file and scale) of each `XI_*` id of mdlDyna.inc. */
+  effects: Map<number, WebEffectRef>;
 }
 
 /**
@@ -49,22 +77,28 @@ export class GameDataMissingError extends Error {
 }
 
 /**
- * Loads the six catalogs. The converter writes the movers, items and characters as arrays of records that carry
- * their own id or key (`gameDataStage.ts`), and the honour titles and worlds as objects keyed by the id as text. A
- * repeated id or key keeps the later record, as `CProject::LoadCharacter`'s `SetAt` does. A catalog that is not in the
- * asset index fails the load with a `GameDataMissingError`, before anything is fetched; one that cannot be fetched
- * fails it with the download's error.
+ * Loads the eleven catalogs. The converter writes the movers, items, item props and characters as arrays of records
+ * that carry their own id or key (`gameDataStage.ts`), the honour titles, worlds, texts and effects as objects keyed
+ * by the id as text, the jobs and EXP rows as arrays in table order, and the EXP columns as decimal text (they pass
+ * 2^53), which become bigint here. A repeated id or key keeps the later record, as `CProject::LoadCharacter`'s
+ * `SetAt` does. A catalog that is not in the asset index fails the load with a `GameDataMissingError`, before
+ * anything is fetched; one that cannot be fetched fails it with the download's error.
  */
 export async function loadGameData(store: Pick<AssetStore, 'json' | 'url'>): Promise<GameData> {
   const missing = Object.values(GAME_DATA_KEYS).filter((key) => store.url(key) === null);
   if (missing.length > 0) throw new GameDataMissingError(missing);
-  const [movers, items, npcs, nameColors, honorTitles, worlds] = await Promise.all([
+  const [movers, items, npcs, nameColors, honorTitles, worlds, itemProps, jobs, exp, texts, effects] = await Promise.all([
     store.json<WebMover[]>(GAME_DATA_KEYS.movers),
     store.json<WebItemModel[]>(GAME_DATA_KEYS.items),
     store.json<WebNpc[]>(GAME_DATA_KEYS.npcs),
     store.json<WebNameColors>(GAME_DATA_KEYS.nameColors),
     store.json<WebHonorTitles>(GAME_DATA_KEYS.honorTitles),
     store.json<WebWorlds>(GAME_DATA_KEYS.worlds),
+    store.json<WebItemProp[]>(GAME_DATA_KEYS.itemProps),
+    store.json<JobProp[]>(GAME_DATA_KEYS.jobs),
+    store.json<WebExpRow[]>(GAME_DATA_KEYS.exp),
+    store.json<WebTexts>(GAME_DATA_KEYS.texts),
+    store.json<WebEffectsIndex>(GAME_DATA_KEYS.effectsIndex),
   ]);
   return {
     movers: new Map(movers.map((mover) => [mover.index, withFlying(mover)])),
@@ -73,5 +107,12 @@ export async function loadGameData(store: Pick<AssetStore, 'json' | 'url'>): Pro
     nameColors,
     honorTitles: new Map(Object.entries(honorTitles).map(([id, title]) => [Number(id), title])),
     worlds: new Map(Object.entries(worlds).map(([id, folder]) => [Number(id), folder])),
+    itemProps: new Map(itemProps.map((prop) => [prop.id, prop])),
+    jobs,
+    exp: exp.map((row) => ({
+      exp1: BigInt(row.exp1), exp2: BigInt(row.exp2), lpPoint: row.lpPoint, limitExp: BigInt(row.limitExp),
+    })),
+    texts: new Map(Object.entries(texts).map(([id, { text, color }]) => [id, { id, text, color }])),
+    effects: new Map(Object.entries(effects).map(([id, effect]) => [Number(id), effect])),
   };
 }

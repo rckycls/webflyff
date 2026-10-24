@@ -1,0 +1,140 @@
+import { describe, expect, it } from 'vitest';
+import { GAME_DATA_KEYS } from '@flyffweb/formats';
+import type { JobProp, WebExpRow, WebItemProp, WebMover } from '@flyffweb/formats';
+import { GameDataMissingError, loadGameData } from '../src/world/gameData';
+import { catalogFiles, storeOf } from './helpers/gameDataFiles';
+
+/** The Wooden Sword as the converter writes it. */
+const WOODEN_SWORD: WebItemProp = {
+  id: 21, name: 'Wooden Sword', kind1: 1, kind2: 2, kind3: 2, handed: 1, part: 10, abilityMin: 3, abilityMax: 4,
+  weaponType: 1, attackSpeed: Math.fround(0.085), attackRange: 1, destParams: [-1, -1, -1], adjParams: [-1, -1, -1],
+  sfxHit: 20, model: 'models/item_weaswowooden.glb', icon: 'ui/itm_weaswowooden.png',
+};
+
+const VAGRANT: JobProp = {
+  name: 'JOB_VAGRANT', attackSpeed: 75, factorMaxHP: Math.fround(0.9), factorMaxMP: Math.fround(0.3),
+  factorMaxFP: Math.fround(0.3), factorDef: 1, factorHPRecovery: Math.fround(1.2), factorMPRecovery: 0.5,
+  factorFPRecovery: 0.5, meleeSWD: 4.5, meleeAXE: 5.5, meleeSTAFF: Math.fround(0.8), meleeSTICK: 3, meleeKNUCKLE: 5,
+  magicWAND: 6, blocking: Math.fround(0.2), meleeYOYO: Math.fround(4.2), critical: 1,
+};
+
+/** The catalogs added for combat: an asset index written before them lacks these keys. */
+const NEW_KEYS = [
+  GAME_DATA_KEYS.itemProps,
+  GAME_DATA_KEYS.jobs,
+  GAME_DATA_KEYS.exp,
+  GAME_DATA_KEYS.texts,
+  GAME_DATA_KEYS.effectsIndex,
+];
+
+describe('loadGameData: the combat catalogs', () => {
+  it('reads all eleven catalogs, each key once', async () => {
+    const store = storeOf(catalogFiles());
+    await loadGameData(store);
+    expect(store.asked.sort()).toEqual(Object.values(GAME_DATA_KEYS).sort());
+    expect(Object.values(GAME_DATA_KEYS)).toHaveLength(11);
+    for (const key of NEW_KEYS) expect(store.asked, key).toContain(key);
+  });
+
+  it('itemProps are looked up by item id', async () => {
+    const other: WebItemProp = { ...WOODEN_SWORD, id: 22, name: 'Bat', model: null, icon: null, sfxHit: -1 };
+    const data = await loadGameData(storeOf(catalogFiles({ [GAME_DATA_KEYS.itemProps]: [WOODEN_SWORD, other] })));
+    expect([...data.itemProps.keys()]).toEqual([21, 22]); // numbers, in file order
+    expect(data.itemProps.get(21)).toEqual(WOODEN_SWORD);
+    expect(data.itemProps.get(21)!.attackSpeed).toBe(Math.fround(0.085));
+    expect(data.itemProps.get(22)).toMatchObject({ name: 'Bat', model: null, icon: null });
+    expect(data.itemProps.has(23)).toBe(false);
+  });
+
+  it('a repeated item id keeps the later row, as CFixedArray::SetAtGrow does', async () => {
+    const later = { ...WOODEN_SWORD, name: 'Later' };
+    const data = await loadGameData(storeOf(catalogFiles({ [GAME_DATA_KEYS.itemProps]: [WOODEN_SWORD, later] })));
+    expect(data.itemProps.size).toBe(1);
+    expect(data.itemProps.get(21)!.name).toBe('Later');
+  });
+
+  it('jobs are the rows in JOB_* order, so jobs[job] is the job', async () => {
+    const mercenary: JobProp = { ...VAGRANT, name: 'JOB_MERCENARY', attackSpeed: 80 };
+    const data = await loadGameData(storeOf(catalogFiles({ [GAME_DATA_KEYS.jobs]: [VAGRANT, mercenary] })));
+    expect(data.jobs).toEqual([VAGRANT, mercenary]);
+    expect(data.jobs[1]!.name).toBe('JOB_MERCENARY');
+  });
+
+  it('exp parses the 64-bit columns back to bigint, past 2^53 too', async () => {
+    const rows: WebExpRow[] = [
+      { exp1: '0', exp2: '0', lpPoint: 0, limitExp: '0' },
+      { exp1: '14', exp2: '1', lpPoint: 2, limitExp: '18' },
+      { exp1: '369857717768', exp2: '0', lpPoint: 5, limitExp: '9007199254740993' },
+    ];
+    const data = await loadGameData(storeOf(catalogFiles({ [GAME_DATA_KEYS.exp]: rows })));
+    expect(data.exp).toEqual([
+      { exp1: 0n, exp2: 0n, lpPoint: 0, limitExp: 0n },
+      { exp1: 14n, exp2: 1n, lpPoint: 2, limitExp: 18n },
+      { exp1: 369857717768n, exp2: 0n, lpPoint: 5, limitExp: 9007199254740993n },
+    ]);
+    expect(typeof data.exp[2]!.limitExp).toBe('bigint');
+  });
+
+  it('texts are looked up by TID name, with the name as the entry id', async () => {
+    const data = await loadGameData(storeOf(catalogFiles({
+      [GAME_DATA_KEYS.texts]: {
+        TID_GAME_DEATH: { text: 'Press ESC and go back to Lodestar(Town).', color: 0xff00ffff },
+        TID_GAME_LEVELUP: { text: 'Level up!', color: 0xffffff00 },
+      },
+    })));
+    expect([...data.texts.keys()]).toEqual(['TID_GAME_DEATH', 'TID_GAME_LEVELUP']);
+    expect(data.texts.get('TID_GAME_DEATH')).toEqual({
+      id: 'TID_GAME_DEATH', text: 'Press ESC and go back to Lodestar(Town).', color: 0xff00ffff,
+    });
+    expect(data.texts.get('TID_NOT_THERE')).toBeUndefined();
+  });
+
+  it('effects are looked up by the XI number', async () => {
+    const data = await loadGameData(storeOf(catalogFiles({
+      [GAME_DATA_KEYS.effectsIndex]: {
+        '20': { effect: 'effects/sfx_hitsword01.json', scale: 1 },
+        '42': { effect: 'effects/sfx_genlevelup01.json', scale: 1 },
+      },
+    })));
+    expect([...data.effects.keys()]).toEqual([20, 42]); // numbers, not the JSON's text
+    expect(data.effects.get(42)).toEqual({ effect: 'effects/sfx_genlevelup01.json', scale: 1 });
+    expect(data.effects.get(43)).toBeUndefined();
+  });
+
+  it('a mover keeps its fight columns', async () => {
+    const aibatt: WebMover = {
+      index: 20, name: 'Small Aibatt', speed: 0.075, ai: 2, flying: false, level: 1, addHp: 120, expValue: 2, rank: 0,
+      belligerence: 2, killable: 1, hideLevel: -1, element: 0, model: null, skeleton: null, motions: {},
+    };
+    const data = await loadGameData(storeOf(catalogFiles({ [GAME_DATA_KEYS.movers]: [aibatt] })));
+    expect(data.movers.get(20)).toEqual(aibatt);
+  });
+
+  it.each(NEW_KEYS)('%s missing from the asset index means game files from an older version, and nothing is fetched', async (key) => {
+    const files = catalogFiles();
+    delete files[key];
+    const store = storeOf(files);
+    const failure = await loadGameData(store).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(GameDataMissingError);
+    expect((failure as GameDataMissingError).keys).toEqual([key]);
+    expect((failure as Error).message).toContain(key);
+    expect(store.asked).toEqual([]);
+  });
+
+  it('names every new catalog an old index lacks, in one error', async () => {
+    const files = catalogFiles();
+    for (const key of NEW_KEYS) delete files[key];
+    const failure = await loadGameData(storeOf(files)).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(GameDataMissingError);
+    expect((failure as GameDataMissingError).keys).toEqual(NEW_KEYS);
+  });
+
+  it('a new catalog that is listed and cannot be fetched fails with the download error, not the out-of-date one', async () => {
+    const files = catalogFiles();
+    delete files[GAME_DATA_KEYS.texts];
+    const failure = await loadGameData(storeOf(files, [GAME_DATA_KEYS.texts])).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure).not.toBeInstanceOf(GameDataMissingError);
+    expect((failure as Error).message).toBe(`no ${GAME_DATA_KEYS.texts}`);
+  });
+});

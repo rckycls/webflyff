@@ -9,6 +9,8 @@ import { terrainGround } from '../src/world/sim/collision';
 import type { Ground } from '../src/world/sim/collision';
 import { ActMsg, AniLoop, Mti, ObjSta, ObjStaF } from '../src/world/sim/constants';
 import { WorldState } from '../src/world/WorldState';
+import { catalogFiles, storeOf } from './helpers/gameDataFiles';
+import { gameDataOf, webMoverOf } from './helpers/movers';
 
 const f32 = Math.fround;
 
@@ -23,25 +25,20 @@ const AII_MOVER = 1;
 const AII_MONSTER = 2;
 const AII_CLOCKWORKS = 4;
 
-const moverProp = (index: number, name: string, speed: number, ai = AII_MOVER, flying = false): WebMover => ({
-  index, name, speed, ai, flying, model: null, skeleton: null, motions: {},
-});
+const moverProp = (index: number, name: string, speed: number, ai = AII_MOVER, flying = false): WebMover =>
+  webMoverOf({ index, name, speed, ai, flying });
 
 function gameData(): GameData {
-  return {
+  return gameDataOf({
     movers: new Map([
       [11, moverProp(11, 'Male', 0.1)],
       [20, moverProp(20, 'Aibatt', 0.2, AII_MONSTER)],
       [21, moverProp(21, 'Clockworks', 0.2, AII_CLOCKWORKS)], // the same table speed as the Aibatt
       [22, moverProp(22, 'Mothbee', 0.2, AII_MONSTER, true)], // dwFlying 1
     ]),
-    items: new Map(),
     // keyed by the lower-cased key, as CProject::GetCharacter looks it up
     npcs: new Map([['mafl_mikyel', { key: 'MaFl_Mikyel', name: 'Mikyel' }]]),
-    nameColors: { general: 0xffffffff, chaotic: 0xffff0000, ready: 0xffffc0cb },
-    honorTitles: new Map(),
-    worlds: new Map(),
-  };
+  });
 }
 
 /** A world on a clock that stands at `START_MS` until the test moves `time.now`; the ground is flat at height 0. */
@@ -598,35 +595,17 @@ describe('WorldState: the messages and the rules (OnMoverMoved and the others)',
 
 // ---- the game data ------------------------------------------------------------------------------------------------
 
-/**
- * An asset store over `files`, as `loadGameData` uses one: `url` answers for the keys the index lists, `json` reads
- * them (and notes each key asked for). `unreadable` keys are listed but cannot be read, as after three failed tries.
- */
-function storeOf(files: Record<string, unknown>, unreadable: string[] = []) {
-  const asked: string[] = [];
-  return {
-    asked,
-    url: (key: string): string | null => (key in files || unreadable.includes(key) ? `/assets/${key}` : null),
-    json: async <T>(key: string): Promise<T> => {
-      asked.push(key);
-      if (!(key in files)) throw new Error(`no ${key}`);
-      return files[key] as T;
-    },
-  };
-}
-
 describe('loadGameData', () => {
   it('loadGameData reads the game-data keys', async () => {
-    const files: Record<string, unknown> = {
+    const files = catalogFiles({
       [GAME_DATA_KEYS.movers]: [moverProp(11, 'Male', 0.1), moverProp(20, 'Aibatt', 0.2, AII_MONSTER)],
       [GAME_DATA_KEYS.items]: [
         { id: 500, part: 6, male: 'models/part_mvag02cap.glb', female: 'models/part_fvag02cap.glb' },
       ],
       [GAME_DATA_KEYS.npcs]: [{ key: 'MaFl_Mikyel', name: 'Mikyel' }, { key: 'MaDa_Cooky', name: 'Cooky' }],
-      [GAME_DATA_KEYS.nameColors]: { general: 0xffffffff, chaotic: 0xffff0000, ready: 0xffffc0cb },
       [GAME_DATA_KEYS.honorTitles]: { '0': 'Master Collector', '12': 'Entrepreneur' },
       [GAME_DATA_KEYS.worlds]: { '1': 'wdmadrigal', '40': 'wdheaven06', '41': 'wdheaven06_1' },
-    };
+    });
     const store = storeOf(files);
     const data = await loadGameData(store);
 
@@ -646,26 +625,17 @@ describe('loadGameData', () => {
 
   it('a mover of a movers.json from before the converter kept dwFlying is not flying', async () => {
     const old = { index: 20, name: 'Aibatt', speed: 0.2, ai: AII_MONSTER, model: null, skeleton: null, motions: {} };
-    const files: Record<string, unknown> = {
-      [GAME_DATA_KEYS.movers]: [old, moverProp(22, 'Mothbee', 0.2, AII_MONSTER, true)],
-      [GAME_DATA_KEYS.items]: [],
-      [GAME_DATA_KEYS.npcs]: [],
-      [GAME_DATA_KEYS.nameColors]: { general: 0xffffffff, chaotic: 0xffff0000, ready: 0xffffc0cb },
-      [GAME_DATA_KEYS.honorTitles]: {},
-      [GAME_DATA_KEYS.worlds]: {},
-    };
+    const files = catalogFiles({ [GAME_DATA_KEYS.movers]: [old, moverProp(22, 'Mothbee', 0.2, AII_MONSTER, true)] });
     const data = await loadGameData(storeOf(files));
     expect(data.movers.get(20)!.flying).toBe(false);
     expect(data.movers.get(22)!.flying).toBe(true);
   });
 
   it('a catalog the asset index does not list means game files from an older version, named, and nothing is fetched', async () => {
-    const store = storeOf({
-      [GAME_DATA_KEYS.movers]: [],
-      [GAME_DATA_KEYS.items]: [],
-      [GAME_DATA_KEYS.npcs]: [],
-      [GAME_DATA_KEYS.nameColors]: { general: 1, chaotic: 2, ready: 3 },
-    });
+    const files = catalogFiles();
+    delete files[GAME_DATA_KEYS.honorTitles];
+    delete files[GAME_DATA_KEYS.worlds];
+    const store = storeOf(files);
     const failure = await loadGameData(store).catch((error: unknown) => error);
     expect(failure).toBeInstanceOf(GameDataMissingError);
     expect((failure as GameDataMissingError).keys).toEqual([GAME_DATA_KEYS.honorTitles, GAME_DATA_KEYS.worlds]);
@@ -674,14 +644,9 @@ describe('loadGameData', () => {
   });
 
   it('a character defined twice keeps the later one, as CProject::LoadCharacter does', async () => {
-    const data = await loadGameData(storeOf({
-      [GAME_DATA_KEYS.movers]: [],
-      [GAME_DATA_KEYS.items]: [],
+    const data = await loadGameData(storeOf(catalogFiles({
       [GAME_DATA_KEYS.npcs]: [{ key: 'Abc', name: 'First' }, { key: 'aBC', name: 'Second' }],
-      [GAME_DATA_KEYS.nameColors]: { general: 1, chaotic: 2, ready: 3 },
-      [GAME_DATA_KEYS.honorTitles]: {},
-      [GAME_DATA_KEYS.worlds]: {},
-    }));
+    })));
     expect(data.npcs.size).toBe(1);
     expect(data.npcs.get('abc')!.name).toBe('Second');
   });

@@ -7,12 +7,19 @@
 //   data/nameColors.json   the three player name colours of PKSetting.inc (WebNameColors)
 //   data/honorTitles.json  honour id to title text of honorList.txt (WebHonorTitles)
 //   data/worlds.json       world id to the web folder name of its world, from World.inc (WebWorlds)
+//   data/itemProps.json    every item of propItem.txt with the columns the fight reads, its held model and icon (WebItemProp[])
+//   data/jobs.json         every job of propJob.inc (JobProp[])
+//   data/exp.json          the character EXP table of ExpTable.inc, the 64-bit columns as text (WebExpRow[])
+//   data/texts.json        every client text of textClient.inc, by TID name (WebTexts)
+//   data/effectsIndex.json XI id to the effect file and scale of its OT_SFX entry in mdlDyna.inc (WebEffectsIndex)
 //
-// It runs after the models stage. A catalog names a model, skeleton or motion by its logical key, the way the models
-// stage writes it (`webName` of the real file's base name), and only when `writer.pathOf(key)` says the file was
-// converted (in this run, or listed in the index.json an earlier run left); else the entry is null, or left out of
-// `motions`, with a warning. Each catalog is built on its own: one that cannot be read is reported as a failure and
-// the others are still written.
+// It runs after the models stage, and after the effects and UI stages whose files the effects index and the item icons
+// name (`effects/<web name>.json`, `ui/<web name>.png`; this stage does not check that they exist).
+//
+// A catalog names a model, skeleton or motion by its logical key, the way the models stage writes it (`webName` of the
+// real file's base name), and only when `writer.pathOf(key)` says the file was converted (in this run, or listed in the
+// index.json an earlier run left); else the entry is null, or left out of `motions`, with a warning. Each catalog is
+// built on its own: one that cannot be read is reported as a failure and the others are still written.
 //
 // `--only` filters world folders and model/texture base names; this stage runs when there is no filter or when the
 // glob matches the name `data` (so `--only data` runs just this stage, the others finding nothing named `data`).
@@ -27,22 +34,30 @@ import {
   loadStrings,
   modelFileName,
   readCharacterInc,
+  readExpTable,
   readHonorTitles,
   readModelIndex,
   readPkSetting,
   readPropItem,
+  readPropJob,
   readPropMover,
+  readTextClient,
   readWorldInc,
   webName,
 } from '@flyffweb/formats';
 import type {
   ItemProp,
+  JobProp,
   ModelElem,
+  WebEffectsIndex,
+  WebExpRow,
   WebHonorTitles,
   WebItemModel,
+  WebItemProp,
   WebMover,
   WebNameColors,
   WebNpc,
+  WebTexts,
   WebWorlds,
 } from '@flyffweb/formats';
 import type { ClientFs } from '../ClientFs';
@@ -57,6 +72,8 @@ const MODEL_DIR = 'Model';
 
 /** MODELTYPE_ANIMATED_MESH (Source/_Common/Model.h:12): a model with a skeleton (`<model>.chr`) and motions. */
 const MODELTYPE_ANIMATED_MESH = 2;
+/** MODELTYPE_SFX (Source/_Common/Model.h:14): an effect, the `.sfx` script of the name. */
+const MODELTYPE_SFX = 4;
 
 /** CModelMng's g_szRoot (ModelMng.cpp:5) for OT_MOVER: the start of a mover's model, skeleton and motion files. */
 const MOVER_ROOT = 'mvr';
@@ -148,6 +165,12 @@ const converted = (env: Env, key: string): string | null => (env.writer.pathOf(k
 /** `models/<web name>.glb` of an `.o3d` file name, as the models stage writes it. */
 const modelKeyOf = (o3dFile: string): string => `models/${webName(stem(o3dFile))}.glb`;
 
+/** `effects/<web name>.json` of a `.sfx` file's stem, as the effects stage writes it. */
+export const effectKeyOf = (sfxStem: string): string => `effects/${webName(sfxStem)}.json`;
+
+/** `ui/<web name>.png` of an icon file name (`szIcon`, `itm_WeaSwoWooden.dds`), as the UI stage writes it. */
+export const iconKeyOf = (iconFile: string): string => `ui/${webName(stem(iconFile))}.png`;
+
 function buildMovers(env: Env, read: Reading): WebMover[] {
   const props = readPropMover(read.text('propMover.txt'), env.defines, env.strings, 'propMover.txt');
   const index = env.models();
@@ -174,6 +197,14 @@ function buildMovers(env: Env, read: Reading): WebMover[] {
         speed: prop.speed,
         ai: prop.ai,
         flying: prop.flying,
+        level: prop.level,
+        addHp: prop.addHp,
+        expValue: prop.expValue,
+        rank: prop.rank,
+        belligerence: prop.belligerence,
+        killable: prop.killable,
+        hideLevel: prop.hideLevel,
+        element: prop.element,
         model: null,
         skeleton: null,
         motions: {},
@@ -238,12 +269,17 @@ function buildMovers(env: Env, read: Reading): WebMover[] {
 
 // ---- items -------------------------------------------------------------------------------------------------------
 
-function buildItems(env: Env, read: Reading): WebItemModel[] {
-  // a repeated id keeps the last row (CFixedArray::SetAtGrow, as readPropItem notes)
+/** The rows of propItem.txt by id; a repeated id keeps the last row (CFixedArray::SetAtGrow, as readPropItem notes). */
+function readItemRows(env: Env, read: Reading): Map<number, ItemProp> {
   const props = new Map<number, ItemProp>();
   for (const prop of readPropItem(read.text('propItem.txt'), env.defines, env.strings, 'propItem.txt')) {
     props.set(prop.id, prop);
   }
+  return props;
+}
+
+function buildItems(env: Env, read: Reading): WebItemModel[] {
+  const props = readItemRows(env, read);
   const index = env.models();
   read.bytes += index.bytes;
 
@@ -286,6 +322,106 @@ function buildItems(env: Env, read: Reading): WebItemModel[] {
     });
   }
   return items;
+}
+
+// ---- item props, jobs, EXP, texts, effects -----------------------------------------------------------------------
+
+/**
+ * Every item of propItem.txt, with the columns the fight reads. `model` is the held model, which Neuz loads from the
+ * item's OT_ITEM entry as `item_<name>.o3d` (CModelMng::MakeModelName, ModelMng.cpp:63). An entry with a part is worn
+ * and not held, and buildItems has its part models. `icon` names the file the UI stage writes.
+ */
+function buildItemProps(env: Env, read: Reading): WebItemProp[] {
+  const props = readItemRows(env, read);
+  const index = env.models();
+  read.bytes += index.bytes;
+
+  const noModel: string[] = []; // held items whose model was not converted
+  const itemProps = [...props.values()]
+    .sort((a, b) => a.id - b.id)
+    .map((prop): WebItemProp => {
+      let model: string | null = null;
+      const elem = index.entries.get(`${OT.ITEM}:${prop.id}`);
+      if (elem !== undefined && elem.part === '') {
+        const file = modelFileName(elem);
+        if (/\.o3d$/i.test(file)) {
+          const key = modelKeyOf(file);
+          model = converted(env, key);
+          if (model === null) noModel.push(`${prop.id} "${prop.name}" (${key})`);
+        }
+      }
+      return {
+        id: prop.id,
+        name: prop.name,
+        kind1: prop.kind1,
+        kind2: prop.kind2,
+        kind3: prop.kind3,
+        handed: prop.handed,
+        part: prop.parts,
+        abilityMin: prop.abilityMin,
+        abilityMax: prop.abilityMax,
+        weaponType: prop.weaponType,
+        attackSpeed: prop.attackSpeed,
+        attackRange: prop.attackRange,
+        destParams: [...prop.destParams],
+        adjParams: [...prop.adjParams],
+        sfxHit: prop.sfxObj3,
+        model,
+        icon: prop.icon === '' ? null : iconKeyOf(prop.icon),
+      };
+    });
+
+  if (noModel.length > 0) {
+    const shown = noModel.slice(0, 5).join(', ');
+    const more = noModel.length > 5 ? ` and ${noModel.length - 5} more` : '';
+    env.report.warn(
+      KIND,
+      'mdlDyna.inc',
+      `${plural(noModel.length, 'held item')} (an OT_ITEM entry with no part) ` +
+        `${noModel.length === 1 ? 'has' : 'have'} no converted model, left null: ${shown}${more}`,
+    );
+  }
+  return itemProps;
+}
+
+function buildJobs(env: Env, read: Reading): JobProp[] {
+  return readPropJob(read.text('propJob.inc'), 'propJob.inc', env.defines);
+}
+
+/** EXPINTEGER is 64 bits and one value passes 2^53, so JSON carries the columns as decimal text. */
+function buildExp(_env: Env, read: Reading): WebExpRow[] {
+  return readExpTable(read.text('ExpTable.inc'), 'ExpTable.inc').map((row) => ({
+    exp1: row.exp1.toString(),
+    exp2: row.exp2.toString(),
+    lpPoint: row.lpPoint,
+    limitExp: row.limitExp.toString(),
+  }));
+}
+
+function buildTexts(env: Env, read: Reading): WebTexts {
+  const texts = readTextClient(read.text('textClient.inc'), env.strings, 'textClient.inc');
+  return Object.fromEntries([...texts].map(([id, { text, color }]) => [id, { text, color }]));
+}
+
+/**
+ * The effect each `XI_*` id stands for: the OT_SFX entries of mdlDyna.inc that name a `.sfx` (MODELTYPE_SFX; a
+ * billboard entry is a texture). The file is the name CModelMng::MakeModelName makes (ModelMng.cpp:63: `sfx_` unless
+ * the name has an underscore), and the scale is the entry's `fScale` (ModelMng.cpp:397, a C float): CSfx::SetSfx
+ * (SfxObj.cpp:77, which CreateSfx calls) loads the entry with SetTypeIndex(..., TRUE), and CObj::ResetScale (Obj.cpp:390)
+ * scales the effect by it.
+ */
+function buildEffectsIndex(env: Env, read: Reading): WebEffectsIndex {
+  const index = env.models();
+  read.bytes += index.bytes;
+  const effects = [...index.entries.values()]
+    .filter((elem) => elem.type === OT.SFX && elem.modelType === MODELTYPE_SFX)
+    .sort((a, b) => a.id - b.id);
+  return Object.fromEntries(
+    effects.map((elem) => [
+      String(elem.id),
+      { effect: effectKeyOf(modelFileName(elem)), scale: Math.fround(elem.extra[3]!) },
+    ]),
+  );
 }
 
 // ---- NPCs, name colours, honour titles, worlds -------------------------------------------------------------------
@@ -370,6 +506,11 @@ export const gameDataStage: Stage = {
       { key: GAME_DATA_KEYS.nameColors, source: 'PKSetting.inc', build: (read) => buildNameColors(env, read) },
       { key: GAME_DATA_KEYS.honorTitles, source: 'honorList.txt', build: (read) => buildHonorTitles(env, read) },
       { key: GAME_DATA_KEYS.worlds, source: 'World.inc', build: (read) => buildWorlds(env, read) },
+      { key: GAME_DATA_KEYS.itemProps, source: 'propItem.txt', build: (read) => buildItemProps(env, read) },
+      { key: GAME_DATA_KEYS.jobs, source: 'propJob.inc', build: (read) => buildJobs(env, read) },
+      { key: GAME_DATA_KEYS.exp, source: 'ExpTable.inc', build: (read) => buildExp(env, read) },
+      { key: GAME_DATA_KEYS.texts, source: 'textClient.inc', build: (read) => buildTexts(env, read) },
+      { key: GAME_DATA_KEYS.effectsIndex, source: 'mdlDyna.inc', build: (read) => buildEffectsIndex(env, read) },
     ];
     for (const { key, source, build } of catalogs) {
       try {

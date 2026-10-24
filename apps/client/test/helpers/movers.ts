@@ -1,3 +1,4 @@
+import type { WebMover } from '@flyffweb/formats';
 import type { AddedMover, AddedNpc, AddedPlayer } from '@flyffweb/protocol';
 import { ServerClock } from '../../src/net/serverClock';
 import type { GameData } from '../../src/world/gameData';
@@ -18,7 +19,20 @@ export function gameDataOf(parts: Partial<GameData> = {}): GameData {
     nameColors: { general: 0xffffffff, chaotic: 0xffff0000, ready: 0xffffc0cb },
     honorTitles: new Map(),
     worlds: new Map(),
+    itemProps: new Map(),
+    jobs: [],
+    exp: [],
+    texts: new Map(),
+    effects: new Map(),
     ...parts,
+  };
+}
+
+/** A row of movers.json: a level 1 mover with no model and nothing to fight with, unless `parts` says otherwise. */
+export function webMoverOf(parts: Pick<WebMover, 'index' | 'name'> & Partial<WebMover>): WebMover {
+  return {
+    speed: 0.1, ai: 2, flying: false, level: 1, addHp: 0, expValue: 0, rank: 0, belligerence: 0, killable: 0,
+    hideLevel: -1, element: 0, model: null, skeleton: null, motions: {}, ...parts,
   };
 }
 
