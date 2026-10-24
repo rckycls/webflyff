@@ -5,8 +5,10 @@
 //   dwID  szName  dwAI  dwStr ... fSpeed ...  (the columns are listed in MOVER_COLUMNS, in the order of the C++)
 //
 // Of the 83 columns this keeps the id (the `MI_*` define, which `mdlDyna.inc` also uses to find the mover's
-// model), the name, the AI (`AII_*`), the speed and whether it flies (`dwFlying`); the rest are read and dropped. Build flags of the client:
-// `__VER >= 9` (fFrame, dwOrthograde) and `__S1108_BACK_END_SYSTEM` (dwUseable), both on in Neuz/VersionCommon.h.
+// model), the name, the AI (`AII_*`), the speed, whether it flies (`dwFlying`), and the columns a fight shows and
+// uses (level, HP, EXP, rank, belligerence, killable, hide level, element); the rest are read and dropped. Build
+// flags of the client: `__VER >= 9` (fFrame, dwOrthograde) and `__S1108_BACK_END_SYSTEM` (dwUseable), both on in
+// Neuz/VersionCommon.h.
 
 import { ScriptReader } from '../script/cscript';
 
@@ -24,6 +26,22 @@ export interface MoverProp {
    * CActionMover::ProcessCollision moves with the flying rules (`IsFly() || pProp->dwFlying == 1`, ActionMover.cpp:183).
    */
   flying: boolean;
+  /** `dwLevel`: the mover's level (-1, written `=`, for one that has none). */
+  level: number;
+  /** `dwAddHp`: the base of a monster's maximum HP (`CMover::GetMaxOriginHitPoint`, MoverParam.cpp:2880). */
+  addHp: number;
+  /** `nExpValue`: the EXP a kill gives (`GetExpInteger`, 64 bits in the C++; the shipped values all fit a double). */
+  expValue: number;
+  /** `dwClass`: the mover's rank, a `RANK_*` value (RANK_LOW, RANK_BOSS, RANK_GUARD ...). */
+  rank: number;
+  /** `dwBelligerence`: how it treats a player, a `BELLI_*` value (BELLI_PEACEFUL, BELLI_MELEE2X ...). */
+  belligerence: number;
+  /** `bKillable`: whether the mover can be killed. The C++ tests it against 0 and against 1, so it is kept as it is. */
+  killable: number;
+  /** `dwHideLevel`: 1 for a mover whose level the target bar does not show (WndWorld.cpp:2840). */
+  hideLevel: number;
+  /** `eElementType`: the mover's element, an `SAI79::ePropType` value (0 for none). */
+  element: number;
 }
 
 const READER = 'readPropMover';
@@ -93,21 +111,36 @@ export function readPropMover(
     let ai = 0;
     let speed = 0;
     let flying = false;
+    let level = 0;
+    let addHp = 0;
+    let expValue = 0;
+    let rank = 0;
+    let belligerence = 0;
+    let killable = 0;
+    let hideLevel = 0;
+    let element = 0;
     for (const [column, kind] of MOVER_COLUMNS) {
       if (kind === 'float') {
         const value = r.float(column);
         if (column === 'fSpeed') speed = value;
       } else if (kind === 'int64') {
-        r.int64(column);
+        expValue = r.int64(column); // the only 64-bit column: nExpValue
       } else {
         const value = r.number(column);
         if (column === 'dwAI') ai = value;
         else if (column === 'dwFlying') flying = value === 1;
+        else if (column === 'dwLevel') level = value;
+        else if (column === 'dwAddHp') addHp = value;
+        else if (column === 'dwClass') rank = value;
+        else if (column === 'dwBelligerence') belligerence = value;
+        else if (column === 'bKillable') killable = value;
+        else if (column === 'dwHideLevel') hideLevel = value;
+        else if (column === 'eElementType') element = value;
       }
     }
     r.token('the last column'); // the column after dwSndIdle2, which the C++ reads and drops
 
-    movers.push({ index, name, speed, ai, flying });
+    movers.push({ index, name, speed, ai, flying, level, addHp, expValue, rank, belligerence, killable, hideLevel, element });
   }
 
   return movers;

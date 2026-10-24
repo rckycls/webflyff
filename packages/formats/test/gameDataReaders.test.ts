@@ -214,16 +214,46 @@ describe('readPropMover', () => {
 
   it('reads the id, the name (through the string table), the AI and the speed of each row', () => {
     const text = script(DEFAULT, MALE, AIBATT1);
-    expect(readPropMover(HEADER + text, DEFINES, STRINGS, 'propMover.txt')).toEqual([
+    const movers = readPropMover(HEADER + text, DEFINES, STRINGS, 'propMover.txt');
+    expect(movers.map(({ index, name, speed, ai, flying }) => ({ index, name, speed, ai, flying }))).toEqual([
       { index: 10, name: 'Default', speed: 0.1, ai: 1, flying: false },
       { index: 11, name: 'Male', speed: 0.1, ai: 1, flying: false },
       { index: 20, name: 'Small Aibatt', speed: 0.075, ai: 2, flying: false },
     ]);
   });
 
+  it('reads the columns the fight needs: level, HP, EXP, rank, belligerence, killable, hide level, element', () => {
+    const movers = readPropMover(script(DEFAULT, MALE, AIBATT1), DEFINES, STRINGS);
+    const fight = movers.map((m) => ({
+      level: m.level,
+      addHp: m.addHp,
+      expValue: m.expValue,
+      rank: m.rank,
+      belligerence: m.belligerence,
+      killable: m.killable,
+      hideLevel: m.hideLevel,
+      element: m.element,
+    }));
+    expect(fight).toEqual([
+      // "=" is NULL_ID (-1), as GetNumber reads it
+      { level: -1, addHp: -1, expValue: 0, rank: -1, belligerence: 1, killable: 0, hideLevel: -1, element: 0 },
+      { level: -1, addHp: -1, expValue: 0, rank: -1, belligerence: 1, killable: 0, hideLevel: -1, element: 0 },
+      // dwLevel 1, dwAddHp 120, nExpValue 2, dwClass RANK_LOW, BELLI_MELEE2X, bKillable 1, eElementType 4
+      { level: 1, addHp: 120, expValue: 2, rank: 1, belligerence: 11, killable: 1, hideLevel: -1, element: 4 },
+    ]);
+  });
+
+  it('reads nExpValue as a 64-bit number, past the 32 bits of the other columns', () => {
+    const cells = AIBATT1.split('\t');
+    expect(cells[62]).toBe('2'); // nExpValue: after dwCorrectionValue, before nFxpValue
+    cells[62] = '369857717768';
+    expect(readPropMover(script(cells.join('\t')), DEFINES, STRINGS)[0]!.expValue).toBe(369857717768);
+  });
+
   it('takes a name that is not an IDS key as it is, and an id written as a number', () => {
     const text = script(AIBATT1.replace('MI_AIBATT1', '77').replace('IDS_PROPMOVER_TXT_000006', '"Plain Name"'));
-    expect(readPropMover(text, DEFINES, STRINGS)).toEqual([{ index: 77, name: 'Plain Name', speed: 0.075, ai: 2, flying: false }]);
+    const [mover] = readPropMover(text, DEFINES, STRINGS);
+    expect(mover).toMatchObject({ index: 77, name: 'Plain Name', speed: 0.075, ai: 2, flying: false });
   });
 
   it('reads dwFlying, the column after fSpeed and dwShelter: 1 is a flying monster, anything else is not', () => {
@@ -336,7 +366,7 @@ describe('readPropItem', () => {
 
   it('reads the id, the name (through the string table), the body slot (dwParts) and the parts it hides of each row', () => {
     const items = readPropItem(HEADER + script(DEFAULT, SUIT, SWORD), DEFINES, STRINGS, 'propItem.txt');
-    expect(items).toEqual([
+    expect(items.map(({ id, name, parts, exclusive, baseIgnore }) => ({ id, name, parts, exclusive, baseIgnore }))).toEqual([
       { id: 10, name: '', parts: -1, exclusive: -1, baseIgnore: -1 }, // "=" is NULL_ID: worn nowhere, hides nothing
       { id: 502, name: 'Cotton Suit', parts: 2, exclusive: 3, baseIgnore: -1 }, // PARTS_UPPER_BODY, takes PARTS_LOWER_BODY off
       // PARTS_RWEAPON; the " @" of an ultimate is dropped
@@ -344,11 +374,64 @@ describe('readPropItem', () => {
     ]);
   });
 
+  it('reads the columns the fight needs: kinds, hands, ability, weapon type, range, dest and adjust params, effects', () => {
+    const [fists, suit, sword] = readPropItem(script(DEFAULT, SUIT, SWORD), DEFINES, STRINGS);
+    expect(sword).toEqual({
+      id: 22368,
+      name: 'Ultimate Guardian Sword',
+      kind1: 1, // IK1_WEAPON
+      kind2: 2, // IK2_WEAPON_DIRECT
+      kind3: 2, // IK3_SWD
+      handed: 1, // HD_ONE
+      parts: 10,
+      exclusive: -1,
+      baseIgnore: -1,
+      abilityMin: 350,
+      abilityMax: 357,
+      weaponType: 1, // WT_MELEE_SWD
+      attackSpeed: Math.fround(0.085),
+      attackSpeedText: '0.085',
+      attackRange: 1, // AR_SHORT
+      destParams: [4, 2, -1], // DST_STA, DST_DEX, none
+      adjParams: [5, 5, -1],
+      sfxObj3: 20, // XI_HIT_SWORD01
+      sfxObj5: -1,
+      sndAttack1: 117, // SND_PC_DMGSWDM
+      icon: 'Itm_WeaSwoSuho.dds', // """Itm_WeaSwoSuho.dds""" is "", the name, ""
+      textFileName: '',
+      command: '', // IDS_PROPITEM_TXT_008535
+    });
+    expect(suit).toMatchObject({
+      kind1: 2,
+      kind2: 7,
+      kind3: 18,
+      handed: -1,
+      abilityMin: 8, // the suit's defence
+      abilityMax: 10,
+      weaponType: -1,
+      attackSpeed: -1, // GetFloat reads "=" as -1
+      attackSpeedText: '=',
+      icon: 'itm_mVag01Upper.dds',
+      command: 'A suit of cotton.', // szCommand: the description, through the string table
+    });
+    expect(fists).toMatchObject({ kind1: 5, kind2: -1, attackSpeed: Math.fround(0.07), attackSpeedText: '0.07', icon: '' });
+    expect(fists!.destParams).toEqual([-1, -1, -1]);
+  });
+
+  it('keeps fAttackSpeed as the float and as the token as written, so a float that has no short double stays exact', () => {
+    // 0.085 is not a float: the server compares the float exactly, and the text is how to get it again
+    expect(Math.fround(0.085)).not.toBe(0.085);
+    const [sword] = readPropItem(script(SWORD.replace('0.085', '0.0850')), DEFINES, STRINGS);
+    expect(sword!.attackSpeedText).toBe('0.0850');
+    expect(sword!.attackSpeed).toBe(Math.fround(0.085));
+    expect(Math.fround(parseFloat(sword!.attackSpeedText))).toBe(sword!.attackSpeed);
+  });
+
   it('reads dwBasePartsIgnore, the base part a worn item hides', () => {
     // the suit's slots (dwParts dwPartsub bPartsFile dwExclusive dwBasePartsIgnore) as a helmet that covers the hair
     const helmet = SUIT.replace(row('PARTS_UPPER_BODY = 1 PARTS_LOWER_BODY ='), row('PARTS_CAP = 1 = PARTS_HAIR'));
     expect(helmet).not.toBe(SUIT);
-    expect(readPropItem(script(helmet), DEFINES, STRINGS)[0]).toEqual({
+    expect(readPropItem(script(helmet), DEFINES, STRINGS)[0]).toMatchObject({
       id: 502, name: 'Cotton Suit', parts: 6, exclusive: -1, baseIgnore: 1,
     });
   });
