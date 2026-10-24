@@ -448,13 +448,17 @@ describe('buildSkeletonGlb / buildMotionGlb (synthetic)', () => {
     expect(doc.getRoot().listMeshes()).toEqual([]);
   });
 
-  it('a skeleton glb carries the hand bones and the four grip matrices of the .chr in its scene extras', async () => {
-    // CBones::LoadBone (Bone.cpp:76) reads m_mLocalRH, m_mLocalShield, m_mLocalKnuckle and m_mLocalLH; CBones::Init
-    // finds the hand bones. The matrices keep the D3DXMATRIX memory order and the handedness of the file.
+  it('a skeleton glb carries the hand and forearm bones and the four grip matrices of the .chr in its extras', async () => {
+    // CBones::LoadBone (Bone.cpp:76) finds the hand and forearm bones by name (:123-129) and reads m_mLocalRH,
+    // m_mLocalShield, m_mLocalKnuckle and m_mLocalLH. CModelObject::Render (ModelObject.cpp:1134-1142) puts localRH on
+    // a part hung from the right hand, localLH on the left hand, localShield on the LEFT forearm and localKnuckle on
+    // the RIGHT forearm. The matrices keep the D3DXMATRIX memory order and the handedness of the file.
     const skel: Skeleton = {
-      ...chainSkeleton(['Root', 'Bip01 L Hand', 'Bip01 R Hand']),
-      rHandIdx: 2,
-      lHandIdx: 1,
+      ...chainSkeleton(['Root', 'Bip01 L ForeArm', 'Bip01 R ForeArm', 'Bip01 L Hand', 'Bip01 R Hand']),
+      rHandIdx: 4,
+      lHandIdx: 3,
+      rArmIdx: 2,
+      lArmIdx: 1,
       localRH: translation(1, 2, 3),
       localLH: translation(4, 5, 6),
       localShield: translation(7, 8, 9),
@@ -463,8 +467,10 @@ describe('buildSkeletonGlb / buildMotionGlb (synthetic)', () => {
     const doc = await readGlb(await buildSkeletonGlb(skel));
     expect(doc.getRoot().listScenes()[0]!.getExtras()).toEqual({
       grips: {
-        rHand: 2,
-        lHand: 1,
+        rHand: 4,
+        lHand: 3,
+        rArm: 2,
+        lArm: 1,
         localRH: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1, 2, 3, 1],
         localLH: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 4, 5, 6, 1],
         localShield: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 7, 8, 9, 1],
@@ -672,20 +678,28 @@ describeClient('models stage on a small client copy', () => {
     expect(report.kinds.motions!.ok).toBe(1);
   });
 
-  it("mvr_male's skeleton carries its hand bones and grips; a model carries the box of its file", async () => {
+  it("mvr_male's skeleton carries its hand and forearm bones and grips; a model carries the box of its file", async () => {
     const { writer } = await runStage();
     const glbOf = async (key: string) =>
       readGlb(new Uint8Array(await fs.readFile(path.join(out, writer.pathOf(key)!))));
 
     const chr = readChr(fileBytes(modelPath('mvr_male.chr')), 'mvr_male.chr');
-    // CBones::Init takes the last bone whose name after "Bip01 " is "R Hand" / "L Hand"
-    expect([chr.rHandIdx, chr.lHandIdx]).toEqual([17, 13]);
-    expect([chr.bones[17]!.name, chr.bones[13]!.name]).toEqual(['Bip02 R Hand', 'Bip02 L Hand']);
+    // CBones::LoadBone (Bone.cpp:123-129) takes the last bone whose name after "Bip01 " is "R Hand", "L Hand",
+    // "R ForeArm" or "L ForeArm"
+    expect([chr.rHandIdx, chr.lHandIdx, chr.rArmIdx, chr.lArmIdx]).toEqual([17, 13, 16, 12]);
+    expect([17, 13, 16, 12].map((i) => chr.bones[i]!.name)).toEqual([
+      'Bip02 R Hand',
+      'Bip02 L Hand',
+      'Bip02 R ForeArm',
+      'Bip02 L ForeArm',
+    ]);
     const skeleton = await glbOf('skeletons/mvr_male.glb');
     expect(skeleton.getRoot().listScenes()[0]!.getExtras()).toEqual({
       grips: {
         rHand: 17,
         lHand: 13,
+        rArm: 16,
+        lArm: 12,
         localRH: Array.from(chr.localRH),
         localLH: Array.from(chr.localLH),
         localShield: Array.from(chr.localShield),

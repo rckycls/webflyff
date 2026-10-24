@@ -19,14 +19,22 @@ export interface ModelBoxExtras {
 
 /**
  * `extras.grips` of a skeleton glb's scene: where a held item sits, from the `.chr` (`CBones::LoadBone`, Bone.cpp:76).
- * `rHand` and `lHand` are the skeleton's bone indices of the hands (`m_nRHandIdx` / `m_nLHandIdx`, 0 when no bone is
- * named like one). The matrices are the 16 floats of a D3DXMATRIX in memory order, the item's transform relative to
- * the bone it hangs from (`CModelObject::Render`, ModelObject.cpp:1134-1142): `localRH` for an item on the right hand,
- * `localLH` on the left hand, `localShield` on the left forearm bone and `localKnuckle` on the right forearm bone.
+ * `rHand`, `lHand`, `rArm` and `lArm` are the skeleton's bone indices of the hands and the forearms (`m_nRHandIdx`,
+ * `m_nLHandIdx`, `m_nRArmIdx`, `m_nLArmIdx`, found by name at Bone.cpp:123-129; 0 when no bone is named like one).
+ * The matrices are the 16 floats of a D3DXMATRIX in memory order, the item's transform relative to the bone it hangs
+ * from. `CModelObject::Render` (ModelObject.cpp:1134-1142) tests the bone a part hangs from in this order, and
+ * `SetParent` (:906-915) copies the matrix with the same pairing:
+ *   - the right hand (`rHand`)    -> `localRH`
+ *   - the left hand (`lHand`)     -> `localLH`
+ *   - the LEFT forearm (`lArm`)   -> `localShield`
+ *   - the RIGHT forearm (`rArm`)  -> `localKnuckle`
+ * So a shield is attached to the left forearm bone and a knuckle weapon to the right forearm bone, not to a hand.
  */
 export interface SkeletonGrips {
   rHand: number;
   lHand: number;
+  rArm: number;
+  lArm: number;
   localRH: number[];
   localLH: number[];
   localShield: number[];

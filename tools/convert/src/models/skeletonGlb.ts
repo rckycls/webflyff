@@ -73,14 +73,18 @@ export function addJointNodes(doc: Document, joints: Joint[]): Node[] {
 }
 
 /**
- * The grips of `skel` for the scene extras of its glb: the hand bones CBones::Init found (`rHandIdx`, `lHandIdx`) and
- * the four matrices CBones::LoadBone read (Bone.cpp:135-154), as stored: D3DXMATRIX memory order, not converted to the
- * web's handedness. CModelObject::Render multiplies a held item's matrix by one of them (ModelObject.cpp:1134-1142).
+ * The grips of `skel` for the scene extras of its glb: the hand and forearm bones CBones::LoadBone found by name
+ * (`rHandIdx`, `lHandIdx`, `rArmIdx`, `lArmIdx`; Bone.cpp:123-129) and the four matrices it read (Bone.cpp:135-154),
+ * as stored: D3DXMATRIX memory order, not converted to the web's handedness. CModelObject::Render multiplies a held
+ * item's matrix by one of them, chosen by the bone the item hangs from (ModelObject.cpp:1134-1142): the right hand
+ * gets localRH, the left hand localLH, the LEFT forearm localShield and the RIGHT forearm localKnuckle.
  */
 export function skeletonGrips(skel: Skeleton): SkeletonGrips {
   return {
     rHand: skel.rHandIdx,
     lHand: skel.lHandIdx,
+    rArm: skel.rArmIdx,
+    lArm: skel.lArmIdx,
     localRH: Array.from(skel.localRH),
     localLH: Array.from(skel.localLH),
     localShield: Array.from(skel.localShield),

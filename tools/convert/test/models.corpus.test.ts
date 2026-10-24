@@ -96,6 +96,8 @@ async function runSweep(): Promise<Sweep> {
         grips: {
           rHand: skel.rHandIdx,
           lHand: skel.lHandIdx,
+          rArm: skel.rArmIdx,
+          lArm: skel.lArmIdx,
           localRH: Array.from(skel.localRH),
           localLH: Array.from(skel.localLH),
           localShield: Array.from(skel.localShield),
@@ -251,19 +253,31 @@ describeClient('model boxes and skeleton grips in the converted files', () => {
   };
   const bytesOf = (file: string): Uint8Array => new Uint8Array(readFileSync(path.join(dir(), file)));
 
-  it('mvr_male and mvr_female: hands are bones 17 (R) and 13 (L) and the grips are the file\'s', async () => {
-    for (const [name, localRH, localLH] of [
-      ['mvr_male', [0.10551, -0.01573, -0.00455], [0.10593, 0.01581, -0.00508]],
-      ['mvr_female', [0.10589, -0.01984, -0.00211], [0.10485, 0.01964, -0.00077]],
+  it('mvr_male and mvr_female: hands are bones 17 (R) and 13 (L), forearms 16 (R) and 12 (L), the grips the file\'s', async () => {
+    // [skeleton, translation row (_41, _42, _43) of localRH, localLH, localShield and localKnuckle], as the file stores them
+    for (const [name, localRH, localLH, localShield, localKnuckle] of [
+      [
+        'mvr_male',
+        [0.10551, -0.01573, -0.00455],
+        [0.10593, 0.01581, -0.00508],
+        [0.08033, 0.05767, -0.0294],
+        [0.11212, 0.0083, 0],
+      ],
+      [
+        'mvr_female',
+        [0.10589, -0.01984, -0.00211],
+        [0.10485, 0.01964, -0.00077],
+        [0.079, 0.07433, -0.02024],
+        [0.14325, 0.00275, 0.00669],
+      ],
     ] as const) {
       const doc = await readGlb(await buildSkeletonGlb(readChr(bytesOf(fileOf(name, 'chr')), name)));
       const { grips } = doc.getRoot().listScenes()[0]!.getExtras() as { grips: Record<string, number | number[]> };
-      expect([grips.rHand, grips.lHand]).toEqual([17, 13]);
-      // the translation row (_41, _42, _43) of the D3DXMATRIX, in the order the file stores it
-      (grips.localRH as number[]).slice(12, 15).forEach((v, i) => expect(v).toBeCloseTo(localRH[i]!, 5));
-      (grips.localLH as number[]).slice(12, 15).forEach((v, i) => expect(v).toBeCloseTo(localLH[i]!, 5));
-      for (const matrix of ['localRH', 'localLH', 'localShield', 'localKnuckle']) {
+      expect([grips.rHand, grips.lHand, grips.rArm, grips.lArm]).toEqual([17, 13, 16, 12]);
+      const rows = { localRH, localLH, localShield, localKnuckle };
+      for (const [matrix, row] of Object.entries(rows)) {
         expect(grips[matrix]).toHaveLength(16);
+        (grips[matrix] as number[]).slice(12, 15).forEach((v, i) => expect(v).toBeCloseTo(row[i]!, 5));
       }
     }
   });

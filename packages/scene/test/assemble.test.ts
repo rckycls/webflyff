@@ -258,15 +258,17 @@ describe('the box of an assembled character', () => {
 
   describe('grips', () => {
     const grips = {
-      rHand: 2,
-      lHand: 1,
+      rHand: 4,
+      lHand: 3,
+      rArm: 2,
+      lArm: 1,
       localRH: identity.map((v, i) => v + i / 100),
       localLH: identity.map((v, i) => v + i / 50),
       localShield: identity.map((v, i) => v + i / 25),
       localKnuckle: identity.map((v, i) => v - i / 100),
     };
 
-    it('are the hand bones and the four grip matrices the skeleton glb carries', async () => {
+    it('are the hand and forearm bones and the four grip matrices the skeleton glb carries', async () => {
       const skeleton = skeletonScene(NAMES);
       skeleton.scene.userData.grips = grips;
 
@@ -277,6 +279,18 @@ describe('the box of an assembled character', () => {
 
     it('are null for a skeleton of an older conversion', async () => {
       const character = await assembleCharacter({ scene: skeletonScene(NAMES).scene }, [], fakeCache());
+
+      expect(character.grips).toBeNull();
+    });
+
+    it('are null for grips of the first conversion, which had the hands but not the forearms', async () => {
+      // the shield and the knuckle hang from the forearm bones (ModelObject.cpp:1134-1142): without them the grips
+      // cannot place a shield, so they count as absent rather than half there
+      const { rArm: _rArm, lArm: _lArm, ...handsOnly } = grips;
+      const skeleton = skeletonScene(NAMES);
+      skeleton.scene.userData.grips = handsOnly;
+
+      const character = await assembleCharacter({ scene: skeleton.scene }, [], fakeCache());
 
       expect(character.grips).toBeNull();
     });
@@ -299,6 +313,9 @@ describe('the box of an assembled character', () => {
 
     it.each([
       ['a hand that is not a whole number', { ...grips, rHand: 1.5 }],
+      ['a forearm that is negative', { ...grips, lArm: -1 }],
+      ['a forearm that is a text', { ...grips, rArm: '2' }],
+      ['one forearm only', { ...grips, lArm: undefined }],
       ['a matrix of 15 numbers', { ...grips, localRH: grips.localRH.slice(1) }],
       ['a matrix with a text in it', { ...grips, localLH: [...grips.localLH.slice(1), 'x'] }],
       ['a matrix that is missing', { ...grips, localKnuckle: undefined }],

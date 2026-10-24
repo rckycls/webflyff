@@ -43,8 +43,9 @@ export interface AssembledCharacter {
    */
   box(): ModelBox;
   /**
-   * Where a held item sits (`SkeletonGrips`), from the skeleton glb; null for a skeleton glb of an older conversion,
-   * and for a mover that has no skeleton.
+   * Where a held item sits (`SkeletonGrips`: the hand and forearm bones and the four grip matrices, and which matrix
+   * goes with which bone), from the skeleton glb; null for a skeleton glb of an older conversion (including the first,
+   * whose grips had no forearm bones), and for a mover that has no skeleton.
    */
   readonly grips: SkeletonGrips | null;
   /** Gives the textures back to the cache and disposes the parts' geometry and materials. Safe to call twice. */
@@ -95,7 +96,10 @@ export function unionModelBoxes(boxes: readonly ModelBox[]): ModelBox {
 
 /**
  * The grips a skeleton glb carries on its scene (`SkeletonGrips`), copied; null for a glb without them (an older
- * conversion). Throws when it has them in a shape the converter does not write.
+ * conversion), and for one whose grips have the hands but neither forearm (the first conversion): the shield hangs
+ * from the left forearm bone and the knuckle weapon from the right one (ModelObject.cpp:1134-1142), so such grips
+ * cannot place them and count as absent. Throws when the grips are in a shape the converter does not write (a forearm
+ * index that is present but not a bone index, or only one of the two).
  */
 function gripsOf(scene: Pick<Object3D, 'userData'>): SkeletonGrips | null {
   const written: unknown = scene.userData.grips;
@@ -103,7 +107,11 @@ function gripsOf(scene: Pick<Object3D, 'userData'>): SkeletonGrips | null {
   if (typeof written !== 'object' || written === null) {
     throw new Error("the skeleton glb's grips are not in the shape the converter writes");
   }
-  const { rHand, lHand, localRH, localLH, localShield, localKnuckle } = written as Record<keyof SkeletonGrips, unknown>;
+  const { rHand, lHand, rArm, lArm, localRH, localLH, localShield, localKnuckle } = written as Record<
+    keyof SkeletonGrips,
+    unknown
+  >;
+  const notWritten = new Error("the skeleton glb's grips are not in the shape the converter writes");
   if (
     !isBoneIndex(rHand) ||
     !isBoneIndex(lHand) ||
@@ -112,11 +120,15 @@ function gripsOf(scene: Pick<Object3D, 'userData'>): SkeletonGrips | null {
     !isMatrix(localShield) ||
     !isMatrix(localKnuckle)
   ) {
-    throw new Error("the skeleton glb's grips are not in the shape the converter writes");
+    throw notWritten;
   }
+  if (rArm === undefined && lArm === undefined) return null; // the first conversion: both hands, no forearm
+  if (!isBoneIndex(rArm) || !isBoneIndex(lArm)) throw notWritten;
   return {
     rHand,
     lHand,
+    rArm,
+    lArm,
     localRH: [...localRH],
     localLH: [...localLH],
     localShield: [...localShield],
