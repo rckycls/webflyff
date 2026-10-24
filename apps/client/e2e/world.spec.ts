@@ -84,7 +84,7 @@ const BASE = { scale: 1, motion: 0, hitPoint: 100, state: OBJSTA_STAND, stateFla
 const SELF_PLAYER: AddedPlayer = {
   self: true, name: 'Webby', sex: 0, skinSet: 0, hairMesh: 0, hairColor: 0xff907b6d, headMesh: 0, playerId: 500, job: 0,
   level: 15, authorization: 0x46, mode: 0, stateMode: 0, pkTime: 0, pkValue: 0, pkPropensity: 0, honor: -1, worn: [],
-  equipmentObjectIds: Array.from({ length: MAX_HUMAN_PARTS }, () => NULL_ID), shopTitle: '',
+  equipmentObjectIds: Array.from({ length: MAX_HUMAN_PARTS }, () => NULL_ID), own: null, shopTitle: '',
 };
 const NPC_PART: AddedNpc = {
   hairMesh: 0, hairColor: 0, headMesh: 0, characterKey: '', worn: [], activeAttack: 0, movePattern: 0, moveEvent: 0,

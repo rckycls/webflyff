@@ -36,7 +36,9 @@ export type { JoinRequest, MoveReport, WorldPacket } from './messages/world';
 export { readBundle } from './bundle';
 export type { BundleMessage, BundleResult, MessageHeader, MessageReader } from './bundle';
 export { WORLD_READERS } from './world/readers';
-export type { AddedMover, AddedNpc, AddedPlayer, MonsterRate, WorldMessage, WornPart } from './world/types';
+export type {
+  AddedMover, AddedNpc, AddedPlayer, InventoryItem, MonsterRate, OwnCharacter, SkillSlot, WorldMessage, WornPart,
+} from './world/types';
 export { CloseCode } from './gatewayCloseCodes';
 export { parseRecording } from './recording';
 export type { RecordedPacket, Recording } from './recording';

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ArWriter, BUNDLE_MARKER, MessageType, NULL_ID, PacketType, WORLD_READERS, readBundle } from '../src';
-import type { BundleResult, Vec3, WorldMessage } from '../src';
+import type { BundleResult, OwnCharacter, SkillSlot, Vec3, WorldMessage } from '../src';
 
 // The values below are copied from the C++ on purpose, so that a wrong constant in the reader shows up here.
 /** `OT_ITEM` and `OT_MOVER` (`Resource/define.h:84-85`). */
@@ -10,6 +10,10 @@ const OT_MOVER = 5;
 const MAX_HUMAN_PARTS = 31;
 const SM_MAX = 26;
 const MAX_JOB = 32;
+/** `MAX_SKILL_JOB` (`_Common/Mover.h:96-100`, `__VER >= 10`): 3 + 20 + 20 + 1 + 1 (`Resource/defineJob.h:12-17`). */
+const MAX_SKILL_JOB = 45;
+/** `SI_GEN_EVE_QUICKSTEP`, `_HASTE`, `_HEAPUP` and `_ACCURACY` (`Resource/defineSkill.h:243-246`). */
+const SI_GEN_EVE = [317, 318, 319, 320];
 
 /** The bundle's player object ID: an ADD_OBJ with this object ID is the player's own character. */
 const PLAYER = 0x1234;
@@ -71,10 +75,12 @@ function objectHead(index: number, scaleTimes100: number, angleTimes10: number, 
  * The player part of `CMover::Serialize` that does not depend on the method (`ObjSerializeOpt.cpp:424-506`), with
  * the guild and the party present when their flags are 1.
  */
-function playerCommon(w: ArWriter, name: string, guild: boolean, party: boolean): ArWriter {
+function playerCommon(
+  w: ArWriter, name: string, guild: boolean, party: boolean, stats: readonly number[] = [15, 16, 17, 18],
+): ArWriter {
   w.string(name).u8(1).u8(2).u8(3).u32(0xff112233).u8(4) // name, sex, skin set, hair mesh, hair colour, head mesh
     .u32(777).u8(9) // m_idPlayer, m_nJob
-    .u16(15).u16(16).u16(17).u16(18).u16(65) // str, sta, dex, int, level
+    .u16(stats[0]).u16(stats[1]).u16(stats[2]).u16(stats[3]).u16(65) // m_nStr, m_nSta, m_nDex, m_nInt, level
     .i32(-1).i32(0); // m_nFuel, m_tmAccFuel
   if (guild) w.u8(1).u32(42).u32(3); else w.u8(0); // m_idGuild, m_idWar
   w.u32(42); // m_idGuildCloak
@@ -116,7 +122,7 @@ describe('ADD_OBJ (OnAddObj)', () => {
         index: 11, scale: 1, pos, angle: 90.5, objectId: OTHER,
         motion: 0x15, isPlayer: true, hitPoint: 1234, state: 0x11, stateFlag: 0x2, belligerence: 0, sfxId: NULL_ID,
         player: {
-          ...playerBase, self: false, shopTitle: 'Cheap swords', equipmentObjectIds: [],
+          ...playerBase, self: false, own: null, shopTitle: 'Cheap swords', equipmentObjectIds: [],
           worn: [
             { part: 2, itemId: 500, flag: 0 }, { part: 10, itemId: 21, flag: 1 }, { part: 27, itemId: 4100, flag: 0 },
           ],
@@ -182,15 +188,51 @@ describe('ADD_OBJ (OnAddObj)', () => {
     { length: MAX_HUMAN_PARTS }, (_, i) => (i === 2 ? 7 : i === 10 ? 0 : i === 13 ? 41 : NULL_ID),
   );
 
-  /** The player's own character (METHOD_NONE), through the equipment IDs, then 50 bytes standing for the rest. */
-  function selfFields(): Uint8Array {
+  /**
+   * `m_aJobSkill` with the first slots filled and the rest empty: `dwSkill` `NULL_ID` and `dwLevel` 0, as
+   * `CMover::InitProp` leaves a slot (`_Common/Mover.cpp:1478-1485`).
+   */
+  function skillArray(filled: readonly SkillSlot[]): SkillSlot[] {
+    return Array.from({ length: MAX_SKILL_JOB }, (_, i) => filled[i] ?? { skill: NULL_ID, level: 0 });
+  }
+
+  /** What a new character's ADD_OBJ carries: 15 in each stat, MP 63, FP 32, no EXP or points, seven skills filled. */
+  const newCharacter: OwnCharacter = {
+    str: 15, sta: 15, dex: 15, int: 15, manaPoint: 63, fatiguePoint: 32,
+    exp: 0n, skillLevel: 0, skillPoint: 0, deathExp: 0n, deathLevel: 0, remainGP: 0,
+    // Slots 0 to 2 are the first three skills (here IDs 1, 2 and 3 at levels 0, 1 and 2), slots 3 to 6 the four
+    // `SI_GEN_EVE_*` placeholders.
+    skills: skillArray([
+      { skill: 1, level: 0 }, { skill: 2, level: 1 }, { skill: 3, level: 2 },
+      ...SI_GEN_EVE.map((skill) => ({ skill, level: 0 })),
+    ]),
+    inventory: null,
+  };
+
+  /** A character whose numbers all differ, with the highest values the fields hold and the signed ones negative. */
+  const veteran: OwnCharacter = {
+    str: 80, sta: 65535, dex: 40, int: 25, manaPoint: 65535, fatiguePoint: 60,
+    exp: 9876543210n, skillLevel: 3, skillPoint: 4, deathExp: -5n, deathLevel: 7, remainGP: -2,
+    skills: skillArray([
+      { skill: 0, level: 0 }, { skill: 4, level: 0xffffffff }, { skill: 0xfffffffe, level: 19 },
+      ...SI_GEN_EVE.map((skill, i) => ({ skill, level: i })),
+    ]),
+    inventory: null,
+  };
+
+  /**
+   * The player's own character (METHOD_NONE, `ObjSerializeOpt.cpp:509-566`), through the 45 skill pairs, then `rest`
+   * bytes standing for the cheer point, the banks, the inventory and the buffs.
+   */
+  function selfFields(own: OwnCharacter = veteran, rest = 50): Uint8Array {
     const w = objectHead(11, 100, 0, PLAYER)
       .u16(0x15).u8(1).i32(500).u32(0x1).u32(0).u8(0).u32(NULL_ID);
-    playerCommon(w, 'Hero', false, false)
-      .u16(80).u16(60) // (u_short)m_nManaPoint, (u_short)m_nFatiguePoint
+    playerCommon(w, 'Hero', false, false, [own.str, own.sta, own.dex, own.int])
+      .u16(own.manaPoint).u16(own.fatiguePoint) // (u_short)m_nManaPoint, (u_short)m_nFatiguePoint
       .i32(0) // m_nTutorialState (__VER >= 12)
       .i32(0).u32(123456) // m_nFxp, dwGold
-      .i64(9876543210n).i32(3).i32(4).i64(0n).i32(0); // m_nExp1, skill level, skill point, death exp, death level
+      // m_nExp1, m_nSkillLevel, m_nSkillPoint, m_nDeathExp, m_nDeathLevel
+      .i64(own.exp).i32(own.skillLevel).i32(own.skillPoint).i64(own.deathExp).i32(own.deathLevel);
     repeat(w, MAX_JOB, (x) => x.u32(0)) // dwJobLv[MAX_JOB]
       .u32(1).vec3([1, 2, 3]) // m_idMarkingWorld, m_vMarkingPos
       // m_nQuestSize (BYTE), then sizeof(QUEST) = 12 bytes each: m_nState, a pad byte, m_wTime, m_wId,
@@ -201,24 +243,29 @@ describe('ADD_OBJ (OnAddObj)', () => {
       .u8(1).u16(40) // m_nCompleteQuestSize, then WORDs
       .u8(1).u16(51) // m_nCheckedQuestSize (__IMPROVE_QUEST_INTERFACE), then WORDs
       .u32(0) // m_idMurderer
-      .i16(5).i16(0); // (short)m_nRemainGP, (short)0
+      .i16(own.remainGP).i16(0); // (short)m_nRemainGP, (short)0
     for (const id of ownEquipment) w.u32(id); // m_aEquipInfo[i].dwId
-    // The skills, the inventory, the banks and the rest, which the reader leaves alone.
-    return w.bytes(new Uint8Array(50).fill(0xcd)).toBytes();
+    for (const slot of own.skills) w.u32(slot.skill).u32(slot.level); // m_aJobSkill[i]: dwSkill, dwLevel
+    // The cheer point, the inventory, the banks and the rest, which the reader leaves alone.
+    return w.bytes(new Uint8Array(rest).fill(0xcd)).toBytes();
   }
 
-  const self: WorldMessage = {
-    type: 'addMover',
-    mover: {
-      index: 11, scale: 1, pos, angle: 0, objectId: PLAYER,
-      motion: 0x15, isPlayer: true, hitPoint: 500, state: 0x1, stateFlag: 0, belligerence: 0, sfxId: NULL_ID,
-      player: {
-        ...playerBase, self: true, shopTitle: '', worn: [], equipmentObjectIds: ownEquipment,
+  function selfOf(own: OwnCharacter): WorldMessage {
+    return {
+      type: 'addMover',
+      mover: {
+        index: 11, scale: 1, pos, angle: 0, objectId: PLAYER,
+        motion: 0x15, isPlayer: true, hitPoint: 500, state: 0x1, stateFlag: 0, belligerence: 0, sfxId: NULL_ID,
+        player: {
+          ...playerBase, self: true, own, shopTitle: '', worn: [], equipmentObjectIds: ownEquipment,
+        },
       },
-    },
-  };
+    };
+  }
 
-  it("reads the player's own character up to its equipment and skips the rest", () => {
+  const self = selfOf(veteran);
+
+  it("reads the player's own character through its skills and skips the rest", () => {
     const own = readOne(PLAYER, selfFields());
     expect(own).toEqual(self);
     // No worn parts: the 31 IDs are the inventory's object IDs, kept apart from item IDs.
@@ -234,6 +281,52 @@ describe('ADD_OBJ (OnAddObj)', () => {
     ]), WORLD_READERS);
     expect(result.mismatched).toEqual([]);
     expect(result.messages.map((m) => m.objectId)).toEqual([PLAYER, OTHER]);
+  });
+
+  it('the own ADD_OBJ keeps the numbers and skills', () => {
+    const message = readOne(PLAYER, selfFields(newCharacter));
+    const own = message.type === 'addMover' ? message.mover.player?.own : undefined;
+    expect(own).toEqual(newCharacter);
+    expect(own).toMatchObject({
+      str: 15, sta: 15, dex: 15, int: 15, manaPoint: 63, fatiguePoint: 32, exp: 0n, skillLevel: 0, skillPoint: 0,
+      deathExp: 0n, deathLevel: 0, remainGP: 0, inventory: null,
+    });
+    // Slot by slot: 45 of them, the first three skills, the four SI_GEN_EVE_* IDs, then the empty slots.
+    expect(own?.skills).toHaveLength(MAX_SKILL_JOB);
+    expect(own?.skills.slice(0, 3)).toEqual([
+      { skill: 1, level: 0 }, { skill: 2, level: 1 }, { skill: 3, level: 2 },
+    ]);
+    expect(own?.skills.slice(3, 7)).toEqual(SI_GEN_EVE.map((skill) => ({ skill, level: 0 })));
+    expect(own?.skills.slice(7)).toEqual(
+      Array.from({ length: MAX_SKILL_JOB - 7 }, () => ({ skill: NULL_ID, level: 0 })),
+    );
+  });
+
+  it('keeps the numbers at the width and the sign the C++ types read them', () => {
+    // The stats and the mana and fatigue points are WORDs (`(u_short&)`), the skill pairs DWORDs, the EXP and the
+    // death EXP an __int64, the stat points a `short`.
+    const message = readOne(PLAYER, selfFields(veteran));
+    const own = message.type === 'addMover' ? message.mover.player?.own : undefined;
+    expect(own).toMatchObject({ sta: 65535, manaPoint: 65535, exp: 9876543210n, deathExp: -5n, remainGP: -2 });
+    expect(own?.skills[1]).toEqual({ skill: 4, level: 0xffffffff });
+    expect(own?.skills[2]).toEqual({ skill: 0xfffffffe, level: 19 });
+  });
+
+  it("another player's ADD_OBJ has no own character and still ends on the boundary", () => {
+    const message = readOne(OTHER, otherPlayerFields().toBytes());
+    expect(message.type === 'addMover' ? message.mover.player?.own : undefined).toBeNull();
+  });
+
+  it('an own ADD_OBJ whose skill array is cut short or missing is a mismatch', () => {
+    // 44 pairs and nothing after them: the 45th pair is missing.
+    expect(readAdd(PLAYER, selfFields({ ...veteran, skills: veteran.skills.slice(0, 44) }, 0)).mismatched)
+      .toEqual([MessageType.ADD_OBJ]);
+    // Cut in the middle of the 45th pair.
+    expect(readAdd(PLAYER, selfFields(veteran, 0).subarray(0, -3)).mismatched).toEqual([MessageType.ADD_OBJ]);
+    // Piece 3's own ADD_OBJ, which ended on the equipment IDs.
+    expect(readAdd(PLAYER, selfFields({ ...veteran, skills: [] }, 0)).mismatched).toEqual([MessageType.ADD_OBJ]);
+    // The whole array and nothing after it is fine: the rest is skipped, whatever its length.
+    expect(readAdd(PLAYER, selfFields(veteran, 0)).mismatched).toEqual([]);
   });
 
   it("chooses the own character's fields by the object ID, as OnAddObj's SetMethod does", () => {

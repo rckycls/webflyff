@@ -96,8 +96,55 @@ export type MessageOf<T extends WorldMessage['type']> = Extract<WorldMessage, { 
 export interface WornPart { part: number; itemId: number; flag: number }
 
 /**
+ * One slot of the own character's `m_aJobSkill` (a `SKILL`, `_Common/Item.h:308-314`: `DWORD dwSkill`, `DWORD
+ * dwLevel`). `skill` is a `SI_*` skill ID, or `NULL_ID` (0xffffffff) in a slot that holds no skill, whose `level` is 0.
+ */
+export interface SkillSlot { skill: number; level: number }
+
+/**
+ * One item of the own inventory: `objectId` is its object ID in the inventory (what `AddedPlayer.equipmentObjectIds`
+ * name), `itemId` the item's ID in `propItem.txt` and `count` how many of it the stack holds.
+ */
+export interface InventoryItem { objectId: number; itemId: number; count: number }
+
+/**
+ * What the own ADD_OBJ (METHOD_NONE, `_Common/ObjSerializeOpt.cpp:509-566`) tells about the player's own character
+ * beyond what every player has: its base stats (the player part's `m_nStr` to `m_nInt`, :436-439), the points
+ * and EXP, and the skill array.
+ */
+export interface OwnCharacter {
+  /** `m_nStr`, `m_nSta`, `m_nDex`, `m_nInt`: the base stats, without equipment or buffs (`WORD`s). */
+  str: number;
+  sta: number;
+  dex: number;
+  int: number;
+  /** `m_nManaPoint` and `m_nFatiguePoint`: the current MP and FP (`WORD`s; the maxima are not on the wire). */
+  manaPoint: number;
+  fatiguePoint: number;
+  /** `m_nExp1`, the EXP towards the next level (`EXPINTEGER`, an `__int64`). */
+  exp: bigint;
+  /** `m_nSkillLevel`: the skill points earned in total. `m_nSkillPoint`: the unspent ones. */
+  skillLevel: number;
+  skillPoint: number;
+  /** `m_nDeathExp` and `m_nDeathLevel`: the EXP and the level the character had when it last died. */
+  deathExp: bigint;
+  deathLevel: number;
+  /** `m_nRemainGP`: the unspent stat points (a `short` on the wire). */
+  remainGP: number;
+  /**
+   * `m_aJobSkill`, always `MAX_SKILL_JOB` (45) slots: 3 of the first job, 20 expert, 20 professional, the master and
+   * the hero skill. The index is what shortcuts and skill packets call the skill; a slot holding no skill has
+   * `skill` `NULL_ID`.
+   */
+  skills: SkillSlot[];
+  /** The own inventory's items; `null` while the reader does not read them, and when its read fails. */
+  inventory: InventoryItem[] | null;
+}
+
+/**
  * The player part of `CMover::Serialize` (`_Common/ObjSerializeOpt.cpp:405`). Fields the browser has no use for
- * (the stats, the guild and party, the fame, the item options and so on) are read past, not kept.
+ * (the guild and party, the fame, the item options and so on) are read past, not kept; a stat of another player is
+ * one of them, only the own character's are kept (`own`).
  */
 export interface AddedPlayer {
   /** The player's own character: the message's object ID is the bundle's player object ID (METHOD_NONE). */
@@ -134,6 +181,8 @@ export interface AddedPlayer {
    * decoded. In Piece 3 the own look comes from the lobby's PLAYER_LIST equipment instead.
    */
   equipmentObjectIds: number[];
+  /** The own character's stats, points, EXP and skills (METHOD_NONE); `null` for another player. */
+  own: OwnCharacter | null;
   /** `m_vtInfo.GetTitle()`, the title of the player's private shop (another player only; '' for the own character). */
   shopTitle: string;
 }

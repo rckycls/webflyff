@@ -39,7 +39,7 @@ const SELF: AddedMover = {
   player: {
     self: true, name: 'Webby', sex: 0, skinSet: 0, hairMesh: 0, hairColor: 0, headMesh: 0, playerId: 500, job: 0, level: 15,
     authorization: 0x46, mode: 0, stateMode: 0, pkTime: 0, pkValue: 0, pkPropensity: 0, honor: -1, worn: [],
-    equipmentObjectIds: new Array<number>(31).fill(NULL_ID), shopTitle: '',
+    equipmentObjectIds: new Array<number>(31).fill(NULL_ID), own: null, shopTitle: '',
   },
 };
 

@@ -1,5 +1,7 @@
 import { ArWriter, AttackFlag, BUNDLE_MARKER, MessageType, NULL_ID, ObjectType, ProtocolError } from '@flyffweb/protocol';
-import type { AddedMover, AddedNpc, AddedPlayer, MonsterRate, MoveReport, Vec3 } from '@flyffweb/protocol';
+import type {
+  AddedMover, AddedNpc, AddedPlayer, MonsterRate, MoveReport, OwnCharacter, SkillSlot, Vec3,
+} from '@flyffweb/protocol';
 
 /** One message of a scripted bundle. `fields` are the bytes after the object ID and the type, built by the caller. */
 export interface ScriptMessage {
@@ -286,12 +288,26 @@ export function writeGameTimer(objectId: number, time: number): ScriptMessage {
 
 // ADD_OBJ: `CUser::AddAddObj` (`WORLDSERVER/User.cpp:664`) and the storing side of `CMover::Serialize`
 // (`_Common/ObjSerializeOpt.cpp:97`). The fields the browser does not keep are written as a mover with nothing
-// in them would have them: no guild, no party, no pet, no buffs, zero stats.
+// in them would have them: no guild, no party, no pet, no buffs, and zero stats unless the own character's are given.
 
 /** `MAX_HUMAN_PARTS` (`Resource/defineNeuz.h:62`), `SM_MAX` (`_Network/CmnHdr.h:503`), `MAX_JOB` (`defineJob.h:90`). */
 const MAX_HUMAN_PARTS = 31;
 const SM_MAX = 26;
 const MAX_JOB = 32;
+/** `MAX_SKILL_JOB` (`_Common/Mover.h:96-100`, `__VER >= 10`): the length of `m_aJobSkill`. */
+const MAX_SKILL_JOB = 45;
+
+/**
+ * What an own character without `own` is written with, a mover that has nothing yet: zero stats, MP, FP, EXP and
+ * points, and every skill slot empty (`dwSkill` `NULL_ID`, `dwLevel` 0, as `CMover::InitProp` leaves a slot,
+ * `_Common/Mover.cpp:1478-1485`).
+ */
+const NO_OWN: OwnCharacter = {
+  str: 0, sta: 0, dex: 0, int: 0, manaPoint: 0, fatiguePoint: 0, exp: 0n, skillLevel: 0, skillPoint: 0,
+  deathExp: 0n, deathLevel: 0, remainGP: 0,
+  skills: Array.from({ length: MAX_SKILL_JOB }, (): SkillSlot => ({ skill: NULL_ID, level: 0 })),
+  inventory: null,
+};
 
 /**
  * `AddAddObj` writes `(BYTE)pCtrl->GetType() << pCtrl->GetIndex()` in front of `Serialize`; then `CObj::Serialize`
@@ -311,11 +327,15 @@ function moverStart(m: AddedMover): ArWriter {
     .u32(m.sfxId);
 }
 
-/** The player part every method writes (`ObjSerializeOpt.cpp:115-196`). */
-function playerStart(m: AddedMover, p: AddedPlayer): ArWriter {
+/**
+ * The player part every method writes (`ObjSerializeOpt.cpp:115-196`). `stats` are `m_nStr`, `m_nSta`, `m_nDex` and
+ * `m_nInt` (`(u_short)`, :123-126): the own character's, and zeros for another player, whose stats the browser does
+ * not keep.
+ */
+function playerStart(m: AddedMover, p: AddedPlayer, stats: readonly number[] = [0, 0, 0, 0]): ArWriter {
   const w = moverStart(m)
     .string(p.name).u8(p.sex).u8(p.skinSet).u8(p.hairMesh).u32(p.hairColor).u8(p.headMesh).u32(p.playerId).u8(p.job)
-    .u16(0).u16(0).u16(0).u16(0) // m_nStr, m_nSta, m_nDex, m_nInt
+    .u16(stats[0]).u16(stats[1]).u16(stats[2]).u16(stats[3]) // m_nStr, m_nSta, m_nDex, m_nInt
     .u16(p.level)
     .i32(0).i32(0) // m_nFuel, m_tmAccFuel
     .u8(0) // m_idGuild > 0 is false: no guild and war IDs follow
@@ -371,18 +391,22 @@ export function writeAddPlayer(objectId: number, p: AddedMover): ScriptMessage {
     throw new Error(`mover ${p.objectId} is another player: its equipmentObjectIds must be [], not `
       + `${player.equipmentObjectIds.length} IDs`);
   }
+  if (player.own !== null) {
+    throw new Error(`mover ${p.objectId} is another player: its own must be null, not the own character's numbers`);
+  }
   const w = playerStart(p, player).string(player.shopTitle).u8(player.worn.length);
   for (const part of player.worn) w.u8(part.part).u16(part.itemId).u8(part.flag);
   return scripted(objectId, MessageType.ADD_OBJ, w.u32(NULL_ID).string('').u32(0));
 }
 
 /**
- * ADD_OBJ of the player's own character (METHOD_NONE, `ObjSerializeOpt.cpp:198-236`), up to its equipment IDs:
- * `equipmentObjectIds` (one per part, the inventory's object IDs or `NULL_ID`) go in `m_aEquipInfo[i].dwId`; the
- * own character lists no worn parts, so `worn` must be `[]`. The world server goes on with the skills, the
- * inventory, the banks and the rest (:237-276), then the buffs; the browser skips all of that, so the script ends
- * the message after the equipment. The bundle's player object ID must be `objectId`, as `CUser::Open` makes it
- * (`User.cpp:315`).
+ * ADD_OBJ of the player's own character (METHOD_NONE, `ObjSerializeOpt.cpp:198-237`), through its skill array: the
+ * stats (`m_nStr` to `m_nInt`) and the numbers from `p.player.own` (a character with nothing yet when it is `null`:
+ * `NO_OWN`), `equipmentObjectIds` (one per part, the inventory's object IDs or `NULL_ID`) in `m_aEquipInfo[i].dwId`,
+ * then the 45 skill pairs. The own character lists no worn parts, so `worn` must be `[]`. The world server goes on
+ * with the cheer point, the inventory, the banks and the rest (:239-276), then the buffs; the browser skips all of
+ * that, so the script ends the message after the skills, and `own.inventory` must be `null`. The bundle's player
+ * object ID must be `objectId`, as `CUser::Open` makes it (`User.cpp:315`).
  */
 export function writeAddSelf(objectId: number, p: AddedMover): ScriptMessage {
   const player = playerOf(p, true);
@@ -394,15 +418,24 @@ export function writeAddSelf(objectId: number, p: AddedMover): ScriptMessage {
     throw new Error(`the own character's worn parts are not on the wire: worn must be [], not `
       + `${player.worn.length} parts`);
   }
-  const w = playerStart(p, player)
-    .u16(0).u16(0) // (u_short)m_nManaPoint, (u_short)m_nFatiguePoint
+  const own = player.own ?? NO_OWN;
+  if (own.skills.length !== MAX_SKILL_JOB) {
+    throw new Error(`the own character needs ${MAX_SKILL_JOB} skill slots, not ${own.skills.length}`);
+  }
+  if (own.inventory !== null) {
+    throw new Error('the own character\'s inventory is not written yet: own.inventory must be null');
+  }
+  const w = playerStart(p, player, [own.str, own.sta, own.dex, own.int])
+    .u16(own.manaPoint).u16(own.fatiguePoint) // (u_short)m_nManaPoint, (u_short)m_nFatiguePoint
     .i32(0).i32(0).u32(0) // m_nTutorialState, m_nFxp, dwGold
-    .i64(0n).i32(0).i32(0).i64(0n).i32(0); // m_nExp1, m_nSkillLevel, m_nSkillPoint, m_nDeathExp, m_nDeathLevel
+    // m_nExp1, m_nSkillLevel, m_nSkillPoint, m_nDeathExp, m_nDeathLevel
+    .i64(own.exp).i32(own.skillLevel).i32(own.skillPoint).i64(own.deathExp).i32(own.deathLevel);
   for (let i = 0; i < MAX_JOB; i++) w.u32(0); // dwJobLv
   w.u32(0).vec3([0, 0, 0]) // m_idMarkingWorld, m_vMarkingPos
     .u8(0).u8(0).u8(0) // no quests, no completed quests, no checked quests
-    .u32(0).i16(0).i16(0); // m_idMurderer, (short)m_nRemainGP, (short)0
+    .u32(0).i16(own.remainGP).i16(0); // m_idMurderer, (short)m_nRemainGP, (short)0
   for (const id of player.equipmentObjectIds) w.u32(id); // m_aEquipInfo[i].dwId
+  for (const slot of own.skills) w.u32(slot.skill).u32(slot.level); // m_aJobSkill[i]: dwSkill, dwLevel
   return scripted(objectId, MessageType.ADD_OBJ, w);
 }
 

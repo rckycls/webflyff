@@ -31,7 +31,7 @@ export function addedPlayer(objectId: number, player: Partial<AddedPlayer> = {},
     player: {
       self: false, name: `Player${objectId}`, sex: 0, skinSet: 0, hairMesh: 0, hairColor: 0, headMesh: 0,
       playerId: objectId, job: 0, level: 1, authorization: 0x46, mode: 0, stateMode: 0, pkTime: 0, pkValue: 0,
-      pkPropensity: 0, honor: -1, worn: [], equipmentObjectIds: [], shopTitle: '', ...player,
+      pkPropensity: 0, honor: -1, worn: [], equipmentObjectIds: [], own: null, shopTitle: '', ...player,
     },
   };
 }

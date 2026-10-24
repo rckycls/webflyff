@@ -1,6 +1,8 @@
 import type { ArReader } from '../ar/ArReader';
 import type { MessageHeader } from '../bundle';
 import { ObjectType } from '../constants';
+import { readOwnAfterEquipment } from './own';
+import type { OwnNumbers } from './own';
 import type { AddedMover, AddedNpc, AddedPlayer, MessageOf, WornPart } from './types';
 
 /** `MAX_HUMAN_PARTS` (`Resource/defineNeuz.h:62`): the length of `m_aEquipInfo`. */
@@ -45,8 +47,9 @@ export function readAddObj(r: ArReader, header: MessageHeader): MessageOf<'addMo
 
 /**
  * `CMover::Serialize`, the loading side (`_Common/ObjSerializeOpt.cpp:97`, :359-767), which first calls
- * `CCtrl::Serialize` and through it `CObj::Serialize`. The own character is read through its equipment IDs and the
- * rest skipped (the skills, the inventory, the banks and so on, then its buffs); every other mover to its end.
+ * `CCtrl::Serialize` and through it `CObj::Serialize`. The own character is read through its numbers, equipment IDs
+ * and skills (`readOwnAfterEquipment`) and the rest skipped (the inventory, the banks and so on, then its buffs);
+ * every other mover to its end.
  */
 function readMover(r: ArReader, self: boolean): AddedMover {
   // CObj::Serialize (ObjSerializeOpt.cpp:39-51): (u_char&)m_dwType, m_dwIndex, the scale as a u_short
@@ -74,10 +77,8 @@ function readMover(r: ArReader, self: boolean): AddedMover {
 
   if (isPlayer) {
     mover.player = readPlayer(r, self);
-    if (self) {
-      r.skipRest();
-      return mover;
-    }
+    // The own character's reader has left the message at its end, buffs included (see `readOwnAfterEquipment`).
+    if (self) return mover;
   } else {
     mover.npc = readNpc(r);
   }
@@ -85,7 +86,7 @@ function readMover(r: ArReader, self: boolean): AddedMover {
   return mover;
 }
 
-/** The player branch (ObjSerializeOpt.cpp:405-688); for the own character only up to its equipment IDs. */
+/** The player branch (ObjSerializeOpt.cpp:405-688); for the own character only up to the end of its skill array. */
 function readPlayer(r: ArReader, self: boolean): AddedPlayer {
   const name = r.string(NAME_BUFFER); // ReadString( m_szName, 32 )
   const sex = r.u8(); // BYTE bySex
@@ -95,10 +96,11 @@ function readPlayer(r: ArReader, self: boolean): AddedPlayer {
   const headMesh = r.u8();
   const playerId = r.u32(); // m_idPlayer
   const job = r.u8(); // (u_char&)m_nJob
-  r.u16(); // m_nStr
-  r.u16(); // m_nSta
-  r.u16(); // m_nDex
-  r.u16(); // m_nInt
+  // The stats are kept for the own character only; another player's are read past.
+  const str = r.u16(); // (u_short&)m_nStr
+  const sta = r.u16(); // (u_short&)m_nSta
+  const dex = r.u16(); // (u_short&)m_nDex
+  const int = r.u16(); // (u_short&)m_nInt
   const level = r.u16(); // (u_short&)m_nLevel
   r.i32(); // m_nFuel
   r.i32(); // m_tmAccFuel
@@ -131,7 +133,10 @@ function readPlayer(r: ArReader, self: boolean): AddedPlayer {
     self, name, sex, skinSet, hairMesh, hairColor, headMesh, playerId, job, level, authorization, mode, stateMode,
     pkTime, pkValue, pkPropensity, honor,
   };
-  if (self) return { ...base, worn: [], equipmentObjectIds: readOwnEquipment(r), shopTitle: '' };
+  if (self) {
+    const { equipmentObjectIds, numbers } = readOwnEquipment(r, { str, sta, dex, int });
+    return { ...base, worn: [], equipmentObjectIds, own: readOwnAfterEquipment(r, numbers), shopTitle: '' };
+  }
 
   // METHOD_EXCLUDE_ITEM (:641-676)
   const shopTitle = r.string(MAX_VENDORNAME); // ReadString( szPVendor, MAX_VENDORNAME )
@@ -145,24 +150,28 @@ function readPlayer(r: ArReader, self: boolean): AddedPlayer {
   }
   r.u32(); // dwPetId (__VER >= 9, __PET_0410)
   r.string(MAX_PET_NAME); // szPetName (__PET_1024)
-  return { ...base, worn, equipmentObjectIds: [], shopTitle };
+  return { ...base, worn, equipmentObjectIds: [], own: null, shopTitle };
 }
 
 /**
  * METHOD_NONE (ObjSerializeOpt.cpp:509-559), the own character, through `m_aEquipInfo[i].dwId`: the 31 IDs as they
- * are, which are inventory object IDs, not item IDs (see `AddedPlayer.equipmentObjectIds`).
+ * are, which are inventory object IDs, not item IDs (see `AddedPlayer.equipmentObjectIds`). The numbers on the way
+ * are kept, with the base stats the player part gave (`stats`); `readOwnAfterEquipment` completes them with the
+ * skills.
  */
-function readOwnEquipment(r: ArReader): number[] {
-  r.u16(); // (u_short&)m_nManaPoint
-  r.u16(); // (u_short&)m_nFatiguePoint
+function readOwnEquipment(
+  r: ArReader, stats: Pick<OwnNumbers, 'str' | 'sta' | 'dex' | 'int'>,
+): { equipmentObjectIds: number[]; numbers: OwnNumbers } {
+  const manaPoint = r.u16(); // (u_short&)m_nManaPoint
+  const fatiguePoint = r.u16(); // (u_short&)m_nFatiguePoint
   r.i32(); // m_nTutorialState (__VER >= 12, __MOD_TUTORIAL)
   r.i32(); // m_nFxp
   r.u32(); // dwGold
-  r.i64(); // m_nExp1 (EXPINTEGER, __int64)
-  r.i32(); // m_nSkillLevel
-  r.i32(); // m_nSkillPoint
-  r.i64(); // m_nDeathExp
-  r.i32(); // m_nDeathLevel
+  const exp = r.i64(); // m_nExp1 (EXPINTEGER, __int64)
+  const skillLevel = r.i32(); // m_nSkillLevel
+  const skillPoint = r.i32(); // m_nSkillPoint
+  const deathExp = r.i64(); // m_nDeathExp (EXPINTEGER)
+  const deathLevel = r.i32(); // m_nDeathLevel (LONG)
   r.bytes(4 * MAX_JOB); // dwJobLv[MAX_JOB], unused
   r.u32(); // m_idMarkingWorld
   r.vec3(); // m_vMarkingPos
@@ -170,11 +179,14 @@ function readOwnEquipment(r: ArReader): number[] {
   r.bytes(2 * r.u8()); // m_nCompleteQuestSize (BYTE), then m_aCompleteQuest (WORD)
   r.bytes(2 * r.u8()); // m_nCheckedQuestSize (BYTE), then m_aCheckedQuest (WORD) (__VER >= 15)
   r.u32(); // m_idMurderer
-  r.i16(); // n1, m_nRemainGP
+  const remainGP = r.i16(); // n1, m_nRemainGP
   r.i16(); // n2, unused
   const equipmentObjectIds: number[] = [];
   for (let i = 0; i < MAX_HUMAN_PARTS; i++) equipmentObjectIds.push(r.u32()); // m_aEquipInfo[i].dwId
-  return equipmentObjectIds;
+  return {
+    equipmentObjectIds,
+    numbers: { ...stats, manaPoint, fatiguePoint, exp, skillLevel, skillPoint, deathExp, deathLevel, remainGP },
+  };
 }
 
 /** The NPC branch (ObjSerializeOpt.cpp:689-755), which monsters take too. */

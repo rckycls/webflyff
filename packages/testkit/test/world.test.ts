@@ -3,7 +3,9 @@ import {
   ArWriter, AttackFlag, BUNDLE_MARKER, DstParam, MessageType, NULL_ID, PacketType, WORLD_READERS, bytesToHex,
   readBundle,
 } from '@flyffweb/protocol';
-import type { AddedMover, MessageReader, MonsterRate, MoveReport, Vec3, WorldMessage } from '@flyffweb/protocol';
+import type {
+  AddedMover, MessageReader, MonsterRate, MoveReport, OwnCharacter, SkillSlot, Vec3, WorldMessage,
+} from '@flyffweb/protocol';
 import {
   GAMETIMER, encodeBundle, writeAddMonster, writeAddNpc, writeAddPlayer, writeAddSelf, writeCorrReq, writeDamage,
   writeDefinedText, writeDelObj, writeDestAngle, writeDestPos, writeEnvironmentSetting, writeGameTimer,
@@ -282,17 +284,32 @@ const player = {
 const moverBase = {
   pos, motion: 0x15, hitPoint: 1234, state: 0x11, stateFlag: 0x2, belligerence: 0, sfxId: NULL_ID,
 };
+/** `MAX_SKILL_JOB` (`_Common/Mover.h:96-100`): the slots of `m_aJobSkill`, the empty ones `NULL_ID` at level 0. */
+const MAX_SKILL_JOB = 45;
+const skillSlots = (filled: SkillSlot[]): SkillSlot[] =>
+  Array.from({ length: MAX_SKILL_JOB }, (_, i) => filled[i] ?? { skill: NULL_ID, level: 0 });
+/** Numbers that differ from each other, with the signs and widths the C++ types keep: a `short` GP, an `__int64` EXP. */
+const ownNumbers: OwnCharacter = {
+  str: 15, sta: 16, dex: 17, int: 18, manaPoint: 63, fatiguePoint: 32,
+  exp: 9876543210n, skillLevel: 3, skillPoint: 4, deathExp: -5n, deathLevel: 7, remainGP: -2,
+  // Slots 0 to 2: test skills; 3 to 6: the four `SI_GEN_EVE_*` IDs (`Resource/defineSkill.h:243-246`); the rest empty.
+  skills: skillSlots([
+    { skill: 1, level: 0 }, { skill: 2, level: 1 }, { skill: 3, level: 2 },
+    { skill: 317, level: 0 }, { skill: 318, level: 0 }, { skill: 319, level: 0 }, { skill: 320, level: 0 },
+  ]),
+  inventory: null,
+};
 const otherPlayer: AddedMover = {
   ...moverBase, index: 11, scale: 1, angle: 90.5, objectId: 31, isPlayer: true,
   player: {
-    ...player, self: false, shopTitle: 'Cheap swords', equipmentObjectIds: [],
+    ...player, self: false, own: null, shopTitle: 'Cheap swords', equipmentObjectIds: [],
     worn: [{ part: 2, itemId: 500, flag: 0 }, { part: 10, itemId: 21, flag: 1 }, { part: 27, itemId: 4100, flag: 0 }],
   },
 };
 const ownPlayer: AddedMover = {
   ...moverBase, index: 11, scale: 1, angle: -45.5, objectId: 32, isPlayer: true,
   player: {
-    ...player, self: true, shopTitle: '', worn: [],
+    ...player, self: true, own: ownNumbers, shopTitle: '', worn: [],
     // m_aEquipInfo[i].dwId: inventory object IDs at parts 2 and 13, NULL_ID elsewhere.
     equipmentObjectIds: Array.from({ length: 31 }, (_, i) => (i === 2 ? 7 : i === 13 ? 0 : NULL_ID)),
   },
@@ -343,6 +360,60 @@ it('each ADD_OBJ writer decodes to what it was given', () => {
   expect(join.messages.map((m) => m.value)).toEqual(inView.map((mover) => ({ type: 'addMover', mover })));
 });
 
+/** The own player's ADD_OBJ read back as the browser reads it: the bundle's player object ID is the mover's. */
+function readSelf(mover: AddedMover): AddedMover {
+  const bundle = encodeBundle(PacketType.JOIN, mover.objectId, [writeAddSelf(mover.objectId, mover)]);
+  const result = readBundle(bundle, WORLD_READERS);
+  expect(result.skipped).toEqual([]);
+  expect(result.mismatched).toEqual([]);
+  expect(result.messages).toHaveLength(1);
+  const value = result.messages[0].value;
+  if (value.type !== 'addMover') throw new Error(`not a mover: ${value.type}`);
+  return value.mover;
+}
+
+it('writeAddSelf writes the numbers, then the equipment IDs and the 45 skill pairs last', () => {
+  const { fields } = writeAddSelf(32, ownPlayer);
+  // `ar.Read( m_aJobSkill, sizeof(SKILL) * MAX_SKILL_JOB )` follows the 31 `m_aEquipInfo[i].dwId` directly
+  // (`ObjSerializeOpt.cpp:557-561`), and the message ends with it: the bytes after are not written yet.
+  const expected = new ArWriter();
+  for (const id of ownPlayer.player!.equipmentObjectIds) expected.u32(id);
+  for (const slot of ownNumbers.skills) expected.u32(slot.skill).u32(slot.level);
+  const tail = 4 * 31 + 8 * MAX_SKILL_JOB;
+  expect(expected.toBytes()).toHaveLength(tail);
+  expect(bytesToHex(fields.subarray(fields.byteLength - tail))).toBe(bytesToHex(expected.toBytes()));
+  // Slot 1 is skill 2 at level 1, slot 7 the first empty one: NULL_ID at level 0.
+  const pairs = fields.subarray(fields.byteLength - 8 * MAX_SKILL_JOB);
+  expect(bytesToHex(pairs.subarray(8, 16))).toBe('0200000001000000');
+  expect(bytesToHex(pairs.subarray(56, 64))).toBe('ffffffff00000000');
+});
+
+it("a new character's numbers and skills read back slot by slot", () => {
+  const skills = skillSlots([
+    { skill: 1, level: 0 }, { skill: 2, level: 1 }, { skill: 3, level: 2 },
+    { skill: 317, level: 0 }, { skill: 318, level: 0 }, { skill: 319, level: 0 }, { skill: 320, level: 0 },
+  ]);
+  const own: OwnCharacter = {
+    str: 15, sta: 15, dex: 15, int: 15, manaPoint: 63, fatiguePoint: 32, exp: 0n, skillLevel: 0, skillPoint: 0,
+    deathExp: 0n, deathLevel: 0, remainGP: 0, skills, inventory: null,
+  };
+  const mover = readSelf({ ...ownPlayer, player: { ...ownPlayer.player!, own } });
+  expect(mover.player?.own).toEqual(own);
+  expect(mover.player?.own?.skills).toHaveLength(MAX_SKILL_JOB);
+  mover.player?.own?.skills.forEach((slot, i) => expect(slot, `slot ${i}`).toEqual(skills[i]));
+});
+
+it('an own character without numbers is written with nothing in them', () => {
+  // `own: null` is what a script that does not care about the numbers passes: zero stats, MP, FP, EXP and points,
+  // and 45 empty slots, which read back as that.
+  const mover = readSelf({ ...ownPlayer, player: { ...ownPlayer.player!, own: null } });
+  expect(mover.player?.own).toEqual({
+    str: 0, sta: 0, dex: 0, int: 0, manaPoint: 0, fatiguePoint: 0, exp: 0n, skillLevel: 0, skillPoint: 0,
+    deathExp: 0n, deathLevel: 0, remainGP: 0, skills: skillSlots([]), inventory: null,
+  });
+  expect(mover.player?.equipmentObjectIds).toEqual(ownPlayer.player!.equipmentObjectIds);
+});
+
 it('the ADD_OBJ writers refuse a mover of the other kind', () => {
   expect(() => writeAddPlayer(31, ownPlayer)).toThrow(/own character/);
   expect(() => writeAddSelf(32, otherPlayer)).toThrow(/another player/);
@@ -356,4 +427,11 @@ it('the ADD_OBJ writers refuse a mover of the other kind', () => {
   expect(() => writeAddSelf(32, { ...ownPlayer, player: dressed })).toThrow(/worn must be \[\]/);
   const withIds = { ...otherPlayer.player!, equipmentObjectIds: own.equipmentObjectIds };
   expect(() => writeAddPlayer(31, { ...otherPlayer, player: withIds })).toThrow(/equipmentObjectIds must be \[\]/);
+  // The skill array has 45 slots; another player has no numbers on the wire; the inventory is not written yet.
+  const fewer = { ...own, own: { ...ownNumbers, skills: ownNumbers.skills.slice(1) } };
+  expect(() => writeAddSelf(32, { ...ownPlayer, player: fewer })).toThrow(/45 skill slots, not 44/);
+  const withNumbers = { ...otherPlayer.player!, own: ownNumbers };
+  expect(() => writeAddPlayer(31, { ...otherPlayer, player: withNumbers })).toThrow(/own must be null/);
+  const withInventory = { ...own, own: { ...ownNumbers, inventory: [{ objectId: 0, itemId: 502, count: 1 }] } };
+  expect(() => writeAddSelf(32, { ...ownPlayer, player: withInventory })).toThrow(/inventory must be null/);
 });
