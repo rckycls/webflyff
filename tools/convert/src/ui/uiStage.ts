@@ -12,10 +12,10 @@
 // all). D3DX turns every pixel of the key colour, alpha included, into transparent black. `applyColorKey` does the same,
 // with the keys read from the sheets' scripts for the files they name and 0xffff00ff for every other picture.
 //
-// Item icons (`ItemProp::szIcon`) are not here: CItemElem loads them from Client/Item (DIR_ITEM, Item.cpp:114), not from
-// Client/Icon, and 3,215 files are not a Piece 4 window's art. The data stage names them by the same key rule, so a stage
-// that converts that folder only has to add it to ICON_FOLDERS (8 of its file names are also names in Client/Icon: those
-// collide, and the second file of each is reported).
+// Item icons (`ItemProp::szIcon`) are not here: CItemBase::SetTexture loads them from Client/Item (DIR_ITEM, Item.cpp:114),
+// not from Client/Icon, and 3,215 files are not a Piece 4 window's art. The data stage names them by the same key rule,
+// so a stage that converts that folder only has to add it to ICON_FOLDERS (8 of its file names are also names in
+// Client/Icon: those collide, and the second file of each is reported).
 //
 // Client/Icon holds 27 `.jpg` files (cloak logos) and no decoder reads JPEG here; one warning names them. No Piece 4
 // window draws them.

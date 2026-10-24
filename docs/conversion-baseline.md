@@ -145,7 +145,7 @@ Compression, measured as for the first run:
 
 `index.json` is now 19,152 entries and 1.59 MiB raw.
 
-Not in `ui/`: the item icons. `ItemProp::szIcon` is loaded from `Client/Item` (3,215 pictures; `CItemElem`, `Item.cpp:114`), not from `Client/Icon`, so of the 4,998 items with an icon only the 12 whose name is also a name in `Icon/` have a `ui/` file for the `icon` key of `data/itemProps.json`.
+Not in `ui/`: the item icons. `ItemProp::szIcon` is loaded from `Client/Item` (3,215 pictures; `CItemBase::SetTexture`, `Item.cpp:114`), not from `Client/Icon`, so of the 4,998 items with an icon only the 12 whose name is also a name in `Icon/` have a `ui/` file for the `icon` key of `data/itemProps.json`.
 
 ## Compression
 
