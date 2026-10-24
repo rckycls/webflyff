@@ -11,6 +11,7 @@ import type {
   GmObject,
   MaterialBlock,
   Motion,
+  MotionFrameAttribute,
   MotionKey,
   O3dMaterial,
   O3dModel,
@@ -482,6 +483,70 @@ describe('buildSkeletonGlb / buildMotionGlb (synthetic)', () => {
     poseAt(doc, 1);
     const world = worldOf(big);
     closeTo([0, 1, 2].map((c) => Math.hypot(world[c * 4]!, world[c * 4 + 1]!, world[c * 4 + 2]!)), [1, 1, 1]);
+  });
+
+  /** `frames` frame attributes without flags, with `marked` (frame index to attributes) laid over them. */
+  const attributesOf = (
+    frames: number,
+    marked: Record<number, Partial<MotionFrameAttribute>>,
+  ): MotionFrameAttribute[] =>
+    Array.from({ length: frames }, (_, i) => ({ attr: 0, soundId: 0, frame: i, ...marked[i] }));
+
+  const MA_HIT = 1;
+  const MA_SOUND = 2;
+  const MA_QUAKE = 4;
+
+  it('a motion glb carries the hit, sound and quake frames of the motion in its animation extras', async () => {
+    const motion = {
+      ...motionOf(17, [track(17), track(17)]),
+      // frame 8 plays sound 140 and frame 12 is the hit (Mvr_male_AtkAtk1-01); the rest is made up to cover the flags,
+      // and entry 15 sits at the exact frame 15.5 (m_fFrame), which is the frame the events name
+      frameAttributes: attributesOf(17, {
+        3: { attr: MA_QUAKE },
+        8: { attr: MA_SOUND, soundId: 140 },
+        10: { attr: MA_SOUND | MA_QUAKE, soundId: 7 },
+        12: { attr: MA_HIT },
+        15: { attr: MA_HIT | MA_SOUND | MA_QUAKE, soundId: 9, frame: 15.5 },
+      }),
+    };
+    const doc = await readGlb(await buildMotionGlb(chainSkeleton(['Root', 'Bone']), motion, 'm'));
+    expect(doc.getRoot().listAnimations()[0]!.getExtras()).toEqual({
+      events: {
+        hit: [12, 15.5],
+        sound: [[8, 140], [10, 7], [15.5, 9]],
+        quake: [3, 10, 15.5],
+        frames: 17,
+        perSlerp: 0.5,
+      },
+    });
+  });
+
+  it('a motion with one hit at frame 12 writes { hit: [12] } and no other event', async () => {
+    const motion = { ...motionOf(17, [track(17)]), frameAttributes: attributesOf(17, { 12: { attr: MA_HIT } }) };
+    const doc = await readGlb(await buildMotionGlb(chainSkeleton(['Root']), motion, 'm'));
+    expect(doc.getRoot().listAnimations()[0]!.getExtras().events).toEqual({
+      hit: [12],
+      sound: [],
+      quake: [],
+      frames: 17,
+      perSlerp: 0.5,
+    });
+  });
+
+  it('a sound id on a frame without MA_SOUND is not a sound, and a motion without flags has empty lists', async () => {
+    // 329 frames of the client have a sound id without MA_SOUND; the client plays a sound for MA_SOUND only
+    const marked = attributesOf(4, { 2: { attr: MA_HIT, soundId: 5 } });
+    const skel = chainSkeleton(['Root']);
+    const hit = await readGlb(await buildMotionGlb(skel, { ...motionOf(4, [track(4)]), frameAttributes: marked }, 'm'));
+    expect(hit.getRoot().listAnimations()[0]!.getExtras().events).toMatchObject({ hit: [2], sound: [] });
+    const none = await readGlb(await buildMotionGlb(skel, motionOf(4, [track(4)]), 'm'));
+    expect(none.getRoot().listAnimations()[0]!.getExtras().events).toEqual({
+      hit: [],
+      sound: [],
+      quake: [],
+      frames: 4,
+      perSlerp: 0.5,
+    });
   });
 
   it('a motion with more bone tracks than its skeleton has bones is refused', async () => {

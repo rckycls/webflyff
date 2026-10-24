@@ -15,8 +15,10 @@ import {
   Vector3,
   VectorKeyframeTrack,
 } from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { describe, expect, it, vi } from 'vitest';
 import { assembleCharacter, loopMotion } from '../src/character/assemble';
+import type { MotionEvents } from '../src/character/assemble';
 
 /** A chain of bones under a node named `skeleton`, as the converter writes them (names as GLTFLoader leaves them). */
 function skeletonScene(names: string[]): { scene: Group; bones: Bone[] } {
@@ -222,5 +224,85 @@ describe('loopMotion', () => {
     expect(looped.clip).toBe(clip);
     expect(looped.frames).toBe(1);
     expect(looped.frameTime(5)).toBe(0);
+  });
+
+  describe('events', () => {
+    // Mvr_male_AtkAtk1-01 as the converter writes it: 17 frames at perSlerp 0.5, a sound at frame 8, the hit at 12.
+    const attack: MotionEvents = { hit: [12], sound: [[8, 140]], quake: [], frames: 17, perSlerp: 0.5 };
+
+    /** A glb of one node moved by a two-key animation with `extras`, as GLTFLoader meets the converter's motions. */
+    function glbWithExtras(extras: unknown): ArrayBuffer {
+      const bin = new Uint8Array(32);
+      bin.set(new Uint8Array(Float32Array.from([0, 1]).buffer), 0);
+      bin.set(new Uint8Array(Float32Array.from([0, 0, 0, 1, 0, 0]).buffer), 8);
+      const json = new TextEncoder().encode(
+        JSON.stringify({
+          asset: { version: '2.0' },
+          buffers: [{ byteLength: 32 }],
+          bufferViews: [
+            { buffer: 0, byteOffset: 0, byteLength: 8 },
+            { buffer: 0, byteOffset: 8, byteLength: 24 },
+          ],
+          accessors: [
+            { bufferView: 0, componentType: 5126, count: 2, type: 'SCALAR', min: [0], max: [1] },
+            { bufferView: 1, componentType: 5126, count: 2, type: 'VEC3' },
+          ],
+          nodes: [{ name: 'a' }],
+          scenes: [{ nodes: [0] }],
+          scene: 0,
+          animations: [
+            {
+              name: 'attack',
+              samplers: [{ input: 0, output: 1 }],
+              channels: [{ sampler: 0, target: { node: 0, path: 'translation' } }],
+              extras,
+            },
+          ],
+        }),
+      );
+      const jsonChunk = new Uint8Array(Math.ceil(json.length / 4) * 4).fill(0x20);
+      jsonChunk.set(json);
+      const glb = new Uint8Array(12 + 8 + jsonChunk.length + 8 + bin.length);
+      const view = new DataView(glb.buffer);
+      view.setUint32(0, 0x46546c67, true); // 'glTF'
+      view.setUint32(4, 2, true);
+      view.setUint32(8, glb.length, true);
+      view.setUint32(12, jsonChunk.length, true);
+      view.setUint32(16, 0x4e4f534a, true); // 'JSON'
+      glb.set(jsonChunk, 20);
+      view.setUint32(20 + jsonChunk.length, bin.length, true);
+      view.setUint32(24 + jsonChunk.length, 0x004e4942, true); // 'BIN'
+      glb.set(bin, 28 + jsonChunk.length);
+      return glb.buffer;
+    }
+
+    it('carries the events a converted motion has in its animation extras', async () => {
+      const gltf = await new GLTFLoader().parseAsync(glbWithExtras({ events: attack }), '');
+
+      const looped = loopMotion(gltf.animations[0]!);
+
+      expect(looped.events).toEqual(attack);
+    });
+
+    it('carries them on a one-frame motion too', () => {
+      const clip = new AnimationClip('pose', -1, [new VectorKeyframeTrack('a.position', [0], [1, 2, 3])]);
+      clip.userData.events = { hit: [], sound: [], quake: [0], frames: 1, perSlerp: 0.5 };
+
+      expect(loopMotion(clip).events).toEqual({ hit: [], sound: [], quake: [0], frames: 1, perSlerp: 0.5 });
+    });
+
+    it('gives a motion without events (an older conversion) empty lists, its own frame count and its own speed', () => {
+      expect(loopMotion(motion()).events).toEqual({ hit: [], sound: [], quake: [], frames: 3, perSlerp: 0.5 });
+      // the speed is not in a one-frame motion
+      const pose = new AnimationClip('pose', -1, [new VectorKeyframeTrack('a.position', [0], [1, 2, 3])]);
+      expect(loopMotion(pose).events).toEqual({ hit: [], sound: [], quake: [], frames: 1, perSlerp: 0 });
+    });
+
+    it('refuses events that are not in the shape the converter writes', () => {
+      const clip = motion();
+      clip.userData.events = { ...attack, sound: [8, 140] };
+
+      expect(() => loopMotion(clip)).toThrow(/events/);
+    });
   });
 });

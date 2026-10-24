@@ -100,6 +100,25 @@ function rebind(mesh: SkinnedMesh, bonesByName: ReadonlyMap<string, Object3D>, w
   mesh.frustumCulled = false;
 }
 
+/**
+ * The frames a motion marks, as the converter writes them to the motion glb's animation extras (`MotionEvents` in
+ * tools/convert/src/models/motionGlb.ts, which also tells what a frame number is). CMotion::IsAttrHit, IsAttrSound and
+ * IsAttrQuake (Source/_Common/Bone.h:162-185) tell a frame went by when the motion moved from `old` to `current` with
+ * `old < frame <= current`.
+ */
+export interface MotionEvents {
+  /** The frames with MA_HIT: a blow lands. */
+  hit: number[];
+  /** The frames with MA_SOUND and the sound resource id (the client plays it when above 0). */
+  sound: [frame: number, sound: number][];
+  /** The frames with MA_QUAKE: the screen shakes. */
+  quake: number[];
+  /** The motion's frame count. */
+  frames: number;
+  /** The motion's frames advanced per 60 Hz tick (`motionFps` gives the frames a second). */
+  perSlerp: number;
+}
+
 export interface LoopedMotion {
   /** The clip with frame 0 appended after its last frame. */
   clip: AnimationClip;
@@ -107,6 +126,39 @@ export interface LoopedMotion {
   frames: number;
   /** The clip time of frame `n`, exactly the key time the converter wrote; `n` wraps around `frames`. */
   frameTime(n: number): number;
+  /** The frames the motion marks with a hit, a sound or a quake. */
+  events: MotionEvents;
+}
+
+const isNumbers = (value: unknown): value is number[] =>
+  Array.isArray(value) && value.every((n) => typeof n === 'number');
+
+/** `value` when it has the shape the converter writes (`MotionEvents`), else null. */
+function readEvents(value: unknown): MotionEvents | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const { hit, sound, quake, frames, perSlerp } = value as Record<string, unknown>;
+  const pairs = Array.isArray(sound) && sound.every((pair) => isNumbers(pair) && pair.length === 2);
+  if (!isNumbers(hit) || !pairs || !isNumbers(quake) || typeof frames !== 'number' || typeof perSlerp !== 'number') {
+    return null;
+  }
+  return { hit, sound: sound as MotionEvents['sound'], quake, frames, perSlerp };
+}
+
+/**
+ * The events of `clip`, which GLTFLoader reads from the animation's extras into `clip.userData`. A clip without them
+ * (a motion of an older conversion) has no marked frames: empty lists, its own `frames`, and the `perSlerp` its key
+ * times give (frame i is at i / (60 * perSlerp) s, with perSlerp cut to 3 decimals as `motionFps` does; 0 when there
+ * is a single frame, which has no speed). Throws when the events are not in the shape the converter writes.
+ */
+function eventsOf(clip: AnimationClip, frames: number, lastTime: number): MotionEvents {
+  const written: unknown = clip.userData.events;
+  if (written === undefined) {
+    const perSlerp = frames > 1 && lastTime > 0 ? Math.round(((frames - 1) / lastTime / 60) * 1000) / 1000 : 0;
+    return { hit: [], sound: [], quake: [], frames, perSlerp };
+  }
+  const events = readEvents(written);
+  if (events === null) throw new Error(`motion ${clip.name}: its events are not in the shape the converter writes`);
+  return events;
 }
 
 /**
@@ -114,13 +166,15 @@ export interface LoopedMotion {
  * lasts (N - 1) / fps; looping, CModel::GetNextFrame (Source/_Common/Model.cpp:82-86) makes frame 0 the frame after
  * N - 1, so the last frame blends back into the first over one more frame. Here every track gets frame 0's value
  * again at N / fps. The frame step is read from the track with the most keys (a bone with keys has one per frame; a
- * bone held still has two, at 0 and at the end). A motion of a single frame is left as it is.
+ * bone held still has two, at 0 and at the end). A motion of a single frame is left as it is. The motion's `events`
+ * come from the clip's userData (see `eventsOf`).
  */
 export function loopMotion(clip: AnimationClip): LoopedMotion {
   let keyed: KeyframeTrack | undefined;
   for (const track of clip.tracks) if (keyed === undefined || track.times.length > keyed.times.length) keyed = track;
   const frames = Math.max(1, keyed?.times.length ?? 0);
-  if (keyed === undefined || frames < 2) return { clip, frames, frameTime: () => 0 };
+  const events = eventsOf(clip, frames, keyed?.times[frames - 1] ?? 0);
+  if (keyed === undefined || frames < 2) return { clip, frames, frameTime: () => 0, events };
 
   const times = keyed.times;
   const end = (times[frames - 1]! / (frames - 1)) * frames;
@@ -143,5 +197,6 @@ export function loopMotion(clip: AnimationClip): LoopedMotion {
     clip: new AnimationClip(clip.name, -1, tracks),
     frames,
     frameTime: (n) => times[((n % frames) + frames) % frames]!,
+    events,
   };
 }

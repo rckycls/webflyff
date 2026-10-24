@@ -13,6 +13,10 @@
 //
 // Motions bind to their skeleton by bone index, as the C++ does (the motion's own bone names differ from the
 // skeleton's in 95 client motions), so track i animates the node named after skeleton bone i.
+//
+// The frames a motion marks (its MOTION_ATTR per frame: a blow lands, a sound plays, the screen shakes) go to the
+// animation's `extras.events`, see `MotionEvents`. GLTFLoader copies them to the clip's `userData`; the client decides
+// what a marked frame does.
 
 import type { Document, Node } from '@gltf-transform/core';
 import { motionFps, toWebPosition, toWebQuaternion } from '@flyffweb/formats';
@@ -20,6 +24,45 @@ import type { BoneTrack, Motion, MotionKey, Skeleton } from '@flyffweb/formats';
 import { addAccessor, d3dTrs, newDocument, normalizeQuaternion, writeGlb } from './gltf';
 import type { Quat, Vec3 } from './gltf';
 import { addJointNodes, chrJoints } from './skeletonGlb';
+
+/** MA_HIT, MA_SOUND and MA_QUAKE: the flags of MOTION_ATTR::m_dwAttr (Source/_Common/Bone.h:105-107). */
+const MA_HIT = 0x1;
+const MA_SOUND = 0x2;
+const MA_QUAKE = 0x4;
+
+/**
+ * What the frames of a motion do, as `extras.events` of the motion's animation; `loopMotion`
+ * (packages/scene/src/character/assemble.ts) reads the same shape. A frame is MOTION_ATTR::m_fFrame, the exact frame
+ * number, 0-based: in the client's motions it is the entry's index, except two sound entries half a frame later
+ * (mvr_Frinker_die1 at 20.5, mvr_SkelWolf_Atk2 at 30.5). One frame can carry several flags. Each list follows the
+ * order of the frames.
+ *
+ * CMotion::IsAttrHit, IsAttrSound and IsAttrQuake (Bone.h:162-185) tell that a flagged frame went by when the motion
+ * moved from `old` to `current` with `old < frame <= current`, looking at the entry of (int)current.
+ */
+export interface MotionEvents {
+  /** The frames with MA_HIT: a blow lands. */
+  hit: number[];
+  /** The frames with MA_SOUND and the sound resource id (`m_nSndID`; ModelObject.cpp:1594 plays it when above 0). */
+  sound: [frame: number, sound: number][];
+  /** The frames with MA_QUAKE: the screen shakes. */
+  quake: number[];
+  /** The motion's frame count (`m_nMaxFrame`). */
+  frames: number;
+  /** The motion's `m_fPerSlerp`: frames advanced per 60 Hz tick (`motionFps` gives the frames a second). */
+  perSlerp: number;
+}
+
+/** The frames `motion` marks with MA_HIT, MA_SOUND and MA_QUAKE (CMotion::LoadMotion reads `m_pAttr`, Bone.cpp:559). */
+export function motionEvents(motion: Motion): MotionEvents {
+  const events: MotionEvents = { hit: [], sound: [], quake: [], frames: motion.frameCount, perSlerp: motion.perSlerp };
+  for (const { attr, soundId, frame } of motion.frameAttributes) {
+    if (attr & MA_HIT) events.hit.push(frame);
+    if (attr & MA_SOUND) events.sound.push([frame, soundId]);
+    if (attr & MA_QUAKE) events.quake.push(frame);
+  }
+  return events;
+}
 
 /** What an animation does to one node. */
 export interface AnimatedNode {
@@ -100,8 +143,8 @@ export function addKeyAnimation(
 }
 
 /**
- * `motion` as a glb: `skel`'s joint nodes and one animation named `name`. Throws when the motion has more bone tracks
- * than the skeleton has bones (track i animates bone i), or none.
+ * `motion` as a glb: `skel`'s joint nodes and one animation named `name`, whose extras hold the motion's events.
+ * Throws when the motion has more bone tracks than the skeleton has bones (track i animates bone i), or none.
  */
 export async function buildMotionGlb(skel: Skeleton, motion: Motion, name: string): Promise<Uint8Array> {
   if (motion.tracks.length > skel.bones.length) {
@@ -111,5 +154,6 @@ export async function buildMotionGlb(skel: Skeleton, motion: Motion, name: strin
   const doc = newDocument();
   const nodes = addJointNodes(doc, chrJoints(skel));
   addKeyAnimation(doc, name, boneTargets(motion.tracks, nodes), motion.frameCount, motion.perSlerp);
+  doc.getRoot().listAnimations()[0]!.setExtras({ events: motionEvents(motion) });
   return writeGlb(doc);
 }

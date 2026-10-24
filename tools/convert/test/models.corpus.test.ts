@@ -9,6 +9,7 @@ import { buildModelGlb } from '../src/models/modelGlb';
 import { buildMotionGlb } from '../src/models/motionGlb';
 import { skeletonFor, skeletonOfMotion } from '../src/models/skeletonFor';
 import { buildSkeletonGlb } from '../src/models/skeletonGlb';
+import { readGlb } from './helpers/glbChecks';
 
 // Converts every model, skeleton and motion directly in Client/Model (as the models stage does, without writing) and
 // runs the Khronos glTF validator on every glb.
@@ -148,5 +149,54 @@ describeClient('models stage over every file of Client/Model', () => {
       'Part_maleHead.o3d: version Neuz refuses',
       'region_Path.o3d: stored name differs',
     ]);
+  });
+});
+
+// The frames the client's motions mark, measured with readAni on Client/Model and cross-checked with the notes
+// ([combat §2.5] attacks, [skills §1.6] skills).
+describeClient('motion events in the converted motions', () => {
+  /** [motion file, hit frames, sound frames and ids, quake frames, frame count]; every perSlerp is 0.5. */
+  const MOTIONS: [string, number[], [number, number][], number[], number][] = [
+    ['Mvr_male_AtkAtk1-01', [12], [[8, 140]], [], 17],
+    ['Mvr_male_AtkAtk2-01', [11], [[7, 141]], [], 17],
+    ['Mvr_male_AtkAtk3-01', [10], [[7, 142]], [], 17],
+    ['Mvr_male_AtkAtk4-01', [8], [[3, 143]], [], 17],
+    ['Mvr_female_AtkAtk1-01', [12], [[8, 140]], [], 17],
+    ['Mvr_AiBatt_atk1', [21], [[0, 1308]], [], 52],
+    ['Mvr_male_SklVagCleanHit', [27], [[20, 211]], [], 51],
+    [
+      'Mvr_male_SklVagBrandish',
+      [7, 23, 39],
+      [[11, 212], [19, 212], [27, 212], [35, 212], [43, 212]],
+      [],
+      61,
+    ],
+    ['Mvr_male_SklVagOverCutter', [23], [[17, 213]], [], 51],
+    // a blow and a sound-and-quake frame on one frame (attr 6)
+    ['Mvr_male_Atkatk1-14', [17], [[6, 172]], [6], 24],
+    // a damaged motion and a death have no blow
+    ['Mvr_male_AtkDmg1-01', [], [[0, 102]], [], 26],
+    ['Mvr_male_AtkDie1-01', [], [[0, 103]], [], 46],
+    // a sound frame between two frames (the client keeps the exact frame in m_fFrame)
+    ['mvr_Frinker_die1', [], [[0, 2324], [20.5, 0]], [], 51],
+  ];
+
+  const dir = (): string => path.join(clientRoot()!, 'Model');
+  const bytesOf = (file: string): Uint8Array => new Uint8Array(readFileSync(path.join(dir(), file)));
+  const fileOf = (name: string): string => {
+    const found = readdirSync(dir()).find((f) => f.toLowerCase() === `${name.toLowerCase()}.ani`);
+    if (found === undefined) throw new Error(`Client/Model/${name}.ani not found`);
+    return found;
+  };
+
+  it.each(MOTIONS)('%s: the glb names its hit, sound and quake frames', async (name, hit, sound, quake, frames) => {
+    const chrs = readdirSync(dir()).filter((f) => /\.chr$/i.test(f));
+    const chr = skeletonOfMotion(name, chrs.map((f) => stem(f).toLowerCase()));
+    const file = fileOf(name);
+    const skeleton = readChr(bytesOf(chrs.find((f) => stem(f).toLowerCase() === chr)!), chr!);
+    const glb = await buildMotionGlb(skeleton, readAni(bytesOf(file), file), stem(file));
+
+    const [animation] = (await readGlb(glb)).getRoot().listAnimations();
+    expect(animation!.getExtras().events).toEqual({ hit, sound, quake, frames, perSlerp: 0.5 });
   });
 });
