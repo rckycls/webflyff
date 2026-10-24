@@ -297,7 +297,12 @@ const ownNumbers: OwnCharacter = {
     { skill: 1, level: 0 }, { skill: 2, level: 1 }, { skill: 3, level: 2 },
     { skill: 317, level: 0 }, { skill: 318, level: 0 }, { skill: 319, level: 0 }, { skill: 320, level: 0 },
   ]),
-  inventory: null,
+  // The two worn items (object IDs 0 and 7, see `equipmentObjectIds`) and 3 lollipops in slot 45.
+  inventory: [
+    { objectId: 0, itemId: 506, count: 1 }, { objectId: 7, itemId: 502, count: 1 },
+    { objectId: 45, itemId: 2800, count: 3 },
+  ],
+  inventoryError: null,
 };
 const otherPlayer: AddedMover = {
   ...moverBase, index: 11, scale: 1, angle: 90.5, objectId: 31, isPlayer: true,
@@ -372,44 +377,77 @@ function readSelf(mover: AddedMover): AddedMover {
   return value.mover;
 }
 
-it('writeAddSelf writes the numbers, then the equipment IDs and the 45 skill pairs last', () => {
+it('writeAddSelf writes the equipment IDs, the skill pairs, the fields up to the inventory and the inventory last', () => {
   const { fields } = writeAddSelf(32, ownPlayer);
   // `ar.Read( m_aJobSkill, sizeof(SKILL) * MAX_SKILL_JOB )` follows the 31 `m_aEquipInfo[i].dwId` directly
-  // (`ObjSerializeOpt.cpp:557-561`), and the message ends with it: the bytes after are not written yet.
+  // (`ObjSerializeOpt.cpp:557-561`). Then the cheer point and its tick, the slot, the banks' gold and player IDs, the
+  // HP bonus, the three resists and the angel's EXP and level (:569-583), 49 bytes with nothing in them, and
+  // `m_Inventory.Serialize` (:585), where the message ends: the banks and the rest are not written.
   const expected = new ArWriter();
   for (const id of ownPlayer.player!.equipmentObjectIds) expected.u32(id);
   for (const slot of ownNumbers.skills) expected.u32(slot.skill).u32(slot.level);
-  const tail = 4 * 31 + 8 * MAX_SKILL_JOB;
-  expect(expected.toBytes()).toHaveLength(tail);
-  expect(bytesToHex(fields.subarray(fields.byteLength - tail))).toBe(bytesToHex(expected.toBytes()));
+  expected.bytes(new Uint8Array(1 + 4 + 1 + 3 * 4 + 3 * 4 + 4 + 3 + 8 + 4));
+  // `CItemContainer::Serialize` (`_Common/Item.h:898-922`) over the 42 + 31 slots: `m_apIndex` as a fresh container
+  // has it (`Clear`, :480-496: the bag's 42 positions hold their own slot, the parts NULL_ID), the count, each item's
+  // slot and `CItemElem::Serialize`, then the object indexes, a fresh container's too.
+  const fresh = (w: ArWriter): void => {
+    for (let i = 0; i < 73; i++) w.u32(i < 42 ? i : NULL_ID);
+  };
+  fresh(expected);
+  expected.u8(3);
+  for (const item of ownNumbers.inventory!) {
+    expected.u8(item.objectId) // ch
+      .u32(item.objectId).u32(item.itemId).u32(0).i32(0) // m_dwObjId, m_dwItemId, m_liSerialNumber, '' (m_szItemText)
+      .i16(item.count) // m_nItemNum
+      .bytes(new Uint8Array(1 + 4 + 4 + 1 + 4 + 4 + 1 + 4 + 4)) // m_nRepairNumber to m_nResistSMItemId
+      .u32(0).u32(0).u32(0) // m_piercing: no cards, no ultimate jewels, no vis keep times
+      .i32(0).i64(0n).u32(0) // m_bCharged, m_iRandomOptItemId, m_dwKeepTime (0: no time left follows)
+      .u8(0).i32(0); // no pet, m_bTranformVisPet
+  }
+  fresh(expected);
+  const tail = expected.toBytes();
+  expect(bytesToHex(fields.subarray(fields.byteLength - tail.byteLength))).toBe(bytesToHex(tail));
   // Slot 1 is skill 2 at level 1, slot 7 the first empty one: NULL_ID at level 0.
-  const pairs = fields.subarray(fields.byteLength - 8 * MAX_SKILL_JOB);
+  const skillsAt = fields.byteLength - tail.byteLength + 4 * 31;
+  const pairs = fields.subarray(skillsAt, skillsAt + 8 * MAX_SKILL_JOB);
   expect(bytesToHex(pairs.subarray(8, 16))).toBe('0200000001000000');
   expect(bytesToHex(pairs.subarray(56, 64))).toBe('ffffffff00000000');
+  // The last item, 79 bytes before the object indexes: slot 45 (0x2d), item 2800 (0x0af0), serial 0, '', count 3.
+  const lollipops = fields.subarray(fields.byteLength - 4 * 73 - 79);
+  expect(bytesToHex(lollipops.subarray(0, 19))).toBe('2d' + '2d000000' + 'f00a0000' + '00000000' + '00000000' + '0300');
 });
 
-it("a new character's numbers and skills read back slot by slot", () => {
+it("a new character's numbers, skills and inventory read back slot by slot", () => {
   const skills = skillSlots([
     { skill: 1, level: 0 }, { skill: 2, level: 1 }, { skill: 3, level: 2 },
     { skill: 317, level: 0 }, { skill: 318, level: 0 }, { skill: 319, level: 0 }, { skill: 320, level: 0 },
   ]);
+  // The male `BASE_VALUE_TBL` inventory (`Database.sql:2741`): the suit, biscuit, town blink wings, gauntlets, boots,
+  // wooden sword and lollipops.
+  const inventory = [
+    { objectId: 0, itemId: 502, count: 1 }, { objectId: 1, itemId: 2801, count: 1 },
+    { objectId: 2, itemId: 4805, count: 5 }, { objectId: 42, itemId: 506, count: 1 },
+    { objectId: 43, itemId: 510, count: 1 }, { objectId: 44, itemId: 21, count: 1 },
+    { objectId: 45, itemId: 2800, count: 3 },
+  ];
   const own: OwnCharacter = {
     str: 15, sta: 15, dex: 15, int: 15, manaPoint: 63, fatiguePoint: 32, exp: 0n, skillLevel: 0, skillPoint: 0,
-    deathExp: 0n, deathLevel: 0, remainGP: 0, skills, inventory: null,
+    deathExp: 0n, deathLevel: 0, remainGP: 0, skills, inventory, inventoryError: null,
   };
   const mover = readSelf({ ...ownPlayer, player: { ...ownPlayer.player!, own } });
   expect(mover.player?.own).toEqual(own);
   expect(mover.player?.own?.skills).toHaveLength(MAX_SKILL_JOB);
   mover.player?.own?.skills.forEach((slot, i) => expect(slot, `slot ${i}`).toEqual(skills[i]));
+  expect(mover.player?.own?.inventory).toEqual(inventory);
 });
 
 it('an own character without numbers is written with nothing in them', () => {
   // `own: null` is what a script that does not care about the numbers passes: zero stats, MP, FP, EXP and points,
-  // and 45 empty slots, which read back as that.
+  // 45 empty slots and an empty inventory, which read back as that.
   const mover = readSelf({ ...ownPlayer, player: { ...ownPlayer.player!, own: null } });
   expect(mover.player?.own).toEqual({
     str: 0, sta: 0, dex: 0, int: 0, manaPoint: 0, fatiguePoint: 0, exp: 0n, skillLevel: 0, skillPoint: 0,
-    deathExp: 0n, deathLevel: 0, remainGP: 0, skills: skillSlots([]), inventory: null,
+    deathExp: 0n, deathLevel: 0, remainGP: 0, skills: skillSlots([]), inventory: [], inventoryError: null,
   });
   expect(mover.player?.equipmentObjectIds).toEqual(ownPlayer.player!.equipmentObjectIds);
 });
@@ -427,11 +465,22 @@ it('the ADD_OBJ writers refuse a mover of the other kind', () => {
   expect(() => writeAddSelf(32, { ...ownPlayer, player: dressed })).toThrow(/worn must be \[\]/);
   const withIds = { ...otherPlayer.player!, equipmentObjectIds: own.equipmentObjectIds };
   expect(() => writeAddPlayer(31, { ...otherPlayer, player: withIds })).toThrow(/equipmentObjectIds must be \[\]/);
-  // The skill array has 45 slots; another player has no numbers on the wire; the inventory is not written yet.
+  // The skill array has 45 slots; another player has no numbers on the wire.
   const fewer = { ...own, own: { ...ownNumbers, skills: ownNumbers.skills.slice(1) } };
   expect(() => writeAddSelf(32, { ...ownPlayer, player: fewer })).toThrow(/45 skill slots, not 44/);
   const withNumbers = { ...otherPlayer.player!, own: ownNumbers };
   expect(() => writeAddPlayer(31, { ...otherPlayer, player: withNumbers })).toThrow(/own must be null/);
-  const withInventory = { ...own, own: { ...ownNumbers, inventory: [{ objectId: 0, itemId: 502, count: 1 }] } };
-  expect(() => writeAddSelf(32, { ...ownPlayer, player: withInventory })).toThrow(/inventory must be null/);
+  // The inventory is a list (a failed read's null and error are the reader's), in the slot order the storing side
+  // writes, each slot one of the 73.
+  const withInventory = (inventory: OwnCharacter['inventory'], inventoryError: string | null = null): AddedMover => (
+    { ...ownPlayer, player: { ...own, own: { ...ownNumbers, inventory, inventoryError } } }
+  );
+  expect(() => writeAddSelf(32, withInventory(null))).toThrow(/inventory to write is a list/);
+  expect(() => writeAddSelf(32, withInventory([], 'item 1 of 1: ...'))).toThrow(/inventoryError must be null/);
+  const lollipops = { itemId: 2800, count: 3 };
+  expect(() => writeAddSelf(32, withInventory([{ objectId: 45, ...lollipops }, { objectId: 1, ...lollipops }])))
+    .toThrow(/object ID 1 after 45/);
+  expect(() => writeAddSelf(32, withInventory([{ objectId: 1, ...lollipops }, { objectId: 1, ...lollipops }])))
+    .toThrow(/object ID 1 after 1/);
+  expect(() => writeAddSelf(32, withInventory([{ objectId: 73, ...lollipops }]))).toThrow(/object ID 73 is not one of/);
 });

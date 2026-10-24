@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { writeAddSelf } from '@flyffweb/testkit';
 import { ArWriter, BUNDLE_MARKER, MessageType, NULL_ID, PacketType, WORLD_READERS, readBundle } from '../src';
-import type { BundleResult, OwnCharacter, SkillSlot, Vec3, WorldMessage } from '../src';
+import type {
+  AddedMover, BundleResult, InventoryItem, OwnCharacter, SkillSlot, Vec3, WorldMessage,
+} from '../src';
 
 // The values below are copied from the C++ on purpose, so that a wrong constant in the reader shows up here.
 /** `OT_ITEM` and `OT_MOVER` (`Resource/define.h:84-85`). */
@@ -14,6 +17,12 @@ const MAX_JOB = 32;
 const MAX_SKILL_JOB = 45;
 /** `SI_GEN_EVE_QUICKSTEP`, `_HASTE`, `_HEAPUP` and `_ACCURACY` (`Resource/defineSkill.h:243-246`). */
 const SI_GEN_EVE = [317, 318, 319, 320];
+/**
+ * `m_Inventory`'s `m_dwItemMax`: `SetItemContainer( ITYPE_ITEM, MAX_INVENTORY, MAX_HUMAN_PARTS )`
+ * (`_Common/Mover.cpp:1460`, `Item.h:498-503`), `MAX_INVENTORY` 42 (`_Common/ProjectCmn.h:7`) + 31.
+ */
+const MAX_INVENTORY = 42;
+const INVENTORY_SLOTS = MAX_INVENTORY + MAX_HUMAN_PARTS;
 
 /** The bundle's player object ID: an ADD_OBJ with this object ID is the player's own character. */
 const PLAYER = 0x1234;
@@ -196,7 +205,41 @@ describe('ADD_OBJ (OnAddObj)', () => {
     return Array.from({ length: MAX_SKILL_JOB }, (_, i) => filled[i] ?? { skill: NULL_ID, level: 0 });
   }
 
-  /** What a new character's ADD_OBJ carries: 15 in each stat, MP 63, FP 32, no EXP or points, seven skills filled. */
+  // A new male Vagrant's inventory, the `BASE_VALUE_TBL` row with `g_nSex` 0 (`Database.sql:2741`): `m_Inventory` lists
+  // each item as `objectId,itemId,bEquip,nTrade,text,m_nItemNum,m_nRepairNumber,m_nHitPoint,...`
+  // (`CDbManager::GetOneItem`, `_Database/DbManagerFun.cpp:1426-1450`), and `m_apIndex` and `m_dwObjIndex` put the
+  // suit, gauntlets, boots and sword in parts 2, 4, 5 and 10 (`PARTS_UPPER_BODY`, `_HAND`, `_FOOT`, `_RWEAPON`,
+  // `Resource/defineNeuz.h:26-34`), slots 42 + part.
+  const STARTER_INVENTORY: InventoryItem[] = [
+    { objectId: 0, itemId: 502, count: 1 }, // II_ARM_M_VAG_SUIT01 (Resource/defineItem.h:248), worn
+    { objectId: 1, itemId: 2801, count: 1 }, // II_GEN_FOO_INS_BISCUIT (:1064)
+    { objectId: 2, itemId: 4805, count: 5 }, // II_SYS_BLI_TWO_TOWNBLINKWING (:1542)
+    { objectId: 42, itemId: 506, count: 1 }, // II_ARM_M_VAG_GAUNTLET01 (:252), worn
+    { objectId: 43, itemId: 510, count: 1 }, // II_ARM_M_VAG_BOOTS01 (:256), worn
+    { objectId: 44, itemId: 21, count: 1 }, // II_WEA_SWO_WOODEN (:32), worn
+    { objectId: 45, itemId: 2800, count: 3 }, // II_GEN_FOO_INS_LOLLIPOP (:1063)
+  ];
+  /** The row's `m_nHitPoint` of the worn items (the others have 0). */
+  const STARTER_EXTRAS: ReadonlyMap<number, ItemExtras> = new Map([
+    [0, { hitPoint: 9000000 }], [42, { hitPoint: 5850000 }], [43, { hitPoint: 4500000 }], [44, { hitPoint: 7200000 }],
+  ]);
+  const STARTER_WORN: ReadonlyMap<number, number> = new Map([[2, 0], [4, 42], [5, 43], [10, 44]]);
+  /** `m_aEquipInfo[i].dwId`: the worn items' object IDs, `m_apIndex[MAX_INVENTORY + i]` (`Obj.cpp:494-506`). */
+  const STARTER_EQUIPMENT = Array.from({ length: MAX_HUMAN_PARTS }, (_, i) => STARTER_WORN.get(i) ?? NULL_ID);
+  /** The row's `m_apIndex`: the object ID at each position of the bag (42), then of each part (31). */
+  const STARTER_AP_INDEX = [
+    45, ...Array.from({ length: MAX_INVENTORY - 1 }, (_, i) => i + 1), ...STARTER_EQUIPMENT,
+  ];
+  /** The row's `m_dwObjIndex`: each slot's position in `m_apIndex`, `NULL_ID` for the slots no item uses. */
+  const STARTER_OBJ_INDEX = [
+    44, ...Array.from({ length: MAX_INVENTORY - 1 }, (_, i) => i + 1), 46, 47, 52, 0,
+    ...Array.from({ length: INVENTORY_SLOTS - MAX_INVENTORY - 4 }, () => NULL_ID),
+  ];
+
+  /**
+   * What a new character's ADD_OBJ carries: 15 in each stat, MP 63, FP 32, no EXP or points, seven skills filled, and
+   * the `BASE_VALUE_TBL` inventory.
+   */
   const newCharacter: OwnCharacter = {
     str: 15, sta: 15, dex: 15, int: 15, manaPoint: 63, fatiguePoint: 32,
     exp: 0n, skillLevel: 0, skillPoint: 0, deathExp: 0n, deathLevel: 0, remainGP: 0,
@@ -206,7 +249,8 @@ describe('ADD_OBJ (OnAddObj)', () => {
       { skill: 1, level: 0 }, { skill: 2, level: 1 }, { skill: 3, level: 2 },
       ...SI_GEN_EVE.map((skill) => ({ skill, level: 0 })),
     ]),
-    inventory: null,
+    inventory: STARTER_INVENTORY,
+    inventoryError: null,
   };
 
   /** A character whose numbers all differ, with the highest values the fields hold and the signed ones negative. */
@@ -217,14 +261,101 @@ describe('ADD_OBJ (OnAddObj)', () => {
       { skill: 0, level: 0 }, { skill: 4, level: 0xffffffff }, { skill: 0xfffffffe, level: 19 },
       ...SI_GEN_EVE.map((skill, i) => ({ skill, level: i })),
     ]),
-    inventory: null,
+    // The count is a `short`; the last of the 73 slots is 72.
+    inventory: [{ objectId: 7, itemId: 0xfffffffe, count: -2 }, { objectId: 72, itemId: 4805, count: 32767 }],
+    inventoryError: null,
   };
 
   /**
-   * The player's own character (METHOD_NONE, `ObjSerializeOpt.cpp:509-566`), through the 45 skill pairs, then `rest`
-   * bytes standing for the cheer point, the banks, the inventory and the buffs.
+   * Fields of `CItemElem::Serialize` the reader reads past, which a test item can fill; the others are written as 0.
+   * `piercing`, `ultimate` and `visKeepTimes` are `m_piercing`'s three lists (`CPiercing::Serialize`); a `keepTime`
+   * other than 0 brings the time left; a `petName` brings a pet (`CPet::Serialize`).
    */
-  function selfFields(own: OwnCharacter = veteran, rest = 50): Uint8Array {
+  interface ItemExtras {
+    serialNumber?: number;
+    text?: string;
+    hitPoint?: number;
+    piercing?: number[];
+    ultimate?: number[];
+    visKeepTimes?: number[];
+    charged?: boolean;
+    randomOption?: bigint;
+    keepTime?: number;
+    petName?: string;
+    visPet?: boolean;
+  }
+
+  /**
+   * One item as `CItemContainer::Serialize` stores it (`_Common/Item.h:910-911`): `ch`, the slot, then
+   * `CItemElem::Serialize` (`_Common/ObjSerialize.cpp:48-89`, with `CItemBase::Serialize`, :31-38), field by field.
+   */
+  function itemFields(w: ArWriter, item: InventoryItem, x: ItemExtras = {}): ArWriter {
+    w.u8(item.objectId) // ch
+      // m_dwObjId (the slot), m_dwItemId, m_liSerialNumber (SERIALNUMBER, a DWORD), m_szItemText
+      .u32(item.objectId).u32(item.itemId).u32(x.serialNumber ?? 0).string(x.text ?? '')
+      .i16(item.count) // m_nItemNum (short)
+      .u8(0).i32(x.hitPoint ?? 0).i32(0) // m_nRepairNumber (BYTE), m_nHitPoint (int), m_nRepair (int)
+      .u8(0).i32(0).u32(0) // m_byFlag (BYTE), m_nAbilityOption (int), m_idGuild (DWORD)
+      .u8(0).i32(0).i32(0); // m_bItemResist (BYTE), m_nResistAbilityOption (int), m_nResistSMItemId (int)
+    // m_piercing: the cards, the ultimate jewels (__EXT_PIERCING), the vis keep times (__PETVIS), each as its count
+    // and then a DWORD (a time_t for the keep times, 4 bytes with _USE_32BIT_TIME_T) per entry
+    for (const list of [x.piercing ?? [], x.ultimate ?? [], x.visKeepTimes ?? []]) {
+      w.u32(list.length);
+      for (const value of list) w.u32(value);
+    }
+    w.i32(x.charged === true ? 1 : 0) // m_bCharged (BOOL)
+      .i64(x.randomOption ?? 0n) // m_iRandomOptItemId (__int64, __SYS_IDENTIFY)
+      .u32(x.keepTime ?? 0); // m_dwKeepTime
+    if ((x.keepTime ?? 0) !== 0) w.i32(86400); // time_t t, the seconds left
+    if (x.petName === undefined) {
+      w.u8(0); // no pet
+    } else {
+      // bPet, then m_nKind, m_nLevel, m_dwExp, m_wEnergy, m_wLife, m_anAvailLevel[PL_MAX], m_szName (__PET_1024)
+      w.u8(1).u8(4).u8(2).u32(5000).u16(80).u16(3).bytes(Uint8Array.of(1, 2, 0, 0, 0, 0)).string(x.petName);
+    }
+    return w.i32(x.visPet === true ? 1 : 0); // m_bTranformVisPet (BOOL, __PETVIS)
+  }
+
+  /** `CItemContainer::Serialize` storing (`Item.h:898-922`): `m_apIndex`, the count, the items, the object indexes. */
+  function inventoryFields(
+    w: ArWriter, items: readonly InventoryItem[], extras: ReadonlyMap<number, ItemExtras> = new Map(),
+  ): ArWriter {
+    for (const v of STARTER_AP_INDEX) w.u32(v);
+    w.u8(items.length); // chSize
+    for (const item of items) itemFields(w, item, extras.get(item.objectId));
+    for (const v of STARTER_OBJ_INDEX) w.u32(v); // adwObjIndex
+    return w;
+  }
+
+  /**
+   * The fields between the skill array and the inventory (`ObjSerializeOpt.cpp:239-253`, read at :569-583), with
+   * values that all differ.
+   */
+  function beforeInventory(w: ArWriter): ArWriter {
+    w.u8(3).u32(120000) // (BYTE)m_nCheerPoint, m_dwTickCheer - GetTickCount()
+      .u8(2); // m_nSlot (BYTE)
+    repeat(w, 3, (x, k) => x.u32(1000 * (k + 1))); // m_dwGoldBank[k]
+    repeat(w, 3, (x, k) => x.u32(700 + k)); // m_idPlayerBank[k]
+    return w.i32(-25) // m_nPlusMaxHitPoint (LONG)
+      .u8(1).u8(2).u8(3) // m_nAttackResistLeft, m_nAttackResistRight, m_nDefenseResist (BYTEs)
+      .i64(123456789012n).i32(4); // m_nAngelExp (EXPINTEGER), m_nAngelLevel (LONG) (__CSC_VER8_5)
+  }
+
+  interface SelfOptions {
+    /** `m_aEquipInfo[i].dwId` (`ownEquipment` when not given). */
+    equipment?: readonly number[];
+    /** False ends the message after the skill array; true (the default) writes on through `own.inventory`. */
+    inventory?: boolean;
+    extras?: ReadonlyMap<number, ItemExtras>;
+    /** Bytes standing for the banks, the pet, the pocket, the titles and the buffs, which the reader leaves alone. */
+    rest?: number;
+  }
+
+  /**
+   * The player's own character (METHOD_NONE, `ObjSerializeOpt.cpp:509-640`), through the 45 skill pairs, the fields up
+   * to the inventory and the inventory (`own.inventory`, `[]` when null), then `rest` bytes.
+   */
+  function selfFields(own: OwnCharacter = veteran, options: SelfOptions = {}): Uint8Array {
     const w = objectHead(11, 100, 0, PLAYER)
       .u16(0x15).u8(1).i32(500).u32(0x1).u32(0).u8(0).u32(NULL_ID);
     playerCommon(w, 'Hero', false, false, [own.str, own.sta, own.dex, own.int])
@@ -244,28 +375,42 @@ describe('ADD_OBJ (OnAddObj)', () => {
       .u8(1).u16(51) // m_nCheckedQuestSize (__IMPROVE_QUEST_INTERFACE), then WORDs
       .u32(0) // m_idMurderer
       .i16(own.remainGP).i16(0); // (short)m_nRemainGP, (short)0
-    for (const id of ownEquipment) w.u32(id); // m_aEquipInfo[i].dwId
+    for (const id of options.equipment ?? ownEquipment) w.u32(id); // m_aEquipInfo[i].dwId
     for (const slot of own.skills) w.u32(slot.skill).u32(slot.level); // m_aJobSkill[i]: dwSkill, dwLevel
-    // The cheer point, the inventory, the banks and the rest, which the reader leaves alone.
-    return w.bytes(new Uint8Array(rest).fill(0xcd)).toBytes();
+    if (options.inventory ?? true) inventoryFields(beforeInventory(w), own.inventory ?? [], options.extras);
+    // The banks, the pet, the pocket and the rest, which the reader leaves alone.
+    return w.bytes(new Uint8Array(options.rest ?? 50).fill(0xcd)).toBytes();
   }
 
-  function selfOf(own: OwnCharacter): WorldMessage {
+  /** The own character's mover, as the reader gives it back from `selfFields` and `writeAddSelf` takes it. */
+  function selfMover(own: OwnCharacter, equipment: readonly number[] = ownEquipment): AddedMover {
     return {
-      type: 'addMover',
-      mover: {
-        index: 11, scale: 1, pos, angle: 0, objectId: PLAYER,
-        motion: 0x15, isPlayer: true, hitPoint: 500, state: 0x1, stateFlag: 0, belligerence: 0, sfxId: NULL_ID,
-        player: {
-          ...playerBase, self: true, own, shopTitle: '', worn: [], equipmentObjectIds: ownEquipment,
-        },
+      index: 11, scale: 1, pos, angle: 0, objectId: PLAYER,
+      motion: 0x15, isPlayer: true, hitPoint: 500, state: 0x1, stateFlag: 0, belligerence: 0, sfxId: NULL_ID,
+      player: {
+        ...playerBase, self: true, own, shopTitle: '', worn: [], equipmentObjectIds: [...equipment],
       },
     };
   }
 
+  function selfOf(own: OwnCharacter, equipment?: readonly number[]): WorldMessage {
+    return { type: 'addMover', mover: selfMover(own, equipment) };
+  }
+
+  function ownOf(message: WorldMessage): OwnCharacter | null | undefined {
+    return message.type === 'addMover' ? message.mover.player?.own : undefined;
+  }
+
+  /** The bytes of the own ADD_OBJ up to its skill array, then the fields up to the inventory and what `write` adds. */
+  function afterSkills(write: (w: ArWriter) => void): Uint8Array {
+    const w = new ArWriter().bytes(selfFields(newCharacter, { inventory: false, rest: 0 }));
+    write(beforeInventory(w));
+    return w.toBytes();
+  }
+
   const self = selfOf(veteran);
 
-  it("reads the player's own character through its skills and skips the rest", () => {
+  it("reads the player's own character through its inventory and skips the rest", () => {
     const own = readOne(PLAYER, selfFields());
     expect(own).toEqual(self);
     // No worn parts: the 31 IDs are the inventory's object IDs, kept apart from item IDs.
@@ -289,7 +434,7 @@ describe('ADD_OBJ (OnAddObj)', () => {
     expect(own).toEqual(newCharacter);
     expect(own).toMatchObject({
       str: 15, sta: 15, dex: 15, int: 15, manaPoint: 63, fatiguePoint: 32, exp: 0n, skillLevel: 0, skillPoint: 0,
-      deathExp: 0n, deathLevel: 0, remainGP: 0, inventory: null,
+      deathExp: 0n, deathLevel: 0, remainGP: 0,
     });
     // Slot by slot: 45 of them, the first three skills, the four SI_GEN_EVE_* IDs, then the empty slots.
     expect(own?.skills).toHaveLength(MAX_SKILL_JOB);
@@ -310,6 +455,108 @@ describe('ADD_OBJ (OnAddObj)', () => {
     expect(own).toMatchObject({ sta: 65535, manaPoint: 65535, exp: 9876543210n, deathExp: -5n, remainGP: -2 });
     expect(own?.skills[1]).toEqual({ skill: 4, level: 0xffffffff });
     expect(own?.skills[2]).toEqual({ skill: 0xfffffffe, level: 19 });
+    // ch is a BYTE, m_dwItemId a DWORD, m_nItemNum a short.
+    expect(own?.inventory).toEqual([
+      { objectId: 7, itemId: 0xfffffffe, count: -2 }, { objectId: 72, itemId: 4805, count: 32767 },
+    ]);
+  });
+
+  it('the own inventory is read', () => {
+    const starter = selfMover(newCharacter, STARTER_EQUIPMENT);
+    // The testkit's writeAddSelf, with and without the table of contents.
+    for (const indexed of [true, false]) {
+      expect(readOne(PLAYER, writeAddSelf(PLAYER, starter).fields, indexed))
+        .toEqual({ type: 'addMover', mover: starter });
+    }
+    // The same inventory written by hand, every field as `CItemElem::Serialize` stores it, with the row's `m_apIndex`,
+    // object indexes and hit points: the reader keeps the same three values of each item.
+    const byHand = selfFields(newCharacter, { equipment: STARTER_EQUIPMENT, extras: STARTER_EXTRAS });
+    const own = ownOf(readOne(PLAYER, byHand));
+    expect(own?.inventoryError).toBeNull();
+    expect(own?.inventory).toEqual([
+      { objectId: 0, itemId: 502, count: 1 }, { objectId: 1, itemId: 2801, count: 1 },
+      { objectId: 2, itemId: 4805, count: 5 }, { objectId: 42, itemId: 506, count: 1 },
+      { objectId: 43, itemId: 510, count: 1 }, { objectId: 44, itemId: 21, count: 1 },
+      { objectId: 45, itemId: 2800, count: 3 },
+    ]);
+    // An empty inventory (`chSize` 0) is [], not null.
+    const empty = ownOf(readOne(PLAYER, selfFields({ ...newCharacter, inventory: [] })));
+    expect(empty).toMatchObject({ inventory: [], inventoryError: null });
+  });
+
+  it('reads past every field of an item: piercing, random option, keep time, pet', () => {
+    const pierced: InventoryItem = { objectId: 10, itemId: 3001, count: 1 };
+    const after: InventoryItem = { objectId: 11, itemId: 2801, count: 9 };
+    const extras = new Map<number, ItemExtras>([[10, {
+      serialNumber: 0x01020304, text: 'Kyle', hitPoint: 7, piercing: [7001, 7002, 0], ultimate: [9001],
+      visKeepTimes: [3600, 7200], charged: true, randomOption: 0x0123456789abcdefn, keepTime: 1700000000,
+      petName: 'Rex', visPet: true,
+    }]]);
+    const own = ownOf(readOne(PLAYER, selfFields({ ...newCharacter, inventory: [pierced, after] }, { extras })));
+    // The item after it is read from where the first one ends.
+    expect(own).toMatchObject({ inventory: [pierced, after], inventoryError: null });
+  });
+
+  it('a slot listed twice holds the later item, and an item ID of 0 empties its slot, as m_apItem[ch] does', () => {
+    const own = ownOf(readOne(PLAYER, selfFields({
+      ...newCharacter,
+      inventory: [
+        { objectId: 3, itemId: 2801, count: 1 }, { objectId: 4, itemId: 2800, count: 2 },
+        { objectId: 3, itemId: 4805, count: 5 }, { objectId: 4, itemId: 0, count: 1 },
+      ],
+    })));
+    expect(own).toMatchObject({ inventory: [{ objectId: 3, itemId: 4805, count: 5 }], inventoryError: null });
+  });
+
+  it('a broken inventory still gives the numbers', () => {
+    // The starter character's message cut 30 bytes before the end of its third item: the four items after it and the
+    // 73 object indexes are missing. The message ends on its boundary all the same and is kept.
+    const whole = selfFields(newCharacter, { rest: 0 });
+    const itemSize = itemFields(new ArWriter(), STARTER_INVENTORY[3]).toBytes().byteLength;
+    const cut = whole.subarray(0, whole.byteLength - 4 * INVENTORY_SLOTS - 4 * itemSize - 30);
+    const broken = { ...newCharacter, inventory: null, inventoryError: expect.any(String) };
+    for (const indexed of [true, false]) {
+      // Without the table the message is the end of the bundle, and the reader runs out the same way.
+      const result = readAdd(PLAYER, cut, indexed);
+      expect(result.mismatched).toEqual([]);
+      expect(result.stoppedAt).toBeNull();
+      expect(result.messages).toHaveLength(1);
+      const own = ownOf(result.messages[0].value);
+      expect(own).toEqual(broken);
+      expect(own?.inventoryError).toMatch(/^item 3 of 7: need \d+ bytes but only \d+ remain at offset \d+$/);
+    }
+
+    const errorOf = (fields: Uint8Array): string | null | undefined => {
+      const result = readAdd(PLAYER, fields);
+      expect(result.mismatched).toEqual([]);
+      const own = ownOf(result.messages[0].value);
+      // Task 3's numbers and skills are all there.
+      expect(own).toEqual(broken);
+      return own?.inventoryError;
+    };
+    const indexes = (w: ArWriter): void => {
+      for (let i = 0; i < INVENTORY_SLOTS; i++) w.u32(i < MAX_INVENTORY ? i : NULL_ID);
+    };
+    // Nothing after the skill array: the cheer point is missing.
+    expect(errorOf(selfFields(newCharacter, { inventory: false, rest: 0 })))
+      .toMatch(/^before the inventory: need 1 bytes but only 0 remain/);
+    // More items than the 73 slots (the storing side writes one per filled slot).
+    expect(errorOf(afterSkills((w) => {
+      indexes(w);
+      w.u8(INVENTORY_SLOTS + 1);
+    }))).toMatch(/^the inventory: 74 items, more than its 73 slots at offset \d+$/);
+    // A slot past the last (m_apItem[ch] would write outside the array).
+    expect(errorOf(afterSkills((w) => {
+      indexes(w);
+      itemFields(w.u8(1), { objectId: INVENTORY_SLOTS, itemId: 2801, count: 1 });
+      indexes(w);
+    }))).toMatch(/^item 1 of 1: slot 73 is outside the inventory's 73 slots at offset \d+$/);
+    // An item text longer than `ReadString( m_szItemText, 32 )` holds.
+    expect(errorOf(afterSkills((w) => {
+      indexes(w);
+      itemFields(w.u8(1), { objectId: 0, itemId: 2801, count: 1 }, { text: 'x'.repeat(32) });
+      indexes(w);
+    }))).toMatch(/^item 1 of 1: string length 32 is outside 0\.\.31/);
   });
 
   it("another player's ADD_OBJ has no own character and still ends on the boundary", () => {
@@ -318,15 +565,19 @@ describe('ADD_OBJ (OnAddObj)', () => {
   });
 
   it('an own ADD_OBJ whose skill array is cut short or missing is a mismatch', () => {
+    const skillsOnly = { inventory: false, rest: 0 };
     // 44 pairs and nothing after them: the 45th pair is missing.
-    expect(readAdd(PLAYER, selfFields({ ...veteran, skills: veteran.skills.slice(0, 44) }, 0)).mismatched)
+    expect(readAdd(PLAYER, selfFields({ ...veteran, skills: veteran.skills.slice(0, 44) }, skillsOnly)).mismatched)
       .toEqual([MessageType.ADD_OBJ]);
     // Cut in the middle of the 45th pair.
-    expect(readAdd(PLAYER, selfFields(veteran, 0).subarray(0, -3)).mismatched).toEqual([MessageType.ADD_OBJ]);
+    expect(readAdd(PLAYER, selfFields(veteran, skillsOnly).subarray(0, -3)).mismatched).toEqual([MessageType.ADD_OBJ]);
     // Piece 3's own ADD_OBJ, which ended on the equipment IDs.
-    expect(readAdd(PLAYER, selfFields({ ...veteran, skills: [] }, 0)).mismatched).toEqual([MessageType.ADD_OBJ]);
-    // The whole array and nothing after it is fine: the rest is skipped, whatever its length.
-    expect(readAdd(PLAYER, selfFields(veteran, 0)).mismatched).toEqual([]);
+    expect(readAdd(PLAYER, selfFields({ ...veteran, skills: [] }, skillsOnly)).mismatched)
+      .toEqual([MessageType.ADD_OBJ]);
+    // Task 3's, which ended on the skill array, is kept: only its inventory is missing.
+    expect(readAdd(PLAYER, selfFields(veteran, skillsOnly)).mismatched).toEqual([]);
+    // The whole inventory and nothing after it is fine: the rest is skipped, whatever its length.
+    expect(readAdd(PLAYER, selfFields(veteran, { rest: 0 })).mismatched).toEqual([]);
   });
 
   it("chooses the own character's fields by the object ID, as OnAddObj's SetMethod does", () => {

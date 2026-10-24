@@ -1,6 +1,6 @@
 import { ArWriter, AttackFlag, BUNDLE_MARKER, MessageType, NULL_ID, ObjectType, ProtocolError } from '@flyffweb/protocol';
 import type {
-  AddedMover, AddedNpc, AddedPlayer, MonsterRate, MoveReport, OwnCharacter, SkillSlot, Vec3,
+  AddedMover, AddedNpc, AddedPlayer, InventoryItem, MonsterRate, MoveReport, OwnCharacter, SkillSlot, Vec3,
 } from '@flyffweb/protocol';
 
 /** One message of a scripted bundle. `fields` are the bytes after the object ID and the type, built by the caller. */
@@ -296,17 +296,24 @@ const SM_MAX = 26;
 const MAX_JOB = 32;
 /** `MAX_SKILL_JOB` (`_Common/Mover.h:96-100`, `__VER >= 10`): the length of `m_aJobSkill`. */
 const MAX_SKILL_JOB = 45;
+/**
+ * `MAX_INVENTORY` (`_Common/ProjectCmn.h:7`), the bag's slots; with one per part, `m_Inventory`'s `m_dwItemMax`
+ * (`SetItemContainer( ITYPE_ITEM, MAX_INVENTORY, MAX_HUMAN_PARTS )`, `_Common/Mover.cpp:1460`).
+ */
+const MAX_INVENTORY = 42;
+const INVENTORY_SLOTS = MAX_INVENTORY + MAX_HUMAN_PARTS;
 
 /**
  * What an own character without `own` is written with, a mover that has nothing yet: zero stats, MP, FP, EXP and
- * points, and every skill slot empty (`dwSkill` `NULL_ID`, `dwLevel` 0, as `CMover::InitProp` leaves a slot,
- * `_Common/Mover.cpp:1478-1485`).
+ * points, every skill slot empty (`dwSkill` `NULL_ID`, `dwLevel` 0, as `CMover::InitProp` leaves a slot,
+ * `_Common/Mover.cpp:1478-1485`) and an empty inventory.
  */
 const NO_OWN: OwnCharacter = {
   str: 0, sta: 0, dex: 0, int: 0, manaPoint: 0, fatiguePoint: 0, exp: 0n, skillLevel: 0, skillPoint: 0,
   deathExp: 0n, deathLevel: 0, remainGP: 0,
   skills: Array.from({ length: MAX_SKILL_JOB }, (): SkillSlot => ({ skill: NULL_ID, level: 0 })),
-  inventory: null,
+  inventory: [],
+  inventoryError: null,
 };
 
 /**
@@ -400,13 +407,54 @@ export function writeAddPlayer(objectId: number, p: AddedMover): ScriptMessage {
 }
 
 /**
- * ADD_OBJ of the player's own character (METHOD_NONE, `ObjSerializeOpt.cpp:198-237`), through its skill array: the
+ * `m_Inventory.Serialize( ar )` (`ObjSerializeOpt.cpp:254`): `CItemContainer<CItemElem>::Serialize`, the storing
+ * side (`_Common/Item.h:898-922`). `m_apIndex` and the object indexes are written as a fresh container has them
+ * (`CItemContainer::Clear`, :480-496: the bag's positions hold their own slot, the parts and their indexes `NULL_ID`),
+ * which the browser reads past. Then the count and, per item, its slot (`ch`) and `CItemElem::Serialize`
+ * (`ObjSerialize.cpp:33-37` and :51-88) with only the three kept values in it: no serial number, text, options,
+ * piercing, keep time or pet. The storing side lists the filled slots in slot order, so `items` must be in rising
+ * `objectId` order, each one of the 73 slots.
+ */
+function writeInventory(w: ArWriter, items: readonly InventoryItem[]): void {
+  items.forEach((item, i) => {
+    if (!Number.isInteger(item.objectId) || item.objectId < 0 || item.objectId >= INVENTORY_SLOTS) {
+      throw new Error(`inventory object ID ${item.objectId} is not one of the ${INVENTORY_SLOTS} slots`);
+    }
+    if (i > 0 && item.objectId <= items[i - 1].objectId) {
+      throw new Error(`the inventory lists its slots in rising order: object ID ${item.objectId} after `
+        + `${items[i - 1].objectId}`);
+    }
+  });
+  const fresh = (): void => {
+    for (let i = 0; i < INVENTORY_SLOTS; i++) w.u32(i < MAX_INVENTORY ? i : NULL_ID);
+  };
+  fresh(); // m_apIndex
+  w.u8(items.length); // chSize
+  for (const item of items) {
+    w.u8(item.objectId) // ch
+      .u32(item.objectId).u32(item.itemId).u32(0).string('') // m_dwObjId, m_dwItemId, m_liSerialNumber, m_szItemText
+      .i16(item.count) // m_nItemNum (short)
+      .u8(0).i32(0).i32(0) // m_nRepairNumber, m_nHitPoint, m_nRepair
+      .u8(0).i32(0).u32(0) // m_byFlag, m_nAbilityOption, m_idGuild
+      .u8(0).i32(0).i32(0) // m_bItemResist, m_nResistAbilityOption, m_nResistSMItemId
+      .u32(0).u32(0).u32(0) // m_piercing: no cards, no ultimate jewels, no vis keep times (piercing.cpp:38-53)
+      .i32(0).i64(0n).u32(0) // m_bCharged, m_iRandomOptItemId, m_dwKeepTime 0 (no time left follows)
+      .u8(0) // (BYTE)0x00: no pet
+      .i32(0); // m_bTranformVisPet
+  }
+  fresh(); // adwObjIndex: each slot's m_dwObjIndex
+}
+
+/**
+ * ADD_OBJ of the player's own character (METHOD_NONE, `ObjSerializeOpt.cpp:198-254`), through its inventory: the
  * stats (`m_nStr` to `m_nInt`) and the numbers from `p.player.own` (a character with nothing yet when it is `null`:
  * `NO_OWN`), `equipmentObjectIds` (one per part, the inventory's object IDs or `NULL_ID`) in `m_aEquipInfo[i].dwId`,
- * then the 45 skill pairs. The own character lists no worn parts, so `worn` must be `[]`. The world server goes on
- * with the cheer point, the inventory, the banks and the rest (:239-276), then the buffs; the browser skips all of
- * that, so the script ends the message after the skills, and `own.inventory` must be `null`. The bundle's player
- * object ID must be `objectId`, as `CUser::Open` makes it (`User.cpp:315`).
+ * the 45 skill pairs, the fields up to the inventory with nothing in them (:239-253), then `own.inventory`
+ * (`writeInventory`). The own character lists no worn parts, so `worn` must be `[]`. The world server goes on with
+ * the banks, the pet, the pocket and the rest (:255-276), then the buffs; the browser skips all of that, so the
+ * script ends the message after the inventory. `own.inventory` must be the list to write (`[]` for none) and
+ * `own.inventoryError` `null`: a failed read's `null` and error are what the reader gives, not something to write.
+ * The bundle's player object ID must be `objectId`, as `CUser::Open` makes it (`User.cpp:315`).
  */
 export function writeAddSelf(objectId: number, p: AddedMover): ScriptMessage {
   const player = playerOf(p, true);
@@ -422,8 +470,11 @@ export function writeAddSelf(objectId: number, p: AddedMover): ScriptMessage {
   if (own.skills.length !== MAX_SKILL_JOB) {
     throw new Error(`the own character needs ${MAX_SKILL_JOB} skill slots, not ${own.skills.length}`);
   }
-  if (own.inventory !== null) {
-    throw new Error('the own character\'s inventory is not written yet: own.inventory must be null');
+  if (own.inventory === null) {
+    throw new Error('the own character\'s inventory to write is a list ([] for none), not null');
+  }
+  if (own.inventoryError !== null) {
+    throw new Error(`the own character's inventoryError must be null, not '${own.inventoryError}'`);
   }
   const w = playerStart(p, player, [own.str, own.sta, own.dex, own.int])
     .u16(own.manaPoint).u16(own.fatiguePoint) // (u_short)m_nManaPoint, (u_short)m_nFatiguePoint
@@ -436,6 +487,14 @@ export function writeAddSelf(objectId: number, p: AddedMover): ScriptMessage {
     .u32(0).i16(own.remainGP).i16(0); // m_idMurderer, (short)m_nRemainGP, (short)0
   for (const id of player.equipmentObjectIds) w.u32(id); // m_aEquipInfo[i].dwId
   for (const slot of own.skills) w.u32(slot.skill).u32(slot.level); // m_aJobSkill[i]: dwSkill, dwLevel
+  w.u8(0).u32(0) // (BYTE)m_nCheerPoint, m_dwTickCheer - GetTickCount()
+    .u8(0) // m_nSlot
+    .u32(0).u32(0).u32(0) // m_dwGoldBank[k]
+    .u32(0).u32(0).u32(0) // m_idPlayerBank[k]
+    .i32(0) // m_nPlusMaxHitPoint
+    .u8(0).u8(0).u8(0) // m_nAttackResistLeft, m_nAttackResistRight, m_nDefenseResist
+    .i64(0n).i32(0); // m_nAngelExp, m_nAngelLevel (__VER >= 8)
+  writeInventory(w, own.inventory);
   return scripted(objectId, MessageType.ADD_OBJ, w);
 }
 

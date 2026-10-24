@@ -102,15 +102,18 @@ export interface WornPart { part: number; itemId: number; flag: number }
 export interface SkillSlot { skill: number; level: number }
 
 /**
- * One item of the own inventory: `objectId` is its object ID in the inventory (what `AddedPlayer.equipmentObjectIds`
- * name), `itemId` the item's ID in `propItem.txt` and `count` how many of it the stack holds.
+ * One item of the own inventory (`CItemContainer<CItemElem>`, `_Common/Item.h:892`). `objectId` is its object ID in
+ * the inventory: the slot of `m_apItem` the message puts it in (`ch`, 0 to 72), which is what `GetAtId` looks an item
+ * up by (the item's own `m_dwObjId` repeats it on the wire), and what `AddedPlayer.equipmentObjectIds` and a task
+ * bar's item shortcut name. `itemId` is `m_dwItemId`, the item's ID in `propItem.txt`, and `count` is `m_nItemNum`
+ * (a `short`), how many of it the stack holds.
  */
 export interface InventoryItem { objectId: number; itemId: number; count: number }
 
 /**
- * What the own ADD_OBJ (METHOD_NONE, `_Common/ObjSerializeOpt.cpp:509-566`) tells about the player's own character
+ * What the own ADD_OBJ (METHOD_NONE, `_Common/ObjSerializeOpt.cpp:509-585`) tells about the player's own character
  * beyond what every player has: its base stats (the player part's `m_nStr` to `m_nInt`, :436-439), the points
- * and EXP, and the skill array.
+ * and EXP, the skill array and the inventory.
  */
 export interface OwnCharacter {
   /** `m_nStr`, `m_nSta`, `m_nDex`, `m_nInt`: the base stats, without equipment or buffs (`WORD`s). */
@@ -137,8 +140,18 @@ export interface OwnCharacter {
    * `skill` `NULL_ID`.
    */
   skills: SkillSlot[];
-  /** The own inventory's items; `null` while the reader does not read them, and when its read fails. */
+  /**
+   * `m_Inventory`'s items, in the order the message lists them (the storing side goes through the slots in order),
+   * `[]` for an empty inventory. `null` when the inventory could not be read: `inventoryError` says why, and the
+   * numbers and skills above are still the message's.
+   */
   inventory: InventoryItem[] | null;
+  /**
+   * `null` when the inventory was read. Otherwise what went wrong between the end of the skill array and the end of the
+   * inventory (the bytes ran out, or a count or a field was out of range): the part being read, then the
+   * `ProtocolError`'s message, for example `item 3 of 7: need 4 bytes but only 2 remain at offset 812`.
+   */
+  inventoryError: string | null;
 }
 
 /**
@@ -177,11 +190,12 @@ export interface AddedPlayer {
    * where the part wears nothing. Another player: `[]`. These are the inventory's object IDs of the worn items, not
    * item IDs: the database server sets them from `m_Inventory.m_apIndex` (`CMover::NormalizePlayerData`,
    * `_Network/Objects/Obj.cpp:494-506`) and `DoEquip` from `m_dwObjId` (`_Common/MoverEquip.cpp:736`); Neuz dresses its
-   * own player from the inventory (`RedoEquip( FALSE )`). They are read again in Piece 5, when the inventory is
-   * decoded. In Piece 3 the own look comes from the lobby's PLAYER_LIST equipment instead.
+   * own player from the inventory (`RedoEquip( FALSE )`). Each names an item of `own.inventory` by its `objectId`.
+   * The browser still dresses the own character from the lobby's PLAYER_LIST equipment (Piece 3), since equipping
+   * stays with Piece 5.
    */
   equipmentObjectIds: number[];
-  /** The own character's stats, points, EXP and skills (METHOD_NONE); `null` for another player. */
+  /** The own character's stats, points, EXP, skills and inventory (METHOD_NONE); `null` for another player. */
   own: OwnCharacter | null;
   /** `m_vtInfo.GetTitle()`, the title of the player's private shop (another player only; '' for the own character). */
   shopTitle: string;

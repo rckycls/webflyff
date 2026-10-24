@@ -47,9 +47,9 @@ export function readAddObj(r: ArReader, header: MessageHeader): MessageOf<'addMo
 
 /**
  * `CMover::Serialize`, the loading side (`_Common/ObjSerializeOpt.cpp:97`, :359-767), which first calls
- * `CCtrl::Serialize` and through it `CObj::Serialize`. The own character is read through its numbers, equipment IDs
- * and skills (`readOwnAfterEquipment`) and the rest skipped (the inventory, the banks and so on, then its buffs);
- * every other mover to its end.
+ * `CCtrl::Serialize` and through it `CObj::Serialize`. The own character is read through its numbers, equipment IDs,
+ * skills and inventory (`readOwnAfterEquipment`) and the rest skipped (the banks and so on, then its buffs); every
+ * other mover to its end.
  */
 function readMover(r: ArReader, self: boolean): AddedMover {
   // CObj::Serialize (ObjSerializeOpt.cpp:39-51): (u_char&)m_dwType, m_dwIndex, the scale as a u_short
@@ -86,7 +86,7 @@ function readMover(r: ArReader, self: boolean): AddedMover {
   return mover;
 }
 
-/** The player branch (ObjSerializeOpt.cpp:405-688); for the own character only up to the end of its skill array. */
+/** The player branch (ObjSerializeOpt.cpp:405-688); for the own character only up to the end of its inventory. */
 function readPlayer(r: ArReader, self: boolean): AddedPlayer {
   const name = r.string(NAME_BUFFER); // ReadString( m_szName, 32 )
   const sex = r.u8(); // BYTE bySex
@@ -157,7 +157,7 @@ function readPlayer(r: ArReader, self: boolean): AddedPlayer {
  * METHOD_NONE (ObjSerializeOpt.cpp:509-559), the own character, through `m_aEquipInfo[i].dwId`: the 31 IDs as they
  * are, which are inventory object IDs, not item IDs (see `AddedPlayer.equipmentObjectIds`). The numbers on the way
  * are kept, with the base stats the player part gave (`stats`); `readOwnAfterEquipment` completes them with the
- * skills.
+ * skills and the inventory.
  */
 function readOwnEquipment(
   r: ArReader, stats: Pick<OwnNumbers, 'str' | 'sta' | 'dex' | 'int'>,
