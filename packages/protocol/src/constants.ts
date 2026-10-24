@@ -33,6 +33,18 @@ export const PacketType = {
   PLAYERBEHAVIOR: 0xffffff02,
   /** `PACKETTYPE_PLAYERCORR`: the client corrects its player's state where a walk met something or began to fall. */
   PLAYERCORR: 0xffffff05,
+  /** `PACKETTYPE_PLAYERSETDESTOBJ`: the client walks its player to a target (`CDPClient::SendPlayerDestObj`). */
+  PLAYERSETDESTOBJ: 0xffffff07,
+  /** `PACKETTYPE_GETDESTOBJ`: the client's answer to the server's QUERYGETDESTOBJ message (`CDPClient::SendGetDestObj`). */
+  GETDESTOBJ: 0xffffff73,
+  /** `PACKETTYPE_MELEE_ATTACK`: the client swings at a target (`CDPClient::SendMeleeAttack`). */
+  MELEE_ATTACK: 0x00ff0010,
+  /** `PACKETTYPE_SETTARGET`: the client selects or releases a target (`CDPClient::SendSetTarget`). */
+  SETTARGET: 0x00ff0023,
+  /** `PACKETTYPE_REVIVAL_TO_LODESTAR`: the dead player asks to be brought back at the lodestar (`SendHdr`). */
+  REVIVAL_TO_LODESTAR: 0x00ff00c1,
+  /** `PACKETTYPE_MODIFY_STATUS`: the client spends stat points (`CDPClient::SendModifyStatus`). */
+  MODIFY_STATUS: 0xf000f501,
   ERROR_STRING: 0x70000003,
   LOGIN_PROTECT_NUMPAD: 0x88100200,
   LOGIN_PROTECT_CERT: 0x88100201,

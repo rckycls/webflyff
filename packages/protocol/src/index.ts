@@ -28,8 +28,9 @@ export {
 } from './messages/login';
 export type { CharacterSummary, LoginMessage, NewCharacter, SlotMessenger } from './messages/login';
 export {
-  decodeWorldPacket, encodeDestPos, encodeJoin, encodePlayerBehavior, encodePlayerCorr, encodePlayerMoved,
-  encodeWorldKeepAlive,
+  decodeWorldPacket, encodeDestPos, encodeGetDestObj, encodeJoin, encodeMeleeAttack, encodeModifyStatus,
+  encodePlayerBehavior, encodePlayerCorr, encodePlayerMoved, encodePlayerSetDestObj, encodeRevivalToLodestar,
+  encodeSetTarget, encodeWorldKeepAlive,
 } from './messages/world';
 export type { JoinRequest, MoveReport, WorldPacket } from './messages/world';
 export { readBundle } from './bundle';

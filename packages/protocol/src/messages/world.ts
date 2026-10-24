@@ -117,12 +117,86 @@ export function encodeDestPos(pos: Vec3, forward: boolean): Uint8Array {
   return clientPacket(PacketType.SNAPSHOT).u8(1).u16(MessageType.DESTPOS).vec3(pos).u8(forward ? 1 : 0).toBytes();
 }
 
+/**
+ * SETTARGET (`CDPClient::SendSetTarget`, `Neuz/DPClient.cpp:9886`): the target's object ID (`OBJID`), then `bClear`
+ * (`BYTE`), the order `CDPSrvr::OnSetTarget` (`WORLDSERVER/DPSrvr.cpp:2183`) reads them in. 1 releases the target (the
+ * server clears the target's `m_idTargeter` if this player set it); 2 makes the target the player's focus
+ * (`m_idSetTarget`), and with `NULL_ID` it clears the focus.
+ */
+export function encodeSetTarget(targetId: number, clear: 1 | 2): Uint8Array {
+  return clientPacket(PacketType.SETTARGET).u32(targetId).u8(clear).toBytes();
+}
+
+/**
+ * PLAYERSETDESTOBJ (`CDPClient::SendPlayerDestObj`, `Neuz/DPClient.cpp:10923`): the object to walk to (`OBJID`),
+ * then the range to stop at (`float`), as `CDPSrvr::OnPlayerSetDestObj` (`WORLDSERVER/DPSrvr.cpp:12794`) reads them.
+ */
+export function encodePlayerSetDestObj(targetId: number, range: number): Uint8Array {
+  return clientPacket(PacketType.PLAYERSETDESTOBJ).u32(targetId).f32(range).toBytes();
+}
+
+/** `nParam2` of a melee swing: `MAKELONG( 0, 0 )` (`CMover::DoAttackMelee`, `_Common/MoverSkill.cpp:3464`). */
+const MELEE_PARAM2 = 0;
+/**
+ * `nParam3` of a melee swing: `MAKELONG( 0, (WORD)nError )` (`_Common/MoverSkill.cpp:3464`), where `nError` is what
+ * `SendActMsg` returned, `m_dwAtkFlags` = `AF_GENERIC` (1) on the client (`CActionMover::ProcessActMsg1`,
+ * `_AIInterface/ActionMoverMsg.cpp:699-702`, as the client does not roll a hit): `0x00010000`.
+ */
+const MELEE_PARAM3 = 0x00010000;
+
+/**
+ * MELEE_ATTACK (`CDPClient::SendMeleeAttack`, `Neuz/DPClient.cpp:9819`, with `__HACK_1023` on: `Neuz/VersionCommon.h:93`,
+ * `WORLDSERVER/VersionCommon.h:102`): the attack message (`OBJMSG`, an `int` on the wire), the target (`OBJID`),
+ * `nParam2` and `nParam3` (`int`), then `fVal` (`FLOAT`), in the order `CDPSrvr::OnMeleeAttack`
+ * (`WORLDSERVER/DPSrvr.cpp:2019`) reads them. The server compares `fVal` with the held item's `fAttackSpeed` and
+ * refuses the swing on any difference (`TID_GAME_MODIFY_ATTACK_SPEED`), so `attackSpeed` is that table value as it
+ * is, written as an `f32`.
+ */
+export function encodeMeleeAttack(message: number, targetId: number, attackSpeed: number): Uint8Array {
+  return clientPacket(PacketType.MELEE_ATTACK).u32(message).u32(targetId).i32(MELEE_PARAM2).i32(MELEE_PARAM3)
+    .f32(attackSpeed).toBytes();
+}
+
+/**
+ * GETDESTOBJ (`CDPClient::SendGetDestObj`, `Neuz/DPClient.cpp:10941`): the answer to the server's QUERYGETDESTOBJ.
+ * `fromId` is the object ID that message named (`OnQueryGetDestObj`, :8985, reads it as `objid`), `destId` the
+ * player's own destination (`g_pPlayer->GetDestId()`); `CDPSrvr::OnGetDestObj` (`WORLDSERVER/DPSrvr.cpp:11604`)
+ * reads the two in that order and uses only the second.
+ */
+export function encodeGetDestObj(fromId: number, destId: number): Uint8Array {
+  return clientPacket(PacketType.GETDESTOBJ).u32(fromId).u32(destId).toBytes();
+}
+
+/**
+ * REVIVAL_TO_LODESTAR (`CDPClient::SendHdr( PACKETTYPE_REVIVAL_TO_LODESTAR )`, `Neuz/DPClient.cpp:11253`, called from
+ * :2054 and :2058): a type and no fields; `CDPSrvr::OnRevivalLodestar` (`WORLDSERVER/DPSrvr.cpp:11296`) reads none.
+ */
+export function encodeRevivalToLodestar(): Uint8Array {
+  return clientPacket(PacketType.REVIVAL_TO_LODESTAR).toBytes();
+}
+
+/**
+ * MODIFY_STATUS (`CDPClient::SendModifyStatus`, `Neuz/DPClient.cpp:16652`): the points to add to STR, STA, DEX and
+ * INT (`int` each), the order `CDPSrvr::OnModifyStatus` (`WORLDSERVER/DPSrvr.cpp:8341`) reads them in. The server
+ * ignores a request with a negative count, no points at all, or more points than the player has.
+ */
+export function encodeModifyStatus(counts: { str: number; sta: number; dex: number; int: number }): Uint8Array {
+  return clientPacket(PacketType.MODIFY_STATUS).i32(counts.str).i32(counts.sta).i32(counts.dex).i32(counts.int).toBytes();
+}
+
 export type WorldPacket =
   | { type: 'join'; body: Uint8Array }
   | { type: 'snapshot'; body: Uint8Array }
   | { type: 'keepAlive' }
   | { type: 'error'; code: number }
   | { type: 'replace'; worldId: number }
+  // The packets the browser sends, read for the pretend servers (`DPID_UNKNOWN` first): the fields of the encoders.
+  | { type: 'setTarget'; targetId: number; clear: number }
+  | { type: 'playerSetDestObj'; targetId: number; range: number }
+  | { type: 'meleeAttack'; message: number; targetId: number; param2: number; param3: number; attackSpeed: number }
+  | { type: 'getDestObj'; fromId: number; destId: number }
+  | { type: 'revivalToLodestar' }
+  | { type: 'modifyStatus'; str: number; sta: number; dex: number; int: number }
   | { type: 'unknown'; packetType: number };
 
 /**
@@ -134,12 +208,16 @@ export type WorldPacket =
  * - ERROR (`OnError`, :1033) reads the error code (`long`).
  * - REPLACE (`OnReplace`, :2297) reads the world ID (`DWORD`) and the position (`D3DXVECTOR3`); the position is
  *   read to check the body and dropped, as the browser only reports the world it is asked to go to.
+ * A body that starts with `DPID_UNKNOWN` is one the browser sent (`BEFORESENDSOLE`), which the pretend servers read:
+ * the type follows, then the fields of the matching `encode*` (`decodeClientPacket`). No packet type of `MsgHdr.h` is
+ * `0xffffffff`, so a server body is never mistaken for one.
  * A known type must use the whole body (JOIN and SNAPSHOT keep it whole); a type this does not know is reported,
  * not thrown.
  */
 export function decodeWorldPacket(body: Uint8Array): WorldPacket {
   const r = new ArReader(body);
   const packetType = r.u32();
+  if (packetType === DPID_UNKNOWN) return decodeClientPacket(r);
   switch (packetType) {
     case PacketType.JOIN:
       return { type: 'join', body };
@@ -158,6 +236,56 @@ export function decodeWorldPacket(body: Uint8Array): WorldPacket {
       r.vec3();
       r.expectEnd();
       return { type: 'replace', worldId };
+    }
+    default:
+      return { type: 'unknown', packetType };
+  }
+}
+
+/**
+ * The fight packets after their `DPID_UNKNOWN`, read in the order the matching `encode*` writes them (and the world
+ * server reads them). Any other type is reported with its fields unread: the pretend servers only look at these.
+ */
+function decodeClientPacket(r: ArReader): WorldPacket {
+  const packetType = r.u32();
+  switch (packetType) {
+    case PacketType.SETTARGET: {
+      const targetId = r.u32();
+      const clear = r.u8();
+      r.expectEnd();
+      return { type: 'setTarget', targetId, clear };
+    }
+    case PacketType.PLAYERSETDESTOBJ: {
+      const targetId = r.u32();
+      const range = r.f32();
+      r.expectEnd();
+      return { type: 'playerSetDestObj', targetId, range };
+    }
+    case PacketType.MELEE_ATTACK: {
+      const message = r.u32();
+      const targetId = r.u32();
+      const param2 = r.i32();
+      const param3 = r.i32();
+      const attackSpeed = r.f32();
+      r.expectEnd();
+      return { type: 'meleeAttack', message, targetId, param2, param3, attackSpeed };
+    }
+    case PacketType.GETDESTOBJ: {
+      const fromId = r.u32();
+      const destId = r.u32();
+      r.expectEnd();
+      return { type: 'getDestObj', fromId, destId };
+    }
+    case PacketType.REVIVAL_TO_LODESTAR:
+      r.expectEnd();
+      return { type: 'revivalToLodestar' };
+    case PacketType.MODIFY_STATUS: {
+      const str = r.i32();
+      const sta = r.i32();
+      const dex = r.i32();
+      const int = r.i32();
+      r.expectEnd();
+      return { type: 'modifyStatus', str, sta, dex, int };
     }
     default:
       return { type: 'unknown', packetType };
