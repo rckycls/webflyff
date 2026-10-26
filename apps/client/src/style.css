@@ -865,6 +865,116 @@ fieldset:disabled .btn {
   background-position: -144px 0;
 }
 
+/* A button drawn with a theme picture (pictureButton, CTheme::RenderWndButton_4Texture): the picture's quarters,
+   --hud-quarter wide, are the highlighted, normal, pushed and disabled states. A touch screen has no pointer over a
+   button, so no highlight. */
+.hud-picture-button {
+  position: absolute;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  background-repeat: no-repeat;
+  background-position: calc(-1 * var(--hud-quarter, 0px)) 0;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (hover: hover) {
+  .hud-picture-button:hover:not(:disabled) {
+    background-position: 0 0;
+  }
+}
+
+.hud-picture-button:active:not(:disabled) {
+  background-position: calc(-2 * var(--hud-quarter, 0px)) 0;
+}
+
+.hud-picture-button:disabled {
+  background-position: calc(-3 * var(--hud-quarter, 0px)) 0;
+  cursor: default;
+}
+
+/* The revive window's backdrop (ReviveWindow, WBS_MODAL): over the windows and the task bar, it takes every press while
+   the window is open */
+.hud-modal {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+/* The edit tiles (WndEditTile00 to 08) under a text control and under the tab control's pages */
+.hud-edit-tiles {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+.hud-edit-tiles > div {
+  position: absolute;
+  background-repeat: repeat;
+}
+
+/* The Character window (CharacterWindow): the tab control, its strip and titles, the page's picture with its texts,
+   counts and buttons, placed by the script as CWndCharInfo draws them */
+.hud-char-tab,
+.hud-char-tab > div,
+.hud-char-page {
+  position: absolute;
+}
+
+.hud-char-page {
+  left: 0;
+  top: 0;
+  background-repeat: no-repeat;
+}
+
+.hud-char-text {
+  position: absolute;
+  height: 12px;
+  line-height: 12px;
+  white-space: nowrap;
+}
+
+/* A count's box (m_editStrCount ...): the page's picture draws the box, the count is typed over it. Not the lobby's field
+   (input[type='text']): its text is 16 px, as iOS zooms the page into a field of less, drawn three quarters of its size
+   (the script makes the box 4 / 3 of its place) to be the window's 12 px. */
+.hud-window input.hud-char-count {
+  position: absolute;
+  display: block;
+  box-sizing: border-box;
+  min-height: 0;
+  margin: 0;
+  padding: 0 0 0 4px;
+  border: 0;
+  border-radius: 0;
+  outline: none;
+  background: transparent;
+  color: #000000;
+  -webkit-text-fill-color: #000000;
+  opacity: 1;
+  font: inherit;
+  font-size: 16px;
+  transform: scale(0.75);
+  transform-origin: 0 0;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* The confirm box of the stat points (StateConfirm, CWndStateConfirm): the text control's tiles and its two lines */
+.hud-confirm-box {
+  position: absolute;
+}
+
+.hud-confirm-text {
+  position: absolute;
+  color: #000000;
+  line-height: 14px;
+  white-space: pre-line;
+}
+
 /* The attack button of a touch screen (AttackButton): right side, above the task bar, in the joystick's look */
 .hud-attack {
   position: absolute;
@@ -901,7 +1011,8 @@ fieldset:disabled .btn {
 }
 
 /* The Start menu opens where Piece 3's joystick stands, which is over the windows' layer: it hides while the menu is open
-   (WorldScreen sets the class) */
+   (WorldScreen sets the class); and while the revive window, which takes every press, is open */
+.world.world-modal .joystick,
 .world.world-menu-open .joystick {
   visibility: hidden;
 }

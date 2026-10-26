@@ -682,6 +682,8 @@ describe('LoginFlow, handing over to the world', () => {
     expect(entry.login).toBe(login);
     expect(entry.cacheTarget).toBe('172.31.238.55:5400');
     expect([entry.account, entry.passwordHash, entry.authKey, entry.channelId]).toEqual(['webtester', HASH, 7, 1]);
+    // the server and the channel picked, by name, for the Character window (CWndCharInfo::OnDraw, WndField.cpp:3119-3156)
+    expect([entry.serverName, entry.channelName]).toEqual(['FlyFF', 'Channel 1']);
     expect(entry.character).toMatchObject({ slot: 0, playerId: 500, name: 'Webby' });
     expect(entry.messenger).toEqual({ slot: 0, state: 0, friends: [{ id: 900, blocked: 0, state: 1 }] });
     // The clock started 40 ms after the request: half of that is added to the server's tick, and it runs on the flow's clock.

@@ -22,13 +22,17 @@ import { Caption, MessageLines, formatDefinedText } from '../src/world/hud/messa
 import { StatusWindow } from '../src/world/hud/statusWindow';
 import { TargetBar } from '../src/world/hud/targetBar';
 import { LogOutBox } from '../src/world/hud/logOutBox';
+import { CharacterWindow } from '../src/world/hud/characterWindow';
+import type { StatCounts } from '../src/world/hud/characterWindow';
+import { ReviveWindow } from '../src/world/hud/reviveWindow';
 import { TaskBar, actionPointLit, taskBarLayout } from '../src/world/hud/taskBar';
 import type { TaskBarActions } from '../src/world/hud/taskBar';
 import { terrainGround } from '../src/world/sim/collision';
 import { Belli, ObjSta } from '../src/world/sim/constants';
+import { Dst } from '../src/world/sim/params';
 import { WorldState } from '../src/world/WorldState';
 import { addedNpc, addedPlayer, moverFrom, webMoverOf } from './helpers/movers';
-import { EXP_ROWS, VAGRANT, itemProp, newVagrant, ownAdded, ownGameData } from './helpers/ownState';
+import { EXP_ROWS, OWN_ID, VAGRANT, WOODEN_SWORD, itemProp, newVagrant, ownAdded, ownGameData } from './helpers/ownState';
 
 /** The art as the asset store would give it: every picture under /assets/. */
 const art: UiArt = { url: (key) => `/assets/${key}`, sheets: null };
@@ -1236,5 +1240,423 @@ describe('LogOutBox (CWndLogOut, WndField.cpp:11910-11983; CWndMessageBox, WndMe
     box.frame.element.querySelectorAll<HTMLButtonElement>('.hud-logout-button')[0]!.click();
     expect(onOk).toHaveBeenCalledTimes(1);
     expect(box.isOpen).toBe(false);
+  });
+});
+
+// The revive window (CWndRevival, _Interface/WndField.cpp:12147-12345) and the Character window (CWndCharacter and
+// CWndCharInfo, WndField.cpp:2986-4110) with its confirm box (CWndStateConfirm, :4395-4560).
+
+/** The texts these windows read, as data/texts.json gives them. */
+const WINDOW_TEXTS: Texts = new Map([
+  ...TEXTS,
+  text('TID_GAME_TOOLTIP_LODESTAR', 1153, 'Lodestar is a place near the closest city where a character can choose to be resurrected.'),
+  text('TID_GAME_TOOLTIP_LODELIGHT', 1152, 'Lodelight is a spawning point where a character can be resurrected.'),
+  text('TID_GAME_TOOLTIP_OGNPOINT', 2632, 'You will be revived where you died.'),
+  text('TID_GAME_TOOLTIP_SHOP', 3335, 'You can use a Premium item.'),
+  text('TID_GAME_TITLE_CHAR_INFO', 4004, 'Character'),
+  text('TID_GAME_TITLE_HONOR', 4005, 'Fame/Master'),
+  text('TID_APP_CHARACTER_BASE', 158, 'Base'),
+  text('TID_APP_CHARACTER_DETAIL', 159, 'Detail'),
+  text('TID_APP_CHARACTER_JOB', 160, 'Job'),
+  text('TID_GAME_CHARACTER_01', 3077, 'Name'),
+  text('TID_GAME_CHARACTER_02', 3078, 'Level'),
+  text('TID_GAME_CHAR_SERVER', 3362, 'Server'),
+  text('TID_GAME_CHAR_SERVERNAME', 3363, 'Channel'),
+  text('TID_GAME_CHARACTER_13', 3089, 'ATK'),
+  text('TID_GAME_CHARACTER_14', 3090, 'Critical'),
+  text('TID_TOOLTIP_DEFENCE', 1344, 'DEF'),
+  text('TID_GAME_CHARACTER_15', 3091, 'A.Speed'),
+  text('TID_GAME_CHARACTER_07', 3083, 'Stat Points'),
+  text('TID_TOOLTIP_STR', 1377, 'STR'),
+  text('TID_TOOLTIP_STA', 1338, 'STA'),
+  text('TID_TOOLTIP_DEX', 1336, 'DEX'),
+  text('TID_TOOLTIP_INT', 1337, 'INT'),
+  text('TID_TOOLTIP_CHARSTATUS_APPLY', 3306, 'Apply new Stats.'),
+  text('TID_TOOLTIP_CHARSTATUS_RESET', 3307, 'Return to Previous Stats.'),
+  text('TID_GAME_CHARSTATUS_APPLY_Q', 3308, 'Do you want to use the current Stat setup?'),
+  text('TID_DIAG_0082', 2081, 'Your stat values will reset after your 1st job change.'),
+  text('TID_GAME_YES', 2500, 'Yes', 0xff9a0000),
+  text('TID_GAME_NO', 2501, 'No', 0xff9a0000),
+]);
+
+/** A key pressed on the page, as the player types it. */
+const press = (code: string, extra: KeyboardEventInit = {}): KeyboardEvent => {
+  const event = new KeyboardEvent('keydown', { code, key: code.replace(/^Key|^Digit/, ''), bubbles: true, cancelable: true, ...extra });
+  document.body.dispatchEvent(event);
+  return event;
+};
+
+describe('ReviveWindow (CWndRevival, WndField.cpp:12147-12345)', () => {
+  const windows: ReviveWindow[] = [];
+  afterEach(() => {
+    for (const revive of windows.splice(0)) revive.dispose();
+  });
+  /** The revive window in a layer 800 px wide, `sent` the REVIVAL_TO_LODESTARs its Lodestar sent. */
+  const reviveOn = () => {
+    const sent: string[] = [];
+    const revive = new ReviveWindow(art, WINDOW_TEXTS, () => void sent.push('REVIVAL_TO_LODESTAR'));
+    windows.push(revive);
+    layer(800, 450).append(revive.element);
+    return { revive, sent };
+  };
+  const button = (revive: ReviveWindow, name: string) =>
+    revive.frame.element.querySelector<HTMLButtonElement>(`[data-button="${name}"]`)!;
+
+  it('the own death opens it, says TID_GAME_DEATH among the server messages and stops the auto-attack; Lodestar sends one REVIVAL_TO_LODESTAR', () => {
+    // the new Vagrant auto-attacking an Aibatt 6 m away, as the world screen has them
+    const AIBATT_ID = 30;
+    const own = newVagrant();
+    const data = ownGameData({
+      movers: new Map([[AIBATT, webMoverOf({ index: AIBATT, name: 'Aibatt', killable: 1, belligerence: Belli.ACTIVEATTACK })]]),
+      texts: WINDOW_TEXTS,
+    });
+    const world = new WorldState(data, new ServerClock(() => 0), terrainGround(() => 0), own);
+    world.apply(OWN_ID, { type: 'addMover', mover: { ...ownAdded(1), pos: [100, 0, 100], angle: 90, state: ObjSta.STAND } });
+    world.apply(AIBATT_ID, {
+      type: 'addMover',
+      mover: addedNpc(AIBATT_ID, AIBATT, {}, { pos: [106, 0, 100], state: ObjSta.STAND, belligerence: Belli.ACTIVEATTACK }),
+    });
+    const session = {
+      sendDestObj: () => {}, sendMeleeAttack: () => {}, sendGetDestObj: () => {}, sendBehavior: () => {}, sendSetTarget: () => {},
+    };
+    const loop = new AttackLoop(session, new Focus(session), world, () => own, { tick: () => 0n }, data.movers);
+    loop.onMoverPressed(AIBATT_ID, 10_000, false);
+    loop.onReleased();
+    loop.attackButton();
+    expect(loop.autoAttack).toBe(true);
+    const hud = new Hud(document, art, { ...DATA, texts: WINDOW_TEXTS });
+    document.body.append(hud.element);
+    const { revive, sent } = reviveOn();
+    world.takeChanges();
+
+    // MOVERDEATH of the own mover, as the world screen applies it (`WorldScreen.apply`): the attack loop first, then the
+    // world; then the frame plays what it brought (`WorldScreen.play`)
+    loop.onMoverDeath(OWN_ID, AIBATT_ID);
+    world.apply(OWN_ID, { type: 'moverDeath', attackerId: AIBATT_ID, message: 41 });
+    const changes = world.takeChanges();
+    hud.play(changes.combat, changes.own, own);
+    revive.play(changes.own);
+
+    expect(revive.isOpen).toBe(true);
+    expect(loop.autoAttack).toBe(false);
+    const lines = [...hud.messages.element.children].map((e) => e.textContent);
+    expect(lines).toEqual(['Press ESC and go back to Lodestar(Town) or Lodelight(Field) for resurrecting.']);
+    // Revive here wants a resurrection scroll (Piece 5): greyed
+    expect(button(revive, 'stand').disabled).toBe(true);
+    expect(button(revive, 'lodestar').disabled).toBe(false);
+    // Lodestar sends REVIVAL_TO_LODESTAR and destroys the window (:12311-12320, :12342-12343); a second click finds it gone
+    button(revive, 'lodestar').click();
+    button(revive, 'lodestar').click();
+    expect(sent).toEqual(['REVIVAL_TO_LODESTAR']);
+    expect(revive.isOpen).toBe(false);
+    hud.dispose();
+  });
+
+  it('is APP_REVIVAL titled "Revive", with no close button, at the middle of the width and 70 px down; its buttons where v15 moves them', () => {
+    const { revive } = reviveOn();
+    revive.open();
+    const element = revive.frame.element;
+    expect([element.style.width, element.style.height]).toEqual(['176px', '128px']);
+    expect([element.style.left, element.style.top]).toEqual(['312px', '70px']);
+    expect(element.querySelector('.hud-window-title')!.textContent).toBe('Revive');
+    expect(element.querySelector<HTMLElement>('.hud-window-close')!.hidden).toBe(true);
+    const rect = (name: string) => {
+      const b = button(revive, name);
+      return [b.style.left, b.style.top, b.style.width, b.style.height, b.style.backgroundImage];
+    };
+    expect(rect('lodestar')).toEqual(['12px', '12px', '140px', '20px', 'url("/assets/ui/buttlodestar.png")']);
+    // __VER >= 9 (:12221-12245): Revive here takes the Lodelight's place, the Shop the Revive here's, the Lodelight hidden
+    expect(rect('stand')).toEqual(['12px', '38px', '140px', '20px', 'url("/assets/ui/buttrevivestand.png")']);
+    expect(rect('shop')).toEqual(['12px', '64px', '140px', '20px', 'url("/assets/ui/buttflyffshop.png")']);
+    expect(element.querySelector('[data-button="lodelight"]')).toBeNull();
+    // the tooltips (:12183-12187)
+    expect(button(revive, 'lodestar').title)
+      .toBe('Lodestar is a place near the closest city where a character can choose to be resurrected.');
+    expect(button(revive, 'stand').title).toBe('You will be revived where you died.');
+    expect(button(revive, 'shop').title).toBe('You can use a Premium item.');
+    // the item mall is not the browser's yet
+    expect(button(revive, 'shop').disabled).toBe(true);
+  });
+
+  it('is modal (WBS_MODAL): no key reaches the game while it is open, and its backdrop takes the presses; Escape never closes it', () => {
+    const { revive } = reviveOn();
+    const heard: string[] = [];
+    const listen = (event: KeyboardEvent) => void heard.push(event.code);
+    window.addEventListener('keydown', listen);
+    revive.open();
+    expect(revive.element.hidden).toBe(false);
+    expect(revive.element.classList.contains('hud-modal')).toBe(true);
+    press('KeyH');
+    press('Escape', { key: 'Escape' });
+    expect(heard).toEqual([]);
+    expect(revive.isOpen).toBe(true);
+    // opened again while open: one window (`m_pWndRevival == NULL`, WndManager.cpp:3313)
+    revive.open();
+    expect(revive.isOpen).toBe(true);
+    button(revive, 'lodestar').click();
+    expect(revive.element.hidden).toBe(true);
+    press('KeyH');
+    expect(heard).toEqual(['KeyH']);
+    window.removeEventListener('keydown', listen);
+  });
+
+  it('opens on a death only: no other own event opens it', () => {
+    const { revive } = reviveOn();
+    revive.play([{ kind: 'refilled' }, { kind: 'statsChanged' }, { kind: 'revived' }]);
+    expect(revive.isOpen).toBe(false);
+    revive.play([{ kind: 'died' }]);
+    expect(revive.isOpen).toBe(true);
+  });
+});
+
+describe('CharacterWindow (CWndCharInfo, WndField.cpp:3012-4110; CWndStateConfirm, :4395-4560)', () => {
+  /** What the lobby handed the world: the character's name and the server and channel picked. */
+  const ENTRY = { character: { name: 'Webby' }, serverName: 'FlyFF', channelName: 'Channel 1' };
+  /** A time in the red half of the blink (`(g_nRenderCnt / 8) & 1`, 8 frames of 60 a second), and one in the black. */
+  const RED_PHASE = 140;
+  const BLACK_PHASE = 0;
+  const windows: CharacterWindow[] = [];
+  afterEach(() => {
+    for (const w of windows.splice(0)) w.dispose();
+  });
+  /** The Character window in a landscape layer, open; `applied` the MODIFY_STATUS counts it sent. */
+  const windowOn = () => {
+    const applied: StatCounts[] = [];
+    const character = new CharacterWindow(art, WINDOW_TEXTS, (counts) => void applied.push(counts));
+    windows.push(character);
+    layer(800, 450).append(character.frame.element, character.confirm.frame.element);
+    character.toggle();
+    return { character, applied };
+  };
+  const value = (w: CharacterWindow, name: string) => w.frame.element.querySelector<HTMLElement>(`[data-value="${name}"]`)!;
+  const shown = (w: CharacterWindow, name: string) => value(w, name).textContent;
+  const button = (w: CharacterWindow, name: string) => w.frame.element.querySelector<HTMLButtonElement>(`[data-button="${name}"]`)!;
+  const count = (w: CharacterWindow, stat: string) => w.frame.element.querySelector<HTMLInputElement>(`input[data-count="${stat}"]`)!;
+  const confirmButton = (w: CharacterWindow, name: string) =>
+    w.confirm.frame.element.querySelector<HTMLButtonElement>(`[data-button="${name}"]`)!;
+
+  it('Server, Channel and Name come from the lobby entry; the level and the numbers from the own state', () => {
+    const { character } = windowOn();
+    character.update(newVagrant(), ENTRY);
+    const element = character.frame.element;
+    expect(element.querySelector('.hud-window-title')!.textContent).toBe('Character');
+    expect([element.style.width, element.style.height, element.style.left, element.style.top])
+      .toEqual(['208px', '512px', '0px', '0px']);
+    expect([shown(character, 'name'), shown(character, 'level'), shown(character, 'server'), shown(character, 'channel')])
+      .toEqual(['Webby', '1', 'FlyFF', 'Channel 1']);
+    const labels = [...element.querySelectorAll('[data-label]')].map((e) => e.textContent);
+    expect(labels).toEqual([
+      'Base', 'Name', 'Job', 'Level', 'Server', 'Channel', 'Detail', 'ATK', 'Critical', 'DEF', 'A.Speed', 'STR', 'STA', 'DEX',
+      'INT', 'Stat Points',
+    ]);
+    // the starter Vagrant (Wooden Sword, the cotton suit, gauntlet and boots): ATK (20 + 22) / 2, DEF 0 + 19 / 4,
+    // DEX / 10, A 77 shown as 42 % (plan-header reference numbers)
+    expect([shown(character, 'atk'), shown(character, 'def'), shown(character, 'critical'), shown(character, 'speed')])
+      .toEqual(['21', '4', '1%', '42%']);
+    expect(['str', 'sta', 'dex', 'int', 'points'].map((name) => shown(character, name))).toEqual(['15', '15', '15', '15', '0']);
+    // the labels in ARGB(255, 0, 0, 180), the values in black (:3170, :3374; :3018)
+    expect(element.querySelector<HTMLElement>('[data-label="name"]')!.style.color).toBe('rgb(0, 0, 180)');
+    expect(value(character, 'name').style.color).toBe('rgb(0, 0, 0)');
+    // CWndCharInfo::OnDraw's places (:3036-3296), from the tab control's top left
+    const at = (name: string) => [value(character, name).style.left, value(character, name).style.top];
+    expect([at('name'), at('channel'), at('atk'), at('speed'), at('str'), at('int'), at('points')]).toEqual([
+      ['80px', '31px'], ['80px', '91px'], ['50px', '131px'], ['140px', '146px'], ['50px', '173px'], ['50px', '218px'],
+      ['105px', '233px'],
+    ]);
+    // the tabs: Character chosen (black), Fame/Master (white)
+    expect([...element.querySelectorAll('[data-tab]')].map((e) => [e.textContent, (e as HTMLElement).style.color])).toEqual([
+      ['Character', 'rgb(0, 0, 0)'], ['Fame/Master', 'rgb(255, 255, 255)'],
+    ]);
+  });
+
+  it('with 4 points: + on STR twice and STA twice makes Stat Points 0 and disables every +; the preview ATK and DEF blink red', () => {
+    const { character } = windowOn();
+    const own = newVagrant();
+    own.remainGP = 4;
+    character.update(own, ENTRY, BLACK_PHASE);
+    // nothing placed: every - and Apply and Reset off (OnInitialUpdate :3580-3593, Process :3784-3849), every + on
+    for (const stat of ['str', 'sta', 'dex', 'int']) {
+      expect(button(character, `${stat}-plus`).disabled).toBe(false);
+      expect(button(character, `${stat}-minus`).disabled).toBe(true);
+    }
+    expect([button(character, 'apply').disabled, button(character, 'reset').disabled]).toEqual([true, true]);
+    for (const name of ['str-plus', 'str-plus', 'sta-plus', 'sta-plus']) button(character, name).click();
+    character.update(own, ENTRY, RED_PHASE);
+    expect(character.counts).toEqual({ str: 2, sta: 2, dex: 0, int: 0 });
+    expect(shown(character, 'points')).toBe('0');
+    for (const stat of ['str', 'sta', 'dex', 'int']) expect(button(character, `${stat}-plus`).disabled).toBe(true);
+    expect([button(character, 'str-minus').disabled, button(character, 'sta-minus').disabled]).toEqual([false, false]);
+    expect([button(character, 'dex-minus').disabled, button(character, 'int-minus').disabled]).toEqual([true, true]);
+    expect([button(character, 'apply').disabled, button(character, 'reset').disabled]).toEqual([false, false]);
+    expect([count(character, 'str').value, count(character, 'sta').value, count(character, 'dex').value]).toEqual(['2', '2', '0']);
+    // the stats shown stay the character's; ATK and DEF are previewed with STR 17 and STA 17 (GetVirtualATK, GetVirtualDEF)
+    expect([shown(character, 'str'), shown(character, 'sta')]).toEqual(['15', '15']);
+    expect([shown(character, 'atk'), shown(character, 'def')]).toEqual(['30', '6']);
+    expect(value(character, 'atk').style.color).toBe('rgb(255, 0, 0)');
+    expect(value(character, 'def').style.color).toBe('rgb(255, 0, 0)');
+    expect(value(character, 'atk').dataset.preview).toBe('');
+    // critical and speed are DEX's: no preview
+    expect(value(character, 'critical').style.color).toBe('rgb(0, 0, 0)');
+    expect(value(character, 'critical').dataset.preview).toBeUndefined();
+    // the other half of the blink is black
+    character.update(own, ENTRY, BLACK_PHASE);
+    expect(value(character, 'atk').style.color).toBe('rgb(0, 0, 0)');
+    // - gives one back
+    button(character, 'sta-minus').click();
+    character.update(own, ENTRY, RED_PHASE);
+    expect(shown(character, 'points')).toBe('1');
+    expect(button(character, 'int-plus').disabled).toBe(false);
+    // Reset puts every count back to 0 (:3700-3706)
+    button(character, 'reset').click();
+    character.update(own, ENTRY, RED_PHASE);
+    expect(character.counts).toEqual({ str: 0, sta: 0, dex: 0, int: 0 });
+    expect([shown(character, 'atk'), shown(character, 'def'), shown(character, 'points')]).toEqual(['21', '4', '4']);
+    expect(value(character, 'atk').dataset.preview).toBeUndefined();
+  });
+
+  it('Apply asks first (CWndStateConfirm): Yes sends MODIFY_STATUS(2, 2, 0, 0) and zeroes the counters; No keeps them', () => {
+    const { character, applied } = windowOn();
+    const own = newVagrant();
+    own.remainGP = 4;
+    character.update(own, ENTRY);
+    for (const name of ['str-plus', 'str-plus', 'sta-plus', 'sta-plus']) button(character, name).click();
+    button(character, 'apply').click();
+    const confirm = character.confirm;
+    expect(confirm.isOpen).toBe(true);
+    const box = confirm.frame.element;
+    expect(box.querySelector('.hud-window-title')!.textContent).toBe('Change State');
+    // TID_GAME_CHARSTATUS_APPLY_Q, and for a base job the line TID_DIAG_0082 (:4409-4452)
+    expect(box.querySelector('.hud-confirm-text')!.textContent)
+      .toBe('Do you want to use the current Stat setup?\nYour stat values will reset after your 1st job change.');
+    // APP_STATE_CONFIRM, 304 x 128 (resdata.inc:1202), at the middle of the screen (MoveParentCenter)
+    expect([box.style.width, box.style.height, box.style.left, box.style.top]).toEqual(['304px', '128px', '248px', '161px']);
+    expect([confirmButton(character, 'yes').style.left, confirmButton(character, 'yes').style.top]).toEqual(['56px', '70px']);
+    expect([confirmButton(character, 'no').style.left, confirmButton(character, 'no').style.width]).toEqual(['146px', '72px']);
+    expect(confirmButton(character, 'yes').getAttribute('aria-label')).toBe('Yes');
+    // No: the box goes, the counts stay (:4503-4510)
+    confirmButton(character, 'no').click();
+    expect(confirm.isOpen).toBe(false);
+    expect(character.counts).toEqual({ str: 2, sta: 2, dex: 0, int: 0 });
+    expect(applied).toEqual([]);
+    // Yes: SendModifyStatus with the counts, which go to 0 at once, and the box goes (:4487-4502)
+    button(character, 'apply').click();
+    confirmButton(character, 'yes').click();
+    expect(applied).toEqual([{ str: 2, sta: 2, dex: 0, int: 0 }]);
+    expect(character.counts).toEqual({ str: 0, sta: 0, dex: 0, int: 0 });
+    expect(confirm.isOpen).toBe(false);
+    // until SETSTATE comes the points are still the server's 4
+    character.update(own, ENTRY);
+    expect(shown(character, 'points')).toBe('4');
+    // Apply with nothing placed asks nothing (:3692-3699)
+    button(character, 'apply').click();
+    expect(confirm.isOpen).toBe(false);
+  });
+
+  it('SETSTATE updates the shown stats', () => {
+    const { character } = windowOn();
+    const own = newVagrant();
+    own.remainGP = 4;
+    character.update(own, ENTRY);
+    own.apply({ type: 'setState', str: 17, sta: 17, dex: 15, int: 15, remainGP: 0 }, OWN_ID);
+    character.update(own, ENTRY, RED_PHASE);
+    expect(['str', 'sta', 'dex', 'int', 'points'].map((name) => shown(character, name))).toEqual(['17', '17', '15', '15', '0']);
+    expect([shown(character, 'atk'), shown(character, 'def')]).toEqual(['30', '6']);
+    expect(value(character, 'atk').style.color).toBe('rgb(0, 0, 0)');
+    expect(button(character, 'str-plus').disabled).toBe(true);
+  });
+
+  it('DEX previews the critical and the attack speed; a stat raised by an item is blue (:3246-3286)', () => {
+    const { character } = windowOn();
+    const own = newVagrant();
+    own.remainGP = 30;
+    // a ring of STR +3 (DST_STR): GetStr() 18 over m_nStr 15
+    own.equipped = {
+      weapon: WOODEN_SWORD, armour: [itemProp({ id: 9, kind2: 9, destParams: [Dst.STR, -1, -1], adjParams: [3, -1, -1] })],
+    };
+    character.update(own, ENTRY, RED_PHASE);
+    expect(shown(character, 'str')).toBe('18');
+    expect(value(character, 'str').style.color).toBe('rgb(0, 0, 255)');
+    for (let i = 0; i < 25; i++) button(character, 'dex-plus').click();
+    character.update(own, ENTRY, RED_PHASE);
+    // DEX 40: critical 40 / 10 = 4 %; A = trunc(75 + 0.085 x (160 + 1 / 8) - 3) = 85: 46 %
+    expect([shown(character, 'critical'), shown(character, 'speed')]).toEqual(['4%', '46%']);
+    expect(value(character, 'critical').style.color).toBe('rgb(255, 0, 0)');
+    expect(value(character, 'speed').style.color).toBe('rgb(255, 0, 0)');
+    // the stat points blink red while some are left, in INT's colour otherwise (:3288-3296)
+    expect(shown(character, 'points')).toBe('5');
+    expect(value(character, 'points').style.color).toBe('rgb(255, 0, 0)');
+    character.update(own, ENTRY, BLACK_PHASE);
+    expect(value(character, 'points').style.color).toBe('rgb(0, 0, 0)');
+  });
+
+  it('a count typed in its box is kept to the points left, digits only (OnChildNotify, :3623-3662)', () => {
+    const { character } = windowOn();
+    const own = newVagrant();
+    own.remainGP = 4;
+    character.update(own, ENTRY);
+    button(character, 'dex-plus').click();
+    const type = (stat: string, text: string) => {
+      const input = count(character, stat);
+      input.value = text;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    type('str', '9');
+    expect(character.counts).toEqual({ str: 3, sta: 0, dex: 1, int: 0 });
+    expect(count(character, 'str').value).toBe('3');
+    type('str', '2x');
+    expect(character.counts.str).toBe(3);
+    expect(count(character, 'str').value).toBe('3');
+    type('str', '');
+    expect(character.counts.str).toBe(0);
+    // with every point placed the boxes take no typing (Process, :3818-3832)
+    type('int', '3');
+    character.update(own, ENTRY);
+    expect(count(character, 'int').disabled).toBe(true);
+  });
+
+  it('closing it (H, its button, Escape) forgets the counts and the confirm box, as Destroy does; H opens it again at the top left', () => {
+    const { character } = windowOn();
+    const own = newVagrant();
+    own.remainGP = 4;
+    character.update(own, ENTRY);
+    button(character, 'str-plus').click();
+    button(character, 'apply').click();
+    expect(character.confirm.isOpen).toBe(true);
+    character.toggle();
+    expect(character.frame.isOpen).toBe(false);
+    expect(character.confirm.isOpen).toBe(false);
+    character.toggle();
+    expect(character.frame.isOpen).toBe(true);
+    expect(character.frame.position).toEqual({ x: 0, y: 0 });
+    expect(character.counts).toEqual({ str: 0, sta: 0, dex: 0, int: 0 });
+    press('Escape', { key: 'Escape' });
+    expect(character.frame.isOpen).toBe(false);
+  });
+
+  it('the confirm box takes every key while open (CNeuzApp::KillWindow): Escape and Enter close it, the counts kept', () => {
+    const { character, applied } = windowOn();
+    const own = newVagrant();
+    own.remainGP = 4;
+    character.update(own, ENTRY);
+    button(character, 'str-plus').click();
+    const heard: string[] = [];
+    const listen = (event: KeyboardEvent) => void heard.push(event.code);
+    window.addEventListener('keydown', listen);
+    button(character, 'apply').click();
+    press('KeyH');
+    expect(heard).toEqual([]);
+    // Escape closes the box only, not the Character window under it
+    press('Escape', { key: 'Escape' });
+    expect(character.confirm.isOpen).toBe(false);
+    expect(character.frame.isOpen).toBe(true);
+    // Enter: SendYes, which sends the old INC_STAT_LEVEL with id 0 that the world server drops (OnIncStatLevel's default)
+    button(character, 'apply').click();
+    press('Enter', { key: 'Enter' });
+    expect(character.confirm.isOpen).toBe(false);
+    expect(applied).toEqual([]);
+    expect(character.counts.str).toBe(1);
+    press('KeyH');
+    expect(heard).toEqual(['KeyH']);
+    window.removeEventListener('keydown', listen);
   });
 });

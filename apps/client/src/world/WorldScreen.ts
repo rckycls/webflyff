@@ -7,9 +7,10 @@
 // it, with the mark of the point a tap sends it to, the effects and damage numbers of the fight, and the corners around
 // the target (Piece 4 §3.7), and over it Neuz's windows: the status window, the target bar, the server messages and the
 // caption (`Hud`, Piece 4 §3.9), the task bar with its Start menu, whose Log out asks first (`LogOutBox`) and then leaves
-// as the loading screen's Leave does (`TaskBar`), the attack button of a touch screen (`AttackButton`), and Escape in
-// Neuz's order (`escapeStep`). Every ending closes everything and hands the lobby its message (Ruling 8): nothing that goes
-// wrong here is thrown at the lobby.
+// as the loading screen's Leave does (`TaskBar`), the attack button of a touch screen (`AttackButton`), the revive window
+// of the dead player (`ReviveWindow`, Piece 4 §3.5) and the Character window, where the stat points are placed
+// (`CharacterWindow`, §3.6), and Escape in Neuz's order (`escapeStep`). Every ending closes everything and hands the
+// lobby its message (Ruling 8): nothing that goes wrong here is thrown at the lobby.
 
 import { UI_SHEETS_KEY, toWebPosition } from '@flyffweb/formats';
 import type { Vec3, WebEffect, WebUiSheet, WebUiSheets } from '@flyffweb/formats';
@@ -37,11 +38,13 @@ import { EffectManager } from './fx/EffectManager';
 import { GameDataMissingError } from './gameData';
 import type { GameData } from './gameData';
 import { AttackButton } from './hud/attackButton';
+import { CharacterWindow } from './hud/characterWindow';
 import { escapeWindow } from './hud/frame';
 import type { UiArt } from './hud/art';
 import { Hud } from './hud/hud';
 import { escapeStep } from './hud/escape';
 import { LogOutBox } from './hud/logOutBox';
+import { ReviveWindow } from './hud/reviveWindow';
 import { TaskBar } from './hud/taskBar';
 import type { TaskBarWindow } from './hud/taskBar';
 import { OwnMover, pickOnStage } from './ownMover';
@@ -164,6 +167,13 @@ export class WorldScreen {
   private taskBar: TaskBar | undefined;
   private attackButton: AttackButton | undefined;
   private logOutBox: LogOutBox | undefined;
+  /**
+   * The revive window (`CWndRevival`, Piece 4 §3.5), which the own death and Escape while dead open, and the Character
+   * window with its confirm box (`CWndCharacter`, §3.6), which H, the applet and the Start menu open: in the windows'
+   * layer once the world is on screen (`showWorld`).
+   */
+  private reviveWindow: ReviveWindow | undefined;
+  private characterWindow: CharacterWindow | undefined;
   /** The own character's driving: the controls each rules step, the moves sent, the stop. */
   private ownMover: OwnMover | undefined;
   /** The own character's numbers (`ownState`). */
@@ -508,7 +518,21 @@ export class WorldScreen {
     this.taskBar.onMenuChange = (open) => this.element.classList.toggle('world-menu-open', open);
     this.attackButton = new AttackButton(() => attackLoop.attackButton(), doc);
     this.logOutBox = new LogOutBox(this.hudArt!, this.data!.texts, () => this.leave(), doc);
-    this.hud!.element.append(this.taskBar.element, this.attackButton.element, this.logOutBox.frame.element);
+    const characterWindow = new CharacterWindow(
+      this.hudArt!, this.data!.texts, (counts) => this.session.sendModifyStatus(counts), doc,
+    );
+    this.characterWindow = characterWindow;
+    const reviveWindow = new ReviveWindow(this.hudArt!, this.data!.texts, () => this.session.sendRevivalToLodestar(), doc);
+    // modal: the world's controls let go, and the joystick, which stands over the windows' layer, hides
+    reviveWindow.onModalChange = (open) => {
+      this.element.classList.toggle('world-modal', open);
+      if (open) this.releaseControls();
+    };
+    this.reviveWindow = reviveWindow;
+    this.hud!.element.append(
+      this.taskBar.element, this.attackButton.element, this.logOutBox.frame.element, characterWindow.frame.element,
+      characterWindow.confirm.frame.element, reviveWindow.element,
+    );
     // before the windows' own Escape (frame.ts), which closes a window only if this one leaves the key to it
     view.addEventListener('keydown', this.onEscape, true);
     // on the canvas: the joystick is an element of its own over it, and its touches never reach it; each press goes to
@@ -593,6 +617,9 @@ export class WorldScreen {
    */
   private play(changes: WorldChanges): void {
     this.hud?.play(changes.combat, changes.own, this.own);
+    // the own death opens the revive window after its chat line (`OnMoverDeath`, DPClient.cpp:2040-2072); one before the
+    // windows are up (the world still loading) leaves it to Escape
+    this.reviveWindow?.play(changes.own);
     const effects = this.effects;
     if (effects === undefined) return;
     const world = this.world!;
@@ -722,7 +749,8 @@ export class WorldScreen {
    * The windows of the frame at `now` (`Hud.frame`): the own numbers and name, and the target bar's mover, which is
    * the attack's mark (`m_pRenderTargetObj`) when there is one, else the focus (`CWndWorld::RenderSelectObj`,
    * `WndWorld.cpp:2720-2723`, called with the focus at :1058); the task bar with the own bars (empty without the own
-   * numbers), and the attack button, enabled while the focus is a mover the attack would take (`canAttackFocus`).
+   * numbers), the attack button, enabled while the focus is a mover the attack would take (`canAttackFocus`), and the
+   * Character window while it is open, with the own numbers and the lobby's name, server and channel.
    */
   private drawHud(world: WorldState, now: number): void {
     const self = world.self();
@@ -733,6 +761,7 @@ export class WorldScreen {
     this.hud!.frame(now, this.own, self?.name ?? this.entry.character.name, target, gameMaster);
     this.taskBar!.update(this.own, this.data!);
     this.attackButton!.update(loop.canAttackFocus);
+    if (this.own !== undefined && this.characterWindow?.frame.isOpen === true) this.characterWindow.update(this.own, this.entry, now);
   }
 
   /**
@@ -762,23 +791,49 @@ export class WorldScreen {
     this.logOutBox?.open(this.hud?.element.clientWidth ?? 0);
   }
 
-  /** Opens or closes the Character window (`APP_CHARACTER3`, H). Task 24 builds it: until then, nothing. */
-  private openCharacter(): void {}
+  /**
+   * Opens or closes the Character window (`APP_CHARACTER3`, H: `ObjectExecutor` creates the applet or destroys it,
+   * `WndManager.cpp:2650-2700`), with own numbers to show (as T does for the status window); drawn at once, then each
+   * frame (`drawHud`).
+   */
+  private openCharacter(): void {
+    const { own, characterWindow } = this;
+    if (own === undefined || characterWindow === undefined) return;
+    characterWindow.toggle();
+    if (characterWindow.frame.isOpen) characterWindow.update(own, this.entry, performance.now());
+  }
 
-  /** Opens the revive window, unless it is open (`CWndRevival`, Escape when dead). Task 24 builds it: until then, nothing. */
-  private openRevive(): void {}
+  /** Opens the revive window, unless it is open (`CWndRevival`, Escape when dead, `WndManager.cpp:3311-3318`). */
+  private openRevive(): void {
+    this.reviveWindow?.open();
+  }
+
+  /**
+   * The revive window opened (WBS_MODAL): the keys, the joystick and the finger on the world let go, as when the page
+   * loses the focus (`stopOwnMover`), for the presses and keys they would have had go to the window's backdrop and its
+   * key hold now. The player is dead: no move is sent.
+   */
+  private releaseControls(): void {
+    this.keyboard?.reset();
+    this.walkKey?.reset();
+    this.joystick?.reset();
+    this.tap?.reset();
+  }
 
   /**
    * Escape in Neuz's order (`escapeStep`, `CWndMgr::Process`, `WndManager.cpp:3295-3427`): dead, the revive window
    * (`openRevive`); the Start menu open, nothing; a target, cleared (`AttackLoop.escape`); a window Escape closes
    * (`escapeWindow`, never the status window), left to the windows' own handler, which runs after this one; else the
-   * Start menu. A held key does it once.
+   * Start menu. A held key does it once. Before all that, the keys are the revive window's while it is open (WBS_MODAL:
+   * `CNeuzApp::MsgProc` takes none, `Neuz/Neuz.cpp:1253-1309`) and the stat points' confirm box's while it is open
+   * (`CNeuzApp::KillWindow`, :1262, :1323): their own handlers take Escape.
    */
   private readonly onEscape = (event: KeyboardEvent): void => {
     const { taskBar, attackLoop, focus } = this;
     if (event.key !== 'Escape' || event.repeat || taskBar === undefined || attackLoop === undefined || focus === undefined) {
       return;
     }
+    if (this.reviveWindow?.isOpen === true || this.characterWindow?.confirm.isOpen === true) return;
     const self = this.world?.self();
     const step = escapeStep({
       dead: self !== undefined && isDie(self),
@@ -919,6 +974,8 @@ export class WorldScreen {
     this.effectTextures?.dispose();
     for (const layer of this.spriteLayers) layer.dispose();
     if (this.logOutBox?.isOpen === true) this.logOutBox.frame.close();
+    this.characterWindow?.dispose();
+    this.reviveWindow?.dispose();
     this.hud?.dispose();
     this.sheetPictures = [];
     this.stage?.dispose();

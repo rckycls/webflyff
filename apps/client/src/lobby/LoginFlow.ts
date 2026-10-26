@@ -45,6 +45,14 @@ export interface WorldEntry {
   authKey: number;
   /** The id of the channel picked in the server list (the `dwID` of GETPLAYERLIST). */
   channelId: number;
+  /**
+   * The names of the server and the channel picked (`lpName` of their `SERVER_DESC`), which the Character window shows
+   * (`CWndCharInfo::OnDraw`, `_Interface/WndField.cpp:3119-3156`). Neuz names the channel `m_aServerset[ j + m_nMSer ]`,
+   * counted from the server's first enabled channel (:3134-3156): the one picked while none before it is disabled. The
+   * browser names the one picked.
+   */
+  serverName: string;
+  channelName: string;
   character: CharacterSummary;
   /** The messenger the login server listed for the character's slot, if it listed one. */
   messenger: SlotMessenger | undefined;
@@ -119,6 +127,11 @@ export class LoginFlow {
   private serverClock: ServerClock | undefined;
   /** The id of the channel the login-server connection was opened for. */
   private channelId: number | undefined;
+  /**
+   * The names of that channel and of its server, as the server list gave them. Kept from the entries picked: a channel's
+   * id is only unique under its server (the server list's own fixture has server 1 and its channel 1).
+   */
+  private channelNames: { server: string; channel: string } | undefined;
   private certifier: PacketChannel | undefined;
   private loginServer: PacketChannel | undefined;
   /** True after ERROR 103, until the player answers the "close the other connection" prompt. */
@@ -223,6 +236,7 @@ export class LoginFlow {
     if (login === undefined) return;
     // The clock and the cache address are the new connection's to learn: the server answers each connection by itself.
     this.channelId = channel.id;
+    this.channelNames = { server: server.name, channel: channel.name };
     this.serverClock = new ServerClock(() => this.clock.now());
     this.attach('loginServer', login);
     this.startPing();
@@ -282,9 +296,10 @@ export class LoginFlow {
    * cache address or answered QUERYTICKCOUNT (or when the hand-over already happened).
    */
   handOver(slot: number): WorldEntry | undefined {
-    const { loginServer: login, authKey, channelId, cacheAddress, serverClock } = this;
+    const { loginServer: login, authKey, channelId, channelNames, cacheAddress, serverClock } = this;
     const character = this.characters.find((c) => c.slot === slot);
-    if (login === undefined || authKey === undefined || channelId === undefined || character === undefined) return undefined;
+    if (login === undefined || authKey === undefined || channelId === undefined || channelNames === undefined) return undefined;
+    if (character === undefined) return undefined;
     if (cacheAddress === undefined || cacheAddress === '' || serverClock === undefined || !serverClock.started) return undefined;
     const entry: WorldEntry = {
       login,
@@ -293,6 +308,8 @@ export class LoginFlow {
       passwordHash: this.passwordHash,
       authKey,
       channelId,
+      serverName: channelNames.server,
+      channelName: channelNames.channel,
       character,
       messenger: this.messengers.find((m) => m.slot === slot),
       clock: serverClock,
@@ -530,5 +547,6 @@ export class LoginFlow {
     this.cacheAddress = undefined;
     this.serverClock = undefined;
     this.channelId = undefined;
+    this.channelNames = undefined;
   }
 }
