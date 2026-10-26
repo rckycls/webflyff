@@ -703,6 +703,77 @@ describe('AttackLoop: another target while auto-attacking (WndWorld.cpp:6912-691
   });
 });
 
+describe('AttackLoop: the attack button\'s target (canAttackFocus, IsAttackAble, Mover.cpp:6469-6626)', () => {
+  it('is an attackable focus: none, a peaceful NPC or another player is not; a monster is', () => {
+    const r = rig();
+    expect(r.loop.canAttackFocus).toBe(false);
+    r.tap(MONSTER_ID);
+    expect(r.loop.canAttackFocus).toBe(true);
+    r.tap(NPC_ID);
+    expect(r.loop.canAttackFocus).toBe(false);
+    r.tap(PLAYER_ID);
+    expect(r.loop.canAttackFocus).toBe(false);
+    const unkillable = rig({ killable: 0 });
+    unkillable.tap(MONSTER_ID);
+    expect(unkillable.loop.canAttackFocus).toBe(false);
+  });
+
+  it('asks without doing what IsAttackAble does: a dead focus is not attackable, and stays the focus until the loop runs', () => {
+    const r = rig();
+    r.tap(MONSTER_ID);
+    r.tap(MONSTER_ID);
+    expect(r.loop.autoAttack).toBe(true);
+    r.monster.hp = 0;
+    expect(r.loop.canAttackFocus).toBe(false);
+    // the question cleared nothing: the attack's own IsAttackAbleNPC does, at the next step
+    expect(r.focus.targetId).toBe(MONSTER_ID);
+    expect(r.loop.autoAttack).toBe(true);
+    r.step();
+    expect(r.focus.targetId).toBeNull();
+    expect(r.loop.autoAttack).toBe(false);
+  });
+});
+
+describe('AttackLoop: Escape (CWndMgr::Process, WndManager.cpp:3321-3368)', () => {
+  it('with a next target queued, drops it and puts the mark back on the focus; the focus and the attack stay', () => {
+    const r = rig();
+    r.tap(MONSTER_ID);
+    r.tap(MONSTER_ID);
+    r.tap(OTHER_MONSTER_ID);
+    expect(r.loop.renderTargetId).toBe(OTHER_MONSTER_ID);
+    expect(r.loop.escape()).toBe(true);
+    expect(r.focus.next).toBeNull();
+    expect(r.focus.targetId).toBe(MONSTER_ID);
+    expect(r.loop.renderTargetId).toBe(MONSTER_ID);
+    expect(r.loop.autoAttack).toBe(true);
+    expect(r.targets).toEqual([[MONSTER_ID, 2]]);
+  });
+
+  it('with a focus, clears it (SETTARGET), the mark, the walk to it (ClearDest) and the auto-attack', () => {
+    const r = rig();
+    r.tap(MONSTER_ID);
+    r.tap(MONSTER_ID);
+    r.step();
+    expect(r.own.dest?.targetId).toBe(MONSTER_ID);
+    expect(r.loop.escape()).toBe(true);
+    expect(r.focus.targetId).toBeNull();
+    expect(r.loop.renderTargetId).toBeNull();
+    expect(r.loop.autoAttack).toBe(false);
+    expect(r.own.dest?.targetId ?? null).toBeNull();
+    // SetObjFocus( NULL ): the live target released with 1, then NULL_ID focused with 2 (World.cpp:310-343)
+    expect(r.targets).toEqual([[MONSTER_ID, 2], [MONSTER_ID, 1], [NULL_ID, 2]]);
+    r.steps(120);
+    expect(r.melee()).toEqual([]);
+  });
+
+  it('with nothing focused, does nothing and says so', () => {
+    const r = rig();
+    expect(r.loop.escape()).toBe(false);
+    expect(r.targets).toEqual([]);
+    expect(r.sent).toEqual([]);
+  });
+});
+
 describe('AttackLoop: QUERYGETDESTOBJ (CDPClient::OnQueryGetDestObj, DPClient.cpp:8985-8991)', () => {
   it('is answered with GETDESTOBJ while the player follows a target, and not otherwise', () => {
     const r = rig();

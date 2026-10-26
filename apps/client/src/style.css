@@ -658,3 +658,215 @@ fieldset:disabled .btn {
   white-space: nowrap;
   transform-origin: 50% 0;
 }
+
+/* The task bar (TaskBar), at the bottom of the layer: the window's picture with its buttons and slots placed by the script,
+   drawn smaller (from its bottom left) on a screen narrower than it; the Start menu above its left end, over the windows.
+   The holder takes no press itself. */
+.hud-taskbar {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 0;
+  height: 0;
+}
+
+.hud-taskbar-strip {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  background-repeat: no-repeat;
+  transform-origin: 0 100%;
+  pointer-events: auto;
+  /* the bar's texts are in the title font (m_pFontWndTitle, CWndTaskBar::OnDraw) */
+  font-weight: bold;
+}
+
+.hud-taskbar-strip > button {
+  position: absolute;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  background-repeat: no-repeat;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ButtStart.bmp and ButtQuickListUp/Dn.tga: normal, highlighted, pushed, disabled side by side */
+.hud-taskbar-start:hover {
+  background-position: -64px 0;
+}
+
+.hud-taskbar-start:active,
+.hud-taskbar-start[aria-expanded='true'] {
+  background-position: -128px 0;
+}
+
+.hud-taskbar-up:hover,
+.hud-taskbar-down:hover {
+  background-position: -14px 0;
+}
+
+.hud-taskbar-up:active,
+.hud-taskbar-down:active {
+  background-position: -28px 0;
+}
+
+/* the bar's number, at the up arrow's left, 2 px over its bottom */
+.hud-taskbar-number {
+  position: absolute;
+  line-height: 12px;
+  text-shadow: 1px 1px #000000;
+  pointer-events: none;
+}
+
+/* A slot: the shortcut's picture, an item's count at its bottom right (light blue over blue, 1 px apart), an applet's
+   hotkey above it */
+.hud-slot-icon {
+  position: absolute;
+  inset: 0;
+  background: no-repeat 0 0 / 100% 100%;
+}
+
+.hud-slot[data-greyed] .hud-slot-icon {
+  filter: grayscale(1);
+  opacity: 0.55;
+}
+
+/* a shortcut Piece 4 has no picture for (a motion, a chat line, a skill before milestone 2) */
+.hud-slot[data-kind='plain'] .hud-slot-icon {
+  inset: 2px;
+  border-radius: 3px;
+  background-color: rgba(128, 128, 128, 0.55);
+}
+
+.hud-slot-count {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  line-height: 12px;
+  color: rgb(176, 176, 240);
+  text-shadow: 1px 1px rgb(0, 0, 255);
+  pointer-events: none;
+}
+
+.hud-slot-hotkey {
+  position: absolute;
+  left: 10px;
+  top: -13px;
+  line-height: 12px;
+  color: #ffffff;
+  pointer-events: none;
+}
+
+/* the action points not reached yet: ARGB( 0x7f, 0, 0, 0 ) over the action slot */
+.hud-taskbar-ap {
+  position: absolute;
+  background: rgba(0, 0, 0, 0.498);
+  pointer-events: none;
+}
+
+/* The Start menu (CWndTaskMenu): a white panel with Neuz's orange edge, a line for each window, with its applet's icon;
+   taller lines than Neuz's 22 px, for a finger */
+.hud-taskbar-menu {
+  position: absolute;
+  left: 0;
+  z-index: 1000;
+  width: 192px;
+  box-sizing: border-box;
+  padding: 10px;
+  border: 2px solid #e89a74;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 3px 3px 0 rgba(200, 120, 90, 0.55);
+  color: #000000;
+  transform-origin: 0 100%;
+  pointer-events: auto;
+}
+
+.hud-taskbar-menu > button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 26px;
+  margin: 0;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.hud-taskbar-menu > button:hover:not(:disabled) {
+  background: rgba(255, 190, 150, 0.6);
+}
+
+.hud-taskbar-menu > button:disabled {
+  color: #9a9a9a;
+  cursor: default;
+}
+
+.hud-taskbar-menu > button:disabled .hud-menu-icon {
+  filter: grayscale(1);
+  opacity: 0.5;
+}
+
+.hud-menu-icon {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  background: no-repeat 0 0 / 100% 100%;
+}
+
+/* The attack button of a touch screen (AttackButton): right side, above the task bar, in the joystick's look */
+.hud-attack {
+  position: absolute;
+  right: 16px;
+  bottom: calc(var(--hud-taskbar-height, 48px) + 16px);
+  width: 80px;
+  height: 80px;
+  padding: 0;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.25);
+  pointer-events: auto;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* a sword */
+.hud-attack::before {
+  content: '';
+  position: absolute;
+  inset: 18px;
+  background: no-repeat center / contain
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23ffffff' d='M20 2h2v2l-9.5 9.5 1.8 1.8-1.4 1.4-1.8-1.8-3.6 3.6.9.9-1.4 1.4-3.2-3.2 1.4-1.4.9.9 3.6-3.6-1.8-1.8 1.4-1.4 1.8 1.8L20 2z'/%3E%3C/svg%3E");
+}
+
+.hud-attack:active:not(:disabled) {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.hud-attack:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* Piece 3's joystick stands above the task bar, out of the safe area under it; the Start menu, which opens where it
+   stands, hides it while open (the joystick is over the windows' layer; WorldScreen sets the class) */
+.world .joystick {
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 56px) !important;
+}
+
+.world.world-menu-open .joystick {
+  visibility: hidden;
+}

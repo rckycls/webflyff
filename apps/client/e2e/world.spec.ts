@@ -10,12 +10,12 @@ import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { MAP_SIZE, decodeTileBin } from '@flyffweb/formats';
 import type { AssetIndex, WorldManifest } from '@flyffweb/formats';
-import { ArReader, ArWriter, MessageType, NULL_ID, PacketType, Port } from '@flyffweb/protocol';
-import type { AddedMover, AddedNpc, AddedPlayer, MoveReport, Vec3 } from '@flyffweb/protocol';
+import { ArReader, ArWriter, MessageType, NULL_ID, PacketType, Port, ShortcutKind } from '@flyffweb/protocol';
+import type { AddedMover, AddedNpc, AddedPlayer, MoveReport, Shortcut, TaskBar, Vec3 } from '@flyffweb/protocol';
 import { sampleHeight } from '@flyffweb/scene';
 import {
-  createWorldScript, writeAddMonster, writeAddNpc, writeAddPlayer, writeAddSelf, writeDamage, writeDefinedText, writeDelObj,
-  writeMoverCorr, writeMoverDeath, writeMoverMoved, writeSetPointParam, writeTaskBar,
+  createWorldScript, newVagrantOwn, writeAddMonster, writeAddNpc, writeAddPlayer, writeAddSelf, writeDamage, writeDefinedText,
+  writeDelObj, writeMoverCorr, writeMoverDeath, writeMoverMoved, writeSetPointParam, writeTaskBar,
 } from '@flyffweb/testkit';
 import type {} from '../src/testHooks'; // window.__client
 import { Belli } from '../src/world/sim/constants';
@@ -118,6 +118,37 @@ const flarisWithOwnMessages = createWorldScript({
     writeTaskBar(SELF_ID, { applets: [], items: [], queue: [], actionPoint: 42 }), writeSetPointParam(SELF_ID, DST_HP, 77),
     writeAddMonster(MONSTER_ID, aibatt), writeAddNpc(NPC_ID, julia),
   ],
+});
+
+const shortcut = (kind: number, id: number, index: number, data: number): Shortcut => ({
+  kind, id, type: 0, index, userId: 0, data, text: '',
+});
+/**
+ * The new character's bars (BASE_VALUE_TBL, `Database.sql:2741-2742`): the applets 400, 398, 2010, 581 and the motion 25
+ * in the applet row; on bar 0 the lollipops (object 45) and the biscuit (object 1), and the motions 3 and 2.
+ */
+const NEW_BAR: TaskBar = {
+  applets: [
+    { slot: 0, shortcut: shortcut(ShortcutKind.APPLET, 400, 0, 0) },
+    { slot: 1, shortcut: shortcut(ShortcutKind.APPLET, 398, 1, 0) },
+    { slot: 2, shortcut: shortcut(ShortcutKind.APPLET, 2010, 2, 0) },
+    { slot: 3, shortcut: shortcut(ShortcutKind.APPLET, 581, 3, 0) },
+    { slot: 4, shortcut: shortcut(ShortcutKind.MOTION, 25, 4, 0) },
+  ],
+  items: [
+    { bar: 0, slot: 0, shortcut: shortcut(ShortcutKind.ITEM, 45, 0, 1) },
+    { bar: 0, slot: 1, shortcut: shortcut(ShortcutKind.ITEM, 1, 1, 1) },
+    { bar: 0, slot: 2, shortcut: shortcut(ShortcutKind.MOTION, 3, 2, 1) },
+    { bar: 0, slot: 8, shortcut: shortcut(ShortcutKind.MOTION, 2, 8, 1) },
+  ],
+  queue: [],
+  actionPoint: 0,
+};
+/** Flaris with Webby's own data a new Vagrant's (its inventory: the lollipops, the biscuit ...) and the new character's TASKBAR. */
+const flarisWithNewBar = createWorldScript({
+  playerObjectId: SELF_ID, worldId: MADRIGAL, pos: SQUARE,
+  self: writeAddSelf(SELF_ID, { ...self, player: { ...SELF_PLAYER, own: newVagrantOwn() } }),
+  others: [writeTaskBar(SELF_ID, NEW_BAR), writeAddMonster(MONSTER_ID, aibatt), writeAddNpc(NPC_ID, julia)],
 });
 
 /**
@@ -248,11 +279,17 @@ async function startEntering(page: Page): Promise<void> {
   await expect(page.getByText('Entering the world…')).toBeVisible();
 }
 
-/** Logs in, picks Channel 1 and enters with Webby; resolves once the world is on screen. */
+/** Logs in, picks Channel 1 and enters with Webby; resolves once the world is on screen, with its task bar. */
 async function enterFlaris(page: Page): Promise<void> {
   await startEntering(page);
   await page.evaluate(() => window.__client!.ready());
-  await expect(page.getByRole('button', { name: 'Leave' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Start' })).toBeVisible();
+}
+
+/** Leaves the world as Piece 4's player does: the task bar's Start button, then the menu's Log out (spec §3.9). */
+async function logOut(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Start' }).click();
+  await page.getByRole('menuitem', { name: 'Log out' }).click();
 }
 
 /** The PLAYERMOVED packets the page sent so far. */
@@ -634,14 +671,15 @@ test.describe('the world screen against scripted servers', () => {
     expect(await glyphs.first().evaluate((e) => (e as HTMLElement).style.backgroundPosition)).toBe('-50px -128px');
     expect((await page.evaluate(() => window.__client!.stats())).errors).toEqual([]);
 
-    await page.getByRole('button', { name: 'Leave' }).click();
+    await logOut(page);
     await expect(page.getByRole('button', { name: 'Log in' })).toBeEnabled();
     await expect(page.locator('.world-damage-numbers, .world-target-marks')).toHaveCount(0);
   });
 
   // Neuz's windows over the world (Hud, Piece 4 §3.9): the status window with the own numbers, the target bar of the tapped
-  // monster, a DEFINEDTEXT as a line of the server messages (its TID found by the number defineText.h gives it), T and
-  // Escape; leaving takes them off with the screen
+  // monster, a DEFINEDTEXT as a line of the server messages (its TID found by the number defineText.h gives it), T, and
+  // Escape in Neuz's order (WndManager.cpp:3295-3427: the target first, never the status window, then the Start menu);
+  // logging out takes them off with the screen
   test('the status window shows the own numbers, the target bar the tapped monster, and a server text its line', async ({ page }) => {
     const gateway = await playGateway(page);
     await enterFlaris(page);
@@ -667,13 +705,62 @@ test.describe('the world screen against scripted servers', () => {
     await expect(status).toBeHidden();
     await page.keyboard.press('t');
     await expect(status).toBeVisible();
+    // Escape clears the target first (SetObjFocus( NULL ): released, then NULL_ID), and leaves the status window
     await page.keyboard.press('Escape');
-    await expect(status).toBeHidden();
+    await expect(page.locator('.hud-target')).toBeHidden();
+    await expect.poll(() => targetsOf(gateway)).toEqual([[MONSTER_ID, 2], [MONSTER_ID, 1], [NULL_ID, 2]]);
+    await expect(status).toBeVisible();
+    // with nothing to clear and no window it closes, it opens the Start menu
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('menu')).toBeVisible();
+    await expect(status).toBeVisible();
     expect((await page.evaluate(() => window.__client!.stats())).errors).toEqual([]);
 
-    await page.getByRole('button', { name: 'Leave' }).click();
+    await page.getByRole('menuitem', { name: 'Log out' }).click();
     await expect(page.getByRole('button', { name: 'Log in' })).toBeEnabled();
     await expect(page.locator('.world-hud')).toHaveCount(0);
+  });
+
+  // The task bar (CWndTaskBar, Piece 4 §3.9) with the JOIN's TASKBAR, drawn with the converted pictures (none missing from
+  // the asset index, or the overlay would list it)
+  test("the task bar draws the JOIN's TASKBAR, and F5 and the digits are the bar's, not the browser's", async ({ page }) => {
+    await playGateway(page, flarisWithNewBar);
+    await enterFlaris(page);
+    const slot = (row: string, i: number) => page.locator(`.hud-slot[data-row="${row}"][data-slot="${i}"]`);
+    await expect(slot('item', 0)).toHaveAttribute('data-kind', 'item');
+    await expect(slot('item', 0).locator('.hud-slot-count')).toHaveText('3');
+    await expect(slot('item', 1).locator('.hud-slot-count')).toHaveText('1');
+    await expect(slot('item', 2)).toHaveAttribute('data-kind', 'plain');
+    await expect(slot('applet', 1).locator('.hud-slot-hotkey')).toHaveText('J');
+    // F5 is the fifth slot of the bar (empty here): the page is not reloaded, and 2 shows the second bar
+    await page.keyboard.press('F5');
+    await page.keyboard.press('Digit2');
+    await expect(page.locator('.hud-taskbar-number')).toHaveText('2');
+    await expect(slot('item', 0)).not.toHaveAttribute('data-kind');
+    await page.keyboard.press('Digit1');
+    await expect(slot('item', 0)).toHaveAttribute('data-kind', 'item');
+    expect((await page.evaluate(() => window.__client!.stats())).errors).toEqual([]);
+  });
+
+  // The attack button (Piece 4 §3.4, §3.9): a touch screen's, where the joystick shows
+  test('the attack button shows on a touch screen, enabled once the Aibatt is selected, and a press attacks it', async ({ page }) => {
+    const gateway = await playGateway(page);
+    await enterFlaris(page);
+    const button = page.getByRole('button', { name: 'Attack' });
+    if (test.info().project.use.hasTouch !== true) {
+      await expect(button).toBeHidden();
+      return;
+    }
+    await expect(button).toBeVisible();
+    await expect(button).toBeDisabled();
+    const at = await page.evaluate((id) => window.__client!.screenOf(id), MONSTER_ID);
+    expect(at).not.toBeNull();
+    await tapWorld(page, at![0], at![1]);
+    await expect.poll(() => targetsOf(gateway)).toEqual([[MONSTER_ID, 2]]);
+    await expect(button).toBeEnabled();
+    await button.tap();
+    await expect.poll(() => sentOf(gateway, PacketType.MELEE_ATTACK).length, { timeout: 60_000 }).toBeGreaterThan(0);
+    expect(sentOf(gateway, PacketType.PLAYERSETDESTOBJ)).toHaveLength(1);
   });
 
   test("the JOIN's messages about the own character reach its numbers, made before the JOIN is applied", async ({ page }) => {
@@ -688,8 +775,9 @@ test.describe('the world screen against scripted servers', () => {
   test('pressing a turn key cancels it', async ({ page }) => {
     const gateway = await playGateway(page);
     await enterFlaris(page);
-    // as far behind Webby as the screen shows (about 8 m: it runs there in under 1.5 s), and the key goes down soon after it starts
-    await tapWorld(page, 0.5, 0.97);
+    // as far behind Webby as the screen shows above the task bar (about 7 m: it runs there in about 1 s), and the key goes
+    // down soon after it starts
+    await tapWorld(page, 0.5, 0.92);
     await expect.poll(() => destPosOf(gateway).length).toBe(1);
     const dest = destPosOf(gateway)[0]!.pos;
     await expect.poll(async () => distanceXZ(await ownAt(page), SQUARE), { timeout: 60_000, intervals: [20] }).toBeGreaterThan(0.5);
@@ -793,14 +881,16 @@ test.describe('the world screen against scripted servers', () => {
     expect(own[0]).toBeLessThan(BY_THE_WALL[0] - 4);
   });
 
-  test('Leave returns to the login form', async ({ page }) => {
+  // the Start menu's Log out replaces Piece 3's Leave in the world (spec §3.9), and leaves as it did
+  test("the Start menu's Log out returns to the login form", async ({ page }) => {
     const gateway = await playGateway(page);
     await enterFlaris(page);
-    await page.getByRole('button', { name: 'Leave' }).click();
+    await expect(page.getByRole('button', { name: 'Leave' })).toHaveCount(0);
+    await logOut(page);
 
     await expect(page.getByRole('button', { name: 'Log in' })).toBeEnabled();
     await expect(page.getByRole('alert')).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Leave' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Start' })).toHaveCount(0);
     // both of the world's connections are closed: the login server's and the cache server's
     const login = gateway.sent.find((s) => s.port === Port.LOGIN)!.connection;
     const cache = gateway.sent.find((s) => s.port === Port.CACHE)!.connection;
@@ -815,6 +905,6 @@ test.describe('the world screen against scripted servers', () => {
 
     await expect(page.getByRole('alert')).toHaveText('The connection to the game was lost.');
     await expect(page.getByRole('button', { name: 'Log in' })).toBeEnabled();
-    await expect(page.getByRole('button', { name: 'Leave' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Start' })).toHaveCount(0);
   });
 });

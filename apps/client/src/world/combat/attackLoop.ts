@@ -53,6 +53,21 @@ export function objRadius({ min, max }: ModelBox, scale: number): number {
   return f32(radius * f32(scale));
 }
 
+/**
+ * The verdict of `CMover::IsAttackAble( pObj )` on the client for a mover (`Mover.cpp:6469-6570`), with nothing of what it
+ * does besides: a player only in a duel, a war or PK, none of which Piece 4 has; a monster or NPC as `IsAttackAbleNPC`
+ * (:6572-6626) says: not dead (`IsDie`: its dead state, or no HP left), killable (`bKillable`, and a row in the catalog),
+ * not peaceful (`IsPeaceful`, the ADD_OBJ's `m_dwBelligerence`) and, the player on the ground, not flying (`dwFlying`).
+ * The attack loop's step adds what the C++ does with a refusal; the attack button asks it alone (`canAttackFocus`).
+ */
+export function attackAble(target: Mover, moverProps: ReadonlyMap<number, Pick<WebMover, 'killable'>>): boolean {
+  if (target.added.isPlayer || isDie(target)) return false;
+  const prop = moverProps.get(target.added.index);
+  if (prop === undefined || prop.killable === 0) return false;
+  if (target.added.belligerence === Belli.PEACEFUL) return false;
+  return !target.flying;
+}
+
 /** The branch `CWndWorld::Process` runs (`WndWorld.cpp:8513-8537`): the attack, `ControlPlayer`, or neither. */
 type ProcessBranch = 'attack' | 'controls' | 'none';
 
@@ -143,6 +158,17 @@ export class AttackLoop {
   }
 
   /**
+   * Whether the attack button of a touch screen is enabled (spec §3.9): the focus is a mover in view that `IsAttackAble`
+   * accepts (`attackAble`, the rule the attack itself runs at each step). It only asks: a dead focus is not cleared here,
+   * the attack's step does that.
+   */
+  get canAttackFocus(): boolean {
+    const id = this.focus.targetId;
+    const target = id === null ? undefined : this.world.movers.get(id);
+    return target !== undefined && attackAble(target, this.moverProps);
+  }
+
+  /**
    * A press on the mover `objectId` at `now` (ms), its second one of a double click if `double`. `CWndWorld::OnLButtonDown`
    * on a highlighted mover (`WndWorld.cpp:6712-7113`), not flying, with no right button down: the auto-attack goes off
    * when nothing is focused or queued (:6850-6853); the command is dropped (`ClearCmd`, :6854); the mover is selected
@@ -228,6 +254,29 @@ export class AttackLoop {
   attackButton(): void {
     if (this.ownIsDead()) return;
     if (this.focus.targetId !== null && !this.holdsWand()) this.auto = true;
+  }
+
+  /**
+   * Escape's part of `CWndMgr::Process` about the target (`WndManager.cpp:3321-3368`, `__CSC_VER11_2`), once the player is
+   * not dead and the Start menu not open: with a next target queued, that one is dropped and the mark goes back on the
+   * focus unless it is peaceful (:3327-3334); otherwise with a focus, `SetObjFocus( NULL )` (its SETTARGETs), the mark
+   * off, `g_pPlayer->ClearDest()` (the walk up to the target ends) and the auto-attack off (:3335-3361). True when it did
+   * either; false with nothing focused, when Escape goes on to the windows. (The casting cancel of :3342-3348 is for two
+   * skills of later jobs, and `m_idObjFocusOld` and the tracking flag have no counterpart here.)
+   */
+  escape(): boolean {
+    if (this.focus.next !== null) {
+      this.focus.next = null;
+      const focus = this.focus.targetId === null ? undefined : this.world.movers.get(this.focus.targetId);
+      if (focus !== undefined && focus.added.belligerence !== Belli.PEACEFUL) this.renderTarget = focus.objectId;
+      return true;
+    }
+    if (this.focus.targetId === null) return false;
+    this.focus.select(null);
+    this.renderTarget = null;
+    this.world.self()?.act.clearDest();
+    this.auto = false;
+    return true;
   }
 
   /**
@@ -390,31 +439,15 @@ export class AttackLoop {
   }
 
   /**
-   * `CMover::IsAttackAble( pObj )` (`Mover.cpp:6469-6570`) on the client for a mover: a player only in a duel, a war or
-   * PK, none of which Piece 4 has; a monster or NPC as `IsAttackAbleNPC` says. Refused, the auto-attack goes off
-   * (:6564-6567).
+   * `CMover::IsAttackAble( pObj )` (`Mover.cpp:6469-6570`) on the client for a mover, as `attackAble` judges it, with what
+   * the C++ does besides: `IsAttackAbleNPC` refusing a dead monster or NPC clears the focus (`SetObjFocus( NULL )`,
+   * :6580-6589), and a refusal turns the auto-attack off (:6564-6567).
    */
   private isAttackAble(target: Mover): boolean {
-    const able = !target.added.isPlayer && this.isAttackAbleNpc(target);
+    if (!target.added.isPlayer && isDie(target)) this.focus.select(null);
+    const able = attackAble(target, this.moverProps);
     if (!able) this.auto = false;
     return able;
-  }
-
-  /**
-   * `CMover::IsAttackAbleNPC` (`Mover.cpp:6572-6626`): a dead one (`IsDie`: its dead state, or no HP left) is refused and
-   * the focus cleared (`SetObjFocus( NULL )`, :6580-6589); then one that cannot be killed (`bKillable == 0`, or no row in
-   * the catalog), a peaceful one (`IsPeaceful`, the ADD_OBJ's `m_dwBelligerence`) and, the player on the ground, a flying
-   * one (`dwFlying == 1`).
-   */
-  private isAttackAbleNpc(npc: Mover): boolean {
-    if (isDie(npc)) {
-      this.focus.select(null);
-      return false;
-    }
-    const prop = this.moverProps.get(npc.added.index);
-    if (prop === undefined || prop.killable === 0) return false;
-    if (npc.added.belligerence === Belli.PEACEFUL) return false;
-    return !npc.flying;
   }
 
   /**

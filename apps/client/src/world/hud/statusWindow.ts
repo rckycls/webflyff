@@ -88,6 +88,8 @@ export class StatusWindow {
   ) {
     const frame = new WindowFrame('', art, { width: WIDTH, height: HEIGHT, texture: 'WndStatus2.tga' }, doc);
     frame.element.classList.add('hud-status');
+    // Escape never closes it (GetWndBase, WndBase.cpp:2079-2087): T and its close button do
+    frame.escapeCloses = false;
     this.frame = frame;
     const body = frame.body;
     body.addEventListener('pointerdown', (event) => {

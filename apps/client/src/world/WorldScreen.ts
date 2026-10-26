@@ -1,13 +1,14 @@
-// The world screen (spec §3.2, §3.5): "Entering the world…" while the session enters, then the world in 3D with its
-// movers and their name tags, the joystick, a Leave button and the measurement overlay. It wires the parts together:
+// The world screen (spec §3.2, §3.5): "Entering the world…" with a Leave button while the session enters, then the world in
+// 3D with its movers and their name tags, the joystick and the measurement overlay. It wires the parts together:
 // the session's bundles go into `WorldState` as they come; once the world is on screen the frame loop runs the rules'
 // 60 steps a second, the keys, the joystick and a tap on the world (spec §3.7) driving the own mover as
 // `CWndWorld::ControlGround` does and its moves sent as Neuz sends them, and the presses on a mover selecting and
 // attacking it (`AttackLoop`, Piece 4 §3.4); and it draws the stage around the own mover, from the chase camera behind
 // it, with the mark of the point a tap sends it to, the effects and damage numbers of the fight, and the corners around
 // the target (Piece 4 §3.7), and over it Neuz's windows: the status window, the target bar, the server messages and the
-// caption (`Hud`, Piece 4 §3.9). Every ending closes everything and hands the lobby its message (Ruling 8): nothing that
-// goes wrong here is thrown at the lobby.
+// caption (`Hud`, Piece 4 §3.9), the task bar with its Start menu, whose Log out leaves as the loading screen's Leave does
+// (`TaskBar`), the attack button of a touch screen (`AttackButton`), and Escape in Neuz's order (`escapeStep`). Every
+// ending closes everything and hands the lobby its message (Ruling 8): nothing that goes wrong here is thrown at the lobby.
 
 import { UI_SHEETS_KEY, toWebPosition } from '@flyffweb/formats';
 import type { Vec3, WebEffect, WebUiSheet, WebUiSheets } from '@flyffweb/formats';
@@ -33,8 +34,12 @@ import type { CombatFxOut, CombatFxWorld } from './fx/combatEffects';
 import { EffectManager } from './fx/EffectManager';
 import { GameDataMissingError } from './gameData';
 import type { GameData } from './gameData';
+import { AttackButton } from './hud/attackButton';
+import { escapeWindow } from './hud/frame';
 import type { UiArt } from './hud/frame';
 import { Hud } from './hud/hud';
+import { TaskBar, escapeStep } from './hud/taskBar';
+import type { TaskBarWindow } from './hud/taskBar';
 import { OwnMover, pickOnStage } from './ownMover';
 import { OwnState } from './OwnState';
 import { NoWebGLError, page3d, sceneAssets } from './page3d';
@@ -57,7 +62,7 @@ import { transformCoord } from './sim/d3dx';
 import { FixedStepper, STEPS_PER_SECOND } from './sim/stepper';
 import { WorldSession } from './WorldSession';
 import type { WorldEvent } from './WorldSession';
-import { WorldState, isLive } from './WorldState';
+import { WorldState, isDie, isLive } from './WorldState';
 import type { WorldChanges } from './WorldState';
 
 const LOADING_TEXT = 'Entering the world…';
@@ -144,6 +149,9 @@ export class WorldScreen {
    */
   private hud: Hud | undefined;
   private hudArt: UiArt | undefined;
+  /** The task bar and the attack button, in the windows' layer once the world is on screen (`showWorld`). */
+  private taskBar: TaskBar | undefined;
+  private attackButton: AttackButton | undefined;
   /** The own character's driving: the controls each rules step, the moves sent, the stop. */
   private ownMover: OwnMover | undefined;
   /** The own character's numbers (`ownState`). */
@@ -165,7 +173,7 @@ export class WorldScreen {
 
   /**
    * Opens the world screen over `root` for `entry` and starts entering. `onEnd` is called once, when the world is over:
-   * with the text to show, or undefined after Leave. Never throws.
+   * with the text to show, or undefined after Leave or Log out. Never throws.
    */
   static open(root: HTMLElement, entry: WorldEntry, open: OpenChannel, onEnd: (message: string | undefined) => void): WorldScreen {
     return new WorldScreen(root, entry, open, onEnd);
@@ -184,7 +192,8 @@ export class WorldScreen {
       this.rejectShown = reject;
     });
     this.shown.catch(() => {}); // only `ready()` callers care
-    // Leave is there from the start, so that a loading screen that hangs has a way out
+    // Leave is there from the start, so that a loading screen that hangs has a way out; in the world, the task bar's Start
+    // menu has Log out instead (`showWorld`)
     this.leaveButton = h('button', { type: 'button', class: 'world-leave' }, 'Leave');
     this.leaveButton.addEventListener('click', () => this.leave());
     this.element = h('div', { class: 'world' }, h('p', { class: 'world-status', role: 'status' }, LOADING_TEXT), this.leaveButton);
@@ -209,7 +218,7 @@ export class WorldScreen {
     void this.start();
   }
 
-  /** Leave (spec §3.2.7): both connections close, and the lobby comes back with no message. */
+  /** Leave (spec §3.2.7), and the Start menu's Log out: both connections close, and the lobby comes back with no message. */
   leave(): void {
     this.end(undefined);
   }
@@ -451,20 +460,37 @@ export class WorldScreen {
     return this.spriteLayers.map((layer) => layer.element);
   }
 
-  /** The world is ready to be seen: the map, the layers of numbers and corners over it, the controls, and the frame loop. */
+  /**
+   * The world is ready to be seen: the map, the layers of numbers and corners over it, the windows with the task bar in
+   * place of the loading screen's Leave (its Start menu's Log out leaves), the controls, Escape, and the frame loop.
+   */
   private showWorld(sheets: WebUiSheets | null): void {
     const { holder, renderer } = this.page!;
     const doc = this.element.ownerDocument;
+    const view = doc.defaultView ?? window;
     this.hudArt!.sheets = sheets;
-    this.element.replaceChildren(holder, ...this.screenLayers(doc, sheets), this.hud!.element, this.leaveButton);
-    this.keyboard = new KeyboardInput(doc.defaultView ?? window);
-    this.walkKey = new WalkKey(doc.defaultView ?? window);
+    this.element.replaceChildren(holder, ...this.screenLayers(doc, sheets), this.hud!.element);
+    this.keyboard = new KeyboardInput(view);
+    this.walkKey = new WalkKey(view);
     this.joystick = new Joystick(this.element);
     this.focus = new Focus(this.session, (objectId) => this.isLive(objectId));
     const attackLoop = new AttackLoop(
       this.session, this.focus, this.world!, () => this.own, this.entry.clock, this.data!.movers,
     );
     this.attackLoop = attackLoop;
+    this.taskBar = new TaskBar(this.hudArt!, {
+      open: (window) => this.openWindow(window),
+      logOut: () => this.leave(),
+      // the slots' items are used in Piece 5, their skills in milestone 2
+      useSlot: () => {},
+      useActionSlot: () => {},
+    }, doc);
+    // the Start menu opens where the joystick stands, which is over the windows' layer: it hides while the menu is open
+    this.taskBar.onMenuChange = (open) => this.element.classList.toggle('world-menu-open', open);
+    this.attackButton = new AttackButton(() => attackLoop.attackButton(), doc);
+    this.hud!.element.append(this.taskBar.element, this.attackButton.element);
+    // before the windows' own Escape (frame.ts), which closes a window only if this one leaves the key to it
+    view.addEventListener('keydown', this.onEscape, true);
     // on the canvas: the joystick is an element of its own over it, and its touches never reach it; each press goes to
     // the attack loop as it goes down (OnLButtonDown, OnLButtonDblClk): on a mover, or on the ground, which stops it
     this.tap = new TapToWalk(
@@ -477,7 +503,7 @@ export class WorldScreen {
     this.mark = new MoveMark(this.stage!.scene);
     this.ownMover = new OwnMover(this.session, this.entry.clock, this.mark);
     doc.addEventListener('visibilitychange', this.onVisibility);
-    (doc.defaultView ?? window).addEventListener('blur', this.onBlur);
+    view.addEventListener('blur', this.onBlur);
     this.lastTime = performance.now();
     renderer.setAnimationLoop((now) => this.frame(now));
     this.resolveShown();
@@ -672,15 +698,63 @@ export class WorldScreen {
   /**
    * The windows of the frame at `now` (`Hud.frame`): the own numbers and name, and the target bar's mover, which is
    * the attack's mark (`m_pRenderTargetObj`) when there is one, else the focus (`CWndWorld::RenderSelectObj`,
-   * `WndWorld.cpp:2720-2723`, called with the focus at :1058).
+   * `WndWorld.cpp:2720-2723`, called with the focus at :1058); the task bar with the own bars (empty without the own
+   * numbers), and the attack button, enabled while the focus is a mover the attack would take (`canAttackFocus`).
    */
   private drawHud(world: WorldState, now: number): void {
     const self = world.self();
-    const targetId = this.attackLoop!.renderTargetId ?? this.focus!.targetId;
+    const loop = this.attackLoop!;
+    const targetId = loop.renderTargetId ?? this.focus!.targetId;
     const target = targetId === null ? null : world.movers.get(targetId) ?? null;
     const gameMaster = isGameMaster(self?.added.player?.authorization ?? 0);
     this.hud!.frame(now, this.own, self?.name ?? this.entry.character.name, target, gameMaster);
+    this.taskBar!.update(this.own, this.data!);
+    this.attackButton!.update(loop.canAttackFocus);
   }
+
+  /**
+   * A window of Piece 4 the task bar opens or closes (`ObjectExecutor` on its applet: the Start menu, a slot, its hotkey):
+   * the status window, with own numbers to show (as T does); the Character window (`openCharacter`); the skill window is
+   * milestone 2's.
+   */
+  private openWindow(window: TaskBarWindow): void {
+    if (window === 'status') {
+      if (this.own !== undefined) this.hud?.status.toggle();
+    } else if (window === 'character') {
+      this.openCharacter();
+    }
+  }
+
+  /** Opens or closes the Character window (`APP_CHARACTER3`, H). Task 24 builds it: until then, nothing. */
+  private openCharacter(): void {}
+
+  /** Opens the revive window, unless it is open (`CWndRevival`, Escape when dead). Task 24 builds it: until then, nothing. */
+  private openRevive(): void {}
+
+  /**
+   * Escape in Neuz's order (`escapeStep`, `CWndMgr::Process`, `WndManager.cpp:3295-3427`): dead, the revive window
+   * (`openRevive`); the Start menu open, nothing; a target, cleared (`AttackLoop.escape`); a window Escape closes
+   * (`escapeWindow`, never the status window), left to the windows' own handler, which runs after this one; else the
+   * Start menu. A held key does it once.
+   */
+  private readonly onEscape = (event: KeyboardEvent): void => {
+    const { taskBar, attackLoop, focus } = this;
+    if (event.key !== 'Escape' || event.repeat || taskBar === undefined || attackLoop === undefined || focus === undefined) {
+      return;
+    }
+    const self = this.world?.self();
+    const step = escapeStep({
+      dead: self !== undefined && isDie(self),
+      menuOpen: taskBar.menuOpen,
+      target: focus.next !== null || focus.targetId !== null,
+      window: escapeWindow(this.element.ownerDocument) !== undefined,
+    });
+    if (step === 'window') return;
+    event.preventDefault();
+    if (step === 'revive') this.openRevive();
+    else if (step === 'target') attackLoop.escape();
+    else if (step === 'menu') taskBar.openMenu();
+  };
 
   /**
    * `CObj::GetRadius` (`objRadius`) of the own mover and of the movers its attack is about (the focus and the one it
@@ -790,6 +864,9 @@ export class WorldScreen {
     const doc = this.element.ownerDocument;
     doc.removeEventListener('visibilitychange', this.onVisibility);
     (doc.defaultView ?? window).removeEventListener('blur', this.onBlur);
+    (doc.defaultView ?? window).removeEventListener('keydown', this.onEscape, true);
+    this.taskBar?.dispose();
+    this.attackButton?.dispose();
     this.keyboard?.dispose();
     this.walkKey?.dispose();
     this.joystick?.dispose();

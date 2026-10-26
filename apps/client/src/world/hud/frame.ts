@@ -11,6 +11,7 @@
 //   CWndTitleBar                  WndNeuz.cpp:39-107                       the close button 7 px from the right, 5 down
 //   CTheme::RenderWndButton_4Texture  _Interface/ITheme.cpp:1336-1414      a button's 4 states side by side in its picture
 //   CWndMgr::Process (Escape)     _Interface/WndManager.cpp:3295-3420      Escape closes the window that has the focus
+//   CWndBase::GetWndBase          WndBase.cpp:2048-2095                    ... but never the status window (escapeCloses)
 
 import { webName } from '@flyffweb/formats';
 import type { WebUiSheets } from '@flyffweb/formats';
@@ -113,6 +114,11 @@ export class WindowFrame {
   readonly body: HTMLElement;
   /** Called once each time the window closes (its close button, Escape or `close`). */
   onClose?: () => void;
+  /**
+   * Whether Escape may close the window. `CWndBase::GetWndBase()`, which picks the window Escape closes, passes over
+   * APP_STATUS1, APP_NAVIGATOR, APP_REVIVAL and APP_BUFF_STATUS (`WndBase.cpp:2048-2095`): those windows set it false.
+   */
+  escapeCloses = true;
   private readonly titleText: HTMLElement;
   private readonly doc: Document;
   private open_ = false;
@@ -318,11 +324,26 @@ export class WindowFrame {
   }
 }
 
-/** Escape closes the window on top (`CWndMgr::Process`, `WndManager.cpp:3295-3420`); a held key closes one, not all. */
+/**
+ * The window Escape closes on `doc`: the top one it may close (`CWndBase::GetWndBase()`, `WndBase.cpp:2048-2095`, which
+ * passes over the windows whose `escapeCloses` is false), or none.
+ */
+export function escapeWindow(doc: Document): WindowFrame | undefined {
+  const stack = stacks.get(doc) ?? [];
+  for (let i = stack.length - 1; i >= 0; i--) {
+    if (stack[i]!.escapeCloses) return stack[i];
+  }
+  return undefined;
+}
+
+/**
+ * Escape closes the window `escapeWindow` names (`CWndMgr::Process`, `WndManager.cpp:3383-3420`); a held key closes one,
+ * not all. An Escape that something before it in Neuz's order took (`preventDefault`: the revive window, a target
+ * cleared, `escapeStep`) closes nothing, and one with no window to close is left to that order's owner.
+ */
 function onKeyDown(this: Window, event: KeyboardEvent): void {
-  if (event.key !== 'Escape' || event.repeat) return;
-  const stack = stacks.get(this.document);
-  const top = stack?.[stack.length - 1];
+  if (event.key !== 'Escape' || event.repeat || event.defaultPrevented) return;
+  const top = escapeWindow(this.document);
   if (top === undefined) return;
   event.preventDefault();
   top.close();

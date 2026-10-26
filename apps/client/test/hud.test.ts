@@ -6,16 +6,26 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { WebMover } from '@flyffweb/formats';
+import { ShortcutKind } from '@flyffweb/protocol';
+import type { Shortcut, TaskBar as TaskBarMessage } from '@flyffweb/protocol';
+import { ServerClock } from '../src/net/serverClock';
+import { AttackLoop } from '../src/world/combat/attackLoop';
+import { Focus } from '../src/world/combat/focus';
 import type { Texts } from '../src/world/gameData';
-import { WindowFrame } from '../src/world/hud/frame';
+import { AttackButton } from '../src/world/hud/attackButton';
+import { WindowFrame, escapeWindow } from '../src/world/hud/frame';
 import type { UiArt } from '../src/world/hud/frame';
 import { Hud } from '../src/world/hud/hud';
 import { Caption, MessageLines, formatDefinedText } from '../src/world/hud/messages';
 import { StatusWindow } from '../src/world/hud/statusWindow';
 import { TargetBar } from '../src/world/hud/targetBar';
-import { Belli } from '../src/world/sim/constants';
+import { APPLETS, TaskBar, actionPointLit, escapeStep, taskBarLayout } from '../src/world/hud/taskBar';
+import type { TaskBarActions } from '../src/world/hud/taskBar';
+import { terrainGround } from '../src/world/sim/collision';
+import { Belli, ObjSta } from '../src/world/sim/constants';
+import { WorldState } from '../src/world/WorldState';
 import { addedNpc, addedPlayer, moverFrom, webMoverOf } from './helpers/movers';
-import { EXP_ROWS, newVagrant } from './helpers/ownState';
+import { EXP_ROWS, itemProp, newVagrant, ownAdded, ownGameData } from './helpers/ownState';
 
 /** The art as the asset store would give it: every picture under /assets/. */
 const art: UiArt = { url: (key) => `/assets/${key}`, sheets: null };
@@ -482,5 +492,556 @@ describe('Hud: what the world and the own numbers show', () => {
     expect(hud.target.element.hidden).toBe(true);
     hud.dispose();
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 't', code: 'KeyT', bubbles: true }));
+  });
+});
+
+// The task bar (CWndTaskBar, _Interface/WndTaskBar.cpp), its Start menu (CWndTaskMenu, :2464-2811), the keys
+// (CWndTaskBar::Process, :2359-2427; CWndMgr::Process, _Interface/WndManager.cpp:3295-3600) and the attack button.
+
+/** A shortcut as TASKBAR carries it (`m_dwShortcut`, `m_dwId`, `m_dwType`, `m_dwIndex`, `m_dwUserId`, `m_dwData`). */
+const shortcut = (kind: number, id: number, index: number, data: number, type = 0): Shortcut => ({
+  kind, id, type, index, userId: 0, data, text: '',
+});
+
+/**
+ * The new character's bars, as BASE_VALUE_TBL holds them (`Database.sql:2741-2742`, both sexes): the applets 400
+ * (APP_WEBBOX), 398 (APP_COMM_ITEM), 2010 (APP_CHARACTER), 581 (APP_SKILL1) and the motion 25 (MOT_BASE_ESCAPE) in slots 0
+ * to 4; on bar 0 the lollipops (object 45) and the biscuit (object 1), and the motions 3 and 2 in slots 2 and 8.
+ */
+const NEW_BAR: TaskBarMessage = {
+  applets: [
+    { slot: 0, shortcut: shortcut(ShortcutKind.APPLET, 400, 0, 0) },
+    { slot: 1, shortcut: shortcut(ShortcutKind.APPLET, 398, 1, 0) },
+    { slot: 2, shortcut: shortcut(ShortcutKind.APPLET, 2010, 2, 0) },
+    { slot: 3, shortcut: shortcut(ShortcutKind.APPLET, 581, 3, 0) },
+    { slot: 4, shortcut: shortcut(ShortcutKind.MOTION, 25, 4, 0) },
+  ],
+  items: [
+    { bar: 0, slot: 0, shortcut: shortcut(ShortcutKind.ITEM, 45, 0, 1) },
+    { bar: 0, slot: 1, shortcut: shortcut(ShortcutKind.ITEM, 1, 1, 1) },
+    { bar: 0, slot: 2, shortcut: shortcut(ShortcutKind.MOTION, 3, 2, 1) },
+    { bar: 0, slot: 8, shortcut: shortcut(ShortcutKind.MOTION, 2, 8, 1) },
+  ],
+  queue: [],
+  actionPoint: 0,
+};
+
+/** `II_GEN_FOO_INS_LOLLIPOP` and `II_GEN_FOO_INS_BISCUIT` (`propItem.txt:1744-1745`): IK1_GENERAL, IK2_FOOD, IK3_INSTANT. */
+const LOLLIPOP = itemProp({ id: 2800, name: 'Lollipop', kind1: 3, kind2: 14, kind3: 30, part: -1, icon: 'ui/item/itm_genfoolollip.png' });
+const BISCUIT = itemProp({ id: 2801, name: 'Biscuit', kind1: 3, kind2: 14, kind3: 30, part: -1, icon: 'ui/item/itm_genfoobiscuit.png' });
+const BAR_DATA = { itemProps: new Map([LOLLIPOP, BISCUIT].map((prop) => [prop.id, prop])) };
+
+/** The new Vagrant with its TASKBAR. */
+function newVagrantWithBar() {
+  const own = newVagrant();
+  own.taskBar = NEW_BAR;
+  return own;
+}
+
+/** Actions that record what the task bar asks for. */
+function recorder() {
+  const calls: string[] = [];
+  const actions: TaskBarActions = {
+    open: (window) => void calls.push(`open ${window}`),
+    logOut: () => void calls.push('logOut'),
+    useSlot: (bar, slot) => void calls.push(`useSlot ${bar} ${slot}`),
+    useActionSlot: () => void calls.push('useActionSlot'),
+  };
+  return { calls, actions };
+}
+
+const bars: TaskBar[] = [];
+/** A task bar in a layer `width` px wide, taken off the window's keys after the test. */
+function taskBarOn(width = 800, actions: TaskBarActions = recorder().actions): TaskBar {
+  const bar = new TaskBar(art, actions);
+  bars.push(bar);
+  layer(width).append(bar.element);
+  return bar;
+}
+
+afterEach(() => {
+  for (const bar of bars.splice(0)) bar.dispose();
+});
+
+const slot = (bar: TaskBar, row: 'applet' | 'item' | 'queue', i: number): HTMLElement =>
+  bar.element.querySelector<HTMLElement>(`.hud-slot[data-row="${row}"][data-slot="${i}"]`)!;
+/** What a slot shows: its kind, greyed or not, its icon's picture, its count and its hotkey letter. */
+const shown = (element: HTMLElement) => ({
+  kind: element.dataset.kind ?? '',
+  greyed: element.hasAttribute('data-greyed'),
+  icon: element.querySelector<HTMLElement>('.hud-slot-icon')!.style.backgroundImage,
+  count: element.querySelector('.hud-slot-count')!.textContent,
+  hotkey: element.querySelector('.hud-slot-hotkey')!.textContent,
+});
+const key = (type: 'keydown' | 'keyup', code: string, extra: KeyboardEventInit = {}): KeyboardEvent => {
+  const event = new KeyboardEvent(type, {
+    code, key: code.replace(/^Key|^Digit/, ''), bubbles: true, cancelable: true, ...extra,
+  });
+  document.body.dispatchEvent(event);
+  return event;
+};
+
+describe('TaskBar (CWndTaskBar, WndTaskBar.cpp)', () => {
+  it("shows the new character's bar: the lollipops (3) and the biscuit (1) greyed, the motions as plain greyed slots, and the applets' icons", () => {
+    const bar = taskBarOn();
+    bar.update(newVagrantWithBar(), BAR_DATA);
+    // the item bar: the item's icon (CItemBase::GetTexture) and m_Inventory.GetItemCount( m_dwItemId ) (:946-956), greyed
+    // until items are used (Piece 5)
+    expect(shown(slot(bar, 'item', 0))).toEqual({
+      kind: 'item', greyed: true, icon: 'url("/assets/ui/item/itm_genfoolollip.png")', count: '3', hotkey: '',
+    });
+    expect(shown(slot(bar, 'item', 1))).toEqual({
+      kind: 'item', greyed: true, icon: 'url("/assets/ui/item/itm_genfoobiscuit.png")', count: '1', hotkey: '',
+    });
+    for (const i of [2, 8]) {
+      expect(shown(slot(bar, 'item', i))).toEqual({ kind: 'plain', greyed: true, icon: '', count: '', hotkey: '' });
+    }
+    for (const i of [3, 4, 5, 6, 7]) expect(shown(slot(bar, 'item', i)).kind).toBe('');
+    // the applets: their icon from AddAllApplet's table (SetTaskBarTexture, :405-416) and their hotkey above (:889-896)
+    expect(shown(slot(bar, 'applet', 0))).toEqual({
+      kind: 'applet', greyed: false, icon: 'url("/assets/ui/icon_citemmall.png")', count: '', hotkey: '',
+    });
+    expect(shown(slot(bar, 'applet', 1))).toEqual({
+      kind: 'applet', greyed: false, icon: 'url("/assets/ui/icon_citemtime.png")', count: '', hotkey: 'J',
+    });
+    // APP_CHARACTER (2010) and APP_SKILL1 (581) have no applet in a version 15 Neuz, which registers APP_CHARACTER3 and
+    // APP_SKILL3 instead (FuncApplet.cpp:203-217): GetAppletFunc finds nothing, and the slot draws no picture (:405-416,
+    // :826-829)
+    for (const i of [2, 3]) {
+      expect(shown(slot(bar, 'applet', i))).toEqual({ kind: 'applet', greyed: false, icon: '', count: '', hotkey: '' });
+    }
+    expect(shown(slot(bar, 'applet', 4))).toEqual({ kind: 'plain', greyed: true, icon: '', count: '', hotkey: '' });
+  });
+
+  it('with no own numbers, or before the TASKBAR, the bars are empty (InitTaskBar) and the rest of the bar is drawn', () => {
+    const { calls, actions } = recorder();
+    const bar = taskBarOn(800, actions);
+    bar.update(undefined, BAR_DATA);
+    expect(bar.element.querySelector<HTMLElement>('.hud-taskbar-strip')!.style.backgroundImage).toContain('wndtaskbar800.png');
+    expect(bar.element.querySelectorAll('.hud-slot[data-kind]')).toHaveLength(0);
+    expect(bar.element.querySelector('.hud-taskbar-number')!.textContent).toBe('1');
+    bar.element.querySelector<HTMLButtonElement>('.hud-taskbar-start')!.click();
+    bar.element.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')[3]!.click();
+    expect(calls).toEqual(['logOut']);
+    // the own numbers come with no TASKBAR yet: still empty; then it comes
+    const own = newVagrant();
+    bar.update(own, BAR_DATA);
+    expect(bar.element.querySelectorAll('.hud-slot[data-kind]')).toHaveLength(0);
+    own.taskBar = NEW_BAR;
+    bar.update(own, BAR_DATA);
+    expect(shown(slot(bar, 'item', 0)).count).toBe('3');
+  });
+
+  it('with inventory null the item slots are plain greyed slots', () => {
+    const bar = taskBarOn();
+    const own = newVagrantWithBar();
+    own.inventory = null;
+    bar.update(own, BAR_DATA);
+    for (const i of [0, 1]) {
+      expect(shown(slot(bar, 'item', i))).toEqual({ kind: 'plain', greyed: true, icon: '', count: '', hotkey: '' });
+    }
+  });
+
+  it('an item shortcut whose object is gone shows another stack of the same item (m_dwItemId, :347-378, :859-881), or empties', () => {
+    const bar = taskBarOn();
+    const own = newVagrantWithBar();
+    bar.update(own, BAR_DATA);
+    // the lollipops are now another object: the shortcut follows the item ID it was loaded with
+    own.inventory!.delete(45);
+    own.inventory!.set(46, { objectId: 46, itemId: 2800, count: 2 });
+    bar.update(own, BAR_DATA);
+    expect(shown(slot(bar, 'item', 0))).toMatchObject({ kind: 'item', count: '2' });
+    own.inventory!.delete(46);
+    bar.update(own, BAR_DATA);
+    expect(shown(slot(bar, 'item', 0)).kind).toBe('');
+  });
+
+  it('the count is of every stack of the item (GetItemCount, Item.h:378-389)', () => {
+    const bar = taskBarOn();
+    const own = newVagrantWithBar();
+    own.inventory!.set(47, { objectId: 47, itemId: 2800, count: 5 });
+    bar.update(own, BAR_DATA);
+    expect(shown(slot(bar, 'item', 0)).count).toBe('8');
+  });
+
+  it('a skill shows its icon from the skills catalog; one in the applet row that is not CT_STEP or CT_GENERAL is emptied (:330-343)', () => {
+    const own = newVagrant();
+    // m_aJobSkill: Clean Hit (1), Flurry (2), Over Cut (3) in its slots 0 to 2
+    own.taskBar = {
+      applets: [
+        { slot: 0, shortcut: shortcut(ShortcutKind.SKILL, 0, 0, 0) },
+        { slot: 1, shortcut: shortcut(ShortcutKind.SKILL, 1, 1, 0) },
+      ],
+      items: [{ bar: 0, slot: 3, shortcut: shortcut(ShortcutKind.SKILL, 0, 3, 1) }],
+      queue: [shortcut(ShortcutKind.SKILL, 0, 0, 2), shortcut(ShortcutKind.SKILL, 1, 1, 2)],
+      actionPoint: 0,
+    };
+    // no skills catalog (milestone 1): plain slots, kept
+    const bar = taskBarOn();
+    bar.update(own, BAR_DATA);
+    expect(shown(slot(bar, 'item', 3))).toEqual({ kind: 'plain', greyed: true, icon: '', count: '', hotkey: '' });
+    expect(shown(slot(bar, 'applet', 1)).kind).toBe('plain');
+    expect(shown(slot(bar, 'queue', 0)).kind).toBe('plain');
+    // with it (milestone 2): the icons, and Flurry (CT_CIRCLE) leaves the applet row
+    const skills = new Map([
+      [1, { icon: 'ui/skill_vagonecleanh.png', comboStyle: 1 }],
+      [2, { icon: 'ui/skill_vagonebrandi.png', comboStyle: 2 }],
+    ]);
+    const fresh = taskBarOn();
+    fresh.update(own, { ...BAR_DATA, skills });
+    expect(shown(slot(fresh, 'item', 3))).toEqual({
+      kind: 'skill', greyed: false, icon: 'url("/assets/ui/skill_vagonecleanh.png")', count: '', hotkey: '',
+    });
+    expect(shown(slot(fresh, 'applet', 0)).kind).toBe('skill');
+    expect(shown(slot(fresh, 'applet', 1)).kind).toBe('');
+    expect(shown(slot(fresh, 'queue', 1)).icon).toBe('url("/assets/ui/skill_vagonebrandi.png")');
+  });
+
+  it('key 2 switches to bar 2, and the arrows cycle the bars with wrap (CWndMgr::Process :3541-3582; WIDC_UP, WIDC_DOWN :1371-1380)', () => {
+    const bar = taskBarOn();
+    const own = newVagrantWithBar();
+    own.taskBar = { ...NEW_BAR, items: [...NEW_BAR.items, { bar: 1, slot: 4, shortcut: shortcut(ShortcutKind.MOTION, 5, 4, 1) }] };
+    bar.update(own, BAR_DATA);
+    const number = () => bar.element.querySelector('.hud-taskbar-number')!.textContent;
+    expect(bar.bar).toBe(0);
+    expect(number()).toBe('1');
+    key('keydown', 'Digit2');
+    bar.update(own, BAR_DATA);
+    expect(bar.bar).toBe(1);
+    expect(number()).toBe('2');
+    expect(shown(slot(bar, 'item', 0)).kind).toBe('');
+    expect(shown(slot(bar, 'item', 4)).kind).toBe('plain');
+    key('keydown', 'Digit8');
+    expect(bar.bar).toBe(7);
+    // the down arrow goes on to the next bar, past the last to the first; the up arrow back, past the first to the last
+    bar.element.querySelector<HTMLButtonElement>('.hud-taskbar-down')!.click();
+    expect(bar.bar).toBe(0);
+    bar.element.querySelector<HTMLButtonElement>('.hud-taskbar-up')!.click();
+    expect(bar.bar).toBe(7);
+    // 9 and 0 are not bars (a position note and a screenshot in Neuz)
+    key('keydown', 'Digit9');
+    key('keydown', 'Digit0');
+    expect(bar.bar).toBe(7);
+  });
+
+  it("the Start menu lists Piece 4's windows and Log out in CWndTaskMenu's order; Log out leaves", () => {
+    const { calls, actions } = recorder();
+    const bar = taskBarOn(800, actions);
+    bar.update(newVagrantWithBar(), BAR_DATA);
+    const changes: boolean[] = [];
+    bar.onMenuChange = (open) => void changes.push(open);
+    const start = bar.element.querySelector<HTMLButtonElement>('.hud-taskbar-start')!;
+    const menu = bar.element.querySelector<HTMLElement>('.hud-taskbar-menu')!;
+    expect(start.getAttribute('aria-label')).toBe('Start');
+    expect(menu.hidden).toBe(true);
+    start.click();
+    expect(menu.hidden).toBe(false);
+    expect(bar.menuOpen).toBe(true);
+    const items = [...menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
+    expect(items.map((item) => item.textContent)).toEqual(['Status', 'Character', 'Skills', 'Log out']);
+    // the skill window is milestone 2's
+    expect(items.map((item) => item.disabled)).toEqual([false, false, true, false]);
+    expect(items[0]!.querySelector<HTMLElement>('.hud-menu-icon')!.style.backgroundImage).toContain('/assets/ui/icon_status.png');
+    items[3]!.click();
+    expect(calls).toEqual(['logOut']);
+    expect(menu.hidden).toBe(true);
+    // Start again opens it; Status opens the status window and closes the menu; Start twice, or a press elsewhere, closes it
+    start.click();
+    items[0]!.click();
+    expect(calls).toEqual(['logOut', 'open status']);
+    expect(bar.menuOpen).toBe(false);
+    start.click();
+    start.click();
+    expect(bar.menuOpen).toBe(false);
+    start.click();
+    document.body.dispatchEvent(pointer('pointerdown', 400, 100));
+    expect(bar.menuOpen).toBe(false);
+    // its owner hears each opening and closing (the world screen hides the joystick meanwhile)
+    expect(changes).toEqual([true, false, true, false, true, false, true, false]);
+  });
+
+  it('a press on an applet with a window in Piece 4 opens it; the others, and the plain slots, do nothing', () => {
+    const { calls, actions } = recorder();
+    const bar = taskBarOn(800, actions);
+    const own = newVagrantWithBar();
+    own.taskBar = {
+      ...NEW_BAR,
+      applets: [
+        { slot: 0, shortcut: shortcut(ShortcutKind.APPLET, 577, 0, 0) }, // APP_STATUS1
+        { slot: 1, shortcut: shortcut(ShortcutKind.APPLET, 764, 1, 0) }, // APP_CHARACTER3
+        { slot: 2, shortcut: shortcut(ShortcutKind.APPLET, 1003, 2, 0) }, // APP_INVENTORY: Piece 5's
+        { slot: 3, shortcut: shortcut(ShortcutKind.APPLET, 2010, 3, 0) }, // no applet
+        { slot: 4, shortcut: shortcut(ShortcutKind.MOTION, 25, 4, 0) },
+      ],
+    };
+    bar.update(own, BAR_DATA);
+    for (let i = 0; i < 5; i++) slot(bar, 'applet', i).click();
+    expect(calls).toEqual(['open status', 'open character']);
+    // a slot of the item bar goes to its owner (ObjectExecutor): items in Piece 5, skills in milestone 2; an empty one is nothing
+    slot(bar, 'item', 0).click();
+    slot(bar, 'item', 3).click();
+    expect(calls).toEqual(['open status', 'open character', 'useSlot 0 0']);
+  });
+
+  it('the action slot: its button uses it, and the action points light the slots after the first (:1011-1083)', () => {
+    const { calls, actions } = recorder();
+    const bar = taskBarOn(800, actions);
+    const own = newVagrantWithBar();
+    bar.update(own, BAR_DATA);
+    const action = bar.element.querySelector<HTMLElement>('.hud-taskbar-action')!;
+    // POINT_QUEUE_X - ICON_SIZE - 5 (:1011): 638 - 32 - 5
+    expect([action.style.left, action.style.top]).toEqual(['601px', '10px']);
+    expect(action.style.backgroundImage).toBe('url("/assets/ui/icon_actionskill.png")');
+    action.click();
+    expect(calls).toEqual(['useActionSlot']);
+    // 0 points: the four slots after the first are shaded; 25: two lit; 100 and more: none shaded
+    const shade = bar.element.querySelector<HTMLElement>('.hud-taskbar-ap')!;
+    expect([shade.style.left, shade.style.width, shade.style.height]).toEqual(['666px', '112px', '30px']);
+    own.taskBar = { ...NEW_BAR, actionPoint: 25 };
+    bar.update(own, BAR_DATA);
+    expect([shade.style.left, shade.style.width]).toEqual(['722px', '56px']);
+    own.taskBar = { ...NEW_BAR, actionPoint: 150 };
+    bar.update(own, BAR_DATA);
+    expect(shade.style.width).toBe('0px');
+  });
+});
+
+describe('actionPointLit (the lit width of the action slot, WndTaskBar.cpp:1037-1053)', () => {
+  it('is 28 px a step: 10, 25, 50 and 100 points light one, two, three and four slots, in int arithmetic', () => {
+    expect([0, 5, 9, 10, 17, 25, 49, 50, 75, 100].map(actionPointLit)).toEqual([0, 14, 25, 28, 41, 56, 82, 84, 98, 112]);
+  });
+});
+
+describe('taskBarLayout (CWndTaskBar::Initialize, WndTaskBar.cpp:1264-1306; resdata.inc APP_TASKBAR*)', () => {
+  it('takes 5, 10 or 18 applet slots by the width, the controls of its window, and its picture', () => {
+    expect(taskBarLayout(800)).toMatchObject({
+      width: 800, picture: 'wndTaskBar800.bmp', applets: 5, appletX: 106, itemX: 286, queueX: 638, scale: 1,
+    });
+    expect(taskBarLayout(1023)).toMatchObject({ width: 800, applets: 5 });
+    expect(taskBarLayout(1024)).toMatchObject({ width: 1024, applets: 10, appletX: 106, itemX: 446, queueX: 798 });
+    expect(taskBarLayout(1280)).toMatchObject({ width: 1280, applets: 18, appletX: 106, itemX: 702, queueX: 1054 });
+    // the wide windows have the 1280 one's controls and a wider picture
+    expect(taskBarLayout(1500)).toMatchObject({ width: 1440, picture: 'WndTaskBar1440Wide.bmp', applets: 18, itemX: 702 });
+    expect(taskBarLayout(2560)).toMatchObject({ width: 1680, picture: 'WndTaskBar1680Wide.bmp' });
+    // a screen narrower than the narrowest window gets it scaled down to its width
+    expect(taskBarLayout(600)).toMatchObject({ width: 800, applets: 5, scale: 0.75 });
+  });
+
+  it('the bar draws the applet slots its width has, 32 px apart from WIDC_CUSTOM1, and its picture', () => {
+    const strip = (bar: TaskBar): HTMLElement => bar.element.querySelector<HTMLElement>('.hud-taskbar-strip')!;
+    const narrow = taskBarOn(800);
+    narrow.update(newVagrantWithBar(), BAR_DATA);
+    expect(narrow.element.querySelectorAll('.hud-slot[data-row="applet"]')).toHaveLength(5);
+    expect(strip(narrow).style.backgroundImage).toBe('url("/assets/ui/wndtaskbar800.png")');
+    expect([slot(narrow, 'item', 1).style.left, slot(narrow, 'item', 1).style.top]).toEqual(['318px', '10px']);
+    // the layer learns the bar's height on screen (the attack button stands above it)
+    expect(narrow.element.parentElement!.style.getPropertyValue('--hud-taskbar-height')).toBe('48px');
+    const wide = taskBarOn(1280);
+    wide.update(newVagrantWithBar(), BAR_DATA);
+    expect(wide.element.querySelectorAll('.hud-slot[data-row="applet"]')).toHaveLength(18);
+    expect(slot(wide, 'queue', 0).style.left).toBe('1054px');
+    // narrower than 800 px: the bar and its menu drawn smaller, the menu above the bar
+    const small = taskBarOn(400);
+    small.update(newVagrantWithBar(), BAR_DATA);
+    expect(strip(small).style.transform).toBe('scale(0.5)');
+    const menu = small.element.querySelector<HTMLElement>('.hud-taskbar-menu')!;
+    expect([menu.style.transform, menu.style.bottom]).toEqual(['scale(0.5)', '24px']);
+    expect(small.element.parentElement!.style.getPropertyValue('--hud-taskbar-height')).toBe('24px');
+  });
+});
+
+describe('APPLETS (CWndMgr::AddAllApplet, FuncApplet.cpp:178-301)', () => {
+  it('has the icon and hotkey of each applet the live build registers', () => {
+    expect(APPLETS.get(577)).toEqual({ name: 'APP_STATUS1', icon: 'Icon_Status.dds', hotkey: 'T' });
+    expect(APPLETS.get(764)).toEqual({ name: 'APP_CHARACTER3', icon: 'Icon_Character.dds', hotkey: 'H' });
+    expect(APPLETS.get(622)).toEqual({ name: 'APP_SKILL3', icon: 'Icon_Skill.dds', hotkey: 'K' });
+    expect(APPLETS.get(1100)).toEqual({ name: 'APP_LOGOUT', icon: 'Icon_Logout.dds', hotkey: null });
+    expect(APPLETS.get(228)).toEqual({ name: 'APP_MAP', icon: 'Icon_Applet.dds', hotkey: 'M' }); // __IMPROVE_MAP_SYSTEM is off
+    expect(APPLETS.get(302)).toEqual({ name: 'APP_MESSENGER_EX', icon: 'Icon_Messenger.dds', hotkey: 'E' });
+    expect(APPLETS.get(593)).toEqual({ name: 'APP_PARTY_QUICK', icon: null, hotkey: null });
+    // the earlier versions' windows are not registered, nor the dead flags' ones (APP_GUILD_VOTE, APP_MAP_EX)
+    for (const id of [2010, 581, 321, 2022]) expect(APPLETS.has(id)).toBe(false);
+  });
+});
+
+describe('the keys (CWndTaskBar::Process, WndTaskBar.cpp:2359-2427; CWndMgr::Process, WndManager.cpp:3541-3582)', () => {
+  it('H opens the Character window, and T toggles the status window once (the Hud keys it)', () => {
+    const { calls, actions } = recorder();
+    const hud = new Hud(document, art, DATA);
+    document.body.append(hud.element);
+    const bar = new TaskBar(art, actions);
+    bars.push(bar);
+    hud.element.append(bar.element);
+    const own = newVagrantWithBar();
+    hud.frame(0, own, 'Webby', null, false);
+    bar.update(own, BAR_DATA);
+    key('keydown', 'KeyH');
+    expect(calls).toEqual(['open character']);
+    key('keydown', 'KeyT');
+    expect(hud.status.frame.isOpen).toBe(false);
+    expect(calls).toEqual(['open character']);
+    // held down, the key repeats: once a press
+    key('keydown', 'KeyH', { repeat: true });
+    expect(calls).toEqual(['open character']);
+    hud.dispose();
+  });
+
+  it('F1 to F9 use the slots of the bar shown, and the browser does nothing else with them (F5 does not reload)', () => {
+    const { calls, actions } = recorder();
+    const bar = taskBarOn(800, actions);
+    const own = newVagrantWithBar();
+    own.taskBar = {
+      ...NEW_BAR,
+      items: [...NEW_BAR.items, { bar: 2, slot: 4, shortcut: shortcut(ShortcutKind.APPLET, 764, 4, 1) }],
+    };
+    bar.update(own, BAR_DATA);
+    const f5 = key('keydown', 'F5', { key: 'F5' });
+    expect(f5.defaultPrevented).toBe(true);
+    for (let i = 1; i <= 9; i++) key('keydown', `F${i}`, { key: `F${i}` });
+    // the empty slots are nothing to use; the item and motion ones go to the owner
+    expect(calls).toEqual(['useSlot 0 0', 'useSlot 0 1', 'useSlot 0 2', 'useSlot 0 8']);
+    // an applet on the bar opens its window (ObjectExecutor)
+    key('keydown', 'Digit3');
+    key('keydown', 'F5', { key: 'F5' });
+    expect(calls.at(-1)).toBe('open character');
+    // F10 would read the next bar's slot 0 (a quirk of the C++ array, not copied)
+    expect(key('keydown', 'F10', { key: 'F10' }).defaultPrevented).toBe(false);
+  });
+
+  it('C uses the action slot as it is let go (CWndWorld::OnKeyUp, WndWorld.cpp:7712-7729)', () => {
+    const { calls, actions } = recorder();
+    taskBarOn(800, actions).update(newVagrantWithBar(), BAR_DATA);
+    key('keydown', 'KeyC');
+    expect(calls).toEqual([]);
+    key('keyup', 'KeyC');
+    expect(calls).toEqual(['useActionSlot']);
+  });
+
+  it('no key works with Ctrl, Alt or Meta, nor while typing in a field', () => {
+    const { calls, actions } = recorder();
+    const bar = taskBarOn(800, actions);
+    bar.update(newVagrantWithBar(), BAR_DATA);
+    key('keydown', 'KeyH', { ctrlKey: true });
+    key('keydown', 'Digit2', { altKey: true });
+    key('keydown', 'F1', { key: 'F1', metaKey: true });
+    const field = document.createElement('input');
+    document.body.append(field);
+    field.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyH', key: 'h', bubbles: true }));
+    field.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyC', key: 'c', bubbles: true }));
+    expect(calls).toEqual([]);
+    expect(bar.bar).toBe(0);
+  });
+
+  it('a disposed bar hears no key', () => {
+    const { calls, actions } = recorder();
+    const bar = taskBarOn(800, actions);
+    bar.update(newVagrantWithBar(), BAR_DATA);
+    bar.dispose();
+    key('keydown', 'KeyH');
+    key('keyup', 'KeyC');
+    expect(calls).toEqual([]);
+    expect(bar.element.isConnected).toBe(false);
+  });
+});
+
+describe('escapeStep (CWndMgr::Process, WndManager.cpp:3295-3427)', () => {
+  const state = { dead: false, menuOpen: false, target: false, window: false };
+  it('dead: the revive window; else, the Start menu open: nothing; else a target to clear; else a window to close; else the Start menu', () => {
+    expect(escapeStep({ ...state, dead: true, target: true, window: true })).toBe('revive');
+    expect(escapeStep({ ...state, menuOpen: true, target: true, window: true })).toBe('none');
+    expect(escapeStep({ ...state, target: true, window: true })).toBe('target');
+    expect(escapeStep({ ...state, window: true })).toBe('window');
+    expect(escapeStep(state)).toBe('menu');
+  });
+});
+
+describe('Escape and the windows (GetWndBase, WndBase.cpp:2048-2095)', () => {
+  it('never closes the status window: it is passed over for the window under it, and with none Escape is left to its owner', () => {
+    const parent = layer();
+    const status = new StatusWindow(art, DATA);
+    const other = new WindowFrame('Character', art);
+    parent.append(status.frame.element, other.element);
+    other.open({ x: 0, y: 0 });
+    status.update(newVagrant(), 'Webby');
+    expect(escapeWindow(document)).toBe(other);
+    let event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    document.body.dispatchEvent(event);
+    expect(other.isOpen).toBe(false);
+    expect(event.defaultPrevented).toBe(true);
+    expect(escapeWindow(document)).toBeUndefined();
+    event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    document.body.dispatchEvent(event);
+    expect(status.frame.isOpen).toBe(true);
+    expect(event.defaultPrevented).toBe(false);
+    status.frame.close();
+  });
+
+  it('an Escape an earlier handler took (a target cleared, the revive window) closes no window', () => {
+    const frame = new WindowFrame('Character', art);
+    layer().append(frame.element);
+    frame.open({ x: 0, y: 0 });
+    const take = (event: KeyboardEvent) => event.preventDefault();
+    window.addEventListener('keydown', take, true);
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    window.removeEventListener('keydown', take, true);
+    expect(frame.isOpen).toBe(true);
+    frame.close();
+  });
+});
+
+describe('AttackButton (touch screens; spec §3.9)', () => {
+  /** The new Vagrant 6 m from an Aibatt, and the attack loop over them, as the world screen makes it. */
+  function fight() {
+    const AIBATT_ID = 30;
+    const data = ownGameData({
+      movers: new Map([[AIBATT, webMoverOf({ index: AIBATT, name: 'Aibatt', killable: 1, belligerence: Belli.ACTIVEATTACK })]]),
+    });
+    const world = new WorldState(data, new ServerClock(() => 0), terrainGround(() => 0));
+    const self = { ...ownAdded(1), pos: [100, 0, 100] as [number, number, number], angle: 90, state: ObjSta.STAND };
+    world.apply(self.objectId, { type: 'addMover', mover: self });
+    world.apply(AIBATT_ID, {
+      type: 'addMover',
+      mover: addedNpc(AIBATT_ID, AIBATT, {}, { pos: [106, 0, 100], state: ObjSta.STAND, belligerence: Belli.ACTIVEATTACK }),
+    });
+    const session = {
+      sendDestObj: () => {}, sendMeleeAttack: () => {}, sendGetDestObj: () => {}, sendBehavior: () => {}, sendSetTarget: () => {},
+    };
+    const focus = new Focus(session);
+    const own = newVagrant();
+    const loop = new AttackLoop(session, focus, world, () => own, { tick: () => 0n }, data.movers);
+    return { loop, AIBATT_ID };
+  }
+
+  it('is disabled with no target and enabled with an Aibatt selected; a press attacks', () => {
+    const { loop, AIBATT_ID } = fight();
+    const button = new AttackButton(() => loop.attackButton());
+    layer().append(button.element);
+    expect(button.element.getAttribute('aria-label')).toBe('Attack');
+    button.update(loop.canAttackFocus);
+    expect(button.element.disabled).toBe(true);
+    loop.onMoverPressed(AIBATT_ID, 10_000, false);
+    loop.onReleased();
+    button.update(loop.canAttackFocus);
+    expect(button.element.disabled).toBe(false);
+    button.element.click();
+    expect(loop.autoAttack).toBe(true);
+    button.dispose();
+  });
+
+  it('shows on touch screens only: where the main pointer is a finger, or from the first touch (as the joystick)', () => {
+    const button = new AttackButton(() => {});
+    layer().append(button.element);
+    // jsdom has no coarse pointer
+    expect(button.element.hidden).toBe(true);
+    const mouse = pointer('pointerdown', 10, 10);
+    Object.defineProperty(mouse, 'pointerType', { value: 'mouse' });
+    document.body.dispatchEvent(mouse);
+    expect(button.element.hidden).toBe(true);
+    const touch = pointer('pointerdown', 10, 10);
+    Object.defineProperty(touch, 'pointerType', { value: 'touch' });
+    document.body.dispatchEvent(touch);
+    expect(button.element.hidden).toBe(false);
+    button.dispose();
+    expect(button.element.isConnected).toBe(false);
   });
 });
