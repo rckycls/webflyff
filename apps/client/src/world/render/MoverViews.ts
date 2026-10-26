@@ -18,16 +18,15 @@ import type { AnimationAction, Object3D, Scene } from 'three';
 import { AnimationClip, Box3, CapsuleGeometry, Group, LoopOnce, LoopRepeat, Mesh, MeshLambertMaterial } from 'three';
 import { motionFor } from '../sim/ActionMover';
 import type { MotionHand } from '../sim/ActionMover';
-import { AniLoop, Ik3 } from '../sim/constants';
+import { AniLoop, Ik3, Mop } from '../sim/constants';
 import { STEPS_PER_SECOND } from '../sim/stepper';
 import type { Mover, WorldChanges } from '../WorldState';
+import { MI_FEMALE, MI_MALE, Parts } from './looks';
 import type { MoverLook } from './looks';
 import type { HeldItem } from './moverModels';
 import { moverMatrix } from './picking';
 import type { PickCandidate } from './picking';
 
-/** `MOP_NO_TRANS` (`_Common/Mover.h:46`): a motion that starts without blending from the last one. */
-const MOP_NO_TRANS = 0x00000004;
 /** `m_fBlendWeight += 0.05f` a frame move (`CModelObject::FrameMove`, `ModelObject.cpp:1749-1754`): 20 steps of blending. */
 const BLEND_SECONDS = 20 / STEPS_PER_SECOND;
 /** The placeholder: a grey figure a little taller than a person, standing on its origin. */
@@ -37,17 +36,12 @@ const PLACEHOLDER_RADIUS = 0.3;
 const placeholderBox = (): ModelBox => ({
   min: [-PLACEHOLDER_RADIUS, 0, -PLACEHOLDER_RADIUS], max: [PLACEHOLDER_RADIUS, PLACEHOLDER_HEIGHT, PLACEHOLDER_RADIUS],
 });
-/** `MI_MALE`, `MI_FEMALE` (`Resource/defineObj.h:954-955`): the player bodies, which play weapon sets. */
-const MI_MALE = 11;
-const MI_FEMALE = 12;
 /** `MI_DWARPETMAS`, `MI_CROWNIBLIS`, `MI_CROWNSHADE`, `MI_CROWNBUBBLE` (`defineObj.h:1167-1170`): the master bodies. */
 const MASTER_BODIES: ReadonlySet<number> = new Set([202, 203, 204, 205]);
 /** `II_WEA_HAN_HAND` (`Resource/defineItem.h:25`): the bare hand's item, held when the hand is empty. */
 const II_WEA_HAN_HAND = 11;
 /** `HD_TWO` (`Resource/defineAttribute.h:28`): a two-handed weapon. */
 const HD_TWO = 2;
-/** `PARTS_SHIELD` (`Resource/defineNeuz.h:35`): the slot of a left-hand item that is no weapon. */
-const PARTS_SHIELD = 11;
 /** `JOB_PSYCHIKEEPER`, its master and its hero (`Resource/defineJob.h:59,72,83`). */
 const PSYKEEPERS: ReadonlySet<number> = new Set([12, 22, 30]);
 
@@ -65,7 +59,10 @@ interface Clip {
  * `CModel`'s frame of a motion (`Model.h:86-94`), as `FrameMove` moves it: `current` is `m_fFrameCurrent`, `old`
  * `m_fFrameOld`, `endFrame` `m_bEndFrame`. `sets` is the rules' `motionSets` it belongs to: the next motion set starts
  * a new one (`InitAnimate`, `Model.h:125-136`). The frame moves of the steps that went by while the motion's file
- * loaded (its frame count and speed are in it) wait in `backlog`, as their speeds, and are made once it is in.
+ * loaded (its frame count and speed are in it) wait in `backlog`, as their speeds, and are made at once when it is in.
+ * Neuz, whose files are in at once, tests each frame move's `old` and `current` for a hit before the next; so a hit that
+ * one of those moves passes, whose frames the next move replaces untested, waits in `waiting` for the rules' next tests,
+ * oldest first, with the hits of the moves that come after it.
  */
 interface ModelFrame {
   sets: number;
@@ -73,9 +70,10 @@ interface ModelFrame {
   old: number;
   endFrame: boolean;
   backlog: number[];
+  waiting: number[];
 }
 
-const startFrame = (sets: number): ModelFrame => ({ sets, current: 0, old: -1, endFrame: false, backlog: [] });
+const startFrame = (sets: number): ModelFrame => ({ sets, current: 0, old: -1, endFrame: false, backlog: [], waiting: [] });
 
 /**
  * `CModel::FrameMove` (`Model.cpp:13-55`) once, at `speed` (`m_fAniSpeed`), for a motion of `events.frames` frames
@@ -162,7 +160,7 @@ interface View {
  * look's hands (never rejecting: what it cannot have it says to `report` and leaves out). A model that throws as it is
  * put on screen is the placeholder too. Once disposed, nothing more is said on the overlay: it is the page's, and the
  * next entry's errors are listed there. `itemProps` is the item catalog, which tells what a player's hands hold for its
- * weapon's motion sets; without it every player plays the bare hand's (+200, a Vagrant's with or without a sword).
+ * weapon's motion sets (`handOf`); an item it lacks is the bare hand's.
  *
  * The models' frames run at the rules' steps, exactly; what is drawn plays the same motion by the frame's time, at the
  * mover's animation speed, still while the model is paused. A one-play motion stops on its last frame. A motion the
@@ -190,7 +188,7 @@ export class MoverViews {
     private readonly lookFor: (mover: Mover) => MoverLook | null,
     private readonly loadMotion: (key: string) => Promise<LoopedMotion>,
     private readonly loadHeld: (look: MoverLook, report: (message: string) => void) => Promise<HeldItem[]>,
-    private readonly itemProps: ReadonlyMap<number, WebItemProp> = new Map(),
+    private readonly itemProps: ReadonlyMap<number, WebItemProp>,
   ) {}
 
   /** Drops the views of the movers that left, then makes one for each mover that came and is still in `movers`. */
@@ -460,7 +458,7 @@ export class MoverViews {
     return {
       kind3: item?.kind3 ?? Ik3.HAND,
       twoHanded: item?.handed === HD_TWO,
-      dual: right !== null && leftItem !== undefined && leftItem.part !== PARTS_SHIELD,
+      dual: right !== null && leftItem !== undefined && leftItem.part !== Parts.SHIELD,
       master,
       psykeeper: PSYKEEPERS.has(mover.added.player?.job ?? -1),
     };
@@ -477,21 +475,39 @@ export class MoverViews {
     const key = this.keyOf(view);
     if (key === null) return;
     const clip = this.clip(key);
+    const { frame } = view;
     if (clip.loading) {
-      view.frame.backlog.push(act.aniSpeed);
+      frame.backlog.push(act.aniSpeed);
       return;
     }
     if (clip.motion === null) return;
-    this.catchUp(view, clip.motion);
-    frameMove(view.frame, clip.motion.events, act.loop, act.aniSpeed);
+    // the hit the rules were given since the last frame move (or, paused, passed by) is behind the model now
+    frame.waiting.shift();
+    this.catchUp(view, clip.motion, true);
+    frameMove(frame, clip.motion.events, act.loop, act.aniSpeed);
+    if (frame.waiting.length > 0) this.keepHit(frame, clip.motion);
   }
 
-  /** Makes the frame moves that waited for the motion's file. */
-  private catchUp(view: View, motion: LoopedMotion): void {
+  /**
+   * Makes the frame moves that waited for the motion's file (`ModelFrame`). The hit each passes waits for the rules,
+   * unless it is the last of them, nothing waits before it and no move comes after it (`more`): then the rules test its
+   * frames themselves, as any frame move's.
+   */
+  private catchUp(view: View, motion: LoopedMotion, more: boolean): void {
     const { frame } = view;
-    if (frame.backlog.length === 0) return;
-    for (const speed of frame.backlog) frameMove(frame, motion.events, view.mover.act.loop, speed);
+    const { backlog } = frame;
+    if (backlog.length === 0) return;
     frame.backlog = [];
+    backlog.forEach((speed, i) => {
+      frameMove(frame, motion.events, view.mover.act.loop, speed);
+      if (more || i < backlog.length - 1 || frame.waiting.length > 0) this.keepHit(frame, motion);
+    });
+  }
+
+  /** Keeps for the rules the hit that the frame's last move passed (`hitIndex`, the C++'s test of one move), if any. */
+  private keepHit(frame: ModelFrame, motion: LoopedMotion): void {
+    const hit = hitIndex(motion.events.hit, frame.old, frame.current);
+    if (hit >= 0) frame.waiting.push(hit);
   }
 
   /**
@@ -506,15 +522,16 @@ export class MoverViews {
     const clip = this.clip(key);
     if (clip.loading) return false;
     if (clip.motion === null) return true;
-    this.catchUp(view, clip.motion);
+    this.catchUp(view, clip.motion, false);
     return view.frame.endFrame;
   }
 
   /**
    * `m_pModel->IsAttrHit()` (`ModelObject.h:280-286`): the hit frame of the motion that the model's last frame move went
    * past (`hitIndex`), from frame -1 to 0 for a motion set since (`InitAnimate`); -1 for none, and while the file loads.
-   * The rules ask it during a swing only, so a motion with no hit frame at all is an attack motion of a conversion from
-   * before hit frames, or one with no blow, which look the same: that is said once.
+   * A hit kept from the moves made as the file came in comes first (`ModelFrame.waiting`). The rules ask it during a
+   * swing only, so a motion with no hit frame at all is an attack motion of a conversion from before hit frames, or one
+   * with no blow, which look the same: that is said once.
    */
   private isAttrHit(view: View): number {
     const key = this.keyOf(view);
@@ -530,8 +547,9 @@ export class MoverViews {
       return -1;
     }
     if (view.frame.sets !== view.mover.act.motionSets) return hitIndex(hit, -1, 0);
-    this.catchUp(view, motion);
-    return hitIndex(hit, view.frame.old, view.frame.current);
+    this.catchUp(view, motion, false);
+    const { frame } = view;
+    return frame.waiting[0] ?? hitIndex(hit, frame.old, frame.current);
   }
 
   /**
@@ -560,11 +578,11 @@ export class MoverViews {
       const last = view.action;
       action.reset().play();
       if (view.frame.sets === act.motionSets) {
-        this.catchUp(view, motion);
+        this.catchUp(view, motion, false);
         action.time = timeOf(motion, view.frame.current);
       }
       if (last !== null && last !== action) {
-        if (act.motionOption & MOP_NO_TRANS) last.stop();
+        if (act.motionOption & Mop.NO_TRANS) last.stop();
         else {
           action.fadeIn(BLEND_SECONDS);
           last.fadeOut(BLEND_SECONDS);

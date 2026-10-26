@@ -246,11 +246,12 @@ export class WorldScreen {
     this.stage = stage;
     const { overlay } = this.page!;
     const data = this.data!;
-    // the own character is dressed, and armed, from the character list's item ids (`lookOf`)
+    // the own character is dressed, and armed, from the character list's item ids (`lookOf`); what the hands hold picks
+    // each player's weapon set of its motions in combat, from the item catalog
     const equipment = this.entry.character.equipment;
     this.views = new MoverViews(
       stage.scene, loadMoverModel(services), overlay, (mover) => lookOf(mover, data, equipment),
-      (key) => loadMotion(services, key), loadHeldItems(services, data),
+      (key) => loadMotion(services, key), loadHeldItems(services, data), data.itemProps,
     );
     this.tags = new NameTagLayer(stage.scene, this.element.ownerDocument);
     this.syncViews();

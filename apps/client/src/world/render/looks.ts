@@ -34,13 +34,13 @@ export interface MoverLook {
 }
 
 /** `MI_MALE` and `MI_FEMALE` (`Resource/defineObj.h:954-955`): the bodies of players and human NPCs, with no model of their own. */
-const MI_MALE = 11;
-const MI_FEMALE = 12;
+export const MI_MALE = 11;
+export const MI_FEMALE = 12;
 /** `CItemElem::expired` (`_Common/Item.h:119`), a bit of a worn part's flag: the item shows nothing (`MoverEquip.cpp:322,346`). */
 const ITEM_EXPIRED = 0x01;
 
-/** `PARTS_*` (`Resource/defineNeuz.h:24-61`): the slots of a body that the rules below use. */
-const Parts = {
+/** `PARTS_*` (`Resource/defineNeuz.h:24-61`): the slots of a body that the rules below (and the weapon sets) use. */
+export const Parts = {
   HEAD: 0, HAIR: 1, UPPER_BODY: 2, LOWER_BODY: 3, HAND: 4, FOOT: 5, CAP: 6, CLOAK: 8, LWEAPON: 9, RWEAPON: 10, SHIELD: 11,
   HAT: 26, CLOTH: 27, GLOVE: 28, BOOTS: 29, CLOAK2: 30,
 } as const;

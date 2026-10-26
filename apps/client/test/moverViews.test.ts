@@ -114,9 +114,9 @@ interface Rig {
 }
 
 interface RigOptions {
-  /** The motion files of these keys; any other is `motion(key)`. */
-  motions?: Record<string, () => LoopedMotion>;
-  /** The item catalog, for the weapon sets. */
+  /** The motion files of these keys, or a load of one to resolve later; any other is `motion(key)`. */
+  motions?: Record<string, () => LoopedMotion | Promise<LoopedMotion>>;
+  /** The item catalog, for the weapon sets; empty by default. */
   itemProps?: ReadonlyMap<number, WebItemProp>;
 }
 
@@ -132,11 +132,11 @@ function rig(
   const overlay = { error: vi.fn(), addGpuBytes: vi.fn() };
   const motions = new Map<string, LoopedMotion>();
   const loadMotion = async (key: string) => {
-    const loaded = options.motions?.[key]?.() ?? motion(key);
+    const loaded = await (options.motions?.[key]?.() ?? motion(key));
     motions.set(key, loaded);
     return loaded;
   };
-  const views = new MoverViews(scene, load, overlay, lookFor, loadMotion, loadHeld, options.itemProps);
+  const views = new MoverViews(scene, load, overlay, lookFor, loadMotion, loadHeld, options.itemProps ?? new Map());
   const movers = new Map<number, Mover>();
   const sync = (changes: WorldChanges) => views.sync(changes, movers);
   return {
@@ -695,6 +695,30 @@ describe('MoverViews', () => {
       }
       // at speed 1: the hit at the 24th frame move, the end at the 33rd; the second swing starts in step 34
       expect(hits).toEqual([25, 58]);
+    });
+
+    it('a swing whose file comes in after its hit frame still hits, once', async () => {
+      let resolve!: (motion: LoopedMotion) => void;
+      const late = new Promise<LoopedMotion>((done) => (resolve = done));
+      const r = armedRig({ motions: { m23: () => late } });
+      const { player, monster } = duel(r);
+      await r.views.settled();
+      let now = 0;
+      const hits: number[] = [];
+      const ends: number[] = [];
+      monster.act.onHit = () => hits.push(now);
+      monster.act.onAttackEnd = () => ends.push(now);
+      expect(monster.act.meleeAttack(ActMsg.ATK1, 7)).toBe(true);
+      // at speed 1 the blow (frame 12) goes by at the 24th frame move, while the swing's file still loads
+      for (now = 1; now <= 30; now++) stepAll(r, player, monster);
+      expect(hits).toEqual([]);
+      resolve(hitMotion('m23', 17, [12]));
+      await r.views.settled();
+      for (now = 31; now <= 60; now++) stepAll(r, player, monster);
+      // Neuz has the file at once and hits in step 25. Here the 30 waiting frame moves are made as it comes in, and the
+      // hit one of them passed goes to the next test of the rules; the swing still ends on time, at the 33rd frame move.
+      expect(hits).toEqual([31]);
+      expect(ends).toEqual([34]);
     });
 
     it('says once that an attack motion has no hit frame', async () => {

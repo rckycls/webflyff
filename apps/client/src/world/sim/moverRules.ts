@@ -1,5 +1,5 @@
 import type { MoveReport, Vec3 } from '@flyffweb/protocol';
-import { wrapAngle } from './ActionMover';
+import { getDegree, wrapAngle } from './ActionMover';
 import type { ActionMover } from './ActionMover';
 import type { Ground } from './collision';
 import { ActMsg, MAX_CORR_SIZE_45, ObjSta, ObjStaF } from './constants';
@@ -28,8 +28,7 @@ const ANGLE_NEAR = f32(4.001);
 const ARRIVE_MOTION = ActMsg.STAND;
 /** `0.8f`: `CObj::IsRangeObj` counts this much of each radius (`Obj.cpp:802-806`). */
 const RADIUS_PART = f32(0.8);
-/** `D3DXToDegree`/`D3DXToRadian` with `D3DX_PI` `3.141592654f` (`d3dx9math.h:28-31`). */
-const DEGREES_PER_RADIAN = f32(180 / f32(3.141592654));
+/** `D3DXToRadian` with `D3DX_PI` `3.141592654f` (`d3dx9math.h:28-31`). */
 const RADIANS_PER_DEGREE = f32(f32(3.141592654) / 180);
 
 /**
@@ -107,16 +106,6 @@ const dot = (a: Vec3, b: Vec3): number => f32(f32(f32(a[0] * b[0]) + f32(a[1] * 
 function normalize(v: Vec3): Vec3 {
   const length = f32(Math.sqrt(dot(v, v)));
   return length === 0 ? [0, 0, 0] : [f32(v[0] / length), f32(v[1] / length), f32(v[2] / length)];
-}
-
-/**
- * `GetDegree` (`Source/_Common/Obj.h:288-304`): the angle from `src` to `dest` on the ground, from the dot product
- * with `VelocityToVec( 0.0f, 1.0f )`, (0, 0, -1): `acosf`, then 360 minus it when x is negative.
- */
-function getDegree(dest: Vec3, src: Vec3): number {
-  const dir = normalize([f32(dest[0] - src[0]), 0, f32(dest[2] - src[2])]);
-  const degree = f32(f32(Math.acos(dot([0, 0, -1], dir))) * DEGREES_PER_RADIAN);
-  return dir[0] < 0 ? f32(360 - degree) : degree;
 }
 
 /**

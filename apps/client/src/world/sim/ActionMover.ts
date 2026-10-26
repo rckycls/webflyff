@@ -115,8 +115,8 @@ function moveSpeed(moveState: number, walk: boolean, speed: number): number | un
 
 /**
  * `GetDegree` (`Source/_Common/Obj.h:288-304`): the angle from `src` to `dest` on the ground, from the dot product
- * with `VelocityToVec( 0.0f, 1.0f )`, (0, 0, -1): `acosf`, then 360 minus it when x is negative. (`moverRules.ts` keeps
- * its own copy for the walk to a target.)
+ * with `VelocityToVec( 0.0f, 1.0f )`, (0, 0, -1): `acosf`, then 360 minus it when x is negative. A swing faces its
+ * target by it, and a walk to a point or a mover turns toward it (`moverRules.ts`).
  */
 export function getDegree(dest: Vec3, src: Vec3): number {
   const dir = normalize([f32(dest[0] - src[0]), 0, f32(dest[2] - src[2])]);
