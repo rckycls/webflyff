@@ -1,6 +1,7 @@
 /**
- * The values of Neuz's ground movement rules that Piece 3 uses, copied from their headers. Each object is named after
- * the C++ prefix: `ObjSta.FMOVE` is `OBJSTA_FMOVE`, `ActMsg.FORWARD` is `OBJMSG_FORWARD`, and so on.
+ * The values of Neuz's ground movement rules (Piece 3) and of its attacks, damage and death (Piece 4), copied from their
+ * headers. Each object is named after the C++ prefix: `ObjSta.FMOVE` is `OBJSTA_FMOVE`, `ActMsg.FORWARD` is
+ * `OBJMSG_FORWARD`, and so on.
  */
 
 /**
@@ -18,23 +19,40 @@ export const ObjSta = {
   LTURN: 0x00000100,
   RTURN: 0x00000200,
   TURN_ALL: 0x00000300,
+  LOOK_ALL: 0x00000c00,
   /** Falling (`MoverMsg.h:40`). */
   SJUMP3: 0x00007000,
   /** Landing (`MoverMsg.h:41`). */
   SJUMP4: 0x00008000,
   JUMP_ALL: 0x0000f000,
+  /** The four swings of a melee combo (`MoverMsg.h:48-51`). */
+  ATK1: 0x00010000,
+  ATK2: 0x00020000,
+  ATK3: 0x00030000,
+  ATK4: 0x00040000,
   ATK_ALL: 0x00ff0000,
+  /** Hit: the flinch (`MoverMsg.h:68`). */
   DMG: 0x01000000,
+  /** Knocked flying (`:72`), then down on the ground (`:73`), then getting up (`:74`). */
+  DMG_FLY: 0x02000000,
+  DMG_DIE: 0x03000000,
+  DMG_LIVE: 0x06000000,
   DMG_FLY_ALL: 0x02000000,
-  DIE_ALL: 0x08000000,
+  /** Dead on the ground (`:77`), then vanishing (`:78`, the server's only). */
+  DEAD: 0x08000000,
   DISAPPEAR: 0x09000000,
+  DIE_ALL: 0x08000000,
   DMG_ALL: 0x0f000000,
   COLLECT: 0x10000000,
   ACTION_ALL: 0xf0000000,
+  /** `OBJSTA_ALL` (`:91`): every group's mask, which is every bit. */
+  ALL: 0xffffffff,
 } as const;
 
 /** `OBJSTAF_*` (`Source/_Common/MoverMsg.h:95-102`): `CAction::m_dwStateFlag`. */
 export const ObjStaF = {
+  /** Combat mode: a player's motions are its weapon's set (`motionFor`). */
+  COMBAT: 0x00000001,
   WALK: 0x00000002,
   SIT: 0x00000004,
   FLY: 0x00000008,
@@ -43,8 +61,9 @@ export const ObjStaF = {
 } as const;
 
 /**
- * The action messages the ground rules take: `OBJMSG_*`, the `OBJMSG` enum (`Source/_Common/MoverMsg.h:105-166`),
- * which counts from `OBJMSG_NONE` = 0. These are also the values a MOTION message carries (`CDPClient::OnMotion`).
+ * The action messages the rules take: `OBJMSG_*`, the `OBJMSG` enum (`Source/_Common/MoverMsg.h:105-166`), which
+ * counts from `OBJMSG_NONE` = 0. These are also the values a MOTION message carries (`CDPClient::OnMotion`), and `ATK1`
+ * to `ATK4` the attack a MELEE_ATTACK carries.
  */
 export const ActMsg = {
   FORWARD: 1,
@@ -56,23 +75,82 @@ export const ActMsg = {
   LTURN: 8,
   RTURN: 9,
   STOP_TURN: 10,
+  /** Combat mode on: a player's motions become its weapon's set. */
+  MODE_COMBAT: 18,
   MODE_WALK: 20,
   MODE_RUN: 21,
+  /** The four swings of a melee combo, at the object ID in the first parameter. */
+  ATK1: 29,
+  ATK2: 30,
+  ATK3: 31,
+  ATK4: 32,
+  /** Die; the first parameter says how (`DAMAGE`, `DAMAGE_FORCE` or 0), the second is the attacker. */
+  DIE: 40,
+  /** A plain blow, and a blow that knocks the victim flying (`CActionMover::SendDamageForce`). */
+  DAMAGE: 41,
+  DAMAGE_FORCE: 42,
   /** Turn to the angle in the first parameter and run (`CMover::ProcessMove` sends it toward a destination). */
   TURNMOVE: 47,
 } as const;
 
-/** `MTI_*` (`Resource/defineNeuz.h:352-374`): the motion a mover plays (`CMover::m_dwMotion`). */
+/**
+ * `MTI_*` (`Resource/defineNeuz.h:352-378`): the motion a mover plays (`CMover::m_dwMotion`). The `STAND_*` ones are
+ * the first motions of the weapon sets that `motionFor` adds (`:500`, `:599`, `:796`, `:856`, `:886`).
+ */
 export const Mti = {
   STAND: 0,
   WALK: 3,
   BACK: 4,
   RUN: 5,
+  /** The two flinches. */
+  DMG1: 6,
+  DMG2: 7,
+  DIE1: 8,
+  /** Getting up, lying after a fall, and the flight of a knock-back. */
+  DMGLIVE: 9,
+  DMGDIE: 10,
+  DMGFLY: 11,
   JUMP3: 15,
   JUMP4: 16,
   SIT: 20,
   SITSTAND: 21,
   GETUP: 22,
+  ATK1: 23,
+  ATK2: 24,
+  ATK3: 25,
+  ATK4: 26,
+  STAND_02: 300,
+  STAND_05: 600,
+  STAND_11: 2200,
+  STAND_13: 2328,
+  STAND_14: 2356,
+} as const;
+
+/** `MOP_*` (`Source/_Common/Mover.h:43-47`): how `CMover::SetMotion` plays a motion (`m_dwMotionOption`). */
+export const Mop = {
+  /** Draws the weapon's trail. */
+  SWDFORCE: 0x00000001,
+  /** The motion as it is, never the weapon's set (`motionFor`). */
+  FIXED: 0x00000002,
+  /** Starts without blending from the last motion. */
+  NO_TRANS: 0x00000004,
+} as const;
+
+/**
+ * `IK3_*` (`Resource/defineItemkind.h:67-78`): an item's third kind (`ItemProp::dwItemKind3`), here the weapon kinds
+ * whose motion sets differ. `HAND` is the bare hand's (`II_WEA_HAN_HAND`), `VIRTUAL` a monster's attack.
+ */
+export const Ik3 = {
+  HAND: 1,
+  SWD: 2,
+  AXE: 3,
+  CHEERSTICK: 4,
+  KNUCKLEHAMMER: 5,
+  WAND: 6,
+  STAFF: 7,
+  VIRTUAL: 10,
+  YOYO: 11,
+  BOW: 12,
 } as const;
 
 /** `ANILOOP_*` (`Source/_Common/Obj.h:26-28`): how a motion plays (`CModel::m_nLoop`). */

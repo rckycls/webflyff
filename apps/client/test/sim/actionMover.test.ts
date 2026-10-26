@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { MoveReport, Vec3 } from '@flyffweb/protocol';
-import { ActionMover, wrapAngle } from '../../src/world/sim/ActionMover';
-import type { MoverBody } from '../../src/world/sim/ActionMover';
+import { ActionMover, motionFor, wrapAngle } from '../../src/world/sim/ActionMover';
+import type { MotionHand, MoverBody } from '../../src/world/sim/ActionMover';
 import { terrainGround } from '../../src/world/sim/collision';
-import { ActMsg, AniLoop, MAX_CORR_SIZE_45, Mti, ObjSta, ObjStaF } from '../../src/world/sim/constants';
+import { ActMsg, AniLoop, Ik3, MAX_CORR_SIZE_45, Mop, Mti, ObjSta, ObjStaF } from '../../src/world/sim/constants';
 
 /** A terrain's height under D3D x, z (null where there is none): these tests' grounds have no objects. */
 type GroundAt = (x: number, z: number) => number | null;
@@ -443,5 +443,339 @@ describe('ActionMover: the rest of the copied rules', () => {
       angle: 90, state: ObjSta.FMOVE, stateFlag: 0, motion: Mti.RUN, motionEx: -1, loop: AniLoop.LOOP, motionOption: 0,
       tick: 123n,
     });
+  });
+});
+
+/** The fists' attack speed of a level 1 Vagrant with 15 DEX (`attackSpeed` of `params.ts`; plan-header's reference). */
+const FISTS_SPEED = Math.fround(0.8416128754615784);
+
+/** A player body's hand holding a one-handed sword (the Wooden Sword's `IK3_SWD`, `HD_ONE`). */
+const SWORD: MotionHand = { kind3: Ik3.SWD, twoHanded: false, dual: false, master: false, psykeeper: false };
+
+/**
+ * A player (object 1) at the origin facing north and an Aibatt (object 2) 2 m east of it, each finding the other as
+ * `prj.GetMover` would; both would swing at the fists' speed (only the player does: `ProcessAniSpeed`).
+ */
+function fight(): { player: ActionMover; monster: ActionMover; byId: Map<number, ActionMover> } {
+  const player = mover(0, [0, 0, 0], { isPlayer: true });
+  const monster = mover(0, [2, 0, 0]);
+  const byId = new Map([[1, player], [2, monster]]);
+  for (const act of [player, monster]) {
+    act.findMover = (id) => byId.get(id);
+    act.attackSpeed = () => FISTS_SPEED;
+  }
+  return { player, monster, byId };
+}
+
+describe('ActionMover: attacks, damage and death', () => {
+  it('ATK1 swings at its target: OBJSTA_ATK1, the combat flag and MTI_ATK1, a one-handed sword\'s 223', () => {
+    const { player } = fight();
+    expect(player.sendActMsg(ActMsg.ATK1, 2)).toBe(true);
+    expect(player.state).toBe(ObjSta.STAND | ObjSta.ATK1);
+    expect(player.stateFlag).toBe(ObjStaF.COMBAT);
+    expect(player.motion).toBe(Mti.ATK1);
+    expect(player.loop).toBe(AniLoop.ONE_PLAY);
+    expect(player.motionOption).toBe(Mop.SWDFORCE | Mop.NO_TRANS);
+    expect(motionFor(player.motion, SWORD, player.stateFlag, player.motionOption)).toBe(223);
+    // it faces the target, 2 m east (GetDegree), and swings at its attack speed
+    expect(player.body.angle).toBe(90);
+    expect(player.targetId).toBe(2);
+    expect(player.aniSpeed).toBe(FISTS_SPEED);
+    // while it swings, another swing is refused (0: OnMeleeAttack keeps it), and so are moves and turns
+    expect(player.sendActMsg(ActMsg.ATK2, 2)).toBe(false);
+    expect(player.state & ObjSta.ATK_ALL).toBe(ObjSta.ATK1);
+    expect(player.sendActMsg(ActMsg.FORWARD)).toBe(false);
+    expect(player.sendActMsg(ActMsg.LTURN)).toBe(false);
+    expect(player.state).toBe(ObjSta.STAND | ObjSta.ATK1);
+  });
+
+  it('ATK refuses a target out of view or dead, clears a flinch and is refused in any other damage state', () => {
+    const { player, monster } = fight();
+    expect(player.sendActMsg(ActMsg.ATK1, 99)).toBe(false);
+    expect(player.state).toBe(0);
+    monster.sendActMsg(ActMsg.DIE, ActMsg.DAMAGE, 1);
+    expect(player.sendActMsg(ActMsg.ATK1, 2)).toBe(false);
+    expect(player.stateFlag).toBe(0);
+    // a flinch ends for the swing (ActionMoverMsg.cpp:640-641)
+    const fresh = fight();
+    fresh.player.setDamaged();
+    expect(fresh.player.state & ObjSta.DMG_ALL).toBe(ObjSta.DMG);
+    expect(fresh.player.sendActMsg(ActMsg.ATK1, 2)).toBe(true);
+    expect(fresh.player.state).toBe(ObjSta.STAND | ObjSta.ATK1);
+    // a knock-back, or death, refuses it (:642-644)
+    fresh.monster.sendActMsg(ActMsg.DIE, ActMsg.DAMAGE_FORCE, 1);
+    expect(fresh.monster.sendActMsg(ActMsg.ATK1, 1)).toBe(false);
+    expect(fresh.monster.state).toBe(ObjSta.DMG_FLY);
+  });
+
+  it('calls onHit as the model passes a hit frame, but not while paused, and not at a target dead with no HP', () => {
+    const { player, monster } = fight();
+    let hit = -1;
+    player.isAttrHit = () => hit;
+    player.isEndFrame = () => false;
+    const hits: [number, number][] = [];
+    player.onHit = (index, state) => hits.push([index, state]);
+    player.sendActMsg(ActMsg.ATK3, 2);
+    player.step();
+    expect(hits).toEqual([]);
+    hit = 1;
+    player.step();
+    expect(hits).toEqual([[1, ObjSta.ATK3]]);
+    // OnAttackMelee pauses a player's model 5 steps; each step counts one off and tests no hit (ActionMoverState.cpp:953-1031)
+    player.pause(5);
+    for (let left = 4; left >= 0; left--) {
+      player.step();
+      expect(player.paused).toBe(left);
+    }
+    expect(hits).toHaveLength(1);
+    player.step();
+    expect(hits).toHaveLength(2);
+    // IsLive (Mover.h:1222): a dead target with HP left is still hit, one with none is not
+    monster.sendActMsg(ActMsg.DIE, ActMsg.DAMAGE, 1);
+    monster.hitPoint = () => 3;
+    player.step();
+    expect(hits).toHaveLength(3);
+    monster.hitPoint = () => 0;
+    player.step();
+    expect(hits).toHaveLength(3);
+    // a new motion ends a pause (SetMotion loads it: InitAnimate, Model.h:125-136)
+    player.pause(5);
+    player.sendActMsg(ActMsg.DIE, ActMsg.DAMAGE, 2);
+    expect(player.paused).toBe(0);
+  });
+
+  it('ends the swing at its last frame and says so, still testing the hit in that step', () => {
+    const { player } = fight();
+    let ended = false;
+    let hit = -1;
+    player.isEndFrame = () => ended;
+    player.isAttrHit = () => hit;
+    const hits: number[] = [];
+    const ends: number[] = [];
+    player.onHit = (index) => hits.push(index);
+    player.onAttackEnd = (state) => ends.push(state);
+    player.sendActMsg(ActMsg.ATK2, 2);
+    player.step();
+    expect(ends).toEqual([]);
+    ended = true;
+    hit = 0;
+    player.step();
+    expect(ends).toEqual([ObjSta.ATK2]);
+    expect(hits).toEqual([0]);
+    expect(player.state).toBe(ObjSta.STAND);
+    // the next step stands, at speed 1 again
+    hit = -1;
+    player.step();
+    expect(player.aniSpeed).toBe(1);
+    expect(player.motion).toBe(Mti.STAND);
+  });
+
+  it('a busy mover keeps a MELEE_ATTACK and swings it as its swing ends (OnMeleeAttack, OnEndAttackState)', () => {
+    const { monster, byId } = fight();
+    let ended = false;
+    monster.isEndFrame = () => ended;
+    const ends: number[] = [];
+    monster.onAttackEnd = (state) => ends.push(state);
+    expect(monster.meleeAttack(ActMsg.ATK1, 1)).toBe(true);
+    expect(monster.meleeAttack(ActMsg.ATK1, 1)).toBe(false);
+    monster.step();
+    const started = monster.motionSets;
+    ended = true;
+    monster.step();
+    // the kept swing starts as the first ends: the same motion, set again
+    expect(ends).toEqual([ObjSta.ATK1]);
+    expect(monster.state & ObjSta.ATK_ALL).toBe(ObjSta.ATK1);
+    expect(monster.motion).toBe(Mti.ATK1);
+    expect(monster.motionSets).toBe(started + 1);
+    monster.step();
+    expect(ends).toEqual([ObjSta.ATK1, ObjSta.ATK1]);
+    expect(monster.state & ObjSta.ATK_ALL).toBe(0);
+    // a kept swing whose target left is dropped and the next one swings (ActionMover.cpp:39-56)
+    const other = mover(0, [0, 0, 2]);
+    byId.set(3, other);
+    ended = false;
+    monster.meleeAttack(ActMsg.ATK1, 1);
+    monster.meleeAttack(ActMsg.ATK2, 1);
+    monster.meleeAttack(ActMsg.ATK3, 3);
+    byId.delete(1);
+    ended = true;
+    monster.step();
+    expect(monster.state & ObjSta.ATK_ALL).toBe(ObjSta.ATK3);
+    expect(monster.targetId).toBe(3);
+    // a message this copy does not take (a special attack, OBJMSG_SP_ATK1 33) is not kept to block the rest
+    const OBJMSG_SP_ATK1 = 33;
+    expect(monster.meleeAttack(OBJMSG_SP_ATK1, 3)).toBe(false);
+    monster.step();
+    expect(monster.state & ObjSta.ATK_ALL).toBe(0);
+  });
+
+  it('setDamaged flinches a standing mover (MTI_DMG1 + random(2)), but plays nothing while it attacks', () => {
+    const { player, monster } = fight();
+    monster.rand = () => 7; // rand() % 2 = 1
+    monster.step();
+    monster.setDamaged();
+    expect(monster.state).toBe(ObjSta.STAND | ObjSta.DMG);
+    expect(monster.motion).toBe(Mti.DMG2);
+    expect(monster.loop).toBe(AniLoop.ONE_PLAY);
+    monster.step(); // the flinch ends with its motion
+    expect(monster.state).toBe(ObjSta.STAND);
+    player.sendActMsg(ActMsg.ATK1, 2);
+    const sets = player.motionSets;
+    player.setDamaged();
+    expect(player.motion).toBe(Mti.ATK1);
+    expect(player.motionSets).toBe(sets);
+    expect(player.state & ObjSta.ATK_ALL).toBe(ObjSta.ATK1);
+    // Neuz marks the hit all the same: SetState comes before the test (MoverAttack.cpp:2036-2049)
+    expect(player.state & ObjSta.DMG_ALL).toBe(ObjSta.DMG);
+    // a mover knocked flying is left alone (:2018-2019)
+    const flying = fight();
+    flying.monster.sendActMsg(ActMsg.DIE, ActMsg.DAMAGE_FORCE, 1);
+    const flySets = flying.monster.motionSets;
+    flying.monster.setDamaged();
+    expect(flying.monster.state).toBe(ObjSta.DMG_FLY);
+    expect(flying.monster.motionSets).toBe(flySets);
+  });
+
+  it('DIE with DAMAGE or 0 lies dead in MTI_DIE1, held on its last frame', () => {
+    for (const how of [ActMsg.DAMAGE, 0]) {
+      const { player, monster } = fight();
+      player.sendActMsg(ActMsg.ATK1, 2);
+      monster.sendActMsg(ActMsg.FORWARD);
+      monster.step(FLAT);
+      expect(monster.sendActMsg(ActMsg.DIE, how, 1)).toBe(true);
+      expect(monster.state).toBe(ObjSta.DEAD);
+      expect(monster.motion).toBe(Mti.DIE1);
+      expect(monster.loop).toBe(AniLoop.CONT);
+      expect(monster.delta[0]).toBe(0);
+      const at = [...monster.body.pos];
+      steps(monster, 30, () => 0);
+      expect(monster.body.pos).toEqual(at);
+      expect(monster.state).toBe(ObjSta.DEAD);
+      expect(monster.motion).toBe(Mti.DIE1);
+      // the dead state keeps the last frame however the model was left (ActionMoverState.cpp:532-533)
+      monster.loop = AniLoop.LOOP;
+      monster.step(FLAT);
+      expect(monster.loop).toBe(AniLoop.CONT);
+      // the dead neither move, turn, stand nor swing
+      expect(monster.sendActMsg(ActMsg.FORWARD)).toBe(false);
+      expect(monster.sendActMsg(ActMsg.LTURN)).toBe(false);
+      expect(monster.sendActMsg(ActMsg.STAND)).toBe(false);
+      expect(monster.sendActMsg(ActMsg.ATK1, 1)).toBe(false);
+      expect(monster.state).toBe(ObjSta.DEAD);
+      // dying ends a swing
+      expect(player.sendActMsg(ActMsg.DIE, how, 2)).toBe(true);
+      expect(player.state).toBe(ObjSta.DEAD);
+      expect(player.motion).toBe(Mti.DIE1);
+    }
+  });
+
+  it('DIE with DAMAGE_FORCE knocks the mover flying the way the attacker faces, then down, then dead', () => {
+    const { player, monster } = fight();
+    player.sendActMsg(ActMsg.ATK1, 2); // faces east
+    steps(monster, 3, () => 0);
+    expect(monster.sendActMsg(ActMsg.DIE, ActMsg.DAMAGE_FORCE, 1)).toBe(true);
+    expect(monster.state).toBe(ObjSta.DMG_FLY);
+    expect(monster.motion).toBe(Mti.DMGFLY);
+    expect(monster.loop).toBe(AniLoop.CONT);
+    // DoDamageFly( 90, 145, 0.25 ) (ActionMover.cpp:446-454): up by -cos(145) * 0.25, east by sin(145) * 0.25 a step
+    expect(monster.delta[1]).toBe(Math.fround(0.20478801429271698));
+    const x0 = monster.body.pos[0];
+    const seen: number[] = [];
+    let flown = 0;
+    for (let i = 0; i < 200 && monster.state !== ObjSta.DEAD; i++) {
+      if (monster.state === ObjSta.DMG_FLY) flown++;
+      monster.step(FLAT);
+      if (seen.at(-1) !== monster.state) seen.push(monster.state);
+    }
+    // aloft with no friction, down on the ground, then dead: it has no HP. The step that finds it landed moves it no more.
+    expect(seen).toEqual([ObjSta.DMG_FLY, ObjSta.DMG_DIE, ObjSta.DEAD]);
+    near(monster.body.pos[0] - x0, (flown - 1) * 0.1433941125869751);
+    near(monster.body.pos[2], 0);
+    expect(monster.motion).toBe(Mti.DMGDIE);
+    const at = [...monster.body.pos];
+    steps(monster, 30, () => 0);
+    expect(monster.body.pos[0]).toBe(at[0]);
+    expect(monster.body.pos[1]).toBe(0);
+  });
+
+  it('a mover knocked down with HP left gets up (OBJSTA_DMG_LIVE) and stands', () => {
+    const { monster } = fight();
+    monster.hitPoint = () => 40;
+    monster.sendActMsg(ActMsg.DIE, ActMsg.DAMAGE_FORCE, 1);
+    const seen: number[] = [];
+    for (let i = 0; i < 200 && monster.state !== ObjSta.STAND; i++) {
+      monster.step(FLAT);
+      if (seen.at(-1) !== monster.state) seen.push(monster.state);
+    }
+    expect(seen).toEqual([ObjSta.DMG_FLY, ObjSta.DMG_DIE, ObjSta.DMG_LIVE, 0, ObjSta.STAND]);
+    expect(monster.motion).toBe(Mti.STAND);
+  });
+
+  it('a player swings at its attack speed and a monster at 1.0, as ProcessAniSpeed sets them', () => {
+    const { player, monster } = fight();
+    monster.sendActMsg(ActMsg.ATK1, 1);
+    expect(monster.aniSpeed).toBe(1);
+    monster.isEndFrame = () => false;
+    monster.step();
+    expect(monster.aniSpeed).toBe(1);
+    expect(monster.state & ObjSta.ATK_ALL).toBe(ObjSta.ATK1);
+    player.sendActMsg(ActMsg.ATK1, 2);
+    expect(player.aniSpeed).toBe(FISTS_SPEED);
+    player.step(); // the swing ends at once: no model plays it
+    expect(player.aniSpeed).toBe(FISTS_SPEED);
+    expect(player.state & ObjSta.ATK_ALL).toBe(0);
+    player.step();
+    expect(player.aniSpeed).toBe(1);
+  });
+
+  it('MODE_COMBAT sets the combat flag and the standing motion again, once', () => {
+    const act = mover(0);
+    act.step();
+    const sets = act.motionSets;
+    expect(act.sendActMsg(ActMsg.MODE_COMBAT)).toBe(true);
+    expect(act.stateFlag).toBe(ObjStaF.COMBAT);
+    expect(act.motion).toBe(Mti.STAND);
+    // m_dwMotion = -1 first, so that the weapon's standing motion is loaded (ActionMoverMsg.cpp:1018-1019)
+    expect(act.motionSets).toBe(sets + 1);
+    expect(act.sendActMsg(ActMsg.MODE_COMBAT)).toBe(false);
+    const sitting = mover(0);
+    sitting.sendActMsg(ActMsg.SITDOWN);
+    expect(sitting.sendActMsg(ActMsg.MODE_COMBAT)).toBe(false);
+    expect(sitting.stateFlag).toBe(ObjStaF.SIT);
+  });
+});
+
+describe('motionFor', () => {
+  const hand = (kind3: number, more: Partial<MotionHand> = {}): MotionHand =>
+    ({ kind3, twoHanded: false, dual: false, master: false, psykeeper: false, ...more });
+  const atk1 = (h: MotionHand | null, stateFlag: number = ObjStaF.COMBAT, option = 0): number =>
+    motionFor(Mti.ATK1, h, stateFlag, option);
+
+  it('adds the weapon set of a player body in combat (CMover::SetMotion, Mover.cpp:4822-4902)', () => {
+    expect(atk1(hand(Ik3.HAND))).toBe(223);
+    expect(atk1(hand(Ik3.SWD))).toBe(223);
+    expect(atk1(hand(Ik3.SWD, { twoHanded: true }))).toBe(823);
+    expect(atk1(hand(Ik3.AXE))).toBe(523);
+    expect(atk1(hand(Ik3.AXE, { twoHanded: true }))).toBe(823);
+    expect(atk1(hand(Ik3.STAFF))).toBe(623);
+    expect(atk1(hand(Ik3.CHEERSTICK))).toBe(423);
+    expect(atk1(hand(Ik3.KNUCKLEHAMMER))).toBe(723);
+    expect(atk1(hand(Ik3.WAND))).toBe(323);
+    expect(atk1(hand(Ik3.WAND, { psykeeper: true }))).toBe(2223);
+    expect(atk1(hand(Ik3.YOYO))).toBe(2379);
+    expect(atk1(hand(Ik3.BOW))).toBe(2351);
+    expect(atk1(hand(Ik3.SWD, { dual: true }))).toBe(923);
+    // the master bodies: no dual set, and a yoyo or bow is +200
+    expect(atk1(hand(Ik3.YOYO, { master: true, dual: true }))).toBe(223);
+    expect(atk1(hand(Ik3.BOW, { master: true }))).toBe(223);
+  });
+
+  it('adds nothing out of combat, for MOP_FIXED, or for a monster or NPC', () => {
+    expect(atk1(hand(Ik3.SWD), 0)).toBe(Mti.ATK1);
+    expect(atk1(hand(Ik3.SWD), ObjStaF.COMBAT | ObjStaF.WALK)).toBe(223);
+    expect(atk1(hand(Ik3.SWD), ObjStaF.COMBAT, Mop.FIXED)).toBe(Mti.ATK1);
+    expect(atk1(null)).toBe(Mti.ATK1);
+    expect(motionFor(Mti.STAND, hand(Ik3.HAND), ObjStaF.COMBAT)).toBe(200);
+    expect(motionFor(Mti.DIE1, hand(Ik3.HAND), ObjStaF.COMBAT)).toBe(208);
   });
 });

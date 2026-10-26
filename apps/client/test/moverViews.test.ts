@@ -2,17 +2,19 @@ import {
   AnimationClip, AnimationMixer, Bone, BoxGeometry, BufferAttribute, BufferGeometry, Group, Mesh, MeshBasicMaterial,
   NumberKeyframeTrack, Object3D, Raycaster, Scene, Skeleton, SkinnedMesh, Vector3,
 } from 'three';
+import type { AnimationAction } from 'three';
 import { describe, expect, it, vi } from 'vitest';
 import type { Mock } from 'vitest';
 import { toWebPosition } from '@flyffweb/formats';
-import type { WebItemProp } from '@flyffweb/formats';
+import type { JobProp, MotionEvents, WebItemProp } from '@flyffweb/formats';
 import { geometryBytes, loopMotion } from '@flyffweb/scene';
 import type { AssembledCharacter, HeldSlot, LoopedMotion, ModelBox } from '@flyffweb/scene';
 import { MoverViews } from '../src/world/render/MoverViews';
 import type { MoverLook } from '../src/world/render/looks';
 import { loadHeldItems, loadMoverModel } from '../src/world/render/moverModels';
 import type { HeldItem } from '../src/world/render/moverModels';
-import { ActMsg, Mti } from '../src/world/sim/constants';
+import { ActMsg, Mti, ObjSta } from '../src/world/sim/constants';
+import { FISTS, attackSpeed } from '../src/world/sim/params';
 import type { Mover, WorldChanges } from '../src/world/WorldState';
 import { addedNpc, addedPlayer, gameDataOf, moverFrom } from './helpers/movers';
 
@@ -77,6 +79,22 @@ function motion(name: string): LoopedMotion {
   return loopMotion(new AnimationClip(name, -1, [new NumberKeyframeTrack('joint.position[x]', times, times)]));
 }
 
+/** A motion of `frames` frames at 30 fps (0.5 frames a step, as the client's motions are) whose blows land on `hit`. */
+function hitMotion(name: string, frames: number, hit: number[]): LoopedMotion {
+  const times = Array.from({ length: frames }, (_, i) => i / 30);
+  const clip = new AnimationClip(name, -1, [new NumberKeyframeTrack('joint.position[x]', times, times)]);
+  const events: MotionEvents = { hit, sound: [], quake: [], frames, perSlerp: 0.5 };
+  clip.userData.events = events;
+  return loopMotion(clip);
+}
+
+/** The Wooden Sword's row of itemProps.json. */
+const WOODEN_SWORD: WebItemProp = {
+  id: 21, name: 'Wooden Sword', kind1: 1, kind2: 2, kind3: 2, handed: 1, part: 10, abilityMin: 3, abilityMax: 4,
+  weaponType: 1, attackSpeed: Math.fround(0.085), attackRange: 1, destParams: [-1, -1, -1], adjParams: [-1, -1, -1],
+  sfxHit: 20, model: 'models/item_weaswowooden.glb', icon: 'ui/item/itm_weaswowooden.png',
+};
+
 /** Every motion of the look is `m<id>`. */
 const look: MoverLook = {
   skeleton: 'skeleton', parts: ['part'], motion: (id) => `m${id}`, hairColor: null, held: { right: null, left: null },
@@ -94,22 +112,30 @@ interface Rig {
   remove(objectId: number): void;
 }
 
+interface RigOptions {
+  /** The motion files of these keys; any other is `motion(key)`. */
+  motions?: Record<string, () => LoopedMotion>;
+  /** The item catalog, for the weapon sets. */
+  itemProps?: ReadonlyMap<number, WebItemProp>;
+}
+
 function rig(
   loadModel: (look: MoverLook, report: (message: string) => void) => Promise<AssembledCharacter | Object3D> =
     async () => fakeModel(),
   lookFor: (mover: Mover) => MoverLook | null = () => look,
   loadHeld: (look: MoverLook, report: (message: string) => void) => Promise<HeldItem[]> = async () => [],
+  options: RigOptions = {},
 ): Rig {
   const scene = new Scene();
   const load = vi.fn(loadModel);
   const overlay = { error: vi.fn(), addGpuBytes: vi.fn() };
   const motions = new Map<string, LoopedMotion>();
   const loadMotion = async (key: string) => {
-    const loaded = motion(key);
+    const loaded = options.motions?.[key]?.() ?? motion(key);
     motions.set(key, loaded);
     return loaded;
   };
-  const views = new MoverViews(scene, load, overlay, lookFor, loadMotion, loadHeld);
+  const views = new MoverViews(scene, load, overlay, lookFor, loadMotion, loadHeld, options.itemProps);
   const movers = new Map<number, Mover>();
   const sync = (changes: WorldChanges) => views.sync(changes, movers);
   return {
@@ -445,15 +471,203 @@ describe('MoverViews', () => {
       expect(sword.release).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe('attacks, hits and deaths', () => {
+    /** `JOB_VAGRANT`'s base of the attack speed (`Resource/propJob.inc:3`); `attackSpeed` reads no other column. */
+    const VAGRANT = { attackSpeed: 75 } as JobProp;
+    type FakeModel = ReturnType<typeof fakeModel>;
+
+    /** A rig whose models are kept, in the order the movers came. */
+    function armedRig(options: RigOptions = {}, lookFor?: (mover: Mover) => MoverLook | null): Rig & { models: FakeModel[] } {
+      const models: FakeModel[] = [];
+      const r = rig(async () => {
+        const model = fakeModel();
+        models.push(model);
+        return model;
+      }, lookFor, undefined, options);
+      return Object.assign(r, { models });
+    }
+
+    /** A bare-handed Vagrant (object 7) and an Aibatt (object 8) 2 m east of it, in view, each finding the other. */
+    function duel(r: Rig): { player: Mover; monster: Mover } {
+      const player = moverFrom(addedPlayer(7));
+      const monster = moverFrom(addedNpc(8, 21, {}, { pos: [102, 0, 100] }));
+      const byId = new Map([[7, player.act], [8, monster.act]]);
+      for (const m of [player, monster]) {
+        m.act.findMover = (id) => byId.get(id);
+        r.add(m);
+      }
+      return { player, monster };
+    }
+
+    /** A rules step of `movers` (`WorldState.step`), then the views' (`WorldScreen.step`), then a frame drawn. */
+    function stepAll(r: Rig, ...movers: Mover[]): void {
+      for (const m of movers) m.act.step();
+      r.views.step(r.movers);
+      r.views.update(r.movers, 1 / 60);
+    }
+
+    /** The action a model was last told to play. */
+    const lastAction = (clipAction: Mock): AnimationAction => clipAction.mock.results.at(-1)!.value as AnimationAction;
+
+    it('a player swings at its attack speed: the hit frame goes by on the 29th frame move and the swing ends on the 39th, on the 44th after a 5-step hit pause', async () => {
+      const speed = attackSpeed(VAGRANT, FISTS.attackSpeed, 1, 15).speed;
+      expect(speed).toBe(Math.fround(0.8416128754615784));
+      for (const pause of [0, 5]) {
+        // the bare hand's MTI_ATK1 in combat (+200): Mvr_male_AtkAtk1-01, 17 frames, the blow on frame 12 ([combat §2.5])
+        const r = armedRig({ motions: { m223: () => hitMotion('m223', 17, [12]) } });
+        const { player, monster } = duel(r);
+        await r.views.settled();
+        const clipAction = vi.spyOn(r.models[0]!.mixer, 'clipAction') as unknown as Mock;
+        player.act.attackSpeed = () => speed;
+        let now = 0;
+        const hits: number[] = [];
+        const ends: number[] = [];
+        // OnAttackMelee pauses a player's model (MoverActEvent.cpp:1693-1696)
+        player.act.onHit = () => {
+          hits.push(now);
+          if (pause > 0) player.act.pause(pause);
+        };
+        player.act.onAttackEnd = () => ends.push(now);
+        expect(player.act.sendActMsg(ActMsg.ATK1, 8)).toBe(true);
+        let passed = 0;
+        let ended = 0;
+        const timeScales = new Map<number, number>();
+        for (now = 1; now <= 60; now++) {
+          stepAll(r, player, monster);
+          // the swing's file comes in after the first step asked for it; that step's frame move is made up for
+          if (now === 1) await r.views.settled();
+          if (passed === 0 && player.act.isAttrHit() === 0) passed = now;
+          if (ended === 0 && (player.act.state & ObjSta.ATK_ALL) !== 0 && player.act.isEndFrame()) ended = now;
+          if (now >= 2 && now <= 40) timeScales.set(now, lastAction(clipAction).timeScale);
+        }
+        // Steps count from the one that starts the swing. `_ProcessStateAttack` reads the model before the step moves its
+        // frame (`CMover::Process`, Mover.cpp:3819-3862), so the rules see the hit and the end a step after the frame move.
+        expect(passed).toBe(29);
+        expect(hits).toEqual([30]);
+        expect(ended).toBe(39 + pause);
+        expect(ends).toEqual([40 + pause]);
+        // on screen the swing plays at the attack speed, and holds still while the model is paused; then it stands
+        expect(timeScales.get(29)).toBe(speed);
+        expect(timeScales.get(30)).toBe(pause > 0 ? 0 : speed);
+        expect(timeScales.get(34)).toBe(pause > 0 ? 0 : speed);
+        expect(timeScales.get(35)).toBe(speed);
+        await r.views.settled();
+        r.views.update(r.movers, 1 / 60);
+        expect(lastAction(clipAction).getClip().name).toBe('m200');
+        expect(lastAction(clipAction).timeScale).toBe(1);
+      }
+    });
+
+    it('a monster swings at speed 1 whatever its attack speed (ProcessAniSpeed, Mover.cpp:3141-3143)', async () => {
+      // Mvr_AiBatt_atk1: 52 frames, the blow on frame 21
+      const r = armedRig({ motions: { m23: () => hitMotion('m23', 52, [21]) } });
+      const { player, monster } = duel(r);
+      await r.views.settled();
+      monster.act.attackSpeed = () => 2;
+      let now = 0;
+      const hits: number[] = [];
+      const ends: number[] = [];
+      monster.act.onHit = () => hits.push(now);
+      monster.act.onAttackEnd = () => ends.push(now);
+      expect(monster.act.meleeAttack(ActMsg.ATK1, 7)).toBe(true);
+      for (now = 1; now <= 110; now++) {
+        stepAll(r, player, monster);
+        if (now === 1) await r.views.settled();
+        expect(monster.act.aniSpeed).toBe(1);
+      }
+      // half a frame a step: frame 21 at the 42nd frame move, past the last (51) at the 103rd
+      expect(hits).toEqual([43]);
+      expect(ends).toEqual([104]);
+    });
+
+    it('plays the weapon\'s motion set in combat: +200 bare-handed or with a one-handed sword, +800 two-handed, none for a monster', async () => {
+      const BIG_SWORD: WebItemProp = { ...WOODEN_SWORD, id: 22, name: 'Big Sword', handed: 2 };
+      const held = new Map<number, number | null>([[7, null], [9, 21], [10, 22]]);
+      const r = armedRig(
+        { itemProps: new Map([[21, WOODEN_SWORD], [22, BIG_SWORD]]) },
+        (m) => ({ ...look, held: { right: held.get(m.objectId) ?? null, left: null } }),
+      );
+      const { player, monster } = duel(r);
+      const one = moverFrom(addedPlayer(9));
+      const two = moverFrom(addedPlayer(10));
+      r.add(one);
+      r.add(two);
+      await r.views.settled();
+      const asked = r.models.map((model) => vi.spyOn(model.mixer, 'clipAction') as unknown as Mock);
+      // out of combat each plays the plain motion
+      expect(r.motions.has(`m${Mti.STAND}`)).toBe(true);
+      expect(r.motions.has('m200')).toBe(false);
+      for (const m of [player, one, two]) {
+        m.act.findMover = () => monster.act;
+        expect(m.act.sendActMsg(ActMsg.ATK1, 8)).toBe(true);
+      }
+      monster.act.findMover = () => player.act;
+      expect(monster.act.sendActMsg(ActMsg.ATK1, 7)).toBe(true);
+      stepAll(r, player, monster, one, two);
+      await r.views.settled();
+      r.views.update(r.movers, 1 / 60);
+      expect(asked.map((spy) => lastAction(spy).getClip().name)).toEqual(['m223', 'm23', 'm223', 'm823']);
+    });
+
+    it('a dead mover holds the last frame of MTI_DIE1', async () => {
+      const r = armedRig();
+      const npc = moverFrom(addedNpc(7, 21));
+      r.add(npc);
+      await r.views.settled();
+      expect(npc.act.sendActMsg(ActMsg.DIE, ActMsg.DAMAGE, 0)).toBe(true);
+      stepAll(r, npc);
+      await r.views.settled();
+      for (let i = 0; i < 90; i++) stepAll(r, npc);
+      expect(npc.act.state).toBe(ObjSta.DEAD);
+      expect(npc.act.motion).toBe(Mti.DIE1);
+      expect(npc.act.isEndFrame()).toBe(true);
+      // on screen: played once and stopped on its last frame (frame 30, x = 1), not blended back into its first
+      expect(r.models[0]!.root.getObjectByName('joint')!.position.x).toBeCloseTo(1, 6);
+    });
+
+    it('a swing set again as the last one ends plays again from its start', async () => {
+      const r = armedRig({ motions: { m23: () => hitMotion('m23', 17, [12]) } });
+      const { player, monster } = duel(r);
+      await r.views.settled();
+      let now = 0;
+      const hits: number[] = [];
+      monster.act.onHit = () => hits.push(now);
+      // the second is kept while the first plays (OnMeleeAttack), and starts as the first ends
+      monster.act.meleeAttack(ActMsg.ATK1, 7);
+      monster.act.meleeAttack(ActMsg.ATK1, 7);
+      for (now = 1; now <= 80; now++) {
+        stepAll(r, player, monster);
+        if (now === 1) await r.views.settled();
+      }
+      // at speed 1: the hit at the 24th frame move, the end at the 33rd; the second swing starts in step 34
+      expect(hits).toEqual([25, 58]);
+    });
+
+    it('says once that an attack motion has no hit frame', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        const r = armedRig(); // every motion: 31 frames, and no events (an older conversion)
+        const { player, monster } = duel(r);
+        await r.views.settled();
+        for (let swing = 0; swing < 2; swing++) {
+          expect(monster.act.meleeAttack(ActMsg.ATK1, 7)).toBe(true);
+          for (let now = 1; now <= 70; now++) {
+            stepAll(r, player, monster);
+            if (now === 1) await r.views.settled();
+          }
+          expect(monster.act.state & ObjSta.ATK_ALL).toBe(0);
+        }
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(warn.mock.calls[0]![0]).toMatch(/^motion m23: /);
+      } finally {
+        warn.mockRestore();
+      }
+    });
+  });
 });
 
 describe('loadHeldItems', () => {
-  /** The Wooden Sword's row of itemProps.json. */
-  const WOODEN_SWORD: WebItemProp = {
-    id: 21, name: 'Wooden Sword', kind1: 1, kind2: 2, kind3: 2, handed: 1, part: 10, abilityMin: 3, abilityMax: 4,
-    weaponType: 1, attackSpeed: Math.fround(0.085), attackRange: 1, destParams: [-1, -1, -1], adjParams: [-1, -1, -1],
-    sfxHit: 20, model: 'models/item_weaswowooden.glb', icon: 'ui/item/itm_weaswowooden.png',
-  };
   const YOYO: WebItemProp = { ...WOODEN_SWORD, id: 381, name: 'Itun', kind3: 11, model: 'models/item_weayoyiron.glb' };
   const data = gameDataOf({ itemProps: new Map([[21, WOODEN_SWORD], [381, YOYO]]) });
   const holding = (right: number | null, left: number | null = null): MoverLook => ({ ...look, held: { right, left } });

@@ -5,16 +5,20 @@
 //
 // The drawn pose is Neuz's `m_vScrPos` / `m_fScrAngle`: the own character is drawn where the rules have it, any other
 // mover follows its rules position a step behind, an eighth of the way per step (`CMover::Interpolate`), which smooths
-// the jumps a server correction makes. A model's motion goes on a frame per step as `CModel::FrameMove` does, and
-// `CActionMover`'s `IsEndFrame` asks it whether a one-play motion (sitting down, getting up) has played to its end.
+// the jumps a server correction makes. Each model keeps its frame of the motion the rules set as `CModel::FrameMove`
+// moves it, a step at a time at the mover's animation speed, held while the rules pause the model: `CActionMover`'s
+// `IsEndFrame` asks it whether a motion has played to its end (sitting down, a swing), and `IsAttrHit` whether a step
+// went past a hit frame of a swing. In combat a player plays its weapon's set of each motion (`motionFor`).
 
 import { attachHeld, geometryBytes } from '@flyffweb/scene';
 import type { AssembledCharacter, LoopedMotion, Overlay } from '@flyffweb/scene';
 import { toWebPosition } from '@flyffweb/formats';
-import type { Vec3 } from '@flyffweb/formats';
+import type { MotionEvents, Vec3, WebItemProp } from '@flyffweb/formats';
 import type { AnimationAction, Object3D, Raycaster, Scene } from 'three';
-import { Box3, CapsuleGeometry, Group, LoopOnce, LoopRepeat, Mesh, MeshLambertMaterial } from 'three';
-import { AniLoop } from '../sim/constants';
+import { AnimationClip, Box3, CapsuleGeometry, Group, LoopOnce, LoopRepeat, Mesh, MeshLambertMaterial } from 'three';
+import { motionFor } from '../sim/ActionMover';
+import type { MotionHand } from '../sim/ActionMover';
+import { AniLoop, Ik3 } from '../sim/constants';
 import { STEPS_PER_SECOND } from '../sim/stepper';
 import type { Mover, WorldChanges } from '../WorldState';
 import type { MoverLook } from './looks';
@@ -27,7 +31,21 @@ const BLEND_SECONDS = 20 / STEPS_PER_SECOND;
 /** The placeholder: a grey figure a little taller than a person, standing on its origin. */
 const PLACEHOLDER_HEIGHT = 1.8;
 const PLACEHOLDER_RADIUS = 0.3;
+/** `MI_MALE`, `MI_FEMALE` (`Resource/defineObj.h:954-955`): the player bodies, which play weapon sets. */
+const MI_MALE = 11;
+const MI_FEMALE = 12;
+/** `MI_DWARPETMAS`, `MI_CROWNIBLIS`, `MI_CROWNSHADE`, `MI_CROWNBUBBLE` (`defineObj.h:1167-1170`): the master bodies. */
+const MASTER_BODIES: ReadonlySet<number> = new Set([202, 203, 204, 205]);
+/** `II_WEA_HAN_HAND` (`Resource/defineItem.h:25`): the bare hand's item, held when the hand is empty. */
+const II_WEA_HAN_HAND = 11;
+/** `HD_TWO` (`Resource/defineAttribute.h:28`): a two-handed weapon. */
+const HD_TWO = 2;
+/** `PARTS_SHIELD` (`Resource/defineNeuz.h:35`): the slot of a left-hand item that is no weapon. */
+const PARTS_SHIELD = 11;
+/** `JOB_PSYCHIKEEPER`, its master and its hero (`Resource/defineJob.h:59,72,83`). */
+const PSYKEEPERS: ReadonlySet<number> = new Set([12, 22, 30]);
 
+const f32 = Math.fround;
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 const copy = (v: Vec3): Vec3 => [v[0], v[1], v[2]];
 
@@ -35,6 +53,73 @@ interface Clip {
   /** Null while loading, and for good once it failed. */
   motion: LoopedMotion | null;
   loading: boolean;
+}
+
+/**
+ * `CModel`'s frame of a motion (`Model.h:86-94`), as `FrameMove` moves it: `current` is `m_fFrameCurrent`, `old`
+ * `m_fFrameOld`, `endFrame` `m_bEndFrame`. `sets` is the rules' `motionSets` it belongs to: the next motion set starts
+ * a new one (`InitAnimate`, `Model.h:125-136`). The frame moves of the steps that went by while the motion's file
+ * loaded (its frame count and speed are in it) wait in `backlog`, as their speeds, and are made once it is in.
+ */
+interface ModelFrame {
+  sets: number;
+  current: number;
+  old: number;
+  endFrame: boolean;
+  backlog: number[];
+}
+
+const startFrame = (sets: number): ModelFrame => ({ sets, current: 0, old: -1, endFrame: false, backlog: [] });
+
+/**
+ * `CModel::FrameMove` (`Model.cpp:13-55`) once, at `speed` (`m_fAniSpeed`), for a motion of `events.frames` frames
+ * (`m_nFrameMax`) that moves `m_fPerSlerp` frames a step, cut to 3 decimals as `CModelObject::LoadMotion` does
+ * (`ModelObject.cpp:582`). A looping motion ends at its first wrap and goes round; any other stops on its last frame.
+ * The pause (`m_nPause`) is its caller's; `m_bSlow` comes from `MOP_HITSLOW`, which `__XSLOW1018` (not built) sets.
+ */
+function frameMove(frame: ModelFrame, events: MotionEvents, loop: number, speed: number): void {
+  const max = events.frames;
+  if (max === 0) return;
+  const perSlerp = f32(Math.trunc(f32(events.perSlerp * 1000)) / 1000);
+  frame.old = frame.current;
+  if (frame.old > max - 1) frame.old = f32(frame.old - max);
+  frame.current = f32(frame.current + f32(perSlerp * speed));
+  let n = Math.trunc(frame.current);
+  let slp = f32(frame.current - n);
+  if (frame.current > max - 1) {
+    frame.endFrame = true;
+    if (loop & AniLoop.LOOP) {
+      n %= max;
+    } else {
+      slp = 0;
+      n = max - 1;
+    }
+  }
+  frame.current = f32(n + slp);
+}
+
+/**
+ * `CMotion::IsAttrHit( fOldFrm, fNumFrm )` (`Bone.h:162-169`): the attribute of frame `(int)current` holds a hit
+ * frame `f` with `old < f <= current`; so a hit that one frame move jumps right over is missed, as in Neuz. The index
+ * of `f` in the motion's hit frames, or -1.
+ */
+function hitIndex(hits: readonly number[], old: number, current: number): number {
+  const o = f32(old);
+  const c = f32(current);
+  const at = Math.trunc(c);
+  return hits.findIndex((h) => {
+    const f = f32(h);
+    return Math.trunc(f) === at && o < f && f <= c;
+  });
+}
+
+/** The clip time of the model's frame `frame` (`m_fFrameCurrent`): between the key times of its frame and the next. */
+function timeOf(motion: LoopedMotion, frame: number): number {
+  if (motion.frames < 2) return 0;
+  const n = Math.min(Math.trunc(frame), motion.frames - 1);
+  const time = motion.frameTime(n);
+  const next = n + 1 < motion.frames ? motion.frameTime(n + 1) : motion.clip.duration;
+  return time + (frame - n) * (next - time);
 }
 
 interface View {
@@ -53,11 +138,11 @@ interface View {
   /** `m_vScrPos` (D3D) and `m_fScrAngle` (degrees): where the mover is drawn. */
   scrPos: Vec3;
   scrAngle: number;
-  /** The motion the rules set as last seen at a step (`m_dwMotion`, the option and the loop), and the steps it has played. */
-  motion: { id: number; option: number; loop: number } | null;
-  steps: number;
+  /** The model's frame of the motion the rules set (`CModel`'s), from the step its model came on. */
+  frame: ModelFrame;
+  /** The action playing on screen, and the rules' `motionSets` of the motion it was last started for. */
   action: AnimationAction | null;
-  actionKey: string | null;
+  played: number;
   gone: boolean;
 }
 
@@ -68,11 +153,21 @@ interface View {
  * with the game data; `loadMotion` gives a motion file, looped as the client loops it; `loadHeld` gives the items of a
  * look's hands (never rejecting: what it cannot have it says to `report` and leaves out). A model that throws as it is
  * put on screen is the placeholder too. Once disposed, nothing more is said on the overlay: it is the page's, and the
- * next entry's errors are listed there.
+ * next entry's errors are listed there. `itemProps` is the item catalog, which tells what a player's hands hold for its
+ * weapon's motion sets; without it every player plays the bare hand's (+200, a Vagrant's with or without a sword).
+ *
+ * The models' frames run at the rules' steps, exactly; what is drawn plays the same motion by the frame's time, at the
+ * mover's animation speed, still while the model is paused. A one-play motion stops on its last frame. A motion the
+ * rules set again (`motionSets`) starts again, but a looping one goes on as it was, as in Piece 3 (Neuz starts it again
+ * at each `ActionForceSet`, `MoverParam.cpp:3336-3338`).
  */
 export class MoverViews {
   private readonly views = new Map<number, View>();
   private readonly clips = new Map<string, Clip>();
+  /** The motions' clips played once, which end on their last frame (`once`). */
+  private readonly onceClips = new WeakMap<LoopedMotion, AnimationClip>();
+  /** The attack motions found with no hit frame, said once each. */
+  private readonly hitless = new Set<string>();
   /** Model and motion loads under way; each settles, never rejects. */
   private readonly pending = new Set<Promise<void>>();
   private readonly placeholderGeometry = new CapsuleGeometry(PLACEHOLDER_RADIUS, PLACEHOLDER_HEIGHT - 2 * PLACEHOLDER_RADIUS)
@@ -87,6 +182,7 @@ export class MoverViews {
     private readonly lookFor: (mover: Mover) => MoverLook | null,
     private readonly loadMotion: (key: string) => Promise<LoopedMotion>,
     private readonly loadHeld: (look: MoverLook, report: (message: string) => void) => Promise<HeldItem[]>,
+    private readonly itemProps: ReadonlyMap<number, WebItemProp> = new Map(),
   ) {}
 
   /** Drops the views of the movers that left, then makes one for each mover that came and is still in `movers`. */
@@ -103,24 +199,17 @@ export class MoverViews {
 
   /**
    * One rules step of the drawing side (`CMover::Process` after the rules, `Mover.cpp:3538`, `:3862`): the drawn pose
-   * follows (`Interpolate`), and each model's motion plays a frame on, or starts again where the rules set it anew.
+   * follows (`Interpolate`), and each model's frame moves on, from the first frame of a motion the rules set anew.
    */
   step(movers: ReadonlyMap<number, Mover>): void {
     for (const view of this.views.values()) {
       if (movers.get(view.mover.objectId) !== view.mover) continue;
       interpolate(view);
-      const { motion, motionOption, loop } = view.mover.act;
-      const seen = view.motion;
-      if (seen === null || seen.id !== motion || seen.option !== motionOption || seen.loop !== loop) {
-        // CMover::SetMotion starts the model's motion at frame 0 (m_bEndFrame = FALSE); this step's FrameMove plays one on
-        view.motion = { id: motion, option: motionOption, loop };
-        view.steps = 1;
-        // its file is asked for now, to be in by the time the motion is drawn (`update`) or asked about (`isEndFrame`)
-        const key = view.model === null ? null : (view.look?.motion(motion) ?? null);
-        if (key !== null) this.clip(key);
-      } else {
-        view.steps++;
-      }
+      if (view.model === null) continue;
+      const act = view.mover.act;
+      // CMover::SetMotion loaded a motion: the model starts it at frame 0 (InitAnimate), and this step moves it on
+      if (view.frame.sets !== act.motionSets) view.frame = startFrame(act.motionSets);
+      this.moveFrame(view);
     }
   }
 
@@ -201,8 +290,8 @@ export class MoverViews {
     const view: View = {
       mover, look: this.lookFor(mover), holder, model: null, held: [], head: null, bytes: 0,
       // ADD_OBJ ends with InitInterpolation (ObjSerializeOpt.cpp:764): a new mover is drawn where it is
-      scrPos: copy(mover.act.body.pos), scrAngle: mover.act.body.angle, motion: null, steps: 0, action: null, actionKey: null,
-      gone: false,
+      scrPos: copy(mover.act.body.pos), scrAngle: mover.act.body.angle, frame: startFrame(mover.act.motionSets),
+      action: null, played: -1, gone: false,
     };
     this.views.set(mover.objectId, view);
     const { look } = view;
@@ -223,7 +312,7 @@ export class MoverViews {
       }
       try {
         // the motion it is in, so that it is drawn in it from the first frame
-        const key = look.motion(mover.act.motion);
+        const key = this.keyOf(view);
         if (key !== null) await this.clip(key).ready;
         if (view.gone) {
           if ('release' in loaded) loaded.release();
@@ -252,9 +341,10 @@ export class MoverViews {
     view.bytes = bytes;
     view.model = model;
     const act = view.mover.act;
-    view.motion = { id: act.motion, option: act.motionOption, loop: act.loop };
-    view.steps = 0;
+    // the model comes on at the first frame of the motion the rules have set
+    view.frame = startFrame(act.motionSets);
     act.isEndFrame = () => this.isEndFrame(view);
+    act.isAttrHit = () => this.isAttrHit(view);
     this.play(view);
     model.mixer.update(0);
   }
@@ -294,8 +384,8 @@ export class MoverViews {
     view.model = null;
     view.head = null;
     view.action = null;
-    view.actionKey = null;
     view.mover.act.isEndFrame = () => true;
+    view.mover.act.isAttrHit = () => -1;
     if ('release' in loaded) loaded.release();
   }
 
@@ -316,57 +406,164 @@ export class MoverViews {
       view.held = [];
       this.overlay.addGpuBytes(-view.bytes);
       view.mover.act.isEndFrame = () => true;
+      view.mover.act.isAttrHit = () => -1;
       view.model = null;
     }
   }
 
   /**
-   * `m_pModel->IsEndFrame()` (`Model.h:142`): whether the motion the rules set has played past its last frame
-   * (`CModel::FrameMove`, `Model.cpp:36-50`, a looping one at its first wrap). False right after the rules set it
-   * (`SetMotion` clears the flag) and while its file loads; true for a motion the model cannot play.
+   * The motion file the model plays for the motion the rules set: the weapon's set of it (`motionFor`), as the look
+   * names it; null for a mover with no motions.
    */
-  private isEndFrame(view: View): boolean {
+  private keyOf(view: View): string | null {
     const act = view.mover.act;
-    const seen = view.motion;
-    if (seen === null || seen.id !== act.motion || seen.option !== act.motionOption || seen.loop !== act.loop) return false;
-    const key = view.look?.motion(act.motion) ?? null;
-    if (key === null) return true;
-    const clip = this.clip(key);
-    if (clip.loading) return false;
-    if (clip.motion === null || clip.motion.frames < 2) return true;
-    return view.steps > clip.motion.frameTime(clip.motion.frames - 1) * STEPS_PER_SECOND;
+    return view.look?.motion(motionFor(act.motion, this.handOf(view), act.stateFlag, act.motionOption)) ?? null;
   }
 
   /**
-   * Starts the motion the rules set, once its file is in: looping for `ANILOOP_LOOP`, else once and held at its last
-   * frame. It blends in over 20 steps from the last one, unless the option says not to (`CMover::SetMotion`,
-   * `Mover.cpp:4924-4925`). A motion the model has no file for keeps the last one playing.
+   * What `motionFor` reads of a mover's hand (`CMover::SetMotion`, `Mover.cpp:4821-4864`), for a player of the two
+   * bodies or the four master bodies: the right hand's item (`GetActiveHandItemProp`), or the bare hand's row when it
+   * is empty or the catalog lacks it; dual when the left hand holds a weapon, not a shield (`IsDualWeapon`,
+   * `Mover.cpp:3059-3081`; a left item the catalog lacks counts as none). Null for any other mover.
+   */
+  private handOf(view: View): MotionHand | null {
+    const { mover, look } = view;
+    const { index } = mover.added;
+    const master = MASTER_BODIES.has(index);
+    if (look === null || !mover.added.isPlayer || (index !== MI_MALE && index !== MI_FEMALE && !master)) return null;
+    const { right, left } = look.held;
+    const item = (right === null ? undefined : this.itemProps.get(right)) ?? this.itemProps.get(II_WEA_HAN_HAND);
+    const leftItem = left === null ? undefined : this.itemProps.get(left);
+    return {
+      kind3: item?.kind3 ?? Ik3.HAND,
+      twoHanded: item?.handed === HD_TWO,
+      dual: right !== null && leftItem !== undefined && leftItem.part !== PARTS_SHIELD,
+      master,
+      psykeeper: PSYKEEPERS.has(mover.added.player?.job ?? -1),
+    };
+  }
+
+  /**
+   * The model's frame move of this step (`pModel->FrameMove( &vPos, m_fAniSpeed )`, `Mover.cpp:3862`), none while the
+   * rules pause the model (`m_nPause`, `Model.cpp:15-16`). While the motion's file loads the move waits (`ModelFrame`).
+   * The walk's and the turn's speed factor (`__AI_0509`, :3828-3861) is left out with the rest of Piece 3's walking.
+   */
+  private moveFrame(view: View): void {
+    const act = view.mover.act;
+    if (act.paused > 0) return;
+    const key = this.keyOf(view);
+    if (key === null) return;
+    const clip = this.clip(key);
+    if (clip.loading) {
+      view.frame.backlog.push(act.aniSpeed);
+      return;
+    }
+    if (clip.motion === null) return;
+    this.catchUp(view, clip.motion);
+    frameMove(view.frame, clip.motion.events, act.loop, act.aniSpeed);
+  }
+
+  /** Makes the frame moves that waited for the motion's file. */
+  private catchUp(view: View, motion: LoopedMotion): void {
+    const { frame } = view;
+    if (frame.backlog.length === 0) return;
+    for (const speed of frame.backlog) frameMove(frame, motion.events, view.mover.act.loop, speed);
+    frame.backlog = [];
+  }
+
+  /**
+   * `m_pModel->IsEndFrame()` (`Model.h:142`): whether the motion the rules set has played past its last frame
+   * (`CModel::FrameMove`, `Model.cpp:36-53`, a looping one at its first wrap). False right after the rules set it
+   * (`SetMotion` clears the flag) and while its file loads; true for a motion the model cannot play.
+   */
+  private isEndFrame(view: View): boolean {
+    if (view.frame.sets !== view.mover.act.motionSets) return false;
+    const key = this.keyOf(view);
+    if (key === null) return true;
+    const clip = this.clip(key);
+    if (clip.loading) return false;
+    if (clip.motion === null) return true;
+    this.catchUp(view, clip.motion);
+    return view.frame.endFrame;
+  }
+
+  /**
+   * `m_pModel->IsAttrHit()` (`ModelObject.h:280-286`): the hit frame of the motion that the model's last frame move went
+   * past (`hitIndex`), from frame -1 to 0 for a motion set since (`InitAnimate`); -1 for none, and while the file loads.
+   * The rules ask it during a swing only, so a motion with no hit frame at all is an attack motion of a conversion from
+   * before hit frames, or one with no blow, which look the same: that is said once.
+   */
+  private isAttrHit(view: View): number {
+    const key = this.keyOf(view);
+    if (key === null) return -1;
+    const motion = this.clip(key).motion;
+    if (motion === null) return -1;
+    const { hit } = motion.events;
+    if (hit.length === 0) {
+      if (!this.hitless.has(key)) {
+        this.hitless.add(key);
+        console.warn(`motion ${key}: an attack motion with no hit frame (converted before hit frames, or it has no blow)`);
+      }
+      return -1;
+    }
+    if (view.frame.sets !== view.mover.act.motionSets) return hitIndex(hit, -1, 0);
+    this.catchUp(view, motion);
+    return hitIndex(hit, view.frame.old, view.frame.current);
+  }
+
+  /**
+   * Plays the motion the rules set, once its file is in: looping for `ANILOOP_LOOP`, else once and held at its last
+   * frame (`once`). A new motion, or one set again that does not loop, starts at the model's frame, and blends in over
+   * 20 steps from the last one unless the option says not to (`CMover::SetMotion`, `Mover.cpp:4924-4925`). It plays at
+   * the mover's animation speed, and holds still while the model is paused. A motion the model has no file for keeps
+   * the last one playing.
    */
   private play(view: View): void {
     const model = view.model;
+    const key = this.keyOf(view);
+    if (model === null || key === null) return;
+    const motion = this.clip(key).motion;
+    if (motion === null) return;
     const act = view.mover.act;
-    const key = view.look?.motion(act.motion) ?? null;
-    if (model === null || key === null || key === view.actionKey) return;
-    const clip = this.clip(key);
-    if (clip.motion === null) return;
-    const action = model.mixer.clipAction(clip.motion.clip);
-    if (act.loop === AniLoop.LOOP && clip.motion.frames >= 2) {
-      action.setLoop(LoopRepeat, Infinity);
-    } else {
-      action.setLoop(LoopOnce, 1);
-      action.clampWhenFinished = true;
-    }
-    const last = view.action;
-    action.reset().play();
-    if (last !== null && last !== action) {
-      if (act.motionOption & MOP_NO_TRANS) last.stop();
-      else {
-        action.fadeIn(BLEND_SECONDS);
-        last.fadeOut(BLEND_SECONDS);
+    const looping = act.loop === AniLoop.LOOP && motion.frames >= 2;
+    const action = model.mixer.clipAction(looping || motion.frames < 2 ? motion.clip : this.once(motion));
+    if (action !== view.action || (view.played !== act.motionSets && !looping)) {
+      if (looping) {
+        action.setLoop(LoopRepeat, Infinity);
+      } else {
+        action.setLoop(LoopOnce, 1);
+        action.clampWhenFinished = true;
       }
+      const last = view.action;
+      action.reset().play();
+      if (view.frame.sets === act.motionSets) {
+        this.catchUp(view, motion);
+        action.time = timeOf(motion, view.frame.current);
+      }
+      if (last !== null && last !== action) {
+        if (act.motionOption & MOP_NO_TRANS) last.stop();
+        else {
+          action.fadeIn(BLEND_SECONDS);
+          last.fadeOut(BLEND_SECONDS);
+        }
+      }
+      view.action = action;
     }
-    view.action = action;
-    view.actionKey = key;
+    view.played = act.motionSets;
+    action.timeScale = act.paused > 0 ? 0 : act.aniSpeed;
+  }
+
+  /**
+   * The clip of a motion played once, which stops on its last frame as `CModel::FrameMove` stops it (`Model.cpp:45-53`):
+   * the motion's tracks, ended at the last frame, before the way back to frame 0 that `loopMotion` adds for looping.
+   */
+  private once(motion: LoopedMotion): AnimationClip {
+    let clip = this.onceClips.get(motion);
+    if (clip === undefined) {
+      clip = new AnimationClip(motion.clip.name, motion.frameTime(motion.frames - 1), motion.clip.tracks);
+      this.onceClips.set(motion, clip);
+    }
+    return clip;
   }
 
   /** A motion file by key, loaded once; a failure is said once on the overlay and kept, so it is not asked for again. */

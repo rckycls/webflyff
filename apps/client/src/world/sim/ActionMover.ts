@@ -1,8 +1,8 @@
 import type { MoveReport, Vec3 } from '@flyffweb/protocol';
 import { NO_CEILING, collideMove, overHeight, processUnderCollision } from './collision';
 import type { Ground } from './collision';
-import { ActMsg, AniLoop, Mti, ObjSta, ObjStaF } from './constants';
-import { vecLength } from './d3dx';
+import { ActMsg, AniLoop, Ik3, Mop, Mti, ObjSta, ObjStaF } from './constants';
+import { dot, normalize, vecLength } from './d3dx';
 
 /**
  * The part of `CMover` the ground rules move: its position, its angle and its speed. Positions are D3D coordinates
@@ -19,7 +19,10 @@ export interface MoverBody {
   angle: number;
   /** `CMover::GetSpeed( m_pActMover->m_fSpeed )` (`MoverParam.cpp:3248`): how far a run goes in one step. */
   speed: number;
-  /** `CMover::IsPlayer()`: only a player takes the falling state (`ActionMoverCollision.cpp:314-317`). Default `false`. */
+  /**
+   * `CMover::IsPlayer()`: only a player takes the falling state (`ActionMoverCollision.cpp:314-317`), swings at its
+   * attack speed (`ProcessAniSpeed`) and ends a swing as a player (`_ProcessStateAttack`). Default `false`.
+   */
   isPlayer?: boolean;
 }
 
@@ -47,6 +50,8 @@ const f32 = Math.fround;
 /** `D3DXToRadian( degree )`: `(degree) * (D3DX_PI / 180.0f)` with `D3DX_PI` `3.141592654f` (`d3dx9math.h:28-31`). */
 const RADIANS_PER_DEGREE = f32(f32(3.141592654) / 180);
 const radians = (degrees: number): number => f32(degrees * RADIANS_PER_DEGREE);
+/** `D3DXToDegree( radian )`: `(radian) * (180.0f / D3DX_PI)`. */
+const DEGREES_PER_RADIAN = f32(180 / f32(3.141592654));
 
 /** `0.005f`, the fall a step adds to `m_vDelta.y` (`ActionMover.cpp:294`). */
 const GRAVITY = f32(0.005);
@@ -61,8 +66,32 @@ const HEAD_HEIGHT = 1.5;
 const CEILING_BOUNCE = f32(-0.01);
 /** `__FIX_COLLISION` (:225-232): a slid move longer than `0.15f` a step becomes the mover's delta. */
 const FIX_COLLISION_LENGTH = f32(0.15);
-/** The groups of states whose states are copied, in `ProcessAction`'s order (the look, attack, damage and action ones are not). */
-const STATE_GROUPS: readonly number[] = [ObjSta.MOVE_ALL, ObjSta.TURN_ALL, ObjSta.JUMP_ALL];
+/** `__FIX_COLLISION` (`ActionMover.cpp:322-327`): an outside force weaker than this (squared) stops; else it keeps 0.9 of itself. */
+const DELTA_E_STOP = f32(0.01);
+const DELTA_E_FRICTION = f32(0.9);
+/** The knock-back of a forced death: `DoDamageFly( attacker's angle, 145.0f, 0.25f )` (`ActionMoverMsg.cpp:959`). */
+const DIE_FLY_ANGLE_Y = 145;
+const DIE_FLY_POWER = f32(0.25);
+/** `m_vDelta.y = 0.04f`: the bounce of a knocked-flying mover as it lands (`__BS_FIXED_KNOCKBACK`, `ActionMoverState.cpp:492-496`). */
+const LANDING_BOUNCE = f32(0.04);
+/** `AF_GENERIC`, what a swing answers on the client: it never rolls the hit, the server does (`ActionMoverMsg.cpp:698-700`). */
+const AF_GENERIC = 1;
+/** `MAX_ACTMSG` (`Action.h:10`): `CActMsgq` is a ring of 0xff entries, one always empty, so it keeps 254. */
+const MELEE_QUEUE_SIZE = 0xff - 1;
+/**
+ * The groups of states whose states are copied, in `ProcessAction`'s order (`ActionMover.cpp:241-274`); the look and
+ * action ones are not.
+ */
+const STATE_GROUPS: readonly number[] = [ObjSta.MOVE_ALL, ObjSta.TURN_ALL, ObjSta.JUMP_ALL, ObjSta.ATK_ALL, ObjSta.DMG_ALL];
+/** The swings of a melee combo, `OBJMSG_ATK1` to `OBJMSG_ATK4`, and their states and motions. */
+const SWINGS: ReadonlyMap<number, { state: number; motion: number }> = new Map([
+  [ActMsg.ATK1, { state: ObjSta.ATK1, motion: Mti.ATK1 }],
+  [ActMsg.ATK2, { state: ObjSta.ATK2, motion: Mti.ATK2 }],
+  [ActMsg.ATK3, { state: ObjSta.ATK3, motion: Mti.ATK3 }],
+  [ActMsg.ATK4, { state: ObjSta.ATK4, motion: Mti.ATK4 }],
+]);
+const isSwing = (state: number): boolean =>
+  state === ObjSta.ATK1 || state === ObjSta.ATK2 || state === ObjSta.ATK3 || state === ObjSta.ATK4;
 
 const copy = (v: Vec3): Vec3 => [v[0], v[1], v[2]];
 const toFloats = (v: Vec3): Vec3 => [f32(v[0]), f32(v[1]), f32(v[2])];
@@ -85,6 +114,70 @@ function moveSpeed(moveState: number, walk: boolean, speed: number): number | un
 }
 
 /**
+ * `GetDegree` (`Source/_Common/Obj.h:288-304`): the angle from `src` to `dest` on the ground, from the dot product
+ * with `VelocityToVec( 0.0f, 1.0f )`, (0, 0, -1): `acosf`, then 360 minus it when x is negative. (`moverRules.ts` keeps
+ * its own copy for the walk to a target.)
+ */
+export function getDegree(dest: Vec3, src: Vec3): number {
+  const dir = normalize([f32(dest[0] - src[0]), 0, f32(dest[2] - src[2])]);
+  const degree = f32(f32(Math.acos(dot([0, 0, -1], dir))) * DEGREES_PER_RADIAN);
+  return dir[0] < 0 ? f32(360 - degree) : degree;
+}
+
+/**
+ * What `CMover::SetMotion` (`Mover.cpp:4821-4902`) reads of a mover to pick the motion set it plays in combat: the
+ * item of its active hand (`GetActiveHandItemProp()`: the right hand's, or the bare hand's `II_WEA_HAN_HAND`, IK3_HAND,
+ * when it is empty) and who holds it.
+ */
+export interface MotionHand {
+  /** The item's `dwItemKind3` (`Ik3`). */
+  kind3: number;
+  /** `dwHanded == HD_TWO`. */
+  twoHanded: boolean;
+  /** `IsDualWeapon()`: a weapon in each hand (a shield is none). */
+  dual: boolean;
+  /** One of the four master bodies (`bMasterPlayer`, :4853-4856): no dual set, and a yoyo or bow plays +200. */
+  master: boolean;
+  /** A Psykeeper, or its master or hero: a wand plays `MTI_STAND_11`'s set, not `MTI_STAND_02`'s (:4885-4890). */
+  psykeeper: boolean;
+}
+
+/**
+ * `CMover::SetMotion` (`Source/_Common/Mover.cpp:4822-4902`): the motion whose file a mover plays for the `MTI_*`
+ * motion `motion` (`m_dwMotion` keeps the plain one, :4919). With `OBJSTAF_COMBAT` in `stateFlag` and no `MOP_FIXED` in
+ * `option`, a player body plays the set of the weapon in its hand: dual weapons +900; a one-handed sword +200, a
+ * two-handed one +800; an axe +500, +800 two-handed; a stick +400; a staff `+MTI_STAND_05`; a knuckle +700; a wand
+ * `+MTI_STAND_02` (a Psykeeper's `+MTI_STAND_11`); a yoyo `+MTI_STAND_14`; a bow `+MTI_STAND_13`; anything else, the bare
+ * hand included, +200. `hand` is null for a mover with no set: a monster or NPC, whose hand is a virtual item
+ * (`IK3_VIRTUAL`, none of the cases, and not a player), or a player disguised as another mover (:4845-4851). A player
+ * whose item has no row in the catalog is given the bare hand's set (Neuz, with no row, would not change its motion,
+ * :4825-4839).
+ */
+export function motionFor(motion: number, hand: MotionHand | null, stateFlag: number, option = 0): number {
+  if ((stateFlag & ObjStaF.COMBAT) === 0 || (option & Mop.FIXED) !== 0 || hand === null) return motion;
+  if (hand.dual && !hand.master) return motion + 900;
+  switch (hand.kind3) {
+    case Ik3.YOYO: return motion + (hand.master ? 200 : Mti.STAND_14);
+    case Ik3.BOW: return motion + (hand.master ? 200 : Mti.STAND_13);
+    case Ik3.SWD: return motion + (hand.twoHanded ? 800 : 200);
+    case Ik3.AXE: return motion + (hand.twoHanded ? 800 : 500);
+    case Ik3.WAND: return motion + (hand.psykeeper ? Mti.STAND_11 : Mti.STAND_02);
+    case Ik3.CHEERSTICK: return motion + 400;
+    case Ik3.STAFF: return motion + Mti.STAND_05;
+    case Ik3.KNUCKLEHAMMER: return motion + 700;
+    default: return motion + 200;
+  }
+}
+
+/** An attack kept for later (`ACTMSG`, `Action.h:61-69`): the message and its parameters. */
+interface KeptAttack {
+  msg: number;
+  param1: number;
+  param2: number;
+  param3: number;
+}
+
+/**
  * `CActionMover` on the ground (`Source/_AIInterface/ActionMover*.cpp`): the action messages that change a mover's
  * state, and the step that moves it by that state, 60 times a second. Neuz moves every mover with these rules
  * between the server's messages, so a copy that keeps them moves others as their own clients do.
@@ -92,30 +185,63 @@ function moveSpeed(moveState: number, walk: boolean, speed: number): number | un
  * Copied: the messages in `ActMsg` (`ProcessActMsg1`); the states `STAND`, `FMOVE`, `BMOVE`, `SIT`, `LTURN` and
  * `RTURN` (`ProcessState1`), and `SJUMP3`/`SJUMP4`, the falling and landing that the ground's height leads to;
  * `ProcessCollisionGround`, with the collision rules of `collision.ts`; `PresupposePos`; `CMover::ActionForceSet`.
- * Left out: flying (`IsFly`, flying NPCs), attacks, damage, collecting, jumping on purpose, the `MVRF_NOMOVE` and
- * `CHS_LOOT` blocks (no buffs here) and the world's edge (`CWorld::ClipX`/`ClipZ`); `__Y_INTERFACE_VER3` (strafing)
- * and `__X15` are off in Neuz's build. Positions, deltas and speeds are floats (`f32`).
+ * Combat (Piece 4): the melee swings `ATK1` to `ATK4` with their hit frames, pause and end (`_ProcessStateAttack`), the
+ * attacks kept while busy (`m_qMeleeAtkMsg`), the flinch (`SetDamagedMotion`), the knock-back flight and fall
+ * (`OBJSTA_DMG_FLY`, `DMG_DIE`, `DMG_LIVE`, with the outside force `m_vDeltaE`), death, combat mode, and the animation
+ * speed (`CMover::ProcessAniSpeed`). The model's side of it (its frame, `IsEndFrame`, `IsAttrHit`) is its owner's, who
+ * sets the hooks; `m_nPause` is kept here (`paused`), where both the rules and the model read it.
+ * Left out: flying (`IsFly`, flying NPCs), collecting, jumping on purpose, the `MVRF_NOMOVE`, `MVRF_NOATTACK` and
+ * `CHS_LOOT` blocks and the stun (no buffs here), skills, and the world's edge (`CWorld::ClipX`/`ClipZ`);
+ * `__Y_INTERFACE_VER3` (strafing) and `__X15` are off in Neuz's build. Positions, deltas and speeds are floats (`f32`).
  */
 export class ActionMover {
   /** `m_dwState`: `OBJSTA_*` bits. */
   state = 0;
   /** `m_dwStateFlag`: `OBJSTAF_*` bits. */
   stateFlag = 0;
-  /** `CMover::m_dwMotion`: the `MTI_*` motion set last. */
+  /** `CMover::m_dwMotion`: the `MTI_*` motion set last (without the weapon's set: `motionFor`). */
   motion = NO_MOTION;
   /** `CMover::m_dwMotionOption` (`MOP_*`). */
   motionOption = 0;
+  /**
+   * How many times `SetMotion` has set a motion. Each time the model loads it and starts it from its first frame
+   * (`CModelObject::LoadMotion` → `InitAnimate`, `ModelObject.cpp:579`, `Model.h:125-136`), the same motion set again
+   * included, so this, not `motion`, tells the model's owner when to start it.
+   */
+  motionSets = 0;
   /** `m_pModel->m_nLoop` (`ANILOOP_*`), which `CModel::InitAnimate` starts at `ANILOOP_LOOP`. */
   loop: number = AniLoop.LOOP;
   /** `m_nMotionEx`. */
   motionEx = -1;
   /** `m_vDelta`: the movement per step. */
   delta: Vec3 = [0, 0, 0];
+  /** `m_vDeltaE`: the outside force, a knock-back's flight; it is added to the delta each step and fades (`ProcessAction`). */
+  deltaE: Vec3 = [0, 0, 0];
+  /**
+   * `CMover::m_fAniSpeed`: how fast the model's motion plays, 1.0 but for a player's swing, which plays at its attack
+   * speed (`ProcessAniSpeed`, set at each step and as a swing starts). The model's owner reads it at each frame move.
+   */
+  aniSpeed = 1;
+  /**
+   * `m_pModel->m_nPause`: the steps the model's motion still holds still (`CModel::FrameMove` does nothing while it is
+   * above 0, `Model.cpp:15-16`). `pause` sets it; a swing counts it down, a step at a time; a new motion clears it.
+   */
+  paused = 0;
+  /** `m_idTarget`: the mover a swing hits, its object ID; null for `NULL_ID`. */
+  targetId: number | null = null;
+  /** `m_objidHit`: the mover a swing was started at, which the own character's combo goes on with; null for `NULL_ID`. */
+  hitId: number | null = null;
+
   /**
    * `m_pModel->IsEndFrame()`: whether the motion has played to its end. No model plays it here, so by default every
    * motion has ended at once (sitting down takes one step); whoever plays the motions can answer from the animation.
    */
   isEndFrame: () => boolean = () => true;
+  /**
+   * `m_pModel->IsAttrHit()` (`ModelObject.h:280-286`, `CMotion::IsAttrHit`, `Bone.h:162-169`): the hit frame that the
+   * model's last frame move went past, as its index in the motion's hit frames, or -1. By default -1: no model, no hits.
+   */
+  isAttrHit: () => number = () => -1;
   /** `CMover::ClearDest` (`Mover.h:1008`), which `STOP` calls. The destination is not kept here: its owner sets this. */
   clearDest: () => void = () => {};
   /**
@@ -125,34 +251,110 @@ export class ActionMover {
   onActDrop: () => void = () => {};
   /** `CMover::OnActEndJump4` (`MoverActEvent.cpp:2089`), which `CAction::OnEndJumpState` calls as a landing ends. */
   onEndJump4: () => void = () => {};
+  /**
+   * `prj.GetMover( id )` as the rules ask it: the rules of the mover in view with that object ID, or undefined
+   * (`IsValidObj` fails). A swing needs its target, and a forced death its attacker. Its owner sets this.
+   */
+  findMover: (objectId: number) => ActionMover | undefined = () => undefined;
+  /**
+   * `CMover::m_nHitPoint`, which `IsLive` (`Mover.h:1222`) and the end of a fall (`OBJSTA_DMG_DIE`) read. Its owner sets
+   * this; by default 0, so that the dead state alone tells life.
+   */
+  hitPoint: () => number = () => 0;
+  /** `CMover::GetAttackSpeed()` (`MoverAttack.cpp:159-192`, `params.ts`' `attackSpeed`): a player's. Its owner sets this. */
+  attackSpeed: () => number = () => 1;
+  /**
+   * `CMover::OnAttackMelee( dwState, pHitObj )` (`MoverActEvent.cpp:1592-1726`), which `_ProcessStateAttack` calls as the
+   * model passes a hit frame of a swing (`ActionMoverState.cpp:1080-1090`), while its target (`targetId`) is in view and
+   * alive: `hitIndex` is the hit frame's index in the motion's hit frames, `state` the swing's `OBJSTA_ATK*`. Its owner
+   * makes the hit (`OnDamage`: the victim's spark, flinch and shake) and pauses the model (`pause`).
+   */
+  onHit: (hitIndex: number, state: number) => void = () => {};
+  /**
+   * Called as a swing's motion has played to its end and its state was reset (`_ProcessStateAttack`,
+   * `ActionMoverState.cpp:809-814` for a player, `:938-944` for a monster), with the state it ended. The own
+   * character's combo (`:815-846`: the next swing, by level, while auto-attacking) is its owner's.
+   */
+  onAttackEnd: (state: number) => void = () => {};
+  /** The C runtime's `rand()`, 0 to `RAND_MAX` (32767, MSVC's), for `random( n )` (`xUtil.h:28`): `rand() % n`. */
+  rand: () => number = () => Math.floor(Math.random() * 32768);
 
   /** `m_bGround`: 1 standing on the ground, 2 landed on a face steep enough to slide off. */
   private ground = 0;
-  /** `m_bMove`: this step moves in x or z. */
+  /** `m_bMove`: this step moves in x or z, or an outside force is on. */
   private moved = false;
   /** `m_vDeltaAccu`: the step's movement (`m_vDelta`), which the collision step adds. */
   private deltaAccu: Vec3 = [0, 0, 0];
   /** `m_vPosLast`: where the last step put the mover, a copy of its own (`ActionMover.cpp:192`). */
   private posLast: Vec3 = [0, 0, 0];
+  /** `m_qMeleeAtkMsg` (`Action.h:274`): the swings a MELEE_ATTACK asked for while the mover was busy. */
+  private readonly keptAttacks: KeptAttack[] = [];
 
   constructor(readonly body: MoverBody) {
     body.pos = toFloats(body.pos);
     body.angle = wrapAngle(body.angle);
   }
 
-  /** `CActionMover::SendActMsg` (`ActionMover.cpp:337`) on the ground: true when `ProcessActMsg1` returns 1. */
+  /**
+   * `CActionMover::SendActMsg` (`ActionMover.cpp:337`) on the ground: true when `ProcessActMsg1` returns 1 (a swing
+   * returns `AF_GENERIC`, 1). The parameters are `nParam1` to `nParam3`; where the C++ passes a `CMover*` (the attacker
+   * of `DIE`), its object ID.
+   */
   sendActMsg(msg: number, ...params: number[]): boolean {
-    return this.processActMsg1(msg, params[0] ?? 0, params[2] ?? 0) === 1;
+    return this.processActMsg1(msg, params[0] ?? 0, params[1] ?? 0, params[2] ?? 0) === 1;
+  }
+
+  /**
+   * `CDPClient::OnMeleeAttack` (`Neuz/DPClient.cpp:3802-3815`) on its mover: the swing starts now, or, while the mover is
+   * busy (`ProcessActMsg1` answers 0), is kept for the end of its swing (`m_qMeleeAtkMsg.AddTail`, `Action.cpp:230-237`:
+   * none past 254). True when it started. The own character's are never kept: the server sends a MELEE_ATTACK to the
+   * others only. A message this copy does not take (a monster's special attack) does nothing and is not kept, where it
+   * would stand in the way of the rest.
+   */
+  meleeAttack(msg: number, targetId: number, param2 = 0, param3 = 0): boolean {
+    const result = this.processActMsg1(msg, targetId, param2, param3);
+    if (result === 0 && SWINGS.has(msg) && this.keptAttacks.length < MELEE_QUEUE_SIZE) {
+      this.keptAttacks.push({ msg, param1: targetId, param2, param3 });
+    }
+    return result > 0;
+  }
+
+  /**
+   * `CMover::SetDamagedMotion( pAttacker, dwAtkFlags )` (`Source/_Common/MoverAttack.cpp:2016-2064`) for a blow of a
+   * hit frame, whose flags are `AF_GENERIC` on the client (`ActionMoverMsg.cpp:699`): a mover knocked flying is left
+   * alone; any other takes the flinch state, and its motion, `MTI_DMG1 + random( 2 )`, unless it jumps, swings or is in
+   * an action, which keep their motion with the state. The flying branch (`AF_FLYING`) is the DAMAGE message's, and the
+   * hero skills' casting (`__LEGEND`, :2038-2046) needs skills.
+   */
+  setDamaged(): void {
+    if (this.state & ObjSta.DMG_FLY_ALL) return;
+    this.resetState(ObjSta.JUMP_ALL);
+    this.setState(ObjSta.DMG_ALL, ObjSta.DMG);
+    if (this.state & (ObjSta.JUMP_ALL | ObjSta.ATK_ALL)) return;
+    if (this.state & ObjSta.ACTION_ALL) return;
+    this.motion = NO_MOTION;
+    this.setMotion(Mti.DMG1 + (this.rand() % 2), AniLoop.ONE_PLAY);
+  }
+
+  /** `pModel->m_nPause = ticks` (`OnAttackMelee`, `MoverActEvent.cpp:1693-1701`): the model holds still for `ticks` steps. */
+  pause(ticks: number): void {
+    this.paused = ticks;
+  }
+
+  /** `CAction::IsDie()` (`Action.h:310`): in a dead state. */
+  isDie(): boolean {
+    return (this.state & ObjSta.DIE_ALL) !== 0;
   }
 
   /**
    * One step of `CMover::Process` (`Source/_Common/Mover.cpp:3802-3906`) after `ProcessMove`: `ProcessPreAction`,
-   * `ProcessAction` (the states), `ProcessCollision` (`ProcessCollisionGround`, `ActionMoverCollision.cpp:127-389`:
-   * the move against the objects and the land, then the height), then `SetPos` only if there is land there
-   * (`GetWorld()->GetLandscape( vPos )`, a `terrainHeight` that is not null); otherwise the mover stays where it was.
-   * Where the move ends on no land the height part is skipped (the C++ measures it from no land, then does not place
-   * the mover). Every mover on the ground collides alike (`collideMove`). Without `ground` nothing is in the way and
-   * the mover keeps its height, as on a flat floor.
+   * `ProcessAniSpeed`, `ProcessAction` (the states), `ProcessCollision` (`ProcessCollisionGround`,
+   * `ActionMoverCollision.cpp:127-389`: the move against the objects and the land, then the height), then `SetPos`
+   * only if there is land there (`GetWorld()->GetLandscape( vPos )`, a `terrainHeight` that is not null); otherwise the
+   * mover stays where it was. The model's frame move (`:3862`), between the states and the collision, is its owner's,
+   * after this. Where the move ends on no land the height part is skipped (the C++ measures it from no land, then does
+   * not place the mover). Every mover on the ground collides alike (`collideMove`). Without `ground` nothing is in the
+   * way and the mover keeps its height, as on a flat floor.
    *
    * `collided` is `ProcessCollision`'s answer where the mover was placed, for `OnActCollision` (`Mover.cpp:3899-3905`):
    * the move met an object (`CWorld::ProcessCollision`, which tests the objects only: steep land slides the mover in
@@ -161,6 +363,7 @@ export class ActionMover {
   step(ground?: Ground): { collided: boolean } {
     const pos = toFloats(this.body.pos);
     this.deltaAccu = [0, 0, 0];
+    this.processAniSpeed();
     this.processAction(pos);
     const dy = this.deltaAccu[1]; // vDelta, the function's own copy of m_vDeltaAccu (:131)
     let collided = false; // fResult
@@ -249,11 +452,19 @@ export class ActionMover {
     };
   }
 
+  /**
+   * `CMover::ProcessAniSpeed` (`Mover.cpp:3084-3145`, `__AI_0509` on): a player swinging plays at its attack speed, any
+   * other mover, and a player doing anything else, at 1.0. (The casting states, at `GetCastingAniSpeed`, are skills'.)
+   */
+  private processAniSpeed(): void {
+    this.aniSpeed = this.body.isPlayer && isSwing(this.state & ObjSta.ATK_ALL) ? this.attackSpeed() : 1;
+  }
+
   /** `CActionMover::ProcessAction` (`ActionMover.cpp:210-334`) on the ground; `vPos` is the position the step starts at. */
   private processAction(vPos: Vec3): void {
     this.delta[0] = this.delta[2] = 0;
     if (this.state === 0) {
-      this.processActMsg1(ActMsg.STAND, 0, 0);
+      this.processActMsg1(ActMsg.STAND, 0, 0, 0);
     } else {
       const speed = f32(this.body.speed);
       for (let i = 0; i < STATE_GROUPS.length; i++) {
@@ -261,8 +472,8 @@ export class ActionMover {
         if (this.state & group) this.processState1(this.state & group, speed);
       }
     }
-    // m_vDeltaE, the outside force, is always zero here
-    this.moved = this.delta[0] !== 0 || this.delta[2] !== 0;
+    const e = this.deltaE;
+    this.moved = this.delta[0] !== 0 || this.delta[2] !== 0 || e[0] !== 0 || e[1] !== 0 || e[2] !== 0;
     if (this.delta[1] !== 0 || this.moved) this.ground = 0;
     else if (Math.abs(f32(vPos[1] - this.posLast[1])) > MOVED_HEIGHT) this.ground = 0;
     // gravity, except while vanishing after death
@@ -270,7 +481,16 @@ export class ActionMover {
       this.delta[1] = f32(this.delta[1] - GRAVITY);
       if (this.delta[1] < -0.5) this.delta[1] = -0.5;
     }
-    for (let i = 0; i < 3; i++) this.deltaAccu[i] = f32(this.deltaAccu[i]! + this.delta[i]!);
+    if (this.isDie()) e[0] = e[1] = e[2] = 0;
+    // the outside force joins the delta (m_vDelta += m_vDeltaE), then fades, unless the mover is knocked flying
+    for (let i = 0; i < 3; i++) {
+      this.delta[i] = f32(this.delta[i]! + e[i]!);
+      this.deltaAccu[i] = f32(this.deltaAccu[i]! + this.delta[i]!);
+    }
+    if ((this.state & ObjSta.DMG_FLY) === 0) {
+      if (dot(e, e) < DELTA_E_STOP) e[0] = e[1] = e[2] = 0;
+      for (let i = 0; i < 3; i++) e[i] = f32(e[i]! * DELTA_E_FRICTION);
+    }
   }
 
   /**
@@ -328,7 +548,7 @@ export class ActionMover {
   }
 
   /** `CActionMover::ProcessActMsg1` (`ActionMoverMsg.cpp:101-1170`) for the messages in `ActMsg`. */
-  private processActMsg1(msg: number, param1: number, param3: number): number {
+  private processActMsg1(msg: number, param1: number, param2: number, param3: number): number {
     const moveState = this.state & ObjSta.MOVE_ALL;
     switch (msg) {
       case ActMsg.STAND: // :108-134
@@ -352,7 +572,7 @@ export class ActionMover {
         if (this.stateFlag & ObjStaF.SIT) return 0;
         if (param3 === 0 && this.isBusy()) return 0;
         this.stateFlag |= ObjStaF.SIT;
-        this.processActMsg1(ActMsg.STOP, 0, 0);
+        this.processActMsg1(ActMsg.STOP, 0, 0, 0);
         this.setMotion(Mti.SIT, AniLoop.CONT);
         this.setState(ObjSta.MOVE_ALL, ObjSta.SIT);
         return 1;
@@ -400,12 +620,29 @@ export class ActionMover {
         if (this.state & ObjSta.ATK_ALL) return -2;
         if (this.inDamage()) return -3;
         this.body.angle = wrapAngle(param1);
-        this.processActMsg1(ActMsg.STOP_TURN, 0, 0);
-        this.processActMsg1(ActMsg.FORWARD, 0, 0);
+        this.processActMsg1(ActMsg.STOP_TURN, 0, 0, 0);
+        this.processActMsg1(ActMsg.FORWARD, 0, 0, 0);
         return 1;
       case ActMsg.STOP_TURN: // :453-456
         if ((this.state & ObjSta.TURN_ALL) === 0) return 0;
         this.setState(ObjSta.TURN_ALL, 0);
+        return 1;
+      case ActMsg.ATK1: // :596-704
+      case ActMsg.ATK2:
+      case ActMsg.ATK3:
+      case ActMsg.ATK4:
+        return this.swing(SWINGS.get(msg)!, param1);
+      case ActMsg.DIE: // :842-1003
+        this.die(param1, param2);
+        return 1;
+      case ActMsg.MODE_COMBAT: // :1010-1020
+        if (this.stateFlag & ObjStaF.COMBAT) return 0;
+        if (this.state & (ObjSta.JUMP_ALL | ObjSta.ATK_ALL | ObjSta.DMG_ALL)) return 0;
+        if (this.stateFlag & ObjStaF.SIT) return 0;
+        if (this.state & ObjSta.ACTION_ALL) return 0;
+        this.stateFlag |= ObjStaF.COMBAT;
+        this.motion = NO_MOTION; // the same motion again, so that the weapon's set of it is loaded
+        this.setMotion(Mti.STAND);
         return 1;
       case ActMsg.MODE_WALK: // :1032-1037
         if (this.stateFlag & ObjStaF.SIT || this.state & ObjSta.ACTION_ALL) return 0;
@@ -423,7 +660,73 @@ export class ActionMover {
   }
 
   /**
-   * `CActionMover::ProcessState1` (`ActionMoverState.cpp:32-437`) for the copied states; `speed` is
+   * `OBJMSG_ATK1` to `OBJMSG_ATK4` (`ActionMoverMsg.cpp:596-704`) at the mover `targetId`: refused (0) in an action and
+   * while swinging, which `OnMeleeAttack` keeps for later; -1 for a target out of view or dead; -3 in a damage state
+   * other than a flinch, which the swing ends. Then combat mode, a stop of the turn, standing, the attack speed for a
+   * player, the swing's state and motion (`ANILOOP_1PLAY`, `MOP_SWDFORCE | MOP_NO_TRANS`), and the mover turns to the
+   * target. The client never rolls the hit (`AF_GENERIC`). Left out: `MVRF_NOATTACK`/`NO_ATTACK_MODE` (buffs); the own
+   * character's refusal with a wand or bow (:608-616), which never starts a melee swing with them; the steal rule
+   * (server); `__XSLOW1018`'s slow blow (not built); and `CMover`'s own marks (`SetJJim`'s `m_idTargeter`, `m_nAtkCnt`).
+   */
+  private swing(swing: { state: number; motion: number }, targetId: number): number {
+    if (this.state & ObjSta.ACTION_ALL) return 0;
+    const target = this.findMover(targetId);
+    if (target === undefined) return -1;
+    this.targetId = targetId;
+    if (target.isDie()) return -1;
+    if (this.state & ObjSta.ATK_ALL) return 0;
+    if (this.stateFlag & ObjStaF.SIT) this.resetState(ObjSta.MOVE_ALL);
+    if ((this.state & ObjSta.DMG_ALL) === ObjSta.DMG) this.resetState(ObjSta.DMG_ALL);
+    else if (this.state & ObjSta.DMG_ALL) return -3;
+    if ((this.stateFlag & ObjStaF.COMBAT) === 0) this.processActMsg1(ActMsg.MODE_COMBAT, 0, 0, 0);
+    this.processActMsg1(ActMsg.STOP_TURN, 0, 0, 0);
+    this.processActMsg1(ActMsg.STAND, 0, 0, 0);
+    if (this.body.isPlayer) this.aniSpeed = this.attackSpeed();
+    this.setState(ObjSta.ATK_ALL, swing.state);
+    this.setMotion(swing.motion, AniLoop.ONE_PLAY, Mop.SWDFORCE | Mop.NO_TRANS);
+    this.body.angle = wrapAngle(getDegree(target.body.pos, this.body.pos));
+    this.hitId = targetId;
+    return AF_GENERIC;
+  }
+
+  /**
+   * `OBJMSG_DIE` (`ActionMoverMsg.cpp:842-1003`, `__BS_DEATH_ACTION` off): `how` is the blow that killed (`OBJMSG_DAMAGE`,
+   * `OBJMSG_DAMAGE_FORCE` or 0), `attackerId` the attacker. Sitting ends, every state is cleared, and the mover stops;
+   * a forced blow knocks it flying the way its attacker faces (`OBJSTA_DMG_FLY`, `MTI_DMGFLY`); any other lays it dead
+   * (`OBJSTA_DEAD`, `MTI_DIE1`), both held on their last frame. The duel and steal bookkeeping (`m_idAttacker`), the
+   * buffs (`RemoveInvisible`) and the corpse's count to vanishing (`m_nDeadCnt`) are `CMover`'s and the server's.
+   */
+  private die(how: number, attackerId: number): void {
+    if (this.stateFlag & ObjStaF.SIT) this.resetState(ObjSta.MOVE_ALL);
+    this.clearState();
+    this.delta[0] = this.delta[2] = 0;
+    if (how === ActMsg.DAMAGE_FORCE) {
+      this.setState(ObjSta.DMG_ALL, ObjSta.DMG_FLY);
+      this.setMotion(Mti.DMGFLY, AniLoop.CONT);
+      const attacker = this.findMover(attackerId);
+      if (attacker !== undefined) this.doDamageFly(attacker.body.angle, DIE_FLY_ANGLE_Y, DIE_FLY_POWER);
+    } else {
+      this.setState(ObjSta.DMG_ALL, ObjSta.DEAD);
+      this.setMotion(Mti.DIE1, AniLoop.CONT);
+    }
+  }
+
+  /**
+   * `CActionMover::DoDamageFly` (`ActionMover.cpp:446-454`): a push `power` strong, `angleXZ` degrees round on the
+   * ground (the attacker's angle) and `angleY` degrees from straight down: up into `m_vDelta.y`, along into the
+   * outside force.
+   */
+  private doDamageFly(angleXZ: number, angleY: number, power: number): void {
+    const theta = radians(angleXZ);
+    const theta2 = radians(angleY);
+    this.delta[1] = f32(this.delta[1] + f32(-f32(Math.cos(theta2)) * power));
+    const dist = f32(f32(Math.sin(theta2)) * power);
+    this.deltaE[0] = f32(this.deltaE[0] + f32(f32(Math.sin(theta)) * dist));
+    this.deltaE[2] = f32(this.deltaE[2] + f32(-f32(Math.cos(theta)) * dist));
+  }
+
+  /**
+   * `CActionMover::ProcessState1` (`ActionMoverState.cpp:32-587`) for the copied states; `speed` is
    * `GetSpeed( m_fSpeed )`. The angle is read before this step's turn. Drawing (motion blending, the camera quake,
    * the stretching effect) is left out, and so are the random idle motions of a standing mover.
    */
@@ -480,13 +783,79 @@ export class ActionMover {
       case ObjSta.SJUMP4: // :414-437, landed: the state ends at once, and with it OnActEndJump4 (resetState)
         this.resetState(ObjSta.JUMP_ALL);
         break;
+      case ObjSta.ATK1: // :439-444
+      case ObjSta.ATK2:
+      case ObjSta.ATK3:
+      case ObjSta.ATK4:
+        this.processStateAttack(dwState);
+        break;
+      case ObjSta.DMG: // :472-477: the flinch ends with its motion
+        if (this.isEndFrame()) this.resetState(ObjSta.DMG_ALL);
+        break;
+      case ObjSta.DMG_FLY: // :478-502 (a stunned mover's end, :481-485, needs the stun: none here)
+        // on the ground with no rise: landed (it is on the ground as it takes off too, but rising)
+        if (this.ground && this.delta[1] === 0) {
+          this.delta[0] = this.delta[2] = 0;
+          this.deltaE[0] = this.delta[0];
+          this.deltaE[2] = this.delta[2];
+          this.delta[1] = LANDING_BOUNCE;
+          this.setState(ObjSta.DMG_ALL, ObjSta.DMG_DIE);
+          this.setMotion(Mti.DMGDIE, AniLoop.CONT);
+        }
+        break;
+      case ObjSta.DMG_DIE: // :504-521: down; with HP left it gets up, else it is dead
+        this.delta[0] = this.delta[2] = 0;
+        if (this.isEndFrame()) {
+          if (this.hitPoint() > 0) {
+            this.setState(ObjSta.DMG_ALL, ObjSta.DMG_LIVE);
+            this.setMotion(Mti.DMGLIVE, AniLoop.ONE_PLAY);
+          } else {
+            this.setState(ObjSta.DMG_ALL, ObjSta.DEAD);
+          }
+        }
+        break;
+      case ObjSta.DMG_LIVE: // :523-530 (MVRF_NOACTION is CMover's)
+        if (this.isEndFrame()) {
+          this.resetState(ObjSta.DMG_ALL);
+          this.resetState(ObjSta.ATK_ALL);
+        }
+        break;
+      case ObjSta.DEAD: // :531-572: the body keeps the last frame; the count to vanishing is the server's, the quake drawing
+        if (this.loop !== AniLoop.CONT) this.loop = AniLoop.CONT;
+        break;
     }
   }
 
   /**
+   * `CActionMover::_ProcessStateAttack` (`ActionMoverState.cpp:778-1105`) for a melee swing `dwState`. As its motion has
+   * played to its end the state is reset (which may start a kept swing, `resetState`) and `onAttackEnd` told: a player's
+   * at :809-814, where the own character's combo follows (its owner's); a monster's at :938-944, after `m_objidHit` is
+   * cleared. Then, in the same step, a paused model counts a step off (:953-1031), and an unpaused one is asked for a
+   * hit frame (:1080-1090), which `onHit` gets while the target is in view and alive (`IsLive`, `Mover.h:1222`).
+   * Drawing is left out: the sparks of a player's pause, three monsters' charge effects and quakes, and a yoyo's shot;
+   * so are `MVRF_HITCONT` and `OnAttackMeleeContinue` (three monsters' specials) and `OnEndMeleeAttack` (server AI).
+   */
+  private processStateAttack(dwState: number): void {
+    if (this.isEndFrame()) {
+      if (!this.body.isPlayer) this.hitId = null;
+      this.resetState(ObjSta.ATK_ALL);
+      this.onAttackEnd(dwState);
+    }
+    if (this.paused > 0) {
+      this.paused--;
+      return;
+    }
+    const hit = this.isAttrHit();
+    if (hit < 0) return;
+    const target = this.targetId === null ? undefined : this.findMover(this.targetId);
+    if (target !== undefined && (!target.isDie() || target.hitPoint() > 0)) this.onHit(hit, dwState);
+  }
+
+  /**
    * `CMover::SetMotion` (`Mover.cpp:4817-4977`): false when the same motion with the same option is still playing,
-   * loops, or holds its last frame. The weapon's motion set (`+200` and so on in combat) changes only the file played,
-   * not `m_dwMotion`, and is left out with the rest of the drawing.
+   * loops, or holds its last frame. The weapon's motion set (`motionFor`) changes only the file played, not
+   * `m_dwMotion`, and is its drawer's. A motion set loads it into the model, which starts it from its first frame
+   * unpaused (`InitAnimate`): `motionSets` counts it and `paused` goes to 0.
    */
   private setMotion(motion: number, loop: number = AniLoop.LOOP, option = 0): boolean {
     if (this.motion === motion && this.motionOption === option) {
@@ -497,6 +866,8 @@ export class ActionMover {
     this.motion = motion;
     this.motionOption = option;
     this.loop = loop;
+    this.motionSets++;
+    this.paused = 0;
     return true;
   }
 
@@ -507,15 +878,55 @@ export class ActionMover {
   }
 
   /**
-   * `CAction::ResetState` (`Action.cpp:163-207`): clears the groups in `mask`. Ending a sitting state takes the
-   * sitting flag off (`OnEndMoveState`, :69-78), and ending a landing calls `onEndJump4` once the bits are clear
-   * (`OnEndJumpState( dw )` with the state as it was, :90-99); the other `OnEnd*` handlers do nothing on the ground here.
+   * `CAction::ResetState` (`Action.cpp:163-207`): clears the groups in `mask`, a group at a time, in its order, each
+   * time all of `mask` (so a group's handler may set bits a later group clears). Ending a sitting state takes the
+   * sitting flag off (`OnEndMoveState`, :69-78, before the clearing), ending a landing calls `onEndJump4`
+   * (`OnEndJumpState( dw )` with the state as it was, :90-99) and ending a swing may start a kept one
+   * (`OnEndAttackState( dw )`); the other `OnEnd*` handlers do nothing.
    */
   private resetState(mask: number): void {
     const was = this.state;
-    if (mask & ObjSta.MOVE_ALL && (was & ObjSta.MOVE_ALL) === ObjSta.SIT) this.stateFlag &= ~ObjStaF.SIT;
-    this.state = (was & ~mask) >>> 0;
-    if (mask & ObjSta.JUMP_ALL && (was & ObjSta.JUMP_ALL) === ObjSta.SJUMP4) this.onEndJump4();
+    const clear = (): void => {
+      this.state = (this.state & ~mask) >>> 0;
+    };
+    if (mask & ObjSta.MOVE_ALL) {
+      if ((this.state & ObjSta.MOVE_ALL) === ObjSta.SIT) this.stateFlag &= ~ObjStaF.SIT;
+      clear();
+    }
+    if (mask & ObjSta.TURN_ALL) clear();
+    if (mask & ObjSta.LOOK_ALL) clear();
+    if (mask & ObjSta.JUMP_ALL) {
+      clear();
+      if ((was & ObjSta.JUMP_ALL) === ObjSta.SJUMP4) this.onEndJump4();
+    }
+    if (mask & ObjSta.ATK_ALL) {
+      clear();
+      this.onEndAttackState(was);
+    }
+    if (mask & ObjSta.DMG_ALL) clear();
+    if (mask & ObjSta.ACTION_ALL) clear();
+  }
+
+  /** `CAction::ClearState` (`Action.cpp:147-159`): every state ends, the handlers called. */
+  private clearState(): void {
+    this.resetState(ObjSta.ALL);
+    this.state = 0;
+  }
+
+  /**
+   * `CAction::OnEndAttackState` (`Action.cpp:101-135`) on the client, for the copied swings: the next kept swing starts
+   * (`ProcessAtkMsg`, `CMeleeAtkMsgq::Process`, `ActionMover.cpp:32-57`). One that starts (above 0) leaves the queue; a
+   * busy answer (0) keeps it and stops; one refused (below 0) leaves the queue and the next is tried. The own character
+   * keeps none (`meleeAttack`), so its `IsActiveMover()` test is left out.
+   */
+  private onEndAttackState(was: number): void {
+    if (!isSwing(was & ObjSta.ATK_ALL)) return;
+    for (let kept = this.keptAttacks[0]; kept !== undefined; kept = this.keptAttacks[0]) {
+      const result = this.processActMsg1(kept.msg, kept.param1, kept.param2, kept.param3);
+      if (result === 0) return;
+      this.keptAttacks.shift();
+      if (result > 0) return;
+    }
   }
 
   /** The stop that `OBJMSG_STAND` and `OBJMSG_STOP` make of a forward or backward move (:110-122, :138-150). */
