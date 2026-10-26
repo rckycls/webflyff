@@ -170,8 +170,13 @@ export interface WebExpRow {
   limitExp: string;
 }
 
-/** `TID_*` name to the client text (`textClient.inc`): the text, and its colour as unsigned ARGB (data/texts.json). */
-export type WebTexts = Record<string, { text: string; color: number }>;
+/**
+ * `TID_*` name to the client text (`textClient.inc`): the text, its colour as unsigned ARGB, and `textId`, the number
+ * `defineText.h` gives the name (data/texts.json). The server names a text by that number (DEFINEDTEXT,
+ * `CDPClient::OnDefinedText`, `Neuz/DPClient.cpp:4117`), which Neuz looks up with `prj.GetText( dwText )`. A name that no
+ * header numbers, and every text of a texts.json written before the converter kept the numbers, has no `textId`.
+ */
+export type WebTexts = Record<string, { text: string; color: number; textId?: number }>;
 
 /** What the effects index says of one effect: its converted file and the `fScale` of its mdlDyna.inc entry. */
 export interface WebEffectRef {

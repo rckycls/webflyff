@@ -382,9 +382,17 @@ function buildExp(_env: Env, read: Reading): WebExpRow[] {
   }));
 }
 
+/**
+ * The texts by `TID_*` name, each with the number `defineText.h` gives the name (`textId`): CProject::LoadText
+ * (ProjectCmn.cpp:543) reads the name as that number and keeps the text under it, and the server names a text by it
+ * (DEFINEDTEXT). A name that no header numbers keeps its text without one.
+ */
 function buildTexts(env: Env, read: Reading): WebTexts {
   const texts = readTextClient(read.text('textClient.inc'), env.strings, 'textClient.inc');
-  return Object.fromEntries([...texts].map(([id, { text, color }]) => [id, { text, color }]));
+  return Object.fromEntries([...texts].map(([id, { text, color }]) => {
+    const textId = env.defines.get(id);
+    return [id, textId === undefined ? { text, color } : { text, color, textId }];
+  }));
 }
 
 /**

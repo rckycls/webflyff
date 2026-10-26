@@ -374,14 +374,19 @@ describeClient('the game-data stage on the real client', () => {
     expect(typeof exp[199]!.limitExp).toBe('string');
   });
 
-  it('texts: every TID with a text, with its colour', async () => {
+  it('texts: every TID with a text, with its colour and the number defineText.h gives it', async () => {
     const texts = await catalog<WebTexts>(GAME_DATA_KEYS.texts);
     const read = readTextClient(script('textClient.inc'), strings, 'textClient.inc');
     expect(Object.keys(texts)).toEqual([...read.keys()]);
     expect(Object.keys(texts).length).toBeGreaterThan(2000);
-    for (const [id, entry] of read) expect(texts[id], id).toEqual({ text: entry.text, color: entry.color });
-    expect(texts.TID_GAME_DEATH).toEqual({ text: read.get('TID_GAME_DEATH')!.text, color: 0xff00ffff });
+    // every name is numbered (formats' textClient corpus test checks the names against the headers)
+    for (const [id, entry] of read) {
+      expect(texts[id], id).toEqual({ text: entry.text, color: entry.color, textId: defines.get(id) });
+    }
+    expect(texts.TID_GAME_DEATH).toEqual({ text: read.get('TID_GAME_DEATH')!.text, color: 0xff00ffff, textId: 602 });
     expect(texts.TID_GAME_DEATH!.text).toContain('Press ESC');
+    // Resource/defineText.h:273, a text the server sends when it refuses an attack
+    expect(texts.TID_GAME_PRIORITYMOB).toMatchObject({ textId: 655, color: 0xffff0000 });
   });
 
   it('effectsIndex: every OT_SFX entry of mdlDyna.inc, by its XI id, to the effect file the effects stage writes', async () => {

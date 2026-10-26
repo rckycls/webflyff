@@ -77,6 +77,8 @@ const DEFINES = script(
   '#define MONSTER_TITLE_MAX 70',
   '#define MMI_DIALOG 0',
   '#define WI_WORLD_TEST 0',
+  // defineText.h: the number Neuz asks for the text by (TID_GAME_LEVELUP is left without one)
+  '#define TID_GAME_DEATH 602',
   '#define WI_WORLD_MADRIGAL 1',
   '#define WI_WORLD_GUILDHOUSE 5',
   '#define WI_DUNGEON_SECRET_0 40',
@@ -596,13 +598,14 @@ describe('the game-data stage', () => {
     ]);
   });
 
-  it('texts: the text and colour of every TID with a text, by its name', async () => {
+  it('texts: the text and colour of every TID with a text, by its name, and the number defineText.h gives it', async () => {
     await client();
     const run = await runData();
     const texts = await catalog<WebTexts>(run, GAME_DATA_KEYS.texts);
-    // the quotes are taken out of the text (CProject::LoadText) and a TID whose text is empty is not there
+    // the quotes are taken out of the text (CProject::LoadText) and a TID whose text is empty is not there; a TID that no
+    // header numbers has no textId
     expect(texts).toEqual({
-      TID_GAME_DEATH: { text: 'Press ESC and go back to Lodestar(Town).', color: 0xff00ffff },
+      TID_GAME_DEATH: { text: 'Press ESC and go back to Lodestar(Town).', color: 0xff00ffff, textId: 602 },
       TID_GAME_LEVELUP: { text: 'Level up!', color: 0xffffff00 },
     });
   });

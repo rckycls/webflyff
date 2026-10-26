@@ -14,8 +14,8 @@ import { ArReader, ArWriter, MessageType, NULL_ID, PacketType, Port } from '@fly
 import type { AddedMover, AddedNpc, AddedPlayer, MoveReport, Vec3 } from '@flyffweb/protocol';
 import { sampleHeight } from '@flyffweb/scene';
 import {
-  createWorldScript, writeAddMonster, writeAddNpc, writeAddPlayer, writeAddSelf, writeDamage, writeDelObj, writeMoverCorr,
-  writeMoverDeath, writeMoverMoved, writeSetPointParam, writeTaskBar,
+  createWorldScript, writeAddMonster, writeAddNpc, writeAddPlayer, writeAddSelf, writeDamage, writeDefinedText, writeDelObj,
+  writeMoverCorr, writeMoverDeath, writeMoverMoved, writeSetPointParam, writeTaskBar,
 } from '@flyffweb/testkit';
 import type {} from '../src/testHooks'; // window.__client
 import { Belli } from '../src/world/sim/constants';
@@ -637,6 +637,43 @@ test.describe('the world screen against scripted servers', () => {
     await page.getByRole('button', { name: 'Leave' }).click();
     await expect(page.getByRole('button', { name: 'Log in' })).toBeEnabled();
     await expect(page.locator('.world-damage-numbers, .world-target-marks')).toHaveCount(0);
+  });
+
+  // Neuz's windows over the world (Hud, Piece 4 §3.9): the status window with the own numbers, the target bar of the tapped
+  // monster, a DEFINEDTEXT as a line of the server messages (its TID found by the number defineText.h gives it), T and
+  // Escape; leaving takes them off with the screen
+  test('the status window shows the own numbers, the target bar the tapped monster, and a server text its line', async ({ page }) => {
+    const gateway = await playGateway(page);
+    await enterFlaris(page);
+    const status = page.locator('.hud-status');
+    await expect(status.locator('.hud-window-title')).toHaveText('Webby - Lv: 15');
+    // the ADD_OBJ's HP, of the maximum of a level 15 Vagrant with the stats of a character with nothing (NO_OWN)
+    await expect(status.locator('[data-text="hp"]')).toHaveText(/^100 \/ \d+$/);
+    await expect(status.locator('[data-text="exp"]')).toHaveText('0.00%');
+    await expect(status.locator('.hud-status-face canvas')).toHaveCount(1);
+    await expect(page.locator('.hud-target')).toBeHidden();
+
+    const at = await page.evaluate((id) => window.__client!.screenOf(id), MONSTER_ID);
+    expect(at).not.toBeNull();
+    await tapWorld(page, at![0], at![1]);
+    await expect(page.locator('.hud-target-name')).toHaveText(/^Aibatt <Lvl \d+>$/);
+
+    // TID_GAME_PRIORITYMOB (Resource/defineText.h:273), as the server refuses an attack, with no arguments (DEFINEDTEXT1)
+    gateway.pushCache(flaris.later([writeDefinedText(SELF_ID, 655)]));
+    await expect(page.locator('.hud-messages > div'))
+      .toHaveText(['You cannot attack a monster that is fighting against another player.']);
+
+    await page.keyboard.press('t');
+    await expect(status).toBeHidden();
+    await page.keyboard.press('t');
+    await expect(status).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(status).toBeHidden();
+    expect((await page.evaluate(() => window.__client!.stats())).errors).toEqual([]);
+
+    await page.getByRole('button', { name: 'Leave' }).click();
+    await expect(page.getByRole('button', { name: 'Log in' })).toBeEnabled();
+    await expect(page.locator('.world-hud')).toHaveCount(0);
   });
 
   test("the JOIN's messages about the own character reach its numbers, made before the JOIN is applied", async ({ page }) => {

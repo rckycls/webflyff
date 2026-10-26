@@ -20,8 +20,16 @@ import type { AssetStore } from '@flyffweb/scene';
 /** NULL_ID, written `=` in `propItem.txt`: the `exclusive` and `baseIgnore` of an item that takes off and hides nothing. */
 export const NO_PART = -1;
 
+/**
+ * A client text: its `TID_*` name, text and ARGB colour, and the number `defineText.h` gives the name (`textId`), which the
+ * server names it by (DEFINEDTEXT); none in game files converted before the converter kept the numbers.
+ */
+export interface ClientText extends TextEntry {
+  textId?: number;
+}
+
 /** The client texts by `TID_*` name (`textClient.inc`): the text and its ARGB colour, what GETTEXT and GETTEXTCOLOR give. */
-export type Texts = ReadonlyMap<string, TextEntry>;
+export type Texts = ReadonlyMap<string, ClientText>;
 
 /**
  * The converter's game-data catalogs (`data/*.json`), looked up the way Neuz looks the same things up.
@@ -117,7 +125,9 @@ export async function loadGameData(store: Pick<AssetStore, 'json' | 'url'>): Pro
     exp: exp.map((row) => ({
       exp1: BigInt(row.exp1), exp2: BigInt(row.exp2), lpPoint: row.lpPoint, limitExp: BigInt(row.limitExp),
     })),
-    texts: new Map(Object.entries(texts).map(([id, { text, color }]) => [id, { id, text, color }])),
+    texts: new Map(Object.entries(texts).map(([id, { text, color, textId }]): [string, ClientText] => [
+      id, textId === undefined ? { id, text, color } : { id, text, color, textId },
+    ])),
     effects: new Map(Object.entries(effects).map(([id, effect]) => [Number(id), effect])),
   };
 }

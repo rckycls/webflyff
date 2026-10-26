@@ -433,3 +433,228 @@ fieldset:disabled .btn {
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
 }
+
+/* Neuz's windows and texts over the 3D view (Piece 4 spec §3.9, world/hud/): drawn in CSS pixels as Neuz draws them in
+   screen pixels, with the theme's pictures. The layer is the screen inside its safe areas, and takes no touch itself:
+   only the windows do. */
+.world-hud {
+  position: absolute;
+  top: env(safe-area-inset-top, 0px);
+  right: env(safe-area-inset-right, 0px);
+  bottom: env(safe-area-inset-bottom, 0px);
+  left: env(safe-area-inset-left, 0px);
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+  color: #ffffff;
+  /* gulim9, the windows' text font: 9 points, 12 px */
+  font: 12px/1 Verdana, Geneva, Tahoma, sans-serif;
+  /* FontWorld's outline: 2 px of ARGB(255, 60, 60, 60) (CTheme, ITheme.cpp:91-124) */
+  --hud-world-outline: -2px 0 #3c3c3c, 2px 0 #3c3c3c, 0 -2px #3c3c3c, 0 2px #3c3c3c, -1px -1px #3c3c3c,
+    1px -1px #3c3c3c, -1px 1px #3c3c3c, 1px 1px #3c3c3c;
+}
+
+.world-hud [hidden] {
+  display: none !important;
+}
+
+/* The overlay stays top left, under the status window (§3.9; 112 px, APP_STATUS1's height). */
+.world:has(.hud-status:not([hidden])) #overlay {
+  top: calc(env(safe-area-inset-top, 0px) + 112px) !important;
+}
+
+/* A window (WindowFrame): its frame, title bar, close button and client area, placed by the script. */
+.hud-window {
+  position: absolute;
+  pointer-events: auto;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.hud-window-frame {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background-repeat: no-repeat;
+}
+
+.hud-window-frame > div {
+  position: absolute;
+  background-repeat: repeat;
+}
+
+.hud-window-title {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  box-sizing: border-box;
+  padding: 4px 26px 0 10px;
+  overflow: hidden;
+  white-space: nowrap;
+  /* Arial Black9, the title font, in the window's colour (white) */
+  font-weight: bold;
+  text-shadow: 1px 1px #000000;
+  cursor: move;
+}
+
+/* ButtWndExit.tga: normal, highlighted, pushed, disabled side by side; the title bar's button is never highlighted */
+.hud-window-close {
+  position: absolute;
+  padding: 0;
+  border: 0;
+  background: transparent no-repeat -15px 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.hud-window-close:active {
+  background-position: -30px 0;
+}
+
+/* a finger needs more than 15 x 14 px */
+.hud-window-close::before {
+  content: '';
+  position: absolute;
+  inset: -12px -8px -12px -12px;
+}
+
+.hud-window-body {
+  position: absolute;
+}
+
+/* A gauge (Gauge): three pieces of the picture, multiplied by the gauge's colour. */
+.hud-gauge {
+  position: absolute;
+  pointer-events: none;
+}
+
+.hud-gauge > div {
+  position: absolute;
+  top: 0;
+  background-repeat: no-repeat;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+}
+
+/* The status window (StatusWindow): the numbers over the bars, as CWndStatus::OnDraw places them */
+.hud-status-face {
+  position: absolute;
+  overflow: hidden;
+}
+
+.hud-status-face canvas {
+  display: block;
+}
+
+.hud-status-text {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 12px;
+  white-space: nowrap;
+  text-shadow: 1px 1px #000000;
+  pointer-events: none;
+}
+
+.hud-status-text > span {
+  position: absolute;
+  top: 0;
+}
+
+/* the value centred at 122, the slash at the bar's middle, the maximum centred at 174 */
+.hud-status-text[data-mode='points'] > span:nth-of-type(1) {
+  left: 122px;
+  transform: translateX(-50%);
+}
+
+.hud-status-text[data-mode='points'] > span:nth-of-type(2) {
+  left: 150px;
+  transform: translateX(-50%);
+}
+
+.hud-status-text[data-mode='points'] > span:nth-of-type(3) {
+  left: 174px;
+  transform: translateX(-50%);
+}
+
+/* the percent from 114, the <value> up to 187 */
+.hud-status-text[data-mode='percent'] > span:nth-of-type(1) {
+  left: 114px;
+}
+
+.hud-status-text[data-mode='percent'] > span:nth-of-type(2) {
+  left: 187px;
+  transform: translateX(-100%);
+}
+
+/* the EXP and rest percent up to 197 */
+.hud-status-text[data-mode='single'] > span {
+  left: 197px;
+  transform: translateX(-100%);
+}
+
+/* The target bar (TargetBar), top centre: the 200 px gauge 30 px down, the text over it, the arrow left of the text */
+.hud-target {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  height: 56px;
+  margin-left: -100px;
+  text-shadow: var(--hud-world-outline);
+}
+
+.hud-target-name,
+.hud-target-info {
+  position: absolute;
+  white-space: nowrap;
+}
+
+.hud-target-info {
+  left: 0;
+}
+
+.hud-target-arrow {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  background-repeat: no-repeat;
+}
+
+/* The server messages (MessageLines), centred at 520/768 of the height, the newest at the bottom */
+.hud-messages {
+  position: absolute;
+  top: calc(100% * 520 / 768);
+  left: 0;
+  right: 0;
+  transform: translateY(-50%);
+  text-align: center;
+  /* a line every size.cy - 3 px (CClientMsg::Render) */
+  line-height: 12px;
+  text-shadow: var(--hud-world-outline);
+}
+
+.hud-messages > div {
+  padding: 0 16px;
+}
+
+/* The caption (Caption), at 184/768 of the height: Arial at a fiftieth of the width, outlined in ARGB(255, 40, 100, 220) */
+.hud-caption {
+  position: absolute;
+  top: calc(100% * 184 / 768);
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  color: rgb(250, 250, 255);
+  font: 2vw/1.15 Arial, Helvetica, sans-serif;
+  text-shadow: -2px 0 #2864dc, 2px 0 #2864dc, 0 -2px #2864dc, 0 2px #2864dc, -1px -1px #2864dc, 1px -1px #2864dc,
+    -1px 1px #2864dc, 1px 1px #2864dc;
+}
+
+.hud-caption > div {
+  white-space: nowrap;
+  transform-origin: 50% 0;
+}

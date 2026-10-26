@@ -75,17 +75,20 @@ describe('loadGameData: the combat catalogs', () => {
     expect(typeof data.exp[2]!.limitExp).toBe('bigint');
   });
 
-  it('texts are looked up by TID name, with the name as the entry id', async () => {
+  it('texts are looked up by TID name, with the name as the entry id and the number defineText.h gives it', async () => {
     const data = await loadGameData(storeOf(catalogFiles({
       [GAME_DATA_KEYS.texts]: {
-        TID_GAME_DEATH: { text: 'Press ESC and go back to Lodestar(Town).', color: 0xff00ffff },
+        TID_GAME_DEATH: { text: 'Press ESC and go back to Lodestar(Town).', color: 0xff00ffff, textId: 602 },
+        // a texts.json written before the converter kept the numbers has none
         TID_GAME_LEVELUP: { text: 'Level up!', color: 0xffffff00 },
       },
     })));
     expect([...data.texts.keys()]).toEqual(['TID_GAME_DEATH', 'TID_GAME_LEVELUP']);
     expect(data.texts.get('TID_GAME_DEATH')).toEqual({
-      id: 'TID_GAME_DEATH', text: 'Press ESC and go back to Lodestar(Town).', color: 0xff00ffff,
+      id: 'TID_GAME_DEATH', text: 'Press ESC and go back to Lodestar(Town).', color: 0xff00ffff, textId: 602,
     });
+    expect(data.texts.get('TID_GAME_LEVELUP')).toEqual({ id: 'TID_GAME_LEVELUP', text: 'Level up!', color: 0xffffff00 });
+    expect(data.texts.get('TID_GAME_LEVELUP')).not.toHaveProperty('textId');
     expect(data.texts.get('TID_NOT_THERE')).toBeUndefined();
   });
 

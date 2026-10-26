@@ -5,8 +5,9 @@
 // `CWndWorld::ControlGround` does and its moves sent as Neuz sends them, and the presses on a mover selecting and
 // attacking it (`AttackLoop`, Piece 4 §3.4); and it draws the stage around the own mover, from the chase camera behind
 // it, with the mark of the point a tap sends it to, the effects and damage numbers of the fight, and the corners around
-// the target (Piece 4 §3.7). Every ending closes everything and hands the lobby its message (Ruling 8): nothing that goes
-// wrong here is thrown at the lobby.
+// the target (Piece 4 §3.7), and over it Neuz's windows: the status window, the target bar, the server messages and the
+// caption (`Hud`, Piece 4 §3.9). Every ending closes everything and hands the lobby its message (Ruling 8): nothing that
+// goes wrong here is thrown at the lobby.
 
 import { UI_SHEETS_KEY, toWebPosition } from '@flyffweb/formats';
 import type { Vec3, WebEffect, WebUiSheet, WebUiSheets } from '@flyffweb/formats';
@@ -32,6 +33,8 @@ import type { CombatFxOut, CombatFxWorld } from './fx/combatEffects';
 import { EffectManager } from './fx/EffectManager';
 import { GameDataMissingError } from './gameData';
 import type { GameData } from './gameData';
+import type { UiArt } from './hud/frame';
+import { Hud } from './hud/hud';
 import { OwnMover, pickOnStage } from './ownMover';
 import { OwnState } from './OwnState';
 import { NoWebGLError, page3d, sceneAssets } from './page3d';
@@ -44,10 +47,12 @@ import { MoveMark } from './render/moveMark';
 import { loadHeldItems, loadMoverModel } from './render/moverModels';
 import { nameTagOf } from './render/nameTags';
 import type { TapHit } from './render/picking';
+import { renderPortrait } from './render/portrait';
 import { SpriteLayer } from './render/SpriteLayer';
 import { TargetMarks, attackMarks, focusRect } from './render/TargetMarks';
 import type { ScreenRect } from './render/TargetMarks';
 import { HAttr } from './sim/collision';
+import { Mti } from './sim/constants';
 import { transformCoord } from './sim/d3dx';
 import { FixedStepper, STEPS_PER_SECOND } from './sim/stepper';
 import { WorldSession } from './WorldSession';
@@ -133,6 +138,12 @@ export class WorldScreen {
   private readonly spriteLayers: SpriteLayer[] = [];
   /** The sheets' pictures, decoded as the world is entered and kept while it is on screen (`loadSheets`). */
   private sheetPictures: HTMLImageElement[] = [];
+  /**
+   * The on-screen windows and texts (spec §3.9), made with the stage so that the texts of the messages applied while the
+   * world loads are kept, and put on screen with the world; the UI pictures they are drawn with (`hudArt`).
+   */
+  private hud: Hud | undefined;
+  private hudArt: UiArt | undefined;
   /** The own character's driving: the controls each rules step, the moves sent, the stop. */
   private ownMover: OwnMover | undefined;
   /** The own character's numbers (`ownState`). */
@@ -331,6 +342,7 @@ export class WorldScreen {
     );
     this.tags = new NameTagLayer(stage.scene, this.element.ownerDocument);
     this.startEffects(stage, services);
+    this.startHud(services);
     this.syncViews();
     // the objects' collision shapes come with the tiles from here on, and `ready` waits for them
     stage.ground();
@@ -364,6 +376,24 @@ export class WorldScreen {
     const effects = new EffectManager(this.data!, (key) => services.store.json<WebEffect>(key), renderer, neuzRandom, report);
     this.effects = effects;
     for (const xi of WARM_UP_EFFECTS) effects.preload(xi, (key) => void textures.get(key));
+  }
+
+  /**
+   * The on-screen windows (`Hud`), drawn with the UI stage's pictures from the asset store: one the asset index lacks
+   * (game files converted before the UI stage) is drawn as nothing, and named once on the overlay (spec §4). The glyph
+   * sheets come with the world (`showWorld`).
+   */
+  private startHud(services: SceneServices): void {
+    const art: UiArt = {
+      url: (key) => {
+        const url = services.store.url(key);
+        if (url === null) this.reportOnce(`ui: ${key}`, new Error(`${key} is not in the asset index`));
+        return url ?? '';
+      },
+      sheets: null,
+    };
+    this.hudArt = art;
+    this.hud = new Hud(this.element.ownerDocument, art, this.data!);
   }
 
   /**
@@ -425,7 +455,8 @@ export class WorldScreen {
   private showWorld(sheets: WebUiSheets | null): void {
     const { holder, renderer } = this.page!;
     const doc = this.element.ownerDocument;
-    this.element.replaceChildren(holder, ...this.screenLayers(doc, sheets), this.leaveButton);
+    this.hudArt!.sheets = sheets;
+    this.element.replaceChildren(holder, ...this.screenLayers(doc, sheets), this.hud!.element, this.leaveButton);
     this.keyboard = new KeyboardInput(doc.defaultView ?? window);
     this.walkKey = new WalkKey(doc.defaultView ?? window);
     this.joystick = new Joystick(this.element);
@@ -450,6 +481,33 @@ export class WorldScreen {
     this.lastTime = performance.now();
     renderer.setAnimationLoop((now) => this.frame(now));
     this.resolveShown();
+    void this.makePortrait();
+  }
+
+  /**
+   * The face of the status window (`renderPortrait`): the own look, loaded for it alone, in the first frame of its standing
+   * motion, drawn once with the page's renderer and let go. What cannot be had leaves the face box empty, said once.
+   */
+  private async makePortrait(): Promise<void> {
+    const self = this.world?.self();
+    const services = this.services!;
+    const data = this.data!;
+    const look = self === undefined ? null : lookOf(self, data, this.entry.character.equipment);
+    if (look === null) return;
+    const report = (message: string): void => this.reportOnce(`portrait: ${message}`, new Error(message));
+    try {
+      const model = await loadMoverModel(services)(look, report);
+      try {
+        const key = look.motion(Mti.STAND);
+        const motion = key === null ? null : await loadMotion(services, key);
+        if (this.over) return;
+        this.hud?.status.setPortrait(renderPortrait(this.page!.renderer, model, motion, this.element.ownerDocument));
+      } finally {
+        model.release();
+      }
+    } catch (error) {
+      if (!this.over) report(messageOf(error));
+    }
   }
 
   /**
@@ -488,6 +546,7 @@ export class WorldScreen {
    * attacker's `Process` starts it.
    */
   private play(changes: WorldChanges): void {
+    this.hud?.play(changes.combat, changes.own, this.own);
     const effects = this.effects;
     if (effects === undefined) return;
     const world = this.world!;
@@ -543,6 +602,7 @@ export class WorldScreen {
       overlay.setMessageCounts(this.session.stats);
       stage.render();
       this.drawScreenLayers(world, stage, views, renderer);
+      this.drawHud(world, now);
     } catch (error) {
       // a frame that throws every frame must not fill the overlay with the same line sixty times a second
       const message = `world: ${messageOf(error)}`;
@@ -607,6 +667,19 @@ export class WorldScreen {
     const target = focus.targetId === null ? undefined : world.movers.get(focus.targetId);
     const attacking = target !== undefined && attackMarks(target, focus.next, loop.selectsTarget, loop.autoAttack);
     marks.show(rectOf(focus.targetId), attacking, loop.autoAttack ? rectOf(focus.next) : null);
+  }
+
+  /**
+   * The windows of the frame at `now` (`Hud.frame`): the own numbers and name, and the target bar's mover, which is
+   * the attack's mark (`m_pRenderTargetObj`) when there is one, else the focus (`CWndWorld::RenderSelectObj`,
+   * `WndWorld.cpp:2720-2723`, called with the focus at :1058).
+   */
+  private drawHud(world: WorldState, now: number): void {
+    const self = world.self();
+    const targetId = this.attackLoop!.renderTargetId ?? this.focus!.targetId;
+    const target = targetId === null ? null : world.movers.get(targetId) ?? null;
+    const gameMaster = isGameMaster(self?.added.player?.authorization ?? 0);
+    this.hud!.frame(now, this.own, self?.name ?? this.entry.character.name, target, gameMaster);
   }
 
   /**
@@ -727,6 +800,7 @@ export class WorldScreen {
     this.effectRenderer?.dispose();
     this.effectTextures?.dispose();
     for (const layer of this.spriteLayers) layer.dispose();
+    this.hud?.dispose();
     this.sheetPictures = [];
     this.stage?.dispose();
     this.page?.holder.remove();
