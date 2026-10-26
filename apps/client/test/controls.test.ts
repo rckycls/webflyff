@@ -2,17 +2,22 @@ import { PerspectiveCamera } from 'three';
 import { describe, expect, it, vi } from 'vitest';
 import { toWebPosition } from '@flyffweb/formats';
 import type { Vec3 } from '@flyffweb/formats';
+import type { MoveReport } from '@flyffweb/protocol';
 import { NO_INTENT, joystickIntent } from '@flyffweb/scene';
 import type { MoveIntent } from '@flyffweb/scene';
-import { STANDING, TapToWalk, desiredFrom, driveOwnMover, restingIn } from '../src/world/controls';
-import type { Desired } from '../src/world/controls';
+import {
+  STANDING, TapToWalk, WalkKey, controlIntent, desiredFrom, driveOwnMover, movesOrTurns, restingIn,
+} from '../src/world/controls';
+import type { ControlIntent, Desired, MoverPress } from '../src/world/controls';
+import { OwnMover } from '../src/world/ownMover';
 import { moverMatrix, pickTap } from '../src/world/render/picking';
-import type { PickCandidate } from '../src/world/render/picking';
+import type { PickCandidate, TapHit } from '../src/world/render/picking';
 import { ActionMover } from '../src/world/sim/ActionMover';
 import { terrainGround } from '../src/world/sim/collision';
 import { ActMsg, ObjSta, ObjStaF } from '../src/world/sim/constants';
 import { setDestPos } from '../src/world/sim/moverRules';
 import type { SimMover } from '../src/world/sim/moverRules';
+import { addedPlayer, moverFrom } from './helpers/movers';
 
 /** An own mover at the origin facing 90 degrees, running 0.1 a step; `walking` is the server's starting mode. */
 function ownMover(walking: boolean): ActionMover {
@@ -21,7 +26,11 @@ function ownMover(walking: boolean): ActionMover {
   return act;
 }
 
+/** A push of the joystick, or of anything that asks for a gait (`run`): a full push runs, a part push walks. */
 const intent = (forward: number, turn: number, run: boolean): MoveIntent => ({ forward, turn, run });
+/** The keys (W, S, A, D) held, with Shift or not, the joystick at rest: what `controlIntent` makes of them. */
+const keys = (forward: number, turn: number, shift = false): ControlIntent =>
+  controlIntent({ forward, turn, run: shift }, NO_INTENT);
 const desired = (move: Desired['move'], turn: Desired['turn'], walk: boolean): Desired => ({ move, turn, walk });
 const NOTHING = { moved: false, behavior: false };
 
@@ -39,7 +48,7 @@ describe('desiredFrom', () => {
     expect(desiredFrom(intent(0, 0, false)).turn).toBe('none');
   });
 
-  it('walks unless running', () => {
+  it('a push walks unless it is a full one', () => {
     expect(desiredFrom(intent(1, 0, false)).walk).toBe(true);
     expect(desiredFrom(intent(1, 0, true)).walk).toBe(false);
   });
@@ -62,11 +71,11 @@ describe('desiredFrom', () => {
     expect(desiredFrom(intent(0, 1, false), desired('forward', 'left', true))).toEqual(desired('stand', 'right', true));
   });
 
-  it('with no move or turn held the mode is the one before: letting go or the run key alone asks for no change (Ruling 40)', () => {
-    // after a run, at rest, and the run key let go at rest: still running
+  it('with no move or turn held the mode is the one before: letting go asks for no change (Ruling 40)', () => {
+    // after a run, at rest: still running
     expect(desiredFrom(intent(0, 0, false), desired('forward', 'none', false)).walk).toBe(false);
     expect(desiredFrom(intent(0, 0, false), desired('stand', 'none', false)).walk).toBe(false);
-    // the run key alone at rest does not run
+    // a gait asked for with no move or turn changes nothing
     expect(desiredFrom(intent(0, 0, true), desired('stand', 'none', true)).walk).toBe(true);
     // a move or a turn takes the mode it is held with
     expect(desiredFrom(intent(0, 1, false), desired('stand', 'none', false)).walk).toBe(true);
@@ -266,7 +275,7 @@ describe('driveOwnMover', () => {
     expect(act.state & ObjSta.TURN_ALL).toBe(0);
   });
 
-  it('standing, nothing held and the run key alone change no mode; a turn takes the mode it is held with (Ruling 40)', () => {
+  it('standing, nothing held changes no mode; a turn of the joystick takes the mode it is pushed with (Ruling 40)', () => {
     // the server has the player standing, running: the first idle step, from the mover's own mode, sends nothing
     const act = ownMover(false);
     act.state = ObjSta.STAND;
@@ -275,7 +284,7 @@ describe('driveOwnMover', () => {
     asked = desiredFrom(intent(0, 0, true), asked);
     expect(driveOwnMover(act, asked, true)).toEqual(NOTHING);
     expect(act.stateFlag & ObjStaF.WALK).toBe(0);
-    // turning in place without the run key walks: the turn and the mode go out together
+    // a part push sideways walks: the turn and the mode go out together
     asked = desiredFrom(intent(0, -1, false), asked);
     expect(driveOwnMover(act, asked, true)).toEqual({ moved: true, behavior: true });
     expect(act.stateFlag & ObjStaF.WALK).toBeTruthy();
@@ -383,14 +392,167 @@ describe('driveOwnMover with a destination (WndWorldControlPlayer.cpp:450-465, :
   });
 });
 
-/** Just enough of a canvas for `TapToWalk`: its listeners and a 200 x 100 px box at (10, 20). */
+/**
+ * The own character standing at (100, 0, 100) facing east, walking or running as the server gave it, and the world
+ * screen's driving of it (`OwnMover`), with what it sends.
+ */
+function driven(walking: boolean) {
+  const own = moverFrom(addedPlayer(1, { self: true }, {
+    pos: [100, 0, 100], angle: 90, state: ObjSta.STAND, stateFlag: walking ? ObjStaF.WALK : 0,
+  }));
+  own.act.body.speed = Math.fround(0.1);
+  const sent: Array<{ type: 'moved' | 'behavior'; m: MoveReport }> = [];
+  const session = {
+    sendMoved: (m: MoveReport) => void sent.push({ type: 'moved', m }),
+    sendBehavior: (m: MoveReport) => void sent.push({ type: 'behavior', m }),
+    sendDestPos: () => {},
+    sendCorr: () => {},
+  };
+  let tick = 1000n;
+  const driving = new OwnMover(session, { tick: () => (tick += 10n) }, { show: () => {} });
+  /** One step of the controls: `held` the keys and the joystick, `walkKey` whether X is held. */
+  const control = (held: ControlIntent, walkKey = false): void => {
+    driving.control(own, held, null, walkKey);
+    own.act.step();
+  };
+  const types = (): string[] => sent.map((s) => s.type);
+  return { own, sent, types, control };
+}
+
+const walkFlag = (act: ActionMover): boolean => (act.stateFlag & ObjStaF.WALK) !== 0;
+
+describe('the gait (spec §1): X toggles walking and running, the keys move at the gait the mover has', () => {
+  it('X toggles walk and sends one PLAYERBEHAVIOR (WndWorldControlPlayer.cpp:524-545)', () => {
+    const r = driven(false);
+    const idle = keys(0, 0);
+    r.control(idle);
+    expect(r.sent).toEqual([]);
+    // X goes down: MODE_WALK, and its PLAYERBEHAVIOR, once however long it is held (`bWalk && !s_bWalk2`)
+    for (let i = 0; i < 30; i++) r.control(idle, true);
+    expect(r.types()).toEqual(['behavior']);
+    expect(walkFlag(r.own.act)).toBe(true);
+    expect(r.sent[0]!.m.stateFlag & ObjStaF.WALK).toBe(ObjStaF.WALK);
+    // let go, nothing; down again: MODE_RUN
+    r.control(idle);
+    r.control(idle);
+    expect(r.types()).toEqual(['behavior']);
+    r.control(idle, true);
+    expect(r.types()).toEqual(['behavior', 'behavior']);
+    expect(walkFlag(r.own.act)).toBe(false);
+    expect(r.sent[1]!.m.stateFlag & ObjStaF.WALK).toBe(0);
+  });
+
+  it('W and S then move at the toggled gait, and letting go keeps it', () => {
+    const r = driven(false);
+    r.control(keys(0, 0), true);
+    r.control(keys(0, 0));
+    for (let i = 0; i < 10; i++) r.control(keys(1, 0));
+    // the move alone, no change of mode: it walks (a quarter of the run)
+    expect(r.types()).toEqual(['behavior', 'moved']);
+    expect(walkFlag(r.own.act)).toBe(true);
+    expect(r.own.act.delta[0]).toBe(Math.fround(Math.fround(0.1) / 4));
+    r.control(keys(0, 0));
+    expect(walkFlag(r.own.act)).toBe(true);
+  });
+
+  it('Shift with W runs as W does: running, it runs; walking, it walks; and no mode changes', () => {
+    for (const walking of [false, true]) {
+      for (const shift of [false, true]) {
+        const r = driven(walking);
+        for (let i = 0; i < 5; i++) r.control(keys(1, 0, shift));
+        expect(r.types()).toEqual(['moved']);
+        expect(walkFlag(r.own.act)).toBe(walking);
+        // Shift alone changes nothing either
+        r.control(keys(0, 0, shift));
+        expect(r.types()).toEqual(['moved', 'moved']); // the STAND of letting go
+        expect(walkFlag(r.own.act)).toBe(walking);
+      }
+    }
+    expect(desiredFrom(keys(1, 0, true), restingIn(ownMover(true))).walk).toBe(true);
+    expect(desiredFrom(keys(-1, 1, true), restingIn(ownMover(false))).walk).toBe(false);
+  });
+
+  it('the joystick is unchanged: a part push walks, a full push runs, whatever X made the gait', () => {
+    const r = driven(true);
+    r.control(controlIntent(NO_INTENT, joystickIntent(0, -60)));
+    expect(r.types()).toEqual(['moved', 'behavior']);
+    expect(walkFlag(r.own.act)).toBe(false);
+    r.control(controlIntent(NO_INTENT, joystickIntent(0, -30)));
+    expect(walkFlag(r.own.act)).toBe(true);
+    // the keys and the joystick together: the joystick's push sets the gait
+    expect(controlIntent({ forward: 1, turn: 0, run: false }, joystickIntent(0, -60)))
+      .toEqual({ forward: 1, turn: 0, run: true });
+    expect(controlIntent({ forward: 1, turn: 0, run: true }, NO_INTENT)).toEqual({ forward: 1, turn: 0 });
+  });
+
+  it('movesOrTurns: a key or a push of the joystick, which stop the auto-attack (WndWorldControlPlayer.cpp:383-403)', () => {
+    expect(movesOrTurns(keys(0, 0))).toBe(false);
+    expect(movesOrTurns(keys(0, 0, true))).toBe(false);
+    expect(movesOrTurns(keys(1, 0))).toBe(true);
+    expect(movesOrTurns(keys(0, -1))).toBe(true);
+    expect(movesOrTurns(controlIntent(NO_INTENT, joystickIntent(2, -2)))).toBe(false); // the dead zone
+    expect(movesOrTurns(controlIntent(NO_INTENT, joystickIntent(0, -30)))).toBe(true);
+  });
+});
+
+describe('WalkKey', () => {
+  it('is held from the X key going down to its going up, by its place on the keyboard; a blur or reset lets go', () => {
+    const listeners = new Map<string, (event: unknown) => void>();
+    const target = {
+      addEventListener: (type: string, listener: (event: unknown) => void) => void listeners.set(type, listener),
+      removeEventListener: (type: string) => void listeners.delete(type),
+    };
+    const key = new WalkKey(target as unknown as EventTarget);
+    expect(key.held()).toBe(false);
+    listeners.get('keydown')!({ code: 'KeyX' });
+    expect(key.held()).toBe(true);
+    listeners.get('keydown')!({ code: 'KeyW' });
+    listeners.get('keyup')!({ code: 'KeyW' });
+    expect(key.held()).toBe(true);
+    listeners.get('keyup')!({ code: 'KeyX' });
+    expect(key.held()).toBe(false);
+    listeners.get('keydown')!({ code: 'KeyX' });
+    listeners.get('blur')!({});
+    expect(key.held()).toBe(false);
+    listeners.get('keydown')!({ code: 'KeyX' });
+    key.reset();
+    expect(key.held()).toBe(false);
+    key.dispose();
+    expect(listeners.size).toBe(0);
+  });
+
+  it('a press let go before it is read counts as held at the next read, once: a quick press toggles the gait once', () => {
+    const listeners = new Map<string, (event: unknown) => void>();
+    const target = {
+      addEventListener: (type: string, listener: (event: unknown) => void) => void listeners.set(type, listener),
+      removeEventListener: (type: string) => void listeners.delete(type),
+    };
+    const key = new WalkKey(target as unknown as EventTarget);
+    listeners.get('keydown')!({ code: 'KeyX' });
+    listeners.get('keyup')!({ code: 'KeyX' });
+    expect(key.held()).toBe(true);
+    expect(key.held()).toBe(false);
+    const r = driven(false);
+    listeners.get('keydown')!({ code: 'KeyX' });
+    listeners.get('keyup')!({ code: 'KeyX' });
+    for (let i = 0; i < 3; i++) r.control(keys(0, 0), key.held());
+    expect(r.types()).toEqual(['behavior']);
+    expect(walkFlag(r.own.act)).toBe(true);
+  });
+});
+
+/** Just enough of a canvas for `TapToWalk`: its listeners, the pointers it keeps, and a 200 x 100 px box at (10, 20). */
 class FakeCanvas {
   readonly listeners = new Map<string, (event: unknown) => void>();
+  readonly captured: number[] = [];
   addEventListener(type: string, listener: (event: unknown) => void): void {
     this.listeners.set(type, listener);
   }
   removeEventListener(type: string, listener: (event: unknown) => void): void {
     if (this.listeners.get(type) === listener) this.listeners.delete(type);
+  }
+  setPointerCapture(pointerId: number): void {
+    this.captured.push(pointerId);
   }
   getBoundingClientRect(): { left: number; top: number; width: number; height: number } {
     return { left: 10, top: 20, width: 200, height: 100 };
@@ -401,22 +563,25 @@ class FakeCanvas {
   }
 }
 
-function tapToWalk(pick: (ndcX: number, ndcY: number) => Vec3 | null = () => [1, 2, 3]) {
+function tapToWalk(pick: (ndcX: number, ndcY: number) => TapHit | null = () => ({ point: [1, 2, 3] })) {
   const canvas = new FakeCanvas();
   const spy = vi.fn(pick);
-  const tap = new TapToWalk(canvas as unknown as HTMLElement, spy);
-  return { canvas, pick: spy, tap };
+  const presses: MoverPress[] = [];
+  const tap = new TapToWalk(canvas as unknown as HTMLElement, spy, undefined, (press) => presses.push(press));
+  return { canvas, pick: spy, tap, presses };
 }
 
 describe('TapToWalk', () => {
-  it('a tap gives the picked point', () => {
+  it('a tap on the ground gives the point picked where it went down', () => {
     const { canvas, pick, tap } = tapToWalk();
     expect(tap.take()).toBeNull();
-    // pressed in the middle of the canvas, let go 2 px away 100 ms later
+    // pressed in the middle of the canvas, let go 2 px away 100 ms later: picked as it goes down (OnLButtonDown)
     canvas.fire('pointerdown', 110, 70, 1000);
-    canvas.fire('pointerup', 112, 70, 1100);
     expect(pick).toHaveBeenCalledTimes(1);
     expect(pick).toHaveBeenCalledWith(0, 0);
+    expect(tap.take()).toBeNull();
+    canvas.fire('pointerup', 112, 70, 1100);
+    expect(pick).toHaveBeenCalledTimes(1);
     expect(tap.take()).toEqual([1, 2, 3]);
     // once: the next take has nothing new
     expect(tap.take()).toBeNull();
@@ -431,7 +596,7 @@ describe('TapToWalk', () => {
   });
 
   it('a drag is not a tap', () => {
-    const { canvas, pick, tap } = tapToWalk();
+    const { canvas, tap } = tapToWalk();
     // moved more than 8 px on the way, though let go where it started
     canvas.fire('pointerdown', 100, 50, 0);
     canvas.fire('pointermove', 109, 50, 50);
@@ -442,21 +607,20 @@ describe('TapToWalk', () => {
     // held longer than 300 ms
     canvas.fire('pointerdown', 100, 50, 2000);
     canvas.fire('pointerup', 100, 50, 2301);
-    expect(pick).not.toHaveBeenCalled();
     expect(tap.take()).toBeNull();
 
     // 8 px and 300 ms are still a tap
     canvas.fire('pointerdown', 100, 50, 3000);
     canvas.fire('pointermove', 108, 50, 3100);
     canvas.fire('pointerup', 100, 58, 3300);
-    expect(pick).toHaveBeenCalledTimes(1);
     expect(tap.take()).toEqual([1, 2, 3]);
   });
 
   it("only the main button or a lone finger taps: not another button, a pinch, a cancel or another pointer's let-go", () => {
-    const { canvas, pick } = tapToWalk();
+    const { canvas, pick, tap } = tapToWalk();
     canvas.fire('pointerdown', 100, 50, 0, { button: 2 });
     canvas.fire('pointerup', 100, 50, 10, { button: 2 });
+    expect(pick).not.toHaveBeenCalled();
     // a pinch: the second finger ends the first one's tap, and is none itself
     canvas.fire('pointerdown', 100, 50, 100, { pointerId: 5 });
     canvas.fire('pointerdown', 150, 50, 110, { pointerId: 6, isPrimary: false });
@@ -467,20 +631,22 @@ describe('TapToWalk', () => {
     canvas.fire('pointerup', 100, 50, 220);
     canvas.fire('pointerdown', 100, 50, 300, { pointerId: 7 });
     canvas.fire('pointerup', 100, 50, 310, { pointerId: 8 });
-    expect(pick).not.toHaveBeenCalled();
+    expect(tap.take()).toBeNull();
+    // the second finger picked nothing: only the main pointers' presses are picked
+    expect(pick).toHaveBeenCalledTimes(3);
   });
 
   it('a tap that picks nothing gives nothing, and leaves a tap not yet taken as it is', () => {
-    let point: Vec3 | null = [4, 5, 6];
-    const { canvas, tap } = tapToWalk(() => point);
+    let hit: TapHit | null = { point: [4, 5, 6] };
+    const { canvas, tap } = tapToWalk(() => hit);
     canvas.fire('pointerdown', 100, 50, 0);
     canvas.fire('pointerup', 100, 50, 10);
-    point = null;
-    canvas.fire('pointerdown', 100, 50, 100);
-    canvas.fire('pointerup', 100, 50, 110);
+    hit = null;
+    canvas.fire('pointerdown', 100, 50, 1000);
+    canvas.fire('pointerup', 100, 50, 1010);
     expect(tap.take()).toEqual([4, 5, 6]);
-    canvas.fire('pointerdown', 100, 50, 200);
-    canvas.fire('pointerup', 100, 50, 210);
+    canvas.fire('pointerdown', 100, 50, 2000);
+    canvas.fire('pointerup', 100, 50, 2010);
     expect(tap.take()).toBeNull();
   });
 
@@ -491,28 +657,78 @@ describe('TapToWalk', () => {
       throw new Error('no ground');
     }, report);
     canvas.fire('pointerdown', 100, 50, 0);
-    canvas.fire('pointerup', 100, 50, 10);
     expect(report).toHaveBeenCalledWith(new Error('no ground'));
+    canvas.fire('pointerup', 100, 50, 10);
     expect(tap.take()).toBeNull();
+    expect(tap.heldMover()).toBeNull();
 
     const { canvas: other } = tapToWalk(() => {
       throw new Error('no ground');
     });
-    other.fire('pointerdown', 100, 50, 0);
-    expect(() => other.fire('pointerup', 100, 50, 10)).toThrow('no ground');
+    expect(() => other.fire('pointerdown', 100, 50, 0)).toThrow('no ground');
   });
 
   it('reset forgets a press under way and a tap not yet taken; dispose stops listening', () => {
-    const { canvas, pick, tap } = tapToWalk();
+    const { canvas, tap } = tapToWalk();
     canvas.fire('pointerdown', 100, 50, 0);
     canvas.fire('pointerup', 100, 50, 10);
-    canvas.fire('pointerdown', 100, 50, 100);
+    canvas.fire('pointerdown', 100, 50, 1000);
     tap.reset();
-    canvas.fire('pointerup', 100, 50, 110);
+    canvas.fire('pointerup', 100, 50, 1010);
     expect(tap.take()).toBeNull();
-    expect(pick).toHaveBeenCalledTimes(1);
     tap.dispose();
     expect(canvas.listeners.size).toBe(0);
+  });
+
+  it('a press on a mover is handed on as it goes down, and held until it is let go however far it moves', () => {
+    const { canvas, tap, presses } = tapToWalk(() => ({ mover: 7 }));
+    canvas.fire('pointerdown', 100, 50, 1000);
+    // OnLButtonDown: picked and handed on at once; SetCapture keeps the pointer's let-go
+    expect(presses).toEqual([{ mover: 7, time: 1000, double: false }]);
+    expect(canvas.captured).toEqual([1]);
+    expect(tap.heldMover()).toEqual({ mover: 7, time: 1000 });
+    // a drag or a long hold is still the press (moving the cursor away does not matter, [combat §2.1])
+    canvas.fire('pointermove', 180, 90, 1300);
+    canvas.fire('pointermove', 120, 50, 1900);
+    expect(tap.heldMover()).toEqual({ mover: 7, time: 1000 });
+    canvas.fire('pointerup', 120, 50, 2000);
+    expect(tap.heldMover()).toBeNull();
+    // a mover gives no destination
+    expect(tap.take()).toBeNull();
+
+    // a second finger, a cancel, a lost capture and reset let go too
+    canvas.fire('pointerdown', 100, 50, 3000);
+    canvas.fire('pointerdown', 150, 50, 3010, { pointerId: 6, isPrimary: false });
+    expect(tap.heldMover()).toBeNull();
+    canvas.fire('pointerdown', 100, 50, 4000);
+    canvas.fire('pointercancel', 100, 50, 4010);
+    expect(tap.heldMover()).toBeNull();
+    canvas.fire('pointerdown', 100, 50, 5000);
+    canvas.fire('lostpointercapture', 100, 50, 5010);
+    expect(tap.heldMover()).toBeNull();
+    canvas.fire('pointerdown', 100, 50, 6000);
+    tap.reset();
+    expect(tap.heldMover()).toBeNull();
+  });
+
+  it('a second press within 500 ms and 2 px of the first is a double click\'s (GetDoubleClickTime, SM_CXDOUBLECLK)', () => {
+    let hit: TapHit = { point: [1, 2, 3] };
+    const { canvas, presses } = tapToWalk(() => hit);
+    // the first press on the ground, the second on a mover: a double click whatever is under it
+    canvas.fire('pointerdown', 100, 50, 1000);
+    canvas.fire('pointerup', 100, 50, 1050);
+    hit = { mover: 7 };
+    canvas.fire('pointerdown', 102, 48, 1500);
+    canvas.fire('pointerup', 102, 48, 1550);
+    // a third is a first press again
+    canvas.fire('pointerdown', 102, 48, 1600);
+    canvas.fire('pointerup', 102, 48, 1650);
+    // too late, too far
+    canvas.fire('pointerdown', 102, 48, 2101);
+    canvas.fire('pointerup', 102, 48, 2150);
+    canvas.fire('pointerdown', 105, 48, 2200);
+    canvas.fire('pointerup', 105, 48, 2250);
+    expect(presses.map((p) => p.double)).toEqual([true, false, false, false]);
   });
 
   it('a tap on a mover gives no destination: the world screen selects the mover instead', () => {
@@ -528,10 +744,7 @@ describe('TapToWalk', () => {
       isPlayer: false,
     };
     let moverThere = false;
-    const { canvas, tap } = tapToWalk((x, y) => {
-      const hit = pickTap(camera, x, y, ground, 4, moverThere ? [mover] : []);
-      return hit !== null && 'point' in hit ? hit.point : null;
-    });
+    const { canvas, tap, presses } = tapToWalk((x, y) => pickTap(camera, x, y, ground, 4, moverThere ? [mover] : []));
 
     canvas.fire('pointerdown', 110, 70, 0);
     canvas.fire('pointerup', 110, 70, 10);
@@ -541,12 +754,13 @@ describe('TapToWalk', () => {
     expect(point[2]).toBeCloseTo(100, 2);
 
     moverThere = true;
-    canvas.fire('pointerdown', 110, 70, 100);
-    canvas.fire('pointerup', 110, 70, 110);
+    canvas.fire('pointerdown', 110, 70, 1000);
+    canvas.fire('pointerup', 110, 70, 1010);
     expect(tap.take()).toBeNull();
+    expect(presses).toEqual([{ mover: 7, time: 1000, double: false }]);
     // beside the mover, the ground is picked as before
-    canvas.fire('pointerdown', 170, 70, 200);
-    canvas.fire('pointerup', 170, 70, 210);
+    canvas.fire('pointerdown', 170, 70, 2000);
+    canvas.fire('pointerup', 170, 70, 2010);
     expect(tap.take()).not.toBeNull();
   });
 });

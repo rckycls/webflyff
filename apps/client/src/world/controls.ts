@@ -1,5 +1,7 @@
 import type { MoveReport, Vec3 } from '@flyffweb/protocol';
+import { combineIntents } from '@flyffweb/scene';
 import type { MoveIntent } from '@flyffweb/scene';
+import type { TapHit } from './render/picking';
 import type { ActionMover } from './sim/ActionMover';
 import { ActMsg, MAX_CORR_SIZE_45, ObjSta, ObjStaF } from './sim/constants';
 
@@ -8,11 +10,37 @@ export interface Desired {
   move: 'stand' | 'forward' | 'back';
   turn: 'none' | 'left' | 'right';
   /**
-   * Walk mode asked for. Neuz toggles it with a key, and the mode stays until the key is pressed again; here the player
-   * holds it while moving or turning (running is held, walking is the rest), and with nothing held the mode stays as it
-   * was (`desiredFrom`), so a walk to a tapped point goes in the mode the last move had.
+   * Walk mode asked for. The keys move in the mode the mover has, which the walk key (X) toggles as Neuz's does
+   * (`OwnMover.control`); the joystick asks for one while it is pushed (a part push walks, a full push runs); and with
+   * nothing pushed the mode stays as it was (`desiredFrom`), so a walk to a tapped point goes in the mode the last move had.
    */
   walk: boolean;
+}
+
+/**
+ * What the keys and the joystick ask for this frame (spec §1): the move and the turn of both, and the gait the joystick's
+ * push asks for (`run`: a full push runs, a part push walks), none (`undefined`) while it is not pushed: the keys ask for
+ * no gait, they move at the one the mover has. A `MoveIntent` is one, with its gait.
+ */
+export type ControlIntent = Omit<MoveIntent, 'run'> & { run?: boolean };
+
+/**
+ * The keys' and the joystick's intents as one (`combineIntents`), with the joystick's gait while it is pushed. Shift, the
+ * keys' `run`, no longer changes the gait: Neuz's walk key is a toggle (X, `NeuzMsgProc.cpp:181`,
+ * `WndWorldControlPlayer.cpp:524-545`), and W moves at the gait it toggled (Piece 3's Ruling 25, walk unless Shift, is
+ * replaced).
+ */
+export function controlIntent(keys: MoveIntent, stick: MoveIntent): ControlIntent {
+  const { forward, turn } = combineIntents({ ...keys, run: false }, stick);
+  return stick.forward !== 0 || stick.turn !== 0 ? { forward, turn, run: stick.run } : { forward, turn };
+}
+
+/**
+ * Whether `intent` moves or turns: the movement keys (`bUp || bDown || bLeft || bRight`; the web client has no jump) or
+ * the joystick out of its dead zone, which stop the auto-attack (`WndWorldControlPlayer.cpp:383-403`).
+ */
+export function movesOrTurns(intent: ControlIntent): boolean {
+  return intent.forward !== 0 || intent.turn !== 0;
 }
 
 /** Nothing pressed: standing, not turning, walk mode (the rest before any input, when the mover's mode is not known). */
@@ -48,18 +76,19 @@ function axis(value: number, length: number, was: -1 | 0 | 1): -1 | 0 | 1 {
  * edge (`AXIS_OFF`), so a thumb resting on the edge does not send a PLAYERMOVED every frame. The keys give -1, 0 or 1
  * on each axis, all or nothing, so they turn on and off exactly as before.
  *
- * The mode: walking, or running with the run key (or a full push of the joystick) held, while a move or a turn is asked
- * for. With neither, the mode is `previous`'s: letting go, or the run key alone, changes no mode (no MODE_WALK or
- * MODE_RUN), so a walk to a tapped point keeps the mode the last move had and nothing cancels it (Ruling 40).
+ * The mode: while a move or a turn is asked for with a gait (`intent.run`, the joystick's push), walking unless it
+ * runs; otherwise `previous`'s. So the keys move in the mode the mover has (`restingIn`, and the walk key's toggle), and
+ * letting go changes no mode (no MODE_WALK or MODE_RUN): a walk to a tapped point keeps the mode the last move had and
+ * nothing cancels it (Ruling 40).
  */
-export function desiredFrom(intent: MoveIntent, previous: Readonly<Desired> = STANDING): Desired {
+export function desiredFrom(intent: ControlIntent, previous: Readonly<Desired> = STANDING): Desired {
   const length = Math.hypot(intent.forward, intent.turn);
   const move = axis(intent.forward, length, previous.move === 'forward' ? 1 : previous.move === 'back' ? -1 : 0);
   const turn = axis(intent.turn, length, previous.turn === 'right' ? 1 : previous.turn === 'left' ? -1 : 0);
   return {
     move: move > 0 ? 'forward' : move < 0 ? 'back' : 'stand',
     turn: turn > 0 ? 'right' : turn < 0 ? 'left' : 'none',
-    walk: move === 0 && turn === 0 ? previous.walk : !intent.run,
+    walk: (move === 0 && turn === 0) || intent.run === undefined ? previous.walk : !intent.run,
   };
 }
 
@@ -74,9 +103,10 @@ export function desiredFrom(intent: MoveIntent, previous: Readonly<Desired> = ST
  * it (`ClearDest`, :548-553; `g_DPlay.ClearPlayerDestPos` is `__J0823`'s, which is off): back, a turn, or a change
  * of gait. Forward does not while the mover goes forward already, as on its way to a point: `FORWARD` answers 0.
  *
- * Left out: jumping (:486), auto-attack, tracking, the cast cancel and the chat line that announces walking or
- * running. The walk key's toggle (:526-545) becomes `desired.walk`, which sends MODE_WALK or MODE_RUN only where the
- * mover's walk flag differs.
+ * Left out: jumping (:486), tracking, the cast cancel and the chat line that announces walking or running
+ * (`TID_GAME_WALK`, `TID_GAME_RUN`: no chat window yet). The auto-attack the movement keys stop (:383-403) is the
+ * attack loop's (`AttackLoop.stop`). The walk key's toggle (:526-545) and the joystick's gait become `desired.walk`,
+ * which sends MODE_WALK or MODE_RUN only where the mover's walk flag differs (`OwnMover.control` flips it as X goes down).
  */
 export function driveOwnMover(act: ActionMover, desired: Desired, emptyDest: boolean): { moved: boolean; behavior: boolean } {
   let moved = false;
@@ -127,33 +157,62 @@ export function movedReport(act: ActionMover, tick: bigint): MoveReport {
 const TAP_MOVE_PX = 8;
 /** A press held longer than this many milliseconds is not a tap either. */
 const TAP_HOLD_MS = 300;
+/**
+ * A press that goes down within this many milliseconds of the one before (Windows' `GetDoubleClickTime`, 500 by
+ * default) and within `DOUBLE_PX` of where it went down (half of `SM_CXDOUBLECLK`, 4 by default: the rectangle is
+ * centred on the first press) is a double click's second one, which Windows sends as `WM_LBUTTONDBLCLK`.
+ */
+const DOUBLE_MS = 500;
+const DOUBLE_PX = 2;
 
 /**
- * A tap on the world (a click of the main mouse button on a computer), where `CWndWorld::OnLButtonDown`
- * (`WndWorld.cpp:6712-6995`) lets the player walk (`m_bFreeMove`) and `ControlGround` sets the destination at the point
- * the press is over (`WndWorldControlPlayer.cpp:299-361`). `pick` turns that point, in normalized device coordinates
- * (x from -1 at the left to 1, y from 1 at the top to -1), into the D3D point the walk goes to, or null where there is
- * none (or a mover is there: picking one is targeting, Piece 4's). `canvas` is the drawing: a finger on the
- * joystick, an element of its own over it, is not on it.
+ * A press on a mover, handed on as it goes down (`CWndWorld::OnLButtonDown`, `WndWorld.cpp:6712-7113`, or for a double
+ * click's second press `OnLButtonDblClk`, :7239-7263): the mover's object ID, the press's time (the event's, in the
+ * clock of `performance.now()`), and whether it is a double click's second press.
+ */
+export interface MoverPress {
+  mover: number;
+  time: number;
+  double: boolean;
+}
+
+type Listen = Pick<EventTarget, 'addEventListener' | 'removeEventListener'>;
+
+/**
+ * The presses on the world (a click of the main mouse button on a computer, a finger on a phone): what each lands on is
+ * picked as it goes down, as `CWndWorld::OnLButtonDown` picks the highlighted object (`WndWorld.cpp:6844-6847`). `pick`
+ * turns the point, in normalized device coordinates (x from -1 at the left to 1, y from 1 at the top to -1), into what is
+ * there (`TapHit`), or null where there is nothing. `canvas` is the drawing: a finger on the joystick, an element of its
+ * own over it, is not on it.
  *
- * Neuz sets the destination as the button goes down, and drags with it held turn the camera. Here a press is a tap
- * only if it is let go within 300 ms and 8 px of where it went down, so that a drag or a held finger walks nowhere; the
- * point is the one it went down at. Only the main button and a lone finger tap: a second finger ends the first one's
- * tap. An error `pick` throws goes to `report` (the overlay), and the tap gives nothing; without `report` it is thrown.
+ * - A press on a mover goes to `onMoverPress` at once, and is held (`heldMover`) until it is let go, however far it
+ *   moves (moving the cursor away does not matter to Neuz's hold, [combat §2.1]); the canvas keeps the pointer
+ *   (`SetCapture`, :6842), so that its let-go comes here.
+ * - A press on the ground is a tap where the player walks (`m_bFreeMove`, :6989-6997, and `ControlGround`'s destination
+ *   at the point, `WndWorldControlPlayer.cpp:299-361`): `take`. Neuz sets the destination as the button goes down, and
+ *   drags with it held turn the camera; here a press is a tap only if it is let go within 300 ms and 8 px of where it
+ *   went down, so that a drag or a held finger walks nowhere. The point is the one it went down at.
+ *
+ * Only the main button and a lone finger press: a second finger ends the first one's press. An error `pick` throws goes
+ * to `report` (the overlay), and the press gives nothing; without `report` it is thrown.
  */
 export class TapToWalk {
-  private press: { pointerId: number; x: number; y: number; time: number } | null = null;
+  private press: { pointerId: number; x: number; y: number; time: number; hit: TapHit | null; tap: boolean } | null = null;
+  /** The last press that went down, for the next one's double click; null after a double click's second press. */
+  private last: { x: number; y: number; time: number } | null = null;
   private dest: Vec3 | null = null;
 
   constructor(
     private readonly canvas: HTMLElement,
-    private readonly pick: (ndcX: number, ndcY: number) => Vec3 | null,
+    private readonly pick: (ndcX: number, ndcY: number) => TapHit | null,
     private readonly report?: (error: unknown) => void,
+    private readonly onMoverPress?: (press: MoverPress) => void,
   ) {
     canvas.addEventListener('pointerdown', this.onDown);
     canvas.addEventListener('pointermove', this.onMove);
     canvas.addEventListener('pointerup', this.onUp);
     canvas.addEventListener('pointercancel', this.onCancel);
+    canvas.addEventListener('lostpointercapture', this.onLost);
   }
 
   /** The newest destination since the last call, or null. */
@@ -163,9 +222,16 @@ export class TapToWalk {
     return dest;
   }
 
+  /** The press on a mover still held (Neuz's `m_bLButtonDown` after it): the mover and when it went down; or null. */
+  heldMover(): { mover: number; time: number } | null {
+    const press = this.press;
+    return press !== null && press.hit !== null && 'mover' in press.hit ? { mover: press.hit.mover, time: press.time } : null;
+  }
+
   /** Forgets a press under way and a tap not yet taken: the page lost the focus or was hidden. */
   reset(): void {
     this.press = null;
+    this.last = null;
     this.dest = null;
   }
 
@@ -174,42 +240,107 @@ export class TapToWalk {
     this.canvas.removeEventListener('pointermove', this.onMove);
     this.canvas.removeEventListener('pointerup', this.onUp);
     this.canvas.removeEventListener('pointercancel', this.onCancel);
+    this.canvas.removeEventListener('lostpointercapture', this.onLost);
     this.reset();
   }
 
   private readonly onDown = (event: PointerEvent): void => {
-    this.press = event.isPrimary && event.button === 0
-      ? { pointerId: event.pointerId, x: event.clientX, y: event.clientY, time: event.timeStamp }
-      : null;
+    this.press = null;
+    if (!event.isPrimary || event.button !== 0) return;
+    const box = this.canvas.getBoundingClientRect();
+    if (!(box.width > 0 && box.height > 0)) return;
+    const { pointerId, clientX: x, clientY: y, timeStamp: time } = event;
+    const last = this.last;
+    const double = last !== null && time - last.time <= DOUBLE_MS && Math.abs(x - last.x) <= DOUBLE_PX
+      && Math.abs(y - last.y) <= DOUBLE_PX;
+    this.last = double ? null : { x, y, time };
+    let hit: TapHit | null;
+    try {
+      hit = this.pick(((x - box.left) / box.width) * 2 - 1, 1 - ((y - box.top) / box.height) * 2);
+    } catch (error) {
+      if (this.report === undefined) throw error;
+      this.report(error);
+      return;
+    }
+    this.press = { pointerId, x, y, time, hit, tap: true };
+    if (hit === null || !('mover' in hit)) return;
+    this.canvas.setPointerCapture?.(pointerId);
+    this.onMoverPress?.({ mover: hit.mover, time, double });
   };
 
   private readonly onMove = (event: PointerEvent): void => {
     const press = this.press;
-    if (press !== null && event.pointerId === press.pointerId && moved(press, event)) this.press = null;
+    if (press !== null && event.pointerId === press.pointerId && moved(press, event)) press.tap = false;
   };
 
   private readonly onUp = (event: PointerEvent): void => {
     const press = this.press;
     if (press === null || event.pointerId !== press.pointerId) return;
     this.press = null;
-    if (moved(press, event) || event.timeStamp - press.time > TAP_HOLD_MS) return;
-    const box = this.canvas.getBoundingClientRect();
-    if (!(box.width > 0 && box.height > 0)) return;
-    let point: Vec3 | null;
-    try {
-      point = this.pick(((press.x - box.left) / box.width) * 2 - 1, 1 - ((press.y - box.top) / box.height) * 2);
-    } catch (error) {
-      if (this.report === undefined) throw error;
-      this.report(error);
-      return;
-    }
-    if (point !== null) this.dest = point;
+    if (!press.tap || moved(press, event) || event.timeStamp - press.time > TAP_HOLD_MS) return;
+    if (press.hit !== null && 'point' in press.hit) this.dest = press.hit.point;
   };
 
   private readonly onCancel = (): void => {
     this.press = null;
   };
+
+  /** The canvas lost the pointer it kept (the press's let-go will not come here). */
+  private readonly onLost = (event: PointerEvent): void => {
+    if (this.press !== null && event.pointerId === this.press.pointerId) this.press = null;
+  };
 }
 
 const moved = (from: { x: number; y: number }, to: PointerEvent): boolean =>
   Math.hypot(to.clientX - from.x, to.clientY - from.y) > TAP_MOVE_PX;
+
+/** `KeyX`: the walk key (`g_Neuz.Key.chWalk = 'X'`, `Neuz/NeuzMsgProc.cpp:181`), by its place on the keyboard as `KeyboardInput` reads keys. */
+const WALK_KEY = 'KeyX';
+
+/**
+ * The walk key: whether it is held (`g_bKeyTable[g_Neuz.Key.chWalk]`, `WndWorldControlPlayer.cpp:524`), which
+ * `OwnMover.control` toggles the gait on as it goes down. Neuz reads the key table once a frame; here a press let go
+ * before the next read still counts as held at that read, once, as the frames of a slow page can be farther apart than
+ * a quick press. `target` is usually `window`; losing the focus lets it go, as a key let go meanwhile never sends its
+ * keyup.
+ */
+export class WalkKey {
+  private down = false;
+  /** It went down since the last read. */
+  private pressed = false;
+  private readonly onKeyDown = (event: Event): void => {
+    if ((event as KeyboardEvent).code !== WALK_KEY) return;
+    this.down = true;
+    this.pressed = true;
+  };
+  private readonly onKeyUp = (event: Event): void => {
+    if ((event as KeyboardEvent).code === WALK_KEY) this.down = false;
+  };
+  private readonly onBlur = (): void => this.reset();
+
+  constructor(private readonly target: Listen) {
+    target.addEventListener('keydown', this.onKeyDown);
+    target.addEventListener('keyup', this.onKeyUp);
+    target.addEventListener('blur', this.onBlur);
+  }
+
+  /** Whether the key is held, or was pressed since the last call. */
+  held(): boolean {
+    const held = this.down || this.pressed;
+    this.pressed = false;
+    return held;
+  }
+
+  /** Lets go of the key, as losing the focus does. */
+  reset(): void {
+    this.down = false;
+    this.pressed = false;
+  }
+
+  dispose(): void {
+    this.target.removeEventListener('keydown', this.onKeyDown);
+    this.target.removeEventListener('keyup', this.onKeyUp);
+    this.target.removeEventListener('blur', this.onBlur);
+    this.reset();
+  }
+}

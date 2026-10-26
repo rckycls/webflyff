@@ -1,18 +1,18 @@
 // The player's own character as the world screen drives it (spec §3.2, §3.7): `CWndWorld::ControlGround`
-// (`Source/_Interface/WndWorldControlPlayer.cpp:299-559`) at each rules step, a tap's destination first and then the
-// keys and the joystick, with its moves sent as Neuz sends them; the PLAYERCORR the rules' step may owe; and the stop
-// when the page loses the focus or is hidden. The world screen hands it the inputs and the movers; the rules it drives
-// are `sim/`'s.
+// (`Source/_Interface/WndWorldControlPlayer.cpp:299-559`) at each rules step, a tap's destination first, then the
+// keys and the joystick, then the walk key's toggle (spec §1), with its moves sent as Neuz sends them; the PLAYERCORR
+// the rules' step may owe; and the stop when the page loses the focus or is hidden. The world screen hands it the
+// inputs and the movers; the rules it drives are `sim/`'s.
 
 import type { Vec3 } from '@flyffweb/protocol';
-import type { MoveIntent, WorldStage } from '@flyffweb/scene';
+import type { WorldStage } from '@flyffweb/scene';
 import { desiredFrom, driveOwnMover, movedReport, restingIn } from './controls';
-import type { Desired } from './controls';
+import type { ControlIntent, Desired } from './controls';
 import type { MoveMark } from './render/moveMark';
 import type { MoverViews } from './render/MoverViews';
 import { pickTap } from './render/picking';
 import type { TapHit } from './render/picking';
-import { MAX_CORR_SIZE_45 } from './sim/constants';
+import { MAX_CORR_SIZE_45, ObjStaF } from './sim/constants';
 import { isEmptyDest, setDestPos } from './sim/moverRules';
 import type { WorldSession } from './WorldSession';
 import type { Mover } from './WorldState';
@@ -27,6 +27,8 @@ export class OwnMover {
    * that the first idle step changes no mode.
    */
   private desired: Desired | null = null;
+  /** `s_bWalk2`: whether the walk key was held at the last step that read it (`WndWorldControlPlayer.cpp:117`, :546). */
+  private walkKeyWas = false;
 
   /** `clock` gives the ticks the moves carry (`g_TickCount.GetTickCount()`); `mark` shows where a tap walks to. */
   constructor(
@@ -37,12 +39,18 @@ export class OwnMover {
 
   /**
    * The controls of one rules step, before the rules step the movers: a tap's destination (`tap`, or null), then the
-   * keys and the joystick (`intent`), in `ControlGround`'s order.
+   * keys and the joystick (`intent`, `controlIntent`'s), then the walk key (`walkKey`: whether X is held), in
+   * `ControlGround`'s order. The walk key toggles the gait as it goes down (`bWalk && !s_bWalk2`, :526-546): MODE_RUN
+   * when walking, MODE_WALK when not, and so a PLAYERBEHAVIOR (and `ClearDest`, :548-553) once a press; the mode it
+   * gives is the one the keys move at from then on.
    */
-  control(own: Mover, intent: MoveIntent, tap: Vec3 | null): void {
+  control(own: Mover, intent: ControlIntent, tap: Vec3 | null, walkKey = false): void {
     if (tap !== null) this.walkTo(own, tap);
-    this.desired = desiredFrom(intent, this.desired ?? restingIn(own.act));
-    this.drive(own, this.desired);
+    let desired = desiredFrom(intent, this.desired ?? restingIn(own.act));
+    if (walkKey && !this.walkKeyWas) desired = { ...desired, walk: (own.act.stateFlag & ObjStaF.WALK) === 0 };
+    this.walkKeyWas = walkKey;
+    this.desired = desired;
+    this.drive(own, desired);
   }
 
   /**

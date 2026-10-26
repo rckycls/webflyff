@@ -2,14 +2,15 @@
 // movers and their name tags, the joystick, a Leave button and the measurement overlay. It wires the parts together:
 // the session's bundles go into `WorldState` as they come; once the world is on screen the frame loop runs the rules'
 // 60 steps a second, the keys, the joystick and a tap on the world (spec §3.7) driving the own mover as
-// `CWndWorld::ControlGround` does and its moves sent as Neuz sends them; and it draws the stage around the own mover,
-// from the chase camera behind it, with the mark of the point a tap sends it to. Every ending closes everything and
-// hands the lobby its message (Ruling 8): nothing that goes wrong here is thrown at the lobby.
+// `CWndWorld::ControlGround` does and its moves sent as Neuz sends them, and the presses on a mover selecting and
+// attacking it (`AttackLoop`, Piece 4 §3.4); and it draws the stage around the own mover, from the chase camera behind
+// it, with the mark of the point a tap sends it to. Every ending closes everything and hands the lobby its message
+// (Ruling 8): nothing that goes wrong here is thrown at the lobby.
 
 import { toWebPosition } from '@flyffweb/formats';
 import type { Vec3 } from '@flyffweb/formats';
-import type { BundleMessage, WorldMessage } from '@flyffweb/protocol';
-import { Joystick, KeyboardInput, WorldStage, combineIntents, loadGltf, loopMotion } from '@flyffweb/scene';
+import type { AddedMover, BundleMessage, WorldMessage } from '@flyffweb/protocol';
+import { Joystick, KeyboardInput, WorldStage, loadGltf, loopMotion } from '@flyffweb/scene';
 import type { Ground, LoopedMotion, SceneServices } from '@flyffweb/scene';
 import { Vector2, Vector3 } from 'three';
 import { UNEXPECTED_PROBLEM } from '../lobby/errorText';
@@ -19,11 +20,13 @@ import type { OpenChannel } from '../net/PacketChannel';
 import { registerWorld } from '../testHooks';
 import { BackCamera } from './backCamera';
 import type { ChaseView } from './backCamera';
+import { AttackLoop, objRadius } from './combat/attackLoop';
 import { Focus } from './combat/focus';
-import { TapToWalk } from './controls';
+import { TapToWalk, WalkKey, controlIntent, movesOrTurns } from './controls';
 import { GameDataMissingError } from './gameData';
 import type { GameData } from './gameData';
 import { OwnMover, pickOnStage } from './ownMover';
+import { OwnState } from './OwnState';
 import { NoWebGLError, page3d, sceneAssets } from './page3d';
 import type { Page3d } from './page3d';
 import { MoverViews } from './render/MoverViews';
@@ -32,12 +35,14 @@ import { lookOf } from './render/looks';
 import { MoveMark } from './render/moveMark';
 import { loadHeldItems, loadMoverModel } from './render/moverModels';
 import { nameTagOf } from './render/nameTags';
+import type { TapHit } from './render/picking';
 import { HAttr } from './sim/collision';
 import { transformCoord } from './sim/d3dx';
 import { FixedStepper, STEPS_PER_SECOND } from './sim/stepper';
 import { WorldSession } from './WorldSession';
 import type { WorldEvent } from './WorldSession';
 import { WorldState } from './WorldState';
+import type { Mover } from './WorldState';
 
 const LOADING_TEXT = 'Entering the world…';
 const NOT_AVAILABLE_TEXT = "This map isn't available in the browser yet.";
@@ -97,11 +102,17 @@ export class WorldScreen {
   private keyboard: KeyboardInput | undefined;
   private joystick: Joystick | undefined;
   private tap: TapToWalk | undefined;
+  /** X, the walk key (spec §1). */
+  private walkKey: WalkKey | undefined;
   /** The mover the player selected (`CWorld::m_pObjFocus`), which the server is told of. */
   private focus: Focus | undefined;
+  /** The own character's auto-attack: the presses on a mover, the attack each rules step, what stops it. */
+  private attackLoop: AttackLoop | undefined;
   private mark: MoveMark | undefined;
   /** The own character's driving: the controls each rules step, the moves sent, the stop. */
   private ownMover: OwnMover | undefined;
+  /** The own character's numbers (`ownState`). */
+  private own: OwnState | undefined;
   /** The chase camera behind the own mover, which follows it once a rules step. */
   private readonly backCamera = new BackCamera();
   private readonly stepper = new FixedStepper();
@@ -160,6 +171,15 @@ export class WorldScreen {
   /** Leave (spec §3.2.7): both connections close, and the lobby comes back with no message. */
   leave(): void {
     this.end(undefined);
+  }
+
+  /**
+   * The own character's numbers (`OwnState`), made from the own ADD_OBJ and the character list's equipment as the JOIN
+   * brings the own mover; undefined before, or if they could not be made (the overlay says why). The attack loop reads
+   * them; the messages about the own character are to go into this same object.
+   */
+  get ownState(): OwnState | undefined {
+    return this.own;
   }
 
   private async start(): Promise<void> {
@@ -221,6 +241,7 @@ export class WorldScreen {
    * A bundle's messages, in order, to the movers in view. SETPOS ends with `InitInterpolation` (`CDPClient::OnSetPos`,
    * `DPClient.cpp:2270`): the mover is drawn where it is put. A REPLACE within the world (another world has ended the
    * session) puts the own mover there as SETPOS does; the frame loop then streams the map there and moves the camera.
+   * The own mover's ADD_OBJ makes the own character's numbers (`ownState`); QUERYGETDESTOBJ is the attack loop's.
    */
   private apply(messages: BundleMessage<WorldMessage>[]): void {
     const world = this.world!;
@@ -232,8 +253,27 @@ export class WorldScreen {
         this.views?.snap(self.objectId);
         continue;
       }
+      if (value.type === 'queryGetDestObj') {
+        this.attackLoop?.onQueryGetDestObj(value.fromId);
+        continue;
+      }
       world.apply(objectId, value);
       if (value.type === 'setPos') this.views?.snap(objectId);
+      if (value.type === 'addMover' && this.own === undefined && world.self()?.added === value.mover) {
+        this.makeOwnState(value.mover);
+      }
+    }
+  }
+
+  /**
+   * The own character's numbers from its ADD_OBJ and the character list's equipment. A throw (no own data in the
+   * ADD_OBJ, no job row) is the overlay's: the world goes on without them, and the attack loop attacks nothing.
+   */
+  private makeOwnState(added: AddedMover): void {
+    try {
+      this.own = new OwnState(this.data!, added, this.entry.character.equipment);
+    } catch (error) {
+      this.reportOnce(`own character: ${messageOf(error)}`, error);
     }
   }
 
@@ -275,12 +315,17 @@ export class WorldScreen {
     const doc = this.element.ownerDocument;
     this.element.replaceChildren(holder, this.leaveButton);
     this.keyboard = new KeyboardInput(doc.defaultView ?? window);
+    this.walkKey = new WalkKey(doc.defaultView ?? window);
     this.joystick = new Joystick(this.element);
-    // on the canvas: the joystick is an element of its own over it, and its touches never reach it
+    this.focus = new Focus(this.session, (objectId) => this.isLive(objectId));
+    const attackLoop = new AttackLoop(this.session, this.focus, () => this.own, this.entry.clock, this.data!.movers);
+    this.attackLoop = attackLoop;
+    // on the canvas: the joystick is an element of its own over it, and its touches never reach it; a press on a mover
+    // goes to the attack loop as it goes down (OnLButtonDown, OnLButtonDblClk)
     this.tap = new TapToWalk(
       renderer.domElement, (x, y) => this.pick(x, y), (error) => this.reportOnce(`tap: ${messageOf(error)}`, error),
+      (press) => attackLoop.onMoverPressed(press.mover, press.time, press.double),
     );
-    this.focus = new Focus(this.session, (objectId) => this.isLive(objectId));
     this.mark = new MoveMark(this.stage!.scene);
     this.ownMover = new OwnMover(this.session, this.entry.clock, this.mark);
     doc.addEventListener('visibilitychange', this.onVisibility);
@@ -295,8 +340,12 @@ export class WorldScreen {
     const world = this.world!;
     const data = this.data!;
     const changes = world.takeChanges();
-    // a mover that left (DEL_OBJ) is no longer the focus (`CWorld::Process`, `World.cpp:892-893`)
-    for (const objectId of changes.removed) this.focus?.onRemoved(objectId, false);
+    // a mover that left (DEL_OBJ) is no longer the focus (`CWorld::Process`, `World.cpp:892-893`), and the attack on it stops
+    for (const objectId of changes.removed) {
+      const wasTarget = this.focus?.targetId === objectId;
+      this.focus?.onRemoved(objectId, false);
+      if (wasTarget) this.attackLoop?.stop('target');
+    }
     this.views!.sync(changes, world.movers);
     this.tags!.sync(changes, world.movers, (mover) => nameTagOf(mover, world.self(), data.nameColors, data.honorTitles));
   }
@@ -318,8 +367,9 @@ export class WorldScreen {
       const stage = this.stage!;
       const views = this.views!;
       this.syncViews();
+      this.measureRadii(world, views);
       const steps = this.paused ? 0 : this.stepper.advance(dt);
-      for (let i = 0; i < steps; i++) this.step(world, stage, views);
+      for (let i = 0; i < steps; i++) this.step(world, stage, views, now);
       views.update(world.movers, steps / STEPS_PER_SECOND);
       // the mark goes once the walk to its point is over: arrived, or ended by a key, a stop or the server
       this.mark!.follow(world.self()?.dest?.pos ?? null);
@@ -343,18 +393,53 @@ export class WorldScreen {
   }
 
   /**
-   * One rules step: a tap, then the keys and the joystick, to the own mover (`OwnMover.control`, in `ControlGround`'s
-   * order); then every mover's step (the own one's included), the PLAYERCORR it may have led to, the views', and the
-   * chase camera's (`CWorld::Process` processes the camera at each `FrameMove`, `World.cpp:924-935`).
+   * One rules step at `now` (ms): the press held on a mover, a tap, the keys and the joystick, as `CWndWorld::Process`
+   * takes them (`WndWorld.cpp:8513-8537`): a tap on the ground or a move of the keys or the joystick stops the
+   * auto-attack ([combat §2.6]); then either the controls drive the own mover (`OwnMover.control`, in `ControlGround`'s
+   * order) or the attack runs, and the attack loop's step (`AttackLoop.step`) comes before the rules'. Then every
+   * mover's step (the own one's included), the PLAYERCORR it may have led to, the views', and the chase camera's
+   * (`CWorld::Process` processes the camera at each `FrameMove`, `World.cpp:924-935`).
    */
-  private step(world: WorldState, stage: WorldStage, views: MoverViews): void {
+  private step(world: WorldState, stage: WorldStage, views: MoverViews, now: number): void {
     const own = world.self();
+    const loop = this.attackLoop!;
+    const held = this.tap!.heldMover();
+    if (held === null) loop.onReleased();
+    else loop.onMoverHeld(held.mover, now - held.time);
     const tap = this.tap!.take();
-    if (own !== undefined) this.ownMover!.control(own, combineIntents(this.keyboard!.intent(), this.joystick!.intent()), tap);
+    if (own !== undefined) {
+      // the keys' Shift no longer changes the gait: X toggles it (spec §1)
+      const intent = controlIntent(this.keyboard!.intent(), this.joystick!.intent());
+      if (tap !== null) loop.stop('ground');
+      if (movesOrTurns(intent)) loop.stop('move');
+      if (loop.controlsPlayer) this.ownMover!.control(own, intent, tap, this.walkKey!.held());
+      loop.step(own, this.findMover);
+    }
     world.step();
     this.ownMover!.corrected(own);
     views.step(world.movers);
     this.follow(world, stage);
+  }
+
+  /** `prj.GetMover`: the mover in view with that object ID. */
+  private readonly findMover = (objectId: number): Mover | undefined => this.world?.movers.get(objectId);
+
+  /**
+   * `CObj::GetRadius` (`objRadius`) of the own mover and of the movers its attack is about (the focus and the one it
+   * follows), from the boxes of their models as drawn (a held weapon's included), for `IsRangeObj`'s arrival; a mover
+   * whose model is still loading stays as it was (0 at first). The others' stay unknown (0), as in Piece 3. Once a frame,
+   * and only while there is such a mover: the boxes are made anew at each `pickCandidates`.
+   */
+  private measureRadii(world: WorldState, views: MoverViews): void {
+    const own = world.self();
+    if (own === undefined) return;
+    const about = [this.focus?.targetId, own.dest?.targetId].filter((id): id is number => id !== null && id !== undefined);
+    if (about.length === 0) return;
+    for (const candidate of views.pickCandidates(undefined)) {
+      if (candidate.objectId !== own.objectId && !about.includes(candidate.objectId)) continue;
+      const mover = world.movers.get(candidate.objectId);
+      if (mover !== undefined) mover.radius = objRadius(candidate.box, mover.added.scale);
+    }
   }
 
   /**
@@ -366,21 +451,14 @@ export class WorldScreen {
   }
 
   /**
-   * What a tap at (`ndcX`, `ndcY`) does (`pickOnStage`, from the camera as last drawn): on a mover it selects it
-   * (`CWndWorld::SelectObj`, `WndWorld.cpp:6353-6386`: `SetObjFocus`) and the player walks nowhere; elsewhere it gives
-   * the D3D point the own mover walks to, and the focus stays (`:6361-6383`). Selecting only: attacking is the attack
-   * loop's.
+   * What a press at (`ndcX`, `ndcY`) lands on (`pickOnStage`, from the camera as last drawn): a mover, which the press
+   * hands to the attack loop to select (`CWndWorld::SelectObj`, `WndWorld.cpp:6353-6386`) and maybe attack, the player
+   * walking nowhere; or the D3D point the own mover walks to, which leaves the focus as it is (`:6361-6383`).
    */
-  private pick(ndcX: number, ndcY: number): Vec3 | null {
+  private pick(ndcX: number, ndcY: number): TapHit | null {
     const { stage, views } = this;
     if (stage === undefined || views === undefined) return null;
-    const hit = pickOnStage(stage, views, this.world?.self(), ndcX, ndcY);
-    if (hit === null) return null;
-    if ('mover' in hit) {
-      this.focus?.select(hit.mover);
-      return null;
-    }
-    return hit.point;
+    return pickOnStage(stage, views, this.world?.self(), ndcX, ndcY);
   }
 
   /** Where the middle of a mover's box is on the drawing, as shares of its width and height from the top left (`testHooks`). */
@@ -421,6 +499,7 @@ export class WorldScreen {
    */
   private stopOwnMover(): void {
     this.keyboard?.reset();
+    this.walkKey?.reset();
     this.joystick?.reset();
     this.tap?.reset();
     this.ownMover?.stop(this.world?.self());
@@ -453,6 +532,7 @@ export class WorldScreen {
     doc.removeEventListener('visibilitychange', this.onVisibility);
     (doc.defaultView ?? window).removeEventListener('blur', this.onBlur);
     this.keyboard?.dispose();
+    this.walkKey?.dispose();
     this.joystick?.dispose();
     this.tap?.dispose();
     this.mark?.dispose();

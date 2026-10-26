@@ -283,6 +283,12 @@ const targetsOf = (gateway: Gateway): Array<[number, number]> =>
  * DPID_UNKNOWN, the type, the position, the delta and the angle.
  */
 const movedState = (moved: Sent): number => moved.body.readUInt32LE(4 + 4 + 12 + 12 + 4);
+/** The state flag in a PLAYERMOVED or a PLAYERBEHAVIOR, after the state. */
+const movedStateFlag = (moved: Sent): number => moved.body.readUInt32LE(4 + 4 + 12 + 12 + 4 + 4);
+/** `OBJSTAF_WALK` (`MoverMsg.h:97`). */
+const OBJSTAF_WALK = 0x02;
+/** `OBJMSG_ATK1` (`MoverMsg.h`, the `OBJMSG` enum from 0). */
+const OBJMSG_ATK1 = 29;
 
 test.describe('the world screen against scripted servers', () => {
   test('enters Flaris from the character list', async ({ page }) => {
@@ -571,6 +577,73 @@ test.describe('the world screen against scripted servers', () => {
     await page.waitForTimeout(1000);
     expect(await ownAt(page)).toEqual(stopped);
     expect(distanceXZ(stopped, dest)).toBeGreaterThan(1);
+  });
+
+  // X is the walk key (spec §1): it toggles walking and running as Neuz's does, and Shift no longer changes the gait
+  test('X toggles walking with one PLAYERBEHAVIOR, and W with Shift moves at that gait', async ({ page }) => {
+    const gateway = await playGateway(page);
+    await enterFlaris(page);
+    const behaviors = () => sentOf(gateway, PacketType.PLAYERBEHAVIOR);
+    await page.keyboard.press('KeyX');
+    await expect.poll(() => behaviors().length).toBe(1);
+    expect(movedStateFlag(behaviors()[0]!) & OBJSTAF_WALK).toBe(OBJSTAF_WALK);
+
+    // Shift held with W walks, as W alone does now: the move goes out walking, with no change of mode
+    await page.keyboard.down('Shift');
+    await page.keyboard.down('KeyW');
+    await expect.poll(() => movesOf(gateway).length).toBeGreaterThan(0);
+    await page.keyboard.up('KeyW');
+    await page.keyboard.up('Shift');
+    expect(movedStateFlag(movesOf(gateway)[0]!) & OBJSTAF_WALK).toBe(OBJSTAF_WALK);
+    await page.waitForTimeout(500);
+    expect(behaviors()).toHaveLength(1);
+
+    // X again: running
+    await page.keyboard.press('KeyX');
+    await expect.poll(() => behaviors().length).toBe(2);
+    expect(movedStateFlag(behaviors()[1]!) & OBJSTAF_WALK).toBe(0);
+  });
+
+  // The Aibatt stands 6 m ahead of Webby: a tap selects it, the next one walks Webby up to it and swings (spec §3.4)
+  test('tapping the selected monster again walks up to it with one PLAYERSETDESTOBJ and attacks; a turn key stops it', async ({ page }) => {
+    const gateway = await playGateway(page);
+    await enterFlaris(page);
+    const tapMover = async (objectId: number): Promise<void> => {
+      const at = await page.evaluate((id) => window.__client!.screenOf(id), objectId);
+      expect(at).not.toBeNull();
+      await tapWorld(page, at![0], at![1]);
+    };
+    const approaches = () => sentOf(gateway, PacketType.PLAYERSETDESTOBJ);
+    const swings = () => sentOf(gateway, PacketType.MELEE_ATTACK);
+
+    await tapMover(MONSTER_ID);
+    await expect.poll(() => targetsOf(gateway)).toEqual([[MONSTER_ID, 2]]);
+    await page.waitForTimeout(1000);
+    expect(approaches()).toEqual([]);
+
+    await tapMover(MONSTER_ID);
+    await expect.poll(() => swings().length, { timeout: 60_000 }).toBeGreaterThan(0);
+    // CDPClient::SendPlayerDestObj: the target and the range 0, once
+    expect(approaches()).toHaveLength(1);
+    expect([approaches()[0]!.body.readUInt32LE(8), approaches()[0]!.body.readFloatLE(12)]).toEqual([MONSTER_ID, 0]);
+    // CDPClient::SendMeleeAttack: OBJMSG_ATK1, the target, 0, MAKELONG( 0, 1 ), and the fists' fAttackSpeed (no weapon)
+    const melee = swings()[0]!.body;
+    expect([melee.readUInt32LE(8), melee.readUInt32LE(12), melee.readInt32LE(16), melee.readInt32LE(20)])
+      .toEqual([OBJMSG_ATK1, MONSTER_ID, 0, 0x00010000]);
+    expect(melee.readFloatLE(24)).toBe(Math.fround(0.07));
+    // it ran up to the Aibatt, and stays with it
+    expect(distanceXZ(await ownAt(page), MONSTER_AT)).toBeLessThan(3);
+    expect(targetsOf(gateway)).toEqual([[MONSTER_ID, 2]]);
+
+    // a turn key stops the auto-attack: the swing under way ends, and no more come
+    await page.keyboard.down('KeyA');
+    await expect.poll(() => movesOf(gateway).length, { timeout: 30_000 }).toBeGreaterThan(0);
+    await page.keyboard.up('KeyA');
+    await page.waitForTimeout(1500);
+    const count = swings().length;
+    await page.waitForTimeout(2000);
+    expect(swings()).toHaveLength(count);
+    expect(approaches()).toHaveLength(1);
   });
 
   test('a tap-walk into a Flaris wall stops there and sends one PLAYERCORR, standing', async ({ page }) => {
