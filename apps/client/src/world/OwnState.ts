@@ -1,6 +1,8 @@
+import { GAME_DATA_KEYS } from '@flyffweb/formats';
 import type { JobProp, WebItemProp } from '@flyffweb/formats';
 import { DstParam } from '@flyffweb/protocol';
 import type { AddedMover, InventoryItem, SkillSlot, TaskBar, WorldMessage } from '@flyffweb/protocol';
+import { GameDataMissingError } from './gameData';
 import type { GameData } from './gameData';
 import { Parts, ownWorn } from './render/looks';
 import {
@@ -117,8 +119,8 @@ export class OwnState {
 
   /**
    * `added` is the own ADD_OBJ (its HP is `m_nHitPoint`; its `player.own` the rest) and `equipment` the lobby's item IDs
-   * of the character, which dress it (`ownWorn`) and make `equipped`. Throws when `added` is not the own character's, or
-   * the job table has no row for its job.
+   * of the character, which dress it (`ownWorn`) and make `equipped`. Throws when `added` is not the own character's, and
+   * a `GameDataMissingError` when the job table has no row for its job: the game files are older than the server's.
    */
   constructor(private readonly data: GameData, added: AddedMover, equipment: readonly number[]) {
     const player = added.player;
@@ -127,7 +129,7 @@ export class OwnState {
       throw new Error(`mover ${added.objectId} is not the own character: its ADD_OBJ carries no own data`);
     }
     const jobProp = data.jobs[player.job];
-    if (jobProp === undefined) throw new RangeError(`the job table has no row for job ${player.job}`);
+    if (jobProp === undefined) throw new GameDataMissingError([`${GAME_DATA_KEYS.jobs} (job ${player.job})`]);
     this.objectId = added.objectId;
     this.job = player.job;
     this.jobProp = jobProp;

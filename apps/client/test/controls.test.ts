@@ -8,7 +8,7 @@ import type { MoveIntent } from '@flyffweb/scene';
 import {
   STANDING, TapToWalk, WalkKey, controlIntent, desiredFrom, driveOwnMover, movesOrTurns, restingIn,
 } from '../src/world/controls';
-import type { ControlIntent, Desired, MoverPress } from '../src/world/controls';
+import type { ControlIntent, Desired, WorldPress } from '../src/world/controls';
 import { OwnMover } from '../src/world/ownMover';
 import { moverMatrix, pickTap } from '../src/world/render/picking';
 import type { PickCandidate, TapHit } from '../src/world/render/picking';
@@ -539,6 +539,26 @@ describe('WalkKey', () => {
     expect(r.types()).toEqual(['behavior']);
     expect(walkFlag(r.own.act)).toBe(true);
   });
+
+  it('read every step, as Neuz reads the key table: X pressed and let go while the attack runs toggles nothing later', () => {
+    const listeners = new Map<string, (event: unknown) => void>();
+    const target = {
+      addEventListener: (type: string, listener: (event: unknown) => void) => void listeners.set(type, listener),
+      removeEventListener: (type: string) => void listeners.delete(type),
+    };
+    const key = new WalkKey(target as unknown as EventTarget);
+    const r = driven(false);
+    listeners.get('keydown')!({ code: 'KeyX' });
+    listeners.get('keyup')!({ code: 'KeyX' });
+    key.held(); // a step of the attack branch: ControlGround does not run, and the press is gone with it
+    for (let i = 0; i < 3; i++) r.control(keys(0, 0), key.held());
+    expect(r.sent).toEqual([]);
+    // held across the attack's end, it toggles as the controls come back (`bWalk && !s_bWalk2`)
+    listeners.get('keydown')!({ code: 'KeyX' });
+    key.held();
+    r.control(keys(0, 0), key.held());
+    expect(r.types()).toEqual(['behavior']);
+  });
 });
 
 /** Just enough of a canvas for `TapToWalk`: its listeners, the pointers it keeps, and a 200 x 100 px box at (10, 20). */
@@ -566,7 +586,7 @@ class FakeCanvas {
 function tapToWalk(pick: (ndcX: number, ndcY: number) => TapHit | null = () => ({ point: [1, 2, 3] })) {
   const canvas = new FakeCanvas();
   const spy = vi.fn(pick);
-  const presses: MoverPress[] = [];
+  const presses: WorldPress[] = [];
   const tap = new TapToWalk(canvas as unknown as HTMLElement, spy, undefined, (press) => presses.push(press));
   return { canvas, pick: spy, tap, presses };
 }
@@ -711,6 +731,31 @@ describe('TapToWalk', () => {
     expect(tap.heldMover()).toBeNull();
   });
 
+  it('a press on the ground, or on nothing, is handed on as it goes down too, with no mover; it still walks only as a tap', () => {
+    let hit: TapHit | null = { point: [1, 2, 3] };
+    const { canvas, tap, presses } = tapToWalk(() => hit);
+    // OnLButtonDown's other branch (WndWorld.cpp:6919-6929) runs as the button goes down, a drag or not
+    canvas.fire('pointerdown', 100, 50, 1000);
+    expect(presses).toEqual([{ mover: null, time: 1000, double: false }]);
+    expect(tap.heldMover()).toBeNull();
+    canvas.fire('pointermove', 150, 50, 1100);
+    canvas.fire('pointerup', 150, 50, 1200);
+    expect(tap.take()).toBeNull();
+    hit = null;
+    canvas.fire('pointerdown', 100, 50, 3000);
+    canvas.fire('pointerup', 100, 50, 3010);
+    expect(presses.at(-1)).toEqual({ mover: null, time: 3000, double: false });
+    expect(tap.take()).toBeNull();
+    // a pick that throws hands on no press
+    const other = new FakeCanvas();
+    const pressed: WorldPress[] = [];
+    new TapToWalk(other as unknown as HTMLElement, () => {
+      throw new Error('no ground');
+    }, () => {}, (press) => pressed.push(press));
+    other.fire('pointerdown', 100, 50, 0);
+    expect(pressed).toEqual([]);
+  });
+
   it('a second press within 500 ms and 2 px of the first is a double click\'s (GetDoubleClickTime, SM_CXDOUBLECLK)', () => {
     let hit: TapHit = { point: [1, 2, 3] };
     const { canvas, presses } = tapToWalk(() => hit);
@@ -728,7 +773,8 @@ describe('TapToWalk', () => {
     canvas.fire('pointerup', 102, 48, 2150);
     canvas.fire('pointerdown', 105, 48, 2200);
     canvas.fire('pointerup', 105, 48, 2250);
-    expect(presses.map((p) => p.double)).toEqual([true, false, false, false]);
+    expect(presses.map((p) => p.double)).toEqual([false, true, false, false, false]);
+    expect(presses.map((p) => p.mover)).toEqual([null, 7, 7, 7, 7]);
   });
 
   it('a tap on a mover gives no destination: the world screen selects the mover instead', () => {
@@ -757,7 +803,7 @@ describe('TapToWalk', () => {
     canvas.fire('pointerdown', 110, 70, 1000);
     canvas.fire('pointerup', 110, 70, 1010);
     expect(tap.take()).toBeNull();
-    expect(presses).toEqual([{ mover: 7, time: 1000, double: false }]);
+    expect(presses).toEqual([{ mover: null, time: 0, double: false }, { mover: 7, time: 1000, double: false }]);
     // beside the mover, the ground is picked as before
     canvas.fire('pointerdown', 170, 70, 2000);
     canvas.fire('pointerup', 170, 70, 2010);

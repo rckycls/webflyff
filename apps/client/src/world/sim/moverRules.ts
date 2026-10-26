@@ -91,6 +91,19 @@ export interface SimMover {
    * character's state (`act.report`), tick 0. The owner sends it with the clock's tick and puts null back.
    */
   corrReport?: MoveReport | null;
+  /**
+   * The own character's command on arriving (`CMover::ProcessMoveArrival`, `MoverMove.cpp:76-262`): its
+   * `switch( m_oaCmd )` for `target`, the object it followed into range. True where a command took the arrival (it then
+   * ends, `SetCmd( OBJACT_NONE )`, :262); false, or none set, for no command, whose arrival is the default
+   * (`ClearDestObj` and `OBJMSG_STOP`, :256-259). Its owner (the attack loop) sets it.
+   */
+  arrive?: (target: SimMover) => boolean;
+  /**
+   * `CWndWorld::m_bLButtonDown = FALSE`, which the own character's `OnActCollision` does as a walk with `m_nCorr` -1 (to
+   * a tapped point or after an object) meets something (`MoverActEvent.cpp:2022-2028`); `OnActDrop` does not. Its owner
+   * (the attack loop, whose hold it ends) sets it.
+   */
+  releaseButton?: () => void;
 }
 
 const copy = (v: Vec3): Vec3 => [v[0], v[1], v[2]];
@@ -119,7 +132,7 @@ function bind(m: SimMover): void {
   if (bound.get(m.act) === m) return;
   bound.set(m.act, m);
   m.act.clearDest = () => clearDest(m);
-  m.act.onActDrop = () => onActCorr(m);
+  m.act.onActDrop = () => onActCorr(m, false);
   m.act.onEndJump4 = () => onActEndJump4(m);
 }
 
@@ -339,22 +352,23 @@ export function stepMover(m: SimMover, find: (objectId: number) => SimMover | un
   body.speed = getSpeed(m);
   const { collided } = m.act.step(ground);
   body.speed = own;
-  if (collided) onActCorr(m);
+  if (collided) onActCorr(m, true);
 }
 
 /**
- * The client's `CMover::OnActCollision` and `CMover::OnActDrop` (the `#else` parts of `MoverActEvent.cpp:1979-2053`
- * and `:1908-1977`), which do the same for the active mover: while `m_nCorr` is set, a walk the player tapped (-1)
- * ends there, with `ClearDest` and `OBJMSG_STAND`, and either way the state is corrected (`SendPlayerCorr`:
- * `corrReport`) and `m_nCorr` goes back to 0. (`OnActCollision` also lets go of a held left button,
- * `m_bLButtonDown = FALSE`: a tap here is over once it is let go.) Another mover on its way somewhere asks the server
- * where it is (`SendQueryGetPos`), which the browser does not.
+ * The client's `CMover::OnActCollision` (`collision`) and `CMover::OnActDrop` (the `#else` parts of
+ * `MoverActEvent.cpp:1979-2053` and `:1908-1977`), which do the same for the active mover: while `m_nCorr` is set, a walk
+ * the player tapped, or the walk after an object (-1), ends there, with `ClearDest` and `OBJMSG_STAND`, and either way the
+ * state is corrected (`SendPlayerCorr`: `corrReport`) and `m_nCorr` goes back to 0. `OnActCollision` also lets go of a
+ * held left button there (`m_bLButtonDown = FALSE`, :2022-2028: `releaseButton`). Another mover on its way somewhere
+ * asks the server where it is (`SendQueryGetPos`), which the browser does not.
  */
-function onActCorr(m: SimMover): void {
+function onActCorr(m: SimMover, collision: boolean): void {
   if (!m.isSelf || !m.nCorr) return;
   if (m.nCorr < 0) {
     clearDest(m);
     m.act.sendActMsg(ActMsg.STAND);
+    if (collision) m.releaseButton?.();
   }
   m.corrReport = m.act.report(0n);
   m.nCorr = 0;
@@ -397,7 +411,7 @@ function processMove(m: SimMover, find: (objectId: number) => SimMover | undefin
     }
     destPos = target.act.body.pos;
     if (isRangeObj(target, m, d.range)) {
-      processMoveArrival(m);
+      processMoveArrival(m, target);
       return;
     }
   }
@@ -485,11 +499,13 @@ function onArriveAtPos(m: SimMover): void {
 }
 
 /**
- * The client's `CMover::ProcessMoveArrival` (`MoverMove.cpp:73-275`): `ClearDestObj` and `OBJMSG_STOP`. For the
- * active mover that is its command's default (:256-259; Piece 3 gives it no command). A moving other also sends
+ * The client's `CMover::ProcessMoveArrival( pObj )` (`MoverMove.cpp:73-275`), `target` being the object followed into
+ * range. The active mover runs its command (`switch( m_oaCmd )`, :78-262: `arrive`, which ends it); with none, the
+ * default (:256-259), as for any other mover: `ClearDestObj` and `OBJMSG_STOP`. A moving other also sends
  * QUERYGETDESTOBJ (:272-273), which the browser does not.
  */
-function processMoveArrival(m: SimMover): void {
+function processMoveArrival(m: SimMover, target: SimMover): void {
+  if (m.isSelf && m.arrive?.(target) === true) return;
   clearDestObj(m);
   m.act.sendActMsg(ActMsg.STOP);
 }

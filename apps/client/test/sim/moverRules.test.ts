@@ -570,6 +570,66 @@ describe('moverRules: m_nCorr, OnActCollision and OnActDrop (MoverActEvent.cpp:1
     expect(m.corrReport ?? null).toBeNull();
     expect(m.act.state & ObjSta.MOVE_ALL).toBe(ObjSta.FMOVE);
   });
+
+  it('OnActCollision with m_nCorr -1 lets go of the held button (:2022-2028); one after a PLAYERMOVED and a fall do not', () => {
+    let released = 0;
+    const releaseButton = (): void => void released++;
+    // a walk after an object (SetDestObj's m_nCorr -1) into a wall
+    const target = sim(2, [110, 0, 100], 0);
+    const walker = self([100, 0, 100], { nCorr: -1, releaseButton });
+    setDestObj(walker, 2, 0);
+    for (let i = 0; i < 100 && walker.corrReport == null; i++) stepMover(walker, world(target).find, groundOf([wallAt(103)]));
+    expect(walker.corrReport).not.toBeNull();
+    expect(walker.dest).toBeNull();
+    expect(released).toBe(1);
+    // a collision within a PLAYERMOVED's 22 steps
+    const moved = self([100, 0, 100], { nCorr: MAX_CORR_SIZE_45, releaseButton });
+    moved.act.sendActMsg(ActMsg.FORWARD);
+    stepsOn(moved, groundOf([wallAt(101.5)]), MAX_CORR_SIZE_45, () => moved.corrReport != null);
+    expect(moved.corrReport).not.toBeNull();
+    // a tap-walk that starts to fall (OnActDrop)
+    const falling = self([100, 10, 100], { nCorr: -1, releaseButton });
+    setDestPos(falling, [110, 0, 100], true);
+    stepsOn(falling, groundOf([], (x) => (x < 103 ? 10 : 0)), 200, () => falling.corrReport != null);
+    expect(falling.corrReport).not.toBeNull();
+    expect(released).toBe(1);
+  });
+});
+
+describe('moverRules: the own character\'s command on arriving (CMover::ProcessMoveArrival, MoverMove.cpp:73-262)', () => {
+  /**
+   * The own character (or another mover) half a metre from mover 2, which it follows (`SetDestObj`, range 0: within 1 m
+   * with no radii), walking; `arrive` answers `took` and does nothing else. One step: it arrives.
+   */
+  function arriving(took: boolean, isSelf = true) {
+    const target = sim(2, [106, 0, 100], 0);
+    const arrivals: SimMover[] = [];
+    const m = self([105.5, 0, 100], { isSelf, arrive: (t) => (arrivals.push(t), took) });
+    setDestObj(m, 2, 0);
+    m.act.sendActMsg(ActMsg.FORWARD);
+    stepMover(m, world(target).find);
+    return { m, target, arrivals };
+  }
+
+  it("in range, the own character's command takes the arrival: the rules leave the following and the state to it", () => {
+    const { m, target, arrivals } = arriving(true);
+    expect(arrivals).toEqual([target]);
+    expect(m.dest?.targetId).toBe(2);
+    expect(m.act.state & ObjSta.MOVE_ALL).toBe(ObjSta.FMOVE);
+  });
+
+  it('with no command, the default: ClearDestObj and OBJMSG_STOP', () => {
+    const { m, arrivals } = arriving(false);
+    expect(arrivals).toHaveLength(1);
+    expect(m.dest).toBeNull();
+    expect(m.act.state & ObjSta.MOVE_ALL).not.toBe(ObjSta.FMOVE);
+  });
+
+  it('another mover never asks: its arrival is the default', () => {
+    const { m, arrivals } = arriving(true, false);
+    expect(arrivals).toEqual([]);
+    expect(m.dest).toBeNull();
+  });
 });
 
 describe('moverRules: OnActEndJump4 (MoverActEvent.cpp:2089-2098)', () => {

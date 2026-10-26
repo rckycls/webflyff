@@ -9,7 +9,7 @@
 
 import { toWebPosition } from '@flyffweb/formats';
 import type { Vec3 } from '@flyffweb/formats';
-import type { AddedMover, BundleMessage, WorldMessage } from '@flyffweb/protocol';
+import type { BundleMessage, WorldMessage } from '@flyffweb/protocol';
 import { Joystick, KeyboardInput, WorldStage, loadGltf, loopMotion } from '@flyffweb/scene';
 import type { Ground, LoopedMotion, SceneServices } from '@flyffweb/scene';
 import { Vector2, Vector3 } from 'three';
@@ -42,7 +42,6 @@ import { FixedStepper, STEPS_PER_SECOND } from './sim/stepper';
 import { WorldSession } from './WorldSession';
 import type { WorldEvent } from './WorldSession';
 import { WorldState } from './WorldState';
-import type { Mover } from './WorldState';
 
 const LOADING_TEXT = 'Entering the world…';
 const NOT_AVAILABLE_TEXT = "This map isn't available in the browser yet.";
@@ -175,8 +174,8 @@ export class WorldScreen {
 
   /**
    * The own character's numbers (`OwnState`), made from the own ADD_OBJ and the character list's equipment as the JOIN
-   * brings the own mover; undefined before, or if they could not be made (the overlay says why). The attack loop reads
-   * them; the messages about the own character are to go into this same object.
+   * enters the world (`enter`); undefined before, or with no own mover in the JOIN. The attack loop reads them; the
+   * messages about the own character are to go into this same object.
    */
   get ownState(): OwnState | undefined {
     return this.own;
@@ -222,7 +221,11 @@ export class WorldScreen {
     }
   }
 
-  /** The JOIN bundle: the world (spec §3.2.5, a converted one or the session ends), the movers in view, then the map. */
+  /**
+   * The JOIN bundle: the world (spec §3.2.5, a converted one or the session ends), the movers in view, the own
+   * character's numbers from its ADD_OBJ (the JOIN's first, `CUser::Open`, `WORLDSERVER/User.cpp:326`) and the character
+   * list's equipment (`OwnState`, whose throw ends the entry: the game files may be out of date), then the map.
+   */
   private enter(worldId: number, pos: Vec3, messages: BundleMessage<WorldMessage>[]): void {
     const services = this.services!;
     const folder = this.data!.worlds.get(worldId);
@@ -234,6 +237,8 @@ export class WorldScreen {
     this.world = new WorldState(this.data!, this.entry.clock, this.ground);
     this.entered = pos;
     this.apply(messages);
+    const self = this.world.self();
+    if (self !== undefined) this.own = new OwnState(this.data!, self.added, this.entry.character.equipment);
     void this.openStage(folder, services).catch((error: unknown) => this.fail(error));
   }
 
@@ -241,7 +246,7 @@ export class WorldScreen {
    * A bundle's messages, in order, to the movers in view. SETPOS ends with `InitInterpolation` (`CDPClient::OnSetPos`,
    * `DPClient.cpp:2270`): the mover is drawn where it is put. A REPLACE within the world (another world has ended the
    * session) puts the own mover there as SETPOS does; the frame loop then streams the map there and moves the camera.
-   * The own mover's ADD_OBJ makes the own character's numbers (`ownState`); QUERYGETDESTOBJ is the attack loop's.
+   * QUERYGETDESTOBJ is the attack loop's.
    */
   private apply(messages: BundleMessage<WorldMessage>[]): void {
     const world = this.world!;
@@ -259,21 +264,6 @@ export class WorldScreen {
       }
       world.apply(objectId, value);
       if (value.type === 'setPos') this.views?.snap(objectId);
-      if (value.type === 'addMover' && this.own === undefined && world.self()?.added === value.mover) {
-        this.makeOwnState(value.mover);
-      }
-    }
-  }
-
-  /**
-   * The own character's numbers from its ADD_OBJ and the character list's equipment. A throw (no own data in the
-   * ADD_OBJ, no job row) is the overlay's: the world goes on without them, and the attack loop attacks nothing.
-   */
-  private makeOwnState(added: AddedMover): void {
-    try {
-      this.own = new OwnState(this.data!, added, this.entry.character.equipment);
-    } catch (error) {
-      this.reportOnce(`own character: ${messageOf(error)}`, error);
     }
   }
 
@@ -318,13 +308,18 @@ export class WorldScreen {
     this.walkKey = new WalkKey(doc.defaultView ?? window);
     this.joystick = new Joystick(this.element);
     this.focus = new Focus(this.session, (objectId) => this.isLive(objectId));
-    const attackLoop = new AttackLoop(this.session, this.focus, () => this.own, this.entry.clock, this.data!.movers);
+    const attackLoop = new AttackLoop(
+      this.session, this.focus, this.world!, () => this.own, this.entry.clock, this.data!.movers,
+    );
     this.attackLoop = attackLoop;
-    // on the canvas: the joystick is an element of its own over it, and its touches never reach it; a press on a mover
-    // goes to the attack loop as it goes down (OnLButtonDown, OnLButtonDblClk)
+    // on the canvas: the joystick is an element of its own over it, and its touches never reach it; each press goes to
+    // the attack loop as it goes down (OnLButtonDown, OnLButtonDblClk): on a mover, or on the ground, which stops it
     this.tap = new TapToWalk(
       renderer.domElement, (x, y) => this.pick(x, y), (error) => this.reportOnce(`tap: ${messageOf(error)}`, error),
-      (press) => attackLoop.onMoverPressed(press.mover, press.time, press.double),
+      (press) => {
+        if (press.mover === null) attackLoop.onGroundPressed(press.double);
+        else attackLoop.onMoverPressed(press.mover, press.time, press.double);
+      },
     );
     this.mark = new MoveMark(this.stage!.scene);
     this.ownMover = new OwnMover(this.session, this.entry.clock, this.mark);
@@ -340,12 +335,9 @@ export class WorldScreen {
     const world = this.world!;
     const data = this.data!;
     const changes = world.takeChanges();
-    // a mover that left (DEL_OBJ) is no longer the focus (`CWorld::Process`, `World.cpp:892-893`), and the attack on it stops
-    for (const objectId of changes.removed) {
-      const wasTarget = this.focus?.targetId === objectId;
-      this.focus?.onRemoved(objectId, false);
-      if (wasTarget) this.attackLoop?.stop('target');
-    }
+    // a mover that left (DEL_OBJ) is no longer the focus (`CWorld::Process`, `World.cpp:892-893`), and the attack on it
+    // stops (`AttackLoop.onRemoved`); before the world is on screen nothing is focused
+    for (const objectId of changes.removed) this.attackLoop?.onRemoved(objectId);
     this.views!.sync(changes, world.movers);
     this.tags!.sync(changes, world.movers, (mover) => nameTagOf(mover, world.self(), data.nameColors, data.honorTitles));
   }
@@ -393,12 +385,14 @@ export class WorldScreen {
   }
 
   /**
-   * One rules step at `now` (ms): the press held on a mover, a tap, the keys and the joystick, as `CWndWorld::Process`
-   * takes them (`WndWorld.cpp:8513-8537`): a tap on the ground or a move of the keys or the joystick stops the
-   * auto-attack ([combat §2.6]); then either the controls drive the own mover (`OwnMover.control`, in `ControlGround`'s
-   * order) or the attack runs, and the attack loop's step (`AttackLoop.step`) comes before the rules'. Then every
-   * mover's step (the own one's included), the PLAYERCORR it may have led to, the views', and the chase camera's
-   * (`CWorld::Process` processes the camera at each `FrameMove`, `World.cpp:924-935`).
+   * One rules step at `now` (ms): the press held on a mover, a tap, the keys, the joystick and the walk key, as
+   * `CWndWorld::Process` takes them (`WndWorld.cpp:8513-8537`): a move of the keys or the joystick stops the auto-attack
+   * ([combat §2.6]; a press on the ground stopped it as it went down); then the attack loop's step runs `Process`'s
+   * branch, and where that is `ControlPlayer` the controls drive the own mover (`OwnMover.control`, in `ControlGround`'s
+   * order). The walk key is read at every step, as Neuz reads its key table (`WndWorldControlPlayer.cpp:524`): a press
+   * made and let go while the attack runs is gone. Then every mover's step (the own one's included), the PLAYERCORR it
+   * may have led to, the views', and the chase camera's (`CWorld::Process` processes the camera at each `FrameMove`,
+   * `World.cpp:924-935`).
    */
   private step(world: WorldState, stage: WorldStage, views: MoverViews, now: number): void {
     const own = world.self();
@@ -407,22 +401,18 @@ export class WorldScreen {
     if (held === null) loop.onReleased();
     else loop.onMoverHeld(held.mover, now - held.time);
     const tap = this.tap!.take();
+    const walkKey = this.walkKey!.held();
     if (own !== undefined) {
       // the keys' Shift no longer changes the gait: X toggles it (spec §1)
       const intent = controlIntent(this.keyboard!.intent(), this.joystick!.intent());
-      if (tap !== null) loop.stop('ground');
       if (movesOrTurns(intent)) loop.stop('move');
-      if (loop.controlsPlayer) this.ownMover!.control(own, intent, tap, this.walkKey!.held());
-      loop.step(own, this.findMover);
+      if (loop.step()) this.ownMover!.control(own, intent, tap, walkKey);
     }
     world.step();
     this.ownMover!.corrected(own);
     views.step(world.movers);
     this.follow(world, stage);
   }
-
-  /** `prj.GetMover`: the mover in view with that object ID. */
-  private readonly findMover = (objectId: number): Mover | undefined => this.world?.movers.get(objectId);
 
   /**
    * `CObj::GetRadius` (`objRadius`) of the own mover and of the movers its attack is about (the focus and the one it

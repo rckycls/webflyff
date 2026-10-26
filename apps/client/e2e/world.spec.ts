@@ -17,6 +17,7 @@ import {
   createWorldScript, writeAddMonster, writeAddNpc, writeAddPlayer, writeAddSelf, writeDelObj, writeMoverCorr, writeMoverMoved,
 } from '@flyffweb/testkit';
 import type {} from '../src/testHooks'; // window.__client
+import { Belli } from '../src/world/sim/constants';
 
 const ASSETS = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../dist/assets');
 
@@ -38,7 +39,7 @@ const MADRIGAL = 1;
 const MI_MALE = 11;
 const MI_FEMALE = 12;
 const MI_AIBATT = 21;
-/** `OBJSTA_STAND` (`MoverMsg.h`), `OBJSTA_FMOVE`, `OBJSTA_MOVE_ALL`, `BELLI_PEACEFUL` (`defineAttribute.h:203`). */
+/** `OBJSTA_STAND` (`MoverMsg.h`), `OBJSTA_FMOVE`, `OBJSTA_MOVE_ALL`. */
 const OBJSTA_STAND = 0x01;
 const OBJSTA_FMOVE = 0x04;
 /** `MTI_STAND`, `MTI_RUN` (`Resource/defineNeuz.h`) and `ANILOOP_LOOP` (`_Common/Obj.h:28`). */
@@ -46,7 +47,6 @@ const MTI_STAND = 0;
 const MTI_RUN = 5;
 const ANILOOP_LOOP = 0x04;
 const OBJSTA_MOVE_ALL = 0xff;
-const BELLI_PEACEFUL = 1;
 /** `MAX_HUMAN_PARTS` (`Resource/defineNeuz.h:62`): the own character's equipment object IDs. */
 const MAX_HUMAN_PARTS = 31;
 /** The vagrant's clothes (jobItem.inc): `II_ARM_M_VAG_SUIT01`, `_GAUNTLET01`, `_BOOTS01`, and the women's 504, 508, 512. */
@@ -93,7 +93,7 @@ const NPC_PART: AddedNpc = {
 const self: AddedMover = { ...BASE, index: MI_MALE, pos: SQUARE, angle: 0, objectId: SELF_ID, isPlayer: true, player: SELF_PLAYER };
 const aibatt: AddedMover = { ...BASE, index: MI_AIBATT, pos: MONSTER_AT, angle: 180, objectId: MONSTER_ID, isPlayer: false, npc: NPC_PART };
 const julia: AddedMover = {
-  ...BASE, index: MI_FEMALE, pos: NPC_AT, angle: 180, objectId: NPC_ID, isPlayer: false, belligerence: BELLI_PEACEFUL,
+  ...BASE, index: MI_FEMALE, pos: NPC_AT, angle: 180, objectId: NPC_ID, isPlayer: false, belligerence: Belli.PEACEFUL,
   npc: { ...NPC_PART, characterKey: 'MaFl_Juria', hairMesh: 2, hairColor: 0xff8a5a3c, worn: FEMALE_VAGRANT },
 };
 
@@ -417,6 +417,16 @@ test.describe('the world screen against scripted servers', () => {
       delete files['data/worlds.json'];
       await route.fulfill({ response, json: { ...index, files } });
     });
+    await playGateway(page);
+    await startEntering(page);
+
+    await expect(page.getByRole('alert')).toHaveText('The game files on the server are out of date.');
+    await expect(page.getByRole('button', { name: 'Log in' })).toBeEnabled();
+  });
+
+  test("a job table without the character's job ends the entry as game files out of date (the own numbers made on entry)", async ({ page }) => {
+    // a job table from before the character's job had a row: OwnState, made as the JOIN enters, cannot be made
+    await page.route(/\/assets\/data\/jobs\.[0-9a-f]+\.json/, (route) => route.fulfill({ json: [] }));
     await playGateway(page);
     await startEntering(page);
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DstParam, NULL_ID } from '@flyffweb/protocol';
 import type { TaskBar, WorldMessage } from '@flyffweb/protocol';
 import { newVagrantOwn } from '@flyffweb/testkit';
+import { GameDataMissingError } from '../src/world/gameData';
 import { OwnState } from '../src/world/OwnState';
 import type { OwnEvent } from '../src/world/OwnState';
 import { Dst, FISTS } from '../src/world/sim/params';
@@ -88,6 +89,18 @@ describe('the own character at the start (a new Vagrant)', () => {
     expect(() => new OwnState(data, { ...added, player: { ...added.player!, own: null } }, [])).toThrow(/own character/);
     expect(() => new OwnState(data, { ...added, player: undefined }, [])).toThrow(/own character/);
     expect(() => new OwnState(data, { ...added, player: { ...added.player!, job: 5 } }, [])).toThrow(/job 5/);
+  });
+
+  it('a job the table lacks is game files older than the client (GameDataMissingError: the screen says they are out of date)', () => {
+    const added = ownAdded();
+    let thrown: unknown;
+    try {
+      new OwnState(ownGameData(), { ...added, player: { ...added.player!, job: 5 } }, []);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(GameDataMissingError);
+    expect((thrown as GameDataMissingError).keys).toEqual(['data/jobs.json (job 5)']);
   });
 });
 

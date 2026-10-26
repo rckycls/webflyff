@@ -6,7 +6,8 @@ import { AttackLoop, objRadius } from '../src/world/combat/attackLoop';
 import { Focus } from '../src/world/combat/focus';
 import type { OwnState } from '../src/world/OwnState';
 import { terrainGround } from '../src/world/sim/collision';
-import { ActMsg, ObjSta } from '../src/world/sim/constants';
+import type { CollisionObject, Ground } from '../src/world/sim/collision';
+import { ActMsg, Belli, ObjSta } from '../src/world/sim/constants';
 import { WorldState } from '../src/world/WorldState';
 import type { Mover } from '../src/world/WorldState';
 import { MI_FEMALE, MI_MALE, addedNpc, addedPlayer, webMoverOf } from './helpers/movers';
@@ -20,9 +21,6 @@ const MONSTER_ID = 30;
 const OTHER_MONSTER_ID = 31;
 const NPC_ID = 40;
 const PLAYER_ID = 50;
-/** `BELLI_PEACEFUL`, `BELLI_ACTIVEATTACK` (`Resource/defineAttribute.h:203-205`). */
-const PEACEFUL = 1;
-const ACTIVE_ATTACK = 3;
 /** How many steps the fake model plays each motion for before `IsEndFrame` (a swing included). */
 const MOTION_STEPS = 12;
 
@@ -36,6 +34,17 @@ const OWN_AT: Vec3 = [100, 0, 100];
 /** 6 m east of the own mover, which faces east (angle 90: D3D +x). */
 const MONSTER_AT: Vec3 = [106, 0, 100];
 
+const IDENTITY = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+
+/** The plane x = `x` from height 0 to 10 and z 90 to 110, facing -x. */
+function wallAt(x: number): CollisionObject {
+  const a: Vec3 = [x, 0, 110];
+  const b: Vec3 = [x, 10, 110];
+  const c: Vec3 = [x, 0, 90];
+  const d: Vec3 = [x, 10, 90];
+  return { triangles: new Float32Array([a, b, c, b, d, c].flat()), matrix: IDENTITY };
+}
+
 interface RigOptions {
   level?: number;
   /** The own state the loop reads; `newVagrant( level )` unless given. */
@@ -43,14 +52,18 @@ interface RigOptions {
   /** The monster's belligerence and `bKillable`. */
   belligerence?: number;
   killable?: number;
+  /** Whether the own mover comes into view (and so is stepped) first, as the first ADD_OBJ of the JOIN; by default it is. */
+  ownFirst?: boolean;
+  /** The land and objects; flat land with nothing on it by default. */
+  ground?: Ground;
 }
 
 /**
  * The own character (a Vagrant of `level`, with the Wooden Sword) 6 m west of an Aibatt and of a second one 6 m north,
- * with a peaceful NPC and another player beside them, in a `WorldState` on flat land; the loop over a fake session that
- * records what it sends; and a rules step as the world screen takes one: the loop's step, then the world's (the own
- * mover first, as the first ADD_OBJ of the JOIN), then each model's frame move. The models are fakes that end each
- * motion after `MOTION_STEPS` steps; each mover's radius is 0.5.
+ * with a peaceful NPC and another player beside them, in a `WorldState` on `ground`; the loop over a fake session that
+ * records what it sends; and a rules step as the world screen takes one: the loop's step (which says whether the
+ * controls run: `controls`), then the world's, then each model's frame move. The models are fakes that end each motion
+ * after `MOTION_STEPS` steps; each mover's radius is 0.5.
  */
 function rig(options: RigOptions = {}) {
   const level = options.level ?? 1;
@@ -58,29 +71,34 @@ function rig(options: RigOptions = {}) {
     movers: new Map([
       [MI_MALE, webMoverOf({ index: MI_MALE, name: 'Male', speed: 0.1, ai: 1, killable: 1 })],
       [MI_FEMALE, webMoverOf({ index: MI_FEMALE, name: 'Female', speed: 0.1, ai: 1, killable: 1 })],
-      [AIBATT, webMoverOf({ index: AIBATT, name: 'Aibatt', killable: options.killable ?? 1, belligerence: ACTIVE_ATTACK })],
+      [AIBATT, webMoverOf({ index: AIBATT, name: 'Aibatt', killable: options.killable ?? 1, belligerence: Belli.ACTIVEATTACK })],
     ]),
   });
-  const world = new WorldState(data, new ServerClock(() => 0), terrainGround(() => 0));
-  const add = (added: Parameters<WorldState['apply']>[1] & { type: 'addMover' }): Mover => {
+  const world = new WorldState(data, new ServerClock(() => 0), options.ground ?? terrainGround(() => 0));
+  const add = (added: Parameters<WorldState['apply']>[1] & { type: 'addMover' }): void => {
     world.apply(added.mover.objectId, added);
-    return world.movers.get(added.mover.objectId)!;
   };
-  const own = add({ type: 'addMover', mover: { ...ownAdded(level), pos: OWN_AT, angle: 90, state: ObjSta.STAND } });
-  const monster = add({
+  const addOwn = (): void => add({ type: 'addMover', mover: { ...ownAdded(level), pos: OWN_AT, angle: 90, state: ObjSta.STAND } });
+  if (options.ownFirst !== false) addOwn();
+  add({
     type: 'addMover',
-    mover: addedNpc(MONSTER_ID, AIBATT, {}, { pos: MONSTER_AT, angle: 270, state: ObjSta.STAND, belligerence: options.belligerence ?? ACTIVE_ATTACK }),
+    mover: addedNpc(MONSTER_ID, AIBATT, {}, {
+      pos: MONSTER_AT, angle: 270, state: ObjSta.STAND, belligerence: options.belligerence ?? Belli.ACTIVEATTACK,
+    }),
   });
   add({
     type: 'addMover',
-    mover: addedNpc(OTHER_MONSTER_ID, AIBATT, {}, { pos: [100, 0, 94], state: ObjSta.STAND, belligerence: ACTIVE_ATTACK }),
+    mover: addedNpc(OTHER_MONSTER_ID, AIBATT, {}, { pos: [100, 0, 94], state: ObjSta.STAND, belligerence: Belli.ACTIVEATTACK }),
   });
   add({
     type: 'addMover',
-    mover: addedNpc(NPC_ID, MI_FEMALE, { characterKey: 'MaFl_Juria' }, { pos: [103, 0, 103], belligerence: PEACEFUL }),
+    mover: addedNpc(NPC_ID, MI_FEMALE, { characterKey: 'MaFl_Juria' }, { pos: [103, 0, 103], belligerence: Belli.PEACEFUL }),
   });
   add({ type: 'addMover', mover: addedPlayer(PLAYER_ID, {}, { pos: [103, 0, 97] }) });
+  if (options.ownFirst === false) addOwn();
   world.takeChanges();
+  const own = world.self()!;
+  const monster = world.movers.get(MONSTER_ID)!;
   for (const m of world.movers.values()) m.radius = 0.5;
 
   // the models: each plays its motion for MOTION_STEPS steps, from the step the rules set it on; one set since the last
@@ -115,12 +133,13 @@ function rig(options: RigOptions = {}) {
   const focus = new Focus(session);
   const state = 'own' in options ? options.own : newVagrant(level);
   let tick = 1000n;
-  const loop = new AttackLoop(session, focus, () => state, { tick: () => (tick += 10n) }, data.movers);
-  const find = (objectId: number): Mover | undefined => world.movers.get(objectId);
+  const loop = new AttackLoop(session, focus, world, () => state, { tick: () => (tick += 10n) }, data.movers);
 
   let now = 10_000;
+  /** Whether the last step ran the controls (`AttackLoop.step`'s answer). */
+  let controls = true;
   const step = (): void => {
-    loop.step(own, find);
+    controls = loop.step();
     world.step();
     frameMove();
     now += 1000 / 60;
@@ -141,16 +160,16 @@ function rig(options: RigOptions = {}) {
     loop.onMoverPressed(objectId, now, double);
     loop.onReleased();
   };
-  // the world runs before anything can be pressed: the loop knows the own mover and the movers in view from its step
-  step();
   const melee = (): Array<[number, number, number]> =>
     sent.filter((s) => s[0] === 'melee').map((s) => [s[1], s[2], s[3]] as [number, number, number]);
   const kinds = (): string[] => sent.filter((s) => s[0] === 'destObj' || s[0] === 'melee').map((s) =>
     s[0] === 'destObj' ? `destObj ${s[1]}` : `ATK${(s[1] as number) - ActMsg.ATK1 + 1} ${s[2]}`);
   return {
-    world, own, monster, loop, focus, sent, targets, step, steps, until, tap, melee, kinds, now: () => now, find,
+    world, own, monster, loop, focus, sent, targets, step, steps, until, tap, melee, kinds, now: () => now,
+    controls: () => controls,
   };
 }
+
 
 const SWORD_SPEED = f32(0.085);
 
@@ -284,18 +303,98 @@ describe('AttackLoop: holding the button on a new target (m_timerFocusAttack, Wn
     expect(r.sent).toEqual([]);
   });
 
-  it('while a press on a mover is held before its time is out, the controls do nothing (Process: neither branch)', () => {
+  it("each step decides Process's branch once: the controls, the attack, or neither (WndWorld.cpp:8513-8537)", () => {
     const r = rig();
-    expect(r.loop.controlsPlayer).toBe(true);
+    r.step();
+    expect(r.controls()).toBe(true);
+    // a press on a mover held before its time is out: neither branch, no controls and no attack
     r.loop.onMoverPressed(MONSTER_ID, r.now(), false);
-    expect(r.loop.controlsPlayer).toBe(false);
+    r.loop.onMoverHeld(MONSTER_ID, 100);
+    r.step();
+    expect(r.controls()).toBe(false);
+    expect(r.sent).toEqual([]);
+    // past it: the attack branch
+    r.loop.onMoverHeld(MONSTER_ID, 500);
+    r.step();
+    expect(r.controls()).toBe(false);
+    expect(r.sent).toEqual([['destObj', MONSTER_ID, 0]]);
     r.loop.onReleased();
-    expect(r.loop.controlsPlayer).toBe(true);
-    // auto-attacking a focus: the attack, not the controls
+    r.step();
+    expect(r.controls()).toBe(true);
+    // auto-attacking a focus: the attack; stopped, the controls
     r.tap(MONSTER_ID);
-    expect(r.loop.controlsPlayer).toBe(false);
+    r.step();
+    expect(r.controls()).toBe(false);
     r.loop.stop('move');
-    expect(r.loop.controlsPlayer).toBe(true);
+    r.step();
+    expect(r.controls()).toBe(true);
+  });
+
+  it('a double click\'s second press held on another mover runs neither branch, its m_bSelectTarget being off', () => {
+    const r = rig();
+    // OnLButtonDblClk sets m_bLButtonDown but not m_bSelectTarget: with nothing focused, the timer long out, still neither
+    r.loop.onMoverPressed(OTHER_MONSTER_ID, r.now(), true);
+    r.loop.onMoverHeld(OTHER_MONSTER_ID, 600);
+    r.step();
+    expect(r.controls()).toBe(false);
+    expect(r.sent).toEqual([]);
+    expect(r.focus.targetId).toBeNull();
+  });
+
+  it('a collision ends the hold: OnActCollision lets go of the button (MoverActEvent.cpp:2022-2028)', () => {
+    // a wall 3 m east, between the player and the Aibatt
+    const r = rig({ ground: { ...terrainGround(() => 0), objectsNear: () => [wallAt(103)] } });
+    r.loop.onMoverPressed(MONSTER_ID, r.now(), false);
+    r.loop.onMoverHeld(MONSTER_ID, 600);
+    r.until(() => r.own.corrReport != null);
+    // the walk the press started met the wall: ClearDest, STAND, the PLAYERCORR, and the button let go
+    expect(r.own.dest).toBeNull();
+    expect(r.own.act.state & ObjSta.MOVE_ALL).toBe(ObjSta.STAND);
+    expect(r.own.act.body.pos[0]).toBeLessThan(103);
+    // still held on the screen, the hold attacks no more: no new approach, and the controls run
+    r.loop.onMoverHeld(MONSTER_ID, 2000);
+    r.steps(120);
+    expect(r.kinds()).toEqual([`destObj ${MONSTER_ID}`]);
+    expect(r.controls()).toBe(true);
+  });
+
+  it('a collision does not stop the auto-attack: it walks up again (UseFocusObj, PLAYERSETDESTOBJ anew)', () => {
+    const r = rig({ ground: { ...terrainGround(() => 0), objectsNear: () => [wallAt(103)] } });
+    r.tap(MONSTER_ID);
+    r.tap(MONSTER_ID);
+    r.until(() => r.own.corrReport != null);
+    r.own.corrReport = null; // the world screen sends it (OwnMover.corrected)
+    r.step();
+    expect(r.kinds()).toEqual([`destObj ${MONSTER_ID}`, `destObj ${MONSTER_ID}`]);
+    expect(r.loop.autoAttack).toBe(true);
+  });
+});
+
+describe('AttackLoop: the arrival is the rules\' (ProcessMoveArrival, MoverMove.cpp:73-262)', () => {
+  it('the arrival swings even when another mover is stepped before the own mover', () => {
+    // the own mover last in view, so stepped last, standing still (no speed); the Aibatt walks up to it, and comes in
+    // range in its own step, before the own mover's ProcessMove
+    const r = rig({ ownFirst: false });
+    r.own.act.body.speed = 0;
+    r.world.apply(MONSTER_ID, { type: 'setDestObj', targetId: OWN_ID, range: 0 });
+    r.tap(MONSTER_ID);
+    r.tap(MONSTER_ID);
+    r.until(() => r.melee().length > 0);
+    expect(r.kinds()).toEqual([`destObj ${MONSTER_ID}`, `ATK1 ${MONSTER_ID}`]);
+    expect(r.own.act.state & ObjSta.ATK_ALL).toBe(ObjSta.ATK1);
+    expect(r.own.act.body.pos).toEqual(OWN_AT);
+  });
+
+  it('with no command the arrival is the default: the walk ends, nothing is swung', () => {
+    const r = rig();
+    r.tap(MONSTER_ID);
+    r.tap(MONSTER_ID);
+    r.step();
+    r.loop.stop('move'); // ClearCmd: the walk goes on (FORWARD answers 0 on the way), the command does not
+    r.until(() => r.own.dest === null);
+    r.steps(5);
+    expect(r.melee()).toEqual([]);
+    expect(r.own.act.state & ObjSta.MOVE_ALL).toBe(ObjSta.STAND);
   });
 });
 
@@ -324,20 +423,30 @@ describe('AttackLoop: what stops it ([combat §2.6])', () => {
     expect(r.kinds()).toEqual([`destObj ${MONSTER_ID}`, `ATK1 ${MONSTER_ID}`]);
   });
 
-  it('a tap on the ground stops it and drops the next target (WndWorld.cpp:6919-6929)', () => {
+  it('a press on the ground stops it as it goes down and drops the next target (WndWorld.cpp:6854, 6919-6929)', () => {
     const r = rig();
+    // pressed before any step: the loop sees the movers in view from the start (the render target)
     r.tap(MONSTER_ID);
     r.tap(MONSTER_ID);
     r.tap(OTHER_MONSTER_ID); // queued behind the target while auto-attacking
     expect(r.focus.next).toBe(OTHER_MONSTER_ID);
     expect(r.loop.renderTargetId).toBe(OTHER_MONSTER_ID);
-    r.loop.stop('ground');
+    r.loop.onGroundPressed(false);
     expect(r.loop.autoAttack).toBe(false);
     expect(r.focus.next).toBeNull();
     expect(r.loop.renderTargetId).toBeNull();
     expect(r.focus.targetId).toBe(MONSTER_ID); // bare ground does not clear the focus
     r.steps(300);
     expect(r.melee()).toEqual([]);
+  });
+
+  it("a double click's second press on the ground stops nothing (OnLButtonDblClk, WndWorld.cpp:7239-7263)", () => {
+    const r = rig();
+    r.tap(MONSTER_ID);
+    r.tap(MONSTER_ID);
+    r.loop.onGroundPressed(true);
+    expect(r.loop.autoAttack).toBe(true);
+    r.until(() => r.melee().length > 0);
   });
 
   it('the player dying stops it (DPClient.cpp:2080)', () => {
@@ -357,19 +466,32 @@ describe('AttackLoop: what stops it ([combat §2.6])', () => {
     r.tap(MONSTER_ID);
     r.steps(10); // on the way
     expect(r.sent).toEqual([['destObj', MONSTER_ID, 0]]);
-    // the world screen's part of a DEL_OBJ: the world drops the mover, the focus goes (CWorld::Process, World.cpp:892-893)
-    // and the loop is told its target is gone
+    // the world screen's part of a DEL_OBJ: the world drops the mover, and the loop is told (`onRemoved`): the focus goes
+    // (CWorld::Process, World.cpp:892-893) and the attack stops
     r.world.apply(MONSTER_ID, { type: 'delObj' });
-    for (const id of r.world.takeChanges().removed) {
-      const wasTarget = r.focus.targetId === id;
-      r.focus.onRemoved(id, false);
-      if (wasTarget) r.loop.stop('target');
-    }
+    for (const id of r.world.takeChanges().removed) r.loop.onRemoved(id);
     expect(r.focus.targetId).toBeNull();
     expect(() => r.steps(300)).not.toThrow();
     expect(r.melee()).toEqual([]);
     expect(r.sent).toEqual([['destObj', MONSTER_ID, 0]]);
     expect(r.loop.autoAttack).toBe(false);
+  });
+
+  it('a kill with a next target queued focuses it and stops the auto-attack (onRemoved taking the next, SetNextTarget)', () => {
+    const r = rig();
+    r.tap(MONSTER_ID);
+    r.tap(MONSTER_ID);
+    r.tap(OTHER_MONSTER_ID);
+    // another mover going changes nothing
+    r.loop.onRemoved(NPC_ID);
+    expect(r.loop.autoAttack).toBe(true);
+    // DPClient.cpp:1956-1970, WndWorld.cpp:6389-6419: the focus to the next target, marked, and the auto-attack off
+    r.loop.onRemoved(MONSTER_ID, true);
+    expect(r.focus.targetId).toBe(OTHER_MONSTER_ID);
+    expect(r.focus.next).toBeNull();
+    expect(r.loop.autoAttack).toBe(false);
+    expect(r.loop.renderTargetId).toBe(OTHER_MONSTER_ID);
+    expect(r.targets).toEqual([[MONSTER_ID, 2], [MONSTER_ID, 1], [NULL_ID, 2], [OTHER_MONSTER_ID, 2]]);
   });
 
   it('a target that leaves view gets no packet even before the loop is told', () => {
@@ -454,7 +576,7 @@ describe('AttackLoop: what is never attacked (IsAttackAble, IsAttackAbleNPC, Mov
   });
 
   it('nor a monster that is peaceful, one whose bKillable is 0, or another player', () => {
-    const peaceful = rig({ belligerence: PEACEFUL });
+    const peaceful = rig({ belligerence: Belli.PEACEFUL });
     tryEverything(peaceful, MONSTER_ID);
     expect(peaceful.sent).toEqual([]);
     const unkillable = rig({ killable: 0 });

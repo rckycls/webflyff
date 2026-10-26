@@ -1,5 +1,6 @@
 import type { AddedPlayer } from '@flyffweb/protocol';
 import type { WebNameColors } from '@flyffweb/formats';
+import { Belli } from '../sim/constants';
 import type { Mover } from '../WorldState';
 
 /** What a mover's name tag says. `color` is 0xAARRGGBB, as Neuz's `D3DCOLOR` and `PKSetting.inc` give it. */
@@ -27,8 +28,6 @@ const AUTH_GENERAL_VIP = [0x31, 0x32, 0x33]; // '1' to '3': `IsAuthVip` (`__BB_V
 
 /** `TRANSPARENT_MODE` (`authorization.h`), a bit of `CMover::m_dwMode`. */
 const TRANSPARENT_MODE = 0x00000002;
-/** `BELLI_PEACEFUL` (`Resource/defineAttribute.h:203`): `CMover::IsPeaceful`. */
-const BELLI_PEACEFUL = 1;
 
 /** `fDistLimit` of `CWorld::Render` (`World3D.cpp:1276-1278`): 40 m, and 100 m for players and peaceful NPCs. */
 const NEAR_LIMIT = 40;
@@ -65,7 +64,7 @@ export function nameTagOf(
     return { text: playerText(mover.name, player, honorTitles), color: playerColor(player, colors), maxDistance: FAR_LIMIT };
   }
   const { belligerence } = mover.added;
-  const peaceful = belligerence === BELLI_PEACEFUL;
+  const peaceful = belligerence === Belli.PEACEFUL; // CMover::IsPeaceful
   const aggressive = (mover.added.npc?.activeAttack ?? 0) !== 0;
   return {
     text: mover.name,

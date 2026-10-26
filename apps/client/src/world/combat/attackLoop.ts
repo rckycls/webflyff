@@ -1,19 +1,20 @@
 // The own character's melee (spec §3.4): the presses that select and attack (`CWndWorld::OnLButtonDown`,
 // `OnLButtonDblClk`, `OnLButtonUp`), the attack Neuz starts each frame while auto-attacking or holding the button
 // (`CWndWorld::Process`, `UseFocusObj`, `CMover::CMD_SetMeleeAttack`, `SetDestObj`), the swing on arrival
-// (`ProcessMoveArrival`, `DoAttackMelee`), the combo at each swing's end (`_ProcessStateAttack`), and what stops it
-// ([combat §2.6]). The rules it drives are `sim/`'s: the walk up to the target is `stepMover`'s following of the
-// destination object, and the swings are `ActionMover`'s.
+// (`ProcessMoveArrival`'s command, `DoAttackMelee`), the combo at each swing's end (`_ProcessStateAttack`), and what
+// stops it ([combat §2.6]). The rules it drives are `sim/`'s: the walk up to the target and the arrival are
+// `stepMover`'s following of the destination object, and the swings are `ActionMover`'s.
 
 import type { WebMover } from '@flyffweb/formats';
 import type { ModelBox } from '@flyffweb/scene';
 import type { OwnState } from '../OwnState';
 import type { ActionMover } from '../sim/ActionMover';
-import { ActMsg, Ik3, ObjSta, ObjStaF } from '../sim/constants';
+import { ActMsg, Belli, Ik3, ObjSta, ObjStaF } from '../sim/constants';
 import { setDestObj } from '../sim/moverRules';
+import type { SimMover } from '../sim/moverRules';
 import { attackSpeed } from '../sim/params';
 import type { WorldSession } from '../WorldSession';
-import type { Mover } from '../WorldState';
+import type { Mover, WorldState } from '../WorldState';
 import type { Focus } from './focus';
 
 const f32 = Math.fround;
@@ -21,8 +22,6 @@ const f32 = Math.fround;
 /** What the attack loop sends. */
 export type AttackLoopSession = Pick<WorldSession, 'sendDestObj' | 'sendMeleeAttack' | 'sendGetDestObj' | 'sendBehavior'>;
 
-/** `BELLI_PEACEFUL` (`Resource/defineAttribute.h:203`): `CMover::IsPeaceful()` (`Mover.h:1091`). */
-const BELLI_PEACEFUL = 1;
 /** `IK2_TOOLS` (`Resource/defineItemkind.h:36`): a tool in the hand does not attack (`CMD_SetMeleeAttack`). */
 const IK2_TOOLS = 18;
 /** `m_timerFocusAttack.Set( 500 )` (`WndWorld.cpp:571`): holding the button this long on a new target attacks. */
@@ -39,8 +38,6 @@ const COMBO: ReadonlyMap<number, { level: number; next: number }> = new Map([
 ]);
 /** `INV_6 = 1.0f / 6.0f` (`Obj.cpp:778`). */
 const INV_6 = f32(1 / 6);
-/** `0.8f`: `CObj::IsRangeObj` counts this much of each radius (`Obj.cpp:802-806`). */
-const RADIUS_PART = f32(0.8);
 
 /**
  * `CObj::GetRadius` (`Source/_Common/Obj.cpp:781-791`): the three sides of the model's box (`m_vMin`, `m_vMax`: for an
@@ -55,63 +52,47 @@ export function objRadius({ min, max }: ModelBox, scale: number): number {
   return f32(radius * f32(scale));
 }
 
-/**
- * `CObj::IsRangeObj( pOther, fRange )` (`Obj.cpp:794-819`), `obj` the one followed and `other` the walker: within 0.8 of
- * each radius plus `range` (0 counting as 1), in 3D. The same as the rules' (`moverRules.ts`, which keeps it to itself),
- * float for float, so that the arrival here and the following there agree.
- */
-function isRangeObj(obj: Mover, other: Mover, range: number): boolean {
-  const r = range === 0 ? 1 : range;
-  const radius = f32(f32(f32(obj.radius ?? 0) * RADIUS_PART) + f32(f32(f32(other.radius ?? 0) * RADIUS_PART) + r));
-  const a = obj.act.body.pos;
-  const b = other.act.body.pos;
-  const x = f32(a[0] - b[0]);
-  const y = f32(a[1] - b[1]);
-  const z = f32(a[2] - b[2]);
-  return f32(f32(f32(x * x) + f32(y * y)) + f32(z * z)) < f32(radius * radius);
-}
+/** The branch `CWndWorld::Process` runs (`WndWorld.cpp:8513-8537`): the attack, `ControlPlayer`, or neither. */
+type ProcessBranch = 'attack' | 'controls' | 'none';
 
 /**
  * The own character's auto-attack, a copy of `CWndWorld`'s and `g_pPlayer`'s part of it:
- * - the presses on a mover select it and turn the auto-attack on (`onMoverPressed`, `onMoverHeld`, `onReleased`, and the
- *   touch screen's `attackButton`), as `OnLButtonDown` (`Source/_Interface/WndWorld.cpp:6844-7096`), `OnLButtonDblClk`
- *   (:7239-7263) and `OnLButtonUp` (:6471-6512) do; the focus is `Focus` (`CWorld::m_pObjFocus` and
- *   `m_pNextTargetObj`), whose SETTARGETs it sends;
- * - each rules step (`step`), the attack branch of `CWndWorld::Process` (:8513-8537): while auto-attacking, or holding
- *   the button 500 ms on a target, `UseFocusObj` (:6197-6266) on an attackable focus (`IsAttackAble`,
- *   `_Common/Mover.cpp:6469-6626`), whose `CMD_SetMeleeAttack` (`_Common/MoverMsg.cpp:427-454`) walks the player to it
- *   (`SetDestObj`, :47-84: PLAYERSETDESTOBJ once per target followed); then the part of `CMover::ProcessMove`
- *   (`_Common/MoverMove.cpp:344-430`) that, the target in range, runs the command (`ProcessMoveArrival`, :73-262):
- *   `DoAttackMelee` (`_Common/MoverSkill.cpp:3436-3488`), the swing ATK1 and its MELEE_ATTACK;
+ * - the presses select a mover and turn the auto-attack on, or stop it (`onMoverPressed`, `onGroundPressed`,
+ *   `onMoverHeld`, `onReleased`, and the touch screen's `attackButton`), as `OnLButtonDown`
+ *   (`Source/_Interface/WndWorld.cpp:6712-7113`), `OnLButtonDblClk` (:7239-7263) and `OnLButtonUp` (:6471-6512) do; the
+ *   focus is `Focus` (`CWorld::m_pObjFocus` and `m_pNextTargetObj`), whose SETTARGETs it sends;
+ * - each rules step (`step`), the branch of `CWndWorld::Process` (:8513-8537): while auto-attacking, or holding the button
+ *   500 ms on a target, `UseFocusObj` (:6197-6266) on an attackable focus (`IsAttackAble`, `_Common/Mover.cpp:6469-6626`),
+ *   whose `CMD_SetMeleeAttack` (`_Common/MoverMsg.cpp:427-454`) walks the player to it (`SetDestObj`, :47-84:
+ *   PLAYERSETDESTOBJ once per target followed); otherwise the controls (`ControlPlayer`), whose turn `step` answers;
+ * - the command on arrival, which the rules' `ProcessMove` runs (`SimMover.arrive`, `ProcessMoveArrival`,
+ *   `_Common/MoverMove.cpp:73-262`): `DoAttackMelee` (`_Common/MoverSkill.cpp:3436-3488`), the swing ATK1 and its
+ *   MELEE_ATTACK;
  * - at each swing's end, the combo (`_ProcessStateAttack`, `_AIInterface/ActionMoverState.cpp:804-841`): the next swing,
  *   by level, while auto-attacking or holding the button, and its MELEE_ATTACK;
- * - what stops it (`stop`), and the answer to QUERYGETDESTOBJ.
+ * - what stops it (`stop`, `onRemoved`), and the answer to QUERYGETDESTOBJ.
  *
- * `own` gives the own character's numbers (`OwnState`): its level, its hand's `fAttackSpeed` (MELEE_ATTACK sends it,
- * the server refuses another), its weapon; without them (the own ADD_OBJ could not be read) presses still select, but
- * nothing attacks. `clock` gives the ticks of the PLAYERBEHAVIOR `SetDestObj` sends; `movers` is the mover catalog
- * (`bKillable`).
+ * `world` gives the own mover (`g_pPlayer`, `self`) and the movers in view (`prj.GetMover`, `movers`); `own` the own
+ * character's numbers (`OwnState`): its level, its hand's `fAttackSpeed` (MELEE_ATTACK sends it, the server refuses
+ * another), its weapon; without them presses still select, but nothing attacks. `clock` gives the ticks of the
+ * PLAYERBEHAVIOR `SetDestObj` sends; `moverProps` is the mover catalog (`bKillable`).
  *
- * The world screen calls `step` once a rules step, after the controls (`OwnMover.control`, which it skips while
- * `controlsPlayer` is false, as `Process` runs one branch or the other) and before the world's step: the attack branch
- * is the frame before's interface, as the controls are, and the arrival comes just before the own mover's
- * `ProcessMove` in `stepMover`. Those see the same positions, the own mover being the first stepped (its ADD_OBJ is the
- * first of the JOIN, `CUser::Open`, `WORLDSERVER/User.cpp:326`), so that where this finds no arrival the rules find
- * none either and follow on (`TURNMOVE`).
+ * The world screen calls `step` once a rules step, before the world's step, and runs the controls (`OwnMover.control`)
+ * when it says so: `Process` runs one branch or the other, and both are the frame before's interface.
  *
  * Left out, as Piece 4 has none of them: skills (`m_dwNextSkill`, `OBJACT_USESKILL`, `REQ_USESKILL`), flying, the
- * wand's and the bow's attacks (at the button's let-go, `CMD_SetMagicAttack`, `CMD_SetRangeAttack`), the yoyo's reach
- * and its short combo, attacking players (duels, PK, wars), the guards' disposition (`RANK_GUARD` against a chaotic
- * player), the Ctrl key's auto-attack, the menu of a peaceful NPC (Piece 5), standing a sitting player up first
- * (`SendMotion( OBJMSG_STANDUP )`: the browser's player never sits), buffs (`IK3_TEXT_DISGUISE`, `MVRF_NOATTACK`) and
- * `STATE_BASEMOTION_MODE`.
+ * wand's and the bow's attacks (at the button's let-go, `CMD_SetMagicAttack`, `CMD_SetRangeAttack`), the yoyo's reach,
+ * its line of sight on arrival and its short combo, attacking players (duels, PK, wars), the guards' disposition
+ * (`RANK_GUARD` against a chaotic player), the Ctrl key's auto-attack, the menu of a peaceful NPC (Piece 5), standing a
+ * sitting player up first (`SendMotion( OBJMSG_STANDUP )`: the browser's player never sits), buffs (`IK3_TEXT_DISGUISE`,
+ * `MVRF_NOATTACK`) and `STATE_BASEMOTION_MODE`.
  */
 export class AttackLoop {
   /** `m_bAutoAttack`. */
   private auto = false;
   /**
    * `m_bLButtonDown` while a press on a mover is held, which is also the `CTRLMSG_LDOWN` the combo reads: `ControlGround`
-   * sets `m_dwCtrlMsg` from it as the press goes down and as it is let go (`WndWorldControlPlayer.cpp:237-238`), and not
+   * sets `m_dwCtrlMsg` from it as the press goes down and as it is let go (`WndWorldControlPlayer.cpp:235-238`), and not
    * in between, while `Process` runs the attack branch. (A press on the ground held down is the controls' tap.)
    */
   private buttonDown = false;
@@ -125,17 +106,15 @@ export class AttackLoop {
   private cmd: number | null = null;
   /** `m_pRenderTargetObj`: the mover the target marks are on. */
   private renderTarget: number | null = null;
-  /** The own mover and the movers in view (`prj.GetMover`), as the last step had them. */
-  private ownMover: Mover | undefined;
-  private find: (objectId: number) => Mover | undefined = () => undefined;
   private readonly bound = new WeakSet<ActionMover>();
 
   constructor(
     private readonly session: AttackLoopSession,
     private readonly focus: Focus,
+    private readonly world: Pick<WorldState, 'self' | 'movers'>,
     private readonly own: () => OwnState | undefined,
     private readonly clock: { tick(): bigint },
-    private readonly movers: ReadonlyMap<number, Pick<WebMover, 'killable'>>,
+    private readonly moverProps: ReadonlyMap<number, Pick<WebMover, 'killable'>>,
   ) {}
 
   /** `m_bAutoAttack`. */
@@ -145,22 +124,12 @@ export class AttackLoop {
 
   /**
    * `m_pRenderTargetObj`, the mover the target marks and the target bar are on: the last mover pressed that is a
-   * player or not peaceful (`WndWorld.cpp:6888-6891`); none after a tap on the ground (:6928) or once the focus is
-   * cleared (`SetObjFocus( NULL )`, `World.cpp:331-343`).
+   * player or not peaceful (`WndWorld.cpp:6888-6891`), or the next target taken after a kill (`SetNextTarget`,
+   * :6411-6416); none after a press on the ground (:6928) or once the focus is cleared (`SetObjFocus( NULL )`,
+   * `World.cpp:337-341`).
    */
   get renderTargetId(): number | null {
     return this.focus.targetId === null ? null : this.renderTarget;
-  }
-
-  /**
-   * Whether `CWndWorld::Process` runs `ControlPlayer` this frame (`WndWorld.cpp:8513-8537`): not while it runs the attack
-   * branch (auto-attacking, or the button held past its 500 ms, with a focus), nor while a press on a mover is held
-   * before then (neither branch runs); otherwise it does.
-   */
-  get controlsPlayer(): boolean {
-    if (!this.buttonDown && !this.auto) return true;
-    if (this.auto || this.holdTimedOut()) return this.focus.targetId === null;
-    return false;
   }
 
   /**
@@ -187,12 +156,13 @@ export class AttackLoop {
       return;
     }
     const old = this.focus.targetId;
-    if (old === null) this.renderTarget = null;
     if (this.focus.next === null && old === null) this.auto = false;
     this.cmd = null;
     if (!this.auto) this.focus.select(objectId);
-    const mover = this.find(objectId);
-    const peaceful = mover !== undefined && mover.added.belligerence === BELLI_PEACEFUL;
+    const mover = this.world.movers.get(objectId);
+    const peaceful = mover !== undefined && mover.added.belligerence === Belli.PEACEFUL;
+    // with nothing focused before, `SetObjFocus( NULL )` cleared the mark when the focus went (World.cpp:337-341)
+    if (old === null) this.renderTarget = null;
     if (mover !== undefined && (mover.added.isPlayer || !peaceful)) this.renderTarget = objectId;
     if (old !== null && old === objectId) {
       this.auto = false;
@@ -206,6 +176,17 @@ export class AttackLoop {
     if (peaceful && !mover.added.isPlayer) this.auto = false;
     this.selectTarget = true;
     if (objectId !== old) this.focusTimer = now;
+  }
+
+  /**
+   * A press on the ground, or on nothing (`OnLButtonDown` where the highlight is no mover, `WndWorld.cpp:6854`,
+   * `:6919-6929`), as it goes down: the command dropped, the auto-attack off, and the next target and the mark dropped;
+   * the focus stays (`SelectObj` focuses only what it picked). A double click's second press is `OnLButtonDblClk`
+   * (:7239-7263), which stops nothing.
+   */
+  onGroundPressed(double: boolean): void {
+    if (double || this.ownIsDead()) return;
+    this.stop('ground');
   }
 
   /**
@@ -242,12 +223,10 @@ export class AttackLoop {
   /**
    * What stops the auto-attack ([combat §2.6]), with the command (`ClearCmd`): a movement key or the joystick (`move`:
    * `WndWorldControlPlayer.cpp:383-403`, and `CWndWorld::OnKeyDown` for W, A, S and D, `WndWorld.cpp:7739-7740`); a
-   * tap on the ground (`ground`: `OnLButtonDown`'s :6854 and :6922-6929, which also drop the next target and the mark,
-   * and leave the focus); the player's death (`died`: `CDPClient::OnMoverDeath`, `Neuz/DPClient.cpp:2080`); the target
-   * dead or gone from view (`target`: `SetNextTarget`'s `m_bAutoAttack = FALSE`, `WndWorld.cpp:6418`, for a kill; for a
-   * DEL_OBJ Neuz leaves the flag on with nothing focused, where it does nothing, and the next press clears it,
-   * :6850-6853). The focus is `Focus`'s to clear. A press held on a mover past its 500 ms goes on attacking: Neuz reads
-   * no keys while it runs that branch.
+   * press on the ground (`ground`: `onGroundPressed`, which also drops the next target and the mark, and leaves the
+   * focus); the player's death (`died`: `CDPClient::OnMoverDeath`, `Neuz/DPClient.cpp:2080`); the target dead or gone
+   * from view (`target`: `onRemoved`). The focus is `Focus`'s to clear. A press held on a mover past its 500 ms goes on
+   * attacking: Neuz reads no keys while it runs that branch.
    */
   stop(reason: 'move' | 'ground' | 'died' | 'target'): void {
     this.auto = false;
@@ -259,27 +238,42 @@ export class AttackLoop {
   }
 
   /**
-   * One rules step for the own mover `own`, `find` giving the movers in view: the attack branch of `CWndWorld::Process`
-   * (`WndWorld.cpp:8513-8537`), then the arrival of `CMover::ProcessMove` for the command. The combo runs in the rules'
-   * step, at the swing's end (`ActionMover.onAttackEnd`, which this sets, with the own mover's `findMover` and its
-   * attack speed, `CMover::GetAttackSpeed`, for the animation).
+   * The mover `objectId` is gone from view (DEL_OBJ: `CWorld::Process`, `World.cpp:883-893`) or, with `takesNext`, was
+   * killed by the player (MOVERDEATH: `CDPClient::OnMoverDeath`, `Neuz/DPClient.cpp:1956-1972`): the focus goes, and
+   * after a kill the next target queued becomes it (`Focus.onRemoved`), marked unless peaceful (`SetNextTarget`,
+   * `WndWorld.cpp:6389-6419`). Was it the target, the attack stops (`stop( 'target' )`): `SetNextTarget`'s
+   * `m_bAutoAttack = FALSE` (:6418) after a kill; after a DEL_OBJ Neuz leaves the flag on with nothing focused, where it
+   * does nothing, and the next press clears it (:6850-6853).
    */
-  step(own: Mover, find: (objectId: number) => Mover | undefined): void {
-    this.ownMover = own;
-    this.find = find;
+  onRemoved(objectId: number, takesNext = false): void {
+    const wasTarget = this.focus.targetId === objectId;
+    this.focus.onRemoved(objectId, takesNext);
+    if (!wasTarget) return;
+    const next = this.focus.targetId;
+    if (next !== null && this.world.movers.get(next)?.added.belligerence !== Belli.PEACEFUL) this.renderTarget = next;
+    this.stop('target');
+  }
+
+  /**
+   * One rules step: the branch of `CWndWorld::Process` (`WndWorld.cpp:8513-8537`), decided once; on the attack branch,
+   * `UseFocusObj` on an attackable focus. True where `Process` runs `ControlPlayer` this step, which the world screen
+   * then runs (`OwnMover.control`); false on the attack branch and where neither runs (a press on a mover held before its
+   * 500 ms are out). The own mover's hooks (its swing's target `findMover`, the combo `onAttackEnd`, its animation speed
+   * `attackSpeed`, the command on arrival `arrive`) are set at its first step.
+   */
+  step(): boolean {
+    const own = this.world.self();
+    if (own === undefined) return true;
     this.bind(own);
-    const state = this.own();
-    if (state === undefined) return;
-    if (this.buttonDown || this.auto) {
-      if (this.auto || (this.selectTarget && this.holdTimedOut())) {
-        const id = this.focus.targetId;
-        const target = id === null ? undefined : find(id);
-        if (target !== undefined && this.isAttackAble(target)) this.useFocusObj(own, target, state);
-      }
-    } else {
-      this.selectTarget = false;
+    const branch = this.processBranch();
+    if (branch === 'attack') {
+      const target = this.world.movers.get(this.focus.targetId!)!;
+      const state = this.own();
+      if (state !== undefined && this.isAttackAble(target)) this.useFocusObj(own, target, state);
+    } else if (!this.buttonDown && !this.auto) {
+      this.selectTarget = false; // the else branch (:8533-8537)
     }
-    this.processMove(own, state);
+    return branch === 'controls';
   }
 
   /**
@@ -287,8 +281,20 @@ export class AttackLoop {
    * asks what it follows; while the own mover follows an object (`!IsEmptyDestObj()`), GETDESTOBJ answers with it.
    */
   onQueryGetDestObj(fromId: number): void {
-    const dest = this.ownMover?.dest?.targetId ?? null;
+    const dest = this.world.self()?.dest?.targetId ?? null;
     if (dest !== null) this.session.sendGetDestObj(fromId, dest);
+  }
+
+  /**
+   * The branch of `CWndWorld::Process` (`WndWorld.cpp:8513-8537`): with the button down or auto-attacking, the attack
+   * when auto-attacking or held past `m_timerFocusAttack` (:8517) with a focus in view, the controls with none, and
+   * neither otherwise; the controls with neither.
+   */
+  private processBranch(): ProcessBranch {
+    if (!this.buttonDown && !this.auto) return 'controls';
+    if (!this.auto && !(this.selectTarget && this.holdTimedOut())) return 'none';
+    const id = this.focus.targetId;
+    return id !== null && this.world.movers.has(id) ? 'attack' : 'controls';
   }
 
   /** `m_timerFocusAttack.IsTimeOut()` at the time the held press is known held till. */
@@ -298,7 +304,7 @@ export class AttackLoop {
 
   /** `g_pPlayer->IsDie()` (`Mover.h:1221`): in a dead state, or with no HP left. */
   private ownIsDead(): boolean {
-    return this.ownMover?.act.isDie() === true || this.own()?.hp === 0;
+    return this.world.self()?.act.isDie() === true || this.own()?.hp === 0;
   }
 
   /** `GetActiveHandItemProp()->dwItemKind3 == IK3_WAND`: the fists' (`II_WEA_HAN_HAND`, `IK3_HAND`) when the hand is empty. */
@@ -307,14 +313,20 @@ export class AttackLoop {
   }
 
   /**
-   * The own mover's hooks the attack needs, set once: the swing's target (`prj.GetMover`), the combo at a swing's end,
-   * and the animation's speed while swinging (`CMover::GetAttackSpeed`, `MoverAttack.cpp:159-192`, `params.ts`).
+   * The own mover's hooks the attack needs, set once: the command on arriving (`arrive`) and the button its collision
+   * lets go (`releaseButton`: `m_bLButtonDown = FALSE`, `MoverActEvent.cpp:2022-2028`), which the rules' step calls; the
+   * swing's target (`prj.GetMover`), the combo at a swing's end, and the animation's speed while swinging
+   * (`CMover::GetAttackSpeed`, `MoverAttack.cpp:159-192`, `params.ts`), which the swing calls.
    */
   private bind(own: Mover): void {
     const act = own.act;
     if (this.bound.has(act)) return;
     this.bound.add(act);
-    act.findMover = (objectId) => this.find(objectId)?.act;
+    own.arrive = (target) => this.arrive(own, target);
+    own.releaseButton = () => {
+      this.buttonDown = false;
+    };
+    act.findMover = (objectId) => this.world.movers.get(objectId)?.act;
     act.onAttackEnd = (dwState) => this.combo(own, dwState);
     act.attackSpeed = () => {
       const state = this.own();
@@ -345,9 +357,9 @@ export class AttackLoop {
       this.focus.select(null);
       return false;
     }
-    const prop = this.movers.get(npc.added.index);
+    const prop = this.moverProps.get(npc.added.index);
     if (prop === undefined || prop.killable === 0) return false;
-    if (npc.added.belligerence === BELLI_PEACEFUL) return false;
+    if (npc.added.belligerence === Belli.PEACEFUL) return false;
     return !npc.flying;
   }
 
@@ -386,7 +398,7 @@ export class AttackLoop {
   private setDestObj(own: Mover, objectId: number, range: number): void {
     const old = own.dest?.targetId ?? null;
     if (old !== objectId) {
-      if (old !== null && this.find(old)?.added.isPlayer === true) {
+      if (old !== null && this.world.movers.get(old)?.added.isPlayer === true) {
         this.session.sendBehavior(own.act.report(this.clock.tick()));
       }
       this.session.sendDestObj(objectId, range);
@@ -396,23 +408,16 @@ export class AttackLoop {
   }
 
   /**
-   * The part of `CMover::ProcessMove` (`MoverMove.cpp:344-430`) that runs the command: not sitting, not swinging, with
-   * an object to follow that is in view and within `IsRangeObj` of the own mover, `ProcessMoveArrival` (:73-262) runs
-   * `OBJACT_MELEE_ATTACK` (`DoAttackMelee`, :189-205) and the command ends (`SetCmd( OBJACT_NONE )`, :262). With no
-   * command it is the rules' arrival (`ClearDestObj` and `OBJMSG_STOP`, :256-259), and a target out of view stands the
-   * mover with the command kept (:401-406): both `stepMover`'s.
+   * `CMover::ProcessMoveArrival`'s `switch( m_oaCmd )` for the own mover (`MoverMove.cpp:78-262`), which the rules' step
+   * calls as it arrives at `target` (`SimMover.arrive`): `OBJACT_MELEE_ATTACK` (:189-205) swings at it (`DoAttackMelee`)
+   * and the command ends (`SetCmd( OBJACT_NONE )`, :262). With no command, false: the rules' default arrival.
    */
-  private processMove(own: Mover, state: OwnState): void {
-    if (this.cmd === null) return;
-    const act = own.act;
-    if (act.stateFlag & ObjStaF.SIT) return;
-    const d = own.dest;
-    if (d === null || d.pos !== null || d.targetId === null) return;
-    if (act.state & ObjSta.ATK_ALL) return;
-    const target = this.find(d.targetId);
-    if (target === undefined || !isRangeObj(target, own, d.range)) return;
+  private arrive(own: Mover, target: SimMover): boolean {
+    if (this.cmd === null) return false;
     this.cmd = null;
-    this.doAttackMelee(own, target, state);
+    const state = this.own();
+    if (state !== undefined) this.doAttackMelee(own, target, state);
+    return true;
   }
 
   /**
@@ -420,7 +425,7 @@ export class AttackLoop {
    * following, `ClearDest`), then the swing; one that starts (`nError > 0`) sends MELEE_ATTACK with the hand's
    * `fAttackSpeed` (`__HACK_1023`, :3455-3467).
    */
-  private doAttackMelee(own: Mover, target: Mover, state: OwnState): void {
+  private doAttackMelee(own: Mover, target: SimMover, state: OwnState): void {
     own.act.sendActMsg(ActMsg.STOP);
     if (!own.act.sendActMsg(ActMsg.ATK1, target.objectId, 0, 0)) return;
     this.session.sendMeleeAttack(ActMsg.ATK1, target.objectId, state.attackSpeed());
@@ -438,7 +443,7 @@ export class AttackLoop {
     if (combo === undefined || state === undefined) return;
     if (state.level < combo.level || !(this.buttonDown || this.auto)) return;
     const act = own.act;
-    const hit = act.hitId === null ? undefined : this.find(act.hitId);
+    const hit = act.hitId === null ? undefined : this.world.movers.get(act.hitId);
     if (hit === undefined) {
       act.hitId = null;
       return;

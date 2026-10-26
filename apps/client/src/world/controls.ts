@@ -166,12 +166,13 @@ const DOUBLE_MS = 500;
 const DOUBLE_PX = 2;
 
 /**
- * A press on a mover, handed on as it goes down (`CWndWorld::OnLButtonDown`, `WndWorld.cpp:6712-7113`, or for a double
- * click's second press `OnLButtonDblClk`, :7239-7263): the mover's object ID, the press's time (the event's, in the
- * clock of `performance.now()`), and whether it is a double click's second press.
+ * A press on the world, handed on as it goes down (`CWndWorld::OnLButtonDown`, `WndWorld.cpp:6712-7113`, or for a double
+ * click's second press `OnLButtonDblClk`, :7239-7263): the object ID of the mover it went down on, or null for the
+ * ground or nothing; the press's time (the event's, in the clock of `performance.now()`); and whether it is a double
+ * click's second press.
  */
-export interface MoverPress {
-  mover: number;
+export interface WorldPress {
+  mover: number | null;
   time: number;
   double: boolean;
 }
@@ -185,9 +186,10 @@ type Listen = Pick<EventTarget, 'addEventListener' | 'removeEventListener'>;
  * there (`TapHit`), or null where there is nothing. `canvas` is the drawing: a finger on the joystick, an element of its
  * own over it, is not on it.
  *
- * - A press on a mover goes to `onMoverPress` at once, and is held (`heldMover`) until it is let go, however far it
- *   moves (moving the cursor away does not matter to Neuz's hold, [combat §2.1]); the canvas keeps the pointer
- *   (`SetCapture`, :6842), so that its let-go comes here.
+ * - Every press goes to `onPress` at once, as `OnLButtonDown` runs as the button goes down.
+ * - A press on a mover is held (`heldMover`) until it is let go, however far it moves (moving the cursor away does not
+ *   matter to Neuz's hold, [combat §2.1]); the canvas keeps the pointer (`SetCapture`, :6842), so that its let-go comes
+ *   here.
  * - A press on the ground is a tap where the player walks (`m_bFreeMove`, :6989-6997, and `ControlGround`'s destination
  *   at the point, `WndWorldControlPlayer.cpp:299-361`): `take`. Neuz sets the destination as the button goes down, and
  *   drags with it held turn the camera; here a press is a tap only if it is let go within 300 ms and 8 px of where it
@@ -206,7 +208,7 @@ export class TapToWalk {
     private readonly canvas: HTMLElement,
     private readonly pick: (ndcX: number, ndcY: number) => TapHit | null,
     private readonly report?: (error: unknown) => void,
-    private readonly onMoverPress?: (press: MoverPress) => void,
+    private readonly onPress?: (press: WorldPress) => void,
   ) {
     canvas.addEventListener('pointerdown', this.onDown);
     canvas.addEventListener('pointermove', this.onMove);
@@ -263,9 +265,9 @@ export class TapToWalk {
       return;
     }
     this.press = { pointerId, x, y, time, hit, tap: true };
-    if (hit === null || !('mover' in hit)) return;
-    this.canvas.setPointerCapture?.(pointerId);
-    this.onMoverPress?.({ mover: hit.mover, time, double });
+    const mover = hit !== null && 'mover' in hit ? hit.mover : null;
+    if (mover !== null) this.canvas.setPointerCapture?.(pointerId);
+    this.onPress?.({ mover, time, double });
   };
 
   private readonly onMove = (event: PointerEvent): void => {

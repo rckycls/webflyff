@@ -153,6 +153,16 @@ export const Ik3 = {
   BOW: 12,
 } as const;
 
+/**
+ * `BELLI_*` (`Resource/defineAttribute.h:203-205`): how a mover takes to players (`MoverProp::dwBelligerence`, and the
+ * `m_dwBelligerence` an ADD_OBJ carries). `CMover::IsPeaceful()` is `PEACEFUL` (`Source/_Common/Mover.h:1091`).
+ */
+export const Belli = {
+  PEACEFUL: 1,
+  CAUTIOUSATTACK: 2,
+  ACTIVEATTACK: 3,
+} as const;
+
 /** `ANILOOP_*` (`Source/_Common/Obj.h:26-28`): how a motion plays (`CModel::m_nLoop`). */
 export const AniLoop = {
   /** `ANILOOP_1PLAY`: once. */
