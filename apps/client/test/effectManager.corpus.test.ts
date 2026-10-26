@@ -4,7 +4,7 @@
 // unit-tested on hand-made effects in effectManager.test.ts.
 
 import { existsSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { loadDefines } from '@flyffweb/formats';
 import type { Vec3, WebEffect } from '@flyffweb/formats';
 import type { EffectDraw } from '@flyffweb/scene';
@@ -42,7 +42,11 @@ const PLAYED: [name: string, xi: number, ticks: number][] = [
 ];
 
 describe.skipIf(!existsSync(`${ASSETS_DIR}index.json`))('the effects of the fight and the Vagrant skills, from the converted files', () => {
-  const assets = DiskAssets.open();
+  // opened in beforeAll: Vitest runs the body of a skipped suite to collect it, and without index.json this would throw
+  let assets: DiskAssets;
+  beforeAll(() => {
+    assets = DiskAssets.open();
+  });
   const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
   /** Plays `xi` to its end; the ticks it took, the draws it handed out, and what it said. */
@@ -52,7 +56,7 @@ describe.skipIf(!existsSync(`${ASSETS_DIR}index.json`))('the effects of the figh
     const reports: string[] = [];
     const renderer = { begin: () => undefined, draw: (list: EffectDraw[]) => void draws.push(list), end: () => undefined };
     const manager = new EffectManager(data, (key) => assets.json<WebEffect>(key), renderer, neuzRandom, (message) => reports.push(message));
-    manager.play({ xi, pos: [100, 10, 100] as Vec3, followId: 1 });
+    manager.play({ xi, pos: [100, 10, 100] as Vec3, followId: 1, sourceAngle: 30 });
     await settle();
     const camera = new PerspectiveCamera();
     let ticks = 0;

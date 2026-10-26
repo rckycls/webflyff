@@ -12,6 +12,7 @@ import type { Mock } from 'vitest';
 import { EffectManager, Xi } from '../src/world/fx/EffectManager';
 import type { EffectRequest } from '../src/world/fx/EffectManager';
 import type { GameData } from '../src/world/gameData';
+import { wrapAngle } from '../src/world/sim/ActionMover';
 
 const f32 = Math.fround;
 const LIFT_CREATE = f32(0.01);
@@ -48,6 +49,9 @@ const REFS: [number, string, number][] = [
   [Xi.SKILL_VAG_ONE_CLEANHIT01, 'effects/cleanhit.json', 1],
   [Xi.SKILL_VAG_ONE_BRANDISH01, 'effects/cleanhit.json', 1],
   [Xi.SKILL_VAG_ONE_OVERCUTTER01, 'effects/cleanhit.json', 1],
+  [Xi.SKILL_BIL_KNU_SONICHAND02, 'effects/cleanhit.json', 1],
+  [Xi.HIT_BOW01, 'effects/cleanhit.json', 1],
+  [Xi.EVE_EVENT_FAIRYLY, 'effects/cleanhit.json', 1],
   [Xi.HIT_YOY01, 'effects/big.json', 2],
   [Xi.GEN_MONSTER_SPAWN01, 'effects/short.json', 2],
   [Xi.HIT_HITBLOCK01, 'effects/missing.json', 1], // an entry that names a .sfx the client lacks
@@ -117,6 +121,11 @@ const steps = (r: Rig, count: number, find: (id: number) => { pos: Vec3 } | unde
   for (let i = 0; i < count; i++) r.manager.step(find);
 };
 const quadOf = (drawn: Drawn): EffectQuadDraw => drawn.list[0] as EffectQuadDraw;
+/** The heading, degrees from 0 to 360, a NORMAL quad of unit scale is drawn at: its matrix is YawPitchRoll( heading ), whose first row is ( cos, 0, -sin ). */
+const headingOf = (drawn: Drawn): number => {
+  const m = quadOf(drawn).matrix;
+  return (((Math.atan2(-m[2]!, m[0]!) * 180) / Math.PI) + 360) % 360;
+};
 
 describe('EffectManager: following (CSfx::Process, SfxObj.cpp:134-238)', () => {
   it('XI_GEN_LEVEL_UP01 with a follow id moves with the mover', async () => {
@@ -180,27 +189,27 @@ describe('EffectManager: following (CSfx::Process, SfxObj.cpp:134-238)', () => {
     }
   });
 
-  it('the Vagrant skills are CSfxFixed: they stay where they were made, with no 0.2 (CreateObj.cpp:94-111)', async () => {
+  it('the Vagrant skills are CSfxFixed: they sit at the point given (vPosDest, with no 0.01) and have no 0.2 (Sfx.cpp:2089-2092)', async () => {
     for (const xi of [Xi.SKILL_VAG_ONE_CLEANHIT01, Xi.SKILL_VAG_ONE_BRANDISH01, Xi.SKILL_VAG_ONE_OVERCUTTER01]) {
       const r = rig();
-      await play(r, { xi, pos: [4, 1, 9], followId: 7, angle: 30 });
+      await play(r, { xi, pos: [4, 1, 9], followId: 7, sourceAngle: 30 });
       r.manager.step(() => ({ pos: [50, 50, 50] }));
-      expect(r.drawn().effects[0]!.at).toEqual([4, f32(1 + LIFT_CREATE), 9]);
+      expect(r.drawn().effects[0]!.at).toEqual([4, 1, 9]);
     }
   });
 
-  it('a request marked fixed is CSfxFixed whatever its id: it keeps the made position and has no 0.2', async () => {
+  it('a request marked fixed is CSfxFixed whatever its id: it sits at the point given and has no 0.2', async () => {
     const r = rig();
     await play(r, { xi: Xi.GEN_LEVEL_UP01, pos: [4, 1, 9], followId: 7, fixed: true });
     r.manager.step(() => ({ pos: [50, 50, 50] }));
-    expect(r.drawn().effects[0]!.at).toEqual([4, f32(1 + LIFT_CREATE), 9]);
+    expect(r.drawn().effects[0]!.at).toEqual([4, 1, 9]);
     expect(r.manager.count()).toBe(1);
     steps(r, 2, nobody); // and nothing it follows can end it
     expect(r.manager.count()).toBe(1);
   });
 });
 
-describe('EffectManager: scale and heading (CObj::ResetScale, SetScale and CSfx::Render)', () => {
+describe('EffectManager: scale (CObj::ResetScale and SetScale)', () => {
   it("scales an effect by its index entry's scale", async () => {
     const r = rig();
     await play(r, { xi: Xi.HIT_YOY01, pos: [0, 0, 0] });
@@ -215,27 +224,67 @@ describe('EffectManager: scale and heading (CObj::ResetScale, SetScale and CSfx:
     expect([m[0], m[5], m[10]]).toEqual([3, 3, 3]); // not 2 * 3
   });
 
-  it('draws an effect with the heading of the request', async () => {
+});
+
+describe('EffectManager: the heading, as CreateSfx turns the effect (CreateObj.cpp:94-153)', () => {
+  /** Plays `xi` for a source mover at `sourceAngle`, and gives the heading it is drawn at. */
+  async function headingFor(xi: number, sourceAngle?: number, extra: Partial<EffectRequest> = {}): Promise<number> {
     const r = rig();
-    await play(r, { xi: Xi.HIT_CRITICAL01, pos: [0, 0, 0], angle: 90 });
+    await play(r, { xi, pos: [0, 0, 0], sourceAngle, ...extra });
+    return headingOf(r.drawn().effects[0]!);
+  }
+
+  it('turns a melee skill hit by -a: the Over Cut of a caster at 30 degrees is drawn at 330 (:94-111)', async () => {
+    expect(await headingFor(Xi.SKILL_VAG_ONE_OVERCUTTER01, 30)).toBeCloseTo(330, 1);
+    expect(await headingFor(Xi.SKILL_VAG_ONE_OVERCUTTER01, 270)).toBeCloseTo(90, 1);
+    expect(await headingFor(Xi.SKILL_VAG_ONE_CLEANHIT01, 40)).toBeCloseTo(320, 1);
+    expect(await headingFor(Xi.SKILL_VAG_ONE_BRANDISH01, 40)).toBeCloseTo(320, 1);
+  });
+
+  it('turns the two Knuckle Hammer hits by -a + 180 (:115-121)', async () => {
+    expect(await headingFor(Xi.SKILL_BIL_KNU_SONICHAND02, 40)).toBeCloseTo(140, 1);
+    expect(await headingFor(Xi.SKILL_BIL_KNU_SONICHAND02, 200)).toBeCloseTo(340, 1);
+  });
+
+  it('turns the bow, yoyo and arrow hits by 180 - a (:128-152)', async () => {
+    expect(await headingFor(Xi.HIT_BOW01, 40)).toBeCloseTo(140, 1);
+    expect(await headingFor(Xi.HIT_BOW01, 200)).toBeCloseTo(340, 1);
+    expect(await headingFor(Xi.HIT_YOY01, 40)).toBeCloseTo(140, 1);
+  });
+
+  it('stores the heading as SetAngle does: 65536 steps a circle, wrapped to 0..360 (Obj.cpp:662-664)', async () => {
+    for (const a of [100.123456, 1, 359.9, 400, -20]) {
+      expect(await headingFor(Xi.SKILL_VAG_ONE_OVERCUTTER01, a)).toBeCloseTo(wrapAngle(-a), 3);
+      expect(await headingFor(Xi.HIT_BOW01, a)).toBeCloseTo(wrapAngle(f32(180 - f32(a))), 3);
+    }
+  });
+
+  it('does not turn a fixed effect that has no source mover: IsValidObj( pSrc ) fails, and it keeps heading 0', async () => {
+    expect(await headingFor(Xi.SKILL_VAG_ONE_OVERCUTTER01, undefined)).toBe(0);
+    expect(await headingFor(Xi.HIT_BOW01, undefined)).toBe(0);
+  });
+
+  it('does not turn a plain effect: CreateSfx never calls SetAngle for it, and a CObj starts at angle 0 (Obj.cpp:49)', async () => {
+    expect(await headingFor(Xi.HIT_CRITICAL01, 90)).toBe(0);
+    expect(await headingFor(Xi.GEN_LEVEL_UP01, 90)).toBe(0);
+  });
+
+  it('does not turn what is fixed without a rule: the fairy (CreateObj.cpp:294-296) and any id marked fixed', async () => {
+    expect(await headingFor(Xi.EVE_EVENT_FAIRYLY, 90)).toBe(0);
+    expect(await headingFor(Xi.GEN_LEVEL_UP01, 90, { fixed: true })).toBe(0);
+  });
+
+  it('does not turn CSfxGenNormalDmg01: its Render never sets m_vRotate.y (Sfx.cpp:62-68)', async () => {
+    expect(await headingFor(Xi.HIT_SWORD01, 90)).toBe(0);
+    expect(await headingFor(Xi.HIT_STICK02, 90)).toBe(0);
+  });
+
+  it('draws the turned effect with that heading in its matrix, not only in a number', async () => {
+    const r = rig();
+    await play(r, { xi: Xi.SKILL_VAG_ONE_OVERCUTTER01, pos: [0, 0, 0], sourceAngle: 30 });
     const m = quadOf(r.drawn().effects[0]!).matrix;
-    expect(m[0]).toBeCloseTo(0, 5); // YawPitchRoll( 90 degrees ) about Y
-    expect(m[2]).toBeCloseTo(-1, 5);
-    const flat = rig();
-    await play(flat, { xi: Xi.HIT_CRITICAL01, pos: [0, 0, 0] });
-    expect(quadOf(flat.drawn().effects[0]!).matrix[0]).toBe(1); // no angle: 0
-  });
-
-  it('CSfxFixed has the heading too (CSfxFixed::Render sets m_vRotate.y, Sfx.cpp:2115-2119)', async () => {
-    const r = rig();
-    await play(r, { xi: Xi.SKILL_VAG_ONE_CLEANHIT01, pos: [0, 0, 0], angle: 90 });
-    expect(quadOf(r.drawn().effects[0]!).matrix[2]).toBeCloseTo(-1, 5);
-  });
-
-  it("CSfxGenNormalDmg01 has none: its Render never sets m_vRotate.y (Sfx.cpp:62-68), so it is 0", async () => {
-    const r = rig();
-    await play(r, { xi: Xi.HIT_SWORD01, pos: [0, 0, 0], angle: 90 });
-    expect(quadOf(r.drawn().effects[0]!).matrix[0]).toBe(1);
+    expect(m[0]).toBeCloseTo(Math.cos((30 * Math.PI) / 180), 3); // YawPitchRoll( 330 degrees ), to SetAngle's 0.0055 degree step
+    expect(m[2]).toBeCloseTo(Math.sin((30 * Math.PI) / 180), 3);
   });
 });
 
@@ -315,6 +364,17 @@ describe('EffectManager: loading and errors', () => {
     expect(r.manager.count()).toBe(0);
     expect(r.report).not.toHaveBeenCalled();
     expect(r.load).not.toHaveBeenCalled();
+  });
+
+  it('copies the position when played: a vector the caller changes while the file is still coming moves nothing', async () => {
+    const r = rig();
+    const pos: Vec3 = [1, 2, 3];
+    r.manager.play({ xi: Xi.HIT_SWORD01, pos });
+    pos[0] = 50;
+    pos[1] = 60;
+    pos[2] = 70;
+    await settle();
+    expect(r.drawn().effects[0]!.at).toEqual([1, f32(2 + LIFT_CREATE), 3]);
   });
 
   it('loads a file once for every effect that plays it, even while it is still coming', async () => {

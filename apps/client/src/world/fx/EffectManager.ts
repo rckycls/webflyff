@@ -4,6 +4,7 @@ import { EffectModel } from '@flyffweb/scene';
 import type { EffectRandom, EffectRenderer } from '@flyffweb/scene';
 import type { Camera } from 'three';
 import type { GameData } from '../gameData';
+import { wrapAngle } from '../sim/ActionMover';
 
 /**
  * Effects by `XI_*` id, played as Neuz plays them. `CreateSfx` (`Source/_Common/CreateObj.cpp:33-377`) makes an object of
@@ -14,8 +15,18 @@ import type { GameData } from '../gameData';
  *   and block banners, the monster spawn): follows the mover whose id it was made with, and is drawn 0.2 m up.
  * - **`CSfxGenNormalDmg01`** (`XI_HIT_SWORD01/02`, `XI_HIT_STICK01/02`, `CreateObj.cpp:61-64`; `Sfx.cpp:47-68`): follows
  *   nothing, is drawn where it is (no 0.2) and with heading 0: its `Render` never sets `m_vRotate.y`.
- * - **`CSfxFixed`** (the Vagrant skills and the other ids of `CreateObj.cpp:94-153`; `Sfx.cpp:2086-2119`): stays at the
- *   point it was made at, is drawn there (no 0.2) with the heading it was given (`CreateSfx` sets it from the caster).
+ * - **`CSfxFixed`** (the Vagrant skills and the other ids of `CreateObj.cpp:94-153`; `Sfx.cpp:2086-2119`): sits at the
+ *   point it was given, is drawn there (no 0.2) and turned to the caster as `CreateSfx` turns it (below).
+ *
+ * **The heading** is `CreateSfx`'s: for the ids of its `CSfxFixed` cases it calls `SetAngle` with the source mover's angle
+ * turned by the case, when the source is a valid mover (`CreateObj.cpp:110-111,118-121,151-152`): `-a` for the melee
+ * skill hits, `-a + 180` for the two Knuckle Hammer hits, `180 - a` for the bow, yoyo and arrow hits. `SetAngle` keeps
+ * it in 65536 steps a circle (`Obj.cpp:662-664`). Every other effect keeps the angle a new `CObj` has, 0 (`Obj.cpp:49`).
+ * The callers pass the source's angle, and the manager turns it. (Not copied, as none is in Piece 4: `CreateSfx` also
+ * turns the plain `XI_SKILL_MER_ONE_BLOODYSTRIKE02` by the direction from the source to the target, `CreateObj.cpp:206-217`;
+ * and Neuz has callers that call `SetAngle` on the effect `CreateSfx` returns: the boss attacks `XI_NPCSP1DIRFIRESP` and
+ * `XI_NPCSP1DIRCANNON`, `MoverActEvent.cpp:906,920,1165`; gathering, `MoverActEvent.cpp:2160`, `Mover.cpp:11579`; the
+ * party leader's marker, `DPClient.cpp:5433`. So there is no way to give a heading of one's own yet.)
  *
  * The other classes (projectiles, effects linked to a hand or a back, the casting effects) are not in Piece 4's reach,
  * and would play here as the plain one.
@@ -83,25 +94,30 @@ export const Xi = {
 /** The ids `CreateSfx` makes a `CSfxGenNormalDmg01` of (`CreateObj.cpp:61-64`). */
 const NORMAL_DMG = new Set<number>([Xi.HIT_SWORD01, Xi.HIT_SWORD02, Xi.HIT_STICK01, Xi.HIT_STICK02]);
 
-/**
- * The ids `CreateSfx` makes a `CSfxFixed` of: the melee skill hits (`CreateObj.cpp:94-114`, heading `-caster angle`),
- * the two Knuckle Hammer ones turned round (`:115-124`, `-angle + 180`), the bow, yoyo and arrow hits (`:128-153`,
- * `180 - angle`) and the fairy (`:294-296`, no heading set).
- */
-const FIXED = new Set<number>([
+/** The ids `CreateSfx` makes a `CSfxFixed` of and turns by `-a`: the melee skill hits (`CreateObj.cpp:94-111`). */
+const FIXED_FACING = new Set<number>([
   Xi.SKILL_VAG_ONE_OVERCUTTER01, Xi.SKILL_VAG_ONE_CLEANHIT01, Xi.SKILL_VAG_ONE_BRANDISH01,
   Xi.SKILL_MER_ONE_SPECIALHIT02, Xi.SKILL_MER_ONE_REFLEXHIT02, Xi.SKILL_BIL_KNU_BELIALSMESHING02,
   Xi.SKILL_BLD_DOUBLE_CROSSSTRIKE02, Xi.SKILL_BLD_DOUBLE_ARMORPENETRATE02, Xi.SKILL_BIL_KNU_BLOODFIST02,
   Xi.SKILL_BLD_DOUBLE_SONICBLADE03, Xi.SKILL_BIL_KNU_PIERCINGSERPENT02, Xi.SKILL_RIN_SUP_MERKABAHANZELRUSHA03,
   Xi.SKILL_ELE_FIRE_BURINGFIELD02, Xi.SKILL_KNT_TWOSW_EARTHDIVIDER02,
-  Xi.SKILL_BIL_KNU_SONICHAND02, Xi.SKILL_BIL_KNU_ASALRAALAIKUM02,
+]);
+
+/** The ids it makes a `CSfxFixed` of and turns by `-a + 180`: "the sfx is drawn the other way round" (`CreateObj.cpp:115-124`). */
+const FIXED_BACK = new Set<number>([Xi.SKILL_BIL_KNU_SONICHAND02, Xi.SKILL_BIL_KNU_ASALRAALAIKUM02]);
+
+/** The ids it makes a `CSfxFixed` of and turns by `180 - a`: the bow, yoyo and arrow hits (`CreateObj.cpp:128-152`). */
+const FIXED_AROUND = new Set<number>([
   Xi.HIT_YOY01, Xi.HIT_BOW01, Xi.SKILL_JST_YOYO_HITOFPENYA02, Xi.SKILL_JST_YOYO_VATALSTAB02, Xi.SKILL_ACR_YOYO_SLOWSTEP02,
   Xi.SKILL_RAG_BOW_FLAMEARROW03, Xi.SKILL_RAG_BOW_PIRCINGARROW03, Xi.SKILL_RAG_BOW_POISONARROW03,
   Xi.SKILL_RAG_BOW_SILENTARROW03, Xi.SKILL_RAG_SUP_NATURE02, Xi.SKILL_RAG_BOW_TRIPLESHOT03, Xi.SKILL_ACR_YOYO_SNITCH02,
   Xi.SKILL_ACR_BOW_AIMEDSHOT03, Xi.SKILL_ACR_BOW_JUNKBOW03, Xi.SKILL_ACR_BOW_SILENTSHOT03, Xi.SKILL_ACR_BOW_AUTOSHOT03,
   Xi.SKILL_BLD_DOUBLEAX_HAWKATTACK03, Xi.SKILL_BLD_DOUBLESW_BLADEDANCE02, Xi.SKILL_BLD_DOUBLESW_BLADEDANCE03,
-  Xi.SKILL_KNT_TWO_POWERSWING02, Xi.EVE_EVENT_FAIRYLY,
+  Xi.SKILL_KNT_TWO_POWERSWING02,
 ]);
+
+/** Every id `CreateSfx` makes a `CSfxFixed` of: those three groups, and the fairy (`CreateObj.cpp:294-296`), which is not turned. */
+const FIXED = new Set<number>([...FIXED_FACING, ...FIXED_BACK, ...FIXED_AROUND, Xi.EVE_EVENT_FAIRYLY]);
 
 const f32 = Math.fround;
 /** `vPosSrc.y += 0.01f`: "a little off the ground, or it flickers" (`CSfx::SetSfx`, `SfxObj.cpp:85`). */
@@ -113,7 +129,13 @@ const DRAWN_LIFT = f32(0.2);
 export interface EffectRequest {
   /** The `XI_*` id of mdlDyna.inc (`Xi`). 0 and below are no effect (`case 0: break;`, `CreateObj.cpp:310`). */
   xi: number;
-  /** `vPosSrc` (D3D): where it is made. */
+  /**
+   * Where it is made (D3D). For a plain effect and `CSfxGenNormalDmg01` that is `vPosSrc`, which `SetSfx` lifts by 0.01.
+   * For a `CSfxFixed` it is **`vPosDest`**: while its caster is a valid mover the effect sits at `m_vPosDest`
+   * (`Sfx.cpp:2089-2092`), a copy made before the lift (`SfxObj.cpp:82,85`), so a fixed effect gets no 0.01. (With the
+   * caster gone Neuz leaves it at `vPosSrc` + 0.01; the manager has no caster to ask. A Vagrant skill gives the same
+   * point for both.) `play` copies it.
+   */
   pos: Vec3;
   /**
    * `idSrc`: the mover the effect follows. Each tick the effect goes to the mover's position, and it ends when the mover
@@ -130,10 +152,12 @@ export interface EffectRequest {
   /** Play it as a `CSfxFixed` (stays where made, no 0.2 m), whatever its id. The ids `CreateSfx` makes one of are fixed anyway. */
   fixed?: boolean;
   /**
-   * `SetAngle`, the effect's heading in degrees, as it is given: `CreateSfx` has the caller's angle turned for the effect
-   * (`-caster angle` for a Vagrant skill, `CreateObj.cpp:94-111`). 0 when absent; not used by `CSfxGenNormalDmg01`.
+   * `pSrc->GetAngle()`: the source mover's (the caster's) angle in FlyFF degrees. Pass the caster's angle as it is; the
+   * manager turns it as `CreateSfx` turns it (`-a`, `-a + 180` or `180 - a` by the id, see the top of the file). Leave it
+   * out when there is no valid source mover (`IsValidObj( pSrc )` fails: no turn). It does nothing for the ids that
+   * `CreateSfx` does not turn.
    */
-  angle?: number;
+  sourceAngle?: number;
   /** `SetScale( s, s, s )` after `CreateSfx`: replaces the scale of the index entry (`CObj::SetScale`, `Obj.cpp:709-714`). */
   scale?: number;
 }
@@ -147,12 +171,27 @@ interface Playing {
   followId: number | null;
   /** The mover it follows is `m_idDest`: the effect stays at its last position when the mover is gone. */
   keepWhenGone: boolean;
-  /** `GetAngle()`, degrees. */
+  /** `GetAngle()`, degrees, as `SetAngle` stores it. */
   angle: number;
   /** `GetScale()`. */
   scale: Vec3;
   /** What `Render` adds to y: 0.2, or 0 for the two classes that do not. */
   lift: number;
+}
+
+/**
+ * The heading `CreateSfx` leaves the effect at (`CreateObj.cpp:94-153`): for the ids of its `CSfxFixed` cases, with a valid
+ * source mover, `SetAngle` of `-a` (`:111`), `-a + 180` (`:119-121`) or `180 - a` (`:152`), in floats, and `SetAngle`
+ * stores it in 65536 steps a circle (`wrapAngle`, `Obj.cpp:662-664`). Anything else is not turned: the `CObj`'s own 0
+ * (`Obj.cpp:49`), which `CSfxGenNormalDmg01::Render` and the plain `CSfx::Render` hand to the model as `m_vRotate.y`.
+ */
+function headingOf(xi: number, sourceAngle: number | undefined): number {
+  if (sourceAngle === undefined) return 0;
+  const angle = f32(sourceAngle);
+  if (FIXED_FACING.has(xi)) return wrapAngle(-angle);
+  if (FIXED_BACK.has(xi)) return wrapAngle(f32(-angle + 180));
+  if (FIXED_AROUND.has(xi)) return wrapAngle(f32(180 - angle));
+  return 0;
 }
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -185,8 +224,10 @@ export class EffectManager {
    * time an effect file is wanted it has to come over the network, and the effect begins when it has: later plays begin
    * at once.
    */
-  play(request: EffectRequest): void {
-    if (request.xi <= 0) return;
+  play(given: EffectRequest): void {
+    if (given.xi <= 0) return;
+    // a copy: an effect that waits for its file reads the request when the file arrives, not when it was played
+    const request: EffectRequest = { ...given, pos: [given.pos[0], given.pos[1], given.pos[2]] };
     const ref = this.data.effects.get(request.xi);
     if (ref === undefined) {
       this.reportOnce(`xi ${request.xi}`, `effect XI ${request.xi}: not in the effects index`);
@@ -263,14 +304,16 @@ export class EffectManager {
   /** `CSfx::SetSfx` and the class `CreateSfx` chose, for an effect whose file is in. */
   private start(effect: WebEffect, key: string, request: EffectRequest, indexScale: number): void {
     try {
-      const plain = request.fixed !== true && !NORMAL_DMG.has(request.xi) && !FIXED.has(request.xi);
+      const fixed = request.fixed === true || FIXED.has(request.xi);
+      const plain = !fixed && !NORMAL_DMG.has(request.xi);
       const scale = request.scale ?? indexScale;
       this.effects.push({
         model: new EffectModel(effect, this.random),
-        pos: [f32(request.pos[0]), f32(f32(request.pos[1]) + MADE_LIFT), f32(request.pos[2])],
+        // `SetPos( vPosSrc )` after `vPosSrc.y += 0.01f`; a fixed effect is at `m_vPosDest`, which has no lift (`Sfx.cpp:2091`)
+        pos: [f32(request.pos[0]), fixed ? f32(request.pos[1]) : f32(f32(request.pos[1]) + MADE_LIFT), f32(request.pos[2])],
         followId: plain && request.followId !== undefined ? request.followId : null,
         keepWhenGone: request.followDest === true,
-        angle: NORMAL_DMG.has(request.xi) ? 0 : (request.angle ?? 0),
+        angle: headingOf(request.xi, request.sourceAngle),
         scale: [scale, scale, scale],
         lift: plain ? DRAWN_LIFT : 0,
       });
