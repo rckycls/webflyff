@@ -6,9 +6,9 @@
 //
 // Of the 83 columns this keeps the id (the `MI_*` define, which `mdlDyna.inc` also uses to find the mover's
 // model), the name, the AI (`AII_*`), the speed, whether it flies (`dwFlying`), and the columns a fight shows and
-// uses (level, HP, EXP, rank, belligerence, killable, hide level, element); the rest are read and dropped. Build
-// flags of the client: `__VER >= 9` (fFrame, dwOrthograde) and `__S1108_BACK_END_SYSTEM` (dwUseable), both on in
-// Neuz/VersionCommon.h.
+// uses (level, HP, EXP, rank, belligerence, killable, hide level, element, the item it attacks with); the rest are read
+// and dropped. Build flags of the client: `__VER >= 9` (fFrame, dwOrthograde) and `__S1108_BACK_END_SYSTEM`
+// (dwUseable), both on in Neuz/VersionCommon.h.
 
 import { ScriptReader } from '../script/cscript';
 
@@ -42,6 +42,11 @@ export interface MoverProp {
   hideLevel: number;
   /** `eElementType`: the mover's element, an `SAI79::ePropType` value (0 for none). */
   element: number;
+  /**
+   * `dwAtk1`: the item (`II_*`) a monster attacks with. `CMover::InitProp` makes it the mover's `m_dwVirtItem`
+   * (Mover.cpp:1536), which `GetActiveHandItemProp` gives for a mover that is not a player (:2960-2966). -1 (`=`) for none.
+   */
+  atk1: number;
 }
 
 const READER = 'readPropMover';
@@ -119,6 +124,7 @@ export function readPropMover(
     let killable = 0;
     let hideLevel = 0;
     let element = 0;
+    let atk1 = 0;
     for (const [column, kind] of MOVER_COLUMNS) {
       if (kind === 'float') {
         const value = r.float(column);
@@ -136,11 +142,14 @@ export function readPropMover(
         else if (column === 'bKillable') killable = value;
         else if (column === 'dwHideLevel') hideLevel = value;
         else if (column === 'eElementType') element = value;
+        else if (column === 'dwAtk1') atk1 = value;
       }
     }
     r.token('the last column'); // the column after dwSndIdle2, which the C++ reads and drops
 
-    movers.push({ index, name, speed, ai, flying, level, addHp, expValue, rank, belligerence, killable, hideLevel, element });
+    movers.push({
+      index, name, speed, ai, flying, level, addHp, expValue, rank, belligerence, killable, hideLevel, element, atk1,
+    });
   }
 
   return movers;

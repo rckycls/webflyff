@@ -104,10 +104,19 @@ describe('loadGameData: the combat catalogs', () => {
   it('a mover keeps its fight columns', async () => {
     const aibatt: WebMover = {
       index: 20, name: 'Small Aibatt', speed: 0.075, ai: 2, flying: false, level: 1, addHp: 120, expValue: 2, rank: 0,
-      belligerence: 2, killable: 1, hideLevel: -1, element: 0, model: null, skeleton: null, motions: {},
+      belligerence: 2, killable: 1, hideLevel: -1, element: 0, atk1: 9000, model: null, skeleton: null, motions: {},
     };
     const data = await loadGameData(storeOf(catalogFiles({ [GAME_DATA_KEYS.movers]: [aibatt] })));
     expect(data.movers.get(20)).toEqual(aibatt);
+  });
+
+  it('a mover of a movers.json from before the converter kept dwAtk1 attacks with no item (NULL_ID, -1)', async () => {
+    const older = {
+      index: 20, name: 'Small Aibatt', speed: 0.075, ai: 2, flying: false, level: 1, addHp: 120, expValue: 2, rank: 0,
+      belligerence: 2, killable: 1, hideLevel: -1, element: 0, model: null, skeleton: null, motions: {},
+    };
+    const data = await loadGameData(storeOf(catalogFiles({ [GAME_DATA_KEYS.movers]: [older] })));
+    expect(data.movers.get(20)?.atk1).toBe(-1);
   });
 
   it.each(NEW_KEYS)('%s missing from the asset index means game files from an older version, and nothing is fetched', async (key) => {

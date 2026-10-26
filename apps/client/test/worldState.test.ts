@@ -607,8 +607,12 @@ describe('WorldState: the messages and the rules (OnMoverMoved and the others)',
 
 // ---- combat: the fight messages on the movers in view -------------------------------------------------------------
 
-/** `MI_AIBATT1` as `propMover.txt` has it: level 1, `dwAddHp` 120, killable; and a second row of the same name. */
+/**
+ * `MI_AIBATT1` as `propMover.txt` has it: level 1, `dwAddHp` 120, killable, attacking with `II_WEA_MOB_AIBATT1_ATK1`
+ * (`dwAtk1`); and a second row of the same name, with no item.
+ */
 const AIBATT = 20;
+const AIBATT_ATK1 = 9000;
 const AIBATT_TWIN = 23;
 /** A peaceful NPC that cannot be killed. */
 const JURIA = 24;
@@ -620,7 +624,7 @@ function combatData(): GameData {
   return ownGameData({
     movers: new Map([
       [11, moverProp(11, 'Male', 0.1)],
-      [AIBATT, webMoverOf({ index: AIBATT, name: 'Aibatt', speed: 0.2, ai: AII_MONSTER, addHp: 120, killable: 1, belligerence: 3 })],
+      [AIBATT, webMoverOf({ index: AIBATT, name: 'Aibatt', speed: 0.2, ai: AII_MONSTER, addHp: 120, killable: 1, belligerence: 3, atk1: AIBATT_ATK1 })],
       [AIBATT_TWIN, webMoverOf({ index: AIBATT_TWIN, name: 'Aibatt', ai: AII_MONSTER, addHp: 200, killable: 1, level: 4 })],
       [JURIA, webMoverOf({ index: JURIA, name: 'Juria', ai: AII_MOVER, addHp: 50, killable: 0, belligerence: 1, level: -1 })],
     ]),
@@ -995,7 +999,7 @@ describe('WorldState: the other fight messages', () => {
     expect(monster.hp).toBe(120); // the client's hit changes no HP: DAMAGE does
   });
 
-  it('a monster\'s hit holds neither model; its hand item is not known (the virtual item)', () => {
+  it('a monster\'s hit holds neither model; its hand item is its dwAtk1 (m_dwVirtItem, Mover.cpp:1536, :2960-2966)', () => {
     const { world, self } = combatWorld();
     add(world, aibatt(MONSTER));
     const monster = world.movers.get(MONSTER)!;
@@ -1005,10 +1009,23 @@ describe('WorldState: the other fight messages', () => {
     hitFrames(monster, [0]);
     world.step();
     expect(world.takeChanges().combat).toEqual([
-      spark(OWN_ID, MONSTER), { kind: 'attackerHit', attackerId: MONSTER, victimId: OWN_ID, weapon: null }, spark(MONSTER, OWN_ID),
+      spark(OWN_ID, MONSTER), { kind: 'attackerHit', attackerId: MONSTER, victimId: OWN_ID, weapon: AIBATT_ATK1 }, spark(MONSTER, OWN_ID),
     ]);
     expect(self.act.state & ObjSta.DMG_ALL).toBe(ObjSta.DMG);
     expect([monster.act.paused, self.act.paused]).toEqual([0, 0]);
+  });
+
+  it('a monster whose dwAtk1 is `=` (NULL_ID) attacks with no item: GetActiveHandItemProp gives none', () => {
+    const { world } = combatWorld();
+    add(world, npcOf(MONSTER, AIBATT_TWIN, '', { pos: [101, 0, 100], hitPoint: 200, state: ObjSta.STAND, belligerence: 3 }));
+    const monster = world.movers.get(MONSTER)!;
+    world.apply(MONSTER, { type: 'meleeAttack', message: ActMsg.ATK1, targetId: OWN_ID, param2: 0, param3: 0x00010000 });
+    world.takeChanges();
+    hitFrames(monster, [0]);
+    world.step();
+    expect(world.takeChanges().combat.filter((e) => e.kind === 'attackerHit')).toEqual([
+      { kind: 'attackerHit', attackerId: MONSTER, victimId: OWN_ID, weapon: null },
+    ]);
   });
 
   it('a hit lands on no mover in a dead state (OnDamageMsgC, :59-60) nor on one that cannot be killed (PreProcessDamage)', () => {

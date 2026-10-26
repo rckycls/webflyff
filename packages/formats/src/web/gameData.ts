@@ -39,6 +39,12 @@ export interface WebMover {
   /** `MoverProp::eElementType`: the mover's element, an `SAI79::ePropType` value (0 for none). */
   element: number;
   /**
+   * `MoverProp::dwAtk1`: the item (`II_*`) a monster attacks with, its `m_dwVirtItem` (`CMover::InitProp`,
+   * Mover.cpp:1536), whose hit effect a blow plays (`GetActiveHandItemProp`, :2960-2966); -1 (`=`) for none. A
+   * movers.json written before the converter kept it has none: the client reads that as -1.
+   */
+  atk1: number;
+  /**
    * Logical key of the body model (`models/mvr_<name>.glb`, CModelMng::MakeModelName). Null for the player bodies
    * MI_MALE and MI_FEMALE, which Neuz assembles from parts (CMover::LoadModel, Mover.cpp:1427), and for a mover whose
    * model was not converted.

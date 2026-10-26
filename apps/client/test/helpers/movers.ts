@@ -32,7 +32,7 @@ export function gameDataOf(parts: Partial<GameData> = {}): GameData {
 export function webMoverOf(parts: Pick<WebMover, 'index' | 'name'> & Partial<WebMover>): WebMover {
   return {
     speed: 0.1, ai: 2, flying: false, level: 1, addHp: 0, expValue: 0, rank: 0, belligerence: 0, killable: 0,
-    hideLevel: -1, element: 0, model: null, skeleton: null, motions: {}, ...parts,
+    hideLevel: -1, element: 0, atk1: -1, model: null, skeleton: null, motions: {}, ...parts,
   };
 }
 

@@ -6,7 +6,7 @@ import type { PackFrame, Vec3 } from '@flyffweb/formats';
 import { PerspectiveCamera } from 'three';
 import { describe, expect, it } from 'vitest';
 import { DamageNumbers, screenProjector } from '../src/world/render/DamageNumbers';
-import type { Project, ScreenPoint } from '../src/world/render/DamageNumbers';
+import type { Project, Projected } from '../src/world/render/DamageNumbers';
 import type { Sprite, SpritePainter } from '../src/world/render/SpriteLayer';
 
 const f32 = Math.fround;
@@ -33,8 +33,8 @@ function recorder(): SpritePainter & { painted: Sprite[]; paints: number } {
   };
 }
 
-/** Every point at the same place on the screen. */
-const at = (point: ScreenPoint): Project => () => point;
+/** Every point at the same place on the screen, in front of the camera. */
+const at = (point: { x: number; y: number }): Project => () => ({ ...point, front: true });
 
 /** One Neuz loop: a FrameMove (`step`), then a Render (`draw`). */
 function tick(numbers: DamageNumbers, project: Project): void {
@@ -88,7 +88,7 @@ describe('DamageNumbers: the glyphs (CDamageNum::Render, 2DRender.cpp:1913-1974)
     let dx = 0;
     const project: Project = (p) => {
       asked.push(p);
-      return { x: 100 + p[0] / 100 + dx, y: 500 - p[1] };
+      return { x: 100 + p[0] / 100 + dx, y: 500 - p[1], front: true };
     };
     numbers.draw(project);
     numbers.add(FEET, 5, false);
@@ -176,8 +176,8 @@ describe('DamageNumbers: the path (CDamageNum::Process, 2DRender.cpp:1855-1910; 
     const painter = recorder();
     const numbers = new DamageNumbers(FRAMES, painter);
     let behind = true;
-    // the feet are tested (in front of the camera?), the point 1 m over them is projected
-    const project: Project = (p) => (behind && p[1] === FEET[1] ? null : { x: 400, y: 300 });
+    // only the feet are tested (in front of the camera?); the point 1 m over them is projected whatever the answer
+    const project: Project = (p) => ({ x: 400, y: 300, front: !(behind && p[1] === FEET[1]) });
     numbers.draw(project);
     numbers.add(FEET, 4, false);
     for (let t = 1; t <= 50; t++) {
@@ -200,6 +200,22 @@ describe('DamageNumbers: the path (CDamageNum::Process, 2DRender.cpp:1855-1910; 
     expect(painter.painted).toEqual([]);
   });
 
+  it('takes y at the first step from the point over the feet even behind the camera, as D3DXVec3Project always gives one', () => {
+    const painter = recorder();
+    const numbers = new DamageNumbers(FRAMES, painter);
+    let front = false;
+    // everything behind the camera, projected all the same (D3DXVec3Project divides by a negative w and goes on)
+    const project: Project = () => ({ x: 400, y: 300, front });
+    numbers.draw(project);
+    numbers.add(FEET, 4, false);
+    for (let t = 1; t <= 8; t++) tick(numbers, project);
+    expect(painter.painted).toEqual([]);
+    front = true;
+    tick(numbers, project);
+    // tick 9 of the path from 300, taken at tick 1: up 80
+    expect(painter.painted.map((s) => s.y)).toEqual([220]);
+  });
+
   it('several numbers at one place are drawn over each other, in the order they came', () => {
     const painter = recorder();
     const numbers = new DamageNumbers(FRAMES, painter);
@@ -214,18 +230,22 @@ describe('DamageNumbers: the path (CDamageNum::Process, 2DRender.cpp:1855-1910; 
 });
 
 describe('screenProjector (D3DXVec3TransformCoord and D3DXVec3Project of CDamageNum::Render, 2DRender.cpp:1919-1926)', () => {
-  it('gives the CSS pixel of a D3D point, and null for one behind the camera', () => {
+  it('gives the CSS pixel of a D3D point, and whether it is in front of the camera; one behind is projected all the same', () => {
     const camera = new PerspectiveCamera(60, 2, 0.1, 1000);
     // web (0, 0, 0) looking down web -z, which is D3D +z
     camera.position.set(0, 0, 0);
     camera.lookAt(0, 0, -1);
     camera.updateMatrixWorld();
     const project = screenProjector(camera, 800, 400);
-    expect(project([0, 0, 10])).toEqual({ x: 400, y: 200 });
+    expect(project([0, 0, 10])).toEqual({ x: 400, y: 200, front: true });
     // up is up: a point over the middle is higher on the screen (smaller y)
-    expect(project([0, 1, 10])!.y).toBeLessThan(200);
+    expect(project([0, 1, 10]).y).toBeLessThan(200);
     // D3D +x is to the right (the web x is the D3D x)
-    expect(project([1, 0, 10])!.x).toBeGreaterThan(400);
-    expect(project([0, 0, -10])).toBeNull();
+    expect(project([1, 0, 10]).x).toBeGreaterThan(400);
+    // behind: the view z test fails, and the divide by a negative w mirrors the point through the middle
+    const behind: Projected = project([1, 1, -10]);
+    expect(behind.front).toBe(false);
+    expect(behind.x).toBeLessThan(400);
+    expect(behind.y).toBeGreaterThan(200);
   });
 });

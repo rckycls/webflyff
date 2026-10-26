@@ -8,12 +8,13 @@
 // the jumps a server correction makes. Each model keeps its frame of the motion the rules set as `CModel::FrameMove`
 // moves it, a step at a time at the mover's animation speed, held while the rules pause the model: `CActionMover`'s
 // `IsEndFrame` asks it whether a motion has played to its end (sitting down, a swing), and `IsAttrHit` whether a step
-// went past a hit frame of a swing. In combat a player plays its weapon's set of each motion (`motionFor`).
+// went past a hit frame of a swing. In combat a player plays its weapon's set of each motion (`motionFor`). A hit
+// flashes a model and shakes a monster's drawing (`sparks.ts`): `flash` and `shake`, stepped with the rules.
 
 import { attachHeld, geometryBytes } from '@flyffweb/scene';
 import type { AssembledCharacter, LoopedMotion, ModelBox, Overlay } from '@flyffweb/scene';
 import { toWebPosition } from '@flyffweb/formats';
-import type { MotionEvents, Vec3, WebItemProp } from '@flyffweb/formats';
+import type { MotionEvents, Vec3, WebItemProp, WebMover } from '@flyffweb/formats';
 import type { AnimationAction, Object3D, Scene } from 'three';
 import { AnimationClip, Box3, CapsuleGeometry, Group, LoopOnce, LoopRepeat, Mesh, MeshLambertMaterial } from 'three';
 import { motionFor } from '../sim/ActionMover';
@@ -27,6 +28,10 @@ import type { MoverLook } from './looks';
 import type { HeldItem } from './moverModels';
 import { moverMatrix } from './picking';
 import type { PickCandidate } from './picking';
+import {
+  DAMAGE_SHAKE_TICKS, idleSpark, lightWithSpark, setSparkUniforms, shakeOffset, sparkUniforms, startSpark, stepSpark,
+} from './sparks';
+import type { SparkInfo, SparkUniforms } from './sparks';
 
 /** `m_fBlendWeight += 0.05f` a frame move (`CModelObject::FrameMove`, `ModelObject.cpp:1749-1754`): 20 steps of blending. */
 const BLEND_SECONDS = 20 / STEPS_PER_SECOND;
@@ -151,6 +156,20 @@ interface View {
   action: AnimationAction | null;
   played: number;
   gone: boolean;
+  /** The model's `m_SparkInfo`, and the uniforms its lit skinned parts take it from (`sparks.ts`). */
+  spark: SparkInfo;
+  sparkUniforms: SparkUniforms;
+  /** `CMover::m_nDmgCnt`: the steps a hit still shakes the drawing for. */
+  dmgCnt: number;
+}
+
+/** `RANK_SUPER` (`Resource/defineAttribute.h:165`): a boss that a hit does not shake (`MoverRender.cpp:286`). */
+const RANK_SUPER = 7;
+
+/** What the views read besides the movers: the ranks of the mover catalog, and `xRandom( n )` (0 to n - 1). */
+export interface MoverViewsOptions {
+  moverProps?: ReadonlyMap<number, Pick<WebMover, 'rank'>>;
+  random?: (n: number) => number;
 }
 
 /**
@@ -161,7 +180,8 @@ interface View {
  * look's hands (never rejecting: what it cannot have it says to `report` and leaves out). A model that throws as it is
  * put on screen is the placeholder too. Once disposed, nothing more is said on the overlay: it is the page's, and the
  * next entry's errors are listed there. `itemProps` is the item catalog, which tells what a player's hands hold for its
- * weapon's motion sets (`handOf`); an item it lacks is the bare hand's.
+ * weapon's motion sets (`handOf`); an item it lacks is the bare hand's. `options` give the mover catalog's ranks (which
+ * monsters a hit does not shake) and the shake's random.
  *
  * The models' frames run at the rules' steps, exactly; what is drawn plays the same motion by the frame's time, at the
  * mover's animation speed, still while the model is paused. A one-play motion stops on its last frame. A motion the
@@ -190,6 +210,7 @@ export class MoverViews {
     private readonly loadMotion: (key: string) => Promise<LoopedMotion>,
     private readonly loadHeld: (look: MoverLook, report: (message: string) => void) => Promise<HeldItem[]>,
     private readonly itemProps: ReadonlyMap<number, WebItemProp>,
+    private readonly options: MoverViewsOptions = {},
   ) {}
 
   /** Drops the views of the movers that left, then makes one for each mover that came and is still in `movers`. */
@@ -206,12 +227,17 @@ export class MoverViews {
 
   /**
    * One rules step of the drawing side (`CMover::Process` after the rules, `Mover.cpp:3538`, `:3862`): the drawn pose
-   * follows (`Interpolate`), and each model's frame moves on, from the first frame of a motion the rules set anew.
+   * follows (`Interpolate`), a hit's shake counts down (`--m_nDmgCnt`, :3526-3527) and its flash fades
+   * (`ProcessETC`, :3953, `stepSpark`), and each model's frame moves on, from the first frame of a motion the rules set
+   * anew. The world screen hands the step's flashes and shakes over before this, so a hit's are counted on the step
+   * it lands in, as `ProcessETC` at the end of the attacker's `Process` counts its own.
    */
   step(movers: ReadonlyMap<number, Mover>): void {
     for (const view of this.views.values()) {
       if (movers.get(view.mover.objectId) !== view.mover) continue;
       interpolate(view);
+      if (view.dmgCnt > 0) view.dmgCnt--;
+      stepSpark(view.spark);
       if (view.model === null) continue;
       const act = view.mover.act;
       // CMover::SetMotion loaded a motion: the model starts it at frame 0 (InitAnimate), and this step moves it on
@@ -220,18 +246,39 @@ export class MoverViews {
     }
   }
 
-  /** Places every view where its mover is drawn, starts the motions the rules set, and plays them on by `dt` seconds. */
+  /**
+   * Places every view where its mover is drawn (off by a hit's shake, `CMover::Render`, `MoverRender.cpp:286-296`: a
+   * new offset each frame), lights its skinned parts with its flash, starts the motions the rules set, and plays them on
+   * by `dt` seconds.
+   */
   update(movers: ReadonlyMap<number, Mover>, dt: number): void {
     for (const view of this.views.values()) {
       if (movers.get(view.mover.objectId) !== view.mover) continue;
       const { holder } = view;
-      holder.position.set(...toWebPosition(view.scrPos));
+      holder.position.set(...toWebPosition(this.shaken(view) ? shakenPos(view.scrPos, this.random) : view.scrPos));
+      setSparkUniforms(view.sparkUniforms, view.spark);
       holder.rotation.y = (view.scrAngle * Math.PI) / 180;
       holder.scale.setScalar(view.mover.added.scale);
       if (view.model === null) continue;
       this.play(view);
       view.model.mixer.update(dt);
     }
+  }
+
+  /**
+   * A hit's flash on the mover `objectId`'s model (`m_SparkInfo`: `CMover::OnDamage`, `MoverActEvent.cpp:1522-1538`;
+   * `OnAttackMelee`, :1704-1717), lit along `direction` (`m_v3SparkDir`, D3D). A mover whose model is still loading
+   * keeps it, and its model takes it when it comes.
+   */
+  flash(objectId: number, direction: Vec3): void {
+    const view = this.views.get(objectId);
+    if (view !== undefined) startSpark(view.spark, direction);
+  }
+
+  /** A blow landed on the mover `objectId`: `m_nDmgCnt = 10` (`CActionMover::OnDamageMsgC`, `ActionMoverDmg.cpp:118`). */
+  shake(objectId: number): void {
+    const view = this.views.get(objectId);
+    if (view !== undefined) view.dmgCnt = DAMAGE_SHAKE_TICKS;
   }
 
   /** `CMover::InitInterpolation` (`Mover.cpp:4118`): the mover is drawn where the rules have it, at once (after SETPOS). */
@@ -317,7 +364,7 @@ export class MoverViews {
       mover, look: this.lookFor(mover), holder, model: null, held: [], head: null, placeholder: false, bytes: 0,
       // ADD_OBJ ends with InitInterpolation (ObjSerializeOpt.cpp:764): a new mover is drawn where it is
       scrPos: copy(mover.act.body.pos), scrAngle: mover.act.body.angle, frame: startFrame(mover.act.motionSets),
-      action: null, played: -1, gone: false,
+      action: null, played: -1, gone: false, spark: idleSpark(), sparkUniforms: sparkUniforms(), dmgCnt: 0,
     };
     this.views.set(mover.objectId, view);
     const { look } = view;
@@ -361,6 +408,8 @@ export class MoverViews {
     root.updateWorldMatrix(true, true);
     view.head = Math.max(0, new Box3().setFromObject(root).max.y);
     view.holder.add(root);
+    // the skinned parts take the model's flash; the items of the hands, held later (`hold`), are not skinned
+    lightWithSpark(root, view.sparkUniforms);
     if (model === null) return;
     const bytes = bytesOf(root);
     this.overlay.addGpuBytes(bytes);
@@ -401,6 +450,21 @@ export class MoverViews {
       view.bytes += bytes;
     }
   }
+
+  /**
+   * `IsNPC() && m_nDmgCnt > 0 && pMoverProp->dwClass != RANK_SUPER` (`MoverRender.cpp:286`): a mover that is not a
+   * player, hit in the last 10 steps, and not a `RANK_SUPER` boss, is drawn shaken. A mover the catalog has no row for
+   * counts as no boss.
+   */
+  private shaken(view: View): boolean {
+    const { mover } = view;
+    if (mover.added.isPlayer || view.dmgCnt <= 0) return false;
+    return this.options.moverProps?.get(mover.added.index)?.rank !== RANK_SUPER;
+  }
+
+  /** `xRandom( n )`: the options', or `Math.random`'s (Neuz's `xRand` is a global sequence of its own). */
+  private readonly random = (n: number): number =>
+    this.options.random?.(n) ?? Math.floor(Math.random() * n);
 
   /** Takes back what `attach` did of a model that threw on the way, and lets the model go. */
   private detach(view: View, loaded: AssembledCharacter | Object3D): void {
@@ -677,6 +741,15 @@ function interpolate(view: View): void {
     if (view.scrAngle > 360) view.scrAngle -= 360;
     else if (view.scrAngle < 0) view.scrAngle += 360;
   }
+}
+
+/**
+ * Where a shaken mover is drawn this frame (`MoverRender.cpp:289-294`): its drawn position plus the offset
+ * `shakeOffset` gives, in D3D, added as `mWorld * matDmg` adds it.
+ */
+function shakenPos(scrPos: Vec3, random: (n: number) => number): Vec3 {
+  const [x, y, z] = shakeOffset(random);
+  return [scrPos[0] + x, scrPos[1] + y, scrPos[2] + z];
 }
 
 /** A view's pick candidate (`MoverViews.pickCandidates`), or null when nothing is drawn of it yet. */

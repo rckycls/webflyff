@@ -1,12 +1,12 @@
 import {
-  AnimationClip, AnimationMixer, Bone, BoxGeometry, BufferAttribute, BufferGeometry, Group, Mesh, MeshBasicMaterial,
-  NumberKeyframeTrack, Object3D, Scene, Skeleton, SkinnedMesh, Vector3,
+  AnimationClip, AnimationMixer, Bone, BoxGeometry, BufferAttribute, BufferGeometry, Color, Group, Mesh, MeshBasicMaterial,
+  MeshStandardMaterial, NumberKeyframeTrack, Object3D, SRGBColorSpace, Scene, ShaderLib, Skeleton, SkinnedMesh, Vector3,
 } from 'three';
-import type { AnimationAction } from 'three';
+import type { AnimationAction, IUniform, Material, WebGLProgramParametersWithUniforms, WebGLRenderer } from 'three';
 import { describe, expect, it, vi } from 'vitest';
 import type { Mock } from 'vitest';
 import { objectLocalMatrix, toWebPosition } from '@flyffweb/formats';
-import type { JobProp, MotionEvents, Vec3, WebItemProp } from '@flyffweb/formats';
+import type { JobProp, MotionEvents, Vec3, WebItemProp, WebMover } from '@flyffweb/formats';
 import { geometryBytes, loopMotion } from '@flyffweb/scene';
 import type { AssembledCharacter, HeldSlot, LoopedMotion, ModelBox } from '@flyffweb/scene';
 import { MoverViews } from '../src/world/render/MoverViews';
@@ -118,6 +118,10 @@ interface RigOptions {
   motions?: Record<string, () => LoopedMotion | Promise<LoopedMotion>>;
   /** The item catalog, for the weapon sets; empty by default. */
   itemProps?: ReadonlyMap<number, WebItemProp>;
+  /** The mover catalog's ranks, for the shake; empty by default. */
+  moverProps?: ReadonlyMap<number, Pick<WebMover, 'rank'>>;
+  /** `xRandom( n )`, for the shake. */
+  random?: (n: number) => number;
 }
 
 function rig(
@@ -136,7 +140,9 @@ function rig(
     motions.set(key, loaded);
     return loaded;
   };
-  const views = new MoverViews(scene, load, overlay, lookFor, loadMotion, loadHeld, options.itemProps ?? new Map());
+  const views = new MoverViews(scene, load, overlay, lookFor, loadMotion, loadHeld, options.itemProps ?? new Map(), {
+    moverProps: options.moverProps, random: options.random,
+  });
   const movers = new Map<number, Mover>();
   const sync = (changes: WorldChanges) => views.sync(changes, movers);
   return {
@@ -391,6 +397,114 @@ describe('MoverViews', () => {
       expect(r.views.pickCandidates(undefined).map((c) => c.objectId).sort()).toEqual([7, 8]);
       r.remove(7);
       expect(r.views.pickCandidates(undefined).map((c) => c.objectId)).toEqual([8]);
+    });
+  });
+
+  describe("a hit's flash and shake (m_SparkInfo, m_nDmgCnt)", () => {
+    /** `armedModel`, its skinned part lit as the converted ones are (MeshStandardMaterial), and that material. */
+    function skinnedModel(): { model: ReturnType<typeof fakeModel>; material: MeshStandardMaterial } {
+      const model = armedModel();
+      const material = new MeshStandardMaterial();
+      model.root.traverse((object) => {
+        if (object instanceof SkinnedMesh) object.material = material;
+      });
+      return { model, material };
+    }
+
+    /** The uniforms three would give the material's program: what its `onBeforeCompile` puts in. */
+    function uniformsOf(material: Material): Record<string, IUniform> {
+      const shader = {
+        uniforms: {}, vertexShader: ShaderLib.standard.vertexShader, fragmentShader: ShaderLib.standard.fragmentShader,
+      } as unknown as WebGLProgramParametersWithUniforms;
+      material.onBeforeCompile(shader, {} as WebGLRenderer);
+      return shader.uniforms;
+    }
+
+    it('lights the skinned parts along the spark from the step it came on, at 2.0 first, and for 20 steps', async () => {
+      const { model, material } = skinnedModel();
+      const r = rig(async () => model);
+      const npc = moverFrom(addedNpc(7, 21, {}, { pos: [0, 0, -10] }));
+      r.add(npc);
+      await r.views.settled();
+      r.views.update(r.movers, 0);
+      const uniforms = uniformsOf(material);
+      expect(uniforms.sparkOn!.value).toBe(false);
+
+      // hit from the west: the spark points east, D3D +x, and the light comes from the west
+      r.views.flash(7, [1, 0, 0]);
+      const on: boolean[] = [];
+      for (let step = 1; step <= 22; step++) {
+        r.views.step(r.movers);
+        r.views.update(r.movers, 0);
+        on.push(uniforms.sparkOn!.value as boolean);
+        if (step === 1) {
+          expect((uniforms.sparkDirection!.value as Vector3).toArray()).toEqual([-1, 0, 0]);
+          // the grey 2.0 as the sun's grey is given (sRGB), times pi
+          expect((uniforms.sparkColor!.value as Color).r).toBeCloseTo(new Color().setRGB(2, 2, 2, SRGBColorSpace).r * Math.PI, 5);
+        }
+      }
+      expect(on).toEqual([...Array<boolean>(20).fill(true), false, false]);
+    });
+
+    it('keeps the spark of a mover whose model is still loading, and lights the model with it once it is on', async () => {
+      const { model, material } = skinnedModel();
+      const pending = later();
+      const r = rig(() => pending.promise);
+      r.add(moverFrom(addedNpc(7, 21, {}, { pos: [0, 0, -10] })));
+      r.views.flash(7, [0, 0, 1]);
+      r.views.step(r.movers);
+      pending.resolve(model);
+      await r.views.settled();
+      r.views.update(r.movers, 0);
+      const uniforms = uniformsOf(material);
+      expect(uniforms.sparkOn!.value).toBe(true);
+      expect((uniforms.sparkDirection!.value as Vector3).toArray()).toEqual([0, 0, 1]);
+    });
+
+    it('shakes a monster hit for the 9 steps after it, (cx, 0, cz) / 100 off where it is drawn, its picking and tag unmoved', async () => {
+      let next = 0;
+      const r = rig(undefined, undefined, undefined, { random: () => [0, 49][next++ % 2]! });
+      const npc = moverFrom(addedNpc(7, 21, {}, { pos: [10, 0, -10] }));
+      r.add(npc);
+      await r.views.settled();
+      const holder = r.scene.getObjectByName('mover 7')!;
+      const place = r.views.placeOf(7);
+      const world = r.views.pickCandidate(7)!.world;
+
+      r.views.shake(7);
+      const offsets: Vec3[] = [];
+      for (let step = 1; step <= 11; step++) {
+        r.views.step(r.movers);
+        r.views.update(r.movers, 0);
+        offsets.push(holder.position.toArray().map((v, i) => v - toWebPosition(npc.act.body.pos)[i]!) as Vec3);
+      }
+      // D3D (-0.25, 0, 0.24): web (-0.25, 0, -0.24)
+      const shaken: Vec3 = [Math.fround(-0.25), 0, -Math.fround(0.24)];
+      offsets.forEach((offset, i) => {
+        const expected = i < 9 ? shaken : [0, 0, 0];
+        offset.forEach((v, k) => expect(v, `step ${i + 1}`).toBeCloseTo(expected[k]!, 6));
+      });
+      // only the drawing moves: the pick and the name tag are where the mover is
+      expect(r.views.placeOf(7)).toEqual(place);
+      expect(Array.from(r.views.pickCandidate(7)!.world)).toEqual(Array.from(world));
+    });
+
+    it('never shakes a player, nor a monster of RANK_SUPER (dwClass 7)', async () => {
+      const r = rig(undefined, undefined, undefined, {
+        moverProps: new Map([[21, { rank: 7 }], [22, { rank: 1 }]]), random: () => 0,
+      });
+      r.add(moverFrom(addedPlayer(5, {}, { pos: [0, 0, -10] })));
+      r.add(moverFrom(addedNpc(7, 21, {}, { pos: [3, 0, -10] })));
+      r.add(moverFrom(addedNpc(8, 22, {}, { pos: [6, 0, -10] })));
+      await r.views.settled();
+      for (const id of [5, 7, 8]) r.views.shake(id);
+      r.views.step(r.movers);
+      r.views.update(r.movers, 0);
+      const moved = (id: number): boolean => {
+        const at = toWebPosition(r.movers.get(id)!.act.body.pos);
+        return r.scene.getObjectByName(`mover ${id}`)!.position.toArray().some((v, i) => Math.abs(v - at[i]!) > 1e-9);
+      };
+      expect([moved(5), moved(7), moved(8)]).toEqual([false, false, true]);
     });
   });
 

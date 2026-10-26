@@ -1,12 +1,14 @@
 // What the screen plays for the world's combat events (`CombatEvent`) and the own character's (`OwnEvent`): the effects
-// Neuz's handlers make with `CreateSfx` and the damage numbers they add with `g_DamageNumMng.AddNumber`. The world
-// (`WorldState`, `OwnState`) has already done the rules' part of each message (HP, states, motions: the flinch, the
-// level-up motion); what is left is what is seen, which goes to `out`: the effect manager and the damage numbers.
+// Neuz's handlers make with `CreateSfx`, the damage numbers they add with `g_DamageNumMng.AddNumber`, and the flash and
+// the shake a hit gives a model (`m_SparkInfo`, `m_nDmgCnt`). The world (`WorldState`, `OwnState`) has already done the
+// rules' part of each message and step (HP, states, motions: the flinch, the level-up motion); what is left is what is
+// seen, which goes to `out`: the effect manager, the damage numbers and the movers' views.
 
 import type { Vec3, WebItemProp } from '@flyffweb/formats';
 import { AttackFlag } from '@flyffweb/protocol';
 import type { OwnEvent } from '../OwnState';
 import { Ik3 } from '../sim/constants';
+import { normalize, sub } from '../sim/d3dx';
 import type { CombatEvent } from '../WorldState';
 import { Xi } from './EffectManager';
 import type { EffectRequest } from './EffectManager';
@@ -58,10 +60,14 @@ export function isGameMaster(authorization: number): boolean {
   return authorization >= AUTH_GAMEMASTER;
 }
 
-/** Where the effects and numbers go: `EffectManager.play` and `DamageNumbers.add`. */
+/** Where what is played goes: `EffectManager.play`, `DamageNumbers.add`, and `MoverViews.flash` and `shake`. */
 export interface CombatFxOut {
   effect(request: EffectRequest): void;
   number(pos: Vec3, value: number, ownHurt: boolean): void;
+  /** The mover's model flashes: `m_SparkInfo` with `m_v3SparkDir` `direction` (D3D, a unit vector). */
+  flash(moverId: number, direction: Vec3): void;
+  /** The mover's `m_nDmgCnt = 10`: its drawing shakes, a monster's. */
+  shake(moverId: number): void;
 }
 
 /**
@@ -81,29 +87,35 @@ const bannerAt = (p: Vec3): Vec3 => [p[0], f32(p[1] + BANNER_RAISE), p[2]];
 
 /**
  * What a combat event shows:
- * - `hit`: `CDPClient::OnDamage` (`Neuz/DPClient.cpp:1792-1897`). It is shown when the attacker is not in view
- *   (`goto g_PASS`, `:1811-1812`: the attacker `prj.GetCtrl` finds none of, `NULL_ID` included, whoever the victim is),
- *   when the victim or the attacker is the own player (`:1833`), or, for a game master, when the victim is its focus
- *   (`:1824-1828`). (The "show all damage" option, `m_bDamageRender`, is off by default, `HwOption.cpp:238`, and the
- *   browser has no options.) Then the flags in Neuz's order ([combat §4.1],
- *   `:1843-1896`): blocking plays its banner and goes on; parry plays its banner; else resist plays the miss banner when
+ * - `hit`: `CDPClient::OnDamage` (`Neuz/DPClient.cpp:1792-1897`). It is shown when the attacker was not in view as the
+ *   message came (`attackerInView`; `goto g_PASS`, `:1811-1812`: `prj.GetCtrl` found none, `NULL_ID` included), whoever
+ *   the victim is; when the victim or the attacker is the own player (`:1833`); or, for a game master, when the victim is
+ *   its focus (`:1824-1828`). (The "show all damage" option, `m_bDamageRender`, is off by default, `HwOption.cpp:238`,
+ *   and the browser has no options.) Then the flags in Neuz's order ([combat §4.1], `:1843-1896`): blocking plays its
+ *   banner and goes on; parry plays its banner; else resist plays the miss banner when
  *   nothing got through, else the number; else miss plays its banner; else a critical plays its banner, and the number.
  *   The banners are made 1.5 m over the feet, at scale 2 (3 for the critical), and follow nothing; the number is at the
  *   feet, in the first colour set when the own player is hurt.
- * - `death`: `CDPClient::OnMoverDeath` (`DPClient.cpp:2003-2007`): with the killer in view (`if( pAttacker )`), and the
- *   own player either of them, the HP the mover had is its last number.
+ * - `death`: `CDPClient::OnMoverDeath` (`DPClient.cpp:2003-2007`): with the killer in view as the message came
+ *   (`attackerInView`, `if( pAttacker )`), and the own player either of them, the HP the mover had is its last number.
  * - `attackerHit`: `CActionMover::OnDamageMsgC` (`_AIInterface/ActionMoverDmg.cpp:74-100`) for `AF_GENERIC`: the
  *   attacker's hand item's `dwSfxObj3` (`GetActiveHandItemProp`), 1 m over the victim for a yoyo, else 1 m in front of the
  *   victim along the attacker's heading (`AngleToVectorXZ( angle, 1.0f )`, `xUtil3D.h:37-43`) and 1 m up; made with no
- *   source, so it follows nothing and is not turned. (`dwSfxObj5` at the attacker is none for every player's weapon,
- *   [effects §3.2], and a monster's item is not known: `weapon` is null.)
+ *   source, so it follows nothing and is not turned. A monster's item is its `dwAtk1` (`m_dwVirtItem`): of the melee
+ *   ones only the Skeleton General's and the Skeleton Devil's have a `dwSfxObj3`. (`dwSfxObj5`, at the attacker, is
+ *   none for every player's weapon, [effects §3.2], and the catalog does not keep it.) Then the victim shakes
+ *   (`m_nDmgCnt = 10`, `:118`, outside the `AF_GENERIC` branch: every blow that landed).
+ * - `spark`: `m_SparkInfo` of `CMover::OnDamage` (the victim's, `MoverActEvent.cpp:1522-1538`) and `OnAttackMelee`
+ *   (the attacker's, :1704-1717): the mover's model flashes, lit along `D3DXVec3Normalize( GetPos() - pOther->GetPos() )`,
+ *   both movers being valid (`IsValidObj( pHitObj )`).
  * - `levelUp`: `CDPClient::OnSetLevel` (`DPClient.cpp:3351`): `XI_GEN_LEVEL_UP01` on the mover, following it.
  * - `spawned`: `CDPClient::OnAddObj` (`DPClient.cpp:1226`): `XI_GEN_MONSTER_SPAWN01` on the mover, following it.
  * - `swing` and `text`: nothing here (the rules played the swing; the texts are the messages window's).
  *
- * The world gives the movers as they are when the event is played: the next frame after the message, with no rules
- * step in between, so where the handler found them. A mover that left in the meantime (a DEL_OBJ later in the same
- * bundle) is not in view, and what it would have shown is not.
+ * The world gives the movers as they are when the event is played: a message's at the start of the next frame, before
+ * any rules step, and a step's (`spark`, `attackerHit`) right after that step, so where the handler found them. A
+ * mover that left in the meantime (a DEL_OBJ later in the same bundle) is not in view, and what it would have shown at
+ * it is not; whether the attacker was in view is the message's (`attackerInView`).
  */
 export function playCombatEvent(event: CombatEvent, world: CombatFxWorld, out: CombatFxOut): void {
   switch (event.kind) {
@@ -112,16 +124,22 @@ export function playCombatEvent(event: CombatEvent, world: CombatFxWorld, out: C
       return;
     case 'death': {
       const victim = world.movers.get(event.victimId);
-      const attacker = world.movers.get(event.attackerId);
-      if (victim === undefined || attacker === undefined) return;
+      if (victim === undefined || !event.attackerInView) return;
       const own = world.selfId;
-      if (victim.objectId !== own && attacker.objectId !== own) return;
-      out.number(victim.act.body.pos, event.lastHp, victim.objectId === own);
+      if (event.victimId !== own && event.attackerId !== own) return;
+      out.number(victim.act.body.pos, event.lastHp, event.victimId === own);
       return;
     }
     case 'attackerHit':
       playSpark(event, world, out);
       return;
+    case 'spark': {
+      const mover = world.movers.get(event.moverId);
+      const from = world.movers.get(event.fromId);
+      if (mover === undefined || from === undefined) return;
+      out.flash(event.moverId, normalize(sub(mover.act.body.pos, from.act.body.pos)));
+      return;
+    }
     case 'levelUp':
       followed(Xi.GEN_LEVEL_UP01, world.movers.get(event.moverId), out);
       return;
@@ -158,14 +176,13 @@ function followed(xi: number, mover: FxMover | undefined, out: CombatFxOut): voi
 function playHit(event: Extract<CombatEvent, { kind: 'hit' }>, world: CombatFxWorld, out: CombatFxOut): void {
   const victim = world.movers.get(event.victimId);
   if (victim === undefined) return;
-  const attacker = world.movers.get(event.attackerId);
   const own = world.selfId;
-  const shown = attacker === undefined || victim.objectId === own || attacker.objectId === own ||
-    (world.gameMaster && world.focusId === victim.objectId);
+  const shown = !event.attackerInView || event.victimId === own || event.attackerId === own ||
+    (world.gameMaster && world.focusId === event.victimId);
   if (!shown) return;
   const { flags, hit } = event;
   const pos = victim.act.body.pos;
-  const ownHurt = victim.objectId === own;
+  const ownHurt = event.victimId === own;
   if (flags & AttackFlag.BLOCKING) out.effect({ xi: Xi.HIT_HITBLOCK01, pos: bannerAt(pos), scale: BANNER_SCALE });
   if (flags & AttackFlag.PARRY) {
     out.effect({ xi: Xi.HIT_PARRY01, pos: bannerAt(pos), scale: BANNER_SCALE });
@@ -180,21 +197,27 @@ function playHit(event: Extract<CombatEvent, { kind: 'hit' }>, world: CombatFxWo
   }
 }
 
-/** The hit spark of `OnDamageMsgC` (`ActionMoverDmg.cpp:74-93`), in floats. */
+/**
+ * The hit spark of `OnDamageMsgC` (`ActionMoverDmg.cpp:74-93`), in floats, and the victim's shake (:118). The movers
+ * are in view (the event is played on the step that made it); they are read for the victim's position and the
+ * attacker's heading.
+ */
 function playSpark(event: Extract<CombatEvent, { kind: 'attackerHit' }>, world: CombatFxWorld, out: CombatFxOut): void {
   const victim = world.movers.get(event.victimId);
   const attacker = world.movers.get(event.attackerId);
-  if (victim === undefined || attacker === undefined || event.weapon === null) return;
-  const prop = world.itemProps.get(event.weapon);
-  if (prop === undefined || prop.sfxHit === NO_SFX) return;
-  const [x, y, z] = victim.act.body.pos;
-  let at: Vec3;
-  if (prop.kind3 === Ik3.YOYO) {
-    at = [x, f32(y + SPARK_RAISE), z];
-  } else {
-    // AngleToVectorXZ( &vLocal, pAttacker->GetAngle(), 1.0f ); vLocal += pMover->GetPos(); vLocal.y += 1.0f
-    const theta = f32(attacker.act.body.angle * RADIANS_PER_DEGREE);
-    at = [f32(f32(Math.sin(theta)) + x), f32(y + SPARK_RAISE), f32(f32(-f32(Math.cos(theta))) + z)];
+  if (victim === undefined || attacker === undefined) return;
+  const prop = event.weapon === null ? undefined : world.itemProps.get(event.weapon);
+  if (prop !== undefined && prop.sfxHit !== NO_SFX) {
+    out.effect({ xi: prop.sfxHit, pos: sparkAt(victim, attacker, prop.kind3) });
   }
-  out.effect({ xi: prop.sfxHit, pos: at });
+  out.shake(event.victimId);
+}
+
+/** Where `OnDamageMsgC` makes the hit spark: `vLocal` (`ActionMoverDmg.cpp:78-90`). */
+function sparkAt(victim: FxMover, attacker: FxMover, kind3: number): Vec3 {
+  const [x, y, z] = victim.act.body.pos;
+  if (kind3 === Ik3.YOYO) return [x, f32(y + SPARK_RAISE), z];
+  // AngleToVectorXZ( &vLocal, pAttacker->GetAngle(), 1.0f ); vLocal += pMover->GetPos(); vLocal.y += 1.0f
+  const theta = f32(attacker.act.body.angle * RADIANS_PER_DEGREE);
+  return [f32(f32(Math.sin(theta)) + x), f32(y + SPARK_RAISE), f32(f32(-f32(Math.cos(theta))) + z)];
 }

@@ -96,7 +96,7 @@ const MOVER_CELLS = tabs(
 ).split('\t');
 /** Where the fight columns are in a row (MOVER_CELLS has `=` or 0 in them: the player movers fight with nothing). */
 const FIGHT_CELLS = {
-  belligerence: 10, level: 12, rank: 15, addHp: 35, element: 41, hideLevel: 43, expValue: 62, killable: 66,
+  belligerence: 10, level: 12, rank: 15, atk1: 22, addHp: 35, element: 41, hideLevel: 43, expValue: 62, killable: 66,
 } as const;
 const moverRow = (
   id: string, name: string, ai: string, speed: string, flying = '0',
@@ -113,10 +113,10 @@ const moverRow = (
 };
 
 /** What MOVER_CELLS gives the fight fields of WebMover: BELLI_PEACEFUL, and `=` (-1) or 0 elsewhere. */
-const NO_FIGHT = { level: -1, addHp: -1, expValue: 0, rank: -1, belligerence: 1, killable: 0, hideLevel: -1, element: 0 };
+const NO_FIGHT = { level: -1, addHp: -1, expValue: 0, rank: -1, belligerence: 1, killable: 0, hideLevel: -1, element: 0, atk1: -1 };
 /** The fight columns of the Orphan's row: a level past the player's, EXP past 32 bits (nExpValue is 64 bits in the C++). */
 const ORPHAN_FIGHT = {
-  level: 85, addHp: 9000, expValue: 5000000000, rank: 3, belligerence: 4, killable: 2, hideLevel: 1, element: 2,
+  level: 85, addHp: 9000, expValue: 5000000000, rank: 3, belligerence: 4, killable: 2, hideLevel: 1, element: 2, atk1: 9001,
 };
 
 /** The columns of a shipped propItem.txt row (II_ARM_M_VAG_SUIT01): id, name, body slot and the parts it hides change. */
@@ -227,10 +227,10 @@ const PACKED: Record<string, string> = {
     moverRow('MI_MALE', 'IDS_PROPMOVER_TXT_000002', 'AII_MOVER', '0.1'),
     moverRow('MI_FEMALE', 'IDS_PROPMOVER_TXT_000004', 'AII_MOVER', '0.1'),
     moverRow('MI_AIBATT1', 'IDS_PROPMOVER_TXT_000006', 'AII_MONSTER', '0.075', '0', {
-      level: '1', addHp: '120', expValue: '2', rank: '0', belligerence: '2', killable: '1',
+      level: '1', addHp: '120', expValue: '2', rank: '0', belligerence: '2', killable: '1', atk1: '9000',
     }),
     moverRow('MI_ORPHAN', 'IDS_PROPMOVER_TXT_000008', 'AII_MONSTER', '0.2', '1', {
-      level: '85', addHp: '9000', expValue: '5000000000', rank: '3', belligerence: '4', killable: '2', hideLevel: '1', element: '2',
+      level: '85', addHp: '9000', expValue: '5000000000', rank: '3', belligerence: '4', killable: '2', hideLevel: '1', element: '2', atk1: '9001',
     }),
   ),
   'propItem.txt.txt': script(
@@ -459,7 +459,7 @@ describe('the game-data stage', () => {
         speed: 0.075,
         ai: 2,
         flying: false,
-        level: 1, addHp: 120, expValue: 2, rank: 0, belligerence: 2, killable: 1, hideLevel: -1, element: 0,
+        level: 1, addHp: 120, expValue: 2, rank: 0, belligerence: 2, killable: 1, hideLevel: -1, element: 0, atk1: 9000,
         model: 'models/mvr_aibatt1.glb',
         skeleton: 'skeletons/mvr_aibatt1.glb',
         motions: {

@@ -21,29 +21,34 @@ const RAISE = 1;
 /** `0.05f` (`:1940`): the scale the fade grows by a tick. */
 const FADE_GROWTH = f32(0.05);
 
-/** A point on the drawing, in CSS pixels from its top left (`D3DXVec3Project` with the viewport at 0, 0). */
-export interface ScreenPoint {
+/**
+ * A D3D point on the drawing: `D3DXVec3Project` with the viewport at 0, 0, in CSS pixels from its top left, which gives a
+ * point wherever it is (behind the camera the divide by a negative w mirrors it); and whether it is in front of the
+ * camera (`D3DXVec3TransformCoord` by the view, `vTemp.z >= 0`), which is all `Render` tests (`2DRender.cpp:1921-1922`).
+ */
+export interface Projected {
   x: number;
   y: number;
+  front: boolean;
 }
 
-/** Where a D3D point is on the drawing, or null when it is behind the camera. */
-export type Project = (p: Vec3) => ScreenPoint | null;
+/** The projection of a D3D point (`Projected`). */
+export type Project = (p: Vec3) => Projected;
 
 /**
- * The projection `CDamageNum::Render` makes with the camera's view and projection and the viewport
- * (`2DRender.cpp:1919-1926`; `CWndWorld` copies them for it, `WndWorld.cpp:1079-1081`): null for a point behind the
- * camera (`D3DXVec3TransformCoord( &vTemp, &m_vPos, &m_matView ); if( vTemp.z < 0 ) return;`: D3D's view looks down +z,
- * the web's down -z), else `D3DXVec3Project` on a viewport `width` by `height` CSS pixels at 0, 0. The camera's matrices
- * are taken as they are: the renderer brings them up to date as it draws.
+ * The projection `CDamageNum` makes with the camera's view and projection and the viewport (`2DRender.cpp:1862`,
+ * :1919-1926; `CWndWorld` copies them for it, `WndWorld.cpp:1079-1081`): `D3DXVec3Project` on a viewport `width` by
+ * `height` CSS pixels at 0, 0, and whether the point is in front (`D3DXVec3TransformCoord( &vTemp, &m_vPos, &m_matView );
+ * if( vTemp.z < 0 ) return;`: D3D's view looks down +z, the web's down -z). The camera's matrices are taken as they are:
+ * the renderer brings them up to date as it draws.
  */
 export function screenProjector(camera: Camera, width: number, height: number): Project {
   const v = new Vector3();
   return (p) => {
     v.set(...toWebPosition(p)).applyMatrix4(camera.matrixWorldInverse);
-    if (v.z > 0) return null;
+    const front = v.z <= 0;
     v.applyMatrix4(camera.projectionMatrix);
-    return { x: ((v.x + 1) * width) / 2, y: ((1 - v.y) * height) / 2 };
+    return { x: ((v.x + 1) * width) / 2, y: ((1 - v.y) * height) / 2, front };
   };
 }
 
@@ -158,9 +163,9 @@ export class DamageNumbers {
   private process(n: DamageNum): void {
     switch (n.state) {
       case 0: {
-        // init: m_fY = vTemp.y of the point over the feet, m_fDy = 10
-        const at = this.project?.(raised(n.pos)) ?? null;
-        n.y = at === null ? null : f32(at.y);
+        // init: m_fY = vTemp.y of the point over the feet, projected wherever it is (:1862-1864), m_fDy = 10
+        const project = this.project;
+        n.y = project === null ? null : f32(project(raised(n.pos)).y);
         n.dy = 10;
         n.state++;
         break;
@@ -204,9 +209,9 @@ export class DamageNumbers {
    * (they overlap by half), at the integer point.
    */
   private render(n: DamageNum, project: Project, out: Sprite[]): void {
-    if (project(n.pos) === null) return;
+    // only the feet are tested (:1921-1922); the point over them is projected as it is (:1925)
+    if (!project(n.pos).front) return;
     const at = project(raised(n.pos));
-    if (at === null) return;
     if (n.y === null) n.y = f32(f32(at.y) - n.pending);
     let fx = f32(at.x);
     const fy = n.y;

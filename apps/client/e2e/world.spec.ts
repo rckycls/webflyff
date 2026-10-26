@@ -14,8 +14,8 @@ import { ArReader, ArWriter, MessageType, NULL_ID, PacketType, Port } from '@fly
 import type { AddedMover, AddedNpc, AddedPlayer, MoveReport, Vec3 } from '@flyffweb/protocol';
 import { sampleHeight } from '@flyffweb/scene';
 import {
-  createWorldScript, writeAddMonster, writeAddNpc, writeAddPlayer, writeAddSelf, writeDelObj, writeMoverCorr, writeMoverDeath,
-  writeMoverMoved, writeSetPointParam, writeTaskBar,
+  createWorldScript, writeAddMonster, writeAddNpc, writeAddPlayer, writeAddSelf, writeDamage, writeDelObj, writeMoverCorr,
+  writeMoverDeath, writeMoverMoved, writeSetPointParam, writeTaskBar,
 } from '@flyffweb/testkit';
 import type {} from '../src/testHooks'; // window.__client
 import { Belli } from '../src/world/sim/constants';
@@ -616,6 +616,27 @@ test.describe('the world screen against scripted servers', () => {
       [MONSTER_ID, 2], [NULL_ID, 2], [NPC_ID, 2], [NPC_ID, 1], [NULL_ID, 2],
     ]);
     expect(await hpOf(NPC_ID)).toBe(0);
+  });
+
+  // OnDamage's number (CDamageNumMng::AddNumber) in the numbers layer over the canvas; the layers go with the screen
+  test("a DAMAGE the own player deals draws its number's glyphs in the numbers layer, and leaving takes the layers off", async ({ page }) => {
+    const gateway = await playGateway(page);
+    await enterFlaris(page);
+    const glyphs = page.locator('.world-damage-numbers > div');
+    await expect(page.locator('.world-damage-numbers')).toHaveCount(1);
+    await expect(page.locator('.world-target-marks')).toHaveCount(1);
+    expect(await glyphs.count()).toBe(0);
+
+    gateway.pushCache(flaris.later([writeDamage(MONSTER_ID, SELF_ID, 123, 0)]));
+    // its three digits, in the second colour set (the own player hurt the Aibatt): "1" is the frame at 50, 128 of the
+    // sheet; the elements stay for the next numbers once this one has gone
+    await expect.poll(() => glyphs.count()).toBe(3);
+    expect(await glyphs.first().evaluate((e) => (e as HTMLElement).style.backgroundPosition)).toBe('-50px -128px');
+    expect((await page.evaluate(() => window.__client!.stats())).errors).toEqual([]);
+
+    await page.getByRole('button', { name: 'Leave' }).click();
+    await expect(page.getByRole('button', { name: 'Log in' })).toBeEnabled();
+    await expect(page.locator('.world-damage-numbers, .world-target-marks')).toHaveCount(0);
   });
 
   test("the JOIN's messages about the own character reach its numbers, made before the JOIN is applied", async ({ page }) => {

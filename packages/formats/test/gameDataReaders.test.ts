@@ -243,6 +243,12 @@ describe('readPropMover', () => {
     ]);
   });
 
+  it('reads dwAtk1, the item a monster attacks with (m_dwVirtItem, CMover::InitProp, Mover.cpp:1536)', () => {
+    const movers = readPropMover(script(DEFAULT, MALE, AIBATT1), DEFINES, STRINGS);
+    // "=" is NULL_ID (-1); the Aibatt's is II_WEA_MOB_AIBATT1_ATK1
+    expect(movers.map((m) => m.atk1)).toEqual([-1, -1, 9000]);
+  });
+
   it('reads nExpValue as a 64-bit number, past the 32 bits of the other columns', () => {
     const cells = AIBATT1.split('\t');
     expect(cells[62]).toBe('2'); // nExpValue: after dwCorrectionValue, before nFxpValue

@@ -131,6 +131,8 @@ export class WorldScreen {
   private numbers: DamageNumbers | undefined;
   private marks: TargetMarks | undefined;
   private readonly spriteLayers: SpriteLayer[] = [];
+  /** The sheets' pictures, decoded as the world is entered and kept while it is on screen (`loadSheets`). */
+  private sheetPictures: HTMLImageElement[] = [];
   /** The own character's driving: the controls each rules step, the moves sent, the stop. */
   private ownMover: OwnMover | undefined;
   /** The own character's numbers (`ownState`). */
@@ -325,7 +327,7 @@ export class WorldScreen {
     const equipment = this.entry.character.equipment;
     this.views = new MoverViews(
       stage.scene, loadMoverModel(services), overlay, (mover) => lookOf(mover, data, equipment),
-      (key) => loadMotion(services, key), loadHeldItems(services, data), data.itemProps,
+      (key) => loadMotion(services, key), loadHeldItems(services, data), data.itemProps, { moverProps: data.movers },
     );
     this.tags = new NameTagLayer(stage.scene, this.element.ownerDocument);
     this.startEffects(stage, services);
@@ -367,15 +369,31 @@ export class WorldScreen {
   /**
    * The glyph sheets of the damage numbers and the target corners (`data/uiSheets.json`, `WebUiSheets`), or null when
    * they cannot be had (game files converted before the UI stage, or a failed download): the world goes on without the
-   * numbers and the corners, and the overlay says why.
+   * numbers and the corners, and the overlay says why. Their pictures are downloaded and decoded too, as the effects are
+   * warmed up (`startEffects`): a number lasts under a second, and its first one must not be drawn blank while its
+   * picture comes. A picture that cannot be had is said once; its layer tries again as it draws.
    */
   private async loadSheets(services: SceneServices): Promise<WebUiSheets | null> {
+    let sheets: WebUiSheets;
     try {
-      return await services.store.json<WebUiSheets>(UI_SHEETS_KEY);
+      sheets = await services.store.json<WebUiSheets>(UI_SHEETS_KEY);
     } catch (error) {
       this.reportOnce(`ui sheets: ${messageOf(error)}`, error);
       return null;
     }
+    await Promise.all([sheets.targetCorners, sheets.damageDigits].map(async ({ image }) => {
+      const url = services.store.url(image);
+      if (url === null) return; // `screenLayers` says so
+      const picture = new (this.element.ownerDocument.defaultView ?? window).Image();
+      picture.src = url;
+      this.sheetPictures.push(picture);
+      try {
+        await picture.decode();
+      } catch (error) {
+        this.reportOnce(`ui sheets: ${image} could not be decoded`, error);
+      }
+    }));
+    return sheets;
   }
 
   /**
@@ -463,10 +481,11 @@ export class WorldScreen {
   }
 
   /**
-   * What the combat and own events show (`playCombatEvent`, `playOwnEvent`): the effects, and the damage numbers once
-   * their layer is up. They are played at the start of the frame after their message, before any rules step, so the
-   * movers are where the handler found them; a swing's hit frame (`attackerHit`) comes from the rules' step, and plays at
-   * the frame after it.
+   * What the combat and own events show (`playCombatEvent`, `playOwnEvent`): the effects, the damage numbers once their
+   * layer is up, and the movers' flashes and shakes. A message's events are played at the start of the frame after it,
+   * before any rules step, so the movers are where the handler found them; a step's (a swing's hit frame: `spark`,
+   * `attackerHit`) right after that step (`step`), so that its effect starts on its hit's step, as `CreateSfx` in the
+   * attacker's `Process` starts it.
    */
   private play(changes: WorldChanges): void {
     const effects = this.effects;
@@ -477,9 +496,12 @@ export class WorldScreen {
       movers: world.movers, selfId: self?.objectId, gameMaster: isGameMaster(self?.added.player?.authorization ?? 0),
       focusId: this.focus?.targetId ?? null, itemProps: this.data!.itemProps,
     };
+    const views = this.views!;
     const out: CombatFxOut = {
       effect: (request) => effects.play(request),
       number: (pos, value, ownHurt) => this.numbers?.add(pos, value, ownHurt),
+      flash: (moverId, direction) => views.flash(moverId, direction),
+      shake: (moverId) => views.shake(moverId),
     };
     for (const event of changes.combat) playCombatEvent(event, fxWorld, out);
     for (const event of changes.own) playOwnEvent(event, fxWorld, out);
@@ -536,9 +558,10 @@ export class WorldScreen {
    * branch, and where that is `ControlPlayer` the controls drive the own mover (`OwnMover.control`, in `ControlGround`'s
    * order). The walk key is read at every step, as Neuz reads its key table (`WndWorldControlPlayer.cpp:524`): a press
    * made and let go while the attack runs is gone. Then every mover's step (the own one's included), the PLAYERCORR it
-   * may have led to, the views', the effects' (`CWorld::Process` steps them with the movers, `CSfx::Process`), the damage
-   * numbers' (`CDamageNumMng::Process`, `Neuz.cpp:1084`), and the chase camera's (`CWorld::Process` processes the camera
-   * at each `FrameMove`, `World.cpp:924-935`).
+   * may have led to, what the step's hits play (`syncViews`: the effects, flashes and shakes a hit frame makes inside
+   * the attacker's `Process`), the views', the effects' (`CWorld::Process` steps them with the movers, `CSfx::Process`),
+   * the damage numbers' (`CDamageNumMng::Process`, `Neuz.cpp:1084`), and the chase camera's (`CWorld::Process`
+   * processes the camera at each `FrameMove`, `World.cpp:924-935`).
    */
   private step(world: WorldState, stage: WorldStage, views: MoverViews, now: number): void {
     const own = world.self();
@@ -556,6 +579,7 @@ export class WorldScreen {
     }
     world.step();
     this.ownMover!.corrected(own);
+    this.syncViews();
     views.step(world.movers);
     this.effects?.step((objectId) => world.movers.get(objectId)?.act.body);
     this.numbers?.step();
@@ -703,6 +727,7 @@ export class WorldScreen {
     this.effectRenderer?.dispose();
     this.effectTextures?.dispose();
     for (const layer of this.spriteLayers) layer.dispose();
+    this.sheetPictures = [];
     this.stage?.dispose();
     this.page?.holder.remove();
     this.element.remove();

@@ -62,8 +62,13 @@ const withHides = (item: WebItemModel): WebItemModel => ({
   ...item, exclusive: item.exclusive ?? NO_PART, baseIgnore: item.baseIgnore ?? NO_PART,
 });
 
-/** A mover of a movers.json from before the converter kept `flying` (`dwFlying`) lacks it: it does not fly. */
-const withFlying = (mover: WebMover): WebMover => ({ ...mover, flying: mover.flying ?? false });
+/**
+ * A mover of a movers.json from before the converter kept `flying` (`dwFlying`) or `atk1` (`dwAtk1`) lacks them: it does
+ * not fly, and attacks with no item (`NULL_ID`, -1).
+ */
+const withLaterColumns = (mover: WebMover): WebMover => ({
+  ...mover, flying: mover.flying ?? false, atk1: mover.atk1 ?? -1,
+});
 
 /**
  * The asset index lists none of `keys`: the game files on the server were converted by a version older than these
@@ -101,7 +106,7 @@ export async function loadGameData(store: Pick<AssetStore, 'json' | 'url'>): Pro
     store.json<WebEffectsIndex>(GAME_DATA_KEYS.effectsIndex),
   ]);
   return {
-    movers: new Map(movers.map((mover) => [mover.index, withFlying(mover)])),
+    movers: new Map(movers.map((mover) => [mover.index, withLaterColumns(mover)])),
     items: new Map(items.map((item) => [item.id, withHides(item)])),
     npcs: new Map(npcs.map((npc) => [npc.key.toLowerCase(), npc])),
     nameColors,

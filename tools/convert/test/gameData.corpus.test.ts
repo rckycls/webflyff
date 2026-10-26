@@ -287,6 +287,7 @@ describeClient('the game-data stage on the real client', () => {
       const fight = {
         level: prop.level, addHp: prop.addHp, expValue: prop.expValue, rank: prop.rank,
         belligerence: prop.belligerence, killable: prop.killable, hideLevel: prop.hideLevel, element: prop.element,
+        atk1: prop.atk1,
       };
       expect(mover, `mover ${mover.index} ${mover.name}`).toMatchObject(fight);
     }

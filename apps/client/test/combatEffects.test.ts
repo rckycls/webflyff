@@ -1,15 +1,17 @@
 // What the screen plays for the world's combat and own events (combatEffects): the effects by XI id, where and how big,
-// and the damage numbers, as CDPClient::OnDamage, OnMoverDeath, OnSetLevel, OnAddObj, OnSetExperience,
-// CMover::SetExperience and CActionMover::OnDamageMsgC make them. The effects and numbers go to a recorder.
+// the damage numbers, the models' flashes and shakes, as CDPClient::OnDamage, OnMoverDeath, OnSetLevel, OnAddObj,
+// OnSetExperience, CMover::SetExperience, CMover::OnDamage, OnAttackMelee and CActionMover::OnDamageMsgC make them.
+// What is played goes to a recorder.
 
 import type { Vec3 } from '@flyffweb/formats';
 import { AttackFlag, NULL_ID } from '@flyffweb/protocol';
 import { describe, expect, it } from 'vitest';
 import { WARM_UP_EFFECTS, isGameMaster, playCombatEvent, playOwnEvent } from '../src/world/fx/combatEffects';
-import type { CombatFxWorld, FxMover } from '../src/world/fx/combatEffects';
+import type { CombatFxOut, CombatFxWorld, FxMover } from '../src/world/fx/combatEffects';
 import { Xi } from '../src/world/fx/EffectManager';
 import type { EffectRequest } from '../src/world/fx/EffectManager';
 import { Ik3 } from '../src/world/sim/constants';
+import { normalize, sub } from '../src/world/sim/d3dx';
 
 const f32 = Math.fround;
 
@@ -48,15 +50,21 @@ function worldOf(options: { self?: boolean; gone?: number[]; gameMaster?: boolea
   };
 }
 
-type Played = { effect: EffectRequest } | { number: [Vec3, number, boolean] };
+type Played =
+  | { effect: EffectRequest }
+  | { number: [Vec3, number, boolean] }
+  | { flash: [number, Vec3] }
+  | { shake: number };
 
-function recorder(): { played: Played[]; out: { effect(r: EffectRequest): void; number(p: Vec3, v: number, o: boolean): void } } {
+function recorder(): { played: Played[]; out: CombatFxOut } {
   const played: Played[] = [];
   return {
     played,
     out: {
       effect: (request) => void played.push({ effect: request }),
       number: (pos, value, ownHurt) => void played.push({ number: [pos, value, ownHurt] }),
+      flash: (moverId, direction) => void played.push({ flash: [moverId, direction] }),
+      shake: (moverId) => void played.push({ shake: moverId }),
     },
   };
 }
@@ -64,11 +72,17 @@ function recorder(): { played: Played[]; out: { effect(r: EffectRequest): void; 
 /** `pMover->GetPos()` with `vPos.y += 1.5f`: where the banners are made (`DPClient.cpp:1845-1888`). */
 const over = (p: Vec3): Vec3 => [p[0], f32(p[1] + 1.5), p[2]];
 
+/** What was played as a short word: an effect's XI id (and scale), a number, or anything else as JSON. */
+function wordOf(p: Played, scale: boolean): string {
+  if ('effect' in p) return scale ? `xi ${p.effect.xi} x${p.effect.scale}` : `xi ${p.effect.xi}`;
+  return 'number' in p ? `number ${p.number[1]}` : JSON.stringify(p);
+}
+
 /** The XI ids and the numbers a DAMAGE plays, in order, as short words. */
 function hitPlays(flags: number, hit = 25, world = worldOf()): string[] {
   const r = recorder();
   playCombatEvent({ kind: 'hit', victimId: MONSTER_ID, attackerId: OWN_ID, hit, flags, attackerInView: true }, world, r.out);
-  return r.played.map((p) => ('effect' in p ? `xi ${p.effect.xi} x${p.effect.scale}` : `number ${p.number[1]}`));
+  return r.played.map((p) => wordOf(p, true));
 }
 
 describe('playCombatEvent: a DAMAGE (CDPClient::OnDamage, DPClient.cpp:1792-1897)', () => {
@@ -123,12 +137,17 @@ describe('playCombatEvent: a DAMAGE (CDPClient::OnDamage, DPClient.cpp:1792-1897
     ]);
   });
 
-  it('shows nothing of a fight the own player is not in, unless the attacker is not in view (goto g_PASS, :1811-1812)', () => {
+  it('shows nothing of a fight the own player is not in, unless the attacker was not in view (goto g_PASS, :1811-1812)', () => {
     expect(hitPlaysOf({ victimId: MONSTER_ID, attackerId: OTHER_ID })).toEqual([]);
     expect(hitPlaysOf({ victimId: OTHER_ID, attackerId: MONSTER_ID })).toEqual([]);
-    // an attacker the browser does not have: NULL_ID, or one out of view
-    expect(hitPlaysOf({ victimId: OTHER_ID, attackerId: NULL_ID })).toEqual(['number 4']);
-    expect(hitPlaysOf({ victimId: MONSTER_ID, attackerId: OTHER_ID }, worldOf({ gone: [OTHER_ID] }))).toEqual(['number 4']);
+    // an attacker the browser did not have as the message came (attackerInView): NULL_ID, or one out of view then,
+    // whatever is in view when the event is played
+    expect(hitPlaysOf({ victimId: OTHER_ID, attackerId: NULL_ID }, worldOf(), false)).toEqual(['number 4']);
+    expect(hitPlaysOf({ victimId: MONSTER_ID, attackerId: OTHER_ID }, worldOf(), false)).toEqual(['number 4']);
+    // one in view then and gone since is still the attacker the handler found: not the own player's fight
+    expect(hitPlaysOf({ victimId: MONSTER_ID, attackerId: OTHER_ID }, worldOf({ gone: [OTHER_ID] }), true)).toEqual([]);
+    // and the own player's, gone or not, is
+    expect(hitPlaysOf({ victimId: MONSTER_ID, attackerId: OWN_ID }, worldOf({ gone: [OWN_ID] }), true)).toEqual(['number 4']);
   });
 
   it('shows a game master the hits on its focus, whoever deals them (:1824-1828)', () => {
@@ -143,25 +162,27 @@ describe('playCombatEvent: a DAMAGE (CDPClient::OnDamage, DPClient.cpp:1792-1897
   });
 });
 
-function hitPlaysOf(ids: { victimId: number; attackerId: number }, world = worldOf()): string[] {
+function hitPlaysOf(ids: { victimId: number; attackerId: number }, world = worldOf(), attackerInView = true): string[] {
   const r = recorder();
-  playCombatEvent({ kind: 'hit', ...ids, hit: 4, flags: 0, attackerInView: world.movers.has(ids.attackerId) }, world, r.out);
-  return r.played.map((p) => ('effect' in p ? `xi ${p.effect.xi}` : `number ${p.number[1]}`));
+  playCombatEvent({ kind: 'hit', ...ids, hit: 4, flags: 0, attackerInView }, world, r.out);
+  return r.played.map((p) => wordOf(p, false));
 }
 
 describe('playCombatEvent: a MOVERDEATH (CDPClient::OnMoverDeath, DPClient.cpp:2003-2007)', () => {
   it('shows the HP the mover had as its last number, when the own player killed it or died, and the killer is in view', () => {
-    const death = (victimId: number, attackerId: number, world = worldOf()): Played[] => {
+    const death = (victimId: number, attackerId: number, attackerInView = true, world = worldOf()): Played[] => {
       const r = recorder();
-      playCombatEvent({ kind: 'death', victimId, attackerId, lastHp: 13, attackerInView: world.movers.has(attackerId) }, world, r.out);
+      playCombatEvent({ kind: 'death', victimId, attackerId, lastHp: 13, attackerInView }, world, r.out);
       return r.played;
     };
     expect(death(MONSTER_ID, OWN_ID)).toEqual([{ number: [MONSTER_AT, 13, false] }]);
     expect(death(OWN_ID, MONSTER_ID)).toEqual([{ number: [OWN_AT, 13, true] }]);
     expect(death(MONSTER_ID, OTHER_ID)).toEqual([]);
-    // `if( pAttacker )`: no killer in view, no number
-    expect(death(OWN_ID, NULL_ID)).toEqual([]);
-    expect(death(OWN_ID, MONSTER_ID, worldOf({ gone: [MONSTER_ID] }))).toEqual([]);
+    // `if( pAttacker )`: no killer in view as the message came, no number, whatever is in view now
+    expect(death(OWN_ID, NULL_ID, false)).toEqual([]);
+    expect(death(OWN_ID, MONSTER_ID, false)).toEqual([]);
+    // a killer in view then that has gone since still counts
+    expect(death(OWN_ID, MONSTER_ID, true, worldOf({ gone: [MONSTER_ID] }))).toEqual([{ number: [OWN_AT, 13, true] }]);
   });
 });
 
@@ -172,27 +193,54 @@ describe("playCombatEvent: a swing's hit frame (CActionMover::OnDamageMsgC, Acti
     return [f32(f32(Math.sin(rad)) + victim[0]), f32(victim[1] + 1), f32(f32(-f32(Math.cos(rad))) + victim[2])];
   };
 
-  it("plays the weapon's dwSfxObj3 a metre in front of the victim along the attacker's heading, 1 m up, following nothing", () => {
+  it("plays the weapon's dwSfxObj3 a metre in front of the victim along the attacker's heading, 1 m up, then shakes the victim", () => {
     const r = recorder();
     playCombatEvent({ kind: 'attackerHit', attackerId: OWN_ID, victimId: MONSTER_ID, weapon: SWORD }, worldOf(), r.out);
-    expect(r.played).toEqual([{ effect: { xi: Xi.HIT_SWORD01, pos: sparkAt(MONSTER_AT, 37.5) } }]);
+    expect(r.played).toEqual([{ effect: { xi: Xi.HIT_SWORD01, pos: sparkAt(MONSTER_AT, 37.5) } }, { shake: MONSTER_ID }]);
     // D3D: the heading 90 is +x
     const [x, , z] = sparkAt([0, 0, 0], 90);
     expect(x).toBeCloseTo(1, 6);
     expect(z).toBeCloseTo(0, 6);
   });
 
-  it('plays a yoyo\'s 1 m over the victim; nothing for the bare hand (`=`), a weapon not known, or a mover gone', () => {
+  it('plays a yoyo\'s 1 m over the victim; no effect for the bare hand (`=`) or an item not known, the shake all the same', () => {
     const r = recorder();
     playCombatEvent({ kind: 'attackerHit', attackerId: OWN_ID, victimId: MONSTER_ID, weapon: YOYO }, worldOf(), r.out);
-    expect(r.played).toEqual([{ effect: { xi: Xi.HIT_YOY01, pos: [MONSTER_AT[0], f32(MONSTER_AT[1] + 1), MONSTER_AT[2]] } }]);
+    expect(r.played).toEqual([
+      { effect: { xi: Xi.HIT_YOY01, pos: [MONSTER_AT[0], f32(MONSTER_AT[1] + 1), MONSTER_AT[2]] } }, { shake: MONSTER_ID },
+    ]);
+    const bare = recorder();
+    playCombatEvent({ kind: 'attackerHit', attackerId: OWN_ID, victimId: MONSTER_ID, weapon: HAND }, worldOf(), bare.out);
+    playCombatEvent({ kind: 'attackerHit', attackerId: MONSTER_ID, victimId: OWN_ID, weapon: null }, worldOf(), bare.out);
+    playCombatEvent({ kind: 'attackerHit', attackerId: OWN_ID, victimId: MONSTER_ID, weapon: 999 }, worldOf(), bare.out);
+    // `m_nDmgCnt = 10` is outside the AF_GENERIC branch (ActionMoverDmg.cpp:118): every blow that landed shakes
+    expect(bare.played).toEqual([{ shake: MONSTER_ID }, { shake: OWN_ID }, { shake: MONSTER_ID }]);
+  });
+
+  it('plays nothing of a hit whose movers are not in view (the event is played on the step that made it, so they are)', () => {
     const none = recorder();
-    playCombatEvent({ kind: 'attackerHit', attackerId: OWN_ID, victimId: MONSTER_ID, weapon: HAND }, worldOf(), none.out);
-    playCombatEvent({ kind: 'attackerHit', attackerId: MONSTER_ID, victimId: OWN_ID, weapon: null }, worldOf(), none.out);
-    playCombatEvent({ kind: 'attackerHit', attackerId: OWN_ID, victimId: MONSTER_ID, weapon: 999 }, worldOf(), none.out);
     playCombatEvent({ kind: 'attackerHit', attackerId: OWN_ID, victimId: MONSTER_ID, weapon: SWORD }, worldOf({ gone: [MONSTER_ID] }), none.out);
     playCombatEvent({ kind: 'attackerHit', attackerId: OWN_ID, victimId: MONSTER_ID, weapon: SWORD }, worldOf({ gone: [OWN_ID] }), none.out);
     expect(none.played).toEqual([]);
+  });
+});
+
+describe("playCombatEvent: a model's flash (m_SparkInfo: CMover::OnDamage, MoverActEvent.cpp:1522-1538, :1704-1717)", () => {
+  it('flashes the mover, lit along the way from the other one to it: D3DXVec3Normalize( GetPos() - pOther->GetPos() )', () => {
+    const r = recorder();
+    // the victim's flash: pHitObj->GetPos() - GetPos(); the attacker's: GetPos() - pHitObj->GetPos()
+    playCombatEvent({ kind: 'spark', moverId: MONSTER_ID, fromId: OWN_ID }, worldOf(), r.out);
+    playCombatEvent({ kind: 'spark', moverId: OWN_ID, fromId: MONSTER_ID }, worldOf(), r.out);
+    const toMonster = normalize(sub(MONSTER_AT, OWN_AT));
+    expect(r.played).toEqual([{ flash: [MONSTER_ID, toMonster] }, { flash: [OWN_ID, normalize(sub(OWN_AT, MONSTER_AT))] }]);
+    expect(Math.hypot(...toMonster)).toBeCloseTo(1, 6);
+  });
+
+  it('flashes nothing when either mover is not in view (IsValidObj( pHitObj ))', () => {
+    const r = recorder();
+    playCombatEvent({ kind: 'spark', moverId: MONSTER_ID, fromId: OWN_ID }, worldOf({ gone: [OWN_ID] }), r.out);
+    playCombatEvent({ kind: 'spark', moverId: MONSTER_ID, fromId: OWN_ID }, worldOf({ gone: [MONSTER_ID] }), r.out);
+    expect(r.played).toEqual([]);
   });
 });
 

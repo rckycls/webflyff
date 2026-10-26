@@ -188,6 +188,7 @@ function buildMovers(env: Env, read: Reading): WebMover[] {
         killable: prop.killable,
         hideLevel: prop.hideLevel,
         element: prop.element,
+        atk1: prop.atk1,
         model: null,
         skeleton: null,
         motions: {},

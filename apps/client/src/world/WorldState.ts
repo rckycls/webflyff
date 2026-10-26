@@ -20,6 +20,8 @@ const f32 = Math.fround;
 const AII_MONSTER = 2;
 /** `II_WEA_HAN_HAND` (`Resource/defineItem.h:25`): the bare hand's item, a player's active hand when it is empty. */
 const II_WEA_HAN_HAND = 11;
+/** `NULL_ID`, an item column written `=`: no item. */
+const NULL_ITEM = -1;
 /** `MATCHLESS_MODE` (`_Common/authorization.h:106`): a player in it takes no blow (`PreProcessDamage`). */
 const MATCHLESS_MODE = 0x00000001;
 /**
@@ -97,8 +99,8 @@ export interface Mover extends SimMover {
  *   :1704-1717).
  * - `attackerHit`: a swing's blow landed (`CMover::OnAttackMelee` → `OnDamageMsgC`, `ActionMoverDmg.cpp:54-122`): the
  *   effects of the attacker's active hand item `weapon` (`GetActiveHandItemProp`: `dwSfxObj3` at the victim, `dwSfxObj5`
- *   at the attacker), the victim's shake (`m_nDmgCnt`) and the hit sound; `weapon` is null where the browser does not
- *   know it (a monster's virtual item). The flinch and the pause are done.
+ *   at the attacker), the victim's shake (`m_nDmgCnt`) and the hit sound; `weapon` is a monster's `dwAtk1` (its virtual
+ *   item), and null where there is none (`=`). The flinch and the pause are done.
  * - `levelUp`: SETLEVEL raised another mover's level: the level-up effect on it (`OnSetLevel`); the motion is done.
  * - `text`: DEFINEDTEXT or DEFINEDTEXT1: the text `textId` with the arguments `args`.
  * - `spawned`: a mover that is not a player came into view within 32 m of the own mover (`XI_GEN_MONSTER_SPAWN01`).
@@ -622,11 +624,15 @@ export class WorldState {
   /**
    * The ID of `CMover::GetActiveHandItemProp()`'s item (`Mover.cpp:2930-2968`, the client's branches): a player's right
    * hand, the bare hand's `II_WEA_HAN_HAND` when it is empty: the own one's from its numbers (the lobby's equipment),
-   * another's from `m_aEquipInfo[PARTS_RWEAPON]`, the worn part's item ID. Null for a mover that is not a player (its
-   * `m_dwVirtItem` is not in the browser's mover catalog), and for the own mover with no numbers.
+   * another's from `m_aEquipInfo[PARTS_RWEAPON]`, the worn part's item ID. Any other mover's is its `m_dwVirtItem`
+   * (`VT_ITEM`, :2960-2966), which `CMover::InitProp` takes from its row's `dwAtk1` (:1536); null for `NULL_ID` (`=`), and
+   * for a mover the catalog has no row for. Null for the own mover with no numbers.
    */
   private handItem(m: Mover): number | null {
-    if (!m.added.isPlayer) return null;
+    if (!m.added.isPlayer) {
+      const atk1 = this.data.movers.get(m.added.index)?.atk1 ?? NULL_ITEM;
+      return atk1 === NULL_ITEM ? null : atk1;
+    }
     if (m.isSelf) {
       const numbers = this.numbersOf(m);
       return numbers === undefined ? null : numbers.equipped.weapon?.id ?? II_WEA_HAN_HAND;

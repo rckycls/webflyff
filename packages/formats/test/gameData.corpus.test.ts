@@ -114,6 +114,7 @@ describeClient('game data readers on the client packs', () => {
       killable: col('bKillable'),
       hideLevel: col('dwHideLevel'),
       element: col('eElementType'),
+      atk1: col('dwAtk1'),
     };
     expect(fightCols).toEqual({
       level: 12,
@@ -124,11 +125,12 @@ describeClient('game data readers on the client packs', () => {
       killable: 66,
       hideLevel: 43,
       element: 41,
+      atk1: 22,
     });
     const wrong: string[] = [];
     rows.forEach((cells, i) => {
       const mover = movers[i];
-      for (const key of ['level', 'addHp', 'rank', 'belligerence', 'killable', 'hideLevel', 'element'] as const) {
+      for (const key of ['level', 'addHp', 'rank', 'belligerence', 'killable', 'hideLevel', 'element', 'atk1'] as const) {
         if (mover[key] !== asNumber(cells[fightCols[key]])) wrong.push(`${cells[0]}.${key}=${mover[key]} (${cells[fightCols[key]]})`);
       }
       if (mover.expValue !== asInt64(cells[fightCols.expValue])) wrong.push(`${cells[0]}.expValue=${mover.expValue}`);
