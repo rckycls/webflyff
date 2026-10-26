@@ -406,6 +406,39 @@ describe('EffectManager: loading and errors', () => {
     expect(r.manager.count()).toBe(0);
     expect(r.report).toHaveBeenCalledTimes(1);
   });
+
+  it('preloads a file before its first play and names the textures its parts draw, so that the first play starts at once', async () => {
+    const animated = part({ texture: 'textures/sfx/a00.ktx2', frames: ['textures/sfx/a00.ktx2', 'textures/sfx/a01.ktx2', null], keys: [key(0), key(9)] });
+    const plain = part({ keys: [key(0), key(9)] });
+    const untextured = part({ texture: null, keys: [key(0), key(9)] });
+    const r = rig({ ...FILES, 'effects/sword.json': { parts: [animated, plain, untextured] } });
+    const textures: string[] = [];
+    r.manager.preload(Xi.HIT_SWORD01, (key) => textures.push(key));
+    expect(r.manager.count()).toBe(0); // nothing plays
+    await settle();
+    expect(textures).toEqual(['textures/sfx/a00.ktx2', 'textures/sfx/a00.ktx2', 'textures/sfx/a01.ktx2', 'textures/sfx/t.ktx2']);
+    r.manager.play({ xi: Xi.HIT_SWORD01, pos: [0, 0, 0] });
+    expect(r.manager.count()).toBe(1); // no waiting
+    expect(r.load).toHaveBeenCalledTimes(1);
+  });
+
+  it('says once, as play does, that it cannot preload an unknown XI or a missing file; XI 0 and -1 are nothing', async () => {
+    const r = rig();
+    const texture = vi.fn<(key: string) => void>();
+    r.manager.preload(99999, texture);
+    r.manager.preload(Xi.HIT_HITBLOCK01, texture);
+    r.manager.preload(0, texture);
+    r.manager.preload(-1, texture);
+    await settle();
+    r.manager.play({ xi: 99999, pos: [0, 0, 0] });
+    r.manager.play({ xi: Xi.HIT_HITBLOCK01, pos: [0, 0, 0] });
+    await settle();
+    expect(r.report.mock.calls.map(([message]) => message)).toEqual([
+      'effect XI 99999: not in the effects index',
+      expect.stringContaining('effect effects/missing.json:'),
+    ]);
+    expect(texture).not.toHaveBeenCalled();
+  });
 });
 
 describe('EffectManager: drawing', () => {

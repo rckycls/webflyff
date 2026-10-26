@@ -363,6 +363,20 @@ describe('MoverViews', () => {
       expect(r.views.pickCandidates(undefined)[0]!.world[12]).toBeCloseTo(1, 5);
     });
 
+    it("pickCandidate gives one mover's candidate, the same as pickCandidates, or null for one with nothing drawn", async () => {
+      const pending = later();
+      const r = rig(() => pending.promise, (mover) => (mover.objectId === 7 ? null : look));
+      r.add(moverFrom(addedNpc(7, 21, {}, { pos: [0, 0, -10], angle: 45, scale: 1.5 })));
+      r.add(moverFrom(addedNpc(8, 21, {}, { pos: [0, 0, -20] })));
+      // 7 is the placeholder; 8 is loading, so nothing is drawn of it; 9 is not in view
+      expect(r.views.pickCandidate(7)).toEqual(r.views.pickCandidates(undefined).find((c) => c.objectId === 7));
+      expect(r.views.pickCandidate(8)).toBeNull();
+      expect(r.views.pickCandidate(9)).toBeNull();
+      pending.resolve(fakeModel());
+      await r.views.settled();
+      expect(r.views.pickCandidate(8)).toEqual(r.views.pickCandidates(undefined).find((c) => c.objectId === 8));
+    });
+
     it('gives a mover that is the placeholder a box of its own, and none that has nothing drawn yet', async () => {
       const pending = later();
       const r = rig(() => pending.promise, (mover) => (mover.objectId === 7 ? null : look));

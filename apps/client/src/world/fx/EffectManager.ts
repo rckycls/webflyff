@@ -277,6 +277,29 @@ export class EffectManager {
     this.renderer.end();
   }
 
+  /**
+   * Loads the file of `xi` ahead of its first `play`, which then starts at once, and names to `texture` the logical key of
+   * each texture its parts draw (`texture`, and each frame of a texture animation), for the renderer's textures to start
+   * loading too. Neuz has every file on disk; here they come over the network on first use, and a hit spark (19 ticks)
+   * asked for the first time could be over before its file and textures are in. An id not in the index, or a file that
+   * cannot be had, is said once, as `play` says it; 0 and below are nothing.
+   */
+  preload(xi: number, texture: (key: string) => void): void {
+    if (xi <= 0) return;
+    const ref = this.data.effects.get(xi);
+    if (ref === undefined) {
+      this.reportOnce(`xi ${xi}`, `effect XI ${xi}: not in the effects index`);
+      return;
+    }
+    void this.file(ref.effect).then((effect) => {
+      if (effect === null) return;
+      for (const part of effect.parts) {
+        if (part.texture !== null) texture(part.texture);
+        for (const frame of part.frames) if (frame !== null) texture(frame);
+      }
+    });
+  }
+
   /** The effects playing now. */
   count(): number {
     return this.effects.length;

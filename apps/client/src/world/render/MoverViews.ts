@@ -262,16 +262,21 @@ export class MoverViews {
   pickCandidates(except: number | undefined): PickCandidate[] {
     const found: PickCandidate[] = [];
     for (const view of this.views.values()) {
-      const { mover } = view;
-      if (mover.objectId === except) continue;
-      const box = view.model !== null ? view.model.box() : view.placeholder ? placeholderBox() : null;
-      if (box === null) continue;
-      found.push({
-        objectId: mover.objectId, box, world: moverMatrix(view.scrPos, view.scrAngle, mover.added.scale), dead: isDie(mover),
-        isPlayer: mover.added.isPlayer,
-      });
+      if (view.mover.objectId === except) continue;
+      const candidate = candidateOf(view);
+      if (candidate !== null) found.push(candidate);
     }
     return found;
+  }
+
+  /**
+   * The candidate `pickCandidates` gives for the mover `objectId` alone, or null when nothing is drawn of it (not in view,
+   * or its model still loading): its box and drawn matrix, for the target corners each frame (`CWndWorld::GetBoundRect`)
+   * without making every view's box.
+   */
+  pickCandidate(objectId: number): PickCandidate | null {
+    const view = this.views.get(objectId);
+    return view === undefined ? null : candidateOf(view);
   }
 
   /** The movers drawn with their own model. */
@@ -672,6 +677,17 @@ function interpolate(view: View): void {
     if (view.scrAngle > 360) view.scrAngle -= 360;
     else if (view.scrAngle < 0) view.scrAngle += 360;
   }
+}
+
+/** A view's pick candidate (`MoverViews.pickCandidates`), or null when nothing is drawn of it yet. */
+function candidateOf(view: View): PickCandidate | null {
+  const { mover } = view;
+  const box = view.model !== null ? view.model.box() : view.placeholder ? placeholderBox() : null;
+  if (box === null) return null;
+  return {
+    objectId: mover.objectId, box, world: moverMatrix(view.scrPos, view.scrAngle, mover.added.scale), dead: isDie(mover),
+    isPlayer: mover.added.isPlayer,
+  };
 }
 
 /** What the meshes under `object` add to the overlay's GPU estimate. */

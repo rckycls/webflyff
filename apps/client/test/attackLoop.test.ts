@@ -283,6 +283,17 @@ describe('AttackLoop: holding the button on a new target (m_timerFocusAttack, Wn
     r.until(() => r.melee().length > 0);
   });
 
+  it('selectsTarget is m_bSelectTarget: on from a press on a mover till it is let go (WndWorld.cpp:7090-7128, 6512)', () => {
+    const r = rig();
+    expect(r.loop.selectsTarget).toBe(false);
+    r.loop.onMoverPressed(MONSTER_ID, r.now(), false);
+    expect(r.loop.selectsTarget).toBe(true);
+    r.step();
+    expect(r.loop.selectsTarget).toBe(true);
+    r.loop.onReleased();
+    expect(r.loop.selectsTarget).toBe(false);
+  });
+
   it('a hold attacks while it is held: let go, the swing under way is the last', () => {
     const r = rig({ level: 2 });
     r.loop.onMoverPressed(MONSTER_ID, r.now(), false);

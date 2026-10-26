@@ -4,14 +4,18 @@
 // 60 steps a second, the keys, the joystick and a tap on the world (spec §3.7) driving the own mover as
 // `CWndWorld::ControlGround` does and its moves sent as Neuz sends them, and the presses on a mover selecting and
 // attacking it (`AttackLoop`, Piece 4 §3.4); and it draws the stage around the own mover, from the chase camera behind
-// it, with the mark of the point a tap sends it to. Every ending closes everything and hands the lobby its message
-// (Ruling 8): nothing that goes wrong here is thrown at the lobby.
+// it, with the mark of the point a tap sends it to, the effects and damage numbers of the fight, and the corners around
+// the target (Piece 4 §3.7). Every ending closes everything and hands the lobby its message (Ruling 8): nothing that goes
+// wrong here is thrown at the lobby.
 
-import { toWebPosition } from '@flyffweb/formats';
-import type { Vec3 } from '@flyffweb/formats';
+import { UI_SHEETS_KEY, toWebPosition } from '@flyffweb/formats';
+import type { Vec3, WebEffect, WebUiSheet, WebUiSheets } from '@flyffweb/formats';
 import type { AddedMover, BundleMessage, WorldMessage } from '@flyffweb/protocol';
-import { Joystick, KeyboardInput, WorldStage, loadGltf, loopMotion } from '@flyffweb/scene';
-import type { Ground, LoopedMotion, SceneServices } from '@flyffweb/scene';
+import {
+  EffectRenderer, Joystick, KeyboardInput, WorldStage, effectTextureProvider, loadGltf, loopMotion, neuzRandom,
+} from '@flyffweb/scene';
+import type { EffectTextureProvider, Ground, LoopedMotion, SceneServices } from '@flyffweb/scene';
+import type { WebGLRenderer } from 'three';
 import { Vector2, Vector3 } from 'three';
 import { UNEXPECTED_PROBLEM } from '../lobby/errorText';
 import type { WorldEntry } from '../lobby/LoginFlow';
@@ -23,12 +27,16 @@ import type { ChaseView } from './backCamera';
 import { AttackLoop, objRadius } from './combat/attackLoop';
 import { Focus } from './combat/focus';
 import { TapToWalk, WalkKey, controlIntent, movesOrTurns } from './controls';
+import { WARM_UP_EFFECTS, isGameMaster, playCombatEvent, playOwnEvent } from './fx/combatEffects';
+import type { CombatFxOut, CombatFxWorld } from './fx/combatEffects';
+import { EffectManager } from './fx/EffectManager';
 import { GameDataMissingError } from './gameData';
 import type { GameData } from './gameData';
 import { OwnMover, pickOnStage } from './ownMover';
 import { OwnState } from './OwnState';
 import { NoWebGLError, page3d, sceneAssets } from './page3d';
 import type { Page3d } from './page3d';
+import { DamageNumbers, screenProjector } from './render/DamageNumbers';
 import { MoverViews } from './render/MoverViews';
 import { NameTagLayer } from './render/NameTagLayer';
 import { lookOf } from './render/looks';
@@ -36,12 +44,16 @@ import { MoveMark } from './render/moveMark';
 import { loadHeldItems, loadMoverModel } from './render/moverModels';
 import { nameTagOf } from './render/nameTags';
 import type { TapHit } from './render/picking';
+import { SpriteLayer } from './render/SpriteLayer';
+import { TargetMarks, attackMarks, focusRect } from './render/TargetMarks';
+import type { ScreenRect } from './render/TargetMarks';
 import { HAttr } from './sim/collision';
 import { transformCoord } from './sim/d3dx';
 import { FixedStepper, STEPS_PER_SECOND } from './sim/stepper';
 import { WorldSession } from './WorldSession';
 import type { WorldEvent } from './WorldSession';
 import { WorldState, isLive } from './WorldState';
+import type { WorldChanges } from './WorldState';
 
 const LOADING_TEXT = 'Entering the world…';
 const NOT_AVAILABLE_TEXT = "This map isn't available in the browser yet.";
@@ -108,6 +120,17 @@ export class WorldScreen {
   /** The own character's auto-attack: the presses on a mover, the attack each rules step, what stops it. */
   private attackLoop: AttackLoop | undefined;
   private mark: MoveMark | undefined;
+  /** The effects by `XI_*` id (`CreateSfx`), the renderer that draws them on the stage, and the textures it draws with. */
+  private effects: EffectManager | undefined;
+  private effectRenderer: EffectRenderer | undefined;
+  private effectTextures: EffectTextureProvider | undefined;
+  /**
+   * The damage numbers and the corners around the target, each drawn in a layer of its glyph sheet over the canvas
+   * (`spriteLayers`); none of either when the sheets cannot be had.
+   */
+  private numbers: DamageNumbers | undefined;
+  private marks: TargetMarks | undefined;
+  private readonly spriteLayers: SpriteLayer[] = [];
   /** The own character's driving: the controls each rules step, the moves sent, the stop. */
   private ownMover: OwnMover | undefined;
   /** The own character's numbers (`ownState`). */
@@ -299,6 +322,7 @@ export class WorldScreen {
       (key) => loadMotion(services, key), loadHeldItems(services, data), data.itemProps,
     );
     this.tags = new NameTagLayer(stage.scene, this.element.ownerDocument);
+    this.startEffects(stage, services);
     this.syncViews();
     // the objects' collision shapes come with the tiles from here on, and `ready` waits for them
     stage.ground();
@@ -307,18 +331,77 @@ export class WorldScreen {
     const late = new Promise<'late'>((resolve) => {
       this.loadTimer = setTimeout(() => resolve('late'), LOAD_LIMIT_MS);
     });
-    const loaded = await Promise.race([Promise.all([stage.ready(), this.views.settled()]), late]);
+    const loaded = await Promise.race([Promise.all([stage.ready(), this.views.settled(), this.loadSheets(services)]), late]);
     clearTimeout(this.loadTimer);
     if (this.over) return;
     if (loaded === 'late') this.end(TOO_SLOW_TEXT);
-    else this.showWorld();
+    else this.showWorld(loaded[2]);
   }
 
-  /** The world is ready to be seen: the map, the controls, and the frame loop. */
-  private showWorld(): void {
+  /**
+   * The effects (spec §3.7): the manager plays them by `XI_*` id on the stage, with the page's texture cache, and says on
+   * the overlay what it cannot play. The milestone's effects (`WARM_UP_EFFECTS`) start loading now, files and textures,
+   * so that the first hit's spark is not lost to its download.
+   */
+  private startEffects(stage: WorldStage, services: SceneServices): void {
+    const overlay = this.page!.overlay;
+    const textures = effectTextureProvider(services.textures);
+    const renderer = new EffectRenderer(stage.scene, (key) => textures.get(key));
+    this.effectTextures = textures;
+    this.effectRenderer = renderer;
+    // a file that fails after the screen has ended is not this entry's to say: the overlay is the page's
+    const report = (message: string): void => {
+      if (!this.over) overlay.error(message);
+    };
+    const effects = new EffectManager(this.data!, (key) => services.store.json<WebEffect>(key), renderer, neuzRandom, report);
+    this.effects = effects;
+    for (const xi of WARM_UP_EFFECTS) effects.preload(xi, (key) => void textures.get(key));
+  }
+
+  /**
+   * The glyph sheets of the damage numbers and the target corners (`data/uiSheets.json`, `WebUiSheets`), or null when
+   * they cannot be had (game files converted before the UI stage, or a failed download): the world goes on without the
+   * numbers and the corners, and the overlay says why.
+   */
+  private async loadSheets(services: SceneServices): Promise<WebUiSheets | null> {
+    try {
+      return await services.store.json<WebUiSheets>(UI_SHEETS_KEY);
+    } catch (error) {
+      this.reportOnce(`ui sheets: ${messageOf(error)}`, error);
+      return null;
+    }
+  }
+
+  /**
+   * The layers over the canvas, under the controls, from the glyph sheets: the target corners, then the damage numbers
+   * over them, the order `CWndWorld::OnDraw` draws them in (`RenderSelectObj`, `WndWorld.cpp:1058`, then
+   * `g_DamageNumMng.Render()`, :1092). A sheet whose picture the asset index lacks leaves its part out, said once.
+   */
+  private screenLayers(doc: Document, sheets: WebUiSheets | null): HTMLElement[] {
+    if (sheets === null) return [];
+    const store = this.services!.store;
+    const layerOf = (sheet: WebUiSheet, name: string): SpriteLayer | null => {
+      const url = store.url(sheet.image);
+      if (url === null) {
+        this.reportOnce(`ui sheets: ${sheet.image}`, new Error(`${sheet.image} is not in the asset index`));
+        return null;
+      }
+      const layer = new SpriteLayer(doc, url, sheet.frames, name);
+      this.spriteLayers.push(layer);
+      return layer;
+    };
+    const corners = layerOf(sheets.targetCorners, 'world-target-marks');
+    if (corners !== null) this.marks = new TargetMarks(corners);
+    const digits = layerOf(sheets.damageDigits, 'world-damage-numbers');
+    if (digits !== null) this.numbers = new DamageNumbers(sheets.damageDigits.frames, digits);
+    return this.spriteLayers.map((layer) => layer.element);
+  }
+
+  /** The world is ready to be seen: the map, the layers of numbers and corners over it, the controls, and the frame loop. */
+  private showWorld(sheets: WebUiSheets | null): void {
     const { holder, renderer } = this.page!;
     const doc = this.element.ownerDocument;
-    this.element.replaceChildren(holder, this.leaveButton);
+    this.element.replaceChildren(holder, ...this.screenLayers(doc, sheets), this.leaveButton);
     this.keyboard = new KeyboardInput(doc.defaultView ?? window);
     this.walkKey = new WalkKey(doc.defaultView ?? window);
     this.joystick = new Joystick(this.element);
@@ -346,9 +429,9 @@ export class WorldScreen {
   }
 
   /**
-   * The changes in view since the last call, to the views and the name tags. The focus heard of the movers that left as
-   * their DEL_OBJ came (`apply`); what the combat and own messages played (`changes.combat`, `changes.own`) is not
-   * drawn yet.
+   * The changes in view since the last call, to the views and the name tags, and what the combat and own messages
+   * played to the effects and the damage numbers (`play`). The focus heard of the movers that left as their DEL_OBJ came
+   * (`apply`).
    */
   private syncViews(): void {
     const world = this.world!;
@@ -356,6 +439,30 @@ export class WorldScreen {
     const changes = world.takeChanges();
     this.views!.sync(changes, world.movers);
     this.tags!.sync(changes, world.movers, (mover) => nameTagOf(mover, world.self(), data.nameColors, data.honorTitles));
+    this.play(changes);
+  }
+
+  /**
+   * What the combat and own events show (`playCombatEvent`, `playOwnEvent`): the effects, and the damage numbers once
+   * their layer is up. They are played at the start of the frame after their message, before any rules step, so the
+   * movers are where the handler found them; a swing's hit frame (`attackerHit`) comes from the rules' step, and plays at
+   * the frame after it.
+   */
+  private play(changes: WorldChanges): void {
+    const effects = this.effects;
+    if (effects === undefined) return;
+    const world = this.world!;
+    const self = world.self();
+    const fxWorld: CombatFxWorld = {
+      movers: world.movers, selfId: self?.objectId, gameMaster: isGameMaster(self?.added.player?.authorization ?? 0),
+      focusId: this.focus?.targetId ?? null, itemProps: this.data!.itemProps,
+    };
+    const out: CombatFxOut = {
+      effect: (request) => effects.play(request),
+      number: (pos, value, ownHurt) => this.numbers?.add(pos, value, ownHurt),
+    };
+    for (const event of changes.combat) playCombatEvent(event, fxWorld, out);
+    for (const event of changes.own) playOwnEvent(event, fxWorld, out);
   }
 
   /** Where the own mover is (web coordinates), or where the player entered while it is not in view. */
@@ -387,11 +494,13 @@ export class WorldScreen {
       const view = this.backCamera.view ?? this.follow(world, stage);
       stage.setCamera(view.position, view.target);
       this.tags!.update(stage.camera, renderer.getSize(drawingSize).y, (objectId) => views.placeOf(objectId));
+      this.effects?.draw(stage.camera);
 
       const { tiles, models } = stage.counts();
       overlay.setCounts({ tiles, models: models + views.count(), textures: this.services!.textures.size() });
       overlay.setMessageCounts(this.session.stats);
       stage.render();
+      this.drawScreenLayers(world, stage, views, renderer);
     } catch (error) {
       // a frame that throws every frame must not fill the overlay with the same line sixty times a second
       const message = `world: ${messageOf(error)}`;
@@ -407,8 +516,9 @@ export class WorldScreen {
    * branch, and where that is `ControlPlayer` the controls drive the own mover (`OwnMover.control`, in `ControlGround`'s
    * order). The walk key is read at every step, as Neuz reads its key table (`WndWorldControlPlayer.cpp:524`): a press
    * made and let go while the attack runs is gone. Then every mover's step (the own one's included), the PLAYERCORR it
-   * may have led to, the views', and the chase camera's (`CWorld::Process` processes the camera at each `FrameMove`,
-   * `World.cpp:924-935`).
+   * may have led to, the views', the effects' (`CWorld::Process` steps them with the movers, `CSfx::Process`), the damage
+   * numbers' (`CDamageNumMng::Process`, `Neuz.cpp:1084`), and the chase camera's (`CWorld::Process` processes the camera
+   * at each `FrameMove`, `World.cpp:924-935`).
    */
   private step(world: WorldState, stage: WorldStage, views: MoverViews, now: number): void {
     const own = world.self();
@@ -427,7 +537,32 @@ export class WorldScreen {
     world.step();
     this.ownMover!.corrected(own);
     views.step(world.movers);
+    this.effects?.step((objectId) => world.movers.get(objectId)?.act.body);
+    this.numbers?.step();
     this.follow(world, stage);
+  }
+
+  /**
+   * The damage numbers and the target corners of the frame just drawn, in CSS pixels of the canvas, through the camera as
+   * the renderer drew with it. The corners go around the focus (`CWndWorld::RenderSelectObj`, `WndWorld.cpp:3002-3024`),
+   * red or white (`attackMarks`), and, while auto-attacking, around the next target queued (:3041-3056).
+   */
+  private drawScreenLayers(world: WorldState, stage: WorldStage, views: MoverViews, renderer: WebGLRenderer): void {
+    const { x: width, y: height } = renderer.getSize(drawingSize);
+    this.numbers?.draw(screenProjector(stage.camera, width, height));
+    const marks = this.marks;
+    if (marks === undefined) return;
+    const focus = this.focus!;
+    const loop = this.attackLoop!;
+    const rectOf = (objectId: number | null): ScreenRect | null => {
+      const mover = objectId === null ? undefined : world.movers.get(objectId);
+      const candidate = mover === undefined ? null : views.pickCandidate(mover.objectId);
+      if (mover === undefined || candidate === null) return null;
+      return focusRect(stage.camera, width, height, candidate.box, candidate.world, mover.act.body.pos);
+    };
+    const target = focus.targetId === null ? undefined : world.movers.get(focus.targetId);
+    const attacking = target !== undefined && attackMarks(target, focus.next, loop.selectsTarget, loop.autoAttack);
+    marks.show(rectOf(focus.targetId), attacking, loop.autoAttack ? rectOf(focus.next) : null);
   }
 
   /**
@@ -545,6 +680,9 @@ export class WorldScreen {
     this.mark?.dispose();
     this.views?.dispose();
     this.tags?.dispose();
+    this.effectRenderer?.dispose();
+    this.effectTextures?.dispose();
+    for (const layer of this.spriteLayers) layer.dispose();
     this.stage?.dispose();
     this.page?.holder.remove();
     this.element.remove();

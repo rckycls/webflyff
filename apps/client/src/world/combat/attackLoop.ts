@@ -124,6 +124,15 @@ export class AttackLoop {
   }
 
   /**
+   * `m_bSelectTarget`: a press on a mover is held (`OnLButtonDown`, `WndWorld.cpp:7090-7128`) until it is let go
+   * (`OnLButtonUp`, :6512) or `Process` finds neither the button nor the auto-attack on (:8533-8537). The target corners
+   * read it (`RenderFocusObj`, :3109).
+   */
+  get selectsTarget(): boolean {
+    return this.selectTarget;
+  }
+
+  /**
    * `m_pRenderTargetObj`, the mover the target marks and the target bar are on: the last mover pressed that is a
    * player or not peaceful (`WndWorld.cpp:6888-6891`), or the next target taken after a kill (`SetNextTarget`,
    * :6411-6416); none after a press on the ground (:6928) or once the focus is cleared (`SetObjFocus( NULL )`,
