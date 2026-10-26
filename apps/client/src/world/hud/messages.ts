@@ -3,7 +3,7 @@
 // one), the big caption of a level up (`g_Caption1`), and the texts of DEFINEDTEXT.
 //
 //   CDPClient::OnDefinedText   Source/Neuz/DPClient.cpp:4117-4228  the TID's text with the string's tokens (CScanner)
-//   CDPClient::OnDefinedText1  DPClient.cpp:4230-4239              the TID's text alone
+//   CDPClient::OnDefinedText1  DPClient.cpp:4230-4239              the TID's text alone, as it is (GETTEXT, unformatted)
 //   CWndMgr::PutString         _Interface/WndManager.cpp:4026-4130 a CHATSTY_GAME line goes to g_ClientMsg (the default
 //                                                                  m_dwChatFilterEtc has CHATSTY_GAME_CLIENT, HwOption.cpp:227)
 //   CClientMsg                 _Common/ClientMsg.cpp               six lines; 3 s after the last one came the oldest fades,
@@ -14,7 +14,8 @@
 
 import { FormatError, tokenize } from '@flyffweb/formats';
 import type { ClientText, Texts } from '../gameData';
-import { cssRgb } from './frame';
+import { cssRgb } from './art';
+import { formatText } from './format';
 
 const f32 = Math.fround;
 
@@ -23,44 +24,6 @@ const FRAME_MS = 1000 / 60;
 
 /** The frames of 60 a second in `ms` milliseconds, whole (a little slack for the float sum of a frame count). */
 const framesIn = (ms: number): number => Math.floor(ms / FRAME_MS + 1e-6);
-
-/**
- * A C `printf` format with `args` (`sprintf`, `CString::Format`): `%s` (a precision cuts it), `%d` `%i` `%u` (an `I64`
- * or `l` size is read and ignored), `%f` with its precision, `%x` `%X` `%c`, a width with `-` and `0`, and `%%`. A missing
- * argument is empty (C would read whatever is there). A string given to `%d` is written as it is: DEFINEDTEXT passes
- * every argument as a string, which Neuz's `FormatV` would print the address of.
- */
-export function formatText(format: string, args: ReadonlyArray<string | number | bigint>): string {
-  let next = 0;
-  return format.replace(/%([-+ #0]*)(\d+)?(?:\.(\d+))?(?:I64|ll|l|h)?([sdiuxXcf%])/g, (_, flags: string, width?: string, precision?: string, conversion?: string) => {
-    if (conversion === '%') return '%';
-    const value = args[next++];
-    const prec = precision === undefined ? undefined : Number(precision);
-    let out: string;
-    switch (conversion) {
-      case 's':
-        out = value === undefined ? '' : String(value);
-        if (prec !== undefined) out = out.slice(0, prec);
-        break;
-      case 'f':
-        out = typeof value === 'number' ? value.toFixed(prec ?? 6) : String(value ?? '');
-        break;
-      case 'x':
-      case 'X':
-        out = typeof value === 'number' ? (value >>> 0).toString(16) : String(value ?? '');
-        if (conversion === 'X') out = out.toUpperCase();
-        break;
-      case 'c':
-        out = typeof value === 'number' ? String.fromCharCode(value) : String(value ?? '').slice(0, 1);
-        break;
-      default: // d i u
-        out = typeof value === 'number' ? String(Math.trunc(value)) : String(value ?? '');
-    }
-    const w = width === undefined ? 0 : Number(width);
-    if (out.length < w) out = flags.includes('-') ? out.padEnd(w) : out.padStart(w, flags.includes('0') && conversion !== 's' ? '0' : ' ');
-    return out;
-  });
-}
 
 /** The texts by their number, made once for each catalog. */
 const byNumber = new WeakMap<Texts, Map<number, ClientText>>();
@@ -98,12 +61,14 @@ function definedTextArgs(texts: Texts, textId: number, args: string): string[] {
 /**
  * `CDPClient::OnDefinedText` (`DPClient.cpp:4117-4228`): the text the TID numbered `textId` stands for (`prj.GetText`),
  * its `%s` filled with the tokens of `args` in order (`CString::FormatV` with the tokens as its arguments), and its colour
- * (`prj.GetTextColor`). DEFINEDTEXT1 is the same with no arguments (`OnDefinedText1`, `:4230-4239`). A number the texts
- * do not have (or game files whose texts have no numbers) gives no text and colour 0.
+ * (`prj.GetTextColor`). DEFINEDTEXT1 (`args` null) is the text as it is, not formatted: `GETTEXT( dwText )` and its
+ * colour (`OnDefinedText1`, `:4230-4239`). A number the texts do not have (or game files whose texts have no numbers)
+ * gives no text and colour 0.
  */
-export function formatDefinedText(texts: Texts, textId: number, args: string): { text: string; color: number } {
+export function formatDefinedText(texts: Texts, textId: number, args: string | null): { text: string; color: number } {
   const entry = textNumbered(texts, textId);
   if (entry === undefined) return { text: '', color: 0 };
+  if (args === null) return { text: entry.text, color: entry.color };
   return { text: formatText(entry.text, definedTextArgs(texts, textId, args)), color: entry.color };
 }
 

@@ -685,8 +685,8 @@ test.describe('the world screen against scripted servers', () => {
     await enterFlaris(page);
     const status = page.locator('.hud-status');
     await expect(status.locator('.hud-window-title')).toHaveText('Webby - Lv: 15');
-    // the ADD_OBJ's HP, of the maximum of a level 15 Vagrant with the stats of a character with nothing (NO_OWN)
-    await expect(status.locator('[data-text="hp"]')).toHaveText(/^100 \/ \d+$/);
+    // the ADD_OBJ's HP, of the maximum of a level 15 Vagrant with the stats of a character with nothing (NO_OWN): 117
+    await expect(status.locator('[data-text="hp"]')).toHaveText('100 / 117');
     await expect(status.locator('[data-text="exp"]')).toHaveText('0.00%');
     await expect(status.locator('.hud-status-face canvas')).toHaveCount(1);
     await expect(page.locator('.hud-target')).toBeHidden();
@@ -694,7 +694,9 @@ test.describe('the world screen against scripted servers', () => {
     const at = await page.evaluate((id) => window.__client!.screenOf(id), MONSTER_ID);
     expect(at).not.toBeNull();
     await tapWorld(page, at![0], at![1]);
-    await expect(page.locator('.hud-target-name')).toHaveText(/^Aibatt <Lvl \d+>$/);
+    // MI_AIBATT2 (propMover.txt): level 1, dwAddHp 148; its ADD_OBJ's HP 100, shown to every viewer (ruling R21)
+    await expect(page.locator('.hud-target-name')).toHaveText('Aibatt <Lvl 1>');
+    await expect(page.locator('.hud-target-info')).toHaveText('100 / 148');
 
     // TID_GAME_PRIORITYMOB (Resource/defineText.h:273), as the server refuses an attack, with no arguments (DEFINEDTEXT1)
     gateway.pushCache(flaris.later([writeDefinedText(SELF_ID, 655)]));

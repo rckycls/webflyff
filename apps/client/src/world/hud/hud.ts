@@ -19,7 +19,7 @@ import type { ExpRow, WebMover } from '@flyffweb/formats';
 import type { Texts } from '../gameData';
 import type { OwnEvent, OwnState } from '../OwnState';
 import type { CombatEvent, Mover } from '../WorldState';
-import type { UiArt } from './frame';
+import type { UiArt } from './art';
 import { Caption, MessageLines, formatDefinedText } from './messages';
 import { StatusWindow } from './statusWindow';
 import { TargetBar } from './targetBar';

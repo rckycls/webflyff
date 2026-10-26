@@ -39,25 +39,15 @@ export interface CombatFxWorld {
   movers: ReadonlyMap<number, FxMover>;
   /** `g_pPlayer`'s object ID, the active mover (`IsActiveMover()`); undefined while it is not in view. */
   selfId: number | undefined;
-  /** `g_pPlayer->IsAuthHigher( AUTH_GAMEMASTER )` (`isGameMaster`): a game master is also shown the hits on its focus. */
+  /**
+   * `g_pPlayer->IsAuthHigher( AUTH_GAMEMASTER )` (`isGameMaster`, `world/authorization.ts`): a game master is also shown
+   * the hits on its focus.
+   */
   gameMaster: boolean;
   /** `GetObjFocus()`: the mover the player has selected, or null. */
   focusId: number | null;
   /** The item catalog: the hit effect (`dwSfxObj3`) and the kind (`dwItemKind3`) of an attacker's hand item. */
   itemProps: ReadonlyMap<number, Pick<WebItemProp, 'sfxHit' | 'kind3'>>;
-}
-
-/** `AUTH_GAMEMASTER` (`_Common/authorization.h:23`), the letter `'L'`. */
-const AUTH_GAMEMASTER = 0x4c;
-
-/**
- * `g_pPlayer->IsAuthHigher( AUTH_GAMEMASTER )` (`Mover.h:1061`): `IsAuthorizationHigher` (`authorization.h:93-102`)
- * compares the ranks of `GetAuthorizationRank` (`:58-82`), and the letters for one it has no rank for. The ranks keep the
- * letters' order on each side of `'L'` (every letter it ranks below 50 is before `'L'`, every one from 50 is `'L'` or
- * after), so the authorization is a game master's when its letter is `'L'` or later.
- */
-export function isGameMaster(authorization: number): boolean {
-  return authorization >= AUTH_GAMEMASTER;
 }
 
 /** Where what is played goes: `EffectManager.play`, `DamageNumbers.add`, and `MoverViews.flash` and `shake`. */

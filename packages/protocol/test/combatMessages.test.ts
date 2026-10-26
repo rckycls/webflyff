@@ -203,10 +203,10 @@ describe('text messages', () => {
     expect(tooLong.messages).toEqual([]);
   });
 
-  it('DEFINEDTEXT1 is OnDefinedText1: only the text ID, so the arguments are empty', () => {
+  it('DEFINEDTEXT1 is OnDefinedText1: only the text ID, and no string at all (null), as the text is shown unformatted', () => {
     // ar >> dwText;
     expect(readOne(MessageType.DEFINEDTEXT1, new ArWriter().i32(0x1234).toBytes()))
-      .toEqual({ type: 'definedText', textId: 0x1234, args: '' });
+      .toEqual({ type: 'definedText', textId: 0x1234, args: null });
   });
 });
 

@@ -28,8 +28,8 @@ import { MAX_SLOT_APPLET, MAX_SLOT_ITEM, MAX_SLOT_ITEM_COUNT, MAX_SLOT_QUEUE, Sh
 import type { Shortcut, TaskBar as TaskBarMessage } from '@flyffweb/protocol';
 import type { WebItemProp } from '@flyffweb/formats';
 import type { OwnState } from '../OwnState';
-import { themeKey, themeUrl } from './frame';
-import type { UiArt } from './frame';
+import { themeKey, themeUrl } from './art';
+import type { UiArt } from './art';
 
 /** An applet of `CWndMgr::AddAllApplet`: its `APP_*` name, its icon in Client/Icon (none for two), its hotkey. */
 export interface Applet {

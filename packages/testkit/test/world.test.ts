@@ -212,7 +212,7 @@ it('every writer decodes to what it was given', () => {
     ],
     [
       'writeDefinedText (no arguments: DEFINEDTEXT1)', writeDefinedText(57, 0x1234), MessageType.DEFINEDTEXT1,
-      { type: 'definedText', textId: 0x1234, args: '' },
+      { type: 'definedText', textId: 0x1234, args: null },
     ],
     [
       'writeQueryGetDestObj', writeQueryGetDestObj(58, 0x4242), MessageType.QUERYGETDESTOBJ,

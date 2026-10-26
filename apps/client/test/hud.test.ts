@@ -14,7 +14,7 @@ import { Focus } from '../src/world/combat/focus';
 import type { Texts } from '../src/world/gameData';
 import { AttackButton } from '../src/world/hud/attackButton';
 import { WindowFrame, escapeWindow } from '../src/world/hud/frame';
-import type { UiArt } from '../src/world/hud/frame';
+import type { UiArt } from '../src/world/hud/art';
 import { Hud } from '../src/world/hud/hud';
 import { Caption, MessageLines, formatDefinedText } from '../src/world/hud/messages';
 import { StatusWindow } from '../src/world/hud/statusWindow';
@@ -25,7 +25,7 @@ import { terrainGround } from '../src/world/sim/collision';
 import { Belli, ObjSta } from '../src/world/sim/constants';
 import { WorldState } from '../src/world/WorldState';
 import { addedNpc, addedPlayer, moverFrom, webMoverOf } from './helpers/movers';
-import { EXP_ROWS, itemProp, newVagrant, ownAdded, ownGameData } from './helpers/ownState';
+import { EXP_ROWS, VAGRANT, itemProp, newVagrant, ownAdded, ownGameData } from './helpers/ownState';
 
 /** The art as the asset store would give it: every picture under /assets/. */
 const art: UiArt = { url: (key) => `/assets/${key}`, sheets: null };
@@ -243,18 +243,35 @@ describe('TargetBar (CWndWorld::RenderSelectObj, WndWorld.cpp:2716-2931)', () =>
     expect(name(target).textContent).toBe('Rockepeller');
   });
 
-  it('a mover with no maximum HP gets the empty gauge only; a game master is shown "Health: %d/%d" under it', () => {
+  // R21: Neuz shows a game master alone "Health: %d/%d" there (:2913-2927); the owner wants "value / max" for everyone
+  it('the HP under the gauge as "value / max" for every viewer (R21); a mover with no maximum gets the empty gauge alone', () => {
     const target = bar();
+    const info = target.element.querySelector<HTMLElement>('.hud-target-info')!;
     const orphan = moverFrom(addedNpc(9, 99, {}, { hitPoint: 50 }), gameData());
     expect(orphan.maxHp).toBeNull();
     target.update(orphan, 1, TEXTS);
     expect(fill(target).hidden).toBe(true);
-    const info = target.element.querySelector<HTMLElement>('.hud-target-info')!;
     expect(info.textContent).toBe('');
-    target.update(monster(AIBATT, { hp: 60 }), 1, TEXTS, true);
-    expect(info.textContent).toBe('Health: 60/120');
     target.update(monster(AIBATT, { hp: 60 }), 1, TEXTS, false);
-    expect(info.textContent).toBe('');
+    expect(info.textContent).toBe('60 / 120');
+    target.update(monster(AIBATT, { hp: 61 }), 1, TEXTS, true);
+    expect(info.textContent).toBe('61 / 120');
+    const bob = moverFrom(addedPlayer(8, { name: 'Bob', level: 1 }, { hitPoint: 200 }), { ...gameData(), jobs: [VAGRANT] });
+    target.update(bob, 1, TEXTS);
+    expect(info.textContent).toBe('200 / 230');
+  });
+
+  it("another player's fill stays inside its bar when its HP passes the maximum the browser can compute (no gear, no buffs)", () => {
+    const target = bar();
+    const info = target.element.querySelector<HTMLElement>('.hud-target-info')!;
+    // a Vagrant of level 1 and STA 15 has 230 without items (GetMaxOriginHitPoint); its ADD_OBJ says 350
+    const bob = moverFrom(addedPlayer(8, { name: 'Bob', level: 1 }, { hitPoint: 350 }), { ...gameData(), jobs: [VAGRANT] });
+    expect(bob.maxHp).toBe(230);
+    target.update(bob, 1, TEXTS);
+    expect(fill(target).dataset.width).toBe('200');
+    expect(fill(target).style.width).toBe('200px');
+    // the numbers as they came: the maximum is the browser's, short of the gear and buffs
+    expect(info.textContent).toBe('350 / 230');
   });
 });
 
@@ -428,6 +445,12 @@ describe('formatDefinedText (CDPClient::OnDefinedText, DPClient.cpp:4117-4228)',
   it('an unknown number gives no text', () => {
     expect(formatDefinedText(TEXTS, 99999, 'x')).toEqual({ text: '', color: 0 });
   });
+
+  it('DEFINEDTEXT1 (no string) is the text as it is: GETTEXT, not formatted (OnDefinedText1, DPClient.cpp:4230-4239)', () => {
+    expect(formatDefinedText(TEXTS, 628, null)).toEqual({ text: 'You received %s.', color: 0xffccffcc });
+    // a DEFINEDTEXT with an empty string is still formatted, its %s given nothing
+    expect(formatDefinedText(TEXTS, 628, '').text).toBe('You received .');
+  });
 });
 
 describe('Hud: what the world and the own numbers show', () => {
@@ -441,7 +464,7 @@ describe('Hud: what the world and the own numbers show', () => {
   it("the world's text events go to the message lines, in the text's colour", () => {
     const hud = hudOn();
     hud.play([
-      { kind: 'text', textId: 655, args: '' },
+      { kind: 'text', textId: 655, args: null },
       { kind: 'swing', attackerId: 1, targetId: 2 },
       { kind: 'text', textId: 628, args: '"Wooden Sword"' },
     ], [], newVagrant());

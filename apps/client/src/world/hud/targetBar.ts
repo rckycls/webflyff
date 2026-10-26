@@ -13,16 +13,19 @@
 //                 (Mover.h:34,38), an aggressive monster (m_bActiveAttack) red
 //     :2874-2903  a monster's level arrow at ( x + 30, 30 - 20 ): LvUp2 above 5, LvUp above 0, LvDn2 below -5, LvDn below -1
 //     :2913-2927  to a game master, "Health: %d/%d" (TID_GAME_SELECT_OBJECT_INFORMATION_MONSTER) at ( x, 30 + 12 )
+//
+// Ruling R21, a deliberate departure from Neuz: the HP numbers are shown to every viewer, as "value / max" (spec §3.9,
+// the owner's decision), where :2913-2927 put the game master's line. The game master rules of the level (<Lvl ??>) and
+// of a game master's target stay Neuz's.
 
 import type { WebMover } from '@flyffweb/formats';
+import { isGameMaster } from '../authorization';
 import type { Texts } from '../gameData';
-import { isGameMaster } from '../fx/combatEffects';
 import { Belli } from '../sim/constants';
 import type { Mover } from '../WorldState';
-import { cssRgb, themeUrl } from './frame';
-import type { UiArt } from './frame';
+import { cssRgb, themeUrl } from './art';
+import type { UiArt } from './art';
 import { Gauge } from './gauge';
-import { formatText } from './messages';
 
 /** The gauge's width (`nWidthClient = 200`) and where it stands from the top (`rect.top = 30`). */
 const GAUGE_WIDTH = 200;
@@ -61,10 +64,30 @@ export function targetText(
 }
 
 /**
+ * The gauge's width for `hp` of `max`: `(int)( (__int64)200 * HP / MaxHP )` (:2768), none with no maximum, and at most the
+ * bar. Neuz needs no limit (its client clamps HP to the maximum it computes with the mover's items and buffs), but the
+ * browser's maximum of another player leaves those out (`WorldState`), so the HP an ADD_OBJ gives can pass it, and the fill
+ * would run past the white bar.
+ */
+export function targetFillWidth(hp: number, max: number | null): number {
+  if (max === null || max <= 0) return 0;
+  return Math.min(GAUGE_WIDTH, Math.trunc((GAUGE_WIDTH * hp) / max));
+}
+
+/**
+ * The HP line under the gauge (ruling R21): "value / max" as the status window writes it, the HP as it came and the
+ * maximum as the browser has it, for every viewer; none for a mover with no maximum. Another player's maximum is near,
+ * not exact: it leaves out the player's items and buffs, so the HP can read above it ("350 / 230").
+ */
+export function targetHpText(hp: number, max: number | null): string {
+  return max === null ? '' : `${hp} / ${max}`;
+}
+
+/**
  * The target bar. `update` is given, each frame, the mover `RenderSelectObj` would draw (`m_pRenderTargetObj`, else the
  * focus; null for none), the player's level and whether the player is a game master. The gauge needs the mover's maximum
  * HP: one with none (no catalog row) gets the empty gauge alone. Another player's maximum leaves out its items and buffs
- * (`WorldState`), so its gauge is near, not exact.
+ * (`WorldState`), so its gauge is near, not exact, and kept inside its bar.
  */
 export class TargetBar {
   readonly element: HTMLElement;
@@ -110,15 +133,17 @@ export class TargetBar {
   /**
    * Draws `target` for a player of `ownLevel` (`gameMaster`: `g_pPlayer->IsAuthHigher( AUTH_GAMEMASTER )`), or hides the
    * bar: no target, a peaceful mover that is not a player, or a game master's target for a player who is not one.
+   * `texts` stays in the brief's interface; no text of the catalog is drawn since R21 replaced the game master's line.
    */
   update(target: Mover | null, ownLevel: number, texts: Texts, gameMaster = false): void {
+    void texts;
     const shown = target !== null && (target.added.isPlayer || target.added.belligerence !== Belli.PEACEFUL) &&
       (gameMaster || !isGameMaster(target.added.player?.authorization ?? 0));
     if (this.element.hidden === shown) this.element.hidden = !shown;
     if (!shown) return;
 
     const max = target.maxHp;
-    this.fill.set(max === null || max <= 0 ? 0 : Math.trunc((GAUGE_WIDTH * target.hp) / max));
+    this.fill.set(targetFillWidth(target.hp, max));
 
     const text = targetText(target, ownLevel, this.moverProps, gameMaster);
     if (this.name.textContent !== text) this.name.textContent = text;
@@ -137,10 +162,8 @@ export class TargetBar {
       this.arrow.style.backgroundImage = themeUrl(this.art, `${arrow}.bmp`);
     }
 
-    // a game master's line: a monster's HP and maximum (a player's adds penya and EXP, which the browser has not)
-    const info = gameMaster && !player && max !== null
-      ? formatText(texts.get('TID_GAME_SELECT_OBJECT_INFORMATION_MONSTER')?.text ?? '', [target.hp, max])
-      : '';
+    // R21: the HP for every viewer, where Neuz writes a game master's line (:2913-2927)
+    const info = targetHpText(target.hp, max);
     if (this.info.textContent !== info) this.info.textContent = info;
   }
 }

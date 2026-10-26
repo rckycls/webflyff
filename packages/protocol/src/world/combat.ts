@@ -129,11 +129,12 @@ export function readDefinedText(r: ArReader): MessageOf<'definedText'> {
 }
 
 /**
- * DEFINEDTEXT1: `CDPClient::OnDefinedText1` (`Neuz/DPClient.cpp:4230`): `DWORD dwText; ar >> dwText`, with no string
- * (`CUser::AddDefinedText( int )`, `WORLDSERVER/User.cpp:2264`). It reads as a DEFINEDTEXT with empty arguments.
+ * DEFINEDTEXT1: `CDPClient::OnDefinedText1` (`Neuz/DPClient.cpp:4230-4239`): `DWORD dwText; ar >> dwText`, with no
+ * string (`CUser::AddDefinedText( int )`, `WORLDSERVER/User.cpp:2264`). It reads as a DEFINEDTEXT whose `args` is null:
+ * Neuz shows that text as it is (`GETTEXT( dwText )`), not formatted as DEFINEDTEXT's is.
  */
 export function readDefinedText1(r: ArReader): MessageOf<'definedText'> {
-  return { type: 'definedText', textId: r.i32(), args: '' };
+  return { type: 'definedText', textId: r.i32(), args: null };
 }
 
 /** QUERYGETDESTOBJ: `CDPClient::OnQueryGetDestObj` (`Neuz/DPClient.cpp:8985`): `OBJID objid; ar >> objid`. */

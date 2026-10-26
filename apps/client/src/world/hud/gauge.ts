@@ -6,8 +6,8 @@
 //                                                                    under two slices nothing is made
 //   CTheme::RenderGauge      ITheme.cpp:1850-1906                    texture x diffuse, for the colour and the alpha
 
-import { cssRgb, themeUrl } from './frame';
-import type { UiArt } from './frame';
+import { cssRgb, themeUrl } from './art';
+import type { UiArt } from './art';
 
 /** The gauge pictures' sizes: 12 x 12 and 12 x 8 (`Theme/Default`). */
 const PICTURES = {

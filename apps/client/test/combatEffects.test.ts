@@ -6,7 +6,8 @@
 import type { Vec3 } from '@flyffweb/formats';
 import { AttackFlag, NULL_ID } from '@flyffweb/protocol';
 import { describe, expect, it } from 'vitest';
-import { WARM_UP_EFFECTS, isGameMaster, playCombatEvent, playOwnEvent } from '../src/world/fx/combatEffects';
+import { isGameMaster } from '../src/world/authorization';
+import { WARM_UP_EFFECTS, playCombatEvent, playOwnEvent } from '../src/world/fx/combatEffects';
 import type { CombatFxOut, CombatFxWorld, FxMover } from '../src/world/fx/combatEffects';
 import { Xi } from '../src/world/fx/EffectManager';
 import type { EffectRequest } from '../src/world/fx/EffectManager';

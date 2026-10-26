@@ -102,7 +102,8 @@ export interface Mover extends SimMover {
  *   at the attacker), the victim's shake (`m_nDmgCnt`) and the hit sound; `weapon` is a monster's `dwAtk1` (its virtual
  *   item), and null where there is none (`=`). The flinch and the pause are done.
  * - `levelUp`: SETLEVEL raised another mover's level: the level-up effect on it (`OnSetLevel`); the motion is done.
- * - `text`: DEFINEDTEXT or DEFINEDTEXT1: the text `textId` with the arguments `args`.
+ * - `text`: DEFINEDTEXT or DEFINEDTEXT1: the text `textId` with the arguments `args` (null for DEFINEDTEXT1, whose text
+ *   Neuz shows unformatted).
  * - `spawned`: a mover that is not a player came into view within 32 m of the own mover (`XI_GEN_MONSTER_SPAWN01`).
  */
 export type CombatEvent =
@@ -112,7 +113,7 @@ export type CombatEvent =
   | { kind: 'spark'; moverId: number; fromId: number }
   | { kind: 'attackerHit'; attackerId: number; victimId: number; weapon: number | null }
   | { kind: 'levelUp'; moverId: number }
-  | { kind: 'text'; textId: number; args: string }
+  | { kind: 'text'; textId: number; args: string | null }
   | { kind: 'spawned'; moverId: number };
 
 /**

@@ -13,10 +13,10 @@ import { expNeeded, expPercentText } from '../sim/params';
 import type { ExpRow } from '@flyffweb/formats';
 import type { Texts } from '../gameData';
 import type { OwnState } from '../OwnState';
+import type { UiArt } from './art';
+import { formatText } from './format';
 import { WindowFrame } from './frame';
-import type { UiArt } from './frame';
 import { Gauge } from './gauge';
-import { formatText } from './messages';
 
 const f32 = Math.fround;
 

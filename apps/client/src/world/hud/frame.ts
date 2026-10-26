@@ -13,34 +13,8 @@
 //   CWndMgr::Process (Escape)     _Interface/WndManager.cpp:3295-3420      Escape closes the window that has the focus
 //   CWndBase::GetWndBase          WndBase.cpp:2048-2095                    ... but never the status window (escapeCloses)
 
-import { webName } from '@flyffweb/formats';
-import type { WebUiSheets } from '@flyffweb/formats';
-
-/** The converted UI pictures, by the logical keys the UI stage writes them under. */
-export interface UiArt {
-  /** The URL of a picture of the UI stage by its logical key (`ui/<web name>.png`): the asset store's, '' when it lacks it. */
-  url(key: string): string;
-  /** The glyph sheets of `data/uiSheets.json`; null when they could not be had (the windows draw without them). */
-  sheets: WebUiSheets | null;
-}
-
-/**
- * The logical key of a picture of Client/Theme/Default (`MakePath( DIR_THEME, name )`): `ui/<web name of the file name
- * without its extension>.png`, as the UI stage writes it (`iconKeyOf`, tools/convert/src/output/keys.ts).
- */
-export function themeKey(file: string): string {
-  return `ui/${webName(file.replace(/\.[^.]*$/, ''))}.png`;
-}
-
-/** A CSS `url()` of a theme picture. */
-export function themeUrl(art: UiArt, file: string): string {
-  return `url(${JSON.stringify(art.url(themeKey(file)))})`;
-}
-
-/** An ARGB colour as CSS, its alpha left out: `rgb(r, g, b)`. */
-export function cssRgb(argb: number): string {
-  return `rgb(${(argb >>> 16) & 0xff}, ${(argb >>> 8) & 0xff}, ${argb & 0xff})`;
-}
+import { themeUrl } from './art';
+import type { UiArt } from './art';
 
 /** The side of a tile of a tiled window (`sizeBmp[ 0 ] = CSize( 16, 16 )`, `WndNeuz.cpp:293`). */
 const TILE = 16;
@@ -264,7 +238,12 @@ export class WindowFrame {
     return this.doc.defaultView ?? window;
   }
 
-  /** `m_bPickup` on a press in the title bar (`IsPickupSpace`): the window follows the pointer until it is let go. */
+  /**
+   * `m_bPickup` on a press in the title bar (`IsPickupSpace`): the window follows the pointer until it is let go. The
+   * pointer is told by its `pointerId`; the `?? 0` here and in `onMove` and `onUp` is for jsdom 25, which has no
+   * PointerEvent: the unit tests send mouse events under the pointer events' names, which carry none. A browser always
+   * gives one.
+   */
   private startDrag(event: PointerEvent): void {
     if (event.button !== 0 || this.drag !== null) return;
     const { x, y } = this.position;
@@ -298,6 +277,11 @@ export class WindowFrame {
    * Moves the window's top left to (`x`, `y`), kept on its layer (`m_bCling`, `WndBase.cpp:1259-1271`): within 10 px of an
    * edge it goes against it (`cling`, while moved by the pointer), and it never goes past one. A layer with no size yet
    * (not laid out) keeps nothing.
+   *
+   * A deliberate departure: Neuz keeps the left and top edges first and the right and bottom ones last (:1268-1271), so a
+   * window taller than the screen ends with its bottom on the screen's and its title bar above the top, out of reach.
+   * Here the right and bottom go first and the left and top last, so the title bar of such a window (on a short phone in
+   * landscape) stays on the screen, to be dragged.
    */
   private moveTo(x: number, y: number, cling: boolean): void {
     const layer = this.element.parentElement;

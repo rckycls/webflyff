@@ -66,9 +66,10 @@ export type WorldMessage =
   | { type: 'revivalToLodestar' }
   /**
    * A server message: the text ID (`TID_*`) and its arguments, which Neuz splits into tokens and puts in the text
-   * (`OnDefinedText`). DEFINEDTEXT1 has no arguments, so `args` is ''.
+   * (`OnDefinedText`). DEFINEDTEXT1 has no string at all: `args` is null, and Neuz shows the text unformatted
+   * (`OnDefinedText1`).
    */
-  | { type: 'definedText'; textId: number; args: string }
+  | { type: 'definedText'; textId: number; args: string | null }
   /** The server asks the own player whether it follows a target; `fromId` goes back in GETDESTOBJ. */
   | { type: 'queryGetDestObj'; fromId: number }
   /** The monster rates the server sets and the monsters whose rates it clears. */
