@@ -19,8 +19,8 @@ import { intersectRayTri } from './object3d';
 
 const f32 = Math.fround;
 
-/** `CWorld::m_fFarPlane` (`World3D.cpp:50`). */
-const FAR_PLANE = 512;
+/** `CWorld::m_fFarPlane` (`World3D.cpp:50`); `render/picking.ts` picks movers within it too (`PickObject_Fast`, :2671). */
+export const FAR_PLANE = 512;
 /** `fFarPlane /= 2` on the client (:2357-2360): how far from the camera the land is looked for. */
 const LAND_REACH = FAR_PLANE / 2;
 /** `D3DXVec3Length( &vPickRayAdd ) <= 0.000001f` (:2364): no way along the ray. */

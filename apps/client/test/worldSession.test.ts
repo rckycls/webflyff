@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  ArWriter, MessageType, NULL_ID, PacketType, bytesToHex, encodeDestPos, encodeJoin, encodePing, encodePlayerBehavior,
-  encodePlayerCorr, encodePlayerMoved, encodePreJoin, encodeWorldKeepAlive,
+  ArWriter, MessageType, NULL_ID, PacketType, bytesToHex, encodeDestPos, encodeGetDestObj, encodeJoin, encodeMeleeAttack,
+  encodeModifyStatus, encodePing, encodePlayerBehavior, encodePlayerCorr, encodePlayerMoved, encodePlayerSetDestObj, encodePreJoin,
+  encodeRevivalToLodestar, encodeSetTarget, encodeWorldKeepAlive,
 } from '@flyffweb/protocol';
 import type { AddedMover, CharacterSummary, MoveReport, SlotMessenger, Vec3 } from '@flyffweb/protocol';
 import {
@@ -315,6 +316,20 @@ describe('WorldSession, answering and pinging', () => {
   });
 });
 
+/** Every sender of the fight, with the arguments of its encoder: what `send` makes of it and the bytes it must give. */
+const FIGHT_SENDS: Array<{ name: string; send: (s: WorldSession) => void; bytes: Uint8Array }> = [
+  { name: 'SETTARGET', send: (s) => s.sendSetTarget(77, 2), bytes: encodeSetTarget(77, 2) },
+  { name: 'SETTARGET (release)', send: (s) => s.sendSetTarget(77, 1), bytes: encodeSetTarget(77, 1) },
+  { name: 'PLAYERSETDESTOBJ', send: (s) => s.sendDestObj(77, 0), bytes: encodePlayerSetDestObj(77, 0) },
+  { name: 'MELEE_ATTACK', send: (s) => s.sendMeleeAttack(29, 77, Math.fround(0.085)), bytes: encodeMeleeAttack(29, 77, Math.fround(0.085)) },
+  { name: 'GETDESTOBJ', send: (s) => s.sendGetDestObj(5, 77), bytes: encodeGetDestObj(5, 77) },
+  { name: 'REVIVAL_TO_LODESTAR', send: (s) => s.sendRevivalToLodestar(), bytes: encodeRevivalToLodestar() },
+  {
+    name: 'MODIFY_STATUS', send: (s) => s.sendModifyStatus({ str: 1, sta: 2, dex: 0, int: 3 }),
+    bytes: encodeModifyStatus({ str: 1, sta: 2, dex: 0, int: 3 }),
+  },
+];
+
 describe('WorldSession, sending while playing', () => {
   it('sends PLAYERMOVED, PLAYERBEHAVIOR, DESTPOS and PLAYERCORR to the cache server', async () => {
     const { session, cache } = await playing();
@@ -328,6 +343,12 @@ describe('WorldSession, sending while playing', () => {
     ]);
   });
 
+  it('sends SETTARGET, PLAYERSETDESTOBJ, MELEE_ATTACK, GETDESTOBJ, REVIVAL_TO_LODESTAR and MODIFY_STATUS to the cache server', async () => {
+    const { session, cache } = await playing();
+    for (const { send } of FIGHT_SENDS) send(session);
+    expect(cache.sent.slice(1).map(hex)).toEqual(FIGHT_SENDS.map(({ bytes }) => hex(bytes)));
+  });
+
   it('sends nothing before the world is entered', async () => {
     const { session, cache } = await atJoin();
     const sent = cache.sent.length;
@@ -335,6 +356,7 @@ describe('WorldSession, sending while playing', () => {
     session.sendBehavior(MOVE);
     session.sendDestPos([9, 8, 7], false);
     session.sendCorr(MOVE);
+    for (const { send } of FIGHT_SENDS) send(session);
     expect(cache.sent).toHaveLength(sent);
   });
 
@@ -349,6 +371,7 @@ describe('WorldSession, sending while playing', () => {
       session.sendBehavior(MOVE);
       session.sendDestPos([1, 2, 3], true);
       session.sendCorr(MOVE);
+      for (const { send } of FIGHT_SENDS) send(session);
       expect(cache.sent).toHaveLength(sent);
     }
   });

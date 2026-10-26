@@ -1,12 +1,12 @@
 import {
   AnimationClip, AnimationMixer, Bone, BoxGeometry, BufferAttribute, BufferGeometry, Group, Mesh, MeshBasicMaterial,
-  NumberKeyframeTrack, Object3D, Raycaster, Scene, Skeleton, SkinnedMesh, Vector3,
+  NumberKeyframeTrack, Object3D, Scene, Skeleton, SkinnedMesh, Vector3,
 } from 'three';
 import type { AnimationAction } from 'three';
 import { describe, expect, it, vi } from 'vitest';
 import type { Mock } from 'vitest';
-import { toWebPosition } from '@flyffweb/formats';
-import type { JobProp, MotionEvents, WebItemProp } from '@flyffweb/formats';
+import { objectLocalMatrix, toWebPosition } from '@flyffweb/formats';
+import type { JobProp, MotionEvents, Vec3, WebItemProp } from '@flyffweb/formats';
 import { geometryBytes, loopMotion } from '@flyffweb/scene';
 import type { AssembledCharacter, HeldSlot, LoopedMotion, ModelBox } from '@flyffweb/scene';
 import { MoverViews } from '../src/world/render/MoverViews';
@@ -14,6 +14,7 @@ import type { MoverLook } from '../src/world/render/looks';
 import { loadHeldItems, loadMoverModel } from '../src/world/render/moverModels';
 import type { HeldItem } from '../src/world/render/moverModels';
 import { ActMsg, Mti, ObjSta } from '../src/world/sim/constants';
+import { transformCoord } from '../src/world/sim/d3dx';
 import { FISTS, attackSpeed } from '../src/world/sim/params';
 import type { Mover, WorldChanges } from '../src/world/WorldState';
 import { addedNpc, addedPlayer, gameDataOf, moverFrom } from './helpers/movers';
@@ -305,26 +306,78 @@ describe('MoverViews', () => {
     expect(npc.act.isEndFrame()).toBe(true);
   });
 
-  it('nearestHit: how far along a ray the nearest mover drawn is, model or placeholder, the one left out not counted', async () => {
-    // an NPC 10 m and the own character 15 m south of the origin (D3D -z: web +z), on a ray from 20 m out going north
-    const r = rig(async () => fakeModel(), (mover) => (mover.isSelf ? null : look));
-    r.add(moverFrom(addedNpc(7, 21, {}, { pos: [0, 0, -10] })));
-    r.add(moverFrom(addedPlayer(8, { self: true }, { pos: [0, 0, -15] })));
-    await r.views.settled();
-    r.views.update(r.movers, 0);
-    r.scene.updateMatrixWorld();
-    const ray = new Raycaster(new Vector3(0, 1, 20), new Vector3(0, 0, -1));
-
-    // the box is 1 m deep: its near face 0.5 m before the mover, the placeholder's capsule 0.3 m
-    expect(r.views.nearestHit(ray, 8)).toBeCloseTo(9.5, 5);
-    expect(r.views.nearestHit(ray, undefined)).toBeCloseTo(4.7, 5);
-    // a ray past them meets none
-    expect(r.views.nearestHit(new Raycaster(new Vector3(5, 1, 20), new Vector3(0, 0, -1)), undefined)).toBeNull();
-    // a part not drawn is not met
-    r.scene.getObjectByName('mover 7')!.traverse((o) => {
-      if (o instanceof Mesh) o.visible = false;
+  describe('pickCandidates (what CWorld::PickObject_Fast tests: the box, the matrix, dead and player)', () => {
+    /** The `objectLocalMatrix` of a mover, as an oracle: its record's other fields are not read. */
+    const matrixOf = (pos: Vec3, angle: number, scale: number): Float32Array => objectLocalMatrix({
+      objType: 5, angle, axis: [0, 0, 0], position: pos, scale: [scale, scale, scale], type: 5, index: 0, motion: 0, ai: 0, ai2: 0,
+      extraBytes: 0,
     });
-    expect(r.views.nearestHit(ray, 8)).toBeNull();
+
+    it("gives each mover drawn: its model's box, the matrix it stands in, dead and player; the mover left out is not among them", async () => {
+      const r = rig(async () => fakeModel(), (mover) => (mover.isSelf ? null : look));
+      r.add(moverFrom(addedNpc(7, 21, {}, { pos: [0, 0, -10], angle: 90, scale: 1.5 })));
+      const dead = moverFrom(addedPlayer(8, {}, { pos: [3, 1, 4], angle: 20, state: ObjSta.DEAD }));
+      r.add(dead);
+      r.add(moverFrom(addedPlayer(9, { self: true }, { pos: [0, 0, -15] })));
+      await r.views.settled();
+      r.views.update(r.movers, 0);
+
+      expect(r.views.pickCandidates(9).map((c) => c.objectId).sort()).toEqual([7, 8]);
+      // the own character has no look in this rig: it is the placeholder, and a candidate unless it is left out
+      expect(r.views.pickCandidates(undefined).map((c) => c.objectId).sort()).toEqual([7, 8, 9]);
+      const found = r.views.pickCandidates(9);
+      const npc = found.find((c) => c.objectId === 7)!;
+      expect(npc.box).toEqual({ min: [-0.5, 0, -0.5], max: [0.5, 2, 0.5] });
+      expect(npc).toMatchObject({ dead: false, isPlayer: false });
+      Array.from(matrixOf([0, 0, -10], 90, 1.5)).forEach((v, i) => expect(npc.world[i]).toBeCloseTo(v, 4));
+      const player = found.find((c) => c.objectId === 8)!;
+      expect(player).toMatchObject({ dead: true, isPlayer: true });
+      // the angle the mover has: `CObj::SetAngle` keeps it in steps of 360 / 65536 degrees
+      Array.from(matrixOf([3, 1, 4], dead.act.body.angle, 1)).forEach((v, i) => expect(player.world[i]).toBeCloseTo(v, 4));
+    });
+
+    it('stands the box where the model is drawn: a point of the box through the matrix is the drawn point', async () => {
+      const r = rig();
+      r.add(moverFrom(addedNpc(7, 21, {}, { pos: [6970, 100, 3330], angle: 137, scale: 1.5 })));
+      await r.views.settled();
+      r.views.update(r.movers, 0);
+      r.scene.updateMatrixWorld();
+      const npc = r.views.pickCandidates(undefined)[0]!;
+      const holder = r.scene.getObjectByName('mover 7')!;
+      for (const corner of [[0.5, 2, -0.5], [-0.5, 0, 0.5], [0.5, 0, 0.5]] as Vec3[]) {
+        // the model's meshes are in web coordinates (z mirrored), the box and the matrix in D3D
+        const drawn = holder.localToWorld(new Vector3(corner[0], corner[1], -corner[2])).toArray();
+        const picked = toWebPosition(transformCoord(corner, npc.world));
+        picked.forEach((v, i) => expect(v).toBeCloseTo(drawn[i]!, 2));
+      }
+    });
+
+    it('follows the drawn pose, not the rules position: a mover is drawn an eighth of the way to it a step', async () => {
+      const r = rig();
+      const npc = moverFrom(addedNpc(7, 21, {}, { pos: [0, 0, -10] }));
+      r.add(npc);
+      await r.views.settled();
+      npc.act.body.pos = [8, 0, -10];
+      expect(r.views.pickCandidates(undefined)[0]!.world[12]).toBe(0);
+      r.views.step(r.movers);
+      expect(r.views.pickCandidates(undefined)[0]!.world[12]).toBeCloseTo(1, 5);
+    });
+
+    it('gives a mover that is the placeholder a box of its own, and none that has nothing drawn yet', async () => {
+      const pending = later();
+      const r = rig(() => pending.promise, (mover) => (mover.objectId === 7 ? null : look));
+      r.add(moverFrom(addedNpc(7, 21, {}, { pos: [0, 0, -10] })));
+      r.add(moverFrom(addedNpc(8, 21, {}, { pos: [0, 0, -20] })));
+      // 7 is the placeholder, a capsule 0.3 m round and 1.8 m high; 8 is loading
+      expect(r.views.pickCandidates(undefined)).toEqual([
+        expect.objectContaining({ objectId: 7, box: { min: [-0.3, 0, -0.3], max: [0.3, 1.8, 0.3] } }),
+      ]);
+      pending.resolve(fakeModel());
+      await r.views.settled();
+      expect(r.views.pickCandidates(undefined).map((c) => c.objectId).sort()).toEqual([7, 8]);
+      r.remove(7);
+      expect(r.views.pickCandidates(undefined).map((c) => c.objectId)).toEqual([8]);
+    });
   });
 
   it('plays the motion the rules set', async () => {

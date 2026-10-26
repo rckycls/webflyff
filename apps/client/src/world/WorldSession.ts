@@ -1,6 +1,7 @@
 import {
   ArReader, CloseCode, MessageType, NULL_ID, ProtocolError, WORLD_READERS, decodeLoginMessage, decodeWorldPacket, encodeDestPos,
-  encodeJoin, encodePing, encodePlayerBehavior, encodePlayerCorr, encodePlayerMoved, encodePreJoin, encodeWorldKeepAlive,
+  encodeGetDestObj, encodeJoin, encodeMeleeAttack, encodeModifyStatus, encodePing, encodePlayerBehavior, encodePlayerCorr,
+  encodePlayerMoved, encodePlayerSetDestObj, encodePreJoin, encodeRevivalToLodestar, encodeSetTarget, encodeWorldKeepAlive,
   readBundle,
 } from '@flyffweb/protocol';
 import type { BundleMessage, BundleResult, MoveReport, Vec3, WorldMessage } from '@flyffweb/protocol';
@@ -188,6 +189,51 @@ export class WorldSession {
   /** The client's SNAPSHOT with one DESTPOS (`CDPClient::SendSnapshot`): a click-to-move. Sent only while playing. */
   sendDestPos(pos: Vec3, forward: boolean): void {
     this.playingCache()?.send(encodeDestPos(pos, forward));
+  }
+
+  /**
+   * SETTARGET (`CDPClient::SendSetTarget`, `Neuz/DPClient.cpp:9886`): `clear` 1 releases the target, 2 focuses it
+   * (`NULL_ID` with 2 clears the focus). Sent only while playing.
+   */
+  sendSetTarget(targetId: number, clear: 1 | 2): void {
+    this.playingCache()?.send(encodeSetTarget(targetId, clear));
+  }
+
+  /**
+   * PLAYERSETDESTOBJ (`CDPClient::SendPlayerDestObj`, `Neuz/DPClient.cpp:10923`): the object to walk to and the range to
+   * stop at (0 for a melee attack). Sent only while playing.
+   */
+  sendDestObj(targetId: number, range: number): void {
+    this.playingCache()?.send(encodePlayerSetDestObj(targetId, range));
+  }
+
+  /**
+   * MELEE_ATTACK (`CDPClient::SendMeleeAttack`, `Neuz/DPClient.cpp:9819`): the `OBJMSG_ATK*`, the target, and the held
+   * item's `fAttackSpeed` as the server compares it. Sent only while playing.
+   */
+  sendMeleeAttack(message: number, targetId: number, attackSpeed: number): void {
+    this.playingCache()?.send(encodeMeleeAttack(message, targetId, attackSpeed));
+  }
+
+  /**
+   * GETDESTOBJ (`CDPClient::SendGetDestObj`, `Neuz/DPClient.cpp:10941`): the answer to QUERYGETDESTOBJ, with the object
+   * ID the query named and the player's own destination. Sent only while playing.
+   */
+  sendGetDestObj(fromId: number, destId: number): void {
+    this.playingCache()?.send(encodeGetDestObj(fromId, destId));
+  }
+
+  /** REVIVAL_TO_LODESTAR (`CDPClient::SendHdr`, `Neuz/DPClient.cpp:11253`): revive at the lodestar. Sent only while playing. */
+  sendRevivalToLodestar(): void {
+    this.playingCache()?.send(encodeRevivalToLodestar());
+  }
+
+  /**
+   * MODIFY_STATUS (`CDPClient::SendModifyStatus`, `Neuz/DPClient.cpp:16652`): the stat points to add to STR, STA, DEX and
+   * INT. Sent only while playing.
+   */
+  sendModifyStatus(counts: { str: number; sta: number; dex: number; int: number }): void {
+    this.playingCache()?.send(encodeModifyStatus(counts));
   }
 
   /**

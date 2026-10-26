@@ -28,6 +28,11 @@ export interface ClientHooks {
   camera(): Vec3;
   /** Stops the rules and holds every model at the first frame of its motion, for pictures. Drawing goes on. */
   pause(): void;
+  /**
+   * Where the middle of the box of the mover `objectId` is on the drawing, as shares of its width and height from the top
+   * left (where a tap lands on it); null if the mover is not drawn.
+   */
+  screenOf(objectId: number): [number, number] | null;
 }
 
 declare global {
@@ -56,6 +61,7 @@ export function createClientHooks(): ClientHooks {
     stats: () => current().stats(),
     camera: () => current().camera(),
     pause: () => current().pause(),
+    screenOf: (objectId) => current().screenOf(objectId),
   };
 }
 

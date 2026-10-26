@@ -11,7 +11,7 @@ import type { Vec3 } from '@flyffweb/formats';
 import type { BundleMessage, WorldMessage } from '@flyffweb/protocol';
 import { Joystick, KeyboardInput, WorldStage, combineIntents, loadGltf, loopMotion } from '@flyffweb/scene';
 import type { Ground, LoopedMotion, SceneServices } from '@flyffweb/scene';
-import { Vector2 } from 'three';
+import { Vector2, Vector3 } from 'three';
 import { UNEXPECTED_PROBLEM } from '../lobby/errorText';
 import type { WorldEntry } from '../lobby/LoginFlow';
 import { h } from '../lobby/views/dom';
@@ -19,6 +19,7 @@ import type { OpenChannel } from '../net/PacketChannel';
 import { registerWorld } from '../testHooks';
 import { BackCamera } from './backCamera';
 import type { ChaseView } from './backCamera';
+import { Focus } from './combat/focus';
 import { TapToWalk } from './controls';
 import { GameDataMissingError } from './gameData';
 import type { GameData } from './gameData';
@@ -32,6 +33,7 @@ import { MoveMark } from './render/moveMark';
 import { loadHeldItems, loadMoverModel } from './render/moverModels';
 import { nameTagOf } from './render/nameTags';
 import { HAttr } from './sim/collision';
+import { transformCoord } from './sim/d3dx';
 import { FixedStepper, STEPS_PER_SECOND } from './sim/stepper';
 import { WorldSession } from './WorldSession';
 import type { WorldEvent } from './WorldSession';
@@ -95,6 +97,8 @@ export class WorldScreen {
   private keyboard: KeyboardInput | undefined;
   private joystick: Joystick | undefined;
   private tap: TapToWalk | undefined;
+  /** The mover the player selected (`CWorld::m_pObjFocus`), which the server is told of. */
+  private focus: Focus | undefined;
   private mark: MoveMark | undefined;
   /** The own character's driving: the controls each rules step, the moves sent, the stop. */
   private ownMover: OwnMover | undefined;
@@ -148,6 +152,7 @@ export class WorldScreen {
         this.paused = true;
         this.views?.freeze();
       },
+      screenOf: (objectId) => this.screenOf(objectId),
     });
     void this.start();
   }
@@ -274,6 +279,7 @@ export class WorldScreen {
     this.tap = new TapToWalk(
       renderer.domElement, (x, y) => this.pick(x, y), (error) => this.reportOnce(`tap: ${messageOf(error)}`, error),
     );
+    this.focus = new Focus(this.session, (objectId) => this.isLive(objectId));
     this.mark = new MoveMark(this.stage!.scene);
     this.ownMover = new OwnMover(this.session, this.entry.clock, this.mark);
     doc.addEventListener('visibilitychange', this.onVisibility);
@@ -288,6 +294,8 @@ export class WorldScreen {
     const world = this.world!;
     const data = this.data!;
     const changes = world.takeChanges();
+    // a mover that left (DEL_OBJ) is no longer the focus (`CWorld::Process`, `World.cpp:892-893`)
+    for (const objectId of changes.removed) this.focus?.onRemoved(objectId, false);
     this.views!.sync(changes, world.movers);
     this.tags!.sync(changes, world.movers, (mover) => nameTagOf(mover, world.self(), data.nameColors, data.honorTitles));
   }
@@ -356,11 +364,42 @@ export class WorldScreen {
     return this.backCamera.follow(this.ownAt(), world.self()?.act.body.angle ?? 0, stage.ground());
   }
 
-  /** The D3D point a tap at (`ndcX`, `ndcY`) sends the own mover to (`pickOnStage`), from the camera as last drawn. */
+  /**
+   * What a tap at (`ndcX`, `ndcY`) does (`pickOnStage`, from the camera as last drawn): on a mover it selects it
+   * (`CWndWorld::SelectObj`, `WndWorld.cpp:6353-6386`: `SetObjFocus`) and the player walks nowhere; elsewhere it gives
+   * the D3D point the own mover walks to, and the focus stays (`:6361-6383`). Selecting only: attacking is the attack
+   * loop's.
+   */
   private pick(ndcX: number, ndcY: number): Vec3 | null {
     const { stage, views } = this;
     if (stage === undefined || views === undefined) return null;
-    return pickOnStage(stage, views, this.world?.self(), ndcX, ndcY);
+    const hit = pickOnStage(stage, views, this.world?.self(), ndcX, ndcY);
+    if (hit === null) return null;
+    if ('mover' in hit) {
+      this.focus?.select(hit.mover);
+      return null;
+    }
+    return hit.point;
+  }
+
+  /** Where the middle of a mover's box is on the drawing, as shares of its width and height from the top left (`testHooks`). */
+  private screenOf(objectId: number): [number, number] | null {
+    const candidate = this.views?.pickCandidates(undefined).find((c) => c.objectId === objectId);
+    const camera = this.stage?.camera;
+    if (candidate === undefined || camera === undefined) return null;
+    const { min, max } = candidate.box;
+    const middle: Vec3 = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2];
+    const ndc = new Vector3(...toWebPosition(transformCoord(middle, candidate.world))).project(camera);
+    return [(ndc.x + 1) / 2, (1 - ndc.y) / 2];
+  }
+
+  /**
+   * `CMover::IsLive` (`Mover.h:1222`) of the mover `objectId`: not in a dead state, or with HP left. A mover no longer in
+   * view is live, as the one `CWorld::Process` deletes still is when the focus is released.
+   */
+  private isLive(objectId: number): boolean {
+    const mover = this.world?.movers.get(objectId);
+    return mover === undefined || !mover.act.isDie() || mover.act.hitPoint() > 0;
   }
 
   /** The page is hidden (another tab, the home screen, a phone going to sleep): no frame runs until it shows again. */

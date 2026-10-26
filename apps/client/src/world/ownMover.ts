@@ -10,7 +10,8 @@ import { desiredFrom, driveOwnMover, movedReport, restingIn } from './controls';
 import type { Desired } from './controls';
 import type { MoveMark } from './render/moveMark';
 import type { MoverViews } from './render/MoverViews';
-import { pickGround } from './render/picking';
+import { pickTap } from './render/picking';
+import type { TapHit } from './render/picking';
 import { MAX_CORR_SIZE_45 } from './sim/constants';
 import { isEmptyDest, setDestPos } from './sim/moverRules';
 import type { WorldSession } from './WorldSession';
@@ -95,12 +96,13 @@ export class OwnMover {
 }
 
 /**
- * The D3D point a tap at (`ndcX`, `ndcY`) sends the own mover (`own`) to, from `stage`'s camera as last drawn
- * (`pickGround`): on its land and objects, unless a mover drawn in `views`, the own one left out, is nearer.
+ * What a tap at (`ndcX`, `ndcY`) lands on, from `stage`'s camera as last drawn (`pickTap`): the mover drawn in
+ * `views` that the box pick finds (the own mover, `own`, left out), which the tap selects; else the D3D point of the
+ * stage's land and objects the own mover walks to; or null.
  */
 export function pickOnStage(
   stage: Pick<WorldStage, 'camera' | 'ground'> & { manifest: Pick<WorldStage['manifest'], 'mpu'> },
-  views: Pick<MoverViews, 'nearestHit'>, own: Mover | undefined, ndcX: number, ndcY: number,
-): Vec3 | null {
-  return pickGround(stage.camera, ndcX, ndcY, stage.ground(), stage.manifest.mpu, (ray) => views.nearestHit(ray, own?.objectId));
+  views: Pick<MoverViews, 'pickCandidates'>, own: Mover | undefined, ndcX: number, ndcY: number,
+): TapHit | null {
+  return pickTap(stage.camera, ndcX, ndcY, stage.ground(), stage.manifest.mpu, views.pickCandidates(own?.objectId));
 }

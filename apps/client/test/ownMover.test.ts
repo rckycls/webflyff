@@ -5,6 +5,8 @@ import type { MoveReport, Vec3 } from '@flyffweb/protocol';
 import { NO_INTENT } from '@flyffweb/scene';
 import type { MoveIntent } from '@flyffweb/scene';
 import { OwnMover, pickOnStage } from '../src/world/ownMover';
+import { moverMatrix } from '../src/world/render/picking';
+import type { PickCandidate } from '../src/world/render/picking';
 import { HAttr, terrainGround } from '../src/world/sim/collision';
 import type { CollisionObject, Ground } from '../src/world/sim/collision';
 import { MAX_CORR_SIZE_45, ObjSta, ObjStaF } from '../src/world/sim/constants';
@@ -148,17 +150,39 @@ describe('OwnMover', () => {
 });
 
 describe('pickOnStage', () => {
+  const camera = new PerspectiveCamera(45, 2, 0.5, 1000);
+  camera.position.set(...toWebPosition([100, 15, 100]));
+  camera.lookAt(...toWebPosition([100, 5, 100.001]));
+  camera.updateMatrixWorld();
+  const ground: Ground = { terrainHeight: () => 5, landAttr: () => HAttr.NONE, objectsNear: () => [] };
+  const stage = { camera, ground: () => ground, manifest: { mpu: 4 } };
+  const own = moverFrom(addedPlayer(7, { self: true }));
+  /** A mover 1.8 m tall under the camera, a little off the middle of the picture. */
+  const under: PickCandidate = {
+    objectId: 8, box: { min: [-0.5, 0, -0.5], max: [0.5, 1.8, 0.5] }, world: moverMatrix([100.2, 5, 99.9], 0, 1), dead: false,
+    isPlayer: false,
+  };
+
   it("picks with the stage's camera, ground and MPU, the own mover left out of the movers", () => {
-    const camera = new PerspectiveCamera(45, 2, 0.5, 1000);
-    camera.position.set(...toWebPosition([100, 15, 100]));
-    camera.lookAt(...toWebPosition([100, 5, 100.001]));
-    camera.updateMatrixWorld();
-    const ground: Ground = { terrainHeight: () => 5, landAttr: () => HAttr.NONE, objectsNear: () => [] };
-    const nearestHit = vi.fn(() => null);
-    const own = moverFrom(addedPlayer(7, { self: true }));
-    const point = pickOnStage({ camera, ground: () => ground, manifest: { mpu: 4 } }, { nearestHit }, own, 0, 0);
-    expect(point![0]).toBeCloseTo(100, 3);
-    expect(point![1]).toBeCloseTo(5, 4);
-    expect(nearestHit).toHaveBeenCalledWith(expect.anything(), 7);
+    const pickCandidates = vi.fn((_except: number | undefined): PickCandidate[] => []);
+    const hit = pickOnStage(stage, { pickCandidates }, own, 0, 0) as { point: Vec3 };
+    expect(hit.point[0]).toBeCloseTo(100, 3);
+    expect(hit.point[1]).toBeCloseTo(5, 4);
+    expect(pickCandidates).toHaveBeenCalledWith(7);
+  });
+
+  it('gives the mover the tap lands on, else the point of the land: a mover takes the tap, as in Neuz', () => {
+    const views = { pickCandidates: () => [under] };
+    expect(pickOnStage(stage, views, own, 0, 0)).toEqual({ mover: 8 });
+    const beside = pickOnStage(stage, views, own, 0.5, 0) as { point: Vec3 };
+    expect(beside.point[1]).toBeCloseTo(5, 3);
+    expect(Math.hypot(beside.point[0] - 100, beside.point[2] - 100)).toBeGreaterThan(3);
+  });
+
+  it('gives nothing where there is no land and no mover, and works with no own mover yet', () => {
+    const pickCandidates = vi.fn((_except: number | undefined): PickCandidate[] => []);
+    const bare = { ...stage, ground: () => ({ ...ground, terrainHeight: () => null }) };
+    expect(pickOnStage(bare, { pickCandidates }, undefined, 0, 0)).toBeNull();
+    expect(pickCandidates).toHaveBeenCalledWith(undefined);
   });
 });

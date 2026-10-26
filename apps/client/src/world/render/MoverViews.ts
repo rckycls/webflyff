@@ -11,10 +11,10 @@
 // went past a hit frame of a swing. In combat a player plays its weapon's set of each motion (`motionFor`).
 
 import { attachHeld, geometryBytes } from '@flyffweb/scene';
-import type { AssembledCharacter, LoopedMotion, Overlay } from '@flyffweb/scene';
+import type { AssembledCharacter, LoopedMotion, ModelBox, Overlay } from '@flyffweb/scene';
 import { toWebPosition } from '@flyffweb/formats';
 import type { MotionEvents, Vec3, WebItemProp } from '@flyffweb/formats';
-import type { AnimationAction, Object3D, Raycaster, Scene } from 'three';
+import type { AnimationAction, Object3D, Scene } from 'three';
 import { AnimationClip, Box3, CapsuleGeometry, Group, LoopOnce, LoopRepeat, Mesh, MeshLambertMaterial } from 'three';
 import { motionFor } from '../sim/ActionMover';
 import type { MotionHand } from '../sim/ActionMover';
@@ -23,6 +23,8 @@ import { STEPS_PER_SECOND } from '../sim/stepper';
 import type { Mover, WorldChanges } from '../WorldState';
 import type { MoverLook } from './looks';
 import type { HeldItem } from './moverModels';
+import { moverMatrix } from './picking';
+import type { PickCandidate } from './picking';
 
 /** `MOP_NO_TRANS` (`_Common/Mover.h:46`): a motion that starts without blending from the last one. */
 const MOP_NO_TRANS = 0x00000004;
@@ -31,6 +33,10 @@ const BLEND_SECONDS = 20 / STEPS_PER_SECOND;
 /** The placeholder: a grey figure a little taller than a person, standing on its origin. */
 const PLACEHOLDER_HEIGHT = 1.8;
 const PLACEHOLDER_RADIUS = 0.3;
+/** The box round the placeholder, in the model's own D3D space (a new one each time: a caller may keep it). */
+const placeholderBox = (): ModelBox => ({
+  min: [-PLACEHOLDER_RADIUS, 0, -PLACEHOLDER_RADIUS], max: [PLACEHOLDER_RADIUS, PLACEHOLDER_HEIGHT, PLACEHOLDER_RADIUS],
+});
 /** `MI_MALE`, `MI_FEMALE` (`Resource/defineObj.h:954-955`): the player bodies, which play weapon sets. */
 const MI_MALE = 11;
 const MI_FEMALE = 12;
@@ -133,6 +139,8 @@ interface View {
   held: HeldItem[];
   /** The height of the top of what is drawn, at scale 1; null while the model loads. */
   head: number | null;
+  /** The placeholder figure is what is drawn (`showPlaceholder`). */
+  placeholder: boolean;
   /** What the model added to the overlay's GPU estimate. */
   bytes: number;
   /** `m_vScrPos` (D3D) and `m_fScrAngle` (degrees): where the mover is drawn. */
@@ -244,13 +252,27 @@ export class MoverViews {
   }
 
   /**
-   * How far along `raycaster`'s ray (from its origin, in its units) the nearest mover drawn is, its model or its
-   * placeholder as last drawn, the mover `except` left out; null where the ray meets none. A part not drawn is not met.
+   * The movers a tap may land on (`CWorld::PickObject_Fast`'s candidates, `pickMover`): each one drawn, the mover `except`
+   * (`CMover::GetActiveMover()`, its exception object) left out, with what the pick tests it by: the box of its model, a
+   * held item's included (`AssembledCharacter.box`; the placeholder's own for the placeholder), the D3D world matrix it
+   * is drawn with (`moverMatrix` of `m_vScrPos`, `m_fScrAngle` and the scale), whether it is dead and whether it is a
+   * player. A mover whose model is still loading is not drawn and not among them. `dead` is the dead state alone
+   * (`CActionMover::IsDie`): the movers keep no HP yet for the other half of `CMover::IsDie` (`Mover.h:1221`).
+   * The boxes are made anew from the models at each call: it is for a tap, not for a step.
    */
-  nearestHit(raycaster: Raycaster, except: number | undefined): number | null {
-    const holders = [...this.views.values()].filter((view) => view.mover.objectId !== except).map((view) => view.holder);
-    const hit = raycaster.intersectObjects(holders, true).find((h) => drawn(h.object));
-    return hit?.distance ?? null;
+  pickCandidates(except: number | undefined): PickCandidate[] {
+    const found: PickCandidate[] = [];
+    for (const view of this.views.values()) {
+      const { mover } = view;
+      if (mover.objectId === except) continue;
+      const box = view.model !== null ? view.model.box() : view.placeholder ? placeholderBox() : null;
+      if (box === null) continue;
+      found.push({
+        objectId: mover.objectId, box, world: moverMatrix(view.scrPos, view.scrAngle, mover.added.scale), dead: mover.act.isDie(),
+        isPlayer: mover.added.isPlayer,
+      });
+    }
+    return found;
   }
 
   /** The movers drawn with their own model. */
@@ -288,7 +310,7 @@ export class MoverViews {
     holder.name = `mover ${mover.objectId}`;
     this.scene.add(holder);
     const view: View = {
-      mover, look: this.lookFor(mover), holder, model: null, held: [], head: null, bytes: 0,
+      mover, look: this.lookFor(mover), holder, model: null, held: [], head: null, placeholder: false, bytes: 0,
       // ADD_OBJ ends with InitInterpolation (ObjSerializeOpt.cpp:764): a new mover is drawn where it is
       scrPos: copy(mover.act.body.pos), scrAngle: mover.act.body.angle, frame: startFrame(mover.act.motionSets),
       action: null, played: -1, gone: false,
@@ -394,6 +416,7 @@ export class MoverViews {
     figure.name = 'placeholder';
     view.holder.add(figure);
     view.head = PLACEHOLDER_HEIGHT;
+    view.placeholder = true;
   }
 
   private drop(view: View): void {
@@ -639,12 +662,6 @@ function bytesOf(object: Object3D): number {
     if (o instanceof Mesh) bytes += geometryBytes(o.geometry);
   });
   return bytes;
-}
-
-/** Whether `object` and every parent it has are visible. */
-function drawn(object: Object3D): boolean {
-  for (let o: Object3D | null = object; o !== null; o = o.parent) if (!o.visible) return false;
-  return true;
 }
 
 /** How the overlay names a mover: its `MI_*` index and its name. */

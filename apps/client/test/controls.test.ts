@@ -1,5 +1,4 @@
-import { BoxGeometry, Mesh, PerspectiveCamera } from 'three';
-import type { Raycaster } from 'three';
+import { PerspectiveCamera } from 'three';
 import { describe, expect, it, vi } from 'vitest';
 import { toWebPosition } from '@flyffweb/formats';
 import type { Vec3 } from '@flyffweb/formats';
@@ -7,7 +6,8 @@ import { NO_INTENT, joystickIntent } from '@flyffweb/scene';
 import type { MoveIntent } from '@flyffweb/scene';
 import { STANDING, TapToWalk, desiredFrom, driveOwnMover, restingIn } from '../src/world/controls';
 import type { Desired } from '../src/world/controls';
-import { pickGround } from '../src/world/render/picking';
+import { moverMatrix, pickTap } from '../src/world/render/picking';
+import type { PickCandidate } from '../src/world/render/picking';
 import { ActionMover } from '../src/world/sim/ActionMover';
 import { terrainGround } from '../src/world/sim/collision';
 import { ActMsg, ObjSta, ObjStaF } from '../src/world/sim/constants';
@@ -515,21 +515,23 @@ describe('TapToWalk', () => {
     expect(canvas.listeners.size).toBe(0);
   });
 
-  it('a tap on a mover gives nothing', () => {
+  it('a tap on a mover gives no destination: the world screen selects the mover instead', () => {
     // flat land at height 5 (D3D); the camera 10 m over (100, 100), looking straight down at it
     const ground = terrainGround(() => 5);
     const camera = new PerspectiveCamera(45, 2, 0.5, 1000);
     camera.position.set(...toWebPosition([100, 15, 100]));
     camera.lookAt(...toWebPosition([100, 5, 100.001]));
     camera.updateMatrixWorld();
-    // a mover 1.8 m tall standing on that spot
-    const mover = new Mesh(new BoxGeometry(0.6, 1.8, 0.6));
-    mover.position.set(...toWebPosition([100, 5.9, 100]));
-    mover.updateMatrixWorld();
+    // a mover 1.8 m tall standing on that spot (a little off, so that the ray is not on a diagonal of its top)
+    const mover: PickCandidate = {
+      objectId: 7, box: { min: [-0.5, 0, -0.5], max: [0.5, 1.8, 0.5] }, world: moverMatrix([100.2, 5, 99.9], 0, 1), dead: false,
+      isPlayer: false,
+    };
     let moverThere = false;
-    const moverAt = (raycaster: Raycaster): number | null =>
-      moverThere ? (raycaster.intersectObject(mover)[0]?.distance ?? null) : null;
-    const { canvas, tap } = tapToWalk((x, y) => pickGround(camera, x, y, ground, 4, moverAt));
+    const { canvas, tap } = tapToWalk((x, y) => {
+      const hit = pickTap(camera, x, y, ground, 4, moverThere ? [mover] : []);
+      return hit !== null && 'point' in hit ? hit.point : null;
+    });
 
     canvas.fire('pointerdown', 110, 70, 0);
     canvas.fire('pointerup', 110, 70, 10);

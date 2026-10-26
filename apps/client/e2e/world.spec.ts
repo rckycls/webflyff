@@ -274,6 +274,10 @@ async function tapWorld(page: Page, x: number, y: number): Promise<void> {
 /** The packets of `type` the page sent on the cache connection so far. */
 const sentOf = (gateway: Gateway, type: number): Sent[] => gateway.sent.filter((s) => s.port === Port.CACHE && s.type === type);
 
+/** The SETTARGETs the page sent so far (`CDPClient::SendSetTarget`): after DPID_UNKNOWN and the type, the target and `bClear`. */
+const targetsOf = (gateway: Gateway): Array<[number, number]> =>
+  sentOf(gateway, PacketType.SETTARGET).map(({ body }) => [body.readUInt32LE(8), body.readUInt8(12)]);
+
 /**
  * The state in a PLAYERMOVED (`CDPClient::SendPlayerMoved`) or a PLAYERCORR (`SendPlayerCorr`, the same fields): after
  * DPID_UNKNOWN, the type, the position, the delta and the angle.
@@ -518,6 +522,35 @@ test.describe('the world screen against scripted servers', () => {
     // walk to a point sends nothing of its own
     expect(movesOf(gateway)).toEqual([]);
     expect(sentOf(gateway, PacketType.PLAYERBEHAVIOR)).toEqual([]);
+  });
+
+  // The Aibatt and Julia stand 6 m ahead of Webby, 2.5 m to either side. A tap on a mover is a selection (SelectObj), not a
+  // walk; a tap on the ground walks and leaves the selection as it is.
+  test('tapping a mover selects it with SETTARGET and walks nowhere; the ground leaves the focus alone', async ({ page }) => {
+    const gateway = await playGateway(page);
+    await enterFlaris(page);
+    const tapMover = async (objectId: number): Promise<void> => {
+      const at = await page.evaluate((id) => window.__client!.screenOf(id), objectId);
+      expect(at).not.toBeNull();
+      await tapWorld(page, at![0], at![1]);
+    };
+
+    await tapMover(MONSTER_ID);
+    await expect.poll(() => targetsOf(gateway)).toEqual([[MONSTER_ID, 2]]);
+    // another mover: the old target is released with 1, the new one focused with 2
+    await tapMover(NPC_ID);
+    await expect.poll(() => targetsOf(gateway)).toEqual([[MONSTER_ID, 2], [MONSTER_ID, 1], [NPC_ID, 2]]);
+    // the same one again changes nothing
+    await tapMover(NPC_ID);
+    await page.waitForTimeout(500);
+    expect(targetsOf(gateway)).toHaveLength(3);
+    expect(destPosOf(gateway)).toEqual([]);
+
+    // the ground walks (as Piece 3), and the focus stays
+    await tapWorld(page, 0.5, 0.8);
+    await expect.poll(() => destPosOf(gateway).length).toBe(1);
+    await page.waitForTimeout(500);
+    expect(targetsOf(gateway)).toHaveLength(3);
   });
 
   test('pressing a turn key cancels it', async ({ page }) => {
