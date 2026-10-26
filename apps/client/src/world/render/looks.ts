@@ -1,6 +1,6 @@
 import type { WornPart } from '@flyffweb/protocol';
 import { DEFAULT_MOTION, motionKey, partKey, skeletonKey } from '@flyffweb/scene';
-import type { Gender } from '@flyffweb/scene';
+import type { Gender, HeldSlot } from '@flyffweb/scene';
 import { Sex, defaultHairRgb } from '../../lobby/appearance';
 import { Mti } from '../sim/constants';
 import { NO_PART } from '../gameData';
@@ -24,6 +24,13 @@ export interface MoverLook {
    * to tint the hair part with. Null if the mover has no hair part.
    */
   hairColor: number | null;
+  /**
+   * The item ids (`II_*`) in the hands, as `m_aEquipInfo` has them: `right` the PARTS_RWEAPON slot's, `left` the
+   * PARTS_LWEAPON or the PARTS_SHIELD slot's (CMover::DoEquip never fills both: a left-hand weapon goes there only
+   * without a shield, and a shield takes it off, `MoverEquip.cpp:505-506`, `:573-600`). Null for an empty hand, and for
+   * every hand of a mover that is not dressed. `heldModels` says what is drawn there.
+   */
+  held: { right: number | null; left: number | null };
 }
 
 /** `MI_MALE` and `MI_FEMALE` (`Resource/defineObj.h:954-955`): the bodies of players and human NPCs, with no model of their own. */
@@ -34,9 +41,11 @@ const ITEM_EXPIRED = 0x01;
 
 /** `PARTS_*` (`Resource/defineNeuz.h:24-61`): the slots of a body that the rules below use. */
 const Parts = {
-  HEAD: 0, HAIR: 1, UPPER_BODY: 2, LOWER_BODY: 3, HAND: 4, FOOT: 5, CAP: 6, CLOAK: 8, HAT: 26, CLOTH: 27, GLOVE: 28,
-  BOOTS: 29, CLOAK2: 30,
+  HEAD: 0, HAIR: 1, UPPER_BODY: 2, LOWER_BODY: 3, HAND: 4, FOOT: 5, CAP: 6, CLOAK: 8, LWEAPON: 9, RWEAPON: 10, SHIELD: 11,
+  HAT: 26, CLOTH: 27, GLOVE: 28, BOOTS: 29, CLOAK2: 30,
 } as const;
+/** `IK3_KNUCKLEHAMMER`, `IK3_YOYO` and `IK3_BOW` (`Resource/defineItemkind.h:71,77,78`): the weapons held elsewhere. */
+const Ik3 = { KNUCKLEHAMMER: 5, YOYO: 11, BOW: 12 } as const;
 
 /** What a slot shows with no item: `PARTSMESH_UPPER`, `_LOWER`, `_HAND` and `_FOOT` (`MoverEquip.cpp:75-78`, used at :426-445). */
 const BARE_BODY = [
@@ -148,7 +157,8 @@ function hiddenSlots(equipped: ReadonlyMap<number, Equipped>): Set<number> {
  * - a worn fashion slot (hat, cloth, glove, boots, second cloak) takes the part of the armour slot it covers away
  *   (`Mover.cpp:9122-9150`);
  * - the slots `hiddenSlots` names are dropped.
- * An item the catalog lacks, or has no model for the sex, is as no item: the bare part shows.
+ * An item the catalog lacks, or has no model for the sex, is as no item: the bare part shows. The hands hold the items
+ * of their slots (`heldBy`), which are no parts: they hang from the skeleton (`heldModels`).
  */
 function humanLook({ gender, hairMesh, headMesh, hairColor, worn }: Dressing, data: GameData): MoverLook {
   const equipped = equippedBy(worn, gender, data);
@@ -175,18 +185,70 @@ function humanLook({ gender, hairMesh, headMesh, hairColor, worn }: Dressing, da
     parts,
     motion: motionOf(body?.motions ?? {}, motionKey(gender, DEFAULT_MOTION[gender])),
     hairColor: drawnHairColor(gender, hairMesh, hairColor),
+    held: heldBy(worn),
   };
 }
 
 /**
- * The own character's item ids as `m_aEquipInfo`: each in the slot its item takes (`dwParts`). Ids the catalog lacks are
- * skipped, and so are items worn nowhere (`dwParts` is NULL_ID, -1 here).
+ * The items of the hand slots of `worn` (`MoverLook.held`). An expired one is none: `UpdateParts` takes its part off
+ * (`MoverEquip.cpp:346-347`, `:407-408`, `:416-417`, `:423-424`). The id is kept whether the catalog knows it or not.
+ */
+function heldBy(worn: readonly WornPart[]): MoverLook['held'] {
+  const bySlot = new Map(worn.map((w) => [w.part, w]));
+  const inSlot = (slot: number): number | null => {
+    const w = bySlot.get(slot);
+    return w === undefined || (w.flag & ITEM_EXPIRED) !== 0 ? null : w.itemId;
+  };
+  return { right: inSlot(Parts.RWEAPON), left: inSlot(Parts.LWEAPON) ?? inSlot(Parts.SHIELD) };
+}
+
+/** A held item to draw: its model and where it hangs (`attachHeld`). */
+export interface HeldModel {
+  model: string;
+  slot: HeldSlot;
+}
+
+/**
+ * What the hands of `held` show, as `UpdateParts` hangs the items (`MoverEquip.cpp:378-425`), each the model of its
+ * OT_ITEM entry (`WebItemProp.model`, `MakeModelName`, :367):
+ * - the right-hand item in the right hand; a knuckle on the right forearm (`IK3_KNUCKLEHAMMER`, :386-387), a bow in the
+ *   left hand (:390-391), and a yoyo in both hands, its model loaded a second time for the left (:393-396);
+ * - the left-hand item in the left hand (PARTS_LWEAPON, :410-414), or on the left forearm for a shield (PARTS_SHIELD,
+ *   :419-422). Which of the two slots it is in, its row says: a shield's `dwParts` is PARTS_SHIELD, and a left-hand
+ *   weapon's is PARTS_RWEAPON, a one-handed weapon `DoEquip` put in the left hand (:488-506, and the note at :573).
+ * An item with no model, or one the catalog lacks, shows nothing in its hand.
+ */
+export function heldModels(held: MoverLook['held'], data: GameData): HeldModel[] {
+  const out: HeldModel[] = [];
+  const right = held.right === null ? undefined : data.itemProps.get(held.right);
+  if (right?.model) {
+    const { model } = right;
+    if (right.kind3 === Ik3.KNUCKLEHAMMER) out.push({ model, slot: 'knuckle' });
+    else if (right.kind3 === Ik3.BOW) out.push({ model, slot: 'left' });
+    else if (right.kind3 === Ik3.YOYO) out.push({ model, slot: 'right' }, { model, slot: 'left' });
+    else out.push({ model, slot: 'right' });
+  }
+  const left = held.left === null ? undefined : data.itemProps.get(held.left);
+  if (left?.model) out.push({ model: left.model, slot: left.part === Parts.SHIELD ? 'shield' : 'left' });
+  return out;
+}
+
+/**
+ * The own character's item ids as `m_aEquipInfo`, slotted as `CDPLoginClient::OnPlayerList` slots the character list's
+ * (`Neuz/DPLoginClient.cpp:478-494`): each in the slot its item takes (`dwParts`), but a second right-hand weapon moves
+ * the first one to the left hand (the list has them the other way round). Ids the catalogs lack are skipped, and so are
+ * items worn nowhere (`dwParts` is NULL_ID, -1 here).
  */
 function ownWorn(itemIds: readonly number[], data: GameData): WornPart[] {
-  return itemIds.flatMap((itemId) => {
-    const item = data.items.get(itemId);
-    return item === undefined || item.part < 0 ? [] : [{ part: item.part, itemId, flag: 0 }];
-  });
+  const slots = new Map<number, number>();
+  for (const itemId of itemIds) {
+    const part = data.items.get(itemId)?.part ?? data.itemProps.get(itemId)?.part;
+    if (part === undefined || part < 0) continue;
+    const right = slots.get(Parts.RWEAPON);
+    if (part === Parts.RWEAPON && right !== undefined) slots.set(Parts.LWEAPON, right);
+    slots.set(part, itemId);
+  }
+  return [...slots].map(([part, itemId]) => ({ part, itemId, flag: 0 }));
 }
 
 /**
@@ -229,5 +291,9 @@ export function lookOf(mover: Mover, data: GameData, ownEquipment: readonly numb
   }
   const prop = data.movers.get(added.index);
   if (prop === undefined || prop.model === null) return null;
-  return { skeleton: prop.skeleton, parts: [prop.model], motion: motionOf(prop.motions, null), hairColor: null };
+  // a monster's "weapon" (IK3_VIRTUAL) is a row of the rules, with no model to hold
+  return {
+    skeleton: prop.skeleton, parts: [prop.model], motion: motionOf(prop.motions, null), hairColor: null,
+    held: { right: null, left: null },
+  };
 }

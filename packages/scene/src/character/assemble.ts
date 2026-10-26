@@ -9,8 +9,9 @@
 //
 // The converter also writes the part's bounding box on the scene of a part glb, and the skeleton's hand grips on the
 // scene of a skeleton glb (`ModelBoxExtras`, `SkeletonGrips`; GLTFLoader puts a scene's extras in its `userData`). The
-// character offers the union of its parts' boxes (`box()`) and the grips (`grips`), both in D3D space: they feed the
-// picking and range rules and the place of a held weapon, not the drawing. A glb of an older conversion has neither.
+// character offers the union of its parts' boxes and its held items' (`box()`, `addBox`) and the grips (`grips`), both
+// in D3D space: they feed the picking and range rules and the place of a held weapon (held.ts), not the drawing. A glb
+// of an older conversion has neither.
 
 import type { Material, Object3D } from 'three';
 import { AnimationClip, AnimationMixer, Group, KeyframeTrack, Skeleton, SkinnedMesh } from 'three';
@@ -37,11 +38,18 @@ export interface AssembledCharacter {
   mixer: AnimationMixer;
   /**
    * The model's box, in D3D coordinates and the model's own space (scale, rotation and position are the mover's): the
-   * union of the boxes of the loaded parts, as CModelObject::LoadElement builds `m_vMin` / `m_vMax` (see
-   * `unionModelBoxes`). A part of an older conversion has no box and adds nothing; with no box at all it is the empty
-   * box, zero size at the origin. A new object each call.
+   * union of the boxes of the loaded parts and of those `addBox` added, as CModelObject::LoadElement builds `m_vMin` /
+   * `m_vMax` (see `unionModelBoxes`). A part of an older conversion has no box and adds nothing; with no box at all it
+   * is the empty box, zero size at the origin. A new object each call.
    */
   box(): ModelBox;
+  /**
+   * Adds `box` to the union `box()` gives: the box of an element loaded after the parts, which LoadElement unions like
+   * theirs (ModelObject.cpp:735-744). That is a held item (`attachHeld`): CMover::UpdateParts loads it into the same
+   * model (MoverEquip.cpp:371). Nothing takes a box out again, as TakeOffParts leaves `m_vMin` / `m_vMax` as they are
+   * (ModelObject.cpp:470-514).
+   */
+  addBox(box: ModelBox): void;
   /**
    * Where a held item sits (`SkeletonGrips`: the hand and forearm bones and the four grip matrices, and which matrix
    * goes with which bone), from the skeleton glb; null for a skeleton glb of an older conversion (including the first,
@@ -180,10 +188,10 @@ export async function assembleCharacter(
     mixer,
     grips,
     box() {
-      // The held item joins here (Task 14): a weapon is loaded into the same CModelObject as the parts, so its box is
-      // unioned into m_vMin / m_vMax like theirs (ModelObject.cpp:735-744, where a comment notes that a human holding
-      // a spear has the spear in the box). Its own box, as its glb carries it, goes into this list.
       return unionModelBoxes(partBoxes);
+    },
+    addBox(box) {
+      partBoxes.push({ min: [...box.min], max: [...box.max] });
     },
     release() {
       if (released) return;

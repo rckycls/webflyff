@@ -1,6 +1,6 @@
 // The model of a mover's look, assembled from the page's asset store and texture cache as Neuz assembles it: the
 // skeleton with every part re-bound to it, the hair drawn unlit in its colour, or for a model with no skeleton its
-// `lod0` as it is. `MoverViews` puts what this gives on screen.
+// `lod0` as it is; and the models of the items in its hands. `MoverViews` puts what this gives on screen.
 
 import {
   applyTextures,
@@ -12,10 +12,12 @@ import {
   partSlot,
   unionModelBoxes,
 } from '@flyffweb/scene';
-import type { AssembledCharacter, SceneServices } from '@flyffweb/scene';
+import type { AssembledCharacter, HeldSlot, SceneServices } from '@flyffweb/scene';
 import type { Material, Object3D, Texture } from 'three';
 import { AnimationMixer, Color, Group, Mesh, MeshBasicMaterial, SRGBColorSpace } from 'three';
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import type { GameData } from '../gameData';
+import { heldModels } from './looks';
 import type { MoverLook } from './looks';
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -95,24 +97,72 @@ async function plainModel(gltf: GLTF, textures: SceneServices['textures']): Prom
   const lod = gltf.scene.getObjectByName('lod0');
   if (lod === undefined) throw new Error('the model has no "lod0" node');
   const box = modelBoxOf(gltf.scene, 'the model');
+  const boxes = box === null ? [] : [box];
   const root = new Group();
   root.add(lod);
   const keys = await applyTextures(lod, textures);
-  let released = false;
   return {
     root,
     mixer: new AnimationMixer(root),
     grips: null,
-    box: () => unionModelBoxes(box === null ? [] : [box]),
-    release() {
-      if (released) return;
-      released = true;
-      for (const key of keys) textures.release(key);
-      root.traverse((object) => {
-        if (!(object instanceof Mesh)) return;
-        object.geometry.dispose();
-        for (const material of Array.isArray(object.material) ? object.material : [object.material]) material.dispose();
-      });
-    },
+    box: () => unionModelBoxes(boxes),
+    addBox: (added) => void boxes.push({ min: [...added.min], max: [...added.max] }),
+    release: releaser(root, keys, textures),
+  };
+}
+
+/** Gives `keys` back to the cache and disposes the geometry and materials of the meshes under `root`; once. */
+function releaser(root: Object3D, keys: readonly string[], textures: SceneServices['textures']): () => void {
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    for (const key of keys) textures.release(key);
+    root.traverse((object) => {
+      if (!(object instanceof Mesh)) return;
+      object.geometry.dispose();
+      for (const material of Array.isArray(object.material) ? object.material : [object.material]) material.dispose();
+    });
+  };
+}
+
+/** An item for a hand, loaded: its model, where it is held (`attachHeld`), and how to let it go. */
+export interface HeldItem {
+  /** The glb's scene with its `lod0` alone, textured; the scene's userData has the item's box (`ModelBoxExtras`). */
+  item: Object3D;
+  slot: HeldSlot;
+  /** Gives the textures back to the cache and disposes the geometry and materials. Safe to call twice. */
+  release(): void;
+}
+
+/**
+ * The items the hands of a look hold (`heldModels`), each from the page's asset store with its textures; a yoyo's model
+ * is loaded once for each hand, as UpdateParts loads it twice (`MoverEquip.cpp:395`). A model that cannot be had leaves
+ * its hand empty and is said to `report` once: it is not asked for again. Never rejects.
+ */
+export function loadHeldItems(
+  services: Pick<SceneServices, 'store' | 'loaders' | 'textures'>,
+  data: GameData,
+): (look: MoverLook, report: (message: string) => void) => Promise<HeldItem[]> {
+  const { store, loaders, textures } = services;
+  const failed = new Set<string>();
+  return async (look, report) => {
+    const items = await Promise.all(heldModels(look.held, data).map(async ({ model, slot }): Promise<HeldItem[]> => {
+      if (failed.has(model)) return [];
+      try {
+        const gltf = await loadGltf(store, loaders.gltf, model);
+        const lod = gltf.scene.getObjectByName('lod0');
+        if (lod === undefined) throw new Error('the model has no "lod0" node');
+        // the character view draws lod0 (assemble.ts), and so does the hand
+        for (const child of [...gltf.scene.children]) if (child !== lod) child.removeFromParent();
+        const keys = await applyTextures(lod, textures);
+        return [{ item: gltf.scene, slot, release: releaser(gltf.scene, keys, textures) }];
+      } catch (error) {
+        if (!failed.has(model)) report(`held item ${model}: ${messageOf(error)}`);
+        failed.add(model);
+        return [];
+      }
+    }));
+    return items.flat();
   };
 }

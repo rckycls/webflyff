@@ -1,32 +1,74 @@
 import {
-  AnimationClip, AnimationMixer, BoxGeometry, Group, Mesh, NumberKeyframeTrack, Object3D, Raycaster, Scene, Vector3,
+  AnimationClip, AnimationMixer, Bone, BoxGeometry, BufferAttribute, BufferGeometry, Group, Mesh, MeshBasicMaterial,
+  NumberKeyframeTrack, Object3D, Raycaster, Scene, Skeleton, SkinnedMesh, Vector3,
 } from 'three';
 import { describe, expect, it, vi } from 'vitest';
 import type { Mock } from 'vitest';
 import { toWebPosition } from '@flyffweb/formats';
-import { loopMotion } from '@flyffweb/scene';
-import type { AssembledCharacter, LoopedMotion } from '@flyffweb/scene';
+import type { WebItemProp } from '@flyffweb/formats';
+import { geometryBytes, loopMotion } from '@flyffweb/scene';
+import type { AssembledCharacter, HeldSlot, LoopedMotion, ModelBox } from '@flyffweb/scene';
 import { MoverViews } from '../src/world/render/MoverViews';
 import type { MoverLook } from '../src/world/render/looks';
-import { loadMoverModel } from '../src/world/render/moverModels';
+import { loadHeldItems, loadMoverModel } from '../src/world/render/moverModels';
+import type { HeldItem } from '../src/world/render/moverModels';
 import { ActMsg, Mti } from '../src/world/sim/constants';
 import type { Mover, WorldChanges } from '../src/world/WorldState';
-import { addedNpc, addedPlayer, moverFrom } from './helpers/movers';
+import { addedNpc, addedPlayer, gameDataOf, moverFrom } from './helpers/movers';
 
-/** A model as the loader gives it: a 2 m box standing on its origin, a joint the motions drive, and a release to count. */
-function fakeModel(): AssembledCharacter & { release: Mock<() => void> } {
+/**
+ * A model as the loader gives it: a 2 m box standing on its origin, a joint the motions drive, a release to count, and
+ * the boxes added to it.
+ */
+function fakeModel(): AssembledCharacter & { release: Mock<() => void>; added: ModelBox[] } {
   const root = new Group();
   const box = new Mesh(new BoxGeometry(1, 2, 1).translate(0, 1, 0));
   const joint = new Object3D();
   joint.name = 'joint';
   root.add(box, joint);
+  const added: ModelBox[] = [];
   return {
     root,
     mixer: new AnimationMixer(root),
     grips: null,
     box: () => ({ min: [-0.5, 0, -0.5], max: [0.5, 2, 0.5] }),
+    addBox: (b) => void added.push(b),
     release: vi.fn<() => void>(),
+    added,
   };
+}
+
+/**
+ * `fakeModel` with a skeleton that can hold things: its right hand (bone 2) 1.5 m up, a skinned part bound to the
+ * bones in bone order, and grips that hold with no turn or offset (identity matrices).
+ */
+function armedModel(): ReturnType<typeof fakeModel> {
+  const model = fakeModel();
+  const bones = ['bone0', 'bone1', 'hand'].map((name) => Object.assign(new Bone(), { name }));
+  bones[1]!.position.y = 1;
+  bones[2]!.position.y = 0.5;
+  bones[0]!.add(bones[1]!);
+  bones[1]!.add(bones[2]!);
+  // one vertex at the origin, on bone 0: inside the 2 m box
+  const geometry = new BufferGeometry();
+  geometry.setAttribute('position', new BufferAttribute(new Float32Array(3), 3));
+  geometry.setAttribute('skinIndex', new BufferAttribute(new Uint16Array(4), 4));
+  geometry.setAttribute('skinWeight', new BufferAttribute(new Float32Array([1, 0, 0, 0]), 4));
+  const part = new SkinnedMesh(geometry);
+  part.bind(new Skeleton(bones));
+  model.root.add(bones[0]!, part);
+  const identity = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
+  return Object.assign(model, {
+    grips: { rHand: 2, lHand: 1, rArm: 1, lArm: 1, localRH: identity, localLH: identity, localShield: identity, localKnuckle: identity },
+  });
+}
+
+/** A held item as the loader gives it: a 3 m pole across its origin, the box of its glb, and a release to count. */
+function heldItem(slot: HeldSlot = 'right'): HeldItem & { release: Mock<() => void> } {
+  const item = new Group();
+  item.add(new Mesh(new BoxGeometry(0.1, 3, 0.1)));
+  Object.assign(item.userData, { bbMin: [-0.05, -1.5, -0.05], bbMax: [0.05, 1.5, 0.05] });
+  return { item, slot, release: vi.fn<() => void>() };
 }
 
 /** A motion of 31 frames at 30 fps, as the converter writes one (frame i at i / 30 s): its last frame is at 1 s. */
@@ -36,7 +78,9 @@ function motion(name: string): LoopedMotion {
 }
 
 /** Every motion of the look is `m<id>`. */
-const look: MoverLook = { skeleton: 'skeleton', parts: ['part'], motion: (id) => `m${id}`, hairColor: null };
+const look: MoverLook = {
+  skeleton: 'skeleton', parts: ['part'], motion: (id) => `m${id}`, hairColor: null, held: { right: null, left: null },
+};
 
 interface Rig {
   scene: Scene;
@@ -54,6 +98,7 @@ function rig(
   loadModel: (look: MoverLook, report: (message: string) => void) => Promise<AssembledCharacter | Object3D> =
     async () => fakeModel(),
   lookFor: (mover: Mover) => MoverLook | null = () => look,
+  loadHeld: (look: MoverLook, report: (message: string) => void) => Promise<HeldItem[]> = async () => [],
 ): Rig {
   const scene = new Scene();
   const load = vi.fn(loadModel);
@@ -64,7 +109,7 @@ function rig(
     motions.set(key, loaded);
     return loaded;
   };
-  const views = new MoverViews(scene, load, overlay, lookFor, loadMotion);
+  const views = new MoverViews(scene, load, overlay, lookFor, loadMotion, loadHeld);
   const movers = new Map<number, Mover>();
   const sync = (changes: WorldChanges) => views.sync(changes, movers);
   return {
@@ -308,6 +353,168 @@ describe('MoverViews', () => {
     expect(loaded.release).toHaveBeenCalledTimes(1);
     expect(late.release).toHaveBeenCalledTimes(1);
     expect(r.scene.children).toEqual([]);
+  });
+
+  describe('the items of the hands', () => {
+    it('go in the hand once the body is on screen, into its box, and the name tag stays on top of the body', async () => {
+      const model = armedModel();
+      const sword = heldItem();
+      const loadHeld = vi.fn(async () => [sword]);
+      const r = rig(async () => model, undefined, loadHeld);
+      r.add(moverFrom(addedPlayer(7, {}, { pos: [0, 0, 0] })));
+      await r.views.settled();
+      r.views.update(r.movers, 0);
+      r.scene.updateMatrixWorld();
+
+      expect(loadHeld).toHaveBeenCalledWith(look, expect.any(Function));
+      // it hangs from the right hand, 1.5 m up, and goes up to 3 m
+      const hand = model.root.getObjectByName('hand')!;
+      expect(sword.item.parent?.parent).toBe(hand);
+      expect(new Vector3().setFromMatrixPosition(sword.item.matrixWorld).y).toBeCloseTo(1.5, 6);
+      expect(model.added).toEqual([{ min: [-0.05, -1.5, -0.05], max: [0.05, 1.5, 0.05] }]);
+      // the top of the body as before: the 2 m box (MoverRender.cpp:1349 projects the model's box, where a weapon
+      // adds only its own box, at the model's origin)
+      expect(r.views.placeOf(7)!.head[1]).toBeCloseTo(2, 6);
+      // the GPU estimate holds the sword too, and gets it all back with the mover
+      const sum = (): number => r.overlay.addGpuBytes.mock.calls.reduce((a, [n]) => a + (n as number), 0);
+      let drawn = 0;
+      model.root.traverse((object) => {
+        if (object instanceof Mesh) drawn += geometryBytes(object.geometry);
+      });
+      expect(sum()).toBe(drawn);
+      expect(drawn).toBeGreaterThan(geometryBytes((sword.item.children[0] as Mesh).geometry));
+      r.remove(7);
+      expect(sword.release).toHaveBeenCalledTimes(1);
+      expect(model.release).toHaveBeenCalledTimes(1);
+      expect(sum()).toBe(0);
+      expect(r.overlay.error).not.toHaveBeenCalled();
+    });
+
+    it('are let go when the body never comes: the mover left, or its model cannot be had', async () => {
+      const pending = later();
+      const gone = heldItem();
+      const r = rig(() => pending.promise, undefined, async () => [gone]);
+      r.add(moverFrom(addedPlayer(7)));
+      r.remove(7);
+      pending.resolve(armedModel());
+      await r.views.settled();
+      expect(gone.release).toHaveBeenCalledTimes(1);
+
+      const lost = heldItem();
+      const failing = rig(async () => {
+        throw new Error('asset "skeletons/mvr_male.glb" is not in the asset index');
+      }, undefined, async () => [lost]);
+      failing.add(moverFrom(addedPlayer(8)));
+      await failing.views.settled();
+      expect(lost.release).toHaveBeenCalledTimes(1);
+      expect(failing.overlay.error).toHaveBeenCalledTimes(1); // the model's failure, said once
+    });
+
+    it('one that cannot be held is let go and said, and the others still go in their hands', async () => {
+      // a skeleton without grips (an older conversion) holds nothing
+      const unarmed = fakeModel();
+      const sword = heldItem();
+      const r = rig(async () => unarmed, undefined, async () => [sword]);
+      r.add(moverFrom(addedPlayer(7)));
+      await r.views.settled();
+      expect(sword.release).toHaveBeenCalledTimes(1);
+      expect(r.overlay.error).toHaveBeenCalledTimes(1);
+      expect(r.overlay.error.mock.calls[0]![0]).toMatch(/^mover 11.*: the skeleton has no grips/);
+      expect(r.views.count()).toBe(1); // the body is drawn all the same
+
+      const model = armedModel();
+      const shield = heldItem('shield');
+      const broken = heldItem('right');
+      broken.item.userData.bbMin = [0, 0];
+      const both = rig(async () => model, undefined, async () => [broken, shield]);
+      both.add(moverFrom(addedPlayer(8)));
+      await both.views.settled();
+      expect(broken.release).toHaveBeenCalledTimes(1);
+      expect(broken.item.parent).toBeNull();
+      expect(shield.item.parent?.parent).toBe(model.root.getObjectByName('bone1'));
+      expect(both.overlay.error).toHaveBeenCalledTimes(1);
+    });
+
+    it('dispose lets the held items go with their models', async () => {
+      const sword = heldItem();
+      const r = rig(async () => armedModel(), undefined, async () => [sword]);
+      r.add(moverFrom(addedPlayer(7)));
+      await r.views.settled();
+      r.views.dispose();
+
+      expect(sword.release).toHaveBeenCalledTimes(1);
+    });
+  });
+});
+
+describe('loadHeldItems', () => {
+  /** The Wooden Sword's row of itemProps.json. */
+  const WOODEN_SWORD: WebItemProp = {
+    id: 21, name: 'Wooden Sword', kind1: 1, kind2: 2, kind3: 2, handed: 1, part: 10, abilityMin: 3, abilityMax: 4,
+    weaponType: 1, attackSpeed: Math.fround(0.085), attackRange: 1, destParams: [-1, -1, -1], adjParams: [-1, -1, -1],
+    sfxHit: 20, model: 'models/item_weaswowooden.glb', icon: 'ui/item/itm_weaswowooden.png',
+  };
+  const YOYO: WebItemProp = { ...WOODEN_SWORD, id: 381, name: 'Itun', kind3: 11, model: 'models/item_weayoyiron.glb' };
+  const data = gameDataOf({ itemProps: new Map([[21, WOODEN_SWORD], [381, YOYO]]) });
+  const holding = (right: number | null, left: number | null = null): MoverLook => ({ ...look, held: { right, left } });
+
+  /** Services whose glbs are a scene with a textured mesh in its lod0, a lod1, and the box `extras` on the scene. */
+  function itemServices(missing: readonly string[] = []) {
+    const bytes = vi.fn(async (key: string): Promise<Uint8Array> => {
+      if (missing.includes(key)) throw new Error(`${key} is not in the asset index`);
+      return new Uint8Array(4);
+    });
+    const parseAsync = vi.fn(async () => {
+      const scene = new Group();
+      for (const name of ['lod0', 'lod1']) {
+        const material = new MeshBasicMaterial();
+        material.userData.texture = `textures/${name}.ktx2`;
+        const lod = new Mesh(new BoxGeometry(0.1, 0.8, 0.1), material);
+        lod.name = name;
+        scene.add(lod);
+      }
+      Object.assign(scene.userData, { bbMin: [-0.08, -0.03, -0.1], bbMax: [0.74, 0.03, 0.1] });
+      return { scene };
+    });
+    const textures = { acquire: vi.fn(async () => null), release: vi.fn() };
+    const services = { store: { bytes }, loaders: { gltf: { parseAsync } }, textures } as unknown as Parameters<typeof loadHeldItems>[0];
+    return { services, bytes, textures };
+  }
+
+  it('gives each item of the hands, its lod0 with its textures and the box of its glb, in its slot', async () => {
+    const { services, bytes, textures } = itemServices();
+
+    const items = await loadHeldItems(services, data)(holding(21), vi.fn());
+
+    expect(items.map((h) => h.slot)).toEqual(['right']);
+    expect(bytes).toHaveBeenCalledWith('models/item_weaswowooden.glb');
+    const { item } = items[0]!;
+    expect(item.children.map((c) => c.name)).toEqual(['lod0']);
+    expect(item.userData).toMatchObject({ bbMin: [-0.08, -0.03, -0.1], bbMax: [0.74, 0.03, 0.1] });
+    expect(textures.acquire).toHaveBeenCalledWith('textures/lod0.ktx2');
+    items[0]!.release();
+    expect(textures.release).toHaveBeenCalledWith('textures/lod0.ktx2');
+  });
+
+  it('loads a yoyo once for each hand, and gives nothing for empty hands', async () => {
+    const { services } = itemServices();
+    const yoyos = await loadHeldItems(services, data)(holding(381), vi.fn());
+    expect(yoyos.map((h) => h.slot)).toEqual(['right', 'left']);
+    expect(yoyos[0]!.item).not.toBe(yoyos[1]!.item);
+    expect(await loadHeldItems(services, data)(holding(null), vi.fn())).toEqual([]);
+  });
+
+  it('leaves the hand of a model it cannot load empty, says so once, and does not ask for it again', async () => {
+    const { services, bytes } = itemServices(['models/item_weayoyiron.glb']);
+    const report = vi.fn();
+    const load = loadHeldItems(services, data);
+
+    await expect(load(holding(381), report)).resolves.toEqual([]);
+    await expect(load(holding(381), report)).resolves.toEqual([]);
+    expect(report.mock.calls).toEqual([['held item models/item_weayoyiron.glb: models/item_weayoyiron.glb is not in the asset index']]);
+    expect(bytes).toHaveBeenCalledTimes(2); // the two hands of the first yoyo, then never again
+    // the other items still come
+    expect((await load(holding(21), report)).map((h) => h.slot)).toEqual(['right']);
   });
 });
 

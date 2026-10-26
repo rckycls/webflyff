@@ -29,7 +29,7 @@ import { MoverViews } from './render/MoverViews';
 import { NameTagLayer } from './render/NameTagLayer';
 import { lookOf } from './render/looks';
 import { MoveMark } from './render/moveMark';
-import { loadMoverModel } from './render/moverModels';
+import { loadHeldItems, loadMoverModel } from './render/moverModels';
 import { nameTagOf } from './render/nameTags';
 import { HAttr } from './sim/collision';
 import { FixedStepper, STEPS_PER_SECOND } from './sim/stepper';
@@ -241,10 +241,11 @@ export class WorldScreen {
     this.stage = stage;
     const { overlay } = this.page!;
     const data = this.data!;
+    // the own character is dressed, and armed, from the character list's item ids (`lookOf`)
     const equipment = this.entry.character.equipment;
     this.views = new MoverViews(
       stage.scene, loadMoverModel(services), overlay, (mover) => lookOf(mover, data, equipment),
-      (key) => loadMotion(services, key),
+      (key) => loadMotion(services, key), loadHeldItems(services, data),
     );
     this.tags = new NameTagLayer(stage.scene, this.element.ownerDocument);
     this.syncViews();

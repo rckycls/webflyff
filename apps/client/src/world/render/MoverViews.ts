@@ -1,13 +1,14 @@
 // The movers in view on screen: a model per mover, placed and turned where the rules put it and playing the motion they
-// set, or a placeholder figure when its model cannot be had. Models load on demand, through the page's asset store and
-// texture cache (`loadMoverModel`, `moverModels.ts`); motions too, each file once for every mover that plays it.
+// set, with the items of its hands, or a placeholder figure when its model cannot be had. Models load on demand,
+// through the page's asset store and texture cache (`loadMoverModel` and `loadHeldItems`, `moverModels.ts`); motions
+// too, each file once for every mover that plays it.
 //
 // The drawn pose is Neuz's `m_vScrPos` / `m_fScrAngle`: the own character is drawn where the rules have it, any other
 // mover follows its rules position a step behind, an eighth of the way per step (`CMover::Interpolate`), which smooths
 // the jumps a server correction makes. A model's motion goes on a frame per step as `CModel::FrameMove` does, and
 // `CActionMover`'s `IsEndFrame` asks it whether a one-play motion (sitting down, getting up) has played to its end.
 
-import { geometryBytes } from '@flyffweb/scene';
+import { attachHeld, geometryBytes } from '@flyffweb/scene';
 import type { AssembledCharacter, LoopedMotion, Overlay } from '@flyffweb/scene';
 import { toWebPosition } from '@flyffweb/formats';
 import type { Vec3 } from '@flyffweb/formats';
@@ -17,6 +18,7 @@ import { AniLoop } from '../sim/constants';
 import { STEPS_PER_SECOND } from '../sim/stepper';
 import type { Mover, WorldChanges } from '../WorldState';
 import type { MoverLook } from './looks';
+import type { HeldItem } from './moverModels';
 
 /** `MOP_NO_TRANS` (`_Common/Mover.h:46`): a motion that starts without blending from the last one. */
 const MOP_NO_TRANS = 0x00000004;
@@ -42,6 +44,8 @@ interface View {
   holder: Group;
   /** The loaded model, which plays the motions; null while loading, and for a plain object or the placeholder. */
   model: AssembledCharacter | null;
+  /** The items in the model's hands. */
+  held: HeldItem[];
   /** The height of the top of what is drawn, at scale 1; null while the model loads. */
   head: number | null;
   /** What the model added to the overlay's GPU estimate. */
@@ -61,9 +65,10 @@ interface View {
  * The views of the movers in view, kept in step with `WorldState`: `sync` with its changes each frame, `step` after each
  * of its steps, `update` before drawing. `load` gives the model of a look (rejecting when it cannot be had: the mover is
  * then the placeholder, and the overlay says why, once), and says to `report` what it left out; `lookFor` is `lookOf`
- * with the game data; `loadMotion` gives a motion file, looped as the client loops it. A model that throws as it is put
- * on screen is the placeholder too. Once disposed, nothing more is said on the overlay: it is the page's, and the next
- * entry's errors are listed there.
+ * with the game data; `loadMotion` gives a motion file, looped as the client loops it; `loadHeld` gives the items of a
+ * look's hands (never rejecting: what it cannot have it says to `report` and leaves out). A model that throws as it is
+ * put on screen is the placeholder too. Once disposed, nothing more is said on the overlay: it is the page's, and the
+ * next entry's errors are listed there.
  */
 export class MoverViews {
   private readonly views = new Map<number, View>();
@@ -81,6 +86,7 @@ export class MoverViews {
     private readonly overlay: Pick<Overlay, 'error' | 'addGpuBytes'>,
     private readonly lookFor: (mover: Mover) => MoverLook | null,
     private readonly loadMotion: (key: string) => Promise<LoopedMotion>,
+    private readonly loadHeld: (look: MoverLook, report: (message: string) => void) => Promise<HeldItem[]>,
   ) {}
 
   /** Drops the views of the movers that left, then makes one for each mover that came and is still in `movers`. */
@@ -193,7 +199,7 @@ export class MoverViews {
     holder.name = `mover ${mover.objectId}`;
     this.scene.add(holder);
     const view: View = {
-      mover, look: this.lookFor(mover), holder, model: null, head: null, bytes: 0,
+      mover, look: this.lookFor(mover), holder, model: null, held: [], head: null, bytes: 0,
       // ADD_OBJ ends with InitInterpolation (ObjSerializeOpt.cpp:764): a new mover is drawn where it is
       scrPos: copy(mover.act.body.pos), scrAngle: mover.act.body.angle, motion: null, steps: 0, action: null, actionKey: null,
       gone: false,
@@ -204,6 +210,8 @@ export class MoverViews {
       this.showPlaceholder(view);
       return;
     }
+    // the items of the hands load beside the body, and go in its hands once it is on screen (`hold`)
+    const held = this.loadHeld(look, this.report);
     this.track((async () => {
       let loaded: AssembledCharacter | Object3D;
       try {
@@ -228,7 +236,7 @@ export class MoverViews {
         this.detach(view, loaded);
         if (!view.gone) this.showPlaceholder(view);
       }
-    })());
+    })().finally(async () => this.hold(view, await held)));
   }
 
   private attach(view: View, loaded: AssembledCharacter | Object3D): void {
@@ -239,10 +247,7 @@ export class MoverViews {
     view.head = Math.max(0, new Box3().setFromObject(root).max.y);
     view.holder.add(root);
     if (model === null) return;
-    let bytes = 0;
-    root.traverse((object) => {
-      if (object instanceof Mesh) bytes += geometryBytes(object.geometry);
-    });
+    const bytes = bytesOf(root);
     this.overlay.addGpuBytes(bytes);
     view.bytes = bytes;
     view.model = model;
@@ -252,6 +257,33 @@ export class MoverViews {
     act.isEndFrame = () => this.isEndFrame(view);
     this.play(view);
     model.mixer.update(0);
+  }
+
+  /**
+   * Puts the items of the hands in the model's hands (`attachHeld`), after `attach` took the top of the body for the name
+   * tag: RenderName projects the model's box (MoverRender.cpp:1349), where a held item adds only its own box, unioned as
+   * it lies at the model's origin (ModelObject.cpp:735-744), not the place the hand carries it to. An item with no model
+   * to go on (the mover left, or is the placeholder) is let go; one that cannot be held is let go and said.
+   */
+  private hold(view: View, items: readonly HeldItem[]): void {
+    for (const held of items) {
+      const model = view.model;
+      if (model === null) {
+        held.release();
+        continue;
+      }
+      try {
+        attachHeld(model, held.item, held.slot);
+      } catch (error) {
+        this.report(`${moverLabel(view.mover)}: ${messageOf(error)}`);
+        held.release();
+        continue;
+      }
+      view.held.push(held);
+      const bytes = bytesOf(held.item);
+      this.overlay.addGpuBytes(bytes);
+      view.bytes += bytes;
+    }
   }
 
   /** Takes back what `attach` did of a model that threw on the way, and lets the model go. */
@@ -280,6 +312,8 @@ export class MoverViews {
     view.holder.removeFromParent();
     if (view.model !== null) {
       view.model.release();
+      for (const held of view.held) held.release();
+      view.held = [];
       this.overlay.addGpuBytes(-view.bytes);
       view.mover.act.isEndFrame = () => true;
       view.model = null;
@@ -399,6 +433,15 @@ function interpolate(view: View): void {
     if (view.scrAngle > 360) view.scrAngle -= 360;
     else if (view.scrAngle < 0) view.scrAngle += 360;
   }
+}
+
+/** What the meshes under `object` add to the overlay's GPU estimate. */
+function bytesOf(object: Object3D): number {
+  let bytes = 0;
+  object.traverse((o) => {
+    if (o instanceof Mesh) bytes += geometryBytes(o.geometry);
+  });
+  return bytes;
 }
 
 /** Whether `object` and every parent it has are visible. */

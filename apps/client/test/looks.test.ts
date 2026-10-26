@@ -1,15 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import type { WornPart } from '@flyffweb/protocol';
 import { GAME_DATA_KEYS } from '@flyffweb/formats';
-import type { WebItemModel, WebMover } from '@flyffweb/formats';
+import type { WebItemModel, WebItemProp, WebMover } from '@flyffweb/formats';
 import { DEFAULT_MALE, partKey } from '@flyffweb/scene';
 import { loadGameData } from '../src/world/gameData';
-import { lookOf } from '../src/world/render/looks';
+import { heldModels, lookOf } from '../src/world/render/looks';
 import { catalogFiles } from './helpers/gameDataFiles';
 import { MI_FEMALE, MI_MALE, addedNpc, addedPlayer, gameDataOf, moverFrom, webMoverOf } from './helpers/movers';
 
 /** `PARTS_*` (`Resource/defineNeuz.h:24-61`). */
-const PARTS = { HEAD: 0, HAIR: 1, UPPER: 2, LOWER: 3, HAND: 4, FOOT: 5, CAP: 6, HAT: 26, CLOTH: 27 };
+const PARTS = { HEAD: 0, HAIR: 1, UPPER: 2, LOWER: 3, HAND: 4, FOOT: 5, CAP: 6, LWEAPON: 9, RWEAPON: 10, SHIELD: 11, HAT: 26, CLOTH: 27 };
+/** `IK3_*` (`Resource/defineItemkind.h`): a sword, a knuckle, a yoyo, a bow and a shield. */
+const IK3 = { SWD: 2, KNUCKLEHAMMER: 5, YOYO: 11, BOW: 12, SHIELD: 16 };
 /** NULL_ID, `=` in propItem.txt: no `dwExclusive` or `dwBasePartsIgnore`. */
 const NONE = -1;
 
@@ -21,6 +23,13 @@ const item = (
   id, part, exclusive: hides.exclusive ?? NONE, baseIgnore: hides.baseIgnore ?? NONE, male, female,
 });
 const worn = (part: number, itemId: number, flag = 0): WornPart => ({ part, itemId, flag });
+
+/** A row of itemProps.json: an item held in the hand, as the Wooden Sword's but with its own kind, slot and model. */
+const held = (id: number, name: string, kind3: number, part: number, model: string | null): WebItemProp => ({
+  id, name, kind1: 1, kind2: 2, kind3, handed: 1, part, abilityMin: 3, abilityMax: 4, weaponType: 1,
+  attackSpeed: Math.fround(0.085), attackRange: 1, destParams: [-1, -1, -1], adjParams: [-1, -1, -1], sfxHit: 20, model,
+  icon: null,
+});
 
 const mover = (index: number, name: string, model: string | null, skeleton: string | null, motions: Record<string, string> = {}): WebMover =>
   webMoverOf({ index, name, model, skeleton, motions });
@@ -59,6 +68,16 @@ const data = gameDataOf({
     [780, item(780, PARTS.UPPER, null, 'models/part_fsuit01upper.glb', { exclusive: PARTS.LOWER })],
     [781, item(781, PARTS.CAP, null, 'models/part_fhelm01cap.glb', { baseIgnore: PARTS.HAIR })],
     [790, item(790, -1, 'models/part_mnowhere.glb')], // an item that is worn nowhere (dwParts is NULL_ID)
+  ]),
+  itemProps: new Map([
+    // the starter weapon (II_WEA_SWO_WOODEN) and the Long Sword, both one-handed: dwParts PARTS_RWEAPON
+    [21, held(21, 'Wooden Sword', IK3.SWD, PARTS.RWEAPON, 'models/item_weaswowooden.glb')],
+    [23, held(23, 'Long Sword', IK3.SWD, PARTS.RWEAPON, 'models/item_weaswonormal.glb')],
+    [331, held(331, 'Overam Knuckle', IK3.KNUCKLEHAMMER, PARTS.RWEAPON, 'models/item_weaknucram.glb')],
+    [381, held(381, 'Itun', IK3.YOYO, PARTS.RWEAPON, 'models/item_weayoyiron.glb')],
+    [431, held(431, 'Woodness Bow', IK3.BOW, PARTS.RWEAPON, 'models/item_weabowwoode.glb')],
+    [2001, held(2001, 'Green Shield', IK3.SHIELD, PARTS.SHIELD, 'models/item_armshiwooden.glb')],
+    [24, held(24, 'Unseen Sword', IK3.SWD, PARTS.RWEAPON, null)], // no model was converted
   ]),
 });
 
@@ -231,6 +250,77 @@ describe('lookOf: players', () => {
     expect(lookOf(player([worn(PARTS.UPPER, 700)]), data, [502])?.parts).toContain('models/part_mmer01upper.glb');
   });
 
+});
+
+describe('lookOf: what the hands hold', () => {
+  const own = moverFrom(addedPlayer(7, { self: true }), data);
+  const NOTHING = { right: null, left: null };
+
+  it('the own look takes item 21 into held.right', () => {
+    // the character list of a new vagrant: the clothes and the Wooden Sword, which takes PARTS_RWEAPON (dwParts)
+    const look = lookOf(own, data, [502, 506, 510, 21]);
+    expect(look?.held).toEqual({ right: 21, left: null });
+    // held, not worn: the parts are the clothes' alone
+    expect(look?.parts).toEqual(lookOf(own, data, [502, 506, 510])?.parts);
+  });
+
+  it("the own look puts a second right-hand weapon of the list in the right hand and the first in the left, and a shield on the left", () => {
+    // CDPLoginClient::OnPlayerList (DPLoginClient.cpp:485-493): the list has the hands the other way round
+    expect(lookOf(own, data, [21, 23])?.held).toEqual({ right: 23, left: 21 });
+    expect(lookOf(own, data, [2001, 21])?.held).toEqual({ right: 21, left: 2001 });
+    expect(lookOf(own, data, [12345])?.held).toEqual(NOTHING); // an id the catalogs lack has no slot
+    expect(lookOf(own, data)?.held).toEqual(NOTHING);
+  });
+
+  it('another player holds what its ADD_OBJ lists in the hand slots, and an expired item is none', () => {
+    expect(lookOf(player([worn(PARTS.RWEAPON, 23), worn(PARTS.SHIELD, 2001)]), data)?.held).toEqual({ right: 23, left: 2001 });
+    expect(lookOf(player([worn(PARTS.RWEAPON, 23), worn(PARTS.LWEAPON, 21)]), data)?.held).toEqual({ right: 23, left: 21 });
+    // CItemElem::expired: UpdateParts takes the part off (MoverEquip.cpp:346-347, 407-408, 423-424)
+    expect(lookOf(player([worn(PARTS.RWEAPON, 23, 0x01), worn(PARTS.SHIELD, 2001, 0x01)]), data)?.held).toEqual(NOTHING);
+    // the id is what the server says is held, whether the catalog knows it or not
+    expect(lookOf(player([worn(PARTS.RWEAPON, 9999)]), data)?.held).toEqual({ right: 9999, left: null });
+    expect(lookOf(player([worn(PARTS.UPPER, 700)]), data)?.held).toEqual(NOTHING);
+  });
+
+  it('a human NPC holds what its ADD_OBJ lists, and a monster or a disguised player holds nothing', () => {
+    const npc = moverFrom(addedNpc(5, MI_MALE, { characterKey: 'MaFl_Guard', worn: [worn(PARTS.RWEAPON, 23)] }), data);
+    expect(lookOf(npc, data)?.held).toEqual({ right: 23, left: null });
+    expect(lookOf(moverFrom(addedNpc(9, 21), data), data)?.held).toEqual(NOTHING);
+    const disguised = moverFrom(addedPlayer(1, { worn: [worn(PARTS.RWEAPON, 23)] }, { index: 21 }), data);
+    expect(lookOf(disguised, data)?.held).toEqual(NOTHING);
+  });
+});
+
+describe('heldModels', () => {
+  // CMover::UpdateParts (MoverEquip.cpp:378-425): the bone each held part hangs from
+  it('a weapon goes to the right hand, and in the left hand to the left one', () => {
+    expect(heldModels({ right: 21, left: null }, data)).toEqual([{ model: 'models/item_weaswowooden.glb', slot: 'right' }]);
+    expect(heldModels({ right: 23, left: 21 }, data)).toEqual([
+      { model: 'models/item_weaswonormal.glb', slot: 'right' },
+      { model: 'models/item_weaswowooden.glb', slot: 'left' },
+    ]);
+  });
+
+  it('a shield goes to the shield grip', () => {
+    expect(heldModels({ right: 21, left: 2001 }, data)).toEqual([
+      { model: 'models/item_weaswowooden.glb', slot: 'right' },
+      { model: 'models/item_armshiwooden.glb', slot: 'shield' },
+    ]);
+  });
+
+  it('a knuckle goes to the right forearm, a bow to the left hand, and a yoyo to both hands', () => {
+    expect(heldModels({ right: 331, left: null }, data)).toEqual([{ model: 'models/item_weaknucram.glb', slot: 'knuckle' }]);
+    expect(heldModels({ right: 431, left: null }, data)).toEqual([{ model: 'models/item_weabowwoode.glb', slot: 'left' }]);
+    expect(heldModels({ right: 381, left: null }, data)).toEqual([
+      { model: 'models/item_weayoyiron.glb', slot: 'right' },
+      { model: 'models/item_weayoyiron.glb', slot: 'left' },
+    ]);
+  });
+
+  it('an item with no model, or one the catalog lacks, shows nothing in the hand', () => {
+    expect(heldModels({ right: 24, left: 9999 }, data)).toEqual([]);
+    expect(heldModels({ right: null, left: null }, data)).toEqual([]);
+  });
 });
 
 describe('lookOf: hair colour', () => {

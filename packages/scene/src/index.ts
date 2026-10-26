@@ -1,7 +1,7 @@
 // The 3D code the game client and the viewer share: starting the renderer and the asset services, loading models and
-// textures, assembling a character, a world's map on screen (terrain tiles and their streaming, objects), the player's
-// movement and chase camera, the world as the game client's movement rules read it, input, the measurement overlay, and
-// the effect player (its stepping, and its renderer).
+// textures, assembling a character and putting the items in its hands, a world's map on screen (terrain tiles and their
+// streaming, objects), the player's movement and chase camera, the world as the game client's movement rules read it,
+// input, the measurement overlay, and the effect player (its stepping, and its renderer).
 
 export * from './assets/AssetStore';
 export * from './assets/fetchWithRetry';
@@ -9,6 +9,7 @@ export * from './assets/loaders';
 export * from './assets/placeholder';
 export * from './boot';
 export * from './character/assemble';
+export * from './character/held';
 export * from './character/parts';
 export * from './effects/EffectModel';
 export * from './effects/EffectRenderer';
