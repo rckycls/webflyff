@@ -9,5 +9,6 @@ export {
   writeSetPosAngle, writeSetState, writeTaskBar, writeWorldReadInfo,
 } from './world';
 export type { ScriptMessage } from './world';
+export { newVagrantOwn } from './newVagrant';
 export { createWorldScript } from './worldScript';
 export type { WorldScript, WorldScriptOptions } from './worldScript';

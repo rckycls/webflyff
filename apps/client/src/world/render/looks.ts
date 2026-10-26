@@ -239,7 +239,7 @@ export function heldModels(held: MoverLook['held'], data: GameData): HeldModel[]
  * the first one to the left hand (the list has them the other way round). Ids the catalogs lack are skipped, and so are
  * items worn nowhere (`dwParts` is NULL_ID, -1 here).
  */
-function ownWorn(itemIds: readonly number[], data: GameData): WornPart[] {
+export function ownWorn(itemIds: readonly number[], data: GameData): WornPart[] {
   const slots = new Map<number, number>();
   for (const itemId of itemIds) {
     const part = data.items.get(itemId)?.part ?? data.itemProps.get(itemId)?.part;
