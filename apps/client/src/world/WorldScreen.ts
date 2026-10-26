@@ -9,7 +9,7 @@
 
 import { toWebPosition } from '@flyffweb/formats';
 import type { Vec3 } from '@flyffweb/formats';
-import type { BundleMessage, WorldMessage } from '@flyffweb/protocol';
+import type { AddedMover, BundleMessage, WorldMessage } from '@flyffweb/protocol';
 import { Joystick, KeyboardInput, WorldStage, loadGltf, loopMotion } from '@flyffweb/scene';
 import type { Ground, LoopedMotion, SceneServices } from '@flyffweb/scene';
 import { Vector2, Vector3 } from 'three';
@@ -41,7 +41,7 @@ import { transformCoord } from './sim/d3dx';
 import { FixedStepper, STEPS_PER_SECOND } from './sim/stepper';
 import { WorldSession } from './WorldSession';
 import type { WorldEvent } from './WorldSession';
-import { WorldState } from './WorldState';
+import { WorldState, isLive } from './WorldState';
 
 const LOADING_TEXT = 'Entering the world…';
 const NOT_AVAILABLE_TEXT = "This map isn't available in the browser yet.";
@@ -174,8 +174,8 @@ export class WorldScreen {
 
   /**
    * The own character's numbers (`OwnState`), made from the own ADD_OBJ and the character list's equipment as the JOIN
-   * enters the world (`enter`); undefined before, or with no own mover in the JOIN. The attack loop reads them; the
-   * messages about the own character are to go into this same object.
+   * enters the world (`enter`); undefined before, or with no own mover in the JOIN. The attack loop reads them, and the
+   * world (`WorldState`) applies the messages about the own character to this same object, in bundle order.
    */
   get ownState(): OwnState | undefined {
     return this.own;
@@ -222,9 +222,11 @@ export class WorldScreen {
   }
 
   /**
-   * The JOIN bundle: the world (spec §3.2.5, a converted one or the session ends), the movers in view, the own
-   * character's numbers from its ADD_OBJ (the JOIN's first, `CUser::Open`, `WORLDSERVER/User.cpp:326`) and the character
-   * list's equipment (`OwnState`, whose throw ends the entry: the game files may be out of date), then the map.
+   * The JOIN bundle: the world (spec §3.2.5, a converted one or the session ends), the own character's numbers from its
+   * ADD_OBJ (the JOIN's first, `CUser::Open`, `WORLDSERVER/User.cpp:326`) and the character list's equipment
+   * (`OwnState`, whose throw ends the entry: the game files may be out of date), made before the bundle is applied so
+   * that its messages about the own character (the TASKBAR after the ADD_OBJ, `User.cpp:328`) reach them; then the movers
+   * in view, and the map. An inventory that could not be read is named on the overlay (Ruling R1; the session counts it).
    */
   private enter(worldId: number, pos: Vec3, messages: BundleMessage<WorldMessage>[]): void {
     const services = this.services!;
@@ -233,22 +235,31 @@ export class WorldScreen {
       this.end(NOT_AVAILABLE_TEXT);
       return;
     }
+    let added: AddedMover | undefined;
+    for (const { value } of messages) {
+      if (value.type === 'addMover' && value.mover.player?.self === true) added ??= value.mover;
+    }
+    if (added !== undefined) this.own = new OwnState(this.data!, added, this.entry.character.equipment);
+    const inventoryError = this.own?.inventoryError ?? null;
+    if (inventoryError !== null) this.page?.overlay.error(`own inventory: ${inventoryError}`);
     // the rules stand the movers on the stage's land and objects once their tiles are in (`ground`)
-    this.world = new WorldState(this.data!, this.entry.clock, this.ground);
+    this.world = new WorldState(this.data!, this.entry.clock, this.ground, this.own);
     this.entered = pos;
-    this.apply(messages);
-    const self = this.world.self();
-    if (self !== undefined) this.own = new OwnState(this.data!, self.added, this.entry.character.equipment);
+    this.apply(messages, true);
     void this.openStage(folder, services).catch((error: unknown) => this.fail(error));
   }
 
   /**
-   * A bundle's messages, in order, to the movers in view. SETPOS ends with `InitInterpolation` (`CDPClient::OnSetPos`,
-   * `DPClient.cpp:2270`): the mover is drawn where it is put. A REPLACE within the world (another world has ended the
-   * session) puts the own mover there as SETPOS does; the frame loop then streams the map there and moves the camera.
-   * QUERYGETDESTOBJ is the attack loop's.
+   * A bundle's messages, in order, to the movers in view and the own numbers (`WorldState`); `joining` for the JOIN's.
+   * SETPOS ends with `InitInterpolation` (`CDPClient::OnSetPos`, `DPClient.cpp:2270`): the mover is drawn where it is
+   * put. A REPLACE within the world (another world has ended the session) puts the own mover there as SETPOS does; the
+   * frame loop then streams the map there and moves the camera. QUERYGETDESTOBJ is the attack loop's, and so are the
+   * focus and the attack when a mover in view dies (`AttackLoop.onMoverDeath`, `OnMoverDeath`) or leaves
+   * (`AttackLoop.onRemoved`, `CWorld::Process`, `World.cpp:883-893`): told before the world puts the mover in its dead
+   * state or drops it, so that the focus released is as live as Neuz finds it (`IsLive`, the SETTARGET with 1 of a
+   * live target only, `World.cpp:310`).
    */
-  private apply(messages: BundleMessage<WorldMessage>[]): void {
+  private apply(messages: BundleMessage<WorldMessage>[], joining = false): void {
     const world = this.world!;
     for (const { objectId, value } of messages) {
       const self = world.self();
@@ -262,7 +273,11 @@ export class WorldScreen {
         this.attackLoop?.onQueryGetDestObj(value.fromId);
         continue;
       }
-      world.apply(objectId, value);
+      if (world.movers.has(objectId)) {
+        if (value.type === 'moverDeath') this.attackLoop?.onMoverDeath(objectId, value.attackerId);
+        else if (value.type === 'delObj') this.attackLoop?.onRemoved(objectId);
+      }
+      world.apply(objectId, value, joining);
       if (value.type === 'setPos') this.views?.snap(objectId);
     }
   }
@@ -330,14 +345,15 @@ export class WorldScreen {
     this.resolveShown();
   }
 
-  /** The changes in view since the last call, to the views and the name tags. */
+  /**
+   * The changes in view since the last call, to the views and the name tags. The focus heard of the movers that left as
+   * their DEL_OBJ came (`apply`); what the combat and own messages played (`changes.combat`, `changes.own`) is not
+   * drawn yet.
+   */
   private syncViews(): void {
     const world = this.world!;
     const data = this.data!;
     const changes = world.takeChanges();
-    // a mover that left (DEL_OBJ) is no longer the focus (`CWorld::Process`, `World.cpp:892-893`), and the attack on it
-    // stops (`AttackLoop.onRemoved`); before the world is on screen nothing is focused
-    for (const objectId of changes.removed) this.attackLoop?.onRemoved(objectId);
     this.views!.sync(changes, world.movers);
     this.tags!.sync(changes, world.movers, (mover) => nameTagOf(mover, world.self(), data.nameColors, data.honorTitles));
   }
@@ -463,12 +479,13 @@ export class WorldScreen {
   }
 
   /**
-   * `CMover::IsLive` (`Mover.h:1222`) of the mover `objectId`: not in a dead state, or with HP left. A mover no longer in
-   * view is live, as the one `CWorld::Process` deletes still is when the focus is released.
+   * `CMover::IsLive` (`Mover.h:1222`) of the mover `objectId`: not in a dead state, or with HP left (`isLive`). The
+   * focus asks it of a mover still in view: the world screen tells the attack loop of a DEL_OBJ before the world drops
+   * the mover (`apply`). One not in view counts as live.
    */
   private isLive(objectId: number): boolean {
     const mover = this.world?.movers.get(objectId);
-    return mover === undefined || !mover.act.isDie() || mover.act.hitPoint() > 0;
+    return mover === undefined || isLive(mover);
   }
 
   /** The page is hidden (another tab, the home screen, a phone going to sleep): no frame runs until it shows again. */

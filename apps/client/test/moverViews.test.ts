@@ -143,11 +143,11 @@ function rig(
     scene, views, load, overlay, movers, motions,
     add(mover) {
       movers.set(mover.objectId, mover);
-      sync({ added: [mover], removed: [] });
+      sync({ added: [mover], removed: [], combat: [], own: [] });
     },
     remove(objectId) {
       movers.delete(objectId);
-      sync({ added: [], removed: [objectId] });
+      sync({ added: [], removed: [objectId], combat: [], own: [] });
     },
   };
 }

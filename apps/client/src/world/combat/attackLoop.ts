@@ -14,6 +14,7 @@ import { setDestObj } from '../sim/moverRules';
 import type { SimMover } from '../sim/moverRules';
 import { attackSpeed } from '../sim/params';
 import type { WorldSession } from '../WorldSession';
+import { isDie } from '../WorldState';
 import type { Mover, WorldState } from '../WorldState';
 import type { Focus } from './focus';
 
@@ -70,7 +71,7 @@ type ProcessBranch = 'attack' | 'controls' | 'none';
  *   MELEE_ATTACK;
  * - at each swing's end, the combo (`_ProcessStateAttack`, `_AIInterface/ActionMoverState.cpp:804-841`): the next swing,
  *   by level, while auto-attacking or holding the button, and its MELEE_ATTACK;
- * - what stops it (`stop`, `onRemoved`), and the answer to QUERYGETDESTOBJ.
+ * - what stops it (`stop`, `onRemoved`, `onMoverDeath`), and the answer to QUERYGETDESTOBJ.
  *
  * `world` gives the own mover (`g_pPlayer`, `self`) and the movers in view (`prj.GetMover`, `movers`); `own` the own
  * character's numbers (`OwnState`): its level, its hand's `fAttackSpeed` (MELEE_ATTACK sends it, the server refuses
@@ -224,9 +225,9 @@ export class AttackLoop {
    * What stops the auto-attack ([combat §2.6]), with the command (`ClearCmd`): a movement key or the joystick (`move`:
    * `WndWorldControlPlayer.cpp:383-403`, and `CWndWorld::OnKeyDown` for W, A, S and D, `WndWorld.cpp:7739-7740`); a
    * press on the ground (`ground`: `onGroundPressed`, which also drops the next target and the mark, and leaves the
-   * focus); the player's death (`died`: `CDPClient::OnMoverDeath`, `Neuz/DPClient.cpp:2080`); the target dead or gone
-   * from view (`target`: `onRemoved`). The focus is `Focus`'s to clear. A press held on a mover past its 500 ms goes on
-   * attacking: Neuz reads no keys while it runs that branch.
+   * focus); the player's death (`died`: `CDPClient::OnMoverDeath`, `Neuz/DPClient.cpp:2080`, `onMoverDeath`); the
+   * target killed by the player or gone from view (`target`: `onRemoved`, `onMoverDeath`). The focus is `Focus`'s to
+   * clear. A press held on a mover past its 500 ms goes on attacking: Neuz reads no keys while it runs that branch.
    */
   stop(reason: 'move' | 'ground' | 'died' | 'target'): void {
     this.auto = false;
@@ -239,19 +240,37 @@ export class AttackLoop {
 
   /**
    * The mover `objectId` is gone from view (DEL_OBJ: `CWorld::Process`, `World.cpp:883-893`) or, with `takesNext`, was
-   * killed by the player (MOVERDEATH: `CDPClient::OnMoverDeath`, `Neuz/DPClient.cpp:1956-1972`): the focus goes, and
-   * after a kill the next target queued becomes it (`Focus.onRemoved`), marked unless peaceful (`SetNextTarget`,
-   * `WndWorld.cpp:6389-6419`). Was it the target, the attack stops (`stop( 'target' )`): `SetNextTarget`'s
-   * `m_bAutoAttack = FALSE` (:6418) after a kill; after a DEL_OBJ Neuz leaves the flag on with nothing focused, where it
-   * does nothing, and the next press clears it (:6850-6853).
+   * killed by the player (MOVERDEATH: `CDPClient::OnMoverDeath`, `Neuz/DPClient.cpp:1956-1972`; see `onMoverDeath`): was
+   * it the target, the focus goes (`loseTarget`); was it the queued next target, that is forgotten (`World.cpp:899-902`,
+   * which leaves the mark as it is).
    */
   onRemoved(objectId: number, takesNext = false): void {
-    const wasTarget = this.focus.targetId === objectId;
-    this.focus.onRemoved(objectId, takesNext);
-    if (!wasTarget) return;
-    const next = this.focus.targetId;
-    if (next !== null && this.world.movers.get(next)?.added.belligerence !== Belli.PEACEFUL) this.renderTarget = next;
-    this.stop('target');
+    if (this.focus.targetId === objectId) this.loseTarget(takesNext);
+    else this.focus.onRemoved(objectId, takesNext);
+  }
+
+  /**
+   * `CDPClient::OnMoverDeath` (`Neuz/DPClient.cpp:1936-2090`) as the mover `victimId` dies, killed by `attackerId`
+   * (`NULL_ID` for none), for the focus, the mark and the auto-attack. The world screen calls it as the message comes,
+   * before the world sets the mover's HP to 0 and its dead state: the focus released then is live (`IsLive`,
+   * `Mover.h:1222`), as in the C++, where its HP is 0 by then but its state not yet dead.
+   * - The own death clears the focus (`SetObjFocus( NULL )`, :1949-1951) and stops the attack (`m_bAutoAttack = FALSE`,
+   *   :2080).
+   * - The own kill clears the focus whatever died (:1963), and the next target queued, kept through the clearing,
+   *   becomes it (`SetNextTarget`, :1959-1970): `loseTarget` with the next.
+   * - The queued next target dying is forgotten, the mark going back to the focus if it was on it (:1984-1993).
+   * A target that another killed stays the focus: the attack finds it dead and clears it (`IsAttackAbleNPC`), or its
+   * DEL_OBJ does.
+   */
+  onMoverDeath(victimId: number, attackerId: number): void {
+    const self = this.world.self()?.objectId;
+    if (self !== undefined && victimId === self) this.clearFocus();
+    else if (self !== undefined && attackerId === self && this.focus.targetId !== null) this.loseTarget(true);
+    if (this.focus.next === victimId) {
+      if (this.renderTarget === victimId) this.renderTarget = this.focus.targetId;
+      this.focus.next = null;
+    }
+    if (self !== undefined && victimId === self) this.stop('died');
   }
 
   /**
@@ -302,6 +321,31 @@ export class AttackLoop {
     return this.held !== null && this.held.until - this.focusTimer >= FOCUS_ATTACK_MS;
   }
 
+  /**
+   * The focus is gone (DEL_OBJ) or was the player's kill: `SetObjFocus( NULL )` (`World.cpp:253-359`), whose clearing
+   * takes the mark off (:337-341), and after a kill (`takesNext`) the next target queued becomes the focus
+   * (`Focus.onRemoved`), marked unless peaceful (`SetNextTarget`, `WndWorld.cpp:6389-6419`). The attack stops
+   * (`stop( 'target' )`): `SetNextTarget`'s `m_bAutoAttack = FALSE` (:6418); with no next target, or after a DEL_OBJ,
+   * Neuz leaves the flag on with nothing focused, where it does nothing, and the next press clears it (:6850-6853).
+   */
+  private loseTarget(takesNext: boolean): void {
+    this.focus.onRemoved(this.focus.targetId!, takesNext);
+    const next = this.focus.targetId;
+    const marked = next !== null && this.world.movers.get(next)?.added.belligerence !== Belli.PEACEFUL;
+    this.renderTarget = marked ? next : null;
+    this.stop('target');
+  }
+
+  /**
+   * `SetObjFocus( NULL )` (`World.cpp:253-359`): with a focus, it is released, and the next target and the mark go
+   * (:331-343); with none, nothing changes (:319).
+   */
+  private clearFocus(): void {
+    if (this.focus.targetId === null) return;
+    this.focus.select(null);
+    this.renderTarget = null;
+  }
+
   /** `g_pPlayer->IsDie()` (`Mover.h:1221`): in a dead state, or with no HP left. */
   private ownIsDead(): boolean {
     return this.world.self()?.act.isDie() === true || this.own()?.hp === 0;
@@ -347,13 +391,13 @@ export class AttackLoop {
   }
 
   /**
-   * `CMover::IsAttackAbleNPC` (`Mover.cpp:6572-6626`): a dead one is refused and the focus cleared (`SetObjFocus( NULL )`,
-   * :6580-6589); then one that cannot be killed (`bKillable == 0`, or no row in the catalog), a peaceful one
-   * (`IsPeaceful`, the ADD_OBJ's `m_dwBelligerence`) and, the player on the ground, a flying one (`dwFlying == 1`). A
-   * mover's HP is not kept yet: its dead state alone tells its death, as for picking.
+   * `CMover::IsAttackAbleNPC` (`Mover.cpp:6572-6626`): a dead one (`IsDie`: its dead state, or no HP left) is refused and
+   * the focus cleared (`SetObjFocus( NULL )`, :6580-6589); then one that cannot be killed (`bKillable == 0`, or no row in
+   * the catalog), a peaceful one (`IsPeaceful`, the ADD_OBJ's `m_dwBelligerence`) and, the player on the ground, a flying
+   * one (`dwFlying == 1`).
    */
   private isAttackAbleNpc(npc: Mover): boolean {
-    if (npc.act.isDie()) {
+    if (isDie(npc)) {
       this.focus.select(null);
       return false;
     }

@@ -72,6 +72,9 @@ const DELTA_E_FRICTION = f32(0.9);
 /** The knock-back of a forced death: `DoDamageFly( attacker's angle, 145.0f, 0.25f )` (`ActionMoverMsg.cpp:959`). */
 const DIE_FLY_ANGLE_Y = 145;
 const DIE_FLY_POWER = f32(0.25);
+/** The knock-back of a hit: `DoDamageFly( attacker's angle, 145.0f, 0.18f )` (`Neuz/DPClient.cpp:1919`). */
+const HIT_FLY_ANGLE_Y = 145;
+const HIT_FLY_POWER = f32(0.18);
 /** `m_vDelta.y = 0.04f`: the bounce of a knocked-flying mover as it lands (`__BS_FIXED_KNOCKBACK`, `ActionMoverState.cpp:492-496`). */
 const LANDING_BOUNCE = f32(0.04);
 /** `AF_GENERIC`, what a swing answers on the client: it never rolls the hit, the server does (`ActionMoverMsg.cpp:698-700`). */
@@ -339,6 +342,39 @@ export class ActionMover {
   /** `pModel->m_nPause = ticks` (`OnAttackMelee`, `MoverActEvent.cpp:1693-1701`): the model holds still for `ticks` steps. */
   pause(ticks: number): void {
     this.paused = ticks;
+  }
+
+  /**
+   * `if( IsSit() ) ResetState( OBJSTA_MOVE_ALL )`, what a hit does to a sitting mover (`CDPClient::OnDamage`,
+   * `Neuz/DPClient.cpp:1789-1790`, and `OnDamageMsgC`, `ActionMoverDmg.cpp:62-63`): its sitting state ends, and with it
+   * the sitting flag (`resetState`).
+   */
+  unsit(): void {
+    if (this.stateFlag & ObjStaF.SIT) this.resetState(ObjSta.MOVE_ALL);
+  }
+
+  /**
+   * The knock-back of a DAMAGE with `AF_FLYING` on its victim, the attacker being in view (`CDPClient::OnDamage`,
+   * `Neuz/DPClient.cpp:1910-1921`): unless the state is `OBJSTA_STUN` and nothing else (`GetState() != OBJSTA_STUN`, which
+   * nearly always holds), the mover takes `OBJSTA_DMG_FLY` with `MTI_DMGFLY` held on its last frame, and is pushed the
+   * way its attacker faces (`attackerAngle`), `DoDamageFly( fAngle, 145.0f, 0.18f )`. True where it was; the attacker's
+   * `OBJMSG_STOP`, between the motion and the push in the C++ and with no bearing on either, is the caller's.
+   */
+  knockFlying(attackerAngle: number): boolean {
+    if (this.state === ObjSta.STUN) return false;
+    this.setState(ObjSta.DMG_ALL, ObjSta.DMG_FLY);
+    this.setMotion(Mti.DMGFLY, AniLoop.CONT);
+    this.doDamageFly(attackerAngle, HIT_FLY_ANGLE_Y, HIT_FLY_POWER);
+    return true;
+  }
+
+  /**
+   * A level up's motion (`CDPClient::OnSetLevel`, `Neuz/DPClient.cpp:3349-3350`, and `CMover::SetExperience`,
+   * `MoverParam.cpp:1725-1726`): `MTI_LEVELUP`, once and as it is (`ANILOOP_1PLAY`, `MOP_FIXED`), when the state has a
+   * standing bit. `IsState` is a bitwise test (`Action.h:307`), so `OBJSTA_SIT` (3) and `OBJSTA_BMOVE` (5) pass it too.
+   */
+  levelUpMotion(): void {
+    if (this.state & (ObjSta.STAND | ObjSta.STAND2)) this.setMotion(Mti.LEVELUP, AniLoop.ONE_PLAY, Mop.FIXED);
   }
 
   /** `CAction::IsDie()` (`Action.h:310`): in a dead state. */
@@ -907,8 +943,11 @@ export class ActionMover {
     if (mask & ObjSta.ACTION_ALL) clear();
   }
 
-  /** `CAction::ClearState` (`Action.cpp:147-159`): every state ends, the handlers called. */
-  private clearState(): void {
+  /**
+   * `CAction::ClearState` (`Action.cpp:147-159`): every state ends, the handlers called. Death does it, and a revival
+   * (`CDPClient::OnRevival`, `OnRevivalLodestar`, `Neuz/DPClient.cpp:3455`, :3489), after which the next step stands.
+   */
+  clearState(): void {
     this.resetState(ObjSta.ALL);
     this.state = 0;
   }

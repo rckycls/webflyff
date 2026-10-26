@@ -752,6 +752,24 @@ describe('WorldSession, statistics and logging', () => {
     expect(events.map((e) => e.type)).toEqual(['entered']); // none of them ends the session
   });
 
+  it('an own ADD_OBJ whose inventory did not read is kept, counted as one mismatch and named once (Ruling R1)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { cache, session, events } = await atJoin();
+    // the own ADD_OBJ cut 10 bytes into its inventory's object indexes: the table of contents still bounds it
+    const whole = writeAddSelf(OWN, SELF);
+    const broken = { ...whole, fields: whole.fields.subarray(0, whole.fields.byteLength - 10) };
+    cache.push(encodeBundle(PacketType.JOIN, OWN, [writeWorldReadInfo(OWN, FLARIS, POS), broken]));
+    expect(session.stats).toEqual({ bundles: 1, indexed: 1, skipped: 0, mismatched: 1, unknownPackets: 0 });
+    const entered = events[0] as EventOf<'entered'>;
+    const added = entered.messages[1]!.value;
+    expect(added.type === 'addMover' && added.mover.player?.own).toMatchObject({ inventory: null, inventoryError: expect.any(String) });
+    expect(warn.mock.calls.map((call) => String(call[0]))).toEqual([expect.stringContaining('inventory')]);
+    // the same again (another self ADD_OBJ) is counted, and not named again
+    cache.push(snapshot([broken]));
+    expect(session.stats.mismatched).toBe(2);
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
   it('a message that is skipped in an indexed bundle is counted but not logged', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const { cache, session } = await playing();

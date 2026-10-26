@@ -20,6 +20,7 @@ import { motionFor } from '../sim/ActionMover';
 import type { MotionHand } from '../sim/ActionMover';
 import { AniLoop, Ik3, Mop } from '../sim/constants';
 import { STEPS_PER_SECOND } from '../sim/stepper';
+import { isDie } from '../WorldState';
 import type { Mover, WorldChanges } from '../WorldState';
 import { MI_FEMALE, MI_MALE, Parts } from './looks';
 import type { MoverLook } from './looks';
@@ -254,9 +255,9 @@ export class MoverViews {
    * (`CMover::GetActiveMover()`, its exception object) left out, with what the pick tests it by: the box of its model, a
    * held item's included (`AssembledCharacter.box`; the placeholder's own for the placeholder), the D3D world matrix it
    * is drawn with (`moverMatrix` of `m_vScrPos`, `m_fScrAngle` and the scale), whether it is dead and whether it is a
-   * player. A mover whose model is still loading is not drawn and not among them. `dead` is the dead state alone
-   * (`CActionMover::IsDie`): the movers keep no HP yet for the other half of `CMover::IsDie` (`Mover.h:1221`).
-   * The boxes are made anew from the models at each call: it is for a tap, not for a step.
+   * player. A mover whose model is still loading is not drawn and not among them. `dead` is `CMover::IsDie`
+   * (`Mover.h:1221`, `isDie`): the dead state, or no HP left. The boxes are made anew from the models at each call: it
+   * is for a tap, not for a step.
    */
   pickCandidates(except: number | undefined): PickCandidate[] {
     const found: PickCandidate[] = [];
@@ -266,7 +267,7 @@ export class MoverViews {
       const box = view.model !== null ? view.model.box() : view.placeholder ? placeholderBox() : null;
       if (box === null) continue;
       found.push({
-        objectId: mover.objectId, box, world: moverMatrix(view.scrPos, view.scrAngle, mover.added.scale), dead: mover.act.isDie(),
+        objectId: mover.objectId, box, world: moverMatrix(view.scrPos, view.scrAngle, mover.added.scale), dead: isDie(mover),
         isPlayer: mover.added.isPlayer,
       });
     }

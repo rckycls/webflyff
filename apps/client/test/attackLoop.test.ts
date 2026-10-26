@@ -518,6 +518,80 @@ describe('AttackLoop: what stops it ([combat §2.6])', () => {
   });
 });
 
+describe('AttackLoop: MOVERDEATH (CDPClient::OnMoverDeath, DPClient.cpp:1936-2090)', () => {
+  /** Auto-attacking the monster, with `next` pressed after it (queued as the next target). */
+  function attacking(next: number | null) {
+    const r = rig();
+    r.tap(MONSTER_ID);
+    r.tap(MONSTER_ID);
+    if (next !== null) r.tap(next);
+    return r;
+  }
+
+  it('the own kill focuses the queued next target, marked only when it is not peaceful (:1956-1971, SetNextTarget)', () => {
+    const r = attacking(OTHER_MONSTER_ID);
+    r.loop.onMoverDeath(MONSTER_ID, OWN_ID);
+    expect(r.focus.targetId).toBe(OTHER_MONSTER_ID);
+    expect(r.loop.renderTargetId).toBe(OTHER_MONSTER_ID);
+    expect(r.loop.autoAttack).toBe(false);
+    // the dead target, not yet in its dead state, is live: it is released (World.cpp:310)
+    expect(r.targets).toEqual([[MONSTER_ID, 2], [MONSTER_ID, 1], [NULL_ID, 2], [OTHER_MONSTER_ID, 2]]);
+
+    // a peaceful NPC queued: it becomes the focus, and SetObjFocus( NULL ) left no mark (WndWorld.cpp:6414-6415)
+    const peaceful = attacking(NPC_ID);
+    expect(peaceful.focus.next).toBe(NPC_ID);
+    expect(peaceful.loop.renderTargetId).toBe(MONSTER_ID);
+    peaceful.loop.onMoverDeath(MONSTER_ID, OWN_ID);
+    expect(peaceful.focus.targetId).toBe(NPC_ID);
+    expect(peaceful.loop.renderTargetId).toBeNull();
+  });
+
+  it('the own kill clears the focus whatever died (:1963)', () => {
+    const r = rig();
+    r.tap(OTHER_MONSTER_ID);
+    r.loop.onMoverDeath(MONSTER_ID, OWN_ID);
+    expect(r.focus.targetId).toBeNull();
+    expect(r.targets).toEqual([[OTHER_MONSTER_ID, 2], [OTHER_MONSTER_ID, 1], [NULL_ID, 2]]);
+  });
+
+  it('the queued next target killed by another: dropped, and the mark goes back to the focus (:1984-1993)', () => {
+    const r = attacking(OTHER_MONSTER_ID);
+    expect(r.loop.renderTargetId).toBe(OTHER_MONSTER_ID);
+    r.loop.onMoverDeath(OTHER_MONSTER_ID, PLAYER_ID);
+    expect(r.focus.next).toBeNull();
+    expect(r.focus.targetId).toBe(MONSTER_ID);
+    expect(r.loop.renderTargetId).toBe(MONSTER_ID);
+    expect(r.loop.autoAttack).toBe(true);
+    // a DEL_OBJ of the queued one only forgets it (World.cpp:899-902): the mark stays where it was
+    const gone = attacking(OTHER_MONSTER_ID);
+    gone.loop.onRemoved(OTHER_MONSTER_ID);
+    expect(gone.focus.next).toBeNull();
+    expect(gone.loop.renderTargetId).toBe(OTHER_MONSTER_ID);
+  });
+
+  it('the target killed by another stays the focus until the attack finds it dead (IsAttackAbleNPC)', () => {
+    const r = attacking(null);
+    r.loop.onMoverDeath(MONSTER_ID, PLAYER_ID);
+    expect(r.focus.targetId).toBe(MONSTER_ID);
+    expect(r.loop.autoAttack).toBe(true);
+    r.monster.act.sendActMsg(ActMsg.DIE, ActMsg.DAMAGE, PLAYER_ID);
+    r.step();
+    expect(r.focus.targetId).toBeNull();
+    expect(r.loop.autoAttack).toBe(false);
+    expect(r.melee()).toEqual([]);
+  });
+
+  it('the own death clears the focus and the next target, and stops the attack (:1949-1951, 2080)', () => {
+    const r = attacking(OTHER_MONSTER_ID);
+    r.loop.onMoverDeath(OWN_ID, MONSTER_ID);
+    expect(r.focus.targetId).toBeNull();
+    expect(r.focus.next).toBeNull();
+    expect(r.loop.renderTargetId).toBeNull();
+    expect(r.loop.autoAttack).toBe(false);
+    expect(r.targets).toEqual([[MONSTER_ID, 2], [MONSTER_ID, 1], [NULL_ID, 2]]);
+  });
+});
+
 describe('AttackLoop: taps that repeat fast (Review Focus 2)', () => {
   it('pressing attack ten times sends one approach', () => {
     const r = rig();

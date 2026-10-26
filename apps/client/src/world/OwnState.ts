@@ -50,8 +50,11 @@ function patternUpLevel(from: number, to: number): 2 | 8 | 12 | null {
   return null;
 }
 
-/** The `nRate` of `OnRevivalLodestar` (`DPClient.cpp:3492-3499`, `__VER >= 9`): the tenths of the maximum it gives. */
-function lodestarRate(level: number): number {
+/**
+ * The `nRate` of `OnRevivalLodestar` (`DPClient.cpp:3492-3499`, `__VER >= 9`): the tenths of the maximum it gives, to
+ * any mover it names (the world's, `WorldState`, for the others).
+ */
+export function lodestarRate(level: number): number {
   if (level === 1) return 8;
   if (level === 2) return 6;
   if (level <= 5) return 5;

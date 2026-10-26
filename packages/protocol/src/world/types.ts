@@ -38,7 +38,11 @@ export type WorldMessage =
    * victim's position and angle when `AF_FLYING` is set, else `null`.
    */
   | { type: 'damage'; attackerId: number; hit: number; flags: number; fly: { pos: Vec3; angle: number } | null }
-  /** The mover died. `attackerId` is `NULL_ID` when no mover killed it; `message` is an `OBJMSG` (41 or 0). */
+  /**
+   * The mover died. `attackerId` is `NULL_ID` when no mover killed it; `message` is an `OBJMSG`: `OBJMSG_DAMAGE` (41) for
+   * a blow, `OBJMSG_DAMAGE_FORCE` (42) for a forced one (`SendDamageForce` → `DoDie` → `AddMoverDeath`), 0 for a death
+   * with no blow (`DoDie( NULL )` on deadly land, `HATTR_DIE`, `ActionMoverCollision.cpp:87-89`).
+   */
   | { type: 'moverDeath'; attackerId: number; message: number }
   /** The mover's HP, MP or FP, absolute: `param` is a `DST_*` (`DstParam`). */
   | { type: 'setPointParam'; param: number; value: number }

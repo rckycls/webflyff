@@ -154,12 +154,15 @@ function tidyCorr(m: SimMover): void {
   if (c && c.action === null && c.remnant === 0 && c.speed === 0) m.corr = null;
 }
 
-/** `ClearDestPos`, `ClearDestObj`, `ClearDest` and `ClearDestAngle` (`Mover.h:1006-1015`). */
+/**
+ * `ClearDestPos`, `ClearDestObj`, `ClearDest` and `ClearDestAngle` (`Mover.h:1006-1015`). `ClearDestObj` is also what a
+ * kill does to the killer (`CDPClient::OnMoverDeath`, `DPClient.cpp:2009`).
+ */
 function clearDestPos(m: SimMover): void {
   if (m.dest) m.dest.pos = null;
   tidyDest(m);
 }
-function clearDestObj(m: SimMover): void {
+export function clearDestObj(m: SimMover): void {
   if (m.dest) {
     m.dest.targetId = null;
     m.dest.range = 0;

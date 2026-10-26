@@ -22,7 +22,8 @@ export type WorldEvent =
 /**
  * What the bundles looked like, for the overlay. `indexed` counts the bundles that had a valid table of contents, `skipped`
  * the messages of a type nothing reads (in a bundle without a table, the one that ended it too), `mismatched` the messages
- * whose reader did not end where the table says, and `unknownPackets` the top-level packets of a type this does not know.
+ * whose reader did not end where the table says (and the own ADD_OBJs whose inventory could not be read, which are kept),
+ * and `unknownPackets` the top-level packets of a type this does not know.
  */
 export interface SessionStats { bundles: number; indexed: number; skipped: number; mismatched: number; unknownPackets: number }
 
@@ -350,7 +351,10 @@ export class WorldSession {
     }
   }
 
-  /** Counts a bundle and names, once each, the types the reader could not make sense of. */
+  /**
+   * Counts a bundle and names, once each, the types the reader could not make sense of. An own ADD_OBJ whose inventory
+   * could not be read is kept, its numbers being good, and counted as a mismatch all the same (Ruling R1).
+   */
   private count(bundle: BundleResult<WorldMessage>): void {
     this.stats.bundles++;
     if (bundle.indexed) this.stats.indexed++;
@@ -358,6 +362,12 @@ export class WorldSession {
     this.stats.mismatched += bundle.mismatched.length;
     for (const type of bundle.mismatched) {
       this.warnOnce(`type ${type}`, `message type ${hex(type, 4)} did not end where the bundle's table of contents says; its messages are dropped`);
+    }
+    for (const { value } of bundle.messages) {
+      const error = value.type === 'addMover' ? value.mover.player?.own?.inventoryError ?? null : null;
+      if (error === null) continue;
+      this.stats.mismatched++;
+      this.warnOnce('inventory', `the own character's inventory could not be read (${error}); the rest of its ADD_OBJ is kept`);
     }
     if (bundle.stoppedAt !== null) {
       this.warnOnce(`type ${bundle.stoppedAt}`, `a bundle without a table of contents stopped at message type ${hex(bundle.stoppedAt, 4)}; the rest of it is dropped`);

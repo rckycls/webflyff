@@ -11,6 +11,8 @@
 export const ObjSta = {
   NONE: 0x00000000,
   STAND: 0x00000001,
+  /** The other standing state (`MoverMsg.h:9`), which a level up's motion takes too (`OnSetLevel`, `SetExperience`). */
+  STAND2: 0x00000002,
   SIT: 0x00000003,
   FMOVE: 0x00000004,
   BMOVE: 0x00000005,
@@ -44,6 +46,8 @@ export const ObjSta = {
   DIE_ALL: 0x08000000,
   DMG_ALL: 0x0f000000,
   COLLECT: 0x10000000,
+  /** Stunned (`MoverMsg.h:88`), the state a knock-back's DAMAGE compares with (`CDPClient::OnDamage`). */
+  STUN: 0x40000000,
   ACTION_ALL: 0xf0000000,
   /** `OBJSTA_ALL` (`:91`): every group's mask, which is every bit. */
   ALL: 0xffffffff,
@@ -119,6 +123,8 @@ export const Mti = {
   ATK2: 24,
   ATK3: 25,
   ATK4: 26,
+  /** The level up (`defineNeuz.h:460`), played as it is (`MOP_FIXED`) by a standing mover. */
+  LEVELUP: 198,
   STAND_02: 300,
   STAND_05: 600,
   STAND_11: 2200,
