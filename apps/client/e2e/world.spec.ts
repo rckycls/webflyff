@@ -286,10 +286,15 @@ async function enterFlaris(page: Page): Promise<void> {
   await expect(page.getByRole('button', { name: 'Start' })).toBeVisible();
 }
 
-/** Leaves the world as Piece 4's player does: the task bar's Start button, then the menu's Log out (spec §3.9). */
+/**
+ * Leaves the world as Piece 4's player does: the task bar's Start button, the menu's Log out, and OK in the box that asks
+ * first (CWndLogOut, spec §3.9).
+ */
 async function logOut(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Start' }).click();
   await page.getByRole('menuitem', { name: 'Log out' }).click();
+  await expect(page.getByText('Do you want to disconnect?')).toBeVisible();
+  await page.getByRole('button', { name: 'OK' }).click();
 }
 
 /** The PLAYERMOVED packets the page sent so far. */
@@ -716,9 +721,21 @@ test.describe('the world screen against scripted servers', () => {
     await page.keyboard.press('Escape');
     await expect(page.getByRole('menu')).toBeVisible();
     await expect(status).toBeVisible();
+    // with the Start menu open, Escape does nothing (WndManager.cpp:3321): the menu and the status window stay
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(300);
+    await expect(page.getByRole('menu')).toBeVisible();
+    await expect(status).toBeVisible();
+    // the menu's Status closes the status window, and opens it again (ObjectExecutor on APP_STATUS1)
+    await page.getByRole('menuitem', { name: 'Status' }).click();
+    await expect(page.getByRole('menu')).toBeHidden();
+    await expect(status).toBeHidden();
+    await page.getByRole('button', { name: 'Start' }).click();
+    await page.getByRole('menuitem', { name: 'Status' }).click();
+    await expect(status).toBeVisible();
     expect((await page.evaluate(() => window.__client!.stats())).errors).toEqual([]);
 
-    await page.getByRole('menuitem', { name: 'Log out' }).click();
+    await logOut(page);
     await expect(page.getByRole('button', { name: 'Log in' })).toBeEnabled();
     await expect(page.locator('.world-hud')).toHaveCount(0);
   });
@@ -860,6 +877,15 @@ test.describe('the world screen against scripted servers', () => {
     await page.waitForTimeout(2000);
     expect(swings()).toHaveLength(count);
     expect(approaches()).toHaveLength(1);
+
+    // within 10 s of a swing the player is fighting (IsAttackMode): Log out is refused, in red (WndManager.cpp:2613-2617)
+    await page.getByRole('button', { name: 'Start' }).click();
+    await page.getByRole('menuitem', { name: 'Log out' }).click();
+    const refusal = page.locator('.hud-messages > div', { hasText: 'You cannot quit during combat.' });
+    await expect(refusal).toHaveCount(1);
+    expect(await refusal.evaluate((e) => (e as HTMLElement).style.color)).toBe('rgb(255, 0, 0)');
+    await expect(page.getByText('Do you want to disconnect?')).toBeHidden();
+    await expect(page.getByRole('button', { name: 'Start' })).toBeVisible();
   });
 
   test('a tap-walk into a Flaris wall stops there and sends one PLAYERCORR, standing', async ({ page }) => {
@@ -888,14 +914,23 @@ test.describe('the world screen against scripted servers', () => {
     const gateway = await playGateway(page);
     await enterFlaris(page);
     await expect(page.getByRole('button', { name: 'Leave' })).toHaveCount(0);
+    const login = gateway.sent.find((s) => s.port === Port.LOGIN)!.connection;
+    const cache = gateway.sent.find((s) => s.port === Port.CACHE)!.connection;
+    // the box asks first (CWndLogOut: TID_DIAG_0068's title, TID_DIAG_0069); Cancel keeps the player in the world
+    await page.getByRole('button', { name: 'Start' }).click();
+    await page.getByRole('menuitem', { name: 'Log out' }).click();
+    await expect(page.getByText('Do you want to disconnect?')).toBeVisible();
+    await page.getByRole('button', { name: 'Cancel' }).click();
+    await expect(page.getByText('Do you want to disconnect?')).toBeHidden();
+    await page.waitForTimeout(300);
+    expect(gateway.closed).not.toContain(login);
+    expect(gateway.closed).not.toContain(cache);
     await logOut(page);
 
     await expect(page.getByRole('button', { name: 'Log in' })).toBeEnabled();
     await expect(page.getByRole('alert')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Start' })).toHaveCount(0);
     // both of the world's connections are closed: the login server's and the cache server's
-    const login = gateway.sent.find((s) => s.port === Port.LOGIN)!.connection;
-    const cache = gateway.sent.find((s) => s.port === Port.CACHE)!.connection;
     await expect.poll(() => gateway.closed).toEqual(expect.arrayContaining([login, cache]));
   });
 

@@ -4,8 +4,8 @@
 //
 //   version  dwID  szName  dwNum dwPackMax ... dwParts ...  (the columns are listed in ITEM_COLUMNS)  icon  quest ...
 //
-// Of the 124 columns this keeps the id (`II_*`), the name, the three kinds and the hands, `dwParts` (the body slot a
-// worn item takes: `PARTS_*` of defineNeuz.h, PARTS_UPPER_BODY, PARTS_RWEAPON ...), the two columns that say which
+// Of the 124 columns this keeps the id (`II_*`), the name, `dwPackMax`, the three kinds and the hands, `dwParts` (the
+// body slot a worn item takes: `PARTS_*` of defineNeuz.h, PARTS_UPPER_BODY, PARTS_RWEAPON ...), the two columns that say which
 // other parts a worn item hides (`dwExclusive` and `dwBasePartsIgnore`), the ability range, the weapon type, the
 // attack speed and range, the dest and adjust params, three effect and sound ids, and the string columns at the end
 // (the icon, the text file and the description); the rest are read and dropped. Build flags of the client:
@@ -21,6 +21,11 @@ export interface ItemProp {
    * ultimate weapons is removed, as the client does when it loads the table (ProjectCmn.cpp:519-533).
    */
   name: string;
+  /**
+   * `dwPackMax`: how many of the item one inventory slot holds (99 for the starter food, 1 for a sword). Above 1 the item
+   * stacks, and the task bar counts it (`CWndTaskBar::OnDraw`, WndTaskBar.cpp:836-847).
+   */
+  packMax: number;
   /** `dwItemKind1`: the first kind, an `IK1_*` value (IK1_WEAPON, IK1_ARMOR ...). -1 (written `=`) for none. */
   kind1: number;
   /** `dwItemKind2`: the second kind, an `IK2_*` value (IK2_WEAPON_DIRECT, IK2_ARMOR ...). */
@@ -122,6 +127,7 @@ const ITEM_COLUMNS: readonly Column[] = [
 
 /** The integer columns the rows keep (by their C++ names), and dwReferStat1, which IsUltimate asks for. */
 const KEPT: ReadonlySet<string> = new Set([
+  'dwPackMax',
   'dwItemKind1',
   'dwItemKind2',
   'dwItemKind3',
@@ -220,6 +226,7 @@ export function readPropItem(
       items.push({
         id,
         name,
+        packMax: kept.dwPackMax,
         kind1: kept.dwItemKind1,
         kind2: kept.dwItemKind2,
         kind3: kept.dwItemKind3,

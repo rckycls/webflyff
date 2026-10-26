@@ -768,34 +768,27 @@ fieldset:disabled .btn {
   pointer-events: none;
 }
 
-/* The Start menu (CWndTaskMenu): a white panel with Neuz's orange edge, a line for each window, with its applet's icon;
-   taller lines than Neuz's 22 px, for a finger */
+/* The Start menu (CWndTaskMenu): WndTaskMenu.tga at its size (192 x 496), its lines placed by the script (TaskMenu) */
 .hud-taskbar-menu {
   position: absolute;
   left: 0;
   z-index: 1000;
-  width: 192px;
   box-sizing: border-box;
-  padding: 10px;
-  border: 2px solid #e89a74;
-  border-radius: 10px;
-  background: #ffffff;
-  box-shadow: 3px 3px 0 rgba(200, 120, 90, 0.55);
+  background-repeat: no-repeat;
   color: #000000;
   transform-origin: 0 100%;
   pointer-events: auto;
 }
 
-.hud-taskbar-menu > button {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  height: 26px;
+/* a line (CWndButton, WBS_MENUITEM): the icon 20 x 20 at its left, the title at (24, 4), the hotkey 32 px from the right;
+   under the pointer filled ARGB(155, 200, 200, 200) and edged ARGB(200, 240, 240, 240) */
+.hud-menu-line {
+  position: absolute;
   margin: 0;
-  padding: 0 4px;
-  border: 0;
+  padding: 0;
+  border: 1px solid transparent;
   border-radius: 3px;
+  box-sizing: border-box;
   background: transparent;
   color: inherit;
   font: inherit;
@@ -805,25 +798,71 @@ fieldset:disabled .btn {
   -webkit-tap-highlight-color: transparent;
 }
 
-.hud-taskbar-menu > button:hover:not(:disabled) {
-  background: rgba(255, 190, 150, 0.6);
+.hud-menu-line:hover:not(:disabled) {
+  border-color: rgba(240, 240, 240, 0.784);
+  background: rgba(200, 200, 200, 0.608);
 }
 
-.hud-taskbar-menu > button:disabled {
+.hud-menu-line:disabled {
   color: #9a9a9a;
   cursor: default;
 }
 
-.hud-taskbar-menu > button:disabled .hud-menu-icon {
+.hud-menu-line:disabled .hud-menu-icon {
   filter: grayscale(1);
   opacity: 0.5;
 }
 
 .hud-menu-icon {
-  flex: none;
+  position: absolute;
+  left: 0;
+  top: 0;
   width: 20px;
   height: 20px;
   background: no-repeat 0 0 / 100% 100%;
+}
+
+.hud-menu-text {
+  position: absolute;
+  left: 24px;
+  top: 4px;
+  line-height: 12px;
+  white-space: nowrap;
+}
+
+.hud-menu-hotkey {
+  position: absolute;
+  right: 32px;
+  top: 4px;
+  line-height: 12px;
+}
+
+/* The box that asks before logging out (LogOutBox, CWndLogOut over CWndMessageBox): the text in black, OK and Cancel */
+.hud-logout-text {
+  position: absolute;
+  color: #000000;
+  line-height: 14px;
+  white-space: normal;
+}
+
+/* ButtOk.tga, ButtCancel.tga: normal, highlighted, pushed, disabled side by side, 72 px each */
+.hud-logout-button {
+  position: absolute;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  background-repeat: no-repeat;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.hud-logout-button:hover {
+  background-position: -72px 0;
+}
+
+.hud-logout-button:active {
+  background-position: -144px 0;
 }
 
 /* The attack button of a touch screen (AttackButton): right side, above the task bar, in the joystick's look */
@@ -861,12 +900,8 @@ fieldset:disabled .btn {
   cursor: default;
 }
 
-/* Piece 3's joystick stands above the task bar, out of the safe area under it; the Start menu, which opens where it
-   stands, hides it while open (the joystick is over the windows' layer; WorldScreen sets the class) */
-.world .joystick {
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 56px) !important;
-}
-
+/* The Start menu opens where Piece 3's joystick stands, which is over the windows' layer: it hides while the menu is open
+   (WorldScreen sets the class) */
 .world.world-menu-open .joystick {
   visibility: hidden;
 }

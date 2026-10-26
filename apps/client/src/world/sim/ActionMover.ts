@@ -55,6 +55,8 @@ const DEGREES_PER_RADIAN = f32(180 / f32(3.141592654));
 
 /** `0.005f`, the fall a step adds to `m_vDelta.y` (`ActionMover.cpp:294`). */
 const GRAVITY = f32(0.005);
+/** `SEC1 * 10` of `IsAttackMode` (`Mover.cpp:9229`): `SEC1` is the client's `PROCESS_COUNT`, 60 (`timer.h:133-141`). */
+const ATTACK_MODE_STEPS = 60 * 10;
 /** `0.001f`, the height change that takes a mover off the ground (`ActionMover.cpp:284`). */
 const MOVED_HEIGHT = f32(0.001);
 /** `-0.1f`: falling faster than this takes the falling state (`ActionMoverCollision.cpp:308`). */
@@ -234,6 +236,12 @@ export class ActionMover {
   targetId: number | null = null;
   /** `m_objidHit`: the mover a swing was started at, which the own character's combo goes on with; null for `NULL_ID`. */
   hitId: number | null = null;
+  /**
+   * `CMover::m_nAtkCnt` (`Mover.h:584`): 1 as a swing starts (`ActionMoverMsg.cpp:685`), then one more each step
+   * (`CMover::Process`, `Mover.cpp:3872-3873`); 0 for a mover that never swung. The client never clears it (its only
+   * clearing, in `DoDie`, is the server's: `Mover.cpp:5133-5182`). `isAttackMode` reads it.
+   */
+  atkCnt = 0;
 
   /**
    * `m_pModel->IsEndFrame()`: whether the motion has played to its end. No model plays it here, so by default every
@@ -386,6 +394,14 @@ export class ActionMover {
   }
 
   /**
+   * `CMover::IsAttackMode()` (`Mover.cpp:9226-9233`, `__VER >= 9`): fighting, a swing started less than `SEC1 * 10` steps
+   * ago (`SEC1` is the client's `PROCESS_COUNT`, 60 steps a second: 10 s, `timer.h:133-141`).
+   */
+  isAttackMode(): boolean {
+    return this.atkCnt !== 0 && this.atkCnt < ATTACK_MODE_STEPS;
+  }
+
+  /**
    * One step of `CMover::Process` (`Source/_Common/Mover.cpp:3802-3906`) after `ProcessMove`: `ProcessPreAction`,
    * `ProcessAniSpeed`, `ProcessAction` (the states), `ProcessCollision` (`ProcessCollisionGround`,
    * `ActionMoverCollision.cpp:127-389`: the move against the objects and the land, then the height), then `SetPos`
@@ -404,6 +420,7 @@ export class ActionMover {
     this.deltaAccu = [0, 0, 0];
     this.processAniSpeed();
     this.processAction(pos);
+    if (this.atkCnt > 0) this.atkCnt++; // Mover.cpp:3872-3873, after the actions
     const dy = this.deltaAccu[1]; // vDelta, the function's own copy of m_vDeltaAccu (:131)
     let collided = false; // fResult
     if (this.moved) {
@@ -705,7 +722,7 @@ export class ActionMover {
    * player, the swing's state and motion (`ANILOOP_1PLAY`, `MOP_SWDFORCE | MOP_NO_TRANS`), and the mover turns to the
    * target. The client never rolls the hit (`AF_GENERIC`). Left out: `MVRF_NOATTACK`/`NO_ATTACK_MODE` (buffs); the own
    * character's refusal with a wand or bow (:608-616), which never starts a melee swing with them; the steal rule
-   * (server); `__XSLOW1018`'s slow blow (not built); and `CMover`'s own marks (`SetJJim`'s `m_idTargeter`, `m_nAtkCnt`).
+   * (server); `__XSLOW1018`'s slow blow (not built); and `SetJJim`'s `m_idTargeter`. The swing starts `m_nAtkCnt` (:685).
    */
   private swing(swing: { state: number; motion: number }, targetId: number): number {
     if (this.state & ObjSta.ACTION_ALL) return 0;
@@ -724,6 +741,7 @@ export class ActionMover {
     this.setState(ObjSta.ATK_ALL, swing.state);
     this.setMotion(swing.motion, AniLoop.ONE_PLAY, Mop.SWDFORCE | Mop.NO_TRANS);
     this.body.angle = wrapAngle(getDegree(target.body.pos, this.body.pos));
+    this.atkCnt = 1;
     this.hitId = targetId;
     return AF_GENERIC;
   }

@@ -159,10 +159,12 @@ export class AttackLoop {
 
   /**
    * Whether the attack button of a touch screen is enabled (spec §3.9): the focus is a mover in view that `IsAttackAble`
-   * accepts (`attackAble`, the rule the attack itself runs at each step). It only asks: a dead focus is not cleared here,
-   * the attack's step does that.
+   * accepts (`attackAble`, the rule the attack itself runs at each step), and the player is not dead (`attackButton` does
+   * nothing then, as a dead player's press, `WndWorld.cpp:6719-6720`). It only asks: a dead focus is not cleared here, the
+   * attack's step does that.
    */
   get canAttackFocus(): boolean {
+    if (this.ownIsDead()) return false;
     const id = this.focus.targetId;
     const target = id === null ? undefined : this.world.movers.get(id);
     return target !== undefined && attackAble(target, this.moverProps);

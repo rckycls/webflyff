@@ -6,7 +6,7 @@ import { catalogFiles, storeOf } from './helpers/gameDataFiles';
 
 /** The Wooden Sword as the converter writes it. */
 const WOODEN_SWORD: WebItemProp = {
-  id: 21, name: 'Wooden Sword', kind1: 1, kind2: 2, kind3: 2, handed: 1, part: 10, abilityMin: 3, abilityMax: 4,
+  id: 21, name: 'Wooden Sword', packMax: 1, kind1: 1, kind2: 2, kind3: 2, handed: 1, part: 10, abilityMin: 3, abilityMax: 4,
   weaponType: 1, attackSpeed: Math.fround(0.085), attackRange: 1, destParams: [-1, -1, -1], adjParams: [-1, -1, -1],
   sfxHit: 20, model: 'models/item_weaswowooden.glb', icon: 'ui/item/itm_weaswowooden.png',
 };
@@ -44,6 +44,14 @@ describe('loadGameData: the combat catalogs', () => {
     expect(data.itemProps.get(21)!.attackSpeed).toBe(Math.fround(0.085));
     expect(data.itemProps.get(22)).toMatchObject({ name: 'Bat', model: null, icon: null });
     expect(data.itemProps.has(23)).toBe(false);
+  });
+
+  it('an itemProps.json from before the converter kept dwPackMax reads it as 1: one to a slot, nothing counted', async () => {
+    const { packMax: _dropped, ...older } = WOODEN_SWORD;
+    const data = await loadGameData(storeOf(catalogFiles({ [GAME_DATA_KEYS.itemProps]: [older] })));
+    expect(data.itemProps.get(21)!.packMax).toBe(1);
+    const stacked = await loadGameData(storeOf(catalogFiles({ [GAME_DATA_KEYS.itemProps]: [{ ...WOODEN_SWORD, packMax: 99 }] })));
+    expect(stacked.itemProps.get(21)!.packMax).toBe(99);
   });
 
   it('a repeated item id keeps the later row, as CFixedArray::SetAtGrow does', async () => {

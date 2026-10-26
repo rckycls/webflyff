@@ -91,7 +91,7 @@ function hitMotion(name: string, frames: number, hit: number[]): LoopedMotion {
 
 /** The Wooden Sword's row of itemProps.json. */
 const WOODEN_SWORD: WebItemProp = {
-  id: 21, name: 'Wooden Sword', kind1: 1, kind2: 2, kind3: 2, handed: 1, part: 10, abilityMin: 3, abilityMax: 4,
+  id: 21, name: 'Wooden Sword', packMax: 1, kind1: 1, kind2: 2, kind3: 2, handed: 1, part: 10, abilityMin: 3, abilityMax: 4,
   weaponType: 1, attackSpeed: Math.fround(0.085), attackRange: 1, destParams: [-1, -1, -1], adjParams: [-1, -1, -1],
   sfxHit: 20, model: 'models/item_weaswowooden.glb', icon: 'ui/item/itm_weaswowooden.png',
 };

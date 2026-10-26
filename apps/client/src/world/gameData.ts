@@ -79,6 +79,12 @@ const withLaterColumns = (mover: WebMover): WebMover => ({
 });
 
 /**
+ * An item of an itemProps.json from before the converter kept `packMax` (`dwPackMax`) lacks it: it reads as 1, one to a
+ * slot, so the task bar counts nothing and keeps no item id for it.
+ */
+const withPackMax = (prop: WebItemProp): WebItemProp => ({ ...prop, packMax: prop.packMax ?? 1 });
+
+/**
  * The asset index lists none of `keys`: the game files on the server were converted by a version older than these
  * catalogs (`npm run convert -- --only data` makes them).
  */
@@ -120,7 +126,7 @@ export async function loadGameData(store: Pick<AssetStore, 'json' | 'url'>): Pro
     nameColors,
     honorTitles: new Map(Object.entries(honorTitles).map(([id, title]) => [Number(id), title])),
     worlds: new Map(Object.entries(worlds).map(([id, folder]) => [Number(id), folder])),
-    itemProps: new Map(itemProps.map((prop) => [prop.id, prop])),
+    itemProps: new Map(itemProps.map((prop) => [prop.id, withPackMax(prop)])),
     jobs,
     exp: exp.map((row) => ({
       exp1: BigInt(row.exp1), exp2: BigInt(row.exp2), lpPoint: row.lpPoint, limitExp: BigInt(row.limitExp),

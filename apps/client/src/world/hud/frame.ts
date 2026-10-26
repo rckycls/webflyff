@@ -62,6 +62,18 @@ export function frameTile(x: number, y: number, cx: number, cy: number): number 
 /** The windows open on a document, the top one last: Escape closes that one. */
 const stacks = new WeakMap<Document, WindowFrame[]>();
 
+/** How much of each layer's bottom the windows leave free (`setLayoutBottom`). */
+const layoutBottoms = new WeakMap<Element, number>();
+
+/**
+ * Keeps the windows of `layer` `px` CSS pixels clear of its bottom: the task bar's, which Neuz takes off the root window's
+ * layout rectangle (`m_pWndRoot->m_rectLayout.bottom = rect.top`, `CWndTaskBar::OnInitialUpdate`,
+ * `WndTaskBar.cpp:1176-1178`), inside which the windows are kept as they move (`m_bCling`, `WndBase.cpp:1261`).
+ */
+export function setLayoutBottom(layer: Element, px: number): void {
+  layoutBottoms.set(layer, px);
+}
+
 function stackOf(doc: Document): WindowFrame[] {
   let stack = stacks.get(doc);
   if (stack === undefined) {
@@ -275,8 +287,8 @@ export class WindowFrame {
 
   /**
    * Moves the window's top left to (`x`, `y`), kept on its layer (`m_bCling`, `WndBase.cpp:1259-1271`): within 10 px of an
-   * edge it goes against it (`cling`, while moved by the pointer), and it never goes past one. A layer with no size yet
-   * (not laid out) keeps nothing.
+   * edge it goes against it (`cling`, while moved by the pointer), and it never goes past one; its bottom edge is the
+   * layout's, above the task bar (`setLayoutBottom`). A layer with no size yet (not laid out) keeps nothing.
    *
    * A deliberate departure: Neuz keeps the left and top edges first and the right and bottom ones last (:1268-1271), so a
    * window taller than the screen ends with its bottom on the screen's and its title bar above the top, out of reach.
@@ -286,7 +298,7 @@ export class WindowFrame {
   private moveTo(x: number, y: number, cling: boolean): void {
     const layer = this.element.parentElement;
     const right = layer?.clientWidth ?? 0;
-    const bottom = layer?.clientHeight ?? 0;
+    const bottom = (layer?.clientHeight ?? 0) - (layer === null ? 0 : layoutBottoms.get(layer) ?? 0);
     const w = this.element.offsetWidth || parseFloat(this.element.style.width) || 0;
     const h = this.element.offsetHeight || parseFloat(this.element.style.height) || 0;
     let px = Math.round(x);

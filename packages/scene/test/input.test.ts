@@ -161,6 +161,15 @@ describe('Joystick', () => {
     expect(knob.style.transform).toBe('');
   });
 
+  it('stands 56 px above the bottom, or where its owner says (above a task bar, out of a safe area)', () => {
+    const doc = new FakeDocument();
+    new Joystick(new FakeElement(doc) as unknown as HTMLElement);
+    expect(doc.created[0]!.style.cssText).toContain('bottom:56px;');
+    const raised = new FakeDocument();
+    new Joystick(new FakeElement(raised) as unknown as HTMLElement, { bottom: 'calc(env(safe-area-inset-bottom, 0px) + 56px)' });
+    expect(raised.created[0]!.style.cssText).toContain('bottom:calc(env(safe-area-inset-bottom, 0px) + 56px);');
+  });
+
   it('reset lets go of a push whose finger never lifted, and that finger moves it no more', () => {
     const { joystick, knob, finger } = stick();
     finger('pointerdown', 0, -50);

@@ -28,7 +28,7 @@ const worn = (part: number, itemId: number, flag = 0): WornPart => ({ part, item
 const held = (id: number, name: string, kind3: number, part: number, model: string | null): WebItemProp => ({
   id, name, kind1: 1, kind2: 2, kind3, handed: 1, part, abilityMin: 3, abilityMax: 4, weaponType: 1,
   attackSpeed: Math.fround(0.085), attackRange: 1, destParams: [-1, -1, -1], adjParams: [-1, -1, -1], sfxHit: 20, model,
-  icon: null,
+  icon: null, packMax: 1,
 });
 
 const mover = (index: number, name: string, model: string | null, skeleton: string | null, motions: Record<string, string> = {}): WebMover =>

@@ -96,6 +96,11 @@ export interface WebItemProp {
   id: number;
   /** `ItemProp::szName`: the English name. */
   name: string;
+  /**
+   * `dwPackMax`: how many of the item one inventory slot holds. Above 1 the item stacks: the task bar prints its count
+   * and keeps its item id for another stack (`CWndTaskBar::OnDraw`, WndTaskBar.cpp:836-847; `Serialize`, :345-380).
+   */
+  packMax: number;
   /** `dwItemKind1`, `dwItemKind2`, `dwItemKind3`: the kinds (`IK1_*`, `IK2_*`, `IK3_*`). */
   kind1: number;
   kind2: number;

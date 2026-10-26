@@ -43,6 +43,12 @@ function touchFirst(view: Window | null): boolean {
   return view?.matchMedia?.('(pointer: coarse)').matches === true;
 }
 
+/** Where the joystick stands. */
+export interface JoystickOptions {
+  /** Its base's distance from the container's bottom, a CSS length: 56 px (above the nav bar) by default. */
+  bottom?: string;
+}
+
 export class Joystick {
   private readonly container: HTMLElement;
   private readonly base: HTMLElement;
@@ -50,12 +56,12 @@ export class Joystick {
   private pointer: number | null = null;
   private current: MoveIntent = { ...NO_INTENT };
 
-  constructor(container: HTMLElement) {
+  constructor(container: HTMLElement, options: JoystickOptions = {}) {
     const doc = container.ownerDocument;
     this.base = doc.createElement('div');
     this.base.className = 'joystick';
     this.base.style.cssText =
-      `position:absolute;left:${LEFT}px;bottom:${BOTTOM}px;z-index:1000;width:${JOYSTICK_RADIUS * 2}px;` +
+      `position:absolute;left:${LEFT}px;bottom:${options.bottom ?? `${BOTTOM}px`};z-index:1000;width:${JOYSTICK_RADIUS * 2}px;` +
       `height:${JOYSTICK_RADIUS * 2}px;border-radius:50%;background:rgba(0,0,0,.25);` +
       'border:2px solid rgba(255,255,255,.35);box-sizing:border-box;touch-action:none;user-select:none;' +
       `display:${touchFirst(doc.defaultView) ? 'block' : 'none'};`;

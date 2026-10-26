@@ -337,6 +337,7 @@ function buildItemProps(env: Env, read: Reading): WebItemProp[] {
       return {
         id: prop.id,
         name: prop.name,
+        packMax: prop.packMax,
         kind1: prop.kind1,
         kind2: prop.kind2,
         kind3: prop.kind3,

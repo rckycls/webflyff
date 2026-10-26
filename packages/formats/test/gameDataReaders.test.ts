@@ -385,6 +385,7 @@ describe('readPropItem', () => {
     expect(sword).toEqual({
       id: 22368,
       name: 'Ultimate Guardian Sword',
+      packMax: 1, // dwPackMax: one to an inventory slot
       kind1: 1, // IK1_WEAPON
       kind2: 2, // IK2_WEAPON_DIRECT
       kind3: 2, // IK3_SWD
@@ -431,6 +432,13 @@ describe('readPropItem', () => {
     expect(sword!.attackSpeedText).toBe('0.0850');
     expect(sword!.attackSpeed).toBe(Math.fround(0.085));
     expect(Math.fround(parseFloat(sword!.attackSpeedText))).toBe(sword!.attackSpeed);
+  });
+
+  it('reads dwPackMax, how many of the item one inventory slot holds (prop.dwPackMax, ProjectCmn.cpp:335)', () => {
+    // the default item's row as a food's, 99 to a slot (II_GEN_FOO_INS_LOLLIPOP, propItem.txt:1744)
+    const food = DEFAULT.replace(row('IDS_PROPITEM_TXT_000000 1 1 IK1_SYSTEM'), row('IDS_PROPITEM_TXT_000000 1 99 IK1_SYSTEM'));
+    expect(food).not.toBe(DEFAULT);
+    expect(readPropItem(script(food, SUIT), DEFINES, STRINGS).map((item) => item.packMax)).toEqual([99, 1]);
   });
 
   it('reads dwBasePartsIgnore, the base part a worn item hides', () => {

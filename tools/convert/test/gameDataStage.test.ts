@@ -528,7 +528,7 @@ describe('the game-data stage', () => {
     // a sword: dwSfxObj3 is the hit effect (XI_HIT_SWORD01), the attack speed the C float of the token, and the
     // model entry has no part, so the item is held and the converted item model is its model
     expect(props[2]).toEqual({
-      id: 505, name: 'Training Sword', kind1: 1, kind2: 2, kind3: 2, handed: 1, part: 10, abilityMin: 3, abilityMax: 4,
+      id: 505, name: 'Training Sword', packMax: 1, kind1: 1, kind2: 2, kind3: 2, handed: 1, part: 10, abilityMin: 3, abilityMax: 4,
       weaponType: 1, attackSpeed: Math.fround(0.085), attackRange: 1, destParams: [14, -1, -1], adjParams: [5, -3, -1],
       sfxHit: 20, model: 'models/item_weasword.glb', icon: 'ui/item/itm_weasword.png',
     });
@@ -536,7 +536,7 @@ describe('the game-data stage', () => {
 
     // a suit: worn, so its model entry has a part and the item is not held; `=` is -1, as in the other catalogs
     expect(props[0]).toEqual({
-      id: 502, name: 'Cotton Suit', kind1: 2, kind2: 7, kind3: 18, handed: -1, part: 2, abilityMin: 8, abilityMax: 10,
+      id: 502, name: 'Cotton Suit', packMax: 1, kind1: 2, kind2: 7, kind3: 18, handed: -1, part: 2, abilityMin: 8, abilityMax: 10,
       weaponType: -1, attackSpeed: -1, attackRange: -1, destParams: [-1, -1, -1], adjParams: [-1, -1, -1],
       sfxHit: -1, model: null, icon: 'ui/item/itm_mvag01upper.png',
     });
@@ -558,6 +558,15 @@ describe('the game-data stage', () => {
     const props = await catalog<WebItemProp[]>(run, GAME_DATA_KEYS.itemProps);
     expect(props.map((prop) => prop.id)).toEqual([503, 505]);
     expect(props[0]).toMatchObject({ id: 503, name: 'Pike Suit', part: 3, icon: null });
+  });
+
+  it('itemProps: dwPackMax, how many of the item one inventory slot holds, as the row gives it', async () => {
+    const stacked = itemRow('503', 'IDS_PROPITEM_TXT_000792', 'PARTS_LOWER_BODY').split('	');
+    stacked[4] = '99'; // dwPackMax, the column after dwNum
+    await client({ 'propItem.txt': script(itemRow('502', 'IDS_PROPITEM_TXT_000790', 'PARTS_UPPER_BODY'), stacked.join('	')) });
+    const run = await runData();
+    const props = await catalog<WebItemProp[]>(run, GAME_DATA_KEYS.itemProps);
+    expect(props.map(({ id, packMax }) => [id, packMax])).toEqual([[502, 1], [503, 99]]);
   });
 
   it('itemProps: a held item whose model was not converted has no model, with one warning that names the item', async () => {

@@ -130,6 +130,8 @@ export const THEME_FILES: readonly string[] = [
   'ButtStart.bmp',
   'ButtQuickListUp.tga',
   'ButtQuickListDn.tga',
+  // The Start menu (CWndTaskMenu::OnInitialUpdate, WndTaskBar.cpp:2646: the window is the picture's size), ruling R22.
+  'WndTaskMenu.tga',
   // The skill window (APP_SKILL3, resdata.inc:6665), for milestone 2: the Vagrant backdrop and its buttons.
   'ImgSkillVagrant.tga',
   'ButItemPlus.bmp',

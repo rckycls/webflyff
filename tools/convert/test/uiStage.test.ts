@@ -35,6 +35,8 @@ describe('the theme list', () => {
     }
     expect(lower.filter((file) => /^wndtile\d\d\.tga$/.test(file))).toHaveLength(12); // the 12 pieces of a window frame
     expect(lower.filter((file) => /^buttchar/.test(file))).toHaveLength(4);
+    // the task bar's Start menu (CWndTaskMenu::OnInitialUpdate, WndTaskBar.cpp:2646)
+    expect(lower).toContain('wndtaskmenu.tga');
   });
 });
 

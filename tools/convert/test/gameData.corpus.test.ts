@@ -306,7 +306,7 @@ describeClient('the game-data stage on the real client', () => {
     for (const prop of itemProps) {
       const row = rows.get(prop.id)!;
       expect(prop, `item ${prop.id} ${row.name}`).toMatchObject({
-        name: row.name, kind1: row.kind1, kind2: row.kind2, kind3: row.kind3, handed: row.handed, part: row.parts,
+        name: row.name, packMax: row.packMax, kind1: row.kind1, kind2: row.kind2, kind3: row.kind3, handed: row.handed, part: row.parts,
         abilityMin: row.abilityMin, abilityMax: row.abilityMax, weaponType: row.weaponType, attackSpeed: row.attackSpeed,
         attackRange: row.attackRange, destParams: row.destParams, adjParams: row.adjParams, sfxHit: row.sfxObj3,
       });
@@ -317,6 +317,15 @@ describeClient('the game-data stage on the real client', () => {
     }
     expect(itemProps.filter((p) => p.icon === null).length).toBeGreaterThan(100);
     expect(itemProps.filter((p) => p.icon !== null).length).toBeGreaterThan(4900);
+  });
+
+  it("itemProps: the new character's food stacks (dwPackMax 99, propItem.txt:1744-1745) and its sword does not", async () => {
+    const itemProps = await catalog<WebItemProp[]>(GAME_DATA_KEYS.itemProps);
+    const packMax = (name: string): number | undefined => itemProps.find((p) => p.id === defines.get(name))?.packMax;
+    expect(packMax('II_GEN_FOO_INS_LOLLIPOP')).toBe(99);
+    expect(packMax('II_GEN_FOO_INS_BISCUIT')).toBe(99);
+    expect(packMax('II_WEA_SWO_WOODEN')).toBe(1);
+    expect(itemProps.filter((p) => p.packMax > 1).length).toBeGreaterThan(100);
   });
 
   it('itemProps: the Wooden Sword has the float attack speed, the sword hit effect and the converted item model', async () => {

@@ -6,9 +6,10 @@
 // attacking it (`AttackLoop`, Piece 4 §3.4); and it draws the stage around the own mover, from the chase camera behind
 // it, with the mark of the point a tap sends it to, the effects and damage numbers of the fight, and the corners around
 // the target (Piece 4 §3.7), and over it Neuz's windows: the status window, the target bar, the server messages and the
-// caption (`Hud`, Piece 4 §3.9), the task bar with its Start menu, whose Log out leaves as the loading screen's Leave does
-// (`TaskBar`), the attack button of a touch screen (`AttackButton`), and Escape in Neuz's order (`escapeStep`). Every
-// ending closes everything and hands the lobby its message (Ruling 8): nothing that goes wrong here is thrown at the lobby.
+// caption (`Hud`, Piece 4 §3.9), the task bar with its Start menu, whose Log out asks first (`LogOutBox`) and then leaves
+// as the loading screen's Leave does (`TaskBar`), the attack button of a touch screen (`AttackButton`), and Escape in
+// Neuz's order (`escapeStep`). Every ending closes everything and hands the lobby its message (Ruling 8): nothing that goes
+// wrong here is thrown at the lobby.
 
 import { UI_SHEETS_KEY, toWebPosition } from '@flyffweb/formats';
 import type { Vec3, WebEffect, WebUiSheet, WebUiSheets } from '@flyffweb/formats';
@@ -39,7 +40,9 @@ import { AttackButton } from './hud/attackButton';
 import { escapeWindow } from './hud/frame';
 import type { UiArt } from './hud/art';
 import { Hud } from './hud/hud';
-import { TaskBar, escapeStep } from './hud/taskBar';
+import { escapeStep } from './hud/escape';
+import { LogOutBox } from './hud/logOutBox';
+import { TaskBar } from './hud/taskBar';
 import type { TaskBarWindow } from './hud/taskBar';
 import { OwnMover, pickOnStage } from './ownMover';
 import { OwnState } from './OwnState';
@@ -67,6 +70,10 @@ import { WorldState, isDie, isLive } from './WorldState';
 import type { WorldChanges } from './WorldState';
 
 const LOADING_TEXT = 'Entering the world…';
+/** The joystick's height over the bottom, as Piece 3's: the task bar's 48 px and 8 more. */
+const JOYSTICK_BOTTOM = 56;
+/** `PutString( prj.GetText( TID_PK_COMBAT_END ), NULL, 0xffff0000 )` (`WndManager.cpp:2615`): red, not the text's colour. */
+const COMBAT_END_COLOR = 0xffff0000;
 const NOT_AVAILABLE_TEXT = "This map isn't available in the browser yet.";
 const NO_WEBGL_TEXT = "This browser can't show the 3D world (WebGL is off or not supported).";
 const OUT_OF_DATE_TEXT = 'The game files on the server are out of date.';
@@ -150,9 +157,13 @@ export class WorldScreen {
    */
   private hud: Hud | undefined;
   private hudArt: UiArt | undefined;
-  /** The task bar and the attack button, in the windows' layer once the world is on screen (`showWorld`). */
+  /**
+   * The task bar, the attack button and the box that asks before logging out, in the windows' layer once the world is on
+   * screen (`showWorld`).
+   */
   private taskBar: TaskBar | undefined;
   private attackButton: AttackButton | undefined;
+  private logOutBox: LogOutBox | undefined;
   /** The own character's driving: the controls each rules step, the moves sent, the stop. */
   private ownMover: OwnMover | undefined;
   /** The own character's numbers (`ownState`). */
@@ -168,6 +179,12 @@ export class WorldScreen {
   private lastError = '';
   /** The errors of applying a bundle said on the overlay, so that one that comes with every bundle is listed once. */
   private readonly reported = new Set<string>();
+  /**
+   * The stage's camera has been put behind the player by a frame: until the first frame it is the stage's default one at
+   * the origin, and a point projected or picked through it is nowhere the player sees.
+   */
+  private cameraPlaced = false;
+  /** Resolved once the first frame has drawn the world (`ready()`), rejected if the screen ends first. */
   private readonly shown: Promise<void>;
   private resolveShown!: () => void;
   private rejectShown!: (error: Error) => void;
@@ -473,7 +490,8 @@ export class WorldScreen {
     this.element.replaceChildren(holder, ...this.screenLayers(doc, sheets), this.hud!.element);
     this.keyboard = new KeyboardInput(view);
     this.walkKey = new WalkKey(view);
-    this.joystick = new Joystick(this.element);
+    // above the task bar (48 px, smaller on a narrow screen) and out of the safe area under it
+    this.joystick = new Joystick(this.element, { bottom: `calc(env(safe-area-inset-bottom, 0px) + ${JOYSTICK_BOTTOM}px)` });
     this.focus = new Focus(this.session, (objectId) => this.isLive(objectId));
     const attackLoop = new AttackLoop(
       this.session, this.focus, this.world!, () => this.own, this.entry.clock, this.data!.movers,
@@ -481,7 +499,7 @@ export class WorldScreen {
     this.attackLoop = attackLoop;
     this.taskBar = new TaskBar(this.hudArt!, {
       open: (window) => this.openWindow(window),
-      logOut: () => this.leave(),
+      logOut: () => this.logOut(),
       // the slots' items are used in Piece 5, their skills in milestone 2
       useSlot: () => {},
       useActionSlot: () => {},
@@ -489,7 +507,8 @@ export class WorldScreen {
     // the Start menu opens where the joystick stands, which is over the windows' layer: it hides while the menu is open
     this.taskBar.onMenuChange = (open) => this.element.classList.toggle('world-menu-open', open);
     this.attackButton = new AttackButton(() => attackLoop.attackButton(), doc);
-    this.hud!.element.append(this.taskBar.element, this.attackButton.element);
+    this.logOutBox = new LogOutBox(this.hudArt!, this.data!.texts, () => this.leave(), doc);
+    this.hud!.element.append(this.taskBar.element, this.attackButton.element, this.logOutBox.frame.element);
     // before the windows' own Escape (frame.ts), which closes a window only if this one leaves the key to it
     view.addEventListener('keydown', this.onEscape, true);
     // on the canvas: the joystick is an element of its own over it, and its touches never reach it; each press goes to
@@ -506,8 +525,8 @@ export class WorldScreen {
     doc.addEventListener('visibilitychange', this.onVisibility);
     view.addEventListener('blur', this.onBlur);
     this.lastTime = performance.now();
+    // `ready()` resolves at the end of the first frame (`frame`), once the camera is placed and the world drawn
     renderer.setAnimationLoop((now) => this.frame(now));
-    this.resolveShown();
     void this.makePortrait();
   }
 
@@ -621,6 +640,7 @@ export class WorldScreen {
       stage.focus(this.ownAt());
       const view = this.backCamera.view ?? this.follow(world, stage);
       stage.setCamera(view.position, view.target);
+      this.cameraPlaced = true;
       this.tags!.update(stage.camera, renderer.getSize(drawingSize).y, (objectId) => views.placeOf(objectId));
       this.effects?.draw(stage.camera);
 
@@ -630,6 +650,8 @@ export class WorldScreen {
       stage.render();
       this.drawScreenLayers(world, stage, views, renderer);
       this.drawHud(world, now);
+      // the world is on screen: `ready()` (a second call does nothing)
+      this.resolveShown();
     } catch (error) {
       // a frame that throws every frame must not fill the overlay with the same line sixty times a second
       const message = `world: ${messageOf(error)}`;
@@ -726,6 +748,20 @@ export class WorldScreen {
     }
   }
 
+  /**
+   * The Start menu's Log out (`ObjectExecutor`'s APP_LOGOUT, `WndManager.cpp:2610-2621`): refused while the player fights
+   * (`IsAttackMode`: a swing started in the last 10 s), with `TID_PK_COMBAT_END` in red among the server messages; otherwise
+   * the box that asks first (`CWndLogOut`), whose OK leaves.
+   */
+  private logOut(): void {
+    if (this.world?.self()?.act.isAttackMode() === true) {
+      const refusal = this.data!.texts.get('TID_PK_COMBAT_END')?.text ?? '';
+      if (refusal !== '') this.hud?.messages.add(refusal, COMBAT_END_COLOR);
+      return;
+    }
+    this.logOutBox?.open(this.hud?.element.clientWidth ?? 0);
+  }
+
   /** Opens or closes the Character window (`APP_CHARACTER3`, H). Task 24 builds it: until then, nothing. */
   private openCharacter(): void {}
 
@@ -790,12 +826,16 @@ export class WorldScreen {
    */
   private pick(ndcX: number, ndcY: number): TapHit | null {
     const { stage, views } = this;
-    if (stage === undefined || views === undefined) return null;
+    if (stage === undefined || views === undefined || !this.cameraPlaced) return null;
     return pickOnStage(stage, views, this.world?.self(), ndcX, ndcY);
   }
 
-  /** Where the middle of a mover's box is on the drawing, as shares of its width and height from the top left (`testHooks`). */
+  /**
+   * Where the middle of a mover's box is on the drawing, as shares of its width and height from the top left (`testHooks`);
+   * null for a mover not drawn, and before the first frame has placed the camera.
+   */
   private screenOf(objectId: number): [number, number] | null {
+    if (!this.cameraPlaced) return null;
     const candidate = this.views?.pickCandidates(undefined).find((c) => c.objectId === objectId);
     const camera = this.stage?.camera;
     if (candidate === undefined || camera === undefined) return null;
@@ -878,6 +918,7 @@ export class WorldScreen {
     this.effectRenderer?.dispose();
     this.effectTextures?.dispose();
     for (const layer of this.spriteLayers) layer.dispose();
+    if (this.logOutBox?.isOpen === true) this.logOutBox.frame.close();
     this.hud?.dispose();
     this.sheetPictures = [];
     this.stage?.dispose();

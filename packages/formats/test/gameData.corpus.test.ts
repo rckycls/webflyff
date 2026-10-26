@@ -195,6 +195,7 @@ describeClient('game data readers on the client packs', () => {
 
     // the columns the fight reads, from the same cells; the mismatches are collected so a failure lists them all
     const numberCols = {
+      packMax: 'dwPackMax',
       kind1: 'dwItemKind1',
       kind2: 'dwItemKind2',
       kind3: 'dwItemKind3',

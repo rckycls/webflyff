@@ -718,6 +718,14 @@ describe('AttackLoop: the attack button\'s target (canAttackFocus, IsAttackAble,
     expect(unkillable.loop.canAttackFocus).toBe(false);
   });
 
+  it('is not while the player is dead, whose presses do nothing (WndWorld.cpp:6719-6720)', () => {
+    const r = rig();
+    r.tap(MONSTER_ID);
+    expect(r.loop.canAttackFocus).toBe(true);
+    r.own.act.sendActMsg(ActMsg.DIE, ActMsg.DAMAGE, MONSTER_ID);
+    expect(r.loop.canAttackFocus).toBe(false);
+  });
+
   it('asks without doing what IsAttackAble does: a dead focus is not attackable, and stays the focus until the loop runs', () => {
     const r = rig();
     r.tap(MONSTER_ID);

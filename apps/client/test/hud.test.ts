@@ -13,13 +13,16 @@ import { AttackLoop } from '../src/world/combat/attackLoop';
 import { Focus } from '../src/world/combat/focus';
 import type { Texts } from '../src/world/gameData';
 import { AttackButton } from '../src/world/hud/attackButton';
-import { WindowFrame, escapeWindow } from '../src/world/hud/frame';
+import { APPLETS, appletText } from '../src/world/hud/applets';
+import { escapeStep } from '../src/world/hud/escape';
+import { WindowFrame, escapeWindow, setLayoutBottom } from '../src/world/hud/frame';
 import type { UiArt } from '../src/world/hud/art';
 import { Hud } from '../src/world/hud/hud';
 import { Caption, MessageLines, formatDefinedText } from '../src/world/hud/messages';
 import { StatusWindow } from '../src/world/hud/statusWindow';
 import { TargetBar } from '../src/world/hud/targetBar';
-import { APPLETS, TaskBar, actionPointLit, escapeStep, taskBarLayout } from '../src/world/hud/taskBar';
+import { LogOutBox } from '../src/world/hud/logOutBox';
+import { TaskBar, actionPointLit, taskBarLayout } from '../src/world/hud/taskBar';
 import type { TaskBarActions } from '../src/world/hud/taskBar';
 import { terrainGround } from '../src/world/sim/collision';
 import { Belli, ObjSta } from '../src/world/sim/constants';
@@ -550,9 +553,12 @@ const NEW_BAR: TaskBarMessage = {
 };
 
 /** `II_GEN_FOO_INS_LOLLIPOP` and `II_GEN_FOO_INS_BISCUIT` (`propItem.txt:1744-1745`): IK1_GENERAL, IK2_FOOD, IK3_INSTANT. */
-const LOLLIPOP = itemProp({ id: 2800, name: 'Lollipop', kind1: 3, kind2: 14, kind3: 30, part: -1, icon: 'ui/item/itm_genfoolollip.png' });
-const BISCUIT = itemProp({ id: 2801, name: 'Biscuit', kind1: 3, kind2: 14, kind3: 30, part: -1, icon: 'ui/item/itm_genfoobiscuit.png' });
-const BAR_DATA = { itemProps: new Map([LOLLIPOP, BISCUIT].map((prop) => [prop.id, prop])) };
+const food = { kind1: 3, kind2: 14, kind3: 30, part: -1, packMax: 99 };
+const LOLLIPOP = itemProp({ id: 2800, name: 'Lollipop', ...food, icon: 'ui/item/itm_genfoolollip.png' });
+const BISCUIT = itemProp({ id: 2801, name: 'Biscuit', ...food, icon: 'ui/item/itm_genfoobiscuit.png' });
+/** `II_WEA_SWO_WOODEN` (`propItem.txt:701`): one to a slot (`dwPackMax` 1). */
+const SWORD = itemProp({ id: 21, name: 'Wooden Sword', kind1: 1, kind2: 2, kind3: 2, part: 10, icon: 'ui/item/itm_weaswowooden.png' });
+const BAR_DATA = { itemProps: new Map([LOLLIPOP, BISCUIT, SWORD].map((prop) => [prop.id, prop])) };
 
 /** The new Vagrant with its TASKBAR. */
 function newVagrantWithBar() {
@@ -761,10 +767,22 @@ describe('TaskBar (CWndTaskBar, WndTaskBar.cpp)', () => {
     expect(menu.hidden).toBe(false);
     expect(bar.menuOpen).toBe(true);
     const items = [...menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
-    expect(items.map((item) => item.textContent)).toEqual(['Status', 'Character', 'Skills', 'Log out']);
+    expect(items.map((item) => item.getAttribute('aria-label'))).toEqual(['Status', 'Character', 'Skills', 'Log out']);
+    expect(items.map((item) => item.querySelector('.hud-menu-text')!.textContent)).toEqual(['Status', 'Character', 'Skills', 'Log out']);
     // the skill window is milestone 2's
     expect(items.map((item) => item.disabled)).toEqual([false, false, true, false]);
     expect(items[0]!.querySelector<HTMLElement>('.hud-menu-icon')!.style.backgroundImage).toContain('/assets/ui/icon_status.png');
+    // as CWndTaskMenu draws it (WndTaskBar.cpp:2646-2653): WndTaskMenu.tga at its 192 x 496, line i at (10, 50 + 22 i),
+    // 162 x 20, with its applet's hotkey (AppendMenu, :2746)
+    expect(menu.style.backgroundImage).toBe('url("/assets/ui/wndtaskmenu.png")');
+    expect([menu.style.width, menu.style.height]).toEqual(['192px', '496px']);
+    expect(items.map((item) => [item.style.left, item.style.top, item.style.width, item.style.height])).toEqual([
+      ['10px', '50px', '162px', '20px'], ['10px', '72px', '162px', '20px'], ['10px', '94px', '162px', '20px'],
+      ['10px', '116px', '162px', '20px'],
+    ]);
+    expect(items.map((item) => item.querySelector('.hud-menu-hotkey')!.textContent)).toEqual(['T', 'H', 'K', '']);
+    // the menu stands on the bar, its own scale
+    expect(menu.style.bottom).toBe('48px');
     items[3]!.click();
     expect(calls).toEqual(['logOut']);
     expect(menu.hidden).toBe(true);
@@ -875,13 +893,19 @@ describe('taskBarLayout (CWndTaskBar::Initialize, WndTaskBar.cpp:1264-1306; resd
 
 describe('APPLETS (CWndMgr::AddAllApplet, FuncApplet.cpp:178-301)', () => {
   it('has the icon and hotkey of each applet the live build registers', () => {
-    expect(APPLETS.get(577)).toEqual({ name: 'APP_STATUS1', icon: 'Icon_Status.dds', hotkey: 'T' });
-    expect(APPLETS.get(764)).toEqual({ name: 'APP_CHARACTER3', icon: 'Icon_Character.dds', hotkey: 'H' });
-    expect(APPLETS.get(622)).toEqual({ name: 'APP_SKILL3', icon: 'Icon_Skill.dds', hotkey: 'K' });
-    expect(APPLETS.get(1100)).toEqual({ name: 'APP_LOGOUT', icon: 'Icon_Logout.dds', hotkey: null });
-    expect(APPLETS.get(228)).toEqual({ name: 'APP_MAP', icon: 'Icon_Applet.dds', hotkey: 'M' }); // __IMPROVE_MAP_SYSTEM is off
-    expect(APPLETS.get(302)).toEqual({ name: 'APP_MESSENGER_EX', icon: 'Icon_Messenger.dds', hotkey: 'E' });
-    expect(APPLETS.get(593)).toEqual({ name: 'APP_PARTY_QUICK', icon: null, hotkey: null });
+    const tid = (id: string) => ({ tid: id });
+    expect(APPLETS.get(577)).toEqual({ name: 'APP_STATUS1', icon: 'Icon_Status.dds', desc: tid('TID_TIP_STATUS'), hotkey: 'T' });
+    expect(APPLETS.get(764)).toEqual({ name: 'APP_CHARACTER3', icon: 'Icon_Character.dds', desc: tid('TID_TIP_CHARACTER'), hotkey: 'H' });
+    expect(APPLETS.get(622)).toEqual({ name: 'APP_SKILL3', icon: 'Icon_Skill.dds', desc: tid('TID_TIP_SKILL'), hotkey: 'K' });
+    expect(APPLETS.get(1100)).toEqual({ name: 'APP_LOGOUT', icon: 'Icon_Logout.dds', desc: tid('TID_TIP_LOGOUT'), hotkey: null });
+    // __IMPROVE_MAP_SYSTEM is off
+    expect(APPLETS.get(228)).toEqual({ name: 'APP_MAP', icon: 'Icon_Applet.dds', desc: tid('TID_TIP_MAP'), hotkey: 'M' });
+    expect(APPLETS.get(302)).toEqual({ name: 'APP_MESSENGER_EX', icon: 'Icon_Messenger.dds', desc: tid('TID_TIP_MESSENGER'), hotkey: 'E' });
+    expect(APPLETS.get(593)).toEqual({ name: 'APP_PARTY_QUICK', icon: null, desc: tid('TID_TIP_DIALOG'), hotkey: null });
+    // the BB windows name themselves (_T( "Teleporter" ), FuncApplet.cpp:238)
+    expect(APPLETS.get(2023)!.desc).toEqual({ text: 'Teleporter' });
+    expect(appletText(APPLETS.get(2023)!.desc, new Map())).toBe('Teleporter');
+    expect(appletText(APPLETS.get(400)!.desc, new Map([['TID_TIP_ITEMMALL', { text: 'Item Mall' }]]))).toBe('Item Mall');
     // the earlier versions' windows are not registered, nor the dead flags' ones (APP_GUILD_VOTE, APP_MAP_EX)
     for (const id of [2010, 581, 321, 2022]) expect(APPLETS.has(id)).toBe(false);
   });
@@ -1066,5 +1090,151 @@ describe('AttackButton (touch screens; spec §3.9)', () => {
     expect(button.element.hidden).toBe(false);
     button.dispose();
     expect(button.element.isConnected).toBe(false);
+  });
+});
+
+describe('TaskBar: stackable items, names, focus and room (WndTaskBar.cpp)', () => {
+  /** The new Vagrant's bar with the Wooden Sword (object 44, item 21, `dwPackMax` 1) in slot 3. */
+  function withSword() {
+    const own = newVagrantWithBar();
+    own.taskBar = { ...NEW_BAR, items: [...NEW_BAR.items, { bar: 0, slot: 3, shortcut: shortcut(ShortcutKind.ITEM, 44, 3, 1) }] };
+    return own;
+  }
+
+  it('a non-stackable item shows no count (dwPackMax 1, OnDraw :946-957), and gone it empties: no m_dwItemId (:368-380)', () => {
+    const bar = taskBarOn();
+    const own = withSword();
+    bar.update(own, BAR_DATA);
+    expect(shown(slot(bar, 'item', 3))).toEqual({
+      kind: 'item', greyed: true, icon: 'url("/assets/ui/item/itm_weaswowooden.png")', count: '', hotkey: '',
+    });
+    // another sword in the inventory does not take the slot: the shortcut kept no item ID (UpdateItem, :1114-1138)
+    own.inventory!.delete(44);
+    own.inventory!.set(50, { objectId: 50, itemId: 21, count: 1 });
+    bar.update(own, BAR_DATA);
+    expect(shown(slot(bar, 'item', 3)).kind).toBe('');
+    // an item the catalog lacks stacks no more than a sword
+    const unknown = newVagrantWithBar();
+    unknown.inventory!.set(45, { objectId: 45, itemId: 9999, count: 3 });
+    const other = taskBarOn();
+    other.update(unknown, BAR_DATA);
+    expect(shown(slot(other, 'item', 0))).toMatchObject({ kind: 'item', count: '' });
+  });
+
+  it('names each slot for a screen reader: an item its name, an applet its description (PutTooTip, :547-684)', () => {
+    const bar = taskBarOn();
+    const texts = new Map([
+      ['TID_TIP_ITEMMALL', { text: 'Item Mall' }], ['TID_TIP_ITEMTIME', { text: 'Time Items' }],
+      ['TID_GAME_SKILLSHORTCUT', { text: 'Action Slot' }],
+    ]);
+    bar.update(withSword(), { ...BAR_DATA, texts });
+    const name = (row: 'applet' | 'item', i: number) => slot(bar, row, i).getAttribute('aria-label');
+    expect([name('item', 0), name('item', 1), name('item', 3)]).toEqual(['Lollipop', 'Biscuit', 'Wooden Sword']);
+    expect([name('applet', 0), name('applet', 1)]).toEqual(['Item Mall', 'Time Items']);
+    // an applet the build lacks, a plain slot and an empty one have no name
+    expect([name('applet', 2), name('item', 2), name('item', 5)]).toEqual([null, null, null]);
+    expect(bar.element.querySelector('.hud-taskbar-action')!.getAttribute('aria-label')).toBe('Action Slot');
+  });
+
+  it('its buttons take no focus: out of the tab order, and a press gives them none (Space and Enter never press them)', () => {
+    const bar = taskBarOn();
+    bar.update(newVagrantWithBar(), BAR_DATA);
+    const buttons = [...bar.element.querySelectorAll<HTMLButtonElement>('button')];
+    expect(buttons.length).toBeGreaterThan(20);
+    for (const button of buttons) {
+      expect(button.tabIndex, button.className).toBe(-1);
+      const press = new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 });
+      button.dispatchEvent(press);
+      expect(press.defaultPrevented, button.className).toBe(true);
+    }
+  });
+
+  it('the menu is drawn smaller where the layer is too short for its 496 px above the bar', () => {
+    const bar = new TaskBar(art, recorder().actions);
+    bars.push(bar);
+    layer(800, 400).append(bar.element);
+    bar.update(newVagrantWithBar(), BAR_DATA);
+    const menu = bar.element.querySelector<HTMLElement>('.hud-taskbar-menu')!;
+    expect(menu.style.transform).toBe(`scale(${(400 - 48) / 496})`);
+    expect(menu.style.bottom).toBe('48px');
+  });
+
+  it("keeps the windows above it: the layout's bottom is the bar's top (WndTaskBar.cpp:1176-1178)", () => {
+    const parent = layer(800, 450);
+    const bar = new TaskBar(art, recorder().actions);
+    bars.push(bar);
+    parent.append(bar.element);
+    bar.update(newVagrantWithBar(), BAR_DATA);
+    const frame = new WindowFrame('Character', art, { width: 200, height: 150 });
+    parent.append(frame.element);
+    frame.open({ x: 0, y: 400 });
+    // 450 - 48 - 150
+    expect(frame.element.style.top).toBe('252px');
+    frame.close();
+  });
+});
+
+describe('setLayoutBottom (m_rectLayout, WndBase.cpp:1261-1271)', () => {
+  it("keeps a window dragged down clear of the layer's bottom by that much, clinging to the line within 10 px", () => {
+    const parent = layer(800, 450);
+    setLayoutBottom(parent, 48);
+    const frame = new WindowFrame('Character', art, { width: 200, height: 150 });
+    parent.append(frame.element);
+    frame.open({ x: 0, y: 0 });
+    const title = frame.element.querySelector('.hud-window-title')!;
+    title.dispatchEvent(pointer('pointerdown', 5, 5));
+    window.dispatchEvent(pointer('pointermove', 5, 600));
+    expect(frame.element.style.top).toBe('252px');
+    window.dispatchEvent(pointer('pointermove', 5, 249));
+    expect(frame.element.style.top).toBe('252px'); // within 10 px of the line: against it
+    window.dispatchEvent(pointer('pointerup', 5, 249));
+    frame.close();
+  });
+});
+
+describe('LogOutBox (CWndLogOut, WndField.cpp:11910-11983; CWndMessageBox, WndMessageBox.cpp:65-129)', () => {
+  const LOG_OUT_TEXTS = new Map([
+    ['TID_DIAG_0068', { text: 'Inbox' }], ['TID_DIAG_0069', { text: 'Do you want to disconnect?' }],
+  ]);
+  const boxOn = (onOk: () => void = () => {}) => {
+    const box = new LogOutBox(art, LOG_OUT_TEXTS, onOk);
+    layer(800, 450).append(box.frame.element);
+    return box;
+  };
+
+  it('is APP_MESSAGEBOX titled TID_DIAG_0068 with TID_DIAG_0069, at the middle of the width and 70 px down', () => {
+    const box = boxOn();
+    box.open(800);
+    const element = box.frame.element;
+    expect(box.isOpen).toBe(true);
+    expect(element.querySelector('.hud-window-title')!.textContent).toBe('Inbox');
+    expect(element.querySelector('.hud-logout-text')!.textContent).toBe('Do you want to disconnect?');
+    expect(element.querySelector<HTMLElement>('.hud-window-frame')!.style.backgroundImage).toBe('url("/assets/ui/wndmessagebox.png")');
+    expect([element.style.width, element.style.height]).toEqual(['256px', '144px']);
+    expect([element.style.left, element.style.top]).toEqual(['272px', '70px']);
+    // OK 70 px left of the client area's middle (122) and Cancel 10 px right of it, 30 px over its bottom (112)
+    const [ok, cancel] = [...element.querySelectorAll<HTMLElement>('.hud-logout-button')];
+    expect([ok!.getAttribute('aria-label'), ok!.style.left, ok!.style.top, ok!.style.width]).toEqual(['OK', '52px', '82px', '72px']);
+    expect([cancel!.getAttribute('aria-label'), cancel!.style.left, cancel!.style.top]).toEqual(['Cancel', '132px', '82px']);
+    expect(ok!.style.backgroundImage).toBe('url("/assets/ui/buttok.png")');
+    expect(cancel!.style.backgroundImage).toBe('url("/assets/ui/buttcancel.png")');
+    box.frame.close();
+  });
+
+  it('OK logs out and closes it; Cancel and Escape close it and do nothing else', () => {
+    const onOk = vi.fn();
+    const box = boxOn(onOk);
+    box.open(800);
+    box.frame.element.querySelectorAll<HTMLButtonElement>('.hud-logout-button')[1]!.click();
+    expect(box.isOpen).toBe(false);
+    box.open(800);
+    // a window of resdata.inc, which GetWndBase finds (WndBase.cpp:2048-2095) and Escape destroys (WndManager.cpp:3383-3420)
+    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    expect(box.isOpen).toBe(false);
+    expect(onOk).not.toHaveBeenCalled();
+    box.open(800);
+    box.frame.element.querySelectorAll<HTMLButtonElement>('.hud-logout-button')[0]!.click();
+    expect(onOk).toHaveBeenCalledTimes(1);
+    expect(box.isOpen).toBe(false);
   });
 });

@@ -31,7 +31,7 @@ export const EXP_ROWS: ExpRow[] = [
 export const itemProp = (over: Partial<WebItemProp>): WebItemProp => ({
   id: 0, name: '', kind1: 2, kind2: 7, kind3: 18, handed: -1, part: 2, abilityMin: 0, abilityMax: 0, weaponType: -1,
   attackSpeed: -1, attackRange: -1, destParams: [-1, -1, -1], adjParams: [-1, -1, -1], sfxHit: -1, model: null,
-  icon: null, ...over,
+  icon: null, packMax: 1, ...over,
 });
 
 /** `II_WEA_SWO_WOODEN`, `Resource/propItem.txt:701`: `IK1_WEAPON IK2_WEAPON_DIRECT IK3_SWORD`, `HD_ONE`, `PARTS_RWEAPON`, 3-4, `WT_MELEE_SWD`, 0.085. */

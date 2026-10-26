@@ -489,6 +489,24 @@ describe('ActionMover: attacks, damage and death', () => {
     expect(player.state).toBe(ObjSta.STAND | ObjSta.ATK1);
   });
 
+  it('a swing starts m_nAtkCnt, one more each step: IsAttackMode for its 600 steps (10 s), and not before any swing', () => {
+    const { player } = fight();
+    expect(player.isAttackMode()).toBe(false);
+    player.step(); // never swung: the count stays 0 (Mover.cpp:3872)
+    expect(player.atkCnt).toBe(0);
+    expect(player.sendActMsg(ActMsg.ATK1, 2)).toBe(true);
+    expect(player.atkCnt).toBe(1); // ActionMoverMsg.cpp:685
+    expect(player.isAttackMode()).toBe(true);
+    for (let i = 0; i < 598; i++) player.step();
+    expect(player.atkCnt).toBe(599);
+    expect(player.isAttackMode()).toBe(true);
+    player.step(); // m_nAtkCnt < SEC1 * 10 no more (Mover.cpp:9229)
+    expect(player.isAttackMode()).toBe(false);
+    // a refused swing does not start it again
+    expect(player.sendActMsg(ActMsg.ATK1, 99)).toBe(false);
+    expect(player.isAttackMode()).toBe(false);
+  });
+
   it('ATK refuses a target out of view or dead, clears a flinch and is refused in any other damage state', () => {
     const { player, monster } = fight();
     expect(player.sendActMsg(ActMsg.ATK1, 99)).toBe(false);
