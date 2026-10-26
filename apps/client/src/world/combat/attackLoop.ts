@@ -248,14 +248,14 @@ export class AttackLoop {
   }
 
   /**
-   * The mover `objectId` is gone from view (DEL_OBJ: `CWorld::Process`, `World.cpp:883-893`) or, with `takesNext`, was
-   * killed by the player (MOVERDEATH: `CDPClient::OnMoverDeath`, `Neuz/DPClient.cpp:1956-1972`; see `onMoverDeath`): was
-   * it the target, the focus goes (`loseTarget`); was it the queued next target, that is forgotten (`World.cpp:899-902`,
-   * which leaves the mark as it is).
+   * The mover `objectId` is gone from view (DEL_OBJ: `CWorld::Process`, `World.cpp:883-902`): was it the target, the
+   * focus goes, with no next target (`loseTarget`); was it the queued next target, that is forgotten (:901-902, which
+   * leaves the mark as it is). The world screen calls it before the world drops the mover, so that the focus released
+   * is as live as it is (`IsLive`, a dead one getting no release, `World.cpp:310`).
    */
-  onRemoved(objectId: number, takesNext = false): void {
-    if (this.focus.targetId === objectId) this.loseTarget(takesNext);
-    else this.focus.onRemoved(objectId, takesNext);
+  onRemoved(objectId: number): void {
+    if (this.focus.targetId === objectId) this.loseTarget(false);
+    else this.focus.onRemoved(objectId, false);
   }
 
   /**
@@ -286,8 +286,8 @@ export class AttackLoop {
    * One rules step: the branch of `CWndWorld::Process` (`WndWorld.cpp:8513-8537`), decided once; on the attack branch,
    * `UseFocusObj` on an attackable focus. True where `Process` runs `ControlPlayer` this step, which the world screen
    * then runs (`OwnMover.control`); false on the attack branch and where neither runs (a press on a mover held before its
-   * 500 ms are out). The own mover's hooks (its swing's target `findMover`, the combo `onAttackEnd`, its animation speed
-   * `attackSpeed`, the command on arrival `arrive`) are set at its first step.
+   * 500 ms are out). The own mover's hooks (the combo `onAttackEnd`, its animation speed `attackSpeed`, the command on
+   * arrival `arrive`) are set at its first step.
    */
   step(): boolean {
     const own = this.world.self();
@@ -331,8 +331,9 @@ export class AttackLoop {
   }
 
   /**
-   * The focus is gone (DEL_OBJ) or was the player's kill: `SetObjFocus( NULL )` (`World.cpp:253-359`), whose clearing
-   * takes the mark off (:337-341), and after a kill (`takesNext`) the next target queued becomes the focus
+   * The focus is gone (DEL_OBJ, `onRemoved`) or the player killed (`onMoverDeath`): `SetObjFocus( NULL )`
+   * (`World.cpp:253-359`), whose clearing takes the mark off (:337-341), and after a kill (`takesNext`) the next target
+   * queued becomes the focus
    * (`Focus.onRemoved`), marked unless peaceful (`SetNextTarget`, `WndWorld.cpp:6389-6419`). The attack stops
    * (`stop( 'target' )`): `SetNextTarget`'s `m_bAutoAttack = FALSE` (:6418); with no next target, or after a DEL_OBJ,
    * Neuz leaves the flag on with nothing focused, where it does nothing, and the next press clears it (:6850-6853).
@@ -368,8 +369,9 @@ export class AttackLoop {
   /**
    * The own mover's hooks the attack needs, set once: the command on arriving (`arrive`) and the button its collision
    * lets go (`releaseButton`: `m_bLButtonDown = FALSE`, `MoverActEvent.cpp:2022-2028`), which the rules' step calls; the
-   * swing's target (`prj.GetMover`), the combo at a swing's end, and the animation's speed while swinging
-   * (`CMover::GetAttackSpeed`, `MoverAttack.cpp:159-192`, `params.ts`), which the swing calls.
+   * combo at a swing's end, and the animation's speed while swinging (`CMover::GetAttackSpeed`, `MoverAttack.cpp:159-192`,
+   * `params.ts`, from the own numbers), which the swing calls. Its swing's target (`findMover`, `prj.GetMover`) is the
+   * world's, which sets it for every mover.
    */
   private bind(own: Mover): void {
     const act = own.act;
@@ -379,7 +381,6 @@ export class AttackLoop {
     own.releaseButton = () => {
       this.buttonDown = false;
     };
-    act.findMover = (objectId) => this.world.movers.get(objectId)?.act;
     act.onAttackEnd = (dwState) => this.combo(own, dwState);
     act.attackSpeed = () => {
       const state = this.own();

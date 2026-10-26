@@ -7,8 +7,8 @@ const SELF: AddedMover = {
   index: 11, scale: 1, pos: [6968, 100, 3328], angle: 0, objectId: 9, motion: 0, isPlayer: true, hitPoint: 230, state: 1,
   stateFlag: 0, belligerence: 0, sfxId: 0,
   player: {
-    self: true, name: 'Webby', sex: 0, skinSet: 0, hairMesh: 0, hairColor: 0, headMesh: 0, playerId: 500, job: 0, level: 1,
-    authorization: 0x46, mode: 0, stateMode: 0, pkTime: 0, pkValue: 0, pkPropensity: 0, honor: -1, worn: [],
+    self: true, name: 'Webby', sex: 0, skinSet: 0, hairMesh: 0, hairColor: 0, headMesh: 0, playerId: 500, job: 0, sta: 15,
+    dex: 15, level: 1, authorization: 0x46, mode: 0, stateMode: 0, pkTime: 0, pkValue: 0, pkPropensity: 0, honor: -1, worn: [],
     equipmentObjectIds: new Array<number>(31).fill(NULL_ID), shopTitle: '', own: newVagrantOwn(),
   },
 };

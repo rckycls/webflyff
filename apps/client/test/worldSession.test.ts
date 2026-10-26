@@ -33,13 +33,13 @@ const CHARACTER: CharacterSummary = {
 };
 const MESSENGER: SlotMessenger = { slot: 1, state: 2, friends: [{ id: 900, blocked: 0, state: 1 }] };
 
-/** The own character as ADD_OBJ carries it: a player, wearing nothing. */
+/** The own character as ADD_OBJ carries it: a player, wearing nothing, with no numbers (`own` null: STA and DEX 0). */
 const SELF: AddedMover = {
   index: 11, scale: 1, pos: POS, angle: 0, objectId: OWN, motion: 0, isPlayer: true, hitPoint: 100, state: 0, stateFlag: 0,
   belligerence: 0, sfxId: 0,
   player: {
-    self: true, name: 'Webby', sex: 0, skinSet: 0, hairMesh: 0, hairColor: 0, headMesh: 0, playerId: 500, job: 0, level: 15,
-    authorization: 0x46, mode: 0, stateMode: 0, pkTime: 0, pkValue: 0, pkPropensity: 0, honor: -1, worn: [],
+    self: true, name: 'Webby', sex: 0, skinSet: 0, hairMesh: 0, hairColor: 0, headMesh: 0, playerId: 500, job: 0, sta: 0,
+    dex: 0, level: 15, authorization: 0x46, mode: 0, stateMode: 0, pkTime: 0, pkValue: 0, pkPropensity: 0, honor: -1, worn: [],
     equipmentObjectIds: new Array<number>(31).fill(NULL_ID), own: null, shopTitle: '',
   },
 };
@@ -222,7 +222,7 @@ describe('WorldSession, entering', () => {
     expect(entered.messages.map((m) => m.value.type)).toEqual(['environmentSetting', 'worldReadInfo', 'addMover']);
     // the own ADD_OBJ's reader skips the rest of its message, which without a table is the rest of the bundle: the game
     // timer is dropped with it, unseen, so nothing counts as skipped
-    expect(session.stats).toEqual({ bundles: 1, indexed: 0, skipped: 0, mismatched: 0, unknownPackets: 0 });
+    expect(session.stats).toEqual({ bundles: 1, indexed: 0, skipped: 0, mismatched: 0, unknownPackets: 0, droppedEvents: 0 });
   });
 
   it('takes the world from WORLD_READINFO, not from the character list', async () => {
@@ -712,15 +712,15 @@ describe('WorldSession, statistics and logging', () => {
   it('stats count indexed, skipped and mismatched', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const { cache, session, events } = await atJoin();
-    expect(session.stats).toEqual({ bundles: 0, indexed: 0, skipped: 0, mismatched: 0, unknownPackets: 0 });
+    expect(session.stats).toEqual({ bundles: 0, indexed: 0, skipped: 0, mismatched: 0, unknownPackets: 0, droppedEvents: 0 });
     // An indexed JOIN bundle: one message nothing reads, one whose reader does not end where the message does.
     cache.push(joinBundle([unknownMessage(), longDestPos()]));
-    expect(session.stats).toEqual({ bundles: 1, indexed: 1, skipped: 1, mismatched: 1, unknownPackets: 0 });
+    expect(session.stats).toEqual({ bundles: 1, indexed: 1, skipped: 1, mismatched: 1, unknownPackets: 0, droppedEvents: 0 });
     // Without a table the bundle ends at the first type nothing reads.
     cache.push(snapshot([writeSetPos(OWN, [1, 2, 3]), unknownMessage(), writeSetPos(OWN, [4, 5, 6])], { index: false }));
-    expect(session.stats).toEqual({ bundles: 2, indexed: 1, skipped: 2, mismatched: 1, unknownPackets: 0 });
+    expect(session.stats).toEqual({ bundles: 2, indexed: 1, skipped: 2, mismatched: 1, unknownPackets: 0, droppedEvents: 0 });
     cache.push(snapshot([longDestPos(), writeSetPos(OWN, [7, 8, 9])]));
-    expect(session.stats).toEqual({ bundles: 3, indexed: 2, skipped: 2, mismatched: 2, unknownPackets: 0 });
+    expect(session.stats).toEqual({ bundles: 3, indexed: 2, skipped: 2, mismatched: 2, unknownPackets: 0, droppedEvents: 0 });
     // The messages that could be read went on.
     expect((events[0] as EventOf<'entered'>).messages.map((m) => m.value.type)).toEqual(['worldReadInfo', 'addMover']);
     expect((events[1] as EventOf<'messages'>).messages.map((m) => m.value.type)).toEqual(['setPos']);
@@ -759,7 +759,7 @@ describe('WorldSession, statistics and logging', () => {
     const whole = writeAddSelf(OWN, SELF);
     const broken = { ...whole, fields: whole.fields.subarray(0, whole.fields.byteLength - 10) };
     cache.push(encodeBundle(PacketType.JOIN, OWN, [writeWorldReadInfo(OWN, FLARIS, POS), broken]));
-    expect(session.stats).toEqual({ bundles: 1, indexed: 1, skipped: 0, mismatched: 1, unknownPackets: 0 });
+    expect(session.stats).toEqual({ bundles: 1, indexed: 1, skipped: 0, mismatched: 1, unknownPackets: 0, droppedEvents: 0 });
     const entered = events[0] as EventOf<'entered'>;
     const added = entered.messages[1]!.value;
     expect(added.type === 'addMover' && added.mover.player?.own).toMatchObject({ inventory: null, inventoryError: expect.any(String) });
@@ -768,6 +768,16 @@ describe('WorldSession, statistics and logging', () => {
     cache.push(snapshot([broken]));
     expect(session.stats.mismatched).toBe(2);
     expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('counts the drawing events the world dropped untaken, and names that once', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { session } = await playing();
+    session.countDroppedEvents(3);
+    session.countDroppedEvents(0);
+    session.countDroppedEvents(5);
+    expect(session.stats.droppedEvents).toBe(8);
+    expect(warn.mock.calls.map((call) => String(call[0]))).toEqual([expect.stringContaining('dropped')]);
   });
 
   it('a message that is skipped in an indexed bundle is counted but not logged', async () => {

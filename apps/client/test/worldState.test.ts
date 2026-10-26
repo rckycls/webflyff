@@ -10,11 +10,12 @@ import { OwnState } from '../src/world/OwnState';
 import { terrainGround } from '../src/world/sim/collision';
 import type { Ground } from '../src/world/sim/collision';
 import { ActMsg, AniLoop, Mop, Mti, ObjSta, ObjStaF } from '../src/world/sim/constants';
+import { attackSpeed } from '../src/world/sim/params';
 import { WorldState, isDie, isLive } from '../src/world/WorldState';
-import type { Mover } from '../src/world/WorldState';
+import type { CombatEvent, Mover } from '../src/world/WorldState';
 import { catalogFiles, storeOf } from './helpers/gameDataFiles';
 import { gameDataOf, webMoverOf } from './helpers/movers';
-import { OWN_ID, STARTER_EQUIPMENT, WOODEN_SWORD, ownAdded, ownGameData } from './helpers/ownState';
+import { OWN_ID, STARTER_EQUIPMENT, VAGRANT, WOODEN_SWORD, ownAdded, ownGameData } from './helpers/ownState';
 
 const f32 = Math.fround;
 
@@ -59,20 +60,21 @@ function newWorld(
 }
 
 /** No changes at all, as `takeChanges` reports them. */
-const NO_CHANGES = { added: [], removed: [], combat: [], own: [] };
+const NO_CHANGES = { added: [], removed: [], combat: [], own: [], dropped: 0 };
 
 // ---- ADD_OBJ payloads ---------------------------------------------------------------------------------------------
 
 const BASE = { scale: 1, motion: Mti.STAND, hitPoint: 100, state: 0, stateFlag: 0, belligerence: 0, sfxId: 0 };
 const AT: Vec3 = [100, 0, 100];
 
+/** A player's ADD_OBJ: a level 1 Vagrant with STA and DEX 15, wearing nothing. */
 function playerOf(objectId: number, name: string, extra: Partial<AddedMover> = {}, self = false): AddedMover {
   return {
     ...BASE, index: 11, pos: AT, angle: 0, objectId, isPlayer: true, ...extra,
     player: {
-      self, name, sex: 0, skinSet: 0, hairMesh: 0, hairColor: 0, headMesh: 0, playerId: objectId, job: 0, level: 1,
-      authorization: 0x46, mode: 0, stateMode: 0, pkTime: 0, pkValue: 0, pkPropensity: 0, honor: -1, worn: [],
-      equipmentObjectIds: [], own: null, shopTitle: '',
+      self, name, sex: 0, skinSet: 0, hairMesh: 0, hairColor: 0, headMesh: 0, playerId: objectId, job: 0, sta: 15,
+      dex: 15, level: 1, authorization: 0x46, mode: 0, stateMode: 0, pkTime: 0, pkValue: 0, pkPropensity: 0, honor: -1,
+      worn: [], equipmentObjectIds: [], own: null, shopTitle: '',
     },
   };
 }
@@ -657,6 +659,13 @@ function hitFrames(m: Mover, frames: number[]): void {
   m.act.isAttrHit = () => frames.shift() ?? -1;
 }
 
+/** The `hit` event of a DAMAGE on `victimId` by `attackerId`, an attacker in view unless `attackerInView` says not. */
+const hitEvent = (victimId: number, attackerId: number, hit: number, flags = GENERIC, attackerInView = true): CombatEvent =>
+  ({ kind: 'hit', victimId, attackerId, hit, flags, attackerInView });
+
+/** The model flashes of a swing's blow (`m_SparkInfo`): the victim's, lit from the attacker's side. */
+const spark = (moverId: number, fromId: number): CombatEvent => ({ kind: 'spark', moverId, fromId });
+
 describe('WorldState: DAMAGE (CDPClient::OnDamage, DPClient.cpp:1758-1934)', () => {
   it('DAMAGE lowers HP and emits hit, and the following SETPOINTPARAM sets it', () => {
     const { world } = combatWorld();
@@ -668,7 +677,7 @@ describe('WorldState: DAMAGE (CDPClient::OnDamage, DPClient.cpp:1758-1934)', () 
     world.apply(MONSTER, damage(OWN_ID, 7));
     expect(monster.hp).toBe(113); // IncHitPoint( -dwHit )
     expect(monster.act.hitPoint()).toBe(113); // the rules' m_nHitPoint (IsLive, the end of a fall)
-    expect(world.takeChanges().combat).toEqual([{ kind: 'hit', victimId: MONSTER, attackerId: OWN_ID, hit: 7, flags: GENERIC }]);
+    expect(world.takeChanges().combat).toEqual([hitEvent(MONSTER, OWN_ID, 7)]);
 
     // the server's absolute value follows (EndPVP, AttackArbiter.cpp:259): SetPointParam, at most the max
     world.apply(MONSTER, { type: 'setPointParam', param: DstParam.HP, value: 110 });
@@ -725,8 +734,21 @@ describe('WorldState: DAMAGE (CDPClient::OnDamage, DPClient.cpp:1758-1934)', () 
     expect(world.movers.get(MONSTER)!.hp).toBe(100);
     const changes = world.takeChanges();
     expect(changes.added.map((m) => m.objectId)).toEqual([MONSTER]);
-    expect(changes.combat).toEqual([
-      { kind: 'spawned', moverId: MONSTER }, { kind: 'hit', victimId: MONSTER, attackerId: OWN_ID, hit: 20, flags: GENERIC },
+    expect(changes.combat).toEqual([{ kind: 'spawned', moverId: MONSTER }, hitEvent(MONSTER, OWN_ID, 20)]);
+  });
+
+  it('a hit says whether its attacker was in view as the message came, which decides who sees its number (:1810-1833)', () => {
+    // an attacker prj.GetCtrl finds none of (NULL_ID, or not in view) goes to g_PASS: the number shows for any victim
+    const { world } = combatWorld();
+    add(world, aibatt(MONSTER));
+    world.takeChanges();
+    world.apply(MONSTER, damage(OWN_ID, 3));
+    world.apply(MONSTER, damage(77, 4));
+    world.apply(MONSTER, damage(NULL_ID, 5));
+    world.apply(OWN_ID, damage(MONSTER, 6));
+    expect(world.takeChanges().combat).toEqual([
+      hitEvent(MONSTER, OWN_ID, 3), hitEvent(MONSTER, 77, 4, GENERIC, false), hitEvent(MONSTER, NULL_ID, 5, GENERIC, false),
+      hitEvent(OWN_ID, MONSTER, 6),
     ]);
   });
 
@@ -777,7 +799,9 @@ describe('WorldState: MOVERDEATH (CDPClient::OnMoverDeath, DPClient.cpp:1936-209
     expect(monster.act.state & ObjSta.DMG_ALL).toBe(ObjSta.DEAD);
     expect([monster.act.motion, monster.act.loop]).toEqual([Mti.DIE1, AniLoop.CONT]);
     expect([isDie(monster), isLive(monster)]).toEqual([true, false]);
-    expect(world.takeChanges().combat).toEqual([{ kind: 'death', victimId: MONSTER, attackerId: OWN_ID, lastHp: 30 }]);
+    expect(world.takeChanges().combat).toEqual([
+      { kind: 'death', victimId: MONSTER, attackerId: OWN_ID, lastHp: 30, attackerInView: true },
+    ]);
     // the attacker: SetObjHit( NULL_ID ) and ClearDestObj (:2008-2009)
     expect(self.act.hitId).toBeNull();
     expect(self.dest).toBeNull();
@@ -793,8 +817,9 @@ describe('WorldState: MOVERDEATH (CDPClient::OnMoverDeath, DPClient.cpp:1936-209
     expect(flown.act.deltaE[0]).toBeGreaterThan(0); // the own mover faces +x
     world.apply(MONSTER + 1, { type: 'moverDeath', attackerId: NULL_ID, message: 0 }); // HATTR_DIE
     expect(world.movers.get(MONSTER + 1)!.act.state & ObjSta.DMG_ALL).toBe(ObjSta.DEAD);
+    // the death's number needs the killer found (`if( pAttacker )`, :1998-2007): `attackerInView`
     const deaths = world.takeChanges().combat.filter((e) => e.kind === 'death');
-    expect(deaths.map((e) => [e.attackerId, e.lastHp])).toEqual([[OWN_ID, 120], [NULL_ID, 120]]);
+    expect(deaths.map((e) => [e.attackerId, e.lastHp, e.attackerInView])).toEqual([[OWN_ID, 120, true], [NULL_ID, 120, false]]);
   });
 });
 
@@ -813,7 +838,7 @@ describe('WorldState: the own character\'s numbers (OwnState, one source of its 
     expect([own.hp, self.hp]).toEqual([150, 150]);
     world.apply(OWN_ID, { type: 'setPointParam', param: DstParam.MP, value: 10 });
     expect(own.mp).toBe(10);
-    expect(world.takeChanges().combat).toEqual([{ kind: 'hit', victimId: OWN_ID, attackerId: MONSTER, hit: 30, flags: GENERIC }]);
+    expect(world.takeChanges().combat).toEqual([hitEvent(OWN_ID, MONSTER, 30, GENERIC, false)]); // no monster in view
   });
 
   it('the own death: OwnState\'s HP 0 and its event, the death\'s last HP, the dead state', () => {
@@ -826,7 +851,7 @@ describe('WorldState: the own character\'s numbers (OwnState, one source of its 
     expect(self.act.state & ObjSta.DMG_ALL).toBe(ObjSta.DEAD);
     const changes = world.takeChanges();
     expect(changes.own).toEqual([{ kind: 'died' }]);
-    expect(changes.combat).toEqual([{ kind: 'death', victimId: OWN_ID, attackerId: MONSTER, lastHp: 12 }]);
+    expect(changes.combat).toEqual([{ kind: 'death', victimId: OWN_ID, attackerId: MONSTER, lastHp: 12, attackerInView: true }]);
   });
 
   it('a level up plays MTI_LEVELUP on the standing own mover and refills its HP (SetExperience, MoverParam.cpp:1725-1772)', () => {
@@ -862,12 +887,69 @@ describe('WorldState: the own character\'s numbers (OwnState, one source of its 
     expect(self.act.state & ObjSta.MOVE_ALL).toBe(ObjSta.STAND);
   });
 
-  it('without the own numbers the own mover is any player\'s: its HP from ADD_OBJ and DAMAGE, no max known', () => {
+  it('without the own numbers the own mover is any player\'s: its HP from ADD_OBJ and DAMAGE, its max from its stats', () => {
     const { world, self } = combatWorld(false);
-    expect([self.hp, self.maxHp]).toEqual([230, null]);
+    expect([self.hp, self.maxHp]).toEqual([230, 230]);
     world.apply(OWN_ID, damage(MONSTER, 30));
     expect(self.hp).toBe(200);
     expect(world.takeChanges().own).toEqual([]);
+  });
+});
+
+describe('WorldState: another player\'s numbers, from its ADD_OBJ\'s job, level, STA and DEX (Ruling R19)', () => {
+  /** A player of `level` with the given STA and DEX, standing 1 m north of the own mover; `weapon` in its right hand. */
+  function playerWith(level: number, sta: number, dex: number, weapon: number | null = null): AddedMover {
+    const added = playerOf(PLAYER, 'Bob', { pos: [100, 0, 99], state: ObjSta.STAND });
+    Object.assign(added.player!, { level, sta, dex, worn: weapon === null ? [] : [{ part: 10, itemId: weapon, flag: 0 }] });
+    return added;
+  }
+
+  it('its max HP is GetMaxOriginHitPoint\'s of its job, level and STA (the BASE_VALUE_TBL values)', () => {
+    for (const [level, sta, max] of [[1, 15, 230], [2, 15, 230], [8, 15, 240], [15, 15, 265], [15, 45, 581]] as const) {
+      const { world } = combatWorld();
+      add(world, playerWith(level, sta, 15));
+      expect(world.movers.get(PLAYER)!.maxHp, `level ${level}, STA ${sta}`).toBe(max);
+    }
+    // a job the catalog has no row for: no max
+    const { world } = combatWorld();
+    const stranger = playerWith(1, 15, 15);
+    stranger.player!.job = 99;
+    add(world, stranger);
+    expect(world.movers.get(PLAYER)!.maxHp).toBeNull();
+  });
+
+  it('SETLEVEL refills its HP to the new level\'s max; SETPOINTPARAM stops at the max; the lodestar gives its part', () => {
+    const { world } = combatWorld();
+    add(world, playerWith(1, 15, 15));
+    const bob = world.movers.get(PLAYER)!;
+    world.apply(PLAYER, { type: 'setLevel', level: 8 }); // OnSetLevel: m_nLevel, then m_nHitPoint = GetMaxHitPoint()
+    expect([bob.level, bob.maxHp, bob.hp]).toEqual([8, 240, 240]);
+    world.apply(PLAYER, { type: 'setPointParam', param: DstParam.HP, value: 999 });
+    expect(bob.hp).toBe(240);
+    world.apply(PLAYER, { type: 'moverDeath', attackerId: MONSTER, message: ActMsg.DAMAGE });
+    world.apply(PLAYER, { type: 'revivalToLodestar' });
+    expect(bob.hp).toBe(96); // 240 * 4 / 10 at level 8 (OnRevivalLodestar, DPClient.cpp:3492-3501)
+  });
+
+  it('it swings at its attack speed: GetAttackSpeed of its job, right-hand item, DEX and level (ProcessAniSpeed)', () => {
+    const cases: Array<[number, number, number | null, number]> = [
+      [1, 15, null, f32(0.8416128754615784)], // the fists (II_WEA_HAN_HAND, 0.07)
+      [1, 15, WOODEN_SWORD.id, f32(0.8432520031929016)],
+      [15, 45, WOODEN_SWORD.id, f32(0.9412389993667603)],
+      // an item the catalog has no row for: fItem stays 1.0f (MoverAttack.cpp:162-166)
+      [1, 15, 9999, attackSpeed(VAGRANT, 1, 1, 15).speed],
+    ];
+    for (const [level, dex, weapon, speed] of cases) {
+      const { world } = combatWorld();
+      add(world, aibatt(MONSTER));
+      add(world, playerWith(level, 15, dex, weapon));
+      const bob = world.movers.get(PLAYER)!;
+      expect(bob.act.sendActMsg(ActMsg.ATK1, MONSTER, 0, 0)).toBe(true);
+      expect(bob.act.aniSpeed, `level ${level}, DEX ${dex}, item ${weapon}`).toBe(speed);
+      hitFrames(bob, []);
+      world.step();
+      expect(bob.act.aniSpeed).toBe(speed);
+    }
   });
 });
 
@@ -883,6 +965,10 @@ describe('WorldState: the other fight messages', () => {
     expect(monster.act.stateFlag & ObjStaF.COMBAT).toBe(ObjStaF.COMBAT);
     expect(monster.act.body.angle).toBe(270); // GetDegree to the target, west
     expect(world.takeChanges().combat).toEqual([{ kind: 'swing', attackerId: MONSTER, targetId: OWN_ID }]);
+    // one under way keeps the next for its end, and one at a mover not in view is refused: neither is a swing yet
+    world.apply(MONSTER, { type: 'meleeAttack', message: ActMsg.ATK2, targetId: OWN_ID, param2: 0, param3: 0x00010000 });
+    world.apply(MONSTER, { type: 'meleeAttack', message: ActMsg.ATK1, targetId: 77, param2: 0, param3: 0x00010000 });
+    expect(world.takeChanges().combat).toEqual([]);
   });
 
   it('a swing\'s hit frame flinches the victim, says where the hit lands and holds a player\'s model 5 steps', () => {
@@ -898,7 +984,11 @@ describe('WorldState: the other fight messages', () => {
     world.step();
     expect(world.takeChanges().combat).toEqual([]);
     world.step();
-    expect(world.takeChanges().combat).toEqual([{ kind: 'attackerHit', attackerId: OWN_ID, victimId: MONSTER, weapon: WOODEN_SWORD.id }]);
+    // the victim's model flashes (OnDamage, :1522-1538), the blow lands, then the attacker's flashes too (:1704-1717)
+    expect(world.takeChanges().combat).toEqual([
+      spark(MONSTER, OWN_ID), { kind: 'attackerHit', attackerId: OWN_ID, victimId: MONSTER, weapon: WOODEN_SWORD.id },
+      spark(OWN_ID, MONSTER),
+    ]);
     expect(monster.act.state & ObjSta.DMG_ALL).toBe(ObjSta.DMG);
     expect(monster.act.motion).toBe(Mti.DMG1);
     expect(self.act.paused).toBe(5);
@@ -914,29 +1004,34 @@ describe('WorldState: the other fight messages', () => {
     world.takeChanges();
     hitFrames(monster, [0]);
     world.step();
-    expect(world.takeChanges().combat).toEqual([{ kind: 'attackerHit', attackerId: MONSTER, victimId: OWN_ID, weapon: null }]);
+    expect(world.takeChanges().combat).toEqual([
+      spark(OWN_ID, MONSTER), { kind: 'attackerHit', attackerId: MONSTER, victimId: OWN_ID, weapon: null }, spark(MONSTER, OWN_ID),
+    ]);
     expect(self.act.state & ObjSta.DMG_ALL).toBe(ObjSta.DMG);
     expect([monster.act.paused, self.act.paused]).toEqual([0, 0]);
   });
 
   it('a hit lands on no mover in a dead state (OnDamageMsgC, :59-60) nor on one that cannot be killed (PreProcessDamage)', () => {
     const { world } = combatWorld();
+    const juria = 7;
     add(world, aibatt(MONSTER));
-    add(world, npcOf(6, JURIA, '', { pos: [99, 0, 100], state: ObjSta.STAND }));
+    add(world, npcOf(juria, JURIA, '', { pos: [99, 0, 100], state: ObjSta.STAND }));
     add(world, playerOf(PLAYER, 'Bob', { pos: [100, 0, 101], state: ObjSta.STAND }));
     add(world, playerOf(PLAYER + 1, 'Carol', { pos: [100, 0, 99], state: ObjSta.STAND }));
     const [monster, bob, carol] = [world.movers.get(MONSTER)!, world.movers.get(PLAYER)!, world.movers.get(PLAYER + 1)!];
+    expect(carol.name).toBe('Carol');
     expect(bob.act.sendActMsg(ActMsg.ATK1, MONSTER, 0, 0)).toBe(true);
-    expect(carol.act.sendActMsg(ActMsg.ATK1, 6, 0, 0)).toBe(true);
+    expect(carol.act.sendActMsg(ActMsg.ATK1, juria, 0, 0)).toBe(true);
     // the monster dies under the swing, its HP not yet 0: live to the rules (IsLive), so the hit frame is passed on
     monster.act.sendActMsg(ActMsg.DIE, 0, NULL_ID);
     hitFrames(bob, [0]);
     hitFrames(carol, [0]);
     world.takeChanges();
     world.step();
-    expect(world.takeChanges().combat).toEqual([]);
+    // OnDamage flashes the victim's model before the blow is tried (:1522-1538), and no more comes of either
+    expect(world.takeChanges().combat).toEqual([spark(MONSTER, PLAYER), spark(juria, PLAYER + 1)]);
     expect([bob.act.paused, carol.act.paused]).toEqual([0, 0]);
-    expect(world.movers.get(6)!.act.state & ObjSta.DMG_ALL).toBe(0);
+    expect(world.movers.get(juria)!.act.state & ObjSta.DMG_ALL).toBe(0);
   });
 
   it('another player\'s hand item is its worn weapon (m_aEquipInfo[PARTS_RWEAPON]), or the fists\' (II_WEA_HAN_HAND)', () => {
@@ -954,7 +1049,7 @@ describe('WorldState: the other fight messages', () => {
     }
     world.takeChanges();
     world.step();
-    expect(world.takeChanges().combat).toEqual([
+    expect(world.takeChanges().combat.filter((e) => e.kind === 'attackerHit')).toEqual([
       { kind: 'attackerHit', attackerId: PLAYER, victimId: MONSTER, weapon: 11 },
       { kind: 'attackerHit', attackerId: PLAYER + 1, victimId: MONSTER, weapon: WOODEN_SWORD.id },
     ]);
@@ -972,13 +1067,12 @@ describe('WorldState: the other fight messages', () => {
     expect([bob.act.motion, bob.act.motionOption]).toEqual([Mti.LEVELUP, Mop.FIXED]);
     expect(runner.act.motion).toBe(Mti.STAND); // not standing: no motion, the effect all the same
     expect(world.takeChanges().combat).toEqual([{ kind: 'levelUp', moverId: PLAYER }, { kind: 'levelUp', moverId: PLAYER + 1 }]);
-    world.apply(PLAYER, { type: 'setLevel', level: 2 }); // lower: only the level
-    expect(bob.level).toBe(2);
+    world.apply(PLAYER, { type: 'setLevel', level: 2 }); // lower: no level up, but the level and the HP all the same
+    expect([bob.level, bob.hp]).toEqual([2, 230]);
     expect(world.takeChanges().combat).toEqual([]);
-    expect(bob.hp).toBe(100); // another player's max HP is not known: its HP stays until SETPOINTPARAM
   });
 
-  it('SETLEVEL sets a mover\'s HP to its max where it is known (m_nHitPoint = GetMaxHitPoint())', () => {
+  it('SETLEVEL sets a mover\'s HP to its max (m_nHitPoint = GetMaxHitPoint())', () => {
     const { world } = combatWorld();
     add(world, aibatt(MONSTER, AT, { hitPoint: 40 }));
     world.apply(MONSTER, { type: 'setLevel', level: 1 });
@@ -992,16 +1086,16 @@ describe('WorldState: the other fight messages', () => {
     expect(world.movers.get(MONSTER)!.act.body.pos).toEqual([110.5, 1, 99]);
   });
 
-  it('a revival clears another mover\'s state; REVIVAL_TO_LODESTAR sets HP only where the max is known', () => {
+  it('a revival clears another mover\'s state; REVIVAL_TO_LODESTAR also gives it the level\'s part of its max HP', () => {
     const { world } = combatWorld();
     add(world, playerOf(PLAYER, 'Bob'));
     const bob = world.movers.get(PLAYER)!;
     world.apply(PLAYER, { type: 'moverDeath', attackerId: MONSTER, message: ActMsg.DAMAGE });
     world.apply(PLAYER, { type: 'revival' });
-    expect(bob.act.state).toBe(0);
+    expect([bob.act.state, bob.hp]).toEqual([0, 0]); // OnRevival's HP lines are __VER < 9
     world.apply(PLAYER, { type: 'moverDeath', attackerId: MONSTER, message: ActMsg.DAMAGE });
     world.apply(PLAYER, { type: 'revivalToLodestar' });
-    expect([bob.act.state, bob.hp]).toEqual([0, 0]); // the SETPOINTPARAMs after it set the HP
+    expect([bob.act.state, bob.hp]).toEqual([0, 184]); // 230 * 8 / 10 at level 1
   });
 
   it('DEFINEDTEXT is a text whatever its object ID (OnDefinedText, DPClient.cpp:4117)', () => {
@@ -1034,9 +1128,9 @@ describe('WorldState: the other fight messages', () => {
   it('a mover\'s level and max HP: a player\'s level from ADD_OBJ; another mover\'s dwLevel, at least 1 (CMover::InitProp)', () => {
     const { world } = combatWorld();
     const veteran = playerOf(PLAYER, 'Veteran');
-    veteran.player!.level = 9;
+    Object.assign(veteran.player!, { level: 15, sta: 45 });
     add(world, veteran);
-    expect([world.movers.get(PLAYER)!.level, world.movers.get(PLAYER)!.maxHp]).toEqual([9, null]);
+    expect([world.movers.get(PLAYER)!.level, world.movers.get(PLAYER)!.maxHp]).toEqual([15, 581]);
     add(world, npcOf(3, AIBATT_TWIN));
     add(world, npcOf(6, JURIA, 'nobody'));
     add(world, npcOf(7, 999));
@@ -1067,13 +1161,26 @@ describe('WorldState: the other fight messages', () => {
     expect(world.takeChanges().combat).toEqual([]);
   });
 
-  it('the drawing events a hidden tab never takes are kept to the last 1024', () => {
+  it('the drawing events a hidden tab never takes are kept to the last 1024, the drops counted; the texts are all kept', () => {
     const { world } = combatWorld();
-    for (let i = 0; i < 3000; i++) world.apply(OWN_ID, { type: 'definedText', textId: i, args: '' });
-    const { combat } = world.takeChanges();
-    expect(combat).toHaveLength(1024);
-    expect(combat[0]).toEqual({ kind: 'text', textId: 3000 - 1024, args: '' });
-    expect(combat.at(-1)).toEqual({ kind: 'text', textId: 2999, args: '' });
+    add(world, aibatt(MONSTER));
+    world.takeChanges();
+    world.apply(OWN_ID, { type: 'definedText', textId: 1, args: '' });
+    for (let i = 0; i < 1500; i++) world.apply(MONSTER, damage(OWN_ID, i));
+    world.apply(OWN_ID, { type: 'definedText', textId: 2, args: '' });
+    const { combat, dropped } = world.takeChanges();
+    // Neuz logs every text (OnDefinedText): they are never dropped, and keep their place
+    expect(combat.filter((e) => e.kind === 'text')).toEqual([
+      { kind: 'text', textId: 1, args: '' }, { kind: 'text', textId: 2, args: '' },
+    ]);
+    expect(combat[0]).toEqual({ kind: 'text', textId: 1, args: '' });
+    const hits = combat.filter((e) => e.kind === 'hit');
+    expect(hits).toHaveLength(1024);
+    expect([hits[0], hits.at(-1)]).toEqual([hitEvent(MONSTER, OWN_ID, 1500 - 1024), hitEvent(MONSTER, OWN_ID, 1499)]);
+    expect(dropped).toBe(1500 - 1024);
+    // the count starts again with each call
+    world.apply(MONSTER, damage(OWN_ID, 1));
+    expect(world.takeChanges()).toMatchObject({ dropped: 0 });
   });
 });
 

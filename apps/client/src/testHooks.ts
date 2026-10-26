@@ -12,17 +12,30 @@ export interface ClientStats extends SessionStats {
   errors: string[];
 }
 
-/** A mover in view: its object ID, its name and its position in the client's (D3D) coordinates, as the rules have it. */
+/**
+ * A mover in view: its object ID, its name, its position in the client's (D3D) coordinates, as the rules have it, and its
+ * HP (`m_nHitPoint`).
+ */
 export interface ClientMover {
   objectId: number;
   name: string;
   pos: Vec3;
+  hp: number;
+}
+
+/** The own character's numbers (`OwnState`): its HP, level, and the task bar's action point (null before the TASKBAR). */
+export interface ClientOwn {
+  hp: number;
+  level: number;
+  actionPoint: number | null;
 }
 
 export interface ClientHooks {
   /** Resolves once the world screen shows the world (its map around the player and the models in view); rejects if it ends first. */
   ready(): Promise<void>;
   movers(): ClientMover[];
+  /** The own character's numbers, made as the JOIN enters the world; null before, or with no own mover in it. */
+  own(): ClientOwn | null;
   stats(): ClientStats;
   /** Where the chase camera looks from, in the client's (D3D) coordinates, as last drawn ([0, 0, 0] before). */
   camera(): Vec3;
@@ -58,6 +71,7 @@ export function createClientHooks(): ClientHooks {
   return {
     ready: async () => current().ready(),
     movers: () => current().movers(),
+    own: () => current().own(),
     stats: () => current().stats(),
     camera: () => current().camera(),
     pause: () => current().pause(),

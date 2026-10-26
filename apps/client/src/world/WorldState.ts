@@ -1,5 +1,5 @@
 import { AttackFlag, DstParam } from '@flyffweb/protocol';
-import type { AddedMover, Vec3, WorldMessage } from '@flyffweb/protocol';
+import type { AddedMover, AddedPlayer, Vec3, WorldMessage } from '@flyffweb/protocol';
 import type { ServerClock } from '../net/serverClock';
 import type { GameData } from './gameData';
 import { lodestarRate } from './OwnState';
@@ -12,7 +12,7 @@ import {
   applyDestPos, applyMotion, applyMoved, applyMoverCorr, clearDestObj, setDestAngle, setDestObj, stepMover,
 } from './sim/moverRules';
 import type { SimMover } from './sim/moverRules';
-import { monsterMaxHitPoint } from './sim/params';
+import { FISTS, NO_ADJUST, attackSpeed, maxHitPoint, monsterMaxHitPoint } from './sim/params';
 
 const f32 = Math.fround;
 
@@ -23,18 +23,22 @@ const II_WEA_HAN_HAND = 11;
 /** `MATCHLESS_MODE` (`_Common/authorization.h:106`): a player in it takes no blow (`PreProcessDamage`). */
 const MATCHLESS_MODE = 0x00000001;
 /**
- * The monsters whose hit frames have their own handlers, which deal no blow on the client (`CMover::OnAttackMelee`,
- * `_Common/MoverActEvent.cpp:1601-1636`): `MI_CLOCKWORK1`, `MI_BIGMUSCLE`, `MI_KRRR`, `MI_MUSHMOOT` and the four
- * `MI_DU_METEONYKER`s (`Resource/defineObj.h:1149-1152`, :1481, :1529-1531).
+ * The monsters whose hit frames have handlers of their own (`CMover::OnAttackMelee`, `_Common/MoverActEvent.cpp:1601-1636`,
+ * the handlers at :882-1460, with their own blows, effects and quakes): `MI_CLOCKWORK1`, `MI_BIGMUSCLE`, `MI_KRRR`,
+ * `MI_MUSHMOOT` and the four `MI_DU_METEONYKER`s (`Resource/defineObj.h:1149-1152`, :1481, :1529-1531). They are left out:
+ * none of them is a Flaris monster.
  */
 const OWN_MELEE_HANDLERS: ReadonlySet<number> = new Set([164, 165, 166, 167, 715, 753, 754, 755]);
 /** `vTemp.x*vTemp.x + vTemp.z*vTemp.z < 32*32` (`DPClient.cpp:1225`): how near a mover appearing plays the spawn effect. */
 const SPAWN_RANGE_SQ = 32 * 32;
 /** The MONSTERPROP percent of a monster none has come for: `m_fHitPoint_Rate` 1.0f (`ProjectCmn.cpp:274`). */
 const NO_RATE = 100;
+/** `float fItem = 1.0f` (`CMover::GetAttackSpeed`, `MoverAttack.cpp:162`): the item speed when the hand's item has no row. */
+const NO_ITEM_SPEED = 1;
 /**
  * The most drawing events kept between two `takeChanges`: a hidden tab takes none, and what a long absence brought is
- * not worth drawing when it shows again. The oldest go first.
+ * not worth drawing when it shows again. The oldest go first, counted (`WorldChanges.dropped`); the texts are kept
+ * whatever their number, as Neuz logs every one.
  */
 const MAX_PENDING_COMBAT = 1024;
 
@@ -68,10 +72,10 @@ export interface Mover extends SimMover {
    */
   level: number;
   /**
-   * `CMover::GetMaxHitPoint()`: a monster's or an NPC's `dwAddHp` times its MONSTERPROP rate (`monsterMaxHitPoint`); the
-   * own one's from its numbers (`OwnState.maxHp`). Null where the browser cannot work it out: another player (the
-   * readers keep no stats of other players, nor their items' and buffs' parameters), or a mover the catalog has no
-   * row for.
+   * `CMover::GetMaxHitPoint()`: a monster's or an NPC's `dwAddHp` times its MONSTERPROP rate (`monsterMaxHitPoint`); a
+   * player's `GetMaxOriginHitPoint` of its job, level and STA (`maxHitPoint`; the own one's is `OwnState.maxHp`, with its
+   * items). Null only for a mover the catalog has no row for (its mover row, or a player's job row), for which Neuz
+   * would have none either.
    */
   maxHp: number | null;
 }
@@ -79,24 +83,31 @@ export interface Mover extends SimMover {
 /**
  * What the screen should draw or play for a combat message, in the order the messages came. The rules' side (HP,
  * states, motions) is done by the time it is handed out.
- * - `hit`: a DAMAGE on `victimId` by `attackerId` (`NULL_ID`, or a mover not in view, where Neuz finds none): the number
- *   and the effects of `CDPClient::OnDamage` by `flags` (`AF_*`, `DPClient.cpp:1792-1909`), which Neuz shows when the
- *   own mover is either party.
- * - `death`: a MOVERDEATH; `lastHp` is the HP before it, the number Neuz shows when the own mover is either party
- *   (`DPClient.cpp:2006-2007`).
- * - `swing`: another mover's MELEE_ATTACK (`OnMeleeAttack`), applied to its rules.
- * - `attackerHit`: a swing's hit frame landed (`CMover::OnAttackMelee` → `OnDamageMsgC`, `ActionMoverDmg.cpp:54-122`):
- *   the victim's spark and shake (`m_nDmgCnt`), the effects of the attacker's active hand item `weapon`
- *   (`GetActiveHandItemProp`: `dwSfxObj3` at the victim, `dwSfxObj5` at the attacker), and the hit sound; `weapon` is
- *   null where the browser does not know it (a monster's virtual item). The flinch and the pause are done.
+ * - `hit`: a DAMAGE on `victimId` by `attackerId`: the number and the effects of `CDPClient::OnDamage` by `flags` (`AF_*`,
+ *   `DPClient.cpp:1792-1909`). `attackerInView` is whether the attacker was in view as the message came (`prj.GetCtrl`
+ *   found it; only movers are kept here, so an attacker that is an object of another kind counts as not in view). Neuz
+ *   shows the hit for any victim when the attacker was not (`goto g_PASS`, :1810-1812), else when the own mover is
+ *   either party (:1833), or to a game master when the victim is its focus (:1824-1828).
+ * - `death`: a MOVERDEATH; `lastHp` is the HP before it, the number Neuz shows when the killer was in view as the message
+ *   came (`attackerInView`, `if( pAttacker )`, :1998-2007) and the own mover is either party.
+ * - `swing`: another mover's MELEE_ATTACK (`OnMeleeAttack`) started its swing (one kept for later, or refused, is not).
+ * - `spark`: a mover's model flashes, lit from the side of the mover `fromId` (`m_SparkInfo`, its direction
+ *   `GetPos() - pOther->GetPos()`): a swing's victim at its hit frame, whether or not the blow lands
+ *   (`CMover::OnDamage`, `MoverActEvent.cpp:1522-1538`), and the attacker once its blow has landed (`OnAttackMelee`,
+ *   :1704-1717).
+ * - `attackerHit`: a swing's blow landed (`CMover::OnAttackMelee` → `OnDamageMsgC`, `ActionMoverDmg.cpp:54-122`): the
+ *   effects of the attacker's active hand item `weapon` (`GetActiveHandItemProp`: `dwSfxObj3` at the victim, `dwSfxObj5`
+ *   at the attacker), the victim's shake (`m_nDmgCnt`) and the hit sound; `weapon` is null where the browser does not
+ *   know it (a monster's virtual item). The flinch and the pause are done.
  * - `levelUp`: SETLEVEL raised another mover's level: the level-up effect on it (`OnSetLevel`); the motion is done.
  * - `text`: DEFINEDTEXT or DEFINEDTEXT1: the text `textId` with the arguments `args`.
  * - `spawned`: a mover that is not a player came into view within 32 m of the own mover (`XI_GEN_MONSTER_SPAWN01`).
  */
 export type CombatEvent =
-  | { kind: 'hit'; victimId: number; attackerId: number; hit: number; flags: number }
-  | { kind: 'death'; victimId: number; attackerId: number; lastHp: number }
+  | { kind: 'hit'; victimId: number; attackerId: number; hit: number; flags: number; attackerInView: boolean }
+  | { kind: 'death'; victimId: number; attackerId: number; lastHp: number; attackerInView: boolean }
   | { kind: 'swing'; attackerId: number; targetId: number }
+  | { kind: 'spark'; moverId: number; fromId: number }
   | { kind: 'attackerHit'; attackerId: number; victimId: number; weapon: number | null }
   | { kind: 'levelUp'; moverId: number }
   | { kind: 'text'; textId: number; args: string }
@@ -108,8 +119,9 @@ export type CombatEvent =
  * - `added` holds the movers that came and are still in view, in the order they came.
  * A mover that came and went between two calls is in neither: the caller never saw it. An ID can be in both, for a
  * mover handed out that left and another that came with its ID.
- * - `combat` holds what to draw of the combat messages (`CombatEvent`), in order: the last `MAX_PENDING_COMBAT`; an
- *   event can name a mover that has left since.
+ * - `combat` holds what to draw of the combat messages (`CombatEvent`), in order: every text, and the last
+ *   `MAX_PENDING_COMBAT` of the rest; an event can name a mover that has left since.
+ * - `dropped` counts the events of the rest that went for that limit since the last call.
  * - `own` holds what the messages about the own character played (`OwnState.apply`'s events), in order.
  */
 export interface WorldChanges {
@@ -117,6 +129,7 @@ export interface WorldChanges {
   removed: number[];
   combat: CombatEvent[];
   own: OwnEvent[];
+  dropped: number;
 }
 
 /** `CMover::IsDie` (`Mover.h:1221`): in a dead state, or with no HP left. */
@@ -127,6 +140,14 @@ export function isDie(m: Mover): boolean {
 /** `CMover::IsLive` (`Mover.h:1222`): not in a dead state, or with HP left. */
 export function isLive(m: Mover): boolean {
   return !m.act.isDie() || m.hp > 0;
+}
+
+/**
+ * The item ID of another player's `m_aEquipInfo[PARTS_RWEAPON]` (its worn right-hand part, expired or not), which the
+ * client's `GetActiveHandItemProp` takes for it (`Mover.cpp:2942-2947`); null for an empty hand.
+ */
+function rightHandItem(player: AddedPlayer): number | null {
+  return player.worn.find((w) => w.part === Parts.RWEAPON)?.itemId ?? null;
 }
 
 /**
@@ -147,6 +168,9 @@ export class WorldState {
   private pendingAdded: Mover[] = [];
   private pendingRemoved = new Set<number>();
   private pendingCombat: CombatEvent[] = [];
+  /** How many of `pendingCombat` the limit counts (all but the texts), and how many went for it since the last call. */
+  private pendingDrawn = 0;
+  private dropped = 0;
   private pendingOwn: OwnEvent[] = [];
   /** `MoverProp::m_fHitPoint_Rate` as MONSTERPROP sets it, a percent, by mover ID; none for 100. */
   private readonly hpRates = new Map<number, number>();
@@ -236,8 +260,9 @@ export class WorldState {
         break;
       case 'meleeAttack':
         // OnMeleeAttack (:3802-3815): the swing now, or kept for the end of the one under way (`meleeAttack`)
-        m.act.meleeAttack(message.message, message.targetId, message.param2, message.param3);
-        this.combat({ kind: 'swing', attackerId: objectId, targetId: message.targetId });
+        if (m.act.meleeAttack(message.message, message.targetId, message.param2, message.param3)) {
+          this.combat({ kind: 'swing', attackerId: objectId, targetId: message.targetId });
+        }
         break;
       case 'damage':
         this.damage(m, message);
@@ -289,10 +314,13 @@ export class WorldState {
   takeChanges(): WorldChanges {
     const changes = {
       added: this.pendingAdded, removed: [...this.pendingRemoved], combat: this.pendingCombat, own: this.pendingOwn,
+      dropped: this.dropped,
     };
     this.pendingAdded = [];
     this.pendingRemoved = new Set();
     this.pendingCombat = [];
+    this.pendingDrawn = 0;
+    this.dropped = 0;
     this.pendingOwn = [];
     return changes;
   }
@@ -340,10 +368,12 @@ export class WorldState {
    * (`CreateObj.cpp:644-649`: `dwAI == AII_MONSTER`; a player's is set again from `fSpeed` alone, `Mover.cpp:1521`), times
    * `m_fSpeedFactor`, which is 1 (`Mover.cpp:517`) unless the NPC part of the ADD_OBJ sends one
    * (`ObjSerializeOpt.cpp:753`); floats throughout, and no buff changes it here. The own mover's numbers are its
-   * `OwnState`'s, when the world has them.
+   * `OwnState`'s, when the world has them; any other's max HP is `maxHpOf`'s.
    *
    * The rules' calls into `CMover` that the world answers are set here, for every mover: `prj.GetMover` for a swing's
-   * target and a forced death's attacker (`findMover`), `m_nHitPoint` (`hitPoint`), and a swing's hit frame (`onHit`).
+   * target and a forced death's attacker (`findMover`), `m_nHitPoint` (`hitPoint`), and a swing's hit frame (`onHit`);
+   * and another player's attack speed (`attackSpeed`, `attackSpeedOf`). The own one's is the attack loop's, which has
+   * the own numbers' items and buffs.
    */
   private build(objectId: number, added: AddedMover): Mover {
     const prop = this.data.movers.get(added.index);
@@ -370,11 +400,10 @@ export class WorldState {
       name = prop?.name ?? '';
     }
     const isSelf = added.player?.self === true;
+    const level = added.isPlayer ? added.player?.level ?? 1 : Math.max(prop?.level ?? 1, 1);
     const mover: Mover = {
       objectId, act, dest: null, corr: null, speedFactor, isSelf, kind, added, name, flying: prop?.flying === true,
-      hp: added.hitPoint,
-      level: added.isPlayer ? added.player?.level ?? 1 : Math.max(prop?.level ?? 1, 1),
-      maxHp: added.isPlayer ? null : this.monsterMaxHp(added.index),
+      hp: added.hitPoint, level, maxHp: this.maxHpOf(added, level),
     };
     const numbers = this.numbers;
     if (isSelf && numbers?.objectId === objectId) {
@@ -388,16 +417,46 @@ export class WorldState {
     act.findMover = (id) => this.byId.get(id)?.act;
     act.hitPoint = () => mover.hp;
     act.onHit = () => this.onAttackMelee(mover);
+    if (added.isPlayer && !isSelf) act.attackSpeed = () => this.attackSpeedOf(mover);
     return mover;
   }
 
   /**
-   * `GetMaxHitPoint()` of a mover that is not a player (`MoverParam.cpp:2788-2805`, :2876-2884): its `dwAddHp` times its
-   * MONSTERPROP rate (`monsterMaxHitPoint`); null with no row in the catalog.
+   * `CMover::GetMaxHitPoint()` (`MoverParam.cpp:2788-2805`) of a mover at `level` whose numbers are not `OwnState`'s,
+   * over `GetMaxOriginHitPoint( FALSE )` (:2856-2884):
+   * - a player: its job's `fFactorMaxHP`, its level and `GetSta()` (`maxHitPoint`);
+   * - any other mover: its `dwAddHp` times its MONSTERPROP rate (`monsterMaxHitPoint`).
+   * Another player's items and buffs are left out (`GetSta()`'s adjustments, `DST_HP_MAX` and `DST_HP_MAX_RATE`): the
+   * browser keeps no parameters of them, so its STA is the ADD_OBJ's `m_nSta`. Null with no row in the catalog (the
+   * mover's, or a player's job's).
    */
-  private monsterMaxHp(index: number): number | null {
-    const prop = this.data.movers.get(index);
-    return prop === undefined ? null : monsterMaxHitPoint(prop.addHp, this.hpRates.get(index) ?? NO_RATE);
+  private maxHpOf(added: AddedMover, level: number): number | null {
+    const player = added.player;
+    if (player !== undefined) {
+      const job = this.data.jobs[player.job];
+      if (job === undefined) return null;
+      // `maxHitPoint` reads STA alone of the stats
+      return maxHitPoint(job, level, { str: 0, sta: player.sta, dex: player.dex, int: 0 }, NO_ADJUST);
+    }
+    const prop = this.data.movers.get(added.index);
+    return prop === undefined ? null : monsterMaxHitPoint(prop.addHp, this.hpRates.get(added.index) ?? NO_RATE);
+  }
+
+  /**
+   * `CMover::GetAttackSpeed()` (`MoverAttack.cpp:159-192`, `attackSpeed`) of another player, which `ProcessAniSpeed`
+   * plays its swings at (`Mover.cpp:3086-3096`): its job's `fAttackSpeed`; the `fAttackSpeed` of its right hand's item
+   * (`GetActiveHandItemProp`, the client's branch for another player, `Mover.cpp:2942-2947`: `m_aEquipInfo[PARTS_RWEAPON]`'s
+   * item, the bare hand's `FISTS` for none, and `fItem`'s 1.0f for an item with no row); its DEX (`GetDex()`) and its
+   * level. Its items' and buffs' `DST_ATTACKSPEED`, `DST_ATTACKSPEED_RATE` and DEX are left out, as for its max HP. With
+   * no job row, the hook's 1.0 (`GetAttackSpeed` would `ASSERT`).
+   */
+  private attackSpeedOf(m: Mover): number {
+    const player = m.added.player;
+    const job = player === undefined ? undefined : this.data.jobs[player.job];
+    if (player === undefined || job === undefined) return 1;
+    const item = rightHandItem(player);
+    const weaponSpeed = item === null ? FISTS.attackSpeed : this.data.itemProps.get(item)?.attackSpeed ?? NO_ITEM_SPEED;
+    return attackSpeed(job, weaponSpeed, m.level, player.dex, NO_ADJUST).speed;
   }
 
   /** The own character's numbers, when `m` is the own mover and the world has them. */
@@ -417,14 +476,18 @@ export class WorldState {
     }
   }
 
+  /** An event to hand out; past `MAX_PENDING_COMBAT` the oldest that is not a text goes, counted. */
   private combat(event: CombatEvent): void {
     this.pendingCombat.push(event);
-    if (this.pendingCombat.length > MAX_PENDING_COMBAT) this.pendingCombat.shift();
+    if (event.kind === 'text' || ++this.pendingDrawn <= MAX_PENDING_COMBAT) return;
+    this.pendingCombat.splice(this.pendingCombat.findIndex((e) => e.kind !== 'text'), 1);
+    this.pendingDrawn--;
+    this.dropped++;
   }
 
   /**
    * `CMover::SetPointParam( DST_HP, nValue )` on the client (`MoverParam.cpp:894-910`) for a mover whose numbers are not
-   * `OwnState`'s: at least 0, and at most `GetMaxHitPoint()` where it is known.
+   * `OwnState`'s: at least 0, and at most `GetMaxHitPoint()` (with no catalog row, no max).
    */
   private setHitPoint(m: Mover, value: number): void {
     let hp = Math.max(0, value);
@@ -435,12 +498,14 @@ export class WorldState {
   /**
    * `CDPClient::OnDamage` (`DPClient.cpp:1758-1934`) on a mover in view: a knock-back's position and angle first
    * (:1771-1781); `IncHitPoint( -dwHit )`, an HP that reaches 0 being 1, since a hit never kills (:1785-1788, the own
-   * mover's in its numbers); a sitting mover stands (:1789-1790); then the drawing (`hit`); and for an attacker in view
-   * (`prj.GetCtrl`: only movers are kept, so a valid object that is not a mover, :1923-1931, is none here), the knock-back
-   * of `AF_FLYING`, with the attacker's `OBJMSG_STOP` (:1910-1921). The critical's sound is the screen's.
+   * mover's in its numbers); a sitting mover stands (:1789-1790); then the drawing (`hit`, with whether the attacker was
+   * in view, :1810-1812); and for an attacker in view (`prj.GetCtrl`: only movers are kept, so a valid object that is not
+   * a mover, :1923-1931, is none here), the knock-back of `AF_FLYING`, with the attacker's `OBJMSG_STOP` (:1910-1921).
+   * The critical's sound is the screen's.
    */
   private damage(m: Mover, message: MessageOf<'damage'>): void {
     const { attackerId, hit, flags, fly } = message;
+    const attacker = this.byId.get(attackerId);
     if (fly !== null) {
       m.act.body.pos = [f32(fly.pos[0]), f32(fly.pos[1]), f32(fly.pos[2])];
       m.act.body.angle = wrapAngle(fly.angle);
@@ -452,8 +517,7 @@ export class WorldState {
       if (m.hp === 0) m.hp = 1;
     }
     m.act.unsit();
-    this.combat({ kind: 'hit', victimId: m.objectId, attackerId, hit, flags });
-    const attacker = this.byId.get(attackerId);
+    this.combat({ kind: 'hit', victimId: m.objectId, attackerId, hit, flags, attackerInView: attacker !== undefined });
     if (attacker !== undefined && flags & AttackFlag.FLYING && m.act.knockFlying(attacker.act.body.angle)) {
       attacker.act.sendActMsg(ActMsg.STOP);
     }
@@ -462,9 +526,9 @@ export class WorldState {
   /**
    * `CDPClient::OnMoverDeath` (`DPClient.cpp:1936-2090`) on a mover in view: its HP before (`GetHitPoint()`, the death's
    * number) and then 0 (`IncHitPoint( -nHitPoint )`, :1944-1945, the own mover's in its numbers); the attacker in view
-   * forgets the mover it hit and the one it followed (`SetObjHit( NULL_ID )`, `ClearDestObj`, :2008-2009); and
-   * `OBJMSG_DIE` with how it died and who killed it (:2011). The focus, the auto-attack and the own death's windows,
-   * music and texts are the world screen's.
+   * forgets the mover it hit and the one it followed (`SetObjHit( NULL_ID )`, `ClearDestObj`, :2008-2009), and the
+   * drawing (`death`, with whether the killer was found, :1998-2007); and `OBJMSG_DIE` with how it died and who killed it
+   * (:2011). The focus, the auto-attack and the own death's windows, music and texts are the world screen's.
    */
   private moverDeath(m: Mover, message: MessageOf<'moverDeath'>): void {
     const lastHp = m.hp;
@@ -475,14 +539,15 @@ export class WorldState {
       attacker.act.hitId = null;
       clearDestObj(attacker);
     }
-    this.combat({ kind: 'death', victimId: m.objectId, attackerId: message.attackerId, lastHp });
+    const attackerInView = attacker !== undefined;
+    this.combat({ kind: 'death', victimId: m.objectId, attackerId: message.attackerId, lastHp, attackerInView });
     m.act.sendActMsg(ActMsg.DIE, message.message, message.attackerId);
   }
 
   /**
    * `CDPClient::OnSetLevel` (`DPClient.cpp:3339-3359`), another player's level (the world server sends it to the others
    * only, `CUserMng::AddSetLevel`; the own numbers ignore it): a higher level plays the level up (its motion when
-   * standing, `levelUpMotion`, and its effect); then the level, and the HP at its max where that is known
+   * standing, `levelUpMotion`, and its effect); then the level, and the HP at the max of that level
    * (`m_nHitPoint = GetMaxHitPoint()`; the MP, which is not kept for others, likewise).
    */
   private setLevel(m: Mover, level: number): void {
@@ -492,13 +557,14 @@ export class WorldState {
       this.combat({ kind: 'levelUp', moverId: m.objectId });
     }
     m.level = level;
+    m.maxHp = this.maxHpOf(m.added, level);
     if (m.maxHp !== null) m.hp = m.maxHp;
   }
 
   /**
    * `CDPClient::OnRevivalLodestar` (`DPClient.cpp:3484-3513`, `__VER >= 9`): `ClearState`, then the HP at the level's
-   * tenths of its max (`lodestarRate`), which for the own mover its numbers do, and for another only where its max is
-   * known: the SETPOINTPARAMs that follow set it anyway.
+   * tenths of its max (`lodestarRate`, :3501), which for the own mover its numbers do. The SETPOINTPARAMs that follow set
+   * it again.
    */
   private revivalToLodestar(m: Mover, message: MessageOf<'revivalToLodestar'>): void {
     m.act.clearState();
@@ -508,22 +574,26 @@ export class WorldState {
 
   /**
    * `CMover::OnAttackMelee( dwState, pHitObj )` on the client (`MoverActEvent.cpp:1592-1726`), which the rules call at a
-   * swing's hit frame with its target in view and alive (`ActionMover.onHit`). Five monsters' hits are their own (:1601-
-   * 1636). Any other's is `OnDamage` (:1503-1588), the blow (`onDamageMsgC`); one that lands holds a player attacker's
-   * model 5 steps, and a monster's and its victim's not at all (:1693-1701). The hit sound, the action point the own
-   * ATK1 earns (:1674-1678) and the sparks are the screen's.
+   * swing's hit frame with its target in view and alive (`ActionMover.onHit`). Five monsters' hits have handlers of their
+   * own, left out (`OWN_MELEE_HANDLERS`). Any other's is `OnDamage` (:1503-1588): the victim's model flashes (`spark`,
+   * :1522-1538), then the blow (`onDamageMsgC`); one that lands holds a player attacker's model 5 steps, and a monster's
+   * and its victim's not at all (:1693-1701), and flashes the attacker's model (:1704-1717). The hit sound and the action
+   * point the own ATK1 earns (:1674-1678) are the screen's.
    */
   private onAttackMelee(attacker: Mover): void {
     if (OWN_MELEE_HANDLERS.has(attacker.added.index)) return;
     const targetId = attacker.act.targetId;
     const victim = targetId === null ? undefined : this.byId.get(targetId);
-    if (victim === undefined || !this.onDamageMsgC(victim, attacker)) return;
+    if (victim === undefined) return;
+    this.combat({ kind: 'spark', moverId: victim.objectId, fromId: attacker.objectId });
+    if (!this.onDamageMsgC(victim, attacker)) return;
     if (attacker.added.isPlayer) {
       attacker.act.pause(5);
     } else {
       attacker.act.pause(0);
       victim.act.pause(0);
     }
+    this.combat({ kind: 'spark', moverId: attacker.objectId, fromId: victim.objectId });
   }
 
   /**
@@ -561,7 +631,8 @@ export class WorldState {
       const numbers = this.numbersOf(m);
       return numbers === undefined ? null : numbers.equipped.weapon?.id ?? II_WEA_HAN_HAND;
     }
-    return m.added.player?.worn.find((w) => w.part === Parts.RWEAPON)?.itemId ?? II_WEA_HAN_HAND;
+    const player = m.added.player;
+    return (player === undefined ? null : rightHandItem(player)) ?? II_WEA_HAN_HAND;
   }
 
   /**
@@ -580,7 +651,7 @@ export class WorldState {
       const index = this.moverIndexOf(name);
       if (index !== undefined) this.hpRates.delete(index);
     }
-    for (const m of this.byId.values()) if (!m.added.isPlayer) m.maxHp = this.monsterMaxHp(m.added.index);
+    for (const m of this.byId.values()) if (!m.added.isPlayer) m.maxHp = this.maxHpOf(m.added, m.level);
   }
 
   private moverIndexOf(name: string): number | undefined {

@@ -364,7 +364,7 @@ export function writeGameTimer(objectId: number, time: number): ScriptMessage {
 
 // ADD_OBJ: `CUser::AddAddObj` (`WORLDSERVER/User.cpp:664`) and the storing side of `CMover::Serialize`
 // (`_Common/ObjSerializeOpt.cpp:97`). The fields the browser does not keep are written as a mover with nothing
-// in them would have them: no guild, no party, no pet, no buffs, and zero stats unless the own character's are given.
+// in them would have them: no guild, no party, no pet, no buffs, and another player's STR and INT zero.
 
 /** `MAX_HUMAN_PARTS` (`Resource/defineNeuz.h:62`), `SM_MAX` (`_Network/CmnHdr.h:503`), `MAX_JOB` (`defineJob.h:90`). */
 const MAX_HUMAN_PARTS = 31;
@@ -412,10 +412,10 @@ function moverStart(m: AddedMover): ArWriter {
 
 /**
  * The player part every method writes (`ObjSerializeOpt.cpp:115-196`). `stats` are `m_nStr`, `m_nSta`, `m_nDex` and
- * `m_nInt` (`(u_short)`, :123-126): the own character's, and zeros for another player, whose stats the browser does
- * not keep.
+ * `m_nInt` (`(u_short)`, :123-126): the own character's numbers', and for another player its STA and DEX between
+ * zeros, the STR and INT the browser does not keep.
  */
-function playerStart(m: AddedMover, p: AddedPlayer, stats: readonly number[] = [0, 0, 0, 0]): ArWriter {
+function playerStart(m: AddedMover, p: AddedPlayer, stats: readonly number[] = [0, p.sta, p.dex, 0]): ArWriter {
   const w = moverStart(m)
     .string(p.name).u8(p.sex).u8(p.skinSet).u8(p.hairMesh).u32(p.hairColor).u8(p.headMesh).u32(p.playerId).u8(p.job)
     .u16(stats[0]).u16(stats[1]).u16(stats[2]).u16(stats[3]) // m_nStr, m_nSta, m_nDex, m_nInt
@@ -524,7 +524,8 @@ function writeInventory(w: ArWriter, items: readonly InventoryItem[]): void {
 /**
  * ADD_OBJ of the player's own character (METHOD_NONE, `ObjSerializeOpt.cpp:198-254`), through its inventory: the
  * stats (`m_nStr` to `m_nInt`) and the numbers from `p.player.own` (a character with nothing yet when it is `null`:
- * `NO_OWN`), `equipmentObjectIds` (one per part, the inventory's object IDs or `NULL_ID`) in `m_aEquipInfo[i].dwId`,
+ * `NO_OWN`; the reader gives its STA and DEX as `player.sta` and `dex` too, so a script gives them equal),
+ * `equipmentObjectIds` (one per part, the inventory's object IDs or `NULL_ID`) in `m_aEquipInfo[i].dwId`,
  * the 45 skill pairs, the fields up to the inventory with nothing in them (:239-253), then `own.inventory`
  * (`writeInventory`). The own character lists no worn parts, so `worn` must be `[]`. The world server goes on with
  * the banks, the pet, the pocket and the rest (:255-276), then the buffs; the browser skips all of that, so the

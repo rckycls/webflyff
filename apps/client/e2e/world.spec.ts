@@ -14,7 +14,8 @@ import { ArReader, ArWriter, MessageType, NULL_ID, PacketType, Port } from '@fly
 import type { AddedMover, AddedNpc, AddedPlayer, MoveReport, Vec3 } from '@flyffweb/protocol';
 import { sampleHeight } from '@flyffweb/scene';
 import {
-  createWorldScript, writeAddMonster, writeAddNpc, writeAddPlayer, writeAddSelf, writeDelObj, writeMoverCorr, writeMoverMoved,
+  createWorldScript, writeAddMonster, writeAddNpc, writeAddPlayer, writeAddSelf, writeDelObj, writeMoverCorr, writeMoverDeath,
+  writeMoverMoved, writeSetPointParam, writeTaskBar,
 } from '@flyffweb/testkit';
 import type {} from '../src/testHooks'; // window.__client
 import { Belli } from '../src/world/sim/constants';
@@ -81,10 +82,11 @@ const NPC_ID = 9002;
 
 const BASE = { scale: 1, motion: 0, hitPoint: 100, state: OBJSTA_STAND, stateFlag: 0, belligerence: 0, sfxId: 0 };
 
+/** Webby with no numbers (`own` null), so with STA and DEX 0 on the wire too. */
 const SELF_PLAYER: AddedPlayer = {
   self: true, name: 'Webby', sex: 0, skinSet: 0, hairMesh: 0, hairColor: 0xff907b6d, headMesh: 0, playerId: 500, job: 0,
-  level: 15, authorization: 0x46, mode: 0, stateMode: 0, pkTime: 0, pkValue: 0, pkPropensity: 0, honor: -1, worn: [],
-  equipmentObjectIds: Array.from({ length: MAX_HUMAN_PARTS }, () => NULL_ID), own: null, shopTitle: '',
+  sta: 0, dex: 0, level: 15, authorization: 0x46, mode: 0, stateMode: 0, pkTime: 0, pkValue: 0, pkPropensity: 0, honor: -1,
+  worn: [], equipmentObjectIds: Array.from({ length: MAX_HUMAN_PARTS }, () => NULL_ID), own: null, shopTitle: '',
 };
 const NPC_PART: AddedNpc = {
   hairMesh: 0, hairColor: 0, headMesh: 0, characterKey: '', worn: [], activeAttack: 0, movePattern: 0, moveEvent: 0,
@@ -100,6 +102,22 @@ const julia: AddedMover = {
 const flaris = createWorldScript({
   playerObjectId: SELF_ID, worldId: MADRIGAL, pos: SQUARE,
   self: writeAddSelf(SELF_ID, self), others: [writeAddMonster(MONSTER_ID, aibatt), writeAddNpc(NPC_ID, julia)],
+});
+
+/** `DST_HP` (`Resource/defineAttribute.h`), and `OBJMSG_DAMAGE` (`MoverMsg.h`, the `OBJMSG` enum from 0). */
+const DST_HP = 38;
+const OBJMSG_DAMAGE = 41;
+/**
+ * Flaris with the own character's TASKBAR and an HP of 77 right after its ADD_OBJ in the JOIN (`CUser::Open` sends the
+ * task bar there, `WORLDSERVER/User.cpp:326-328`): they reach the own numbers only if these are made before the JOIN is
+ * applied.
+ */
+const flarisWithOwnMessages = createWorldScript({
+  playerObjectId: SELF_ID, worldId: MADRIGAL, pos: SQUARE, self: writeAddSelf(SELF_ID, self),
+  others: [
+    writeTaskBar(SELF_ID, { applets: [], items: [], queue: [], actionPoint: 42 }), writeSetPointParam(SELF_ID, DST_HP, 77),
+    writeAddMonster(MONSTER_ID, aibatt), writeAddNpc(NPC_ID, julia),
+  ],
 });
 
 /**
@@ -567,6 +585,46 @@ test.describe('the world screen against scripted servers', () => {
     await expect.poll(() => destPosOf(gateway).length).toBe(1);
     await page.waitForTimeout(500);
     expect(targetsOf(gateway)).toHaveLength(3);
+  });
+
+  // WorldScreen.apply tells the focus of a MOVERDEATH and a DEL_OBJ as they come, before the world applies them
+  test('a death and a DEL_OBJ reach the focus as they come: a dead target leaving gets no release, the own kill clears it', async ({ page }) => {
+    const gateway = await playGateway(page);
+    await enterFlaris(page);
+    const tapMover = async (objectId: number): Promise<void> => {
+      const at = await page.evaluate((id) => window.__client!.screenOf(id), objectId);
+      expect(at).not.toBeNull();
+      await tapWorld(page, at![0], at![1]);
+    };
+    const hpOf = async (objectId: number) =>
+      (await page.evaluate(() => window.__client!.movers())).find((m) => m.objectId === objectId)?.hp;
+
+    await tapMover(MONSTER_ID);
+    await expect.poll(() => targetsOf(gateway)).toEqual([[MONSTER_ID, 2]]);
+    // the Aibatt dies with no killer (OnMoverDeath): HP 0 and the dead state, and the focus stays on it
+    gateway.pushCache(flaris.later([writeMoverDeath(MONSTER_ID, NULL_ID, 0)]));
+    await expect.poll(() => hpOf(MONSTER_ID)).toBe(0);
+    // then it leaves view: the focus goes (CWorld::Process), and a dead target is not released (IsLive, World.cpp:310)
+    gateway.pushCache(flaris.later([writeDelObj(MONSTER_ID)]));
+    await expect.poll(() => targetsOf(gateway)).toEqual([[MONSTER_ID, 2], [NULL_ID, 2]]);
+
+    // the own kill clears the focus, the live target released first (DPClient.cpp:1956-1963)
+    await tapMover(NPC_ID);
+    await expect.poll(() => targetsOf(gateway).length).toBe(3);
+    gateway.pushCache(flaris.later([writeMoverDeath(NPC_ID, SELF_ID, OBJMSG_DAMAGE)]));
+    await expect.poll(() => targetsOf(gateway)).toEqual([
+      [MONSTER_ID, 2], [NULL_ID, 2], [NPC_ID, 2], [NPC_ID, 1], [NULL_ID, 2],
+    ]);
+    expect(await hpOf(NPC_ID)).toBe(0);
+  });
+
+  test("the JOIN's messages about the own character reach its numbers, made before the JOIN is applied", async ({ page }) => {
+    await playGateway(page, flarisWithOwnMessages);
+    await enterFlaris(page);
+    // the TASKBAR and the SETPOINTPARAM after the own ADD_OBJ: the own numbers have them, and the own mover's HP is theirs
+    expect(await page.evaluate(() => window.__client!.own())).toEqual({ hp: 77, level: 15, actionPoint: 42 });
+    const self = (await page.evaluate(() => window.__client!.movers())).find((m) => m.objectId === SELF_ID);
+    expect(self?.hp).toBe(77);
   });
 
   test('pressing a turn key cancels it', async ({ page }) => {

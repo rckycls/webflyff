@@ -477,18 +477,20 @@ describe('AttackLoop: what stops it ([combat §2.6])', () => {
     r.tap(MONSTER_ID);
     r.steps(10); // on the way
     expect(r.sent).toEqual([['destObj', MONSTER_ID, 0]]);
-    // the world screen's part of a DEL_OBJ: the world drops the mover, and the loop is told (`onRemoved`): the focus goes
-    // (CWorld::Process, World.cpp:892-893) and the attack stops
+    // the world screen's part of a DEL_OBJ (`WorldScreen.apply`): the loop is told first (`onRemoved`), while the mover
+    // is still in view, so its focus is released as live as it is: the focus goes (CWorld::Process, World.cpp:892-893)
+    // and the attack stops; then the world drops the mover
+    r.loop.onRemoved(MONSTER_ID);
     r.world.apply(MONSTER_ID, { type: 'delObj' });
-    for (const id of r.world.takeChanges().removed) r.loop.onRemoved(id);
     expect(r.focus.targetId).toBeNull();
+    expect(r.targets).toEqual([[MONSTER_ID, 2], [MONSTER_ID, 1], [NULL_ID, 2]]);
     expect(() => r.steps(300)).not.toThrow();
     expect(r.melee()).toEqual([]);
     expect(r.sent).toEqual([['destObj', MONSTER_ID, 0]]);
     expect(r.loop.autoAttack).toBe(false);
   });
 
-  it('a kill with a next target queued focuses it and stops the auto-attack (onRemoved taking the next, SetNextTarget)', () => {
+  it('a kill with a next target queued focuses it and stops the auto-attack (onMoverDeath, SetNextTarget)', () => {
     const r = rig();
     r.tap(MONSTER_ID);
     r.tap(MONSTER_ID);
@@ -497,7 +499,7 @@ describe('AttackLoop: what stops it ([combat §2.6])', () => {
     r.loop.onRemoved(NPC_ID);
     expect(r.loop.autoAttack).toBe(true);
     // DPClient.cpp:1956-1970, WndWorld.cpp:6389-6419: the focus to the next target, marked, and the auto-attack off
-    r.loop.onRemoved(MONSTER_ID, true);
+    r.loop.onMoverDeath(MONSTER_ID, OWN_ID);
     expect(r.focus.targetId).toBe(OTHER_MONSTER_ID);
     expect(r.focus.next).toBeNull();
     expect(r.loop.autoAttack).toBe(false);

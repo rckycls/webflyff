@@ -264,7 +264,10 @@ export class ActionMover {
    * this; by default 0, so that the dead state alone tells life.
    */
   hitPoint: () => number = () => 0;
-  /** `CMover::GetAttackSpeed()` (`MoverAttack.cpp:159-192`, `params.ts`' `attackSpeed`): a player's. Its owner sets this. */
+  /**
+   * `CMover::GetAttackSpeed()` (`MoverAttack.cpp:159-192`, `params.ts`' `attackSpeed`): a player's. Its owner sets this
+   * (the world for another player, from its job, right-hand item, DEX and level; the attack loop for the own one).
+   */
   attackSpeed: () => number = () => 1;
   /**
    * `CMover::OnAttackMelee( dwState, pHitObj )` (`MoverActEvent.cpp:1592-1726`), which `_ProcessStateAttack` calls as the

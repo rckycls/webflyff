@@ -224,6 +224,13 @@ export interface AddedPlayer {
   /** `m_idPlayer`, the character's database ID. */
   playerId: number;
   job: number;
+  /**
+   * `m_nSta` and `m_nDex`, the base STA and DEX (`WORD`s, without items or buffs), which Neuz works another player's max
+   * HP and attack speed out from (`GetMaxOriginHitPoint`, `GetAttackSpeed`). The own character's are its numbers' too
+   * (`own.sta`, `own.dex`: the same fields). STR and INT are kept for the own character only.
+   */
+  sta: number;
+  dex: number;
   level: number;
   /** `m_dwAuthorization`, an `AUTH_*` letter (`(char&)` into the DWORD's low byte, so 0 to 255). */
   authorization: number;

@@ -96,7 +96,8 @@ function readPlayer(r: ArReader, self: boolean): AddedPlayer {
   const headMesh = r.u8();
   const playerId = r.u32(); // m_idPlayer
   const job = r.u8(); // (u_char&)m_nJob
-  // The stats are kept for the own character only; another player's are read past.
+  // STA and DEX are kept for every player (another's max HP and attack speed come from them, Ruling R19); STR and INT
+  // for the own character only (`own`).
   const str = r.u16(); // (u_short&)m_nStr
   const sta = r.u16(); // (u_short&)m_nSta
   const dex = r.u16(); // (u_short&)m_nDex
@@ -130,8 +131,8 @@ function readPlayer(r: ArReader, self: boolean): AddedPlayer {
   r.bytes(4 * SM_MAX); // m_dwSMTime[j] (DWORD)
 
   const base = {
-    self, name, sex, skinSet, hairMesh, hairColor, headMesh, playerId, job, level, authorization, mode, stateMode,
-    pkTime, pkValue, pkPropensity, honor,
+    self, name, sex, skinSet, hairMesh, hairColor, headMesh, playerId, job, sta, dex, level, authorization, mode,
+    stateMode, pkTime, pkValue, pkPropensity, honor,
   };
   if (self) {
     const { equipmentObjectIds, numbers } = readOwnEquipment(r, { str, sta, dex, int });

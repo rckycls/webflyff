@@ -102,10 +102,14 @@ function playerCommon(
   return repeat(w, SM_MAX, (x, i) => x.u32(i * 1000)); // m_dwSMTime
 }
 
-/** What every player value below shares; `worn`, `equipmentObjectIds` and `shopTitle` are set per test. */
+/**
+ * What every player value below shares; `worn`, `equipmentObjectIds` and `shopTitle` are set per test. STA and DEX are
+ * `playerCommon`'s (16 and 17), which the own character's numbers replace (`selfMover`).
+ */
 const playerBase = {
-  name: 'Hero', sex: 1, skinSet: 2, hairMesh: 3, hairColor: 0xff112233, headMesh: 4, playerId: 777, job: 9, level: 65,
-  authorization: 0x46, mode: 0x10, stateMode: 0x20, pkTime: 5000, pkValue: 3, pkPropensity: 100, honor: 6,
+  name: 'Hero', sex: 1, skinSet: 2, hairMesh: 3, hairColor: 0xff112233, headMesh: 4, playerId: 777, job: 9, sta: 16,
+  dex: 17, level: 65, authorization: 0x46, mode: 0x10, stateMode: 0x20, pkTime: 5000, pkValue: 3, pkPropensity: 100,
+  honor: 6,
 };
 
 /** Another player (METHOD_EXCLUDE_ITEM): `OnAddObj` sees an object ID that is not `g_pPlayer`'s. */
@@ -388,7 +392,7 @@ describe('ADD_OBJ (OnAddObj)', () => {
       index: 11, scale: 1, pos, angle: 0, objectId: PLAYER,
       motion: 0x15, isPlayer: true, hitPoint: 500, state: 0x1, stateFlag: 0, belligerence: 0, sfxId: NULL_ID,
       player: {
-        ...playerBase, self: true, own, shopTitle: '', worn: [], equipmentObjectIds: [...equipment],
+        ...playerBase, sta: own.sta, dex: own.dex, self: true, own, shopTitle: '', worn: [], equipmentObjectIds: [...equipment],
       },
     };
   }

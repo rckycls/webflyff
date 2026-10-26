@@ -67,26 +67,26 @@ const over = (p: Vec3): Vec3 => [p[0], f32(p[1] + 1.5), p[2]];
 /** The XI ids and the numbers a DAMAGE plays, in order, as short words. */
 function hitPlays(flags: number, hit = 25, world = worldOf()): string[] {
   const r = recorder();
-  playCombatEvent({ kind: 'hit', victimId: MONSTER_ID, attackerId: OWN_ID, hit, flags }, world, r.out);
+  playCombatEvent({ kind: 'hit', victimId: MONSTER_ID, attackerId: OWN_ID, hit, flags, attackerInView: true }, world, r.out);
   return r.played.map((p) => ('effect' in p ? `xi ${p.effect.xi} x${p.effect.scale}` : `number ${p.number[1]}`));
 }
 
 describe('playCombatEvent: a DAMAGE (CDPClient::OnDamage, DPClient.cpp:1792-1897)', () => {
   it("shows the own player's hit on a monster as a number at the monster's feet, in the second colour set", () => {
     const r = recorder();
-    playCombatEvent({ kind: 'hit', victimId: MONSTER_ID, attackerId: OWN_ID, hit: 25, flags: AttackFlag.GENERIC }, worldOf(), r.out);
+    playCombatEvent({ kind: 'hit', victimId: MONSTER_ID, attackerId: OWN_ID, hit: 25, flags: AttackFlag.GENERIC, attackerInView: true }, worldOf(), r.out);
     expect(r.played).toEqual([{ number: [MONSTER_AT, 25, false] }]);
   });
 
   it('shows a hit on the own player in the first colour set (`IsActiveMover() ? 0 : 1`)', () => {
     const r = recorder();
-    playCombatEvent({ kind: 'hit', victimId: OWN_ID, attackerId: MONSTER_ID, hit: 7, flags: 0 }, worldOf(), r.out);
+    playCombatEvent({ kind: 'hit', victimId: OWN_ID, attackerId: MONSTER_ID, hit: 7, flags: 0, attackerInView: true }, worldOf(), r.out);
     expect(r.played).toEqual([{ number: [OWN_AT, 7, true] }]);
   });
 
   it('plays the critical banner 1.5 m over the feet at scale 3, then the number', () => {
     const r = recorder();
-    playCombatEvent({ kind: 'hit', victimId: MONSTER_ID, attackerId: OWN_ID, hit: 60, flags: AttackFlag.CRITICAL1 }, worldOf(), r.out);
+    playCombatEvent({ kind: 'hit', victimId: MONSTER_ID, attackerId: OWN_ID, hit: 60, flags: AttackFlag.CRITICAL1, attackerInView: true }, worldOf(), r.out);
     expect(r.played).toEqual([
       { effect: { xi: Xi.HIT_CRITICAL01, pos: over(MONSTER_AT), scale: 3 } },
       { number: [MONSTER_AT, 60, false] },
@@ -116,7 +116,7 @@ describe('playCombatEvent: a DAMAGE (CDPClient::OnDamage, DPClient.cpp:1792-1897
 
   it('makes the banners where they stay: no mover followed, 1.5 m over the feet, in floats', () => {
     const r = recorder();
-    playCombatEvent({ kind: 'hit', victimId: MONSTER_ID, attackerId: OWN_ID, hit: 0, flags: AttackFlag.BLOCKING | AttackFlag.PARRY }, worldOf(), r.out);
+    playCombatEvent({ kind: 'hit', victimId: MONSTER_ID, attackerId: OWN_ID, hit: 0, flags: AttackFlag.BLOCKING | AttackFlag.PARRY, attackerInView: true }, worldOf(), r.out);
     expect(r.played).toEqual([
       { effect: { xi: Xi.HIT_HITBLOCK01, pos: over(MONSTER_AT), scale: 2 } },
       { effect: { xi: Xi.HIT_PARRY01, pos: over(MONSTER_AT), scale: 2 } },
@@ -145,7 +145,7 @@ describe('playCombatEvent: a DAMAGE (CDPClient::OnDamage, DPClient.cpp:1792-1897
 
 function hitPlaysOf(ids: { victimId: number; attackerId: number }, world = worldOf()): string[] {
   const r = recorder();
-  playCombatEvent({ kind: 'hit', ...ids, hit: 4, flags: 0 }, world, r.out);
+  playCombatEvent({ kind: 'hit', ...ids, hit: 4, flags: 0, attackerInView: world.movers.has(ids.attackerId) }, world, r.out);
   return r.played.map((p) => ('effect' in p ? `xi ${p.effect.xi}` : `number ${p.number[1]}`));
 }
 
@@ -153,7 +153,7 @@ describe('playCombatEvent: a MOVERDEATH (CDPClient::OnMoverDeath, DPClient.cpp:2
   it('shows the HP the mover had as its last number, when the own player killed it or died, and the killer is in view', () => {
     const death = (victimId: number, attackerId: number, world = worldOf()): Played[] => {
       const r = recorder();
-      playCombatEvent({ kind: 'death', victimId, attackerId, lastHp: 13 }, world, r.out);
+      playCombatEvent({ kind: 'death', victimId, attackerId, lastHp: 13, attackerInView: world.movers.has(attackerId) }, world, r.out);
       return r.played;
     };
     expect(death(MONSTER_ID, OWN_ID)).toEqual([{ number: [MONSTER_AT, 13, false] }]);

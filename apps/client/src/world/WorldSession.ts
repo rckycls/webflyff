@@ -23,9 +23,17 @@ export type WorldEvent =
  * What the bundles looked like, for the overlay. `indexed` counts the bundles that had a valid table of contents, `skipped`
  * the messages of a type nothing reads (in a bundle without a table, the one that ended it too), `mismatched` the messages
  * whose reader did not end where the table says (and the own ADD_OBJs whose inventory could not be read, which are kept),
- * and `unknownPackets` the top-level packets of a type this does not know.
+ * `unknownPackets` the top-level packets of a type this does not know, and `droppedEvents` the drawing events of the
+ * messages that the world dropped untaken (`WorldChanges.dropped`: a hidden tab draws nothing for a long time).
  */
-export interface SessionStats { bundles: number; indexed: number; skipped: number; mismatched: number; unknownPackets: number }
+export interface SessionStats {
+  bundles: number;
+  indexed: number;
+  skipped: number;
+  mismatched: number;
+  unknownPackets: number;
+  droppedEvents: number;
+}
 
 /** Neuz waits a second between connecting to the cache server and PRE_JOIN (`g_Neuz.m_timerConnect.Set( SEC( 1 ) )`, `_Interface/WndTitle.cpp:2123`). */
 const CACHE_PAUSE_MS = 1000;
@@ -84,7 +92,7 @@ function replacePosition(body: Uint8Array): Vec3 {
  * packet it cannot read ends it with the bad-data text.
  */
 export class WorldSession {
-  readonly stats: SessionStats = { bundles: 0, indexed: 0, skipped: 0, mismatched: 0, unknownPackets: 0 };
+  readonly stats: SessionStats = { bundles: 0, indexed: 0, skipped: 0, mismatched: 0, unknownPackets: 0, droppedEvents: 0 };
   private phase: Phase = 'opening';
   private started = false;
   private cache: PacketChannel | undefined;
@@ -235,6 +243,16 @@ export class WorldSession {
    */
   sendModifyStatus(counts: { str: number; sta: number; dex: number; int: number }): void {
     this.playingCache()?.send(encodeModifyStatus(counts));
+  }
+
+  /**
+   * Counts `count` drawing events the world dropped untaken (`WorldChanges.dropped`), named once in the console as the
+   * session names what its bundles lose; the world screen names it on the overlay.
+   */
+  countDroppedEvents(count: number): void {
+    if (count <= 0) return;
+    this.stats.droppedEvents += count;
+    this.warnOnce('dropped', 'drawing events of the messages were dropped untaken (the page was hidden for a long time)');
   }
 
   /**

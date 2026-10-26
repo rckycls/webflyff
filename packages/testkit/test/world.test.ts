@@ -388,9 +388,10 @@ it('writeGameTimer writes the time as a double, a message the browser has no rea
 
 // One mover of each kind, with values the C++ casts keep (a scale × 100 and an angle × 10 that are whole numbers).
 const looks = { hairMesh: 3, hairColor: 0xff112233, headMesh: 4 };
+/** STA and DEX are the own character's numbers' (`ownNumbers`), which `writeAddSelf` writes. */
 const player = {
-  ...looks, name: 'Hero', sex: 1, skinSet: 2, playerId: 777, job: 9, level: 65, authorization: 0x46, mode: 0x10,
-  stateMode: 0x20, pkTime: 5000, pkValue: -3, pkPropensity: 100, honor: 6,
+  ...looks, name: 'Hero', sex: 1, skinSet: 2, playerId: 777, job: 9, sta: 16, dex: 17, level: 65, authorization: 0x46,
+  mode: 0x10, stateMode: 0x20, pkTime: 5000, pkValue: -3, pkPropensity: 100, honor: 6,
 };
 const moverBase = {
   pos, motion: 0x15, hitPoint: 1234, state: 0x11, stateFlag: 0x2, belligerence: 0, sfxId: NULL_ID,

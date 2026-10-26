@@ -38,14 +38,17 @@ export function webMoverOf(parts: Pick<WebMover, 'index' | 'name'> & Partial<Web
 
 const BASE = { scale: 1, motion: 0, hitPoint: 100, state: 0, stateFlag: 0, belligerence: 0, sfxId: 0 };
 
-/** A player's ADD_OBJ: a new male character with no title, no PK state and ordinary authorization (`AUTH_GENERAL`, 'F'). */
+/**
+ * A player's ADD_OBJ: a new male Vagrant (level 1, STA and DEX 15) with no title, no PK state and ordinary authorization
+ * (`AUTH_GENERAL`, 'F').
+ */
 export function addedPlayer(objectId: number, player: Partial<AddedPlayer> = {}, extra: Partial<AddedMover> = {}): AddedMover {
   return {
     ...BASE, index: MI_MALE, pos: [100, 0, 100], angle: 0, objectId, isPlayer: true, ...extra,
     player: {
       self: false, name: `Player${objectId}`, sex: 0, skinSet: 0, hairMesh: 0, hairColor: 0, headMesh: 0,
-      playerId: objectId, job: 0, level: 1, authorization: 0x46, mode: 0, stateMode: 0, pkTime: 0, pkValue: 0,
-      pkPropensity: 0, honor: -1, worn: [], equipmentObjectIds: [], own: null, shopTitle: '', ...player,
+      playerId: objectId, job: 0, sta: 15, dex: 15, level: 1, authorization: 0x46, mode: 0, stateMode: 0, pkTime: 0,
+      pkValue: 0, pkPropensity: 0, honor: -1, worn: [], equipmentObjectIds: [], own: null, shopTitle: '', ...player,
     },
   };
 }

@@ -178,7 +178,13 @@ export class WorldScreen {
     root.append(this.element);
     this.unregister = registerWorld({
       ready: () => this.shown,
-      movers: () => [...(this.world?.movers.values() ?? [])].map((m) => ({ objectId: m.objectId, name: m.name, pos: [...m.act.body.pos] })),
+      movers: () => [...(this.world?.movers.values() ?? [])].map((m) => ({
+        objectId: m.objectId, name: m.name, pos: [...m.act.body.pos], hp: m.hp,
+      })),
+      own: () => {
+        const own = this.own;
+        return own === undefined ? null : { hp: own.hp, level: own.level, actionPoint: own.taskBar?.actionPoint ?? null };
+      },
       stats: () => ({ ...this.session.stats, errors: this.page?.overlay.snapshot().errors ?? [] }),
       camera: () => toWebPosition(this.backCamera.view?.position ?? [0, 0, 0]),
       pause: () => {
@@ -437,9 +443,23 @@ export class WorldScreen {
     const world = this.world!;
     const data = this.data!;
     const changes = world.takeChanges();
+    this.countDropped(changes.dropped);
     this.views!.sync(changes, world.movers);
     this.tags!.sync(changes, world.movers, (mover) => nameTagOf(mover, world.self(), data.nameColors, data.honorTitles));
     this.play(changes);
+  }
+
+  /**
+   * Drawing events the world dropped untaken (`WorldChanges.dropped`: the page was hidden while the fight went on): counted
+   * in the session's stats, and named once on the overlay, as an own inventory that could not be read is (Ruling R1).
+   */
+  private countDropped(dropped: number): void {
+    if (dropped === 0) return;
+    this.session.countDroppedEvents(dropped);
+    const message = 'world: drawing events were dropped untaken (the page was hidden)';
+    if (this.reported.has(message)) return;
+    this.reported.add(message);
+    this.page?.overlay.error(message);
   }
 
   /**
