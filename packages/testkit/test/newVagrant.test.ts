@@ -13,14 +13,14 @@ const SELF: AddedMover = {
   },
 };
 
-it('the new Vagrant: the BASE_VALUE_TBL numbers, three skills and the starter inventory', () => {
+it('the new Vagrant: the BASE_VALUE_TBL numbers, the three skills at level 0 and the starter inventory', () => {
   const own = newVagrantOwn();
   expect([own.str, own.sta, own.dex, own.int]).toEqual([15, 15, 15, 15]);
   expect([own.manaPoint, own.fatiguePoint, own.exp, own.remainGP, own.skillPoint]).toEqual([63, 32, 0n, 0, 0]);
   expect(own.skills).toHaveLength(45);
-  expect(own.skills.slice(0, 4)).toEqual([
-    { skill: 1, level: 1 }, { skill: 2, level: 1 }, { skill: 3, level: 1 }, { skill: NULL_ID, level: 0 },
-  ]);
+  // the tblSkillPoint rows of character creation (SkillLv 0), on an array InitProp left empty: nothing else is in it
+  expect(own.skills.slice(0, 3)).toEqual([{ skill: 1, level: 0 }, { skill: 2, level: 0 }, { skill: 3, level: 0 }]);
+  expect(own.skills.slice(3)).toEqual(Array.from({ length: 42 }, () => ({ skill: NULL_ID, level: 0 })));
   expect(own.inventory?.map((item) => [item.objectId, item.itemId, item.count])).toEqual([
     [0, 502, 1], [1, 2801, 1], [2, 4805, 5], [42, 506, 1], [43, 510, 1], [44, 21, 1], [45, 2800, 3],
   ]);
@@ -31,7 +31,7 @@ it('is a fresh object each call, so a test can change it', () => {
   const a = newVagrantOwn();
   a.skills[0]!.level = 9;
   a.inventory?.pop();
-  expect(newVagrantOwn().skills[0]).toEqual({ skill: 1, level: 1 });
+  expect(newVagrantOwn().skills[0]).toEqual({ skill: 1, level: 0 });
   expect(newVagrantOwn().inventory).toHaveLength(7);
 });
 

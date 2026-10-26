@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ExpRow, JobProp, WebItemProp } from '@flyffweb/formats';
+import type { JobProp } from '@flyffweb/formats';
 import {
   Dst,
   FISTS,
@@ -21,53 +21,19 @@ import {
   monsterMaxHitPoint,
 } from '../src/world/sim/params';
 import type { Equipped, ParamAdjust, Stats } from '../src/world/sim/params';
+// the reference rows (job, EXP table, starter items) are the helper of the OwnState tests, so they cannot drift apart
+import { BOOTS, EXP_ROWS, GAUNTLET, SUIT, VAGRANT, WOODEN_SWORD, itemProp as item } from './helpers/ownState';
 
 const f32 = Math.fround;
 
-/** `JOB_VAGRANT`, `Resource/propJob.inc:3`, the numbers as `GetFloat` stores them (C `float`). */
-const VAGRANT: JobProp = {
-  name: 'JOB_VAGRANT', attackSpeed: 75, factorMaxHP: f32(0.9), factorMaxMP: f32(0.3), factorMaxFP: f32(0.3),
-  factorDef: 1, factorHPRecovery: f32(1.2), factorMPRecovery: 0.5, factorFPRecovery: 0.5, meleeSWD: 4.5, meleeAXE: 5.5,
-  meleeSTAFF: f32(0.8), meleeSTICK: 3, meleeKNUCKLE: 5, magicWAND: 6, blocking: f32(0.2), meleeYOYO: f32(4.2),
-  critical: 1,
-};
-
 /** The stats of a new character (`Obj.cpp:165`): 15 in each. */
 const S15: Stats = { str: 15, sta: 15, dex: 15, int: 15 };
-
-/** An item row with only the columns these formulas read; the rest as an armour with no destination parameters has them. */
-const item = (over: Partial<WebItemProp>): WebItemProp => ({
-  id: 0, name: '', kind1: 2, kind2: 7, kind3: 18, handed: -1, part: 2, abilityMin: 0, abilityMax: 0, weaponType: -1,
-  attackSpeed: -1, attackRange: -1, destParams: [-1, -1, -1], adjParams: [-1, -1, -1], sfxHit: -1, model: null,
-  icon: null, ...over,
-});
-
-/** `II_WEA_SWO_WOODEN`, `Resource/propItem.txt:701`: `IK1_WEAPON IK2_WEAPON_DIRECT IK3_SWORD`, `HD_ONE`, `PARTS_RWEAPON`, 3-4, `WT_MELEE_SWD`, 0.085. */
-const WOODEN_SWORD = item({
-  id: 21, name: 'Wooden Sword', kind1: 1, kind2: 2, kind3: 2, handed: 1, part: 10, abilityMin: 3, abilityMax: 4,
-  weaponType: WeaponType.MELEE_SWD, attackSpeed: f32(0.085), attackRange: 1, sfxHit: 20,
-});
-/** `II_ARM_M_VAG_SUIT01`, `propItem.txt:564`: `IK2_ARMOR`, `PARTS_UPPER_BODY`, defence 8-10. */
-const SUIT = item({ id: 502, name: 'Cotton Suit', kind2: 7, kind3: 18, part: 2, abilityMin: 8, abilityMax: 10 });
-/** `II_ARM_M_VAG_GAUNTLET01`, `propItem.txt:241`: `IK2_ARMORETC`, `PARTS_HAND`, defence 5-7. */
-const GAUNTLET = item({ id: 506, name: 'Cotton Gauntlet', kind2: 8, kind3: 19, part: 4, abilityMin: 5, abilityMax: 7 });
-/** `II_ARM_M_VAG_BOOTS01`, `propItem.txt:40`: `IK2_ARMORETC`, `PARTS_FOOT`, defence 4-5. */
-const BOOTS = item({ id: 510, name: 'Cotton Boots', kind2: 8, kind3: 20, part: 5, abilityMin: 4, abilityMax: 5 });
 
 const NAKED: Equipped = { weapon: null, armour: [] };
 const STARTER: Equipped = { weapon: WOODEN_SWORD, armour: [SUIT, GAUNTLET, BOOTS] };
 
 /** The adjustments of `m_adjParamAry`, from pairs. */
 const adjOf = (...pairs: [number, number][]): ParamAdjust => new Map(pairs);
-
-/** `ExpTable.inc:4-20`, rows 0 to 16 (`nExp1 nExp2 dwLPPoint nLimitExp`; the row's place is the level). */
-const EXP_ROWS: ExpRow[] = [
-  [0, 0, 0, 0], [0, 1, 0, 16], [14, 1, 2, 18], [20, 2, 2, 21], [36, 2, 2, 25], [90, 3, 2, 30], [152, 4, 2, 35],
-  [250, 4, 2, 42], [352, 5, 2, 49], [480, 5, 2, 58], [591, 6, 2, 69], [743, 6, 2, 84], [973, 7, 2, 102],
-  [1290, 8, 2, 123], [1632, 9, 2, 145], [1928, 10, 2, 170], [2340, 12, 2, 195],
-].map(([exp1, exp2, lpPoint, limitExp]) => ({
-  exp1: BigInt(exp1!), exp2: BigInt(exp2!), lpPoint: lpPoint!, limitExp: BigInt(limitExp!),
-}));
 
 describe('getParam, equipAdjust and effectiveStats (CMover::GetParam, SetDestParam, GetStr)', () => {
   it('adds the adjustment of a parameter to the base, and leaves a base with none alone', () => {

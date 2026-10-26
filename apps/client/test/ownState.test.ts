@@ -78,7 +78,7 @@ describe('the own character at the start (a new Vagrant)', () => {
     const own = new OwnState(ownGameData(), added, STARTER_EQUIPMENT);
     own.skills[0]!.level = 5;
     own.inventory!.get(45)!.count = 1;
-    expect(added.player!.own!.skills[0]).toEqual({ skill: 1, level: 1 });
+    expect(added.player!.own!.skills[0]).toEqual({ skill: 1, level: 0 });
     expect(added.player!.own!.inventory!.find((item) => item.objectId === 45)!.count).toBe(3);
   });
 
@@ -150,9 +150,9 @@ describe('SETEXPERIENCE (CMover::SetExperience, CDPClient::OnSetExperience)', ()
     own.hp = 10;
     own.mp = 3;
     own.fp = 0;
-    const events = own.apply(setExperience(3n, 2));
+    const events = own.apply(setExperience(3n, 2), OWN_ID);
     expect(events).toEqual<OwnEvent[]>([
-      { kind: 'levelUp', from: 1, to: 2 },
+      { kind: 'levelUp', from: 1, to: 2, chatLine: true },
       { kind: 'patternUp', level: 2 },
       { kind: 'refilled' },
     ]);
@@ -163,10 +163,11 @@ describe('SETEXPERIENCE (CMover::SetExperience, CDPClient::OnSetExperience)', ()
   });
 
   it('a level up that earns skill points ends with the skill point event, as Neuz shows its caption last', () => {
-    // the server sends SETEXPERIENCE with the skill points the level gave (+2 at levels 2 to 20)
-    const events = newVagrant().apply(setExperience(0n, 2, { skillLevel: 2, skillPoint: 2 }));
+    // the server sends SETEXPERIENCE with the skill points the level gave: +2 at levels 2 to 20, but only while
+    // m_nDeathLevel < m_nLevel (AddExperience, MoverParam.cpp:1432-1441)
+    const events = newVagrant().apply(setExperience(0n, 2, { skillLevel: 2, skillPoint: 2 }), OWN_ID);
     expect(events).toEqual<OwnEvent[]>([
-      { kind: 'levelUp', from: 1, to: 2 },
+      { kind: 'levelUp', from: 1, to: 2, chatLine: true },
       { kind: 'patternUp', level: 2 },
       { kind: 'refilled' },
       { kind: 'skillPointUp' },
@@ -178,8 +179,8 @@ describe('SETEXPERIENCE (CMover::SetExperience, CDPClient::OnSetExperience)', ()
     own.hp = 1;
     own.mp = 1;
     own.fp = 1;
-    const events = own.apply(setExperience(5n, 5));
-    expect(events).toEqual<OwnEvent[]>([{ kind: 'levelUp', from: 3, to: 5 }, { kind: 'refilled' }]);
+    const events = own.apply(setExperience(5n, 5), OWN_ID);
+    expect(events).toEqual<OwnEvent[]>([{ kind: 'levelUp', from: 3, to: 5, chatLine: true }, { kind: 'refilled' }]);
     expect(own.level).toBe(5);
     expect(bars(own)).toEqual([234, 65, 34]); // level 5's maxima, not level 3's (231 / 64 / 33)
     expect([own.maxHp(), own.maxMp(), own.maxFp()]).toEqual([234, 65, 34]);
@@ -190,25 +191,27 @@ describe('SETEXPERIENCE (CMover::SetExperience, CDPClient::OnSetExperience)', ()
     [1, 2, 2], [2, 3, null], [7, 8, 8], [8, 9, null], [11, 12, 12], [12, 13, null], [14, 15, null],
     [1, 9, 2], [1, 15, 2], [3, 13, 8], [8, 13, 12], [5, 12, 8], [2, 12, 8],
   ] as const)('level %i to %i: the pattern up is %s', (from, to, pattern) => {
-    const events = newVagrant(from).apply(setExperience(0n, to));
+    const events = newVagrant(from).apply(setExperience(0n, to), OWN_ID);
     expect(events.filter((e) => e.kind === 'patternUp')).toEqual(pattern === null ? [] : [{ kind: 'patternUp', level: pattern }]);
-    expect(events.filter((e) => e.kind === 'levelUp')).toEqual([{ kind: 'levelUp', from, to }]);
+    expect(events.filter((e) => e.kind === 'levelUp')).toEqual([{ kind: 'levelUp', from, to, chatLine: true }]);
   });
 
   it('puts the EXP in first, so the text is the new level\'s bar', () => {
     const own = newVagrant(4);
-    own.apply(setExperience(45n, 4)); // 45 of the 90 level 4 needs
+    own.apply(setExperience(45n, 4), OWN_ID); // 45 of the 90 level 4 needs
     expect(own.expText()).toBe('50.00%');
-    own.apply(setExperience(10n, 5)); // 10 of the 152 level 5 needs: 6.57 %
+    own.apply(setExperience(10n, 5), OWN_ID); // 10 of the 152 level 5 needs: 6.57 %
     expect(own.expText()).toBe('6.57%');
   });
 
   it('a Vagrant at level 15 keeps its EXP at 0', () => {
     const own = newVagrant(14);
-    expect(own.apply(setExperience(0n, 15))).toEqual<OwnEvent[]>([{ kind: 'levelUp', from: 14, to: 15 }, { kind: 'refilled' }]);
+    expect(own.apply(setExperience(0n, 15), OWN_ID)).toEqual<OwnEvent[]>([
+      { kind: 'levelUp', from: 14, to: 15, chatLine: true }, { kind: 'refilled' },
+    ]);
     expect(bars(own)).toEqual([265, 71, 40]);
     // every later kill sends the same level and the 0 the server keeps (AddExperience, MoverParam.cpp:1173-1177)
-    expect(own.apply(setExperience(0n, 15))).toEqual([]);
+    expect(own.apply(setExperience(0n, 15), OWN_ID)).toEqual([]);
     expect(own.exp).toBe(0n);
     expect(own.expText()).toBe('0.00%');
   });
@@ -217,7 +220,7 @@ describe('SETEXPERIENCE (CMover::SetExperience, CDPClient::OnSetExperience)', ()
     const own = newVagrant();
     own.hp = 100;
     own.mp = 20;
-    expect(own.apply(setExperience(7n, 1))).toEqual([]);
+    expect(own.apply(setExperience(7n, 1), OWN_ID)).toEqual([]);
     expect(own.exp).toBe(7n);
     expect(own.expText()).toBe('50.00%');
     expect(bars(own)).toEqual([100, 20, 32]);
@@ -226,40 +229,70 @@ describe('SETEXPERIENCE (CMover::SetExperience, CDPClient::OnSetExperience)', ()
   it('a lower level only changes the level (no event and no refill)', () => {
     const own = newVagrant(5);
     own.hp = 100;
-    expect(own.apply(setExperience(0n, 4))).toEqual([]);
+    expect(own.apply(setExperience(0n, 4), OWN_ID)).toEqual([]);
     expect(own.level).toBe(4);
     expect(own.hp).toBe(100);
   });
 
   it('keeps the skill points, and a rise in them is an event', () => {
     const own = newVagrant();
-    expect(own.apply(setExperience(2n, 1, { skillLevel: 4, skillPoint: 4 }))).toEqual<OwnEvent[]>([{ kind: 'skillPointUp' }]);
+    expect(own.apply(setExperience(2n, 1, { skillLevel: 4, skillPoint: 4 }), OWN_ID)).toEqual<OwnEvent[]>([{ kind: 'skillPointUp' }]);
     expect([own.skillLevel, own.skillPoint]).toEqual([4, 4]);
-    expect(own.apply(setExperience(2n, 1, { skillLevel: 4, skillPoint: 4 }))).toEqual([]); // the same
-    expect(own.apply(setExperience(2n, 1, { skillLevel: 4, skillPoint: 3 }))).toEqual([]); // spent one
+    expect(own.apply(setExperience(2n, 1, { skillLevel: 4, skillPoint: 4 }), OWN_ID)).toEqual([]); // the same
+    expect(own.apply(setExperience(2n, 1, { skillLevel: 4, skillPoint: 3 }), OWN_ID)).toEqual([]); // spent one
     expect([own.skillLevel, own.skillPoint]).toEqual([4, 3]);
   });
 
   it('keeps the death values unless the server sends its defaults (-1 and 0xffff)', () => {
     const own = newVagrant();
-    own.apply(setExperience(0n, 1, { deathExp: 120n, deathLevel: 9 }));
+    own.apply(setExperience(0n, 1, { deathExp: 120n, deathLevel: 9 }), OWN_ID);
     expect([own.deathExp, own.deathLevel]).toEqual([120n, 9]);
-    own.apply(setExperience(0n, 1)); // deathExp -1n and deathLevel 0xffff: no new value
+    own.apply(setExperience(0n, 1), OWN_ID); // deathExp -1n and deathLevel 0xffff: no new value
     expect([own.deathExp, own.deathLevel]).toEqual([120n, 9]);
-    own.apply(setExperience(0n, 1, { deathExp: 0n, deathLevel: 0 }));
+    own.apply(setExperience(0n, 1, { deathExp: 0n, deathLevel: 0 }), OWN_ID);
     expect([own.deathExp, own.deathLevel]).toEqual([0n, 0]);
+  });
+
+  describe('the level-up chat line (TID_GAME_LEVELUP) is decided before the death level of the same message is stored', () => {
+    // SetExperience tests `m_nDeathLevel < nLevel` (MoverParam.cpp:1729); OnSetExperience stores the death level after
+    // it (DPClient.cpp:3389-3393). A GM's /level (CMover::SetLevel, Mover.cpp:1826-1837) sends deathLevel = level - 1.
+    const chatLineOf = (events: OwnEvent[]): boolean | undefined => {
+      const up = events.find((e) => e.kind === 'levelUp');
+      return up?.kind === 'levelUp' ? up.chatLine : undefined;
+    };
+
+    it('is due when the death level it replaces is below the new level, whatever the message brings with it', () => {
+      const own = newVagrant(); // death level 0
+      expect(chatLineOf(own.apply(setExperience(0n, 5, { deathLevel: 9 }), OWN_ID))).toBe(true); // 0 < 5, though 9 is not
+      expect(own.deathLevel).toBe(9); // stored after
+    });
+
+    it('is not due when the death level it replaces is not below the new level, whatever the message brings with it', () => {
+      const own = newVagrant(5);
+      own.apply(setExperience(0n, 5, { deathLevel: 9 }), OWN_ID); // died at level 9 once
+      // a GM's /level 7 sends death level 6, which is below 7 once stored; the 9 it replaces is not
+      expect(chatLineOf(own.apply(setExperience(0n, 7, { deathLevel: 6 }), OWN_ID))).toBe(false);
+      expect(own.deathLevel).toBe(6);
+    });
+
+    it('is due while the death level is below the new level and not when it equals it', () => {
+      const own = newVagrant(5);
+      own.apply(setExperience(0n, 5, { deathLevel: 6 }), OWN_ID);
+      expect(chatLineOf(own.apply(setExperience(0n, 6), OWN_ID))).toBe(false); // 6 < 6 is false
+      expect(chatLineOf(own.apply(setExperience(0n, 7), OWN_ID))).toBe(true); // 6 < 7
+    });
   });
 });
 
 describe('SETSTATE (CDPClient::OnSetState)', () => {
   it('sets the stats and the stat points and shows full bars at the new maxima', () => {
     const own = newVagrant(15);
-    own.apply(setPoint(DstParam.HP, 50));
+    own.apply(setPoint(DstParam.HP, 50), OWN_ID);
     own.mp = 1;
     own.fp = 1;
     own.remainGP = 28;
     // 30 points into STA, as the reference table has it: HP 581, FP 103, MP unchanged
-    const events = own.apply(setState(15, 45, 15, 15, 0));
+    const events = own.apply(setState(15, 45, 15, 15, 0), OWN_ID);
     expect(events).toEqual<OwnEvent[]>([{ kind: 'statsChanged' }, { kind: 'refilled' }]);
     expect(own.stats).toEqual({ str: 15, sta: 45, dex: 15, int: 15 });
     expect(own.remainGP).toBe(0);
@@ -269,7 +302,7 @@ describe('SETSTATE (CDPClient::OnSetState)', () => {
 
   it('INT 20 raises MP to 85 and leaves HP and FP', () => {
     const own = newVagrant(15);
-    own.apply(setState(15, 15, 15, 20, 23));
+    own.apply(setState(15, 15, 15, 20, 23), OWN_ID);
     expect(bars(own)).toEqual([265, 85, 40]);
     expect(own.remainGP).toBe(23);
   });
@@ -287,7 +320,7 @@ describe('SET_GROWTH_LEARNING_POINT (CDPClient::OnSetGrowthLearningPoint)', () =
   it('sets the stat points and changes nothing else', () => {
     const own = newVagrant();
     own.hp = 100;
-    expect(own.apply({ type: 'setGrowthLearningPoint', remainGP: 2 })).toEqual([]);
+    expect(own.apply({ type: 'setGrowthLearningPoint', remainGP: 2 }, OWN_ID)).toEqual([]);
     expect(own.remainGP).toBe(2);
     expect(own.hp).toBe(100);
     expect(own.stats).toEqual({ str: 15, sta: 15, dex: 15, int: 15 });
@@ -298,35 +331,35 @@ describe('SETPOINTPARAM (CMover::SetPointParam)', () => {
   it('HP clamps to the maximum, and to 0 below it', () => {
     const own = newVagrant();
     own.hp = 100;
-    expect(own.apply(setPoint(DstParam.HP, 500))).toEqual([]);
+    expect(own.apply(setPoint(DstParam.HP, 500), OWN_ID)).toEqual([]);
     expect(own.hp).toBe(230);
-    own.apply(setPoint(DstParam.HP, 46));
+    own.apply(setPoint(DstParam.HP, 46), OWN_ID);
     expect(own.hp).toBe(46);
-    own.apply(setPoint(DstParam.HP, -5));
+    own.apply(setPoint(DstParam.HP, -5), OWN_ID);
     expect(own.hp).toBe(0);
   });
 
   it('MP and FP clamp the same way', () => {
     const own = newVagrant();
-    own.apply(setPoint(DstParam.MP, 999));
-    own.apply(setPoint(DstParam.FP, 12));
+    own.apply(setPoint(DstParam.MP, 999), OWN_ID);
+    own.apply(setPoint(DstParam.FP, 12), OWN_ID);
     expect([own.mp, own.fp]).toEqual([63, 12]);
-    own.apply(setPoint(DstParam.MP, -1));
-    own.apply(setPoint(DstParam.FP, 33));
+    own.apply(setPoint(DstParam.MP, -1), OWN_ID);
+    own.apply(setPoint(DstParam.FP, 33), OWN_ID);
     expect([own.mp, own.fp]).toEqual([0, 32]);
   });
 
   it('clamps to the maximum of the stats it has now', () => {
     const own = newVagrant(15);
-    own.apply(setState(15, 45, 15, 15, 0));
-    own.apply(setPoint(DstParam.HP, 600));
+    own.apply(setState(15, 45, 15, 15, 0), OWN_ID);
+    own.apply(setPoint(DstParam.HP, 600), OWN_ID);
     expect(own.hp).toBe(581);
   });
 
   it('leaves a parameter that is not HP, MP or FP alone (penya is not kept here)', () => {
     const own = newVagrant();
     own.hp = 100;
-    expect(own.apply(setPoint(10000, 5000))).toEqual([]);
+    expect(own.apply(setPoint(10000, 5000), OWN_ID)).toEqual([]);
     expect(bars(own)).toEqual([100, 63, 32]);
   });
 });
@@ -334,9 +367,9 @@ describe('SETPOINTPARAM (CMover::SetPointParam)', () => {
 describe('DAMAGE (CDPClient::OnDamage)', () => {
   it('takes the hit off the HP, at least to 1 (a hit never kills here: MOVERDEATH does)', () => {
     const own = newVagrant();
-    expect(own.apply(damage(30))).toEqual([]);
+    expect(own.apply(damage(30), OWN_ID)).toEqual([]);
     expect(own.hp).toBe(200);
-    own.apply(damage(500));
+    own.apply(damage(500), OWN_ID);
     expect(own.hp).toBe(1); // IncHitPoint( -500 ) clamps to 0, OnDamage bumps it to 1
   });
 });
@@ -344,17 +377,17 @@ describe('DAMAGE (CDPClient::OnDamage)', () => {
 describe('MOVERDEATH, REVIVAL and REVIVAL_TO_LODESTAR', () => {
   it('MOVERDEATH empties the HP and says the own character died', () => {
     const own = newVagrant();
-    expect(own.apply(death())).toEqual<OwnEvent[]>([{ kind: 'died' }]);
+    expect(own.apply(death(), OWN_ID)).toEqual<OwnEvent[]>([{ kind: 'died' }]);
     expect(own.hp).toBe(0);
     expect([own.mp, own.fp]).toEqual([63, 32]);
   });
 
   it('REVIVAL says it came back and leaves the bars to the SETPOINTPARAM that follows', () => {
     const own = newVagrant();
-    own.apply(death());
-    expect(own.apply({ type: 'revival' })).toEqual<OwnEvent[]>([{ kind: 'revived' }]);
+    own.apply(death(), OWN_ID);
+    expect(own.apply({ type: 'revival' }, OWN_ID)).toEqual<OwnEvent[]>([{ kind: 'revived' }]);
     expect(own.hp).toBe(0); // OnRevival's HP lines are under __VER < 9
-    own.apply(setPoint(DstParam.HP, 46));
+    own.apply(setPoint(DstParam.HP, 46), OWN_ID);
     expect(own.hp).toBe(46);
   });
 
@@ -364,22 +397,22 @@ describe('MOVERDEATH, REVIVAL and REVIVAL_TO_LODESTAR', () => {
     [15, 79, 21, 12],
   ])('REVIVAL_TO_LODESTAR at level %i gives %i / %i / %i from empty bars', (level, hp, mp, fp) => {
     const own = newVagrant(level);
-    own.apply(death());
+    own.apply(death(), OWN_ID);
     own.mp = 0;
     own.fp = 0;
-    expect(own.apply({ type: 'revivalToLodestar' })).toEqual<OwnEvent[]>([{ kind: 'revived' }]);
+    expect(own.apply({ type: 'revivalToLodestar' }, OWN_ID)).toEqual<OwnEvent[]>([{ kind: 'revived' }]);
     expect(bars(own)).toEqual([hp, mp, fp]);
   });
 
   it('REVIVAL_TO_LODESTAR raises MP and FP only when they are lower', () => {
     const own = newVagrant();
-    own.apply(death());
+    own.apply(death(), OWN_ID);
     own.mp = 60; // above 50
     own.fp = 10; // below 25
-    own.apply({ type: 'revivalToLodestar' });
+    own.apply({ type: 'revivalToLodestar' }, OWN_ID);
     expect(bars(own)).toEqual([184, 60, 25]);
     // then the server's SETPOINTPARAMs of 20 % overwrite them
-    own.apply(setPoint(DstParam.HP, 46));
+    own.apply(setPoint(DstParam.HP, 46), OWN_ID);
     expect(own.hp).toBe(46);
   });
 });
@@ -388,7 +421,7 @@ describe('TASKBAR (CDPClient::OnTaskBar)', () => {
   it('replaces the shortcut bars, and takes no object ID', () => {
     const own = newVagrant();
     const first = taskBarOf(400);
-    expect(own.apply({ type: 'taskBar', taskBar: first })).toEqual([]);
+    expect(own.apply({ type: 'taskBar', taskBar: first }, OWN_ID)).toEqual([]);
     expect(own.taskBar).toBe(first);
     const second = taskBarOf(401);
     own.apply({ type: 'taskBar', taskBar: second }, OTHER_ID);
@@ -417,23 +450,30 @@ describe('messages that are not about the own character', () => {
     expect(snapshot(own)).toEqual(before);
   });
 
-  it('applies the same messages when they name the own mover, or no mover (the default)', () => {
-    const named = newVagrant();
-    const unnamed = newVagrant();
-    for (const [, message] of aboutOthers) {
-      expect(named.apply(message, OWN_ID)).toEqual(unnamed.apply(message));
-    }
-    expect(snapshot(named)).toEqual(snapshot(unnamed));
-    expect(named.level).toBe(9);
+  it('applies the same messages when they name the own mover', () => {
+    const own = newVagrant();
+    const events = aboutOthers.flatMap(([, message]) => own.apply(message, OWN_ID));
+    expect(events.map((e) => e.kind)).toEqual([
+      'levelUp', 'patternUp', 'refilled', 'skillPointUp', 'died', 'revived', 'revived',
+    ]);
+    expect([own.level, own.remainGP, own.skillPoint]).toEqual([9, 9, 9]);
+  });
+
+  it('does not take a message with no object ID for the own one: a monster\'s DAMAGE is not the player\'s', () => {
+    // apply( message, objectId ) needs the ID; a caller that leaves it out (undefined at run time) gets the message ignored
+    const own = newVagrant();
+    // @ts-expect-error the object ID is not optional
+    expect(own.apply(damage(100))).toEqual([]);
+    expect(own.hp).toBe(230);
   });
 
   it('the level of a mover in view (SETLEVEL, never sent to the player itself) and the other kinds are ignored', () => {
     const own = newVagrant();
     const before = snapshot(own);
     expect(own.apply({ type: 'setLevel', level: 9 }, OWN_ID)).toEqual([]);
-    expect(own.apply({ type: 'definedText', textId: 5, args: '' })).toEqual([]);
-    expect(own.apply({ type: 'meleeAttack', message: 29, targetId: 3, param2: 0, param3: 0 })).toEqual([]);
-    expect(own.apply({ type: 'delObj' })).toEqual([]);
+    expect(own.apply({ type: 'definedText', textId: 5, args: '' }, OWN_ID)).toEqual([]);
+    expect(own.apply({ type: 'meleeAttack', message: 29, targetId: 3, param2: 0, param3: 0 }, OWN_ID)).toEqual([]);
+    expect(own.apply({ type: 'delObj' }, OWN_ID)).toEqual([]);
     expect(snapshot(own)).toEqual(before);
   });
 });

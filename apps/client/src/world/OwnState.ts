@@ -11,8 +11,9 @@ import type { Equipped, ParamAdjust, Stats } from './sim/params';
 /**
  * What the screen should play for an own message, in the order Neuz does it:
  * - `levelUp`: the level rose from `from` to `to`, whatever the jump (`SetExperience` plays it once): the level-up
- *   effect and motion, the caption, the chat line. `deathLevel` (not the event) says whether the chat line is due: Neuz
- *   prints `TID_GAME_LEVELUP` only when `m_nDeathLevel < nLevel`.
+ *   effect and motion, the caption, and the chat line `TID_GAME_LEVELUP` when `chatLine` is true. Neuz prints that line
+ *   only when `m_nDeathLevel < nLevel` (`MoverParam.cpp:1729`), tested before `OnSetExperience` stores the message's own
+ *   death level (`DPClient.cpp:3390-3393`); `chatLine` is that test, so it is not `deathLevel` read after the message.
  * - `patternUp`: the level crossed a combo level (2, 8 or 12), and `level` is the first of them (see `patternUpLevel`).
  * - `refilled`: HP, MP and FP were set to their maxima (a level up, SETSTATE).
  * - `statsChanged`: SETSTATE replaced the stats and the stat points.
@@ -22,7 +23,7 @@ import type { Equipped, ParamAdjust, Stats } from './sim/params';
  * - `revived`: REVIVAL or REVIVAL_TO_LODESTAR.
  */
 export type OwnEvent =
-  | { kind: 'levelUp'; from: number; to: number }
+  | { kind: 'levelUp'; from: number; to: number; chatLine: boolean }
   | { kind: 'patternUp'; level: 2 | 8 | 12 }
   | { kind: 'refilled' }
   | { kind: 'statsChanged' }
@@ -197,14 +198,15 @@ export class OwnState {
 
   /**
    * Applies one message, and returns what the screen should play. `objectId` is the object the message is about (the
-   * bundle's, beside the message): a message about another mover is ignored, as `prj.GetMover( objid )` in the handlers
-   * finds that mover and not `g_pPlayer`. Left out, the message is taken as the own character's.
+   * bundle's, which `readBundle` reports beside the message; note `WorldState.apply` takes `( objectId, message )`, this
+   * the other way round). It is required, as a message with none cannot be told from the own one: a message about another
+   * mover is ignored, as `prj.GetMover( objid )` in the handlers finds that mover and not `g_pPlayer`.
    *
    * SETSTATE and TASKBAR name no mover in Neuz (`OnSetState( ar )`, `OnTaskBar( ar )` go to `g_pPlayer` and its task bar),
    * so they apply whatever `objectId` is. SETLEVEL is another player's (`CUserMng::AddSetLevel` skips the player,
    * `User.cpp:4694-4706`), so it is ignored. The rest of the messages are not about the own numbers.
    */
-  apply(message: WorldMessage, objectId: number = this.objectId): OwnEvent[] {
+  apply(message: WorldMessage, objectId: number): OwnEvent[] {
     switch (message.type) {
       case 'setState':
         return this.onSetState(message);
@@ -265,8 +267,9 @@ export class OwnState {
   /**
    * `CDPClient::OnSetExperience` (`DPClient.cpp:3376-3430`) over `CMover::SetExperience` (`MoverParam.cpp:1709-1900`):
    * - the EXP first (:1711);
-   * - a higher level (:1714): the level up, the pattern up of the first combo level it crosses (:1740-1750), then the new
-   *   level and HP, MP and FP at the new maxima (:1766-1772). A jump over several levels is one level up;
+   * - a higher level (:1714): the level up, with whether its chat line is due (:1729), the pattern up of the first combo
+   *   level it crosses (:1740-1750), then the new level and HP, MP and FP at the new maxima (:1766-1772). A jump over
+   *   several levels is one level up;
    * - a lower level (:1843) only sets the level;
    * - then the death EXP and level unless the server sent its defaults (`-1`, `0xffff`: :3390-3393), and the skill level
    *   and points, with an event when the points rose (:3394-3417).
@@ -277,7 +280,8 @@ export class OwnState {
     this.exp = m.exp;
     const from = this.levelNow;
     if (m.level > from) {
-      events.push({ kind: 'levelUp', from, to: m.level });
+      // the chat line is tested here, with the death level before this message's (:1729 against :3390-3393)
+      events.push({ kind: 'levelUp', from, to: m.level, chatLine: this.deathLevel < m.level });
       const pattern = patternUpLevel(from, m.level);
       if (pattern !== null) events.push({ kind: 'patternUp', level: pattern });
       this.levelNow = m.level;
