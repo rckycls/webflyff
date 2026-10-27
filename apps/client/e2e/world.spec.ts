@@ -578,22 +578,35 @@ test.describe('the world screen against scripted servers', () => {
   test('pressing a turn key cancels it', async ({ page }) => {
     const gateway = await playGateway(page);
     await enterFlaris(page);
-    // as far behind Webby as the screen shows above the task bar (about 7 m on the desktop: it runs there in about 1 s), and
-    // the key goes down soon after it starts; on the phone held on its side (342 px high) the bar starts at 0.87 of it
+    // The rules are held (the test hooks' pause) and stepped, so that the key goes down while the walk is under way: under
+    // load a frame runs up to 60 steps (1 s), the whole walk, and a key sent once Webby was seen moving came after it had
+    // arrived (a turn standing: one PLAYERMOVED, and no other while the key is held)
+    await page.evaluate(() => window.__client!.pause());
+    // as far behind Webby as the screen shows above the task bar (about 7 m on the desktop: it runs there in about 1 s);
+    // on the phone held on its side (342 px high) the bar starts at 0.87 of it
     const canvas = (await page.locator('.world-view canvas').boundingBox())!;
     const barTop = (await page.locator('.hud-taskbar-strip').boundingBox())!.y;
     await tapWorld(page, 0.5, Math.min(0.92, (barTop - 8 - canvas.y) / canvas.height));
-    await expect.poll(() => destPosOf(gateway).length, ON_FRAMES).toBe(1);
+    // the tap's step walks there and sends the DESTPOS; 10 more (1/6 s) and Webby is on the way, far from the point
+    await page.evaluate(() => window.__client!.step(1));
+    await expect.poll(() => destPosOf(gateway).length).toBe(1);
     const dest = destPosOf(gateway)[0]!.pos;
-    await expect.poll(async () => distanceXZ(await ownAt(page), SQUARE), { timeout: 60_000, intervals: [20] }).toBeGreaterThan(0.5);
+    await page.evaluate(() => window.__client!.step(10));
+    const walking = await ownAt(page);
+    expect(distanceXZ(walking, SQUARE)).toBeGreaterThan(0.5);
+    expect(distanceXZ(walking, dest)).toBeGreaterThan(1);
 
     // the turn is a move (LTURN answers 1): ClearDest, then PLAYERMOVED; with the walk over, the next step stands
     await page.keyboard.down('KeyA');
-    await expect.poll(() => movesOf(gateway).length, ON_FRAMES).toBeGreaterThan(1);
+    await page.evaluate(() => window.__client!.step(2));
+    await expect.poll(() => movesOf(gateway).length).toBe(2);
+    // let go, the next step stops turning: STAND
     await page.keyboard.up('KeyA');
-    await expect.poll(() => movedState(movesOf(gateway).at(-1)!), ON_FRAMES).toBe(OBJSTA_STAND);
+    await page.evaluate(() => window.__client!.step(1));
+    await expect.poll(() => movedState(movesOf(gateway).at(-1)!)).toBe(OBJSTA_STAND);
     const stopped = await ownAt(page);
-    await page.waitForTimeout(1000);
+    // a second of steps later Webby is still there, short of the point
+    await page.evaluate(() => window.__client!.step(60));
     expect(await ownAt(page)).toEqual(stopped);
     expect(distanceXZ(stopped, dest)).toBeGreaterThan(1);
   });
