@@ -121,13 +121,25 @@ export function serverList(channels: readonly Channel[] = [{ id: 1, name: 'Chann
 /** An ERROR packet of the certifier or the login server, with its code (`ERROR_*`). */
 export const errorPacket = (code: number): Buffer => Buffer.from(new ArWriter().u32(PacketType.ERROR).i32(code).toBytes());
 
-/** Webby in Madrigal on Flaris' square, dressed as a vagrant (`CDPLoginClient::OnPlayerList`'s order). */
-export function playerList(): Buffer {
+/**
+ * What the character list says of Webby that the world reads: its level, and the item IDs it wears, which dress and arm
+ * the own character (the lobby's equipment, `OwnState`).
+ */
+export interface Listed {
+  level: number;
+  equipment: readonly number[];
+}
+
+/** Webby as the world tests list it: level 15, in the vagrant's clothes, with nothing in the hands. */
+export const LISTED_WEBBY: Listed = { level: 15, equipment: MALE_VAGRANT };
+
+/** Webby in Madrigal on Flaris' square, dressed as `listed` says (`CDPLoginClient::OnPlayerList`'s order). */
+export function playerList(listed: Listed = LISTED_WEBBY): Buffer {
   const w = new ArWriter().u32(PacketType.PLAYER_LIST).u32(AUTH_KEY).i32(1);
   w.i32(0).i32(0).u32(MADRIGAL).u32(MI_MALE).string('Webby').vec3(SQUARE)
-    .u32(500).u32(0).u32(0).u32(0).u32(0).u32(0).u32(0xff907b6d).u32(0).u8(0).i32(0).i32(15).u32(0)
-    .i32(15).i32(15).i32(15).i32(15).u32(0).i32(MALE_VAGRANT.length);
-  for (const id of MALE_VAGRANT) w.u32(id);
+    .u32(500).u32(0).u32(0).u32(0).u32(0).u32(0).u32(0xff907b6d).u32(0).u8(0).i32(0).i32(listed.level).u32(0)
+    .i32(15).i32(15).i32(15).i32(15).u32(0).i32(listed.equipment.length);
+  for (const id of listed.equipment) w.u32(id);
   return Buffer.from(w.i32(0).toBytes());
 }
 
@@ -152,6 +164,8 @@ export interface Gateway {
 export interface GatewayOptions {
   /** The certifier's answer to the page's `n`-th CERTIFY (1, 2, ...): the server list (`serverList()`) unless said. */
   certify?: (n: number) => Uint8Array;
+  /** Webby's level and equipment in the character list: `LISTED_WEBBY` unless said. */
+  listed?: Listed;
 }
 
 /**
@@ -188,7 +202,7 @@ export async function playGateway(page: Page, world: WorldScript = flaris, optio
         }
         if (type === PacketType.GETPLAYERLIST) {
           reply(new ArWriter().u32(PacketType.CACHE_ADDR).string('172.31.238.55').toBytes());
-          reply(playerList());
+          reply(playerList(options.listed));
         }
         world.answer('login', body).forEach(reply);
       } else {

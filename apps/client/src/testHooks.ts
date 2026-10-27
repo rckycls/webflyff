@@ -13,14 +13,31 @@ export interface ClientStats extends SessionStats {
 }
 
 /**
- * A mover in view: its object ID, its name, its position in the client's (D3D) coordinates, as the rules have it, and its
- * HP (`m_nHitPoint`).
+ * A mover in view: its object ID, its name, its position in the client's (D3D) coordinates, as the rules have it, its
+ * HP (`m_nHitPoint`), and the rules' motion and state (`m_dwMotion`, the `MTI_*` set last without the weapon's set, and
+ * `m_dwState`, the `OBJSTA_*` bits).
  */
 export interface ClientMover {
   objectId: number;
   name: string;
   pos: Vec3;
   hp: number;
+  motion: number;
+  state: number;
+}
+
+/**
+ * What the screen played of the fight since it opened, in order. A test reads these rather than the drawing: the damage
+ * numbers are a layer over the canvas, which a readback of it never shows, and under a software renderer a frame can be
+ * so slow that a number lives only two or three of them.
+ */
+export interface ClientPlayed {
+  /** The damage numbers added (`CDamageNumMng::AddNumber`): the value, and whether the own player was hurt (its colours). */
+  numbers: Array<{ value: number; ownHurt: boolean }>;
+  /** The effects played (`CreateSfx`), by `XI_*` id. */
+  effects: number[];
+  /** The swings other movers' MELEE_ATTACKs started (`OnMeleeAttack`): the attacker, and the motion it swings with. */
+  swings: Array<{ attackerId: number; motion: number }>;
 }
 
 /** The own character's numbers (`OwnState`): its HP, level, and the task bar's action point (null before the TASKBAR). */
@@ -41,6 +58,14 @@ export interface ClientHooks {
   camera(): Vec3;
   /** Stops the rules and holds every model at the first frame of its motion, for pictures. Drawing goes on. */
   pause(): void;
+  /**
+   * After `pause`: the next frame runs `steps` rules steps (the movers, their models, the effects and the damage numbers
+   * with them), and this resolves once that frame is drawn. For a picture of a number or an effect at a known tick.
+   * Rejects when the rules are not paused, the screen ends first, or `steps` is not a whole number from 0.
+   */
+  step(steps: number): Promise<void>;
+  /** What the screen played of the fight so far (`ClientPlayed`). */
+  played(): ClientPlayed;
   /**
    * Where the middle of the box of the mover `objectId` is on the drawing, as shares of its width and height from the top
    * left (where a tap lands on it); null if the mover is not drawn.
@@ -75,6 +100,8 @@ export function createClientHooks(): ClientHooks {
     stats: () => current().stats(),
     camera: () => current().camera(),
     pause: () => current().pause(),
+    step: async (steps) => current().step(steps),
+    played: () => current().played(),
     screenOf: (objectId) => current().screenOf(objectId),
   };
 }

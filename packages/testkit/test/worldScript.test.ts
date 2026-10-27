@@ -1,10 +1,13 @@
 import { expect, it } from 'vitest';
 import {
-  ArWriter, DPID_UNKNOWN, MessageType, NULL_ID, PacketType, WORLD_READERS, bytesToHex, encodeJoin, encodePlayerMoved,
-  encodePreJoin, encodeWorldKeepAlive, readBundle,
+  ArWriter, DPID_UNKNOWN, MessageType, NULL_ID, PacketType, WORLD_READERS, bytesToHex, encodeJoin, encodeMeleeAttack,
+  encodeModifyStatus, encodePlayerMoved, encodePreJoin, encodeRevivalToLodestar, encodeWorldKeepAlive, readBundle,
 } from '@flyffweb/protocol';
-import type { AddedMover, MoveReport } from '@flyffweb/protocol';
-import { GAMETIMER, createWorldScript, writeAddSelf, writeDelObj, writeSetPos } from '../src';
+import type { AddedMover, MoveReport, WorldPacket } from '@flyffweb/protocol';
+import {
+  GAMETIMER, createWorldScript, writeAddSelf, writeDamage, writeDelObj, writeRevivalToLodestar, writeSetPos,
+  writeSetState,
+} from '../src';
 
 /** The own character, wearing nothing. */
 const OWN: AddedMover = {
@@ -82,4 +85,52 @@ it('later is a SNAPSHOT bundle for the same player', () => {
   expect(readBundle(bytes, WORLD_READERS)).toMatchObject({
     playerObjectId: 9, indexed: true, messages: [{ objectId: 10, value: { type: 'delObj' } }],
   });
+});
+
+it('on answers each packet of its type on the cache connection with the reply\'s messages, as a SNAPSHOT bundle', () => {
+  const s = script();
+  const seen: WorldPacket[] = [];
+  s.on('meleeAttack', (p) => {
+    seen.push(p);
+    return [writeDamage(10, 9, 10, 1)];
+  });
+  const answers = s.answer('cache', encodeMeleeAttack(29, 10, 0.085));
+  // the reply is given the packet as decodeWorldPacket reads it
+  expect(seen).toEqual([
+    { type: 'meleeAttack', message: 29, targetId: 10, param2: 0, param3: 0x00010000, attackSpeed: Math.fround(0.085) },
+  ]);
+  expect(answers.map(bytesToHex)).toEqual([bytesToHex(s.later([writeDamage(10, 9, 10, 1)]))]);
+  expect(readBundle(answers[0]!, WORLD_READERS)).toMatchObject({
+    playerObjectId: 9, indexed: true,
+    messages: [{ objectId: 10, value: { type: 'damage', attackerId: 9, hit: 10, flags: 1, fly: null } }],
+  });
+  // each packet of the type is answered, in turn
+  expect(s.answer('cache', encodeMeleeAttack(29, 10, 0.085))).toHaveLength(1);
+  expect(seen).toHaveLength(2);
+});
+
+it('on: an empty reply sends nothing; other types, the login connection and JOIN are answered as before', () => {
+  const s = script();
+  let replies = 0;
+  s.on('revivalToLodestar', () => {
+    replies++;
+    return [];
+  });
+  expect(s.answer('cache', encodeRevivalToLodestar())).toEqual([]);
+  expect(replies).toBe(1);
+  expect(s.answer('login', encodeRevivalToLodestar())).toEqual([]);
+  expect(replies).toBe(1);
+  expect(s.answer('cache', encodeModifyStatus({ str: 1, sta: 0, dex: 0, int: 0 }))).toEqual([]);
+  // the JOIN bundle still comes, whatever is scripted besides
+  expect(s.answer('cache', join)).toHaveLength(1);
+});
+
+it('on: a later reply for the same type takes the place of the earlier', () => {
+  const s = script();
+  s.on('modifyStatus', () => [writeRevivalToLodestar(9)]);
+  s.on('modifyStatus', (p) => (p.type === 'modifyStatus' ? [writeSetState(9, 15 + p.str, 15, 15, 15, 0)] : []));
+  const [bundle] = s.answer('cache', encodeModifyStatus({ str: 2, sta: 0, dex: 0, int: 0 }));
+  expect(readBundle(bundle!, WORLD_READERS).messages.map((m) => m.value)).toEqual([
+    { type: 'setState', str: 17, sta: 15, dex: 15, int: 15, remainGP: 0 },
+  ]);
 });

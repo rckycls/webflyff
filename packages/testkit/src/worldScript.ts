@@ -1,5 +1,5 @@
-import { ArReader, ArWriter, PacketType } from '@flyffweb/protocol';
-import type { Vec3 } from '@flyffweb/protocol';
+import { ArReader, ArWriter, DPID_UNKNOWN, PacketType, decodeWorldPacket } from '@flyffweb/protocol';
+import type { Vec3, WorldPacket } from '@flyffweb/protocol';
 import { encodeBundle, writeEnvironmentSetting, writeGameTimer, writeWorldReadInfo } from './world';
 import type { ScriptMessage } from './world';
 
@@ -24,12 +24,21 @@ export interface WorldScriptOptions {
 export interface WorldScript {
   /**
    * The answers to one packet the browser sent: `body` as it arrived, `DPID_UNKNOWN` first, then the type. The login
-   * server answers PRE_JOIN with PRE_JOIN; the cache server answers JOIN with the JOIN bundle; anything else (KEEP_ALIVE
-   * answers, PING, the player's moves) gets no answer.
+   * server answers PRE_JOIN with PRE_JOIN; the cache server answers JOIN with the JOIN bundle, and a packet of a type
+   * given to `on` with that reply's messages; anything else (KEEP_ALIVE answers, PING, the player's moves) gets no
+   * answer.
    */
   answer(role: 'login' | 'cache', body: Uint8Array): Uint8Array[];
   /** A SNAPSHOT bundle of `messages`, to push to the browser afterwards. */
   later(messages: ScriptMessage[]): Uint8Array;
+  /**
+   * The world server's answer to a packet the browser sends on the cache connection: each one of the type `packet`
+   * (`decodeWorldPacket`'s name for it: `'meleeAttack'`, `'revivalToLodestar'`, `'modifyStatus'` ...) is read and
+   * handed to `reply`, and the messages it gives go back at once, in one SNAPSHOT bundle (`later`); an empty list sends
+   * nothing. As the world server answers a MELEE_ATTACK with the DAMAGE of the hit, or a REVIVAL_TO_LODESTAR with the
+   * revival, the points and the position. A later `on` for the same type takes the place of the earlier one.
+   */
+  on(packet: WorldPacket['type'], reply: (p: WorldPacket) => ScriptMessage[]): void;
 }
 
 /**
@@ -50,14 +59,18 @@ export interface WorldScript {
  */
 export function createWorldScript(o: WorldScriptOptions): WorldScript {
   const index = o.index ?? true;
+  const replies = new Map<WorldPacket['type'], (p: WorldPacket) => ScriptMessage[]>();
+  const later = (messages: ScriptMessage[]): Uint8Array =>
+    encodeBundle(PacketType.SNAPSHOT, o.playerObjectId, messages, { index });
   return {
     answer(role, body) {
       // The browser's bodies start with DPID_UNKNOWN (BEFORESENDSOLE), then the type.
       const r = new ArReader(body);
-      r.u32();
+      const dpid = r.u32();
       const type = r.u32();
       if (role === 'login' && type === PacketType.PRE_JOIN) return [new ArWriter().u32(PacketType.PRE_JOIN).toBytes()];
-      if (role === 'cache' && type === PacketType.JOIN) {
+      if (role !== 'cache') return [];
+      if (type === PacketType.JOIN) {
         const own = o.playerObjectId;
         const messages = [
           writeEnvironmentSetting(own, SEASON_NONE), writeWorldReadInfo(own, o.worldId, o.pos), o.self, writeGameTimer(own, 0),
@@ -65,10 +78,14 @@ export function createWorldScript(o: WorldScriptOptions): WorldScript {
         ];
         return [encodeBundle(PacketType.JOIN, own, messages, { index })];
       }
-      return [];
+      if (dpid !== DPID_UNKNOWN || replies.size === 0) return [];
+      const packet = decodeWorldPacket(body);
+      const messages = replies.get(packet.type)?.(packet) ?? [];
+      return messages.length === 0 ? [] : [later(messages)];
     },
-    later(messages) {
-      return encodeBundle(PacketType.SNAPSHOT, o.playerObjectId, messages, { index });
+    later,
+    on(packet, reply) {
+      replies.set(packet, reply);
     },
   };
 }

@@ -27,6 +27,7 @@ import type { WorldEntry } from '../lobby/LoginFlow';
 import { h } from '../lobby/views/dom';
 import type { OpenChannel } from '../net/PacketChannel';
 import { registerWorld } from '../testHooks';
+import type { ClientPlayed } from '../testHooks';
 import { BackCamera } from './backCamera';
 import type { ChaseView } from './backCamera';
 import { AttackLoop, objRadius } from './combat/attackLoop';
@@ -86,6 +87,14 @@ const TOO_SLOW_TEXT = 'The game files took too long to load. Check the connectio
 const LOAD_LIMIT_MS = 60_000;
 /** The tiles shown around the player: 3 x 3, as the viewer's world view by default. */
 const RADIUS = 1;
+/** What the test hooks keep of what was played (`ClientPlayed`): the latest of each kind, so a long session stays small. */
+const PLAYED_KEPT = 256;
+
+/** `list` with `entry` added, and the oldest dropped past `PLAYED_KEPT`. */
+function keep<T>(list: T[], entry: T): void {
+  list.push(entry);
+  if (list.length > PLAYED_KEPT) list.shift();
+}
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
@@ -183,6 +192,14 @@ export class WorldScreen {
   private readonly backCamera = new BackCamera();
   private readonly stepper = new FixedStepper();
   private paused = false;
+  /**
+   * While paused, the rules steps the next frame runs (the test hooks' `step`), and the calls that wait for that frame to
+   * be drawn.
+   */
+  private askedSteps = 0;
+  private stepsDrawn: Array<{ resolve: () => void; reject: (error: Error) => void }> = [];
+  /** What the screen played of the fight (the test hooks' `played`), the latest `PLAYED_KEPT` of each kind. */
+  private readonly playedSoFar: ClientPlayed = { numbers: [], effects: [], swings: [] };
   /** The window was resized (or the device turned) since the last frame: the open windows are kept on the screen. */
   private resized = false;
   private lastTime = 0;
@@ -232,7 +249,7 @@ export class WorldScreen {
     this.unregister = registerWorld({
       ready: () => this.shown,
       movers: () => [...(this.world?.movers.values() ?? [])].map((m) => ({
-        objectId: m.objectId, name: m.name, pos: [...m.act.body.pos], hp: m.hp,
+        objectId: m.objectId, name: m.name, pos: [...m.act.body.pos], hp: m.hp, motion: m.act.motion, state: m.act.state,
       })),
       own: () => {
         const own = this.own;
@@ -243,6 +260,11 @@ export class WorldScreen {
       pause: () => {
         this.paused = true;
         this.views?.freeze();
+      },
+      step: (steps) => this.askSteps(steps),
+      played: () => {
+        const { numbers, effects, swings } = this.playedSoFar;
+        return { numbers: numbers.map((n) => ({ ...n })), effects: [...effects], swings: swings.map((s) => ({ ...s })) };
       },
       screenOf: (objectId) => this.screenOf(objectId),
     });
@@ -614,7 +636,9 @@ export class WorldScreen {
    * layer is up, and the movers' flashes and shakes. A message's events are played at the start of the frame after it,
    * before any rules step, so the movers are where the handler found them; a step's (a swing's hit frame: `spark`,
    * `attackerHit`) right after that step (`step`), so that its effect starts on its hit's step, as `CreateSfx` in the
-   * attacker's `Process` starts it.
+   * attacker's `Process` starts it. The test hooks are told what was played (`playedSoFar`): the effects asked for, the
+   * numbers added to their layer, and the swings started, with the motion each mover swings with as its event is played,
+   * before any step of the frame.
    */
   private play(changes: WorldChanges): void {
     this.hud?.play(changes.combat, changes.own, this.own);
@@ -630,13 +654,27 @@ export class WorldScreen {
       focusId: this.focus?.targetId ?? null, itemProps: this.data!.itemProps,
     };
     const views = this.views!;
+    const played = this.playedSoFar;
     const out: CombatFxOut = {
-      effect: (request) => effects.play(request),
-      number: (pos, value, ownHurt) => this.numbers?.add(pos, value, ownHurt),
+      effect: (request) => {
+        keep(played.effects, request.xi);
+        effects.play(request);
+      },
+      number: (pos, value, ownHurt) => {
+        const numbers = this.numbers;
+        if (numbers === undefined) return;
+        numbers.add(pos, value, ownHurt);
+        keep(played.numbers, { value, ownHurt });
+      },
       flash: (moverId, direction) => views.flash(moverId, direction),
       shake: (moverId) => views.shake(moverId),
     };
-    for (const event of changes.combat) playCombatEvent(event, fxWorld, out);
+    for (const event of changes.combat) {
+      if (event.kind === 'swing') {
+        keep(played.swings, { attackerId: event.attackerId, motion: world.movers.get(event.attackerId)?.act.motion ?? -1 });
+      }
+      playCombatEvent(event, fxWorld, out);
+    }
     for (const event of changes.own) playOwnEvent(event, fxWorld, out);
   }
 
@@ -652,13 +690,17 @@ export class WorldScreen {
     this.lastTime = now;
     const { overlay, renderer } = this.page!;
     overlay.frame(dt);
+    // paused, the frame runs only the steps the test hooks asked for, and tells them once it is drawn (or has failed)
+    const asked = this.paused ? this.askedSteps : null;
+    const drawn = this.paused ? this.stepsDrawn.splice(0) : [];
+    this.askedSteps = 0;
     try {
       const world = this.world!;
       const stage = this.stage!;
       const views = this.views!;
       this.syncViews();
       this.measureRadii(world, views);
-      const steps = this.paused ? 0 : this.stepper.advance(dt);
+      const steps = asked ?? this.stepper.advance(dt);
       for (let i = 0; i < steps; i++) this.step(world, stage, views, now);
       views.update(world.movers, steps / STEPS_PER_SECOND);
       // the mark goes once the walk to its point is over: arrived, or ended by a key, a stop or the server
@@ -686,6 +728,21 @@ export class WorldScreen {
       if (message !== this.lastError) overlay.error(message);
       this.lastError = message;
     }
+    for (const { resolve } of drawn) resolve();
+  }
+
+  /**
+   * The test hooks' `step`: while paused, the next frame runs `steps` more rules steps; the promise resolves once that
+   * frame is drawn, and rejects when the rules are not paused or the screen ends first (`end`), or for a count of steps
+   * that is not a whole number from 0.
+   */
+  private askSteps(steps: number): Promise<void> {
+    if (!Number.isInteger(steps) || steps < 0) return Promise.reject(new Error(`${steps} is not a count of steps`));
+    if (!this.paused || this.over) return Promise.reject(new Error('the rules are not paused'));
+    return new Promise((resolve, reject) => {
+      this.askedSteps += steps;
+      this.stepsDrawn.push({ resolve, reject });
+    });
   }
 
   /**
@@ -1013,6 +1070,7 @@ export class WorldScreen {
     this.page?.holder.remove();
     this.element.remove();
     this.unregister();
+    for (const { reject } of this.stepsDrawn.splice(0)) reject(new Error('the world screen ended'));
     this.rejectShown(new Error(message ?? 'the player left the world'));
     this.onEnd(message);
   }
