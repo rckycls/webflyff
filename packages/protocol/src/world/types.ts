@@ -78,7 +78,8 @@ export type WorldMessage =
   | { type: 'taskBar'; taskBar: TaskBar }
   /**
    * The mover the message is about begins a skill (`OnUseSkill`). `skill` is the real `SI_*` ID, not the index into
-   * `m_aJobSkill`; `targetId` is the target's object ID (the caster's own for a skill on itself); `useType` is a
+   * `m_aJobSkill`; `targetId` is the target's object ID (the caster's own for a skill on itself, and `NULL_ID` for a
+   * queue start with no target: `m_idTarget` may be `NULL_ID` there, `_Interface/WndTaskBar.cpp:2252`); `useType` is a
    * `SKILLUSETYPE` (`SUT_NORMAL` 0, `SUT_QUEUESTART` 1, `SUT_QUEUEING` 2); `castingTime` is 1 for a `KT_SKILL`, else the
    * cast in the world server's ticks (`SEC1` is 15 there, `_Common/timer.h:133-140`).
    */
@@ -87,7 +88,8 @@ export type WorldMessage =
   | { type: 'clearUseSkill' }
   /**
    * The own skills and skill points after a change (`OnDoUseSkillPoint`): always `MAX_SKILL_JOB` (45) slots, and the
-   * points left. After a spend the slots are the array the browser sent; a master or hero level-up sends the server's.
+   * points left. After a spend the slots are the array the browser sent; a master level-up (`MoverSkill.cpp:88`) or the
+   * legend skill's hero level (`DPSrvr.cpp:8453`) sends the server's.
    */
   | { type: 'doUseSkillPoint'; skills: SkillSlot[]; skillPoint: number }
   /**

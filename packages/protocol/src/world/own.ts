@@ -46,8 +46,12 @@ export function readOwnAfterEquipment(r: ArReader, numbers: OwnNumbers): OwnChar
  * `m_aJobSkill`: `ar.Read( (void*)m_aJobSkill, sizeof(SKILL) * ( MAX_SKILL_JOB ) )` (:561, and :565 when
  * `__SKILL_0205` is off: the same bytes), 45 `SKILL`s (`_Common/Item.h:308-314`) of `DWORD dwSkill` and `DWORD
  * dwLevel`, 8 bytes each, which `CAr::Read` copies as they are (360 bytes).
+ *
+ * DOUSESKILLPOINT carries the same 45 pairs, written and read one `ar << dwSkill << dwLevel` at a time (`CDPClient::
+ * OnDoUseSkillPoint`, `Neuz/DPClient.cpp:14733-14735`; `CDPSrvr::OnDoUseSkillPoint`, `WORLDSERVER/DPSrvr.cpp:1108-1109`),
+ * so its readers use this one too.
  */
-function readSkills(r: ArReader): SkillSlot[] {
+export function readSkills(r: ArReader): SkillSlot[] {
   const skills: SkillSlot[] = [];
   for (let i = 0; i < MAX_SKILL_JOB; i++) {
     const skill = r.u32(); // dwSkill: a SI_* ID, or NULL_ID in an empty slot

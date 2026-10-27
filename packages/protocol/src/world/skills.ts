@@ -1,6 +1,6 @@
 import type { ArReader } from '../ar/ArReader';
-import { MAX_SKILL_JOB } from './own';
-import type { MessageOf, SkillSlot } from './types';
+import { readSkills } from './own';
+import type { MessageOf } from './types';
 
 /**
  * USESKILL: `CDPClient::OnUseSkill` (`Neuz/DPClient.cpp:3894`): `ar >> dwSkill >> dwLevel; ar >> id >> nUseType >>
@@ -31,28 +31,14 @@ export function readClearUseSkill(): MessageOf<'clearUseSkill'> {
  * DOUSESKILLPOINT: `CDPClient::OnDoUseSkillPoint` (`Neuz/DPClient.cpp:14730`): for each of the `MAX_SKILL_JOB` skills `ar
  * >> dwSkill >> dwLevel`, then `ar >> g_pPlayer->m_nSkillPoint` (an `int`). `CUser::AddDoUseSkillPoint`
  * (`WORLDSERVER/User.cpp:6566`) writes them; `CDPSrvr::OnDoUseSkillPoint` answers a spend with the array it was sent
- * (`WORLDSERVER/DPSrvr.cpp:1162`), the master and hero level-ups (`_Common/MoverSkill.cpp:88`) and the legend skill
+ * (`WORLDSERVER/DPSrvr.cpp:1162`), a master level-up (`_Common/MoverSkill.cpp:88`) or the legend skill's hero level
  * (`DPSrvr.cpp:8453`) with the server's own. Neuz sets the level of the skill it finds by `dwSkill`; the reader gives
- * the pairs as they are, an empty slot with `dwSkill` `NULL_ID`.
+ * the pairs as they are (`readSkills`), an empty slot with `dwSkill` `NULL_ID`.
  */
 export function readDoUseSkillPoint(r: ArReader): MessageOf<'doUseSkillPoint'> {
-  const skills = readSkillPairs(r);
+  const skills = readSkills(r);
   const skillPoint = r.i32();
   return { type: 'doUseSkillPoint', skills, skillPoint };
-}
-
-/**
- * The `MAX_SKILL_JOB` pairs of `ar >> dwSkill >> dwLevel` that `OnDoUseSkillPoint` reads and `CDPSrvr::OnDoUseSkillPoint`
- * (`WORLDSERVER/DPSrvr.cpp:1104-1109`) reads too, from a browser's DOUSESKILLPOINT.
- */
-export function readSkillPairs(r: ArReader): SkillSlot[] {
-  const skills: SkillSlot[] = [];
-  for (let i = 0; i < MAX_SKILL_JOB; i++) {
-    const skill = r.u32();
-    const level = r.u32();
-    skills.push({ skill, level });
-  }
-  return skills;
 }
 
 /**
@@ -81,7 +67,9 @@ export function readEndSkillQueue(): MessageOf<'endSkillQueue'> {
  * CREATESFXOBJ: `CDPClient::OnCreateSfxObj` (`Neuz/DPClient.cpp:4038`): `ar >> dwSfxObj >> x >> y >> z; ar >> bFlag;`
  * (`DWORD`, three `float`, `BOOL`: 4 bytes). `CUserMng::AddCreateSfxObj` (`WORLDSERVER/User.cpp:5016`) writes the object it
  * is called for as the message's object ID, and `x`, `y`, `z` and `bFlag` default to 0 (`User.h:864`). The reader gives
- * the position as it is: Neuz makes it the effect's absolute place only `if( x || y || z )`, else the object's.
+ * the position as it is: Neuz makes it the effect's absolute place only `if( x || y || z )`, else the object's, and
+ * when that object is not in view it still makes the effect at the absolute position if there is one, and nothing if
+ * there is not (`DPClient.cpp:4062-4066`).
  */
 export function readCreateSfxObj(r: ArReader): MessageOf<'createSfxObj'> {
   const sfxId = r.u32();

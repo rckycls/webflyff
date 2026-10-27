@@ -1,10 +1,10 @@
 import type { ArReader } from '../ar/ArReader';
-import { ArWriter } from '../ar/ArWriter';
+import type { ArWriter } from '../ar/ArWriter';
 import {
-  DPID_UNKNOWN, MAX_SHORTCUT_STRING, MAX_SLOT_APPLET, MAX_SLOT_ITEM, MAX_SLOT_ITEM_COUNT, MAX_SLOT_QUEUE, PacketType,
-  ShortcutKind,
+  MAX_SHORTCUT_STRING, MAX_SLOT_APPLET, MAX_SLOT_ITEM, MAX_SLOT_ITEM_COUNT, MAX_SLOT_QUEUE, PacketType, ShortcutKind,
 } from '../constants';
 import { ProtocolError } from '../errors';
+import { clientPacket } from './packet';
 import type { MessageOf, Shortcut } from './types';
 
 /**
@@ -88,13 +88,8 @@ export function readTaskBar(r: ArReader): MessageOf<'taskBar'> {
   return { type: 'taskBar', taskBar: { applets, items, queue, actionPoint } };
 }
 
-// The packets the browser sends to edit the bars, none of which the world server answers: Neuz's
-// `CDPClient::Send*TaskBar` write them and `CDPSrvr::On*TaskBar` read them.
-
-/** The start of a packet the browser sends, `BEFORESENDSOLE( ar, type, DPID_UNKNOWN )`, as `messages/world.ts` writes it. */
-function clientPacket(type: number): ArWriter {
-  return new ArWriter().u32(DPID_UNKNOWN).u32(type);
-}
+// The packets the browser sends to edit the bars, which the world server answers with no message (bar the text for an
+// 11th chat shortcut, below): Neuz's `CDPClient::Send*TaskBar` write them and `CDPSrvr::On*TaskBar` read them.
 
 /**
  * A slot the server takes as a `BYTE` and tests against the size of the array (`if( nSlotIndex >= MAX_SLOT_ITEM_COUNT
@@ -124,7 +119,9 @@ function writeShortcutFields(w: ArWriter, s: Shortcut): ArWriter {
  * ADDITEMTASKBAR: `CDPClient::SendAddItemTaskBar` (`Neuz/DPClient.cpp:11014`): the item bar and the slot on it
  * (`BYTE` each), the shortcut's six `DWORD`s and, for `SHORTCUT_CHAT` alone, `WriteString( m_szString )`, in the
  * order `CDPSrvr::OnAddItemTaskBar` (`WORLDSERVER/DPSrvr.cpp:12428`) reads them. The server sets the slot and sends no
- * reply. A chat text is a `char[128]`, so it holds at most 127 bytes; the text of any other kind is not written.
+ * reply, except that an 11th chat shortcut gets a DEFINEDTEXT1 `TID_GAME_MAX_SHORTCUT_CHAT` and is not set
+ * (`DPSrvr.cpp:12456-12460`). A chat text is a `char[128]`, so it holds at most 127 bytes; the text of any other kind
+ * is not written.
  * Neuz sends it when a shortcut is dropped on an item bar (`CWndTaskBar::SetShortcut`, `_Interface/WndTaskBar.cpp:1664`).
  */
 export function encodeAddItemTaskBar(bar: number, slot: number, shortcut: Shortcut): Uint8Array {

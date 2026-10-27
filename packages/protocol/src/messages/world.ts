@@ -1,20 +1,12 @@
 import { ArReader } from '../ar/ArReader';
-import { ArWriter } from '../ar/ArWriter';
 import { DPID_UNKNOWN, MessageType, PacketType } from '../constants';
 import type { Vec3 } from '../constants';
 import { ProtocolError } from '../errors';
-import { MAX_SKILL_JOB } from '../world/own';
-import { readSkillPairs } from '../world/skills';
+import { MAX_SKILL_JOB, readSkills } from '../world/own';
+import { clientPacket } from '../world/packet';
 import { readAddItemTaskBar, readRemoveItemTaskBar, readSkillTaskBar } from '../world/taskBar';
 import type { Shortcut, SkillSlot } from '../world/types';
 import type { SlotMessenger } from './login';
-
-// A packet the client sends to the cache server is built with `BEFORESENDSOLE( ar, type, DPID_UNKNOWN )`
-// (`Source/_Network/Net/Include/dpmng.h`), like the login packets: the sender ID `DPID_UNKNOWN` first, then the
-// type, then the fields.
-function clientPacket(type: number): ArWriter {
-  return new ArWriter().u32(DPID_UNKNOWN).u32(type);
-}
 
 /** What `CDPClient::SendJoin` sends: the character that enters the world, and the account that owns it. */
 export interface JoinRequest {
@@ -219,8 +211,9 @@ export function encodeUseSkill(index: number, targetId: number, useType: 0 | 1, 
  * DOUSESKILLPOINT (`CDPClient::SendDoUseSkillPoint`, `Neuz/DPClient.cpp:9710`): for each of the `MAX_SKILL_JOB` (45) slots
  * `dwSkill` then `dwLevel` (`DWORD` each) and nothing else, the player's own skill IDs with the levels the skill window
  * set, `NULL_ID` and 0 for an empty slot; 8 + 360 bytes. `CDPSrvr::OnDoUseSkillPoint` (`WORLDSERVER/DPSrvr.cpp:1104`)
- * reads the same 45 pairs, takes only the level of each slot and answers with a DOUSESKILLPOINT message, or with nothing
- * when no level changed.
+ * reads the same 45 pairs, takes only the level of each slot and answers a spend with a DOUSESKILLPOINT message, a
+ * refusal with a DEFINEDTEXT1 `TID_RESKILLPOINT_ERROR` (`DPSrvr.cpp:1125`, :1136), and a request that changes no level
+ * with nothing.
  */
 export function encodeDoUseSkillPoint(skills: readonly SkillSlot[]): Uint8Array {
   if (skills.length !== MAX_SKILL_JOB) {
@@ -363,7 +356,7 @@ function decodeClientPacket(r: ArReader): WorldPacket {
       return { type: 'useSkill', skillType, index, targetId, useType, control };
     }
     case PacketType.DOUSESKILLPOINT: {
-      const skills = readSkillPairs(r);
+      const skills = readSkills(r);
       r.expectEnd();
       return { type: 'doUseSkillPoint', skills };
     }
