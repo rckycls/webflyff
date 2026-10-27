@@ -1,6 +1,13 @@
 # Device testing and comparison with the Windows client
 
-For the owner. This file has two parts. The first is Piece 1, the viewer. The second, at the end, is [Piece 2: lobby](#piece-2-lobby), the login, channel and character screens.
+For the owner. This file has a part per piece:
+- Piece 1, the viewer, first;
+- [Piece 2: lobby](#piece-2-lobby), the login, channel and character screens;
+- [Piece 3, milestone 1: the world](#piece-3-milestone-1-the-world);
+- [Piece 3, milestone 2: collision and tap to walk](#piece-3-milestone-2-collision-and-tap-to-walk);
+- [Piece 4, milestone 1: fighting and levelling](#piece-4-milestone-1-fighting-and-levelling), at the end.
+
+From Piece 4 on, the game is played sideways: hold phones and tablets in landscape for every checklist in the client parts. See [Hold every device sideways](#hold-every-device-sideways).
 
 Piece 1 has three jobs, none of which the automated tests can do for you:
 
@@ -131,7 +138,7 @@ Any `errors:` line in the overlay that you cannot explain is a fail too: send a 
 
 For the owner. The lobby is the first real page of the browser client: log in, pick a server and channel, see your characters, create one and delete one. This part of the file checks it on your four devices, over your Wi-Fi, with the PC running the game servers, the gateway and the client.
 
-The automated side is `npm test` (including the gateway tests) and `npm run test:e2e:client` (the lobby in Chromium and in WebKit as an iPhone, against pretend servers). What they cannot tell you is whether a real phone, over real Wi-Fi, gets through your real servers. That is this checklist.
+The automated side is `npm test` (including the gateway tests) and `npm run test:e2e:client` (the lobby in Chromium, against pretend servers; until Piece 4 also in WebKit, Safari's engine). What they cannot tell you is whether a real phone, over real Wi-Fi, gets through your real servers. That is this checklist.
 
 To put the lobby on the internet instead, see [hosting.md](hosting.md).
 
@@ -266,7 +273,7 @@ The lobby passes when **every cell is `pass` on every one of the four devices**.
 
 For the owner. **Enter** on a character now opens the 3D world where the character was saved: the other players, the monsters and the NPCs around it, each with a name tag, moving by the Windows client's own rules. This part checks it on your four devices, two at a time, over your Wi-Fi, with the PC running the game servers, the gateway and the client.
 
-The automated side is `npm test`, `npm run test:e2e:client` (the world against pretend servers, in Chromium and WebKit) and the live world test below. None of it needs Neuz, and nothing here asks you to run Neuz next to the servers.
+The automated side is `npm test`, `npm run test:e2e:client` (the world against pretend servers, in Chromium; until Piece 4 also in WebKit) and the live world test below. None of it needs Neuz, and nothing here asks you to run Neuz next to the servers.
 
 ## Before you start
 
@@ -296,7 +303,7 @@ The same care as for `npm run test:live` applies: wait at least 15 seconds betwe
 
 As in the Piece 2 part ("Start the gateway and the client"): `npm run gateway` in one window, `npm run dev:client` in another, and the phone's address in `allowedOrigins`. Then, on the PC first, open `http://localhost:5174`, log in, pick a channel and tap **Enter** on a character: after "Entering the world…" (which has a **Leave** button too, to give up) you should see the character from behind, in the world, with the **Leave** button at the top right and the overlay at the top left. If that fails, fix it on the PC, not on a phone (see "When something goes wrong" below).
 
-**Moving:** on a touch screen, the joystick at the bottom left (a push walks, a full push runs); on a keyboard, `W` / `S` or the up and down arrows walk forward and back, `A` / `D` or the left and right arrows turn, and holding `Shift` runs.
+**Moving:** on a touch screen, the joystick at the bottom left (a push walks, a full push runs); on a keyboard, `W` / `S` or the up and down arrows walk forward and back, `A` / `D` or the left and right arrows turn, and holding `Shift` runs. (Since Piece 4, as in the Windows client: the keys run, and `X` toggles between walking and running; `Shift` no longer changes the pace. Where the steps below say Shift, use `X`.)
 
 ## Steps, two devices at a time
 
@@ -374,7 +381,7 @@ Device A walks; device B watches the same character. Swap roles for the second p
 6. **Tap to walk.** Tap a spot on the ground across the square. Success: the ring appears there, the character walks (or runs, if it was running) to it and stops on the ring, and the ring goes. B sees the character walk there and stop at the same spot.
 7. **Tap behind a wall.** Tap a spot behind a building, so the straight path runs into it. Success: the character walks until it reaches the wall and stops there; B sees it stop there too, not run on the spot.
 8. **Cancel a tap.** Tap a far spot, and while the character walks there turn with the joystick (or press a turn key, A or D). Success: the walk stops at once and the ring goes. Going straight forward at the pace the walk already has does not cancel it, as in the Windows client: a walk to a tapped spot goes at the pace of your last move (before your first move, at the pace the character was saved with, normally running), so while it runs there Shift+W or the joystick pushed all the way up leaves it alone, and while it walks there W alone or a part push does. W alone while it runs there changes the pace to walking, and a change of pace does cancel it: the walk stops and the ring goes, which is right too.
-9. **Taps that do nothing.** Tap another player, a monster or a shopkeeper. Success: nothing happens (choosing a target comes with Piece 4). Tap the trunk of a tree or a fence: the character walks to the ground behind it, as in the Windows client, where only some objects can be tapped.
+9. **Taps that do nothing.** Tap another player, a monster or a shopkeeper. Success: nothing happens (choosing a target comes with Piece 4; since Piece 4 the tap selects it, see the Piece 4 part). Tap the trunk of a tree or a fence: the character walks to the ground behind it, as in the Windows client, where only some objects can be tapped.
 
 ## Results
 
@@ -399,3 +406,170 @@ Milestone 2 passes when every cell is `pass` on every device and milestone 1's c
 | A tap does nothing on the ground | The tap was a drag (the finger moved more than a few pixels or stayed down longer than a third of a second), or it landed on a player, monster or NPC. Tap again, quickly. |
 | On B, the character keeps running on into a wall or a house after A stopped there | B moves its copy of the character by the same rules, so it stops at the same wall by itself. Where A had told the server just before that it would be further on, A's browser sends a correction as it bumps, the server passes it on, and B puts the character back where A stopped: on a slow connection B may show it a step or two into the wall for a moment first, which is expected. If it stays inside, or runs on, the correction did not arrive or was not applied: write down what each device showed. |
 | The Mothbees and other flying monsters walk on the ground or stand stuck against walls | The game data was converted before this version: run `npm run convert -- --only data` (a few seconds) and reload the page. Flying monsters stay where the server last put them; their flying comes with a later piece. |
+
+# Piece 4, milestone 1: fighting and levelling
+
+For the owner. Milestone 1 of Piece 4 lets a Vagrant fight in Flaris, as in the Windows client:
+- select a monster and attack it, with the combo of your level;
+- damage numbers, hit sparks, critical and miss banners, and monsters that hit back;
+- the status window (HP, MP, FP and EXP), the target bar and the corners around the target;
+- the task bar with the Start menu, and the attack button on touch screens;
+- dying, the revive window and the lodestar;
+- levelling up, and the Character window with stat points;
+- the sword in the hand;
+- the whole game held sideways (landscape).
+
+Skills come in milestone 2. Do this checklist on your four devices, two at a time, as for Piece 3.
+
+The automated side:
+- `npm test` covers the formulas, the fight rules, the windows and the landscape cover.
+- `npm run test:e2e:client` plays whole fights against a pretend server (`fight.spec.ts`), in Chromium as a desktop and as a landscape Android phone.
+- The live world test below now also kills an Aibatt on your real servers.
+
+None of it needs Neuz, and nothing here asks you to run Neuz next to the servers.
+
+## Hold every device sideways
+
+From this piece on, the whole game is landscape, from the **Log in** form to the world. While a phone or tablet is held upright, a cover says "Turn your device sideways to play." On a PC whose window is taller than it is wide, the cover says "Make the window wider to play."
+- On Android, the first **Log in** or **Enter** tap also puts Chrome in full screen and locks it sideways.
+- iPhones and iPads can't be locked by a web page, so turn them by hand.
+
+Use this way of holding the devices for the earlier checklists in this file too.
+
+## Before you start
+
+1. **The game files.** `dist/assets` must hold a conversion made with this version. It adds:
+   - the effects and the window pictures;
+   - new fields in the catalogs: the monsters' weapons, which items stack, the texts' numbers and the job names.
+
+   If you are not sure, run `npm run convert -- --only effects,ui,data` in `FlyffWeb/`, which takes about a minute.
+2. **The VM.** Copy the FlyffWeb folder into the VM again, with its new `dist/assets`. See [servers-in-a-vm.md](servers-in-a-vm.md), step 4. The servers themselves are unchanged: Piece 4 needs no new server program.
+3. **Two throwaway test accounts,** as for Piece 3.
+   - The first account's character must be **new or low level** (a Vagrant under level 15).
+   - It must still carry its starter food.
+   - It must stand at Flaris's lodestar, where a new character starts.
+   - The live test walks it out of the north gate to fight. A new character fits every point.
+
+## Run the live world test first
+
+In the VM, as in the Piece 3 part:
+
+```
+npm run test:live:world
+```
+
+Success: no `failed`. Besides the Piece 3 checks, the first account now:
+1. checks its inventory (the starter lollipops and biscuit);
+2. walks out of the north gate and over the bridge;
+3. picks the nearest small Aibatt and kills it;
+4. checks that its EXP went up;
+5. walks back to the lodestar.
+
+It fails if a swing gets no damage back within 3 seconds, or if the server says "Please wait a moment before attacking again." (the attack speed). If the server says the monster is fighting another player, it tries one other Aibatt first. Its message then says what it saw. If it stops with the character still outside the town, the message says so. Walk the character back to the lodestar in the browser before the next run. A character that died is put back at the lodestar by the server when the test logs out.
+
+Wait at least 15 seconds between runs, and never run it in a loop.
+
+## Start the gateway and the client
+
+As in the Piece 3 part: the gateway in the VM, and `npm run dev:client` on your PC with `VITE_GATEWAY_URL` set (see [servers-in-a-vm.md](servers-in-a-vm.md), step 6).
+
+**Fighting:**
+- **On a touch screen:** tap a monster to select it. Its name and HP show in the target bar, top centre, and corners appear around it. Tap it again, or press the attack button at the bottom right, to attack.
+- **With a mouse:** click to select. Then click the selected monster again, double-click it, or hold the button down on it for half a second, to attack. Holding attacks only while you hold, as in the Windows client.
+- The character walks up and swings again and again until the monster dies, or until you move or tap the ground.
+
+**Keys:**
+
+| Key | What it does |
+| --- | --- |
+| `W`, `S`, `A`, `D` or the arrow keys | Move and turn, as before |
+| `X` | Toggles walking and running. `Shift` no longer changes the pace. |
+| `H` | Character window |
+| `T` | Status window |
+| `F1`-`F9` | The slots of the current bar |
+| `1`-`8` | Choose the bar |
+| `Escape` | 1. Clears the target. 2. With no target, closes the top window. 3. With nothing to close, opens the Start menu. 4. When you are dead, opens the revive window. |
+
+## Steps, two devices at a time
+
+Pair the devices as before, one test account each. Read the overlay as in the Piece 3 part. Its `errors:` line must stay empty, and `mismatched` must stay 0.
+
+**Browsers.** The automated tests run only in Chromium, the engine of Chrome and Edge. So your iPhone and iPad are the only check for them:
+- **iPhone and iPad:** use any browser. Safari, Chrome and Firefox there all run on Safari's engine and behave the same.
+- **Android:** use Chrome.
+- **PC:** use Chrome. Then do steps 2, 4 and 8 once more in **Firefox** and write the result in the Notes column of the PC row.
+
+1. **Sideways.** On the phones and tablets, start upright. Success: the cover asks you to turn the device, and nothing of the game shows behind it. Turn it: the **Log in** form shows and fits the screen with no scrolling. On Android, the first **Log in** tap goes full screen. Enter the world, then turn the phone upright and back in the middle of a fight. Success: the fight goes on behind the cover, and after you turn back the target's HP shows what happened meanwhile.
+2. **The windows.** Success:
+   - The status window sits top left, with the character's face, name and level, the HP, MP and FP bars with "value / max", and the EXP bar with a percent.
+   - The task bar runs along the bottom. Its first slots show the lollipop and biscuit icons with their counts, greyed: food comes in Piece 5.
+   - The Start menu (bottom left) opens with lines big enough for a finger.
+   - Tapping each line opens its window: **Character**, **Status**, and **Log out**, which asks first.
+3. **The sword in the hand.** Success: your character holds its wooden sword in the right hand. The other device shows the sword in the same hand, moving with the arm as the character runs and fights.
+4. **Select and attack.** Walk out of the north gate to the Aibatts. Tap (or click) one. Success:
+   - The target bar shows "Aibatt <Lvl 1>" and its HP as "value / max", and white corners appear around it.
+   - Tap it again, or press the attack button. The corners turn red, the character runs up to it and swings, and each blow shows a number over the Aibatt and a spark.
+   - The other device sees the same swing and the same Aibatt flinching.
+5. **The combo.** At level 1, every swing is the same single blow. Watch for the change after you level up:
+   - At level 2 the character chains two blows.
+   - At level 8, three.
+   - When the level reaches 2 and 8, the messages above the task bar say "You are learning new attack patterns!".
+6. **Critical and miss.** Keep fighting for a while. Success: now and then a red "critical" banner shows with a bigger number, and a "miss" banner where a blow missed.
+7. **Being hit.** Let an aggressive monster attack you, or stand still while an Aibatt you hit hits back. Success: its swing, a number over your character in the other colour, your HP bar going down, and your character flinching.
+8. **Level up.** Kill Aibatts until the EXP bar is full. Success:
+   - a column of light around the character;
+   - "Congratulations! Level up!" across the middle of the screen;
+   - the new level in the status window;
+   - HP, MP and FP refilled to the new maximum;
+   - a line in the messages.
+   - The other device sees the light too.
+9. **Stat points.**
+   - Press `H`, or use **Character** in the Start menu. Success: the Character window shows your name, "Vagrant", your level, the server and the channel, your ATK, DEF, critical and attack speed, STR, STA, DEX and INT, and the Stat Points left (2 for each level since level 1).
+   - Press **+** next to STR twice. Success: the counts show, the numbers that would change turn red, and **Apply** and **Reset** light up. **Reset** clears the counts.
+   - Place the points again and press **Apply**, then **Yes**. Success: the stats go up, and the Stat Points go down.
+   - On a phone, the window may be taller than the space above the task bar. Then it scrolls: drag inside it to reach **Apply**.
+10. **Dying and the lodestar.** Let monsters kill your character. A group of aggressive ones works, or a strong monster further out. Success:
+    - the death motion, the message "Press ESC and go back to Lodestar(Town) or Lodelight(Field) for resurrecting.", and the revive window in the middle of the screen;
+    - **Revive here** is greyed out, and the rest of the screen takes no taps.
+    - **Lodestar** takes the character back to Flaris's lodestar, alive, with part of its HP.
+    - The other device sees it disappear and come back at the lodestar.
+11. **Speed in a fight.** On the weakest device, fight with at least 5 monsters in view, for example at the Aibatt field. Read `fps` on the overlay for a minute.
+12. **Log out.** In a fight, use **Log out** in the Start menu. Success: it says "You cannot quit during combat." Out of the fight, wait about 10 seconds, then try again. Success: a box asks first, **OK** goes back to the **Log in** form, and on the other device the character disappears.
+
+## Results
+
+| Device | Browser | 1. Sideways | 2. Windows | 3. Sword | 4. Select, attack | 5. Combo | 6. Critical, miss | 7. Being hit | 8. Level up | 9. Stat points | 10. Dying | 11. fps in a fight | 12. Log out | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| iPhone | Safari | | | | | | | | | | | | | |
+| Android phone | Chrome | | | | | | | | | | | | | |
+| iPad | Safari | | | | | | | | | | | | | |
+| Android tablet | Chrome | | | | | | | | | | | | | |
+| PC | Chrome | | | | | | | | | | | | | |
+
+## Pass and fail
+
+Milestone 1 passes when:
+- `npm run test:live:world` passed in the VM;
+- every cell of steps 1-10 and 12 is `pass` on every device;
+- the weakest device keeps **at least 30 fps** in step 11.
+
+If it misses, write down by how much. Any `errors:` line you cannot explain is a fail too, and so is a `mismatched` number above 0: send a photo of the overlay. Milestone 2 (skills) starts after you say milestone 1 works.
+
+**Look closely at these,** because the tests can't judge them:
+- the critical banner's edges: they should be crisp, as in the Windows client, not blurred;
+- whether a character turned the wrong way swings the right way;
+- on an iPhone or iPad: that the world redraws after you turn the device, and that dragging inside a tall window scrolls it;
+- that the attack button and the joystick are easy to reach. A window open over the joystick hides it until you move or close the window.
+
+## When something goes wrong in a fight
+
+| What you see | What it means and what to do |
+| --- | --- |
+| Tapping a monster walks to it instead of selecting it | The tap missed the monster's outline, for example on a giant's far corner. Tap the middle of it. |
+| The character swings but no number shows, and the overlay counts nothing | The server answered nothing. Run the live world test: "no DAMAGE within 3 s" there says the same. Check that the world server in the VM is the patched one (Piece 3). |
+| "Please wait a moment before attacking again." in the messages | The server thinks the browser swings faster than the character can. Send a photo of the Character window (its attack speed) and the messages. |
+| "You cannot attack a monster that is fighting against another player." | Normal when another player hit that monster first: pick another. |
+| The Job line in the Character window is empty, or the counts show on a sword in the task bar | `dist/assets` is older than this version: run `npm run convert -- --only data` (see "Before you start") and copy it to the VM again. |
+| No sparks, banners or level-up light, but the fight works | The effects were not converted: run `npm run convert -- --only effects,ui,data`. The overlay's `errors:` line names a missing effect. |
+| The task bar, Start menu or windows are plain grey boxes | The window pictures were not converted: as above. |
+| The cover stays up although the device is sideways | The page is still taller than wide, for example a split screen or a small browser window. Make it wider, or turn off the split screen. |

@@ -90,7 +90,7 @@ Section numbers (§) are the spec's. The C++ facts are in `docs/superpowers/spec
 | Arrival range | `IsRangeObj`: R = 0.8·r(target) + 0.8·r(walker) + range (range 0 → 1.0), in range when the 3D distance² < R². r = (|Δx| + |Δy| + |Δz|) / 6 · scale of the model box. `AR_SHORT` 2.0, `AR_LONG` 3.0, `AR_FAR` 4.0, `AR_RANGE` 10.0, `AR_WAND` 15.0, `AR_HRANGE` 6.0 |
 | Hold-to-attack | 500 ms on a newly selected target (`m_timerFocusAttack`) |
 | Attack speed | `A = trunc(job.fAttackSpeed + item.fAttackSpeed · (4·DEX + level/8) − 3)`, A ≥ 187.5 → 187; `s = (50 / (200 − A)) / 2 + PLUS[clamp(trunc(A/10), 0, 17)]`, clamped to [0.1, 2.0]; PLUS = 0.08, 0.16, 0.24, 0.32, 0.40, 0.48, 0.56, 0.64, 0.72, 0.80, 0.88, 0.96, 1.04, 1.12, 1.20, 1.30, 1.38, 1.50; shown as `trunc(trunc(s·100)/2)`% (`MoverAttack.cpp:72-200`) |
-| Damage number | glyph `d + a·14` (a = 0 own player hurt, 1 otherwise); 25 px glyphs, 12.5 px advance; ticks 1-8 rise 10 px/tick, 9-18 shake ±3 px, 19-34 hold, 35-50 rise 2 px/tick with alpha 75 − 2n and scale (3 + 0.05n)/4, then gone ([effects §5]) |
+| Damage number | glyph `d + a·14` (a = 0 own player hurt, 1 otherwise); 25 px glyphs, 12.5 px advance; ticks 1-8 rise 10 px/tick, 9-18 shake ±3 px, 19-33 hold, 34-50 rise 2 px/tick with alpha 75 − 2n and scale (3 + 0.05n)/4, then gone at tick 51; a number whose point is behind the camera still ages (`Process` counts every tick, only the draw is skipped) ([effects §5]) |
 | Effect positions | hit spark at victim + forward(attacker angle) · 1 + (0, 1, 0); critical `XI_HIT_CRITICAL01` at +1.5 y scale 3; miss, parry, block at +1.5 y scale 2; level up follows the mover; Vagrant skill (`CSfxFixed`) at caster + forward · 1.3 + (0, 1, 0); `CSfx` draws at +0.2 y, `CSfxGenNormalDmg01` and `CSfxFixed` at +0 ([effects §2.2, §3.2]) |
 | Revive | the server sets HP/MP/FP to 20% and sends SETPOS on the same map |
 | Skill timeout | a USESKILL or DOUSESKILLPOINT with no answer in 2000 ms is cleared (§3.11) |
@@ -200,7 +200,7 @@ export const DstParam = { HP: 38, MP: 39, FP: 40 } as const;
 | { type: 'setState'; str: number; sta: number; dex: number; int: number; remainGP: number }
 | { type: 'corrReq'; pos: Vec3; attackerId: number }
 | { type: 'revival' } | { type: 'revivalToLodestar' }
-| { type: 'definedText'; textId: number; args: string }      // DEFINEDTEXT1 reads as args ''
+| { type: 'definedText'; textId: number; args: string | null }      // DEFINEDTEXT1 reads as args null (shown raw, OnDefinedText1)
 | { type: 'queryGetDestObj'; fromId: number }
 | { type: 'monsterProp'; rates: MonsterRate[]; removed: string[] }
 export interface MonsterRate { name: string; hitPoint: number; attackPower: number; defence: number; exp: number; itemDrop: number; penya: number }  // percent
@@ -403,7 +403,7 @@ export interface WebItemProp { id: number; name: string; kind1: number; kind2: n
   part: number; abilityMin: number; abilityMax: number; weaponType: number; attackSpeed: number /* f32 of the token */;
   attackRange: number; destParams: number[]; adjParams: number[]; sfxHit: number /* dwSfxObj3, XI id or -1 */;
   model: string | null /* models/<item>.glb for a held item (OT_ITEM entry without parts), else null */;
-  icon: string | null /* ui/<icon>.png */ }
+  icon: string | null /* ui/item/<icon>.png: item icons are loaded from Client/Item (ruling R9) */ }
 // data/itemProps.json: WebItemProp[]   data/jobs.json: JobProp[]   data/exp.json: { exp1: string; lpPoint: number; limitExp: string }[]
 // data/texts.json: Record<TID name, { text: string; color: number }>   (every TID; small enough)
 // data/effectsIndex.json: Record<XI id as string, { effect: string /* effects/<name>.json */; scale: number }>
@@ -1268,7 +1268,7 @@ export class SkillUse {
   - INITSKILLPOINT sets the three levels to 0 and the points to the value.
   - CREATESFXOBJ with a zero position plays on the message's mover.
 - [ ] **Step 2: Run** `npx vitest run apps/client/test/skillUse.test.ts apps/client/test/actionMover.test.ts`. Expected: FAIL.
-- [ ] **Step 3: Implement**, with the skill effect played at caster + forward · 1.3 + (0, 1, 0), fixed, angle `-caster angle`.
+- [ ] **Step 3: Implement**, with the skill effect played at caster + forward · 1.3 + (0, 1, 0), fixed; pass the caster's raw FlyFF angle as `sourceAngle` and the effect manager turns it as CreateSfx does (ruling R11).
 - [ ] **Step 4: Run** the same commands and `npm test`. Expected: PASS.
 - [ ] **Step 5: Commit** `feat(client): using skills from the bar and the action slot`.
 
@@ -1311,7 +1311,7 @@ export class SkillUse {
 - Create: `apps/client/e2e/skills.spec.ts`
 - Modify: `apps/client/test/world.live.test.ts`, `apps/client/test/live.config.example.json`
 
-- [ ] **Step 1: Write the e2e tests** (Chromium and WebKit):
+- [ ] **Step 1: Write the e2e tests** (Chromium, desktop and landscape phone; ruling R34):
   - **Skill points:** a level-5 character with 4 points raises Clean Hit; the script answers DOUSESKILLPOINT.
   - **The bar:** Clean Hit is put on the bar, and the script sees ADDITEMTASKBAR. Pressing it with an Aibatt selected: the script answers USESKILL and DAMAGE, and the skill's effect plays (via `testHooks`).
   - **The action slot:** Clean Hit, Flurry, Over Cut; C starts it; the script drives the chain with USESKILL `SUT_QUEUEING` and ends with ENDSKILLQUEUE.

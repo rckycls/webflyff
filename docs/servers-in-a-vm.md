@@ -63,7 +63,12 @@ Hyper-V comes with Windows 10 and 11 Pro; once it is turned on, **Hyper-V Manage
 ## 4. The gateway in the VM
 
 1. **Install Node.js** v24 or newer (the LTS version) in the VM, from nodejs.org.
-2. **Copy the FlyffWeb folder into the VM,** for example to `C:\FlyFF\FlyffWeb`: the folder with this milestone (on your PC, `C:\Users\silec\Desktop\FlyFF\Bakbak\FlyffWeb-worktrees\piece3-world`). Leave out its `node_modules` folder; the next step makes it again. Keep `dist\assets` (about 1 GB): the live world test reads it. Copy it again after every update of the code.
+2. **Copy the FlyffWeb folder into the VM,** for example to `C:\FlyFF\FlyffWeb`. Use the folder of the piece you are testing. On your PC that is `C:\Users\silec\Desktop\FlyFF\Bakbak\FlyffWeb-worktrees\piece4-combat` for Piece 4, and `...\piece3-world` for Piece 3.
+   - Leave out its `node_modules` folder; the next step makes it again.
+   - Keep `dist\assets` (about 1 GB): the live world test reads it.
+   - **Copy it again after every update of the code, with `dist\assets` too.** Piece 4 changed the game data (new fields in the catalogs) and added the effects and the window pictures. An old `dist\assets` makes the live test fail with "out of date".
+   - **Keep your two settings files when you copy a newer version over the old one:** `apps\client\test\live.config.json` and `apps\gateway\gateway.config.json` exist only in the VM's copy. Copy them aside first and put them back afterwards, or copy the new folder over the old one without deleting it first.
+   - After copying a new version, run `npm ci` again (next step).
 3. **Install the packages,** in PowerShell in the VM:
 
    ```
@@ -93,9 +98,16 @@ Hyper-V comes with Windows 10 and 11 Pro; once it is turned on, **Hyper-V Manage
 
 The live tests start their own gateway and expect the servers on the same machine, so run them in the VM, in `C:\FlyFF\FlyffWeb`: make `apps\client\test\live.config.json` from `live.config.example.json` as the checklists in [device-testing.md](device-testing.md) say (for this milestone, the `world` section with two throwaway accounts), then `npm run test:live:world`. Its own gateway uses port 8091 inside the VM, so it does not clash with the one from step 4.
 
+From Piece 4 on, the world test also fights. Its first account walks out of Flaris's north gate and kills a small Aibatt, so that account's character must meet three conditions:
+- new or low level (a Vagrant under level 15);
+- still carrying its starter food;
+- standing at Flaris's lodestar.
+
+A new character fits all three. The checklist in [device-testing.md](device-testing.md) ("Piece 4, milestone 1") says what to do when a run stops with the character outside the town.
+
 ## 6. The client on your PC
 
-On your PC, in PowerShell, in the FlyffWeb folder (`C:\Users\silec\Desktop\FlyFF\Bakbak\FlyffWeb-worktrees\piece3-world`), tell the client where the gateway is, start it, and clear the setting again when you stop it:
+On your PC, in PowerShell, in the FlyffWeb folder of the piece you are testing (`C:\Users\silec\Desktop\FlyFF\Bakbak\FlyffWeb-worktrees\piece4-combat` for Piece 4), tell the client where the gateway is, start it, and clear the setting again when you stop it:
 
 ```
 $env:VITE_GATEWAY_URL = 'ws://<VM-IP>:8090'; npm run dev:client

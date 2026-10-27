@@ -150,6 +150,22 @@ Compression, measured as for the first run:
 
 `index.json` is now 22,369 entries and 1.82 MiB raw.
 
+## Data and UI changes in Piece 4, milestone 1
+
+The rest of milestone 1 changed only the data and ui stages. Each change was regenerated with `npm run convert -- --only data` or `--only ui` on the real client, and each run had 0 failures. No texture, model, world or effect file changed.
+
+| Catalog or picture | What it gained | Why |
+| --- | --- | --- |
+| `data/movers.json` | `atk1`: a monster's attack item (`dwAtk1`), -1 for none. 613 of the 786 movers have one. | The monster's hit spark (`m_dwVirtItem`) |
+| `data/itemProps.json` | `packMax` (`dwPackMax`). 1,543 of the 5,277 items stack. | Counts on the task bar only for stackable items, as Neuz |
+| `data/texts.json` | `textId`: each text's number from `defineText.h`, for all 2,949 texts | Server messages name a text by its number (DEFINEDTEXT) |
+| `data/jobs.json` | `title`: the job's name from `etc.inc` and `etc.txt.txt` ("Vagrant" and the other 31) | The Character window's Job line |
+| `ui/wndtaskmenu.png` | `Theme/Default/WndTaskMenu.tga`, the Start menu's picture (192 x 496) | The Start menu in the game's look |
+
+`index.json` is now 22,370 entries. The data stage still gives its 81 expected warnings (movers whose motions or model were not converted), and the whole output still has 0 failures.
+
+**After pulling a version with these changes,** run `npm run convert -- --only ui,data`. It takes about 20 seconds. Then copy `dist/assets` to the VM again. An older catalog still loads, but the new fields read as their defaults: no monster hit sparks, a count on every item, and an empty Job line.
+
 ## Compression
 
 Measured over every converted file (not a sample) with Node `zlib`: `gzipSync` at the default level and `brotliCompressSync` at quality 5. This is what a static host that compresses on the fly, or a CDN, would send. Average is per file.

@@ -64,7 +64,7 @@ origin = (int)(b + 80.f)
 result = (int)( GetParam(DST_HP_MAX, origin) * (1.0f + (float)GetParam(DST_HP_MAX_RATE, 0) / 100.0f) )
 result = max(result, 1)                              // __JEFF_11
 ```
-(`DST_HP_MAX` 35, `DST_HP_MAX_RATE` 52.) For a **monster** (`MoverParam.cpp:2878-2881`): `origin = int( dwAddHp * prj.m_fMonsterHitpointRate * pMoverProp->m_fHitPoint_Rate )`, then the same `DST_HP_MAX` wrapper. `dwAddHp` is a `propMover.txt` column (the converter reads and drops it, `web:packages/formats/src/inc/propMover.ts`); both rates default to 1.0 (`Project.cpp:255`, `ProjectCmn.cpp:274`), the first is only overwritten for GMs (`User.cpp:6508-6519`, `Neuz/DPClient.cpp:6508-6560`), the second by the MONSTERPROP snapshot (section 2.3).
+(`DST_HP_MAX` 35, `DST_HP_MAX_RATE` 52.) For a **monster** (`MoverParam.cpp:2878-2881`): `origin = int( dwAddHp * prj.m_fMonsterHitpointRate * pMoverProp->m_fHitPoint_Rate )`, then the same `DST_HP_MAX` wrapper. `dwAddHp` is a `propMover.txt` column (the converter reads and drops it, `web:packages/formats/src/inc/propMover.ts`); both rates default to 1.0 (`Project.cpp:255`, `ProjectCmn.cpp:274`), the first is sent to GMs (`User.cpp:6508-6519`) and also broadcast to every player when the back-end setting changes (`DBBackEndSystem.cpp:77-79` -> `CUserMng::AddGameRate`, `User.cpp:5228-5236`); Neuz applies it for anyone (`Neuz/DPClient.cpp:6551-6553`), the second by the MONSTERPROP snapshot (section 2.3).
 
 **Max MP** - `GetMaxManaPoint` (:2808) / `GetMaxOriginManaPoint` (:2889, :2904):
 ```

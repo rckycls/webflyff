@@ -200,7 +200,7 @@ Converted files:
   - the gauges `GauEmptyNormal.bmp`, `LvUp/LvUp2/LvDn/LvDn2.bmp`;
   - `DmgEffect.dds` and its glyph rectangles;
   - `icon_target.dds` and its cells;
-  - skill and item icons, `icon_ActionSkill.dds` and `icon_IconSkillLevel.tga` from `Client/Icon`.
+  - skill icons, `icon_ActionSkill.dds` and `icon_IconSkillLevel.tga` from `Client/Icon`, and item icons from `Client/Item` (where `CItemBase::SetTexture` loads them; corrected by ruling R9 during the build).
 - **The report** (`report.json`) counts what each new stage wrote, skipped and failed, as the existing stages do.
 
 ### 3.4 Selecting and attacking
@@ -439,7 +439,7 @@ and closed with their close button or Escape. More than one can be open.
   - the new catalogs read the real files with zero failures;
   - every converted motion's hit frames match `readAni`;
   - the Vagrant skills' and Aibatt's frames match [skills §1.6] and [combat §2.5].
-- **Client tests against the pretend world server** (`packages/testkit`), in Chromium and WebKit:
+- **Client tests against the pretend world server** (`packages/testkit`), in Chromium as a desktop and as a landscape Android phone (the owner's decision of 2026-10-27, ruling R34: the automated tests run in Chromium only; every device stays supported, and iPhones and iPads are checked by hand with the device checklist):
   - select, attack, a hit with a number, a critical and a miss, a kill with EXP, a level up with the effect;
   - a monster's hit, death and the lodestar revive;
   - a stat point applied;

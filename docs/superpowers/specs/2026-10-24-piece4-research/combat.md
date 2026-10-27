@@ -456,7 +456,7 @@ For a valid target: `IncHitPoint( -dwHit )` (client `SetPointParam`, clamped), f
 vendor window is closed.
 
 **When anything is shown:** only if the damaged mover **is the own player or the attacker is the own player** (:1833). (With the option `m_bDamageRender`, default FALSE (`HwOption.cpp:238`), numbers within 30 m of anyone are shown too, :1816-1821.)
-A missing attacker (not in view) -> the same `g_PASS` path is used for the own player's damage but the attacker part is skipped.
+A missing attacker (not in view) -> `goto g_PASS` (`DPClient.cpp:1810-1812`): the number shows for **any** victim, not only the own player, and the attacker part is skipped. (Corrected in Task 21.)
 Casting of a base-motion state mode is cancelled (:1837-1840).
 
 Per flag, in this order (`:1843-1896`):
