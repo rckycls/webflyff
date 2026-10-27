@@ -869,6 +869,34 @@ describe('MoverViews', () => {
         warn.mockRestore();
       }
     });
+
+    it('says nothing of a level up during a swing: MTI_LEVELUP has no hit frame, and the swing ends with it', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        // the bare hand's swing has its blow; the level up (MTI_LEVELUP, MOP_FIXED: no weapon set) none, as Mvr_male_GenLevelUp
+        const r = armedRig({ motions: { m223: () => hitMotion('m223', 17, [12]) } });
+        const { player, monster } = duel(r);
+        await r.views.settled();
+        const hits: number[] = [];
+        player.act.onHit = (hit) => hits.push(hit);
+        expect(player.act.sendActMsg(ActMsg.ATK1, 8)).toBe(true);
+        stepAll(r, player, monster);
+        await r.views.settled();
+        // SetExperience sets the level up whenever the state has a standing bit (MoverParam.cpp:1725-1726), a swing's too:
+        // the swing goes on with it, and its hit test reads the level up's frames (_ProcessStateAttack)
+        player.act.levelUpMotion();
+        expect([player.act.motion, player.act.state & ObjSta.ATK_ALL]).toEqual([Mti.LEVELUP, ObjSta.ATK1]);
+        for (let now = 2; now <= 70; now++) {
+          stepAll(r, player, monster);
+          if (now === 2) await r.views.settled();
+        }
+        expect(player.act.state & ObjSta.ATK_ALL).toBe(0);
+        expect(hits).toEqual([]);
+        expect(warn).not.toHaveBeenCalled();
+      } finally {
+        warn.mockRestore();
+      }
+    });
   });
 });
 

@@ -19,7 +19,7 @@ import type { AnimationAction, Object3D, Scene } from 'three';
 import { AnimationClip, Box3, CapsuleGeometry, Group, LoopOnce, LoopRepeat, Mesh, MeshLambertMaterial } from 'three';
 import { motionFor } from '../sim/ActionMover';
 import type { MotionHand } from '../sim/ActionMover';
-import { AniLoop, Ik3, Mop } from '../sim/constants';
+import { AniLoop, Ik3, Mop, Mti } from '../sim/constants';
 import { STEPS_PER_SECOND } from '../sim/stepper';
 import { isDie } from '../WorldState';
 import type { Mover, WorldChanges } from '../WorldState';
@@ -50,6 +50,8 @@ const II_WEA_HAN_HAND = 11;
 const HD_TWO = 2;
 /** `JOB_PSYCHIKEEPER`, its master and its hero (`Resource/defineJob.h:59,72,83`). */
 const PSYKEEPERS: ReadonlySet<number> = new Set([12, 22, 30]);
+/** The motions a swing sets (`OBJMSG_ATK1` to `OBJMSG_ATK4`, `ActionMoverMsg.cpp:596-704`), each with its blow's frame. */
+const SWING_MOTIONS: ReadonlySet<number> = new Set([Mti.ATK1, Mti.ATK2, Mti.ATK3, Mti.ATK4]);
 
 const f32 = Math.fround;
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -600,8 +602,10 @@ export class MoverViews {
    * `m_pModel->IsAttrHit()` (`ModelObject.h:280-286`): the hit frame of the motion that the model's last frame move went
    * past (`hitIndex`), from frame -1 to 0 for a motion set since (`InitAnimate`); -1 for none, and while the file loads.
    * A hit kept from the moves made as the file came in comes first (`ModelFrame.waiting`). The rules ask it during a
-   * swing only, so a motion with no hit frame at all is an attack motion of a conversion from before hit frames, or one
-   * with no blow, which look the same: that is said once.
+   * swing, whose state can play another motion than the swing's: a level up sets `MTI_LEVELUP` over it
+   * (`CMover::SetExperience`, `MoverParam.cpp:1725-1726`: `IsState` is a bitwise test, `Action.h:307`), and that motion
+   * has no blow. So only a swing's own motion (`SWING_MOTIONS`) with no hit frame at all is an attack motion of a
+   * conversion from before hit frames, or one with no blow, which look the same: that is said once.
    */
   private isAttrHit(view: View): number {
     const key = this.keyOf(view);
@@ -610,7 +614,7 @@ export class MoverViews {
     if (motion === null) return -1;
     const { hit } = motion.events;
     if (hit.length === 0) {
-      if (!this.hitless.has(key)) {
+      if (SWING_MOTIONS.has(view.mover.act.motion) && !this.hitless.has(key)) {
         this.hitless.add(key);
         console.warn(`motion ${key}: an attack motion with no hit frame (converted before hit frames, or it has no blow)`);
       }
