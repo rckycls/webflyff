@@ -7,7 +7,7 @@ import type { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js';
 import { AssetStore } from './assets/AssetStore';
 import { TextureCache, createLoaders, loadKtx2 } from './assets/loaders';
-import { installContextLossHandlers, installShaderErrorHandler } from './overlay/errorHandlers';
+import { installContextLossHandlers, installShaderErrorHandler, markContextReleased } from './overlay/errorHandlers';
 import { trackDrawingBuffer } from './overlay/gpuMemory';
 import type { Overlay } from './overlay/Overlay';
 
@@ -43,6 +43,20 @@ export function createRenderer(container: HTMLElement, overlay: Overlay): WebGLR
     countDrawingBuffer();
   });
   return renderer;
+}
+
+/**
+ * Lets the page's renderer go on purpose, for a page that is being thrown away: its loss is first marked as the page's
+ * own (`markContextReleased`, which the context-loss handlers then do not say); then the renderer lets go of its GPU
+ * objects and its listeners and stops its animation loop (`dispose`, three's `WebGLRenderer.dispose`); then the WebGL
+ * context itself goes (`WEBGL_lose_context.loseContext()`), so that the browser frees what it holds now rather than when
+ * it collects the page. (WebKit on Windows keeps a closed page's: a run of world pages in one browser loses a later
+ * page's context.) The renderer draws nothing after.
+ */
+export function releaseRenderer(renderer: Pick<WebGLRenderer, 'domElement' | 'dispose' | 'getContext'>): void {
+  markContextReleased(renderer.domElement);
+  renderer.dispose();
+  renderer.getContext().getExtension('WEBGL_lose_context')?.loseContext();
 }
 
 /** What every scene draws with. The renderer and the services belong to the page: scenes borrow them. */

@@ -735,9 +735,10 @@ export class WorldScreen {
       this.resolveShown();
     } catch (error) {
       // a frame that throws every frame must not fill the overlay with the same line sixty times a second; the console has
-      // it too, with its stack, beside what came before it there (a lost WebGL context, errorHandlers.ts)
+      // it too, with its stack, beside what came before it there (a lost WebGL context, errorHandlers.ts). A page that let
+      // its context go on purpose as it was thrown away (`Page3d.released`) has no fault to say.
       const message = `world: ${messageOf(error)}`;
-      if (message !== this.lastError) {
+      if (message !== this.lastError && !this.page!.released) {
         overlay.error(message);
         console.warn(message, error);
       }

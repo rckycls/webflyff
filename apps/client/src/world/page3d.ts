@@ -1,8 +1,11 @@
 // What the world screens of a page share: one renderer and overlay (one WebGL context a page), made by the first world
 // screen and kept for the next ones, and the asset index, the loaders and the game data, loaded once a page. Each world
-// screen puts the renderer's holder on screen and takes it off again.
+// screen puts the renderer's holder on screen and takes it off again. A page that is thrown away lets its WebGL context
+// go as it goes (`releaseOnPageHide`).
 
-import { Overlay, createRenderer, installGlobalErrorHandlers, loadSceneServices } from '@flyffweb/scene';
+import {
+  Overlay, createRenderer, installGlobalErrorHandlers, loadSceneServices, releaseRenderer,
+} from '@flyffweb/scene';
 import type { SceneServices } from '@flyffweb/scene';
 import type { WebGLRenderer } from 'three';
 import { loadGameData } from './gameData';
@@ -14,6 +17,11 @@ export interface Page3d {
   holder: HTMLElement;
   overlay: Overlay;
   renderer: WebGLRenderer;
+  /**
+   * The page let the renderer and its WebGL context go (`releaseRenderer`, as the page was thrown away): nothing is
+   * drawn after, and nothing that fails for it is a fault to say.
+   */
+  released: boolean;
 }
 
 /** The browser cannot draw the world: WebGL is off or not supported (`createRenderer` threw). */
@@ -37,7 +45,27 @@ function hasWebGL2(doc: Document): boolean {
   return gl !== null;
 }
 
-/** The page's renderer and overlay; throws a `NoWebGLError` (and keeps nothing, to try again next time) without WebGL. */
+/**
+ * Calls `release` once, when the page is thrown away: at a `pagehide` that is not persisted (a page closed, or left for
+ * another). A page kept in the back/forward cache (`persisted`) keeps its context, to be shown again as it was.
+ */
+export function releaseOnPageHide(view: EventTarget, release: () => void): void {
+  let done = false;
+  view.addEventListener('pagehide', (event) => {
+    if ((event as PageTransitionEvent).persisted || done) return;
+    done = true;
+    release();
+  });
+}
+
+/**
+ * The page's renderer and overlay; throws a `NoWebGLError` (and keeps nothing, to try again next time) without WebGL.
+ * Made once a page, which lets the renderer and its WebGL context go as the page is thrown away (`releaseOnPageHide`,
+ * `releaseRenderer`), so that the browser need not keep what the context holds until it collects the page. (WebKit on
+ * Windows keeps a closed page's, and after some twenty world pages in one browser loses a later page's context; a release
+ * at the `pagehide` of Playwright's page close was seen not to prevent that, one made before the close does: the test
+ * hooks' `releaseWebGL`, `releasePage3d`.)
+ */
 export function page3d(doc: Document): Page3d {
   if (page === undefined) {
     if (!hasWebGL2(doc)) throw new NoWebGLError('this browser gives no WebGL 2 context');
@@ -52,9 +80,21 @@ export function page3d(doc: Document): Page3d {
     }
     // whatever nothing catches still ends up on the overlay, as in the viewer
     installGlobalErrorHandlers(window, overlay);
-    page = { holder, overlay, renderer };
+    page = { holder, overlay, renderer, released: false };
+    releaseOnPageHide(window, releasePage3d);
   }
   return page;
+}
+
+/**
+ * Lets the page's renderer and its WebGL context go (`releaseRenderer`), once: what a page that is thrown away does
+ * (`releaseOnPageHide`), and what the test hooks' `releaseWebGL` does before a test's page closes. Nothing without a
+ * renderer, or once it has gone.
+ */
+export function releasePage3d(): void {
+  if (page === undefined || page.released) return;
+  page.released = true;
+  releaseRenderer(page.renderer);
 }
 
 /**

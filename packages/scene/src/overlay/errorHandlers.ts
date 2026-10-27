@@ -37,16 +37,26 @@ export function installGlobalErrorHandlers(target: EventTarget, overlay: ErrorSi
   });
 }
 
+/** The canvases whose WebGL context the page lets go on purpose: their loss is no fault, and is not said. */
+const released = new WeakSet<EventTarget>();
+
+/** Marks the coming loss of `canvas`'s context as the page's own doing (`releaseRenderer`), which the handlers do not say. */
+export function markContextReleased(canvas: EventTarget): void {
+  released.add(canvas);
+}
+
 /**
  * Tells the overlay when the WebGL context goes (a memory-starved phone does this) and when it returns. three.js
  * handles both events itself (it cancels the loss so the browser may restore the context); this only makes them visible.
  * A restored context does not bring the picture back: the viewer lets go of its textures' CPU copies once they are
  * uploaded (loaders.ts, TerrainTile.ts), so there is nothing to upload again. Both messages say to reload the page.
  * Both are said in the console too (`console.warn`): the errors a lost context leads to later (a texture drawn again
- * with its levels gone) come there, and without this one before them they cannot be told apart from a bug.
+ * with its levels gone) come there, and without this one before them they cannot be told apart from a bug. Nothing is
+ * said of a canvas whose context the page lets go on purpose (`markContextReleased`, `releaseRenderer`).
  */
 export function installContextLossHandlers(canvas: EventTarget, overlay: ErrorSink): void {
   const say = (message: string): void => {
+    if (released.has(canvas)) return;
     console.warn(message);
     overlay.error(message);
   };

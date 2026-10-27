@@ -5,6 +5,7 @@ import {
   installGlobalErrorHandlers,
   installShaderErrorHandler,
 } from '../src/overlay/errorHandlers';
+import { releaseRenderer } from '../src/boot';
 
 // Node has no ErrorEvent or PromiseRejectionEvent, so the events are plain Events carrying the fields the browser's have.
 function errorEvent(fields: { message?: string; filename?: string; lineno?: number; error?: unknown }): Event {
@@ -118,6 +119,40 @@ describe('installContextLossHandlers', () => {
 
     expect(overlay.error.mock.calls[0]![0]).toMatch(/reload the page/i);
     expect(overlay.error.mock.calls[1]![0]).toMatch(/reload the page/i);
+  });
+
+  /** A renderer's three parts `releaseRenderer` uses: its canvas, `dispose`, and a context whose loss the canvas hears. */
+  function fakeRenderer(steps: string[]) {
+    const domElement = new EventTarget() as HTMLCanvasElement;
+    const loseContext = (): void => {
+      steps.push('loseContext');
+      domElement.dispatchEvent(new Event('webglcontextlost', { cancelable: true }));
+    };
+    const gl = {
+      getExtension: (name: string) => (name === 'WEBGL_lose_context' ? { loseContext } : null),
+    } as unknown as WebGL2RenderingContext;
+    return { domElement, dispose: () => steps.push('dispose'), getContext: () => gl };
+  }
+
+  it('says nothing of a loss the page makes on purpose (releaseRenderer): the renderer goes, then its context', () => {
+    const steps: string[] = [];
+    const renderer = fakeRenderer(steps);
+    const overlay = { error: vi.fn<(message: string) => void>() };
+    installContextLossHandlers(renderer.domElement, overlay);
+
+    releaseRenderer(renderer);
+    renderer.domElement.dispatchEvent(new Event('webglcontextrestored'));
+
+    expect(steps).toEqual(['dispose', 'loseContext']);
+    expect(overlay.error).not.toHaveBeenCalled();
+    expect(warn).not.toHaveBeenCalled();
+
+    // another canvas's loss is still said
+    const other = new EventTarget();
+    installContextLossHandlers(other, overlay);
+    other.dispatchEvent(new Event('webglcontextlost', { cancelable: true }));
+    expect(overlay.error).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledTimes(1);
   });
 });
 
