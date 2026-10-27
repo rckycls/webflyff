@@ -21,6 +21,13 @@ import {
 // Entering, loading Flaris and drawing it with SwiftShader take much longer than a lobby screen.
 test.describe.configure({ timeout: 120_000 });
 
+/**
+ * A wait on the frame loop (a key, a tap or a move a rules step takes and sends, the camera, a frame's drawing): 60 s, as
+ * this file's other waits on it, since Chromium draws with SwiftShader on the CPU and the other files' worlds drawn beside
+ * it starve the frames (ruling R28).
+ */
+const ON_FRAMES = { timeout: 60_000 };
+
 // Ruling 3: WebKit runs these where it draws WebGL. Playwright's WebKit draws Flaris on this PC (checked with a picture
 // of the iPhone 13 page); where a WebKit build has no WebGL the world screen ends at once with "This browser can't show
 // the 3D world", these fail at `ready()`, and they are to be skipped in that project, naming that reason. The picture is
@@ -191,7 +198,7 @@ test.describe('the world screen against scripted servers', () => {
       const gateway = await playGateway(page);
       await enterFlaris(page);
       await page.keyboard.down('KeyW');
-      await expect.poll(() => movesOf(gateway).length).toBeGreaterThan(0);
+      await expect.poll(() => movesOf(gateway).length, ON_FRAMES).toBeGreaterThan(0);
       expect(movedState(movesOf(gateway).at(-1)!) & OBJSTA_MOVE_ALL).toBe(OBJSTA_FMOVE);
       // the rules stop stepping: from here on, the frame loop sends nothing
       await page.evaluate(() => window.__client!.pause());
@@ -279,8 +286,7 @@ test.describe('the world screen against scripted servers', () => {
     const gateway = await playGateway(page);
     await enterFlaris(page);
     await page.keyboard.down('KeyW');
-    await expect.poll(() => gateway.sent.filter((s) => s.port === Port.CACHE && s.type === PacketType.PLAYERMOVED).length)
-      .toBeGreaterThan(0);
+    await expect.poll(() => movesOf(gateway).length, ON_FRAMES).toBeGreaterThan(0);
     await page.keyboard.up('KeyW');
 
     // CDPClient::SendPlayerMoved: DPID_UNKNOWN, the type, then where PresupposePos puts the player 22 steps on, the move
@@ -325,7 +331,7 @@ test.describe('the world screen against scripted servers', () => {
     // 16 m behind Webby (15.65 m out, 12 degrees up) the camera would be at x 6988.3, inside the house: the line to it
     // meets the wall 5.5 m behind Webby, 2.5 m up, and the camera stays there, in front of it
     const cameraX = async () => (await page.evaluate(() => window.__client!.camera()))[0];
-    await expect.poll(cameraX).toBeGreaterThan(WALL_X - 0.05);
+    await expect.poll(cameraX, ON_FRAMES).toBeGreaterThan(WALL_X - 0.05);
     await page.waitForTimeout(500);
     expect(await cameraX()).toBeGreaterThan(WALL_X - 0.05);
     expect(await cameraX()).toBeLessThan(BY_THE_WALL[0] - 4);
@@ -339,7 +345,7 @@ test.describe('the world screen against scripted servers', () => {
     await tapWorld(page, 0.5, 0.8);
 
     // CDPClient::SendSnapshot: one DESTPOS, forward, at a point of the square behind Webby
-    await expect.poll(() => destPosOf(gateway).length).toBe(1);
+    await expect.poll(() => destPosOf(gateway).length, ON_FRAMES).toBe(1);
     const [dest] = destPosOf(gateway);
     expect(dest).toMatchObject({ count: 1, type: MessageType.DESTPOS, forward: 1 });
     expect(dest!.pos[2]).toBeGreaterThan(SQUARE[2] + 1);
@@ -374,7 +380,7 @@ test.describe('the world screen against scripted servers', () => {
 
     // the ground walks (as Piece 3), and the focus stays
     await tapWorld(page, 0.5, 0.8);
-    await expect.poll(() => destPosOf(gateway).length).toBe(1);
+    await expect.poll(() => destPosOf(gateway).length, ON_FRAMES).toBe(1);
     await page.waitForTimeout(500);
     expect(targetsOf(gateway)).toHaveLength(3);
   });
@@ -415,7 +421,7 @@ test.describe('the world screen against scripted servers', () => {
     gateway.pushCache(flaris.later([writeDamage(MONSTER_ID, SELF_ID, 123, 0)]));
     // its three digits, in the second colour set (the own player hurt the Aibatt): "1" is the frame at 50, 128 of the
     // sheet; the elements stay for the next numbers once this one has gone
-    await expect.poll(() => glyphs.count()).toBe(3);
+    await expect.poll(() => glyphs.count(), ON_FRAMES).toBe(3);
     expect(await glyphs.first().evaluate((e) => (e as HTMLElement).style.backgroundPosition)).toBe('-50px -128px');
     expect((await page.evaluate(() => window.__client!.stats())).errors).toEqual([]);
 
@@ -580,15 +586,15 @@ test.describe('the world screen against scripted servers', () => {
     const canvas = (await page.locator('.world-view canvas').boundingBox())!;
     const barTop = (await page.locator('.hud-taskbar-strip').boundingBox())!.y;
     await tapWorld(page, 0.5, Math.min(0.92, (barTop - 8 - canvas.y) / canvas.height));
-    await expect.poll(() => destPosOf(gateway).length).toBe(1);
+    await expect.poll(() => destPosOf(gateway).length, ON_FRAMES).toBe(1);
     const dest = destPosOf(gateway)[0]!.pos;
     await expect.poll(async () => distanceXZ(await ownAt(page), SQUARE), { timeout: 60_000, intervals: [20] }).toBeGreaterThan(0.5);
 
     // the turn is a move (LTURN answers 1): ClearDest, then PLAYERMOVED; with the walk over, the next step stands
     await page.keyboard.down('KeyA');
-    await expect.poll(() => movesOf(gateway).length).toBeGreaterThan(1);
+    await expect.poll(() => movesOf(gateway).length, ON_FRAMES).toBeGreaterThan(1);
     await page.keyboard.up('KeyA');
-    await expect.poll(() => movedState(movesOf(gateway).at(-1)!)).toBe(OBJSTA_STAND);
+    await expect.poll(() => movedState(movesOf(gateway).at(-1)!), ON_FRAMES).toBe(OBJSTA_STAND);
     const stopped = await ownAt(page);
     await page.waitForTimeout(1000);
     expect(await ownAt(page)).toEqual(stopped);
@@ -674,7 +680,7 @@ test.describe('the world screen against scripted servers', () => {
     const gateway = await playGateway(page, byTheWall);
     await enterFlaris(page);
     await tapWorld(page, 0.5, 0.45);
-    await expect.poll(() => destPosOf(gateway).length).toBe(1);
+    await expect.poll(() => destPosOf(gateway).length, ON_FRAMES).toBe(1);
     expect(destPosOf(gateway)[0]!.pos[0]).toBeLessThan(WALL_X);
 
     // OnActCollision with m_nCorr -1: ClearDest, STAND and SendPlayerCorr, once
