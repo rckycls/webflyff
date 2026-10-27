@@ -742,6 +742,35 @@ test.describe('the world screen against scripted servers', () => {
     await expect.poll(() => gateway.closed).toEqual(expect.arrayContaining([login, cache]));
   });
 
+  // The browser asks before the tab is closed, reloaded or left while the world is open (askBeforeLeaving). `runBeforeUnload` makes
+  // Playwright's close raise the dialog a player's close would (a plain `page.close()` skips it); dismissing it keeps the
+  // page. The page has been clicked (the login form), as Chromium needs before it shows a beforeunload dialog.
+  test('closing the page in the world asks first; in the lobby after Log out it does not', async ({ page }) => {
+    const dialogs: string[] = [];
+    // a listener turns off Playwright's automatic dismissal of every dialog type: all are dismissed here, as it did
+    page.on('dialog', (dialog) => {
+      dialogs.push(dialog.type());
+      void dialog.dismiss();
+    });
+    await playGateway(page);
+    await enterFlaris(page);
+
+    const asked = page.waitForEvent('dialog');
+    await page.close({ runBeforeUnload: true });
+    expect((await asked).type()).toBe('beforeunload');
+    // dismissed: the player stays in the world
+    expect(page.isClosed()).toBe(false);
+    await expect(page.getByRole('button', { name: 'Start' })).toBeVisible();
+
+    // Log out returns to the login form without unloading, and ends the question
+    await logOut(page);
+    await expect(page.getByRole('button', { name: 'Log in' })).toBeEnabled();
+    const closed = page.waitForEvent('close');
+    await page.close({ runBeforeUnload: true });
+    await closed;
+    expect(dialogs).toEqual(['beforeunload']);
+  });
+
   test('a dropped cache connection shows the lost text', async ({ page }) => {
     const gateway = await playGateway(page);
     await enterFlaris(page);

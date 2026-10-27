@@ -28,6 +28,7 @@ import { h } from '../lobby/views/dom';
 import type { OpenChannel } from '../net/PacketChannel';
 import { registerWorld } from '../testHooks';
 import type { ClientPlayed } from '../testHooks';
+import { askBeforeLeaving } from './askBeforeLeaving';
 import { BackCamera } from './backCamera';
 import type { ChaseView } from './backCamera';
 import { AttackLoop, objRadius } from './combat/attackLoop';
@@ -119,6 +120,8 @@ export class WorldScreen {
   private readonly element: HTMLElement;
   private readonly leaveButton: HTMLButtonElement;
   private readonly unregister: () => void;
+  /** Stops the browser's question before the page is closed, reloaded or left (`askBeforeLeaving`): asked from `open` to the ending. */
+  private readonly stopAsking: () => void;
   private over = false;
   private page: Page3d | undefined;
   private services: SceneServices | undefined;
@@ -250,6 +253,8 @@ export class WorldScreen {
     this.leaveButton.addEventListener('click', () => this.leave());
     this.element = h('div', { class: 'world' }, h('p', { class: 'world-status', role: 'status' }, LOADING_TEXT), this.leaveButton);
     root.append(this.element);
+    // from here to every ending, closing, reloading or leaving the page asks the player first; the ending lifts it
+    this.stopAsking = askBeforeLeaving(this.element.ownerDocument.defaultView ?? window);
     this.unregister = registerWorld({
       ready: () => this.shown,
       movers: () => [...(this.world?.movers.values() ?? [])].map((m) => ({
@@ -1062,6 +1067,7 @@ export class WorldScreen {
     clearTimeout(this.loadTimer);
     this.page?.renderer.setAnimationLoop(null);
     const doc = this.element.ownerDocument;
+    this.stopAsking();
     doc.removeEventListener('visibilitychange', this.onVisibility);
     (doc.defaultView ?? window).removeEventListener('blur', this.onBlur);
     (doc.defaultView ?? window).removeEventListener('resize', this.onResize);
