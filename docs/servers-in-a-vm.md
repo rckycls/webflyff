@@ -86,7 +86,7 @@ Hyper-V comes with Windows 10 and 11 Pro; once it is turned on, **Hyper-V Manage
    ```
 
    - Keep `"listen": { "host": "0.0.0.0", "port": 8090 }`, so your PC can reach it.
-   - Set `"allowedOrigins": ["http://localhost:5174"]`, the only page address the gateway will see: your PC's client forwards the game connection (step 6) and always gives that as its origin, whatever address the browser or phone used for the page. Delete the second address the example lists, a leftover from an older setup. The gateway refuses a page whose address is not listed exactly.
+   - Set `"allowedOrigins": ["http://localhost:5174"]`, the only page address the gateway will see: your PC's client forwards the game connection (step 6) and always gives that as its origin, whatever address the browser or phone used for the page. The example already lists it first. Any other address in the list does no harm, so you can leave it. The gateway refuses a page whose address is not listed exactly.
    - Keep the three `routes` to `127.0.0.1`.
 5. **Let your PC in.** In PowerShell **as administrator** in the VM:
 
@@ -120,14 +120,14 @@ Remove-Item Env:GATEWAY_PROXY
 
 `GATEWAY_PROXY` is the only setting to use for this. `VITE_GATEWAY_URL` must not be set at the same time: the client then refuses to start and says so. An old PowerShell window may still have it; `Remove-Item Env:VITE_GATEWAY_URL` clears it. If `GATEWAY_PROXY` is not of the form `ws://<VM-IP>:8090`, the client refuses to start and says so too.
 
-Then open `http://localhost:5174` on your PC, and `http://<PC-IP>:5174` on phones and tablets (the address, not the PC's name), as the checklists in [device-testing.md](device-testing.md) say. The page and the game connection both come from your PC. Your PC passes the game connection on to the VM, and only for a page that was opened from this client: any other page on your network is turned away before it reaches the gateway.
+Then open `http://localhost:5174` on your PC, and `http://<PC-IP>:5174` on phones and tablets (the address, not the PC's name), as the checklists in [device-testing.md](device-testing.md) say. The page and the game connection both come from your PC. Your PC passes the game connection on to the VM, and only for a page that was opened from this client: any other page on your network is turned away before it reaches the gateway. So the VM's gateway window shows your PC's address for every device, phones included.
 
 ## When something goes wrong
 
 | What you see | What it means and what to do |
 | --- | --- |
 | "Cannot reach the game gateway." on every device | Check, in this order: the client was started with `GATEWAY_PROXY` and the right `<VM-IP>` (step 6); the gateway is running in the VM (step 4); the VM's firewall rule for port 8090 exists and the VM's network is Private (steps 2 and 4). The client's window prints `ws proxy error` when your PC cannot reach the VM. In the VM's gateway window, a `refused <address> origin` line means `"http://localhost:5174"` is not in `allowedOrigins` (fix it and restart the gateway). No line at all means the connection never reached the VM. |
-| The client does not start and prints `GATEWAY_PROXY …` | The message says what is wrong: the setting is not of the form `ws://<VM-IP>:8090`, or `VITE_GATEWAY_URL` is set too (step 6). |
+| The client does not start and prints `error when starting dev server:` with a line starting `Error: GATEWAY_PROXY …` | That line says what is wrong: the setting is not of the form `ws://<VM-IP>:8090`, or `VITE_GATEWAY_URL` is set too (step 6). |
 | It works on the PC but "Cannot reach the game gateway." on a phone | A phone takes the same way as the PC's own browser: the page and the game both come from your PC. Open the page as `http://<PC-IP>:5174`, with the address and not the PC's name (the client turns away a game connection from a page opened by name), and reload it after restarting the client. If the page itself does not open, see "When something goes wrong" in [device-testing.md](device-testing.md). |
 | It worked yesterday, not today | The VM got a new address from the router. Check `ipconfig` in the VM and restart the client with the new `<VM-IP>`. A DHCP reservation (step 2) stops this. Your PC's own address does not matter any more. |
 | The servers' error log says they cannot connect to the database | A data source is missing, misspelt or made with the 64-bit tool (step 3, item 4), or SQL Server is not running in the VM. |

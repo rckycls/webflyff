@@ -37,7 +37,8 @@ export default defineConfig({
     command: 'npm run dev:client -- --port 5174 --strictPort',
     url: CLIENT_URL,
     cwd: flyffwebRoot,
-    env: { VITE_GATEWAY_URL: 'ws://127.0.0.1:9' },
+    // GATEWAY_PROXY emptied: one left in the owner's window would stop the dev server (both set), and empty is unset.
+    env: { VITE_GATEWAY_URL: 'ws://127.0.0.1:9', GATEWAY_PROXY: '' },
     // Another dev server on this port would not have the closed gateway address.
     reuseExistingServer: false,
     timeout: 120_000,

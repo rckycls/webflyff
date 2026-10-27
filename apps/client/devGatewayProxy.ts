@@ -52,8 +52,10 @@ export function devGatewayProxy(env: Readonly<Record<string, string | undefined>
         // Lower case on purpose: the proxy merges these over the request's own headers, which are lower case, and an
         // `Origin` spelt otherwise would travel next to the page's own instead of replacing it.
         headers: { origin: `http://localhost:${devPort}` },
-        // Called for the upgrade before it is forwarded; `false` ends it with a 404 and the gateway never sees it.
-        bypass: (request) => (isSamePageUpgrade(request.headers.origin, request.headers.host) ? undefined : false),
+        // Called for the upgrade before it is forwarded; `false` ends it with a 404 and the gateway never sees it. Vite
+        // calls it for plain HTTP requests under the prefix too, with a response: those are never forwarded.
+        bypass: (request, response) =>
+          response === undefined && isSamePageUpgrade(request.headers.origin, request.headers.host) ? undefined : false,
       },
     },
     define: { 'import.meta.env.VITE_GATEWAY_URL': '""' },

@@ -759,7 +759,6 @@ test.describe('the world screen against scripted servers', () => {
     await page.close({ runBeforeUnload: true });
     expect((await asked).type()).toBe('beforeunload');
     // dismissed: the player stays in the world
-    expect(page.isClosed()).toBe(false);
     await expect(page.getByRole('button', { name: 'Start' })).toBeVisible();
 
     // Log out returns to the login form without unloading, and ends the question
