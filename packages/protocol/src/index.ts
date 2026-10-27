@@ -29,14 +29,16 @@ export {
 } from './messages/login';
 export type { CharacterSummary, LoginMessage, NewCharacter, SlotMessenger } from './messages/login';
 export {
-  decodeWorldPacket, encodeDestPos, encodeGetDestObj, encodeJoin, encodeMeleeAttack, encodeModifyStatus,
-  encodePlayerBehavior, encodePlayerCorr, encodePlayerMoved, encodePlayerSetDestObj, encodeRevivalToLodestar,
-  encodeSetTarget, encodeWorldKeepAlive,
+  decodeWorldPacket, encodeDestPos, encodeDoUseSkillPoint, encodeEndSkillQueue, encodeGetDestObj, encodeJoin,
+  encodeMeleeAttack, encodeModifyStatus, encodePlayerBehavior, encodePlayerCorr, encodePlayerMoved,
+  encodePlayerSetDestObj, encodeRevivalToLodestar, encodeSetTarget, encodeUseSkill, encodeWorldKeepAlive,
 } from './messages/world';
 export type { JoinRequest, MoveReport, WorldPacket } from './messages/world';
 export { readBundle } from './bundle';
 export type { BundleMessage, BundleResult, MessageHeader, MessageReader } from './bundle';
 export { WORLD_READERS } from './world/readers';
+export { MAX_SKILL_JOB } from './world/own';
+export { encodeAddItemTaskBar, encodeRemoveItemTaskBar, encodeSkillTaskBar } from './world/taskBar';
 export type {
   AddedMover, AddedNpc, AddedPlayer, InventoryItem, MonsterRate, OwnCharacter, Shortcut, SkillSlot, TaskBar,
   WorldMessage, WornPart,

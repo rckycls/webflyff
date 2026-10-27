@@ -75,7 +75,36 @@ export type WorldMessage =
   /** The monster rates the server sets and the monsters whose rates it clears. */
   | { type: 'monsterProp'; rates: MonsterRate[]; removed: string[] }
   /** The own shortcut bars: the applet row, the item bars and the action slot, and the action points. */
-  | { type: 'taskBar'; taskBar: TaskBar };
+  | { type: 'taskBar'; taskBar: TaskBar }
+  /**
+   * The mover the message is about begins a skill (`OnUseSkill`). `skill` is the real `SI_*` ID, not the index into
+   * `m_aJobSkill`; `targetId` is the target's object ID (the caster's own for a skill on itself); `useType` is a
+   * `SKILLUSETYPE` (`SUT_NORMAL` 0, `SUT_QUEUESTART` 1, `SUT_QUEUEING` 2); `castingTime` is 1 for a `KT_SKILL`, else the
+   * cast in the world server's ticks (`SEC1` is 15 there, `_Common/timer.h:133-140`).
+   */
+  | { type: 'useSkill'; skill: number; level: number; targetId: number; useType: number; castingTime: number }
+  /** The world server refused the own USESKILL (`OnClearUseSkill`): the request is answered, and nothing begins. */
+  | { type: 'clearUseSkill' }
+  /**
+   * The own skills and skill points after a change (`OnDoUseSkillPoint`): always `MAX_SKILL_JOB` (45) slots, and the
+   * points left. After a spend the slots are the array the browser sent; a master or hero level-up sends the server's.
+   */
+  | { type: 'doUseSkillPoint'; skills: SkillSlot[]; skillPoint: number }
+  /**
+   * The own skill points after a reset of the skills (`OnInitSkillPoint`); Neuz then sets every skill level to 0, but
+   * the master's and the hero's.
+   */
+  | { type: 'initSkillPoint'; skillPoint: number }
+  /** The own action points (`OnSetActionPoint`); the message's object ID is `NULL_ID`. */
+  | { type: 'setActionPoint'; actionPoint: number }
+  /** The action slot's chain is over (`OnEndSkillQueue`). */
+  | { type: 'endSkillQueue' }
+  /**
+   * An effect (`XI_*`) at a position, or on the object the message is about when `pos` is all zeros (`OnCreateSfxObj`
+   * makes the position absolute only `if( x || y || z )`). `flag` is the `BOOL bFlag` (0 fixed, 1 follows the object),
+   * which Neuz reads and does not use.
+   */
+  | { type: 'createSfxObj'; sfxId: number; pos: Vec3; flag: number };
 
 /**
  * One shortcut (`SHORTCUT`, `_Common/ProjectCmn.h:930-948`) as `CUserTaskBar::Serialize` writes it, the six `DWORD`s in

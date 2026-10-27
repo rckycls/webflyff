@@ -1,6 +1,6 @@
 import {
-  ArWriter, AttackFlag, BUNDLE_MARKER, MAX_SHORTCUT_STRING, MAX_SLOT_APPLET, MAX_SLOT_ITEM, MAX_SLOT_ITEM_COUNT,
-  MAX_SLOT_QUEUE, MessageType, NULL_ID, ObjectType, ProtocolError, ShortcutKind,
+  ArWriter, AttackFlag, BUNDLE_MARKER, MAX_SHORTCUT_STRING, MAX_SKILL_JOB, MAX_SLOT_APPLET, MAX_SLOT_ITEM,
+  MAX_SLOT_ITEM_COUNT, MAX_SLOT_QUEUE, MessageType, NULL_ID, ObjectType, ProtocolError, ShortcutKind,
 } from '@flyffweb/protocol';
 import type {
   AddedMover, AddedNpc, AddedPlayer, InventoryItem, MonsterRate, MoveReport, OwnCharacter, Shortcut, SkillSlot,
@@ -348,6 +348,69 @@ export function writeTaskBar(objectId: number, taskBar: TaskBar): ScriptMessage 
   return scripted(objectId, MessageType.TASKBAR, w);
 }
 
+// The skill messages. `objectId` is the object the message is about, as the C++ writes it.
+
+/**
+ * USESKILL: `CUserMng::AddUseSkill` (`WORLDSERVER/User.cpp:4540`): the skill's `SI_*` ID and level, the target's object
+ * ID, the use type (`SUT_NORMAL` 0, `SUT_QUEUESTART` 1, `SUT_QUEUEING` 2) and the casting time (1 for a `KT_SKILL`);
+ * `objectId` is the caster.
+ */
+export function writeUseSkill(
+  objectId: number, skill: number, level: number, targetId: number, useType: number, castingTime: number,
+): ScriptMessage {
+  return scripted(
+    objectId, MessageType.USESKILL, new ArWriter().u32(skill).u32(level).u32(targetId).i32(useType).i32(castingTime),
+  );
+}
+
+/** CLEAR_USESKILL: `CUser::AddHdr( GETID( pUser ), SNAPSHOTTYPE_CLEAR_USESKILL )` (`DPSrvrLux.cpp:96`): no fields. */
+export function writeClearUseSkill(objectId: number): ScriptMessage {
+  return scripted(objectId, MessageType.CLEAR_USESKILL, new ArWriter());
+}
+
+/**
+ * DOUSESKILLPOINT: `CUser::AddDoUseSkillPoint` (`WORLDSERVER/User.cpp:6566`): the 45 `dwSkill`, `dwLevel` pairs, then
+ * the skill points. The array is the 45 slots of `m_aJobSkill` (or what the browser sent, for a spend); any other length
+ * is refused, as the reader reads 45 pairs and would misread the rest.
+ */
+export function writeDoUseSkillPoint(
+  objectId: number, skills: readonly SkillSlot[], skillPoint: number,
+): ScriptMessage {
+  if (skills.length !== MAX_SKILL_JOB) {
+    throw new Error(`a DOUSESKILLPOINT needs ${MAX_SKILL_JOB} skill slots, not ${skills.length}`);
+  }
+  const w = new ArWriter();
+  for (const slot of skills) w.u32(slot.skill).u32(slot.level);
+  return scripted(objectId, MessageType.DOUSESKILLPOINT, w.i32(skillPoint));
+}
+
+/** INITSKILLPOINT: `CUser::AddInitSkill` (`WORLDSERVER/User.cpp:6554`): `m_nSkillPoint`. */
+export function writeInitSkillPoint(objectId: number, skillPoint: number): ScriptMessage {
+  return scripted(objectId, MessageType.INITSKILLPOINT, new ArWriter().i32(skillPoint));
+}
+
+/**
+ * SETACTIONPOINT: `CUser::AddSetActionPoint` (`WORLDSERVER/UserLux.cpp:206`): the action points. The server writes
+ * `NULL_ID` as the object ID; the script passes whatever it wants there.
+ */
+export function writeSetActionPoint(objectId: number, actionPoint: number): ScriptMessage {
+  return scripted(objectId, MessageType.SETACTIONPOINT, new ArWriter().i32(actionPoint));
+}
+
+/** ENDSKILLQUEUE: `CUserTaskBar::OnEndSkillQueue` (`_Interface/UserTaskBar.cpp:190`) through `AddHdr`: no fields. */
+export function writeEndSkillQueue(objectId: number): ScriptMessage {
+  return scripted(objectId, MessageType.ENDSKILLQUEUE, new ArWriter());
+}
+
+/**
+ * CREATESFXOBJ: `CUserMng::AddCreateSfxObj` (`WORLDSERVER/User.cpp:5016`): the effect, a position, then `bFlag` (a
+ * `BOOL`). `pos` and `flag` default to what the C++ defaults them to (`User.h:864`), the origin and 0; with a position
+ * of zeros the effect goes on the object the message is about, with any other it is absolute (`OnCreateSfxObj`).
+ */
+export function writeCreateSfxObj(objectId: number, sfxId: number, pos: Vec3 = [0, 0, 0], flag = 0): ScriptMessage {
+  return scripted(objectId, MessageType.CREATESFXOBJ, new ArWriter().u32(sfxId).vec3(pos).i32(flag));
+}
+
 /** `SNAPSHOTTYPE_GAMETIMER` (`_Network/MsgHdr.h:1057`): a message type the browser has no reader for. */
 export const GAMETIMER = 0x0096;
 
@@ -370,8 +433,6 @@ export function writeGameTimer(objectId: number, time: number): ScriptMessage {
 const MAX_HUMAN_PARTS = 31;
 const SM_MAX = 26;
 const MAX_JOB = 32;
-/** `MAX_SKILL_JOB` (`_Common/Mover.h:96-100`, `__VER >= 10`): the length of `m_aJobSkill`. */
-const MAX_SKILL_JOB = 45;
 /**
  * `MAX_INVENTORY` (`_Common/ProjectCmn.h:7`), the bag's slots; with one per part, `m_Inventory`'s `m_dwItemMax`
  * (`SetItemContainer( ITYPE_ITEM, MAX_INVENTORY, MAX_HUMAN_PARTS )`, `_Common/Mover.cpp:1460`).

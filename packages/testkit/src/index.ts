@@ -1,12 +1,13 @@
 export { startFakeFlyffServer } from './fakeFlyffServer';
 export type { FakeFlyffServer, FakeFlyffServerOptions } from './fakeFlyffServer';
 export {
-  GAMETIMER, encodeBundle, writeAddMonster, writeAddNpc, writeAddPlayer, writeAddSelf, writeCorrReq, writeDamage,
-  writeDefinedText, writeDelObj, writeDestAngle, writeDestPos, writeEnvironmentSetting, writeGameTimer,
+  GAMETIMER, encodeBundle, writeAddMonster, writeAddNpc, writeAddPlayer, writeAddSelf, writeClearUseSkill,
+  writeCorrReq, writeCreateSfxObj, writeDamage, writeDefinedText, writeDelObj, writeDestAngle, writeDestPos,
+  writeDoUseSkillPoint, writeEndSkillQueue, writeEnvironmentSetting, writeGameTimer, writeInitSkillPoint,
   writeMeleeAttack, writeMonsterProp, writeMotion, writeMoverAngle, writeMoverBehavior, writeMoverCorr,
   writeMoverDeath, writeMoverMoved, writeQueryGetDestObj, writeReplace, writeRevival, writeRevivalToLodestar,
-  writeSetDestObj, writeSetExperience, writeSetGrowthLearningPoint, writeSetLevel, writeSetPointParam, writeSetPos,
-  writeSetPosAngle, writeSetState, writeTaskBar, writeWorldReadInfo,
+  writeSetActionPoint, writeSetDestObj, writeSetExperience, writeSetGrowthLearningPoint, writeSetLevel,
+  writeSetPointParam, writeSetPos, writeSetPosAngle, writeSetState, writeTaskBar, writeUseSkill, writeWorldReadInfo,
 } from './world';
 export type { ScriptMessage } from './world';
 export { newVagrantOwn } from './newVagrant';

@@ -12,6 +12,10 @@ import {
   readSetDestObj,
 } from './movement';
 import { readDelObj, readReplace, readSetPos, readSetPosAngle, readWorldReadInfo } from './place';
+import {
+  readClearUseSkill, readCreateSfxObj, readDoUseSkillPoint, readEndSkillQueue, readInitSkillPoint, readSetActionPoint,
+  readUseSkill,
+} from './skills';
 import { readTaskBar } from './taskBar';
 import type { WorldMessage } from './types';
 
@@ -52,4 +56,11 @@ export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
     [MessageType.QUERYGETDESTOBJ, readQueryGetDestObj],
     [MessageType.MONSTERPROP, readMonsterProp],
     [MessageType.TASKBAR, readTaskBar],
+    [MessageType.USESKILL, readUseSkill],
+    [MessageType.CLEAR_USESKILL, readClearUseSkill],
+    [MessageType.DOUSESKILLPOINT, readDoUseSkillPoint],
+    [MessageType.INITSKILLPOINT, readInitSkillPoint],
+    [MessageType.SETACTIONPOINT, readSetActionPoint],
+    [MessageType.ENDSKILLQUEUE, readEndSkillQueue],
+    [MessageType.CREATESFXOBJ, readCreateSfxObj],
   ]);

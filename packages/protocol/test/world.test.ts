@@ -42,6 +42,9 @@ describe('world constants', () => {
       MELEE_ATTACK: 0x00e0,
       // The shortcut bar of the JOIN bundle.
       TASKBAR: 0x0097,
+      // Milestone 2: skills.
+      CREATESFXOBJ: 0x000f, USESKILL: 0x0019, CLEAR_USESKILL: 0x001a, INITSKILLPOINT: 0x007c,
+      DOUSESKILLPOINT: 0x007d, SETACTIONPOINT: 0x00c5, ENDSKILLQUEUE: 0x00e5,
     });
     expect(BUNDLE_MARKER).toBe(0x31434f54);
   });

@@ -45,6 +45,18 @@ export const PacketType = {
   REVIVAL_TO_LODESTAR: 0x00ff00c1,
   /** `PACKETTYPE_MODIFY_STATUS`: the client spends stat points (`CDPClient::SendModifyStatus`). */
   MODIFY_STATUS: 0xf000f501,
+  /** `PACKETTYPE_USESKILL`: the client uses the skill in a slot of `m_aJobSkill` (`CDPClient::SendUseSkill`). */
+  USESKILL: 0x00ff0020,
+  /** `PACKETTYPE_DOUSESKILLPOINT`: the client spends skill points, with all 45 skills (`CDPClient::SendDoUseSkillPoint`). */
+  DOUSESKILLPOINT: 0x000f0003,
+  /** `PACKETTYPE_ADDITEMTASKBAR`: the client puts a shortcut on an item bar (`CDPClient::SendAddItemTaskBar`). */
+  ADDITEMTASKBAR: 0xffffff0c,
+  /** `PACKETTYPE_REMOVEITEMTASKBAR`: the client empties a slot of an item bar (`CDPClient::SendRemoveItemTaskBar`). */
+  REMOVEITEMTASKBAR: 0xffffff0d,
+  /** `PACKETTYPE_SKILLTASKBAR`: the client sends the five slots of the action slot (`CDPClient::SendSkillTaskBar`). */
+  SKILLTASKBAR: 0xffffff0e,
+  /** `PACKETTYPE_ENDSKILLQUEUE`: the client stops the running action slot (`CDPClient::SendEndSkillQueue`). */
+  ENDSKILLQUEUE: 0x00ff00d5,
   ERROR_STRING: 0x70000003,
   LOGIN_PROTECT_NUMPAD: 0x88100200,
   LOGIN_PROTECT_CERT: 0x88100201,
@@ -69,6 +81,8 @@ export const MAX_CHARACTER_SLOTS = 3;
  */
 export const MessageType = {
   SETPOSANGLE: 0x000e,
+  /** An effect made on an object or at a position, to everyone in view (`CUserMng::AddCreateSfxObj`, `User.cpp:5016`). */
+  CREATESFXOBJ: 0x000f,
   SETPOS: 0x0010,
   /** Another player's level, to everyone in view but that player (`CUserMng::AddSetLevel`, `WORLDSERVER/User.cpp:4694`). */
   SETLEVEL: 0x0011,
@@ -76,6 +90,10 @@ export const MessageType = {
   SETEXPERIENCE: 0x0012,
   /** A hit on a mover, to everyone in view of it (`CUserMng::AddDamage`, `User.cpp:4474`). */
   DAMAGE: 0x0013,
+  /** A mover begins a skill, to everyone in view of it and the caster too (`CUserMng::AddUseSkill`, `User.cpp:4540`). */
+  USESKILL: 0x0019,
+  /** The world server refused the own USESKILL (`CUser::AddHdr`, `User.cpp:655`, from `OnUseSkill`, `DPSrvrLux.cpp:96`). */
+  CLEAR_USESKILL: 0x001a,
   /** A mover's HP, MP or FP as an absolute value (`CUserMng::AddSetPointParam`, `User.cpp:4663`). */
   SETPOINTPARAM: 0x001e,
   /** A monster's position and attacker, once, on the first hit by a player (`CUser::AddCorrReq`, `User.cpp:2405`). */
@@ -88,6 +106,10 @@ export const MessageType = {
   ENVIRONMENTALL: 0x0063,
   /** The own stats, after a MODIFY_STATUS (`CUser::AddSetState`, `User.cpp:2429`). */
   SETSTATE: 0x006a,
+  /** The own skill points after a reset (`CUser::AddInitSkill`, `User.cpp:6554`). */
+  INITSKILLPOINT: 0x007c,
+  /** The own skills and skill points after a spend (`CUser::AddDoUseSkillPoint`, `User.cpp:6566`). */
+  DOUSESKILLPOINT: 0x007d,
   /** A server message that is a text ID alone (`CUser::AddDefinedText( int )`, `User.cpp:2264`). */
   DEFINEDTEXT1: 0x0094,
   /** A server message that is a text ID and its arguments (`CUser::AddDefinedText`, `User.cpp:2218`). */
@@ -104,6 +126,8 @@ export const MessageType = {
   DESTPOS: 0x00c1,
   MOVERSETDESTOBJ: 0x00c2,
   DESTANGLE: 0x00c3,
+  /** The own action points, in a message about `NULL_ID` (`CUser::AddSetActionPoint`, `UserLux.cpp:206`). */
+  SETACTIONPOINT: 0x00c5,
   /** A mover died (`CUserMng::AddMoverDeath`, `User.cpp:4527`). */
   MOVERDEATH: 0x00c7,
   /** The correction another client sent of its player (PLAYERCORR), which the world server passes on (`AddMoverCorr`). */
@@ -113,6 +137,8 @@ export const MessageType = {
   MOVERANGLE: 0x00ce,
   /** Another mover's swing, to everyone in view but the attacker (`CUserMng::AddMeleeAttack`, `User.cpp:4808`). */
   MELEE_ATTACK: 0x00e0,
+  /** The action slot's chain is over (`CUserTaskBar::OnEndSkillQueue`, `_Interface/UserTaskBar.cpp:190`). */
+  ENDSKILLQUEUE: 0x00e5,
   ADD_OBJ: 0x00f0,
   DEL_OBJ: 0x00f1,
   REPLACE: 0x00f2,

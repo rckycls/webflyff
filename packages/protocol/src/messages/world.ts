@@ -2,6 +2,11 @@ import { ArReader } from '../ar/ArReader';
 import { ArWriter } from '../ar/ArWriter';
 import { DPID_UNKNOWN, MessageType, PacketType } from '../constants';
 import type { Vec3 } from '../constants';
+import { ProtocolError } from '../errors';
+import { MAX_SKILL_JOB } from '../world/own';
+import { readSkillPairs } from '../world/skills';
+import { readAddItemTaskBar, readRemoveItemTaskBar, readSkillTaskBar } from '../world/taskBar';
+import type { Shortcut, SkillSlot } from '../world/types';
 import type { SlotMessenger } from './login';
 
 // A packet the client sends to the cache server is built with `BEFORESENDSOLE( ar, type, DPID_UNKNOWN )`
@@ -184,6 +189,57 @@ export function encodeModifyStatus(counts: { str: number; sta: number; dex: numb
   return clientPacket(PacketType.MODIFY_STATUS).i32(counts.str).i32(counts.sta).i32(counts.dex).i32(counts.int).toBytes();
 }
 
+/**
+ * `wType` of a USESKILL, which tells a job skill from a license skill and is meaningless since 2005 (`CDPSrvr::OnUseSkill`
+ * sets it to 0 whatever it is, `WORLDSERVER/DPSrvrLux.cpp:49`); Neuz sends 0
+ * (`CMover::ProcessMoveArrival`, `_Common/MoverMove.cpp:171`).
+ */
+const USESKILL_WTYPE = 0;
+
+/**
+ * USESKILL (`CDPClient::SendUseSkill`, `Neuz/DPClient.cpp:9855`, `__VER >= 8`): `wType` (`WORD`, 0), `wId` (`WORD`, the
+ * index into `m_aJobSkill`, which is what `index` is), the target's object ID (`OBJID`), the use type (`int`, a
+ * `SKILLUSETYPE`: `SUT_NORMAL` 0 for a task bar slot, `SUT_QUEUESTART` 1 for the first skill of the action slot; Neuz
+ * sends no other, `SUT_QUEUEING` is the server's own chain) and the Ctrl key (`BOOL`, which matters only for PK), the
+ * order `CDPSrvr::OnUseSkill` (`WORLDSERVER/DPSrvrLux.cpp:32`) reads them in. 24 bytes.
+ *
+ * The server drops an index outside `m_aJobSkill` (and a skill of level 0) with no reply, not even CLEAR_USESKILL
+ * (`DPSrvrLux.cpp:46-47`, :74-75), which would leave a player waiting for its answer: the encoder refuses the index.
+ * The level is the caller's to check.
+ */
+export function encodeUseSkill(index: number, targetId: number, useType: 0 | 1, control = false): Uint8Array {
+  if (!Number.isInteger(index) || index < 0 || index >= MAX_SKILL_JOB) {
+    throw new ProtocolError(`skill index ${index} is outside 0..${MAX_SKILL_JOB - 1}`);
+  }
+  return clientPacket(PacketType.USESKILL).u16(USESKILL_WTYPE).u16(index).u32(targetId).i32(useType)
+    .i32(control ? 1 : 0).toBytes();
+}
+
+/**
+ * DOUSESKILLPOINT (`CDPClient::SendDoUseSkillPoint`, `Neuz/DPClient.cpp:9710`): for each of the `MAX_SKILL_JOB` (45) slots
+ * `dwSkill` then `dwLevel` (`DWORD` each) and nothing else, the player's own skill IDs with the levels the skill window
+ * set, `NULL_ID` and 0 for an empty slot; 8 + 360 bytes. `CDPSrvr::OnDoUseSkillPoint` (`WORLDSERVER/DPSrvr.cpp:1104`)
+ * reads the same 45 pairs, takes only the level of each slot and answers with a DOUSESKILLPOINT message, or with nothing
+ * when no level changed.
+ */
+export function encodeDoUseSkillPoint(skills: readonly SkillSlot[]): Uint8Array {
+  if (skills.length !== MAX_SKILL_JOB) {
+    throw new ProtocolError(`a skill array has ${MAX_SKILL_JOB} slots, not ${skills.length}`);
+  }
+  const w = clientPacket(PacketType.DOUSESKILLPOINT);
+  for (const slot of skills) w.u32(slot.skill).u32(slot.level);
+  return w.toBytes();
+}
+
+/**
+ * ENDSKILLQUEUE (`CDPClient::SendEndSkillQueue`, `Neuz/DPClient.cpp:15819`, which is `SendHdr( PACKETTYPE_ENDSKILLQUEUE )`,
+ * :11253): a type and no fields, as `CDPSrvr::OnEndSkillQueue` (`WORLDSERVER/DPSrvr.cpp:4963`) reads none. The player
+ * sends it to stop the action slot's chain (`CWndWorld::OnLButtonDown`, `_Interface/WndWorld.cpp:6982`).
+ */
+export function encodeEndSkillQueue(): Uint8Array {
+  return clientPacket(PacketType.ENDSKILLQUEUE).toBytes();
+}
+
 export type WorldPacket =
   | { type: 'join'; body: Uint8Array }
   | { type: 'snapshot'; body: Uint8Array }
@@ -197,6 +253,14 @@ export type WorldPacket =
   | { type: 'getDestObj'; fromId: number; destId: number }
   | { type: 'revivalToLodestar' }
   | { type: 'modifyStatus'; str: number; sta: number; dex: number; int: number }
+  // The skill packets: `skillType` is `wType` (0), `index` the skill's index in `m_aJobSkill`, `control` the Ctrl key.
+  | { type: 'useSkill'; skillType: number; index: number; targetId: number; useType: number; control: boolean }
+  | { type: 'doUseSkillPoint'; skills: SkillSlot[] }
+  | { type: 'addItemTaskBar'; bar: number; slot: number; shortcut: Shortcut }
+  | { type: 'removeItemTaskBar'; bar: number; slot: number }
+  // The slots a SKILLTASKBAR names, in the order sent: Neuz sends all five, the server only overwrites those.
+  | { type: 'skillTaskBar'; entries: Array<{ slot: number; shortcut: Shortcut }> }
+  | { type: 'endSkillQueue' }
   | { type: 'unknown'; packetType: number };
 
 /**
@@ -243,8 +307,9 @@ export function decodeWorldPacket(body: Uint8Array): WorldPacket {
 }
 
 /**
- * The fight packets after their `DPID_UNKNOWN`, read in the order the matching `encode*` writes them (and the world
- * server reads them). Any other type is reported with its fields unread: the pretend servers only look at these.
+ * The fight and skill packets after their `DPID_UNKNOWN`, read in the order the matching `encode*` writes them (and
+ * the world server reads them). Any other type is reported with its fields unread: the pretend servers only look at
+ * these.
  */
 function decodeClientPacket(r: ArReader): WorldPacket {
   const packetType = r.u32();
@@ -287,6 +352,39 @@ function decodeClientPacket(r: ArReader): WorldPacket {
       r.expectEnd();
       return { type: 'modifyStatus', str, sta, dex, int };
     }
+    case PacketType.USESKILL: {
+      // `ar >> wType >> wId >> objid >> nUseType; ar >> bControl;` (`CDPSrvr::OnUseSkill`, `DPSrvrLux.cpp:39-43`)
+      const skillType = r.u16();
+      const index = r.u16();
+      const targetId = r.u32();
+      const useType = r.i32();
+      const control = r.i32() !== 0;
+      r.expectEnd();
+      return { type: 'useSkill', skillType, index, targetId, useType, control };
+    }
+    case PacketType.DOUSESKILLPOINT: {
+      const skills = readSkillPairs(r);
+      r.expectEnd();
+      return { type: 'doUseSkillPoint', skills };
+    }
+    case PacketType.ADDITEMTASKBAR: {
+      const { bar, slot, shortcut } = readAddItemTaskBar(r);
+      r.expectEnd();
+      return { type: 'addItemTaskBar', bar, slot, shortcut };
+    }
+    case PacketType.REMOVEITEMTASKBAR: {
+      const { bar, slot } = readRemoveItemTaskBar(r);
+      r.expectEnd();
+      return { type: 'removeItemTaskBar', bar, slot };
+    }
+    case PacketType.SKILLTASKBAR: {
+      const entries = readSkillTaskBar(r);
+      r.expectEnd();
+      return { type: 'skillTaskBar', entries };
+    }
+    case PacketType.ENDSKILLQUEUE:
+      r.expectEnd();
+      return { type: 'endSkillQueue' };
     default:
       return { type: 'unknown', packetType };
   }

@@ -7,12 +7,13 @@ import type {
   AddedMover, MessageReader, MonsterRate, MoveReport, OwnCharacter, Shortcut, SkillSlot, TaskBar, Vec3, WorldMessage,
 } from '@flyffweb/protocol';
 import {
-  GAMETIMER, encodeBundle, writeAddMonster, writeAddNpc, writeAddPlayer, writeAddSelf, writeCorrReq, writeDamage,
-  writeDefinedText, writeDelObj, writeDestAngle, writeDestPos, writeEnvironmentSetting, writeGameTimer,
+  GAMETIMER, encodeBundle, writeAddMonster, writeAddNpc, writeAddPlayer, writeAddSelf, writeClearUseSkill,
+  writeCorrReq, writeCreateSfxObj, writeDamage, writeDefinedText, writeDelObj, writeDestAngle, writeDestPos,
+  writeDoUseSkillPoint, writeEndSkillQueue, writeEnvironmentSetting, writeGameTimer, writeInitSkillPoint,
   writeMeleeAttack, writeMonsterProp, writeMotion, writeMoverAngle, writeMoverBehavior, writeMoverCorr,
   writeMoverDeath, writeMoverMoved, writeQueryGetDestObj, writeReplace, writeRevival, writeRevivalToLodestar,
-  writeSetDestObj, writeSetExperience, writeSetGrowthLearningPoint, writeSetLevel, writeSetPointParam, writeSetPos,
-  writeSetPosAngle, writeSetState, writeTaskBar, writeWorldReadInfo,
+  writeSetActionPoint, writeSetDestObj, writeSetExperience, writeSetGrowthLearningPoint, writeSetLevel,
+  writeSetPointParam, writeSetPos, writeSetPosAngle, writeSetState, writeTaskBar, writeUseSkill, writeWorldReadInfo,
 } from '../src';
 
 it('encodeBundle writes the table', () => {
@@ -117,6 +118,10 @@ const busyBar: TaskBar = {
   queue: [shortcut(ShortcutKind.SKILL, 0, 0, 0, 0, 2), shortcut(ShortcutKind.SKILL, 1, 0, 1, 0, 2)],
   actionPoint: 11,
 };
+
+/** A skill array after a spend (`DOUSESKILLPOINT`): Clean Hit 3, Flurry 1, Over Cut 0 and the other 42 slots empty. */
+const spentSkills: SkillSlot[] = Array.from({ length: 45 }, (_, i): SkillSlot =>
+  i < 3 ? { skill: i + 1, level: [3, 1, 0][i] } : { skill: NULL_ID, level: 0 });
 
 it('every writer decodes to what it was given', () => {
   // One entry per writer: the message it makes, the type it must carry and what the reader must make of it.
@@ -237,6 +242,36 @@ it('every writer decodes to what it was given', () => {
     [
       'writeTaskBar (nothing on it)', writeTaskBar(62, { applets: [], items: [], queue: [], actionPoint: 0 }),
       MessageType.TASKBAR, { type: 'taskBar', taskBar: { applets: [], items: [], queue: [], actionPoint: 0 } },
+    ],
+    [
+      'writeUseSkill', writeUseSkill(63, 1, 3, 0x4242, 0, 1), MessageType.USESKILL,
+      { type: 'useSkill', skill: 1, level: 3, targetId: 0x4242, useType: 0, castingTime: 1 },
+    ],
+    [
+      "writeUseSkill (a queue's second skill)", writeUseSkill(63, 2, 10, 0x4242, 2, 1), MessageType.USESKILL,
+      { type: 'useSkill', skill: 2, level: 10, targetId: 0x4242, useType: 2, castingTime: 1 },
+    ],
+    ['writeClearUseSkill', writeClearUseSkill(64), MessageType.CLEAR_USESKILL, { type: 'clearUseSkill' }],
+    [
+      'writeDoUseSkillPoint', writeDoUseSkillPoint(65, spentSkills, 4), MessageType.DOUSESKILLPOINT,
+      { type: 'doUseSkillPoint', skills: spentSkills, skillPoint: 4 },
+    ],
+    [
+      'writeInitSkillPoint', writeInitSkillPoint(66, 28), MessageType.INITSKILLPOINT,
+      { type: 'initSkillPoint', skillPoint: 28 },
+    ],
+    [
+      'writeSetActionPoint', writeSetActionPoint(NULL_ID, 11), MessageType.SETACTIONPOINT,
+      { type: 'setActionPoint', actionPoint: 11 },
+    ],
+    ['writeEndSkillQueue', writeEndSkillQueue(67), MessageType.ENDSKILLQUEUE, { type: 'endSkillQueue' }],
+    [
+      'writeCreateSfxObj', writeCreateSfxObj(68, 108, pos, 1), MessageType.CREATESFXOBJ,
+      { type: 'createSfxObj', sfxId: 108, pos, flag: 1 },
+    ],
+    [
+      'writeCreateSfxObj (the defaults of AddCreateSfxObj: no position, fixed)', writeCreateSfxObj(69, 108),
+      MessageType.CREATESFXOBJ, { type: 'createSfxObj', sfxId: 108, pos: [0, 0, 0], flag: 0 },
     ],
   ];
   for (const [name, message, type, expected] of cases) {
@@ -368,6 +403,37 @@ it('the task bar writer refuses what the C++ arrays and the wire format cannot h
   expect(() => writeTaskBar(1, { ...empty, applets: [{ slot: 0, shortcut: chat('x'.repeat(128)) }] }))
     .toThrow(/at most 127/);
   expect(() => writeTaskBar(1, { ...empty, applets: [{ slot: 0, shortcut: chat('x'.repeat(127)) }] })).not.toThrow();
+});
+
+it('writes the skill messages in the order the CUser::Add* and CUserMng::Add* functions do', () => {
+  const hex = (w: ArWriter) => bytesToHex(w.toBytes());
+  // CUserMng::AddUseSkill: ar << dwSkill << dwLevel; ar << objid << nUseType << nCastingTime;
+  expect(bytesToHex(writeUseSkill(1, 3, 4, 9, 2, 45).fields))
+    .toBe(hex(new ArWriter().u32(3).u32(4).u32(9).i32(2).i32(45)));
+  expect(writeUseSkill(1, 3, 4, 9, 2, 45).type).toBe(MessageType.USESKILL);
+  // CUser::AddHdr( GETID( pUser ), SNAPSHOTTYPE_CLEAR_USESKILL ) and CUserTaskBar::OnEndSkillQueue's AddHdr: no fields.
+  expect(writeClearUseSkill(3)).toEqual({ objectId: 3, type: MessageType.CLEAR_USESKILL, fields: new Uint8Array(0) });
+  expect(writeEndSkillQueue(3)).toEqual({ objectId: 3, type: MessageType.ENDSKILLQUEUE, fields: new Uint8Array(0) });
+  // CUser::AddDoUseSkillPoint: the 45 `ar << dwSkill << dwLevel` pairs, then `ar << nSkillPoint`.
+  const pairs = new ArWriter();
+  for (const s of spentSkills) pairs.u32(s.skill).u32(s.level);
+  expect(bytesToHex(writeDoUseSkillPoint(1, spentSkills, 6).fields)).toBe(hex(pairs.i32(6)));
+  expect(writeDoUseSkillPoint(1, spentSkills, 6).fields.byteLength).toBe(45 * 8 + 4);
+  // CUser::AddInitSkill: ar << m_nSkillPoint;
+  expect(bytesToHex(writeInitSkillPoint(1, 28).fields)).toBe(hex(new ArWriter().i32(28)));
+  // CUser::AddSetActionPoint: ar << nAP; (the server writes NULL_ID as the object ID, UserLux.cpp:206-214)
+  expect(bytesToHex(writeSetActionPoint(NULL_ID, 11).fields)).toBe(hex(new ArWriter().i32(11)));
+  expect(writeSetActionPoint(NULL_ID, 11).objectId).toBe(NULL_ID);
+  // CUserMng::AddCreateSfxObj: ar << dwSfxObj << x << y << z; ar << bFlag;  (BOOL, 4 bytes)
+  expect(bytesToHex(writeCreateSfxObj(1, 108, [1, 2, 3], 1).fields))
+    .toBe(hex(new ArWriter().u32(108).vec3([1, 2, 3]).i32(1)));
+  expect(bytesToHex(writeCreateSfxObj(1, 108).fields)).toBe(hex(new ArWriter().u32(108).vec3([0, 0, 0]).i32(0)));
+});
+
+it('the DOUSESKILLPOINT writer refuses an array that is not the 45 slots of m_aJobSkill', () => {
+  expect(() => writeDoUseSkillPoint(1, spentSkills.slice(0, 44), 6)).toThrow(/45 skill slots, not 44/);
+  expect(() => writeDoUseSkillPoint(1, [...spentSkills, spentSkills[0]], 6)).toThrow(/45 skill slots, not 46/);
+  expect(() => writeDoUseSkillPoint(1, spentSkills, 6)).not.toThrow();
 });
 
 it('the DAMAGE writer refuses a position without AF_FLYING and AF_FLYING without a position', () => {
