@@ -234,7 +234,9 @@ test.describe('the world screen against scripted servers', () => {
     await playGateway(page);
     await startEntering(page);
 
-    await expect(page.getByRole('alert')).toHaveText('The game files on the server are out of date.');
+    // The alert comes once the entry has fetched the asset index and the catalogs through the dev server, which four
+    // workers drawing in software (SwiftShader) slow well past the 5 s default; the wait is on loading, not on a frame.
+    await expect(page.getByRole('alert')).toHaveText('The game files on the server are out of date.', { timeout: 30_000 });
     await expect(page.getByRole('button', { name: 'Log in' })).toBeEnabled();
   });
 
