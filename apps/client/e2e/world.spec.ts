@@ -761,6 +761,44 @@ test.describe('the world screen against scripted servers', () => {
     expect((await page.evaluate(() => window.__client!.stats())).errors).toEqual([]);
   });
 
+  // The own death (CDPClient::OnMoverDeath, DPClient.cpp:2040-2072) opens the revive window (CWndRevival, WBS_MODAL), which
+  // takes the presses and the keys while it is open and closes the Start menu (CWndTaskMenu::OnKillFocus); Lodestar sends
+  // REVIVAL_TO_LODESTAR, and Escape while still dead opens it again (CWndMgr::Process, WndManager.cpp:3311-3318)
+  test('the own death opens the modal revive window; Lodestar sends REVIVAL_TO_LODESTAR, and Escape while dead opens it again', async ({ page }) => {
+    const gateway = await playGateway(page, flarisWithNewBar);
+    await enterFlaris(page);
+    const status = page.locator('.hud-status');
+    const menu = page.getByRole('menu');
+    await page.getByRole('button', { name: 'Start' }).click();
+    await expect(menu).toBeVisible();
+    gateway.pushCache(flarisWithNewBar.later([writeMoverDeath(SELF_ID, MONSTER_ID, OBJMSG_DAMAGE)]));
+    const revive = page.locator('.hud-revive');
+    await expect(revive).toBeVisible();
+    await expect(page.locator('.hud-messages > div'))
+      .toHaveText(['Press ESC and go back to Lodestar(Town) or Lodelight(Field) for resurrecting.']);
+    await expect(menu).toBeHidden();
+    // the backdrop takes the press on the Start button under it; no key reaches the game: T, Escape
+    const start = (await page.getByRole('button', { name: 'Start' }).boundingBox())!;
+    const at = { x: start.x + start.width / 2, y: start.y + start.height / 2 };
+    if (test.info().project.use.hasTouch === true) await page.touchscreen.tap(at.x, at.y);
+    else await page.mouse.click(at.x, at.y);
+    await page.keyboard.press('t');
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(300);
+    await expect(menu).toBeHidden();
+    await expect(status).toBeVisible();
+    await expect(revive).toBeVisible();
+    // Lodestar: one REVIVAL_TO_LODESTAR, and the window goes
+    await page.locator('[data-button="lodestar"]').click();
+    await expect(revive).toBeHidden();
+    await expect.poll(() => sentOf(gateway, PacketType.REVIVAL_TO_LODESTAR).length).toBe(1);
+    // no answer from the server: still dead, Escape opens the window again
+    await page.keyboard.press('Escape');
+    await expect(revive).toBeVisible();
+    expect(sentOf(gateway, PacketType.REVIVAL_TO_LODESTAR)).toHaveLength(1);
+    expect((await page.evaluate(() => window.__client!.stats())).errors).toEqual([]);
+  });
+
   // The attack button (Piece 4 §3.4, §3.9): a touch screen's, where the joystick shows
   test('the attack button shows on a touch screen, enabled once the Aibatt is selected, and a press attacks it', async ({ page }) => {
     const gateway = await playGateway(page);
@@ -918,9 +956,14 @@ test.describe('the world screen against scripted servers', () => {
     await expect(page.getByRole('button', { name: 'Leave' })).toHaveCount(0);
     const login = gateway.sent.find((s) => s.port === Port.LOGIN)!.connection;
     const cache = gateway.sent.find((s) => s.port === Port.CACHE)!.connection;
-    // the box asks first (CWndLogOut: TID_DIAG_0068's title, TID_DIAG_0069); Cancel keeps the player in the world
+    // the box asks first (CWndLogOut: "Message Box", TID_DIAG_0069); it is modal (WBS_MODAL, WndMessageBox.cpp:202), so
+    // Escape does not close it; Cancel keeps the player in the world
     await page.getByRole('button', { name: 'Start' }).click();
     await page.getByRole('menuitem', { name: 'Log out' }).click();
+    await expect(page.getByText('Do you want to disconnect?')).toBeVisible();
+    await expect(page.locator('.hud-logout .hud-window-title')).toHaveText('Message Box');
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(300);
     await expect(page.getByText('Do you want to disconnect?')).toBeVisible();
     await page.getByRole('button', { name: 'Cancel' }).click();
     await expect(page.getByText('Do you want to disconnect?')).toBeHidden();

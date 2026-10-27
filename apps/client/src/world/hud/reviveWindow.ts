@@ -16,10 +16,8 @@
 //                                                                     button but the Shop destroys the window (:12342-12343)
 //   CWndBase::GetWndBase            _Interface/WndBase.cpp:2048-2095  Escape passes over APP_REVIVAL
 //
-// WBS_MODAL: while the window is open it keeps the focus, a press elsewhere gives no other window any (WndBase.cpp:963-967),
-// and Neuz takes no key at all (`CNeuzApp::MsgProc` returns before its key table, Neuz/Neuz.cpp:1253-1309). Here a backdrop
-// under the window takes every press over the windows' layer and the world, and every key is stopped before the game's
-// handlers hear it.
+// WBS_MODAL: while the window is open, no other window, no press on the world and no key reach the game (its
+// `ModalBackdrop`, modal.ts).
 //
 // Revive here (PACKETTYPE_REVIVAL) needs the resurrection scroll, an item of Piece 5: it is greyed, as Neuz greys it for a
 // player who has none. The Shop opens the item mall's web box (`APP_WEBBOX`), which the browser does not have: greyed too.
@@ -29,6 +27,7 @@ import type { UiArt } from './art';
 import { pictureButton } from './button';
 import type { ControlRect } from './button';
 import { WindowFrame } from './frame';
+import { ModalBackdrop } from './modal';
 
 /** `APP_REVIVAL "WndTile07.tga" 1 176 128` (resdata.inc:10964). */
 const WIDTH = 176;
@@ -46,36 +45,27 @@ const STAND_AT: ControlRect = { left: 12, top: 38, width: 140, height: 20 };
 const SHOP_AT: ControlRect = { left: 12, top: 64, width: 140, height: 20 };
 /** Each button's picture is 560 x 20: four states of 140 px. */
 const QUARTER = 140;
-/** The keys the task bar takes from the browser (F1 to F9, `TaskBar`): kept from it while the window holds the keys. */
-const BAR_KEYS = /^F[1-9]$/;
 
 /** The texts the window reads (the texts catalog). */
 export type ReviveTexts = ReadonlyMap<string, { text: string }>;
 
 /**
- * The revive window. Its `element` (the modal backdrop, with the window in it) goes in the windows' layer; `open` shows
- * it at the middle of that layer's width, 70 px down; Lodestar calls `onLodestar` (REVIVAL_TO_LODESTAR) and closes it.
- * `onModalChange` hears it open (true) and close (false), for the world screen to let go of the controls.
+ * The revive window. Its `element` (its modal backdrop, `modal`, with the window in it) goes in the windows' layer;
+ * `open` shows it at the middle of that layer's width, 70 px down; Lodestar calls `onLodestar` (REVIVAL_TO_LODESTAR) and
+ * closes it. `modal.onChange` hears it open and close, for the world screen to let go of the controls.
  */
 export class ReviveWindow {
-  readonly element: HTMLElement;
   readonly frame: WindowFrame;
-  onModalChange?: (open: boolean) => void;
-  private readonly doc: Document;
+  readonly modal: ModalBackdrop;
 
   constructor(art: UiArt, texts: ReviveTexts, private readonly onLodestar: () => void, doc: Document = document) {
-    this.doc = doc;
     const text = (id: string): string => texts.get(id)?.text ?? '';
-    const frame = new WindowFrame(TITLE, art, { width: WIDTH, height: HEIGHT }, doc);
+    // m_wndTitleBar.SetVisible( FALSE ) (:12219): its caption is drawn, but it has no close button
+    const frame = new WindowFrame(TITLE, art, { width: WIDTH, height: HEIGHT, closeButton: false }, doc);
     frame.element.classList.add('hud-revive');
-    // m_wndTitleBar.SetVisible( FALSE ) (:12219): no close button; Escape passes over it (GetWndBase)
-    frame.element.querySelector<HTMLElement>('.hud-window-close')!.hidden = true;
+    // Escape passes over it (GetWndBase)
     frame.escapeCloses = false;
-    frame.onClose = () => {
-      this.element.hidden = true;
-      this.listen(false);
-      this.onModalChange?.(false);
-    };
+    frame.onClose = () => this.modal.hide();
 
     const button = (name: string, picture: string, rect: ControlRect, tooltip: string, press: () => void) => {
       const element = pictureButton(doc, art, picture, rect, QUARTER, press);
@@ -92,12 +82,12 @@ export class ReviveWindow {
     shop.disabled = true;
     frame.body.append(lodestar, stand, shop);
     this.frame = frame;
+    this.modal = new ModalBackdrop(frame, doc);
+  }
 
-    const backdrop = doc.createElement('div');
-    backdrop.className = 'hud-modal';
-    backdrop.hidden = true;
-    backdrop.append(frame.element);
-    this.element = backdrop;
+  /** The modal backdrop with the window in it: what goes in the windows' layer. */
+  get element(): HTMLElement {
+    return this.modal.element;
   }
 
   get isOpen(): boolean {
@@ -110,11 +100,9 @@ export class ReviveWindow {
    */
   open(): void {
     if (this.isOpen) return;
-    const width = this.element.parentElement?.clientWidth ?? 0;
-    this.element.hidden = false;
-    this.listen(true);
+    const width = this.modal.layerWidth;
+    this.modal.show();
     this.frame.open({ x: Math.trunc((width - WIDTH) / 2), y: TOP });
-    this.onModalChange?.(true);
   }
 
   /** What the own events open: the own death (`OnMoverDeath`, DPClient.cpp:2060-2072). */
@@ -134,22 +122,4 @@ export class ReviveWindow {
     this.onLodestar();
     this.frame.close();
   }
-
-  private listen(on: boolean): void {
-    const view = this.doc.defaultView ?? window;
-    for (const type of ['keydown', 'keyup'] as const) {
-      if (on) view.addEventListener(type, this.holdKey, true);
-      else view.removeEventListener(type, this.holdKey, true);
-    }
-  }
-
-  /**
-   * Every key while the window is open: stopped at the window's capture, before the game's handlers (the task bar's, the
-   * status window's, the moves', the windows' Escape) hear it. The task bar's F1 to F9 stay out of the browser's hands
-   * (F5 would reload the page), as the bar keeps them.
-   */
-  private readonly holdKey = (event: KeyboardEvent): void => {
-    event.stopImmediatePropagation();
-    if (event.type === 'keydown' && BAR_KEYS.test(event.key)) event.preventDefault();
-  };
 }

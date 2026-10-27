@@ -1,11 +1,58 @@
 import { describe, expect, it } from 'vitest';
-import { readExpTable, readPropJob, readTextClient, readTexturePack } from '../src/index';
+import { readEtcJobs, readExpTable, readPropJob, readTextClient, readTexturePack } from '../src/index';
 import { thrown } from './helpers/thrown';
 
 /** Script text with the CRLF line ends the shipped files use. */
 function script(...lines: string[]): string {
   return lines.join('\r\n') + '\r\n';
 }
+
+describe('readEtcJobs', () => {
+  // etc.inc as shipped: comment lines, the job block (job, name, base job, job type), then the structure and Guild blocks
+  const DEFINES = new Map([
+    ['JOB_VAGRANT', 0], ['JOB_MERCENARY', 1], ['JOB_KNIGHT', 6], ['JTYPE_BASE', 0], ['JTYPE_EXPERT', 1], ['JTYPE_PRO', 2],
+    ['STRUCTURE_A', 0],
+  ]);
+  const STRINGS = new Map([
+    ['IDS_ETC_INC_000000', 'Vagrant'], ['IDS_ETC_INC_000001', 'Mercenary'], ['IDS_ETC_INC_000006', 'Knight'],
+    ['IDS_ETC_INC_000020', 'Hall'],
+  ]);
+  const ETC = script(
+    '// a comment',
+    'job',
+    '{',
+    '\tJOB_VAGRANT\t\tIDS_ETC_INC_000000\t\tJOB_VAGRANT\tJTYPE_BASE',
+    '',
+    '\tJOB_MERCENARY\t\tIDS_ETC_INC_000001\t\tJOB_VAGRANT\tJTYPE_EXPERT',
+    '\tJOB_KNIGHT\t\tIDS_ETC_INC_000006\t\tJOB_MERCENARY\tJTYPE_PRO',
+    '}',
+    'structure',
+    '{',
+    '\tSTRUCTURE_A\tIDS_ETC_INC_000020',
+    '}',
+  );
+
+  it('gives each job its name from the string table, its base job and its type, by job (CProject::LoadEtc)', () => {
+    const jobs = readEtcJobs(ETC, DEFINES, STRINGS, 'etc.inc');
+    expect([...jobs]).toEqual([
+      [0, { name: 'Vagrant', base: 0, type: 0 }],
+      [1, { name: 'Mercenary', base: 0, type: 1 }],
+      [6, { name: 'Knight', base: 1, type: 2 }],
+    ]);
+  });
+
+  it('keeps a name the string table lacks as written, as CScript leaves the token', () => {
+    const jobs = readEtcJobs(script('job', '{', 'JOB_VAGRANT IDS_ETC_INC_000099 JOB_VAGRANT JTYPE_BASE', '}'), DEFINES, STRINGS);
+    expect(jobs.get(0)!.name).toBe('IDS_ETC_INC_000099');
+  });
+
+  it('reads nothing from a file with no job block, and throws for a job row that stops early', () => {
+    expect(readEtcJobs(script('// nothing'), DEFINES, STRINGS).size).toBe(0);
+    const cut = thrown(() => readEtcJobs(script('job', '{', 'JOB_VAGRANT IDS_ETC_INC_000000'), DEFINES, STRINGS, 'etc.inc'));
+    expect(cut.file).toBe('etc.inc');
+    expect(cut.message).toContain('end of the script');
+  });
+});
 
 describe('readPropJob', () => {
   // propJob.inc as shipped: two comment lines, then one row per job in JOB_* order

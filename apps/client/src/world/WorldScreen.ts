@@ -519,20 +519,17 @@ export class WorldScreen {
     // the Start menu opens where the joystick stands, which is over the windows' layer: it hides while the menu is open
     this.taskBar.onMenuChange = (open) => this.element.classList.toggle('world-menu-open', open);
     this.attackButton = new AttackButton(() => attackLoop.attackButton(), doc);
-    this.logOutBox = new LogOutBox(this.hudArt!, this.data!.texts, () => this.leave(), doc);
+    const logOutBox = new LogOutBox(this.hudArt!, this.data!.texts, () => this.leave(), doc);
+    this.logOutBox = logOutBox;
     const characterWindow = new CharacterWindow(
       this.hudArt!, this.data!.texts, (counts) => this.session.sendModifyStatus(counts), doc,
     );
     this.characterWindow = characterWindow;
     const reviveWindow = new ReviveWindow(this.hudArt!, this.data!.texts, () => this.session.sendRevivalToLodestar(), doc);
-    // modal: the world's controls let go, and the joystick, which stands over the windows' layer, hides
-    reviveWindow.onModalChange = (open) => {
-      this.element.classList.toggle('world-modal', open);
-      if (open) this.releaseControls();
-    };
     this.reviveWindow = reviveWindow;
+    for (const modal of [logOutBox.modal, reviveWindow.modal]) modal.onChange = () => this.modalChanged();
     this.hud!.element.append(
-      this.taskBar.element, this.attackButton.element, this.logOutBox.frame.element, characterWindow.frame.element,
+      this.taskBar.element, this.attackButton.element, logOutBox.element, characterWindow.frame.element,
       characterWindow.confirm.frame.element, reviveWindow.element,
     );
     // before the windows' own Escape (frame.ts), which closes a window only if this one leaves the key to it
@@ -818,11 +815,18 @@ export class WorldScreen {
   }
 
   /**
-   * The revive window opened (WBS_MODAL): the keys, the joystick and the finger on the world let go, as when the page
-   * loses the focus (`stopOwnMover`), for the presses and keys they would have had go to the window's backdrop and its
-   * key hold now. The player is dead: no move is sent.
+   * A WBS_MODAL window (the revive window, the log-out box) opened or closed. While one is open the joystick, which stands
+   * over the windows' layer, hides (`.world-modal`); as one opens, the Start menu closes, as `CWndTaskMenu::OnKillFocus`
+   * hides it when the focus goes to another window (`WndTaskBar.cpp:2795-2799`; it stands over the backdrop), and the
+   * keys, the joystick and the finger on the world let go, as when the page loses the focus (`stopOwnMover`), for the
+   * presses and keys they would have had go to the window's backdrop and its key hold now. No move is sent: the player
+   * stands, or is dead.
    */
-  private releaseControls(): void {
+  private modalChanged(): void {
+    const open = this.reviveWindow?.modal.isShown === true || this.logOutBox?.modal.isShown === true;
+    this.element.classList.toggle('world-modal', open);
+    if (!open) return;
+    this.taskBar?.closeMenu();
     this.keyboard?.reset();
     this.walkKey?.reset();
     this.joystick?.reset();
@@ -833,16 +837,18 @@ export class WorldScreen {
    * Escape in Neuz's order (`escapeStep`, `CWndMgr::Process`, `WndManager.cpp:3295-3427`): dead, the revive window
    * (`openRevive`); the Start menu open, nothing; a target, cleared (`AttackLoop.escape`); a window Escape closes
    * (`escapeWindow`, never the status window), left to the windows' own handler, which runs after this one; else the
-   * Start menu. A held key does it once. Before all that, the keys are the revive window's while it is open (WBS_MODAL:
-   * `CNeuzApp::MsgProc` takes none, `Neuz/Neuz.cpp:1253-1309`) and the stat points' confirm box's while it is open
-   * (`CNeuzApp::KillWindow`, :1262, :1323): their own handlers take Escape.
+   * Start menu. A held key does it once. Before all that, the keys are a modal window's while one is open (the revive
+   * window, the log-out box; WBS_MODAL: `CNeuzApp::MsgProc` takes none, `Neuz/Neuz.cpp:1253-1309`) and the stat points'
+   * confirm box's while it is open (`CNeuzApp::KillWindow`, :1262, :1323): their own handlers take Escape.
    */
   private readonly onEscape = (event: KeyboardEvent): void => {
     const { taskBar, attackLoop, focus } = this;
     if (event.key !== 'Escape' || event.repeat || taskBar === undefined || attackLoop === undefined || focus === undefined) {
       return;
     }
-    if (this.reviveWindow?.isOpen === true || this.characterWindow?.confirm.isOpen === true) return;
+    if (this.reviveWindow?.isOpen === true || this.logOutBox?.isOpen === true || this.characterWindow?.confirm.isOpen === true) {
+      return;
+    }
     const self = this.world?.self();
     const step = escapeStep({
       dead: self !== undefined && isDie(self),
@@ -988,7 +994,7 @@ export class WorldScreen {
     this.effectRenderer?.dispose();
     this.effectTextures?.dispose();
     for (const layer of this.spriteLayers) layer.dispose();
-    if (this.logOutBox?.isOpen === true) this.logOutBox.frame.close();
+    this.logOutBox?.dispose();
     this.characterWindow?.dispose();
     this.reviveWindow?.dispose();
     this.hud?.dispose();

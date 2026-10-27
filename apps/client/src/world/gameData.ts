@@ -1,7 +1,6 @@
 import { GAME_DATA_KEYS } from '@flyffweb/formats';
 import type {
   ExpRow,
-  JobProp,
   TextEntry,
   WebEffectRef,
   WebEffectsIndex,
@@ -9,6 +8,7 @@ import type {
   WebHonorTitles,
   WebItemModel,
   WebItemProp,
+  WebJob,
   WebMover,
   WebNameColors,
   WebNpc,
@@ -52,8 +52,11 @@ export interface GameData {
   worlds: Map<number, string>;
   /** Every item of `propItem.txt` by item id (`II_*`), with the columns the fight reads; a repeated id keeps the later row. */
   itemProps: Map<number, WebItemProp>;
-  /** The jobs of `propJob.inc`, `jobs[JOB_*]` (CProject::m_aPropJob). */
-  jobs: JobProp[];
+  /**
+   * The jobs of `propJob.inc`, `jobs[JOB_*]` (CProject::m_aPropJob), each with its name of etc.inc (`m_aJob[ id ].szName`,
+   * what `GetJobString` gives the Character window).
+   */
+  jobs: WebJob[];
   /** The character EXP table of `ExpTable.inc`, `exp[level]` (CProject::m_aExpCharacter), the 64-bit columns as bigint. */
   exp: ExpRow[];
   /** The client texts by `TID_*` name. */
@@ -83,6 +86,9 @@ const withLaterColumns = (mover: WebMover): WebMover => ({
  * slot, so the task bar counts nothing and keeps no item id for it.
  */
 const withPackMax = (prop: WebItemProp): WebItemProp => ({ ...prop, packMax: prop.packMax ?? 1 });
+
+/** A job of a jobs.json from before the converter kept the job's name (etc.inc) lacks it: it reads as no name. */
+const withTitle = (job: WebJob): WebJob => ({ ...job, title: job.title ?? '' });
 
 /**
  * The asset index lists none of `keys`: the game files on the server were converted by a version older than these
@@ -114,7 +120,7 @@ export async function loadGameData(store: Pick<AssetStore, 'json' | 'url'>): Pro
     store.json<WebHonorTitles>(GAME_DATA_KEYS.honorTitles),
     store.json<WebWorlds>(GAME_DATA_KEYS.worlds),
     store.json<WebItemProp[]>(GAME_DATA_KEYS.itemProps),
-    store.json<JobProp[]>(GAME_DATA_KEYS.jobs),
+    store.json<WebJob[]>(GAME_DATA_KEYS.jobs),
     store.json<WebExpRow[]>(GAME_DATA_KEYS.exp),
     store.json<WebTexts>(GAME_DATA_KEYS.texts),
     store.json<WebEffectsIndex>(GAME_DATA_KEYS.effectsIndex),
@@ -127,7 +133,7 @@ export async function loadGameData(store: Pick<AssetStore, 'json' | 'url'>): Pro
     honorTitles: new Map(Object.entries(honorTitles).map(([id, title]) => [Number(id), title])),
     worlds: new Map(Object.entries(worlds).map(([id, folder]) => [Number(id), folder])),
     itemProps: new Map(itemProps.map((prop) => [prop.id, withPackMax(prop)])),
-    jobs,
+    jobs: jobs.map(withTitle),
     exp: exp.map((row) => ({
       exp1: BigInt(row.exp1), exp2: BigInt(row.exp2), lpPoint: row.lpPoint, limitExp: BigInt(row.limitExp),
     })),

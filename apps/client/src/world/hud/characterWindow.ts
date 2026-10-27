@@ -1,7 +1,7 @@
 // The Character window (spec §3.6, [stats §3.1-3.4]): `CWndCharacter` (APP_CHARACTER3) and the page of its first tab,
 // `CWndCharInfo`: the name, job, level, server and channel; ATK, DEF, critical and attack speed; the four stats with the
-// counts of the points being placed, their preview, the stat points left, Apply (which asks first, `CWndStateConfirm`)
-// and Reset. H, the task bar's applet and the Start menu open and close it (`CWndMgr::ObjectExecutor`).
+// counts of the points being placed, their preview, the stat points left, Apply (which asks first, `StateConfirm`) and
+// Reset. H, the task bar's applet and the Start menu open and close it (`CWndMgr::ObjectExecutor`).
 //
 //   resdata.inc APP_CHARACTER3      Resource/resdata.inc:22746-22766  "Wndtile00.tga" tiled, 208 x 512, a caption, titled
 //                                                                     "Character" (IDS_RESDATA_INC_005936, Resource/
@@ -20,8 +20,6 @@
 //   CWndCharInfo::Process           WndField.cpp:3784-3849             which controls are enabled, the points left
 //   CWndCharInfo::GetVirtual*       WndField.cpp:3864-4056             the preview
 //   CWndCharInfo::RenderATK         WndField.cpp:4057-4099             ATK
-//   CWndStateConfirm                WndField.cpp:4395-4560             the confirm box
-//   CNeuzApp::KillWindow            Neuz/Neuz.cpp:1495-1524            the confirm box takes every key
 //
 // The page's PVP/PK part (fame, PK value and propensity, :3449-3489) and the Fame/Master tab's page (CWndHonor) are not
 // drawn: the browser reads none of their numbers (stats §3.2). The tooltips of the stat rows (:3298-3368) are not copied.
@@ -31,9 +29,11 @@ import type { Stats } from '../sim/params';
 import type { OwnState } from '../OwnState';
 import { cssRgb, themeUrl } from './art';
 import type { UiArt } from './art';
-import { pictureButton } from './button';
+import { pictureButton, place } from './button';
 import type { ControlRect } from './button';
 import { WindowFrame } from './frame';
+import { StateConfirm } from './stateConfirm';
+import { EDIT, TAB_TILE, TAB_TILE_HEIGHT, chosenTabTiles, editTiles, tabStripTiles } from './tiles';
 
 /** The points being placed on each stat (`m_nStrCount`, `m_nStaCount`, `m_nDexCount`, `m_nIntCount`); MODIFY_STATUS's fields. */
 export interface StatCounts {
@@ -50,7 +50,7 @@ export interface CharacterEntry {
   channelName: string;
 }
 
-/** The texts the windows read (the texts catalog). */
+/** The texts the window and its confirm box read (the texts catalog). */
 export type CharacterTexts = ReadonlyMap<string, { text: string }>;
 
 type Stat = keyof StatCounts;
@@ -59,8 +59,6 @@ const NO_COUNTS: StatCounts = { str: 0, sta: 0, dex: 0, int: 0 };
 
 /** `JOB_VAGRANT` (`Resource/defineJob.h`): the one job of `JTYPE_BASE` (etc.inc's job block), which `IsBaseJob()` asks for. */
 const JOB_VAGRANT = 0;
-/** The keys the task bar takes from the browser (F1 to F9, `TaskBar`): kept from it while the confirm box holds the keys. */
-const BAR_KEYS = /^F[1-9]$/;
 
 // ---- the window and its tab control --------------------------------------------------------------------------------
 
@@ -71,14 +69,12 @@ const HEIGHT = 512;
 const TITLE = 'Character';
 /** `WIDC_TABCTRL1` (resdata.inc:22756): (8, 12) to (204, 466) in the client area. */
 const TAB: ControlRect = { left: 8, top: 12, width: 196, height: 454 };
-/** `EDIT_HEIGHT` (WndControl.cpp:22): the edit tiles are laid every 8 px both ways (8 x 10 pictures, the next row over). */
-const EDIT = 8;
 /** The tab control's tiles stop 15 px short of its right (`rect.right -= 15`, :4190, :4224, :4323, :4401). */
 const TAB_RIGHT = 15;
-/** WndTabTile*.bmp: 8 x 20. */
-const TAB_TILE = 8;
 /** The tab titles' line: 17 px over the control's bottom (`y = rectClient.bottom - 17`, :4225). */
 const TAB_TITLE_UP = 17;
+/** A tab's page: the control less the strip's 18 px at the bottom (`InsertItem`, :4586-4592). */
+const TAB_STRIP = 18;
 /** The tabs: `CWndCharacter::OnInitialUpdate` inserts the page and the Fame/Master page, the first chosen (:4290-4300). */
 const TABS = ['TID_GAME_TITLE_CHAR_INFO', 'TID_GAME_TITLE_HONOR'] as const;
 const CHOSEN_TAB = 0;
@@ -90,6 +86,7 @@ const PAGE_PICTURE = 'WndNewCharacter01.tga';
 /** `D3DCOLOR_ARGB( 255, 0, 0, 180 )`: the labels (:3170, :3374). */
 const LABEL_COLOR = 0xff0000b4;
 const BLACK = 0xff000000;
+const WHITE = 0xffffffff;
 const RED = 0xffff0000;
 /** A stat raised by an item or a buff (`m_nStr < GetStr()`, :3251-3252). */
 const BLUE = 0xff0000ff;
@@ -143,179 +140,12 @@ const COUNT_SCALE = 0.75;
 /** ButtCharPlus.bmp and ButtCharMinus.bmp are 56 x 14, ButtCharApply.tga and ButtCharReset.tga 200 x 20: four states each. */
 const PLUS_QUARTER = 14;
 const APPLY_QUARTER = 50;
-
-// ---- the confirm box -------------------------------------------------------------------------------------------------
-
-/** `APP_STATE_CONFIRM "WndTile08.tga" 1 304 128` (resdata.inc:1202). */
-const CONFIRM_WIDTH = 304;
-const CONFIRM_HEIGHT = 128;
-/** `IDS_RESDATA_INC_000000` (resData.txt.txt:1): the applet's title. */
-const CONFIRM_TITLE = 'Change State';
-/** Its controls (resdata.inc:1212-1238): the text `WIDC_TEXT1` "WndEditTile00.tga" tiled, `WIDC_YES`, `WIDC_NO`. */
-const CONFIRM_TEXT: ControlRect = { left: 8, top: 8, width: 278, height: 52 };
-const YES: ControlRect = { left: 56, top: 70, width: 72, height: 20 };
-const NO: ControlRect = { left: 146, top: 70, width: 72, height: 20 };
-/** ButtYes.tga and ButtNo.tga: 288 x 20, four states of 72 px. */
-const YES_QUARTER = 72;
-/** A control's client area inside its frame (`CWndBase::SetWndRect`, `WndBase.cpp:1846-1853`): 4 in at the top left. */
-const CONTROL_INSET = 4;
-
 /**
- * The tiles of the strip of tabs, from the left, as `CWndTabCtrl::AdditionalSkinTexture` lays them (:4396-4436): a strip
- * `columns` tiles of 8 px long for `tabs` tabs, each tab `columns / tabs` tiles. The first tab starts with tile 0 and the
- * others with tile 4; a tab's last two tiles are 2 and 3, or 2 and 5 at the end of the strip; the rest are 1.
+ * The names of + and - for a screen reader: the stat's text and the sign on the button's picture (ButtCharPlus.bmp,
+ * ButtCharMinus.bmp; the C++ creates both with the title "<", :3527-3540).
  */
-export function tabStripTiles(columns: number, tabs: number): number[] {
-  const size = Math.trunc(columns / Math.max(tabs, 1));
-  const tiles: number[] = [];
-  let start = 0;
-  for (let i = 0; i < columns; i++) {
-    if (i === start - 2) {
-      tiles[i] = 2;
-      i++;
-      if (i < columns) tiles[i] = i === columns - 1 ? 5 : 3;
-    } else if (i === start) {
-      tiles[i] = i === 0 ? 0 : 4;
-      start += size;
-    } else {
-      tiles[i] = 1;
-    }
-  }
-  return tiles;
-}
-
-/**
- * A rectangle `columns` by `rows` edit tiles of 8 px filled with the nine pieces of WndEditTile00 to 08, as
- * `CWndBase::AdditionalSkinTexture` lays them (`_Interface/WndBase.cpp:2575-2620`): the corners and edges round the
- * middle, each picture 8 x 10 laid every 8 px, so that each row but the last is the top 8 px of its pictures (the next
- * row covers the rest) and the last is all 10. The middle and edge pieces are the same down their height, so a run of
- * them is the picture repeated.
- */
-function editTiles(doc: Document, art: UiArt, columns: number, rows: number): HTMLElement {
-  const element = doc.createElement('div');
-  element.className = 'hud-edit-tiles';
-  const xs: Array<[number, number]> = [[0, EDIT], [EDIT, (columns - 2) * EDIT], [(columns - 1) * EDIT, EDIT]];
-  const ys: Array<[number, number]> = [[0, EDIT], [EDIT, (rows - 2) * EDIT], [(rows - 1) * EDIT, 10]];
-  ys.forEach(([top, height], row) => {
-    xs.forEach(([left, width], column) => {
-      if (width <= 0 || height <= 0) return;
-      const piece = doc.createElement('div');
-      piece.style.left = `${left}px`;
-      piece.style.top = `${top}px`;
-      piece.style.width = `${width}px`;
-      piece.style.height = `${height}px`;
-      piece.style.backgroundImage = themeUrl(art, `WndEditTile0${row * 3 + column}.tga`);
-      element.append(piece);
-    });
-  });
-  return element;
-}
-
-/** Places `element` at `rect`. */
-function place(element: HTMLElement, rect: ControlRect): void {
-  element.style.left = `${rect.left}px`;
-  element.style.top = `${rect.top}px`;
-  element.style.width = `${rect.width}px`;
-  element.style.height = `${rect.height}px`;
-}
-
-/** Holds a key at the window's capture: none of the game's handlers hears it, and the browser keeps none of the bar's. */
-function holdKey(event: KeyboardEvent): void {
-  event.stopImmediatePropagation();
-  if (BAR_KEYS.test(event.key)) event.preventDefault();
-}
-
-/**
- * The box that asks before the stat points are applied (`CWndStateConfirm`, APP_STATE_CONFIRM). Its `frame` goes in the
- * windows' layer; `open` shows it at the middle of the layer (`MoveParentCenter`, :4453) with
- * TID_GAME_CHARSTATUS_APPLY_Q and, for a base job, TID_DIAG_0082 on the next line (:4409-4452). Yes calls `onYes` and
- * closes it; No, its close button (`WIDC_NO || WTBID_CLOSE`, :4503-4510) and Escape close it.
- *
- * It is not WBS_MODAL (resdata.inc:1202, `InitDialog( ..., 0, ... )`, :4456-4460): the world and the other windows take
- * presses. But while it is open `CNeuzApp::KillWindow` takes every key first (Neuz.cpp:1262, :1323, :1495-1524): Escape
- * closes it, Enter calls `SendYes`, and no other key goes anywhere. `SendYes` (:4552-4556) is the old path: it sends
- * INC_STAT_LEVEL with `m_nId` 0, which `CDPSrvr::OnIncStatLevel` drops (WORLDSERVER/DPSrvr.cpp, its `default: return`),
- * and closes the box; the browser does not send that packet, and Enter only closes it.
- */
-export class StateConfirm {
-  readonly frame: WindowFrame;
-  private readonly message: HTMLElement;
-  private readonly doc: Document;
-
-  constructor(art: UiArt, private readonly texts: CharacterTexts, private readonly onYes: () => void, doc: Document = document) {
-    this.doc = doc;
-    const frame = new WindowFrame(CONFIRM_TITLE, art, { width: CONFIRM_WIDTH, height: CONFIRM_HEIGHT }, doc);
-    frame.element.classList.add('hud-confirm');
-    frame.onClose = () => this.listen(false);
-    const box = doc.createElement('div');
-    box.className = 'hud-confirm-box';
-    place(box, CONFIRM_TEXT);
-    box.append(editTiles(doc, art, Math.trunc(CONFIRM_TEXT.width / EDIT), Math.trunc(CONFIRM_TEXT.height / EDIT)));
-    const message = doc.createElement('div');
-    message.className = 'hud-confirm-text';
-    message.style.left = `${CONTROL_INSET}px`;
-    message.style.top = `${CONTROL_INSET}px`;
-    // the text control's client area: 4 4 8 10 in (SetWndRect)
-    message.style.width = `${CONFIRM_TEXT.width - CONTROL_INSET - 8}px`;
-    message.style.height = `${CONFIRM_TEXT.height - CONTROL_INSET - 10}px`;
-    box.append(message);
-    this.message = message;
-    const button = (name: string, picture: string, rect: ControlRect, label: string, press: () => void) => {
-      const element = pictureButton(doc, art, picture, rect, YES_QUARTER, press);
-      element.dataset.button = name;
-      element.setAttribute('aria-label', this.text(label));
-      return element;
-    };
-    const yes = button('yes', 'ButtYes.tga', YES, 'TID_GAME_YES', () => {
-      if (!this.isOpen) return;
-      this.onYes();
-      this.close();
-    });
-    const no = button('no', 'ButtNo.tga', NO, 'TID_GAME_NO', () => this.close());
-    frame.body.append(box, yes, no);
-    this.frame = frame;
-  }
-
-  get isOpen(): boolean {
-    return this.frame.isOpen;
-  }
-
-  /** Shows it at the middle of its layer (`MoveRectCenter` of the root window, WndBase.cpp:1805-1816); `baseJob`: add TID_DIAG_0082. */
-  open(baseJob: boolean): void {
-    let message = this.text('TID_GAME_CHARSTATUS_APPLY_Q');
-    if (baseJob) message += `\n${this.text('TID_DIAG_0082')}`;
-    this.message.textContent = message;
-    const layer = this.frame.element.parentElement;
-    const x = Math.trunc((layer?.clientWidth ?? 0) / 2) - CONFIRM_WIDTH / 2;
-    const y = Math.trunc((layer?.clientHeight ?? 0) / 2) - CONFIRM_HEIGHT / 2;
-    if (!this.isOpen) this.listen(true);
-    this.frame.open({ x, y });
-  }
-
-  close(): void {
-    this.frame.close();
-  }
-
-  private text(id: string): string {
-    return this.texts.get(id)?.text ?? '';
-  }
-
-  private listen(on: boolean): void {
-    const view = this.doc.defaultView ?? window;
-    if (on) view.addEventListener('keydown', this.onKeyDown, true);
-    else view.removeEventListener('keydown', this.onKeyDown, true);
-  }
-
-  /** `KillWindow`: every key is the box's; Escape and Enter close it. */
-  private readonly onKeyDown = (event: KeyboardEvent): void => {
-    holdKey(event);
-    if (event.repeat) return;
-    if (event.key === 'Escape' || event.key === 'Enter') {
-      event.preventDefault();
-      this.close();
-    }
-  };
-}
+const PLUS_SIGN = '+';
+const MINUS_SIGN = '-';
 
 /** A value of the page: its element, and what it shows, kept to touch the DOM only when it changes. */
 interface Value {
@@ -365,16 +195,13 @@ export class CharacterWindow {
     const tab = doc.createElement('div');
     tab.className = 'hud-char-tab';
     place(tab, TAB);
-    const width = TAB.width - TAB_RIGHT;
-    const columns = Math.trunc(width / EDIT);
+    const columns = Math.trunc((TAB.width - TAB_RIGHT) / EDIT);
     tab.append(editTiles(doc, art, columns, Math.trunc(TAB.height / EDIT)));
     tab.append(...this.tabStrip(doc, art, columns));
 
     const page = doc.createElement('div');
     page.className = 'hud-char-page';
-    page.style.width = `${TAB.width}px`;
-    // InsertItem: the control less the strip's 18 px (:4586-4592)
-    page.style.height = `${TAB.height - 18}px`;
+    place(page, { left: 0, top: 0, width: TAB.width, height: TAB.height - TAB_STRIP });
     page.style.backgroundImage = themeUrl(art, PAGE_PICTURE);
     tab.append(page);
     frame.body.append(tab);
@@ -431,21 +258,21 @@ export class CharacterWindow {
         });
       }
       inputs[stat] = input;
-      const button = (name: string, picture: string, rect: ControlRect, sign: string, step: 1 | -1) => {
-        const element = pictureButton(doc, art, picture, rect, PLUS_QUARTER, () => this.step(stat, step));
+      const button = (name: string, picture: string, at: ControlRect, sign: string, step: 1 | -1) => {
+        const element = pictureButton(doc, art, picture, at, PLUS_QUARTER, () => this.step(stat, step));
         element.dataset.button = `${stat}-${name}`;
         element.setAttribute('aria-label', `${this.text(STAT_LABELS[stat])} ${sign}`);
         return element;
       };
-      plus[stat] = button('plus', 'ButtCharPlus.bmp', plusRect(i), '+', 1);
-      minus[stat] = button('minus', 'ButtCharMinus.bmp', minusRect(i), '-', -1);
+      plus[stat] = button('plus', 'ButtCharPlus.bmp', plusRect(i), PLUS_SIGN, 1);
+      minus[stat] = button('minus', 'ButtCharMinus.bmp', minusRect(i), MINUS_SIGN, -1);
       page.append(input, plus[stat], minus[stat]);
     });
     this.plus = plus;
     this.minus = minus;
     this.inputs = inputs;
-    const button = (name: string, picture: string, rect: ControlRect, tooltip: string, press: () => void) => {
-      const element = pictureButton(doc, art, picture, rect, APPLY_QUARTER, press);
+    const button = (name: string, picture: string, at: ControlRect, tooltip: string, press: () => void) => {
+      const element = pictureButton(doc, art, picture, at, APPLY_QUARTER, press);
       element.dataset.button = name;
       element.title = this.text(tooltip);
       return element;
@@ -482,11 +309,11 @@ export class CharacterWindow {
     const red = (Math.trunc(nowMs / BLINK_MS) & 1) === 1;
     const blink = (preview: boolean, color = BLACK): number => (preview && red ? RED : color);
 
-    // the base part (:3036-3176): the name GetName(), the job GetJobString(), the level, the server and the channel.
-    // The job's name (`prj.m_aJob[ m_nJob ].szName`, etc.inc's job block through etc.txt.txt) is in no converted catalog:
-    // it is left empty until the converter carries it.
+    // the base part (:3029-3176): the name GetName(), the job GetJobString() (`prj.m_aJob[ m_nJob ].szName`,
+    // MoverParam.cpp:354-359: the jobs catalog's name of etc.inc, '' in one converted before it kept it), the level,
+    // the server and the channel
     this.show('name', entry.character.name);
-    this.show('job', '');
+    this.show('job', own.jobProp.title);
     this.show('level', String(own.level));
     this.show('server', entry.serverName);
     this.show('channel', entry.channelName);
@@ -636,40 +463,28 @@ export class CharacterWindow {
   }
 
   /**
-   * The strip of tabs under the page (`AdditionalSkinTexture`, :4396-4436), the chosen tab over it and the titles
-   * (`OnDraw`, :4183-4285): the chosen tab is tile 10 (11 for one not first), 11 stretched to `nSize - 3` tiles, 12,
-   * then 13 and 14 (15 for the last tab); the titles 2 px into each tab, the chosen one black and the others white
-   * (ALIGN_LEFT, `__VER >= 15`). Only the page's tab does anything: the Fame/Master page is not the browser's.
+   * The strip of tabs under the page (`tabStripTiles`), the chosen tab over it (`chosenTabTiles`) and the titles (`OnDraw`,
+   * :4221-4283): 2 px into each tab, the chosen one black and the others white (ALIGN_LEFT, `__VER >= 15`). Only the
+   * page's tab does anything: the Fame/Master page is not the browser's.
    */
   private tabStrip(doc: Document, art: UiArt, columns: number): HTMLElement[] {
     const top = (Math.trunc(TAB.height / EDIT) - 2) * EDIT;
     const tile = (index: number, left: number, width = TAB_TILE): HTMLElement => {
       const element = doc.createElement('div');
-      element.style.left = `${left}px`;
-      element.style.top = `${top}px`;
-      element.style.width = `${width}px`;
-      element.style.height = '20px';
+      place(element, { left, top, width, height: TAB_TILE_HEIGHT });
       element.style.backgroundImage = themeUrl(art, `WndTabTile${String(index).padStart(2, '0')}.bmp`);
       element.style.backgroundSize = '100% 100%';
       return element;
     };
     const tiles = tabStripTiles(columns, TABS.length).map((index, i) => tile(index, i * TAB_TILE));
-    const size = Math.trunc(columns / TABS.length);
-    const x = TAB_TILE * size * CHOSEN_TAB;
-    tiles.push(
-      tile(CHOSEN_TAB === 0 ? 10 : 11, x),
-      tile(11, x + TAB_TILE, TAB_TILE * (size - 3)),
-      tile(12, x + TAB_TILE * (size - 2)),
-    );
-    if (CHOSEN_TAB === TABS.length - 1) tiles.push(tile(15, x + TAB_TILE * (size - 1)));
-    else tiles.push(tile(13, x + TAB_TILE * (size - 1)), tile(14, x + TAB_TILE * size));
+    for (const chosen of chosenTabTiles(columns, TABS.length, CHOSEN_TAB)) tiles.push(tile(chosen.index, chosen.left, chosen.width));
     const length = Math.trunc((TAB.width - TAB_RIGHT) / TABS.length);
     const titles = TABS.map((id, i) => {
       const title = this.textAt(doc, i * length + 2, TAB.height - TAB_TITLE_UP);
       title.classList.add('hud-char-tab-title');
       title.dataset.tab = String(i);
       title.textContent = this.text(id);
-      title.style.color = cssRgb(i === CHOSEN_TAB ? BLACK : 0xffffffff);
+      title.style.color = cssRgb(i === CHOSEN_TAB ? BLACK : WHITE);
       return title;
     });
     return [...tiles, ...titles];

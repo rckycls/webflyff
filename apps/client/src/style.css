@@ -962,32 +962,13 @@ fieldset:disabled .btn {
   line-height: 12px;
 }
 
-/* The box that asks before logging out (LogOutBox, CWndLogOut over CWndMessageBox): the text in black, OK and Cancel */
+/* The box that asks before logging out (LogOutBox, CWndLogOut over CWndMessageBox): the text in black; OK and Cancel are
+   picture buttons (ButtOk.tga, ButtCancel.tga, 72 px a state) */
 .hud-logout-text {
   position: absolute;
   color: #000000;
   line-height: 14px;
   white-space: normal;
-}
-
-/* ButtOk.tga, ButtCancel.tga: normal, highlighted, pushed, disabled side by side, 72 px each */
-.hud-logout-button {
-  position: absolute;
-  padding: 0;
-  border: 0;
-  background-color: transparent;
-  background-repeat: no-repeat;
-  cursor: pointer;
-  touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.hud-logout-button:hover {
-  background-position: -72px 0;
-}
-
-.hud-logout-button:active {
-  background-position: -144px 0;
 }
 
 /* A button drawn with a theme picture (pictureButton, CTheme::RenderWndButton_4Texture): the picture's quarters,
@@ -1020,8 +1001,8 @@ fieldset:disabled .btn {
   cursor: default;
 }
 
-/* The revive window's backdrop (ReviveWindow, WBS_MODAL): over the windows and the task bar, it takes every press while
-   the window is open */
+/* The backdrop of a WBS_MODAL window (ModalBackdrop: the revive window, the log-out box): over the windows and the task
+   bar, it takes every press while the window is open */
 .hud-modal {
   position: absolute;
   inset: 0;
@@ -1136,7 +1117,7 @@ fieldset:disabled .btn {
 }
 
 /* The Start menu opens where Piece 3's joystick stands, which is over the windows' layer: it hides while the menu is open
-   (WorldScreen sets the class); and while the revive window, which takes every press, is open */
+   (WorldScreen sets the class); and while a modal window, whose backdrop takes every press, is open */
 .world.world-modal .joystick,
 .world.world-menu-open .joystick {
   visibility: hidden;

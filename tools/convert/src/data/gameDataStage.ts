@@ -8,7 +8,7 @@
 //   data/honorTitles.json  honour id to title text of honorList.txt (WebHonorTitles)
 //   data/worlds.json       world id to the web folder name of its world, from World.inc (WebWorlds)
 //   data/itemProps.json    every item of propItem.txt with the columns the fight reads, its held model and icon (WebItemProp[])
-//   data/jobs.json         every job of propJob.inc (JobProp[])
+//   data/jobs.json         every job of propJob.inc, with its name of etc.inc's job block (WebJob[])
 //   data/exp.json          the character EXP table of ExpTable.inc, the 64-bit columns as text (WebExpRow[])
 //   data/texts.json        every client text of textClient.inc, by TID name (WebTexts)
 //   data/effectsIndex.json XI id to the effect file and scale of its OT_SFX entry in mdlDyna.inc (WebEffectsIndex)
@@ -35,6 +35,7 @@ import {
   loadStrings,
   modelFileName,
   readCharacterInc,
+  readEtcJobs,
   readExpTable,
   readHonorTitles,
   readPkSetting,
@@ -47,13 +48,13 @@ import {
 } from '@flyffweb/formats';
 import type {
   ItemProp,
-  JobProp,
   ModelElem,
   WebEffectsIndex,
   WebExpRow,
   WebHonorTitles,
   WebItemModel,
   WebItemProp,
+  WebJob,
   WebMover,
   WebNameColors,
   WebNpc,
@@ -369,8 +370,24 @@ function buildItemProps(env: Env, read: Reading): WebItemProp[] {
   return itemProps;
 }
 
-function buildJobs(env: Env, read: Reading): JobProp[] {
-  return readPropJob(read.text('propJob.inc'), 'propJob.inc', env.defines);
+/**
+ * Every job of propJob.inc (`m_aPropJob`, by `JOB_*`), with `title`, the job's name of etc.inc's `job` block
+ * (`m_aJob[ id ].szName`, CProject::LoadEtc, Project.cpp:903-920), which `CMover::GetJobString` gives the Character
+ * window (MoverParam.cpp:354-359). A job that etc.inc names nothing for has '', with one warning that lists them.
+ */
+function buildJobs(env: Env, read: Reading): WebJob[] {
+  const props = readPropJob(read.text('propJob.inc'), 'propJob.inc', env.defines);
+  const names = readEtcJobs(read.text('etc.inc'), env.defines, env.strings, 'etc.inc');
+  const unnamed = props.flatMap((prop, job) => (names.has(job) ? [] : [prop.name]));
+  if (unnamed.length > 0) {
+    const has = unnamed.length === 1 ? 'has' : 'have';
+    env.report.warn(
+      KIND,
+      'etc.inc',
+      `${plural(unnamed.length, 'job')} of propJob.inc ${has} no name in etc.inc's job block, left '': ${unnamed.join(', ')}`,
+    );
+  }
+  return props.map((prop, job) => ({ ...prop, title: names.get(job)?.name ?? '' }));
 }
 
 /** EXPINTEGER is 64 bits and one value passes 2^53, so JSON carries the columns as decimal text. */

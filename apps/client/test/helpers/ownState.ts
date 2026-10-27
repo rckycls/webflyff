@@ -1,4 +1,4 @@
-import type { ExpRow, JobProp, WebItemProp } from '@flyffweb/formats';
+import type { ExpRow, WebItemProp, WebJob } from '@flyffweb/formats';
 import type { AddedMover } from '@flyffweb/protocol';
 import { newVagrantOwn } from '@flyffweb/testkit';
 import type { GameData } from '../../src/world/gameData';
@@ -10,12 +10,15 @@ const f32 = Math.fround;
 /** The object ID of the own character in these tests. */
 export const OWN_ID = 9;
 
-/** `JOB_VAGRANT`, `Resource/propJob.inc:3`, the numbers as `GetFloat` stores them (C `float`). */
-export const VAGRANT: JobProp = {
+/**
+ * `JOB_VAGRANT`, `Resource/propJob.inc:3`, the numbers as `GetFloat` stores them (C `float`), with its name of etc.inc's
+ * job block (`Resource/etc.inc:7`, `IDS_ETC_INC_000000`).
+ */
+export const VAGRANT: WebJob = {
   name: 'JOB_VAGRANT', attackSpeed: 75, factorMaxHP: f32(0.9), factorMaxMP: f32(0.3), factorMaxFP: f32(0.3),
   factorDef: 1, factorHPRecovery: f32(1.2), factorMPRecovery: 0.5, factorFPRecovery: 0.5, meleeSWD: 4.5, meleeAXE: 5.5,
   meleeSTAFF: f32(0.8), meleeSTICK: 3, meleeKNUCKLE: 5, magicWAND: 6, blocking: f32(0.2), meleeYOYO: f32(4.2),
-  critical: 1,
+  critical: 1, title: 'Vagrant',
 };
 
 /** `ExpTable.inc:4-20`, rows 0 to 16 (`nExp1 nExp2 dwLPPoint nLimitExp`; the row's place is the level). */

@@ -3,6 +3,7 @@
 // content-hashed like every other output (`data/movers.json` becomes `data/movers.<10 hex>.json` in the asset index).
 
 import type { PkColors } from '../inc/pkSetting';
+import type { JobProp } from '../inc/propJob';
 
 /** One mover of `propMover.txt`, with the converted files its model, skeleton and motions are in. */
 export interface WebMover {
@@ -162,6 +163,15 @@ export type WebHonorTitles = Record<string, string>;
  * world of World.inc, converted or not; a world was converted if its manifest is in the asset index.
  */
 export type WebWorlds = Record<string, string>;
+
+/**
+ * A job of `propJob.inc` (data/jobs.json, job `JOB_*` at index `JOB_*`): its row (`m_aPropJob`) and `title`, the job's
+ * name of etc.inc's `job` block (`m_aJob[ id ].szName`, CProject::LoadEtc, Project.cpp:903-920), which
+ * `CMover::GetJobString` gives the windows (MoverParam.cpp:354-359): "Vagrant". A job etc.inc names nothing for has ''.
+ */
+export interface WebJob extends JobProp {
+  title: string;
+}
 
 /**
  * A row of the EXP table (`ExpTable.inc`, the `expCharacter` block; data/exp.json, row `level` at index `level`). The

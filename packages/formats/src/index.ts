@@ -41,6 +41,8 @@ export type { PkColors } from './inc/pkSetting';
 export { readHonorTitles } from './inc/honorTitles';
 export { readPropJob } from './inc/propJob';
 export type { JobProp } from './inc/propJob';
+export { readEtcJobs } from './inc/etcJobs';
+export type { EtcJob } from './inc/etcJobs';
 export { readExpTable } from './inc/expTable';
 export type { ExpRow } from './inc/expTable';
 export { readTextClient } from './inc/textClient';
@@ -84,6 +86,7 @@ export type {
   WebHonorTitles,
   WebItemModel,
   WebItemProp,
+  WebJob,
   WebMover,
   WebNameColors,
   WebNpc,

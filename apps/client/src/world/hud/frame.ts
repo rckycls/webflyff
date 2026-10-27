@@ -41,6 +41,11 @@ export interface FrameLayout {
   height: number;
   /** The whole window's picture (a theme file name, `WndStatus2.tga`), drawn as it is; none for the tiled frame. */
   texture?: string;
+  /**
+   * False for a window whose title bar's buttons are hidden (`m_wndTitleBar.SetVisible( FALSE )`, CWndRevival,
+   * WndField.cpp:12219): its caption is still drawn, but it has no close button. True by default.
+   */
+  closeButton?: boolean;
 }
 
 /** A window with no layout of its own. */
@@ -156,7 +161,8 @@ export class WindowFrame {
     body.style.height = `${Math.max(0, height - CAPTION - CLIENT_TOP - CLIENT_BOTTOM)}px`;
     this.body = body;
 
-    element.append(frame, titleBar, body, close);
+    element.append(frame, titleBar, body);
+    if (layout.closeButton !== false) element.append(close);
     this.element = element;
     this.setTitle(title);
 

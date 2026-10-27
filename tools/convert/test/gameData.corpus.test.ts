@@ -15,6 +15,7 @@ import {
   loadStrings,
   modelFileName,
   readCharacterInc,
+  readEtcJobs,
   readExpTable,
   readHonorTitles,
   readModelIndex,
@@ -26,13 +27,13 @@ import {
   webName,
 } from '@flyffweb/formats';
 import type {
-  JobProp,
   ModelElem,
   WebEffectsIndex,
   WebExpRow,
   WebHonorTitles,
   WebItemModel,
   WebItemProp,
+  WebJob,
   WebMover,
   WebNameColors,
   WebNpc,
@@ -365,11 +366,16 @@ describeClient('the game-data stage on the real client', () => {
     expect(warning).toBeDefined();
   });
 
-  it('jobs: the 32 rows of propJob.inc in JOB_* order', async () => {
-    const jobs = await catalog<JobProp[]>(GAME_DATA_KEYS.jobs);
-    expect(jobs).toEqual(readPropJob(script('propJob.inc'), 'propJob.inc', defines));
+  it("jobs: the 32 rows of propJob.inc in JOB_* order, each with its name of etc.inc's job block", async () => {
+    const jobs = await catalog<WebJob[]>(GAME_DATA_KEYS.jobs);
+    expect(jobs.map(({ title: _title, ...prop }) => prop)).toEqual(readPropJob(script('propJob.inc'), 'propJob.inc', defines));
     expect(jobs).toHaveLength(32);
-    expect(jobs[defines.get('JOB_VAGRANT')!]).toMatchObject({ name: 'JOB_VAGRANT', attackSpeed: 75, factorMaxHP: Math.fround(0.9) });
+    const names = readEtcJobs(script('etc.inc'), defines, strings, 'etc.inc');
+    expect(jobs.map((job) => job.title)).toEqual(jobs.map((_, i) => names.get(i)!.name));
+    expect(jobs[defines.get('JOB_VAGRANT')!]).toMatchObject({
+      name: 'JOB_VAGRANT', attackSpeed: 75, factorMaxHP: Math.fround(0.9), title: 'Vagrant',
+    });
+    expect(report.warnings.filter((w) => w.message.includes('etc.inc'))).toEqual([]);
   });
 
   it('exp: the 200 rows of the EXP table, the 64-bit columns as exact text', async () => {

@@ -7,6 +7,7 @@ import {
   loadStrings,
   readCharacterInc,
   readDds,
+  readEtcJobs,
   readExpTable,
   readHonorTitles,
   readModelIndex,
@@ -390,6 +391,21 @@ describeClient('game data readers on the client packs', () => {
     for (const e of twoSex) expect(e.part.split('/').filter((half) => half !== ''), e.part).toHaveLength(2);
     const withPart = elems.filter((e) => e.part !== '').length;
     console.log(`mdlDyna.inc: ${elems.length} entries, ${withPart} with a part (${twoSex.length} two-sex), ${motions} motions`);
+  });
+
+  it("etc.inc: every job of propJob.inc has its name, base job and type; the Vagrant is the one JTYPE_BASE job", () => {
+    const jobs = readEtcJobs(scriptText('etc.inc'), defines, strings, 'etc.inc');
+    // an independent reading of the job block: four words a row, the name a string-table key
+    const block = /\bjob\s*\{([^}]*)\}/.exec(withoutComments(scriptText('etc.inc')))![1]!;
+    const rows = block.split(/\r?\n/).map((line) => line.trim().split(/\s+/)).filter((row) => row.length === 4);
+    expect(jobs.size).toBe(rows.length);
+    expect(jobs.size).toBe(32);
+    for (const [job, name, base, type] of rows) {
+      expect(jobs.get(defines.get(job!)!), job).toEqual({ name: resolve(name!), base: asNumber(base!), type: asNumber(type!) });
+    }
+    expect(jobs.get(defines.get('JOB_VAGRANT')!)).toEqual({ name: 'Vagrant', base: 0, type: defines.get('JTYPE_BASE') });
+    expect([...jobs.values()].filter((j) => j.type === defines.get('JTYPE_BASE'))).toHaveLength(1);
+    expect(jobs.get(defines.get('JOB_MERCENARY')!)!.name).toBe('Mercenary');
   });
 
   it('propJob.inc: a row per job in JOB_* order, 17 floats each, the Vagrant row as the reference table has it', () => {

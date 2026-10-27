@@ -7,13 +7,13 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { GAME_DATA_KEYS } from '@flyffweb/formats';
 import type {
-  JobProp,
   ModelElem,
   WebEffectsIndex,
   WebExpRow,
   WebHonorTitles,
   WebItemModel,
   WebItemProp,
+  WebJob,
   WebMover,
   WebNameColors,
   WebNpc,
@@ -85,6 +85,8 @@ const DEFINES = script(
   '#define WI_DUNGEON_SECRET_1 41',
   '#define WI_DUNGEON_SECRET_2 42',
   '#define JOB_MERCENARY 1',
+  '#define JTYPE_BASE 0',
+  '#define JTYPE_EXPERT 1',
   '#define MODELTYPE_SFX 4',
   '#define XI_HIT_SWORD01 20',
   '#define XI_HIT_YOY01 31',
@@ -252,6 +254,15 @@ const PACKED: Record<string, string> = {
     '// fAttackSpeed fFactorMaxHP ...',
     'JOB_VAGRANT 75.0 0.9 0.3 0.3 1.0 1.2 0.5 0.5 4.5 5.5 0.8 3.0 5.0 6.0 0.2 4.2 1.0',
     'JOB_MERCENARY 80.0 1.1 0.3 0.3 1.0 1.2 0.5 0.5 4.5 5.5 0.8 3.0 5.0 6.0 0.2 4.2 1.0',
+  ),
+  // the job names (CProject::LoadEtc)
+  'etc.txt.txt': script('IDS_ETC_INC_000000\tVagrant', 'IDS_ETC_INC_000001\tMercenary'),
+  'etc.inc': script(
+    'job',
+    '{',
+    '\tJOB_VAGRANT\t\tIDS_ETC_INC_000000\t\tJOB_VAGRANT\tJTYPE_BASE',
+    '\tJOB_MERCENARY\t\tIDS_ETC_INC_000001\t\tJOB_VAGRANT\tJTYPE_EXPERT',
+    '}',
   ),
   'ExpTable.inc': script(
     'expCharacter // 1 based',
@@ -582,18 +593,31 @@ describe('the game-data stage', () => {
     expect(warnings[0]!.message).toContain('held');
   });
 
-  it('jobs: a JobProp per row of propJob.inc, the floats as C floats', async () => {
+  it('jobs: a row per job of propJob.inc, the floats as C floats, with the name etc.inc gives the job', async () => {
     await client();
     const run = await runData();
-    const jobs = await catalog<JobProp[]>(run, GAME_DATA_KEYS.jobs);
+    const jobs = await catalog<WebJob[]>(run, GAME_DATA_KEYS.jobs);
     expect(jobs).toHaveLength(2);
     expect(jobs[0]).toEqual({
       name: 'JOB_VAGRANT', attackSpeed: 75, factorMaxHP: Math.fround(0.9), factorMaxMP: Math.fround(0.3),
       factorMaxFP: Math.fround(0.3), factorDef: 1, factorHPRecovery: Math.fround(1.2), factorMPRecovery: 0.5,
       factorFPRecovery: 0.5, meleeSWD: 4.5, meleeAXE: 5.5, meleeSTAFF: Math.fround(0.8), meleeSTICK: 3,
       meleeKNUCKLE: 5, magicWAND: 6, blocking: Math.fround(0.2), meleeYOYO: Math.fround(4.2), critical: 1,
+      title: 'Vagrant',
     });
-    expect(jobs[1]).toMatchObject({ name: 'JOB_MERCENARY', attackSpeed: 80, factorMaxHP: Math.fround(1.1) });
+    expect(jobs[1]).toMatchObject({ name: 'JOB_MERCENARY', attackSpeed: 80, factorMaxHP: Math.fround(1.1), title: 'Mercenary' });
+    expect(run.report.warnings.filter((w) => w.message.includes('etc.inc'))).toEqual([]);
+  });
+
+  it("jobs: a job etc.inc names nothing for has an empty name, with one warning that names it", async () => {
+    await client({ 'etc.inc': script('job', '{', '\tJOB_VAGRANT\t\tIDS_ETC_INC_000000\t\tJOB_VAGRANT\tJTYPE_BASE', '}') });
+    const run = await runData();
+    expect(run.report.failures).toEqual([]);
+    const jobs = await catalog<WebJob[]>(run, GAME_DATA_KEYS.jobs);
+    expect(jobs.map((job) => job.title)).toEqual(['Vagrant', '']);
+    const warnings = run.report.warnings.filter((w) => w.message.includes('etc.inc'));
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]!.message).toContain('JOB_MERCENARY');
   });
 
   it('exp: the expCharacter rows with the 64-bit columns as decimal text', async () => {

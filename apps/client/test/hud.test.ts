@@ -1275,50 +1275,81 @@ describe('refitWindows (the screen resized or the device turned: Piece 4 spec §
   });
 });
 
-describe('LogOutBox (CWndLogOut, WndField.cpp:11910-11983; CWndMessageBox, WndMessageBox.cpp:65-129)', () => {
+describe('LogOutBox (CWndLogOut, WndField.cpp:11910-11983; CWndMessageBox, WndMessageBox.cpp:65-129, :198-206)', () => {
   const LOG_OUT_TEXTS = new Map([
     ['TID_DIAG_0068', { text: 'Inbox' }], ['TID_DIAG_0069', { text: 'Do you want to disconnect?' }],
   ]);
+  const boxes: LogOutBox[] = [];
+  afterEach(() => {
+    for (const box of boxes.splice(0)) box.dispose();
+  });
   const boxOn = (onOk: () => void = () => {}) => {
     const box = new LogOutBox(art, LOG_OUT_TEXTS, onOk);
-    layer(800, 450).append(box.frame.element);
+    boxes.push(box);
+    layer(800, 450).append(box.element);
     return box;
   };
+  const button = (box: LogOutBox, name: string) => box.frame.element.querySelector<HTMLButtonElement>(`[data-button="${name}"]`)!;
 
-  it('is APP_MESSAGEBOX titled TID_DIAG_0068 with TID_DIAG_0069, at the middle of the width and 70 px down', () => {
+  it('is APP_MESSAGEBOX titled "Message Box" (its resdata title) with TID_DIAG_0069, at the middle of the width and 70 px down', () => {
     const box = boxOn();
     box.open(800);
     const element = box.frame.element;
     expect(box.isOpen).toBe(true);
-    expect(element.querySelector('.hud-window-title')!.textContent).toBe('Inbox');
+    // CWndMessageBox::Create sets TID_DIAG_0068 as the title, which CWndNeuz::OnInitialUpdate puts back to the applet's
+    // (WndNeuz.cpp:210-216): IDS_RESDATA_INC_003100
+    expect(element.querySelector('.hud-window-title')!.textContent).toBe('Message Box');
     expect(element.querySelector('.hud-logout-text')!.textContent).toBe('Do you want to disconnect?');
     expect(element.querySelector<HTMLElement>('.hud-window-frame')!.style.backgroundImage).toBe('url("/assets/ui/wndmessagebox.png")');
     expect([element.style.width, element.style.height]).toEqual(['256px', '144px']);
     expect([element.style.left, element.style.top]).toEqual(['272px', '70px']);
     // OK 70 px left of the client area's middle (122) and Cancel 10 px right of it, 30 px over its bottom (112)
-    const [ok, cancel] = [...element.querySelectorAll<HTMLElement>('.hud-logout-button')];
-    expect([ok!.getAttribute('aria-label'), ok!.style.left, ok!.style.top, ok!.style.width]).toEqual(['OK', '52px', '82px', '72px']);
-    expect([cancel!.getAttribute('aria-label'), cancel!.style.left, cancel!.style.top]).toEqual(['Cancel', '132px', '82px']);
-    expect(ok!.style.backgroundImage).toBe('url("/assets/ui/buttok.png")');
-    expect(cancel!.style.backgroundImage).toBe('url("/assets/ui/buttcancel.png")');
-    box.frame.close();
+    const ok = button(box, 'ok');
+    const cancel = button(box, 'cancel');
+    expect([ok.getAttribute('aria-label'), ok.style.left, ok.style.top, ok.style.width]).toEqual(['OK', '52px', '82px', '72px']);
+    expect([cancel.getAttribute('aria-label'), cancel.style.left, cancel.style.top]).toEqual(['Cancel', '132px', '82px']);
+    expect(ok.style.backgroundImage).toBe('url("/assets/ui/buttok.png")');
+    expect(cancel.style.backgroundImage).toBe('url("/assets/ui/buttcancel.png")');
+    // RenderWndButton_4Texture's quarters of 72 px: highlighted, normal (at rest), pushed, disabled (ITheme.cpp:1336-1414)
+    expect(ok.classList.contains('hud-picture-button')).toBe(true);
+    expect(ok.style.getPropertyValue('--hud-quarter')).toBe('72px');
   });
 
-  it('OK logs out and closes it; Cancel and Escape close it and do nothing else', () => {
+  it('OK logs out and closes it; Cancel and its close button close it and do nothing else', () => {
     const onOk = vi.fn();
     const box = boxOn(onOk);
     box.open(800);
-    box.frame.element.querySelectorAll<HTMLButtonElement>('.hud-logout-button')[1]!.click();
+    button(box, 'cancel').click();
     expect(box.isOpen).toBe(false);
+    expect(box.element.hidden).toBe(true);
     box.open(800);
-    // a window of resdata.inc, which GetWndBase finds (WndBase.cpp:2048-2095) and Escape destroys (WndManager.cpp:3383-3420)
-    document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    box.frame.element.querySelector<HTMLButtonElement>('.hud-window-close')!.click();
     expect(box.isOpen).toBe(false);
     expect(onOk).not.toHaveBeenCalled();
     box.open(800);
-    box.frame.element.querySelectorAll<HTMLButtonElement>('.hud-logout-button')[0]!.click();
+    button(box, 'ok').click();
     expect(onOk).toHaveBeenCalledTimes(1);
     expect(box.isOpen).toBe(false);
+  });
+
+  it('is modal (WBS_MODAL, WndMessageBox.cpp:202): no key reaches the game, Escape does not close it, its backdrop takes the presses', () => {
+    const box = boxOn();
+    const heard: string[] = [];
+    const listen = (event: Event) => void heard.push(event.type);
+    window.addEventListener('keydown', listen);
+    box.element.parentElement!.addEventListener('pointerdown', listen);
+    box.open(800);
+    expect(box.element.hidden).toBe(false);
+    expect(box.element.classList.contains('hud-modal')).toBe(true);
+    press('KeyH');
+    press('Escape', { key: 'Escape' });
+    box.element.dispatchEvent(pointer('pointerdown', 5, 5));
+    expect(heard).toEqual([]);
+    expect(box.isOpen).toBe(true);
+    button(box, 'cancel').click();
+    press('KeyH');
+    expect(heard).toEqual(['keydown']);
+    window.removeEventListener('keydown', listen);
   });
 });
 
@@ -1438,7 +1469,8 @@ describe('ReviveWindow (CWndRevival, WndField.cpp:12147-12345)', () => {
     expect([element.style.width, element.style.height]).toEqual(['176px', '128px']);
     expect([element.style.left, element.style.top]).toEqual(['312px', '70px']);
     expect(element.querySelector('.hud-window-title')!.textContent).toBe('Revive');
-    expect(element.querySelector<HTMLElement>('.hud-window-close')!.hidden).toBe(true);
+    // m_wndTitleBar.SetVisible( FALSE ) (:12219): the frame has no close button
+    expect(element.querySelector('.hud-window-close')).toBeNull();
     const rect = (name: string) => {
       const b = button(revive, name);
       return [b.style.left, b.style.top, b.style.width, b.style.height, b.style.backgroundImage];
@@ -1469,6 +1501,21 @@ describe('ReviveWindow (CWndRevival, WndField.cpp:12147-12345)', () => {
     press('Escape', { key: 'Escape' });
     expect(heard).toEqual([]);
     expect(revive.isOpen).toBe(true);
+    // a press on the backdrop, where a window or the world lies under it, reaches none of the page's handlers
+    const pressed: string[] = [];
+    const hear = (event: Event) => void pressed.push(event.type);
+    for (const type of ['pointerdown', 'mousedown', 'click']) {
+      revive.element.parentElement!.addEventListener(type, hear);
+      document.addEventListener(type, hear);
+    }
+    revive.element.dispatchEvent(pointer('pointerdown', 5, 5));
+    revive.element.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    revive.element.click();
+    expect(pressed).toEqual([]);
+    // a press in the window still works: the window is pressed, then the page hears it as ever
+    button(revive, 'stand').dispatchEvent(pointer('pointerdown', 20, 40));
+    expect(pressed).toEqual(['pointerdown', 'pointerdown']);
+    for (const type of ['pointerdown', 'mousedown', 'click']) document.removeEventListener(type, hear);
     // opened again while open: one window (`m_pWndRevival == NULL`, WndManager.cpp:3313)
     revive.open();
     expect(revive.isOpen).toBe(true);
@@ -1523,6 +1570,8 @@ describe('CharacterWindow (CWndCharInfo, WndField.cpp:3012-4110; CWndStateConfir
       .toEqual(['208px', '512px', '0px', '0px']);
     expect([shown(character, 'name'), shown(character, 'level'), shown(character, 'server'), shown(character, 'channel')])
       .toEqual(['Webby', '1', 'FlyFF', 'Channel 1']);
+    // GetJobString(): prj.m_aJob[ m_nJob ].szName (MoverParam.cpp:354-359), etc.inc's name of the job (the jobs catalog's)
+    expect(shown(character, 'job')).toBe('Vagrant');
     const labels = [...element.querySelectorAll('[data-label]')].map((e) => e.textContent);
     expect(labels).toEqual([
       'Base', 'Name', 'Job', 'Level', 'Server', 'Channel', 'Detail', 'ATK', 'Critical', 'DEF', 'A.Speed', 'STR', 'STA', 'DEX',
@@ -1642,6 +1691,22 @@ describe('CharacterWindow (CWndCharInfo, WndField.cpp:3012-4110; CWndStateConfir
     expect([shown(character, 'atk'), shown(character, 'def')]).toEqual(['30', '6']);
     expect(value(character, 'atk').style.color).toBe('rgb(0, 0, 0)');
     expect(button(character, 'str-plus').disabled).toBe(true);
+  });
+
+  it('SETSTATE leaves the counts being placed as they are (OnSetState touches only the stats, DPClient.cpp:13514-13524)', () => {
+    const { character } = windowOn();
+    const own = newVagrant();
+    own.remainGP = 6;
+    character.update(own, ENTRY);
+    for (const name of ['str-plus', 'str-plus', 'dex-plus']) button(character, name).click();
+    // another SETSTATE (the server's answer to an earlier Apply, say): 2 points went into STA
+    own.apply({ type: 'setState', str: 15, sta: 17, dex: 15, int: 15, remainGP: 4 }, OWN_ID);
+    character.update(own, ENTRY, RED_PHASE);
+    expect(character.counts).toEqual({ str: 2, sta: 0, dex: 1, int: 0 });
+    expect([count(character, 'str').value, count(character, 'dex').value]).toEqual(['2', '1']);
+    expect([shown(character, 'sta'), shown(character, 'points')]).toEqual(['17', '1']);
+    // the preview still adds them: STR 17 at level 1 with the Wooden Sword
+    expect([shown(character, 'atk'), value(character, 'atk').dataset.preview]).toEqual(['30', '']);
   });
 
   it('DEX previews the critical and the attack speed; a stat raised by an item is blue (:3246-3286)', () => {

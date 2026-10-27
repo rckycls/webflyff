@@ -1,5 +1,5 @@
 import { GAME_DATA_KEYS } from '@flyffweb/formats';
-import type { JobProp, WebItemProp } from '@flyffweb/formats';
+import type { WebItemProp, WebJob } from '@flyffweb/formats';
 import { DstParam } from '@flyffweb/protocol';
 import type { AddedMover, InventoryItem, SkillSlot, TaskBar, WorldMessage } from '@flyffweb/protocol';
 import { GameDataMissingError } from './gameData';
@@ -93,8 +93,8 @@ export class OwnState {
   /** The own mover's object ID, which a message names its mover by. */
   readonly objectId: number;
   readonly job: number;
-  /** The job's row of `propJob.inc`, which the formulas read. */
-  readonly jobProp: JobProp;
+  /** The job's row of `propJob.inc`, which the formulas read, and its name (`title`, `GetJobString`). */
+  readonly jobProp: WebJob;
   private levelNow: number;
   /** `m_nStr`, `m_nSta`, `m_nDex`, `m_nInt`: without the worn items and buffs. */
   stats: Stats;

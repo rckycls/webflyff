@@ -7,12 +7,20 @@
 import { themeUrl } from './art';
 import type { UiArt } from './art';
 
-/** A control's rectangle in its window's client area, in CSS pixels. */
+/** A control's rectangle in its window's client area, in CSS pixels (resdata.inc's, or the one the C++ creates it with). */
 export interface ControlRect {
   left: number;
   top: number;
   width: number;
   height: number;
+}
+
+/** Places a control's element at `rect` in its window's client area. */
+export function place(element: HTMLElement, rect: ControlRect): void {
+  element.style.left = `${rect.left}px`;
+  element.style.top = `${rect.top}px`;
+  element.style.width = `${rect.width}px`;
+  element.style.height = `${rect.height}px`;
 }
 
 /**
@@ -28,10 +36,7 @@ export function pictureButton(
   button.className = 'hud-picture-button';
   button.tabIndex = -1;
   button.addEventListener('mousedown', (event) => event.preventDefault());
-  button.style.left = `${rect.left}px`;
-  button.style.top = `${rect.top}px`;
-  button.style.width = `${rect.width}px`;
-  button.style.height = `${rect.height}px`;
+  place(button, rect);
   button.style.backgroundImage = themeUrl(art, picture);
   button.style.setProperty('--hud-quarter', `${quarter}px`);
   button.addEventListener('click', press);

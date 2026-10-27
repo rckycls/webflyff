@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { GAME_DATA_KEYS } from '@flyffweb/formats';
-import type { JobProp, WebExpRow, WebItemProp, WebMover } from '@flyffweb/formats';
+import type { WebExpRow, WebItemProp, WebJob, WebMover } from '@flyffweb/formats';
 import { GameDataMissingError, loadGameData } from '../src/world/gameData';
 import { catalogFiles, storeOf } from './helpers/gameDataFiles';
 
@@ -11,11 +11,11 @@ const WOODEN_SWORD: WebItemProp = {
   sfxHit: 20, model: 'models/item_weaswowooden.glb', icon: 'ui/item/itm_weaswowooden.png',
 };
 
-const VAGRANT: JobProp = {
+const VAGRANT: WebJob = {
   name: 'JOB_VAGRANT', attackSpeed: 75, factorMaxHP: Math.fround(0.9), factorMaxMP: Math.fround(0.3),
   factorMaxFP: Math.fround(0.3), factorDef: 1, factorHPRecovery: Math.fround(1.2), factorMPRecovery: 0.5,
   factorFPRecovery: 0.5, meleeSWD: 4.5, meleeAXE: 5.5, meleeSTAFF: Math.fround(0.8), meleeSTICK: 3, meleeKNUCKLE: 5,
-  magicWAND: 6, blocking: Math.fround(0.2), meleeYOYO: Math.fround(4.2), critical: 1,
+  magicWAND: 6, blocking: Math.fround(0.2), meleeYOYO: Math.fround(4.2), critical: 1, title: 'Vagrant',
 };
 
 /** The catalogs added for combat: an asset index written before them lacks these keys. */
@@ -62,10 +62,17 @@ describe('loadGameData: the combat catalogs', () => {
   });
 
   it('jobs are the rows in JOB_* order, so jobs[job] is the job', async () => {
-    const mercenary: JobProp = { ...VAGRANT, name: 'JOB_MERCENARY', attackSpeed: 80 };
+    const mercenary: WebJob = { ...VAGRANT, name: 'JOB_MERCENARY', attackSpeed: 80, title: 'Mercenary' };
     const data = await loadGameData(storeOf(catalogFiles({ [GAME_DATA_KEYS.jobs]: [VAGRANT, mercenary] })));
     expect(data.jobs).toEqual([VAGRANT, mercenary]);
     expect(data.jobs[1]!.name).toBe('JOB_MERCENARY');
+    expect(data.jobs[1]!.title).toBe('Mercenary');
+  });
+
+  it("a jobs.json from before the converter kept the job's name (etc.inc) reads it as empty", async () => {
+    const { title: _dropped, ...older } = VAGRANT;
+    const data = await loadGameData(storeOf(catalogFiles({ [GAME_DATA_KEYS.jobs]: [older] })));
+    expect(data.jobs[0]).toEqual({ ...older, title: '' });
   });
 
   it('exp parses the 64-bit columns back to bigint, past 2^53 too', async () => {
