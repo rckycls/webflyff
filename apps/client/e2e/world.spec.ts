@@ -436,7 +436,10 @@ test.describe('the world screen against scripted servers', () => {
     // the ADD_OBJ's HP, of the maximum of a level 15 Vagrant with the stats of a character with nothing (NO_OWN): 117
     await expect(status.locator('[data-text="hp"]')).toHaveText('100 / 117');
     await expect(status.locator('[data-text="exp"]')).toHaveText('0.00%');
-    await expect(status.locator('.hud-status-face canvas')).toHaveCount(1);
+    // The face is drawn once the own look is loaded for it alone (its parts and the standing motion through the dev server,
+    // the textures transcoded in a worker: `makePortrait`), which four workers drawing in software (SwiftShader) slowed to
+    // 7 to 9 s after the world was ready, past the 5 s default; the wait is on loading, not on a frame.
+    await expect(status.locator('.hud-status-face canvas')).toHaveCount(1, { timeout: 30_000 });
     await expect(page.locator('.hud-target')).toBeHidden();
 
     const at = await page.evaluate((id) => window.__client!.screenOf(id), MONSTER_ID);
