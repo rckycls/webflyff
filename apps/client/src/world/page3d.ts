@@ -61,10 +61,7 @@ export function releaseOnPageHide(view: EventTarget, release: () => void): void 
 /**
  * The page's renderer and overlay; throws a `NoWebGLError` (and keeps nothing, to try again next time) without WebGL.
  * Made once a page, which lets the renderer and its WebGL context go as the page is thrown away (`releaseOnPageHide`,
- * `releaseRenderer`), so that the browser need not keep what the context holds until it collects the page. (WebKit on
- * Windows keeps a closed page's, and after some twenty world pages in one browser loses a later page's context; a release
- * at the `pagehide` of Playwright's page close was seen not to prevent that, one made before the close does: the test
- * hooks' `releaseWebGL`, `releasePage3d`.)
+ * `releaseRenderer`), so that the browser need not keep what the context holds until it collects the page.
  */
 export function page3d(doc: Document): Page3d {
   if (page === undefined) {
@@ -88,10 +85,9 @@ export function page3d(doc: Document): Page3d {
 
 /**
  * Lets the page's renderer and its WebGL context go (`releaseRenderer`), once: what a page that is thrown away does
- * (`releaseOnPageHide`), and what the test hooks' `releaseWebGL` does before a test's page closes. Nothing without a
- * renderer, or once it has gone.
+ * (`releaseOnPageHide`). Nothing without a renderer, or once it has gone.
  */
-export function releasePage3d(): void {
+function releasePage3d(): void {
   if (page === undefined || page.released) return;
   page.released = true;
   releaseRenderer(page.renderer);

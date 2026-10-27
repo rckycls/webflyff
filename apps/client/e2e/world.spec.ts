@@ -15,19 +15,15 @@ import {
   ANILOOP_LOOP, BASE, DST_HP, MADRIGAL, MALE_VAGRANT, MI_MALE, MONSTER_AT, MONSTER_ID, MTI_RUN, MTI_STAND, NPC_ID,
   OBJMSG_ATK1, OBJMSG_DAMAGE, OBJSTAF_WALK, OBJSTA_FMOVE, OBJSTA_MOVE_ALL, OBJSTA_STAND, ON_FRAMES, SELF_ID, SELF_PLAYER,
   SQUARE, aibatt, destPosOf, distanceXZ, enterFlaris, flaris, groundAt, julia, logOut, movedState, movedStateFlag, movesOf,
-  ownAt, hpOf, playGateway, releaseWebGLAfterEach, self, sentOf, startEntering, tapEnter, tapMover, tapWorld, targetsOf,
+  ownAt, hpOf, playGateway, self, sentOf, startEntering, tapEnter, tapMover, tapWorld, targetsOf,
 } from './worldHarness';
 
 // Entering, loading Flaris and drawing it with SwiftShader take much longer than a lobby screen. The waits on the frame
 // loop are `ON_FRAMES` (ruling R28).
 test.describe.configure({ timeout: 120_000 });
-// each test's page lets its WebGL context go before it closes (ruling R32)
-releaseWebGLAfterEach();
 
-// Ruling 3: WebKit runs these where it draws WebGL. Playwright's WebKit draws Flaris on this PC (checked with a picture
-// of the iPhone 13 page); where a WebKit build has no WebGL the world screen ends at once with "This browser can't show
-// the 3D world", these fail at `ready()`, and they are to be skipped in that project, naming that reason. The picture is
-// Chromium's only. Flaris, the servers and the helpers are worldHarness.ts's.
+// These run in Chromium on a desktop and as a touch phone (playwright.config.ts). The picture is the desktop's only.
+// Flaris, the servers and the helpers are worldHarness.ts's.
 
 /**
  * Flaris with the own character's TASKBAR and an HP of 77 right after its ADD_OBJ in the JOIN (`CUser::Open` sends the
@@ -267,8 +263,8 @@ test.describe('the world screen against scripted servers', () => {
     await expect(page.getByRole('button', { name: 'Log in' })).toBeEnabled();
   });
 
-  test('shows a monster and an NPC with name tags', async ({ page, browserName }) => {
-    test.skip(browserName !== 'chromium', 'pictures are Chromium only (SwiftShader), as the viewer takes them');
+  test('shows a monster and an NPC with name tags', async ({ page }) => {
+    test.skip(test.info().project.use.hasTouch === true, "pictures are the desktop's only: one baseline a name (SwiftShader)");
     await playGateway(page);
     await enterFlaris(page);
     await page.evaluate(() => window.__client!.pause());

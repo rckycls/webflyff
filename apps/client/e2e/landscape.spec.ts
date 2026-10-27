@@ -1,6 +1,6 @@
 // Landscape for the whole game (Piece 4 spec §3.10): the cover over a page taller than wide, the lobby's screens and the
-// world laid out for a landscape phone (844 x 390 CSS px, and Safari's 750 x 342 on an iPhone held on its side, the WebKit
-// project's), the touch phone's controls (the joystick, the attack button, a Start menu for a finger, a tall window that
+// world laid out for a landscape phone (844 x 390 CSS px, Safari's 750 x 342 on an iPhone held on its side, and the phone
+// project's Pixel 7, 863 x 360), the touch phone's controls (the joystick, the attack button, a Start menu for a finger, a tall window that
 // scrolls above the task bar), and a fight that goes on while the phone is upright (Review Focus 5). The servers, Flaris
 // and the helpers are worldHarness.ts's, as world.spec.ts uses them.
 
@@ -10,7 +10,7 @@ import { PacketType } from '@flyffweb/protocol';
 import { writeDamage } from '@flyffweb/testkit';
 import {
   MONSTER_ID, OBJSTA_FMOVE, OBJSTA_MOVE_ALL, OBJSTA_STAND, ON_FRAMES, SELF_ID, enterFlaris, errorPacket, flaris, hpOf, logIn,
-  movedState, movesOf, ownAt, playGateway, releaseWebGLAfterEach, sentOf, serverList, tapMover, targetsOf,
+  movedState, movesOf, ownAt, playGateway, sentOf, serverList, tapMover, targetsOf,
 } from './worldHarness';
 import type { Gateway } from './worldHarness';
 
@@ -33,13 +33,23 @@ const FOUR_CHANNELS = [
 
 // Entering, loading Flaris and drawing it with SwiftShader take much longer than a lobby screen.
 test.describe.configure({ timeout: 120_000 });
-// each test's page lets its WebGL context go before it closes (ruling R32)
-releaseWebGLAfterEach();
 
 const isTouch = (): boolean => test.info().project.use.hasTouch === true;
 const swingsOf = (gateway: Gateway): number => sentOf(gateway, PacketType.MELEE_ATTACK).length;
 const cover = (page: Page): Locator => page.locator('.landscape-cover');
 const characterWindow = (page: Page): Locator => page.locator('.hud-character');
+
+/**
+ * Turns a touch phone that has entered the world to `size`. Its taps on Log in and Enter asked for full screen (for the
+ * orientation lock, landscape.ts), which Chromium's phone grants, and Chromium cannot resize a full-screen window
+ * (`Browser.setWindowBounds`). A real phone turns in full screen; this one leaves it first.
+ */
+async function turn(page: Page, size: { width: number; height: number }): Promise<void> {
+  await page.evaluate(async () => {
+    if (document.fullscreenElement !== null) await document.exitFullscreen();
+  });
+  await page.setViewportSize(size);
+}
 
 /** The page's whole size: as big as the window when nothing makes it scroll either way. */
 async function expectNoScroll(page: Page, what: string): Promise<void> {
@@ -95,7 +105,7 @@ test.describe('landscape (spec §3.10)', () => {
     await expect(logInButton).toBeEnabled();
   });
 
-  // Chromium as a phone of 844 x 390, WebKit as the iPhone in Safari, 750 x 342
+  // the desktop set to a phone's 844 x 390, the phone project at its own 863 x 360
   test('every lobby screen fits a landscape phone with no scroll', async ({ page }) => {
     if (!isTouch()) await page.setViewportSize(LANDSCAPE);
     await playGateway(page, flaris, {
@@ -195,7 +205,7 @@ test.describe('landscape (spec §3.10)', () => {
     await playGateway(page);
     await enterFlaris(page);
     for (const size of [SAFARI_LANDSCAPE, LANDSCAPE]) {
-      await page.setViewportSize(size);
+      await turn(page, size);
       await page.getByRole('button', { name: 'Start' }).click();
       const menu = page.getByRole('menu');
       await expect(menu).toBeVisible();
@@ -216,8 +226,8 @@ test.describe('landscape (spec §3.10)', () => {
   });
 
   // Ruling R26: a window taller than the room above the task bar is cut to it, and its client area scrolls
-  test('on an iPhone held on its side the Character window scrolls above the task bar to its Apply button', async ({ page }) => {
-    test.skip(!isTouch(), "the iPhone's 342 px are WebKit's");
+  test('on a touch phone of 750 x 342 the Character window scrolls above the task bar to its Apply button', async ({ page }) => {
+    test.skip(!isTouch(), "a touch phone's, as short as Safari on an iPhone held on its side");
     await page.setViewportSize(SAFARI_LANDSCAPE);
     await playGateway(page);
     await enterFlaris(page);
@@ -255,7 +265,7 @@ test.describe('landscape (spec §3.10)', () => {
     expect(movedState(movesOf(gateway).at(-1)!) & OBJSTA_MOVE_ALL).toBe(OBJSTA_FMOVE);
 
     // the cover shows and goes at the resize, which the page takes between its frames: a wait on the frame loop (R28)
-    await page.setViewportSize(UPRIGHT);
+    await turn(page, UPRIGHT);
     await expect(cover(page)).toBeVisible(ON_FRAMES);
     // the stop goes out, with the finger still down
     await expect.poll(() => movedState(movesOf(gateway).at(-1)!) & OBJSTA_MOVE_ALL, { timeout: 60_000 }).toBe(OBJSTA_STAND);
@@ -263,7 +273,7 @@ test.describe('landscape (spec §3.10)', () => {
     await page.waitForTimeout(1000);
     expect(await ownAt(page)).toEqual(stopped);
     await page.mouse.up();
-    await page.setViewportSize(SAFARI_LANDSCAPE);
+    await turn(page, SAFARI_LANDSCAPE);
     await expect(cover(page)).toBeHidden(ON_FRAMES);
     expect(await ownAt(page)).toEqual(stopped);
   });
@@ -298,7 +308,7 @@ test.describe('landscape (spec §3.10)', () => {
   // Review Focus 5: the phone turned upright in a fight. The cover shows, and nothing behind it pauses: the auto-attack
   // swings on, the server's messages and their numbers are applied, and turning back shows the fight as it went on.
   test('turning upright mid-fight keeps attacking', async ({ page }) => {
-    test.skip(isTouch(), "the fight is Chromium's, with the mouse");
+    test.skip(isTouch(), "the fight is the desktop's, with the mouse");
     await page.setViewportSize(LANDSCAPE);
     const gateway = await playGateway(page);
     await enterFlaris(page);

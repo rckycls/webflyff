@@ -1,11 +1,12 @@
 // Playwright, for the client's end-to-end tests (`e2e/`). It runs against the dev server (`npm run dev:client`),
-// once in Chromium and once in WebKit as an iPhone 13, the engine every iPhone and iPad browser uses. The iPhone is held on
-// its side, as the game is played (Piece 4 spec §3.10: upright, a cover hides the page).
+// twice in Chromium: on a desktop (`chromium`, with the mouse) and as a phone (`phone`, a Pixel 7 with touch), held on its
+// side, as the game is played (Piece 4 spec §3.10: upright, a cover hides the page). Safari is not tested.
 // The gateway address is a closed port, so the test sees what a player sees when the gateway is down.
 //
 // The world tests (`world.spec.ts`) also need the converter's output, `dist/assets`, which the dev server serves as the
 // viewer's does (`serveDist`); they say so when it is missing. Chromium draws with SwiftShader (software WebGL), so their
-// picture does not depend on the machine's GPU; there is one baseline per test file and name, for every platform.
+// picture does not depend on the machine's GPU; there is one baseline per test file and name, for every platform, taken
+// on the desktop.
 
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,15 +23,15 @@ export default defineConfig({
   timeout: 30_000,
   // Ruling R31: at most 4 tests at once. Each world test draws Flaris in software WebGL (SwiftShader in Chromium) on the
   // CPU, and with the default of half the logical cores (8 on the owner's 16) up to 8 worlds drawn side by side saturate
-  // them: WebKit's pages then run no animation frame for tens of seconds, so its clicks never see an element stable and its
-  // key events hang (full runs B, C, E and the control run of Task 26).
+  // them: pages then ran no animation frame for tens of seconds, so clicks never saw an element stable and key events hung
+  // (Task 26's full runs B, C, E and its control run).
   workers: 4,
   reporter: 'list',
   expect: { toHaveScreenshot: { maxDiffPixelRatio: 0.01 } },
   use: { baseURL: CLIENT_URL },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'], launchOptions: { args: SOFTWARE_GL } } },
-    { name: 'webkit', use: { ...devices['iPhone 13 landscape'] } },
+    { name: 'phone', use: { ...devices['Pixel 7 landscape'], launchOptions: { args: SOFTWARE_GL } } },
   ],
   webServer: {
     command: 'npm run dev:client -- --port 5174 --strictPort',

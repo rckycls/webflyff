@@ -3,7 +3,7 @@
 // (`createWorldScript`), which answers the browser's packets as the world server would (`on`): a swing (MELEE_ATTACK)
 // with its DAMAGE, the lodestar's revival with the points and the position, the stat points with SETSTATE. The tests
 // read what was played through the test hooks (`played`: the damage numbers are a layer over the canvas, and under
-// SwiftShader a number lives two or three frames) and what the windows show; the pictures are Chromium's, as
+// SwiftShader a number lives two or three frames) and what the windows show; the pictures are the desktop's, as
 // world.spec.ts's. The servers, Flaris and the helpers are worldHarness.ts's.
 
 import { expect, test } from '@playwright/test';
@@ -20,15 +20,13 @@ import { Xi } from '../src/world/fx/EffectManager';
 import { Mti, ObjSta } from '../src/world/sim/constants';
 import {
   MADRIGAL, MALE_VAGRANT, MONSTER_ID, OBJMSG_ATK1, OBJMSG_DAMAGE, ON_FRAMES, SELF_ID, SELF_PLAYER, SQUARE, aibatt,
-  enterFlaris, groundAt, hpOf, ownAt, playGateway, releaseWebGLAfterEach, self, sentOf, tapMover, targetsOf,
+  enterFlaris, groundAt, hpOf, ownAt, playGateway, self, sentOf, tapMover, targetsOf,
 } from './worldHarness';
 import type { Gateway, Listed, Sent } from './worldHarness';
 
 // Entering, loading Flaris and drawing it with SwiftShader take much longer than a lobby screen. The waits on the frame
 // loop (the swings, what a frame plays, the windows it draws, a screenshot) are `ON_FRAMES` (ruling R28).
 test.describe.configure({ timeout: 120_000 });
-// each test's page lets its WebGL context go before it closes (ruling R32)
-releaseWebGLAfterEach();
 
 /** `MI_AIBATT1` (`Resource/defineObj.h:959`): the Small Aibatt, level 1, `dwAddHp` 120, `nExpValue` 2 (propMover.txt). */
 const MI_AIBATT1 = 20;
@@ -344,8 +342,8 @@ test.describe('fighting against the pretend world server', () => {
   // much of a test's time with the other files' worlds drawn beside it. The rules are paused, and the fight stepped to a
   // known tick (the test hooks' `step`): a number lives under a second, and the frames SwiftShader draws come at no fixed
   // time.
-  test('a picture of the fight: the windows, the corners, a number and the critical banner', async ({ page, browserName }) => {
-    test.skip(browserName !== 'chromium', 'pictures are Chromium only (SwiftShader), as the viewer takes them');
+  test('a picture of the fight: the windows, the corners, a number and the critical banner', async ({ page }) => {
+    test.skip(test.info().project.use.hasTouch === true, "pictures are the desktop's only: one baseline a name (SwiftShader)");
     const script = fight();
     const gateway = await playGateway(page, script, { listed: NEW_CHARACTER });
     await enterFlaris(page);
@@ -371,8 +369,8 @@ test.describe('fighting against the pretend world server', () => {
 
   // The new character's Character window (spec §3.6) over the paused world: its name, job, level, server and channel,
   // ATK 21, DEF 4, Critical 1% and A.Speed 42% with the Wooden Sword and the clothes, and the stats with no points
-  test('a picture of the Character window', async ({ page, browserName }) => {
-    test.skip(browserName !== 'chromium', 'pictures are Chromium only (SwiftShader), as the viewer takes them');
+  test('a picture of the Character window', async ({ page }) => {
+    test.skip(test.info().project.use.hasTouch === true, "pictures are the desktop's only: one baseline a name (SwiftShader)");
     await playGateway(page, fight(), { listed: NEW_CHARACTER });
     await enterFlaris(page);
     await page.evaluate(() => window.__client!.pause());
