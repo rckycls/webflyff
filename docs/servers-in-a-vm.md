@@ -1,11 +1,13 @@
 # Running the servers in a Hyper-V virtual machine
 
-For the owner. This guide moves the game servers and the gateway into a Hyper-V virtual machine (VM), while the web client keeps running on your PC. Phones and tablets load the page from your PC and play through the gateway in the VM:
+For the owner. This guide moves the game servers and the gateway into a Hyper-V virtual machine (VM), while the web client keeps running on your PC. Phones and tablets load the page from your PC and play through your PC too: the client forwards the game connection to the gateway in the VM.
 
 ```
-phone or PC browser --page (port 5174)----> your PC: npm run dev:client (and dist/assets)
-                    --game (port 8090)----> the VM: the gateway --> the 7 game servers (all at 127.0.0.1)
+phone or PC browser --page and game (port 5174)----> your PC: npm run dev:client (and dist/assets)
+                                                     your PC --game (port 8090)----> the VM: the gateway --> the 7 game servers (all at 127.0.0.1)
 ```
+
+A phone talks only to your PC, which it already reaches (the page loads from it). The gateway always sees one page address, `http://localhost:5174`, whichever address the phone used, so a new address for your PC breaks nothing.
 
 **Nothing needs rebuilding.** The servers are ordinary Windows programs and run in a Windows VM as they are. You rebuild only after changing their code in `Source\`.
 
@@ -25,7 +27,7 @@ Names used below:
 Hyper-V comes with Windows 10 and 11 Pro; once it is turned on, **Hyper-V Manager** is in the Start menu. The sizes below fit a laptop with 16 GB of memory and about 90 GB of free disk space.
 
 1. **Get Windows Server from Microsoft.** Download the free evaluation of Windows Server 2019 from the [Microsoft Evaluation Center](https://www.microsoft.com/en-us/evalcenter/download-windows-server-2019): under **English (United States)**, **ISO downloads**, **64-bit edition**. It asks for your name and email, then downloads one file of about 5 GB. The evaluation runs for 180 days, enough for testing; a VPS later comes with its own Windows licence. Don't use a copy of Windows from a torrent or another site: this VM will hold your game database and your accounts' passwords.
-2. **Make the network switch.** Phones must reach the VM directly, so the VM needs its own address on your Wi-Fi network, not a private one behind your PC. In **Hyper-V Manager**, open **Virtual Switch Manager**, choose **New virtual network switch**, **External**, and pick your PC's Wi-Fi adapter (or its network cable, which is more reliable). Keep **Allow management operating system to share this network adapter** ticked, so your PC stays online. Your PC's internet can drop for a few seconds while the switch is made.
+2. **Make the network switch.** The VM needs its own address on your Wi-Fi network, not a private one behind your PC, so that it keeps an address you can fix (step 2) and your PC reaches it the same way every time. In **Hyper-V Manager**, open **Virtual Switch Manager**, choose **New virtual network switch**, **External**, and pick your PC's Wi-Fi adapter (or its network cable, which is more reliable). Keep **Allow management operating system to share this network adapter** ticked, so your PC stays online. Your PC's internet can drop for a few seconds while the switch is made.
 3. **Create the VM:** **Action > New > Virtual Machine**, then:
    - **Name:** `FlyFF-Server`.
    - **Generation:** **Generation 2**.
@@ -48,7 +50,7 @@ Hyper-V comes with Windows 10 and 11 Pro; once it is turned on, **Hyper-V Manage
 ## 2. The VM's network
 
 1. Start the VM and run `ipconfig` in it. The **IPv4 Address** is `<VM-IP>`: it must start like your PC's address (for example both `192.168.1.…`). If it starts with `172.` it is still on the private "Default Switch": set its **Network Adapter** to the switch from step 1 in its **Settings**.
-2. In the VM, set the network to **Private** (Settings > Network & internet > the network > Private network), so Windows lets your devices in.
+2. In the VM, set the network to **Private** (Settings > Network & internet > the network > Private network), so Windows lets your PC in.
 3. **Keep the address fixed.** If the router gives the VM a different address later, everything below that uses `<VM-IP>` must change too. Most routers can reserve an address for a device ("DHCP reservation"); do that for the VM if you can.
 
 ## 3. The game servers in the VM
@@ -83,10 +85,10 @@ Hyper-V comes with Windows 10 and 11 Pro; once it is turned on, **Hyper-V Manage
    notepad apps\gateway\gateway.config.json
    ```
 
-   - Keep `"listen": { "host": "0.0.0.0", "port": 8090 }`, so your devices can reach it.
-   - Set `allowedOrigins` to the addresses of the **page**, which comes from your PC, not from the VM: `"allowedOrigins": ["http://localhost:5174", "http://<PC-IP>:5174"]`. The gateway refuses a page whose address is not listed exactly.
+   - Keep `"listen": { "host": "0.0.0.0", "port": 8090 }`, so your PC can reach it.
+   - Set `"allowedOrigins": ["http://localhost:5174"]`, the only page address the gateway will see: your PC's client forwards the game connection (step 6) and always gives that as its origin, whatever address the browser or phone used for the page. Delete the second address the example lists, a leftover from an older setup. The gateway refuses a page whose address is not listed exactly.
    - Keep the three `routes` to `127.0.0.1`.
-5. **Let your devices in.** In PowerShell **as administrator** in the VM:
+5. **Let your PC in.** In PowerShell **as administrator** in the VM:
 
    ```
    New-NetFirewallRule -DisplayName "FlyffWeb gateway" -Direction Inbound -Protocol TCP -LocalPort 8090 -Action Allow -Profile Private
@@ -110,21 +112,24 @@ A new character fits all three. The checklist in [device-testing.md](device-test
 On your PC, in PowerShell, in the FlyffWeb folder of the piece you are testing (`C:\Users\silec\Desktop\FlyFF\Bakbak\FlyffWeb-worktrees\piece4-combat` for Piece 4), tell the client where the gateway is, start it, and clear the setting again when you stop it:
 
 ```
-$env:VITE_GATEWAY_URL = 'ws://<VM-IP>:8090'; npm run dev:client
-Remove-Item Env:VITE_GATEWAY_URL
+$env:GATEWAY_PROXY = 'ws://<VM-IP>:8090'; npm run dev:client
+Remove-Item Env:GATEWAY_PROXY
 ```
 
 (Run the second line after you stop the client with `Ctrl` + `C`: the setting stays in that window otherwise.) Without it, the page looks for the gateway on your PC, where there is none, and says "Cannot reach the game gateway."
 
-Then open `http://localhost:5174` on your PC, and `http://<PC-IP>:5174` on phones and tablets, as the checklists in [device-testing.md](device-testing.md) say. The page comes from your PC; the game connection goes straight to the VM.
+`GATEWAY_PROXY` is the only setting to use for this. `VITE_GATEWAY_URL` must not be set at the same time: the client then refuses to start and says so. An old PowerShell window may still have it; `Remove-Item Env:VITE_GATEWAY_URL` clears it. If `GATEWAY_PROXY` is not of the form `ws://<VM-IP>:8090`, the client refuses to start and says so too.
+
+Then open `http://localhost:5174` on your PC, and `http://<PC-IP>:5174` on phones and tablets (the address, not the PC's name), as the checklists in [device-testing.md](device-testing.md) say. The page and the game connection both come from your PC. Your PC passes the game connection on to the VM, and only for a page that was opened from this client: any other page on your network is turned away before it reaches the gateway.
 
 ## When something goes wrong
 
 | What you see | What it means and what to do |
 | --- | --- |
-| "Cannot reach the game gateway." on every device | Check, in this order: the client was started with `VITE_GATEWAY_URL` and the right `<VM-IP>` (step 6); the gateway is running in the VM (step 4); the VM's firewall rule for port 8090 exists and the VM's network is Private (steps 2 and 4). In the VM's gateway window, a `refused <address> origin` line means the page's address is not in `allowedOrigins`. No line at all means the connection never reached the VM. |
-| It works on the PC but "Cannot reach the game gateway." on a phone | The phone cannot reach the VM: it is on a guest Wi-Fi that keeps devices apart, or the VM is still on Hyper-V's private "Default Switch" (steps 1 and 2). Check that `<VM-IP>` starts like your PC's address. |
-| It worked yesterday, not today | The VM or your PC got a new address from the router. Check `ipconfig` on both; restart the client with the new `<VM-IP>`, or change `allowedOrigins` in the VM and restart the gateway. A DHCP reservation (step 2) stops this. |
+| "Cannot reach the game gateway." on every device | Check, in this order: the client was started with `GATEWAY_PROXY` and the right `<VM-IP>` (step 6); the gateway is running in the VM (step 4); the VM's firewall rule for port 8090 exists and the VM's network is Private (steps 2 and 4). The client's window prints `ws proxy error` when your PC cannot reach the VM. In the VM's gateway window, a `refused <address> origin` line means `"http://localhost:5174"` is not in `allowedOrigins` (fix it and restart the gateway). No line at all means the connection never reached the VM. |
+| The client does not start and prints `GATEWAY_PROXY …` | The message says what is wrong: the setting is not of the form `ws://<VM-IP>:8090`, or `VITE_GATEWAY_URL` is set too (step 6). |
+| It works on the PC but "Cannot reach the game gateway." on a phone | A phone takes the same way as the PC's own browser: the page and the game both come from your PC. Open the page as `http://<PC-IP>:5174`, with the address and not the PC's name (the client turns away a game connection from a page opened by name), and reload it after restarting the client. If the page itself does not open, see "When something goes wrong" in [device-testing.md](device-testing.md). |
+| It worked yesterday, not today | The VM got a new address from the router. Check `ipconfig` in the VM and restart the client with the new `<VM-IP>`. A DHCP reservation (step 2) stops this. Your PC's own address does not matter any more. |
 | The servers' error log says they cannot connect to the database | A data source is missing, misspelt or made with the 64-bit tool (step 3, item 4), or SQL Server is not running in the VM. |
 | "The game server is not reachable. Try again later." | The gateway in the VM cannot reach a server: are all 7 running in the VM? |
 | The VM's error log has `GATEWAY_CLIENT_ADDR refused from <address>` | The gateway reached that server through an address other than `127.0.0.1`. That should not happen with the routes above; check that the routes in the VM's `gateway.config.json` say `127.0.0.1`. |

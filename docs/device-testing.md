@@ -277,7 +277,7 @@ The automated side is `npm test`, `npm run test:e2e:client` (the world against p
 
 ## Before you start
 
-**Servers in a Hyper-V virtual machine?** Set the VM up with [servers-in-a-vm.md](servers-in-a-vm.md) first. Then everything below that touches the servers happens in the VM (the server swap, the gateway and the live world test), and the client on your PC is started with the VM's gateway address, as that guide's step 6 says.
+**Servers in a Hyper-V virtual machine?** Set the VM up with [servers-in-a-vm.md](servers-in-a-vm.md) first. Then everything below that touches the servers happens in the VM (the server swap, the gateway and the live world test), and the client on your PC is started with `GATEWAY_PROXY` set to the VM's gateway address, as that guide's step 6 says. The phones then talk only to your PC.
 
 1. **Put the new world and cache servers in service**, and add the `Gateway "127.0.0.1"` line to `Program\CacheServer.ini`: follow "Put them in service" in [server-patches/README.md](../server-patches/README.md) (read its note about the world server first). With the old world server the browser still enters the world, but it reads only part of what that server sends: other players, monsters and NPCs can be missing or stand still, and this checklist would fail for that reason alone. The overlay tells you which world server is running (step 1 below).
 2. **The game files.** `dist/assets` must hold a conversion made with this version (it adds `data/worlds.json` and new fields in the other catalogs). If you are not sure, run `npm run convert -- --only data` in `FlyffWeb/` (a few seconds; the full `npm run convert` is only needed when the `Client` folder changed).
@@ -471,7 +471,7 @@ Wait at least 15 seconds between runs, and never run it in a loop.
 
 ## Start the gateway and the client
 
-As in the Piece 3 part: the gateway in the VM, and `npm run dev:client` on your PC with `VITE_GATEWAY_URL` set (see [servers-in-a-vm.md](servers-in-a-vm.md), step 6).
+As in the Piece 3 part: the gateway in the VM, and `npm run dev:client` on your PC with `GATEWAY_PROXY` set to the VM's gateway address (see [servers-in-a-vm.md](servers-in-a-vm.md), step 6). The gateway's `allowedOrigins` then needs only `http://localhost:5174`.
 
 **Fighting:**
 - **On a touch screen:** tap a monster to select it. Its name and HP show in the target bar, top centre, and corners appear around it. Tap it again, or press the attack button at the bottom right, to attack.
