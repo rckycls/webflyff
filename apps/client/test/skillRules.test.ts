@@ -11,38 +11,84 @@ import {
   checkSkill,
 } from '../src/world/skills/skillRules';
 
-// The three Vagrant skills below are the rows of the converted catalog (`dist/assets/data/skills.json`, which a unit test
-// does not read), written out with the values that file holds: their ids, the character level and prerequisite of each,
-// their combo styles and their maximum level. `levels` keeps the FP of each level (propSkillAdd.csv); the rules read nothing
-// of a level but its cool-down, and no level of the three has one (`dwCooldown` is `=`, -1).
-const levelsOf = (fp: number[]): WebSkill['levels'] =>
-  fp.map((reqFp) => ({ reqMp: -1, reqFp, cooldown: -1, skillCount: -1 }));
+// The skills below are rows of the converted skills catalog (`data/skills.json`, which the asset index `dist/assets/index.json`
+// maps to the hashed `data/skills.<hash>.json`), written out with the values that file holds, since a unit test does not read
+// `dist/`. Every field the rules read is the file's; `description` and `icon`, which no rule reads, are left blank.
+//   1 Clean Hit, 2 Flurry, 3 Over Cut        the Vagrant's three: levels, prerequisites, combo styles, maximum level
+//   317 Quick Step (Event)                   a Vagrant's event buff: CT_GENERAL, a `=` character level (-1), no cool-down
+//   107 Blinkpool                            CT_GENERAL with a cool-down of 3000 ms at all 20 levels
+//   150 Geburah Tiphreth                     two prerequisites (147 at 4, 148 at 7), a cool-down of 0 at every level
+//   4 Slash, 128 Guard, 309 Special One-handed Mastery, 237 Ultimate Defense: job types 1, 2, 5 and 6 (what a level costs)
+// No real skill has levels with a cool-down and levels without, so the one test that needs that (a cool-down at one level)
+// uses a variant of Clean Hit with that one field changed, and says so.
+const same = (value: number, n: number): number[] => Array<number>(n).fill(value);
+const levelsOf = (reqMp: number[], reqFp: number[], cooldown: number[]): WebSkill['levels'] =>
+  reqFp.map((fp, i) => ({ reqMp: reqMp[i]!, reqFp: fp, cooldown: cooldown[i]!, skillCount: -1 }));
+const row = (skill: Omit<WebSkill, 'description' | 'icon'>): WebSkill => ({ ...skill, description: '', icon: null });
 
-const base = {
-  description: '', jobType: 0, job: 0, handed: 1, attackRange: 1, exeTarget: 17, useChance: 4, skillType: 2, evildoing: -1,
-  maxLevel: 10, icon: null,
-} as const;
-
-const CLEAN_HIT: WebSkill = {
-  ...base, id: 1, name: 'Clean Hit', reqLevel: 3, reqSkills: [], useMotion: 1000, sfxHit: 201, comboStyle: ComboStyle.STEP,
-  levels: levelsOf([5, 5, 5, 5, 8, 8, 8, 8, 10, 10]),
-};
-const FLURRY: WebSkill = {
-  ...base, id: 2, name: 'Flurry', reqLevel: 5, reqSkills: [{ skill: 1, level: 3 }], useMotion: 1001, sfxHit: 202,
-  comboStyle: ComboStyle.CIRCLE, levels: levelsOf([10, 10, 10, 12, 12, 12, 15, 15, 15, 15]),
-};
-const OVER_CUT: WebSkill = {
-  ...base, id: 3, name: 'Over Cut', reqLevel: 10, reqSkills: [{ skill: 2, level: 3 }], useMotion: 1002, sfxHit: 203,
-  comboStyle: ComboStyle.FINISH, levels: levelsOf([15, 15, 15, 18, 18, 18, 20, 20, 22, 22]),
-};
+const CLEAN_HIT = row({
+  id: 1, name: 'Clean Hit', jobType: 0, job: 0, handed: 1, attackRange: 1, reqLevel: 3, reqSkills: [], useMotion: 1000,
+  sfxHit: 201, exeTarget: 17, useChance: 4, skillType: 2, evildoing: -1, maxLevel: 10, comboStyle: ComboStyle.STEP,
+  levels: levelsOf(same(-1, 10), [5, 5, 5, 5, 8, 8, 8, 8, 10, 10], same(-1, 10)),
+});
+const FLURRY = row({
+  id: 2, name: 'Flurry', jobType: 0, job: 0, handed: 1, attackRange: 1, reqLevel: 5, reqSkills: [{ skill: 1, level: 3 }],
+  useMotion: 1001, sfxHit: 202, exeTarget: 17, useChance: 4, skillType: 2, evildoing: -1, maxLevel: 10,
+  comboStyle: ComboStyle.CIRCLE, levels: levelsOf(same(-1, 10), [10, 10, 10, 12, 12, 12, 15, 15, 15, 15], same(-1, 10)),
+});
+const OVER_CUT = row({
+  id: 3, name: 'Over Cut', jobType: 0, job: 0, handed: 1, attackRange: 1, reqLevel: 10, reqSkills: [{ skill: 2, level: 3 }],
+  useMotion: 1002, sfxHit: 203, exeTarget: 17, useChance: 4, skillType: 2, evildoing: -1, maxLevel: 10,
+  comboStyle: ComboStyle.FINISH, levels: levelsOf(same(-1, 10), [15, 15, 15, 18, 18, 18, 20, 20, 22, 22], same(-1, 10)),
+});
+const QUICK_STEP = row({
+  id: 317, name: 'Quick Step (Event)', jobType: 0, job: 0, handed: -1, attackRange: 4, reqLevel: -1, reqSkills: [],
+  useMotion: 1046, sfxHit: 291, exeTarget: 1, useChance: 1, skillType: 1, evildoing: 1, maxLevel: 5,
+  comboStyle: ComboStyle.GENERAL, levels: levelsOf(same(-1, 5), same(-1, 5), same(-1, 5)),
+});
+const BLINKPOOL = row({
+  id: 107, name: 'Blinkpool', jobType: 1, job: 4, handed: -1, attackRange: 5, reqLevel: 30, reqSkills: [{ skill: 121, level: 3 }],
+  useMotion: 1066, sfxHit: -1, exeTarget: 7, useChance: 12, skillType: 1, evildoing: 1, maxLevel: 20,
+  comboStyle: ComboStyle.GENERAL,
+  levels: levelsOf(
+    [22, 22, 23, 23, 24, 24, 25, 25, 25, 27, 27, 27, 28, 29, 30, 31, 31, 32, 32, 35], same(-1, 20), same(3000, 20),
+  ),
+});
+const GEBURAH = row({
+  id: 150, name: 'Geburah Tiphreth', jobType: 2, job: 10, handed: -1, attackRange: 1, reqLevel: 75,
+  reqSkills: [{ skill: 147, level: 4 }, { skill: 148, level: 7 }], useMotion: 1128, sfxHit: -1, exeTarget: 13, useChance: 1,
+  skillType: 1, evildoing: 1, maxLevel: 10, comboStyle: ComboStyle.GENERAL,
+  levels: levelsOf([55, 65, 75, 85, 90, 100, 105, 115, 120, 125], same(-1, 10), same(0, 10)),
+});
+const SLASH = row({
+  id: 4, name: 'Slash', jobType: 1, job: 1, handed: -1, attackRange: 1, reqLevel: 15, reqSkills: [], useMotion: 1003,
+  sfxHit: 20, exeTarget: 17, useChance: 4, skillType: 2, evildoing: -1, maxLevel: 20, comboStyle: ComboStyle.STEP,
+  levels: levelsOf(
+    same(-1, 20), [20, 20, 23, 23, 26, 26, 30, 30, 33, 33, 36, 36, 40, 40, 43, 43, 46, 46, 50, 50], same(-1, 20),
+  ),
+});
+const GUARD = row({
+  id: 128, name: 'Guard', jobType: 2, job: 6, handed: 2, attackRange: -1, reqLevel: 62, reqSkills: [], useMotion: 1105,
+  sfxHit: 322, exeTarget: 1, useChance: 1, skillType: 2, evildoing: 1, maxLevel: 10, comboStyle: ComboStyle.GENERAL,
+  levels: levelsOf(same(-1, 10), [40, 44, 44, 48, 48, 53, 53, 58, 58, 64], same(60000, 10)),
+});
+const SPECIAL_MASTERY = row({
+  id: 309, name: 'Special One-handed Mastery', jobType: 5, job: 17, handed: 3, attackRange: -1, reqLevel: 60, reqSkills: [],
+  useMotion: 1009, sfxHit: 1865, exeTarget: 1, useChance: 1, skillType: 2, evildoing: 1, maxLevel: 5,
+  comboStyle: ComboStyle.GENERAL, levels: levelsOf(same(-1, 5), same(500, 5), same(5000, 5)),
+});
+const ULTIMATE_DEFENSE = row({
+  id: 237, name: 'Ultimate Defense', jobType: 6, job: 25, handed: -1, attackRange: -1, reqLevel: 120, reqSkills: [],
+  useMotion: 1203, sfxHit: -1, exeTarget: 1, useChance: 1, skillType: 2, evildoing: 1, maxLevel: 5,
+  comboStyle: ComboStyle.GENERAL,
+  levels: levelsOf(same(9999999, 5), same(9999999, 5), [35000, 30000, 25000, 20000, 15000]),
+});
 const CATALOG = new Map([CLEAN_HIT, FLURRY, OVER_CUT].map((skill) => [skill.id, skill]));
 
-// Variants of those rows for the rules the Vagrant's three do not reach: a CT_GENERAL skill (the combo style of the
-// Vagrant's event buffs), and a skill with a cool-down at level 2 (a skill of another job has one).
-const GENERAL: WebSkill = { ...CLEAN_HIT, id: 317, name: 'General', comboStyle: ComboStyle.GENERAL };
-const COOLING: WebSkill = {
-  ...CLEAN_HIT, id: 318, name: 'Cooling',
-  levels: CLEAN_HIT.levels.map((row, i) => (i === 1 ? { ...row, cooldown: 5000 } : row)),
+// Clean Hit with the cool-down of its level 2 set to 5000: a variant, since no real skill has a cool-down at some levels
+// and none at others (the queue rule reads the cool-down of the level the player has).
+const CLEAN_HIT_COOLING_AT_2: WebSkill = {
+  ...CLEAN_HIT, levels: CLEAN_HIT.levels.map((level, i) => (i === 1 ? { ...level, cooldown: 5000 } : level)),
 };
 
 /** The 45 slots of `m_aJobSkill` of a Vagrant: Clean Hit, Flurry and Over Cut with the given levels, the rest empty. */
@@ -85,10 +131,11 @@ describe('checkSkill (CMover::CheckSkill, MoverParam.cpp:117-156)', () => {
   });
 
   it('checks both prerequisites of a skill that has two', () => {
-    const two: WebSkill = { ...FLURRY, reqSkills: [{ skill: 1, level: 3 }, { skill: 3, level: 2 }] };
-    expect(checkSkill(two, 5, owned({ 1: 3, 3: 1 }))).toBe(false);
-    expect(checkSkill(two, 5, owned({ 1: 2, 3: 2 }))).toBe(false);
-    expect(checkSkill(two, 5, owned({ 1: 3, 3: 2 }))).toBe(true);
+    // Geburah Tiphreth needs skill 147 at 4 and skill 148 at 7, and character level 75
+    expect(checkSkill(GEBURAH, 75, owned({ 147: 4, 148: 6 }))).toBe(false);
+    expect(checkSkill(GEBURAH, 75, owned({ 147: 3, 148: 7 }))).toBe(false);
+    expect(checkSkill(GEBURAH, 75, owned({ 147: 4, 148: 7 }))).toBe(true);
+    expect(checkSkill(GEBURAH, 74, owned({ 147: 10, 148: 10 }))).toBe(false);
   });
 });
 
@@ -255,24 +302,27 @@ describe('SkillPlan (CWndSkillTreeEx\'s local copy, WndField.cpp:6531-6703, 8057
   });
 
   it('charges a skill by its job: 1 for a Vagrant skill, 2 for an expert one, 3 for the rest (CProject::GetSkillPoint)', () => {
-    const expert: WebSkill = { ...CLEAN_HIT, id: 20, jobType: 1, reqLevel: 1 };
-    const pro: WebSkill = { ...CLEAN_HIT, id: 21, jobType: 2, reqLevel: 1 };
-    const master: WebSkill = { ...CLEAN_HIT, id: 22, jobType: 5, reqLevel: 1 };
+    // Clean Hit (job type 0), Slash (1, an expert's), Guard (2, a pro's), Special One-handed Mastery (5, a master's) and
+    // Ultimate Defense (6, a hero's)
     const own = slots();
-    own[3] = { skill: 20, level: 0 };
-    own[4] = { skill: 21, level: 0 };
-    own[5] = { skill: 22, level: 0 };
-    const p = new SkillPlan(own, 20, new Map([CLEAN_HIT, expert, pro, master].map((s) => [s.id, s])), 15);
+    own[3] = { skill: 4, level: 0 };
+    own[4] = { skill: 128, level: 0 };
+    own[5] = { skill: 309, level: 0 };
+    own[6] = { skill: 237, level: 0 };
+    const catalog = new Map([CLEAN_HIT, SLASH, GUARD, SPECIAL_MASTERY, ULTIMATE_DEFENSE].map((skill) => [skill.id, skill]));
+    const p = new SkillPlan(own, 30, catalog, 120);
     p.plus(0);
-    expect(p.points).toBe(19);
+    expect(p.points).toBe(29);
     p.plus(3);
-    expect(p.points).toBe(17);
+    expect(p.points).toBe(27);
     p.plus(4);
-    expect(p.points).toBe(14);
+    expect(p.points).toBe(24);
     p.plus(5);
-    expect(p.points).toBe(11);
+    expect(p.points).toBe(21);
+    p.plus(6);
+    expect(p.points).toBe(18);
     p.minus(3);
-    expect(p.points).toBe(13);
+    expect(p.points).toBe(20);
   });
 });
 
@@ -289,7 +339,7 @@ describe('canPlaceOnBar (CWndTaskBar::OnDropIcon, WndTaskBar.cpp:1962-1976, 2026
   });
 
   it('passes a CT_GENERAL skill too', () => {
-    expect(canPlaceOnBar(GENERAL, 1)).toBe(true);
+    expect(canPlaceOnBar(QUICK_STEP, 1)).toBe(true);
   });
 });
 
@@ -319,7 +369,7 @@ describe('canPlaceInQueue (CWndTaskBar::SetSkillQueue and CheckAddSkill, WndTask
     expect(canPlaceInQueue(full, 3, FLURRY, 1)).toBe(false);
     expect(canPlaceInQueue(full, 3, OVER_CUT, 1)).toBe(false);
     expect(canPlaceInQueue(full, 3, CLEAN_HIT, 1)).toBe(false);
-    expect(canPlaceInQueue(full, 3, GENERAL, 1)).toBe(false);
+    expect(canPlaceInQueue(full, 3, QUICK_STEP, 1)).toBe(false);
     // the last slot, with the fourth holding the finisher
     expect(canPlaceInQueue([CLEAN_HIT, FLURRY, FLURRY, OVER_CUT], 4, FLURRY, 1)).toBe(false);
   });
@@ -352,12 +402,25 @@ describe('canPlaceInQueue (CWndTaskBar::SetSkillQueue and CheckAddSkill, WndTask
   });
 
   it('a skill with a cool-down at its level does not go in (SetSkillQueue: (int) dwCooldown > 0), and one with none does', () => {
-    expect(canPlaceInQueue([], 0, COOLING, 1)).toBe(true);
-    expect(canPlaceInQueue([], 0, COOLING, 2)).toBe(false);
-    expect(canPlaceInQueue([], 0, COOLING, 3)).toBe(true);
-    // a cool-down of 0 is no cool-down; a level the catalog has no row for reads as none
-    const zero: WebSkill = { ...CLEAN_HIT, levels: CLEAN_HIT.levels.map((row) => ({ ...row, cooldown: 0 })) };
-    expect(canPlaceInQueue([], 0, zero, 1)).toBe(true);
+    // Blinkpool is CT_GENERAL like Quick Step (Event), which goes first; its 3000 ms cool-down is the only difference
+    expect(canPlaceInQueue([], 0, QUICK_STEP, 1)).toBe(true);
+    expect(canPlaceInQueue([], 0, BLINKPOOL, 1)).toBe(false);
+    expect(canPlaceInQueue([], 0, BLINKPOOL, 20)).toBe(false);
+    // Ultimate Defense has a cool-down at each of its levels, getting shorter
+    for (let level = 1; level <= 5; level++) expect(canPlaceInQueue([], 0, ULTIMATE_DEFENSE, level)).toBe(false);
+  });
+
+  it('reads the cool-down of the level the player has', () => {
+    // a variant of Clean Hit (see CLEAN_HIT_COOLING_AT_2): only its level 2 has a cool-down
+    expect(canPlaceInQueue([], 0, CLEAN_HIT_COOLING_AT_2, 1)).toBe(true);
+    expect(canPlaceInQueue([], 0, CLEAN_HIT_COOLING_AT_2, 2)).toBe(false);
+    expect(canPlaceInQueue([], 0, CLEAN_HIT_COOLING_AT_2, 3)).toBe(true);
+  });
+
+  it('a cool-down of 0 is no cool-down, and a level the catalog has no row for reads as none', () => {
+    // Geburah Tiphreth (CT_GENERAL) has a cool-down of 0 at every level
+    expect(canPlaceInQueue([], 0, GEBURAH, 1)).toBe(true);
+    expect(canPlaceInQueue([], 0, GEBURAH, 10)).toBe(true);
     expect(canPlaceInQueue([], 0, CLEAN_HIT, 11)).toBe(true);
   });
 
@@ -374,27 +437,27 @@ describe('canPlaceInQueue (CWndTaskBar::SetSkillQueue and CheckAddSkill, WndTask
 
   describe('a CT_GENERAL skill', () => {
     it('goes first, or after another CT_GENERAL, and nothing else goes after it', () => {
-      expect(canPlaceInQueue([], 0, GENERAL, 1)).toBe(true);
-      expect(canPlaceInQueue([GENERAL], 1, GENERAL, 1)).toBe(true);
-      expect(canPlaceInQueue([GENERAL, GENERAL], 2, GENERAL, 1)).toBe(true);
-      expect(canPlaceInQueue([GENERAL], 1, FLURRY, 1)).toBe(false);
-      expect(canPlaceInQueue([GENERAL], 1, OVER_CUT, 1)).toBe(false);
-      expect(canPlaceInQueue([GENERAL], 1, CLEAN_HIT, 1)).toBe(false);
+      expect(canPlaceInQueue([], 0, QUICK_STEP, 1)).toBe(true);
+      expect(canPlaceInQueue([QUICK_STEP], 1, QUICK_STEP, 1)).toBe(true);
+      expect(canPlaceInQueue([QUICK_STEP, QUICK_STEP], 2, QUICK_STEP, 1)).toBe(true);
+      expect(canPlaceInQueue([QUICK_STEP], 1, FLURRY, 1)).toBe(false);
+      expect(canPlaceInQueue([QUICK_STEP], 1, OVER_CUT, 1)).toBe(false);
+      expect(canPlaceInQueue([QUICK_STEP], 1, CLEAN_HIT, 1)).toBe(false);
     });
 
     it('cannot follow a step, circle or finish skill', () => {
-      expect(canPlaceInQueue([CLEAN_HIT], 1, GENERAL, 1)).toBe(false);
-      expect(canPlaceInQueue([CLEAN_HIT, FLURRY], 2, GENERAL, 1)).toBe(false);
-      expect(canPlaceInQueue([GENERAL, GENERAL, GENERAL, GENERAL], 4, FLURRY, 1)).toBe(false);
+      expect(canPlaceInQueue([CLEAN_HIT], 1, QUICK_STEP, 1)).toBe(false);
+      expect(canPlaceInQueue([CLEAN_HIT, FLURRY], 2, QUICK_STEP, 1)).toBe(false);
+      expect(canPlaceInQueue([QUICK_STEP, QUICK_STEP, QUICK_STEP, QUICK_STEP], 4, FLURRY, 1)).toBe(false);
     });
 
     it('goes in front of a CT_GENERAL skill only, and in the last slot after a CT_GENERAL one', () => {
-      expect(canPlaceInQueue([GENERAL], 0, GENERAL, 1)).toBe(true);
-      expect(canPlaceInQueue([CLEAN_HIT], 0, GENERAL, 1)).toBe(false);
-      expect(canPlaceInQueue([GENERAL, GENERAL, GENERAL, GENERAL], 4, GENERAL, 1)).toBe(true);
+      expect(canPlaceInQueue([QUICK_STEP], 0, QUICK_STEP, 1)).toBe(true);
+      expect(canPlaceInQueue([CLEAN_HIT], 0, QUICK_STEP, 1)).toBe(false);
+      expect(canPlaceInQueue([QUICK_STEP, QUICK_STEP, QUICK_STEP, QUICK_STEP], 4, QUICK_STEP, 1)).toBe(true);
       // an insert into the middle needs the slot it takes to be a CT_GENERAL one, unless it is at the end
-      expect(canPlaceInQueue([GENERAL, FLURRY], 1, GENERAL, 1)).toBe(false);
-      expect(canPlaceInQueue([GENERAL, GENERAL], 1, GENERAL, 1)).toBe(true);
+      expect(canPlaceInQueue([QUICK_STEP, FLURRY], 1, QUICK_STEP, 1)).toBe(false);
+      expect(canPlaceInQueue([QUICK_STEP, QUICK_STEP], 1, QUICK_STEP, 1)).toBe(true);
     });
   });
 });

@@ -56,7 +56,9 @@ function skillPointCost(skill: WebSkill): number {
  * `CMover::CheckSkill( dwSkill )` (`MoverParam.cpp:117-156`) for `skill`, a skill of the catalog: whether the character, at
  * character level `level`, has what the skill needs to be raised and used. The character level must reach the skill's
  * `reqLevel` (:123-129, `GetLevel() < (int) dwReqDisLV`, so the -1 of a `=` level is open to every level), and each
- * prerequisite (`dwReSkill1` and `dwReSkill2` with their levels, :131-153) must be at its level.
+ * prerequisite (`dwReSkill1` and `dwReSkill2` with their levels, :131-153) must be at its level. A Master or a Hero skips
+ * the character-level test (`!IsMaster() && !IsHero() &&`, :124, the live `__VER >= 10` branch); that is not modelled here,
+ * and it never fires for a Vagrant.
  *
  * `levels` gives the level of the skill with an ID in the set of levels being asked (the player's own, or the skill window's
  * copy, `CWndSkillTreeEx::CheckSkill`, `WndField.cpp:6649-6703`), or `undefined` when that set has no such skill: `GetSkill`
