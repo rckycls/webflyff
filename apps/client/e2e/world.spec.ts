@@ -518,10 +518,13 @@ test.describe('the world screen against scripted servers', () => {
     await page.getByRole('button', { name: 'Start' }).click();
     await expect(menu).toBeVisible();
     gateway.pushCache(flarisWithNewBar.later([writeMoverDeath(SELF_ID, MONSTER_ID, OBJMSG_DAMAGE)]));
+    // the frame after the death plays its chat line, then opens the window (WorldScreen's `play`): a wait on the frame loop
+    // (R28). The line is read first, as it fades 3 s after it came (CClientMsg); read after a wait on the window, under
+    // load it had gone
+    await expect(page.locator('.hud-messages > div'))
+      .toHaveText(['Press ESC and go back to Lodestar(Town) or Lodelight(Field) for resurrecting.'], ON_FRAMES);
     const revive = page.locator('.hud-revive');
     await expect(revive).toBeVisible();
-    await expect(page.locator('.hud-messages > div'))
-      .toHaveText(['Press ESC and go back to Lodestar(Town) or Lodelight(Field) for resurrecting.']);
     await expect(menu).toBeHidden();
     // the backdrop takes the press on the Start button under it; no key reaches the game: T, Escape
     const start = (await page.getByRole('button', { name: 'Start' }).boundingBox())!;
