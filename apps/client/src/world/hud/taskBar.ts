@@ -523,7 +523,8 @@ export class TaskBar {
   /**
    * Lays the bar out for its layer's width (`taskBarLayout`): its picture, its controls, its slots; the layout of the
    * windows ends above it (`setLayoutBottom`, `WndTaskBar.cpp:1176-1178`); and the Start menu stands above its left end,
-   * drawn smaller still where the layer is too short for it above the bar.
+   * at its own scale: drawn smaller only where the layer is too short for its 496 px above the bar. It is 192 px wide, so
+   * a narrow screen, which draws the bar smaller, leaves it room: its lines stay as big as the height allows, for a finger.
    */
   private relayout(): void {
     const parent = this.element.parentElement;
@@ -539,7 +540,7 @@ export class TaskBar {
     strip.style.transform = layout.scale === 1 ? '' : `scale(${layout.scale})`;
     strip.dataset.layout = String(layout.width);
     const room = (parent?.clientHeight ?? 0) - height;
-    this.menu.place(room > 0 ? Math.min(layout.scale, room / MENU_HEIGHT) : layout.scale, height);
+    this.menu.place(room > 0 ? Math.min(1, room / MENU_HEIGHT) : layout.scale, height);
     if (parent !== null) {
       parent.style.setProperty('--hud-taskbar-height', `${height}px`);
       setLayoutBottom(parent, height);

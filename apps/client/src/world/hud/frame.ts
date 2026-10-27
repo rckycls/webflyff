@@ -109,6 +109,12 @@ export class WindowFrame {
   private readonly doc: Document;
   private open_ = false;
   private drag: { pointerId: number; dx: number; dy: number } | null = null;
+  /**
+   * Where the window was put (opened, or dragged to) on the screen as it was then: `refit` keeps the window on a screen
+   * that has changed size from there, so a window squeezed in while the phone is upright goes back where it was once the
+   * phone is turned back.
+   */
+  private placed = { x: 0, y: 0 };
 
   constructor(title: string, art: UiArt, layout: FrameLayout = DEFAULT_LAYOUT, doc: Document = document) {
     this.doc = doc;
@@ -172,6 +178,7 @@ export class WindowFrame {
   open(at: { x: number; y: number }): void {
     this.element.hidden = false;
     this.moveTo(at.x, at.y, false);
+    this.placed = this.position;
     if (!this.open_) {
       this.open_ = true;
       const stack = stackOf(this.doc);
@@ -198,6 +205,15 @@ export class WindowFrame {
   /** Where the window is: its top left in CSS pixels of its layer. */
   get position(): { x: number; y: number } {
     return { x: parseFloat(this.element.style.left) || 0, y: parseFloat(this.element.style.top) || 0 };
+  }
+
+  /**
+   * Keeps the open window on its layer after the screen changed size (a resize, a turn of the device), as `open` keeps
+   * it: from where it was put, so that it goes back there when the screen is big enough again. The layer hides what is
+   * past its edges, and Neuz, whose screen never changes size under a window, has nothing of this.
+   */
+  refit(): void {
+    if (this.open_) this.moveTo(this.placed.x, this.placed.y, false);
   }
 
   /** The 12 tiles: corners, the runs between them repeated every 16 px, on a grid of whole tiles cut to the window. */
@@ -271,6 +287,7 @@ export class WindowFrame {
     const drag = this.drag;
     if (drag === null || (event.pointerId ?? 0) !== drag.pointerId) return;
     this.moveTo(event.clientX - drag.dx, event.clientY - drag.dy, true);
+    this.placed = this.position;
   };
 
   private readonly onUp = (event: PointerEvent): void => {
@@ -318,6 +335,11 @@ export class WindowFrame {
     this.element.style.left = `${px}px`;
     this.element.style.top = `${py}px`;
   }
+}
+
+/** Keeps every open window of `doc` on its layer after the screen changed size (`WindowFrame.refit`). */
+export function refitWindows(doc: Document): void {
+  for (const frame of stacks.get(doc) ?? []) frame.refit();
 }
 
 /**

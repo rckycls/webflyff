@@ -15,7 +15,7 @@ import type { Texts } from '../src/world/gameData';
 import { AttackButton } from '../src/world/hud/attackButton';
 import { APPLETS, appletText } from '../src/world/hud/applets';
 import { escapeStep } from '../src/world/hud/escape';
-import { WindowFrame, escapeWindow, setLayoutBottom } from '../src/world/hud/frame';
+import { WindowFrame, escapeWindow, refitWindows, setLayoutBottom } from '../src/world/hud/frame';
 import type { UiArt } from '../src/world/hud/art';
 import { Hud } from '../src/world/hud/hud';
 import { Caption, MessageLines, formatDefinedText } from '../src/world/hud/messages';
@@ -885,12 +885,12 @@ describe('taskBarLayout (CWndTaskBar::Initialize, WndTaskBar.cpp:1264-1306; resd
     wide.update(newVagrantWithBar(), BAR_DATA);
     expect(wide.element.querySelectorAll('.hud-slot[data-row="applet"]')).toHaveLength(18);
     expect(slot(wide, 'queue', 0).style.left).toBe('1054px');
-    // narrower than 800 px: the bar and its menu drawn smaller, the menu above the bar
+    // narrower than 800 px: the bar drawn smaller; the menu above it at its own scale, the 450 px height's
     const small = taskBarOn(400);
     small.update(newVagrantWithBar(), BAR_DATA);
     expect(strip(small).style.transform).toBe('scale(0.5)');
     const menu = small.element.querySelector<HTMLElement>('.hud-taskbar-menu')!;
-    expect([menu.style.transform, menu.style.bottom]).toEqual(['scale(0.5)', '24px']);
+    expect([menu.style.transform, menu.style.bottom]).toEqual([`scale(${(450 - 24) / 496})`, '24px']);
     expect(small.element.parentElement!.style.getPropertyValue('--hud-taskbar-height')).toBe('24px');
   });
 });
@@ -1163,6 +1163,17 @@ describe('TaskBar: stackable items, names, focus and room (WndTaskBar.cpp)', () 
     expect(menu.style.bottom).toBe('48px');
   });
 
+  it('the menu is not drawn smaller with the bar: 192 px wide, it needs only the height (its lines stay big for a finger)', () => {
+    const bar = new TaskBar(art, recorder().actions);
+    bars.push(bar);
+    layer(600, 600).append(bar.element);
+    bar.update(newVagrantWithBar(), BAR_DATA);
+    expect(bar.element.querySelector<HTMLElement>('.hud-taskbar-strip')!.style.transform).toBe('scale(0.75)');
+    const menu = bar.element.querySelector<HTMLElement>('.hud-taskbar-menu')!;
+    // 600 - 36 px of the bar leaves the menu's 496: its full size
+    expect([menu.style.transform, menu.style.bottom]).toEqual(['', '36px']);
+  });
+
   it("keeps the windows above it: the layout's bottom is the bar's top (WndTaskBar.cpp:1176-1178)", () => {
     const parent = layer(800, 450);
     const bar = new TaskBar(art, recorder().actions);
@@ -1193,6 +1204,74 @@ describe('setLayoutBottom (m_rectLayout, WndBase.cpp:1261-1271)', () => {
     expect(frame.element.style.top).toBe('252px'); // within 10 px of the line: against it
     window.dispatchEvent(pointer('pointerup', 5, 249));
     frame.close();
+  });
+});
+
+describe('refitWindows (the screen resized or the device turned: Piece 4 spec §3.10)', () => {
+  /** A layer whose size changes, as the world's does when the window is resized or the phone turned. */
+  function turningLayer(size: { width: number; height: number }): HTMLElement {
+    const element = document.createElement('div');
+    Object.defineProperty(element, 'clientWidth', { get: () => size.width });
+    Object.defineProperty(element, 'clientHeight', { get: () => size.height });
+    document.body.append(element);
+    setLayoutBottom(element, 48);
+    return element;
+  }
+
+  it('keeps an open window on the layer as it gets smaller, and puts it back where it was as it grows again', () => {
+    const size = { width: 844, height: 390 };
+    const parent = turningLayer(size);
+    const frame = new WindowFrame('Character', art, { width: 200, height: 150 });
+    parent.append(frame.element);
+    frame.open({ x: 600, y: 180 });
+    expect(frame.position).toEqual({ x: 600, y: 180 });
+
+    // upright: 390 x 844, the window squeezed in (the layer hides what is past its edges)
+    Object.assign(size, { width: 390, height: 844 });
+    refitWindows(document);
+    expect(frame.position).toEqual({ x: 190, y: 180 });
+    // a short window: its bottom above the task bar, its title bar on the screen
+    Object.assign(size, { width: 844, height: 300 });
+    refitWindows(document);
+    expect(frame.position).toEqual({ x: 600, y: 102 });
+    // turned back: where it was put
+    Object.assign(size, { width: 844, height: 390 });
+    refitWindows(document);
+    expect(frame.position).toEqual({ x: 600, y: 180 });
+    frame.close();
+  });
+
+  it('a window dragged to a place goes back to that place', () => {
+    const size = { width: 844, height: 390 };
+    const parent = turningLayer(size);
+    const frame = new WindowFrame('Character', art, { width: 200, height: 150 });
+    parent.append(frame.element);
+    frame.open({ x: 0, y: 0 });
+    const title = frame.element.querySelector('.hud-window-title')!;
+    title.dispatchEvent(pointer('pointerdown', 5, 5));
+    window.dispatchEvent(pointer('pointermove', 2000, 105));
+    window.dispatchEvent(pointer('pointerup', 2000, 105));
+    expect(frame.position).toEqual({ x: 644, y: 100 });
+    Object.assign(size, { width: 390, height: 844 });
+    refitWindows(document);
+    expect(frame.position).toEqual({ x: 190, y: 100 });
+    Object.assign(size, { width: 844, height: 390 });
+    refitWindows(document);
+    expect(frame.position).toEqual({ x: 644, y: 100 });
+    frame.close();
+  });
+
+  it('leaves a closed window alone', () => {
+    const size = { width: 844, height: 390 };
+    const parent = turningLayer(size);
+    const frame = new WindowFrame('Character', art, { width: 200, height: 150 });
+    parent.append(frame.element);
+    frame.open({ x: 600, y: 180 });
+    frame.close();
+    Object.assign(size, { width: 390, height: 844 });
+    refitWindows(document);
+    expect(frame.element.hidden).toBe(true);
+    expect(frame.position).toEqual({ x: 600, y: 180 });
   });
 });
 

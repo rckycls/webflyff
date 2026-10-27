@@ -39,7 +39,7 @@ import { GameDataMissingError } from './gameData';
 import type { GameData } from './gameData';
 import { AttackButton } from './hud/attackButton';
 import { CharacterWindow } from './hud/characterWindow';
-import { escapeWindow } from './hud/frame';
+import { escapeWindow, refitWindows } from './hud/frame';
 import type { UiArt } from './hud/art';
 import { Hud } from './hud/hud';
 import { escapeStep } from './hud/escape';
@@ -182,6 +182,8 @@ export class WorldScreen {
   private readonly backCamera = new BackCamera();
   private readonly stepper = new FixedStepper();
   private paused = false;
+  /** The window was resized (or the device turned) since the last frame: the open windows are kept on the screen. */
+  private resized = false;
   private lastTime = 0;
   /** The page was hidden: the next frame owes nothing for the time it was away. */
   private away = false;
@@ -548,6 +550,7 @@ export class WorldScreen {
     this.ownMover = new OwnMover(this.session, this.entry.clock, this.mark);
     doc.addEventListener('visibilitychange', this.onVisibility);
     view.addEventListener('blur', this.onBlur);
+    view.addEventListener('resize', this.onResize);
     this.lastTime = performance.now();
     // `ready()` resolves at the end of the first frame (`frame`), once the camera is placed and the world drawn
     renderer.setAnimationLoop((now) => this.frame(now));
@@ -750,7 +753,9 @@ export class WorldScreen {
    * the attack's mark (`m_pRenderTargetObj`) when there is one, else the focus (`CWndWorld::RenderSelectObj`,
    * `WndWorld.cpp:2720-2723`, called with the focus at :1058); the task bar with the own bars (empty without the own
    * numbers), the attack button, enabled while the focus is a mover the attack would take (`canAttackFocus`), and the
-   * Character window while it is open, with the own numbers and the lobby's name, server and channel.
+   * Character window while it is open, with the own numbers and the lobby's name, server and channel. After a resize or a
+   * turn of the device, once the task bar is laid out for the new size, the open windows are kept on the screen
+   * (`refitWindows`, spec §3.10: the windows' layer hides what is past its edges).
    */
   private drawHud(world: WorldState, now: number): void {
     const self = world.self();
@@ -760,6 +765,10 @@ export class WorldScreen {
     const gameMaster = isGameMaster(self?.added.player?.authorization ?? 0);
     this.hud!.frame(now, this.own, self?.name ?? this.entry.character.name, target, gameMaster);
     this.taskBar!.update(this.own, this.data!);
+    if (this.resized) {
+      this.resized = false;
+      refitWindows(this.element.ownerDocument);
+    }
     this.attackButton!.update(loop.canAttackFocus);
     if (this.own !== undefined && this.characterWindow?.frame.isOpen === true) this.characterWindow.update(this.own, this.entry, now);
   }
@@ -919,6 +928,11 @@ export class WorldScreen {
 
   private readonly onBlur = (): void => this.stopOwnMover();
 
+  /** A resize or a turn of the device: the next frame keeps the open windows on the screen (`drawHud`). */
+  private readonly onResize = (): void => {
+    this.resized = true;
+  };
+
   /**
    * The page lost the focus or is hidden: a key's or the finger's let-go may never come, and a hidden page runs no frame
    * to send a stop. The server's copy of the player would run on, and once it is 1000 units from where the player
@@ -960,6 +974,7 @@ export class WorldScreen {
     const doc = this.element.ownerDocument;
     doc.removeEventListener('visibilitychange', this.onVisibility);
     (doc.defaultView ?? window).removeEventListener('blur', this.onBlur);
+    (doc.defaultView ?? window).removeEventListener('resize', this.onResize);
     (doc.defaultView ?? window).removeEventListener('keydown', this.onEscape, true);
     this.taskBar?.dispose();
     this.attackButton?.dispose();

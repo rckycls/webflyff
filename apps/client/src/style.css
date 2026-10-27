@@ -1,4 +1,5 @@
-/* The lobby: one column, made for a phone and left as it is on a desktop. */
+/* The lobby: one column for a phone held upright (which the landscape cover hides, landscape.ts), and laid out for a screen
+   wider than tall, where the game is played (Piece 4 spec §3.10): see "Landscape" below. */
 
 :root {
   color-scheme: light dark;
@@ -385,6 +386,126 @@ fieldset:disabled .btn {
   font-weight: 600;
 }
 
+/* Landscape ------------------------------------------------------------------------------------------------------- */
+
+/* The whole game is played on a screen wider than tall (Piece 4 spec §3.10), from a phone on its side (844 x 390) to a
+   PC's window: the title and the messages in a column at the left, the screen at the right (the stage says which one it
+   holds, LobbyApp), each laid out to fit a phone's height with no scroll. Taller than wide, the cover hides the page and
+   the one column above stays. */
+@media (orientation: landscape) {
+  #app {
+    display: grid;
+    grid-template-columns: minmax(9rem, 13rem) minmax(0, 1fr);
+    grid-template-rows: auto auto 1fr;
+    column-gap: 24px;
+    max-width: 60rem;
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+  }
+
+  #app > header {
+    grid-area: 1 / 1;
+  }
+
+  #app > .notice {
+    grid-area: 2 / 1;
+  }
+
+  #app > .status {
+    grid-area: 3 / 1;
+    align-self: start;
+  }
+
+  #app > .stage {
+    grid-area: 1 / 2 / 4 / 3;
+    min-width: 0;
+  }
+
+  h1 {
+    margin: 0 0 12px;
+  }
+
+  h2 {
+    margin-bottom: 12px;
+  }
+
+  .field {
+    margin-bottom: 12px;
+  }
+
+  .label {
+    margin-bottom: 4px;
+  }
+
+  /* the buttons of a screen side by side */
+  .actions {
+    grid-auto-columns: minmax(0, 1fr);
+    grid-auto-flow: column;
+    margin-top: 16px;
+  }
+
+  .server {
+    margin-bottom: 16px;
+  }
+
+  .server .list {
+    grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  }
+
+  /* the three slots side by side; in each, the character, then Delete and Enter side by side */
+  .stage[data-screen='characters'] .list {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .slot {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
+    align-content: start;
+  }
+
+  .slot-number {
+    grid-column: 1 / -1;
+    margin: 0;
+  }
+
+  .slot-row {
+    display: contents;
+  }
+
+  .slot-info,
+  .slot-create {
+    grid-column: 1 / -1;
+  }
+
+  .slot .btn.danger-outline,
+  .slot-enter {
+    min-width: 0;
+    width: 100%;
+    margin: 0;
+    padding-inline: 8px;
+  }
+
+  /* the create screen's fields three a row */
+  .stage[data-screen='create'] .screen {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    column-gap: 16px;
+    align-items: start;
+  }
+
+  .stage[data-screen='create'] .screen > :is(h2, .hint, .actions) {
+    grid-column: 1 / -1;
+  }
+
+  .stage[data-screen='create'] .hint {
+    margin-bottom: 0;
+  }
+
+  .stepper {
+    grid-template-columns: 48px minmax(0, 1fr) 48px;
+  }
+}
+
 /* The world screen ------------------------------------------------------------------------------------------------ */
 
 /* Over the whole page, under the notch too: the 3D view fills the screen. */
@@ -670,10 +791,14 @@ fieldset:disabled .btn {
   height: 0;
 }
 
+/* Over the windows: Neuz keeps them above the bar (m_rectLayout), and one taller than the room above it (the Character
+   window's 512 px on a landscape phone) goes under the bar rather than over its Start button. Under the revive window's
+   backdrop (100) and the Start menu (1000). */
 .hud-taskbar-strip {
   position: absolute;
   left: 0;
   bottom: 0;
+  z-index: 50;
   background-repeat: no-repeat;
   transform-origin: 0 100%;
   pointer-events: auto;
@@ -1015,4 +1140,50 @@ fieldset:disabled .btn {
 .world.world-modal .joystick,
 .world.world-menu-open .joystick {
   visibility: hidden;
+}
+
+/* The landscape cover (landscape.ts, Piece 4 spec §3.10): over the whole page while it is taller than wide, the world's
+   windows and Piece 3's overlay included; what is under it goes on, unseen. A finger on it moves nothing. */
+.landscape-cover {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  padding: max(24px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom))
+    max(24px, env(safe-area-inset-left));
+  background: #101418;
+  color: #e6e9ed;
+  text-align: center;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.landscape-cover[hidden] {
+  display: none;
+}
+
+/* it takes the focus as it shows, for a screen reader; nothing on it is to be pressed */
+.landscape-cover:focus {
+  outline: none;
+}
+
+/* a phone upright, faint, and on its side, with the turn between them */
+.landscape-cover-icon {
+  width: 96px;
+  height: 96px;
+  background: no-repeat center / contain
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64' fill='none' stroke='%23e6e9ed' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='6' y='6' width='20' height='34' rx='3' opacity='.4'/%3E%3Crect x='14' y='38' width='44' height='20' rx='3'/%3E%3Cpath d='M34 10a18 18 0 0 1 18 18'/%3E%3Cpath d='M47 25l5 4 4-5'/%3E%3C/svg%3E");
+}
+
+.landscape-cover-text {
+  max-width: 20rem;
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.4;
 }

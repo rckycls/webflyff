@@ -794,9 +794,11 @@ test.describe('the world screen against scripted servers', () => {
   test('pressing a turn key cancels it', async ({ page }) => {
     const gateway = await playGateway(page);
     await enterFlaris(page);
-    // as far behind Webby as the screen shows above the task bar (about 7 m: it runs there in about 1 s), and the key goes
-    // down soon after it starts
-    await tapWorld(page, 0.5, 0.92);
+    // as far behind Webby as the screen shows above the task bar (about 7 m on the desktop: it runs there in about 1 s), and
+    // the key goes down soon after it starts; on the phone held on its side (342 px high) the bar starts at 0.87 of it
+    const canvas = (await page.locator('.world-view canvas').boundingBox())!;
+    const barTop = (await page.locator('.hud-taskbar-strip').boundingBox())!.y;
+    await tapWorld(page, 0.5, Math.min(0.92, (barTop - 8 - canvas.y) / canvas.height));
     await expect.poll(() => destPosOf(gateway).length).toBe(1);
     const dest = destPosOf(gateway)[0]!.pos;
     await expect.poll(async () => distanceXZ(await ownAt(page), SQUARE), { timeout: 60_000, intervals: [20] }).toBeGreaterThan(0.5);

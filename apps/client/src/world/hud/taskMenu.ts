@@ -124,8 +124,8 @@ export class TaskMenu {
   }
 
   /**
-   * Puts the menu's bottom left `bottom` px above the layer's bottom left, drawn `scale` times its size (the bar's scale,
-   * and smaller still where the layer is too short for its 496 px above the bar).
+   * Puts the menu's bottom left `bottom` px above the layer's bottom left, drawn `scale` times its size (smaller where the
+   * layer is too short for its 496 px above the bar; `TaskBar.relayout`).
    */
   place(scale: number, bottom: number): void {
     this.element.style.bottom = `${bottom}px`;

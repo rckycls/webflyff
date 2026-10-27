@@ -47,11 +47,16 @@ export class LobbyApp {
    * it, the login-server connection included) and `done`, which brings the lobby back to the login form with a message
    * (or none) once the world is over. The lobby's stage is empty when `onEnter` is called, so the world screen may fill
    * `root` as it likes; `done` puts the lobby's page back.
+   *
+   * `onPlayTap` is called at the start of the taps that log in and enter the world, inside their handlers: there the
+   * page asks for full screen and the landscape lock (`Landscape.requestLock`, spec §3.10), which a browser grants only to
+   * a tap.
    */
   constructor(
     private readonly root: HTMLElement,
     private readonly flow: LoginFlow,
     private readonly onEnter: (entry: WorldEntry, done: (message?: string) => void) => void,
+    private readonly onPlayTap: () => void = () => {},
   ) {
     this.mount();
     this.showLogin();
@@ -147,6 +152,7 @@ export class LobbyApp {
   }
 
   private login(account: string, password: string): void {
+    this.onPlayTap();
     this.account = account.trim();
     this.setAlert(undefined);
     this.status.textContent = 'Logging in…';
@@ -174,6 +180,7 @@ export class LobbyApp {
    * (the login server has not sent the cache address or the clock yet), the player stays and is told so.
    */
   private enter(character: CharacterSummary): void {
+    this.onPlayTap();
     const entry = this.flow.handOver(character.slot);
     if (entry === undefined) {
       this.setAlert(UNEXPECTED_PROBLEM);
@@ -185,6 +192,7 @@ export class LobbyApp {
     this.setAlert(undefined);
     this.status.textContent = '';
     this.stage.replaceChildren();
+    delete this.stage.dataset.screen;
     const world = {};
     this.world = world;
     this.onEnter(entry, (message) => {
@@ -211,11 +219,15 @@ export class LobbyApp {
     });
   }
 
-  /** Puts a screen in place of the last one. `alert` and `status` are what the new screen starts with. */
+  /**
+   * Puts a screen in place of the last one. `alert` and `status` are what the new screen starts with. The stage says which
+   * screen it holds (`data-screen`), for its landscape layout (style.css).
+   */
   private show(screen: Screen, view: View, alert?: string, status?: string): void {
     const first = this.view === undefined;
     this.screen = screen;
     this.view = view;
+    this.stage.dataset.screen = screen;
     this.stage.replaceChildren(view.element);
     this.setAlert(alert);
     this.status.textContent = status ?? '';
