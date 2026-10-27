@@ -297,12 +297,16 @@ test.describe('landscape (spec §3.10)', () => {
     const placed = await boxOf(character, 'the Character window');
     expect(placed.x + placed.width).toBeCloseTo(LANDSCAPE.width, 0);
 
+    // the open windows are kept on the screen by the first frame after the resize (`refitWindows` in the world screen's
+    // `drawHud`), and the page takes the resize between its frames: both waits are on the frame loop (R28). Four workers
+    // drawing in software left two or three frames in the 4 to 5.5 s the window took to go back
     await page.setViewportSize(UPRIGHT);
-    await expect.poll(async () => (await boxOf(character, 'the Character window')).x + placed.width).toBeLessThanOrEqual(UPRIGHT.width);
+    await expect.poll(async () => (await boxOf(character, 'the Character window')).x + placed.width, ON_FRAMES)
+      .toBeLessThanOrEqual(UPRIGHT.width);
     await expectOnScreen(character.locator('.hud-window-title'), "the Character window's title bar, upright");
 
     await page.setViewportSize(LANDSCAPE);
-    await expect.poll(async () => (await boxOf(character, 'the Character window')).x).toBeCloseTo(placed.x, 0);
+    await expect.poll(async () => (await boxOf(character, 'the Character window')).x, ON_FRAMES).toBeCloseTo(placed.x, 0);
   });
 
   // Review Focus 5: the phone turned upright in a fight. The cover shows, and nothing behind it pauses: the auto-attack
