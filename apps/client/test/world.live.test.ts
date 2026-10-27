@@ -20,19 +20,22 @@
 // files, and the ground from the same folder's tiles (the terrain, without the objects), so the walker stands on the
 // terrain as the screen would put it: the run and the tap need open ground ahead of the walker's character.
 //
-// The last test is a fight (Piece 4): the walker checks that its own ADD_OBJ's inventory was read (the starter food),
-// walks out of Flaris through the north gate to the Small Aibatts (`MI_AIBATT1`; never a giant, Ruling R30), taps the
-// nearest and presses the attack button, and the world screen's attack (`Focus`, `AttackLoop`, the own numbers'
-// `OwnState`, wired as `WorldScreen` wires them) attacks it until it dies. It fails on the server's
-// `TID_GAME_MODIFY_ATTACK_SPEED` (and on a second `TID_GAME_PRIORITYMOB`: after the first it tries another Aibatt once),
-// on a swing with no DAMAGE within 3 s, on EXP that does not rise after the kill, and on any message misread. For it the
-// walker's steps also meet the placed objects, as on the screen: their collision shapes, read from the disk as the
-// stage reads them (`placedObjects`, its tiles around the walker as the test starts). Every player has the world
-// screen's views of the movers, without a screen (`headlessViews`): their models' frames end the swings and land their
-// blows (without them a swing would end at once, and the next would follow it a step later), and their boxes give the
-// radii of `IsRangeObj` (`WorldScreen.measureRadii`). A character the test did not make walks back to where it started,
-// so that the next run's first test finds it in sight of the other's. Run alone (`npm run test:live:world -- -t fight`),
-// the test enters the walker itself.
+// The last test is a fight (Piece 4; its way and steps are helpers/liveFight.ts's): the walker checks that its own
+// ADD_OBJ's inventory was read (the starter food: exactly a new character's in one the test made), walks out of Flaris
+// through the north gate to the Small Aibatts (`MI_AIBATT1`; never a giant, Ruling R30), taps the nearest and presses
+// the attack button, and the world screen's attack (`Focus`, `AttackLoop`, the own numbers' `OwnState`, wired as
+// `WorldScreen` wires them) attacks it until it dies. It fails on the server's `TID_GAME_MODIFY_ATTACK_SPEED` (and on a
+// second `TID_GAME_PRIORITYMOB`: after the first it tries another Aibatt once), on a swing with no DAMAGE within 3 s, on
+// EXP that does not rise after the kill, and on any bundle without its table or misread. For it the walker's steps
+// also meet the placed objects, as on the screen: their collision shapes, read from the disk as the stage reads them
+// (`placedObjects`, its tiles around the walker as the test starts). Every player has the world screen's views of the
+// movers, without a screen (`headlessViews`): their models' frames end the swings and land their blows (without them a
+// swing would end at once, and the next would follow it a step later), and their boxes give the radii of `IsRangeObj`
+// (`WorldScreen.measureRadii`). Afterwards a character the test did not make walks back to where new characters start,
+// beside the lodestar, if it is alive and still in the world; a dead one is revived there (REVIVAL_TO_LODESTAR, as the
+// revive window does). A character an earlier run left on the way walks back first. Where the test leaves a living
+// character outside the town, its error says where, and to walk it back through the north gate in the browser before
+// the next run. Run alone (`npm run test:live:world -- -t fight`), the test enters the walker itself.
 //
 // The servers' accept limiter (helpers/connectGap.ts explains it): every connection below waits until 300 ms after the
 // one before, the lobby's and the world's alike; keep it that way, and do not loop the test.
@@ -45,7 +48,7 @@ import type { Gateway } from '@flyffweb/gateway/src/server';
 import { closeText } from '../src/lobby/errorText';
 import { TIMEOUT_TEXT } from '../src/lobby/LoginFlow';
 import type { WorldEntry } from '../src/lobby/LoginFlow';
-import { AttackLoop, attackAble, objRadius } from '../src/world/combat/attackLoop';
+import { AttackLoop, objRadius } from '../src/world/combat/attackLoop';
 import type { AttackLoopSession } from '../src/world/combat/attackLoop';
 import { Focus } from '../src/world/combat/focus';
 import { movesOrTurns } from '../src/world/controls';
@@ -65,6 +68,11 @@ import type { CombatEvent, Mover } from '../src/world/WorldState';
 import { checkReachable } from './helpers/connectGap';
 import { ASSETS_DIR, DiskAssets, Terrain, placedObjects } from './helpers/diskAssets';
 import { headlessViews } from './helpers/headlessViews';
+import {
+  TO_THE_AIBATTS, attackSpeedRefusals, fightTexts, foodProblem, killSmallAibatt, leftOutsideNote, pollUntil, resumeRoute,
+  reviveIfDead, stands, stateText, walkRoute, withNote,
+} from './helpers/liveFight';
+import type { FightContext } from './helpers/liveFight';
 import { CONFIG_PATH, loadConfigFile, parseGatewaySettings, requireBankPin, requireText } from './helpers/liveConfig';
 import type { GatewaySettings } from './helpers/liveConfig';
 import { printGatewayLogOnFailure, startLiveGateway } from './helpers/liveGateway';
@@ -163,38 +171,17 @@ const TAP_M = 8;
 /** A walk of 8 m at the run's 6 m a second takes under 2 s; the walker stands within this. */
 const TAP_WALK_MS = 10000;
 
-// ---- The fight ---------------------------------------------------------------------------------------------------
+// ---- The fight (its way, its numbers and its steps are helpers/liveFight.ts's) -----------------------------------
 
-/** `II_GEN_FOO_INS_LOLLIPOP`, `II_GEN_FOO_INS_BISCUIT` (`Resource/defineItem.h:1063-1064`): a new character's 3 and 1 (`BASE_VALUE_TBL`, `Database.sql:2741-2742`, both sexes). */
-const STARTER_FOOD = [2800, 2801];
-/** `MI_AIBATT1` (`Resource/defineObj.h:1028`), the Small Aibatt: level 1, `dwAddHp` 120, `nExpValue` 2 (`propMover.txt:7`). */
-const MI_AIBATT1 = 20;
-/**
- * The way out of Flaris to the Small Aibatts north of it, D3D x and z, each point a tap's walk (DESTPOS) once the walker
- * stands at the one before: to where new characters start (`RI_BEGIN`, `Resource/World/WdMadrigal/WdMadrigal.rgn:742`,
- * beside the lodestar; after the first tests a new character stands 26 m south of it), north between the fences to the
- * north gate (its two lamps, `obj_mafiprla02` at 6953.6, 3377.6 and 6965.6, 3377.6), over the bridge (`obj_maflprbr03`,
- * 6960.4, 3396.0), and across the field to a spot between the two Small Aibatt respawns there (`WdMadrigal.rgn:700-701`:
- * 18 each, in 7028-7076 x 3392-3440 and 6988-7036 x 3400-3448), with nothing in the way for about 12 m around. Each leg
- * was walked through the rules with Madrigal's placed objects (the converted files) and met nothing. The giants'
- * respawns (`MI_AIBATT4`, `RANK_BOSS`, `WdMadrigal.rgn:687`) are 300 m west of it.
- */
-const TO_THE_AIBATTS: readonly (readonly [number, number])[] = [[6972, 3337], [6962, 3348], [6960, 3366], [6960, 3412], [7040, 3430]];
-/** A walker in walk mode goes a quarter of its 6 m a second (`moveSpeed`); each leg of the way gets that long, and this more. */
-const WALK_M_PER_S = 1.5;
-const LEG_SPARE_MS = 10000;
-/** All the Small Aibatts near may be dead: one comes back within 30 s (`m_uTime` 60, halved for `MI_AIBATT1`: `CWorld::ReadRespawn`, `WorldFile.cpp:597`, :627-636). */
-const AIBATT_WAIT_MS = 40000;
-/** The attack runs until MOVERDEATH, for at most this long (each Aibatt). */
-const FIGHT_MS = 60000;
-/**
- * Every swing's DAMAGE comes within this; the killing blow's answer is the MOVERDEATH instead, as the server sends no
- * DAMAGE for it (`CAttackArbiter::OnDamageMsgW`, `WORLDSERVER/AttackArbiter.cpp:228-255`: `OnDamaged` with HP left,
- * else `OnDied`).
- */
-const DAMAGE_WAIT_MS = 3000;
 /** The kill's SETEXPERIENCE comes with the MOVERDEATH (`OnDied`, `SubExperience`, `AttackArbiter.cpp:792`); this is only the safety net. */
 const EXP_WAIT_MS = 10000;
+/** REVIVAL_TO_LODESTAR is answered with the revival and the position at the lodestar; this is only the safety net. */
+const REVIVE_WAIT_MS = 10000;
+/**
+ * The fight's own waits add up to under 10 minutes (the way out and back at a walk, two Aibatts' waits and fights);
+ * the test gets more, so that one of them, which says what it waited for, ends it rather than vitest's timeout.
+ */
+const FIGHT_TEST_MS = 900000;
 /** What the stage gives the rules with no objects near, and the walker's ground before the fight turns them on. */
 const NO_OBJECTS: ReturnType<Ground['objectsNear']> = Object.freeze([]);
 
@@ -811,14 +798,8 @@ function checkWell(): void {
  * Polls `done` until it holds, checking all the while that nothing has failed (`checkWell`); `why` says what was seen
  * instead if it does not within `timeoutMs`.
  */
-async function waitUntil(what: string, timeoutMs: number, done: () => boolean, why: () => string): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  for (;;) {
-    checkWell();
-    if (done()) return;
-    if (Date.now() > deadline) throw new Error(`${what}: not within ${timeoutMs / 1000} s. ${why()}`);
-    await sleep(20);
-  }
+function waitUntil(what: string, timeoutMs: number, done: () => boolean, why: () => string): Promise<void> {
+  return pollUntil(checkWell, what, timeoutMs, done, why);
 }
 
 /** Both players, who must be in the world: the tests after the first need what it did. */
@@ -830,15 +811,7 @@ function bothInWorld(): [Player, Player] {
   return [walker, observer];
 }
 
-/** The state of a mover as a short text, for a failure message. */
-const stateText = (m: Pick<Mover, 'act' | 'corr' | 'dest'>): string =>
-  `at ${m.act.body.pos.map((v) => v.toFixed(2)).join(', ')} in state 0x${m.act.state.toString(16)}, ${m.corr?.remnant ?? 0} correction steps left${m.dest?.pos == null ? '' : ', walking to a point'}`;
-
-/** Standing, with no correction running and no point to walk to. */
-const stands = (m: Mover): boolean =>
-  (m.act.state & ObjSta.MOVE_ALL) === ObjSta.STAND && (m.corr?.remnant ?? 0) === 0 && (m.dest?.pos ?? null) === null;
-
-// ---- The fight's helpers ---------------------------------------------------------------------------------------
+// ---- The fight's helpers (the rest are helpers/liveFight.ts's) --------------------------------------------------
 
 /** The walker, in the world: the first tests put it there; run alone (`-t fight`), this enters it and starts the steps. */
 async function walkerInWorld(): Promise<Player> {
@@ -850,187 +823,17 @@ async function walkerInWorld(): Promise<Player> {
   return walker;
 }
 
-/** A text of the texts catalog that the server names by its number (DEFINEDTEXT). */
-interface NumberedText {
-  textId: number;
-  text: string;
-}
-
-/** The two texts the fight fails on, by the numbers DEFINEDTEXT carries (the catalog's `textId`). */
-interface FightTexts {
-  attackSpeed: NumberedText;
-  priorityMob: NumberedText;
-}
-
-function fightTexts(): FightTexts {
-  const numbered = (id: string): NumberedText => {
-    const entry = gameData!.texts.get(id);
-    if (entry?.textId === undefined) {
-      throw new Error(`the texts catalog has no number for ${id}: the converted game files in ${ASSETS_DIR} are older than the texts' numbers (npm run convert)`);
-    }
-    return { textId: entry.textId, text: entry.text };
-  };
-  return { attackSpeed: numbered('TID_GAME_MODIFY_ATTACK_SPEED'), priorityMob: numbered('TID_GAME_PRIORITYMOB') };
-}
-
-/** The D3D x, z distance between two points. */
-const apart = (a: Vec3, b: Vec3): number => Math.hypot(a[0] - b[0], a[2] - b[2]);
-
-/**
- * Walks `player` to each point of `route` in turn as a tap on the land there does (`Player.tap`: `SetDestPos`,
- * `m_nCorr` -1 and the client SNAPSHOT with DESTPOS, `OwnMover`), the next once it stands; fails where a walk ended
- * short: where it met something or began to fall (it ends there, with a PLAYERCORR), or more than 1 m from its point.
- * `progress.reached` counts the points reached.
- */
-async function walkRoute(
-  player: Player, route: readonly (readonly [number, number])[], what: string, progress = { reached: 0 },
-): Promise<void> {
-  const own = player.world?.self();
-  if (own === undefined) throw new Error(`the ${player.role}'s own character is not among its movers in view: ${player.inView()}`);
+/** What the fight's helpers need of the test besides the player. */
+function fightContext(player: Player): FightContext {
   const terrain = terrainOf(player.entered!.worldId);
-  for (const [x, z] of route) {
-    const point: Vec3 = [x, terrain.heightAt(x, z) ?? own.act.body.pos[1], z];
-    const corrBefore = player.sentCorr.length;
-    const destsBefore = player.sentDestPos.length;
-    player.tap = point;
-    await waitUntil(
-      `the walk ${what} to (${x}, ${z})`,
-      (apart(own.act.body.pos, point) / WALK_M_PER_S) * 1000 + LEG_SPARE_MS,
-      () => player.sentDestPos.length > destsBefore && stands(own),
-      () => `The walker is ${stateText(own)}, ${apart(own.act.body.pos, point).toFixed(2)} m from the point.`,
-    );
-    const met = player.sentCorr.length - corrBefore;
-    const off = apart(own.act.body.pos, point);
-    if (met > 0 || off > WITHIN_M) {
-      throw new Error(
-        `the walk ${what} to (${x}, ${z}) ended ${off.toFixed(2)} m from it, the walker ${stateText(own)}${met > 0 ? ', where it met something or began to fall (PLAYERCORR)' : ''}. `
-        + `The way to the Aibatts begins where new characters start, beside Flaris's lodestar (${TO_THE_AIBATTS[0]!.join(', ')}): a character that stands elsewhere may find something in its way there. `
-        + 'Use an account with no character (the test makes one), or bring the character there.',
-      );
-    }
-    progress.reached++;
-  }
+  return { data: gameData!, heightAt: (x, z) => terrain.heightAt(x, z), check: checkWell };
 }
 
 /**
- * The Small Aibatt in `player`'s view nearest it (D3D x and z) that the attack takes (`attackAble`: alive, killable, not
- * peaceful, on the ground), other than those in `skip`; waits for one to come into view. Only `MI_AIBATT1`: never a
- * giant (Ruling R30).
+ * Set while the fight may have the walker's character outside the town and has not said so itself: the test may still
+ * end on vitest's timeout, or the run stop; `afterAll` then says where it was left (`leftOutsideNote`).
  */
-async function nearestSmallAibatt(player: Player, skip: ReadonlySet<number>): Promise<Mover> {
-  const own = player.world!.self()!;
-  const nearest = (): Mover | undefined => {
-    let found: Mover | undefined;
-    let best = Infinity;
-    for (const mover of player.world!.movers.values()) {
-      if (mover.kind !== 'monster' || mover.added.index !== MI_AIBATT1 || skip.has(mover.objectId)) continue;
-      if (!attackAble(mover, gameData!.movers)) continue;
-      const distance = apart(mover.act.body.pos, own.act.body.pos);
-      if (distance < best) {
-        best = distance;
-        found = mover;
-      }
-    }
-    return found;
-  };
-  const picked: { mover?: Mover } = {};
-  await waitUntil(
-    'a Small Aibatt in view',
-    AIBATT_WAIT_MS,
-    () => (picked.mover = nearest()) !== undefined,
-    () => `${player.inView()}. Small Aibatts (MI_AIBATT1) live on the field north of Flaris's north gate, around (${TO_THE_AIBATTS.at(-1)!.join(', ')}); one that dies comes back within 30 s.`,
-  );
-  return picked.mover!;
-}
-
-/** Where the counts of a fight start: the lengths of the player's lists as the attack began. */
-interface FightMarks {
-  swings: number;
-  seen: number;
-  corr: number;
-  destObj: number;
-}
-
-/** How the fight with `target` stands, for a failure message. */
-function fightText(player: Player, target: Mover, from: FightMarks): string {
-  const self = player.world?.self();
-  const swings = player.sentSwings.length - from.swings;
-  const hits = player.combatSeen.slice(from.seen).filter(({ event }) => (
-    event.kind === 'hit' && event.victimId === target.objectId && event.attackerId === self?.objectId
-  )).length;
-  const stats = player.session?.stats;
-  const where = self === undefined ? 'not in view' : `${stateText(self)}, ${apart(self.act.body.pos, target.act.body.pos).toFixed(2)} m from it with ${self.hp} HP`;
-  return `Since the attack began: ${player.sentDestObj.length - from.destObj} PLAYERSETDESTOBJ, ${swings} MELEE_ATTACK, ${hits} DAMAGE from the walker on it, `
-    + `${player.sentCorr.length - from.corr} PLAYERCORR (the walk up to it met something). The walker is ${where}; the Small Aibatt is `
-    + `${stateText(target)} with ${target.hp} HP. ${stats?.mismatched ?? 0} messages misread so far.`
-    + (player.viewProblems.size === 0 ? '' : ` The views could not load: ${[...player.viewProblems].join('; ')}.`);
-}
-
-/**
- * Attacks `target` as a player on a touch screen does: a tap on it (the focus, SETTARGET), then the attack button (the
- * auto-attack), and from there the attack loop walks up to it and swings, every rules step, until it dies. Ends
- * `'killed'` at its MOVERDEATH by the walker, and `'priorityMob'` at a TID_GAME_PRIORITYMOB (another player fights it:
- * `CMover::IsSteal`, `_Common/Mover.cpp:7010-7052`). Fails at a TID_GAME_MODIFY_ATTACK_SPEED (`CDPSrvr::OnMeleeAttack`,
- * `WORLDSERVER/DPSrvr.cpp:2040-2045`: the MELEE_ATTACK's speed is not the held item's `fAttackSpeed`); at a swing whose
- * DAMAGE does not come within 3 s (every swing the server takes has one, a miss's too, the killing one the MOVERDEATH);
- * and when the Aibatt has not died within 60 s, is killed by another, leaves the view alive, or the walker dies.
- */
-async function fight(player: Player, target: Mover, texts: FightTexts): Promise<'killed' | 'priorityMob'> {
-  const self = player.world!.self()!;
-  const from: FightMarks = {
-    swings: player.sentSwings.length, seen: player.combatSeen.length, corr: player.sentCorr.length, destObj: player.sentDestObj.length,
-  };
-  const state = (): string => fightText(player, target, from);
-  player.pressMover(target.objectId);
-  // the attack button is enabled while the focus is a mover the attack takes (`WorldScreen.drawHud`)
-  if (player.focusId !== target.objectId || !player.canAttackFocus) {
-    throw new Error(`the tap on the Small Aibatt ${target.objectId} did not make it a target the attack takes (the focus is ${player.focusId}). ${state()}`);
-  }
-  player.pressAttack();
-  const deadline = performance.now() + FIGHT_MS;
-  for (;;) {
-    checkWell();
-    const seen = player.combatSeen.slice(from.seen);
-    for (const { event } of seen) {
-      if (event.kind === 'text' && event.textId === texts.attackSpeed.textId) {
-        throw new Error(`the world server refused a MELEE_ATTACK with TID_GAME_MODIFY_ATTACK_SPEED ("${texts.attackSpeed.text}"): the speed it carries (${player.own?.attackSpeed()}) is not the held item's fAttackSpeed to the server. ${state()}`);
-      }
-      if (event.kind === 'text' && event.textId === texts.priorityMob.textId) return 'priorityMob';
-      if (event.kind === 'death' && event.victimId === target.objectId) {
-        if (event.attackerId !== self.objectId) throw new Error(`the Small Aibatt ${target.objectId} was killed by ${event.attackerId}, not by the walker. ${state()}`);
-        return 'killed';
-      }
-    }
-    if (isDie(self)) throw new Error(`the walker died in the fight. ${state()}`);
-    // the swings at it in order, and the DAMAGEs from the walker on it: the next one owed is that of the first swing not answered yet
-    const swings = player.sentSwings.slice(from.swings).filter((swing) => swing.targetId === target.objectId);
-    const answered = seen.filter(({ event }) => event.kind === 'hit' && event.victimId === target.objectId && event.attackerId === self.objectId).length;
-    const owed = swings[answered];
-    if (owed !== undefined && performance.now() - owed.at > DAMAGE_WAIT_MS) {
-      throw new Error(`swing ${answered + 1} at the Small Aibatt (its MELEE_ATTACK) got no DAMAGE within ${DAMAGE_WAIT_MS / 1000} s. ${state()}`);
-    }
-    if (!player.world!.movers.has(target.objectId)) throw new Error(`the Small Aibatt ${target.objectId} left the walker's view alive. ${state()}`);
-    if (performance.now() > deadline) throw new Error(`the Small Aibatt ${target.objectId} did not die within ${FIGHT_MS / 1000} s. ${state()}`);
-    await sleep(20);
-  }
-}
-
-/**
- * Kills the Small Aibatt nearest the walker (`fight`); after a TID_GAME_PRIORITYMOB, Escape (as a player gives a target
- * up) and once more with the nearest other one.
- */
-async function killSmallAibatt(player: Player, texts: FightTexts): Promise<void> {
-  const tried = new Set<number>();
-  for (;;) {
-    const target = await nearestSmallAibatt(player, tried);
-    tried.add(target.objectId);
-    if (await fight(player, target, texts) === 'killed') return;
-    if (tried.size >= 2) {
-      throw new Error(`a second Small Aibatt (${target.objectId}) was refused with TID_GAME_PRIORITYMOB ("${texts.priorityMob.text}") too: another player fights the Aibatts here.`);
-    }
-    player.giveUpTarget();
-  }
-}
+let fightUnfinished = false;
 
 // ---- The tests -------------------------------------------------------------------------------------------------
 
@@ -1054,6 +857,9 @@ describe.skipIf(config === undefined)(skip === undefined ? 'live world' : `live 
   afterAll(async () => {
     loop.stop();
     const problems: string[] = [];
+    // the fight stopped before it could say so itself (vitest's timeout): where it left the walker's character, as seen last
+    const note = fightUnfinished ? leftOutsideNote(walker.created !== undefined, walker.world?.self()) : null;
+    if (note !== null) problems.push(note);
     if (walker !== undefined) {
       // Everyone leaves first; the world server saves a character when the cache server reports its closed connection.
       await Promise.all([walker.leave(), observer.leave()]);
@@ -1221,46 +1027,64 @@ describe.skipIf(config === undefined)(skip === undefined ? 'live world' : `live 
     if (own === undefined || self === undefined) throw new Error(`the walker's JOIN bundle had no own ADD_OBJ to read its numbers from: ${runner.inView()}`);
     expect(runner.entered?.worldId, `the walker ${runner.name} is in world ${runner.entered?.worldId}, not Madrigal (Flaris)`).toBe(MADRIGAL);
 
-    // the own ADD_OBJ's inventory was read: the starter food is in it, with counts
-    expect(own.inventoryError, "the walker's inventory could not be read from its ADD_OBJ").toBeNull();
-    const items = [...(own.inventory?.values() ?? [])];
-    const listed = items.map((item) => `${item.itemId} x${item.count}`).join(', ');
-    for (const itemId of STARTER_FOOD) {
-      const count = items.filter((item) => item.itemId === itemId).reduce((sum, item) => sum + item.count, 0);
-      expect(count, `the walker's inventory holds no item ${itemId} (a new character has 3 of 2800 and 1 of 2801): ${items.length} items, ${listed}. Use a new character, or one that still carries its starter food.`).toBeGreaterThan(0);
-    }
+    // the own ADD_OBJ's inventory was read: the starter food is in it, exactly a new character's in one the test made
+    expect(foodProblem(own, runner.created !== undefined)).toBeNull();
 
-    const texts = fightTexts();
+    const texts = fightTexts(gameData!);
+    const ctx = fightContext(runner);
+    const seenFrom = runner.combatSeen.length;
     // from here on the walker's steps meet the placed objects around it, as on the world screen
     runner.objects = await placedObjects(assets!, worldOf(MADRIGAL).manifest, self.act.body.pos[0], self.act.body.pos[2]);
+    fightUnfinished = true;
     let failure: unknown;
-    const out = { reached: 0 };
     try {
-      await walkRoute(runner, TO_THE_AIBATTS, 'out of Flaris', out);
+      // a character an earlier run left on the way, or by the Aibatts, first goes back to where the way begins
+      await walkRoute(ctx, runner, resumeRoute(self.act.body.pos), 'back into Flaris from where an earlier run left it');
+      await walkRoute(ctx, runner, TO_THE_AIBATTS, 'out of Flaris');
       const before = { exp: own.exp, level: own.level };
-      await killSmallAibatt(runner, texts);
+      await killSmallAibatt(ctx, runner, texts);
       await waitUntil(
         'the EXP rising after the kill',
         EXP_WAIT_MS,
         () => own.level > before.level || own.exp > before.exp,
         () => `The walker has ${own.exp} EXP at level ${own.level}, as before the fight (${before.exp} at level ${before.level}): no SETEXPERIENCE came, or it gave nothing (a character of a high level gets little or nothing for a level 1 monster, and a Vagrant at level 15 none).`,
       );
-      const stats = runner.session!.stats;
-      expect(stats.mismatched, `a reader of the walker did not end where the table says (${stats.bundles} bundles, ${stats.indexed} with a table, ${stats.mismatched} mismatched, ${stats.unknownPackets} unknown packets)`).toBe(0);
+      // a refusal of the attack speed that came after the kill counts too
+      const refusals = attackSpeedRefusals(runner.combatSeen.slice(seenFrom), texts.attackSpeed.textId);
+      expect(refusals, `the world server refused ${refusals} MELEE_ATTACK with TID_GAME_MODIFY_ATTACK_SPEED ("${texts.attackSpeed.text}")`).toBe(0);
+      // every bundle of the sessions in the world now (after the test before, the observer's second one too; run alone, the walker's only one)
+      for (const player of [runner, observer]) {
+        const stats = player.session?.stats;
+        if (!player.playing || stats === undefined) continue;
+        const counts = `(${stats.bundles} bundles, ${stats.indexed} with a table, ${stats.mismatched} mismatched, ${stats.unknownPackets} unknown packets)`;
+        expect(stats.indexed, `the ${player.role}'s bundles without a table of contents: is the rebuilt WorldServer running? ${counts}`).toBe(stats.bundles);
+        expect(stats.mismatched, `a reader of the ${player.role} did not end where the table says ${counts}`).toBe(0);
+      }
     } catch (error) {
       failure = error;
     }
-    // a character the test did not make goes back the way it came, as far as it got, for the next run's first test (one
-    // the test made is deleted at the end)
-    if (runner.created === undefined && runner.playing && !isDie(self) && out.reached > 0) {
+    // a dead walker revives at the lodestar, as the revive window's button has it (and were the revival lost, logging out
+    // revives it at the nearest lodestar: `leftOutsideNote`)
+    if (reviveIfDead(runner)) {
+      await waitUntil('the revival at the lodestar', REVIVE_WAIT_MS, () => !isDie(self), () => `The walker is ${stateText(self)}.`)
+        .catch(() => {});
+    }
+    // a living character the test did not make goes back into the town, for the next run's first test (one the test made
+    // is deleted at the end)
+    let walkBack: unknown;
+    if (runner.created === undefined && runner.playing && !isDie(self)) {
       try {
         runner.giveUpTarget();
-        await walkRoute(runner, TO_THE_AIBATTS.slice(0, out.reached).reverse(), 'back into Flaris');
+        await walkRoute(ctx, runner, resumeRoute(self.act.body.pos), 'back into Flaris');
       } catch (error) {
-        failure ??= error;
+        walkBack = error;
       }
     }
     runner.objects = undefined;
-    if (failure !== undefined) throw failure;
-  }, 600000);
+    fightUnfinished = false;
+    let note = leftOutsideNote(runner.created !== undefined, self);
+    if (note !== null && walkBack !== undefined) note += ` (The walk back failed: ${(walkBack as Error).message})`;
+    if (failure !== undefined) throw withNote(failure, note);
+    if (note !== null) throw new Error(note);
+  }, FIGHT_TEST_MS);
 });

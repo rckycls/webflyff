@@ -47,6 +47,9 @@ export const ASSETS_DIR = fileURLToPath(new URL('../../../../dist/assets/', impo
 
 /** `dist/assets` read from the disk instead of fetched: the same logical keys, through the same `index.json`. */
 export class DiskAssets {
+  /** The glbs' JSON chunks read so far, by key (`glb`). */
+  private readonly glbs = new Map<string, GlbJson>();
+
   private constructor(private readonly files: Readonly<Record<string, string>>) {}
 
   /** Reads `index.json`; throws with what to do when the converted files are not there. */
@@ -81,9 +84,17 @@ export class DiskAssets {
     return Promise.resolve(new Uint8Array(readFileSync(this.path(key))));
   }
 
-  /** A glb's JSON chunk (`glbJson`). */
+  /**
+   * A glb's JSON chunk (`glbJson`), read once a key: the views ask for a model's boxes and a motion's events of every
+   * mover that comes into view, many of them the same files. The callers do not change what it gives.
+   */
   glb(key: string): GlbJson {
-    return glbJson(new Uint8Array(readFileSync(this.path(key))), key);
+    let json = this.glbs.get(key);
+    if (json === undefined) {
+      json = glbJson(new Uint8Array(readFileSync(this.path(key))), key);
+      this.glbs.set(key, json);
+    }
+    return json;
   }
 
   /** The `extras` of a glb's scene (`glbSceneExtras`). */
