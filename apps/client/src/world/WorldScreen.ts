@@ -21,6 +21,7 @@ import {
 import type { EffectTextureProvider, Ground, LoopedMotion, SceneServices } from '@flyffweb/scene';
 import type { WebGLRenderer } from 'three';
 import { Vector2, Vector3 } from 'three';
+import { isUpright } from '../landscape';
 import { UNEXPECTED_PROBLEM } from '../lobby/errorText';
 import type { WorldEntry } from '../lobby/LoginFlow';
 import { h } from '../lobby/views/dom';
@@ -934,9 +935,18 @@ export class WorldScreen {
 
   private readonly onBlur = (): void => this.stopOwnMover();
 
-  /** A resize or a turn of the device: the next frame keeps the open windows on the screen (`drawHud`). */
+  /**
+   * A resize or a turn of the device: the next frame keeps the open windows on the screen (`drawHud`). Turned upright, the
+   * landscape cover is up over the world (`isUpright`, landscape.ts) and the game under it is inert: a finger held on the
+   * joystick or on the world may never be seen to lift, so both let go now, and the player stops at the next step as at a
+   * lifted finger. The keys stay: a PC's cover leaves them to the player, and the fight goes on (Review Focus 5).
+   */
   private readonly onResize = (): void => {
     this.resized = true;
+    if (isUpright(this.element.ownerDocument.defaultView ?? window)) {
+      this.joystick?.reset();
+      this.tap?.reset();
+    }
   };
 
   /**

@@ -29,12 +29,14 @@
 import { MAX_SLOT_APPLET, MAX_SLOT_ITEM, MAX_SLOT_ITEM_COUNT, MAX_SLOT_QUEUE, ShortcutKind } from '@flyffweb/protocol';
 import type { InventoryItem, Shortcut, TaskBar as TaskBarMessage } from '@flyffweb/protocol';
 import type { WebItemProp } from '@flyffweb/formats';
+import { watchTouch } from '@flyffweb/scene';
+import type { TouchWatch } from '@flyffweb/scene';
 import type { OwnState } from '../OwnState';
 import { APPLETS, AppId, appletText } from './applets';
 import { themeKey, themeUrl } from './art';
 import type { UiArt } from './art';
 import { setLayoutBottom } from './frame';
-import { MENU_HEIGHT, TaskMenu } from './taskMenu';
+import { TaskMenu } from './taskMenu';
 
 /** The windows of Piece 4 a press on the task bar opens. */
 export type TaskBarWindow = 'character' | 'status' | 'skills';
@@ -110,6 +112,11 @@ const TASKBAR_HEIGHT = 48;
 const SLOT_TOP = 10;
 /** WIDC_BUTTON1, the Start button (`ButtStart.bmp`, 26 14 90 34 in every task bar window); its picture's four states are 64 px. */
 const START = { left: 26, top: 14, width: 64, height: 20 } as const;
+/**
+ * The most a touch screen draws the Start menu at (ruling R27): its 20 px lines at 40 px, a finger's, where the room above
+ * the bar allows (a landscape phone's 300 to 340 px holds the 164 px menu about twice).
+ */
+const TOUCH_MENU_SCALE = 2;
 /** `CT_STEP` and `CT_GENERAL` (`Resource/defineAttribute.h:16-19`). */
 const CT_STEP = 1;
 const CT_GENERAL = 4;
@@ -274,6 +281,8 @@ export class TaskBar {
   private layout: TaskBarLayout = taskBarLayout(0);
   /** The window was resized (or the bar not yet laid out in a layer with a width): `update` lays it out again. */
   private dirty = true;
+  /** The touch rule (`watchTouch`): the Start menu is drawn for a finger on a touch screen, from a first touch on. */
+  private readonly touch: TouchWatch;
 
   constructor(
     private readonly art: UiArt,
@@ -324,6 +333,9 @@ export class TaskBar {
     this.view.addEventListener('keydown', this.onKeyDown);
     this.view.addEventListener('keyup', this.onKeyUp);
     this.view.addEventListener('resize', this.onResize);
+    this.touch = watchTouch(this.view, () => {
+      this.dirty = true;
+    });
   }
 
   /** `m_nSlotIndex`: the bar shown (0 to 7), whose slots F1-F9 use; keys 1-8 and the arrows switch it. */
@@ -388,6 +400,7 @@ export class TaskBar {
     this.view.removeEventListener('keydown', this.onKeyDown);
     this.view.removeEventListener('keyup', this.onKeyUp);
     this.view.removeEventListener('resize', this.onResize);
+    this.touch.dispose();
     this.element.remove();
   }
 
@@ -523,8 +536,9 @@ export class TaskBar {
   /**
    * Lays the bar out for its layer's width (`taskBarLayout`): its picture, its controls, its slots; the layout of the
    * windows ends above it (`setLayoutBottom`, `WndTaskBar.cpp:1176-1178`); and the Start menu stands above its left end,
-   * at its own scale: drawn smaller only where the layer is too short for its 496 px above the bar. It is 192 px wide, so
-   * a narrow screen, which draws the bar smaller, leaves it room: its lines stay as big as the height allows, for a finger.
+   * at its own scale, not the bar's (it is 192 px wide: a narrow screen, which draws the bar smaller, leaves it room). With
+   * a mouse that is 1, and on a touch screen up to `TOUCH_MENU_SCALE` (its lines a finger's); either is smaller where
+   * the room above the bar is too short for the menu (`TaskMenu.height`).
    */
   private relayout(): void {
     const parent = this.element.parentElement;
@@ -540,7 +554,8 @@ export class TaskBar {
     strip.style.transform = layout.scale === 1 ? '' : `scale(${layout.scale})`;
     strip.dataset.layout = String(layout.width);
     const room = (parent?.clientHeight ?? 0) - height;
-    this.menu.place(room > 0 ? Math.min(1, room / MENU_HEIGHT) : layout.scale, height);
+    const most = this.touch() ? TOUCH_MENU_SCALE : 1;
+    this.menu.place(room > 0 ? Math.min(most, room / this.menu.height) : layout.scale, height);
     if (parent !== null) {
       parent.style.setProperty('--hud-taskbar-height', `${height}px`);
       setLayoutBottom(parent, height);

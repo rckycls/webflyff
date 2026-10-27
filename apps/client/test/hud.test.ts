@@ -776,13 +776,19 @@ describe('TaskBar (CWndTaskBar, WndTaskBar.cpp)', () => {
     // the skill window is milestone 2's
     expect(items.map((item) => item.disabled)).toEqual([false, false, true, false]);
     expect(items[0]!.querySelector<HTMLElement>('.hud-menu-icon')!.style.backgroundImage).toContain('/assets/ui/icon_status.png');
-    // as CWndTaskMenu draws it (WndTaskBar.cpp:2646-2653): WndTaskMenu.tga at its 192 x 496, line i at (10, 50 + 22 i),
-    // 162 x 20, with its applet's hotkey (AppendMenu, :2746)
-    expect(menu.style.backgroundImage).toBe('url("/assets/ui/wndtaskmenu.png")');
-    expect([menu.style.width, menu.style.height]).toEqual(['192px', '496px']);
+    // as CWndTaskMenu draws it (WndTaskBar.cpp:2646-2653), line i at (10, 50 + 22 i), 162 wide, with its applet's hotkey
+    // (AppendMenu, :2746); each line takes its whole 22 px row, no gap between two (ruling R27). The picture,
+    // WndTaskMenu.tga (192 x 496), is drawn in three: its top edge (0-50), the four lines' rows (50-138) and its bottom
+    // edge (the last 26 px), 164 px in all, for the four lines Piece 4 has instead of Neuz's twenty
+    const slices = [...menu.querySelectorAll<HTMLElement>('.hud-menu-slice')];
+    expect(slices.map((slice) => [slice.style.top, slice.style.height, slice.style.backgroundPosition])).toEqual([
+      ['0px', '50px', '0px 0px'], ['50px', '88px', '0px -50px'], ['138px', '26px', '0px -470px'],
+    ]);
+    expect(slices.every((slice) => slice.style.backgroundImage === 'url("/assets/ui/wndtaskmenu.png")')).toBe(true);
+    expect([menu.style.width, menu.style.height]).toEqual(['192px', '164px']);
     expect(items.map((item) => [item.style.left, item.style.top, item.style.width, item.style.height])).toEqual([
-      ['10px', '50px', '162px', '20px'], ['10px', '72px', '162px', '20px'], ['10px', '94px', '162px', '20px'],
-      ['10px', '116px', '162px', '20px'],
+      ['10px', '50px', '162px', '22px'], ['10px', '72px', '162px', '22px'], ['10px', '94px', '162px', '22px'],
+      ['10px', '116px', '162px', '22px'],
     ]);
     expect(items.map((item) => item.querySelector('.hud-menu-hotkey')!.textContent)).toEqual(['T', 'H', 'K', '']);
     // the menu stands on the bar, its own scale
@@ -885,12 +891,12 @@ describe('taskBarLayout (CWndTaskBar::Initialize, WndTaskBar.cpp:1264-1306; resd
     wide.update(newVagrantWithBar(), BAR_DATA);
     expect(wide.element.querySelectorAll('.hud-slot[data-row="applet"]')).toHaveLength(18);
     expect(slot(wide, 'queue', 0).style.left).toBe('1054px');
-    // narrower than 800 px: the bar drawn smaller; the menu above it at its own scale, the 450 px height's
+    // narrower than 800 px: the bar drawn smaller; the menu above it at its own scale, 1 with a mouse
     const small = taskBarOn(400);
     small.update(newVagrantWithBar(), BAR_DATA);
     expect(strip(small).style.transform).toBe('scale(0.5)');
     const menu = small.element.querySelector<HTMLElement>('.hud-taskbar-menu')!;
-    expect([menu.style.transform, menu.style.bottom]).toEqual([`scale(${(450 - 24) / 496})`, '24px']);
+    expect([menu.style.transform, menu.style.bottom]).toEqual(['', '24px']);
     expect(small.element.parentElement!.style.getPropertyValue('--hud-taskbar-height')).toBe('24px');
   });
 });
@@ -1153,25 +1159,52 @@ describe('TaskBar: stackable items, names, focus and room (WndTaskBar.cpp)', () 
     }
   });
 
-  it('the menu is drawn smaller where the layer is too short for its 496 px above the bar', () => {
+  /** A task bar in a layer `width` x `height`, laid out; its Start menu. */
+  const menuOn = (width: number, height: number) => {
     const bar = new TaskBar(art, recorder().actions);
     bars.push(bar);
-    layer(800, 400).append(bar.element);
+    layer(width, height).append(bar.element);
     bar.update(newVagrantWithBar(), BAR_DATA);
-    const menu = bar.element.querySelector<HTMLElement>('.hud-taskbar-menu')!;
-    expect(menu.style.transform).toBe(`scale(${(400 - 48) / 496})`);
-    expect(menu.style.bottom).toBe('48px');
+    return { bar, menu: bar.element.querySelector<HTMLElement>('.hud-taskbar-menu')! };
+  };
+  /** A page whose main pointer is a finger (`(pointer: coarse)`), for `run`. */
+  const onTouchScreen = (run: () => void) => {
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true, value: (query: string) => ({ matches: query === '(pointer: coarse)' }),
+    });
+    try {
+      run();
+    } finally {
+      delete (window as { matchMedia?: unknown }).matchMedia;
+    }
+  };
+
+  it('with a mouse the menu is at its size, not the bar\'s, and smaller only where the layer is too short for its 164 px', () => {
+    // 600 px wide: the bar at 0.75, the menu (192 px wide, it needs only the height) at 1
+    const { bar, menu } = menuOn(600, 600);
+    expect(bar.element.querySelector<HTMLElement>('.hud-taskbar-strip')!.style.transform).toBe('scale(0.75)');
+    expect([menu.style.transform, menu.style.bottom]).toEqual(['', '36px']);
+    // 150 px high: 102 px above the bar
+    expect(menuOn(800, 150).menu.style.transform).toBe(`scale(${(150 - 48) / 164})`);
   });
 
-  it('the menu is not drawn smaller with the bar: 192 px wide, it needs only the height (its lines stay big for a finger)', () => {
-    const bar = new TaskBar(art, recorder().actions);
-    bars.push(bar);
-    layer(600, 600).append(bar.element);
+  it('on a touch screen it is up to twice its size, as the room above the bar allows: a finger\'s 40 to 44 px a line', () => {
+    onTouchScreen(() => {
+      // a landscape phone of 844 x 390: 342 px above the bar, room for twice the 164 px; a line 44 px
+      expect(menuOn(844, 390).menu.style.transform).toBe('scale(2)');
+      // an iPhone in Safari held on its side, 750 x 342: the bar at 750 / 800 is 45 px, 297 px above it; a line 39.8 px
+      expect(menuOn(750, 342).menu.style.transform).toBe(`scale(${297 / 164})`);
+    });
+  });
+
+  it('a first touch on a computer with a mouse lays the menu out for a finger', () => {
+    const { bar, menu } = menuOn(844, 390);
+    expect(menu.style.transform).toBe('');
+    const touch = pointer('pointerdown', 10, 10);
+    Object.defineProperty(touch, 'pointerType', { value: 'touch' });
+    document.body.dispatchEvent(touch);
     bar.update(newVagrantWithBar(), BAR_DATA);
-    expect(bar.element.querySelector<HTMLElement>('.hud-taskbar-strip')!.style.transform).toBe('scale(0.75)');
-    const menu = bar.element.querySelector<HTMLElement>('.hud-taskbar-menu')!;
-    // 600 - 36 px of the bar leaves the menu's 496: its full size
-    expect([menu.style.transform, menu.style.bottom]).toEqual(['', '36px']);
+    expect(menu.style.transform).toBe('scale(2)');
   });
 
   it("keeps the windows above it: the layout's bottom is the bar's top (WndTaskBar.cpp:1176-1178)", () => {
@@ -1272,6 +1305,77 @@ describe('refitWindows (the screen resized or the device turned: Piece 4 spec §
     refitWindows(document);
     expect(frame.element.hidden).toBe(true);
     expect(frame.position).toEqual({ x: 600, y: 180 });
+  });
+
+  it('a window opened past an edge goes to the point it was opened at once the screen has room for it there', () => {
+    const size = { width: 390, height: 844 };
+    const parent = turningLayer(size);
+    const frame = new WindowFrame('Character', art, { width: 200, height: 150 });
+    parent.append(frame.element);
+    frame.open({ x: 600, y: 180 });
+    expect(frame.position).toEqual({ x: 190, y: 180 });
+    Object.assign(size, { width: 844, height: 390 });
+    refitWindows(document);
+    expect(frame.position).toEqual({ x: 600, y: 180 });
+    frame.close();
+  });
+});
+
+describe('WindowFrame: a window taller than the room above the task bar (Piece 4 spec §3.10)', () => {
+  /** A layer whose size changes, with the task bar's 45 px (a 750 px wide screen's) kept free at its bottom. */
+  function turningLayer(size: { width: number; height: number }): HTMLElement {
+    const element = document.createElement('div');
+    Object.defineProperty(element, 'clientWidth', { get: () => size.width });
+    Object.defineProperty(element, 'clientHeight', { get: () => size.height });
+    document.body.append(element);
+    setLayoutBottom(element, 45);
+    return element;
+  }
+  /** The top of the frame's bottom-left corner tile (WndTile09), where the tiled frame ends. */
+  const bottomCornerTop = (frame: WindowFrame): string =>
+    frame.element.querySelector<HTMLElement>('.hud-window-frame > [data-tile="9"]')!.style.top;
+
+  it('is cut to the room, its frame tiled at that height and its client area scrolling; with room again it is whole', () => {
+    // an iPhone held on its side: 342 px, 297 above the bar; the Character window is 208 x 512 (APP_CHARACTER3)
+    const size = { width: 750, height: 342 };
+    const parent = turningLayer(size);
+    const frame = new WindowFrame('Character', art, { width: 208, height: 512 });
+    parent.append(frame.element);
+    frame.open({ x: 0, y: 0 });
+    expect(frame.element.style.height).toBe('297px');
+    // the client area: 18 px of caption and 4 above it, 10 under it
+    expect(frame.body.style.height).toBe(`${297 - 22 - 10}px`);
+    expect(frame.element.hasAttribute('data-scrolls')).toBe(true);
+    // AdditionalSkinTexture's tiles for 19 rows: the last row at 18 x 16
+    expect(bottomCornerTop(frame)).toBe('288px');
+    expect(frame.position).toEqual({ x: 0, y: 0 });
+
+    // a taller screen: the whole window, its 32 rows of tiles, nothing to scroll
+    Object.assign(size, { width: 1280, height: 720 });
+    refitWindows(document);
+    expect(frame.element.style.height).toBe('512px');
+    expect(frame.body.style.height).toBe(`${512 - 22 - 10}px`);
+    expect(frame.element.hasAttribute('data-scrolls')).toBe(false);
+    expect(bottomCornerTop(frame)).toBe('496px');
+    // and back on the phone
+    Object.assign(size, { width: 750, height: 342 });
+    refitWindows(document);
+    expect(frame.element.style.height).toBe('297px');
+    expect(frame.element.querySelectorAll('.hud-window-frame > [data-tile="9"]')).toHaveLength(1);
+    frame.close();
+  });
+
+  it('a window that fits is left its height, and one in a layer not laid out yet too', () => {
+    const fits = new WindowFrame('Status', art, { width: 200, height: 150 });
+    turningLayer({ width: 750, height: 342 }).append(fits.element);
+    fits.open({ x: 0, y: 0 });
+    expect([fits.element.style.height, fits.element.hasAttribute('data-scrolls')]).toEqual(['150px', false]);
+    const early = new WindowFrame('Character', art, { width: 208, height: 512 });
+    turningLayer({ width: 0, height: 0 }).append(early.element);
+    early.open({ x: 0, y: 0 });
+    expect([early.element.style.height, early.element.hasAttribute('data-scrolls')]).toEqual(['512px', false]);
+    fits.close();
+    early.close();
   });
 });
 
@@ -1545,12 +1649,15 @@ describe('CharacterWindow (CWndCharInfo, WndField.cpp:3012-4110; CWndStateConfir
   afterEach(() => {
     for (const w of windows.splice(0)) w.dispose();
   });
-  /** The Character window in a landscape layer, open; `applied` the MODIFY_STATUS counts it sent. */
+  /**
+   * The Character window open in a layer of Neuz's 800 x 600, which holds its whole 512 px (a shorter one cuts it: `fit`);
+   * `applied` the MODIFY_STATUS counts it sent.
+   */
   const windowOn = () => {
     const applied: StatCounts[] = [];
     const character = new CharacterWindow(art, WINDOW_TEXTS, (counts) => void applied.push(counts));
     windows.push(character);
-    layer(800, 450).append(character.frame.element, character.confirm.frame.element);
+    layer(800, 600).append(character.frame.element, character.confirm.frame.element);
     character.toggle();
     return { character, applied };
   };
@@ -1656,8 +1763,8 @@ describe('CharacterWindow (CWndCharInfo, WndField.cpp:3012-4110; CWndStateConfir
     // TID_GAME_CHARSTATUS_APPLY_Q, and for a base job the line TID_DIAG_0082 (:4409-4452)
     expect(box.querySelector('.hud-confirm-text')!.textContent)
       .toBe('Do you want to use the current Stat setup?\nYour stat values will reset after your 1st job change.');
-    // APP_STATE_CONFIRM, 304 x 128 (resdata.inc:1202), at the middle of the screen (MoveParentCenter)
-    expect([box.style.width, box.style.height, box.style.left, box.style.top]).toEqual(['304px', '128px', '248px', '161px']);
+    // APP_STATE_CONFIRM, 304 x 128 (resdata.inc:1202), at the middle of the 800 x 600 screen (MoveParentCenter)
+    expect([box.style.width, box.style.height, box.style.left, box.style.top]).toEqual(['304px', '128px', '248px', '236px']);
     expect([confirmButton(character, 'yes').style.left, confirmButton(character, 'yes').style.top]).toEqual(['56px', '70px']);
     expect([confirmButton(character, 'no').style.left, confirmButton(character, 'no').style.width]).toEqual(['146px', '72px']);
     expect(confirmButton(character, 'yes').getAttribute('aria-label')).toBe('Yes');

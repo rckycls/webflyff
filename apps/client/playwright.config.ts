@@ -21,10 +21,7 @@ export default defineConfig({
   snapshotPathTemplate: '{testDir}/__screenshots__/{testFilePath}/{arg}{ext}',
   timeout: 30_000,
   reporter: 'list',
-  // 20 s for an expectation to come true, not 5: Chromium draws the world with SwiftShader at about 2 frames a second, and
-  // slower while another file's world is drawn beside it on the CPU (landscape.spec.ts's beside world.spec.ts's): a mover
-  // seen to move, or a packet sent from the frame loop, can take longer than 5 s then.
-  expect: { timeout: 20_000, toHaveScreenshot: { maxDiffPixelRatio: 0.01 } },
+  expect: { toHaveScreenshot: { maxDiffPixelRatio: 0.01 } },
   use: { baseURL: CLIENT_URL },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'], launchOptions: { args: SOFTWARE_GL } } },

@@ -3,6 +3,8 @@
 
 import type { MoveIntent } from './keyboard';
 import { NO_INTENT } from './keyboard';
+import { watchTouch } from './touch';
+import type { TouchWatch } from './touch';
 
 /** Half the base's 120 px. */
 export const JOYSTICK_RADIUS = 60;
@@ -35,14 +37,6 @@ export function joystickIntent(dx: number, dy: number, previous: MoveIntent = NO
   return { forward: 0 - dy * scale, turn: dx * scale, run: length >= (previous.run ? FULL_HELD : FULL) };
 }
 
-/**
- * True where the main pointer is a finger (phones, tablets). A computer with a touch screen as well as a mouse shows
- * the joystick from its first touch instead (see `onTouch`).
- */
-function touchFirst(view: Window | null): boolean {
-  return view?.matchMedia?.('(pointer: coarse)').matches === true;
-}
-
 /** Where the joystick stands. */
 export interface JoystickOptions {
   /** Its base's distance from the container's bottom, a CSS length: 56 px (above the nav bar) by default. */
@@ -50,21 +44,28 @@ export interface JoystickOptions {
 }
 
 export class Joystick {
-  private readonly container: HTMLElement;
   private readonly base: HTMLElement;
   private readonly knob: HTMLElement;
   private pointer: number | null = null;
   private current: MoveIntent = { ...NO_INTENT };
+  /**
+   * The touch rule (`watchTouch`): the joystick shows where the main pointer is a finger, and on a computer with a touch
+   * screen as well as a mouse from its first touch on.
+   */
+  private readonly touch: TouchWatch;
 
   constructor(container: HTMLElement, options: JoystickOptions = {}) {
     const doc = container.ownerDocument;
+    this.touch = watchTouch(doc.defaultView ?? window, () => {
+      this.base.style.display = 'block';
+    });
     this.base = doc.createElement('div');
     this.base.className = 'joystick';
     this.base.style.cssText =
       `position:absolute;left:${LEFT}px;bottom:${options.bottom ?? `${BOTTOM}px`};z-index:1000;width:${JOYSTICK_RADIUS * 2}px;` +
       `height:${JOYSTICK_RADIUS * 2}px;border-radius:50%;background:rgba(0,0,0,.25);` +
       'border:2px solid rgba(255,255,255,.35);box-sizing:border-box;touch-action:none;user-select:none;' +
-      `display:${touchFirst(doc.defaultView) ? 'block' : 'none'};`;
+      `display:${this.touch() ? 'block' : 'none'};`;
     this.knob = doc.createElement('div');
     this.knob.style.cssText =
       `position:absolute;left:50%;top:50%;width:${KNOB}px;height:${KNOB}px;margin:${-KNOB / 2}px 0 0 ${-KNOB / 2}px;` +
@@ -72,8 +73,6 @@ export class Joystick {
     this.base.append(this.knob);
     container.append(this.base);
 
-    this.container = container;
-    container.addEventListener('pointerdown', this.onTouch);
     this.base.addEventListener('pointerdown', this.onDown);
     this.base.addEventListener('pointermove', this.onMove);
     this.base.addEventListener('pointerup', this.onUp);
@@ -95,18 +94,13 @@ export class Joystick {
   }
 
   dispose(): void {
-    this.container.removeEventListener('pointerdown', this.onTouch);
+    this.touch.dispose();
     this.base.removeEventListener('pointerdown', this.onDown);
     this.base.removeEventListener('pointermove', this.onMove);
     this.base.removeEventListener('pointerup', this.onUp);
     this.base.removeEventListener('pointercancel', this.onUp);
     this.base.remove();
   }
-
-  /** A finger on the screen: the joystick shows from then on. */
-  private readonly onTouch = (event: PointerEvent): void => {
-    if (event.pointerType === 'touch') this.base.style.display = 'block';
-  };
 
   private readonly onDown = (event: PointerEvent): void => {
     if (this.pointer !== null) return;

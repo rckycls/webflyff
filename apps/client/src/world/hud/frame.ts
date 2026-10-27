@@ -115,15 +115,27 @@ export class WindowFrame {
   private open_ = false;
   private drag: { pointerId: number; dx: number; dy: number } | null = null;
   /**
-   * Where the window was put (opened, or dragged to) on the screen as it was then: `refit` keeps the window on a screen
-   * that has changed size from there, so a window squeezed in while the phone is upright goes back where it was once the
-   * phone is turned back.
+   * Where the window was put: the point it was opened at, or where it was dragged to. `refit` keeps the window on a
+   * screen that has changed size from there, so a window squeezed in while the phone is upright goes back where it was
+   * once the phone is turned back, and one opened past an edge goes to its point once there is room.
    */
   private placed = { x: 0, y: 0 };
+  /** The window's size as Neuz has it (`FrameLayout`), its frame, and the height it is shown at (`fit`). */
+  private readonly width: number;
+  private readonly fullHeight: number;
+  private readonly frame: HTMLElement;
+  private readonly art: UiArt;
+  private readonly tiled: boolean;
+  private shownHeight: number;
 
   constructor(title: string, art: UiArt, layout: FrameLayout = DEFAULT_LAYOUT, doc: Document = document) {
     this.doc = doc;
     const { width, height } = layout;
+    this.width = width;
+    this.fullHeight = height;
+    this.shownHeight = height;
+    this.art = art;
+    this.tiled = layout.texture === undefined;
     const element = doc.createElement('div');
     element.className = 'hud-window';
     element.hidden = true;
@@ -135,6 +147,7 @@ export class WindowFrame {
     frame.className = 'hud-window-frame';
     if (layout.texture === undefined) this.tile(frame, art, width, height);
     else frame.style.backgroundImage = themeUrl(art, layout.texture);
+    this.frame = frame;
 
     const titleBar = doc.createElement('div');
     titleBar.className = 'hud-window-title';
@@ -180,11 +193,15 @@ export class WindowFrame {
     this.element.setAttribute('aria-label', text);
   }
 
-  /** Shows the window with its top left at `at` (CSS pixels of its layer, kept on it) and puts it on top. */
+  /**
+   * Shows the window with its top left at `at` (CSS pixels of its layer, kept on it, the window cut to the room above the
+   * task bar if it is taller: `fit`) and puts it on top.
+   */
   open(at: { x: number; y: number }): void {
     this.element.hidden = false;
+    this.fit();
     this.moveTo(at.x, at.y, false);
-    this.placed = this.position;
+    this.placed = { x: Math.round(at.x), y: Math.round(at.y) };
     if (!this.open_) {
       this.open_ = true;
       const stack = stackOf(this.doc);
@@ -216,10 +233,36 @@ export class WindowFrame {
   /**
    * Keeps the open window on its layer after the screen changed size (a resize, a turn of the device), as `open` keeps
    * it: from where it was put, so that it goes back there when the screen is big enough again. The layer hides what is
-   * past its edges, and Neuz, whose screen never changes size under a window, has nothing of this.
+   * past its edges, and Neuz, whose screen never changes size under a window, has nothing of this. Its height is fitted
+   * to the new room first (`fit`).
    */
   refit(): void {
-    if (this.open_) this.moveTo(this.placed.x, this.placed.y, false);
+    if (!this.open_) return;
+    this.fit();
+    this.moveTo(this.placed.x, this.placed.y, false);
+  }
+
+  /**
+   * A window taller than the room its layer has above the task bar (the layer's height less `setLayoutBottom`'s) is cut to
+   * that room: its frame tiled at the height it is shown at (`tile`, as `AdditionalSkinTexture` tiles any height), its
+   * client area as much shorter, and scrolled (`data-scrolls`, style.css). With room again it is whole. Neuz's windows fit
+   * its screens (the Character window's 512 px under a 600 px one less the bar's 48); a landscape phone has 300 to 340 px
+   * above the bar, and a window drawn smaller would make its buttons too small to press. A layer not laid out yet (0 high)
+   * cuts nothing.
+   */
+  private fit(): void {
+    const layer = this.element.parentElement;
+    const room = layer === null ? 0 : layer.clientHeight - (layoutBottoms.get(layer) ?? 0);
+    const height = room > 0 && this.fullHeight > room ? room : this.fullHeight;
+    if (height === this.shownHeight) return;
+    this.shownHeight = height;
+    this.element.style.height = `${height}px`;
+    this.body.style.height = `${Math.max(0, height - CAPTION - CLIENT_TOP - CLIENT_BOTTOM)}px`;
+    if (this.tiled) {
+      this.frame.replaceChildren();
+      this.tile(this.frame, this.art, this.width, height);
+    }
+    this.element.toggleAttribute('data-scrolls', height < this.fullHeight);
   }
 
   /** The 12 tiles: corners, the runs between them repeated every 16 px, on a grid of whole tiles cut to the window. */

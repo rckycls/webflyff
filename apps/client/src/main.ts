@@ -1,5 +1,6 @@
+import { watchTouch } from '@flyffweb/scene';
 import { clientConfig } from './config';
-import { installLandscape, watchTouch } from './landscape';
+import { installLandscape } from './landscape';
 import { LobbyApp } from './lobby/LobbyApp';
 import { LoginFlow } from './lobby/LoginFlow';
 import { openWebSocketChannel } from './net/webSocketChannel';
@@ -12,7 +13,8 @@ if (root === null) throw new Error('index.html has no #app');
 installTestHooks();
 
 // The whole game is landscape (spec §3.10): a cover over the page while it is taller than wide, and on a touch screen full
-// screen and the landscape lock asked for by the taps that log in and enter the world.
+// screen and the landscape lock asked for by the taps that log in and enter the world. A touch screen is told by the
+// one touch rule, the joystick's (`watchTouch`).
 const landscape = installLandscape(root, watchTouch(window));
 
 // One gateway for the lobby and the world: the world screen opens the cache-server connection through it.

@@ -1,5 +1,5 @@
-// The Start menu (`CWndTaskMenu`, _Interface/WndTaskBar.cpp:2464-2811), the task bar's: drawn as Neuz draws it, the window
-// its picture's size with its lines on it.
+// The Start menu (`CWndTaskMenu`, _Interface/WndTaskBar.cpp:2464-2811), the task bar's: drawn as Neuz draws it, its lines
+// on its picture, at their places.
 //
 //   CWndTaskMenu::OnInitialUpdate  WndTaskBar.cpp:2584-2653             the lines, the picture WndTaskMenu.tga (:2646), line i
 //                                                                       at (10, 50 + 22 i) to (cx - 20, 70 + 22 i) (:2648-2652),
@@ -13,20 +13,29 @@
 //   CWndMgr::OpenMenu              _Interface/WndManager.cpp:2302-2322  shows the menu, or hides it if it shows
 //   CWndTaskMenu::OnKillFocus      WndTaskBar.cpp:2795-2799             a press elsewhere hides it
 //   CWndTaskMenu::OnChildNotify    WndTaskBar.cpp:2806-2811             a line pressed runs its applet
+//
+// Two departures, for a finger (ruling R27, which revisits R22): Neuz's window is its whole picture, 496 px, for its twenty
+// lines; Piece 4 has four, and the window is the picture's top edge, those four lines' rows and its bottom edge (a 3-slice
+// of the same picture, 164 px), which a touch screen draws up to twice its size (`TaskBar`). And each line takes its whole
+// 22 px row, the 2 px between two lines included, so no press between two lines is lost; its highlight stays Neuz's 20 px.
 
 import { APPLETS } from './applets';
 import { themeUrl } from './art';
 import type { UiArt } from './art';
 
-/** WndTaskMenu.tga's size (192 x 496), which the window takes (`SetWndRect( CRect( 0, 0, cx, cy ) )`, :2653). */
+/** WndTaskMenu.tga's size (192 x 496), which Neuz's window takes (`SetWndRect( CRect( 0, 0, cx, cy ) )`, :2653). */
 export const MENU_WIDTH = 192;
-export const MENU_HEIGHT = 496;
-/** The lines (:2651): from x 10 to `cx - 20`, 20 high, 22 apart from y 50. */
+const PICTURE_HEIGHT = 496;
+/** The lines (:2651): from x 10 to `cx - 20`, 20 high, 22 apart from y 50; the 2 px between two are pressed too. */
 const LINE_LEFT = 10;
 const LINE_TOP = 50;
 const LINE_PITCH = 22;
-const LINE_HEIGHT = 20;
 const LINE_WIDTH = MENU_WIDTH - 20 - LINE_LEFT;
+/**
+ * The picture's bottom edge as drawn: the panel's rounded bottom (from its row 472) with a few rows of the panel above it,
+ * 26 px from row 470, where the picture's 4 px stripes are in step with the end of an even number of lines' rows.
+ */
+const BOTTOM_EDGE = 26;
 
 /** A line of the menu: its applet, its text, and whether it does anything in Piece 4. */
 export interface TaskMenuLine {
@@ -43,6 +52,8 @@ export interface TaskMenuLine {
  */
 export class TaskMenu {
   readonly element: HTMLElement;
+  /** The menu's height as drawn at scale 1: the picture's top edge, the lines' rows and its bottom edge. */
+  readonly height: number;
   /** Called as the menu opens (true) or closes (false). */
   onChange?: (open: boolean) => void;
   private readonly doc: Document;
@@ -59,9 +70,26 @@ export class TaskMenu {
     element.className = 'hud-taskbar-menu';
     element.setAttribute('role', 'menu');
     element.hidden = true;
+    const rows = lines.length * LINE_PITCH;
+    this.height = LINE_TOP + rows + BOTTOM_EDGE;
     element.style.width = `${MENU_WIDTH}px`;
-    element.style.height = `${MENU_HEIGHT}px`;
-    element.style.backgroundImage = themeUrl(art, 'WndTaskMenu.tga');
+    element.style.height = `${this.height}px`;
+    // the picture's top edge (0 to 50), the lines' rows (from 50), its bottom edge (its last 26 px)
+    const picture = themeUrl(art, 'WndTaskMenu.tga');
+    const slices: Array<[name: string, top: number, height: number, from: number]> = [
+      ['top', 0, LINE_TOP, 0], ['rows', LINE_TOP, rows, LINE_TOP],
+      ['bottom', LINE_TOP + rows, BOTTOM_EDGE, PICTURE_HEIGHT - BOTTOM_EDGE],
+    ];
+    for (const [name, top, height, from] of slices) {
+      const slice = doc.createElement('div');
+      slice.className = 'hud-menu-slice';
+      slice.dataset.slice = name;
+      slice.style.top = `${top}px`;
+      slice.style.height = `${height}px`;
+      slice.style.backgroundImage = picture;
+      slice.style.backgroundPosition = `0px ${-from}px`;
+      element.append(slice);
+    }
     lines.forEach(({ id, text, enabled }, i) => {
       const line = doc.createElement('button');
       line.type = 'button';
@@ -75,7 +103,7 @@ export class TaskMenu {
       line.style.left = `${LINE_LEFT}px`;
       line.style.top = `${LINE_TOP + i * LINE_PITCH}px`;
       line.style.width = `${LINE_WIDTH}px`;
-      line.style.height = `${LINE_HEIGHT}px`;
+      line.style.height = `${LINE_PITCH}px`;
       const applet = APPLETS.get(id);
       const icon = doc.createElement('span');
       icon.className = 'hud-menu-icon';
@@ -124,8 +152,8 @@ export class TaskMenu {
   }
 
   /**
-   * Puts the menu's bottom left `bottom` px above the layer's bottom left, drawn `scale` times its size (smaller where the
-   * layer is too short for its 496 px above the bar; `TaskBar.relayout`).
+   * Puts the menu's bottom left `bottom` px above the layer's bottom left, drawn `scale` times its `height` (bigger on a
+   * touch screen, smaller where the layer is too short for it above the bar; `TaskBar.relayout`).
    */
   place(scale: number, bottom: number): void {
     this.element.style.bottom = `${bottom}px`;

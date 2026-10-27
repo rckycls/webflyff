@@ -3,15 +3,20 @@
 // and the full screen and orientation lock a tap on a touch screen asks for, whose refusal is ignored.
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { installLandscape, watchTouch } from '../src/landscape';
+import { installLandscape, isUpright } from '../src/landscape';
 
 const TOUCH_TEXT = 'Turn your device sideways to play.';
 const PC_TEXT = 'Make the window wider to play.';
 
-/** The window `width` by `height` CSS px, as a resize or a turn of the device leaves it (jsdom lays nothing out). */
-function resizeTo(width: number, height: number): void {
+/** The window `width` by `height` CSS px, with no event (jsdom lays nothing out). */
+function sizeTo(width: number, height: number): void {
   Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
   Object.defineProperty(window, 'innerHeight', { configurable: true, value: height });
+}
+
+/** The window `width` by `height` CSS px, as a resize or a turn of the device leaves it. */
+function resizeTo(width: number, height: number): void {
+  sizeTo(width, height);
   window.dispatchEvent(new Event('resize'));
 }
 
@@ -45,6 +50,7 @@ function stub(target: object, name: string, value: unknown): void {
 }
 
 afterEach(() => {
+  vi.useRealTimers();
   for (const landscape of installed.splice(0)) landscape.dispose();
   for (const undo of stubs.splice(0).reverse()) undo();
   document.body.replaceChildren();
@@ -88,6 +94,58 @@ describe('installLandscape (spec §3.10)', () => {
     other.focus();
     resizeTo(390, 800);
     expect(document.activeElement).toBe(other);
+  });
+
+  it('gives the focus back to where it was as it goes, if nothing took it meanwhile', () => {
+    resizeTo(844, 390);
+    const root = gameRoot();
+    const field = root.appendChild(document.createElement('input'));
+    field.focus();
+    install(root, () => true);
+    resizeTo(390, 844);
+    expect(document.activeElement).toBe(coverOf());
+    resizeTo(844, 390);
+    expect(document.activeElement).toBe(field);
+    // the screen under it changed meanwhile (the lobby's next screen, the world): the element is gone, the focus stays put
+    resizeTo(390, 844);
+    field.remove();
+    resizeTo(844, 390);
+    expect(document.activeElement).not.toBe(field);
+    expect(document.activeElement).not.toBe(coverOf());
+  });
+
+  it('a turn of the device alone (orientationchange, no resize) flips it', () => {
+    sizeTo(844, 390);
+    install(gameRoot(), () => true);
+    sizeTo(390, 844);
+    window.dispatchEvent(new Event('orientationchange'));
+    expect(coverOf()!.hidden).toBe(false);
+    sizeTo(844, 390);
+    window.dispatchEvent(new Event('orientationchange'));
+    expect(coverOf()!.hidden).toBe(true);
+  });
+
+  it('looks again 300 ms after a turn, for an iOS that gives the new size late', () => {
+    vi.useFakeTimers();
+    sizeTo(844, 390);
+    install(gameRoot(), () => true);
+    // the turn is said while the old size is still there; the new one comes with no event
+    window.dispatchEvent(new Event('orientationchange'));
+    sizeTo(390, 844);
+    expect(coverOf()!.hidden).toBe(true);
+    vi.advanceTimersByTime(299);
+    expect(coverOf()!.hidden).toBe(true);
+    vi.advanceTimersByTime(1);
+    expect(coverOf()!.hidden).toBe(false);
+  });
+
+  it('isUpright is the cover\'s rule: taller than wide', () => {
+    sizeTo(390, 844);
+    expect(isUpright(window)).toBe(true);
+    sizeTo(844, 390);
+    expect(isUpright(window)).toBe(false);
+    sizeTo(600, 600);
+    expect(isUpright(window)).toBe(false);
   });
 
   it('is up at once on a page that starts upright', () => {
@@ -214,34 +272,5 @@ describe('requestLock (spec §3.10: Android Chrome allows it, iOS Safari neither
     await landscape.requestLock();
     expect(fullscreen).not.toHaveBeenCalled();
     expect(lock).not.toHaveBeenCalled();
-  });
-});
-
-describe('watchTouch (the joystick\'s rule, packages/scene/src/input/joystick.ts)', () => {
-  const coarse = (matches: boolean) => vi.fn((query: string) => ({ matches: matches && query === '(pointer: coarse)' }));
-
-  it('is true where the main pointer is a finger', () => {
-    stub(window, 'matchMedia', coarse(true));
-    const isTouch = watchTouch(window);
-    expect(isTouch()).toBe(true);
-    isTouch.dispose();
-  });
-
-  it('elsewhere is false until the first touch, and a mouse press does not count', () => {
-    stub(window, 'matchMedia', coarse(false));
-    const isTouch = watchTouch(window);
-    expect(isTouch()).toBe(false);
-    window.dispatchEvent(Object.assign(new Event('pointerdown'), { pointerType: 'mouse' }));
-    expect(isTouch()).toBe(false);
-    window.dispatchEvent(Object.assign(new Event('pointerdown'), { pointerType: 'touch' }));
-    expect(isTouch()).toBe(true);
-    isTouch.dispose();
-  });
-
-  it('a browser without matchMedia counts as no touch screen until touched', () => {
-    stub(window, 'matchMedia', undefined);
-    const isTouch = watchTouch(window);
-    expect(isTouch()).toBe(false);
-    isTouch.dispose();
   });
 });

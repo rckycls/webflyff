@@ -15,6 +15,7 @@ export * from './effects/EffectModel';
 export * from './effects/EffectRenderer';
 export * from './input/joystick';
 export * from './input/keyboard';
+export * from './input/touch';
 export * from './overlay/Overlay';
 export * from './overlay/device';
 export * from './overlay/errorHandlers';

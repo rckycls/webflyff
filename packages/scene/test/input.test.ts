@@ -124,7 +124,11 @@ class FakeElement {
 }
 
 class FakeDocument {
-  readonly defaultView = { matchMedia: () => ({ matches: true }) };
+  /** A window whose main pointer is a finger (`coarse`) or a mouse, with listeners for the touch rule (`watchTouch`). */
+  readonly defaultView: EventTarget & { matchMedia(): { matches: boolean } };
+  constructor(coarse = true) {
+    this.defaultView = Object.assign(new EventTarget(), { matchMedia: () => ({ matches: coarse }) });
+  }
   readonly created: FakeElement[] = [];
   createElement(): FakeElement {
     const element = new FakeElement(this);
@@ -168,6 +172,21 @@ describe('Joystick', () => {
     const raised = new FakeDocument();
     new Joystick(new FakeElement(raised) as unknown as HTMLElement, { bottom: 'calc(env(safe-area-inset-bottom, 0px) + 56px)' });
     expect(raised.created[0]!.style.cssText).toContain('bottom:calc(env(safe-area-inset-bottom, 0px) + 56px);');
+  });
+
+  it('shows where the main pointer is a finger, and elsewhere from the first touch on (the touch rule, watchTouch)', () => {
+    const phone = new FakeDocument(true);
+    new Joystick(new FakeElement(phone) as unknown as HTMLElement);
+    expect(phone.created[0]!.style.cssText).toContain('display:block;');
+    const pc = new FakeDocument(false);
+    const joystick = new Joystick(new FakeElement(pc) as unknown as HTMLElement);
+    const base = pc.created[0]!;
+    expect(base.style.cssText).toContain('display:none;');
+    pc.defaultView.dispatchEvent(Object.assign(new Event('pointerdown'), { pointerType: 'mouse' }));
+    expect(base.style.display).toBeUndefined();
+    pc.defaultView.dispatchEvent(Object.assign(new Event('pointerdown'), { pointerType: 'touch' }));
+    expect(base.style.display).toBe('block');
+    joystick.dispose();
   });
 
   it('reset lets go of a push whose finger never lifted, and that finger moves it no more', () => {
