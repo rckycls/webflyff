@@ -34,11 +34,27 @@ export interface WorldScript {
   /**
    * The world server's answer to a packet the browser sends on the cache connection: each one of the type `packet`
    * (`decodeWorldPacket`'s name for it: `'meleeAttack'`, `'revivalToLodestar'`, `'modifyStatus'` ...) is read and
-   * handed to `reply`, and the messages it gives go back at once, in one SNAPSHOT bundle (`later`); an empty list sends
-   * nothing. As the world server answers a MELEE_ATTACK with the DAMAGE of the hit, or a REVIVAL_TO_LODESTAR with the
-   * revival, the points and the position. A later `on` for the same type takes the place of the earlier one.
+   * handed to `reply`, and the messages it gives go back in one SNAPSHOT bundle (`later`); an empty list sends nothing.
+   * As the world server answers a MELEE_ATTACK with the DAMAGE of the hit, or a REVIVAL_TO_LODESTAR with the revival,
+   * the points and the position. A later `on` for the same type takes the place of the earlier one.
+   *
+   * The bundle goes back at once, unless `options.until` holds it (`ReplyOptions`).
+   *
+   * `on` changes the script: a test that uses it needs a script of its own (`createWorldScript`), not one that a file
+   * shares between its tests, as worldHarness.ts's `flaris` is.
    */
-  on(packet: WorldPacket['type'], reply: (p: WorldPacket) => ScriptMessage[]): void;
+  on(packet: WorldPacket['type'], reply: (p: WorldPacket) => ScriptMessage[], options?: ReplyOptions): void;
+}
+
+/** When `on`'s reply goes back. */
+export interface ReplyOptions {
+  /**
+   * Holds the reply back until the browser next sends a packet of this type, and sends it then, before that packet's own
+   * answer. The live server's DAMAGE comes at its own copy's hit, mostly after the client's swing has played its hit
+   * frame; a swing's DAMAGE held until the next swing's MELEE_ATTACK lands after its hit frame for certain, whatever
+   * the frames take. A reply held is sent once, and a packet brings every reply held for its type, in the order given.
+   */
+  until?: WorldPacket['type'];
 }
 
 /**
@@ -59,7 +75,9 @@ export interface WorldScript {
  */
 export function createWorldScript(o: WorldScriptOptions): WorldScript {
   const index = o.index ?? true;
-  const replies = new Map<WorldPacket['type'], (p: WorldPacket) => ScriptMessage[]>();
+  const replies = new Map<WorldPacket['type'], { reply: (p: WorldPacket) => ScriptMessage[]; until?: WorldPacket['type'] }>();
+  /** The replies `until` holds back, oldest first, with the type that brings them. */
+  let held: Array<{ until: WorldPacket['type']; messages: ScriptMessage[] }> = [];
   const later = (messages: ScriptMessage[]): Uint8Array =>
     encodeBundle(PacketType.SNAPSHOT, o.playerObjectId, messages, { index });
   return {
@@ -80,12 +98,20 @@ export function createWorldScript(o: WorldScriptOptions): WorldScript {
       }
       if (dpid !== DPID_UNKNOWN || replies.size === 0) return [];
       const packet = decodeWorldPacket(body);
-      const messages = replies.get(packet.type)?.(packet) ?? [];
-      return messages.length === 0 ? [] : [later(messages)];
+      // the replies held for this type first, then this packet's own (held in turn, if its `on` says so)
+      const due = held.filter((h) => h.until === packet.type);
+      held = held.filter((h) => h.until !== packet.type);
+      const answers = due.map((h) => later(h.messages));
+      const scripted = replies.get(packet.type);
+      const messages = scripted?.reply(packet) ?? [];
+      if (messages.length === 0) return answers;
+      if (scripted?.until !== undefined) held.push({ until: scripted.until, messages });
+      else answers.push(later(messages));
+      return answers;
     },
     later,
-    on(packet, reply) {
-      replies.set(packet, reply);
+    on(packet, reply, options = {}) {
+      replies.set(packet, { reply, until: options.until });
     },
   };
 }

@@ -379,6 +379,9 @@ test.describe('the lobby against scripted servers', () => {
     await expect(page.getByRole('button', { name: /^Enter/ })).toHaveCount(0);
     const loginConnection = sent.find((s) => s.port === Port.LOGIN)!.connection;
     expect(closed).not.toContain(loginConnection);
+    // left before the test ends, so that the page does not close on the world screen while its files still load
+    await page.getByRole('button', { name: 'Leave' }).click();
+    await expect(page.getByRole('button', { name: 'Log in' })).toBeEnabled();
   });
 
   // This runs on a test page (e2e/lobbyHarness.html: the lobby as main.ts wires it, with a stand-in world that keeps every

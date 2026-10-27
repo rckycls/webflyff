@@ -11,4 +11,4 @@ export {
 export type { ScriptMessage } from './world';
 export { newVagrantOwn } from './newVagrant';
 export { createWorldScript } from './worldScript';
-export type { WorldScript, WorldScriptOptions } from './worldScript';
+export type { ReplyOptions, WorldScript, WorldScriptOptions } from './worldScript';

@@ -1,7 +1,8 @@
 import { expect, it } from 'vitest';
 import {
   ArWriter, DPID_UNKNOWN, MessageType, NULL_ID, PacketType, WORLD_READERS, bytesToHex, encodeJoin, encodeMeleeAttack,
-  encodeModifyStatus, encodePlayerMoved, encodePreJoin, encodeRevivalToLodestar, encodeWorldKeepAlive, readBundle,
+  encodeModifyStatus, encodePlayerMoved, encodePlayerSetDestObj, encodePreJoin, encodeRevivalToLodestar, encodeSetTarget,
+  encodeWorldKeepAlive, readBundle,
 } from '@flyffweb/protocol';
 import type { AddedMover, MoveReport, WorldPacket } from '@flyffweb/protocol';
 import {
@@ -133,4 +134,55 @@ it('on: a later reply for the same type takes the place of the earlier', () => {
   expect(readBundle(bundle!, WORLD_READERS).messages.map((m) => m.value)).toEqual([
     { type: 'setState', str: 17, sta: 15, dex: 15, int: 15, remainGP: 0 },
   ]);
+});
+
+it('on: a body that does not start with DPID_UNKNOWN is not a browser packet, and its reply is not asked', () => {
+  const s = script();
+  let replies = 0;
+  s.on('unknown', () => {
+    replies++;
+    return [writeRevivalToLodestar(9)];
+  });
+  s.on('meleeAttack', () => {
+    replies++;
+    return [writeRevivalToLodestar(9)];
+  });
+  // a server's body (its type first): the MELEE_ATTACK packet type without DPID_UNKNOWN in front, and a bare type
+  expect(s.answer('cache', new ArWriter().u32(PacketType.MELEE_ATTACK).u32(29).u32(10).i32(0).i32(0).f32(1).toBytes()))
+    .toEqual([]);
+  expect(s.answer('cache', new ArWriter().u32(0x1234).u32(0).toBytes())).toEqual([]);
+  expect(replies).toBe(0);
+});
+
+it('on with until: the reply is held back to the next packet of that type, and goes out before its own answer', () => {
+  const s = script();
+  let swing = 0;
+  // the DAMAGE of each swing at the next swing, as a live server's comes after the client's hit frame
+  s.on('meleeAttack', () => [writeDamage(10, 9, ++swing, 1)], { until: 'meleeAttack' });
+  s.on('setTarget', () => [writeSetPos(9, [1, 2, 3])]);
+  const hits = (answers: Uint8Array[]) => answers.map((bundle) => readBundle(bundle, WORLD_READERS).messages.map((m) => m.value));
+
+  // the first swing's DAMAGE waits; another packet, even one that is answered, does not bring it
+  expect(s.answer('cache', encodeMeleeAttack(29, 10, 0.085))).toEqual([]);
+  expect(hits(s.answer('cache', encodeSetTarget(10, 2)))).toEqual([[{ type: 'setPos', pos: [1, 2, 3] }]]);
+  expect(s.answer('cache', encodeWorldKeepAlive())).toEqual([]);
+  // the second swing brings the first's, and its own waits for the third
+  expect(hits(s.answer('cache', encodeMeleeAttack(30, 10, 0.085)))).toEqual([
+    [{ type: 'damage', attackerId: 9, hit: 1, flags: 1, fly: null }],
+  ]);
+  expect(hits(s.answer('cache', encodeMeleeAttack(31, 10, 0.085)))).toEqual([
+    [{ type: 'damage', attackerId: 9, hit: 2, flags: 1, fly: null }],
+  ]);
+});
+
+it('on with until: a reply held for another type goes out with that packet, before the reply to that packet', () => {
+  const s = script();
+  s.on('meleeAttack', () => [writeDamage(10, 9, 7, 1)], { until: 'playerSetDestObj' });
+  s.on('playerSetDestObj', () => [writeSetPos(9, [4, 5, 6])]);
+  expect(s.answer('cache', encodeMeleeAttack(29, 10, 0.085))).toEqual([]);
+  const answers = s.answer('cache', encodePlayerSetDestObj(10, 0));
+  expect(answers.map((bundle) => readBundle(bundle, WORLD_READERS).messages.map((m) => m.value.type)))
+    .toEqual([['damage'], ['setPos']]);
+  // given once
+  expect(s.answer('cache', encodePlayerSetDestObj(10, 0)).map((b) => readBundle(b, WORLD_READERS).messages.length)).toEqual([1]);
 });

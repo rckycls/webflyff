@@ -13,20 +13,14 @@ import {
 } from '@flyffweb/testkit';
 import {
   ANILOOP_LOOP, BASE, DST_HP, MADRIGAL, MALE_VAGRANT, MI_MALE, MONSTER_AT, MONSTER_ID, MTI_RUN, MTI_STAND, NPC_ID,
-  OBJMSG_ATK1, OBJMSG_DAMAGE, OBJSTAF_WALK, OBJSTA_FMOVE, OBJSTA_MOVE_ALL, OBJSTA_STAND, SELF_ID, SELF_PLAYER, SQUARE,
-  aibatt, destPosOf, distanceXZ, enterFlaris, flaris, groundAt, julia, logOut, movedState, movedStateFlag, movesOf, ownAt,
-  hpOf, playGateway, self, sentOf, startEntering, tapEnter, tapMover, tapWorld, targetsOf,
+  OBJMSG_ATK1, OBJMSG_DAMAGE, OBJSTAF_WALK, OBJSTA_FMOVE, OBJSTA_MOVE_ALL, OBJSTA_STAND, ON_FRAMES, SELF_ID, SELF_PLAYER,
+  SQUARE, aibatt, destPosOf, distanceXZ, enterFlaris, flaris, groundAt, julia, logOut, movedState, movedStateFlag, movesOf,
+  ownAt, hpOf, playGateway, self, sentOf, startEntering, tapEnter, tapMover, tapWorld, targetsOf,
 } from './worldHarness';
 
-// Entering, loading Flaris and drawing it with SwiftShader take much longer than a lobby screen.
+// Entering, loading Flaris and drawing it with SwiftShader take much longer than a lobby screen. The waits on the frame
+// loop are `ON_FRAMES` (ruling R28).
 test.describe.configure({ timeout: 120_000 });
-
-/**
- * A wait on the frame loop (a key, a tap or a move a rules step takes and sends, the camera, a frame's drawing): 60 s, as
- * this file's other waits on it, since Chromium draws with SwiftShader on the CPU and the other files' worlds drawn beside
- * it starve the frames (ruling R28).
- */
-const ON_FRAMES = { timeout: 60_000 };
 
 // Ruling 3: WebKit runs these where it draws WebGL. Playwright's WebKit draws Flaris on this PC (checked with a picture
 // of the iPhone 13 page); where a WebKit build has no WebGL the world screen ends at once with "This browser can't show
@@ -278,8 +272,8 @@ test.describe('the world screen against scripted servers', () => {
     await page.evaluate(() => window.__client!.pause());
 
     expect((await page.evaluate(() => window.__client!.stats())).errors).toEqual([]);
-    // The overlay's numbers (fps, heap) change from frame to frame, so it is masked.
-    await expect(page).toHaveScreenshot('world-flaris-movers.png', { mask: [page.locator('#overlay')], timeout: 30_000 });
+    // The overlay's numbers (fps, heap) change from frame to frame, so it is masked. A screenshot waits on the frame loop.
+    await expect(page).toHaveScreenshot('world-flaris-movers.png', { mask: [page.locator('#overlay')], ...ON_FRAMES });
   });
 
   test('walking forward sends PLAYERMOVED', async ({ page }) => {
@@ -654,17 +648,21 @@ test.describe('the world screen against scripted servers', () => {
     expect(distanceXZ(await ownAt(page), MONSTER_AT)).toBeLessThan(3);
     expect(targetsOf(gateway)).toEqual([[MONSTER_ID, 2]]);
 
-    // a turn key stops the auto-attack: the swing under way ends, and no more come
+    // a turn key stops the auto-attack: the swing under way ends, and no more come. From the key's moves on the rules are
+    // held (the test hooks' pause) and stepped: 90 steps (1.5 s) for the swing to end, 120 more with none, counted in steps
+    // the rules ran, not in the time the page takes under load
     await page.keyboard.down('KeyA');
-    await expect.poll(() => movesOf(gateway).length, { timeout: 30_000 }).toBeGreaterThan(0);
+    await expect.poll(() => movesOf(gateway).length, ON_FRAMES).toBeGreaterThan(0);
     await page.keyboard.up('KeyA');
-    await page.waitForTimeout(1500);
+    await page.evaluate(() => window.__client!.pause());
+    await page.evaluate(() => window.__client!.step(90));
     const count = swings().length;
-    await page.waitForTimeout(2000);
+    await page.evaluate(() => window.__client!.step(120));
     expect(swings()).toHaveLength(count);
     expect(approaches()).toHaveLength(1);
 
-    // within 10 s of a swing the player is fighting (IsAttackMode): Log out is refused, in red (WndManager.cpp:2613-2617)
+    // within 10 s of a swing the player is fighting (IsAttackMode: m_nAtkCnt under 600 steps, held here with the rules):
+    // Log out is refused, in red (WndManager.cpp:2613-2617)
     await page.getByRole('button', { name: 'Start' }).click();
     await page.getByRole('menuitem', { name: 'Log out' }).click();
     const refusal = page.locator('.hud-messages > div', { hasText: 'You cannot quit during combat.' });

@@ -29,15 +29,17 @@ export interface ClientMover {
 /**
  * What the screen played of the fight since it opened, in order. A test reads these rather than the drawing: the damage
  * numbers are a layer over the canvas, which a readback of it never shows, and under a software renderer a frame can be
- * so slow that a number lives only two or three of them.
+ * so slow that a number lives only two or three of them. Each has `step`, the rules steps the screen had run when it
+ * was played, which orders the kinds against one another: a hit frame's spark is played in its step, a DAMAGE's number
+ * in a frame after its message.
  */
 export interface ClientPlayed {
   /** The damage numbers added (`CDamageNumMng::AddNumber`): the value, and whether the own player was hurt (its colours). */
-  numbers: Array<{ value: number; ownHurt: boolean }>;
+  numbers: Array<{ value: number; ownHurt: boolean; step: number }>;
   /** The effects played (`CreateSfx`), by `XI_*` id. */
-  effects: number[];
+  effects: Array<{ xi: number; step: number }>;
   /** The swings other movers' MELEE_ATTACKs started (`OnMeleeAttack`): the attacker, and the motion it swings with. */
-  swings: Array<{ attackerId: number; motion: number }>;
+  swings: Array<{ attackerId: number; motion: number; step: number }>;
 }
 
 /** The own character's numbers (`OwnState`): its HP, level, and the task bar's action point (null before the TASKBAR). */

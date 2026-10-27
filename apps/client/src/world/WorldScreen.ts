@@ -198,8 +198,12 @@ export class WorldScreen {
    */
   private askedSteps = 0;
   private stepsDrawn: Array<{ resolve: () => void; reject: (error: Error) => void }> = [];
-  /** What the screen played of the fight (the test hooks' `played`), the latest `PLAYED_KEPT` of each kind. */
+  /**
+   * What the screen played of the fight (the test hooks' `played`), the latest `PLAYED_KEPT` of each kind, each with the
+   * rules steps run when it was played (`stepsRun`, which every `step` counts).
+   */
   private readonly playedSoFar: ClientPlayed = { numbers: [], effects: [], swings: [] };
+  private stepsRun = 0;
   /** The window was resized (or the device turned) since the last frame: the open windows are kept on the screen. */
   private resized = false;
   private lastTime = 0;
@@ -264,7 +268,9 @@ export class WorldScreen {
       step: (steps) => this.askSteps(steps),
       played: () => {
         const { numbers, effects, swings } = this.playedSoFar;
-        return { numbers: numbers.map((n) => ({ ...n })), effects: [...effects], swings: swings.map((s) => ({ ...s })) };
+        return {
+          numbers: numbers.map((n) => ({ ...n })), effects: effects.map((e) => ({ ...e })), swings: swings.map((s) => ({ ...s })),
+        };
       },
       screenOf: (objectId) => this.screenOf(objectId),
     });
@@ -463,14 +469,16 @@ export class WorldScreen {
    * they cannot be had (game files converted before the UI stage, or a failed download): the world goes on without the
    * numbers and the corners, and the overlay says why. Their pictures are downloaded and decoded too, as the effects are
    * warmed up (`startEffects`): a number lasts under a second, and its first one must not be drawn blank while its
-   * picture comes. A picture that cannot be had is said once; its layer tries again as it draws.
+   * picture comes. A picture that cannot be had is said once; its layer tries again as it draws. One that fails after the
+   * screen has ended (the player left while it came, or the page is going) is not this entry's to say, as an effect's
+   * file is not (`startEffects`).
    */
   private async loadSheets(services: SceneServices): Promise<WebUiSheets | null> {
     let sheets: WebUiSheets;
     try {
       sheets = await services.store.json<WebUiSheets>(UI_SHEETS_KEY);
     } catch (error) {
-      this.reportOnce(`ui sheets: ${messageOf(error)}`, error);
+      if (!this.over) this.reportOnce(`ui sheets: ${messageOf(error)}`, error);
       return null;
     }
     await Promise.all([sheets.targetCorners, sheets.damageDigits].map(async ({ image }) => {
@@ -482,7 +490,7 @@ export class WorldScreen {
       try {
         await picture.decode();
       } catch (error) {
-        this.reportOnce(`ui sheets: ${image} could not be decoded`, error);
+        if (!this.over) this.reportOnce(`ui sheets: ${image} could not be decoded`, error);
       }
     }));
     return sheets;
@@ -638,7 +646,8 @@ export class WorldScreen {
    * `attackerHit`) right after that step (`step`), so that its effect starts on its hit's step, as `CreateSfx` in the
    * attacker's `Process` starts it. The test hooks are told what was played (`playedSoFar`): the effects asked for, the
    * numbers added to their layer, and the swings started, with the motion each mover swings with as its event is played,
-   * before any step of the frame.
+   * before any step of the frame; each with the rules steps run so far, which puts a hit frame's spark (played in its
+   * step) and a DAMAGE's number (played in a frame after the message) in order.
    */
   private play(changes: WorldChanges): void {
     this.hud?.play(changes.combat, changes.own, this.own);
@@ -655,23 +664,25 @@ export class WorldScreen {
     };
     const views = this.views!;
     const played = this.playedSoFar;
+    const step = this.stepsRun;
     const out: CombatFxOut = {
       effect: (request) => {
-        keep(played.effects, request.xi);
+        keep(played.effects, { xi: request.xi, step });
         effects.play(request);
       },
       number: (pos, value, ownHurt) => {
         const numbers = this.numbers;
         if (numbers === undefined) return;
         numbers.add(pos, value, ownHurt);
-        keep(played.numbers, { value, ownHurt });
+        keep(played.numbers, { value, ownHurt, step });
       },
       flash: (moverId, direction) => views.flash(moverId, direction),
       shake: (moverId) => views.shake(moverId),
     };
     for (const event of changes.combat) {
       if (event.kind === 'swing') {
-        keep(played.swings, { attackerId: event.attackerId, motion: world.movers.get(event.attackerId)?.act.motion ?? -1 });
+        const motion = world.movers.get(event.attackerId)?.act.motion ?? -1;
+        keep(played.swings, { attackerId: event.attackerId, motion, step });
       }
       playCombatEvent(event, fxWorld, out);
     }
@@ -723,9 +734,13 @@ export class WorldScreen {
       // the world is on screen: `ready()` (a second call does nothing)
       this.resolveShown();
     } catch (error) {
-      // a frame that throws every frame must not fill the overlay with the same line sixty times a second
+      // a frame that throws every frame must not fill the overlay with the same line sixty times a second; the console has
+      // it too, with its stack, beside what came before it there (a lost WebGL context, errorHandlers.ts)
       const message = `world: ${messageOf(error)}`;
-      if (message !== this.lastError) overlay.error(message);
+      if (message !== this.lastError) {
+        overlay.error(message);
+        console.warn(message, error);
+      }
       this.lastError = message;
     }
     for (const { resolve } of drawn) resolve();
@@ -758,6 +773,7 @@ export class WorldScreen {
    * processes the camera at each `FrameMove`, `World.cpp:924-935`).
    */
   private step(world: WorldState, stage: WorldStage, views: MoverViews, now: number): void {
+    this.stepsRun++;
     const own = world.self();
     const loop = this.attackLoop!;
     const held = this.tap!.heldMover();

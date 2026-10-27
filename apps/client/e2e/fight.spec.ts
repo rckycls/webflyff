@@ -19,19 +19,14 @@ import type { ClientMover, ClientPlayed } from '../src/testHooks';
 import { Xi } from '../src/world/fx/EffectManager';
 import { Mti, ObjSta } from '../src/world/sim/constants';
 import {
-  MADRIGAL, MALE_VAGRANT, MONSTER_ID, OBJMSG_ATK1, OBJMSG_DAMAGE, SELF_ID, SELF_PLAYER, SQUARE, aibatt, enterFlaris,
-  groundAt, hpOf, ownAt, playGateway, self, sentOf, tapMover, targetsOf,
+  MADRIGAL, MALE_VAGRANT, MONSTER_ID, OBJMSG_ATK1, OBJMSG_DAMAGE, ON_FRAMES, SELF_ID, SELF_PLAYER, SQUARE, aibatt,
+  enterFlaris, groundAt, hpOf, ownAt, playGateway, self, sentOf, tapMover, targetsOf,
 } from './worldHarness';
 import type { Gateway, Listed, Sent } from './worldHarness';
 
-// Entering, loading Flaris and drawing it with SwiftShader take much longer than a lobby screen.
+// Entering, loading Flaris and drawing it with SwiftShader take much longer than a lobby screen. The waits on the frame
+// loop (the swings, what a frame plays, the windows it draws, a screenshot) are `ON_FRAMES` (ruling R28).
 test.describe.configure({ timeout: 120_000 });
-
-/**
- * A wait on the frame loop (the swings, what a frame plays, the windows it draws): 60 s, as world.spec.ts's waits on it,
- * since Chromium draws with SwiftShader on the CPU and another file's world drawn beside it starves the frames (ruling R28).
- */
-const ON_FRAMES = { timeout: 60_000 };
 
 /** `MI_AIBATT1` (`Resource/defineObj.h:959`): the Small Aibatt, level 1, `dwAddHp` 120, `nExpValue` 2 (propMover.txt). */
 const MI_AIBATT1 = 20;
@@ -82,8 +77,39 @@ const aibattHits = (hit: number): ScriptMessage[] => [
 const played = (page: Page): Promise<ClientPlayed> => page.evaluate(() => window.__client!.played());
 const moverOf = async (page: Page, objectId: number): Promise<ClientMover | undefined> =>
   (await page.evaluate(() => window.__client!.movers())).find((m) => m.objectId === objectId);
-const countOf = (list: readonly number[], value: number): number => list.filter((v) => v === value).length;
+/** The effects of `xi` played. */
+const effectsOf = (p: ClientPlayed, xi: number): ClientPlayed['effects'] => p.effects.filter((e) => e.xi === xi);
+const countOf = (p: ClientPlayed, xi: number): number => effectsOf(p, xi).length;
 const swingsOf = (gateway: Gateway): Sent[] => sentOf(gateway, PacketType.MELEE_ATTACK);
+/** The test hooks' paused rules (`pause`) run `steps` steps, at once (`step`). */
+const stepRules = (page: Page, steps: number): Promise<void> => page.evaluate((n) => window.__client!.step(n), steps);
+
+/** The texts the HUD adds as lines (`.hud-messages`, CClientMsg) and captions (`.hud-caption`, CCaption). */
+interface HudTexts {
+  lines: string[];
+  captions: string[];
+}
+type WithHudTexts = typeof globalThis & { hudTexts?: HudTexts };
+
+/**
+ * Keeps, from now on, the text of each line and caption as the HUD adds it. Both fade by the clock (a line 3 s after the
+ * last one came, `hud/messages.ts`; a caption after its 5 s hold), not by the rules, so a check of the DOM made later can
+ * find them gone; this one cannot.
+ */
+async function recordHudTexts(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const texts: HudTexts = { lines: [], captions: [] };
+    (globalThis as WithHudTexts).hudTexts = texts;
+    const watch = (selector: string, into: string[]): void => {
+      new MutationObserver((records) => {
+        for (const record of records) for (const node of record.addedNodes) into.push(node.textContent ?? '');
+      }).observe(document.querySelector(selector)!, { childList: true });
+    };
+    watch('.hud-messages', texts.lines);
+    watch('.hud-caption', texts.captions);
+  });
+}
+const hudTexts = (page: Page): Promise<HudTexts | undefined> => page.evaluate(() => (globalThis as WithHudTexts).hudTexts);
 /** A row of the status window: `hp`, `mp`, `fp`, `exp`. */
 const statusRow = (page: Page, row: string): Locator => page.locator(`.hud-status [data-text="${row}"]`);
 
@@ -114,10 +140,11 @@ test.describe('fighting against the pretend world server', () => {
     const glyphs = page.locator('.world-damage-numbers > div');
     await expect(statusRow(page, 'hp')).toHaveText('230 / 230');
 
+    // the target bar is drawn by the frame loop (drawHud), not as the press goes down
     await tapMover(page, MONSTER_ID);
     await expect.poll(() => targetsOf(gateway)).toEqual([[MONSTER_ID, 2]]);
-    await expect(page.locator('.hud-target-name')).toHaveText('Small Aibatt <Lvl 1>');
-    await expect(page.locator('.hud-target-info')).toHaveText('120 / 120');
+    await expect(page.locator('.hud-target-name')).toHaveText('Small Aibatt <Lvl 1>', ON_FRAMES);
+    await expect(page.locator('.hud-target-info')).toHaveText('120 / 120', ON_FRAMES);
     await tapMover(page, MONSTER_ID);
 
     // the first swing, with the Wooden Sword's fAttackSpeed; its DAMAGE's number is drawn in the numbers layer (the
@@ -127,15 +154,17 @@ test.describe('fighting against the pretend world server', () => {
     await expect.poll(() => glyphs.count(), ON_FRAMES).toBeGreaterThanOrEqual(2);
 
     // the critical (25, its banner) and the miss (its banner, no number), then the Aibatt's swing and its 12 on Webby
-    await expect.poll(async () => (await played(page)).swings, ON_FRAMES).toEqual([{ attackerId: MONSTER_ID, motion: Mti.ATK1 }]);
-    await expect.poll(async () => (await played(page)).numbers, ON_FRAMES).toEqual([
+    await expect.poll(async () => (await played(page)).swings, ON_FRAMES)
+      .toMatchObject([{ attackerId: MONSTER_ID, motion: Mti.ATK1 }]);
+    await expect.poll(async () => (await played(page)).numbers, ON_FRAMES).toMatchObject([
       { value: 10, ownHurt: false }, { value: 25, ownHurt: false }, { value: 12, ownHurt: true },
     ]);
     const hits = await played(page);
-    expect([countOf(hits.effects, Xi.HIT_CRITICAL01), countOf(hits.effects, Xi.HIT_MISS01)]).toEqual([1, 1]);
-    expect(hits.effects.indexOf(Xi.HIT_CRITICAL01)).toBeLessThan(hits.effects.indexOf(Xi.HIT_MISS01));
+    expect([countOf(hits, Xi.HIT_CRITICAL01), countOf(hits, Xi.HIT_MISS01)]).toEqual([1, 1]);
+    expect(hits.effects.findIndex((e) => e.xi === Xi.HIT_CRITICAL01))
+      .toBeLessThan(hits.effects.findIndex((e) => e.xi === Xi.HIT_MISS01));
     // the hit frames of Webby's swings: the Wooden Sword's spark (dwSfxObj3) on the Aibatt
-    await expect.poll(async () => countOf((await played(page)).effects, Xi.HIT_SWORD01), ON_FRAMES).toBeGreaterThan(0);
+    await expect.poll(async () => countOf(await played(page), Xi.HIT_SWORD01), ON_FRAMES).toBeGreaterThan(0);
     // the target bar's HP down by 10 and 25 (the miss took nothing), and Webby's by the Aibatt's 12
     expect(await hpOf(page, MONSTER_ID)).toBe(85);
     await expect(page.locator('.hud-target-info')).toHaveText('85 / 120', ON_FRAMES);
@@ -143,19 +172,21 @@ test.describe('fighting against the pretend world server', () => {
 
     // the next swing kills (CAttackArbiter::OnDied): SET_GROWTH_LEARNING_POINT and SETEXPERIENCE of the level up
     // (LevelUpSetting, then AddSetExperience, Mover.cpp:6245-6254), 2 EXP into level 2, then MOVERDEATH (DoDie)
+    await recordHudTexts(page);
     answers.push([
       writeSetGrowthLearningPoint(SELF_ID, 2), writeSetExperience(SELF_ID, 2n, 2, 0, 0),
       writeMoverDeath(MONSTER_ID, SELF_ID, OBJMSG_DAMAGE),
     ]);
-    // the level up: its effect on Webby, once (no new skill points), and its lines, read before they fade (3 s after the
-    // last one came, CClientMsg) and its caption
-    await expect.poll(async () => countOf((await played(page)).effects, Xi.GEN_LEVEL_UP01), ON_FRAMES).toBe(1);
-    await expect(page.locator('.hud-messages > div')).toHaveText([
-      'Level up! You can increase your stats in your character window.', 'You are learning new attack patterns!',
-    ]);
-    await expect(page.locator('.hud-caption > div', { hasText: 'Congratulations! Level up!' })).toBeVisible();
+    // the level up: its effect on Webby, once (no new skill points), its lines and its caption as they were added (they
+    // fade by the clock)
+    await expect.poll(async () => countOf(await played(page), Xi.GEN_LEVEL_UP01), ON_FRAMES).toBe(1);
+    await expect.poll(() => hudTexts(page), ON_FRAMES).toEqual({
+      lines: ['Level up! You can increase your stats in your character window.', 'You are learning new attack patterns!'],
+      captions: ['Congratulations! Level up!'],
+    });
     // the death motion, held on its last frame while the body stays in view
     await expect.poll(async () => (await moverOf(page, MONSTER_ID))?.motion, ON_FRAMES).toBe(Mti.DIE1);
+    const swings = swingsOf(gateway).length;
     const body = (await moverOf(page, MONSTER_ID))!;
     expect([body.hp, body.state & ObjSta.DIE_ALL]).toEqual([0, ObjSta.DEAD]);
     // the own kill clears the focus, the Aibatt released first (OnMoverDeath, DPClient.cpp:1956-1963), and the bar goes
@@ -168,13 +199,41 @@ test.describe('fighting against the pretend world server', () => {
     await expect(statusRow(page, 'fp')).toHaveText('32 / 32');
     await expect(statusRow(page, 'exp')).toHaveText('10.00%');
     // the last number is the HP the Aibatt had (OnMoverDeath, DPClient.cpp:2003-2007)
-    expect((await played(page)).numbers.at(-1)).toEqual({ value: 85, ownHurt: false });
+    expect((await played(page)).numbers.at(-1)).toMatchObject({ value: 85, ownHurt: false });
 
-    // the attack is over: no swing after the kill
-    const swings = swingsOf(gateway).length;
-    await page.waitForTimeout(1500);
+    // the attack is over: 120 rules steps (2 s of the game) after the kill, held and stepped by the test hooks, bring no
+    // swing, and the level up has played once
+    await page.evaluate(() => window.__client!.pause());
+    await stepRules(page, 120);
     expect(swingsOf(gateway)).toHaveLength(swings);
+    expect(countOf(await played(page), Xi.GEN_LEVEL_UP01)).toBe(1);
     expect(await page.evaluate(() => window.__client!.own())).toEqual({ hp: 230, level: 2, actionPoint: null });
+    expect((await page.evaluate(() => window.__client!.stats())).errors).toEqual([]);
+  });
+
+  // The live server's DAMAGE comes at its own copy's hit, mostly after the client's swing has played its hit frame. The
+  // script holds each swing's DAMAGE until the next swing's MELEE_ATTACK (`on`'s `until`), so it comes after the hit
+  // frame whatever the frames take: the spark first, then the number and the HP drop
+  test("a swing's DAMAGE that comes after its hit frame: the spark first, then the number and the HP drop", async ({ page }) => {
+    const script = fight();
+    const answers: ScriptMessage[][] = [[writeDamage(MONSTER_ID, SELF_ID, 10, AttackFlag.GENERIC)]];
+    script.on('meleeAttack', () => answers.shift() ?? [], { until: 'meleeAttack' });
+    const gateway = await playGateway(page, script, { listed: NEW_CHARACTER });
+    await enterFlaris(page);
+    await tapMover(page, MONSTER_ID);
+    await expect.poll(() => targetsOf(gateway)).toEqual([[MONSTER_ID, 2]]);
+    await tapMover(page, MONSTER_ID);
+
+    // the second swing brings the first's DAMAGE: its number, after the first swing's spark
+    await expect.poll(async () => (await played(page)).numbers, ON_FRAMES).toMatchObject([{ value: 10, ownHurt: false }]);
+    const p = await played(page);
+    const [spark] = effectsOf(p, Xi.HIT_SWORD01);
+    expect(spark).toBeDefined();
+    expect(p.numbers[0]!.step).toBeGreaterThan(spark!.step);
+    expect(swingsOf(gateway).length).toBeGreaterThanOrEqual(2);
+    // and the HP drop, the one DAMAGE there was
+    expect(await hpOf(page, MONSTER_ID)).toBe(110);
+    await expect(page.locator('.hud-target-info')).toHaveText('110 / 120', ON_FRAMES);
     expect((await page.evaluate(() => window.__client!.stats())).errors).toEqual([]);
   });
 
@@ -192,18 +251,21 @@ test.describe('fighting against the pretend world server', () => {
 
     // the Aibatt's MELEE_ATTACK swings it (MTI_ATK1, a monster's own set), and its DAMAGE is a number in the own colours
     gateway.pushCache(script.later(aibattHits(12)));
-    await expect.poll(async () => (await played(page)).swings, ON_FRAMES).toEqual([{ attackerId: MONSTER_ID, motion: Mti.ATK1 }]);
-    await expect.poll(async () => (await played(page)).numbers, ON_FRAMES).toEqual([{ value: 12, ownHurt: true }]);
+    await expect.poll(async () => (await played(page)).swings, ON_FRAMES)
+      .toMatchObject([{ attackerId: MONSTER_ID, motion: Mti.ATK1 }]);
+    await expect.poll(async () => (await played(page)).numbers, ON_FRAMES).toMatchObject([{ value: 12, ownHurt: true }]);
     await expect(statusRow(page, 'hp')).toHaveText('218 / 230', ON_FRAMES);
 
-    // the killing blow: MOVERDEATH (no DAMAGE: CAttackArbiter::OnDied), its number the HP Webby had
+    // the killing blow: MOVERDEATH (no DAMAGE: CAttackArbiter::OnDied), its number the HP Webby had; its line as it was
+    // added (lines fade by the clock)
+    await recordHudTexts(page);
     gateway.pushCache(script.later([writeMoverDeath(SELF_ID, MONSTER_ID, OBJMSG_DAMAGE)]));
     const revive = page.locator('.hud-revive');
     await expect(revive).toBeVisible(ON_FRAMES);
-    await expect(page.locator('.hud-messages > div'))
-      .toHaveText(['Press ESC and go back to Lodestar(Town) or Lodelight(Field) for resurrecting.']);
+    await expect.poll(async () => (await hudTexts(page))?.lines, ON_FRAMES)
+      .toEqual(['Press ESC and go back to Lodestar(Town) or Lodelight(Field) for resurrecting.']);
     await expect(statusRow(page, 'hp')).toHaveText('0 / 230', ON_FRAMES);
-    expect((await played(page)).numbers).toEqual([{ value: 12, ownHurt: true }, { value: 218, ownHurt: true }]);
+    expect((await played(page)).numbers).toMatchObject([{ value: 12, ownHurt: true }, { value: 218, ownHurt: true }]);
     const dead = (await moverOf(page, SELF_ID))!;
     expect([dead.motion, dead.state & ObjSta.DIE_ALL]).toEqual([Mti.DIE1, ObjSta.DEAD]);
     // Revive here needs a resurrection scroll (Piece 5): greyed
@@ -294,10 +356,10 @@ test.describe('fighting against the pretend world server', () => {
     // banner is up
     await page.evaluate(() => window.__client!.pause());
     gateway.pushCache(script.later([writeDamage(MONSTER_ID, SELF_ID, 25, CRITICAL)]));
-    await expect.poll(() => played(page), ON_FRAMES).toEqual({
-      numbers: [{ value: 25, ownHurt: false }], effects: [Xi.HIT_CRITICAL01], swings: [],
+    await expect.poll(() => played(page), ON_FRAMES).toMatchObject({
+      numbers: [{ value: 25, ownHurt: false }], effects: [{ xi: Xi.HIT_CRITICAL01 }], swings: [],
     });
-    await page.evaluate(() => window.__client!.step(9));
+    await stepRules(page, 9);
     await expect(page.locator('.hud-target-info')).toHaveText('95 / 120');
     expect((await page.evaluate(() => window.__client!.stats())).errors).toEqual([]);
     // The overlay's numbers (fps, heap) change from frame to frame, so it is masked. A screenshot waits on the frame loop:

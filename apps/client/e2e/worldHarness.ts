@@ -20,6 +20,13 @@ import { Belli } from '../src/world/sim/constants';
 
 export const ASSETS = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../dist/assets');
 
+/**
+ * A wait on the frame loop (a key, a tap or a move a rules step takes and sends, the camera, what a frame plays or draws,
+ * a screenshot): 60 s, since Chromium draws with SwiftShader on the CPU and the other files' worlds drawn beside it starve
+ * the frames (ruling R28). The waits on what the page does as a press or a message comes keep the default.
+ */
+export const ON_FRAMES = { timeout: 60_000 };
+
 /** `WI_WORLD_MADRIGAL` (`Resource/defineWorld.h`): Flaris is in Madrigal. */
 export const MADRIGAL = 1;
 /** `MI_MALE`, `MI_FEMALE` (`Resource/defineObj.h:954-955`) and the Aibatt (`MI_AIBATT2`, propMover.txt). */
