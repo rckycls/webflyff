@@ -12,10 +12,11 @@
 //   data/exp.json          the character EXP table of ExpTable.inc, the 64-bit columns as text (WebExpRow[])
 //   data/texts.json        every client text of textClient.inc, by TID name (WebTexts)
 //   data/effectsIndex.json XI id to the effect file and scale of its OT_SFX entry in mdlDyna.inc (WebEffectsIndex)
+//   data/skills.json       every job skill of propSkill.txt with its levels of propSkillAdd.csv (WebSkill[], skillsCatalog.ts)
 //
 // It runs after the models stage, and after the effects and UI stages whose files the effects index and the item icons
 // name (`effects/<web name>.json`, `ui/item/<web name>.png`, the keys of output/keys.ts; this stage does not check that
-// they exist).
+// they exist). A skill's icon (`ui/<web name>.png`) is named only when Client/Icon has the picture.
 //
 // A catalog names a model, skeleton or motion by its logical key, the way the models stage writes it (`webName` of the
 // real file's base name), and only when `writer.pathOf(key)` says the file was converted (in this run, or listed in the
@@ -70,6 +71,7 @@ import type { Stage, StageContext } from '../run';
 import { matchesOnly } from '../util';
 import { readModelIndexes } from './modelIndexes';
 import type { ModelIndex } from './modelIndexes';
+import { buildSkills } from './skillsCatalog';
 
 const KIND = 'data';
 const MODEL_DIR = 'Model';
@@ -512,6 +514,20 @@ export const gameDataStage: Stage = {
       { key: GAME_DATA_KEYS.exp, source: 'ExpTable.inc', build: (read) => buildExp(env, read) },
       { key: GAME_DATA_KEYS.texts, source: 'textClient.inc', build: (read) => buildTexts(env, read) },
       { key: GAME_DATA_KEYS.effectsIndex, source: 'mdlDyna.inc', build: (read) => buildEffectsIndex(env, read) },
+      {
+        key: GAME_DATA_KEYS.skills,
+        source: 'propSkill.txt',
+        build: (read) =>
+          buildSkills(
+            {
+              client: env.client,
+              defines: env.defines,
+              strings: env.strings,
+              warn: (source, message) => env.report.warn(KIND, source, message),
+            },
+            read,
+          ),
+      },
     ];
     for (const { key, source, build } of catalogs) {
       try {

@@ -12,6 +12,7 @@ import type {
   WebMover,
   WebNameColors,
   WebNpc,
+  WebSkill,
   WebTexts,
   WebWorlds,
 } from '@flyffweb/formats';
@@ -63,6 +64,11 @@ export interface GameData {
   texts: Texts;
   /** The effect (converted file and scale) of each `XI_*` id of mdlDyna.inc. */
   effects: Map<number, WebEffectRef>;
+  /**
+   * The job skills of `propSkill.txt` by skill id (`SI_*`, what a player's skill slot calls `dwSkill`; CProject::GetSkillProp),
+   * each with its levels of `propSkillAdd.csv`. The common skills (items' and buffs' effects) are not in it.
+   */
+  skills: Map<number, WebSkill>;
 }
 
 /**
@@ -102,7 +108,7 @@ export class GameDataMissingError extends Error {
 }
 
 /**
- * Loads the eleven catalogs. The converter writes the movers, items, item props and characters as arrays of records
+ * Loads the twelve catalogs. The converter writes the movers, items, item props, skills and characters as arrays of records
  * that carry their own id or key (`gameDataStage.ts`), the honour titles, worlds, texts and effects as objects keyed
  * by the id as text, the jobs and EXP rows as arrays in table order, and the EXP columns as decimal text (they pass
  * 2^53), which become bigint here. A repeated id or key keeps the later record, as `CProject::LoadCharacter`'s
@@ -112,7 +118,7 @@ export class GameDataMissingError extends Error {
 export async function loadGameData(store: Pick<AssetStore, 'json' | 'url'>): Promise<GameData> {
   const missing = Object.values(GAME_DATA_KEYS).filter((key) => store.url(key) === null);
   if (missing.length > 0) throw new GameDataMissingError(missing);
-  const [movers, items, npcs, nameColors, honorTitles, worlds, itemProps, jobs, exp, texts, effects] = await Promise.all([
+  const [movers, items, npcs, nameColors, honorTitles, worlds, itemProps, jobs, exp, texts, effects, skills] = await Promise.all([
     store.json<WebMover[]>(GAME_DATA_KEYS.movers),
     store.json<WebItemModel[]>(GAME_DATA_KEYS.items),
     store.json<WebNpc[]>(GAME_DATA_KEYS.npcs),
@@ -124,6 +130,7 @@ export async function loadGameData(store: Pick<AssetStore, 'json' | 'url'>): Pro
     store.json<WebExpRow[]>(GAME_DATA_KEYS.exp),
     store.json<WebTexts>(GAME_DATA_KEYS.texts),
     store.json<WebEffectsIndex>(GAME_DATA_KEYS.effectsIndex),
+    store.json<WebSkill[]>(GAME_DATA_KEYS.skills),
   ]);
   return {
     movers: new Map(movers.map((mover) => [mover.index, withLaterColumns(mover)])),
@@ -141,5 +148,6 @@ export async function loadGameData(store: Pick<AssetStore, 'json' | 'url'>): Pro
       id, textId === undefined ? { id, text, color } : { id, text, color, textId },
     ])),
     effects: new Map(Object.entries(effects).map(([id, effect]) => [Number(id), effect])),
+    skills: new Map(skills.map((skill) => [skill.id, skill])),
   };
 }

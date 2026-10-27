@@ -22,6 +22,7 @@ import {
   readPropItem,
   readPropJob,
   readPropMover,
+  readPropSkillAdd,
   readTextClient,
   readWorldInc,
   webName,
@@ -37,6 +38,7 @@ import type {
   WebMover,
   WebNameColors,
   WebNpc,
+  WebSkill,
   WebTexts,
   WebWorlds,
 } from '@flyffweb/formats';
@@ -113,10 +115,9 @@ describeClient('the game-data stage on the real client', () => {
     if (out !== undefined) await fs.rm(out, { recursive: true, force: true });
   });
 
-  it('writes the eleven catalogs without a failure, and the index lists them', () => {
+  it('writes every catalog without a failure, and the index lists them', () => {
     expect(report.failures).toEqual([]);
-    expect(report.kinds.data).toMatchObject({ ok: 11, failed: 0 });
-    expect(Object.values(GAME_DATA_KEYS)).toHaveLength(11);
+    expect(report.kinds.data).toMatchObject({ ok: Object.values(GAME_DATA_KEYS).length, failed: 0 });
     for (const key of Object.values(GAME_DATA_KEYS)) expect(writer.pathOf(key), key).toMatch(/^data\//);
   });
 
@@ -423,5 +424,140 @@ describeClient('the game-data stage on the real client', () => {
     expect(index['42']).toEqual({ effect: 'effects/sfx_genlevelup01.json', scale: 1 });
     expect(index[String(defines.get('XI_HIT_SWORD01'))]).toEqual({ effect: 'effects/sfx_hitsword01.json', scale: 1 });
     expect(index[String(defines.get('XI_HIT_YOY01'))]).toMatchObject({ effect: 'effects/sfx_hityoy01.json', scale: 2 });
+  });
+
+  // ---- the skills ---------------------------------------------------------------------------------------------------
+
+  /** The skill ids of a name, as the headers number them. */
+  const skillId = (name: string): number => {
+    const id = defines.get(name);
+    expect(id, name).toBeDefined();
+    return id!;
+  };
+
+  it('skills: every row of propSkill.txt that is not JTYPE_COMMON, by id (CProject::LoadSkill)', async () => {
+    const skills = await catalog<WebSkill[]>(GAME_DATA_KEYS.skills);
+    const rows = readPropItem(script('propSkill.txt'), defines, strings, 'propSkill.txt');
+    const common = defines.get('JTYPE_COMMON')!;
+    expect(common).toBe(4);
+    const job = rows.filter((row) => row.kind1 !== common);
+    expect(skills.map((skill) => skill.id)).toEqual(job.map((row) => row.id).sort((a, b) => a - b));
+    expect(skills).toHaveLength(164);
+    expect(rows.length - job.length).toBe(26); // the effects of items, monsters and buffs
+
+    // the common rows are left out: SI_GEN_FLASH and SI_GEN_BLEEDING are effects, on no job's list
+    for (const name of ['SI_GEN_FLASH', 'SI_GEN_BLEEDING', 'SI_GEN_STUNSINGLE', 'SI_GEN_BURN']) {
+      expect(skills.find((skill) => skill.id === skillId(name)), name).toBeUndefined();
+    }
+    // LoadSkill goes by the job type, not by the name: of the SI_GEN_* the four event buffs of the Vagrant (JTYPE_BASE) and
+    // the Knight's SI_GEN_SWORDCROSS (JTYPE_PRO) are job skills
+    const generic = [...defines].filter(([name]) => name.startsWith('SI_GEN_'));
+    const listed = generic.filter(([, id]) => skills.some((skill) => skill.id === id)).map(([name]) => name);
+    expect(listed.sort()).toEqual([
+      'SI_GEN_EVE_ACCURACY', 'SI_GEN_EVE_HASTE', 'SI_GEN_EVE_HEAPUP', 'SI_GEN_EVE_QUICKSTEP', 'SI_GEN_SWORDCROSS',
+    ]);
+    for (const skill of skills) expect(skill.jobType, `skill ${skill.id}`).not.toBe(common);
+    expect(skills.filter((skill) => skill.job === defines.get('JOB_VAGRANT')).map((skill) => skill.name)).toEqual([
+      'Clean Hit', 'Flurry', 'Over Cut', 'Quick Step (Event)', 'Haste (Event)', 'Heap Up (Event)', 'Accuracy (Event)',
+    ]);
+  });
+
+  it('skills: Clean Hit is level 3 with no prerequisite, 10 levels, a step, with its effect, motion and the FP of each level', async () => {
+    const skills = await catalog<WebSkill[]>(GAME_DATA_KEYS.skills);
+    const cleanHit = skills.find((skill) => skill.id === skillId('SI_VAG_ONE_CLEANHIT'))!;
+    expect(cleanHit).toMatchObject({
+      id: 1,
+      name: 'Clean Hit',
+      description: 'A powerful, downward strike.',
+      jobType: defines.get('JTYPE_BASE'),
+      job: defines.get('JOB_VAGRANT'),
+      handed: defines.get('HD_ONE'),
+      attackRange: defines.get('AR_SHORT'), // 2.0 m
+      reqLevel: 3,
+      reqSkills: [],
+      useMotion: defines.get('MTI_VAG_ONE_CLEANHIT'), // 1000
+      sfxHit: defines.get('XI_SKILL_VAG_ONE_CLEANHIT01'), // 201
+      exeTarget: defines.get('EXT_MELEEATK'),
+      useChance: defines.get('WUI_TARGETINGOBJ'),
+      skillType: defines.get('KT_SKILL'),
+      evildoing: -1,
+      maxLevel: 10,
+      comboStyle: defines.get('CT_STEP'),
+      icon: 'ui/skill_vagonecleanh.png',
+    });
+    expect(cleanHit.useMotion).toBe(1000);
+    expect(cleanHit.sfxHit).toBe(201);
+    // propSkillAdd.csv: 5 FP at levels 1 to 4 and 8 at 5 to 8 (then 10); no MP, no cool-down, no hit count
+    expect(cleanHit.levels).toHaveLength(10);
+    expect(cleanHit.levels.map((level) => level.reqFp)).toEqual([5, 5, 5, 5, 8, 8, 8, 8, 10, 10]);
+    for (const level of cleanHit.levels) expect(level).toMatchObject({ reqMp: -1, cooldown: -1, skillCount: -1 });
+  });
+
+  it('skills: Flurry needs Clean Hit at 3 and is a circle; Over Cut needs Flurry at 3 and is the finish', async () => {
+    const skills = await catalog<WebSkill[]>(GAME_DATA_KEYS.skills);
+    const flurry = skills.find((skill) => skill.id === skillId('SI_VAG_ONE_BRANDISH'))!;
+    expect(flurry).toMatchObject({
+      name: 'Flurry', reqLevel: 5, reqSkills: [{ skill: skillId('SI_VAG_ONE_CLEANHIT'), level: 3 }],
+      comboStyle: defines.get('CT_CIRCLE'), useMotion: 1001, sfxHit: 202, maxLevel: 10, icon: 'ui/skill_vagonebrandi.png',
+    });
+    expect(flurry.levels.map((level) => level.reqFp)).toEqual([10, 10, 10, 12, 12, 12, 15, 15, 15, 15]);
+    const overCut = skills.find((skill) => skill.id === skillId('SI_VAG_ONE_OVERCUTTER'))!;
+    expect(overCut).toMatchObject({
+      name: 'Over Cut', reqLevel: 10, reqSkills: [{ skill: skillId('SI_VAG_ONE_BRANDISH'), level: 3 }],
+      comboStyle: defines.get('CT_FINISH'), useMotion: 1002, sfxHit: 203, maxLevel: 10, icon: 'ui/skill_vagoneovercu.png',
+    });
+    expect(overCut.levels.map((level) => level.reqFp)).toEqual([15, 15, 15, 18, 18, 18, 20, 20, 22, 22]);
+    // the combo styles are what the task bar and the action slot tell the skills apart by
+    expect([1, 2, 3].map((id) => skills.find((skill) => skill.id === id)!.comboStyle)).toEqual([1, 2, 3]);
+  });
+
+  it('skills: the levels are the rows dwSubDefine + level - 1 of propSkillAdd.csv, with the cool-down of the skill when a row has none', async () => {
+    const skills = await catalog<WebSkill[]>(GAME_DATA_KEYS.skills);
+    const props = new Map(readPropItem(script('propSkill.txt'), defines, strings, 'propSkill.txt').map((row) => [row.id, row]));
+    const rows = new Map(readPropSkillAdd(script('propSkillAdd.csv'), defines, props, 'propSkillAdd.csv').map((row) => [row.id, row]));
+    expect(rows.size).toBe(2301);
+    for (const skill of skills) {
+      const prop = props.get(skill.id)!;
+      expect(skill.levels, `skill ${skill.id} ${skill.name}`).toHaveLength(prop.expertMax);
+      skill.levels.forEach((level, i) => {
+        const row = rows.get(prop.subDefine + i)!; // no index below 5 here, which GetAddSkillProp would bump
+        expect(level, `skill ${skill.id} ${skill.name} level ${i + 1}`).toEqual({
+          reqMp: row.reqMp, reqFp: row.reqFp, cooldown: row.cooldown, skillCount: row.skillCount,
+        });
+      });
+    }
+    // a row with no cool-down takes the skill's dwSkillReady: 0 for most skills, not `=`
+    const withReady = skills.filter((skill) => props.get(skill.id)!.skillReady === 0);
+    expect(withReady.length).toBeGreaterThan(50);
+    for (const skill of withReady) {
+      for (const level of skill.levels) expect(level.cooldown, `skill ${skill.id}`).toBeGreaterThanOrEqual(0);
+    }
+    // a magic skill costs MP: Healing
+    const healing = skills.find((skill) => skill.id === skillId('SI_ASS_HEAL_HEALING'))!;
+    expect(healing.skillType).toBe(defines.get('KT_MAGIC'));
+    expect(healing.levels[0]).toMatchObject({ reqMp: 17, reqFp: -1 });
+  });
+
+  it('skills: every icon is a picture of Client/Icon under the key the UI stage writes it, the three of the Vagrant too', async () => {
+    const skills = await catalog<WebSkill[]>(GAME_DATA_KEYS.skills);
+    const props = new Map(readPropItem(script('propSkill.txt'), defines, strings, 'propSkill.txt').map((row) => [row.id, row]));
+    expect(skills.filter((skill) => skill.icon === null)).toEqual([]);
+    for (const skill of skills) {
+      const file = props.get(skill.id)!.icon;
+      expect(client.find('Icon', file), `skill ${skill.id} ${skill.name}: Icon/${file}`).not.toBeNull();
+      expect(skill.icon).toBe(`ui/${webName(file.replace(/\.[^.]*$/, ''))}.png`);
+    }
+    expect(skills.filter((skill) => skill.id <= 3).map((skill) => skill.icon)).toEqual([
+      'ui/skill_vagonecleanh.png', 'ui/skill_vagonebrandi.png', 'ui/skill_vagoneovercu.png',
+    ]);
+    expect(report.warnings.filter((w) => w.message.includes('Client/Icon'))).toEqual([]);
+  });
+
+  it('skills: the one skill whose rows are not in level order is Circle Healing, which the stage says', () => {
+    // SI_ASS_CHEER_CIRCLEHEALING has 20 rows for levels 1, 1, 2, 2 ... 10, 10 and a maximum level of 20: GetAddSkillProp
+    // takes them by place, so level 2 reads the second row of level 1
+    const warnings = report.warnings.filter((w) => w.source === 'propSkillAdd.csv');
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]!.message).toContain('"Circle Healing" level 2 (row');
   });
 });

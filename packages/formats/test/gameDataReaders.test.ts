@@ -348,6 +348,25 @@ describe('readPropItem', () => {
     ['SND_ITEM_DROPDING1', 39],
     ['SND_PC_DMGSWDM', 117],
     ['SND_PC_DMGSWDC', 119],
+    // the words of the Vagrant skill rows of propSkill.txt (defineSkill.h, defineAttribute.h, defineNeuz.h ...)
+    ['SI_VAG_ONE_CLEANHIT', 1],
+    ['SI_VAG_ONE_BRANDISH', 2],
+    ['JTYPE_BASE', 0],
+    ['DIS_VAGRANT', 0],
+    ['WT_EQUIP', 13],
+    ['XI_SKILL_VAG_ONE_CLEANHIT01', 201],
+    ['XI_SKILL_VAG_ONE_BRANDISH01', 202],
+    ['MTI_VAG_ONE_CLEANHIT', 1000],
+    ['MTI_VAG_ONE_BRANDISH', 1001],
+    ['EXT_MELEEATK', 17],
+    ['WUI_TARGETINGOBJ', 4],
+    ['SRO_DIRECT', 1],
+    ['DST_STR', 1],
+    ['RT_ATTACK', 1],
+    ['KT_SKILL', 2],
+    ['CT_STEP', 1],
+    ['CT_CIRCLE', 2],
+    ['SND_PC_DMGSWD', 115],
   ]);
   const STRINGS = new Map([
     ['IDS_PROPITEM_TXT_000000', ''],
@@ -356,6 +375,10 @@ describe('readPropItem', () => {
     ['IDS_PROPITEM_TXT_000791', 'A suit of cotton.'],
     ['IDS_PROPITEM_TXT_008534', 'Ultimate Guardian Sword @'],
     ['IDS_PROPITEM_TXT_008535', ''],
+    ['IDS_PROPSKILL_TXT_000000', 'Clean Hit'],
+    ['IDS_PROPSKILL_TXT_000001', 'A powerful, downward strike.'],
+    ['IDS_PROPSKILL_TXT_000002', 'Flurry'],
+    ['IDS_PROPSKILL_TXT_000003', 'Rapid, stabbing attack.'],
   ]);
 
   // Three rows of propItem.txt as shipped. The icon cell `"""name"""` is three tokens: "", "name", "".
@@ -368,7 +391,46 @@ describe('readPropItem', () => {
   const SWORD = row(
     '8 II_WEA_SWO_SUHOUM IDS_PROPITEM_TXT_008534 1 1 IK1_WEAPON IK2_WEAPON_DIRECT IK3_SWD JOB_MERCENARY TRUE = = 200000 7200000 100 180 HD_ONE = PARTS_RWEAPON = 0 = = 200 200 = 1 = = = 350 357 _NONE 0 0 0 0 0 = WT_MELEE_SWD AS_HORIZONTAL AS_DIAGONAL AS_VERTICAL AS_THRUST = = = = = 0.085 = AR_SHORT = DST_STA DST_DEX = 5 5 = = = = = = = = = = = = = = = = = = = = = = = XI_HIT_SWORD01 = = = = = = = = = WEAPON_ULTIMATE = = = = = = 0 0 0 0 0 0 = = SND_ITEM_DROPDING1 = = = = = = = = = 60 = SND_PC_DMGSWDM SND_PC_DMGSWDC """Itm_WeaSwoSuho.dds""" 0 """""" IDS_PROPITEM_TXT_008535',
   );
+  // Two rows of propSkill.txt as shipped, which has the columns of propItem.txt (LoadSkill reads it with LoadPropItem,
+  // Project.cpp:377): Clean Hit, and Flurry, which needs Clean Hit at level 3
+  const CLEAN_HIT = row(
+    '6 SI_VAG_ONE_CLEANHIT IDS_PROPSKILL_TXT_000000 1 1 JTYPE_BASE JOB_VAGRANT DIS_VAGRANT JOB_VAGRANT = = = = = = = HD_ONE = = = = = = = = = = = = = 0 0 _NONE 0 0 0 = = AS_DIAGONAL WT_EQUIP = = = = = = = = = = = AR_SHORT = = = = = = = = = = = = = = = = = 0 3 = = = = = = = = = = XI_SKILL_VAG_ONE_CLEANHIT01 = = MTI_VAG_ONE_CLEANHIT = = EXT_MELEEATK WUI_TARGETINGOBJ SRO_DIRECT = DST_STR = RT_ATTACK = 5 = KT_SKILL 0 0 0 0 0 = 1 10 5 1 CT_STEP = = = = = = = = = SND_PC_DMGSWD = """skill_VagOneCleanh.dds""" 0 """""" IDS_PROPSKILL_TXT_000001',
+  );
+  const FLURRY = row(
+    '6 SI_VAG_ONE_BRANDISH IDS_PROPSKILL_TXT_000002 1 1 JTYPE_BASE JOB_VAGRANT DIS_VAGRANT JOB_VAGRANT = = = = = = = HD_ONE = = = = = = = = = = = = = 0 0 _NONE 0 0 0 = = AS_DIAGONAL WT_EQUIP = = = = = = = = = = = AR_SHORT = = = = = = = = = = = = = = = = = 0 5 SI_VAG_ONE_CLEANHIT 3 = = = = = = = = XI_SKILL_VAG_ONE_BRANDISH01 = = MTI_VAG_ONE_BRANDISH = = EXT_MELEEATK WUI_TARGETINGOBJ SRO_DIRECT = DST_STR = RT_ATTACK = 8 = KT_SKILL 0 0 0 0 0 = 1 10 15 1 CT_CIRCLE = = = = = = = = = SND_PC_DMGSWD = """skill_VagOneBrandi.dds""" 0 """""" IDS_PROPSKILL_TXT_000003',
+  );
   const HEADER = script('//ver6\t//dwID\tszName', '//\t\t');
+
+  it('reads the skill columns: level, prerequisites, motion, target rule, kind, cost style, maximum level, first add row, combo', () => {
+    const [cleanHit, flurry] = readPropItem(script(CLEAN_HIT, FLURRY), DEFINES, STRINGS, 'propSkill.txt');
+    expect(cleanHit).toMatchObject({
+      id: 1, // SI_VAG_ONE_CLEANHIT
+      name: 'Clean Hit',
+      command: 'A powerful, downward strike.',
+      kind1: 0, // dwItemKind1: JTYPE_BASE
+      kind2: 0, // dwItemKind2: JOB_VAGRANT
+      handed: 1, // HD_ONE
+      attackRange: 1, // AR_SHORT
+      reqLevel: 3, // dwReqDisLV
+      reSkills: [-1, -1], // dwReSkill1 and 2: none
+      reSkillLevels: [-1, -1],
+      skillReady: -1, // dwSkillReady: no cool-down of its own
+      sfxObj3: 201, // XI_SKILL_VAG_ONE_CLEANHIT01
+      useMotion: 1000, // MTI_VAG_ONE_CLEANHIT
+      exeTarget: 17, // EXT_MELEEATK
+      useChance: 4, // WUI_TARGETINGOBJ
+      skillType: 2, // KT_SKILL
+      evildoing: -1, // nEvildoing
+      expertMax: 10, // dwExpertMax
+      subDefine: 5, // dwSubDefine: the first row of the skill in propSkillAdd.csv (SA_CLEANHIT_L01)
+      comboStyle: 1, // CT_STEP
+      icon: 'skill_VagOneCleanh.dds',
+    });
+    // a prerequisite is the SI_* id of another skill (CMover::CheckSkill asks GetSkill( dwReSkill1 ))
+    expect(flurry).toMatchObject({
+      id: 2, reqLevel: 5, reSkills: [1, -1], reSkillLevels: [3, -1], useMotion: 1001, subDefine: 15, comboStyle: 2,
+    });
+  });
 
   it('reads the id, the name (through the string table), the body slot (dwParts) and the parts it hides of each row', () => {
     const items = readPropItem(HEADER + script(DEFAULT, SUIT, SWORD), DEFINES, STRINGS, 'propItem.txt');
@@ -404,6 +466,19 @@ describe('readPropItem', () => {
       sfxObj3: 20, // XI_HIT_SWORD01
       sfxObj5: -1,
       sndAttack1: 117, // SND_PC_DMGSWDM
+      // the skill columns: an item has none of them (`=`), except that dwSubDefine is the sound an item makes when dropped
+      reqLevel: -1,
+      reSkills: [-1, -1],
+      reSkillLevels: [-1, -1],
+      skillReady: -1,
+      useMotion: -1,
+      exeTarget: -1,
+      useChance: -1,
+      skillType: -1,
+      evildoing: 0,
+      expertMax: -1,
+      subDefine: 39, // SND_ITEM_DROPDING1
+      comboStyle: -1,
       icon: 'Itm_WeaSwoSuho.dds', // """Itm_WeaSwoSuho.dds""" is "", the name, ""
       textFileName: '',
       command: '', // IDS_PROPITEM_TXT_008535

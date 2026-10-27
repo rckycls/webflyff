@@ -17,6 +17,7 @@ export function catalogFiles(parts: Record<string, unknown> = {}): Record<string
     [GAME_DATA_KEYS.exp]: [],
     [GAME_DATA_KEYS.texts]: {},
     [GAME_DATA_KEYS.effectsIndex]: {},
+    [GAME_DATA_KEYS.skills]: [],
     ...parts,
   };
 }

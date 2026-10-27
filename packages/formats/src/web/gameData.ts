@@ -204,6 +204,66 @@ export interface WebEffectRef {
 /** `XI_*` id (a decimal string) to its effect: the OT_SFX entries of mdlDyna.inc that name a `.sfx` (data/effectsIndex.json). */
 export type WebEffectsIndex = Record<string, WebEffectRef>;
 
+/**
+ * A job skill (data/skills.json, in id order): its row of `propSkill.txt` and its levels of `propSkillAdd.csv`, as
+ * CProject::LoadSkill (Project.cpp:375-400) and LoadPropAddSkill (:2522-2611) keep them. The skills of `JTYPE_COMMON`
+ * (the effects of items, monsters and buffs: `SI_GEN_FLASH`, `SI_GEN_BLEEDING` ...) are not in the catalog: they are on
+ * no job's list. (The type decides, not the name: the Vagrant's four `SI_GEN_EVE_*` event buffs are `JTYPE_BASE`, so they
+ * are in.) A -1 is a `=` cell, NULL_ID.
+ */
+export interface WebSkill {
+  /** The skill's id (`SI_*`): what a player's skill slot calls `dwSkill`. */
+  id: number;
+  /** `szName`: the English name. */
+  name: string;
+  /** `szCommand`: the description (the file calls the column szComment). */
+  description: string;
+  /** `dwItemKind1`: the job type, a `JTYPE_*` value (JTYPE_BASE 0 for a Vagrant's skill). */
+  jobType: number;
+  /** `dwItemKind2`: the job whose list the skill is on, a `JOB_*` value (JOB_VAGRANT 0). */
+  job: number;
+  /** `dwHanded`: the hands the weapon in use has to have, an `HD_*` value (the server checks it; HD_ONE 1). */
+  handed: number;
+  /** `dwAttackRange`: how near the caster walks to its target, an `AR_*` value (AR_SHORT 1). */
+  attackRange: number;
+  /**
+   * `dwReqDisLV`: the character level that unlocks the skill (CMover::CheckSkill, MoverParam.cpp:117-156, which compares
+   * `GetLevel() < (int) dwReqDisLV`). -1 for `=` (the four event buffs of the Vagrant): no level is below it, so such a skill
+   * is open at every level.
+   */
+  reqLevel: number;
+  /** The skills that have to be raised first: `dwReSkill1/Level1` and `dwReSkill2/Level2`, the ones that are not `=`. */
+  reqSkills: Array<{ skill: number; level: number }>;
+  /** `dwUseMotion`: the motion the caster plays, an `MTI_*` id (`MTI_VAG_ONE_CLEANHIT` 1000). */
+  useMotion: number;
+  /** `dwSfxObj3`: the effect shown at the target when the skill hits, an `XI_*` id (see WebEffectsIndex), -1 for none. */
+  sfxHit: number;
+  /** `dwExeTarget`: how the target is found, an `EXT_*` value (EXT_MELEEATK 17). */
+  exeTarget: number;
+  /** `dwUseChance`: what the skill needs to be used, a `WUI_*` value (WUI_TARGETINGOBJ 4: a selected target). */
+  useChance: number;
+  /** `dwSkillType`: `KT_SKILL` 2 (a melee skill, which costs FP) or `KT_MAGIC` 1. */
+  skillType: number;
+  /** `nEvildoing`: negative for a harmful skill, which needs a target that can be attacked. */
+  evildoing: number;
+  /** `dwExpertMax`: the highest level the skill can be raised to. */
+  maxLevel: number;
+  /** `dwComboStyle`: where the skill can be put on the task bar and in the action slot, a `CT_*` value. */
+  comboStyle: number;
+  /**
+   * Logical key of the icon (`ui/<web name of szIcon>.png`, which the UI stage writes from Client/Icon, where the task
+   * bar loads a skill's picture from, WndTaskBar.cpp:396); null when the table names none or Client/Icon lacks the file.
+   */
+  icon: string | null;
+  /**
+   * The skill's levels, `levels[level - 1]` for level 1 to `maxLevel`: the rows `dwSubDefine + level - 1` of
+   * propSkillAdd.csv (CProject::GetAddSkillProp, Project.cpp:879-896; the C++ reads level 0 as level 1).
+   * `reqMp`, `reqFp` and `skillCount` are `nReqMp`, `nReqFp` and `nSkillCount` of the row; `cooldown` is `dwCooldown`,
+   * or the skill's `dwSkillReady` when the row gives none (:2587-2596).
+   */
+  levels: Array<{ reqMp: number; reqFp: number; cooldown: number; skillCount: number }>;
+}
+
 /** The logical keys of the catalogs in the asset index. */
 export const GAME_DATA_KEYS = {
   movers: 'data/movers.json',
@@ -217,4 +277,5 @@ export const GAME_DATA_KEYS = {
   exp: 'data/exp.json',
   texts: 'data/texts.json',
   effectsIndex: 'data/effectsIndex.json',
+  skills: 'data/skills.json',
 } as const;

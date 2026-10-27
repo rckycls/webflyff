@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readEtcJobs, readExpTable, readPropJob, readTextClient, readTexturePack } from '../src/index';
+import { readEtcJobs, readExpTable, readPropJob, readPropSkillAdd, readTextClient, readTexturePack } from '../src/index';
 import { thrown } from './helpers/thrown';
 
 /** Script text with the CRLF line ends the shipped files use. */
@@ -386,5 +386,93 @@ describe('readTexturePack', () => {
 
   it('throws for a serialize block whose tiles have no size (the C++ would never leave the loop)', () => {
     thrown(() => readTexturePack(script('number 1', 'texture "a.dds" 0x0', 'serialize 1 0 4 0 0 0 0'), 'x.inc', { width: 8, height: 8 }));
+  });
+});
+
+describe('readPropSkillAdd', () => {
+  // propSkillAdd.csv as shipped: two comment lines (the column names), then one comma-separated row per skill level, CRLF.
+  // The first rows are Clean Hit's; the last two are other skills with a cost in MP and a cool-down of their own.
+  const COMMENTS = ['//id,name,level,...', '//dwID,dwName,dwSkillLvl,dwAbilityMin,...'];
+  const CLEAN_HIT_1 = 'SA_CLEANHIT_L01,SI_VAG_ONE_CLEANHIT,1,10,11,=,=,150,=,=,=,=,=,=,=,=,=,=,=,=,=,=,=,=,=,5,=,=,=,=,=,=,=,4,0,600';
+  const CLEAN_HIT_5 = 'SA_CLEANHIT_L05,SI_VAG_ONE_CLEANHIT,5,12,13,=,=,150,=,=,=,=,=,=,=,=,=,=,=,=,=,=,=,=,=,8,=,=,=,=,=,=,=,3,0,600';
+  const PREVENTION_1 = 'SA_PREVENTION_L01,SI_ASS_HEAL_PREVENTION,1,=,=,=,=,=,=,=,=,=,DST_AUTOHP,=,10,=,15,=,=,=,=,=,=,=,35,=,480000,1000,=,=,=,600000,=,1,1,600';
+  const SONICHAND_1 = 'SA_SONICHAND_L01,SI_BIL_KNU_SONICHAND,1,116,117,=,=,=,=,=,=,=,=,=,=,=,=,=,=,=,=,=,=,=,=,60,=,2000,=,=,=,=,7,1,25,600';
+  const DEFINES = new Map([
+    ['SA_CLEANHIT_L01', 5], ['SA_CLEANHIT_L05', 9], ['SA_PREVENTION_L01', 4000], ['SA_SONICHAND_L01', 3000],
+    ['SI_VAG_ONE_CLEANHIT', 1], ['SI_ASS_HEAL_PREVENTION', 70], ['SI_BIL_KNU_SONICHAND', 200], ['DST_AUTOHP', 111],
+  ]);
+  const FILE = script(...COMMENTS, CLEAN_HIT_1, CLEAN_HIT_5, PREVENTION_1, SONICHAND_1);
+
+  it('reads the row id and skill through the defines, the level, the MP and FP cost, the cool-down and the hit count, in file order', () => {
+    const rows = readPropSkillAdd(FILE, DEFINES, new Map(), 'propSkillAdd.csv');
+    expect(rows).toEqual([
+      { id: 5, skill: 1, level: 1, reqMp: -1, reqFp: 5, cooldown: -1, skillCount: -1 },
+      { id: 9, skill: 1, level: 5, reqMp: -1, reqFp: 8, cooldown: -1, skillCount: -1 },
+      { id: 4000, skill: 70, level: 1, reqMp: 35, reqFp: -1, cooldown: 480000, skillCount: -1 },
+      { id: 3000, skill: 200, level: 1, reqMp: -1, reqFp: 60, cooldown: -1, skillCount: 7 },
+    ]);
+  });
+
+  it('gives a level with no cool-down the dwSkillReady of its skill (LoadPropAddSkill, Project.cpp:2587-2596), and leaves the others', () => {
+    const skills = new Map([[1, { skillReady: 3000 }], [70, { skillReady: 1 }]]);
+    const rows = readPropSkillAdd(FILE, DEFINES, skills);
+    // Clean Hit has a skillReady and no cool-down of its own; Prevention has its own; the skill the table does not have none
+    expect(rows.map((row) => row.cooldown)).toEqual([3000, 3000, 480000, -1]);
+    // a skill whose own dwSkillReady is `=` passes that on
+    expect(readPropSkillAdd(FILE, DEFINES, new Map([[1, { skillReady: -1 }]]))[0]!.cooldown).toBe(-1);
+  });
+
+  it('reads the text as CScanner does in comma mode: cells split at commas and the end of a line, white space trimmed, comments skipped', () => {
+    const spaced = CLEAN_HIT_1.replace('SA_CLEANHIT_L01,SI_VAG_ONE_CLEANHIT,1,', ' SA_CLEANHIT_L01 , SI_VAG_ONE_CLEANHIT ,  1  ,');
+    const text = [
+      '// a comment',
+      '/* a block',
+      'comment */',
+      spaced,
+      '',
+      '// another comment between rows',
+      CLEAN_HIT_5,
+      '   ',
+    ].join('\r\n');
+    const rows = readPropSkillAdd(text, DEFINES, new Map());
+    expect(rows.map((row) => [row.id, row.level, row.reqFp])).toEqual([[5, 1, 5], [9, 5, 8]]);
+    // the last row needs no line end
+    expect(readPropSkillAdd(CLEAN_HIT_1, DEFINES, new Map()).map((row) => row.id)).toEqual([5]);
+  });
+
+  it('reads a number as GetNumber( TRUE ) does: = is NULL_ID, a minus sign belongs to the number, an empty cell is 0', () => {
+    const negative = CLEAN_HIT_1.replace(',=,5,=,=,', ',-3,5,=,=,'); // nReqMp -3
+    expect(readPropSkillAdd(negative, DEFINES, new Map())[0]!.reqMp).toBe(-3);
+    const cells = CLEAN_HIT_1.split(',');
+    cells[24] = ' '; // nReqMp: a cell with nothing in it, which the scanner reads as 0
+    cells[25] = '+7'; // nReqFp: a plus sign is read as the number's
+    const odd = readPropSkillAdd(cells.join(','), DEFINES, new Map())[0]!;
+    expect([odd.reqMp, odd.reqFp]).toEqual([0, 7]);
+  });
+
+  it('keeps a repeated id each time, in file order (CFixedArray::SetAtGrow keeps the last)', () => {
+    const rows = readPropSkillAdd(script(CLEAN_HIT_1, CLEAN_HIT_1.replace(',5,=,=,', ',6,=,=,')), DEFINES, new Map());
+    expect(rows.map((row) => [row.id, row.reqFp])).toEqual([[5, 5], [5, 6]]);
+  });
+
+  it('returns nothing for a file of comments or an empty one', () => {
+    expect(readPropSkillAdd(script(...COMMENTS), DEFINES, new Map())).toEqual([]);
+    expect(readPropSkillAdd('', DEFINES, new Map())).toEqual([]);
+  });
+
+  it('throws a FormatError for a name that is not defined, a row that stops early, and a row id of 0 before the end', () => {
+    const unknown = thrown(() => readPropSkillAdd(script(...COMMENTS, CLEAN_HIT_1.replace('SI_VAG_ONE_CLEANHIT', 'SI_NOT_THERE')), DEFINES, new Map(), 'propSkillAdd.csv'));
+    expect(unknown.file).toBe('propSkillAdd.csv');
+    expect(unknown.line).toBe(3);
+    expect(unknown.message).toContain('SI_NOT_THERE');
+    expect(unknown.message).toContain('dwName');
+
+    const cut = thrown(() => readPropSkillAdd(CLEAN_HIT_1.split(',').slice(0, 30).join(','), DEFINES, new Map(), 'propSkillAdd.csv'));
+    expect(cut.message).toContain('end of the script');
+
+    // the C++ stops reading at a row whose id is 0 and ignores the rest of the file: here that is an error
+    const zero = thrown(() => readPropSkillAdd(script(CLEAN_HIT_1, '0,0,0', CLEAN_HIT_5), DEFINES, new Map(), 'propSkillAdd.csv'));
+    expect(zero.line).toBe(2);
+    expect(zero.message).toContain('0');
   });
 });

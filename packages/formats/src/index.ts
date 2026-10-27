@@ -34,6 +34,8 @@ export { readPropMover } from './inc/propMover';
 export type { MoverProp } from './inc/propMover';
 export { readPropItem } from './inc/propItem';
 export type { ItemProp } from './inc/propItem';
+export { readPropSkillAdd } from './inc/propSkillAdd';
+export type { SkillAddProp } from './inc/propSkillAdd';
 export { readCharacterInc } from './inc/character';
 export type { CharacterDef } from './inc/character';
 export { readPkSetting } from './inc/pkSetting';
@@ -90,6 +92,7 @@ export type {
   WebMover,
   WebNameColors,
   WebNpc,
+  WebSkill,
   WebTexts,
   WebWorlds,
 } from './web/gameData';

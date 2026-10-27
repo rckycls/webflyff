@@ -79,6 +79,7 @@ const monster = (index: number, extra: { level?: number; activeAttack?: number; 
 const gameData = () => ({
   movers: MOVERS, items: new Map(), npcs: new Map(), nameColors: { general: 0, chaotic: 0, ready: 0 },
   honorTitles: new Map(), worlds: new Map(), itemProps: new Map(), jobs: [], exp: [], texts: TEXTS, effects: new Map(),
+  skills: new Map(),
 });
 
 /** A layer as big as a landscape phone, which the windows are kept inside (jsdom lays nothing out). */

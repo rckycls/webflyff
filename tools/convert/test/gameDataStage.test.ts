@@ -17,6 +17,7 @@ import type {
   WebMover,
   WebNameColors,
   WebNpc,
+  WebSkill,
   WebTexts,
   WebWorlds,
 } from '@flyffweb/formats';
@@ -92,6 +93,36 @@ const DEFINES = script(
   '#define XI_HIT_YOY01 31',
   '#define XI_GEN_LEVEL_UP01 42',
   '#define XI_GEN_FLASH01 60',
+  // propSkill.txt and propSkillAdd.csv: the words of the rows and the `SA_*` ids of their levels
+  '#define JTYPE_COMMON 4',
+  '#define SI_VAG_ONE_CLEANHIT 1',
+  '#define SI_VAG_ONE_BRANDISH 2',
+  '#define SI_MER_ONE_SPLMASH 3',
+  '#define SI_GEN_FLASH 50',
+  '#define SA_CLEANHIT_L01 5',
+  '#define SA_CLEANHIT_L02 6',
+  '#define SA_BRANDISH_L01 15',
+  '#define SA_BRANDISH_L02 16',
+  '#define SA_SPLMASH_L01 25',
+  '#define SA_SPLMASH_L02 26',
+  '#define DIS_VAGRANT 0',
+  '#define HD_ONE 1',
+  '#define WT_EQUIP 13',
+  '#define AS_DIAGONAL 2',
+  '#define AR_SHORT 1',
+  '#define XI_SKILL_VAG_ONE_CLEANHIT01 201',
+  '#define XI_SKILL_VAG_ONE_BRANDISH01 202',
+  '#define MTI_VAG_ONE_CLEANHIT 1000',
+  '#define MTI_VAG_ONE_BRANDISH 1001',
+  '#define EXT_MELEEATK 17',
+  '#define WUI_TARGETINGOBJ 4',
+  '#define SRO_DIRECT 1',
+  '#define DST_STR 1',
+  '#define RT_ATTACK 1',
+  '#define KT_SKILL 2',
+  '#define CT_STEP 1',
+  '#define CT_CIRCLE 2',
+  '#define SND_PC_DMGSWD 115',
 );
 
 /** The columns of a shipped propMover.txt row (MI_MALE), which the tests re-use: id, name, AI and speed change. */
@@ -167,6 +198,49 @@ const weaponRow = (id: string, name: string): string => {
   set('sndAttack1', '115');
   set('icon', '"""itm_WeaSword.dds"""');
   return cells.join('	');
+};
+
+/**
+ * The columns of a shipped propSkill.txt row (Clean Hit), which has the columns of propItem.txt: the job, the level it
+ * needs, the skills it needs first, its cool-down, effect, motion, maximum level, first level row, combo style and icon change.
+ */
+const SKILL_CELLS = tabs(
+  '6 SI_VAG_ONE_CLEANHIT IDS_PROPSKILL_TXT_000000 1 1 JTYPE_BASE JOB_VAGRANT DIS_VAGRANT JOB_VAGRANT = = = = = = = HD_ONE = = = = = = = = = = = = = 0 0 _NONE 0 0 0 = = AS_DIAGONAL WT_EQUIP = = = = = = = = = = = AR_SHORT = = = = = = = = = = = = = = = = = 0 3 = = = = = = = = = = XI_SKILL_VAG_ONE_CLEANHIT01 = = MTI_VAG_ONE_CLEANHIT = = EXT_MELEEATK WUI_TARGETINGOBJ SRO_DIRECT = DST_STR = RT_ATTACK = 5 = KT_SKILL 0 0 0 0 0 = 1 10 5 1 CT_STEP = = = = = = = = = SND_PC_DMGSWD = """skill_VagOneCleanh.dds""" 0 """""" IDS_PROPSKILL_TXT_000001',
+).split('\t');
+const SKILL_CELL = {
+  kind1: 5, kind2: 6, reqLevel: 70, reSkill1: 71, reSkillLevel1: 72, skillReady: 76, sfxObj3: 81, useMotion: 84,
+  expertMax: 105, subDefine: 106, comboStyle: 108, icon: 120, comment: 123,
+} as const;
+const skillRow = (
+  id: string, name: string, comment: string, cells: Partial<Record<keyof typeof SKILL_CELL, string>> = {},
+): string => {
+  const row = [...SKILL_CELLS];
+  row[1] = id;
+  row[2] = name;
+  row[SKILL_CELL.comment] = comment;
+  for (const [column, text] of Object.entries(cells)) row[SKILL_CELL[column as keyof typeof SKILL_CELL]] = text;
+  return row.join('\t');
+};
+/** A row of propSkillAdd.csv: 36 comma-separated columns, `=` for the ones the Vagrant's skills leave empty. */
+const addRow = (
+  id: string, skill: string, level: number, cost: { mp?: string; fp?: string; cooldown?: string; count?: string } = {},
+): string => {
+  const cells = Array<string>(36).fill('=');
+  cells[0] = id;
+  cells[1] = skill;
+  cells[2] = String(level);
+  cells[3] = '10'; // dwAbilityMin
+  cells[4] = '11'; // dwAbilityMax
+  cells[7] = '150'; // dwAttackSpeed
+  cells[24] = cost.mp ?? '='; // nReqMp
+  cells[25] = cost.fp ?? '='; // nReqFp
+  cells[26] = cost.cooldown ?? '='; // dwCooldown
+  cells[28] = '2000'; // dwSkillRange, read and dropped
+  cells[32] = cost.count ?? '='; // nSkillCount
+  cells[33] = '4'; // dwSkillExp, dwExp and dwComboSkillTime
+  cells[34] = '0';
+  cells[35] = '600';
+  return cells.join(',');
 };
 
 const entry = (name: string, id: string, modelType: string, part = '""'): string =>
@@ -249,6 +323,42 @@ const PACKED: Record<string, string> = {
     itemRow('503', 'IDS_PROPITEM_TXT_000792', 'PARTS_LOWER_BODY', '=', 'PARTS_HAIR'),
     // 504 has a model entry and no row here
     weaponRow('505', 'IDS_PROPITEM_TXT_000793'),
+  ),
+  'propSkill.txt.txt': script(
+    'IDS_PROPSKILL_TXT_000000\tClean Hit',
+    'IDS_PROPSKILL_TXT_000001\tA powerful, downward strike.',
+    'IDS_PROPSKILL_TXT_000002\tFlurry',
+    'IDS_PROPSKILL_TXT_000003\tRapid, stabbing attack.',
+    'IDS_PROPSKILL_TXT_000004\tSplitting Mash',
+    'IDS_PROPSKILL_TXT_000005\tA blow with the whole body.',
+    'IDS_PROPSKILL_TXT_000006\tFlash',
+    'IDS_PROPSKILL_TXT_000007\tAn effect of an item.',
+  ),
+  // Clean Hit; Flurry, which needs Clean Hit at 3, has a cool-down of its own to fall back on, a picture the client lacks,
+  // and two levels; a Mercenary's skill; and a common skill (an effect of items), which is on no job's list
+  'propSkill.txt': script(
+    '//ver\t//dwID\tszName',
+    skillRow('SI_VAG_ONE_CLEANHIT', 'IDS_PROPSKILL_TXT_000000', 'IDS_PROPSKILL_TXT_000001', { expertMax: '2', subDefine: 'SA_CLEANHIT_L01' }),
+    skillRow('SI_VAG_ONE_BRANDISH', 'IDS_PROPSKILL_TXT_000002', 'IDS_PROPSKILL_TXT_000003', {
+      reqLevel: '5', reSkill1: 'SI_VAG_ONE_CLEANHIT', reSkillLevel1: '3', skillReady: '2000', sfxObj3: 'XI_SKILL_VAG_ONE_BRANDISH01',
+      useMotion: 'MTI_VAG_ONE_BRANDISH', expertMax: '2', subDefine: 'SA_BRANDISH_L01', comboStyle: 'CT_CIRCLE',
+      icon: '"""skill_VagOneBrandi.dds"""',
+    }),
+    skillRow('SI_MER_ONE_SPLMASH', 'IDS_PROPSKILL_TXT_000004', 'IDS_PROPSKILL_TXT_000005', {
+      kind1: 'JTYPE_EXPERT', kind2: 'JOB_MERCENARY', reqLevel: '=', expertMax: '2', subDefine: 'SA_SPLMASH_L01',
+      icon: '""""""',
+    }),
+    skillRow('SI_GEN_FLASH', 'IDS_PROPSKILL_TXT_000006', 'IDS_PROPSKILL_TXT_000007', { kind1: 'JTYPE_COMMON', expertMax: '1' }),
+  ),
+  'propSkillAdd.csv': script(
+    '//dwID,dwName,dwSkillLvl,dwAbilityMin,...',
+    '//dwID,dwName,dwSkillLvl,dwAbilityMin,...',
+    addRow('SA_CLEANHIT_L01', 'SI_VAG_ONE_CLEANHIT', 1, { fp: '5' }),
+    addRow('SA_CLEANHIT_L02', 'SI_VAG_ONE_CLEANHIT', 2, { fp: '8' }),
+    addRow('SA_BRANDISH_L01', 'SI_VAG_ONE_BRANDISH', 1, { fp: '10' }),
+    addRow('SA_BRANDISH_L02', 'SI_VAG_ONE_BRANDISH', 2, { fp: '12', cooldown: '500', count: '3' }),
+    addRow('SA_SPLMASH_L01', 'SI_MER_ONE_SPLMASH', 1, { mp: '20', fp: '9' }),
+    addRow('SA_SPLMASH_L02', 'SI_MER_ONE_SPLMASH', 2, { mp: '24', fp: '11' }),
   ),
   'propJob.inc': script(
     '// fAttackSpeed fFactorMaxHP ...',
@@ -363,6 +473,9 @@ const CONVERTED = [
   'models/item_genmatsuitbox.glb', // the model of the suits' entries, which have a part: they are worn, not held
 ];
 
+/** Every catalog of GAME_DATA_KEYS: the stage writes one file for each. */
+const CATALOGS = Object.keys(GAME_DATA_KEYS).length;
+
 describe('the game-data stage', () => {
   let root: string;
   let out: string;
@@ -384,7 +497,7 @@ describe('the game-data stage', () => {
       packed: Object.entries(files).flatMap(([name, content]) =>
         content === undefined ? [] : [{ name, data: text(content) }],
       ),
-      loose: Object.fromEntries(CHR_FILES.map((file) => [file, 'not read'])),
+      loose: Object.fromEntries([...CHR_FILES, 'Icon/skill_VagOneCleanh.dds'].map((file) => [file, 'not read'])),
     });
   }
 
@@ -416,7 +529,7 @@ describe('the game-data stage', () => {
     expect(DEFAULT_STAGES.map((s) => s.name)).toEqual(['textures', 'models', 'effects', 'ui', 'worlds', 'data']);
   });
 
-  it('writes the eleven catalogs, each once, under its hashed name', async () => {
+  it('writes every catalog, each once, under its hashed name', async () => {
     await client();
     const run = await runData();
     expect(run.report.failures).toEqual([]);
@@ -431,13 +544,14 @@ describe('the game-data stage', () => {
       'data/movers.json',
       'data/nameColors.json',
       'data/npcs.json',
+      'data/skills.json',
       'data/texts.json',
       'data/worlds.json',
     ]);
     for (const key of Object.values(GAME_DATA_KEYS)) {
       expect(run.writer.pathOf(key), key).toMatch(/^data\/[a-zA-Z]+\.[0-9a-f]{10}\.json$/);
     }
-    expect(run.report.kinds.data).toMatchObject({ ok: 11, failed: 0 });
+    expect(run.report.kinds.data).toMatchObject({ ok: CATALOGS, failed: 0 });
 
     // movers: by index; a player body has no model; the speed is the table's; the fight columns are the table's too
     expect(await catalog<WebMover[]>(run, GAME_DATA_KEYS.movers)).toEqual([
@@ -665,6 +779,108 @@ describe('the game-data stage', () => {
     expect(index['31']!.effect).toBe('effects/sfx_hit-yoy01.json');
   });
 
+  it('skills: every job skill of propSkill.txt by id, with its levels of propSkillAdd.csv; a common skill is left out', async () => {
+    await client();
+    const run = await runData();
+    expect(run.report.failures).toEqual([]);
+    const skills = await catalog<WebSkill[]>(run, GAME_DATA_KEYS.skills);
+    expect(skills.map((skill) => skill.id)).toEqual([1, 2, 3]); // SI_GEN_FLASH (50) is JTYPE_COMMON
+
+    expect(skills[0]).toEqual({
+      id: 1, name: 'Clean Hit', description: 'A powerful, downward strike.', jobType: 0, job: 0, handed: 1, attackRange: 1,
+      reqLevel: 3, reqSkills: [], useMotion: 1000, sfxHit: 201, exeTarget: 17, useChance: 4, skillType: 2, evildoing: -1,
+      maxLevel: 2, comboStyle: 1, icon: 'ui/skill_vagonecleanh.png',
+      // dwSkillReady is `=`, so a level with no cool-down of its own has none
+      levels: [
+        { reqMp: -1, reqFp: 5, cooldown: -1, skillCount: -1 },
+        { reqMp: -1, reqFp: 8, cooldown: -1, skillCount: -1 },
+      ],
+    });
+
+    // Flurry needs Clean Hit at 3; its first level takes the skill's dwSkillReady for a cool-down, its second has its own
+    expect(skills[1]).toMatchObject({
+      id: 2, name: 'Flurry', reqLevel: 5, reqSkills: [{ skill: 1, level: 3 }], useMotion: 1001, sfxHit: 202, comboStyle: 2,
+    });
+    expect(skills[1]!.levels).toEqual([
+      { reqMp: -1, reqFp: 10, cooldown: 2000, skillCount: -1 },
+      { reqMp: -1, reqFp: 12, cooldown: 500, skillCount: 3 },
+    ]);
+
+    // a Mercenary's skill: the job type and the job are the row's, `=` as the level needed is -1, and the cost has MP
+    expect(skills[2]).toMatchObject({
+      id: 3, name: 'Splitting Mash', jobType: 1, job: 1, reqLevel: -1, icon: null, maxLevel: 2,
+    });
+    expect(skills[2]!.levels.map((level) => [level.reqMp, level.reqFp])).toEqual([[20, 9], [24, 11]]);
+  });
+
+  it('skills: a picture Client/Icon lacks is null, with one warning that names the skill and the file', async () => {
+    await client();
+    const run = await runData();
+    const skills = await catalog<WebSkill[]>(run, GAME_DATA_KEYS.skills);
+    expect(skills.map((skill) => skill.icon)).toEqual(['ui/skill_vagonecleanh.png', null, null]);
+    // Flurry names a picture the client lacks; the Mercenary's skill names none, which needs no warning
+    const warnings = run.report.warnings.filter((w) => w.message.includes('Client/Icon'));
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatchObject({ kind: 'data', source: 'propSkill.txt' });
+    expect(warnings[0]!.message).toContain('2 "Flurry" (skill_VagOneBrandi.dds)');
+    expect(warnings[0]!.message).not.toContain('Clean Hit');
+  });
+
+  it("skills: the icon is looked for whatever the case of the file's name", async () => {
+    await writeFakeClient(root, {
+      packed: Object.entries(PACKED).map(([name, content]) => ({ name, data: text(content) })),
+      loose: { 'icon/SKILL_VAGONECLEANH.DDS': 'not read', 'Model/Mvr_male.chr': 'x' },
+    });
+    const run = await runData();
+    const skills = await catalog<WebSkill[]>(run, GAME_DATA_KEYS.skills);
+    expect(skills[0]!.icon).toBe('ui/skill_vagonecleanh.png');
+  });
+
+  it('skills: a level with no row in propSkillAdd.csv costs nothing, and a row of another level is read as the C++ reads it, both with a warning', async () => {
+    await client({
+      'propSkillAdd.csv': script(
+        addRow('SA_CLEANHIT_L01', 'SI_VAG_ONE_CLEANHIT', 1, { fp: '5' }),
+        // level 2 of Clean Hit is missing; the first row of Flurry is another skill's level
+        addRow('SA_BRANDISH_L01', 'SI_VAG_ONE_CLEANHIT', 1, { fp: '10' }),
+        addRow('SA_BRANDISH_L02', 'SI_VAG_ONE_BRANDISH', 2, { fp: '12' }),
+        addRow('SA_SPLMASH_L01', 'SI_MER_ONE_SPLMASH', 1, { fp: '9' }),
+        addRow('SA_SPLMASH_L02', 'SI_MER_ONE_SPLMASH', 2, { fp: '11' }),
+      ),
+    });
+    const run = await runData();
+    expect(run.report.failures).toEqual([]);
+    const skills = await catalog<WebSkill[]>(run, GAME_DATA_KEYS.skills);
+    expect(skills[0]!.levels).toEqual([
+      { reqMp: -1, reqFp: 5, cooldown: -1, skillCount: -1 },
+      { reqMp: -1, reqFp: -1, cooldown: -1, skillCount: -1 },
+    ]);
+    // GetAddSkillProp takes the row by its place, not by what it says
+    expect(skills[1]!.levels[0]).toMatchObject({ reqFp: 10 });
+
+    const missing = run.report.warnings.find((w) => w.source === 'propSkillAdd.csv' && w.message.includes('no row'));
+    expect(missing).toMatchObject({ kind: 'data', source: 'propSkillAdd.csv' });
+    expect(missing!.message).toContain('1 "Clean Hit" level 2');
+    const other = run.report.warnings.find((w) => w.source === 'propSkillAdd.csv' && w.message.includes('another level'));
+    expect(other).toMatchObject({ kind: 'data', source: 'propSkillAdd.csv' });
+    expect(other!.message).toContain('2 "Flurry" level 1 (row 15 is level 1 of skill 1)');
+  });
+
+  it('skills: a table that cannot be read fails the skills catalog alone, with the file it came from', async () => {
+    await client({ 'propSkillAdd.csv': undefined });
+    const run = await runData();
+    expect(run.report.failures).toHaveLength(1);
+    expect(run.report.failures[0]!.message).toContain('propSkillAdd.csv');
+    expect(run.writer.pathOf(GAME_DATA_KEYS.skills)).toBeUndefined();
+    expect(run.writer.pathOf(GAME_DATA_KEYS.itemProps)).toBeDefined();
+    expect(run.report.kinds.data).toMatchObject({ ok: CATALOGS - 1, failed: 1 });
+
+    await client({ 'propSkillAdd.csv': script('SA_CLEANHIT_L01,SI_NOT_THERE,1') });
+    const unknown = await runData();
+    expect(unknown.report.failures).toHaveLength(1);
+    expect(unknown.report.failures[0]).toMatchObject({ kind: 'data', source: 'propSkillAdd.csv' });
+    expect(unknown.report.failures[0]!.message).toContain('SI_NOT_THERE');
+  });
+
   it('a world id defined twice keeps the later file name, and one with no file name is left out', async () => {
     // CFixedArray::SetAtGrow replaces the slot (worldmng.cpp:359); a slot with no file name is not a valid WORLD
     await client({
@@ -832,7 +1048,7 @@ describe('the game-data stage', () => {
     expect(run.writer.pathOf(GAME_DATA_KEYS.nameColors)).toBeUndefined();
     const written = [GAME_DATA_KEYS.movers, GAME_DATA_KEYS.items, GAME_DATA_KEYS.npcs, GAME_DATA_KEYS.honorTitles];
     for (const key of [...written, GAME_DATA_KEYS.worlds]) expect(run.writer.pathOf(key), key).toBeDefined();
-    expect(run.report.kinds.data).toMatchObject({ ok: 10, failed: 1 });
+    expect(run.report.kinds.data).toMatchObject({ ok: CATALOGS - 1, failed: 1 });
   });
 
   it('a World.inc that cannot be read fails the worlds catalog with its name, the others are written', async () => {
@@ -842,7 +1058,7 @@ describe('the game-data stage', () => {
     expect(run.report.failures[0]).toMatchObject({ kind: 'data', source: 'World.inc' });
     expect(run.writer.pathOf(GAME_DATA_KEYS.worlds)).toBeUndefined();
     expect(run.writer.pathOf(GAME_DATA_KEYS.honorTitles)).toBeDefined();
-    expect(run.report.kinds.data).toMatchObject({ ok: 10, failed: 1 });
+    expect(run.report.kinds.data).toMatchObject({ ok: CATALOGS - 1, failed: 1 });
   });
 
   it('a combat table that cannot be read fails its own catalog, with the file it came from; the others are written', async () => {
@@ -854,7 +1070,7 @@ describe('the game-data stage', () => {
     for (const key of [GAME_DATA_KEYS.itemProps, GAME_DATA_KEYS.jobs, GAME_DATA_KEYS.texts, GAME_DATA_KEYS.effectsIndex]) {
       expect(run.writer.pathOf(key), key).toBeDefined();
     }
-    expect(run.report.kinds.data).toMatchObject({ ok: 10, failed: 1 });
+    expect(run.report.kinds.data).toMatchObject({ ok: CATALOGS - 1, failed: 1 });
   });
 
   it('a file missing from the packs fails its catalog with the resource name', async () => {

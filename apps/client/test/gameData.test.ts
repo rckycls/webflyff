@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { GAME_DATA_KEYS } from '@flyffweb/formats';
-import type { WebExpRow, WebItemProp, WebJob, WebMover } from '@flyffweb/formats';
+import type { WebExpRow, WebItemProp, WebJob, WebMover, WebSkill } from '@flyffweb/formats';
 import { GameDataMissingError, loadGameData } from '../src/world/gameData';
 import { catalogFiles, storeOf } from './helpers/gameDataFiles';
 
@@ -18,21 +18,33 @@ const VAGRANT: WebJob = {
   magicWAND: 6, blocking: Math.fround(0.2), meleeYOYO: Math.fround(4.2), critical: 1, title: 'Vagrant',
 };
 
-/** The catalogs added for combat: an asset index written before them lacks these keys. */
+/** Clean Hit as the converter writes it: Flurry and Over Cut are the same with their own numbers. */
+const CLEAN_HIT: WebSkill = {
+  id: 1, name: 'Clean Hit', description: 'A powerful, downward strike.', jobType: 0, job: 0, handed: 1, attackRange: 1,
+  reqLevel: 3, reqSkills: [], useMotion: 1000, sfxHit: 201, exeTarget: 17, useChance: 4, skillType: 2, evildoing: -1,
+  maxLevel: 10, comboStyle: 1, icon: 'ui/skill_vagonecleanh.png',
+  levels: [
+    { reqMp: -1, reqFp: 5, cooldown: -1, skillCount: -1 },
+    { reqMp: -1, reqFp: 5, cooldown: -1, skillCount: -1 },
+  ],
+};
+
+/** The catalogs added for combat and skills: an asset index written before them lacks these keys. */
 const NEW_KEYS = [
   GAME_DATA_KEYS.itemProps,
   GAME_DATA_KEYS.jobs,
   GAME_DATA_KEYS.exp,
   GAME_DATA_KEYS.texts,
   GAME_DATA_KEYS.effectsIndex,
+  GAME_DATA_KEYS.skills,
 ];
 
 describe('loadGameData: the combat catalogs', () => {
-  it('reads all eleven catalogs, each key once', async () => {
+  it('reads every catalog, each key once', async () => {
     const store = storeOf(catalogFiles());
     await loadGameData(store);
     expect(store.asked.sort()).toEqual(Object.values(GAME_DATA_KEYS).sort());
-    expect(Object.values(GAME_DATA_KEYS)).toHaveLength(11);
+    expect(store.asked).toHaveLength(Object.values(GAME_DATA_KEYS).length);
     for (const key of NEW_KEYS) expect(store.asked, key).toContain(key);
   });
 
@@ -105,6 +117,18 @@ describe('loadGameData: the combat catalogs', () => {
     expect(data.texts.get('TID_GAME_LEVELUP')).toEqual({ id: 'TID_GAME_LEVELUP', text: 'Level up!', color: 0xffffff00 });
     expect(data.texts.get('TID_GAME_LEVELUP')).not.toHaveProperty('textId');
     expect(data.texts.get('TID_NOT_THERE')).toBeUndefined();
+  });
+
+  it('skills are looked up by skill id, with their levels', async () => {
+    const flurry: WebSkill = {
+      ...CLEAN_HIT, id: 2, name: 'Flurry', reqLevel: 5, reqSkills: [{ skill: 1, level: 3 }], useMotion: 1001, comboStyle: 2,
+    };
+    const data = await loadGameData(storeOf(catalogFiles({ [GAME_DATA_KEYS.skills]: [CLEAN_HIT, flurry] })));
+    expect([...data.skills.keys()]).toEqual([1, 2]); // numbers, in file order
+    expect(data.skills.get(1)).toEqual(CLEAN_HIT);
+    expect(data.skills.get(2)!.reqSkills).toEqual([{ skill: 1, level: 3 }]);
+    expect(data.skills.get(1)!.levels[0]).toEqual({ reqMp: -1, reqFp: 5, cooldown: -1, skillCount: -1 });
+    expect(data.skills.get(3)).toBeUndefined();
   });
 
   it('effects are looked up by the XI number', async () => {

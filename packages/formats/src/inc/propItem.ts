@@ -10,6 +10,12 @@
 // attack speed and range, the dest and adjust params, three effect and sound ids, and the string columns at the end
 // (the icon, the text file and the description); the rest are read and dropped. Build flags of the client:
 // `__PROP_0827` (three dest params), `__CLIENT`, `__VER` 15, all on in Neuz/VersionCommon.h.
+//
+// `propSkill.txt` has the same 124 columns: CProject::LoadSkill reads it with this loader (`LoadPropItem( "propSkill.txt",
+// &m_aPropSkill )`, Project.cpp:377), so this reads it too, and also keeps the columns a skill row uses (the kinds are the
+// job type `JTYPE_*` and the job `JOB_*`): the level it needs and the skills it needs first, the motion, the target and
+// approach rules, the kind of skill, the evil-doing flag, the maximum level, the first row of its levels in
+// `propSkillAdd.csv`, the combo style and the cool-down a level without one falls back on.
 
 import { ScriptReader } from '../script/cscript';
 
@@ -79,6 +85,42 @@ export interface ItemProp {
   sfxObj5: number;
   /** `dwSndAttack1`: the sound of a hit (`SND_*`). */
   sndAttack1: number;
+  /**
+   * `dwReqDisLV`: of a skill, the character level that unlocks it (`CMover::CheckSkill`, MoverParam.cpp:117-156). -1 for
+   * `=`, which the C++ keeps as 0xFFFFFFFF, so LoadSkill sorts such a skill last (SortJobSkill, Project.cpp:364-373).
+   */
+  reqLevel: number;
+  /**
+   * `dwReSkill1` and `dwReSkill2`: the skills (`SI_*` ids, not slots of the player's array) that have to be at least at
+   * `reSkillLevels` before this one can be raised. -1 for `=`: no prerequisite (CheckSkill compares with 0xffffffff).
+   */
+  reSkills: [number, number];
+  /** `dwReSkillLevel1` and `dwReSkillLevel2`: the level each prerequisite has to be at. */
+  reSkillLevels: [number, number];
+  /**
+   * `dwSkillReady`: of a skill, the cool-down a level of `propSkillAdd.csv` that gives none falls back on
+   * (LoadPropAddSkill, Project.cpp:2587-2596). -1 for `=`.
+   */
+  skillReady: number;
+  /** `dwUseMotion`: of a skill, the motion it plays, an `MTI_*` id (`MTI_VAG_ONE_CLEANHIT` 1000). -1 for none. */
+  useMotion: number;
+  /** `dwExeTarget`: of a skill, how its target is found, an `EXT_*` value (EXT_MELEEATK 17). */
+  exeTarget: number;
+  /** `dwUseChance`: of a skill, what it needs to be used, a `WUI_*` value (WUI_TARGETINGOBJ 4: a selected target). */
+  useChance: number;
+  /** `dwSkillType`: of a skill, `KT_SKILL` (2, a melee skill that costs FP) or `KT_MAGIC` (1). */
+  skillType: number;
+  /** `nEvildoing`: of a skill, negative for a harmful one, which needs a target that can be attacked. */
+  evildoing: number;
+  /** `dwExpertMax`: of a skill, the highest level it can be raised to. */
+  expertMax: number;
+  /**
+   * `dwSubDefine`: of a skill, the row of its first level in `propSkillAdd.csv`: `CProject::GetAddSkillProp`
+   * (Project.cpp:879-896) takes the row `dwSubDefine + level - 1`.
+   */
+  subDefine: number;
+  /** `dwComboStyle`: of a skill, where it can be put on the task bar and in the action slot, a `CT_*` value. */
+  comboStyle: number;
   /** `szIcon`: the icon file (`itm_WeaSwoWooden.dds`); '' for none. */
   icon: string;
   /** `szTextFileName`: the text file of the item's GM command; '' for none. */
@@ -149,6 +191,21 @@ const KEPT: ReadonlySet<string> = new Set([
   'dwSfxObj5',
   'dwSndAttack1',
   'dwReferStat1',
+  // the columns of a skill row
+  'dwReqDisLV',
+  'dwReSkill1',
+  'dwReSkillLevel1',
+  'dwReSkill2',
+  'dwReSkillLevel2',
+  'dwSkillReady',
+  'dwUseMotion',
+  'dwExeTarget',
+  'dwUseChance',
+  'dwSkillType',
+  'nEvildoing',
+  'dwExpertMax',
+  'dwSubDefine',
+  'dwComboStyle',
 ]);
 
 /** Removes trailing white space, the characters C `isspace` accepts (CString::TrimRight, ProjectCmn.cpp:331). */
@@ -245,6 +302,18 @@ export function readPropItem(
         sfxObj3: kept.dwSfxObj3,
         sfxObj5: kept.dwSfxObj5,
         sndAttack1: kept.dwSndAttack1,
+        reqLevel: kept.dwReqDisLV,
+        reSkills: [kept.dwReSkill1, kept.dwReSkill2],
+        reSkillLevels: [kept.dwReSkillLevel1, kept.dwReSkillLevel2],
+        skillReady: kept.dwSkillReady,
+        useMotion: kept.dwUseMotion,
+        exeTarget: kept.dwExeTarget,
+        useChance: kept.dwUseChance,
+        skillType: kept.dwSkillType,
+        evildoing: kept.nEvildoing,
+        expertMax: kept.dwExpertMax,
+        subDefine: kept.dwSubDefine,
+        comboStyle: kept.dwComboStyle,
         icon,
         textFileName,
         command,
