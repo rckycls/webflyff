@@ -10,6 +10,7 @@
 //
 // The numbers of the keys and of the particle block are the reader's, unchanged. Vectors are in the file's coordinates.
 
+import { atoi } from '../script/cscript';
 import type { SfxPart } from '../sfx/sfx';
 
 export interface WebEffectPart extends Omit<SfxPart, 'texture'> {
@@ -35,14 +36,6 @@ export interface WebEffectPart extends Omit<SfxPart, 'texture'> {
 
 export interface WebEffect {
   parts: WebEffectPart[];
-}
-
-/** C `atoi` of a short string: optional white space, an optional sign, then digits; 0 when there are none. */
-function atoi(text: string): number {
-  const match = /^[ \t\n\v\f\r]*([+-]?)(\d*)/.exec(text)!;
-  if (match[2] === '') return 0;
-  const value = Number(match[2]);
-  return match[1] === '-' ? -value : value;
 }
 
 /** C `%02d`: at least two characters, zero padded after the sign. */

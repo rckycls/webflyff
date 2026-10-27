@@ -40,7 +40,7 @@ import {
 import type { TextureContext } from '../textures/convertTexture';
 import { ktxAvailable } from '../textures/ktx';
 import type { KtxTool } from '../textures/ktx';
-import { matchesOnly, runLimited } from '../util';
+import { listed, matchesOnly, plural, runLimited } from '../util';
 
 const STAGE = 'effects';
 /** The report kinds: the effect files, the textures they name, and the mesh parts kept in them. */
@@ -56,14 +56,6 @@ const TEXTURE_DIR = 'SFX/Texture';
 const MODELTYPE_SFX = 4;
 /** SFXPARTTYPE_MESH (sfxbase.h:17-22): the part's `m_strTex` is a model file name. */
 const PART_MESH = 3;
-
-const plural = (n: number, noun: string): string => `${n} ${noun}${n === 1 ? '' : 's'}`;
-
-/** At most five names, then "and N more". */
-function listed(names: Iterable<string>): string {
-  const all = [...names];
-  return all.slice(0, 5).join(', ') + (all.length > 5 ? ` and ${all.length - 5} more` : '');
-}
 
 /** The texture file names a part draws with: its name, or one per frame of its texture animation (GetTextureName). */
 function textureNamesOf(part: SfxPart): string[] {

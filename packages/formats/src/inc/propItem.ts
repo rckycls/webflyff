@@ -86,8 +86,10 @@ export interface ItemProp {
   /** `dwSndAttack1`: the sound of a hit (`SND_*`). */
   sndAttack1: number;
   /**
-   * `dwReqDisLV`: of a skill, the character level that unlocks it (`CMover::CheckSkill`, MoverParam.cpp:117-156). -1 for
-   * `=`, which the C++ keeps as 0xFFFFFFFF, so LoadSkill sorts such a skill last (SortJobSkill, Project.cpp:364-373).
+   * `dwReqDisLV`: of a skill, the character level that unlocks it. `CMover::CheckSkill` refuses a skill when
+   * `!IsMaster() && !IsHero() && GetLevel() < (int)dwReqDisLV` (MoverParam.cpp:124, the `__VER >= 10` branch): a Master or
+   * Hero skips the level test. -1 for `=`, which the C++ keeps as 0xFFFFFFFF: no level is below `(int)` of it, and
+   * LoadSkill sorts such a skill last (SortJobSkill, Project.cpp:364-373).
    */
   reqLevel: number;
   /**

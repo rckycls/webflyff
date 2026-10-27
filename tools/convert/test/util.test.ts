@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { matchesOnly, runLimited } from '../src/util';
+import { listed, matchesOnly, plural, runLimited } from '../src/util';
 
 describe('matchesOnly', () => {
   it('matches everything when there is no filter', () => {
@@ -115,5 +115,21 @@ describe('runLimited', () => {
     for (const jobs of [0, -1, 1.5, Number.NaN]) {
       await expect(runLimited([1], jobs, async () => {})).rejects.toThrow(RangeError);
     }
+  });
+});
+
+describe('plural and listed, the words of a report', () => {
+  it('gives a count its noun, in the singular only for one', () => {
+    expect(plural(1, 'skill')).toBe('1 skill');
+    expect(plural(0, 'skill')).toBe('0 skills');
+    expect(plural(2, 'held item')).toBe('2 held items');
+  });
+
+  it('lists at most five names, then how many more (for an array or any other iterable)', () => {
+    expect(listed([])).toBe('');
+    expect(listed(['a', 'b', 'c'])).toBe('a, b, c');
+    expect(listed(['a', 'b', 'c', 'd', 'e'])).toBe('a, b, c, d, e');
+    expect(listed(['a', 'b', 'c', 'd', 'e', 'f'])).toBe('a, b, c, d, e and 1 more');
+    expect(listed(new Set(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']))).toBe('a, b, c, d, e and 3 more');
   });
 });

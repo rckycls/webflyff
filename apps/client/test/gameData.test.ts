@@ -22,7 +22,7 @@ const VAGRANT: WebJob = {
 const CLEAN_HIT: WebSkill = {
   id: 1, name: 'Clean Hit', description: 'A powerful, downward strike.', jobType: 0, job: 0, handed: 1, attackRange: 1,
   reqLevel: 3, reqSkills: [], useMotion: 1000, sfxHit: 201, exeTarget: 17, useChance: 4, skillType: 2, evildoing: -1,
-  maxLevel: 10, comboStyle: 1, icon: 'ui/skill_vagonecleanh.png',
+  maxLevel: 2, comboStyle: 1, icon: 'ui/skill_vagonecleanh.png',
   levels: [
     { reqMp: -1, reqFp: 5, cooldown: -1, skillCount: -1 },
     { reqMp: -1, reqFp: 5, cooldown: -1, skillCount: -1 },

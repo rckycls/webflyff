@@ -18,6 +18,15 @@ export function matchesOnly(name: string, only: string | undefined): boolean {
   });
 }
 
+/** `1 skill`, `2 skills`: a count and its noun, for the sentences of a report. */
+export const plural = (n: number, noun: string): string => `${n} ${noun}${n === 1 ? '' : 's'}`;
+
+/** At most five names, then "and N more": the names a warning lists. */
+export function listed(names: Iterable<string>): string {
+  const all = [...names];
+  return all.slice(0, 5).join(', ') + (all.length > 5 ? ` and ${all.length - 5} more` : '');
+}
+
 /**
  * Calls `fn` once per item with at most `jobs` calls in flight. Catch a failure inside `fn` and report it there:
  * if `fn` does reject, no new item is started, the calls already running finish, and the first rejection is

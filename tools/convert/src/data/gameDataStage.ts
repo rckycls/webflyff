@@ -68,7 +68,7 @@ import type { AssetWriter } from '../output/AssetWriter';
 import { effectKeyOf, itemIconKeyOf, modelKeyOf, stem } from '../output/keys';
 import type { Report } from '../output/Report';
 import type { Stage, StageContext } from '../run';
-import { matchesOnly } from '../util';
+import { matchesOnly, plural } from '../util';
 import { readModelIndexes } from './modelIndexes';
 import type { ModelIndex } from './modelIndexes';
 import { buildSkills } from './skillsCatalog';
@@ -125,8 +125,6 @@ export function makeMotionName(elem: ModelElem, motion: number, stand = 0): stri
   if (text === '') text = texts.get(stand) ?? '';
   return `${name}${text}.ani`;
 }
-
-const plural = (n: number, noun: string): string => `${n} ${noun}${n === 1 ? '' : 's'}`;
 
 /** What the catalogs share. */
 interface Env {

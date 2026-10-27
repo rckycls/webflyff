@@ -33,20 +33,13 @@ import type { RgbaImage, TexturePack, WebUiSheet, WebUiSheets } from '@flyffweb/
 import { iconKeyOf, itemIconKeyOf } from '../output/keys';
 import type { Stage, StageContext } from '../run';
 import { encodePng } from '../textures/convertTexture';
-import { matchesOnly, runLimited } from '../util';
+import { listed, matchesOnly, plural, runLimited } from '../util';
 
 const STAGE = 'ui';
 const KIND = 'ui';
 
 /** The colour key of the icons, theme pieces and target corners: opaque magenta (`0xffff00ff` in every AddTexture call). */
 const MAGENTA_KEY = 0xffff00ff;
-
-const plural = (n: number, noun: string): string => `${n} ${noun}${n === 1 ? '' : 's'}`;
-
-/** At most five names, then "and N more". */
-function listed(names: string[]): string {
-  return names.slice(0, 5).join(', ') + (names.length > 5 ? ` and ${names.length - 5} more` : '');
-}
 
 /** The pictures the converter reads: the formats `decodeImage` knows. */
 const PICTURE = /\.(dds|tga|bmp)$/i;

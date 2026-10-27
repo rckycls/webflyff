@@ -227,9 +227,9 @@ export interface WebSkill {
   /** `dwAttackRange`: how near the caster walks to its target, an `AR_*` value (AR_SHORT 1). */
   attackRange: number;
   /**
-   * `dwReqDisLV`: the character level that unlocks the skill (CMover::CheckSkill, MoverParam.cpp:117-156, which compares
-   * `GetLevel() < (int) dwReqDisLV`). -1 for `=` (the four event buffs of the Vagrant): no level is below it, so such a skill
-   * is open at every level.
+   * `dwReqDisLV`: the character level that unlocks the skill. `CMover::CheckSkill` (MoverParam.cpp:117-156) refuses a skill
+   * when `!IsMaster() && !IsHero() && GetLevel() < (int)dwReqDisLV` (:124): a Master or Hero skips the level test. -1 for
+   * `=` (the four event buffs of the Vagrant): no level is below it, so such a skill is open at every level.
    */
   reqLevel: number;
   /** The skills that have to be raised first: `dwReSkill1/Level1` and `dwReSkill2/Level2`, the ones that are not `=`. */

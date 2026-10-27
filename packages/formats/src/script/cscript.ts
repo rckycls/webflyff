@@ -24,7 +24,7 @@ import { parseHexToken, tokenize } from './scanner';
 import type { Token } from './scanner';
 
 /** NULL_ID (Source/_Common/scanner.h:7) as `GetNumber` returns it: an int, so -1. */
-const NULL_ID = -1;
+export const NULL_ID = -1;
 
 /**
  * CScript's keyword table (Script.cpp:23-47, the entries CScript::LookUp matches). A word in it is a KEYWORD
@@ -52,7 +52,7 @@ const MAX_INT = 2147483647;
 const MIN_INT = -2147483648;
 
 /** C `atoi`: leading white space, an optional sign, digits; 0 when there are none. Out of range clamps, as in MSVC. */
-function atoi(text: string): number {
+export function atoi(text: string): number {
   const m = /^[\s]*([+-]?\d+)/.exec(text);
   if (m === null) return 0;
   return Math.max(MIN_INT, Math.min(MAX_INT, parseInt(m[1], 10)));

@@ -14,6 +14,7 @@ import { readPropItem, readPropSkillAdd } from '@flyffweb/formats';
 import type { ItemProp, SkillAddProp, WebSkill } from '@flyffweb/formats';
 import type { ClientFs } from '../ClientFs';
 import { iconKeyOf } from '../output/keys';
+import { listed, plural } from '../util';
 
 /** DIR_ICON (path.h:31): the folder of the skill pictures, where the task bar and the skill window load them from. */
 const ICON_DIR = 'Icon';
@@ -32,13 +33,6 @@ export interface SkillsEnv {
 /** What the catalog reads: the two files by name, as the stage's `Reading` gives them (it counts the bytes). */
 export interface SkillsReading {
   text(name: string): string;
-}
-
-const plural = (n: number, noun: string): string => `${n} ${noun}${n === 1 ? '' : 's'}`;
-
-/** At most five, then "and N more". */
-function listed(names: string[]): string {
-  return names.slice(0, 5).join(', ') + (names.length > 5 ? ` and ${names.length - 5} more` : '');
 }
 
 /**

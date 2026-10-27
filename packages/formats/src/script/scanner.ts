@@ -6,7 +6,8 @@
 //   CScanner::GetNumber scanner.cpp:852  sign folding, define-resolved numbers
 //   CScanner::GetHex    scanner.cpp:964
 //
-// Not copied: the comma / CSV mode (`CScanner(bComma)`), which the tab-separated property tables use.
+// The comma / CSV mode (`CScanner(bComma)`, which `propSkillAdd.csv` is read in) is not here: see commaReader.ts. The
+// tab-separated property tables use the mode copied here.
 
 import { FormatError } from '../errors';
 
