@@ -1,9 +1,10 @@
 // `window.__client`: what the Playwright tests (and a tester's console) use to look into the game client, as
 // `window.__viewer` is for the viewer (apps/viewer/src/testHooks.ts). It is a registry: the hooks are there from the
 // start, and the world screen registers what they answer from while it is open. Outside a world screen they throw
-// (`ready` rejects) with "no world screen".
+// (`ready` rejects) with "no world screen"; the page's own hook (`releaseWebGL`) answers either way.
 
 import type { Vec3 } from '@flyffweb/protocol';
+import { releasePage3d } from './world/page3d';
 import type { SessionStats } from './world/WorldSession';
 
 /** The session's counts of what its bundles held, and the overlay's errors. */
@@ -75,8 +76,21 @@ export interface ClientHooks {
   screenOf(objectId: number): [number, number] | null;
 }
 
+/** The hooks of the page itself, which answer with or without a world screen. */
+export interface PageHooks {
+  /**
+   * Lets the page's renderer and WebGL context go, as a page that is thrown away does (`releasePage3d`, the same call),
+   * for a test to make before its page closes: WebKit on Windows frees a page's GPU memory when it is let go then, and
+   * not when the page closes, and after some twenty world pages in one browser it loses the next page's context.
+   */
+  releaseWebGL(): void;
+}
+
+/** `window.__client`: the world screen's hooks and the page's. */
+export type TestHooks = ClientHooks & PageHooks;
+
 declare global {
-  var __client: ClientHooks | undefined;
+  var __client: TestHooks | undefined;
 }
 
 let world: ClientHooks | null = null;
@@ -94,7 +108,7 @@ function current(): ClientHooks {
   return world;
 }
 
-export function createClientHooks(): ClientHooks {
+export function createClientHooks(): TestHooks {
   return {
     ready: async () => current().ready(),
     movers: () => current().movers(),
@@ -105,10 +119,11 @@ export function createClientHooks(): ClientHooks {
     step: async (steps) => current().step(steps),
     played: () => current().played(),
     screenOf: (objectId) => current().screenOf(objectId),
+    releaseWebGL: () => releasePage3d(),
   };
 }
 
-export function installTestHooks(): ClientHooks {
+export function installTestHooks(): TestHooks {
   const hooks = createClientHooks();
   globalThis.__client = hooks;
   return hooks;

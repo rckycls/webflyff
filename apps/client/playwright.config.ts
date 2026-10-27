@@ -20,6 +20,11 @@ export default defineConfig({
   testDir: './e2e',
   snapshotPathTemplate: '{testDir}/__screenshots__/{testFilePath}/{arg}{ext}',
   timeout: 30_000,
+  // Ruling R31: at most 4 tests at once. Each world test draws Flaris in software WebGL (SwiftShader in Chromium) on the
+  // CPU, and with the default of half the logical cores (8 on the owner's 16) up to 8 worlds drawn side by side saturate
+  // them: WebKit's pages then run no animation frame for tens of seconds, so its clicks never see an element stable and its
+  // key events hang (full runs B, C, E and the control run of Task 26).
+  workers: 4,
   reporter: 'list',
   expect: { toHaveScreenshot: { maxDiffPixelRatio: 0.01 } },
   use: { baseURL: CLIENT_URL },

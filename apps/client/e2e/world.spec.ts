@@ -15,12 +15,14 @@ import {
   ANILOOP_LOOP, BASE, DST_HP, MADRIGAL, MALE_VAGRANT, MI_MALE, MONSTER_AT, MONSTER_ID, MTI_RUN, MTI_STAND, NPC_ID,
   OBJMSG_ATK1, OBJMSG_DAMAGE, OBJSTAF_WALK, OBJSTA_FMOVE, OBJSTA_MOVE_ALL, OBJSTA_STAND, ON_FRAMES, SELF_ID, SELF_PLAYER,
   SQUARE, aibatt, destPosOf, distanceXZ, enterFlaris, flaris, groundAt, julia, logOut, movedState, movedStateFlag, movesOf,
-  ownAt, hpOf, playGateway, self, sentOf, startEntering, tapEnter, tapMover, tapWorld, targetsOf,
+  ownAt, hpOf, playGateway, releaseWebGLAfterEach, self, sentOf, startEntering, tapEnter, tapMover, tapWorld, targetsOf,
 } from './worldHarness';
 
 // Entering, loading Flaris and drawing it with SwiftShader take much longer than a lobby screen. The waits on the frame
 // loop are `ON_FRAMES` (ruling R28).
 test.describe.configure({ timeout: 120_000 });
+// each test's page lets its WebGL context go before it closes (ruling R32)
+releaseWebGLAfterEach();
 
 // Ruling 3: WebKit runs these where it draws WebGL. Playwright's WebKit draws Flaris on this PC (checked with a picture
 // of the iPhone 13 page); where a WebKit build has no WebGL the world screen ends at once with "This browser can't show

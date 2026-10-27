@@ -27,6 +27,27 @@ export const ASSETS = path.resolve(path.dirname(fileURLToPath(import.meta.url)),
  */
 export const ON_FRAMES = { timeout: 60_000 };
 
+/** How long the release after a test is waited for: a page that runs nothing (hung) never answers, and has nothing to give. */
+const RELEASE_WAIT_MS = 5_000;
+
+/**
+ * After each test of the calling file, before Playwright closes its page, the page lets its renderer and WebGL context go
+ * (the test hooks' `releaseWebGL`, the same call as a page thrown away makes at its `pagehide`). WebKit on Windows frees
+ * a page's GPU memory when the page lets it go itself, but not when the page is closed, even with that `pagehide`
+ * release: after some twenty world pages in one browser it loses the next page's context (ruling R32). Called once at
+ * the top of each file whose tests open the world: this module is loaded once a worker, so a hook declared here at the top
+ * would be the first file's only.
+ */
+export function releaseWebGLAfterEach(): void {
+  test.afterEach(async ({ page }) => {
+    // a page already closed or gone elsewhere has nothing left to let go, and a hung one is not waited for
+    await Promise.race([
+      page.evaluate(() => window.__client?.releaseWebGL()).catch(() => {}),
+      new Promise((resolve) => setTimeout(resolve, RELEASE_WAIT_MS)),
+    ]);
+  });
+}
+
 /** `WI_WORLD_MADRIGAL` (`Resource/defineWorld.h`): Flaris is in Madrigal. */
 export const MADRIGAL = 1;
 /** `MI_MALE`, `MI_FEMALE` (`Resource/defineObj.h:954-955`) and the Aibatt (`MI_AIBATT2`, propMover.txt). */

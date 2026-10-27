@@ -9,8 +9,8 @@ import type { Locator, Page } from '@playwright/test';
 import { PacketType } from '@flyffweb/protocol';
 import { writeDamage } from '@flyffweb/testkit';
 import {
-  MONSTER_ID, OBJSTA_FMOVE, OBJSTA_MOVE_ALL, OBJSTA_STAND, SELF_ID, enterFlaris, errorPacket, flaris, hpOf, logIn, movedState,
-  movesOf, ownAt, playGateway, sentOf, serverList, tapMover, targetsOf,
+  MONSTER_ID, OBJSTA_FMOVE, OBJSTA_MOVE_ALL, OBJSTA_STAND, ON_FRAMES, SELF_ID, enterFlaris, errorPacket, flaris, hpOf, logIn,
+  movedState, movesOf, ownAt, playGateway, releaseWebGLAfterEach, sentOf, serverList, tapMover, targetsOf,
 } from './worldHarness';
 import type { Gateway } from './worldHarness';
 
@@ -33,6 +33,8 @@ const FOUR_CHANNELS = [
 
 // Entering, loading Flaris and drawing it with SwiftShader take much longer than a lobby screen.
 test.describe.configure({ timeout: 120_000 });
+// each test's page lets its WebGL context go before it closes (ruling R32)
+releaseWebGLAfterEach();
 
 const isTouch = (): boolean => test.info().project.use.hasTouch === true;
 const swingsOf = (gateway: Gateway): number => sentOf(gateway, PacketType.MELEE_ATTACK).length;
@@ -252,8 +254,9 @@ test.describe('landscape (spec §3.10)', () => {
     await expect.poll(() => movesOf(gateway).length, { timeout: 60_000 }).toBeGreaterThan(0);
     expect(movedState(movesOf(gateway).at(-1)!) & OBJSTA_MOVE_ALL).toBe(OBJSTA_FMOVE);
 
+    // the cover shows and goes at the resize, which the page takes between its frames: a wait on the frame loop (R28)
     await page.setViewportSize(UPRIGHT);
-    await expect(cover(page)).toBeVisible();
+    await expect(cover(page)).toBeVisible(ON_FRAMES);
     // the stop goes out, with the finger still down
     await expect.poll(() => movedState(movesOf(gateway).at(-1)!) & OBJSTA_MOVE_ALL, { timeout: 60_000 }).toBe(OBJSTA_STAND);
     const stopped = await ownAt(page);
@@ -261,7 +264,7 @@ test.describe('landscape (spec §3.10)', () => {
     expect(await ownAt(page)).toEqual(stopped);
     await page.mouse.up();
     await page.setViewportSize(SAFARI_LANDSCAPE);
-    await expect(cover(page)).toBeHidden();
+    await expect(cover(page)).toBeHidden(ON_FRAMES);
     expect(await ownAt(page)).toEqual(stopped);
   });
 
@@ -305,24 +308,26 @@ test.describe('landscape (spec §3.10)', () => {
     await expect.poll(() => targetsOf(gateway)).toEqual([[MONSTER_ID, 2]]);
     await tapMover(page, MONSTER_ID);
     await expect.poll(() => swingsOf(gateway), { timeout: 60_000 }).toBeGreaterThan(0);
-    await expect(page.locator('.hud-target-info')).toHaveText('100 / 148');
+    // the target bar, the cover and the numbers are the frame loop's to draw, and the cover changes at a resize the page
+    // takes between its frames: waits on the frame loop (R28)
+    await expect(page.locator('.hud-target-info')).toHaveText('100 / 148', ON_FRAMES);
 
     // upright: the cover is over the fight
     await page.setViewportSize(UPRIGHT);
-    await expect(cover(page)).toBeVisible();
+    await expect(cover(page)).toBeVisible(ON_FRAMES);
     await expect(cover(page)).toHaveText(PC_TEXT);
     const swingsUpright = swingsOf(gateway);
     // the world server's DAMAGE of the own hit (the Aibatt loses 30): applied under the cover, its number drawn
     gateway.pushCache(flaris.later([writeDamage(MONSTER_ID, SELF_ID, 30, 0)]));
     await expect.poll(() => hpOf(page, MONSTER_ID)).toBe(70);
-    await expect.poll(() => page.locator('.world-damage-numbers > div').count(), { timeout: 10_000 }).toBeGreaterThan(0);
+    await expect.poll(() => page.locator('.world-damage-numbers > div').count(), ON_FRAMES).toBeGreaterThan(0);
     // the auto-attack swings on
     await expect.poll(() => swingsOf(gateway), { timeout: 60_000 }).toBeGreaterThan(swingsUpright);
 
     // turned back: the same fight, the Aibatt's HP lowered on its bar, the loop still running, the target still the Aibatt
     await page.setViewportSize(LANDSCAPE);
-    await expect(cover(page)).toBeHidden();
-    await expect(page.locator('.hud-target-info')).toHaveText('70 / 148');
+    await expect(cover(page)).toBeHidden(ON_FRAMES);
+    await expect(page.locator('.hud-target-info')).toHaveText('70 / 148', ON_FRAMES);
     const swingsBack = swingsOf(gateway);
     await expect.poll(() => swingsOf(gateway), { timeout: 60_000 }).toBeGreaterThan(swingsBack);
     expect(targetsOf(gateway)).toEqual([[MONSTER_ID, 2]]);

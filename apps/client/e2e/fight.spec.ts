@@ -20,13 +20,15 @@ import { Xi } from '../src/world/fx/EffectManager';
 import { Mti, ObjSta } from '../src/world/sim/constants';
 import {
   MADRIGAL, MALE_VAGRANT, MONSTER_ID, OBJMSG_ATK1, OBJMSG_DAMAGE, ON_FRAMES, SELF_ID, SELF_PLAYER, SQUARE, aibatt,
-  enterFlaris, groundAt, hpOf, ownAt, playGateway, self, sentOf, tapMover, targetsOf,
+  enterFlaris, groundAt, hpOf, ownAt, playGateway, releaseWebGLAfterEach, self, sentOf, tapMover, targetsOf,
 } from './worldHarness';
 import type { Gateway, Listed, Sent } from './worldHarness';
 
 // Entering, loading Flaris and drawing it with SwiftShader take much longer than a lobby screen. The waits on the frame
 // loop (the swings, what a frame plays, the windows it draws, a screenshot) are `ON_FRAMES` (ruling R28).
 test.describe.configure({ timeout: 120_000 });
+// each test's page lets its WebGL context go before it closes (ruling R32)
+releaseWebGLAfterEach();
 
 /** `MI_AIBATT1` (`Resource/defineObj.h:959`): the Small Aibatt, level 1, `dwAddHp` 120, `nExpValue` 2 (propMover.txt). */
 const MI_AIBATT1 = 20;
