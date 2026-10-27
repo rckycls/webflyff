@@ -42,13 +42,19 @@ export function installGlobalErrorHandlers(target: EventTarget, overlay: ErrorSi
  * handles both events itself (it cancels the loss so the browser may restore the context); this only makes them visible.
  * A restored context does not bring the picture back: the viewer lets go of its textures' CPU copies once they are
  * uploaded (loaders.ts, TerrainTile.ts), so there is nothing to upload again. Both messages say to reload the page.
+ * Both are said in the console too (`console.warn`): the errors a lost context leads to later (a texture drawn again
+ * with its levels gone) come there, and without this one before them they cannot be told apart from a bug.
  */
 export function installContextLossHandlers(canvas: EventTarget, overlay: ErrorSink): void {
+  const say = (message: string): void => {
+    console.warn(message);
+    overlay.error(message);
+  };
   canvas.addEventListener('webglcontextlost', () => {
-    overlay.error('WebGL context lost (often the device is short of GPU memory): reload the page');
+    say('WebGL context lost (often the device is short of GPU memory): reload the page');
   });
   canvas.addEventListener('webglcontextrestored', () => {
-    overlay.error('WebGL context restored, but the textures it lost cannot be uploaded again: reload the page');
+    say('WebGL context restored, but the textures it lost cannot be uploaded again: reload the page');
   });
 }
 

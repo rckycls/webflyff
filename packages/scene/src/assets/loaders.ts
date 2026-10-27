@@ -36,8 +36,10 @@ const transcoders = new WeakMap<KTX2Loader, Promise<void>>();
 /**
  * Resolves once `ktx2`'s Basis transcoder is downloaded, retried like every other download. KTX2Loader downloads it
  * itself (`init`), with no time limit, and keeps a failed download for good (`transcoderPending`), after which every
- * texture would fail for the rest of the session; so each attempt starts over from `transcoderPending = null`. (After
- * a failure KTX2Loader then warns about "multiple active KTX2 loaders": it counts each fresh start as a loader.) Only
+ * texture would fail for the rest of the session; so each attempt starts over from `transcoderPending = null`.
+ * KTX2Loader counts each fresh start as one more active loader and warns of "multiple active KTX2 loaders" when one
+ * already is (`init`, `KTX2Loader.js:345-358`), so an attempt after an earlier one (a failed or timed-out download: a
+ * `transcoderPending` is there) first lets that one go, its workers and its count (`dispose`, :512-517). Only
  * `loadKtx2` parses, and only after this has resolved, so no other download can be under way. One download per loader
  * is shared by every texture; one that failed every attempt is forgotten, so the next texture tries again.
  */
@@ -47,6 +49,8 @@ export function readyTranscoder(ktx2: KTX2Loader, retry: FetchRetryOptions = {})
     ready = withRetries(
       'the Basis transcoder',
       () => {
+        // a download started before (KTX2Loader's own test of it, `if ( ! this.transcoderPending )`, :285)
+        if (ktx2.transcoderPending) ktx2.dispose();
         ktx2.transcoderPending = null;
         return ktx2.init();
       },

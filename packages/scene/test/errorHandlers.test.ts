@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { MockInstance } from 'vitest';
 import {
   installContextLossHandlers,
   installGlobalErrorHandlers,
@@ -72,6 +73,15 @@ describe('installGlobalErrorHandlers', () => {
 });
 
 describe('installContextLossHandlers', () => {
+  // each event is said in the console too (below); the spy keeps the test output clean
+  let warn: MockInstance<typeof console.warn>;
+  beforeEach(() => {
+    warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+  afterEach(() => {
+    warn.mockRestore();
+  });
+
   it('tells the overlay when the WebGL context is lost and when it comes back', () => {
     const canvas = new EventTarget();
     const overlay = { error: vi.fn<(message: string) => void>() };
@@ -84,6 +94,18 @@ describe('installContextLossHandlers', () => {
     canvas.dispatchEvent(new Event('webglcontextrestored'));
     expect(overlay.error).toHaveBeenCalledTimes(2);
     expect(overlay.error.mock.calls[1]![0]).toMatch(/context restored/i);
+  });
+
+  it('says both in the console as well, where a test run or a tester sees what came before a later error', () => {
+    const canvas = new EventTarget();
+    const overlay = { error: vi.fn<(message: string) => void>() };
+    installContextLossHandlers(canvas, overlay);
+
+    canvas.dispatchEvent(new Event('webglcontextlost', { cancelable: true }));
+    canvas.dispatchEvent(new Event('webglcontextrestored'));
+
+    expect(warn).toHaveBeenCalledTimes(2);
+    expect(warn.mock.calls.map(([message]) => message)).toEqual(overlay.error.mock.calls.map(([message]) => message));
   });
 
   it('says that the page needs a reload: the textures are not kept after upload, so they cannot come back', () => {

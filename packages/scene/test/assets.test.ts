@@ -664,20 +664,30 @@ describe('applyTextures', () => {
 /**
  * KTX2Loader's transcoder loading as three r186 does it: `init()` starts the download once and keeps the promise in
  * `transcoderPending`, a failed one too, until someone sets it back to null. The first `failures` downloads fail.
+ * Each fresh start counts the loader as active (`_activeLoaders++`, `KTX2Loader.js:345-358`), warning of "multiple
+ * active KTX2 loaders" when one already is (counted in `warnings`); `dispose()` counts it off (:512-517).
  */
 function fakeTranscoderLoader(failures: number, texture: Texture = rgbaTexture()) {
   let downloads = 0;
+  let active = 0;
+  let warnings = 0;
   const loader = {
     transcoderPending: null as Promise<void> | null,
     init: vi.fn((): Promise<void> => {
       if (loader.transcoderPending === null) {
         loader.transcoderPending =
           ++downloads <= failures ? Promise.reject(new TypeError('Failed to fetch basis_transcoder.wasm')) : Promise.resolve();
+        if (active > 0) warnings++;
+        active++;
       }
       return loader.transcoderPending;
     }),
+    dispose: vi.fn(() => {
+      active--;
+    }),
     parse: vi.fn((_buffer: ArrayBuffer, onLoad: (t: Texture) => void) => onLoad(texture)),
     downloads: () => downloads,
+    warnings: () => warnings,
   };
   return loader;
 }
@@ -708,6 +718,28 @@ describe('loadKtx2: the Basis transcoder', () => {
     expect(sleep.mock.calls.map(([ms]) => ms)).toEqual([500, 1000]);
   });
 
+  it('lets a failed attempt go before the next (dispose), so KTX2Loader warns of no second loader', async () => {
+    const loader = fakeTranscoderLoader(2);
+    await loadKtx2(loader as unknown as KTX2Loader, '/a.ktx2', { fetchFn: fine(), sleep: noSleep });
+    expect(loader.init).toHaveBeenCalledTimes(3);
+    expect(loader.dispose).toHaveBeenCalledTimes(2);
+    expect(loader.warnings()).toBe(0);
+
+    // the first attempt, and the textures after a success, let nothing go
+    const fresh = fakeTranscoderLoader(0);
+    await loadKtx2(fresh as unknown as KTX2Loader, '/a.ktx2', { fetchFn: fine(), sleep: noSleep });
+    await loadKtx2(fresh as unknown as KTX2Loader, '/b.ktx2', { fetchFn: fine(), sleep: noSleep });
+    expect(fresh.dispose).not.toHaveBeenCalled();
+
+    // a texture after a whole failure tries again on the same loader, with no warning either
+    const failing = fakeTranscoderLoader(Number.POSITIVE_INFINITY);
+    for (const url of ['/a.ktx2', '/b.ktx2']) {
+      await loadKtx2(failing as unknown as KTX2Loader, url, { fetchFn: fine(), sleep: noSleep }).catch(() => {});
+    }
+    expect(failing.downloads()).toBe(8);
+    expect(failing.warnings()).toBe(0);
+  });
+
   it('fails the texture with AssetLoadError after 4 attempts, and the next texture tries again', async () => {
     const loader = fakeTranscoderLoader(Number.POSITIVE_INFINITY);
     const ktx2 = loader as unknown as KTX2Loader;
@@ -733,6 +765,7 @@ describe('loadKtx2: the Basis transcoder', () => {
         loader.transcoderPending ??= ++downloads === 1 ? new Promise<void>(() => {}) : Promise.resolve();
         return loader.transcoderPending;
       },
+      dispose(): void {},
       parse: (_buffer: ArrayBuffer, onLoad: (t: Texture) => void) => onLoad(rgbaTexture()),
     };
 
