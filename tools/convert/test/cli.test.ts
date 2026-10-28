@@ -127,6 +127,8 @@ describe('main', () => {
     }
   });
 
+  // This test spawns Node and starts tsx cold. Inside a parallel `npm test` run that has taken 6.9 s, past vitest's
+  // default 5 s limit, so it gets its own 30 s limit.
   it('is what `npm run convert -- --help` runs: usage on stdout, exit code 0', () => {
     const stdout = execFileSync(process.execPath, ['--import', 'tsx', 'tools/convert/src/cli.ts', '--help'], {
       cwd: FLYFFWEB,
@@ -134,7 +136,7 @@ describe('main', () => {
     });
     expect(stdout).toContain('Usage:');
     expect(stdout).toContain('--allow-failures');
-  });
+  }, 30_000);
 });
 
 describe('run', () => {
