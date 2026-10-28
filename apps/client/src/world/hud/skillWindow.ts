@@ -63,8 +63,13 @@ export interface SkillWindowData {
  * `CWndTaskBar::OnDropIcon`.
  */
 export interface SkillHand {
-  /** A skill dragged with the mouse (`event`, its press) or picked by a finger (no event; picked again, let go). */
-  carrySkill(skillIndex: number, event?: PointerEvent): void;
+  /** A skill dragged with the mouse: `event` is the press on it, the drag begins once the mouse moves. */
+  carrySkill(skillIndex: number, event: PointerEvent): void;
+  /**
+   * A skill picked by a finger, for the next slot of the bar tapped (picked again, it is let go). A press anywhere but in
+   * `within` (the window) or on a slot of the bar's item row or action slot lets it go.
+   */
+  pickSkill(skillIndex: number, within: Element): void;
   /** The skill a finger picked, or null. */
   readonly pickedSkill: number | null;
   /** Lets go of the skill a finger picked. */
@@ -78,6 +83,8 @@ export interface SkillHand {
 /** `APP_SKILL3 "WndTile03.tga" 1 256 624`, less the 100 px of the hero section a Vagrant has not (`rect.bottom -= 100`, :8020). */
 const WIDTH = 256;
 const HEIGHT = 624 - 100;
+/** The client area's width (`CWndBase::SetWndRect`, `WndBase.cpp:1846-1853`: 4 px in on the left, 8 on the right). */
+const CLIENT_WIDTH = WIDTH - 4 - 8;
 /** `IDS_RESDATA_INC_003714` (resData.txt.txt:3715): the applet's title (`CWndNeuz::OnInitialUpdate`, WndNeuz.cpp:210-216). */
 const TITLE = 'Skill Tree';
 /** WIDC_CUSTOM1 (20, 26, 52, 58): the chosen skill, its icon at its own 32 px and its level digit at its top left (:7866-7881). */
@@ -495,8 +502,12 @@ export class SkillWindow {
     this.buttons.finish.disabled = !changed;
   }
 
-  /** + and - (`OnChildNotify`, :8057-8082): on the chosen skill, while the player has points to spend. */
+  /**
+   * + and - (`OnChildNotify`, :8057-8082): on the chosen skill, while the player has points to spend. Like Reset and
+   * Finish, a press on them is no placing of a skill a finger picked: it is let go, so that a slot tapped next is used.
+   */
   private step(step: 1 | -1): void {
+    this.hand.dropPick();
     const { plan, focus, own } = this;
     if (plan === null || focus === null || own === undefined || own.skillPoint <= 0) return;
     if (step === 1) plan.plus(focus);
@@ -506,6 +517,7 @@ export class SkillWindow {
 
   /** Reset (:8083-8089): the own skills anew when points were placed (`InitItem`), and no skill chosen either way. */
   private reset(): void {
+    this.hand.dropPick();
     const { plan, focus, own } = this;
     if (plan === null || focus === null || own === undefined || own.skillPoint <= 0) return;
     if (plan.changed) this.initItem(own);
@@ -515,6 +527,7 @@ export class SkillWindow {
 
   /** Finish (:8090-8098): with points placed, the box (`CWndReSkillWarning`) asks; its Yes sends them. */
   private finish(): void {
+    this.hand.dropPick();
     const { plan, focus, own } = this;
     if (plan === null || focus === null || own === undefined || own.skillPoint <= 0 || !plan.changed) return;
     if (!this.warning.isOpen) this.warning.open(false);
@@ -546,7 +559,7 @@ export class SkillWindow {
     });
     element.addEventListener('click', () => {
       if (!finger || this.plan === null || skill.index < 0 || !this.plan.active(skill.index)) return;
-      this.hand.carrySkill(skill.index);
+      this.hand.pickSkill(skill.index, this.frame.element);
       if (this.own !== undefined) this.update(this.own);
     });
     element.addEventListener('dblclick', () => {
@@ -624,9 +637,12 @@ export class SkillWindow {
       return element;
     }));
     if (skill !== undefined) {
+      // measured at the left edge, where it has the client area's whole width, then moved under the skill as far as it
+      // still ends inside the window (a window that scrolls would cut it)
       const at = SKILL_PLACES.get(skill.skillId)!;
-      this.tooltip.style.left = `${at.left}px`;
+      this.tooltip.style.left = '0px';
       this.tooltip.style.top = `${at.top + SKILL_ICON + 4}px`;
+      this.tooltip.style.left = `${Math.max(0, Math.min(at.left, CLIENT_WIDTH - this.tooltip.offsetWidth))}px`;
     }
   }
 
@@ -673,13 +689,15 @@ const WARNING_WIDTH = 320;
 const WARNING_HEIGHT = 160;
 const WARNING_TITLE = 'Warning';
 /**
- * Its controls: the text WIDC_CONTEXT "WndEditTile00.tga" (72, 8, 300, 88), WIDC_BTN_YES "ButtYes.tga" (72, 96, 144, 116)
- * and WIDC_BTN_NO "ButtNo.tga" (164, 96, 236, 116). Its picture, WIDC_WARNING "WndQueItmwarning.tga" (8, 18, 72, 82), is not
- * drawn: the UI stage does not convert it (`THEME_FILES`), and a picture the asset index lacks is an error on the overlay.
+ * Its controls (resdata.inc:23229-23270): the text WIDC_CONTEXT "WndEditTile00.tga" (72, 8, 300, 88), WIDC_BTN_YES
+ * "ButtYes.tga" (72, 96, 144, 116), WIDC_BTN_NO "ButtNo.tga" (164, 96, 236, 116), and its picture, the static WIDC_WARNING
+ * "WndQueItmwarning.tga" (8, 18, 72, 82), not tiled, which `CWndBase::AdditionalSkinTexture` paints whole
+ * (`WndBase.cpp:2529-2545`) at its own 64 x 64.
  */
 const WARNING_TEXT: ControlRect = { left: 72, top: 8, width: 228, height: 80 };
 const WARNING_YES: ControlRect = { left: 72, top: 96, width: 72, height: 20 };
 const WARNING_NO: ControlRect = { left: 164, top: 96, width: 72, height: 20 };
+const WARNING_PICTURE: ControlRect = { left: 8, top: 18, width: 64, height: 64 };
 /** ButtYes.tga and ButtNo.tga: 288 x 20, four states of 72 px. */
 const YES_NO_QUARTER = 72;
 /** A control's client area inside its frame (`CWndBase::SetWndRect`, `WndBase.cpp:1846-1853`): 4 4 8 10 in. */
@@ -711,6 +729,10 @@ export class ReSkillWarning {
       this.closeWindow = false;
       onClosed(closeWindow);
     };
+    const picture = doc.createElement('div');
+    picture.className = 'hud-skills-picture';
+    place(picture, WARNING_PICTURE);
+    picture.style.backgroundImage = themeUrl(art, 'WndQueItmwarning.tga');
     const box = doc.createElement('div');
     box.className = 'hud-confirm-box';
     place(box, WARNING_TEXT);
@@ -735,7 +757,7 @@ export class ReSkillWarning {
       this.close();
     });
     const no = button('no', 'ButtNo.tga', WARNING_NO, 'TID_GAME_NO', () => this.close());
-    frame.body.append(box, yes, no);
+    frame.body.append(picture, box, yes, no);
     this.frame = frame;
     this.modal = new ModalBackdrop(frame, doc);
   }

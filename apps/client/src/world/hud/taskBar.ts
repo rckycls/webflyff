@@ -301,8 +301,9 @@ export class TaskBar {
   private dirty = true;
   /** The touch rule (`watchTouch`): the Start menu is drawn for a finger on a touch screen, from a first touch on. */
   private readonly touch: TouchWatch;
-  /** The skill a finger picked in the skill window, which the next slot tapped takes. */
+  /** The skill a finger picked in the skill window, which the next slot tapped takes, and the window, where presses keep it. */
   private picked: number | null = null;
+  private pickedWithin: Element | null = null;
   /** The click that ends a slot's drag back onto itself, or its long press, is not a press on the slot. */
   private swallowClick = false;
   /** The edits (`TaskBarEdits`) and the gestures that make them (`SlotGestures`). */
@@ -452,23 +453,35 @@ export class TaskBar {
   }
 
   /**
-   * A skill of the skill window carried to the bar: with the mouse (`event`, the press on the skill), a drag that begins
-   * once the mouse moves (`CWndSkillTreeEx::OnMouseMove`) and ends where the button is let go; with a finger (no `event`),
-   * the skill is picked, and the next slot of the bar tapped takes it (picked again, it is let go).
+   * A skill of the skill window carried to the bar with the mouse (`event`, the press on the skill): a drag that begins
+   * once the mouse moves (`CWndSkillTreeEx::OnMouseMove`) and ends where the button is let go.
    */
-  carrySkill(skillIndex: number, event?: PointerEvent): void {
-    if (event !== undefined) {
-      this.gestures.press({ from: 'skills', skillIndex }, event);
+  carrySkill(skillIndex: number, event: PointerEvent): void {
+    this.gestures.press({ from: 'skills', skillIndex }, event);
+  }
+
+  /**
+   * A skill of the skill window picked by a finger: the next slot of the item row or the action slot tapped takes it
+   * (picked again, it is let go). A press anywhere else but in `within` (the skill window) lets it go, so that a slot is
+   * never replaced by a pick the player has forgotten.
+   */
+  pickSkill(skillIndex: number, within: Element): void {
+    if (this.picked === skillIndex) {
+      this.dropPick();
       return;
     }
-    this.picked = this.picked === skillIndex ? null : skillIndex;
+    if (this.picked === null) this.doc.addEventListener('pointerdown', this.onPressWhilePicked, true);
+    this.picked = skillIndex;
+    this.pickedWithin = within;
     this.drawLit();
   }
 
-  /** Lets go of the skill a finger picked (the skill window closed). */
+  /** Lets go of the skill a finger picked (the skill window's buttons, a press elsewhere, the window closed, a placing). */
   dropPick(): void {
     if (this.picked === null) return;
     this.picked = null;
+    this.pickedWithin = null;
+    this.doc.removeEventListener('pointerdown', this.onPressWhilePicked, true);
     this.drawLit();
   }
 
@@ -516,6 +529,7 @@ export class TaskBar {
   /** Takes the bar off and lets go of the keys. */
   dispose(): void {
     this.menu.dispose();
+    this.dropPick();
     this.gestures.dispose();
     this.view.removeEventListener('keydown', this.onKeyDown);
     this.view.removeEventListener('keyup', this.onKeyUp);
@@ -824,11 +838,22 @@ export class TaskBar {
   private placePicked(target: DropTarget): boolean {
     const picked = this.picked;
     if (picked === null) return false;
-    this.picked = null;
+    this.dropPick();
     this.edits.dropOn({ from: 'skills', skillIndex: picked }, target);
-    this.drawLit();
     return true;
   }
+
+  /**
+   * A press while a finger's pick waits: in the skill window, or on a slot of the item row or the action slot (whose tap
+   * then places it), it keeps; anywhere else (the world, the applet row, the bar's buttons, another window) it lets it go.
+   */
+  private readonly onPressWhilePicked = (event: Event): void => {
+    const target = event.target as Element | null;
+    if (target !== null && this.pickedWithin?.contains(target) === true) return;
+    const slot = typeof target?.closest === 'function' ? target.closest<HTMLElement>('.hud-slot[data-row]') : null;
+    if (slot !== null && this.strip.contains(slot) && (slot.dataset.row === 'item' || slot.dataset.row === 'queue')) return;
+    this.dropPick();
+  };
 
   /**
    * Slot `i` of the bar shown, pressed or by its F-key (`ObjectExecutor( lpShortcut )`, :2409-2427): an applet runs, an empty

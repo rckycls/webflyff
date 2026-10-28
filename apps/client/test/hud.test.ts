@@ -2023,9 +2023,10 @@ function recordingHand() {
   const carried: string[] = [];
   let picked: number | null = null;
   const hand: SkillHand = {
-    carrySkill: (i, event) => {
-      carried.push(event === undefined ? `pick ${i}` : `drag ${i}`);
-      if (event === undefined) picked = picked === i ? null : i;
+    carrySkill: (i) => void carried.push(`drag ${i}`),
+    pickSkill: (i) => {
+      carried.push(`pick ${i}`);
+      picked = picked === i ? null : i;
     },
     get pickedSkill() {
       return picked;
@@ -2330,6 +2331,29 @@ describe('SkillWindow (CWndSkillTreeEx, WndField.cpp:6649-8393)', () => {
     expect(tree.skillPlan).toBe(null);
   });
 
+  it('the tooltip ends inside the window: one past its right edge moves left (the window\'s 244 px client area)', () => {
+    const own = vagrantWithSkills(10, 4, [3, 3, 0]);
+    const { tree } = skillWindowOn(own, recordingHand().hand);
+    const tooltip = tree.frame.element.querySelector<HTMLElement>('.hud-skill-tooltip')!;
+    let width = 200;
+    Object.defineProperty(tooltip, 'offsetWidth', { configurable: true, get: () => width });
+    // Over Cut at 164: 164 + 200 is past 244, so it starts at 44
+    skillOf(tree, 3).dispatchEvent(pointer('pointerenter', 170, 110));
+    expect(tooltip.style.left).toBe('44px');
+    skillOf(tree, 3).dispatchEvent(pointer('pointerleave', 0, 0));
+    // Clean Hit at 62 with a tooltip of 100: where it is
+    width = 100;
+    skillOf(tree, 1).dispatchEvent(pointer('pointerenter', 70, 110));
+    expect(tooltip.style.left).toBe('62px');
+  });
+
+  it("the box's picture is WIDC_WARNING's WndQueItmwarning.tga at (8, 18), 64 x 64 (resdata.inc:23266)", () => {
+    const { tree } = skillWindowOn(vagrantWithSkills(5, 4), recordingHand().hand);
+    const picture = tree.warning.frame.element.querySelector<HTMLElement>('.hud-skills-picture')!;
+    expect([picture.style.left, picture.style.top, picture.style.width, picture.style.height, picture.style.backgroundImage])
+      .toEqual(['8px', '18px', '64px', '64px', 'url("/assets/ui/wndqueitmwarning.png")']);
+  });
+
   it('a skill pressed with the mouse is dragged from (OnMouseMove), tapped by a finger is picked; a double click queues it when CheckSkill lets it', () => {
     const own = vagrantWithSkills(5, 2, [3, 0, 0]);
     const { hand, carried } = recordingHand();
@@ -2564,9 +2588,84 @@ describe('TaskBar: editing the bars (CWndTaskBar::OnDropIcon, WndTaskBar.cpp:187
     expect(calls).toEqual([`useAppletSlot 0 ${ShortcutKind.SKILL} 0`]);
     key('keydown', 'KeyK');
     expect(calls.at(-1)).toBe('open skills');
-    bar.carrySkill(0);
+    bar.pickSkill(0, document.body);
     key('keydown', 'KeyK');
     expect(calls.filter((call) => call === 'open skills')).toHaveLength(1);
+  });
+
+  it("a picked skill is let go by + - Reset Finish, and by a press outside the window and the bar's rows, not by one in them", () => {
+    const own = vagrantWithSkills(5, 4, [3, 0, 0]);
+    const { bar, sent } = editingOn(own);
+    const { tree } = skillWindowOn(own, bar);
+    const pick = () => {
+      skillOf(tree, 1).dispatchEvent(touch('pointerdown'));
+      skillOf(tree, 1).click();
+      expect(bar.pickedSkill).toBe(0);
+    };
+    // + raises Clean Hit, - lowers it, Reset and Finish with a level placed: each lets the pick go
+    const pressed = (name: string) => {
+      pick();
+      expect(skillButton(tree, name).disabled, name).toBe(false);
+      skillButton(tree, name).click();
+      expect(bar.pickedSkill, name).toBe(null);
+    };
+    pressed('plus');
+    pressed('minus');
+    skillButton(tree, 'plus').click();
+    pressed('reset');
+    // Reset unchose Clean Hit: chosen again and raised
+    choose(tree, 1);
+    skillButton(tree, 'plus').click();
+    pressed('finish');
+    expect(tree.warning.isOpen).toBe(true);
+    warningButton(tree, 'no').click();
+    // a finger elsewhere in the window, or on a slot of the item row or the action slot, keeps it
+    pick();
+    tree.frame.body.dispatchEvent(touch('pointerdown'));
+    slot(bar, 'queue', 0).dispatchEvent(touch('pointerdown'));
+    slot(bar, 'item', 5).dispatchEvent(touch('pointerdown'));
+    expect(bar.pickedSkill).toBe(0);
+    // the tap on the slot, as the finger lifts, places it
+    slot(bar, 'item', 5).click();
+    expect(sent).toHaveLength(1);
+    expect(bar.pickedSkill).toBe(null);
+    // the world, the applet row, the Start button: let go, and the next slot tapped is used, not replaced
+    for (const target of [document.body, slot(bar, 'applet', 0), bar.element.querySelector('.hud-taskbar-start')!]) {
+      pick();
+      target.dispatchEvent(touch('pointerdown'));
+      expect(bar.pickedSkill).toBe(null);
+    }
+    slot(bar, 'item', 0).click();
+    expect(sent).toHaveLength(1);
+  });
+
+  it('a chat line moved on the bar loses its --, \', /* and */ (OnDropIcon, WndTaskBar.cpp:1985-1992)', () => {
+    const own = vagrantWithSkills(5, 0, [3, 0, 0]);
+    const chat: Shortcut = { kind: ShortcutKind.CHAT, id: 1, type: 0, index: 3, userId: 0, data: 1, text: "hi--'/* there */" };
+    own.taskBar = { ...NEW_BAR, items: [...NEW_BAR.items, { bar: 0, slot: 3, shortcut: chat }] };
+    const { bar, sent } = editingOn(own);
+    const from = slot(bar, 'item', 3);
+    from.dispatchEvent(pointer('pointerdown', 10, 10));
+    window.dispatchEvent(pointer('pointermove', 30, 30));
+    slot(bar, 'item', 4).dispatchEvent(pointer('pointerup', 30, 30));
+    expect(sent[0]).toEqual({ type: 'ADDITEMTASKBAR', bar: 0, slot: 4, shortcut: { ...chat, index: 4, text: 'hi there ' } });
+  });
+});
+
+describe('Hud: T and the carried shortcut', () => {
+  it('T does nothing while the task bar carries a shortcut: Process reads the applets\' hotkeys only with none (WndTaskBar.cpp:2331-2338)', () => {
+    const hud = new Hud(document, art, DATA);
+    document.body.append(hud.element);
+    hud.frame(0, newVagrantWithBar(), 'Webby', null, false);
+    let carrying = true;
+    hud.carrying = () => carrying;
+    expect(hud.status.frame.isOpen).toBe(true);
+    key('keydown', 'KeyT');
+    expect(hud.status.frame.isOpen).toBe(true);
+    carrying = false;
+    key('keydown', 'KeyT');
+    expect(hud.status.frame.isOpen).toBe(false);
+    hud.dispose();
   });
 });
 

@@ -46,6 +46,11 @@ export class Hud {
   readonly caption: Caption;
   /** Whether there are own numbers to show: the status window and its key wait for them. */
   private hasOwn = false;
+  /**
+   * Whether the task bar carries a shortcut (`TaskBar.carrying`): T, APP_STATUS1's hotkey (`FuncApplet.cpp:179`), is read by
+   * `CWndTaskBar::Process` only while none is (`WndTaskBar.cpp:2331-2338`). None, without a bar.
+   */
+  carrying?: () => boolean;
 
   constructor(
     private readonly doc: Document,
@@ -145,12 +150,15 @@ export class Hud {
     return this.doc.defaultView ?? window;
   }
 
-  /** T toggles the status window, once a press; not with Ctrl, Alt or Meta, nor while typing in a field. */
+  /**
+   * T toggles the status window, once a press; not with Ctrl, Alt or Meta, nor while typing in a field, nor while the task
+   * bar carries a shortcut (`carrying`).
+   */
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     if (event.code !== 'KeyT' || event.repeat || event.ctrlKey || event.altKey || event.metaKey) return;
     const target = event.target as { tagName?: string } | null;
     if (target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA') return;
-    if (!this.hasOwn) return;
+    if (!this.hasOwn || this.carrying?.() === true) return;
     this.status.toggle();
   };
 }

@@ -1250,12 +1250,14 @@ fieldset:disabled .btn {
     inset: -8px;
   }
 
+  /* + from y 2 to 41 and - from 41 to 80, x 20 to 78: 58 x 39 each, over the chosen skill's icon and the Skill Point
+     label (nothing to press) and short of Reset's 80 */
   .hud-skills [data-button='plus']::before {
-    inset: -6px -5px -3px -10px;
+    inset: -20px -8px -3px -36px;
   }
 
   .hud-skills [data-button='minus']::before {
-    inset: -3px -5px -6px -10px;
+    inset: -3px -8px -20px -36px;
   }
 
   .hud-skills [data-button='reset']::before,

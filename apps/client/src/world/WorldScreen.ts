@@ -579,6 +579,8 @@ export class WorldScreen {
       say: (text, color) => this.hud?.messages.add(text, color),
     }, doc);
     this.taskBar = taskBar;
+    // T, the status window's key, waits while the bar carries a shortcut, as the bar's own hotkeys do
+    this.hud!.carrying = () => taskBar.carrying;
     // the Start menu opens where the joystick stands, which is over the windows' layer: it hides while the menu is open
     this.taskBar.onMenuChange = (open) => this.element.classList.toggle('world-menu-open', open);
     this.attackButton = new AttackButton(() => attackLoop.attackButton(), doc);

@@ -58,6 +58,14 @@ export function remember(
 }
 
 /**
+ * A chat line's text as `OnDropIcon` puts it on an item slot (`WndTaskBar.cpp:1985-1992`): `sChat.Replace( "--", "" )`,
+ * then `"'"`, `"/*"` and `"*\/"`, each every time it occurs, in that order (the marks the database's SQL would read).
+ */
+export function withoutSqlMarks(text: string): string {
+  return ['--', "'", '/*', '*/'].reduce((out, mark) => out.split(mark).join(''), text);
+}
+
+/**
  * What the pointer or a finger carries to the bar (`m_GlobalShortcut`): a skill of the skill window, by its slot of
  * `m_aJobSkill` (`CWndSkillTreeEx::OnMouseMove`, `WndField.cpp:7438-7463`: `SHORTCUT_SKILL`, type 0, `m_dwId` the slot), or
  * the shortcut of a slot of an item bar or of the action slot (`CWndTaskBar::OnMouseMove`, `WndTaskBar.cpp:2143-2168`).
@@ -145,7 +153,8 @@ export class TaskBarEdits {
    *   TASKBAR also is, its text being read for chat lines only, so Clean Hit loaded from the server does not move on the
    *   bar; one placed from the skill window carries its name).
    * - On a slot of the item row: a skill only if `CT_STEP` or `CT_GENERAL` (`canPlaceOnBar`, :2026-2041), else it is refused
-   *   and stays where it was; let go on its own slot, nothing. It goes there (`SetShortcut`, ADDITEMTASKBAR).
+   *   and stays where it was; let go on its own slot, nothing. It goes there (`SetShortcut`, ADDITEMTASKBAR), a chat line
+   *   without the marks `withoutSqlMarks` takes out.
    * - On a slot of the action slot: a job skill only (`SetSkillQueue`, :2043-2066); one moved within the action slot is
    *   taken out first, unsent (`RemoveSkillQueue( i, FALSE )`), and put back where it is let go.
    * - From the bar, once it has gone somewhere else on the bar (or anywhere on it that takes nothing), its slot is emptied
@@ -180,7 +189,9 @@ export class TaskBarEdits {
         // a party skill (type 2) is the troupe's catalog's, which the browser has not: Neuz reads its combo style there
         if (skill === undefined || !canPlaceOnBar(skill, own.skills[shortcut.id]?.level ?? 0)) return;
       }
-      this.setItemShortcut(target.slot, shortcut);
+      // a chat line's text loses its --, ', /* and */ before it goes on the slot (:1985-1992)
+      const text = shortcut.kind === ShortcutKind.CHAT ? withoutSqlMarks(shortcut.text) : shortcut.text;
+      this.setItemShortcut(target.slot, { ...shortcut, text });
     } else if (target !== 'bar' && target.row === 'queue' && shortcut.kind === ShortcutKind.SKILL && shortcut.type === 0) {
       if (carried.from === 'queue') {
         if (this.actions.queueRunning()) return;
