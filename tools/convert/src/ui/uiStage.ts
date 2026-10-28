@@ -105,6 +105,10 @@ export const THEME_FILES: readonly string[] = [
   'ButtCancel.tga',
   'ButtYes.tga',
   'ButtNo.tga',
+  // The box that asks before the skill points are spent (APP_QUEITMWARNING, resdata.inc:23229, CWndReSkillWarning): its
+  // picture, the static WIDC_WARNING (resdata.inc:23266), not tiled, which CWndBase::AdditionalSkinTexture paints whole
+  // (WndBase.cpp:2529-2545).
+  'WndQueItmwarning.tga',
   // The revive window (APP_REVIVAL, resdata.inc:10964): its four buttons.
   'ButtLodestar.bmp',
   'ButtLodelight.bmp',
