@@ -20,13 +20,14 @@
 // files, and the ground from the same folder's tiles (the terrain, without the objects), so the walker stands on the
 // terrain as the screen would put it: the run and the tap need open ground ahead of the walker's character.
 //
-// The last test is a fight (Piece 4; its way and steps are helpers/liveFight.ts's): the walker checks that its own
+// The last test but one is a fight (Piece 4; its way and steps are helpers/liveFight.ts's), and the last the skill part
+// (below; run alone with `-t skill`). In the fight the walker checks that its own
 // ADD_OBJ's inventory was read (the starter food: exactly a new character's in one the test made), walks out of Flaris
 // through the north gate to the Small Aibatts (`MI_AIBATT1`; never a giant, Ruling R30), taps the nearest and presses
 // the attack button, and the world screen's attack (`Focus`, `AttackLoop`, the own numbers' `OwnState`, wired as
 // `WorldScreen` wires them) attacks it until it dies. It fails on the server's `TID_GAME_MODIFY_ATTACK_SPEED` (and on a
 // second `TID_GAME_PRIORITYMOB`: after the first it tries another Aibatt once), on a swing with no DAMAGE within 3 s, on
-// a kill whose EXP is not the server's rule's, and on any bundle without its table or misread. For it the walker's steps
+// a kill with no SETEXPERIENCE after it, and on any bundle without its table or misread. For it the walker's steps
 // also meet the placed objects, as on the screen: their collision shapes, read from the disk as the stage reads them
 // (`placedObjects`, its tiles around the walker as the test starts). Every player has the world screen's views of the
 // movers, without a screen (`headlessViews`): their models' frames end the swings and land their blows (without them a
@@ -37,9 +38,11 @@
 // character outside the town, its error says where, and to walk it back through the north gate in the browser before
 // the next run. Run alone (`npm run test:live:world -- -t fight`), the test enters the walker itself.
 //
-// The kill's EXP is checked against the server's rule for the level gap (`soloKillExp`: `CMover::AddExperienceSolo`,
-// `_Common/Mover.cpp:6198-6216`, cut to a whole number at :6245): 2 at level 1, 1 at levels 2 and 3, none from level 4 on,
-// where the MOVERDEATH alone proves the kill. So any Vagrant of level 1 to 14 runs the fight.
+// The kill is proven by its MOVERDEATH and the server's SETEXPERIENCE after it, which comes whatever the amount
+// (`CMover::AddExperienceSolo`, `_Common/Mover.cpp:6254`). The amount is not checked (ruling R44): a server may run a
+// server-wide EXP rate or an EXP event (`GetExpFactor`); the test prints in one line the EXP the kill gave next to what the
+// base rule gives (`soloKillExp`: 2 at level 1, 1 at levels 2 and 3, none from level 4 on). So any Vagrant of level 1 to
+// 14 runs the fight.
 //
 // After it comes the skill part (milestone 2; run alone: `-t skill`), with the same character. With a skill point left
 // and Clean Hit below its top level it spends one on Clean Hit as the skill window's + and Finish do (`SkillPlan`,
@@ -91,7 +94,7 @@ import { ASSETS_DIR, DiskAssets, Terrain, placedObjects } from './helpers/diskAs
 import { headlessViews } from './helpers/headlessViews';
 import {
   MI_AIBATT1, SKILL_BAR, SKILL_SLOT, SPEND_WAIT_MS, TO_THE_AIBATTS, attackSpeedRefusals, fightTexts, foodProblem,
-  killExpProblem, killSmallAibatt, leftOutsideNote, numberedText, pollUntil, resumeRoute, reviveIfDead, skillLegPlan,
+  killExpLine, killSmallAibatt, leftOutsideNote, numberedText, pollUntil, resumeRoute, reviveIfDead, skillLegPlan,
   skillOnSmallAibatt, soloKillExp, stands, stateText, walkRoute, withNote,
 } from './helpers/liveFight';
 import type { FightContext, SkillPlayer } from './helpers/liveFight';
@@ -1227,21 +1230,22 @@ describe.skipIf(config === undefined)(skip === undefined ? 'live world' : `live 
     const seenFrom = runner.combatSeen.length;
     await outOfTown(runner, self, async (ctx) => {
       const before = { exp: own.exp, level: own.level };
-      // what the server gives for the kill by its rule for the level gap (`soloKillExp`), with the Aibatts' EXP rate it
-      // sent (MONSTERPROP), if any: none from level 4 on, where the MOVERDEATH alone proves the kill
+      // what the base rule gives for the kill (`soloKillExp`), with the Aibatts' EXP rate the server sent (MONSTERPROP), if
+      // any: only said, as a server-wide rate or an EXP event changes it (ruling R44)
       const aibatt = gameData!.movers.get(MI_AIBATT1);
       if (aibatt === undefined) throw new Error('the movers catalog has no MI_AIBATT1: the converted game files are out of date (npm run convert)');
-      const expected = soloKillExp(before.level, aibatt, runner.expRateOf(aibatt.name));
+      const base = soloKillExp(before.level, aibatt, runner.expRateOf(aibatt.name));
       const experienceFrom = runner.experienceSeen;
+      // the kill: its MOVERDEATH by the walker
       await killSmallAibatt(ctx, runner, texts);
-      // the kill's SETEXPERIENCE comes with its MOVERDEATH, whatever it gives (`AddExperienceSolo`, Mover.cpp:6254)
+      // and the server's SETEXPERIENCE with it, which comes whatever the amount (`AddExperienceSolo`, Mover.cpp:6254)
       await waitUntil(
         "the kill's SETEXPERIENCE",
         EXP_WAIT_MS,
         () => runner.experienceSeen > experienceFrom,
         () => `No SETEXPERIENCE came after the kill: the walker has ${own.exp} EXP at level ${own.level}, as before the fight (${before.exp} at level ${before.level}).`,
       );
-      expect(killExpProblem(before, { exp: own.exp, level: own.level }, expected)).toBeNull();
+      console.log(`Live world test: ${killExpLine(before, { exp: own.exp, level: own.level }, base)}`);
       // a refusal of the attack speed that came after the kill counts too
       const refusals = attackSpeedRefusals(runner.combatSeen.slice(seenFrom), texts.attackSpeed.textId);
       expect(refusals, `the world server refused ${refusals} MELEE_ATTACK with TID_GAME_MODIFY_ATTACK_SPEED ("${texts.attackSpeed.text}")`).toBe(0);

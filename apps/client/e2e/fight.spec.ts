@@ -20,7 +20,7 @@ import { Xi } from '../src/world/fx/EffectManager';
 import { Mti, ObjSta } from '../src/world/sim/constants';
 import {
   MADRIGAL, MALE_VAGRANT, MONSTER_ID, OBJMSG_ATK1, OBJMSG_DAMAGE, ON_FRAMES, SELF_ID, SELF_PLAYER, SQUARE, aibatt,
-  enterFlaris, groundAt, hpOf, ownAt, playGateway, self, sentOf, tapMover, targetsOf,
+  enterFlaris, groundAt, hpOf, hudTexts, ownAt, playGateway, recordHudTexts, self, sentOf, tapMover, targetsOf,
 } from './worldHarness';
 import type { Gateway, Listed, Sent } from './worldHarness';
 
@@ -84,32 +84,6 @@ const swingsOf = (gateway: Gateway): Sent[] => sentOf(gateway, PacketType.MELEE_
 /** The test hooks' paused rules (`pause`) run `steps` steps, at once (`step`). */
 const stepRules = (page: Page, steps: number): Promise<void> => page.evaluate((n) => window.__client!.step(n), steps);
 
-/** The texts the HUD adds as lines (`.hud-messages`, CClientMsg) and captions (`.hud-caption`, CCaption). */
-interface HudTexts {
-  lines: string[];
-  captions: string[];
-}
-type WithHudTexts = typeof globalThis & { hudTexts?: HudTexts };
-
-/**
- * Keeps, from now on, the text of each line and caption as the HUD adds it. Both fade by the clock (a line 3 s after the
- * last one came, `hud/messages.ts`; a caption after its 5 s hold), not by the rules, so a check of the DOM made later can
- * find them gone; this one cannot.
- */
-async function recordHudTexts(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const texts: HudTexts = { lines: [], captions: [] };
-    (globalThis as WithHudTexts).hudTexts = texts;
-    const watch = (selector: string, into: string[]): void => {
-      new MutationObserver((records) => {
-        for (const record of records) for (const node of record.addedNodes) into.push(node.textContent ?? '');
-      }).observe(document.querySelector(selector)!, { childList: true });
-    };
-    watch('.hud-messages', texts.lines);
-    watch('.hud-caption', texts.captions);
-  });
-}
-const hudTexts = (page: Page): Promise<HudTexts | undefined> => page.evaluate(() => (globalThis as WithHudTexts).hudTexts);
 /** A row of the status window: `hp`, `mp`, `fp`, `exp`. */
 const statusRow = (page: Page, row: string): Locator => page.locator(`.hud-status [data-text="${row}"]`);
 

@@ -3,7 +3,7 @@ import { NULL_ID } from '@flyffweb/protocol';
 import type { InventoryItem, SkillSlot } from '@flyffweb/protocol';
 import type { CombatEvent } from '../src/world/WorldState';
 import {
-  TO_THE_AIBATTS, attackSpeedRefusals, foodProblem, killExpProblem, leftOutsideNote, resumeRoute, reviveIfDead, skillLegPlan,
+  TO_THE_AIBATTS, attackSpeedRefusals, foodProblem, killExpLine, leftOutsideNote, resumeRoute, reviveIfDead, skillLegPlan,
   soloKillExp,
 } from './helpers/liveFight';
 import type { FightPlayer } from './helpers/liveFight';
@@ -124,16 +124,22 @@ describe('the live fight: the EXP of the kill', () => {
     expect(soloKillExp(3, SMALL_AIBATT, 100)).toBe(1);
   });
 
-  it('accepts the EXP the rule gives, none included, and a level up only where the rule gives some', () => {
-    expect(killExpProblem({ level: 2, exp: 5n }, { level: 2, exp: 6n }, 1)).toBeNull();
-    expect(killExpProblem({ level: 5, exp: 40n }, { level: 5, exp: 40n }, 0)).toBeNull();
-    expect(killExpProblem({ level: 1, exp: 13n }, { level: 2, exp: 1n }, 2)).toBeNull();
+  it('says in one line the EXP the kill gave and what the base rule gives, the same', () => {
+    expect(killExpLine({ level: 2, exp: 5n }, { level: 2, exp: 6n }, 1))
+      .toBe('The kill gave 1 EXP; the base rule for a level 2 character and a Small Aibatt gives 1.');
+    expect(killExpLine({ level: 5, exp: 40n }, { level: 5, exp: 40n }, 0))
+      .toBe('The kill gave 0 EXP; the base rule for a level 5 character and a Small Aibatt gives 0.');
+    expect(killExpLine({ level: 1, exp: 13n }, { level: 2, exp: 1n }, 2))
+      .toBe('The kill gave a level up (level 1 to 2); the base rule for a level 1 character and a Small Aibatt gives 2.');
   });
 
-  it('names what came and what the rule gives when they differ', () => {
-    expect(killExpProblem({ level: 2, exp: 5n }, { level: 2, exp: 5n }, 1)).toMatch(/gave 0 EXP.*level 2.*gives 1/);
-    expect(killExpProblem({ level: 5, exp: 40n }, { level: 5, exp: 41n }, 0)).toMatch(/gave 1 EXP.*level 5.*gives 0.*EXP event/);
-    expect(killExpProblem({ level: 5, exp: 40n }, { level: 6, exp: 0n }, 0)).toMatch(/level 6.*gives 0/);
+  it('says that a server-wide EXP rate or an EXP event explains a difference, which fails nothing', () => {
+    const line = killExpLine({ level: 5, exp: 40n }, { level: 5, exp: 43n }, 0);
+    expect(line).toBe('The kill gave 3 EXP; the base rule for a level 5 character and a Small Aibatt gives 0. '
+      + "A server-wide EXP rate or an EXP event explains the difference (CMover::GetExpFactor); it is not a failure.");
+    expect(line.split('\n')).toHaveLength(1);
+    // a level up where the rule gives none is a difference too
+    expect(killExpLine({ level: 5, exp: 40n }, { level: 6, exp: 0n }, 0)).toMatch(/level up \(level 5 to 6\).*gives 0\. A server-wide/);
   });
 });
 

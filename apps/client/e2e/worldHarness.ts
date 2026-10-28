@@ -320,3 +320,33 @@ export async function tapMover(page: Page, objectId: number): Promise<void> {
   expect(at).not.toBeNull();
   await tapWorld(page, at![0], at![1]);
 }
+
+/** The texts the HUD adds as lines (`.hud-messages`, CClientMsg) and captions (`.hud-caption`, CCaption). */
+export interface HudTexts {
+  lines: string[];
+  captions: string[];
+}
+type WithHudTexts = typeof globalThis & { hudTexts?: HudTexts };
+
+/**
+ * Keeps, from now on, the text of each line and caption as the HUD adds it (`hudTexts`). Both fade by the clock (a line
+ * 3 s after the last one came, `hud/messages.ts`; a caption after its 5 s hold), not by the rules, so a check of the DOM
+ * made later can find them gone; this one cannot.
+ */
+export async function recordHudTexts(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const texts: HudTexts = { lines: [], captions: [] };
+    (globalThis as WithHudTexts).hudTexts = texts;
+    const watch = (selector: string, into: string[]): void => {
+      new MutationObserver((records) => {
+        for (const record of records) for (const node of record.addedNodes) into.push(node.textContent ?? '');
+      }).observe(document.querySelector(selector)!, { childList: true });
+    };
+    watch('.hud-messages', texts.lines);
+    watch('.hud-caption', texts.captions);
+  });
+}
+
+/** The lines and captions `recordHudTexts` kept since it was called, in the order the HUD added them; undefined before. */
+export const hudTexts = (page: Page): Promise<HudTexts | undefined> =>
+  page.evaluate(() => (globalThis as WithHudTexts).hudTexts);

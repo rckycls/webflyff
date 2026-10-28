@@ -616,7 +616,11 @@ export class MoverViews {
    * once, tests each move's hit before the next move, so a skill's 65% cut, which `ProcessStateMeleeSkill` tests before
    * the hit (:614-619, then :651-658), never comes before a hit frame below it; the moves made at once would otherwise
    * carry the frame past the cut and end the skill with its blow untold. A waiting hit at or past the cut ends it, as
-   * Neuz never reaches one.
+   * Neuz never reaches one. The frame given is the waiting hit's own, not the frame of the move that passed it, which is
+   * what Neuz would read; the two decide the cut differently only when one move is longer than the gap from the hit to
+   * the cut (Neuz would then end the skill with the blow untold). The Vagrant's smallest gap is Flurry's last blow, 0.65
+   * of a frame (39 to 39.65; Clean Hit's is 6.15, Over Cut's 10.15), which a move of half a frame (speed 1 at the motions'
+   * 30 frames a second) never spans, but a fast enough `aniSpeed` (up to 2, a frame a move) could.
    */
   private modelFrame(view: View): ActionModelFrame | null {
     const key = this.keyOf(view);

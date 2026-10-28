@@ -22,7 +22,7 @@ import { Xi } from '../src/world/fx/EffectManager';
 import { Mti, ObjSta, Sut } from '../src/world/sim/constants';
 import {
   BASE, MADRIGAL, MALE_VAGRANT, MI_MALE, MONSTER_ID, ON_FRAMES, SELF_ID, SELF_PLAYER, SQUARE, aibatt, enterFlaris, groundAt,
-  hpOf, playGateway, self, sentOf, tapMover, targetsOf,
+  hpOf, hudTexts, playGateway, recordHudTexts, self, sentOf, tapMover, targetsOf,
 } from './worldHarness';
 import type { Gateway, Listed } from './worldHarness';
 
@@ -175,23 +175,6 @@ async function useActionSlot(page: Page): Promise<void> {
   if (isTouch()) await page.locator('.hud-taskbar-action').tap();
   else await page.keyboard.press('c');
 }
-
-type WithHudLines = typeof globalThis & { hudLines?: string[] };
-
-/**
- * Keeps, from now on, the text of each line the HUD adds to the server messages (`.hud-messages`, CClientMsg). A line
- * fades by the clock, so a check of the DOM made later can find it gone; this one cannot.
- */
-async function recordLines(page: Page): Promise<void> {
-  await page.evaluate(() => {
-    const lines: string[] = [];
-    (globalThis as WithHudLines).hudLines = lines;
-    new MutationObserver((records) => {
-      for (const record of records) for (const node of record.addedNodes) lines.push(node.textContent ?? '');
-    }).observe(document.querySelector('.hud-messages')!, { childList: true });
-  });
-}
-const linesOf = (page: Page): Promise<string[] | undefined> => page.evaluate(() => (globalThis as WithHudLines).hudLines);
 
 test.describe('skills against the pretend world server', () => {
   // Spec §3.11: a level 5 Vagrant with 4 points raises Clean Hit twice in the skill window; Finish asks, Yes sends
@@ -391,13 +374,13 @@ test.describe('skills against the pretend world server', () => {
     await enterFlaris(page);
     await expect(itemSlot(page, F4_SLOT)).toHaveAttribute('aria-label', 'Clean Hit');
 
-    await recordLines(page);
+    await recordHudTexts(page);
     await tapMover(page, MONSTER_ID);
     await expect.poll(() => targetsOf(gateway)).toEqual([[MONSTER_ID, 2]]);
     await useSlot(page, F4_SLOT);
     await expect.poll(() => packetsOf(gateway, 'useSkill').length, ON_FRAMES).toBe(1);
     // the line, in the order the HUD added it
-    await expect.poll(() => linesOf(page), ON_FRAMES).toEqual(['Not enough FP.']);
+    await expect.poll(async () => (await hudTexts(page))?.lines, ON_FRAMES).toEqual(['Not enough FP.']);
     // refused: no motion, no effect, and no auto-attack begun (only a begun skill starts it, OnUseSkill)
     const webby = (await moverOf(page, SELF_ID))!;
     expect(webby.motion).not.toBe(Mti.VAG_ONE_CLEANHIT);

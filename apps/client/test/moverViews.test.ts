@@ -891,52 +891,54 @@ describe('MoverViews', () => {
       expect(ended).toBe(72);
     });
 
-    it('a skill whose file comes in after its cut at 65% still hits, once, and then ends', async () => {
+    /**
+     * The player uses the skill of motion `mti` (`frames` frames, its blows on `hit`) at the monster, and its file comes in
+     * after `loading` steps (each a frame move of half a frame, at speed 1 and the motion's 30 frames a second); the steps
+     * of the blows and the step the skill ended on, in the `after` steps that follow, and whether it was still on as the
+     * file came.
+     */
+    async function lateSkill(mti: number, frames: number, hit: number[], loading: number, after: number) {
+      const key = `m${mti}`;
       let resolve!: (motion: LoopedMotion) => void;
       const late = new Promise<LoopedMotion>((done) => (resolve = done));
-      const r = armedRig({ motions: { m1000: () => late } });
+      const r = armedRig({ motions: { [key]: () => late } });
       const { player, monster } = duel(r);
       await r.views.settled();
       let now = 0;
       const hits: number[] = [];
       player.act.onMeleeSkill = () => hits.push(now);
-      expect(player.act.sendActMsg(ActMsg.MELEESKILL, Mti.VAG_ONE_CLEANHIT, 8)).toBe(true);
-      // the blow (frame 27) goes by at the 54th frame move and the cut (33.15) at the 67th, while the file still loads
-      for (now = 1; now <= 80; now++) stepAll(r, player, monster);
-      expect(hits).toEqual([]);
-      expect(player.act.state & ObjSta.ATK_ALL).toBe(ObjSta.ATK_MELEESKILL);
-      resolve(hitMotion('m1000', 51, [27]));
+      expect(player.act.sendActMsg(ActMsg.MELEESKILL, mti, 8)).toBe(true);
+      for (now = 1; now <= loading; now++) stepAll(r, player, monster);
+      const onAsItCame = (player.act.state & ObjSta.ATK_ALL) === ObjSta.ATK_MELEESKILL && hits.length === 0;
+      resolve(hitMotion(key, frames, hit));
       await r.views.settled();
       let ended = 0;
-      for (now = 81; now <= 100; now++) {
+      for (now = loading + 1; now <= loading + after; now++) {
         stepAll(r, player, monster);
         if (ended === 0 && (player.act.state & ObjSta.ATK_ALL) === 0) ended = now;
       }
+      return { hits, ended, onAsItCame };
+    }
+
+    it('a skill whose file comes in after its cut at 65% still hits, once, and then ends', async () => {
+      // Clean Hit: the blow (frame 27) goes by at the 54th frame move and the cut (33.15) at the 67th, while the file loads.
       // Neuz has the file at once and hits in step 55, before the cut. Here the 80 waiting frame moves are made as it comes
       // in; the blow one of them passed goes to the rules' next test, and the skill ends after the 4 steps it holds
-      expect(hits).toEqual([81]);
-      expect(ended).toBe(86);
+      expect(await lateSkill(Mti.VAG_ONE_CLEANHIT, 51, [27], 80, 20)).toEqual({ hits: [81], ended: 86, onAsItCame: true });
+    });
 
-      // Flurry (Mvr_male_SklVagBrandish: 61 frames, blows on 7, 23 and 39, the last just under its cut at 39.65), its file
-      // in after the cut: its three blows, 5 steps apart, then the end
-      let resolveFlurry!: (motion: LoopedMotion) => void;
-      const lateFlurry = new Promise<LoopedMotion>((done) => (resolveFlurry = done));
-      const f = armedRig({ motions: { m1001: () => lateFlurry } });
-      const duelled = duel(f);
-      await f.views.settled();
-      hits.length = 0;
-      duelled.player.act.onMeleeSkill = () => hits.push(now);
-      expect(duelled.player.act.sendActMsg(ActMsg.MELEESKILL, Mti.VAG_ONE_BRANDISH, 8)).toBe(true);
-      for (now = 1; now <= 90; now++) stepAll(f, duelled.player, duelled.monster);
-      resolveFlurry(hitMotion('m1001', 61, [7, 23, 39]));
-      await f.views.settled();
-      ended = 0;
-      for (now = 91; now <= 120; now++) {
-        stepAll(f, duelled.player, duelled.monster);
-        if (ended === 0 && (duelled.player.act.state & ObjSta.ATK_ALL) === 0) ended = now;
-      }
-      expect(hits).toEqual([91, 96, 101]);
-      expect(ended).toBe(106);
+    it('a skill with three blows whose file comes in after its cut gives each, 5 steps apart, then ends', async () => {
+      // Flurry (Mvr_male_SklVagBrandish: 61 frames, blows on 7, 23 and 39, the last just under its cut at 39.65): all three
+      // passed in the 90 moves made at once, each waits its turn behind the 4 steps the one before holds
+      expect(await lateSkill(Mti.VAG_ONE_BRANDISH, 61, [7, 23, 39], 90, 30))
+        .toEqual({ hits: [91, 96, 101], ended: 106, onAsItCame: true });
+    });
+
+    it('a waiting blow at or past the cut is never given: the skill ends at once, as Neuz never reaches that frame', async () => {
+      // a blow on frame 40 of 51, past the cut at 33.15, passed at the 80th of the 90 moves made at once
+      expect(await lateSkill(Mti.VAG_ONE_CLEANHIT, 51, [40], 90, 20)).toEqual({ hits: [], ended: 91, onAsItCame: true });
+      // a blow on frame 33, under the cut by 0.15, is given before it ends
+      expect(await lateSkill(Mti.VAG_ONE_CLEANHIT, 51, [33], 90, 20)).toEqual({ hits: [91], ended: 96, onAsItCame: true });
     });
 
     it('says once that a skill motion has no hit frame, as an attack motion', async () => {

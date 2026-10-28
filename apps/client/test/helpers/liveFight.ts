@@ -215,7 +215,11 @@ const f32 = Math.fround;
  * - `AddExperienceSolo` (:6170-6254): times 0.7f for a killer 1 or 2 levels above the monster, 0.4f for 3 or 4, 0.1f for
  *   more (:6198-6216), then cut to a whole number (`static_cast<EXPINTEGER>`, :6245).
  * Left out: the level's `nLimitExp` cap (:6221; 16 to 170 for levels 1 to 15 in `expTable.inc`, above any Small Aibatt's
- * EXP), the Valentine's event's 1.5 (`EVE_EVENT0214`, :6172) and the PC-bang factor.
+ * EXP), the Valentine's event's 1.5 (`EVE_EVENT0214`, :6172), the PC-bang factor, and what `CMover::AddExperience` does
+ * to the amount (`_Common/MoverParam.cpp:1094-1103`): the rest points' EXP (`GetAddExpAfterApplyRestPoint`) and
+ * `GetExpFactor` (:4123-4268), which holds the server-wide rate (`prj.m_fMonsterExpRate`, Constant.inc's, by language:
+ * 0.9 for `LANG_CHI`), a game master's rate, EXP scrolls and the Lua events. So this is the base rule: a server may give
+ * more, or less, and the fight only says how much came (`killExpLine`).
  */
 export function soloKillExp(level: number, monster: { level: number; expValue: number }, ratePercent = 100): number {
   const rate = f32(f32(ratePercent) / 100);
@@ -228,20 +232,21 @@ export function soloKillExp(level: number, monster: { level: number; expValue: n
 }
 
 /**
- * What is wrong with the EXP after a kill, or null: `before` and `after` are the own level and EXP, `expected` what the
- * rule gives (`soloKillExp`). With the level unchanged the EXP must have risen by exactly that, nothing where it gives
- * nothing; a level up is right only where it gives some.
+ * The one line the fight prints of the kill's EXP: `before` and `after` are the own level and EXP around it, `base` what
+ * the base rule gives (`soloKillExp`). Where what came differs (a gain of another amount, or a level up where the rule
+ * gives none, or none where it gives some), the line says that a server-wide EXP rate or an EXP event explains it; it
+ * is no failure (ruling R44: `GetExpFactor`, see `soloKillExp`).
  */
-export function killExpProblem(
-  before: { level: number; exp: bigint }, after: { level: number; exp: bigint }, expected: number,
-): string | null {
-  if (after.level > before.level && expected > 0) return null;
-  const gain = after.level === before.level ? after.exp - before.exp : null;
-  if (gain === BigInt(expected)) return null;
-  const came = gain === null ? `took the character from level ${before.level} to level ${after.level}` : `gave ${gain} EXP`;
-  return `the kill ${came}, where the world server's rule for a level ${before.level} character and a Small Aibatt gives ${expected} `
-    + '(its 2 EXP times 0.7 for 1 or 2 levels above it, 0.4 for 3 or 4, 0.1 for more, cut to a whole number: '
-    + "CMover::AddExperienceSolo). A server running an EXP event, or with the Aibatts' EXP rate changed, gives more.";
+export function killExpLine(
+  before: { level: number; exp: bigint }, after: { level: number; exp: bigint }, base: number,
+): string {
+  const same = after.level === before.level;
+  const came = same ? `${after.exp - before.exp} EXP` : `a level up (level ${before.level} to ${after.level})`;
+  const line = `The kill gave ${came}; the base rule for a level ${before.level} character and a Small Aibatt gives ${base}.`;
+  const differs = same ? after.exp - before.exp !== BigInt(base) : after.level < before.level || base === 0;
+  return differs
+    ? `${line} A server-wide EXP rate or an EXP event explains the difference (CMover::GetExpFactor); it is not a failure.`
+    : line;
 }
 
 /** The text `id` of the texts catalog with the number DEFINEDTEXT names it by; throws when the catalog has no number. */
