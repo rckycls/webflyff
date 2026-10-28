@@ -26,7 +26,7 @@
 // the attack button, and the world screen's attack (`Focus`, `AttackLoop`, the own numbers' `OwnState`, wired as
 // `WorldScreen` wires them) attacks it until it dies. It fails on the server's `TID_GAME_MODIFY_ATTACK_SPEED` (and on a
 // second `TID_GAME_PRIORITYMOB`: after the first it tries another Aibatt once), on a swing with no DAMAGE within 3 s, on
-// EXP that does not rise after the kill, and on any bundle without its table or misread. For it the walker's steps
+// a kill whose EXP is not the server's rule's, and on any bundle without its table or misread. For it the walker's steps
 // also meet the placed objects, as on the screen: their collision shapes, read from the disk as the stage reads them
 // (`placedObjects`, its tiles around the walker as the test starts). Every player has the world screen's views of the
 // movers, without a screen (`headlessViews`): their models' frames end the swings and land their blows (without them a
@@ -37,17 +37,20 @@
 // character outside the town, its error says where, and to walk it back through the north gate in the browser before
 // the next run. Run alone (`npm run test:live:world -- -t fight`), the test enters the walker itself.
 //
-// After it comes the skill part (milestone 2; run alone: `-t skill`), with the same character: it spends one skill point
-// on Clean Hit as the skill window's + and Finish do (`SkillPlan`, DOUSESKILLPOINT, which the server must answer with
-// DOUSESKILLPOINT), puts Clean Hit on the first bar's F4 as a drop there does (`TaskBarEdits`, ADDITEMTASKBAR), walks out
-// to the Small Aibatts again, taps the nearest and presses F4: the world screen's skill use (`SkillUse`, wired with the
-// attack as `WorldScreen` wires it) walks up to it and sends USESKILL, and the server must answer with USESKILL and the
-// skill's DAMAGE (`AF_MELEESKILL`); the auto-attack the skill turns on then finishes the Aibatt, and the character walks
-// back as after the fight. Clean Hit opens at level 3, so the part is skipped, with one sentence that says why, for a
-// character below level 3, without a skill point left, or with Clean Hit at its top level. The fight needs a character
-// of level 1 to 3 (from level 4 on a Small Aibatt gives no EXP: `CMover::AddExperienceSolo`, `_Common/Mover.cpp:6198-6216`,
-// its 2 EXP times 0.4 or 0.1 cut to 0 by the `static_cast<EXPINTEGER>` at :6245), so the one character that runs both is a
-// Vagrant of level 3 with its skill points unspent (the comment in live.config.example.json says how to get one).
+// The kill's EXP is checked against the server's rule for the level gap (`soloKillExp`: `CMover::AddExperienceSolo`,
+// `_Common/Mover.cpp:6198-6216`, cut to a whole number at :6245): 2 at level 1, 1 at levels 2 and 3, none from level 4 on,
+// where the MOVERDEATH alone proves the kill. So any Vagrant of level 1 to 14 runs the fight.
+//
+// After it comes the skill part (milestone 2; run alone: `-t skill`), with the same character. With a skill point left
+// and Clean Hit below its top level it spends one on Clean Hit as the skill window's + and Finish do (`SkillPlan`,
+// DOUSESKILLPOINT, which the server must answer with DOUSESKILLPOINT); otherwise it says in one line that it spends
+// nothing this run. Then it puts Clean Hit on the first bar's F4 as a drop there does (`TaskBarEdits`, ADDITEMTASKBAR),
+// walks out to the Small Aibatts again, taps the nearest and presses F4: the world screen's skill use (`SkillUse`, wired
+// with the attack as `WorldScreen` wires it) walks up to it and sends USESKILL, and the server must answer with USESKILL
+// and the skill's DAMAGE (`AF_MELEESKILL`); the auto-attack the skill turns on then finishes the Aibatt, and the character
+// walks back as after the fight. Clean Hit opens at level 3: below it, or with Clean Hit not learned and no point to learn
+// it, the whole part is skipped before the character moves, with one sentence that says why. A brand-new character runs
+// the fight, and the skill part is skipped until it reaches level 3.
 //
 // The servers' accept limiter (helpers/connectGap.ts explains it): every connection below waits until 300 ms after the
 // one before, the lobby's and the world's alike; keep it that way, and do not loop the test.
@@ -87,9 +90,9 @@ import { checkReachable } from './helpers/connectGap';
 import { ASSETS_DIR, DiskAssets, Terrain, placedObjects } from './helpers/diskAssets';
 import { headlessViews } from './helpers/headlessViews';
 import {
-  SKILL_BAR, SKILL_SLOT, SPEND_WAIT_MS, TO_THE_AIBATTS, attackSpeedRefusals, cleanHitSpend, fightTexts, foodProblem,
-  killSmallAibatt, leftOutsideNote, numberedText, pollUntil, resumeRoute, reviveIfDead, skillOnSmallAibatt, stands,
-  stateText, walkRoute, withNote,
+  MI_AIBATT1, SKILL_BAR, SKILL_SLOT, SPEND_WAIT_MS, TO_THE_AIBATTS, attackSpeedRefusals, fightTexts, foodProblem,
+  killExpProblem, killSmallAibatt, leftOutsideNote, numberedText, pollUntil, resumeRoute, reviveIfDead, skillLegPlan,
+  skillOnSmallAibatt, soloKillExp, stands, stateText, walkRoute, withNote,
 } from './helpers/liveFight';
 import type { FightContext, SkillPlayer } from './helpers/liveFight';
 import { CONFIG_PATH, loadConfigFile, parseGatewaySettings, requireBankPin, requireText } from './helpers/liveConfig';
@@ -329,6 +332,14 @@ class Player implements SkillPlayer {
   readonly sentAddItemTaskBar: { bar: number; slot: number; shortcut: Shortcut }[] = [];
   /** The skill messages since the player entered (USESKILL, CLEAR_USESKILL, DOUSESKILLPOINT, ENDSKILLQUEUE), with when and about whom. */
   readonly skillSeen: { at: number; objectId: number; message: WorldMessage }[] = [];
+  /** The SETEXPERIENCEs about the own character since the player entered. */
+  experienceSeen = 0;
+  /**
+   * The monsters' EXP rates (percent, by name) of the MONSTERPROPs since the player entered: the world server sends them at
+   * the entry and as they change (`CUser::AddMonsterProp`, `WORLDSERVER/DPDatabaseClient.cpp:1096`, :1916), and takes
+   * them as `m_fExp_Rate` (:1879, back to 1 for a name it removes, :1908).
+   */
+  private readonly expRates = new Map<string, number>();
   /** Rules steps taken since the first entry. */
   steps = 0;
   /** The text of the `ended` event, if the session has ended. */
@@ -441,6 +452,11 @@ class Player implements SkillPlayer {
     while (this.attack?.escape() === true) {
       // each press clears one of the two
     }
+  }
+
+  /** The EXP rate (percent) the server last sent for the monster named `name`, 100 when it sent none. */
+  expRateOf(name: string): number {
+    return this.expRates.get(name) ?? 100;
   }
 
   /** A press on a slot of the bar that holds `shortcut`, or its F-key (the world screen's `useSlot`: `SkillUse.useShortcut`). */
@@ -690,6 +706,8 @@ class Player implements SkillPlayer {
     ]) {
       sent.length = 0;
     }
+    this.experienceSeen = 0;
+    this.expRates.clear();
     // the session's sends, counted on the way (the world screen's mark of the tapped point is not drawn here)
     const sends: OwnMoverSession = {
       sendMoved: (move) => session.sendMoved(move),
@@ -785,6 +803,11 @@ class Player implements SkillPlayer {
       world.apply(objectId, value, joining);
       this.skillUse?.onMessage(objectId, value, world.self());
       if (SKILL_MESSAGES.has(value.type)) this.skillSeen.push({ at: performance.now(), objectId, message: value });
+      if (value.type === 'setExperience' && objectId === world.self()?.objectId) this.experienceSeen++;
+      if (value.type === 'monsterProp') {
+        for (const rate of value.rates) this.expRates.set(rate.name, rate.exp);
+        for (const name of value.removed) this.expRates.delete(name);
+      }
     }
     this.take(world);
   }
@@ -1204,13 +1227,21 @@ describe.skipIf(config === undefined)(skip === undefined ? 'live world' : `live 
     const seenFrom = runner.combatSeen.length;
     await outOfTown(runner, self, async (ctx) => {
       const before = { exp: own.exp, level: own.level };
+      // what the server gives for the kill by its rule for the level gap (`soloKillExp`), with the Aibatts' EXP rate it
+      // sent (MONSTERPROP), if any: none from level 4 on, where the MOVERDEATH alone proves the kill
+      const aibatt = gameData!.movers.get(MI_AIBATT1);
+      if (aibatt === undefined) throw new Error('the movers catalog has no MI_AIBATT1: the converted game files are out of date (npm run convert)');
+      const expected = soloKillExp(before.level, aibatt, runner.expRateOf(aibatt.name));
+      const experienceFrom = runner.experienceSeen;
       await killSmallAibatt(ctx, runner, texts);
+      // the kill's SETEXPERIENCE comes with its MOVERDEATH, whatever it gives (`AddExperienceSolo`, Mover.cpp:6254)
       await waitUntil(
-        'the EXP rising after the kill',
+        "the kill's SETEXPERIENCE",
         EXP_WAIT_MS,
-        () => own.level > before.level || own.exp > before.exp,
-        () => `The walker has ${own.exp} EXP at level ${own.level}, as before the fight (${before.exp} at level ${before.level}): no SETEXPERIENCE came, or it gave nothing (from level 4 on a Small Aibatt gives no EXP: use a character of level 1 to 3).`,
+        () => runner.experienceSeen > experienceFrom,
+        () => `No SETEXPERIENCE came after the kill: the walker has ${own.exp} EXP at level ${own.level}, as before the fight (${before.exp} at level ${before.level}).`,
       );
+      expect(killExpProblem(before, { exp: own.exp, level: own.level }, expected)).toBeNull();
       // a refusal of the attack speed that came after the kill counts too
       const refusals = attackSpeedRefusals(runner.combatSeen.slice(seenFrom), texts.attackSpeed.textId);
       expect(refusals, `the world server refused ${refusals} MELEE_ATTACK with TID_GAME_MODIFY_ATTACK_SPEED ("${texts.attackSpeed.text}")`).toBe(0);
@@ -1218,47 +1249,55 @@ describe.skipIf(config === undefined)(skip === undefined ? 'live world' : `live 
     });
   }, FIGHT_TEST_MS);
 
-  it('the skill part: the walker spends a skill point on Clean Hit, puts it on F4 and uses it on a Small Aibatt', async (context) => {
+  it('the skill part: the walker raises Clean Hit with a skill point if it has one, puts it on F4 and uses it on a Small Aibatt', async (context) => {
     const runner = await walkerInWorld();
     const own = runner.own;
     const self = runner.world?.self();
     if (own === undefined || self === undefined) throw new Error(`the walker's JOIN bundle had no own ADD_OBJ to read its numbers from: ${runner.inView()}`);
     expect(runner.entered?.worldId, `the walker ${runner.name} is in world ${runner.entered?.worldId}, not Madrigal (Flaris)`).toBe(MADRIGAL);
-    // Clean Hit opens at level 3 and needs a point to raise: a character that cannot is skipped, with one sentence (also in
-    // the console, as a reporter that lists no skipped tests, vitest's default, shows only that)
-    const spend = cleanHitSpend(own, gameData!.skills, runner.name);
-    if ('skip' in spend) {
-      console.warn(`Live world test, the skill part: ${spend.skip}`);
-      context.skip(spend.skip);
+    // Clean Hit opens at level 3: below it, or with Clean Hit not learned and no point to learn it, the part is skipped before
+    // the character moves, with one sentence (also in the console, as a reporter that lists no skipped tests, vitest's
+    // default, shows only that)
+    const plan = skillLegPlan(own, gameData!.skills, runner.name);
+    if ('skip' in plan) {
+      console.warn(`Live world test, the skill part: ${plan.skip}`);
+      context.skip(plan.skip);
       return;
     }
+    const { index, spend } = plan;
 
-    // 1. A point on Clean Hit: the skill window's + and Finish, and its box's Yes (DOUSESKILLPOINT), which the server
-    // answers with DOUSESKILLPOINT (the slots, then the points left), or refuses with TID_RESKILLPOINT_ERROR
-    const refusal = numberedText(gameData!, 'TID_RESKILLPOINT_ERROR');
-    const before = { level: own.skills[spend.index]!.level, points: own.skillPoint };
-    const seenFrom = runner.skillSeen.length;
-    const textsFrom = runner.combatSeen.length;
-    const refused = (): boolean =>
-      runner.combatSeen.slice(textsFrom).some(({ event }) => event.kind === 'text' && event.textId === refusal.textId);
-    const answered = (): boolean => runner.skillSeen.slice(seenFrom).some(({ message }) => message.type === 'doUseSkillPoint');
-    expect(runner.spendSkillPoints(spend.skills), 'the skill use sent the DOUSESKILLPOINT').toBe(true);
-    await waitUntil(
-      'the answer to the skill point (DOUSESKILLPOINT)',
-      SPEND_WAIT_MS,
-      () => answered() || refused(),
-      () => `The walker sent ${runner.sentSkillPoints.length} DOUSESKILLPOINT (Clean Hit from level ${before.level} to ${before.level + 1}, with ${before.points} points) and the world server said nothing, which it does for a spend that changes no level.`,
-    );
-    if (refused()) {
-      throw new Error(`the world server refused the skill point with TID_RESKILLPOINT_ERROR ("${refusal.text}"): its copy of the character's skills or points is not the one the walker read (Clean Hit at ${before.level}, ${before.points} points), or a level costs more on it.`);
+    if (spend === null) {
+      // no point left, or Clean Hit at its top level: only the spend is left out, said in one line
+      console.log(`Live world test: ${plan.note}`);
+    } else {
+      // 1. A point on Clean Hit: the skill window's + and Finish, and its box's Yes (DOUSESKILLPOINT), which the server
+      // answers with DOUSESKILLPOINT (the slots, then the points left), or refuses with TID_RESKILLPOINT_ERROR
+      const refusal = numberedText(gameData!, 'TID_RESKILLPOINT_ERROR');
+      const before = { level: own.skills[index]!.level, points: own.skillPoint };
+      const seenFrom = runner.skillSeen.length;
+      const textsFrom = runner.combatSeen.length;
+      const refused = (): boolean =>
+        runner.combatSeen.slice(textsFrom).some(({ event }) => event.kind === 'text' && event.textId === refusal.textId);
+      const answered = (): boolean => runner.skillSeen.slice(seenFrom).some(({ message }) => message.type === 'doUseSkillPoint');
+      expect(runner.spendSkillPoints(spend), 'the skill use sent the DOUSESKILLPOINT').toBe(true);
+      await waitUntil(
+        'the answer to the skill point (DOUSESKILLPOINT)',
+        SPEND_WAIT_MS,
+        () => answered() || refused(),
+        () => `The walker sent ${runner.sentSkillPoints.length} DOUSESKILLPOINT (Clean Hit from level ${before.level} to ${before.level + 1}, with ${before.points} points) and the world server said nothing, which it does for a spend that changes no level.`,
+      );
+      if (refused()) {
+        throw new Error(`the world server refused the skill point with TID_RESKILLPOINT_ERROR ("${refusal.text}"): its copy of the character's skills or points is not the one the walker read (Clean Hit at ${before.level}, ${before.points} points), or a level costs more on it.`);
+      }
+      expect(own.skills[index]!.level, 'Clean Hit after the DOUSESKILLPOINT').toBe(before.level + 1);
+      expect(own.skillPoint, 'the skill points after the DOUSESKILLPOINT (a level of a Vagrant skill costs 1)').toBe(before.points - 1);
     }
-    expect(own.skills[spend.index]!.level, 'Clean Hit after the DOUSESKILLPOINT').toBe(before.level + 1);
-    expect(own.skillPoint, 'the skill points after the DOUSESKILLPOINT (a level of a Vagrant skill costs 1)').toBe(before.points - 1);
 
-    // 2. Clean Hit on the first bar's F4, as a drop from the skill window does it (ADDITEMTASKBAR, which has no answer)
+    // 2. Clean Hit (at level 1 or more now) on the first bar's F4, as a drop from the skill window does it (ADDITEMTASKBAR,
+    // which has no answer)
     const placedFrom = runner.sentAddItemTaskBar.length;
-    const shortcut = runner.placeSkillOnBar(spend.index, SKILL_SLOT);
-    if (shortcut === null) throw new Error(`the bar turned Clean Hit (level ${own.skills[spend.index]!.level}) away from F4`);
+    const shortcut = runner.placeSkillOnBar(index, SKILL_SLOT);
+    if (shortcut === null) throw new Error(`the bar turned Clean Hit (level ${own.skills[index]!.level}) away from F4`);
     expect(runner.sentAddItemTaskBar.slice(placedFrom)).toEqual([{ bar: SKILL_BAR, slot: SKILL_SLOT, shortcut }]);
 
     // 3. and 4. Out to the Small Aibatts: Clean Hit (F4) on the nearest, which the server begins (USESKILL) and lands (a

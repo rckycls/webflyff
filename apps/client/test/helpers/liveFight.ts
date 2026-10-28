@@ -202,6 +202,48 @@ export interface FightTexts {
   priorityMob: NumberedText;
 }
 
+const f32 = Math.fround;
+
+/**
+ * The EXP the world server gives a character of `level` for `monster` (a `WebMover`'s `level` and `expValue`) that it
+ * killed alone, every blow its own; `ratePercent` is the monster's EXP rate in the MONSTERPROP the server sent (100 when
+ * none named it):
+ * - `CMover::SubExperience` (`_Common/Mover.cpp:5992-6022`, `__S1108_BACK_END_SYSTEM` on, :6006): `nExpValue` times
+ *   `m_fExp_Rate`, a `float` of the rate / 100 (`CDPDatabaseClient`, `WORLDSERVER/DPDatabaseClient.cpp:1879`; 1 by
+ *   default, :1908);
+ * - `AddExperienceKillMember` (:6085-6166): the killer's share of the blows, all of them here, as a `float` (:6138);
+ * - `AddExperienceSolo` (:6170-6254): times 0.7f for a killer 1 or 2 levels above the monster, 0.4f for 3 or 4, 0.1f for
+ *   more (:6198-6216), then cut to a whole number (`static_cast<EXPINTEGER>`, :6245).
+ * Left out: the level's `nLimitExp` cap (:6221; 16 to 170 for levels 1 to 15 in `expTable.inc`, above any Small Aibatt's
+ * EXP), the Valentine's event's 1.5 (`EVE_EVENT0214`, :6172) and the PC-bang factor.
+ */
+export function soloKillExp(level: number, monster: { level: number; expValue: number }, ratePercent = 100): number {
+  const rate = f32(f32(ratePercent) / 100);
+  let exp = f32(monster.expValue * rate);
+  const above = level - monster.level;
+  if (above === 1 || above === 2) exp *= f32(0.7);
+  else if (above === 3 || above === 4) exp *= f32(0.4);
+  else if (above > 4) exp *= f32(0.1);
+  return Math.trunc(exp);
+}
+
+/**
+ * What is wrong with the EXP after a kill, or null: `before` and `after` are the own level and EXP, `expected` what the
+ * rule gives (`soloKillExp`). With the level unchanged the EXP must have risen by exactly that, nothing where it gives
+ * nothing; a level up is right only where it gives some.
+ */
+export function killExpProblem(
+  before: { level: number; exp: bigint }, after: { level: number; exp: bigint }, expected: number,
+): string | null {
+  if (after.level > before.level && expected > 0) return null;
+  const gain = after.level === before.level ? after.exp - before.exp : null;
+  if (gain === BigInt(expected)) return null;
+  const came = gain === null ? `took the character from level ${before.level} to level ${after.level}` : `gave ${gain} EXP`;
+  return `the kill ${came}, where the world server's rule for a level ${before.level} character and a Small Aibatt gives ${expected} `
+    + '(its 2 EXP times 0.7 for 1 or 2 levels above it, 0.4 for 3 or 4, 0.1 for more, cut to a whole number: '
+    + "CMover::AddExperienceSolo). A server running an EXP event, or with the Aibatts' EXP rate changed, gives more.";
+}
+
 /** The text `id` of the texts catalog with the number DEFINEDTEXT names it by; throws when the catalog has no number. */
 export function numberedText(data: Pick<GameData, 'texts'>, id: string): NumberedText {
   const entry = data.texts.get(id);
@@ -401,31 +443,36 @@ export const SKILL_ANSWER_MS = 3000;
 export const SPEND_WAIT_MS = 5000;
 
 /**
- * The skill part's spend for the character `own`, named `name`: Clean Hit one level up in a copy of its skills, as the skill
- * window's + makes it (`SkillPlan.plus`, `CWndSkillTreeEx::OnChildNotify`, `WndField.cpp:8057-8072`), the 45 slots that
- * Finish then sends (`skills`) and Clean Hit's slot (`index`); or, where the character cannot, the one sentence the part
- * is skipped with (`skip`): it has no Clean Hit, is below the level Clean Hit opens at (3, `dwReqDisLV`), has Clean Hit at
- * its top level (10, `dwExpertMax`), or has no skill point left.
+ * What the skill part does with the character `own`, named `name`:
+ * - with a skill point left and Clean Hit below its top level (10, `dwExpertMax`), it spends one on Clean Hit: `spend`, a
+ *   copy of its skills with Clean Hit one level up, as the skill window's + makes it (`SkillPlan.plus`,
+ *   `CWndSkillTreeEx::OnChildNotify`, `WndField.cpp:8057-8072`), the 45 slots that Finish then sends;
+ * - otherwise, with Clean Hit learned, it spends nothing (`spend` null) and says so in one line (`note`), and uses Clean
+ *   Hit at the level it has;
+ * - below the level Clean Hit opens at (3, `dwReqDisLV`), or with Clean Hit not learned and no point to learn it (or no
+ *   Clean Hit at all), the whole part is skipped, with one sentence (`skip`).
+ * `index` is Clean Hit's slot.
  */
-export function cleanHitSpend(
+export function skillLegPlan(
   own: Pick<OwnState, 'level' | 'skills' | 'skillPoint'>, catalog: ReadonlyMap<number, WebSkill>, name: string,
-): { index: number; skills: SkillSlot[] } | { skip: string } {
+): { index: number; spend: SkillSlot[] | null; note: string | null } | { skip: string } {
   const skill = catalog.get(SI_VAG_ONE_CLEANHIT);
   if (skill === undefined) {
     throw new Error('the skills catalog has no Clean Hit: the converted game files are older than the skills (npm run convert)');
   }
+  const skipped = (why: string): { skip: string } => ({
+    skip: `Skipped: ${name} ${why}, and the skill part needs a character of level ${skill.reqLevel} or higher with Clean Hit `
+      + 'learned or a skill point to learn it (the comment at the top of live.config.example.json says more).',
+  });
   const index = own.skills.findIndex((slot) => slot.skill === SI_VAG_ONE_CLEANHIT);
+  if (index < 0) return skipped('has no Clean Hit among its skills');
+  if (own.level < skill.reqLevel) return skipped(`is level ${own.level}`);
+  const level = own.skills[index]!.level;
   const plan = new SkillPlan(own.skills, own.skillPoint, catalog, own.level);
-  let why: string | null = null;
-  if (index < 0) why = 'has no Clean Hit among its skills';
-  else if (own.level < skill.reqLevel) why = `is level ${own.level}`;
-  else if (own.skills[index]!.level >= skill.maxLevel) why = `has Clean Hit at its top level (${skill.maxLevel}) already`;
-  else if (!plan.plus(index)) why = 'has no skill point left to spend';
-  if (why === null) return { index, skills: plan.result() };
-  return {
-    skip: `Skipped: ${name} ${why}, and the skill part needs a character of level ${skill.reqLevel} or higher with a skill `
-      + 'point left to spend (the comment at the top of live.config.example.json says how to get one).',
-  };
+  if (plan.plus(index)) return { index, spend: plan.result(), note: null };
+  if (level <= 0) return skipped('has not learned Clean Hit and has no skill point to learn it');
+  const why = level >= skill.maxLevel ? `has Clean Hit at its top level (${skill.maxLevel})` : 'has none left';
+  return { index, spend: null, note: `The skill part spends no skill point this run: ${name} ${why}. It uses Clean Hit at level ${level}.` };
 }
 
 /** What the skill part reads of the test's player besides the fight's, and presses on it (`Player` in world.live.test.ts). */

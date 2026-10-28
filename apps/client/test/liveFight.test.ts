@@ -3,7 +3,8 @@ import { NULL_ID } from '@flyffweb/protocol';
 import type { InventoryItem, SkillSlot } from '@flyffweb/protocol';
 import type { CombatEvent } from '../src/world/WorldState';
 import {
-  TO_THE_AIBATTS, attackSpeedRefusals, cleanHitSpend, foodProblem, leftOutsideNote, resumeRoute, reviveIfDead,
+  TO_THE_AIBATTS, attackSpeedRefusals, foodProblem, killExpProblem, leftOutsideNote, resumeRoute, reviveIfDead, skillLegPlan,
+  soloKillExp,
 } from './helpers/liveFight';
 import type { FightPlayer } from './helpers/liveFight';
 import { addedPlayer, moverFrom } from './helpers/movers';
@@ -106,37 +107,77 @@ describe('the live fight: a death and the texts', () => {
   });
 });
 
-describe('the live skill part: who can spend a point on Clean Hit', () => {
+describe('the live fight: the EXP of the kill', () => {
+  /** `MI_AIBATT1` (propMover.txt): level 1, `nExpValue` 2. */
+  const SMALL_AIBATT = { level: 1, expValue: 2 };
+
+  it("gives what CMover::AddExperienceSolo gives a Small Aibatt's killer: 2 at level 1, 1 at levels 2 and 3, none from level 4", () => {
+    expect([1, 2, 3, 4, 5, 6, 14, 15].map((level) => soloKillExp(level, SMALL_AIBATT))).toEqual([2, 1, 1, 0, 0, 0, 0, 0]);
+    // a monster of the killer's level or above gives its EXP whole
+    expect(soloKillExp(3, { level: 5, expValue: 7 })).toBe(7);
+  });
+
+  it("takes the monster's EXP rate the server sent (MONSTERPROP, in percent) before the level gap", () => {
+    // 2 x 2 = 4, times 0.4 for 3 levels above it: 1.6, cut to 1
+    expect(soloKillExp(4, SMALL_AIBATT, 200)).toBe(1);
+    expect(soloKillExp(1, SMALL_AIBATT, 50)).toBe(1);
+    expect(soloKillExp(3, SMALL_AIBATT, 100)).toBe(1);
+  });
+
+  it('accepts the EXP the rule gives, none included, and a level up only where the rule gives some', () => {
+    expect(killExpProblem({ level: 2, exp: 5n }, { level: 2, exp: 6n }, 1)).toBeNull();
+    expect(killExpProblem({ level: 5, exp: 40n }, { level: 5, exp: 40n }, 0)).toBeNull();
+    expect(killExpProblem({ level: 1, exp: 13n }, { level: 2, exp: 1n }, 2)).toBeNull();
+  });
+
+  it('names what came and what the rule gives when they differ', () => {
+    expect(killExpProblem({ level: 2, exp: 5n }, { level: 2, exp: 5n }, 1)).toMatch(/gave 0 EXP.*level 2.*gives 1/);
+    expect(killExpProblem({ level: 5, exp: 40n }, { level: 5, exp: 41n }, 0)).toMatch(/gave 1 EXP.*level 5.*gives 0.*EXP event/);
+    expect(killExpProblem({ level: 5, exp: 40n }, { level: 6, exp: 0n }, 0)).toMatch(/level 6.*gives 0/);
+  });
+});
+
+describe('the live skill part: its choices', () => {
   /** A Vagrant's 45 skill slots (Clean Hit, Flurry and Over Cut in slots 0-2) with Clean Hit at `cleanHit`. */
   const skills = (cleanHit: number): SkillSlot[] => Array.from({ length: 45 }, (_, i) =>
     (i === 0 ? { skill: 1, level: cleanHit } : i < 3 ? { skill: i + 1, level: 0 } : { skill: NULL_ID, level: 0 }));
+  const planOf = (level: number, cleanHit: number, skillPoint: number) =>
+    skillLegPlan({ level, skills: skills(cleanHit), skillPoint }, vagrantSkills(), 'WebWalk1');
 
-  it('raises Clean Hit by one level for a character of level 3 with a point, as the skill window would send it', () => {
+  it('spends a point on Clean Hit when one is left and Clean Hit is below its top level, as the skill window would send it', () => {
     const own = { level: 3, skills: skills(0), skillPoint: 4 };
-    expect(cleanHitSpend(own, vagrantSkills(), 'WebWalk1')).toEqual({ index: 0, skills: skills(1) });
-    // from a level it has, too, and above level 3
-    expect(cleanHitSpend({ level: 9, skills: skills(4), skillPoint: 1 }, vagrantSkills(), 'WebWalk1'))
-      .toEqual({ index: 0, skills: skills(5) });
+    expect(skillLegPlan(own, vagrantSkills(), 'WebWalk1')).toEqual({ index: 0, spend: skills(1), note: null });
+    expect(planOf(9, 4, 1)).toEqual({ index: 0, spend: skills(5), note: null });
     // the character's own slots are left as they were
     expect(own.skills).toEqual(skills(0));
   });
 
-  it('is skipped with one sentence, naming the character and why, below level 3, with no point, or at the top level', () => {
-    const skipOf = (own: { level: number; skills: SkillSlot[]; skillPoint: number }): string => {
-      const spend = cleanHitSpend(own, vagrantSkills(), 'WebWalk1');
-      if (!('skip' in spend)) throw new Error('not skipped');
-      return spend.skip;
+  it('skips only the spend, with one line, when no point is left or Clean Hit is at its top level, and uses Clean Hit still', () => {
+    const noPoint = planOf(3, 2, 0);
+    expect(noPoint).toMatchObject({ index: 0, spend: null });
+    expect('note' in noPoint && noPoint.note).toBe(
+      'The skill part spends no skill point this run: WebWalk1 has none left. It uses Clean Hit at level 2.');
+    const top = planOf(14, 10, 5);
+    expect(top).toMatchObject({ index: 0, spend: null });
+    expect('note' in top && top.note).toBe(
+      'The skill part spends no skill point this run: WebWalk1 has Clean Hit at its top level (10). It uses Clean Hit at level 10.');
+  });
+
+  it('is skipped whole, with one sentence naming the character and why, below level 3 or with Clean Hit at 0 and no point', () => {
+    const skipOf = (plan: ReturnType<typeof planOf>): string => {
+      if (!('skip' in plan)) throw new Error('not skipped');
+      return plan.skip;
     };
-    const atLevel2 = skipOf({ level: 2, skills: skills(0), skillPoint: 2 });
-    expect(atLevel2).toMatch(/^Skipped: WebWalk1 is level 2, and the skill part needs a character of level 3 or higher with a skill point left to spend/);
+    const atLevel2 = skipOf(planOf(2, 0, 2));
+    expect(atLevel2).toMatch(/^Skipped: WebWalk1 is level 2, and the skill part needs a character of level 3 or higher with Clean Hit learned or a skill point to learn it/);
     expect(atLevel2.split('. ').length).toBe(1);
-    expect(skipOf({ level: 3, skills: skills(0), skillPoint: 0 })).toMatch(/WebWalk1 has no skill point left to spend/);
-    expect(skipOf({ level: 15, skills: skills(10), skillPoint: 9 })).toMatch(/WebWalk1 has Clean Hit at its top level \(10\) already/);
+    expect(skipOf(planOf(3, 0, 0))).toMatch(/^Skipped: WebWalk1 has not learned Clean Hit and has no skill point to learn it, and /);
     const none = Array.from({ length: 45 }, () => ({ skill: NULL_ID, level: 0 }));
-    expect(skipOf({ level: 3, skills: none, skillPoint: 4 })).toMatch(/WebWalk1 has no Clean Hit among its skills/);
+    expect(skipOf(skillLegPlan({ level: 3, skills: none, skillPoint: 4 }, vagrantSkills(), 'WebWalk1')))
+      .toMatch(/WebWalk1 has no Clean Hit among its skills/);
   });
 
   it('says to convert the game files again when the skills catalog has no Clean Hit', () => {
-    expect(() => cleanHitSpend({ level: 3, skills: skills(0), skillPoint: 4 }, new Map(), 'WebWalk1')).toThrow(/npm run convert/);
+    expect(() => skillLegPlan({ level: 3, skills: skills(0), skillPoint: 4 }, new Map(), 'WebWalk1')).toThrow(/npm run convert/);
   });
 });
