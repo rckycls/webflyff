@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  ArWriter, MessageType, NULL_ID, PacketType, bytesToHex, encodeDestPos, encodeGetDestObj, encodeJoin, encodeMeleeAttack,
-  encodeModifyStatus, encodePing, encodePlayerBehavior, encodePlayerCorr, encodePlayerMoved, encodePlayerSetDestObj, encodePreJoin,
-  encodeRevivalToLodestar, encodeSetTarget, encodeWorldKeepAlive,
+  ArWriter, MAX_SKILL_JOB, MessageType, NULL_ID, PacketType, ProtocolError, ShortcutKind, bytesToHex, encodeAddItemTaskBar,
+  encodeDestPos, encodeDoUseSkillPoint, encodeEndSkillQueue, encodeGetDestObj, encodeJoin, encodeMeleeAttack, encodeModifyStatus,
+  encodePing, encodePlayerBehavior, encodePlayerCorr, encodePlayerMoved, encodePlayerSetDestObj, encodePreJoin,
+  encodeRemoveItemTaskBar, encodeRevivalToLodestar, encodeSetTarget, encodeSkillTaskBar, encodeUseSkill, encodeWorldKeepAlive,
 } from '@flyffweb/protocol';
-import type { AddedMover, CharacterSummary, MoveReport, SlotMessenger, Vec3 } from '@flyffweb/protocol';
+import type { AddedMover, CharacterSummary, MoveReport, Shortcut, SlotMessenger, Vec3 } from '@flyffweb/protocol';
 import {
   encodeBundle, writeAddSelf, writeDestPos, writeEnvironmentSetting, writeGameTimer, writeReplace, writeSetPos, writeWorldReadInfo,
 } from '@flyffweb/testkit';
@@ -330,6 +331,29 @@ const FIGHT_SENDS: Array<{ name: string; send: (s: WorldSession) => void; bytes:
   },
 ];
 
+/** Clean Hit (skill slot 0) as a bar shortcut (`SetShortcut`: `SHORTCUT_SKILL`, type 0, id the slot, data 1 the item bars). */
+const CLEAN_HIT_SHORTCUT: Shortcut = { kind: ShortcutKind.SKILL, id: 0, type: 0, index: 2, userId: 0, data: 1, text: '' };
+/** A new Vagrant's skills: Clean Hit at 1, Flurry and Over Cut at 0, the other 42 slots empty. */
+const SKILLS = Array.from({ length: MAX_SKILL_JOB }, (_, i) =>
+  (i < 3 ? { skill: i + 1, level: i === 0 ? 1 : 0 } : { skill: NULL_ID, level: 0 }));
+
+/** Every sender of the skills and the task bar (milestone 2), as `FIGHT_SENDS`. */
+const SKILL_SENDS: Array<{ name: string; send: (s: WorldSession) => void; bytes: Uint8Array }> = [
+  { name: 'USESKILL', send: (s) => s.sendUseSkill(0, 77, 0), bytes: encodeUseSkill(0, 77, 0) },
+  { name: 'USESKILL (queue start, no target)', send: (s) => s.sendUseSkill(0, NULL_ID, 1), bytes: encodeUseSkill(0, NULL_ID, 1) },
+  { name: 'DOUSESKILLPOINT', send: (s) => s.sendDoUseSkillPoint(SKILLS), bytes: encodeDoUseSkillPoint(SKILLS) },
+  {
+    name: 'ADDITEMTASKBAR', send: (s) => s.sendAddItemTaskBar(0, 2, CLEAN_HIT_SHORTCUT),
+    bytes: encodeAddItemTaskBar(0, 2, CLEAN_HIT_SHORTCUT),
+  },
+  { name: 'REMOVEITEMTASKBAR', send: (s) => s.sendRemoveItemTaskBar(0, 2), bytes: encodeRemoveItemTaskBar(0, 2) },
+  {
+    name: 'SKILLTASKBAR', send: (s) => s.sendSkillTaskBar([{ ...CLEAN_HIT_SHORTCUT, data: 2, index: 0 }]),
+    bytes: encodeSkillTaskBar([{ ...CLEAN_HIT_SHORTCUT, data: 2, index: 0 }]),
+  },
+  { name: 'ENDSKILLQUEUE', send: (s) => s.sendEndSkillQueue(), bytes: encodeEndSkillQueue() },
+];
+
 describe('WorldSession, sending while playing', () => {
   it('sends PLAYERMOVED, PLAYERBEHAVIOR, DESTPOS and PLAYERCORR to the cache server', async () => {
     const { session, cache } = await playing();
@@ -349,6 +373,26 @@ describe('WorldSession, sending while playing', () => {
     expect(cache.sent.slice(1).map(hex)).toEqual(FIGHT_SENDS.map(({ bytes }) => hex(bytes)));
   });
 
+  it('sends USESKILL, DOUSESKILLPOINT, the task-bar edits and ENDSKILLQUEUE to the cache server', async () => {
+    const { session, cache } = await playing();
+    for (const { send } of SKILL_SENDS) send(session);
+    expect(cache.sent.slice(1).map(hex)).toEqual(SKILL_SENDS.map(({ bytes }) => hex(bytes)));
+  });
+
+  it('lets a skill or task-bar value the server would drop throw to the caller, sending nothing, and the session plays on', async () => {
+    const { session, cache, events } = await playing();
+    const sent = cache.sent.length;
+    expect(() => session.sendUseSkill(MAX_SKILL_JOB, 77, 0)).toThrow(ProtocolError);
+    expect(() => session.sendDoUseSkillPoint(SKILLS.slice(1))).toThrow(ProtocolError);
+    expect(() => session.sendAddItemTaskBar(8, 0, CLEAN_HIT_SHORTCUT)).toThrow(ProtocolError);
+    expect(() => session.sendRemoveItemTaskBar(0, 9)).toThrow(ProtocolError);
+    expect(() => session.sendSkillTaskBar(Array<Shortcut | null>(6).fill(null))).toThrow(ProtocolError);
+    expect(cache.sent).toHaveLength(sent);
+    expect(events.map((e) => e.type)).toEqual(['entered']);
+    session.sendEndSkillQueue();
+    expect(cache.sent).toHaveLength(sent + 1);
+  });
+
   it('sends nothing before the world is entered', async () => {
     const { session, cache } = await atJoin();
     const sent = cache.sent.length;
@@ -356,7 +400,7 @@ describe('WorldSession, sending while playing', () => {
     session.sendBehavior(MOVE);
     session.sendDestPos([9, 8, 7], false);
     session.sendCorr(MOVE);
-    for (const { send } of FIGHT_SENDS) send(session);
+    for (const { send } of [...FIGHT_SENDS, ...SKILL_SENDS]) send(session);
     expect(cache.sent).toHaveLength(sent);
   });
 
@@ -371,7 +415,7 @@ describe('WorldSession, sending while playing', () => {
       session.sendBehavior(MOVE);
       session.sendDestPos([1, 2, 3], true);
       session.sendCorr(MOVE);
-      for (const { send } of FIGHT_SENDS) send(session);
+      for (const { send } of [...FIGHT_SENDS, ...SKILL_SENDS]) send(session);
       expect(cache.sent).toHaveLength(sent);
     }
   });

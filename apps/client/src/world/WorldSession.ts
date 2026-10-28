@@ -1,10 +1,11 @@
 import {
-  ArReader, CloseCode, MessageType, NULL_ID, ProtocolError, WORLD_READERS, decodeLoginMessage, decodeWorldPacket, encodeDestPos,
-  encodeGetDestObj, encodeJoin, encodeMeleeAttack, encodeModifyStatus, encodePing, encodePlayerBehavior, encodePlayerCorr,
-  encodePlayerMoved, encodePlayerSetDestObj, encodePreJoin, encodeRevivalToLodestar, encodeSetTarget, encodeWorldKeepAlive,
-  readBundle,
+  ArReader, CloseCode, MessageType, NULL_ID, ProtocolError, WORLD_READERS, decodeLoginMessage, decodeWorldPacket,
+  encodeAddItemTaskBar, encodeDestPos, encodeDoUseSkillPoint, encodeEndSkillQueue, encodeGetDestObj, encodeJoin,
+  encodeMeleeAttack, encodeModifyStatus, encodePing, encodePlayerBehavior, encodePlayerCorr, encodePlayerMoved,
+  encodePlayerSetDestObj, encodePreJoin, encodeRemoveItemTaskBar, encodeRevivalToLodestar, encodeSetTarget,
+  encodeSkillTaskBar, encodeUseSkill, encodeWorldKeepAlive, readBundle,
 } from '@flyffweb/protocol';
-import type { BundleMessage, BundleResult, MoveReport, Vec3, WorldMessage } from '@flyffweb/protocol';
+import type { BundleMessage, BundleResult, MoveReport, Shortcut, SkillSlot, Vec3, WorldMessage } from '@flyffweb/protocol';
 import { UNEXPECTED_PROBLEM, closeText, errorText } from '../lobby/errorText';
 import { GATEWAY_UNREACHABLE, PING_INTERVAL_MS, TIMEOUT_TEXT, systemClock } from '../lobby/LoginFlow';
 import type { FlowClock, WorldEntry } from '../lobby/LoginFlow';
@@ -243,6 +244,53 @@ export class WorldSession {
    */
   sendModifyStatus(counts: { str: number; sta: number; dex: number; int: number }): void {
     this.playingCache()?.send(encodeModifyStatus(counts));
+  }
+
+  // The skill and task-bar packets (milestone 2). Their encoders throw a ProtocolError for a value the server's own bounds
+  // would drop without a reply (an index outside m_aJobSkill, a slot outside the bars, more than 5 queue entries): the
+  // callers pass only the player's own skill slots and the bars' fixed grid, and never call these from a packet's
+  // handling (`guarded`), where a throw would end the session as the server's fault.
+
+  /**
+   * USESKILL (`CDPClient::SendUseSkill`, `Neuz/DPClient.cpp:9855`): the index of the skill in `m_aJobSkill` (0-44), the
+   * target, `SUT_NORMAL` 0 (a bar slot) or `SUT_QUEUESTART` 1 (the action slot), and the Ctrl key. Sent only while playing.
+   */
+  sendUseSkill(index: number, targetId: number, useType: 0 | 1, control = false): void {
+    this.playingCache()?.send(encodeUseSkill(index, targetId, useType, control));
+  }
+
+  /**
+   * DOUSESKILLPOINT (`CDPClient::SendDoUseSkillPoint`, `Neuz/DPClient.cpp:9710`): the 45 slots, the player's own skill IDs
+   * with the levels the skill window set. Sent only while playing.
+   */
+  sendDoUseSkillPoint(skills: readonly SkillSlot[]): void {
+    this.playingCache()?.send(encodeDoUseSkillPoint(skills));
+  }
+
+  /**
+   * ADDITEMTASKBAR (`CDPClient::SendAddItemTaskBar`, `Neuz/DPClient.cpp:11014`): `shortcut` into slot `slot` (0-8) of item
+   * bar `bar` (0-7). Sent only while playing.
+   */
+  sendAddItemTaskBar(bar: number, slot: number, shortcut: Shortcut): void {
+    this.playingCache()?.send(encodeAddItemTaskBar(bar, slot, shortcut));
+  }
+
+  /** REMOVEITEMTASKBAR (`CDPClient::SendRemoveItemTaskBar`, `Neuz/DPClient.cpp:11008`): slot `slot` of item bar `bar` emptied. Sent only while playing. */
+  sendRemoveItemTaskBar(bar: number, slot: number): void {
+    this.playingCache()?.send(encodeRemoveItemTaskBar(bar, slot));
+  }
+
+  /**
+   * SKILLTASKBAR (`CDPClient::SendSkillTaskBar`, `Neuz/DPClient.cpp:10972`): the action slot's 5 slots, `queue[i]` slot `i`
+   * (null, or left out, for an empty one). Sent only while playing.
+   */
+  sendSkillTaskBar(queue: ReadonlyArray<Shortcut | null>): void {
+    this.playingCache()?.send(encodeSkillTaskBar(queue));
+  }
+
+  /** ENDSKILLQUEUE (`CDPClient::SendEndSkillQueue`, `Neuz/DPClient.cpp:15819`): stop the action slot's chain. Sent only while playing. */
+  sendEndSkillQueue(): void {
+    this.playingCache()?.send(encodeEndSkillQueue());
   }
 
   /**

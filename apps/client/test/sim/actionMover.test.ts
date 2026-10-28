@@ -763,6 +763,141 @@ describe('ActionMover: attacks, damage and death', () => {
   });
 });
 
+/**
+ * A fake model of `frames` frames that moves 0.5 a step at speed 1 (a `.ani` at 30 fps: `perSlerp` 0.5), held while the
+ * rules pause it and started again at each motion set, as `MoverViews` moves a model; `hits` are the motion's `MA_HIT`
+ * frames, one passed when the last move went from below it to it or past it within its frame (`CMotion::IsAttrHit`,
+ * `Bone.h:162-169`). `move` is the frame move that follows each rules step.
+ */
+function fakeModel(act: ActionMover, frames: number, hits: readonly number[]): { frame: () => number; move: () => void } {
+  let sets = act.motionSets;
+  let current = 0;
+  let old = -1;
+  act.modelFrame = () => ({ current: sets === act.motionSets ? current : 0, max: frames });
+  act.isAttrHit = () => {
+    const [o, c] = sets === act.motionSets ? [old, current] : [-1, 0];
+    return hits.findIndex((h) => Math.trunc(h) === Math.trunc(c) && o < h && h <= c);
+  };
+  act.isEndFrame = () => sets === act.motionSets && current >= frames - 1;
+  return {
+    frame: () => current,
+    move: () => {
+      if (sets !== act.motionSets) {
+        sets = act.motionSets;
+        current = 0;
+        old = -1;
+      }
+      if (act.paused > 0) return;
+      old = current;
+      current = Math.min(current + 0.5 * act.aniSpeed, frames - 1);
+    },
+  };
+}
+
+describe('ActionMover: melee skills (OBJMSG_MELEESKILL, ProcessStateMeleeSkill)', () => {
+  it('MELEESKILL clears every state and plays the skill motion as it is: OBJSTA_ATK_MELEESKILL, MOP_FIXED, at 1.0', () => {
+    const { player } = fight();
+    player.sendActMsg(ActMsg.MODE_COMBAT);
+    player.step();
+    expect(player.state).toBe(ObjSta.STAND);
+    const sets = player.motionSets;
+    expect(player.sendActMsg(ActMsg.MELEESKILL, Mti.VAG_ONE_CLEANHIT, 2)).toBe(true);
+    // ClearState, then the skill's state alone (ActionMoverMsg.cpp:746-753): no standing state is left
+    expect(player.state).toBe(ObjSta.ATK_MELEESKILL);
+    expect(player.motion).toBe(Mti.VAG_ONE_CLEANHIT);
+    expect(player.motionSets).toBe(sets + 1);
+    expect(player.loop).toBe(AniLoop.ONE_PLAY);
+    expect(player.motionOption).toBe(Mop.SWDFORCE | Mop.NO_TRANS | Mop.FIXED);
+    // MOP_FIXED: the sword's set is not added in combat (Mover.cpp:4822)
+    expect(motionFor(player.motion, SWORD, player.stateFlag, player.motionOption)).toBe(Mti.VAG_ONE_CLEANHIT);
+    player.modelFrame = () => ({ current: 0, max: 51 });
+    player.step();
+    // ProcessAniSpeed lists no melee-skill state: 1.0, not the attack speed (Mover.cpp:3084-3119)
+    expect(player.aniSpeed).toBe(1);
+    expect(player.state).toBe(ObjSta.ATK_MELEESKILL);
+    // the same skill again starts its motion again (m_dwMotion = -1 first)
+    expect(player.sendActMsg(ActMsg.MELEESKILL, Mti.VAG_ONE_CLEANHIT, 2)).toBe(true);
+    expect(player.motionSets).toBe(sets + 2);
+  });
+
+  it('MELEESKILL is refused (-2) at a target out of view and in an action, and leaves the state as it was', () => {
+    const { player } = fight();
+    player.step();
+    expect(player.sendActMsg(ActMsg.MELEESKILL, Mti.VAG_ONE_CLEANHIT, 99)).toBe(false);
+    expect(player.state).toBe(ObjSta.STAND);
+    expect(player.motion).toBe(Mti.STAND);
+    player.state |= ObjSta.COLLECT; // an action state (OBJSTA_ACTION_ALL)
+    expect(player.sendActMsg(ActMsg.MELEESKILL, Mti.VAG_ONE_CLEANHIT, 2)).toBe(false);
+    expect(player.state & ObjSta.ATK_ALL).toBe(0);
+  });
+
+  it('the skill motion ends at 65% of its 51 frames, its skill cleared, and the next step stands', () => {
+    const { player } = fight();
+    const model = fakeModel(player, 51, [27]);
+    const ends: number[] = [];
+    player.onAttackEnd = (state) => ends.push(state);
+    player.onMeleeSkill = () => {};
+    player.sendActMsg(ActMsg.MELEESKILL, Mti.VAG_ONE_CLEANHIT, 2);
+    player.skillAct = { skill: 1, targetId: 2, level: 1 };
+    let steps = 0;
+    for (;;) {
+      player.step();
+      steps++;
+      if ((player.state & ObjSta.ATK_ALL) === 0 || steps > 200) break;
+      model.move();
+    }
+    // m_fFrameCurrent >= m_nFrameMax * 0.65f, 51 * 0.65f being 33.15 (ActionMoverState.cpp:614-619): 67 moves of 0.5
+    // reach 33.5, the hit at 27 held the model 4 steps, and the step that sees 33.5 ends it (33 did not)
+    expect(model.frame()).toBe(33.5);
+    expect(steps).toBe(67 + 4 + 1);
+    expect(player.state).toBe(0);
+    // OnActEndMeleeSkill (MoverActEvent.cpp:2056-2060): the skill in use is cleared; a swing's end is not told
+    expect(player.skillAct).toBe(null);
+    expect(ends).toEqual([]);
+    player.step();
+    expect(player.state).toBe(ObjSta.STAND);
+    expect(player.motion).toBe(Mti.STAND);
+  });
+
+  it('a model with no frame to tell ends the skill at once; one whose motion file is still loading does not', () => {
+    const { player } = fight();
+    player.sendActMsg(ActMsg.MELEESKILL, Mti.VAG_ONE_CLEANHIT, 2);
+    player.step(); // the default: no model, every motion over at once (frame 0 of 0)
+    expect(player.state & ObjSta.ATK_ALL).toBe(0);
+    player.sendActMsg(ActMsg.MELEESKILL, Mti.VAG_ONE_CLEANHIT, 2);
+    player.modelFrame = () => null;
+    player.step();
+    expect(player.state).toBe(ObjSta.ATK_MELEESKILL);
+  });
+
+  it('calls onMeleeSkill at each hit frame with the hit count, then holds the model 4 steps: Flurry hits three times', () => {
+    const { player } = fight();
+    const model = fakeModel(player, 61, [7, 23, 39]);
+    const hits: Array<[number, number]> = [];
+    let step = 0;
+    player.onMeleeSkill = (count) => hits.push([count, step]);
+    player.sendActMsg(ActMsg.MELEESKILL, Mti.VAG_ONE_BRANDISH, 2);
+    for (; step < 120 && (player.state & ObjSta.ATK_ALL) !== 0; step++) {
+      player.step();
+      // m_nPause = 4 on the client (ActionMoverState.cpp:656-658)
+      if (hits.length > 0 && hits[hits.length - 1]![1] === step) expect(player.paused).toBe(4);
+      model.move();
+    }
+    // 61 * 0.65f = 39.65: the third hit, at 39, comes before the cut
+    expect(hits.map(([count]) => count)).toEqual([0, 1, 2]);
+    // frame 7 is reached by the 14th move, so the 15th step finds it; each hit holds the model 4 steps
+    expect(hits.map(([, at]) => at)).toEqual([14, 14 + 32 + 4, 14 + 64 + 8]);
+    // a new skill counts its hits from 0 again (m_nMotionHitCount = 0, ActionMoverMsg.cpp:769)
+    hits.length = 0;
+    player.sendActMsg(ActMsg.MELEESKILL, Mti.VAG_ONE_BRANDISH, 2);
+    for (let i = 0; i < 20; i++) {
+      player.step();
+      model.move();
+    }
+    expect(hits.map(([count]) => count)).toEqual([0]);
+  });
+});
+
 describe('motionFor', () => {
   const hand = (kind3: number, more: Partial<MotionHand> = {}): MotionHand =>
     ({ kind3, twoHanded: false, dual: false, master: false, psykeeper: false, ...more });

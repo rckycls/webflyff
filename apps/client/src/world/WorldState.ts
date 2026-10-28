@@ -5,7 +5,7 @@ import type { GameData } from './gameData';
 import { lodestarRate } from './OwnState';
 import type { OwnEvent, OwnState } from './OwnState';
 import { Parts } from './render/looks';
-import { ActionMover, wrapAngle } from './sim/ActionMover';
+import { ActionMover, getDegree, wrapAngle } from './sim/ActionMover';
 import type { Ground } from './sim/collision';
 import { ActMsg, ObjSta, ObjStaF } from './sim/constants';
 import {
@@ -43,6 +43,23 @@ const NO_ITEM_SPEED = 1;
  * whatever their number, as Neuz logs every one.
  */
 const MAX_PENDING_COMBAT = 1024;
+
+/** `KT_SKILL` (`Resource/defineAttribute.h:131`): a melee skill, which `DoUseSkill` plays with `OBJMSG_MELEESKILL`. */
+const KT_SKILL = 2;
+/** `SUT_QUEUEING` (`_Common/Mover.h:138`): a skill of the action slot's chain after its first. */
+const SUT_QUEUEING = 2;
+/** `SI_GEN_ATK_COUNTER` (`Resource/defineSkill.h:191`): the one skill not played with the motion after its own. */
+const SI_GEN_ATK_COUNTER = 223;
+/** `SI_ASS_HEAL_HEALING` (`Resource/defineSkill.h:40`): a heal, refused on a dead target (`MoverSkill.cpp:340-344`). */
+const SI_ASS_HEAL_HEALING = 44;
+/** `NO_ATTACK_MODE` (`_Common/authorization.h:112`): a player in it uses no skill (`DoUseSkill`, `MoverSkill.cpp:317`). */
+const NO_ATTACK_MODE = 0x00000040;
+/** `EXT_MAGICSHOT` and `EXT_MAGICATKSHOT` (`Resource/define.h:41,52`): the skills whose hit is a shot (`OnMeleeSkill`). */
+const EXT_MAGICSHOT = 3;
+const EXT_MAGICATKSHOT = 14;
+/** `EXT_MAGICATK` and `EXT_MELEEATK` (`Resource/define.h:42,55`): the skills whose hit is a blow (`CCtrl::ApplyDamage`). */
+const EXT_MAGICATK = 4;
+export const EXT_MELEEATK = 17;
 
 /** The message of this `type`. */
 type MessageOf<T extends WorldMessage['type']> = Extract<WorldMessage, { type: T }>;
@@ -105,6 +122,11 @@ export interface Mover extends SimMover {
  * - `text`: DEFINEDTEXT or DEFINEDTEXT1: the text `textId` with the arguments `args` (null for DEFINEDTEXT1, whose text
  *   Neuz shows unformatted).
  * - `spawned`: a mover that is not a player came into view within 32 m of the own mover (`XI_GEN_MONSTER_SPAWN01`).
+ * - `skillHit`: a hit frame of the melee skill `skill` (`SI_*`) that `casterId` uses at `targetId` (`CMover::OnMeleeSkill`,
+ *   `MoverActEvent.cpp:72-164`): the skill's effect (`CCtrl::CreateSkillSfx`, `Ctrl.cpp:878-997`), and, where the blow
+ *   `landed` (`OnDamageMsgC` took it), the victim's shake. The flinch, the pause and the caster's flash are done.
+ * - `sfxObj`: CREATESFXOBJ's effect `xi` (`OnCreateSfxObj`, `DPClient.cpp:4038-4067`): at the absolute position `pos`, or,
+ *   `pos` being null, on the mover `moverId`, which was in view as the message came.
  */
 export type CombatEvent =
   | { kind: 'hit'; victimId: number; attackerId: number; hit: number; flags: number; attackerInView: boolean }
@@ -114,7 +136,9 @@ export type CombatEvent =
   | { kind: 'attackerHit'; attackerId: number; victimId: number; weapon: number | null }
   | { kind: 'levelUp'; moverId: number }
   | { kind: 'text'; textId: number; args: string | null }
-  | { kind: 'spawned'; moverId: number };
+  | { kind: 'spawned'; moverId: number }
+  | { kind: 'skillHit'; casterId: number; targetId: number; skill: number; landed: boolean }
+  | { kind: 'sfxObj'; xi: number; pos: Vec3 | null; moverId: number | null };
 
 /**
  * What changed in view since the last `takeChanges`. A caller applies `removed` first, then `added`:
@@ -184,6 +208,14 @@ export class WorldState {
   private readonly find = (objectId: number): Mover | undefined => this.byId.get(objectId);
 
   /**
+   * `CDPClient::OnUseSkill` (`DPClient.cpp:3894-3950`) beyond the mover's rules, told of each USESKILL of a mover in view
+   * after its `DoUseSkill`, with whether that began the skill (`bSuccess`): the own one's request is answered
+   * (`REQ_USESKILL`), and a skill begun moves the action slot on and may start the auto-attack. Its owner (the own skill
+   * use, `SkillUse.onUseSkill`) sets it; it is told in the message's order, before the next message is applied.
+   */
+  onUseSkill: (casterId: number, message: MessageOf<'useSkill'>, started: boolean) => void = () => {};
+
+  /**
    * `ground` is the world the movers stand on and collide with (D3D coordinates); `numbers` the own character's numbers,
    * when the world screen has them, which the messages about it change.
    */
@@ -223,7 +255,13 @@ export class WorldState {
         return;
       case 'setState': // OnSetState (:13514) and OnTaskBar (:4285) take no object ID: they are g_pPlayer's
       case 'taskBar':
+      case 'doUseSkillPoint': // OnDoUseSkillPoint (:14730), OnInitSkillPoint (:14687) and OnSetActionPoint (:15798) too
+      case 'initSkillPoint':
+      case 'setActionPoint':
         this.toOwn(message, objectId);
+        return;
+      case 'createSfxObj': // OnCreateSfxObj (:4038) plays at an absolute position for an object not in view too
+        this.createSfxObj(objectId, message);
         return;
       default:
         break;
@@ -294,7 +332,12 @@ export class WorldState {
       case 'revivalToLodestar':
         this.revivalToLodestar(m, message);
         break;
-      default: // addOther, environmentSetting, worldReadInfo, replace, queryGetDestObj: not kept here
+      case 'useSkill': // OnUseSkill (:3894-3950)
+        this.onUseSkill(m.objectId, message, this.doUseSkill(m, message));
+        break;
+      // addOther, environmentSetting, worldReadInfo, replace, queryGetDestObj: not kept here; clearUseSkill and
+      // endSkillQueue are the own skill use's (`SkillUse`)
+      default:
         break;
     }
   }
@@ -374,8 +417,9 @@ export class WorldState {
    * `OwnState`'s, when the world has them; any other's max HP is `maxHpOf`'s.
    *
    * The rules' calls into `CMover` that the world answers are set here, for every mover: `prj.GetMover` for a swing's
-   * target and a forced death's attacker (`findMover`), `m_nHitPoint` (`hitPoint`), and a swing's hit frame (`onHit`);
-   * and another player's attack speed (`attackSpeed`, `attackSpeedOf`). The own one's is the attack loop's, which has
+   * target and a forced death's attacker (`findMover`), `m_nHitPoint` (`hitPoint`), a swing's hit frame (`onHit`) and a
+   * melee skill's (`onMeleeSkill`); and another player's attack speed (`attackSpeed`, `attackSpeedOf`). The own one's is
+   * the attack loop's, which has
    * the own numbers' items and buffs.
    */
   private build(objectId: number, added: AddedMover): Mover {
@@ -420,6 +464,7 @@ export class WorldState {
     act.findMover = (id) => this.byId.get(id)?.act;
     act.hitPoint = () => mover.hp;
     act.onHit = () => this.onAttackMelee(mover);
+    act.onMeleeSkill = () => this.onMeleeSkill(mover);
     if (added.isPlayer && !isSelf) act.attackSpeed = () => this.attackSpeedOf(mover);
     return mover;
   }
@@ -589,7 +634,7 @@ export class WorldState {
     const victim = targetId === null ? undefined : this.byId.get(targetId);
     if (victim === undefined) return;
     this.combat({ kind: 'spark', moverId: victim.objectId, fromId: attacker.objectId });
-    if (!this.onDamageMsgC(victim, attacker)) return;
+    if (!this.onDamageMsgC(victim, attacker, AttackFlag.GENERIC)) return;
     if (attacker.added.isPlayer) {
       attacker.act.pause(5);
     } else {
@@ -600,14 +645,17 @@ export class WorldState {
   }
 
   /**
-   * A swing's blow on `victim`: `SendDamage( m_dwAtkFlags, ... )`, its flags `AF_GENERIC` on the client
-   * (`ActionMoverMsg.cpp:699`), through `PreProcessDamage` (`ActionMoverMsg.cpp:1190-1228`: none on a player in
-   * `MATCHLESS_MODE`, nor on a mover that is not a player and cannot be killed, `bKillable != 1`) to `OnDamageMsgC`
-   * (`ActionMoverDmg.cpp:54-122`): none on a mover in a dead state; a sitting victim stands, then `OBJMSG_STAND`, the
-   * drawing (`attackerHit`) and the flinch (`SetDamagedMotion`). True where it landed. Left out: the stone state
-   * (`CHS_SETSTONE`, buffs), and `m_idAttacker`, `m_idTargeter` and `m_idLastHitMover`, which the browser does not keep.
+   * A blow on `victim` with the flags `flags`: a swing's `SendDamage( m_dwAtkFlags, ... )`, its flags `AF_GENERIC` on the
+   * client (`ActionMoverMsg.cpp:699`), or a melee skill's `AF_MELEESKILL` (`CCtrl::ApplyDamage`, `Ctrl.cpp:1001-1030`),
+   * through `PreProcessDamage` (`ActionMoverMsg.cpp:1190-1228`: none on a player in `MATCHLESS_MODE`, nor on a mover that
+   * is not a player and cannot be killed, `bKillable != 1`) to `OnDamageMsgC` (`ActionMoverDmg.cpp:54-122`): none on a
+   * mover in a dead state; a sitting victim stands, then `OBJMSG_STAND`; an `AF_GENERIC` blow's drawing (`attackerHit`:
+   * the hand item's spark, and the shake); and the flinch (`SetDamagedMotion`, which flies only with `AF_FLYING`). True
+   * where it landed (a skill's shake is its `skillHit`'s). Left out: the stone state (`CHS_SETSTONE`, buffs),
+   * `AF_MONSTER_SP_CLIENT` (monsters' specials), and `m_idAttacker`, `m_idTargeter` and `m_idLastHitMover`, which the
+   * browser does not keep.
    */
-  private onDamageMsgC(victim: Mover, attacker: Mover): boolean {
+  private onDamageMsgC(victim: Mover, attacker: Mover, flags: number): boolean {
     if ((victim.added.player?.mode ?? 0) & MATCHLESS_MODE) return false;
     if (!victim.added.isPlayer) {
       const prop = this.data.movers.get(victim.added.index);
@@ -616,10 +664,86 @@ export class WorldState {
     if (victim.act.isDie()) return false;
     victim.act.unsit();
     victim.act.sendActMsg(ActMsg.STAND);
-    const weapon = this.handItem(attacker);
-    this.combat({ kind: 'attackerHit', attackerId: attacker.objectId, victimId: victim.objectId, weapon });
+    if (flags & AttackFlag.GENERIC) {
+      const weapon = this.handItem(attacker);
+      this.combat({ kind: 'attackerHit', attackerId: attacker.objectId, victimId: victim.objectId, weapon });
+    }
     victim.act.setDamaged();
     return true;
+  }
+
+  /**
+   * `CMover::DoUseSkill( 0, -1, ... )` (`MoverSkill.cpp:163-283`) and the `DoUseSkill( dwSkill, nLevel, ... )` it calls
+   * (:287-1063), the client's branches, for the USESKILL `message` of the mover `m`: true where the skill began
+   * (`bSuccess`). Refused: a mover that is not a player (`IsNPC`, :177-178), a skill the catalog lacks (`GetSkillProp`), a
+   * dead or flying caster (:293-294), one in `NO_ATTACK_MODE` (:317), a target not in view (:336-338), a heal at a dead
+   * target (:340-344). Then the caster faces its target unless it is itself (:450), stops (`OBJMSG_STOP`, which clears its
+   * destination, `ClearDest`, :701-702), and a melee skill plays its motion, `dwUseMotion` (+2 only for a skill with no
+   * cast time outside the chain, :829-831; a melee skill's is 1), with `OBJMSG_MELEESKILL`, which a caster in an action
+   * refuses (-2, :890-893); begun, the skill is the caster's (`SetActParam`, `m_nAParam[3] = nLevel`, :840-846).
+   * Not copied: a magic skill (`KT_MAGIC`, cast with `OBJMSG_MAGICCASTING` or `MAGICSKILL`), which is not begun here at
+   * all. Left out: `MVRF_NOATTACK` (buffs), the guild-war and quiz maps' rules, `MVRF_SKILL` (which nothing on the client
+   * reads), the hand-linked effects of later jobs' skills (:905-990), the cast effect at the caster (`dwSfxObj`, :993-996:
+   * the catalog does not keep it; none for a Vagrant skill), the chat lines of a skill that is no attack used on a player
+   * (:997-1016) and the Japanese voice. The own action slot's step (`m_nExecute`, :896-903) is the skill use's
+   * (`onUseSkill`).
+   */
+  private doUseSkill(m: Mover, message: MessageOf<'useSkill'>): boolean {
+    if (!m.added.isPlayer) return false;
+    const skill = this.data.skills.get(message.skill);
+    if (skill === undefined || skill.skillType !== KT_SKILL) return false;
+    if (isDie(m) || m.act.stateFlag & ObjStaF.FLY) return false;
+    if ((m.added.player?.mode ?? 0) & NO_ATTACK_MODE) return false;
+    const target = this.byId.get(message.targetId);
+    if (target === undefined) return false;
+    if (skill.id === SI_ASS_HEAL_HEALING && isDie(target)) return false;
+    if (target !== m) m.act.body.angle = wrapAngle(getDegree(target.act.body.pos, m.act.body.pos));
+    m.act.sendActMsg(ActMsg.STOP);
+    let motion = skill.useMotion;
+    if (message.useType !== SUT_QUEUEING && message.castingTime === 0 && skill.id !== SI_GEN_ATK_COUNTER) motion += 2;
+    if (!m.act.sendActMsg(ActMsg.MELEESKILL, motion, target.objectId)) return false;
+    m.act.skillAct = { skill: skill.id, targetId: target.objectId, level: message.level };
+    return true;
+  }
+
+  /**
+   * `CMover::OnMeleeSkill( 0, nCount )` (`MoverActEvent.cpp:72-164`) on the client, at a hit frame of the melee skill
+   * `caster` uses (`ActionMover.onMeleeSkill`): nothing unless it uses a skill of the catalog (`m_oaAct ==
+   * OBJACT_USESKILL`) at a target in view. The caster's model flashes from its target's side (:94-113); then, unless the
+   * skill's hit is a shot (`EXT_MAGICATKSHOT`, `EXT_MAGICSHOT`: `ShootSkill`, not copied), `DoApplySkill`
+   * (`Ctrl.cpp:1449-1677`) as its `SRO_DIRECT` and default branch: the target's `ApplySkill`, whose `ApplyDamage` sends an
+   * attack skill's blow (`EXT_MELEEATK`, `EXT_MAGICATK`; `SendDamage( AF_MELEESKILL, ... )`, a `CT_FINISH` skill's
+   * `SendDamageForce` taken the same way on the client, `OnDamageMsgC` reading no message), then `CreateSkillSfx`, the
+   * skill's effect, whether the blow landed or not: the `skillHit` event.
+   * Left out: the area skills (`SRO_AROUND`, `SRO_REGION`, `SRO_LINE`: the catalog keeps no spell region, and the
+   * Vagrant's are all `SRO_DIRECT`), the buffs a skill gives (its destination parameters: none for a Vagrant skill), the
+   * second skill (`dwActiveSkill`), the first hit's cool-down (`SetCoolTime`: none for a Vagrant skill), and the flash of a
+   * skill on the caster itself (lit from straight up, :106-107).
+   */
+  private onMeleeSkill(caster: Mover): void {
+    const use = caster.act.skillAct;
+    const skill = use === null ? undefined : this.data.skills.get(use.skill);
+    const target = use === null ? undefined : this.byId.get(use.targetId);
+    if (skill === undefined || target === undefined) return;
+    if (target !== caster) this.combat({ kind: 'spark', moverId: caster.objectId, fromId: target.objectId });
+    if (skill.exeTarget === EXT_MAGICATKSHOT || skill.exeTarget === EXT_MAGICSHOT) return;
+    const attack = skill.exeTarget === EXT_MELEEATK || skill.exeTarget === EXT_MAGICATK;
+    const landed = attack && this.onDamageMsgC(target, caster, AttackFlag.MELEESKILL);
+    this.combat({ kind: 'skillHit', casterId: caster.objectId, targetId: target.objectId, skill: skill.id, landed });
+  }
+
+  /**
+   * `CDPClient::OnCreateSfxObj` (`DPClient.cpp:4038-4067`): CREATESFXOBJ's effect at its position when it has one (`if( x
+   * || y || z )`, a float's test, so -0 is none and NaN is one), whether or not its object is in view; else on the object,
+   * when it is a mover in view (only movers are kept: another object counts as not in view); else nothing.
+   */
+  private createSfxObj(objectId: number, message: MessageOf<'createSfxObj'>): void {
+    const [x, y, z] = message.pos;
+    if (x !== 0 || y !== 0 || z !== 0) {
+      this.combat({ kind: 'sfxObj', xi: message.sfxId, pos: [x, y, z], moverId: null });
+    } else if (this.byId.has(objectId)) {
+      this.combat({ kind: 'sfxObj', xi: message.sfxId, pos: null, moverId: objectId });
+    }
   }
 
   /**

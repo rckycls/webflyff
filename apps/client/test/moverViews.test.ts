@@ -870,6 +870,48 @@ describe('MoverViews', () => {
       }
     });
 
+    it('plays a Vagrant skill as it is: Clean Hit\'s blow on frame 27 goes by on the 54th frame move, and it ends at 65% of its 51 frames', async () => {
+      // Mvr_male_SklVagCleanHit: 51 frames, the blow on frame 27 ([skills §1.6]); MOP_FIXED, so no weapon set
+      const r = armedRig({ motions: { m1000: () => hitMotion('m1000', 51, [27]) } });
+      const { player, monster } = duel(r);
+      await r.views.settled();
+      let now = 0;
+      const hits: number[] = [];
+      player.act.onMeleeSkill = () => hits.push(now);
+      expect(player.act.sendActMsg(ActMsg.MELEESKILL, Mti.VAG_ONE_CLEANHIT, 8)).toBe(true);
+      let ended = 0;
+      for (now = 1; now <= 90; now++) {
+        stepAll(r, player, monster);
+        if (now === 1) await r.views.settled();
+        if (ended === 0 && (player.act.state & ObjSta.ATK_ALL) === 0) ended = now;
+      }
+      // the rules read the frame a step after it moved: the blow at the 55th step, then 4 steps held; 33.5, past 33.15, is
+      // the 67th move, made on the 71st step, and read on the 72nd
+      expect(hits).toEqual([55]);
+      expect(ended).toBe(72);
+    });
+
+    it('says once that a skill motion has no hit frame, as an attack motion', async () => {
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        const r = armedRig(); // every motion: 31 frames, and no events (an older conversion)
+        const { player, monster } = duel(r);
+        await r.views.settled();
+        for (let use = 0; use < 2; use++) {
+          expect(player.act.sendActMsg(ActMsg.MELEESKILL, Mti.VAG_ONE_BRANDISH, 8)).toBe(true);
+          for (let now = 1; now <= 60; now++) {
+            stepAll(r, player, monster);
+            if (now === 1) await r.views.settled();
+          }
+          expect(player.act.state & ObjSta.ATK_ALL).toBe(0);
+        }
+        expect(warn).toHaveBeenCalledTimes(1);
+        expect(warn.mock.calls[0]![0]).toMatch(/^motion m1001: /);
+      } finally {
+        warn.mockRestore();
+      }
+    });
+
     it('says nothing of a level up during a swing: MTI_LEVELUP has no hit frame, and the swing ends with it', async () => {
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
       try {

@@ -55,6 +55,10 @@ const TEXTS: Texts = new Map([
   text('TID_EVE_LEVEL15', 504, "Now it's time to choose your job.", 0xff3366ff),
   text('TID_GAME_LEVELUP_CAPTION', 3073, 'Congratulations! Level up!'),
   text('TID_GAME_SKILLPOINT_UP', 3067, 'New Skill Points are now available.'),
+  text(
+    'TID_GAME_RECCURENCE', 2621,
+    'Your character’s skill points have been reset.  Please redistribute your points in the Skill Tree window.', 0xff99cc00,
+  ),
 ]);
 
 /** `MI_AIBATT1` (propMover.txt): level 1, not aggressive. */
@@ -504,6 +508,19 @@ describe('Hud: what the world and the own numbers show', () => {
     expect(shown(hud).slice(3)).toEqual([
       'Press ESC and go back to Lodestar(Town) or Lodelight(Field) for resurrecting.',
     ]);
+    hud.dispose();
+  });
+
+  it('a reset of the skill points has its chat line, unless it stopped early (OnInitSkillPoint, DPClient.cpp:14701-14725)', () => {
+    const hud = hudOn();
+    hud.play([], [
+      { kind: 'skillPointReset', effect: true, chatLine: true },
+      { kind: 'skillPointReset', effect: false, chatLine: false },
+    ], newVagrant());
+    expect(shown(hud)).toEqual([
+      'Your character’s skill points have been reset.  Please redistribute your points in the Skill Tree window.',
+    ]);
+    expect((hud.messages.element.children[0] as HTMLElement).style.color).toBe('rgb(153, 204, 0)');
     hud.dispose();
   });
 

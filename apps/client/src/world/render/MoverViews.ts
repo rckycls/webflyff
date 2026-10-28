@@ -18,7 +18,7 @@ import type { MotionEvents, Vec3, WebItemProp, WebMover } from '@flyffweb/format
 import type { AnimationAction, Object3D, Scene } from 'three';
 import { AnimationClip, Box3, CapsuleGeometry, Group, LoopOnce, LoopRepeat, Mesh, MeshLambertMaterial } from 'three';
 import { motionFor } from '../sim/ActionMover';
-import type { MotionHand } from '../sim/ActionMover';
+import type { ModelFrame as ActionModelFrame, MotionHand } from '../sim/ActionMover';
 import { AniLoop, Ik3, Mop, Mti } from '../sim/constants';
 import { STEPS_PER_SECOND } from '../sim/stepper';
 import { isDie } from '../WorldState';
@@ -50,12 +50,19 @@ const II_WEA_HAN_HAND = 11;
 const HD_TWO = 2;
 /** `JOB_PSYCHIKEEPER`, its master and its hero (`Resource/defineJob.h:59,72,83`). */
 const PSYKEEPERS: ReadonlySet<number> = new Set([12, 22, 30]);
-/** The motions a swing sets (`OBJMSG_ATK1` to `OBJMSG_ATK4`, `ActionMoverMsg.cpp:596-704`), each with its blow's frame. */
-const SWING_MOTIONS: ReadonlySet<number> = new Set([Mti.ATK1, Mti.ATK2, Mti.ATK3, Mti.ATK4]);
+/**
+ * The motions that each have a blow's frame: a swing's (`OBJMSG_ATK1` to `OBJMSG_ATK4`, `ActionMoverMsg.cpp:596-704`) and
+ * the Vagrant's skills' (`OBJMSG_MELEESKILL`, :736-772; Flurry has three).
+ */
+const SWING_MOTIONS: ReadonlySet<number> = new Set([
+  Mti.ATK1, Mti.ATK2, Mti.ATK3, Mti.ATK4, Mti.VAG_ONE_CLEANHIT, Mti.VAG_ONE_BRANDISH, Mti.VAG_ONE_OVERCUTTER,
+]);
 
 const f32 = Math.fround;
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 const copy = (v: Vec3): Vec3 => [v[0], v[1], v[2]];
+/** The frame of a mover with no model to play its motions: 0 of 0, so a motion is over at once (`ActionMover.modelFrame`). */
+const noFrame = (): ActionModelFrame => ({ current: 0, max: 0 });
 
 interface Clip {
   /** Null while loading, and for good once it failed. */
@@ -422,6 +429,7 @@ export class MoverViews {
     view.frame = startFrame(act.motionSets);
     act.isEndFrame = () => this.isEndFrame(view);
     act.isAttrHit = () => this.isAttrHit(view);
+    act.modelFrame = () => this.modelFrame(view);
     this.play(view);
     model.mixer.update(0);
   }
@@ -478,6 +486,7 @@ export class MoverViews {
     view.action = null;
     view.mover.act.isEndFrame = () => true;
     view.mover.act.isAttrHit = () => -1;
+    view.mover.act.modelFrame = noFrame;
     if ('release' in loaded) loaded.release();
   }
 
@@ -500,6 +509,7 @@ export class MoverViews {
       this.overlay.addGpuBytes(-view.bytes);
       view.mover.act.isEndFrame = () => true;
       view.mover.act.isAttrHit = () => -1;
+      view.mover.act.modelFrame = noFrame;
       view.model = null;
     }
   }
@@ -596,6 +606,23 @@ export class MoverViews {
     if (clip.motion === null) return true;
     this.catchUp(view, clip.motion, false);
     return view.frame.endFrame;
+  }
+
+  /**
+   * `m_pModel->m_fFrameCurrent` and `m_nFrameMax` of the motion the rules set (`ProcessStateMeleeSkill` reads them,
+   * `ActionMoverState.cpp:614`): frame 0 right after the rules set it (`InitAnimate`); null while its file loads; 0 of 0
+   * for a motion the model cannot play, which is over at once as `isEndFrame` says.
+   */
+  private modelFrame(view: View): ActionModelFrame | null {
+    const key = this.keyOf(view);
+    if (key === null) return noFrame();
+    const clip = this.clip(key);
+    if (clip.loading) return null;
+    if (clip.motion === null) return noFrame();
+    const max = clip.motion.events.frames;
+    if (view.frame.sets !== view.mover.act.motionSets) return { current: 0, max };
+    this.catchUp(view, clip.motion, false);
+    return { current: view.frame.current, max };
   }
 
   /**

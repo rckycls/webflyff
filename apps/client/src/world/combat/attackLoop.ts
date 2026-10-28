@@ -72,6 +72,45 @@ export function attackAble(target: Mover, moverProps: ReadonlyMap<number, Pick<W
 type ProcessBranch = 'attack' | 'controls' | 'none';
 
 /**
+ * What the attack loop asks of the own skill use (`SkillUse`): the skill's side of `CWndWorld::m_dwNextSkill`, of
+ * `g_pPlayer`'s one command (`m_oaCmd`) and of its `REQ_USESKILL`.
+ */
+export interface OwnSkills {
+  /** `m_dwNextSkill != NEXTSKILL_NONE`: a skill is reserved, and a swing's end starts no next swing (`ActionMoverState.cpp:826-828`). */
+  readonly reserved: boolean;
+  /** `GetCmd() == OBJACT_USESKILL`: the own mover goes to use a skill, and `Process` runs the controls (`WndWorld.cpp:8512`). */
+  readonly commanding: boolean;
+  /** `m_dwReqFlag & REQ_USESKILL`: a USESKILL waits for its answer, and the attack does not use the focus (:8522). */
+  readonly pending: boolean;
+  /** The skill's part of `ClearCmd()`: its command goes. */
+  clearCmd(): void;
+  /** The skill's part of a press in the world (`OnLButtonDown`, `WndWorld.cpp:6976-6987`). */
+  worldPressed(): void;
+  /** `ProcessMoveArrival`'s `OBJACT_USESKILL` (`MoverMove.cpp:80-184`): true where the skill's command took the arrival. */
+  arrive(own: Mover, target: SimMover): boolean;
+}
+
+/**
+ * `CMover::SetDestObj( objid, fRange, bSend = TRUE )` (`MoverMsg.cpp:47-84`) for the active mover `own`: following another
+ * object than it does, it says so first: a PLAYERBEHAVIOR if it followed a player (`__BS_ADJUST_SYNC`, :55-61, `find`
+ * being `prj.GetMover`), then PLAYERSETDESTOBJ, and `m_nCorr = -1` (so that the walk ends where it meets something,
+ * `OnActCollision`); then the rules' `SetDestObj` (`m_idDest`, `m_fArrivalRange`, `ClearDestPos`). Its `m_oaCmd =
+ * OBJACT_NONE` (:79) is the caller's, which sets its own command next.
+ */
+export function setOwnDestObj(
+  session: Pick<WorldSession, 'sendDestObj' | 'sendBehavior'>, tick: () => bigint,
+  find: (objectId: number) => Mover | undefined, own: Mover, objectId: number, range: number,
+): void {
+  const old = own.dest?.targetId ?? null;
+  if (old !== objectId) {
+    if (old !== null && find(old)?.added.isPlayer === true) session.sendBehavior(own.act.report(tick()));
+    session.sendDestObj(objectId, range);
+    own.nCorr = -1;
+  }
+  setDestObj(own, objectId, range);
+}
+
+/**
  * The own character's auto-attack, a copy of `CWndWorld`'s and `g_pPlayer`'s part of it:
  * - the presses select a mover and turn the auto-attack on, or stop it (`onMoverPressed`, `onGroundPressed`,
  *   `onMoverHeld`, `onReleased`, and the touch screen's `attackButton`), as `OnLButtonDown`
@@ -96,7 +135,12 @@ type ProcessBranch = 'attack' | 'controls' | 'none';
  * The world screen calls `step` once a rules step, before the world's step, and runs the controls (`OwnMover.control`)
  * when it says so: `Process` runs one branch or the other, and both are the frame before's interface.
  *
- * Left out, as Piece 4 has none of them: skills (`m_dwNextSkill`, `OBJACT_USESKILL`, `REQ_USESKILL`), flying, the
+ * The skills (milestone 2) are the own skill use's (`skills`, `OwnSkills`), with which the loop shares what Neuz keeps
+ * once: the command (`m_oaCmd`: a skill's or a melee attack's, whichever was set last, `ClearCmd` dropping both), the
+ * arrival, a reserved skill (`m_dwNextSkill`, whose branch of `Process` the skill use runs: `step( true )`), and the
+ * request in flight (`REQ_USESKILL`). A skill begun turns the auto-attack on (`startAutoAttack`).
+ *
+ * Left out, as Piece 4 has none of them: flying, the
  * wand's and the bow's attacks (at the button's let-go, `CMD_SetMagicAttack`, `CMD_SetRangeAttack`), the yoyo's reach,
  * its line of sight on arrival and its short combo, attacking players (duels, PK, wars), the guards' disposition
  * (`RANK_GUARD` against a chaotic player), the Ctrl key's auto-attack, the menu of a peaceful NPC (Piece 5), standing a
@@ -131,6 +175,7 @@ export class AttackLoop {
     private readonly own: () => OwnState | undefined,
     private readonly clock: { tick(): bigint },
     private readonly moverProps: ReadonlyMap<number, Pick<WebMover, 'killable'>>,
+    private readonly skills?: OwnSkills,
   ) {}
 
   /** `m_bAutoAttack`. */
@@ -183,7 +228,8 @@ export class AttackLoop {
    *
    * A double click's second press is `OnLButtonDblClk` instead (:7239-7263): the focused mover pressed again turns the
    * auto-attack on, unless the hand holds a wand. Either press is held (`m_bLButtonDown`, `WndBase.cpp:1324-1331,
-   * 1374-1383`) until `onReleased`. A dead player presses nothing (:6719-6720).
+   * 1374-1383`) until `onReleased`. A dead player presses nothing (:6719-6720). The first press also drops the skill's
+   * command with the melee one (`ClearCmd`) and stops the action slot (`skills.worldPressed`, :6976-6987).
    */
   onMoverPressed(objectId: number, now: number, double: boolean): void {
     if (this.ownIsDead()) return;
@@ -195,7 +241,7 @@ export class AttackLoop {
     }
     const old = this.focus.targetId;
     if (this.focus.next === null && old === null) this.auto = false;
-    this.cmd = null;
+    this.clearCmd();
     if (!this.auto) this.focus.select(objectId);
     const mover = this.world.movers.get(objectId);
     const peaceful = mover !== undefined && mover.added.belligerence === Belli.PEACEFUL;
@@ -212,19 +258,22 @@ export class AttackLoop {
       this.auto = false;
     }
     if (peaceful && !mover.added.isPlayer) this.auto = false;
+    this.skills?.worldPressed(); // after the selection's SETTARGETs, as :6976-6987 come after SelectObj
     this.selectTarget = true;
     if (objectId !== old) this.focusTimer = now;
   }
 
   /**
    * A press on the ground, or on nothing (`OnLButtonDown` where the highlight is no mover, `WndWorld.cpp:6854`,
-   * `:6919-6929`), as it goes down: the command dropped, the auto-attack off, and the next target and the mark dropped;
-   * the focus stays (`SelectObj` focuses only what it picked). A double click's second press is `OnLButtonDblClk`
-   * (:7239-7263), which stops nothing.
+   * `:6919-6929`), as it goes down: the command dropped (the skill's too), the auto-attack off, and the next target and
+   * the mark dropped; the focus stays (`SelectObj` focuses only what it picked); and the action slot stops
+   * (`skills.worldPressed`, :6976-6987). A double click's second press is `OnLButtonDblClk` (:7239-7263), which stops
+   * nothing.
    */
   onGroundPressed(double: boolean): void {
     if (double || this.ownIsDead()) return;
     this.stop('ground');
+    this.skills?.worldPressed();
   }
 
   /**
@@ -287,15 +336,35 @@ export class AttackLoop {
    * press on the ground (`ground`: `onGroundPressed`, which also drops the next target and the mark, and leaves the
    * focus); the player's death (`died`: `CDPClient::OnMoverDeath`, `Neuz/DPClient.cpp:2080`, `onMoverDeath`); the
    * target killed by the player or gone from view (`target`: `onRemoved`, `onMoverDeath`). The focus is `Focus`'s to
-   * clear. A press held on a mover past its 500 ms goes on attacking: Neuz reads no keys while it runs that branch.
+   * clear. A press held on a mover past its 500 ms goes on attacking: Neuz reads no keys while it runs that branch. A
+   * move and a press on the ground are `ClearCmd()`s, which drop a skill's command too (`WndWorldControlPlayer.cpp:399`,
+   * `WndWorld.cpp:6854`).
    */
   stop(reason: 'move' | 'ground' | 'died' | 'target'): void {
     this.auto = false;
-    this.cmd = null;
+    if (reason === 'move' || reason === 'ground') this.clearCmd();
+    else this.cmd = null;
     if (reason === 'ground') {
       this.focus.next = null;
       this.renderTarget = null;
     }
+  }
+
+  /**
+   * `g_pPlayer->ClearCmd()` (`_Common/Mover.h:1770-1775`, `m_oaCmd = OBJACT_NONE`): the command goes, the melee attack's
+   * or the skill's.
+   */
+  clearCmd(): void {
+    this.cmd = null;
+    this.skills?.clearCmd();
+  }
+
+  /**
+   * `m_bAutoAttack = TRUE` as a skill begins (`CDPClient::OnUseSkill`, `Neuz/DPClient.cpp:3912-3943`;
+   * `CWndWorld::UseSkillToFocusObj`, `WndWorld.cpp:6280-6292`): the skill use asks it, which tests the hand and the skill.
+   */
+  startAutoAttack(): void {
+    this.auto = true;
   }
 
   /**
@@ -334,22 +403,27 @@ export class AttackLoop {
   }
 
   /**
-   * One rules step: the branch of `CWndWorld::Process` (`WndWorld.cpp:8513-8537`), decided once; on the attack branch,
-   * `UseFocusObj` on an attackable focus. True where `Process` runs `ControlPlayer` this step, which the world screen
-   * then runs (`OwnMover.control`); false on the attack branch and where neither runs (a press on a mover held before its
-   * 500 ms are out). The own mover's hooks (the combo `onAttackEnd`, its animation speed `attackSpeed`, the command on
-   * arrival `arrive`) are set at its first step.
+   * One rules step: the branch of `CWndWorld::Process` (`WndWorld.cpp:8503-8537`), decided once. `skillBranch` says the
+   * skill use ran the branch of a reserved skill this step (`m_dwNextSkill`, :8505-8511, `SkillUse.step`): then neither
+   * the attack nor the controls run. Else on the attack branch, `UseFocusObj` on an attackable focus while no USESKILL
+   * waits for its answer (:8522). True where `Process` runs `ControlPlayer` this step, which the world screen then runs
+   * (`OwnMover.control`); false on the attack branch and where neither runs (a press on a mover held before its 500 ms
+   * are out). The own mover's hooks (the combo `onAttackEnd`, its animation speed `attackSpeed`, the command on arrival
+   * `arrive`) are set at its first step.
    */
-  step(): boolean {
+  step(skillBranch = false): boolean {
     const own = this.world.self();
     if (own === undefined) return true;
     this.bind(own);
+    if (skillBranch) return false;
     const branch = this.processBranch();
     if (branch === 'attack') {
       const target = this.world.movers.get(this.focus.targetId!)!;
       const state = this.own();
-      if (state !== undefined && this.isAttackAble(target)) this.useFocusObj(own, target, state);
-    } else if (!this.buttonDown && !this.auto) {
+      if (state !== undefined && this.isAttackAble(target) && this.skills?.pending !== true) {
+        this.useFocusObj(own, target, state);
+      }
+    } else if (!this.pressed()) {
       this.selectTarget = false; // the else branch (:8533-8537)
     }
     return branch === 'controls';
@@ -365,15 +439,20 @@ export class AttackLoop {
   }
 
   /**
-   * The branch of `CWndWorld::Process` (`WndWorld.cpp:8513-8537`): with the button down or auto-attacking, the attack
-   * when auto-attacking or held past `m_timerFocusAttack` (:8517) with a focus in view, the controls with none, and
-   * neither otherwise; the controls with neither.
+   * The branch of `CWndWorld::Process` (`WndWorld.cpp:8513-8537`): with the button down or auto-attacking and no skill's
+   * command (`pressed`), the attack when auto-attacking or held past `m_timerFocusAttack` (:8517) with a focus in view,
+   * the controls with none, and neither otherwise; the controls else.
    */
   private processBranch(): ProcessBranch {
-    if (!this.buttonDown && !this.auto) return 'controls';
+    if (!this.pressed()) return 'controls';
     if (!this.auto && !(this.selectTarget && this.holdTimedOut())) return 'none';
     const id = this.focus.targetId;
     return id !== null && this.world.movers.has(id) ? 'attack' : 'controls';
+  }
+
+  /** `(m_bLButtonDown || m_bAutoAttack) && (g_pPlayer->GetCmd() != OBJACT_USESKILL)` (`WndWorld.cpp:8514`). */
+  private pressed(): boolean {
+    return (this.buttonDown || this.auto) && this.skills?.commanding !== true;
   }
 
   /** `m_timerFocusAttack.IsTimeOut()` at the time the held press is known held till. */
@@ -443,9 +522,9 @@ export class AttackLoop {
   /**
    * `CMover::IsAttackAble( pObj )` (`Mover.cpp:6469-6570`) on the client for a mover, as `attackAble` judges it, with what
    * the C++ does besides: `IsAttackAbleNPC` refusing a dead monster or NPC clears the focus (`SetObjFocus( NULL )`,
-   * :6580-6589), and a refusal turns the auto-attack off (:6564-6567).
+   * :6580-6589), and a refusal turns the auto-attack off (:6564-6567). The skill use asks it too (`CMD_SetUseSkill`).
    */
-  private isAttackAble(target: Mover): boolean {
+  isAttackAble(target: Mover): boolean {
     if (!target.added.isPlayer && isDie(target)) this.focus.select(null);
     const able = attackAble(target, this.moverProps);
     if (!able) this.auto = false;
@@ -479,29 +558,25 @@ export class AttackLoop {
   }
 
   /**
-   * `CMover::SetDestObj( objid, fRange, bSend = TRUE )` (`MoverMsg.cpp:47-84`) for the active mover: following another
-   * object than it does, it says so first: a PLAYERBEHAVIOR if it followed a player (`__BS_ADJUST_SYNC`, :55-61), then
-   * PLAYERSETDESTOBJ, and `m_nCorr = -1` (so that the walk ends where it meets something, `OnActCollision`); then the
-   * rules' `SetDestObj` (`m_idDest`, `m_fArrivalRange`, `ClearDestPos`).
+   * `CMover::SetDestObj( objid, fRange, bSend = TRUE )` (`MoverMsg.cpp:47-84`) for the active mover (`setOwnDestObj`), whose
+   * `m_oaCmd = OBJACT_NONE` (:79) drops a skill's command; the caller sets the melee one next.
    */
   private setDestObj(own: Mover, objectId: number, range: number): void {
-    const old = own.dest?.targetId ?? null;
-    if (old !== objectId) {
-      if (old !== null && this.world.movers.get(old)?.added.isPlayer === true) {
-        this.session.sendBehavior(own.act.report(this.clock.tick()));
-      }
-      this.session.sendDestObj(objectId, range);
-      own.nCorr = -1;
-    }
-    setDestObj(own, objectId, range);
+    this.skills?.clearCmd();
+    setOwnDestObj(this.session, () => this.clock.tick(), (id) => this.world.movers.get(id), own, objectId, range);
   }
 
   /**
    * `CMover::ProcessMoveArrival`'s `switch( m_oaCmd )` for the own mover (`MoverMove.cpp:78-262`), which the rules' step
-   * calls as it arrives at `target` (`SimMover.arrive`): `OBJACT_MELEE_ATTACK` (:189-205) swings at it (`DoAttackMelee`)
-   * and the command ends (`SetCmd( OBJACT_NONE )`, :262). With no command, false: the rules' default arrival.
+   * calls as it arrives at `target` (`SimMover.arrive`): `OBJACT_USESKILL` (:80-184) is the skill use's (`skills.arrive`);
+   * `OBJACT_MELEE_ATTACK` (:189-205) swings at it (`DoAttackMelee`); either command ends (`SetCmd( OBJACT_NONE )`, :262).
+   * With no command, false: the rules' default arrival.
    */
   private arrive(own: Mover, target: SimMover): boolean {
+    if (this.skills?.arrive(own, target) === true) {
+      this.cmd = null;
+      return true;
+    }
     if (this.cmd === null) return false;
     this.cmd = null;
     const state = this.own();
@@ -523,8 +598,9 @@ export class AttackLoop {
   /**
    * The own character's combo at the end of the swing `dwState` (`_ProcessStateAttack`, `ActionMoverState.cpp:815-841`):
    * at the level it needs, and while auto-attacking or holding the button (`CTRLMSG_LDOWN`), the next swing at the mover
-   * the last one was started at (`m_objidHit`), if it is in view (`IsValidObj`; no skill is queued in Piece 4); one that
-   * starts sends MELEE_ATTACK. A mover gone from view is forgotten (`m_objidHit = NULL_ID`).
+   * the last one was started at (`m_objidHit`), if it is in view (`IsValidObj`) and no skill is reserved
+   * (`GetNextSkill() == NEXTSKILL_NONE`, :826-828: the reserved skill goes next); one that starts sends MELEE_ATTACK. A
+   * mover gone from view, or a reserved skill, forgets it (`m_objidHit = NULL_ID`).
    */
   private combo(own: Mover, dwState: number): void {
     const combo = COMBO.get(dwState);
@@ -533,7 +609,7 @@ export class AttackLoop {
     if (state.level < combo.level || !(this.buttonDown || this.auto)) return;
     const act = own.act;
     const hit = act.hitId === null ? undefined : this.world.movers.get(act.hitId);
-    if (hit === undefined) {
+    if (hit === undefined || this.skills?.reserved === true) {
       act.hitId = null;
       return;
     }

@@ -94,6 +94,9 @@ export class Hud {
         case 'skillPointUp':
           this.show('TID_GAME_SKILLPOINT_UP');
           break;
+        case 'skillPointReset': // OnInitSkillPoint (DPClient.cpp:14725), unless it stopped early
+          if (event.chatLine) this.line('TID_GAME_RECCURENCE');
+          break;
         case 'died':
           this.line('TID_GAME_DEATH');
           break;

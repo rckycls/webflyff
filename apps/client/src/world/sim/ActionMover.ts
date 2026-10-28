@@ -83,6 +83,10 @@ const LANDING_BOUNCE = f32(0.04);
 const AF_GENERIC = 1;
 /** `MAX_ACTMSG` (`Action.h:10`): `CActMsgq` is a ring of 0xff entries, one always empty, so it keeps 254. */
 const MELEE_QUEUE_SIZE = 0xff - 1;
+/** `pModel->m_nFrameMax * 0.65f` (`ActionMoverState.cpp:614`): the share of its frames a melee skill's motion plays. */
+const MELEE_SKILL_CUT = f32(0.65);
+/** `pModel->m_nPause = 4` (`ActionMoverState.cpp:656-658`, the client's only): a melee skill's hit holds the model 4 steps. */
+const MELEE_SKILL_PAUSE = 4;
 /**
  * The groups of states whose states are copied, in `ProcessAction`'s order (`ActionMover.cpp:241-274`); the look and
  * action ones are not.
@@ -183,6 +187,26 @@ interface KeptAttack {
 }
 
 /**
+ * The skill a mover is using: `m_oaAct == OBJACT_USESKILL` and its `m_nAParam`s, as `CMover::DoUseSkill` sets them once
+ * the skill's motion has started (`SetActParam( OBJACT_USESKILL, dwSkill, idFocusObj )` and `m_nAParam[3] = nLevel`,
+ * `MoverSkill.cpp:840-846`): the skill's ID (`SI_*`), its target's object ID and the level it is used at.
+ */
+export interface SkillAct {
+  skill: number;
+  targetId: number;
+  level: number;
+}
+
+/**
+ * `m_pModel->m_fFrameCurrent` and `m_nFrameMax`: the frame the model's motion is at and how many it has (the `.ani`'s
+ * `m_nMaxFrame`, `CModelObject::LoadMotion`).
+ */
+export interface ModelFrame {
+  current: number;
+  max: number;
+}
+
+/**
  * `CActionMover` on the ground (`Source/_AIInterface/ActionMover*.cpp`): the action messages that change a mover's
  * state, and the step that moves it by that state, 60 times a second. Neuz moves every mover with these rules
  * between the server's messages, so a copy that keeps them moves others as their own clients do.
@@ -193,10 +217,11 @@ interface KeptAttack {
  * Combat (Piece 4): the melee swings `ATK1` to `ATK4` with their hit frames, pause and end (`_ProcessStateAttack`), the
  * attacks kept while busy (`m_qMeleeAtkMsg`), the flinch (`SetDamagedMotion`), the knock-back flight and fall
  * (`OBJSTA_DMG_FLY`, `DMG_DIE`, `DMG_LIVE`, with the outside force `m_vDeltaE`), death, combat mode, and the animation
- * speed (`CMover::ProcessAniSpeed`). The model's side of it (its frame, `IsEndFrame`, `IsAttrHit`) is its owner's, who
- * sets the hooks; `m_nPause` is kept here (`paused`), where both the rules and the model read it.
+ * speed (`CMover::ProcessAniSpeed`); and the melee skills (`OBJMSG_MELEESKILL`, `ProcessStateMeleeSkill`), with the skill
+ * in use (`skillAct`). The model's side of it (its frame, `IsEndFrame`, `IsAttrHit`) is its owner's, who sets the hooks;
+ * `m_nPause` is kept here (`paused`), where both the rules and the model read it.
  * Left out: flying (`IsFly`, flying NPCs), collecting, jumping on purpose, the `MVRF_NOMOVE`, `MVRF_NOATTACK` and
- * `CHS_LOOT` blocks and the stun (no buffs here), skills, and the world's edge (`CWorld::ClipX`/`ClipZ`);
+ * `CHS_LOOT` blocks and the stun (no buffs here), the magic skills' casting, and the world's edge (`CWorld::ClipX`/`ClipZ`);
  * `__Y_INTERFACE_VER3` (strafing) and `__X15` are off in Neuz's build. Positions, deltas and speeds are floats (`f32`).
  */
 export class ActionMover {
@@ -242,6 +267,12 @@ export class ActionMover {
    * clearing, in `DoDie`, is the server's: `Mover.cpp:5133-5182`). `isAttackMode` reads it.
    */
   atkCnt = 0;
+  /**
+   * The skill the mover uses (`m_oaAct == OBJACT_USESKILL` and its `m_nAParam`s), or null (`OBJACT_NONE`): its owner sets
+   * it as the skill's motion starts (`CMover::DoUseSkill`), a melee skill's end clears it (`OnActEndMeleeSkill`,
+   * `ClearActParam`), and so does the own character's next skill command (`CMD_SetUseSkill`, `MoverMsg.cpp:418`).
+   */
+  skillAct: SkillAct | null = null;
 
   /**
    * `m_pModel->IsEndFrame()`: whether the motion has played to its end. No model plays it here, so by default every
@@ -253,6 +284,12 @@ export class ActionMover {
    * model's last frame move went past, as its index in the motion's hit frames, or -1. By default -1: no model, no hits.
    */
   isAttrHit: () => number = () => -1;
+  /**
+   * `m_pModel->m_fFrameCurrent` and `m_nFrameMax` of the motion the rules set, which a melee skill's end reads; null while
+   * the motion's file loads (no frame yet, so no end). By default frame 0 of 0: no model, so the motion is over at once,
+   * as `isEndFrame` says.
+   */
+  modelFrame: () => ModelFrame | null = () => ({ current: 0, max: 0 });
   /** `CMover::ClearDest` (`Mover.h:1008`), which `STOP` calls. The destination is not kept here: its owner sets this. */
   clearDest: () => void = () => {};
   /**
@@ -290,6 +327,13 @@ export class ActionMover {
    * character's combo (`:815-846`: the next swing, by level, while auto-attacking) is its owner's.
    */
   onAttackEnd: (state: number) => void = () => {};
+  /**
+   * `CMover::OnMeleeSkill( 0, m_nMotionHitCount )` (`MoverActEvent.cpp:72-164`), which `ProcessStateMeleeSkill` calls as
+   * the model passes a hit frame of a melee skill's motion (`ActionMoverState.cpp:651-654`), whatever its target:
+   * `hitCount` is the hits of this motion before this one. Its owner makes the skill's hit (from `skillAct`); the model's
+   * 4 steps' hold is the rules' own.
+   */
+  onMeleeSkill: (hitCount: number) => void = () => {};
   /** The C runtime's `rand()`, 0 to `RAND_MAX` (32767, MSVC's), for `random( n )` (`xUtil.h:28`): `rand() % n`. */
   rand: () => number = () => Math.floor(Math.random() * 32768);
 
@@ -303,6 +347,8 @@ export class ActionMover {
   private posLast: Vec3 = [0, 0, 0];
   /** `m_qMeleeAtkMsg` (`Action.h:274`): the swings a MELEE_ATTACK asked for while the mover was busy. */
   private readonly keptAttacks: KeptAttack[] = [];
+  /** `m_nMotionHitCount` (`ActionMover.h:92`): the hit frames a melee skill's motion has passed. */
+  private motionHitCount = 0;
 
   constructor(readonly body: MoverBody) {
     body.pos = toFloats(body.pos);
@@ -688,6 +734,8 @@ export class ActionMover {
       case ActMsg.ATK3:
       case ActMsg.ATK4:
         return this.swing(SWINGS.get(msg)!, param1);
+      case ActMsg.MELEESKILL: // :736-772
+        return this.meleeSkill(param1, param2);
       case ActMsg.DIE: // :842-1003
         this.die(param1, param2);
         return 1;
@@ -744,6 +792,26 @@ export class ActionMover {
     this.atkCnt = 1;
     this.hitId = targetId;
     return AF_GENERIC;
+  }
+
+  /**
+   * `OBJMSG_MELEESKILL` (`ActionMoverMsg.cpp:736-772`, the client's branch) with the skill's motion `motion` at the mover
+   * `targetId`: refused (-2) in an action, or at a target out of view (`IsValidObj`); else, as the server's word comes,
+   * whatever the mover was doing: `m_dwMotion = -1` and `ClearState`, the melee-skill state alone, and the motion once and
+   * as it is (`ANILOOP_1PLAY`, `MOP_SWDFORCE | MOP_NO_TRANS | MOP_FIXED`: no weapon set), its hits counted from 0. It does
+   * not face the target: `DoUseSkill` turns the mover first. Left out: `MVRF_NOATTACK` (buffs); the looping motion of two
+   * later jobs' skills (`SI_BLD_DOUBLESW_SILENTSTRIKE`, `SI_ACR_YOYO_COUNTER`, read from the skill used before) and the
+   * disguise's `MTI_ATK1` (`IK3_TEXT_DISGUISE`, a buff); `OnAttackStart` does nothing.
+   */
+  private meleeSkill(motion: number, targetId: number): number {
+    if (this.state & ObjSta.ACTION_ALL) return -2;
+    if (this.findMover(targetId) === undefined) return -2;
+    this.motion = NO_MOTION;
+    this.clearState();
+    this.setState(ObjSta.ATK_ALL, ObjSta.ATK_MELEESKILL);
+    this.setMotion(motion, AniLoop.ONE_PLAY, Mop.SWDFORCE | Mop.NO_TRANS | Mop.FIXED);
+    this.motionHitCount = 0;
+    return 1;
   }
 
   /**
@@ -846,6 +914,9 @@ export class ActionMover {
       case ObjSta.ATK4:
         this.processStateAttack(dwState);
         break;
+      case ObjSta.ATK_MELEESKILL: // :460-462
+        this.processStateMeleeSkill();
+        break;
       case ObjSta.DMG: // :472-477: the flinch ends with its motion
         if (this.isEndFrame()) this.resetState(ObjSta.DMG_ALL);
         break;
@@ -906,6 +977,32 @@ export class ActionMover {
     if (hit < 0) return;
     const target = this.targetId === null ? undefined : this.findMover(this.targetId);
     if (target !== undefined && (!target.isDie() || target.hitPoint() > 0)) this.onHit(hit, dwState);
+  }
+
+  /**
+   * `CActionMover::ProcessStateMeleeSkill` (`ActionMoverState.cpp:593-679`) for the skills that are no exception (the
+   * Vagrant's): once the model's frame has reached 65% of its frames the state ends (`ResetState( OBJSTA_ATK_ALL )`,
+   * :614-619, whose end clears the skill in use); a paused model counts a step off; an unpaused one that passed a hit
+   * frame calls `onMeleeSkill` with the hits so far, counts it, and holds 4 steps (`m_nPause = 4`, :651-658). With no
+   * frame to tell yet (the file loading) nothing ends. The `m_bEndFrame = TRUE` of the cut is left out: every motion set
+   * after it is another one or set with `m_dwMotion = -1` first, so no rule here reads it. Left out with their skills:
+   * the two exceptions (`SI_ACR_YOYO_COUNTER`, and `SI_BLD_DOUBLESW_SILENTSTRIKE`'s end and dash), `SI_BIL_KNU_BELIALSMESHING`'s
+   * dash, and the shots of a skill with an `nSkillCount` (`m_nShootCnt`, every fourth step, :622-629, :668-676).
+   */
+  private processStateMeleeSkill(): void {
+    const frame = this.modelFrame();
+    if (frame !== null && frame.current >= f32(frame.max * MELEE_SKILL_CUT)) {
+      this.resetState(ObjSta.ATK_ALL);
+      return;
+    }
+    if (this.paused > 0) {
+      this.paused--;
+      return;
+    }
+    if (this.isAttrHit() < 0) return;
+    this.onMeleeSkill(this.motionHitCount);
+    this.motionHitCount++;
+    this.paused = MELEE_SKILL_PAUSE;
   }
 
   /**
@@ -974,12 +1071,18 @@ export class ActionMover {
   }
 
   /**
-   * `CAction::OnEndAttackState` (`Action.cpp:101-135`) on the client, for the copied swings: the next kept swing starts
-   * (`ProcessAtkMsg`, `CMeleeAtkMsgq::Process`, `ActionMover.cpp:32-57`). One that starts (above 0) leaves the queue; a
-   * busy answer (0) keeps it and stops; one refused (below 0) leaves the queue and the next is tried. The own character
-   * keeps none (`meleeAttack`), so its `IsActiveMover()` test is left out.
+   * `CAction::OnEndAttackState` (`Action.cpp:101-135`) on the client, for the copied states. A melee skill's end is
+   * `CMover::OnActEndMeleeSkill` (`MoverActEvent.cpp:2056-2068`): `ClearActParam`, the skill in use gone (`MVRF_SKILL`,
+   * which nothing on the client reads, is not kept; the action slot's next skill is the server's). A swing's starts the
+   * next kept swing (`ProcessAtkMsg`, `CMeleeAtkMsgq::Process`, `ActionMover.cpp:32-57`): one that starts (above 0) leaves
+   * the queue; a busy answer (0) keeps it and stops; one refused (below 0) leaves the queue and the next is tried. The own
+   * character keeps none (`meleeAttack`), so its `IsActiveMover()` test is left out.
    */
   private onEndAttackState(was: number): void {
+    if ((was & ObjSta.ATK_ALL) === ObjSta.ATK_MELEESKILL) {
+      this.skillAct = null;
+      return;
+    }
     if (!isSwing(was & ObjSta.ATK_ALL)) return;
     for (let kept = this.keptAttacks[0]; kept !== undefined; kept = this.keptAttacks[0]) {
       const result = this.processActMsg1(kept.msg, kept.param1, kept.param2, kept.param3);

@@ -4,7 +4,7 @@
 // rules' part of each message and step (HP, states, motions: the flinch, the level-up motion); what is left is what is
 // seen, which goes to `out`: the effect manager, the damage numbers and the movers' views.
 
-import type { Vec3, WebItemProp } from '@flyffweb/formats';
+import type { Vec3, WebItemProp, WebSkill } from '@flyffweb/formats';
 import { AttackFlag } from '@flyffweb/protocol';
 import type { OwnEvent } from '../OwnState';
 import { Ik3 } from '../sim/constants';
@@ -26,6 +26,12 @@ const CRITICAL_SCALE = 3;
 const SPARK_RAISE = 1;
 /** `NULL_ID` written `=` in `propItem.txt`: the item has no hit effect (`dwSfxObj3 != NULL_ID`, `ActionMoverDmg.cpp:92`). */
 const NO_SFX = -1;
+/** `AngleToVectorXZ( &vLocal, GetAngle(), 1.3f )` (`Ctrl.cpp:953`): a melee skill's effect is made 1.3 m before its caster. */
+const SKILL_SFX_REACH = f32(1.3);
+/** `vLocal.y += 1.0f` (`Ctrl.cpp:955`). */
+const SKILL_SFX_RAISE = 1;
+/** `EXT_MELEEATK` (`Resource/define.h:55`): a melee attack skill, whose effect is made before its caster. */
+const EXT_MELEEATK = 17;
 
 /** What the events read of a mover in view: its object ID, position (`GetPos()`) and angle (`GetAngle()`). */
 export interface FxMover {
@@ -48,6 +54,8 @@ export interface CombatFxWorld {
   focusId: number | null;
   /** The item catalog: the hit effect (`dwSfxObj3`) and the kind (`dwItemKind3`) of an attacker's hand item. */
   itemProps: ReadonlyMap<number, Pick<WebItemProp, 'sfxHit' | 'kind3'>>;
+  /** The skills catalog: a skill's hit effect (`dwSfxObj3`) and how it finds its target (`dwExeTarget`); none, no skill effect. */
+  skills?: ReadonlyMap<number, Pick<WebSkill, 'sfxHit' | 'exeTarget'>>;
 }
 
 /** Where what is played goes: `EffectManager.play`, `DamageNumbers.add`, and `MoverViews.flash` and `shake`. */
@@ -61,15 +69,16 @@ export interface CombatFxOut {
 }
 
 /**
- * The effects of milestone 1, loaded as the world is entered so that the first of each plays at once (their files and
- * textures come over the network on first use): the weapons' hit sparks (`dwSfxObj3` of the swords and axes, sticks and
- * staffs, knuckles, bows and yoyos: [effects §3.2]), the critical, miss (also the resist's), parry and block banners, the
- * level up and the spawn.
+ * The effects loaded as the world is entered so that the first of each plays at once (their files and textures come over
+ * the network on first use): milestone 1's weapons' hit sparks (`dwSfxObj3` of the swords and axes, sticks and staffs,
+ * knuckles, bows and yoyos: [effects §3.2]), the critical, miss (also the resist's), parry and block banners, the level up
+ * and the spawn; and milestone 2's hits of the Vagrant's three skills ([skills §4.9]).
  */
 export const WARM_UP_EFFECTS: readonly number[] = [
   Xi.HIT_SWORD01, Xi.HIT_STICK01, Xi.HIT_KNUCKLE01, Xi.HIT_BOW01, Xi.HIT_YOY01,
   Xi.HIT_CRITICAL01, Xi.HIT_MISS01, Xi.HIT_PARRY01, Xi.HIT_HITBLOCK01,
   Xi.GEN_LEVEL_UP01, Xi.GEN_MONSTER_SPAWN01,
+  Xi.SKILL_VAG_ONE_CLEANHIT01, Xi.SKILL_VAG_ONE_BRANDISH01, Xi.SKILL_VAG_ONE_OVERCUTTER01,
 ];
 
 /** `D3DXVECTOR3 vPos = pMover->GetPos(); vPos.y += 1.5f;`, in floats. */
@@ -100,10 +109,21 @@ const bannerAt = (p: Vec3): Vec3 => [p[0], f32(p[1] + BANNER_RAISE), p[2]];
  *   both movers being valid (`IsValidObj( pHitObj )`).
  * - `levelUp`: `CDPClient::OnSetLevel` (`DPClient.cpp:3351`): `XI_GEN_LEVEL_UP01` on the mover, following it.
  * - `spawned`: `CDPClient::OnAddObj` (`DPClient.cpp:1226`): `XI_GEN_MONSTER_SPAWN01` on the mover, following it.
+ * - `skillHit`: `CCtrl::CreateSkillSfx` (`_Common/Ctrl.cpp:878-997`), the branch of a skill with no duration (every
+ *   Vagrant skill's): a melee attack skill's (`EXT_MELEEATK`) `dwSfxObj3` 1.3 m in front of the caster along its heading
+ *   and 1 m up (`AngleToVectorXZ( GetAngle(), 1.3f )`, :950-955), made there with the caster as its source and the target
+ *   as its destination (`CreateSfx( xi, vLocal, GetId(), vLocal, pTarget->GetId() )`, :958): a `CSfxFixed` for the melee
+ *   skills' ids, which stays where it is made and which the manager turns by the caster's angle (ruling R11). Then the
+ *   victim's shake, where the blow landed (`m_nDmgCnt = 10`, `ActionMoverDmg.cpp:118`). Left out: the other skills'
+ *   effect at the target (:965-971, with their projectiles, the yoyo's and the effects that last, `dwSfxObj4`, and the
+ *   caster's `dwSfxObj5`, which the catalog does not keep), and the hit sound (`dwSndAttack1`: this client plays none).
+ * - `sfxObj`: `CDPClient::OnCreateSfxObj` (`DPClient.cpp:4038-4067`): the effect at its absolute position, with no source
+ *   (`NULL_ID`), or on its mover as both source and destination (`CreateSfx( xi, vPos, idObj, vPos, idObj )`): it follows
+ *   the mover, and stays where the mover was last when it goes; the mover's angle goes with it.
  * - `swing` and `text`: nothing here (the rules played the swing; the texts are the messages window's).
  *
  * The world gives the movers as they are when the event is played: a message's at the start of the next frame, before
- * any rules step, and a step's (`spark`, `attackerHit`) right after that step, so where the handler found them. A
+ * any rules step, and a step's (`spark`, `attackerHit`, `skillHit`) right after that step, so where the handler found them. A
  * mover that left in the meantime (a DEL_OBJ later in the same bundle) is not in view, and what it would have shown at
  * it is not; whether the attacker was in view is the message's (`attackerInView`).
  */
@@ -136,6 +156,12 @@ export function playCombatEvent(event: CombatEvent, world: CombatFxWorld, out: C
     case 'spawned':
       followed(Xi.GEN_MONSTER_SPAWN01, world.movers.get(event.moverId), out);
       return;
+    case 'skillHit':
+      playSkillHit(event, world, out);
+      return;
+    case 'sfxObj':
+      playSfxObj(event, world, out);
+      return;
     default: // swing, text
       return;
   }
@@ -143,14 +169,48 @@ export function playCombatEvent(event: CombatEvent, world: CombatFxWorld, out: C
 
 /**
  * What an own event shows: a level up plays `XI_GEN_LEVEL_UP01` on the own player (`CMover::SetExperience`,
- * `_Common/MoverParam.cpp:1727`; its motion, `MTI_LEVELUP`, the world played), and new skill points play it again
- * (`CDPClient::OnSetExperience`, `DPClient.cpp:3398-3400`, on `g_pPlayer`). Their texts and music are the messages
- * window's. The rest show nothing here.
+ * `_Common/MoverParam.cpp:1727`; its motion, `MTI_LEVELUP`, the world played), new skill points play it again
+ * (`CDPClient::OnSetExperience`, `DPClient.cpp:3398-3400`, on `g_pPlayer`), and so does a reset of the skills that raised
+ * the points (`OnInitSkillPoint`, `DPClient.cpp:14691-14695`). Their texts and music are the messages window's. The rest
+ * show nothing here.
  */
 export function playOwnEvent(event: OwnEvent, world: CombatFxWorld, out: CombatFxOut): void {
-  if (event.kind !== 'levelUp' && event.kind !== 'skillPointUp') return;
+  const shown = event.kind === 'levelUp' || event.kind === 'skillPointUp' || (event.kind === 'skillPointReset' && event.effect);
+  if (!shown) return;
   const self = world.selfId === undefined ? undefined : world.movers.get(world.selfId);
   followed(Xi.GEN_LEVEL_UP01, self, out);
+}
+
+/** A melee skill's hit (`skillHit`, see `playCombatEvent`): its effect before the caster, and the victim's shake. */
+function playSkillHit(event: Extract<CombatEvent, { kind: 'skillHit' }>, world: CombatFxWorld, out: CombatFxOut): void {
+  const caster = world.movers.get(event.casterId);
+  const skill = world.skills?.get(event.skill);
+  if (caster === undefined || skill === undefined || !world.movers.has(event.targetId)) return;
+  if (skill.exeTarget === EXT_MELEEATK && skill.sfxHit !== NO_SFX) {
+    // AngleToVectorXZ( &vLocal, GetAngle(), 1.3f ); vLocal += GetPos(); vLocal.y += 1.0f
+    const [x, y, z] = caster.act.body.pos;
+    const { angle } = caster.act.body;
+    const theta = f32(angle * RADIANS_PER_DEGREE);
+    const pos: Vec3 = [
+      f32(f32(f32(Math.sin(theta)) * SKILL_SFX_REACH) + x),
+      f32(y + SKILL_SFX_RAISE),
+      f32(f32(f32(-f32(Math.cos(theta))) * SKILL_SFX_REACH) + z),
+    ];
+    out.effect({ xi: skill.sfxHit, pos, sourceAngle: angle });
+  }
+  if (event.landed) out.shake(event.targetId);
+}
+
+/** CREATESFXOBJ's effect (`sfxObj`, see `playCombatEvent`). */
+function playSfxObj(event: Extract<CombatEvent, { kind: 'sfxObj' }>, world: CombatFxWorld, out: CombatFxOut): void {
+  if (event.pos !== null) {
+    out.effect({ xi: event.xi, pos: event.pos });
+    return;
+  }
+  const mover = event.moverId === null ? undefined : world.movers.get(event.moverId);
+  if (mover === undefined) return;
+  const { pos, angle } = mover.act.body;
+  out.effect({ xi: event.xi, pos, followId: mover.objectId, followDest: true, sourceAngle: angle });
 }
 
 /**

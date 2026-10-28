@@ -21,6 +21,10 @@ import type { Equipped, ParamAdjust, Stats } from './sim/params';
  * - `statsChanged`: SETSTATE replaced the stats and the stat points.
  * - `skillPointUp`: SETEXPERIENCE brought more skill points than there were: a second level-up effect and the caption
  *   `TID_GAME_SKILLPOINT_UP` (`OnSetExperience`, `DPClient.cpp:3394-3417`).
+ * - `skillPointReset`: INITSKILLPOINT reset the skills (`OnInitSkillPoint`, `DPClient.cpp:14687-14728`): with `effect`,
+ *   the points rose, which plays `XI_GEN_LEVEL_UP01` on the own player (and Neuz's level-up music, `BGM_IN_LEVELUP`: this
+ *   client plays no sound); with `chatLine`, the chat line `TID_GAME_RECCURENCE`, which a skill with a level and no row in
+ *   the catalog stops before, as it stops the levels' reset (`return`, :14701-14702).
  * - `died`: MOVERDEATH, the HP is 0.
  * - `revived`: REVIVAL or REVIVAL_TO_LODESTAR.
  */
@@ -30,8 +34,13 @@ export type OwnEvent =
   | { kind: 'refilled' }
   | { kind: 'statsChanged' }
   | { kind: 'skillPointUp' }
+  | { kind: 'skillPointReset'; effect: boolean; chatLine: boolean }
   | { kind: 'died' }
   | { kind: 'revived' };
+
+/** `JTYPE_MASTER` and `JTYPE_HERO` (`Resource/defineJob.h:9-10`): the skills a reset of the skill points leaves. */
+const JTYPE_MASTER = 5;
+const JTYPE_HERO = 6;
 
 /** `nPatLv` of `CMover::SetExperience` (`MoverParam.cpp:1741`): the levels where a Vagrant learns a new attack pattern. */
 const PATTERN_LEVELS = [2, 8, 12] as const;
@@ -207,16 +216,30 @@ export class OwnState {
    * the other way round). It is required, as a message with none cannot be told from the own one: a message about another
    * mover is ignored, as `prj.GetMover( objid )` in the handlers finds that mover and not `g_pPlayer`.
    *
-   * SETSTATE and TASKBAR name no mover in Neuz (`OnSetState( ar )`, `OnTaskBar( ar )` go to `g_pPlayer` and its task bar),
-   * so they apply whatever `objectId` is. SETLEVEL is another player's (`CUserMng::AddSetLevel` skips the player,
-   * `User.cpp:4694-4706`), so it is ignored. The rest of the messages are not about the own numbers.
+   * SETSTATE, TASKBAR, DOUSESKILLPOINT, INITSKILLPOINT and SETACTIONPOINT name no mover in Neuz (`OnSetState( ar )`,
+   * `OnTaskBar( ar )`, `OnDoUseSkillPoint( ar )` and `OnInitSkillPoint( ar )` go to `g_pPlayer` and its task bar,
+   * `DPClient.cpp:653-654`; `OnSetActionPoint` reads no object, its message's being `NULL_ID`), so they apply whatever
+   * `objectId` is. SETLEVEL is another player's (`CUserMng::AddSetLevel` skips the player, `User.cpp:4694-4706`), so it is
+   * ignored. The rest of the messages are not about the own numbers.
    */
   apply(message: WorldMessage, objectId: number): OwnEvent[] {
     switch (message.type) {
       case 'setState':
         return this.onSetState(message);
       case 'taskBar':
-        this.taskBar = message.taskBar; // CWndTaskBar::Serialize empties the bars and reads them anew
+        // CWndTaskBar::Serialize empties the bars and reads them anew: after a reset of the skills too, whose server
+        // empties every skill shortcut and sends the bars again (`CMover::InitSkillExp`, `Mover.cpp:1855-1900`)
+        this.taskBar = message.taskBar;
+        return [];
+      case 'doUseSkillPoint':
+        this.onDoUseSkillPoint(message);
+        return [];
+      case 'initSkillPoint':
+        return this.onInitSkillPoint(message.skillPoint);
+      case 'setActionPoint':
+        // OnSetActionPoint (DPClient.cpp:15798-15805): m_pWndTaskBar->m_nActionPoint alone, in place, so that the bars stay
+        // as they are (the task bar loads them anew only for another TASKBAR); a TASKBAR sets it again as it comes
+        if (this.taskBar !== null) this.taskBar.actionPoint = message.actionPoint;
         return [];
       default:
         break;
@@ -314,6 +337,39 @@ export class OwnState {
     this.remainGP = m.remainGP;
     this.refill();
     return [{ kind: 'statsChanged' }, { kind: 'refilled' }];
+  }
+
+  /**
+   * `CDPClient::OnDoUseSkillPoint` (`DPClient.cpp:14730-14748`): for each of the 45 pairs, the level goes to the first slot
+   * that holds the pair's skill (`GetSkill( dwSkill )`, `MoverParam.cpp:96-104`, by skill ID, not by slot: an empty pair,
+   * `NULL_ID`, finds the first empty slot, whose level is 0 already), and a skill the player lacks is skipped; then the
+   * points. The skill window's refresh (`InitItem`) is the window's, from these.
+   */
+  private onDoUseSkillPoint(m: Extract<WorldMessage, { type: 'doUseSkillPoint' }>): void {
+    for (const pair of m.skills) {
+      const slot = this.skills.find((s) => s.skill === pair.skill);
+      if (slot !== undefined) slot.level = pair.level;
+    }
+    this.skillPoint = m.skillPoint;
+  }
+
+  /**
+   * `CDPClient::OnInitSkillPoint` (`DPClient.cpp:14687-14728`, `__LEGEND`): more points than there were play the level-up
+   * effect (and music); the points are the message's; then each skill with a level goes to 0 unless it is a master's or a
+   * hero's (`JTYPE_MASTER`, `JTYPE_HERO`). A skill with a level and no row in the catalog stops it there (`return`,
+   * :14701-14702): the slots after it keep their levels and the chat line `TID_GAME_RECCURENCE` does not come. The server
+   * empties the skill shortcuts and sends the bars again (`InitSkillExp`), which TASKBAR applies.
+   */
+  private onInitSkillPoint(skillPoint: number): OwnEvent[] {
+    const effect = this.skillPoint < skillPoint;
+    this.skillPoint = skillPoint;
+    for (const slot of this.skills) {
+      if (slot.level === 0) continue;
+      const skill = this.data.skills.get(slot.skill);
+      if (skill === undefined) return [{ kind: 'skillPointReset', effect, chatLine: false }];
+      if (skill.jobType !== JTYPE_MASTER && skill.jobType !== JTYPE_HERO) slot.level = 0;
+    }
+    return [{ kind: 'skillPointReset', effect, chatLine: true }];
   }
 
   /** HP, MP and FP at their maxima: `SetHitPoint( GetMaxHitPoint() )` and the other two (`DPClient.cpp:13520-13522`). */

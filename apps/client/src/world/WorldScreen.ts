@@ -2,8 +2,9 @@
 // 3D with its movers and their name tags, the joystick and the measurement overlay. It wires the parts together:
 // the session's bundles go into `WorldState` as they come; once the world is on screen the frame loop runs the rules'
 // 60 steps a second, the keys, the joystick and a tap on the world (spec §3.7) driving the own mover as
-// `CWndWorld::ControlGround` does and its moves sent as Neuz sends them, and the presses on a mover selecting and
-// attacking it (`AttackLoop`, Piece 4 §3.4); and it draws the stage around the own mover, from the chase camera behind
+// `CWndWorld::ControlGround` does and its moves sent as Neuz sends them, the presses on a mover selecting and
+// attacking it (`AttackLoop`, Piece 4 §3.4), and the task bar's skills and action slot used (`SkillUse`, §3.11); and it
+// draws the stage around the own mover, from the chase camera behind
 // it, with the mark of the point a tap sends it to, the effects and damage numbers of the fight, and the corners around
 // the target (Piece 4 §3.7), and over it Neuz's windows: the status window, the target bar, the server messages and the
 // caption (`Hud`, Piece 4 §3.9), the task bar with its Start menu, whose Log out asks first (`LogOutBox`) and then leaves
@@ -14,6 +15,7 @@
 
 import { UI_SHEETS_KEY, toWebPosition } from '@flyffweb/formats';
 import type { Vec3, WebEffect, WebUiSheet, WebUiSheets } from '@flyffweb/formats';
+import { ShortcutKind } from '@flyffweb/protocol';
 import type { AddedMover, BundleMessage, WorldMessage } from '@flyffweb/protocol';
 import {
   EffectRenderer, Joystick, KeyboardInput, WorldStage, effectTextureProvider, loadGltf, loopMotion, neuzRandom,
@@ -68,6 +70,7 @@ import { TargetMarks, attackMarks, focusRect } from './render/TargetMarks';
 import type { ScreenRect } from './render/TargetMarks';
 import { HAttr } from './sim/collision';
 import { Mti } from './sim/constants';
+import { SkillUse } from './skills/skillUse';
 import { transformCoord } from './sim/d3dx';
 import { FixedStepper, STEPS_PER_SECOND } from './sim/stepper';
 import { WorldSession } from './WorldSession';
@@ -153,6 +156,8 @@ export class WorldScreen {
   private focus: Focus | undefined;
   /** The own character's auto-attack: the presses on a mover, the attack each rules step, what stops it. */
   private attackLoop: AttackLoop | undefined;
+  /** The own character's skill use (milestone 2): the task bar's skills and the action slot, and the server's answers. */
+  private skillUse: SkillUse | undefined;
   private mark: MoveMark | undefined;
   /** The effects by `XI_*` id (`CreateSfx`), the renderer that draws them on the stage, and the textures it draws with. */
   private effects: EffectManager | undefined;
@@ -372,7 +377,8 @@ export class WorldScreen {
    * focus and the attack when a mover in view dies (`AttackLoop.onMoverDeath`, `OnMoverDeath`) or leaves
    * (`AttackLoop.onRemoved`, `CWorld::Process`, `World.cpp:883-893`): told before the world puts the mover in its dead
    * state or drops it, so that the focus released is as live as Neuz finds it (`IsLive`, the SETTARGET with 1 of a
-   * live target only, `World.cpp:310`).
+   * live target only, `World.cpp:310`). The skill use takes its answers after the world (`SkillUse.onMessage`; USESKILL
+   * reaches it through the world, `WorldState.onUseSkill`), once the world is on screen.
    */
   private apply(messages: BundleMessage<WorldMessage>[], joining = false): void {
     const world = this.world!;
@@ -393,6 +399,7 @@ export class WorldScreen {
         else if (value.type === 'delObj') this.attackLoop?.onRemoved(objectId);
       }
       world.apply(objectId, value, joining);
+      this.skillUse?.onMessage(objectId, value, world.self());
       if (value.type === 'setPos') this.views?.snap(objectId);
     }
   }
@@ -541,16 +548,24 @@ export class WorldScreen {
     // above the task bar (48 px, smaller on a narrow screen) and out of the safe area under it
     this.joystick = new Joystick(this.element, { bottom: `calc(env(safe-area-inset-bottom, 0px) + ${JOYSTICK_BOTTOM}px)` });
     this.focus = new Focus(this.session, (objectId) => this.isLive(objectId));
+    // the skill use and the attack loop share the own mover's one command, the reserved skill and the auto-attack
+    const skillUse = new SkillUse(this.session, this.focus, () => this.own, () => performance.now(), this.data!, {
+      tick: () => this.entry.clock.tick(), ground: () => this.ground,
+    });
+    skillUse.onText = (id) => this.say(id);
+    this.skillUse = skillUse;
     const attackLoop = new AttackLoop(
-      this.session, this.focus, this.world!, () => this.own, this.entry.clock, this.data!.movers,
+      this.session, this.focus, this.world!, () => this.own, this.entry.clock, this.data!.movers, skillUse,
     );
+    skillUse.attack = attackLoop;
+    this.world!.onUseSkill = (casterId, message, started) => skillUse.onUseSkill(casterId, message, started);
     this.attackLoop = attackLoop;
     this.taskBar = new TaskBar(this.hudArt!, {
       open: (window) => this.openWindow(window),
       logOut: () => this.logOut(),
-      // the slots' items are used in Piece 5, their skills in milestone 2
-      useSlot: () => {},
-      useActionSlot: () => {},
+      // the slots' items are used in Piece 5
+      useSlot: (bar, slot) => this.useBarSlot(bar, slot),
+      useActionSlot: () => skillUse.useActionSlot(),
     }, doc);
     // the Start menu opens where the joystick stands, which is over the windows' layer: it hides while the menu is open
     this.taskBar.onMenuChange = (open) => this.element.classList.toggle('world-menu-open', open);
@@ -584,6 +599,8 @@ export class WorldScreen {
     doc.addEventListener('visibilitychange', this.onVisibility);
     view.addEventListener('blur', this.onBlur);
     view.addEventListener('resize', this.onResize);
+    view.addEventListener('keydown', this.onKeyDown);
+    view.addEventListener('keyup', this.onKeyUp);
     this.lastTime = performance.now();
     // `ready()` resolves at the end of the first frame (`frame`), once the camera is placed and the world drawn
     renderer.setAnimationLoop((now) => this.frame(now));
@@ -665,7 +682,7 @@ export class WorldScreen {
     const self = world.self();
     const fxWorld: CombatFxWorld = {
       movers: world.movers, selfId: self?.objectId, gameMaster: isGameMaster(self?.added.player?.authorization ?? 0),
-      focusId: this.focus?.targetId ?? null, itemProps: this.data!.itemProps,
+      focusId: this.focus?.targetId ?? null, itemProps: this.data!.itemProps, skills: this.data!.skills,
     };
     const views = this.views!;
     const played = this.playedSoFar;
@@ -791,7 +808,9 @@ export class WorldScreen {
       // the keys' Shift no longer changes the gait: X toggles it (spec §1)
       const intent = controlIntent(this.keyboard!.intent(), this.joystick!.intent());
       if (movesOrTurns(intent)) loop.stop('move');
-      if (loop.step()) this.ownMover!.control(own, intent, tap, walkKey);
+      // the task bar's skills, then the reserved skill's branch of Process, which leaves neither the attack nor the controls
+      const skillBranch = this.skillUse!.step(own, (objectId) => world.movers.get(objectId));
+      if (loop.step(skillBranch)) this.ownMover!.control(own, intent, tap, walkKey);
     }
     world.step();
     this.ownMover!.corrected(own);
@@ -861,6 +880,22 @@ export class WorldScreen {
     } else if (window === 'character') {
       this.openCharacter();
     }
+  }
+
+  /**
+   * Slot `slot` of item bar `bar` used, pressed or by its F-key (`ObjectExecutor`, `WndManager.cpp:2776-2880`): a job
+   * skill's shortcut (`SHORTCUT_SKILL`, `m_dwType` 0) is `UseSkillShortCut( 0, m_dwId )` (`SkillUse.useSlot`); the slot
+   * holds the last entry TASKBAR gave it. A party skill (type 2) and an item (Piece 5) do nothing here.
+   */
+  private useBarSlot(bar: number, slot: number): void {
+    const shortcut = this.own?.taskBar?.items.findLast((entry) => entry.bar === bar && entry.slot === slot)?.shortcut;
+    if (shortcut?.kind === ShortcutKind.SKILL && shortcut.type === 0) this.skillUse?.useSlot(shortcut.id);
+  }
+
+  /** A line of the messages window, `PutString( prj.GetText( id ), NULL, prj.GetTextColor( id ) )`: the skill use's texts. */
+  private say(id: string): void {
+    const entry = this.data?.texts.get(id);
+    if (entry !== undefined && entry.text !== '') this.hud?.messages.add(entry.text, entry.color);
   }
 
   /**
@@ -1015,6 +1050,13 @@ export class WorldScreen {
   private readonly onBlur = (): void => this.stopOwnMover();
 
   /**
+   * The keys as the world gets them, for the skill use's `m_SkillTimerStop`: any key going down
+   * (`CWndWorld::OnKeyDown`, `WndWorld.cpp:7756`) and any let go (`OnKeyUp`, :7734).
+   */
+  private readonly onKeyDown = (): void => this.skillUse?.keyDown();
+  private readonly onKeyUp = (): void => this.skillUse?.keyUp();
+
+  /**
    * A resize or a turn of the device: the next frame keeps the open windows on the screen (`drawHud`). Turned upright, the
    * landscape cover is up over the world (`isUpright`, landscape.ts) and the game under it is inert: a finger held on the
    * joystick or on the world may never be seen to lift, so both let go now, and the player stops at the next step as at a
@@ -1072,6 +1114,8 @@ export class WorldScreen {
     (doc.defaultView ?? window).removeEventListener('blur', this.onBlur);
     (doc.defaultView ?? window).removeEventListener('resize', this.onResize);
     (doc.defaultView ?? window).removeEventListener('keydown', this.onEscape, true);
+    (doc.defaultView ?? window).removeEventListener('keydown', this.onKeyDown);
+    (doc.defaultView ?? window).removeEventListener('keyup', this.onKeyUp);
     this.taskBar?.dispose();
     this.attackButton?.dispose();
     this.keyboard?.dispose();

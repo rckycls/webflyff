@@ -288,13 +288,70 @@ describe('playOwnEvent (CMover::SetExperience, MoverParam.cpp:1727; CDPClient::O
     playOwnEvent({ kind: 'levelUp', from: 1, to: 2, chatLine: true }, worldOf({ self: false }), r.out);
     expect(r.played).toEqual([]);
   });
+
+  it('plays the level up for a reset of the skills that raised the points, and nothing for one that did not', () => {
+    // OnInitSkillPoint (DPClient.cpp:14691-14695): CreateSfx( XI_GEN_LEVEL_UP01, g_pPlayer->GetPos(), g_pPlayer->GetId() )
+    const r = recorder();
+    playOwnEvent({ kind: 'skillPointReset', effect: true, chatLine: true }, worldOf(), r.out);
+    playOwnEvent({ kind: 'skillPointReset', effect: false, chatLine: true }, worldOf(), r.out);
+    expect(r.played).toEqual([{ effect: { xi: Xi.GEN_LEVEL_UP01, pos: OWN_AT, followId: OWN_ID, sourceAngle: 37.5 } }]);
+  });
+});
+
+describe('playCombatEvent: skills (CCtrl::CreateSkillSfx, Ctrl.cpp:878-997; CDPClient::OnCreateSfxObj, DPClient.cpp:4038-4067)', () => {
+  /** Clean Hit's row as far as its effect goes: `XI_SKILL_VAG_ONE_CLEANHIT01`, `EXT_MELEEATK`; and a buff's, `EXT_SELFCHGPARAMET`. */
+  const skillsOf = (): CombatFxWorld['skills'] => new Map([
+    [1, { sfxHit: Xi.SKILL_VAG_ONE_CLEANHIT01, exeTarget: 17 }],
+    [317, { sfxHit: 291, exeTarget: 1 }],
+  ]);
+
+  it('makes a melee skill\'s effect 1.3 m before its caster and 1 m up, fixed and turned by the caster\'s angle, then shakes a victim the blow landed on', () => {
+    const r = recorder();
+    const world = { ...worldOf(), skills: skillsOf() };
+    playCombatEvent({ kind: 'skillHit', casterId: OWN_ID, targetId: MONSTER_ID, skill: 1, landed: true }, world, r.out);
+    // AngleToVectorXZ( &vLocal, 37.5, 1.3f ) + GetPos(), y + 1.0f, in floats
+    const theta = f32(37.5 * f32(f32(3.141592654) / 180));
+    const at: Vec3 = [
+      f32(f32(f32(Math.sin(theta)) * f32(1.3)) + OWN_AT[0]),
+      f32(OWN_AT[1] + 1),
+      f32(f32(-f32(Math.cos(theta)) * f32(1.3)) + OWN_AT[2]),
+    ];
+    expect(r.played).toEqual([{ effect: { xi: Xi.SKILL_VAG_ONE_CLEANHIT01, pos: at, sourceAngle: 37.5 } }, { shake: MONSTER_ID }]);
+    expect(Math.hypot(at[0] - OWN_AT[0], at[2] - OWN_AT[2])).toBeCloseTo(1.3, 3); // floats at x 6968: 0.0005 apart
+  });
+
+  it('plays the effect whether or not the blow landed, nothing for a skill that is no melee attack, and nothing without its movers or the catalog', () => {
+    const r = recorder();
+    const world = { ...worldOf(), skills: skillsOf() };
+    playCombatEvent({ kind: 'skillHit', casterId: OWN_ID, targetId: MONSTER_ID, skill: 1, landed: false }, world, r.out);
+    expect(r.played.map((p) => wordOf(p, false))).toEqual([`xi ${Xi.SKILL_VAG_ONE_CLEANHIT01}`]);
+    r.played.length = 0;
+    playCombatEvent({ kind: 'skillHit', casterId: OWN_ID, targetId: OWN_ID, skill: 317, landed: false }, world, r.out);
+    playCombatEvent({ kind: 'skillHit', casterId: OWN_ID, targetId: MONSTER_ID, skill: 1, landed: true }, worldOf(), r.out);
+    const gone = { ...worldOf({ gone: [MONSTER_ID] }), skills: skillsOf() };
+    playCombatEvent({ kind: 'skillHit', casterId: OWN_ID, targetId: MONSTER_ID, skill: 1, landed: true }, gone, r.out);
+    expect(r.played).toEqual([]);
+  });
+
+  it('plays CREATESFXOBJ at its absolute position with no source, or on its mover, following it as source and destination', () => {
+    const r = recorder();
+    const pos: Vec3 = [f32(6000.5), f32(90.25), f32(3000.75)];
+    playCombatEvent({ kind: 'sfxObj', xi: 108, pos, moverId: null }, worldOf(), r.out);
+    playCombatEvent({ kind: 'sfxObj', xi: 108, pos: null, moverId: OTHER_ID }, worldOf(), r.out);
+    playCombatEvent({ kind: 'sfxObj', xi: 108, pos: null, moverId: OTHER_ID }, worldOf({ gone: [OTHER_ID] }), r.out);
+    expect(r.played).toEqual([
+      { effect: { xi: 108, pos } },
+      { effect: { xi: 108, pos: OTHER_AT, followId: OTHER_ID, followDest: true, sourceAngle: 300.25 } },
+    ]);
+  });
 });
 
 describe('WARM_UP_EFFECTS', () => {
-  it("holds milestone 1's effects: the weapons' hit sparks, the four banners, the level up and the spawn", () => {
+  it("holds milestone 1's effects (the weapons' hit sparks, the four banners, the level up and the spawn) and the Vagrant skills' hits", () => {
     expect([...WARM_UP_EFFECTS].sort((a, b) => a - b)).toEqual([
       Xi.HIT_CRITICAL01, Xi.HIT_MISS01, Xi.HIT_PARRY01, Xi.HIT_HITBLOCK01, Xi.HIT_YOY01, Xi.HIT_SWORD01, Xi.HIT_STICK01,
-      Xi.HIT_KNUCKLE01, Xi.HIT_BOW01, Xi.GEN_LEVEL_UP01, Xi.GEN_MONSTER_SPAWN01,
+      Xi.HIT_KNUCKLE01, Xi.HIT_BOW01, Xi.GEN_LEVEL_UP01, Xi.GEN_MONSTER_SPAWN01, Xi.SKILL_VAG_ONE_CLEANHIT01,
+      Xi.SKILL_VAG_ONE_BRANDISH01, Xi.SKILL_VAG_ONE_OVERCUTTER01,
     ]);
   });
 });

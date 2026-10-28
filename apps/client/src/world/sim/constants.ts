@@ -32,6 +32,8 @@ export const ObjSta = {
   ATK2: 0x00020000,
   ATK3: 0x00030000,
   ATK4: 0x00040000,
+  /** A melee skill's motion (`MoverMsg.h:58`), which `OBJMSG_MELEESKILL` sets. */
+  ATK_MELEESKILL: 0x00090000,
   ATK_ALL: 0x00ff0000,
   /** Hit: the flinch (`MoverMsg.h:68`). */
   DMG: 0x01000000,
@@ -88,6 +90,11 @@ export const ActMsg = {
   ATK2: 30,
   ATK3: 31,
   ATK4: 32,
+  /**
+   * A melee skill (`MoverMsg.h:144`): its motion in the first parameter, at the object ID in the second, as
+   * `CMover::DoUseSkill` sends it (`MoverSkill.cpp:835`).
+   */
+  MELEESKILL: 37,
   /** Die; the first parameter says how (`DAMAGE`, `DAMAGE_FORCE` or 0), the second is the attacker. */
   DIE: 40,
   /** A plain blow, and a blow that knocks the victim flying (`CActionMover::SendDamageForce`). */
@@ -125,6 +132,10 @@ export const Mti = {
   ATK4: 26,
   /** The level up (`defineNeuz.h:460`), played as it is (`MOP_FIXED`) by a standing mover. */
   LEVELUP: 198,
+  /** The Vagrant's skills, Clean Hit, Flurry and Over Cut (`defineNeuz.h:936-938`), played as they are (`MOP_FIXED`). */
+  VAG_ONE_CLEANHIT: 1000,
+  VAG_ONE_BRANDISH: 1001,
+  VAG_ONE_OVERCUTTER: 1002,
   STAND_02: 300,
   STAND_05: 600,
   STAND_11: 2200,
