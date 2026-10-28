@@ -5,7 +5,8 @@ For the owner. This file has a part per piece:
 - [Piece 2: lobby](#piece-2-lobby), the login, channel and character screens;
 - [Piece 3, milestone 1: the world](#piece-3-milestone-1-the-world);
 - [Piece 3, milestone 2: collision and tap to walk](#piece-3-milestone-2-collision-and-tap-to-walk);
-- [Piece 4, milestone 1: fighting and levelling](#piece-4-milestone-1-fighting-and-levelling), at the end.
+- [Piece 4, milestone 1: fighting and levelling](#piece-4-milestone-1-fighting-and-levelling);
+- [Piece 4, milestone 2: skills](#piece-4-milestone-2-skills), at the end.
 
 From Piece 4 on, the game is played sideways: hold phones and tablets in landscape for every checklist in the client parts. See [Hold every device sideways](#hold-every-device-sideways).
 
@@ -573,3 +574,159 @@ If it misses, write down by how much. Any `errors:` line you cannot explain is a
 | No sparks, banners or level-up light, but the fight works | The effects were not converted: run `npm run convert -- --only effects,ui,data`. The overlay's `errors:` line names a missing effect. |
 | The task bar, Start menu or windows are plain grey boxes | The window pictures were not converted: as above. |
 | The cover stays up although the device is sideways | The page is still taller than wide, for example a split screen or a small browser window. Make it wider, or turn off the split screen. |
+
+# Piece 4, milestone 2: skills
+
+For the owner. Milestone 2 gives the Vagrant its skills, as in the Windows client:
+- the skill window (`K`, or **Skills** in the Start menu), to spend skill points on Clean Hit, Flurry and Over Cut;
+- skills on the task bar and in the action slot, placed with the mouse or a finger;
+- using a skill from its slot, and the action slot's chain of skills with `C`, each with its motion and effect, which the other device sees too.
+
+It also brings the two things you asked for after milestone 1:
+- **phones reach the game through your PC.** The client on your PC passes the game connection on to the VM, so a phone needs only your PC's address, whatever it is that day;
+- **closing the page asks first** while you are in the world.
+
+The automated side:
+- `npm test` covers the skill rules, the skill window and the task bar's edits.
+- `npm run test:e2e:client` now also plays skills against a pretend server (`skills.spec.ts`), in Chromium as a desktop and as a landscape Android phone.
+- The live world test below also uses a skill on your real servers.
+
+None of it needs Neuz.
+
+## Before you start
+
+1. **The game files.** `dist/assets` must hold a conversion made with this version. It adds the skills catalog and the warning box's picture. On your PC the piece4-combat folder already has it. Elsewhere, run `npm run convert -- --only ui,data` in that folder (about 20 seconds).
+2. **The VM.** Copy the FlyffWeb folder into the VM again, with its new `dist/assets`, as in [servers-in-a-vm.md](servers-in-a-vm.md), step 4:
+   - keep your two settings files, `apps\client\test\live.config.json` and `apps\gateway\gateway.config.json`;
+   - run `npm ci` again afterwards.
+   
+   Without the new `dist/assets`, entering the world says "The game files on the server are out of date."
+3. **The client on your PC** starts differently now. Stop the old one with `Ctrl` + `C`, then, in PowerShell in the piece4-combat folder:
+
+   ```
+   $env:GATEWAY_PROXY = 'ws://<VM-IP>:8090'; npm run dev:client
+   ```
+
+   After you stop it, run `Remove-Item Env:GATEWAY_PROXY`. If that window still has the old `VITE_GATEWAY_URL` from milestone 1, the client refuses to start and says so: run `Remove-Item Env:VITE_GATEWAY_URL` and start it again. Details are in [servers-in-a-vm.md](servers-in-a-vm.md), step 6.
+4. **The characters.**
+   - The live test's first account: a Vagrant of level 1 to 14, standing at Flaris's lodestar, still carrying its starter food. The skill part needs level 3 or higher: with a lower level it is skipped with one sentence, and the rest still runs.
+   - For the steps below you need level 3 for Clean Hit, level 5 for Flurry and level 10 for Over Cut. Levelling up takes playing time: Aibatts give less as you rise, so move on to stronger monsters. Steps that need Flurry or Over Cut can wait until your character gets there (see "Pass and fail").
+
+## Run the live world test first
+
+In the VM:
+
+```
+npm run test:live:world
+```
+
+Success: no `failed`. Besides the milestone 1 checks, when the first account's character is level 3 or higher it now:
+1. spends a skill point on Clean Hit, if it has one left (otherwise it says it skipped that);
+2. puts Clean Hit on the first bar's slot `F4`, replacing whatever was there;
+3. walks out to a small Aibatt and uses Clean Hit on it;
+4. checks that the server answered: the new skill level, the skill's use, and its damage.
+
+As before, if it stops with the character outside the town, the message says so: walk the character back to the lodestar in the browser before the next run. Wait at least 15 seconds between runs.
+
+## Start the gateway and the client
+
+The gateway in the VM as before (`npm run gateway`), and the client on your PC as in "Before you start", item 3. Open `http://localhost:5174` on your PC and `http://<PC-IP>:5174` on phones and tablets, with the address, not the PC's name.
+
+**New keys** (the milestone 1 keys still work):
+
+| Key | What it does |
+| --- | --- |
+| `K` | Opens and closes the skill window. With points placed and not finished, closing asks first. |
+| `F1`-`F9` | Use the slot: an item, or a skill on the current bar |
+| `C` | Starts the action slot's chain |
+| `Escape` | Also closes the skill window, without asking |
+
+**Placing skills:**
+- **With a mouse:** drag a skill from the skill window onto a slot of the bar, or onto the action slot (the row of small slots next to the bar). Double-clicking a skill adds it to the action slot. To take one off, drag it off the bar, or right-click it.
+- **With a finger:** tap a skill in the window, then tap a slot. To take one off, hold your finger on the slot until a **Remove** line shows, then tap it.
+
+## Steps, two devices at a time
+
+As in milestone 1: pair the devices, one test account each, and keep an eye on the overlay. Its `errors:` line must stay empty, and `mismatched` must stay 0. Browsers as in milestone 1: any browser on iPhone and iPad, Chrome on Android, and Chrome on the PC. Then do steps 3, 4 and 10 once more in **Firefox** and write the result in the Notes column of the PC row.
+
+1. **The phone reaches the game.** On a phone, log in and enter the world. Success: no "Cannot reach the game gateway.", which is what milestone 1 showed.
+2. **The skill window.** Press `K`, or tap **Start**, then **Skills**. Success:
+   - the window shows Clean Hit, Flurry and Over Cut with their icons, their levels and your Skill Points;
+   - holding the pointer on a skill, or tapping it, shows its name, its level and what it costs (Clean Hit: "FP : 5");
+   - for a skill you can't raise yet, the tooltip shows in red what it still needs (the character's level, or the skill before it);
+   - on a phone, the window may be cut off above the task bar: drag inside it to scroll.
+3. **Spending a point** (level 3 or higher). Choose Clean Hit and press **+**. Success: its level and the points change in the window only, and **Reset** puts them back. Press **+** again, then **Finish**. A box with a warning picture asks first; press **Yes**. Success: Clean Hit's level rises and the Skill Points go down. Also check:
+   - with points placed but not finished, closing the window asks first;
+   - `Escape` closes it without asking;
+   - on a phone, **+** and **−** are easy to hit with a finger.
+4. **Clean Hit on the bar.** Put Clean Hit on slot `F4` (see "Placing skills"). Success: its icon shows on the slot. Log out and in again. Success: it is still there, because the server keeps the bar.
+5. **Using Clean Hit.** Select an Aibatt, then press `F4` or tap the slot. Success:
+   - the character walks up to it and swings with the skill's own motion;
+   - the skill's effect shows in front of the character, then the damage number;
+   - your FP goes down by 5;
+   - the other device sees the same swing and the effect.
+
+   On a touch screen, a second tap within about a second of the first is ignored when the character arrives. The Windows client does the same.
+6. **A slot is used, not replaced.** On a phone, tap a skill in the window, press **+** or **Finish**, then tap a slot on the bar. Success: the slot's item or skill is used, not replaced. Then tap the ground just above the bar. Success: the character walks there, and no slot is pressed.
+7. **The action slot's chain.** Flurry needs level 5 and Clean Hit at level 3; Over Cut needs level 10 and Flurry at level 3. Put Clean Hit, then Flurry, then Over Cut in the action slot. Success:
+   - Flurry can't go first, and nothing goes after Over Cut;
+   - with an Aibatt selected, `C` (or the action slot's button) plays the skills one after another, each with its effect;
+   - a click or tap in the world during the chain stops it.
+8. **Not enough FP.** Use skills until your FP runs out. Success: "Not enough FP." shows in the messages, the character plays nothing for that skill, and the game goes on.
+9. **Taking skills off.** Take Clean Hit off the bar and a skill out of the action slot (see "Placing skills"). Success: the slots are empty, and they stay empty after you log in again.
+10. **Closing the page asks first.**
+    - **PC**, in the world: close the tab. Success: the browser asks whether to leave ("Leave site?" in Chrome). **Cancel** keeps you in the game. After **Log out**, closing the tab doesn't ask.
+    - **Android**: reloading the page in the world asks. Closing the tab from the tab list, or swiping Chrome away, doesn't. That is how Android works, not a fault.
+    - **iPhone and iPad**: no question at all. Safari doesn't allow it, so write "n/a".
+
+## Results
+
+| Device | Browser | 1. Phone reaches the game | 2. Skill window | 3. Spending | 4. On the bar | 5. Clean Hit | 6. Used, not replaced | 7. Chain | 8. Not enough FP | 9. Taking off | 10. Closing asks | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| iPhone | Safari | | | | | | | | | | | |
+| Android phone | Chrome | | | | | | | | | | | |
+| iPad | Safari | | | | | | | | | | | |
+| Android tablet | Chrome | | | | | | | | | | | |
+| PC | Chrome | | | | | | | | | | | |
+
+(Step 1 is for the phones and tablets: write "n/a" for the PC.)
+
+## Pass and fail
+
+Milestone 2 passes when:
+- `npm run test:live:world` passed in the VM, with the skill part run, not skipped (a character of level 3 or higher);
+- every cell of steps 1-6 and 8-10 is `pass` on every device (or "n/a" where the step says so);
+- step 7 passes with Clean Hit and Flurry. Over Cut can be checked later, when a character reaches level 10;
+- the full tests below pass.
+
+Any `errors:` line you cannot explain is a fail too, and so is a `mismatched` number above 0: send a photo of the overlay.
+
+**Look closely at these,** because the tests can't judge them:
+- the skill effects: in front of the character, facing the monster, as in the Windows client;
+- the skill window's look next to the Windows client's;
+- on an iPhone or iPad: that holding a finger on a slot shows the **Remove** line, and no copy or select bubble.
+
+## The full tests (yours to run)
+
+From milestone 2 on, the builders run only the quick checks. The long test runs are yours, on your PC, in PowerShell in the piece4-combat folder. Run them one at a time, while you don't use the PC for anything heavy.
+
+| Command | How long | Success |
+| --- | --- | --- |
+| `npm test` | about 2 minutes | It ends with `Test Files … passed` and no `failed`. |
+| `npm run typecheck` | about 1 minute | No lines with `error`. |
+| `npm run test:e2e:client` | about 30 minutes | Stop your own `npm run dev:client` first: this test starts its own client on the same port (5174). It ends with `… passed`, maybe a few `skipped`, and no `failed`. |
+| `npm run test:e2e` | about 5 minutes | The viewer's tests. No `failed`. |
+| `$env:FLYFF_CLIENT = 'C:\Users\silec\Desktop\FlyFF\Bakbak\Blouflash VS22 V15\Client'; npm run test:corpus` | about 10 minutes | The tests that read the real game files. No `failed`. Run `Remove-Item Env:FLYFF_CLIENT` afterwards. |
+
+If one fails, send me the lines from the first `failed` (or `error`) down to the end, or a photo of them.
+
+## When something goes wrong with skills
+
+| What you see | What it means and what to do |
+| --- | --- |
+| "The game files on the server are out of date." when you enter | `dist/assets` has no skills catalog: run `npm run convert -- --only ui,data`, and copy `dist/assets` to the VM again. |
+| The skill window has no icons, or its box no picture, and the overlay's `errors:` line names a picture | The pictures were not converted: as above. |
+| Pressing a skill's slot does nothing | Is the skill at level 0? Spend a point on it first. A skill whose FP you don't have says "Not enough FP.". |
+| **+** stays greyed | You have no Skill Points, the skill is at its top level, or its condition isn't met. The skill's tooltip shows the unmet condition in red: the character's level, or the skill it needs first. |
+| A phone says "Cannot reach the game gateway." | The client was not started with `GATEWAY_PROXY` ("Before you start", item 3), or the page was opened with the PC's name instead of its address. See [servers-in-a-vm.md](servers-in-a-vm.md), "When something goes wrong". |
+| The client doesn't start and prints `Error: GATEWAY_PROXY …` | That line says what is wrong: usually `VITE_GATEWAY_URL` is still set in that window (`Remove-Item Env:VITE_GATEWAY_URL`). |

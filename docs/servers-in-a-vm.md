@@ -100,12 +100,12 @@ Hyper-V comes with Windows 10 and 11 Pro; once it is turned on, **Hyper-V Manage
 
 The live tests start their own gateway and expect the servers on the same machine, so run them in the VM, in `C:\FlyFF\FlyffWeb`: make `apps\client\test\live.config.json` from `live.config.example.json` as the checklists in [device-testing.md](device-testing.md) say (for this milestone, the `world` section with two throwaway accounts), then `npm run test:live:world`. Its own gateway uses port 8091 inside the VM, so it does not clash with the one from step 4.
 
-From Piece 4 on, the world test also fights. Its first account walks out of Flaris's north gate and kills a small Aibatt, so that account's character must meet three conditions:
-- new or low level (a Vagrant under level 15);
-- still carrying its starter food;
+From Piece 4 on, the world test also fights, and from milestone 2 it uses a skill. Its first account walks out of Flaris's north gate and kills a small Aibatt, so that account's character must meet three conditions:
+- a Vagrant of level 1 to 14;
+- still carrying some of its starter food (lollipops and a biscuit);
 - standing at Flaris's lodestar.
 
-A new character fits all three. The checklist in [device-testing.md](device-testing.md) ("Piece 4, milestone 1") says what to do when a run stops with the character outside the town.
+A new character fits all three. The skill part needs level 3 or higher: below that it is skipped with one sentence, and the rest still runs. It puts Clean Hit on the first bar's `F4` slot, replacing whatever was there. The checklist in [device-testing.md](device-testing.md) ("Piece 4, milestone 1") says what to do when a run stops with the character outside the town.
 
 ## 6. The client on your PC
 

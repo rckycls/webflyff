@@ -1174,7 +1174,7 @@ export interface WebSkill { id: number; name: string; description: string; jobTy
   - Corpus: Clean Hit is level 3, no prerequisite, max 10, `CT_STEP`, `XI_SKILL_VAG_ONE_CLEANHIT01`, motion 1000, `AR_SHORT`, with FP 5 at levels 1-4 and 8 at 5-8.
   - Flurry needs Clean Hit 3 and is `CT_CIRCLE`.
   - Over Cut needs Flurry 3 and is `CT_FINISH`.
-  - No `SI_GEN_*` row is in the list.
+  - No `JTYPE_COMMON` row is in the list (ruling R39: `LoadSkill` leaves rows out by job type, so the Vagrant's `SI_GEN_EVE_*` event buffs stay).
 - [ ] **Step 2: Run** `npx vitest run packages/formats/test/gameTables.test.ts` and `npm run test:corpus -- gameData`. Expected: FAIL.
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Run** the same commands. Expected: PASS.
@@ -1315,9 +1315,9 @@ export class SkillUse {
   - **Skill points:** a level-5 character with 4 points raises Clean Hit; the script answers DOUSESKILLPOINT.
   - **The bar:** Clean Hit is put on the bar, and the script sees ADDITEMTASKBAR. Pressing it with an Aibatt selected: the script answers USESKILL and DAMAGE, and the skill's effect plays (via `testHooks`).
   - **The action slot:** Clean Hit, Flurry, Over Cut; C starts it; the script drives the chain with USESKILL `SUT_QUEUEING` and ends with ENDSKILLQUEUE.
-  - **A refusal:** "Not enough FP." (DEFINEDTEXT1 `TID_GAME_REQFP`) shows as a server message.
+  - **A refusal:** "Not enough FP." (a DEFINEDTEXT `TID_GAME_REQFP` with an empty format, `MoverSkill.cpp:729-735`) shows as a server message.
   - **Another player's skill:** its USESKILL plays the motion and effect on them.
-- [ ] **Step 2: Write the live leg.** The first account, which must be level 3 or higher with a skill point (the config comment says so):
+- [ ] **Step 2: Write the live leg.** The first account's Vagrant, of level 3 to 14 (ruling R42: the leg spends a point when one is left, and otherwise uses Clean Hit at its level; the config comment says so):
   1. spends a point on Clean Hit;
   2. puts it on bar 0, slot 3;
   3. uses it on an Aibatt;

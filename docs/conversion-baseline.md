@@ -166,6 +166,19 @@ The rest of milestone 1 changed only the data and ui stages. Each change was reg
 
 **After pulling a version with these changes,** run `npm run convert -- --only ui,data`. It takes about 20 seconds. Then copy `dist/assets` to the VM again. An older catalog still loads, but the new fields read as their defaults: no monster hit sparks, a count on every item, and an empty Job line.
 
+## Data and UI changes in Piece 4, milestone 2
+
+Milestone 2 (skills) changed only the data and ui stages again, each regenerated on the real client with 0 failures.
+
+| Catalog or picture | What it gained | Why |
+| --- | --- | --- |
+| `data/skills.json` (new) | Every job skill of `propSkill.txt` with its levels from `propSkillAdd.csv`: 164 skills. The 26 `JTYPE_COMMON` rows are left out, as `CProject::LoadSkill` does. The Vagrant has 7: Clean Hit, Flurry, Over Cut and four event buffs (317-320). Each skill's `icon` is `ui/<name>.png` from `Client/Icon`; all 164 resolve. | The skill window, the task bar and using skills |
+| `ui/wndqueitmwarning.png` | `Theme/Default/WndQueItmwarning.tga`, the warning box's picture (`APP_QUEITMWARNING`) | The box that asks before skill points are spent |
+
+`index.json` is now 22,372 entries. The data stage gives 82 warnings: the 81 expected before, plus one for Circle Healing (an Assist skill), whose 20 rows in `propSkillAdd.csv` are labelled 1, 1, 2, 2 ... 10, 10. `GetAddSkillProp` takes the rows by place, so the catalog does too. The whole output still has 0 failures.
+
+**After pulling a version with these changes,** run `npm run convert -- --only ui,data` (about 20 seconds), then copy `dist/assets` to the VM again. Without `skills.json`, entering the world stops with a message that the game files are out of date.
+
 ## Compression
 
 Measured over every converted file (not a sample) with Node `zlib`: `gzipSync` at the default level and `brotliCompressSync` at quality 5. This is what a static host that compresses on the fly, or a CDN, would send. Average is per file.
