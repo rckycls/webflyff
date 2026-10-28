@@ -626,7 +626,7 @@ In the VM:
 npm run test:live:world
 ```
 
-Success: no `failed`. Besides the milestone 1 checks, when the first account's character is level 3 or higher it now:
+Success: no `failed`, **and no line saying `Live world test skipped`**. That line means nothing was tested, most often because `appsclient	estlive.config.json` doesn't exist yet: make it from `live.config.example.json` and put your two test accounts in its `world` section, as [servers-in-a-vm.md](servers-in-a-vm.md), step 5, says. Besides the milestone 1 checks, when the first account's character is level 3 or higher it now:
 1. spends a skill point on Clean Hit, if it has one left (otherwise it says it skipped that);
 2. puts Clean Hit on the first bar's slot `F4`, replacing whatever was there;
 3. walks out to a small Aibatt and uses Clean Hit on it;
