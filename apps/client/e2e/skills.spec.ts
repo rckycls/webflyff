@@ -375,7 +375,7 @@ test.describe('skills against the pretend world server', () => {
   });
 
   // Spec §3.11: the server refuses a skill. With 2 FP Clean Hit (5 FP) is refused in DoUseSkill, which tells the player
-  // TID_GAME_REQFP (MoverSkill.cpp:724-729, a DEFINEDTEXT with an empty format) before OnUseSkill answers CLEAR_USESKILL:
+  // TID_GAME_REQFP (MoverSkill.cpp:729-735, a DEFINEDTEXT with an empty format) before OnUseSkill answers CLEAR_USESKILL:
   // the text is a line of the server messages, and nothing is played
   test('a refusal: "Not enough FP." is a line of the server messages, and the skill plays nothing', async ({ page }) => {
     const own = vagrant([1, 0, 0], 0, 2);
