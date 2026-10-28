@@ -15,7 +15,7 @@ import {
   ANILOOP_LOOP, BASE, DST_HP, MADRIGAL, MALE_VAGRANT, MI_MALE, MONSTER_AT, MONSTER_ID, MTI_RUN, MTI_STAND, NPC_ID,
   OBJMSG_ATK1, OBJMSG_DAMAGE, OBJSTAF_WALK, OBJSTA_FMOVE, OBJSTA_MOVE_ALL, OBJSTA_STAND, ON_FRAMES, SELF_ID, SELF_PLAYER,
   SQUARE, aibatt, destPosOf, distanceXZ, enterFlaris, flaris, groundAt, julia, logOut, movedState, movedStateFlag, movesOf,
-  ownAt, hpOf, playGateway, self, sentOf, startEntering, tapEnter, tapMover, tapWorld, targetsOf,
+  ownAt, hpOf, hudTexts, playGateway, recordHudTexts, self, sentOf, startEntering, tapEnter, tapMover, tapWorld, targetsOf,
 } from './worldHarness';
 
 // Entering, loading Flaris and drawing it with SwiftShader take much longer than a lobby screen. The waits on the frame
@@ -517,12 +517,14 @@ test.describe('the world screen against scripted servers', () => {
     const menu = page.getByRole('menu');
     await page.getByRole('button', { name: 'Start' }).click();
     await expect(menu).toBeVisible();
-    gateway.pushCache(flarisWithNewBar.later([writeMoverDeath(SELF_ID, MONSTER_ID, OBJMSG_DAMAGE)]));
     // the frame after the death plays its chat line, then opens the window (WorldScreen's `play`): a wait on the frame loop
-    // (R28). The line is read first, as it fades 3 s after it came (CClientMsg); read after a wait on the window, under
-    // load it had gone
-    await expect(page.locator('.hud-messages > div'))
-      .toHaveText(['Press ESC and go back to Lodestar(Town) or Lodelight(Field) for resurrecting.'], ON_FRAMES);
+    // (R28). The line fades 3 s (wall clock) after it came (CClientMsg), and a frame under load can take longer than that,
+    // so a poll of the DOM may never see it: its text is read as the HUD added it (`recordHudTexts`), started before the
+    // death is pushed
+    await recordHudTexts(page);
+    gateway.pushCache(flarisWithNewBar.later([writeMoverDeath(SELF_ID, MONSTER_ID, OBJMSG_DAMAGE)]));
+    await expect.poll(async () => (await hudTexts(page))?.lines, ON_FRAMES)
+      .toEqual(['Press ESC and go back to Lodestar(Town) or Lodelight(Field) for resurrecting.']);
     const revive = page.locator('.hud-revive');
     await expect(revive).toBeVisible();
     await expect(menu).toBeHidden();
