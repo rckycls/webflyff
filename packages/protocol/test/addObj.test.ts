@@ -241,8 +241,10 @@ describe('ADD_OBJ (OnAddObj)', () => {
   ];
 
   /**
-   * What a new character's ADD_OBJ carries: 15 in each stat, MP 63, FP 32, no EXP or points, seven skills filled, and
-   * the `BASE_VALUE_TBL` inventory.
+   * An ADD_OBJ's own numbers with a new character's stats (15 in each, MP 63, FP 32, no EXP or points) and its
+   * `BASE_VALUE_TBL` inventory, but not its skills: seven slots are filled at levels 0, 1 and 2, so that the reads can be
+   * told apart. A new character has the skills 1 to 3 at level 0 and 42 empty slots (`newVagrantOwn`,
+   * `_Network/Objects/Obj.cpp:297-332`).
    */
   const newCharacter: OwnCharacter = {
     str: 15, sta: 15, dex: 15, int: 15, manaPoint: 63, fatiguePoint: 32,
@@ -440,7 +442,8 @@ describe('ADD_OBJ (OnAddObj)', () => {
       str: 15, sta: 15, dex: 15, int: 15, manaPoint: 63, fatiguePoint: 32, exp: 0n, skillLevel: 0, skillPoint: 0,
       deathExp: 0n, deathLevel: 0, remainGP: 0,
     });
-    // Slot by slot: 45 of them, the first three skills, the four SI_GEN_EVE_* IDs, then the empty slots.
+    // Slot by slot, as the fixture fills them (not a new character's skills): 45 of them, the first three skills, the
+    // four SI_GEN_EVE_* IDs, then the empty slots.
     expect(own?.skills).toHaveLength(MAX_SKILL_JOB);
     expect(own?.skills.slice(0, 3)).toEqual([
       { skill: 1, level: 0 }, { skill: 2, level: 1 }, { skill: 3, level: 2 },

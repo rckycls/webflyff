@@ -16,15 +16,17 @@ const MAX_SKILL_JOB = 45;
  * `DBConvert.cpp:193-210` and a conversion procedure). The join builds the mover with `InitProp` (`DbManagerJoin.cpp:186`)
  * and lays the `tblSkillPoint` rows over it by position (`GetSkill`, `DbManagerFun.cpp:1211-1233`, called at
  * `DbManagerJoin.cpp:330`). Character creation inserts three rows: the skills 1, 2 and 3 (`SI_VAG_ONE_CLEANHIT`, `_BRANDISH`
- * and `_OVERCUTTER`, `Resource/defineSkill.h:19-21`) at positions 0, 1 and 2 with `SkillLv` 0 (`Database.sql:10677-10682`).
+ * and `_OVERCUTTER`, `Resource/defineSkill.h:19-21`) at positions 0, 1 and 2 with `SkillLv` 0 (`Database.sql:10678-10683`).
  *
- * `InitProp` adds no others. It fills the slots with the job's skill IDs at level 0 only `if( m_nJob != -1 )`
- * (`Mover.cpp:1487-1499`, after the loop that leaves every slot `NULL_ID` with level 0, :1478-1485), and at that point of
- * the join `m_nJob` is still the -1 of `CMover::Init` (`Mover.cpp:253`): `GetBaseCharacter` reads it afterwards
- * (`DbManagerJoin.cpp:203`, `DbManagerFun.cpp:1045`). So the 42 other slots are empty, and the four `SI_GEN_EVE_*` skills
- * (317-320) that the job's table also lists (`CProject::LoadSkill`, `_Common/Project.cpp:375-400`) are in no slot of a new
- * character. (Were `m_nJob` set there, they would follow 1, 2, 3, which sort first by `dwReqDisLV` 3, 5 and 10; their own
- * order would be the CRT `qsort`'s on four equal keys, `dwReqDisLV` being `=` in all, `DatabaseServer/Project.cpp:97-106`.)
+ * `InitProp` adds no others. The join runs the database server's own `CMover` (`_Network/Objects/Obj.cpp`, not the
+ * `_Common/Mover.cpp` of the world server and Neuz), whose `CMover::InitProp` (:297-332, `__DBSERVER`) leaves every slot
+ * `NULL_ID` with level 0 (:306-312) and fills the slots with the job's skill IDs only `if( m_nJob != -1 )` (:314-324).
+ * At that point of the join `m_nJob` is still the -1 of the constructor (`CMover::CMover`, :163): `GetBaseCharacter` reads it
+ * afterwards (`DbManagerJoin.cpp:203`, `DbManagerFun.cpp:1045`). So the 42 other slots are empty, and the four `SI_GEN_EVE_*`
+ * skills (317-320) that the job's table also lists (the database server's `CProject::OpenProject`,
+ * `databaseserver/Project.cpp:129-160`) are in no slot of a new character. (Were `m_nJob` set there, they would follow 1, 2,
+ * 3, which sort first by `dwReqDisLV` 3, 5 and 10; their own order would be the CRT `qsort`'s on four equal keys,
+ * `dwReqDisLV` being `=` in all, `databaseserver/Project.cpp:97-106`.)
  *
  * A fresh object each call, so a test can change it.
  */

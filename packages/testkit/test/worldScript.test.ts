@@ -18,7 +18,8 @@ const OWN: AddedMover = {
     self: true, name: 'Webby', sex: 0, skinSet: 0, hairMesh: 0, hairColor: 0, headMesh: 0, playerId: 500, job: 0, sta: 15,
     dex: 15, level: 15, authorization: 0x46, mode: 0, stateMode: 0, pkTime: 0, pkValue: 0, pkPropensity: 0, honor: -1, worn: [],
     equipmentObjectIds: new Array<number>(31).fill(NULL_ID), shopTitle: '',
-    // A new character's numbers; its 45 skill slots and its inventory hold nothing.
+    // A new character's numbers, but 45 empty skill slots and an empty inventory (a new character's hold its three skills and
+    // its starter items, `newVagrantOwn`).
     own: {
       str: 15, sta: 15, dex: 15, int: 15, manaPoint: 63, fatiguePoint: 32, exp: 0n, skillLevel: 0, skillPoint: 0,
       deathExp: 0n, deathLevel: 0, remainGP: 0,

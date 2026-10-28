@@ -230,9 +230,13 @@ export function maxFatiguePoint(job: JobProp, level: number, s: Stats, adj: Para
 
 /**
  * `CMover::GetMaxHitPoint` of a monster (`MoverParam.cpp:2788-2805`) over `GetMaxOriginHitPoint` (:2876-2884):
- * `int( dwAddHp * prj.m_fMonsterHitpointRate * pMoverProp->m_fHitPoint_Rate )`. The first rate is 1.0f for a player
- * (the server sends it to game masters only, `User.cpp:6508-6520`); the second is the MONSTERPROP percent over 100.0f
- * (`CDPClient::OnMonsterProp`, `DPClient.cpp:6660`), 1.0f when none came (`ratePercent` 100).
+ * `int( dwAddHp * prj.m_fMonsterHitpointRate * pMoverProp->m_fHitPoint_Rate )`. The first rate is 1.0f unless the back-end
+ * system changed it. At the join the server sends it to game masters only (`CUser::AddGameSetting`, `User.cpp:6508-6520`);
+ * a change made while the world runs goes to everyone (`DBBackEndSystem.cpp:77-79` sends the settings to all players, the
+ * world server's `OnBaseGameSetting` answers with `CUserMng::AddGameRate`, `DPDatabaseClient.cpp:1704-1725` and
+ * `User.cpp:5228-5236`, an `AddBlock` to all; Neuz keeps it, `DPClient.cpp:6551-6553`). This client does not read
+ * GAMERATE and takes 1.0f. The second rate is the MONSTERPROP percent over 100.0f (`CDPClient::OnMonsterProp`,
+ * `DPClient.cpp:6660`), 1.0f when none came (`ratePercent` 100).
  */
 export function monsterMaxHitPoint(addHp: number, ratePercent: number): number {
   const monsterRate = 1;

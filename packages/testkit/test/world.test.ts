@@ -595,7 +595,9 @@ it('writeAddSelf writes the equipment IDs, the skill pairs, the fields up to the
   expect(bytesToHex(lollipops.subarray(0, 19))).toBe('2d' + '2d000000' + 'f00a0000' + '00000000' + '00000000' + '0300');
 });
 
-it("a new character's numbers, skills and inventory read back slot by slot", () => {
+it("a character's numbers, skills and inventory read back slot by slot", () => {
+  // Seven filled skill slots at levels 0, 1 and 2, so that the slots can be told apart: not a new character's, which
+  // has the skills 1 to 3 at level 0 and 42 empty slots (`newVagrantOwn`, `_Network/Objects/Obj.cpp:297-332`).
   const skills = skillSlots([
     { skill: 1, level: 0 }, { skill: 2, level: 1 }, { skill: 3, level: 2 },
     { skill: 317, level: 0 }, { skill: 318, level: 0 }, { skill: 319, level: 0 }, { skill: 320, level: 0 },
