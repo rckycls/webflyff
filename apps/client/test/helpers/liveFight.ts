@@ -1,13 +1,17 @@
-// The live world test's fight (world.live.test.ts, its last test): the way out of Flaris to the Small Aibatts and the
-// walks along it, the starter food, the choice of an Aibatt, the fight and its checks, and what a run that stops leaves
-// for the owner to do. The player is the test's (`FightPlayer`, what of it these read and press); the world screen's
-// attack it presses is the real one (`AttackLoop`, `Focus`).
+// The live world test's fight and skill part (world.live.test.ts, its last two tests): the way out of Flaris to the Small
+// Aibatts and the walks along it, the starter food, the choice of an Aibatt, the fight and its checks, the skill part's
+// spend and its use of Clean Hit, and what a run that stops leaves for the owner to do. The player is the test's
+// (`FightPlayer`, `SkillPlayer`: what of it these read and press); the world screen's attack and skill use it presses are
+// the real ones (`AttackLoop`, `Focus`, `SkillUse`).
 
-import type { InventoryItem, Vec3 } from '@flyffweb/protocol';
+import { AttackFlag } from '@flyffweb/protocol';
+import type { InventoryItem, Shortcut, SkillSlot, Vec3, WorldMessage } from '@flyffweb/protocol';
+import type { WebSkill } from '@flyffweb/formats';
 import { attackAble } from '../../src/world/combat/attackLoop';
 import type { GameData } from '../../src/world/gameData';
 import type { OwnState } from '../../src/world/OwnState';
 import { ObjSta } from '../../src/world/sim/constants';
+import { SkillPlan } from '../../src/world/skills/skillRules';
 import type { WorldSession } from '../../src/world/WorldSession';
 import { isDie } from '../../src/world/WorldState';
 import type { CombatEvent, Mover, WorldState } from '../../src/world/WorldState';
@@ -198,15 +202,28 @@ export interface FightTexts {
   priorityMob: NumberedText;
 }
 
+/** The text `id` of the texts catalog with the number DEFINEDTEXT names it by; throws when the catalog has no number. */
+export function numberedText(data: Pick<GameData, 'texts'>, id: string): NumberedText {
+  const entry = data.texts.get(id);
+  if (entry?.textId === undefined) {
+    throw new Error(`the texts catalog has no number for ${id}: the converted game files are older than the texts' numbers (npm run convert)`);
+  }
+  return { textId: entry.textId, text: entry.text };
+}
+
 export function fightTexts(data: GameData): FightTexts {
-  const numbered = (id: string): NumberedText => {
-    const entry = data.texts.get(id);
-    if (entry?.textId === undefined) {
-      throw new Error(`the texts catalog has no number for ${id}: the converted game files are older than the texts' numbers (npm run convert)`);
-    }
-    return { textId: entry.textId, text: entry.text };
-  };
-  return { attackSpeed: numbered('TID_GAME_MODIFY_ATTACK_SPEED'), priorityMob: numbered('TID_GAME_PRIORITYMOB') };
+  return { attackSpeed: numberedText(data, 'TID_GAME_MODIFY_ATTACK_SPEED'), priorityMob: numberedText(data, 'TID_GAME_PRIORITYMOB') };
+}
+
+/** The texts of the DEFINEDTEXTs among `seen`, as the catalog has them (by their numbers), for a failure message. */
+function textsSaid(data: Pick<GameData, 'texts'>, seen: readonly { event: CombatEvent }[]): string[] {
+  const said: string[] = [];
+  for (const { event } of seen) {
+    if (event.kind !== 'text') continue;
+    const entry = [...data.texts.entries()].find(([, text]) => text.textId === event.textId);
+    said.push(entry === undefined ? `text number ${event.textId}` : `${entry[0]} "${entry[1].text}"`);
+  }
+  return said;
 }
 
 /**
@@ -362,6 +379,163 @@ export async function killSmallAibatt(ctx: FightContext, player: FightPlayer, te
     if (await fight(ctx, player, target, texts) === 'killed') return;
     if (tried.size >= 2) {
       throw new Error(`a second Small Aibatt (${target.objectId}) was refused with TID_GAME_PRIORITYMOB ("${texts.priorityMob.text}") too: another player fights the Aibatts here.`);
+    }
+    player.giveUpTarget();
+  }
+}
+
+// ---- The skill part ------------------------------------------------------------------------------------------------
+
+/** `SI_VAG_ONE_CLEANHIT` (`Resource/defineSkill.h:19`): the skill the skill part raises and uses, open from level 3. */
+export const SI_VAG_ONE_CLEANHIT = 1;
+/** Where the skill part puts Clean Hit: the first bar (0), its fourth slot (3), which F4 uses. */
+export const SKILL_BAR = 0;
+export const SKILL_SLOT = 3;
+/**
+ * The world server answers a USESKILL as it reads it (`CDPSrvr::OnUseSkill`, `WORLDSERVER/DPSrvrLux.cpp:32-99`: USESKILL
+ * to everyone around, or CLEAR_USESKILL), and a DOUSESKILLPOINT likewise (`CDPSrvr::OnDoUseSkillPoint`,
+ * `WORLDSERVER/DPSrvr.cpp:1104-1163`: DOUSESKILLPOINT, TID_RESKILLPOINT_ERROR, or nothing for a spend that changes no
+ * level); the client gives either up after 2 s (spec §3.11). These are the safety nets.
+ */
+export const SKILL_ANSWER_MS = 3000;
+export const SPEND_WAIT_MS = 5000;
+
+/**
+ * The skill part's spend for the character `own`, named `name`: Clean Hit one level up in a copy of its skills, as the skill
+ * window's + makes it (`SkillPlan.plus`, `CWndSkillTreeEx::OnChildNotify`, `WndField.cpp:8057-8072`), the 45 slots that
+ * Finish then sends (`skills`) and Clean Hit's slot (`index`); or, where the character cannot, the one sentence the part
+ * is skipped with (`skip`): it has no Clean Hit, is below the level Clean Hit opens at (3, `dwReqDisLV`), has Clean Hit at
+ * its top level (10, `dwExpertMax`), or has no skill point left.
+ */
+export function cleanHitSpend(
+  own: Pick<OwnState, 'level' | 'skills' | 'skillPoint'>, catalog: ReadonlyMap<number, WebSkill>, name: string,
+): { index: number; skills: SkillSlot[] } | { skip: string } {
+  const skill = catalog.get(SI_VAG_ONE_CLEANHIT);
+  if (skill === undefined) {
+    throw new Error('the skills catalog has no Clean Hit: the converted game files are older than the skills (npm run convert)');
+  }
+  const index = own.skills.findIndex((slot) => slot.skill === SI_VAG_ONE_CLEANHIT);
+  const plan = new SkillPlan(own.skills, own.skillPoint, catalog, own.level);
+  let why: string | null = null;
+  if (index < 0) why = 'has no Clean Hit among its skills';
+  else if (own.level < skill.reqLevel) why = `is level ${own.level}`;
+  else if (own.skills[index]!.level >= skill.maxLevel) why = `has Clean Hit at its top level (${skill.maxLevel}) already`;
+  else if (!plan.plus(index)) why = 'has no skill point left to spend';
+  if (why === null) return { index, skills: plan.result() };
+  return {
+    skip: `Skipped: ${name} ${why}, and the skill part needs a character of level ${skill.reqLevel} or higher with a skill `
+      + 'point left to spend (the comment at the top of live.config.example.json says how to get one).',
+  };
+}
+
+/** What the skill part reads of the test's player besides the fight's, and presses on it (`Player` in world.live.test.ts). */
+export interface SkillPlayer extends FightPlayer {
+  /** The skill messages (USESKILL, CLEAR_USESKILL, DOUSESKILLPOINT, ENDSKILLQUEUE) since the player entered, with when and about whom. */
+  readonly skillSeen: readonly { at: number; objectId: number; message: WorldMessage }[];
+  /** The USESKILLs the skill use sent since the player entered, with when. */
+  readonly sentUseSkill: readonly { at: number; index: number; targetId: number; useType: number }[];
+  /** A press on the bar's slot that holds `shortcut` (F4 on the world screen: `SkillUse.useShortcut`). */
+  pressShortcut(shortcut: Shortcut): void;
+}
+
+/** How the skill's use on `target` stands, for a failure message. */
+function skillText(
+  data: Pick<GameData, 'texts'>, player: SkillPlayer, target: Mover, from: { seen: number; uses: number; destObj: number },
+): string {
+  const self = player.world?.self();
+  const where = self === undefined ? 'not in view' : `${stateText(self)}, ${apart(self.act.body.pos, target.act.body.pos).toFixed(2)} m from it with ${self.hp} HP`;
+  const said = textsSaid(data, player.combatSeen.slice(from.seen));
+  return `Since the press on F4: ${player.sentDestObj.length - from.destObj} PLAYERSETDESTOBJ, ${player.sentUseSkill.length - from.uses} USESKILL. `
+    + `The walker is ${where}; the Small Aibatt is ${stateText(target)} with ${target.hp} HP.`
+    + (said.length === 0 ? '' : ` The server said: ${said.join('; ')}.`)
+    + (player.viewProblems.size === 0 ? '' : ` The views could not load: ${[...player.viewProblems].join('; ')}.`);
+}
+
+/**
+ * Uses the skill of the bar's `shortcut` (Clean Hit on F4) on `target`, as a player on the world screen does: a tap on it
+ * (the focus, SETTARGET), then F4; from there the skill use walks up to it (PLAYERSETDESTOBJ, `AR_SHORT`) and on arriving
+ * sends USESKILL (`SkillUse`), and the world server, as it begins the skill, sends USESKILL back. Ends `'hit'` at the
+ * walker's DAMAGE on it with `AF_MELEESKILL` (the skill's blow: `CMover::OnMeleeSkill` → `ApplySkill` → `SendDamage(
+ * AF_MELEESKILL, ... )` on the server); `'killed'` when that blow killed it, its MOVERDEATH by the walker coming in place of
+ * the DAMAGE (`CAttackArbiter::OnDamageMsgW`, `WORLDSERVER/AttackArbiter.cpp:228-255`); `'priorityMob'` at a
+ * TID_GAME_PRIORITYMOB (another player fights it). Fails when no USESKILL went within the walk up, when the server did not
+ * answer it within 3 s or refused it (CLEAR_USESKILL, with what it said), when the DAMAGE did not come within 3 s of the
+ * answer, and when the walker dies, or the Aibatt leaves the view or is killed by another.
+ */
+export async function useSkillOn(
+  ctx: FightContext, player: SkillPlayer, target: Mover, texts: FightTexts, shortcut: Shortcut,
+): Promise<'hit' | 'killed' | 'priorityMob'> {
+  const self = player.world!.self()!;
+  const from = {
+    seen: player.combatSeen.length, skills: player.skillSeen.length, uses: player.sentUseSkill.length,
+    destObj: player.sentDestObj.length,
+  };
+  const state = (): string => skillText(ctx.data, player, target, from);
+  player.pressMover(target.objectId);
+  if (player.focusId !== target.objectId) {
+    throw new Error(`the tap on the Small Aibatt ${target.objectId} did not select it (the focus is ${player.focusId}). ${state()}`);
+  }
+  player.pressShortcut(shortcut);
+  const pressedAt = performance.now();
+  // the walk up to it, at a walk, as each leg of the way out gets
+  const walkMs = (apart(self.act.body.pos, target.act.body.pos) / WALK_M_PER_S) * 1000 + LEG_SPARE_MS;
+  for (;;) {
+    ctx.check();
+    for (const { event } of player.combatSeen.slice(from.seen)) {
+      if (event.kind === 'text' && event.textId === texts.priorityMob.textId) return 'priorityMob';
+      if (event.kind === 'hit' && event.victimId === target.objectId && event.attackerId === self.objectId
+        && (event.flags & AttackFlag.MELEESKILL) !== 0) {
+        return 'hit';
+      }
+      if (event.kind === 'death' && event.victimId === target.objectId) {
+        if (event.attackerId !== self.objectId) throw new Error(`the Small Aibatt ${target.objectId} was killed by ${event.attackerId}, not by the walker. ${state()}`);
+        return 'killed';
+      }
+    }
+    let answeredAt: number | null = null;
+    for (const { at, objectId, message } of player.skillSeen.slice(from.skills)) {
+      if (objectId !== self.objectId) continue;
+      if (message.type === 'clearUseSkill') throw new Error(`the world server refused Clean Hit (CLEAR_USESKILL). ${state()}`);
+      if (message.type === 'useSkill') answeredAt ??= at;
+    }
+    const now = performance.now();
+    const sent = player.sentUseSkill[from.uses];
+    if (isDie(self)) throw new Error(`the walker died while it used Clean Hit. ${state()}`);
+    if (!player.world!.movers.has(target.objectId)) throw new Error(`the Small Aibatt ${target.objectId} left the walker's view alive. ${state()}`);
+    if (sent === undefined && now - pressedAt > walkMs) {
+      throw new Error(`the walker sent no USESKILL within ${Math.round(walkMs / 1000)} s of the press on F4: the walk up to the Aibatt did not end in range, or something stood between them. ${state()}`);
+    }
+    if (sent !== undefined && answeredAt === null && now - sent.at > SKILL_ANSWER_MS) {
+      throw new Error(`the world server did not answer the walker's USESKILL (skill slot ${sent.index}, at ${sent.targetId}) within ${SKILL_ANSWER_MS / 1000} s: it drops one for an empty slot or a level of 0 without a word. ${state()}`);
+    }
+    if (answeredAt !== null && now - answeredAt > DAMAGE_WAIT_MS) {
+      throw new Error(`the server began Clean Hit (its USESKILL came) but no DAMAGE with AF_MELEESKILL from the walker on the Aibatt came within ${DAMAGE_WAIT_MS / 1000} s. ${state()}`);
+    }
+    await sleep(20);
+  }
+}
+
+/**
+ * The skill part on the field: Clean Hit (the bar's `shortcut`) on the nearest Small Aibatt (`useSkillOn`); once its blow
+ * has landed, the auto-attack that a skill's use turns on (`OnUseSkill`) finishes it (`fight`), so that no Aibatt left
+ * alive follows the walker back. After a TID_GAME_PRIORITYMOB, or a blow that killed it outright (which leaves no DAMAGE
+ * to check), Escape and once more on the nearest other one.
+ */
+export async function skillOnSmallAibatt(ctx: FightContext, player: SkillPlayer, texts: FightTexts, shortcut: Shortcut): Promise<void> {
+  const tried = new Set<number>();
+  for (;;) {
+    const target = await nearestSmallAibatt(ctx, player, tried);
+    tried.add(target.objectId);
+    const result = await useSkillOn(ctx, player, target, texts, shortcut);
+    if (result === 'hit') {
+      // another player who took it over in the meantime leaves it to them
+      if (await fight(ctx, player, target, texts) === 'priorityMob') player.giveUpTarget();
+      return;
+    }
+    if (tried.size >= 2) {
+      throw new Error(result === 'killed'
+        ? `Clean Hit killed a second Small Aibatt (${target.objectId}) at its first blow, so no DAMAGE of it came to check: other players may be hurting the Aibatts here.`
+        : `a second Small Aibatt (${target.objectId}) was refused with TID_GAME_PRIORITYMOB ("${texts.priorityMob.text}") too: another player fights the Aibatts here.`);
     }
     player.giveUpTarget();
   }

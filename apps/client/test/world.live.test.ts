@@ -37,12 +37,26 @@
 // character outside the town, its error says where, and to walk it back through the north gate in the browser before
 // the next run. Run alone (`npm run test:live:world -- -t fight`), the test enters the walker itself.
 //
+// After it comes the skill part (milestone 2; run alone: `-t skill`), with the same character: it spends one skill point
+// on Clean Hit as the skill window's + and Finish do (`SkillPlan`, DOUSESKILLPOINT, which the server must answer with
+// DOUSESKILLPOINT), puts Clean Hit on the first bar's F4 as a drop there does (`TaskBarEdits`, ADDITEMTASKBAR), walks out
+// to the Small Aibatts again, taps the nearest and presses F4: the world screen's skill use (`SkillUse`, wired with the
+// attack as `WorldScreen` wires it) walks up to it and sends USESKILL, and the server must answer with USESKILL and the
+// skill's DAMAGE (`AF_MELEESKILL`); the auto-attack the skill turns on then finishes the Aibatt, and the character walks
+// back as after the fight. Clean Hit opens at level 3, so the part is skipped, with one sentence that says why, for a
+// character below level 3, without a skill point left, or with Clean Hit at its top level. The fight needs a character
+// of level 1 to 3 (from level 4 on a Small Aibatt gives no EXP: `CMover::AddExperienceSolo`, `_Common/Mover.cpp:6198-6216`,
+// its 2 EXP times 0.4 or 0.1 cut to 0 by the `static_cast<EXPINTEGER>` at :6245), so the one character that runs both is a
+// Vagrant of level 3 with its skill points unspent (the comment in live.config.example.json says how to get one).
+//
 // The servers' accept limiter (helpers/connectGap.ts explains it): every connection below waits until 300 ms after the
 // one before, the lobby's and the world's alike; keep it that way, and do not loop the test.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { WorldManifest } from '@flyffweb/formats';
-import { CloseCode } from '@flyffweb/protocol';
-import type { AddedMover, BundleMessage, CharacterSummary, MoveReport, Vec3, WorldMessage } from '@flyffweb/protocol';
+import { CloseCode, MAX_SLOT_APPLET, MAX_SLOT_ITEM, MAX_SLOT_ITEM_COUNT, MAX_SLOT_QUEUE, ShortcutKind } from '@flyffweb/protocol';
+import type {
+  AddedMover, BundleMessage, CharacterSummary, MoveReport, Shortcut, SkillSlot, Vec3, WorldMessage,
+} from '@flyffweb/protocol';
 import type { CollisionShapes, MoveIntent } from '@flyffweb/scene';
 import type { Gateway } from '@flyffweb/gateway/src/server';
 import { closeText } from '../src/lobby/errorText';
@@ -54,6 +68,8 @@ import { Focus } from '../src/world/combat/focus';
 import { movesOrTurns } from '../src/world/controls';
 import { loadGameData } from '../src/world/gameData';
 import type { GameData } from '../src/world/gameData';
+import { EMPTY, TaskBarEdits } from '../src/world/hud/taskBarEdits';
+import type { LoadedBars } from '../src/world/hud/taskBarEdits';
 import { OwnState } from '../src/world/OwnState';
 import type { MoverViews } from '../src/world/render/MoverViews';
 import type { Ground } from '../src/world/sim/collision';
@@ -61,6 +77,8 @@ import { ObjSta } from '../src/world/sim/constants';
 import { OwnMover } from '../src/world/ownMover';
 import type { OwnMoverSession } from '../src/world/ownMover';
 import { FixedStepper } from '../src/world/sim/stepper';
+import { SkillUse } from '../src/world/skills/skillUse';
+import type { SkillUseSession } from '../src/world/skills/skillUse';
 import { JOIN_CLOSED_TEXT, WorldSession } from '../src/world/WorldSession';
 import type { WorldEvent } from '../src/world/WorldSession';
 import { WorldState, isDie, isLive } from '../src/world/WorldState';
@@ -69,10 +87,11 @@ import { checkReachable } from './helpers/connectGap';
 import { ASSETS_DIR, DiskAssets, Terrain, placedObjects } from './helpers/diskAssets';
 import { headlessViews } from './helpers/headlessViews';
 import {
-  TO_THE_AIBATTS, attackSpeedRefusals, fightTexts, foodProblem, killSmallAibatt, leftOutsideNote, pollUntil, resumeRoute,
-  reviveIfDead, stands, stateText, walkRoute, withNote,
+  SKILL_BAR, SKILL_SLOT, SPEND_WAIT_MS, TO_THE_AIBATTS, attackSpeedRefusals, cleanHitSpend, fightTexts, foodProblem,
+  killSmallAibatt, leftOutsideNote, numberedText, pollUntil, resumeRoute, reviveIfDead, skillOnSmallAibatt, stands,
+  stateText, walkRoute, withNote,
 } from './helpers/liveFight';
-import type { FightContext } from './helpers/liveFight';
+import type { FightContext, SkillPlayer } from './helpers/liveFight';
 import { CONFIG_PATH, loadConfigFile, parseGatewaySettings, requireBankPin, requireText } from './helpers/liveConfig';
 import type { GatewaySettings } from './helpers/liveConfig';
 import { printGatewayLogOnFailure, startLiveGateway } from './helpers/liveGateway';
@@ -182,6 +201,10 @@ const REVIVE_WAIT_MS = 10000;
  * the test gets more, so that one of them, which says what it waited for, ends it rather than vitest's timeout.
  */
 const FIGHT_TEST_MS = 900000;
+/** The skill part's waits are the fight's, and the spend's few seconds more. */
+const SKILL_TEST_MS = 900000;
+/** The skill messages the skill part reads (`Player.skillSeen`). */
+const SKILL_MESSAGES: ReadonlySet<WorldMessage['type']> = new Set(['useSkill', 'clearUseSkill', 'doUseSkillPoint', 'endSkillQueue']);
 /** What the stage gives the rules with no objects near, and the walker's ground before the fight turns them on. */
 const NO_OBJECTS: ReturnType<Ground['objectsNear']> = Object.freeze([]);
 
@@ -264,12 +287,13 @@ const asError = (error: unknown): Error => (error instanceof Error ? error : new
 /**
  * One account's player: logs in, picks (or makes) its character, enters, and then, like the world screen, runs the rules
  * 60 steps a second with the keys in `intent` and a `tap`, driving its own mover with the world screen's `OwnMover`,
- * and its attack with the world screen's `AttackLoop` (a tap on a mover, `pressMover`; the attack button,
- * `pressAttack`; Escape, `giveUpTarget`). It keeps its own `WorldState`, the movers in view of its session, which the
- * other player's moves reach through the server, and the own character's numbers (`OwnState`) that the messages about
- * it change.
+ * its attack with the world screen's `AttackLoop` (a tap on a mover, `pressMover`; the attack button, `pressAttack`;
+ * Escape, `giveUpTarget`) and its skills with the world screen's `SkillUse` (a slot of the bar, `pressShortcut`; the
+ * skill window's Finish, `spendSkillPoints`; a skill dropped on the bar, `placeSkillOnBar`). It keeps its own
+ * `WorldState`, the movers in view of its session, which the other player's moves reach through the server, and the own
+ * character's numbers (`OwnState`) that the messages about it change.
  */
-class Player {
+class Player implements SkillPlayer {
   /** The character it plays: the account's first, or the one the test made. */
   character: CharacterSummary | undefined;
   /** Set when the test made the character: it is deleted at the end. The slot is known once the list that holds it has come. */
@@ -296,6 +320,15 @@ class Player {
   readonly sentSwings: { at: number; targetId: number }[] = [];
   /** The hits, deaths and texts the world played since the player entered (`WorldState.takeChanges`), with when (`performance.now()`). */
   readonly combatSeen: { at: number; event: CombatEvent }[] = [];
+  /**
+   * What the skill use and the bar sent since the player entered: the USESKILLs with when, the DOUSESKILLPOINTs' slots,
+   * and the ADDITEMTASKBARs.
+   */
+  readonly sentUseSkill: { at: number; index: number; targetId: number; useType: number }[] = [];
+  readonly sentSkillPoints: SkillSlot[][] = [];
+  readonly sentAddItemTaskBar: { bar: number; slot: number; shortcut: Shortcut }[] = [];
+  /** The skill messages since the player entered (USESKILL, CLEAR_USESKILL, DOUSESKILLPOINT, ENDSKILLQUEUE), with when and about whom. */
+  readonly skillSeen: { at: number; objectId: number; message: WorldMessage }[] = [];
   /** Rules steps taken since the first entry. */
   steps = 0;
   /** The text of the `ended` event, if the session has ended. */
@@ -309,9 +342,10 @@ class Player {
   private lobby: Lobby | undefined;
   /** The own mover's driving, as the world screen's, for the session the player is in. */
   private ownMover: OwnMover | undefined;
-  /** The focus and the auto-attack, as the world screen's, for the session the player is in. */
+  /** The focus, the auto-attack and the skill use, as the world screen's, for the session the player is in. */
   private focus: Focus | undefined;
   private attack: AttackLoop | undefined;
+  private skillUse: SkillUse | undefined;
   /**
    * The world screen's views of the movers, without a screen (`headlessViews`): the models' frames that end a swing and
    * land its blow, and the boxes of the attack's radii. What they could not load (the screen's overlay says it) is in
@@ -409,6 +443,52 @@ class Player {
     }
   }
 
+  /** A press on a slot of the bar that holds `shortcut`, or its F-key (the world screen's `useSlot`: `SkillUse.useShortcut`). */
+  pressShortcut(shortcut: Shortcut): void {
+    this.skillUse?.useShortcut(shortcut);
+  }
+
+  /**
+   * The skill window's Finish and its box's Yes with `skills`, the 45 slots of the plan (`SkillUse.spendSkillPoints`:
+   * DOUSESKILLPOINT); false where it did not go (one waits for its answer, or the player is not in).
+   */
+  spendSkillPoints(skills: readonly SkillSlot[]): boolean {
+    return this.skillUse?.spendSkillPoints(skills) === true;
+  }
+
+  /**
+   * The skill of slot `skillIndex` carried from the skill window to slot `slot` of the first bar, the bar shown, and let go
+   * there (`TaskBarEdits.dropOn`, `CWndTaskBar::OnDropIcon`: the bar's rules, then `SetShortcut`'s ADDITEMTASKBAR); the
+   * shortcut the slot then holds, or null where the rules turned the skill away. The bars start empty, as the world screen's
+   * do before a TASKBAR: a drop takes its slot whatever the server's bar had there, as Neuz's does. Nothing here draws the
+   * bars, so the edit is not put back in `OwnState.taskBar`.
+   */
+  placeSkillOnBar(skillIndex: number, slot: number): Shortcut | null {
+    const session = this.session;
+    if (session === undefined || gameData === undefined) return null;
+    const bars: LoadedBars = {
+      applets: Array.from({ length: MAX_SLOT_APPLET }, () => EMPTY),
+      items: Array.from({ length: MAX_SLOT_ITEM_COUNT }, () => Array.from({ length: MAX_SLOT_ITEM }, () => EMPTY)),
+      queue: Array.from({ length: MAX_SLOT_QUEUE }, () => EMPTY),
+      queueCount: 0,
+      itemIds: new Map(),
+    };
+    const data = { itemProps: gameData.itemProps, skills: gameData.skills, texts: gameData.texts };
+    const edits = new TaskBarEdits({ bars, own: this.own, data, bar: SKILL_BAR, commit: () => {} }, {
+      sendAddItemTaskBar: (bar, at, shortcut) => {
+        session.sendAddItemTaskBar(bar, at, shortcut);
+        this.sentAddItemTaskBar.push({ bar, slot: at, shortcut });
+      },
+      sendRemoveItemTaskBar: (bar, at) => session.sendRemoveItemTaskBar(bar, at),
+      sendSkillTaskBar: (queue) => session.sendSkillTaskBar(queue),
+      queueRunning: () => (this.skillUse?.execute ?? 0) !== 0,
+      say: () => {},
+    });
+    edits.dropOn({ from: 'skills', skillIndex }, { row: 'item', slot });
+    const placed = bars.items[SKILL_BAR]![slot]!;
+    return placed.kind === ShortcutKind.SKILL ? placed : null;
+  }
+
   /** Logs in, lists the characters and picks the character, makes one if the account has none, and enters the world. */
   async enter(): Promise<void> {
     this.playing = false;
@@ -445,21 +525,23 @@ class Player {
 
   /**
    * One rules step, as the world screen takes it (`WorldScreen.step`): the press let go (none is held from one step to
-   * the next here: a press on a mover is a tap, `pressMover`); a move of the keys stopping the auto-attack, then the
-   * attack loop's branch of `CWndWorld::Process`, and where that is `ControlPlayer`, a tap, then the keys, to the own
-   * mover (`OwnMover.control`), its moves sent; then every mover's step, the PLAYERCORR it may owe, what the step played
-   * (`take`, the world screen's `syncViews`), and the views' step (the models' frames).
+   * the next here: a press on a mover is a tap, `pressMover`); a move of the keys stopping the auto-attack, then the skill
+   * use's step (the bar's presses, and a reserved skill's branch of `CWndWorld::Process`) and the attack loop's branch,
+   * and where that is `ControlPlayer`, a tap, then the keys, to the own mover (`OwnMover.control`), its moves sent; then
+   * every mover's step, the PLAYERCORR it may owe, what the step played (`take`, the world screen's `syncViews`), and the
+   * views' step (the models' frames).
    */
   step(): void {
-    const { world, ownMover, attack, views } = this;
-    if (!this.playing || world === undefined || ownMover === undefined || attack === undefined || views === undefined) return;
+    const { world, ownMover, attack, skillUse, views } = this;
+    if (!this.playing || world === undefined || ownMover === undefined || attack === undefined || skillUse === undefined || views === undefined) return;
     const own = world.self();
     const tap = this.tap;
     this.tap = null;
     attack.onReleased();
     if (own !== undefined) {
       if (movesOrTurns(this.intent)) attack.stop('move');
-      if (attack.step()) ownMover.control(own, this.intent, tap);
+      const skillBranch = skillUse.step(own, (objectId) => world.movers.get(objectId));
+      if (attack.step(skillBranch)) ownMover.control(own, this.intent, tap);
     }
     world.step();
     ownMover.corrected(own);
@@ -586,7 +668,7 @@ class Player {
    * ADD_OBJ and the lobby's equipment (`OwnState`, made before the bundle is applied, so that its messages about the own
    * character reach them); the world the player is in, with the movers in view, standing on its terrain (and on the
    * placed objects once a test sets `objects`); the views of the movers (`WorldScreen.openStage`); the own mover's
-   * driving; the bundle; then the focus and the attack (`WorldScreen.showWorld`).
+   * driving; the bundle; then the focus, the skill use and the attack (`WorldScreen.showWorld`).
    */
   private begin(event: EnteredEvent): void {
     const terrain = terrainOf(event.worldId);
@@ -602,7 +684,12 @@ class Player {
     this.views?.dispose();
     this.views = headlessViews(assets!, gameData!, entry.character.equipment, (message) => this.viewProblems.add(message));
     this.entered = event;
-    for (const sent of [this.sentDestPos, this.sentCorr, this.sentDestObj, this.sentSwings, this.combatSeen]) sent.length = 0;
+    for (const sent of [
+      this.sentDestPos, this.sentCorr, this.sentDestObj, this.sentSwings, this.combatSeen, this.sentUseSkill,
+      this.sentSkillPoints, this.sentAddItemTaskBar, this.skillSeen,
+    ]) {
+      sent.length = 0;
+    }
     // the session's sends, counted on the way (the world screen's mark of the tapped point is not drawn here)
     const sends: OwnMoverSession = {
       sendMoved: (move) => session.sendMoved(move),
@@ -618,16 +705,18 @@ class Player {
     };
     this.ownMover = new OwnMover(sends, entry.clock, { show: () => {} });
     this.apply(event.messages, true);
-    this.startAttack(session, entry, this.world);
+    this.startAttack(session, entry, this.world, ground);
     this.playing = true;
   }
 
   /**
-   * The focus and the auto-attack as the world screen makes them (`WorldScreen.showWorld`): the focus tells the server
-   * of its changes (SETTARGET) and asks `IsLive` of a mover in view (`WorldScreen.isLive`); the attack reads the own
-   * numbers and the movers in view, and sends through the session, its approaches and swings counted on the way.
+   * The focus, the skill use and the auto-attack as the world screen makes them (`WorldScreen.showWorld`): the focus tells
+   * the server of its changes (SETTARGET) and asks `IsLive` of a mover in view (`WorldScreen.isLive`); the skill use and the
+   * attack share the own mover's one command and the reserved skill, and the world tells the skill use of a USESKILL's
+   * outcome (`onUseSkill`); both read the own numbers and the movers in view (the skill use the ground too, for its line of
+   * sight), and send through the session, their approaches, swings, USESKILLs and spends counted on the way.
    */
-  private startAttack(session: WorldSession, entry: WorldEntry, world: WorldState): void {
+  private startAttack(session: WorldSession, entry: WorldEntry, world: WorldState, ground: Ground): void {
     const focus = new Focus(session, (objectId) => {
       const mover = world.movers.get(objectId);
       return mover === undefined || isLive(mover);
@@ -644,14 +733,36 @@ class Player {
       sendGetDestObj: (fromId, destId) => session.sendGetDestObj(fromId, destId),
       sendBehavior: (move) => session.sendBehavior(move),
     };
+    // each counted once it went: the encoders throw at a value the server would drop (SkillUse says it and goes on)
+    const skillSends: SkillUseSession = {
+      sendUseSkill: (index, targetId, useType, control) => {
+        session.sendUseSkill(index, targetId, useType, control);
+        this.sentUseSkill.push({ at: performance.now(), index, targetId, useType });
+      },
+      sendDoUseSkillPoint: (skills) => {
+        session.sendDoUseSkillPoint(skills);
+        this.sentSkillPoints.push(skills.map((slot) => ({ ...slot })));
+      },
+      sendEndSkillQueue: () => session.sendEndSkillQueue(),
+      sendDestObj: (targetId, range) => sends.sendDestObj(targetId, range),
+      sendBehavior: (move) => session.sendBehavior(move),
+    };
+    const skillUse = new SkillUse(skillSends, focus, () => this.own, () => performance.now(), gameData!, {
+      tick: () => entry.clock.tick(), ground: () => ground,
+    });
+    const attack = new AttackLoop(sends, focus, world, () => this.own, entry.clock, gameData!.movers, skillUse);
+    skillUse.attack = attack;
+    world.onUseSkill = (casterId, message, started) => skillUse.onUseSkill(casterId, message, started);
     this.focus = focus;
-    this.attack = new AttackLoop(sends, focus, world, () => this.own, entry.clock, gameData!.movers);
+    this.skillUse = skillUse;
+    this.attack = attack;
   }
 
   /**
    * A bundle's messages to the movers in view, in order (`WorldScreen.apply`); `joining` for the JOIN's. QUERYGETDESTOBJ
    * is the attack loop's, and so are a death and a DEL_OBJ of a mover in view, told before the world applies them
-   * (`AttackLoop.onMoverDeath`, `onRemoved`). Then what they played (`take`).
+   * (`AttackLoop.onMoverDeath`, `onRemoved`). The skill use takes its answers after the world (`SkillUse.onMessage`), and
+   * the skill messages are kept for the skill part (`skillSeen`). Then what they played (`take`).
    */
   private apply(messages: BundleMessage<WorldMessage>[], joining = false): void {
     const world = this.world!;
@@ -672,6 +783,8 @@ class Player {
       if (value.type === 'moverMoved') this.movesApplied.set(objectId, this.movesAppliedTo(objectId) + 1);
       if (value.type === 'destPos') this.destsApplied.set(objectId, this.destsAppliedTo(objectId) + 1);
       world.apply(objectId, value, joining);
+      this.skillUse?.onMessage(objectId, value, world.self());
+      if (SKILL_MESSAGES.has(value.type)) this.skillSeen.push({ at: performance.now(), objectId, message: value });
     }
     this.take(world);
   }
@@ -811,9 +924,9 @@ function bothInWorld(): [Player, Player] {
   return [walker, observer];
 }
 
-// ---- The fight's helpers (the rest are helpers/liveFight.ts's) --------------------------------------------------
+// ---- The fight's and the skill part's helpers (the rest are helpers/liveFight.ts's) -----------------------------
 
-/** The walker, in the world: the first tests put it there; run alone (`-t fight`), this enters it and starts the steps. */
+/** The walker, in the world: the first tests put it there; run alone (`-t fight`, `-t skill`), this enters it and starts the steps. */
 async function walkerInWorld(): Promise<Player> {
   if (!walker.playing) {
     loop.start();
@@ -830,10 +943,66 @@ function fightContext(player: Player): FightContext {
 }
 
 /**
- * Set while the fight may have the walker's character outside the town and has not said so itself: the test may still
- * end on vitest's timeout, or the run stop; `afterAll` then says where it was left (`leftOutsideNote`).
+ * Set while the fight or the skill part may have the walker's character outside the town and has not said so itself:
+ * the test may still end on vitest's timeout, or the run stop; `afterAll` then says where it was left (`leftOutsideNote`).
  */
-let fightUnfinished = false;
+let walkerMayBeOutside = false;
+
+/**
+ * The walker's way out of the town and back, around `leg`: from here on its steps meet the placed objects around it, as
+ * on the world screen; a character an earlier run left on the way, or by the Aibatts, first goes back to where the way
+ * begins; then the way out to the Small Aibatts, and `leg`. Whatever came of that, a dead walker revives at the lodestar,
+ * as the revive window's button has it (were the revival lost, logging out revives it at the nearest lodestar:
+ * `leftOutsideNote`), and a living character the test did not make goes back into the town, for the next run's first test
+ * (one the test made is deleted at the end). Throws the leg's failure with the note of where the character was left when
+ * it is still outside, or that note alone.
+ */
+async function outOfTown(runner: Player, self: Mover, leg: (ctx: FightContext) => Promise<void>): Promise<void> {
+  const ctx = fightContext(runner);
+  runner.objects = await placedObjects(assets!, worldOf(MADRIGAL).manifest, self.act.body.pos[0], self.act.body.pos[2]);
+  walkerMayBeOutside = true;
+  let failure: unknown;
+  try {
+    await walkRoute(ctx, runner, resumeRoute(self.act.body.pos), 'back into Flaris from where an earlier run left it');
+    await walkRoute(ctx, runner, TO_THE_AIBATTS, 'out of Flaris');
+    await leg(ctx);
+  } catch (error) {
+    failure = error;
+  }
+  if (reviveIfDead(runner)) {
+    await waitUntil('the revival at the lodestar', REVIVE_WAIT_MS, () => !isDie(self), () => `The walker is ${stateText(self)}.`)
+      .catch(() => {});
+  }
+  let walkBack: unknown;
+  if (runner.created === undefined && runner.playing && !isDie(self)) {
+    try {
+      runner.giveUpTarget();
+      await walkRoute(ctx, runner, resumeRoute(self.act.body.pos), 'back into Flaris');
+    } catch (error) {
+      walkBack = error;
+    }
+  }
+  runner.objects = undefined;
+  walkerMayBeOutside = false;
+  let note = leftOutsideNote(runner.created !== undefined, self);
+  if (note !== null && walkBack !== undefined) note += ` (The walk back failed: ${(walkBack as Error).message})`;
+  if (failure !== undefined) throw withNote(failure, note);
+  if (note !== null) throw new Error(note);
+}
+
+/**
+ * Every bundle of the sessions in the world now had its table of contents, and no reader mismatched: the walker's, and the
+ * observer's while it is in (after the re-entry test its second session; run alone, the walker is the only one in).
+ */
+function expectEveryBundleRead(): void {
+  for (const player of [walker, observer]) {
+    const stats = player.session?.stats;
+    if (!player.playing || stats === undefined) continue;
+    const counts = `(${stats.bundles} bundles, ${stats.indexed} with a table, ${stats.mismatched} mismatched, ${stats.unknownPackets} unknown packets)`;
+    expect(stats.indexed, `the ${player.role}'s bundles without a table of contents: is the rebuilt WorldServer running? ${counts}`).toBe(stats.bundles);
+    expect(stats.mismatched, `a reader of the ${player.role} did not end where the table says ${counts}`).toBe(0);
+  }
+}
 
 // ---- The tests -------------------------------------------------------------------------------------------------
 
@@ -857,8 +1026,9 @@ describe.skipIf(config === undefined)(skip === undefined ? 'live world' : `live 
   afterAll(async () => {
     loop.stop();
     const problems: string[] = [];
-    // the fight stopped before it could say so itself (vitest's timeout): where it left the walker's character, as seen last
-    const note = fightUnfinished ? leftOutsideNote(walker.created !== undefined, walker.world?.self()) : null;
+    // the fight or the skill part stopped before it could say so itself (vitest's timeout): where it left the walker's
+    // character, as seen last
+    const note = walkerMayBeOutside ? leftOutsideNote(walker.created !== undefined, walker.world?.self()) : null;
     if (note !== null) problems.push(note);
     if (walker !== undefined) {
       // Everyone leaves first; the world server saves a character when the cache server reports its closed connection.
@@ -1031,60 +1201,72 @@ describe.skipIf(config === undefined)(skip === undefined ? 'live world' : `live 
     expect(foodProblem(own, runner.created !== undefined)).toBeNull();
 
     const texts = fightTexts(gameData!);
-    const ctx = fightContext(runner);
     const seenFrom = runner.combatSeen.length;
-    // from here on the walker's steps meet the placed objects around it, as on the world screen
-    runner.objects = await placedObjects(assets!, worldOf(MADRIGAL).manifest, self.act.body.pos[0], self.act.body.pos[2]);
-    fightUnfinished = true;
-    let failure: unknown;
-    try {
-      // a character an earlier run left on the way, or by the Aibatts, first goes back to where the way begins
-      await walkRoute(ctx, runner, resumeRoute(self.act.body.pos), 'back into Flaris from where an earlier run left it');
-      await walkRoute(ctx, runner, TO_THE_AIBATTS, 'out of Flaris');
+    await outOfTown(runner, self, async (ctx) => {
       const before = { exp: own.exp, level: own.level };
       await killSmallAibatt(ctx, runner, texts);
       await waitUntil(
         'the EXP rising after the kill',
         EXP_WAIT_MS,
         () => own.level > before.level || own.exp > before.exp,
-        () => `The walker has ${own.exp} EXP at level ${own.level}, as before the fight (${before.exp} at level ${before.level}): no SETEXPERIENCE came, or it gave nothing (a character of a high level gets little or nothing for a level 1 monster, and a Vagrant at level 15 none).`,
+        () => `The walker has ${own.exp} EXP at level ${own.level}, as before the fight (${before.exp} at level ${before.level}): no SETEXPERIENCE came, or it gave nothing (from level 4 on a Small Aibatt gives no EXP: use a character of level 1 to 3).`,
       );
       // a refusal of the attack speed that came after the kill counts too
       const refusals = attackSpeedRefusals(runner.combatSeen.slice(seenFrom), texts.attackSpeed.textId);
       expect(refusals, `the world server refused ${refusals} MELEE_ATTACK with TID_GAME_MODIFY_ATTACK_SPEED ("${texts.attackSpeed.text}")`).toBe(0);
-      // every bundle of the sessions in the world now (after the test before, the observer's second one too; run alone, the walker's only one)
-      for (const player of [runner, observer]) {
-        const stats = player.session?.stats;
-        if (!player.playing || stats === undefined) continue;
-        const counts = `(${stats.bundles} bundles, ${stats.indexed} with a table, ${stats.mismatched} mismatched, ${stats.unknownPackets} unknown packets)`;
-        expect(stats.indexed, `the ${player.role}'s bundles without a table of contents: is the rebuilt WorldServer running? ${counts}`).toBe(stats.bundles);
-        expect(stats.mismatched, `a reader of the ${player.role} did not end where the table says ${counts}`).toBe(0);
-      }
-    } catch (error) {
-      failure = error;
-    }
-    // a dead walker revives at the lodestar, as the revive window's button has it (and were the revival lost, logging out
-    // revives it at the nearest lodestar: `leftOutsideNote`)
-    if (reviveIfDead(runner)) {
-      await waitUntil('the revival at the lodestar', REVIVE_WAIT_MS, () => !isDie(self), () => `The walker is ${stateText(self)}.`)
-        .catch(() => {});
-    }
-    // a living character the test did not make goes back into the town, for the next run's first test (one the test made
-    // is deleted at the end)
-    let walkBack: unknown;
-    if (runner.created === undefined && runner.playing && !isDie(self)) {
-      try {
-        runner.giveUpTarget();
-        await walkRoute(ctx, runner, resumeRoute(self.act.body.pos), 'back into Flaris');
-      } catch (error) {
-        walkBack = error;
-      }
-    }
-    runner.objects = undefined;
-    fightUnfinished = false;
-    let note = leftOutsideNote(runner.created !== undefined, self);
-    if (note !== null && walkBack !== undefined) note += ` (The walk back failed: ${(walkBack as Error).message})`;
-    if (failure !== undefined) throw withNote(failure, note);
-    if (note !== null) throw new Error(note);
+      expectEveryBundleRead();
+    });
   }, FIGHT_TEST_MS);
+
+  it('the skill part: the walker spends a skill point on Clean Hit, puts it on F4 and uses it on a Small Aibatt', async (context) => {
+    const runner = await walkerInWorld();
+    const own = runner.own;
+    const self = runner.world?.self();
+    if (own === undefined || self === undefined) throw new Error(`the walker's JOIN bundle had no own ADD_OBJ to read its numbers from: ${runner.inView()}`);
+    expect(runner.entered?.worldId, `the walker ${runner.name} is in world ${runner.entered?.worldId}, not Madrigal (Flaris)`).toBe(MADRIGAL);
+    // Clean Hit opens at level 3 and needs a point to raise: a character that cannot is skipped, with one sentence (also in
+    // the console, as a reporter that lists no skipped tests, vitest's default, shows only that)
+    const spend = cleanHitSpend(own, gameData!.skills, runner.name);
+    if ('skip' in spend) {
+      console.warn(`Live world test, the skill part: ${spend.skip}`);
+      context.skip(spend.skip);
+      return;
+    }
+
+    // 1. A point on Clean Hit: the skill window's + and Finish, and its box's Yes (DOUSESKILLPOINT), which the server
+    // answers with DOUSESKILLPOINT (the slots, then the points left), or refuses with TID_RESKILLPOINT_ERROR
+    const refusal = numberedText(gameData!, 'TID_RESKILLPOINT_ERROR');
+    const before = { level: own.skills[spend.index]!.level, points: own.skillPoint };
+    const seenFrom = runner.skillSeen.length;
+    const textsFrom = runner.combatSeen.length;
+    const refused = (): boolean =>
+      runner.combatSeen.slice(textsFrom).some(({ event }) => event.kind === 'text' && event.textId === refusal.textId);
+    const answered = (): boolean => runner.skillSeen.slice(seenFrom).some(({ message }) => message.type === 'doUseSkillPoint');
+    expect(runner.spendSkillPoints(spend.skills), 'the skill use sent the DOUSESKILLPOINT').toBe(true);
+    await waitUntil(
+      'the answer to the skill point (DOUSESKILLPOINT)',
+      SPEND_WAIT_MS,
+      () => answered() || refused(),
+      () => `The walker sent ${runner.sentSkillPoints.length} DOUSESKILLPOINT (Clean Hit from level ${before.level} to ${before.level + 1}, with ${before.points} points) and the world server said nothing, which it does for a spend that changes no level.`,
+    );
+    if (refused()) {
+      throw new Error(`the world server refused the skill point with TID_RESKILLPOINT_ERROR ("${refusal.text}"): its copy of the character's skills or points is not the one the walker read (Clean Hit at ${before.level}, ${before.points} points), or a level costs more on it.`);
+    }
+    expect(own.skills[spend.index]!.level, 'Clean Hit after the DOUSESKILLPOINT').toBe(before.level + 1);
+    expect(own.skillPoint, 'the skill points after the DOUSESKILLPOINT (a level of a Vagrant skill costs 1)').toBe(before.points - 1);
+
+    // 2. Clean Hit on the first bar's F4, as a drop from the skill window does it (ADDITEMTASKBAR, which has no answer)
+    const placedFrom = runner.sentAddItemTaskBar.length;
+    const shortcut = runner.placeSkillOnBar(spend.index, SKILL_SLOT);
+    if (shortcut === null) throw new Error(`the bar turned Clean Hit (level ${own.skills[spend.index]!.level}) away from F4`);
+    expect(runner.sentAddItemTaskBar.slice(placedFrom)).toEqual([{ bar: SKILL_BAR, slot: SKILL_SLOT, shortcut }]);
+
+    // 3. and 4. Out to the Small Aibatts: Clean Hit (F4) on the nearest, which the server begins (USESKILL) and lands (a
+    // DAMAGE with AF_MELEESKILL), then the auto-attack it turned on finishes the Aibatt; and back into the town
+    const texts = fightTexts(gameData!);
+    await outOfTown(runner, self, async (ctx) => {
+      await skillOnSmallAibatt(ctx, runner, texts, shortcut);
+      expectEveryBundleRead();
+    });
+  }, SKILL_TEST_MS);
 });

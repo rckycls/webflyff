@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { InventoryItem } from '@flyffweb/protocol';
+import { NULL_ID } from '@flyffweb/protocol';
+import type { InventoryItem, SkillSlot } from '@flyffweb/protocol';
 import type { CombatEvent } from '../src/world/WorldState';
 import {
-  TO_THE_AIBATTS, attackSpeedRefusals, foodProblem, leftOutsideNote, resumeRoute, reviveIfDead,
+  TO_THE_AIBATTS, attackSpeedRefusals, cleanHitSpend, foodProblem, leftOutsideNote, resumeRoute, reviveIfDead,
 } from './helpers/liveFight';
 import type { FightPlayer } from './helpers/liveFight';
 import { addedPlayer, moverFrom } from './helpers/movers';
+import { vagrantSkills } from './helpers/skills';
 
 /** An inventory of `[itemId, count]` slots, as the own ADD_OBJ lists it. */
 const bag = (...slots: [number, number][]): { inventory: Map<number, InventoryItem>; inventoryError: null } => ({
@@ -101,5 +103,40 @@ describe('the live fight: a death and the texts', () => {
     ];
     expect(attackSpeedRefusals(seen, 3456)).toBe(2);
     expect(attackSpeedRefusals(seen.slice(1, 3), 3456)).toBe(0);
+  });
+});
+
+describe('the live skill part: who can spend a point on Clean Hit', () => {
+  /** A Vagrant's 45 skill slots (Clean Hit, Flurry and Over Cut in slots 0-2) with Clean Hit at `cleanHit`. */
+  const skills = (cleanHit: number): SkillSlot[] => Array.from({ length: 45 }, (_, i) =>
+    (i === 0 ? { skill: 1, level: cleanHit } : i < 3 ? { skill: i + 1, level: 0 } : { skill: NULL_ID, level: 0 }));
+
+  it('raises Clean Hit by one level for a character of level 3 with a point, as the skill window would send it', () => {
+    const own = { level: 3, skills: skills(0), skillPoint: 4 };
+    expect(cleanHitSpend(own, vagrantSkills(), 'WebWalk1')).toEqual({ index: 0, skills: skills(1) });
+    // from a level it has, too, and above level 3
+    expect(cleanHitSpend({ level: 9, skills: skills(4), skillPoint: 1 }, vagrantSkills(), 'WebWalk1'))
+      .toEqual({ index: 0, skills: skills(5) });
+    // the character's own slots are left as they were
+    expect(own.skills).toEqual(skills(0));
+  });
+
+  it('is skipped with one sentence, naming the character and why, below level 3, with no point, or at the top level', () => {
+    const skipOf = (own: { level: number; skills: SkillSlot[]; skillPoint: number }): string => {
+      const spend = cleanHitSpend(own, vagrantSkills(), 'WebWalk1');
+      if (!('skip' in spend)) throw new Error('not skipped');
+      return spend.skip;
+    };
+    const atLevel2 = skipOf({ level: 2, skills: skills(0), skillPoint: 2 });
+    expect(atLevel2).toMatch(/^Skipped: WebWalk1 is level 2, and the skill part needs a character of level 3 or higher with a skill point left to spend/);
+    expect(atLevel2.split('. ').length).toBe(1);
+    expect(skipOf({ level: 3, skills: skills(0), skillPoint: 0 })).toMatch(/WebWalk1 has no skill point left to spend/);
+    expect(skipOf({ level: 15, skills: skills(10), skillPoint: 9 })).toMatch(/WebWalk1 has Clean Hit at its top level \(10\) already/);
+    const none = Array.from({ length: 45 }, () => ({ skill: NULL_ID, level: 0 }));
+    expect(skipOf({ level: 3, skills: none, skillPoint: 4 })).toMatch(/WebWalk1 has no Clean Hit among its skills/);
+  });
+
+  it('says to convert the game files again when the skills catalog has no Clean Hit', () => {
+    expect(() => cleanHitSpend({ level: 3, skills: skills(0), skillPoint: 4 }, new Map(), 'WebWalk1')).toThrow(/npm run convert/);
   });
 });
