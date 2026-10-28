@@ -1,7 +1,8 @@
 // `window.__client`: what the Playwright tests (and a tester's console) use to look into the game client, as
 // `window.__viewer` is for the viewer (apps/viewer/src/testHooks.ts). It is a registry: the hooks are there from the
 // start, and the world screen registers what they answer from while it is open. Outside a world screen they throw
-// (`ready` rejects) with "no world screen".
+// (`ready` rejects) with "no world screen". `main.ts` installs them on the dev server and in a build made with
+// `VITE_TEST_HOOKS=1` only, so a public build has no `window.__client`.
 
 import type { Vec3 } from '@flyffweb/protocol';
 import type { SessionStats } from './world/WorldSession';

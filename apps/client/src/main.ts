@@ -10,7 +10,10 @@ import { WorldScreen } from './world/WorldScreen';
 const root = document.getElementById('app');
 if (root === null) throw new Error('index.html has no #app');
 
-installTestHooks();
+// `window.__client` (src/testHooks.ts) is for the dev server, which the Playwright tests run against, and for a build made
+// on purpose with `VITE_TEST_HOOKS=1`. A page built for the public does not get it: its `pause()` and `step(n)` run the
+// game's rules at will (ten seconds of them in one frame), and `movers()` and `own()` read its state, which no player needs.
+if (import.meta.env.DEV || import.meta.env.VITE_TEST_HOOKS === '1') installTestHooks();
 
 // The whole game is landscape (spec §3.10): a cover over the page while it is taller than wide, and on a touch screen full
 // screen and the landscape lock asked for by the taps that log in and enter the world. A touch screen is told by the
