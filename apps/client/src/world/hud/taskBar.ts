@@ -461,10 +461,6 @@ export class TaskBar {
     this.slotMenu.append(this.removeLine);
 
     strip.append(this.start, this.up, this.down, this.number, this.action);
-    // a new press on the bar: a click left over from a drag or a long press that made none is no longer awaited
-    strip.addEventListener('pointerdown', () => {
-      this.swallowClick = false;
-    }, true);
     // the menus beside the bar, not in it: a bar drawn smaller is a layer of its own, which would keep them under the
     // windows
     element.append(strip, this.menu.element, this.slotMenu);
@@ -830,6 +826,11 @@ export class TaskBar {
           return;
         }
         press(i);
+      });
+      // a new press on a slot: a click left over from a drag or a long press that made none is no longer awaited (on the
+      // slots, not the strip: a listener makes an element one Chromium moves nearby taps onto)
+      element.addEventListener('pointerdown', () => {
+        this.swallowClick = false;
       });
       element.dataset.row = row;
       element.dataset.slot = String(i);

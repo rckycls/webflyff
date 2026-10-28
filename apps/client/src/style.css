@@ -1225,9 +1225,10 @@ fieldset:disabled .btn {
   -webkit-touch-callout: none;
 }
 
-/* For a finger (Piece 4 spec §3.11, as the Start menu's lines, ruling R27): the item and action slots take the strip's whole
-   48 px height, the skills a 43 px square, + and - what lies free round them, Reset and Finish 40 px of height; nothing
-   drawn changes */
+/* For a finger (Piece 4 spec §3.11, as the Start menu's lines, ruling R27): the item and action slots reach down to the
+   strip's bottom (38 px), the skills a 43 px square, + and - what lies free round them, Reset and Finish 40 px of height;
+   nothing drawn changes. A slot grows down only, never up: Chromium moves a tap to a tappable element near it (touch
+   adjustment), and a slot that reached the strip's top took the taps a few pixels above the bar, which walk the player */
 @media (pointer: coarse) {
   .hud-slot[data-row='item']::before,
   .hud-slot[data-row='queue']::before,
@@ -1239,7 +1240,7 @@ fieldset:disabled .btn {
 
   .hud-slot[data-row='item']::before,
   .hud-slot[data-row='queue']::before {
-    top: -10px;
+    top: 0;
     right: 0;
     bottom: -6px;
     left: 0;
