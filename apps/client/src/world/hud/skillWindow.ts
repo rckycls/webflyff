@@ -48,6 +48,7 @@ import type { ControlRect } from './button';
 import { formatText } from './format';
 import { WindowFrame } from './frame';
 import { ModalBackdrop } from './modal';
+import { byFinger } from './slotGestures';
 import { EDIT, editTiles } from './tiles';
 
 /** What the window reads of the catalogs: the skills, the texts (with their colours) and the jobs' names. */
@@ -158,12 +159,6 @@ const TIP_RED = 0xffff0000;
 const WHITE = 0xffffffff;
 /** `nReqMp`, `nReqFp` of a level that needs none (0xffffffff, read as an int). */
 const NONE = -1;
-
-/** A finger's press (or a pen's): jsdom's mouse events under the pointer events' names carry no `pointerType`, a mouse's. */
-const byFinger = (event: Event): boolean => {
-  const type = (event as { pointerType?: string }).pointerType;
-  return type === 'touch' || type === 'pen';
-};
 
 /** Whether an event's target is, or is inside, an element `selector` names. */
 const within = (target: EventTarget | null, selector: string): boolean =>
