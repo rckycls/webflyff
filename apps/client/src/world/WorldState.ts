@@ -7,7 +7,7 @@ import type { OwnEvent, OwnState } from './OwnState';
 import { Parts } from './render/looks';
 import { ActionMover, getDegree, wrapAngle } from './sim/ActionMover';
 import type { Ground } from './sim/collision';
-import { ActMsg, ObjSta, ObjStaF } from './sim/constants';
+import { ActMsg, Ext, Kt, ObjSta, ObjStaF, Si, Sut } from './sim/constants';
 import {
   applyDestPos, applyMotion, applyMoved, applyMoverCorr, clearDestObj, setDestAngle, setDestObj, stepMover,
 } from './sim/moverRules';
@@ -44,22 +44,8 @@ const NO_ITEM_SPEED = 1;
  */
 const MAX_PENDING_COMBAT = 1024;
 
-/** `KT_SKILL` (`Resource/defineAttribute.h:131`): a melee skill, which `DoUseSkill` plays with `OBJMSG_MELEESKILL`. */
-const KT_SKILL = 2;
-/** `SUT_QUEUEING` (`_Common/Mover.h:138`): a skill of the action slot's chain after its first. */
-const SUT_QUEUEING = 2;
-/** `SI_GEN_ATK_COUNTER` (`Resource/defineSkill.h:191`): the one skill not played with the motion after its own. */
-const SI_GEN_ATK_COUNTER = 223;
-/** `SI_ASS_HEAL_HEALING` (`Resource/defineSkill.h:40`): a heal, refused on a dead target (`MoverSkill.cpp:340-344`). */
-const SI_ASS_HEAL_HEALING = 44;
 /** `NO_ATTACK_MODE` (`_Common/authorization.h:112`): a player in it uses no skill (`DoUseSkill`, `MoverSkill.cpp:317`). */
 const NO_ATTACK_MODE = 0x00000040;
-/** `EXT_MAGICSHOT` and `EXT_MAGICATKSHOT` (`Resource/define.h:41,52`): the skills whose hit is a shot (`OnMeleeSkill`). */
-const EXT_MAGICSHOT = 3;
-const EXT_MAGICATKSHOT = 14;
-/** `EXT_MAGICATK` and `EXT_MELEEATK` (`Resource/define.h:42,55`): the skills whose hit is a blow (`CCtrl::ApplyDamage`). */
-const EXT_MAGICATK = 4;
-export const EXT_MELEEATK = 17;
 
 /** The message of this `type`. */
 type MessageOf<T extends WorldMessage['type']> = Extract<WorldMessage, { type: T }>;
@@ -691,16 +677,16 @@ export class WorldState {
   private doUseSkill(m: Mover, message: MessageOf<'useSkill'>): boolean {
     if (!m.added.isPlayer) return false;
     const skill = this.data.skills.get(message.skill);
-    if (skill === undefined || skill.skillType !== KT_SKILL) return false;
+    if (skill === undefined || skill.skillType !== Kt.SKILL) return false;
     if (isDie(m) || m.act.stateFlag & ObjStaF.FLY) return false;
     if ((m.added.player?.mode ?? 0) & NO_ATTACK_MODE) return false;
     const target = this.byId.get(message.targetId);
     if (target === undefined) return false;
-    if (skill.id === SI_ASS_HEAL_HEALING && isDie(target)) return false;
+    if (skill.id === Si.ASS_HEAL_HEALING && isDie(target)) return false;
     if (target !== m) m.act.body.angle = wrapAngle(getDegree(target.act.body.pos, m.act.body.pos));
     m.act.sendActMsg(ActMsg.STOP);
     let motion = skill.useMotion;
-    if (message.useType !== SUT_QUEUEING && message.castingTime === 0 && skill.id !== SI_GEN_ATK_COUNTER) motion += 2;
+    if (message.useType !== Sut.QUEUEING && message.castingTime === 0 && skill.id !== Si.GEN_ATK_COUNTER) motion += 2;
     if (!m.act.sendActMsg(ActMsg.MELEESKILL, motion, target.objectId)) return false;
     m.act.skillAct = { skill: skill.id, targetId: target.objectId, level: message.level };
     return true;
@@ -726,8 +712,8 @@ export class WorldState {
     const target = use === null ? undefined : this.byId.get(use.targetId);
     if (skill === undefined || target === undefined) return;
     if (target !== caster) this.combat({ kind: 'spark', moverId: caster.objectId, fromId: target.objectId });
-    if (skill.exeTarget === EXT_MAGICATKSHOT || skill.exeTarget === EXT_MAGICSHOT) return;
-    const attack = skill.exeTarget === EXT_MELEEATK || skill.exeTarget === EXT_MAGICATK;
+    if (skill.exeTarget === Ext.MAGICATKSHOT || skill.exeTarget === Ext.MAGICSHOT) return;
+    const attack = skill.exeTarget === Ext.MELEEATK || skill.exeTarget === Ext.MAGICATK;
     const landed = attack && this.onDamageMsgC(target, caster, AttackFlag.MELEESKILL);
     this.combat({ kind: 'skillHit', casterId: caster.objectId, targetId: target.objectId, skill: skill.id, landed });
   }

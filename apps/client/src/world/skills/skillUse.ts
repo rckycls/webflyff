@@ -18,7 +18,7 @@
 //   CWndWorld::OnKeyDown, OnKeyUp    _Interface/WndWorld.cpp:7734, 7756    m_SkillTimerStop
 
 import { MAX_SKILL_JOB, NULL_ID, ShortcutKind } from '@flyffweb/protocol';
-import type { SkillSlot, Vec3, WorldMessage } from '@flyffweb/protocol';
+import type { Shortcut, SkillSlot, Vec3, WorldMessage } from '@flyffweb/protocol';
 import { attackAble, setOwnDestObj } from '../combat/attackLoop';
 import type { OwnSkills } from '../combat/attackLoop';
 import type { Focus } from '../combat/focus';
@@ -26,7 +26,7 @@ import type { GameData } from '../gameData';
 import type { OwnState } from '../OwnState';
 import { CAMERA_LINK_RANGE } from '../sim/camera';
 import type { Ground } from '../sim/collision';
-import { ActMsg, Ik3, ObjSta, ObjStaF } from '../sim/constants';
+import { ActMsg, Ext, Ik3, ObjSta, ObjStaF, Si, Sut, Wui } from '../sim/constants';
 import { clearDestObj } from '../sim/moverRules';
 import type { SimMover } from '../sim/moverRules';
 import { findTouchTriLine, touchedBy } from '../sim/object3d';
@@ -59,28 +59,14 @@ export interface SkillUseWorld {
   ground?: () => Ground | undefined;
 }
 
-/** `SKILLUSETYPE` (`_Common/Mover.h:134-139`): `SUT_NORMAL` from a bar slot, `SUT_QUEUESTART` from the action slot. */
-const SUT_NORMAL = 0;
-const SUT_QUEUESTART = 1;
 /** The spec's guard against a server that drops a request without a word (§3.11, [skills §8.3]): 2 s, then it is over. */
 const REQUEST_TIMEOUT_MS = 2000;
 /** `m_SkillTimer.Set( 1000 )` (`Mover.cpp:509`): a skill used on arriving waits a second for the next. */
 const SKILL_TIMER_MS = 1000;
 /** `vStart.y += 0.5f; vEnd.y += 0.5f` (`MoverMove.cpp:83-84`): the line of sight runs half a metre over the feet. */
 const SIGHT_RAISE = f32(0.5);
-/** `WUI_NOW` and `WUI_TARGETINGOBJ` (`Resource/define.h:10,13`): a skill on oneself, and one on the focus. */
-const WUI_NOW = 1;
-const WUI_TARGETINGOBJ = 4;
-/** `EXT_*` (`Resource/define.h:39-55`): how a skill finds its target (`dwExeTarget`). */
-const EXT_SELFCHGPARAMET = 1;
-const EXT_MAGICSHOT = 3;
-const EXT_MAGICATK = 4;
-const EXT_ANOTHERWITH = 9;
-const EXT_AROUNDATK = 11;
-const EXT_MAGICATKSHOT = 14;
-/** `SI_ASS_HEAL_RESURRECTION` (`Resource/defineSkill.h:41`) and `SI_KNT_HERO_DRAWING` (:210). */
-const SI_ASS_HEAL_RESURRECTION = 45;
-const SI_KNT_HERO_DRAWING = 238;
+/** A skill shortcut's `m_dwType` of a party (troupe) skill (`ObjectExecutor`, `WndManager.cpp:2782`). */
+const PARTY_SKILL = 2;
 /**
  * `CMover::GetAttackRange( dwAttackRange )` (`MoverMsg.cpp:140-169`): how near a skill walks to its target, by its `AR_*`
  * (`AR_SHORT` 1 to `AR_HWAND` 7, `Resource/defineAttribute.h:85-91`); anything else, 0. `DST_HAWKEYE_RATE` (a buff) would
@@ -199,10 +185,20 @@ export class SkillUse implements OwnSkills {
   }
 
   /**
-   * A press on an item bar's skill shortcut, or its F-key: `ObjectExecutor` → `UseSkillShortCut( 0, m_dwId )`
-   * (`WndManager.cpp:2876-2879`), `skillIndex` being the shortcut's slot of `m_aJobSkill`. Taken at the next step. An
-   * index outside the 45 slots is refused: Neuz would use slot 0 (`GetSkill`, `MoverParam.cpp:89-93`) and send a USESKILL
-   * the server drops.
+   * A shortcut of the task bar used, pressed or by its F-key, on an item bar or the applet row: `ObjectExecutor`'s
+   * `SHORTCUT_SKILL` (`WndManager.cpp:2776-2880`). A party skill (`m_dwType == 2`, a troupe's, :2782-2875: not Piece 4's)
+   * does nothing here; any other is `UseSkillShortCut( m_dwType, m_dwId )` (:2876-2879), whose `GetSkill( nType, nIdx )`
+   * reads `m_aJobSkill[ nIdx ]` whatever the type (`MoverParam.cpp:85-95`): `useSlot( m_dwId )`. A shortcut that is no
+   * skill (an applet, an item) is not the skill use's.
+   */
+  useShortcut(shortcut: Shortcut): void {
+    if (shortcut.kind === ShortcutKind.SKILL && shortcut.type !== PARTY_SKILL) this.useSlot(shortcut.id);
+  }
+
+  /**
+   * A press on a skill shortcut, or its F-key: `UseSkillShortCut( 0, nIdx )` (`WndManager.cpp:6820-6864`), `skillIndex`
+   * being the shortcut's slot of `m_aJobSkill`. Taken at the next step. An index outside the 45 slots is refused: Neuz
+   * would use slot 0 (`GetSkill`, `MoverParam.cpp:89-93`) and send a USESKILL the server drops.
    */
   useSlot(skillIndex: number): void {
     if (isSlotIndex(skillIndex)) this.presses.push(skillIndex);
@@ -291,6 +287,10 @@ export class SkillUse implements OwnSkills {
    * auto-attack goes on, unless the hand holds a staff, a cheer stick or a wand (`__CSC_VER11_2`), the skill is one on
    * oneself (`EXT_SELFCHGPARAMET`) or the hero Knight's recall (`SI_KNT_HERO_DRAWING`); `g_Option.m_bAutoAttack` is on
    * (`HwOption.cpp:246`, and the browser has no options).
+   *
+   * Not Neuz's: a queue start's answer that comes after the 2 s guard gave it up finds the action slot idle (the guard,
+   * not the server, set `m_nExecute` to 0); begun, the server runs its chain all the same, so the action slot runs too,
+   * and a press in the world can stop it with ENDSKILLQUEUE.
    */
   onUseSkill(casterId: number, message: Extract<WorldMessage, { type: 'useSkill' }>, started: boolean): void {
     const state = this.own();
@@ -298,10 +298,12 @@ export class SkillUse implements OwnSkills {
     this.requestAt = null;
     if (!started) return;
     if (this.executing === 1) this.executing = 2;
+    // the repair of the guard's side effect: only it leaves a queue start's answer with the action slot idle
+    else if (this.executing === 0 && message.useType === Sut.QUEUESTART) this.executing = 2;
     const kind3 = state.equipped.weapon?.kind3 ?? Ik3.HAND;
     if (kind3 === Ik3.STAFF || kind3 === Ik3.CHEERSTICK || kind3 === Ik3.WAND) return;
     const skill = this.data.skills.get(message.skill);
-    if (skill === undefined || skill.exeTarget === EXT_SELFCHGPARAMET || message.skill === SI_KNT_HERO_DRAWING) return;
+    if (skill === undefined || skill.exeTarget === Ext.SELFCHGPARAMET || message.skill === Si.KNT_HERO_DRAWING) return;
     this.attack.startAutoAttack();
   }
 
@@ -412,7 +414,7 @@ export class SkillUse implements OwnSkills {
     const state = this.own();
     if (state === undefined || state.skills[index] === undefined) return;
     if (this.executing !== 0) return;
-    const result = this.cmdSetUseSkill(own, find, this.focus.targetId ?? NULL_ID, index, SUT_NORMAL);
+    const result = this.cmdSetUseSkill(own, find, this.focus.targetId ?? NULL_ID, index, Sut.NORMAL);
     this.next = null;
     if (!result && own.act.state & ObjSta.ATK_ALL) this.next = index;
   }
@@ -436,7 +438,7 @@ export class SkillUse implements OwnSkills {
     const skill = slot === undefined ? undefined : this.data.skills.get(slot.skill);
     const kind3 = state?.equipped.weapon?.kind3 ?? Ik3.HAND;
     if (kind3 === Ik3.STAFF || kind3 === Ik3.CHEERSTICK) return;
-    if (skill !== undefined && skill.exeTarget !== EXT_SELFCHGPARAMET) this.attack.startAutoAttack();
+    if (skill !== undefined && skill.exeTarget !== Ext.SELFCHGPARAMET) this.attack.startAutoAttack();
   }
 
   /**
@@ -458,7 +460,7 @@ export class SkillUse implements OwnSkills {
       return false;
     }
     this.executing = 1;
-    if (!this.cmdSetUseSkill(own, find, target?.objectId ?? NULL_ID, first.id, SUT_QUEUESTART)) {
+    if (!this.cmdSetUseSkill(own, find, target?.objectId ?? NULL_ID, first.id, Sut.QUEUESTART)) {
       this.onCancelSkill(own);
     } else {
       const kind3 = state.equipped.weapon?.kind3 ?? Ik3.HAND;
@@ -491,13 +493,13 @@ export class SkillUse implements OwnSkills {
     const skill = slot === undefined ? undefined : this.data.skills.get(slot.skill);
     if (skill === undefined) return false;
     let targetId = idTarget;
-    if (skill.useChance === WUI_NOW) targetId = own.objectId;
-    else if (skill.useChance === WUI_TARGETINGOBJ && this.focus.targetId !== null) targetId = this.focus.targetId;
+    if (skill.useChance === Wui.NOW) targetId = own.objectId;
+    else if (skill.useChance === Wui.TARGETINGOBJ && this.focus.targetId !== null) targetId = this.focus.targetId;
     if (targetId !== own.objectId) {
       const target = find(targetId);
       if (target !== undefined) {
         if (skill.evildoing < 0 && !this.attack.isAttackAble(target)) return false;
-        if (skill.id === SI_ASS_HEAL_RESURRECTION) {
+        if (skill.id === Si.ASS_HEAL_RESURRECTION) {
           if (!target.added.isPlayer || !isDie(target)) return false;
         } else if (isDie(target)) {
           return false;
@@ -505,16 +507,16 @@ export class SkillUse implements OwnSkills {
       }
     }
     switch (skill.exeTarget) {
-      case EXT_SELFCHGPARAMET:
-      case EXT_AROUNDATK:
+      case Ext.SELFCHGPARAMET:
+      case Ext.AROUNDATK:
         targetId = own.objectId;
         break;
-      case EXT_ANOTHERWITH:
+      case Ext.ANOTHERWITH:
         if (targetId === NULL_ID) targetId = own.objectId;
         break;
-      case EXT_MAGICATKSHOT:
-      case EXT_MAGICATK:
-      case EXT_MAGICSHOT:
+      case Ext.MAGICATKSHOT:
+      case Ext.MAGICATK:
+      case Ext.MAGICSHOT:
       default:
         if (targetId === NULL_ID) return false;
         break;

@@ -7,7 +7,7 @@
 import type { Vec3, WebItemProp, WebSkill } from '@flyffweb/formats';
 import { AttackFlag } from '@flyffweb/protocol';
 import type { OwnEvent } from '../OwnState';
-import { Ik3 } from '../sim/constants';
+import { Ext, Ik3 } from '../sim/constants';
 import { normalize, sub } from '../sim/d3dx';
 import type { CombatEvent } from '../WorldState';
 import { Xi } from './EffectManager';
@@ -30,8 +30,6 @@ const NO_SFX = -1;
 const SKILL_SFX_REACH = f32(1.3);
 /** `vLocal.y += 1.0f` (`Ctrl.cpp:955`). */
 const SKILL_SFX_RAISE = 1;
-/** `EXT_MELEEATK` (`Resource/define.h:55`): a melee attack skill, whose effect is made before its caster. */
-const EXT_MELEEATK = 17;
 
 /** What the events read of a mover in view: its object ID, position (`GetPos()`) and angle (`GetAngle()`). */
 export interface FxMover {
@@ -186,7 +184,7 @@ function playSkillHit(event: Extract<CombatEvent, { kind: 'skillHit' }>, world: 
   const caster = world.movers.get(event.casterId);
   const skill = world.skills?.get(event.skill);
   if (caster === undefined || skill === undefined || !world.movers.has(event.targetId)) return;
-  if (skill.exeTarget === EXT_MELEEATK && skill.sfxHit !== NO_SFX) {
+  if (skill.exeTarget === Ext.MELEEATK && skill.sfxHit !== NO_SFX) {
     // AngleToVectorXZ( &vLocal, GetAngle(), 1.3f ); vLocal += GetPos(); vLocal.y += 1.0f
     const [x, y, z] = caster.act.body.pos;
     const { angle } = caster.act.body;

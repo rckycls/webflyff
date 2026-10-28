@@ -436,6 +436,37 @@ describe('SkillUse: a bar slot (UseSkillShortCut, CMD_SetUseSkill, ProcessMoveAr
     r.steps(5);
     expect(r.sent).toEqual([]);
   });
+
+  it('a move key drops the skill\'s command (ClearCmd, WndWorldControlPlayer.cpp:399): the arrival is the default one', () => {
+    const r = rig();
+    r.tap(MONSTER_ID);
+    r.skills.useSlot(0);
+    r.step();
+    expect(r.skills.commanding).toBe(true);
+    r.loop.stop('move');
+    expect(r.skills.commanding).toBe(false);
+    // the following stays (ClearCmd leaves the destination): the mover still comes in range, and stops there
+    r.until(() => r.own.dest?.targetId == null);
+    r.steps(30);
+    expect(r.sent).toEqual([['destObj', MONSTER_ID, 2]]);
+    expect(r.skills.pending).toBe(false);
+  });
+
+  it('uses a job skill shortcut of the bar or the applet row (ObjectExecutor), not a party skill nor another shortcut', () => {
+    const r = rig();
+    r.tap(MONSTER_ID);
+    // m_dwType 2: a troupe's skill (WndManager.cpp:2782-2875), not Piece 4's
+    r.skills.useShortcut({ ...skillShortcut(0, 1), type: 2 });
+    // an applet (APP_STATUS), which the task bar runs itself
+    r.skills.useShortcut({ kind: ShortcutKind.APPLET, id: 0, type: 0, index: 0, userId: 0, data: 0, text: '' });
+    r.steps(3);
+    expect(r.sent).toEqual([]);
+    // m_dwType 0, the job skill in slot 0 of m_aJobSkill: UseSkillShortCut( 0, 0 )
+    r.skills.useShortcut(skillShortcut(0, 1));
+    r.step();
+    expect(r.sent).toEqual([['destObj', MONSTER_ID, 2]]);
+    expect(r.skills.commanding).toBe(true);
+  });
 });
 
 describe('SkillUse: the answer to USESKILL (OnUseSkill, OnClearUseSkill, the 2 s guard)', () => {
@@ -546,6 +577,49 @@ describe('SkillUse: the action slot (UseSkillQueue, ENDSKILLQUEUE)', () => {
     expect(empty.sent).toEqual([]);
     expect(empty.skills.reserved).toBe(false);
     expect(empty.skills.execute).toBe(0);
+  });
+
+  it('ENDSKILLQUEUE during the walk to the target ends it (OnCancelSkill: ClearDestObj), and no USESKILL goes', () => {
+    const r = rig({ queue: [skillShortcut(0, 2)] });
+    r.tap(MONSTER_ID);
+    r.skills.useActionSlot();
+    r.step();
+    expect(r.skills.execute).toBe(1);
+    expect(r.own.dest?.targetId).toBe(MONSTER_ID);
+    expect(r.skills.pending).toBe(false);
+    r.apply(OWN_ID, { type: 'endSkillQueue' });
+    expect(r.skills.execute).toBe(0);
+    // the following is over: no arrival comes (the controls' STAND stops the run, ControlGround with no destination)
+    expect(r.own.dest?.targetId ?? null).toBeNull();
+    r.steps(120);
+    expect(r.sent).toEqual([['destObj', MONSTER_ID, 2]]);
+  });
+
+  it('a queue start answered after the 2 s guard runs the action slot all the same, so a press can stop its chain', () => {
+    const r = rig({ queue: [skillShortcut(0, 2)] });
+    r.tap(MONSTER_ID);
+    r.skills.useActionSlot();
+    r.until(() => r.skills.pending);
+    r.setNow(r.sentAt[0]! + 2000);
+    r.step();
+    expect([r.skills.pending, r.skills.execute]).toEqual([false, 0]);
+    // the server's answer comes late: the guard's m_nExecute = 0 is repaired, the server running the chain
+    r.useSkill(OWN_ID, CLEAN_HIT.id, 1, MONSTER_ID, 1);
+    expect(r.own.act.state).toBe(ObjSta.ATK_MELEESKILL);
+    expect(r.skills.execute).toBe(2);
+    const before = r.sent.length;
+    r.loop.onGroundPressed(false);
+    expect(r.sent.slice(before)).toEqual([['endSkillQueue']]);
+    // a bar slot's late answer (SUT_NORMAL) is no chain: the action slot stays idle
+    const bar = rig();
+    bar.tap(MONSTER_ID);
+    bar.skills.useSlot(0);
+    bar.until(() => bar.skills.pending);
+    bar.setNow(bar.sentAt[0]! + 2000);
+    bar.step();
+    bar.useSkill(OWN_ID, CLEAN_HIT.id, 1, MONSTER_ID, 0);
+    expect(bar.own.act.state).toBe(ObjSta.ATK_MELEESKILL);
+    expect(bar.skills.execute).toBe(0);
   });
 });
 

@@ -180,6 +180,64 @@ export const Belli = {
   ACTIVEATTACK: 3,
 } as const;
 
+/**
+ * `EXT_*` (`Resource/define.h:38-59`): how a skill finds its target and what its hit does (`ItemProp::dwExeTarget`), the
+ * values the skill rules tell apart.
+ */
+export const Ext = {
+  /** On the caster itself (a buff on oneself). */
+  SELFCHGPARAMET: 1,
+  /** A shot that acts as it lands. */
+  MAGICSHOT: 3,
+  /** A magic blow at once. */
+  MAGICATK: 4,
+  /** On another or, with none, on oneself. */
+  ANOTHERWITH: 9,
+  /** Around the caster. */
+  AROUNDATK: 11,
+  /** A magic attack with a shot. */
+  MAGICATKSHOT: 14,
+  /** A melee attack skill: the Vagrant's three. */
+  MELEEATK: 17,
+} as const;
+
+/** `WUI_*` (`Resource/define.h:9-21`): how a skill takes its target (`ItemProp::dwUseChance`). */
+export const Wui = {
+  /** On the caster, whatever is selected. */
+  NOW: 1,
+  /** On the selected target (the focus). */
+  TARGETINGOBJ: 4,
+} as const;
+
+/** `KT_*` (`Resource/defineAttribute.h:130-131`): a skill's kind (`ItemProp::dwSkillType`). */
+export const Kt = {
+  MAGIC: 1,
+  /** A melee skill, played with `OBJMSG_MELEESKILL`. */
+  SKILL: 2,
+} as const;
+
+/** `SKILLUSETYPE` (`Source/_Common/Mover.h:134-139`): how a skill is used (USESKILL's `nUseType`). */
+export const Sut = {
+  /** From a slot of the task bar. */
+  NORMAL: 0,
+  /** The action slot's first skill. */
+  QUEUESTART: 1,
+  /** The action slot's next ones, which the server chains. */
+  QUEUEING: 2,
+} as const;
+
+/** `SI_*` (`Resource/defineSkill.h`): the skills the rules name. */
+export const Si = {
+  /** Healing (:40): refused at a dead target. */
+  ASS_HEAL_HEALING: 44,
+  /** Resurrection (:41): wants a dead player. */
+  ASS_HEAL_RESURRECTION: 45,
+  /** Counter attack (:191): the one skill not played with the motion after its own. */
+  GEN_ATK_COUNTER: 223,
+  /** The hero Knight's recall (:210): no attack, so no auto-attack after it. */
+  KNT_HERO_DRAWING: 238,
+} as const;
+
 /** `ANILOOP_*` (`Source/_Common/Obj.h:26-28`): how a motion plays (`CModel::m_nLoop`). */
 export const AniLoop = {
   /** `ANILOOP_1PLAY`: once. */

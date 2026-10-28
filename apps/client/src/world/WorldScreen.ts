@@ -16,8 +16,7 @@
 
 import { UI_SHEETS_KEY, toWebPosition } from '@flyffweb/formats';
 import type { Vec3, WebEffect, WebUiSheet, WebUiSheets } from '@flyffweb/formats';
-import { ShortcutKind } from '@flyffweb/protocol';
-import type { AddedMover, BundleMessage, Shortcut, WorldMessage } from '@flyffweb/protocol';
+import type { AddedMover, BundleMessage, WorldMessage } from '@flyffweb/protocol';
 import {
   EffectRenderer, Joystick, KeyboardInput, WorldStage, effectTextureProvider, loadGltf, loopMotion, neuzRandom,
 } from '@flyffweb/scene';
@@ -569,9 +568,9 @@ export class WorldScreen {
     const taskBar = new TaskBar(this.hudArt!, {
       open: (window) => this.openWindow(window),
       logOut: () => this.logOut(),
-      // the slots' items are used in Piece 5
-      useSlot: (_bar, _slot, shortcut) => this.useShortcut(shortcut),
-      useAppletSlot: (_slot, shortcut) => this.useShortcut(shortcut),
+      // a skill shortcut is the skill use's (`ObjectExecutor`'s SHORTCUT_SKILL); the slots' items are used in Piece 5
+      useSlot: (_bar, _slot, shortcut) => skillUse.useShortcut(shortcut),
+      useAppletSlot: (_slot, shortcut) => skillUse.useShortcut(shortcut),
       useActionSlot: () => skillUse.useActionSlot(),
       sendAddItemTaskBar: (bar, slot, shortcut) => session.sendAddItemTaskBar(bar, slot, shortcut),
       sendRemoveItemTaskBar: (bar, slot) => session.sendRemoveItemTaskBar(bar, slot),
@@ -899,16 +898,6 @@ export class WorldScreen {
     } else if (this.own !== undefined) {
       this.skillWindow?.toggle(this.own);
     }
-  }
-
-  /**
-   * A shortcut of the task bar used, pressed or by its F-key, on an item bar or the applet row (`ObjectExecutor`,
-   * `WndManager.cpp:2776-2880`), the bar handing over the shortcut its slot holds: a job skill's (`SHORTCUT_SKILL`,
-   * `m_dwType` 0) is `UseSkillShortCut( 0, m_dwId )` (`SkillUse.useSlot`). A party skill (type 2) and an item (Piece 5) do
-   * nothing here.
-   */
-  private useShortcut(shortcut: Shortcut): void {
-    if (shortcut.kind === ShortcutKind.SKILL && shortcut.type === 0) this.skillUse?.useSlot(shortcut.id);
   }
 
   /** A line of the messages window, `PutString( prj.GetText( id ), NULL, prj.GetTextColor( id ) )`: the skill use's texts. */
