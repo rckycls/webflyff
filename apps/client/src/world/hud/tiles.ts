@@ -22,9 +22,13 @@ export const TAB_TILE_HEIGHT = 20;
  * `CWndBase::AdditionalSkinTexture` lays them (WndBase.cpp:2575-2620): the corners and edges round the middle, each picture
  * 8 x 10 laid every 8 px, so that each row but the last is the top 8 px of its pictures (the next row covers the rest)
  * and the last is all 10. The middle and edge pieces are the same down their height, so a run of them is the picture
- * repeated. Its element goes at the control's top left.
+ * repeated. Its element goes at the control's top left. `tile` is the control's picture in resdata.inc, whose nine pieces
+ * are its name less its last 6 characters, the piece's number in two digits and its extension (`strTile.Left( len - 6 )`,
+ * `"%s%02d%s"`, WndBase.cpp:2555-2557): "WndEditTile00.tga" the pieces WndEditTile00 to 08, "WndEditTile200.tga" (the skill
+ * window's) WndEditTile200 to 208.
  */
-export function editTiles(doc: Document, art: UiArt, columns: number, rows: number): HTMLElement {
+export function editTiles(doc: Document, art: UiArt, columns: number, rows: number, tile = 'WndEditTile00.tga'): HTMLElement {
+  const name = (n: number): string => `${tile.slice(0, -6)}${String(n).padStart(2, '0')}${tile.slice(-4)}`;
   const element = doc.createElement('div');
   element.className = 'hud-edit-tiles';
   const xs: Array<[number, number]> = [[0, EDIT], [EDIT, (columns - 2) * EDIT], [(columns - 1) * EDIT, EDIT]];
@@ -37,7 +41,7 @@ export function editTiles(doc: Document, art: UiArt, columns: number, rows: numb
       piece.style.top = `${top}px`;
       piece.style.width = `${width}px`;
       piece.style.height = `${height}px`;
-      piece.style.backgroundImage = themeUrl(art, `WndEditTile0${row * 3 + column}.tga`);
+      piece.style.backgroundImage = themeUrl(art, name(row * 3 + column));
       element.append(piece);
     });
   });

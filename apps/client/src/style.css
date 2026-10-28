@@ -1097,6 +1097,172 @@ fieldset:disabled .btn {
   user-select: text;
 }
 
+/* The skill tree window (SkillWindow, CWndSkillTreeEx): its controls' tiles and titles, the Vagrant's picture with the
+   arrows, the skills' icons (32 px pictures drawn at 27) and level digits (28 px frames of icon_IconSkillLevel), the chosen
+   skill, and the tooltip (PutToolTip_Skill; Neuz's WndTooltipTile pictures are not converted: a dark box) */
+.hud-skills-box,
+.hud-skills-arrow,
+.hud-skills-picture,
+.hud-skills-chosen,
+.hud-skills-points {
+  position: absolute;
+  background-repeat: no-repeat;
+}
+
+.hud-skills-arrow {
+  background-size: 100% 100%;
+  pointer-events: none;
+}
+
+/* a group box's title (CWndStatic, WSS_GROUPBOX) and a plain static's text, each drawn twice a pixel apart */
+.hud-skills-group-title {
+  position: absolute;
+  line-height: 12px;
+  white-space: nowrap;
+  text-shadow: 1px 0 currentColor;
+}
+
+.hud-skills-points {
+  box-sizing: border-box;
+  padding: 2px;
+  line-height: 12px;
+  text-shadow: 1px 0 currentColor;
+}
+
+.hud-skill {
+  position: absolute;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+
+.hud-skill-icon {
+  position: absolute;
+  inset: 0;
+  background: no-repeat 0 0 / 100% 100%;
+}
+
+.hud-skill-digit {
+  position: absolute;
+  background-repeat: no-repeat;
+  pointer-events: none;
+}
+
+/* a skill a finger picked for the task bar: the bar's lit rows' blue, pulsing */
+.hud-skill[data-picked] {
+  outline: 2px solid rgb(0, 0, 255);
+  animation: hud-lit 0.43s linear infinite;
+}
+
+.hud-skill-tooltip {
+  position: absolute;
+  z-index: 2;
+  max-width: 220px;
+  padding: 3px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.8);
+  line-height: 14px;
+  white-space: pre-wrap;
+  pointer-events: none;
+}
+
+/* The rows a carried shortcut may go to (TaskBar, CWndTaskBar::OnDraw :769-819): ARGB(a, 0, 0, 255), a rising 10 a frame
+   to 128 and back (26 frames at 60 a second) */
+.hud-taskbar-lit {
+  position: absolute;
+  background: rgb(0, 0, 255);
+  pointer-events: none;
+  animation: hud-lit 0.43s linear infinite;
+}
+
+@keyframes hud-lit {
+  0%,
+  100% {
+    opacity: 0;
+  }
+
+  50% {
+    opacity: 0.5;
+  }
+}
+
+/* The shortcut a drag carries, at the pointer, 16 px up and left of it (CNeuzApp::Render, Neuz.cpp:823-824) */
+.hud-carried {
+  position: fixed;
+  z-index: 2000;
+  width: 32px;
+  height: 32px;
+  background: no-repeat 0 0 / 100% 100%;
+  pointer-events: none;
+}
+
+/* The long press's line over a slot (TaskBar): a finger's 44 px */
+.hud-slot-menu {
+  position: absolute;
+  z-index: 1000;
+  pointer-events: auto;
+}
+
+.hud-slot-menu-line {
+  display: block;
+  min-width: 96px;
+  height: 44px;
+  padding: 0 16px;
+  border: 1px solid #6b6b6b;
+  border-radius: 3px;
+  background: rgba(240, 236, 224, 0.95);
+  color: #000000;
+  font: inherit;
+  font-weight: bold;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.hud-taskbar-strip > .hud-slot {
+  -webkit-touch-callout: none;
+}
+
+/* For a finger (Piece 4 spec §3.11, as the Start menu's lines, ruling R27): the item and action slots take the strip's whole
+   48 px height, the skills a 43 px square, + and - what lies free round them, Reset and Finish 40 px of height; nothing
+   drawn changes */
+@media (pointer: coarse) {
+  .hud-slot[data-row='item']::before,
+  .hud-slot[data-row='queue']::before,
+  .hud-skill::before,
+  .hud-skills [data-button]::before {
+    content: '';
+    position: absolute;
+  }
+
+  .hud-slot[data-row='item']::before,
+  .hud-slot[data-row='queue']::before {
+    top: -10px;
+    right: 0;
+    bottom: -6px;
+    left: 0;
+  }
+
+  .hud-skill::before {
+    inset: -8px;
+  }
+
+  .hud-skills [data-button='plus']::before {
+    inset: -6px -5px -3px -10px;
+  }
+
+  .hud-skills [data-button='minus']::before {
+    inset: -3px -5px -6px -10px;
+  }
+
+  .hud-skills [data-button='reset']::before,
+  .hud-skills [data-button='finish']::before {
+    inset: -10px -4px;
+  }
+}
+
 /* The confirm box of the stat points (StateConfirm, CWndStateConfirm): the text control's tiles and its two lines */
 .hud-confirm-box {
   position: absolute;

@@ -5,9 +5,9 @@
 // texts of DEFINEDTEXT (CDPClient::OnDefinedText, Neuz/DPClient.cpp:4117-4228).
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { WebMover } from '@flyffweb/formats';
-import { ShortcutKind } from '@flyffweb/protocol';
-import type { Shortcut, TaskBar as TaskBarMessage } from '@flyffweb/protocol';
+import type { WebMover, WebSkill } from '@flyffweb/formats';
+import { NULL_ID, ShortcutKind } from '@flyffweb/protocol';
+import type { Shortcut, SkillSlot, TaskBar as TaskBarMessage } from '@flyffweb/protocol';
 import { ServerClock } from '../src/net/serverClock';
 import { AttackLoop } from '../src/world/combat/attackLoop';
 import { Focus } from '../src/world/combat/focus';
@@ -25,14 +25,19 @@ import { LogOutBox } from '../src/world/hud/logOutBox';
 import { CharacterWindow } from '../src/world/hud/characterWindow';
 import type { StatCounts } from '../src/world/hud/characterWindow';
 import { ReviveWindow } from '../src/world/hud/reviveWindow';
+import { SkillWindow, skillTooltip } from '../src/world/hud/skillWindow';
+import type { SkillHand } from '../src/world/hud/skillWindow';
 import { TaskBar, actionPointLit, taskBarLayout } from '../src/world/hud/taskBar';
 import type { TaskBarActions } from '../src/world/hud/taskBar';
 import { terrainGround } from '../src/world/sim/collision';
 import { Belli, ObjSta } from '../src/world/sim/constants';
 import { Dst } from '../src/world/sim/params';
+import { SkillUse } from '../src/world/skills/skillUse';
+import type { OwnState } from '../src/world/OwnState';
 import { WorldState } from '../src/world/WorldState';
 import { addedNpc, addedPlayer, moverFrom, webMoverOf } from './helpers/movers';
 import { EXP_ROWS, OWN_ID, VAGRANT, WOODEN_SWORD, itemProp, newVagrant, ownAdded, ownGameData } from './helpers/ownState';
+import { CLEAN_HIT, FLURRY, OVER_CUT } from './helpers/skills';
 
 /** The art as the asset store would give it: every picture under /assets/. */
 const art: UiArt = { url: (key) => `/assets/${key}`, sheets: null };
@@ -581,6 +586,12 @@ const BISCUIT = itemProp({ id: 2801, name: 'Biscuit', ...food, icon: 'ui/item/it
 /** `II_WEA_SWO_WOODEN` (`propItem.txt:701`): one to a slot (`dwPackMax` 1). */
 const SWORD = itemProp({ id: 21, name: 'Wooden Sword', kind1: 1, kind2: 2, kind3: 2, part: 10, icon: 'ui/item/itm_weaswowooden.png' });
 const BAR_DATA = { itemProps: new Map([LOLLIPOP, BISCUIT, SWORD].map((prop) => [prop.id, prop])) };
+/** The Vagrant's three skills as `data/skills.json` has them, with their icons and descriptions (`propSkill.txt.txt:2-6`). */
+const SKILLS: ReadonlyMap<number, WebSkill> = new Map([
+  { ...CLEAN_HIT, icon: 'ui/skill_vagonecleanh.png', description: 'A powerful, downward strike.' },
+  { ...FLURRY, icon: 'ui/skill_vagonebrandi.png', description: 'Rapid, stabbing attack.' },
+  { ...OVER_CUT, icon: 'ui/skill_vagoneovercu.png', description: 'Powerful, upward, finishing move.' },
+].map((skill) => [skill.id, skill]));
 
 /** The new Vagrant with its TASKBAR. */
 function newVagrantWithBar() {
@@ -589,16 +600,34 @@ function newVagrantWithBar() {
   return own;
 }
 
-/** Actions that record what the task bar asks for. */
+/** What the task bar sent: ADDITEMTASKBAR, REMOVEITEMTASKBAR and SKILLTASKBAR, with their fields. */
+type Sent =
+  | { type: 'ADDITEMTASKBAR'; bar: number; slot: number; shortcut: Shortcut }
+  | { type: 'REMOVEITEMTASKBAR'; bar: number; slot: number }
+  | { type: 'SKILLTASKBAR'; queue: Array<Shortcut | null> };
+
+/**
+ * Actions that record what the task bar asks for (`calls`), what it sends (`sent`) and the lines it says (`said`);
+ * `running.value` is the action slot's chain (`m_nExecute != 0`).
+ */
 function recorder() {
   const calls: string[] = [];
+  const sent: Sent[] = [];
+  const said: Array<{ text: string; color: number }> = [];
+  const running = { value: false };
   const actions: TaskBarActions = {
     open: (window) => void calls.push(`open ${window}`),
     logOut: () => void calls.push('logOut'),
-    useSlot: (bar, slot) => void calls.push(`useSlot ${bar} ${slot}`),
+    useSlot: (bar, slot, used) => void calls.push(`useSlot ${bar} ${slot}${used.kind === ShortcutKind.SKILL ? ` skill ${used.id}` : ''}`),
+    useAppletSlot: (slot, used) => void calls.push(`useAppletSlot ${slot} ${used.kind} ${used.id}`),
     useActionSlot: () => void calls.push('useActionSlot'),
+    sendAddItemTaskBar: (bar, slot, added) => void sent.push({ type: 'ADDITEMTASKBAR', bar, slot, shortcut: added }),
+    sendRemoveItemTaskBar: (bar, slot) => void sent.push({ type: 'REMOVEITEMTASKBAR', bar, slot }),
+    sendSkillTaskBar: (queue) => void sent.push({ type: 'SKILLTASKBAR', queue: [...queue] }),
+    queueRunning: () => running.value,
+    say: (text, color) => void said.push({ text, color }),
   };
-  return { calls, actions };
+  return { calls, sent, said, running, actions };
 }
 
 const bars: TaskBar[] = [];
@@ -734,12 +763,8 @@ describe('TaskBar (CWndTaskBar, WndTaskBar.cpp)', () => {
     expect(shown(slot(bar, 'applet', 1)).kind).toBe('plain');
     expect(shown(slot(bar, 'queue', 0)).kind).toBe('plain');
     // with it (milestone 2): the icons, and Flurry (CT_CIRCLE) leaves the applet row
-    const skills = new Map([
-      [1, { icon: 'ui/skill_vagonecleanh.png', comboStyle: 1 }],
-      [2, { icon: 'ui/skill_vagonebrandi.png', comboStyle: 2 }],
-    ]);
     const fresh = taskBarOn();
-    fresh.update(own, { ...BAR_DATA, skills });
+    fresh.update(own, { ...BAR_DATA, skills: SKILLS });
     expect(shown(slot(fresh, 'item', 3))).toEqual({
       kind: 'skill', greyed: false, icon: 'url("/assets/ui/skill_vagonecleanh.png")', count: '', hotkey: '',
     });
@@ -791,8 +816,8 @@ describe('TaskBar (CWndTaskBar, WndTaskBar.cpp)', () => {
     const items = [...menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
     expect(items.map((item) => item.getAttribute('aria-label'))).toEqual(['Status', 'Character', 'Skills', 'Log out']);
     expect(items.map((item) => item.querySelector('.hud-menu-text')!.textContent)).toEqual(['Status', 'Character', 'Skills', 'Log out']);
-    // the skill window is milestone 2's
-    expect(items.map((item) => item.disabled)).toEqual([false, false, true, false]);
+    // every line has its window (the skill window's, milestone 2's, too)
+    expect(items.map((item) => item.disabled)).toEqual([false, false, false, false]);
     expect(items[0]!.querySelector<HTMLElement>('.hud-menu-icon')!.style.backgroundImage).toContain('/assets/ui/icon_status.png');
     // as CWndTaskMenu draws it (WndTaskBar.cpp:2646-2653), line i at (10, 50 + 22 i), 162 wide, with its applet's hotkey
     // (AppendMenu, :2746); each line takes its whole 22 px row, no gap between two (ruling R27). The picture,
@@ -829,7 +854,7 @@ describe('TaskBar (CWndTaskBar, WndTaskBar.cpp)', () => {
     expect(changes).toEqual([true, false, true, false, true, false, true, false]);
   });
 
-  it('a press on an applet with a window in Piece 4 opens it; the others, and the plain slots, do nothing', () => {
+  it('a press on an applet with a window in Piece 4 opens it; the other applets do nothing; a non-applet goes to the owner', () => {
     const { calls, actions } = recorder();
     const bar = taskBarOn(800, actions);
     const own = newVagrantWithBar();
@@ -845,11 +870,13 @@ describe('TaskBar (CWndTaskBar, WndTaskBar.cpp)', () => {
     };
     bar.update(own, BAR_DATA);
     for (let i = 0; i < 5; i++) slot(bar, 'applet', i).click();
-    expect(calls).toEqual(['open status', 'open character']);
-    // a slot of the item bar goes to its owner (ObjectExecutor): items in Piece 5, skills in milestone 2; an empty one is nothing
+    // the motion of slot 4 is ObjectExecutor's too (OnLButtonUp, WndTaskBar.cpp:2178-2188): its owner's
+    expect(calls).toEqual(['open status', 'open character', 'useAppletSlot 4 3 25']);
+    // a slot of the item bar goes to its owner (ObjectExecutor) with its shortcut: items in Piece 5, skills in milestone 2;
+    // an empty one is nothing
     slot(bar, 'item', 0).click();
     slot(bar, 'item', 3).click();
-    expect(calls).toEqual(['open status', 'open character', 'useSlot 0 0']);
+    expect(calls).toEqual(['open status', 'open character', 'useAppletSlot 4 3 25', 'useSlot 0 0']);
   });
 
   it('the action slot: its button uses it, and the action points light the slots after the first (:1011-1083)', () => {
@@ -1929,3 +1956,619 @@ describe('CharacterWindow (CWndCharInfo, WndField.cpp:3012-4110; CWndStateConfir
     window.removeEventListener('keydown', listen);
   });
 });
+
+// The skill tree window (CWndSkillTreeEx, _Interface/WndField.cpp:6649-8393), its box (CWndReSkillWarning, :13667-13749),
+// and the task bar's edits (CWndTaskBar::OnDropIcon, SetShortcut, SetSkillQueue, RemoveSkillQueue, _Interface/WndTaskBar.cpp
+// :1446-2093), Milestone 2.
+
+/** The texts the skill window, its box and the bar's edits read (data/texts.json's, with their numbers and colours). */
+const SKILL_TEXTS: Texts = new Map([
+  ...WINDOW_TEXTS,
+  text('TID_GAME_SKILLLEVEL_CHANGE', 3074, 'Confirm changes to skill points?'),
+  text('TID_GAME_SKILLDIS', 2368, '%s Skill level %d is needed.'),
+  text('TID_GAME_BASESKILLLEVEL', 2371, 'Character Level: %d'),
+  text('TID_GAME_SKILLLNOTUSE', 2382, '%s skill cannot be registered in the action slot.', 0xff99cc00),
+  text('TID_RESKILLPOINT_ERROR', 2362, 'There was a problem during skill redistribution. Please try again.', 0xffccffcc),
+  text('TID_MMI_GHOUSE_RECALL', 7145, 'Remove'),
+]);
+const SKILL_DATA = { skills: SKILLS, texts: SKILL_TEXTS, jobs: [VAGRANT] };
+const EDIT_DATA = { ...BAR_DATA, skills: SKILLS, texts: SKILL_TEXTS };
+
+/** A Vagrant of character level `level` with `points` skill points and Clean Hit, Flurry and Over Cut at `levels`. */
+function vagrantWithSkills(level: number, points: number, levels: readonly number[] = [0, 0, 0]): OwnState {
+  const own = newVagrant(level, undefined, ownGameData({ skills: new Map(SKILLS) }));
+  own.skillPoint = points;
+  levels.forEach((value, i) => {
+    own.skills[i]!.level = value;
+  });
+  own.taskBar = NEW_BAR;
+  return own;
+}
+
+/** A press of a finger at (`x`, `y`): a pointer event whose `pointerType` is touch. */
+const touch = (type: string, x = 10, y = 10): MouseEvent => {
+  const event = pointer(type, x, y);
+  Object.defineProperty(event, 'pointerType', { value: 'touch' });
+  return event;
+};
+
+/** The bar shown and the windows in one 800 x 600 layer (Neuz's screen), with the bar's recorder. */
+function editingOn(own: OwnState) {
+  const record = recorder();
+  const bar = new TaskBar(art, record.actions);
+  bars.push(bar);
+  const parent = layer(800, 600);
+  parent.append(bar.element);
+  bar.update(own, EDIT_DATA);
+  return { ...record, bar, parent };
+}
+
+const skillWindows: SkillWindow[] = [];
+afterEach(() => {
+  for (const w of skillWindows.splice(0)) w.dispose();
+});
+
+/** The skill tree in `parent`, opened with `own`'s skills; `spent` the slots its Finish handed over. */
+function skillWindowOn(own: OwnState, hand: SkillHand, parent = layer(800, 600)) {
+  const spent: SkillSlot[][] = [];
+  const tree = new SkillWindow(art, SKILL_DATA, (skills) => void spent.push(skills), hand);
+  skillWindows.push(tree);
+  parent.append(tree.frame.element, tree.warning.element);
+  tree.toggle(own);
+  return { tree, spent };
+}
+
+/** A hand that only records (the task bar's part), for the window's own tests. */
+function recordingHand() {
+  const carried: string[] = [];
+  let picked: number | null = null;
+  const hand: SkillHand = {
+    carrySkill: (i, event) => {
+      carried.push(event === undefined ? `pick ${i}` : `drag ${i}`);
+      if (event === undefined) picked = picked === i ? null : i;
+    },
+    get pickedSkill() {
+      return picked;
+    },
+    dropPick: () => {
+      picked = null;
+    },
+    queueSkill: (i) => void carried.push(`queue ${i}`),
+  };
+  return { hand, carried };
+}
+
+const skillOf = (w: SkillWindow, id: number) => w.frame.element.querySelector<HTMLElement>(`.hud-skill[data-skill="${id}"]`)!;
+const skillButton = (w: SkillWindow, name: string) => w.frame.element.querySelector<HTMLButtonElement>(`[data-button="${name}"]`)!;
+const warningButton = (w: SkillWindow, name: string) =>
+  w.warning.frame.element.querySelector<HTMLButtonElement>(`[data-button="${name}"]`)!;
+const pointsLeft = (w: SkillWindow) => w.frame.element.querySelector('.hud-skills-points')!.textContent;
+/** Chooses the skill `id` (OnLButtonDown), as the mouse's button goes down on it. */
+const choose = (w: SkillWindow, id: number) => skillOf(w, id).dispatchEvent(pointer('pointerdown', 70, 110));
+const levelsOf = (slots: readonly SkillSlot[]) => slots.slice(0, 3).map((slot) => slot.level);
+
+describe('SkillWindow (CWndSkillTreeEx, WndField.cpp:6649-8393)', () => {
+  it('with 4 points at level 5: + Clean Hit to 3, + Flurry to 1, then Finish and Yes send one DOUSESKILLPOINT with levels 3 and 1 and the player\'s IDs', () => {
+    const own = vagrantWithSkills(5, 4);
+    // the window's Finish goes through the skill use, as the world screen wires it
+    const sent: SkillSlot[][] = [];
+    const session = {
+      sendUseSkill: () => {}, sendEndSkillQueue: () => {}, sendDestObj: () => {}, sendBehavior: () => {}, sendSetTarget: () => {},
+      sendDoUseSkillPoint: (skills: readonly SkillSlot[]) => void sent.push(skills.map((slot) => ({ ...slot }))),
+    };
+    const skillUse = new SkillUse(session, new Focus(session), () => own, () => 0, { skills: new Map(SKILLS), texts: SKILL_TEXTS, movers: new Map() });
+    const tree = new SkillWindow(art, SKILL_DATA, (skills) => void skillUse.spendSkillPoints(skills), recordingHand().hand);
+    skillWindows.push(tree);
+    layer(800, 600).append(tree.frame.element, tree.warning.element);
+    tree.toggle(own);
+
+    expect(pointsLeft(tree)).toBe('4');
+    // nothing chosen (InitItem, g_nSkillCurSelect = -1): every button off (Process, :7529-7532)
+    expect(['plus', 'minus', 'reset', 'finish'].map((name) => skillButton(tree, name).disabled)).toEqual([true, true, true, true]);
+    choose(tree, 1);
+    expect(tree.chosen).toBe(0);
+    for (let i = 0; i < 3; i++) skillButton(tree, 'plus').click();
+    expect(pointsLeft(tree)).toBe('1');
+    // Flurry opens as Clean Hit reaches 3 in the window's copy (CheckSkill against m_apSkill, :6649-6703)
+    choose(tree, 2);
+    expect(tree.chosen).toBe(1);
+    skillButton(tree, 'plus').click();
+    expect(pointsLeft(tree)).toBe('0');
+    expect(skillButton(tree, 'plus').disabled).toBe(true);
+    expect(levelsOf(tree.skillPlan!.result())).toEqual([3, 1, 0]);
+    // the player's own levels are not touched until the server says so
+    expect(levelsOf(own.skills)).toEqual([0, 0, 0]);
+
+    // Finish asks first (CWndReSkillWarning, TID_GAME_SKILLLEVEL_CHANGE); nothing is sent before Yes
+    skillButton(tree, 'finish').click();
+    expect(tree.warning.isOpen).toBe(true);
+    expect(tree.warning.frame.element.querySelector('.hud-confirm-text')!.textContent).toBe('Confirm changes to skill points?');
+    expect(tree.warning.frame.element.querySelector('.hud-window-title')!.textContent).toBe('Warning');
+    expect(tree.warning.modal.isShown).toBe(true);
+    expect(sent).toEqual([]);
+    warningButton(tree, 'yes').click();
+    expect(sent).toHaveLength(1);
+    const expected = own.skills.map((slot, i) => ({ skill: slot.skill, level: [3, 1, 0][i] ?? 0 }));
+    expect(sent[0]).toEqual(expected);
+    expect(sent[0]!.slice(3).every((slot) => slot.skill === NULL_ID && slot.level === 0)).toBe(true);
+    // Finish's box leaves the window open (InitItem( FALSE ): m_bParentDestroy stays FALSE)
+    expect(tree.warning.isOpen).toBe(false);
+    expect(tree.isOpen).toBe(true);
+    // a second Finish and Yes while the first waits for its answer sends nothing more (SkillUse.spendPending)
+    skillButton(tree, 'finish').click();
+    warningButton(tree, 'yes').click();
+    expect(sent).toHaveLength(1);
+
+    // the answer: DOUSESKILLPOINT sets the levels and the points, and the window loads them anew (InitItem, :14740-14747)
+    const answer = { type: 'doUseSkillPoint' as const, skills: sent[0]!, skillPoint: 0 };
+    own.apply(answer, OWN_ID);
+    skillUse.onMessage(OWN_ID, answer);
+    tree.onMessage(OWN_ID, answer, own);
+    expect(skillUse.spendPending).toBe(false);
+    expect(levelsOf(tree.skillPlan!.result())).toEqual([3, 1, 0]);
+    expect(tree.skillPlan!.changed).toBe(false);
+    expect(tree.chosen).toBe(null);
+  });
+
+  it('closing it with points placed asks first (the close button, 10000, and the toggle): No closes both and sends nothing, Yes sends', () => {
+    const own = vagrantWithSkills(5, 4);
+    const { tree, spent } = skillWindowOn(own, recordingHand().hand);
+    // nothing placed: the close button closes it at once
+    tree.frame.element.querySelector<HTMLButtonElement>('.hud-window-close')!.click();
+    expect(tree.isOpen).toBe(false);
+    tree.toggle(own);
+    choose(tree, 1);
+    skillButton(tree, 'plus').click();
+    // the close button: the box asks, the window stays
+    tree.frame.element.querySelector<HTMLButtonElement>('.hud-window-close')!.click();
+    expect(tree.warning.isOpen).toBe(true);
+    expect(tree.isOpen).toBe(true);
+    // the toggle (K, the applet) while the box is open does nothing (ObjectExecutor, WndManager.cpp:2588-2590)
+    tree.toggle(own);
+    expect(tree.isOpen).toBe(true);
+    // No: the box goes and takes the window with it (OnDestroy, m_bParentDestroy), the points unsent
+    warningButton(tree, 'no').click();
+    expect(tree.warning.isOpen).toBe(false);
+    expect(tree.isOpen).toBe(false);
+    expect(spent).toEqual([]);
+    // opened again, the window starts from the player's skills (InitItem)
+    tree.toggle(own);
+    expect(tree.skillPlan!.changed).toBe(false);
+    choose(tree, 1);
+    skillButton(tree, 'plus').click();
+    skillButton(tree, 'plus').click();
+    // the toggle asks too; Yes sends and closes both
+    tree.toggle(own);
+    expect(tree.warning.isOpen).toBe(true);
+    warningButton(tree, 'yes').click();
+    expect(spent.map(levelsOf)).toEqual([[2, 0, 0]]);
+    expect(tree.isOpen).toBe(false);
+    // the box's own close button is its No
+    tree.toggle(own);
+    choose(tree, 1);
+    skillButton(tree, 'plus').click();
+    tree.toggle(own);
+    tree.warning.frame.element.querySelector<HTMLButtonElement>('.hud-window-close')!.click();
+    expect([tree.warning.isOpen, tree.isOpen]).toEqual([false, false]);
+    expect(spent).toHaveLength(1);
+  });
+
+  it('Escape closes it without asking, the points dropped, as CWndMgr::Process destroys it (WndManager.cpp:3383-3420)', () => {
+    const own = vagrantWithSkills(5, 4);
+    const { tree, spent } = skillWindowOn(own, recordingHand().hand);
+    choose(tree, 1);
+    skillButton(tree, 'plus').click();
+    press('Escape', { key: 'Escape' });
+    expect(tree.isOpen).toBe(false);
+    expect(tree.warning.isOpen).toBe(false);
+    expect(spent).toEqual([]);
+  });
+
+  it('the tooltip of Clean Hit shows "FP : 5"; Flurry\'s names its prerequisite and the level, red while unmet (PutToolTip_Skill)', () => {
+    const own = vagrantWithSkills(4, 4);
+    const { tree } = skillWindowOn(own, recordingHand().hand);
+    const tooltip = tree.frame.element.querySelector<HTMLElement>('.hud-skill-tooltip')!;
+    expect(tooltip.hidden).toBe(true);
+    skillOf(tree, 1).dispatchEvent(pointer('pointerenter', 70, 110));
+    expect(tooltip.hidden).toBe(false);
+    const lines = () => [...tooltip.children].map((line) => [line.textContent, (line as HTMLElement).style.color]);
+    // open at level 0: "   Lv 0", the name bold in ff2fbe6d; the add-skill row of level 1 (GetAddSkillProp reads 0 as 1)
+    expect(lines()).toEqual([
+      ['Clean Hit   Lv 0', 'rgb(47, 190, 109)'],
+      ['FP : 5', 'rgb(255, 255, 255)'],
+      ['Character Level: 3', 'rgb(255, 255, 255)'],
+      ['A powerful, downward strike.', 'rgb(255, 255, 255)'],
+    ]);
+    expect((tooltip.children[0] as HTMLElement).style.fontWeight).toBe('bold');
+    // at level 4 the open skill's icon shows on the mouse over it only (m_dwMouseSkill, :7834-7843)
+    expect(skillOf(tree, 1).querySelector<HTMLElement>('.hud-skill-icon')!.style.backgroundImage).toContain('skill_vagonecleanh');
+    skillOf(tree, 1).dispatchEvent(pointer('pointerleave', 0, 0));
+    expect(tooltip.hidden).toBe(true);
+    expect(skillOf(tree, 1).querySelector<HTMLElement>('.hud-skill-icon')!.style.backgroundImage).toBe('');
+    // Flurry at character level 4: not open (no "Lv"), Clean Hit 0 of 3 and the level 5 in red
+    skillOf(tree, 2).dispatchEvent(pointer('pointerenter', 120, 110));
+    expect(lines()).toEqual([
+      ['Flurry', 'rgb(47, 190, 109)'],
+      ['FP : 10', 'rgb(255, 255, 255)'],
+      ['Clean Hit Skill level 3 is needed.', 'rgb(255, 0, 0)'],
+      ['Character Level: 5', 'rgb(255, 0, 0)'],
+      ['Rapid, stabbing attack.', 'rgb(255, 255, 255)'],
+    ]);
+    // the tooltip reads the player's own levels for the prerequisite, not the window's copy
+    expect(skillTooltip(FLURRY, 0, false, vagrantWithSkills(5, 0, [3, 0, 0]), SKILLS, SKILL_TEXTS)[2])
+      .toEqual({ text: 'Clean Hit Skill level 3 is needed.', color: 0xffffffff });
+  });
+
+  it('shows Clean Hit, Flurry and Over Cut only, by their places (GetSkillPoint): the event buffs of slots 3-6 get none, and no button raises them', () => {
+    const QUICK_STEP: WebSkill = { ...CLEAN_HIT, id: 317, name: 'Quick Step (Event)', reqLevel: -1, comboStyle: 4, maxLevel: 5 };
+    const own = vagrantWithSkills(15, 10);
+    // the array of a Vagrant with the four SI_GEN_EVE_* in slots 3-6 (skills notes §2.1)
+    for (let i = 3; i < 7; i++) own.skills[i] = { skill: 317 + i - 3, level: 0 };
+    const data = { ...SKILL_DATA, skills: new Map([...SKILLS, [317, QUICK_STEP]]) };
+    const tree = new SkillWindow(art, data, () => {}, recordingHand().hand);
+    skillWindows.push(tree);
+    layer(800, 600).append(tree.frame.element, tree.warning.element);
+    tree.toggle(own);
+    const shown = [...tree.frame.element.querySelectorAll<HTMLElement>('.hud-skill')];
+    expect(shown.map((element) => [element.dataset.skill, element.style.left, element.style.top])).toEqual([
+      ['1', '62px', '103px'], ['2', '112px', '103px'], ['3', '164px', '103px'],
+    ]);
+    expect(shown.map((element) => element.getAttribute('aria-label'))).toEqual(['Clean Hit', 'Flurry', 'Over Cut']);
+    // nothing chooses slot 3 (Quick Step), so + raises the three only
+    choose(tree, 1);
+    skillButton(tree, 'plus').click();
+    expect(tree.skillPlan!.result().slice(3, 7).map((slot) => slot.level)).toEqual([0, 0, 0, 0]);
+  });
+
+  it('draws the window as resdata.inc lays it out: 256 x 524 at the bottom right, the arrows picture, the level digits', () => {
+    const own = vagrantWithSkills(5, 4, [1, 0, 0]);
+    own.skills[0]!.level = 1;
+    const parent = layer(800, 600);
+    setLayoutBottom(parent, 48);
+    const { tree } = skillWindowOn(own, recordingHand().hand, parent);
+    const element = tree.frame.element;
+    // APP_SKILL3 256 x 624, less the hero section (:8017-8022); at the layout's bottom right (:8034-8040)
+    expect([element.style.width, element.style.height, element.style.left, element.style.top]).toEqual(['256px', '524px', '544px', '28px']);
+    expect(element.querySelector('.hud-window-title')!.textContent).toBe('Skill Tree');
+    expect(element.querySelector<HTMLElement>('.hud-skills-picture')!.style.backgroundImage).toBe('url("/assets/ui/imgskillvagrant.png")');
+    // the sections' titles: the Vagrant's job name, then none (InitItem, :6769-6776), each with its arrow
+    expect([...element.querySelectorAll('.hud-skills-group-title')].map((title) => title.textContent))
+      .toEqual(['Vagrant', '', '', 'Skill Point']);
+    expect(element.querySelectorAll('.hud-skills-arrow')).toHaveLength(3);
+    // Clean Hit at level 1: its icon and the digit frame 0, 2 px up and left
+    const digit = (id: number) => skillOf(tree, id).querySelector<HTMLElement>('.hud-skill-digit')!;
+    expect(skillOf(tree, 1).querySelector<HTMLElement>('.hud-skill-icon')!.style.backgroundImage)
+      .toBe('url("/assets/ui/skill_vagonecleanh.png")');
+    expect([digit(1).hidden, digit(1).dataset.frame, digit(1).style.backgroundPosition]).toEqual([false, '0', '-1px -1px']);
+    // raised to 2 in the window: frame 1 of the second row, 20 + 1, until it is sent (:7824-7832)
+    choose(tree, 1);
+    skillButton(tree, 'plus').click();
+    expect([digit(1).dataset.frame, digit(1).style.backgroundPosition]).toEqual(['21', '-29px -29px']);
+    // the chosen skill in WIDC_CUSTOM1 with its digit; Flurry at level 0 shows no digit, and not open no icon
+    expect(element.querySelector<HTMLElement>('.hud-skills-chosen')!.style.backgroundImage).toContain('skill_vagonecleanh');
+    expect(digit(2).hidden).toBe(true);
+    expect(skillOf(tree, 3).querySelector<HTMLElement>('.hud-skill-icon')!.style.backgroundImage).toBe('');
+    // the maximum level is frame 19 (:7828-7831)
+    const top = vagrantWithSkills(15, 0, [10, 0, 0]);
+    tree.frame.close();
+    tree.toggle(top);
+    expect(digit(1).dataset.frame).toBe('19');
+  });
+
+  it('- gives a level back, down to the player\'s own, and resets what needed it (SubSkillPointDown); Reset loads the skills anew', () => {
+    const own = vagrantWithSkills(10, 6, [3, 0, 0]);
+    const { tree } = skillWindowOn(own, recordingHand().hand);
+    choose(tree, 1);
+    expect(skillButton(tree, 'minus').disabled).toBe(true);
+    skillButton(tree, 'plus').click();
+    choose(tree, 2);
+    skillButton(tree, 'plus').click();
+    skillButton(tree, 'plus').click();
+    expect(levelsOf(tree.skillPlan!.result())).toEqual([4, 2, 0]);
+    expect(pointsLeft(tree)).toBe('3');
+    choose(tree, 1);
+    expect(skillButton(tree, 'minus').disabled).toBe(false);
+    skillButton(tree, 'minus').click();
+    // Clean Hit back to 3: Flurry keeps its 2
+    expect(levelsOf(tree.skillPlan!.result())).toEqual([3, 2, 0]);
+    // not below the player's own 3
+    expect(skillButton(tree, 'minus').disabled).toBe(true);
+    // Reset: the player's skills again, nothing chosen, every button off
+    skillButton(tree, 'reset').click();
+    expect(levelsOf(tree.skillPlan!.result())).toEqual([3, 0, 0]);
+    expect(pointsLeft(tree)).toBe('6');
+    expect(tree.chosen).toBe(null);
+    expect(['plus', 'minus', 'reset', 'finish'].map((name) => skillButton(tree, name).disabled)).toEqual([true, true, true, true]);
+  });
+
+  it('with no skill points the buttons stay off and the window shows 0 (InitItem works on the player\'s own skills)', () => {
+    const own = vagrantWithSkills(5, 0, [3, 1, 0]);
+    const { tree } = skillWindowOn(own, recordingHand().hand);
+    choose(tree, 1);
+    skillButton(tree, 'plus').click();
+    expect(levelsOf(tree.skillPlan!.result())).toEqual([3, 1, 0]);
+    expect(pointsLeft(tree)).toBe('0');
+    expect(['plus', 'minus', 'reset', 'finish'].map((name) => skillButton(tree, name).disabled)).toEqual([true, true, true, true]);
+  });
+
+  it('loads the skills anew, dropping the points placed, on DOUSESKILLPOINT, INITSKILLPOINT and a SETEXPERIENCE that changed the points', () => {
+    const own = vagrantWithSkills(5, 4);
+    const { tree } = skillWindowOn(own, recordingHand().hand);
+    const place = () => {
+      choose(tree, 1);
+      skillButton(tree, 'plus').click();
+      expect(tree.skillPlan!.changed).toBe(true);
+    };
+    const setExperience = (skillPoint: number) => ({
+      type: 'setExperience' as const, exp: 1n, level: 5, skillLevel: 8, skillPoint, deathExp: -1n, deathLevel: 0xffff,
+    });
+    place();
+    // SETEXPERIENCE with the same points (EXP from a kill) keeps them (nSP != nSkillPoint, DPClient.cpp:3426)
+    own.apply(setExperience(4), OWN_ID);
+    tree.onMessage(OWN_ID, setExperience(4), own);
+    expect(tree.skillPlan!.changed).toBe(true);
+    // another player's SETEXPERIENCE is not the own one
+    own.skillPoint = 6;
+    tree.onMessage(OWN_ID + 1, setExperience(6), own);
+    expect(tree.skillPlan!.changed).toBe(true);
+    // more points: InitItem
+    own.apply(setExperience(6), OWN_ID);
+    tree.onMessage(OWN_ID, setExperience(6), own);
+    expect(tree.skillPlan!.changed).toBe(false);
+    expect([pointsLeft(tree), tree.chosen]).toEqual(['6', null]);
+    place();
+    own.apply({ type: 'initSkillPoint', skillPoint: 6 }, OWN_ID);
+    tree.onMessage(OWN_ID, { type: 'initSkillPoint', skillPoint: 6 }, own);
+    expect(tree.skillPlan!.changed).toBe(false);
+    place();
+    const answer = { type: 'doUseSkillPoint' as const, skills: own.skills, skillPoint: 6 };
+    tree.onMessage(OWN_ID, answer, own);
+    expect(tree.skillPlan!.changed).toBe(false);
+    // closed, it hears nothing
+    tree.frame.close();
+    tree.onMessage(OWN_ID, answer, own);
+    expect(tree.skillPlan).toBe(null);
+  });
+
+  it('a skill pressed with the mouse is dragged from (OnMouseMove), tapped by a finger is picked; a double click queues it when CheckSkill lets it', () => {
+    const own = vagrantWithSkills(5, 2, [3, 0, 0]);
+    const { hand, carried } = recordingHand();
+    const { tree } = skillWindowOn(own, hand);
+    choose(tree, 1);
+    expect(carried).toEqual(['drag 0']);
+    // a finger: picked on the tap, and marked
+    skillOf(tree, 1).dispatchEvent(touch('pointerdown'));
+    skillOf(tree, 1).click();
+    expect(carried).toEqual(['drag 0', 'pick 0']);
+    expect(skillOf(tree, 1).hasAttribute('data-picked')).toBe(true);
+    // a skill not open (Over Cut at character level 5) is neither chosen nor carried
+    skillOf(tree, 3).dispatchEvent(pointer('pointerdown', 170, 110));
+    skillOf(tree, 3).dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    expect(carried).toEqual(['drag 0', 'pick 0']);
+    // Flurry is open, in the window's copy and for the player (its own Clean Hit 3, character level 5): queued
+    skillOf(tree, 2).dispatchEvent(pointer('pointerdown', 120, 110));
+    skillOf(tree, 2).dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    expect(carried).toEqual(['drag 0', 'pick 0', 'drag 1', 'queue 1']);
+    // closing it lets the picked skill go
+    tree.frame.close();
+    expect(hand.pickedSkill).toBe(null);
+  });
+});
+
+describe('TaskBar: editing the bars (CWndTaskBar::OnDropIcon, WndTaskBar.cpp:1874-2093)', () => {
+  /** Drags `from` to `to` with the mouse: the button down, a move of 20 px, and let go on `to`. */
+  const drag = (from: Element, to: Element) => {
+    from.dispatchEvent(pointer('pointerdown', 10, 10));
+    window.dispatchEvent(pointer('pointermove', 30, 30));
+    to.dispatchEvent(pointer('pointerup', 30, 30));
+  };
+
+  it('dropping Clean Hit on slot 3 sends ADDITEMTASKBAR(0, 3) with the skill shortcut, and the slot shows it', () => {
+    const own = vagrantWithSkills(5, 0, [3, 1, 0]);
+    const { bar, sent, calls } = editingOn(own);
+    const { tree } = skillWindowOn(own, bar);
+    drag(skillOf(tree, 1), slot(bar, 'item', 3));
+    // SetShortcut( 3, SHORTCUT_SKILL, 0, 0, ..., 1 ): m_dwId the slot of m_aJobSkill, m_dwIndex the bar slot, m_dwData 1
+    expect(sent).toEqual([{
+      type: 'ADDITEMTASKBAR', bar: 0, slot: 3,
+      shortcut: { kind: ShortcutKind.SKILL, id: 0, type: 0, index: 3, userId: 0, data: 1, text: 'Clean Hit' },
+    }]);
+    expect(shown(slot(bar, 'item', 3))).toMatchObject({ kind: 'skill', icon: 'url("/assets/ui/skill_vagonecleanh.png")' });
+    // the own bars hold it, which the skill use and F4 read
+    expect(own.taskBar!.items.find((entry) => entry.bar === 0 && entry.slot === 3)?.shortcut.kind).toBe(ShortcutKind.SKILL);
+    key('keydown', 'F4', { key: 'F4' });
+    expect(calls).toEqual(['useSlot 0 3 skill 0']);
+    // no ghost is left behind, nothing is lit
+    expect(bar.element.querySelector('.hud-carried')).toBeNull();
+    expect(bar.carrying).toBe(false);
+  });
+
+  it('dropping Flurry on a bar slot is refused (CT_CIRCLE: canPlaceOnBar), and so is a skill of level 0 (CheckSkill, :1920-1928)', () => {
+    const own = vagrantWithSkills(5, 0, [3, 1, 0]);
+    const { bar, sent } = editingOn(own);
+    const { tree } = skillWindowOn(own, bar);
+    drag(skillOf(tree, 2), slot(bar, 'item', 3));
+    expect(sent).toEqual([]);
+    expect(shown(slot(bar, 'item', 3)).kind).toBe('');
+    // Clean Hit open in the window but of level 0 for the player
+    const fresh = vagrantWithSkills(5, 3);
+    const other = editingOn(fresh);
+    const second = skillWindowOn(fresh, other.bar);
+    drag(skillOf(second.tree, 1), slot(other.bar, 'item', 3));
+    expect(other.sent).toEqual([]);
+  });
+
+  it("a drop asks CMover::CheckSkill of the player's own levels, not the window's copy (:1920-1928)", () => {
+    // Flurry 1 with a Clean Hit of 2: the window, raising Clean Hit to 3, opens Flurry; the player's own Flurry is not open
+    const own = vagrantWithSkills(5, 1, [2, 1, 0]);
+    own.taskBar = { ...NEW_BAR, queue: [{ ...EMPTY_SKILL, id: 0, index: 0, data: 2 }] };
+    const { bar, sent } = editingOn(own);
+    const { tree } = skillWindowOn(own, bar);
+    choose(tree, 1);
+    skillButton(tree, 'plus').click();
+    expect(tree.skillPlan!.active(1)).toBe(true);
+    drag(skillOf(tree, 2), slot(bar, 'queue', 1));
+    expect(sent).toEqual([]);
+    // with the player's own Clean Hit at 3 it goes
+    own.skills[0]!.level = 3;
+    drag(skillOf(tree, 2), slot(bar, 'queue', 1));
+    expect(sent).toHaveLength(1);
+  });
+
+  it('building the action slot Clean Hit, Flurry, Over Cut sends SKILLTASKBAR with all 5 entries each time; Flurry cannot go first', () => {
+    const own = vagrantWithSkills(10, 0, [3, 3, 1]);
+    const { bar, sent } = editingOn(own);
+    const { tree } = skillWindowOn(own, bar);
+    // CheckAddSkill: the first slot takes a CT_STEP or CT_GENERAL skill only
+    drag(skillOf(tree, 2), slot(bar, 'queue', 0));
+    expect(sent).toEqual([]);
+    drag(skillOf(tree, 1), slot(bar, 'queue', 0));
+    // a drop past the last skill lands after it (:1804-1805)
+    drag(skillOf(tree, 2), slot(bar, 'queue', 4));
+    drag(skillOf(tree, 3), slot(bar, 'queue', 2));
+    const entry = (id: number, index: number) => ({ kind: ShortcutKind.SKILL, id, type: 0, index, userId: 0, data: 2 });
+    expect(sent).toHaveLength(3);
+    for (const packet of sent) expect(packet.type === 'SKILLTASKBAR' && packet.queue).toHaveLength(5);
+    expect(sent[2]).toMatchObject({ type: 'SKILLTASKBAR', queue: [entry(0, 0), entry(1, 1), entry(2, 2), null, null] });
+    expect([0, 1, 2, 3].map((i) => shown(slot(bar, 'queue', i)).kind)).toEqual(['skill', 'skill', 'skill', '']);
+    expect(own.taskBar!.queue.map((shortcut) => shortcut.id)).toEqual([0, 1, 2]);
+    // nothing goes after the finish skill
+    drag(skillOf(tree, 2), slot(bar, 'queue', 4));
+    expect(sent).toHaveLength(3);
+  });
+
+  it('while the chain runs (m_nExecute) the action slot takes no edit; taking Clean Hit out empties it (RemoveSkillQueue, :1446-1472)', () => {
+    const own = vagrantWithSkills(10, 0, [3, 3, 1]);
+    const shortcut = (id: number, index: number): Shortcut => ({ ...EMPTY_SKILL, id, index, data: 2 });
+    own.taskBar = { ...NEW_BAR, queue: [shortcut(0, 0), shortcut(1, 1), shortcut(2, 2)] };
+    const { bar, sent, running } = editingOn(own);
+    running.value = true;
+    slot(bar, 'queue', 0).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }));
+    drag(slot(bar, 'queue', 1), document.body);
+    expect(sent).toEqual([]);
+    running.value = false;
+    // Over Cut out: the two others stay
+    drag(slot(bar, 'queue', 2), document.body);
+    expect(sent).toEqual([{ type: 'SKILLTASKBAR', queue: [shortcut(0, 0), shortcut(1, 1), null, null, null] }]);
+    // Clean Hit out by a right click: Flurry cannot be first, so it goes too, and the action slot is empty
+    const menu = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 });
+    slot(bar, 'queue', 0).dispatchEvent(menu);
+    expect(menu.defaultPrevented).toBe(true);
+    expect(sent.at(-1)).toEqual({ type: 'SKILLTASKBAR', queue: [null, null, null, null, null] });
+    expect(own.taskBar!.queue).toEqual([]);
+  });
+
+  it('a shortcut dragged off the bar comes off its slot (REMOVEITEMTASKBAR); dragged to another slot it moves (ADD there, then REMOVE)', () => {
+    const own = vagrantWithSkills(5, 0, [3, 0, 0]);
+    const { bar, sent } = editingOn(own);
+    // the lollipops (slot 0) to slot 5, then the biscuit (slot 1) off the bar
+    drag(slot(bar, 'item', 0), slot(bar, 'item', 5));
+    expect(sent).toEqual([
+      { type: 'ADDITEMTASKBAR', bar: 0, slot: 5, shortcut: { ...NEW_BAR.items[0]!.shortcut, index: 5, data: 1 } },
+      { type: 'REMOVEITEMTASKBAR', bar: 0, slot: 0 },
+    ]);
+    expect([shown(slot(bar, 'item', 0)).kind, shown(slot(bar, 'item', 5)).count]).toEqual(['', '3']);
+    drag(slot(bar, 'item', 1), document.body);
+    expect(sent.at(-1)).toEqual({ type: 'REMOVEITEMTASKBAR', bar: 0, slot: 1 });
+    // a right click takes one off too (OnRButtonUp)
+    slot(bar, 'item', 2).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }));
+    expect(sent.at(-1)).toEqual({ type: 'REMOVEITEMTASKBAR', bar: 0, slot: 2 });
+    // let go on the applet row, which the browser does not edit: it stays where it was
+    drag(slot(bar, 'item', 8), slot(bar, 'applet', 4));
+    expect(sent).toHaveLength(4);
+    expect(shown(slot(bar, 'item', 8)).kind).toBe('plain');
+    // a press that never moved is a press
+    slot(bar, 'item', 5).dispatchEvent(pointer('pointerdown', 10, 10));
+    window.dispatchEvent(pointer('pointerup', 11, 11));
+    expect(sent).toHaveLength(4);
+  });
+
+  it('with a finger: a skill tapped, then a slot, goes there; a long press on a slot offers Remove, which takes it off', () => {
+    vi.useFakeTimers();
+    try {
+      const own = vagrantWithSkills(5, 0, [3, 0, 0]);
+      const { bar, sent, calls } = editingOn(own);
+      const { tree } = skillWindowOn(own, bar);
+      skillOf(tree, 1).dispatchEvent(touch('pointerdown'));
+      skillOf(tree, 1).click();
+      expect(bar.pickedSkill).toBe(0);
+      expect(bar.carrying).toBe(true);
+      // the rows Clean Hit may go to are lit (OnDraw, :769-819)
+      const lit = (row: string) => bar.element.querySelector<HTMLElement>(`.hud-taskbar-lit[data-row="${row}"]`)!.hidden;
+      expect([lit('item'), lit('queue')]).toEqual([false, false]);
+      // F-keys do nothing while a shortcut is carried (Process, :2331-2338)
+      key('keydown', 'F1', { key: 'F1' });
+      expect(calls).toEqual([]);
+      slot(bar, 'item', 4).click();
+      expect(sent).toEqual([{
+        type: 'ADDITEMTASKBAR', bar: 0, slot: 4,
+        shortcut: { kind: ShortcutKind.SKILL, id: 0, type: 0, index: 4, userId: 0, data: 1, text: 'Clean Hit' },
+      }]);
+      expect(bar.pickedSkill).toBe(null);
+      expect([lit('item'), lit('queue')]).toEqual([true, true]);
+      // a short tap on the slot uses it
+      slot(bar, 'item', 4).dispatchEvent(touch('pointerdown'));
+      window.dispatchEvent(touch('pointerup'));
+      slot(bar, 'item', 4).click();
+      expect(calls).toEqual(['useSlot 0 4 skill 0']);
+      // held 500 ms: the Remove line over the slot; the finger's lift is no press
+      slot(bar, 'item', 4).dispatchEvent(touch('pointerdown'));
+      vi.advanceTimersByTime(499);
+      const menu = bar.element.querySelector<HTMLElement>('.hud-slot-menu')!;
+      expect(menu.hidden).toBe(true);
+      vi.advanceTimersByTime(1);
+      expect(menu.hidden).toBe(false);
+      window.dispatchEvent(touch('pointerup'));
+      slot(bar, 'item', 4).click();
+      expect(calls).toEqual(['useSlot 0 4 skill 0']);
+      const remove = menu.querySelector<HTMLButtonElement>('[role="menuitem"]')!;
+      expect(remove.textContent).toBe('Remove');
+      expect(menu.style.left).toBe(`${286 + 4 * 32}px`);
+      remove.click();
+      expect(sent.at(-1)).toEqual({ type: 'REMOVEITEMTASKBAR', bar: 0, slot: 4 });
+      expect(menu.hidden).toBe(true);
+      // a finger that moves while held is no long press; a press elsewhere closes the line
+      slot(bar, 'item', 0).dispatchEvent(touch('pointerdown', 10, 10));
+      window.dispatchEvent(touch('pointermove', 40, 10));
+      vi.advanceTimersByTime(600);
+      expect(menu.hidden).toBe(true);
+      slot(bar, 'item', 0).dispatchEvent(touch('pointerdown', 10, 10));
+      vi.advanceTimersByTime(500);
+      expect(menu.hidden).toBe(false);
+      document.body.dispatchEvent(touch('pointerdown', 400, 100));
+      expect(menu.hidden).toBe(true);
+      expect(sent).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a skill with a cool-down is turned away from the action slot with TID_GAME_SKILLLNOTUSE (SetSkillQueue, :1819-1830)', () => {
+    const own = vagrantWithSkills(5, 0, [3, 0, 0]);
+    const cooling: WebSkill = { ...SKILLS.get(1)!, levels: SKILLS.get(1)!.levels.map((row) => ({ ...row, cooldown: 3000 })) };
+    const record = recorder();
+    const bar = new TaskBar(art, record.actions);
+    bars.push(bar);
+    layer(800, 600).append(bar.element);
+    bar.update(own, { ...EDIT_DATA, skills: new Map([...SKILLS, [1, cooling]]) });
+    bar.queueSkill(0);
+    expect(record.sent).toEqual([]);
+    expect(record.said).toEqual([{ text: 'Clean Hit skill cannot be registered in the action slot.', color: 0xff99cc00 }]);
+  });
+
+  it('a skill in the applet row is used as a bar\'s is; K opens the skill window (APP_SKILL3\'s hotkey), not while carrying', () => {
+    const own = vagrantWithSkills(5, 0, [3, 0, 0]);
+    own.taskBar = { ...NEW_BAR, applets: [{ slot: 0, shortcut: { ...EMPTY_SKILL, id: 0, index: 0, data: 0 } }] };
+    const { bar, calls } = editingOn(own);
+    slot(bar, 'applet', 0).click();
+    expect(calls).toEqual([`useAppletSlot 0 ${ShortcutKind.SKILL} 0`]);
+    key('keydown', 'KeyK');
+    expect(calls.at(-1)).toBe('open skills');
+    bar.carrySkill(0);
+    key('keydown', 'KeyK');
+    expect(calls.filter((call) => call === 'open skills')).toHaveLength(1);
+  });
+});
+
+/** A job skill's shortcut, `SHORTCUT_SKILL` type 0, to fill in. */
+const EMPTY_SKILL: Shortcut = { kind: ShortcutKind.SKILL, id: 0, type: 0, index: 0, userId: 0, data: 0, text: '' };

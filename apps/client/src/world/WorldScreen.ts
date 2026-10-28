@@ -9,14 +9,15 @@
 // the target (Piece 4 §3.7), and over it Neuz's windows: the status window, the target bar, the server messages and the
 // caption (`Hud`, Piece 4 §3.9), the task bar with its Start menu, whose Log out asks first (`LogOutBox`) and then leaves
 // as the loading screen's Leave does (`TaskBar`), the attack button of a touch screen (`AttackButton`), the revive window
-// of the dead player (`ReviveWindow`, Piece 4 §3.5) and the Character window, where the stat points are placed
-// (`CharacterWindow`, §3.6), and Escape in Neuz's order (`escapeStep`). Every ending closes everything and hands the
-// lobby its message (Ruling 8): nothing that goes wrong here is thrown at the lobby.
+// of the dead player (`ReviveWindow`, Piece 4 §3.5), the Character window, where the stat points are placed
+// (`CharacterWindow`, §3.6), and the skill tree window, where the skill points are (`SkillWindow`, §3.11), and Escape in
+// Neuz's order (`escapeStep`). Every ending closes everything and hands the lobby its message (Ruling 8): nothing that goes
+// wrong here is thrown at the lobby.
 
 import { UI_SHEETS_KEY, toWebPosition } from '@flyffweb/formats';
 import type { Vec3, WebEffect, WebUiSheet, WebUiSheets } from '@flyffweb/formats';
 import { ShortcutKind } from '@flyffweb/protocol';
-import type { AddedMover, BundleMessage, WorldMessage } from '@flyffweb/protocol';
+import type { AddedMover, BundleMessage, Shortcut, WorldMessage } from '@flyffweb/protocol';
 import {
   EffectRenderer, Joystick, KeyboardInput, WorldStage, effectTextureProvider, loadGltf, loopMotion, neuzRandom,
 } from '@flyffweb/scene';
@@ -50,6 +51,7 @@ import { Hud } from './hud/hud';
 import { escapeStep } from './hud/escape';
 import { LogOutBox } from './hud/logOutBox';
 import { ReviveWindow } from './hud/reviveWindow';
+import { SkillWindow } from './hud/skillWindow';
 import { TaskBar } from './hud/taskBar';
 import type { TaskBarWindow } from './hud/taskBar';
 import { OwnMover, pickOnStage } from './ownMover';
@@ -192,6 +194,8 @@ export class WorldScreen {
    */
   private reviveWindow: ReviveWindow | undefined;
   private characterWindow: CharacterWindow | undefined;
+  /** The skill tree window with its box (`CWndSkillTreeEx`, §3.11), which K, the applet and the Start menu open. */
+  private skillWindow: SkillWindow | undefined;
   /** The own character's driving: the controls each rules step, the moves sent, the stop. */
   private ownMover: OwnMover | undefined;
   /** The own character's numbers (`ownState`). */
@@ -400,6 +404,7 @@ export class WorldScreen {
       }
       world.apply(objectId, value, joining);
       this.skillUse?.onMessage(objectId, value, world.self());
+      this.skillWindow?.onMessage(objectId, value, this.own);
       if (value.type === 'setPos') this.views?.snap(objectId);
     }
   }
@@ -560,13 +565,21 @@ export class WorldScreen {
     skillUse.attack = attackLoop;
     this.world!.onUseSkill = (casterId, message, started) => skillUse.onUseSkill(casterId, message, started);
     this.attackLoop = attackLoop;
-    this.taskBar = new TaskBar(this.hudArt!, {
+    const session = this.session;
+    const taskBar = new TaskBar(this.hudArt!, {
       open: (window) => this.openWindow(window),
       logOut: () => this.logOut(),
       // the slots' items are used in Piece 5
-      useSlot: (bar, slot) => this.useBarSlot(bar, slot),
+      useSlot: (_bar, _slot, shortcut) => this.useShortcut(shortcut),
+      useAppletSlot: (_slot, shortcut) => this.useShortcut(shortcut),
       useActionSlot: () => skillUse.useActionSlot(),
+      sendAddItemTaskBar: (bar, slot, shortcut) => session.sendAddItemTaskBar(bar, slot, shortcut),
+      sendRemoveItemTaskBar: (bar, slot) => session.sendRemoveItemTaskBar(bar, slot),
+      sendSkillTaskBar: (queue) => session.sendSkillTaskBar(queue),
+      queueRunning: () => skillUse.execute !== 0,
+      say: (text, color) => this.hud?.messages.add(text, color),
     }, doc);
+    this.taskBar = taskBar;
     // the Start menu opens where the joystick stands, which is over the windows' layer: it hides while the menu is open
     this.taskBar.onMenuChange = (open) => this.element.classList.toggle('world-menu-open', open);
     this.attackButton = new AttackButton(() => attackLoop.attackButton(), doc);
@@ -578,10 +591,13 @@ export class WorldScreen {
     this.characterWindow = characterWindow;
     const reviveWindow = new ReviveWindow(this.hudArt!, this.data!.texts, () => this.session.sendRevivalToLodestar(), doc);
     this.reviveWindow = reviveWindow;
-    for (const modal of [logOutBox.modal, reviveWindow.modal]) modal.onChange = () => this.modalChanged();
+    // Finish sends DOUSESKILLPOINT through the skill use, which also ends a spend the server leaves unanswered
+    const skillWindow = new SkillWindow(this.hudArt!, this.data!, (skills) => void skillUse.spendSkillPoints(skills), taskBar, doc);
+    this.skillWindow = skillWindow;
+    for (const modal of [logOutBox.modal, reviveWindow.modal, skillWindow.warning.modal]) modal.onChange = () => this.modalChanged();
     this.hud!.element.append(
-      this.taskBar.element, this.attackButton.element, logOutBox.element, characterWindow.frame.element,
-      characterWindow.confirm.frame.element, reviveWindow.element,
+      taskBar.element, this.attackButton.element, logOutBox.element, characterWindow.frame.element,
+      characterWindow.confirm.frame.element, skillWindow.frame.element, skillWindow.warning.element, reviveWindow.element,
     );
     // before the windows' own Escape (frame.ts), which closes a window only if this one leaves the key to it
     view.addEventListener('keydown', this.onEscape, true);
@@ -867,29 +883,32 @@ export class WorldScreen {
     }
     this.attackButton!.update(loop.canAttackFocus);
     if (this.own !== undefined && this.characterWindow?.frame.isOpen === true) this.characterWindow.update(this.own, this.entry, now);
+    if (this.own !== undefined && this.skillWindow?.isOpen === true) this.skillWindow.update(this.own);
   }
 
   /**
    * A window of Piece 4 the task bar opens or closes (`ObjectExecutor` on its applet: the Start menu, a slot, its hotkey):
-   * the status window, with own numbers to show (as T does); the Character window (`openCharacter`); the skill window is
-   * milestone 2's.
+   * the status window, with own numbers to show (as T does); the Character window (`openCharacter`); the skill tree window,
+   * with own numbers (`SkillWindow.toggle`, which asks first when points were placed).
    */
   private openWindow(window: TaskBarWindow): void {
     if (window === 'status') {
       if (this.own !== undefined) this.hud?.status.toggle();
     } else if (window === 'character') {
       this.openCharacter();
+    } else if (this.own !== undefined) {
+      this.skillWindow?.toggle(this.own);
     }
   }
 
   /**
-   * Slot `slot` of item bar `bar` used, pressed or by its F-key (`ObjectExecutor`, `WndManager.cpp:2776-2880`): a job
-   * skill's shortcut (`SHORTCUT_SKILL`, `m_dwType` 0) is `UseSkillShortCut( 0, m_dwId )` (`SkillUse.useSlot`); the slot
-   * holds the last entry TASKBAR gave it. A party skill (type 2) and an item (Piece 5) do nothing here.
+   * A shortcut of the task bar used, pressed or by its F-key, on an item bar or the applet row (`ObjectExecutor`,
+   * `WndManager.cpp:2776-2880`), the bar handing over the shortcut its slot holds: a job skill's (`SHORTCUT_SKILL`,
+   * `m_dwType` 0) is `UseSkillShortCut( 0, m_dwId )` (`SkillUse.useSlot`). A party skill (type 2) and an item (Piece 5) do
+   * nothing here.
    */
-  private useBarSlot(bar: number, slot: number): void {
-    const shortcut = this.own?.taskBar?.items.findLast((entry) => entry.bar === bar && entry.slot === slot)?.shortcut;
-    if (shortcut?.kind === ShortcutKind.SKILL && shortcut.type === 0) this.skillUse?.useSlot(shortcut.id);
+  private useShortcut(shortcut: Shortcut): void {
+    if (shortcut.kind === ShortcutKind.SKILL && shortcut.type === 0) this.skillUse?.useSlot(shortcut.id);
   }
 
   /** A line of the messages window, `PutString( prj.GetText( id ), NULL, prj.GetTextColor( id ) )`: the skill use's texts. */
@@ -938,7 +957,8 @@ export class WorldScreen {
    * stands, or is dead.
    */
   private modalChanged(): void {
-    const open = this.reviveWindow?.modal.isShown === true || this.logOutBox?.modal.isShown === true;
+    const open = this.reviveWindow?.modal.isShown === true || this.logOutBox?.modal.isShown === true ||
+      this.skillWindow?.warning.modal.isShown === true;
     this.element.classList.toggle('world-modal', open);
     if (!open) return;
     this.taskBar?.closeMenu();
@@ -953,15 +973,20 @@ export class WorldScreen {
    * (`openRevive`); the Start menu open, nothing; a target, cleared (`AttackLoop.escape`); a window Escape closes
    * (`escapeWindow`, never the status window), left to the windows' own handler, which runs after this one; else the
    * Start menu. A held key does it once. Before all that, the keys are a modal window's while one is open (the revive
-   * window, the log-out box; WBS_MODAL: `CNeuzApp::MsgProc` takes none, `Neuz/Neuz.cpp:1253-1309`) and the stat points'
-   * confirm box's while it is open (`CNeuzApp::KillWindow`, :1262, :1323): their own handlers take Escape.
+   * window, the log-out box, the skill points' box; WBS_MODAL: `CNeuzApp::MsgProc` takes none, `Neuz/Neuz.cpp:1253-1309`)
+   * and the stat points' confirm box's while it is open (`CNeuzApp::KillWindow`, :1262, :1323): their own handlers take
+   * Escape. While the task bar carries a shortcut (a drag, a skill a finger picked), the window and menu steps do nothing
+   * (`if( CWndBase::m_GlobalShortcut.IsEmpty() )`, `WndManager.cpp:3383`).
    */
   private readonly onEscape = (event: KeyboardEvent): void => {
     const { taskBar, attackLoop, focus } = this;
     if (event.key !== 'Escape' || event.repeat || taskBar === undefined || attackLoop === undefined || focus === undefined) {
       return;
     }
-    if (this.reviveWindow?.isOpen === true || this.logOutBox?.isOpen === true || this.characterWindow?.confirm.isOpen === true) {
+    if (
+      this.reviveWindow?.isOpen === true || this.logOutBox?.isOpen === true || this.characterWindow?.confirm.isOpen === true ||
+      this.skillWindow?.warning.isOpen === true
+    ) {
       return;
     }
     const self = this.world?.self();
@@ -971,8 +996,9 @@ export class WorldScreen {
       target: focus.next !== null || focus.targetId !== null,
       window: escapeWindow(this.element.ownerDocument) !== undefined,
     });
-    if (step === 'window') return;
+    if (step === 'window' && !taskBar.carrying) return;
     event.preventDefault();
+    if ((step === 'window' || step === 'menu') && taskBar.carrying) return;
     if (step === 'revive') this.openRevive();
     else if (step === 'target') attackLoop.escape();
     else if (step === 'menu') taskBar.openMenu();
@@ -1130,6 +1156,7 @@ export class WorldScreen {
     for (const layer of this.spriteLayers) layer.dispose();
     this.logOutBox?.dispose();
     this.characterWindow?.dispose();
+    this.skillWindow?.dispose();
     this.reviveWindow?.dispose();
     this.hud?.dispose();
     this.sheetPictures = [];

@@ -46,7 +46,7 @@ const EXPERT_SP = 2;
 const PRO_SP = 3;
 
 /** `CProject::GetSkillPoint( pSkillProp )` (`Project.cpp:5143-5153`): the skill points one level of `skill` costs. */
-function skillPointCost(skill: WebSkill): number {
+export function skillPointCost(skill: Pick<WebSkill, 'jobType'>): number {
   if (skill.jobType === JTYPE_BASE) return VAGRANT_SP;
   if (skill.jobType === JTYPE_EXPERT) return EXPERT_SP;
   return PRO_SP;
@@ -219,7 +219,16 @@ export class SkillPlan {
  * and Over Cut are for the action slot. The caller also asks `checkSkill` of the player's own levels (:1923).
  */
 export function canPlaceOnBar(skill: WebSkill, level: number): boolean {
-  return level > 0 && (skill.comboStyle === ComboStyle.STEP || skill.comboStyle === ComboStyle.GENERAL);
+  return level > 0 && isBarStyle(skill);
+}
+
+/**
+ * Whether `skill`'s combo style is one the task bar's rows take: `CT_STEP` or `CT_GENERAL` (`dwComboStyle`). The style alone,
+ * with no test of the level: the loader's rule for a skill of the applet row (`CWndTaskBar::Serialize`,
+ * `WndTaskBar.cpp:340-343`), and the bar's highlight of the rows a dragged skill may go to (`OnDraw`, :803-806).
+ */
+export function isBarStyle(skill: Pick<WebSkill, 'comboStyle'>): boolean {
+  return skill.comboStyle === ComboStyle.STEP || skill.comboStyle === ComboStyle.GENERAL;
 }
 
 /** `m_nCurQueueNum`: the skills the action slot holds, counted up to the first empty slot. */
