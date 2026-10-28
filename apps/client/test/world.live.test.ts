@@ -25,8 +25,10 @@
 // ADD_OBJ's inventory was read (the starter food: exactly a new character's in one the test made), walks out of Flaris
 // through the north gate to the Small Aibatts (`MI_AIBATT1`; never a giant, Ruling R30), taps the nearest and presses
 // the attack button, and the world screen's attack (`Focus`, `AttackLoop`, the own numbers' `OwnState`, wired as
-// `WorldScreen` wires them) attacks it until it dies. It fails on the server's `TID_GAME_MODIFY_ATTACK_SPEED` (and on a
-// second `TID_GAME_PRIORITYMOB`: after the first it tries another Aibatt once), on a swing with no DAMAGE within 3 s, on
+// `WorldScreen` wires them) attacks it until it dies. It gives an Aibatt up, as a player does, that is another player's
+// (`TID_GAME_PRIORITYMOB`) or untouchable (its last 10 blows answered with AF_MISS: it is on its way back to its spawn
+// point), and tries the nearest other one, at most 3 in all; it fails on the server's `TID_GAME_MODIFY_ATTACK_SPEED`, on a
+// third given up (the error names each and what the blows did), on a swing with no DAMAGE within 3 s, on
 // a kill with no SETEXPERIENCE after it, and on any bundle without its table or misread. For it the walker's steps
 // also meet the placed objects, as on the screen: their collision shapes, read from the disk as the stage reads them
 // (`placedObjects`, its tiles around the walker as the test starts). Every player has the world screen's views of the
@@ -203,7 +205,7 @@ const EXP_WAIT_MS = 10000;
 /** REVIVAL_TO_LODESTAR is answered with the revival and the position at the lodestar; this is only the safety net. */
 const REVIVE_WAIT_MS = 10000;
 /**
- * The fight's own waits add up to under 10 minutes (the way out and back at a walk, two Aibatts' waits and fights);
+ * The fight's own waits add up to under 10 minutes (the way out and back at a walk, three Aibatts' waits and fights);
  * the test gets more, so that one of them, which says what it waited for, ends it rather than vitest's timeout.
  */
 const FIGHT_TEST_MS = 900000;

@@ -4,7 +4,7 @@
 // (`FightPlayer`, `SkillPlayer`: what of it these read and press); the world screen's attack and skill use it presses are
 // the real ones (`AttackLoop`, `Focus`, `SkillUse`).
 
-import { AttackFlag } from '@flyffweb/protocol';
+import { AttackFlag, NULL_ID } from '@flyffweb/protocol';
 import type { InventoryItem, Shortcut, SkillSlot, Vec3, WorldMessage } from '@flyffweb/protocol';
 import type { WebSkill } from '@flyffweb/formats';
 import { attackAble } from '../../src/world/combat/attackLoop';
@@ -50,6 +50,30 @@ export const FIGHT_MS = 60000;
  * else `OnDied`).
  */
 export const DAMAGE_WAIT_MS = 3000;
+/**
+ * The walker gives an Aibatt up as untouchable when its last this many blows on it were all answered with AF_MISS, as a
+ * player does who sees "Miss" at every swing. The server makes a monster untouchable while it is on its way back to its
+ * spawn point (`CAIMonster::DoReturnToBegin`, `_AIInterface/AIMonster.cpp:286-309`, started for a monster out of its move
+ * range: :209, :473, :1596-1721): `CAttackArbiter::OnAfterDamage` (`WORLDSERVER/AttackArbiter.cpp:427-431`,
+ * `IsReturnToBegin`) turns every blow that would hurt it into 0 damage with AF_MISS, until it arrives (`AIMonster.cpp`
+ * :332-336, :790-794, :926-930, or is set down at its spawn point after 20 s, :366-376) and `DoReturnToBegin( FALSE )`
+ * heals it. Such a DAMAGE says AF_MISS with a hit of 1, not 0 (`OnDamageMsgW` raises the damage to `max( nDamage, 1 )`,
+ * `AttackArbiter.cpp:215`, and `OnDamaged` sends it, :756-764), and `OnDamaged` puts the monster in the damage state
+ * (`SetDamagedMotion`, `_Common/MoverAttack.cpp:2016-2064`: `OBJSTA_DMG`, not the `OBJSTA_DMG_FLY_ALL` that stops the AI's
+ * movement, `_Common/MoverMsg.h:68`, :75, `AIMonster.cpp:318`); a plain miss says AF_MISS with 0 (`CheckValidDamageMsg`,
+ * `AttackArbiter.cpp:290-294`). So the rule reads the flag, not the damage.
+ *
+ * By chance the walker would not miss that often: a player's blow at a monster hits with
+ * `int( ((DEX * 1.6f) / (DEX + ER)) * 1.5f * (level * 1.2f / (level + monster level)) * 100 )`, at most 96 and at least
+ * `MIN_HR` 20 (`CMover::GetAttackResult`, `_Common/MoverAttack.cpp:41`, :244-284; the hit rating is the DEX, `GetHR`,
+ * :236-242, the monster's evasion its `dwER`, `GetParrying`, `_Common/MoverParam.cpp:506-512`). The Vagrant's DEX is 15 or
+ * more (every stat of a new character starts at 15: `_Common/Mover.cpp:1592`), the Small Aibatt's ER 3 and level 1
+ * (`Resource/propMover.txt:7`): at level 1 that is ((15 * 1.6) / 18) * 1.5 * (1.2 / 2) * 100 = 120, more from level 2 to 14, so 96 % at every level of the
+ * test's walker. A chance miss is 4 %, 10 in a row 0.04^10, about 1e-14.
+ */
+export const UNTOUCHABLE_AFTER = 10;
+/** The walker tries at most this many Small Aibatts (given up for another player's or as untouchable) before it fails. */
+export const MAX_AIBATTS = 3;
 
 const sleep = (ms: number): Promise<void> => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
@@ -339,8 +363,50 @@ export async function nearestSmallAibatt(ctx: FightContext, player: FightPlayer,
   return picked.mover!;
 }
 
+/** A DAMAGE among the combat events. */
+type DamageEvent = Extract<CombatEvent, { kind: 'hit' }>;
+
+/** The DAMAGEs from `attackerId` on `targetId` among `seen`, in the order they came: the walker's blows on its target. */
+function blowsOn(seen: readonly { event: CombatEvent }[], targetId: number, attackerId: number): DamageEvent[] {
+  const blows: DamageEvent[] = [];
+  for (const { event } of seen) {
+    if (event.kind === 'hit' && event.victimId === targetId && event.attackerId === attackerId) blows.push(event);
+  }
+  return blows;
+}
+
+const isMiss = (blow: DamageEvent): boolean => (blow.flags & AttackFlag.MISS) !== 0;
+
+/**
+ * What the walker's blows on a target did, from the DAMAGEs among `seen`: how many there were, how many of them were
+ * misses (`AF_MISS`: a plain miss, or a blow at a monster on its way back to its spawn point), how many landed (the
+ * rest), and the damage they carried in total (a DAMAGE's `hit`, which an AF_MISS may carry too, see `UNTOUCHABLE_AFTER`).
+ */
+export interface Blows {
+  blows: number;
+  misses: number;
+  hits: number;
+  damage: number;
+}
+
+export function blowCounts(seen: readonly { event: CombatEvent }[], targetId: number, attackerId: number): Blows {
+  const blows = blowsOn(seen, targetId, attackerId);
+  const misses = blows.filter(isMiss).length;
+  return { blows: blows.length, misses, hits: blows.length - misses, damage: blows.reduce((sum, blow) => sum + blow.hit, 0) };
+}
+
+/** `blows` in words, for a failure message. */
+const blowsText = ({ blows, misses, hits, damage }: Blows): string =>
+  `${blows} DAMAGE from the walker on it (${misses} AF_MISS, ${hits} landed, ${damage} damage in total)`;
+
+/** Whether the walker's last `UNTOUCHABLE_AFTER` blows on `targetId` among `seen` were all answered with AF_MISS. */
+export function untouchable(seen: readonly { event: CombatEvent }[], targetId: number, attackerId: number): boolean {
+  const blows = blowsOn(seen, targetId, attackerId);
+  return blows.length >= UNTOUCHABLE_AFTER && blows.slice(-UNTOUCHABLE_AFTER).every(isMiss);
+}
+
 /** Where the counts of a fight start: the lengths of the player's lists as the attack began. */
-interface FightMarks {
+export interface FightMarks {
   swings: number;
   seen: number;
   corr: number;
@@ -348,15 +414,13 @@ interface FightMarks {
 }
 
 /** How the fight with `target` stands, for a failure message. */
-function fightText(player: FightPlayer, target: Mover, from: FightMarks): string {
+export function fightText(player: FightPlayer, target: Mover, from: FightMarks): string {
   const self = player.world?.self();
   const swings = player.sentSwings.length - from.swings;
-  const hits = player.combatSeen.slice(from.seen).filter(({ event }) => (
-    event.kind === 'hit' && event.victimId === target.objectId && event.attackerId === self?.objectId
-  )).length;
+  const blows = blowCounts(player.combatSeen.slice(from.seen), target.objectId, self?.objectId ?? NULL_ID);
   const stats = player.session?.stats;
   const where = self === undefined ? 'not in view' : `${stateText(self)}, ${apart(self.act.body.pos, target.act.body.pos).toFixed(2)} m from it with ${self.hp} HP`;
-  return `Since the attack began: ${player.sentDestObj.length - from.destObj} PLAYERSETDESTOBJ, ${swings} MELEE_ATTACK, ${hits} DAMAGE from the walker on it, `
+  return `Since the attack began: ${player.sentDestObj.length - from.destObj} PLAYERSETDESTOBJ, ${swings} MELEE_ATTACK, ${blowsText(blows)}, `
     + `${player.sentCorr.length - from.corr} PLAYERCORR (the walk up to it met something). The walker is ${where}; the Small Aibatt is `
     + `${stateText(target)} with ${target.hp} HP. ${stats?.mismatched ?? 0} messages misread so far.`
     + (player.viewProblems.size === 0 ? '' : ` The views could not load: ${[...player.viewProblems].join('; ')}.`);
@@ -365,16 +429,17 @@ function fightText(player: FightPlayer, target: Mover, from: FightMarks): string
 /**
  * Attacks `target` as a player on a touch screen does: a tap on it (the focus, SETTARGET), then the attack button (the
  * auto-attack), and from there the attack loop walks up to it and swings, every rules step, until it dies. Ends
- * `'killed'` at its MOVERDEATH by the walker, and `'priorityMob'` at a TID_GAME_PRIORITYMOB (another player fights it:
- * `CMover::IsSteal`, `_Common/Mover.cpp:7010-7052`). Fails at a TID_GAME_MODIFY_ATTACK_SPEED (`CDPSrvr::OnMeleeAttack`,
- * `WORLDSERVER/DPSrvr.cpp:2040-2045`: the MELEE_ATTACK's speed is not the held item's `fAttackSpeed`); at a swing whose
- * DAMAGE does not come within 3 s (every swing the server takes has one, a miss's too, the killing one the MOVERDEATH);
- * and when the Aibatt has not died within 60 s, is killed by another, leaves the view alive, or the walker dies (the
- * test then revives it: `reviveIfDead`).
+ * `'killed'` at its MOVERDEATH by the walker, `'priorityMob'` at a TID_GAME_PRIORITYMOB (another player fights it:
+ * `CMover::IsSteal`, `_Common/Mover.cpp:7010-7052`), and `'untouchable'` when the walker's last 10 blows on it were all
+ * answered with AF_MISS (`UNTOUCHABLE_AFTER`: the monster is on its way back to its spawn point). Fails at a
+ * TID_GAME_MODIFY_ATTACK_SPEED (`CDPSrvr::OnMeleeAttack`, `WORLDSERVER/DPSrvr.cpp:2040-2045`: the MELEE_ATTACK's speed is
+ * not the held item's `fAttackSpeed`); at a swing whose DAMAGE does not come within 3 s (every swing the server takes has
+ * one, a miss's too, the killing one the MOVERDEATH); and when the Aibatt has not died within 60 s, is killed by another,
+ * leaves the view alive, or the walker dies (the test then revives it: `reviveIfDead`).
  */
 export async function fight(
   ctx: FightContext, player: FightPlayer, target: Mover, texts: FightTexts,
-): Promise<'killed' | 'priorityMob'> {
+): Promise<'killed' | 'priorityMob' | 'untouchable'> {
   const self = player.world!.self()!;
   const from: FightMarks = {
     swings: player.sentSwings.length, seen: player.combatSeen.length, corr: player.sentCorr.length, destObj: player.sentDestObj.length,
@@ -401,9 +466,10 @@ export async function fight(
       }
     }
     if (isDie(self)) throw new Error(`the walker died in the fight. ${state()}`);
+    if (untouchable(seen, target.objectId, self.objectId)) return 'untouchable';
     // the swings at it in order, and the DAMAGEs from the walker on it: the next one owed is that of the first swing not answered yet
     const swings = player.sentSwings.slice(from.swings).filter((swing) => swing.targetId === target.objectId);
-    const answered = seen.filter(({ event }) => event.kind === 'hit' && event.victimId === target.objectId && event.attackerId === self.objectId).length;
+    const answered = blowsOn(seen, target.objectId, self.objectId).length;
     const owed = swings[answered];
     if (owed !== undefined && performance.now() - owed.at > DAMAGE_WAIT_MS) {
       throw new Error(`swing ${answered + 1} at the Small Aibatt (its MELEE_ATTACK) got no DAMAGE within ${DAMAGE_WAIT_MS / 1000} s. ${state()}`);
@@ -414,19 +480,47 @@ export async function fight(
   }
 }
 
+/** A Small Aibatt the walker gave up, why, and what its blows on it did. */
+export interface GivenUp {
+  objectId: number;
+  /** Another player's (TID_GAME_PRIORITYMOB), untouchable (`UNTOUCHABLE_AFTER`), or killed by the skill's first blow (the skill part). */
+  why: 'priorityMob' | 'untouchable' | 'killed';
+  blows: Blows;
+}
+
+/** The Small Aibatt `target` as given up for `why`, with the counts of the walker's blows among what came since `seenFrom`. */
+function givenUp(player: FightPlayer, target: Mover, why: GivenUp['why'], seenFrom: number): GivenUp {
+  const blows = blowCounts(player.combatSeen.slice(seenFrom), target.objectId, player.world!.self()!.objectId);
+  return { objectId: target.objectId, why, blows };
+}
+
+/** The failure after `MAX_AIBATTS` given up: one sentence, each Aibatt with why it was given up and what the blows did. */
+export function givenUpText(given: readonly GivenUp[]): string {
+  const each = given.map(({ objectId, why, blows }) => {
+    const aibatt = `Small Aibatt ${objectId} was`;
+    if (why === 'killed') return `${aibatt} killed at the first blow of Clean Hit, so that no DAMAGE of it came to check`;
+    if (why === 'priorityMob') return `${aibatt} another player's (TID_GAME_PRIORITYMOB), with ${blowsText(blows)}`;
+    return `${aibatt} on its way back to its spawn point and untouchable, with ${blowsText(blows)}`;
+  });
+  return `Gave up ${given.length} Small Aibatts: ${each.join('; ')}.`;
+}
+
 /**
- * Kills the Small Aibatt nearest the walker (`fight`); after a TID_GAME_PRIORITYMOB, Escape (as a player gives a target
- * up) and once more with the nearest other one.
+ * Kills the Small Aibatt nearest the walker (`fight`); one that is another player's (TID_GAME_PRIORITYMOB) or untouchable
+ * (`UNTOUCHABLE_AFTER`) the walker gives up with Escape, as a player gives a target up, and goes on to the nearest other
+ * one it has not tried; at the third given up (`MAX_AIBATTS`) it fails, with `givenUpText`.
  */
 export async function killSmallAibatt(ctx: FightContext, player: FightPlayer, texts: FightTexts): Promise<void> {
   const tried = new Set<number>();
+  const given: GivenUp[] = [];
   for (;;) {
     const target = await nearestSmallAibatt(ctx, player, tried);
     tried.add(target.objectId);
-    if (await fight(ctx, player, target, texts) === 'killed') return;
-    if (tried.size >= 2) {
-      throw new Error(`a second Small Aibatt (${target.objectId}) was refused with TID_GAME_PRIORITYMOB ("${texts.priorityMob.text}") too: another player fights the Aibatts here.`);
-    }
+    const seenFrom = player.combatSeen.length;
+    const end = await fight(ctx, player, target, texts);
+    if (end === 'killed') return;
+    given.push(givenUp(player, target, end, seenFrom));
+    if (given.length >= MAX_AIBATTS) throw new Error(givenUpText(given));
     player.giveUpTarget();
   }
 }
@@ -510,13 +604,17 @@ function skillText(
  * walker's DAMAGE on it with `AF_MELEESKILL` (the skill's blow: `CMover::OnMeleeSkill` → `ApplySkill` → `SendDamage(
  * AF_MELEESKILL, ... )` on the server); `'killed'` when that blow killed it, its MOVERDEATH by the walker coming in place of
  * the DAMAGE (`CAttackArbiter::OnDamageMsgW`, `WORLDSERVER/AttackArbiter.cpp:228-255`); `'priorityMob'` at a
- * TID_GAME_PRIORITYMOB (another player fights it). Fails when no USESKILL went within the walk up, when the server did not
+ * TID_GAME_PRIORITYMOB (another player fights it); `'untouchable'` when, after the server began the skill, a DAMAGE from
+ * the walker on it comes with AF_MISS: a melee skill rolls no hit (`CCtrl::ApplyDamage`, `_Common/Ctrl.cpp:1001-1030`
+ * sends AF_MELEESKILL, and `GetAttackResult` is called for swings and shots only), so only the server's own turn of a blow
+ * into a miss makes one (`UNTOUCHABLE_AFTER`: a monster on its way back to its spawn point, `OnAfterDamage`, :427-431 of
+ * `AttackArbiter.cpp`, which replaces the flags). Fails when no USESKILL went within the walk up, when the server did not
  * answer it within 3 s or refused it (CLEAR_USESKILL, with what it said), when the DAMAGE did not come within 3 s of the
  * answer, and when the walker dies, or the Aibatt leaves the view or is killed by another.
  */
 export async function useSkillOn(
   ctx: FightContext, player: SkillPlayer, target: Mover, texts: FightTexts, shortcut: Shortcut,
-): Promise<'hit' | 'killed' | 'priorityMob'> {
+): Promise<'hit' | 'killed' | 'priorityMob' | 'untouchable'> {
   const self = player.world!.self()!;
   const from = {
     seen: player.combatSeen.length, skills: player.skillSeen.length, uses: player.sentUseSkill.length,
@@ -550,6 +648,9 @@ export async function useSkillOn(
       if (message.type === 'clearUseSkill') throw new Error(`the world server refused Clean Hit (CLEAR_USESKILL). ${state()}`);
       if (message.type === 'useSkill') answeredAt ??= at;
     }
+    if (answeredAt !== null && blowCounts(player.combatSeen.slice(from.seen), target.objectId, self.objectId).misses > 0) {
+      return 'untouchable';
+    }
     const now = performance.now();
     const sent = player.sentUseSkill[from.uses];
     if (isDie(self)) throw new Error(`the walker died while it used Clean Hit. ${state()}`);
@@ -570,25 +671,25 @@ export async function useSkillOn(
 /**
  * The skill part on the field: Clean Hit (the bar's `shortcut`) on the nearest Small Aibatt (`useSkillOn`); once its blow
  * has landed, the auto-attack that a skill's use turns on (`OnUseSkill`) finishes it (`fight`), so that no Aibatt left
- * alive follows the walker back. After a TID_GAME_PRIORITYMOB, or a blow that killed it outright (which leaves no DAMAGE
- * to check), Escape and once more on the nearest other one.
+ * alive follows the walker back. After a TID_GAME_PRIORITYMOB, an Aibatt that is untouchable (`UNTOUCHABLE_AFTER`), or a
+ * blow that killed it outright (which leaves no DAMAGE to check), Escape and once more on the nearest other one, as
+ * `killSmallAibatt` does: at the third given up (`MAX_AIBATTS`) it fails, with `givenUpText`.
  */
 export async function skillOnSmallAibatt(ctx: FightContext, player: SkillPlayer, texts: FightTexts, shortcut: Shortcut): Promise<void> {
   const tried = new Set<number>();
+  const given: GivenUp[] = [];
   for (;;) {
     const target = await nearestSmallAibatt(ctx, player, tried);
     tried.add(target.objectId);
+    const seenFrom = player.combatSeen.length;
     const result = await useSkillOn(ctx, player, target, texts, shortcut);
     if (result === 'hit') {
-      // another player who took it over in the meantime leaves it to them
-      if (await fight(ctx, player, target, texts) === 'priorityMob') player.giveUpTarget();
+      // another player who took it over in the meantime, or an Aibatt that went untouchable since the blow, is left alone
+      if (await fight(ctx, player, target, texts) !== 'killed') player.giveUpTarget();
       return;
     }
-    if (tried.size >= 2) {
-      throw new Error(result === 'killed'
-        ? `Clean Hit killed a second Small Aibatt (${target.objectId}) at its first blow, so no DAMAGE of it came to check: other players may be hurting the Aibatts here.`
-        : `a second Small Aibatt (${target.objectId}) was refused with TID_GAME_PRIORITYMOB ("${texts.priorityMob.text}") too: another player fights the Aibatts here.`);
-    }
+    given.push(givenUp(player, target, result, seenFrom));
+    if (given.length >= MAX_AIBATTS) throw new Error(givenUpText(given));
     player.giveUpTarget();
   }
 }

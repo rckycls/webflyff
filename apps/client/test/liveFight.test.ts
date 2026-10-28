@@ -1,13 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
-import { NULL_ID } from '@flyffweb/protocol';
-import type { InventoryItem, SkillSlot } from '@flyffweb/protocol';
+import { AttackFlag, NULL_ID } from '@flyffweb/protocol';
+import type { InventoryItem, Shortcut, SkillSlot } from '@flyffweb/protocol';
+import { ServerClock } from '../src/net/serverClock';
+import { terrainGround } from '../src/world/sim/collision';
+import { WorldState } from '../src/world/WorldState';
 import type { CombatEvent } from '../src/world/WorldState';
 import {
-  TO_THE_AIBATTS, attackSpeedRefusals, foodProblem, killExpLine, leftOutsideNote, resumeRoute, reviveIfDead, skillLegPlan,
-  soloKillExp,
+  MI_AIBATT1, TO_THE_AIBATTS, attackSpeedRefusals, blowCounts, fight, fightText, foodProblem, killExpLine, killSmallAibatt,
+  leftOutsideNote, resumeRoute, reviveIfDead, skillLegPlan, skillOnSmallAibatt, soloKillExp, untouchable, useSkillOn,
 } from './helpers/liveFight';
-import type { FightPlayer } from './helpers/liveFight';
-import { addedPlayer, moverFrom } from './helpers/movers';
+import type { FightContext, FightPlayer, FightTexts, SkillPlayer } from './helpers/liveFight';
+import { addedNpc, addedPlayer, gameDataOf, moverFrom, webMoverOf } from './helpers/movers';
 import { vagrantSkills } from './helpers/skills';
 
 /** An inventory of `[itemId, count]` slots, as the own ADD_OBJ lists it. */
@@ -185,5 +188,187 @@ describe('the live skill part: its choices', () => {
 
   it('says to convert the game files again when the skills catalog has no Clean Hit', () => {
     expect(() => skillLegPlan({ level: 3, skills: skills(0), skillPoint: 4 }, new Map(), 'WebWalk1')).toThrow(/npm run convert/);
+  });
+});
+
+// ---- What the blows did, and an Aibatt that the server makes untouchable ----------------------------------------------
+
+const SELF_ID = 1;
+const TEXTS: FightTexts = { attackSpeed: { textId: 3456, text: 'speed' }, priorityMob: { textId: 777, text: 'busy' } };
+type Seen = { at: number; event: CombatEvent };
+
+/** A DAMAGE on `victimId`, from the walker unless `attackerId` says otherwise. */
+const damage = (victimId: number, flags: number, hit: number, attackerId = SELF_ID): Seen => ({
+  at: 0, event: { kind: 'hit', victimId, attackerId, hit, flags, attackerInView: true },
+});
+/** A blow answered with AF_MISS: a plain miss carries 0, one at a monster on its way back to its spawn point 1 (`max( nDamage, 1 )`). */
+const missed = (victimId: number, hit = 0): Seen => damage(victimId, AttackFlag.MISS, hit);
+const landed = (victimId: number, hit = 5): Seen => damage(victimId, AttackFlag.GENERIC, hit);
+const died = (victimId: number, attackerId = SELF_ID): Seen => ({
+  at: 0, event: { kind: 'death', victimId, attackerId, lastHp: 1, attackerInView: true },
+});
+const said = (textId: number): Seen => ({ at: 0, event: { kind: 'text', textId, args: null } });
+const times = (n: number, make: () => Seen): Seen[] => Array.from({ length: n }, make);
+
+type Push = (...events: Seen[]) => void;
+
+/**
+ * A walker at (100, 100) with one Small Aibatt per id, 5 m apart eastwards of it (the first the nearest). Each press on the
+ * attack button hands `answers` the focus and a `push` for the events the server sends in answer, now or later; each
+ * press on the skill's shortcut likewise `skillAnswers`, after a USESKILL of its own.
+ */
+function fakeWalker(
+  aibatts: readonly number[], answers: (targetId: number, push: Push) => void,
+  skillAnswers: (targetId: number, push: Push) => void = () => {},
+) {
+  const data = gameDataOf({ movers: new Map([[MI_AIBATT1, webMoverOf({ index: MI_AIBATT1, name: 'Small Aibatt', killable: 1, addHp: 120 })]]) });
+  const world = new WorldState(data, new ServerClock(() => 0), terrainGround(() => 0));
+  world.apply(SELF_ID, { type: 'addMover', mover: addedPlayer(SELF_ID, { self: true }, { pos: [100, 100, 100] }) });
+  aibatts.forEach((id, i) => world.apply(id, { type: 'addMover', mover: addedNpc(id, MI_AIBATT1, {}, { pos: [105 + 5 * i, 100, 100] }) }));
+  const combatSeen: Seen[] = [];
+  const push: Push = (...events) => { combatSeen.push(...events); };
+  const log = { pressed: [] as number[], attacks: [] as number[], skills: [] as number[], giveUps: 0 };
+  const sentUseSkill: { at: number; index: number; targetId: number; useType: number }[] = [];
+  const skillSeen: { at: number; objectId: number; message: unknown }[] = [];
+  const walker = {
+    role: 'walker', playing: true, world, session: undefined, own: undefined, tap: null,
+    sentDestPos: [], sentCorr: [], sentDestObj: [], sentSwings: [], combatSeen, viewProblems: new Set<string>(),
+    sentUseSkill, skillSeen,
+    focusId: null as number | null, canAttackFocus: true,
+    pressMover(id: number) { log.pressed.push(id); this.focusId = id; },
+    pressAttack() { log.attacks.push(this.focusId!); answers(this.focusId!, push); },
+    pressShortcut() {
+      const targetId = this.focusId!;
+      log.skills.push(targetId);
+      sentUseSkill.push({ at: performance.now(), index: 3, targetId, useType: 0 });
+      skillSeen.push({ at: performance.now(), objectId: SELF_ID, message: { type: 'useSkill' } });
+      skillAnswers(targetId, push);
+    },
+    giveUpTarget() { log.giveUps++; this.focusId = null; },
+    inView: () => 'in view',
+  };
+  const ctx: FightContext = { data, heightAt: () => 0, check: () => {} };
+  return { walker: walker as unknown as SkillPlayer, ctx, log, combatSeen, world };
+}
+
+describe('the live fight: what the blows did', () => {
+  it("counts the walker's DAMAGEs on the target: the AF_MISS ones, the others, and the damage in total", () => {
+    const seen = [
+      missed(7), missed(7, 1), landed(7, 5), damage(7, AttackFlag.GENERIC | AttackFlag.CRITICAL1, 8),
+      landed(8), damage(7, AttackFlag.GENERIC, 99, 2), said(777), // another victim's, another attacker's, a text
+    ];
+    expect(blowCounts(seen, 7, SELF_ID)).toEqual({ blows: 4, misses: 2, hits: 2, damage: 14 });
+    expect(blowCounts([], 7, SELF_ID)).toEqual({ blows: 0, misses: 0, hits: 0, damage: 0 });
+  });
+
+  it('says them in the fight text, after the DAMAGE count, and only for what came since the attack began', () => {
+    const { walker, combatSeen, world } = fakeWalker([7], () => {});
+    combatSeen.push(missed(7), missed(7, 1), landed(7, 5), landed(7, 8), landed(9));
+    const target = world.movers.get(7)!;
+    expect(fightText(walker, target, { swings: 0, seen: 0, corr: 0, destObj: 0 }))
+      .toContain('4 DAMAGE from the walker on it (2 AF_MISS, 2 landed, 14 damage in total), 0 PLAYERCORR');
+    expect(fightText(walker, target, { swings: 0, seen: 2, corr: 0, destObj: 0 }))
+      .toContain('2 DAMAGE from the walker on it (0 AF_MISS, 2 landed, 13 damage in total), 0 PLAYERCORR');
+  });
+});
+
+describe('the live fight: an Aibatt the server makes untouchable', () => {
+  const rule = (...seen: Seen[]): boolean => untouchable(seen, 7, SELF_ID);
+
+  it('is untouchable after 10 blows in a row answered with AF_MISS and 0 damage', () => {
+    expect(rule(...times(10, () => missed(7)))).toBe(true);
+    // the last 10 of more
+    expect(rule(landed(7), ...times(10, () => missed(7)))).toBe(true);
+  });
+
+  it('is not after 9 misses then a hit, nor 9 misses, nor misses another attacker or victim had', () => {
+    expect(rule(...times(9, () => missed(7)), landed(7))).toBe(false);
+    expect(rule(...times(9, () => missed(7)))).toBe(false);
+    expect(rule(...times(9, () => missed(7)), landed(7), ...times(9, () => missed(7)))).toBe(false);
+    expect(rule(...times(9, () => missed(7)), damage(7, AttackFlag.MISS, 0, 2))).toBe(false);
+    expect(rule(...times(9, () => missed(7)), missed(8))).toBe(false);
+  });
+
+  it('is untouchable too when each AF_MISS carries the 1 damage of a monster on its way back (max( nDamage, 1 ))', () => {
+    expect(rule(...times(10, () => missed(7, 1)))).toBe(true);
+    expect(rule(...times(5, () => missed(7)), ...times(5, () => missed(7, 1)))).toBe(true);
+  });
+
+  it("makes `fight` end 'untouchable' at the 10th miss", async () => {
+    const { walker, ctx, log } = fakeWalker([7], (id, push) => push(...times(10, () => missed(id))));
+    await expect(fight(ctx, walker, walker.world!.movers.get(7)!, TEXTS)).resolves.toBe('untouchable');
+    expect(log.attacks).toEqual([7]);
+  });
+
+  it('does not for 9 misses, a hit and 9 misses more: `fight` goes on to the kill', async () => {
+    const { walker, ctx } = fakeWalker([7], (id, push) => {
+      push(...times(9, () => missed(id)), landed(id), ...times(9, () => missed(id)));
+      setTimeout(() => push(died(id)), 80);
+    });
+    await expect(fight(ctx, walker, walker.world!.movers.get(7)!, TEXTS)).resolves.toBe('killed');
+  });
+
+  it("goes on to another Aibatt after an 'untouchable' one, and kills it", async () => {
+    const { walker, ctx, log } = fakeWalker([7, 8], (id, push) => (id === 7 ? push(...times(10, () => missed(id))) : push(landed(id), died(id))));
+    await killSmallAibatt(ctx, walker, TEXTS);
+    expect(log.pressed).toEqual([7, 8]);
+    expect(log.giveUps).toBe(1);
+  });
+
+  it('fails at a third given up, with one sentence naming each Aibatt, why, and the counts of its blows', async () => {
+    const { walker, ctx, log } = fakeWalker([7, 8, 9, 10], (id, push) => {
+      if (id === 8) push(said(TEXTS.priorityMob.textId));
+      else if (id === 7) push(...times(10, () => missed(id, 1)));
+      else push(landed(id), ...times(10, () => missed(id)));
+    });
+    const failure = await killSmallAibatt(ctx, walker, TEXTS).then(() => null, (error: Error) => error);
+    expect(failure?.message).toBe(
+      'Gave up 3 Small Aibatts: '
+      + 'Small Aibatt 7 was on its way back to its spawn point and untouchable, with 10 DAMAGE from the walker on it (10 AF_MISS, 0 landed, 10 damage in total); '
+      + "Small Aibatt 8 was another player's (TID_GAME_PRIORITYMOB), with 0 DAMAGE from the walker on it (0 AF_MISS, 0 landed, 0 damage in total); "
+      + 'Small Aibatt 9 was on its way back to its spawn point and untouchable, with 11 DAMAGE from the walker on it (10 AF_MISS, 1 landed, 5 damage in total).',
+    );
+    // the fourth was never tried, and the third is not given up by Escape: the failure ends the run
+    expect(log.pressed).toEqual([7, 8, 9]);
+    expect(log.giveUps).toBe(2);
+  });
+});
+
+describe('the live skill part: an Aibatt the server makes untouchable', () => {
+  /** What the server sends for Clean Hit's blow: AF_MELEESKILL; where it makes the Aibatt untouchable, AF_MISS alone instead. */
+  const skillBlow = (id: number): Seen => damage(id, AttackFlag.MELEESKILL, 7);
+  const shortcut = {} as Shortcut;
+
+  it("ends `useSkillOn` 'untouchable' at an AF_MISS answer to the skill, which rolls no miss of its own", async () => {
+    const { walker, ctx } = fakeWalker([7], () => {}, (id, push) => push(missed(id, 1)));
+    await expect(useSkillOn(ctx, walker, walker.world!.movers.get(7)!, TEXTS, shortcut)).resolves.toBe('untouchable');
+  });
+
+  it("goes on to another Aibatt after an 'untouchable' one, uses the skill on it and finishes it", async () => {
+    const { walker, ctx, log } = fakeWalker(
+      [7, 8], (id, push) => push(died(id)), (id, push) => push(id === 7 ? missed(id, 1) : skillBlow(id)),
+    );
+    await skillOnSmallAibatt(ctx, walker, TEXTS, shortcut);
+    expect(log.skills).toEqual([7, 8]);
+    expect(log.giveUps).toBe(1);
+    expect(log.attacks).toEqual([8]);
+  });
+
+  it("gives up the Aibatt that goes untouchable in the fight after the skill's blow, as a player gives a target up", async () => {
+    const { walker, ctx, log } = fakeWalker([7], (id, push) => push(...times(10, () => missed(id))), (id, push) => push(skillBlow(id)));
+    await skillOnSmallAibatt(ctx, walker, TEXTS, shortcut);
+    expect(log.giveUps).toBe(1);
+  });
+
+  it('fails at a third given up, with the same sentence as the fight', async () => {
+    const { walker, ctx, log } = fakeWalker([7, 8, 9, 10], () => {}, (id, push) => push(id === 8 ? said(TEXTS.priorityMob.textId) : missed(id, 1)));
+    const failure = await skillOnSmallAibatt(ctx, walker, TEXTS, shortcut).then(() => null, (error: Error) => error);
+    expect(failure?.message).toBe(
+      'Gave up 3 Small Aibatts: '
+      + 'Small Aibatt 7 was on its way back to its spawn point and untouchable, with 1 DAMAGE from the walker on it (1 AF_MISS, 0 landed, 1 damage in total); '
+      + "Small Aibatt 8 was another player's (TID_GAME_PRIORITYMOB), with 0 DAMAGE from the walker on it (0 AF_MISS, 0 landed, 0 damage in total); "
+      + 'Small Aibatt 9 was on its way back to its spawn point and untouchable, with 1 DAMAGE from the walker on it (1 AF_MISS, 0 landed, 1 damage in total).',
+    );
+    expect(log.skills).toEqual([7, 8, 9]);
   });
 });
