@@ -463,7 +463,7 @@ Success: no `failed`. Besides the Piece 3 checks, the first account now:
 1. checks its inventory (the starter lollipops and biscuit);
 2. walks out of the north gate and over the bridge;
 3. picks the nearest small Aibatt and kills it;
-4. checks that its EXP went up;
+4. checks that the server counted the kill, and prints the EXP it gave (a server-wide EXP rate or an EXP event changes that number, which is fine);
 5. walks back to the lodestar.
 
 It fails if a swing gets no damage back within 3 seconds, or if the server says "Please wait a moment before attacking again." (the attack speed). If the server says the monster is fighting another player, it tries one other Aibatt first. Its message then says what it saw. If it stops with the character still outside the town, the message says so. Walk the character back to the lodestar in the browser before the next run. A character that died is put back at the lodestar by the server when the test logs out.
