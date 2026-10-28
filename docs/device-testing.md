@@ -595,7 +595,13 @@ None of it needs Neuz.
 
 ## Before you start
 
-1. **The game files.** `dist/assets` must hold a conversion made with this version. It adds the skills catalog and the warning box's picture. On your PC the piece4-combat folder already has it. Elsewhere, run `npm run convert -- --only ui,data` in that folder (about 20 seconds).
+1. **The game files.** `dist/assets` must hold a conversion made with this version. It adds the skills catalog and the warning box's picture. On your PC the piece4-combat folder already has it. Elsewhere, run this in PowerShell in that folder (about 20 seconds):
+
+   ```
+   npm run convert -- --only ui,data --client "C:\Users\silec\Desktop\FlyFF\Bakbak\Blouflash VS22 V15\Client"
+   ```
+
+   The `--client` part is needed: without it, the converter looks for the game's `Client` folder next to the piece4-combat folder, where there is none, and stops with "client folder not found".
 2. **The VM.** Copy the FlyffWeb folder into the VM again, with its new `dist/assets`, as in [servers-in-a-vm.md](servers-in-a-vm.md), step 4:
    - keep your two settings files, `apps\client\test\live.config.json` and `apps\gateway\gateway.config.json`;
    - run `npm ci` again afterwards.
@@ -637,7 +643,7 @@ The gateway in the VM as before (`npm run gateway`), and the client on your PC a
 | Key | What it does |
 | --- | --- |
 | `K` | Opens and closes the skill window. With points placed and not finished, closing asks first. |
-| `F1`-`F9` | Use the slot: an item, or a skill on the current bar |
+| `F1`-`F9` | Use the slot's skill on the current bar. From Piece 4 a slot's skill is used and items are used from Piece 5: a slot that holds an item (the starter food) is greyed and does nothing when pressed or tapped |
 | `C` | Starts the action slot's chain |
 | `Escape` | Also closes the skill window, without asking |
 
@@ -667,7 +673,7 @@ As in milestone 1: pair the devices, one test account each, and keep an eye on t
    - the other device sees the same swing and the effect.
 
    On a touch screen, a second tap within about a second of the first is ignored when the character arrives. The Windows client does the same.
-6. **A slot is used, not replaced.** On a phone, tap a skill in the window, press **+** or **Finish**, then tap a slot on the bar. Success: the slot's item or skill is used, not replaced. Then tap the ground just above the bar. Success: the character walks there, and no slot is pressed.
+6. **A slot is used, not replaced.** On a phone, select an Aibatt, tap a skill in the window, press **+** or **Finish**, then tap the slot that holds Clean Hit (step 4). Success: Clean Hit is used, as in step 5, and the slot still holds Clean Hit: the skill you tapped in the window did not replace it. A slot that holds an item (the starter food) does nothing when you tap it, because items are used from Piece 5: that is not a fail. Then tap the ground just above the bar. Success: the character walks there, and no slot is pressed.
 7. **The action slot's chain.** Flurry needs level 5 and Clean Hit at level 3; Over Cut needs level 10 and Flurry at level 3. Put Clean Hit, then Flurry, then Over Cut in the action slot. Success:
    - Flurry can't go first, and nothing goes after Over Cut;
    - with an Aibatt selected, `C` (or the action slot's button) plays the skills one after another, each with its effect;
@@ -724,9 +730,9 @@ If one fails, send me the lines from the first `failed` (or `error`) down to the
 
 | What you see | What it means and what to do |
 | --- | --- |
-| "The game files on the server are out of date." when you enter | `dist/assets` has no skills catalog: run `npm run convert -- --only ui,data`, and copy `dist/assets` to the VM again. |
+| "The game files on the server are out of date." when you enter | `dist/assets` has no skills catalog: run `npm run convert -- --only ui,data --client "C:\Users\silec\Desktop\FlyFF\Bakbak\Blouflash VS22 V15\Client"` in the piece4-combat folder, and copy `dist/assets` to the VM again. |
 | The skill window has no icons, or its box no picture, and the overlay's `errors:` line names a picture | The pictures were not converted: as above. |
-| Pressing a skill's slot does nothing | Is the skill at level 0? Spend a point on it first. A skill whose FP you don't have says "Not enough FP.". |
+| Pressing a skill's slot does nothing | Is the skill at level 0? Spend a point on it first. A skill whose FP you don't have says "Not enough FP.". A slot that holds an item does nothing until Piece 5. |
 | **+** stays greyed | You have no Skill Points, the skill is at its top level, or its condition isn't met. The skill's tooltip shows the unmet condition in red: the character's level, or the skill it needs first. |
 | A phone says "Cannot reach the game gateway." | The client was not started with `GATEWAY_PROXY` ("Before you start", item 3), or the page was opened with the PC's name instead of its address. See [servers-in-a-vm.md](servers-in-a-vm.md), "When something goes wrong". |
 | The client doesn't start and prints `Error: GATEWAY_PROXY …` | That line says what is wrong: usually `VITE_GATEWAY_URL` is still set in that window (`Remove-Item Env:VITE_GATEWAY_URL`). |
