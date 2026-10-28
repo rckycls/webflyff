@@ -611,7 +611,12 @@ export class MoverViews {
   /**
    * `m_pModel->m_fFrameCurrent` and `m_nFrameMax` of the motion the rules set (`ProcessStateMeleeSkill` reads them,
    * `ActionMoverState.cpp:614`): frame 0 right after the rules set it (`InitAnimate`); null while its file loads; 0 of 0
-   * for a motion the model cannot play, which is over at once as `isEndFrame` says.
+   * for a motion the model cannot play, which is over at once as `isEndFrame` says. While a hit that the frame moves made
+   * as the file came in passed waits for the rules (`ModelFrame.waiting`), the frame is that hit's: Neuz, its file in at
+   * once, tests each move's hit before the next move, so a skill's 65% cut, which `ProcessStateMeleeSkill` tests before
+   * the hit (:614-619, then :651-658), never comes before a hit frame below it; the moves made at once would otherwise
+   * carry the frame past the cut and end the skill with its blow untold. A waiting hit at or past the cut ends it, as
+   * Neuz never reaches one.
    */
   private modelFrame(view: View): ActionModelFrame | null {
     const key = this.keyOf(view);
@@ -622,7 +627,8 @@ export class MoverViews {
     const max = clip.motion.events.frames;
     if (view.frame.sets !== view.mover.act.motionSets) return { current: 0, max };
     this.catchUp(view, clip.motion, false);
-    return { current: view.frame.current, max };
+    const waiting = view.frame.waiting[0];
+    return { current: waiting === undefined ? view.frame.current : clip.motion.events.hit[waiting]!, max };
   }
 
   /**

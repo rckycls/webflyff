@@ -891,6 +891,54 @@ describe('MoverViews', () => {
       expect(ended).toBe(72);
     });
 
+    it('a skill whose file comes in after its cut at 65% still hits, once, and then ends', async () => {
+      let resolve!: (motion: LoopedMotion) => void;
+      const late = new Promise<LoopedMotion>((done) => (resolve = done));
+      const r = armedRig({ motions: { m1000: () => late } });
+      const { player, monster } = duel(r);
+      await r.views.settled();
+      let now = 0;
+      const hits: number[] = [];
+      player.act.onMeleeSkill = () => hits.push(now);
+      expect(player.act.sendActMsg(ActMsg.MELEESKILL, Mti.VAG_ONE_CLEANHIT, 8)).toBe(true);
+      // the blow (frame 27) goes by at the 54th frame move and the cut (33.15) at the 67th, while the file still loads
+      for (now = 1; now <= 80; now++) stepAll(r, player, monster);
+      expect(hits).toEqual([]);
+      expect(player.act.state & ObjSta.ATK_ALL).toBe(ObjSta.ATK_MELEESKILL);
+      resolve(hitMotion('m1000', 51, [27]));
+      await r.views.settled();
+      let ended = 0;
+      for (now = 81; now <= 100; now++) {
+        stepAll(r, player, monster);
+        if (ended === 0 && (player.act.state & ObjSta.ATK_ALL) === 0) ended = now;
+      }
+      // Neuz has the file at once and hits in step 55, before the cut. Here the 80 waiting frame moves are made as it comes
+      // in; the blow one of them passed goes to the rules' next test, and the skill ends after the 4 steps it holds
+      expect(hits).toEqual([81]);
+      expect(ended).toBe(86);
+
+      // Flurry (Mvr_male_SklVagBrandish: 61 frames, blows on 7, 23 and 39, the last just under its cut at 39.65), its file
+      // in after the cut: its three blows, 5 steps apart, then the end
+      let resolveFlurry!: (motion: LoopedMotion) => void;
+      const lateFlurry = new Promise<LoopedMotion>((done) => (resolveFlurry = done));
+      const f = armedRig({ motions: { m1001: () => lateFlurry } });
+      const duelled = duel(f);
+      await f.views.settled();
+      hits.length = 0;
+      duelled.player.act.onMeleeSkill = () => hits.push(now);
+      expect(duelled.player.act.sendActMsg(ActMsg.MELEESKILL, Mti.VAG_ONE_BRANDISH, 8)).toBe(true);
+      for (now = 1; now <= 90; now++) stepAll(f, duelled.player, duelled.monster);
+      resolveFlurry(hitMotion('m1001', 61, [7, 23, 39]));
+      await f.views.settled();
+      ended = 0;
+      for (now = 91; now <= 120; now++) {
+        stepAll(f, duelled.player, duelled.monster);
+        if (ended === 0 && (duelled.player.act.state & ObjSta.ATK_ALL) === 0) ended = now;
+      }
+      expect(hits).toEqual([91, 96, 101]);
+      expect(ended).toBe(106);
+    });
+
     it('says once that a skill motion has no hit frame, as an attack motion', async () => {
       const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
       try {
