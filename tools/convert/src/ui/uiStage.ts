@@ -82,6 +82,8 @@ export const THEME_FILES: readonly string[] = [
   'TexMapMonster_Flaris.bmp', 'TexMapMonster_Harmonin.bmp', 'TexMapMonster_Estia.bmp',
   'ImgMapArrow.bmp',
   ...numbered('WndTooltipTile', 0, 8, '.tga'),
+  // the Sound Option sliders of the Option window (CWndOptionGame::OnInitialUpdate, WndOptionGame.cpp:75-76)
+  'WndVolumeBar.tga', 'ButtSpin.tga',
   // V15 inventory: APP_INVENTORY (resdata.inc), CWndInventory::OnInitialUpdate (WndField.cpp).
   'WndInventory3D.tga',
   'WndInventoryGarbage.dds',
@@ -267,7 +269,9 @@ export function createUiStage(options: UiStageOptions = {}): Stage {
       const add = (src: string, keyOf: (file: string) => string): void => {
         if (wanted(src)) {
           pictures.set(src, { src, key: keyOf(path.basename(src)), colorKey: sheetKeys.get(src) ??
-            (/^world_/i.test(path.basename(src)) ? 0xff000000 : /^imgnavpos\./i.test(path.basename(src)) ? 0 : MAGENTA_KEY) });
+            (/^world_/i.test(path.basename(src)) ? 0xff000000 : /^imgnavpos\./i.test(path.basename(src)) ? 0
+              // the slider knob is loaded with white as its key (WndOptionGame.cpp:76)
+              : /^buttspin\./i.test(path.basename(src)) ? 0xffffffff : MAGENTA_KEY) });
         }
       };
       for (const { dir, keyOf } of PICTURE_FOLDERS) for (const src of ctx.client.list(dir, PICTURE)) add(src, keyOf);

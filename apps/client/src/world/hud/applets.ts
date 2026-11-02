@@ -25,6 +25,8 @@ export const AppId = {
   CHARACTER3: 764,
   SKILL3: 622,
   LOGOUT: 1100,
+  /** The Option window (Piece 6 M2: its sound sliders only). */
+  OPTIONEX: 412,
 } as const;
 
 /**

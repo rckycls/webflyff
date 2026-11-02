@@ -1900,3 +1900,9 @@ fieldset:disabled .btn {
 }
 .hud-worldmap-close span { width: 15px; height: 14px; background: transparent no-repeat -15px 0; }
 .world:has(.hud-worldmap:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack) { visibility: hidden; }
+
+/* The Option window's Sound Option group (Piece 6 M2, hud/optionWindow.ts): Neuz's controls at their own spacing */
+.hud-option-label { position: absolute; height: 18px; line-height: 18px; color: #000; font-size: 12px; white-space: nowrap; }
+.hud-option-bar { position: absolute; background-size: 100% 100%; cursor: pointer; touch-action: none; outline: none; }
+.hud-option-bar:focus-visible { box-shadow: 0 0 0 1px #fff, 0 0 0 2px #000; }
+.hud-option-knob { position: absolute; top: 0; background-size: 100% 100%; pointer-events: none; }

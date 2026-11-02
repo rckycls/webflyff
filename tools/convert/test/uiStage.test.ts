@@ -44,6 +44,31 @@ describe('the theme list', () => {
     expect(lower.filter((file) => /^wndtooltiptile0\d\.tga$/.test(file))).toHaveLength(9);
     expect(lower).toContain('texmapbutton.bmp');
     expect(lower).toContain('imgmaparrow.bmp');
+    // the sound sliders of the Option window (WndOptionGame.cpp:75-76)
+    expect(lower).toContain('wndvolumebar.tga');
+    expect(lower).toContain('buttspin.tga');
+  });
+});
+
+describe('the pictures of the sound sliders', () => {
+  let root: string;
+  let out: string;
+  beforeEach(async () => { root = await makeTempDir('flyffweb-ui-spin-'); out = await makeTempDir('flyffweb-ui-spin-out-'); });
+  afterEach(async () => { await fs.rm(root, { recursive: true, force: true }); await fs.rm(out, { recursive: true, force: true }); });
+
+  it('keys ButtSpin.tga with white, as CWndOptionGame loads it (0xffffffff), and WndVolumeBar.tga with magenta', async () => {
+    await writeFakeClient(root, { loose: {
+      'Theme/Default/ButtSpin.tga': tga32(2, 1, [[255, 255, 255, 255], [1, 2, 3, 255]]),
+      'Theme/Default/WndVolumeBar.tga': tga32(2, 1, [MAGENTA, [255, 255, 255, 255]]),
+    } });
+    const writer = new AssetWriter(out);
+    const ctx: StageContext = { client: await ClientFs.open(root), writer, report: new Report(), jobs: 1, outDir: out };
+    await createUiStage({ themeFiles: ['ButtSpin.tga', 'WndVolumeBar.tga'] }).run(ctx);
+    const read = async (key: string): Promise<PNG> => PNG.sync.read(await fs.readFile(path.join(out, ...writer.pathOf(key)!.split('/'))));
+    const spin = await read('ui/buttspin.png');
+    expect([spin.data[3], spin.data[7]]).toEqual([0, 255]);
+    const bar = await read('ui/wndvolumebar.png');
+    expect([bar.data[3], bar.data[7]]).toEqual([0, 255]);
   });
 });
 

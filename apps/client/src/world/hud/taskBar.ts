@@ -52,7 +52,7 @@ import type { Carried, DropTarget, LoadedBars, TaskBarEditActions } from './task
 import { TaskMenu } from './taskMenu';
 
 /** The windows of Piece 4 a press on the task bar opens. */
-export type TaskBarWindow = 'character' | 'status' | 'skills' | 'inventory' | 'chat' | 'navigator' | 'worldmap';
+export type TaskBarWindow = 'character' | 'status' | 'skills' | 'inventory' | 'chat' | 'navigator' | 'worldmap' | 'option';
 
 /**
  * The applets whose window Piece 4 has, which `ObjectExecutor` opens (or closes) when they are pressed: from the Start
@@ -66,6 +66,7 @@ const WINDOWS: ReadonlyMap<number, TaskBarWindow> = new Map([
   [AppId.STATUS1, 'status'],
   [AppId.CHARACTER3, 'character'],
   [AppId.SKILL3, 'skills'],
+  [AppId.OPTIONEX, 'option'],
 ]);
 
 /**
@@ -74,7 +75,7 @@ const WINDOWS: ReadonlyMap<number, TaskBarWindow> = new Map([
  */
 const HOTKEYS: ReadonlyMap<string, number> = new Map(
   [...WINDOWS.keys()]
-    .filter((id) => id !== AppId.STATUS1)
+    .filter((id) => id !== AppId.STATUS1 && APPLETS.get(id)?.hotkey !== undefined)
     .map((id) => [APPLETS.get(id)!.hotkey!, id] as const),
 );
 
@@ -91,6 +92,8 @@ const MENU: ReadonlyArray<{ id: number; text: string }> = [
   // CWndTaskMenu's APP_MAP line, 'World Map' (TID_APP_MAP), just before Navigator (WndTaskBar.cpp:2734-2738)
   { id: AppId.MAP, text: 'World Map' },
   { id: AppId.NAVIGATOR, text: 'Navigator' },
+  // CWndTaskMenu's APP_OPTIONEX line, 'Option' (TID_APP_OPTION), just before Log out (WndTaskBar.cpp:2638)
+  { id: AppId.OPTIONEX, text: 'Option' },
   { id: AppId.LOGOUT, text: 'Log out' },
 ];
 

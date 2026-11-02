@@ -54,6 +54,7 @@ import { escapeStep } from './hud/escape';
 import { LogOutBox } from './hud/logOutBox';
 import { ReviveWindow } from './hud/reviveWindow';
 import { SkillWindow } from './hud/skillWindow';
+import { OptionWindow } from './hud/optionWindow';
 import { TaskBar } from './hud/taskBar';
 import { InventoryWindow } from './hud/inventoryWindow';
 import { ChatWindow } from './hud/chatWindow';
@@ -238,6 +239,8 @@ export class WorldScreen {
    * without the page's audio, and the rules also without the audio catalog.
    */
   private music: MusicRules | null = null;
+  /** The Option window's sound sliders (Piece 6 M2); none without the page's audio. */
+  private optionWindow: OptionWindow | undefined;
   private sounds: WorldSounds | null = null;
   private worldMapMonsters = false;
   /** The world the player is in (`enter`). */
@@ -801,6 +804,7 @@ export class WorldScreen {
     // Finish sends DOUSESKILLPOINT through the skill use, which also ends a spend the server leaves unanswered
     const skillWindow = new SkillWindow(this.hudArt!, this.data!, (skills) => void skillUse.spendSkillPoints(skills), taskBar, doc);
     this.skillWindow = skillWindow;
+    this.optionWindow = this.audio === null ? undefined : new OptionWindow(this.hudArt!, this.audio, doc);
     for (const modal of [logOutBox.modal, reviveWindow.modal, skillWindow.warning.modal]) modal.onChange = () => this.modalChanged();
     this.hud!.element.append(
       this.teleporter.frame.element,
@@ -808,6 +812,7 @@ export class WorldScreen {
       characterWindow.confirm.frame.element, skillWindow.frame.element, skillWindow.warning.element, reviveWindow.element,
       inventoryWindow.frame.element, this.nearbyItems.element, this.chatWindow.element, this.npcDialog.frame.element, this.shopWindow.frame.element,
     );
+    if (this.optionWindow !== undefined) this.hud!.element.append(this.optionWindow.frame.element);
     // before the windows' own Escape (frame.ts), which closes a window only if this one leaves the key to it
     view.addEventListener('keydown', this.onEscape, true);
     // on the canvas: the joystick is an element of its own over it, and its touches never reach it; each press goes to
@@ -1234,6 +1239,7 @@ export class WorldScreen {
       return;
     }
     if (window === 'chat') { this.chatWindow?.open(); return; }
+    if (window === 'option') { this.optionWindow?.toggle(); return; }
     if (window === 'inventory') {
       if (this.own) {
         this.inventoryWindow?.toggle(this.own);
