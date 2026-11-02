@@ -41,6 +41,9 @@ export interface ClientPlayed {
   effects: Array<{ xi: number; step: number }>;
   /** The swings other movers' MELEE_ATTACKs started (`OnMeleeAttack`): the attacker, and the motion it swings with. */
   swings: Array<{ attackerId: number; motion: number; step: number }>;
+  /** The effects the page's audio was asked to play (`PLAYSND`), by sound id, and the tracks it started, by key (Piece 6 M2). */
+  sounds: number[];
+  music: string[];
 }
 
 /** The own character's numbers (`OwnState`): its HP, level, and the task bar's action point (null before the TASKBAR). */

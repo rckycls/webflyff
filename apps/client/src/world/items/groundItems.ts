@@ -22,7 +22,7 @@ export class GroundItems {
       let button = this.buttons.get(id);
       if (!button) {
         const prop = this.data.itemProps.get(drop.item.itemId);
-        button = this.doc.createElement('button'); button.type = 'button'; button.dataset.groundItem = String(id);
+        button = this.doc.createElement('button'); button.type = 'button'; button.dataset.groundItem = String(id); button.dataset.silent = '';
         button.title = `${prop?.name ?? 'Item'} ×${drop.item.count}`; button.setAttribute('aria-label', `Pick up ${button.title}`);
         if (prop?.icon) { const img = this.doc.createElement('img'); img.src = this.art.url(prop.icon); img.alt = ''; button.append(img); }
         else button.textContent = '◆';

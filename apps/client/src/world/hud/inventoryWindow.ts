@@ -123,7 +123,7 @@ export class InventoryWindow {
     grid.setAttribute('aria-label', 'Inventory bag');
     for (let slot = 0; slot < 42; slot++) {
       const id = own.inventorySlots[slot]!, item = own.inventory.get(id), prop = item && this.data.itemProps.get(item.itemId);
-      const cell = this.doc.createElement('button'); cell.type = 'button'; cell.dataset.bagSlot = String(slot);
+      const cell = this.doc.createElement('button'); cell.type = 'button'; cell.dataset.bagSlot = String(slot); cell.dataset.silent = '';
       cell.className = 'inventory-cell'; cell.classList.toggle('is-selected', id === this.selected && item !== undefined);
       cell.setAttribute('aria-label', item ? `${prop?.name ?? 'Unknown item'} ×${item.count}, slot ${slot + 1}` : `Empty slot ${slot + 1}`);
       if (prop?.icon) { const icon = this.doc.createElement('img'); icon.src = this.art.url(prop.icon); icon.alt = ''; cell.append(icon); }
@@ -169,7 +169,7 @@ export class InventoryWindow {
       const item = this.itemAt(part);
       const prop = item && this.data.itemProps.get(item.itemId);
       const cell = this.doc.createElement('button'); cell.type = 'button';
-      cell.className = 'inventory-equipped-cell'; cell.dataset.equipmentPart = String(part);
+      cell.className = 'inventory-equipped-cell'; cell.dataset.silent = ''; cell.dataset.equipmentPart = String(part);
       Object.assign(cell.style, { left: `${x}px`, top: `${y}px`, width: `${size}px`, height: `${size}px` });
       cell.setAttribute('aria-label', item ? `Equipped ${prop?.name ?? 'Unknown equipment'}` : `Empty equipment slot ${part}`);
       cell.title = item ? prop?.name ?? 'Unknown equipment' : `Equipment slot ${part}`;

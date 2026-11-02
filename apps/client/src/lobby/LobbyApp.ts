@@ -58,6 +58,8 @@ export class LobbyApp {
     private readonly flow: LoginFlow,
     private readonly onEnter: (entry: WorldEntry, done: (message?: string) => void) => void,
     private readonly onPlayTap: () => void = () => {},
+    /** The page's audio: the title track plays whenever the login form is shown (Piece 6 M2). */
+    private readonly audio: { title(): void } | null = null,
   ) {
     this.mount();
     this.showLogin();
@@ -106,6 +108,8 @@ export class LobbyApp {
 
   /** The login form; `busy` while the lobby logs in by itself (Change channel), so the form cannot start another login. */
   private showLogin(alert?: string, status?: string, busy = false): void {
+    // the title track, forever, at the start and after every logout (Neuz.cpp:1724, :1465-1471, WM_LOGOUT)
+    this.audio?.title();
     this.show('login', loginView({ account: this.account, busy, onLogin: (account, password) => this.login(account, password) }), alert, status);
   }
 

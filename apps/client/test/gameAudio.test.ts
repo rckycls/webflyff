@@ -281,3 +281,42 @@ describe('GameAudio: a hidden tab', () => {
     expect(context.sources.filter((s) => s.started)).toHaveLength(2); // its copy was released
   });
 });
+
+describe('GameAudio: the title track and where errors go', () => {
+  it('plays the title track forever, once the catalog is in if it is not yet', () => {
+    const { audio, media, tap } = keep(setup());
+    tap();
+    audio.title();
+    expect(media.plays.at(-1)).toBe('/assets/music/title.ogg');
+    expect(media.loop).toBe(true);
+    audio.title(); // already playing: not restarted
+    expect(media.plays).toHaveLength(1);
+    audio.setCatalog(null, { url: () => null });
+    audio.music.stop();
+    audio.title();
+    expect(media.plays).toHaveLength(1);
+    audio.setCatalog(CATALOG, { url: (key) => `/assets/${key}` });
+    expect(media.plays).toHaveLength(2);
+  });
+
+  it('a stopped world forgets a title that waited for the catalog', () => {
+    const { audio, media, tap } = keep(setup());
+    tap();
+    audio.setCatalog(null, { url: () => null });
+    audio.title();
+    audio.stopWorld();
+    audio.setCatalog(CATALOG, { url: (key) => `/assets/${key}` });
+    expect(media.plays).toEqual([]);
+  });
+
+  it('says a failure where setReport says, from then on', () => {
+    const { audio, media, tap, errors } = keep(setup());
+    const world: string[] = [];
+    audio.setReport((e) => world.push(e.message));
+    tap();
+    audio.music.playFile('music/flaris.ogg', 1);
+    media.fire('error');
+    expect(world).toHaveLength(1);
+    expect(errors).toEqual([]);
+  });
+});

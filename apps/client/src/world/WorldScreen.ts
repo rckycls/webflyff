@@ -63,6 +63,11 @@ import { Minimap } from './hud/minimap';
 import { WorldMap } from './hud/worldMap';
 import type { MapView } from './hud/worldMap';
 import { loadWorldMap } from './worldMapData';
+import { loadAudio } from '../audio/audioCatalog';
+import type { GameAudio } from '../audio/gameAudio';
+import { MusicRules } from './sound/musicRules';
+import { listenerAngle } from './sound/soundRules';
+import { WorldSounds } from './sound/worldSounds';
 import { TeleporterWindow } from './hud/teleporterWindow';
 import { formatDefinedText } from './hud/messages';
 import { ItemUse } from './items/itemUse';
@@ -228,6 +233,12 @@ export class WorldScreen {
   /** The world map (Piece 6 M1), its catalog (null without one) and its monster switch, kept across world changes. */
   private worldMap: WorldMap | undefined;
   private worldMapData: WebWorldMap | null = null;
+  /**
+   * This login's music rules (CWndWorld's, WndWorld.cpp:8013-8689) and the world's sound triggers (Piece 6 M2); null
+   * without the page's audio, and the rules also without the audio catalog.
+   */
+  private music: MusicRules | null = null;
+  private sounds: WorldSounds | null = null;
   private worldMapMonsters = false;
   /** The world the player is in (`enter`). */
   private worldId = 0;
@@ -254,7 +265,7 @@ export class WorldScreen {
    * What the screen played of the fight (the test hooks' `played`), the latest `PLAYED_KEPT` of each kind, each with the
    * rules steps run when it was played (`stepsRun`, which every `step` counts).
    */
-  private readonly playedSoFar: ClientPlayed = { numbers: [], effects: [], swings: [] };
+  private readonly playedSoFar: Omit<ClientPlayed, 'sounds' | 'music'> = { numbers: [], effects: [], swings: [] };
   private stepsRun = 0;
   /** The window was resized (or the device turned) since the last frame: the open windows are kept on the screen. */
   private resized = false;
@@ -277,8 +288,10 @@ export class WorldScreen {
    * Opens the world screen over `root` for `entry` and starts entering. `onEnd` is called once, when the world is over:
    * with the text to show, or undefined after Leave or Log out. Never throws.
    */
-  static open(root: HTMLElement, entry: WorldEntry, open: OpenChannel, onEnd: (message: string | undefined) => void): WorldScreen {
-    return new WorldScreen(root, entry, open, onEnd);
+  static open(
+    root: HTMLElement, entry: WorldEntry, open: OpenChannel, onEnd: (message: string | undefined) => void, audio: GameAudio | null = null,
+  ): WorldScreen {
+    return new WorldScreen(root, entry, open, onEnd, audio);
   }
 
   private constructor(
@@ -286,6 +299,7 @@ export class WorldScreen {
     private readonly entry: WorldEntry,
     open: OpenChannel,
     private readonly onEnd: (message: string | undefined) => void,
+    private readonly audio: GameAudio | null,
   ) {
     // the session takes over the login-server connection first, so that an ending below closes it too
     this.session = new WorldSession(open, entry, (event) => this.onEvent(event));
@@ -323,6 +337,7 @@ export class WorldScreen {
         const { numbers, effects, swings } = this.playedSoFar;
         return {
           numbers: numbers.map((n) => ({ ...n })), effects: effects.map((e) => ({ ...e })), swings: swings.map((s) => ({ ...s })),
+          sounds: [...(this.audio?.played.sounds ?? [])], music: [...(this.audio?.played.music ?? [])],
         };
       },
       screenOf: (objectId) => this.screenOf(objectId),
@@ -354,6 +369,16 @@ export class WorldScreen {
       this.data = data;
       this.worldMapData = await loadWorldMap(services.store, (error) => this.reportOnce(`world map: ${messageOf(error)}`, error));
       if (this.over) return;
+      const audio = this.audio;
+      if (audio !== null) {
+        const catalog = await loadAudio(services.store, (error) => this.reportOnce(`audio: ${messageOf(error)}`, error));
+        if (this.over) return;
+        // a file that fails is said once on the overlay while the world is up (Piece 6 design §4)
+        audio.setReport((error) => { if (!this.over) this.reportOnce(error.message, error); });
+        audio.setCatalog(catalog, services.store);
+        this.music = catalog === null ? null : new MusicRules(audio.music, catalog);
+        this.sounds = new WorldSounds(audio, this.music ?? { play: () => {} }, catalog);
+      }
       for (const event of this.waiting.splice(0)) this.handle(event);
     } catch (error) {
       this.fail(error);
@@ -402,6 +427,9 @@ export class WorldScreen {
     const generation = ++this.stageGeneration;
     this.element.dataset.worldId = String(worldId);
     this.worldId = worldId;
+    // OpenField and OnReplace: the music stops, and the world's rules start afresh (WndManager.cpp:2153, DPClient.cpp:2422-2427)
+    this.audio?.music.stop();
+    this.music?.enterWorld(worldId);
     const services = this.services!;
     const folder = this.data!.worlds.get(worldId);
     if (folder === undefined || services.store.url(`worlds/${folder}/manifest.json`) === null) {
@@ -448,6 +476,9 @@ export class WorldScreen {
         continue;
       }
       if (value.type === 'delObj') this.speechBubbles?.remove(objectId);
+      if (value.type === 'playMusic') { this.sounds?.serverMusic(value.music); continue; }
+      if (value.type === 'playSound') { this.sounds?.serverSound(value.sound); continue; }
+      this.messageSounds(objectId, value, self);
       if (value.type === 'shopStock') { this.shopWindow?.receive(objectId, value.tabs); continue; }
       if (value.type === 'gmChat') {
         for (const text of value.texts) this.chatWindow?.append('system', '', text);
@@ -474,6 +505,7 @@ export class WorldScreen {
       }
       if (value.type === 'replace') {
         if (self === undefined) continue;
+        this.music?.enterWorld(this.worldId); // OnReplace reopens the world: its music starts afresh (DPClient.cpp:2422-2427)
         world.apply(self.objectId, { type: 'setPos', pos: value.pos });
         this.views?.snap(self.objectId);
         this.backCamera.relocate();
@@ -514,7 +546,10 @@ export class WorldScreen {
     this.views = new MoverViews(
       stage.scene, loadMoverModel(services), overlay, (mover) => lookOf(mover, data,
         this.own?.inventory ? this.own.equipmentObjectIds.map((id) => this.own!.inventory!.get(id)?.itemId ?? 0) : equipment),
-      (key) => loadMotion(services, key), loadHeldItems(services, data), data.itemProps, { moverProps: data.movers },
+      (key) => loadMotion(services, key), loadHeldItems(services, data), data.itemProps, {
+        moverProps: data.movers,
+        sounds: { motion: (at, id) => this.sounds?.motion(at, id), footstep: (at) => this.sounds?.footstep(at) },
+      },
     );
     this.world!.onEquipmentChange = (mover) => {
       this.views?.refresh(mover);
@@ -551,6 +586,7 @@ export class WorldScreen {
     };
     const effects = new EffectManager(this.data!, (key) => services.store.json<WebEffect>(key), renderer, neuzRandom, report);
     this.effects = effects;
+    effects.made = (xi, pos) => this.sounds?.effect(xi, { x: pos[0], y: pos[1], z: pos[2] });
     for (const xi of WARM_UP_EFFECTS) effects.preload(xi, (key) => void textures.get(key));
   }
 
@@ -731,14 +767,16 @@ export class WorldScreen {
     reviveWindow.onStand = () => this.itemUse!.revive();
     const inventoryWindow = new InventoryWindow(this.hudArt!, this.data!, {
       use: (id) => { this.itemUse!.use(id); }, equip: (id) => { itemActions.equip(id); },
-      drop: (id, count) => { itemActions.drop(id, count); }, move: (source, dest) => { itemActions.move(source, dest); },
+      drop: (id, count) => { this.sounds?.drop(); itemActions.drop(id, count); }, move: (source, dest) => { itemActions.move(source, dest); },
       shortcut: (id, slot) => taskBar.setInventoryShortcut(id, slot),
     }, doc);
     this.inventoryWindow = inventoryWindow;
     this.chatWindow ??= new ChatWindow((channel, text, target) => this.session.sendChat(channel, text, target), () => this.stopOwnMover(), doc);
     this.shopWindow = new ShopWindow(this.hudArt!, this.data!, () => this.own, (id) => this.canTalk(id), {
       open: (id) => session.sendOpenShop(id), close: () => session.sendCloseShop(),
-      buy: (tab, id, count, itemId) => session.sendBuyItem(tab, id, count, itemId), sell: (id, count) => session.sendSellItem(id, count),
+      // the trade sound of a buy confirmed and of a sale (WndShop.cpp:655, :232-235)
+      buy: (tab, id, count, itemId) => { this.sounds?.shop(); session.sendBuyItem(tab, id, count, itemId); },
+      sell: (id, count) => { this.sounds?.shop(); session.sendSellItem(id, count); },
     }, doc);
     this.shopWindow.onOpen = () => {
       this.hud!.element.classList.add('shop-active');
@@ -781,7 +819,12 @@ export class WorldScreen {
         else if (this.world?.movers.get(press.mover)?.kind === 'npc') {
           attackLoop.stop('move'); this.focus!.select(press.mover); this.stopOwnMover();
           const npc = this.world.movers.get(press.mover)!;
-          if (this.canTalk(press.mover)) this.npcDialog?.open(press.mover, npc.name, this.data!.npcs.get(npc.added.npc!.characterKey.toLowerCase()));
+          if (this.canTalk(press.mover)) {
+            // the click's dwSndIdle1, then the dialog and its SetMusic (WndWorld.cpp:7063, WndDialog.cpp:290-297)
+            this.sounds?.moverClicked(npc.added.index);
+            this.npcDialog?.open(press.mover, npc.name, this.data!.npcs.get(npc.added.npc!.characterKey.toLowerCase()));
+            this.sounds?.npcDialog(npc.added.npc!.characterKey);
+          }
           else this.hud?.messages.add('Move closer to speak with this NPC.', 0xffffff00);
         } else attackLoop.onMoverPressed(press.mover, press.time, press.double);
       },
@@ -879,6 +922,18 @@ export class WorldScreen {
     // the own death opens the revive window after its chat line (`OnMoverDeath`, DPClient.cpp:2040-2072); one before the
     // windows are up (the world still loading) leaves it to Escape
     this.reviveWindow?.play(changes.own);
+    const sounds = this.sounds;
+    const soundWorld = this.world;
+    if (sounds !== null && soundWorld !== undefined) {
+      const mover = (id: number): { pos: { x: number; y: number; z: number }; weapon: number | null } | undefined => {
+        const m = soundWorld.movers.get(id);
+        if (m === undefined) return undefined;
+        const p = m.act.body.pos;
+        return { pos: { x: p[0], y: p[1], z: p[2] }, weapon: soundWorld.handItem(m) };
+      };
+      for (const event of changes.combat) sounds.combatEvent(event, mover);
+      for (const event of changes.own) sounds.ownEvent(event, this.worldId);
+    }
     const effects = this.effects;
     if (effects === undefined) return;
     const world = this.world!;
@@ -912,6 +967,47 @@ export class WorldScreen {
       playCombatEvent(event, fxWorld, out);
     }
     for (const event of changes.own) playOwnEvent(event, fxWorld, out);
+  }
+
+  /**
+   * The sounds a message plays as Neuz's handler of it does (Piece 6 M2): a ground item's drop sound and a boss's track
+   * (`OnAddObj`, DPClient.cpp:1252-1259, :1293-1298), an equip (`DoEquip`, MoverEquip.cpp:1013-1041), the own pick-ups
+   * (`OnCreateItem`, :2148-2156) and gold (`DST_GOLD`, MoverParam.cpp:946-947).
+   */
+  private messageSounds(objectId: number, value: WorldMessage, self: ReturnType<WorldState['self']>): void {
+    const sounds = this.sounds;
+    if (sounds === null) return;
+    const at = (p: Vec3): { x: number; y: number; z: number } => ({ x: p[0], y: p[1], z: p[2] });
+    if (value.type === 'addItem') {
+      sounds.groundItem(at(value.item.pos), value.item.item.itemId);
+    } else if (value.type === 'addMover') {
+      if (!value.mover.isPlayer && self !== undefined) {
+        sounds.bossAdded(at(value.mover.pos), at(self.act.body.pos), this.data!.movers.get(value.mover.index)?.rank ?? 0);
+      }
+    } else if (value.type === 'equipItem') {
+      const mover = this.world!.movers.get(objectId);
+      if (mover !== undefined) sounds.equip(at(mover.act.body.pos), this.data!.itemProps.get(value.itemId), value.equip);
+    } else if (self !== undefined && objectId === self.objectId) {
+      if (value.type === 'createItem') sounds.itemsCreated(at(self.act.body.pos), value.stacks.length);
+      else if (value.type === 'setPointParam' && value.param === 10000) sounds.gold(); // DST_GOLD, defineAttribute.h
+    }
+  }
+
+  /**
+   * The listener and the music, once a rules step: `SetListener( pos, angle )` (WndWorld.cpp:8498) with the own player and
+   * the camera's heading, and the music rules of CWndWorld::Process, with the land under the player for an inn region.
+   */
+  private stepAudio(world: WorldState): void {
+    const self = world.self();
+    if (self === undefined || this.audio === null) return;
+    const p = self.act.body.pos;
+    const pos = { x: p[0], y: p[1], z: p[2] };
+    const view = this.backCamera.view;
+    if (view) {
+      const camera = toWebPosition(view.position); // the web mirror is its own inverse: FlyFF again
+      this.audio.setListener(pos, listenerAngle({ x: camera[0], y: camera[1], z: camera[2] }, pos));
+    }
+    this.music?.step(pos, () => this.ground.terrainHeight(p[0], p[2]) ?? p[1]);
   }
 
   /** Where the own mover is (web coordinates), or where the player entered while it is not in view. */
@@ -1052,6 +1148,7 @@ export class WorldScreen {
     this.ownMover!.corrected(own);
     this.syncViews();
     views.step(world.movers);
+    this.stepAudio(world);
     this.effects?.step((objectId) => world.movers.get(objectId)?.act.body);
     this.numbers?.step();
     this.follow(world, stage);
@@ -1411,6 +1508,7 @@ export class WorldScreen {
 
   /** Dispose world-owned resources while leaving the cache session and page renderer available. */
   private disposeWorld(): void {
+    this.audio?.stopWorld(); // travel and leaving stop the world's sounds (Piece 6 design §3.3)
     this.stageGeneration++;
     this.portraitGeneration++;
     this.stopOwnMover();

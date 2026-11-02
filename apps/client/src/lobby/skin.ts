@@ -3,11 +3,16 @@ import { themeKey } from '../world/hud/art';
 
 let assets: Promise<AssetStore> | undefined;
 
+/** The lobby's asset store, loaded once (the audio catalog is read from it too); rejects when it cannot be had. */
+export function lobbyAssets(): Promise<AssetStore> {
+  assets ??= AssetStore.load();
+  return assets;
+}
+
 /** Original Default.thm wallpaper and window/button textures; login remains usable if assets are unavailable. */
 export async function skinLobby(root: HTMLElement): Promise<void> {
   try {
-    assets ??= AssetStore.load();
-    const store = await assets;
+    const store = await lobbyAssets();
     const pictures = ['Screen.bmp', 'WndSelectChar.tga', 'ButtLogin.bmp', 'ButtBack.tga', 'ButtNext.tga',
       'ButtCreate.tga', 'ButtDelete.tga', 'ButtAccept.tga',
       ...Array.from({ length: 12 }, (_, i) => `WndTile${String(i).padStart(2, '0')}.tga`)];

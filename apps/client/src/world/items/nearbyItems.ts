@@ -17,7 +17,7 @@ export class NearbyItems {
     this.list = doc.createElement('div'); this.list.className = 'nearby-items-list';
     this.element.append(title, this.list);
     if (pickAll) {
-      const all = doc.createElement('button'); all.type = 'button'; all.className = 'nearby-pickup-all';
+      const all = doc.createElement('button'); all.type = 'button'; all.className = 'nearby-pickup-all'; all.dataset.silent = '';
       all.textContent = 'Pick up all'; all.setAttribute('aria-label', 'Pick up nearby items');
       all.addEventListener('click', () => { pickAll(); all.blur(); }); this.element.append(all);
     }
@@ -31,7 +31,7 @@ export class NearbyItems {
       visible.add(id);
       let row = this.rows.get(id);
       if (!row) {
-        const button = this.doc.createElement('button'); button.type = 'button'; button.dataset.pickupItem = String(id);
+        const button = this.doc.createElement('button'); button.type = 'button'; button.dataset.pickupItem = String(id); button.dataset.silent = '';
         const icon = this.doc.createElement('img'); icon.alt = '';
         const text = this.doc.createElement('span'); button.append(icon, text);
         let suppressClick = false;

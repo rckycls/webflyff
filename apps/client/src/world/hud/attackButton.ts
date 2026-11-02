@@ -22,6 +22,7 @@ export class AttackButton {
     const element = doc.createElement('button');
     element.type = 'button';
     element.className = options.className ?? 'hud-attack';
+    element.dataset.silent = ''; // the web's own control: no CWndButton, no click (Piece 6 M2)
     element.setAttribute('aria-label', options.label ?? LABEL);
     let touchPressed = false;
     const activate = () => { if (!element.disabled) onPress(); element.blur(); };

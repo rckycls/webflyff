@@ -784,7 +784,7 @@ export class WorldState {
    * (`VT_ITEM`, :2960-2966), which `CMover::InitProp` takes from its row's `dwAtk1` (:1536); null for `NULL_ID` (`=`), and
    * for a mover the catalog has no row for. Null for the own mover with no numbers.
    */
-  private handItem(m: Mover): number | null {
+  handItem(m: Mover): number | null {
     if (!m.added.isPlayer) {
       const atk1 = this.data.movers.get(m.added.index)?.atk1 ?? NULL_ITEM;
       return atk1 === NULL_ITEM ? null : atk1;

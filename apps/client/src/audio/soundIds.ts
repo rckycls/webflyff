@@ -36,5 +36,11 @@ export const XI_SOUNDS: ReadonlyMap<number, number> = new Map([
   [71, SND_GEN_WATER], // XI_GEN_WATERCROWN01
 ]);
 
+/** The sounds fetched when the catalog is in, ahead of their first play (the plan's ruling 7). */
+export const PREFETCHED: readonly number[] = [
+  SND_INF_CLICK, SND_INF_TRADE, SND_INF_INVENTORYDROP, SND_INF_GROUNDDROP, SND_INF_GROUNDPICKUP, SND_INF_EQUIPWEAPON,
+  SND_INF_EQUIPARMOR, SND_INF_EQUIPCLOTH, SND_INF_EQUIPACCESSORY, SND_WALK_LANDSOFT,
+];
+
 /** RANK_BOSS (Resource/defineAttribute.h:162). */
 export const RANK_BOSS = 4;

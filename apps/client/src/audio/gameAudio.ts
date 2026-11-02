@@ -12,6 +12,7 @@
 import type { WebAudio } from '@flyffweb/formats';
 import { EffectsPlayer } from './effectsPlayer';
 import { MusicPlayer } from './musicPlayer';
+import { BGM_TITLE } from './soundIds';
 import { readSoundSettings, writeSoundSettings } from './soundSettings';
 import type { SoundSettings } from './soundSettings';
 import type { MusicPort } from '../world/sound/musicRules';
@@ -51,10 +52,14 @@ export class GameAudio {
   private listener: Vec = { x: 0, y: 0, z: 0 };
   private angle = 0;
   private current: SoundSettings;
+  /** `title()` came before the catalog: it plays when the catalog is in. */
+  private titleWanted = false;
+  private report: (error: Error) => void;
   private readonly onGesture = (): void => this.unlock();
   private readonly onVisibility = (): void => this.setHidden(this.deps.doc.visibilityState === 'hidden');
 
   constructor(private readonly deps: GameAudioDeps) {
+    this.report = deps.report;
     this.current = readSoundSettings(deps.storage);
     this.hidden = deps.doc.visibilityState === 'hidden';
     const mp3s = new Map<string, string | null>();
@@ -64,7 +69,7 @@ export class GameAudio {
         if (mp3s.size === 0 && this.catalog !== null) for (const t of Object.values(this.catalog.music)) mp3s.set(t.ogg, t.mp3);
         return mp3s.has(ogg) ? mp3s.get(ogg)! : undefined;
       },
-    }, deps.report, (key) => this.played.music.push(key));
+    }, (error) => this.report(error), (key) => this.played.music.push(key));
     this.player.setGain(musicGain(this.current.music));
     this.music = this.player;
     const fetchBytes = deps.fetch ?? (async (url: string) => {
@@ -73,7 +78,7 @@ export class GameAudio {
       return response.arrayBuffer();
     });
     this.effects = new EffectsPlayer({
-      url: (key) => this.url(key), fetch: fetchBytes, now: deps.now ?? (() => performance.now()), report: deps.report,
+      url: (key) => this.url(key), fetch: fetchBytes, now: deps.now ?? (() => performance.now()), report: (error) => this.report(error),
     });
     for (const type of GESTURES) deps.doc.addEventListener(type, this.onGesture, { capture: true });
     deps.doc.addEventListener('visibilitychange', this.onVisibility);
@@ -83,6 +88,22 @@ export class GameAudio {
   setCatalog(audio: WebAudio | null, store: { url(key: string): string | null }): void {
     this.catalog = audio;
     this.url = (key) => store.url(key);
+    if (this.titleWanted && audio !== null) this.title();
+  }
+
+  /** Where the players say what fails, from now on: the world's overlay while it is up. */
+  setReport(report: (error: Error) => void): void {
+    this.report = report;
+  }
+
+  /**
+   * The title track, forever (`PlayMusic( BGM_TITLE, 0 )`, Neuz.cpp:1724, and on every logout, :1465-1471); when the
+   * catalog is not in yet, as soon as it is.
+   */
+  title(): void {
+    const track = this.catalog?.music[BGM_TITLE];
+    this.titleWanted = track === undefined;
+    if (track !== undefined) this.player.playFile(track.ogg, 0);
   }
 
   /** Fetches the files of these sound ids ahead of their first play (the plan's ruling 7). */
@@ -122,6 +143,7 @@ export class GameAudio {
 
   /** Ends the world's sounds and stops its track (a world change, leaving). */
   stopWorld(): void {
+    this.titleWanted = false;
     this.effects.stopAll();
     this.player.stop();
   }
