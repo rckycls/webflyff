@@ -857,7 +857,7 @@ The game's own music and sound, as the Windows client plays them. The music foll
 
 **What the test character needs:** a character in Flaris that can fight, with a potion, a piece of equipment to put on and take off, and some penya. For step 6, a monster that can kill it, or a way to die. For step 5, a level-up close by, or a game-master character.
 
-**Start the client** from the piece6 folder, as in milestone 0. Turn the sound up on each device.
+**Start the client** from the piece6 folder, as in milestone 0. Turn the sound up on each device. On the iPhone, put the ring/silent switch on ring: in silent mode it mutes the whole game, music included.
 
 **Steps**, on the PC, an Android phone and an iPhone:
 

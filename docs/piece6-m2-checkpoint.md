@@ -68,6 +68,18 @@ The plan's 16 rulings, and those made while building, are in the M2 final report
 - **Typecheck:** clean.
 - **Browser spec:** `npm run test:e2e:client -- audio.spec.ts`: 6 passed.
 
+## Final review
+
+A fresh reviewer checked M2. It found nothing Critical and four Important findings. Each was fixed with a test that failed first. The suite after the fixes: 156 files, 3,060 tests passed, 8 skipped. `audio.spec.ts`: 9 passed, 1 skipped (the keyboard case on the phone).
+
+- **No burst after a stall:** a phone page that was frozen in the background no longer plays the sounds of the second or more it catches up, all at once. Only the last step plays. No effect waits in a context that is not running, and hiding the tab ends the effects that play.
+- **Silence for a track that cannot play:** the previous track no longer plays on, as Neuz closes its stream first.
+- **The Option window** goes with the world. One left open at logout leaked and swallowed the next world's first Escape.
+- **Silent slots:** the task bar's slots and the shop's stock items no longer click, as Neuz's do not.
+- **Also hardened:** the world entry no longer waits for `audio.json`.
+
+Nine Minor findings are left for later, listed in the M2 final report.
+
 ## Owner checks
 
 - [ ] FFmpeg installed, and `npm run convert -- --only audio,data --client "…\Client"` ends with 0 failed.
