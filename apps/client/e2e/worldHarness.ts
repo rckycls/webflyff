@@ -164,6 +164,8 @@ export interface Gateway {
   closed: number[];
   /** Ends the cache connection the way the gateway does, with a close code. */
   closeCache(code: number): Promise<void>;
+  /** Ends the latest login-server connection the same way (Piece 6 M3). */
+  closeLogin(code: number): Promise<void>;
   /** Sends a packet to the page on the cache connection, as the world server does between the page's packets. */
   pushCache(packet: Uint8Array): void;
 }
@@ -179,9 +181,14 @@ export interface GatewayOptions {
  * Plays the gateway and the four servers behind it: the certifier, the login server and the cache server with Flaris
  * (`world`: Webby on the square, with the Aibatt and Julia, unless another script is given).
  */
-export async function playGateway(page: Page, world: WorldScript = flaris, options: GatewayOptions = {}): Promise<Gateway> {
+export async function playGateway(
+  page: Page, world: WorldScript | ((entry: number) => WorldScript) = flaris, options: GatewayOptions = {},
+): Promise<Gateway> {
+  // a script per entry (the n-th login connection's and its cache connection's), so a reconnect gets a fresh world
+  let entries = 0;
+  let script = typeof world === 'function' ? world(1) : world;
   const gateway: Gateway = {
-    sent: [], closed: [], closeCache: async () => {}, pushCache: () => {
+    sent: [], closed: [], closeCache: async () => {}, closeLogin: async () => {}, pushCache: () => {
       throw new Error('no cache connection yet');
     },
   };
@@ -193,6 +200,11 @@ export async function playGateway(page: Page, world: WorldScript = flaris, optio
     if (port === Port.CACHE) {
       gateway.closeCache = (code) => ws.close({ code });
       gateway.pushCache = (packet) => ws.send(Buffer.from(packet));
+    }
+    if (port === Port.LOGIN) {
+      entries++;
+      if (typeof world === 'function') script = world(entries);
+      gateway.closeLogin = (code) => ws.close({ code });
     }
     ws.onClose(() => gateway.closed.push(connection));
     ws.onMessage((message) => {
@@ -211,9 +223,9 @@ export async function playGateway(page: Page, world: WorldScript = flaris, optio
           reply(new ArWriter().u32(PacketType.CACHE_ADDR).string('172.31.238.55').toBytes());
           reply(playerList(options.listed));
         }
-        world.answer('login', body).forEach(reply);
+        script.answer('login', body).forEach(reply);
       } else {
-        world.answer('cache', body).forEach(reply);
+        script.answer('cache', body).forEach(reply);
       }
     });
   });

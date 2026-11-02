@@ -776,13 +776,14 @@ test.describe('the world screen against scripted servers', () => {
     expect(dialogs).toEqual(['beforeunload']);
   });
 
-  test('a dropped cache connection shows the lost text', async ({ page }) => {
+  test('a dropped cache connection shows the lost text, in the reconnect box (Piece 6 M3)', async ({ page }) => {
     const gateway = await playGateway(page);
     await enterFlaris(page);
     // 4002: the server ended the connection (the gateway passes the close on)
     await gateway.closeCache(4002);
 
     await expect(page.getByRole('alert')).toHaveText('The connection to the game was lost.');
+    await page.getByRole('button', { name: 'Back to login' }).click();
     await expect(page.getByRole('button', { name: 'Log in' })).toBeEnabled();
     await expect(page.getByRole('button', { name: 'Start' })).toHaveCount(0);
   });

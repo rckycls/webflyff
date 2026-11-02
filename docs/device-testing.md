@@ -884,3 +884,42 @@ The game's own music and sound, as the Windows client plays them. The music foll
 Milestone 2 passes when every cell above is `pass` and the tests of the milestone 3 section pass (the two milestones are tested together).
 
 **Listen closely to these,** because the tests can't judge them: left and right. A monster on the right of the screen should sound from the right. The Windows client's own left and right could not be checked here, so tell me if it sounds wrong. Also tell me any sound that plays twice.
+
+## Piece 6, milestone 3: reconnect
+
+When the game's connection drops on its own, the world now stays on screen, frozen, behind a box in the game's look. The box shows why, with **Reconnect** and **Back to login**. One tap logs you back in, to the same channel and character. Nothing you did before is sent again. The login is kept in memory only, for 5 minutes after the drop. The Windows client has no such box: this is the web's own.
+
+**What the test character needs:** any character in Flaris, and its password. For step 4, a second device or browser to log the same account in from.
+
+**Start the client** from the piece6 folder, as in milestone 0, with the servers and the gateway in the VM.
+
+**Steps**, on the PC and an Android phone (the iPhone too, if you have time):
+
+1. **The gateway stops.** In the VM, stop the gateway while you stand in Flaris. Success: the world freezes behind the box, which says the connection was lost. Nothing moves, and the keys do nothing.
+2. **Reconnect.** Start the gateway again, wait 15 seconds (the server keeps a character outside a safe zone for 15 s), and tap **Reconnect**. Success: the box reads "Reconnecting…", the loading screen comes, and you stand in the game again, where the server says, with your items and HP.
+3. **Too soon.** Stop the gateway again, start it, and tap **Reconnect** at once. Success: the box says "This account is still in the game. Wait a minute, then tap Reconnect." Wait a minute and tap again. Success: you are back in.
+4. **The same account elsewhere.** Log the account in on the second device, then tap **Reconnect** on the first. Success: the box says the account is still in the game. The second device stays logged in: nothing kicks it.
+5. **The 5 minutes.** Drop the connection again and wait 5 minutes without tapping. Success: the box says "The saved login has expired.", and only **Back to login** is left.
+6. **Back to login.** Tap it. Success: the login form, with your account name already filled in.
+
+## Results
+
+| Device | Browser | 1. Stop | 2. Reconnect | 3. Too soon | 4. Elsewhere | 5. 5 minutes | 6. Back to login | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| PC | Chrome | | | | | | | |
+| Android phone | Chrome | | | | | | | |
+| iPhone | Safari | | | | | | | |
+
+## Pass and fail (milestones 2 and 3 together)
+
+Milestones 2 and 3 pass when every cell of both tables is `pass` and the tests below pass.
+
+**The tests (yours to run),** on the PC in PowerShell in the piece6 folder, with your own `npm run dev:client` stopped first:
+
+| Command | How long | Success |
+| --- | --- | --- |
+| `winget install --id Gyan.FFmpeg -e`, then a new PowerShell and `npm run convert -- --only audio,data --client "C:\Users\silec\Desktop\FlyFF\Bakbak\Blouflash VS22 V15\Client"` | about 5 minutes | The convert ends with `0 failed`. |
+| `npm run test:e2e:client` | about 40-50 minutes | It ends with `… passed`, maybe a few `skipped`, and no `failed`. |
+| `$env:FLYFF_CLIENT = 'C:\Users\silec\Desktop\FlyFF\Bakbak\Blouflash VS22 V15\Client'; npm run test:corpus` | about 10 minutes | No `failed`. Run `Remove-Item Env:FLYFF_CLIENT` afterwards. |
+
+If one fails, send me the lines from the first `failed` down to the end.
