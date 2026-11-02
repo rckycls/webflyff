@@ -718,6 +718,13 @@ describe('WorldSession, the login channel from the start', () => {
 });
 
 describe('WorldSession, leaving', () => {
+  it('forgets the JOIN it sent, which holds the password hash, once it ends (Piece 6 M3)', async () => {
+    const s = await playing();
+    expect((s.session as unknown as { joinPacket: unknown }).joinPacket).toBeDefined();
+    s.session.leave();
+    expect((s.session as unknown as { joinPacket: unknown }).joinPacket).toBeUndefined();
+  });
+
   it('leave closes both channels and emits nothing', async () => {
     const { session, cache, login, events, clock } = await playing();
     session.leave();

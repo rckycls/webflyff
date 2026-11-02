@@ -561,6 +561,7 @@ export class WorldSession {
     if (this.over) return;
     this.phase = 'over';
     this.destination = undefined;
+    this.joinPacket = undefined; // it holds the password hash (Piece 6 M3)
     this.stopTimer();
     if (this.pingTimer !== undefined) this.clock.clearTimeout(this.pingTimer);
     this.pingTimer = undefined;

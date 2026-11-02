@@ -1906,3 +1906,9 @@ fieldset:disabled .btn {
 .hud-option-bar { position: absolute; background-size: 100% 100%; cursor: pointer; touch-action: none; outline: none; }
 .hud-option-bar:focus-visible { box-shadow: 0 0 0 1px #fff, 0 0 0 2px #000; }
 .hud-option-knob { position: absolute; top: 0; background-size: 100% 100%; pointer-events: none; }
+
+/* The box of a dropped world (Piece 6 M3, hud/dropBox.ts): Neuz's message box with the web's two buttons */
+.hud-dropbox-text { position: absolute; color: #000; font-size: 12px; line-height: 16px; text-align: center; overflow-wrap: anywhere; }
+.hud-dropbox-button { position: absolute; border: 1px solid #6b5a3a; border-radius: 3px; background: linear-gradient(#f6edd2, #d9c69a); color: #2a1e0a; font-size: 12px; padding: 0; }
+.hud-dropbox-button:disabled { color: #8a7d62; }
+.hud-dropbox-button:focus-visible { outline: 1px solid #fff; }

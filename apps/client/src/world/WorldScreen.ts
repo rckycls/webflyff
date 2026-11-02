@@ -55,6 +55,8 @@ import { LogOutBox } from './hud/logOutBox';
 import { ReviveWindow } from './hud/reviveWindow';
 import { SkillWindow } from './hud/skillWindow';
 import { OptionWindow } from './hud/optionWindow';
+import { DropBox } from './hud/dropBox';
+import type { BoxState, KeptLogin } from '../lobby/reconnect';
 import { TaskBar } from './hud/taskBar';
 import { InventoryWindow } from './hud/inventoryWindow';
 import { ChatWindow } from './hud/chatWindow';
@@ -143,6 +145,20 @@ async function loadMotion(services: SceneServices, key: string): Promise<LoopedM
 }
 
 const drawingSize = new Vector2();
+
+/**
+ * A world whose session dropped on its own, frozen behind its box (Piece 6 M3): what the lobby needs to reconnect. The lobby
+ * sets `onReconnect` and `onBack` (the box's buttons), shows each attempt's state with `box`, and takes the frozen world
+ * away with `close` once it goes on: into a new world, or back to the lobby.
+ */
+export interface DroppedWorld {
+  message: string;
+  kept: KeptLogin;
+  box(state: BoxState): void;
+  onReconnect: () => void;
+  onBack: () => void;
+  close(): void;
+}
 
 export class WorldScreen {
   private readonly session: WorldSession;
@@ -241,6 +257,10 @@ export class WorldScreen {
   private music: MusicRules | null = null;
   /** The Option window's sound sliders (Piece 6 M2); none without the page's audio. */
   private optionWindow: OptionWindow | undefined;
+  /** True once the world was first on screen: a session ending after it is a drop (Piece 6 M3). */
+  private everShown = false;
+  /** The box of a dropped world, while it shows. */
+  private dropBox: DropBox | undefined;
   private sounds: WorldSounds | null = null;
   private worldMapMonsters = false;
   /** The world the player is in (`enter`). */
@@ -293,8 +313,9 @@ export class WorldScreen {
    */
   static open(
     root: HTMLElement, entry: WorldEntry, open: OpenChannel, onEnd: (message: string | undefined) => void, audio: GameAudio | null = null,
+    onDrop?: (drop: DroppedWorld) => void,
   ): WorldScreen {
-    return new WorldScreen(root, entry, open, onEnd, audio);
+    return new WorldScreen(root, entry, open, onEnd, audio, onDrop);
   }
 
   private constructor(
@@ -303,6 +324,7 @@ export class WorldScreen {
     open: OpenChannel,
     private readonly onEnd: (message: string | undefined) => void,
     private readonly audio: GameAudio | null,
+    private readonly onDrop: ((drop: DroppedWorld) => void) | undefined,
   ) {
     // the session takes over the login-server connection first, so that an ending below closes it too
     this.session = new WorldSession(open, entry, (event) => this.onEvent(event));
@@ -395,7 +417,10 @@ export class WorldScreen {
 
   private onEvent(event: WorldEvent): void {
     if (this.over) return;
-    if (event.type === 'ended') this.end(event.message);
+    if (event.type === 'ended') {
+      if (this.everShown && this.onDrop !== undefined) this.drop(event.message);
+      else this.end(event.message);
+    }
     else if (this.data === undefined) this.waiting.push(event);
     else this.handle(event);
   }
@@ -1070,6 +1095,7 @@ export class WorldScreen {
       this.drawScreenLayers(world, stage, views, renderer);
       this.drawHud(world, now);
       // the world is on screen: `ready()` (a second call does nothing)
+      this.everShown = true;
       this.resolveShown();
     } catch (error) {
       // a frame that throws every frame must not fill the overlay with the same line sixty times a second; the console has
@@ -1354,7 +1380,7 @@ export class WorldScreen {
    * (`if( CWndBase::m_GlobalShortcut.IsEmpty() )`, `WndManager.cpp:3383`).
    */
   private readonly onEscape = (event: KeyboardEvent): void => {
-    if (this.chatWindow?.typing) return;
+    if (this.chatWindow?.typing || this.dropBox !== undefined) return;
     if (this.worldMap?.isOpen === true) return; // the map's own key hold closes it, and Escape does nothing else
     const { taskBar, attackLoop, focus } = this;
     if (event.key !== 'Escape' || event.repeat || taskBar === undefined || attackLoop === undefined || focus === undefined) {
@@ -1469,7 +1495,7 @@ export class WorldScreen {
    * (`CWndWorld::OnKeyDown`, `WndWorld.cpp:7756`) and any let go (`OnKeyUp`, :7734).
    */
   private readonly onKeyDown = (event: KeyboardEvent): void => {
-    if (this.chatWindow?.typing) return;
+    if (this.chatWindow?.typing || this.dropBox !== undefined) return;
     if (event.key === 'Enter' && !event.repeat && !(event.target as HTMLElement | null)?.closest?.('input,textarea,select,[contenteditable="true"]')) {
       event.preventDefault(); this.chatWindow?.open(); return;
     }
@@ -1594,6 +1620,12 @@ export class WorldScreen {
   private end(message: string | undefined): void {
     if (this.over) return;
     this.over = true;
+    this.teardown(message);
+    this.onEnd(message);
+  }
+
+  /** Everything the screen holds, closed and taken off the page. */
+  private teardown(message: string | undefined): void {
     this.session.leave();
     this.releaseBrowserGestures();
     this.stopAsking();
@@ -1603,6 +1635,51 @@ export class WorldScreen {
     this.unregister();
     for (const { reject } of this.stepsDrawn.splice(0)) reject(new Error('the world screen ended'));
     this.rejectShown(new Error(message ?? 'the player left the world'));
-    this.onEnd(message);
+  }
+
+  /**
+   * The session dropped on its own after the world was shown (Piece 6 M3, the plan's rulings 1-2): the rules, the sounds
+   * and every late event stop here, the controls let go, the windows close, and the last picture stays behind the drop
+   * box. The lobby gets the kept login (`onDrop`), and the screen drops the hash from its entry, which the session and
+   * its JOIN shared. `close` takes the frozen world away for good, without `onEnd`: the lobby goes on from there.
+   */
+  private drop(message: string): void {
+    if (this.over) return;
+    this.over = true;
+    const entry = this.entry;
+    const kept: KeptLogin = {
+      account: entry.account, passwordHash: entry.passwordHash, serverId: entry.serverId, channelId: entry.channelId,
+      playerId: entry.character.playerId,
+    };
+    entry.passwordHash = '';
+    this.session.leave();
+    this.releaseControls();
+    for (const window of [this.shopWindow, this.npcDialog, this.teleporter, this.inventoryWindow, this.characterWindow,
+      this.skillWindow, this.optionWindow]) window?.frame.close();
+    this.worldMap?.close();
+    this.audio?.stopWorld();
+    this.stopAsking(); // nothing is left to lose by closing the page
+    const doc = this.element.ownerDocument;
+    // a drop while a new world loads has no HUD: the box takes its pictures from the store
+    const art: UiArt = this.hudArt ?? { url: (key) => this.services?.store.url(key) ?? '', sheets: null };
+    const layer = this.hud?.element ?? this.element;
+    const box = new DropBox(art, doc);
+    layer.append(box.element);
+    this.dropBox = box;
+    const dropped: DroppedWorld = {
+      message,
+      kept,
+      box: (state) => box.show(state, layer.clientWidth),
+      onReconnect: () => {},
+      onBack: () => {},
+      close: () => {
+        box.dispose();
+        this.dropBox = undefined;
+        this.teardown(message);
+      },
+    };
+    box.onReconnect = () => dropped.onReconnect();
+    box.onBack = () => dropped.onBack();
+    this.onDrop!(dropped);
   }
 }
