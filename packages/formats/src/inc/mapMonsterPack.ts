@@ -67,7 +67,7 @@ export function readMapMonsterPack(
       pack.texture = r.token('the texture file').text;
       const key = r.token('the colour key');
       const value = parseHexToken(key.text);
-      if (value === undefined) r.fail(`expected a hex colour key, found "${key.text}"`, key);
+      if (value === undefined) return r.fail(`expected a hex colour key, found "${key.text}"`, key);
       pack.colorKey = value >>> 0;
     } else if (tok.text === 'serialize') {
       if (pack.frames.length >= number) tooMany(r, number);
