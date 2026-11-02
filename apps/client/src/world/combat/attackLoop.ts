@@ -99,24 +99,49 @@ export interface OwnSkills {
  *
  * The browser's adaptation (Piece 6 spec §3.1): a walk to the object that a collision or a drop just ended
  * (`blockedTarget`, `MoverActEvent.cpp:2017-2037`) waits until `APPROACH_REPORT_STEPS` steps after the last
- * PLAYERSETDESTOBJ (`approachWait`), neither sent nor walked meanwhile, so that an auto-attack or a repeating skill at a
- * wall asks at most 10 times a second where Neuz asks at every step; a walk to another object goes at once. False while
- * it waits, for a caller that asks only once (a skill's command) to ask again at the next step.
+ * PLAYERSETDESTOBJ (`approachWait`), so that an auto-attack or a repeating skill at a wall asks at most 10 times a second
+ * where Neuz asks at every step; a walk to another object goes at once. While it waits:
+ * - after a stop at the obstacle, it is neither sent nor walked, and the answer is false, for a caller that asks only
+ *   once (a skill's command) to ask again at the next step;
+ * - after a slide along it (`blockedSlid`), the walk goes on here at full speed, untold (`untoldWalk`), with `m_nCorr` 0
+ *   so that no collision ends it; once the wait is over, the server is told where it got to with a PLAYERBEHAVIOR,
+ *   which keeps the server's walk (`CDPSrvr::OnPlayerBehavior`, where a PLAYERCORR's `ClearDest`s it), then the walk.
  */
 export function setOwnDestObj(
   session: Pick<WorldSession, 'sendDestObj' | 'sendBehavior'>, tick: () => bigint,
   find: (objectId: number) => Mover | undefined, own: Mover, objectId: number, range: number,
 ): boolean {
   const old = own.dest?.targetId ?? null;
+  const waiting = own.blockedTarget === objectId && (own.approachWait ?? 0) > 0;
   if (old !== objectId) {
-    if (own.blockedTarget === objectId && (own.approachWait ?? 0) > 0) return false;
-    if (old !== null && find(old)?.added.isPlayer === true) session.sendBehavior(own.act.report(tick()));
+    if (waiting && own.blockedSlid !== true) return false;
+    own.untoldWalk = waiting;
+    if (waiting) {
+      own.nCorr = 0;
+    } else {
+      if (old !== null && find(old)?.added.isPlayer === true) session.sendBehavior(own.act.report(tick()));
+      session.sendDestObj(objectId, range);
+      own.nCorr = -1;
+      own.approachWait = APPROACH_REPORT_STEPS;
+    }
+  } else if (own.untoldWalk === true && !waiting) {
+    tellUntoldWalk(session, tick, own);
     session.sendDestObj(objectId, range);
     own.nCorr = -1;
     own.approachWait = APPROACH_REPORT_STEPS;
   }
   setDestObj(own, objectId, range);
   return true;
+}
+
+/**
+ * The browser's: where an untold walk (`setOwnDestObj`) got to, as a PLAYERBEHAVIOR, before anything the server would
+ * judge from the player's place (the walk again, a swing or a skill on arrival); nothing when there is none.
+ */
+export function tellUntoldWalk(session: Pick<WorldSession, 'sendBehavior'>, tick: () => bigint, own: Mover): void {
+  if (own.untoldWalk !== true) return;
+  own.untoldWalk = false;
+  session.sendBehavior(own.act.report(tick()));
 }
 
 /** Rules steps between two PLAYERSETDESTOBJs to an object whose walk met something: 10 a second at 60 Hz. */
@@ -599,6 +624,7 @@ export class AttackLoop {
     }
     if (this.cmd === null) return false;
     this.cmd = null;
+    tellUntoldWalk(this.session, () => this.clock.tick(), own);
     const state = this.own();
     if (state !== undefined) this.doAttackMelee(own, target, state);
     return true;

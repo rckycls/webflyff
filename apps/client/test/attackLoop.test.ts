@@ -426,12 +426,70 @@ describe('AttackLoop: holding the button on a new target (m_timerFocusAttack, Wn
     const session = { sendDestObj: (id: number, range: number) => void sent.push([id, range]), sendBehavior: () => {} };
     const find = (id: number): Mover | undefined => r.world.movers.get(id);
     r.own.approachWait = 3;
+    r.own.blockedSlid = false; // stopped dead at the wall
     setOwnDestObj(session, () => 0n, find, r.own, MONSTER_ID, 0);
     expect(sent).toEqual([]);
     expect(r.own.dest).toBeNull();
     setOwnDestObj(session, () => 0n, find, r.own, OTHER_MONSTER_ID, 0);
     expect(sent).toEqual([[OTHER_MONSTER_ID, 0]]);
     expect(r.own.approachWait).toBe(APPROACH_REPORT_STEPS);
+  });
+
+  it('a walk that was still sliding goes on locally while it waits, then tells the server where it got to', () => {
+    const r = rig({ ground: { ...terrainGround(() => 0), objectsNear: () => [wallAt(103)] } });
+    r.tap(MONSTER_ID);
+    r.tap(MONSTER_ID);
+    r.until(() => r.own.corrReport != null);
+    const sent: string[] = [];
+    const session = {
+      sendDestObj: (id: number) => void sent.push(`destObj ${id}`), sendBehavior: () => void sent.push('behavior'),
+    };
+    const find = (id: number): Mover | undefined => r.world.movers.get(id);
+    r.own.approachWait = 3;
+    r.own.blockedSlid = true;
+    setOwnDestObj(session, () => 0n, find, r.own, MONSTER_ID, 0);
+    // walking again, untold, and no collision ends it meanwhile (m_nCorr 0)
+    expect(sent).toEqual([]);
+    expect(r.own.dest?.targetId).toBe(MONSTER_ID);
+    expect(r.own.nCorr).toBe(0);
+    r.own.approachWait = 0;
+    setOwnDestObj(session, () => 0n, find, r.own, MONSTER_ID, 0);
+    // where the slide got to first, which keeps the server's walk (OnPlayerBehavior), then the walk
+    expect(sent).toEqual(['behavior', `destObj ${MONSTER_ID}`]);
+    expect(r.own.nCorr).toBe(-1);
+    expect(r.own.approachWait).toBe(APPROACH_REPORT_STEPS);
+    setOwnDestObj(session, () => 0n, find, r.own, MONSTER_ID, 0);
+    expect(sent).toHaveLength(2);
+  });
+
+  it('auto-attack sliding along a wall reaches its target at about full speed, within the traffic budget', () => {
+    // the Aibatt past the wall's end (z 90 to 110): the walk slides along the wall until it clears it
+    const r = rig({ ground: { ...terrainGround(() => 0), objectsNear: () => [wallAt(103)] } });
+    r.monster.act.body.pos[0] = 106;
+    r.monster.act.body.pos[2] = 112;
+    r.tap(MONSTER_ID);
+    r.tap(MONSTER_ID);
+    const at: number[] = [];
+    let s = 0;
+    for (; s < 1200 && r.melee().length === 0; s++) stepCounting(r, at, s);
+    // Neuz's own pace here (a walk-up at every step) arrives at about 344 steps; one every 6 steps took about 1,650
+    expect(s).toBeLessThanOrEqual(400);
+    expect(busiestSecond(at)).toBeLessThanOrEqual(TRAFFIC_BUDGET);
+  });
+
+  it('a walk that arrives untold tells the server where the player is before the swing', () => {
+    const r = rig();
+    r.tap(MONSTER_ID);
+    r.tap(MONSTER_ID);
+    r.step();
+    // as after a slide (setOwnDestObj): walking on untold, its wait not over by the arrival
+    r.own.untoldWalk = true;
+    r.own.blockedTarget = MONSTER_ID;
+    r.own.approachWait = 600;
+    r.until(() => r.melee().length > 0);
+    const kinds = r.sent.map((x) => x[0]);
+    expect(kinds.slice(-2)).toEqual(['behavior', 'melee']);
+    expect(r.own.untoldWalk).toBe(false);
   });
 });
 

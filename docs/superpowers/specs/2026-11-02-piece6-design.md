@@ -89,7 +89,7 @@ else changes:
 - a walk to a **different** object goes out at once;
 - arriving, swinging, the combo and skills are untouched.
 
-While it waits, the character stands at the wall. That is the stand Neuz's `OBJMSG_STAND` already gives at each bump.
+While it waits after a stop at the obstacle, the character stands there. That is the stand Neuz's `OBJMSG_STAND` already gives at each bump. After a slide along it, where the step still moved the character, the walk goes on at full speed without telling the server. When the wait ends, a PLAYERBEHAVIOR says where the character got to; it keeps the server's walk, where a PLAYERCORR cancels it (`DPSrvr.cpp:12872-12915`). The walk then goes out again. An arrival during such a walk sends that PLAYERBEHAVIOR before the swing or the skill. (Owner's choice after the final review, 2026-11-02: full speed when sliding.)
 The rule is a browser adaptation, documented next to the copied code. Neuz sends up to 120 a second here, but it talks to
 the servers directly, with no gateway limit.
 

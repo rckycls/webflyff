@@ -19,7 +19,7 @@
 
 import { MAX_SKILL_JOB, NULL_ID, ShortcutKind } from '@flyffweb/protocol';
 import type { Shortcut, SkillSlot, Vec3, WorldMessage } from '@flyffweb/protocol';
-import { attackAble, setOwnDestObj } from '../combat/attackLoop';
+import { attackAble, setOwnDestObj, tellUntoldWalk } from '../combat/attackLoop';
 import type { OwnSkills } from '../combat/attackLoop';
 import type { Focus } from '../combat/focus';
 import type { GameData } from '../gameData';
@@ -360,6 +360,7 @@ export class SkillUse implements OwnSkills {
     const cmd = this.cmd;
     if (cmd === null) return false;
     this.cmd = null;
+    tellUntoldWalk(this.session, this.world.tick ?? (() => 0n), own);
     const now = this.now();
     if (!this.skillTimerStop && now < this.skillTimerEnd) return true;
     if (this.blocked(own, target)) {

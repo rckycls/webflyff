@@ -786,13 +786,14 @@ Open `http://localhost:5174` on the PC and `http://<PC-IP>:5174` on the phone.
 2. **Around the obstacle.** With the auto-attack still on, walk around the obstacle with the joystick or the keys, then select the monster and attack again. Success: once the way is clear, the character reaches the monster and fights it.
 3. **A skill across an obstacle.** Tap the ground first, to turn the auto-attack off. Select a monster behind the obstacle again and use Clean Hit from the bar. Success: the character bumps into the obstacle once and stops, and you stay in the game. (If the monster is close enough for the skill's reach through the obstacle, "This action has been blocked by an obstacle.." shows instead: that is the Windows client's rule too, and also a pass.)
 4. **A skill during the auto-attack.** Turn the auto-attack on again against the monster behind the obstacle and, while the character nudges at it, use Clean Hit. Success: within a moment the skill walks up (or shows the "blocked by an obstacle" line), and then the character goes back to nudging. It must not stand still with nothing happening.
+5. **Sliding past the end of an obstacle.** Stand so that a monster is diagonally past the end of a fence or a building corner, so that the straight line to it scrapes along the obstacle. Turn the auto-attack on. Success: the character slides along the obstacle at about normal walking speed, rounds its end and attacks, and you stay in the game. Write in Notes roughly how many seconds it took.
 
 ## Results
 
-| Device | Browser | 1. Auto-attack across | 2. Around it | 3. Skill across | 4. Skill during auto-attack | Notes |
-| --- | --- | --- | --- | --- | --- | --- |
-| Phone | | | | | | |
-| PC | Chrome | | | | | |
+| Device | Browser | 1. Auto-attack across | 2. Around it | 3. Skill across | 4. Skill during auto-attack | 5. Sliding past | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Phone | | | | | | | |
+| PC | Chrome | | | | | | |
 
 ## Pass and fail
 

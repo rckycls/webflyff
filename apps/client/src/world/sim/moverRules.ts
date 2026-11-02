@@ -96,6 +96,13 @@ export interface SimMover {
   /** The object whose walk `OnActCollision` or `OnActDrop` ended (`onActCorr`); null where the walk was to a point. */
   blockedTarget?: number | null;
   /**
+   * Whether the step whose collision ended that walk still moved the mover (`SLIDE_FRACTION` of its step or more): a
+   * slide along the obstacle, not a stop at it, which `setOwnDestObj` lets walk on while it waits.
+   */
+  blockedSlid?: boolean;
+  /** Walking to `blockedTarget` while the server has not been told (`setOwnDestObj`), until it is: no collision ends it. */
+  untoldWalk?: boolean;
+  /**
    * What `CDPClient::SendPlayerCorr` (`Neuz/DPClient.cpp:10866`) sends, as it was when the rules called it: the own
    * character's state (`act.report`), tick 0. The owner sends it with the clock's tick and puts null back.
    */
@@ -362,11 +369,20 @@ export function stepMover(m: SimMover, find: (objectId: number) => SimMover | un
   processMove(m, find);
   const body = m.act.body;
   const own = body.speed;
-  body.speed = getSpeed(m);
+  const speed = getSpeed(m);
+  body.speed = speed;
+  const [x, , z] = body.pos;
   const { collided } = m.act.step(ground);
   body.speed = own;
-  if (collided) onActCorr(m, true);
+  if (collided) onActCorr(m, true, Math.hypot(body.pos[0] - x, body.pos[2] - z) >= SLIDE_FRACTION * speed);
 }
+
+/**
+ * The browser's (Piece 6 spec §3.1): the part of its step a mover must still have moved, in the step whose collision
+ * ended its walk to an object, for that to count as sliding along the obstacle rather than stopping at it. Measured in
+ * the tests: a stop at a wall moves 0, a slide along one about 5% of the step, the collision clipping the rest.
+ */
+const SLIDE_FRACTION = 0.01;
 
 /**
  * The client's `CMover::OnActCollision` (`collision`) and `CMover::OnActDrop` (the `#else` parts of
@@ -374,12 +390,14 @@ export function stepMover(m: SimMover, find: (objectId: number) => SimMover | un
  * the player tapped, or the walk after an object (-1), ends there, with `ClearDest` and `OBJMSG_STAND`, and either way the
  * state is corrected (`SendPlayerCorr`: `corrReport`) and `m_nCorr` goes back to 0. `OnActCollision` also lets go of a
  * held left button there (`m_bLButtonDown = FALSE`, :2022-2028: `releaseButton`). Another mover on its way somewhere
- * asks the server where it is (`SendQueryGetPos`), which the browser does not.
+ * asks the server where it is (`SendQueryGetPos`), which the browser does not. The ended walk's object is kept
+ * (`blockedTarget`), and whether the step still `slid` (`blockedSlid`; a drop never does), for `setOwnDestObj`.
  */
-function onActCorr(m: SimMover, collision: boolean): void {
+function onActCorr(m: SimMover, collision: boolean, slid = false): void {
   if (!m.isSelf || !m.nCorr) return;
   if (m.nCorr < 0) {
     m.blockedTarget = m.dest?.targetId ?? null;
+    m.blockedSlid = slid;
     clearDest(m);
     m.act.sendActMsg(ActMsg.STAND);
     if (collision) m.releaseButton?.();
