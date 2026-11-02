@@ -75,9 +75,10 @@ export class DropBox {
     }
   }
 
-  /** Closes it, and takes it off its layer. */
+  /** Closes it, gives the page its keys back (the backdrop held them), and takes it off its layer. */
   dispose(): void {
     this.frame.close();
+    this.modal.hide();
     this.element.remove();
   }
 }

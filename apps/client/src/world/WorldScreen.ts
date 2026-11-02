@@ -100,7 +100,7 @@ import { HAttr } from './sim/collision';
 import { Mti, ObjSta } from './sim/constants';
 import { SkillUse } from './skills/skillUse';
 import { transformCoord } from './sim/d3dx';
-import { STEPS_PER_SECOND } from './sim/stepper';
+import { STEPS_PER_SECOND, catchUp } from './sim/stepper';
 import { SimulationClock } from './simulationClock';
 import { WorldSession } from './WorldSession';
 import type { WorldEvent } from './WorldSession';
@@ -153,7 +153,8 @@ const drawingSize = new Vector2();
  */
 export interface DroppedWorld {
   message: string;
-  kept: KeptLogin;
+  /** The kept login, until the lobby takes it (and blanks this): the reconnect alone holds it then, for its 5 minutes. */
+  kept: KeptLogin | undefined;
   box(state: BoxState): void;
   onReconnect: () => void;
   onBack: () => void;
@@ -257,8 +258,11 @@ export class WorldScreen {
   private music: MusicRules | null = null;
   /** The Option window's sound sliders (Piece 6 M2); none without the page's audio. */
   private optionWindow: OptionWindow | undefined;
-  /** True once the world was first on screen: a session ending after it is a drop (Piece 6 M3). */
-  private everShown = false;
+  /**
+   * Whether a session ending is a drop (Piece 6 M3): from the world's first frame on, or from the start for the world a
+   * reconnect enters (`open`'s `reconnected`), so that one ending before it is shown keeps the login too.
+   */
+  private endingsAreDrops: boolean;
   /** The box of a dropped world, while it shows. */
   private dropBox: DropBox | undefined;
   private sounds: WorldSounds | null = null;
@@ -309,13 +313,14 @@ export class WorldScreen {
 
   /**
    * Opens the world screen over `root` for `entry` and starts entering. `onEnd` is called once, when the world is over:
-   * with the text to show, or undefined after Leave or Log out. Never throws.
+   * with the text to show, or undefined after Leave or Log out. Never throws. `onDrop` takes over instead when the session
+   * ends on its own after the world was shown, or at any time when `reconnected` (the world a reconnect enters).
    */
   static open(
     root: HTMLElement, entry: WorldEntry, open: OpenChannel, onEnd: (message: string | undefined) => void, audio: GameAudio | null = null,
-    onDrop?: (drop: DroppedWorld) => void,
+    onDrop?: (drop: DroppedWorld) => void, reconnected = false,
   ): WorldScreen {
-    return new WorldScreen(root, entry, open, onEnd, audio, onDrop);
+    return new WorldScreen(root, entry, open, onEnd, audio, onDrop, reconnected);
   }
 
   private constructor(
@@ -325,7 +330,9 @@ export class WorldScreen {
     private readonly onEnd: (message: string | undefined) => void,
     private readonly audio: GameAudio | null,
     private readonly onDrop: ((drop: DroppedWorld) => void) | undefined,
+    reconnected: boolean,
   ) {
+    this.endingsAreDrops = reconnected;
     // the session takes over the login-server connection first, so that an ending below closes it too
     this.session = new WorldSession(open, entry, (event) => this.onEvent(event));
     this.shown = new Promise<void>((resolve, reject) => {
@@ -418,7 +425,7 @@ export class WorldScreen {
   private onEvent(event: WorldEvent): void {
     if (this.over) return;
     if (event.type === 'ended') {
-      if (this.everShown && this.onDrop !== undefined) this.drop(event.message);
+      if (this.endingsAreDrops && this.onDrop !== undefined) this.drop(event.message);
       else this.end(event.message);
     }
     else if (this.data === undefined) this.waiting.push(event);
@@ -1094,8 +1101,8 @@ export class WorldScreen {
       stage.render();
       this.drawScreenLayers(world, stage, views, renderer);
       this.drawHud(world, now);
-      // the world is on screen: `ready()` (a second call does nothing)
-      this.everShown = true;
+      // the world is on screen: `ready()` (a second call does nothing), and an ending from here on is a drop
+      this.endingsAreDrops = true;
       this.resolveShown();
     } catch (error) {
       // a frame that throws every frame must not fill the overlay with the same line sixty times a second; the console has
@@ -1117,14 +1124,7 @@ export class WorldScreen {
     if (this.over || !world || !stage || !views) return;
     try {
       this.syncViews(); this.measureRadii(world, views);
-      // a second or more to catch up (a page that was frozen or hidden): only the last step's effects play, so they do not
-      // all sound at once on its return (the M2 final review's ruling)
-      const stalled = steps >= STEPS_PER_SECOND;
-      for (let i = 0; i < steps; i++) {
-        if (stalled) this.audio?.hold(i < steps - 1);
-        this.step(world, stage, views, now);
-      }
-      if (stalled) this.audio?.hold(false);
+      catchUp(steps, this.audio ? (on) => this.audio!.hold(on) : undefined, () => this.step(world, stage, views, now));
       views.update(world.movers, steps / STEPS_PER_SECOND);
       stage.focus(this.ownAt());
     } catch (error) { this.reportOnce(`simulation: ${messageOf(error)}`, error instanceof Error ? error : new Error(String(error))); }
@@ -1638,9 +1638,9 @@ export class WorldScreen {
   }
 
   /**
-   * The session dropped on its own after the world was shown (Piece 6 M3, the plan's rulings 1-2): the rules, the sounds
-   * and every late event stop here, the controls let go, the windows close, and the last picture stays behind the drop
-   * box. The lobby gets the kept login (`onDrop`), and the screen drops the hash from its entry, which the session and
+   * The session dropped on its own after the world was shown, or in the world a reconnect enters (Piece 6 M3, the plan's
+   * rulings 1-2, and the final review): the rules, the sounds and every late event stop here, the controls let go, the
+   * windows close, and the last picture (or the loading text) stays behind the drop box. The lobby gets the kept login (`onDrop`), and the screen drops the hash from its entry, which the session and
    * its JOIN shared. `close` takes the frozen world away for good, without `onEnd`: the lobby goes on from there.
    */
   private drop(message: string): void {
@@ -1662,7 +1662,10 @@ export class WorldScreen {
     const doc = this.element.ownerDocument;
     // a drop while a new world loads has no HUD: the box takes its pictures from the store
     const art: UiArt = this.hudArt ?? { url: (key) => this.services?.store.url(key) ?? '', sheets: null };
-    const layer = this.hud?.element ?? this.element;
+    // the next world's HUD is built before its tiles and models are in, and stays off the page until then: the box goes
+    // on the screen itself then, over the loading text, whose Leave would do nothing now
+    const layer = this.hud?.element.parentElement === this.element ? this.hud.element : this.element;
+    this.leaveButton.hidden = true;
     const box = new DropBox(art, doc);
     layer.append(box.element);
     this.dropBox = box;

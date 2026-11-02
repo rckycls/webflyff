@@ -52,7 +52,9 @@ export class LobbyApp {
    * `onEnter` takes over when the player enters the world with a character: it gets the `WorldEntry` (the lobby has let go of
    * it, the login-server connection included) and `done`, which brings the lobby back to the login form with a message
    * (or none) once the world is over. The lobby's stage is empty when `onEnter` is called, so the world screen may fill
-   * `root` as it likes; `done` puts the lobby's page back.
+   * `root` as it likes; `done` puts the lobby's page back. `onDrop` gets a world that dropped on its own after it was
+   * shown; `reconnected` is true for the world a reconnect enters, whose session endings are drops from the start, so a
+   * new world that drops before it is shown brings the box back with the login kept.
    *
    * `onPlayTap` is called at the start of the taps that log in and enter the world, inside their handlers: there the
    * page asks for full screen and the landscape lock (`Landscape.requestLock`, spec §3.10), which a browser grants only to
@@ -61,7 +63,9 @@ export class LobbyApp {
   constructor(
     private readonly root: HTMLElement,
     private readonly flow: LoginFlow,
-    private readonly onEnter: (entry: WorldEntry, done: (message?: string) => void, onDrop: (drop: DroppedWorld) => void) => void,
+    private readonly onEnter: (
+      entry: WorldEntry, done: (message?: string) => void, onDrop: (drop: DroppedWorld) => void, reconnected: boolean,
+    ) => void,
     private readonly onPlayTap: () => void = () => {},
     /** The page's audio: the title track plays whenever the login form is shown (Piece 6 M2). */
     private readonly audio: { title(): void } | null = null,
@@ -192,9 +196,10 @@ export class LobbyApp {
 
   /**
    * Enter on a character: the flow hands over what the world needs, and the world takes the page. If the flow cannot
-   * (the login server has not sent the cache address or the clock yet), the player stays and is told so.
+   * (the login server has not sent the cache address or the clock yet), the player stays and is told so. `reconnected`
+   * is for the world a reconnect enters (`onEnter`).
    */
-  private enter(character: CharacterSummary): void {
+  private enter(character: CharacterSummary, reconnected = false): void {
     this.onPlayTap();
     const entry = this.flow.handOver(character.slot);
     if (entry === undefined) {
@@ -220,7 +225,7 @@ export class LobbyApp {
       this.stage.querySelector<HTMLElement>('h2')?.focus();
     }, (drop) => {
       if (this.world === world) this.dropped(drop);
-    });
+    }, reconnected);
   }
 
   /**
@@ -240,12 +245,15 @@ export class LobbyApp {
       show();
       this.stage.querySelector<HTMLElement>('h2')?.focus();
     };
-    this.reconnect = new Reconnect(this.flow, drop.kept, this.clock, {
+    // taken, not shared: the frozen world may stay up past the 5 minutes, and the hash must not stay with it
+    const kept = drop.kept!;
+    drop.kept = undefined;
+    this.reconnect = new Reconnect(this.flow, kept, this.clock, {
       box: (state) => drop.box(state),
       enter: (character) => {
         leave();
         this.characters = [character];
-        this.enter(character);
+        this.enter(character, true);
       },
       toLogin: (message) => back(() => this.showLogin(message)),
       toServers: (message, servers) => back(() => {

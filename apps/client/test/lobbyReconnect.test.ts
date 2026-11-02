@@ -31,7 +31,11 @@ function setup() {
     handOver: (slot: number) => ({ character: { ...WEBBY, slot } }) as unknown as WorldEntry,
   } as unknown as LoginFlow;
   const entered: Array<(drop: DroppedWorld) => void> = [];
-  const app = new LobbyApp(root, flow, (_entry, _done, onDrop) => { entered.push(onDrop); }, () => {}, null, fakeClock(0));
+  const reconnected: boolean[] = [];
+  const app = new LobbyApp(root, flow, (_entry, _done, onDrop, again) => {
+    entered.push(onDrop);
+    reconnected.push(again);
+  }, () => {}, null, fakeClock(0));
   const event = (e: LobbyEvent) => app.handle(e);
   // in the world with Webby, as the lobby puts the player there
   event({ type: 'serverList', servers: SERVERS });
@@ -47,7 +51,7 @@ function setup() {
     onBack: () => {},
     close: () => { closed++; },
   };
-  return { root, calls, entered, event, boxes, drop, closedCount: () => closed };
+  return { root, calls, entered, reconnected, event, boxes, drop, closedCount: () => closed };
 }
 
 describe('LobbyApp: the one-tap reconnect (Piece 6 M3)', () => {
@@ -99,5 +103,24 @@ describe('LobbyApp: the one-tap reconnect (Piece 6 M3)', () => {
     s.drop.onBack();
     s.event({ type: 'serverList', servers: SERVERS });
     expect(s.root.querySelector('[data-screen="servers"]')).not.toBeNull();
+  });
+});
+
+describe('LobbyApp: the kept login, after the final review', () => {
+  it('takes the kept login from the dropped world, so only the reconnect holds it, for its 5 minutes', () => {
+    const s = setup();
+    s.entered[0]!(s.drop);
+    expect(s.drop.kept).toBeUndefined();
+    s.drop.onReconnect();
+    expect(s.calls.at(-1)).toBe('relogin webtester'); // the reconnect has it
+  });
+
+  it('tells the world it opens for a reconnect so, as its endings are drops from the start: the box stays, the login kept', () => {
+    const s = setup();
+    s.entered[0]!(s.drop);
+    s.drop.onReconnect();
+    s.event({ type: 'serverList', servers: SERVERS });
+    s.event({ type: 'characters', characters: [WEBBY] });
+    expect(s.reconnected).toEqual([false, true]);
   });
 });

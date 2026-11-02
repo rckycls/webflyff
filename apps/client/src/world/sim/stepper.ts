@@ -31,3 +31,21 @@ export class FixedStepper {
     return whole;
   }
 }
+
+/**
+ * Runs a frame's `steps` rules steps. A second or more of them at once (a page that was frozen or hidden) is a stall:
+ * the sound effects of all but the last step are held (`hold`), so they do not all sound at once on the page's return
+ * (the M2 final review's ruling). The hold ends with the frame even when a step throws: a hold left on would silence every
+ * effect of the page.
+ */
+export function catchUp(steps: number, hold: ((on: boolean) => void) | undefined, step: () => void): void {
+  const stalled = steps >= STEPS_PER_SECOND;
+  try {
+    for (let i = 0; i < steps; i++) {
+      if (stalled) hold?.(i < steps - 1);
+      step();
+    }
+  } finally {
+    if (stalled) hold?.(false);
+  }
+}

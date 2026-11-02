@@ -1013,15 +1013,24 @@ describe('LoginFlow, logging in again from the kept hash (Piece 6 M3)', () => {
     expect(s.flow.handOver(0)!.serverId).toBe(s.channel.parent);
   });
 
-  it('gives the login server 20 s to send the character list, then fails with the timeout text and closes', async () => {
+  it('gives the login server 20 s to send the character list, then closes the session with the timeout text', async () => {
     const s = await atServerList();
     await s.flow.selectChannel(s.channel);
     const login = s.net.channel(LOGIN_SERVER);
     s.clock.advance(19999);
-    expect(s.events.some((e) => e.type === 'error')).toBe(false);
+    expect(s.events.some((e) => e.type === 'closed' || e.type === 'error')).toBe(false);
     s.clock.advance(1);
-    expect(s.events.at(-1)).toEqual({ type: 'error', message: TIMEOUT_TEXT });
+    // a closed session, not a screen's error: the flow has reset, so the lobby must go back to the login form
+    expect(s.events.at(-1)).toEqual({ type: 'closed', message: TIMEOUT_TEXT });
     expect(login.closed).toBe(true);
+  });
+
+  it('an ERROR of the login server while the list is awaited stops that timeout', async () => {
+    const s = await atServerList();
+    await s.flow.selectChannel(s.channel);
+    s.net.channel(LOGIN_SERVER).push(new ArWriter().u32(PacketType.ERROR).i32(107).toBytes());
+    s.clock.advance(30000);
+    expect(s.events.filter((e) => 'message' in e && e.message === TIMEOUT_TEXT)).toEqual([]);
   });
 
   it('the character list stops that timeout', async () => {

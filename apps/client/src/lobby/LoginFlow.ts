@@ -271,7 +271,7 @@ export class LoginFlow {
     login.send(encodeQueryTickCount(this.clock.now()));
     login.send(encodeGetPlayerList(authKey, this.account, this.passwordHash, channel.id));
     // the certifier's 20 s for the character list too, which had no limit: a list that never comes ends (Piece 6 M3)
-    this.startTimer();
+    this.startTimer('closed');
   }
 
   /**
@@ -460,6 +460,8 @@ export class LoginFlow {
         break;
       case 'error':
         // Not the end of the session: a name in use or a wrong Bank PIN is answered the same way, and Neuz stays on its screen.
+        // An answer while the list is awaited is an answer too, so the list's 20 s stop (Piece 6 M3).
+        this.stopTimer();
         this.notify({ type: 'error', message: errorText(message.code) });
         break;
       case 'unknown':
@@ -510,11 +512,15 @@ export class LoginFlow {
     }
   }
 
-  private startTimer(): void {
+  /**
+   * The 20 s for an answer. The certifier's ends as an `error` on the login form. The character list's ends as `closed`:
+   * the flow is reset by then, so the lobby must leave the server list for the login form, not show it dead.
+   */
+  private startTimer(ending: 'error' | 'closed' = 'error'): void {
     this.stopTimer();
     this.timer = this.clock.setTimeout(() => {
       this.timer = undefined;
-      this.fail({ type: 'error', message: TIMEOUT_TEXT });
+      this.fail({ type: ending, message: TIMEOUT_TEXT });
     }, CERTIFY_TIMEOUT_MS);
   }
 

@@ -1,10 +1,13 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { PacketType } from '@flyffweb/protocol';
-import { createWorldScript, writeAddMonster, writeAddNpc, writeAddSelf } from '@flyffweb/testkit';
+import type { AssetIndex } from '@flyffweb/formats';
+import { NULL_ID, PacketType } from '@flyffweb/protocol';
+import { createWorldScript, writeAddMonster, writeAddNpc, writeAddSelf, writeReplace } from '@flyffweb/testkit';
 import type { Gateway } from './worldHarness';
 import {
-  MADRIGAL, MONSTER_ID, NPC_ID, SELF_ID, SQUARE, aibatt, enterFlaris, errorPacket, julia, playGateway, self, serverList,
+  ASSETS, MADRIGAL, MONSTER_ID, NPC_ID, SELF_ID, SQUARE, aibatt, enterFlaris, errorPacket, julia, playGateway, self, serverList,
   startEntering,
 } from './worldHarness';
 
@@ -28,6 +31,25 @@ function errorsOf(page: Page): string[] {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   return errors;
+}
+
+/**
+ * Holds the second download of the glyph sheets (data/uiSheets.json, fetched again for each world), which a world waits
+ * for before it is first shown: `held` once it is asked for, `release` lets it go.
+ */
+async function holdSecondSheets(page: Page): Promise<{ held: Promise<void>; release: () => void }> {
+  const index: AssetIndex = JSON.parse(readFileSync(path.join(ASSETS, 'index.json'), 'utf8'));
+  let loads = 0, release!: () => void, holding!: () => void;
+  const released = new Promise<void>((resolve) => { release = resolve; });
+  const held = new Promise<void>((resolve) => { holding = resolve; });
+  await page.route(`**/${index.files['data/uiSheets.json']}`, async (route) => {
+    if (++loads === 2) {
+      holding();
+      await released;
+    }
+    await route.continue();
+  });
+  return { held, release };
 }
 
 async function reconnect(page: Page, isMobile: boolean): Promise<void> {
@@ -94,4 +116,39 @@ test('reconnect: a drop before the world was shown goes to the login form as bef
   await gateway.closeLogin(1006);
   await expect(page.getByRole('button', { name: 'Log in' })).toBeEnabled({ timeout: 30_000 });
   await expect(box(page)).toHaveCount(0);
+});
+
+test('reconnect: a drop while the next world is drawn for the first time shows the box, and hides the Leave of the loading screen', async ({ page, isMobile }) => {
+  // the next world's HUD is built, then kept off the page until its tiles, models and glyph sheets are in: the drop comes
+  // while its sheets are held
+  const { held, release } = await holdSecondSheets(page);
+  const scripts: ReturnType<typeof createWorldScript>[] = [];
+  const gateway = await playGateway(page, (entry) => (scripts[entry] = freshFlaris(entry)));
+  await enterFlaris(page);
+  // a REPLACE to Mars Mine (200), and its snapshot: the new world is entered and loads
+  gateway.pushCache(scripts[1]!.later([writeReplace(NULL_ID, 200, SQUARE), writeAddSelf(SELF_ID, self)]));
+  await held;
+  await gateway.closeCache(4002);
+  await expect(box(page)).toBeVisible();
+  await expect(page.locator('.world-leave')).toBeHidden(); // it would do nothing: the world has ended
+  release();
+  await reconnect(page, isMobile);
+  await expect.poll(() => page.evaluate(() => window.__client!.own()?.hp ?? null), { timeout: 30_000 }).toBe(77);
+});
+
+test('reconnect: a new world that drops before it is shown brings the box back, the login kept, and a later tap gets in', async ({ page, isMobile }) => {
+  const { held, release } = await holdSecondSheets(page);
+  const gateway = await playGateway(page, freshFlaris);
+  await enterFlaris(page);
+  await gateway.closeCache(4002);
+  await reconnect(page, isMobile);
+  await held; // the reconnect's world is entered, and waits for its sheets
+  await gateway.closeCache(4002);
+  await expect(box(page)).toBeVisible();
+  await expect(page.getByRole('alert')).toHaveText('The connection to the game was lost.');
+  await expect(page.getByRole('button', { name: 'Reconnect' })).toBeEnabled();
+  release();
+  await reconnect(page, isMobile);
+  await expect.poll(() => page.evaluate(() => window.__client!.own()?.hp ?? null), { timeout: 30_000 }).toBe(77);
+  expect(certifies(gateway)).toHaveLength(3);
 });

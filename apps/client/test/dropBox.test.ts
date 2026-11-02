@@ -60,3 +60,17 @@ describe('DropBox (Piece 6 M3: the world dropped, in a Neuz message box)', () =>
     expect(box.element.querySelector('.hud-window-close')).toBeNull();
   });
 });
+
+describe('DropBox: the final review', () => {
+  it('lets the page have its keys again once it is gone', () => {
+    const { box } = make();
+    box.show({ text: 'x', canReconnect: true, busy: false }, 800);
+    box.dispose();
+    const heard: string[] = [];
+    const listen = (event: KeyboardEvent) => heard.push(event.key);
+    window.addEventListener('keydown', listen);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'w' }));
+    window.removeEventListener('keydown', listen);
+    expect(heard).toEqual(['w']);
+  });
+});
