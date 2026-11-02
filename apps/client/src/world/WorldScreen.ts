@@ -374,13 +374,18 @@ export class WorldScreen {
       if (this.over) return;
       const audio = this.audio;
       if (audio !== null) {
-        const catalog = await loadAudio(services.store, (error) => this.reportOnce(`audio: ${messageOf(error)}`, error));
-        if (this.over) return;
         // a file that fails is said once on the overlay while the world is up (Piece 6 design §4)
         audio.setReport((error) => { if (!this.over) this.reportOnce(error.message, error); });
-        audio.setCatalog(catalog, services.store);
-        this.music = catalog === null ? null : new MusicRules(audio.music, catalog);
-        this.sounds = new WorldSounds(audio, this.music ?? { play: () => {} }, catalog);
+        this.sounds = new WorldSounds(audio, { play: () => {} }, null);
+        // the game never waits for sound: the world goes on while the catalog loads, silent until it is in, and a failed
+        // load leaves the page's catalog as it was (the M2 final review)
+        void loadAudio(services.store, (error) => this.reportOnce(`audio: ${messageOf(error)}`, error)).then((catalog) => {
+          if (this.over || catalog === null) return;
+          audio.setCatalog(catalog, services.store);
+          this.music = new MusicRules(audio.music, catalog);
+          if (this.world !== undefined) this.music.enterWorld(this.worldId); // a world entered before the catalog came
+          this.sounds = new WorldSounds(audio, this.music, catalog);
+        });
       }
       for (const event of this.waiting.splice(0)) this.handle(event);
     } catch (error) {
@@ -1086,7 +1091,14 @@ export class WorldScreen {
     if (this.over || !world || !stage || !views) return;
     try {
       this.syncViews(); this.measureRadii(world, views);
-      for (let i = 0; i < steps; i++) this.step(world, stage, views, now);
+      // a second or more to catch up (a page that was frozen or hidden): only the last step's effects play, so they do not
+      // all sound at once on its return (the M2 final review's ruling)
+      const stalled = steps >= STEPS_PER_SECOND;
+      for (let i = 0; i < steps; i++) {
+        if (stalled) this.audio?.hold(i < steps - 1);
+        this.step(world, stage, views, now);
+      }
+      if (stalled) this.audio?.hold(false);
       views.update(world.movers, steps / STEPS_PER_SECOND);
       stage.focus(this.ownAt());
     } catch (error) { this.reportOnce(`simulation: ${messageOf(error)}`, error instanceof Error ? error : new Error(String(error))); }
@@ -1515,6 +1527,8 @@ export class WorldScreen {
   /** Dispose world-owned resources while leaving the cache session and page renderer available. */
   private disposeWorld(): void {
     this.audio?.stopWorld(); // travel and leaving stop the world's sounds (Piece 6 design §3.3)
+    this.optionWindow?.dispose();
+    this.optionWindow = undefined;
     this.stageGeneration++;
     this.portraitGeneration++;
     this.stopOwnMover();

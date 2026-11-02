@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { writePlaySound } from '@flyffweb/testkit';
-import { enterFlaris, flaris, playGateway } from './worldHarness';
+import { enterFlaris, flaris, logIn, logOut, playGateway } from './worldHarness';
 
 // Piece 6 M2: the game's music and sound (docs/superpowers/plans/2026-11-02-piece6-m2-sound.md). The page's audio is
 // read by what it asks the server for (the tracks) and by the test hooks' log (the effects it was asked to play).
@@ -74,5 +74,34 @@ test('audio: the Option window shows the kept BGM step, moves it, and keeps the 
   expect(JSON.parse((await page.evaluate(() => localStorage.getItem('flyffweb.sound')))!)).toEqual({ effects: 10, music: 4 });
   await page.reload();
   expect(JSON.parse((await page.evaluate(() => localStorage.getItem('flyffweb.sound')))!)).toEqual({ effects: 10, music: 4 });
+  expect(errors).toEqual([]);
+});
+
+test('audio: the world enters while audio.json hangs: the game never waits for sound', async ({ page }) => {
+  const errors = errorsOf(page);
+  await page.route(/\/data\/audio\.[0-9a-f]+\.json/, () => {}); // never answered
+  await playGateway(page);
+  const started = Date.now();
+  await enterFlaris(page);
+  expect(Date.now() - started).toBeLessThan(45_000);
+  expect(errors).toEqual([]);
+});
+
+test('audio: an Option window open at logout is gone in the next world, whose Escape opens the Start menu', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'the keyboard case');
+  const errors = errorsOf(page);
+  await playGateway(page);
+  await enterFlaris(page);
+  await page.getByRole('button', { name: 'Start', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Option', exact: true }).click();
+  await expect(page.getByRole('slider', { name: 'BGM' })).toBeVisible();
+  await logOut(page);
+  // back in without reloading the page: the same page's windows
+  await logIn(page);
+  await page.getByRole('button', { name: /Channel 1/ }).click();
+  await page.getByRole('button', { name: 'Enter Webby' }).click();
+  await page.evaluate(() => window.__client!.ready());
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('menuitem', { name: 'Log out', exact: true })).toBeVisible();
   expect(errors).toEqual([]);
 });

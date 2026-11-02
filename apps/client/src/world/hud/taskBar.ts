@@ -954,6 +954,9 @@ export class TaskBar {
     const button = this.doc.createElement('button');
     button.type = 'button';
     button.className = className;
+    // the bar's slots are drawn by CWndTaskBar itself, which plays no sound (WndTaskBar.cpp has no PLAYSND): only the Start
+    // button is a CWndButton's click (Piece 6 M2)
+    if (className !== 'hud-taskbar-start') button.dataset.silent = '';
     button.tabIndex = -1;
     button.addEventListener('mousedown', (event) => event.preventDefault());
     button.addEventListener('click', press);

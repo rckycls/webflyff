@@ -62,6 +62,7 @@ export class MusicPlayer implements MusicPort {
     this.key = key;
     this.pending = false;
     if (this.failed.has(key)) {
+      this.silence();
       this.state = 'failed';
       return;
     }
@@ -136,6 +137,11 @@ export class MusicPlayer implements MusicPort {
     this.state = 'stopped';
   }
 
+  /** PlayMusic_ closes the stream before it opens the next (Music2.cpp:48-61): a track that cannot play leaves silence. */
+  private silence(): void {
+    if (this.state === 'playing') this.element.pause();
+  }
+
   private applyGain(): void {
     if (this.gainNode !== null) this.gainNode.gain.value = this.gain;
     else this.element.volume = this.gain;
@@ -161,6 +167,7 @@ export class MusicPlayer implements MusicPort {
   }
 
   private fail(key: string, why: string): void {
+    this.silence();
     this.state = 'failed';
     if (this.failed.has(key)) return;
     this.failed.add(key);

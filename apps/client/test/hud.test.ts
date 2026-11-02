@@ -819,6 +819,15 @@ describe('TaskBar (CWndTaskBar, WndTaskBar.cpp)', () => {
     expect(bar.bar).toBe(7);
   });
 
+  it('draws its slots itself, as CWndTaskBar does: they make no click sound (Piece 6 M2)', () => {
+    const bar = taskBarOn(800, recorder().actions);
+    bar.update(newVagrantWithBar(), BAR_DATA);
+    expect(slot(bar, 'item', 0).hasAttribute('data-silent')).toBe(true);
+    expect(slot(bar, 'applet', 0).hasAttribute('data-silent')).toBe(true);
+    expect(bar.element.querySelector('.hud-taskbar-action')!.hasAttribute('data-silent')).toBe(true);
+    expect(bar.element.querySelector('.hud-taskbar-start')!.hasAttribute('data-silent')).toBe(false);
+  });
+
   it("the Start menu lists Piece 4's windows and Log out in CWndTaskMenu's order; Log out leaves", () => {
     const { calls, actions } = recorder();
     const bar = taskBarOn(800, actions);

@@ -115,7 +115,7 @@ export class ShopWindow {
     const list = this.doc.createElement('div'); list.className = 'shop-items shop-stock-grid'; list.setAttribute('aria-label', 'Vendor items');
     for (const item of this.tabs?.[this.tab] ?? []) {
       const prop = this.data.itemProps.get(item.itemId), button = this.doc.createElement('button'); button.type = 'button';
-      button.dataset.stockId = String(item.objectId); button.disabled = !prop || item.count <= 0;
+      button.dataset.stockId = String(item.objectId); button.dataset.silent = ''; button.disabled = !prop || item.count <= 0;
       const name = prop?.name ?? 'Unknown item'; button.setAttribute('aria-label', name + ' ×' + item.count); button.title = name + (prop?.cost === undefined ? '' : ' · Base price: ' + prop.cost + ' penya');
       if (prop?.icon) { const icon = this.doc.createElement('img'); icon.src = this.art.url(prop.icon); icon.alt = ''; button.append(icon); }
       else button.textContent = '?';

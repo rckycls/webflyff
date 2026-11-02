@@ -54,6 +54,8 @@ export class GameAudio {
   private current: SoundSettings;
   /** `title()` came before the catalog: it plays when the catalog is in. */
   private titleWanted = false;
+  /** Effects asked for while held are dropped (`hold`). */
+  private held = false;
   private report: (error: Error) => void;
   private readonly onGesture = (): void => this.unlock();
   private readonly onVisibility = (): void => this.setHidden(this.deps.doc.visibilityState === 'hidden');
@@ -125,7 +127,9 @@ export class GameAudio {
    */
   playKey(key: string, at?: Vec): boolean {
     const gain = effectsGain(this.current.effects);
-    if (gain === 0 || !this.unlocked || this.hidden || this.context === null) return false;
+    // a context that does not run yet (its resume after a gesture or the tab's return, iOS's `interrupted`) would keep the
+    // sound and start it with the others when it runs: dropped instead, so nothing plays late
+    if (gain === 0 || !this.unlocked || this.hidden || this.held || this.context === null || this.context.state !== 'running') return false;
     let local: Vec | null = null;
     if (at !== undefined) {
       local = placeSound(at, this.listener, this.angle);
@@ -139,6 +143,14 @@ export class GameAudio {
   setListener(pos: Vec, angleDeg: number): void {
     this.listener = { x: pos.x, y: pos.y, z: pos.z };
     this.angle = angleDeg;
+  }
+
+  /**
+   * Drops the effects asked for while `on`: the world screen holds them over the steps a page that was frozen or hidden
+   * catches up, so they do not all play at once on its return (the M2 final review's ruling).
+   */
+  hold(on: boolean): void {
+    this.held = on;
   }
 
   /** Ends the world's sounds and stops its track (a world change, leaving). */
@@ -186,6 +198,8 @@ export class GameAudio {
   private setHidden(hidden: boolean): void {
     if (hidden === this.hidden) return;
     this.hidden = hidden;
+    // the effects that play are ended, so their tails do not play on return
+    if (hidden) this.effects.stopAll();
     if (this.context !== null) {
       if (hidden) void this.context.suspend().catch(() => {});
       else if (this.unlocked) void this.context.resume().catch(() => {});

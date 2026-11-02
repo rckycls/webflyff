@@ -15,6 +15,8 @@ it('uses confirmed stock/inventory, validates quantity and refuses stale, equipp
   ui.receive(8, [[{ objectId: 1, itemId: 2800, count: 99 }], [], [], []]);
   expect(ui.frame.element.querySelector('[data-stock-id]')).toBeNull();
   ui.receive(7, [[{ objectId: 1, itemId: 2800, count: 99 }], [], [], []]);
+  // a stock item is drawn by the shop, not a CWndButton: no click sound (Piece 6 M2)
+  expect(ui.frame.element.querySelector('[data-stock-id="1"]')!.hasAttribute('data-silent')).toBe(true);
   ui.frame.element.querySelector<HTMLButtonElement>('[data-stock-id="1"]')!.click();
   const quantity = ui.frame.element.querySelector<HTMLInputElement>('[name=quantity]')!;
   const buy = ui.frame.element.querySelector<HTMLButtonElement>('[data-shop-action=buy]')!;

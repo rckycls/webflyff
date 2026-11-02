@@ -321,3 +321,57 @@ describe('GameAudio: the title track and where errors go', () => {
     expect(errors).toEqual([]);
   });
 });
+
+describe('GameAudio: the final review\'s fixes', () => {
+  it('a track that cannot play stops the one that played, as PlayMusic_ closes the stream first (Music2.cpp:48-61)', () => {
+    const { audio, media, tap } = keep(setup());
+    tap();
+    audio.music.playFile('music/flaris.ogg', 1);
+    media.fire('error'); // flaris is failed for the page from here
+    audio.music.playFile('music/title.ogg', 0);
+    const pauses = media.pauses;
+    audio.music.playFile('music/flaris.ogg', 1);
+    expect(media.pauses).toBe(pauses + 1);
+    expect(audio.music.isStopped()).toBe(true);
+  });
+
+  it('plays no effect until the context runs, so nothing waits in a suspended one', async () => {
+    const { audio, context, tap, settle } = keep(setup());
+    context.resume = async () => { context.resumes++; }; // the resume has not come back yet
+    tap();
+    audio.play(1);
+    await settle();
+    expect(context.sources).toEqual([]);
+    context.state = 'running';
+    audio.play(1);
+    await settle();
+    expect(context.sources.filter((s) => s.started)).toHaveLength(1);
+  });
+
+  it('a hidden tab ends the effects that play, so their tails do not play on return', async () => {
+    const { audio, context, tap, settle } = keep(setup());
+    tap();
+    audio.play(1);
+    await settle();
+    const source = context.sources[0]!;
+    let ended = false;
+    const stop = source.stop.bind(source);
+    source.stop = () => { ended = true; stop(); };
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(ended).toBe(true);
+  });
+
+  it('hold drops the effects asked for while it lasts (the steps a stalled page catches up)', async () => {
+    const { audio, context, tap, settle } = keep(setup());
+    tap();
+    audio.hold(true);
+    audio.play(1);
+    await settle();
+    expect(context.sources).toEqual([]);
+    audio.hold(false);
+    audio.play(1);
+    await settle();
+    expect(context.sources.filter((s) => s.started)).toHaveLength(1);
+  });
+});
