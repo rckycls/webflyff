@@ -1,6 +1,10 @@
 import type { MessageReader } from '../bundle';
 import { MessageType } from '../constants';
 import { readAddObj } from './addObj';
+import { readChat, readShout, readReturnSay, readSocial, readGmChat, readAnnouncement } from './chat';
+import { readNpcScript } from './npc';
+import { readShop } from './shop';
+import { readCreateItem, readUpdateItem, readMoveItem, readEquipItem } from './items';
 import {
   readCorrReq, readDamage, readDefinedText, readDefinedText1, readMeleeAttack, readMonsterProp, readMoverDeath,
   readQueryGetDestObj, readRevival, readRevivalLodestar, readSetExperience, readSetGrowthLearningPoint, readSetLevel,
@@ -26,6 +30,18 @@ import type { WorldMessage } from './types';
 export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
   new Map<number, MessageReader<WorldMessage>>([
     [MessageType.ADD_OBJ, readAddObj],
+    [0x0069, r => readSocial(r, 'party')],
+    [0x004f, readGmChat],
+    [0x00a0, readAnnouncement],
+    [0x0001, readChat],
+    [0x00d0, readShout],
+    [0x00a9, readReturnSay],
+    [0x0024, readNpcScript],
+    [0x0014, readShop],
+    [0x0003, readCreateItem],
+    [0x0004, readMoveItem],
+    [0x0006, readEquipItem],
+    [0x0018, readUpdateItem],
     [MessageType.MOVERMOVED, readMoverMoved],
     [MessageType.MOVERBEHAVIOR, readMoverBehavior],
     [MessageType.MOVERCORR, readMoverCorr],

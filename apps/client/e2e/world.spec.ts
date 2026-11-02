@@ -333,10 +333,10 @@ test.describe('the world screen against scripted servers', () => {
 
   // The chase camera looks south over Webby from 16 m north of it: a tap below the middle of the screen is on the square
   // behind Webby, a few metres north.
-  test('clicking the ground sends DESTPOS and the player walks there', async ({ page }) => {
+  test('clicking the ground sends DESTPOS and the player walks there', async ({ page, isMobile }) => {
     const gateway = await playGateway(page);
     await enterFlaris(page);
-    await tapWorld(page, 0.5, 0.8);
+    await tapWorld(page, 0.5, isMobile ? 0.7 : 0.8);
 
     // CDPClient::SendSnapshot: one DESTPOS, forward, at a point of the square behind Webby
     await expect.poll(() => destPosOf(gateway).length, ON_FRAMES).toBe(1);
@@ -357,7 +357,7 @@ test.describe('the world screen against scripted servers', () => {
 
   // The Aibatt and Julia stand 6 m ahead of Webby, 2.5 m to either side. A tap on a mover is a selection (SelectObj), not a
   // walk; a tap on the ground walks and leaves the selection as it is.
-  test('tapping a mover selects it with SETTARGET and walks nowhere; the ground leaves the focus alone', async ({ page }) => {
+  test('tapping a mover selects it with SETTARGET and walks nowhere; the ground leaves the focus alone', async ({ page, isMobile }) => {
     const gateway = await playGateway(page);
     await enterFlaris(page);
 
@@ -373,7 +373,8 @@ test.describe('the world screen against scripted servers', () => {
     expect(destPosOf(gateway)).toEqual([]);
 
     // the ground walks (as Piece 3), and the focus stays
-    await tapWorld(page, 0.5, 0.8);
+    // Keep clear of the NPC menu and the composer's touch targets on a short phone.
+    await tapWorld(page, isMobile ? 0.7 : 0.5, isMobile ? 0.65 : 0.8);
     await expect.poll(() => destPosOf(gateway).length, ON_FRAMES).toBe(1);
     await page.waitForTimeout(500);
     expect(targetsOf(gateway)).toHaveLength(3);
@@ -488,7 +489,7 @@ test.describe('the world screen against scripted servers', () => {
 
   // The task bar (CWndTaskBar, Piece 4 §3.9) with the JOIN's TASKBAR, drawn with the converted pictures (none missing from
   // the asset index, or the overlay would list it)
-  test("the task bar draws the JOIN's TASKBAR, and F5 and the digits are the bar's, not the browser's", async ({ page }) => {
+  test("the task bar draws the JOIN's TASKBAR, and F5 and the digits are the bar's, not the browser's", async ({ page, isMobile }) => {
     await playGateway(page, flarisWithNewBar);
     await enterFlaris(page);
     const slot = (row: string, i: number) => page.locator(`.hud-slot[data-row="${row}"][data-slot="${i}"]`);
@@ -496,7 +497,8 @@ test.describe('the world screen against scripted servers', () => {
     await expect(slot('item', 0).locator('.hud-slot-count')).toHaveText('3');
     await expect(slot('item', 1).locator('.hud-slot-count')).toHaveText('1');
     await expect(slot('item', 2)).toHaveAttribute('data-kind', 'plain');
-    await expect(slot('applet', 1).locator('.hud-slot-hotkey')).toHaveText('J');
+    if (isMobile) await expect(page.locator('.hud-slot[data-row=applet]')).toHaveCount(0);
+    else await expect(slot('applet', 1).locator('.hud-slot-hotkey')).toHaveText('J');
     // F5 is the fifth slot of the bar (empty here): the page is not reloaded, and 2 shows the second bar
     await page.keyboard.press('F5');
     await page.keyboard.press('Digit2');
@@ -580,7 +582,7 @@ test.describe('the world screen against scripted servers', () => {
     expect(self?.hp).toBe(77);
   });
 
-  test('pressing a turn key cancels it', async ({ page }) => {
+  test('pressing a turn key cancels it', async ({ page, isMobile }) => {
     const gateway = await playGateway(page);
     await enterFlaris(page);
     // The rules are held (the test hooks' pause) and stepped, so that the key goes down while the walk is under way: under
@@ -591,7 +593,9 @@ test.describe('the world screen against scripted servers', () => {
     // on the phone held on its side (342 px high) the bar starts at 0.87 of it
     const canvas = (await page.locator('.world-view canvas').boundingBox())!;
     const barTop = (await page.locator('.hud-taskbar-strip').boundingBox())!.y;
-    await tapWorld(page, 0.5, Math.min(0.92, (barTop - 8 - canvas.y) / canvas.height));
+    const composerTop = (await page.locator('.hud-chat form').boundingBox())?.y ?? barTop;
+    await tapWorld(page, isMobile ? 0.7 : 0.5,
+      isMobile ? 0.65 : Math.min(0.92, (Math.min(barTop, composerTop) - 8 - canvas.y) / canvas.height));
     // the tap's step walks there and sends the DESTPOS; 10 more (1/6 s) and Webby is on the way, far from the point
     await page.evaluate(() => window.__client!.step(1));
     await expect.poll(() => destPosOf(gateway).length).toBe(1);

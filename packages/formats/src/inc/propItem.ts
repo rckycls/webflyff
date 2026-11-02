@@ -20,6 +20,7 @@
 import { ScriptReader } from '../script/cscript';
 
 export interface ItemProp {
+  cost?: number;
   /** The item id: the `II_*` define of the second column (`ItemProp::dwID`). */
   id: number;
   /**
@@ -171,6 +172,7 @@ const ITEM_COLUMNS: readonly Column[] = [
 
 /** The integer columns the rows keep (by their C++ names), and dwReferStat1, which IsUltimate asks for. */
 const KEPT: ReadonlySet<string> = new Set([
+  'dwCost',
   'dwPackMax',
   'dwItemKind1',
   'dwItemKind2',
@@ -285,6 +287,7 @@ export function readPropItem(
       items.push({
         id,
         name,
+        ...(kept.dwCost > 0 ? { cost: kept.dwCost } : {}),
         packMax: kept.dwPackMax,
         kind1: kept.dwItemKind1,
         kind2: kept.dwItemKind2,

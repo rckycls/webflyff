@@ -390,6 +390,7 @@ export async function convertWorld(
     name: folder,
     size: info.size,
     mpu: info.mpu,
+    indoor: info.indoor,
     mapSize: MAP_SIZE,
     ambient: info.ambient,
     bgColor: info.bgColor,

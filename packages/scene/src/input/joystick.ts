@@ -41,9 +41,15 @@ export function joystickIntent(dx: number, dy: number, previous: MoveIntent = NO
 export interface JoystickOptions {
   /** Its base's distance from the container's bottom, a CSS length: 56 px (above the nav bar) by default. */
   bottom?: string;
+  /** Claim touch presses on the left 40% of the canvas and place the stick under that thumb. */
+  floating?: boolean;
+  /** A floating drag claimed the pointer, so a pending world tap must be cancelled. */
+  onClaim?: () => void;
 }
 
 export class Joystick {
+  private center: [number, number] | null = null;
+  private floatingActive = false;
   private readonly base: HTMLElement;
   private readonly knob: HTMLElement;
   private pointer: number | null = null;
@@ -54,10 +60,11 @@ export class Joystick {
    */
   private readonly touch: TouchWatch;
 
-  constructor(container: HTMLElement, options: JoystickOptions = {}) {
+  constructor(private readonly container: HTMLElement, private readonly options: JoystickOptions = {}) {
     const doc = container.ownerDocument;
-    this.touch = watchTouch(doc.defaultView ?? window, () => {
-      this.base.style.display = 'block';
+    this.touch = watchTouch(doc.defaultView ?? window, (touch) => {
+      if (!touch) this.reset();
+      if (!options.floating) this.base.style.display = touch ? 'block' : 'none';
     });
     this.base = doc.createElement('div');
     this.base.className = 'joystick';
@@ -72,11 +79,16 @@ export class Joystick {
       'border-radius:50%;background:rgba(255,255,255,.55);pointer-events:none;';
     this.base.append(this.knob);
     container.append(this.base);
-
-    this.base.addEventListener('pointerdown', this.onDown);
-    this.base.addEventListener('pointermove', this.onMove);
-    this.base.addEventListener('pointerup', this.onUp);
-    this.base.addEventListener('pointercancel', this.onUp);
+    if (options.floating) {
+      this.base.style.display = 'none';
+      this.base.style.pointerEvents = 'none';
+    }
+    const target = options.floating ? container : this.base;
+    target.addEventListener('pointerdown', this.onDown, !!options.floating);
+    target.addEventListener('pointermove', this.onMove, !!options.floating);
+    target.addEventListener('pointerup', this.onUp, !!options.floating);
+    target.addEventListener('pointercancel', this.onUp, !!options.floating);
+    target.addEventListener('lostpointercapture', this.onLostCapture, !!options.floating);
   }
 
   intent(): MoveIntent {
@@ -91,21 +103,39 @@ export class Joystick {
     this.pointer = null;
     this.current = { ...NO_INTENT };
     this.knob.style.transform = '';
+    this.center = null;
+    this.floatingActive = false;
+    if (this.options.floating) this.base.style.display = 'none';
   }
 
   dispose(): void {
     this.touch.dispose();
-    this.base.removeEventListener('pointerdown', this.onDown);
-    this.base.removeEventListener('pointermove', this.onMove);
-    this.base.removeEventListener('pointerup', this.onUp);
-    this.base.removeEventListener('pointercancel', this.onUp);
+    const target = this.options.floating ? this.container : this.base;
+    target.removeEventListener('pointerdown', this.onDown, !!this.options.floating);
+    target.removeEventListener('pointermove', this.onMove, !!this.options.floating);
+    target.removeEventListener('pointerup', this.onUp, !!this.options.floating);
+    target.removeEventListener('pointercancel', this.onUp, !!this.options.floating);
+    target.removeEventListener('lostpointercapture', this.onLostCapture, !!this.options.floating);
     this.base.remove();
   }
 
   private readonly onDown = (event: PointerEvent): void => {
     if (this.pointer !== null) return;
+    if (this.options.floating) {
+      if (event.pointerType !== 'touch' || (event.target as HTMLElement | null)?.tagName !== 'CANVAS') return;
+      if (this.container.classList.contains('world-modal') || this.container.classList.contains('world-menu-open')) return;
+      const box = this.container.getBoundingClientRect();
+      if (event.clientX - box.left > box.width * 0.4) return;
+      this.center = [event.clientX, event.clientY];
+      this.base.style.left = `${event.clientX - box.left - JOYSTICK_RADIUS}px`;
+      this.base.style.top = `${event.clientY - box.top - JOYSTICK_RADIUS}px`;
+      this.base.style.bottom = 'auto';
+      this.base.style.display = 'block';
+      // Preserve a short tap for the world; camera input ignores this reserved left-thumb press.
+      event.preventDefault();
+    }
     this.pointer = event.pointerId;
-    this.base.setPointerCapture(event.pointerId);
+    if (!this.options.floating) this.base.setPointerCapture(event.pointerId);
     this.onMove(event);
   };
 
@@ -113,8 +143,17 @@ export class Joystick {
     if (event.pointerId !== this.pointer) return;
     event.preventDefault();
     const box = this.base.getBoundingClientRect();
-    const dx = event.clientX - (box.left + box.width / 2);
-    const dy = event.clientY - (box.top + box.height / 2);
+    const dx = event.clientX - (this.center?.[0] ?? box.left + box.width / 2);
+    const dy = event.clientY - (this.center?.[1] ?? box.top + box.height / 2);
+    if (this.options.floating) {
+      if (!this.floatingActive) {
+        if (Math.hypot(dx, dy) <= 8) return;
+        this.floatingActive = true;
+        this.container.setPointerCapture(event.pointerId);
+        this.options.onClaim?.();
+      }
+      event.stopPropagation();
+    }
     this.current = joystickIntent(dx, dy, this.current);
     // the knob follows the finger, but stays on the base
     const length = Math.hypot(dx, dy);
@@ -124,5 +163,11 @@ export class Joystick {
 
   private readonly onUp = (event: PointerEvent): void => {
     if (event.pointerId === this.pointer) this.reset();
+  };
+
+  private readonly onLostCapture = (event: PointerEvent): void => {
+    // Ignore the canvas losing its implicit capture when this container takes over the same touch.
+    const owner = this.options.floating ? this.container : this.base;
+    if (event.target === owner && event.pointerId === this.pointer) this.reset();
   };
 }

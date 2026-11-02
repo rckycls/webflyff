@@ -37,6 +37,7 @@ describe('the theme list', () => {
     expect(lower.filter((file) => /^buttchar/.test(file))).toHaveLength(4);
     // the task bar's Start menu (CWndTaskMenu::OnInitialUpdate, WndTaskBar.cpp:2646)
     expect(lower).toContain('wndtaskmenu.tga');
+    expect(lower).toContain('wndinventory3d.tga');
   });
 });
 
@@ -174,6 +175,13 @@ describe('the UI stage on a small hand-made client', () => {
     // nothing of Client/Item leaks into the plain space, and the zip is not a picture
     expect(run.writer.pathOf('ui/itm_bar.png')).toBeUndefined();
     expect(run.writer.pathOf('ui/item/items.png')).toBeUndefined();
+  });
+
+  it('preserves native landscape minimap DDS art without applying the UI magenta colour key', async () => {
+    const run = await runUi({ 'World/WdTest/WdTest03-07.dds': dds(2, 1, [MAGENTA, [4, 5, 6, 255]]) });
+    const map = await png(run, 'minimaps/wdtest/3_7.png');
+    expect(pixel(map, 0, 0)).toEqual(MAGENTA);
+    expect(pixel(map, 1, 0)).toEqual([4, 5, 6, 255]);
   });
 
   it('makes magenta transparent, in a DDS, a TGA and a BMP', async () => {

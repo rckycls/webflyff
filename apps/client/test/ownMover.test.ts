@@ -5,12 +5,14 @@ import type { MoveReport, Vec3 } from '@flyffweb/protocol';
 import { NO_INTENT } from '@flyffweb/scene';
 import type { MoveIntent } from '@flyffweb/scene';
 import { OwnMover, pickOnStage } from '../src/world/ownMover';
+import type { ControlIntent } from '../src/world/controls';
 import { moverMatrix } from '../src/world/render/picking';
 import type { PickCandidate } from '../src/world/render/picking';
 import { HAttr, terrainGround } from '../src/world/sim/collision';
 import type { CollisionObject, Ground } from '../src/world/sim/collision';
-import { MAX_CORR_SIZE_45, ObjSta, ObjStaF } from '../src/world/sim/constants';
+import { ActMsg, MAX_CORR_SIZE_45, ObjSta, ObjStaF } from '../src/world/sim/constants';
 import { stepMover } from '../src/world/sim/moverRules';
+import { wrapAngle } from '../src/world/sim/ActionMover';
 import { addedPlayer, moverFrom } from './helpers/movers';
 
 type Sent =
@@ -50,12 +52,12 @@ function rig(walking: boolean, ground: Ground = terrainGround(() => 0)) {
   const clock = { tick: () => (now += 10n) };
   const shown: Vec3[] = [];
   const driving = new OwnMover(session, clock, { show: (pos) => shown.push(pos) });
-  const step = (input: MoveIntent = NO_INTENT, tap: Vec3 | null = null): void => {
+  const step = (input: ControlIntent = NO_INTENT, tap: Vec3 | null = null): void => {
     driving.control(own, input, tap);
     stepMover(own, () => undefined, ground);
     driving.corrected(own);
   };
-  const steps = (n: number, input: MoveIntent = NO_INTENT): void => {
+  const steps = (n: number, input: ControlIntent = NO_INTENT): void => {
     for (let i = 0; i < n; i++) step(input);
   };
   const types = (): string[] => sent.map((s) => s.type);
@@ -63,6 +65,187 @@ function rig(walking: boolean, ground: Ground = terrainGround(() => 0)) {
 }
 
 describe('OwnMover', () => {
+  it.each(['steady', 'noisy'])('coalesces %s ground steering against a wall without delaying local steering or flooding corrections', (mode) => {
+    const r = rig(false, { ...terrainGround(() => 0), objectsNear: () => [wallAt(103)] });
+    const timestamps: number[] = [];
+    for (let frame = 0; frame < 360; frame++) {
+      const before = r.sent.length;
+      const angle = mode === 'steady' ? 91 : frame % 2 ? 89 : 91;
+      r.step({ forward: 1, turn: 0, run: true, angle });
+      expect(r.own.act.body.angle).toBe(wrapAngle(angle));
+      for (let i = before; i < r.sent.length; i++) timestamps.push(frame);
+    }
+    const peak = Math.max(...timestamps.map((frame) => timestamps.filter((at) => at > frame - 60 && at <= frame).length));
+    expect(peak).toBeLessThanOrEqual(22); // 10 movement + 10 correction reports, with boundary headroom
+    expect(r.sent.filter((p) => p.type === 'corr').length).toBeGreaterThan(0);
+    expect(r.own.act.body.pos[0]).toBeLessThan(103);
+    // Turning away takes effect immediately even while the next network report is coalesced.
+    const blockedX = r.own.act.body.pos[0];
+    r.steps(12, { forward: 1, turn: 0, run: true, angle: 270 });
+    expect(r.own.act.body.pos[0]).toBeLessThan(blockedX - .5);
+    const beforeStop = r.sent.length;
+    r.step(NO_INTENT);
+    expect(r.sent.length).toBe(beforeStop + 1);
+    expect(r.own.act.state & ObjSta.MOVE_ALL).toBe(ObjSta.STAND);
+    r.steps(12);
+    expect(r.sent.length).toBe(beforeStop + 1);
+  });
+
+  it('flushes the final coalesced angle even after the joystick stops changing direction', () => {
+    const r = rig(false);
+    r.step({ forward: 1, turn: 0, run: true, angle: 90 });
+    r.step({ forward: 1, turn: 0, run: true, angle: 135 });
+    expect(r.sent.length).toBe(1);
+    r.steps(6, { forward: 1, turn: 0, run: true, angle: 135 });
+    expect(r.sent.length).toBe(2);
+    const last = r.sent.at(-1)!;
+    expect('m' in last && last.m.angle).toBe(135);
+    r.steps(20, { forward: 1, turn: 0, run: true, angle: 135 });
+    expect(r.sent.length).toBe(2);
+  });
+
+  it('drops a queued ground turn when jumping or explicitly stopping', () => {
+    const r = rig(false);
+    r.step({ forward: 1, turn: 0, run: true, angle: 90 });
+    r.step({ forward: 1, turn: 0, run: true, angle: 91 });
+    r.driving.control(r.own, { forward: 1, turn: 0, run: true, angle: 91 }, null, false, true);
+    const moved = r.sent.filter((p) => p.type === 'moved').length;
+    r.steps(12, { forward: 1, turn: 0, run: true, angle: 91 });
+    expect(r.sent.filter((p) => p.type === 'moved').length).toBe(moved);
+    r.driving.stop(r.own);
+    const stopped = r.sent.length;
+    r.steps(12);
+    expect(r.sent.length).toBe(stopped);
+  });
+
+  it('reports a quick joystick stop and restart immediately despite the steering cooldown', () => {
+    const r = rig(false);
+    r.step({ forward: 1, turn: 0, run: true, angle: 90 });
+    r.step({ forward: 1, turn: 0, run: true, angle: 135 });
+    r.driving.stop(r.own);
+    expect(r.types()).toEqual(['moved', 'moved']);
+    expect((r.sent[1] as { m: MoveReport }).m.state & ObjSta.MOVE_ALL).toBe(ObjSta.STAND);
+    r.step({ forward: 1, turn: 0, run: true, angle: 180 });
+    expect(r.types()).toEqual(['moved', 'moved', 'moved']);
+    expect((r.sent[2] as { m: MoveReport }).m.angle).toBe(180);
+  });
+
+  it('a new tap destination discards queued joystick steering instead of sending it over DESTPOS', () => {
+    const r = rig(false);
+    r.step({ forward: 1, turn: 0, run: true, angle: 90 });
+    r.step({ forward: 1, turn: 0, run: true, angle: 135 });
+    r.step(NO_INTENT, [110, 0, 100]);
+    const before = r.sent.length;
+    r.steps(12);
+    expect(r.sent.length).toBe(before);
+    expect(r.sent.at(-1)?.type).toBe('destPos');
+    expect(r.own.dest?.pos).toEqual([110, 0, 100]);
+  });
+
+  it('keeps run mode after combat changes the gait outside the controls', () => {
+    const r = rig(true);
+    r.step({ forward: 1, turn: 0 });
+    r.own.act.sendActMsg(ActMsg.MODE_RUN);
+    r.step(NO_INTENT);
+    expect(r.own.act.stateFlag & ObjStaF.WALK).toBe(0);
+  });
+  it.each([-1, 1])('turns a desktop jump with A/D (%s) and reports only turn transitions', (turn) => {
+    const r = rig(false);
+    const forward = { forward: 1, turn: 0, run: true };
+    r.driving.control(r.own, forward, null, false, true);
+    r.own.act.step(terrainGround(() => 0));
+    const before = [...r.own.act.body.pos];
+    const reports = r.sent.filter((p) => p.type === 'behavior').length;
+    r.steps(5, { ...forward, turn });
+    expect(r.own.act.body.angle).toBeCloseTo(90 - turn * 20, 1);
+    expect(r.own.act.body.pos[1]).toBeGreaterThan(before[1]!);
+    expect(Math.abs(r.own.act.body.pos[2] - before[2]!)).toBeGreaterThan(.02);
+    expect(r.sent.filter((p) => p.type === 'behavior').length).toBe(reports + 1);
+    r.step(forward);
+    const releasedAngle = r.own.act.body.angle;
+    r.steps(5, forward);
+    expect(r.own.act.body.angle).toBe(releasedAngle);
+  });
+  it('steers a moving jump without restarting the jump or flooding repeated direction reports', () => {
+    const r = rig(false);
+    const east = { forward: 1, turn: 0, run: true, angle: 90 };
+    const north = { forward: 1, turn: 0, run: true, angle: 0 };
+    r.driving.control(r.own, east, null, false, true);
+    r.own.act.step(terrainGround(() => 0));
+    r.steps(5, east);
+    const before = [...r.own.act.body.pos];
+    const vertical = r.own.act.delta[1];
+    const jumping = r.own.act.state & ObjSta.JUMP_ALL;
+    const reports = r.sent.filter((packet) => packet.type === 'behavior').length;
+    r.driving.control(r.own, north, null);
+    expect(r.own.act.body.angle).toBe(0);
+    expect(r.own.act.delta[1]).toBe(vertical);
+    expect(r.own.act.state & ObjSta.JUMP_ALL).toBe(jumping);
+    const sent = r.sent.at(-1)!;
+    expect(sent.type).toBe('behavior');
+    if (sent.type === 'behavior') {
+      expect(sent.m.pos).toEqual(before); // current position, not a ground-move prediction
+      expect(sent.m.delta[1]).toBe(vertical);
+    }
+    r.steps(5, north);
+    expect(r.own.act.body.pos[2]).toBeLessThan(before[2]! - .4);
+    expect(r.own.act.body.pos[0]).toBeCloseTo(before[0]!, 3);
+    expect(r.sent.filter((packet) => packet.type === 'behavior').length).toBe(reports + 1);
+  });
+
+  it('can start moving from a standing jump and release the stick to stop horizontal travel before landing', () => {
+    const r = rig(false);
+    r.driving.control(r.own, NO_INTENT, null, false, true);
+    r.own.act.step(terrainGround(() => 0));
+    r.steps(5, { forward: 1, turn: 0, run: true, angle: 90 });
+    expect(r.own.act.body.pos[0]).toBeGreaterThan(100.4);
+    r.step(NO_INTENT);
+    const landingX = r.own.act.body.pos[0];
+    expect(r.own.act.body.pos[1]).toBeGreaterThan(0);
+    r.steps(120);
+    expect(r.own.act.body.pos[0]).toBe(landingX);
+    expect(r.own.act.body.pos[1]).toBe(0);
+    expect(r.own.act.state & ObjSta.JUMP_ALL).toBe(0);
+  });
+  it('can redirect the landing spot while descending', () => {
+    const r = rig(false);
+    const east = { forward: 1, turn: 0, run: true, angle: 90 };
+    r.driving.control(r.own, east, null, false, true);
+    r.own.act.step(terrainGround(() => 0));
+    r.steps(45, east);
+    expect(r.own.act.state & ObjSta.JUMP_ALL).toBe(ObjSta.SJUMP3);
+    const before = [...r.own.act.body.pos];
+    r.steps(5, { ...east, angle: 270 });
+    expect(r.own.act.body.pos[0]).toBeLessThan(before[0]! - .4);
+    expect(r.own.act.body.pos[1]).toBeLessThan(before[1]!);
+    expect(r.own.act.body.pos[1]).toBeGreaterThan(0);
+  });
+
+  it('stops joystick air travel on focus loss without cancelling the jump', () => {
+    const r = rig(false);
+    const east = { forward: 1, turn: 0, run: true, angle: 90 };
+    r.driving.control(r.own, east, null, false, true);
+    r.own.act.step(terrainGround(() => 0));
+    r.steps(5, east);
+    const x = r.own.act.body.pos[0];
+    const vertical = r.own.act.delta[1];
+    r.driving.stop(r.own);
+    expect(r.own.act.delta[1]).toBe(vertical);
+    expect(r.own.act.state & ObjSta.JUMP_ALL).toBe(ObjSta.SJUMP2);
+    r.steps(5);
+    expect(r.own.act.body.pos[0]).toBe(x);
+    expect(r.own.act.body.pos[1]).toBeGreaterThan(0);
+  });
+
+  it('sends one native behavior report for a jump and keeps the existing correction path', () => {
+    const r = rig(false);
+    r.driving.control(r.own, NO_INTENT, null, false, true);
+    expect(r.types()).toEqual(['behavior']);
+    const report = r.sent[0]!;
+    expect('m' in report && (report.m.state & 0xf000)).toBe(0x5000);
+    r.driving.control(r.own, NO_INTENT, null, false, true);
+    expect(r.types()).toEqual(['behavior']);
+  });
   it('the first idle steps send nothing, in whatever mode the server gave the player (Ruling 40)', () => {
     for (const walking of [false, true]) {
       const { own, steps, types } = rig(walking);

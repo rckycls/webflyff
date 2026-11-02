@@ -2,7 +2,7 @@ import net from 'node:net';
 import type { WebSocket } from 'ws';
 import {
   ArWriter, CloseCode, DPID_UNKNOWN, PacketType, ProtocolError, ServerFrameReader, encodeClientFrame,
-  encodeGatewayClientAddr, readProtocolId,
+  encodeGatewayClientAddr, encodePing, encodeWorldKeepAlive, readProtocolId,
 } from '@flyffweb/protocol';
 import { normalizeIPv4 } from './clientAddress';
 import type { Limits, RouteTarget } from './config';
@@ -89,6 +89,8 @@ function closeCodeOfWsError(error: Error): number {
  * - A browser that sleeps leaves a WebSocket that never closes: every `pingIntervalMs` the relay pings it, and if no
  *   pong comes within `pongTimeoutMs` of the first unanswered ping, the WebSocket is terminated and, with it, the
  *   TCP connection, so the server does not keep the session.
+ * - Login PINGs and cache KEEP_ALIVE replies run here so background-tab timer throttling does not expire a live
+ *   browser connection. Closing the WebSocket still destroys the TCP connection and all its timers.
  *
  * Throws, before anything is opened, when `clientAddress` is not a dotted IPv4 address. It writes no log: the
  * caller knows the address and the route and, from `done`, the code and the byte counts.
@@ -124,6 +126,7 @@ export function startRelay(ws: WebSocket, opts: RelayOptions): { done: Promise<R
   /** Runs until the server's protocol ID has arrived. */
   const connectTimer = setTimeout(() => finish(CloseCode.SERVER_UNREACHABLE), limits.connectTimeoutMs);
   let pongTimer: NodeJS.Timeout | undefined;
+  let loginPingTimer: NodeJS.Timeout | undefined;
   const pingTimer = setInterval(() => {
     if (ws.readyState !== ws.OPEN) return;
     ws.ping();
@@ -144,6 +147,7 @@ export function startRelay(ws: WebSocket, opts: RelayOptions): { done: Promise<R
     closeCode = code;
     clearTimeout(connectTimer);
     clearInterval(pingTimer);
+    clearInterval(loginPingTimer);
     clearTimeout(pongTimer);
     held.length = 0;
     tcp.destroy();
@@ -158,6 +162,11 @@ export function startRelay(ws: WebSocket, opts: RelayOptions): { done: Promise<R
 
   const onServerBody = (body: Uint8Array): void => {
     if (protocolId !== undefined) {
+      if (route.role === 'cache' && body.byteLength === 4 &&
+        new DataView(body.buffer, body.byteOffset, body.byteLength).getUint32(0, true) === PacketType.KEEP_ALIVE) {
+        if (ws.readyState === ws.OPEN) tcp.write(encodeClientFrame(encodeWorldKeepAlive(), protocolId));
+        return; // the browser must not send a duplicate reply after resuming
+      }
       ws.send(body, { binary: true });
       bytesDown += body.byteLength;
       return;
@@ -173,6 +182,12 @@ export function startRelay(ws: WebSocket, opts: RelayOptions): { done: Promise<R
       tcp.write(encodeClientFrame(clientAddrPacket(route.role, opts.clientAddress), protocolId));
     }
     for (const early of held.splice(0)) forward(early);
+    if (route.role === 'login') {
+      // Neuz's 10s heartbeat; the login server expires clients after 90s without one.
+      loginPingTimer = setInterval(() => {
+        if (!finished && ws.readyState === ws.OPEN) tcp.write(encodeClientFrame(encodePing(Date.now()), protocolId!));
+      }, 10_000);
+    }
   };
 
   tcp.once('connect', () => { connected = true; });

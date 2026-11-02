@@ -212,7 +212,7 @@ export interface ModelFrame {
  * between the server's messages, so a copy that keeps them moves others as their own clients do.
  *
  * Copied: the messages in `ActMsg` (`ProcessActMsg1`); the states `STAND`, `FMOVE`, `BMOVE`, `SIT`, `LTURN` and
- * `RTURN` (`ProcessState1`), and `SJUMP3`/`SJUMP4`, the falling and landing that the ground's height leads to;
+ * `RTURN` (`ProcessState1`), and `SJUMP1` through `SJUMP4`, the jump, fall and landing;
  * `ProcessCollisionGround`, with the collision rules of `collision.ts`; `PresupposePos`; `CMover::ActionForceSet`.
  * Combat (Piece 4): the melee swings `ATK1` to `ATK4` with their hit frames, pause and end (`_ProcessStateAttack`), the
  * attacks kept while busy (`m_qMeleeAtkMsg`), the flinch (`SetDamagedMotion`), the knock-back flight and fall
@@ -220,7 +220,7 @@ export interface ModelFrame {
  * speed (`CMover::ProcessAniSpeed`); and the melee skills (`OBJMSG_MELEESKILL`, `ProcessStateMeleeSkill`), with the skill
  * in use (`skillAct`). The model's side of it (its frame, `IsEndFrame`, `IsAttrHit`) is its owner's, who sets the hooks;
  * `m_nPause` is kept here (`paused`), where both the rules and the model read it.
- * Left out: flying (`IsFly`, flying NPCs), collecting, jumping on purpose, the `MVRF_NOMOVE`, `MVRF_NOATTACK` and
+ * Left out: flying (`IsFly`, flying NPCs), collecting, the `MVRF_NOMOVE`, `MVRF_NOATTACK` and
  * `CHS_LOOT` blocks and the stun (no buffs here), the magic skills' casting, and the world's edge (`CWorld::ClipX`/`ClipZ`);
  * `__Y_INTERFACE_VER3` (strafing) and `__X15` are off in Neuz's build. Positions, deltas and speeds are floats (`f32`).
  */
@@ -309,6 +309,8 @@ export class ActionMover {
    * this; by default 0, so that the dead state alone tells life.
    */
   hitPoint: () => number = () => 0;
+  /** DST_JUMPING, added to native jump velocity in thousandths. */
+  jumpBonus: () => number = () => 0;
   /**
    * `CMover::GetAttackSpeed()` (`MoverAttack.cpp:159-192`, `params.ts`' `attackSpeed`): a player's. Its owner sets this
    * (the world for another player, from its job, right-hand item, DEX and level; the attack loop for the own one).
@@ -362,6 +364,36 @@ export class ActionMover {
    */
   sendActMsg(msg: number, ...params: number[]): boolean {
     return this.processActMsg1(msg, params[0] ?? 0, params[1] ?? 0, params[2] ?? 0) === 1;
+  }
+
+  /** Joystick air control: change horizontal travel while preserving the native jump and vertical velocity. */
+  steerJump(angle: number | null): boolean {
+    const jumping = this.state & ObjSta.JUMP_ALL;
+    if (jumping !== ObjSta.SJUMP1 && jumping !== ObjSta.SJUMP2 && jumping !== ObjSta.SJUMP3) return false;
+    if ((this.state & (ObjSta.ATK_ALL | ObjSta.DMG_ALL | ObjSta.ACTION_ALL)) || (this.stateFlag & ObjStaF.FLY)) return false;
+    const move = angle === null ? ObjSta.STAND : ObjSta.FMOVE;
+    const facing = angle === null ? this.body.angle : wrapAngle(angle);
+    if ((this.state & ObjSta.MOVE_ALL) === move && (this.state & ObjSta.TURN_ALL) === 0 && this.body.angle === facing) return false;
+    this.body.angle = facing;
+    this.setState(ObjSta.MOVE_ALL, move);
+    this.setState(ObjSta.TURN_ALL, 0);
+    if (angle === null) {
+      this.delta[0] = this.delta[2] = 0;
+    } else {
+      moveDelta(this.delta, radians(facing), moveSpeed(move, (this.stateFlag & ObjStaF.WALK) !== 0, f32(this.body.speed))!);
+    }
+    return true;
+  }
+
+  /** Desktop A/D air turns use the ordinary turn states/rate, keeping the jump's existing travel mode. */
+  turnJump(direction: number): boolean {
+    const jumping = this.state & ObjSta.JUMP_ALL;
+    if (jumping !== ObjSta.SJUMP1 && jumping !== ObjSta.SJUMP2 && jumping !== ObjSta.SJUMP3) return false;
+    if ((this.state & (ObjSta.ATK_ALL | ObjSta.DMG_ALL | ObjSta.ACTION_ALL)) || (this.stateFlag & ObjStaF.FLY)) return false;
+    const turn = direction < 0 ? ObjSta.LTURN : direction > 0 ? ObjSta.RTURN : 0;
+    if ((this.state & ObjSta.TURN_ALL) === turn) return false;
+    this.setState(ObjSta.TURN_ALL, turn);
+    return true;
   }
 
   /**
@@ -729,6 +761,13 @@ export class ActionMover {
         if ((this.state & ObjSta.TURN_ALL) === 0) return 0;
         this.setState(ObjSta.TURN_ALL, 0);
         return 1;
+      case ActMsg.JUMP: // ActionMoverMsg.cpp:498-519
+        if (this.state & (ObjSta.JUMP_ALL | ObjSta.ATK_ALL | ObjSta.DMG_ALL | ObjSta.ACTION_ALL)) return 0;
+        if (this.stateFlag & ObjStaF.SIT) return 0;
+        this.processActMsg1(ActMsg.STOP_TURN, 0, 0, 0);
+        this.setState(ObjSta.JUMP_ALL, ObjSta.SJUMP1);
+        this.setMotion(Mti.JUMP1, AniLoop.ONE_PLAY);
+        return 1;
       case ActMsg.ATK1: // :596-704
       case ActMsg.ATK2:
       case ActMsg.ATK3:
@@ -896,6 +935,18 @@ export class ActionMover {
         break;
       case ObjSta.RTURN: // :353-356
         if ((this.state & ObjSta.ATK_ALL) === 0) this.body.angle = wrapAngle(this.body.angle - 4);
+        break;
+      case ObjSta.SJUMP1: // ActionMoverState.cpp:370-382
+        this.setState(ObjSta.JUMP_ALL, ObjSta.SJUMP2);
+        this.delta[1] = f32(f32(0.2) + f32(this.jumpBonus() / 1000));
+        if ((this.state & ObjSta.COLLECT) === 0) this.setMotion(Mti.JUMP2, AniLoop.CONT);
+        break;
+      case ObjSta.SJUMP2: // :384-393
+        if ((this.state & ObjSta.COLLECT) === 0) this.setMotion(Mti.JUMP2, AniLoop.CONT);
+        if (this.delta[1] <= 0) {
+          this.setState(ObjSta.JUMP_ALL, ObjSta.SJUMP3);
+          if ((this.state & ObjSta.COLLECT) === 0) this.setMotion(Mti.JUMP3, AniLoop.CONT);
+        }
         break;
       case ObjSta.SJUMP3: // :395-412, falling (OnActLanding only shakes the camera for a boss)
         if ((this.state & ObjSta.DMG_ALL) === 0 || (this.state & ObjSta.COLLECT) === 0) this.setMotion(Mti.JUMP3, AniLoop.CONT);

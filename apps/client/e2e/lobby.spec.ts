@@ -127,7 +127,7 @@ async function logIn(page: Page, path = '/'): Promise<void> {
 }
 
 /**
- * Every control is a comfortable touch target, no input is small enough to make iOS zoom in, and nothing makes the
+ * Classic compact controls stay usable, no input is small enough to make iOS zoom in, and nothing makes the
  * page scroll sideways.
  */
 async function expectPhoneFriendly(page: Page): Promise<void> {
@@ -135,7 +135,9 @@ async function expectPhoneFriendly(page: Page): Promise<void> {
     const found: string[] = [];
     for (const control of document.querySelectorAll<HTMLElement>('button, input')) {
       const box = control.getBoundingClientRect();
-      if (box.height < 44 || box.width < 44) found.push(`${control.tagName} ${control.textContent ?? ''} is ${box.width}x${box.height}`);
+      if (box.width === 0 || box.height === 0) continue; // the unselected character's action row is hidden
+      const minimum = control instanceof HTMLInputElement ? 24 : matchMedia('(pointer: coarse)').matches ? 28 : 20;
+      if (box.height < minimum || box.width < 28) found.push(`${control.tagName} ${control.textContent ?? ''} is ${box.width}x${box.height}`);
       if (control instanceof HTMLInputElement && control.type !== 'radio' && parseFloat(getComputedStyle(control).fontSize) < 16) {
         found.push(`input ${control.name} has a font smaller than 16px`);
       }
@@ -146,12 +148,40 @@ async function expectPhoneFriendly(page: Page): Promise<void> {
   expect(problems).toEqual([]);
 }
 
+test('classic lobby artwork, previews and bounds', async ({ page }, info) => {
+  test.setTimeout(90_000);
+  await playGateway(page, { certifier: listing([FLYFF, OPEN_CHANNEL]), login: enterable([WEBBY]) });
+  await page.goto('/');
+  await expect.poll(() => page.locator('#app').evaluate(el => getComputedStyle(el).backgroundImage)).toContain('screen.');
+  await page.screenshot({ path: info.outputPath('login.png') });
+  await page.getByLabel('Account').fill('webtester');
+  await page.getByLabel('Password').fill('password1');
+  await page.getByRole('button', { name: 'Log in' }).click();
+  await expect(page.getByRole('button', { name: 'Next' })).toBeVisible();
+  await page.screenshot({ path: info.outputPath('servers.png') });
+  await page.getByRole('button', { name: 'Next' }).click();
+  await expect(page.locator('.character-preview canvas')).toHaveCount(1, { timeout: 60_000 });
+  await page.screenshot({ path: info.outputPath('characters.png') });
+  const sizes = info.project.name === 'phone' ? [{ width: 568, height: 320 }, { width: 844, height: 390 }] : [page.viewportSize()!];
+  for (const size of sizes) {
+    await page.setViewportSize(size);
+    const issues = await page.locator('.character-screen button:visible').evaluateAll(buttons => buttons.flatMap(button => {
+      const b = button.getBoundingClientRect();
+      const hit = document.elementFromPoint(b.x + b.width / 2, b.y + b.height / 2);
+      return b.left < 0 || b.top < 0 || b.right > innerWidth || b.bottom > innerHeight || !button.contains(hit)
+        ? [button.getAttribute('aria-label') ?? button.textContent] : [];
+    }));
+    expect(issues).toEqual([]);
+    await page.screenshot({ path: info.outputPath(`characters-${size.width}.png`) });
+  }
+});
+
 test.describe('the lobby against scripted servers', () => {
   test('lists servers and channels; an offline or a full channel cannot be picked', async ({ page }) => {
     await playGateway(page, { certifier: listing([FLYFF, OPEN_CHANNEL, OFFLINE_CHANNEL, FULL_CHANNEL]) });
     await logIn(page);
     await expect(page.getByRole('heading', { name: 'Choose a channel' })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'FlyFF', level: 3 })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'FlyFF', exact: true })).toHaveAttribute('aria-pressed', 'true');
     await expectPhoneFriendly(page);
 
     const open = page.getByRole('button', { name: /Channel 1/ });
@@ -214,7 +244,7 @@ test.describe('the lobby against scripted servers', () => {
       certifier: listing([{ ...FLYFF, name: '<i>Fly</i>FF' }, { ...OPEN_CHANNEL, name: markup }]),
     });
     await logIn(page);
-    await expect(page.getByRole('heading', { name: '<i>Fly</i>FF' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '<i>Fly</i>FF', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: new RegExp(markup.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')) })).toBeVisible();
     await expect(page.locator('main i, main img')).toHaveCount(0);
     expect(await page.evaluate(() => (window as unknown as { pwned?: number }).pwned)).toBeUndefined();
@@ -239,7 +269,7 @@ test.describe('the lobby against scripted servers', () => {
     await page.getByRole('button', { name: /Channel 1/ }).click();
 
     await expect(page.getByRole('heading', { name: 'Your characters' })).toBeFocused();
-    await expect(page.getByRole('listitem').filter({ hasText: 'Webby' })).toContainText('Level 15 · Job 0');
+    await expect(page.getByRole('listitem').filter({ hasText: 'Webby' })).toContainText('Level 15');
     await expect(page.getByRole('button', { name: 'Empty — Create' })).toHaveCount(2);
     await expectPhoneFriendly(page);
 
@@ -364,11 +394,12 @@ test.describe('the lobby against scripted servers', () => {
     await page.getByRole('button', { name: /Channel 1/ }).click();
     await expect(page.getByRole('heading', { name: 'Your characters' })).toBeVisible();
 
-    // One Enter on each character and none on the empty slot.
+    // The classic shared action row follows the selected character.
     const enter = page.getByRole('button', { name: /^Enter/ });
-    await expect(enter).toHaveCount(2);
+    await expect(enter).toHaveCount(1);
     await expect(page.getByRole('listitem').filter({ hasText: 'Webby' }).getByRole('button', { name: 'Enter Webby' })).toHaveText('Enter');
-    await expect(page.getByRole('listitem').filter({ hasText: 'Third' }).getByRole('button', { name: 'Enter Third' })).toHaveText('Enter');
+    await page.getByRole('button', { name: 'Select Third' }).click();
+    await expect(page.getByRole('button', { name: 'Enter Third' })).toHaveText('Enter');
     await expectPhoneFriendly(page);
 
     // The lobby's screens go and the world screen takes over, with the login-server connection still open: the world

@@ -19,7 +19,7 @@ import type { AnimationAction, Object3D, Scene } from 'three';
 import { AnimationClip, Box3, CapsuleGeometry, Group, LoopOnce, LoopRepeat, Mesh, MeshLambertMaterial } from 'three';
 import { motionFor } from '../sim/ActionMover';
 import type { ModelFrame as ActionModelFrame, MotionHand } from '../sim/ActionMover';
-import { AniLoop, Ik3, Mop, Mti } from '../sim/constants';
+import { AniLoop, Ik3, Mop, Mti, ObjStaF } from '../sim/constants';
 import { STEPS_PER_SECOND } from '../sim/stepper';
 import { isDie } from '../WorldState';
 import type { Mover, WorldChanges } from '../WorldState';
@@ -234,6 +234,13 @@ export class MoverViews {
     }
   }
 
+  /** Equipment confirmation invalidates the assembled parts and held models, with normal async-load disposal. */
+  refresh(mover: Mover): void {
+    const old = this.views.get(mover.objectId);
+    if (old) this.drop(old);
+    this.add(mover);
+  }
+
   /**
    * One rules step of the drawing side (`CMover::Process` after the rules, `Mover.cpp:3538`, `:3862`): the drawn pose
    * follows (`Interpolate`), a hit's shake counts down (`--m_nDmgCnt`, :3526-3527) and its flash fades
@@ -340,6 +347,17 @@ export class MoverViews {
     let n = 0;
     for (const view of this.views.values()) if (view.model !== null) n++;
     return n;
+  }
+
+  /** Starts loading an action's motion and allows local combat only once a real model can play it. */
+  motionReady(mover: Mover, motion: number): boolean {
+    const view = this.views.get(mover.objectId);
+    if (view === undefined || view.model === null) return false;
+    // swing() enters combat before SetMotion, even when the character was standing peacefully.
+    const key = view.look?.motion(motionFor(motion, this.handOf(view), mover.act.stateFlag | ObjStaF.COMBAT, 0));
+    if (key == null) return false;
+    const clip = this.clip(key);
+    return !clip.loading && clip.motion !== null && clip.motion.events.frames > 1;
   }
 
   /** Resolves once every model and motion asked for so far (and any they lead to) has arrived or failed. */

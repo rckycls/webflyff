@@ -24,6 +24,7 @@ const OWN: AddedMover = {
       str: 15, sta: 15, dex: 15, int: 15, manaPoint: 63, fatiguePoint: 32, exp: 0n, skillLevel: 0, skillPoint: 0,
       deathExp: 0n, deathLevel: 0, remainGP: 0,
       skills: Array.from({ length: 45 }, () => ({ skill: NULL_ID, level: 0 })), inventory: [], inventoryError: null,
+      inventorySlots: Array.from({ length: 73 }, (_, i) => i < 42 ? i : NULL_ID),
     },
   },
 };

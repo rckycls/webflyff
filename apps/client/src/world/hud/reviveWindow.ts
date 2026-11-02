@@ -55,6 +55,8 @@ export type ReviveTexts = ReadonlyMap<string, { text: string }>;
  * closes it. `modal.onChange` hears it open and close, for the world screen to let go of the controls.
  */
 export class ReviveWindow {
+  private readonly stand: HTMLButtonElement;
+  onStand: () => boolean = () => false;
   readonly frame: WindowFrame;
   readonly modal: ModalBackdrop;
 
@@ -75,7 +77,10 @@ export class ReviveWindow {
     };
     const lodestar = button('lodestar', 'ButtLodestar.bmp', LODESTAR_AT, 'TID_GAME_TOOLTIP_LODESTAR', () => this.lodestar());
     // no resurrection scroll (II_SYS_SYS_SCR_RESURRECTION, :12193-12200): Piece 5's items
-    const stand = button('stand', 'ButtReviveStand.bmp', STAND_AT, 'TID_GAME_TOOLTIP_OGNPOINT', () => {});
+    const stand = button('stand', 'ButtReviveStand.bmp', STAND_AT, 'TID_GAME_TOOLTIP_OGNPOINT', () => {
+      if (this.onStand()) this.frame.close();
+    });
+    this.stand = stand;
     stand.disabled = true;
     // the item mall's web box (:12334-12339) is not the browser's
     const shop = button('shop', 'ButtFlyffShop.tga', SHOP_AT, 'TID_GAME_TOOLTIP_SHOP', () => {});
@@ -93,6 +98,8 @@ export class ReviveWindow {
   get isOpen(): boolean {
     return this.frame.isOpen;
   }
+
+  update(canRevive: boolean): void { this.stand.disabled = !canRevive; }
 
   /**
    * Shows the window at the middle of its layer's width, 70 px down (`( rectRoot.right - rectWindow.Width() ) / 2`,

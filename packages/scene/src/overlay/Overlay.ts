@@ -67,6 +67,10 @@ export class Overlay {
   private errors: string[] = [];
   private device = deviceLabel();
   private readonly text: HTMLElement;
+  private readonly deviceButton: HTMLButtonElement;
+  private readonly toggle: HTMLButtonElement;
+  private compact = false;
+  private expanded = true;
 
   constructor(root: HTMLElement) {
     const doc = root.ownerDocument;
@@ -79,9 +83,36 @@ export class Overlay {
     button.textContent = 'set device name';
     button.style.cssText = BUTTON_STYLE;
     button.addEventListener('click', () => this.askDeviceName());
-    box.append(this.text, button);
+    this.deviceButton = button;
+    this.toggle = doc.createElement('button');
+    this.toggle.style.cssText = BUTTON_STYLE;
+    this.toggle.textContent = 'Stats';
+    this.toggle.hidden = true;
+    this.toggle.addEventListener('click', () => this.togglePanel());
+    box.append(this.text, button, this.toggle);
     root.append(box);
     this.redraw();
+  }
+
+  setCompact(compact: boolean): void {
+    if (this.compact === compact) return;
+    this.compact = compact;
+    this.expanded = !compact;
+    this.fold();
+  }
+
+  /** Lets the client's mobile shortcuts open the same diagnostics panel. */
+  togglePanel(): boolean {
+    this.expanded = !this.expanded;
+    this.fold();
+    return this.expanded;
+  }
+
+  private fold(): void {
+    this.text.hidden = this.compact && !this.expanded;
+    this.deviceButton.hidden = this.text.hidden;
+    this.toggle.hidden = !this.compact;
+    this.toggle.ariaExpanded = String(this.expanded);
   }
 
   /** Call once per rendered frame with the time since the previous one, in seconds. Zero, negative or NaN is ignored. */
@@ -144,6 +175,7 @@ export class Overlay {
   private redraw(): void {
     this.sinceRedraw = 0;
     const s = this.snapshot();
+    this.toggle.textContent = s.errors.length > 0 ? `Stats (${s.errors.length} errors)` : 'Stats';
     const lines = [
       `fps ${s.fps.toFixed(1)}   frame ${s.frameMs.toFixed(1)} ms`,
       `heap ${s.jsHeapBytes === null ? 'n/a' : megabytes(s.jsHeapBytes)}   gpu (est) ${megabytes(s.gpuBytes)}`,

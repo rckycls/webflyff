@@ -6,7 +6,9 @@ For the owner. This file has a part per piece:
 - [Piece 3, milestone 1: the world](#piece-3-milestone-1-the-world);
 - [Piece 3, milestone 2: collision and tap to walk](#piece-3-milestone-2-collision-and-tap-to-walk);
 - [Piece 4, milestone 1: fighting and levelling](#piece-4-milestone-1-fighting-and-levelling);
-- [Piece 4, milestone 2: skills](#piece-4-milestone-2-skills), at the end.
+- [Piece 4, milestone 2: skills](#piece-4-milestone-2-skills);
+- [Piece 5, milestone 1: controls and layout](piece5-m1-checkpoint.md), accepted;
+- [Piece 5, milestone 2: items](piece5-m2-checkpoint.md), awaiting owner checks.
 
 From Piece 4 on, the game is played sideways: hold phones and tablets in landscape for every checklist in the client parts. See [Hold every device sideways](#hold-every-device-sideways).
 
@@ -483,7 +485,8 @@ As in the Piece 3 part: the gateway in the VM, and `npm run dev:client` on your 
 
 | Key | What it does |
 | --- | --- |
-| `W`, `S`, `A`, `D` or the arrow keys | Move and turn, as before |
+| `W`, `S`, `A`, `D` | Move and turn |
+| Arrow keys (from Piece 5) | Rotate the camera, in the same reversed direction as dragging |
 | `X` | Toggles walking and running. `Shift` no longer changes the pace. |
 | `H` | Character window |
 | `T` | Status window |
@@ -736,3 +739,27 @@ If one fails, send me the lines from the first `failed` (or `error`) down to the
 | **+** stays greyed | You have no Skill Points, the skill is at its top level, or its condition isn't met. The skill's tooltip shows the unmet condition in red: the character's level, or the skill it needs first. |
 | A phone says "Cannot reach the game gateway." | The client was not started with `GATEWAY_PROXY` ("Before you start", item 3), or the page was opened with the PC's name instead of its address. See [servers-in-a-vm.md](servers-in-a-vm.md), "When something goes wrong". |
 | The client doesn't start and prints `Error: GATEWAY_PROXY …` | That line says what is wrong: usually `VITE_GATEWAY_URL` is still set in that window (`Remove-Item Env:VITE_GATEWAY_URL`). |
+
+## Piece 5 M4 — classic V15 navigation and travel
+
+Run on PC and on iPhone/Android landscape:
+
+- Navigator opens at the top right; N and Start > Navigator toggle it. The original square map, title, zoom buttons and marker art are visible.
+- Zoom remains centered on the player. NPC/player/monster filter toggles affect known markers. Rotating the camera turns the viewing arrow.
+- Tapping Navigator places a temporary navigation mark and does not walk or attack. Joystick and camera controls still work outside it.
+- Indoor worlds show native Navigator dungeon fog. Return to an outdoor map restores terrain artwork and markers.
+- Click a nearby resource teleporter, choose Teleporter, and select a native map marker. Verify the server moves the character; a refused request must not move the client locally. Leaving NPC range prevents stale selections.
+- Travel to another supported world and back without reconnecting. Verify one HUD/taskbar, retained chat history, authoritative inventory, working controls and no old-world NPCs or duplicate input handlers.
+- Confirm mobile toolbar buttons leave room for Navigator and the teleporter selector fits above the taskbar. Chat remains aligned while typing and after sending.
+
+Record device/browser, destination, pass/fail, and any screenshot for each failure. The general M-key world map remains a later piece.
+
+## Mobile UI audit follow-up — 2026-11-02
+
+Automated findings, fixes and exact evidence are in [the mobile UI audit](2026-11-01-mobile-ui-audit.md). Physical checks remain open:
+
+- [ ] Confirm passive chat lets the joystick start, Chat enables scrolling, and Send/outside touch releases keyboard focus.
+- [ ] Confirm typing does not hide touch controls or shrink the Start menu; login never requests fullscreen.
+- [ ] Check Jump/Attack below Navigator and above the composer with actual safe-area insets; test second-finger Jump while steering.
+- [ ] Rotate with Character/Skill open; check centering, close buttons, Bag/Shop footers and item/drop/shop quantity controls above the taskbar.
+- [ ] Repeat on Android Chrome and iPhone Safari, including the real software keyboard. Record device/OS/browser versions and failures.

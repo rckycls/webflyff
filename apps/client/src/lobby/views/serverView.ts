@@ -57,13 +57,16 @@ export function serverView({ servers, onSelect, onLogout }: ServerViewOptions): 
     setBusy(true);
     onSelect(channel);
   };
+  const serverList = h('div', { class: 'server-names', role: 'group', 'aria-label': 'Servers' });
+  const channelList = h('div', { class: 'server-channels' });
+  let selected: ServerEntry | undefined;
   const sections = servers
     .filter((server) => server.parent === NULL_ID)
     .map((server) => {
       const channels = servers.filter((entry) => entry.parent === server.id);
       const items = channels.map((channel) => channelButton(channel, pick));
       buttons.push(...items);
-      return h(
+      const section = h(
         'section',
         { class: 'server' },
         h('h3', {}, server.name),
@@ -71,15 +74,34 @@ export function serverView({ servers, onSelect, onLogout }: ServerViewOptions): 
           ? h('p', { class: 'hint' }, 'No channels.')
           : h('ul', { class: 'list' }, ...items.map(({ button }) => h('li', {}, button))),
       );
+      const choose = h('button', { type: 'button', class: 'server-name', 'aria-pressed': 'false' }, server.name);
+      choose.addEventListener('click', () => {
+        if (busy) return;
+        for (const child of serverList.children) child.setAttribute('aria-pressed', String(child === choose));
+        for (const child of channelList.children) (child as HTMLElement).hidden = child !== section;
+        selected = channels.find(c => unavailableReason(c) === undefined);
+      });
+      serverList.append(choose);
+      channelList.append(section);
+      return section;
     });
+  (serverList.firstElementChild as HTMLButtonElement | null)?.click();
   const logout = h('button', { type: 'button', class: 'btn' }, 'Log out');
+  logout.classList.add('lobby-back');
   logout.addEventListener('click', onLogout);
+  const next = h('button', { type: 'button', class: 'btn lobby-next', disabled: !selected }, 'Next');
+  next.addEventListener('click', () => { if (selected) pick(selected); });
+  serverList.addEventListener('click', () => { next.disabled = busy || !selected; });
   const element = h(
     'section',
-    { class: 'screen' },
+    { class: 'screen server-screen' },
     h('h2', { tabindex: '-1' }, 'Choose a channel'),
-    ...(sections.length === 0 ? [h('p', { class: 'hint' }, 'No servers are available.')] : sections),
-    h('div', { class: 'actions' }, logout),
+    ...(sections.length === 0 ? [h('p', { class: 'hint' }, 'No servers are available.')] : [
+      h('div', { class: 'server-columns' },
+        h('section', {}, h('h3', {}, 'Server'), serverList),
+        h('section', {}, h('h3', {}, 'Channel'), channelList)),
+    ]),
+    h('div', { class: 'actions' }, logout, next),
   );
   return {
     element,

@@ -20,9 +20,17 @@ const RUN = new Set(['ShiftLeft', 'ShiftRight']);
 type Listen = Pick<EventTarget, 'addEventListener' | 'removeEventListener'>;
 
 export class KeyboardInput {
+  private jumpPressed = false;
   private readonly down = new Set<string>();
   private readonly onKeyDown = (event: Event): void => {
     const { code } = event as KeyboardEvent;
+    const field = (event.target as HTMLElement | null);
+    if (field?.tagName === 'INPUT' || field?.tagName === 'TEXTAREA' || field?.isContentEditable) return;
+    if (this.options.arrows === false && code.startsWith('Arrow')) return;
+    if (code === 'Space') {
+      event.preventDefault?.();
+      if (!this.down.has(code)) this.jumpPressed = true;
+    }
     if (FORWARD.has(code) || BACKWARD.has(code) || LEFT.has(code) || RIGHT.has(code)) event.preventDefault?.();
     this.down.add(code);
   };
@@ -33,7 +41,7 @@ export class KeyboardInput {
   private readonly onBlur = (): void => this.reset();
 
   /** `target` is usually `window`. */
-  constructor(private readonly target: Listen) {
+  constructor(private readonly target: Listen, private readonly options: { arrows?: boolean } = {}) {
     target.addEventListener('keydown', this.onKeyDown);
     target.addEventListener('keyup', this.onKeyUp);
     target.addEventListener('blur', this.onBlur);
@@ -48,9 +56,16 @@ export class KeyboardInput {
     };
   }
 
+  takeJump(): boolean {
+    const pressed = this.jumpPressed;
+    this.jumpPressed = false;
+    return pressed;
+  }
+
   /** Lets go of every key, as losing the focus does: for a page that was hidden without losing it first. */
   reset(): void {
     this.down.clear();
+    this.jumpPressed = false;
   }
 
   dispose(): void {

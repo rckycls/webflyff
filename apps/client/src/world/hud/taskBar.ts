@@ -52,13 +52,16 @@ import type { Carried, DropTarget, LoadedBars, TaskBarEditActions } from './task
 import { TaskMenu } from './taskMenu';
 
 /** The windows of Piece 4 a press on the task bar opens. */
-export type TaskBarWindow = 'character' | 'status' | 'skills';
+export type TaskBarWindow = 'character' | 'status' | 'skills' | 'inventory' | 'chat' | 'navigator';
 
 /**
  * The applets whose window Piece 4 has, which `ObjectExecutor` opens (or closes) when they are pressed: from the Start
  * menu, a slot or their hotkey. The skill window (`APP_SKILL3`, K) is milestone 2's.
  */
 const WINDOWS: ReadonlyMap<number, TaskBarWindow> = new Map([
+  [AppId.NAVIGATOR, 'navigator'],
+  [1014, 'chat'],
+  [1003, 'inventory'],
   [AppId.STATUS1, 'status'],
   [AppId.CHARACTER3, 'character'],
   [AppId.SKILL3, 'skills'],
@@ -83,6 +86,8 @@ const MENU: ReadonlyArray<{ id: number; text: string }> = [
   { id: AppId.STATUS1, text: 'Status' },
   { id: AppId.CHARACTER3, text: 'Character' },
   { id: AppId.SKILL3, text: 'Skills' },
+  { id: 1003, text: 'Inventory' },
+  { id: AppId.NAVIGATOR, text: 'Navigator' },
   { id: AppId.LOGOUT, text: 'Log out' },
 ];
 
@@ -201,10 +206,10 @@ const WINDOWS_BY_WIDTH = [
  * `WndTaskBar.cpp:1264-1306`), with 5, 10 or 18 applet slots; the browser takes the widest one that fits, and the 800 one
  * drawn smaller on a narrower screen. A width of 0 (not laid out yet) is the 800 one as it is.
  */
-export function taskBarLayout(width: number): TaskBarLayout {
+export function taskBarLayout(width: number, fill = false): TaskBarLayout {
   let chosen: (typeof WINDOWS_BY_WIDTH)[number] = WINDOWS_BY_WIDTH[0];
   for (const window of WINDOWS_BY_WIDTH) if (window.width <= width) chosen = window;
-  const scale = width > 0 && width < chosen.width ? width / chosen.width : 1;
+  const scale = width > 0 && (fill || width < chosen.width) ? width / chosen.width : 1;
   return { ...chosen, scale };
 }
 
@@ -311,6 +316,7 @@ export class TaskBar {
   private readonly gestures: SlotGestures;
   /** The rows lit, as a string, to touch the DOM only when it changes. */
   private litShown = '';
+  private itemShortcutsChanged = false;
 
   constructor(
     private readonly art: UiArt,
@@ -460,6 +466,11 @@ export class TaskBar {
     this.gestures.press({ from: 'skills', skillIndex }, event);
   }
 
+  setInventoryShortcut(objectId: number, slot: number): void {
+    if (!Number.isInteger(slot) || slot < 0 || slot >= 9 || !this.own?.inventory?.has(objectId)) return;
+    this.edits.dropOn({ from: 'inventory', objectId }, { row: 'item', slot });
+  }
+
   /**
    * A skill of the skill window picked by a finger: the next slot of the item row or the action slot tapped takes it
    * (picked again, it is let go). A press anywhere else but in `within` (the skill window) lets it go, so that a slot is
@@ -508,6 +519,10 @@ export class TaskBar {
       this.loaded = TaskBar.load(own ?? null, message, data);
     }
     const { applets, items, queue, queueCount } = this.loaded;
+    // A consumed stack may be referenced on a hidden bar too. Reconcile all rows before drawing the selected one.
+    if (own) for (const row of items) row.forEach((shortcut, i) => {
+      if (shortcut.kind === ShortcutKind.ITEM) this.itemView(row, i, own, data);
+    });
     const view = (row: Shortcut[], i: number): SlotView => (own === undefined ? EMPTY_VIEW : this.slotView(row, i, own, data));
     this.appletSlots.forEach((slot, i) => this.draw(slot, view(applets, i)));
     const bar = items[this.slotIndex]!;
@@ -524,6 +539,7 @@ export class TaskBar {
     }
     this.gestures.setRemoveText(data.texts?.get(REMOVE_TEXT)?.text ?? '');
     this.drawLit();
+    if (this.itemShortcutsChanged) { this.itemShortcutsChanged = false; this.commit(); }
   }
 
   /** Takes the bar off and lets go of the keys. */
@@ -591,8 +607,9 @@ export class TaskBar {
         return EMPTY_VIEW;
       case ShortcutKind.APPLET: {
         const found = APPLETS.get(shortcut.id);
+        const available = WINDOWS.has(shortcut.id) || shortcut.id === AppId.LOGOUT;
         return {
-          kind: 'applet', greyed: false, icon: found?.icon ? themeKey(found.icon) : null, count: '', hotkey: found?.hotkey ?? '',
+          kind: 'applet', greyed: !available, icon: found?.icon ? themeKey(found.icon) : null, count: '', hotkey: available ? found?.hotkey ?? '' : '',
           name: found === undefined ? '' : appletText(found.desc, data.texts ?? new Map()),
         };
       }
@@ -614,17 +631,24 @@ export class TaskBar {
    * and for a stackable item (`dwPackMax > 1`) `m_Inventory.GetItemCount( m_dwItemId )`, every stack of it (:836-847,
    * :946-957, `Item.h:378-389`). An object that is gone takes the first other stack of the stackable item it was loaded
    * with (`m_Inventory.Find`, :859-881 and `UpdateItem`, :1114-1138); a slot with no such stack, or that held a
-   * non-stackable item, empties. Neuz tells the server either way, which comes with Piece 5's items. With no inventory (it
+   * non-stackable item, empties. Rebinding/clearing item rows is sent to the server. With no inventory (it
    * could not be read) an item is a plain greyed slot.
    */
   private itemView(row: Shortcut[], i: number, own: OwnState, data: TaskBarData): SlotView {
     const inventory = own.inventory;
     if (inventory === null) return PLAIN_VIEW;
     let item: InventoryItem | undefined = inventory.get(row[i]!.id);
-    if (item === undefined) {
-      const itemId = this.loaded.itemIds.get(row)?.[i] ?? null;
+    const remembered = this.loaded.itemIds.get(row)?.[i] ?? null;
+    if (item === undefined || (remembered !== null && item.itemId !== remembered)) {
+      const itemId = remembered;
       item = itemId === null ? undefined : [...inventory.values()].find((other) => other.itemId === itemId);
       row[i] = item === undefined ? EMPTY : { ...row[i]!, id: item.objectId };
+      const bar = this.loaded.items.indexOf(row);
+      if (bar >= 0) {
+        if (item) this.actions.sendAddItemTaskBar(bar, i, row[i]!);
+        else this.actions.sendRemoveItemTaskBar(bar, i);
+        this.itemShortcutsChanged = true;
+      }
       if (item === undefined) return EMPTY_VIEW;
     }
     const itemId = item.itemId;
@@ -635,7 +659,7 @@ export class TaskBar {
       for (const other of inventory.values()) if (other.itemId === itemId) total += other.count;
       count = String(total);
     }
-    return { kind: 'item', greyed: true, icon: prop?.icon ?? null, count, hotkey: '', name: prop?.name ?? '' };
+    return { kind: 'item', greyed: false, icon: prop?.icon ?? null, count, hotkey: '', name: prop?.name ?? '' };
   }
 
   /** Puts `view` in `slot`, if it is not what it shows. */
@@ -703,13 +727,31 @@ export class TaskBar {
    */
   private relayout(): void {
     const parent = this.element.parentElement;
-    const width = parent?.clientWidth ?? 0;
+    const style = parent === null ? null : this.view.getComputedStyle(parent);
+    const safeLeft = parseFloat(style?.getPropertyValue('--game-safe-left') ?? '') || 0;
+    const safeRight = parseFloat(style?.getPropertyValue('--game-safe-right') ?? '') || 0;
+    const available = Math.max(0, (parent?.clientWidth ?? 0) - safeLeft - safeRight);
+    // Typing and compatibility mouse events must not swap a phone's layout to the desktop bar.
+    const mobile = (this.view.matchMedia?.('(pointer: coarse)').matches === true || this.touch()) &&
+      (parent?.clientWidth ?? 0) <= 1000;
+    // Equal gutters keep the bar centered on the viewport even with an asymmetric notch.
+    const width = mobile ? Math.min(720, Math.max(0, (parent?.clientWidth ?? 0) - 2 * Math.max(safeLeft, safeRight) - 32)) : available;
     // a layer not laid out yet is tried again at the next update
     this.dirty = width === 0;
-    const layout = taskBarLayout(width);
+    const layout: TaskBarLayout = mobile ? {
+      ...taskBarLayout(width), width: 620, picture: 'wndTaskBar800.bmp', applets: 0,
+      itemX: 106, queueX: 458, up: rect(404, 8, 418, 20), down: rect(404, 32, 418, 44),
+      scale: width > 0 ? width / 620 : 1,
+    } : taskBarLayout(width);
     this.layout = layout;
     const strip = this.strip;
+    strip.classList.toggle('is-mobile-layout', mobile);
+    strip.style.setProperty('--taskbar-art', themeUrl(this.art, layout.picture));
     const height = TASKBAR_HEIGHT * layout.scale;
+    this.element.classList.toggle('is-floating', mobile);
+    this.element.style.left = mobile ? `${((parent?.clientWidth ?? 0) - width) / 2}px` : '';
+    this.element.style.width = mobile ? `${width}px` : '';
+    this.element.style.height = mobile ? `${height}px` : '';
     strip.style.width = `${layout.width}px`;
     strip.style.backgroundImage = themeUrl(this.art, layout.picture);
     strip.style.transform = layout.scale === 1 ? '' : `scale(${layout.scale})`;
@@ -719,6 +761,9 @@ export class TaskBar {
     this.menu.place(room > 0 ? Math.min(most, room / this.menu.height) : layout.scale, height);
     if (parent !== null) {
       parent.style.setProperty('--hud-taskbar-height', `${height}px`);
+      parent.style.setProperty('--hud-taskbar-left', mobile ? `${(parent.clientWidth - width) / 2}px` : '0px');
+      parent.style.setProperty('--hud-taskbar-width', `${layout.width * layout.scale}px`);
+      parent.style.setProperty('--hud-taskbar-bottom', mobile ? '0px' : 'var(--game-safe-bottom, 0px)');
       setLayoutBottom(parent, height);
     }
     this.gestures.closeMenu();

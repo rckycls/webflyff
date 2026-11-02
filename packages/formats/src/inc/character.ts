@@ -19,6 +19,12 @@
 import { ScriptReader } from '../script/cscript';
 
 export interface CharacterDef {
+  menus?: number[];
+  dialogFile?: string;
+  vendorTabs?: Record<number, string>;
+  vendorType?: number;
+  /** AddTeleport order is the server's destination index; V15 targets Madrigal. */
+  teleports?: Array<{ x: number; z: number }>;
   /** The first token of the block as written (`CHARACTER::m_szKey`; the C++ looks characters up in lower case). */
   key: string;
   /** `m_strName`: the text of `SetName ( IDS_... )` or `m_szName = ...`, the last one in the block; '' if none. */
@@ -96,6 +102,39 @@ export function readCharacterInc(
       if (statement === undefined) return r.fail(`the script ends inside the block of "${character.key}"`, keyToken);
 
       switch (statement.text) {
+        case 'AddTeleport': {
+          if (r.token().text !== '(') r.fail('expected teleport coordinates', statement);
+          const x = r.float('teleport x');
+          if (r.lastToken()?.kind !== 'number' || r.token().text !== ',') r.fail('invalid teleport x coordinate', statement);
+          const z = r.float('teleport z');
+          if (r.lastToken()?.kind !== 'number' || r.token().text !== ')') r.fail('invalid teleport z coordinate', statement);
+          if (!Number.isFinite(x) || !Number.isFinite(z) || x < 0 || z < 0) r.fail('invalid teleport destination', statement);
+          (character.teleports ??= []).push({ x, z }); break;
+        }
+        case 'AddMenu':
+          r.token(); (character.menus ??= []).push(r.number('a menu')); r.token(); break;
+        case 'AddMenuLang': {
+          r.token(); const language = r.number('language'); r.token(); const sub = r.number('sub-language'); r.token();
+          const menu = r.number('menu'); r.token();
+          if (language === (defines.get('LANG_ENG') ?? 9) && (sub === 0 || sub === (defines.get('LANG_SUB_USA') ?? 1))) (character.menus ??= []).push(menu);
+          break;
+        }
+        case 'm_szDialog':
+          r.token(); character.dialogFile = r.token('dialogue file').text; break;
+        case 'SetVenderType':
+          r.token(); character.vendorType = r.number('vendor type'); r.token(); break;
+        case 'AddVendorSlot': {
+          r.token(); const slot = r.number('vendor tab'); r.token();
+          const label = langScript();
+          if (slot >= 0 && slot < 4) (character.vendorTabs ??= {})[slot] = label;
+          break;
+        }
+        case 'AddVendorSlotLang': {
+          r.token(); const language = r.number('language'); r.token(); const sub = r.number('sub-language'); r.token();
+          const slot = r.number('vendor tab'); r.token(); const label = langScript();
+          if (slot >= 0 && slot < 4 && language === (defines.get('LANG_ENG') ?? 9) && (sub === 0 || sub === (defines.get('LANG_SUB_USA') ?? 1))) (character.vendorTabs ??= {})[slot] = label;
+          break;
+        }
         case '{':
           block++;
           break;

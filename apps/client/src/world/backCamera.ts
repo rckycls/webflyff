@@ -24,6 +24,21 @@ export interface ChaseView {
 }
 
 export class BackCamera {
+  /** Independent web heading: character turns and tap-to-walk never rotate the view. */
+  heading: number | null = null;
+  pitch = CHASE_PITCH;
+  private relocatePending = false;
+  private offset: Vec3 = [0, 0, 0];
+  private easeSteps = 0;
+  private lastAt: Vec3 | null = null;
+
+  rotate(dx: number, dy: number): void {
+    this.heading = (this.heading ?? 0) + dx * 0.005;
+    this.pitch = Math.max(-Math.PI * 0.4, Math.min(Math.PI * 0.4, this.pitch - dy * 0.005));
+  }
+
+  /** The camera follows a teleport/revival over 30 rules steps (half a second). */
+  relocate(): void { this.relocatePending = true; }
   /** `m_bOld`: the last step's camera was pulled in. */
   private old = false;
   /** `m_bStart`: the camera is easing back out. */
@@ -39,7 +54,18 @@ export class BackCamera {
    * `bound`, which works in D3D (the mirror, web z = -z, both ways).
    */
   follow(at: Vec3, angle: number, ground: Ground): ChaseView {
-    const chase = chaseCamera(at, Math.PI - (angle * Math.PI) / 180, CHASE_PITCH);
+    this.heading ??= Math.PI - (angle * Math.PI) / 180;
+    if (this.relocatePending && this.lastAt !== null) {
+      this.offset = this.lastAt.map((v, i) => v - at[i]!) as Vec3;
+      this.easeSteps = 30;
+    }
+    this.relocatePending = false;
+    const t = this.easeSteps / 30;
+    const ease = t * t * (3 - 2 * t);
+    const eased = at.map((v, i) => v + this.offset[i]! * ease) as Vec3;
+    if (this.easeSteps > 0) this.easeSteps--;
+    this.lastAt = eased;
+    const chase = chaseCamera(eased, this.heading, this.pitch);
     const position = toWebPosition(this.bound(toWebPosition(chase.target), toWebPosition(chase.position), ground));
     this.view = { position, target: chase.target };
     return this.view;

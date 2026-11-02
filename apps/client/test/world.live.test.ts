@@ -674,7 +674,7 @@ class Player implements SkillPlayer {
       } else if (event.type === 'entered') {
         this.begin(event);
         this.finishEntering?.resolve();
-      } else {
+      } else if (event.type === 'messages') {
         this.apply(event.messages);
       }
     } catch (error) {

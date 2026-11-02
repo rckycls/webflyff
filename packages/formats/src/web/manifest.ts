@@ -18,6 +18,8 @@ export interface WorldManifest {
   size: [number, number];
   /** "Meter per unit" (`WorldInfo.mpu`). */
   mpu: number;
+  /** Native indoor flag: Navigator draws dungeon fog instead of outdoor markers. */
+  indoor?: boolean;
   /** Cells per tile side (`MAP_SIZE`), always 128. */
   mapSize: 128;
   /** `WorldInfo.ambient`: D3DCOLOR 0xAARRGGBB. */

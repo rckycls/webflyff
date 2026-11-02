@@ -20,7 +20,7 @@ import { Xi } from '../src/world/fx/EffectManager';
 import { Mti, ObjSta } from '../src/world/sim/constants';
 import {
   MADRIGAL, MALE_VAGRANT, MONSTER_ID, OBJMSG_ATK1, OBJMSG_DAMAGE, ON_FRAMES, SELF_ID, SELF_PLAYER, SQUARE, aibatt,
-  enterFlaris, groundAt, hpOf, hudTexts, ownAt, playGateway, recordHudTexts, self, sentOf, tapMover, targetsOf,
+  enterFlaris, groundAt, hpOf, hudTexts, movedState, ownAt, playGateway, recordHudTexts, self, sentOf, tapMover, targetsOf,
 } from './worldHarness';
 import type { Gateway, Listed, Sent } from './worldHarness';
 
@@ -97,6 +97,47 @@ async function openCharacterWindow(page: Page): Promise<Locator> {
 }
 
 test.describe('fighting against the pretend world server', () => {
+  test('auto-attack resumes after jumping and sends swings while rendering is stopped in another tab', async ({ page, isMobile }) => {
+    await page.addInitScript(() => {
+      const raf = window.requestAnimationFrame.bind(window);
+      const state = { stopped: false, frames: 0 };
+      Object.assign(window, { combatRenderProbe: state });
+      window.requestAnimationFrame = (callback) => raf((time) => {
+        if (state.stopped) return;
+        state.frames++; callback(time);
+      });
+    });
+    const script = fight();
+    const gateway = await playGateway(page, script, { listed: NEW_CHARACTER });
+    await enterFlaris(page);
+    await tapMover(page, MONSTER_ID);
+    await tapMover(page, MONSTER_ID);
+    await expect.poll(() => swingsOf(gateway).length, ON_FRAMES).toBeGreaterThan(0);
+    const beforeJump = swingsOf(gateway).length;
+    if (isMobile) await page.getByRole('button', { name: 'Jump', exact: true }).tap();
+    else await page.keyboard.press('Space');
+    await expect.poll(() => sentOf(gateway, PacketType.PLAYERBEHAVIOR).some((packet) =>
+      (movedState(packet) & ObjSta.JUMP_ALL) !== 0), ON_FRAMES).toBe(true);
+    await expect.poll(async () => ((await moverOf(page, SELF_ID))!.state & ObjSta.JUMP_ALL), ON_FRAMES).toBe(0);
+    await expect.poll(() => swingsOf(gateway).length, ON_FRAMES).toBeGreaterThan(beforeJump);
+    await page.evaluate(() => {
+      (window as unknown as { combatRenderProbe: { stopped: boolean } }).combatRenderProbe.stopped = true;
+      window.dispatchEvent(new Event('blur'));
+    });
+    const frozenFrames = await page.evaluate(() =>
+      (window as unknown as { combatRenderProbe: { frames: number } }).combatRenderProbe.frames);
+    const beforeBackground = swingsOf(gateway).length;
+    const otherTab = await page.context().newPage();
+    await otherTab.goto('about:blank');
+    await otherTab.bringToFront();
+    // The gateway is outside the page: this observes packets before returning to the game.
+    await expect.poll(() => swingsOf(gateway).length, ON_FRAMES).toBeGreaterThan(beforeBackground + 1);
+    expect(await page.evaluate(() =>
+      (window as unknown as { combatRenderProbe: { frames: number } }).combatRenderProbe.frames)).toBe(frozenFrames);
+    expect((await page.evaluate(() => window.__client!.stats())).errors).toEqual([]);
+    await otherTab.close();
+  });
+
   // Spec §3.4, §3.5, §3.6: a tap selects the Aibatt and the next one attacks it; the world server answers each swing,
   // the Aibatt hits back, and the kill takes Webby to level 2
   test('tapping the Aibatt twice fights it: hits, a critical, a miss and a blow back, then the kill that levels Webby up', async ({ page }) => {
@@ -277,6 +318,20 @@ test.describe('fighting against the pretend world server', () => {
     await enterFlaris(page);
     const character = await openCharacterWindow(page);
     const value = (name: string): Locator => character.locator(`[data-value="${name}"]`);
+    if (test.info().project.name === 'phone') {
+      await expect(character).toHaveClass(/hud-character-landscape/);
+      const base = (await character.locator('[data-label="base"]').boundingBox())!;
+      const stats = (await value('str').boundingBox())!;
+      expect(stats.x).toBeGreaterThan(base.x);
+      const box = (await character.boundingBox())!;
+      const hud = (await page.locator('.world-hud').boundingBox())!;
+      const bar = (await page.locator('.hud-taskbar-strip').boundingBox())!;
+      expect(Math.abs(box.x + box.width / 2 - (hud.x + hud.width / 2))).toBeLessThanOrEqual(1);
+      expect(Math.abs(box.y + box.height / 2 - (hud.y + bar.y) / 2)).toBeLessThanOrEqual(1);
+      expect(box.width).toBeGreaterThan(box.height * 1.4);
+      await expect(character).not.toHaveAttribute('data-scrolls');
+      await page.screenshot({ path: test.info().outputPath('mobile-character.png') });
+    }
     const apply = character.locator('[data-button="apply"]');
     await expect(value('level')).toHaveText('2');
     await expect(value('str')).toHaveText('15');
@@ -289,7 +344,7 @@ test.describe('fighting against the pretend world server', () => {
     await character.locator('[data-button="sta-plus"]').click();
     await expect(value('points')).toHaveText('0', ON_FRAMES);
     await apply.click();
-    const confirm = page.locator('.hud-confirm');
+    const confirm = page.getByRole('group', { name: 'Change State', exact: true });
     await expect(confirm).toBeVisible();
     expect(sentOf(gateway, PacketType.MODIFY_STATUS)).toEqual([]);
     await confirm.locator('[data-button="yes"]').click();

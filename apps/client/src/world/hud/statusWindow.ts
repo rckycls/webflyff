@@ -86,7 +86,7 @@ export class StatusWindow {
     private readonly data: { texts: Texts; exp: readonly ExpRow[] },
     private readonly doc: Document = document,
   ) {
-    const frame = new WindowFrame('', art, { width: WIDTH, height: HEIGHT, texture: 'WndStatus2.tga' }, doc);
+    const frame = new WindowFrame('', art, { width: WIDTH, height: HEIGHT, texture: 'WndStatus2.tga', mobileScale: 0.63 }, doc);
     frame.element.classList.add('hud-status');
     // Escape never closes it (GetWndBase, WndBase.cpp:2079-2087): T and its close button do
     frame.escapeCloses = false;

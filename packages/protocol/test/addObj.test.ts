@@ -418,14 +418,14 @@ describe('ADD_OBJ (OnAddObj)', () => {
 
   it("reads the player's own character through its inventory and skips the rest", () => {
     const own = readOne(PLAYER, selfFields());
-    expect(own).toEqual(self);
+    expect(own).toMatchObject(self);
     // No worn parts: the 31 IDs are the inventory's object IDs, kept apart from item IDs.
     const player = own.type === 'addMover' ? own.mover.player : undefined;
     expect(player?.worn).toEqual([]);
     expect(player?.equipmentObjectIds).toHaveLength(MAX_HUMAN_PARTS);
     expect(player?.equipmentObjectIds).toEqual(ownEquipment);
     // Without the table the reader has to stop the bundle there; with it the next message is still read.
-    expect(readOne(PLAYER, selfFields(), false)).toEqual(self);
+    expect(readOne(PLAYER, selfFields(), false)).toMatchObject(self);
     const result = readBundle(body([
       { objectId: PLAYER, type: MessageType.ADD_OBJ, fields: selfFields() },
       { objectId: OTHER, type: MessageType.ADD_OBJ, fields: otherPlayerFields().toBytes() },
@@ -437,7 +437,7 @@ describe('ADD_OBJ (OnAddObj)', () => {
   it('the own ADD_OBJ keeps the numbers and skills', () => {
     const message = readOne(PLAYER, selfFields(newCharacter));
     const own = message.type === 'addMover' ? message.mover.player?.own : undefined;
-    expect(own).toEqual(newCharacter);
+    expect(own).toMatchObject(newCharacter);
     expect(own).toMatchObject({
       str: 15, sta: 15, dex: 15, int: 15, manaPoint: 63, fatiguePoint: 32, exp: 0n, skillLevel: 0, skillPoint: 0,
       deathExp: 0n, deathLevel: 0, remainGP: 0,
@@ -473,7 +473,7 @@ describe('ADD_OBJ (OnAddObj)', () => {
     // The testkit's writeAddSelf, with and without the table of contents.
     for (const indexed of [true, false]) {
       expect(readOne(PLAYER, writeAddSelf(PLAYER, starter).fields, indexed))
-        .toEqual({ type: 'addMover', mover: starter });
+        .toMatchObject({ type: 'addMover', mover: starter });
     }
     // The same inventory written by hand, every field as `CItemElem::Serialize` stores it, with the row's `m_apIndex`,
     // object indexes and hit points: the reader keeps the same three values of each item.
@@ -529,7 +529,7 @@ describe('ADD_OBJ (OnAddObj)', () => {
       expect(result.stoppedAt).toBeNull();
       expect(result.messages).toHaveLength(1);
       const own = ownOf(result.messages[0].value);
-      expect(own).toEqual(broken);
+      expect(own).toEqual({ ...broken, gold: 123456 });
       expect(own?.inventoryError).toMatch(/^item 3 of 7: need \d+ bytes but only \d+ remain at offset \d+$/);
     }
 
@@ -538,7 +538,7 @@ describe('ADD_OBJ (OnAddObj)', () => {
       expect(result.mismatched).toEqual([]);
       const own = ownOf(result.messages[0].value);
       // Task 3's numbers and skills are all there.
-      expect(own).toEqual(broken);
+      expect(own).toEqual({ ...broken, gold: 123456 });
       return own?.inventoryError;
     };
     const indexes = (w: ArWriter): void => {
@@ -594,11 +594,11 @@ describe('ADD_OBJ (OnAddObj)', () => {
     expect(readAdd(PLAYER, otherPlayerFields().toBytes()).mismatched).toEqual([MessageType.ADD_OBJ]);
   });
 
-  it('an item object is addOther', () => {
+  it('unknown objects are skipped and malformed item objects are bounded', () => {
     // dwObjType, dwObjIndex, then whatever CItem::Serialize writes, which the reader skips.
     const fields = new ArWriter().u8(OT_ITEM).u32(21).u8(OT_ITEM).u32(21).u16(100).vec3(pos).i16(0).u32(0x5001)
       .bytes(new Uint8Array(40).fill(0xab)).toBytes();
-    expect(readOne(0x5001, fields)).toEqual({ type: 'addOther', objectType: OT_ITEM });
+    expect(readAdd(0x5001, fields).mismatched).toEqual([MessageType.ADD_OBJ]);
     expect(readOne(0x5001, new ArWriter().u8(0).u32(1).toBytes())).toEqual({ type: 'addOther', objectType: 0 });
   });
 

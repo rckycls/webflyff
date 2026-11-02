@@ -7,10 +7,8 @@
 //   went on (Review Focus 5). Covered, the game takes no press, key focus or screen reader (`inert`); the keys the world
 //   reads from the window still reach it. The focus goes to the cover as it shows, and back where it was as it goes. A turn
 //   of the device is looked at as it is said and again 300 ms later, for an iOS that gives the new size late.
-// - on a touch screen, the taps that log in and enter the world (`requestLock`, LobbyApp) ask for full screen and then
-//   `screen.orientation.lock('landscape')`, which Android Chrome allows (from full screen only). iOS Safari allows
-//   neither, and any browser may refuse: a refusal is ignored, and the cover does the job. A PC is never put in full
-//   screen: its cover asks for a wider window instead.
+// - play taps may request landscape orientation without requesting fullscreen. Unsupported locks are ignored;
+//   the cover remains the fallback on phones and narrow desktop windows.
 //
 // Neuz has nothing of this: its window is the size the player picked, always wider than tall.
 
@@ -21,9 +19,7 @@ const PC_TEXT = 'Make the window wider to play.';
 /** What `installLandscape` gives its owner. */
 export interface Landscape {
   /**
-   * On a touch screen, asks for full screen and then the landscape lock; resolves once both are answered, whatever the
-   * answers. Called in a tap's handler, as a browser grants full screen only to a tap's: full screen is asked for before
-   * this returns.
+   * On a touch screen, requests landscape orientation without fullscreen. A refusal is ignored; the cover applies.
    */
   requestLock(): Promise<void>;
   /** Takes the cover off and lets the game go. */
@@ -109,15 +105,6 @@ export function installLandscape(root: HTMLElement, isTouch: () => boolean): Lan
   return {
     async requestLock() {
       if (!isTouch()) return;
-      const page = doc.documentElement;
-      // Android Chrome locks the orientation only in full screen; iOS Safari on an iPhone has no requestFullscreen
-      try {
-        if (doc.fullscreenElement == null && typeof page.requestFullscreen === 'function') {
-          await page.requestFullscreen({ navigationUI: 'hide' });
-        }
-      } catch {
-        // refused (not from a tap, not allowed): the cover still applies
-      }
       try {
         await (view.screen.orientation as LockableOrientation | undefined)?.lock?.('landscape');
       } catch {

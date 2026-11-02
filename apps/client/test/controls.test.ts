@@ -591,6 +591,30 @@ function tapToWalk(pick: (ndcX: number, ndcY: number) => TapHit | null = () => (
   return { canvas, pick: spy, tap, presses };
 }
 
+describe('Piece 5 camera-relative movement and touch gestures', () => {
+  it('turns the character toward the stick vector relative to the camera without a turn state', () => {
+    const intent = controlIntent(NO_INTENT, { forward: 0, turn: 1, run: true }, 90);
+    const r = driven(false);
+    r.control(intent);
+    expect(r.own.act.body.angle).toBe(0);
+    expect(r.own.act.state & ObjSta.MOVE_ALL).toBe(ObjSta.FMOVE);
+    expect(r.own.act.state & ObjSta.TURN_ALL).toBe(0);
+  });
+
+  it('a finger drag over a mover does not select or attack; a short tap does', () => {
+    const r = tapToWalk(() => ({ mover: 7 }));
+    r.canvas.fire('pointerdown', 100, 50, 0, { pointerType: 'touch' });
+    expect(r.presses).toEqual([]);
+    r.canvas.fire('pointermove', 130, 50, 50, { pointerType: 'touch' });
+    r.canvas.fire('pointerup', 130, 50, 100, { pointerType: 'touch' });
+    expect(r.presses).toEqual([]);
+    r.canvas.fire('pointerdown', 100, 50, 1000, { pointerType: 'touch' });
+    r.canvas.fire('pointerup', 100, 50, 1100, { pointerType: 'touch' });
+    expect(r.presses).toHaveLength(1);
+    expect(r.presses[0]!.mover).toBe(7);
+  });
+});
+
 describe('TapToWalk', () => {
   it('a tap on the ground gives the point picked where it went down', () => {
     const { canvas, pick, tap } = tapToWalk();

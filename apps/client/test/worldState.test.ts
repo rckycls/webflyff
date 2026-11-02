@@ -62,6 +62,33 @@ function newWorld(
 /** No changes at all, as `takeChanges` reports them. */
 const NO_CHANGES = { added: [], removed: [], combat: [], own: [], dropped: 0 };
 
+describe('ground item lifecycle', () => {
+  it('updates another player equipment and invalidates its look after confirmation', () => {
+    const { world } = newWorld(ownGameData());
+    world.apply(90, { type: 'addMover', mover: playerOf(90, 'Other') });
+    let refreshed = 0;
+    world.onEquipmentChange = () => { refreshed++; };
+    world.apply(90, { type: 'equipItem', objectId: 6, itemId: 21, equip: true, flag: 0, option: 0, part: -1 });
+    expect(world.movers.get(90)?.added.player?.worn).toContainEqual({ part: 10, itemId: 21, flag: 0 });
+    world.apply(90, { type: 'equipItem', objectId: 6, itemId: 21, equip: false, flag: 0, option: 0, part: -1 });
+    expect(world.movers.get(90)?.added.player?.worn.some((p) => p.part === 10)).toBe(false);
+    expect(refreshed).toBe(2);
+  });
+  it('keeps known in-world items, removes them on DEL_OBJ, and ignores unknown/invalid drops', () => {
+    const { world } = newWorld(ownGameData());
+    world.setItemBounds(200, 200);
+    const item = { index: 21, scale: 1, pos: [100, 0, 100] as Vec3, angle: 0, item: { objectId: 0, itemId: 21, count: 1 } };
+    world.apply(90, { type: 'addItem', item });
+    expect(world.groundItems.has(90)).toBe(true);
+    world.apply(91, { type: 'addItem', item: { ...item, pos: [201, 0, 100] } });
+    world.apply(92, { type: 'addItem', item: { ...item, pos: [NaN, 0, 100] } });
+    world.apply(93, { type: 'addItem', item: { ...item, item: { ...item.item, itemId: 999999 } } });
+    expect(world.groundItems.size).toBe(1);
+    world.apply(90, { type: 'delObj' });
+    expect(world.groundItems.size).toBe(0);
+  });
+});
+
 // ---- ADD_OBJ payloads ---------------------------------------------------------------------------------------------
 
 const BASE = { scale: 1, motion: Mti.STAND, hitPoint: 100, state: 0, stateFlag: 0, belligerence: 0, sfxId: 0 };
@@ -472,6 +499,19 @@ describe('WorldState: stepping', () => {
 });
 
 describe('WorldState: the messages and the rules (OnMoverMoved and the others)', () => {
+  it('plays another player jumping from the native behavior report through landing', () => {
+    const { world } = newWorld();
+    add(world, playerOf(1, 'Jumper'));
+    world.apply(1, { type: 'moverBehavior', move: report(AT, {
+      state: ObjSta.STAND | ObjSta.SJUMP1, motion: Mti.JUMP1, loop: AniLoop.ONE_PLAY,
+    }) });
+    world.step();
+    expect(world.movers.get(1)!.act.body.pos[1]).toBeGreaterThan(0);
+    expect(world.movers.get(1)!.act.motion).toBe(Mti.JUMP2);
+    steps(world, 120);
+    expect(world.movers.get(1)!.act.body.pos[1]).toBe(0);
+    expect(world.movers.get(1)!.act.state & ObjSta.JUMP_ALL).toBe(0);
+  });
   it('MOVERMOVED corrects a recent move and takes a late one at once; MOVERBEHAVIOR is always at once', () => {
     const { world } = newWorld();
     add(world, playerOf(1, 'Recent'));

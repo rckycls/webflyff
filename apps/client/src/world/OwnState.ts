@@ -5,6 +5,7 @@ import type { AddedMover, InventoryItem, SkillSlot, TaskBar, WorldMessage } from
 import { GameDataMissingError } from './gameData';
 import type { GameData } from './gameData';
 import { Parts, ownWorn } from './render/looks';
+import { equipmentPart } from './items/equipment';
 import {
   FISTS, effectiveStats, equipAdjust, expNeeded, expPercentText, maxFatiguePoint, maxHitPoint, maxManaPoint,
 } from './sim/params';
@@ -123,6 +124,10 @@ export class OwnState {
   skills: SkillSlot[];
   /** The inventory by object ID (a copy); null when its part of the ADD_OBJ could not be read: `inventoryError` says why. */
   inventory: Map<number, InventoryItem> | null;
+  inventorySlots: number[];
+  readonly equipmentObjectIds: number[];
+  inventoryRevision = 0;
+  gold = 0;
   readonly inventoryError: string | null;
   /** The shortcut bars, once the TASKBAR message after the ADD_OBJ has come. */
   taskBar: TaskBar | null = null;
@@ -159,6 +164,11 @@ export class OwnState {
     this.skills = own.skills.map((slot) => ({ ...slot }));
     this.inventory = own.inventory === null ? null : new Map(own.inventory.map((item) => [item.objectId, { ...item }]));
     this.inventoryError = own.inventoryError;
+    this.gold = own.gold ?? 0;
+    // CWndInventory/RedoEquip(FALSE) reads m_Inventory.GetEquip(part), whose source is m_apIndex[42 + part].
+    this.equipmentObjectIds = own.inventorySlots ? own.inventorySlots.slice(42, 73) : [...player.equipmentObjectIds];
+    this.inventorySlots = own.inventorySlots ? [...own.inventorySlots] : Array.from({ length: 73 }, (_, i) =>
+      i < 42 ? i : this.equipmentObjectIds[i - 42] ?? 0xffffffff);
     this.worn = wornBy(equipment, data);
     this.adjust = equipAdjust(this.worn);
   }
@@ -246,6 +256,41 @@ export class OwnState {
     }
     if (objectId !== this.objectId) return [];
     switch (message.type) {
+      case 'createItem':
+        if (message.itemType === 0 && this.inventory !== null) {
+          for (const stack of message.stacks) {
+            if (stack.count > 0) this.inventory.set(stack.objectId, { ...message.item, ...stack });
+            else this.inventory.delete(stack.objectId);
+          }
+          this.inventoryRevision++;
+        }
+        return [];
+      case 'updateItem': {
+        const item = this.inventory?.get(message.objectId);
+        if (message.itemType === 0 && item && (message.param === 0 || message.param === 8)) {
+          if ((message.value | 0) <= 0) this.inventory!.delete(message.objectId);
+          else this.inventory!.set(message.objectId, { ...item, count: message.value });
+          this.inventoryRevision++;
+        }
+        return [];
+      }
+      case 'moveItem':
+        if (message.itemType === 0) this.moveInventory(message.source, message.destination);
+        return [];
+      case 'equipItem': {
+        const prop = this.data.itemProps.get(message.itemId);
+        if (prop) {
+          const part = equipmentPart(prop, message.part, message.equip, this.job,
+            (slot) => this.data.itemProps.get(this.inventory?.get(this.equipmentObjectIds[slot]!)?.itemId ?? -1),
+            this.equipmentObjectIds.indexOf(message.objectId));
+          const exclusive = this.data.items.get(prop.id)?.exclusive ?? -1;
+          if (message.equip && exclusive >= 0 && this.equipmentObjectIds[exclusive] !== 0xffffffff) {
+            this.equipInventory(this.equipmentObjectIds[exclusive]!, exclusive, false);
+          }
+          this.equipInventory(message.objectId, part, message.equip);
+        }
+        return [];
+      }
       case 'setPointParam': // OnSetPointParam (DPClient.cpp:3303)
         this.setPointParam(message.param, message.value);
         return [];
@@ -271,6 +316,55 @@ export class OwnState {
     }
   }
 
+  /** Server MOVEITEM executes CItemContainer::Swap, including automatic stack merging. */
+  private moveInventory(source: number, destination: number): void {
+    if (!this.inventory || source === destination || source >= 42 || destination >= 42) return;
+    const a = this.inventorySlots[source]!, b = this.inventorySlots[destination]!;
+    const src = this.inventory.get(a), dst = this.inventory.get(b);
+    if (!src) return;
+    const max = this.data.itemProps.get(src.itemId)?.packMax ?? 1;
+    if (dst && src.itemId === dst.itemId && (src.flag ?? 0) === (dst.flag ?? 0) &&
+        (src.charged ?? 0) === (dst.charged ?? 0) && max > 1) {
+      const amount = Math.max(0, Math.min(src.count, max - dst.count));
+      this.inventory.set(b, { ...dst, count: dst.count + amount });
+      if (src.count === amount) this.inventory.delete(a);
+      else this.inventory.set(a, { ...src, count: src.count - amount });
+    } else {
+      this.inventorySlots[source] = b;
+      this.inventorySlots[destination] = a;
+    }
+    this.inventoryRevision++;
+  }
+
+  /** Native DoEquip/UnEquip allocate the first free object/empty bag position, retaining item identity. */
+  private equipInventory(objectId: number, part: number, equip: boolean): void {
+    if (!this.inventory?.has(objectId) || part < 0 || part >= 31) return;
+    const at = 42 + part;
+    const old = this.inventorySlots[at]!;
+    if (equip) {
+      if (old === objectId) return;
+      if (this.inventory.has(old)) this.equipInventory(old, part, false);
+      const source = this.inventorySlots.indexOf(objectId);
+      const free = Array.from({ length: 73 }, (_, i) => i).find((id) =>
+        !this.inventory!.has(id) && !this.inventorySlots.includes(id));
+      if (source < 0 || source >= 42 || free === undefined) return;
+      this.inventorySlots[source] = free;
+      this.inventorySlots[at] = objectId;
+    } else {
+      if (old !== objectId) return;
+      const bag = this.inventorySlots.findIndex((id, i) => i < 42 && id < 73 && !this.inventory!.has(id));
+      if (bag < 0) return;
+      this.inventorySlots[bag] = objectId;
+      this.inventorySlots[at] = 0xffffffff;
+    }
+    this.equipmentObjectIds[part] = equip ? objectId : 0xffffffff;
+    // Keep actual slots: two rings share a catalog part and must both contribute their parameters.
+    const parts = this.equipmentObjectIds.map((id) => this.data.itemProps.get(this.inventory!.get(id)?.itemId ?? -1));
+    this.equipped = { weapon: parts[Parts.RWEAPON] ?? null,
+      armour: parts.filter((prop, at): prop is WebItemProp => prop !== undefined && at !== Parts.RWEAPON) };
+    this.inventoryRevision++;
+  }
+
   /**
    * `CMover::SetPointParam` (`MoverParam.cpp:889-955`, the client's branches): a negative value is 0, and HP, MP and FP stop
    * at their maxima. `DST_GOLD` (penya) is kept nowhere here.
@@ -278,6 +372,10 @@ export class OwnState {
   private setPointParam(param: number, value: number): void {
     const v = Math.max(0, value);
     switch (param) {
+      case 10000: // DST_GOLD, defineAttribute.h; server-confirmed penya
+        this.gold = v;
+        this.inventoryRevision++;
+        break;
       case DstParam.HP:
         this.hp = Math.min(v, this.maxHp());
         break;

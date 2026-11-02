@@ -168,6 +168,29 @@ function later(): { promise: Promise<AssembledCharacter>; resolve: (model: Assem
 }
 
 describe('MoverViews', () => {
+  it('keeps combat unavailable when its actual attack clip fails to load', async () => {
+    const r = rig(undefined, undefined, undefined, { motions: { m223: async () => { throw new Error('missing attack'); } } });
+    const player = moverFrom(addedPlayer(7));
+    r.add(player);
+    await r.views.settled();
+    expect(r.views.motionReady(player, Mti.ATK1)).toBe(false);
+    await r.views.settled();
+    expect(r.views.motionReady(player, Mti.ATK1)).toBe(false);
+    r.views.dispose();
+  });
+  it('preloads the actual combat clip before the first attack enters combat mode', async () => {
+    const r = rig();
+    const player = moverFrom(addedPlayer(7));
+    r.add(player);
+    expect(r.views.motionReady(player, Mti.ATK1)).toBe(false);
+    await r.views.settled();
+    expect(r.views.motionReady(player, Mti.ATK1)).toBe(false);
+    await r.views.settled();
+    expect(r.motions.has('m223')).toBe(true); // bare hand / one-hand weapon combat set
+    expect(r.motions.has('m23')).toBe(false);
+    expect(r.views.motionReady(player, Mti.ATK1)).toBe(true);
+    r.views.dispose();
+  });
   it('adds a view for an added mover', async () => {
     const model = fakeModel();
     const r = rig(async () => model);

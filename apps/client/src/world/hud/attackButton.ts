@@ -18,19 +18,27 @@ export class AttackButton {
   private readonly touch: TouchWatch;
 
   /** `onPress` is called at each press of the button while it is enabled. */
-  constructor(onPress: () => void, doc: Document = document) {
+  constructor(onPress: () => void, doc: Document = document, options: { label?: string; className?: string } = {}) {
     const element = doc.createElement('button');
     element.type = 'button';
-    element.className = 'hud-attack';
-    element.setAttribute('aria-label', LABEL);
+    element.className = options.className ?? 'hud-attack';
+    element.setAttribute('aria-label', options.label ?? LABEL);
+    let touchPressed = false;
+    const activate = () => { if (!element.disabled) onPress(); element.blur(); };
+    element.addEventListener('pointerdown', (event) => {
+      touchPressed = event.pointerType === 'touch';
+      event.preventDefault();
+      if (touchPressed) activate(); // secondary touches need not produce a compatibility click
+    });
     element.disabled = true;
-    element.addEventListener('click', () => {
-      if (!element.disabled) onPress();
+    element.addEventListener('click', (event) => {
+      if (touchPressed && event.detail !== 0) { touchPressed = false; return; }
+      activate();
     });
     this.element = element;
     // a finger on the screen: the button shows from then on, as the joystick does
-    this.touch = watchTouch(doc.defaultView ?? window, () => {
-      element.hidden = false;
+    this.touch = watchTouch(doc.defaultView ?? window, (touch) => {
+      element.hidden = !touch;
     });
     element.hidden = !this.touch();
   }

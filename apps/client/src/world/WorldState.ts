@@ -5,6 +5,7 @@ import type { GameData } from './gameData';
 import { lodestarRate } from './OwnState';
 import type { OwnEvent, OwnState } from './OwnState';
 import { Parts } from './render/looks';
+import { equipmentPart } from './items/equipment';
 import { ActionMover, getDegree, wrapAngle } from './sim/ActionMover';
 import type { Ground } from './sim/collision';
 import { ActMsg, Ext, Kt, ObjSta, ObjStaF, Si, Sut } from './sim/constants';
@@ -12,7 +13,7 @@ import {
   applyDestPos, applyMotion, applyMoved, applyMoverCorr, clearDestObj, setDestAngle, setDestObj, stepMover,
 } from './sim/moverRules';
 import type { SimMover } from './sim/moverRules';
-import { FISTS, NO_ADJUST, attackSpeed, maxHitPoint, monsterMaxHitPoint } from './sim/params';
+import { Dst, FISTS, NO_ADJUST, attackSpeed, maxHitPoint, monsterMaxHitPoint } from './sim/params';
 
 const f32 = Math.fround;
 
@@ -176,6 +177,13 @@ function rightHandItem(player: AddedPlayer): number | null {
  * (`OnMoverDeath`'s and `CWorld::Process`'s part of them) are the world screen's.
  */
 export class WorldState {
+  readonly groundItems = new Map<number, import('@flyffweb/protocol').GroundItem>();
+  private itemBounds: [number, number] = [1_000_000, 1_000_000];
+  setItemBounds(width: number, depth: number): void {
+    this.itemBounds = [width, depth];
+    for (const [id, drop] of this.groundItems) if (drop.pos[0] >= width || drop.pos[2] >= depth) this.groundItems.delete(id);
+  }
+  onEquipmentChange: (mover: Mover) => void = () => {};
   private readonly byId = new Map<number, Mover>();
   private own: Mover | undefined;
   private pendingAdded: Mover[] = [];
@@ -227,10 +235,46 @@ export class WorldState {
    */
   apply(objectId: number, message: WorldMessage, joining = false): void {
     switch (message.type) {
+      case 'addItem': {
+        const { pos, item } = message.item;
+        if (this.data.itemProps.has(item.itemId) && item.count > 0 &&
+            pos.every(Number.isFinite) && pos[0] >= 0 && pos[2] >= 0 && pos[0] < this.itemBounds[0] &&
+            pos[2] < this.itemBounds[1] && pos.every((n) => Math.abs(n) <= 1_000_000)) {
+          this.groundItems.set(objectId, message.item);
+        }
+        return;
+      }
+      case 'createItem':
+      case 'updateItem':
+      case 'moveItem':
+        this.toOwn(message, objectId);
+        return;
+      case 'equipItem': {
+        this.toOwn(message, objectId);
+        const mover = this.byId.get(objectId);
+        const player = mover?.added.player;
+        if (mover && player) {
+          if (mover.isSelf) player.equipmentObjectIds = [...(this.numbers?.equipmentObjectIds ?? player.equipmentObjectIds)];
+          else {
+            const prop = this.data.itemProps.get(message.itemId);
+            const part = prop ? equipmentPart(prop, message.part, message.equip, player.job,
+              (slot) => this.data.itemProps.get(player.worn.find((p) => p.part === slot)?.itemId ?? -1),
+              message.part < 0 ? player.worn.find((p) => p.itemId === message.itemId)?.part : message.part) : undefined;
+            if (part === undefined || part < 0 || part >= 31) return;
+            player.worn = player.worn.filter((w) => w.part !== part);
+            const exclusive = this.data.items.get(message.itemId)?.exclusive ?? -1;
+            if (message.equip && exclusive >= 0) player.worn = player.worn.filter((w) => w.part !== exclusive);
+            if (message.equip) player.worn.push({ part, itemId: message.itemId, flag: message.flag });
+          }
+          this.onEquipmentChange(mover);
+        }
+        return;
+      }
       case 'addMover':
         this.add(objectId, message.mover, joining);
         return;
       case 'delObj':
+        this.groundItems.delete(objectId);
         this.remove(objectId); // OnRemoveObj (:1643): the object is deleted
         return;
       case 'monsterProp': // OnMonsterProp (:6630) names no object
@@ -449,6 +493,7 @@ export class WorldState {
     }
     act.findMover = (id) => this.byId.get(id)?.act;
     act.hitPoint = () => mover.hp;
+    if (isSelf) act.jumpBonus = () => this.numbers?.adj.get(Dst.JUMPING) ?? 0;
     act.onHit = () => this.onAttackMelee(mover);
     act.onMeleeSkill = () => this.onMeleeSkill(mover);
     if (added.isPlayer && !isSelf) act.attackSpeed = () => this.attackSpeedOf(mover);

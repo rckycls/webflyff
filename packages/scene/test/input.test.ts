@@ -7,6 +7,29 @@ function key(type: 'keydown' | 'keyup', code: string): Event {
 }
 
 describe('KeyboardInput', () => {
+  it('can reserve arrows for camera control while WASD still moves', () => {
+    const target = new EventTarget();
+    const keyboard = new KeyboardInput(target, { arrows: false });
+    target.dispatchEvent(key('keydown', 'ArrowUp'));
+    target.dispatchEvent(key('keydown', 'ArrowRight'));
+    expect(keyboard.intent()).toEqual(NO_INTENT);
+    target.dispatchEvent(key('keydown', 'KeyW'));
+    expect(keyboard.intent().forward).toBe(1);
+    keyboard.dispose();
+  });
+  it('latches Space once per press and clears it on focus loss', () => {
+    const target = new EventTarget();
+    const keyboard = new KeyboardInput(target);
+    target.dispatchEvent(key('keydown', 'Space'));
+    expect(keyboard.takeJump()).toBe(true);
+    target.dispatchEvent(key('keydown', 'Space'));
+    expect(keyboard.takeJump()).toBe(false);
+    target.dispatchEvent(key('keyup', 'Space'));
+    target.dispatchEvent(key('keydown', 'Space'));
+    target.dispatchEvent(new Event('blur'));
+    expect(keyboard.takeJump()).toBe(false);
+    keyboard.dispose();
+  });
   it('maps WASD and the arrows to forward and turn, Shift to run', () => {
     const target = new EventTarget();
     const keyboard = new KeyboardInput(target);
@@ -125,9 +148,9 @@ class FakeElement {
 
 class FakeDocument {
   /** A window whose main pointer is a finger (`coarse`) or a mouse, with listeners for the touch rule (`watchTouch`). */
-  readonly defaultView: EventTarget & { matchMedia(): { matches: boolean } };
+  readonly defaultView: EventTarget & { matchMedia(query: string): { matches: boolean } };
   constructor(coarse = true) {
-    this.defaultView = Object.assign(new EventTarget(), { matchMedia: () => ({ matches: coarse }) });
+    this.defaultView = Object.assign(new EventTarget(), { matchMedia: (query: string) => ({ matches: coarse && query === '(pointer: coarse)' }) });
   }
   readonly created: FakeElement[] = [];
   createElement(): FakeElement {

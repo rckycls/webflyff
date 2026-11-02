@@ -11,6 +11,40 @@ type GroundAt = (x: number, z: number) => number | null;
 /** Flat terrain at height 0. */
 const FLAT = terrainGround(() => 0);
 
+describe('native standing jump', () => {
+  it('reports jump start, rises, falls and lands without allowing another jump in flight', () => {
+    const act = new ActionMover({ pos: [0, 0, 0], angle: 0, speed: 0.1, isPlayer: true });
+    act.step(FLAT);
+    expect(act.sendActMsg(17)).toBe(true); // OBJMSG_JUMP
+    expect(act.report(1n).state & 0xf000).toBe(0x5000);
+    expect(act.motion).toBe(13); // MTI_JUMP1
+    act.step(FLAT);
+    expect(act.motion).toBe(14);
+    expect(act.body.pos[1]).toBeGreaterThan(0);
+    expect(act.sendActMsg(17)).toBe(false);
+    let peak = 0;
+    let falling = false;
+    for (let i = 0; i < 120; i++) {
+      act.step(FLAT);
+      peak = Math.max(peak, act.body.pos[1]);
+      falling ||= (act.state & 0xf000) === 0x7000;
+    }
+    expect(peak).toBeGreaterThan(3);
+    expect(falling).toBe(true);
+    expect(act.body.pos[1]).toBe(0);
+    expect(act.state & 0xf000).toBe(0);
+  });
+
+  it('does not jump while sitting, hurt, dead or attacking', () => {
+    for (const state of [ObjSta.ATK1, ObjSta.DMG, ObjSta.DEAD, ObjSta.SIT]) {
+      const act = new ActionMover({ pos: [0, 0, 0], angle: 0, speed: 0.1 });
+      act.state = state;
+      if (state === ObjSta.SIT) act.stateFlag |= ObjStaF.SIT;
+      expect(act.sendActMsg(17)).toBe(false);
+    }
+  });
+});
+
 /** A mover at `pos` facing `angle`, whose `CMover::GetSpeed` is 0.1 per step (the plan's test speed). */
 function mover(angle: number, pos: Vec3 = [0, 0, 0], extra: Partial<MoverBody> = {}): ActionMover {
   return new ActionMover({ pos, angle, speed: 0.1, ...extra });
@@ -230,8 +264,6 @@ describe('ActionMover: the rest of the copied rules', () => {
   it('ignores messages outside ActMsg', () => {
     const act = mover(0);
     const OBJMSG_ASTOP = 7;
-    const OBJMSG_JUMP = 17;
-    expect(act.sendActMsg(OBJMSG_JUMP)).toBe(false);
     expect(act.sendActMsg(OBJMSG_ASTOP)).toBe(false);
     expect(act.state).toBe(0);
   });

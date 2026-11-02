@@ -22,7 +22,7 @@ const PL_MAX = 6;
 const MAX_PET_NAME = 17;
 
 /** What `OwnCharacter` holds before the skill array: the numbers `readOwnEquipment` reads on its way to the IDs. */
-export type OwnNumbers = Omit<OwnCharacter, 'skills' | 'inventory' | 'inventoryError'>;
+export type OwnNumbers = Omit<OwnCharacter, 'skills' | 'inventory' | 'inventoryError' | 'inventorySlots'>;
 
 /**
  * The rest of the own character's METHOD_NONE block (`CMover::Serialize`, `_Common/ObjSerializeOpt.cpp:509-640`),
@@ -32,14 +32,14 @@ export type OwnNumbers = Omit<OwnCharacter, 'skills' | 'inventory' | 'inventoryE
  */
 export function readOwnAfterEquipment(r: ArReader, numbers: OwnNumbers): OwnCharacter {
   const skills = readSkills(r);
-  const { inventory, inventoryError } = readInventoryPart(r);
+  const { inventory, inventoryError, inventorySlots } = readInventoryPart(r);
   // The reader stops here, after the inventory, or wherever the inventory part failed. The C++ goes on with
   // `m_Bank[k].Serialize` for the three banks (:586-587), `dwPetId` (:594-596), `m_Pocket.Serialize` (:606),
   // `m_dwMute` (:610, __JEFF_9_20), the honour titles (:616-634), `m_idCampus` and `m_nCampusPoint` (:637-638), then
   // the buffs. None of them is read yet (they stay with Piece 5): they are skipped, and whatever reads them next
   // replaces this `skipRest`.
   r.skipRest();
-  return { ...numbers, skills, inventory, inventoryError };
+  return { ...numbers, skills, inventory, inventoryError, ...(inventorySlots ? { inventorySlots } : {}) };
 }
 
 /**
@@ -70,11 +70,15 @@ interface Where { part: string }
  * boundary (the caller skips the rest) and keeps the numbers and skills read before it: `inventory` is then `null`
  * and `inventoryError` names the part and the error. Any other error is a bug and propagates.
  */
-function readInventoryPart(r: ArReader): Pick<OwnCharacter, 'inventory' | 'inventoryError'> {
+function readInventoryPart(r: ArReader): Pick<OwnCharacter, 'inventory' | 'inventoryError' | 'inventorySlots'> {
   const where: Where = { part: 'before the inventory' };
   try {
     skipBeforeInventory(r);
-    return { inventory: readInventory(r, where), inventoryError: null };
+    const inventorySlots = Array.from({ length: INVENTORY_SLOTS }, () => r.u32());
+    if (inventorySlots.some((id) => id !== 0xffffffff && id >= INVENTORY_SLOTS)) {
+      throw new ProtocolError('invalid inventory index mapping', r.position());
+    }
+    return { inventory: readInventory(r, where), inventoryError: null, inventorySlots };
   } catch (error) {
     if (!(error instanceof ProtocolError)) throw error;
     return { inventory: null, inventoryError: `${where.part}: ${error.message}` };
@@ -98,14 +102,13 @@ function skipBeforeInventory(r: ArReader): void {
 
 /**
  * `m_Inventory.Serialize( ar )` (:585): `CItemContainer<CItemElem>::Serialize`, the loading side
- * (`_Common/Item.h:923-944`; storing :898-922). `m_apIndex` (each bag position's and part's object ID) and the object
- * indexes are read past; the items are kept as `m_apItem[ch]` holds them after the read: an item in a slot listed
+ * (`_Common/Item.h:923-944`; storing :898-922). The caller keeps `m_apIndex` (bag/equipment positions to object IDs).
+ * Object indexes are read past; the items are kept as `m_apItem[ch]` holds them after the read: an item in a slot listed
  * before replaces it, and one with `m_dwItemId` 0 leaves its slot empty (`CItemBase::IsEmpty`, `Item.h:48`). The
  * storing side lists each filled slot once, in slot order (:906-915).
  */
 function readInventory(r: ArReader, where: Where): InventoryItem[] {
   where.part = 'the inventory';
-  r.bytes(4 * INVENTORY_SLOTS); // ar.Read( m_apIndex, sizeof(DWORD) * m_dwItemMax ) (:925)
   const at = r.position();
   const count = r.u8(); // chSize (unsigned char, :930)
   // The storing side counts the filled slots, so no more than m_dwItemMax; the C++ reader does not check.
@@ -121,7 +124,7 @@ function readInventory(r: ArReader, where: Where): InventoryItem[] {
     if (objectId >= INVENTORY_SLOTS) {
       throw new ProtocolError(`slot ${objectId} is outside the inventory's ${INVENTORY_SLOTS} slots`, slotAt);
     }
-    slots.set(objectId, readItem(r, objectId)); // m_apItem[ch].Serialize( ar ) (:936)
+    slots.set(objectId, readInventoryItem(r, objectId)); // m_apItem[ch].Serialize( ar ) (:936)
   }
   where.part = 'the inventory\'s object indexes';
   r.bytes(4 * INVENTORY_SLOTS); // ar.Read( adwObjIndex, sizeof(DWORD) * m_dwItemMax ) (:939), into m_dwObjIndex
@@ -132,8 +135,9 @@ function readInventory(r: ArReader, where: Where): InventoryItem[] {
  * `CItemElem::Serialize`, the loading side (`_Common/ObjSerialize.cpp:90-137`; storing :51-88), after
  * `CItemBase::Serialize` (:41-43; storing :35-37). `objectId` is the slot the container read before it.
  */
-function readItem(r: ArReader, objectId: number): InventoryItem {
-  r.u32(); // m_dwObjId (OBJID, a DWORD): the storing side's slot number again (CItemContainer::Clear, Item.h:485)
+export function readInventoryItem(r: ArReader, slotId?: number): InventoryItem {
+  const objectId = slotId ?? r.u32();
+  if (slotId !== undefined) r.u32(); // serialized id repeated; container slot takes precedence
   const itemId = r.u32(); // m_dwItemId (DWORD)
   r.u32(); // m_liSerialNumber (SERIALNUMBER, a DWORD: _Network/CmnHdr.h:88)
   r.string(ITEM_TEXT_BUFFER); // ReadString( m_szItemText, 32 )
@@ -141,14 +145,14 @@ function readItem(r: ArReader, objectId: number): InventoryItem {
   r.u8(); // m_nRepairNumber (BYTE, :93)
   r.i32(); // m_nHitPoint (int, :94)
   r.i32(); // m_nRepair (int, :95)
-  r.u8(); // m_byFlag (BYTE, :96)
+  const flag = r.u8(); // m_byFlag (BYTE, :96)
   r.i32(); // m_nAbilityOption (int, :97)
   r.u32(); // m_idGuild (DWORD, :98)
   r.u8(); // m_bItemResist (BYTE, :99)
   r.i32(); // m_nResistAbilityOption (int, :100)
   r.i32(); // m_nResistSMItemId (int, :101)
   skipPiercing(r); // m_piercing.Serialize( ar ) (:103)
-  r.i32(); // m_bCharged (BOOL, :104)
+  const charged = r.i32(); // m_bCharged (BOOL, :104)
   r.i64(); // m_iRandomOptItemId (__int64; __VER >= 11, __SYS_IDENTIFY, :106)
   // m_dwKeepTime (DWORD, :110), then `if( m_dwKeepTime )` the time left, a time_t (:112-119): 4 bytes, since both
   // Neuz and the world server define _USE_32BIT_TIME_T (Neuz/StdAfx.h:10, WORLDSERVER/StdAfx.h:4)
@@ -156,7 +160,7 @@ function readItem(r: ArReader, objectId: number): InventoryItem {
   // BYTE bPet, then `if( bPet )` the pet (__VER >= 9, __PET_0410, :121-128); the storing side writes 1 or 0 (:76-84)
   if (r.u8() !== 0) skipPet(r);
   r.i32(); // m_bTranformVisPet (BOOL; __VER >= 15, __PETVIS, :131)
-  return { objectId, itemId, count };
+  return { objectId, itemId, count, ...(flag ? { flag } : {}), ...(charged ? { charged } : {}) };
 }
 
 /**

@@ -4,6 +4,8 @@ import type { Vec3 } from '../constants';
 import { ProtocolError } from '../errors';
 import { MAX_SKILL_JOB, readSkills } from '../world/own';
 import { clientPacket } from '../world/packet';
+import { readDefinedText } from '../world/combat';
+import { readWhisper, readSocial, readGmSay } from '../world/chat';
 import { readAddItemTaskBar, readRemoveItemTaskBar, readSkillTaskBar } from '../world/taskBar';
 import type { Shortcut, SkillSlot } from '../world/types';
 import type { SlotMessenger } from './login';
@@ -234,6 +236,10 @@ export function encodeEndSkillQueue(): Uint8Array {
 }
 
 export type WorldPacket =
+  | { type: 'teleporter'; key: string; index: number }
+  | ReturnType<typeof readDefinedText>
+  | ReturnType<typeof readWhisper>
+  | { type: 'guild' | 'system'; sender: string; text: string }
   | { type: 'join'; body: Uint8Array }
   | { type: 'snapshot'; body: Uint8Array }
   | { type: 'keepAlive' }
@@ -276,6 +282,18 @@ export function decodeWorldPacket(body: Uint8Array): WorldPacket {
   const packetType = r.u32();
   if (packetType === DPID_UNKNOWN) return decodeClientPacket(r);
   switch (packetType) {
+    case 0xff00ec: {
+      const value = readDefinedText(r); r.expectEnd(); return value;
+    }
+    case 0xffffff39: {
+      const value = readSocial(r, 'guild'); r.expectEnd(); return value as { type: 'guild'; sender: string; text: string };
+    }
+    case 0xff00ed: {
+      const value = readGmSay(r); r.expectEnd(); return value as { type: 'system'; sender: string; text: string };
+    }
+    case 0xff00d4: {
+      const whisper = readWhisper(r); r.expectEnd(); return whisper;
+    }
     case PacketType.JOIN:
       return { type: 'join', body };
     case PacketType.SNAPSHOT:
@@ -307,6 +325,11 @@ export function decodeWorldPacket(body: Uint8Array): WorldPacket {
 function decodeClientPacket(r: ArReader): WorldPacket {
   const packetType = r.u32();
   switch (packetType) {
+    case PacketType.TELEPORTER: {
+      const key = r.string(63), index = r.i32(); r.expectEnd();
+      if (key.length === 0 || index < 0) throw new ProtocolError('Invalid teleporter destination');
+      return { type: 'teleporter', key, index };
+    }
     case PacketType.SETTARGET: {
       const targetId = r.u32();
       const clear = r.u8();

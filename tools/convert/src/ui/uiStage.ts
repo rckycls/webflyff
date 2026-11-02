@@ -28,7 +28,7 @@
 
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { UI_SHEETS_KEY, decodeImage, decodeScript, readTexturePack } from '@flyffweb/formats';
+import { UI_SHEETS_KEY, decodeImage, decodeScript, readTexturePack, webName } from '@flyffweb/formats';
 import type { RgbaImage, TexturePack, WebUiSheet, WebUiSheets } from '@flyffweb/formats';
 import { iconKeyOf, itemIconKeyOf } from '../output/keys';
 import type { Stage, StageContext } from '../run';
@@ -65,6 +65,17 @@ const numbered = (prefix: string, from: number, to: number, suffix: string): str
  * say why). Grouped by what draws them; `resdata.inc` is Resource/resdata.inc, the window layouts.
  */
 export const THEME_FILES: readonly string[] = [
+  // Default.thm wallpaper and APP_LOGIN / APP_SELECT_SERVER / APP_SELECT_CHAR (WndTitle.cpp).
+  'Screen.bmp', 'WndSelectChar.tga', 'ButtLogin.bmp', 'ButtBack.tga', 'ButtNext.tga',
+  'ButtCreate.tga', 'ButtDelete.tga', 'ButtAccept.tga',
+  // CWndNavigator (WndField.cpp:9848): native controls, arrow, marker sheet and indoor fog.
+  'ButtNavLeft.tga', 'ButtNavZoomIn.tga', 'ButtNavZoomOut.tga', 'ImgNavArrow.bmp', 'ImgNavObj.bmp', 'NavDunFog.tga',
+  'ButtTeleport.bmp',
+  'ImgNavPos.tga',
+  'WORLD_Flyff.dds',
+  // V15 inventory: APP_INVENTORY (resdata.inc), CWndInventory::OnInitialUpdate (WndField.cpp).
+  'WndInventory3D.tga',
+  'WndInventoryGarbage.dds',
   // The frame and title bar of every window: CWndNeuz::AdditionalSkinTexture (WndNeuz.cpp:269-290) paints a window whose
   // resdata.inc entry is tiled (APP_REVIVAL "WndTile07.tga", APP_SKILL3 "WndTile03.tga", APP_CHARACTER3 "Wndtile00.tga" ...)
   // from 12 pieces of 16 x 16, the file name without its last 6 characters, a two-digit number 0 to 11 and ".tga". Whatever
@@ -238,9 +249,16 @@ export function createUiStage(options: UiStageOptions = {}): Stage {
       const sheetKeys = new Map(sheets.map((sheet) => [sheet.picture, sheet.colorKey]));
 
       const pictures = new Map<string, Picture>();
+      // CLandscape loads the DDS beside each landscape tile, without a colour key (lod.cpp:1420).
+      for (const src of ctx.client.list('World', /\d{2}-\d{2}\.dds$/i, true)) {
+        const match = /^(.+?)(\d{2})-(\d{2})\.dds$/i.exec(path.basename(src));
+        if (match !== null && wanted(src)) pictures.set(src, { src,
+          key: `minimaps/${webName(match[1]!)}/${Number(match[2])}_${Number(match[3])}.png`, colorKey: 0 });
+      }
       const add = (src: string, keyOf: (file: string) => string): void => {
         if (wanted(src)) {
-          pictures.set(src, { src, key: keyOf(path.basename(src)), colorKey: sheetKeys.get(src) ?? MAGENTA_KEY });
+          pictures.set(src, { src, key: keyOf(path.basename(src)), colorKey: sheetKeys.get(src) ??
+            (/^world_/i.test(path.basename(src)) ? 0xff000000 : /^imgnavpos\./i.test(path.basename(src)) ? 0 : MAGENTA_KEY) });
         }
       };
       for (const { dir, keyOf } of PICTURE_FOLDERS) for (const src of ctx.client.list(dir, PICTURE)) add(src, keyOf);

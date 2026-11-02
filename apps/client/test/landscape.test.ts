@@ -199,7 +199,7 @@ describe('installLandscape (spec §3.10)', () => {
 });
 
 describe('requestLock (spec §3.10: Android Chrome allows it, iOS Safari neither)', () => {
-  it('on a touch screen asks for full screen, then the landscape lock', async () => {
+  it('on a touch screen requests landscape without fullscreen', async () => {
     const calls: string[] = [];
     stub(document.documentElement, 'requestFullscreen', vi.fn(async () => {
       calls.push('fullscreen');
@@ -209,15 +209,15 @@ describe('requestLock (spec §3.10: Android Chrome allows it, iOS Safari neither
     }) });
     const landscape = install(gameRoot(), () => true);
     await landscape.requestLock();
-    expect(calls).toEqual(['fullscreen', 'lock landscape']);
+    expect(calls).toEqual(['lock landscape']);
   });
 
-  it('asks for full screen at once, in the tap that calls it (a browser allows it only there)', () => {
+  it('never requests fullscreen from a play tap', () => {
     const fullscreen = vi.fn(async () => {});
     stub(document.documentElement, 'requestFullscreen', fullscreen);
     const landscape = install(gameRoot(), () => true);
     void landscape.requestLock();
-    expect(fullscreen).toHaveBeenCalledTimes(1);
+    expect(fullscreen).not.toHaveBeenCalled();
   });
 
   it('a refused full screen and a refused lock do not throw, and the lock is still asked for', async () => {

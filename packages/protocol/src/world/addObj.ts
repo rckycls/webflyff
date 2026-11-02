@@ -2,6 +2,7 @@ import type { ArReader } from '../ar/ArReader';
 import type { MessageHeader } from '../bundle';
 import { ObjectType } from '../constants';
 import { readOwnAfterEquipment } from './own';
+import { readGroundItem } from './items';
 import type { OwnNumbers } from './own';
 import type { AddedMover, AddedNpc, AddedPlayer, MessageOf, WornPart } from './types';
 
@@ -29,15 +30,16 @@ const MAX_PET_NAME = 17; // _Common/pet.h:105
  * `pObj->Serialize( ar )` on the object `CreateObj` made for that type. The world server writes the same pair
  * in front of `Serialize` (`CUser::AddAddObj`, `WORLDSERVER/User.cpp:676`), so `CObj::Serialize` reads them again.
  *
- * Only movers are read: any other type is `addOther`, its fields skipped. A mover's fields depend on
+ * Movers and ground items are read; other types are `addOther`, their fields skipped. A mover's fields depend on
  * `CObj::GetMethod()`, which `OnAddObj` sets before reading (:1058): METHOD_NONE for the player's own character
  * (the object ID is `g_pPlayer`'s, or there is no `g_pPlayer` yet: the world server sends the own ADD_OBJ first,
  * `CUser::Open`, `User.cpp:326`), METHOD_EXCLUDE_ITEM for anything else. The world server picks the method the
  * same way (`User.cpp:677`). Here the own character is the one whose object ID is the bundle's player object ID.
  */
-export function readAddObj(r: ArReader, header: MessageHeader): MessageOf<'addMover' | 'addOther'> {
+export function readAddObj(r: ArReader, header: MessageHeader): MessageOf<'addMover' | 'addItem' | 'addOther'> {
   const objectType = r.u8();
   r.u32(); // dwObjIndex, which CObj::Serialize reads again
+  if (objectType === ObjectType.ITEM) return { type: 'addItem', item: readGroundItem(r) };
   if (objectType !== ObjectType.MOVER) {
     r.skipRest();
     return { type: 'addOther', objectType };
@@ -167,7 +169,7 @@ function readOwnEquipment(
   const fatiguePoint = r.u16(); // (u_short&)m_nFatiguePoint
   r.i32(); // m_nTutorialState (__VER >= 12, __MOD_TUTORIAL)
   r.i32(); // m_nFxp
-  r.u32(); // dwGold
+  const gold = r.u32(); // dwGold
   const exp = r.i64(); // m_nExp1 (EXPINTEGER, __int64)
   const skillLevel = r.i32(); // m_nSkillLevel
   const skillPoint = r.i32(); // m_nSkillPoint
@@ -186,7 +188,7 @@ function readOwnEquipment(
   for (let i = 0; i < MAX_HUMAN_PARTS; i++) equipmentObjectIds.push(r.u32()); // m_aEquipInfo[i].dwId
   return {
     equipmentObjectIds,
-    numbers: { ...stats, manaPoint, fatiguePoint, exp, skillLevel, skillPoint, deathExp, deathLevel, remainGP },
+    numbers: { ...stats, manaPoint, fatiguePoint, exp, skillLevel, skillPoint, deathExp, deathLevel, remainGP, ...(gold ? { gold } : {}) },
   };
 }
 

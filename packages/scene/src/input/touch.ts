@@ -1,29 +1,40 @@
-// Whether the player plays with a finger: one rule for every control that is a touch screen's (the joystick here; the game
-// client's attack button, the size of its Start menu and the text of its landscape cover). True where the main pointer is
-// a finger (`(pointer: coarse)`: phones, tablets); a computer with a touch screen besides its mouse or trackpad counts from
-// its first touch on.
+// Current input mode shared by mobile controls. Mouse/keyboard use restores desktop controls on hybrid computers.
 
 /** Capture: a touch anywhere counts, whatever takes it (the object form, which every EventTarget matches on removal). */
 const CAPTURE = { capture: true } as const;
 
-/** Whether the player plays with a finger, asked again each time (a first touch changes it); `dispose` stops listening. */
+/** Whether touch is the current input; `dispose` stops listening. */
 export type TouchWatch = (() => boolean) & { dispose(): void };
 
 /**
- * Watches `view` for the rule above. `onFirstTouch` is told once, at the first touch that makes the answer true (never on
- * a page whose main pointer is already a finger), for the controls that show from then on.
+ * Uses device pointer capabilities initially, then follows actual touch/mouse/keyboard input.
+ * The callback updates control visibility whenever the input mode changes.
  */
-export function watchTouch(view: Window, onFirstTouch?: () => void): TouchWatch {
-  let touched = false;
-  const coarse = (): boolean => view.matchMedia?.('(pointer: coarse)').matches === true;
-  const isTouch = (): boolean => touched || coarse();
-  const onPress = (event: Event): void => {
-    if ((event as PointerEvent).pointerType !== 'touch') return;
+export function watchTouch(view: Window, onChange?: (touch: boolean) => void): TouchWatch {
+  let current: boolean | null = null;
+  const coarse = (): boolean => view.matchMedia?.('(pointer: coarse)').matches === true &&
+    view.matchMedia?.('(any-pointer: fine)').matches !== true;
+  const isTouch = (): boolean => current ?? coarse();
+  const set = (touch: boolean): void => {
+    // A phone's virtual keyboard/compatibility mouse events do not turn it into a desktop.
+    if (!touch && coarse()) return;
     const was = isTouch();
-    touched = true;
-    view.removeEventListener('pointerdown', onPress, CAPTURE);
-    if (!was) onFirstTouch?.();
+    current = touch;
+    if (touch !== was) onChange?.(touch);
   };
+  const onPress = (event: Event): void => {
+    const type = (event as PointerEvent).pointerType;
+    if (type === 'touch') set(true);
+    else if (type === 'mouse' || type === 'pen') set(false);
+  };
+  const onMove = (event: Event): void => { if ((event as PointerEvent).pointerType === 'mouse') set(false); };
+  const onKey = (): void => set(false);
   view.addEventListener('pointerdown', onPress, CAPTURE);
-  return Object.assign(isTouch, { dispose: () => view.removeEventListener('pointerdown', onPress, CAPTURE) });
+  view.addEventListener('pointermove', onMove, CAPTURE);
+  view.addEventListener('keydown', onKey, CAPTURE);
+  return Object.assign(isTouch, { dispose: () => {
+    view.removeEventListener('pointerdown', onPress, CAPTURE);
+    view.removeEventListener('pointermove', onMove, CAPTURE);
+    view.removeEventListener('keydown', onKey, CAPTURE);
+  } });
 }

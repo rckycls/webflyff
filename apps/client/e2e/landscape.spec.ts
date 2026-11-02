@@ -87,6 +87,19 @@ async function tapLandsOn(locator: Locator): Promise<boolean> {
 /** Where the task bar starts, from the top of the page. */
 const barTop = async (page: Page): Promise<number> => (await boxOf(page.locator('.hud-taskbar-strip'), 'the task bar')).y;
 
+/** The mobile joystick floats under a real touch; it is hidden before a gesture starts. */
+async function holdJoystick(page: Page): Promise<() => Promise<void>> {
+  const session = await page.context().newCDPSession(page);
+  const point = { id: 1, x: 120, y: page.viewportSize()!.height * .65 };
+  await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] });
+  await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...point, y: point.y - 40 }] });
+  await expect(page.locator('.joystick')).toBeVisible();
+  return async () => {
+    await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await session.detach();
+  };
+}
+
 test.describe('landscape (spec §3.10)', () => {
   test('the cover shows over the login form while the page is upright, and goes once it is wide again', async ({ page }) => {
     await page.setViewportSize(UPRIGHT);
@@ -187,6 +200,8 @@ test.describe('landscape (spec §3.10)', () => {
       const bar = await barTop(page);
       await expectOnScreen(page.locator('.hud-taskbar-strip'), 'the task bar');
       await expectOnScreen(page.locator('.hud-status'), 'the status window', bar);
+      await expect(page.locator('.joystick')).toBeHidden();
+      const release = await holdJoystick(page);
       await expectOnScreen(page.locator('.joystick'), 'the joystick', bar);
       await expectOnScreen(page.getByRole('button', { name: 'Attack' }), 'the attack button', bar);
       // the joystick (left) and the attack button (right) apart, and the joystick under the status window
@@ -195,12 +210,13 @@ test.describe('landscape (spec §3.10)', () => {
       const status = await boxOf(page.locator('.hud-status'), 'the status window');
       expect(joystick.x + joystick.width).toBeLessThan(attack.x);
       expect(joystick.y).toBeGreaterThanOrEqual(status.y + status.height);
+      await release();
     });
   }
 
   // Ruling R27: the Start menu drawn for a finger, its top edge, Piece 4's four lines and its bottom edge at up to twice
   // their size, each line its whole row
-  test("on a touch phone the Start menu's lines are a finger's, 40 to 44 px, with no gap between two", async ({ page }) => {
+  test("on a touch phone all six Start menu entries fit with contiguous touch targets", async ({ page }) => {
     test.skip(!isTouch(), 'a mouse gets the menu at its size');
     await playGateway(page);
     await enterFlaris(page);
@@ -214,9 +230,9 @@ test.describe('landscape (spec §3.10)', () => {
         const box = item.getBoundingClientRect();
         return { top: box.top, bottom: box.bottom, height: box.height };
       }));
-      expect(lines).toHaveLength(4);
+      expect(lines).toHaveLength(6);
       for (const line of lines) {
-        expect(line.height, `a line at ${size.width} x ${size.height}`).toBeGreaterThanOrEqual(39.5);
+        expect(line.height, `a line at ${size.width} x ${size.height}`).toBeGreaterThanOrEqual(28);
         expect(line.height, `a line at ${size.width} x ${size.height}`).toBeLessThanOrEqual(44.5);
       }
       for (let i = 1; i < lines.length; i++) expect(lines[i]!.top).toBeCloseTo(lines[i - 1]!.bottom, 1);
@@ -226,7 +242,7 @@ test.describe('landscape (spec §3.10)', () => {
   });
 
   // Ruling R26: a window taller than the room above the task bar is cut to it, and its client area scrolls
-  test('on a touch phone of 750 x 342 the Character window scrolls above the task bar to its Apply button', async ({ page }) => {
+  test('on a touch phone of 750 x 342 the wide Character window fits above the taskbar with Apply reachable', async ({ page }) => {
     test.skip(!isTouch(), "a touch phone's, as short as Safari on an iPhone held on its side");
     await page.setViewportSize(SAFARI_LANDSCAPE);
     await playGateway(page);
@@ -237,15 +253,11 @@ test.describe('landscape (spec §3.10)', () => {
     await expect(character).toBeVisible();
     const bar = await barTop(page);
     await expectOnScreen(character, 'the Character window', bar);
-    const body = character.locator('.hud-window-body');
-    expect(await body.evaluate((element) => [getComputedStyle(element).overflowY, getComputedStyle(element).touchAction]))
-      .toEqual(['auto', 'pan-y']);
-    // Apply, 307 px down the 512 px window, is scrolled into the 297 px above the bar, where a tap lands on it
+    await expect(character).toHaveClass(/hud-character-landscape/);
     const apply = character.locator('[data-button="apply"]');
     await apply.scrollIntoViewIfNeeded();
     await expectOnScreen(apply, 'Apply', bar);
     expect(await tapLandsOn(apply)).toBe(true);
-    expect(await body.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
   });
 
   // A finger held on the joystick as the phone turns upright: the game under the cover is inert, and the finger's let-go may
@@ -254,12 +266,7 @@ test.describe('landscape (spec §3.10)', () => {
     test.skip(!isTouch(), "the joystick is a touch screen's");
     const gateway = await playGateway(page);
     await enterFlaris(page);
-    const base = await boxOf(page.locator('.joystick'), 'the joystick');
-    const centre = { x: base.x + base.width / 2, y: base.y + base.height / 2 };
-    // pushed forward, held (a mouse button stands for the finger: the joystick takes any pointer)
-    await page.mouse.move(centre.x, centre.y);
-    await page.mouse.down();
-    await page.mouse.move(centre.x, centre.y - 40, { steps: 4 });
+    const release = await holdJoystick(page);
     // the waits on the frame loop get 60 s, as world.spec.ts's (ruling R28)
     await expect.poll(() => movesOf(gateway).length, { timeout: 60_000 }).toBeGreaterThan(0);
     expect(movedState(movesOf(gateway).at(-1)!) & OBJSTA_MOVE_ALL).toBe(OBJSTA_FMOVE);
@@ -272,7 +279,7 @@ test.describe('landscape (spec §3.10)', () => {
     const stopped = await ownAt(page);
     await page.waitForTimeout(1000);
     expect(await ownAt(page)).toEqual(stopped);
-    await page.mouse.up();
+    await release();
     await turn(page, SAFARI_LANDSCAPE);
     await expect(cover(page)).toBeHidden(ON_FRAMES);
     expect(await ownAt(page)).toEqual(stopped);

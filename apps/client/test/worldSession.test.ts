@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  ArWriter, MAX_SKILL_JOB, MessageType, NULL_ID, PacketType, ProtocolError, ShortcutKind, bytesToHex, encodeAddItemTaskBar,
+  ArReader, ArWriter, MAX_SKILL_JOB, MessageType, NULL_ID, PacketType, ProtocolError, ShortcutKind, bytesToHex, encodeAddItemTaskBar,
   encodeDestPos, encodeDoUseSkillPoint, encodeEndSkillQueue, encodeGetDestObj, encodeJoin, encodeMeleeAttack, encodeModifyStatus,
   encodePing, encodePlayerBehavior, encodePlayerCorr, encodePlayerMoved, encodePlayerSetDestObj, encodePreJoin,
   encodeRemoveItemTaskBar, encodeRevivalToLodestar, encodeSetTarget, encodeSkillTaskBar, encodeUseSkill, encodeWorldKeepAlive,
@@ -151,6 +151,22 @@ afterEach(() => {
 });
 
 describe('WorldSession, entering', () => {
+  it('ignores a malformed optional whisper and keeps the playing session alive', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { cache, events, session } = await playing();
+    cache.push(new ArWriter().u32(0xff00d4).i32(1000).toBytes());
+    expect(events.some((event) => event.type === 'ended')).toBe(false);
+    expect(cache.closed).toBe(false); expect(session.stats.mismatched).toBe(1);
+    session.sendChat('nearby', 'Still connected');
+    const r = new ArReader(cache.sent.at(-1)!); r.bytes(8); expect(r.string(1024)).toBe('Still connected');
+  });
+  it('lets the server fill the script player object ID rather than sending the persistent character ID', async () => {
+    const { cache, session } = await playing();
+    session.sendNpcDialog(7, '#init');
+    const r = new ArReader(cache.sent.at(-1)!); r.bytes(8);
+    expect(r.u32()).toBe(7); expect(r.string(256)).toBe('#init');
+    expect([r.i32(), r.i32(), r.i32(), r.i32()]).toEqual([0, 0, 7, 0]); r.expectEnd();
+  });
   it('waits 1 s after the cache channel opens, then sends PRE_JOIN', async () => {
     const { net, clock, login, cache, events } = await started();
     expect(net.targets).toEqual([LOGIN_SERVER, CACHE_SERVER]);
@@ -499,23 +515,79 @@ describe('WorldSession, endings', () => {
     });
   });
 
-  it('REPLACE to another world ends the session', async () => {
-    const { cache, login, events } = await playing();
+  it('REPLACE retains both connections and waits for the destination own ADD_OBJ', async () => {
+    const { cache, login, events, session } = await playing();
     cache.push(replacePacket(2));
-    expect(events.slice(1)).toEqual([{ type: 'ended', message: "Moving to another map isn't supported yet." }]);
-    expect(cache.closed && login.closed).toBe(true);
+    expect(events.slice(1)).toEqual([{ type: 'transition', worldId: 2, pos: [5, 6, 7] }]);
+    expect(cache.closed || login.closed).toBe(false);
+    const before = cache.sent.length;
+    session.sendMoved(MOVE);
+    expect(cache.sent).toHaveLength(before);
+    cache.push(keepAlive());
+    expect(cache.sent).toHaveLength(before + 1);
+    cache.push(snapshot([writeEnvironmentSetting(OWN, 0)]));
+    expect(events).toHaveLength(2);
+    cache.push(snapshot([writeAddSelf(OWN, { ...SELF, pos: [5, 6, 7] })]));
+    expect(events.map(e => e.type)).toEqual(['entered', 'transition', 'entered']);
+    expect(events[2]).toMatchObject({ worldId: 2, pos: [5, 6, 7], playerObjectId: OWN });
+    expect((events[2] as EventOf<'entered'>).messages).toHaveLength(2);
+    session.sendMoved(MOVE);
+    expect(cache.sent).toHaveLength(before + 2);
   });
 
-  it('a REPLACE message to another world inside a bundle ends the session', async () => {
+  it('splits a bundle at REPLACE so the destination snapshot reaches only the new world', async () => {
     const { cache, events } = await playing();
-    cache.push(snapshot([writeSetPos(OWN, [1, 2, 3]), writeReplace(NULL_ID, 2, [5, 6, 7])]));
-    expect(events.slice(1)).toEqual([{ type: 'ended', message: "Moving to another map isn't supported yet." }]);
+    cache.push(snapshot([writeSetPos(OWN, [1, 2, 3]), writeReplace(NULL_ID, 2, [5, 6, 7]), writeAddSelf(OWN, SELF)]));
+    expect(events.map(e => e.type)).toEqual(['entered', 'messages', 'transition', 'entered']);
+    expect((events[1] as EventOf<'messages'>).messages).toHaveLength(1);
+    expect((events[3] as EventOf<'entered'>).messages).toHaveLength(1);
   });
 
-  it('a REPLACE message to another world inside the JOIN bundle ends the session without entering', async () => {
+  it('handles a REPLACE inside the initial JOIN without losing its destination snapshot', async () => {
     const { cache, events } = await atJoin();
-    cache.push(joinBundle([writeReplace(NULL_ID, 2, [5, 6, 7])]));
-    expect(events).toEqual([{ type: 'ended', message: "Moving to another map isn't supported yet." }]);
+    cache.push(joinBundle([writeReplace(NULL_ID, 2, [5, 6, 7]), writeAddSelf(OWN, SELF)]));
+    expect(events.map(e => e.type)).toEqual(['entered', 'transition', 'entered']);
+  });
+
+  it('a newer destination replaces an unfinished transition, including buffered data', async () => {
+    const { cache, events } = await playing();
+    cache.push(replacePacket(2));
+    cache.push(snapshot([writeSetPos(OWN, [1, 2, 3])]));
+    cache.push(replacePacket(3, [8, 9, 10]));
+    cache.push(snapshot([writeAddSelf(OWN, SELF)]));
+    expect(events.map(e => e.type)).toEqual(['entered', 'transition', 'transition', 'entered']);
+    expect(events[3]).toMatchObject({ worldId: 3, pos: [8, 9, 10] });
+    expect((events[3] as EventOf<'entered'>).messages).toHaveLength(1);
+  });
+
+  it('bounds the destination snapshot wait and releases connections on timeout or leave', async () => {
+    const s = await playing();
+    s.cache.push(replacePacket(2));
+    s.clock.advance(25000);
+    expect(ended(s.events)).toHaveLength(1);
+    expect(s.cache.closed && s.login.closed).toBe(true);
+    const left = await playing();
+    left.cache.push(replacePacket(2)); left.session.leave();
+    left.cache.push(snapshot([writeAddSelf(OWN, SELF)]));
+    expect(left.events.map(e => e.type)).toEqual(['entered', 'transition']);
+    expect(left.clock.pending()).toBe(0);
+  });
+
+  it('rejects invalid target world IDs and non-finite destination positions', async () => {
+    for (const body of [replacePacket(NULL_ID), replacePacket(0), replacePacket(2, [NaN, 0, 0])]) {
+      const s = await playing(); s.cache.push(body);
+      expect(ended(s.events)).toHaveLength(1);
+      expect(s.cache.closed && s.login.closed).toBe(true);
+    }
+  });
+
+  it('caps buffered messages while a destination never supplies the own mover', async () => {
+    const { cache, events, login } = await playing();
+    cache.push(replacePacket(2));
+    const batch = Array.from({ length: 1000 }, () => writeSetPos(OWN, POS));
+    for (let i = 0; i < 5; i++) cache.push(snapshot(batch));
+    expect(ended(events)).toHaveLength(1);
+    expect(cache.closed && login.closed).toBe(true);
   });
 
   it('REPLACE to the same world is passed on as a message', async () => {
@@ -535,7 +607,7 @@ describe('WorldSession, endings', () => {
     const { cache, events } = await atJoin();
     cache.push(encodeBundle(PacketType.JOIN, OWN, [writeWorldReadInfo(OWN, 6, POS), writeAddSelf(OWN, SELF)]));
     cache.push(replacePacket(FLARIS)); // the world the character list named, no longer this one
-    expect(events.map((e) => e.type)).toEqual(['entered', 'ended']);
+    expect(events.map((e) => e.type)).toEqual(['entered', 'transition']);
   });
 
   it('an ERROR from the login server ends with the lobby\'s text for its code', async () => {
@@ -593,7 +665,7 @@ describe('WorldSession, endings', () => {
     const b = await atJoin();
     b.cache.drop(4002);
     const c = await playing();
-    c.cache.push(replacePacket(9));
+    c.cache.push(errorPacket(108));
     const d = await playing();
     d.login.push(errorPacket(108));
     for (const s of [a, b, c, d]) expect(s.closedBeforeEnd).toEqual([true]);

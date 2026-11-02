@@ -9,7 +9,7 @@ import type { WebMover } from '@flyffweb/formats';
 import type { ModelBox } from '@flyffweb/scene';
 import type { OwnState } from '../OwnState';
 import type { ActionMover } from '../sim/ActionMover';
-import { ActMsg, Belli, Ik3, ObjSta, ObjStaF } from '../sim/constants';
+import { ActMsg, Belli, Ik3, Mti, ObjSta, ObjStaF } from '../sim/constants';
 import { setDestObj } from '../sim/moverRules';
 import type { SimMover } from '../sim/moverRules';
 import { attackSpeed } from '../sim/params';
@@ -176,6 +176,7 @@ export class AttackLoop {
     private readonly clock: { tick(): bigint },
     private readonly moverProps: ReadonlyMap<number, Pick<WebMover, 'killable'>>,
     private readonly skills?: OwnSkills,
+    private readonly motionReady: (mover: Mover, motion: number) => boolean = () => true,
   ) {}
 
   /** `m_bAutoAttack`. */
@@ -542,6 +543,11 @@ export class AttackLoop {
     const kind3 = state.equipped.weapon?.kind3 ?? Ik3.HAND;
     if (kind3 === Ik3.WAND || kind3 === Ik3.BOW) return;
     if (act.stateFlag & ObjStaF.SIT) return;
+    // A missing browser animation otherwise ends immediately and emits attacks at rules-step speed.
+    // Request every motion this level can chain before beginning an attack.
+    const motions = [Mti.ATK1, ...(state.level >= 2 ? [Mti.ATK2] : []),
+      ...(state.level >= 8 ? [Mti.ATK3] : []), ...(state.level >= 12 ? [Mti.ATK4] : [])];
+    if (!motions.map((motion) => this.motionReady(own, motion)).every(Boolean)) return;
     this.cmdSetMeleeAttack(own, target.objectId, state);
   }
 
@@ -553,6 +559,8 @@ export class AttackLoop {
     if (state.equipped.weapon?.kind2 === IK2_TOOLS) return;
     if (own.act.state & ObjSta.ATK_ALL) return;
     if (this.ownIsDead()) return;
+    // Combat approaches the target at run speed, even if the player was walking.
+    if (own.act.sendActMsg(ActMsg.MODE_RUN)) this.session.sendBehavior(own.act.report(this.clock.tick()));
     this.setDestObj(own, targetId, 0);
     this.cmd = targetId;
   }

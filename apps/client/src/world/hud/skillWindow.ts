@@ -252,6 +252,7 @@ export class SkillWindow {
   private readonly sectionTitles: HTMLElement[] = [];
   private readonly tooltip: HTMLElement;
   private tooltipShown = '';
+  private readonly mobile: boolean;
 
   constructor(
     private readonly art: UiArt,
@@ -261,8 +262,12 @@ export class SkillWindow {
     doc: Document = document,
   ) {
     this.doc = doc;
-    const frame = new WindowFrame(TITLE, art, { width: WIDTH, height: HEIGHT }, doc);
+    this.mobile = doc.defaultView?.matchMedia?.('(max-width: 1000px) and (pointer: coarse)').matches === true;
+    const frame = new WindowFrame(TITLE, art, this.mobile
+      ? { width: 800, height: 440, mobileScale: 1, fitWhole: true }
+      : { width: WIDTH, height: HEIGHT }, doc);
     frame.element.classList.add('hud-skills');
+    frame.element.classList.toggle('hud-skills-landscape', this.mobile);
     frame.onClose = () => this.closed();
     this.frame = frame;
     this.warning = new ReSkillWarning(art, data.texts, () => this.sendPlan(), (closeWindow) => {
@@ -277,13 +282,18 @@ export class SkillWindow {
     const body = frame.body;
 
     // the sections (the frame's skin: the tiles under everything drawn)
-    SECTIONS.forEach(({ title, panel }) => {
+    SECTIONS.forEach((section, i) => {
+      const title = this.mobile ? { left: 8 + i * 260, top: 48, width: 248, height: 32 } : section.title;
+      const panel = this.mobile ? { left: 8 + i * 260, top: 92, width: 248, height: 304 } : section.panel;
       const box = doc.createElement('div');
       box.className = 'hud-skills-box';
+      box.classList.add('hud-skills-panel');
+      box.dataset.section = String(i);
       place(box, panel);
       box.append(editTiles(doc, art, Math.trunc(panel.width / EDIT), Math.trunc(panel.height / EDIT)));
       const head = doc.createElement('div');
       head.className = 'hud-skills-box';
+      head.classList.add('hud-skills-heading');
       place(head, title);
       head.append(editTiles(doc, art, Math.trunc(title.width / EDIT), Math.trunc(title.height / EDIT), 'WndEditTile200.tga'));
       const text = this.groupTitle(doc);
@@ -297,20 +307,21 @@ export class SkillWindow {
     });
     const label = doc.createElement('div');
     label.className = 'hud-skills-box';
-    place(label, POINTS_LABEL);
+    const pointsLabel = this.mobile ? { left: 8, top: 8, width: 112, height: 24 } : POINTS_LABEL;
+    place(label, pointsLabel);
     label.title = POINTS_LABEL_TIP;
-    const columns = Math.trunc(POINTS_LABEL.width / EDIT);
-    label.append(editTiles(doc, art, columns, Math.trunc(POINTS_LABEL.height / EDIT), 'WndEditTile200.tga'));
+    const columns = Math.trunc(pointsLabel.width / EDIT);
+    label.append(editTiles(doc, art, columns, Math.ceil(pointsLabel.height / EDIT), 'WndEditTile200.tga'));
     const labelText = this.groupTitle(doc);
     labelText.textContent = POINTS_LABEL_TEXT;
     label.append(labelText);
     this.points = doc.createElement('div');
     this.points.className = 'hud-skills-points';
-    place(this.points, POINTS);
+    place(this.points, this.mobile ? { left: 136, top: 8, width: 48, height: 24 } : POINTS);
     this.points.style.color = cssRgb(POINTS_COLOR);
     const picture = doc.createElement('div');
     picture.className = 'hud-skills-picture';
-    place(picture, VAGRANT_PICTURE);
+    place(picture, this.mobile ? { left: 28, top: 112, width: 200, height: 40 } : VAGRANT_PICTURE);
     picture.style.backgroundImage = themeUrl(art, 'ImgSkillVagrant.tga');
     body.append(label, this.points, picture);
 
@@ -327,7 +338,9 @@ export class SkillWindow {
       element.className = 'hud-skill';
       element.setAttribute('role', 'button');
       element.dataset.skill = String(skillId);
-      place(element, { ...at, width: SKILL_ICON, height: SKILL_ICON });
+      place(element, this.mobile
+        ? { left: 28 + (skillId - 1) * 80, top: 111, width: 40, height: 40 }
+        : { ...at, width: SKILL_ICON, height: SKILL_ICON });
       const icon = doc.createElement('span');
       icon.className = 'hud-skill-icon';
       const digit = this.digitElement(doc);
@@ -354,6 +367,17 @@ export class SkillWindow {
       reset: button('reset', () => this.reset()),
       finish: button('finish', () => this.finish()),
     };
+    if (this.mobile) {
+      for (const [name, left] of [['plus', 176], ['minus', 206], ['reset', 548], ['finish', 666]] as const) {
+        const button = this.buttons[name];
+        button.style.left = `${left}px`;
+        button.style.top = '10px';
+        button.style.transform = name === 'plus' || name === 'minus' ? 'scale(1.35)' : 'scale(1.45)';
+        button.style.transformOrigin = 'top left';
+      }
+      this.chosenIcon.hidden = true;
+      this.chosenDigit.style.display = 'none';
+    }
 
     this.tooltip = doc.createElement('div');
     this.tooltip.className = 'hud-skill-tooltip';
@@ -394,7 +418,7 @@ export class SkillWindow {
       return;
     }
     const layer = this.frame.element.parentElement;
-    this.frame.open({ x: (layer?.clientWidth ?? 0) - WIDTH, y: (layer?.clientHeight ?? 0) - HEIGHT });
+    this.frame.open(this.mobile ? 'center' : { x: (layer?.clientWidth ?? 0) - WIDTH, y: (layer?.clientHeight ?? 0) - HEIGHT });
     this.initItem(own);
     this.update(own);
   }
@@ -639,10 +663,10 @@ export class SkillWindow {
     if (skill !== undefined) {
       // measured at the left edge, where it has the client area's whole width, then moved under the skill as far as it
       // still ends inside the window (a window that scrolls would cut it)
-      const at = SKILL_PLACES.get(skill.skillId)!;
+      const at = this.mobile ? { left: 28 + (skill.skillId - 1) * 80, top: 111 } : SKILL_PLACES.get(skill.skillId)!;
       this.tooltip.style.left = '0px';
-      this.tooltip.style.top = `${at.top + SKILL_ICON + 4}px`;
-      this.tooltip.style.left = `${Math.max(0, Math.min(at.left, CLIENT_WIDTH - this.tooltip.offsetWidth))}px`;
+      this.tooltip.style.top = `${at.top + (this.mobile ? 40 : SKILL_ICON) + 4}px`;
+      this.tooltip.style.left = `${Math.max(0, Math.min(at.left, (this.mobile ? 780 : CLIENT_WIDTH) - this.tooltip.offsetWidth))}px`;
     }
   }
 

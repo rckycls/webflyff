@@ -19,6 +19,7 @@ const applet = (name: string, icon: string | null, desc: string, hotkey: string 
 
 /** The `APP_*` ids the client names (`Resource/ResData.h`). */
 export const AppId = {
+  NAVIGATOR: 1000,
   STATUS1: 577,
   CHARACTER3: 764,
   SKILL3: 622,

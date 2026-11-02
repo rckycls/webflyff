@@ -1,0 +1,115 @@
+/* APP_LOGIN 288x256; APP_SELECT_SERVER 416x368; APP_SELECT_CHAR 544x368.
+   WndTitle.cpp hides the About/Credit/Prologue controls and moves Login to y=105. */
+#app.classic-lobby {
+  position: fixed; inset: 0; display: grid; place-items: center;
+  grid-template-columns: 1fr; grid-template-rows: 1fr; gap: 0;
+  max-width: none; min-height: 0; margin: 0; padding: 12px;
+  background: #b5daef var(--lobby-screen) center / 100% 100% no-repeat;
+  color: #111; font: 12px/1.25 Arial, sans-serif; color-scheme: light;
+  --text: #111; --muted: #555; --surface: #fff; --border: #aaa;
+}
+#app.classic-lobby > header { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+#app.classic-lobby > .stage { grid-area: 1 / 1; place-self: center; width: auto; min-width: 0; max-width: 100%; }
+#app.classic-lobby > :is(.notice, .status:not(:empty)) {
+  position: fixed; z-index: 5; bottom: 12px; left: 50%; transform: translateX(-50%);
+  width: min(440px, calc(100% - 24px)); margin: 0; font: 13px/1.3 Arial, sans-serif;
+}
+#app.classic-lobby .screen {
+  position: relative; isolation: isolate; width: 288px; max-width: calc(100vw - 24px);
+  padding: 30px 16px 18px; background: #efebe7; border-radius: 7px;
+  box-shadow: 1px 3px 6px #3338;
+}
+#app.classic-lobby .lobby-frame {
+  position: absolute; inset: 0; z-index: -1; display: grid; pointer-events: none;
+  grid-template-columns: 16px 1fr 16px; grid-template-rows: 16px 16px 1fr 16px;
+}
+.lobby-frame > span { background-repeat: repeat; }
+#app.classic-lobby .screen > h2 {
+  position: absolute; top: 3px; left: 10px; margin: 0; font: bold 12px/16px Arial, sans-serif;
+  color: white; text-shadow: 1px 1px #745c4c;
+}
+#app.classic-lobby .btn {
+  min-height: 20px; height: 20px; min-width: 72px; width: auto; padding: 0 8px;
+  border: 1px solid #aaa; border-radius: 3px; background: linear-gradient(#fff, #eee 45%, #ddd 55%, #fff);
+  color: #333; font: bold 12px/18px Arial, sans-serif;
+}
+#app.classic-lobby .actions { display: flex; justify-content: center; gap: 12px; margin-top: 16px; }
+#app.classic-lobby .field { margin: 0 0 10px; }
+#app.classic-lobby .label { margin: 0; font-weight: normal; }
+#app.classic-lobby input { min-height: 24px; padding: 1px 6px; border-radius: 8px;
+  border: 1px solid #aaa; background: #fff; box-shadow: inset 1px 2px 3px #5555; font: 16px Arial, sans-serif; }
+#app.classic-lobby .login-screen { min-height: 200px; }
+#app.classic-lobby .login-screen .field { display: grid; grid-template-columns: 70px 1fr; align-items: center; }
+#app.classic-lobby .login-screen .actions { margin-top: 28px; }
+#app.classic-lobby :is(.login-screen .btn, .lobby-back, .lobby-next, .lobby-create, .slot-enter, .danger-outline) {
+  width: 72px; border: 0; padding: 0; background-color: transparent;
+  background-size: 400% 100%; background-position: 33.333% 0; background-repeat: no-repeat;
+  font-size: var(--lobby-button-label-size, 12px);
+}
+#app.classic-lobby .login-screen .btn { width: 140px; background-image: var(--lobby-buttlogin); }
+#app.classic-lobby .lobby-back { background-image: var(--lobby-buttback); }
+#app.classic-lobby .lobby-next { background-image: var(--lobby-buttnext); }
+#app.classic-lobby .lobby-create { background-image: var(--lobby-buttcreate); }
+#app.classic-lobby .slot-enter { background-image: var(--lobby-buttaccept); }
+#app.classic-lobby .danger-outline { background-image: var(--lobby-buttdelete); }
+@media (hover: hover) {
+  #app.classic-lobby :is(.login-screen .btn, .lobby-back, .lobby-next, .lobby-create, .slot-enter, .danger-outline):hover { background-position: 0 0; }
+}
+#app.classic-lobby :is(.login-screen .btn, .lobby-back, .lobby-next, .lobby-create, .slot-enter, .danger-outline):active { background-position: 66.666% 0; }
+#app.classic-lobby :is(.login-screen .btn, .lobby-back, .lobby-next, .lobby-create, .slot-enter, .danger-outline):disabled { background-position: 100% 0; }
+#app.classic-lobby .server-screen { width: 416px; }
+#app.classic-lobby .server-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+#app.classic-lobby .server-columns h3 { margin: 0 0 6px; font: 12px Arial, sans-serif; color: #608da4; }
+#app.classic-lobby :is(.server-names, .server-channels) {
+  height: min(224px, calc(100dvh - 140px)); min-height: 90px; overflow-y: auto;
+  border: 1px solid #aaa; border-radius: 8px; background: white; box-shadow: inset 1px 2px 2px #3334;
+  padding: 5px 2px;
+}
+#app.classic-lobby .server { margin: 0; }
+#app.classic-lobby .server > h3 { display: none; }
+#app.classic-lobby .server .list { display: block; }
+#app.classic-lobby :is(.server-name, .channel) {
+  display: flex; align-items: center; width: 100%; min-width: 0; min-height: 28px; height: auto;
+  padding: 4px; border: 0; border-radius: 0; background: transparent; color: #111;
+  text-align: left; font: 12px Arial, sans-serif; cursor: pointer;
+}
+#app.classic-lobby .server-name[aria-pressed='true'] { background: #c4dfed; }
+#app.classic-lobby .channel:hover:not([aria-disabled='true']) { background: #c4dfed; }
+#app.classic-lobby .channel { flex-wrap: wrap; gap: 2px 8px; }
+#app.classic-lobby .channel-state { font-size: 11px; }
+#app.classic-lobby .character-screen {
+  width: 544px; height: min(368px, calc(100dvh - 24px)); min-height: 270px; padding: 0;
+  background: #f1eee9 var(--lobby-wndselectchar) center / 100% 100% no-repeat;
+}
+#app.classic-lobby .character-screen > .lobby-frame { display: none; }
+#app.classic-lobby .character-screen > .list {
+  position: absolute; top: 11.5%; left: 3.1%; width: 93.4%; height: 62%;
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2.6%;
+  grid-template-rows: minmax(0, 1fr);
+}
+#app.classic-lobby .slot { display: block; min-height: 0; height: 100%; padding: 0; border: 0; border-radius: 6px; background: transparent; }
+#app.classic-lobby .slot.selected { background: #b0eac233; outline: 1px solid #84a7a6; }
+#app.classic-lobby .slot-number { position: absolute; top: -16px; font-size: 10px; color: #777; }
+#app.classic-lobby .character-select { width: 100%; height: 100%; padding: 0; border: 0; background: transparent; cursor: pointer; }
+#app.classic-lobby .character-preview { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; }
+#app.classic-lobby .character-preview canvas { max-height: 95%; max-width: 100%; object-fit: contain; }
+#app.classic-lobby .slot-row { display: contents; }
+#app.classic-lobby .slot-info { position: absolute; top: 102%; width: 31.6%; display: block; text-align: center; margin: 0; font-size: 10px; line-height: 10px; }
+#app.classic-lobby .slot-info > span { display: block; }
+#app.classic-lobby .slot.selected .slot-name { color: #6060ff; }
+#app.classic-lobby .slot-create { margin: 60% auto 0; min-width: 0; max-width: 100%; font-size: 11px; }
+#app.classic-lobby > .stage .character-screen .slot :is(.slot-enter, .danger-outline) {
+  position: absolute; top: 113%; margin: 0; width: 72px; min-width: 72px; padding: 0;
+}
+#app.classic-lobby .slot .danger-outline { left: 50%; }
+#app.classic-lobby .slot .slot-enter { left: 67%; }
+#app.classic-lobby .character-screen > .actions { position: absolute; top: 81.5%; left: 19%; margin: 0; }
+#app.classic-lobby .character-screen > .actions > :last-child { position: fixed; right: 12px; bottom: 12px; }
+#app.classic-lobby [hidden] { display: none !important; }
+#app.classic-lobby .screen:not(.login-screen, .server-screen, .character-screen) {
+  width: min(640px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow-y: auto;
+}
+#app.classic-lobby .screen:not(.login-screen, .server-screen, .character-screen) .label { margin-bottom: 4px; }
+@media (pointer: coarse) {
+  #app.classic-lobby .btn { min-height: 28px; height: 28px; }
+}

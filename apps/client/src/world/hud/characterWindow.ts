@@ -174,6 +174,7 @@ export class CharacterWindow {
   private readonly inputs: Record<Stat, HTMLInputElement>;
   private readonly apply: HTMLButtonElement;
   private readonly reset: HTMLButtonElement;
+  private readonly mobile: boolean;
 
   constructor(
     art: UiArt,
@@ -181,8 +182,14 @@ export class CharacterWindow {
     private readonly onApply: (counts: StatCounts) => void,
     doc: Document = document,
   ) {
-    const frame = new WindowFrame(TITLE, art, { width: WIDTH, height: HEIGHT }, doc);
+    const mobile = doc.defaultView?.matchMedia?.('(max-width: 1000px) and (pointer: coarse)').matches === true;
+    this.mobile = mobile;
+    const tabRect = mobile ? { left: 8, top: 12, width: 464, height: 272 } : TAB;
+    const frame = new WindowFrame(TITLE, art, mobile
+      ? { width: 480, height: 320, mobileScale: 1, fitWhole: true }
+      : { width: WIDTH, height: HEIGHT }, doc);
     frame.element.classList.add('hud-character');
+    frame.element.classList.toggle('hud-character-landscape', mobile);
     frame.onClose = () => {
       // Destroy: the page and its counts go, and the confirm box's Yes would find no page (:4490-4500)
       this.countsNow = { ...NO_COUNTS };
@@ -194,15 +201,15 @@ export class CharacterWindow {
 
     const tab = doc.createElement('div');
     tab.className = 'hud-char-tab';
-    place(tab, TAB);
-    const columns = Math.trunc((TAB.width - TAB_RIGHT) / EDIT);
-    tab.append(editTiles(doc, art, columns, Math.trunc(TAB.height / EDIT)));
-    tab.append(...this.tabStrip(doc, art, columns));
+    place(tab, tabRect);
+    const columns = Math.trunc((tabRect.width - TAB_RIGHT) / EDIT);
+    tab.append(editTiles(doc, art, columns, Math.trunc(tabRect.height / EDIT)));
+    tab.append(...this.tabStrip(doc, art, columns, tabRect));
 
     const page = doc.createElement('div');
     page.className = 'hud-char-page';
-    place(page, { left: 0, top: 0, width: TAB.width, height: TAB.height - TAB_STRIP });
-    page.style.backgroundImage = themeUrl(art, PAGE_PICTURE);
+    place(page, { left: 0, top: 0, width: tabRect.width - (mobile ? 16 : 0), height: tabRect.height - TAB_STRIP });
+    if (!mobile) page.style.backgroundImage = themeUrl(art, PAGE_PICTURE);
     tab.append(page);
     frame.body.append(tab);
 
@@ -284,6 +291,44 @@ export class CharacterWindow {
       this.process();
     });
     page.append(this.apply, this.reset);
+    if (mobile) {
+      const move = (selector: string, left: number, top: number) => {
+        const element = page.querySelector<HTMLElement>(selector)!;
+        element.style.left = `${left}px`;
+        element.style.top = `${top}px`;
+      };
+      move('[data-label="base"]', 76, 14);
+      BASE_ROWS.forEach((row, i) => {
+        move(`[data-label="${row.name}"]`, 8, 38 + i * 20);
+        move(`[data-value="${row.name}"]`, 100, 38 + i * 20);
+      });
+      move('[data-label="detail"]', 76, 150);
+      DETAIL_ROWS.forEach((row) => {
+        const right = row.name === 'critical' || row.name === 'speed';
+        const top = row.name === 'atk' || row.name === 'critical' ? 176 : 196;
+        move(`[data-label="${row.name}"]`, right ? 106 : 8, top);
+        move(`[data-value="${row.name}"]`, right ? 180 : 44, top);
+      });
+      move('[data-label="points"]', 236, 14);
+      move('[data-value="points"]', 360, 14);
+      STATS.forEach((stat, i) => {
+        const top = 38 + i * 20;
+        move(`[data-label="${stat}"]`, 236, top);
+        move(`[data-value="${stat}"]`, 294, top);
+        move(`[data-count="${stat}"]`, 340, top - 3);
+        move(`[data-button="${stat}-plus"]`, 390, top);
+        move(`[data-button="${stat}-minus"]`, 412, top);
+      });
+      move('[data-button="apply"]', 252, 174);
+      move('[data-button="reset"]', 352, 174);
+      for (const [left, top, width] of [[8, 8, 208], [8, 32, 208], [8, 142, 208], [8, 168, 208],
+        [8, 224, 208], [236, 8, 200], [236, 32, 200], [236, 142, 200], [236, 224, 200]]) {
+        const rule = doc.createElement('div');
+        rule.className = 'hud-char-rule';
+        place(rule, { left: left!, top: top!, width: width!, height: 2 });
+        page.append(rule);
+      }
+    }
     this.process();
   }
 
@@ -292,10 +337,10 @@ export class CharacterWindow {
     return { ...this.countsNow };
   }
 
-  /** H, the applet and the Start menu (`ObjectExecutor`): opens the window at the top left, or closes it if it is open. */
+  /** H, the applet and Start: opens at the top left on desktop or centered on mobile; closes if already open. */
   toggle(): void {
     if (this.frame.isOpen) this.frame.close();
-    else this.frame.open({ x: 0, y: 0 });
+    else this.frame.open(this.mobile ? 'center' : { x: 0, y: 0 });
   }
 
   /**
@@ -467,8 +512,8 @@ export class CharacterWindow {
    * :4221-4283): 2 px into each tab, the chosen one black and the others white (ALIGN_LEFT, `__VER >= 15`). Only the
    * page's tab does anything: the Fame/Master page is not the browser's.
    */
-  private tabStrip(doc: Document, art: UiArt, columns: number): HTMLElement[] {
-    const top = (Math.trunc(TAB.height / EDIT) - 2) * EDIT;
+  private tabStrip(doc: Document, art: UiArt, columns: number, rect: ControlRect = TAB): HTMLElement[] {
+    const top = (Math.trunc(rect.height / EDIT) - 2) * EDIT;
     const tile = (index: number, left: number, width = TAB_TILE): HTMLElement => {
       const element = doc.createElement('div');
       place(element, { left, top, width, height: TAB_TILE_HEIGHT });
@@ -478,9 +523,9 @@ export class CharacterWindow {
     };
     const tiles = tabStripTiles(columns, TABS.length).map((index, i) => tile(index, i * TAB_TILE));
     for (const chosen of chosenTabTiles(columns, TABS.length, CHOSEN_TAB)) tiles.push(tile(chosen.index, chosen.left, chosen.width));
-    const length = Math.trunc((TAB.width - TAB_RIGHT) / TABS.length);
+    const length = Math.trunc((rect.width - TAB_RIGHT) / TABS.length);
     const titles = TABS.map((id, i) => {
-      const title = this.textAt(doc, i * length + 2, TAB.height - TAB_TITLE_UP);
+      const title = this.textAt(doc, i * length + 2, rect.height - TAB_TITLE_UP);
       title.classList.add('hud-char-tab-title');
       title.dataset.tab = String(i);
       title.textContent = this.text(id);

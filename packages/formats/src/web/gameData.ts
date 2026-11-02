@@ -93,6 +93,10 @@ export interface WebItemModel {
  * the last row, as CFixedArray::SetAtGrow does). A -1 is a `=` cell, NULL_ID.
  */
 export interface WebItemProp {
+  /** Native base penya price; server event factors/taxes and upgraded-item prices can differ. */
+  cost?: number;
+  /** Native szComment/command text, optional in catalogs converted before item tooltips. */
+  description?: string;
   /** The item's id (`II_*`). */
   id: number;
   /** `ItemProp::szName`: the English name. */
@@ -141,6 +145,11 @@ export interface WebItemProp {
 
 /** A non-player character of `character.inc` and its two sister files. */
 export interface WebNpc {
+  teleports?: Array<{ x: number; z: number }>;
+  menus?: number[];
+  dialogFile?: string;
+  vendorTabs?: Record<number, string>;
+  vendorType?: number;
   /**
    * The key as the file writes it (`CHARACTER::m_szKey`). Neuz looks characters up by the lower-cased key
    * (CProject::GetCharacter, Project.h:1376), so look it up with `key.toLowerCase()`.

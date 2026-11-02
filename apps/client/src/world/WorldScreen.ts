@@ -1,3 +1,4 @@
+import { SpeechBubbleLayer } from './render/SpeechBubbleLayer';
 // The world screen (spec §3.2, §3.5): "Entering the world…" with a Leave button while the session enters, then the world in
 // 3D with its movers and their name tags, the joystick and the measurement overlay. It wires the parts together:
 // the session's bundles go into `WorldState` as they come; once the world is on screen the frame loop runs the rules'
@@ -18,7 +19,7 @@ import { UI_SHEETS_KEY, toWebPosition } from '@flyffweb/formats';
 import type { Vec3, WebEffect, WebUiSheet, WebUiSheets } from '@flyffweb/formats';
 import type { AddedMover, BundleMessage, WorldMessage } from '@flyffweb/protocol';
 import {
-  EffectRenderer, Joystick, KeyboardInput, WorldStage, effectTextureProvider, loadGltf, loopMotion, neuzRandom,
+  EffectRenderer, Joystick, KeyboardInput, WorldStage, effectTextureProvider, loadGltf, loopMotion, neuzRandom, attachHeld,
 } from '@flyffweb/scene';
 import type { EffectTextureProvider, Ground, LoopedMotion, SceneServices } from '@flyffweb/scene';
 import type { WebGLRenderer } from 'three';
@@ -43,6 +44,8 @@ import { EffectManager } from './fx/EffectManager';
 import { GameDataMissingError } from './gameData';
 import type { GameData } from './gameData';
 import { AttackButton } from './hud/attackButton';
+import { CameraControls } from './cameraControls';
+import { blockBrowserGestures } from './browserGestures';
 import { CharacterWindow } from './hud/characterWindow';
 import { escapeWindow, refitWindows } from './hud/frame';
 import type { UiArt } from './hud/art';
@@ -52,6 +55,18 @@ import { LogOutBox } from './hud/logOutBox';
 import { ReviveWindow } from './hud/reviveWindow';
 import { SkillWindow } from './hud/skillWindow';
 import { TaskBar } from './hud/taskBar';
+import { InventoryWindow } from './hud/inventoryWindow';
+import { ChatWindow } from './hud/chatWindow';
+import { NpcDialog } from './hud/npcDialog';
+import { ShopWindow } from './hud/shopWindow';
+import { Minimap } from './hud/minimap';
+import { TeleporterWindow } from './hud/teleporterWindow';
+import { formatDefinedText } from './hud/messages';
+import { ItemUse } from './items/itemUse';
+import { ItemActions } from './items/itemActions';
+import { GroundItems } from './items/groundItems';
+import { NearbyItems } from './items/nearbyItems';
+import { ShortcutKind } from '@flyffweb/protocol';
 import type { TaskBarWindow } from './hud/taskBar';
 import { OwnMover, pickOnStage } from './ownMover';
 import { OwnState } from './OwnState';
@@ -70,10 +85,11 @@ import { SpriteLayer } from './render/SpriteLayer';
 import { TargetMarks, attackMarks, focusRect } from './render/TargetMarks';
 import type { ScreenRect } from './render/TargetMarks';
 import { HAttr } from './sim/collision';
-import { Mti } from './sim/constants';
+import { Mti, ObjSta } from './sim/constants';
 import { SkillUse } from './skills/skillUse';
 import { transformCoord } from './sim/d3dx';
-import { FixedStepper, STEPS_PER_SECOND } from './sim/stepper';
+import { STEPS_PER_SECOND } from './sim/stepper';
+import { SimulationClock } from './simulationClock';
 import { WorldSession } from './WorldSession';
 import type { WorldEvent } from './WorldSession';
 import { WorldState, isDie, isLive } from './WorldState';
@@ -81,7 +97,6 @@ import type { WorldChanges } from './WorldState';
 
 const LOADING_TEXT = 'Entering the world…';
 /** The joystick's height over the bottom, as Piece 3's: the task bar's 48 px and 8 more. */
-const JOYSTICK_BOTTOM = 56;
 /** `PutString( prj.GetText( TID_PK_COMBAT_END ), NULL, 0xffff0000 )` (`WndManager.cpp:2615`): red, not the text's colour. */
 const COMBAT_END_COLOR = 0xffff0000;
 const NOT_AVAILABLE_TEXT = "This map isn't available in the browser yet.";
@@ -136,6 +151,7 @@ export class WorldScreen {
   /** Where WORLD_READINFO put the player: the camera looks there until the own mover is in view. */
   private entered: Vec3 = [0, 0, 0];
   private stage: WorldStage | undefined;
+  private stageGeneration = 0;
   /**
    * The world the rules move the movers in (D3D x, z): the stage's (`WorldStage.ground`: the land of its tiles and
    * their objects' collision shapes) once the stage is open; no land and nothing in the way before.
@@ -185,6 +201,10 @@ export class WorldScreen {
    */
   private taskBar: TaskBar | undefined;
   private attackButton: AttackButton | undefined;
+  private cameraControls: CameraControls | undefined;
+  private jumpButton: AttackButton | undefined;
+  private jumpRequested = false;
+  private releaseBrowserGestures: () => void = () => {};
   private logOutBox: LogOutBox | undefined;
   /**
    * The revive window (`CWndRevival`, Piece 4 §3.5), which the own death and Escape while dead open, and the Character
@@ -195,13 +215,24 @@ export class WorldScreen {
   private characterWindow: CharacterWindow | undefined;
   /** The skill tree window with its box (`CWndSkillTreeEx`, §3.11), which K, the applet and the Start menu open. */
   private skillWindow: SkillWindow | undefined;
+  private inventoryWindow: InventoryWindow | undefined;
+  private chatWindow: ChatWindow | undefined;
+  private speechBubbles: SpeechBubbleLayer | undefined;
+  private npcDialog: NpcDialog | undefined;
+  private shopWindow: ShopWindow | undefined;
+  private minimap: Minimap | undefined;
+  private teleporter: TeleporterWindow | undefined;
+  private itemUse: ItemUse | undefined;
+  private itemActions: ItemActions | undefined;
+  private groundItems: GroundItems | undefined;
+  private nearbyItems: NearbyItems | undefined;
   /** The own character's driving: the controls each rules step, the moves sent, the stop. */
   private ownMover: OwnMover | undefined;
   /** The own character's numbers (`ownState`). */
   private own: OwnState | undefined;
   /** The chase camera behind the own mover, which follows it once a rules step. */
-  private readonly backCamera = new BackCamera();
-  private readonly stepper = new FixedStepper();
+  private backCamera = new BackCamera();
+  private simulationClock: SimulationClock | undefined;
   private paused = false;
   /**
    * While paused, the rules steps the next frame runs (the test hooks' `step`), and the calls that wait for that frame to
@@ -218,8 +249,6 @@ export class WorldScreen {
   /** The window was resized (or the device turned) since the last frame: the open windows are kept on the screen. */
   private resized = false;
   private lastTime = 0;
-  /** The page was hidden: the next frame owes nothing for the time it was away. */
-  private away = false;
   private loadTimer: ReturnType<typeof setTimeout> | undefined;
   private lastError = '';
   /** The errors of applying a bundle said on the overlay, so that one that comes with every bundle is listed once. */
@@ -261,6 +290,7 @@ export class WorldScreen {
     this.leaveButton.addEventListener('click', () => this.leave());
     this.element = h('div', { class: 'world' }, h('p', { class: 'world-status', role: 'status' }, LOADING_TEXT), this.leaveButton);
     root.append(this.element);
+    this.releaseBrowserGestures = blockBrowserGestures(this.element, this.element.ownerDocument.defaultView ?? window);
     // from here to every ending, closing, reloading or leaving the page asks the player first; the ending lifts it
     this.stopAsking = askBeforeLeaving(this.element.ownerDocument.defaultView ?? window);
     this.unregister = registerWorld({
@@ -328,7 +358,12 @@ export class WorldScreen {
   private handle(event: WorldEvent): void {
     // an ending while the waiting events are handled (the map is not available) ends the ones after it too
     if (this.over) return;
-    if (event.type === 'entered') {
+    if (event.type === 'transition') {
+      this.disposeWorld();
+      this.element.replaceChildren(h('p', { class: 'world-status', role: 'status' }, LOADING_TEXT), this.leaveButton);
+      const folder = this.data!.worlds.get(event.worldId);
+      if (folder === undefined || this.services!.store.url(`worlds/${folder}/manifest.json`) === null) this.end(NOT_AVAILABLE_TEXT);
+    } else if (event.type === 'entered') {
       try {
         this.enter(event.worldId, event.pos, event.messages);
       } catch (error) {
@@ -352,6 +387,8 @@ export class WorldScreen {
    * in view, and the map. An inventory that could not be read is named on the overlay (Ruling R1; the session counts it).
    */
   private enter(worldId: number, pos: Vec3, messages: BundleMessage<WorldMessage>[]): void {
+    const generation = ++this.stageGeneration;
+    this.element.dataset.worldId = String(worldId);
     const services = this.services!;
     const folder = this.data!.worlds.get(worldId);
     if (folder === undefined || services.store.url(`worlds/${folder}/manifest.json`) === null) {
@@ -369,7 +406,13 @@ export class WorldScreen {
     this.world = new WorldState(this.data!, this.entry.clock, this.ground, this.own);
     this.entered = pos;
     this.apply(messages, true);
-    void this.openStage(folder, services).catch((error: unknown) => this.fail(error));
+    this.loadTimer = setTimeout(() => { if (generation === this.stageGeneration) this.end(TOO_SLOW_TEXT); }, LOAD_LIMIT_MS);
+    void this.openStage(folder, services, generation).catch((error: unknown) => {
+      if (!this.over && generation === this.stageGeneration) {
+        console.warn(`Unable to load map ${folder}:`, error);
+        this.end(NOT_AVAILABLE_TEXT);
+      }
+    });
   }
 
   /**
@@ -387,10 +430,40 @@ export class WorldScreen {
     const world = this.world!;
     for (const { objectId, value } of messages) {
       const self = world.self();
+      if (value.type === 'npcScript') {
+        if (objectId === self?.objectId) this.npcDialog?.receive(value.action);
+        continue;
+      }
+      if (value.type === 'delObj') this.speechBubbles?.remove(objectId);
+      if (value.type === 'shopStock') { this.shopWindow?.receive(objectId, value.tabs); continue; }
+      if (value.type === 'gmChat') {
+        for (const text of value.texts) this.chatWindow?.append('system', '', text);
+        continue;
+      }
+      if (value.type === 'chat' || value.type === 'shout' || value.type === 'whisper' || value.type === 'party' || value.type === 'guild' || value.type === 'system' || value.type === 'announcement') {
+        if (value.type === 'chat' && world.movers.get(objectId)?.kind !== 'player') continue;
+        if (value.type === 'chat') {
+          this.chatWindow?.append('nearby', world.movers.get(objectId)?.name ?? 'Unknown', value.text);
+          const speaker = world.movers.get(objectId);
+          if (speaker && this.data && nameTagOf(speaker, world.self(), this.data.nameColors, this.data.honorTitles)) this.speechBubbles?.say(objectId, value.text);
+        }
+        else this.chatWindow?.append(value.type, value.sender, value.text, value.type === 'whisper' ? value.recipient : undefined);
+        continue;
+      }
+      if (value.type === 'chatReturn') {
+        this.chatWindow?.append('system', '', value.flag === 1 ? value.text : value.flag === 2 ? 'You cannot whisper to yourself.' : `Whisper unavailable: ${value.text}`);
+        continue;
+      }
+      if (value.type === 'definedText' && this.data) {
+        const text = formatDefinedText(this.data.texts, value.textId, value.args).text;
+        if (text) this.chatWindow?.append('system', '', text);
+        if (text) this.shopWindow?.feedback(text);
+      }
       if (value.type === 'replace') {
         if (self === undefined) continue;
         world.apply(self.objectId, { type: 'setPos', pos: value.pos });
         this.views?.snap(self.objectId);
+        this.backCamera.relocate();
         continue;
       }
       if (value.type === 'queryGetDestObj') {
@@ -404,42 +477,48 @@ export class WorldScreen {
       world.apply(objectId, value, joining);
       this.skillUse?.onMessage(objectId, value, world.self());
       this.skillWindow?.onMessage(objectId, value, this.own);
-      if (value.type === 'setPos') this.views?.snap(objectId);
+      if (value.type === 'setPos' || value.type === 'setPosAngle') {
+        this.views?.snap(objectId);
+        if (objectId === self?.objectId) this.backCamera.relocate();
+      }
     }
   }
 
-  private async openStage(folder: string, services: SceneServices): Promise<void> {
+  private async openStage(folder: string, services: SceneServices, generation: number): Promise<void> {
     const stage = await WorldStage.open(folder, services, RADIUS);
-    if (this.over) {
+    if (this.over || generation !== this.stageGeneration) {
       stage.dispose();
       return;
     }
     this.stage = stage;
+    const { size, mapSize, mpu } = stage.manifest;
+    this.world!.setItemBounds(size[0] * mapSize * mpu, size[1] * mapSize * mpu);
     const { overlay } = this.page!;
     const data = this.data!;
     // the own character is dressed, and armed, from the character list's item ids (`lookOf`); what the hands hold picks
     // each player's weapon set of its motions in combat, from the item catalog
     const equipment = this.entry.character.equipment;
     this.views = new MoverViews(
-      stage.scene, loadMoverModel(services), overlay, (mover) => lookOf(mover, data, equipment),
+      stage.scene, loadMoverModel(services), overlay, (mover) => lookOf(mover, data,
+        this.own?.inventory ? this.own.equipmentObjectIds.map((id) => this.own!.inventory!.get(id)?.itemId ?? 0) : equipment),
       (key) => loadMotion(services, key), loadHeldItems(services, data), data.itemProps, { moverProps: data.movers },
     );
+    this.world!.onEquipmentChange = (mover) => {
+      this.views?.refresh(mover);
+      if (mover.isSelf && this.inventoryWindow?.frame.isOpen) void this.makePortrait(true);
+    };
     this.tags = new NameTagLayer(stage.scene, this.element.ownerDocument);
+    this.speechBubbles = new SpeechBubbleLayer(stage.scene, this.element.ownerDocument);
     this.startEffects(stage, services);
-    this.startHud(services);
+    this.startHud(services, folder);
     this.syncViews();
     // the objects' collision shapes come with the tiles from here on, and `ready` waits for them
     stage.ground();
     stage.focus(this.ownAt());
-    // a download that stalls must not hold the loading screen for good
-    const late = new Promise<'late'>((resolve) => {
-      this.loadTimer = setTimeout(() => resolve('late'), LOAD_LIMIT_MS);
-    });
-    const loaded = await Promise.race([Promise.all([stage.ready(), this.views.settled(), this.loadSheets(services)]), late]);
+    const loaded = await Promise.all([stage.ready(), this.views.settled(), this.loadSheets(services, generation)]);
+    if (this.over || generation !== this.stageGeneration) return;
     clearTimeout(this.loadTimer);
-    if (this.over) return;
-    if (loaded === 'late') this.end(TOO_SLOW_TEXT);
-    else this.showWorld(loaded[2]);
+    this.showWorld(loaded[2]);
   }
 
   /**
@@ -467,7 +546,7 @@ export class WorldScreen {
    * (game files converted before the UI stage) is drawn as nothing, and named once on the overlay (spec §4). The glyph
    * sheets come with the world (`showWorld`).
    */
-  private startHud(services: SceneServices): void {
+  private startHud(services: SceneServices, folder: string): void {
     const art: UiArt = {
       url: (key) => {
         const url = services.store.url(key);
@@ -478,6 +557,8 @@ export class WorldScreen {
     };
     this.hudArt = art;
     this.hud = new Hud(this.element.ownerDocument, art, this.data!);
+    this.minimap = new Minimap(art, this.stage!.manifest, folder, key => services.store.url(key), this.element.ownerDocument);
+    this.hud.element.append(this.minimap.frame.element);
   }
 
   /**
@@ -489,7 +570,7 @@ export class WorldScreen {
    * screen has ended (the player left while it came, or the page is going) is not this entry's to say, as an effect's
    * file is not (`startEffects`).
    */
-  private async loadSheets(services: SceneServices): Promise<WebUiSheets | null> {
+  private async loadSheets(services: SceneServices, generation: number): Promise<WebUiSheets | null> {
     let sheets: WebUiSheets;
     try {
       sheets = await services.store.json<WebUiSheets>(UI_SHEETS_KEY);
@@ -497,6 +578,7 @@ export class WorldScreen {
       if (!this.over) this.reportOnce(`ui sheets: ${messageOf(error)}`, error);
       return null;
     }
+    if (this.over || generation !== this.stageGeneration) return null;
     await Promise.all([sheets.targetCorners, sheets.damageDigits].map(async ({ image }) => {
       const url = services.store.url(image);
       if (url === null) return; // `screenLayers` says so
@@ -547,10 +629,13 @@ export class WorldScreen {
     const view = doc.defaultView ?? window;
     this.hudArt!.sheets = sheets;
     this.element.replaceChildren(holder, ...this.screenLayers(doc, sheets), this.hud!.element);
-    this.keyboard = new KeyboardInput(view);
+    this.minimap?.open();
+    this.element.addEventListener('contextmenu', this.onContextMenu);
+    this.page?.overlay.setCompact(view.matchMedia?.('(max-width: 1000px) and (pointer: coarse)').matches === true);
+    this.keyboard = new KeyboardInput(view, { arrows: false });
     this.walkKey = new WalkKey(view);
     // above the task bar (48 px, smaller on a narrow screen) and out of the safe area under it
-    this.joystick = new Joystick(this.element, { bottom: `calc(env(safe-area-inset-bottom, 0px) + ${JOYSTICK_BOTTOM}px)` });
+    this.joystick = new Joystick(this.element, { floating: true, onClaim: () => this.tap?.reset() });
     this.focus = new Focus(this.session, (objectId) => this.isLive(objectId));
     // the skill use and the attack loop share the own mover's one command, the reserved skill and the auto-attack
     const skillUse = new SkillUse(this.session, this.focus, () => this.own, () => performance.now(), this.data!, {
@@ -560,17 +645,30 @@ export class WorldScreen {
     this.skillUse = skillUse;
     const attackLoop = new AttackLoop(
       this.session, this.focus, this.world!, () => this.own, this.entry.clock, this.data!.movers, skillUse,
+      (mover, motion) => this.views!.motionReady(mover, motion),
     );
     skillUse.attack = attackLoop;
     this.world!.onUseSkill = (casterId, message, started) => skillUse.onUseSkill(casterId, message, started);
     this.attackLoop = attackLoop;
     const session = this.session;
+    this.itemUse = new ItemUse(() => this.own, this.data!.itemProps, session);
+    const itemActions = new ItemActions(() => this.own, () => this.world!.self()!.act.body.pos,
+      () => this.world!.groundItems, this.data!.itemProps, session, (pos) => {
+        attackLoop.stop('move');
+        const own = this.world?.self();
+        if (own) this.ownMover?.walkTo(own, pos, false);
+      });
+    this.itemActions = itemActions;
+    this.groundItems = new GroundItems(this.data!, this.hudArt!, (id) => itemActions.pick(id, performance.now()), doc);
+    this.nearbyItems = new NearbyItems(this.data!, this.hudArt!, (id) => itemActions.pick(id, performance.now()), doc,
+      () => itemActions.pickNearby(performance.now()));
+    this.element.append(this.groundItems.element);
     const taskBar = new TaskBar(this.hudArt!, {
       open: (window) => this.openWindow(window),
       logOut: () => this.logOut(),
       // a skill shortcut is the skill use's (`ObjectExecutor`'s SHORTCUT_SKILL); the slots' items are used in Piece 5
-      useSlot: (_bar, _slot, shortcut) => skillUse.useShortcut(shortcut),
-      useAppletSlot: (_slot, shortcut) => skillUse.useShortcut(shortcut),
+      useSlot: (_bar, _slot, shortcut) => { if (shortcut.kind === ShortcutKind.ITEM) this.itemUse!.use(shortcut.id); else skillUse.useShortcut(shortcut); },
+      useAppletSlot: (_slot, shortcut) => { if (shortcut.kind === ShortcutKind.ITEM) this.itemUse!.use(shortcut.id); else skillUse.useShortcut(shortcut); },
       useActionSlot: () => skillUse.useActionSlot(),
       sendAddItemTaskBar: (bar, slot, shortcut) => session.sendAddItemTaskBar(bar, slot, shortcut),
       sendRemoveItemTaskBar: (bar, slot) => session.sendRemoveItemTaskBar(bar, slot),
@@ -584,6 +682,25 @@ export class WorldScreen {
     // the Start menu opens where the joystick stands, which is over the windows' layer: it hides while the menu is open
     this.taskBar.onMenuChange = (open) => this.element.classList.toggle('world-menu-open', open);
     this.attackButton = new AttackButton(() => attackLoop.attackButton(), doc);
+    this.jumpButton = new AttackButton(() => { this.jumpRequested = true; }, doc, { label: 'Jump', className: 'hud-jump' });
+    const mobileTools = doc.createElement('div');
+    mobileTools.className = 'hud-mobile-tools';
+    mobileTools.setAttribute('role', 'toolbar');
+    mobileTools.setAttribute('aria-label', 'Window shortcuts');
+    for (const [label, action] of [
+      ['Skill', () => this.openWindow('skills')],
+      ['Bag', () => this.openWindow('inventory')],
+      ['Character', () => this.openWindow('character')],
+      ['Stats', () => { statsButton.ariaExpanded = String(this.page!.overlay.togglePanel()); }],
+    ] as const) {
+      const button = doc.createElement('button');
+      button.type = 'button';
+      button.textContent = label;
+      button.addEventListener('click', () => { action(); button.blur(); });
+      mobileTools.append(button);
+    }
+    const statsButton = mobileTools.lastElementChild as HTMLButtonElement;
+    statsButton.ariaExpanded = 'false';
     const logOutBox = new LogOutBox(this.hudArt!, this.data!.texts, () => this.leave(), doc);
     this.logOutBox = logOutBox;
     const characterWindow = new CharacterWindow(
@@ -592,13 +709,47 @@ export class WorldScreen {
     this.characterWindow = characterWindow;
     const reviveWindow = new ReviveWindow(this.hudArt!, this.data!.texts, () => this.session.sendRevivalToLodestar(), doc);
     this.reviveWindow = reviveWindow;
+    reviveWindow.onStand = () => this.itemUse!.revive();
+    const inventoryWindow = new InventoryWindow(this.hudArt!, this.data!, {
+      use: (id) => { this.itemUse!.use(id); }, equip: (id) => { itemActions.equip(id); },
+      drop: (id, count) => { itemActions.drop(id, count); }, move: (source, dest) => { itemActions.move(source, dest); },
+      shortcut: (id, slot) => taskBar.setInventoryShortcut(id, slot),
+    }, doc);
+    this.inventoryWindow = inventoryWindow;
+    this.chatWindow ??= new ChatWindow((channel, text, target) => this.session.sendChat(channel, text, target), () => this.stopOwnMover(), doc);
+    this.shopWindow = new ShopWindow(this.hudArt!, this.data!, () => this.own, (id) => this.canTalk(id), {
+      open: (id) => session.sendOpenShop(id), close: () => session.sendCloseShop(),
+      buy: (tab, id, count, itemId) => session.sendBuyItem(tab, id, count, itemId), sell: (id, count) => session.sendSellItem(id, count),
+    }, doc);
+    this.shopWindow.onOpen = () => {
+      this.hud!.element.classList.add('shop-active');
+      inventoryWindow.shopSelect = id => this.shopWindow!.selectSell(id);
+      if (this.own) {
+        if (!inventoryWindow.frame.isOpen) inventoryWindow.toggle(this.own);
+        inventoryWindow.update(this.own, true); void this.makePortrait(true);
+      }
+    };
+    this.shopWindow.onClosed = () => {
+      this.hud?.element.classList.remove('shop-active'); inventoryWindow.shopSelect = undefined;
+      if (this.own) inventoryWindow.update(this.own, true);
+    };
+    inventoryWindow.onShopClose = () => this.shopWindow?.frame.close();
+    this.teleporter = new TeleporterWindow(this.hudArt!, id => this.canTalk(id), (key, index) => session.sendTeleporter(key, index), doc);
+    this.npcDialog = new NpcDialog(this.hudArt!, (id) => this.canTalk(id),
+      (id, key, param, quest) => session.sendNpcDialog(id, key, param, quest),
+      (id) => {
+        const npc = this.world!.movers.get(id)!;
+        this.shopWindow!.open(id, npc.name, this.data!.npcs.get(npc.added.npc!.characterKey.toLowerCase())); this.npcDialog!.frame.close();
+      }, doc, this.data!.texts, (id, npc) => { this.teleporter!.open(id, npc); this.npcDialog?.frame.close(); });
     // Finish sends DOUSESKILLPOINT through the skill use, which also ends a spend the server leaves unanswered
     const skillWindow = new SkillWindow(this.hudArt!, this.data!, (skills) => void skillUse.spendSkillPoints(skills), taskBar, doc);
     this.skillWindow = skillWindow;
     for (const modal of [logOutBox.modal, reviveWindow.modal, skillWindow.warning.modal]) modal.onChange = () => this.modalChanged();
     this.hud!.element.append(
-      taskBar.element, this.attackButton.element, logOutBox.element, characterWindow.frame.element,
+      this.teleporter.frame.element,
+      taskBar.element, this.attackButton.element, this.jumpButton.element, mobileTools, logOutBox.element, characterWindow.frame.element,
       characterWindow.confirm.frame.element, skillWindow.frame.element, skillWindow.warning.element, reviveWindow.element,
+      inventoryWindow.frame.element, this.nearbyItems.element, this.chatWindow.element, this.npcDialog.frame.element, this.shopWindow.frame.element,
     );
     // before the windows' own Escape (frame.ts), which closes a window only if this one leaves the key to it
     view.addEventListener('keydown', this.onEscape, true);
@@ -608,9 +759,15 @@ export class WorldScreen {
       renderer.domElement, (x, y) => this.pick(x, y), (error) => this.reportOnce(`tap: ${messageOf(error)}`, error),
       (press) => {
         if (press.mover === null) attackLoop.onGroundPressed(press.double);
-        else attackLoop.onMoverPressed(press.mover, press.time, press.double);
+        else if (this.world?.movers.get(press.mover)?.kind === 'npc') {
+          attackLoop.stop('move'); this.focus!.select(press.mover); this.stopOwnMover();
+          const npc = this.world.movers.get(press.mover)!;
+          if (this.canTalk(press.mover)) this.npcDialog?.open(press.mover, npc.name, this.data!.npcs.get(npc.added.npc!.characterKey.toLowerCase()));
+          else this.hud?.messages.add('Move closer to speak with this NPC.', 0xffffff00);
+        } else attackLoop.onMoverPressed(press.mover, press.time, press.double);
       },
     );
+    this.cameraControls = new CameraControls(renderer.domElement, (dx, dy) => this.backCamera.rotate(dx, dy));
     this.mark = new MoveMark(this.stage!.scene);
     this.ownMover = new OwnMover(this.session, this.entry.clock, this.mark);
     doc.addEventListener('visibilitychange', this.onVisibility);
@@ -619,6 +776,7 @@ export class WorldScreen {
     view.addEventListener('keydown', this.onKeyDown);
     view.addEventListener('keyup', this.onKeyUp);
     this.lastTime = performance.now();
+    this.simulationClock = new SimulationClock((steps, now) => this.simulate(steps, now), () => this.paused || this.over);
     // `ready()` resolves at the end of the first frame (`frame`), once the camera is placed and the world drawn
     renderer.setAnimationLoop((now) => this.frame(now));
     void this.makePortrait();
@@ -628,21 +786,30 @@ export class WorldScreen {
    * The face of the status window (`renderPortrait`): the own look, loaded for it alone, in the first frame of its standing
    * motion, drawn once with the page's renderer and let go. What cannot be had leaves the face box empty, said once.
    */
-  private async makePortrait(): Promise<void> {
+  private portraitGeneration = 0;
+  private async makePortrait(inventory = false): Promise<void> {
+    const stageGeneration = this.stageGeneration;
+    const generation = inventory ? ++this.portraitGeneration : 0;
     const self = this.world?.self();
     const services = this.services!;
     const data = this.data!;
-    const look = self === undefined ? null : lookOf(self, data, this.entry.character.equipment);
+    const equipment = inventory && this.own?.inventory ? this.own.equipmentObjectIds.map((id) => this.own!.inventory!.get(id)?.itemId ?? 0) : this.entry.character.equipment;
+    const look = self === undefined ? null : lookOf(self, data, equipment);
     if (look === null) return;
     const report = (message: string): void => this.reportOnce(`portrait: ${message}`, new Error(message));
     try {
       const model = await loadMoverModel(services)(look, report);
+      const held = inventory ? await loadHeldItems(services, data)(look, report) : [];
       try {
+        for (const item of held) attachHeld(model, item.item, item.slot);
         const key = look.motion(Mti.STAND);
         const motion = key === null ? null : await loadMotion(services, key);
-        if (this.over) return;
-        this.hud?.status.setPortrait(renderPortrait(this.page!.renderer, model, motion, this.element.ownerDocument));
+        if (this.over || stageGeneration !== this.stageGeneration) return;
+        if (inventory) {
+          if (generation === this.portraitGeneration) this.inventoryWindow?.setPreview(renderPortrait(this.page!.renderer, model, motion, this.element.ownerDocument, true));
+        } else this.hud?.status.setPortrait(renderPortrait(this.page!.renderer, model, motion, this.element.ownerDocument));
       } finally {
+        for (const item of held) { item.item.removeFromParent(); item.release(); }
         model.release();
       }
     } catch (error) {
@@ -734,9 +901,7 @@ export class WorldScreen {
   }
 
   private frame(now: number): void {
-    // the first frame after the page was hidden owes nothing for the time it was away: no steps replay it
-    const dt = this.away ? 0 : (now - this.lastTime) / 1000;
-    this.away = false;
+    const dt = Math.min(.25, Math.max(0, (now - this.lastTime) / 1000));
     this.lastTime = now;
     const { overlay, renderer } = this.page!;
     overlay.frame(dt);
@@ -750,7 +915,7 @@ export class WorldScreen {
       const views = this.views!;
       this.syncViews();
       this.measureRadii(world, views);
-      const steps = asked ?? this.stepper.advance(dt);
+      const steps = asked ?? 0;
       for (let i = 0; i < steps; i++) this.step(world, stage, views, now);
       views.update(world.movers, steps / STEPS_PER_SECOND);
       // the mark goes once the walk to its point is over: arrived, or ended by a key, a stop or the server
@@ -761,7 +926,16 @@ export class WorldScreen {
       const view = this.backCamera.view ?? this.follow(world, stage);
       stage.setCamera(view.position, view.target);
       this.cameraPlaced = true;
+      this.groundItems?.update(world.groundItems, stage.camera);
       this.tags!.update(stage.camera, renderer.getSize(drawingSize).y, (objectId) => views.placeOf(objectId));
+      this.speechBubbles?.update(stage.camera, drawingSize.y, (objectId) => views.placeOf(objectId));
+      this.npcDialog?.updateAnchor(id => {
+        const place = views.placeOf(id); if (!place) return null;
+        const point = new Vector3(...place.head).project(stage.camera);
+        if (point.z < -1 || point.z > 1 || Math.abs(point.x) > 1 || Math.abs(point.y) > 1) return null;
+        const canvas = renderer.domElement.getBoundingClientRect(), parent = this.hud!.element.getBoundingClientRect();
+        return { x: canvas.left - parent.left + (point.x + 1) * canvas.width / 2 + 16, y: canvas.top - parent.top + (1 - point.y) * canvas.height / 2 };
+      });
       this.effects?.draw(stage.camera);
 
       const { tiles, models } = stage.counts();
@@ -784,6 +958,18 @@ export class WorldScreen {
       this.lastError = message;
     }
     for (const { resolve } of drawn) resolve();
+  }
+
+  /** Advances rules and animation hit frames without rendering WebGL or waiting for a visible tab. */
+  private simulate(steps: number, now: number): void {
+    const world = this.world, stage = this.stage, views = this.views;
+    if (this.over || !world || !stage || !views) return;
+    try {
+      this.syncViews(); this.measureRadii(world, views);
+      for (let i = 0; i < steps; i++) this.step(world, stage, views, now);
+      views.update(world.movers, steps / STEPS_PER_SECOND);
+      stage.focus(this.ownAt());
+    } catch (error) { this.reportOnce(`simulation: ${messageOf(error)}`, error instanceof Error ? error : new Error(String(error))); }
   }
 
   /**
@@ -814,22 +1000,36 @@ export class WorldScreen {
    */
   private step(world: WorldState, stage: WorldStage, views: MoverViews, now: number): void {
     this.stepsRun++;
+    this.cameraControls?.step();
     const own = world.self();
+    const shopPosition = this.shopWindow?.frame.isOpen ? own?.act.body.pos : undefined;
     const loop = this.attackLoop!;
     const held = this.tap!.heldMover();
     if (held === null) loop.onReleased();
     else loop.onMoverHeld(held.mover, now - held.time);
     const tap = this.tap!.take();
     const walkKey = this.walkKey!.held();
+    this.jumpRequested = this.keyboard!.takeJump() || this.jumpRequested;
+    const airborne = own !== undefined && (own.act.state & ObjSta.JUMP_ALL) !== 0;
+    const jump = this.jumpRequested && own !== undefined && !own.act.isDie() &&
+      (own.act.state & (ObjSta.JUMP_ALL | ObjSta.ATK_ALL | ObjSta.DMG_ALL)) === 0 && !this.skillUse!.pending;
+    if (jump || airborne || own?.act.isDie()) this.jumpRequested = false;
     if (own !== undefined) {
       // the keys' Shift no longer changes the gait: X toggles it (spec §1)
-      const intent = controlIntent(this.keyboard!.intent(), this.joystick!.intent());
+      const cameraAngle = this.backCamera.heading === null ? own.act.body.angle : 180 - this.backCamera.heading * 180 / Math.PI;
+      const intent = controlIntent(this.keyboard!.intent(), this.joystick!.intent(), cameraAngle);
+      if (movesOrTurns(intent) || jump || tap !== null) this.itemActions?.cancel();
       if (movesOrTurns(intent)) loop.stop('move');
+      this.itemActions?.step(now);
       // the task bar's skills, then the reserved skill's branch of Process, which leaves neither the attack nor the controls
       const skillBranch = this.skillUse!.step(own, (objectId) => world.movers.get(objectId));
-      if (loop.step(skillBranch)) this.ownMover!.control(own, intent, tap, walkKey);
+      if (((jump || airborne) && !skillBranch) || loop.step(skillBranch)) this.ownMover!.control(own, intent, tap, walkKey, jump);
     }
     world.step();
+    if (shopPosition !== undefined && own !== undefined &&
+      (own.act.body.pos[0] !== shopPosition[0] || own.act.body.pos[2] !== shopPosition[2])) {
+      this.shopWindow?.frame.close();
+    }
     this.ownMover!.corrected(own);
     this.syncViews();
     views.step(world.movers);
@@ -878,11 +1078,25 @@ export class WorldScreen {
     const gameMaster = isGameMaster(self?.added.player?.authorization ?? 0);
     this.hud!.frame(now, this.own, self?.name ?? this.entry.character.name, target, gameMaster);
     this.taskBar!.update(this.own, this.data!);
+    this.nearbyItems?.update(world.groundItems, self?.act.body.pos ?? null);
+    if (this.own) this.inventoryWindow?.update(this.own);
+    this.npcDialog?.update(); this.shopWindow?.update();
+    this.teleporter?.update();
+    if (self !== undefined) this.minimap?.update(self.act.body.pos, this.backCamera.heading ?? 0,
+      [...world.movers.values()].filter(mover => !mover.isSelf && mover.hp > 0 &&
+        !isGameMaster(mover.added.player?.authorization ?? 0)).map(mover => ({
+        id: mover.objectId, kind: mover.kind, name: mover.name, pos: mover.act.body.pos,
+      })));
+    this.reviveWindow?.update(this.itemUse?.canRevive ?? false);
     if (this.resized) {
       this.resized = false;
       refitWindows(this.element.ownerDocument);
     }
     this.attackButton!.update(loop.canAttackFocus);
+    const ownMover = this.world?.self();
+    this.jumpButton!.update(ownMover !== undefined && !ownMover.act.isDie() &&
+      (ownMover.act.state & (ObjSta.JUMP_ALL | ObjSta.DMG_ALL)) === 0 &&
+      ((ownMover.act.state & ObjSta.ATK_ALL) === 0 || loop.autoAttack));
     if (this.own !== undefined && this.characterWindow?.frame.isOpen === true) this.characterWindow.update(this.own, this.entry, now);
     if (this.own !== undefined && this.skillWindow?.isOpen === true) this.skillWindow.update(this.own);
   }
@@ -893,7 +1107,14 @@ export class WorldScreen {
    * with own numbers (`SkillWindow.toggle`, which asks first when points were placed).
    */
   private openWindow(window: TaskBarWindow): void {
-    if (window === 'status') {
+    if (window === 'navigator') { this.minimap?.toggle(); return; }
+    if (window === 'chat') { this.chatWindow?.open(); return; }
+    if (window === 'inventory') {
+      if (this.own) {
+        this.inventoryWindow?.toggle(this.own);
+        if (this.inventoryWindow?.frame.isOpen) void this.makePortrait(true);
+      }
+    } else if (window === 'status') {
       if (this.own !== undefined) this.hud?.status.toggle();
     } else if (window === 'character') {
       this.openCharacter();
@@ -952,6 +1173,8 @@ export class WorldScreen {
       this.skillWindow?.warning.modal.isShown === true;
     this.element.classList.toggle('world-modal', open);
     if (!open) return;
+    this.cameraControls?.reset();
+    this.jumpRequested = false;
     this.taskBar?.closeMenu();
     this.keyboard?.reset();
     this.walkKey?.reset();
@@ -970,6 +1193,7 @@ export class WorldScreen {
    * (`if( CWndBase::m_GlobalShortcut.IsEmpty() )`, `WndManager.cpp:3383`).
    */
   private readonly onEscape = (event: KeyboardEvent): void => {
+    if (this.chatWindow?.typing) return;
     const { taskBar, attackLoop, focus } = this;
     if (event.key !== 'Escape' || event.repeat || taskBar === undefined || attackLoop === undefined || focus === undefined) {
       return;
@@ -1057,20 +1281,38 @@ export class WorldScreen {
     return mover === undefined || isLive(mover);
   }
 
-  /** The page is hidden (another tab, the home screen, a phone going to sleep): no frame runs until it shows again. */
+  /** MAX_LEN_MOVER_MENU is a squared distance of 1024 in the native server's script handler. */
+  private canTalk(id: number): boolean {
+    const npc = this.world?.movers.get(id), own = this.world?.self();
+    if (!npc || npc.kind !== 'npc' || !own || own.act.isDie() || npc.act.isDie()) return false;
+    return npc.act.body.pos.reduce((sum, value, axis) => sum + (value - own.act.body.pos[axis]!) ** 2, 0) <= 1024;
+  }
+
+  /** Release held controls when hidden; the simulation clock keeps toggled combat running. */
   private readonly onVisibility = (): void => {
     if (this.element.ownerDocument.visibilityState !== 'hidden') return;
-    this.away = true;
     this.stopOwnMover();
   };
 
   private readonly onBlur = (): void => this.stopOwnMover();
 
+  private readonly onContextMenu = (event: Event): void => {
+    const target = event.target as HTMLElement | null;
+    if (target?.closest('input,textarea,[contenteditable="true"]')) return;
+    event.preventDefault();
+  };
+
   /**
    * The keys as the world gets them, for the skill use's `m_SkillTimerStop`: any key going down
    * (`CWndWorld::OnKeyDown`, `WndWorld.cpp:7756`) and any let go (`OnKeyUp`, :7734).
    */
-  private readonly onKeyDown = (): void => this.skillUse?.keyDown();
+  private readonly onKeyDown = (event: KeyboardEvent): void => {
+    if (this.chatWindow?.typing) return;
+    if (event.key === 'Enter' && !event.repeat && !(event.target as HTMLElement | null)?.closest?.('input,textarea,select,[contenteditable="true"]')) {
+      event.preventDefault(); this.chatWindow?.open(); return;
+    }
+    this.skillUse?.keyDown();
+  };
   private readonly onKeyUp = (): void => this.skillUse?.keyUp();
 
   /**
@@ -1081,24 +1323,26 @@ export class WorldScreen {
    */
   private readonly onResize = (): void => {
     this.resized = true;
+    this.page?.overlay.setCompact(this.element.ownerDocument.defaultView?.matchMedia?.('(max-width: 1000px) and (pointer: coarse)').matches === true);
     if (isUpright(this.element.ownerDocument.defaultView ?? window)) {
+      this.cameraControls?.reset();
       this.joystick?.reset();
       this.tap?.reset();
     }
   };
 
   /**
-   * The page lost the focus or is hidden: a key's or the finger's let-go may never come, and a hidden page runs no frame
-   * to send a stop. The server's copy of the player would run on, and once it is 1000 units from where the player
-   * stands the server takes none of the player's moves (`CDPSrvr::OnPlayerMoved`, `DPSrvr.cpp:12524-12529`). So the
-   * controls let go and the player stops now, its moves sent from here rather than from the frame loop
-   * (`OwnMover.stop`: a walk to a tapped point ends too), and a tap not yet taken is dropped.
+   * Release controls immediately on blur: key/finger releases may never arrive. This prevents stuck movement,
+   * including if the browser later freezes the page. A walk to a tapped point ends too; toggled combat stays enabled
+   * and continues through the simulation clock.
    */
   private stopOwnMover(): void {
     this.keyboard?.reset();
     this.walkKey?.reset();
     this.joystick?.reset();
     this.tap?.reset();
+    this.cameraControls?.reset();
+    this.jumpRequested = false;
     this.ownMover?.stop(this.world?.self());
   }
 
@@ -1118,15 +1362,18 @@ export class WorldScreen {
     this.end(ending);
   }
 
-  /** Closes the connections and everything on screen, once, then tells the lobby. */
-  private end(message: string | undefined): void {
-    if (this.over) return;
-    this.over = true;
-    this.session.leave();
+  /** Dispose world-owned resources while leaving the cache session and page renderer available. */
+  private disposeWorld(): void {
+    this.stageGeneration++;
+    this.portraitGeneration++;
+    this.stopOwnMover();
+    this.itemActions?.cancel();
+    this.element.classList.remove('world-modal', 'world-menu-open');
+    this.element.removeEventListener('contextmenu', this.onContextMenu);
     clearTimeout(this.loadTimer);
     this.page?.renderer.setAnimationLoop(null);
+    this.simulationClock?.dispose();
     const doc = this.element.ownerDocument;
-    this.stopAsking();
     doc.removeEventListener('visibilitychange', this.onVisibility);
     (doc.defaultView ?? window).removeEventListener('blur', this.onBlur);
     (doc.defaultView ?? window).removeEventListener('resize', this.onResize);
@@ -1135,6 +1382,8 @@ export class WorldScreen {
     (doc.defaultView ?? window).removeEventListener('keyup', this.onKeyUp);
     this.taskBar?.dispose();
     this.attackButton?.dispose();
+    this.jumpButton?.dispose();
+    this.cameraControls?.dispose();
     this.keyboard?.dispose();
     this.walkKey?.dispose();
     this.joystick?.dispose();
@@ -1142,16 +1391,46 @@ export class WorldScreen {
     this.mark?.dispose();
     this.views?.dispose();
     this.tags?.dispose();
+    this.speechBubbles?.dispose();
     this.effectRenderer?.dispose();
     this.effectTextures?.dispose();
-    for (const layer of this.spriteLayers) layer.dispose();
+    for (const layer of this.spriteLayers.splice(0)) layer.dispose();
     this.logOutBox?.dispose();
     this.characterWindow?.dispose();
     this.skillWindow?.dispose();
     this.reviveWindow?.dispose();
+    this.inventoryWindow?.dispose();
+    if (this.over) { this.chatWindow?.dispose(); this.chatWindow = undefined; }
+    else this.chatWindow?.close();
+    this.npcDialog?.dispose(); this.shopWindow?.dispose();
+    this.groundItems?.dispose();
+    this.nearbyItems?.dispose();
+    this.minimap?.dispose();
+    this.teleporter?.dispose();
     this.hud?.dispose();
     this.sheetPictures = [];
     this.stage?.dispose();
+    this.backCamera = new BackCamera();
+    this.cameraPlaced = false;
+    this.jumpRequested = false;
+    this.paused = false;
+    this.askedSteps = 0;
+    for (const { reject } of this.stepsDrawn.splice(0)) reject(new Error('the world changed'));
+    for (const key of ['world', 'own', 'stage', 'views', 'tags', 'speechBubbles', 'keyboard', 'walkKey', 'joystick', 'tap',
+      'focus', 'attackLoop', 'skillUse', 'mark', 'effects', 'effectRenderer', 'effectTextures', 'numbers', 'marks',
+      'hud', 'hudArt', 'taskBar', 'attackButton', 'cameraControls', 'jumpButton', 'logOutBox', 'reviveWindow',
+      'characterWindow', 'skillWindow', 'inventoryWindow', 'npcDialog', 'shopWindow', 'itemUse',
+      'itemActions', 'groundItems', 'nearbyItems', 'ownMover', 'simulationClock', 'minimap', 'teleporter'] as const) this[key] = undefined;
+  }
+
+  /** Closes the connections and everything on screen, once, then tells the lobby. */
+  private end(message: string | undefined): void {
+    if (this.over) return;
+    this.over = true;
+    this.session.leave();
+    this.releaseBrowserGestures();
+    this.stopAsking();
+    this.disposeWorld();
     this.page?.holder.remove();
     this.element.remove();
     this.unregister();

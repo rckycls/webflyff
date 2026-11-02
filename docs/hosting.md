@@ -316,11 +316,14 @@ Paste this, with your own site address and your own `FlyffWeb` path. In a Caddyf
 
 ```
 play.example.com {
+	encode zstd gzip
 	handle /connect/* {
 		reverse_proxy 127.0.0.1:8090
 	}
 	handle /assets/* {
 		respond /assets/report.json 404
+		@fingerprinted path_regexp fingerprinted \.[0-9a-f]{10}\.[a-z0-9]+$
+		header @fingerprinted Cache-Control "public, max-age=31536000, immutable"
 		root * "D:/FlyFF/Blouflash VS22 V15/FlyffWeb/dist"
 		file_server
 	}
@@ -333,6 +336,8 @@ play.example.com {
 ```
 
 What it does:
+
+- `encode zstd gzip` compresses supported responses. Fingerprinted game files are cached for one year as immutable; the mutable asset index and reports do not get this policy. New conversions produce new fingerprinted URLs.
 
 - `/connect/*` goes to the gateway. Caddy passes WebSocket connections through by itself and adds the player's address in the `X-Forwarded-For` header, which is what the gateway reads (because of `trustedProxies`).
 - `/assets/*` is read from `FlyffWeb\dist`, so `/assets/x` is the file `FlyffWeb\dist\assets\x`: where `npm run convert` writes.
@@ -466,6 +471,12 @@ Then run `nssm restart flyff-gateway`. A misspelt limit name stops the gateway w
 The game files are served from this machine, over this machine's internet connection. A player downloads many megabytes the first time they enter the world (the target is at most 15 MB until the character is on screen), more as they walk into new areas and meet new monsters, and every player does that over your upload speed. The lobby itself is a few kilobytes and uses none of these files.
 
 When the machine's upload becomes the limit, move `/assets/` to a CDN (a service that serves files from servers close to the player): upload `dist\assets` there, and send `/assets/*` to it instead of to the `file_server` in the Caddyfile. Also worth doing then: compress the `.json`, `.bin` and `.glb` files, as the viewer's server does (`packages/scene/vite/serveDist.ts`).
+
+## Background tabs and session lifetime
+
+The gateway sends the login server's PING every 10 seconds and answers the cache server's KEEP_ALIVE challenge itself. These transport heartbeats continue when a tab's JavaScript timers are throttled or paused. This change needs the updated gateway process restarted using [Updating later](#updating-later); a client refresh alone does not update the gateway.
+
+There is no logout timer based on tab focus. Closing the browser WebSocket destroys its TCP connection and cancels its heartbeat timers. Explicit logout, server shutdown and broken/unresponsive connections still end sessions. Browsers can discard background tabs or suspend network activity, so an unfocused tab cannot be guaranteed to survive every browser/OS action indefinitely. See [Chrome's page lifecycle documentation](https://developer.chrome.com/docs/web-platform/page-lifecycle-api).
 
 ## Troubleshooting
 

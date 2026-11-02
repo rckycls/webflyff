@@ -338,6 +338,8 @@ function buildItemProps(env: Env, read: Reading): WebItemProp[] {
       return {
         id: prop.id,
         name: prop.name,
+        ...(prop.command ? { description: prop.command } : {}),
+        ...(prop.cost !== undefined ? { cost: prop.cost } : {}),
         packMax: prop.packMax,
         kind1: prop.kind1,
         kind2: prop.kind2,
@@ -441,7 +443,7 @@ function buildNpcs(env: Env, read: Reading): WebNpc[] {
   const byKey = new Map<string, WebNpc>();
   for (const file of CHARACTER_FILES) {
     for (const character of readCharacterInc(read.text(file), env.defines, env.strings, file)) {
-      byKey.set(character.key.toLowerCase(), { key: character.key, name: character.name });
+      byKey.set(character.key.toLowerCase(), character);
     }
   }
   return [...byKey.values()];

@@ -39,6 +39,10 @@ const CLING = 10;
 export interface FrameLayout {
   width: number;
   height: number;
+  /** Scale on compact touch screens; 0.7 unless this window needs a smaller footprint. */
+  mobileScale?: number;
+  /** Fit a landscape layout whole within the available window layer. */
+  fitWhole?: boolean;
   /** The whole window's picture (a theme file name, `WndStatus2.tga`), drawn as it is; none for the tiled frame. */
   texture?: string;
   /**
@@ -120,6 +124,7 @@ export class WindowFrame {
    * once the phone is turned back, and one opened past an edge goes to its point once there is room.
    */
   private placed = { x: 0, y: 0 };
+  private centered = false;
   /** The window's size as Neuz has it (`FrameLayout`), its frame, and the height it is shown at (`fit`). */
   private readonly width: number;
   private readonly fullHeight: number;
@@ -127,9 +132,14 @@ export class WindowFrame {
   private readonly art: UiArt;
   private readonly tiled: boolean;
   private shownHeight: number;
+  private scale = 1;
+  private readonly mobileScale: number;
+  private readonly fitWhole: boolean;
 
   constructor(title: string, art: UiArt, layout: FrameLayout = DEFAULT_LAYOUT, doc: Document = document) {
     this.doc = doc;
+    this.mobileScale = layout.mobileScale ?? 0.7;
+    this.fitWhole = layout.fitWhole ?? false;
     const { width, height } = layout;
     this.width = width;
     this.fullHeight = height;
@@ -197,11 +207,17 @@ export class WindowFrame {
    * Shows the window with its top left at `at` (CSS pixels of its layer, kept on it, the window cut to the room above the
    * task bar if it is taller: `fit`) and puts it on top.
    */
-  open(at: { x: number; y: number }): void {
+  open(at: { x: number; y: number } | 'center'): void {
+    this.centered = at === 'center';
     this.element.hidden = false;
     this.fit();
-    this.moveTo(at.x, at.y, false);
-    this.placed = { x: Math.round(at.x), y: Math.round(at.y) };
+    const layer = this.element.parentElement;
+    const position = at === 'center' ? {
+      x: ((layer?.clientWidth ?? 0) - this.width * this.scale) / 2,
+      y: ((layer?.clientHeight ?? 0) - (layer === null ? 0 : layoutBottoms.get(layer) ?? 0) - this.shownHeight * this.scale) / 2,
+    } : at;
+    this.moveTo(position.x, position.y, false);
+    this.placed = { x: Math.round(position.x), y: Math.round(position.y) };
     if (!this.open_) {
       this.open_ = true;
       const stack = stackOf(this.doc);
@@ -239,7 +255,11 @@ export class WindowFrame {
   refit(): void {
     if (!this.open_) return;
     this.fit();
-    this.moveTo(this.placed.x, this.placed.y, false);
+    const layer = this.element.parentElement;
+    if (this.centered && layer !== null) {
+      this.moveTo((layer.clientWidth - this.width * this.scale) / 2,
+        (layer.clientHeight - (layoutBottoms.get(layer) ?? 0) - this.shownHeight * this.scale) / 2, false);
+    } else this.moveTo(this.placed.x, this.placed.y, false);
   }
 
   /**
@@ -247,12 +267,20 @@ export class WindowFrame {
    * that room: its frame tiled at the height it is shown at (`tile`, as `AdditionalSkinTexture` tiles any height), its
    * client area as much shorter, and scrolled (`data-scrolls`, style.css). With room again it is whole. Neuz's windows fit
    * its screens (the Character window's 512 px under a 600 px one less the bar's 48); a landscape phone has 300 to 340 px
-   * above the bar, and a window drawn smaller would make its buttons too small to press. A layer not laid out yet (0 high)
+   * above the bar. Piece 5 scales phone windows to about half their PC area. A layer not laid out yet (0 high)
    * cuts nothing.
    */
   private fit(): void {
+    this.scale = this.view().matchMedia?.('(max-width: 1000px) and (pointer: coarse)').matches === true ? this.mobileScale : 1;
     const layer = this.element.parentElement;
-    const room = layer === null ? 0 : layer.clientHeight - (layoutBottoms.get(layer) ?? 0);
+    if (this.fitWhole && layer !== null && layer.clientWidth > 0 && layer.clientHeight > 0) {
+      this.scale = Math.min(1, (layer.clientWidth - 16) / this.width,
+        (layer.clientHeight - (layoutBottoms.get(layer) ?? 0) - 16) / this.fullHeight);
+    }
+    this.element.style.transform = this.scale === 1 ? '' : `scale(${this.scale})`;
+    this.element.style.transformOrigin = 'top left';
+    this.element.toggleAttribute('data-mobile-window', this.scale !== 1);
+    const room = layer === null ? 0 : (layer.clientHeight - (layoutBottoms.get(layer) ?? 0)) / this.scale;
     const height = room > 0 && this.fullHeight > room ? room : this.fullHeight;
     if (height === this.shownHeight) return;
     this.shownHeight = height;
@@ -335,6 +363,7 @@ export class WindowFrame {
   private readonly onMove = (event: PointerEvent): void => {
     const drag = this.drag;
     if (drag === null || (event.pointerId ?? 0) !== drag.pointerId) return;
+    this.centered = false;
     this.moveTo(event.clientX - drag.dx, event.clientY - drag.dy, true);
     this.placed = this.position;
   };
@@ -365,8 +394,8 @@ export class WindowFrame {
     const layer = this.element.parentElement;
     const right = layer?.clientWidth ?? 0;
     const bottom = (layer?.clientHeight ?? 0) - (layer === null ? 0 : layoutBottoms.get(layer) ?? 0);
-    const w = this.element.offsetWidth || parseFloat(this.element.style.width) || 0;
-    const h = this.element.offsetHeight || parseFloat(this.element.style.height) || 0;
+    const w = (this.element.offsetWidth || parseFloat(this.element.style.width) || 0) * this.scale;
+    const h = (this.element.offsetHeight || parseFloat(this.element.style.height) || 0) * this.scale;
     let px = Math.round(x);
     let py = Math.round(y);
     if (right > 0 && bottom > 0) {

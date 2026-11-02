@@ -105,4 +105,35 @@ describe('BackCamera (CBackCamera::Process, Camera.cpp:398-423)', () => {
     expect(camera.view).toBe(view);
     expect(toWebPosition(view.position)[2]).toBeCloseTo(20, 4);
   });
+
+  it('keeps the camera direction when the character turns and follows camera drag immediately', () => {
+    const { ground } = world();
+    const camera = new BackCamera();
+    const before = camera.follow([0, 0, 0], 90, ground);
+    expect(camera.follow([0, 0, 0], 270, ground)).toEqual(before);
+    camera.rotate(100, 0);
+    expect(camera.follow([0, 0, 0], 270, ground).position).not.toEqual(before.position);
+  });
+
+  it('reverses both drag axes from the original camera direction', () => {
+    const camera = new BackCamera();
+    camera.follow([0, 0, 0], 90, world().ground);
+    const heading = camera.heading!;
+    const pitch = camera.pitch;
+    camera.rotate(20, 20);
+    expect(camera.heading!).toBeGreaterThan(heading);
+    expect(camera.pitch).toBeLessThan(pitch);
+  });
+
+  it('eases relocation over half a second while keeping free camera direction', () => {
+    const { ground } = world();
+    const camera = new BackCamera();
+    camera.follow([0, 0, 0], 90, ground);
+    camera.relocate();
+    expect(camera.follow([100, 0, 0], 270, ground).target[0]).toBe(0);
+    for (let i = 0; i < 15; i++) camera.follow([100, 0, 0], 270, ground);
+    expect(camera.view!.target[0]).toBeCloseTo(50);
+    for (let i = 0; i < 15; i++) camera.follow([100, 0, 0], 270, ground);
+    expect(camera.view!.target[0]).toBe(100);
+  });
 });

@@ -193,6 +193,22 @@ test.describe('skills against the pretend world server', () => {
     const gateway = await playGateway(page, script, { listed: listedAt(5) });
     await enterFlaris(page);
     const tree = await openSkillWindow(page);
+    if (test.info().project.name === 'phone') {
+      await expect(tree).toHaveClass(/hud-skills-landscape/);
+      const box = (await tree.boundingBox())!;
+      const hud = (await page.locator('.world-hud').boundingBox())!;
+      const bar = (await page.locator('.hud-taskbar-strip').boundingBox())!;
+      expect(Math.abs(box.x + box.width / 2 - (hud.x + hud.width / 2))).toBeLessThanOrEqual(1);
+      expect(Math.abs(box.y + box.height / 2 - (hud.y + bar.y) / 2)).toBeLessThanOrEqual(1);
+      const panels = await tree.locator('.hud-skills-panel').all();
+      const boxes = await Promise.all(panels.map((panel) => panel.boundingBox()));
+      expect(boxes).toHaveLength(3);
+      expect(boxes[1]!.x).toBeGreaterThanOrEqual(boxes[0]!.x + boxes[0]!.width);
+      expect(boxes[2]!.x).toBeGreaterThanOrEqual(boxes[1]!.x + boxes[1]!.width);
+      expect(boxes[0]!.y).toBeCloseTo(boxes[2]!.y, 0);
+      await expect(tree).not.toHaveAttribute('data-scrolls');
+      await page.screenshot({ path: test.info().outputPath('mobile-skills.png') });
+    }
     const points = tree.locator('.hud-skills-points');
     const cleanHit = skillIn(tree, CLEAN_HIT);
     const digit = cleanHit.locator('.hud-skill-digit');

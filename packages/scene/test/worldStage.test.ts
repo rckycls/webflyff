@@ -54,6 +54,13 @@ async function openStage(manifest = makeManifest(), radius = 1) {
 }
 
 describe('WorldStage.open', () => {
+  it('rejects malformed manifests before creating world resources', async () => {
+    for (const bad of [{}, { ...makeManifest(), size: [0, 30] }, { ...makeManifest(), mpu: 0 },
+      { ...makeManifest(), mapSize: 0 }, { ...makeManifest(), terrainTextures: null }]) {
+      const { services } = fakeServices(async () => bad as WorldManifest);
+      await expect(WorldStage.open('wdtest', services, 1)).rejects.toThrow('Invalid world manifest');
+    }
+  });
   it('asks the store for the world by its web name and keeps its manifest', async () => {
     const manifest = makeManifest();
     const { stage, store } = await openStage(manifest);

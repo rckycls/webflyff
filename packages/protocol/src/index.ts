@@ -38,11 +38,15 @@ export { readBundle } from './bundle';
 export type { BundleMessage, BundleResult, MessageHeader, MessageReader } from './bundle';
 export { WORLD_READERS } from './world/readers';
 export { MAX_SKILL_JOB } from './world/own';
+export { encodeUseItem, encodeEquipItem, encodeMoveItem, encodeDropItem, encodeRevival } from './world/items';
 export { encodeAddItemTaskBar, encodeRemoveItemTaskBar, encodeSkillTaskBar } from './world/taskBar';
 export type {
-  AddedMover, AddedNpc, AddedPlayer, InventoryItem, MonsterRate, OwnCharacter, Shortcut, SkillSlot, TaskBar,
+  AddedMover, AddedNpc, AddedPlayer, GroundItem, InventoryItem, MonsterRate, OwnCharacter, Shortcut, SkillSlot, TaskBar,
   WorldMessage, WornPart,
 } from './world/types';
 export { CloseCode } from './gatewayCloseCodes';
 export { parseRecording } from './recording';
 export type { RecordedPacket, Recording } from './recording';
+export * from './world/chat';
+export * from './world/npc';
+export * from './world/shop';

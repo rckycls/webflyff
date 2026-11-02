@@ -39,5 +39,8 @@ it('writes and reads back through the own ADD_OBJ unchanged', () => {
   const bundle = encodeBundle(PacketType.JOIN, 9, [writeAddSelf(9, SELF)]);
   const read = readBundle(bundle, WORLD_READERS);
   expect(read.mismatched).toEqual([]);
-  expect(read.messages).toEqual([{ objectId: 9, type: MessageType.ADD_OBJ, value: { type: 'addMover', mover: SELF } }]);
+  expect(read.messages).toEqual([{ objectId: 9, type: MessageType.ADD_OBJ, value: { type: 'addMover', mover: {
+    ...SELF, player: { ...SELF.player!, own: { ...SELF.player!.own!,
+      inventorySlots: Array.from({ length: 73 }, (_, i) => i < 42 ? i : NULL_ID) } },
+  } } }]);
 });

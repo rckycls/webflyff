@@ -481,6 +481,7 @@ const ownNumbers: OwnCharacter = {
     { objectId: 45, itemId: 2800, count: 3 },
   ],
   inventoryError: null,
+  inventorySlots: Array.from({ length: 73 }, (_, i) => i < 42 ? i : NULL_ID),
 };
 const otherPlayer: AddedMover = {
   ...moverBase, index: 11, scale: 1, angle: 90.5, objectId: 31, isPlayer: true,
@@ -615,7 +616,7 @@ it("a character's numbers, skills and inventory read back slot by slot", () => {
     deathExp: 0n, deathLevel: 0, remainGP: 0, skills, inventory, inventoryError: null,
   };
   const mover = readSelf({ ...ownPlayer, player: { ...ownPlayer.player!, own } });
-  expect(mover.player?.own).toEqual(own);
+  expect(mover.player?.own).toEqual({ ...own, inventorySlots: Array.from({ length: 73 }, (_, i) => i < 42 ? i : NULL_ID) });
   expect(mover.player?.own?.skills).toHaveLength(MAX_SKILL_JOB);
   mover.player?.own?.skills.forEach((slot, i) => expect(slot, `slot ${i}`).toEqual(skills[i]));
   expect(mover.player?.own?.inventory).toEqual(inventory);
@@ -628,6 +629,7 @@ it('an own character without numbers is written with nothing in them', () => {
   expect(mover.player?.own).toEqual({
     str: 0, sta: 0, dex: 0, int: 0, manaPoint: 0, fatiguePoint: 0, exp: 0n, skillLevel: 0, skillPoint: 0,
     deathExp: 0n, deathLevel: 0, remainGP: 0, skills: skillSlots([]), inventory: [], inventoryError: null,
+    inventorySlots: Array.from({ length: 73 }, (_, i) => i < 42 ? i : NULL_ID),
   });
   expect(mover.player?.equipmentObjectIds).toEqual(ownPlayer.player!.equipmentObjectIds);
 });

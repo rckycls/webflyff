@@ -423,6 +423,7 @@ const PACKED: Record<string, string> = {
     '}',
     'MaFl_Luda',
     '{',
+    '\tAddTeleport( 7161, 3264 );',
     '\tSetName ( IDS_CHARACTER_INC_000002 );',
     '}',
   ),
@@ -616,7 +617,7 @@ describe('the game-data stage', () => {
     // NPCs: file order over the three files; MAFL_MIKYEL of the second file replaces MaFl_Mikyel (same lower-case key)
     expect(await catalog<WebNpc[]>(run, GAME_DATA_KEYS.npcs)).toEqual([
       { key: 'MAFL_MIKYEL', name: 'Mikyel the Second' },
-      { key: 'MaFl_Luda', name: 'Luda' },
+      { key: 'MaFl_Luda', name: 'Luda', teleports: [{ x: 7161, z: 3264 }] },
       { key: 'Sc_Guard', name: 'Guard' },
     ]);
 
@@ -653,7 +654,7 @@ describe('the game-data stage', () => {
     // a sword: dwSfxObj3 is the hit effect (XI_HIT_SWORD01), the attack speed the C float of the token, and the
     // model entry has no part, so the item is held and the converted item model is its model
     expect(props[2]).toEqual({
-      id: 505, name: 'Training Sword', packMax: 1, kind1: 1, kind2: 2, kind3: 2, handed: 1, part: 10, abilityMin: 3, abilityMax: 4,
+      id: 505, name: 'Training Sword', description: 'A suit of cotton.', cost: 12, packMax: 1, kind1: 1, kind2: 2, kind3: 2, handed: 1, part: 10, abilityMin: 3, abilityMax: 4,
       weaponType: 1, attackSpeed: Math.fround(0.085), attackRange: 1, destParams: [14, -1, -1], adjParams: [5, -3, -1],
       sfxHit: 20, model: 'models/item_weasword.glb', icon: 'ui/item/itm_weasword.png',
     });
@@ -661,7 +662,7 @@ describe('the game-data stage', () => {
 
     // a suit: worn, so its model entry has a part and the item is not held; `=` is -1, as in the other catalogs
     expect(props[0]).toEqual({
-      id: 502, name: 'Cotton Suit', packMax: 1, kind1: 2, kind2: 7, kind3: 18, handed: -1, part: 2, abilityMin: 8, abilityMax: 10,
+      id: 502, name: 'Cotton Suit', description: 'A suit of cotton.', cost: 12, packMax: 1, kind1: 2, kind2: 7, kind3: 18, handed: -1, part: 2, abilityMin: 8, abilityMax: 10,
       weaponType: -1, attackSpeed: -1, attackRange: -1, destParams: [-1, -1, -1], adjParams: [-1, -1, -1],
       sfxHit: -1, model: null, icon: 'ui/item/itm_mvag01upper.png',
     });

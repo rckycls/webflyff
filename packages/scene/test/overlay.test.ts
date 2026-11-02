@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Overlay } from '../src/overlay/Overlay';
 
 class FakeElement {
+  hidden = false;
   id = '';
   textContent = '';
   style = { cssText: '' };
@@ -184,6 +185,18 @@ describe('Overlay device button', () => {
 });
 
 describe('Overlay placement', () => {
+  it('folds phone diagnostics behind a button and retains errors while folded', () => {
+    const { overlay, root } = overlayOn();
+    overlay.setCompact(true);
+    expect(root.find('pre').hidden).toBe(true);
+    const toggle = root.created.filter((element) => element.tag === 'button')[1]!;
+    overlay.error('A missing file');
+    expect(overlay.snapshot().errors).toEqual(['A missing file']);
+    toggle.listeners.get('click')!();
+    expect(root.find('pre').hidden).toBe(false);
+    overlay.setCompact(false);
+    expect(toggle.hidden).toBe(true);
+  });
   it('keeps clear of the notch: the top-left corner of the screen is under it on a phone or iPad turned sideways', () => {
     // index.html asks for viewport-fit=cover, so the page reaches under the notch and the safe-area insets say how far
     const { root } = overlayOn();

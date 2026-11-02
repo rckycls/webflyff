@@ -6,6 +6,7 @@ import { LoginFlow } from './lobby/LoginFlow';
 import { openWebSocketChannel } from './net/webSocketChannel';
 import { installTestHooks } from './testHooks';
 import { WorldScreen } from './world/WorldScreen';
+import './lobby/lobby.css';
 
 const root = document.getElementById('app');
 if (root === null) throw new Error('index.html has no #app');

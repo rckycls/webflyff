@@ -447,6 +447,7 @@ describe('readPropItem', () => {
     expect(sword).toEqual({
       id: 22368,
       name: 'Ultimate Guardian Sword',
+      cost: 200000,
       packMax: 1, // dwPackMax: one to an inventory slot
       kind1: 1, // IK1_WEAPON
       kind2: 2, // IK2_WEAPON_DIRECT
@@ -627,8 +628,8 @@ describe('readCharacterInc', () => {
     ];
     const text = script('//header comment', '/* block', 'comment */', ...MIKYEL, '', ...player);
     expect(readCharacterInc(text, DEFINES, STRINGS, 'character.inc')).toEqual([
-      { key: 'MaFl_Mikyel', name: 'Mikyel' },
-      { key: 'MaFl_Player', name: 'Luda' },
+      { key: 'MaFl_Mikyel', name: 'Mikyel', menus: [0], dialogFile: 'MaFl_Mikyel.txt' },
+      { key: 'MaFl_Player', name: 'Luda', menus: [0] },
     ]);
   });
 
@@ -661,9 +662,17 @@ describe('readCharacterInc', () => {
     ];
     const text = script(...vendor, ...MIKYEL);
     expect(readCharacterInc(text, DEFINES, STRINGS)).toEqual([
-      { key: 'MaFl_Vendor', name: 'Bobo' },
-      { key: 'MaFl_Mikyel', name: 'Mikyel' },
+      { key: 'MaFl_Vendor', name: 'Bobo', menus: [146], vendorTabs: { 0: 'Weapons' }, vendorType: 1, teleports: [{ x: 7161, z: 3264 }] },
+      { key: 'MaFl_Mikyel', name: 'Mikyel', menus: [0], dialogFile: 'MaFl_Mikyel.txt' },
     ]);
+  });
+
+  it('preserves teleport destination order and rejects malformed coordinates', () => {
+    expect(readCharacterInc('Pang { AddTeleport( 10, 20 ); AddTeleport( 30, 40 ); }', DEFINES, STRINGS)[0]!.teleports)
+      .toEqual([{ x: 10, z: 20 }, { x: 30, z: 40 }]);
+    for (const row of ['AddTeleport( nope, 20 );', 'AddTeleport( -1, 20 );', 'AddTeleport( 10, );']) {
+      expect(() => readCharacterInc(`Pang { ${row} }`, DEFINES, STRINGS)).toThrow();
+    }
   });
 
   it('reads m_szName = "text", and gives a character with no name an empty one', () => {
@@ -679,7 +688,7 @@ describe('readCharacterInc', () => {
     );
     expect(readCharacterInc(text, DEFINES, STRINGS)).toEqual([
       { key: 'Quoted', name: 'A Quoted Name' },
-      { key: 'Nameless', name: '' },
+      { key: 'Nameless', name: '', menus: [0] },
     ]);
   });
 

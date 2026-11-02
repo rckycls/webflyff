@@ -511,6 +511,9 @@ fieldset:disabled .btn {
 
 /* Over the whole page, under the notch too: the 3D view fills the screen. */
 .world {
+  --game-safe-left: env(safe-area-inset-left, 0px);
+  --game-safe-right: env(safe-area-inset-right, 0px);
+  --game-safe-bottom: env(safe-area-inset-bottom, 0px);
   position: fixed;
   inset: 0;
   z-index: 10;
@@ -557,15 +560,16 @@ fieldset:disabled .btn {
 }
 
 /* Neuz's windows and texts over the 3D view (Piece 4 spec §3.9, world/hud/): drawn in CSS pixels as Neuz draws them in
-   screen pixels, with the theme's pictures. The layer is the screen inside its safe areas, and takes no touch itself:
+   screen pixels, with the theme's pictures. Windows use the full horizontal play area; fixed controls apply notch insets.
+   The layer takes no touch itself:
    only the windows do. It is over the world's controls too, as Neuz's windows are over the world: over Piece 3's joystick
    (z-index 1000), whose touches pass through the layer wherever no window is, and over its overlay. */
 .world-hud {
   position: absolute;
   top: env(safe-area-inset-top, 0px);
-  right: env(safe-area-inset-right, 0px);
-  bottom: env(safe-area-inset-bottom, 0px);
-  left: env(safe-area-inset-left, 0px);
+  right: 0;
+  bottom: var(--game-safe-bottom, 0px);
+  left: 0;
   z-index: 1001;
   overflow: hidden;
   pointer-events: none;
@@ -1278,39 +1282,196 @@ fieldset:disabled .btn {
   white-space: pre-line;
 }
 
-/* The attack button of a touch screen (AttackButton): right side, above the task bar, in the joystick's look */
-.hud-attack {
+/* Touch actions: gilded rims and clear fantasy silhouettes, with native vector assets. */
+.hud-mobile-tools { display: none; }
+.hud-mobile-tools > button {
+  min-height: 32px;
+  padding: 6px 10px;
+  border: 1px solid #d7b579;
+  border-radius: 8px;
+  background: #202e42e8;
+  color: #fff4d5;
+  font: 12px/1 Verdana, sans-serif;
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+.hud-mobile-tools > button:active { background: #465970; }
+.hud-mobile-tools > button:focus-visible { outline: 2px solid #c2e9ff; }
+/* The floating bar's dimensions and safe-area centering come from its native layout. */
+/* The HUD is already above the home-indicator inset; cancel it for the bar alone. */
+.hud-taskbar.is-floating { bottom: calc(0px - var(--game-safe-bottom, 0px)); }
+@media (max-width: 1000px) and (pointer: coarse) {
+  .hud-mobile-tools {
+    display: flex;
+    gap: 6px;
+    position: absolute;
+    z-index: 50;
+    top: 8px;
+    right: calc(var(--game-safe-right, 0px) + 12px);
+  }
+  .world #overlay > button:last-child { display: none; }
+  .world #overlay,
+  .world:has(.hud-status:not([hidden])) #overlay {
+    top: calc(env(safe-area-inset-top, 0px) + 48px) !important;
+    left: auto !important;
+    right: calc(var(--game-safe-right, 0px) + 12px);
+    padding: 6px 8px !important;
+  }
+  .world #overlay:has(pre[hidden]) { background: none !important; padding: 0 !important; }
+}
+.hud-attack,
+.hud-jump {
   position: absolute;
-  right: 16px;
+  padding: 0;
+  border: 2px solid #d7b579;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 22%, #576574e6, #202e42e6 55%, #0c1528ed);
+  box-shadow: inset 0 1px 2px #fff5, inset 0 -3px 6px #0008, 0 3px 9px #07102088;
+  pointer-events: auto;
+  cursor: pointer;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.hud-attack[hidden], .hud-jump[hidden] { display: none !important; }
+.hud-attack {
+  right: calc(var(--game-safe-right, 0px) + 16px);
   bottom: calc(var(--hud-taskbar-height, 48px) + 16px);
   width: 80px;
   height: 80px;
-  padding: 0;
-  border: 2px solid rgba(255, 255, 255, 0.35);
-  border-radius: 50%;
-  background: rgba(0, 0, 0, 0.25);
-  pointer-events: auto;
-  cursor: pointer;
-  touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
 }
 
-/* a sword */
-.hud-attack::before {
+.hud-attack::before,
+.hud-jump::before {
   content: '';
   position: absolute;
-  inset: 18px;
-  background: no-repeat center / contain
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='%23ffffff' d='M20 2h2v2l-9.5 9.5 1.8 1.8-1.4 1.4-1.8-1.8-3.6 3.6.9.9-1.4 1.4-3.2-3.2 1.4-1.4.9.9 3.6-3.6-1.8-1.8 1.4-1.4 1.8 1.8L20 2z'/%3E%3C/svg%3E");
+  background: no-repeat center / contain;
+  filter: drop-shadow(0 2px 2px #07101b);
+  pointer-events: none;
+}
+.hud-attack::before { inset: 15px; background-image: url('./icons/attack.svg'); }
+.hud-jump::before { inset: 8px; background-image: url('./icons/jump.svg'); }
+
+.hud-attack:active:not(:disabled), .hud-jump:active:not(:disabled) {
+  transform: scale(.95);
+  filter: brightness(1.2);
 }
 
-.hud-attack:active:not(:disabled) {
-  background: rgba(255, 255, 255, 0.3);
-}
-
-.hud-attack:disabled {
-  opacity: 0.35;
+.hud-attack:disabled, .hud-jump:disabled {
+  opacity: 0.48;
   cursor: default;
+}
+
+.hud-jump {
+  right: calc(var(--game-safe-right, 0px) + 30px);
+  bottom: calc(var(--hud-taskbar-height, 48px) + 108px);
+  width: 52px;
+  height: 52px;
+}
+.hud-attack:focus-visible, .hud-jump:focus-visible { outline: 2px solid #c2e9ff; outline-offset: 3px; }
+
+/* Short landscape screens need both actions below Navigator and above the composer.
+   Like the bar/composer, their anchors cancel the HUD's home-indicator inset. */
+@media (max-width: 1000px) and (max-height: 400px) and (pointer: coarse) {
+  .hud-attack {
+    width: 64px; height: 64px;
+    bottom: calc(var(--hud-taskbar-height, 48px) - var(--game-safe-bottom, 0px) + 28px);
+  }
+  .hud-jump {
+    width: 44px; height: 44px;
+    right: calc(var(--game-safe-right, 0px) + 26px);
+    bottom: calc(var(--hud-taskbar-height, 48px) - var(--game-safe-bottom, 0px) + 98px);
+  }
+}
+
+/* A 0.7 linear scale uses about half the PC window's area. Text retains a readable base size. */
+.hud-window[data-mobile-window] { font-size: 14px; }
+
+.hud-inventory > .hud-window-body { overflow: visible !important; }
+.inventory-sections { position: absolute; inset: 0; }
+.inventory-equipment-box { position: absolute; left: 0; top: 0; width: 228px; height: 244px; }
+.inventory-equipment { position: relative; width: 228px; height: 244px; }
+.inventory-preview { position: absolute; left: 54px; top: 32px; width: 120px; height: 174px; pointer-events: none; }
+.inventory-preview canvas { display: block; width: 100% !important; height: 100% !important; }
+.inventory-equipped-cell { position: absolute; background: none; border: 0; padding: 0; cursor: pointer; display: grid; place-items: center; }
+.inventory-equipped-cell img { width: 32px; height: 32px; max-width: 95%; max-height: 95%; object-fit: contain; pointer-events: none; }
+.inventory-equipped-cell:hover { outline: 1px solid #e6a380; }
+.inventory-bag-box { position: absolute; left: 8px; top: 250px; width: 218px; height: 174px; }
+.inventory-bag { position: relative; width: 218px; height: 174px; }
+.inventory-bag-scroll { position: absolute; left: 6px; top: 0; width: 204px; height: 128px; overflow-x: hidden; overflow-y: auto; touch-action: none; scrollbar-width: thin; scrollbar-color: #9d84b8 #f5edeb; scroll-snap-type: y mandatory; }
+.inventory-grid { display: grid; grid-template-columns: repeat(6, 32px); gap: 0; width: 192px; }
+.inventory-cell { position: relative; width: 32px; height: 32px; min-width: 0; border: 0; border-radius: 0; padding: 0; background: none; color: #32291b; cursor: pointer; scroll-snap-align: start; }
+.inventory-cell img { width: 32px; height: 32px; object-fit: contain; pointer-events: none; }
+.inventory-cell span { position: absolute; bottom: 0; right: 1px; font-size: 10px; font-weight: bold; color: #182ad4; text-shadow: 1px 1px #fff; }
+.inventory-cell.is-selected { outline: 2px solid #ffe494; background: #f6e8bf; }
+.inventory-money { position: absolute; left: 88px; top: 154px; width: 116px; height: 18px; line-height: 18px; text-align: right; padding-right: 6px; box-sizing: border-box; color: #2376ad; font-size: 11px; }
+.inventory-details { position: absolute; right: calc(100% + 12px); top: 180px; width: 210px; display: flex; flex-wrap: wrap; gap: 6px; padding: 10px; border: 2px solid #d5a188; border-radius: 4px; background: #fff6eb; box-shadow: 0 2px 5px #0005; align-items: center; color: #382b20; z-index: 2; }
+.inventory-details[hidden] { display: none; }
+.hud-inventory.inventory-actions-right .inventory-details { right: auto; left: calc(100% + 8px); }
+.inventory-details-close { position: absolute; right: 3px; top: 2px; min-height: 18px; background: none; border: 0; }
+.inventory-item-info { width: 100%; line-height: 1.4; }
+.inventory-item-description { width: 100%; line-height: 1.4; white-space: pre-line; }
+.hud-inventory:not([data-mobile-window]) .inventory-details { position: fixed; pointer-events: none; max-height: calc(100vh - 16px); overflow: hidden; }
+.hud-inventory:not([data-mobile-window]) .inventory-details-close { display: none; }
+.inventory-drop-dialog { position: absolute; left: -220px; top: 200px; display: flex; flex-wrap: wrap; gap: 8px; width: 200px; padding: 12px; border: 2px solid #d5a188; border-radius: 4px; background: #fff6eb; color: #382b20; box-shadow: 0 2px 5px #0005; z-index: 4; }
+.inventory-actions-right .inventory-drop-dialog { left: calc(100% + 8px); }
+.inventory-drop-dialog strong { width: 100%; }
+.inventory-drop-dialog input { width: 70px; }
+.inventory-drop-dialog button { min-height: 28px; }
+.hud-inventory[data-mobile-window] .inventory-drop-dialog { left: 50%; top: 50%; transform: translate(-50%, -50%); }
+.hud-inventory[data-mobile-window] .inventory-drop-dialog button { min-height: 40px; }
+.hud-nearby-items { position: absolute; pointer-events: auto; right: max(10px, env(safe-area-inset-right)); top: 32%; width: 176px; padding: 7px; border: 1px solid #d7ac8f; border-radius: 5px; background: #fff6ebee; color: #382b20; box-shadow: 0 2px 6px #0004; }
+.hud-nearby-items > strong { display: block; margin-bottom: 5px; font-size: 11px; }
+.nearby-items-list { max-height: 190px; overflow-y: auto; touch-action: pan-y; }
+.nearby-items-list button { display: flex; align-items: center; gap: 5px; width: 100%; min-height: 34px; padding: 4px; border: 0; border-bottom: 1px solid #ddc5b5; background: none; color: inherit; text-align: left; font: inherit; cursor: pointer; }
+.nearby-items-list button:hover { background: #ecd8c6; }
+.nearby-items-list img { width: 24px; height: 24px; object-fit: contain; pointer-events: none; }
+.nearby-items-list span { line-height: 1.3; overflow-wrap: anywhere; }
+.nearby-pickup-all { display: block; width: 100%; margin-top: 5px; min-height: 28px; border: 1px solid #d7ac8f; border-radius: 3px; background: #f4e4d4; color: inherit; cursor: pointer; }
+.world:has(.hud-inventory:not([hidden])) .hud-nearby-items { visibility: hidden; }
+@media (max-width: 1000px) and (pointer: coarse) {
+  .hud-nearby-items { top: 48px; width: 160px; padding: 5px; }
+  .nearby-items-list { max-height: max(34px, calc(100dvh - var(--hud-taskbar-height, 48px) - 300px)); }
+}
+@media (max-width: 1000px) and (max-height: 360px) and (pointer: coarse) {
+  .hud-nearby-items { right: calc(var(--game-safe-right, 0px) + 108px); }
+}
+.inventory-details strong { flex: 1 0 100%; color: #382b20; }
+.inventory-details button, .inventory-details select { min-height: 28px; }
+.inventory-details input[type=number] { width: 55px; }
+.hud-inventory[data-mobile-window] { left: auto !important; right: 12px; top: 8px !important; width: var(--mobile-inventory-width, calc(100% - 24px)) !important; height: calc(100% - var(--hud-taskbar-height, 48px) - 16px) !important; transform: none !important; z-index: 60 !important; border-radius: 6px; background: repeating-linear-gradient(#fdf5ee 0 2px, #f6e6dc 2px 4px); box-shadow: inset 0 0 0 2px #dba98c, 0 2px 8px #0005; }
+.hud-inventory[data-mobile-window] > .hud-window-frame { display: none; }
+.hud-inventory[data-mobile-window] > .hud-window-title { height: 28px !important; background-image: var(--classic-inventory-art); background-size: 100% 590px; background-position: top left; box-shadow: 0 1px 2px #795431; }
+.hud-inventory[data-mobile-window] > .hud-window-body { top: 34px !important; width: calc(100% - 12px) !important; height: calc(100% - 42px) !important; }
+.hud-inventory[data-mobile-window] > .hud-window-close { left: auto !important; right: 14px; }
+.hud-inventory[data-mobile-window] .inventory-sections { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+.hud-inventory[data-mobile-window] .inventory-equipment-box,
+.hud-inventory[data-mobile-window] .inventory-bag-box { position: relative; left: auto; top: auto; width: auto; height: 100%; }
+.hud-inventory[data-mobile-window] .inventory-equipment,
+.hud-inventory[data-mobile-window] .inventory-bag { position: absolute; left: 50%; top: 0; transform: translateX(-50%) scale(var(--classic-inventory-scale, 1)); transform-origin: top center; }
+.hud-inventory[data-mobile-window] .inventory-equipment { background-image: var(--classic-inventory-art); background-position: -4px -22px; background-repeat: no-repeat; }
+.hud-inventory[data-mobile-window] .inventory-bag { width: 228px; height: 252px; }
+.hud-inventory[data-mobile-window] .inventory-bag::before { content: ''; position: absolute; inset: 0 0 auto; height: 6px; background-image: var(--classic-inventory-art); background-position: -4px -266px; }
+.inventory-mobile-grid-art { position: absolute; left: 0; top: 6px; width: 228px; height: 192px; pointer-events: none; }
+.inventory-mobile-grid-art > div { height: 32px; background-image: var(--classic-inventory-art); background-repeat: no-repeat; }
+.inventory-grid-heading { position: absolute; left: 14px; top: 198px; width: 192px; height: 18px; line-height: 18px; text-align: center; color: #241c16; font: 15px/18px Georgia, serif; background: linear-gradient(#fff 70%, #c8d8ea); }
+.inventory-mobile-bag-footer { position: absolute; left: 0; top: 216px; width: 228px; height: 36px; background-image: var(--classic-inventory-art); background-position: -4px -410px; }
+.hud-inventory[data-mobile-window] .inventory-bag-scroll { left: 14px; top: 6px; width: 204px; height: 192px; }
+.hud-inventory[data-mobile-window] .inventory-money { left: 98px; top: 232px; width: 116px; }
+.hud-inventory[data-mobile-window] .inventory-details { right: 12px; top: auto; bottom: 6px; width: min(320px, calc(100% - 44px)); }
+.hud-inventory[data-mobile-window] .inventory-details button { min-height: 40px; }
+.world-ground-items { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
+.world-ground-items button { position: absolute; pointer-events: auto; transform: translate(-50%, -50%); display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; background: none; color: #ffe59c; font-size: var(--drop-icon-size, 16px); touch-action: none; }
+.world-ground-items button img { width: var(--drop-icon-size, 16px); height: var(--drop-icon-size, 16px); object-fit: contain; pointer-events: none; filter: drop-shadow(0 1px 1px #3b240e); }
+.hud-pickup { position: absolute; pointer-events: auto; right: max(12px, env(safe-area-inset-right)); bottom: calc(var(--hud-taskbar-height, 48px) + 168px); border: 1px solid #c7ad6c; border-radius: 16px; background: #263749dd; color: #fff4d5; padding: 6px 12px; }
+@media (max-width: 1000px) and (pointer: coarse) {
+  .hud-pickup { min-height: 40px; }
+  .world:has(.hud-inventory[data-mobile-window]:not([hidden])) .joystick,
+  .world:has(.hud-inventory[data-mobile-window]:not([hidden])) .hud-jump,
+  .world:has(.hud-inventory[data-mobile-window]:not([hidden])) .hud-attack { visibility: hidden; }
+}
+@media (max-width: 1000px) and (pointer: coarse) {
+  .world-hud { overflow: visible; }
+  .hud-target { transform: scale(.7); transform-origin: top center; }
 }
 
 /* The Start menu opens where Piece 3's joystick stands, under the windows' layer: it hides while the menu is open
@@ -1365,4 +1526,279 @@ fieldset:disabled .btn {
   font-size: 1.25rem;
   font-weight: 600;
   line-height: 1.4;
+}
+.hud-chat { position: absolute; left: 12px; bottom: 62px; width: min(360px, calc(100% - 24px)); pointer-events: auto; color: white; font-size: 12px; text-shadow: 1px 1px 2px #000; }
+.hud-chat > button { border: 1px solid #ba9377; border-radius: 4px; background: #fff1df; color: #463027; padding: 4px 12px; }
+.chat-transcript { max-height: 110px; overflow-y: auto; background: #16161790; padding: 5px; overflow-wrap: anywhere; touch-action: pan-y; }
+.chat-transcript:empty { display: none; }
+.chat-transcript [data-channel=whisper] { color: #aaf4bc; }
+.chat-transcript [data-channel=shout] { color: #ffbddd; }
+.chat-transcript [data-channel=system], .chat-feedback { color: #ffdfa2; }
+.hud-chat form { display: flex; flex-wrap: wrap; gap: 4px; padding: 5px; background: #292523e8; }
+.hud-chat form[hidden], .hud-chat input[hidden] { display: none; }
+.hud-chat input { min-width: 0; flex: 1; width: 140px; }
+.hud-chat input[name=recipient] { flex-basis: 150px; }
+.chat-feedback { width: 100%; text-shadow: none; }
+@media (pointer: coarse) {
+  .hud-chat { bottom: 48px; left: max(12px, env(safe-area-inset-left)); width: min(440px, calc(100% - 24px)); font-size: 14px; }
+  .hud-chat:not([data-expanded]) { width: auto; }
+  .hud-chat:not([data-expanded]) .chat-transcript { display: none; }
+  .hud-chat button, .hud-chat select, .hud-chat input { min-height: 34px; }
+  .chat-transcript { max-height: 90px; }
+}
+.hud-npc > .hud-window-body, .hud-shop > .hud-window-body { box-sizing: border-box; padding: 10px; color: #3b2a20; }
+.npc-menu, .npc-dialog-keys, .shop-controls, .shop-tabs { display: flex; gap: 5px; flex-wrap: wrap; margin: 5px 0; }
+.npc-dialog-text { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 130px; overflow-y: auto; margin: 12px 0; }
+.npc-dialog-keys { max-height: 95px; overflow-y: auto; }
+.hud-npc button, .hud-shop button { min-height: 28px; }
+.shop-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 6px; }
+.shop-items { height: 225px; overflow-y: auto; touch-action: pan-y; }
+.shop-items button { display: flex; align-items: center; gap: 4px; text-align: left; width: 100%; margin-bottom: 3px; }
+.shop-items img { width: 26px; height: 26px; object-fit: contain; }
+.shop-controls input { width: 60px; }
+.shop-feedback { margin: 5px 0; font-size: 11px; }
+.hud-shop > .hud-window-body { display: flex; flex-direction: column; gap: 6px; overflow: hidden; }
+.hud-shop .shop-columns { flex: 1; min-height: 0; margin: 0; }
+.shop-columns > div { display: flex; flex-direction: column; min-height: 0; }
+.hud-shop .shop-items { flex: 1; min-height: 0; height: auto; }
+.hud-shop .shop-tabs { flex-wrap: nowrap; margin: 0 0 5px; }
+.shop-tabs button { flex: 1; min-width: 0; padding: 3px; font-size: 11px; }
+.hud-shop .shop-controls, .hud-shop .shop-feedback { flex-shrink: 0; margin: 0; }
+@media (pointer: coarse) {
+  .hud-shop button, .hud-npc button { min-height: 36px; }
+  .hud-shop { width: min(460px, calc(100vw - 24px)) !important; height: min(350px, calc(100dvh - 62px)) !important; font-size: 14px; background: #fff5ea; }
+  .hud-shop > .hud-window-body { width: calc(100% - 12px) !important; height: calc(100% - 32px) !important; }
+  .hud-shop .hud-window-close { left: auto !important; right: 7px; }
+}
+/* Classic FlyFF chat: translucent transcript above the peach tab rail and pale input. */
+.hud-chat { left: 2px; bottom: 46px; width: min(540px, calc(100% - 4px)); font: 12px Arial, sans-serif; }
+.chat-transcript { display: block; height: 100px; max-height: 160px; padding: 5px 8px; background: repeating-linear-gradient(0deg, #513d3433 0 1px, #30292133 1px 3px); border-right: 6px solid #c4b7d4; scrollbar-color: #9484bd #eee9df; scrollbar-width: thin; }
+.chat-transcript:empty { display: block; }
+.chat-transcript [hidden] { display: none; }
+.chat-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 3px 5px; border: 1px solid #a7775e; border-radius: 4px 4px 0 0; background: linear-gradient(#f9d8b0, #dba67e); cursor: move; touch-action: none; min-height: 20px; }
+.chat-toolbar button { font: 11px Arial, sans-serif; color: white; text-shadow: 1px 1px #51483f; border: 1px solid #8c8b82; border-radius: 4px; padding: 1px 6px; background: linear-gradient(#d8d9d3, #989a94); box-shadow: inset 0 0 0 1px #ffffff88; cursor: pointer; }
+.chat-toolbar button[aria-pressed=true] { background: linear-gradient(#c3d7fc, #7699d6); border-color: #607eb4; }
+.chat-toolbar .chat-lock { margin-left: auto; }
+.chat-toolbar button:disabled { opacity: .55; cursor: default; }
+.hud-chat form { gap: 3px; padding: 3px; border: 2px solid #d5aa81; border-radius: 0 0 5px 5px; background: #e6eee0; text-shadow: none; }
+.hud-chat input, .hud-chat select { font: 12px Arial, sans-serif; border: 1px solid #b4b8a3; border-radius: 4px; background: #f5faef; color: #302c28; }
+.hud-chat input { width: 80px; }
+.hud-chat input[name=recipient] { flex-basis: 95px; }
+.hud-chat form button { font-size: 11px; border: 1px solid #b79579; border-radius: 3px; background: #ead0b0; }
+.chat-feedback:empty { display: none; }
+.chat-transcript [data-channel=party] { color: #b6df67; }
+.chat-transcript [data-channel=guild] { color: #94e9ed; }
+.chat-transcript [data-channel=announcement] { color: #ffdfa2; }
+.chat-minimized .chat-transcript, .chat-minimized form { display: none; }
+@media (pointer: coarse) {
+  .hud-chat, .hud-chat:not([data-expanded]) { width: min(480px, calc(100% - 24px)); left: max(12px, env(safe-area-inset-left)); bottom: 48px; }
+  .chat-toolbar { gap: 3px; }
+  .chat-toolbar button { min-height: 28px; }
+  .hud-chat[data-expanded] .chat-transcript { height: 85px; }
+}
+
+.chat-grip { padding: 0 8px; margin-left: auto; cursor: move; }
+.chat-toolbar .chat-lock { margin-left: 0; }
+@media (pointer: coarse) {
+  .chat-toolbar { gap: 2px; padding: 2px 3px; }
+  .chat-toolbar button { font-size: 10px; padding: 1px 4px; }
+  .chat-grip { padding: 0 4px; }
+}
+/* Mobile chat keeps its transcript visible while the composer is closed. */
+@media (pointer: coarse) {
+  .hud-chat, .hud-chat:not([data-expanded]) { bottom: calc(var(--hud-taskbar-height, 48px) - var(--game-safe-bottom, 0px)); }
+  .hud-chat .chat-transcript,
+  .hud-chat:not([data-expanded]) .chat-transcript,
+  .hud-chat.chat-minimized .chat-transcript,
+  .hud-chat[data-expanded] .chat-transcript {
+    display: block; box-sizing: border-box; height: 42.5px; max-height: 42.5px;
+    padding: 2px 4px; border: 0; background: transparent;
+    overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y;
+    mask-image: linear-gradient(to bottom, transparent, black 35%);
+    scrollbar-color: #9484bd transparent;
+  }
+  .hud-chat .chat-transcript:hover {
+    background: #30292188; mask-image: none;
+  }
+  .hud-chat .chat-toolbar { min-height: 0; gap: 2px; padding: 1px 3px; margin: 0; }
+  .hud-chat .chat-toolbar button { min-height: 14px; height: 14px; line-height: 10px; padding: 0 4px; }
+  .hud-chat form { margin: 0; padding: 0; gap: 0; border-width: 1px; }
+  .hud-chat input, .hud-chat form button { box-sizing: border-box; min-height: 17px; height: 17px; padding: 0 3px; line-height: 15px; }
+}
+/* Compact controls on every device; the taskbar supplies its actual screen bounds. */
+.hud-chat, .hud-chat:not([data-expanded]) {
+  position: fixed; top: auto; left: var(--hud-taskbar-left, 0px);
+  width: var(--hud-taskbar-width, 100%); box-sizing: border-box;
+  bottom: calc(var(--hud-taskbar-height, 48px) + var(--hud-taskbar-bottom, 0px));
+}
+.hud-chat .chat-toolbar { min-height: 0; padding: 1px 3px; gap: 2px; margin: 0; cursor: default; }
+.hud-chat .chat-toolbar button { box-sizing: border-box; min-height: 14px; height: 14px; padding: 0 4px; font-size: 10px; line-height: 10px; }
+.hud-chat .chat-lock { margin-left: auto; }
+@media (min-width: 1001px), (pointer: fine) {
+  .hud-chat, .hud-chat:not([data-expanded]) { width: calc(var(--hud-taskbar-width, 100%) * .5); }
+}
+.hud-chat form { padding: 0; margin: 0; gap: 0; border-width: 1px; }
+.hud-chat input, .hud-chat select, .hud-chat form button { box-sizing: border-box; min-height: 17px; height: 17px; padding: 0 3px; line-height: 15px; }
+/* Classic shop paired with the existing inventory. */
+.hud-shop > .hud-window-title { text-align: center; color: #527baf; text-shadow: 1px 1px #fff; }
+.hud-shop > .hud-window-body { width: calc(100% - 12px) !important; height: calc(100% - 32px) !important; padding: 6px; gap: 4px; overflow: hidden; color: #382d25; }
+.shop-heading { flex-shrink: 0; color: #62818b; font: 12px/16px Arial, sans-serif; }
+.hud-shop .shop-tabs { display: flex; flex-shrink: 0; gap: 2px; margin: 0; }
+.hud-shop .shop-tabs button { min-height: 18px; padding: 0 4px; font-size: 10px; border: 1px solid #c7b7a5; border-radius: 3px; background: #eee7dc; }
+.hud-shop .shop-tabs [aria-pressed=true] { background-color: #b9bad9; }
+.hud-shop .shop-stock-grid { flex: 1; min-height: 32px; height: auto; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); grid-auto-rows: 34px; align-content: start; gap: 1px; padding: 4px; border: 1px solid #bbb5ab; border-radius: 9px 9px 0 0; background: #fffaf5cc; scrollbar-color: #9484bd #eee9df; scrollbar-width: thin; }
+.hud-shop .shop-stock-grid button { display: grid; place-items: center; width: 100%; min-width: 0; min-height: 0; height: 34px; padding: 0; margin: 0; border: 1px solid transparent; background: transparent; }
+.hud-shop .shop-stock-grid button:hover, .hud-shop .shop-stock-grid button.is-selected { border-color: #c8a34c; background: #f8e6a888; }
+.hud-shop .shop-stock-grid [hidden] { display: none; }
+.hud-shop .shop-stock-grid img { width: 30px; height: 30px; object-fit: contain; }
+.shop-awaken { display: grid; grid-template-columns: auto 1fr 1fr 1fr; flex-shrink: 0; font-size: 11px; line-height: 16px; }
+.shop-awaken span:first-child { padding-right: 5px; }
+.shop-awaken span:not(:first-child) { background: #acaacb; color: #747294; padding-left: 4px; border-right: 1px solid #9694b7; }
+.shop-search { display: grid; grid-template-columns: 48px minmax(0, 1fr); align-items: center; flex-shrink: 0; color: #62818b; font-size: 11px; }
+.shop-search input { box-sizing: border-box; width: 100%; min-width: 0; height: 22px; border: 1px solid #c6beb2; border-radius: 8px; background: #fffcf7; font-size: 11px; }
+.hud-shop .shop-controls { display: flex; flex-wrap: nowrap; flex-shrink: 0; gap: 3px; margin: 0; }
+.hud-shop .shop-controls input { min-width: 0; width: 50px; }
+.hud-shop .shop-controls button { flex: 1; min-height: 24px; padding: 1px 4px; }
+.shop-money { flex-shrink: 0; font: 10px/12px Arial, sans-serif; text-align: right; color: #756148; }
+.hud-shop .shop-feedback { flex-shrink: 0; font: 10px/12px Arial, sans-serif; min-height: 24px; max-height: 36px; overflow-y: auto; margin: 0; }
+.shop-active .hud-shop { left: var(--shop-window-left, 8px) !important; right: auto; top: var(--bag-window-top, 80px) !important; width: 264px !important; height: min(400px, calc(100% - var(--hud-taskbar-height, 48px) - 16px)) !important; transform: none !important; }
+.hud-shop .hud-window-close { left: auto !important; right: 7px; }
+@media (max-width: 1000px) and (pointer: coarse) {
+  .shop-active .hud-shop { left: 12px !important; right: auto; top: 8px !important; height: calc(100% - var(--hud-taskbar-height, 48px) - 16px) !important; width: calc(100% - var(--bag-window-width, 60%) - 36px) !important; }
+  .hud-shop > .hud-window-body { padding: 4px; gap: 2px; }
+  .hud-shop .shop-heading { font-size: 11px; line-height: 12px; }
+  .hud-shop .shop-tabs button { min-height: 14px; font-size: 9px; }
+  .hud-shop .shop-controls button, .hud-shop .shop-controls input { box-sizing: border-box; min-height: 20px; height: 20px; font-size: 10px; }
+  .hud-shop .shop-search input { height: 18px; }
+  .hud-shop .shop-awaken { line-height: 12px; font-size: 10px; }
+  .hud-shop .shop-feedback { min-height: 18px; max-height: 24px; line-height: 12px; font-size: 10px; }
+}
+.shop-reference-filters { flex-shrink: 0; display: grid; grid-template-columns: 1fr 1fr; font: 10px/12px Arial, sans-serif; }
+.shop-reference-filters > label:not(.shop-price) { display: flex; align-items: center; gap: 2px; grid-column: 1; }
+.shop-reference-filters input { width: 11px; height: 11px; margin: 0; accent-color: #d6b66f; }
+.shop-price { grid-column: 2; grid-row: 1 / 3; display: flex; flex-direction: column; color: #62818b; }
+.shop-price output { display: block; border: 1px solid #c4bdb4; border-radius: 8px; background-color: #fffaf6; padding: 0 5px; color: #70665b; }
+@media (max-width: 1000px) and (pointer: coarse) {
+  .shop-active .hud-shop { border-radius: 6px; background: repeating-linear-gradient(#fdf5ee 0 2px, #f6e6dc 2px 4px); box-shadow: inset 0 0 0 2px #dba98c, 0 2px 8px #0005; overflow: hidden; }
+  .shop-active .hud-shop > .hud-window-frame { display: none; }
+  .shop-active .hud-shop > .hud-window-title { height: 28px !important; background-image: var(--classic-shop-art); background-size: 100% 590px; background-position: top left; box-shadow: 0 1px 2px #795431; }
+  .shop-active .hud-shop > .hud-window-body { top: 34px !important; height: calc(100% - 42px) !important; }
+}
+@media (max-width: 1000px) and (pointer: coarse) {
+  .hud-shop .shop-money { display: none; }
+  .hud-shop .shop-feedback { min-height: 12px; max-height: 12px; }
+}
+/* Native shop tabs live below the item list (CWndShop and AddVendorSlot). */
+.hud-shop .shop-tabs { margin: 0; padding: 0; gap: 0; height: 20px; min-height: 20px; }
+.hud-shop .shop-tabs button { min-height: 20px; height: 20px; border: 0; border-radius: 0; padding: 0 5px; background-color: transparent; background-position: left top, right top, center top; background-size: 8px 20px, 8px 20px, calc(100% - 16px) 20px; background-repeat: no-repeat; color: #4b4666; font: 11px/20px Arial, sans-serif; }
+.hud-shop .shop-tabs [aria-pressed=true] { background-color: transparent; color: #252039; }
+.hud-shop .shop-tabs button:disabled { color: #827e94; }
+.hud-shop .shop-price { display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 6px; flex-shrink: 0; font: 11px/20px Arial, sans-serif; }
+.hud-shop .shop-price output { flex: 1; max-width: 120px; }
+/* CTheme::RenderWndButton's default frame, gradient and pressed colours. */
+.hud-shop .shop-controls button { border: 1px solid #3232329b; border-radius: 3px; background: linear-gradient(#fffffffA, #969696c8, #00000032); color: #fff; text-shadow: 1px 1px #000; box-shadow: inset 0 0 0 1px #c8c8c89b; font: 12px Arial, sans-serif; }
+.hud-shop .shop-controls button:hover { filter: brightness(1.1); }
+.hud-shop .shop-controls button:active { background: linear-gradient(#64ffff, #009696c8, #00000032); }
+.hud-shop .classic-shop-edit { border: 0; border-radius: 0; padding: 2px 5px; background-color: transparent; background-repeat: no-repeat; background-position: left top,right top,left bottom,right bottom,center top,center bottom,left center,right center,center; background-size: 8px 10px,8px 10px,8px 10px,8px 10px,calc(100% - 16px) 10px,calc(100% - 16px) 10px,8px calc(100% - 16px),8px calc(100% - 16px),calc(100% - 16px) calc(100% - 16px); color: #2f2822; font: 12px Arial, sans-serif; }
+.hud-shop .shop-price output { border: 0; border-radius: 0; background-color: transparent; }
+/* A compact world-anchored NPC menu, without a window frame or caption. */
+.hud-npc { width: 140px !important; height: auto !important; min-height: 0; transform: none !important; background: #fffdf8; border: 1px solid #aaa28e; border-radius: 0; box-shadow: 1px 2px 3px #0004; color: #29251f; text-shadow: none; }
+.hud-npc > .hud-window-frame, .hud-npc > .hud-window-title, .hud-npc > .hud-window-close { display: none; }
+.hud-npc > .hud-window-body { position: relative; left: 0 !important; top: 0 !important; box-sizing: border-box; width: 100% !important; height: auto !important; padding: 4px; overflow: visible; }
+.hud-npc .npc-menu, .hud-npc .npc-dialog-keys { display: flex; flex-direction: column; gap: 0; margin: 0; max-height: 160px; overflow-y: auto; }
+.hud-npc button { display: block; width: 100%; min-height: 22px; border: 0; background: transparent; text-align: left; color: #29251f; font: 12px/18px Arial, sans-serif; padding: 2px 6px; }
+.hud-npc button:hover:not(:disabled) { background: #dfeafa; }
+.hud-npc button:disabled { color: #9b978e; }
+.hud-npc .npc-dialog-text { margin: 4px 6px; max-height: 70px; font: 12px/16px Arial, sans-serif; overflow-y: auto; }
+.hud-npc .npc-dialog-text:empty { display: none; }
+@media (max-width: 1000px) and (pointer: coarse) {
+  .hud-shop .shop-stock-grid { grid-template-columns: repeat(auto-fill, minmax(28px, 1fr)); }
+  .hud-shop .shop-stock-grid img { max-width: 100%; }
+}
+.hud-shop .shop-price .classic-shop-edit {
+  box-sizing: border-box; height: 20px; min-height: 20px; line-height: 20px; padding: 0 5px;
+  background-repeat: no-repeat;
+  background-position: left top,right top,left bottom,right bottom,center top,center bottom,left center,right center,center;
+  background-size: 8px 10px,8px 10px,8px 10px,8px 10px,calc(100% - 16px) 10px,calc(100% - 16px) 10px,8px calc(100% - 16px),8px calc(100% - 16px),calc(100% - 16px) calc(100% - 16px);
+}
+.hud-shop input[type=number] { appearance: textfield; }
+.hud-shop input::-webkit-inner-spin-button, .hud-shop input::-webkit-outer-spin-button { appearance: none; margin: 0; }
+.shop-item-details { position: fixed; right: auto; pointer-events: none; z-index: 90; max-height: calc(100dvh - 16px); overflow: hidden; text-shadow: none; }
+.hud-shop .shop-feedback:empty { display: none; }
+.hud-shop .shop-feedback { color: #8b352b; }
+
+/* Landscape mobile windows follow the classic wide Character and Skill Tree layouts. */
+.hud-character-landscape,
+.hud-skills-landscape { background: #f4ece3; border-radius: 6px; }
+.world:has(:is(.hud-character-landscape, .hud-skills-landscape):not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack) { visibility: hidden; }
+.hud-character-landscape { font-size: 15px !important; }
+.hud-character-landscape .hud-char-page { height: 240px !important; background: #fff; }
+.hud-character-landscape .hud-char-text { height: 18px; line-height: 18px; }
+.hud-character-landscape .hud-char-rule { position: absolute; background: linear-gradient(#888, #ddd); pointer-events: none; }
+.hud-character-landscape .hud-char-count { background: linear-gradient(#aaa, #eee 45%, #ddd) !important; border-radius: 8px !important; }
+.hud-character-landscape > .hud-window-title,
+.hud-skills-landscape > .hud-window-title { font-size: 18px; font-weight: bold; }
+.hud-skills-landscape .hud-skills-heading,
+.hud-skills-landscape .hud-skills-panel { overflow: hidden; }
+.hud-skills-landscape .hud-skills-group-title { font-size: 18px; line-height: 24px; }
+.hud-skills-landscape .hud-skills-points { font-size: 20px; line-height: 24px; }
+.hud-skills-landscape .hud-skills-picture { background-size: 100% 100%; }
+.hud-skills-landscape [data-button]::before { inset: -4px !important; }
+
+/* Mobile composer and taskbar: one icon rail above Start, F1–F9 and the action slots. */
+.chat-button-icon { display: none; }
+  .hud-taskbar-strip.is-mobile-layout { background-image: none !important; }
+  .hud-taskbar-strip.is-mobile-layout::before,
+  .hud-taskbar-strip.is-mobile-layout::after { content: ''; position: absolute; top: 0; height: 48px; background-image: var(--taskbar-art); background-repeat: no-repeat; pointer-events: none; z-index: -1; }
+  .hud-taskbar-strip.is-mobile-layout::before { left: 0; width: 100px; }
+  .hud-taskbar-strip.is-mobile-layout::after { left: 100px; width: 520px; background-position: -280px 0; }
+@media (max-width: 1000px) and (pointer: coarse) {
+  .hud-chat, .hud-chat:not([data-expanded]) {
+    position: absolute; bottom: calc(var(--hud-taskbar-height, 48px) - var(--game-safe-bottom, 0px));
+    display: grid; grid-template-columns: minmax(0, 1fr) auto;
+    pointer-events: none;
+  }
+  .hud-chat form, .hud-chat .chat-toolbar,
+  .hud-chat[data-expanded] .chat-transcript { pointer-events: auto; }
+  .hud-chat .chat-transcript { grid-column: 1 / -1; grid-row: 1; }
+  /* Visible passive chat must not take the floating joystick's first touch. Chat/input activates scrolling. */
+  .hud-chat:not([data-expanded]) .chat-transcript { pointer-events: none; }
+  .hud-chat form { grid-column: 1; grid-row: 2; display: flex; flex-wrap: nowrap; border-radius: 5px 0 0 0; border-color: #bf9674; background: #e9c59c; }
+  .hud-chat input { height: 24px; min-height: 24px; font-size: 16px; line-height: 22px; }
+  .hud-chat form button,
+  .hud-chat .chat-toolbar button { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 30px; width: 30px; height: 22px; min-height: 22px; padding: 0; }
+  .hud-chat form button { color: #f9ffff; background: linear-gradient(#efd9b8, #d7b48d); }
+  .hud-chat .chat-toolbar { grid-column: 2; grid-row: 2; flex-wrap: nowrap; gap: 3px; padding: 2px 3px; border-left: 0; border-radius: 0 5px 0 0; }
+  .hud-chat .chat-button-label { display: none; }
+  .hud-chat .chat-button-icon { display: block; width: 18px; height: 18px; filter: drop-shadow(0 1px 1px #233545); }
+  .hud-chat .chat-lock { margin-left: 12px; }
+  .hud-chat .chat-feedback:not(:empty) { position: absolute; bottom: 28px; left: 0; background: #302921ee; padding: 3px; }
+  .hud-chat.chat-minimized form { display: flex; }
+}
+
+/* CWndNavigator: native square local map, compact controls and marker atlas. */
+.hud-navigator > .hud-window-body { overflow: hidden; }
+.navigator-map { position: absolute; inset: 0; overflow: hidden; background: #a6a6a6 center / cover no-repeat; touch-action: none; }
+.navigator-map > img { position: absolute; max-width: none; pointer-events: none; }
+.navigator-marker { position: absolute; width: 5px; height: 5px; background-repeat: no-repeat; z-index: 1; }
+.navigator-player { position: absolute; left: 50%; top: 50%; width: 20px; height: 20px; background: center / contain no-repeat; z-index: 2; pointer-events: none; }
+.navigator-destination { position: absolute; width: 16px; height: 16px; background: 0 0 / 64px 16px no-repeat; transform: translate(-50%, -50%); z-index: 1; pointer-events: none; }
+.hud-navigator .hud-picture-button { z-index: 3; }
+.navigator-filters { position: absolute; left: 13px; top: 1px; z-index: 4; width: 94px; padding: 2px; border: 1px solid #aaa; background: white; color: black; }
+.navigator-filters[hidden] { display: none; }
+.navigator-filters button { display: block; width: 100%; height: 22px; min-height: 0; border: 0; padding: 2px 3px; background: white; color: black; text-align: left; font: 12px Arial; }
+.navigator-filters button::before { content: '□ '; }
+.navigator-filters button[aria-pressed=true]::before { content: '✓ '; }
+.navigator-filters button:hover { background: #d7e1ff; }
+@media (max-width: 1000px) and (pointer: coarse) {
+  .world:has(.hud-navigator:not([hidden])) .hud-mobile-tools { right: calc(var(--game-safe-right, 0px) + 136px); }
+}
+
+.hud-teleporter > .hud-window-body { overflow: hidden; }
+.teleporter-map { position: absolute; inset: 0; background: center / 100% 100% no-repeat; }
+.teleporter-map button { position: absolute; width: 20px; height: 20px; min-height: 0; padding: 0; border: 0; background: center / 16px 16px no-repeat; transform: translate(-50%, -50%); cursor: pointer; }
+.teleporter-map button:hover, .teleporter-map button:focus-visible { background-size: 20px 20px; outline: 1px solid #fff8; }
+@media (max-width: 1000px) and (pointer: coarse) {
+  .world:has(.hud-teleporter:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack) { visibility: hidden; }
+  .teleporter-map button::before { content: ''; position: absolute; inset: -12px; }
 }

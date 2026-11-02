@@ -70,6 +70,14 @@ export class WorldStage {
    */
   static async open(world: string, services: SceneServices, radius: number): Promise<WorldStage> {
     const manifest = await services.store.manifest(world);
+    if (manifest === null || typeof manifest !== 'object' || typeof manifest.name !== 'string' ||
+      !Array.isArray(manifest.size) || manifest.size.length !== 2 || !manifest.size.every(n => Number.isInteger(n) && n > 0) ||
+      !Number.isFinite(manifest.mpu) || manifest.mpu <= 0 || manifest.mapSize !== 128 ||
+      !manifest.fog || ![manifest.fog.start, manifest.fog.end, manifest.fog.density, manifest.bgColor, manifest.ambient].every(Number.isFinite) ||
+      !Array.isArray(manifest.terrainTextures) || !Array.isArray(manifest.models) ||
+      !manifest.tiles || typeof manifest.tiles !== 'object' || Array.isArray(manifest.tiles)) {
+      throw new Error(`Invalid world manifest: ${world}`);
+    }
     return new WorldStage(world, manifest, services, radius);
   }
 

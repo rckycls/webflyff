@@ -4,6 +4,7 @@
  * test helpers).
  */
 export const PacketType = {
+  TELEPORTER: 0x88100100,
   QUERYTICKCOUNT: 0x0b,
   PING: 0x14,
   CLOSE_EXISTING_CONNECTION: 0x16,

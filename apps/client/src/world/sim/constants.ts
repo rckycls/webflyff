@@ -22,6 +22,8 @@ export const ObjSta = {
   RTURN: 0x00000200,
   TURN_ALL: 0x00000300,
   LOOK_ALL: 0x00000c00,
+  SJUMP1: 0x00005000,
+  SJUMP2: 0x00006000,
   /** Falling (`MoverMsg.h:40`). */
   SJUMP3: 0x00007000,
   /** Landing (`MoverMsg.h:41`). */
@@ -81,6 +83,7 @@ export const ActMsg = {
   LTURN: 8,
   RTURN: 9,
   STOP_TURN: 10,
+  JUMP: 17,
   /** Combat mode on: a player's motions become its weapon's set. */
   MODE_COMBAT: 18,
   MODE_WALK: 20,
@@ -121,6 +124,8 @@ export const Mti = {
   DMGLIVE: 9,
   DMGDIE: 10,
   DMGFLY: 11,
+  JUMP1: 13,
+  JUMP2: 14,
   JUMP3: 15,
   JUMP4: 16,
   SIT: 20,

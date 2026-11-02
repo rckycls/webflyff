@@ -27,7 +27,7 @@ export function loginView({ account, busy = false, onLogin }: LoginViewOptions):
     h('label', { class: 'field' }, h('span', { class: 'label' }, 'Password'), passwordInput),
     h('div', { class: 'actions' }, submit),
   );
-  const form = h('form', { class: 'screen', novalidate: true }, h('h2', { tabindex: '-1' }, 'Log in'), fields);
+  const form = h('form', { class: 'screen login-screen', novalidate: true }, h('h2', { tabindex: '-1' }, 'Log in'), fields);
   form.addEventListener('submit', (event) => {
     event.preventDefault();
     fields.disabled = true;

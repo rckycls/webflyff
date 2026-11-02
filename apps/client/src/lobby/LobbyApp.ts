@@ -9,6 +9,7 @@ import { loginView } from './views/loginView';
 import { serverView } from './views/serverView';
 import { h } from './views/dom';
 import type { View } from './views/dom';
+import { frameLobby, skinLobby } from './skin';
 
 type Screen = 'login' | 'alreadyConnected' | 'servers' | 'characters' | 'create' | 'delete';
 
@@ -65,6 +66,8 @@ export class LobbyApp {
   /** Puts the lobby's frame in the page. */
   private mount(): void {
     this.root.replaceChildren(h('header', {}, h('h1', {}, 'FlyFF')), this.notice, this.status, this.stage);
+    this.root.classList.add('classic-lobby');
+    void skinLobby(this.root);
   }
 
   /** What the flow reports. */
@@ -192,6 +195,7 @@ export class LobbyApp {
     this.setAlert(undefined);
     this.status.textContent = '';
     this.stage.replaceChildren();
+    this.root.classList.remove('classic-lobby');
     delete this.stage.dataset.screen;
     const world = {};
     this.world = world;
@@ -227,8 +231,10 @@ export class LobbyApp {
     const first = this.view === undefined;
     this.screen = screen;
     this.view = view;
+    frameLobby(view.element);
     this.stage.dataset.screen = screen;
     this.stage.replaceChildren(view.element);
+    if (screen === 'characters') void import('./characterPreviews').then(({ characterPreviews }) => characterPreviews(view.element, this.characters));
     this.setAlert(alert);
     this.status.textContent = status ?? '';
     // Keyboard and screen-reader users start at the top of the new screen, not on the button that has just gone. The

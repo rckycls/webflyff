@@ -71,6 +71,7 @@ export function withoutSqlMarks(text: string): string {
  * the shortcut of a slot of an item bar or of the action slot (`CWndTaskBar::OnMouseMove`, `WndTaskBar.cpp:2143-2168`).
  */
 export type Carried =
+  | { from: 'inventory'; objectId: number }
   | { from: 'skills'; skillIndex: number }
   | { from: 'item'; bar: number; slot: number }
   | { from: 'queue'; slot: number };
@@ -119,6 +120,9 @@ export class TaskBarEdits {
   /** The shortcut `carried` stands for: a job skill of the skill window, as `OnMouseMove` makes it, or the slot's. */
   carriedShortcut(carried: Carried): Shortcut | null {
     const bars = this.bar.bars;
+    if (carried.from === 'inventory') return this.bar.own?.inventory?.has(carried.objectId) ? {
+      kind: ShortcutKind.ITEM, id: carried.objectId, type: 0, index: 0, userId: 0, data: 1, text: '',
+    } : null;
     if (carried.from === 'skills') {
       // m_dwShortcut SHORTCUT_SKILL, m_dwType 0, m_dwId the slot, m_dwIndex the skill, m_dwData 0, m_szString its name
       const slot = this.bar.own?.skills[carried.skillIndex];
@@ -171,7 +175,7 @@ export class TaskBarEdits {
     const own = this.bar.own;
     const shortcut = this.carriedShortcut(carried);
     if (own === undefined || shortcut === null) return;
-    const fromBar = carried.from !== 'skills';
+    const fromBar = carried.from === 'item' || carried.from === 'queue';
     if (target === null) {
       if (fromBar) this.removeCarried(carried);
       return;
@@ -180,7 +184,7 @@ export class TaskBarEdits {
       const slot = own.skills[shortcut.id];
       if (slot !== undefined && (slot.level <= 0 || !this.playerHasSkillOpen(slot.skill))) return;
     }
-    if (shortcut.id === 0 && shortcut.text === '' && shortcut.kind !== ShortcutKind.SKILLFUN) return;
+    if (shortcut.id === 0 && shortcut.text === '' && shortcut.kind !== ShortcutKind.SKILLFUN && shortcut.kind !== ShortcutKind.ITEM) return;
     if (target === 'applet') return;
     if (target !== 'bar' && target.row === 'item') {
       if (carried.from === 'item' && carried.bar === this.bar.bar && carried.slot === target.slot) return;

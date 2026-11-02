@@ -60,23 +60,26 @@ function unlit(root: Object3D): void {
  */
 export function renderPortrait(
   renderer: WebGLRenderer, model: AssembledCharacter, motion: LoopedMotion | null, doc: Document,
+  fullBody = false,
 ): HTMLCanvasElement {
   const ratio = renderer.getPixelRatio();
-  const width = Math.round(FACE_WIDTH * ratio);
-  const height = Math.round(FACE_HEIGHT * ratio);
+  const cssWidth = fullBody ? 120 : FACE_WIDTH, cssHeight = fullBody ? 174 : FACE_HEIGHT;
+  const width = Math.round(cssWidth * ratio);
+  const height = Math.round(cssHeight * ratio);
 
   const { root } = model;
   unlit(root);
-  root.scale.setScalar(SCALE);
-  root.rotation.set(0, TURN, 0);
-  root.position.set(0, DROP, 0);
+  // V15 inventory WIDC_CUSTOM20: scale 1.2, translation y=-0.6 (WndField.cpp:1439-1440).
+  root.scale.setScalar(fullBody ? 1.2 : SCALE);
+  root.rotation.set(0, fullBody ? 0 : TURN, 0);
+  root.position.set(0, fullBody ? -.6 : DROP, 0);
   if (motion !== null) {
     model.mixer.clipAction(motion.clip).play();
     model.mixer.setTime(motion.frameTime(0));
   }
   const scene = new Scene();
   scene.add(root);
-  const viewWidth = VIEW_HEIGHT * (FACE_WIDTH / FACE_HEIGHT);
+  const viewWidth = VIEW_HEIGHT * (cssWidth / cssHeight);
   const camera = new OrthographicCamera(-viewWidth / 2, viewWidth / 2, VIEW_HEIGHT / 2, -VIEW_HEIGHT / 2, NEAR, FAR);
   camera.position.set(...EYE);
   camera.lookAt(...LOOK_AT);
@@ -103,8 +106,8 @@ export function renderPortrait(
   const canvas = doc.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
-  canvas.style.width = `${FACE_WIDTH}px`;
-  canvas.style.height = `${FACE_HEIGHT}px`;
+  canvas.style.width = `${cssWidth}px`;
+  canvas.style.height = `${cssHeight}px`;
   const context = canvas.getContext('2d');
   if (context === null) return canvas;
   const image = context.createImageData(width, height);

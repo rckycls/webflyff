@@ -7,7 +7,7 @@ import { Focus } from '../src/world/combat/focus';
 import type { OwnState } from '../src/world/OwnState';
 import { terrainGround } from '../src/world/sim/collision';
 import type { CollisionObject, Ground } from '../src/world/sim/collision';
-import { ActMsg, Belli, ObjSta } from '../src/world/sim/constants';
+import { ActMsg, Belli, ObjSta, ObjStaF } from '../src/world/sim/constants';
 import { WorldState } from '../src/world/WorldState';
 import type { Mover } from '../src/world/WorldState';
 import { MI_FEMALE, MI_MALE, addedNpc, addedPlayer, webMoverOf } from './helpers/movers';
@@ -46,6 +46,7 @@ function wallAt(x: number): CollisionObject {
 }
 
 interface RigOptions {
+  motionReady?: () => boolean;
   level?: number;
   /** The own state the loop reads; `newVagrant( level )` unless given. */
   own?: OwnState | undefined;
@@ -133,7 +134,7 @@ function rig(options: RigOptions = {}) {
   const focus = new Focus(session);
   const state = 'own' in options ? options.own : newVagrant(level);
   let tick = 1000n;
-  const loop = new AttackLoop(session, focus, world, () => state, { tick: () => (tick += 10n) }, data.movers);
+  const loop = new AttackLoop(session, focus, world, () => state, { tick: () => (tick += 10n) }, data.movers, undefined, options.motionReady);
 
   let now = 10_000;
   /** Whether the last step ran the controls (`AttackLoop.step`'s answer). */
@@ -174,6 +175,20 @@ function rig(options: RigOptions = {}) {
 const SWORD_SPEED = f32(0.085);
 
 describe('AttackLoop: a tap selects, a second one attacks (WndWorld.cpp:6844-6929, 8513-8531)', () => {
+  it.each(['button', 'target'])('switches walking to running once when attacking through %s', (source) => {
+    const r = rig();
+    r.own.act.sendActMsg(ActMsg.MODE_WALK);
+    r.tap(MONSTER_ID);
+    r.step();
+    expect(r.own.act.stateFlag & ObjStaF.WALK).not.toBe(0); // selection alone keeps the gait
+    if (source === 'button') r.loop.attackButton();
+    else r.tap(MONSTER_ID);
+    r.step();
+    expect(r.own.act.stateFlag & ObjStaF.WALK).toBe(0);
+    expect(r.sent.filter((s) => s[0] === 'behavior')).toHaveLength(1);
+    r.steps(5);
+    expect(r.sent.filter((s) => s[0] === 'behavior')).toHaveLength(1);
+  });
   it('one tap only selects; the second walks up with one PLAYERSETDESTOBJ and swings ATK1 on arrival with MELEE_ATTACK', () => {
     const r = rig();
     r.tap(MONSTER_ID);
@@ -606,6 +621,21 @@ describe('AttackLoop: MOVERDEATH (CDPClient::OnMoverDeath, DPClient.cpp:1936-209
 });
 
 describe('AttackLoop: taps that repeat fast (Review Focus 2)', () => {
+  it('waits for playable attack motions instead of flooding while the model is unavailable', () => {
+    let ready = false;
+    const r = rig({ motionReady: () => ready });
+    r.own.act.isEndFrame = () => true; // no model or a missing clip used to end every swing immediately
+    r.tap(MONSTER_ID);
+    for (let i = 0; i < 120; i++) {
+      r.loop.attackButton();
+      r.step();
+    }
+    expect(r.sent).toEqual([]);
+    ready = true;
+    r.own.act.isEndFrame = () => false;
+    r.until(() => r.melee().length > 0);
+    expect(r.kinds()).toEqual([`destObj ${MONSTER_ID}`, `ATK1 ${MONSTER_ID}`]);
+  });
   it('pressing attack ten times sends one approach', () => {
     const r = rig();
     r.tap(MONSTER_ID);

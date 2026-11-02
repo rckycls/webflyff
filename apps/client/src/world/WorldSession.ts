@@ -4,6 +4,8 @@ import {
   encodeMeleeAttack, encodeModifyStatus, encodePing, encodePlayerBehavior, encodePlayerCorr, encodePlayerMoved,
   encodePlayerSetDestObj, encodePreJoin, encodeRemoveItemTaskBar, encodeRevivalToLodestar, encodeSetTarget,
   encodeSkillTaskBar, encodeUseSkill, encodeWorldKeepAlive, readBundle,
+  encodeUseItem, encodeEquipItem, encodeMoveItem, encodeDropItem, encodeRevival, encodeChat,
+  encodeNpcDialog, encodeOpenShop, encodeCloseShop, encodeBuyItem, encodeSellItem, encodeTeleporter,
 } from '@flyffweb/protocol';
 import type { BundleMessage, BundleResult, MoveReport, Shortcut, SkillSlot, Vec3, WorldMessage } from '@flyffweb/protocol';
 import { UNEXPECTED_PROBLEM, closeText, errorText } from '../lobby/errorText';
@@ -17,6 +19,7 @@ import type { OpenChannel, PacketChannel } from '../net/PacketChannel';
  */
 export type WorldEvent =
   | { type: 'entered'; worldId: number; pos: Vec3; playerObjectId: number; messages: BundleMessage<WorldMessage>[] }
+  | { type: 'transition'; worldId: number; pos: Vec3 }
   | { type: 'messages'; messages: BundleMessage<WorldMessage>[] }
   | { type: 'ended'; message: string };
 
@@ -48,7 +51,7 @@ const LOST_TEXT = 'The connection to the game was lost.';
 // Exported for the live world test, which tries again when a session ends with it.
 export const JOIN_CLOSED_TEXT =
   'The game closed the connection. If this character was still in the game from an earlier session, wait a moment and try again.';
-const REPLACE_TEXT = "Moving to another map isn't supported yet.";
+const MAX_TRANSITION_MESSAGES = 4096;
 const BAD_DATA_TEXT = closeText(CloseCode.BAD_SERVER_DATA);
 
 /**
@@ -64,7 +67,7 @@ const GATEWAY_CAUSES: ReadonlySet<number> = new Set([
  * Where the session is: `opening` (the cache channel is not open yet), `pausing` (the 1 s pause), `preJoin` and `join` (that
  * packet is sent, its answer awaited), `playing`, and `over` (ended or left: nothing is emitted or sent from here on).
  */
-type Phase = 'opening' | 'pausing' | 'preJoin' | 'join' | 'playing' | 'over';
+type Phase = 'opening' | 'pausing' | 'preJoin' | 'join' | 'playing' | 'transition' | 'over';
 
 const hex = (n: number, width: number): string => `0x${n.toString(16).padStart(width, '0')}`;
 
@@ -93,14 +96,29 @@ function replacePosition(body: Uint8Array): Vec3 {
  * packet it cannot read ends it with the bad-data text.
  */
 export class WorldSession {
+  sendTeleporter(key: string, index: number): void { this.playingCache()?.send(encodeTeleporter(key, index)); }
+  sendNpcDialog(id: number, key: string, param = 0, quest = 0): void { this.playingCache()?.send(encodeNpcDialog(id, key, param, quest)); }
+  sendOpenShop(id: number): void { this.playingCache()?.send(encodeOpenShop(id)); }
+  sendCloseShop(): void { this.playingCache()?.send(encodeCloseShop()); }
+  sendBuyItem(tab: number, id: number, count: number, itemId: number): void { this.playingCache()?.send(encodeBuyItem(tab, id, count, itemId)); }
+  sendSellItem(id: number, count: number): void { this.playingCache()?.send(encodeSellItem(id, count)); }
+  sendChat(channel: import('@flyffweb/protocol').ChatChannel, text: string, target = ''): void {
+    this.playingCache()?.send(encodeChat(channel, text, target));
+  }
+  sendUseItem(objectId: number): void { this.playingCache()?.send(encodeUseItem(objectId)); }
+  sendEquipItem(objectId: number, part = -1): void { this.playingCache()?.send(encodeEquipItem(objectId, part)); }
+  sendMoveItem(source: number, destination: number): void { this.playingCache()?.send(encodeMoveItem(source, destination)); }
+  sendDropItem(objectId: number, count: number, pos: Vec3): void { this.playingCache()?.send(encodeDropItem(objectId, count, pos)); }
+  sendRevival(): void { this.playingCache()?.send(encodeRevival()); }
   readonly stats: SessionStats = { bundles: 0, indexed: 0, skipped: 0, mismatched: 0, unknownPackets: 0, droppedEvents: 0 };
   private phase: Phase = 'opening';
   private started = false;
   private cache: PacketChannel | undefined;
   /** JOIN, made by `start` with PRE_JOIN so that a name the wire cannot carry fails before anything is opened. */
   private joinPacket: Uint8Array | undefined;
-  /** The world the player is in: the character list's until the JOIN bundle names it (WORLD_READINFO). A REPLACE elsewhere ends the session. */
+  /** The world the player is in, or the destination being entered. */
   private worldId: number;
+  private destination: { pos: Vec3; messages: BundleMessage<WorldMessage>[] } | undefined;
   /** The timer of the step in flight: the pause, or the wait for the PRE_JOIN or JOIN answer. */
   private timer: ReturnType<typeof setTimeout> | undefined;
   private pingTimer: ReturnType<typeof setTimeout> | undefined;
@@ -356,8 +374,21 @@ export class WorldSession {
   }
 
   private onCachePacket(body: Uint8Array): void {
-    const packet = decodeWorldPacket(body);
+    let packet: ReturnType<typeof decodeWorldPacket>;
+    try { packet = decodeWorldPacket(body); }
+    catch (error) {
+      if (error instanceof ProtocolError && body.byteLength >= 4 && new DataView(body.buffer, body.byteOffset, body.byteLength).getUint32(0, true) === 0xff00d4) {
+        this.stats.mismatched++; this.warnOnce('whisper', 'Ignored a malformed whisper packet.'); return;
+      }
+      throw error;
+    }
     switch (packet.type) {
+      case 'definedText':
+      case 'guild':
+      case 'system':
+      case 'whisper':
+        if (this.phase === 'playing') this.notify({ type: 'messages', messages: [{ objectId: NULL_ID, type: packet.type === 'guild' ? 0xffffff39 : packet.type === 'system' ? 0xff00ed : packet.type === 'definedText' ? 0xff00ec : 0xff00d4, value: packet }] });
+        break;
       case 'keepAlive':
         // CDPClient::OnKeepAlive (Neuz/DPClient.cpp:961): answered at once, from the callback.
         this.cache?.send(encodeWorldKeepAlive());
@@ -366,20 +397,17 @@ export class WorldSession {
         this.end(errorText(packet.code));
         break;
       case 'replace':
-        // CDPClient::OnReplace (:2297) loads another map, which this client does not do (yet). Within the world it is passed on
-        // like the message of the same name, whose object ID the world server sets to NULL_ID (`CUser::AddReplace`).
-        if (packet.worldId !== this.worldId) this.end(REPLACE_TEXT);
-        else if (this.phase === 'playing') {
+        if (this.phase === 'playing' || this.phase === 'transition') {
           const value = { type: 'replace', worldId: packet.worldId, pos: replacePosition(body) } as const;
-          this.notify({ type: 'messages', messages: [{ objectId: NULL_ID, type: MessageType.REPLACE, value }] });
+          this.dispatchMessages([{ objectId: NULL_ID, type: MessageType.REPLACE, value }], NULL_ID);
         }
         break;
       case 'join':
         // CDPClient::OnJoin (:897) is OnSnapshot for the first bundle. A later bundle typed JOIN (`CAr::ReelIn` after a JOIN over 16 KB) is an ordinary one.
-        if (this.phase === 'join' || this.phase === 'playing') this.onBundle(body);
+        if (this.phase === 'join' || this.phase === 'playing' || this.phase === 'transition') this.onBundle(body);
         break;
       case 'snapshot':
-        if (this.phase === 'playing') this.onBundle(body);
+        if (this.phase === 'playing' || this.phase === 'transition') this.onBundle(body);
         break;
       case 'unknown':
         this.stats.unknownPackets++;
@@ -404,17 +432,54 @@ export class WorldSession {
       }
       this.worldId = info.worldId;
     }
-    if (messages.some((m) => m.value.type === 'replace' && m.value.worldId !== this.worldId)) {
-      this.end(REPLACE_TEXT);
-      return;
-    }
     if (info !== undefined) {
       this.stopTimer();
       this.phase = 'playing';
-      this.notify({ type: 'entered', worldId: info.worldId, pos: info.pos, playerObjectId: bundle.playerObjectId, messages });
-    } else if (messages.length > 0) {
-      this.notify({ type: 'messages', messages });
+      const split = messages.findIndex(m => m.value.type === 'replace' && m.value.worldId !== this.worldId);
+      this.notify({ type: 'entered', worldId: info.worldId, pos: info.pos, playerObjectId: bundle.playerObjectId,
+        messages: split < 0 ? messages : messages.slice(0, split) });
+      if (split >= 0) this.dispatchMessages(messages.slice(split), bundle.playerObjectId);
+    } else {
+      this.dispatchMessages(messages, bundle.playerObjectId);
     }
+  }
+
+  /** Native AddReplace is flushed before AddAddObj; the own mover may arrive in a later snapshot. */
+  private dispatchMessages(messages: BundleMessage<WorldMessage>[], playerObjectId: number): void {
+    let batch: BundleMessage<WorldMessage>[] = [];
+    const flush = () => {
+      if (batch.length === 0 || this.over) return;
+      const destination = this.destination;
+      if (destination === undefined) this.notify({ type: 'messages', messages: batch });
+      else {
+        if (destination.messages.length + batch.length > MAX_TRANSITION_MESSAGES) { this.end(BAD_DATA_TEXT); return; }
+        destination.messages.push(...batch);
+        if (destination.messages.some(m => m.value.type === 'addMover' && m.value.mover.player?.self === true)) {
+          this.destination = undefined;
+          this.stopTimer();
+          this.phase = 'playing';
+          this.notify({ type: 'entered', worldId: this.worldId, pos: destination.pos, playerObjectId, messages: destination.messages });
+        }
+      }
+      batch = [];
+    };
+    for (const message of messages) {
+      if (this.over) return;
+      const value = message.value;
+      if (value.type === 'replace' && value.worldId !== this.worldId) {
+        flush();
+        if (this.over) return;
+        if (value.worldId === 0 || value.worldId === NULL_ID || !value.pos.every(Number.isFinite)) {
+          this.end(BAD_DATA_TEXT); return;
+        }
+        this.worldId = value.worldId;
+        this.destination = { pos: value.pos, messages: [] };
+        this.phase = 'transition';
+        this.startTimer(JOIN_TIMEOUT_MS);
+        this.notify({ type: 'transition', worldId: value.worldId, pos: value.pos });
+      } else batch.push(message);
+    }
+    flush();
   }
 
   /**
@@ -495,6 +560,7 @@ export class WorldSession {
   private close(): void {
     if (this.over) return;
     this.phase = 'over';
+    this.destination = undefined;
     this.stopTimer();
     if (this.pingTimer !== undefined) this.clock.clearTimeout(this.pingTimer);
     this.pingTimer = undefined;

@@ -22,22 +22,26 @@ export interface Desired {
  * push asks for (`run`: a full push runs, a part push walks), none (`undefined`) while it is not pushed: the keys ask for
  * no gait, they move at the one the mover has. A `MoveIntent` is one, with its gait.
  */
-export type ControlIntent = Omit<MoveIntent, 'run'> & { run?: boolean };
+export type ControlIntent = Omit<MoveIntent, 'run'> & { run?: boolean; angle?: number };
 
 /**
  * The keys' and the joystick's intents as one (`combineIntents`), with the joystick's gait while it is pushed. Shift, the
  * keys' `run`, no longer changes the gait: Neuz's walk key is a toggle (X, `NeuzMsgProc.cpp:181`,
  * `WndWorldControlPlayer.cpp:524-545`), and W moves at the gait it toggled (Piece 3's Ruling 25, walk unless Shift, is
- * replaced).
+ * replaced). With a camera angle, the floating stick supplies an absolute facing and forward movement instead of tank turns.
  */
-export function controlIntent(keys: MoveIntent, stick: MoveIntent): ControlIntent {
+export function controlIntent(keys: MoveIntent, stick: MoveIntent, cameraAngle?: number): ControlIntent {
+  if (cameraAngle !== undefined && (stick.forward !== 0 || stick.turn !== 0)) {
+    const angle = cameraAngle - Math.atan2(stick.turn, stick.forward) * 180 / Math.PI;
+    return { forward: 1, turn: 0, run: stick.run, angle: ((Math.round(angle) % 360) + 360) % 360 };
+  }
   const { forward, turn } = combineIntents({ ...keys, run: false }, stick);
   return stick.forward !== 0 || stick.turn !== 0 ? { forward, turn, run: stick.run } : { forward, turn };
 }
 
 /**
- * Whether `intent` moves or turns: the movement keys (`bUp || bDown || bLeft || bRight`; the web client has no jump) or
- * the joystick out of its dead zone, which stop the auto-attack (`WndWorldControlPlayer.cpp:383-403`).
+ * Whether `intent` moves or turns: the movement keys (`bUp || bDown || bLeft || bRight`) or
+ * the joystick out of its dead zone, which stop the auto-attack (`WndWorldControlPlayer.cpp:383-403`). Jump is consumed separately.
  */
 export function movesOrTurns(intent: ControlIntent): boolean {
   return intent.forward !== 0 || intent.turn !== 0;
@@ -103,12 +107,12 @@ export function desiredFrom(intent: ControlIntent, previous: Readonly<Desired> =
  * it (`ClearDest`, :548-553; `g_DPlay.ClearPlayerDestPos` is `__J0823`'s, which is off): back, a turn, or a change
  * of gait. Forward does not while the mover goes forward already, as on its way to a point: `FORWARD` answers 0.
  *
- * Left out: jumping (:486), tracking, the cast cancel and the chat line that announces walking or running
+ * Left out: tracking, the cast cancel and the chat line that announces walking or running
  * (`TID_GAME_WALK`, `TID_GAME_RUN`: no chat window yet). The auto-attack the movement keys stop (:383-403) is the
  * attack loop's (`AttackLoop.stop`). The walk key's toggle (:526-545) and the joystick's gait become `desired.walk`,
  * which sends MODE_WALK or MODE_RUN only where the mover's walk flag differs (`OwnMover.control` flips it as X goes down).
  */
-export function driveOwnMover(act: ActionMover, desired: Desired, emptyDest: boolean): { moved: boolean; behavior: boolean } {
+export function driveOwnMover(act: ActionMover, desired: Desired, emptyDest: boolean, jump = false): { moved: boolean; behavior: boolean } {
   let moved = false;
   let behavior = false;
 
@@ -131,6 +135,7 @@ export function driveOwnMover(act: ActionMover, desired: Desired, emptyDest: boo
   }
 
   // :526-545: the walk key's toggle, MODE_RUN when walking and MODE_WALK when not (the jump, :486-505, comes before)
+  if (jump && act.sendActMsg(ActMsg.JUMP)) behavior = true;
   const walking = (act.stateFlag & ObjStaF.WALK) !== 0;
   if (desired.walk && !walking) {
     if (act.sendActMsg(ActMsg.MODE_WALK)) behavior = true;
@@ -186,7 +191,7 @@ type Listen = Pick<EventTarget, 'addEventListener' | 'removeEventListener'>;
  * there (`TapHit`), or null where there is nothing. `canvas` is the drawing: a finger on the joystick, an element of its
  * own over it, is not on it.
  *
- * - Every press goes to `onPress` at once, as `OnLButtonDown` runs as the button goes down.
+ * - Mouse presses go to `onPress` immediately. Touch waits for a valid tap, so a camera/joystick drag cannot select or attack.
  * - A press on a mover is held (`heldMover`) until it is let go, however far it moves (moving the cursor away does not
  *   matter to Neuz's hold, [combat §2.1]); the canvas keeps the pointer (`SetCapture`, :6842), so that its let-go comes
  *   here.
@@ -199,7 +204,7 @@ type Listen = Pick<EventTarget, 'addEventListener' | 'removeEventListener'>;
  * to `report` (the overlay), and the press gives nothing; without `report` it is thrown.
  */
 export class TapToWalk {
-  private press: { pointerId: number; x: number; y: number; time: number; hit: TapHit | null; tap: boolean } | null = null;
+  private press: { pointerId: number; x: number; y: number; time: number; hit: TapHit | null; tap: boolean; deferred: boolean; double: boolean } | null = null;
   /** The last press that went down, for the next one's double click; null after a double click's second press. */
   private last: { x: number; y: number; time: number } | null = null;
   private dest: Vec3 | null = null;
@@ -227,7 +232,7 @@ export class TapToWalk {
   /** The press on a mover still held (Neuz's `m_bLButtonDown` after it): the mover and when it went down; or null. */
   heldMover(): { mover: number; time: number } | null {
     const press = this.press;
-    return press !== null && press.hit !== null && 'mover' in press.hit ? { mover: press.hit.mover, time: press.time } : null;
+    return press !== null && !press.deferred && press.hit !== null && 'mover' in press.hit ? { mover: press.hit.mover, time: press.time } : null;
   }
 
   /** Forgets a press under way and a tap not yet taken: the page lost the focus or was hidden. */
@@ -248,7 +253,7 @@ export class TapToWalk {
 
   private readonly onDown = (event: PointerEvent): void => {
     this.press = null;
-    if (!event.isPrimary || event.button !== 0) return;
+    if ((!event.isPrimary && event.pointerType !== 'touch') || event.button !== 0) return;
     const box = this.canvas.getBoundingClientRect();
     if (!(box.width > 0 && box.height > 0)) return;
     const { pointerId, clientX: x, clientY: y, timeStamp: time } = event;
@@ -264,10 +269,11 @@ export class TapToWalk {
       this.report(error);
       return;
     }
-    this.press = { pointerId, x, y, time, hit, tap: true };
+    const deferred = event.pointerType === 'touch';
+    this.press = { pointerId, x, y, time, hit, tap: true, deferred, double };
     const mover = hit !== null && 'mover' in hit ? hit.mover : null;
     if (mover !== null) this.canvas.setPointerCapture?.(pointerId);
-    this.onPress?.({ mover, time, double });
+    if (!deferred) this.onPress?.({ mover, time, double });
   };
 
   private readonly onMove = (event: PointerEvent): void => {
@@ -280,11 +286,12 @@ export class TapToWalk {
     if (press === null || event.pointerId !== press.pointerId) return;
     this.press = null;
     if (!press.tap || moved(press, event) || event.timeStamp - press.time > TAP_HOLD_MS) return;
+    if (press.deferred) this.onPress?.({ mover: press.hit !== null && 'mover' in press.hit ? press.hit.mover : null, time: press.time, double: press.double });
     if (press.hit !== null && 'point' in press.hit) this.dest = press.hit.point;
   };
 
-  private readonly onCancel = (): void => {
-    this.press = null;
+  private readonly onCancel = (event: PointerEvent): void => {
+    if (event.pointerId === this.press?.pointerId) this.press = null;
   };
 
   /** The canvas lost the pointer it kept (the press's let-go will not come here). */

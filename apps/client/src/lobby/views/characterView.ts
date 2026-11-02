@@ -29,6 +29,8 @@ function slotItem(slot: number, character: CharacterSummary | undefined, options
     'li',
     { class: 'slot' },
     label,
+    h('button', { type: 'button', class: 'character-select', 'aria-label': `Select ${character.name}`, 'aria-pressed': 'false' },
+      h('span', { class: 'character-preview', 'data-slot': slot, 'aria-hidden': 'true' })),
     h(
       'div',
       { class: 'slot-row' },
@@ -45,14 +47,28 @@ export function characterView(options: CharacterViewOptions): View {
     slotItem(slot, options.characters.find((c) => c.slot === slot), options));
   const channel = h('button', { type: 'button', class: 'btn' }, 'Change channel');
   const logout = h('button', { type: 'button', class: 'btn' }, 'Log out');
+  const empty = Array.from({ length: MAX_CHARACTER_SLOTS }, (_, slot) => slot).find(slot => !options.characters.some(c => c.slot === slot));
+  const create = h('button', { type: 'button', class: 'btn lobby-create', disabled: empty === undefined }, 'Create');
+  create.addEventListener('click', () => { if (empty !== undefined) options.onCreate(empty); });
+  channel.classList.add('lobby-back');
   channel.addEventListener('click', options.onChangeChannel);
   logout.addEventListener('click', options.onLogout);
   const element = h(
     'section',
-    { class: 'screen' },
+    { class: 'screen character-screen' },
     h('h2', { tabindex: '-1' }, 'Your characters'),
     h('ul', { class: 'list' }, ...slots),
-    h('div', { class: 'actions' }, channel, logout),
+    h('div', { class: 'actions' }, channel, create, logout),
   );
+  const select = (selected: HTMLElement): void => {
+    for (const slot of slots) {
+      const active = slot === selected;
+      slot.classList.toggle('selected', active);
+      slot.querySelector('.character-select')?.setAttribute('aria-pressed', String(active));
+      for (const action of slot.querySelectorAll<HTMLButtonElement>('.slot-enter, .danger-outline')) action.hidden = !active;
+    }
+  };
+  for (const slot of slots) slot.querySelector('.character-select')?.addEventListener('click', () => select(slot));
+  select(slots.find(slot => slot.querySelector('.character-select')) ?? slots[0]!);
   return { element };
 }

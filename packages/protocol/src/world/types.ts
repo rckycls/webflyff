@@ -6,10 +6,19 @@ import type { MoveReport } from '../messages/world';
  * it. Positions and deltas are D3D coordinates and angles FlyFF degrees, as the C++ holds them. The message's
  * object ID is not here: `readBundle` reports it beside the value.
  */
-export type WorldMessage =
+import type { ChatMessage } from './chat';
+import type { NpcMessage } from './npc';
+import type { ShopMessage } from './shop';
+
+export type WorldMessage = ChatMessage | NpcMessage | ShopMessage
+  | { type: 'addItem'; item: GroundItem }
+  | { type: 'createItem'; itemType: number; item: InventoryItem; stacks: Array<{ objectId: number; count: number }> }
+  | { type: 'updateItem'; itemType: number; objectId: number; param: number; value: number; time: number }
+  | { type: 'moveItem'; itemType: number; source: number; destination: number }
+  | { type: 'equipItem'; objectId: number; equip: boolean; itemId: number; option: number; flag: number; part: number }
   /** ADD_OBJ of a mover (`OT_MOVER`): a player, a monster or an NPC came into view. */
   | { type: 'addMover'; mover: AddedMover }
-  /** ADD_OBJ of any other object (`OT_ITEM`, `OT_CTRL`, ...), which the browser does not read past its type. */
+  /** ADD_OBJ of any other object (`OT_CTRL`, ...), which the browser does not read past its type. */
   | { type: 'addOther'; objectType: number }
   | { type: 'delObj' }
   /** The season (`SEASON_*`, `Resource/define.h:269-274`), from which Neuz picks some trees' models; the browser keeps it nowhere. */
@@ -193,7 +202,8 @@ export interface SkillSlot { skill: number; level: number }
  * bar's item shortcut name. `itemId` is `m_dwItemId`, the item's ID in `propItem.txt`, and `count` is `m_nItemNum`
  * (a `short`), how many of it the stack holds.
  */
-export interface InventoryItem { objectId: number; itemId: number; count: number }
+export interface InventoryItem { objectId: number; itemId: number; count: number; flag?: number; charged?: number }
+export interface GroundItem { index: number; scale: number; pos: Vec3; angle: number; item: InventoryItem }
 
 /**
  * What the own ADD_OBJ (METHOD_NONE, `_Common/ObjSerializeOpt.cpp:509-585`) tells about the player's own character
@@ -201,6 +211,8 @@ export interface InventoryItem { objectId: number; itemId: number; count: number
  * and EXP, the skill array and the inventory.
  */
 export interface OwnCharacter {
+  /** Native dwGold (optional in older fixtures). */
+  gold?: number;
   /** `m_nStr`, `m_nSta`, `m_nDex`, `m_nInt`: the base stats, without equipment or buffs (`WORD`s). */
   str: number;
   sta: number;
@@ -231,6 +243,8 @@ export interface OwnCharacter {
    * numbers and skills above are still the message's.
    */
   inventory: InventoryItem[] | null;
+  /** Bag positions 0..41, equipment positions 42..72 -> inventory object IDs, including empty allocations. */
+  inventorySlots?: number[];
   /**
    * `null` when the inventory was read. Otherwise what went wrong between the end of the skill array and the end of the
    * inventory (the bytes ran out, or a count or a field was out of range): the part being read, then the

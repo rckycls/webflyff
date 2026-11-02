@@ -2,7 +2,8 @@ import net from 'node:net';
 import type { WebSocket } from 'ws';
 import { afterEach, expect, it, vi } from 'vitest';
 import {
-  ArWriter, CloseCode, DPID_UNKNOWN, bytesToHex, encodeGatewayClientAddr, encodeProtocolIdBody, encodeServerFrame,
+  ArWriter, CloseCode, DPID_UNKNOWN, PacketType, bytesToHex, encodeGatewayClientAddr, encodeProtocolIdBody, encodeServerFrame,
+  encodeWorldKeepAlive,
 } from '@flyffweb/protocol';
 import { startFakeFlyffServer, type FakeFlyffServerOptions } from '@flyffweb/testkit';
 import { DEFAULT_LIMITS } from '../src/config';
@@ -71,6 +72,45 @@ const clientAddr = (address: string) => bytesToHex(encodeGatewayClientAddr(addre
 const cacheClientAddr = (address: string) =>
   bytesToHex(new ArWriter().u32(DPID_UNKNOWN).bytes(encodeGatewayClientAddr(address)).toBytes());
 const keepAlive = new Uint8Array([0x18, 0, 0, 0]);
+
+it('answers cache keepalives without browser JavaScript and still relays game packets', async () => {
+  const server = await fakeServer();
+  const h = await harness(relayOptions(server.port, 'cache'));
+  h.client.send(new Uint8Array([0xfc]));
+  await server.waitForBodies(1);
+  for (let i = 0; i < 3; i++) server.send(new ArWriter().u32(PacketType.KEEP_ALIVE).toBytes());
+  await expect.poll(() => server.received.length).toBe(4);
+  expect(server.received.slice(1).map(bytesToHex)).toEqual(Array(3).fill(bytesToHex(encodeWorldKeepAlive())));
+  expect(h.messages).toEqual([]);
+  server.send(new Uint8Array([0xfd, 1]));
+  await expect.poll(() => h.messages.map(bytesToHex)).toEqual(['fd01']);
+  expect(server.crcErrors).toBe(0);
+});
+
+it('keeps login alive without browser timers and stops its heartbeat when the browser closes', async () => {
+  const intervals = vi.spyOn(globalThis, 'setInterval');
+  const cleared = vi.spyOn(globalThis, 'clearInterval');
+  const server = await fakeServer();
+  const h = await harness(relayOptions(server.port, 'login'));
+  h.client.send(new Uint8Array([0xfc]));
+  await server.waitForBodies(1);
+  const index = intervals.mock.calls.findIndex(([, ms]) => ms === 10_000);
+  expect(index).toBeGreaterThanOrEqual(0);
+  const heartbeat = intervals.mock.calls[index]![0] as () => void;
+  for (let i = 0; i < 3; i++) heartbeat();
+  await server.waitForBodies(4);
+  for (const body of server.received.slice(1)) {
+    const packet = Buffer.from(body);
+    expect(packet.length).toBe(12);
+    expect(packet.readUInt32LE(0)).toBe(DPID_UNKNOWN);
+    expect(packet.readUInt32LE(4)).toBe(PacketType.PING);
+  }
+  h.client.close(1000);
+  await expect(h.result).resolves.toMatchObject({ closeCode: 1000 });
+  expect(cleared).toHaveBeenCalledWith(intervals.mock.results[index]!.value);
+  heartbeat();
+  expect(server.received).toHaveLength(4);
+});
 
 it('sends the client address first on certifier routes, then relays both ways', async () => {
   const server = await startFakeFlyffServer({ onBody: (b, reply) => { if (b[0] === 0xfc) reply(new Uint8Array([0xfd, 0, 0, 0])); } });

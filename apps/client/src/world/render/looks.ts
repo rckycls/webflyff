@@ -1,4 +1,4 @@
-import type { WornPart } from '@flyffweb/protocol';
+import type { CharacterSummary, WornPart } from '@flyffweb/protocol';
 import { DEFAULT_MOTION, motionKey, partKey, skeletonKey } from '@flyffweb/scene';
 import type { Gender, HeldSlot } from '@flyffweb/scene';
 import { Sex, defaultHairRgb } from '../../lobby/appearance';
@@ -249,6 +249,14 @@ export function ownWorn(itemIds: readonly number[], data: GameData): WornPart[] 
     slots.set(part, itemId);
   }
   return [...slots].map(([part, itemId]) => ({ part, itemId, flag: 0 }));
+}
+
+/** The login server's saved appearance, dressed by the same V15 rules as the inventory preview. */
+export function characterLook(character: CharacterSummary, data: GameData): MoverLook {
+  return humanLook({
+    gender: character.sex === Sex.FEMALE ? 'female' : 'male', hairMesh: character.hairMesh,
+    headMesh: character.headMesh, hairColor: character.hairColor, worn: ownWorn(character.equipment, data),
+  }, data);
 }
 
 /**
