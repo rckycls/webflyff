@@ -20,6 +20,8 @@
 import { ScriptReader } from '../script/cscript';
 
 export interface ItemProp {
+  /** Positive nReflect enables the native reflection pass. */
+  reflect?: number;
   cost?: number;
   /** The item id: the `II_*` define of the second column (`ItemProp::dwID`). */
   id: number;
@@ -192,6 +194,7 @@ const KEPT: ReadonlySet<string> = new Set([
   'nAdjParamVal1',
   'nAdjParamVal2',
   'dwSfxObj3',
+  'nReflect',
   'dwSfxObj5',
   'dwSndAttack1',
   'dwReferStat1',
@@ -286,6 +289,7 @@ export function readPropItem(
       }
       items.push({
         id,
+        ...(kept.nReflect > 0 ? { reflect: kept.nReflect } : {}),
         name,
         ...(kept.dwCost > 0 ? { cost: kept.dwCost } : {}),
         packMax: kept.dwPackMax,

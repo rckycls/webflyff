@@ -128,6 +128,10 @@ export interface WebItemProp {
   adjParams: number[];
   /** `dwSfxObj3`: the effect shown at the target when the item hits, an `XI_*` id (see WebEffectsIndex), -1 for none. */
   sfxHit: number;
+  /** OT_ITEM ground model, including the box used for worn parts; absent in older catalogs. */
+  dropModel?: string | null;
+  /** Positive nReflect requests the drop's camera-normal reflection map. */
+  reflect?: number;
   /**
    * Logical key of the model a held item shows (`models/item_<name>.glb`, CModelMng::MakeModelName of its OT_ITEM entry
    * in mdlDyna.inc). Null for an item whose entry has a part (it is worn: see WebItemModel), one with no entry, and one

@@ -1462,6 +1462,8 @@ fieldset:disabled .btn {
 .world-ground-items { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
 .world-ground-items button { position: absolute; pointer-events: auto; transform: translate(-50%, -50%); display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; background: none; color: #ffe59c; font-size: var(--drop-icon-size, 16px); touch-action: none; }
 .world-ground-items button img { width: var(--drop-icon-size, 16px); height: var(--drop-icon-size, 16px); object-fit: contain; pointer-events: none; filter: drop-shadow(0 1px 1px #3b240e); }
+.world-ground-items button.has-drop-model { color: transparent; }
+.world-ground-items button.has-drop-model img { visibility: hidden; }
 .hud-pickup { position: absolute; pointer-events: auto; right: max(12px, env(safe-area-inset-right)); bottom: calc(var(--hud-taskbar-height, 48px) + 168px); border: 1px solid #c7ad6c; border-radius: 16px; background: #263749dd; color: #fff4d5; padding: 6px 12px; }
 @media (max-width: 1000px) and (pointer: coarse) {
   .hud-pickup { min-height: 40px; }

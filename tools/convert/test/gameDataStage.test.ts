@@ -656,7 +656,7 @@ describe('the game-data stage', () => {
     expect(props[2]).toEqual({
       id: 505, name: 'Training Sword', description: 'A suit of cotton.', cost: 12, packMax: 1, kind1: 1, kind2: 2, kind3: 2, handed: 1, part: 10, abilityMin: 3, abilityMax: 4,
       weaponType: 1, attackSpeed: Math.fround(0.085), attackRange: 1, destParams: [14, -1, -1], adjParams: [5, -3, -1],
-      sfxHit: 20, model: 'models/item_weasword.glb', icon: 'ui/item/itm_weasword.png',
+      sfxHit: 20, model: 'models/item_weasword.glb', dropModel: 'models/item_weasword.glb', icon: 'ui/item/itm_weasword.png',
     });
     expect(props[2]!.attackSpeed).not.toBe(0.085);
 
@@ -664,7 +664,7 @@ describe('the game-data stage', () => {
     expect(props[0]).toEqual({
       id: 502, name: 'Cotton Suit', description: 'A suit of cotton.', cost: 12, packMax: 1, kind1: 2, kind2: 7, kind3: 18, handed: -1, part: 2, abilityMin: 8, abilityMax: 10,
       weaponType: -1, attackSpeed: -1, attackRange: -1, destParams: [-1, -1, -1], adjParams: [-1, -1, -1],
-      sfxHit: -1, model: null, icon: 'ui/item/itm_mvag01upper.png',
+      sfxHit: -1, model: null, dropModel: 'models/item_genmatsuitbox.glb', icon: 'ui/item/itm_mvag01upper.png',
     });
     expect(props[1]).toMatchObject({ id: 503, name: 'Pike Suit', part: 3, model: null });
   });
@@ -684,6 +684,16 @@ describe('the game-data stage', () => {
     const props = await catalog<WebItemProp[]>(run, GAME_DATA_KEYS.itemProps);
     expect(props.map((prop) => prop.id)).toEqual([503, 505]);
     expect(props[0]).toMatchObject({ id: 503, name: 'Pike Suit', part: 3, icon: null });
+  });
+
+  it('itemProps: preserves a positive native reflection flag for the drop renderer', async () => {
+    const row = weaponRow('505', 'IDS_PROPITEM_TXT_000793').split('\t');
+    row[117] = '1'; // nReflect, immediately before dwSndAttack1 and dwSndAttack2
+    await client({ 'propItem.txt': script(row.join('\t')) });
+    const run = await runData();
+    expect(await catalog<WebItemProp[]>(run, GAME_DATA_KEYS.itemProps)).toEqual([
+      expect.objectContaining({ id: 505, reflect: 1, dropModel: 'models/item_weasword.glb' }),
+    ]);
   });
 
   it('itemProps: dwPackMax, how many of the item one inventory slot holds, as the row gives it', async () => {

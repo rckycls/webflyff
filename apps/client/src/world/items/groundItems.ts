@@ -4,16 +4,19 @@ import { Vector3 } from 'three';
 import { toWebPosition } from '@flyffweb/formats';
 import type { GameData } from '../gameData';
 import type { UiArt } from '../hud/art';
+import type { GroundModels } from './groundModels';
 
-/** Screen-space item icons remain anchored to their world positions and disappear on DEL_OBJ. */
+/** Accessible pickup targets follow world models; icons remain as a fallback for missing assets. */
 export class GroundItems {
   readonly element: HTMLElement;
   private readonly buttons = new Map<number, HTMLButtonElement>();
   constructor(private readonly data: GameData, private readonly art: UiArt, private readonly pick: (id: number) => void,
-    private readonly doc: Document = document) {
+    private readonly doc: Document = document, private readonly models?: GroundModels) {
     this.element = doc.createElement('div'); this.element.className = 'world-ground-items';
   }
-  update(items: ReadonlyMap<number, GroundItem>, camera: Camera): void {
+  update(items: ReadonlyMap<number, GroundItem>, camera: Camera, tick = 0): void {
+    const mobile = this.doc.defaultView?.matchMedia?.('(max-width: 1000px) and (pointer: coarse)').matches === true;
+    this.models?.update(items, camera, tick, mobile);
     for (const [id, button] of this.buttons) if (!items.has(id)) { button.remove(); this.buttons.delete(id); }
     for (const [id, drop] of items) {
       let button = this.buttons.get(id);
@@ -41,16 +44,18 @@ export class GroundItems {
         });
         this.buttons.set(id, button); this.element.append(button);
       }
-      const pos = new Vector3(...toWebPosition(drop.pos)); pos.y += 0.25;
+      const view = this.models?.views.get(id);
+      button.classList.toggle('has-drop-model', view?.model !== undefined);
+      const pos = view ? view.root.position.clone() : new Vector3(...toWebPosition(drop.pos)); pos.y += 0.25;
       const distance = pos.distanceTo(camera.position);
       const near = distance < 40;
       // Perspective-like apparent size, separate from the invisible touch target.
-      const size = Math.max(8, Math.min(28, 128 / Math.max(1, distance)));
+      const size = Math.max(8, Math.min(28, 128 / Math.max(1, distance))) * (mobile ? .5 : 1);
       button.style.setProperty('--drop-icon-size', `${size}px`);
       pos.project(camera);
       button.hidden = !near || pos.z < -1 || pos.z > 1 || Math.abs(pos.x) > 1 || Math.abs(pos.y) > 1;
       button.style.left = `${(pos.x + 1) * 50}%`; button.style.top = `${(1 - pos.y) * 50}%`;
     }
   }
-  dispose(): void { this.buttons.clear(); this.element.remove(); }
+  dispose(): void { this.models?.dispose(); this.buttons.clear(); this.element.remove(); }
 }

@@ -17,6 +17,34 @@ function groundItem(): ScriptMessage {
   return { objectId: 901, type: 0xf0, fields: w.toBytes() };
 }
 
+test('ground models load and remain pickable on desktop and phone', async ({ page }, info) => {
+  const shaderErrors: string[] = [];
+  page.on('console', message => { if (/Shader Error|VALIDATE_STATUS/.test(message.text())) shaderErrors.push(message.text()); });
+  // Exercise the native nReflect material branch with a small, reliably converted item.
+  await page.route(/\/data\/itemProps\.[^/]+\.json/i, async route => {
+    const response = await route.fetch();
+    const props = await response.json() as Array<{ id: number; reflect?: number }>;
+    const prop = props.find(prop => prop.id === 2800);
+    if (prop) prop.reflect = 1;
+    await route.fulfill({ response, json: props });
+  });
+  const script = createWorldScript({ playerObjectId: SELF_ID, worldId: MADRIGAL, pos: SQUARE,
+    self: writeAddSelf(SELF_ID, { ...self, player: { ...SELF_PLAYER, own: newVagrantOwn(), equipmentObjectIds: Array(31).fill(NULL_ID) } }),
+    others: [groundItem()],
+  });
+  const gateway = await playGateway(page, script);
+  await enterFlaris(page);
+  const drop = page.getByRole('button', { name: /Pick up Lollipop/ });
+  await expect(drop).toHaveClass(/has-drop-model/);
+  await expect(drop.locator('img')).toBeHidden();
+  await page.screenshot({ path: info.outputPath('ground-model.png') });
+  expect(shaderErrors).toEqual([]);
+  await drop.click();
+  await expect.poll(() => sentOf(gateway, 0xffffff07).some(p => p.body.readUInt32LE(8) === 901)).toBe(true);
+  gateway.pushCache(script.later([writeDelObj(901)]));
+  await expect(drop).toHaveCount(0);
+});
+
 test('inventory, item requests, ground pickup and scroll revival wait for server confirmations', async ({ page, isMobile }, info) => {
   const own = newVagrantOwn();
   own.inventory = [{ objectId: 6, itemId: 2800, count: 5 }, { objectId: 7, itemId: 4805, count: 2 },
@@ -132,7 +160,9 @@ test('inventory, item requests, ground pickup and scroll revival wait for server
   await expect(cell(7)).toContainText('2');
   await closeBag();
   const ground = page.getByRole('button', { name: /Pick up Lollipop/ });
-  await expect(ground).toBeVisible(); await ground.click();
+  await expect(ground).toBeVisible();
+  await expect(ground).toHaveClass(/has-drop-model/);
+  await ground.click();
   await expect.poll(() => sentOf(gateway, 0xffffff07).some((p) => p.body.readUInt32LE(8) === 901)).toBe(true);
   if (isMobile) await page.getByRole('button', { name: /Pick up nearby Lollipop/ }).tap();
   else await page.getByRole('button', { name: /Pick up nearby Lollipop/ }).click();

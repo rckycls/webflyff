@@ -68,6 +68,7 @@ import { formatDefinedText } from './hud/messages';
 import { ItemUse } from './items/itemUse';
 import { ItemActions } from './items/itemActions';
 import { GroundItems } from './items/groundItems';
+import { GroundModels, loadDropModel } from './items/groundModels';
 import { NearbyItems } from './items/nearbyItems';
 import { ShortcutKind } from '@flyffweb/protocol';
 import type { TaskBarWindow } from './hud/taskBar';
@@ -674,7 +675,10 @@ export class WorldScreen {
         if (own) this.ownMover?.walkTo(own, pos, false);
       });
     this.itemActions = itemActions;
-    this.groundItems = new GroundItems(this.data!, this.hudArt!, (id) => itemActions.pick(id, performance.now()), doc);
+    const dropModels = new GroundModels(this.stage!.scene, this.data!, loadDropModel(this.services!),
+      () => this.ground, message => this.page!.overlay.error(message),
+      pos => this.effects?.play({ xi: 64, pos })); // XI_GEN_ITEM_SHINE01, CItem::Render
+    this.groundItems = new GroundItems(this.data!, this.hudArt!, (id) => itemActions.pick(id, performance.now()), doc, dropModels);
     this.nearbyItems = new NearbyItems(this.data!, this.hudArt!, (id) => itemActions.pick(id, performance.now()), doc,
       () => itemActions.pickNearby(performance.now()));
     this.element.append(this.groundItems.element);
@@ -941,7 +945,7 @@ export class WorldScreen {
       const view = this.backCamera.view ?? this.follow(world, stage);
       stage.setCamera(view.position, view.target);
       this.cameraPlaced = true;
-      this.groundItems?.update(world.groundItems, stage.camera);
+      this.groundItems?.update(world.groundItems, stage.camera, this.stepsRun);
       this.tags!.update(stage.camera, renderer.getSize(drawingSize).y, (objectId) => views.placeOf(objectId));
       this.speechBubbles?.update(stage.camera, drawingSize.y, (objectId) => views.placeOf(objectId));
       this.npcDialog?.updateAnchor(id => {

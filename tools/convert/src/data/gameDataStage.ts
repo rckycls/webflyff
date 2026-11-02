@@ -329,6 +329,10 @@ function buildItemProps(env: Env, read: Reading): WebItemProp[] {
     .map((prop): WebItemProp => {
       let model: string | null = null;
       const elem = index.entries.get(`${OT.ITEM}:${prop.id}`);
+      // GetModelElem falls back to II_ARM_M_VAG_HELMET02, whose ground model is the suit box.
+      const dropElem = elem ?? index.entries.get(`${OT.ITEM}:500`);
+      const dropFile = dropElem === undefined ? '' : modelFileName(dropElem);
+      const dropModel = /\.o3d$/i.test(dropFile) ? converted(env, modelKeyOf(dropFile)) : null;
       if (elem !== undefined && elem.part === '') {
         const file = modelFileName(elem);
         if (/\.o3d$/i.test(file)) {
@@ -357,6 +361,8 @@ function buildItemProps(env: Env, read: Reading): WebItemProp[] {
         adjParams: [...prop.adjParams],
         sfxHit: prop.sfxObj3,
         model,
+        dropModel,
+        ...(prop.reflect ? { reflect: prop.reflect } : {}),
         icon: prop.icon === '' ? null : itemIconKeyOf(prop.icon),
       };
     });
