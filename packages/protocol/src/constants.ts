@@ -136,6 +136,10 @@ export const MessageType = {
   MOVERMOVED: 0x00ca,
   MOVERBEHAVIOR: 0x00cb,
   MOVERANGLE: 0x00ce,
+  /** A track to play, to everyone in a world (`CUserMng::AddPlayMusic`: the GM `/music` and guild combat; `MsgHdr.h:1128`). */
+  PLAYMUSIC: 0x00d1,
+  /** A sound to play: upgrade results, `SND_PC_CHAOS` (`CUser::AddPlaySound`, `WORLDSERVER/User.cpp:2528`; `MsgHdr.h:1129`). */
+  PLAYSOUND: 0x00d2,
   /** Another mover's swing, to everyone in view but the attacker (`CUserMng::AddMeleeAttack`, `User.cpp:4808`). */
   MELEE_ATTACK: 0x00e0,
   /** The action slot's chain is over (`CUserTaskBar::OnEndSkillQueue`, `_Interface/UserTaskBar.cpp:190`). */

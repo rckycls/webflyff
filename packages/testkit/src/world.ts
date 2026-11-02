@@ -411,6 +411,21 @@ export function writeCreateSfxObj(objectId: number, sfxId: number, pos: Vec3 = [
   return scripted(objectId, MessageType.CREATESFXOBJ, new ArWriter().u32(sfxId).vec3(pos).i32(flag));
 }
 
+/** PLAYMUSIC: `CUser::AddPlayMusic` (`WORLDSERVER/User.cpp:2517-2526`), about `NULL_ID`: the music id. */
+export function writePlayMusic(music: number): ScriptMessage {
+  return scripted(NULL_ID, MessageType.PLAYMUSIC, new ArWriter().u32(music));
+}
+
+/** PLAYSOUND of type 0: `CUser::AddPlaySound` (`WORLDSERVER/User.cpp:2528-2538`), about `NULL_ID`: the sound id. */
+export function writePlaySound(sound: number): ScriptMessage {
+  return scripted(NULL_ID, MessageType.PLAYSOUND, new ArWriter().u8(0).u32(sound));
+}
+
+/** PLAYSOUND of type 1: `CUser::AddPlaySound2` (`WORLDSERVER/User.cpp:2540-2550`): a file name, for the voice option. */
+export function writePlaySoundFile(name: string): ScriptMessage {
+  return scripted(NULL_ID, MessageType.PLAYSOUND, new ArWriter().u8(1).string(name));
+}
+
 /** `SNAPSHOTTYPE_GAMETIMER` (`_Network/MsgHdr.h:1057`): a message type the browser has no reader for. */
 export const GAMETIMER = 0x0096;
 

@@ -20,6 +20,7 @@ import {
   readClearUseSkill, readCreateSfxObj, readDoUseSkillPoint, readEndSkillQueue, readInitSkillPoint, readSetActionPoint,
   readUseSkill,
 } from './skills';
+import { readPlayMusic, readPlaySound } from './sound';
 import { readTaskBar } from './taskBar';
 import type { WorldMessage } from './types';
 
@@ -79,4 +80,6 @@ export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
     [MessageType.SETACTIONPOINT, readSetActionPoint],
     [MessageType.ENDSKILLQUEUE, readEndSkillQueue],
     [MessageType.CREATESFXOBJ, readCreateSfxObj],
+    [MessageType.PLAYMUSIC, readPlayMusic],
+    [MessageType.PLAYSOUND, readPlaySound],
   ]);

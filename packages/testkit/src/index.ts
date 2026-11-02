@@ -5,7 +5,7 @@ export {
   writeCorrReq, writeCreateSfxObj, writeDamage, writeDefinedText, writeDelObj, writeDestAngle, writeDestPos,
   writeDoUseSkillPoint, writeEndSkillQueue, writeEnvironmentSetting, writeGameTimer, writeInitSkillPoint,
   writeMeleeAttack, writeMonsterProp, writeMotion, writeMoverAngle, writeMoverBehavior, writeMoverCorr,
-  writeMoverDeath, writeMoverMoved, writeQueryGetDestObj, writeReplace, writeRevival, writeRevivalToLodestar,
+  writeMoverDeath, writeMoverMoved, writePlayMusic, writePlaySound, writePlaySoundFile, writeQueryGetDestObj, writeReplace, writeRevival, writeRevivalToLodestar,
   writeSetActionPoint, writeSetDestObj, writeSetExperience, writeSetGrowthLearningPoint, writeSetLevel,
   writeSetPointParam, writeSetPos, writeSetPosAngle, writeSetState, writeTaskBar, writeUseSkill, writeWorldReadInfo,
 } from './world';

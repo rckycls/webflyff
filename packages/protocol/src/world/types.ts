@@ -115,7 +115,11 @@ export type WorldMessage = ChatMessage | NpcMessage | ShopMessage
    * makes the position absolute only `if( x || y || z )`). `flag` is the `BOOL bFlag` (0 fixed, 1 follows the object),
    * which Neuz reads and does not use.
    */
-  | { type: 'createSfxObj'; sfxId: number; pos: Vec3; flag: number };
+  | { type: 'createSfxObj'; sfxId: number; pos: Vec3; flag: number }
+  /** PLAYMUSIC: a `BGM_*` id to play once. */
+  | { type: 'playMusic'; music: number }
+  /** PLAYSOUND: a `SND_*` id to play, or null for the file name of type 1, which is not played. */
+  | { type: 'playSound'; sound: number | null };
 
 /**
  * One shortcut (`SHORTCUT`, `_Common/ProjectCmn.h:930-948`) as `CUserTaskBar::Serialize` writes it, the six `DWORD`s in
