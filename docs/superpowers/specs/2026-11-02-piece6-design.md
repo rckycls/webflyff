@@ -285,7 +285,16 @@ viewer:
    - shadow and effect detail.
 
    Each fix that changes the look on phones is shown to the owner before it is kept.
-3. **Record** the numbers per device in `docs/conversion-baseline.md`.
+3. **Page freezes** (added by the owner on 2026-11-03): the full browser suite has not finished clean on the owner's PC
+   since Piece 5. Under SwiftShader, pages freeze for seconds, and `page.screenshot` can hang for its whole 2 minutes:
+   9 of the 24 timing-set runs failed with 2 workers, and the same set fails on a84fe29.
+   - The suspect is the inventory portrait (`renderPortrait`). Each opening loads the model and reads the pixels back with
+     a synchronous `readRenderTargetPixels`, and the console logs "GPU stall due to ReadPixels".
+   - The 2-minute screenshot hangs are not explained yet.
+   - Find each freeze's cause, fix it where it would also hitch a weak phone, and make the remaining test waits follow
+     the frame loop.
+   - Done when `npm run test:e2e:client` ends with no `failed` on the owner's PC.
+4. **Record** the numbers per device in `docs/conversion-baseline.md`.
 
 ---
 
