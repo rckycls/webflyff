@@ -5,7 +5,7 @@ Date: 2026-11-02. Branch `piece6`.
 - Plan: [M1 plan](superpowers/plans/2026-11-02-piece6-m1-world-map.md).
 - Research: [M1 research](superpowers/specs/2026-11-02-piece6-m1-worldmap-research.md).
 
-The owner's checks below are still open.
+The owner reported M1 passed on 2026-11-02.
 
 ## What changed
 
@@ -106,7 +106,8 @@ After the fixes:
 
 ## Owner checks
 
-- [ ] `npm run test:e2e:client`, the full run: no `failed`. The taller Start menu is checked here too, by the landscape
-  tests.
-- [ ] `npm run test:corpus` with `FLYFF_CLIENT` set: no `failed`.
-- [ ] `docs/device-testing.md`, "Piece 6, milestone 1", on the PC, an Android phone and an iPhone.
+- [x] `npm run test:e2e:client`, the full run: no `failed`. The taller Start menu is checked here too, by the landscape
+  tests (reported passed by the owner).
+- [x] `npm run test:corpus` with `FLYFF_CLIENT` set: no `failed` (reported passed by the owner).
+- [x] `docs/device-testing.md`, "Piece 6, milestone 1", on the PC, an Android phone and an iPhone (reported passed by
+  the owner).
