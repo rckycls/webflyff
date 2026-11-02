@@ -806,3 +806,45 @@ Milestone 0 passes when every cell above is `pass`, and the browser tests below 
 | `npm run test:e2e:client -- fight.spec.ts skills.spec.ts` | about 15-25 minutes | It ends with `… passed`, maybe a few `skipped`, and no `failed`. |
 
 If it fails, send me the lines from the first `failed` down to the end.
+
+## Piece 6, milestone 1: the world map
+
+M (or **Start → World Map**) opens the classic V15 world map. It shows the continent you stand on, with nine picture buttons down the left: the whole world, the seven continents, and **Monster Info**. As in the Windows client, the map is only for Madrigal: in a dungeon, M prints "You can not use the Map in this Dungeon." instead. On the web it also has a close button at its top right, which the Windows client does not have.
+
+**What the test character needs:** any character in Flaris. For step 7, a trip to Mars Mine through the Flaris teleporter NPC, and the way back.
+
+**Start the client** from the piece6 folder, as in milestone 0 (`cd C:\Users\silec\Desktop\FlyFF\Bakbak\FlyffWeb-worktrees\piece6`, `$env:GATEWAY_PROXY = 'ws://<VM-IP>:8090'`, `npm run dev:client`). Open `http://localhost:5174` on the PC and `http://<PC-IP>:5174` on the phones.
+
+**Steps**, on the PC, an Android phone and an iPhone:
+
+1. **Opening.** In Flaris, press M on the PC, or tap **Start**, then **World Map**. Success: the Flaris map fills the game view, with the Flaris button drawn pressed. On a phone the whole picture and all nine buttons are visible, nothing is cut off at the notch or the bottom.
+2. **Where you are.** Success: the green arrow with your name sits where you stand in Flaris. Turn the camera (right-drag on the PC, a swipe on the phone), close the map and open it again: the arrow now points the way the camera looks.
+3. **The buttons.** Press each button in turn, the world and the seven continents. Success: each one shows its own picture and is drawn pressed. On every continent other than Flaris, your arrow is hidden. On the world picture it shows again, over Flaris.
+4. **Monster Info.** Back on the Flaris map, press **Monster Info**. Success: small monster pictures appear on the map. Hover one with the mouse, or tap it on the phone. Success: a box lists "Lv.1 Small Aibatt" and the others, the last name in red, then "Booty : Twinkle Stone". Press Monster Info again: the pictures go away.
+5. **Nothing moves.** With the map open, press W, tap the map, and drag on it. Success: your character does not move, attack or turn, and the map stays open.
+6. **Closing.** On the PC: M closes it, Escape closes it, and the close button at the top right closes it. On the phone: the close button. Success: the game is back as before.
+7. **In a dungeon.** Take the teleporter to Mars Mine and press M, or Start → World Map. Success: "You can not use the Map in this Dungeon." appears in red, and no map opens. Come back to Flaris.
+8. **The teleporter map still works.** Talk to the Flaris teleporter NPC and choose a destination. Success: you are moved, as in Piece 5.
+
+## Results
+
+| Device | Browser | 1. Opening | 2. Where you are | 3. Buttons | 4. Monster Info | 5. Nothing moves | 6. Closing | 7. Dungeon | 8. Teleporter | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| PC | Chrome | | | | | | | | | |
+| Android phone | Chrome | | | | | | | | | |
+| iPhone | Safari | | | | | | | | | |
+
+## Pass and fail
+
+Milestone 1 passes when every cell above is `pass` and the tests below pass.
+
+**Look closely at these,** because the tests can't judge them: the map's picture, buttons and arrow next to the Windows client's. The continent names are drawn in the game's own button pictures, so Harmonin's button reads "Shaduwar", as in the Windows client.
+
+**The tests (yours to run),** on the PC in PowerShell in the piece6 folder, with your own `npm run dev:client` stopped first:
+
+| Command | How long | Success |
+| --- | --- | --- |
+| `npm run test:e2e:client` | about 30-40 minutes | It ends with `… passed`, maybe a few `skipped`, and no `failed`. |
+| `$env:FLYFF_CLIENT = 'C:\Users\silec\Desktop\FlyFF\Bakbak\Blouflash VS22 V15\Client'; npm run test:corpus` | about 10 minutes | No `failed`. Run `Remove-Item Env:FLYFF_CLIENT` afterwards. |
+
+If one fails, send me the lines from the first `failed` down to the end.
