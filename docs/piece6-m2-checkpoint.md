@@ -5,7 +5,9 @@ Date: 2026-11-02. Branch `piece6`.
 - Plan: [M2 plan](superpowers/plans/2026-11-02-piece6-m2-sound.md).
 - Research: [M2 research](superpowers/specs/2026-11-02-piece6-m2-sound-research.md).
 
-The owner tests M2 together with M3. Their checks below are still open.
+The owner reported M2 passed on 2026-11-03: every hand check, on the PC and the phone, tested together with M3.
+- The full browser suite still has timing failures, which date from Piece 5. They moved to M5 (spec §3.6 step 3).
+- The Start menu test still counted six lines; it is fixed in 5cc23c6.
 
 ## What changed
 

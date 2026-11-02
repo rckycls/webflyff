@@ -5,7 +5,9 @@ Date: 2026-11-02. Branch `piece6`.
 - Plan: [M3 plan](superpowers/plans/2026-11-02-piece6-m3-reconnect.md).
 - Research: [M3 research](superpowers/specs/2026-11-02-piece6-m3-reconnect-research.md).
 
-Built straight after M2, at the owner's request. The owner tests M2 and M3 together. Their checks below are still open.
+Built straight after M2, at the owner's request. The owner reported M3 passed on 2026-11-03: every hand check, on the PC
+and the phone, tested together with M2. The full browser suite's timing failures, which date from Piece 5, moved to M5
+(spec §3.6 step 3).
 
 ## What changed
 
