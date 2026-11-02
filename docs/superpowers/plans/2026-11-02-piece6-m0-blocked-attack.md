@@ -22,7 +22,7 @@ packets of every repeatable input into a wall against a shared budget of 50 a se
 - No server change and no gateway change. The gateway keeps `maxPacketsPerSecond: 100` (`apps/gateway/src/config.ts:31`).
 - The walk, the collision, the PLAYERCORR, the auto-attack, the arrival, the swing and the skills keep Neuz's rules.
   Only the timing of a repeated PLAYERSETDESTOBJ to the same blocked object changes. Comment it as a browser adaptation
-  next to the copied code, citing `_Common/MoverMsg.cpp:47-84` and `_Common/MoverActEvent.cpp:2013-2037`.
+  next to the copied code, citing `_Common/MoverMsg.cpp:47-84` and `_Common/MoverActEvent.cpp:2017-2037`.
 - Re-approach cadence: at most one PLAYERSETDESTOBJ to the blocked object per **6** rules steps (10 a second at 60 Hz).
 - Traffic budget: at most **50** packets in any 60 consecutive rules steps for one repeatable input, half the gateway's
   limit.

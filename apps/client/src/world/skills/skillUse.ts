@@ -79,6 +79,11 @@ interface SkillCmd {
   index: number;
   targetId: number;
   useType: 0 | 1;
+  /**
+   * The browser's: the range of a walk to the target that `setOwnDestObj` held back (a target whose walk just met
+   * something, Piece 6 spec §3.1), asked for again at each step until it goes; absent once walking.
+   */
+  heldRange?: number;
 }
 
 /** `m_dwNextSkill`: none (`NEXTSKILL_NONE`), the action slot (`NEXTSKILL_ACTIONSLOT`), or a skill slot. */
@@ -267,6 +272,11 @@ export class SkillUse implements OwnSkills {
     for (const press of presses) {
       if (press === 'actionSlot') this.useSkill(own);
       else this.useSkillShortCut(own, find, press);
+    }
+    const held = this.cmd;
+    if (held?.heldRange !== undefined &&
+      setOwnDestObj(this.session, this.world.tick ?? (() => 0n), find, own, held.targetId, held.heldRange)) {
+      this.cmd = { index: held.index, targetId: held.targetId, useType: held.useType };
     }
     if (own.act.stateFlag & ObjStaF.FLY) return false;
     if (this.next === 'actionSlot') {
@@ -522,9 +532,9 @@ export class SkillUse implements OwnSkills {
         break;
     }
     const range = ATTACK_RANGES.get(skill.attackRange) ?? 0;
-    setOwnDestObj(this.session, this.world.tick ?? (() => 0n), find, own, targetId, range);
+    const walking = setOwnDestObj(this.session, this.world.tick ?? (() => 0n), find, own, targetId, range);
     act.skillAct = null;
-    this.cmd = { index, targetId, useType };
+    this.cmd = walking ? { index, targetId, useType } : { index, targetId, useType, heldRange: range };
     return true;
   }
 

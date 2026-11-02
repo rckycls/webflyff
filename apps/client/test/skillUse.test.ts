@@ -657,6 +657,28 @@ describe('SkillUse: a target behind a wall (Piece 6 M0)', () => {
     return { at, destObjAt, corrAt };
   };
 
+  it('a skill pressed while the walk-up waits goes out once the wait ends, and the auto-attack carries on', () => {
+    // the auto-attack bumping at the wall, the Aibatt 5 m east: within the skill's 2.8 m through the wall
+    const r = rig({ ground: { ...terrainGround(() => 0), objectsNear: () => [wallAt(103)] } });
+    r.tap(MONSTER_ID);
+    r.tap(MONSTER_ID);
+    // the first bump ends a long walk; the walk-up again bumps at once, and the next one waits
+    for (let bump = 0; bump < 2; bump++) {
+      r.until(() => r.own.corrReport != null);
+      r.own.corrReport = null;
+    }
+    expect(r.own.approachWait).toBeGreaterThan(0);
+    const before = r.sent.length;
+    r.skills.useSlot(0);
+    // held at first, then the walk-up with the skill's range, which arrives and meets the wall's line-of-sight rule
+    r.until(() => r.texts.includes('TID_GAME_BLOCKTARGETING'), 7);
+    expect(r.sent.slice(before)).toContainEqual(['destObj', MONSTER_ID, 2]);
+    expect(r.skills.commanding).toBe(false);
+    const afterSkill = r.sent.length;
+    r.steps(12);
+    expect(r.sent.slice(afterSkill)).toContainEqual(['destObj', MONSTER_ID, 0]);
+  });
+
   it('a skill from the bar on a target behind a wall bumps once and asks no more', () => {
     const r = behindWall();
     const { at, destObjAt, corrAt } = counted(r, 300, () => {

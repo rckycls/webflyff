@@ -28,6 +28,7 @@ connection above 100. Neuz does the same, but it has no gateway in front of it.
   - `a skill from the bar on a target behind a wall bumps once and asks no more`.
   - `the action slot with a staff keeps walking up at most 10 times a second, within the traffic budget`. It failed at
     120 a second against the pre-fix `setOwnDestObj`, so a repeating action slot had the same flood.
+- `skillUse.test.ts`: `a skill pressed while the walk-up waits goes out once the wait ends, and the auto-attack carries on` (final review: a press during the wait was lost and stalled the auto-attack).
 - `itemActions.test.ts`: `a drop that is never picked up is asked for once, then given up after 6 s`.
 - `test/helpers/traffic.ts`: `TRAFFIC_BUDGET` (50 a second, half the gateway's limit) and `busiestSecond`.
 
@@ -36,7 +37,7 @@ tap-walk into a wall. Walking to an NPC sends no approach.
 
 ## Quick checks (run by the builder)
 
-- `npm test -- --maxWorkers=2 --reporter=dot`: 139 files passed; 2,913 tests passed, 8 skipped; exit 0.
+- `npm test -- --maxWorkers=2 --reporter=dot`: 139 files passed; 2,914 tests passed, 8 skipped; exit 0 (after the final-review fix).
 - `npm run typecheck`: all projects passed; exit 0.
 
 ## Owner checks

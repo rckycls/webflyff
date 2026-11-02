@@ -784,14 +784,15 @@ Open `http://localhost:5174` on the PC and `http://<PC-IP>:5174` on the phone.
 
 1. **Auto-attack across an obstacle.** Find a monster on the other side of a fence, a wall or a building corner, so that walking straight at it runs into the obstacle. Select it, then press the attack button (phone) or click it again (PC). Success: the character walks into the obstacle and keeps nudging at it; after 30 seconds you are still in the game, and "Too much data was sent." never shows.
 2. **Around the obstacle.** With the auto-attack still on, walk around the obstacle with the joystick or the keys, then select the monster and attack again. Success: once the way is clear, the character reaches the monster and fights it.
-3. **A skill across an obstacle.** Select a monster behind the obstacle again and use Clean Hit from the bar. Success: the character bumps into the obstacle once and stops, and you stay in the game. (If the monster is close enough for the skill's reach through the obstacle, "Blocked." shows instead: that is the Windows client's rule too, and also a pass.)
+3. **A skill across an obstacle.** Tap the ground first, to turn the auto-attack off. Select a monster behind the obstacle again and use Clean Hit from the bar. Success: the character bumps into the obstacle once and stops, and you stay in the game. (If the monster is close enough for the skill's reach through the obstacle, "This action has been blocked by an obstacle.." shows instead: that is the Windows client's rule too, and also a pass.)
+4. **A skill during the auto-attack.** Turn the auto-attack on again against the monster behind the obstacle and, while the character nudges at it, use Clean Hit. Success: within a moment the skill walks up (or shows the "blocked by an obstacle" line), and then the character goes back to nudging. It must not stand still with nothing happening.
 
 ## Results
 
-| Device | Browser | 1. Auto-attack across | 2. Around it | 3. Skill across | Notes |
-| --- | --- | --- | --- | --- | --- |
-| Phone | | | | | |
-| PC | Chrome | | | | |
+| Device | Browser | 1. Auto-attack across | 2. Around it | 3. Skill across | 4. Skill during auto-attack | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| Phone | | | | | | |
+| PC | Chrome | | | | | |
 
 ## Pass and fail
 
