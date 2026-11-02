@@ -1,6 +1,9 @@
 import type { CharacterSummary, ServerEntry } from '@flyffweb/protocol';
 import { UNEXPECTED_PROBLEM } from './errorText';
-import type { LobbyEvent, LoginFlow, WorldEntry } from './LoginFlow';
+import type { FlowClock, LobbyEvent, LoginFlow, WorldEntry } from './LoginFlow';
+import { systemClock } from './LoginFlow';
+import { Reconnect } from './reconnect';
+import type { DroppedWorld } from '../world/WorldScreen';
 import { alertElement, alreadyConnectedView } from './views/messageView';
 import { characterView } from './views/characterView';
 import { createView } from './views/createView';
@@ -42,6 +45,8 @@ export class LobbyApp {
    * entry, must not bring the lobby back over a later world.
    */
   private world: object | undefined;
+  /** The reconnect of a dropped world, while its box shows (Piece 6 M3): it takes the flow's events first. */
+  private reconnect: Reconnect | undefined;
 
   /**
    * `onEnter` takes over when the player enters the world with a character: it gets the `WorldEntry` (the lobby has let go of
@@ -56,10 +61,12 @@ export class LobbyApp {
   constructor(
     private readonly root: HTMLElement,
     private readonly flow: LoginFlow,
-    private readonly onEnter: (entry: WorldEntry, done: (message?: string) => void) => void,
+    private readonly onEnter: (entry: WorldEntry, done: (message?: string) => void, onDrop: (drop: DroppedWorld) => void) => void,
     private readonly onPlayTap: () => void = () => {},
     /** The page's audio: the title track plays whenever the login form is shown (Piece 6 M2). */
     private readonly audio: { title(): void } | null = null,
+    /** The reconnect's 5 minutes run on it. */
+    private readonly clock: FlowClock = systemClock,
   ) {
     this.mount();
     this.showLogin();
@@ -74,6 +81,7 @@ export class LobbyApp {
 
   /** What the flow reports. */
   handle(event: LobbyEvent): void {
+    if (this.reconnect?.handle(event) === true) return;
     switch (event.type) {
       case 'serverList':
         this.servers = event.servers;
@@ -210,7 +218,52 @@ export class LobbyApp {
       this.showLogin(message);
       // Back from the world: keyboard and screen-reader users start at the top of the form, as on any later screen.
       this.stage.querySelector<HTMLElement>('h2')?.focus();
+    }, (drop) => {
+      if (this.world === world) this.dropped(drop);
     });
+  }
+
+  /**
+   * The world dropped on its own (Piece 6 M3): its box offers Reconnect, a fresh login to the same channel and character
+   * (`Reconnect`), and Back to login. Whichever way it ends, the frozen world is closed first: into the new world through
+   * `enter`, or back to the lobby at the step the server's answer leads to.
+   */
+  private dropped(drop: DroppedWorld): void {
+    const leave = (): void => {
+      this.reconnect = undefined;
+      this.world = undefined;
+      drop.close();
+    };
+    const back = (show: () => void): void => {
+      leave();
+      this.mount();
+      show();
+      this.stage.querySelector<HTMLElement>('h2')?.focus();
+    };
+    this.reconnect = new Reconnect(this.flow, drop.kept, this.clock, {
+      box: (state) => drop.box(state),
+      enter: (character) => {
+        leave();
+        this.characters = [character];
+        this.enter(character);
+      },
+      toLogin: (message) => back(() => this.showLogin(message)),
+      toServers: (message, servers) => back(() => {
+        this.servers = servers;
+        this.showServers();
+        this.setAlert(message);
+      }),
+      toCharacters: (message, characters) => back(() => {
+        this.characters = characters;
+        this.showCharacters();
+        this.setAlert(message);
+      }),
+    }, drop.message);
+    drop.onReconnect = () => {
+      this.onPlayTap(); // the landscape lock, as the login and Enter taps ask (the plan's ruling 9)
+      this.reconnect?.tap();
+    };
+    drop.onBack = () => this.reconnect?.back();
   }
 
   /** Leaves the session: every connection is closed, and the login form is shown. */

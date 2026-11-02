@@ -49,6 +49,6 @@ const openChannel = openWebSocketChannel(clientConfig.gatewayUrl);
 let app: LobbyApp | undefined;
 const flow = new LoginFlow(openChannel, clientConfig.certifierAddress, (event) => app?.handle(event));
 // Entering opens the world screen over the page; when the world is over, `done` brings the login form back with its message.
-app = new LobbyApp(root, flow, (entry, done) => {
-  WorldScreen.open(root, entry, openChannel, done, audio);
+app = new LobbyApp(root, flow, (entry, done, onDrop) => {
+  WorldScreen.open(root, entry, openChannel, done, audio, onDrop);
 }, () => void landscape.requestLock(), audio);
