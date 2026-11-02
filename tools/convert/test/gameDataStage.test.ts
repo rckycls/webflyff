@@ -527,7 +527,7 @@ describe('the game-data stage', () => {
   }
 
   it('runs last among the default stages, after the effects and UI stages whose files it names', () => {
-    expect(DEFAULT_STAGES.map((s) => s.name)).toEqual(['textures', 'models', 'effects', 'ui', 'worlds', 'data']);
+    expect(DEFAULT_STAGES.map((s) => s.name)).toEqual(['textures', 'models', 'effects', 'ui', 'worlds', 'audio', 'data']);
   });
 
   it('writes every catalog, each once, under its hashed name', async () => {

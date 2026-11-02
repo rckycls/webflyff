@@ -1,6 +1,7 @@
 import os from 'node:os';
 import path from 'node:path';
 import { ClientFs } from './ClientFs';
+import { audioStage } from './audio/audioStage';
 import { gameDataStage } from './data/gameDataStage';
 import { effectsStage } from './effects/effectsStage';
 import { modelsStage } from './models/modelsStage';
@@ -31,10 +32,11 @@ export interface Stage {
 }
 
 /**
- * The stages a normal run executes, in this order: textures, then models, then effects, then UI, then worlds, then data.
- * A model names its textures only if they were written before it, an effect names the textures it converts itself and the
- * models of its mesh parts written before it, a world links the textures and models written before it, and the
- * game-data catalogs name the models, skeletons and motions, and the effect files and icons, written before them.
+ * The stages a normal run executes, in this order: textures, then models, then effects, then UI, then worlds, then audio,
+ * then data. A model names its textures only if they were written before it, an effect names the textures it converts
+ * itself and the models of its mesh parts written before it, a world links the textures and models written before it,
+ * and the game-data catalogs name the models, skeletons and motions, the effect files and icons, and the sounds and
+ * tracks, written before them.
  */
 export const DEFAULT_STAGES: readonly Stage[] = [
   texturesStage,
@@ -42,6 +44,7 @@ export const DEFAULT_STAGES: readonly Stage[] = [
   effectsStage,
   uiStage,
   worldsStage,
+  audioStage,
   gameDataStage,
 ];
 

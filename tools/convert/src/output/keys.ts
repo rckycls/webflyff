@@ -27,3 +27,12 @@ export const itemIconKeyOf = (iconFile: string): string => `ui/item/${webName(st
 
 /** `models/<web name>.glb` of an `.o3d` file name, as the models stage writes it. */
 export const modelKeyOf = (o3dFile: string): string => `models/${webName(stem(o3dFile))}.glb`;
+
+/** The last part of a path, with `\` or `/` separators. */
+const baseName = (file: string): string => file.split(/[\\/]/).pop() ?? file;
+
+/** `sound/<web name>.wav` of a WAV's file name or path, as the audio stage writes it (`InfClick.wav`). */
+export const soundKeyOf = (file: string): string => `sound/${webName(baseName(file))}`;
+
+/** `music/<web name>.ogg` or `.mp3` of a track's file name or path, as the audio stage writes it. */
+export const musicKeyOf = (file: string, ext: 'ogg' | 'mp3'): string => `music/${webName(stem(baseName(file)))}.${ext}`;
