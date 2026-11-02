@@ -20,6 +20,7 @@ import type { Vec3, WebEffect, WebUiSheet, WebUiSheets, WebWorldMap } from '@fly
 import type { AddedMover, BundleMessage, WorldMessage } from '@flyffweb/protocol';
 import {
   EffectRenderer, Joystick, KeyboardInput, WorldStage, effectTextureProvider, loadGltf, loopMotion, neuzRandom, attachHeld,
+  rendererCounts,
 } from '@flyffweb/scene';
 import type { EffectTextureProvider, Ground, LoopedMotion, SceneServices } from '@flyffweb/scene';
 import type { WebGLRenderer } from 'three';
@@ -359,6 +360,11 @@ export class WorldScreen {
         return own === undefined ? null : { hp: own.hp, level: own.level, actionPoint: own.taskBar?.actionPoint ?? null };
       },
       stats: () => ({ ...this.session.stats, errors: this.page?.overlay.snapshot().errors ?? [] }),
+      perf: () => {
+        if (this.page === undefined) throw new Error('no world page');
+        const { overlay, renderer } = this.page;
+        return { ...overlay.snapshot(), renderer: rendererCounts(renderer), loadedTiles: this.stage?.loadedTiles() ?? [] };
+      },
       camera: () => toWebPosition(this.backCamera.view?.position ?? [0, 0, 0]),
       pause: () => {
         this.paused = true;
@@ -1058,10 +1064,13 @@ export class WorldScreen {
   }
 
   private frame(now: number): void {
-    const dt = Math.min(.25, Math.max(0, (now - this.lastTime) / 1000));
+    // the Stats panel reads the frame's whole time (Piece 6 M5: capped, it could never show under 4 fps); the frame's
+    // other uses keep the quarter-second cap
+    const elapsed = Math.max(0, (now - this.lastTime) / 1000);
+    const dt = Math.min(.25, elapsed);
     this.lastTime = now;
     const { overlay, renderer } = this.page!;
-    overlay.frame(dt);
+    overlay.frame(elapsed);
     // paused, the frame runs only the steps the test hooks asked for, and tells them once it is drawn (or has failed)
     const asked = this.paused ? this.askedSteps : null;
     const drawn = this.paused ? this.stepsDrawn.splice(0) : [];
@@ -1099,6 +1108,8 @@ export class WorldScreen {
       overlay.setCounts({ tiles, models: models + views.count(), textures: this.services!.textures.size() });
       overlay.setMessageCounts(this.session.stats);
       stage.render();
+      // the world's own draw: the screen layers and a portrait after it render too, and three.js counts each render anew
+      overlay.setRenderCounts({ drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles });
       this.drawScreenLayers(world, stage, views, renderer);
       this.drawHud(world, now);
       // the world is on screen: `ready()` (a second call does nothing), and an ending from here on is a drop

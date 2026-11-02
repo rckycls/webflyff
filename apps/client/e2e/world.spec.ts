@@ -114,6 +114,20 @@ test.describe('the world screen against scripted servers', () => {
     expect(stats).toMatchObject({ bundles: 1, indexed: 1, skipped: 1, mismatched: 0, errors: [] });
   });
 
+  // Piece 6 M5: the Stats panel's numbers as the soak test reads them. The draw calls are the world frame's, read right
+  // after its render: a later pass (the screen layers, a portrait) draws a handful, Flaris's 3 x 3 tiles hundreds.
+  test('the stats hook reads the world frame: draw calls, triangles and three.js counts', async ({ page }) => {
+    await playGateway(page);
+    await enterFlaris(page);
+    const perf = () => page.evaluate(() => window.__client!.perf());
+    await expect.poll(async () => (await perf()).drawCalls, ON_FRAMES).toBeGreaterThan(50);
+    const numbers = await perf();
+    expect(numbers.triangles).toBeGreaterThan(0);
+    expect(numbers.renderer.programs).toBeGreaterThan(0);
+    expect(numbers.loadedTiles).toHaveLength(25);
+    expect(numbers.errors).toEqual([]);
+  });
+
   test('bundles after entering: a player comes into view, runs, and leaves', async ({ page }) => {
     const gateway = await playGateway(page);
     await enterFlaris(page);

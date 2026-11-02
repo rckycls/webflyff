@@ -16,6 +16,9 @@ export interface OverlaySnapshot {
   tiles: number;
   models: number;
   textures: number;
+  /** The world frame's draw calls and triangles (`renderer.info.render` right after its render), as the caller gives them. */
+  drawCalls: number;
+  triangles: number;
   device: string;
   /** The latest errors, oldest first (at most 100). */
   errors: string[];
@@ -61,6 +64,7 @@ export class Overlay {
   private nextFrame = 0;
   private sinceRedraw = 0;
   private counts = { tiles: 0, models: 0, textures: 0 };
+  private renderCounts = { drawCalls: 0, triangles: 0 };
   /** The game client's bundles and the messages in them it could not read; null (no line) until it says. */
   private messageCounts: MessageCounts | null = null;
   private gpuBytes = 0;
@@ -129,6 +133,11 @@ export class Overlay {
     this.counts = { tiles: c.tiles, models: c.models, textures: c.textures };
   }
 
+  /** The draw calls and triangles of the frame's main render, read by the caller from `renderer.info.render` after it. */
+  setRenderCounts(c: { drawCalls: number; triangles: number }): void {
+    this.renderCounts = { drawCalls: c.drawCalls, triangles: c.triangles };
+  }
+
   /**
    * The world's bundles, those of them with a table of contents (fewer than the bundles: the old world server), and their
    * messages that were skipped (of a type nothing reads) or did not end where the table says (spec §4): a line of their
@@ -158,6 +167,7 @@ export class Overlay {
       jsHeapBytes: jsHeapBytes(),
       gpuBytes: this.gpuBytes,
       ...this.counts,
+      ...this.renderCounts,
       device: this.device,
       errors: [...this.errors],
     };
@@ -180,6 +190,7 @@ export class Overlay {
       `fps ${s.fps.toFixed(1)}   frame ${s.frameMs.toFixed(1)} ms`,
       `heap ${s.jsHeapBytes === null ? 'n/a' : megabytes(s.jsHeapBytes)}   gpu (est) ${megabytes(s.gpuBytes)}`,
       `tiles ${s.tiles}   models ${s.models}   textures ${s.textures}`,
+      `draws ${s.drawCalls}   triangles ${s.triangles.toLocaleString('en-US')}`,
       `device: ${s.device}`,
     ];
     const m = this.messageCounts;

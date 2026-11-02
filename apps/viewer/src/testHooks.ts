@@ -4,20 +4,12 @@
 // the renderer's own counts).
 
 import type { Vec3 } from '@flyffweb/formats';
-import type { Overlay, OverlaySnapshot } from '@flyffweb/scene';
+import { rendererCounts as countsOf } from '@flyffweb/scene';
+import type { Overlay, OverlaySnapshot, RendererCounts } from '@flyffweb/scene';
 import type { WebGLRenderer } from 'three';
 
+export type { RendererCounts };
 export type WalkRoute = (points: Vec3[], speed: number) => Promise<void>;
-
-/**
- * What three.js itself holds (`renderer.info`): geometries and textures uploaded and not yet disposed, and shader
- * programs. The overlay's `gpuBytes` is the viewer's own bookkeeping; these catch what that bookkeeping misses.
- */
-export interface RendererCounts {
-  geometries: number;
-  textures: number;
-  programs: number;
-}
 
 export interface ViewerStats extends OverlaySnapshot {
   loadedTiles: string[];
@@ -58,9 +50,7 @@ export function registerRenderer(renderer: Pick<WebGLRenderer, 'info'> | null): 
 }
 
 function rendererCounts(): RendererCounts | null {
-  if (rendererImpl === null) return null;
-  const { memory, programs } = rendererImpl.info;
-  return { geometries: memory.geometries, textures: memory.textures, programs: programs?.length ?? 0 };
+  return rendererImpl === null ? null : countsOf(rendererImpl);
 }
 
 /**

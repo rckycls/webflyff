@@ -5,12 +5,22 @@
 // `VITE_TEST_HOOKS=1` only, so a public build has no `window.__client`.
 
 import type { Vec3 } from '@flyffweb/protocol';
+import type { OverlaySnapshot, RendererCounts } from '@flyffweb/scene';
 import type { SessionStats } from './world/WorldSession';
 
 /** The session's counts of what its bundles held, and the overlay's errors. */
 export interface ClientStats extends SessionStats {
   /** The latest errors the overlay lists, oldest first. */
   errors: string[];
+}
+
+/**
+ * The Stats panel's numbers (Piece 6 M5), three.js' own counts of what it holds (`renderer.info`) and the map tiles the
+ * stage has loaded: what the soak test compares from lap to lap.
+ */
+export interface ClientPerf extends OverlaySnapshot {
+  renderer: RendererCounts;
+  loadedTiles: string[];
 }
 
 /**
@@ -60,6 +70,8 @@ export interface ClientHooks {
   /** The own character's numbers, made as the JOIN enters the world; null before, or with no own mover in it. */
   own(): ClientOwn | null;
   stats(): ClientStats;
+  /** The Stats panel's numbers, three.js' counts and the loaded tiles (`ClientPerf`). */
+  perf(): ClientPerf;
   /** Where the chase camera looks from, in the client's (D3D) coordinates, as last drawn ([0, 0, 0] before). */
   camera(): Vec3;
   /** Stops the rules and holds every model at the first frame of its motion, for pictures. Drawing goes on. */
@@ -104,6 +116,7 @@ export function createClientHooks(): ClientHooks {
     movers: () => current().movers(),
     own: () => current().own(),
     stats: () => current().stats(),
+    perf: () => current().perf(),
     camera: () => current().camera(),
     pause: () => current().pause(),
     step: async (steps) => current().step(steps),

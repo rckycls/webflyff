@@ -206,3 +206,33 @@ describe('Overlay placement', () => {
     expect(box).toContain('padding:max(6px, env(safe-area-inset-top)) 8px 6px max(8px, env(safe-area-inset-left));');
   });
 });
+
+describe('Overlay render counts and frame times (Piece 6 M5)', () => {
+  it('shows the draw calls and triangles it is given', () => {
+    vi.stubGlobal('performance', {});
+    const { overlay, root } = overlayOn();
+    overlay.setRenderCounts({ drawCalls: 412, triangles: 183_500 });
+    overlay.frame(0.3); // past the redraw interval
+
+    expect(overlay.snapshot()).toMatchObject({ drawCalls: 412, triangles: 183_500 });
+    expect(root.find('pre').textContent).toContain('draws 412   triangles 183,500');
+  });
+
+  it('reads a long frame as a low, finite rate', () => {
+    vi.stubGlobal('performance', {});
+    const { overlay } = overlayOn();
+    overlay.frame(60);
+
+    const { fps } = overlay.snapshot();
+    expect(Number.isFinite(fps)).toBe(true);
+    expect(fps).toBeGreaterThan(0);
+  });
+
+  it('reads zero-length frames as 0 fps, not Infinity', () => {
+    vi.stubGlobal('performance', {});
+    const { overlay } = overlayOn();
+    for (let i = 0; i < 60; i++) overlay.frame(0);
+
+    expect(overlay.snapshot().fps).toBe(0);
+  });
+});

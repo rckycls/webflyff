@@ -20,6 +20,7 @@ export * from './overlay/Overlay';
 export * from './overlay/device';
 export * from './overlay/errorHandlers';
 export * from './overlay/gpuMemory';
+export * from './overlay/rendererCounts';
 export * from './world/TerrainTile';
 export * from './world/WorldStage';
 export * from './world/collision';
