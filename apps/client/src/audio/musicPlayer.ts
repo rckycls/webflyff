@@ -33,6 +33,9 @@ export class MusicPlayer implements MusicPort {
   private gain = 1;
   private readonly failed = new Set<string>();
   private readonly ogg: boolean;
+  /** The URL of the current track, and the one the element was last given (null when it has not been yet). */
+  private url: string | null = null;
+  private loaded: string | null = null;
 
   constructor(
     private readonly element: HTMLAudioElement,
@@ -74,7 +77,9 @@ export class MusicPlayer implements MusicPort {
       return;
     }
     this.element.loop = loops === 0;
-    this.element.src = url;
+    // the file is given to the element when it starts: nothing is downloaded before the first gesture
+    this.url = url;
+    this.loaded = null;
     this.state = 'playing';
     this.played(key);
     this.start();
@@ -143,6 +148,10 @@ export class MusicPlayer implements MusicPort {
     }
     this.pending = false;
     const key = this.key;
+    if (this.url !== null && this.loaded !== this.url) {
+      this.element.src = this.url; // from its start
+      this.loaded = this.url;
+    }
     this.element.play().catch((error: unknown) => {
       // refused until another gesture: the track stays playing, waiting; an AbortError is a newer play's
       if (error instanceof DOMException && error.name === 'NotAllowedError' && this.key === key && this.state === 'playing') {

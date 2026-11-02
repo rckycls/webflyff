@@ -110,6 +110,7 @@ describe('GameAudio: music before and after the first gesture', () => {
     audio.music.playFile('music/flaris.ogg', 1);
     expect(audio.music.isStopped()).toBe(false);
     expect(media.plays).toEqual([]);
+    expect(media.src).toBe(''); // not even downloaded before the gesture
     tap();
     expect(media.plays).toEqual(['/assets/music/flaris.ogg']);
     tap();
