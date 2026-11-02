@@ -1,6 +1,6 @@
 # Piece 6 — Classic V15 research and implementation gates
 
-Research date: 2026-11-01. Status: initial source survey completed; feature-specific trace and corpus checks are required before implementation. This document does not claim that Piece 6 is implemented or that live-device acceptance passed.
+Research date: 2026-11-01. Status: first survey, used by the Piece 6 spec of 2026-11-02 (`2026-11-02-piece6-design.md`). Each milestone plan closes its gates. One fact here is out of date: the client no longer requests fullscreen (`apps/client/src/landscape.ts:10`).
 
 ## Evidence rules
 
