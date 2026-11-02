@@ -88,6 +88,8 @@ export interface ItemProp {
   sfxObj5: number;
   /** `dwSndAttack1`: the sound of a hit (`SND_*`). */
   sndAttack1: number;
+  /** `dwSndAttack2`: the sound of a critical hit (`DPClient.cpp:1903-1907`), when it names one. */
+  sndAttack2?: number;
   /**
    * `dwReqDisLV`: of a skill, the character level that unlocks it. `CMover::CheckSkill` refuses a skill when
    * `!IsMaster() && !IsHero() && GetLevel() < (int)dwReqDisLV` (MoverParam.cpp:124, the `__VER >= 10` branch): a Master or
@@ -197,6 +199,7 @@ const KEPT: ReadonlySet<string> = new Set([
   'nReflect',
   'dwSfxObj5',
   'dwSndAttack1',
+  'dwSndAttack2',
   'dwReferStat1',
   // the columns of a skill row
   'dwReqDisLV',
@@ -311,6 +314,7 @@ export function readPropItem(
         sfxObj3: kept.dwSfxObj3,
         sfxObj5: kept.dwSfxObj5,
         sndAttack1: kept.dwSndAttack1,
+        ...(kept.dwSndAttack2 > 0 ? { sndAttack2: kept.dwSndAttack2 } : {}),
         reqLevel: kept.dwReqDisLV,
         reSkills: [kept.dwReSkill1, kept.dwReSkill2],
         reSkillLevels: [kept.dwReSkillLevel1, kept.dwReSkillLevel2],

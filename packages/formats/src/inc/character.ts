@@ -25,6 +25,8 @@ export interface CharacterDef {
   vendorType?: number;
   /** AddTeleport order is the server's destination index; V15 targets Madrigal. */
   teleports?: Array<{ x: number; z: number }>;
+  /** `SetMusic( bgm )`: `m_dwMusicId`, the track its dialog plays (WndDialog.cpp:290-297), when it names one. */
+  music?: number;
   /** The first token of the block as written (`CHARACTER::m_szKey`; the C++ looks characters up in lower case). */
   key: string;
   /** `m_strName`: the text of `SetName ( IDS_... )` or `m_szName = ...`, the last one in the block; '' if none. */
@@ -123,6 +125,13 @@ export function readCharacterInc(
           r.token(); character.dialogFile = r.token('dialogue file').text; break;
         case 'SetVenderType':
           r.token(); character.vendorType = r.number('vendor type'); r.token(); break;
+        case 'SetMusic': { // ( bgm: m_dwMusicId = GetNumber (Project.cpp:2983-2987)
+          r.token();
+          const music = r.number('music');
+          if (music > 0) character.music = music;
+          else delete character.music;
+          break;
+        }
         case 'AddVendorSlot': {
           r.token(); const slot = r.number('vendor tab'); r.token();
           const label = langScript();

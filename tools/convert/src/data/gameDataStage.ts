@@ -28,6 +28,7 @@
 
 import path from 'node:path';
 import {
+  AUDIO_KEY,
   FormatError,
   GAME_DATA_KEYS,
   OT,
@@ -64,6 +65,7 @@ import type {
   WebWorlds,
 } from '@flyffweb/formats';
 import type { ClientFs } from '../ClientFs';
+import { SOUND_INC, effectSoundParts } from '../audio/audioSources';
 import { skeletonOfMotion } from '../models/skeletonFor';
 import type { AssetWriter } from '../output/AssetWriter';
 import { effectKeyOf, itemIconKeyOf, modelKeyOf, stem } from '../output/keys';
@@ -72,6 +74,7 @@ import type { Stage, StageContext } from '../run';
 import { matchesOnly, plural } from '../util';
 import { readModelIndexes } from './modelIndexes';
 import type { ModelIndex } from './modelIndexes';
+import { buildAudio } from './audioCatalog';
 import { buildSkills } from './skillsCatalog';
 import { WORLD_MAP_CNT, buildWorldMap } from './worldMapCatalog';
 
@@ -568,6 +571,36 @@ export const gameDataStage: Stage = {
       }
     } catch (error) {
       ctx.report.fail(KIND, error instanceof FormatError ? error.file : WORLD_MAP_CNT, error);
+    }
+
+    // The audio catalog (Piece 6 M2), optional in the same way: without sound.inc there is none, and the client is
+    // silent (AUDIO_KEY is not one of GAME_DATA_KEYS). It names only the files the audio stage wrote.
+    if (ctx.client.find(SOUND_INC.dir, SOUND_INC.name) === null) {
+      ctx.report.warn(KIND, 'Client/sound.inc', 'not in the client folder, so there is no audio catalog');
+    } else try {
+      const read = new Reading(ctx.client);
+      const audio = buildAudio({
+        client: ctx.client,
+        defines: env.defines,
+        effectParts: effectSoundParts(env.models()),
+        worlds: readWorldInc(read.text('World.inc'), env.defines, 'World.inc'),
+        items: readPropItem(read.text('propItem.txt'), env.defines, env.strings, 'propItem.txt'),
+        skills: readPropItem(read.text('propSkill.txt'), env.defines, env.strings, 'propSkill.txt'),
+        movers: readPropMover(read.text('propMover.txt'), env.defines, env.strings, 'propMover.txt'),
+        characters: CHARACTER_FILES.flatMap((file) => readCharacterInc(read.text(file), env.defines, env.strings, file)),
+        has: (key) => ctx.writer.pathOf(key) !== undefined,
+        warn: (source, message) => ctx.report.warn(KIND, source, message),
+        counted: (bytes) => {
+          read.bytes += bytes;
+        },
+      });
+      if (audio !== null) {
+        const bytes = new TextEncoder().encode(JSON.stringify(audio));
+        await ctx.writer.write(AUDIO_KEY, bytes, 'Client/sound.inc');
+        ctx.report.ok(KIND, 'Client/sound.inc', read.bytes, bytes.length);
+      }
+    } catch (error) {
+      ctx.report.fail(KIND, error instanceof FormatError ? error.file : 'Client/sound.inc', error);
     }
   },
 };

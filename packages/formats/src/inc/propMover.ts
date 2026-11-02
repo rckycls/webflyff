@@ -47,6 +47,8 @@ export interface MoverProp {
    * (Mover.cpp:1536), which `GetActiveHandItemProp` gives for a mover that is not a player (:2960-2966). -1 (`=`) for none.
    */
   atk1: number;
+  /** `dwSndIdle1`: the sound a click on the mover plays (WndWorld.cpp:7063), when it names one. */
+  sndIdle1?: number;
 }
 
 const READER = 'readPropMover';
@@ -125,6 +127,7 @@ export function readPropMover(
     let hideLevel = 0;
     let element = 0;
     let atk1 = 0;
+    let sndIdle1 = 0;
     for (const [column, kind] of MOVER_COLUMNS) {
       if (kind === 'float') {
         const value = r.float(column);
@@ -143,12 +146,14 @@ export function readPropMover(
         else if (column === 'dwHideLevel') hideLevel = value;
         else if (column === 'eElementType') element = value;
         else if (column === 'dwAtk1') atk1 = value;
+        else if (column === 'dwSndIdle1') sndIdle1 = value;
       }
     }
     r.token('the last column'); // the column after dwSndIdle2, which the C++ reads and drops
 
     movers.push({
       index, name, speed, ai, flying, level, addHp, expValue, rank, belligerence, killable, hideLevel, element, atk1,
+      ...(sndIdle1 > 0 ? { sndIdle1 } : {}),
     });
   }
 

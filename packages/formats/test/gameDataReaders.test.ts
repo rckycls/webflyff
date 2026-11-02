@@ -212,6 +212,14 @@ describe('readPropMover', () => {
   );
   const HEADER = script('//dwID\tszName\tdwAI\tdwStr', '//\t\t\t\t');
 
+  it('keeps dwSndIdle1, the sound of a click on the mover (WndWorld.cpp:7063), when it names one', () => {
+    const cells = AIBATT1.split('\t');
+    cells[80] = 'SND_ITEM_ANIMAL'; // dwSndIdle1
+    const [plain, clicked] = readPropMover(script(DEFAULT, cells.join('\t')), DEFINES, STRINGS);
+    expect(plain!.sndIdle1).toBeUndefined();
+    expect(clicked!.sndIdle1).toBe(32);
+  });
+
   it('reads the id, the name (through the string table), the AI and the speed of each row', () => {
     const text = script(DEFAULT, MALE, AIBATT1);
     const movers = readPropMover(HEADER + text, DEFINES, STRINGS, 'propMover.txt');
@@ -467,6 +475,7 @@ describe('readPropItem', () => {
       sfxObj3: 20, // XI_HIT_SWORD01
       sfxObj5: -1,
       sndAttack1: 117, // SND_PC_DMGSWDM
+      sndAttack2: 119, // SND_PC_DMGSWDC: the critical hit's sound (DPClient.cpp:1903-1907)
       // the skill columns: an item has none of them (`=`), except that dwSubDefine is the sound an item makes when dropped
       reqLevel: -1,
       reSkills: [-1, -1],
@@ -629,7 +638,7 @@ describe('readCharacterInc', () => {
     const text = script('//header comment', '/* block', 'comment */', ...MIKYEL, '', ...player);
     expect(readCharacterInc(text, DEFINES, STRINGS, 'character.inc')).toEqual([
       { key: 'MaFl_Mikyel', name: 'Mikyel', menus: [0], dialogFile: 'MaFl_Mikyel.txt' },
-      { key: 'MaFl_Player', name: 'Luda', menus: [0] },
+      { key: 'MaFl_Player', name: 'Luda', menus: [0], music: 201 },
     ]);
   });
 
