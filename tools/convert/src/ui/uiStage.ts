@@ -73,6 +73,15 @@ export const THEME_FILES: readonly string[] = [
   'ButtTeleport.bmp',
   'ImgNavPos.tga',
   'WORLD_Flyff.dds',
+  // CWorldMap (WorldMap.cpp:92-225), Piece 6 M1: the continents' pictures, the buttons, each continent's monster icons,
+  // the player's arrow, and the 9 pieces of the tooltip it opens (tooltip.cpp:70-89).
+  'WORLD_Darkon12.dds', 'WORLD_Darkon3.dds', 'WORLD_Ricis.dds', 'WORLD_Saint.dds', 'WORLD_Flaris.dds',
+  'WORLD_harmonin.dds', 'WORLD_Estia.dds',
+  'TexMapButton.bmp',
+  'TexMapMonster_Darkon12.bmp', 'TexMapMonster_Darkon3.bmp', 'TexMapMonster_Ricis.bmp', 'TexMapMonster_Saint.bmp',
+  'TexMapMonster_Flaris.bmp', 'TexMapMonster_Harmonin.bmp', 'TexMapMonster_Estia.bmp',
+  'ImgMapArrow.bmp',
+  ...numbered('WndTooltipTile', 0, 8, '.tga'),
   // V15 inventory: APP_INVENTORY (resdata.inc), CWndInventory::OnInitialUpdate (WndField.cpp).
   'WndInventory3D.tga',
   'WndInventoryGarbage.dds',

@@ -31,6 +31,7 @@ import {
   FormatError,
   GAME_DATA_KEYS,
   OT,
+  WORLD_MAP_KEY,
   decodeScript,
   loadDefines,
   loadStrings,
@@ -72,6 +73,7 @@ import { matchesOnly, plural } from '../util';
 import { readModelIndexes } from './modelIndexes';
 import type { ModelIndex } from './modelIndexes';
 import { buildSkills } from './skillsCatalog';
+import { WORLD_MAP_CNT, buildWorldMap } from './worldMapCatalog';
 
 const KIND = 'data';
 const MODEL_DIR = 'Model';
@@ -539,6 +541,27 @@ export const gameDataStage: Stage = {
         // a FormatError names the file it came from (the model index, say); anything else is about the catalog
         ctx.report.fail(KIND, error instanceof FormatError ? error.file : source, error);
       }
+    }
+
+    // The world map (Piece 6 M1), optional: without the continent file there is no catalog, and the client still logs in
+    // (WORLD_MAP_KEY is not one of GAME_DATA_KEYS).
+    try {
+      let read = 0;
+      const map = buildWorldMap({
+        client: ctx.client,
+        defines: env.defines,
+        warn: (source, message) => ctx.report.warn(KIND, source, message),
+        counted: (bytes) => {
+          read += bytes;
+        },
+      });
+      if (map !== null) {
+        const bytes = new TextEncoder().encode(JSON.stringify(map));
+        await ctx.writer.write(WORLD_MAP_KEY, bytes, WORLD_MAP_CNT);
+        ctx.report.ok(KIND, WORLD_MAP_CNT, read, bytes.length);
+      }
+    } catch (error) {
+      ctx.report.fail(KIND, error instanceof FormatError ? error.file : WORLD_MAP_CNT, error);
     }
   },
 };

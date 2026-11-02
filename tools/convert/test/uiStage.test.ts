@@ -38,6 +38,12 @@ describe('the theme list', () => {
     // the task bar's Start menu (CWndTaskMenu::OnInitialUpdate, WndTaskBar.cpp:2646)
     expect(lower).toContain('wndtaskmenu.tga');
     expect(lower).toContain('wndinventory3d.tga');
+    // the world map (WorldMap.cpp:92-225): 8 pictures, the buttons, 7 monster sheets, the arrow, the tooltip's 9 pieces
+    expect(lower.filter((file) => /^world_\w+\.dds$/.test(file))).toHaveLength(8);
+    expect(lower.filter((file) => /^texmapmonster_\w+\.bmp$/.test(file))).toHaveLength(7);
+    expect(lower.filter((file) => /^wndtooltiptile0\d\.tga$/.test(file))).toHaveLength(9);
+    expect(lower).toContain('texmapbutton.bmp');
+    expect(lower).toContain('imgmaparrow.bmp');
   });
 });
 

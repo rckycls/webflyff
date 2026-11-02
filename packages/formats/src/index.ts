@@ -55,6 +55,8 @@ export { readContinents } from './inc/continent';
 export type { ContinentPolygon } from './inc/continent';
 export { readMapMonsterPack } from './inc/mapMonsterPack';
 export type { MapFrame, MapMonsterPack, MapMonsterRow } from './inc/mapMonsterPack';
+export { WORLD_MAP_KEY } from './web/worldMap';
+export type { WebWorldMap, WebWorldMapEntry } from './web/worldMap';
 export { readWorldInc } from './inc/worldInc';
 export type { WorldDef } from './inc/worldInc';
 export { readChr } from './model/chr';
