@@ -4,6 +4,9 @@
 // Positions are FlyFF positions (D3D), as `PLAYSND( id, &pos )` is given them.
 
 import type { WebAudio } from '@flyffweb/formats';
+import { AttackFlag } from '@flyffweb/protocol';
+import type { OwnEvent } from '../OwnState';
+import type { CombatEvent } from '../WorldState';
 import {
   BGM_IN_BOSS, BGM_IN_DEATH, BGM_IN_LEVELUP, NO_DEATH_MUSIC, RANK_BOSS, SND_INF_GROUNDDROP, SND_INF_GROUNDPICKUP,
   SND_INF_TRADE, SND_WALK_LANDSOFT, XI_SOUNDS,
@@ -130,6 +133,30 @@ export class WorldSounds {
   /** The own player levelled up (MoverParam.cpp:1483, :1728). */
   ownLevelUp(): void {
     this.music.play(BGM_IN_LEVELUP, 1);
+  }
+
+  /**
+   * What a combat event of the rules plays: a melee hit that lands (`attackerHit`, the hit frame of the swing), a
+   * DAMAGE with AF_CRITICAL, and a skill's launch on its hit frame (`skillHit`, where the skill's effect is made). `mover`
+   * is a mover in view: its FlyFF position and its active-hand item (`WorldState.handItem`).
+   */
+  combatEvent(event: CombatEvent, mover: (id: number) => { pos: Vec; weapon: number | null } | undefined): void {
+    if (event.kind === 'attackerHit') {
+      const attacker = mover(event.attackerId);
+      if (attacker !== undefined) this.meleeHit(attacker.pos, event.weapon ?? undefined);
+    } else if (event.kind === 'hit' && (event.flags & AttackFlag.CRITICAL) !== 0) {
+      const attacker = mover(event.attackerId);
+      if (attacker !== undefined) this.critical(attacker.pos, attacker.weapon ?? undefined);
+    } else if (event.kind === 'skillHit') {
+      const caster = mover(event.casterId);
+      if (caster !== undefined) this.skillCast(caster.pos, event.skill);
+    }
+  }
+
+  /** What an own event plays: the death and level-up jingles. */
+  ownEvent(event: OwnEvent, worldId: number): void {
+    if (event.kind === 'died') this.ownDeath(worldId);
+    else if (event.kind === 'levelUp') this.ownLevelUp();
   }
 
   /** An NPC added (DPClient.cpp:1252-1259): a boss within 30 m plays BGM_IN_BOSS. */

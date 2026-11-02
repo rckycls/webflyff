@@ -127,3 +127,27 @@ describe('WorldSounds: the jingles [R §6]', () => {
     expect(music).toEqual([]);
   });
 });
+
+describe('WorldSounds: the events of WorldState and OwnState', () => {
+  const movers = new Map([[7, { pos: P, weapon: 505 }], [8, { pos: { x: 1, y: 2, z: 3 }, weapon: null }]]);
+  const mover = (id: number) => movers.get(id);
+
+  it('a landed melee hit, a critical DAMAGE and a skill\'s launch, at the attacker', () => {
+    const { world, sounds } = setup();
+    world.combatEvent({ kind: 'attackerHit', attackerId: 7, victimId: 8, weapon: 505 }, mover);
+    world.combatEvent({ kind: 'attackerHit', attackerId: 8, victimId: 7, weapon: null }, mover);
+    world.combatEvent({ kind: 'hit', victimId: 8, attackerId: 7, hit: 5, flags: 0x40, attackerInView: true }, mover);
+    world.combatEvent({ kind: 'hit', victimId: 8, attackerId: 7, hit: 5, flags: 0, attackerInView: true }, mover);
+    world.combatEvent({ kind: 'skillHit', casterId: 7, targetId: 8, skill: 1, landed: true }, mover);
+    world.combatEvent({ kind: 'swing', attackerId: 7, targetId: 8 }, mover);
+    expect(sounds).toEqual([{ id: 115, at: P }, { id: 119, at: P }, { id: 140, at: P }]);
+  });
+
+  it('the own death and level-up', () => {
+    const { world, music } = setup();
+    world.ownEvent({ kind: 'died' }, 1);
+    world.ownEvent({ kind: 'levelUp', from: 1, to: 2, chatLine: true }, 1);
+    world.ownEvent({ kind: 'revived' }, 1);
+    expect(music).toEqual([[22, 1], [23, 1]]);
+  });
+});
