@@ -848,3 +848,39 @@ Milestone 1 passes when every cell above is `pass` and the tests below pass.
 | `$env:FLYFF_CLIENT = 'C:\Users\silec\Desktop\FlyFF\Bakbak\Blouflash VS22 V15\Client'; npm run test:corpus` | about 10 minutes | No `failed`. Run `Remove-Item Env:FLYFF_CLIENT` afterwards. |
 
 If one fails, send me the lines from the first `failed` down to the end.
+
+## Piece 6, milestone 2: music and sound
+
+The game's own music and sound, as the Windows client plays them. The music follows where you walk: the title track on the login screen, then each region's track in the world. The death, level-up, NPC and boss tracks cut in over it, and the region's track comes back from its start when they end. Effects come from the animations (swings, being hit, dying), footsteps, hits, criticals, skills, potions, equipping, picking up, gold, the shop, dropping items and every button. **Start → Option** has the Windows client's two sliders, **BGM** and **Sound Effect**. The browser remembers them.
+
+**Before you start:** the iPhone check (step 9) needs the MP3 copies of the music, which FFmpeg makes. Install it once (`winget install --id Gyan.FFmpeg -e`), open a new PowerShell, and in the piece6 folder run `npm run convert -- --only audio,data --client "C:\Users\silec\Desktop\FlyFF\Bakbak\Blouflash VS22 V15\Client"` (about a minute). It ends with `0 failed`.
+
+**What the test character needs:** a character in Flaris that can fight, with a potion, a piece of equipment to put on and take off, and some penya. For step 6, a monster that can kill it, or a way to die. For step 5, a level-up close by, or a game-master character.
+
+**Start the client** from the piece6 folder, as in milestone 0. Turn the sound up on each device.
+
+**Steps**, on the PC, an Android phone and an iPhone:
+
+1. **The title track.** Open the page and wait. Success: no sound before you touch anything. Tap the Account field, or click it. Success: the title music starts, and keeps playing through the server and character lists.
+2. **The town.** Enter Flaris. Success: the title music stops while it loads, then the Flaris town music plays. Each button you press clicks.
+3. **The field and another town.** Walk north out of Flaris, to about x 7100, z 3638 (the stats panel shows where you are). Success: the field music starts. Teleport or walk to Saint Morning. Success: its own town music.
+4. **The fight.** Attack a monster. Success: each swing has its sound, each hit its weapon sound, a critical its own, and the monster's hurt and death cries play. Your footsteps patter while you run. Use a skill. Success: its sounds play with its animation.
+5. **The jingles.** Level up. Success: a short level-up tune cuts in, and the region's music comes back from its start after it. Talk to Benku in Flaris. Success: his dialog plays its own tune.
+6. **Dying.** Let a monster kill you. Success: the death tune plays.
+7. **Items.** Drink a potion, put on and take off a piece of equipment, pick up an item, and buy and sell at a shop. Success: each has its sound, and the gold changes ring.
+8. **The Option window.** Tap **Start → Option**. Move **BGM** to 0: the music goes quiet, and the game goes on. Move **Sound Effect** to 0: no more effects. Put both back, reload the page and open the window again. Success: the sliders are where you left them.
+9. **The browser's rules.** Switch to another tab or app for a minute during a fight, then come back. Success: everything was quiet while you were away, the music carries on, and no burst of old sounds plays. On an iPhone before iOS 18.4, the music plays at all (from its MP3 copy).
+
+## Results
+
+| Device | Browser | 1. Title | 2. Town | 3. Field and Saint Morning | 4. Fight | 5. Jingles | 6. Dying | 7. Items | 8. Option | 9. Browser rules | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| PC | Chrome | | | | | | | | | | |
+| Android phone | Chrome | | | | | | | | | | |
+| iPhone | Safari | | | | | | | | | | |
+
+## Pass and fail
+
+Milestone 2 passes when every cell above is `pass` and the tests of the milestone 3 section pass (the two milestones are tested together).
+
+**Listen closely to these,** because the tests can't judge them: left and right. A monster on the right of the screen should sound from the right. The Windows client's own left and right could not be checked here, so tell me if it sounds wrong. Also tell me any sound that plays twice.

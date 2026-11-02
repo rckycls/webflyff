@@ -337,6 +337,7 @@ play.example.com {
 
 What it does:
 
+- Sound and music (Piece 6, milestone 2) are plain files of `dist\assets`: `.wav` effects, `.ogg` music and `.mp3` copies, served as `audio/wav`, `audio/ogg` and `audio/mpeg`. Caddy's `file_server` sends those types and answers the Range requests a browser streams music with. They are already compressed, or small, so `encode` leaves them alone. They add about 240 MB to `dist\assets`, fetched only as each sound first plays.
 - `encode zstd gzip` compresses supported responses. Fingerprinted game files are cached for one year as immutable; the mutable asset index and reports do not get this policy. New conversions produce new fingerprinted URLs.
 
 - `/connect/*` goes to the gateway. Caddy passes WebSocket connections through by itself and adds the player's address in the `X-Forwarded-For` header, which is what the gateway reads (because of `trustedProxies`).

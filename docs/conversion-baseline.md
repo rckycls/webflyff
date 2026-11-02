@@ -179,6 +179,21 @@ Milestone 2 (skills) changed only the data and ui stages again, each regenerated
 
 **After pulling a version with these changes,** run `npm run convert -- --only ui,data` (about 20 seconds), then copy `dist/assets` to the VM again. Without `skills.json`, entering the world stops with a message that the game files are out of date.
 
+## The audio stage (Piece 6, milestone 2)
+
+The audio stage is new. It copies the game's sounds and music as they are, and makes an MP3 copy of each track with FFmpeg. The data stage then writes `data/audio.json` from `sound.inc`, `default.bgm`, the worlds' `.wld` and `.rgn` files, the props' sound columns and `mdlDyna.inc`. Run on the real client on 2026-11-02, without FFmpeg (not yet installed on this PC):
+
+| Kind | Files | Bytes | Notes |
+| --- | --- | --- | --- |
+| `sound` | 1,150 `.wav` | about 164 MB | Every WAV that `sound.inc` or an `mdlDyna.inc` effect names and the folder has. One warning lists the 350 `sound.inc` names the folder lacks. The 179 WAVs no script names are not copied. |
+| `music` | 36 `.ogg` | about 55 MB | The 38 tracks `default.bgm` names, less the 2 it names that are missing (`Bgm4DuDarkon.ogg`, `BgmFiDarkon.ogg`). |
+| `musicMp3` | 0 | 0 | One failure, "FFmpeg not found", until FFmpeg is installed. Then 36 `.mp3` at 128 kbit/s. |
+| `data/audio.json` | 1 | 88 KB | 1,136 sound ids, 40 music ids, 52 worlds' music (Madrigal's 109 regions), 217 effect sounds, 682 items, 33 skills, 4 movers, 8 NPC tracks. |
+
+The audio stage took 6 s and the data stage 9 s. The data stage still gives 82 warnings, none from audio.
+
+**After pulling this version,** run `npm run convert -- --only audio,data,buttspin,wndvolumebar` once FFmpeg is installed, then copy `dist/assets` to the VM again. Without `audio.json` the game is silent and says so once in the overlay.
+
 ## Compression
 
 Measured over every converted file (not a sample) with Node `zlib`: `gzipSync` at the default level and `brotliCompressSync` at quality 5. This is what a static host that compresses on the fly, or a CDN, would send. Average is per file.
