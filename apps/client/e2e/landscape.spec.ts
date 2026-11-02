@@ -214,9 +214,11 @@ test.describe('landscape (spec §3.10)', () => {
     });
   }
 
-  // Ruling R27: the Start menu drawn for a finger, its top edge, Piece 4's four lines and its bottom edge at up to twice
-  // their size, each line its whole row
-  test("on a touch phone all six Start menu entries fit with contiguous touch targets", async ({ page }) => {
+  // Ruling R27: the Start menu drawn for a finger, its top edge, its lines and its bottom edge at up to twice their size,
+  // each line its whole row. Eight lines since Piece 6 (World Map in M1, Option in M2): the 252 px menu fits 750 x 342's
+  // room above the bar about 1.14 times, so a line is about 25 px there, still more than Neuz's 20 (the owner's choice,
+  // 2026-11-03: every line of the Windows client kept, over the 28 px of six lines)
+  test("on a touch phone all eight Start menu entries fit with contiguous touch targets", async ({ page }) => {
     test.skip(!isTouch(), 'a mouse gets the menu at its size');
     await playGateway(page);
     await enterFlaris(page);
@@ -230,9 +232,9 @@ test.describe('landscape (spec §3.10)', () => {
         const box = item.getBoundingClientRect();
         return { top: box.top, bottom: box.bottom, height: box.height };
       }));
-      expect(lines).toHaveLength(6);
+      expect(lines).toHaveLength(8);
       for (const line of lines) {
-        expect(line.height, `a line at ${size.width} x ${size.height}`).toBeGreaterThanOrEqual(28);
+        expect(line.height, `a line at ${size.width} x ${size.height}`).toBeGreaterThanOrEqual(24);
         expect(line.height, `a line at ${size.width} x ${size.height}`).toBeLessThanOrEqual(44.5);
       }
       for (let i = 1; i < lines.length; i++) expect(lines[i]!.top).toBeCloseTo(lines[i - 1]!.bottom, 1);

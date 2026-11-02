@@ -498,7 +498,11 @@ test.describe('the world screen against scripted servers', () => {
     await expect(slot('item', 1).locator('.hud-slot-count')).toHaveText('1');
     await expect(slot('item', 2)).toHaveAttribute('data-kind', 'plain');
     if (isMobile) await expect(page.locator('.hud-slot[data-row=applet]')).toHaveCount(0);
-    else await expect(slot('applet', 1).locator('.hud-slot-hotkey')).toHaveText('J');
+    else {
+      // APP_COMM_ITEM (398, J) has no window here: Piece 5 greys it and draws no hotkey, as its key does nothing
+      await expect(slot('applet', 1)).toHaveAttribute('data-greyed', '');
+      await expect(slot('applet', 1).locator('.hud-slot-hotkey')).toHaveText('');
+    }
     // F5 is the fifth slot of the bar (empty here): the page is not reloaded, and 2 shows the second bar
     await page.keyboard.press('F5');
     await page.keyboard.press('Digit2');
