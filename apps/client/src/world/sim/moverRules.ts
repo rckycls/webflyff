@@ -87,6 +87,15 @@ export interface SimMover {
    */
   nCorr?: number;
   /**
+   * The browser's, not Neuz's: the rules steps before the next PLAYERSETDESTOBJ to `blockedTarget` may go
+   * (`setOwnDestObj`, which sets it as it sends one), counted down a step at a time as `m_nCorr` is. Neuz walks up again
+   * at every step after a collision ends its walk to an object (`OnActCollision`'s `ClearDest`, then `SetDestObj` anew):
+   * 120 packets a second at a wall with the PLAYERCORRs, past the gateway's 100 (Piece 6 spec §3.1).
+   */
+  approachWait?: number;
+  /** The object whose walk `OnActCollision` or `OnActDrop` ended (`onActCorr`); null where the walk was to a point. */
+  blockedTarget?: number | null;
+  /**
    * What `CDPClient::SendPlayerCorr` (`Neuz/DPClient.cpp:10866`) sends, as it was when the rules called it: the own
    * character's state (`act.report`), tick 0. The owner sends it with the clock's tick and puts null back.
    */
@@ -349,6 +358,7 @@ export function isEmptyDest(m: SimMover): boolean {
 export function stepMover(m: SimMover, find: (objectId: number) => SimMover | undefined, ground?: Ground): void {
   bind(m);
   if (m.nCorr !== undefined && m.nCorr > 0) m.nCorr--;
+  if (m.approachWait !== undefined && m.approachWait > 0) m.approachWait--;
   processMove(m, find);
   const body = m.act.body;
   const own = body.speed;
@@ -369,6 +379,7 @@ export function stepMover(m: SimMover, find: (objectId: number) => SimMover | un
 function onActCorr(m: SimMover, collision: boolean): void {
   if (!m.isSelf || !m.nCorr) return;
   if (m.nCorr < 0) {
+    m.blockedTarget = m.dest?.targetId ?? null;
     clearDest(m);
     m.act.sendActMsg(ActMsg.STAND);
     if (collision) m.releaseButton?.();

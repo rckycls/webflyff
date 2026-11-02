@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { MoveReport, Vec3 } from '@flyffweb/protocol';
 import { NULL_ID } from '@flyffweb/protocol';
 import { ServerClock } from '../src/net/serverClock';
-import { AttackLoop, objRadius } from '../src/world/combat/attackLoop';
+import { APPROACH_REPORT_STEPS, AttackLoop, objRadius, setOwnDestObj } from '../src/world/combat/attackLoop';
 import { Focus } from '../src/world/combat/focus';
 import type { OwnState } from '../src/world/OwnState';
 import { terrainGround } from '../src/world/sim/collision';
@@ -12,6 +12,7 @@ import { WorldState } from '../src/world/WorldState';
 import type { Mover } from '../src/world/WorldState';
 import { MI_FEMALE, MI_MALE, addedNpc, addedPlayer, webMoverOf } from './helpers/movers';
 import { OWN_ID, WOODEN_SWORD, newVagrant, ownAdded, ownGameData } from './helpers/ownState';
+import { TRAFFIC_BUDGET, busiestSecond } from './helpers/traffic';
 
 const f32 = Math.fround;
 
@@ -394,7 +395,59 @@ describe('AttackLoop: holding the button on a new target (m_timerFocusAttack, Wn
     expect(r.kinds()).toEqual([`destObj ${MONSTER_ID}`, `destObj ${MONSTER_ID}`]);
     expect(r.loop.autoAttack).toBe(true);
   });
+
+  it('auto-attack into a wall keeps walking up at most 10 times a second, within the traffic budget', () => {
+    const r = rig({ ground: { ...terrainGround(() => 0), objectsNear: () => [wallAt(103)] } });
+    r.tap(MONSTER_ID);
+    r.tap(MONSTER_ID);
+    const at: number[] = [];
+    const destObjAt: number[] = [];
+    for (let s = 0; s < 300; s++) {
+      const before = r.sent.length;
+      stepCounting(r, at, s);
+      for (const sent of r.sent.slice(before)) if (sent[0] === 'destObj') destObjAt.push(s);
+    }
+    expect(busiestSecond(at)).toBeLessThanOrEqual(TRAFFIC_BUDGET); // 120 before the gate
+    const lastFourSeconds = destObjAt.filter((s) => s >= 60).length;
+    expect(lastFourSeconds).toBeGreaterThanOrEqual(36);
+    expect(lastFourSeconds).toBeLessThanOrEqual(40);
+    expect(r.loop.autoAttack).toBe(true);
+    expect(r.own.act.body.pos[0]).toBeLessThan(103);
+  });
+
+  it('a walk to another object goes out at once; the blocked one waits and does not walk locally', () => {
+    // the own mover has just bumped into the wall on its walk to the Aibatt
+    const r = rig({ ground: { ...terrainGround(() => 0), objectsNear: () => [wallAt(103)] } });
+    r.tap(MONSTER_ID);
+    r.tap(MONSTER_ID);
+    r.until(() => r.own.corrReport != null);
+    expect(r.own.blockedTarget).toBe(MONSTER_ID);
+    const sent: Array<[number, number]> = [];
+    const session = { sendDestObj: (id: number, range: number) => void sent.push([id, range]), sendBehavior: () => {} };
+    const find = (id: number): Mover | undefined => r.world.movers.get(id);
+    r.own.approachWait = 3;
+    setOwnDestObj(session, () => 0n, find, r.own, MONSTER_ID, 0);
+    expect(sent).toEqual([]);
+    expect(r.own.dest).toBeNull();
+    setOwnDestObj(session, () => 0n, find, r.own, OTHER_MONSTER_ID, 0);
+    expect(sent).toEqual([[OTHER_MONSTER_ID, 0]]);
+    expect(r.own.approachWait).toBe(APPROACH_REPORT_STEPS);
+  });
 });
+
+/**
+ * One rules step of `r`, pushing `step` into `stepsOfPackets` once for each packet it sent, the PLAYERCORR the step owes
+ * included, which the world screen sends and clears (`OwnMover.corrected`).
+ */
+function stepCounting(r: ReturnType<typeof rig>, stepsOfPackets: number[], step: number): void {
+  const before = r.sent.length;
+  r.step();
+  for (let i = before; i < r.sent.length; i++) stepsOfPackets.push(step);
+  if (r.own.corrReport) {
+    stepsOfPackets.push(step);
+    r.own.corrReport = null;
+  }
+}
 
 describe('AttackLoop: the arrival is the rules\' (ProcessMoveArrival, MoverMove.cpp:73-262)', () => {
   it('the arrival swings even when another mover is stepped before the own mover', () => {

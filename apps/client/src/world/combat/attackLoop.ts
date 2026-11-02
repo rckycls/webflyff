@@ -96,6 +96,11 @@ export interface OwnSkills {
  * being `prj.GetMover`), then PLAYERSETDESTOBJ, and `m_nCorr = -1` (so that the walk ends where it meets something,
  * `OnActCollision`); then the rules' `SetDestObj` (`m_idDest`, `m_fArrivalRange`, `ClearDestPos`). Its `m_oaCmd =
  * OBJACT_NONE` (:79) is the caller's, which sets its own command next.
+ *
+ * The browser's adaptation (Piece 6 spec §3.1): a walk to the object that a collision or a drop just ended
+ * (`blockedTarget`, `MoverActEvent.cpp:2013-2037`) waits until `APPROACH_REPORT_STEPS` steps after the last
+ * PLAYERSETDESTOBJ (`approachWait`), neither sent nor walked meanwhile, so that an auto-attack or a repeating skill at a
+ * wall asks at most 10 times a second where Neuz asks at every step; a walk to another object goes at once.
  */
 export function setOwnDestObj(
   session: Pick<WorldSession, 'sendDestObj' | 'sendBehavior'>, tick: () => bigint,
@@ -103,12 +108,17 @@ export function setOwnDestObj(
 ): void {
   const old = own.dest?.targetId ?? null;
   if (old !== objectId) {
+    if (own.blockedTarget === objectId && (own.approachWait ?? 0) > 0) return;
     if (old !== null && find(old)?.added.isPlayer === true) session.sendBehavior(own.act.report(tick()));
     session.sendDestObj(objectId, range);
     own.nCorr = -1;
+    own.approachWait = APPROACH_REPORT_STEPS;
   }
   setDestObj(own, objectId, range);
 }
+
+/** Rules steps between two PLAYERSETDESTOBJs to an object whose walk met something: 10 a second at 60 Hz. */
+export const APPROACH_REPORT_STEPS = 6;
 
 /**
  * The own character's auto-attack, a copy of `CWndWorld`'s and `g_pPlayer`'s part of it:
