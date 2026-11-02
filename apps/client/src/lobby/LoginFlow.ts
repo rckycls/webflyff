@@ -46,6 +46,11 @@ export interface WorldEntry {
   /** The id of the channel picked in the server list (the `dwID` of GETPLAYERLIST). */
   channelId: number;
   /**
+   * The id of the channel's parent server. A channel id is unique only within its server, so a reconnect finds the
+   * channel again by both (Piece 6 M3).
+   */
+  serverId: number;
+  /**
    * The names of the server and the channel picked (`lpName` of their `SERVER_DESC`), which the Character window shows
    * (`CWndCharInfo::OnDraw`, `_Interface/WndField.cpp:3119-3156`). Neuz names the channel `m_aServerset[ j + m_nMSer ]`,
    * counted from the server's first enabled channel (:3134-3156): the one picked while none before it is disabled. The
@@ -132,6 +137,8 @@ export class LoginFlow {
    * id is only unique under its server (the server list's own fixture has server 1 and its channel 1).
    */
   private channelNames: { server: string; channel: string } | undefined;
+  /** The parent server of the channel picked. */
+  private serverId: number | undefined;
   private certifier: PacketChannel | undefined;
   private loginServer: PacketChannel | undefined;
   /** True after ERROR 103, until the player answers the "close the other connection" prompt. */
@@ -171,6 +178,26 @@ export class LoginFlow {
     this.account = typed;
     this.passwordHash = prepared.hash;
     await this.certify(prepared.certify, epoch);
+  }
+
+  /**
+   * Starts a session with an account and password hash kept from an earlier one (a reconnect, Piece 6 M3): as `login`
+   * does after hashing, so the hash is sent as it is, never hashed again. The answer comes as it does for `login`.
+   */
+  async relogin(account: string, passwordHash: string): Promise<void> {
+    this.reset();
+    const epoch = this.epoch;
+    let certify: Uint8Array;
+    try {
+      certify = encodeCertify(account, passwordHash);
+    } catch (error) {
+      if (!(error instanceof ProtocolError)) throw error;
+      this.notify({ type: 'error', message: errorText(ServerError.FLYFF_PASSWORD) });
+      return;
+    }
+    this.account = account;
+    this.passwordHash = passwordHash;
+    await this.certify(certify, epoch);
   }
 
   /**
@@ -236,12 +263,15 @@ export class LoginFlow {
     if (login === undefined) return;
     // The clock and the cache address are the new connection's to learn: the server answers each connection by itself.
     this.channelId = channel.id;
+    this.serverId = server.id;
     this.channelNames = { server: server.name, channel: channel.name };
     this.serverClock = new ServerClock(() => this.clock.now());
     this.attach('loginServer', login);
     this.startPing();
     login.send(encodeQueryTickCount(this.clock.now()));
     login.send(encodeGetPlayerList(authKey, this.account, this.passwordHash, channel.id));
+    // the certifier's 20 s for the character list too, which had no limit: a list that never comes ends (Piece 6 M3)
+    this.startTimer();
   }
 
   /**
@@ -296,9 +326,11 @@ export class LoginFlow {
    * cache address or answered QUERYTICKCOUNT (or when the hand-over already happened).
    */
   handOver(slot: number): WorldEntry | undefined {
-    const { loginServer: login, authKey, channelId, channelNames, cacheAddress, serverClock } = this;
+    const { loginServer: login, authKey, channelId, serverId, channelNames, cacheAddress, serverClock } = this;
     const character = this.characters.find((c) => c.slot === slot);
-    if (login === undefined || authKey === undefined || channelId === undefined || channelNames === undefined) return undefined;
+    if (login === undefined || authKey === undefined || channelId === undefined || serverId === undefined || channelNames === undefined) {
+      return undefined;
+    }
     if (character === undefined) return undefined;
     if (cacheAddress === undefined || cacheAddress === '' || serverClock === undefined || !serverClock.started) return undefined;
     const entry: WorldEntry = {
@@ -308,6 +340,7 @@ export class LoginFlow {
       passwordHash: this.passwordHash,
       authKey,
       channelId,
+      serverId,
       serverName: channelNames.server,
       channelName: channelNames.channel,
       character,
@@ -417,6 +450,7 @@ export class LoginFlow {
           this.fail({ type: 'error', message: errorText(ServerError.CERT_GENERAL) });
           break;
         }
+        this.stopTimer();
         this.characters = message.characters;
         this.messengers = message.messengers;
         // The certifier is closed once the character list is in. The recording that shows when Neuz does it is not
@@ -547,6 +581,7 @@ export class LoginFlow {
     this.cacheAddress = undefined;
     this.serverClock = undefined;
     this.channelId = undefined;
+    this.serverId = undefined;
     this.channelNames = undefined;
   }
 }

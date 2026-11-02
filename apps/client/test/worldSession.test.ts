@@ -81,7 +81,7 @@ function setup(character: CharacterSummary = CHARACTER) {
     const serverClock = new ServerClock(() => clock.now());
     serverClock.start(1000, 777n);
     return {
-      login, cacheTarget: CACHE_SERVER, account: 'webtester', passwordHash: HASH, authKey: 7, channelId: 3,
+      login, cacheTarget: CACHE_SERVER, account: 'webtester', passwordHash: HASH, authKey: 7, channelId: 3, serverId: 1,
       serverName: 'FlyFF', channelName: 'Channel 3', character, messenger: MESSENGER, clock: serverClock,
     };
   };

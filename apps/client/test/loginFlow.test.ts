@@ -4,7 +4,7 @@ import {
   encodeDeletePlayer, encodeErrorReply, encodeGetPlayerList, encodeKeepAlive, encodePing, encodeQueryTickCount, hashPassword,
 } from '@flyffweb/protocol';
 import type { NewCharacter, ServerEntry } from '@flyffweb/protocol';
-import { LoginFlow } from '../src/lobby/LoginFlow';
+import { LoginFlow, TIMEOUT_TEXT } from '../src/lobby/LoginFlow';
 import type { LobbyEvent } from '../src/lobby/LoginFlow';
 import { fakeChannels, fakeClock, playerListFor, serverListFor, typeOfClientBody } from './helpers/fakeChannel';
 
@@ -500,6 +500,9 @@ describe('LoginFlow, keeping the login server connection', () => {
     expect(fresh.sent.map(typeOfClientBody)).toEqual([PacketType.QUERYTICKCOUNT, PacketType.GETPLAYERLIST]);
     clock.advance(5000);
     expect(hex(fresh.sent.at(-1)!)).toBe(hex(encodePing(16000)));
+    // the character list's 20 s wait is the other timer until the list comes (Piece 6 M3)
+    expect(clock.pending()).toBe(2);
+    fresh.push(playerListFor(7));
     expect(clock.pending()).toBe(1);
   });
 });
@@ -983,5 +986,47 @@ describe('LoginFlow, starting over and stopping', () => {
     expect(vi.getTimerCount()).toBe(1);
     flow.dispose();
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe('LoginFlow, logging in again from the kept hash (Piece 6 M3)', () => {
+  it('relogin sends the CERTIFY of the account and the hash as they are: the hash is not hashed again', async () => {
+    const s = start();
+    await s.flow.relogin('webtester', HASH);
+    const cert = s.net.channel(CERTIFIER);
+    expect(hex(cert.sent[0]!)).toBe(hex(encodeCertify('webtester', HASH)));
+    cert.push(serverListFor('webtester', 7));
+    expect(s.events.map((e) => e.type)).toEqual(['serverList']);
+  });
+
+  it('forgets the kept hash on a reset, as a login does', async () => {
+    const s = start();
+    await s.flow.relogin('webtester', HASH);
+    s.flow.dispose();
+    s.flow.changeChannel(); // nothing to log in again with
+    s.clock.advance(5000);
+    expect(s.net.targets).toHaveLength(1);
+  });
+
+  it('hands over the parent server of the channel, as a channel id is unique only within it', async () => {
+    const s = await atEnterableList();
+    expect(s.flow.handOver(0)!.serverId).toBe(s.channel.parent);
+  });
+
+  it('gives the login server 20 s to send the character list, then fails with the timeout text and closes', async () => {
+    const s = await atServerList();
+    await s.flow.selectChannel(s.channel);
+    const login = s.net.channel(LOGIN_SERVER);
+    s.clock.advance(19999);
+    expect(s.events.some((e) => e.type === 'error')).toBe(false);
+    s.clock.advance(1);
+    expect(s.events.at(-1)).toEqual({ type: 'error', message: TIMEOUT_TEXT });
+    expect(login.closed).toBe(true);
+  });
+
+  it('the character list stops that timeout', async () => {
+    const s = await atCharacterList();
+    s.clock.advance(60000);
+    expect(s.events.some((e) => e.type === 'error')).toBe(false);
   });
 });
