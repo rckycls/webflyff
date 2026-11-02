@@ -1,11 +1,15 @@
 import type { WebNpc } from '@flyffweb/formats';
 import type { UiArt } from './art';
 import { themeUrl } from './art';
+import { mapPoint } from '../worldMapRules';
 import { WindowFrame } from './frame';
 
-/** CWorldMap::WorldPosToMapPos map 0 (WorldMap.cpp:1359): the actual bounds of WORLD_Flyff.dds. */
+/** Map 0's rectangle, the bounds of WORLD_Flyff.dds (`WorldPosToMapPos`, WorldMap.cpp:1399-1405). */
+const WORLD_BOUNDS = { x1: 0, z1: 1298, x2: 11800, z2: 9757 };
+
+/** `CWorldMap::WorldPosToMapPos` for map 0 (WorldMap.cpp:1463-1490), into the teleporter's 788x591 picture. */
 export function teleportPoint(pos: { x: number; z: number }): { x: number; y: number } {
-  return { x: pos.x / 11800 * 788, y: (9757 - pos.z) / (9757 - 1298) * 591 };
+  return mapPoint(WORLD_BOUNDS, pos, { left: 0, top: 0, width: 788, height: 591 });
 }
 
 /** NPC-only teleport selection; native map art/markers and SendTeleporterReq indexes, without a general world map. */
