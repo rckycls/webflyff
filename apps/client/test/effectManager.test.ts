@@ -127,6 +127,19 @@ const headingOf = (drawn: Drawn): number => {
   return (((Math.atan2(-m[2]!, m[0]!) * 180) / Math.PI) + 360) % 360;
 };
 
+describe('EffectManager: the sound an effect makes (CreateSfx, CreateObj.cpp:328-329)', () => {
+  it('tells `made` of each effect it makes, when it is asked, with its id and where it is made', async () => {
+    const r = rig();
+    const made: Array<[number, Vec3]> = [];
+    r.manager.made = (xi, pos) => made.push([xi, pos]);
+    r.manager.play({ xi: Xi.GEN_LEVEL_UP01, pos: [10, 5, 20] });
+    r.manager.play({ xi: Xi.GEN_LEVEL_UP01, pos: [1, 2, 3] });
+    r.manager.play({ xi: 99999, pos: [0, 0, 0] }); // not in the index: no effect, no sound
+    r.manager.play({ xi: 0, pos: [0, 0, 0] });
+    expect(made).toEqual([[Xi.GEN_LEVEL_UP01, [10, 5, 20]], [Xi.GEN_LEVEL_UP01, [1, 2, 3]]]);
+  });
+});
+
 describe('EffectManager: following (CSfx::Process, SfxObj.cpp:134-238)', () => {
   it('XI_GEN_LEVEL_UP01 with a follow id moves with the mover', async () => {
     const r = rig();

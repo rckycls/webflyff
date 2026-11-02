@@ -203,6 +203,11 @@ export class EffectManager {
   /** Each file's load, started once; null when it could not be had. */
   private readonly loading = new Map<string, Promise<WebEffect | null>>();
   private readonly reported = new Set<string>();
+  /**
+   * Told of each effect made, with its id and where it is made: `CreateSfx` plays the effect's sound there
+   * (CreateObj.cpp:82, :180-181, :328-329), at once, whether or not the file is in yet (Piece 6 M2).
+   */
+  made: ((xi: number, pos: Vec3) => void) | undefined;
 
   /**
    * @param data    The effects index (`GameData.effects`): each `XI_*` id's effect file and scale.
@@ -233,6 +238,7 @@ export class EffectManager {
       this.reportOnce(`xi ${request.xi}`, `effect XI ${request.xi}: not in the effects index`);
       return;
     }
+    this.made?.(request.xi, request.pos);
     const ready = this.loaded.get(ref.effect);
     if (ready !== undefined) {
       this.start(ready, ref.effect, request, ref.scale);
