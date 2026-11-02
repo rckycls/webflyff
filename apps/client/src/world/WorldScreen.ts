@@ -16,7 +16,7 @@ import { SpeechBubbleLayer } from './render/SpeechBubbleLayer';
 // wrong here is thrown at the lobby.
 
 import { UI_SHEETS_KEY, toWebPosition } from '@flyffweb/formats';
-import type { Vec3, WebEffect, WebUiSheet, WebUiSheets } from '@flyffweb/formats';
+import type { Vec3, WebEffect, WebUiSheet, WebUiSheets, WebWorldMap } from '@flyffweb/formats';
 import type { AddedMover, BundleMessage, WorldMessage } from '@flyffweb/protocol';
 import {
   EffectRenderer, Joystick, KeyboardInput, WorldStage, effectTextureProvider, loadGltf, loopMotion, neuzRandom, attachHeld,
@@ -60,6 +60,9 @@ import { ChatWindow } from './hud/chatWindow';
 import { NpcDialog } from './hud/npcDialog';
 import { ShopWindow } from './hud/shopWindow';
 import { Minimap } from './hud/minimap';
+import { WorldMap } from './hud/worldMap';
+import type { MapView } from './hud/worldMap';
+import { loadWorldMap } from './worldMapData';
 import { TeleporterWindow } from './hud/teleporterWindow';
 import { formatDefinedText } from './hud/messages';
 import { ItemUse } from './items/itemUse';
@@ -221,6 +224,12 @@ export class WorldScreen {
   private npcDialog: NpcDialog | undefined;
   private shopWindow: ShopWindow | undefined;
   private minimap: Minimap | undefined;
+  /** The world map (Piece 6 M1), its catalog (null without one) and its monster switch, kept across world changes. */
+  private worldMap: WorldMap | undefined;
+  private worldMapData: WebWorldMap | null = null;
+  private worldMapMonsters = false;
+  /** The world the player is in (`enter`). */
+  private worldId = 0;
   private teleporter: TeleporterWindow | undefined;
   private itemUse: ItemUse | undefined;
   private itemActions: ItemActions | undefined;
@@ -342,6 +351,8 @@ export class WorldScreen {
       if (this.over) return;
       this.services = services;
       this.data = data;
+      this.worldMapData = await loadWorldMap(services.store, (error) => this.reportOnce(`world map: ${messageOf(error)}`, error));
+      if (this.over) return;
       for (const event of this.waiting.splice(0)) this.handle(event);
     } catch (error) {
       this.fail(error);
@@ -389,6 +400,7 @@ export class WorldScreen {
   private enter(worldId: number, pos: Vec3, messages: BundleMessage<WorldMessage>[]): void {
     const generation = ++this.stageGeneration;
     this.element.dataset.worldId = String(worldId);
+    this.worldId = worldId;
     const services = this.services!;
     const folder = this.data!.worlds.get(worldId);
     if (folder === undefined || services.store.url(`worlds/${folder}/manifest.json`) === null) {
@@ -559,6 +571,9 @@ export class WorldScreen {
     this.hud = new Hud(this.element.ownerDocument, art, this.data!);
     this.minimap = new Minimap(art, this.stage!.manifest, folder, key => services.store.url(key), this.element.ownerDocument);
     this.hud.element.append(this.minimap.frame.element);
+    this.worldMap = new WorldMap(art, this.worldMapData, this.data!, (id) => this.say(id), this.element.ownerDocument);
+    this.worldMap.monsterInfo = this.worldMapMonsters;
+    this.hud.element.append(this.worldMap.element);
   }
 
   /**
@@ -1082,6 +1097,7 @@ export class WorldScreen {
     if (this.own) this.inventoryWindow?.update(this.own);
     this.npcDialog?.update(); this.shopWindow?.update();
     this.teleporter?.update();
+    if (this.worldMap?.isOpen === true) this.worldMap.update(this.mapView());
     if (self !== undefined) this.minimap?.update(self.act.body.pos, this.backCamera.heading ?? 0,
       [...world.movers.values()].filter(mover => !mover.isSelf && mover.hp > 0 &&
         !isGameMaster(mover.added.player?.authorization ?? 0)).map(mover => ({
@@ -1108,6 +1124,14 @@ export class WorldScreen {
    */
   private openWindow(window: TaskBarWindow): void {
     if (window === 'navigator') { this.minimap?.toggle(); return; }
+    if (window === 'worldmap') {
+      // ObjectExecutor does nothing while the NPC dialog is open (WndManager.cpp:2570-2576)
+      if (this.npcDialog?.frame.isOpen === true) return;
+      this.worldMap?.toggle(this.mapView());
+      // the map holds the keys and the presses from here: what was held lets go (the plan's Ruling 4)
+      if (this.worldMap?.isOpen === true) this.releaseControls();
+      return;
+    }
     if (window === 'chat') { this.chatWindow?.open(); return; }
     if (window === 'inventory') {
       if (this.own) {
@@ -1173,6 +1197,12 @@ export class WorldScreen {
       this.skillWindow?.warning.modal.isShown === true;
     this.element.classList.toggle('world-modal', open);
     if (!open) return;
+    this.worldMap?.close();
+    this.releaseControls();
+  }
+
+  /** The keys, the joystick, the camera drag and the finger on the world let go, and the Start menu closes. */
+  private releaseControls(): void {
     this.cameraControls?.reset();
     this.jumpRequested = false;
     this.taskBar?.closeMenu();
@@ -1180,6 +1210,18 @@ export class WorldScreen {
     this.walkKey?.reset();
     this.joystick?.reset();
     this.tap?.reset();
+  }
+
+  /** What the world map draws the player from: the world, the own mover and the camera in D3D, the own name. */
+  private mapView(): MapView {
+    const self = this.world?.self();
+    return {
+      worldId: this.worldId,
+      pos: self?.act.body.pos ?? this.entered,
+      // the chase view is in web coordinates; the mirror is its own inverse (web z = -z)
+      camera: toWebPosition(this.backCamera.view?.position ?? [0, 0, 0]),
+      name: self?.name ?? this.entry.character.name,
+    };
   }
 
   /**
@@ -1194,6 +1236,7 @@ export class WorldScreen {
    */
   private readonly onEscape = (event: KeyboardEvent): void => {
     if (this.chatWindow?.typing) return;
+    if (this.worldMap?.isOpen === true) return; // the map's own key hold closes it, and Escape does nothing else
     const { taskBar, attackLoop, focus } = this;
     if (event.key !== 'Escape' || event.repeat || taskBar === undefined || attackLoop === undefined || focus === undefined) {
       return;
@@ -1406,6 +1449,8 @@ export class WorldScreen {
     this.groundItems?.dispose();
     this.nearbyItems?.dispose();
     this.minimap?.dispose();
+    if (this.worldMap !== undefined) this.worldMapMonsters = this.worldMap.monsterInfo;
+    this.worldMap?.dispose();
     this.teleporter?.dispose();
     this.hud?.dispose();
     this.sheetPictures = [];
@@ -1420,7 +1465,7 @@ export class WorldScreen {
       'focus', 'attackLoop', 'skillUse', 'mark', 'effects', 'effectRenderer', 'effectTextures', 'numbers', 'marks',
       'hud', 'hudArt', 'taskBar', 'attackButton', 'cameraControls', 'jumpButton', 'logOutBox', 'reviveWindow',
       'characterWindow', 'skillWindow', 'inventoryWindow', 'npcDialog', 'shopWindow', 'itemUse',
-      'itemActions', 'groundItems', 'nearbyItems', 'ownMover', 'simulationClock', 'minimap', 'teleporter'] as const) this[key] = undefined;
+      'itemActions', 'groundItems', 'nearbyItems', 'ownMover', 'simulationClock', 'minimap', 'teleporter', 'worldMap'] as const) this[key] = undefined;
   }
 
   /** Closes the connections and everything on screen, once, then tells the lobby. */

@@ -52,7 +52,7 @@ import type { Carried, DropTarget, LoadedBars, TaskBarEditActions } from './task
 import { TaskMenu } from './taskMenu';
 
 /** The windows of Piece 4 a press on the task bar opens. */
-export type TaskBarWindow = 'character' | 'status' | 'skills' | 'inventory' | 'chat' | 'navigator';
+export type TaskBarWindow = 'character' | 'status' | 'skills' | 'inventory' | 'chat' | 'navigator' | 'worldmap';
 
 /**
  * The applets whose window Piece 4 has, which `ObjectExecutor` opens (or closes) when they are pressed: from the Start
@@ -60,6 +60,7 @@ export type TaskBarWindow = 'character' | 'status' | 'skills' | 'inventory' | 'c
  */
 const WINDOWS: ReadonlyMap<number, TaskBarWindow> = new Map([
   [AppId.NAVIGATOR, 'navigator'],
+  [AppId.MAP, 'worldmap'],
   [1014, 'chat'],
   [1003, 'inventory'],
   [AppId.STATUS1, 'status'],
@@ -87,6 +88,8 @@ const MENU: ReadonlyArray<{ id: number; text: string }> = [
   { id: AppId.CHARACTER3, text: 'Character' },
   { id: AppId.SKILL3, text: 'Skills' },
   { id: 1003, text: 'Inventory' },
+  // CWndTaskMenu's APP_MAP line, 'World Map' (TID_APP_MAP), just before Navigator (WndTaskBar.cpp:2734-2738)
+  { id: AppId.MAP, text: 'World Map' },
   { id: AppId.NAVIGATOR, text: 'Navigator' },
   { id: AppId.LOGOUT, text: 'Log out' },
 ];

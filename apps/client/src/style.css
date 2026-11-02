@@ -1802,3 +1802,94 @@ fieldset:disabled .btn {
   .world:has(.hud-teleporter:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack) { visibility: hidden; }
   .teleporter-map button::before { content: ''; position: absolute; inset: -12px; }
 }
+
+/* The world map (Piece 6 M1, world/hud/worldMap.ts): CWorldMap's picture over every window and the task bar
+   (RenderWorldMap after PaintRoot, Neuz.cpp:792-793), fitted 4:3 inside the safe area; the fill is set by the script. */
+.hud-worldmap {
+  position: absolute;
+  inset: 0;
+  z-index: 1500;
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.hud-worldmap[hidden] { display: none; }
+.hud-worldmap-area {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--game-safe-left, 0px);
+  right: var(--game-safe-right, 0px);
+}
+.hud-worldmap-picture { position: absolute; overflow: hidden; background: 0 0 / 100% 100% no-repeat; }
+.hud-worldmap-button { position: absolute; background-repeat: no-repeat; cursor: pointer; }
+.hud-worldmap-icons { position: absolute; inset: 0; }
+.hud-worldmap-monster { position: absolute; cursor: pointer; }
+/* RenderScal at alpha 150, 255 for the hovered one (WorldMap.cpp:854-869) */
+.hud-worldmap-monster-picture { background-repeat: no-repeat; opacity: 0.588; }
+.hud-worldmap-monster.is-hovered .hud-worldmap-monster-picture { opacity: 1; }
+.hud-worldmap-arrow { position: absolute; width: 0; height: 0; pointer-events: none; }
+.hud-worldmap-arrow[hidden] { display: none; }
+.hud-worldmap-arrow-picture {
+  position: absolute;
+  left: -18px;
+  top: -17px;
+  width: 37px;
+  height: 35px;
+  transform-origin: 18px 17px;
+  background: 0 0 / 100% 100% no-repeat;
+  image-rendering: pixelated;
+}
+/* the own name, centred on the arrow, its top 1.5 lines above it (WorldMap.cpp:742-784) */
+.hud-worldmap-name {
+  position: absolute;
+  left: 0;
+  top: -18px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  text-shadow: var(--hud-world-outline);
+}
+/* the tooltip's 9-slice frame (WndTooltipTile00-08.tga, tooltip.cpp:70-89) and its text (m_pFontText) */
+.hud-worldmap-tip {
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  grid-template: 16px auto 16px / 16px auto 16px;
+  pointer-events: none;
+}
+.hud-worldmap-tip[hidden] { display: none; }
+.hud-worldmap-tip-tile { background-repeat: repeat; }
+.hud-worldmap-tip-tile-0 { grid-area: 1 / 1; } .hud-worldmap-tip-tile-1 { grid-area: 1 / 2; }
+.hud-worldmap-tip-tile-2 { grid-area: 1 / 3; } .hud-worldmap-tip-tile-3 { grid-area: 2 / 1; }
+.hud-worldmap-tip-tile-4 { grid-area: 2 / 2; } .hud-worldmap-tip-tile-5 { grid-area: 2 / 3; }
+.hud-worldmap-tip-tile-6 { grid-area: 3 / 1; } .hud-worldmap-tip-tile-7 { grid-area: 3 / 2; }
+.hud-worldmap-tip-tile-8 { grid-area: 3 / 3; }
+.hud-worldmap-tip-text { grid-area: 2 / 2; z-index: 1; font: 12px/1.35 Verdana, Geneva, Tahoma, sans-serif; white-space: normal; }
+.hud-worldmap-tip-element {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  margin-left: 6px;
+  vertical-align: middle;
+  background-repeat: no-repeat;
+}
+/* a web addition (Neuz has none): the frames' close picture, with a finger-sized touch area */
+.hud-worldmap-close {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.hud-worldmap-close span { width: 15px; height: 14px; background: transparent no-repeat -15px 0; }
+.world:has(.hud-worldmap:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack) { visibility: hidden; }
