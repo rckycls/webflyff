@@ -10,6 +10,7 @@ import type { JobProp, MotionEvents, Vec3, WebItemProp, WebMover } from '@flyffw
 import { geometryBytes, loopMotion } from '@flyffweb/scene';
 import type { AssembledCharacter, HeldSlot, LoopedMotion, ModelBox } from '@flyffweb/scene';
 import { MoverViews } from '../src/world/render/MoverViews';
+import type { MoverViewsOptions } from '../src/world/render/MoverViews';
 import type { MoverLook } from '../src/world/render/looks';
 import { loadHeldItems, loadMoverModel } from '../src/world/render/moverModels';
 import type { HeldItem } from '../src/world/render/moverModels';
@@ -122,6 +123,8 @@ interface RigOptions {
   moverProps?: ReadonlyMap<number, Pick<WebMover, 'rank'>>;
   /** `xRandom( n )`, for the shake. */
   random?: (n: number) => number;
+  /** Where the motions' sounds and the footsteps go. */
+  sounds?: MoverViewsOptions['sounds'];
 }
 
 function rig(
@@ -141,7 +144,7 @@ function rig(
     return loaded;
   };
   const views = new MoverViews(scene, load, overlay, lookFor, loadMotion, loadHeld, options.itemProps ?? new Map(), {
-    moverProps: options.moverProps, random: options.random,
+    moverProps: options.moverProps, random: options.random, sounds: options.sounds,
   });
   const movers = new Map<number, Mover>();
   const sync = (changes: WorldChanges) => views.sync(changes, movers);
@@ -1124,5 +1127,79 @@ describe('loadMoverModel', () => {
       'part models/part_a.glb: models/part_a.glb is not in the asset index',
       'part models/part_b.glb: models/part_b.glb is not in the asset index',
     ]);
+  });
+});
+
+describe('MoverViews: the sounds of the motions and the footsteps (ModelObject.cpp:1594-1610, Mover.cpp:3202-3219)', () => {
+  /** A 20-frame motion at 0.5 frames a step with sounds on frames 0 and 4, and a hit on frame 2. */
+  function soundMotion(name: string, sound: Array<[number, number]> = [[0, 101], [4, 102]]): LoopedMotion {
+    const times = Array.from({ length: 20 }, (_, i) => i / 30);
+    const clip = new AnimationClip(name, -1, [new NumberKeyframeTrack('joint.position[x]', times, times)]);
+    const events: MotionEvents = { hit: [2], sound, quake: [], frames: 20, perSlerp: 0.5 };
+    clip.userData.events = events;
+    return loopMotion(clip);
+  }
+  /** Every motion key gives the sound motion, through `load` (default: at once). */
+  const every = (load: () => LoopedMotion | Promise<LoopedMotion>) =>
+    new Proxy({}, { get: () => load }) as Record<string, () => LoopedMotion | Promise<LoopedMotion>>;
+
+  function setup(load?: () => LoopedMotion | Promise<LoopedMotion>) {
+    const motions: number[] = [];
+    const steps: Vec3[] = [];
+    const r = rig(undefined, undefined, undefined, {
+      motions: every(load ?? (() => soundMotion('m'))),
+      sounds: { motion: (_at, id) => { motions.push(id); }, footstep: (at) => { steps.push([at.x, at.y, at.z]); } },
+    });
+    return { r, motions, steps };
+  }
+
+  it('plays each sound frame once as the frames pass it, a frame-0 sound on the first move', async () => {
+    const { r, motions } = setup();
+    r.add(moverFrom(addedNpc(7, 21)));
+    await r.views.settled();
+    for (let i = 0; i < 12; i++) r.views.step(r.movers);
+    expect(motions).toEqual([101, 102]);
+  });
+
+  it('plays nothing for the frame moves made late, while the file of the motion loaded', async () => {
+    let resolve: ((m: LoopedMotion) => void) | undefined;
+    const motions: number[] = [];
+    const late = `m${Mti.ATK1}`;
+    const r = rig(undefined, undefined, undefined, {
+      motions: new Proxy({}, {
+        get: (_target, key) => (key === late
+          ? () => new Promise<LoopedMotion>((done) => (resolve = done))
+          : () => soundMotion('m')),
+      }) as Record<string, () => LoopedMotion | Promise<LoopedMotion>>,
+      sounds: { motion: (_at, id) => { motions.push(id); }, footstep: () => {} },
+    });
+    const npc = moverFrom(addedNpc(7, 21));
+    r.add(npc);
+    await r.views.settled();
+    r.views.step(r.movers);
+    motions.length = 0;
+    npc.act.motion = Mti.ATK1; // CMover::SetMotion: a new motion, whose file is not in yet
+    npc.act.motionSets++;
+    r.views.step(r.movers);
+    r.views.step(r.movers);
+    resolve!(soundMotion(late, [[1, 103], [4, 102]])); // the second late move ends on frame 1
+    await r.views.settled();
+    r.views.step(r.movers);
+    expect(motions).toEqual([]); // frame 1 was passed by a move made late
+    for (let i = 0; i < 9; i++) r.views.step(r.movers);
+    expect(motions).toEqual([102]);
+  });
+
+  it('steps a moving player on the hit frames of its motion, and never a monster', async () => {
+    const { r, steps } = setup();
+    const player = moverFrom(addedPlayer(7));
+    const monster = moverFrom(addedNpc(8, 21));
+    player.act.state = (player.act.state & ~ObjSta.MOVE_ALL) | ObjSta.FMOVE;
+    monster.act.state = (monster.act.state & ~ObjSta.MOVE_ALL) | ObjSta.FMOVE;
+    r.add(player);
+    r.add(monster);
+    await r.views.settled();
+    for (let i = 0; i < 8; i++) r.views.step(r.movers);
+    expect(steps).toEqual([[...player.act.body.pos]]);
   });
 });

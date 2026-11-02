@@ -19,7 +19,9 @@ import type { AnimationAction, Object3D, Scene } from 'three';
 import { AnimationClip, Box3, CapsuleGeometry, Group, LoopOnce, LoopRepeat, Mesh, MeshLambertMaterial } from 'three';
 import { motionFor } from '../sim/ActionMover';
 import type { ModelFrame as ActionModelFrame, MotionHand } from '../sim/ActionMover';
-import { AniLoop, Ik3, Mop, Mti, ObjStaF } from '../sim/constants';
+import { AniLoop, Ik3, Mop, Mti, ObjSta, ObjStaF } from '../sim/constants';
+import { soundAt } from '../sound/soundRules';
+import type { Vec } from '../sound/soundRules';
 import { STEPS_PER_SECOND } from '../sim/stepper';
 import { isDie } from '../WorldState';
 import type { Mover, WorldChanges } from '../WorldState';
@@ -179,6 +181,11 @@ const RANK_SUPER = 7;
 export interface MoverViewsOptions {
   moverProps?: ReadonlyMap<number, Pick<WebMover, 'rank'>>;
   random?: (n: number) => number;
+  /**
+   * Where a frame move's sounds go (Piece 6 M2): a motion's MA_SOUND frame (`IsAttrSound`, ModelObject.cpp:1594-1596)
+   * and a player's footstep (`ProcessWalkSound`, Mover.cpp:3202-3219), each at the mover's FlyFF position.
+   */
+  sounds?: { motion(at: Vec, id: number): void; footstep(at: Vec): void };
 }
 
 /**
@@ -583,9 +590,30 @@ export class MoverViews {
     if (clip.motion === null) return;
     // the hit the rules were given since the last frame move (or, paused, passed by) is behind the model now
     frame.waiting.shift();
+    const late = frame.backlog.length > 0;
     this.catchUp(view, clip.motion, true);
+    // the moves made late, after the file came, play no sound (the plan's ruling 6)
+    if (!late) this.frameSounds(view, clip.motion.events);
     frameMove(frame, clip.motion.events, act.loop, act.aniSpeed);
     if (frame.waiting.length > 0) this.keepHit(frame, clip.motion);
+  }
+
+  /**
+   * The sounds Neuz plays before the model's frame move, with the old and current frame of the last move: the motion's
+   * sound frame (`CModelObject::FrameMove`, ModelObject.cpp:1588-1610) and, for a player moving forward, a footstep on
+   * its hit frames (`ProcessWalkSound`, Mover.cpp:3202-3219, called at :3822 before the move at :3862). Transparent mode
+   * (a GM's) is not kept by the client, so it does not silence them.
+   */
+  private frameSounds(view: View, events: MotionEvents): void {
+    const sounds = this.options.sounds;
+    if (sounds === undefined) return;
+    const { frame, mover } = view;
+    const p = mover.act.body.pos;
+    const at = { x: p[0], y: p[1], z: p[2] };
+    const id = soundAt(events.sound, frame.old, frame.current);
+    if (id > 0) sounds.motion(at, id);
+    const forward = (mover.act.state & ObjSta.MOVE_ALL & ObjSta.FMOVE) !== 0;
+    if (mover.kind === 'player' && forward && hitIndex(events.hit, frame.old, frame.current) >= 0) sounds.footstep(at);
   }
 
   /**
