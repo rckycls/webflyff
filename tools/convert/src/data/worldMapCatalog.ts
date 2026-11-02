@@ -112,8 +112,9 @@ function monstersOf(
     if (texture === undefined) throw new Error('it names no texture');
     const sheet = loose(THEME_DIR, texture);
     if (sheet === null) throw new Error(`it names "${texture}", which is not in Client/${THEME_DIR}`);
-    const pack = readMapMonsterPack(text, env.defines, script, decodeImage(sheet, texture));
-    return { sheet: iconKeyOf(pack.texture), frames: pack.frames, rows: pack.rows };
+    const { width, height } = decodeImage(sheet, texture);
+    const pack = readMapMonsterPack(text, env.defines, script, { width, height });
+    return { sheet: iconKeyOf(pack.texture), size: { width, height }, frames: pack.frames, rows: pack.rows };
   } catch (error) {
     env.warn(source, `not read, so that map has no monster icons: ${error instanceof Error ? error.message : String(error)}`);
     return null;

@@ -27,6 +27,8 @@ const DATA: WebWorldMap = {
     monsters: index === 0 ? null : {
       sheet: `ui/texmapmonster_${index}.png`,
       frames: frames(2, 40, 40, 3),
+      // the sheet is larger than its frames reach (Flaris: 3 frames a row, 120x200)
+      size: { width: 120, height: 80 },
       // the Aibatts at (436, 760), and a second icon 100 px to the right
       rows: [{ movers: [20, 21], x: 436, y: 760, drop: 2900 }, { movers: [21], x: 536, y: 760, drop: 0 }],
     },
@@ -62,6 +64,12 @@ afterEach(() => {
   maps = [];
 });
 const q = (map: WorldMap, selector: string) => map.element.querySelector<HTMLElement>(selector);
+/** jsdom has no layout: the safe area's size, as a phone or a window would give it. */
+const sizeArea = (map: WorldMap, w: number, h: number) => {
+  const area = q(map, '.hud-worldmap-area')!;
+  Object.defineProperty(area, 'clientWidth', { configurable: true, get: () => w });
+  Object.defineProperty(area, 'clientHeight', { configurable: true, get: () => h });
+};
 const press = (el: Element, type = 'pointerdown', init: MouseEventInit = {}, pointerType = 'mouse') => {
   const event = new MouseEvent(type, { bubbles: true, cancelable: true, ...init });
   Object.defineProperty(event, 'pointerType', { value: pointerType });
@@ -169,6 +177,48 @@ describe('WorldMap: the monster switch and its details (WorldMap.cpp:467-531, :8
     expect(q(map, '.hud-worldmap-tip')!.textContent).toContain('Small Aibatt');
     press(q(map, '.hud-worldmap-picture')!, 'pointerup', { clientX: 300, clientY: 300 }, 'touch');
     expect(q(map, '.hud-worldmap-tip')!.hidden).toBe(true);
+  });
+});
+
+describe('WorldMap: drawing and fitting (final review)', () => {
+  it('draws an icon from its sheet at the size of the whole sheet, scaled with the picture', () => {
+    const { map } = make();
+    map.toggle(FLARIS);
+    press(q(map, '[data-map-button="8"]')!);
+    // 960 / 1024 of the 120x80 sheet
+    expect(q(map, '[data-monster="0"] .hud-worldmap-monster-picture')!.style.backgroundSize).toBe('112.5px 75px');
+  });
+
+  it('on a phone, a tap picks by the centre of the drawn icon, not of its 40 px box', () => {
+    // a second icon whose 40 px box centre lies on the first icon's drawn centre, at a 520x390 picture
+    const rows = [{ movers: [20, 21], x: 436, y: 760, drop: 2900 }, { movers: [21], x: 407, y: 729, drop: 0 }];
+    const data = { ...DATA, maps: DATA.maps.map((m) => (m.monsters === null ? m : { ...m, monsters: { ...m.monsters, rows } })) };
+    const { map } = make(data);
+    sizeArea(map, 520, 390);
+    map.toggle(FLARIS);
+    press(q(map, '[data-map-button="8"]')!);
+    // icon 0 at (177, 308), drawn 40 x 390/1024 = 15.2 px: its centre (184.6, 315.6)
+    press(q(map, '.hud-worldmap-picture')!, 'pointerup', { clientX: 185, clientY: 316 }, 'touch');
+    expect(q(map, '.hud-worldmap-tip')!.textContent).toContain('Small Aibatt');
+  });
+
+  it('fits itself again when the area changes while it is open', () => {
+    const { map } = make();
+    map.toggle(FLARIS);
+    expect(q(map, '.hud-worldmap-picture')!.style.width).toBe('1280px');
+    sizeArea(map, 520, 390);
+    map.update(FLARIS);
+    expect(q(map, '.hud-worldmap-picture')!.style.width).toBe('520px');
+    expect(q(map, '[data-map-button="8"]')!.style.height).toBe('33px');
+  });
+
+  it('keeps the browser menu and its pinch zoom off the map, as the world does', () => {
+    const { map } = make();
+    map.toggle(FLARIS);
+    expect(press(q(map, '.hud-worldmap-picture')!, 'contextmenu').defaultPrevented).toBe(true);
+    const pinch = new WheelEvent('wheel', { bubbles: true, cancelable: true, ctrlKey: true });
+    q(map, '.hud-worldmap-picture')!.dispatchEvent(pinch);
+    expect(pinch.defaultPrevented).toBe(true);
   });
 });
 

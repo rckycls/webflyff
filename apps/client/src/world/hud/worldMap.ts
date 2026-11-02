@@ -67,6 +67,8 @@ export class WorldMap {
   private hoveredIcon: number | null = null;
   private showMonsters = false;
   private size = { w: PICTURE.w, h: PICTURE.h };
+  /** The safe area's size at the last `layout`, to fit again when it changes while open. */
+  private laidOut = { w: -1, h: -1 };
   private last: MapView | null = null;
   private listening = false;
 
@@ -81,7 +83,15 @@ export class WorldMap {
     this.element = doc.createElement('div');
     this.element.className = 'hud-worldmap';
     this.element.hidden = true;
-    for (const type of PRESSES) this.element.addEventListener(type, (event) => event.stopPropagation());
+    for (const type of PRESSES) {
+      this.element.addEventListener(type, (event) => {
+        event.stopPropagation();
+        // the world's own guards, which the stop keeps from running: no browser menu (WorldScreen.onContextMenu), no
+        // page zoom from a pinch (browserGestures.ts)
+        if (type === 'contextmenu') event.preventDefault();
+        if (type === 'wheel' && ((event as WheelEvent).ctrlKey || (event as WheelEvent).metaKey)) event.preventDefault();
+      }, { passive: false });
+    }
 
     this.area = doc.createElement('div');
     this.area.className = 'hud-worldmap-area';
@@ -195,6 +205,12 @@ export class WorldMap {
   update(view: MapView): void {
     this.last = view;
     if (!this.isOpen || this.data === null) return;
+    if (this.area.clientWidth !== this.laidOut.w || this.area.clientHeight !== this.laidOut.h) {
+      // a resize, a rotation or a phone's toolbar while open: fit again, and draw at the new size
+      this.layout();
+      this.drawPicture();
+      return;
+    }
     const { w, h } = this.size;
     const on = mapNumber(view.worldId, { x: view.pos[0], z: view.pos[2] }, this.data);
     this.arrowAt.hidden = this.shown !== 0 && this.shown !== on;
@@ -220,6 +236,7 @@ export class WorldMap {
   private layout(): void {
     const aw = this.area.clientWidth;
     const ah = this.area.clientHeight;
+    this.laidOut = { w: aw, h: ah };
     if (aw > 0 && ah > 0) {
       const h = Math.min(ah, Math.floor((aw * 3) / 4));
       this.size = { w: Math.floor((h * 4) / 3), h };
@@ -270,8 +287,7 @@ export class WorldMap {
     if (!this.showMonsters || this.shown === 0 || monsters === null) return;
     const { w, h } = this.size;
     const rate = h / 1024;
-    const sheetW = Math.max(...monsters.frames.map((f) => f.x + f.w));
-    const sheetH = Math.max(...monsters.frames.map((f) => f.y + f.h));
+    const { width: sheetW, height: sheetH } = monsters.size;
     const url = `url(${JSON.stringify(this.art.url(monsters.sheet))})`;
     monsters.rows.forEach((row, k) => {
       const box = this.element.ownerDocument.createElement('div');
@@ -326,9 +342,13 @@ export class WorldMap {
     const [x, y] = [event.clientX - rect.left, event.clientY - rect.top];
     let best: number | null = null;
     let bestDistance = TOUCH_PICK;
+    const rate = this.size.h / 1024;
     monsters.rows.forEach((row, k) => {
       const at = iconAt(row, this.size.w, this.size.h);
-      const distance = Math.hypot(at.x + ICON_BOX / 2 - x, at.y + ICON_BOX / 2 - y);
+      // the centre of the icon as drawn (RenderScal at the rate, from its left and top), not of its 40 px box
+      const frame = monsters.frames[k];
+      const [half, halfH] = [((frame?.w ?? ICON_BOX) * rate) / 2, ((frame?.h ?? ICON_BOX) * rate) / 2];
+      const distance = Math.hypot(at.x + half - x, at.y + halfH - y);
       if (distance <= bestDistance) [best, bestDistance] = [k, distance];
     });
     if (best === null) this.hideTip();

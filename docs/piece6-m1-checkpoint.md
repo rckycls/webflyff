@@ -75,6 +75,35 @@ The owner's checks below are still open.
     checks the arrow picture.
 - **Screenshots:** the desktop and phone screenshots were checked by eye.
 
+## Final review fixes
+
+A fresh reviewer checked the branch. These were fixed, each with a test that failed first:
+
+- **Monster sheets:** the icons on Flaris, Saint Morning and Estia were cut from a squeezed sheet. The catalog now
+  keeps each sheet's own size (`monsters.size`), and the data was re-converted (data: 13 ok, 0 failed).
+- **Phone taps:** a tap picks by the centre of the drawn icon, not of its 40 px box.
+- **iPhone home-bar strip:** the open map covers it, so the task bar and the canvas there cannot be tapped.
+- **Refit:** the map fits itself again when the area changes while it is open.
+- **Browser guards:** no browser menu on a right-click, and no page zoom from a pinch over the map. These are the
+  world's own guards, which the overlay had skipped. This one was graded important rather than minor, because the
+  owner asked for it in Piece 5.
+- **New browser case:** opened while walking, the walk stops, nothing is sent while the map is open, and W walks again.
+  The main case now also runs a second of rules before its no-packet check, with iPhone-like safe insets on the phone.
+- **Checklist:** step 7 now says how to get into a dungeon, since the teleporter reaches only the entrances. Step 5
+  also taps the home-bar edge, and step 2 no longer calls the arrow green.
+
+Accepted as it is: without its catalog, the overlay error shows when the world is entered rather than on M.
+
+Left for later, as minor:
+- any mouse button switches maps, where Neuz takes only the left;
+- the tooltip's right clamp is 8 px off `tooltip.cpp:467-468`, and the element icon's margin differs;
+- Tab can move the focus to buttons under the open map.
+
+After the fixes:
+- `npm test`: 143 files passed, 2,959 tests passed, 8 skipped; exit 0.
+- Typecheck: clean.
+- `worldMap.spec.ts`: 5 passed and 1 skipped, the keyboard case on the phone.
+
 ## Owner checks
 
 - [ ] `npm run test:e2e:client`, the full run: no `failed`. The taller Start menu is checked here too, by the landscape

@@ -95,6 +95,8 @@ describe('the world map catalog (CWorldMap, CContinent, CMonsterInfoPack)', () =
     expect(flaris.rows).toHaveLength(3);
     expect(flaris.rows[0]).toEqual({ movers: [20, 21, 22, 23], x: 436, y: 760, drop: 2900 });
     expect(flaris.frames[2]).toEqual({ x: 80, y: 0, w: 40, h: 40 });
+    // the sheet's own size (m_size), which the frames need not fill: 3 frames of a 120x200 picture
+    expect(flaris.size).toEqual({ width: 120, height: 200 });
     expect(map!.buttons.sheet).toBe('ui/texmapbutton.png');
     expect(map!.buttons.frames).toHaveLength(27);
     expect(map!.arrow).toBe('ui/imgmaparrow.png');

@@ -9,7 +9,7 @@ import { ArWriter, PacketType } from '@flyffweb/protocol';
 import type { Vec3 } from '@flyffweb/protocol';
 import { createWorldScript, writeAddSelf } from '@flyffweb/testkit';
 import type { Gateway } from './worldHarness';
-import { ASSETS, MADRIGAL, SELF_ID, SQUARE, enterFlaris, playGateway, self, sentOf } from './worldHarness';
+import { ASSETS, MADRIGAL, SELF_ID, SQUARE, enterFlaris, ownAt, playGateway, self, sentOf } from './worldHarness';
 
 // Piece 6 M1: CWorldMap's ordinary V15 map on M and in the Start menu (docs/superpowers/plans/2026-11-02-piece6-m1-world-map.md).
 test.setTimeout(150_000);
@@ -39,6 +39,16 @@ test('world map: M and the Start menu open Flaris; the buttons, the monster deta
   const gateway = await playGateway(page);
   await enterFlaris(page);
   await page.evaluate(() => window.__client!.pause());
+  if (isMobile) {
+    // an iPhone held sideways: notch insets left and right, the home bar below (as controls.spec.ts sets them)
+    await page.locator('.world').evaluate((element) => {
+      (element as HTMLElement).style.setProperty('--game-safe-left', '48px');
+      (element as HTMLElement).style.setProperty('--game-safe-right', '12px');
+      (element as HTMLElement).style.setProperty('--game-safe-bottom', '34px');
+      window.dispatchEvent(new Event('resize'));
+    });
+    await page.evaluate(() => window.__client!.step(0));
+  }
   const sentBefore = gameplaySent(gateway);
 
   if (isMobile) await openFromStart(page);
@@ -63,13 +73,16 @@ test('world map: M and the Start menu open Flaris; the buttons, the monster deta
   await page.screenshot({ path: test.info().outputPath('world-map.png') });
 
   if (isMobile) {
-    // the whole picture inside the screen, and a close button a finger can hit
+    // the whole picture inside the safe area, the map itself down to the screen's edge (over the home-bar strip, where
+    // the task bar and the canvas reach), and a close button a finger can hit
     const viewport = page.viewportSize()!;
     const box = (await picture(page).boundingBox())!;
-    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x).toBeGreaterThanOrEqual(48 - 0.5);
     expect(box.y).toBeGreaterThanOrEqual(0);
-    expect(box.x + box.width).toBeLessThanOrEqual(viewport.width + 0.5);
-    expect(box.y + box.height).toBeLessThanOrEqual(viewport.height + 0.5);
+    expect(box.x + box.width).toBeLessThanOrEqual(viewport.width - 12 + 0.5);
+    expect(box.y + box.height).toBeLessThanOrEqual(viewport.height - 34 + 0.5);
+    const cover = (await worldMap(page).boundingBox())!;
+    expect(cover.y + cover.height).toBeGreaterThanOrEqual(viewport.height - 0.5);
     const close = (await page.locator('[data-worldmap-close]').boundingBox())!;
     expect(close.width).toBeGreaterThanOrEqual(44);
     expect(close.height).toBeGreaterThanOrEqual(44);
@@ -87,7 +100,34 @@ test('world map: M and the Start menu open Flaris; the buttons, the monster deta
     await page.locator('[data-worldmap-close]').click();
     await expect(worldMap(page)).toBeHidden();
   }
+  // the rules run a second: a press that had reached the world would send its walk, target or swing now
+  await page.evaluate(() => window.__client!.step(60));
   expect(gameplaySent(gateway)).toBe(sentBefore);
+});
+
+test('world map: opened while walking, the walk stops, nothing is sent while it is open, and W walks again after', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'a keyboard case: the touch path is the same releaseControls');
+  const gateway = await playGateway(page);
+  await enterFlaris(page);
+  const moves = () => sentOf(gateway, PacketType.PLAYERMOVED).length;
+  const walking = moves();
+  await page.keyboard.down('KeyW');
+  await expect.poll(moves).toBeGreaterThan(walking);
+  await page.keyboard.press('KeyM');
+  await expect(worldMap(page)).toBeVisible();
+  // the held W lets go as the map opens (its ordinary stop), then nothing more while it is open
+  await page.waitForTimeout(2_000);
+  const [open, at] = [gameplaySent(gateway), await ownAt(page)];
+  await page.waitForTimeout(3_000);
+  expect(gameplaySent(gateway)).toBe(open);
+  expect(await ownAt(page)).toEqual(at);
+  await page.keyboard.up('KeyW');
+  await page.keyboard.press('KeyM');
+  await expect(worldMap(page)).toBeHidden();
+  const closed = moves();
+  await page.keyboard.down('KeyW');
+  await expect.poll(moves).toBeGreaterThan(closed);
+  await page.keyboard.up('KeyW');
 });
 
 test('world map: in Mars Mine, M says the map is not for here, and opens nothing', async ({ page, isMobile }) => {

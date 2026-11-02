@@ -811,19 +811,19 @@ If it fails, send me the lines from the first `failed` down to the end.
 
 M (or **Start → World Map**) opens the classic V15 world map. It shows the continent you stand on, with nine picture buttons down the left: the whole world, the seven continents, and **Monster Info**. As in the Windows client, the map is only for Madrigal: in a dungeon, M prints "You can not use the Map in this Dungeon." instead. On the web it also has a close button at its top right, which the Windows client does not have.
 
-**What the test character needs:** any character in Flaris. For step 7, a trip to Mars Mine through the Flaris teleporter NPC, and the way back.
+**What the test character needs:** any character in Flaris. For step 7, a way into a dungeon world, such as Mars Mine (see the step), and the way back.
 
 **Start the client** from the piece6 folder, as in milestone 0 (`cd C:\Users\silec\Desktop\FlyFF\Bakbak\FlyffWeb-worktrees\piece6`, `$env:GATEWAY_PROXY = 'ws://<VM-IP>:8090'`, `npm run dev:client`). Open `http://localhost:5174` on the PC and `http://<PC-IP>:5174` on the phones.
 
 **Steps**, on the PC, an Android phone and an iPhone:
 
 1. **Opening.** In Flaris, press M on the PC, or tap **Start**, then **World Map**. Success: the Flaris map fills the game view, with the Flaris button drawn pressed. On a phone the whole picture and all nine buttons are visible, nothing is cut off at the notch or the bottom.
-2. **Where you are.** Success: the green arrow with your name sits where you stand in Flaris. Turn the camera (right-drag on the PC, a swipe on the phone), close the map and open it again: the arrow now points the way the camera looks.
+2. **Where you are.** Success: the arrow sits where you stand in Flaris, with your name above it in green. Turn the camera (right-drag on the PC, a swipe on the phone), close the map and open it again: the arrow now points the way the camera looks.
 3. **The buttons.** Press each button in turn, the world and the seven continents. Success: each one shows its own picture and is drawn pressed. On every continent other than Flaris, your arrow is hidden. On the world picture it shows again, over Flaris.
 4. **Monster Info.** Back on the Flaris map, press **Monster Info**. Success: small monster pictures appear on the map. Hover one with the mouse, or tap it on the phone. Success: a box lists "Lv.1 Small Aibatt" and the others, the last name in red, then "Booty : Twinkle Stone". Press Monster Info again: the pictures go away.
-5. **Nothing moves.** With the map open, press W, tap the map, and drag on it. Success: your character does not move, attack or turn, and the map stays open.
+5. **Nothing moves.** With the map open, press W, tap the map, and drag on it. On the iPhone, also tap along the very bottom edge of the screen, by the home bar. Success: your character does not move, attack or turn, nothing under the map opens, and the map stays open.
 6. **Closing.** On the PC: M closes it, Escape closes it, and the close button at the top right closes it. On the phone: the close button. Success: the game is back as before.
-7. **In a dungeon.** Take the teleporter to Mars Mine and press M, or Start → World Map. Success: "You can not use the Map in this Dungeon." appears in red, and no map opens. Come back to Flaris.
+7. **In a dungeon.** Go into a dungeon world. The Flaris teleporter only takes you to dungeon entrances in Madrigal, so take it to one, for example Mars Mine's, and walk through the entrance until the loading screen moves you inside. With a game-master character, your server's teleport command to world 200 (Mars Mine) works too. Then press M, or Start → World Map. Success: "You can not use the Map in this Dungeon." appears in red, and no map opens. Come back to Flaris.
 8. **The teleporter map still works.** Talk to the Flaris teleporter NPC and choose a destination. Success: you are moved, as in Piece 5.
 
 ## Results

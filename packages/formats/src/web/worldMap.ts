@@ -19,7 +19,13 @@ export interface WebWorldMapEntry {
   /** The continent it is the map of (`C_id`); null for map 0. */
   continent: number | null;
   /** The monster icons (`m_strMonScript[index - 1]`, :214-225); null for map 0 and for a script that could not be read. */
-  monsters: { sheet: string; frames: MapFrame[]; rows: MapMonsterRow[] } | null;
+  monsters: {
+    sheet: string;
+    /** The sheet picture's own size (`m_size`), which its frames need not fill: what they are cut from. */
+    size: { width: number; height: number };
+    frames: MapFrame[];
+    rows: MapMonsterRow[];
+  } | null;
 }
 
 export interface WebWorldMap {

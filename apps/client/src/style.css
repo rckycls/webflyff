@@ -1807,7 +1807,12 @@ fieldset:disabled .btn {
    (RenderWorldMap after PaintRoot, Neuz.cpp:792-793), fitted 4:3 inside the safe area; the fill is set by the script. */
 .hud-worldmap {
   position: absolute;
-  inset: 0;
+  /* down to the screen's edge, over the bottom safe strip where the floating task bar and the canvas reach (the HUD
+     layer stops above it); the picture stays inside the insets (.hud-worldmap-area) */
+  top: 0;
+  right: 0;
+  bottom: calc(0px - var(--game-safe-bottom, 0px));
+  left: 0;
   z-index: 1500;
   pointer-events: auto;
   touch-action: none;
@@ -1818,7 +1823,7 @@ fieldset:disabled .btn {
 .hud-worldmap-area {
   position: absolute;
   top: 0;
-  bottom: 0;
+  bottom: var(--game-safe-bottom, 0px);
   left: var(--game-safe-left, 0px);
   right: var(--game-safe-right, 0px);
 }
