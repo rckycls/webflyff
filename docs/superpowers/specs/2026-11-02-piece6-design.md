@@ -34,7 +34,7 @@ with a task that traces the C++ for that milestone and adds the exact `file:line
   | M1 | World map | The classic V15 world map on M and in the Start menu. |
   | M2 | Music and sound | The game's music by world and region, sound effects, and a Sound window. |
   | M3 | Reconnect | After a dropped connection, one tap logs back in to the same character. |
-  | M4 | Installable app | Add to home screen on Android and iPhone, with the game's icon, in landscape. |
+  | M4 | Installable app | Add to home screen on Android and iPhone, with the game's icon, in landscape. **Skipped by the owner on 2026-11-03.** |
   | M5 | Performance and memory | At least 30 fps and at most about 400 MB on the weakest phone, with no memory leak. |
 
 - **No server change.** Every packet the browser sends is one Neuz sends. The servers in `Program\` and in the owner's
