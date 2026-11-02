@@ -763,3 +763,44 @@ Automated findings, fixes and exact evidence are in [the mobile UI audit](2026-1
 - [ ] Check Jump/Attack below Navigator and above the composer with actual safe-area insets; test second-finger Jump while steering.
 - [ ] Rotate with Character/Skill open; check centering, close buttons, Bag/Shop footers and item/drop/shop quantity controls above the taskbar.
 - [ ] Repeat on Android Chrome and iPhone Safari, including the real software keyboard. Record device/OS/browser versions and failures.
+
+## Piece 6, milestone 0: a target behind a wall
+
+Before this fix, auto-attacking a monster on the other side of a fence or wall disconnected you with "Too much data was sent." after about a second. The character now keeps nudging at the obstacle, as in the Windows client, but asks the server at most 10 times a second.
+
+**What the test character needs:** any character that can attack. For step 3, a Vagrant of level 3 or higher with Clean Hit on the bar.
+
+**Start the client** from the piece6 folder, with the gateway running in the VM as before. In PowerShell on the PC (put in the VM's address; it was 192.168.100.141 last time):
+
+```
+cd C:\Users\silec\Desktop\FlyFF\Bakbak\FlyffWeb-worktrees\piece6
+$env:GATEWAY_PROXY = 'ws://<VM-IP>:8090'
+npm run dev:client
+```
+
+Open `http://localhost:5174` on the PC and `http://<PC-IP>:5174` on the phone.
+
+**Steps**, on the phone and on the PC:
+
+1. **Auto-attack across an obstacle.** Find a monster on the other side of a fence, a wall or a building corner, so that walking straight at it runs into the obstacle. Select it, then press the attack button (phone) or click it again (PC). Success: the character walks into the obstacle and keeps nudging at it; after 30 seconds you are still in the game, and "Too much data was sent." never shows.
+2. **Around the obstacle.** With the auto-attack still on, walk around the obstacle with the joystick or the keys, then select the monster and attack again. Success: once the way is clear, the character reaches the monster and fights it.
+3. **A skill across an obstacle.** Select a monster behind the obstacle again and use Clean Hit from the bar. Success: the character bumps into the obstacle once and stops, and you stay in the game. (If the monster is close enough for the skill's reach through the obstacle, "Blocked." shows instead: that is the Windows client's rule too, and also a pass.)
+
+## Results
+
+| Device | Browser | 1. Auto-attack across | 2. Around it | 3. Skill across | Notes |
+| --- | --- | --- | --- | --- | --- |
+| Phone | | | | | |
+| PC | Chrome | | | | |
+
+## Pass and fail
+
+Milestone 0 passes when every cell above is `pass`, and the browser tests below pass. If you are disconnected, write down the message and how long it took, and send a photo of the overlay.
+
+**The browser tests (yours to run),** on the PC in PowerShell in the piece6 folder, with your own `npm run dev:client` stopped first (the tests start their own on port 5174):
+
+| Command | How long | Success |
+| --- | --- | --- |
+| `npm run test:e2e:client -- fight.spec.ts skills.spec.ts` | about 15-25 minutes | It ends with `… passed`, maybe a few `skipped`, and no `failed`. |
+
+If it fails, send me the lines from the first `failed` down to the end.

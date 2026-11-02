@@ -25,6 +25,7 @@ import type { CombatEvent, Mover } from '../src/world/WorldState';
 import { MI_MALE, addedNpc, addedPlayer, webMoverOf } from './helpers/movers';
 import { OWN_ID, STARTER_EQUIPMENT, itemProp, ownAdded, ownGameData } from './helpers/ownState';
 import { CLEAN_HIT, FLURRY, OVER_CUT, vagrantSkills } from './helpers/skills';
+import { TRAFFIC_BUDGET, busiestSecond } from './helpers/traffic';
 
 /** `MI_AIBATT1`, a monster that can be killed. */
 const AIBATT = 20;
@@ -620,6 +621,64 @@ describe('SkillUse: the action slot (UseSkillQueue, ENDSKILLQUEUE)', () => {
     bar.useSkill(OWN_ID, CLEAN_HIT.id, 1, MONSTER_ID, 0);
     expect(bar.own.act.state).toBe(ObjSta.ATK_MELEESKILL);
     expect(bar.skills.execute).toBe(0);
+  });
+});
+
+describe('SkillUse: a target behind a wall (Piece 6 M0)', () => {
+  // 8 m east, so that the wall stops the walk before the skill's range (2.8 m through the wall would arrive and say
+  // TID_GAME_BLOCKTARGETING instead, `arrive`)
+  const behindWall = (): ReturnType<typeof rig> => rig({
+    ground: { ...terrainGround(() => 0), objectsNear: () => [wallAt(103)] }, queue: [skillShortcut(0, 2)],
+    monsterAt: [108, 0, 100],
+  });
+  /**
+   * `steps` rules steps of `r`, with `act` before the first: the step of each packet sent, the PLAYERCORR the step owes
+   * included (which the world screen sends and clears, `OwnMover.corrected`), and the steps of the PLAYERSETDESTOBJs and
+   * of the PLAYERCORRs.
+   */
+  const counted = (r: ReturnType<typeof rig>, steps: number, act: () => void) => {
+    const at: number[] = [];
+    const destObjAt: number[] = [];
+    const corrAt: number[] = [];
+    for (let s = 0; s < steps; s++) {
+      const before = r.sent.length;
+      if (s === 0) act();
+      r.step();
+      for (const sent of r.sent.slice(before)) {
+        at.push(s);
+        if (sent[0] === 'destObj') destObjAt.push(s);
+      }
+      if (r.own.corrReport) {
+        at.push(s);
+        corrAt.push(s);
+        r.own.corrReport = null;
+      }
+    }
+    return { at, destObjAt, corrAt };
+  };
+
+  it('a skill from the bar on a target behind a wall bumps once and asks no more', () => {
+    const r = behindWall();
+    const { at, destObjAt, corrAt } = counted(r, 300, () => {
+      r.tap(MONSTER_ID);
+      r.skills.useSlot(0);
+    });
+    expect(destObjAt).toHaveLength(1);
+    expect(corrAt).toHaveLength(1);
+    expect(busiestSecond(at)).toBeLessThanOrEqual(TRAFFIC_BUDGET);
+  });
+
+  it('the action slot with a staff keeps walking up at most 10 times a second, within the traffic budget', () => {
+    const r = behindWall();
+    r.numbers.equipped = { weapon: itemProp({ id: 31, kind1: 1, kind2: 2, kind3: Ik3.STAFF, part: 10 }), armour: [] };
+    const { at, destObjAt } = counted(r, 300, () => {
+      r.tap(MONSTER_ID);
+      r.skills.useActionSlot();
+    });
+    expect(busiestSecond(at)).toBeLessThanOrEqual(TRAFFIC_BUDGET);
+    const lastFourSeconds = destObjAt.filter((s) => s >= 60).length;
+    expect(lastFourSeconds).toBeGreaterThanOrEqual(36);
+    expect(lastFourSeconds).toBeLessThanOrEqual(40);
   });
 });
 

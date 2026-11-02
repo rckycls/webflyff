@@ -33,4 +33,16 @@ describe('item actions', () => {
     actions.cancel(); actions.step(9000);
     expect(sender.sendDestObj).toHaveBeenCalledTimes(2);
   });
+
+  it('a drop that is never picked up is asked for once, then given up after 6 s', () => {
+    // Piece 6 M0: a drop behind a wall stays on the ground; the pick-up must not keep asking for it
+    const own = newVagrant();
+    const drop: GroundItem = { index: 21, scale: 1, pos: [11, 0, 10], angle: 0, item: { objectId: 0, itemId: 21, count: 1 } };
+    const drops = new Map([[100, drop]]);
+    const sender = { sendEquipItem: vi.fn(), sendDropItem: vi.fn(), sendMoveItem: vi.fn(), sendDestObj: vi.fn() };
+    const actions = new ItemActions(() => own, () => [10, 0, 10], () => drops, ownGameData().itemProps, sender, vi.fn());
+    expect(actions.pick(100, 0)).toBe(true);
+    for (let now = 1000 / 60; now <= 10_000; now += 1000 / 60) actions.step(now);
+    expect(sender.sendDestObj).toHaveBeenCalledTimes(1);
+  });
 });
