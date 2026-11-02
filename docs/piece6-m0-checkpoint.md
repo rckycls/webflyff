@@ -1,7 +1,7 @@
 # Piece 6 milestone 0 checkpoint: a target behind a wall
 
 Date: 2026-11-02. Branch `piece6`. Spec: [Piece 6 design](superpowers/specs/2026-11-02-piece6-design.md) §3.1.
-Plan: [M0 plan](superpowers/plans/2026-11-02-piece6-m0-blocked-attack.md). The owner's checks below are still open.
+Plan: [M0 plan](superpowers/plans/2026-11-02-piece6-m0-blocked-attack.md). The owner reported M0 passed on 2026-11-02, after re-running the client from this folder; the first run had used the piece5 folder, without the fix.
 
 ## What changed
 
@@ -53,7 +53,7 @@ tap-walk into a wall. Walking to an NPC sends no approach.
 
 ## Owner checks
 
-- [ ] `npm run test:e2e:client -- fight.spec.ts skills.spec.ts` on the PC: no `failed`.
-- [ ] `docs/device-testing.md`, "Piece 6, milestone 0", on the phone and the PC: every step passes.
+- [x] `npm run test:e2e:client -- fight.spec.ts skills.spec.ts` on the PC: no `failed` (reported passed by the owner).
+- [x] `docs/device-testing.md`, "Piece 6, milestone 0", on the phone and the PC: every step passes (reported passed by the owner).
 
 The converted game files were copied into this worktree's `dist/assets` from the piece5 worktree, for `dev:client`.
