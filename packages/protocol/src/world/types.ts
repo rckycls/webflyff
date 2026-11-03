@@ -12,6 +12,7 @@ import type { OwnQuest, QuestMessage } from './quest';
 import type { ShopMessage } from './shop';
 
 export type WorldMessage = ChatMessage | NpcMessage | ShopMessage | QuestMessage
+  | { type: 'profileStats'; values: number[] }
   | { type: 'addItem'; item: GroundItem }
   | { type: 'createItem'; itemType: number; item: InventoryItem; stacks: Array<{ objectId: number; count: number }> }
   | { type: 'updateItem'; itemType: number; objectId: number; param: number; value: number; time: number }

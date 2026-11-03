@@ -40,6 +40,8 @@ import type { WorldMessage } from './types';
 export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
   new Map<number, MessageReader<WorldMessage>>([
     [MessageType.ADD_OBJ, readAddObj],
+    // Server calculated display values: gear, awakenings, sets, sockets and buffs.
+    [0x8871, r => ({ type: 'profileStats', values: Array.from({ length: 14 }, () => r.i32()) })],
     [0x0069, r => readSocial(r, 'party')],
     [0x004f, readGmChat],
     [0x00a0, readAnnouncement],

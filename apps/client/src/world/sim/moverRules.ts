@@ -74,6 +74,8 @@ export interface SimMover {
    * factor (no buffs in Piece 3), kept by the owner; the rules read that, and put `corr.speed` in its place for a step.
    */
   speedFactor: number;
+  /** Server calculated own movement speed; corrections still take precedence. */
+  profileSpeed?: () => number | undefined;
   /** `CMover::IsActiveMover()`: the player's own character, which arrives at a point only once past it. */
   isSelf?: boolean;
   /** `CObj::GetRadius()` (`Obj.cpp:781-790`, from the model's box and scale), for `IsRangeObj`. 0 when not known. */
@@ -217,7 +219,7 @@ export function buffedSpeed(speed: number, adj: number): number {
 /** `CMover::GetSpeed( m_pActMover->m_fSpeed )` (`MoverParam.cpp:3248-3289`): `m_fCrrSpd` while it is set. */
 function getSpeed(m: SimMover): number {
   const corrected = m.corr?.speed ?? 0;
-  return corrected !== 0 ? corrected : f32(m.act.body.speed);
+  return corrected !== 0 ? corrected : f32(m.profileSpeed?.() ?? m.act.body.speed);
 }
 
 /**

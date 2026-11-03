@@ -645,9 +645,12 @@ export class WorldState {
         maxHp: { get: () => numbers.maxHp(), enumerable: true },
       });
     }
+    if (isSelf && numbers?.objectId === objectId) {
+      mover.profileSpeed = () => numbers.profileStats ? numbers.profileStats[12]! / 1000000 : undefined;
+    }
     act.findMover = (id) => this.byId.get(id)?.act;
     act.hitPoint = () => mover.hp;
-    if (isSelf) act.jumpBonus = () => this.numbers?.adj.get(Dst.JUMPING) ?? 0;
+    if (isSelf) act.jumpBonus = () => this.numbers?.profileStats?.[13] ?? this.numbers?.adj.get(Dst.JUMPING) ?? 0;
     act.onHit = () => this.onAttackMelee(mover);
     act.onMeleeSkill = () => this.onMeleeSkill(mover);
     act.onAttackQuake = () => this.onAttackQuake(mover);

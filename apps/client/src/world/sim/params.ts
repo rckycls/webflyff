@@ -20,6 +20,7 @@ import type { ExpRow, JobProp, WebItemProp } from '@flyffweb/formats';
  */
 
 const f32 = Math.fround;
+const GEAR_MULTIPLIER = 1; // Catalog values already include the Resource gear profile.
 
 /** `DST_*` (`Resource/defineAttribute.h`): the destination parameters these formulas read, and the three that stand for two. */
 export const Dst = {
@@ -174,7 +175,7 @@ export function equipAdjust(eq: Equipped): ParamAdjust {
     for (let i = 0; i < DEST_PARAMS_PER_ITEM; i++) {
       const dst = item.destParams[i];
       if (dst === undefined || dst === -1) continue;
-      setDestParam(adj, dst, item.adjParams[i] ?? 0);
+      setDestParam(adj, dst, (item.adjParams[i] ?? 0) * GEAR_MULTIPLIER);
     }
   }
   return adj;
@@ -391,8 +392,8 @@ function weaponAtk(job: JobProp, level: number, s: Stats, weaponType: number, ad
  */
 export function attackShown(job: JobProp, level: number, s: Stats, eq: Equipped, adj: ParamAdjust = equipAdjust(eq)): number {
   const held = eq.weapon ?? FISTS;
-  let min = getParam(adj, Dst.ABILITY_MIN, held.abilityMin * 2);
-  let max = getParam(adj, Dst.ABILITY_MAX, held.abilityMax * 2);
+  let min = getParam(adj, Dst.ABILITY_MIN, held.abilityMin * 2 * (eq.weapon ? GEAR_MULTIPLIER : 1));
+  let max = getParam(adj, Dst.ABILITY_MAX, held.abilityMax * 2 * (eq.weapon ? GEAR_MULTIPLIER : 1));
 
   const plus = weaponAtk(job, level, s, held.weaponType, adj) + getParam(adj, Dst.CHR_DMG, 0);
   min += plus;
@@ -425,8 +426,8 @@ export function defenceShown(job: JobProp, level: number, s: Stats, eq: Equipped
   for (const item of eq.armour) {
     if (item.kind2 !== IK2_ARMOR && item.kind2 !== IK2_ARMORETC) continue;
     // nMin += (int)( dwAbilityMin * f ) + nOptionVal, nOptionVal 0 without a refine
-    defenseMin += Math.trunc(f32(item.abilityMin * ITEM_MULTIPLIER));
-    defenseMax += Math.trunc(f32(item.abilityMax * ITEM_MULTIPLIER));
+    defenseMin += Math.trunc(f32(item.abilityMin * ITEM_MULTIPLIER * GEAR_MULTIPLIER));
+    defenseMax += Math.trunc(f32(item.abilityMax * ITEM_MULTIPLIER * GEAR_MULTIPLIER));
   }
   defenseMin = getParam(adj, Dst.ABILITY_MIN, defenseMin);
   defenseMax = getParam(adj, Dst.ABILITY_MAX, defenseMax);

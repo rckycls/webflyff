@@ -737,7 +737,7 @@ export class AttackLoop {
     act.attackSpeed = () => {
       const state = this.own();
       if (state === undefined) return 1;
-      return attackSpeed(state.jobProp, state.attackSpeed(), state.level, state.effective().dex, state.adj).speed;
+      return state.profileStats ? state.profileStats[11]! / 1000000 : attackSpeed(state.jobProp, state.attackSpeed(), state.level, state.effective().dex, state.adj).speed;
     };
   }
 

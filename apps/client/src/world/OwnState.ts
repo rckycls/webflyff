@@ -163,6 +163,8 @@ export class OwnState {
   private adjust: ParamAdjust;
   /** Piece 7 M2: the live buffs' parameters (SETDESTPARAM less RESETDESTPARAM), by `DST_*`. */
   private readonly buffAdjust = new Map<number, number>();
+  /** Owner-only server display snapshot, refreshed after any stat change. */
+  profileStats: readonly number[] | null = null;
 
   /**
    * `added` is the own ADD_OBJ (its HP is `m_nHitPoint`; its `player.own` the rest) and `equipment` the lobby's item IDs
@@ -278,19 +280,20 @@ export class OwnState {
 
   /** `GetStr()`, `GetSta()`, `GetDex()` and `GetInt()`: the stats plus the worn items' parameters, at least 1. */
   effective(): Stats {
-    return effectiveStats(this.stats, this.adjust);
+    const v = this.profileStats;
+    return v ? { str: v[0]!, sta: v[1]!, dex: v[2]!, int: v[3]! } : effectiveStats(this.stats, this.adjust);
   }
 
   maxHp(): number {
-    return maxHitPoint(this.jobProp, this.levelNow, this.effective(), this.adjust);
+    return this.profileStats?.[4] ?? maxHitPoint(this.jobProp, this.levelNow, this.effective(), this.adjust);
   }
 
   maxMp(): number {
-    return maxManaPoint(this.jobProp, this.levelNow, this.effective(), this.adjust);
+    return this.profileStats?.[5] ?? maxManaPoint(this.jobProp, this.levelNow, this.effective(), this.adjust);
   }
 
   maxFp(): number {
-    return maxFatiguePoint(this.jobProp, this.levelNow, this.effective(), this.adjust);
+    return this.profileStats?.[6] ?? maxFatiguePoint(this.jobProp, this.levelNow, this.effective(), this.adjust);
   }
 
   /** The EXP text of the status window (`CWndStatus::OnDraw`, `WndField.cpp:10617-10622`): `"12.34%"`. */
@@ -317,6 +320,9 @@ export class OwnState {
    */
   apply(message: WorldMessage, objectId: number): OwnEvent[] {
     switch (message.type) {
+      case 'profileStats':
+        if (objectId === this.objectId && message.values.length === 14) this.profileStats = [...message.values];
+        return [];
       case 'setState':
         return this.onSetState(message);
       case 'taskBar':

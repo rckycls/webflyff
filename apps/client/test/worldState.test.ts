@@ -887,6 +887,17 @@ describe('WorldState: the own character\'s numbers (OwnState, one source of its 
     expect(world.takeChanges().combat).toEqual([hitEvent(OWN_ID, MONSTER, 30, GENERIC, false)]); // no monster in view
   });
 
+  it('uses server profile movement values without breaking correction steps', () => {
+    const { world, own, self } = combatWorld();
+    own.apply({ type: 'profileStats', values: [15, 15, 15, 15, 230, 63, 31, 49, 24, 1, 42, 840000, 200000, 25] }, OWN_ID);
+    expect(self.profileSpeed?.()).toBe(0.2);
+    expect(self.act.jumpBonus()).toBe(25);
+    expect(() => world.step()).not.toThrow();
+    own.apply({ type: 'profileStats', values: [15, 15, 15, 15, 230, 63, 31, 49, 24, 1, 42, 840000, 0, 0] }, OWN_ID);
+    expect(self.profileSpeed?.()).toBe(0);
+    expect(() => world.step()).not.toThrow();
+  });
+
   it('the own death: OwnState\'s HP 0 and its event, the death\'s last HP, the dead state', () => {
     const { world, own, self } = combatWorld();
     add(world, aibatt(MONSTER));
