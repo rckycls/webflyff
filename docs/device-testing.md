@@ -1000,3 +1000,54 @@ There is no pass or fail for you here. Send me the table, and I'll compare it wi
 | `npm.cmd run test:firstload:client` | about 3 minutes | Known to fail today, at about 16.3 MiB against 15 MiB, mostly textures: that is Part B's. Send me its `first load:` line. |
 
 If something else fails, send me the lines from the first `failed` down to the end.
+
+## Piece 7, milestone 0: the classic NPC dialogue
+
+Talking to an NPC now works as in the Windows client. A tap on an NPC within 20 steps opens its menu beside it, or runs its only entry at once. The menu is a white box listing the NPC's entries in the game's order, with entries the browser cannot do yet greyed. **Dialog** opens the 512 × 320 dialogue window with the NPC's picture on the left, the text page by page with the arrow button, the keyword buttons below, and Yes / No / OK buttons on the last page. **Trade** and **Teleport** open the shop and the teleporter as before. A tap on an NPC farther away walks you to it, and a second tap opens the menu. The dialogue closes when you move, when the NPC leaves, on its close button, on Escape, or when the NPC ends the talk. Quest lines show in the dialogue (**New Quest**, **Quests in Progress**), but taking and handing in quests is milestone 1.
+
+**What the test character needs:** any job, level 1 to 15, in Flaris, with at least one item in the inventory to drop, and enough penya for one shop item.
+
+**Start the client** from the piece7 folder: stop your own `npm run dev:client` first (it may be running from the piece6 folder), then in PowerShell, with the servers and the gateway in the VM:
+
+```
+cd C:\Users\silec\Desktop\FlyFF\Bakbak\FlyffWeb-worktrees\piece7
+$env:GATEWAY_PROXY = 'ws://<VM-IP>:8090'
+npm run dev:client
+```
+
+**Steps**, on the PC and a landscape phone:
+
+1. **Julia's menu.** Tap Julia (Flaris, by the square). Success: a white menu at her right shoulder: Dialog, Trade, then Deposit, Guild Ranking, Guild Duel ranking, Overall guild ranking and Enter quiz event greyed. No Guild Warehouse.
+2. **Dialog.** Tap **Dialog**. Success: the dialogue window opens near the top (centred on the phone), with Julia's picture on the left and the title "Dialog". Her greeting shows, with **Introduction** and **Farewell** below. If she has a quest for you, **New Quest** is on its own row. A long text scrolls inside its box.
+3. **Pages and keys.** Tap **Introduction**. Success: her answer replaces the text, and the title reads "Introduction". Where the text has more pages, the small arrow at the right moves on, and Yes / No / OK buttons show only on the last page. Tapping two keys quickly sends only the first.
+4. **The shop from the menu.** Close the dialogue, tap Luda (the shop next to Julia), and choose **Trade**. Success: her shop opens as before. Buy one item.
+5. **The teleporter.** Tap the Flaris teleporter NPC and choose **Teleport**. Success: the map of destinations opens as before.
+6. **Walking up.** Stand about 30 steps from an NPC and tap it. Success: no menu yet. You walk up to it, and a second tap opens the menu.
+7. **Moving closes it.** Open a dialogue, then press **W** (or push the joystick). Success: the window closes.
+8. **After a drop.** Drop an item, then at once tap an NPC and choose **Dialog**. Success: nothing opens for 3 seconds. After that it opens.
+9. **Escape** (PC only). Open the menu and press Escape: it closes. Open the dialogue and press Escape: it closes.
+
+## Results
+
+| Device | Browser | 1. Menu | 2. Dialog | 3. Pages | 4. Shop | 5. Teleporter | 6. Walk up | 7. Moving | 8. Drop | 9. Escape | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| PC | Chrome | | | | | | | | | | |
+| Android phone | Chrome | | | | | | | | | n/a | |
+| iPhone | Safari | | | | | | | | | n/a | |
+
+## Pass and fail
+
+Milestone 0 passes when every cell of the table is `pass` (or `n/a` where it says so) and the tests below pass.
+
+**The tests (yours to run),** on the PC in PowerShell in the piece7 folder, with your own `npm run dev:client` stopped first:
+
+| Command | How long | Success |
+| --- | --- | --- |
+| `npm test` | about 2 minutes | `Tests … passed`, and no `failed`. |
+| `npm run typecheck` | about 1 minute | It ends with no `error`. |
+| `npm run test:e2e:client` | about 10 minutes | It ends with `… passed`, maybe a few `skipped`, and no `failed`. |
+| `$env:FLYFF_CLIENT = 'C:\Users\silec\Desktop\FlyFF\Bakbak\Blouflash VS22 V15\Client'; npm run test:corpus` | about 10 minutes | No `failed`. Run `Remove-Item Env:FLYFF_CLIENT` afterwards. |
+
+The piece7 folder's `dist/assets` already has the NPC pictures and the dialogue's pictures. For another folder's assets, run `npm run convert -- --client "C:\Users\silec\Desktop\FlyFF\Bakbak\Blouflash VS22 V15\Client" --only "WndDialogEx*,wndButtEnter*,QuestUiPaper*,char*,data"` there (about 1 minute, ends with `0 failed`).
+
+If one fails, send me the lines from the first `failed` down to the end.
