@@ -118,6 +118,8 @@ const OUT_OF_DATE_TEXT = 'The game files on the server are out of date.';
 const TOO_SLOW_TEXT = 'The game files took too long to load. Check the connection and try again.';
 /** How long the map around the player and the models in view may take to load before the entry gives up. */
 const LOAD_LIMIT_MS = 60_000;
+/** The longest the ring of tiles around the view waits for the models in view before it downloads anyway. */
+const PRELOAD_WAIT_MS = 10_000;
 /** The tiles shown around the player: 3 x 3, as the viewer's world view by default. */
 const RADIUS = 1;
 /** What the test hooks keep of what was played (`ClientPlayed`): the latest of each kind, so a long session stays small. */
@@ -274,6 +276,8 @@ export class WorldScreen {
   private itemUse: ItemUse | undefined;
   private itemActions: ItemActions | undefined;
   private groundItems: GroundItems | undefined;
+  /** The ground items' models, which the ring of tiles waits for (`settled`). */
+  private dropModels: GroundModels | undefined;
   private nearbyItems: NearbyItems | undefined;
   /** The own character's driving: the controls each rules step, the moves sent, the stop. */
   private ownMover: OwnMover | undefined;
@@ -771,6 +775,7 @@ export class WorldScreen {
     const dropModels = new GroundModels(this.stage!.scene, this.data!, loadDropModel(this.services!),
       () => this.ground, message => this.page!.overlay.error(message),
       pos => this.effects?.play({ xi: 64, pos })); // XI_GEN_ITEM_SHINE01, CItem::Render
+    this.dropModels = dropModels;
     this.groundItems = new GroundItems(this.data!, this.hudArt!, (id) => itemActions.pick(id, performance.now()), doc, dropModels);
     this.nearbyItems = new NearbyItems(this.data!, this.hudArt!, (id) => itemActions.pick(id, performance.now()), doc,
       () => itemActions.pickNearby(performance.now()));
@@ -1119,11 +1124,16 @@ export class WorldScreen {
       // the mark goes once the walk to its point is over: arrived, or ended by a key, a stop or the server
       this.mark!.follow(world.self()?.dest?.pos ?? null);
 
-      // the ring of tiles around the visible ones downloads only once the character is on screen: from the frame after
-      // the first (Piece 6 M5, part B: not part of the first load, tileStreamer.ts)
+      // the ring of tiles around the visible ones downloads only once the character is on screen (Piece 6 M5, part B: not
+      // part of the first load, tileStreamer.ts), and once the models in view are in: on a slow CPU its downloads, from
+      // the frame after the first, doubled the time a model in view took to come. PRELOAD_WAIT_MS at most.
       if (this.stageDrawn && !this.preloadStarted) {
         this.preloadStarted = true;
-        stage.startPreloading();
+        const generation = this.stageGeneration;
+        const inView = Promise.all([views.settled(), this.dropModels?.settled()]);
+        void Promise.race([inView, new Promise((resolve) => setTimeout(resolve, PRELOAD_WAIT_MS))]).then(() => {
+          if (generation === this.stageGeneration && !this.over) stage.startPreloading();
+        });
       }
       // the map around the own mover, and the chase camera of the last rules step (of now, before the first)
       stage.focus(this.ownAt());
@@ -1657,6 +1667,7 @@ export class WorldScreen {
     else this.chatWindow?.close();
     this.npcDialog?.dispose(); this.shopWindow?.dispose();
     this.groundItems?.dispose();
+    this.dropModels = undefined; // the ground items' own, disposed with them
     this.nearbyItems?.dispose();
     this.minimap?.dispose();
     if (this.worldMap !== undefined) this.worldMapMonsters = this.worldMap.monsterInfo;

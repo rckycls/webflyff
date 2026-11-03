@@ -248,7 +248,8 @@ test.describe('the world screen against scripted servers', () => {
       await route.fulfill({ response, json: { ...index, files } });
     });
     await playGateway(page);
-    await startEntering(page);
+    // not startEntering: with the index in the browser's cache the entry can end before the loading text is seen
+    await tapEnter(page);
 
     // The alert comes once the entry has fetched the asset index and the catalogs through the dev server, which four
     // workers drawing in software (SwiftShader) slow well past the 5 s default; the wait is on loading, not on a frame.

@@ -35,7 +35,8 @@ test('ground models load and remain pickable on desktop and phone', async ({ pag
   const gateway = await playGateway(page, script);
   await enterFlaris(page);
   const drop = page.getByRole('button', { name: /Pick up Lollipop/ });
-  await expect(drop).toHaveClass(/has-drop-model/);
+  // the model downloads and decodes beside the other workers' worlds: a wait on the frame loop (ON_FRAMES), as the world's
+  await expect(drop).toHaveClass(/has-drop-model/, ON_FRAMES);
   await expect(drop.locator('img')).toBeHidden();
   await page.screenshot({ path: info.outputPath('ground-model.png') });
   expect(shaderErrors).toEqual([]);
@@ -43,6 +44,34 @@ test('ground models load and remain pickable on desktop and phone', async ({ pag
   await expect.poll(() => sentOf(gateway, 0xffffff07).some(p => p.body.readUInt32LE(8) === 901)).toBe(true);
   gateway.pushCache(script.later([writeDelObj(901)]));
   await expect(drop).toHaveCount(0);
+});
+
+/** A tile of Flaris' ring: two tiles from Webby's, 13_6. */
+function ringTile(url: string): boolean {
+  const match = /\/worlds\/wdmadrigal\/tiles\/(\d+)_(\d+)\./.exec(url);
+  return match !== null && Math.max(Math.abs(Number(match[1]) - 13), Math.abs(Number(match[2]) - 6)) === 2;
+}
+
+// Piece 6 M5, part B: on a slow CPU the ring's downloads, right after the world shows, doubled the time a model in view
+// took to come (the drop's, 5.4 to 16.4 s at an 8x slowdown); the ring waits for them.
+test('the ring of map tiles around the view waits for the models in view', async ({ page }) => {
+  const ringAsked: number[] = [];
+  page.on('request', (request) => { if (ringTile(request.url())) ringAsked.push(Date.now()); });
+  await page.route(/\/assets\/models\//, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 3_000));
+    await route.continue();
+  });
+  const script = createWorldScript({ playerObjectId: SELF_ID, worldId: MADRIGAL, pos: SQUARE,
+    self: writeAddSelf(SELF_ID, { ...self, player: { ...SELF_PLAYER, own: newVagrantOwn(), equipmentObjectIds: Array(31).fill(NULL_ID) } }),
+    others: [groundItem()],
+  });
+  await playGateway(page, script);
+  await enterFlaris(page);
+  const onScreenAt = (await page.evaluate(() => window.__client!.perf())).onScreenAt!;
+  await expect(page.getByRole('button', { name: /Pick up Lollipop/ })).toHaveClass(/has-drop-model/, ON_FRAMES);
+  await expect.poll(() => ringAsked.length, ON_FRAMES).toBeGreaterThan(0);
+  // every model answers 3 s late: the drop's, asked for as the world showed, came 3 s after it at the earliest
+  expect(Math.min(...ringAsked) - onScreenAt).toBeGreaterThan(2_500);
 });
 
 test('inventory, item requests, ground pickup and scroll revival wait for server confirmations', async ({ page, isMobile }, info) => {

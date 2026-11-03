@@ -80,6 +80,8 @@ export class GroundModels {
   readonly views = new Map<number, View>();
   private dead = false;
   private failed = new Set<string>();
+  /** The model loads not ended yet (`settled`). */
+  private readonly pending = new Set<Promise<void>>();
   constructor(private scene: Object3D, private data: GameData, private load: DropLoader,
     private ground: () => Ground | undefined, private report: (message: string) => void = () => {},
     private shine: (pos: Vec3) => void = () => {}, private random: () => number = Math.random) {}
@@ -96,7 +98,7 @@ export class GroundModels {
         const prop = this.data.itemProps.get(drop.index);
         const key = prop?.dropModel === undefined ? prop?.model ?? 'models/item_genmatsuitbox.glb' : prop.dropModel;
         const pending = view;
-        if (key && !this.failed.has(key)) void this.load(key, (this.data.itemProps.get(drop.item.itemId)?.reflect ?? 0) > 0).then(model => {
+        if (key && !this.failed.has(key)) this.track(this.load(key, (this.data.itemProps.get(drop.item.itemId)?.reflect ?? 0) > 0).then(model => {
           if (this.dead || this.views.get(id) !== pending) { model.release(); return; }
           pending.model = model; pending.root.add(model.root);
           const ground = this.ground();
@@ -105,7 +107,7 @@ export class GroundModels {
           if (floor !== null && Math.abs(floor - drop.pos[1]) < 1) {
             pending.floor = floor; pending.y = drop.pos[1] + 1.5;
           }
-        }).catch(error => { if (!this.dead && !this.failed.has(key)) { this.failed.add(key); this.report(`ground item ${key}: ${String(error)}`); } });
+        }).catch(error => { if (!this.dead && !this.failed.has(key)) { this.failed.add(key); this.report(`ground item ${key}: ${String(error)}`); } }));
       }
       const age = Math.max(0, tick - view.born);
       view.model?.animate?.(age / 60);
@@ -123,9 +125,18 @@ export class GroundModels {
       if (view.model && view.root.visible && this.random() < 1 / 50) this.shine([drop.pos[0], view.y, drop.pos[2]]);
     }
   }
+  /** Resolves once the models asked for so far have loaded or failed (and those asked for meanwhile). Never rejects. */
+  async settled(): Promise<void> {
+    while (this.pending.size > 0) await Promise.all([...this.pending]);
+  }
   dispose(): void {
     this.dead = true;
     for (const view of this.views.values()) { view.root.removeFromParent(); view.model?.release(); }
     this.views.clear();
+  }
+  /** Keeps `work` (which never rejects) among the loads `settled` waits for until it ends. */
+  private track(work: Promise<void>): void {
+    this.pending.add(work);
+    void work.finally(() => this.pending.delete(work));
   }
 }

@@ -43,6 +43,11 @@ Part A measures, and removes the page freezes that kept the full browser suite f
 
 After the fixes: `npm test` 3,124 passed; typecheck clean; the travel spec 12 passed; both first-load tests passed (10.66 MiB); the viewer's browser tests 11 passed. The minors are deferred (the final message lists them).
 
+**After the owner's first full run (1 failed, `items.spec.ts` "ground models load…"):**
+- **The test's 5 s wait** on the drop's model is now the frame loop's (`ON_FRAMES`), as the world's other model waits.
+- **The ring waits for the models in view:** with the CPU slowed 8x, the drop's model took 8.7–16.4 s with the ring loading beside it and 5.4–6.1 s with the ring blocked. The ring now starts once the movers' and ground items' models in view are in, after 10 s at most. At 8x the drop's model then took 1.6 s. Pinned by `items.spec.ts` "the ring of map tiles around the view waits for the models in view".
+- **A race in an older test** (`world.spec.ts` "game files older than the client…"): its entry can end before the loading text is seen, so it taps Enter without waiting for that text.
+
 **Still open for part B:**
 - [ ] The owner's runs: `test:e2e:client`, `test:soak:client`, `test:firstload:client` and `test:perf:client` (device-testing.md, "Piece 6, milestone 5").
 - [ ] The device readings, with the `cpu` column, and the 10-minute walk on the weakest.

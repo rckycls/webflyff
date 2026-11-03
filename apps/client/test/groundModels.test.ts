@@ -64,3 +64,22 @@ it('releases removed models and late downloads after deletion or disposal', asyn
   resolvers[1]!({ root: new Group(), height: 1, release() { released++; } }); await Promise.resolve();
   expect(released).toBe(2); expect(scene.children).toHaveLength(0);
 });
+
+it("settles once the models of the drops it was given have loaded or failed (Piece 6 M5, part B: the ring waits for them)", async () => {
+  const resolvers: Array<(model: DropModel) => void> = [], rejecters: Array<(error: Error) => void> = [], scene = new Group();
+  const models = new GroundModels(scene, ownGameData(), () => new Promise((resolve, reject) => { resolvers.push(resolve); rejecters.push(reject); }), () => ground);
+  const camera = new PerspectiveCamera();
+  const other = { ...drop(), index: 503, item: { objectId: 0, itemId: 503, count: 1 } };
+  models.update(new Map([[1, drop()], [2, other]]), camera, 0, false);
+  let settled = false;
+  void models.settled().then(() => { settled = true; });
+  await Promise.resolve();
+  expect(settled).toBe(false);
+  resolvers[0]!({ root: new Group(), height: 1, release() {} });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(settled).toBe(false); // the second is still coming
+  rejecters[1]!(new Error('HTTP 503'));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(settled).toBe(true);
+  models.dispose();
+});
