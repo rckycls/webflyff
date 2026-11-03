@@ -245,3 +245,28 @@ describe('Overlay render counts and frame times (Piece 6 M5)', () => {
     expect(overlay.snapshot().fps).toBe(0);
   });
 });
+
+describe("Overlay's frame work (Piece 6 M5, part B)", () => {
+  it("adds the frame's own work to the fps line once it is given", () => {
+    vi.stubGlobal('performance', {});
+    const { overlay, root } = overlayOn();
+    for (let i = 0; i < 30; i++) {
+      overlay.frame(1 / 60);
+      overlay.addWork(4);
+    }
+    overlay.frame(0.3); // past the redraw interval
+
+    expect(overlay.snapshot().cpuMs).toBeCloseTo(4, 5);
+    const fpsLine = root.find('pre').textContent.split('\n').find((line) => line.startsWith('fps'));
+    expect(fpsLine).toContain('cpu 4.0 ms');
+  });
+
+  it('keeps the fps line as it was when no work time is given (the viewer)', () => {
+    vi.stubGlobal('performance', {});
+    const { overlay, root } = overlayOn();
+    overlay.frame(0.3);
+
+    expect(overlay.snapshot().cpuMs).toBeNull();
+    expect(root.find('pre').textContent).not.toContain('cpu');
+  });
+});

@@ -9,6 +9,12 @@ export interface OverlaySnapshot {
   fps: number;
   /** Mean frame time over the last 60 frames. */
   frameMs: number;
+  /**
+   * The mean of the frame's own work over the last 60 times the caller gave it (`addWork`), in ms: the page's script
+   * time for the frame, draw submission included. A frame time well over it is the GPU's (or the browser's). Null (and
+   * no `cpu` on the fps line) until it gives one, as in the viewer, which does not.
+   */
+  cpuMs: number | null;
   /** `performance.memory.usedJSHeapSize`; null where the browser has no such thing (Safari, Firefox). */
   jsHeapBytes: number | null;
   /** The estimate callers add up with `addGpuBytes`. */
@@ -65,6 +71,9 @@ export class Overlay {
   private readonly frameTimes = new Float64Array(FRAME_WINDOW);
   private frameCount = 0;
   private nextFrame = 0;
+  private readonly workTimes = new Float64Array(FRAME_WINDOW);
+  private workCount = 0;
+  private nextWork = 0;
   private sinceRedraw = 0;
   private counts = { tiles: 0, models: 0, textures: 0 };
   /** The world frame's draw calls and triangles; null (no line) until the caller gives them. */
@@ -133,6 +142,14 @@ export class Overlay {
     if (this.sinceRedraw >= REDRAW_SECONDS) this.redraw();
   }
 
+  /** Call once per frame with the time the frame's own work took, in ms. Negative or NaN is ignored. */
+  addWork(ms: number): void {
+    if (!(ms >= 0) || !Number.isFinite(ms)) return;
+    this.workTimes[this.nextWork] = ms;
+    this.nextWork = (this.nextWork + 1) % FRAME_WINDOW;
+    this.workCount = Math.min(this.workCount + 1, FRAME_WINDOW);
+  }
+
   setCounts(c: { tiles: number; models: number; textures: number }): void {
     this.counts = { tiles: c.tiles, models: c.models, textures: c.textures };
   }
@@ -165,9 +182,12 @@ export class Overlay {
   snapshot(): OverlaySnapshot {
     let total = 0;
     for (let i = 0; i < this.frameCount; i++) total += this.frameTimes[i]!;
+    let work = 0;
+    for (let i = 0; i < this.workCount; i++) work += this.workTimes[i]!;
     return {
       fps: total > 0 ? this.frameCount / total : 0,
       frameMs: this.frameCount > 0 ? (total / this.frameCount) * 1000 : 0,
+      cpuMs: this.workCount > 0 ? work / this.workCount : null,
       jsHeapBytes: jsHeapBytes(),
       gpuBytes: this.gpuBytes,
       ...this.counts,
@@ -192,7 +212,8 @@ export class Overlay {
     const s = this.snapshot();
     this.toggle.textContent = s.errors.length > 0 ? `Stats (${s.errors.length} errors)` : 'Stats';
     const lines = [
-      `fps ${s.fps.toFixed(1)}   frame ${s.frameMs.toFixed(1)} ms`,
+      // the cpu part keeps the line shorter than the device line, so the box (the pictures' mask) keeps its size
+      `fps ${s.fps.toFixed(1)}   frame ${s.frameMs.toFixed(1)} ms${s.cpuMs === null ? '' : `   cpu ${s.cpuMs.toFixed(1)} ms`}`,
       `heap ${s.jsHeapBytes === null ? 'n/a' : megabytes(s.jsHeapBytes)}   gpu (est) ${megabytes(s.gpuBytes)}`,
       `tiles ${s.tiles}   models ${s.models}   textures ${s.textures}`,
       `device: ${s.device}`,

@@ -11,6 +11,7 @@ import {
 const SNAPSHOT: OverlaySnapshot = {
   fps: 60,
   frameMs: 16.7,
+  cpuMs: null,
   jsHeapBytes: null,
   gpuBytes: 1234,
   drawCalls: null,

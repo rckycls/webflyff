@@ -298,6 +298,8 @@ export class WorldScreen {
   /** The window was resized (or the device turned) since the last frame: the open windows are kept on the screen. */
   private resized = false;
   private lastTime = 0;
+  /** The time the rules steps took since the last frame (`simulate`), in ms, for the frame's `cpu`. */
+  private simulatedMs = 0;
   private loadTimer: ReturnType<typeof setTimeout> | undefined;
   private lastError = '';
   /** The errors of applying a bundle said on the overlay, so that one that comes with every bundle is listed once. */
@@ -1073,6 +1075,18 @@ export class WorldScreen {
   }
 
   private frame(now: number): void {
+    // the Stats panel's `cpu`: this frame's own work and the rules steps run since the last one (Piece 6 M5, part B), the
+    // page's script time per frame; a frame time well over it is the GPU's
+    const started = performance.now();
+    try {
+      this.drawFrame(now);
+    } finally {
+      this.page!.overlay.addWork(performance.now() - started + this.simulatedMs);
+      this.simulatedMs = 0;
+    }
+  }
+
+  private drawFrame(now: number): void {
     // the Stats panel reads the frame's whole time (Piece 6 M5: capped, it could never show under 4 fps); the frame's
     // other uses keep the quarter-second cap
     const elapsed = Math.max(0, (now - this.lastTime) / 1000);
@@ -1142,12 +1156,15 @@ export class WorldScreen {
   private simulate(steps: number, now: number): void {
     const world = this.world, stage = this.stage, views = this.views;
     if (this.over || !world || !stage || !views) return;
+    const started = performance.now();
     try {
       this.syncViews(); this.measureRadii(world, views);
       catchUp(steps, this.audio ? (on) => this.audio!.hold(on) : undefined, () => this.step(world, stage, views, now));
       views.update(world.movers, steps / STEPS_PER_SECOND);
       stage.focus(this.ownAt());
     } catch (error) { this.reportOnce(`simulation: ${messageOf(error)}`, error instanceof Error ? error : new Error(String(error))); }
+    // the rules steps share the page's thread with the frames: the next frame's `cpu` counts them
+    this.simulatedMs += performance.now() - started;
   }
 
   /**

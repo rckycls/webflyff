@@ -26,7 +26,8 @@
     "preview:client": "vite preview --config apps/client/vite.config.ts --host",
     "test:e2e:client": "playwright test -c apps/client/playwright.config.ts --project=chromium --project=phone --project=pictures",
     "test:soak:client": "playwright test -c apps/client/playwright.config.ts --project=soak",
-    "test:firstload:client": "playwright test -c apps/client/playwright.config.ts --project=prod"
+    "test:firstload:client": "playwright test -c apps/client/playwright.config.ts --project=prod",
+    "test:perf:client": "playwright test -c apps/client/playwright.config.ts --project=perf"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",

@@ -46,10 +46,11 @@ function namedProjects(argv: readonly string[]): Set<string> | null {
 const named = namedProjects(process.argv);
 const runs = (...projects: string[]): boolean => named === null || projects.some((p) => named.has(p));
 /**
- * Tests of their own projects, never in the browser suite: the soak test's 10 minutes (`npm run test:soak:client`) and
- * the first-load budget on a production build (`npm run test:firstload:client`).
+ * Tests of their own projects, never in the browser suite: the soak test's 10 minutes (`npm run test:soak:client`), the
+ * first-load budget on a production build (`npm run test:firstload:client`) and the frame at a phone's CPU speed
+ * (`npm run test:perf:client`).
  */
-const OWN_PROJECT = /@picture|@soak|@prod/;
+const OWN_PROJECT = /@picture|@soak|@prod|@perf/;
 
 export default defineConfig({
   testDir: './e2e',
@@ -77,11 +78,13 @@ export default defineConfig({
         launchOptions: { args: [...GPU_GL, '--enable-precise-memory-info', '--js-flags=--expose-gc'] },
       },
     },
+    // Piece 6 M5, part B: the frame in the phone view with the CPU slowed down (frameRate.spec.ts), on the GPU.
+    { name: 'perf', grep: /@perf/, timeout: 180_000, use: { ...devices['Pixel 7 landscape'], launchOptions: { args: GPU_GL } } },
     // Piece 6 M5: the bytes a device downloads before the character is on screen, which only a production build shows.
     { name: 'prod', grep: /@prod/, use: { ...devices['Desktop Chrome'], baseURL: PREVIEW_URL, launchOptions: { args: GPU_GL } } },
   ],
   webServer: [
-    ...(runs('chromium', 'phone', 'pictures', 'soak')
+    ...(runs('chromium', 'phone', 'pictures', 'soak', 'perf')
       ? [{
           command: 'npm run dev:client -- --port 5174 --strictPort',
           url: CLIENT_URL,

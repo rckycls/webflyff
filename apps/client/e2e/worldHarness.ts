@@ -13,7 +13,7 @@ import type { AssetIndex, WorldManifest } from '@flyffweb/formats';
 import { ArReader, ArWriter, NULL_ID, PacketType, Port } from '@flyffweb/protocol';
 import type { AddedMover, AddedNpc, AddedPlayer, Vec3 } from '@flyffweb/protocol';
 import { sampleHeight } from '@flyffweb/scene';
-import { createWorldScript, writeAddMonster, writeAddNpc, writeAddSelf } from '@flyffweb/testkit';
+import { createWorldScript, writeAddMonster, writeAddNpc, writeAddPlayer, writeAddSelf } from '@flyffweb/testkit';
 import type { WorldScript } from '@flyffweb/testkit';
 import type {} from '../src/testHooks'; // window.__client
 import { Belli } from '../src/world/sim/constants';
@@ -105,6 +105,28 @@ export const flaris = createWorldScript({
   playerObjectId: SELF_ID, worldId: MADRIGAL, pos: SQUARE,
   self: writeAddSelf(SELF_ID, self), others: [writeAddMonster(MONSTER_ID, aibatt), writeAddNpc(NPC_ID, julia)],
 });
+
+const groundPoint = (x: number, z: number): Vec3 => [x, groundAt(x, z), z];
+/** A crowd by the square, in view of Webby (the soak's and the frame-rate check's, Piece 6 M5): six Aibatts in a row ... */
+export const CROWD_MONSTERS: AddedMover[] = [9101, 9102, 9103, 9104, 9105, 9106].map((objectId, i) => ({
+  ...aibatt, objectId, pos: groundPoint(SQUARE[0] - 6 + 2.5 * i, SQUARE[2] - 6),
+}));
+/** ... and three vagrant players beside it. */
+export const CROWD_PLAYERS: AddedMover[] = [0, 1, 2].map((i) => ({
+  ...BASE, index: MI_MALE, pos: groundPoint(SQUARE[0] + 3 + 2 * i, SQUARE[2]), angle: 0, objectId: 9201 + i, isPlayer: true,
+  player: {
+    ...SELF_PLAYER, self: false, name: `Soaker${i + 1}`, playerId: 601 + i, equipmentObjectIds: [],
+    worn: MALE_VAGRANT.map((itemId, part) => ({ part: [2, 4, 5][part]!, itemId, flag: 0 })),
+  },
+}));
+
+/** Webby on the square with the crowd. */
+export function crowdScript(): WorldScript {
+  return createWorldScript({
+    playerObjectId: SELF_ID, worldId: MADRIGAL, pos: SQUARE, self: writeAddSelf(SELF_ID, self),
+    others: [...CROWD_MONSTERS.map((m) => writeAddMonster(m.objectId, m)), ...CROWD_PLAYERS.map((p) => writeAddPlayer(p.objectId, p))],
+  });
+}
 
 // The lobby's side, as lobby.spec.ts scripts it: a server list, the clock, the cache address and the characters.
 export const AUTH_KEY = 7;

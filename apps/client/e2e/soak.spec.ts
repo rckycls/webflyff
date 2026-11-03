@@ -18,13 +18,10 @@
 
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import type { AddedMover, Vec3 } from '@flyffweb/protocol';
-import { createWorldScript, writeAddMonster, writeAddPlayer, writeAddSelf, writeDelObj, writeSetPos } from '@flyffweb/testkit';
+import type { Vec3 } from '@flyffweb/protocol';
+import { writeAddMonster, writeDelObj, writeSetPos } from '@flyffweb/testkit';
 import type { ClientPerf } from '../src/testHooks';
-import {
-  BASE, MADRIGAL, MALE_VAGRANT, MI_MALE, ON_FRAMES, SELF_ID, SELF_PLAYER, SQUARE, aibatt, enterFlaris, groundAt,
-  playGateway, self,
-} from './worldHarness';
+import { CROWD_MONSTERS, ON_FRAMES, SELF_ID, SQUARE, crowdScript, enterFlaris, groundAt, playGateway } from './worldHarness';
 
 const MINUTES = Number(process.env.SOAK_MINUTES ?? 10);
 /** The square's side and the distance between two of the server's placings, in metres. */
@@ -37,21 +34,9 @@ const SETTLE_MS = 5_000;
 const LIMIT = 1.1;
 
 const at = (x: number, z: number): Vec3 => [x, groundAt(x, z), z];
-const MONSTER_IDS = [9101, 9102, 9103, 9104, 9105, 9106];
-const monsters: AddedMover[] = MONSTER_IDS.map((objectId, i) => ({
-  ...aibatt, objectId, pos: at(SQUARE[0] - 6 + 2.5 * i, SQUARE[2] - 6),
-}));
-const players: AddedMover[] = [0, 1, 2].map((i) => ({
-  ...BASE, index: MI_MALE, pos: at(SQUARE[0] + 3 + 2 * i, SQUARE[2]), angle: 0, objectId: 9201 + i, isPlayer: true,
-  player: {
-    ...SELF_PLAYER, self: false, name: `Soaker${i + 1}`, playerId: 601 + i, equipmentObjectIds: [],
-    worn: MALE_VAGRANT.map((itemId, part) => ({ part: [2, 4, 5][part]!, itemId, flag: 0 })),
-  },
-}));
-const script = createWorldScript({
-  playerObjectId: SELF_ID, worldId: MADRIGAL, pos: SQUARE, self: writeAddSelf(SELF_ID, self),
-  others: [...monsters.map((m) => writeAddMonster(m.objectId, m)), ...players.map((p) => writeAddPlayer(p.objectId, p))],
-});
+const monsters = CROWD_MONSTERS;
+const MONSTER_IDS = monsters.map((m) => m.objectId);
+const script = crowdScript();
 
 /** The lap's placings: along the square's four sides from Flaris' square (its first corner), and back to it. */
 function lapPoints(): Vec3[] {
