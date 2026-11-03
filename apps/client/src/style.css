@@ -651,6 +651,62 @@ fieldset:disabled .btn {
   position: absolute;
 }
 
+/* The NPC's mover menu (CWndMenu, WndControl.cpp:3337-3630; moverMenu.ts): a 3 px frame of ARGB(255,226,198,181), white
+   inside, 10 + 22 px per item tall; items 20 px on a 22 px pitch from (2, 2), as wide as the widest text + 60, the text
+   24 px in, black; a hovered item gets ARGB(155,200,200,200) and a round outline of ARGB(255,240,240,240). Verdana 9. */
+.hud-mover-menu {
+  position: absolute;
+  z-index: 30;
+  display: inline-flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  border: 3px solid #e2c6b5;
+  padding: 2px 0 0;
+  background: #ffffff;
+  pointer-events: auto;
+  touch-action: none;
+  font: 12px Verdana, Tahoma, sans-serif;
+}
+
+.hud-mover-menu[hidden] {
+  display: none;
+}
+
+.hud-mover-menu-item {
+  box-sizing: border-box;
+  height: 20px;
+  margin: 0 0 2px 2px;
+  padding: 0 36px 0 24px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: #000000;
+  font: inherit;
+  line-height: 18px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.hud-mover-menu-item:not(:disabled):hover {
+  border-color: #f0f0f0;
+  background: rgba(200, 200, 200, 0.61);
+}
+
+.hud-mover-menu-item:disabled {
+  color: #8c8c8c;
+  cursor: default;
+}
+
+/* fingers: 32 px items on a 34 px pitch (plan decision 6) */
+@media (max-width: 1000px) and (pointer: coarse) {
+  .hud-mover-menu-item {
+    height: 32px;
+    font-size: 14px;
+    line-height: 30px;
+  }
+}
+
 /* A window taller than the room above the task bar (WindowFrame.fit): cut to that room, its client area scrolls, with a
    finger (the world's touch-action is none, so this area says its own), the wheel or a thin scroll bar; a scroll that
    reaches the end goes no further */

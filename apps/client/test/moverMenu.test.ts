@@ -1,0 +1,93 @@
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { WebNpc } from '@flyffweb/formats';
+import { MENU_RANGE, MMI, MoverMenu, npcMenuEntries, soleEntry } from '../src/world/hud/moverMenu';
+
+const text = (id: string, textId: number, value: string) => [id, { id, text: value, textId, color: 0xffffffff }] as const;
+const TEXTS = new Map([
+  text('TID_MMI_DIALOG', 7000, 'Dialog'), text('TID_MMI_TRADE', 7002, 'Trade'), text('TID_MMI_BANKING', 7009, 'Deposit'),
+  text('TID_MMI_GUILDBANKING', 7015, 'Guild Warehouse'), text('TID_MMI_ARENA_ENTER', 7080, 'Arena'),
+]);
+const JULIA: WebNpc = { key: 'MaFl_Juria', name: 'Julia', menus: [0, 9, 15, 16, 17, 18, 2, 137] };
+
+describe('npcMenuEntries (CWndWorld::ShowMoverMenu, WndWorld.cpp:6649-6684)', () => {
+  it("Julia's menu is in MMI order, without the guild warehouse", () => {
+    expect(npcMenuEntries(JULIA, TEXTS, false).map((entry) => entry.id)).toEqual([0, 2, 9, 16, 17, 18, 137]);
+  });
+
+  it("Dialog, a shop's Trade and a teleporter's Teleport are enabled; the rest is greyed", () => {
+    const enabled = (npc: WebNpc) => npcMenuEntries(npc, TEXTS, false).filter((entry) => entry.enabled).map((entry) => entry.id);
+    expect(enabled(JULIA)).toEqual([MMI.DIALOG, MMI.TRADE]);
+    expect(enabled({ ...JULIA, vendorType: 1 })).toEqual([MMI.DIALOG]);
+    expect(enabled({ key: 't', name: 'T', menus: [0, 146] })).toEqual([MMI.DIALOG]);
+    expect(enabled({ key: 't', name: 'T', menus: [0, 146], teleports: [{ x: 1, z: 2 }] })).toEqual([MMI.DIALOG, MMI.TELEPORTER]);
+  });
+
+  it('Arena entry is left out for a base job', () => {
+    const npc: WebNpc = { key: 'a', name: 'A', menus: [0, 80] };
+    expect(npcMenuEntries(npc, TEXTS, true).map((entry) => entry.id)).toEqual([0]);
+    expect(npcMenuEntries(npc, TEXTS, false).map((entry) => entry.id)).toEqual([0, 80]);
+  });
+
+  it('labels are TID_MMI_DIALOG + id', () => {
+    expect(npcMenuEntries(JULIA, TEXTS, false).find((entry) => entry.id === 9)!.label).toBe('Deposit');
+    const bare = npcMenuEntries({ key: 't', name: 'T', menus: [0, 2, 146] }, new Map(), false);
+    expect(bare.map((entry) => entry.label)).toEqual(['Dialog', 'Trade', 'Teleport']);
+  });
+
+  it('one entry or none runs at once', () => {
+    expect(soleEntry({ key: 't', name: 'T', menus: [146] })).toBe(146);
+    expect(soleEntry({ key: 't', name: 'T', menus: [] })).toBe(0);
+    expect(soleEntry(undefined)).toBe(0);
+    expect(soleEntry({ key: 't', name: 'T', menus: [0, 2] })).toBeNull();
+    expect(MENU_RANGE).toBe(20);
+  });
+});
+
+describe('MoverMenu (CWndMenu, WndControl.cpp:3337-3630)', () => {
+  const menus: MoverMenu[] = [];
+  afterEach(() => { for (const menu of menus.splice(0)) menu.dispose(); });
+  const make = () => { const menu = new MoverMenu(document); menus.push(menu); document.body.append(menu.element); return menu; };
+
+  it('opens at the given point with one button per entry, in order, the greyed ones disabled', () => {
+    const menu = make();
+    menu.open(npcMenuEntries(JULIA, TEXTS, false), { x: 120, y: 80 }, vi.fn());
+    expect(menu.isOpen).toBe(true);
+    expect([menu.element.style.left, menu.element.style.top]).toEqual(['120px', '80px']);
+    const buttons = [...menu.element.querySelectorAll<HTMLButtonElement>('button[data-menu-entry]')];
+    expect(buttons.map((button) => button.dataset.menuEntry)).toEqual(['0', '2', '9', '16', '17', '18', '137']);
+    expect(buttons.map((button) => button.disabled)).toEqual([false, false, true, true, true, true, true]);
+  });
+
+  it('choosing an enabled entry calls back once and closes; a greyed one does nothing', () => {
+    const menu = make();
+    const choose = vi.fn();
+    menu.open(npcMenuEntries(JULIA, TEXTS, false), { x: 0, y: 0 }, choose);
+    menu.element.querySelector<HTMLButtonElement>('[data-menu-entry="9"]')!.click();
+    expect(choose).not.toHaveBeenCalled();
+    menu.element.querySelector<HTMLButtonElement>('[data-menu-entry="2"]')!.click();
+    expect(choose).toHaveBeenCalledTimes(1);
+    expect(choose).toHaveBeenCalledWith(2);
+    expect(menu.isOpen).toBe(false);
+  });
+
+  it('a press outside or Escape closes it; no listener stays after close or dispose', () => {
+    const add = vi.spyOn(document, 'addEventListener');
+    const remove = vi.spyOn(document, 'removeEventListener');
+    const menu = make();
+    menu.open(npcMenuEntries(JULIA, TEXTS, false), { x: 0, y: 0 }, vi.fn());
+    menu.element.querySelector('button')!.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }));
+    expect(menu.isOpen).toBe(true); // a press inside is the menu's
+    document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }));
+    expect(menu.isOpen).toBe(false);
+    menu.open(npcMenuEntries(JULIA, TEXTS, false), { x: 0, y: 0 }, vi.fn());
+    const escape = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    document.body.dispatchEvent(escape);
+    expect(menu.isOpen).toBe(false);
+    expect(escape.defaultPrevented).toBe(true);
+    menu.dispose();
+    expect(remove.mock.calls.length).toBe(add.mock.calls.length);
+    expect(menu.element.isConnected).toBe(false);
+    add.mockRestore(); remove.mockRestore();
+  });
+});
