@@ -23,8 +23,10 @@
     "test:soak": "playwright test -c apps/viewer/playwright.config.ts --project=soak",
     "dev:client": "vite --config apps/client/vite.config.ts --host",
     "build:client": "vite build --config apps/client/vite.config.ts",
+    "preview:client": "vite preview --config apps/client/vite.config.ts --host",
     "test:e2e:client": "playwright test -c apps/client/playwright.config.ts --project=chromium --project=phone --project=pictures",
-    "test:soak:client": "playwright test -c apps/client/playwright.config.ts --project=soak"
+    "test:soak:client": "playwright test -c apps/client/playwright.config.ts --project=soak",
+    "test:firstload:client": "playwright test -c apps/client/playwright.config.ts --project=prod"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",

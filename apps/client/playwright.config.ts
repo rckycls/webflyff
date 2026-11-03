@@ -21,6 +21,12 @@ import { defineConfig, devices } from '@playwright/test';
 const flyffwebRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 const CLIENT_URL = 'http://localhost:5174/';
+const PREVIEW_URL = 'http://localhost:4174/';
+/**
+ * Where the `prod` project's build goes, relative to the client's root: a build with `VITE_TEST_HOOKS=1` must never be
+ * `apps/client/dist`, the one the hosting guide publishes.
+ */
+const TEST_BUILD = '../../node_modules/.cache/client-firstload';
 const SOFTWARE_GL = ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'];
 const GPU_GL = process.env.E2E_SOFTWARE_GL === '1' ? SOFTWARE_GL
   : [...(process.platform === 'win32' ? ['--use-angle=d3d11'] : []), '--enable-gpu', '--ignore-gpu-blocklist'];
@@ -39,7 +45,10 @@ function namedProjects(argv: readonly string[]): Set<string> | null {
 // command line are given (as the viewer's config does), all of them when none is named.
 const named = namedProjects(process.argv);
 const runs = (...projects: string[]): boolean => named === null || projects.some((p) => named.has(p));
-/** Tests of their own projects: the soak test's 10 minutes (`npm run test:soak:client`), never in the browser suite. */
+/**
+ * Tests of their own projects, never in the browser suite: the soak test's 10 minutes (`npm run test:soak:client`) and
+ * the first-load budget on a production build (`npm run test:firstload:client`).
+ */
 const OWN_PROJECT = /@picture|@soak|@prod/;
 
 export default defineConfig({
@@ -68,6 +77,8 @@ export default defineConfig({
         launchOptions: { args: [...GPU_GL, '--enable-precise-memory-info', '--js-flags=--expose-gc'] },
       },
     },
+    // Piece 6 M5: the bytes a device downloads before the character is on screen, which only a production build shows.
+    { name: 'prod', grep: /@prod/, use: { ...devices['Desktop Chrome'], baseURL: PREVIEW_URL, launchOptions: { args: GPU_GL } } },
   ],
   webServer: [
     ...(runs('chromium', 'phone', 'pictures', 'soak')
@@ -80,6 +91,18 @@ export default defineConfig({
           // Another dev server on this port would not have the closed gateway address.
           reuseExistingServer: false,
           timeout: 120_000,
+        }]
+      : []),
+    ...(runs('prod')
+      ? [{
+          command: `npm run build:client -- --outDir ${TEST_BUILD} --emptyOutDir && npm run preview:client -- --outDir ${TEST_BUILD} --port 4174 --strictPort`,
+          url: PREVIEW_URL,
+          cwd: flyffwebRoot,
+          // the test hooks and the closed gateway address are built in; GATEWAY_PROXY is the dev server's only
+          env: { VITE_TEST_HOOKS: '1', VITE_GATEWAY_URL: 'ws://127.0.0.1:9', GATEWAY_PROXY: '' },
+          // never an older build: the one just made from these sources
+          reuseExistingServer: false,
+          timeout: 300_000,
         }]
       : []),
   ],
