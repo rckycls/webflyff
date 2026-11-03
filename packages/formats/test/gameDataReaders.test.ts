@@ -637,8 +637,8 @@ describe('readCharacterInc', () => {
     ];
     const text = script('//header comment', '/* block', 'comment */', ...MIKYEL, '', ...player);
     expect(readCharacterInc(text, DEFINES, STRINGS, 'character.inc')).toEqual([
-      { key: 'MaFl_Mikyel', name: 'Mikyel', menus: [0], dialogFile: 'MaFl_Mikyel.txt' },
-      { key: 'MaFl_Player', name: 'Luda', menus: [0], music: 201 },
+      { key: 'MaFl_Mikyel', name: 'Mikyel', menus: [0], dialogFile: 'MaFl_Mikyel.txt', image: 'char_Agent.tga' },
+      { key: 'MaFl_Player', name: 'Luda', menus: [0], music: 201, image: 'char_Agent.tga' },
     ]);
   });
 
@@ -672,7 +672,7 @@ describe('readCharacterInc', () => {
     const text = script(...vendor, ...MIKYEL);
     expect(readCharacterInc(text, DEFINES, STRINGS)).toEqual([
       { key: 'MaFl_Vendor', name: 'Bobo', menus: [146], vendorTabs: { 0: 'Weapons' }, vendorType: 1, teleports: [{ x: 7161, z: 3264 }] },
-      { key: 'MaFl_Mikyel', name: 'Mikyel', menus: [0], dialogFile: 'MaFl_Mikyel.txt' },
+      { key: 'MaFl_Mikyel', name: 'Mikyel', menus: [0], dialogFile: 'MaFl_Mikyel.txt', image: 'char_Agent.tga' },
     ]);
   });
 
@@ -682,6 +682,19 @@ describe('readCharacterInc', () => {
     for (const row of ['AddTeleport( nope, 20 );', 'AddTeleport( -1, 20 );', 'AddTeleport( 10, );']) {
       expect(() => readCharacterInc(`Pang { ${row} }`, DEFINES, STRINGS)).toThrow();
     }
+  });
+
+  it('keeps the NPC picture SetImage names', () => {
+    const rows = readCharacterInc(
+      script(
+        'Juria {', 'SetImage( IDS_CHARACTER_INC_000000 );', '}',
+        // m_szChar: one token, then GetLangScript (Project.cpp:2995-3000); no real file uses it
+        'Losha {', 'SetImage( IDS_CHARACTER_INC_000000 );', 'm_szChar = "char_Losha.tga" ) ;', '}',
+        'Blank {', 'SetImage( IDS_CHARACTER_INC_000003 );', '}',
+      ),
+      DEFINES, STRINGS,
+    );
+    expect(rows.map((row) => row.image)).toEqual(['char_Agent.tga', 'char_Losha.tga', undefined]);
   });
 
   it('reads m_szName = "text", and gives a character with no name an empty one', () => {

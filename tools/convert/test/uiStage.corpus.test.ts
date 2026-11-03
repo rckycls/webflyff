@@ -7,7 +7,7 @@ import path from 'node:path';
 import { PNG } from 'pngjs';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { GAME_DATA_KEYS, decodeScript, loadDefines, loadStrings, readPropItem, readTexturePack } from '@flyffweb/formats';
-import type { WebItemProp, WebUiSheets } from '@flyffweb/formats';
+import type { WebItemProp, WebNpc, WebUiSheets } from '@flyffweb/formats';
 import { clientRoot, describeClient, loadClientPacks } from '../../../packages/formats/test/helpers/client';
 import { ClientFs } from '../src/ClientFs';
 import { gameDataStage } from '../src/data/gameDataStage';
@@ -50,12 +50,17 @@ describeClient('the UI stage on the real client', () => {
     expect(reportJson.failures).toEqual([]);
     const pictures = client.list('Icon', /\.(dds|tga|bmp)$/i).length;
     const itemPictures = client.list('Item', /\.(dds|tga|bmp)$/i).length;
+    const charPictures = client.list('Char', /\.(dds|tga|bmp)$/i).length;
+    const minimaps = client.list('World', /\d{2}-\d{2}\.dds$/i, true).length; // the landscapes' DDS (Piece 5 M4)
     const jpegs = client.list('Icon', /\.jpe?g$/i).length;
     expect(pictures).toBeGreaterThan(450);
     expect(itemPictures).toBeGreaterThan(3000);
+    expect(charPictures).toBeGreaterThan(70); // the NPCs' dialogue pictures
+    expect(minimaps).toBeGreaterThan(900);
     expect(jpegs).toBeGreaterThan(0);
-    // every picture of Client/Icon and Client/Item, every piece of the theme list, DmgEffect.dds and the sheets catalog
-    expect(reportJson.kinds.ui!.ok).toBe(pictures + itemPictures + THEME_FILES.length + 1 + 1);
+    // every picture of Client/Icon, Client/Item and Client/Char, the minimaps, every piece of the theme list,
+    // DmgEffect.dds and the sheets catalog
+    expect(reportJson.kinds.ui!.ok).toBe(pictures + itemPictures + charPictures + minimaps + THEME_FILES.length + 1 + 1);
     expect(reportJson.warnings.filter((w) => w.kind === 'ui')).toHaveLength(1);
     expect(reportJson.warnings[0]!.message).toContain('.jpg');
   });
@@ -81,6 +86,18 @@ describeClient('the UI stage on the real client', () => {
     expect([icon.width, icon.height]).toEqual([32, 32]);
     expect(icon.data.some((value, i) => i % 4 === 3 && value === 0)).toBe(true); // the magenta is transparent
     expect(icon.data.some((value, i) => i % 4 === 3 && value === 255)).toBe(true);
+  });
+
+  it('writes the picture of every NPC that names one in Client/Char (WndDialog.cpp:294)', async () => {
+    const hashed = writer.pathOf(GAME_DATA_KEYS.npcs)!;
+    const npcs = JSON.parse(await fs.readFile(path.join(out, ...hashed.split('/')), 'utf8')) as WebNpc[];
+    const withImage = npcs.filter((npc) => npc.image !== undefined);
+    expect(withImage.length).toBeGreaterThan(70);
+    expect(withImage.filter((npc) => writer.pathOf(npc.image!) === undefined).map((npc) => `${npc.key}: ${npc.image}`)).toEqual([]);
+    const juria = npcs.find((npc) => npc.key.toLowerCase() === 'mafl_juria')!;
+    expect(juria.image).toBe('ui/char/char_juria.png');
+    const picture = await readPng(juria.image!);
+    expect([picture.width, picture.height]).toEqual([200, 240]);
   });
 
   it('resolves the icon key of every item whose picture is in Client/Item (4,986 of 4,998)', async () => {

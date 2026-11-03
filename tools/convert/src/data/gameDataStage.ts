@@ -68,7 +68,7 @@ import type { ClientFs } from '../ClientFs';
 import { SOUND_INC, effectSoundParts } from '../audio/audioSources';
 import { skeletonOfMotion } from '../models/skeletonFor';
 import type { AssetWriter } from '../output/AssetWriter';
-import { effectKeyOf, itemIconKeyOf, modelKeyOf, stem } from '../output/keys';
+import { charPictureKeyOf, effectKeyOf, itemIconKeyOf, modelKeyOf, stem } from '../output/keys';
 import type { Report } from '../output/Report';
 import type { Stage, StageContext } from '../run';
 import { matchesOnly, plural } from '../util';
@@ -454,6 +454,8 @@ function buildNpcs(env: Env, read: Reading): WebNpc[] {
   const byKey = new Map<string, WebNpc>();
   for (const file of CHARACTER_FILES) {
     for (const character of readCharacterInc(read.text(file), env.defines, env.strings, file)) {
+      // the picture's file name becomes the key the UI stage writes it under (Client/Char)
+      if (character.image !== undefined) character.image = charPictureKeyOf(character.image);
       byKey.set(character.key.toLowerCase(), character);
     }
   }

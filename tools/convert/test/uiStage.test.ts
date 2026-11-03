@@ -50,6 +50,38 @@ describe('the theme list', () => {
   });
 });
 
+describe('the dialogue window (APP_DIALOG_EX, WndDialog.cpp)', () => {
+  it('lists its background, its next-page button and the four quest papers once each', () => {
+    const lower = THEME_FILES.map((file) => file.toLowerCase());
+    for (const file of ['wnddialogex.tga', 'wndbuttenter.bmp', 'questuipapergreen.tga', 'questuipaperred.tga',
+      'questuipapergray.tga', 'questuipaperyellow.tga']) {
+      expect(lower.filter((name) => name === file), file).toHaveLength(1);
+    }
+  });
+
+  let root: string;
+  let out: string;
+  beforeEach(async () => { root = await makeTempDir('flyffweb-ui-dialog-'); out = await makeTempDir('flyffweb-ui-dialog-out-'); });
+  afterEach(async () => { await fs.rm(root, { recursive: true, force: true }); await fs.rm(out, { recursive: true, force: true }); });
+
+  it('keys the quest papers with white (WndDialog.cpp:254-257), and writes Client/Char under ui/char/ with magenta', async () => {
+    await writeFakeClient(root, { loose: {
+      'Theme/Default/QuestUiPaperGreen.tga': tga32(2, 1, [[255, 255, 255, 255], MAGENTA]),
+      'Char/char_Juria.tga': tga32(2, 1, [MAGENTA, [1, 2, 3, 255]]),
+    } });
+    const writer = new AssetWriter(out);
+    const ctx: StageContext = { client: await ClientFs.open(root), writer, report: new Report(), jobs: 1, outDir: out };
+    await createUiStage({ themeFiles: ['QuestUiPaperGreen.tga'] }).run(ctx);
+    const read = async (key: string): Promise<PNG> => PNG.sync.read(await fs.readFile(path.join(out, ...writer.pathOf(key)!.split('/'))));
+    const paper = await read('ui/questuipapergreen.png');
+    expect([paper.data[3], paper.data[7]]).toEqual([0, 255]);
+    expect(writer.pathOf('ui/char/char_juria.png')).toMatch(/^ui\/char\/char_juria\.[0-9a-f]{10}\.png$/);
+    const picture = await read('ui/char/char_juria.png');
+    expect([picture.data[3], picture.data[7]]).toEqual([0, 255]);
+    expect(writer.pathOf('ui/char_juria.png')).toBeUndefined();
+  });
+});
+
 describe('the pictures of the sound sliders', () => {
   let root: string;
   let out: string;

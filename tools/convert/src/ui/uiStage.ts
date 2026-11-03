@@ -6,6 +6,8 @@
 //                          its file name without the last extension (iconKeyOf)
 //   ui/item/<web name>.png every picture of Client/Item, the item icons, under the same rule (itemIconKeyOf), which the data
 //                          stage names in `itemProps.icon`
+//   ui/char/<web name>.png every picture of Client/Char, the NPCs' dialogue pictures (charPictureKeyOf), which the data
+//                          stage names in `npcs.image`
 //   data/uiSheets.json     the frames of SFX/DmgEffect.inc and Icon/icon_target.inc (WebUiSheets)
 //
 // Neuz loads these pictures through D3DX with a colour key: the icons, theme pieces and target corners with 0xffff00ff
@@ -30,7 +32,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { UI_SHEETS_KEY, decodeImage, decodeScript, readTexturePack, webName } from '@flyffweb/formats';
 import type { RgbaImage, TexturePack, WebUiSheet, WebUiSheets } from '@flyffweb/formats';
-import { iconKeyOf, itemIconKeyOf } from '../output/keys';
+import { charPictureKeyOf, iconKeyOf, itemIconKeyOf } from '../output/keys';
 import type { Stage, StageContext } from '../run';
 import { encodePng } from '../textures/convertTexture';
 import { listed, matchesOnly, plural, runLimited } from '../util';
@@ -46,12 +48,14 @@ const PICTURE = /\.(dds|tga|bmp)$/i;
 const JPEG = /\.jpe?g$/i;
 
 /**
- * The folders whose pictures are all converted, and the key rule of each: DIR_ICON and DIR_ITEM (path.h:31, :32). Their
- * key spaces are apart (see the top of this file).
+ * The folders whose pictures are all converted, and the key rule of each: DIR_ICON and DIR_ITEM (path.h:31, :32), and
+ * `char\`, the NPCs' dialogue pictures (WndDialog.cpp:294, magenta key). Their key spaces are apart (see the top of this
+ * file).
  */
 const PICTURE_FOLDERS: readonly { dir: string; keyOf: (file: string) => string }[] = [
   { dir: 'Icon', keyOf: iconKeyOf },
   { dir: 'Item', keyOf: itemIconKeyOf },
+  { dir: 'Char', keyOf: charPictureKeyOf },
 ];
 /** DIR_THEME (path.h:14). */
 const THEME_DIR = 'Theme/Default';
@@ -157,6 +161,15 @@ export const THEME_FILES: readonly string[] = [
   'ButItemMinus.bmp',
   'ButtReset.bmp',
   'ButtFinish.bmp',
+  // The dialogue window (APP_DIALOG_EX "WndDialogEx.tga", resdata.inc:13842), its next-page button (WIDC_BUTTON1
+  // "wndButtEnter.bmp") and the four papers of its quest lists, keyed with white (WndDialog.cpp:254-257). Its answer
+  // buttons are ButtYes, ButtNo, ButtCancel and ButtOk, above.
+  'WndDialogEx.tga',
+  'wndButtEnter.bmp',
+  'QuestUiPaperGreen.tga',
+  'QuestUiPaperRed.tga',
+  'QuestUiPaperGray.tga',
+  'QuestUiPaperYellow.tga',
 ];
 
 /** The two glyph sheets: the script, and the field of WebUiSheets it fills. */
@@ -271,7 +284,7 @@ export function createUiStage(options: UiStageOptions = {}): Stage {
           pictures.set(src, { src, key: keyOf(path.basename(src)), colorKey: sheetKeys.get(src) ??
             (/^world_/i.test(path.basename(src)) ? 0xff000000 : /^imgnavpos\./i.test(path.basename(src)) ? 0
               // the slider knob is loaded with white as its key (WndOptionGame.cpp:76)
-              : /^buttspin\./i.test(path.basename(src)) ? 0xffffffff : MAGENTA_KEY) });
+              : /^(buttspin|questuipaper\w+)\./i.test(path.basename(src)) ? 0xffffffff : MAGENTA_KEY) });
         }
       };
       for (const { dir, keyOf } of PICTURE_FOLDERS) for (const src of ctx.client.list(dir, PICTURE)) add(src, keyOf);
