@@ -302,7 +302,9 @@ export class WorldScreen {
   private simulatedMs = 0;
   /** When the world was first drawn (`ClientPerf.onScreenAt`), in ms since 1970; null before. */
   private onScreenAt: number | null = null;
-  /** The stage was told to download the ring of tiles around the visible ones (the frame after the first). */
+  /** This world's stage has been drawn once; reset with the stage (travel). */
+  private stageDrawn = false;
+  /** This world's stage was told to download the ring of tiles around the visible ones (the frame after its first). */
   private preloadStarted = false;
   private loadTimer: ReturnType<typeof setTimeout> | undefined;
   private lastError = '';
@@ -1119,7 +1121,7 @@ export class WorldScreen {
 
       // the ring of tiles around the visible ones downloads only once the character is on screen: from the frame after
       // the first (Piece 6 M5, part B: not part of the first load, tileStreamer.ts)
-      if (this.onScreenAt !== null && !this.preloadStarted) {
+      if (this.stageDrawn && !this.preloadStarted) {
         this.preloadStarted = true;
         stage.startPreloading();
       }
@@ -1151,6 +1153,7 @@ export class WorldScreen {
       // the world is on screen: `ready()` (a second call does nothing), and an ending from here on is a drop
       this.endingsAreDrops = true;
       this.resolveShown();
+      this.stageDrawn = true;
       this.onScreenAt ??= performance.timeOrigin + performance.now();
     } catch (error) {
       // a frame that throws every frame must not fill the overlay with the same line sixty times a second; the console has
@@ -1613,6 +1616,9 @@ export class WorldScreen {
     this.optionWindow = undefined;
     this.stageGeneration++;
     this.portraitGeneration++;
+    // the next world's stage is drawn anew and starts its own ring (`onScreenAt` stays the first world's)
+    this.stageDrawn = false;
+    this.preloadStarted = false;
     this.stopOwnMover();
     this.itemActions?.cancel();
     this.element.classList.remove('world-modal', 'world-menu-open');

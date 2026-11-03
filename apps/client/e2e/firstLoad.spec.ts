@@ -22,6 +22,44 @@ const FINISH_MS = 60_000;
 /** Time for the request events of what started before the frame to reach the test (the network's events come apart from the page's). */
 const EVENTS_MS = 1_000;
 
+/**
+ * The requests of `started` that began before `at` (ms since 1970, as `onScreenAt`). Playwright fills `timing()` in only
+ * when a response comes (its `startTime` is 0 until then), so each response is waited for first, up to FINISH_MS: a
+ * request still unanswered would otherwise read as begun at 0. One that failed has no start time and counts no bytes.
+ */
+async function startedBefore(started: readonly Request[], at: number): Promise<Request[]> {
+  await Promise.all(started.map((request) =>
+    Promise.race([request.response(), new Promise<null>((resolve) => setTimeout(() => resolve(null), FINISH_MS))])));
+  return started.filter((request) => {
+    const { startTime } = request.timing();
+    return startTime > 0 && startTime < at;
+  });
+}
+
+/** A tile of Flaris' ring: two tiles from Webby's, 13_6. */
+function ringTile(url: string): boolean {
+  const match = /\/worlds\/wdmadrigal\/tiles\/(\d+)_(\d+)\./.exec(url);
+  return match !== null && Math.max(Math.abs(Number(match[1]) - 13), Math.abs(Number(match[2]) - 6)) === 2;
+}
+
+test('a request asked for after the first frame is not counted, even while its answer has not come', { tag: '@prod' }, async ({ page, baseURL }) => {
+  const site = new URL(baseURL!).origin + '/';
+  const started: Request[] = [];
+  page.on('request', (request) => { if (request.url().startsWith(site)) started.push(request); });
+  // the ring's tiles answer 5 s late: their requests are still waiting when they are sorted
+  await page.route((url) => ringTile(url.href), async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 5_000));
+    await route.continue();
+  });
+  await playGateway(page);
+  await enterFlaris(page);
+  const readyAt = (await page.evaluate(() => window.__client!.perf())).onScreenAt!;
+  await page.waitForTimeout(EVENTS_MS);
+  expect(started.filter((request) => ringTile(request.url())).length, 'the ring was asked for').toBeGreaterThan(0);
+  const counted = await startedBefore(started, readyAt);
+  expect(counted.filter((request) => ringTile(request.url())).map((request) => request.url())).toEqual([]);
+});
+
 test('first load stays under 15 MB until the character is on screen', { tag: '@prod' }, async ({ page, baseURL }) => {
   await page.addInitScript(() => performance.setResourceTimingBufferSize(100_000));
   const site = new URL(baseURL!).origin + '/';
@@ -33,8 +71,7 @@ test('first load stays under 15 MB until the character is on screen', { tag: '@p
   expect(readyAt).not.toBeNull();
   await page.waitForTimeout(EVENTS_MS);
 
-  // both in ms since 1970: Playwright's `startTime` and the page's `timeOrigin + now()`
-  const before = started.filter((request) => request.timing().startTime < readyAt);
+  const before = await startedBefore(started, readyAt);
   const streams = before.filter((request) => request.resourceType() === 'media');
   const counted = before.filter((request) => request.resourceType() !== 'media');
   const sizes = await Promise.all(counted.map(async (request) => {

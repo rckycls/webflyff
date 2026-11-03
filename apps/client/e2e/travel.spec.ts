@@ -7,7 +7,7 @@ import { sampleHeight } from '@flyffweb/scene';
 import { ArWriter, NULL_ID, PacketType } from '@flyffweb/protocol';
 import type { Vec3 } from '@flyffweb/protocol';
 import { createWorldScript, writeAddSelf, writeReplace } from '@flyffweb/testkit';
-import { ASSETS, MADRIGAL, SELF_ID, SQUARE, enterFlaris, ownAt, playGateway, self, sentOf } from './worldHarness';
+import { ASSETS, MADRIGAL, ON_FRAMES, SELF_ID, SQUARE, enterFlaris, ownAt, playGateway, self, sentOf } from './worldHarness';
 
 // M4's transport lifecycle: native REPLACE does not reconnect or send JOIN again.
 test.setTimeout(120_000);
@@ -56,6 +56,23 @@ test('travel: buffers a delayed destination snapshot, keeps the cache open, and 
   await expect(page.locator('canvas').first()).toBeVisible();
   expect(sentOf(gateway, PacketType.JOIN)).toHaveLength(joins);
   expect(gateway.closed).toHaveLength(closed);
+});
+
+// Piece 6 M5, part B: the ring of tiles around the 3 x 3 starts the frame after a world is first drawn, in each world.
+test('travel: the ring of tiles around the view loads again in the world travelled back to', async ({ page }) => {
+  const script = scriptFor(), gateway = await playGateway(page, script);
+  await enterFlaris(page);
+  const tiles = async () => (await page.evaluate(() => window.__client!.perf())).loadedTiles.length;
+  await expect.poll(tiles, ON_FRAMES).toBe(25);
+  gateway.pushCache(replacePacket(MARS, MARS_POS));
+  await expect(page.getByRole('button', { name: 'Start', exact: true })).toBeHidden();
+  gateway.pushCache(script.later([writeAddSelf(SELF_ID, { ...self, pos: MARS_POS })]));
+  await expect(page.locator('.world')).toHaveAttribute('data-world-id', String(MARS));
+  await expect(page.getByRole('button', { name: 'Start', exact: true })).toBeVisible({ timeout: 60_000 });
+  gateway.pushCache(script.later([writeReplace(NULL_ID, MADRIGAL, SQUARE), writeAddSelf(SELF_ID, self)]));
+  await expect(page.locator('.world')).toHaveAttribute('data-world-id', String(MADRIGAL));
+  await expect(page.getByRole('button', { name: 'Start', exact: true })).toBeVisible({ timeout: 60_000 });
+  await expect.poll(tiles, ON_FRAMES).toBe(25);
 });
 
 test('travel: a second transition supersedes an unfinished map load', async ({ page }) => {

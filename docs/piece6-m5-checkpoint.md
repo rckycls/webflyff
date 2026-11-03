@@ -14,7 +14,7 @@ Part A measures, and removes the page freezes that kept the full browser suite f
 - **The ring of 16 tiles around the 3 x 3 loads after the character is on screen, and is never drawn.** Neuz draws the 3 x 3 lands only (`m_nVisibilityLand`, World.cpp:116). The ring was past the 400 m far plane but passed three.js' frustum test. Its textures are uploaded as it arrives, so their CPU copies go as a drawn tile's do.
 - **See-through two-sided materials draw in one pass,** as D3D draws a mesh with culling off. Three.js drew them twice and re-checked their shader program about 10 times a frame.
 - **Each map object hides past its model's view distance,** 250, 150, 60 or 400 m by its `dwDistant` class, as `CWorld::Render` does (World3D.cpp:640-683). The converter writes the class as the manifest's `modelDistant`; the world files were converted again. **This changes the look:** small far objects go, as in Neuz. The pictures are for the owner to judge; a "no" is a revert of 1b6b97a and 95c54cf.
-- **No per-frame allocations in the client's own frame code** but the movement rules' (`ActionMover.step`, 0.13 MB/s).
+- **Fewer per-frame allocations in the client's own frame code:** what is left over 0.1 MB/s is the movement rules' (`ActionMover.step`, 0.13 MB/s) and, in one run of five, the camera's check (0.14 MB/s).
 - **The soak samples after two `gc()` a second apart:** with one, a lap sometimes read 60-80 MB high.
 
 **Numbers on this PC** ([conversion-baseline.md](conversion-baseline.md)):
@@ -36,6 +36,12 @@ Part A measures, and removes the page freezes that kept the full browser suite f
 **Part B's rulings** are in its ledger and the final message: among them the first-load count ending at the world's first frame (`onScreenAt`), the ring's textures uploaded on arrival, the two `gc()`, and three Piece 4 items left (T9, T21, `ActionMover.step`).
 
 **An incident:** while bisecting the soak, removing a temporary worktree followed its junction into `dist/assets` and emptied it. A full `npm run convert` rebuilt it (24,683 ok, 0 failed, the 36 MP3 copies included); hashed names make it the same files.
+
+**Part B's final review:** a fresh reviewer read 8bda07a..95bb790 (without the Piece 7 spec, 3cabb49): 0 Critical, 2 Important, 9 Minor, "with fixes". Both Important findings were fixed, each with a test that failed first:
+- **After travel to another world and back, the ring never loaded again:** the trigger was once per screen, not per world. `travel.spec.ts` "the ring of tiles around the view loads again in the world travelled back to": 9 tiles, then 25.
+- **The first-load count could count ring requests still unanswered:** Playwright's `startTime` is 0 until a response comes. The count now waits for each response first. `firstLoad.spec.ts` "a request asked for after the first frame is not counted, even while its answer has not come": 16 ring tiles counted, then none.
+
+After the fixes: `npm test` 3,124 passed; typecheck clean; the travel spec 12 passed; both first-load tests passed (10.66 MiB); the viewer's browser tests 11 passed. The minors are deferred (the final message lists them).
 
 **Still open for part B:**
 - [ ] The owner's runs: `test:e2e:client`, `test:soak:client`, `test:firstload:client` and `test:perf:client` (device-testing.md, "Piece 6, milestone 5").
