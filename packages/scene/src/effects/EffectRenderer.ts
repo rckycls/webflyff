@@ -1,4 +1,4 @@
-import { toWebMatrix } from '@flyffweb/formats';
+import { toWebMatrixInto } from '@flyffweb/formats';
 import type { Vec3 } from '@flyffweb/formats';
 import type { Camera, Scene, Texture } from 'three';
 import {
@@ -286,7 +286,8 @@ export class EffectRenderer {
     this.scratch[12] = this.scratch[12]! + at[0];
     this.scratch[13] = this.scratch[13]! + at[1];
     this.scratch[14] = this.scratch[14]! + at[2];
-    mesh.matrix.fromArray(toWebMatrix(this.scratch));
+    // into the mesh's own matrix: a part's matrix is made every frame (Piece 6 M5, part B)
+    toWebMatrixInto(this.scratch, mesh.matrix.elements);
     mesh.matrixWorldNeedsUpdate = true;
   }
 }

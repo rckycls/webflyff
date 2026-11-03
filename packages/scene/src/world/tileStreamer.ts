@@ -85,6 +85,12 @@ export interface StreamerDeps {
   lighting?: TerrainLighting;
   /** Visible tiles around the player's: 1 (the default) is 3 x 3. */
   radius?: number;
+  /**
+   * Given a ring tile's ground and its objects once they are in, out of the scene: the stage puts their textures on the
+   * GPU, so that the copies loaded for them (light maps, mip levels) go as they do once drawn, and the tile shows without
+   * an upload when it comes into view.
+   */
+  prepare?: (object: Object3D) => void;
 }
 
 /** One tile the streamer holds. */
@@ -122,6 +128,11 @@ export class TileStreamer {
   /** One plane and one material for every flat tile. */
   private readonly flatGeometry: PlaneGeometry;
   private readonly flatMaterial = new MeshLambertMaterial({ color: 0x7a8a5a });
+  /**
+   * The entries by `y * width + x`, for `tileData`, which the rules and the camera ask many times a frame: a `"x_y"` key
+   * made for each was most of what the height lookups allocated (Piece 6 M5, part B).
+   */
+  private readonly byIndex = new Map<number, Entry>();
 
   constructor(
     private readonly world: string,
@@ -187,7 +198,9 @@ export class TileStreamer {
    * its objects; flat ground has height 0 and no objects. Null while it has not arrived, and for a tile not in range.
    */
   tileData(x: number, y: number): TileData | null {
-    return this.entries.get(tileKey(x, y))?.data ?? null;
+    const [width, height] = this.manifest.size;
+    if (!(x >= 0 && y >= 0 && x < width && y < height)) return null;
+    return this.byIndex.get(y * width + x)?.data ?? null;
   }
 
   /**
@@ -250,6 +263,7 @@ export class TileStreamer {
       unloaded: false,
     };
     this.entries.set(key, entry);
+    this.byIndex.set(y * this.manifest.size[0] + x, entry);
     entry.settled = this.store.tile(this.world, x, y).then(
       (tile) => {
         if (entry.unloaded) return;
@@ -276,18 +290,26 @@ export class TileStreamer {
     this.place(entry);
 
     const ground = terrain.ready.then(() => {
-      if (!entry.unloaded) entry.loaded = true;
+      if (entry.unloaded) return;
+      entry.loaded = true;
+      this.prepareOutOfView(entry, terrain.group);
     });
     const objects = this.deps.objects.place(tile, this.manifest).then((group) => {
       if (entry.unloaded) return;
       entry.objects = group;
       this.place(entry);
+      this.prepareOutOfView(entry, group);
     });
     // the shapes keep `data`, not `tile`, whose light maps are let go of
     const shapes = this.deps.shapes?.place(data);
     await Promise.all([ground, objects, shapes]).catch((error: unknown) => {
       this.deps.overlay.error(`tile ${entry.key}: ${error instanceof Error ? error.message : String(error)}`);
     });
+  }
+
+  /** Hands `object` to `deps.prepare` when its tile is in the ring: a visible one is drawn, which uploads it anyway. */
+  private prepareOutOfView(entry: Entry, object: Object3D): void {
+    if (!this.visible.includes(entry.key)) this.deps.prepare?.(object);
   }
 
   private flat(entry: Entry, x: number, y: number, reason: string): void {
@@ -307,6 +329,8 @@ export class TileStreamer {
     entry.unloaded = true;
     entry.loaded = false;
     this.entries.delete(entry.key);
+    const [x, y] = entry.key.split('_').map(Number) as [number, number];
+    if (this.byIndex.get(y * this.manifest.size[0] + x) === entry) this.byIndex.delete(y * this.manifest.size[0] + x);
     if (entry.terrain !== null) {
       this.scene.remove(entry.terrain.group);
       entry.terrain.dispose();

@@ -48,11 +48,15 @@ export function checkBound(target: Vec3, camera: Vec3, ground: Ground): Bound {
   const towards = sub(eye, dest);
   const length = vecLength(towards);
   const step = scale(normalize(towards), f32(1 / 10)); // tempVec /= 10 multiplies by 1.0f / 10
-  let p = add(dest, scale(step, 10));
+  // the point marches in place, a float add per axis as `add` does (once a frame, up to 10 points a metre: Piece 6 M5
+  // part B kept it from making a vector each)
+  const p = add(dest, scale(step, 10));
   let land: Vec3 | null = null;
   const count = Math.trunc(f32(length * 10));
   for (let i = 0; i < count; i++) {
-    p = add(p, step);
+    p[0] = f32(p[0] + step[0]);
+    p[1] = f32(p[1] + step[1]);
+    p[2] = f32(p[2] + step[2]);
     if (p[1] < f32(f32(ground.terrainHeight(p[0], p[2]) ?? 0) + CAMERA_OVER_TERRAIN)) {
       land = p;
       break;

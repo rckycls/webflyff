@@ -71,15 +71,16 @@ export class NameTagLayer {
     // A sprite without size attenuation is `scale` times its distance wide in view space, so `scale * P11 / 2` of the
     // viewport's height on screen; this is the scale of one pixel.
     const pixel = 2 / (camera.projectionMatrix.elements[5]! * Math.max(1, heightPx));
-    for (const [objectId, tag] of this.tags) {
+    // forEach and no spread: nothing made per tag a frame (Piece 6 M5, part B)
+    this.tags.forEach((tag, objectId) => {
       const place = placeOf(objectId);
-      const opacity = place === null ? 0 : tagOpacity(camera.position.distanceTo(at.set(...place.at)), tag.maxDistance);
+      const opacity = place === null ? 0 : tagOpacity(camera.position.distanceTo(at.set(place.at[0], place.at[1], place.at[2])), tag.maxDistance);
       tag.sprite.visible = opacity > 0;
-      if (place === null || opacity <= 0) continue;
-      tag.sprite.position.set(...place.head);
+      if (place === null || opacity <= 0) return;
+      tag.sprite.position.set(place.head[0], place.head[1], place.head[2]);
       tag.sprite.scale.set(tag.width * pixel, tag.height * pixel, 1);
       (tag.sprite.material as SpriteMaterial).opacity = opacity;
-    }
+    });
   }
 
   /** The movers that have a tag. */

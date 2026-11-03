@@ -147,9 +147,19 @@ export function coneVertices(cone: EffectConeDraw): { positions: Float32Array; u
     const a = degToRad(step * i);
     const s = f32(Math.sin(a));
     const c = f32(Math.cos(a));
-    positions.set([f32(s * cone.top), cone.height, f32(c * cone.top), f32(s * cone.bottom), 0, f32(c * cone.bottom)], i * 6);
+    // written in place: a cone is rebuilt every frame (Piece 6 M5, part B)
+    const p = i * 6;
+    positions[p] = f32(s * cone.top);
+    positions[p + 1] = cone.height;
+    positions[p + 2] = f32(c * cone.top);
+    positions[p + 3] = f32(s * cone.bottom);
+    positions[p + 4] = 0;
+    positions[p + 5] = f32(c * cone.bottom);
     const u = repeats === 0 ? i % 2 : f32(f32(repeats * i) / around);
-    uvs.set([u, vTop, u, bottomV], i * 4);
+    uvs[i * 4] = u;
+    uvs[i * 4 + 1] = vTop;
+    uvs[i * 4 + 2] = u;
+    uvs[i * 4 + 3] = bottomV;
   }
   return { positions, uvs };
 }

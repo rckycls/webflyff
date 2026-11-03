@@ -9,8 +9,10 @@
 // plus the JS heap. The baseline is taken after the first lap, when everything a lap needs has been loaded once; the last
 // lap must stay within 110% of it, and three.js' own counts (`renderer.info`) must be the baseline's.
 //
-// Every sample is taken on the square, after the tiles around it have settled, and after `gc()`: the soak project starts
-// Chromium with `--js-flags=--expose-gc` and precise heap numbers (playwright.config.ts). The test checks that it measures
+// Every sample is taken on the square, after the tiles around it have settled, and after `gc()` twice, a second apart:
+// the soak project starts Chromium with `--js-flags=--expose-gc` and precise heap numbers (playwright.config.ts). One
+// `gc()` alone sometimes left 60-80 MB uncollected at a lap, back at the next (Piece 6 M5, part B: 136.8, 145.4, 208.1,
+// 203.0, 136.9 MB), which a last lap could fail on; with the second, five laps read 98.3-98.7 MB. The test checks that it measures
 // what it says: that `gc()` and the heap number are there, that the heap numbers move at all, that the far corner's tiles
 // are not the square's (the tiles really streamed), and that the monsters' models went and came back.
 //
@@ -30,6 +32,8 @@ const HOP_METRES = 50;
 const HOP_MS = 1_000;
 /** Time on the square before a sample, for the tiles around it to arrive and the ones behind to go. */
 const SETTLE_MS = 5_000;
+/** Between the two `gc()` before a sample. */
+const GC_GAP_MS = 1_000;
 /** The limit: the last sample over the baseline. */
 const LIMIT = 1.1;
 
@@ -62,6 +66,8 @@ test('ten minutes of laps through Flaris keep memory within 10% of the first lap
   const began = Date.now();
   const sample = async (lap: number): Promise<Sample> => {
     await page.waitForTimeout(SETTLE_MS);
+    await page.evaluate(() => (window as unknown as { gc: () => void }).gc());
+    await page.waitForTimeout(GC_GAP_MS);
     await page.evaluate(() => (window as unknown as { gc: () => void }).gc());
     const perf = await perfOf(page);
     return {

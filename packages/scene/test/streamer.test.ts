@@ -1,6 +1,7 @@
 import { MAP_SIZE, NUM_PATCHES_PER_SIDE } from '@flyffweb/formats';
 import type { WebTile, WorldManifest } from '@flyffweb/formats';
 import { Group, Mesh, Scene, Texture } from 'three';
+import type { Object3D } from 'three';
 import { describe, expect, it, vi } from 'vitest';
 import { TerrainTile } from '../src/world/TerrainTile';
 import { TileStreamer, tileOf, tilesInRange } from '../src/world/tileStreamer';
@@ -105,11 +106,12 @@ function setup({ missing = [], failing = [], held = [], instantTextures = true, 
   const overlay = { error: vi.fn((_message: string) => {}), addGpuBytes: vi.fn((_n: number) => {}) };
   const textures = fakeTextures(instantTextures);
   const scene = new Scene();
-  const streamer = new TileStreamer('wdtest', makeManifest(), store, scene, { textures, objects, shapes, overlay });
+  const prepare = vi.fn((_object: Object3D) => {});
+  const streamer = new TileStreamer('wdtest', makeManifest(), store, scene, { textures, objects, shapes, overlay, prepare });
   if (preload) streamer.startPreloading();
   const gpuBytes = () => overlay.addGpuBytes.mock.calls.reduce((sum, [n]) => sum + n, 0);
   const release = (key: string) => heldDownloads.get(key)?.();
-  return { store, objects, shapes, groups, overlay, textures, scene, streamer, gpuBytes, release };
+  return { store, objects, shapes, groups, overlay, textures, scene, streamer, gpuBytes, release, prepare };
 }
 
 const requested = (store: { tile: { mock: { calls: [string, number, number][] } } }): string[] =>
@@ -220,6 +222,19 @@ describe('TileStreamer', () => {
     expect(requested(store).filter((key) => key === '12_10')).toHaveLength(1);
   });
 
+  it("readies a ring tile's ground and objects for the GPU once they are in, though it is not drawn, and no visible one", async () => {
+    const { streamer, groups, prepare, textures } = setup({ instantTextures: false });
+    streamer.update(middleOf(10, 10));
+    textures.arrive();
+    await flush();
+    const ring = tilesInRange({ x: 10, y: 10 }, 1, [30, 30]).preload;
+    const prepared = prepare.mock.calls.map(([object]) => object);
+    // the objects group of each ring tile, and its ground (a group of its own)
+    for (const key of ring) expect(prepared).toContain(groups.get(key));
+    expect(prepared).toHaveLength(ring.length * 2);
+    expect(prepared).not.toContain(groups.get('10_10'));
+  });
+
   it('loads the new visible tiles, then their ring, when the player crosses into another tile', async () => {
     const { store, streamer, scene, groups, textures } = setup({ instantTextures: false });
     streamer.update(middleOf(10, 10));
@@ -288,6 +303,16 @@ describe('TileStreamer', () => {
     expect(scene.getObjectByName('placeholder 11_10')).toBeDefined();
     expect(overlay.error).toHaveBeenCalledTimes(1);
     expect(overlay.error.mock.calls[0]![0]).toMatch(/11_10.*HTTP 503/);
+  });
+
+  it('has no tile data off the world, even beside a loaded tile at the far edge', async () => {
+    const { streamer } = setup();
+    streamer.update(middleOf(28, 9));
+    await flush();
+    expect(streamer.tileData(29, 9)).not.toBeNull();
+    // one tile west of column 0, a row up: as many tiles along as (29, 9)
+    expect(streamer.tileData(-1, 10)).toBeNull();
+    expect(streamer.tileData(30, 9)).toBeNull();
   });
 
   it('gives the ground height under a position, from the tile it is on, in tile-local D3D coordinates', async () => {

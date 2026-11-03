@@ -1467,13 +1467,18 @@ export class WorldScreen {
   private measureRadii(world: WorldState, views: MoverViews): void {
     const own = world.self();
     if (own === undefined) return;
-    const about = [this.focus?.targetId, own.dest?.targetId].filter((id): id is number => id !== null && id !== undefined);
-    if (about.length === 0) return;
-    for (const candidate of views.pickCandidates(undefined)) {
-      if (candidate.objectId !== own.objectId && !about.includes(candidate.objectId)) continue;
-      const mover = world.movers.get(candidate.objectId);
-      if (mover !== undefined) mover.radius = objRadius(candidate.box, mover.added.scale);
-    }
+    const target = this.focus?.targetId, toward = own.dest?.targetId;
+    if ((target === null || target === undefined) && (toward === null || toward === undefined)) return;
+    // the candidates of these alone, not every view's (Piece 6 M5, part B: this runs every frame while focused)
+    this.measureRadius(world, views, own.objectId);
+    if (target !== null && target !== undefined) this.measureRadius(world, views, target);
+    if (toward !== null && toward !== undefined && toward !== target) this.measureRadius(world, views, toward);
+  }
+
+  private measureRadius(world: WorldState, views: MoverViews, objectId: number): void {
+    const candidate = views.pickCandidate(objectId);
+    const mover = world.movers.get(objectId);
+    if (candidate !== null && mover !== undefined) mover.radius = objRadius(candidate.box, mover.added.scale);
   }
 
   /**

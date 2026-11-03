@@ -146,6 +146,8 @@ function timeOf(motion: LoopedMotion, frame: number): number {
 interface View {
   mover: Mover;
   look: MoverLook | null;
+  /** `handOf`'s last answer and what it was made from (asked several times a step: Piece 6 M5, part B). */
+  hand?: { look: boolean; right: number | null; left: number | null; job: number; value: MotionHand | null };
   /** Placed where the mover is drawn; holds what is drawn of it. */
   holder: Group;
   /** The loaded model, which plays the motions; null while loading, and for a plain object or the placeholder. */
@@ -555,6 +557,16 @@ export class MoverViews {
    * `Mover.cpp:3059-3081`; a left item the catalog lacks counts as none). Null for any other mover.
    */
   private handOf(view: View): MotionHand | null {
+    const right = view.look?.held.right ?? null, left = view.look?.held.left ?? null, job = view.mover.added.player?.job ?? -1;
+    const cached = view.hand;
+    if (cached !== undefined && cached.look === (view.look !== null) && cached.right === right && cached.left === left
+      && cached.job === job) return cached.value;
+    const value = this.handNow(view);
+    view.hand = { look: view.look !== null, right, left, job, value };
+    return value;
+  }
+
+  private handNow(view: View): MotionHand | null {
     const { mover, look } = view;
     const { index } = mover.added;
     const master = MASTER_BODIES.has(index);

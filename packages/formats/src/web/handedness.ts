@@ -44,10 +44,15 @@ export function toWebPosition(v: Vec3): Vec3 {
  * column vectors, mirrored in Z.
  */
 export function toWebMatrix(m: Float32Array): Float32Array {
+  return toWebMatrixInto(m, new Float32Array(16));
+}
+
+/** `toWebMatrix` written into `out` (16 numbers, such as a three.js `Matrix4.elements`), for a matrix made every frame. */
+export function toWebMatrixInto<T extends { [index: number]: number; length: number }>(m: Float32Array, out: T): T {
   if (m.length !== 16) {
     throw new RangeError(`toWebMatrix: expected 16 elements, got ${m.length}`);
   }
-  const out = Float32Array.from(m);
+  for (let i = 0; i < 16; i++) out[i] = m[i]!;
   for (const i of MIRRORED_MATRIX_INDICES) {
     out[i] = negate(m[i]!);
   }

@@ -21,9 +21,10 @@ import {
   PerspectiveCamera,
   SRGBColorSpace,
   Scene,
+  Texture,
   Vector2,
 } from 'three';
-import type { WebGLRenderer } from 'three';
+import type { Material, Object3D, WebGLRenderer } from 'three';
 import type { SceneServices } from '../boot';
 import { TerrainLighting } from './TerrainTile';
 import { CollisionShapes } from './collision';
@@ -49,6 +50,29 @@ const drawingSize = new Vector2();
 function aspectOf(renderer: WebGLRenderer): number {
   const size = renderer.getSize(drawingSize);
   return size.y > 0 ? size.x / size.y : 1;
+}
+
+/**
+ * Puts every texture under `root` on the GPU (`initTexture`): the materials' own and their shader uniforms'. A ring tile
+ * is not drawn (Piece 6 M5, part B), and its light maps and the mip levels of textures only it uses are let go of by
+ * `onUpdate` once uploaded (TerrainTile, loaders): without this they stayed in the heap, tens of MB a lap in the soak.
+ */
+export function uploadTextures(renderer: Pick<WebGLRenderer, 'initTexture'>, root: Object3D): void {
+  const seen = new Set<Texture>();
+  const upload = (value: unknown): void => {
+    if (!(value instanceof Texture) || seen.has(value)) return;
+    seen.add(value);
+    renderer.initTexture(value);
+  };
+  root.traverse((object) => {
+    const { material } = object as Object3D & { material?: Material | Material[] };
+    if (material === undefined) return;
+    for (const m of Array.isArray(material) ? material : [material]) {
+      for (const value of Object.values(m)) upload(value);
+      const { uniforms } = m as Material & { uniforms?: Record<string, { value: unknown }> };
+      if (uniforms !== undefined) for (const uniform of Object.values(uniforms)) upload(uniform.value);
+    }
+  });
 }
 
 export class WorldStage {
@@ -116,6 +140,7 @@ export class WorldStage {
       overlay,
       lighting,
       radius,
+      prepare: (object) => uploadTextures(this.renderer, object),
     });
   }
 

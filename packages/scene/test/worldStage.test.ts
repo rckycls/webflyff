@@ -1,10 +1,31 @@
 import { MAP_SIZE } from '@flyffweb/formats';
 import type { Vec3, WorldManifest } from '@flyffweb/formats';
-import { AmbientLight, Color, DirectionalLight, Fog, SRGBColorSpace, Vector2, Vector3 } from 'three';
+import {
+  AmbientLight, BoxGeometry, Color, DataTexture, DirectionalLight, Fog, Group, Mesh, MeshBasicMaterial, SRGBColorSpace,
+  ShaderMaterial, Texture, Vector2, Vector3,
+} from 'three';
 import type { Object3D, PerspectiveCamera, Scene } from 'three';
 import { describe, expect, it, vi } from 'vitest';
 import type { SceneServices } from '../src/boot';
-import { WorldStage } from '../src/world/WorldStage';
+import { WorldStage, uploadTextures } from '../src/world/WorldStage';
+
+describe('uploadTextures (Piece 6 M5, part B: a ring tile, never drawn, still lets go of its CPU copies)', () => {
+  it('puts every texture under the object on the GPU: the materials’ maps and the shader uniforms, each once', () => {
+    const map = new Texture();
+    const light = new DataTexture(new Uint8Array(4), 1, 1);
+    const layer = new Texture();
+    const root = new Group();
+    root.add(new Mesh(new BoxGeometry(), new MeshBasicMaterial({ map })));
+    root.add(new Mesh(new BoxGeometry(), [new MeshBasicMaterial({ map }), new MeshBasicMaterial()]));
+    root.add(new Mesh(new BoxGeometry(), new ShaderMaterial({ uniforms: { layer: { value: layer }, light: { value: light }, alpha: { value: 1 } } })));
+    const renderer = { initTexture: vi.fn((_texture: Texture) => {}) };
+
+    uploadTextures(renderer, root);
+
+    expect(new Set(renderer.initTexture.mock.calls.map(([t]) => t))).toEqual(new Set([map, light, layer]));
+    expect(renderer.initTexture).toHaveBeenCalledTimes(3);
+  });
+});
 
 /** Madrigal's meters per unit: a tile is 512 m across. */
 const MPU = 4;

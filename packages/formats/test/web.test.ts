@@ -8,6 +8,7 @@ import {
   objectLocalMatrix,
   sfxTextureName,
   toWebMatrix,
+  toWebMatrixInto,
   toWebPosition,
   toWebQuaternion,
   webName,
@@ -95,6 +96,14 @@ describe('toWebMatrix', () => {
   it('rejects anything that is not 16 elements', () => {
     expect(() => toWebMatrix(new Float32Array(15))).toThrow(RangeError);
     expect(() => toWebMatrix(new Float32Array(17))).toThrow(/16/);
+  });
+
+  it('writes the same into a matrix it is given (toWebMatrixInto), for one made every frame', () => {
+    const m = Float32Array.from({ length: 16 }, (_, i) => i + 1);
+    const into = new Matrix4();
+    expect(toWebMatrixInto(m, into.elements)).toBe(into.elements);
+    expect(into.elements).toEqual(Array.from(toWebMatrix(m)));
+    expect(() => toWebMatrixInto(new Float32Array(15), into.elements)).toThrow(RangeError);
   });
 
   it('rotation about Y flips sign', () => {
