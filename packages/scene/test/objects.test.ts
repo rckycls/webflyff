@@ -7,6 +7,7 @@ import {
   Bone,
   BufferAttribute,
   BufferGeometry,
+  DoubleSide,
   Group,
   InstancedMesh,
   Matrix4,
@@ -91,6 +92,15 @@ const SCENES: Record<string, () => Group> = {
     scene.add(named(new Mesh(triangle(), standard('textures/glow.ktx2', { light: true })), 'lod0'));
     return scene;
   },
+  // XE_2SIDE and XE_OPACITY: GLTFLoader's doubleSided and BLEND
+  'models/obj_veil.glb': () => {
+    const scene = new Group();
+    const material = standard('textures/veil.ktx2');
+    material.transparent = true;
+    material.side = DoubleSide;
+    scene.add(named(new Mesh(triangle(), material), 'lod0'));
+    return scene;
+  },
 };
 
 const MODELS = Object.keys(SCENES).concat('models/obj_broken.glb');
@@ -98,6 +108,7 @@ const BOX = MODELS.indexOf('models/obj_box.glb');
 const TREE = MODELS.indexOf('models/obj_tree.glb');
 const WINDMILL = MODELS.indexOf('models/obj_windmill.glb');
 const LAMP = MODELS.indexOf('models/obj_lamp.glb');
+const VEIL = MODELS.indexOf('models/obj_veil.glb');
 const BROKEN = MODELS.indexOf('models/obj_broken.glb');
 
 const manifest: WorldManifest = {
@@ -264,6 +275,17 @@ describe('ObjectPool', () => {
     expect(glow.blending).toBe(AdditiveBlending);
     expect(glow.depthWrite).toBe(false);
     expect(glow.map).toBe(texture);
+    // one pass, as D3D draws a mesh with culling off (three.js would draw a see-through two-sided one twice)
+    expect(glow.forceSinglePass).toBe(true);
+    expect((box!.material as MeshLambertMaterial).forceSinglePass).toBe(true);
+  });
+
+  it('draws a see-through two-sided model in one pass, as D3D does with culling off', async () => {
+    const { pool } = setup();
+    const group = await pool.place(makeTile(0, 0, [at(VEIL, 0, 0, 0)]), manifest);
+
+    const veil = instancesOf(group)[0]!.material as MeshLambertMaterial;
+    expect([veil.transparent, veil.side, veil.forceSinglePass]).toEqual([true, DoubleSide, true]);
   });
 
   it('gets textures through the cache once per model, and gives everything back with the last tile', async () => {

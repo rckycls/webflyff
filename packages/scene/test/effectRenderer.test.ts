@@ -92,6 +92,9 @@ describe('EffectRenderer: render state (CSfxModel::Render, sfxbase.cpp:2433-2446
     expect(mesh!.material.depthTest).toBe(true);
     expect(mesh!.material.transparent).toBe(true);
     expect(mesh!.material.side).toBe(DoubleSide);
+    // in one pass, as D3D draws it with culling off (a ShaderMaterial's default; three.js draws another see-through
+    // two-sided material twice, Piece 6 M5 part B)
+    expect(mesh!.material.forceSinglePass).toBe(true);
   });
 
   it('draws a BLEND quad with SRCALPHA, INVSRCALPHA, still with the depth write off', () => {

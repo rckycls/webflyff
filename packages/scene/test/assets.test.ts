@@ -16,7 +16,8 @@ import type { AssetIndex, WebTile, WorldManifest } from '@flyffweb/formats';
 import type { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js';
 import { AssetStore } from '../src/assets/AssetStore';
 import { AssetLoadError, fetchRead, fetchWithRetry } from '../src/assets/fetchWithRetry';
-import { TextureCache, applyTextures, loadKtx2 } from '../src/assets/loaders';
+import { TextureCache, applyTextures, loadGltf, loadKtx2 } from '../src/assets/loaders';
+import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { checkerTexture } from '../src/assets/placeholder';
 
 const noSleep = async (): Promise<void> => {};
@@ -691,6 +692,21 @@ function fakeTranscoderLoader(failures: number, texture: Texture = rgbaTexture()
   };
   return loader;
 }
+
+describe('loadGltf', () => {
+  it('marks every material of a parsed glb for one pass (Piece 6 M5, part B: D3D draws culling-off meshes once)', async () => {
+    const scene = new Group();
+    const one = new MeshStandardMaterial({ transparent: true });
+    const two = new MeshStandardMaterial();
+    scene.add(new Mesh(new BoxGeometry(), one), new Mesh(new BoxGeometry(), [two, one]));
+    const store = { bytes: async () => new Uint8Array(8) };
+    const gltf = { parseAsync: vi.fn(async () => ({ scene }) as unknown as GLTF) };
+
+    await loadGltf(store, gltf, 'models/obj_x.glb');
+
+    expect([one.forceSinglePass, two.forceSinglePass]).toEqual([true, true]);
+  });
+});
 
 describe('loadKtx2: the Basis transcoder', () => {
   const fine = () => vi.fn<typeof fetch>(async () => new Response('x'));

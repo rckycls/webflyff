@@ -1,4 +1,5 @@
 import { Mesh, Scene } from 'three';
+import type { Material } from 'three';
 import { describe, expect, it } from 'vitest';
 import { MoveMark } from '../src/world/render/moveMark';
 
@@ -13,6 +14,12 @@ describe('MoveMark', () => {
     const [ring] = marks(scene);
     expect(ring).toBeDefined();
     expect(ring!.position.toArray()).toEqual([6968, 100.05, -3328]);
+  });
+
+  it('draws its see-through two-sided ring in one pass (Piece 6 M5, part B)', () => {
+    const scene = new Scene();
+    new MoveMark(scene).show([6968, 100, 3328]);
+    expect((marks(scene)[0]!.material as Material).forceSinglePass).toBe(true);
   });
 
   it('stays while the destination is its point, and goes when it is not: arrived, ended or another', () => {

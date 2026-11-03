@@ -65,7 +65,13 @@ export function readyTranscoder(ktx2: KTX2Loader, retry: FetchRetryOptions = {})
   return ready;
 }
 
-/** Downloads a glb (with retries) and parses it; its images, if it had any, would resolve against nothing. */
+/**
+ * Downloads a glb (with retries) and parses it; its images, if it had any, would resolve against nothing.
+ *
+ * Every material is drawn in one pass (`forceSinglePass`, Piece 6 M5 part B): D3D draws a mesh with culling off
+ * (`XE_2SIDE`, the converter's doubleSided, tools/convert/src/models/modelGlb.ts:83-96) in a single draw, where three.js
+ * draws a see-through two-sided material twice, back faces then front, re-checking its shader program before each.
+ */
 export async function loadGltf(
   store: Pick<AssetStore, 'bytes'>,
   gltf: Pick<GLTFLoader, 'parseAsync'>,
@@ -73,7 +79,13 @@ export async function loadGltf(
 ): Promise<GLTF> {
   const bytes = await store.bytes(key);
   const whole = bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength;
-  return gltf.parseAsync((whole ? bytes : bytes.slice()).buffer as ArrayBuffer, '');
+  const parsed = await gltf.parseAsync((whole ? bytes : bytes.slice()).buffer as ArrayBuffer, '');
+  parsed.scene.traverse((object) => {
+    const { material } = object as Object3D & { material?: Material | Material[] };
+    if (material === undefined) return;
+    for (const m of Array.isArray(material) ? material : [material]) m.forceSinglePass = true;
+  });
+  return parsed;
 }
 
 /**

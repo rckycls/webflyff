@@ -116,6 +116,9 @@ function worldMaterial(source: Material): Material {
     opacity: source.opacity,
     alphaTest: source.alphaTest,
     side: source.side,
+    // one draw, as D3D's with culling off (loadGltf): three.js draws a see-through two-sided material twice, and the
+    // light objects of Flaris' houses alone re-checked their programs about 10 times a frame (Piece 6 M5, part B)
+    forceSinglePass: true,
   };
   const material =
     source.userData.light === true

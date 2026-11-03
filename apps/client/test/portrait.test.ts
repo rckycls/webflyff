@@ -2,8 +2,8 @@
 // The portraits' readback (Piece 6 M5): under a software renderer a blocking readRenderTargetPixels held the page for
 // seconds, so the picture is read back with the asynchronous read, and only the newest of several portraits is kept.
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { AnimationMixer, Group, WebGLRenderTarget } from 'three';
-import type { WebGLRenderer } from 'three';
+import { AnimationMixer, BoxGeometry, DoubleSide, Group, Mesh, MeshBasicMaterial, MeshLambertMaterial, WebGLRenderTarget } from 'three';
+import type { Material, WebGLRenderer } from 'three';
 import type { AssembledCharacter } from '@flyffweb/scene';
 import { latestOnly, renderPortrait } from '../src/world/render/portrait';
 
@@ -42,6 +42,19 @@ function quiet(): void {
 }
 
 describe('renderPortrait', () => {
+  it("draws the model's see-through two-sided parts unlit, in one pass (Piece 6 M5, part B)", async () => {
+    quiet();
+    const { renderer, settle } = stubRenderer();
+    const character = model();
+    const part: Mesh<BoxGeometry, Material> = new Mesh(new BoxGeometry(), new MeshLambertMaterial({ transparent: true, side: DoubleSide }));
+    character.root.add(part);
+    const picture = renderPortrait(renderer, character, null, document, true);
+    settle().resolve();
+    await picture;
+    expect(part.material).toBeInstanceOf(MeshBasicMaterial);
+    expect((part.material as MeshBasicMaterial).forceSinglePass).toBe(true);
+  });
+
   it('reads the pixels with readRenderTargetPixelsAsync, never the blocking read', async () => {
     quiet();
     const { renderer, calls, settle } = stubRenderer();

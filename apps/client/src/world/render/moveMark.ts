@@ -36,6 +36,8 @@ export class MoveMark {
       new RingGeometry(INNER_RADIUS, OUTER_RADIUS, SEGMENTS).rotateX(-Math.PI / 2),
       new MeshBasicMaterial({
         color: COLOR, transparent: true, opacity: OPACITY, side: DoubleSide, depthTest: false, depthWrite: false,
+        // one draw: three.js draws a see-through two-sided material twice (Piece 6 M5, part B)
+        forceSinglePass: true,
       }),
     );
     this.ring.name = 'move mark';

@@ -44,7 +44,8 @@ function unlit(root: Object3D): void {
       const { map } = old as Material & { map?: Texture | null };
       const basic = new MeshBasicMaterial({
         name: old.name, map: map ?? null, transparent: old.transparent, opacity: old.opacity, alphaTest: old.alphaTest,
-        side: old.side, depthWrite: old.depthWrite,
+        // one draw, as the glb's own material (loadGltf, Piece 6 M5 part B)
+        side: old.side, depthWrite: old.depthWrite, forceSinglePass: true,
       });
       old.dispose(); // the texture is the cache's: the model's release gives it back
       return basic;

@@ -47,7 +47,8 @@ function tintHair(lod: Object3D, hairColor: number): void {
       const { map } = old as Material & { map?: Texture | null };
       const unlit = new MeshBasicMaterial({
         name: old.name, map: map ?? null, color, transparent: old.transparent, opacity: old.opacity, alphaTest: old.alphaTest,
-        side: old.side, depthWrite: old.depthWrite,
+        // one draw, as the glb's own material (loadGltf, Piece 6 M5 part B)
+        side: old.side, depthWrite: old.depthWrite, forceSinglePass: true,
       });
       old.dispose(); // its texture is the cache's: the assembled character gives it back
       return unlit;
