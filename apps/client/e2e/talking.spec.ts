@@ -98,18 +98,23 @@ test('talking: chat typing, channels, peaceful NPC dialogue and authoritative bu
     normalBag = (await page.locator('.hud-inventory').boundingBox())!;
     await page.locator('.hud-inventory > .hud-window-close').click();
   }
-  await tapMover(page, NPC_ID); await expect(page.locator('.hud-npc')).toBeVisible();
+  const menu = page.locator('.hud-mover-menu');
+  await tapMover(page, NPC_ID); await expect(menu).toBeVisible();
   expect(sentOf(gateway, PacketType.MELEE_ATTACK)).toHaveLength(0);
-  await expect(page.locator('.hud-npc [data-npc-action=talk]')).toHaveText('Dialog');
-  await expect(page.locator('.hud-npc [data-npc-action=shop]')).toHaveText('Trade');
-  expect((await page.locator('.hud-npc').boundingBox())!.width).toBeLessThanOrEqual(140);
-  await page.locator('[data-npc-action=talk]').click(); await expect.poll(() => sentOf(gateway, 0xff00b0).length).toBe(1);
+  await expect(menu.locator('[data-menu-entry="0"]')).toHaveText('Dialog');
+  await expect(menu.locator('[data-menu-entry="2"]')).toHaveText('Trade');
+  await menu.locator('[data-menu-entry="0"]').click(); await expect.poll(() => sentOf(gateway, 0xff00b0).length).toBe(1);
+  const dialog = page.locator('.hud-dialog');
+  if (!isMobile) expect((await dialog.boundingBox())!).toMatchObject({ width: 512, height: 320 });
   // CUser::AddRunScriptFunc uses the receiving player's object ID, not the selected NPC's.
   gateway.pushCache(script.later([message(SELF_ID, 0x24, new ArWriter().u16(0x12).string('Welcome to my shop.').u32(0))]));
-  await expect(page.locator('.npc-dialog-text')).toHaveText('Welcome to my shop.');
+  await expect(dialog.locator('.dialog-text')).toContainText('Welcome to my shop.');
   await page.screenshot({ path: info.outputPath('npc.png') });
+  // the dialogue is modal: it closes before the menu's Trade
+  await dialog.locator(':scope > .hud-window-close').click(); await expect(dialog).toBeHidden();
   gateway.pushCache(script.later([writeSetPointParam(SELF_ID, 10000, 1000)]));
-  await page.locator('[data-npc-action=shop]').click(); await expect.poll(() => sentOf(gateway, 0xff00b1).length).toBe(1);
+  await tapMover(page, NPC_ID);
+  await menu.locator('[data-menu-entry="2"]').click(); await expect.poll(() => sentOf(gateway, 0xff00b1).length).toBe(1);
   gateway.pushCache(script.later([message(NPC_ID, 0x14, stock())]));
   const shop = page.locator('.hud-shop'); await expect(shop.locator('[data-stock-id="1"]')).toBeVisible();
   const inventory = page.locator('.hud-inventory'); await expect(inventory).toBeVisible();
@@ -167,7 +172,7 @@ test('talking: chat typing, channels, peaceful NPC dialogue and authoritative bu
   await inventory.locator(':scope > .hud-window-close').click();
   await page.evaluate(() => window.__client!.step(10));
   await tapMover(page, NPC_ID);
-  await page.locator('[data-npc-action=shop]').click();
+  await page.locator('.hud-mover-menu [data-menu-entry="2"]').click();
   await expect(shop).toBeVisible();
   gateway.pushCache(script.later([writeDelObj(NPC_ID)])); await expect(shop).toBeHidden();
   await expect.poll(() => sentOf(gateway, 0xff00b2).length).toBe(2);

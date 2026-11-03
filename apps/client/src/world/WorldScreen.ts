@@ -17,7 +17,7 @@ import { SpeechBubbleLayer } from './render/SpeechBubbleLayer';
 
 import { UI_SHEETS_KEY, toWebPosition } from '@flyffweb/formats';
 import type { Vec3, WebEffect, WebUiSheet, WebUiSheets, WebWorldMap } from '@flyffweb/formats';
-import type { AddedMover, BundleMessage, WorldMessage } from '@flyffweb/protocol';
+import type { AddedMover, BundleMessage, NpcAction, WorldMessage } from '@flyffweb/protocol';
 import {
   EffectRenderer, Joystick, KeyboardInput, WorldStage, effectTextureProvider, loadGltf, loopMotion, neuzRandom, attachHeld,
   rendererCounts,
@@ -61,7 +61,10 @@ import type { BoxState, KeptLogin } from '../lobby/reconnect';
 import { TaskBar } from './hud/taskBar';
 import { InventoryWindow } from './hud/inventoryWindow';
 import { ChatWindow } from './hud/chatWindow';
-import { NpcDialog } from './hud/npcDialog';
+import { MENU_RANGE, MMI, MoverMenu, npcMenuEntries, soleEntry } from './hud/moverMenu';
+import { NO_QUESTS } from './hud/dialogue/dialogState';
+import { DialogWindow } from './hud/dialogue/dialogWindow';
+import { dialogueStays, ownStands } from './hud/dialogue/dialogueStays';
 import { ShopWindow } from './hud/shopWindow';
 import { Minimap } from './hud/minimap';
 import { WorldMap } from './hud/worldMap';
@@ -146,6 +149,8 @@ async function loadMotion(services: SceneServices, key: string): Promise<LoopedM
 }
 
 const drawingSize = new Vector2();
+/** MMI_DIALOG is refused this long after an item drop (`GetTickCount() - m_dwDropTime < 3000`, WndWorld.cpp:5164). */
+const DROP_GUARD_MS = 3000;
 
 /**
  * A world whose session dropped on its own, frozen behind its box (Piece 6 M3): what the lobby needs to reconnect. The lobby
@@ -246,7 +251,10 @@ export class WorldScreen {
   private inventoryWindow: InventoryWindow | undefined;
   private chatWindow: ChatWindow | undefined;
   private speechBubbles: SpeechBubbleLayer | undefined;
-  private npcDialog: NpcDialog | undefined;
+  private moverMenu: MoverMenu | undefined;
+  private dialog: DialogWindow | undefined;
+  /** `CWndWorld::m_dwDropTime` (WndWorld.cpp:590): when the player last dropped an item. */
+  private lastDropAt = -Infinity;
   private shopWindow: ShopWindow | undefined;
   private minimap: Minimap | undefined;
   /** The world map (Piece 6 M1), its catalog (null without one) and its monster switch, kept across world changes. */
@@ -527,7 +535,7 @@ export class WorldScreen {
     for (const { objectId, value } of messages) {
       const self = world.self();
       if (value.type === 'npcScript') {
-        if (objectId === self?.objectId) this.npcDialog?.receive(value.action);
+        if (objectId === self?.objectId) this.npcScript(value.action);
         continue;
       }
       if (value.type === 'delObj') this.speechBubbles?.remove(objectId);
@@ -822,7 +830,12 @@ export class WorldScreen {
     reviveWindow.onStand = () => this.itemUse!.revive();
     const inventoryWindow = new InventoryWindow(this.hudArt!, this.data!, {
       use: (id) => { this.itemUse!.use(id); }, equip: (id) => { itemActions.equip(id); },
-      drop: (id, count) => { this.sounds?.drop(); itemActions.drop(id, count); }, move: (source, dest) => { itemActions.move(source, dest); },
+      drop: (id, count) => {
+        if (this.dialog?.frame.isOpen === true) return; // no drop while the dialogue is open (DPClient.cpp:9378-9382)
+        this.sounds?.drop();
+        if (itemActions.drop(id, count)) this.lastDropAt = performance.now();
+      },
+      move: (source, dest) => { itemActions.move(source, dest); },
       shortcut: (id, slot) => taskBar.setInventoryShortcut(id, slot),
     }, doc);
     this.inventoryWindow = inventoryWindow;
@@ -847,22 +860,25 @@ export class WorldScreen {
     };
     inventoryWindow.onShopClose = () => this.shopWindow?.frame.close();
     this.teleporter = new TeleporterWindow(this.hudArt!, id => this.canTalk(id), (key, index) => session.sendTeleporter(key, index), doc);
-    this.npcDialog = new NpcDialog(this.hudArt!, (id) => this.canTalk(id),
-      (id, key, param, quest) => session.sendNpcDialog(id, key, param, quest, this.world?.self()?.objectId ?? 0),
-      (id) => {
-        const npc = this.world!.movers.get(id)!;
-        this.shopWindow!.open(id, npc.name, this.data!.npcs.get(npc.added.npc!.characterKey.toLowerCase())); this.npcDialog!.frame.close();
-      }, doc, this.data!.texts, (id, npc) => { this.teleporter!.open(id, npc); this.npcDialog?.frame.close(); });
+    this.moverMenu = new MoverMenu(doc);
+    // RunScript: the NPC and the player as nGlobal3 and nGlobal4 (WndDialog.cpp:234-240)
+    this.dialog = new DialogWindow(this.hudArt!, this.data!.texts, NO_QUESTS, (request) => {
+      const npcId = this.dialog?.npcId ?? null, self = this.world?.self();
+      if (npcId !== null && self !== undefined) session.sendNpcDialog(npcId, request.key, request.param, request.quest, self.objectId);
+    }, doc);
     // Finish sends DOUSESKILLPOINT through the skill use, which also ends a spend the server leaves unanswered
     const skillWindow = new SkillWindow(this.hudArt!, this.data!, (skills) => void skillUse.spendSkillPoints(skills), taskBar, doc);
     this.skillWindow = skillWindow;
     this.optionWindow = this.audio === null ? undefined : new OptionWindow(this.hudArt!, this.audio, doc);
-    for (const modal of [logOutBox.modal, reviveWindow.modal, skillWindow.warning.modal]) modal.onChange = () => this.modalChanged();
+    for (const modal of [logOutBox.modal, reviveWindow.modal, skillWindow.warning.modal, this.dialog.modal]) {
+      modal.onChange = () => this.modalChanged();
+    }
     this.hud!.element.append(
       this.teleporter.frame.element,
       taskBar.element, this.attackButton.element, this.jumpButton.element, mobileTools, logOutBox.element, characterWindow.frame.element,
       characterWindow.confirm.frame.element, skillWindow.frame.element, skillWindow.warning.element, reviveWindow.element,
-      inventoryWindow.frame.element, this.nearbyItems.element, this.chatWindow.element, this.npcDialog.frame.element, this.shopWindow.frame.element,
+      inventoryWindow.frame.element, this.nearbyItems.element, this.chatWindow.element, this.shopWindow.frame.element,
+      this.dialog.element, this.moverMenu.element,
     );
     if (this.optionWindow !== undefined) this.hud!.element.append(this.optionWindow.frame.element);
     // before the windows' own Escape (frame.ts), which closes a window only if this one leaves the key to it
@@ -873,17 +889,8 @@ export class WorldScreen {
       renderer.domElement, (x, y) => this.pick(x, y), (error) => this.reportOnce(`tap: ${messageOf(error)}`, error),
       (press) => {
         if (press.mover === null) attackLoop.onGroundPressed(press.double);
-        else if (this.world?.movers.get(press.mover)?.kind === 'npc') {
-          attackLoop.stop('move'); this.focus!.select(press.mover); this.stopOwnMover();
-          const npc = this.world.movers.get(press.mover)!;
-          if (this.canTalk(press.mover)) {
-            // the click's dwSndIdle1, then the dialog and its SetMusic (WndWorld.cpp:7063, WndDialog.cpp:290-297)
-            this.sounds?.moverClicked(npc.added.index);
-            this.npcDialog?.open(press.mover, npc.name, this.data!.npcs.get(npc.added.npc!.characterKey.toLowerCase()));
-            this.sounds?.npcDialog(npc.added.npc!.characterKey);
-          }
-          else this.hud?.messages.add('Move closer to speak with this NPC.', 0xffffff00);
-        } else attackLoop.onMoverPressed(press.mover, press.time, press.double);
+        else if (this.world?.movers.get(press.mover)?.kind === 'npc') this.pressNpc(press.mover);
+        else attackLoop.onMoverPressed(press.mover, press.time, press.double);
       },
     );
     this.cameraControls = new CameraControls(renderer.domElement, (dx, dy) => this.backCamera.rotate(dx, dy));
@@ -1131,13 +1138,6 @@ export class WorldScreen {
       this.groundItems?.update(world.groundItems, stage.camera, this.stepsRun);
       this.tags!.update(stage.camera, renderer.getSize(drawingSize).y, (objectId) => views.placeOf(objectId));
       this.speechBubbles?.update(stage.camera, drawingSize.y, (objectId) => views.placeOf(objectId));
-      this.npcDialog?.updateAnchor(id => {
-        const place = views.placeOf(id); if (!place) return null;
-        const point = new Vector3(...place.head).project(stage.camera);
-        if (point.z < -1 || point.z > 1 || Math.abs(point.x) > 1 || Math.abs(point.y) > 1) return null;
-        const canvas = renderer.domElement.getBoundingClientRect(), parent = this.hud!.element.getBoundingClientRect();
-        return { x: canvas.left - parent.left + (point.x + 1) * canvas.width / 2 + 16, y: canvas.top - parent.top + (1 - point.y) * canvas.height / 2 };
-      });
       this.effects?.draw(stage.camera);
 
       const { tiles, models } = stage.counts();
@@ -1290,7 +1290,11 @@ export class WorldScreen {
     this.taskBar!.update(this.own, this.data!);
     this.nearbyItems?.update(world.groundItems, self?.act.body.pos ?? null);
     if (this.own) this.inventoryWindow?.update(this.own);
-    this.npcDialog?.update(); this.shopWindow?.update();
+    // the dialogue goes with its NPC or when the player moves; the menu when the player moves (WndWorld.cpp:8052-8081)
+    const dialogNpc = this.dialog?.npcId ?? null;
+    if (dialogNpc !== null && !dialogueStays(world.movers.get(dialogNpc), self)) this.dialog!.close();
+    if (this.moverMenu?.isOpen === true && !ownStands(self)) this.moverMenu.close();
+    this.shopWindow?.update();
     this.teleporter?.update();
     if (this.worldMap?.isOpen === true) this.worldMap.update(this.mapView());
     if (self !== undefined) this.minimap?.update(self.act.body.pos, this.backCamera.heading ?? 0,
@@ -1321,7 +1325,7 @@ export class WorldScreen {
     if (window === 'navigator') { this.minimap?.toggle(); return; }
     if (window === 'worldmap') {
       // ObjectExecutor does nothing while the NPC dialog is open (WndManager.cpp:2570-2576)
-      if (this.npcDialog?.frame.isOpen === true) return;
+      if (this.dialog?.frame.isOpen === true) return;
       this.worldMap?.toggle(this.mapView());
       // the map holds the keys and the presses from here: what was held lets go (the plan's Ruling 4)
       if (this.worldMap?.isOpen === true) this.releaseControls();
@@ -1390,7 +1394,7 @@ export class WorldScreen {
    */
   private modalChanged(): void {
     const open = this.reviveWindow?.modal.isShown === true || this.logOutBox?.modal.isShown === true ||
-      this.skillWindow?.warning.modal.isShown === true;
+      this.skillWindow?.warning.modal.isShown === true || this.dialog?.modal.isShown === true;
     this.element.classList.toggle('world-modal', open);
     if (!open) return;
     this.worldMap?.close();
@@ -1433,6 +1437,8 @@ export class WorldScreen {
   private readonly onEscape = (event: KeyboardEvent): void => {
     if (this.chatWindow?.typing || this.dropBox !== undefined) return;
     if (this.worldMap?.isOpen === true) return; // the map's own key hold closes it, and Escape does nothing else
+    // the NPC's menu and the dialogue take Escape themselves (plan decision 4)
+    if (this.moverMenu?.isOpen === true || this.dialog?.frame.isOpen === true) return;
     const { taskBar, attackLoop, focus } = this;
     if (event.key !== 'Escape' || event.repeat || taskBar === undefined || attackLoop === undefined || focus === undefined) {
       return;
@@ -1518,6 +1524,86 @@ export class WorldScreen {
   private isLive(objectId: number): boolean {
     const mover = this.world?.movers.get(objectId);
     return mover === undefined || isLive(mover);
+  }
+
+  /**
+   * A press on an NPC (`CWndWorld::OnLButtonDown`, WndWorld.cpp:7063-7078; `ShowMoverMenu`, :6517-6710): its idle sound;
+   * within MENU_RANGE the player stops, and its sole entry runs or its menu opens at the right and top of its bound rect;
+   * farther, the player walks up to it and nothing opens on arrival.
+   */
+  private pressNpc(id: number): void {
+    const world = this.world!, npc = world.movers.get(id)!, own = world.self();
+    this.attackLoop!.stop('move');
+    this.focus!.select(id);
+    this.sounds?.moverClicked(npc.added.index);
+    if (own === undefined || own.act.isDie() || npc.act.isDie()) return;
+    const distance = npc.act.body.pos.reduce((sum, value, axis) => sum + (value - own.act.body.pos[axis]!) ** 2, 0);
+    if (distance >= MENU_RANGE * MENU_RANGE) {
+      this.attackLoop!.walkTo(id);
+      return;
+    }
+    this.stopOwnMover();
+    const data = this.data!.npcs.get(npc.added.npc!.characterKey.toLowerCase());
+    const sole = soleEntry(data);
+    if (sole !== null) {
+      this.chooseNpcEntry(id, sole);
+      return;
+    }
+    const at = this.menuPoint(id);
+    if (at === null) return;
+    // the base job is the Vagrant's (CMover::IsBaseJob)
+    const entries = npcMenuEntries(data, this.data!.texts, (this.own?.job ?? 0) === 0);
+    this.moverMenu!.open(entries, at, (entry) => this.chooseNpcEntry(id, entry));
+  }
+
+  /** The right and top of the NPC's bound rect (`GetBoundRect`, WndWorld.cpp:2661-2701), in the HUD layer's pixels. */
+  private menuPoint(id: number): { x: number; y: number } | null {
+    const mover = this.world?.movers.get(id), candidate = this.views?.pickCandidate(id), stage = this.stage;
+    if (mover === undefined || candidate == null || stage === undefined || this.page === undefined || this.hud === undefined) return null;
+    const { x: width, y: height } = this.page.renderer.getSize(drawingSize);
+    const rect = focusRect(stage.camera, width, height, candidate.box, candidate.world, mover.act.body.pos);
+    if (rect === null) return null;
+    const canvas = this.page.renderer.domElement.getBoundingClientRect(), layer = this.hud.element.getBoundingClientRect();
+    return { x: canvas.left - layer.left + rect.right, y: canvas.top - layer.top + rect.top };
+  }
+
+  /** `CWndWorld::OnCommand` for an NPC's entry: Dialog (:5163-5177), Trade (:5251-5386), Teleport (:5949-5969). */
+  private chooseNpcEntry(id: number, entry: number): void {
+    const npc = this.world?.movers.get(id);
+    if (npc === undefined || npc.kind !== 'npc') return;
+    const data = this.data!.npcs.get(npc.added.npc!.characterKey.toLowerCase());
+    if (entry === MMI.DIALOG) {
+      // refused within 3 s of a drop, or with a shop open (:5164-5171)
+      if (performance.now() - this.lastDropAt < DROP_GUARD_MS || this.shopWindow?.frame.isOpen === true) return;
+      this.inventoryWindow?.frame.close(); // OnInitialUpdate destroys the inventory (WndDialog.cpp:280-285)
+      this.dialog!.open(id, data, this.hud!.element.clientWidth);
+      this.session.sendNpcDialogOpen(id);
+      this.sounds?.npcDialog(npc.added.npc!.characterKey);
+    } else if (entry === MMI.TRADE && !data?.vendorType && this.canTalk(id)) {
+      this.dialog?.close();
+      this.shopWindow!.open(id, npc.name, data);
+    } else if (entry === MMI.TELEPORTER && data !== undefined) {
+      this.dialog?.close();
+      this.teleporter!.open(id, data);
+    }
+  }
+
+  /** A RUNSCRIPTFUNC for the player (`CDPClient::OnRunScriptFunc`, DPClient.cpp:14265-14476). */
+  private npcScript(action: NpcAction): void {
+    switch (action.kind) {
+      case 'initStat':
+        this.own?.initStat(action.stat, action.remainGP);
+        return;
+      case 'queryName':
+        this.reportOnce(`npc: the ${action.of === 'player' ? 'rename' : 'guild name'} window is not in the browser`,
+          new Error(`QUERYSET${action.of === 'player' ? 'PLAYER' : 'GUILD'}NAME`));
+        return;
+      case 'navigator':
+      case 'removeNavigator':
+        return; // never sent by V15
+      default:
+        this.dialog?.receive(action);
+    }
   }
 
   /** MAX_LEN_MOVER_MENU is a squared distance of 1024 in the native server's script handler. */
@@ -1644,7 +1730,7 @@ export class WorldScreen {
     this.inventoryWindow?.dispose();
     if (this.over) { this.chatWindow?.dispose(); this.chatWindow = undefined; }
     else this.chatWindow?.close();
-    this.npcDialog?.dispose(); this.shopWindow?.dispose();
+    this.moverMenu?.dispose(); this.dialog?.dispose(); this.shopWindow?.dispose();
     this.groundItems?.dispose();
     this.nearbyItems?.dispose();
     this.minimap?.dispose();
@@ -1663,7 +1749,7 @@ export class WorldScreen {
     for (const key of ['world', 'own', 'stage', 'views', 'tags', 'speechBubbles', 'keyboard', 'walkKey', 'joystick', 'tap',
       'focus', 'attackLoop', 'skillUse', 'mark', 'effects', 'effectRenderer', 'effectTextures', 'numbers', 'marks',
       'hud', 'hudArt', 'taskBar', 'attackButton', 'cameraControls', 'jumpButton', 'logOutBox', 'reviveWindow',
-      'characterWindow', 'skillWindow', 'inventoryWindow', 'npcDialog', 'shopWindow', 'itemUse',
+      'characterWindow', 'skillWindow', 'inventoryWindow', 'moverMenu', 'dialog', 'shopWindow', 'itemUse',
       'itemActions', 'groundItems', 'nearbyItems', 'ownMover', 'simulationClock', 'minimap', 'teleporter', 'worldMap'] as const) this[key] = undefined;
   }
 
@@ -1705,7 +1791,8 @@ export class WorldScreen {
     entry.passwordHash = '';
     this.session.leave();
     this.releaseControls();
-    for (const window of [this.shopWindow, this.npcDialog, this.teleporter, this.inventoryWindow, this.characterWindow,
+    this.moverMenu?.close();
+    for (const window of [this.shopWindow, this.dialog, this.teleporter, this.inventoryWindow, this.characterWindow,
       this.skillWindow, this.optionWindow]) window?.frame.close();
     this.worldMap?.close();
     this.audio?.stopWorld();

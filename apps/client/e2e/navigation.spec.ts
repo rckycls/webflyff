@@ -46,7 +46,7 @@ test('classic NPC teleporter: native map markers send the resource destination i
   const gateway = await playGateway(page, script); await enterFlaris(page);
   await page.evaluate(() => window.__client!.pause());
   await tapMover(page, NPC_ID);
-  await page.locator('[data-npc-action=teleport]').click();
+  await page.locator('.hud-mover-menu [data-menu-entry="146"]').click();
   const teleporterWindow = page.locator('.hud-teleporter'); await expect(teleporterWindow).toBeVisible();
   await expect(teleporterWindow.locator('[data-destination]')).toHaveCount(teleporter.teleports!.length);
   expect(await teleporterWindow.locator('.teleporter-map').evaluate(el => getComputedStyle(el).backgroundImage)).toContain('world_flyff');
