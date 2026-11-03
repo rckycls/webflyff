@@ -279,13 +279,15 @@ test.describe('the world screen against scripted servers', () => {
     await expect(page.getByRole('button', { name: 'Log in' })).toBeEnabled();
   });
 
-  test('shows a monster and an NPC with name tags', async ({ page }) => {
+  test('shows a monster and an NPC with name tags', { tag: '@picture' }, async ({ page }) => {
     test.skip(test.info().project.use.hasTouch === true, "pictures are the desktop's only: one baseline a name (SwiftShader)");
     await playGateway(page);
     await enterFlaris(page);
     await page.evaluate(() => window.__client!.pause());
 
     expect((await page.evaluate(() => window.__client!.stats())).errors).toEqual([]);
+    // the face comes back from the GPU's asynchronous read (Piece 6 M5), under SwiftShader seconds after it is drawn
+    await expect(page.locator('.hud-status-face canvas')).toHaveCount(1, ON_FRAMES);
     // The overlay's numbers (fps, heap) change from frame to frame, so it is masked. A screenshot waits on the frame loop.
     await expect(page).toHaveScreenshot('world-flaris-movers.png', { mask: [page.locator('#overlay')], ...ON_FRAMES });
   });

@@ -371,7 +371,7 @@ test.describe('fighting against the pretend world server', () => {
   // much of a test's time with the other files' worlds drawn beside it. The rules are paused, and the fight stepped to a
   // known tick (the test hooks' `step`): a number lives under a second, and the frames SwiftShader draws come at no fixed
   // time.
-  test('a picture of the fight: the windows, the corners, a number and the critical banner', async ({ page }) => {
+  test('a picture of the fight: the windows, the corners, a number and the critical banner', { tag: '@picture' }, async ({ page }) => {
     test.skip(test.info().project.use.hasTouch === true, "pictures are the desktop's only: one baseline a name (SwiftShader)");
     const script = fight();
     const gateway = await playGateway(page, script, { listed: NEW_CHARACTER });
@@ -391,6 +391,8 @@ test.describe('fighting against the pretend world server', () => {
     await stepRules(page, 9);
     await expect(page.locator('.hud-target-info')).toHaveText('95 / 120');
     expect((await page.evaluate(() => window.__client!.stats())).errors).toEqual([]);
+    // the face comes back from the GPU's asynchronous read (Piece 6 M5), under SwiftShader seconds after it is drawn
+    await expect(page.locator('.hud-status-face canvas')).toHaveCount(1, ON_FRAMES);
     // The overlay's numbers (fps, heap) change from frame to frame, so it is masked. A screenshot waits on the frame loop:
     // with other worlds drawn beside it a frame takes about a second, and two that match took over 30 s (ON_FRAMES).
     await expect(page).toHaveScreenshot('fight-scene.png', { mask: [page.locator('#overlay')], ...ON_FRAMES });
@@ -398,7 +400,7 @@ test.describe('fighting against the pretend world server', () => {
 
   // The new character's Character window (spec §3.6) over the paused world: its name, job, level, server and channel,
   // ATK 21, DEF 4, Critical 1% and A.Speed 42% with the Wooden Sword and the clothes, and the stats with no points
-  test('a picture of the Character window', async ({ page }) => {
+  test('a picture of the Character window', { tag: '@picture' }, async ({ page }) => {
     test.skip(test.info().project.use.hasTouch === true, "pictures are the desktop's only: one baseline a name (SwiftShader)");
     await playGateway(page, fight(), { listed: NEW_CHARACTER });
     await enterFlaris(page);
