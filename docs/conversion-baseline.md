@@ -256,33 +256,51 @@ The test draws on the PC's GPU (Piece 6 M5, Task 3). Memory is the client's own 
 | Run | Date | Laps | Memory per lap (GPU estimate + heap) | three.js geometries / textures / programs | fps | Result |
 | --- | --- | --- | --- | --- | --- | --- |
 | Builder's quick run (`SOAK_MINUTES=2`) | 2026-11-03 | 3 | 266.8 (135.5 + 131.3), 266.1 (135.5 + 130.6), 266.2 (135.5 + 130.8) MB | 591 / 310 / 13 at every lap | 60 | passed |
+| Builder's run after part B (`SOAK_MINUTES=4`) | 2026-11-03 | 5 | 233.7, 234.0, 234.1, 234.1, 234.2 MB (135.5 + 98.3-98.7) | 473 / 469 / 12 at every lap | 60 | passed |
 | Owner's full run (10 minutes) | | | | | | |
+
+Part B changed the numbers: fewer geometries (objects past their view distance are never drawn, so never uploaded), more textures (the ring's are uploaded as they arrive), and a smaller heap (those textures' CPU copies go once uploaded). Since part B each sample follows two `gc()` a second apart: with one, a lap sometimes read 60-80 MB high and the next lap low again.
 
 ## Client first load (Piece 6, milestone 5)
 
 What a device downloads before the character is on screen, measured by `apps/client/e2e/firstLoad.spec.ts` (`npm run test:firstload:client`), with a budget of 15 MiB (15,728,640 bytes), as the viewer's.
 - **The build:** a production build with the test hooks, in `node_modules/.cache/client-firstload`, served by `vite preview`.
-- **What counts:** every request to the site that the page or its workers started before `ready()`, at its whole compressed body, waited for if it was still coming.
+- **What counts:** every request to the site that the page or its workers started before the world was first drawn (the client's `onScreenAt`, since Part B; `ready()` before), at its whole compressed body, waited for if it was still coming.
 - **What does not count:** media streams. The music streams while it plays (spec §9). Whether a track's request had ended at `ready()` was a race worth about 2 MiB.
-- **The check that nothing is missed:** every file the page's Resource Timing has from before `ready()` must be among those counted. Resource Timing itself misses some: the lobby's 1.14 MiB background picture `screen.png` gets no entry, so it read about 1 MiB low.
+- **The check that nothing is missed:** every file the page's Resource Timing has from before that moment must be among those counted. Resource Timing itself misses some: the lobby's 1.14 MiB background picture `screen.png` gets no entry, so it read about 1 MiB low.
 
 | Run | Date | Bytes | By kind (MiB) | Result |
 | --- | --- | --- | --- | --- |
-| Builder's three runs | 2026-11-03 | 17,065,089, 17,099,606 and 17,099,606 bytes (16.27-16.31 MiB) | textures 8.60, models 2.51, worlds 1.52, ui 1.45, Basis transcoder 0.50, minimaps 0.34, then the client script, `index.json`, data, sound and collision at 0.1-0.3 each | **over the budget by 1.31 MiB**: Part B's to bring down, textures first |
+| Builder's three runs (part A) | 2026-11-03 | 17,065,089, 17,099,606 and 17,099,606 bytes (16.27-16.31 MiB) | textures 8.60, models 2.51, worlds 1.52, ui 1.45, Basis transcoder 0.50, minimaps 0.34, then the client script, `index.json`, data, sound and collision at 0.1-0.3 each | **over the budget by 1.31 MiB** |
+| Builder's run (part B, the ring of tiles after the first frame) | 2026-11-03 | 11,176,262 bytes (10.66 MiB) in 614 files; 207 requests after the first frame not counted | textures 5.01, models 1.73, ui 1.45, worlds 0.62, Basis transcoder 0.50, then the client script, `index.json`, data and sound at 0.26-0.31 each | passed: 4.34 MiB under |
 | Owner's run | | | | |
+
+## Client frame at a phone's CPU speed (Piece 6, milestone 5, part B)
+
+`apps/client/e2e/frameRate.spec.ts` (`npm run test:perf:client`): Flaris' square with the soak's six Aibatts and three players in view, in the phone view (Pixel 7 landscape, on the PC's GPU), with Chromium's CPU slowed 4x as a stand-in for a weak phone's processor (not its graphics chip). The fps and `cpu` are the Stats panel's, averaged over 3 s; the allocations are the page's over 10 s at full speed, standing. Pass: 30 fps standing and running.
+
+| After | Standing fps (cpu ms) | Running fps (cpu ms) | Draws | Triangles | Allocations |
+| --- | --- | --- | --- | --- | --- |
+| Part A (the baseline, Task 1) | 24.0 (36.8) | 21.2 (38.0) | 349 | 902,432 | 10.43 MB/s |
+| Task 2: the ring loaded after the first frame, never drawn | 25.8 (33.8) | 23.9 (32.8) | 325 | 637,783 | 10.18 MB/s |
+| Task 3: see-through two-sided materials in one pass | 28.7 (30.3) | 24.3 (32.9) | 318 | 636,344 | 7.50 MB/s |
+| Task 4: Neuz's object view distance | 29.4 (28.7) | 25.2 (29.7) | 247 | 472,844 | 7.21 MB/s |
+| Task 5: the client's per-frame allocations (five runs) | 27.9-34.7 (24.5-30.6) | 19.3-27.5 (26.7-40.8) | 247 | 472,844 | 5.78-5.94 MB/s |
+
+The 4x slowdown is noisy on this 15 W laptop: the same code read from 27.9 to 34.7 fps standing. Each task's row is one run; Task 5's is five. Running stays under 30 at that speed. The owner's device readings, with the `cpu` column, decide.
 
 ## Client performance per device (Piece 6, milestone 5)
 
 The owner's Stats panel readings, from the results table in [device-testing.md](device-testing.md) ("Piece 6, milestone 5"), one line per device at its worst spot.
-- **The builder's PC, for scale:** Chromium on the GPU drew the Flaris square with 327 draw calls and 897,209 triangles a frame in the phone's landscape view, and 292 / 619,009 in the desktop's.
+- **The builder's PC, for scale:** Chromium on the GPU drew the Flaris square with 327 draw calls and 897,209 triangles a frame in the phone's landscape view, and 292 / 619,009 in the desktop's. After part B: 225 draw calls and 467,621 triangles in the phone's view (map objects 163, terrain 47, movers 12, name tags 3).
 - **Under SwiftShader:** on that 15 W laptop part, a frame of that size drew at 8-10 fps for about 20 s, then 1.3-2 fps.
 
-| Device | Browser | Worst spot | fps | gpu (est) + heap | draws | triangles | 10-minute walk |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| iPhone | Safari | | | | | | |
-| Android phone | Chrome | | | | | | |
-| iPad | Safari | | | | | | |
-| Android tablet | Chrome | | | | | | |
+| Device | Browser | Worst spot | fps | frame / cpu ms | gpu (est) + heap | draws | triangles | 10-minute walk |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| iPhone | Safari | | | | | | | |
+| Android phone | Chrome | | | | | | | |
+| iPad | Safari | | | | | | | |
+| Android tablet | Chrome | | | | | | | |
 
 ## Reproducing
 

@@ -1,10 +1,47 @@
-# Piece 6 milestone 5 checkpoint: performance and memory, part A
+# Piece 6 milestone 5 checkpoint: performance and memory, parts A and B
 
 Date: 2026-11-03. Branch `piece6`.
 - Spec: [Piece 6 design](superpowers/specs/2026-11-02-piece6-design.md) §3.6. M4 was skipped by the owner on 2026-11-03.
-- Plan: [M5 plan, part A](superpowers/plans/2026-11-03-piece6-m5-performance.md).
+- Plans: [M5 plan, part A](superpowers/plans/2026-11-03-piece6-m5-performance.md) and [part B](superpowers/plans/2026-11-03-piece6-m5b-fixes.md).
 
-Part A measures, and removes the page freezes that kept the full browser suite from finishing clean. Part B, the fixes, gets its own plan once the owner's device readings are in.
+Part A measures, and removes the page freezes that kept the full browser suite from finishing clean. Part B draws only what Neuz draws, measured on this PC first; the owner chose on 2026-11-03 to have it planned before the device readings, so one round of readings covers both.
+
+## Part B
+
+**What changed:**
+- **The Stats panel's fps line ends with `cpu … ms`:** the frame's own script time plus the rules steps since the last frame. A frame time well over it means the graphics chip holds the device back.
+- **`npm run test:perf:client`:** Flaris' square with six monsters and three players, in the phone view, with Chromium's CPU slowed 4x as a weak phone's processor; 30 fps standing and running to pass.
+- **The ring of 16 tiles around the 3 x 3 loads after the character is on screen, and is never drawn.** Neuz draws the 3 x 3 lands only (`m_nVisibilityLand`, World.cpp:116). The ring was past the 400 m far plane but passed three.js' frustum test. Its textures are uploaded as it arrives, so their CPU copies go as a drawn tile's do.
+- **See-through two-sided materials draw in one pass,** as D3D draws a mesh with culling off. Three.js drew them twice and re-checked their shader program about 10 times a frame.
+- **Each map object hides past its model's view distance,** 250, 150, 60 or 400 m by its `dwDistant` class, as `CWorld::Render` does (World3D.cpp:640-683). The converter writes the class as the manifest's `modelDistant`; the world files were converted again. **This changes the look:** small far objects go, as in Neuz. The pictures are for the owner to judge; a "no" is a revert of 1b6b97a and 95c54cf.
+- **No per-frame allocations in the client's own frame code** but the movement rules' (`ActionMover.step`, 0.13 MB/s).
+- **The soak samples after two `gc()` a second apart:** with one, a lap sometimes read 60-80 MB high.
+
+**Numbers on this PC** ([conversion-baseline.md](conversion-baseline.md)):
+
+| | Before part B | After |
+| --- | --- | --- |
+| First load (production build) | 16.31 MiB, over by 1.31 | **10.66 MiB, passed** |
+| Phone view, Flaris square, draws / triangles | 327 / 897,209 | 225 / 467,621 |
+| CPU 4x, crowd in view, standing fps | 24.0 | 27.9-34.7 (five runs) |
+| CPU 4x, running fps | 21.2 | 19.3-27.5: **under 30** |
+| Allocations standing | 10.43 MB/s | 5.8 MB/s |
+| Soak, 5 laps (memory, heap) | 266 MB (heap 131) | 234 MB (heap 98.5), flat |
+
+**Not done, and why** (the plan's "Decisions"):
+- **Terrain level of detail** (Neuz's `lod.cpp`): it cuts triangles, not draws, and this PC's frame was CPU-bound. It is the next lever if a device's `frame` is well over its `cpu`.
+- **Movers, ground items and effects keep no view distance** (Neuz: movers 150 m, most items and effects 60 m): 15 draws in all.
+- **Texture sizes, view distance and shadows stay:** the first load passes, memory is far under 400 MB, the view is already Neuz's 3 x 3 within its fog, and nothing draws shadows.
+
+**Part B's rulings** are in its ledger and the final message: among them the first-load count ending at the world's first frame (`onScreenAt`), the ring's textures uploaded on arrival, the two `gc()`, and three Piece 4 items left (T9, T21, `ActionMover.step`).
+
+**An incident:** while bisecting the soak, removing a temporary worktree followed its junction into `dist/assets` and emptied it. A full `npm run convert` rebuilt it (24,683 ok, 0 failed, the 36 MP3 copies included); hashed names make it the same files.
+
+**Still open for part B:**
+- [ ] The owner's runs: `test:e2e:client`, `test:soak:client`, `test:firstload:client` and `test:perf:client` (device-testing.md, "Piece 6, milestone 5").
+- [ ] The device readings, with the `cpu` column, and the 10-minute walk on the weakest.
+- [ ] The look of the view distance: yes or no.
+- [ ] If the weakest device misses 30 fps: the next lever, by its `frame` and `cpu`.
 
 ## What changed
 

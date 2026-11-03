@@ -934,6 +934,11 @@ How fast the game draws and how much memory it holds on each of your devices, me
 **What changed in the Stats panel:**
 - It has a new line, `draws … triangles …`: what the world drew in its last frame.
 - Its `fps` is the real one. Before M5 it could never show under 4.
+- Its fps line ends with `cpu … ms` (Part B): the time the page's own script took per frame. When `frame` is well over `cpu`, the device's graphics chip is what holds it back; when they are close, its processor.
+
+**One round of readings covers both parts of M5.** Take them on the build with Part B in it (the piece6 folder as it is now).
+
+**What Part B changes that you can see:** small objects far away (fences, flowers, lamps past 60 m; most others past 250 m) are no longer drawn, as in Neuz, which uses the same distances. Say whether that is all right (the "Look" line below).
 
 **Start the client** from the piece6 folder, with the servers and the gateway in the VM, as in milestone 3:
 
@@ -953,7 +958,9 @@ $env:GATEWAY_PROXY = 'ws://192.168.100.141:8090'; npm.cmd run dev:client
 2. **Running:** run around the square for 30 seconds, and read the panel at the end while still running.
 3. **The field north of Flaris** (about x 7100, z 3638), with monsters in view. Read once standing, then once in the middle of a fight with one.
 
-**At each spot, write down:** fps, frame (ms), gpu (est), heap (`n/a` on Safari), draws and triangles. Do it on the iPhone, the Android phone, the iPad and the Android tablet, and on the PC as a reference.
+**At each spot, write down:** fps, frame (ms), cpu (ms), gpu (est), heap (`n/a` on Safari), draws and triangles. Do it on the iPhone, the Android phone, the iPad and the Android tablet, and on the PC as a reference.
+
+**On the iPhone and the iPad (Safari):** also check that the character's face in the status window, the picture in the inventory and the characters in the lobby all appear, within a few seconds. M5 reads them back from the graphics chip in a new way, tested only in Chrome.
 
 **The 10-minute walk, on the weakest device** (the one with the lowest fps at spot 3):
 1. In Flaris, after a minute, note `gpu (est)` and `heap`.
@@ -962,34 +969,36 @@ $env:GATEWAY_PROXY = 'ws://192.168.100.141:8090'; npm.cmd run dev:client
 
 ## Results
 
-| Spot | Device | Browser | fps | frame ms | gpu (est) | heap | draws | triangles | Notes |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 1. Square | iPhone | Safari | | | | | | | |
-| 1. Square | Android phone | Chrome | | | | | | | |
-| 1. Square | iPad | Safari | | | | | | | |
-| 1. Square | Android tablet | Chrome | | | | | | | |
-| 1. Square | PC | Chrome | | | | | | | |
-| 2. Running | iPhone | Safari | | | | | | | |
-| 2. Running | Android phone | Chrome | | | | | | | |
-| 2. Running | iPad | Safari | | | | | | | |
-| 2. Running | Android tablet | Chrome | | | | | | | |
-| 2. Running | PC | Chrome | | | | | | | |
-| 3. Field, standing | iPhone | Safari | | | | | | | |
-| 3. Field, standing | Android phone | Chrome | | | | | | | |
-| 3. Field, standing | iPad | Safari | | | | | | | |
-| 3. Field, standing | Android tablet | Chrome | | | | | | | |
-| 3. Field, standing | PC | Chrome | | | | | | | |
-| 3. Field, fighting | iPhone | Safari | | | | | | | |
-| 3. Field, fighting | Android phone | Chrome | | | | | | | |
-| 3. Field, fighting | iPad | Safari | | | | | | | |
-| 3. Field, fighting | Android tablet | Chrome | | | | | | | |
-| 3. Field, fighting | PC | Chrome | | | | | | | |
+| Spot | Device | Browser | fps | frame ms | cpu ms | gpu (est) | heap | draws | triangles | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1. Square | iPhone | Safari | | | | | | | | |
+| 1. Square | Android phone | Chrome | | | | | | | | |
+| 1. Square | iPad | Safari | | | | | | | | |
+| 1. Square | Android tablet | Chrome | | | | | | | | |
+| 1. Square | PC | Chrome | | | | | | | | |
+| 2. Running | iPhone | Safari | | | | | | | | |
+| 2. Running | Android phone | Chrome | | | | | | | | |
+| 2. Running | iPad | Safari | | | | | | | | |
+| 2. Running | Android tablet | Chrome | | | | | | | | |
+| 2. Running | PC | Chrome | | | | | | | | |
+| 3. Field, standing | iPhone | Safari | | | | | | | | |
+| 3. Field, standing | Android phone | Chrome | | | | | | | | |
+| 3. Field, standing | iPad | Safari | | | | | | | | |
+| 3. Field, standing | Android tablet | Chrome | | | | | | | | |
+| 3. Field, standing | PC | Chrome | | | | | | | | |
+| 3. Field, fighting | iPhone | Safari | | | | | | | | |
+| 3. Field, fighting | Android phone | Chrome | | | | | | | | |
+| 3. Field, fighting | iPad | Safari | | | | | | | | |
+| 3. Field, fighting | Android tablet | Chrome | | | | | | | | |
+| 3. Field, fighting | PC | Chrome | | | | | | | | |
 
 The 10-minute walk on ____ (the weakest device): after 1 minute, gpu (est) ____, heap ____; after 10 minutes, gpu (est) ____, heap ____.
 
 ## Pass and fail
 
-There is no pass or fail for you here. Send me the table, and I'll compare it with the targets. Part B of M5 then fixes what misses, cheapest first: draw calls, texture sizes, view distance, per-frame work, then shadow and effect detail. Anything that changes the look on a phone is shown to you before it is kept.
+Look (Part B: far small objects not drawn, as in Neuz): all right / not all right ____
+
+There is no pass or fail for you here. Send me the table, and I'll compare it with the targets. Part B has made the fixes the PC's measurements called for; if the weakest device still misses 30 fps, its `frame` and `cpu` columns say which lever is next (the ground's level of detail, as Neuz draws it, if the graphics chip; per-frame work if the processor). Anything that changes the look on a phone is shown to you before it is kept.
 
 **The tests (yours to run),** on the PC in PowerShell in the piece6 folder, with your own `npm run dev:client` stopped first:
 
@@ -997,6 +1006,7 @@ There is no pass or fail for you here. Send me the table, and I'll compare it wi
 | --- | --- | --- |
 | `npm.cmd run test:e2e:client` | about 10-15 minutes (it now draws on the PC's GPU) | It ends with `… passed`, maybe a few `skipped`, and no `failed`. |
 | `npm.cmd run test:soak:client` | about 12 minutes | `1 passed`. Send me its `lap …` lines. |
-| `npm.cmd run test:firstload:client` | about 3 minutes | Known to fail today, at about 16.3 MiB against 15 MiB, mostly textures: that is Part B's. Send me its `first load:` line. |
+| `npm.cmd run test:firstload:client` | about 3 minutes | `1 passed`, at about 10.7 MiB against 15 MiB. Send me its `first load:` line. |
+| `npm.cmd run test:perf:client` | about 1 minute | The frame in the phone view with the processor slowed 4 times, a stand-in for a weak phone's. Send me its `frame rate:` line, pass or fail: it may still fail running (see the checkpoint). |
 
 If something else fails, send me the lines from the first `failed` down to the end.
