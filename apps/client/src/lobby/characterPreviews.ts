@@ -28,7 +28,10 @@ export async function characterPreviews(element: HTMLElement, characters: Charac
         const key = look.motion(Mti.STAND);
         const clip = key ? (await loadGltf(services.store, services.loaders.gltf, key)).animations[0] : undefined;
         if (!element.isConnected) return;
-        target.replaceChildren(renderPortrait(page.renderer, model, clip ? loopMotion(clip) : null, element.ownerDocument, true));
+        // read back without holding the page (Piece 6 M5); the list may have gone meanwhile
+        const picture = await renderPortrait(page.renderer, model, clip ? loopMotion(clip) : null, element.ownerDocument, true);
+        if (!target.isConnected) return;
+        target.replaceChildren(picture);
       } finally {
         for (const item of held) { item.item.removeFromParent(); item.release(); }
         model.release();

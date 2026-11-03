@@ -56,12 +56,14 @@ function unlit(root: Object3D): void {
 /**
  * Draws `model` (the own look, loaded for this picture alone: it is changed, and its owner releases it after) in the first
  * frame of `motion` (its standing motion; none leaves its bind pose) with `renderer`, and gives the picture as a canvas
- * of 64 x 68 CSS pixels at the renderer's pixel ratio. The renderer's target and clear colour are as they were after.
+ * of 64 x 68 CSS pixels at the renderer's pixel ratio. The renderer's target and clear colour are as they were as soon as
+ * the picture is drawn; its pixels come back with the asynchronous read (Piece 6 M5: the blocking one waits for the GPU
+ * to finish everything queued, which under a software renderer held the page for seconds). Rejects if the read fails.
  */
-export function renderPortrait(
+export async function renderPortrait(
   renderer: WebGLRenderer, model: AssembledCharacter, motion: LoopedMotion | null, doc: Document,
   fullBody = false,
-): HTMLCanvasElement {
+): Promise<HTMLCanvasElement> {
   const ratio = renderer.getPixelRatio();
   const cssWidth = fullBody ? 120 : FACE_WIDTH, cssHeight = fullBody ? 174 : FACE_HEIGHT;
   const width = Math.round(cssWidth * ratio);
@@ -91,16 +93,19 @@ export function renderPortrait(
   const oldColor = renderer.getClearColor(new Color());
   const oldAlpha = renderer.getClearAlpha();
   try {
-    renderer.setRenderTarget(target);
-    renderer.setClearColor(0x000000, 0);
-    renderer.clear();
-    renderer.render(scene, camera);
-    renderer.readRenderTargetPixels(target, 0, 0, width, height, pixels);
+    try {
+      renderer.setRenderTarget(target);
+      renderer.setClearColor(0x000000, 0);
+      renderer.clear();
+      renderer.render(scene, camera);
+    } finally {
+      renderer.setRenderTarget(oldTarget);
+      renderer.setClearColor(oldColor, oldAlpha);
+      scene.remove(root);
+    }
+    await renderer.readRenderTargetPixelsAsync(target, 0, 0, width, height, pixels);
   } finally {
-    renderer.setRenderTarget(oldTarget);
-    renderer.setClearColor(oldColor, oldAlpha);
     target.dispose();
-    scene.remove(root);
   }
 
   const canvas = doc.createElement('canvas');
@@ -125,4 +130,17 @@ export function renderPortrait(
   }
   context.putImageData(image, 0, 0);
   return canvas;
+}
+
+/**
+ * Keeps only the newest of the portraits asked for (Piece 6 M5): each task given to the function it returns resolves
+ * with its value, or with null once a later task has been given, so a slow read never puts an older picture over a newer.
+ */
+export function latestOnly<T>(): (task: Promise<T>) => Promise<T | null> {
+  let newest = 0;
+  return async (task) => {
+    const ticket = ++newest;
+    const value = await task;
+    return ticket === newest ? value : null;
+  };
 }

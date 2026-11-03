@@ -93,7 +93,7 @@ import { MoveMark } from './render/moveMark';
 import { loadHeldItems, loadMoverModel } from './render/moverModels';
 import { nameTagOf } from './render/nameTags';
 import type { TapHit } from './render/picking';
-import { renderPortrait } from './render/portrait';
+import { latestOnly, renderPortrait } from './render/portrait';
 import { SpriteLayer } from './render/SpriteLayer';
 import { TargetMarks, attackMarks, focusRect } from './render/TargetMarks';
 import type { ScreenRect } from './render/TargetMarks';
@@ -897,6 +897,7 @@ export class WorldScreen {
    * motion, drawn once with the page's renderer and let go. What cannot be had leaves the face box empty, said once.
    */
   private portraitGeneration = 0;
+  private readonly newestPreview = latestOnly<HTMLCanvasElement>();
   private async makePortrait(inventory = false): Promise<void> {
     const stageGeneration = this.stageGeneration;
     const generation = inventory ? ++this.portraitGeneration : 0;
@@ -915,9 +916,17 @@ export class WorldScreen {
         const key = look.motion(Mti.STAND);
         const motion = key === null ? null : await loadMotion(services, key);
         if (this.over || stageGeneration !== this.stageGeneration) return;
+        // the picture comes back after its asynchronous read (Piece 6 M5): the screen may have ended meanwhile, and a newer
+        // inventory picture started meanwhile wins over this one
+        const gone = (): boolean => this.over || stageGeneration !== this.stageGeneration;
         if (inventory) {
-          if (generation === this.portraitGeneration) this.inventoryWindow?.setPreview(renderPortrait(this.page!.renderer, model, motion, this.element.ownerDocument, true));
-        } else this.hud?.status.setPortrait(renderPortrait(this.page!.renderer, model, motion, this.element.ownerDocument));
+          if (generation !== this.portraitGeneration) return;
+          const canvas = await this.newestPreview(renderPortrait(this.page!.renderer, model, motion, this.element.ownerDocument, true));
+          if (canvas !== null && !gone()) this.inventoryWindow?.setPreview(canvas);
+        } else {
+          const canvas = await renderPortrait(this.page!.renderer, model, motion, this.element.ownerDocument);
+          if (!gone()) this.hud?.status.setPortrait(canvas);
+        }
       } finally {
         for (const item of held) { item.item.removeFromParent(); item.release(); }
         model.release();

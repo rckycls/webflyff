@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { ArWriter, NULL_ID, ShortcutKind } from '@flyffweb/protocol';
 import { createWorldScript, newVagrantOwn, writeAddSelf, writeDelObj, writeMoverDeath, writeRevival, writeSetPointParam, writeTaskBar } from '@flyffweb/testkit';
 import type { ScriptMessage } from '@flyffweb/testkit';
-import { MADRIGAL, SELF_ID, SELF_PLAYER, SQUARE, enterFlaris, playGateway, self, sentOf } from './worldHarness';
+import { MADRIGAL, ON_FRAMES, SELF_ID, SELF_PLAYER, SQUARE, enterFlaris, playGateway, self, sentOf } from './worldHarness';
 
 test.setTimeout(120_000);
 const update = (id: number, count: number): ScriptMessage => ({ objectId: SELF_ID, type: 0x18,
@@ -66,7 +66,8 @@ test('inventory, item requests, ground pickup and scroll revival wait for server
   const closeBag = async () => { await bag.locator('.hud-window-close').click(); await expect(bag).toBeHidden(); };
   await openBag();
   await expect(bag.locator('[data-bag-slot]')).toHaveCount(42);
-  await expect(bag.locator('.inventory-preview canvas')).toBeVisible();
+  // the preview comes back from the GPU's asynchronous read (Piece 6 M5): under SwiftShader seconds after it is drawn
+  await expect(bag.locator('.inventory-preview canvas')).toBeVisible(ON_FRAMES);
   if (isMobile) {
     const rect = await bag.boundingBox(), world = await page.locator('.world-hud').boundingBox();
     expect(rect!.width).toBeLessThanOrEqual(world!.width - 23);
