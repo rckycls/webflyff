@@ -8,6 +8,15 @@
 // per tile, from the distance between the camera and the tile (its nearest point, so the tile the player is on is
 // always at full detail), against LOD_DISTANCES; `update` follows the camera.
 //
+// View distance (Piece 6 M5, part B), as CWorld::Render does it (World3D.cpp:640-683): with `m_bViewLODObj` (TRUE,
+// World.cpp:147), an object whose 3D distance from the camera (`m_fDistCamera`) is over
+// `fDistant[ g_Option.m_nObjectDistant ][ m_dwDistant ]` is not drawn. `m_nObjectDistant` is 1 by default
+// (HwOption.cpp:170), so the limits are OBJECT_DISTANCES, by the model's class (the manifest's `modelDistant`, the
+// `dwDistant` of mdlObj.inc). Around Flaris' square 1,643 of the 3 x 3 tiles' 4,300 objects are within theirs. `update`
+// keeps the instances in range at the front of each mesh's instance buffer and draws `count` of them; a mesh with none
+// is hidden. The buffers are rewritten only when the set in range changes. A manifest without `modelDistant` (an
+// older conversion) draws every object at every distance, as before (spec §4).
+//
 // Objects are static in Piece 1 (ruling R41): no `tm` or `bones` animation is played. Every mesh of a model is drawn
 // where the glb puts it at rest: the lod<k> mesh, its `lod<k>_static` child, the `lod<k>_<j>` objects (under the LOD
 // node or hung from a joint), and skinned meshes in their bind pose, which is the geometry as stored, so a skinned
@@ -42,6 +51,11 @@ import { geometryBytes } from '../overlay/gpuMemory';
 
 /** Where a model switches to lod0, lod1 and lod2: the distance from the camera, in world units (meters). */
 export const LOD_DISTANCES: readonly number[] = [0, 100, 200];
+/**
+ * The distance from the camera past which an object is not drawn, by its model's class (`m_dwDistant`, 0 to 3):
+ * `fDistant[1]` of CWorld::Render (World3D.cpp:672-675), for the default `m_nObjectDistant` 1 (HwOption.cpp:170).
+ */
+export const OBJECT_DISTANCES: readonly number[] = [250, 150, 60, 400];
 
 /** `WebTileObject.model` of an object whose model the converter could not resolve. */
 const NO_MODEL = 0xffff;
@@ -78,12 +92,26 @@ interface ModelEntry {
 /** The instanced meshes of one model on one tile, by LOD level (empty for a level the model lacks). */
 type ModelMeshes = InstancedMesh[][];
 
+/** One model's objects on one tile, as drawn and as placed. */
+interface ModelOnTile {
+  meshes: ModelMeshes;
+  /** The model has more than one LOD level, which `update` switches by the tile's band. */
+  switching: boolean;
+  /** Each mesh's instance matrices as placed, every object's; parallel to `meshes.flat()`. */
+  placed: Float32Array[];
+  /** The objects' web positions, 3 floats each. */
+  positions: Float32Array;
+  /** The view distance (OBJECT_DISTANCES); Infinity without the manifest's `modelDistant`. */
+  limit: number;
+  /** Which objects were in range at the last `update`; null before the first. */
+  inRange: Uint8Array | null;
+}
+
 interface TileRecord {
   /** Model keys this tile holds. */
   keys: Set<string>;
   group: Group;
-  /** Models with more than one LOD level, whose meshes `update` switches. */
-  switching: ModelMeshes[];
+  models: ModelOnTile[];
   /** The tile on the ground: web x from `minX`, web z from `minZ`, `side` long. */
   minX: number;
   minZ: number;
@@ -136,15 +164,61 @@ function bandOf(distance: number): number {
   return band;
 }
 
-/** Shows the level of `meshes` for `band`: the highest level k <= band the model has, else its first. */
-function showLevel(meshes: ModelMeshes, band: number): void {
+/**
+ * Shows the level of `model` for `band`, the highest level k <= band the model has (else its first), where any of its
+ * objects is in range.
+ */
+function showLevel(model: ModelOnTile, band: number): void {
   let shown = -1;
-  meshes.forEach((level, k) => {
+  model.meshes.forEach((level, k) => {
     if (level.length > 0 && (k <= band || shown === -1)) shown = k;
   });
-  meshes.forEach((level, k) => {
-    for (const mesh of level) mesh.visible = k === shown;
+  model.meshes.forEach((level, k) => {
+    for (const mesh of level) mesh.visible = k === shown && mesh.count > 0;
   });
+}
+
+/** The view distance of a model of class `distant`: Infinity without the manifest's column, or for an unknown class. */
+function viewDistance(distant: number | undefined): number {
+  return distant === undefined ? Infinity : (OBJECT_DISTANCES[distant] ?? Infinity);
+}
+
+/**
+ * Puts the objects of `model` within its view distance of `camera` at the front of each of its meshes' instance buffers,
+ * and draws that many; true when the set in range changed (and the buffers were rewritten).
+ */
+function keepInRange(model: ModelOnTile, camera: Vec3): boolean {
+  if (model.limit === Infinity) return false;
+  const { positions, limit } = model;
+  const objects = positions.length / 3;
+  let changed = model.inRange === null;
+  const inRange = (model.inRange ??= new Uint8Array(objects));
+  let count = 0;
+  for (let i = 0; i < objects; i++) {
+    const dx = positions[i * 3]! - camera[0];
+    const dy = positions[i * 3 + 1]! - camera[1];
+    const dz = positions[i * 3 + 2]! - camera[2];
+    // `m_fDistCamera > fDistant` is skipped, so an object at the limit is drawn
+    const inside = dx * dx + dy * dy + dz * dz <= limit * limit ? 1 : 0;
+    if (inRange[i] !== inside) {
+      inRange[i] = inside;
+      changed = true;
+    }
+    count += inside;
+  }
+  if (!changed) return false;
+  model.meshes.flat().forEach((mesh, m) => {
+    const placed = model.placed[m]!;
+    const array = mesh.instanceMatrix.array as Float32Array;
+    let at = 0;
+    for (let i = 0; i < objects; i++) {
+      if (inRange[i] === 1) array.set(placed.subarray(i * 16, i * 16 + 16), 16 * at++);
+    }
+    mesh.count = count;
+    mesh.instanceMatrix.needsUpdate = true;
+    if (count > 0) mesh.computeBoundingSphere();
+  });
+  return true;
 }
 
 export class ObjectPool {
@@ -172,7 +246,7 @@ export class ObjectPool {
     const record: TileRecord = {
       keys: new Set(),
       group: new Group(),
-      switching: [],
+      models: [],
       minX: tile.x * side,
       minZ: -(tile.y + 1) * side,
       side,
@@ -183,8 +257,8 @@ export class ObjectPool {
     record.group.name = `objects ${key}`;
     this.tiles.set(key, record);
 
-    // the objects of each model, in tile order
-    const placements = new Map<string, Matrix4[]>();
+    // the objects of each model, in tile order, and the model's slot in the manifest (for its view distance)
+    const placements = new Map<string, { slot: number; matrices: Matrix4[] }>();
     for (const object of tile.objects) {
       if (object.model === NO_MODEL) continue;
       const model = manifest.models[object.model];
@@ -192,44 +266,56 @@ export class ObjectPool {
         this.overlay.error(`tile ${key}: object model ${object.model} is not in the world manifest`);
         continue;
       }
-      let matrices = placements.get(model);
-      if (matrices === undefined) {
-        matrices = [];
-        placements.set(model, matrices);
+      let placed = placements.get(model);
+      if (placed === undefined) {
+        placed = { slot: object.model, matrices: [] };
+        placements.set(model, placed);
         record.keys.add(model);
         this.acquire(model);
       }
-      matrices.push(new Matrix4().fromArray(object.matrix));
+      placed.matrices.push(new Matrix4().fromArray(object.matrix));
     }
 
     const templates = await Promise.all([...placements.keys()].map((model) => this.models.get(model)!.template));
     if (record.released) return record.group;
 
     let index = 0;
-    for (const matrices of placements.values()) {
+    for (const { slot, matrices } of placements.values()) {
       const template = templates[index++];
       if (template === null || template === undefined) continue;
       const meshes = template.levels.map((parts) => parts.map((part) => instanced(part, matrices)));
       for (const level of meshes) for (const mesh of level) record.group.add(mesh);
       record.bytes += meshes.flat().length * matrices.length * INSTANCE_BYTES;
-      if (meshes.filter((level) => level.length > 0).length > 1) {
-        record.switching.push(meshes);
-        showLevel(meshes, 0);
-      }
+      const model: ModelOnTile = {
+        meshes,
+        switching: meshes.filter((level) => level.length > 0).length > 1,
+        placed: meshes.flat().map((mesh) => (mesh.instanceMatrix.array as Float32Array).slice()),
+        positions: Float32Array.from(matrices.flatMap(({ elements: e }) => [e[12]!, e[13]!, e[14]!])),
+        limit: viewDistance(manifest.modelDistant?.[slot]),
+        inRange: null,
+      };
+      record.models.push(model);
+      if (model.switching) showLevel(model, 0);
     }
     this.overlay.addGpuBytes(record.bytes);
     return record.group;
   }
 
-  /** Picks each tile's LOD level for a camera at `camera` (web). Cheap when no tile changes band. */
+  /**
+   * Picks each tile's LOD level for a camera at `camera` (web), and draws the objects within their view distance of it.
+   * The instance buffers are rewritten only for a model whose set in range changed.
+   */
   update(camera: Vec3): void {
     for (const record of this.tiles.values()) {
       const dx = Math.max(record.minX - camera[0], 0, camera[0] - (record.minX + record.side));
       const dz = Math.max(record.minZ - camera[2], 0, camera[2] - (record.minZ + record.side));
       const band = bandOf(Math.hypot(dx, dz));
-      if (band === record.band) continue;
+      const bandChanged = band !== record.band;
       record.band = band;
-      for (const meshes of record.switching) showLevel(meshes, band);
+      for (const model of record.models) {
+        const rewritten = keepInRange(model, camera);
+        if (rewritten || (bandChanged && model.switching)) showLevel(model, band);
+      }
     }
   }
 

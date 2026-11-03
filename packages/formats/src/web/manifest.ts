@@ -47,6 +47,13 @@ export interface WorldManifest {
    * entry is false.
    */
   modelPick?: boolean[];
+  /**
+   * Parallel to `models`: the model's view-distance class, 0 to 3 (`MODELELEM::m_dwDistant`, the `dwDistant` column of
+   * mdlObj.inc, `CModelMng::LoadScript`, ModelMng.cpp:395), which `CWorld::Render`'s `fDistant` table turns into the
+   * distance from the camera past which an object of the model is not drawn (World3D.cpp:672-683). Missing in a manifest
+   * written before it existed: every object is then drawn at every distance.
+   */
+  modelDistant?: number[];
   /** Tile `"x_y"` to its hashed path. A tile the world does not have is simply absent. */
   tiles: Record<string, string>;
 }

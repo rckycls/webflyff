@@ -22,7 +22,7 @@ import {
 } from 'three';
 import { describe, expect, it, vi } from 'vitest';
 import { geometryBytes } from '../src/overlay/gpuMemory';
-import { LOD_DISTANCES, ObjectPool } from '../src/world/objects';
+import { LOD_DISTANCES, OBJECT_DISTANCES, ObjectPool } from '../src/world/objects';
 
 const SIDE = MAP_SIZE + 1;
 const PATCHES = NUM_PATCHES_PER_SIDE * NUM_PATCHES_PER_SIDE;
@@ -246,6 +246,73 @@ describe('ObjectPool', () => {
     const group = await pool.place(makeTile(0, 0, [at(BOX, 5, 0, -5)]), manifest);
     pool.update([5000, 0, 5000]);
     expect(shown(group)).toEqual([true]);
+  });
+
+  describe("each object's view distance (CWorld::Render's fDistant, World3D.cpp:640-683; Piece 6 M5, part B)", () => {
+    // the box and the tree are of class 2 (60 m at the default m_nObjectDistant 1), the rest of class 0 (250 m)
+    const viewed: WorldManifest = {
+      ...manifest,
+      modelDistant: MODELS.map((key) => (key === 'models/obj_box.glb' || key === 'models/obj_tree.glb' ? 2 : 0)),
+    };
+
+    it('is fDistant[1]: 250, 150, 60 and 400 m by class', () => {
+      expect(OBJECT_DISTANCES).toEqual([250, 150, 60, 400]);
+    });
+
+    it("hides each object past its model's view distance from the camera, and shows it again on the way back", async () => {
+      const { pool } = setup();
+      const group = await pool.place(makeTile(0, 0, [at(BOX, 100, 0, -150), at(BOX, 100, 0, -170)]), viewed);
+      const [box] = instancesOf(group);
+
+      pool.update([100, 0, -100]); // 50 and 70 m away
+      expect(box!.count).toBe(1);
+      expect(positionAt(box!, 0)).toEqual([100, 0, -150]);
+      expect(box!.visible).toBe(true);
+
+      pool.update([100, 0, -115]); // 35 and 55 m
+      expect(box!.count).toBe(2);
+      expect(new Set([positionAt(box!, 0)[2], positionAt(box!, 1)[2]])).toEqual(new Set([-150, -170]));
+
+      // the distance is the camera's in 3D: 65 m straight above the near one, 68 m from the far one
+      pool.update([100, 65, -150]);
+      expect(box!.count).toBe(0);
+      expect(box!.visible).toBe(false);
+
+      pool.update([100, 0, -100]);
+      expect([box!.count, box!.visible]).toEqual([1, true]);
+      expect(box!.boundingSphere!.containsPoint(new Vector3(100, 0, -150))).toBe(true);
+    });
+
+    it("keeps a model's LOD level hidden while none of its objects is in range", async () => {
+      const { pool } = setup();
+      const group = await pool.place(makeTile(0, 0, [at(TREE, 5, 0, -5)]), viewed);
+
+      pool.update([5, 0, -80]); // on the tile (band 0), 75 m from the tree
+      expect(shown(group)).toEqual([false, false, false]);
+      pool.update([5, 0, -50]);
+      expect(shown(group)).toEqual([true, false, false]);
+    });
+
+    it('draws every object at every distance when the manifest has no modelDistant', async () => {
+      const { pool } = setup();
+      const group = await pool.place(makeTile(0, 0, [at(BOX, 100, 0, -150), at(BOX, 100, 0, -170)]), manifest);
+      pool.update([100, 0, 400]);
+      const [box] = instancesOf(group);
+      expect([box!.count, box!.visible]).toEqual([2, true]);
+    });
+
+    it("rewrites a model's instances only when the set in range changes", async () => {
+      const { pool } = setup();
+      const group = await pool.place(makeTile(0, 0, [at(BOX, 100, 0, -150), at(BOX, 100, 0, -170)]), viewed);
+      const [box] = instancesOf(group);
+      pool.update([100, 0, -100]);
+      const version = box!.instanceMatrix.version;
+
+      pool.update([100, 0, -101]); // 49 and 69 m: the same set
+      expect(box!.instanceMatrix.version).toBe(version);
+      pool.update([100, 0, -111]); // 39 and 59 m: both
+      expect(box!.instanceMatrix.version).toBeGreaterThan(version);
+    });
   });
 
   it('draws skinned meshes in their bind pose as plain meshes, with the _static and _<j> children', async () => {

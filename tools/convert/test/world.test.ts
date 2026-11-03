@@ -53,8 +53,8 @@ const TERRAIN_INC = `
 `;
 
 // "name" id modelType part fly distant pick scale trans shadow textureEx renderFlag
-const entry = (name: string, id: number, modelType = 1, trans = 0, pick = 0): string =>
-  `  "${name}" ${id} ${modelType} "" 0 0 ${pick} 1.0 ${trans} 0 0 0`;
+const entry = (name: string, id: number, modelType = 1, trans = 0, pick = 0, distant = 0): string =>
+  `  "${name}" ${id} ${modelType} "" 0 ${distant} ${pick} 1.0 ${trans} 0 0 0`;
 
 const MDL_OBJ_INC = `
 "obj" 0 {
@@ -65,6 +65,7 @@ ${entry('NoFile', 4)}
 ${entry('Fx', 5, 4)}
 ${entry('Glass', 6, 1, 1)}
 ${entry('Bridge', 7, 1, 0, 1)}
+${entry('Grass', 8, 1, 0, 0, 2)}
 }
 `;
 
@@ -375,6 +376,25 @@ describe('worlds stage on a small hand-made client', () => {
       // the bridge's entry picks, the tree's does not; neither is see-through
       expect(manifest.modelPick).toEqual([true, false]);
       expect(manifest.modelTrans).toEqual([false, false]);
+    });
+
+    it("writes each model's dwDistant (mdlObj.inc, ModelMng.cpp:395) as modelDistant, parallel to models", async () => {
+      await client({
+        'World/WdTest/WdTest.wld': wld([1, 1]),
+        'World/WdTest/WdTest00-00.lnd': lndBytes({ objects: objects(8, 1, 8) }),
+        'Model/Obj_Tree01.o3d': 'x',
+        'Model/Obj_Grass.o3d': 'x',
+      });
+      const run = await runWorlds(root, out, {
+        seed: async (writer) => {
+          await seedModel('models/obj_tree01.glb')(writer);
+          await seedModel('models/obj_grass.glb')(writer);
+        },
+      });
+      const manifest = await manifestOf(run, 'wdtest');
+      expect(run.report.failures).toEqual([]);
+      expect(manifest.models).toEqual(['models/obj_grass.glb', 'models/obj_tree01.glb']);
+      expect(manifest.modelDistant).toEqual([2, 0]);
     });
 
     it('gives 0xffff and one warning per distinct unresolved name, not per object', async () => {

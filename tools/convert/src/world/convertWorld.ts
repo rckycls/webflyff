@@ -25,9 +25,9 @@
 //
 // The manifest lists `terrainTextures` and `models` in the order the tiles first use them, tiles taken by row and
 // then column. Tiles are read in parallel but take their slots one after the other in that order, so the output is
-// the same whatever `--jobs` is (the hashed file names depend on it). `modelTrans` and `modelPick` hold each model's
-// `bTrans` and `bPick` from the index entry that first gave the model its slot (CModelMng::LoadScript,
-// ModelMng.cpp:396-398; no shipped model has entries that disagree).
+// the same whatever `--jobs` is (the hashed file names depend on it). `modelTrans`, `modelPick` and `modelDistant`
+// hold each model's `bTrans`, `bPick` and `dwDistant` from the index entry that first gave the model its slot
+// (CModelMng::LoadScript, ModelMng.cpp:395-398; no shipped model has entries that disagree on the first two).
 
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
@@ -145,6 +145,8 @@ class WorldBuild {
   readonly modelTrans: boolean[] = [];
   /** Parallel to `models`: each model's `bPick`. */
   readonly modelPick: boolean[] = [];
+  /** Parallel to `models`: each model's `dwDistant`. */
+  readonly modelDistant: number[] = [];
   private readonly textureOfKey = new Map<string, number>();
   private readonly modelOfKey = new Map<string, number>();
   /** Terrain.inc id to slot (undefined: no such texture). */
@@ -258,6 +260,7 @@ class WorldBuild {
       slot = this.models.push(key) - 1;
       this.modelTrans.push(elem.extra[4] !== 0); // bTrans (ModelMng.cpp:398)
       this.modelPick.push(elem.extra[2] !== 0); // bPick (ModelMng.cpp:396)
+      this.modelDistant.push(elem.extra[1]!); // dwDistant (ModelMng.cpp:395)
       this.modelOfKey.set(key, slot);
     }
     return slot;
@@ -400,6 +403,7 @@ export async function convertWorld(
     models: world.models,
     modelTrans: world.modelTrans,
     modelPick: world.modelPick,
+    modelDistant: world.modelDistant,
     tiles,
   };
   const json = new TextEncoder().encode(JSON.stringify(manifest));
