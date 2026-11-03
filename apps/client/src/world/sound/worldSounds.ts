@@ -8,8 +8,8 @@ import { AttackFlag } from '@flyffweb/protocol';
 import type { OwnEvent } from '../OwnState';
 import type { CombatEvent } from '../WorldState';
 import {
-  BGM_IN_BOSS, BGM_IN_DEATH, BGM_IN_LEVELUP, NO_DEATH_MUSIC, RANK_BOSS, SND_INF_GROUNDDROP, SND_INF_GROUNDPICKUP,
-  SND_INF_TRADE, SND_WALK_LANDSOFT, XI_SOUNDS,
+  BGM_EV_END, BGM_EV_START, BGM_IN_BOSS, BGM_IN_DEATH, BGM_IN_LEVELUP, NO_DEATH_MUSIC, RANK_BOSS, SND_INF_GROUNDDROP,
+  SND_INF_GROUNDPICKUP, SND_INF_TRADE, SND_WALK_LANDSOFT, XI_SOUNDS,
 } from '../../audio/soundIds';
 import { equipSound } from './soundRules';
 import type { Vec } from './soundRules';
@@ -153,10 +153,18 @@ export class WorldSounds {
     }
   }
 
-  /** What an own event plays: the death and level-up jingles. */
+  /**
+   * What an own event plays: the death and level-up jingles, and the quests' (Piece 7 M1): a new quest BGM_EV_START
+   * (`CMover::__SetQuest`, MoverParam.cpp:3534), one that ends or is removed BGM_EV_END (:3600, `RemoveQuest` :3495).
+   */
   ownEvent(event: OwnEvent, worldId: number): void {
     if (event.kind === 'died') this.ownDeath(worldId);
     else if (event.kind === 'levelUp') this.ownLevelUp();
+    else if (event.kind === 'quest') {
+      const change = event.change.kind;
+      if (change === 'started') this.music.play(BGM_EV_START, 1);
+      else if (change === 'ended' || change === 'removed') this.music.play(BGM_EV_END, 1);
+    }
   }
 
   /** An NPC added (DPClient.cpp:1252-1259): a boss within 30 m plays BGM_IN_BOSS. */

@@ -6,6 +6,7 @@ export {
   writeDoUseSkillPoint, writeEndSkillQueue, writeEnvironmentSetting, writeGameTimer, writeInitSkillPoint,
   writeMeleeAttack, writeMonsterProp, writeMotion, writeMoverAngle, writeMoverBehavior, writeMoverCorr,
   writeMoverDeath, writeMoverMoved, writePlayMusic, writePlaySound, writePlaySoundFile, writeQueryGetDestObj, writeReplace, writeRevival, writeRevivalToLodestar,
+  writeQuestChecked, writeRemoveQuest, writeSetQuest,
   writeSetActionPoint, writeSetDestObj, writeSetExperience, writeSetGrowthLearningPoint, writeSetLevel,
   writeSetPointParam, writeSetPos, writeSetPosAngle, writeSetState, writeTaskBar, writeUseSkill, writeWorldReadInfo,
 } from './world';

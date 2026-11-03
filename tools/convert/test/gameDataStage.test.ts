@@ -5,7 +5,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { GAME_DATA_KEYS } from '@flyffweb/formats';
+import { GAME_DATA_KEYS, QUESTS_KEY } from '@flyffweb/formats';
 import type {
   ModelElem,
   WebEffectsIndex,
@@ -530,6 +530,37 @@ describe('the game-data stage', () => {
 
   it('runs last among the default stages, after the effects and UI stages whose files it names', () => {
     expect(DEFAULT_STAGES.map((s) => s.name)).toEqual(['textures', 'models', 'effects', 'ui', 'worlds', 'audio', 'data']);
+  });
+
+  it('writes the optional quest catalog from the quest files the packs hold', async () => {
+    await client({
+      'propQuest.inc': '5 { SetTitle( "A quest" ); setting { SetHeadQuest( 6001 ); } } 6 { SetTitle( "Replaced" ); }',
+      'propQuest-Scenario.inc': '6 { SetTitle( "Scenario six" ); setting { SetHeadQuest( 6000 ); } }',
+    });
+    const run = await runData();
+    expect(run.report.failures).toEqual([]);
+    expect(await catalog(run, QUESTS_KEY)).toEqual([
+      { id: 5, title: 'A quest', head: 6001, states: {} },
+      { id: 6, title: 'Scenario six', head: 6000, states: {} },
+    ]);
+  });
+
+  it('a quest that cannot be read is a warning and is left out; the rest of the catalog is written (spec §4)', async () => {
+    await client({
+      'propQuest.inc': '5 { SetTitle( "A quest" ); } 7 SetTitle( "No brace" ); setting { SetHeadQuest( 6001 ); } } 8 { SetTitle( "After" ); }',
+      'propQuest-Scenario.inc': '6 { SetTitle( "Scenario six" ); setting { SetHeadQuest( 6000 ); } }',
+    });
+    const run = await runData();
+    expect(run.report.failures).toEqual([]);
+    expect((await catalog<{ id: number }[]>(run, QUESTS_KEY)).map((quest) => quest.id)).toEqual([5, 8, 6]);
+    expect(run.report.warnings.filter((w) => w.message.includes("expected '{' after quest"))).toHaveLength(1);
+  });
+
+  it('runs without the quest files, and writes no quest catalog', async () => {
+    await client();
+    const run = await runData();
+    expect(run.report.failures).toEqual([]);
+    expect(run.writer.pathOf(QUESTS_KEY)).toBeUndefined();
   });
 
   it('writes every catalog, each once, under its hashed name', async () => {

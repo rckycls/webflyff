@@ -49,4 +49,5 @@ export { parseRecording } from './recording';
 export type { RecordedPacket, Recording } from './recording';
 export * from './world/chat';
 export * from './world/npc';
+export * from './world/quest';
 export * from './world/shop';

@@ -13,6 +13,8 @@ import {
   readModelIndex,
   readPkSetting,
   readPropItem,
+  readPropQuest,
+  QUEST_FILES,
   readPropJob,
   readPropMover,
   readStringTable,
@@ -317,6 +319,16 @@ describeClient('game data readers on the client packs', () => {
     const all = readCharacterInc(scriptText('character.inc'), defines, strings, 'character.inc');
     expect(all.find((c) => c.key === 'MaFl_Mikyel')?.name).toBe('Mikyel');
     expect(total).toBeGreaterThan(400);
+  });
+
+  it('reads every quest file Neuz loads (Masquerade.prj:116-123), with the job change and a Flaris quest', () => {
+    const quests = QUEST_FILES.flatMap((name) => readPropQuest(scriptText(name), defines, strings, name));
+    const byId = new Map(quests.map((quest) => [quest.id, quest]));
+    console.log(`propQuest*: ${quests.length} entries, ${byId.size} ids`);
+    expect(quests.length).toBeGreaterThan(300);
+    expect(byId.get(151)?.title).toBe('The Path of the Mercenary');
+    expect(byId.get(151)?.kills).toEqual([{ slot: 0, mover: defines.get('MI_AIBATT1'), count: 10, goal: { x: 7128, z: 3333, text: 1 } }]);
+    expect(byId.get(83)).toMatchObject({ head: 6004, levelMin: 30 });
   });
 
   it('PKSetting.inc: the three name colours', () => {

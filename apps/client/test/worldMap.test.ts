@@ -7,6 +7,7 @@ import type { WebWorldMap } from '@flyffweb/formats';
 import { WorldMap } from '../src/world/hud/worldMap';
 import type { MapView } from '../src/world/hud/worldMap';
 import { loadWorldMap } from '../src/world/worldMapData';
+import { mapPoint } from '../src/world/worldMapRules';
 
 const CNT = readFileSync(path.join(__dirname, 'fixtures', 'WdMadrigal.wld.cnt'), 'latin1');
 const MAP_OF: Record<number, number> = { 1: 5, 2: 4, 3: 3, 4: 7, 241: 1, 242: 2, 243: 6 };
@@ -249,5 +250,49 @@ describe('WorldMap: without its catalog, and its teardown', () => {
     key('KeyW', 'w');
     expect(heard).toHaveBeenCalledTimes(1);
     window.removeEventListener('keydown', heard);
+  });
+});
+
+describe("WorldMap: the quest destination (CWorldMap destination mode, WorldMap.cpp:959-962, :1324-1375)", () => {
+  const SPOT = { x: 7128, z: 3333 };
+  const markAt = (index: number) => {
+    const at = mapPoint(DATA.maps[index]!.bounds, SPOT, { left: 0, top: 0, width: 1280, height: 960 });
+    return [`${at.x}px`, `${at.y}px`];
+  };
+
+  it("the destination opens the map with ButtDestination at the spot's map position", () => {
+    const { map, say } = make();
+    map.showDestination(FLARIS, SPOT);
+    expect(map.isOpen).toBe(true);
+    expect(q(map, '.hud-worldmap-picture')!.style.backgroundImage).toContain('ui/world_0.png');
+    const mark = q(map, '.hud-worldmap-destination')!;
+    expect(mark.hidden).toBe(false);
+    expect(mark.style.backgroundImage).toContain('buttdestination');
+    expect([mark.style.left, mark.style.top]).toEqual(markAt(0));
+    press(q(map, '[data-map-button="5"]')!);
+    expect(mark.hidden).toBe(false);
+    expect([mark.style.left, mark.style.top]).toEqual(markAt(5));
+    press(q(map, '[data-map-button="3"]')!);
+    expect(mark.hidden).toBe(true);
+    map.showDestination({ ...FLARIS, worldId: 200 }, SPOT); // already open: it stays on the map shown
+    expect(q(map, '.hud-worldmap-picture')!.style.backgroundImage).toContain('ui/world_3.png');
+    expect(say).not.toHaveBeenCalled();
+  });
+
+  it('the mark goes on clearDestination and survives a reopen', () => {
+    const { map } = make();
+    map.showDestination(FLARIS, SPOT);
+    map.toggle(FLARIS);
+    expect(map.isOpen).toBe(false);
+    map.toggle(FLARIS);
+    const mark = q(map, '.hud-worldmap-destination')!;
+    expect(q(map, '.hud-worldmap-picture')!.style.backgroundImage).toContain('ui/world_5.png');
+    expect(mark.hidden).toBe(false);
+    expect([mark.style.left, mark.style.top]).toEqual(markAt(5));
+    map.clearDestination();
+    expect(mark.hidden).toBe(true);
+    map.toggle(FLARIS);
+    map.toggle(FLARIS);
+    expect(mark.hidden).toBe(true);
   });
 });

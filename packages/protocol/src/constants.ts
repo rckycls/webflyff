@@ -58,6 +58,10 @@ export const PacketType = {
   SKILLTASKBAR: 0xffffff0e,
   /** `PACKETTYPE_ENDSKILLQUEUE`: the client stops the running action slot (`CDPClient::SendEndSkillQueue`). */
   ENDSKILLQUEUE: 0x00ff00d5,
+  /** `PACKETTYPE_REMOVEQUEST`: the client abandons a quest (`CDPClient::SendRemoveQuest`, MsgHdr.h:154). */
+  REMOVEQUEST: 0x00ff0026,
+  /** `PACKETTYPE_QUEST_CHECK`: the client ticks a quest for the tracker (`CDPClient::SendCheckedQuestId`, MsgHdr.h:844). */
+  QUEST_CHECK: 0x88100110,
   ERROR_STRING: 0x70000003,
   LOGIN_PROTECT_NUMPAD: 0x88100200,
   LOGIN_PROTECT_CERT: 0x88100201,

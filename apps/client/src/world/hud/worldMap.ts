@@ -3,6 +3,8 @@
 // continents and the monster switch), the player's arrow and name, and the monster icons with their tooltips. It sends
 // nothing. Browser adaptations (the plan's rulings): it fills the world view as Neuz fills the screen, keeping 4:3; it
 // has a close button; while it is open it holds every key (M and Escape close it) and keeps every press from the world.
+// Piece 7 M1 adds the quest destination (CWorldMap's destination mode): ButtDestination.bmp at a Madrigal spot. Neuz
+// forgets it when the map closes; here it lasts until cleared, since the 3-D arrow that would keep pointing is not drawn.
 
 import type { MapMonsterRow, WebWorldMap, WebWorldMapEntry } from '@flyffweb/formats';
 import type { Vec3 } from '@flyffweb/protocol';
@@ -53,6 +55,7 @@ export class WorldMap {
   private readonly picture: HTMLElement;
   private readonly buttons: HTMLElement[] = [];
   private readonly icons: HTMLElement;
+  private readonly mark: HTMLElement;
   private readonly arrowAt: HTMLElement;
   private readonly arrow: HTMLElement;
   private readonly name: HTMLElement;
@@ -71,6 +74,8 @@ export class WorldMap {
   private laidOut = { w: -1, h: -1 };
   private last: MapView | null = null;
   private listening = false;
+  /** The quest destination, a Madrigal x, z (`m_vDestinationArrow`), until cleared. */
+  private destination: { x: number; z: number } | null = null;
 
   constructor(
     private readonly art: UiArt,
@@ -100,6 +105,10 @@ export class WorldMap {
     this.picture.addEventListener('pointerup', (event) => this.onTap(event as PointerEvent));
     this.icons = doc.createElement('div');
     this.icons.className = 'hud-worldmap-icons';
+    this.mark = doc.createElement('div');
+    this.mark.className = 'hud-worldmap-destination';
+    this.mark.hidden = true;
+    this.mark.style.backgroundImage = themeUrl(art, 'ButtDestination.bmp');
 
     for (let i = 0; i <= MONSTER_BUTTON; i++) {
       const button = doc.createElement('div');
@@ -147,7 +156,7 @@ export class WorldMap {
     this.closeButton.append(cross);
     this.closeButton.addEventListener('click', () => this.close());
 
-    this.picture.append(this.icons, ...this.buttons, this.arrowAt, this.tip, this.closeButton);
+    this.picture.append(this.icons, this.mark, ...this.buttons, this.arrowAt, this.tip, this.closeButton);
     this.area.append(this.picture);
     this.element.append(this.area);
   }
@@ -182,6 +191,27 @@ export class WorldMap {
       this.say('TID_GAME_MAPMSG');
       return;
     }
+    this.open(map, view);
+  }
+
+  /**
+   * A quest row's destination (`ProcessQuestDestinationWorldMap`, WndQuest.cpp:2503-2528, with CWorldMap's destination
+   * mode): the map, if closed, opens on the World (`nMap = CONT_NODATA`, WorldMap.cpp:959-962) wherever the player
+   * stands, with ButtDestination.bmp at the spot.
+   */
+  showDestination(view: MapView, at: { x: number; z: number }): void {
+    this.destination = { x: at.x, z: at.z };
+    if (this.data === null) return;
+    if (this.isOpen) this.drawMark();
+    else this.open(0, view);
+  }
+
+  clearDestination(): void {
+    this.destination = null;
+    this.mark.hidden = true;
+  }
+
+  private open(map: number, view: MapView): void {
     this.shown = map;
     this.hoveredButton = null;
     this.element.hidden = false;
@@ -265,7 +295,24 @@ export class WorldMap {
     this.hoveredIcon = null;
     this.drawButtons();
     this.drawIcons();
+    this.drawMark();
     if (this.last !== null) this.update(this.last);
+  }
+
+  /**
+   * The destination mark (`UpdateDestinationPosition` and `RenderDestinationPosition`, WorldMap.cpp:1324-1375): on the
+   * World always, on a continent's map only when the spot is on that continent; centred on the spot, 0.6 of its 32 px,
+   * blinking (style.css).
+   */
+  private drawMark(): void {
+    const at = this.destination;
+    const on = at === null ? MAP_NONE : mapNumber(this.data!.world, at, this.data!);
+    this.mark.hidden = at === null || (this.shown !== 0 && this.shown !== on);
+    if (at === null || this.mark.hidden) return;
+    const { w, h } = this.size;
+    const point = mapPoint(this.entry().bounds, at, { left: 0, top: 0, width: w, height: h });
+    this.mark.style.left = `${point.x}px`;
+    this.mark.style.top = `${point.y}px`;
   }
 
   private drawButtons(): void {

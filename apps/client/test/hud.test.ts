@@ -720,7 +720,7 @@ describe('TaskBar (CWndTaskBar, WndTaskBar.cpp)', () => {
     expect(bar.element.querySelectorAll('.hud-slot[data-kind]')).toHaveLength(0);
     expect(bar.element.querySelector('.hud-taskbar-number')!.textContent).toBe('1');
     bar.element.querySelector<HTMLButtonElement>('.hud-taskbar-start')!.click();
-    bar.element.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')[7]!.click();
+    bar.element.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')[8]!.click();
     expect(calls).toEqual(['logOut']);
     // the own numbers come with no TASKBAR yet: still empty; then it comes
     const own = newVagrant();
@@ -842,31 +842,32 @@ describe('TaskBar (CWndTaskBar, WndTaskBar.cpp)', () => {
     expect(menu.hidden).toBe(false);
     expect(bar.menuOpen).toBe(true);
     const items = [...menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
-    expect(items.map((item) => item.getAttribute('aria-label'))).toEqual(['Status', 'Character', 'Skills', 'Inventory', 'World Map', 'Navigator', 'Option', 'Log out']);
-    expect(items.map((item) => item.querySelector('.hud-menu-text')!.textContent)).toEqual(['Status', 'Character', 'Skills', 'Inventory', 'World Map', 'Navigator', 'Option', 'Log out']);
+    expect(items.map((item) => item.getAttribute('aria-label'))).toEqual(['Status', 'Character', 'Skills', 'Inventory', 'Quest Diary', 'World Map', 'Navigator', 'Option', 'Log out']);
+    expect(items.map((item) => item.querySelector('.hud-menu-text')!.textContent)).toEqual(['Status', 'Character', 'Skills', 'Inventory', 'Quest Diary', 'World Map', 'Navigator', 'Option', 'Log out']);
     // every line has its window (the skill window's, milestone 2's, too)
-    expect(items.map((item) => item.disabled)).toEqual([false, false, false, false, false, false, false, false]);
+    expect(items.map((item) => item.disabled)).toEqual([false, false, false, false, false, false, false, false, false]);
     expect(items[0]!.querySelector<HTMLElement>('.hud-menu-icon')!.style.backgroundImage).toContain('/assets/ui/icon_status.png');
     // as CWndTaskMenu draws it (WndTaskBar.cpp:2646-2653), line i at (10, 50 + 22 i), 162 wide, with its applet's hotkey
     // (AppendMenu, :2746); each line takes its whole 22 px row, no gap between two (ruling R27). The picture,
     // WndTaskMenu.tga (192 x 496), is drawn in three: its top edge (0-50), the four lines' rows (50-138) and its bottom
-    // edge (the last 26 px), 252 px in all, for the eight lines the client has instead of Neuz's twenty
+    // edge (the last 26 px), 274 px in all, for the nine lines the client has instead of Neuz's twenty
     const slices = [...menu.querySelectorAll<HTMLElement>('.hud-menu-slice')];
     expect(slices.map((slice) => [slice.style.top, slice.style.height, slice.style.backgroundPosition])).toEqual([
-      ['0px', '50px', '0px 0px'], ['50px', '176px', '0px -50px'], ['226px', '26px', '0px -470px'],
+      ['0px', '50px', '0px 0px'], ['50px', '198px', '0px -50px'], ['248px', '26px', '0px -470px'],
     ]);
     expect(slices.every((slice) => slice.style.backgroundImage === 'url("/assets/ui/wndtaskmenu.png")')).toBe(true);
-    expect([menu.style.width, menu.style.height]).toEqual(['192px', '252px']);
+    expect([menu.style.width, menu.style.height]).toEqual(['192px', '274px']);
     expect(items.map((item) => [item.style.left, item.style.top, item.style.width, item.style.height])).toEqual([
       ['10px', '50px', '162px', '22px'], ['10px', '72px', '162px', '22px'], ['10px', '94px', '162px', '22px'],
       ['10px', '116px', '162px', '22px'], ['10px', '138px', '162px', '22px'], ['10px', '160px', '162px', '22px'],
       ['10px', '182px', '162px', '22px'],
       ['10px', '204px', '162px', '22px'],
+      ['10px', '226px', '162px', '22px'],
     ]);
-    expect(items.map((item) => item.querySelector('.hud-menu-hotkey')!.textContent)).toEqual(['T', 'H', 'K', 'I', 'M', 'N', '', '']);
+    expect(items.map((item) => item.querySelector('.hud-menu-hotkey')!.textContent)).toEqual(['T', 'H', 'K', 'I', 'Q', 'M', 'N', '', '']);
     // the menu stands on the bar, its own scale
     expect(menu.style.bottom).toBe('48px');
-    items[7]!.click();
+    items[8]!.click();
     expect(calls).toEqual(['logOut']);
     expect(menu.hidden).toBe(true);
     // Start again opens it; Status opens the status window and closes the menu; Start twice, or a press elsewhere, closes it
@@ -1282,15 +1283,15 @@ describe('TaskBar: stackable items, names, focus and room (WndTaskBar.cpp)', () 
     expect(bar.element.querySelector<HTMLElement>('.hud-taskbar-strip')!.style.transform).toBe('scale(0.75)');
     expect([menu.style.transform, menu.style.bottom]).toEqual(['', '36px']);
     // 150 px high: 102 px above the bar
-    expect(menuOn(800, 150).menu.style.transform).toBe(`scale(${(150 - 48) / 252})`);
+    expect(menuOn(800, 150).menu.style.transform).toBe(`scale(${(150 - 48) / 274})`);
   });
 
   it('on a touch screen it is up to twice its size, as the room above the bar allows: a finger\'s 40 to 44 px a line', () => {
     onTouchScreen(() => {
       // A landscape phone leaves room for twice the 164px menu above the floating bar.
-      expect(menuOn(844, 390).menu.style.transform).toBe(`scale(${(390 - 48 * 720 / 620) / 252})`);
+      expect(menuOn(844, 390).menu.style.transform).toBe(`scale(${(390 - 48 * 720 / 620) / 274})`);
       // The compact 620px layout fills the width between the phone's side gutters.
-      expect(menuOn(750, 342).menu.style.transform).toBe(`scale(${(342 - 48 * (718 / 620)) / 252})`);
+      expect(menuOn(750, 342).menu.style.transform).toBe(`scale(${(342 - 48 * (718 / 620)) / 274})`);
     });
   });
 
@@ -1301,7 +1302,7 @@ describe('TaskBar: stackable items, names, focus and room (WndTaskBar.cpp)', () 
     Object.defineProperty(touch, 'pointerType', { value: 'touch' });
     document.body.dispatchEvent(touch);
     bar.update(newVagrantWithBar(), BAR_DATA);
-    expect(menu.style.transform).toBe(`scale(${(390 - 48 * (720 / 620)) / 252})`);
+    expect(menu.style.transform).toBe(`scale(${(390 - 48 * (720 / 620)) / 274})`);
   });
 
   it('keeps the mobile taskbar bounds while typing or clicking Send on a phone', () => {
@@ -2675,6 +2676,13 @@ describe('TaskBar: editing the bars (CWndTaskBar::OnDropIcon, WndTaskBar.cpp:187
     bar.pickSkill(0, document.body);
     key('keydown', 'KeyK');
     expect(calls.filter((call) => call === 'open skills')).toHaveLength(1);
+  });
+
+  it("Q and the Start menu's Quest Diary open the quests window (APP_QUEST_EX_LIST, FuncApplet.cpp:229)", () => {
+    const own = vagrantWithSkills(5, 0, [3, 0, 0]);
+    const { calls } = editingOn(own);
+    key('keydown', 'KeyQ');
+    expect(calls.at(-1)).toBe('open quests');
   });
 
   it("a picked skill is let go by + - Reset Finish, and by a press outside the window and the bar's rows, not by one in them", () => {

@@ -1063,3 +1063,58 @@ Milestone 0 passes when every cell of the table is `pass` (or `n/a` where it say
 The piece7 folder's `dist/assets` already has the NPC pictures and the dialogue's pictures. For another folder's assets, run `npm run convert -- --client "C:\Users\silec\Desktop\FlyFF\Bakbak\Blouflash VS22 V15\Client" --only "WndDialogEx*,wndButtEnter*,QuestUiPaper*,char*,data"` there (about 1 minute, ends with `0 failed`).
 
 If one fails, send me the lines from the first `failed` down to the end.
+
+## Piece 7, milestone 1: quests
+
+Quests now work as in the Windows client. **Q** (or Start → **Quest Diary**) opens the quest window: four tabs (Scenario, General, Request Office, Event), a tree of folders and quests, and a filter (All Quests, In Progress, Completed). A tap on a quest opens its detail beside the list: what to do, the conditions with their counts, and the rewards. The box before a quest ticks it for the **tracker**, the list of up to five quests at the right edge of the screen, 220 px down (on a phone, under the shortcut buttons). A condition with a place marks it on the world map. Taking and handing in quests happens in the NPC dialogue, which now shows each quest's levels and the yellow paper for a quest ready to hand in. The kill counts, "Quest Complete!" and the cancel line show among the messages and in the chat, with the quest jingles.
+
+On a phone the quest window fills the screen: the list on the left, the detail on the right.
+
+**What the test characters need:**
+- a new Vagrant of level 1 to 5, in Flaris, for the starter quest;
+- a Vagrant of level 15 (a GM account helps), for the Mercenary chain;
+- any character of level 30 or more, in Flaris, for a quest to abandon.
+
+**Start the client** from the piece7 folder as for milestone 0 (stop your own `npm run dev:client` first):
+
+```
+cd C:\Users\silec\Desktop\FlyFF\Bakbak\FlyffWeb-worktrees\piece7
+$env:GATEWAY_PROXY = 'ws://<VM-IP>:8090'
+npm run dev:client
+```
+
+**Steps**, on the PC and a landscape phone:
+
+1. **Take a starter quest.** With the level 1 to 5 Vagrant, talk to Losha (Flaris) and take **A Vagrant's First Steps (1)**: in the dialogue, **New Quest**, the row "[1~5] A Vagrant's First Steps (1)" with the green paper, then Yes. Success: "You've received the quest" (or the server's own line) among the messages, and **Q** shows the quest under General › Flaris, with its detail "Defeat Small Aibatt (0/15)".
+2. **Progress and the tracker.** Tick the quest's box. Success: the quest and its row show at the right edge. Kill a Small Aibatt. Success: "Defeat Small Aibatt (1/15)" among the messages and in the chat, and the tracker and the detail say 1/15.
+3. **Hand it in.** Kill the rest, then talk to Luda. Success: under **Quests in Progress** the row has the yellow paper. Hand it in. Success: the rewards' lines, "Quest Complete!" and the end jingle; the quest leaves the tracker, and with the filter on **Completed** it shows grey.
+4. **The Mercenary chain.** With the level 15 Vagrant, take **The Path of the Mercenary** from Mustang (the row reads "[15~15] The Path of the Mercenary"), finish it, then take and finish **Mercenary Arms** (Mustang to Andy). Success: each quest shows under General › 1st Job Change while it runs, and moves to Completed at its end. Stop before the job change itself (milestone 2).
+5. **Abandon a quest.** With the level 30 character, take **Revenge of Red Bang Troupe** from Luda. Open **Q**, tap the quest, then the remove button at the bottom left. Success: a box asks "Are you going to cancel the quest?" (or the server's text). Cancel does nothing; OK removes the quest, and "Revenge of Red Bang Troupe quest has been cancelled." shows. The remove button stays greyed while no quest is selected, for a completed quest, and while an NPC dialogue is open.
+6. **A sixth box.** With five quests ticked (or as many as you have, then skip), tick a sixth. Success: it stays unticked, and a line says you cannot check more. If you cannot get six quests, write `n/a`.
+7. **A destination.** In a quest's detail (or the tracker), tap a condition with a place, such as "Defeat Small Aibatt". Success: the world map opens on the whole continent with a blinking mark at the place; the continent's own button (Flaris) shows it there too. Close the map and open it again with **M**: the mark is still there. It goes when that quest ends.
+8. **The phone panel and the tracker** (phone only). Open the quest window. Success: it fills the screen above the task bar, the list on the left, the detail on the right, both scroll, and the joystick hides. Close it. Success: the tracker sits under the shortcut buttons, clear of the joystick, the attack and jump buttons and the task bar; with four or more ticked quests it scrolls.
+
+## Results
+
+| Device | Browser | 1. Take | 2. Tracker | 3. Hand in | 4. Mercenary | 5. Abandon | 6. Sixth box | 7. Destination | 8. Phone | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| PC | Chrome | | | | | | | | n/a | |
+| Android phone | Chrome | | | | | | | | | |
+| iPhone | Safari | | | | | | | | | |
+
+## Pass and fail
+
+Milestone 1 passes when every cell of the table is `pass` (or `n/a` where it says so) and the tests below pass.
+
+**The tests (yours to run),** on the PC in PowerShell in the piece7 folder, with your own `npm run dev:client` stopped first:
+
+| Command | How long | Success |
+| --- | --- | --- |
+| `npm test` | about 2 minutes | `Tests … passed`, and no `failed`. |
+| `npm run typecheck` | about 1 minute | It ends with no `error`. |
+| `npm run test:e2e:client` | about 10 minutes | It ends with `… passed`, maybe a few `skipped`, and no `failed`. |
+| `$env:FLYFF_CLIENT = 'C:\Users\silec\Desktop\FlyFF\Bakbak\Blouflash VS22 V15\Client'; npm run test:corpus` | about 10 minutes | No `failed`. Run `Remove-Item Env:FLYFF_CLIENT` afterwards. |
+
+The piece7 folder's `dist/assets` already has the quest catalog (`data/quests.json`) and the quest window's pictures. For another folder's assets, run `npm run convert -- --client "C:\Users\silec\Desktop\FlyFF\Bakbak\Blouflash VS22 V15\Client" --only "ButtRemoveQuest*,ButtClose*,ButtCheck*,ButtDestination*,buttTree*,data"` there (about 1 minute, ends with `0 failed`).
+
+If one fails, send me the lines from the first `failed` down to the end.

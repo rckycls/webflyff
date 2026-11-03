@@ -150,4 +150,15 @@ describe('WorldSounds: the events of WorldState and OwnState', () => {
     world.ownEvent({ kind: 'revived' }, 1);
     expect(music).toEqual([[22, 1], [23, 1]]);
   });
+
+  it('a new quest plays BGM_EV_START; an ended or removed one BGM_EV_END (MoverParam.cpp:3495, :3534, :3600)', () => {
+    const { world, music } = setup();
+    const quest = { id: 151, state: 0, time: 0, kills: [0, 0] as [number, number], patrol: false, dialog: false };
+    world.ownEvent({ kind: 'quest', change: { kind: 'started', quest } }, 1);
+    world.ownEvent({ kind: 'quest', change: { kind: 'progress', before: quest, after: { ...quest, kills: [1, 0] } } }, 1);
+    world.ownEvent({ kind: 'quest', change: { kind: 'ended', quest: { ...quest, state: 14 } } }, 1);
+    world.ownEvent({ kind: 'quest', change: { kind: 'removed', questId: 151, cancelled: true } }, 1);
+    world.ownEvent({ kind: 'quest', change: { kind: 'listsChanged' } }, 1);
+    expect(music).toEqual([[19, 1], [20, 1], [20, 1]]);
+  });
 });

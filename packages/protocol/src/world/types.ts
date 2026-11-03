@@ -8,9 +8,10 @@ import type { MoveReport } from '../messages/world';
  */
 import type { ChatMessage } from './chat';
 import type { NpcMessage } from './npc';
+import type { OwnQuest, QuestMessage } from './quest';
 import type { ShopMessage } from './shop';
 
-export type WorldMessage = ChatMessage | NpcMessage | ShopMessage
+export type WorldMessage = ChatMessage | NpcMessage | ShopMessage | QuestMessage
   | { type: 'addItem'; item: GroundItem }
   | { type: 'createItem'; itemType: number; item: InventoryItem; stacks: Array<{ objectId: number; count: number }> }
   | { type: 'updateItem'; itemType: number; objectId: number; param: number; value: number; time: number }
@@ -217,6 +218,10 @@ export interface GroundItem { index: number; scale: number; pos: Vec3; angle: nu
 export interface OwnCharacter {
   /** Native dwGold (optional in older fixtures). */
   gold?: number;
+  /** `m_aQuest`, `m_aCompleteQuest`, `m_aCheckedQuest` (ObjSerializeOpt.cpp:509-549); absent in older fixtures. */
+  quests?: OwnQuest[];
+  completedQuests?: number[];
+  checkedQuests?: number[];
   /** `m_nStr`, `m_nSta`, `m_nDex`, `m_nInt`: the base stats, without equipment or buffs (`WORD`s). */
   str: number;
   sta: number;

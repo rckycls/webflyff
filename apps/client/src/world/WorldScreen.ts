@@ -62,8 +62,17 @@ import { TaskBar } from './hud/taskBar';
 import { InventoryWindow } from './hud/inventoryWindow';
 import { ChatWindow } from './hud/chatWindow';
 import { MENU_RANGE, MMI, MoverMenu, npcMenuEntries, soleEntry } from './hud/moverMenu';
-import { NO_QUESTS } from './hud/dialogue/dialogState';
 import { DialogWindow } from './hud/dialogue/dialogWindow';
+import { parseDialogText } from './hud/dialogue/dialogText';
+import { QuestTracker } from './hud/quests/questTracker';
+import { QuestWindow } from './hud/quests/questWindow';
+import type { QuestWindowState } from './hud/quests/questWindow';
+import { loadQuests } from './quests/questCatalog';
+import { questLines, timedOut } from './quests/questLines';
+import { createQuestLookup } from './quests/questRules';
+import type { QuestCatalog, QuestNames, QuestOwner } from './quests/questRules';
+import type { QuestChange } from './OwnState';
+import { expNeeded, expPercent } from './sim/params';
 import { dialogueStays, ownStands } from './hud/dialogue/dialogueStays';
 import { ShopWindow } from './hud/shopWindow';
 import { Minimap } from './hud/minimap';
@@ -115,6 +124,8 @@ const LOADING_TEXT = 'Entering the world…';
 /** The joystick's height over the bottom, as Piece 3's: the task bar's 48 px and 8 more. */
 /** `PutString( prj.GetText( TID_PK_COMBAT_END ), NULL, 0xffff0000 )` (`WndManager.cpp:2615`): red, not the text's colour. */
 const COMBAT_END_COLOR = 0xffff0000;
+/** `PutString`'s colour when none is given (`WndManager.h:641`): the quest lines without a TID colour. */
+const WHITE = 0xffffffff;
 const NOT_AVAILABLE_TEXT = "This map isn't available in the browser yet.";
 const NO_WEBGL_TEXT = "This browser can't show the 3D world (WebGL is off or not supported).";
 const OUT_OF_DATE_TEXT = 'The game files on the server are out of date.';
@@ -262,6 +273,10 @@ export class WorldScreen {
   /** The world map (Piece 6 M1), its catalog (null without one) and its monster switch, kept across world changes. */
   private worldMap: WorldMap | undefined;
   private worldMapData: WebWorldMap | null = null;
+  /** The quest catalog (Piece 7 M1; null without one: quests listed by id), the quest window and the tracker. */
+  private questCatalog: QuestCatalog | null = null;
+  private questWindow: QuestWindow | undefined;
+  private questTracker: QuestTracker | undefined;
   /**
    * This login's music rules (CWndWorld's, WndWorld.cpp:8013-8689) and the world's sound triggers (Piece 6 M2); null
    * without the page's audio, and the rules also without the audio catalog.
@@ -428,7 +443,10 @@ export class WorldScreen {
       if (this.over) return;
       this.services = services;
       this.data = data;
-      this.worldMapData = await loadWorldMap(services.store, (error) => this.reportOnce(`world map: ${messageOf(error)}`, error));
+      [this.worldMapData, this.questCatalog] = await Promise.all([
+        loadWorldMap(services.store, (error) => this.reportOnce(`world map: ${messageOf(error)}`, error)),
+        loadQuests(services.store, (error) => this.reportOnce(`quests: ${messageOf(error)}`, error)),
+      ]);
       if (this.over) return;
       const audio = this.audio;
       if (audio !== null) {
@@ -509,7 +527,10 @@ export class WorldScreen {
     for (const { value } of messages) {
       if (value.type === 'addMover' && value.mover.player?.self === true) added ??= value.mover;
     }
-    if (added !== undefined) this.own = new OwnState(this.data!, added, this.entry.character.equipment);
+    if (added !== undefined) {
+      this.own = new OwnState(this.data!, added, this.entry.character.equipment,
+        (questId) => this.questCatalog?.get(questId)?.repeat === true);
+    }
     const inventoryError = this.own?.inventoryError ?? null;
     if (inventoryError !== null) this.page?.overlay.error(`own inventory: ${inventoryError}`);
     // the rules stand the movers on the stage's land and objects once their tiles are in (`ground`)
@@ -869,23 +890,42 @@ export class WorldScreen {
     this.teleporter = new TeleporterWindow(this.hudArt!, id => this.canTalk(id), (key, index) => session.sendTeleporter(key, index), doc);
     this.moverMenu = new MoverMenu(doc);
     // RunScript: the NPC and the player as nGlobal3 and nGlobal4 (WndDialog.cpp:234-240)
-    this.dialog = new DialogWindow(this.hudArt!, this.data!.texts, NO_QUESTS, (request) => {
+    // the dialogue's quest rows from the catalog and the own quests (Piece 7 M1: `[min~max] title`, the papers)
+    const quests = createQuestLookup(() => this.questCatalog, () => this.own?.quests ?? new Map(), () => this.questOwner());
+    this.dialog = new DialogWindow(this.hudArt!, this.data!.texts, quests, (request) => {
       const npcId = this.dialog?.npcId ?? null, self = this.world?.self();
       if (npcId !== null && self !== undefined) session.sendNpcDialog(npcId, request.key, request.param, request.quest, self.objectId);
+    }, doc);
+    const questNames = this.questNames();
+    const destination = (goal: { x: number; z: number }): void => {
+      this.worldMap?.showDestination(this.mapView(), goal);
+      if (this.worldMap?.isOpen === true) this.releaseControls();
+    };
+    const questWindow = new QuestWindow(this.hudArt!, this.data!.texts, questNames, {
+      check: (questId, check) => session.sendQuestCheck(questId, check),
+      abandon: (questId) => session.sendRemoveQuest(questId),
+      destination,
+      // PutString with TID_GAME_ERROR_DONT_CHECK's colour (WndQuest.cpp:1545)
+      say: (text) => this.hud?.messages.add(text, this.data!.texts.get('TID_GAME_ERROR_DONT_CHECK')?.color ?? WHITE),
+    }, doc);
+    this.questWindow = questWindow;
+    this.questTracker = new QuestTracker(this.data!.texts, questNames, {
+      title: (questId) => questWindow.showDetail(questId, this.questState()),
+      destination,
     }, doc);
     // Finish sends DOUSESKILLPOINT through the skill use, which also ends a spend the server leaves unanswered
     const skillWindow = new SkillWindow(this.hudArt!, this.data!, (skills) => void skillUse.spendSkillPoints(skills), taskBar, doc);
     this.skillWindow = skillWindow;
     this.optionWindow = this.audio === null ? undefined : new OptionWindow(this.hudArt!, this.audio, doc);
-    for (const modal of [logOutBox.modal, reviveWindow.modal, skillWindow.warning.modal, this.dialog.modal]) {
+    for (const modal of [logOutBox.modal, reviveWindow.modal, skillWindow.warning.modal, this.dialog.modal, questWindow.modal]) {
       modal.onChange = () => this.modalChanged();
     }
     this.hud!.element.append(
-      this.teleporter.frame.element,
+      this.questTracker.element, this.teleporter.frame.element,
       taskBar.element, this.attackButton.element, this.jumpButton.element, mobileTools, logOutBox.element, characterWindow.frame.element,
       characterWindow.confirm.frame.element, skillWindow.frame.element, skillWindow.warning.element, reviveWindow.element,
       inventoryWindow.frame.element, this.nearbyItems.element, this.chatWindow.element, this.shopWindow.frame.element,
-      this.dialog.element, this.moverMenu.element,
+      ...questWindow.elements, this.dialog.element, this.moverMenu.element,
     );
     if (this.optionWindow !== undefined) this.hud!.element.append(this.optionWindow.frame.element);
     // before the windows' own Escape (frame.ts), which closes a window only if this one leaves the key to it
@@ -999,6 +1039,7 @@ export class WorldScreen {
    */
   private play(changes: WorldChanges): void {
     this.hud?.play(changes.combat, changes.own, this.own);
+    for (const event of changes.own) if (event.kind === 'quest') this.playQuest(event.change);
     // the own death opens the revive window after its chat line (`OnMoverDeath`, DPClient.cpp:2040-2072); one before the
     // windows are up (the world still loading) leaves it to Escape
     this.reviveWindow?.play(changes.own);
@@ -1047,6 +1088,65 @@ export class WorldScreen {
       playCombatEvent(event, fxWorld, out);
     }
     for (const event of changes.own) playOwnEvent(event, fxWorld, out);
+  }
+
+  /**
+   * What a quest message shows (Piece 7 M1, `CDPClient::OnSetQuest` and `OnRemoveQuest`; the jingles are WorldSounds'):
+   * its lines among the messages and in the chat, the text codes dropped; a time run out sends REMOVEQUEST
+   * (DPClient.cpp:8444-8573); an end clears the destination (`m_vDestinationArrow`, MoverParam.cpp:3586-3590).
+   */
+  private playQuest(change: QuestChange): void {
+    for (const line of questLines(change, this.questCatalog, this.questNames(), this.data!.texts)) {
+      const text = parseDialogText(line.text).map((run) => run.text).join('');
+      this.hud?.messages.add(text, line.color ?? WHITE);
+      this.chatWindow?.append('system', '', text);
+    }
+    if (change.kind === 'progress' && timedOut(change)) this.session.sendRemoveQuest(change.after.id);
+    if (change.kind === 'ended') this.worldMap?.clearDestination();
+  }
+
+  /** The names the quest rows give (`QuestNames`): movers and items by id, NPCs by their character key. */
+  private questNames(): QuestNames {
+    const data = this.data!;
+    return {
+      mover: (index) => data.movers.get(index)?.name ?? '',
+      item: (id) => data.itemProps.get(id)?.name ?? '',
+      npc: (key) => data.npcs.get(key.toLowerCase())?.name ?? key,
+    };
+  }
+
+  /**
+   * What `__IsEndQuestCondition` reads off the player (Mover.cpp:9277), from the own state: the EXP as `GetExpPercent`
+   * (0.01 %, 0 at the table's top), an item's count summed over the inventory (`GetItemNum`, MoverParam.cpp:3610-3629).
+   */
+  private questOwner(): QuestOwner | undefined {
+    const own = this.own;
+    if (own === undefined) return undefined;
+    let percent = 0;
+    try {
+      percent = expPercent(own.exp, expNeeded(this.data!.exp, own.level));
+    } catch {
+      // the EXP table's last level has no next one to reach
+    }
+    return {
+      level: own.level, job: own.job, sex: this.world?.self()?.added.player?.sex ?? 0, gold: own.gold, expPercent: percent,
+      skillLevel: (skill) => own.skills.find((slot) => slot.skill === skill)?.level ?? 0,
+      itemCount: (item) => {
+        let count = 0;
+        for (const held of own.inventory?.values() ?? []) if (held.itemId === item) count += held.count;
+        return count;
+      },
+      completed: own.completedQuests,
+    };
+  }
+
+  /** The quest window's and the tracker's state, from the own quests (none before the own ADD_OBJ). */
+  private questState(): QuestWindowState {
+    const own = this.own;
+    return {
+      catalog: this.questCatalog, current: own?.quests ?? new Map(), completed: own?.completedQuests ?? [],
+      checked: own?.checkedQuests ?? [], owner: this.questOwner(), dialogueOpen: this.dialog?.frame.isOpen === true,
+    };
   }
 
   /**
@@ -1312,6 +1412,11 @@ export class WorldScreen {
     this.shopWindow?.update();
     this.teleporter?.update();
     if (this.worldMap?.isOpen === true) this.worldMap.update(this.mapView());
+    if (this.questTracker !== undefined || this.questWindow !== undefined) {
+      const questState = this.questState();
+      this.questTracker?.update(questState);
+      this.questWindow?.update(questState);
+    }
     if (self !== undefined) this.minimap?.update(self.act.body.pos, this.backCamera.heading ?? 0,
       [...world.movers.values()].filter(mover => !mover.isSelf && mover.hp > 0 &&
         !isGameMaster(mover.added.player?.authorization ?? 0)).map(mover => ({
@@ -1347,6 +1452,7 @@ export class WorldScreen {
       return;
     }
     if (window === 'chat') { this.chatWindow?.open(); return; }
+    if (window === 'quests') { this.questWindow?.toggle(this.hud?.element.clientWidth ?? 0, this.questState()); return; }
     if (window === 'option') { this.optionWindow?.toggle(); return; }
     if (window === 'inventory') {
       if (this.own) {
@@ -1409,7 +1515,8 @@ export class WorldScreen {
    */
   private modalChanged(): void {
     const open = this.reviveWindow?.modal.isShown === true || this.logOutBox?.modal.isShown === true ||
-      this.skillWindow?.warning.modal.isShown === true || this.dialog?.modal.isShown === true;
+      this.skillWindow?.warning.modal.isShown === true || this.dialog?.modal.isShown === true ||
+      this.questWindow?.modal.isShown === true;
     this.element.classList.toggle('world-modal', open);
     if (!open) return;
     this.worldMap?.close();
@@ -1760,6 +1867,8 @@ export class WorldScreen {
     this.minimap?.dispose();
     if (this.worldMap !== undefined) this.worldMapMonsters = this.worldMap.monsterInfo;
     this.worldMap?.dispose();
+    this.questWindow?.dispose();
+    this.questTracker?.dispose();
     this.teleporter?.dispose();
     this.hud?.dispose();
     this.sheetPictures = [];
@@ -1774,7 +1883,8 @@ export class WorldScreen {
       'focus', 'attackLoop', 'skillUse', 'mark', 'effects', 'effectRenderer', 'effectTextures', 'numbers', 'marks',
       'hud', 'hudArt', 'taskBar', 'attackButton', 'cameraControls', 'jumpButton', 'logOutBox', 'reviveWindow',
       'characterWindow', 'skillWindow', 'inventoryWindow', 'moverMenu', 'dialog', 'shopWindow', 'itemUse',
-      'itemActions', 'groundItems', 'nearbyItems', 'ownMover', 'simulationClock', 'minimap', 'teleporter', 'worldMap'] as const) this[key] = undefined;
+      'itemActions', 'groundItems', 'nearbyItems', 'ownMover', 'simulationClock', 'minimap', 'teleporter', 'worldMap',
+      'questWindow', 'questTracker'] as const) this[key] = undefined;
   }
 
   /** Closes the connections and everything on screen, once, then tells the lobby. */

@@ -32,6 +32,8 @@ import {
   FormatError,
   GAME_DATA_KEYS,
   OT,
+  QUESTS_KEY,
+  QUEST_FILES,
   WORLD_MAP_KEY,
   decodeScript,
   loadDefines,
@@ -45,6 +47,7 @@ import {
   readPropItem,
   readPropJob,
   readPropMover,
+  readPropQuest,
   readTextClient,
   readWorldInc,
   webName,
@@ -61,6 +64,7 @@ import type {
   WebMover,
   WebNameColors,
   WebNpc,
+  WebQuest,
   WebTexts,
   WebWorlds,
 } from '@flyffweb/formats';
@@ -573,6 +577,33 @@ export const gameDataStage: Stage = {
       }
     } catch (error) {
       ctx.report.fail(KIND, error instanceof FormatError ? error.file : WORLD_MAP_CNT, error);
+    }
+
+    // The quest catalog (Piece 7 M1), optional in the same way: the quest files of Masquerade.prj:116-123 that the packs
+    // hold; without any the client lists quests by id (QUESTS_KEY is not one of GAME_DATA_KEYS). A later file's entry
+    // replaces an earlier one with its id, as m_aPropQuest.SetAtGrow does. A quest that cannot be read is a warning and is
+    // left out, and a file that cannot be read fails alone (the spec's §4): the rest is still written.
+    const questFiles = QUEST_FILES.filter((name) => ctx.client.packs.has(name));
+    if (questFiles.length > 0) {
+      try {
+        const read = new Reading(ctx.client);
+        const quests = new Map<number, WebQuest>();
+        for (const file of questFiles) {
+          try {
+            const skip = (error: FormatError): void => ctx.report.warn(KIND, file, `quest left out: ${error.message}`);
+            for (const quest of readPropQuest(read.text(file), env.defines, env.strings, file, skip)) quests.set(quest.id, quest);
+          } catch (error) {
+            ctx.report.fail(KIND, error instanceof FormatError ? error.file : file, error);
+          }
+        }
+        if (quests.size > 0) {
+          const bytes = new TextEncoder().encode(JSON.stringify([...quests.values()]));
+          await ctx.writer.write(QUESTS_KEY, bytes, QUEST_FILES[0]);
+          ctx.report.ok(KIND, QUEST_FILES[0], read.bytes, bytes.length);
+        }
+      } catch (error) {
+        ctx.report.fail(KIND, error instanceof FormatError ? error.file : QUEST_FILES[0], error);
+      }
     }
 
     // The audio catalog (Piece 6 M2), optional in the same way: without sound.inc there is none, and the client is

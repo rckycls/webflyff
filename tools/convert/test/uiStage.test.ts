@@ -59,6 +59,14 @@ describe('the dialogue window (APP_DIALOG_EX, WndDialog.cpp)', () => {
     }
   });
 
+  it("lists the quest window's buttons, the tree's pictures and the map's destination mark once each", () => {
+    const lower = THEME_FILES.map((file) => file.toLowerCase());
+    for (const file of ['buttremovequest.bmp', 'buttclose.tga', 'buttcheck.bmp', 'butttreeopen.tga', 'butttreeclose.tga',
+      'buttdestination.bmp']) {
+      expect(lower.filter((name) => name === file), file).toHaveLength(1);
+    }
+  });
+
   let root: string;
   let out: string;
   beforeEach(async () => { root = await makeTempDir('flyffweb-ui-dialog-'); out = await makeTempDir('flyffweb-ui-dialog-out-'); });

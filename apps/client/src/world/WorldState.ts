@@ -288,6 +288,11 @@ export class WorldState {
       case 'doUseSkillPoint': // OnDoUseSkillPoint (:14730), OnInitSkillPoint (:14687) and OnSetActionPoint (:15798) too
       case 'initSkillPoint':
       case 'setActionPoint':
+      // OnRemoveQuest (:14633), OnCheckedQuest (:19245), OnQuestTextTime (:6750) and OnNPCPos (:18650) are g_pPlayer's
+      case 'removeQuest':
+      case 'questChecked':
+      case 'questTextTime':
+      case 'questHelperNpcPos':
         this.toOwn(message, objectId);
         return;
       case 'createSfxObj': // OnCreateSfxObj (:4038) plays at an absolute position for an object not in view too
@@ -347,6 +352,7 @@ export class WorldState {
         break;
       case 'setExperience': // OnSetExperience (:3376), OnSetGrowthLearningPoint (:3531): sent to the user about itself
       case 'setGrowthLearningPoint':
+      case 'setQuest': // OnSetQuest (:8444), for the active mover
         this.toOwn(message, objectId);
         break;
       case 'setLevel':

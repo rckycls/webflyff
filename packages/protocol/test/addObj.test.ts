@@ -424,6 +424,12 @@ describe('ADD_OBJ (OnAddObj)', () => {
     expect(player?.worn).toEqual([]);
     expect(player?.equipmentObjectIds).toHaveLength(MAX_HUMAN_PARTS);
     expect(player?.equipmentObjectIds).toEqual(ownEquipment);
+    // the own quest lists (ObjSerializeOpt.cpp:509-549), as `selfFields` writes them
+    expect(player?.own?.quests).toEqual([
+      { id: 51, state: 1, time: 0, kills: [3, 0], patrol: false, dialog: false },
+      { id: 77, state: 14, time: 600, kills: [0, 0], patrol: true, dialog: false },
+    ]);
+    expect([player?.own?.completedQuests, player?.own?.checkedQuests]).toEqual([[40], [51]]);
     // Without the table the reader has to stop the bundle there; with it the next message is still read.
     expect(readOne(PLAYER, selfFields(), false)).toMatchObject(self);
     const result = readBundle(body([
@@ -529,7 +535,7 @@ describe('ADD_OBJ (OnAddObj)', () => {
       expect(result.stoppedAt).toBeNull();
       expect(result.messages).toHaveLength(1);
       const own = ownOf(result.messages[0].value);
-      expect(own).toEqual({ ...broken, gold: 123456 });
+      expect(own).toEqual({ ...broken, gold: 123456, quests: expect.any(Array), completedQuests: [40], checkedQuests: [51] });
       expect(own?.inventoryError).toMatch(/^item 3 of 7: need \d+ bytes but only \d+ remain at offset \d+$/);
     }
 
@@ -538,7 +544,7 @@ describe('ADD_OBJ (OnAddObj)', () => {
       expect(result.mismatched).toEqual([]);
       const own = ownOf(result.messages[0].value);
       // Task 3's numbers and skills are all there.
-      expect(own).toEqual({ ...broken, gold: 123456 });
+      expect(own).toEqual({ ...broken, gold: 123456, quests: expect.any(Array), completedQuests: [40], checkedQuests: [51] });
       return own?.inventoryError;
     };
     const indexes = (w: ArWriter): void => {

@@ -170,6 +170,14 @@ export const THEME_FILES: readonly string[] = [
   'QuestUiPaperRed.tga',
   'QuestUiPaperGray.tga',
   'QuestUiPaperYellow.tga',
+  // The quest window (APP_QUEST_EX_LIST, resdata.inc:4076): its remove and close buttons, the tree's check box and open
+  // and close buttons (CWndTreeCtrl, WndControl.cpp:1130-1131), and the world map's destination mark (WndMapEx.cpp:547-572).
+  'ButtRemoveQuest.bmp',
+  'ButtClose.tga',
+  'ButtCheck.bmp',
+  'buttTreeOpen.tga',
+  'buttTreeClose.tga',
+  'ButtDestination.bmp',
 ];
 
 /** The two glyph sheets: the script, and the field of WebUiSheets it fills. */

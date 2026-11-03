@@ -20,6 +20,9 @@ import {
   readClearUseSkill, readCreateSfxObj, readDoUseSkillPoint, readEndSkillQueue, readInitSkillPoint, readSetActionPoint,
   readUseSkill,
 } from './skills';
+import {
+  readQuestChecked, readQuestHelperNpcPos, readQuestTextTime, readRemoveQuest, readSetQuest,
+} from './quest';
 import { readPlayMusic, readPlaySound } from './sound';
 import { readTaskBar } from './taskBar';
 import type { WorldMessage } from './types';
@@ -38,6 +41,12 @@ export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
     [0x00d0, readShout],
     [0x00a9, readReturnSay],
     [0x0024, readNpcScript],
+    // the quests (MsgHdr.h:953, :1086, :1101, :1284, :1317)
+    [0x00b0, readSetQuest],
+    [0x003a, readRemoveQuest],
+    [0x00ba, readQuestTextTime],
+    [0x9400, readQuestHelperNpcPos],
+    [0x8820, readQuestChecked],
     [0x0014, readShop],
     [0x0003, readCreateItem],
     [0x0004, readMoveItem],

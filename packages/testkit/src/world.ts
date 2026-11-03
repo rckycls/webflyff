@@ -1,9 +1,9 @@
 import {
   ArWriter, AttackFlag, BUNDLE_MARKER, MAX_SHORTCUT_STRING, MAX_SKILL_JOB, MAX_SLOT_APPLET, MAX_SLOT_ITEM,
-  MAX_SLOT_ITEM_COUNT, MAX_SLOT_QUEUE, MessageType, NULL_ID, ObjectType, ProtocolError, ShortcutKind,
+  MAX_SLOT_ITEM_COUNT, MAX_SLOT_QUEUE, MessageType, NULL_ID, ObjectType, ProtocolError, ShortcutKind, writeQuest,
 } from '@flyffweb/protocol';
 import type {
-  AddedMover, AddedNpc, AddedPlayer, InventoryItem, MonsterRate, MoveReport, OwnCharacter, Shortcut, SkillSlot,
+  AddedMover, AddedNpc, AddedPlayer, InventoryItem, MonsterRate, MoveReport, OwnCharacter, OwnQuest, Shortcut, SkillSlot,
   TaskBar, Vec3,
 } from '@flyffweb/protocol';
 
@@ -251,6 +251,23 @@ export function writeRevivalToLodestar(objectId: number): ScriptMessage {
 export function writeDefinedText(objectId: number, textId: number, args?: string): ScriptMessage {
   if (args === undefined) return scripted(objectId, MessageType.DEFINEDTEXT1, new ArWriter().i32(textId));
   return scripted(objectId, MessageType.DEFINEDTEXT, new ArWriter().i32(textId).string(args));
+}
+
+/** SETQUEST: `CUser::AddSetQuest` (`WORLDSERVER/User.cpp:2337`), one QUEST for the player. */
+export function writeSetQuest(objectId: number, quest: OwnQuest): ScriptMessage {
+  return scripted(objectId, 0x00b0, writeQuest(new ArWriter(), quest));
+}
+
+/** REMOVEQUEST: `CUser::AddCancelQuest` (-1) and `AddRemoveQuest` (0) (`User.cpp:1466`, `:1477`). */
+export function writeRemoveQuest(objectId: number, kind: number, questId: number): ScriptMessage {
+  return scripted(objectId, 0x003a, new ArWriter().i32(kind).u32(questId));
+}
+
+/** QUEST_CHECKED: `CUser::AddCheckedQuest` (`User.cpp:8805`), the whole checked list. */
+export function writeQuestChecked(objectId: number, quests: readonly number[]): ScriptMessage {
+  const w = new ArWriter().u8(quests.length);
+  for (const id of quests) w.u16(id);
+  return scripted(objectId, 0x8820, w);
 }
 
 /** QUERYGETDESTOBJ: `CUser::AddQueryGetDestObj` (`WORLDSERVER/User.cpp:2348`). */
@@ -635,9 +652,16 @@ export function writeAddSelf(objectId: number, p: AddedMover): ScriptMessage {
     // m_nExp1, m_nSkillLevel, m_nSkillPoint, m_nDeathExp, m_nDeathLevel
     .i64(own.exp).i32(own.skillLevel).i32(own.skillPoint).i64(own.deathExp).i32(own.deathLevel);
   for (let i = 0; i < MAX_JOB; i++) w.u32(0); // dwJobLv
-  w.u32(0).vec3([0, 0, 0]) // m_idMarkingWorld, m_vMarkingPos
-    .u8(0).u8(0).u8(0) // no quests, no completed quests, no checked quests
-    .u32(0).i16(own.remainGP).i16(0); // m_idMurderer, (short)m_nRemainGP, (short)0
+  w.u32(0).vec3([0, 0, 0]); // m_idMarkingWorld, m_vMarkingPos
+  // m_aQuest, m_aCompleteQuest and m_aCheckedQuest behind their BYTE counts (ObjSerializeOpt.cpp:198-227)
+  const quests = own.quests ?? [];
+  w.u8(quests.length);
+  for (const quest of quests) writeQuest(w, quest);
+  for (const ids of [own.completedQuests ?? [], own.checkedQuests ?? []]) {
+    w.u8(ids.length);
+    for (const id of ids) w.u16(id);
+  }
+  w.u32(0).i16(own.remainGP).i16(0); // m_idMurderer, (short)m_nRemainGP, (short)0
   for (const id of player.equipmentObjectIds) w.u32(id); // m_aEquipInfo[i].dwId
   for (const slot of own.skills) w.u32(slot.skill).u32(slot.level); // m_aJobSkill[i]: dwSkill, dwLevel
   w.u8(0).u32(0) // (BYTE)m_nCheerPoint, m_dwTickCheer - GetTickCount()

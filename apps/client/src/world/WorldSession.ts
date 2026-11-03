@@ -6,6 +6,7 @@ import {
   encodeSkillTaskBar, encodeUseSkill, encodeWorldKeepAlive, readBundle,
   encodeUseItem, encodeEquipItem, encodeMoveItem, encodeDropItem, encodeRevival, encodeChat,
   encodeNpcDialog, encodeNpcDialogOpen, encodeOpenShop, encodeCloseShop, encodeBuyItem, encodeSellItem, encodeTeleporter,
+  encodeQuestCheck, encodeRemoveQuest,
 } from '@flyffweb/protocol';
 import type { BundleMessage, BundleResult, MoveReport, Shortcut, SkillSlot, Vec3, WorldMessage } from '@flyffweb/protocol';
 import { UNEXPECTED_PROBLEM, closeText, errorText } from '../lobby/errorText';
@@ -101,6 +102,8 @@ export class WorldSession {
   sendNpcDialog(id: number, key: string, param: number, quest: number, playerId: number): void {
     this.playingCache()?.send(encodeNpcDialog(id, key, param, quest, playerId));
   }
+  sendRemoveQuest(questId: number): void { this.playingCache()?.send(encodeRemoveQuest(questId)); }
+  sendQuestCheck(questId: number, check: boolean): void { this.playingCache()?.send(encodeQuestCheck(questId, check)); }
   sendOpenShop(id: number): void { this.playingCache()?.send(encodeOpenShop(id)); }
   sendCloseShop(): void { this.playingCache()?.send(encodeCloseShop()); }
   sendBuyItem(tab: number, id: number, count: number, itemId: number): void { this.playingCache()?.send(encodeBuyItem(tab, id, count, itemId)); }

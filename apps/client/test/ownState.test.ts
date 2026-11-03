@@ -501,3 +501,66 @@ describe('OwnState.initStat (OnRunScriptFunc, FUNCTYPE_INITSTAT to INITINT, DPCl
     expect([own.stats, own.remainGP]).toEqual([{ str: 15, sta: 15, dex: 15, int: 15 }, 75]);
   });
 });
+
+describe('OwnState: the quests (CMover::SetQuest, MoverParam.cpp:3475-3577; OnRemoveQuest, DPClient.cpp:14633-14684)', () => {
+  const q = (id: number, extra: Partial<import('@flyffweb/protocol').OwnQuest> = {}) =>
+    ({ id, state: 0, time: 0, kills: [0, 0] as [number, number], patrol: false, dialog: false, ...extra });
+  const withQuests = (quests = [q(151, { kills: [3, 0] })], completedQuests = [40], checkedQuests = [151], repeats?: (id: number) => boolean) =>
+    new OwnState(ownGameData(), ownAdded(1, { ...newVagrantOwn(), quests, completedQuests, checkedQuests }), STARTER_EQUIPMENT, repeats);
+
+  it('a new OwnState takes the quests from ADD_OBJ', () => {
+    const own = withQuests();
+    expect([...own.quests.values()]).toEqual([q(151, { kills: [3, 0] })]);
+    expect([own.completedQuests, own.checkedQuests]).toEqual([[40], [151]]);
+    expect(newVagrant(1).quests.size).toBe(0);
+  });
+
+  it('SETQUEST adds a new quest (started), updates a known one (progress), and an ended one moves to completed and out of the checked list (ended)', () => {
+    const own = withQuests();
+    expect(own.apply({ type: 'setQuest', quest: q(83) }, OWN_ID)).toEqual([{ kind: 'quest', change: { kind: 'started', quest: q(83) } }]);
+    expect(own.apply({ type: 'setQuest', quest: q(151, { kills: [4, 0] }) }, OWN_ID)).toEqual([
+      { kind: 'quest', change: { kind: 'progress', before: q(151, { kills: [3, 0] }), after: q(151, { kills: [4, 0] }) } },
+    ]);
+    expect(own.quests.get(151)!.kills).toEqual([4, 0]);
+    expect(own.apply({ type: 'setQuest', quest: q(151, { state: 14 }) }, OWN_ID)).toEqual([
+      { kind: 'quest', change: { kind: 'ended', quest: q(151, { state: 14 }) } },
+    ]);
+    expect([own.quests.has(151), own.completedQuests, own.checkedQuests]).toEqual([false, [40, 151], []]);
+  });
+
+  it('a repeatable quest that ends is not added to completed', () => {
+    const own = withQuests(undefined, [], [], (id) => id === 151);
+    own.apply({ type: 'setQuest', quest: q(151, { state: 14 }) }, OWN_ID);
+    expect([own.quests.has(151), own.completedQuests]).toEqual([false, []]);
+  });
+
+  it('a quest already completed is refused', () => {
+    const own = withQuests();
+    expect(own.apply({ type: 'setQuest', quest: q(40) }, OWN_ID)).toEqual([]);
+    expect(own.quests.has(40)).toBe(false);
+  });
+
+  it('REMOVEQUEST -1 and 0 remove it from all three lists; 1 clears all; 2 clears completed', () => {
+    const own = withQuests([q(151), q(83)], [40, 83], [151, 83]);
+    expect(own.apply({ type: 'removeQuest', kind: -1, questId: 151 }, 0)).toEqual([{ kind: 'quest', change: { kind: 'removed', questId: 151, cancelled: true } }]);
+    expect(own.apply({ type: 'removeQuest', kind: 0, questId: 83 }, 0)).toEqual([{ kind: 'quest', change: { kind: 'removed', questId: 83, cancelled: false } }]);
+    expect([[...own.quests.keys()], own.completedQuests, own.checkedQuests]).toEqual([[], [40], []]);
+    const all = withQuests([q(151)], [40], [151]);
+    all.apply({ type: 'removeQuest', kind: 2, questId: 0 }, 0);
+    expect([all.quests.size, all.completedQuests]).toEqual([1, []]);
+    all.apply({ type: 'removeQuest', kind: 1, questId: 0 }, 0);
+    expect([all.quests.size, all.completedQuests, all.checkedQuests]).toEqual([0, [], []]);
+  });
+
+  it('QUEST_CHECKED replaces the checked list', () => {
+    const own = withQuests();
+    expect(own.apply({ type: 'questChecked', quests: [83, 151] }, 0)).toEqual([{ kind: 'quest', change: { kind: 'listsChanged' } }]);
+    expect(own.checkedQuests).toEqual([83, 151]);
+  });
+
+  it('QUEST_TEXT_TIME and QUESTHELPER_NPCPOS change nothing', () => {
+    const own = withQuests();
+    expect(own.apply({ type: 'questTextTime', flag: true, state: 1, ms: 60000 }, 0)).toEqual([]);
+    expect(own.apply({ type: 'questHelperNpcPos', pos: [1, 2, 3] }, 0)).toEqual([]);
+  });
+});

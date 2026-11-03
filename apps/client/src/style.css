@@ -1662,6 +1662,77 @@ fieldset:disabled .btn {
 .hud-inventory[data-mobile-window] .inventory-money { left: 98px; top: 232px; width: 116px; }
 .hud-inventory[data-mobile-window] .inventory-details { right: 12px; top: auto; bottom: 6px; width: min(320px, calc(100% - 44px)); }
 .hud-inventory[data-mobile-window] .inventory-details button { min-height: 40px; }
+
+/* The quest window and its detail (QuestWindow; APP_QUEST_EX_LIST, resdata.inc:4076, and APP_QUEST_EX_DETAIL, :2795):
+   the controls at their resdata places, the group titles in the theme's blue, the tree and the detail's areas black on
+   white, Verdana 9. The tabs are WndTabTile pictures as the shop's; a check box is a 14 px frame of ButtCheck.bmp; a
+   completed quest is grey (0xffc0c0c0, WndQuest.cpp:1422-1492). */
+.hud-quests, .hud-quest-detail { color: #000000; font: 12px/16px Verdana, Arial, sans-serif; }
+.quest-group, .quest-tabs, .quest-tree, .quest-filter, .quest-contents, .quest-conditions, .quest-rewards, .quest-confirm-text { position: absolute; box-sizing: border-box; }
+.quest-group { color: #2c5c8c; font-weight: bold; white-space: nowrap; }
+.quest-tabs { display: flex; }
+.quest-tab { flex: 1; min-width: 0; height: 20px; padding: 0 5px; border: 0; background-color: transparent; background-position: left top, right top, center top; background-size: 8px 20px, 8px 20px, calc(100% - 16px) 20px; background-repeat: no-repeat; color: #4b4666; font: 11px/20px Arial, sans-serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
+.quest-tab[aria-pressed=true] { color: #252039; }
+.quest-tree, .quest-contents, .quest-conditions, .quest-rewards { padding: 2px 4px; border: 1px solid #b3a59a; background: #ffffff; overflow-x: hidden; overflow-y: auto; touch-action: pan-y; overscroll-behavior: contain; scrollbar-width: thin; }
+.quest-tree > div { display: flex; align-items: center; min-height: 16px; white-space: nowrap; }
+.quest-folder, .quest-title, .quest-row { padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.quest-folder { display: flex; align-items: center; gap: 4px; }
+.quest-folder img { width: 8px; height: 9px; pointer-events: none; }
+.quest-check { position: relative; flex: none; width: 14px; height: 14px; margin-right: 4px; padding: 0; border: 0; background-color: transparent; background-repeat: no-repeat; cursor: pointer; }
+.quest-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.quest-leaf.completed { color: #c0c0c0; }
+.quest-leaf.selected .quest-title { background: #c8d8f0; }
+.quest-filter { padding: 0; font: 11px Verdana, Arial, sans-serif; }
+.quest-contents { white-space: pre-wrap; overflow-wrap: anywhere; }
+.quest-row { display: block; width: 100%; min-height: 16px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.quest-confirm-text { color: #000000; line-height: 14px; white-space: normal; }
+/* On a touch phone the list and the detail are one full-screen panel, as the inventory's: the list on the left, the
+   detail on the right, each laid out in a column whose areas scroll, the text 14 px; a finger gets 32 px rows */
+:is(.hud-quests, .hud-quest-detail)[data-mobile-window] { top: 8px !important; width: calc(50% - 12px) !important; height: calc(100% - var(--hud-taskbar-height, 48px) - 16px) !important; transform: none !important; z-index: 60 !important; border-radius: 6px; background: repeating-linear-gradient(#fdf5ee 0 2px, #f6e6dc 2px 4px); box-shadow: inset 0 0 0 2px #dba98c, 0 2px 8px #0005; font-size: 14px; line-height: 18px; }
+.hud-quests[data-mobile-window] { left: 8px !important; }
+.hud-quest-detail[data-mobile-window] { left: calc(50% + 4px) !important; }
+:is(.hud-quests, .hud-quest-detail)[data-mobile-window] > .hud-window-frame { display: none; }
+:is(.hud-quests, .hud-quest-detail)[data-mobile-window] > .hud-window-title { height: 28px !important; border-radius: 6px 6px 0 0; background: linear-gradient(#f7d8c4, #e2b394); box-shadow: 0 1px 2px #795431; }
+:is(.hud-quests, .hud-quest-detail)[data-mobile-window] > .hud-window-close { left: auto !important; right: 14px; }
+:is(.hud-quests, .hud-quest-detail)[data-mobile-window] > .hud-window-body { top: 34px !important; left: 6px !important; width: calc(100% - 12px) !important; height: calc(100% - 42px) !important; display: flex; flex-direction: column; gap: 4px; overflow: hidden !important; }
+:is(.hud-quests, .hud-quest-detail)[data-mobile-window] > .hud-window-body > * { position: relative !important; left: auto !important; top: auto !important; flex: none; }
+:is(.hud-quests, .hud-quest-detail)[data-mobile-window] :is(.quest-group, .quest-tabs, .quest-tree, .quest-filter, .quest-contents, .quest-conditions, .quest-rewards) { width: auto !important; height: auto !important; }
+:is(.hud-quests, .hud-quest-detail)[data-mobile-window] :is(.quest-tree, .quest-contents, .quest-conditions, .quest-rewards) { flex: 1 1 0; min-height: 0; }
+.hud-quests[data-mobile-window] > .hud-window-body { display: grid; grid-template: auto 22px minmax(0, 1fr) 32px / auto minmax(0, 1fr) auto; }
+.hud-quests[data-mobile-window] :is(.quest-group, .quest-tabs, .quest-tree) { grid-column: 1 / -1; }
+.hud-quests[data-mobile-window] :is(.quest-remove, .quest-close, .quest-filter) { align-self: center; }
+.hud-quests[data-mobile-window] .quest-filter { order: 1; min-height: 30px; font-size: 14px; }
+.hud-quests[data-mobile-window] .quest-close { order: 2; }
+.hud-quests[data-mobile-window] :is(.quest-remove, .quest-close)::before { content: ''; position: absolute; inset: -6px -2px; }
+.hud-quests[data-mobile-window] .quest-tree > div { min-height: 32px; }
+.hud-quests[data-mobile-window] .quest-check::before { content: ''; position: absolute; inset: -9px -6px; }
+.hud-quest-detail[data-mobile-window] .quest-row { min-height: 28px; }
+@media (max-width: 1000px) and (pointer: coarse) {
+  .world:has(.hud-quests[data-mobile-window]:not([hidden])) :is(.joystick, .hud-jump, .hud-attack, .hud-quest-tracker) { visibility: hidden; }
+}
+/* The quest tracker (QuestTracker; APP_QUEST_QUICK_INFO, resdata.inc:4055): at the right edge, 220 px down, 224 px wide
+   and as tall as its rows up to 544 px; no frame until hovered (plan decision 8). Titles yellow and rows white with a
+   dark shadow over the world; hovered, the frame shows and they turn (161,28,70) and (121,80,255); the one clicked last
+   red (WndQuestQuickInfo.cpp:236-243). */
+.hud-quest-tracker { position: absolute; right: 0; top: 220px; width: 224px; max-height: 544px; box-sizing: border-box; padding: 4px 6px; overflow-x: hidden; overflow-y: auto; border-radius: 4px; pointer-events: auto; touch-action: pan-y; overscroll-behavior: contain; scrollbar-width: none; font: 12px/16px Verdana, Arial, sans-serif; text-shadow: 1px 1px 1px #000, -1px -1px 1px #000, 1px -1px 1px #000, -1px 1px 1px #000; transition: background-color .2s; }
+.hud-quest-tracker[hidden] { display: none; }
+.tracker-title, .tracker-row { display: block; width: 100%; padding: 0; border: 0; background: none; font: inherit; text-align: left; text-shadow: inherit; cursor: pointer; overflow-wrap: anywhere; }
+.tracker-title { color: #ffff00; }
+.tracker-row { padding-left: 12px; color: #ffffff; }
+.tracker-row.met { color: #a0a0a0; }
+.tracker-title.selected, .tracker-row.selected { color: #ff0000; }
+@media (hover: hover) {
+  .hud-quest-tracker:hover { background: #fff6ebe6; box-shadow: inset 0 0 0 1px #d7ac8f; text-shadow: none; scrollbar-width: thin; }
+  .hud-quest-tracker:hover .tracker-title:not(.selected) { color: #a11c46; }
+  .hud-quest-tracker:hover .tracker-row:not(.selected, .met) { color: #7950ff; }
+}
+/* On a touch phone: under the top-right shortcuts, left of the attack and jump buttons, at most three quests tall and
+   scrolling, clear of the task bar; moved left with the Navigator as the shortcuts are */
+@media (max-width: 1000px) and (pointer: coarse) {
+  .hud-quest-tracker { top: calc(env(safe-area-inset-top, 0px) + 56px); right: calc(var(--game-safe-right, 0px) + 100px); width: 200px; max-height: min(162px, calc(100% - var(--hud-taskbar-height, 48px) - 72px)); font-size: 14px; line-height: 18px; scrollbar-width: thin; }
+  .tracker-title, .tracker-row { min-height: 18px; }
+  .world:has(.hud-navigator:not([hidden])) .hud-quest-tracker { right: calc(var(--game-safe-right, 0px) + 136px); }
+}
 .world-ground-items { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
 .world-ground-items button { position: absolute; pointer-events: auto; transform: translate(-50%, -50%); display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; background: none; color: #ffe59c; font-size: var(--drop-icon-size, 16px); touch-action: none; }
 .world-ground-items button img { width: var(--drop-icon-size, 16px); height: var(--drop-icon-size, 16px); object-fit: contain; pointer-events: none; filter: drop-shadow(0 1px 1px #3b240e); }
@@ -2029,6 +2100,11 @@ fieldset:disabled .btn {
 .hud-worldmap-monster.is-hovered .hud-worldmap-monster-picture { opacity: 1; }
 .hud-worldmap-arrow { position: absolute; width: 0; height: 0; pointer-events: none; }
 .hud-worldmap-arrow[hidden] { display: none; }
+/* The quest destination (WorldMap.drawMark; RenderDestinationPosition, WorldMap.cpp:1339-1375): ButtDestination.bmp at
+   0.6 of its 32 px, centred on the spot, its alpha running 0 to 255 and back at 800 a second */
+.hud-worldmap-destination { position: absolute; width: 19px; height: 19px; background: 0 0 / 100% 100% no-repeat; transform: translate(-50%, -50%); pointer-events: none; animation: worldmap-destination .32s linear infinite alternate; }
+.hud-worldmap-destination[hidden] { display: none; }
+@keyframes worldmap-destination { from { opacity: 0; } to { opacity: 1; } }
 .hud-worldmap-arrow-picture {
   position: absolute;
   left: -18px;

@@ -52,7 +52,10 @@ import type { Carried, DropTarget, LoadedBars, TaskBarEditActions } from './task
 import { TaskMenu } from './taskMenu';
 
 /** The windows of Piece 4 a press on the task bar opens. */
-export type TaskBarWindow = 'character' | 'status' | 'skills' | 'inventory' | 'chat' | 'navigator' | 'worldmap' | 'option';
+export type TaskBarWindow = 'character' | 'status' | 'skills' | 'inventory' | 'chat' | 'navigator' | 'worldmap' | 'option'
+  | 'quests';
+/** `APP_QUEST_EX_LIST` (Resource/ResData.h), the quest window (Piece 7 M1), Q (FuncApplet.cpp:229). */
+const APP_QUEST_EX_LIST = 859;
 
 /**
  * The applets whose window Piece 4 has, which `ObjectExecutor` opens (or closes) when they are pressed: from the Start
@@ -67,6 +70,7 @@ const WINDOWS: ReadonlyMap<number, TaskBarWindow> = new Map([
   [AppId.CHARACTER3, 'character'],
   [AppId.SKILL3, 'skills'],
   [AppId.OPTIONEX, 'option'],
+  [APP_QUEST_EX_LIST, 'quests'],
 ]);
 
 /**
@@ -89,6 +93,8 @@ const MENU: ReadonlyArray<{ id: number; text: string }> = [
   { id: AppId.CHARACTER3, text: 'Character' },
   { id: AppId.SKILL3, text: 'Skills' },
   { id: 1003, text: 'Inventory' },
+  // CWndTaskMenu's APP_QUEST_EX_LIST line, 'Quest Diary' (TID_APP_QUEST, WndTaskBar.cpp:2623)
+  { id: APP_QUEST_EX_LIST, text: 'Quest Diary' },
   // CWndTaskMenu's APP_MAP line, 'World Map' (TID_APP_MAP), just before Navigator (WndTaskBar.cpp:2734-2738)
   { id: AppId.MAP, text: 'World Map' },
   { id: AppId.NAVIGATOR, text: 'Navigator' },

@@ -1,7 +1,7 @@
 import { GAME_DATA_KEYS } from '@flyffweb/formats';
 import type { WebItemProp, WebJob } from '@flyffweb/formats';
-import { DstParam } from '@flyffweb/protocol';
-import type { AddedMover, InitStat, InventoryItem, SkillSlot, TaskBar, WorldMessage } from '@flyffweb/protocol';
+import { DstParam, QS_END } from '@flyffweb/protocol';
+import type { AddedMover, InitStat, InventoryItem, OwnQuest, SkillSlot, TaskBar, WorldMessage } from '@flyffweb/protocol';
 import { GameDataMissingError } from './gameData';
 import type { GameData } from './gameData';
 import { Parts, ownWorn } from './render/looks';
@@ -28,6 +28,7 @@ import type { Equipped, ParamAdjust, Stats } from './sim/params';
  *   the catalog stops before, as it stops the levels' reset (`return`, :14701-14702).
  * - `died`: MOVERDEATH, the HP is 0.
  * - `revived`: REVIVAL or REVIVAL_TO_LODESTAR.
+ * - `quest`: the quests changed (Piece 7 M1; see `QuestChange`).
  */
 export type OwnEvent =
   | { kind: 'levelUp'; from: number; to: number; chatLine: boolean }
@@ -37,7 +38,24 @@ export type OwnEvent =
   | { kind: 'skillPointUp' }
   | { kind: 'skillPointReset'; effect: boolean; chatLine: boolean }
   | { kind: 'died' }
-  | { kind: 'revived' };
+  | { kind: 'revived' }
+  | { kind: 'quest'; change: QuestChange };
+
+/**
+ * How a quest message changed the own quests (`CDPClient::OnSetQuest`, `DPClient.cpp:8444-8573`; `CMover::SetQuest`,
+ * `MoverParam.cpp:3475-3577`; `OnRemoveQuest`, `:14633-14684`; `OnCheckedQuest`, `:19245-19250`):
+ * - `started`: a new current quest (`BGM_EV_START`);
+ * - `progress`: a known quest that has not ended, `before` and `after` (the lines compare them);
+ * - `ended`: state 14, moved to the completed quests unless it repeats, and out of the checked ones (`BGM_EV_END`);
+ * - `removed`: REMOVEQUEST -1 (`cancelled`) or 0;
+ * - `listsChanged`: QUEST_CHECKED, or REMOVEQUEST 1 (all) or 2 (the completed list).
+ */
+export type QuestChange =
+  | { kind: 'started'; quest: OwnQuest }
+  | { kind: 'progress'; before: OwnQuest; after: OwnQuest }
+  | { kind: 'ended'; quest: OwnQuest }
+  | { kind: 'removed'; questId: number; cancelled: boolean }
+  | { kind: 'listsChanged' };
 
 /** `JTYPE_MASTER` and `JTYPE_HERO` (`Resource/defineJob.h:9-10`): the skills a reset of the skill points leaves. */
 const JTYPE_MASTER = 5;
@@ -131,6 +149,10 @@ export class OwnState {
   readonly inventoryError: string | null;
   /** The shortcut bars, once the TASKBAR message after the ADD_OBJ has come. */
   taskBar: TaskBar | null = null;
+  /** `m_aQuest` by id, `m_aCompleteQuest` and `m_aCheckedQuest` (copies). */
+  readonly quests: Map<number, OwnQuest>;
+  completedQuests: number[];
+  checkedQuests: number[];
   private worn: Equipped;
   private adjust: ParamAdjust;
 
@@ -138,8 +160,12 @@ export class OwnState {
    * `added` is the own ADD_OBJ (its HP is `m_nHitPoint`; its `player.own` the rest) and `equipment` the lobby's item IDs
    * of the character, which dress it (`ownWorn`) and make `equipped`. Throws when `added` is not the own character's, and
    * a `GameDataMissingError` when the job table has no row for its job: the game files are older than the server's.
+   * `repeats` tells a repeatable quest (the catalog's `repeat`), which an end never adds to the completed quests.
    */
-  constructor(private readonly data: GameData, added: AddedMover, equipment: readonly number[]) {
+  constructor(
+    private readonly data: GameData, added: AddedMover, equipment: readonly number[],
+    private readonly repeats: (questId: number) => boolean = () => false,
+  ) {
     const player = added.player;
     const own = player?.own;
     if (player === undefined || own === null || own === undefined) {
@@ -165,6 +191,9 @@ export class OwnState {
     this.inventory = own.inventory === null ? null : new Map(own.inventory.map((item) => [item.objectId, { ...item }]));
     this.inventoryError = own.inventoryError;
     this.gold = own.gold ?? 0;
+    this.quests = new Map((own.quests ?? []).map((quest) => [quest.id, { ...quest, kills: [...quest.kills] as [number, number] }]));
+    this.completedQuests = [...(own.completedQuests ?? [])];
+    this.checkedQuests = [...(own.checkedQuests ?? [])];
     // CWndInventory/RedoEquip(FALSE) reads m_Inventory.GetEquip(part), whose source is m_apIndex[42 + part].
     this.equipmentObjectIds = own.inventorySlots ? own.inventorySlots.slice(42, 73) : [...player.equipmentObjectIds];
     this.inventorySlots = own.inventorySlots ? [...own.inventorySlots] : Array.from({ length: 73 }, (_, i) =>
@@ -251,6 +280,15 @@ export class OwnState {
         // as they are (the task bar loads them anew only for another TASKBAR); a TASKBAR sets it again as it comes
         if (this.taskBar !== null) this.taskBar.actionPoint = message.actionPoint;
         return [];
+      // the quest messages that name no object (OnRemoveQuest, OnCheckedQuest, OnQuestTextTime, OnNPCPos)
+      case 'removeQuest':
+        return this.onRemoveQuest(message.kind, message.questId);
+      case 'questChecked':
+        this.checkedQuests = [...message.quests];
+        return [{ kind: 'quest', change: { kind: 'listsChanged' } }];
+      case 'questTextTime': // party quests; drawn only on internal servers (WndWorld.cpp:1137-1160)
+      case 'questHelperNpcPos': // the answer to a request V15 never sends
+        return [];
       default:
         break;
     }
@@ -299,6 +337,8 @@ export class OwnState {
       case 'setGrowthLearningPoint': // OnSetGrowthLearningPoint (:3531): m_nRemainGP = nRemainGP (:3540)
         this.remainGP = message.remainGP;
         return [];
+      case 'setQuest': // OnSetQuest (:8444): for the active mover
+        return this.onSetQuest(message.quest);
       case 'damage':
         this.onDamage(message.hit);
         return [];
@@ -423,6 +463,40 @@ export class OwnState {
     this.skillPoint = m.skillPoint;
     if (before < m.skillPoint) events.push({ kind: 'skillPointUp' });
     return events;
+  }
+
+  /**
+   * `CMover::SetQuest` (`MoverParam.cpp:3475-3577`): a quest already completed is refused; a new one is added; a known
+   * one is updated; one at state 14 leaves the current and checked quests and joins the completed ones unless it repeats.
+   */
+  private onSetQuest(quest: OwnQuest): OwnEvent[] {
+    if (this.completedQuests.includes(quest.id)) return [];
+    const copy: OwnQuest = { ...quest, kills: [...quest.kills] as [number, number] };
+    const before = this.quests.get(quest.id);
+    if (quest.state === QS_END) {
+      this.quests.delete(quest.id);
+      this.checkedQuests = this.checkedQuests.filter((id) => id !== quest.id);
+      if (!this.repeats(quest.id)) this.completedQuests.push(quest.id);
+      return [{ kind: 'quest', change: { kind: 'ended', quest: copy } }];
+    }
+    this.quests.set(quest.id, copy);
+    return [{ kind: 'quest', change: before === undefined ? { kind: 'started', quest: copy } : { kind: 'progress', before, after: copy } }];
+  }
+
+  /** `OnRemoveQuest` (`DPClient.cpp:14633-14684`): -1 cancelled, 0 removed, 1 every list, 2 the completed list. */
+  private onRemoveQuest(kind: number, questId: number): OwnEvent[] {
+    if (kind === 1 || kind === 2) {
+      this.completedQuests = [];
+      if (kind === 1) {
+        this.quests.clear();
+        this.checkedQuests = [];
+      }
+      return [{ kind: 'quest', change: { kind: 'listsChanged' } }];
+    }
+    this.quests.delete(questId);
+    this.completedQuests = this.completedQuests.filter((id) => id !== questId);
+    this.checkedQuests = this.checkedQuests.filter((id) => id !== questId);
+    return [{ kind: 'quest', change: { kind: 'removed', questId, cancelled: kind === -1 } }];
   }
 
   /**

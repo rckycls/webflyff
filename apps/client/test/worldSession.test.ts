@@ -170,6 +170,15 @@ describe('WorldSession, entering', () => {
     expect(r.u32()).toBe(7); expect(r.string(256)).toBe('Introduction');
     expect([r.i32(), r.i32(), r.i32(), r.i32()]).toEqual([0, 0, 7, 9000]); r.expectEnd();
   });
+  it('sends the abandon and the tick of a quest as Neuz does', async () => {
+    const { cache, session } = await playing();
+    session.sendRemoveQuest(151);
+    const remove = new ArReader(cache.sent.at(-1)!); remove.u32();
+    expect([remove.u32(), remove.u32()]).toEqual([0x00ff0026, 151]); remove.expectEnd();
+    session.sendQuestCheck(151, true);
+    const check = new ArReader(cache.sent.at(-1)!); check.u32();
+    expect([check.u32(), check.i32(), check.i32()]).toEqual([0x88100110, 151, 1]); check.expectEnd();
+  });
   it('waits 1 s after the cache channel opens, then sends PRE_JOIN', async () => {
     const { net, clock, login, cache, events } = await started();
     expect(net.targets).toEqual([LOGIN_SERVER, CACHE_SERVER]);

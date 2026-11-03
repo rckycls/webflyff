@@ -3,6 +3,7 @@ import type { MessageHeader } from '../bundle';
 import { ObjectType } from '../constants';
 import { readOwnAfterEquipment } from './own';
 import { readGroundItem } from './items';
+import { readQuest, readQuestIds } from './quest';
 import type { OwnNumbers } from './own';
 import type { AddedMover, AddedNpc, AddedPlayer, MessageOf, WornPart } from './types';
 
@@ -12,13 +13,6 @@ const MAX_HUMAN_PARTS = 31;
 const SM_MAX = 26;
 /** `MAX_JOB` (`Resource/defineJob.h:90`, `__VER >= 10`): the length of the unused `dwJobLv` array. */
 const MAX_JOB = 32;
-/**
- * `sizeof(QUEST)` (`tagQuest`, `_Common/Mover.h:261`), with VS2022 x86's default packing (no `#pragma pack` is in
- * force there): `BYTE m_nState` at 0, a pad byte, `WORD m_wTime` at 2, `WORD m_wId` at 4, `WORD m_nKillNPCNum[2]`
- * at 6 and 8, the eight one-bit `BYTE` fields `m_bPatrol` to `m_bReserve8` sharing the byte at 10, and a pad byte
- * to round the size to the struct's 2-byte alignment: 12 bytes.
- */
-const QUEST_SIZE = 12;
 /** The `nBufSize` that each `ReadString` of the reading side passes. */
 const NAME_BUFFER = 32; // m_szName, ObjSerializeOpt.cpp:424
 const CHARACTER_KEY_BUFFER = 32; // m_szCharacterKey, :692
@@ -178,9 +172,9 @@ function readOwnEquipment(
   r.bytes(4 * MAX_JOB); // dwJobLv[MAX_JOB], unused
   r.u32(); // m_idMarkingWorld
   r.vec3(); // m_vMarkingPos
-  r.bytes(QUEST_SIZE * r.u8()); // m_nQuestSize (BYTE), then m_aQuest
-  r.bytes(2 * r.u8()); // m_nCompleteQuestSize (BYTE), then m_aCompleteQuest (WORD)
-  r.bytes(2 * r.u8()); // m_nCheckedQuestSize (BYTE), then m_aCheckedQuest (WORD) (__VER >= 15)
+  const quests = Array.from({ length: r.u8() }, () => readQuest(r)); // m_nQuestSize (BYTE), then m_aQuest
+  const completedQuests = readQuestIds(r); // m_nCompleteQuestSize (BYTE), then m_aCompleteQuest (WORD)
+  const checkedQuests = readQuestIds(r); // m_nCheckedQuestSize (BYTE), then m_aCheckedQuest (WORD) (__VER >= 15)
   r.u32(); // m_idMurderer
   const remainGP = r.i16(); // n1, m_nRemainGP
   r.i16(); // n2, unused
@@ -188,7 +182,13 @@ function readOwnEquipment(
   for (let i = 0; i < MAX_HUMAN_PARTS; i++) equipmentObjectIds.push(r.u32()); // m_aEquipInfo[i].dwId
   return {
     equipmentObjectIds,
-    numbers: { ...stats, manaPoint, fatiguePoint, exp, skillLevel, skillPoint, deathExp, deathLevel, remainGP, ...(gold ? { gold } : {}) },
+    numbers: {
+      ...stats, manaPoint, fatiguePoint, exp, skillLevel, skillPoint, deathExp, deathLevel, remainGP, ...(gold ? { gold } : {}),
+      // like gold, only when there are some
+      ...(quests.length > 0 ? { quests } : {}),
+      ...(completedQuests.length > 0 ? { completedQuests } : {}),
+      ...(checkedQuests.length > 0 ? { checkedQuests } : {}),
+    },
   };
 }
 
