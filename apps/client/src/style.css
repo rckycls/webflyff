@@ -698,6 +698,135 @@ fieldset:disabled .btn {
   cursor: default;
 }
 
+/* The dialogue window (APP_DIALOG_EX, dialogWindow.ts) on its WndDialogEx.tga: Verdana 9 in black, lines of the font's
+   height + 6 (2DRender.cpp:491-566); the title in ARGB(255,128,0,64) drawn twice, 1 px apart; keys in ARGB(255,80,80,80),
+   the selected one ARGB(255,128,0,255), a hovered key or context word ARGB(255,16,16,255) and underlined; quest rows in
+   ARGB(255,64,64,64), hovered ARGB(255,255,128,0), a next-level row ARGB(255,170,170,170) (WndControl.cpp:1802-1924) */
+.hud-dialog {
+  color: #000000;
+  font-family: Verdana, Tahoma, sans-serif;
+  font-size: 12px;
+}
+
+.hud-dialog .dialog-picture,
+.hud-dialog .dialog-title,
+.hud-dialog .dialog-text,
+.hud-dialog .dialog-keys {
+  position: absolute;
+  box-sizing: border-box;
+}
+
+.hud-dialog .dialog-picture[hidden] {
+  display: none;
+}
+
+.hud-dialog .dialog-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: #800040;
+  font-weight: bold;
+  white-space: nowrap;
+}
+
+.hud-dialog .dialog-text {
+  line-height: 18px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  touch-action: pan-y;
+  scrollbar-width: thin;
+}
+
+.hud-dialog .dialog-link,
+.hud-dialog .dialog-key,
+.hud-dialog .dialog-quest-row {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  cursor: pointer;
+}
+
+.hud-dialog .dialog-link {
+  display: inline;
+  font-weight: bold;
+}
+
+.hud-dialog .dialog-link:hover,
+.hud-dialog .dialog-key:hover {
+  color: #1010ff !important;
+  text-decoration: underline;
+}
+
+.hud-dialog .dialog-answer-line {
+  margin-top: 18px;
+}
+
+.hud-dialog .dialog-keys {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  overflow: hidden;
+  line-height: 18px;
+}
+
+.hud-dialog .dialog-key {
+  padding: 0 8px;
+  color: #505050;
+  font-weight: bold;
+}
+
+.hud-dialog .dialog-key.selected {
+  color: #8000ff;
+}
+
+.hud-dialog .dialog-key-break {
+  flex-basis: 100%;
+  height: 0;
+}
+
+.hud-dialog .dialog-quest-list {
+  display: flex;
+  flex-direction: column;
+  padding: 3px;
+}
+
+.hud-dialog .dialog-quest-row {
+  display: flex;
+  align-items: center;
+  min-height: 17px;
+  color: #404040;
+  text-align: left;
+  white-space: normal;
+}
+
+.hud-dialog .dialog-quest-row img {
+  flex: none;
+  width: 17px;
+  height: 17px;
+}
+
+.hud-dialog .dialog-quest-row:hover {
+  color: #ff8000;
+}
+
+.hud-dialog .dialog-quest-row.invalid {
+  color: #aaaaaa;
+  cursor: default;
+}
+
+.hud-dialog[data-mobile-window] {
+  font-size: 14px;
+}
+
+.hud-dialog[data-mobile-window] .dialog-text {
+  line-height: 20px;
+}
+
 /* fingers: 32 px items on a 34 px pitch (plan decision 6) */
 @media (max-width: 1000px) and (pointer: coarse) {
   .hud-mover-menu-item {
