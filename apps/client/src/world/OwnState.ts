@@ -1,7 +1,7 @@
 import { GAME_DATA_KEYS } from '@flyffweb/formats';
 import type { WebItemProp, WebJob } from '@flyffweb/formats';
 import { DstParam } from '@flyffweb/protocol';
-import type { AddedMover, InventoryItem, SkillSlot, TaskBar, WorldMessage } from '@flyffweb/protocol';
+import type { AddedMover, InitStat, InventoryItem, SkillSlot, TaskBar, WorldMessage } from '@flyffweb/protocol';
 import { GameDataMissingError } from './gameData';
 import type { GameData } from './gameData';
 import { Parts, ownWorn } from './render/looks';
@@ -423,6 +423,16 @@ export class OwnState {
     this.skillPoint = m.skillPoint;
     if (before < m.skillPoint) events.push({ kind: 'skillPointUp' });
     return events;
+  }
+
+  /**
+   * An NPC's stat reset (`CDPClient::OnRunScriptFunc`, FUNCTYPE_INITSTAT to INITINT, `DPClient.cpp:14374-14431`): the
+   * stat it names, or all four, back to 15, and the stat points the message's (`m_nRemainGP`).
+   */
+  initStat(stat: InitStat, remainGP: number): OwnEvent[] {
+    this.stats = stat === 'all' ? { str: 15, sta: 15, dex: 15, int: 15 } : { ...this.stats, [stat]: 15 };
+    this.remainGP = remainGP;
+    return [{ kind: 'statsChanged' }];
   }
 
   /**

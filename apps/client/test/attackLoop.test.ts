@@ -951,3 +951,15 @@ describe('objRadius (CObj::GetRadius, Obj.cpp:781-791)', () => {
     expect(objRadius(box, 2)).toBe(f32(r * 2));
   });
 });
+
+describe('AttackLoop.walkTo: a press on an NPC out of the menu range (ShowMoverMenu, WndWorld.cpp:6707-6708)', () => {
+  it('walkTo sends one PLAYERSETDESTOBJ with range 0 and starts no attack', () => {
+    const r = rig();
+    r.loop.walkTo(MONSTER_ID);
+    expect(r.sent).toEqual([['destObj', MONSTER_ID, 0]]);
+    expect(r.loop.autoAttack).toBe(false);
+    r.steps(240);
+    expect(r.melee()).toEqual([]);
+    expect(r.sent.filter((s) => s[0] === 'destObj')).toHaveLength(1);
+  });
+});

@@ -411,6 +411,7 @@ const PACKED: Record<string, string> = {
     'IDS_CHARACTER_INC_000001\tMikyel',
     'IDS_CHARACTER_INC_000002\tLuda',
     'IDS_CHARACTER_INC_000003\tMikyel the Second',
+    'IDS_CHARACTER_INC_000004\tchar_Luda.tga',
   ),
   'character.inc': script(
     'MaFl_Mikyel',
@@ -424,6 +425,7 @@ const PACKED: Record<string, string> = {
     'MaFl_Luda',
     '{',
     '\tAddTeleport( 7161, 3264 );',
+    '\tSetImage( IDS_CHARACTER_INC_000004 );',
     '\tSetName ( IDS_CHARACTER_INC_000002 );',
     '}',
   ),
@@ -617,7 +619,7 @@ describe('the game-data stage', () => {
     // NPCs: file order over the three files; MAFL_MIKYEL of the second file replaces MaFl_Mikyel (same lower-case key)
     expect(await catalog<WebNpc[]>(run, GAME_DATA_KEYS.npcs)).toEqual([
       { key: 'MAFL_MIKYEL', name: 'Mikyel the Second' },
-      { key: 'MaFl_Luda', name: 'Luda', teleports: [{ x: 7161, z: 3264 }] },
+      { key: 'MaFl_Luda', name: 'Luda', teleports: [{ x: 7161, z: 3264 }], image: 'ui/char/char_luda.png' },
       { key: 'Sc_Guard', name: 'Guard' },
     ]);
 

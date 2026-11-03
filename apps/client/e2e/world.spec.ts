@@ -391,8 +391,14 @@ test.describe('the world screen against scripted servers', () => {
     expect(targetsOf(gateway)).toHaveLength(3);
     expect(destPosOf(gateway)).toEqual([]);
 
+    // the second tap re-opened Julia's menu (ShowMoverMenu runs again), which on a short phone covers that side of the
+    // screen: it closes first, and the focus stays
+    const menu = page.locator('.hud-mover-menu');
+    await expect(menu).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(menu).toBeHidden();
     // the ground walks (as Piece 3), and the focus stays
-    // Keep clear of the NPC menu and the composer's touch targets on a short phone.
+    // Keep clear of the composer's touch targets on a short phone.
     await tapWorld(page, isMobile ? 0.7 : 0.5, isMobile ? 0.65 : 0.8);
     await expect.poll(() => destPosOf(gateway).length, ON_FRAMES).toBe(1);
     await page.waitForTimeout(500);

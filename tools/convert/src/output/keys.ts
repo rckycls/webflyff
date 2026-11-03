@@ -25,6 +25,12 @@ export const iconKeyOf = (iconFile: string): string => `ui/${webName(stem(iconFi
  */
 export const itemIconKeyOf = (iconFile: string): string => `ui/item/${webName(stem(iconFile))}.png`;
 
+/**
+ * `ui/char/<web name>.png` of an NPC's dialogue picture (`m_szChar`, `char_Juria.tga`), as the UI stage writes the pictures
+ * of Client/Char, where CWndDialog loads them from (`MakePath( "char\\", m_szChar )`, WndDialog.cpp:294).
+ */
+export const charPictureKeyOf = (pictureFile: string): string => `ui/char/${webName(stem(pictureFile))}.png`;
+
 /** `models/<web name>.glb` of an `.o3d` file name, as the models stage writes it. */
 export const modelKeyOf = (o3dFile: string): string => `models/${webName(stem(o3dFile))}.glb`;
 

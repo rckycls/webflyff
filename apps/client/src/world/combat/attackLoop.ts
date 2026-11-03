@@ -398,6 +398,17 @@ export class AttackLoop {
   }
 
   /**
+   * A press on an NPC farther than the menu's range (`CWndWorld::ShowMoverMenu`, `WndWorld.cpp:6707-6708`):
+   * `g_pPlayer->SetDestObj( pTarget )`, range 0, with no command, so nothing opens on arrival (`MoverMove.cpp:256-259`).
+   */
+  walkTo(objectId: number): void {
+    const own = this.world.self();
+    if (own === undefined) return;
+    this.stop('move');
+    this.setDestObj(own, objectId, 0);
+  }
+
+  /**
    * `m_bAutoAttack = TRUE` as a skill begins (`CDPClient::OnUseSkill`, `Neuz/DPClient.cpp:3912-3943`;
    * `CWndWorld::UseSkillToFocusObj`, `WndWorld.cpp:6280-6292`): the skill use asks it, which tests the hand and the skill.
    */

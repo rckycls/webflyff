@@ -490,3 +490,14 @@ describe('messages that are not about the own character', () => {
     expect(snapshot(own)).toEqual(before);
   });
 });
+
+describe('OwnState.initStat (OnRunScriptFunc, FUNCTYPE_INITSTAT to INITINT, DPClient.cpp:14374-14431)', () => {
+  it('INITSTAT sets all four stats to 15; INITSTR only strength; both set the stat points', () => {
+    const own = newVagrant(1);
+    own.apply(setState(20, 30, 40, 50, 0), OWN_ID);
+    expect(own.initStat('str', 5)).toEqual([{ kind: 'statsChanged' }]);
+    expect([own.stats, own.remainGP]).toEqual([{ str: 15, sta: 30, dex: 40, int: 50 }, 5]);
+    own.initStat('all', 75);
+    expect([own.stats, own.remainGP]).toEqual([{ str: 15, sta: 15, dex: 15, int: 15 }, 75]);
+  });
+});

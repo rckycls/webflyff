@@ -27,6 +27,11 @@ export interface CharacterDef {
   teleports?: Array<{ x: number; z: number }>;
   /** `SetMusic( bgm )`: `m_dwMusicId`, the track its dialog plays (WndDialog.cpp:290-297), when it names one. */
   music?: number;
+  /**
+   * `SetImage( image );` or `m_szChar = ( image );`: `m_szChar`, the picture of `Client/Char` the dialogue shows
+   * (Project.cpp:2995-3021, WndDialog.cpp:294), the last one in the block; none when the text is empty.
+   */
+  image?: string;
   /** The first token of the block as written (`CHARACTER::m_szKey`; the C++ looks characters up in lower case). */
   key: string;
   /** `m_strName`: the text of `SetName ( IDS_... )` or `m_szName = ...`, the last one in the block; '' if none. */
@@ -45,10 +50,8 @@ const STATEMENTS: ReadonlyMap<string, string> = new Map([
   ['SetFigure', 'tntntntn'], // ( mover , hair mesh , hair colour , head mesh
   ['SetMusic', 'tn'], // ( bgm
   ['m_nStructure', 'tn'], // = structure
-  ['m_szChar', 'tl'], // = ( image ) ;  (the C++ reads GetLangScript after one token)
   ['m_szDialog', 'tt'], // = "file"
   ['m_szDlgQuest', 'tt'], // = "file"
-  ['SetImage', 'tl'], // ( image ) ;
   ['AddMenuLang', 'tntntnt'], // ( lang , sublang , menu )
   ['AddMenu', 'tnt'], // ( menu )
   ['AddVenderSlot', 'tnttt'], // ( slot , "name" )
@@ -123,6 +126,14 @@ export function readCharacterInc(
         }
         case 'm_szDialog':
           r.token(); character.dialogFile = r.token('dialogue file').text; break;
+        case 'm_szChar': // = ( image ) ;  (the C++ reads GetLangScript after one token)
+        case 'SetImage': { // ( image ) ;
+          r.token();
+          const image = langScript().trim();
+          if (image !== '') character.image = image;
+          else delete character.image;
+          break;
+        }
         case 'SetVenderType':
           r.token(); character.vendorType = r.number('vendor type'); r.token(); break;
         case 'SetMusic': { // ( bgm: m_dwMusicId = GetNumber (Project.cpp:2983-2987)

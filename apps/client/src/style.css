@@ -651,6 +651,209 @@ fieldset:disabled .btn {
   position: absolute;
 }
 
+/* The NPC's mover menu (CWndMenu, WndControl.cpp:3337-3630; moverMenu.ts): a 3 px frame of ARGB(255,226,198,181), white
+   inside, 10 + 22 px per item tall; items 20 px on a 22 px pitch from (2, 2), as wide as the widest text + 60, the text
+   24 px in, black; a hovered item gets ARGB(155,200,200,200) and a round outline of ARGB(255,240,240,240). Verdana 9. */
+.hud-mover-menu {
+  position: absolute;
+  z-index: 30;
+  display: inline-flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  border: 3px solid #e2c6b5;
+  padding: 2px 0 0;
+  background: #ffffff;
+  pointer-events: auto;
+  touch-action: none;
+  font: 12px Verdana, Tahoma, sans-serif;
+}
+
+.hud-mover-menu[hidden] {
+  display: none;
+}
+
+.hud-mover-menu-item {
+  box-sizing: border-box;
+  height: 20px;
+  margin: 0 0 2px 2px;
+  padding: 0 36px 0 24px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: #000000;
+  font: inherit;
+  line-height: 18px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.hud-mover-menu-item:not(:disabled):hover {
+  border-color: #f0f0f0;
+  background: rgba(200, 200, 200, 0.61);
+}
+
+.hud-mover-menu-item:disabled {
+  color: #8c8c8c;
+  cursor: default;
+}
+
+/* The dialogue window (APP_DIALOG_EX, dialogWindow.ts) on its WndDialogEx.tga: Verdana 9 in black, lines of the font's
+   height + 6 (2DRender.cpp:491-566); the title in ARGB(255,128,0,64) drawn twice, 1 px apart; keys in ARGB(255,80,80,80),
+   the selected one ARGB(255,128,0,255), a hovered key or context word ARGB(255,16,16,255) and underlined; quest rows in
+   ARGB(255,64,64,64), hovered ARGB(255,255,128,0), a next-level row ARGB(255,170,170,170) (WndControl.cpp:1802-1924) */
+.hud-dialog {
+  color: #000000;
+  font-family: Verdana, Tahoma, sans-serif;
+  font-size: 12px;
+}
+
+.hud-dialog .dialog-picture,
+.hud-dialog .dialog-title,
+.hud-dialog .dialog-text,
+.hud-dialog .dialog-keys {
+  position: absolute;
+  box-sizing: border-box;
+}
+
+.hud-dialog .dialog-picture[hidden] {
+  display: none;
+}
+
+.hud-dialog .dialog-title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  color: #800040;
+  font-weight: bold;
+  white-space: nowrap;
+}
+
+.hud-dialog .dialog-text {
+  line-height: 18px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  touch-action: pan-y;
+  scrollbar-width: thin;
+}
+
+.hud-dialog .dialog-link,
+.hud-dialog .dialog-key,
+.hud-dialog .dialog-quest-row {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: inherit;
+  cursor: pointer;
+}
+
+.hud-dialog .dialog-link {
+  display: inline;
+  font-weight: bold;
+}
+
+.hud-dialog .dialog-link:hover,
+.hud-dialog .dialog-key:hover {
+  color: #1010ff !important;
+  text-decoration: underline;
+}
+
+.hud-dialog .dialog-answer-line {
+  margin-top: 18px;
+}
+
+.hud-dialog .dialog-keys {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  overflow-x: hidden;
+  touch-action: pan-y;
+  scrollbar-width: thin;
+  line-height: 18px;
+}
+
+.hud-dialog .dialog-key {
+  padding: 0 8px;
+  color: #505050;
+  font-weight: bold;
+}
+
+.hud-dialog .dialog-key.selected {
+  color: #8000ff;
+}
+
+.hud-dialog .dialog-key-break {
+  flex-basis: 100%;
+  height: 0;
+}
+
+.hud-dialog .dialog-quest-list {
+  display: flex;
+  flex-direction: column;
+  padding: 3px;
+}
+
+.hud-dialog .dialog-quest-row {
+  display: flex;
+  align-items: center;
+  min-height: 17px;
+  color: #404040;
+  text-align: left;
+  white-space: normal;
+}
+
+.hud-dialog .dialog-quest-row img {
+  flex: none;
+  width: 17px;
+  height: 17px;
+}
+
+.hud-dialog .dialog-quest-row:hover {
+  color: #ff8000;
+}
+
+.hud-dialog .dialog-quest-row.invalid {
+  color: #aaaaaa;
+  cursor: default;
+}
+
+.hud-dialog[data-mobile-window] {
+  font-size: 14px;
+}
+
+.hud-dialog[data-mobile-window] .dialog-text {
+  line-height: 20px;
+}
+
+/* fingers (spec §3.1): taller keys and quest rows, and the next-page and answer buttons hit 8 px round their pictures */
+.hud-dialog[data-mobile-window] .dialog-keys {
+  line-height: 26px;
+}
+
+.hud-dialog[data-mobile-window] .dialog-quest-row {
+  min-height: 28px;
+}
+
+.hud-dialog[data-mobile-window] .dialog-enter::before,
+.hud-dialog[data-mobile-window] .dialog-answers > button::before {
+  content: '';
+  position: absolute;
+  inset: -8px;
+}
+
+/* fingers: 32 px items on a 34 px pitch (plan decision 6) */
+@media (max-width: 1000px) and (pointer: coarse) {
+  .hud-mover-menu-item {
+    height: 32px;
+    font-size: 14px;
+    line-height: 30px;
+  }
+}
+
 /* A window taller than the room above the task bar (WindowFrame.fit): cut to that room, its client area scrolls, with a
    finger (the world's touch-action is none, so this area says its own), the wheel or a thin scroll bar; a scroll that
    reaches the end goes no further */
@@ -1548,11 +1751,9 @@ fieldset:disabled .btn {
   .hud-chat button, .hud-chat select, .hud-chat input { min-height: 34px; }
   .chat-transcript { max-height: 90px; }
 }
-.hud-npc > .hud-window-body, .hud-shop > .hud-window-body { box-sizing: border-box; padding: 10px; color: #3b2a20; }
-.npc-menu, .npc-dialog-keys, .shop-controls, .shop-tabs { display: flex; gap: 5px; flex-wrap: wrap; margin: 5px 0; }
-.npc-dialog-text { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 130px; overflow-y: auto; margin: 12px 0; }
-.npc-dialog-keys { max-height: 95px; overflow-y: auto; }
-.hud-npc button, .hud-shop button { min-height: 28px; }
+.hud-shop > .hud-window-body { box-sizing: border-box; padding: 10px; color: #3b2a20; }
+.shop-controls, .shop-tabs { display: flex; gap: 5px; flex-wrap: wrap; margin: 5px 0; }
+.hud-shop button { min-height: 28px; }
 .shop-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 6px; }
 .shop-items { height: 225px; overflow-y: auto; touch-action: pan-y; }
 .shop-items button { display: flex; align-items: center; gap: 4px; text-align: left; width: 100%; margin-bottom: 3px; }
@@ -1567,7 +1768,7 @@ fieldset:disabled .btn {
 .shop-tabs button { flex: 1; min-width: 0; padding: 3px; font-size: 11px; }
 .hud-shop .shop-controls, .hud-shop .shop-feedback { flex-shrink: 0; margin: 0; }
 @media (pointer: coarse) {
-  .hud-shop button, .hud-npc button { min-height: 36px; }
+  .hud-shop button { min-height: 36px; }
   .hud-shop { width: min(460px, calc(100vw - 24px)) !important; height: min(350px, calc(100dvh - 62px)) !important; font-size: 14px; background: #fff5ea; }
   .hud-shop > .hud-window-body { width: calc(100% - 12px) !important; height: calc(100% - 32px) !important; }
   .hud-shop .hud-window-close { left: auto !important; right: 7px; }
@@ -1703,16 +1904,6 @@ fieldset:disabled .btn {
 .hud-shop .shop-controls button:active { background: linear-gradient(#64ffff, #009696c8, #00000032); }
 .hud-shop .classic-shop-edit { border: 0; border-radius: 0; padding: 2px 5px; background-color: transparent; background-repeat: no-repeat; background-position: left top,right top,left bottom,right bottom,center top,center bottom,left center,right center,center; background-size: 8px 10px,8px 10px,8px 10px,8px 10px,calc(100% - 16px) 10px,calc(100% - 16px) 10px,8px calc(100% - 16px),8px calc(100% - 16px),calc(100% - 16px) calc(100% - 16px); color: #2f2822; font: 12px Arial, sans-serif; }
 .hud-shop .shop-price output { border: 0; border-radius: 0; background-color: transparent; }
-/* A compact world-anchored NPC menu, without a window frame or caption. */
-.hud-npc { width: 140px !important; height: auto !important; min-height: 0; transform: none !important; background: #fffdf8; border: 1px solid #aaa28e; border-radius: 0; box-shadow: 1px 2px 3px #0004; color: #29251f; text-shadow: none; }
-.hud-npc > .hud-window-frame, .hud-npc > .hud-window-title, .hud-npc > .hud-window-close { display: none; }
-.hud-npc > .hud-window-body { position: relative; left: 0 !important; top: 0 !important; box-sizing: border-box; width: 100% !important; height: auto !important; padding: 4px; overflow: visible; }
-.hud-npc .npc-menu, .hud-npc .npc-dialog-keys { display: flex; flex-direction: column; gap: 0; margin: 0; max-height: 160px; overflow-y: auto; }
-.hud-npc button { display: block; width: 100%; min-height: 22px; border: 0; background: transparent; text-align: left; color: #29251f; font: 12px/18px Arial, sans-serif; padding: 2px 6px; }
-.hud-npc button:hover:not(:disabled) { background: #dfeafa; }
-.hud-npc button:disabled { color: #9b978e; }
-.hud-npc .npc-dialog-text { margin: 4px 6px; max-height: 70px; font: 12px/16px Arial, sans-serif; overflow-y: auto; }
-.hud-npc .npc-dialog-text:empty { display: none; }
 @media (max-width: 1000px) and (pointer: coarse) {
   .hud-shop .shop-stock-grid { grid-template-columns: repeat(auto-fill, minmax(28px, 1fr)); }
   .hud-shop .shop-stock-grid img { max-width: 100%; }

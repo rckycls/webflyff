@@ -154,6 +154,8 @@ export interface WebNpc {
   dialogFile?: string;
   vendorTabs?: Record<number, string>;
   vendorType?: number;
+  /** The dialogue's picture (`m_szChar`, WndDialog.cpp:294): its asset key, `ui/char/<web name>.png`. */
+  image?: string;
   /**
    * The key as the file writes it (`CHARACTER::m_szKey`). Neuz looks characters up by the lower-cased key
    * (CProject::GetCharacter, Project.h:1376), so look it up with `key.toLowerCase()`.

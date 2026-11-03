@@ -5,7 +5,7 @@ import {
   encodePlayerSetDestObj, encodePreJoin, encodeRemoveItemTaskBar, encodeRevivalToLodestar, encodeSetTarget,
   encodeSkillTaskBar, encodeUseSkill, encodeWorldKeepAlive, readBundle,
   encodeUseItem, encodeEquipItem, encodeMoveItem, encodeDropItem, encodeRevival, encodeChat,
-  encodeNpcDialog, encodeOpenShop, encodeCloseShop, encodeBuyItem, encodeSellItem, encodeTeleporter,
+  encodeNpcDialog, encodeNpcDialogOpen, encodeOpenShop, encodeCloseShop, encodeBuyItem, encodeSellItem, encodeTeleporter,
 } from '@flyffweb/protocol';
 import type { BundleMessage, BundleResult, MoveReport, Shortcut, SkillSlot, Vec3, WorldMessage } from '@flyffweb/protocol';
 import { UNEXPECTED_PROBLEM, closeText, errorText } from '../lobby/errorText';
@@ -97,7 +97,10 @@ function replacePosition(body: Uint8Array): Vec3 {
  */
 export class WorldSession {
   sendTeleporter(key: string, index: number): void { this.playingCache()?.send(encodeTeleporter(key, index)); }
-  sendNpcDialog(id: number, key: string, param = 0, quest = 0): void { this.playingCache()?.send(encodeNpcDialog(id, key, param, quest)); }
+  sendNpcDialogOpen(id: number): void { this.playingCache()?.send(encodeNpcDialogOpen(id)); }
+  sendNpcDialog(id: number, key: string, param: number, quest: number, playerId: number): void {
+    this.playingCache()?.send(encodeNpcDialog(id, key, param, quest, playerId));
+  }
   sendOpenShop(id: number): void { this.playingCache()?.send(encodeOpenShop(id)); }
   sendCloseShop(): void { this.playingCache()?.send(encodeCloseShop()); }
   sendBuyItem(tab: number, id: number, count: number, itemId: number): void { this.playingCache()?.send(encodeBuyItem(tab, id, count, itemId)); }
