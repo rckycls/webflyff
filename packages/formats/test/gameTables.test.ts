@@ -405,12 +405,26 @@ describe('readPropSkillAdd', () => {
 
   it('reads the row id and skill through the defines, the level, the MP and FP cost, the cool-down and the hit count, in file order', () => {
     const rows = readPropSkillAdd(FILE, DEFINES, new Map(), 'propSkillAdd.csv');
-    expect(rows).toEqual([
+    expect(rows.map(({ id, skill, level, reqMp, reqFp, cooldown, skillCount }) => (
+      { id, skill, level, reqMp, reqFp, cooldown, skillCount }
+    ))).toEqual([
       { id: 5, skill: 1, level: 1, reqMp: -1, reqFp: 5, cooldown: -1, skillCount: -1 },
       { id: 9, skill: 1, level: 5, reqMp: -1, reqFp: 8, cooldown: -1, skillCount: -1 },
       { id: 4000, skill: 70, level: 1, reqMp: 35, reqFp: -1, cooldown: 480000, skillCount: -1 },
       { id: 3000, skill: 200, level: 1, reqMp: -1, reqFp: 60, cooldown: -1, skillCount: 7 },
     ]);
+  });
+
+  it('reads the cast time, the pain, the length and the params a buff applies (Piece 7 M2)', () => {
+    const rows = readPropSkillAdd(FILE, DEFINES, new Map(), 'propSkillAdd.csv');
+    // Prevention: DST_AUTOHP, adjusted 10, changed 15; a 1000 ms cast; 600000 ms long
+    expect(rows[2]).toMatchObject({
+      castingTime: 1000, painTime: -1, skillTime: 600000, destParams: [111, -1], adjParams: [10, -1], chgParams: [15, -1],
+    });
+    expect(rows[3]).toMatchObject({ castingTime: 2000, skillTime: -1 });
+    expect(rows[0]).toMatchObject({
+      castingTime: -1, painTime: -1, skillTime: -1, destParams: [-1, -1], adjParams: [-1, -1], chgParams: [-1, -1],
+    });
   });
 
   it('gives a level with no cool-down the dwSkillReady of its skill (LoadPropAddSkill, Project.cpp:2587-2596), and leaves the others', () => {

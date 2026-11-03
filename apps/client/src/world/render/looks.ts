@@ -42,7 +42,7 @@ const ITEM_EXPIRED = 0x01;
 /** `PARTS_*` (`Resource/defineNeuz.h:24-61`): the slots of a body that the rules below (and the weapon sets) use. */
 export const Parts = {
   HEAD: 0, HAIR: 1, UPPER_BODY: 2, LOWER_BODY: 3, HAND: 4, FOOT: 5, CAP: 6, CLOAK: 8, LWEAPON: 9, RWEAPON: 10, SHIELD: 11,
-  HAT: 26, CLOTH: 27, GLOVE: 28, BOOTS: 29, CLOAK2: 30,
+  BULLET: 25, HAT: 26, CLOTH: 27, GLOVE: 28, BOOTS: 29, CLOAK2: 30,
 } as const;
 /** `IK3_KNUCKLEHAMMER`, `IK3_YOYO` and `IK3_BOW` (`Resource/defineItemkind.h:71,77,78`): the weapons held elsewhere. */
 const Ik3 = { KNUCKLEHAMMER: 5, YOYO: 11, BOW: 12 } as const;

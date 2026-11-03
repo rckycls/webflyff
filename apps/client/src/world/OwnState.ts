@@ -7,7 +7,7 @@ import type { GameData } from './gameData';
 import { Parts, ownWorn } from './render/looks';
 import { equipmentPart } from './items/equipment';
 import {
-  FISTS, effectiveStats, equipAdjust, expNeeded, expPercentText, maxFatiguePoint, maxHitPoint, maxManaPoint,
+  Dst, FISTS, effectiveStats, equipAdjust, expNeeded, expPercentText, maxFatiguePoint, maxHitPoint, maxManaPoint,
 } from './sim/params';
 import type { Equipped, ParamAdjust, Stats } from './sim/params';
 
@@ -39,7 +39,12 @@ export type OwnEvent =
   | { kind: 'skillPointReset'; effect: boolean; chatLine: boolean }
   | { kind: 'died' }
   | { kind: 'revived' }
-  | { kind: 'quest'; change: QuestChange };
+  | { kind: 'quest'; change: QuestChange }
+  /**
+   * Piece 7 M2: SET_JOB_SKILL changed the job (`OnSetChangeJob`, `DPClient.cpp:3600-3654`): the level-up effect and
+   * music, and the chat line `TID_EVE_CHGJOB` with the job's name (`title`, `GetJobString`).
+   */
+  | { kind: 'jobChanged'; job: number; title: string };
 
 /**
  * How a quest message changed the own quests (`CDPClient::OnSetQuest`, `DPClient.cpp:8444-8573`; `CMover::SetQuest`,
@@ -120,9 +125,10 @@ function wornBy(equipment: readonly number[], data: GameData): Equipped {
 export class OwnState {
   /** The own mover's object ID, which a message names its mover by. */
   readonly objectId: number;
-  readonly job: number;
+  /** `m_nJob`: SET_JOB_SKILL changes it (`changeJob`). */
+  job: number;
   /** The job's row of `propJob.inc`, which the formulas read, and its name (`title`, `GetJobString`). */
-  readonly jobProp: WebJob;
+  jobProp: WebJob;
   private levelNow: number;
   /** `m_nStr`, `m_nSta`, `m_nDex`, `m_nInt`: without the worn items and buffs. */
   stats: Stats;
@@ -155,6 +161,8 @@ export class OwnState {
   checkedQuests: number[];
   private worn: Equipped;
   private adjust: ParamAdjust;
+  /** Piece 7 M2: the live buffs' parameters (SETDESTPARAM less RESETDESTPARAM), by `DST_*`. */
+  private readonly buffAdjust = new Map<number, number>();
 
   /**
    * `added` is the own ADD_OBJ (its HP is `m_nHitPoint`; its `player.own` the rest) and `equipment` the lobby's item IDs
@@ -202,6 +210,30 @@ export class OwnState {
     this.adjust = equipAdjust(this.worn);
   }
 
+  /**
+   * `CDPClient::OnSetChangeJob` for `g_pPlayer` (`DPClient.cpp:3600-3621`): `m_nJob = nJob`, then all 45 slots of
+   * `m_aJobSkill` read from the message (the slots 3-44 it clears first are read over). The job's row comes with it, so
+   * the formulas follow; a job the table lacks is game files older than the server's, as at the start.
+   */
+  private changeJob(job: number, skills: readonly SkillSlot[]): OwnEvent[] {
+    const jobProp = this.data.jobs[job];
+    if (jobProp === undefined) throw new GameDataMissingError([`${GAME_DATA_KEYS.jobs} (job ${job})`]);
+    this.job = job;
+    this.jobProp = jobProp;
+    this.skills = skills.map((slot) => ({ ...slot }));
+    return [{ kind: 'jobChanged', job, title: jobProp.title }];
+  }
+
+  /**
+   * Piece 7 M2: the item in the arrow slot (`PARTS_BULLET`, `GetEquipItem`), read from the inventory as it is now: null
+   * for an empty slot, and once UPDATE_ITEM has spent the stack to 0 (`CMover::ArrowDown`, `Mover.cpp:8504-8549`).
+   */
+  bullet(): WebItemProp | null {
+    const id = this.equipmentObjectIds[Parts.BULLET];
+    const item = id === undefined ? undefined : this.inventory?.get(id);
+    return item === undefined ? null : this.data.itemProps.get(item.itemId) ?? null;
+  }
+
   /** `m_nLevel`. */
   get level(): number {
     return this.levelNow;
@@ -214,7 +246,29 @@ export class OwnState {
 
   set equipped(worn: Equipped) {
     this.worn = worn;
-    this.adjust = equipAdjust(worn);
+    this.adjust = this.withBuffs(equipAdjust(worn));
+  }
+
+  /**
+   * Piece 7 M2: the worn items' parameters with the live buffs' over them (`m_adjParamAry`): what SETDESTPARAM added
+   * and RESETDESTPARAM took off. `DST_CHRSTATE` is bits (`SetDestParam`'s `|=`, `ResetDestParam`'s `&= ~`).
+   */
+  private withBuffs(base: ParamAdjust): ParamAdjust {
+    if (this.buffAdjust.size === 0) return base;
+    const all = new Map(base);
+    for (const [dst, value] of this.buffAdjust) {
+      all.set(dst, dst === Dst.CHRSTATE ? (all.get(dst) ?? 0) | value : (all.get(dst) ?? 0) + value);
+    }
+    return all;
+  }
+
+  /** Piece 7 M2: SETDESTPARAM, RESETDESTPARAM and RESETDESTPARAM_SYNC (`DPClient.cpp:3271-3305`) on the buff layer. */
+  private buffParam(dst: number, change: (value: number, base: number) => number): void {
+    const base = equipAdjust(this.worn).get(dst) ?? 0;
+    const value = change(this.buffAdjust.get(dst) ?? 0, base);
+    if (value === 0) this.buffAdjust.delete(dst);
+    else this.buffAdjust.set(dst, value);
+    this.adjust = this.withBuffs(equipAdjust(this.worn));
   }
 
   /** `m_adjParamAry` as the worn items fill it (`equipAdjust`): what the formulas' `GetParam` reads. */
@@ -294,6 +348,8 @@ export class OwnState {
     }
     if (objectId !== this.objectId) return [];
     switch (message.type) {
+      case 'setJobSkill':
+        return this.changeJob(message.job, message.skills);
       case 'createItem':
         if (message.itemType === 0 && this.inventory !== null) {
           for (const stack of message.stacks) {
@@ -329,6 +385,21 @@ export class OwnState {
         }
         return [];
       }
+      case 'setDestParam': // Piece 7 M2: SetDestParam( dst, adj, chg ); the chg (a value set) is left out
+        this.buffParam(message.dst, (v) => (message.dst === Dst.CHRSTATE ? v | message.adj : v + message.adj));
+        return [];
+      case 'resetDestParam':
+        // Only what the layer holds comes off: a buff from before this world's JOIN (its own ADD_OBJ's buffs are not
+        // read, plan Decisions 9) left nothing here, and its end must not take the numbers under the server's
+        this.buffParam(message.dst, (v) => {
+          if (message.dst === Dst.CHRSTATE) return v & ~message.adj;
+          if (Math.sign(v) !== Math.sign(message.adj)) return v;
+          return Math.abs(message.adj) >= Math.abs(v) ? 0 : v - message.adj;
+        });
+        return [];
+      case 'resetDestParamSync': // m_adjParamAry[DST_SPEED] = nTotal (MoverParam.cpp:2727-2750): the whole, items and all
+        this.buffParam(message.dst, (_v, base) => message.total - base);
+        return [];
       case 'setPointParam': // OnSetPointParam (DPClient.cpp:3303)
         this.setPointParam(message.param, message.value);
         return [];

@@ -1,6 +1,11 @@
-import { AttackFlag, DstParam } from '@flyffweb/protocol';
+import { AttackFlag, DstParam, NULL_ID } from '@flyffweb/protocol';
+import type { WebSkill } from '@flyffweb/formats';
 import type { AddedMover, AddedPlayer, Vec3, WorldMessage } from '@flyffweb/protocol';
 import type { ServerClock } from '../net/serverClock';
+import { sightBlocked } from './combat/lineOfSight';
+import type { MissileClass, MissileLaunch } from './combat/missiles';
+import { MoverBuffs } from './buffs';
+import type { OwnShots } from './combat/ownShots';
 import type { GameData } from './gameData';
 import { lodestarRate } from './OwnState';
 import type { OwnEvent, OwnState } from './OwnState';
@@ -8,9 +13,9 @@ import { Parts } from './render/looks';
 import { equipmentPart } from './items/equipment';
 import { ActionMover, getDegree, wrapAngle } from './sim/ActionMover';
 import type { Ground } from './sim/collision';
-import { ActMsg, Ext, Kt, ObjSta, ObjStaF, Si, Sut } from './sim/constants';
+import { ActMsg, Ext, Ik3, Kt, Mti, ObjSta, ObjStaF, Si, Sut } from './sim/constants';
 import {
-  applyDestPos, applyMotion, applyMoved, applyMoverCorr, clearDestObj, setDestAngle, setDestObj, stepMover,
+  applyDestPos, applyMotion, applyMoved, applyMoverCorr, buffedSpeed, clearDestObj, setDestAngle, setDestObj, stepMover,
 } from './sim/moverRules';
 import type { SimMover } from './sim/moverRules';
 import { Dst, FISTS, NO_ADJUST, attackSpeed, maxHitPoint, monsterMaxHitPoint } from './sim/params';
@@ -57,6 +62,15 @@ export type MoverKind = 'player' | 'monster' | 'npc';
 export interface Mover extends SimMover {
   kind: MoverKind;
   isSelf: boolean;
+  /**
+   * Piece 7 M2: `SetActParam( OBJACT_MAGIC_ATTACK / OBJACT_RANGE_ATTACK, id, power, idSfxHit )` (`MoverSkill.cpp:3250`,
+   * :3369) of the wand's or the bow's shot under way: its charge and the server's missile id (a monster's), which its hit
+   * frame reads (`OnAttackMagic`, `OnAttackRange`, `GetActParam`).
+   */
+  shot?: { targetId: number; power: number; sfxHitId: number; itemId?: number };
+  /** Piece 7 M2: the buffs on the mover (`m_buffs`), and its speed before `DST_SPEED` (`m_fSpeed` times its factor). */
+  buffs: MoverBuffs;
+  baseSpeed: number;
   /** The ADD_OBJ the mover came from: the model, the look and the worn parts are read from it. */
   added: AddedMover;
   /** `CMover::m_szName`: the player's own, the character's from `character.inc`, or the monster's from `propMover.txt`. '' where unknown. */
@@ -124,8 +138,17 @@ export type CombatEvent =
   | { kind: 'levelUp'; moverId: number }
   | { kind: 'text'; textId: number; args: string | null }
   | { kind: 'spawned'; moverId: number }
-  | { kind: 'skillHit'; casterId: number; targetId: number; skill: number; landed: boolean }
-  | { kind: 'sfxObj'; xi: number; pos: Vec3 | null; moverId: number | null };
+  | { kind: 'skillHit'; casterId: number; targetId: number; skill: number; landed: boolean; level?: number }
+  | { kind: 'sfxObj'; xi: number; pos: Vec3 | null; moverId: number | null }
+  /** Piece 7 M2: a job change, the own or another's: `XI_GEN_LEVEL_UP01` on the mover (`DPClient.cpp:3637`, `:3700`). */
+  | { kind: 'jobChanged'; moverId: number }
+  /** Piece 7 M2: a skill's cast effect (`dwSfxObj`) on its caster as the skill begins (`MoverSkill.cpp:993-996`). */
+  | { kind: 'cast'; casterId: number; xi: number }
+  /**
+   * Piece 7 M2: the mover's model lit in `color` (`m_SparkInfo`) from behind it, `AngleToVectorXZ( fromAngle, -1 )`: the
+   * white flash of a magic skill's shot (`MoverActEvent.cpp:655-664`). The cyan of a cast is the views' own, each step.
+   */
+  | { kind: 'tint'; moverId: number; color: Vec3; fromAngle: number };
 
 /**
  * What changed in view since the last `takeChanges`. A caller applies `removed` first, then `added`:
@@ -162,6 +185,60 @@ export function isLive(m: Mover): boolean {
  */
 function rightHandItem(player: AddedPlayer): number | null {
   return player.worn.find((w) => w.part === Parts.RWEAPON)?.itemId ?? null;
+}
+
+/** `WT_RANGE` and `WT_RANGE_BOW` (`Resource/defineAttribute.h:59-62`): the items `DoAttackRange` shoots with. */
+const WT_RANGE = 8;
+const WT_RANGE_BOW = 21;
+/** `XI_FIR_WAND01` and `XI_HIT_WAND01` (`Resource/defineObj.h`): the wand's missile with no prop, and its hit model. */
+const XI_FIR_WAND01 = 27;
+const XI_HIT_WAND01 = 22;
+/** `pSfx->SetScale` by the charge (`MoverActEvent.cpp:843-849`); 0 keeps the effect's own. */
+const WAND_SCALES: Readonly<Record<number, number>> = { 1: 1.2, 2: 1.7, 3: 2.5, 4: 2.5 };
+/**
+ * The missile classes of `CreateSfx`'s switch (`_Common/CreateObj.cpp:33-280`) that M2 flies: `CSfxItemWandAtk1` for
+ * `XI_FIR_WAND01`, `XI_ITEM_WAND_ATK1` and the monsters' `XI_NPC_RAN_SPITTL`, `_GAS`, `_MAGICBALL`, `_MAGICBLUE`,
+ * `_CARD` and `_CANNON`; `CSfxItemRangeAtk1` for `XI_ITEM_RANGE_ATK1` to `4`.
+ */
+const MISSILE_CLASSES: ReadonlyMap<number, MissileClass> = new Map([
+  [27, 'wand'], [100, 'wand'], [1600, 'wand'], [1601, 'wand'], [1602, 'wand'], [1604, 'wand'], [1605, 'wand'], [1607, 'wand'],
+  [112, 'arrow'], [113, 'arrow'], [114, 'arrow'], [115, 'arrow'],
+]);
+
+/**
+ * The class `CreateSfx` makes of `xi`, or null: any other is a plain `CSfx` (`default`, :279), which never reaches
+ * its target (no `DamageToTarget`), and is not made here.
+ */
+function missileClassOf(xi: number): MissileClass | null {
+  return MISSILE_CLASSES.get(xi) ?? null;
+}
+
+/**
+ * Piece 7 M2: the classes of `CreateShootSfx` (`_Common/CreateObj.cpp:432-540`) for a skill's `dwSfxObj2`: Junk Bow
+ * and Triple Shot's (536, 547), the bow skills' arrows (537-540), Sword Wind (269), Strong Wind (270), the straight
+ * four (Boomerang 264, Ice Missile 302, Lightning Ball 303, Spike Stone 304), Hot Air (265), Guillotine's wave (230);
+ * the wand's and the arrow's (`missileClassOf`); any other a `CSfxShoot` (`default`).
+ */
+const SKILL_MISSILE_CLASSES: ReadonlyMap<number, MissileClass> = new Map([
+  [536, 'junkBow'], [547, 'junkBow'], [537, 'skillArrow'], [538, 'skillArrow'], [539, 'skillArrow'], [540, 'skillArrow'],
+  [269, 'swordWind'], [270, 'strongWind'], [264, 'straight'], [302, 'straight'], [303, 'straight'], [304, 'straight'],
+  [265, 'hotAir'], [230, 'wave'],
+]);
+/**
+ * The hit models the classes load of their own (`m_SfxObj2.SetSfx`, `Sfx.cpp`): `XI_SKILL_MAG_*01_01`
+ * (`Resource/defineObj.h:720-726`); Guillotine's wave hits with its own effect again (`Sfx.cpp:3600-3606`).
+ */
+const SKILL_HIT_MODELS: ReadonlyMap<number, number> = new Map([
+  [270, 1736], [269, 1737], [264, 1738], [265, 1739], [302, 1740], [303, 1741], [304, 1742], [230, 230],
+]);
+
+function skillMissileClassOf(xi: number): MissileClass {
+  return SKILL_MISSILE_CLASSES.get(xi) ?? missileClassOf(xi) ?? 'shoot';
+}
+
+/** The hit effect of a missile: the wand class's own `XI_HIT_WAND01` (`Sfx.cpp:912-921`), else its `m_dwSfxHit`. */
+function hitXiOf(cls: MissileClass, sfxHit: number): number {
+  return cls === 'wand' ? XI_HIT_WAND01 : sfxHit;
 }
 
 /**
@@ -213,6 +290,17 @@ export class WorldState {
    * `ground` is the world the movers stand on and collide with (D3D coordinates); `numbers` the own character's numbers,
    * when the world screen has them, which the messages about it change.
    */
+  /**
+   * Piece 7 M2: where the missiles the movers make go (`Missiles`, the world screen's); none, none made. And where a
+   * mover's hand is now (`CModelObject::GetHandPos`, `ModelObject.cpp:2388+`), from its model; null with no model.
+   */
+  missiles: { launch(launch: MissileLaunch): number } | null = null;
+  /** Piece 7 M2: the steps run, the buffs' clock (`nowMs`). */
+  private steps = 0;
+  handOf: (moverId: number, hand: 'right' | 'left') => Vec3 | null = () => null;
+  /** Piece 7 M2: the own missiles' ids and their SFX_ID (`OwnShots`, the world screen's); none, none sent. */
+  shots: Pick<OwnShots, 'register'> | null = null;
+
   constructor(
     private readonly data: GameData,
     private readonly clock: ServerClock,
@@ -334,6 +422,41 @@ export class WorldState {
       case 'setPosAngle':
         this.setPosAngle(m, message.pos, message.angle);
         break;
+      case 'setSkillState': { // OnSetSkillState (:14158-14181): AddBuff on the target, its stats the server's to send
+        const target = this.byId.get(message.targetId);
+        target?.buffs.add(message.buffType, message.id, message.level, message.time, this.nowMs());
+        break;
+      }
+      case 'removeSkillInfluence': // :14993-15003
+        m.buffs.remove(message.buffType, message.id);
+        break;
+      case 'removeAllSkillInfluence': // :15005-15010
+        m.buffs.removeCommon();
+        break;
+      case 'setDestParam': // :3271-3305: the own numbers' buff layer; DST_SPEED the own run
+      case 'resetDestParam':
+      case 'resetDestParamSync':
+        if (this.numbersOf(m) === undefined) break;
+        this.toOwn(message, objectId);
+        if (message.dst === Dst.SPEED) m.act.body.speed = buffedSpeed(m.baseSpeed, this.numbers?.adj.get(Dst.SPEED) ?? 0);
+        break;
+      case 'magicAttack':
+        // OnMagicAttack (:3841-3857): DoAttackMagic, or kept for the end of the attack under way (busy, 0)
+        if (m.isSelf) break; // the own shots are the attack loop's
+        if (this.doAttackMagic(m, message.targetId, message.power) === 0) {
+          m.act.keepMagicAttack({ ...message, msg: message.message });
+        }
+        break;
+      case 'rangeAttack':
+        // OnRangeAttack (:3859-3880): DoAttackRange with nParam2 as the item (a player's charge), or kept as ( 1, item )
+        if (m.isSelf) break;
+        if (this.doAttackRange(m, message.targetId, message.param2, message.sfxHitId) === 0) {
+          m.act.keepMagicAttack({ msg: message.message, targetId: message.targetId, param2: 1, param3: message.param2, power: 0, sfxHitId: message.sfxHitId });
+        }
+        break;
+      case 'createSfxAllow':
+        this.createSfxAllow(m, message.arrowXi, message.hitXi, message.targetId);
+        break;
       case 'meleeAttack':
         // OnMeleeAttack (:3802-3815): the swing now, or kept for the end of the one under way (`meleeAttack`)
         if (m.act.meleeAttack(message.message, message.targetId, message.param2, message.param3)) {
@@ -371,6 +494,14 @@ export class WorldState {
       case 'useSkill': // OnUseSkill (:3894-3950)
         this.onUseSkill(m.objectId, message, this.doUseSkill(m, message));
         break;
+      case 'setJobSkill': // OnSetChangeJob (:3600-3654): the own character's
+        if (this.numbersOf(m) === undefined) break;
+        this.toOwn(message, objectId);
+        this.jobChanged(m);
+        break;
+      case 'setNearJobSkill': // OnSetNearChangeJob (:3680-3703): another player's
+        this.setNearJob(m, message.job);
+        break;
       // addOther, environmentSetting, worldReadInfo, replace, queryGetDestObj: not kept here; clearUseSkill and
       // endSkillQueue are the own skill use's (`SkillUse`)
       default:
@@ -386,10 +517,26 @@ export class WorldState {
    * (`ActionMoverCollision.cpp:193`).
    */
   step(): void {
+    this.steps++;
+    const now = this.nowMs();
     for (const m of this.byId.values()) {
+      m.buffs.step(now);
       if (m.act.stateFlag & ObjStaF.FLY || m.flying) continue;
       stepMover(m, this.find, this.ground);
     }
+  }
+
+  /** Piece 7 M2: the world's own clock, ms, from its steps (60 a second): the buffs' times run on it. */
+  nowMs(): number {
+    return (this.steps * 1000) / 60;
+  }
+
+  /** Piece 7 M2: the buffs of another mover's ADD_OBJ, with the time each has left (`CBuffMgr::Serialize`). */
+  private buffsOf(added: AddedMover): MoverBuffs {
+    const buffs = new MoverBuffs();
+    const now = this.nowMs();
+    for (const b of added.buffs ?? []) buffs.add(b.buffType, b.id, b.level, b.timeLeft, now);
+    return buffs;
   }
 
   /** The changes since the last call (see `WorldChanges`). */
@@ -486,6 +633,7 @@ export class WorldState {
     const level = added.isPlayer ? added.player?.level ?? 1 : Math.max(prop?.level ?? 1, 1);
     const mover: Mover = {
       objectId, act, dest: null, corr: null, speedFactor, isSelf, kind, added, name, flying: prop?.flying === true,
+      buffs: this.buffsOf(added), baseSpeed: speed,
       hp: added.hitPoint, level, maxHp: this.maxHpOf(added, level),
     };
     const numbers = this.numbers;
@@ -502,6 +650,17 @@ export class WorldState {
     if (isSelf) act.jumpBonus = () => this.numbers?.adj.get(Dst.JUMPING) ?? 0;
     act.onHit = () => this.onAttackMelee(mover);
     act.onMeleeSkill = () => this.onMeleeSkill(mover);
+    act.onAttackQuake = () => this.onAttackQuake(mover);
+    act.onMagicSkill = () => this.onMagicSkill(mover);
+    act.skillCountOf = (skill, level) => this.data.skills.get(skill)?.levels[level - 1]?.skillCount ?? 0;
+    // GetCastingAniSpeed (MoverAttack.cpp:195-203): the own spell rate; another player's is not known (1)
+    if (isSelf) act.castingSpeed = () => Math.min(2, Math.max(0.1, Math.fround(1 + (this.numbers?.adj.get(Dst.SPELL_RATE) ?? 0) / 100)));
+    act.onAttackMagic = () => this.onAttackMagic(mover);
+    act.onAttackRange = () => this.onAttackRange(mover);
+    // CMagicAtkMsgq::Process (ActionMover.cpp:59-93): nParam2 0 is the wand's, else the bow's with its dwItemID
+    act.doKeptMagicAttack = (kept) => (kept.param2 === 0
+      ? this.doAttackMagic(mover, kept.targetId, kept.power)
+      : this.doAttackRange(mover, kept.targetId, kept.param3, kept.sfxHitId));
     if (added.isPlayer && !isSelf) act.attackSpeed = () => this.attackSpeedOf(mover);
     return mover;
   }
@@ -647,6 +806,27 @@ export class WorldState {
   }
 
   /**
+   * Piece 7 M2: what a job change shows on its mover, the own (`OnSetChangeJob`, `DPClient.cpp:3635-3637`) or another's
+   * (`OnSetNearChangeJob`, :3700-3703): `MTI_LEVELUP` once if it stands (`levelUpMotion`), and `XI_GEN_LEVEL_UP01` on it.
+   */
+  private jobChanged(m: Mover): void {
+    m.act.levelUpMotion();
+    this.combat({ kind: 'jobChanged', moverId: m.objectId });
+  }
+
+  /**
+   * `CDPClient::OnSetNearChangeJob` (`DPClient.cpp:3680-3703`) for another player in view: `m_nJob = nJob` (its skills
+   * are read and not kept: nothing of the browser reads another's), and the job change shown. Its maximum HP follows the
+   * new job's `fFactorMaxHP` (`GetMaxHitPoint`, which reads `m_nJob`); Neuz leaves the HP as it is.
+   */
+  private setNearJob(m: Mover, job: number): void {
+    if (this.numbersOf(m) !== undefined || m.added.player === undefined) return;
+    m.added.player.job = job;
+    m.maxHp = this.maxHpOf(m.added, m.level);
+    this.jobChanged(m);
+  }
+
+  /**
    * `CDPClient::OnRevivalLodestar` (`DPClient.cpp:3484-3513`, `__VER >= 9`): `ClearState`, then the HP at the level's
    * tenths of its max (`lodestarRate`, :3501), which for the own mover its numbers do. The SETPOINTPARAMs that follow set
    * it again.
@@ -679,6 +859,206 @@ export class WorldState {
       victim.act.pause(0);
     }
     this.combat({ kind: 'spark', moverId: attacker.objectId, fromId: victim.objectId });
+  }
+
+  /**
+   * Piece 7 M2: a player's quake frame (`_ProcessStateAttack`, `ActionMoverState.cpp:1040-1078`, every player on the
+   * client): with a yoyo in the hand (`GetActiveHandItemProp`) and its target in view, its `dwSfxObj2` thrown
+   * (`CreateSfxYoYo`, `CreateObj.cpp:380`) from the right hand on `MTI_ATK1` and the left on `MTI_ATK2`, at the target
+   * + 1 m (`MakePath`). With no hand to tell, it leaves from the thrower + 1 m (`vPosSrc`, :1058). Drawing only.
+   */
+  private onAttackQuake(m: Mover): void {
+    if (!m.added.isPlayer) return;
+    const item = this.handItemOf(m);
+    if (item?.kind3 !== Ik3.YOYO) return;
+    const target = m.act.targetId === null ? undefined : this.byId.get(m.act.targetId);
+    const xi = item.sfxMissile ?? -1;
+    if (target === undefined || xi === -1) return;
+    const hand = m.act.motion === Mti.ATK1 ? 'right' : m.act.motion === Mti.ATK2 ? 'left' : null;
+    if (hand === null) return;
+    const at = m.act.body.pos;
+    const to = target.act.body.pos;
+    this.missiles?.launch({
+      cls: 'yoyo', sourceId: m.objectId, targetId: target.objectId,
+      from: this.handOf(m.objectId, hand) ?? [at[0], Math.fround(at[1] + 1), at[2]],
+      flightXi: xi, hitXi: -1, scale: 1, report: null,
+      yoyo: { hand, sourceAt: at, dest: [to[0], Math.fround(to[1] + 1), to[2]] },
+    });
+  }
+
+  /**
+   * Piece 7 M2: `CMover::DoAttackMagic( pTarget, nMagicPower, idSfxHit )` (`MoverSkill.cpp:3201-3279`) of another
+   * mover: -1 for a target out of view, an empty right hand (every monster: no `m_aEquipInfo`), no wand, or a line of
+   * sight blocked half a metre up (dropped without the message, plan Decisions 5); else `OBJMSG_ATK_MAGIC1`'s answer,
+   * and one that started faces the target and keeps the charge for its hit frame (`SetActParam`). The idSfxHit is not
+   * kept: another player's wand never reports.
+   */
+  private doAttackMagic(m: Mover, targetId: number, power: number): number {
+    const target = this.byId.get(targetId);
+    if (target === undefined) return -1;
+    if (this.handItemOf(m)?.kind3 !== Ik3.WAND) return -1;
+    if (sightBlocked(this.ground, m.act.body.pos, target.act.body.pos)) return -1;
+    const error = m.act.actMsgError(ActMsg.ATK_MAGIC1, targetId);
+    if (error === 1) {
+      m.act.body.angle = wrapAngle(getDegree(target.act.body.pos, m.act.body.pos));
+      m.shot = { targetId, power, sfxHitId: 0 };
+    }
+    return error;
+  }
+
+  /**
+   * Piece 7 M2: `CMover::DoAttackRange( pTarget, dwItemID, idSfxHit )` (`MoverSkill.cpp:3292-3380`) of another mover:
+   * -1 for a target out of view or no item: a player's hand item (`dwItemID` its charge), a monster's `dwItemID` (the
+   * client keeps no `m_dwVirtItem`, so 0 or `NULL_ID` is none); -1 for an item that is not `WT_RANGE` or
+   * `WT_RANGE_BOW`; else `OBJMSG_ATK_RANGE1` with `MTI_ATK1`'s motion (a player's `MTI_ATK_13 - MTI_STAND_13`; the
+   * converter keeps no `dwUseMotion` for a monster's item, whose own motion this is then), and one that started faces
+   * the target and keeps the item and the server's id (`SetActParam`).
+   */
+  private doAttackRange(m: Mover, targetId: number, itemId: number, sfxHitId: number): number {
+    const target = this.byId.get(targetId);
+    if (target === undefined) return -1;
+    const item = m.added.isPlayer
+      ? this.handItemOf(m)
+      : itemId === NULL_ID || itemId === 0 ? null : this.data.itemProps.get(itemId) ?? null;
+    if (item === null || (item.weaponType !== WT_RANGE && item.weaponType !== WT_RANGE_BOW)) return -1;
+    const error = m.act.actMsgError(ActMsg.ATK_RANGE1, targetId, Mti.ATK1);
+    if (error === 1) {
+      m.act.body.angle = wrapAngle(getDegree(target.act.body.pos, m.act.body.pos));
+      m.shot = { targetId, power: m.added.isPlayer ? itemId : 0, sfxHitId, itemId };
+    }
+    return error;
+  }
+
+  /**
+   * Piece 7 M2: `CCtrl::ShootSkill` (`Ctrl.cpp:1356-1418`) of every caster: the skill's `dwSfxObj2` from the caster
+   * + 1 m (a bow skill's from its left hand: the bone - 1 m, then `CreateShootSfx`'s + 1 m), in the class
+   * `CreateShootSfx` makes of it (`skillMissileClassOf`), hitting with `dwSfxObj3` or the class's own hit model. The own
+   * player's registers its id (`SendSfxID` with `AF_MELEESKILL` for a KT_SKILL, else `AF_MAGICSKILL`, and `dwSkillTime
+   * / dwPainTime + 1` hits for a skill of continuous pain) and carries the skill and its level; another's reports nothing.
+   * The winds start at the caster's feet, Hot Air there too (their frame 0).
+   */
+  private shootSkill(caster: Mover, target: Mover, skill: WebSkill, level: number): void {
+    const xi = skill.sfxMissile ?? -1;
+    if (xi === -1) return;
+    const cls = skillMissileClassOf(xi);
+    const at = caster.act.body.pos;
+    const up: Vec3 = [at[0], Math.fround(at[1] + 1), at[2]];
+    const feet = cls === 'swordWind' || cls === 'strongWind' || cls === 'hotAir';
+    const bow = caster.added.isPlayer && skill.linkKind === Ik3.BOW;
+    const from = feet ? [...at] as Vec3 : bow ? this.handOf(caster.objectId, 'left') ?? up : up;
+    const times = skill.levels[level - 1];
+    const painTime = times?.painTime ?? -1;
+    const skillTime = times?.skillTime ?? -1;
+    const maxDmgCnt = skill.continuousPain === true && painTime > 0 ? Math.trunc(skillTime / painTime) + 1 : 1;
+    const report = caster.isSelf && this.shots !== null
+      ? {
+        sfxHitId: this.shots.register(target.objectId, skill.skillType === Kt.SKILL ? AttackFlag.MELEESKILL : AttackFlag.MAGICSKILL,
+          NULL_ID, maxDmgCnt),
+        power: level, skill: skill.id,
+      }
+      : null;
+    const toTicks = (ms: number): number => Math.trunc((ms / 1000) * 60);
+    this.missiles?.launch({
+      cls, sourceId: caster.objectId, targetId: target.objectId, from, flightXi: xi,
+      hitXi: SKILL_HIT_MODELS.get(xi) ?? (cls === 'wand' ? hitXiOf(cls, -1) : skill.sfxHit), scale: 1, report,
+      ...(cls === 'strongWind' ? { push: Math.fround((skill.dmgShift ?? 0) * 0.2) } : {}),
+      ...(cls === 'hotAir' ? { hotAir: { painTicks: toTicks(painTime), lastTicks: toTicks(skillTime), maxDmgCnt } } : {}),
+    });
+  }
+
+  /**
+   * Piece 7 M2: `CMover::OnAttackMagic()` (`MoverActEvent.cpp:773-880`), the client's, at the wand's hit frame: the
+   * hand's `dwSfxObj2` (`XI_FIR_WAND01` with no prop) from the mover + 1 m at its target, scaled by the charge (1 1.2,
+   * 2 1.7, 3 and 4 2.5); the own player's registers its id (`SendSfxID( AF_MAGIC )`) and carries it with the charge.
+   * The missile class is the effect's (`missileClassOf`). The caster's flash and a flier's `XI_FIR_WAND02` are left out.
+   */
+  private onAttackMagic(m: Mover): void {
+    const target = m.shot === undefined ? undefined : this.byId.get(m.shot.targetId); // GetActParam( 0 )
+    if (target === undefined) return;
+    const item = this.handItemOf(m);
+    if (item === null && !m.added.isPlayer) return; // no m_aEquipInfo: GetWeaponItem or the right hand fails (:792-805)
+    const xi = item === null ? XI_FIR_WAND01 : item.sfxMissile ?? -1;
+    const cls = missileClassOf(xi);
+    if (cls === null) return;
+    const power = m.shot?.power ?? 0;
+    const at = m.act.body.pos;
+    const report = m.isSelf && this.shots !== null
+      ? { sfxHitId: this.shots.register(target.objectId, AttackFlag.MAGIC), power, skill: NULL_ID }
+      : null;
+    this.missiles?.launch({
+      cls, sourceId: m.objectId, targetId: target.objectId, from: [at[0], Math.fround(at[1] + 1), at[2]],
+      flightXi: xi, hitXi: hitXiOf(cls, -1), scale: WAND_SCALES[power] ?? 1, report,
+    });
+  }
+
+  /**
+   * Piece 7 M2: `CMover::OnAttackRange()` (`MoverActEvent.cpp:672-767`), the client's, at the shot's hit frame. A player's
+   * arrow is the own player's alone (others' come by CREATESFXALLOW): the arrow slot's `dwSfxObj2` from the left hand
+   * (`CreateSfxArrow`, `Mover.cpp:8628-8649`), hitting with the bow's `dwSfxObj3`, its id registered with
+   * `AF_GENERIC | AF_RANGE` and carrying the charge. A monster's is its item's `dwSfxObj2` from it + 1 m, carrying the
+   * server's id when it is aimed at the own player (:762-763); none without the item or its effect.
+   */
+  private onAttackRange(m: Mover): void {
+    const target = m.shot === undefined ? undefined : this.byId.get(m.shot.targetId); // GetActParam( 0 )
+    if (target === undefined) return;
+    const at = m.act.body.pos;
+    const shot = m.shot;
+    if (m.added.isPlayer) {
+      if (!m.isSelf) return;
+      const bow = this.handItemOf(m);
+      const arrow = this.numbersOf(m)?.bullet() ?? null;
+      const xi = arrow?.sfxMissile ?? -1;
+      const cls = xi === -1 ? null : missileClassOf(xi);
+      if (bow === null || cls === null) return;
+      const power = shot?.power ?? 0;
+      const report = this.shots === null ? null
+        : { sfxHitId: this.shots.register(target.objectId, AttackFlag.GENERIC | AttackFlag.RANGE), power, skill: NULL_ID };
+      this.missiles?.launch({
+        cls, sourceId: m.objectId, targetId: target.objectId,
+        from: this.handOf(m.objectId, 'left') ?? [at[0], Math.fround(at[1] + 1), at[2]],
+        flightXi: xi, hitXi: hitXiOf(cls, bow.sfxHit), scale: 1, report,
+      });
+      return;
+    }
+    const itemId = shot?.itemId ?? 0;
+    const item = itemId === NULL_ID || itemId === 0 ? null : this.data.itemProps.get(itemId) ?? null;
+    const xi = item?.sfxMissile ?? -1;
+    const cls = xi === -1 ? null : missileClassOf(xi);
+    if (cls === null) return;
+    this.missiles?.launch({
+      cls, sourceId: m.objectId, targetId: target.objectId, from: [at[0], Math.fround(at[1] + 1), at[2]],
+      flightXi: xi, hitXi: hitXiOf(cls, -1), scale: 1,
+      report: target.isSelf ? { sfxHitId: shot?.sfxHitId ?? 0, power: 0, skill: NULL_ID } : null,
+    });
+  }
+
+  /**
+   * Piece 7 M2: `CDPClient::OnCreateSfxAllow` (`DPClient.cpp:4088-4114`): another player's arrow, `CreateSfxArrow`
+   * from its left hand at the target + 1 m, hitting with `hitXi`; the position it carries is ignored. None at a target
+   * out of view, and none of the own player's, whose arrow its own hit frame made.
+   */
+  private createSfxAllow(m: Mover, arrowXi: number, hitXi: number, targetId: number): void {
+    const target = this.byId.get(targetId);
+    if (target === undefined || m.isSelf) return;
+    const cls = missileClassOf(arrowXi);
+    if (cls === null) return;
+    const at = m.act.body.pos;
+    this.missiles?.launch({
+      cls, sourceId: m.objectId, targetId, from: this.handOf(m.objectId, 'left') ?? [at[0], Math.fround(at[1] + 1), at[2]],
+      flightXi: arrowXi, hitXi: hitXiOf(cls, hitXi), scale: 1, report: null,
+    });
+  }
+
+  /**
+   * `GetActiveHandItemProp()` of a player: the own one's weapon (`OwnState`), another's right-hand item (ADD_OBJ and
+   * DOEQUIP); null for the fists or an item the catalog lacks.
+   */
+  private handItemOf(m: Mover) {
+    const own = this.numbersOf(m);
+    if (own !== undefined) return own.equipped.weapon ?? null;
+    const player = m.added.player;
+    const id = player === undefined ? null : rightHandItem(player);
+    return id === null ? null : this.data.itemProps.get(id) ?? null;
   }
 
   /**
@@ -728,7 +1108,7 @@ export class WorldState {
   private doUseSkill(m: Mover, message: MessageOf<'useSkill'>): boolean {
     if (!m.added.isPlayer) return false;
     const skill = this.data.skills.get(message.skill);
-    if (skill === undefined || skill.skillType !== Kt.SKILL) return false;
+    if (skill === undefined || (skill.skillType !== Kt.SKILL && skill.skillType !== Kt.MAGIC)) return false;
     if (isDie(m) || m.act.stateFlag & ObjStaF.FLY) return false;
     if ((m.added.player?.mode ?? 0) & NO_ATTACK_MODE) return false;
     const target = this.byId.get(message.targetId);
@@ -737,10 +1117,65 @@ export class WorldState {
     if (target !== m) m.act.body.angle = wrapAngle(getDegree(target.act.body.pos, m.act.body.pos));
     m.act.sendActMsg(ActMsg.STOP);
     let motion = skill.useMotion;
+    let msg: number = ActMsg.MELEESKILL;
+    // Piece 7 M2: KT_MAGIC (MoverSkill.cpp:812-825): the action slot's chained skills shoot at once, any other casts
+    if (skill.skillType === Kt.MAGIC) {
+      if (message.useType === Sut.QUEUEING) motion += 2;
+      msg = message.useType === Sut.QUEUEING ? ActMsg.MAGICSKILL : ActMsg.MAGICCASTING;
+    }
     if (message.useType !== Sut.QUEUEING && message.castingTime === 0 && skill.id !== Si.GEN_ATK_COUNTER) motion += 2;
-    if (!m.act.sendActMsg(ActMsg.MELEESKILL, motion, target.objectId)) return false;
+    if (!m.act.sendActMsg(msg, motion, target.objectId, message.castingTime)) return false;
     m.act.skillAct = { skill: skill.id, targetId: target.objectId, level: message.level };
+    this.skillBegun(m, skill, target);
     return true;
+  }
+
+  /**
+   * Piece 7 M2: what a skill that began shows (`CMover::DoUseSkill`, `MoverSkill.cpp:993-1016`): its cast effect
+   * (`dwSfxObj`) on the caster; and for a skill that is not an attack on a player, `TID_GAME_SKILL_SELF` ("You use %s.")
+   * when the caster is the own player, `TID_GAME_SKILL_MATE` ("%s uses %s.") when the target is and another cast it (or
+   * the skill is Circle Healing). The texts' arguments are quoted: a skill's name has spaces.
+   */
+  private skillBegun(m: Mover, skill: WebSkill, target: Mover): void {
+    const cast = skill.sfxCast ?? -1;
+    if (cast !== -1) this.combat({ kind: 'cast', casterId: m.objectId, xi: cast });
+    const attack = skill.exeTarget === Ext.MELEEATK || skill.exeTarget === Ext.MAGICATK ||
+      skill.exeTarget === Ext.AROUNDATK || skill.exeTarget === Ext.MAGICATKSHOT;
+    if (attack || !target.added.isPlayer) return;
+    const quoted = (text: string): string => `"${text}"`;
+    if (m.isSelf) this.line('TID_GAME_SKILL_SELF', quoted(skill.name));
+    else if (target.isSelf && (m !== target || skill.id === Si.ASS_CHEER_CIRCLEHEALING)) {
+      this.line('TID_GAME_SKILL_MATE', `${quoted(m.name)} ${quoted(skill.name)}`);
+    }
+  }
+
+  /** A line of the catalog's `id` with `args`, as DEFINEDTEXT gives one (`text`); none for a text the catalog lacks. */
+  private line(id: string, args: string): void {
+    const textId = this.data.texts.get(id)?.textId;
+    if (textId !== undefined) this.combat({ kind: 'text', textId, args });
+  }
+
+  /**
+   * Piece 7 M2: `CMover::OnMagicSkill( 0, nCount )` (`MoverActEvent.cpp:475-666`) on the client, at the hit frame of a
+   * magic skill's shot motion (`ActionMover.onMagicSkill`): nothing without the skill in use at a target in view, nor
+   * for Healing at a dead one. A shot (`EXT_MAGICATKSHOT`, `EXT_MAGICSHOT`) is `ShootSkill`'s; any other is applied as
+   * `DoApplySkill` is for a melee skill (`onMeleeSkill`), with `AF_MAGICSKILL`. Then the caster's white flash from
+   * behind (:655-664). Blinkpool's teleport is the skill use's to refuse.
+   */
+  private onMagicSkill(caster: Mover): void {
+    const use = caster.act.skillAct;
+    const skill = use === null ? undefined : this.data.skills.get(use.skill);
+    const target = use === null ? undefined : this.byId.get(use.targetId);
+    if (skill === undefined || target === undefined) return;
+    if (skill.id === Si.ASS_HEAL_HEALING && isDie(target)) return;
+    if (skill.exeTarget === Ext.MAGICATKSHOT || skill.exeTarget === Ext.MAGICSHOT) {
+      this.shootSkill(caster, target, skill, use!.level);
+    } else {
+      const attack = skill.exeTarget === Ext.MELEEATK || skill.exeTarget === Ext.MAGICATK;
+      const landed = attack && this.onDamageMsgC(target, caster, AttackFlag.MAGICSKILL);
+      this.combat({ kind: 'skillHit', casterId: caster.objectId, targetId: target.objectId, skill: skill.id, landed, level: use!.level });
+    }
+    this.combat({ kind: 'tint', moverId: caster.objectId, color: [2, 2, 2], fromAngle: caster.act.body.angle });
   }
 
   /**
@@ -763,10 +1198,13 @@ export class WorldState {
     const target = use === null ? undefined : this.byId.get(use.targetId);
     if (skill === undefined || target === undefined) return;
     if (target !== caster) this.combat({ kind: 'spark', moverId: caster.objectId, fromId: target.objectId });
-    if (skill.exeTarget === Ext.MAGICATKSHOT || skill.exeTarget === Ext.MAGICSHOT) return;
+    if (skill.exeTarget === Ext.MAGICATKSHOT || skill.exeTarget === Ext.MAGICSHOT) {
+      this.shootSkill(caster, target, skill, use!.level); // Piece 7 M2: Junk Bow, Aimed Shot, Guillotine...
+      return;
+    }
     const attack = skill.exeTarget === Ext.MELEEATK || skill.exeTarget === Ext.MAGICATK;
     const landed = attack && this.onDamageMsgC(target, caster, AttackFlag.MELEESKILL);
-    this.combat({ kind: 'skillHit', casterId: caster.objectId, targetId: target.objectId, skill: skill.id, landed });
+    this.combat({ kind: 'skillHit', casterId: caster.objectId, targetId: target.objectId, skill: skill.id, landed, level: use!.level });
   }
 
   /**

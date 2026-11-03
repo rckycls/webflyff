@@ -154,12 +154,13 @@ export class WorldSounds {
   }
 
   /**
-   * What an own event plays: the death and level-up jingles, and the quests' (Piece 7 M1): a new quest BGM_EV_START
-   * (`CMover::__SetQuest`, MoverParam.cpp:3534), one that ends or is removed BGM_EV_END (:3600, `RemoveQuest` :3495).
+   * What an own event plays: the death and level-up jingles (a job change plays the level-up's, `DPClient.cpp:3638`,
+   * Piece 7 M2), and the quests' (Piece 7 M1): a new quest BGM_EV_START (`CMover::__SetQuest`, MoverParam.cpp:3534), one
+   * that ends or is removed BGM_EV_END (:3600, `RemoveQuest` :3495).
    */
   ownEvent(event: OwnEvent, worldId: number): void {
     if (event.kind === 'died') this.ownDeath(worldId);
-    else if (event.kind === 'levelUp') this.ownLevelUp();
+    else if (event.kind === 'levelUp' || event.kind === 'jobChanged') this.ownLevelUp();
     else if (event.kind === 'quest') {
       const change = event.change.kind;
       if (change === 'started') this.music.play(BGM_EV_START, 1);

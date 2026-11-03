@@ -1118,3 +1118,65 @@ Milestone 1 passes when every cell of the table is `pass` (or `n/a` where it say
 The piece7 folder's `dist/assets` already has the quest catalog (`data/quests.json`) and the quest window's pictures. For another folder's assets, run `npm run convert -- --client "C:\Users\silec\Desktop\FlyFF\Bakbak\Blouflash VS22 V15\Client" --only "ButtRemoveQuest*,ButtClose*,ButtCheck*,ButtDestination*,buttTree*,data"` there (about 1 minute, ends with `0 failed`).
 
 If one fails, send me the lines from the first `failed` down to the end.
+
+## Piece 7, milestone 2: jobs and their weapons
+
+The first jobs now play as in the Windows client. A job change updates the Character and Skill windows, with the level-up effect, its music and the chat line. The Mercenary's, Assist's and Acrobat's weapons swing with their own combos (the yoyo from 6 m, two swings). The wand charges while held and shoots on release, with the gauge over your head and a missile that grows with the charge. The bow shoots arrows, needs them in the arrow slot, and charges like the wand. Other players' wand and bow shots are seen. The first-job skills cast, fly and hit, and buffs show their icons and change your numbers. (The quest that gives the Mercenary job is milestone 1. Here the jobs come from GM commands.)
+
+**The test characters:** make them with GM commands. Start with `/level Vagrant 15`, then `/changejob Mercenary` (or Acrobat, Assist, Magician). Give each a first-job weapon: the Petal Sword, a Plim Stick and Overam Knuckles, the Itun yoyo, the Woodness Bow with arrows, the Seal Wand. Spend skill points on two skills, and put the skills on the task bar. A second browser player helps with steps 4 and 6.
+
+**Start the client** from the piece7-m2 folder. Stop your own `npm run dev:client` first. Then, in PowerShell, with the servers and the gateway in the VM:
+
+```
+cd C:\Users\silec\Desktop\FlyFF\Bakbak\FlyffWeb-worktrees\piece7-m2
+$env:GATEWAY_PROXY = 'ws://<VM-IP>:8090'
+npm run dev:client
+```
+
+**Steps**, on the PC and a landscape phone:
+
+1. **The change.** Use `/changejob Magician` on a level 15 Vagrant. Success:
+   - the level-up effect and its music play;
+   - the line "Welcome to the wonderful world of Magicians!" shows;
+   - the Character window reads Magician;
+   - the open Skill window shows the Magician panel (PC) and the Magician skills.
+2. **Mercenary.** Fight an Aibatt with the Petal Sword, then with an axe. Success: the swings chain into the combo of your level. Use Splmash: its effect plays and the Aibatt loses HP. With a shield, use Protection: its effect stays on you for its time.
+3. **Acrobat.**
+   - **Yoyo:** with the Itun yoyo, attack from far. Success: you stop about 6 m away, swing twice, and the yoyo flies out and back. A wall between you prints "This action has been blocked by an obstacle.." and you do not swing.
+   - **Bow, no arrows:** take the arrows off and attack. Success: "Equip arrows first." and no shot.
+   - **Bow, with arrows:** put the arrows on. A tap shoots at once. A press held on the Aibatt fills the gauge over your head, and the let-go shoots. Held to full, it shoots by itself.
+   - **Junk Bow:** three arrows fly, and four hits land.
+4. **Assist.** Fight with the Plim Stick, then the Overam Knuckles. Select the second player with a tap: no attack starts. Success:
+   - Healing on yourself and on that player casts (a cyan glow while casting), then heals;
+   - the healed player reads "<your name> uses Healing.";
+   - Heap Up on that player shows its icon on their screen, and their Character window's STA rises.
+5. **Magician.** Equip the Seal Wand. Success:
+   - a press held on an Aibatt fills the gauge, and the missile is bigger the longer you hold;
+   - a quick tap shoots a small missile;
+   - a second tap on the Aibatt does not start an auto-attack;
+   - on the phone, the Attack button held does the same as the held press;
+   - Mental Strike casts and hits;
+   - Boomerang casts, flies and hits.
+6. **Others' shots.** The second player shoots the wand and the bow at a monster. Success: you see their motion and the missile or the arrow, and its hit.
+7. **A ranged monster.** If a ranged monster is near Flaris, let it attack you. Success: its missile flies at you and your HP drops. If none is near, write `n/a`.
+
+## Results
+
+| Device | Browser | 1. Change | 2. Mercenary | 3. Acrobat | 4. Assist | 5. Magician | 6. Others | 7. Ranged monster | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| PC | Chrome | | | | | | | | |
+| Android phone | Chrome | | | | | | | | |
+| iPhone | Safari | | | | | | | | |
+
+## Pass and fail
+
+Milestone 2 passes when every cell of the table is `pass` (or `n/a` where it says so) and the tests below pass.
+
+**The tests (yours to run),** on the PC in PowerShell in the piece7-m2 folder, with your own `npm run dev:client` stopped first:
+
+| Command | How long | Success |
+| --- | --- | --- |
+| `npm test` | about 2 minutes | `Tests … passed`, and no `failed`. |
+| `npm run typecheck` | about 1 minute | It ends with no `error`. |
+| `$env:FLYFF_CLIENT = 'C:\Users\silec\Desktop\FlyFF\Bakbak\Blouflash VS22 V15\Client'; npm run test:corpus` | about 5 minutes | `… passed`, and no `failed`. |
+| `npm run test:e2e:client` | about 10 minutes | It ends with `… passed`, maybe a few `skipped`, and no `failed` (`jobs.spec.ts` is the new file). |

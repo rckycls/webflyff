@@ -39,6 +39,8 @@ const FILES: Record<string, WebEffect> = {
   'effects/cleanhit.json': effectOf(30),
   'effects/short.json': effectOf(5),
   'effects/big.json': effectOf(50),
+  // Piece 7 M2: a missile's flight model, its alpha 6 a frame so that its frame can be read off the draw
+  'effects/wand.json': { parts: [part({ keys: [key(0, { alpha: 0 }), key(40, { alpha: 240 })] })] },
 };
 
 const REFS: [number, string, number][] = [
@@ -55,6 +57,8 @@ const REFS: [number, string, number][] = [
   [Xi.HIT_YOY01, 'effects/big.json', 2],
   [Xi.GEN_MONSTER_SPAWN01, 'effects/short.json', 2],
   [Xi.HIT_HITBLOCK01, 'effects/missing.json', 1], // an entry that names a .sfx the client lacks
+  [Xi.FIR_WAND01, 'effects/wand.json', 1],
+  [Xi.ITEM_RANGE_ATK1, 'effects/noarrow.json', 1],
 ];
 
 const data: Pick<GameData, 'effects'> = { effects: new Map(REFS.map(([xi, effect, scale]) => [xi, { effect, scale }])) };
@@ -163,6 +167,15 @@ describe('EffectManager: following (CSfx::Process, SfxObj.cpp:134-238)', () => {
     expect(r.drawn().effects[0]!.at).toEqual([1, f32(f32(2 + LIFT_CREATE) + LIFT_DRAW), 3]);
     steps(r, 1, () => ({ pos: [1, 2, 3] }));
     expect(r.drawn().effects[0]!.at).toEqual([1, f32(2 + LIFT_DRAW), 3]); // SetPos( src pos ): the 0.01 is gone
+  });
+
+  it('an effect of nSec seconds loops its model until nSec * 60 ticks have gone by (CSfx::Process, SfxObj.cpp:148-158; Piece 7 M2)', async () => {
+    const r = rig();
+    await play(r, { xi: Xi.GEN_LEVEL_UP01, pos: [0, 0, 0], seconds: 1 });
+    steps(r, 60, nobody);
+    expect(r.manager.count()).toBe(1);
+    steps(r, 1, nobody);
+    expect(r.manager.count()).toBe(0);
   });
 
   it('ends with the mover it follows: the source is gone (SfxObj.cpp:231-233)', async () => {
@@ -494,5 +507,58 @@ describe('EffectManager: drawing', () => {
     // the quad's x and y axes (scaled by the entry's 2) are the camera's right and up
     expect([e[0], e[1], e[2]]).toEqual([c[0], c[1], c[2]].map((v) => expect.closeTo(v! * 2, 5)));
     expect([e[4], e[5], e[6]]).toEqual([c[4], c[5], c[6]].map((v) => expect.closeTo(v! * 2, 5)));
+  });
+});
+
+describe('EffectManager: missiles in flight and hits turned their own way (Piece 7 M2)', () => {
+  const expectMatrix = (actual: number[], expected: number[]): void =>
+    actual.forEach((value, i) => expect(value, `element ${i}`).toBeCloseTo(expected[i]!, 5));
+  const wandView = (over: Partial<{ rotation: Vec3; pos: Vec3 }> = {}) => ({
+    id: 1, xi: Xi.FIR_WAND01, pos: [5, 1, 5] as Vec3, rotation: [90, 0, 0] as Vec3, scale: 1, loopFrame: 20, ...over,
+  });
+
+  it('knows the ids the missiles play (defineObj.h)', () => {
+    expect([Xi.HIT_WAND01, Xi.FIR_WAND01, Xi.FIR_WAND02, Xi.ITEM_RANGE_ATK1]).toEqual([22, 27, 28, 112]);
+  });
+
+  it("a missile's model takes its whole rotation (Render2), drawn where it is, unlifted", async () => {
+    const r = rig();
+    r.manager.stepMissiles([wandView()]);
+    await settle();
+    r.manager.stepMissiles([wandView()]);
+    const { effects } = r.drawn();
+    expect(effects).toHaveLength(1);
+    expect(effects[0]!.at).toEqual([5, 1, 5]);
+    // a NORMAL quad: S * YawPitchRoll( rotate ) * YawPitchRoll( pitch 90 )
+    expectMatrix((effects[0]!.list[0] as EffectQuadDraw).matrix, [1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, 0, 0, 0, 1]);
+  });
+
+  it("the wand's flight model goes back to frame 0 at 20 (Sfx.cpp:884-888)", async () => {
+    const r = rig();
+    r.manager.stepMissiles([wandView()]);
+    await settle();
+    for (let i = 0; i < 25; i++) r.manager.stepMissiles([wandView()]);
+    // frame 5, not 25: alpha 6 a frame
+    expect((r.drawn().effects[0]!.list[0] as EffectQuadDraw).alpha).toBe(30);
+  });
+
+  it('a missile with no effect file draws nothing and throws nothing; one gone from the views is dropped', async () => {
+    const r = rig();
+    const arrow = { ...wandView(), id: 2, xi: Xi.ITEM_RANGE_ATK1, loopFrame: null };
+    r.manager.stepMissiles([wandView(), arrow]);
+    await settle();
+    r.manager.stepMissiles([wandView(), arrow]);
+    expect(r.drawn().effects).toHaveLength(1);
+    expect(r.report).toHaveBeenCalledTimes(1);
+    r.manager.stepMissiles([]);
+    expect(r.drawn().effects).toEqual([]);
+  });
+
+  it("a hit effect with an angle of its own takes it, not CreateSfx's turn (SetAngle( m_vRotate.y ), Sfx.cpp:1053-1056)", async () => {
+    const r = rig();
+    await play(r, { xi: Xi.HIT_BOW01, pos: [0, 0, 0], sourceAngle: 30, angle: 90 });
+    steps(r, 1);
+    // a NORMAL quad turned by the heading 90 (not 180 - 30)
+    expectMatrix((r.drawn().effects[0]!.list[0] as EffectQuadDraw).matrix, [0, 0, -1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1]);
   });
 });

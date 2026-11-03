@@ -49,6 +49,7 @@ import { formatText } from './format';
 import { WindowFrame } from './frame';
 import { ModalBackdrop } from './modal';
 import { byFinger } from './slotGestures';
+import { JOB_PANELS, PANEL_AT, skillPlaceOf } from './skillPlaces';
 import { EDIT, editTiles } from './tiles';
 
 /** What the window reads of the catalogs: the skills, the texts (with their colours) and the jobs' names. */
@@ -136,16 +137,14 @@ const GROUP_TITLE = { left: 4, top: 4 } as const;
 /** WIDC_STATIC8 "ImgSkillVagrant.tga" (62, 104, 187, 129): the Vagrant's three skills and the arrows between them. */
 const VAGRANT_PICTURE: ControlRect = { left: 62, top: 104, width: 125, height: 25 };
 /**
- * `SI_VAG_ONE_CLEANHIT`, `SI_VAG_ONE_BRANDISH`, `SI_VAG_ONE_OVERCUTTER` (`Resource/defineSkill.h:19-21`) and their places,
- * WIDC_CUSTOM2-4 (62 / 112 / 164, 104), `rect.top += 1` (`GetSkillPoint`, :7172-7194) then `rect.top -= 2` and 27 x 27 to draw
- * and press (:7816-7823, :8288-8296).
+ * The places of the skills (`GetSkillPoint`, `skillPlaces.ts`): the Vagrant's three at WIDC_CUSTOM2-4 and, Piece 7 M2, the
+ * four first jobs' 65, drawn and pressed 27 x 27 (:7816-7823, :8288-8296). On a phone the Vagrant's sit 80 px apart in the
+ * first section and the others in the second, 5 a row, in the order of their slots (`PHONE_EXPERT`).
  */
-const SKILL_PLACES: ReadonlyMap<number, { left: number; top: number }> = new Map([
-  [1, { left: 62, top: 103 }],
-  [2, { left: 112, top: 103 }],
-  [3, { left: 164, top: 103 }],
-]);
 const SKILL_ICON = 27;
+const PHONE_EXPERT = { left: 276, top: 100, pitchX: 48, pitchY: 60, columns: 5 } as const;
+/** The four `Back_*` panels' size (`Client/Theme/Default`, all 225 x 135). */
+const PANEL_SIZE = { width: 225, height: 135 } as const;
 /** The chosen skill's icon, at its own size (`Render( p2DRender, lpWndCtrl->rect.TopLeft() )`, :7869). */
 const ICON = 32;
 /**
@@ -160,6 +159,9 @@ const DIGIT_CHANGED = 20;
 const DIGIT_SHIFT = 2;
 /** `JOB_VAGRANT` (`Resource/defineJob.h:41`): whose name the first section bears (`prj.m_aJob[JOB_VAGRANT].szName`, :6771). */
 const JOB_VAGRANT = 0;
+/** `MAX_JOBBASE` and `MAX_EXPERT` (`Resource/defineJob.h:42`, :50): the first jobs are 1 to 5 (`IsExpert`). */
+const MAX_JOBBASE = 1;
+const MAX_EXPERT = 6;
 /** `PutToolTip_Skill`'s colours: the name `#cff2fbe6d`, an unmet requirement `#cffff0000`. */
 const TIP_NAME = 0xff2fbe6d;
 const TIP_RED = 0xffff0000;
@@ -213,10 +215,11 @@ export function skillTooltip(
   return lines;
 }
 
-/** A skill the window shows: its slot of `m_aJobSkill`, its element, its icon and digit, what it shows. */
+/** A skill the window shows: its slot of `m_aJobSkill`, its element and place, its icon and digit, what it shows. */
 interface ShownSkill {
   skillId: number;
   index: number;
+  at: { left: number; top: number };
   element: HTMLElement;
   icon: HTMLElement;
   digit: HTMLElement;
@@ -253,6 +256,9 @@ export class SkillWindow {
   private readonly tooltip: HTMLElement;
   private tooltipShown = '';
   private readonly mobile: boolean;
+  /** Piece 7 M2: the first job's panel (`m_atexJobPannel[0]`), and the skill IDs the skills are laid out for. */
+  private readonly jobPanel: HTMLImageElement;
+  private laidOut = '';
 
   constructor(
     private readonly art: UiArt,
@@ -333,24 +339,14 @@ export class SkillWindow {
     place(this.chosenDigit, { ...CHOSEN, width: DIGIT, height: DIGIT });
     body.append(this.chosenIcon, this.chosenDigit);
 
-    for (const [skillId, at] of SKILL_PLACES) {
-      const element = doc.createElement('div');
-      element.className = 'hud-skill';
-      element.setAttribute('role', 'button');
-      element.dataset.skill = String(skillId);
-      place(element, this.mobile
-        ? { left: 28 + (skillId - 1) * 80, top: 111, width: 40, height: 40 }
-        : { ...at, width: SKILL_ICON, height: SKILL_ICON });
-      const icon = doc.createElement('span');
-      icon.className = 'hud-skill-icon';
-      const digit = this.digitElement(doc);
-      place(digit, { left: -DIGIT_SHIFT, top: -DIGIT_SHIFT, width: DIGIT, height: DIGIT });
-      element.append(icon, digit);
-      const shown: ShownSkill = { skillId, index: -1, element, icon, digit, shown: '' };
-      this.listen(shown);
-      this.skills.push(shown);
-      body.append(element);
-    }
+    // Piece 7 M2: the first job's panel, painted into the skin at WIDC_STATIC5 + 2 px (`AfterSkinTexture`, :8395-8418);
+    // the skills themselves are laid out by `layoutSkills` when the window loads them (`InitItem`)
+    this.jobPanel = doc.createElement('img');
+    this.jobPanel.className = 'hud-skills-job-panel';
+    this.jobPanel.alt = '';
+    this.jobPanel.hidden = true;
+    place(this.jobPanel, { left: PANEL_AT.x, top: PANEL_AT.y, width: PANEL_SIZE.width, height: PANEL_SIZE.height });
+    body.append(this.jobPanel);
 
     const button = (name: ButtonName, press: () => void): HTMLButtonElement => {
       const { rect, picture, quarter, tip } = BUTTONS[name];
@@ -427,14 +423,18 @@ export class SkillWindow {
    * The messages after which Neuz loads the skills anew in the open window (`InitItem`, dropping the points being placed):
    * DOUSESKILLPOINT (`OnDoUseSkillPoint`, `DPClient.cpp:14740-14747`), INITSKILLPOINT (`OnInitSkillPoint`, :14719-14725) and
    * the own SETEXPERIENCE that changed the skill points (`OnSetExperience`, :3419-3427, `nSP != nSkillPoint`). `own` is the
-   * own state after the message. (The job change's SET_JOB_SKILL, :3624-3630, and a game master's skill level,
-   * `OnCmdSetSkillLevel`, :13544-13551, are messages the browser does not read.)
+   * own state after the message. Piece 7 M2: the job change's SET_JOB_SKILL too (:3623-3630), which lays the skills out
+   * anew for the job. (A game master's skill level, `OnCmdSetSkillLevel`, :13544-13551, is a message the browser does not
+   * read.)
    */
   onMessage(objectId: number, message: WorldMessage, own: OwnState | undefined): void {
     if (!this.frame.isOpen || own === undefined) return;
     switch (message.type) {
       case 'doUseSkillPoint':
       case 'initSkillPoint':
+        break;
+      case 'setJobSkill':
+        if (objectId !== own.objectId) return;
         break;
       case 'setExperience':
         if (objectId !== own.objectId || own.skillPoint === this.seenPoints) return;
@@ -456,8 +456,9 @@ export class SkillWindow {
     const points = String(plan.points);
     if (this.points.textContent !== points) this.points.textContent = points;
     const jobTitle = this.data.jobs[JOB_VAGRANT]?.title ?? '';
-    // InitItem's titles for a Vagrant (:6769-6776): its job's name, then none
-    const titles = [jobTitle, '', ''];
+    // InitItem's titles (:6769-6776, :6801-6880): the Vagrant's name; a first job's name, then none
+    const expert = own.job >= MAX_JOBBASE && own.job < MAX_EXPERT ? this.data.jobs[own.job]?.title ?? '' : '';
+    const titles = [jobTitle, expert, ''];
     this.sectionTitles.forEach((title, i) => {
       if (title.textContent !== titles[i]) title.textContent = titles[i]!;
     });
@@ -481,11 +482,66 @@ export class SkillWindow {
     this.plan = new SkillPlan(own.skills, own.skillPoint, this.data.skills, own.level);
     this.seenPoints = own.skillPoint;
     this.focus = null;
+    this.layoutSkills(own);
     for (const skill of this.skills) {
       skill.index = own.skills.findIndex((slot) => slot.skill === skill.skillId);
       skill.shown = '';
     }
     this.own = own;
+  }
+
+  /**
+   * Piece 7 M2: the skills of the player's slots that `GetSkillPoint` has a place for, each once (`skillPlaceOf`), laid out
+   * anew when they change (a job change); and the job's panel (`JOB_PANELS`), shown on the PC only: on a phone the skills
+   * stand in a grid the panel's lines would not fit.
+   */
+  private layoutSkills(own: OwnState): void {
+    const ids = own.skills.map((slot) => slot.skill)
+      .filter((id, i, all) => skillPlaceOf(id) !== undefined && all.indexOf(id) === i);
+    const key = ids.join(',');
+    if (key !== this.laidOut) {
+      this.laidOut = key;
+      for (const skill of this.skills.splice(0)) skill.element.remove();
+      let expert = 0;
+      for (const skillId of ids) {
+        const base = skillId <= 3;
+        const at = !this.mobile
+          ? { left: skillPlaceOf(skillId)!.x, top: skillPlaceOf(skillId)!.y }
+          : base
+            ? { left: 28 + (skillId - 1) * 80, top: 111 }
+            : {
+              left: PHONE_EXPERT.left + (expert % PHONE_EXPERT.columns) * PHONE_EXPERT.pitchX,
+              top: PHONE_EXPERT.top + Math.trunc(expert / PHONE_EXPERT.columns) * PHONE_EXPERT.pitchY,
+            };
+        if (!base) expert++;
+        this.skills.push(this.skillElement(skillId, at));
+      }
+    }
+    const panel = JOB_PANELS[own.job];
+    this.jobPanel.hidden = this.mobile || panel === undefined;
+    if (panel !== undefined && this.jobPanel.getAttribute('src') !== this.art.url(themeKey(panel))) {
+      this.jobPanel.src = this.art.url(themeKey(panel));
+    }
+  }
+
+  /** A skill's element at `at` (27 x 27, or 40 x 40 on a phone), before the tooltip so that it stays under it. */
+  private skillElement(skillId: number, at: { left: number; top: number }): ShownSkill {
+    const doc = this.doc;
+    const element = doc.createElement('div');
+    element.className = 'hud-skill';
+    element.setAttribute('role', 'button');
+    element.dataset.skill = String(skillId);
+    const size = this.mobile ? 40 : SKILL_ICON;
+    place(element, { ...at, width: size, height: size });
+    const icon = doc.createElement('span');
+    icon.className = 'hud-skill-icon';
+    const digit = this.digitElement(doc);
+    place(digit, { left: -DIGIT_SHIFT, top: -DIGIT_SHIFT, width: DIGIT, height: DIGIT });
+    element.append(icon, digit);
+    const shown: ShownSkill = { skillId, index: -1, at, element, icon, digit, shown: '' };
+    this.listen(shown);
+    this.frame.body.insertBefore(element, this.tooltip);
+    return shown;
   }
 
   /** `Destroy`: the copy, the chosen skill and the skill a finger picked go; the box with them. */
@@ -663,7 +719,7 @@ export class SkillWindow {
     if (skill !== undefined) {
       // measured at the left edge, where it has the client area's whole width, then moved under the skill as far as it
       // still ends inside the window (a window that scrolls would cut it)
-      const at = this.mobile ? { left: 28 + (skill.skillId - 1) * 80, top: 111 } : SKILL_PLACES.get(skill.skillId)!;
+      const at = skill.at;
       this.tooltip.style.left = '0px';
       this.tooltip.style.top = `${at.top + (this.mobile ? 40 : SKILL_ICON) + 4}px`;
       this.tooltip.style.left = `${Math.max(0, Math.min(at.left, (this.mobile ? 780 : CLIENT_WIDTH) - this.tooltip.offsetWidth))}px`;

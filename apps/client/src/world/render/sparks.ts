@@ -36,7 +36,11 @@ export const DAMAGE_SHAKE_TICKS = 10;
 const SHAKE_RANGE = 50;
 const SHAKE_FROM = -25;
 
-/** `_SPARKINFO` of a model; its colour is always (2, 2, 2). */
+/** `m_v3Color` of a hit's spark, and (Piece 7 M2) of a cast's: cyan (`ActionMoverState.cpp:714-724`). */
+export const SPARK_WHITE: Vec3 = [2, 2, 2];
+export const SPARK_CAST: Vec3 = [0, 2, 2];
+
+/** `_SPARKINFO` of a model. */
 export interface SparkInfo {
   /** `m_bUsed`. */
   used: boolean;
@@ -46,19 +50,22 @@ export interface SparkInfo {
   lerp: number;
   /** `m_nCnt`. */
   cnt: number;
+  /** `m_v3Color`: a hit's (2, 2, 2); a cast's (0, 2, 2) (Piece 7 M2). */
+  color: Vec3;
 }
 
 /** A model's spark before any hit: off (`_SPARKINFO()`: `m_nCnt` 0, `m_fLerp` 1.0). */
 export function idleSpark(): SparkInfo {
-  return { used: false, direction: [0, 0, 0], lerp: 1, cnt: 0 };
+  return { used: false, direction: [0, 0, 0], lerp: 1, cnt: 0, color: SPARK_WHITE };
 }
 
 /**
  * A hit's spark (`MoverActEvent.cpp:1527-1537`, :1708-1716): on, at 1.0, its count at 0, its direction the normalized
  * `GetPos() - pOther->GetPos()`. A new one replaces one that fades.
  */
-export function startSpark(spark: SparkInfo, direction: Vec3): void {
+export function startSpark(spark: SparkInfo, direction: Vec3, color: Vec3 = SPARK_WHITE): void {
   spark.used = true;
+  spark.color = color;
   spark.direction = [direction[0], direction[1], direction[2]];
   spark.lerp = 1;
   spark.cnt = 0;
@@ -102,8 +109,9 @@ export function setSparkUniforms(uniforms: SparkUniforms, spark: SparkInfo): voi
   const [x, y, z] = toWebPosition([-spark.direction[0], -spark.direction[1], -spark.direction[2]]);
   // + 0: no negative zero
   uniforms.sparkDirection.value.set(x + 0, y + 0, z + 0);
-  const level = sparkDiffuse(spark);
-  uniforms.sparkColor.value.setRGB(level, level, level, SRGBColorSpace).multiplyScalar(Math.PI);
+  // D3DXVec3Lerp( 0, m_v3Color, m_fLerp ), channel by channel
+  const [r, g, b] = spark.color.map((c) => f32(spark.lerp * c)) as [number, number, number];
+  uniforms.sparkColor.value.setRGB(r, g, b, SRGBColorSpace).multiplyScalar(Math.PI);
 }
 
 const DIRECTIONAL_LIGHT = 'getDirectionalLightInfo( directionalLight, directLight );';

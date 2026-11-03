@@ -107,6 +107,7 @@ export type {
   WebNameColors,
   WebNpc,
   WebSkill,
+  WebSkillLevelTimes,
   WebTexts,
   WebWorlds,
 } from './web/gameData';

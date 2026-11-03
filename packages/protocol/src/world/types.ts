@@ -43,6 +43,27 @@ export type WorldMessage = ChatMessage | NpcMessage | ShopMessage | QuestMessage
   | { type: 'replace'; worldId: number; pos: Vec3 }
   /** Another mover's swing: `OnMeleeAttack` passes `message` (an `OBJMSG_ATK*`) and the rest to `SendActMsg`. */
   | { type: 'meleeAttack'; message: number; targetId: number; param2: number; param3: number }
+  /** Another mover's wand shot: `OnMagicAttack` passes them to `DoAttackMagic` (`power` is the charge, 0-4). */
+  | { type: 'magicAttack'; message: number; targetId: number; param2: number; param3: number; power: number; sfxHitId: number }
+  /**
+   * Another mover's bow shot or a monster's ranged attack: `OnRangeAttack` passes `param2` to `DoAttackRange` as its
+   * `dwItemID` (a player's charge, a monster's attack item) with `sfxHitId` (the server's id for a monster's missile).
+   */
+  | { type: 'rangeAttack'; message: number; targetId: number; param2: number; param3: number; sfxHitId: number }
+  /** Piece 7 M2: the buffs' messages ([R §10]): a buff on `targetId` (`time` its whole length, ms), one gone, all gone. */
+  | { type: 'setSkillState'; targetId: number; buffType: number; id: number; level: number; time: number }
+  | { type: 'removeSkillInfluence'; buffType: number; id: number }
+  | { type: 'removeAllSkillInfluence' }
+  /** Piece 7 M2: a live buff's stat change, its end, and DST_SPEED's end with the total left (`m_adjParamAry`). */
+  | { type: 'setDestParam'; dst: number; adj: number; chg: number }
+  | { type: 'resetDestParam'; dst: number; adj: number }
+  | { type: 'resetDestParamSync'; dst: number; adj: number; total: number }
+  /** Another mover's arrow (`arrowXi`) at `targetId`, hitting with `hitXi`; Neuz ignores `pos` (`OnCreateSfxAllow`). */
+  | { type: 'createSfxAllow'; arrowXi: number; hitXi: number; pos: Vec3; targetId: number }
+  /** The own job change: the new job and all 45 skill slots (`OnSetChangeJob`). */
+  | { type: 'setJobSkill'; job: number; skills: SkillSlot[] }
+  /** Another player's job change: the new job and its 20 (master or hero: 21) skill slots (`OnSetNearChangeJob`). */
+  | { type: 'setNearJobSkill'; job: number; skills: SkillSlot[] }
   /**
    * A hit on the mover the message is about. `hit` is `dwHit` and `flags` the `AF_*` set (`AttackFlag`). `fly` is the
    * victim's position and angle when `AF_FLYING` is set, else `null`.
@@ -333,8 +354,13 @@ export interface AddedNpc {
 }
 
 /** A mover as ADD_OBJ brings it (`CDPClient::OnAddObj`, `Neuz/DPClient.cpp:1053`). */
+/** Piece 7 M2: one buff of an ADD_OBJ (`CBuffMgr::Serialize`): its kind, id, level and the time it has left (ms). */
+export interface AddedBuff { buffType: number; id: number; level: number; timeLeft: number }
+
 export interface AddedMover {
   // CObj::Serialize and CCtrl::Serialize
+  /** Piece 7 M2: another mover's buffs (`CBuffMgr::Serialize`), when it has some; the own ADD_OBJ's are not read. */
+  buffs?: AddedBuff[];
   /** `m_dwIndex`: the mover's ID in `propMover.txt`. */
   index: number;
   /** `m_vScale.x`, one scale for the three axes. */

@@ -15,7 +15,7 @@
 // holding a spear has the spear in the box), so the item's box goes into the character's (`addBox`).
 
 import type { Object3D } from 'three';
-import { Group, Matrix4, SkinnedMesh } from 'three';
+import { Group, Matrix4, SkinnedMesh, Vector3 } from 'three';
 import { toWebMatrix } from '@flyffweb/formats';
 import type { SkeletonGrips } from '@flyffweb/formats';
 import type { AssembledCharacter } from './assemble';
@@ -76,6 +76,19 @@ export function attachHeld(character: AssembledCharacter, item: Object3D, slot: 
   grip.add(item);
   joint.add(grip);
   if (box !== null) character.addBox(box);
+}
+
+/**
+ * Piece 7 M2: `CModelObject::GetHandPos( &vOut, nParts, mWorld )` (`_Common/ModelObject.cpp:2388+`), in web space: the
+ * origin of what the hand of `slot` holds, the hand bone's world matrix as last updated times its grip matrix (`m_mLocalRH`
+ * or `m_mLocalLH`). A wand's and a bow's missile leave from it, and a yoyo goes back to it. Null without grips.
+ */
+export function handPosition(character: AssembledCharacter, slot: 'right' | 'left'): Vector3 | null {
+  const { grips } = character;
+  if (grips === null) return null;
+  const bone = grips[BONE_OF[slot]];
+  const joint = jointOf(character, bone);
+  return new Vector3().setFromMatrixPosition(new Matrix4().multiplyMatrices(joint.matrixWorld, gripMatrix(grips, bone)));
 }
 
 /**

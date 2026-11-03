@@ -21,7 +21,7 @@ describe('the spark (_SPARKINFO, Model.h:60-69)', () => {
     const spark = idleSpark();
     expect(spark.used).toBe(false);
     startSpark(spark, [1, 0, 0]);
-    expect(spark).toEqual({ used: true, direction: [1, 0, 0], lerp: 1, cnt: 0 });
+    expect(spark).toEqual({ used: true, direction: [1, 0, 0], lerp: 1, cnt: 0, color: [2, 2, 2] });
   });
 
   it('keeps 1.0 for its first step, then fades 0.05f a step, and is off once below 0: 20 steps drawn (Mover.cpp:3248-3262)', () => {
@@ -49,7 +49,7 @@ describe('the spark (_SPARKINFO, Model.h:60-69)', () => {
     for (let i = 0; i < 5; i++) stepSpark(spark);
     startSpark(spark, [-1, 0, 0]);
     stepSpark(spark);
-    expect(spark).toEqual({ used: true, direction: [-1, 0, 0], lerp: 1, cnt: 1 });
+    expect(spark).toEqual({ used: true, direction: [-1, 0, 0], lerp: 1, cnt: 1, color: [2, 2, 2] });
   });
 });
 
@@ -81,6 +81,19 @@ describe("the spark's light (CModelObject::Render, ModelObject.cpp:1194-1201, an
     for (let i = 0; i < 25; i++) stepSpark(spark);
     setSparkUniforms(uniforms, spark);
     expect(uniforms.sparkOn.value).toBe(false);
+  });
+
+  it('lights in its own colour: a cast\'s cyan (0, 2, 2) has no red (ProcessStateMagicCasting, ActionMoverState.cpp:714-724; Piece 7 M2)', () => {
+    const uniforms = sparkUniforms();
+    const spark = idleSpark();
+    startSpark(spark, [1, 0, 0], [0, 2, 2]);
+    setSparkUniforms(uniforms, spark);
+    const expected = new Color().setRGB(0, 2, 2, SRGBColorSpace).multiplyScalar(Math.PI);
+    expect([uniforms.sparkColor.value.r, uniforms.sparkColor.value.g]).toEqual([0, expected.g]);
+    // a hit's spark after it is white again
+    startSpark(spark, [1, 0, 0]);
+    setSparkUniforms(uniforms, spark);
+    expect(uniforms.sparkColor.value.r).toBe(expected.g);
   });
 
   /** What three hands `onBeforeCompile` for a MeshStandardMaterial: its own uniforms and the standard shader's source. */

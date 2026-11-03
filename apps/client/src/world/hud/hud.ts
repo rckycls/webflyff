@@ -20,6 +20,7 @@ import type { Texts } from '../gameData';
 import type { OwnEvent, OwnState } from '../OwnState';
 import type { CombatEvent, Mover } from '../WorldState';
 import type { UiArt } from './art';
+import { formatText } from './format';
 import { Caption, MessageLines, formatDefinedText } from './messages';
 import { StatusWindow } from './statusWindow';
 import { TargetBar } from './targetBar';
@@ -105,6 +106,11 @@ export class Hud {
         case 'died':
           this.line('TID_GAME_DEATH');
           break;
+        case 'jobChanged': { // Piece 7 M2: OnSetJobSkill's line, `GetJobString()` in it (DPClient.cpp:3646-3647)
+          const entry = this.data.texts.get('TID_EVE_CHGJOB');
+          if (entry !== undefined && entry.text !== '') this.messages.add(formatText(entry.text, [event.title]), entry.color);
+          break;
+        }
         default:
           break;
       }

@@ -36,6 +36,9 @@ import { askBeforeLeaving } from './askBeforeLeaving';
 import { BackCamera } from './backCamera';
 import type { ChaseView } from './backCamera';
 import { AttackLoop, objRadius } from './combat/attackLoop';
+import { Missiles } from './combat/missiles';
+import type { MissileWorld } from './combat/missiles';
+import { OwnShots } from './combat/ownShots';
 import { Focus } from './combat/focus';
 import { TapToWalk, WalkKey, controlIntent, movesOrTurns } from './controls';
 import { isGameMaster } from './authorization';
@@ -45,6 +48,11 @@ import { EffectManager } from './fx/EffectManager';
 import { GameDataMissingError } from './gameData';
 import type { GameData } from './gameData';
 import { AttackButton } from './hud/attackButton';
+import { effectModelProvider } from './fx/effectModels';
+import type { EffectModels } from './fx/effectModels';
+import { ChargeGauge } from './render/ChargeGauge';
+import { BuffStatus } from './hud/buffStatus';
+import { TargetBuffs } from './hud/targetBuffs';
 import { CameraControls } from './cameraControls';
 import { blockBrowserGestures } from './browserGestures';
 import { CharacterWindow } from './hud/characterWindow';
@@ -111,7 +119,7 @@ import { TargetMarks, attackMarks, focusRect } from './render/TargetMarks';
 import type { ScreenRect } from './render/TargetMarks';
 import { HAttr } from './sim/collision';
 import { Mti, ObjSta } from './sim/constants';
-import { SkillUse } from './skills/skillUse';
+import { BLINKPOOL_NOT_YET, SkillUse } from './skills/skillUse';
 import { transformCoord } from './sim/d3dx';
 import { STEPS_PER_SECOND, catchUp } from './sim/stepper';
 import { SimulationClock } from './simulationClock';
@@ -226,6 +234,18 @@ export class WorldScreen {
   private effects: EffectManager | undefined;
   private effectRenderer: EffectRenderer | undefined;
   private effectTextures: EffectTextureProvider | undefined;
+  /** Piece 7 M2: the models the effects' mesh parts draw (the wand's flight model among them). */
+  private effectModels: EffectModels | undefined;
+  /**
+   * Piece 7 M2: the missiles in flight (the wand's, the bow's, the monsters', a thrown yoyo), what they read of the world,
+   * the own missiles' ids and reports, and the charge gauge over the own head.
+   */
+  private missiles: Missiles | undefined;
+  private missileWorld: MissileWorld | undefined;
+  private chargeGauge: ChargeGauge | undefined;
+  /** Piece 7 M2: the own buffs' icons (`CWndBuffStatus`) and the target's under its bar (`RenderMoverBuff`). */
+  private buffStatus: BuffStatus | undefined;
+  private targetBuffs: TargetBuffs | undefined;
   /**
    * The damage numbers and the corners around the target, each drawn in a layer of its glyph sheet over the canvas
    * (`spriteLayers`); none of either when the sheets cannot be had.
@@ -667,13 +687,15 @@ export class WorldScreen {
   private startEffects(stage: WorldStage, services: SceneServices): void {
     const overlay = this.page!.overlay;
     const textures = effectTextureProvider(services.textures);
-    const renderer = new EffectRenderer(stage.scene, (key) => textures.get(key));
-    this.effectTextures = textures;
-    this.effectRenderer = renderer;
     // a file that fails after the screen has ended is not this entry's to say: the overlay is the page's
     const report = (message: string): void => {
       if (!this.over) overlay.error(message);
     };
+    const models = effectModelProvider(async (key) => (await loadGltf(services.store, services.loaders.gltf, key)).scene, report);
+    const renderer = new EffectRenderer(stage.scene, (key) => textures.get(key), (key) => models.get(key));
+    this.effectTextures = textures;
+    this.effectModels = models;
+    this.effectRenderer = renderer;
     const effects = new EffectManager(this.data!, (key) => services.store.json<WebEffect>(key), renderer, neuzRandom, report);
     this.effects = effects;
     effects.made = (xi, pos) => this.sounds?.effect(xi, { x: pos[0], y: pos[1], z: pos[2] });
@@ -771,6 +793,12 @@ export class WorldScreen {
     const view = doc.defaultView ?? window;
     this.hudArt!.sheets = sheets;
     this.element.replaceChildren(holder, ...this.screenLayers(doc, sheets), this.hud!.element);
+    // Piece 7 M2: the charge gauge, over the canvas and under the windows (CMover::RenderGauge draws it with the world)
+    this.chargeGauge = new ChargeGauge(this.hudArt!, doc);
+    this.element.insertBefore(this.chargeGauge.element, this.hud!.element);
+    this.buffStatus = new BuffStatus(this.hudArt!, doc);
+    this.targetBuffs = new TargetBuffs(this.hudArt!, doc);
+    this.hud!.element.append(this.buffStatus.element, this.targetBuffs.element);
     this.minimap?.open();
     this.element.addEventListener('contextmenu', this.onContextMenu);
     this.page?.overlay.setCompact(view.matchMedia?.('(max-width: 1000px) and (pointer: coarse)').matches === true);
@@ -783,7 +811,10 @@ export class WorldScreen {
     const skillUse = new SkillUse(this.session, this.focus, () => this.own, () => performance.now(), this.data!, {
       tick: () => this.entry.clock.tick(), ground: () => this.ground,
     });
-    skillUse.onText = (id) => this.say(id);
+    // the web's own line where Neuz would teleport (Blinkpool, plan Decisions 8); the catalog's texts for the rest
+    skillUse.onText = (id) => (id === BLINKPOOL_NOT_YET
+      ? this.hud?.messages.add('Blinkpool is not in the browser yet.', 0xffff0000)
+      : this.say(id));
     this.skillUse = skillUse;
     const attackLoop = new AttackLoop(
       this.session, this.focus, this.world!, () => this.own, this.entry.clock, this.data!.movers, skillUse,
@@ -792,6 +823,32 @@ export class WorldScreen {
     skillUse.attack = attackLoop;
     this.world!.onUseSkill = (casterId, message, started) => skillUse.onUseSkill(casterId, message, started);
     this.attackLoop = attackLoop;
+    // Piece 7 M2: the own missiles' ids and reports, the missiles of everyone, and what the attack loop says and tests
+    const ownShots = new OwnShots(this.session);
+    const views = this.views!;
+    // Strong Wind's push goes into the target's outside force (m_vDeltaE), which fades as a knock-back's does
+    this.missiles = new Missiles(ownShots, (targetId, shake) => { if (shake) views.shake(targetId); }, (id, delta) => {
+      const pushed = this.world?.movers.get(id);
+      if (pushed !== undefined) pushed.act.deltaE = [...delta];
+    });
+    this.missileWorld = {
+      movers: this.world!.movers,
+      boxOf: (id) => {
+        const box = views.pickCandidate(id)?.box;
+        return box === undefined ? undefined : { ...box, scale: this.world!.movers.get(id)?.added.scale ?? 1 };
+      },
+      handOf: (id, hand) => views.handAt(id, hand),
+      rankOf: (id) => {
+        const mover = this.world?.movers.get(id);
+        return mover === undefined || mover.added.isPlayer ? 0 : this.data?.movers.get(mover.added.index)?.rank ?? 0;
+      },
+    };
+    this.world!.missiles = this.missiles;
+    this.world!.shots = ownShots;
+    this.world!.handOf = (id, hand) => views.handAt(id, hand);
+    attackLoop.shots = ownShots;
+    attackLoop.onText = (id) => this.say(id);
+    attackLoop.ground = () => this.ground;
     const session = this.session;
     this.itemUse = new ItemUse(() => this.own, this.data!.itemProps, session);
     const itemActions = new ItemActions(() => this.own, () => this.world!.self()!.act.body.pos,
@@ -827,7 +884,10 @@ export class WorldScreen {
     this.hud!.carrying = () => taskBar.carrying;
     // the Start menu opens where the joystick stands, which is over the windows' layer: it hides while the menu is open
     this.taskBar.onMenuChange = (open) => this.element.classList.toggle('world-menu-open', open);
-    this.attackButton = new AttackButton(() => attackLoop.attackButton(), doc);
+    // held with a wand or a bow it charges, and its let-go shoots (Piece 7 M2, plan Decisions 4)
+    this.attackButton = new AttackButton(() => attackLoop.attackButtonDown(performance.now()), doc, {
+      onRelease: () => attackLoop.attackButtonUp(performance.now()),
+    });
     this.jumpButton = new AttackButton(() => { this.jumpRequested = true; }, doc, { label: 'Jump', className: 'hud-jump' });
     const mobileTools = doc.createElement('div');
     mobileTools.className = 'hud-mobile-tools';
@@ -1077,7 +1137,7 @@ export class WorldScreen {
         numbers.add(pos, value, ownHurt);
         keep(played.numbers, { value, ownHurt, step });
       },
-      flash: (moverId, direction) => views.flash(moverId, direction),
+      flash: (moverId, direction, color) => views.flash(moverId, direction, color),
       shake: (moverId) => views.shake(moverId),
     };
     for (const event of changes.combat) {
@@ -1251,6 +1311,9 @@ export class WorldScreen {
       this.tags!.update(stage.camera, renderer.getSize(drawingSize).y, (objectId) => views.placeOf(objectId));
       this.speechBubbles?.update(stage.camera, drawingSize.y, (objectId) => views.placeOf(objectId));
       this.effects?.draw(stage.camera);
+      const ownView = world.self();
+      this.chargeGauge?.update(this.attackLoop?.gauge(now) ?? null, ownView === undefined ? null : views.placeOf(ownView.objectId)?.head ?? null,
+        stage.camera, drawingSize.x, drawingSize.y);
 
       const { tiles, models } = stage.counts();
       overlay.setCounts({ tiles, models: models + views.count(), textures: this.services!.textures.size() });
@@ -1327,7 +1390,7 @@ export class WorldScreen {
     const shopPosition = this.shopWindow?.frame.isOpen ? own?.act.body.pos : undefined;
     const loop = this.attackLoop!;
     const held = this.tap!.heldMover();
-    if (held === null) loop.onReleased();
+    if (held === null) loop.onReleased(now);
     else loop.onMoverHeld(held.mover, now - held.time);
     const tap = this.tap!.take();
     const walkKey = this.walkKey!.held();
@@ -1345,7 +1408,7 @@ export class WorldScreen {
       this.itemActions?.step(now);
       // the task bar's skills, then the reserved skill's branch of Process, which leaves neither the attack nor the controls
       const skillBranch = this.skillUse!.step(own, (objectId) => world.movers.get(objectId));
-      if (((jump || airborne) && !skillBranch) || loop.step(skillBranch)) this.ownMover!.control(own, intent, tap, walkKey, jump);
+      if (((jump || airborne) && !skillBranch) || loop.step(skillBranch, now)) this.ownMover!.control(own, intent, tap, walkKey, jump);
     }
     world.step();
     if (shopPosition !== undefined && own !== undefined &&
@@ -1357,6 +1420,14 @@ export class WorldScreen {
     views.step(world.movers);
     this.stepAudio(world);
     this.effects?.step((objectId) => world.movers.get(objectId)?.act.body);
+    // Piece 7 M2: the missiles' tick (`CSfx::Process` of each), their hits played, and their flight models' frames
+    const missiles = this.missiles;
+    if (missiles !== undefined && this.missileWorld !== undefined) {
+      for (const hit of missiles.step(this.missileWorld)) {
+        this.effects?.play({ xi: hit.xi, pos: hit.pos, angle: hit.angle, ...(hit.scale !== undefined ? { scale: hit.scale } : {}) });
+      }
+      this.effects?.stepMissiles(missiles.views());
+    }
     this.numbers?.step();
     this.follow(world, stage);
   }
@@ -1398,6 +1469,10 @@ export class WorldScreen {
     const loop = this.attackLoop!;
     const targetId = loop.renderTargetId ?? this.focus!.targetId;
     const target = targetId === null ? null : world.movers.get(targetId) ?? null;
+    // Piece 7 M2: the buffs' icons, the own and the target's, on the world's clock
+    const buffNow = world.nowMs();
+    this.buffStatus?.update(self?.buffs.list(buffNow) ?? [], this.data!.skills, buffNow);
+    this.targetBuffs?.update(target?.buffs.list(buffNow) ?? [], this.data!.skills, buffNow, this.element.clientWidth);
     const gameMaster = isGameMaster(self?.added.player?.authorization ?? 0);
     this.hud!.frame(now, this.own, self?.name ?? this.entry.character.name, target, gameMaster);
     this.taskBar!.update(this.own, this.data!);
@@ -1852,6 +1927,17 @@ export class WorldScreen {
     this.speechBubbles?.dispose();
     this.effectRenderer?.dispose();
     this.effectTextures?.dispose();
+    this.effectModels?.dispose();
+    this.missiles?.dispose(); // the world they flew in is gone: nothing is reported
+    this.missiles = undefined;
+    this.missileWorld = undefined;
+    if (this.world !== undefined) this.world.missiles = null;
+    this.chargeGauge?.dispose();
+    this.chargeGauge = undefined;
+    this.buffStatus?.dispose();
+    this.buffStatus = undefined;
+    this.targetBuffs?.dispose();
+    this.targetBuffs = undefined;
     for (const layer of this.spriteLayers.splice(0)) layer.dispose();
     this.logOutBox?.dispose();
     this.characterWindow?.dispose();

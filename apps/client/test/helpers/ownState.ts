@@ -21,6 +21,12 @@ export const VAGRANT: WebJob = {
   critical: 1, title: 'Vagrant',
 };
 
+/** `JOB_MERCENARY`, `Resource/propJob.inc:4`, named as etc.inc's job block names it. */
+export const MERCENARY: WebJob = {
+  ...VAGRANT, name: 'JOB_MERCENARY', attackSpeed: 80, factorMaxHP: 1.5, factorMaxMP: 0.5, factorMaxFP: f32(0.7),
+  factorDef: f32(1.35), factorHPRecovery: f32(1.6), factorFPRecovery: 1, blocking: f32(0.8), title: 'Mercenary',
+};
+
 /** `ExpTable.inc:4-20`, rows 0 to 16 (`nExp1 nExp2 dwLPPoint nLimitExp`; the row's place is the level). */
 export const EXP_ROWS: ExpRow[] = [
   [0, 0, 0, 0], [0, 1, 0, 16], [14, 1, 2, 18], [20, 2, 2, 21], [36, 2, 2, 25], [90, 3, 2, 30], [152, 4, 2, 35],

@@ -101,6 +101,30 @@ const SWINGS: ReadonlyMap<number, { state: number; motion: number }> = new Map([
 ]);
 const isSwing = (state: number): boolean =>
   state === ObjSta.ATK1 || state === ObjSta.ATK2 || state === ObjSta.ATK3 || state === ObjSta.ATK4;
+/** Piece 7 M2: the states a player plays at its attack speed (`ProcessAniSpeed`, `Mover.cpp:3088-3097`), the shots with the swings. */
+const atAttackSpeed = (state: number): boolean =>
+  isSwing(state) || state === ObjSta.ATK_MAGIC1 || state === ObjSta.ATK_RANGE1;
+/** Piece 7 M2: the states a player plays at its casting speed (`GetCastingAniSpeed`, `Mover.cpp:3098-3102`). */
+const atCastingSpeed = (state: number): boolean =>
+  state === ObjSta.ATK_CASTING1 || state === ObjSta.ATK_CASTING2 || state === ObjSta.ATK_MAGICSKILL;
+/** The cast motions' option (`ActionMoverMsg.cpp:806`, `ActionMoverState.cpp:694`, :709): as they are, no weapon set. */
+const CAST_OPTION = Mop.SWDFORCE | Mop.NO_TRANS | Mop.FIXED;
+/** `m_nCastingTime = nParam3 * 4` (`ActionMoverMsg.cpp:788`): the server's ticks of 1/15 s in ticks of 1/60. */
+const CASTING_TICKS = 4;
+
+/**
+ * `MAGICATKMSG` (`Action.h:197-205`): a wand's or a bow's shot another mover's MAGIC_ATTACK or RANGE_ATTACK asked for
+ * while it was busy (`m_qMagicAtkMsg.AddTail`, `DPClient.cpp:3849`, :3870); `param2` 0 is the wand's, anything else the
+ * bow's, whose `dwItemID` is `param3` (`CMagicAtkMsgq::Process`, `ActionMover.cpp:72-75`).
+ */
+export interface KeptMagicAttack {
+  msg: number;
+  targetId: number;
+  param2: number;
+  param3: number;
+  power: number;
+  sfxHitId: number;
+}
 
 const copy = (v: Vec3): Vec3 => [v[0], v[1], v[2]];
 const toFloats = (v: Vec3): Vec3 => [f32(v[0]), f32(v[1]), f32(v[2])];
@@ -285,6 +309,11 @@ export class ActionMover {
    */
   isAttrHit: () => number = () => -1;
   /**
+   * Piece 7 M2: `m_pModel->IsAttrQuake()` (`ModelObject.h:304`, `CMotion::IsAttrQuake`, `Bone.h:178-185`): whether
+   * the model's last frame move went past a frame marked `MA_QUAKE`. By default false: no model.
+   */
+  isAttrQuake: () => boolean = () => false;
+  /**
    * `m_pModel->m_fFrameCurrent` and `m_nFrameMax` of the motion the rules set, which a melee skill's end reads; null while
    * the motion's file loads (no frame yet, so no end). By default frame 0 of 0: no model, so the motion is over at once,
    * as `isEndFrame` says.
@@ -336,6 +365,41 @@ export class ActionMover {
    * 4 steps' hold is the rules' own.
    */
   onMeleeSkill: (hitCount: number) => void = () => {};
+  /**
+   * Piece 7 M2: `CMover::OnAttackMagic()` and `CMover::OnAttackRange()` (`MoverActEvent.cpp:773-880`, :672-767), which
+   * `ProcessStateAttackMagic` and `ProcessStateAttackRange` call at a hit frame of the wand's and the bow's shot
+   * (`ActionMoverState.cpp:1135-1182`; the bow's only at a target in view and alive). Their owner makes the missile.
+   */
+  onAttackMagic: () => void = () => {};
+  onAttackRange: () => void = () => {};
+  /**
+   * Piece 7 M2: a player's swing past a quake frame (`pModel->IsAttrQuake()`, `_ProcessStateAttack`,
+   * `ActionMoverState.cpp:1040-1078`), tested before its hit frame: its owner throws the yoyo of a yoyo's swing.
+   */
+  onAttackQuake: () => void = () => {};
+  /**
+   * Piece 7 M2: `CMover::OnMagicSkill( 0, nCount )` (`MoverActEvent.cpp:475-666`), which `ProcessStateMagicSkill` calls at
+   * the shot motion's hit frame with the hits so far, and with 0 for each of Water Ball's later shots (`m_nShootCnt`,
+   * `ActionMoverState.cpp:740-747`). Its owner, the world, makes the skill's shot or applies it.
+   */
+  onMagicSkill: (hitCount: number) => void = () => {};
+  /**
+   * Piece 7 M2: `GetCastingAniSpeed()` (`MoverAttack.cpp:195-203`): clamp( 1 + DST_SPELL_RATE / 100, 0.1, 2.0 ), which the
+   * cast states play at. 1 for a mover whose spell rate is not known (another player's).
+   */
+  castingSpeed: () => number = () => 1;
+  /** Piece 7 M2: the `nSkillCount` of a skill's level (`AddSkillProp`): Water Ball's shots; 0 or less is one. */
+  skillCountOf: (skill: number, level: number) => number = () => 0;
+  /**
+   * Piece 7 M2: the own mover holds a wand or a bow (`GetWeaponItem()`, `IK3_WAND` or `IK3_BOW`): its `OBJMSG_ATK1` to
+   * `ATK4` are refused, -2 (`ActionMoverMsg.cpp:608-616`). The attack loop sets it for the own mover; nobody else's.
+   */
+  rangedHand: () => boolean = () => false;
+  /**
+   * Piece 7 M2: `CMover::DoAttackMagic` or `DoAttackRange` (`MoverSkill.cpp:3201-3380`) for a kept shot
+   * (`CMagicAtkMsgq::Process`, `ActionMover.cpp:59-93`): 1 started, 0 busy, -1 refused. Its owner, the world, sets it.
+   */
+  doKeptMagicAttack: (kept: KeptMagicAttack) => number = () => -1;
   /** The C runtime's `rand()`, 0 to `RAND_MAX` (32767, MSVC's), for `random( n )` (`xUtil.h:28`): `rand() % n`. */
   rand: () => number = () => Math.floor(Math.random() * 32768);
 
@@ -349,8 +413,14 @@ export class ActionMover {
   private posLast: Vec3 = [0, 0, 0];
   /** `m_qMeleeAtkMsg` (`Action.h:274`): the swings a MELEE_ATTACK asked for while the mover was busy. */
   private readonly keptAttacks: KeptAttack[] = [];
+  /** Piece 7 M2: `m_qMagicAtkMsg` (`Action.h:275`): the shots kept while the mover was busy, the same ring of 254. */
+  private readonly keptMagic: KeptMagicAttack[] = [];
   /** `m_nMotionHitCount` (`ActionMover.h:92`): the hit frames a melee skill's motion has passed. */
   private motionHitCount = 0;
+  /** Piece 7 M2: `m_nCount`, one a step (`ActionMover.cpp:331`), from 0 at a cast's start; `m_nCastingTime`; `m_nShootCnt`. */
+  private count = 0;
+  private castingTime = 0;
+  private shootCount = 0;
 
   constructor(readonly body: MoverBody) {
     body.pos = toFloats(body.pos);
@@ -364,6 +434,11 @@ export class ActionMover {
    */
   sendActMsg(msg: number, ...params: number[]): boolean {
     return this.processActMsg1(msg, params[0] ?? 0, params[1] ?? 0, params[2] ?? 0) === 1;
+  }
+
+  /** Piece 7 M2: `SendActMsg`'s own answer, which `DoAttackMagic` and `DoAttackRange` return: 1 started, 0 busy, below 0 refused. */
+  actMsgError(msg: number, ...params: number[]): number {
+    return this.processActMsg1(msg, params[0] ?? 0, params[1] ?? 0, params[2] ?? 0);
   }
 
   /** Joystick air control: change horizontal travel while preserving the native jump and vertical velocity. */
@@ -409,6 +484,14 @@ export class ActionMover {
       this.keptAttacks.push({ msg, param1: targetId, param2, param3 });
     }
     return result > 0;
+  }
+
+  /**
+   * Piece 7 M2: `m_qMagicAtkMsg.AddTail( ... )` (`DPClient.cpp:3849`, :3870): another mover's shot that `DoAttackMagic` or
+   * `DoAttackRange` found it busy for (0), for the end of its attack (`onEndAttackState`). None past 254 (`MAX_ACTMSG`).
+   */
+  keepMagicAttack(kept: KeptMagicAttack): void {
+    if (this.keptMagic.length < MELEE_QUEUE_SIZE) this.keptMagic.push({ ...kept });
   }
 
   /**
@@ -498,6 +581,7 @@ export class ActionMover {
     this.deltaAccu = [0, 0, 0];
     this.processAniSpeed();
     this.processAction(pos);
+    this.count++; // m_nCount++, at the end of ProcessAction (ActionMover.cpp:331)
     if (this.atkCnt > 0) this.atkCnt++; // Mover.cpp:3872-3873, after the actions
     const dy = this.deltaAccu[1]; // vDelta, the function's own copy of m_vDeltaAccu (:131)
     let collided = false; // fResult
@@ -587,11 +671,13 @@ export class ActionMover {
   }
 
   /**
-   * `CMover::ProcessAniSpeed` (`Mover.cpp:3084-3145`, `__AI_0509` on): a player swinging plays at its attack speed, any
-   * other mover, and a player doing anything else, at 1.0. (The casting states, at `GetCastingAniSpeed`, are skills'.)
+   * `CMover::ProcessAniSpeed` (`Mover.cpp:3084-3145`; its live branch is `__VER < 9`'s, the same): a player swinging or
+   * shooting (Piece 7 M2: ATK_MAGIC1, ATK_RANGE1, :3088-3097) plays at its attack speed, any other mover, and a player doing
+   * anything else, at 1.0. (The casting states, at `GetCastingAniSpeed`, are skills'.)
    */
   private processAniSpeed(): void {
-    this.aniSpeed = this.body.isPlayer && isSwing(this.state & ObjSta.ATK_ALL) ? this.attackSpeed() : 1;
+    const atk = this.state & ObjSta.ATK_ALL;
+    this.aniSpeed = !this.body.isPlayer ? 1 : atAttackSpeed(atk) ? this.attackSpeed() : atCastingSpeed(atk) ? this.castingSpeed() : 1;
   }
 
   /** `CActionMover::ProcessAction` (`ActionMover.cpp:210-334`) on the ground; `vPos` is the position the step starts at. */
@@ -775,6 +861,13 @@ export class ActionMover {
         return this.swing(SWINGS.get(msg)!, param1);
       case ActMsg.MELEESKILL: // :736-772
         return this.meleeSkill(param1, param2);
+      case ActMsg.MAGICSKILL: // :774-812, Piece 7 M2
+      case ActMsg.MAGICCASTING:
+        return this.magicSkill(param1, param2, param3);
+      case ActMsg.ATK_MAGIC1: // :522-553
+        return this.magicShot(param1);
+      case ActMsg.ATK_RANGE1: // :555-594
+        return this.rangeShot(param1, param2);
       case ActMsg.DIE: // :842-1003
         this.die(param1, param2);
         return 1;
@@ -807,12 +900,13 @@ export class ActionMover {
    * while swinging, which `OnMeleeAttack` keeps for later; -1 for a target out of view or dead; -3 in a damage state
    * other than a flinch, which the swing ends. Then combat mode, a stop of the turn, standing, the attack speed for a
    * player, the swing's state and motion (`ANILOOP_1PLAY`, `MOP_SWDFORCE | MOP_NO_TRANS`), and the mover turns to the
-   * target. The client never rolls the hit (`AF_GENERIC`). Left out: `MVRF_NOATTACK`/`NO_ATTACK_MODE` (buffs); the own
-   * character's refusal with a wand or bow (:608-616), which never starts a melee swing with them; the steal rule
-   * (server); `__XSLOW1018`'s slow blow (not built); and `SetJJim`'s `m_idTargeter`. The swing starts `m_nAtkCnt` (:685).
+   * target. The client never rolls the hit (`AF_GENERIC`). The own character with a wand or a bow is refused, -2
+   * (`rangedHand`, :608-616; Piece 7 M2). Left out: `MVRF_NOATTACK`/`NO_ATTACK_MODE` (buffs); the steal rule (server);
+   * `__XSLOW1018`'s slow blow (not built); and `SetJJim`'s `m_idTargeter`. The swing starts `m_nAtkCnt` (:685).
    */
   private swing(swing: { state: number; motion: number }, targetId: number): number {
     if (this.state & ObjSta.ACTION_ALL) return 0;
+    if (this.rangedHand()) return -2; // Piece 7 M2: the own mover with a wand or a bow (:608-616)
     const target = this.findMover(targetId);
     if (target === undefined) return -1;
     this.targetId = targetId;
@@ -834,6 +928,51 @@ export class ActionMover {
   }
 
   /**
+   * Piece 7 M2: `OBJMSG_ATK_MAGIC1` (`ActionMoverMsg.cpp:522-553`), the wand's shot at the mover `targetId`: refused (0)
+   * in an action; a sitting mover stands up first; 0 while already attacking; -1 for a target out of view or dead. Then a
+   * damage state ends, combat mode, a stop of the turn and standing, the state and `MTI_ATK1` once (no option: the
+   * weapon's set makes it the wand's), and `m_nAtkCnt` starts. Left out: `MVRF_NOATTACK`/`NO_ATTACK_MODE` (buffs), the
+   * steal rule (server), `SetJJim`; `OnAttackStart` does nothing. It does not face the target: `DoAttackMagic` does.
+   */
+  private magicShot(targetId: number): number {
+    if (this.state & ObjSta.ACTION_ALL) return 0;
+    if (this.stateFlag & ObjStaF.SIT) this.resetState(ObjSta.MOVE_ALL);
+    if (this.state & ObjSta.ATK_ALL) return 0;
+    const target = this.findMover(targetId);
+    if (target === undefined || target.isDie()) return -1;
+    if (this.state & ObjSta.DMG_ALL) this.resetState(ObjSta.DMG_ALL);
+    if ((this.stateFlag & ObjStaF.COMBAT) === 0) this.processActMsg1(ActMsg.MODE_COMBAT, 0, 0, 0);
+    this.processActMsg1(ActMsg.STOP_TURN, 0, 0, 0);
+    this.processActMsg1(ActMsg.STAND, 0, 0, 0);
+    this.setState(ObjSta.ATK_ALL, ObjSta.ATK_MAGIC1);
+    this.setMotion(Mti.ATK1, AniLoop.ONE_PLAY);
+    this.atkCnt = 1;
+    return 1;
+  }
+
+  /**
+   * Piece 7 M2: `OBJMSG_ATK_RANGE1` (`ActionMoverMsg.cpp:555-594`), the bow's shot at the mover `targetId` with the motion
+   * `motion`: refused (0) in an action; a sitting mover stands up first; 0 while already attacking; -1 for a target out of
+   * view or dead. Then `m_idTarget`; a flinch ends, any other damage state refuses it (-1); combat mode; the state and the
+   * motion once. No stop of the turn and no standing (:586-587). Left out as for the wand.
+   */
+  private rangeShot(targetId: number, motion: number): number {
+    if (this.state & ObjSta.ACTION_ALL) return 0;
+    if (this.stateFlag & ObjStaF.SIT) this.resetState(ObjSta.MOVE_ALL);
+    if (this.state & ObjSta.ATK_ALL) return 0;
+    const target = this.findMover(targetId);
+    if (target === undefined || target.isDie()) return -1;
+    this.targetId = targetId;
+    if ((this.state & ObjSta.DMG_ALL) === ObjSta.DMG) this.resetState(ObjSta.DMG_ALL);
+    else if (this.state & ObjSta.DMG_ALL) return -1;
+    if ((this.stateFlag & ObjStaF.COMBAT) === 0) this.processActMsg1(ActMsg.MODE_COMBAT, 0, 0, 0);
+    this.setState(ObjSta.ATK_ALL, ObjSta.ATK_RANGE1);
+    this.setMotion(motion, AniLoop.ONE_PLAY);
+    this.atkCnt = 1;
+    return 1;
+  }
+
+  /**
    * `OBJMSG_MELEESKILL` (`ActionMoverMsg.cpp:736-772`, the client's branch) with the skill's motion `motion` at the mover
    * `targetId`: refused (-2) in an action, or at a target out of view (`IsValidObj`); else, as the server's word comes,
    * whatever the mover was doing: `m_dwMotion = -1` and `ClearState`, the melee-skill state alone, and the motion once and
@@ -849,6 +988,30 @@ export class ActionMover {
     this.clearState();
     this.setState(ObjSta.ATK_ALL, ObjSta.ATK_MELEESKILL);
     this.setMotion(motion, AniLoop.ONE_PLAY, Mop.SWDFORCE | Mop.NO_TRANS | Mop.FIXED);
+    this.motionHitCount = 0;
+    return 1;
+  }
+
+  /**
+   * Piece 7 M2: `OBJMSG_MAGICSKILL` and `OBJMSG_MAGICCASTING` (`ActionMoverMsg.cpp:774-812`) with the motion `motion` at the
+   * mover `targetId` and the server's cast time `castingTime`: refused (-2) in an action or at a target out of view (the
+   * server's busy rule is its own); else, whatever the mover was doing, `m_dwMotion = -1` and `ClearState`, the cast time
+   * in ticks (`* 4`), a cast of some time from a count of 0 (`CASTING1`), none the shot at once (`MAGICSKILL`), the motion
+   * once and as it is, its hits counted from 0. `MVRF_NOATTACK` (buffs) and the disguise's `MTI_ATK1` are left out.
+   */
+  private magicSkill(motion: number, targetId: number, castingTime: number): number {
+    if (this.state & ObjSta.ACTION_ALL) return -2;
+    if (this.findMover(targetId) === undefined) return -2;
+    this.motion = NO_MOTION;
+    this.clearState();
+    this.castingTime = castingTime * CASTING_TICKS;
+    if (this.castingTime > 0) {
+      this.count = 0;
+      this.setState(ObjSta.ATK_ALL, ObjSta.ATK_CASTING1);
+    } else {
+      this.setState(ObjSta.ATK_ALL, ObjSta.ATK_MAGICSKILL);
+    }
+    this.setMotion(motion, AniLoop.ONE_PLAY, CAST_OPTION);
     this.motionHitCount = 0;
     return 1;
   }
@@ -968,6 +1131,32 @@ export class ActionMover {
       case ObjSta.ATK_MELEESKILL: // :460-462
         this.processStateMeleeSkill();
         break;
+      case ObjSta.ATK_CASTING1: // ProcessStateMagicCasting (:686-725), Piece 7 M2: the cast motion over, its loop
+        if (this.isEndFrame()) {
+          this.setMotion(this.motion + 1, AniLoop.LOOP, CAST_OPTION);
+          this.setState(ObjSta.ATK_ALL, ObjSta.ATK_CASTING2);
+        }
+        break;
+      case ObjSta.ATK_CASTING2: // the cast time counted out (the count runs from the cast's start), the shot motion
+        if (this.count >= this.castingTime) {
+          this.setMotion(this.motion + 1, AniLoop.ONE_PLAY, CAST_OPTION);
+          this.setState(ObjSta.ATK_ALL, ObjSta.ATK_MAGICSKILL);
+        }
+        break;
+      case ObjSta.ATK_MAGICSKILL:
+        this.processStateMagicSkill();
+        break;
+      case ObjSta.ATK_MAGIC1: // :452-454, ProcessStateAttackMagic (:1135-1152)
+        if (this.isEndFrame()) this.resetState(ObjSta.ATK_ALL);
+        if (this.isAttrHit() >= 0) this.onAttackMagic();
+        break;
+      case ObjSta.ATK_RANGE1: { // :456-458, ProcessStateAttackRange (:1158-1182); MVRF_HITCONT is three monsters'
+        if (this.isEndFrame()) this.resetState(ObjSta.ATK_ALL);
+        if (this.isAttrHit() < 0) break;
+        const target = this.targetId === null ? undefined : this.findMover(this.targetId);
+        if (target !== undefined && (!target.isDie() || target.hitPoint() > 0)) this.onAttackRange();
+        break;
+      }
       case ObjSta.DMG: // :472-477: the flinch ends with its motion
         if (this.isEndFrame()) this.resetState(ObjSta.DMG_ALL);
         break;
@@ -1011,8 +1200,8 @@ export class ActionMover {
    * at :809-814, where the own character's combo follows (its owner's); a monster's at :938-944, after `m_objidHit` is
    * cleared. Then, in the same step, a paused model counts a step off (:953-1031), and an unpaused one is asked for a
    * hit frame (:1080-1090), which `onHit` gets while the target is in view and alive (`IsLive`, `Mover.h:1222`).
-   * Drawing is left out: the sparks of a player's pause, three monsters' charge effects and quakes, and a yoyo's shot;
-   * so are `MVRF_HITCONT` and `OnAttackMeleeContinue` (three monsters' specials) and `OnEndMeleeAttack` (server AI).
+   * Drawing is left out: the sparks of a player's pause, and three monsters' charge effects and quakes; a player's quake
+   * frame is told to `onAttackQuake` (Piece 7 M2: the yoyo's throw, :1040-1078). Left out too: `MVRF_HITCONT` and `OnAttackMeleeContinue` (three monsters' specials) and `OnEndMeleeAttack` (server AI).
    */
   private processStateAttack(dwState: number): void {
     if (this.isEndFrame()) {
@@ -1024,6 +1213,7 @@ export class ActionMover {
       this.paused--;
       return;
     }
+    if (this.body.isPlayer && this.isAttrQuake()) this.onAttackQuake();
     const hit = this.isAttrHit();
     if (hit < 0) return;
     const target = this.targetId === null ? undefined : this.findMover(this.targetId);
@@ -1054,6 +1244,32 @@ export class ActionMover {
     this.onMeleeSkill(this.motionHitCount);
     this.motionHitCount++;
     this.paused = MELEE_SKILL_PAUSE;
+  }
+
+  /**
+   * Piece 7 M2: `CActionMover::ProcessStateMagicSkill` (`ActionMoverState.cpp:729-771`): at the motion's end the state
+   * ends (`ResetState`, whose end clears the skill in use), with no cut and no pause; every 4th step a shot left of Water
+   * Ball's is made (`(g_nProcessCnt & 3) == 0`, here the mover's own count); at the hit frame the shot, its hits counted,
+   * and a skill of `nSkillCount` shots keeps the others for the later steps. Its leftover shots go with the state (plan,
+   * Decisions 13: Neuz keeps them for the next).
+   */
+  private processStateMagicSkill(): void {
+    if (this.isEndFrame()) {
+      this.shootCount = 0;
+      this.resetState(ObjSta.ATK_ALL);
+      return;
+    }
+    if ((this.count & 3) === 0 && this.shootCount > 0) {
+      this.onMagicSkill(0);
+      this.shootCount--;
+    }
+    if (this.isAttrHit() < 0) return;
+    this.onMagicSkill(this.motionHitCount);
+    this.motionHitCount++;
+    const act = this.skillAct;
+    if (act === null) return;
+    const shots = this.skillCountOf(act.skill, act.level);
+    if (shots > 0) this.shootCount = shots - 1;
   }
 
   /**
@@ -1130,16 +1346,38 @@ export class ActionMover {
    * character keeps none (`meleeAttack`), so its `IsActiveMover()` test is left out.
    */
   private onEndAttackState(was: number): void {
-    if ((was & ObjSta.ATK_ALL) === ObjSta.ATK_MELEESKILL) {
+    // OnActEndMeleeSkill and, Piece 7 M2, OnActEndMagicSkill (Action.cpp:128-133, MoverActEvent.cpp:2073-2086): ClearActParam
+    if ((was & ObjSta.ATK_ALL) === ObjSta.ATK_MELEESKILL || (was & ObjSta.ATK_ALL) === ObjSta.ATK_MAGICSKILL) {
       this.skillAct = null;
       return;
     }
-    if (!isSwing(was & ObjSta.ATK_ALL)) return;
+    if (!atAttackSpeed(was & ObjSta.ATK_ALL)) return; // the swings and, Piece 7 M2, the two shots (Action.cpp:113-118)
+    // ProcessAtkMsg (Action.cpp:56-60): the melee queue, and the magic one when the melee one started nothing
+    if (!this.processKeptSwings()) this.processKeptShots();
+  }
+
+  /** `CMeleeAtkMsgq::Process` (`ActionMover.cpp:32-57`): true where a kept swing started. */
+  private processKeptSwings(): boolean {
     for (let kept = this.keptAttacks[0]; kept !== undefined; kept = this.keptAttacks[0]) {
       const result = this.processActMsg1(kept.msg, kept.param1, kept.param2, kept.param3);
-      if (result === 0) return;
+      if (result === 0) return false;
       this.keptAttacks.shift();
-      if (result > 0) return;
+      if (result > 0) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Piece 7 M2: `CMagicAtkMsgq::Process` (`ActionMover.cpp:59-93`): the first kept shot through `DoAttackMagic` or
+   * `DoAttackRange` (`doKeptMagicAttack`); started (1) it leaves the queue, busy (0) it stays, refused (-1) it leaves and
+   * the next is tried.
+   */
+  private processKeptShots(): void {
+    for (let kept = this.keptMagic[0]; kept !== undefined; kept = this.keptMagic[0]) {
+      const result = this.doKeptMagicAttack(kept);
+      if (result === 0) return;
+      this.keptMagic.shift();
+      if (result === 1) return;
     }
   }
 

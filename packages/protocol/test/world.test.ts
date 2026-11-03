@@ -47,6 +47,11 @@ describe('world constants', () => {
       DOUSESKILLPOINT: 0x007d, SETACTIONPOINT: 0x00c5, ENDSKILLQUEUE: 0x00e5,
       // Piece 6 M2: the server's music and sound.
       PLAYMUSIC: 0x00d1, PLAYSOUND: 0x00d2,
+      // Piece 7 M2: the job change and the ranged attacks.
+      SET_JOB_SKILL: 0x00a7, SET_NEAR_JOB_SKILL: 0x00a8, CREATESFXALLOW: 0x00aa, MAGIC_ATTACK: 0x00e1, RANGE_ATTACK: 0x00e2,
+      // Piece 7 M2: the buffs.
+      SETSKILLSTATE: 0x004c, REMOVESKILLINFULENCE: 0x00f8, REMOVEALLSKILLINFULENCE: 0x00f4, SETDESTPARAM: 0x001c,
+      RESETDESTPARAM: 0x001d, RESETDESTPARAM_SYNC: 0x9800,
     });
     expect(BUNDLE_MARKER).toBe(0x31434f54);
   });

@@ -368,3 +368,24 @@ describe('effectTextureProvider', () => {
     expect(provider.get('a')).toBeNull();
   });
 });
+
+describe('EffectRenderer: mesh parts (CSfxPartMesh::Render; Piece 7 M2)', () => {
+  it("draws a mesh entry from the provider's geometries, each with its texture, writing depth", async () => {
+    const { BoxGeometry } = await import('three');
+    const scene = new Scene();
+    const geometry = new BoxGeometry(1, 1, 1);
+    const models = vi.fn((key: string) => (key === 'models/arrow.glb' ? [{ geometry, texture: 'tex' }] : null));
+    const renderer = new EffectRenderer(scene, () => pixel(), models);
+    renderer.begin();
+    renderer.draw([{ kind: 'mesh', part: 0, model: 'models/arrow.glb', matrix: [...IDENTITY], alpha: 128, additive: false }], [5, 0, 0], camera());
+    renderer.draw([{ kind: 'mesh', part: 0, model: 'models/missing.glb', matrix: [...IDENTITY], alpha: 255, additive: true }], ORIGIN, camera());
+    renderer.end();
+    const shown = (scene.getObjectByName('effects')?.children ?? []).filter((mesh) => mesh.visible) as EffectMesh[];
+    expect(shown).toHaveLength(1);
+    expect(shown[0]!.geometry).toBe(geometry);
+    expect(shown[0]!.material.uniforms.alpha!.value).toBeCloseTo(128 / 255);
+    expect(shown[0]!.material.blending).toBe(NormalBlending);
+    expect(shown[0]!.material.depthWrite).toBe(true);
+    expect(models).toHaveBeenCalledWith('models/missing.glb');
+  });
+});

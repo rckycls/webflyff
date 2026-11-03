@@ -1,4 +1,5 @@
 import type { ArReader } from '../ar/ArReader';
+import { readBuffs } from './buffs';
 import type { MessageHeader } from '../bundle';
 import { ObjectType } from '../constants';
 import { readOwnAfterEquipment } from './own';
@@ -78,7 +79,9 @@ function readMover(r: ArReader, self: boolean): AddedMover {
   } else {
     mover.npc = readNpc(r);
   }
-  skipBuffs(r);
+  // Piece 7 M2: another mover's buffs are kept (its icons, and what they do to its numbers); none, none listed
+  const buffs = readBuffs(r);
+  if (buffs.length > 0) mover.buffs = buffs;
   return mover;
 }
 
@@ -219,19 +222,3 @@ function readNpc(r: ArReader): AddedNpc {
   };
 }
 
-/**
- * `m_buffs.Serialize( ar )` (__BUFF_1107, ObjSerializeOpt.cpp:758): `CBuffMgr::Serialize` (`_Common/buff.cpp:901`)
- * reads the count (`size_t`, 4 bytes on x86), then per buff `WORD wType` and `IBuff::Serialize` (:124): `m_wId`
- * (`WORD`), the level (`DWORD m_dwLevel`; a `BUFF_ITEM2`'s `time_t`, `CBuffItem2::SerializeLevel`, :604, is 4
- * bytes too, because both Neuz and the world server define `_USE_32BIT_TIME_T`) and the time left (`DWORD`).
- * The browser keeps none of them.
- */
-function skipBuffs(r: ArReader): void {
-  const count = r.u32();
-  for (let i = 0; i < count; i++) {
-    r.u16(); // wType
-    r.u16(); // m_wId
-    r.u32(); // m_dwLevel
-    r.u32(); // tmTotal
-  }
-}

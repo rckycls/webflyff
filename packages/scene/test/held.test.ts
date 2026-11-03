@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { toWebPosition } from '@flyffweb/formats';
 import type { SkeletonGrips, Vec3 } from '@flyffweb/formats';
 import { assembleCharacter } from '../src/character/assemble';
-import { attachHeld } from '../src/character/held';
+import { attachHeld, handPosition } from '../src/character/held';
 
 /**
  * The grips of the converted `mvr_male.chr` (skeletons/mvr_male.glb): the right hand is bone 17, the left hand 13, the
@@ -135,6 +135,22 @@ const POINTS: Vec3[] = [
   [0, 0.3, 0],
   [0, 0, 0.2],
 ];
+
+describe('handPosition (CModelObject::GetHandPos, ModelObject.cpp:2388+; Piece 7 M2)', () => {
+  it("is where a held item's origin sits: the hand's world matrix times its grip, for either hand", async () => {
+    const { character, holder, bone } = await man();
+    const hand = bone('Bip02 L Hand');
+    hand.rotation.set(0.3, 0.2, -0.5);
+    holder.updateMatrixWorld(true);
+    expectAt(handPosition(character, 'left')!, heldAt(hand, MALE_GRIPS.localLH, [0, 0, 0]));
+    expectAt(handPosition(character, 'right')!, heldAt(bone('Bip02 R Hand'), MALE_GRIPS.localRH, [0, 0, 0]));
+  });
+
+  it('none without grips', async () => {
+    const { character } = await man();
+    expect(handPosition({ ...character, grips: null }, 'right')).toBeNull();
+  });
+});
 
 describe('attachHeld', () => {
   it('the Wooden Sword sits at the right hand', async () => {

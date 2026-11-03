@@ -82,10 +82,10 @@ function motion(name: string): LoopedMotion {
 }
 
 /** A motion of `frames` frames at 30 fps (0.5 frames a step, as the client's motions are) whose blows land on `hit`. */
-function hitMotion(name: string, frames: number, hit: number[]): LoopedMotion {
+function hitMotion(name: string, frames: number, hit: number[], quake: number[] = []): LoopedMotion {
   const times = Array.from({ length: frames }, (_, i) => i / 30);
   const clip = new AnimationClip(name, -1, [new NumberKeyframeTrack('joint.position[x]', times, times)]);
-  const events: MotionEvents = { hit, sound: [], quake: [], frames, perSlerp: 0.5 };
+  const events: MotionEvents = { hit, sound: [], quake, frames, perSlerp: 0.5 };
   clip.userData.events = events;
   return loopMotion(clip);
 }
@@ -764,6 +764,34 @@ describe('MoverViews', () => {
         expect(lastAction(clipAction).getClip().name).toBe('m200');
         expect(lastAction(clipAction).timeScale).toBe(1);
       }
+    });
+
+    it('a hand has no place without a model to hold it (GetHandPos; Piece 7 M2)', async () => {
+      const r = armedRig({});
+      const { player } = duel(r);
+      expect(r.views.handAt(999, 'left')).toBeNull();
+      // still loading: no model yet
+      expect(r.views.handAt(player.objectId, 'right')).toBeNull();
+    });
+
+    it('a swing past its quake frame tells it once, before the hit frame (IsAttrQuake, Bone.h:178-185; Piece 7 M2)', async () => {
+      // a yoyo's swing: the throw at the quake frame 6, the blow at 17 of 24 ([R §2])
+      const r = armedRig({ motions: { m223: () => hitMotion('m223', 24, [17], [6]) } });
+      const { player, monster } = duel(r);
+      await r.views.settled();
+      const quakes: number[] = [];
+      const hits: number[] = [];
+      player.act.onAttackQuake = () => quakes.push(now);
+      player.act.onHit = () => hits.push(now);
+      expect(player.act.sendActMsg(ActMsg.ATK1, 8)).toBe(true);
+      let now = 0;
+      for (now = 1; now <= 40; now++) {
+        stepAll(r, player, monster);
+        if (now === 1) await r.views.settled();
+      }
+      expect(quakes).toHaveLength(1);
+      expect(hits).toHaveLength(1);
+      expect(quakes[0]!).toBeLessThan(hits[0]!);
     });
 
     it('a monster swings at speed 1 whatever its attack speed (ProcessAniSpeed, Mover.cpp:3141-3143)', async () => {

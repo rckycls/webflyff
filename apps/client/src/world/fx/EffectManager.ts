@@ -3,6 +3,7 @@ import { toWebMatrix } from '@flyffweb/formats';
 import { EffectModel } from '@flyffweb/scene';
 import type { EffectRandom, EffectRenderer } from '@flyffweb/scene';
 import type { Camera } from 'three';
+import type { MissileView } from '../combat/missiles';
 import type { GameData } from '../gameData';
 import { wrapAngle } from '../sim/ActionMover';
 
@@ -48,6 +49,11 @@ export const Xi = {
   HIT_YOY01: 17,
   HIT_SWORD01: 20,
   HIT_SWORD02: 21,
+  /** Piece 7 M2: the wand's hit (`sfx_HitWand01`), its missile on the ground and in the air, the arrow. */
+  HIT_WAND01: 22,
+  FIR_WAND01: 27,
+  FIR_WAND02: 28,
+  ITEM_RANGE_ATK1: 112,
   HIT_STICK01: 24,
   HIT_STICK02: 25,
   HIT_KNUCKLE01: 31,
@@ -160,6 +166,16 @@ export interface EffectRequest {
   sourceAngle?: number;
   /** `SetScale( s, s, s )` after `CreateSfx`: replaces the scale of the index entry (`CObj::SetScale`, `Obj.cpp:709-714`). */
   scale?: number;
+  /**
+   * Piece 7 M2: `SetAngle( a )` after `CreateSfx`, a heading of its own (degrees) that replaces the one `CreateSfx` turned
+   * from `sourceAngle`: an arrow's hit takes the arrow's yaw (`pSfx->SetAngle( m_pSfxObj->m_vRotate.y )`, `Sfx.cpp:1053-1056`).
+   */
+  angle?: number;
+  /**
+   * Piece 7 M2: `nSec` of `CreateSfx`: the effect's model loops until `nSec * 60` ticks have gone by
+   * (`CSfx::Process`, `SfxObj.cpp:148-158`), as a buff's lasting effect does (`dwSfxObj4`). Without it, once.
+   */
+  seconds?: number;
 }
 
 /** One effect in the world: a `CSfx`. */
@@ -171,6 +187,9 @@ interface Playing {
   followId: number | null;
   /** The mover it follows is `m_idDest`: the effect stays at its last position when the mover is gone. */
   keepWhenGone: boolean;
+  /** Piece 7 M2: `m_nSec` (seconds) and `m_nFrame`, for an effect that loops for a time; null plays once. */
+  seconds: number | null;
+  frame: number;
   /** `GetAngle()`, degrees, as `SetAngle` stores it. */
   angle: number;
   /** `GetScale()`. */
@@ -203,6 +222,8 @@ export class EffectManager {
   /** Each file's load, started once; null when it could not be had. */
   private readonly loading = new Map<string, Promise<WebEffect | null>>();
   private readonly reported = new Set<string>();
+  /** Piece 7 M2: the missiles' flight models by missile id (null while the file loads), with their last view. */
+  private readonly missiles = new Map<number, { model: EffectModel | null; view: MissileView }>();
   /**
    * Told of each effect made, with its id and where it is made: `CreateSfx` plays the effect's sound there
    * (CreateObj.cpp:82, :180-181, :328-329), at once, whether or not the file is in yet (Piece 6 M2).
@@ -256,7 +277,13 @@ export class EffectManager {
    */
   step(find: (objectId: number) => { pos: Vec3 } | undefined): void {
     this.effects = this.effects.filter((effect) => {
-      if (effect.model.step()) return false;
+      effect.frame++;
+      if (effect.seconds === null) {
+        if (effect.model.step()) return false;
+      } else {
+        if (effect.model.step()) effect.model.rewind(); // m_nCurFrame = 0
+        if (effect.frame > effect.seconds * 60) return false;
+      }
       if (effect.followId !== null) {
         const source = find(effect.followId);
         if (source !== undefined) effect.pos = [f32(source.pos[0]), f32(source.pos[1]), f32(source.pos[2])];
@@ -280,7 +307,59 @@ export class EffectManager {
       if (list.length === 0) continue;
       this.renderer.draw(list, [effect.pos[0], f32(effect.pos[1] + effect.lift), effect.pos[2]], camera);
     }
+    // Piece 7 M2: the missiles in flight, `Render2` at their position, unlifted (`CSfxItemWandAtk1::Render`, `Sfx.cpp:939-951`)
+    for (const { model, view } of this.missiles.values()) {
+      if (model === null) continue;
+      const list = model.drawList2(view.rotation, [view.scale, view.scale, view.scale], invView);
+      if (list.length > 0) this.renderer.draw(list, view.pos, camera);
+    }
     this.renderer.end();
+  }
+
+  /**
+   * Piece 7 M2: one 60 Hz tick of the missiles' flight models, given the missiles in flight (`Missiles.views`): a new one
+   * gets its model once its file is in (`CreateSfx`), each steps (`m_pSfxObj->Process()`) and goes back to frame 0 at its
+   * `loopFrame` (the wand's 20, `Sfx.cpp:884-888`) or, with none, once it is over (the arrow's, :978-981); a missile no more
+   * in flight drops its model. A missile whose file cannot be had flies undrawn (said once).
+   */
+  stepMissiles(views: readonly MissileView[]): void {
+    const live = new Set<number>();
+    for (const view of views) {
+      live.add(view.id);
+      let missile = this.missiles.get(view.id);
+      if (missile === undefined) {
+        missile = { model: null, view };
+        this.missiles.set(view.id, missile);
+        this.missileModel(view.id, view.xi);
+      }
+      missile.view = view;
+      const model = missile.model;
+      if (model === null) continue;
+      const over = model.step();
+      if (view.loopFrame !== null ? model.frame === view.loopFrame : over) model.rewind();
+    }
+    for (const id of [...this.missiles.keys()]) if (!live.has(id)) this.missiles.delete(id);
+  }
+
+  /** The flight model of the missile `id`, `xi`'s file, as soon as it is in (and the missile still flies). */
+  private missileModel(id: number, xi: number): void {
+    const ref = this.data.effects.get(xi);
+    if (ref === undefined) {
+      this.reportOnce(`xi ${xi}`, `effect XI ${xi}: not in the effects index`);
+      return;
+    }
+    const start = (effect: WebEffect | null): void => {
+      const missile = this.missiles.get(id);
+      if (effect === null || missile === undefined) return;
+      try {
+        missile.model = new EffectModel(effect, this.random);
+      } catch (error) {
+        this.reportOnce(`start ${ref.effect}`, `effect ${ref.effect}: ${messageOf(error)}`);
+      }
+    };
+    const ready = this.loaded.get(ref.effect);
+    if (ready !== undefined) start(ready);
+    else void this.file(ref.effect).then(start);
   }
 
   /**
@@ -342,7 +421,9 @@ export class EffectManager {
         pos: [f32(request.pos[0]), fixed ? f32(request.pos[1]) : f32(f32(request.pos[1]) + MADE_LIFT), f32(request.pos[2])],
         followId: plain && request.followId !== undefined ? request.followId : null,
         keepWhenGone: request.followDest === true,
-        angle: headingOf(request.xi, request.sourceAngle),
+        seconds: request.seconds !== undefined && request.seconds > 0 ? request.seconds : null,
+        frame: 0,
+        angle: request.angle === undefined ? headingOf(request.xi, request.sourceAngle) : wrapAngle(f32(request.angle)),
         scale: [scale, scale, scale],
         lift: plain ? DRAWN_LIFT : 0,
       });

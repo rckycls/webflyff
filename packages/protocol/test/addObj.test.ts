@@ -165,6 +165,8 @@ describe('ADD_OBJ (OnAddObj)', () => {
           hairMesh: 0, hairColor: 0, headMesh: 0, characterKey: '', worn: [],
           activeAttack: 1, movePattern: 0, moveEvent: 0, moveEventCount: 0, speedFactor: 1,
         },
+        // Piece 7 M2: kept
+        buffs: [{ buffType: 1, id: 55, level: 3, timeLeft: 60000 }, { buffType: 3, id: 10270, level: -3600, timeLeft: 0 }],
       },
     });
   });

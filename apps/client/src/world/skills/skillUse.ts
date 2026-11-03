@@ -22,14 +22,13 @@ import type { Shortcut, SkillSlot, Vec3, WorldMessage } from '@flyffweb/protocol
 import { attackAble, setOwnDestObj, tellUntoldWalk } from '../combat/attackLoop';
 import type { OwnSkills } from '../combat/attackLoop';
 import type { Focus } from '../combat/focus';
+import { sightBlocked } from '../combat/lineOfSight';
 import type { GameData } from '../gameData';
 import type { OwnState } from '../OwnState';
-import { CAMERA_LINK_RANGE } from '../sim/camera';
 import type { Ground } from '../sim/collision';
 import { ActMsg, Ext, Ik3, ObjSta, ObjStaF, Si, Sut, Wui } from '../sim/constants';
 import { clearDestObj } from '../sim/moverRules';
 import type { SimMover } from '../sim/moverRules';
-import { findTouchTriLine, touchedBy } from '../sim/object3d';
 import type { WorldSession } from '../WorldSession';
 import { isDie } from '../WorldState';
 import type { Mover } from '../WorldState';
@@ -40,6 +39,30 @@ const f32 = Math.fround;
 export type SkillUseSession = Pick<
   WorldSession, 'sendUseSkill' | 'sendEndSkillQueue' | 'sendDestObj' | 'sendBehavior' | 'sendDoUseSkillPoint'
 >;
+
+/** `SI_MAG_MAG_BLINKPOOL` (`Resource/defineSkill.h:81`), and the web's own line for it (plan, Decisions 8). */
+const BLINKPOOL = 107;
+export const BLINKPOOL_NOT_YET = 'WEB_BLINKPOOL_NOT_YET';
+/** `AS_BACK` (`Resource/defineAttribute.h:45`): a skill used from behind. */
+const AS_BACK = 8;
+/** `if( fDir < 0.3f )` (`MoverMove.cpp:145`). */
+const FROM_BEHIND_DOT = Math.fround(0.3);
+
+/**
+ * `D3DXVec3Dot( normalize( target - caster ), normalize( AngleToVectorXZ( target's angle, 3 ) ) ) >= 0.3`: the caster
+ * is behind its target, the way to it close to the way it faces.
+ */
+function fromBehind(own: Mover, target: SimMover): boolean {
+  const f32 = Math.fround;
+  const [ox, oy, oz] = own.act.body.pos;
+  const [tx, ty, tz] = target.act.body.pos;
+  const way = [f32(tx - ox), f32(ty - oy), f32(tz - oz)];
+  const length = Math.hypot(way[0]!, way[1]!, way[2]!);
+  if (length === 0) return false;
+  const rad = f32((target.act.body.angle * Math.PI) / 180);
+  const dot = f32(f32(way[0]! / length) * f32(Math.sin(rad)) + f32(way[2]! / length) * f32(-f32(Math.cos(rad))));
+  return dot >= FROM_BEHIND_DOT;
+}
 
 /** What the skill use asks of the attack loop (`AttackLoop`), which keeps the melee side of the one command and the flag. */
 export interface SkillAttack {
@@ -63,8 +86,6 @@ export interface SkillUseWorld {
 const REQUEST_TIMEOUT_MS = 2000;
 /** `m_SkillTimer.Set( 1000 )` (`Mover.cpp:509`): a skill used on arriving waits a second for the next. */
 const SKILL_TIMER_MS = 1000;
-/** `vStart.y += 0.5f; vEnd.y += 0.5f` (`MoverMove.cpp:83-84`): the line of sight runs half a metre over the feet. */
-const SIGHT_RAISE = f32(0.5);
 /** A skill shortcut's `m_dwType` of a party (troupe) skill (`ObjectExecutor`, `WndManager.cpp:2782`). */
 const PARTY_SKILL = 2;
 /**
@@ -368,6 +389,13 @@ export class SkillUse implements OwnSkills {
       this.next = null;
       return true;
     }
+    // Piece 7 M2: an AS_BACK skill (Snitch) only from behind its target (MoverMove.cpp:128-153): the way to it against
+    // its facing, a dot of 0.3 at least, else TID_GAME_NEVERKILLSTOP and the command is over
+    const slot = this.own()?.skills[cmd.index];
+    if (slot !== undefined && this.data.skills.get(slot.skill)?.atkStyle === AS_BACK && !fromBehind(own, target)) {
+      this.onText('TID_GAME_NEVERKILLSTOP');
+      return true;
+    }
     if (this.requestAt === null) {
       if (this.sendable(cmd.index) && this.sendUseSkill(cmd)) this.requestAt = now;
       else this.onClearUseSkill();
@@ -503,6 +531,17 @@ export class SkillUse implements OwnSkills {
     const slot = this.own()?.skills[index];
     const skill = slot === undefined ? undefined : this.data.skills.get(slot.skill);
     if (skill === undefined) return false;
+    // Piece 7 M2: Blinkpool's teleport (SendTeleSkill, MoverActEvent.cpp:533-551) is not built: refused with a word
+    if (skill.id === BLINKPOOL) {
+      this.onText(BLINKPOOL_NOT_YET);
+      return false;
+    }
+    // Piece 7 M2: a skill that shoots bullets needs them in the arrow slot (IsBullet, Mover.cpp:8461-8498)
+    const link = skill.linkKindBullet ?? -1;
+    if (link !== -1 && this.own()?.bullet()?.kind2 !== link) {
+      this.onText(skill.linkKind === Ik3.BOW ? 'TID_TIP_NEEDSATTACKITEM' : 'TID_TIP_NEEDSKILLITEM');
+      return false;
+    }
     let targetId = idTarget;
     if (skill.useChance === Wui.NOW) targetId = own.objectId;
     else if (skill.useChance === Wui.TARGETINGOBJ && this.focus.targetId !== null) targetId = this.focus.targetId;
@@ -552,23 +591,8 @@ export class SkillUse implements OwnSkills {
     return skill !== undefined && slot.level > 0 && slot.level <= skill.maxLevel;
   }
 
-  /**
-   * `g_WorldMng()->IntersectObjLine( NULL, vStart, vEnd, FALSE, FALSE )` (`WorldIntersect.cpp:745-813`) from the own mover
-   * to `target`, each half a metre up: whether the line meets a world object's collision mesh, see-through ones included
-   * (`bSkipTrans` FALSE), not the terrain (`bWithTerrain` FALSE). Neuz tests every object drawn this frame
-   * (`m_aobjCull`); here the objects the chase camera's test takes around the own mover (`CAMERA_LINK_RANGE`), which hold
-   * every one a line of a few metres from it can meet.
-   */
+  /** The line of sight from the own mover to `target` (`sightBlocked`, `IntersectObjLine`, `WorldIntersect.cpp:745-813`). */
   private blocked(own: Mover, target: SimMover): boolean {
-    const ground = this.world.ground?.();
-    if (ground === undefined) return false;
-    const up = (p: Vec3): Vec3 => [p[0], f32(p[1] + SIGHT_RAISE), p[2]];
-    const start = up(own.act.body.pos);
-    const end = up(target.act.body.pos);
-    for (const obj of ground.objectsNear(start[0], start[2], CAMERA_LINK_RANGE)) {
-      const inv = touchedBy(obj, start, end);
-      if (inv !== null && findTouchTriLine(obj, inv, start, end) !== null) return true;
-    }
-    return false;
+    return sightBlocked(this.world.ground?.(), own.act.body.pos, target.act.body.pos);
   }
 }

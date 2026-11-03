@@ -9,19 +9,64 @@ import type { WebMover } from '@flyffweb/formats';
 import type { ModelBox } from '@flyffweb/scene';
 import type { OwnState } from '../OwnState';
 import type { ActionMover } from '../sim/ActionMover';
+import { getDegree, wrapAngle } from '../sim/ActionMover';
+import type { Ground } from '../sim/collision';
 import { ActMsg, Belli, Ik3, Mti, ObjSta, ObjStaF } from '../sim/constants';
-import { setDestObj } from '../sim/moverRules';
+import { clearDestObj, setDestObj } from '../sim/moverRules';
 import type { SimMover } from '../sim/moverRules';
 import { attackSpeed } from '../sim/params';
 import type { WorldSession } from '../WorldSession';
 import { isDie } from '../WorldState';
 import type { Mover, WorldState } from '../WorldState';
 import type { Focus } from './focus';
+import { sightBlocked } from './lineOfSight';
+import type { OwnShots } from './ownShots';
 
 const f32 = Math.fround;
 
 /** What the attack loop sends. */
-export type AttackLoopSession = Pick<WorldSession, 'sendDestObj' | 'sendMeleeAttack' | 'sendGetDestObj' | 'sendBehavior'>;
+export type AttackLoopSession = Pick<
+  WorldSession, 'sendDestObj' | 'sendMeleeAttack' | 'sendGetDestObj' | 'sendBehavior' | 'sendMagicAttack' | 'sendRangeAttack'
+>;
+
+/** Piece 7 M2: `MAX_POWER_GAUGE` and `POWER_ATK_DELAY` (`WndWorld.cpp:81-82`), `MAX_CHARGE_LEVEL` (`DefineCommon.h:25`). */
+const MAX_POWER_GAUGE = 1800;
+const POWER_ATK_DELAY = 1800;
+const MAX_CHARGE_LEVEL = 4;
+/** `GetManaPoint() >= 5` (`WndWorld.cpp:956`): a wand with less shoots on its own a level lower. */
+const WAND_FULL_MP = 5;
+/** `AR_WAND` (`Resource/defineAttribute.h:89`): the wand's shot walks to its range whatever the wand (`MoverMsg.cpp:517`). */
+const AR_WAND = 5;
+/** The task bar's action points go no higher (`MoverSkill.cpp:3253-3257`). */
+const MAX_ACTION_POINT = 100;
+
+/**
+ * `CMover::GetAttackRange( dwAttackRange )` (`MoverMsg.cpp:140-169`): how near an attack walks to its target, by its `AR_*`
+ * (`AR_SHORT` 1 to `AR_HWAND` 7, `Resource/defineAttribute.h:85-91`); anything else, 0. `DST_HAWKEYE_RATE` (a buff) would
+ * lengthen it: no buffs here.
+ */
+const ATTACK_RANGES: ReadonlyMap<number, number> = new Map([[1, 2], [2, 3], [3, 4], [4, 10], [5, 15], [6, 6], [7, 18]]);
+export function attackRangeOf(ar: number): number {
+  return ATTACK_RANGES.get(ar) ?? 0;
+}
+
+/**
+ * Piece 7 M2: `CWndWorld::GetGaugePower` (`WndWorld.cpp:6454-6469`) `sincePress` ms after `m_dwPowerTick`: -1 while that is
+ * still ahead (the lock-out after an automatic shot); else `MulDiv( min( t, 1800 ), 4, 1800 )`, rounded to the nearest
+ * as `MulDiv` rounds: 0 below 225 ms, 1 from 225, 2 from 675, 3 from 1125, 4 from 1575.
+ */
+export function chargeLevel(sincePress: number): number {
+  if (sincePress < 0) return -1;
+  const t = Math.min(Math.trunc(sincePress), MAX_POWER_GAUGE);
+  return Math.round((t * MAX_CHARGE_LEVEL) / MAX_POWER_GAUGE);
+}
+
+/** `m_oaCmd` of the attack loop's own: a melee attack, a wand's or a bow's shot, its target and its charge. */
+interface AttackCmd {
+  kind: 'melee' | 'magic' | 'range';
+  targetId: number;
+  power: number;
+}
 
 /** `IK2_TOOLS` (`Resource/defineItemkind.h:36`): a tool in the hand does not attack (`CMD_SetMeleeAttack`). */
 const IK2_TOOLS = 18;
@@ -199,8 +244,22 @@ export class AttackLoop {
   private focusTimer = -Infinity;
   /** The press held: the mover it went down on, and when it is known held till (ms, the presses' clock). */
   private held: { mover: number; at: number; until: number } | null = null;
-  /** `m_oaCmd == OBJACT_MELEE_ATTACK`, and its target (`m_nCParam[0]`); null for `OBJACT_NONE`. */
-  private cmd: number | null = null;
+  /**
+   * `m_oaCmd`: `OBJACT_MELEE_ATTACK`, or (Piece 7 M2) `OBJACT_MAGIC_ATTACK` and `OBJACT_RANGE_ATTACK`, with its target
+   * (`m_nCParam[0]`) and charge (`[1]`); null for `OBJACT_NONE`.
+   */
+  private cmd: AttackCmd | null = null;
+  /** Piece 7 M2: `m_dwPowerTick` (`WndWorld.cpp:628`), on the presses' clock (ms): where the charge counts from. */
+  private powerTick = 0;
+  /**
+   * Piece 7 M2: a text the loop prints (`g_WndMng.PutString( prj.GetText( id ), ... )`): `TID_TIP_NEEDSATTACKITEM` for a
+   * bow with no arrows, `TID_GAME_BLOCKTARGETING` for a shot or a yoyo's swing behind an obstacle. Its owner shows it.
+   */
+  onText: (id: string) => void = () => {};
+  /** Piece 7 M2: the land and objects round the own character, for the shots' line of sight; none, nothing is in the way. */
+  ground: () => Ground | undefined = () => undefined;
+  /** Piece 7 M2: the own `m_idSfxHit`, which MAGIC_ATTACK and RANGE_ATTACK carry. Its owner sets the world's. */
+  shots: Pick<OwnShots, 'current'> = { current: 0 };
   /** `m_pRenderTargetObj`: the mover the target marks are on. */
   private renderTarget: number | null = null;
   private readonly bound = new WeakSet<ActionMover>();
@@ -271,6 +330,8 @@ export class AttackLoop {
    */
   onMoverPressed(objectId: number, now: number, double: boolean): void {
     if (this.ownIsDead()) return;
+    // a press of its own ends an Attack-button hold whose let-go never came (attackButtonDown holds it again after)
+    this.attackButtonHeld = false;
     this.buttonDown = true;
     this.held = { mover: objectId, at: now, until: now };
     if (double) {
@@ -299,6 +360,7 @@ export class AttackLoop {
     this.skills?.worldPressed(); // after the selection's SETTARGETs, as :6976-6987 come after SelectObj
     this.selectTarget = true;
     if (objectId !== old) this.focusTimer = now;
+    this.powerTick = now; // Piece 7 M2: every press on a mover starts the charge again (:7097)
   }
 
   /**
@@ -309,6 +371,13 @@ export class AttackLoop {
    * nothing.
    */
   onGroundPressed(double: boolean): void {
+    if (this.attackButtonHeld) {
+      // the Attack button's press whose let-go never came goes, with no shot: its finger is long gone
+      this.attackButtonHeld = false;
+      this.buttonDown = false;
+      this.selectTarget = false;
+      this.held = null;
+    }
     if (double || this.ownIsDead()) return;
     this.stop('ground');
     this.skills?.worldPressed();
@@ -326,12 +395,15 @@ export class AttackLoop {
   }
 
   /**
-   * The press let go (`OnLButtonUp`, `WndWorld.cpp:6471-6512`, after `CWndBase` clears `m_bLButtonDown`,
+   * The press let go at `now` (`OnLButtonUp`, `WndWorld.cpp:6471-6512`, after `CWndBase` clears `m_bLButtonDown`,
    * `WndBase.cpp:1142-1146`): its `ControlPlayer( WM_LBUTTONUP )` clears `CTRLMSG_LDOWN`, and `m_bSelectTarget` goes off.
-   * (The wand's and the bow's attacks at the let-go are not Piece 4's.)
+   * Piece 7 M2: before that, with a wand or a bow, the shot at the charge reached (`releaseShot`, :6484-6503). With no
+   * `now`, no shot.
    */
-  onReleased(): void {
+  onReleased(now?: number): void {
+    if (this.attackButtonHeld) return; // the Attack button's press is let go by the button alone (attackButtonUp)
     this.buttonDown = false;
+    if (now !== undefined && !this.ownIsDead()) this.releaseShot(now);
     this.selectTarget = false;
     this.held = null;
   }
@@ -340,9 +412,53 @@ export class AttackLoop {
    * The attack button of a touch screen (spec §3.4): Neuz has none; it is the focused mover pressed again, with no press
    * held, as `OnLButtonDblClk` takes it (`WndWorld.cpp:7248-7260`): the auto-attack goes on unless the hand holds a wand.
    */
+  /**
+   * Piece 7 M2: a press of the Attack button with a wand or a bow is under way. The screen lets go of the canvas's press
+   * at each step no finger holds a mover there (`WorldScreen.step`); that let-go is not the button's.
+   */
+  private attackButtonHeld = false;
+
   attackButton(): void {
     if (this.ownIsDead()) return;
     if (this.focus.targetId !== null && !this.holdsWand()) this.auto = true;
+  }
+
+  /**
+   * Piece 7 M2 (plan, Decisions 4): the Attack button going down at `now`. With a wand or a bow it is a press on the
+   * focused mover (`onMoverPressed`): held it charges, let go (`attackButtonUp`) it shoots. With any other hand it is
+   * `attackButton`, as before.
+   */
+  attackButtonDown(now: number): void {
+    if (!this.holdsRanged()) {
+      this.attackButton();
+      return;
+    }
+    const id = this.focus.targetId;
+    if (id === null) return;
+    this.onMoverPressed(id, now, false);
+    this.attackButtonHeld = true;
+  }
+
+  /** Piece 7 M2: the Attack button let go at `now`: the let-go of its press (`onReleased`), if it made one. */
+  attackButtonUp(now: number): void {
+    if (!this.attackButtonHeld) return;
+    this.attackButtonHeld = false;
+    this.onReleased(now);
+  }
+
+  /**
+   * Piece 7 M2: what `CMover::RenderGauge` draws over the own head (`WndWorld.cpp:930-1000`), or null for nothing: a
+   * wand or a bow in the hand, a mover focused and the player alive. Full (4) in the lock-out after an automatic shot,
+   * 0 while no press is held on the mover, else the charge reached at `now`.
+   */
+  gauge(now: number): number | null {
+    if (!this.holdsRanged() || this.ownIsDead()) return null;
+    const id = this.focus.targetId;
+    if (id === null || !this.world.movers.has(id)) return null;
+    const power = chargeLevel(now - this.powerTick);
+    if (power === -1) return MAX_CHARGE_LEVEL;
+    if (!this.buttonDown || !this.selectTarget) return 0;
+    return power;
   }
 
   /**
@@ -460,22 +576,67 @@ export class AttackLoop {
    * are out). The own mover's hooks (the combo `onAttackEnd`, its animation speed `attackSpeed`, the command on arrival
    * `arrive`) are set at its first step.
    */
-  step(skillBranch = false): boolean {
+  step(skillBranch = false, now?: number): boolean {
     const own = this.world.self();
     if (own === undefined) return true;
     this.bind(own);
-    if (skillBranch) return false;
-    const branch = this.processBranch();
-    if (branch === 'attack') {
-      const target = this.world.movers.get(this.focus.targetId!)!;
-      const state = this.own();
-      if (state !== undefined && this.isAttackAble(target) && this.skills?.pending !== true) {
-        this.useFocusObj(own, target, state);
+    let controls = false;
+    if (!skillBranch) {
+      const branch = this.processBranch();
+      if (branch === 'attack') {
+        const target = this.world.movers.get(this.focus.targetId!)!;
+        const state = this.own();
+        if (state !== undefined && this.isAttackAble(target) && this.skills?.pending !== true) {
+          this.useFocusObj(own, target, state);
+        }
+      } else if (!this.pressed()) {
+        this.selectTarget = false; // the else branch (:8533-8537)
       }
-    } else if (!this.pressed()) {
-      this.selectTarget = false; // the else branch (:8533-8537)
+      controls = branch === 'controls';
     }
-    return branch === 'controls';
+    // Piece 7 M2: what `OnEraseBkgnd` does after `Process` each drawn frame: the automatic shot of a held charge
+    if (now !== undefined) this.automaticShot(own, now);
+    return controls;
+  }
+
+  /**
+   * Piece 7 M2: `CWndWorld::OnEraseBkgnd`'s shot (`WndWorld.cpp:930-990`): a press held on the focused mover with a bow
+   * at level 4, or a wand at 4 (at 3 with less than 5 MP), shoots on its own if the target can be attacked; the charge
+   * then waits 1800 ms (`m_dwPowerTick = now + POWER_ATK_DELAY`, set before the command's own refusals), in which a let-go
+   * shoots nothing.
+   */
+  private automaticShot(own: Mover, now: number): void {
+    const kind3 = this.handKind3();
+    if ((kind3 !== Ik3.WAND && kind3 !== Ik3.BOW) || this.ownIsDead()) return;
+    const id = this.focus.targetId;
+    const target = id === null ? undefined : this.world.movers.get(id);
+    if (target === undefined || !this.buttonDown || !this.selectTarget) return;
+    const full = kind3 === Ik3.BOW || (this.own()?.mp ?? 0) >= WAND_FULL_MP ? MAX_CHARGE_LEVEL : MAX_CHARGE_LEVEL - 1;
+    const power = chargeLevel(now - this.powerTick);
+    if (power < full || !this.isAttackAble(target)) return;
+    this.powerTick = now + POWER_ATK_DELAY;
+    if (kind3 === Ik3.WAND) this.cmdSetMagicAttack(own, target.objectId, power);
+    else this.cmdSetRangeAttack(own, target.objectId, power);
+  }
+
+  /**
+   * Piece 7 M2: the let-go's shot (`OnLButtonUp`, `WndWorld.cpp:6484-6503`): with a focus, the press's `m_bSelectTarget`,
+   * `m_timerFocusAttack` out (a new target's press waits its 500 ms), a target that can be attacked, a mover, and a charge
+   * not in the lock-out: the charge starts again from now, and a wand shoots (`CMD_SetMagicAttack`) or a bow
+   * (`CMD_SetRangeAttack`) at the level reached.
+   */
+  private releaseShot(now: number): void {
+    const own = this.world.self();
+    const id = this.focus.targetId;
+    if (own === undefined || id === null || !this.selectTarget || now - this.focusTimer < FOCUS_ATTACK_MS) return;
+    const target = this.world.movers.get(id);
+    if (target === undefined || !this.isAttackAble(target)) return;
+    const power = chargeLevel(now - this.powerTick);
+    if (power < 0) return;
+    this.powerTick = now;
+    const kind3 = this.handKind3();
+    if (kind3 === Ik3.WAND) this.cmdSetMagicAttack(own, id, power);
+    else if (kind3 === Ik3.BOW) this.cmdSetRangeAttack(own, id, power);
   }
 
   /**
@@ -542,7 +703,18 @@ export class AttackLoop {
 
   /** `GetActiveHandItemProp()->dwItemKind3 == IK3_WAND`: the fists' (`II_WEA_HAN_HAND`, `IK3_HAND`) when the hand is empty. */
   private holdsWand(): boolean {
-    return this.own()?.equipped.weapon?.kind3 === Ik3.WAND;
+    return this.handKind3() === Ik3.WAND;
+  }
+
+  /** Piece 7 M2: `GetActiveHandItemProp()->dwItemKind3`, the fists' `IK3_HAND` for an empty hand. */
+  private handKind3(): number {
+    return this.own()?.equipped.weapon?.kind3 ?? Ik3.HAND;
+  }
+
+  /** Piece 7 M2: a wand or a bow in the hand, which charge and shoot. */
+  private holdsRanged(): boolean {
+    const kind3 = this.handKind3();
+    return kind3 === Ik3.WAND || kind3 === Ik3.BOW;
   }
 
   /**
@@ -561,6 +733,7 @@ export class AttackLoop {
       this.buttonDown = false;
     };
     act.onAttackEnd = (dwState) => this.combo(own, dwState);
+    act.rangedHand = () => this.holdsRanged(); // Piece 7 M2: its swings are refused with a wand or a bow
     act.attackSpeed = () => {
       const state = this.own();
       if (state === undefined) return 1;
@@ -582,35 +755,85 @@ export class AttackLoop {
 
   /**
    * `CWndWorld::UseFocusObj( pFocusObj )` (`WndWorld.cpp:6197-6266`) for a mover: not while jumping, swinging or dead;
-   * a wand or a bow attacks otherwise (not Piece 4's); anything else melee (`CMD_SetMeleeAttack`).
+   * a wand does nothing (:6229-6233: its shots are the presses'); a bow, with the button up, asks for a level-0 shot
+   * (`CMD_SetRangeAttack( id, 0 )`, :6250-6253, Piece 7 M2); anything else melee (`CMD_SetMeleeAttack`).
    */
   private useFocusObj(own: Mover, target: Mover, state: OwnState): void {
     const act = own.act;
     if (act.state & (ObjSta.JUMP_ALL | ObjSta.ATK_ALL)) return;
     if (this.ownIsDead()) return;
     const kind3 = state.equipped.weapon?.kind3 ?? Ik3.HAND;
-    if (kind3 === Ik3.WAND || kind3 === Ik3.BOW) return;
+    if (kind3 === Ik3.WAND) return;
     if (act.stateFlag & ObjStaF.SIT) return;
+    if (kind3 === Ik3.BOW) {
+      if (!this.buttonDown && this.motionReady(own, Mti.ATK1)) this.cmdSetRangeAttack(own, target.objectId, 0);
+      return;
+    }
     // A missing browser animation otherwise ends immediately and emits attacks at rules-step speed.
-    // Request every motion this level can chain before beginning an attack.
+    // Request every motion this level can chain before beginning an attack (a yoyo's chain stops at ATK2).
+    const yoyo = kind3 === Ik3.YOYO;
     const motions = [Mti.ATK1, ...(state.level >= 2 ? [Mti.ATK2] : []),
-      ...(state.level >= 8 ? [Mti.ATK3] : []), ...(state.level >= 12 ? [Mti.ATK4] : [])];
+      ...(state.level >= 8 && !yoyo ? [Mti.ATK3] : []), ...(state.level >= 12 && !yoyo ? [Mti.ATK4] : [])];
     if (!motions.map((motion) => this.motionReady(own, motion)).every(Boolean)) return;
     this.cmdSetMeleeAttack(own, target.objectId, state);
   }
 
   /**
    * `CMover::CMD_SetMeleeAttack( idTarget, 0 )` (`MoverMsg.cpp:427-454`) on the client: not with a tool in the hand,
-   * while swinging or dead; then `SetDestObj( idTarget, 0 )` and `SetCmd( OBJACT_MELEE_ATTACK, idTarget )`.
+   * while swinging or dead; then `SetDestObj( idTarget, fRange )` and `SetCmd( OBJACT_MELEE_ATTACK, idTarget )`, the
+   * range 0 but for a yoyo's, its `GetAttackRange( dwAttackRange )` (AR_HRANGE, 6 m: Piece 7 M2, :439-440).
    */
   private cmdSetMeleeAttack(own: Mover, targetId: number, state: OwnState): void {
-    if (state.equipped.weapon?.kind2 === IK2_TOOLS) return;
+    const hand = state.equipped.weapon;
+    if (hand?.kind2 === IK2_TOOLS) return;
     if (own.act.state & ObjSta.ATK_ALL) return;
     if (this.ownIsDead()) return;
     // Combat approaches the target at run speed, even if the player was walking.
     if (own.act.sendActMsg(ActMsg.MODE_RUN)) this.session.sendBehavior(own.act.report(this.clock.tick()));
-    this.setDestObj(own, targetId, 0);
-    this.cmd = targetId;
+    this.setDestObj(own, targetId, hand?.kind3 === Ik3.YOYO ? attackRangeOf(hand.attackRange) : 0);
+    this.cmd = { kind: 'melee', targetId, power: 0 };
+  }
+
+  /**
+   * Piece 7 M2: `CMover::CMD_SetMagicAttack( idTarget, nMagicPower )` (`MoverMsg.cpp:500-522`): not while attacking or dead,
+   * nor without a wand in the hand; then the walk to `GetAttackRange( AR_WAND )`, 15 m whatever the wand's own reach, and
+   * `SetCmd( OBJACT_MAGIC_ATTACK, idTarget, nMagicPower )`.
+   */
+  private cmdSetMagicAttack(own: Mover, targetId: number, power: number): void {
+    if (own.act.state & ObjSta.ATK_ALL) return;
+    if (this.ownIsDead()) return;
+    if (this.handKind3() !== Ik3.WAND) return;
+    this.setDestObj(own, targetId, attackRangeOf(AR_WAND));
+    this.cmd = { kind: 'magic', targetId, power };
+  }
+
+  /**
+   * Piece 7 M2: `CMover::CMD_SetRangeAttack( idTarget, nPower )` (`MoverMsg.cpp:475-498`): not while attacking or dead,
+   * nor without a bow, nor without its arrows (`IsBullet`); then the walk to the bow's `GetAttackRange( dwAttackRange )`
+   * (AR_WAND, 15 m) and `SetCmd( OBJACT_RANGE_ATTACK, idTarget, nPower )`.
+   */
+  private cmdSetRangeAttack(own: Mover, targetId: number, power: number): void {
+    if (own.act.state & ObjSta.ATK_ALL) return;
+    if (this.ownIsDead()) return;
+    const bow = this.own()?.equipped.weapon;
+    if (bow?.kind3 !== Ik3.BOW || !this.isBullet(bow)) return;
+    this.setDestObj(own, targetId, attackRangeOf(bow.attackRange));
+    this.cmd = { kind: 'range', targetId, power };
+  }
+
+  /**
+   * Piece 7 M2: `CMover::IsBullet( pItemProp )` (`_Common/Mover.cpp:8461-8498`): an item that needs bullets
+   * (`dwLinkKindBullet`) needs that `IK2_*` in the arrow slot (`GetActiveHandItemProp( PARTS_BULLET )`, the fists' for an
+   * empty slot, which are no bullets); without them the client says so (`TID_TIP_NEEDSATTACKITEM` for a bow, else
+   * `TID_TIP_NEEDSKILLITEM`) and the auto-attack goes off.
+   */
+  isBullet(prop: { kind3: number; linkKindBullet?: number }): boolean {
+    const link = prop.linkKindBullet ?? -1;
+    if (link === -1) return true;
+    if (this.own()?.bullet()?.kind2 === link) return true;
+    this.onText(prop.kind3 === Ik3.BOW ? 'TID_TIP_NEEDSATTACKITEM' : 'TID_TIP_NEEDSKILLITEM');
+    this.auto = false;
+    return false;
   }
 
   /**
@@ -625,7 +848,8 @@ export class AttackLoop {
   /**
    * `CMover::ProcessMoveArrival`'s `switch( m_oaCmd )` for the own mover (`MoverMove.cpp:78-262`), which the rules' step
    * calls as it arrives at `target` (`SimMover.arrive`): `OBJACT_USESKILL` (:80-184) is the skill use's (`skills.arrive`);
-   * `OBJACT_MELEE_ATTACK` (:189-205) swings at it (`DoAttackMelee`); either command ends (`SetCmd( OBJACT_NONE )`, :262).
+   * `OBJACT_MELEE_ATTACK` (:189-205) swings at it (`DoAttackMelee`), a yoyo only with a line of sight half a metre up,
+   * else `TID_GAME_BLOCKTARGETING` (Piece 7 M2); either command ends (`SetCmd( OBJACT_NONE )`, :262).
    * With no command, false: the rules' default arrival.
    */
   private arrive(own: Mover, target: SimMover): boolean {
@@ -633,12 +857,68 @@ export class AttackLoop {
       this.cmd = null;
       return true;
     }
-    if (this.cmd === null) return false;
+    const cmd = this.cmd;
+    if (cmd === null) return false;
     this.cmd = null;
     tellUntoldWalk(this.session, () => this.clock.tick(), own);
     const state = this.own();
-    if (state !== undefined) this.doAttackMelee(own, target, state);
+    if (state === undefined) return true;
+    if (cmd.kind === 'melee') {
+      if (state.equipped.weapon?.kind3 === Ik3.YOYO && sightBlocked(this.ground(), own.act.body.pos, target.act.body.pos)) {
+        this.onText('TID_GAME_BLOCKTARGETING');
+        return true;
+      }
+      this.doAttackMelee(own, target, state);
+      return true;
+    }
+    // Piece 7 M2: OBJACT_MAGIC_ATTACK and OBJACT_RANGE_ATTACK (:207-241): the target by its id, standing (the bow also
+    // stops turning), the walk over, then the shot
+    const mover = this.world.movers.get(cmd.targetId);
+    if (mover === undefined) return true;
+    own.act.sendActMsg(ActMsg.STAND);
+    if (cmd.kind === 'range') own.act.sendActMsg(ActMsg.STOP_TURN);
+    clearDestObj(own);
+    if (cmd.kind === 'magic') this.doAttackMagic(own, mover, cmd.power, state);
+    else this.doAttackRange(own, mover, cmd.power, state);
     return true;
+  }
+
+  /**
+   * Piece 7 M2: `CMover::DoAttackMagic( pTarget, nMagicPower )` (`MoverSkill.cpp:3201-3279`) of the own mover: a wand in
+   * the hand; a line of sight half a metre up, else `TID_GAME_BLOCKTARGETING`; `OBJMSG_ATK_MAGIC1` that starts; then it
+   * faces the target, keeps the charge for its hit frame (`SetActParam`), earns an action point for a charge of 1 or more
+   * (up to 100, :3253-3257), and sends MAGIC_ATTACK with `m_idSfxHit` as it is (:3271-3274).
+   */
+  private doAttackMagic(own: Mover, target: Mover, power: number, state: OwnState): void {
+    if (state.equipped.weapon?.kind3 !== Ik3.WAND) return;
+    if (sightBlocked(this.ground(), own.act.body.pos, target.act.body.pos)) {
+      this.onText('TID_GAME_BLOCKTARGETING');
+      return;
+    }
+    if (!own.act.sendActMsg(ActMsg.ATK_MAGIC1, target.objectId)) return;
+    own.act.body.angle = wrapAngle(getDegree(target.act.body.pos, own.act.body.pos));
+    own.shot = { targetId: target.objectId, power, sfxHitId: 0 };
+    const bar = state.taskBar;
+    if (power >= 1 && bar !== null && bar.actionPoint < MAX_ACTION_POINT) bar.actionPoint++;
+    this.session.sendMagicAttack(target.objectId, power, this.shots.current);
+  }
+
+  /**
+   * Piece 7 M2: `CMover::DoAttackRange( pTarget, dwItemID, 0 )` (`MoverSkill.cpp:3292-3380`) of the own mover, the charge
+   * being its `dwItemID`: a line of sight, else `TID_GAME_BLOCKTARGETING`; `OBJMSG_ATK_RANGE1` with `MTI_ATK1` (every bow's
+   * `dwUseMotion` is `=`: `MTI_ATK_13 - MTI_STAND_13`, :3349-3355) that starts; then it faces the target, keeps the charge,
+   * and sends RANGE_ATTACK with the charge and `m_idSfxHit` as it is (:3375-3376).
+   */
+  private doAttackRange(own: Mover, target: Mover, power: number, state: OwnState): void {
+    if (state.equipped.weapon?.kind3 !== Ik3.BOW) return;
+    if (sightBlocked(this.ground(), own.act.body.pos, target.act.body.pos)) {
+      this.onText('TID_GAME_BLOCKTARGETING');
+      return;
+    }
+    if (!own.act.sendActMsg(ActMsg.ATK_RANGE1, target.objectId, Mti.ATK1)) return;
+    own.act.body.angle = wrapAngle(getDegree(target.act.body.pos, own.act.body.pos));
+    own.shot = { targetId: target.objectId, power, sfxHitId: 0 };
+    this.session.sendRangeAttack(target.objectId, power, this.shots.current);
   }
 
   /**
@@ -657,13 +937,15 @@ export class AttackLoop {
    * at the level it needs, and while auto-attacking or holding the button (`CTRLMSG_LDOWN`), the next swing at the mover
    * the last one was started at (`m_objidHit`), if it is in view (`IsValidObj`) and no skill is reserved
    * (`GetNextSkill() == NEXTSKILL_NONE`, :826-828: the reserved skill goes next); one that starts sends MELEE_ATTACK. A
-   * mover gone from view, or a reserved skill, forgets it (`m_objidHit = NULL_ID`).
+   * mover gone from view, or a reserved skill, forgets it (`m_objidHit = NULL_ID`). A yoyo's chain stops after ATK2
+   * (:820-825, Piece 7 M2).
    */
   private combo(own: Mover, dwState: number): void {
     const combo = COMBO.get(dwState);
     const state = this.own();
     if (combo === undefined || state === undefined) return;
     if (state.level < combo.level || !(this.buttonDown || this.auto)) return;
+    if (state.equipped.weapon?.kind3 === Ik3.YOYO && dwState !== ObjSta.ATK1) return;
     const act = own.act;
     const hit = act.hitId === null ? undefined : this.world.movers.get(act.hitId);
     if (hit === undefined || this.skills?.reserved === true) {

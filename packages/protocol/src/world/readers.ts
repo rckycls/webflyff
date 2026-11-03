@@ -3,8 +3,14 @@ import { MessageType } from '../constants';
 import { readAddObj } from './addObj';
 import { readChat, readShout, readReturnSay, readSocial, readGmChat, readAnnouncement } from './chat';
 import { readNpcScript } from './npc';
+import { readCreateSfxAllow, readMagicAttack, readRangeAttack } from './combat';
+import { readSetJobSkill, readSetNearJobSkill } from './jobs';
 import { readShop } from './shop';
 import { readCreateItem, readUpdateItem, readMoveItem, readEquipItem } from './items';
+import {
+  readRemoveAllSkillInfluence, readRemoveSkillInfluence, readResetDestParam, readResetDestParamSync, readSetDestParam,
+  readSetSkillState,
+} from './buffs';
 import {
   readCorrReq, readDamage, readDefinedText, readDefinedText1, readMeleeAttack, readMonsterProp, readMoverDeath,
   readQueryGetDestObj, readRevival, readRevivalLodestar, readSetExperience, readSetGrowthLearningPoint, readSetLevel,
@@ -67,6 +73,19 @@ export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
     [MessageType.REPLACE, readReplace],
     [MessageType.ENVIRONMENTALL, readEnvironmentSetting],
     [MessageType.MELEE_ATTACK, readMeleeAttack],
+    // Piece 7 M2: the ranged attacks and the job change
+    [MessageType.MAGIC_ATTACK, readMagicAttack],
+    [MessageType.RANGE_ATTACK, readRangeAttack],
+    [MessageType.CREATESFXALLOW, readCreateSfxAllow],
+    // Piece 7 M2: the buffs
+    [MessageType.SETSKILLSTATE, readSetSkillState],
+    [MessageType.REMOVESKILLINFULENCE, readRemoveSkillInfluence],
+    [MessageType.REMOVEALLSKILLINFULENCE, readRemoveAllSkillInfluence],
+    [MessageType.SETDESTPARAM, readSetDestParam],
+    [MessageType.RESETDESTPARAM, readResetDestParam],
+    [MessageType.RESETDESTPARAM_SYNC, readResetDestParamSync],
+    [MessageType.SET_JOB_SKILL, readSetJobSkill],
+    [MessageType.SET_NEAR_JOB_SKILL, readSetNearJobSkill],
     [MessageType.DAMAGE, readDamage],
     [MessageType.MOVERDEATH, readMoverDeath],
     [MessageType.SETPOINTPARAM, readSetPointParam],

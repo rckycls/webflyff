@@ -8,6 +8,7 @@ import {
   encodeNpcDialog, encodeNpcDialogOpen, encodeOpenShop, encodeCloseShop, encodeBuyItem, encodeSellItem, encodeTeleporter,
   encodeQuestCheck, encodeRemoveQuest,
 } from '@flyffweb/protocol';
+import { encodeMagicAttack, encodeRangeAttack, encodeSfxClear, encodeSfxHit, encodeSfxId } from '@flyffweb/protocol';
 import type { BundleMessage, BundleResult, MoveReport, Shortcut, SkillSlot, Vec3, WorldMessage } from '@flyffweb/protocol';
 import { UNEXPECTED_PROBLEM, closeText, errorText } from '../lobby/errorText';
 import { GATEWAY_UNREACHABLE, PING_INTERVAL_MS, TIMEOUT_TEXT, systemClock } from '../lobby/LoginFlow';
@@ -247,6 +248,31 @@ export class WorldSession {
    */
   sendMeleeAttack(message: number, targetId: number, attackSpeed: number): void {
     this.playingCache()?.send(encodeMeleeAttack(message, targetId, attackSpeed));
+  }
+
+  /** MAGIC_ATTACK (`CDPClient::SendMagicAttack`, `DPClient.cpp:9841`): the wand's shot. Sent only while playing. */
+  sendMagicAttack(targetId: number, power: number, sfxHitId: number): void {
+    this.playingCache()?.send(encodeMagicAttack(targetId, power, sfxHitId));
+  }
+
+  /** RANGE_ATTACK (`CDPClient::SendRangeAttack`, `DPClient.cpp:9848`): the bow's shot. Sent only while playing. */
+  sendRangeAttack(targetId: number, power: number, sfxHitId: number): void {
+    this.playingCache()?.send(encodeRangeAttack(targetId, power, sfxHitId));
+  }
+
+  /** SFX_ID (`CDPClient::SendSfxID`, `DPClient.cpp:9876`): a missile of the own player's. Sent only while playing. */
+  sendSfxId(targetId: number, sfxHitId: number, type: number, skill?: number, maxDmgCnt?: number): void {
+    this.playingCache()?.send(encodeSfxId(targetId, sfxHitId, type, skill, maxDmgCnt));
+  }
+
+  /** SFX_HIT (`CDPClient::SendSfxHit`, `DPClient.cpp:11230`): a missile landed. Sent only while playing. */
+  sendSfxHit(sfxHitId: number, power: number, skill: number, attackerId: number, dmgCnt = 0, dmgAngle = 0, dmgPower = 0): void {
+    this.playingCache()?.send(encodeSfxHit(sfxHitId, power, skill, attackerId, dmgCnt, dmgAngle, dmgPower));
+  }
+
+  /** SFX_CLEAR (`CDPClient::SendSfxClear`, `DPClient.cpp:11238`): a missile lost. Sent only while playing. */
+  sendSfxClear(sfxHitId: number, moverId: number): void {
+    this.playingCache()?.send(encodeSfxClear(sfxHitId, moverId));
   }
 
   /**

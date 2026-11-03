@@ -54,7 +54,7 @@ function worldOf(options: { self?: boolean; gone?: number[]; gameMaster?: boolea
 type Played =
   | { effect: EffectRequest }
   | { number: [Vec3, number, boolean] }
-  | { flash: [number, Vec3] }
+  | { flash: [number, Vec3] | [number, Vec3, Vec3] }
   | { shake: number };
 
 function recorder(): { played: Played[]; out: CombatFxOut } {
@@ -64,7 +64,7 @@ function recorder(): { played: Played[]; out: CombatFxOut } {
     out: {
       effect: (request) => void played.push({ effect: request }),
       number: (pos, value, ownHurt) => void played.push({ number: [pos, value, ownHurt] }),
-      flash: (moverId, direction) => void played.push({ flash: [moverId, direction] }),
+      flash: (moverId, direction, color) => void played.push({ flash: color === undefined ? [moverId, direction] : [moverId, direction, color] }),
       shake: (moverId) => void played.push({ shake: moverId }),
     },
   };
@@ -246,6 +246,12 @@ describe("playCombatEvent: a model's flash (m_SparkInfo: CMover::OnDamage, Mover
 });
 
 describe('playCombatEvent: level ups, spawns and the rest', () => {
+  it('a job change plays XI_GEN_LEVEL_UP01 on its mover (OnSetChangeJob, DPClient.cpp:3637; OnSetNearChangeJob, :3700)', () => {
+    const r = recorder();
+    playCombatEvent({ kind: 'jobChanged', moverId: OTHER_ID }, worldOf(), r.out);
+    expect(r.played).toEqual([{ effect: { xi: Xi.GEN_LEVEL_UP01, pos: OTHER_AT, followId: OTHER_ID, sourceAngle: 300.25 } }]);
+  });
+
   it("plays another player's level up on it, following it (OnSetLevel, DPClient.cpp:3351)", () => {
     const r = recorder();
     playCombatEvent({ kind: 'levelUp', moverId: OTHER_ID }, worldOf(), r.out);
@@ -320,13 +326,12 @@ describe('playCombatEvent: skills (CCtrl::CreateSkillSfx, Ctrl.cpp:878-997; CDPC
     expect(Math.hypot(at[0] - OWN_AT[0], at[2] - OWN_AT[2])).toBeCloseTo(1.3, 3); // floats at x 6968: 0.0005 apart
   });
 
-  it('plays the effect whether or not the blow landed, nothing for a skill that is no melee attack, and nothing without its movers or the catalog', () => {
+  it('plays the effect whether or not the blow landed, and nothing without its movers or the catalog', () => {
     const r = recorder();
     const world = { ...worldOf(), skills: skillsOf() };
     playCombatEvent({ kind: 'skillHit', casterId: OWN_ID, targetId: MONSTER_ID, skill: 1, landed: false }, world, r.out);
     expect(r.played.map((p) => wordOf(p, false))).toEqual([`xi ${Xi.SKILL_VAG_ONE_CLEANHIT01}`]);
     r.played.length = 0;
-    playCombatEvent({ kind: 'skillHit', casterId: OWN_ID, targetId: OWN_ID, skill: 317, landed: false }, world, r.out);
     playCombatEvent({ kind: 'skillHit', casterId: OWN_ID, targetId: MONSTER_ID, skill: 1, landed: true }, worldOf(), r.out);
     const gone = { ...worldOf({ gone: [MONSTER_ID] }), skills: skillsOf() };
     playCombatEvent({ kind: 'skillHit', casterId: OWN_ID, targetId: MONSTER_ID, skill: 1, landed: true }, gone, r.out);
@@ -361,5 +366,79 @@ describe('isGameMaster (IsAuthHigher( AUTH_GAMEMASTER ), authorization.h:58-102)
     const of = (letter: string): boolean => isGameMaster(letter.charCodeAt(0));
     expect(['F', '1', '3', 'G', 'H', 'J', 'K', 'D'].map(of)).toEqual([false, false, false, false, false, false, false, false]);
     expect(['L', 'M', 'N', 'O', 'P'].map(of)).toEqual([true, true, true, true, true]);
+  });
+});
+
+describe('playCombatEvent: a cast (MoverSkill.cpp:993-996, CSfxSkillMagFireCasting and WindCasting; Piece 7 M2)', () => {
+  it("XI 274 stays where made, 1 m up, turned 180 - the caster's angle; 275 stays 0.2 m up, unturned", () => {
+    const { played, out } = recorder();
+    playCombatEvent({ kind: 'cast', casterId: OWN_ID, xi: 274 }, worldOf(), out);
+    playCombatEvent({ kind: 'cast', casterId: OWN_ID, xi: 275 }, worldOf(), out);
+    playCombatEvent({ kind: 'cast', casterId: OWN_ID, xi: 300 }, worldOf(), out);
+    expect(played).toEqual([
+      // made 0.01 up (SetSfx), drawn 1 m over that, fixed where made
+      { effect: { xi: 274, pos: [OWN_AT[0], f32(f32(OWN_AT[1] + 0.01) + 1), OWN_AT[2]], fixed: true, angle: f32(180 - 37.5) } },
+      // a plain effect's own 0.2 m, where it was made, with no turn
+      { effect: { xi: 275, pos: OWN_AT, angle: 0 } },
+      // any other: a plain effect on the caster
+      { effect: { xi: 300, pos: OWN_AT, followId: OWN_ID, sourceAngle: 37.5 } },
+    ]);
+  });
+
+  it('the caster is tinted cyan while casting and flashes white at the shot, from behind', () => {
+    const { played, out } = recorder();
+    // AngleToVectorXZ( angle, -1 ): from behind the caster
+    const behind: Vec3 = [f32(-Math.sin((37.5 * Math.PI) / 180)), 0, f32(Math.cos((37.5 * Math.PI) / 180))];
+    playCombatEvent({ kind: 'tint', moverId: OWN_ID, color: [0, 2, 2], fromAngle: 37.5 }, worldOf(), out);
+    playCombatEvent({ kind: 'tint', moverId: OWN_ID, color: [2, 2, 2], fromAngle: 37.5 }, worldOf(), out);
+    expect(played).toHaveLength(2);
+    const [cyan, white] = played as Array<{ flash: [number, Vec3, Vec3] }>;
+    expect(cyan!.flash[0]).toBe(OWN_ID);
+    cyan!.flash[1].forEach((c, i) => expect(c).toBeCloseTo(behind[i]!, 5));
+    expect([cyan!.flash[2], white!.flash[2]]).toEqual([[0, 2, 2], [2, 2, 2]]);
+  });
+});
+
+describe('playCombatEvent: the first jobs\' skill effects (CCtrl::CreateSkillSfx, Ctrl.cpp:878-997; Piece 7 M2)', () => {
+  const up1 = (p: Vec3): Vec3 => [p[0], f32(p[1] + 1), p[2]];
+  const level = (skillTime: number) => ({ reqMp: 0, reqFp: 0, cooldown: 0, skillCount: 0, skillTime });
+  const skillsOf = (): CombatFxWorld['skills'] => new Map([
+    // Healing: EXT_ANOTHERWITH, its dwSfxObj3 on the target, no time
+    [44, { sfxHit: 285, exeTarget: 9, levels: [level(-1)] }],
+    // a yoyo's melee skill (Pulling): its hit on the target
+    [206, { sfxHit: 552, exeTarget: 17, linkKind: Ik3.YOYO, levels: [level(-1)] }],
+    // a skill with a caster effect (dwSfxObj5)
+    [121, { sfxHit: 300, exeTarget: 4, sfxCaster: 301, levels: [level(-1)] }],
+    // Protection: 30 s, its lasting dwSfxObj4
+    [146, { sfxHit: -1, exeTarget: 9, sfxLasting: 400, levels: [level(30000)] }],
+  ]) as unknown as CombatFxWorld['skills'];
+  const hit = (skill: number, targetId = MONSTER_ID) =>
+    ({ kind: 'skillHit', casterId: OWN_ID, targetId, skill, landed: false, level: 1 }) as const;
+
+  it("a heal's or a buff's dwSfxObj3 plays at the target + 1 m", () => {
+    const r = recorder();
+    playCombatEvent(hit(44, OTHER_ID), { ...worldOf(), skills: skillsOf() }, r.out);
+    expect(r.played).toEqual([{ effect: { xi: 285, pos: up1(OTHER_AT), followId: OTHER_ID, followDest: true } }]);
+  });
+
+  it("a yoyo skill's hit plays at the target + 1 m, not 1.3 m before the caster", () => {
+    const r = recorder();
+    playCombatEvent(hit(206), { ...worldOf(), skills: skillsOf() }, r.out);
+    expect(r.played).toEqual([{ effect: { xi: 552, pos: up1(MONSTER_AT), sourceAngle: 37.5 } }]);
+  });
+
+  it('dwSfxObj5 plays at the caster', () => {
+    const r = recorder();
+    playCombatEvent(hit(121), { ...worldOf(), skills: skillsOf() }, r.out);
+    expect(r.played).toEqual([
+      { effect: { xi: 300, pos: up1(MONSTER_AT), followId: MONSTER_ID, followDest: true } },
+      { effect: { xi: 301, pos: OWN_AT, followId: OWN_ID, followDest: true } },
+    ]);
+  });
+
+  it("Protection's lasting effect plays for dwSkillTime / 1000 s", () => {
+    const r = recorder();
+    playCombatEvent(hit(146, OTHER_ID), { ...worldOf(), skills: skillsOf() }, r.out);
+    expect(r.played).toEqual([{ effect: { xi: 400, pos: OWN_AT, followId: OTHER_ID, followDest: true, seconds: 30 } }]);
   });
 });

@@ -58,6 +58,7 @@ const TEXTS: Texts = new Map([
   text('TID_GAME_DEATH', 602, 'Press ESC and go back to Lodestar(Town) or Lodelight(Field) for resurrecting.', 0xff00ffff),
   text('TID_GAME_PATTERNUP', 610, 'You are learning new attack patterns!', 0xffccffcc),
   text('TID_EVE_LEVEL15', 504, "Now it's time to choose your job.", 0xff3366ff),
+  text('TID_EVE_CHGJOB', 500, 'Welcome to the wonderful world of %ss!', 0xff3366ff),
   text('TID_GAME_LEVELUP_CAPTION', 3073, 'Congratulations! Level up!'),
   text('TID_GAME_SKILLPOINT_UP', 3067, 'New Skill Points are now available.'),
   text(
@@ -513,6 +514,14 @@ describe('Hud: what the world and the own numbers show', () => {
     expect(shown(hud).slice(3)).toEqual([
       'Press ESC and go back to Lodestar(Town) or Lodelight(Field) for resurrecting.',
     ]);
+    hud.dispose();
+  });
+
+  it('a job change has its line with the job\'s name (OnSetJobSkill, DPClient.cpp:3646-3647; Piece 7 M2)', () => {
+    const hud = hudOn();
+    hud.play([], [{ kind: 'jobChanged', job: 4, title: 'Magician' }], newVagrant(15));
+    expect(shown(hud)).toEqual(['Welcome to the wonderful world of Magicians!']);
+    expect((hud.messages.element.children[0] as HTMLElement).style.color).toBe('rgb(51, 102, 255)');
     hud.dispose();
   });
 
@@ -1157,6 +1166,7 @@ describe('AttackButton (touch screens; spec §3.9)', () => {
     });
     const session = {
       sendDestObj: () => {}, sendMeleeAttack: () => {}, sendGetDestObj: () => {}, sendBehavior: () => {}, sendSetTarget: () => {},
+      sendMagicAttack: () => {}, sendRangeAttack: () => {},
     };
     const focus = new Focus(session);
     const own = newVagrant();
@@ -1662,6 +1672,7 @@ describe('ReviveWindow (CWndRevival, WndField.cpp:12147-12345)', () => {
     });
     const session = {
       sendDestObj: () => {}, sendMeleeAttack: () => {}, sendGetDestObj: () => {}, sendBehavior: () => {}, sendSetTarget: () => {},
+      sendMagicAttack: () => {}, sendRangeAttack: () => {},
     };
     const loop = new AttackLoop(session, new Focus(session), world, () => own, { tick: () => 0n }, data.movers);
     loop.onMoverPressed(AIBATT_ID, 10_000, false);

@@ -53,15 +53,18 @@ export interface CombatFxWorld {
   /** The item catalog: the hit effect (`dwSfxObj3`) and the kind (`dwItemKind3`) of an attacker's hand item. */
   itemProps: ReadonlyMap<number, Pick<WebItemProp, 'sfxHit' | 'kind3'>>;
   /** The skills catalog: a skill's hit effect (`dwSfxObj3`) and how it finds its target (`dwExeTarget`); none, no skill effect. */
-  skills?: ReadonlyMap<number, Pick<WebSkill, 'sfxHit' | 'exeTarget'>>;
+  skills?: ReadonlyMap<number, Pick<WebSkill, 'sfxHit' | 'exeTarget'> & Partial<Pick<WebSkill, 'sfxCaster' | 'sfxLasting' | 'linkKind' | 'levels'>>>;
 }
 
 /** Where what is played goes: `EffectManager.play`, `DamageNumbers.add`, and `MoverViews.flash` and `shake`. */
 export interface CombatFxOut {
   effect(request: EffectRequest): void;
   number(pos: Vec3, value: number, ownHurt: boolean): void;
-  /** The mover's model flashes: `m_SparkInfo` with `m_v3SparkDir` `direction` (D3D, a unit vector). */
-  flash(moverId: number, direction: Vec3): void;
+  /**
+   * The mover's model flashes: `m_SparkInfo` with `m_v3SparkDir` `direction` (D3D, a unit vector), in `color`
+   * (`m_v3Color`; a hit's (2, 2, 2) unless given).
+   */
+  flash(moverId: number, direction: Vec3, color?: Vec3): void;
   /** The mover's `m_nDmgCnt = 10`: its drawing shakes, a monster's. */
   shake(moverId: number): void;
 }
@@ -149,6 +152,7 @@ export function playCombatEvent(event: CombatEvent, world: CombatFxWorld, out: C
       return;
     }
     case 'levelUp':
+    case 'jobChanged': // OnSetChangeJob (DPClient.cpp:3637) and OnSetNearChangeJob (:3700): the same effect on the mover
       followed(Xi.GEN_LEVEL_UP01, world.movers.get(event.moverId), out);
       return;
     case 'spawned':
@@ -157,6 +161,14 @@ export function playCombatEvent(event: CombatEvent, world: CombatFxWorld, out: C
     case 'skillHit':
       playSkillHit(event, world, out);
       return;
+    case 'cast':
+      playCast(event, world, out);
+      return;
+    case 'tint': { // AngleToVectorXZ( &m_v3SparkDir, GetAngle(), -1.0f ): the light from behind
+      if (!world.movers.has(event.moverId)) return;
+      out.flash(event.moverId, behind(event.fromAngle), event.color);
+      return;
+    }
     case 'sfxObj':
       playSfxObj(event, world, out);
       return;
@@ -179,12 +191,35 @@ export function playOwnEvent(event: OwnEvent, world: CombatFxWorld, out: CombatF
   followed(Xi.GEN_LEVEL_UP01, self, out);
 }
 
-/** A melee skill's hit (`skillHit`, see `playCombatEvent`): its effect before the caster, and the victim's shake. */
+/**
+ * A skill's hit that is no shot (`skillHit`, see `playCombatEvent`): `CCtrl::CreateSkillSfx` (`Ctrl.cpp:878-997`). A
+ * skill with a time and a lasting effect (`dwSfxObj4`) plays that on the target for its seconds (Piece 7 M2; Neuz
+ * skips it while the buff is on, which the buffs' own effect then shows); any other plays its `dwSfxObj3`: a melee
+ * skill's 1.3 m before its caster and 1 m up, a yoyo's at the target + 1 m, any other's on the target from its + 1 m;
+ * then its `dwSfxObj5` on the caster (a yoyo's is its thrown yoyo, the world's). Then the victim's shake.
+ */
 function playSkillHit(event: Extract<CombatEvent, { kind: 'skillHit' }>, world: CombatFxWorld, out: CombatFxOut): void {
   const caster = world.movers.get(event.casterId);
   const skill = world.skills?.get(event.skill);
-  if (caster === undefined || skill === undefined || !world.movers.has(event.targetId)) return;
-  if (skill.exeTarget === Ext.MELEEATK && skill.sfxHit !== NO_SFX) {
+  const target = world.movers.get(event.targetId);
+  if (caster === undefined || skill === undefined || target === undefined) return;
+  const time = skill.levels?.[(event.level ?? 1) - 1]?.skillTime ?? -1;
+  const lasting = skill.sfxLasting ?? NO_SFX;
+  const up1 = (p: Vec3): Vec3 => [p[0], f32(p[1] + SKILL_SFX_RAISE), p[2]];
+  if (time > 0 && lasting !== NO_SFX) {
+    out.effect({ xi: lasting, pos: caster.act.body.pos, followId: target.objectId, followDest: true, seconds: Math.trunc(time / 1000) });
+  } else {
+    if (skill.sfxHit !== NO_SFX && skill.exeTarget !== Ext.MELEEATK) {
+      out.effect({ xi: skill.sfxHit, pos: up1(target.act.body.pos), followId: target.objectId, followDest: true });
+    } else if (skill.sfxHit !== NO_SFX && skill.linkKind === Ik3.YOYO) {
+      out.effect({ xi: skill.sfxHit, pos: up1(target.act.body.pos), sourceAngle: caster.act.body.angle });
+    }
+    const own = skill.sfxCaster ?? NO_SFX;
+    if (own !== NO_SFX && skill.linkKind !== Ik3.YOYO) {
+      out.effect({ xi: own, pos: caster.act.body.pos, followId: caster.objectId, followDest: true });
+    }
+  }
+  if (skill.exeTarget === Ext.MELEEATK && skill.sfxHit !== NO_SFX && skill.linkKind !== Ik3.YOYO && !(time > 0 && lasting !== NO_SFX)) {
     // AngleToVectorXZ( &vLocal, GetAngle(), 1.3f ); vLocal += GetPos(); vLocal.y += 1.0f
     const [x, y, z] = caster.act.body.pos;
     const { angle } = caster.act.body;
@@ -215,6 +250,38 @@ function playSfxObj(event: Extract<CombatEvent, { kind: 'sfxObj' }>, world: Comb
  * `CreateSfx( dev, xi, pMover->GetPos(), pMover->GetId() )`: a plain effect on the mover, following it; its source is
  * valid, so the caster's angle goes with it (ruling R11), which the manager does not turn a plain effect by.
  */
+/** Piece 7 M2: `XI_SKILL_*_CASTING01` that `CreateSfx` makes a `CSfxSkillMagFireCasting` of (`CreateObj.cpp:163-174`). */
+const FIRE_CASTING: ReadonlySet<number> = new Set([274, 276, 277, 278]);
+/** Piece 7 M2: `XI_SKILL_MAG_WIND_CASTING01` and `XI_SKILL_ASS_CHEER_CASTING01`: a `CSfxSkillMagWindCasting` (:175-177). */
+const WIND_CASTING = 275;
+/** `vPosSrc.y += 0.01f` (`CSfx::SetSfx`, `SfxObj.cpp:85`). */
+const MADE_LIFT = f32(0.01);
+
+/** `AngleToVectorXZ( &v, angle, -1.0f )` (`xUtil3D.h:37-43`): the unit vector from behind a mover facing `angle`. */
+function behind(angle: number): Vec3 {
+  const rad = f32((angle * Math.PI) / 180);
+  return [f32(-f32(Math.sin(rad))), 0, f32(Math.cos(rad))];
+}
+
+/**
+ * Piece 7 M2: a skill's cast effect (`MoverSkill.cpp:993-996`): a fire casting stays where it was made and draws 1 m over
+ * it, turned `180 - ` the caster's angle (`Sfx.cpp:2406-2425`; Neuz turns it with the caster as it draws, here as it
+ * began); a wind casting stays where it was made, a plain effect's 0.2 m up and not turned (:2426-2446); any other is a
+ * plain effect on the caster.
+ */
+function playCast(event: Extract<CombatEvent, { kind: 'cast' }>, world: CombatFxWorld, out: CombatFxOut): void {
+  const caster = world.movers.get(event.casterId);
+  if (caster === undefined) return;
+  const { pos, angle } = caster.act.body;
+  if (FIRE_CASTING.has(event.xi)) {
+    out.effect({ xi: event.xi, pos: [pos[0], f32(f32(pos[1] + MADE_LIFT) + 1), pos[2]], fixed: true, angle: f32(180 - angle) });
+  } else if (event.xi === WIND_CASTING) {
+    out.effect({ xi: event.xi, pos, angle: 0 });
+  } else {
+    followed(event.xi, caster, out);
+  }
+}
+
 function followed(xi: number, mover: FxMover | undefined, out: CombatFxOut): void {
   if (mover === undefined) return;
   const { pos, angle } = mover.act.body;

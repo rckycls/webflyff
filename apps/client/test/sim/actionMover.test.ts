@@ -964,3 +964,217 @@ describe('motionFor', () => {
     expect(motionFor(Mti.DIE1, hand(Ik3.HAND), ObjStaF.COMBAT)).toBe(208);
   });
 });
+
+describe('ActionMover: the wand\'s and the bow\'s attacks (ATK_MAGIC1, ATK_RANGE1; Piece 7 M2)', () => {
+  it('ATK_MAGIC1 stands, plays MTI_ATK1 once and calls onAttackMagic at the hit frame (ActionMoverMsg.cpp:522-553)', () => {
+    const { player } = fight();
+    let hit = -1;
+    let ended = false;
+    player.isAttrHit = () => hit;
+    player.isEndFrame = () => ended;
+    const shots: number[] = [];
+    player.onAttackMagic = () => shots.push(player.targetId ?? -1);
+    expect(player.sendActMsg(ActMsg.ATK_MAGIC1, 2)).toBe(true);
+    expect(player.state).toBe(ObjSta.STAND | ObjSta.ATK_MAGIC1);
+    expect(player.stateFlag).toBe(ObjStaF.COMBAT);
+    expect([player.motion, player.loop, player.motionOption]).toEqual([Mti.ATK1, AniLoop.ONE_PLAY, 0]);
+    expect(player.atkCnt).toBe(1);
+    player.step();
+    expect(shots).toEqual([]);
+    hit = 0;
+    player.step();
+    expect(shots).toHaveLength(1);
+    ended = true;
+    hit = -1;
+    player.step();
+    expect(player.state & ObjSta.ATK_ALL).toBe(0);
+  });
+
+  it('ATK_RANGE1 plays the motion it is given, with no STAND, and calls onAttackRange only at a live target (:555-594, ActionMoverState.cpp:1158-1182)', () => {
+    const { player, monster } = fight();
+    player.sendActMsg(ActMsg.FORWARD);
+    let hit = -1;
+    player.isAttrHit = () => hit;
+    player.isEndFrame = () => false;
+    let shots = 0;
+    player.onAttackRange = () => shots++;
+    expect(player.sendActMsg(ActMsg.ATK_RANGE1, 2, Mti.ATK1)).toBe(true);
+    expect(player.state & ObjSta.ATK_ALL).toBe(ObjSta.ATK_RANGE1);
+    expect(player.state & ObjSta.MOVE_ALL).toBe(ObjSta.FMOVE); // no STOP_TURN or STAND (:586-587)
+    expect([player.motion, player.loop]).toEqual([Mti.ATK1, AniLoop.ONE_PLAY]);
+    expect(player.targetId).toBe(2);
+    hit = 0;
+    player.step();
+    expect(shots).toBe(1);
+    monster.sendActMsg(ActMsg.DIE, ActMsg.DAMAGE, 1);
+    player.step();
+    expect(shots).toBe(1);
+  });
+
+  it('both refuse in an attack (0) and at a dead target or one out of view (-1)', () => {
+    const { player, monster } = fight();
+    expect(player.sendActMsg(ActMsg.ATK_MAGIC1, 99)).toBe(false);
+    expect(player.sendActMsg(ActMsg.ATK_RANGE1, 99, Mti.ATK1)).toBe(false);
+    expect(player.state & ObjSta.ATK_ALL).toBe(0);
+    expect(player.sendActMsg(ActMsg.ATK_MAGIC1, 2)).toBe(true);
+    expect(player.sendActMsg(ActMsg.ATK_RANGE1, 2, Mti.ATK1)).toBe(false);
+    expect(player.state & ObjSta.ATK_ALL).toBe(ObjSta.ATK_MAGIC1);
+    const fresh = fight();
+    fresh.monster.sendActMsg(ActMsg.DIE, ActMsg.DAMAGE, 1);
+    expect(fresh.player.sendActMsg(ActMsg.ATK_MAGIC1, 2)).toBe(false);
+    expect(fresh.player.sendActMsg(ActMsg.ATK_RANGE1, 2, Mti.ATK1)).toBe(false);
+    expect(monster.isDie()).toBe(false);
+  });
+
+  it('a player in ATK_MAGIC1 or ATK_RANGE1 plays at its attack speed (ProcessAniSpeed, Mover.cpp:3088-3097)', () => {
+    for (const msg of [ActMsg.ATK_MAGIC1, ActMsg.ATK_RANGE1]) {
+      const { player } = fight();
+      player.isEndFrame = () => false;
+      player.isAttrHit = () => -1;
+      player.sendActMsg(msg, 2, Mti.ATK1);
+      player.step();
+      expect(player.aniSpeed).toBe(FISTS_SPEED);
+    }
+  });
+
+  it('the own mover with a ranged hand refuses ATK1 with -2 (ActionMoverMsg.cpp:608-616)', () => {
+    const { player } = fight();
+    player.rangedHand = () => true;
+    expect(player.sendActMsg(ActMsg.ATK1, 2)).toBe(false);
+    expect(player.state & ObjSta.ATK_ALL).toBe(0);
+    player.rangedHand = () => false;
+    expect(player.sendActMsg(ActMsg.ATK1, 2)).toBe(true);
+  });
+
+  it('a magic attack kept while busy runs at the end of the swing, after the melee queue (Action.cpp:56-60, ActionMover.cpp:59-93)', () => {
+    const { player } = fight();
+    let ended = false;
+    player.isEndFrame = () => ended;
+    player.isAttrHit = () => -1;
+    const run: number[] = [];
+    let answer = 0;
+    player.doKeptMagicAttack = (kept) => {
+      run.push(kept.power);
+      return answer;
+    };
+    player.sendActMsg(ActMsg.ATK1, 2);
+    player.keepMagicAttack({ msg: ActMsg.ATK_MAGIC1, targetId: 2, param2: 0, param3: 0, power: 3, sfxHitId: 0 });
+    player.keepMagicAttack({ msg: ActMsg.ATK_RANGE1, targetId: 2, param2: 1, param3: 4, power: 0, sfxHitId: 0 });
+    // a melee swing kept too: it goes first, and with it started the magic queue waits
+    player.meleeAttack(ActMsg.ATK2, 2);
+    ended = true;
+    player.step();
+    expect(run).toEqual([]);
+    expect(player.state & ObjSta.ATK_ALL).toBe(ObjSta.ATK2);
+    // the melee queue is empty now: the first kept magic attack runs; busy (0), it stays and the second waits
+    player.step();
+    expect(run).toEqual([3]);
+    // refused (-1) it goes and the next is tried at once: both are refused, and the queue is empty
+    answer = -1;
+    player.sendActMsg(ActMsg.ATK1, 2);
+    player.step();
+    expect(run).toEqual([3, 3, 0]);
+  });
+});
+
+describe('ActionMover: magic casting (MAGICCASTING, MAGICSKILL, ProcessStateMagicCasting; Piece 7 M2)', () => {
+  /** `MTI_ATK_MAG_FIRE` (`Resource/defineNeuz.h:965`): the fire cast, its loop + 1 and its shot + 2. */
+  const FIRE_CAST = 1063;
+  const CAST_OPTION = Mop.SWDFORCE | Mop.NO_TRANS | Mop.FIXED;
+
+  /** Steps the player until its motion is `motion` (at most 300): the step it was set in, counting from 1. */
+  function stepsUntil(player: ActionMover, model: { move: () => void }, motion: number): number {
+    for (let n = 1; n <= 300; n++) {
+      player.step();
+      if (player.motion === motion) return n;
+      model.move();
+    }
+    return -1;
+  }
+
+  it('MAGICCASTING plays the cast motion, loops motion + 1, and the shot motion + 2 once the count reaches the cast time', () => {
+    // nCastingTime 9 (600 ms on the server's 15 a second) is 36 ticks here; a short cast motion: the shot at tick 37
+    const short = fight().player;
+    const shortModel = fakeModel(short, 10, []);
+    expect(short.sendActMsg(ActMsg.MAGICCASTING, FIRE_CAST, 2, 9)).toBe(true);
+    expect([short.state, short.motion, short.loop, short.motionOption]).toEqual([ObjSta.ATK_CASTING1, FIRE_CAST, AniLoop.ONE_PLAY, CAST_OPTION]);
+    expect(stepsUntil(short, shortModel, FIRE_CAST + 1)).toBeLessThan(37);
+    expect([short.state, short.loop]).toEqual([ObjSta.ATK_CASTING2, AniLoop.LOOP]);
+    const s = fight().player;
+    const sm = fakeModel(s, 10, []);
+    s.sendActMsg(ActMsg.MAGICCASTING, FIRE_CAST, 2, 9);
+    expect(stepsUntil(s, sm, FIRE_CAST + 2)).toBe(37);
+    expect([s.state, s.loop]).toEqual([ObjSta.ATK_MAGICSKILL, AniLoop.ONE_PLAY]);
+    // a cast motion longer than the cast time: the shot the step after it ends
+    const long = fight().player;
+    const longModel = fakeModel(long, 60, []);
+    long.sendActMsg(ActMsg.MAGICCASTING, FIRE_CAST, 2, 9);
+    const looping = stepsUntil(long, longModel, FIRE_CAST + 1);
+    expect(looping).toBeGreaterThan(37);
+    long.step();
+    expect([long.motion, long.state]).toEqual([FIRE_CAST + 2, ObjSta.ATK_MAGICSKILL]);
+    // no cast time: the shot state at once
+    const now = fight().player;
+    expect(now.sendActMsg(ActMsg.MAGICSKILL, FIRE_CAST + 2, 2, 0)).toBe(true);
+    expect(now.state).toBe(ObjSta.ATK_MAGICSKILL);
+    expect(now.sendActMsg(ActMsg.MAGICCASTING, FIRE_CAST, 99, 9)).toBe(false); // no target in view: -2
+  });
+
+  it("MAGICSKILL calls onMagicSkill at the hit frame, and Water Ball's extra shots every 4th tick", () => {
+    const { player } = fight();
+    const model = fakeModel(player, 40, [6]);
+    const shots: Array<[number, number]> = [];
+    let tick = 0;
+    player.onMagicSkill = (hitCount) => shots.push([tick, hitCount]);
+    player.skillCountOf = (skill, level) => (skill === 18 && level === 10 ? 3 : 0); // SI_MAG_WATER_WATERBALL: 3 at level 10
+    player.sendActMsg(ActMsg.MAGICSKILL, FIRE_CAST + 2, 2, 0);
+    player.skillAct = { skill: 18, targetId: 2, level: 10 };
+    for (tick = 1; tick <= 40 && (player.state & ObjSta.ATK_ALL) !== 0; tick++) {
+      player.step();
+      model.move();
+    }
+    expect(shots).toHaveLength(3);
+    expect(shots[0]![1]).toBe(0);
+    const [first, second, third] = shots.map(([t]) => t);
+    expect(second! - first!).toBeLessThanOrEqual(4);
+    expect(third! - second!).toBe(4);
+    // its leftover shots go with the state (plan Decisions 13): a new shot state shoots only at its own hit frame
+    const again: number[] = [];
+    player.onMagicSkill = (hitCount) => again.push(hitCount);
+    player.skillCountOf = () => 0;
+    const m2 = fakeModel(player, 40, [6]);
+    player.sendActMsg(ActMsg.MAGICSKILL, FIRE_CAST + 2, 2, 0);
+    for (let i = 0; i < 40 && (player.state & ObjSta.ATK_ALL) !== 0; i++) { player.step(); m2.move(); }
+    expect(again).toEqual([0]);
+  });
+
+  it('moving and damage do not end a cast; a new MAGICCASTING does', () => {
+    const { player } = fight();
+    const model = fakeModel(player, 10, []);
+    player.sendActMsg(ActMsg.MAGICCASTING, FIRE_CAST, 2, 15);
+    stepsUntil(player, model, FIRE_CAST + 1);
+    expect(player.sendActMsg(ActMsg.FORWARD)).toBe(false);
+    player.setDamaged();
+    player.step();
+    expect(player.state & ObjSta.ATK_ALL).toBe(ObjSta.ATK_CASTING2);
+    expect(player.motion).toBe(FIRE_CAST + 1);
+    expect(player.sendActMsg(ActMsg.MAGICCASTING, 1066, 2, 15)).toBe(true);
+    expect([player.state, player.motion]).toEqual([ObjSta.ATK_CASTING1, 1066]);
+  });
+
+  it('the cast states play at the casting speed, MELEESKILL at 1', () => {
+    const { player } = fight();
+    player.castingSpeed = () => 1.5;
+    player.sendActMsg(ActMsg.MAGICCASTING, FIRE_CAST, 2, 9);
+    player.modelFrame = () => ({ current: 0, max: 10 });
+    player.isEndFrame = () => false;
+    player.step();
+    expect(player.aniSpeed).toBe(1.5);
+    player.sendActMsg(ActMsg.MAGICSKILL, FIRE_CAST + 2, 2, 0);
+    player.step();
+    expect(player.aniSpeed).toBe(1.5);
+    player.sendActMsg(ActMsg.MELEESKILL, Mti.VAG_ONE_CLEANHIT, 2);
+    player.step();
+    expect(player.aniSpeed).toBe(1);
+  });
+});

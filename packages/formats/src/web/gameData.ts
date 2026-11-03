@@ -128,6 +128,14 @@ export interface WebItemProp {
   adjParams: number[];
   /** `dwSfxObj3`: the effect shown at the target when the item hits, an `XI_*` id (see WebEffectsIndex), -1 for none. */
   sfxHit: number;
+  /**
+   * `dwSfxObj2`: the missile the item makes, an `XI_*` id: a wand's (`XI_FIR_WAND01`, `OnAttackMagic`,
+   * MoverActEvent.cpp:836-840), an arrow's (`XI_ITEM_RANGE_ATK1`, `OnAttackRange`, :717), a monster's attack item's, a
+   * yoyo's thrown yoyo. -1 for none. Optional in catalogs converted before Piece 7 M2.
+   */
+  sfxMissile?: number;
+  /** `dwLinkKindBullet`: the `IK2_*` its bullets must be (`IK2_BULLET` 25 for a bow, `CMover::IsBullet`); -1 for none. */
+  linkKindBullet?: number;
   /** OT_ITEM ground model, including the box used for worn parts; absent in older catalogs. */
   dropModel?: string | null;
   /** Positive nReflect requests the drop's camera-normal reflection map. */
@@ -274,9 +282,46 @@ export interface WebSkill {
    * The skill's levels, `levels[level - 1]` for level 1 to `maxLevel`: the rows `dwSubDefine + level - 1` of
    * propSkillAdd.csv (CProject::GetAddSkillProp, Project.cpp:879-896; the C++ reads level 0 as level 1).
    * `reqMp`, `reqFp` and `skillCount` are `nReqMp`, `nReqFp` and `nSkillCount` of the row; `cooldown` is `dwCooldown`,
-   * or the skill's `dwSkillReady` when the row gives none (:2587-2596).
+   * or the skill's `dwSkillReady` when the row gives none (:2587-2596). The rest are Piece 7 M2's (see `WebSkillLevelTimes`).
    */
-  levels: Array<{ reqMp: number; reqFp: number; cooldown: number; skillCount: number }>;
+  levels: Array<{ reqMp: number; reqFp: number; cooldown: number; skillCount: number } & Partial<WebSkillLevelTimes>>;
+  /**
+   * Piece 7 M2: the effects (`XI_*`, -1 for none): `dwSfxObj` at the caster as the skill begins (`CMover::DoUseSkill`,
+   * MoverSkill.cpp:993-996); `dwSfxObj2` the missile (`CCtrl::ShootSkill`, Ctrl.cpp:1367); `dwSfxObj4` the lasting one
+   * (`CCtrl::CreateSkillSfx`, Ctrl.cpp:923-939); `dwSfxObj5` at the caster on the hit (:907-913). Optional in catalogs
+   * converted before Piece 7 M2, as the rest below.
+   */
+  sfxCast?: number;
+  sfxMissile?: number;
+  sfxLasting?: number;
+  sfxCaster?: number;
+  /** `dwLinkKind`: the weapon the skill needs, an `IK3_*` (or `IK3_MAGICBOTH`, `IK3_YOBO`); -1 for any. */
+  linkKind?: number;
+  /** `dwLinkKindBullet`: the bullets a bow skill needs (`IK2_BULLET` 25, `CMover::IsBullet`); -1 for none. */
+  linkKindBullet?: number;
+  /** `dwAtkStyle`: an `AS_*`; `AS_BACK` 8 must be used from behind (`ProcessMoveArrival`, MoverMove.cpp:130-153). */
+  atkStyle?: number;
+  /** `dwDmgShift`: Strong Wind's push, `dwDmgShift * 0.2` (Sfx.cpp:2494-2510); -1 for none. */
+  dmgShift?: number;
+  /** `tmContinuousPain` is set: a missile that hits more than once (`ShootSkill`'s `nMaxDmgCnt`, Ctrl.cpp:1396-1405). */
+  continuousPain?: boolean;
+  /** The row's own `dwDestParam1/2` and `nAdjParamVal1/2` (the tooltip's first lines); -1 for none. */
+  destParams?: number[];
+  adjParams?: number[];
+}
+
+/**
+ * Piece 7 M2's numbers of a skill level (`AddSkillProp`, propSkillAdd.csv, Project.cpp:2533-2579), -1 for `=`:
+ * `dwCastingTime`, `dwSkillTime` and `dwPainTime` in ms; `dwDestParam1/2`, `nAdjParamVal1/2` and `dwChgParamVal1/2`, which
+ * a buff applies (`ApplyParam`, MoverActEvent.cpp:205-433).
+ */
+export interface WebSkillLevelTimes {
+  castingTime: number;
+  skillTime: number;
+  painTime: number;
+  destParams: number[];
+  adjParams: number[];
+  chgParams: number[];
 }
 
 /** The logical keys of the catalogs in the asset index. */

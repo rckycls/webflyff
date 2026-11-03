@@ -62,6 +62,16 @@ export const PacketType = {
   REMOVEQUEST: 0x00ff0026,
   /** `PACKETTYPE_QUEST_CHECK`: the client ticks a quest for the tracker (`CDPClient::SendCheckedQuestId`, MsgHdr.h:844). */
   QUEST_CHECK: 0x88100110,
+  /** `PACKETTYPE_MAGIC_ATTACK`: the client's wand shot, with its charge (`CDPClient::SendMagicAttack`, `MsgHdr.h:136`). */
+  MAGIC_ATTACK: 0x00ff0011,
+  /** `PACKETTYPE_RANGE_ATTACK`: the client's bow shot, with its charge (`CDPClient::SendRangeAttack`, `MsgHdr.h:137`). */
+  RANGE_ATTACK: 0x00ff0012,
+  /** `PACKETTYPE_SFX_ID`: a missile the own player fired, at its hit frame (`CDPClient::SendSfxID`, `MsgHdr.h:150`). */
+  SFX_ID: 0x00ff0022,
+  /** `PACKETTYPE_SFX_CLEAR`: a missile lost without a hit (`CDPClient::SendSfxClear`, `MsgHdr.h:152`). */
+  SFX_CLEAR: 0x00ff0024,
+  /** `PACKETTYPE_SFX_HIT`: a missile landed (`CDPClient::SendSfxHit`, `MsgHdr.h:192`); the server deals its damage then. */
+  SFX_HIT: 0x00ff00d2,
   ERROR_STRING: 0x70000003,
   LOGIN_PROTECT_NUMPAD: 0x88100200,
   LOGIN_PROTECT_CERT: 0x88100201,
@@ -148,6 +158,25 @@ export const MessageType = {
   MELEE_ATTACK: 0x00e0,
   /** The action slot's chain is over (`CUserTaskBar::OnEndSkillQueue`, `_Interface/UserTaskBar.cpp:190`). */
   ENDSKILLQUEUE: 0x00e5,
+  /** The own job change, with all 45 skills (`CUser::AddSetChangeJob`, `User.cpp:1181`; `MsgHdr.h:1076`). */
+  SET_JOB_SKILL: 0x00a7,
+  /** Another player's job change, to everyone in view but that player (`CUserMng::AddNearSetChangeJob`, `User.cpp:5111`). */
+  SET_NEAR_JOB_SKILL: 0x00a8,
+  /** Another mover's arrow at its target, made from its left hand (`CUserMng::AddCreateSfxAllow`, `User.cpp:5098`). */
+  CREATESFXALLOW: 0x00aa,
+  /** Another mover's wand shot, to everyone in view but the attacker (`CUserMng::AddMagicAttack`, `User.cpp:4836`). */
+  MAGIC_ATTACK: 0x00e1,
+  /** Another mover's bow shot, or a monster's ranged attack (`CUserMng::AddRangeAttack`, `User.cpp:4850`). */
+  RANGE_ATTACK: 0x00e2,
+  /** Piece 7 M2: a buff on a mover in view (`CUserMng::AddSetSkillState`, `MsgHdr.h:974`). */
+  SETSKILLSTATE: 0x004c,
+  /** Piece 7 M2: one buff of the mover gone (`MsgHdr.h:1162`), and all its common ones, at a death (:1156). */
+  REMOVESKILLINFULENCE: 0x00f8,
+  REMOVEALLSKILLINFULENCE: 0x00f4,
+  /** Piece 7 M2: a live buff's stat change and its end (`MsgHdr.h:912-913`), and DST_SPEED's total (:1295). */
+  SETDESTPARAM: 0x001c,
+  RESETDESTPARAM: 0x001d,
+  RESETDESTPARAM_SYNC: 0x9800,
   ADD_OBJ: 0x00f0,
   DEL_OBJ: 0x00f1,
   REPLACE: 0x00f2,

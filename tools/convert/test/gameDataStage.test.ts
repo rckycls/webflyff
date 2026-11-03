@@ -210,6 +210,18 @@ const SKILL_CELLS = tabs(
 const SKILL_CELL = {
   kind1: 5, kind2: 6, reqLevel: 70, reSkill1: 71, reSkillLevel1: 72, skillReady: 76, sfxObj3: 81, useMotion: 84,
   expertMax: 105, subDefine: 106, comboStyle: 108, icon: 120, comment: 123,
+  // Piece 7 M2: the effects, the bullets, the attack style, the pain and the push, and the row's own parameters
+  linkKindBullet: 28, linkKind: 29, atkStyle: 38, continuousPain: 44, dmgShift: 50, destParam0: 53, adjParam0: 56,
+  sfxObj: 79, sfxObj2: 80, sfxObj4: 82, sfxObj5: 83,
+} as const;
+/** What a propSkillAdd.csv row that gives no times or parameters gives a level (Piece 7 M2). */
+const NO_TIMES = {
+  castingTime: -1, skillTime: -1, painTime: -1, destParams: [-1, -1], adjParams: [-1, -1], chgParams: [-1, -1],
+} as const;
+/** What a propSkill.txt row that names no effect, bullet or push gives a skill (Piece 7 M2); Clean Hit's style is AS_DIAGONAL. */
+const NO_SHOT = {
+  sfxCast: -1, sfxMissile: -1, sfxLasting: -1, sfxCaster: -1, linkKind: -1, linkKindBullet: -1, atkStyle: 2, dmgShift: -1,
+  continuousPain: false, destParams: [-1, -1], adjParams: [-1, -1],
 } as const;
 const skillRow = (
   id: string, name: string, comment: string, cells: Partial<Record<keyof typeof SKILL_CELL, string>> = {},
@@ -223,7 +235,11 @@ const skillRow = (
 };
 /** A row of propSkillAdd.csv: 36 comma-separated columns, `=` for the ones the Vagrant's skills leave empty. */
 const addRow = (
-  id: string, skill: string, level: number, cost: { mp?: string; fp?: string; cooldown?: string; count?: string } = {},
+  id: string, skill: string, level: number,
+  cost: {
+    mp?: string; fp?: string; cooldown?: string; count?: string;
+    casting?: string; pain?: string; time?: string; dst?: string; adj?: string; chg?: string;
+  } = {},
 ): string => {
   const cells = Array<string>(36).fill('=');
   cells[0] = id;
@@ -235,7 +251,13 @@ const addRow = (
   cells[24] = cost.mp ?? '='; // nReqMp
   cells[25] = cost.fp ?? '='; // nReqFp
   cells[26] = cost.cooldown ?? '='; // dwCooldown
+  cells[12] = cost.dst ?? '='; // dwDestParam1
+  cells[14] = cost.adj ?? '='; // nAdjParamVal1
+  cells[16] = cost.chg ?? '='; // dwChgParamVal1
+  cells[27] = cost.casting ?? '='; // dwCastingTime
   cells[28] = '2000'; // dwSkillRange, read and dropped
+  cells[30] = cost.pain ?? '='; // dwPainTime
+  cells[31] = cost.time ?? '='; // dwSkillTime
   cells[32] = cost.count ?? '='; // nSkillCount
   cells[33] = '4'; // dwSkillExp, dwExp and dwComboSkillTime
   cells[34] = '0';
@@ -347,6 +369,9 @@ const PACKED: Record<string, string> = {
     skillRow('SI_MER_ONE_SPLMASH', 'IDS_PROPSKILL_TXT_000004', 'IDS_PROPSKILL_TXT_000005', {
       kind1: 'JTYPE_EXPERT', kind2: 'JOB_MERCENARY', reqLevel: '=', expertMax: '2', subDefine: 'SA_SPLMASH_L01',
       icon: '""""""',
+      // Piece 7 M2: a cast effect, a missile, a lasting and a caster's effect, arrows, a style, a pain, a push, a parameter
+      sfxObj: '274', sfxObj2: '264', sfxObj4: '9', sfxObj5: '11', linkKindBullet: '25', linkKind: '12', atkStyle: '8',
+      continuousPain: '1', dmgShift: '2', destParam0: '1', adjParam0: '7',
     }),
     skillRow('SI_GEN_FLASH', 'IDS_PROPSKILL_TXT_000006', 'IDS_PROPSKILL_TXT_000007', { kind1: 'JTYPE_COMMON', expertMax: '1' }),
   ),
@@ -357,7 +382,9 @@ const PACKED: Record<string, string> = {
     addRow('SA_CLEANHIT_L02', 'SI_VAG_ONE_CLEANHIT', 2, { fp: '8' }),
     addRow('SA_BRANDISH_L01', 'SI_VAG_ONE_BRANDISH', 1, { fp: '10' }),
     addRow('SA_BRANDISH_L02', 'SI_VAG_ONE_BRANDISH', 2, { fp: '12', cooldown: '500', count: '3' }),
-    addRow('SA_SPLMASH_L01', 'SI_MER_ONE_SPLMASH', 1, { mp: '20', fp: '9' }),
+    addRow('SA_SPLMASH_L01', 'SI_MER_ONE_SPLMASH', 1, {
+      mp: '20', fp: '9', casting: '600', pain: '4000', time: '9000', dst: '4', adj: '2', chg: '3',
+    }),
     addRow('SA_SPLMASH_L02', 'SI_MER_ONE_SPLMASH', 2, { mp: '24', fp: '11' }),
   ),
   'propJob.inc': script(
@@ -689,7 +716,8 @@ describe('the game-data stage', () => {
     expect(props[2]).toEqual({
       id: 505, name: 'Training Sword', description: 'A suit of cotton.', cost: 12, packMax: 1, kind1: 1, kind2: 2, kind3: 2, handed: 1, part: 10, abilityMin: 3, abilityMax: 4,
       weaponType: 1, attackSpeed: Math.fround(0.085), attackRange: 1, destParams: [14, -1, -1], adjParams: [5, -3, -1],
-      sfxHit: 20, model: 'models/item_weasword.glb', dropModel: 'models/item_weasword.glb', icon: 'ui/item/itm_weasword.png',
+      sfxHit: 20, sfxMissile: -1, linkKindBullet: -1,
+      model: 'models/item_weasword.glb', dropModel: 'models/item_weasword.glb', icon: 'ui/item/itm_weasword.png',
     });
     expect(props[2]!.attackSpeed).not.toBe(0.085);
 
@@ -697,9 +725,21 @@ describe('the game-data stage', () => {
     expect(props[0]).toEqual({
       id: 502, name: 'Cotton Suit', description: 'A suit of cotton.', cost: 12, packMax: 1, kind1: 2, kind2: 7, kind3: 18, handed: -1, part: 2, abilityMin: 8, abilityMax: 10,
       weaponType: -1, attackSpeed: -1, attackRange: -1, destParams: [-1, -1, -1], adjParams: [-1, -1, -1],
-      sfxHit: -1, model: null, dropModel: 'models/item_genmatsuitbox.glb', icon: 'ui/item/itm_mvag01upper.png',
+      sfxHit: -1, sfxMissile: -1, linkKindBullet: -1,
+      model: null, dropModel: 'models/item_genmatsuitbox.glb', icon: 'ui/item/itm_mvag01upper.png',
     });
     expect(props[1]).toMatchObject({ id: 503, name: 'Pike Suit', part: 3, model: null });
+  });
+
+  it('items keep the missile and the bullet kind (Piece 7 M2)', async () => {
+    const row = weaponRow('505', 'IDS_PROPITEM_TXT_000793').split('\t');
+    row[80] = '27'; // dwSfxObj2: a wand's missile, XI_FIR_WAND01
+    row[28] = '25'; // dwLinkKindBullet: a bow's IK2_BULLET
+    await client({ 'propItem.txt': script(row.join('\t')) });
+    const run = await runData();
+    expect(await catalog<WebItemProp[]>(run, GAME_DATA_KEYS.itemProps)).toEqual([
+      expect.objectContaining({ id: 505, sfxMissile: 27, linkKindBullet: 25, sfxHit: 20 }),
+    ]);
   });
 
   it('itemProps: a row repeated in propItem.txt keeps the last, and an item with no icon has none', async () => {
@@ -833,11 +873,11 @@ describe('the game-data stage', () => {
     expect(skills[0]).toEqual({
       id: 1, name: 'Clean Hit', description: 'A powerful, downward strike.', jobType: 0, job: 0, handed: 1, attackRange: 1,
       reqLevel: 3, reqSkills: [], useMotion: 1000, sfxHit: 201, exeTarget: 17, useChance: 4, skillType: 2, evildoing: -1,
-      maxLevel: 2, comboStyle: 1, icon: 'ui/skill_vagonecleanh.png',
+      maxLevel: 2, comboStyle: 1, icon: 'ui/skill_vagonecleanh.png', ...NO_SHOT,
       // dwSkillReady is `=`, so a level with no cool-down of its own has none
       levels: [
-        { reqMp: -1, reqFp: 5, cooldown: -1, skillCount: -1 },
-        { reqMp: -1, reqFp: 8, cooldown: -1, skillCount: -1 },
+        { reqMp: -1, reqFp: 5, cooldown: -1, skillCount: -1, ...NO_TIMES },
+        { reqMp: -1, reqFp: 8, cooldown: -1, skillCount: -1, ...NO_TIMES },
       ],
     });
 
@@ -846,9 +886,20 @@ describe('the game-data stage', () => {
       id: 2, name: 'Flurry', reqLevel: 5, reqSkills: [{ skill: 1, level: 3 }], useMotion: 1001, sfxHit: 202, comboStyle: 2,
     });
     expect(skills[1]!.levels).toEqual([
-      { reqMp: -1, reqFp: 10, cooldown: 2000, skillCount: -1 },
-      { reqMp: -1, reqFp: 12, cooldown: 500, skillCount: 3 },
+      { reqMp: -1, reqFp: 10, cooldown: 2000, skillCount: -1, ...NO_TIMES },
+      { reqMp: -1, reqFp: 12, cooldown: 500, skillCount: 3, ...NO_TIMES },
     ]);
+    expect(skills[1]).toMatchObject(NO_SHOT);
+
+    // Piece 7 M2: the Mercenary's row names its effects, arrows, style, pain and push; its first level its times and params
+    expect(skills[2]).toMatchObject({
+      sfxCast: 274, sfxMissile: 264, sfxLasting: 9, sfxCaster: 11, linkKind: 12, linkKindBullet: 25, atkStyle: 8,
+      dmgShift: 2, continuousPain: true, destParams: [1, -1], adjParams: [7, -1],
+    });
+    expect(skills[2]!.levels[0]).toMatchObject({
+      castingTime: 600, skillTime: 9000, painTime: 4000, destParams: [4, -1], adjParams: [2, -1], chgParams: [3, -1],
+    });
+    expect(skills[2]!.levels[1]).toMatchObject(NO_TIMES);
 
     // a Mercenary's skill: the job type and the job are the row's, `=` as the level needed is -1, and the cost has MP
     expect(skills[2]).toMatchObject({
@@ -895,8 +946,8 @@ describe('the game-data stage', () => {
     expect(run.report.failures).toEqual([]);
     const skills = await catalog<WebSkill[]>(run, GAME_DATA_KEYS.skills);
     expect(skills[0]!.levels).toEqual([
-      { reqMp: -1, reqFp: 5, cooldown: -1, skillCount: -1 },
-      { reqMp: -1, reqFp: -1, cooldown: -1, skillCount: -1 },
+      { reqMp: -1, reqFp: 5, cooldown: -1, skillCount: -1, ...NO_TIMES },
+      { reqMp: -1, reqFp: -1, cooldown: -1, skillCount: -1, ...NO_TIMES },
     ]);
     // GetAddSkillProp takes the row by its place, not by what it says
     expect(skills[1]!.levels[0]).toMatchObject({ reqFp: 10 });

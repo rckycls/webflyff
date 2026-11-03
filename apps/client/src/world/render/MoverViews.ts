@@ -11,7 +11,7 @@
 // went past a hit frame of a swing. In combat a player plays its weapon's set of each motion (`motionFor`). A hit
 // flashes a model and shakes a monster's drawing (`sparks.ts`): `flash` and `shake`, stepped with the rules.
 
-import { attachHeld, geometryBytes } from '@flyffweb/scene';
+import { attachHeld, geometryBytes, handPosition } from '@flyffweb/scene';
 import type { AssembledCharacter, LoopedMotion, ModelBox, Overlay } from '@flyffweb/scene';
 import { toWebPosition } from '@flyffweb/formats';
 import type { MotionEvents, Vec3, WebItemProp, WebMover } from '@flyffweb/formats';
@@ -31,7 +31,7 @@ import type { HeldItem } from './moverModels';
 import { moverMatrix } from './picking';
 import type { PickCandidate } from './picking';
 import {
-  DAMAGE_SHAKE_TICKS, idleSpark, lightWithSpark, setSparkUniforms, shakeOffset, sparkUniforms, startSpark, stepSpark,
+  DAMAGE_SHAKE_TICKS, SPARK_CAST, idleSpark, lightWithSpark, setSparkUniforms, shakeOffset, sparkUniforms, startSpark, stepSpark,
 } from './sparks';
 import type { SparkInfo, SparkUniforms } from './sparks';
 
@@ -262,6 +262,12 @@ export class MoverViews {
       if (movers.get(view.mover.objectId) !== view.mover) continue;
       interpolate(view);
       if (view.dmgCnt > 0) view.dmgCnt--;
+      // Piece 7 M2: a cast lights its caster cyan from behind at each of its steps (ProcessStateMagicCasting, :714-724)
+      const atk = view.mover.act.state & ObjSta.ATK_ALL;
+      if (atk === ObjSta.ATK_CASTING1 || atk === ObjSta.ATK_CASTING2) {
+        const rad = Math.fround((view.mover.act.body.angle * Math.PI) / 180);
+        startSpark(view.spark, [Math.fround(-Math.sin(rad)), 0, Math.fround(Math.cos(rad))], SPARK_CAST);
+      }
       stepSpark(view.spark);
       if (view.model === null) continue;
       const act = view.mover.act;
@@ -295,9 +301,9 @@ export class MoverViews {
    * `OnAttackMelee`, :1704-1717), lit along `direction` (`m_v3SparkDir`, D3D). A mover whose model is still loading
    * keeps it, and its model takes it when it comes.
    */
-  flash(objectId: number, direction: Vec3): void {
+  flash(objectId: number, direction: Vec3, color?: Vec3): void {
     const view = this.views.get(objectId);
-    if (view !== undefined) startSpark(view.spark, direction);
+    if (view !== undefined) startSpark(view.spark, direction, color);
   }
 
   /** A blow landed on the mover `objectId`: `m_nDmgCnt = 10` (`CActionMover::OnDamageMsgC`, `ActionMoverDmg.cpp:118`). */
@@ -315,6 +321,21 @@ export class MoverViews {
   }
 
   /** Where a mover is drawn (web coordinates) and the top of its model, for its name tag; null while its model loads. */
+  /**
+   * Piece 7 M2: where a mover's hand is (`CModelObject::GetHandPos`, `handPosition`), in D3D, from its model as last
+   * drawn: a missile leaves from it and a yoyo goes back to it. Null with no model (loading, a placeholder) or no grips.
+   */
+  handAt(objectId: number, hand: 'right' | 'left'): Vec3 | null {
+    const model = this.views.get(objectId)?.model ?? null;
+    if (model === null) return null;
+    try {
+      const at = handPosition(model, hand);
+      return at === null ? null : toWebPosition([at.x, at.y, at.z]);
+    } catch {
+      return null; // a skeleton without the hand's bone
+    }
+  }
+
   placeOf(objectId: number): { at: Vec3; head: Vec3 } | null {
     const view = this.views.get(objectId);
     if (view === undefined || view.head === null) return null;
@@ -456,6 +477,7 @@ export class MoverViews {
     view.frame = startFrame(act.motionSets);
     act.isEndFrame = () => this.isEndFrame(view);
     act.isAttrHit = () => this.isAttrHit(view);
+    act.isAttrQuake = () => this.isAttrQuake(view);
     act.modelFrame = () => this.modelFrame(view);
     this.play(view);
     model.mixer.update(0);
@@ -513,6 +535,7 @@ export class MoverViews {
     view.action = null;
     view.mover.act.isEndFrame = () => true;
     view.mover.act.isAttrHit = () => -1;
+    view.mover.act.isAttrQuake = () => false;
     view.mover.act.modelFrame = noFrame;
     if ('release' in loaded) loaded.release();
   }
@@ -536,6 +559,7 @@ export class MoverViews {
       this.overlay.addGpuBytes(-view.bytes);
       view.mover.act.isEndFrame = () => true;
       view.mover.act.isAttrHit = () => -1;
+      view.mover.act.isAttrQuake = () => false;
       view.mover.act.modelFrame = noFrame;
       view.model = null;
     }
@@ -719,6 +743,22 @@ export class MoverViews {
     this.catchUp(view, motion, false);
     const { frame } = view;
     return frame.waiting[0] ?? hitIndex(hit, frame.old, frame.current);
+  }
+
+  /**
+   * Piece 7 M2: `m_pModel->IsAttrQuake()` (`ModelObject.h:304`, `CMotion::IsAttrQuake`, `Bone.h:178-185`): whether the
+   * model's last frame move went past a quake frame of the motion the rules set (`hitIndex` over its quake frames), from
+   * frame -1 to 0 for a motion set since; false while the file loads. A quake passed by the moves made as the file came
+   * in is not kept, as hits are: it only throws a yoyo, which is drawing.
+   */
+  private isAttrQuake(view: View): boolean {
+    const key = this.keyOf(view);
+    if (key === null) return false;
+    const motion = this.clip(key).motion;
+    if (motion === null || motion.events.quake.length === 0) return false;
+    if (view.frame.sets !== view.mover.act.motionSets) return hitIndex(motion.events.quake, -1, 0) >= 0;
+    this.catchUp(view, motion, false);
+    return hitIndex(motion.events.quake, view.frame.old, view.frame.current) >= 0;
   }
 
   /**

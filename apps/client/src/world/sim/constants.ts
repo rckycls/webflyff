@@ -34,8 +34,15 @@ export const ObjSta = {
   ATK2: 0x00020000,
   ATK3: 0x00030000,
   ATK4: 0x00040000,
+  /** Piece 7 M2: the wand's shot and the bow's (`MoverMsg.h:53-54`), which `OBJMSG_ATK_MAGIC1` and `ATK_RANGE1` set. */
+  ATK_MAGIC1: 0x00050000,
+  ATK_RANGE1: 0x00060000,
   /** A melee skill's motion (`MoverMsg.h:58`), which `OBJMSG_MELEESKILL` sets. */
   ATK_MELEESKILL: 0x00090000,
+  /** Piece 7 M2: a magic skill's cast, its loop, and its shot (`_Common/MoverMsg.h:60-62`). */
+  ATK_CASTING1: 0x000b0000,
+  ATK_CASTING2: 0x000c0000,
+  ATK_MAGICSKILL: 0x000d0000,
   ATK_ALL: 0x00ff0000,
   /** Hit: the flinch (`MoverMsg.h:68`). */
   DMG: 0x01000000,
@@ -94,10 +101,19 @@ export const ActMsg = {
   ATK3: 31,
   ATK4: 32,
   /**
+   * Piece 7 M2 (`MoverMsg.h:142-143`): the bow's shot, at the object ID in the first parameter with the motion in the
+   * second (`CMover::DoAttackRange`, `MoverSkill.cpp:3366`); the wand's, at the object ID in the first (:3246).
+   */
+  ATK_RANGE1: 35,
+  ATK_MAGIC1: 36,
+  /**
    * A melee skill (`MoverMsg.h:144`): its motion in the first parameter, at the object ID in the second, as
    * `CMover::DoUseSkill` sends it (`MoverSkill.cpp:835`).
    */
   MELEESKILL: 37,
+  /** Piece 7 M2: a magic skill's shot, and its cast (`_Common/MoverMsg.h:107-146`). */
+  MAGICSKILL: 38,
+  MAGICCASTING: 39,
   /** Die; the first parameter says how (`DAMAGE`, `DAMAGE_FORCE` or 0), the second is the attacker. */
   DIE: 40,
   /** A plain blow, and a blow that knocks the victim flying (`CActionMover::SendDamageForce`). */
@@ -235,6 +251,8 @@ export const Sut = {
 export const Si = {
   /** Healing (:40): refused at a dead target. */
   ASS_HEAL_HEALING: 44,
+  /** Circle Healing (`Resource/defineSkill.h:46`): its caster reads its own line too (`MoverSkill.cpp:1011`). */
+  ASS_CHEER_CIRCLEHEALING: 51,
   /** Resurrection (:41): wants a dead player. */
   ASS_HEAL_RESURRECTION: 45,
   /** Counter attack (:191): the one skill not played with the motion after its own. */

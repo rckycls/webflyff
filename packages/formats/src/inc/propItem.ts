@@ -84,6 +84,17 @@ export interface ItemProp {
   adjParams: [number, number, number];
   /** `dwSfxObj3`: the effect shown at the target when the item hits (an `XI_*` id: XI_HIT_SWORD01 for a sword). -1 for none. */
   sfxObj3: number;
+  /** `dwSfxObj`, `dwSfxObj2`, `dwSfxObj4` (Piece 7 M2): a skill's cast effect, a missile, a skill's lasting effect. -1 for none. */
+  sfxObj: number;
+  sfxObj2: number;
+  sfxObj4: number;
+  /** `dwLinkKind` and `dwLinkKindBullet` (Piece 7 M2): the weapon a skill needs, the bullets a bow or a bow skill needs. */
+  linkKind: number;
+  linkKindBullet: number;
+  /** `dwAtkStyle`, `dwDmgShift` and `tmContinuousPain` (Piece 7 M2): `AS_BACK`, Strong Wind's push, a hit that repeats. */
+  atkStyle: number;
+  dmgShift: number;
+  continuousPain: number;
   /** `dwSfxObj5`: the effect shown at the user. */
   sfxObj5: number;
   /** `dwSndAttack1`: the sound of a hit (`SND_*`). */
@@ -196,6 +207,15 @@ const KEPT: ReadonlySet<string> = new Set([
   'nAdjParamVal1',
   'nAdjParamVal2',
   'dwSfxObj3',
+  // Piece 7 M2: the missiles, the bullets, a skill's effects, style, push and pain
+  'dwSfxObj',
+  'dwSfxObj2',
+  'dwSfxObj4',
+  'dwLinkKind',
+  'dwLinkKindBullet',
+  'dwAtkStyle',
+  'dwDmgShift',
+  'tmContinuousPain',
   'nReflect',
   'dwSfxObj5',
   'dwSndAttack1',
@@ -312,6 +332,14 @@ export function readPropItem(
         destParams: [kept.dwDestParam0, kept.dwDestParam1, kept.dwDestParam2],
         adjParams: [kept.nAdjParamVal0, kept.nAdjParamVal1, kept.nAdjParamVal2],
         sfxObj3: kept.dwSfxObj3,
+        sfxObj: kept.dwSfxObj,
+        sfxObj2: kept.dwSfxObj2,
+        sfxObj4: kept.dwSfxObj4,
+        linkKind: kept.dwLinkKind,
+        linkKindBullet: kept.dwLinkKindBullet,
+        atkStyle: kept.dwAtkStyle,
+        dmgShift: kept.dwDmgShift,
+        continuousPain: kept.tmContinuousPain,
         sfxObj5: kept.dwSfxObj5,
         sndAttack1: kept.dwSndAttack1,
         ...(kept.dwSndAttack2 > 0 ? { sndAttack2: kept.dwSndAttack2 } : {}),

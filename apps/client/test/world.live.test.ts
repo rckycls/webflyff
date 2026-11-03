@@ -755,6 +755,8 @@ class Player implements SkillPlayer {
       },
       sendGetDestObj: (fromId, destId) => session.sendGetDestObj(fromId, destId),
       sendBehavior: (move) => session.sendBehavior(move),
+      sendMagicAttack: (targetId, power, id) => session.sendMagicAttack(targetId, power, id),
+      sendRangeAttack: (targetId, power, id) => session.sendRangeAttack(targetId, power, id),
     };
     // each counted once it went: the encoders throw at a value the server would drop (SkillUse says it and goes on)
     const skillSends: SkillUseSession = {

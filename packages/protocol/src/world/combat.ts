@@ -20,6 +20,48 @@ export function readMeleeAttack(r: ArReader): MessageOf<'meleeAttack'> {
 }
 
 /**
+ * MAGIC_ATTACK: `CDPClient::OnMagicAttack` (`Neuz/DPClient.cpp:3835-3852`): `ar >> dwAtkMsg >> id >> nParam2 >> nParam3
+ * >> nMagicPower >> idSfxHit` (`DWORD`, `OBJID`, four `int`s), written by `CUserMng::AddMagicAttack`
+ * (`WORLDSERVER/User.cpp:4836-4848`) to everyone in view but the attacker.
+ */
+export function readMagicAttack(r: ArReader): MessageOf<'magicAttack'> {
+  const message = r.u32();
+  const targetId = r.u32();
+  const param2 = r.i32();
+  const param3 = r.i32();
+  const power = r.i32();
+  const sfxHitId = r.i32();
+  return { type: 'magicAttack', message, targetId, param2, param3, power, sfxHitId };
+}
+
+/**
+ * RANGE_ATTACK: `CDPClient::OnRangeAttack` (`DPClient.cpp:3854-3875`): `ar >> dwAtkMsg >> id >> nParam2 >> nPower >>
+ * idSfxHit`, `nParam2` being the `dwItemID` it passes to `DoAttackRange` (a player's charge, a monster's item). The
+ * server writes `dwItemID`, 0 and the id (`CUserMng::AddRangeAttack`, `User.cpp:4850-4862`).
+ */
+export function readRangeAttack(r: ArReader): MessageOf<'rangeAttack'> {
+  const message = r.u32();
+  const targetId = r.u32();
+  const param2 = r.i32();
+  const param3 = r.i32();
+  const sfxHitId = r.i32();
+  return { type: 'rangeAttack', message, targetId, param2, param3, sfxHitId };
+}
+
+/**
+ * CREATESFXALLOW: `CDPClient::OnCreateSfxAllow` (`DPClient.cpp:4088-4114`): `ar >> dwSfxObjArrow >> dwSfxObjHit >>
+ * vPosDest.x >> vPosDest.y >> vPosDest.z >> idTarget`, written by `CUserMng::AddCreateSfxAllow`
+ * (`User.cpp:5098-5109`) at the server's hit frame of a bow shot, to everyone in view but the shooter.
+ */
+export function readCreateSfxAllow(r: ArReader): MessageOf<'createSfxAllow'> {
+  const arrowXi = r.u32();
+  const hitXi = r.u32();
+  const pos = r.vec3();
+  const targetId = r.i32();
+  return { type: 'createSfxAllow', arrowXi, hitXi, pos, targetId };
+}
+
+/**
  * DAMAGE: `CDPClient::OnDamage` (`Neuz/DPClient.cpp:1758`): `ar >> objidAttacker >> dwHit; ar >> dwAtkFlags;` and,
  * `if( dwAtkFlags & AF_FLYING )`, `ar >> vPos; ar >> fAngle;`. `CUserMng::AddDamage` (`WORLDSERVER/User.cpp:4474`)
  * writes the victim's position and angle there.

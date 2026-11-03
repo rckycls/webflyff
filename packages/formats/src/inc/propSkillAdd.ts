@@ -35,6 +35,14 @@ export interface SkillAddProp {
   cooldown: number;
   /** `nSkillCount`: how many hits (or projectiles) a use makes; -1 when the row gives none. */
   skillCount: number;
+  /** `dwCastingTime`, `dwPainTime`, `dwSkillTime` (Piece 7 M2): the cast, the pain's period and the length, in ms. */
+  castingTime: number;
+  painTime: number;
+  skillTime: number;
+  /** `dwDestParam1/2`, `nAdjParamVal1/2`, `dwChgParamVal1/2` (Piece 7 M2): what the level changes (`ApplyParam`). */
+  destParams: [number, number];
+  adjParams: [number, number];
+  chgParams: [number, number];
 }
 
 const READER = 'readPropSkillAdd';
@@ -76,21 +84,27 @@ export function readPropSkillAdd(
     skip(4, 'dwAbilityMin to dwAbilityMaxPVP'); // dwAbilityMin, dwAbilityMax, dwAbilityMinPVP, dwAbilityMaxPVP
     skip(4, 'dwAttackSpeed to nProbabilityPVP'); // dwAttackSpeed, dwDmgShift, nProbability, nProbabilityPVP
     skip(1, 'dwTaunt');
-    skip(6, 'dwDestParam1 to dwChgParamVal2'); // dwDestParam 1 and 2, nAdjParamVal 1 and 2, dwChgParamVal 1 and 2
+    const destParams: [number, number] = [r.number('dwDestParam1'), r.number('dwDestParam2')];
+    const adjParams: [number, number] = [r.number('nAdjParamVal1'), r.number('nAdjParamVal2')];
+    const chgParams: [number, number] = [r.number('dwChgParamVal1'), r.number('dwChgParamVal2')];
     skip(3, 'nDestData1');
     skip(3, 'dwActiveSkill to dwActiveSkillRatePVP'); // dwActiveSkill, dwActiveSkillRate, dwActiveSkillRatePVP
     const reqMp = r.number('nReqMp');
     const reqFp = r.number('nReqFp');
     let cooldown = r.number('dwCooldown');
-    skip(1, 'dwCastingTime');
-    skip(4, 'dwSkillRange to dwSkillTime'); // dwSkillRange, dwCircleTime, dwPainTime, dwSkillTime
+    const castingTime = r.number('dwCastingTime');
+    skip(2, 'dwSkillRange to dwCircleTime'); // dwSkillRange, dwCircleTime
+    const painTime = r.number('dwPainTime');
+    const skillTime = r.number('dwSkillTime');
     const skillCount = r.number('nSkillCount');
     skip(3, 'dwSkillExp to dwComboSkillTime'); // dwSkillExp, dwExp, dwComboSkillTime
 
     // dwCooldown == dwDefault (0xFFFFFFFF): the cool-down of the skill (Project.cpp:2587-2596)
     if (cooldown === NULL_ID) cooldown = skills.get(skill)?.skillReady ?? cooldown;
 
-    rows.push({ id, skill, level, reqMp, reqFp, cooldown, skillCount });
+    rows.push({
+      id, skill, level, reqMp, reqFp, cooldown, skillCount, castingTime, painTime, skillTime, destParams, adjParams, chgParams,
+    });
   }
   return rows;
 }

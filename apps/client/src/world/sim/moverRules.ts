@@ -206,6 +206,14 @@ function defaultSet(m: SimMover): void {
   tidyCorr(m);
 }
 
+/**
+ * Piece 7 M2: `CMover::GetSpeed`'s `DST_SPEED` (`MoverParam.cpp:3293-3311`): `fSrc * ( 1.0f + nAdj / 100.0f )` in
+ * floats, a buff's (Quick Step) or an item's.
+ */
+export function buffedSpeed(speed: number, adj: number): number {
+  return adj === 0 ? f32(speed) : f32(f32(speed) * f32(1 + adj / 100));
+}
+
 /** `CMover::GetSpeed( m_pActMover->m_fSpeed )` (`MoverParam.cpp:3248-3289`): `m_fCrrSpd` while it is set. */
 function getSpeed(m: SimMover): number {
   const corrected = m.corr?.speed ?? 0;

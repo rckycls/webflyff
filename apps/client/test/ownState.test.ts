@@ -7,7 +7,8 @@ import { OwnState } from '../src/world/OwnState';
 import type { OwnEvent } from '../src/world/OwnState';
 import { Dst, FISTS } from '../src/world/sim/params';
 import {
-  BOOTS, GAUNTLET, OWN_ID, STARTER_EQUIPMENT, SUIT, WOODEN_SWORD, itemProp, newVagrant, ownAdded, ownGameData,
+  BOOTS, GAUNTLET, MERCENARY, OWN_ID, STARTER_EQUIPMENT, SUIT, VAGRANT, WOODEN_SWORD, itemProp, newVagrant, ownAdded,
+  ownGameData,
 } from './helpers/ownState';
 
 const f32 = Math.fround;
@@ -101,6 +102,39 @@ describe('the own character at the start (a new Vagrant)', () => {
     }
     expect(thrown).toBeInstanceOf(GameDataMissingError);
     expect((thrown as GameDataMissingError).keys).toEqual(['data/jobs.json (job 5)']);
+  });
+});
+
+describe('the job change (SET_JOB_SKILL, OnSetChangeJob, DPClient.cpp:3600-3654; Piece 7 M2)', () => {
+  /** 45 slots: the Vagrant's three, then a Mercenary skill at level 1 in slot 3, the rest empty. */
+  const slots = () => Array.from({ length: 45 }, (_, i) => (
+    i < 3 ? { skill: i + 1, level: 0 } : i === 3 ? { skill: 7, level: 1 } : { skill: NULL_ID, level: 0 }
+  ));
+
+  it('SET_JOB_SKILL changes the job, its numbers and every skill slot', () => {
+    const own = newVagrant(15, STARTER_EQUIPMENT, ownGameData({ jobs: [VAGRANT, MERCENARY] }));
+    expect(own.maxHp()).toBe(265);
+    const skills = slots();
+    const events = own.apply({ type: 'setJobSkill', job: 1, skills }, OWN_ID);
+    expect(events).toEqual([{ kind: 'jobChanged', job: 1, title: 'Mercenary' }]);
+    expect([own.job, own.jobProp.title]).toEqual([1, 'Mercenary']);
+    expect(own.skills[3]).toEqual({ skill: 7, level: 1 });
+    expect(own.skills[0]).toEqual({ skill: 1, level: 0 });
+    // the Mercenary's fFactorMaxHP 1.5: (int)( 11.25 * 4 * 1.3 + 150 + 80 )
+    expect(own.maxHp()).toBe(288);
+    skills[3]!.level = 5; // a copy: the message stays as it came
+    expect(own.skills[3]!.level).toBe(1);
+  });
+
+  it('a job the table lacks is game files older than the client', () => {
+    const own = newVagrant(15);
+    expect(() => own.apply({ type: 'setJobSkill', job: 4, skills: slots() }, OWN_ID)).toThrow(GameDataMissingError);
+  });
+
+  it("another mover's SET_JOB_SKILL changes nothing", () => {
+    const own = newVagrant(15, STARTER_EQUIPMENT, ownGameData({ jobs: [VAGRANT, MERCENARY] }));
+    expect(own.apply({ type: 'setJobSkill', job: 1, skills: slots() }, OTHER_ID)).toEqual([]);
+    expect(own.job).toBe(0);
   });
 });
 
@@ -562,5 +596,58 @@ describe('OwnState: the quests (CMover::SetQuest, MoverParam.cpp:3475-3577; OnRe
     const own = withQuests();
     expect(own.apply({ type: 'questTextTime', flag: true, state: 1, ms: 60000 }, 0)).toEqual([]);
     expect(own.apply({ type: 'questHelperNpcPos', pos: [1, 2, 3] }, 0)).toEqual([]);
+  });
+});
+
+describe('the buffs\' stat changes (SETDESTPARAM, RESETDESTPARAM, RESETDESTPARAM_SYNC; Piece 7 M2)', () => {
+  const OWN = 9000;
+  it('SETDESTPARAM STA 2 raises the shown STA and the max HP; RESETDESTPARAM takes it back', () => {
+    const own = newVagrant();
+    const sta = own.effective().sta;
+    const hp = own.maxHp();
+    own.apply({ type: 'setDestParam', dst: Dst.STA, adj: 2, chg: -1 }, own.objectId);
+    expect(own.effective().sta).toBe(sta + 2);
+    expect(own.maxHp()).toBeGreaterThan(hp);
+    own.apply({ type: 'resetDestParam', dst: Dst.STA, adj: 2 }, own.objectId);
+    expect([own.effective().sta, own.maxHp()]).toEqual([sta, hp]);
+    void OWN;
+  });
+
+  it("Haste's ATTACKSPEED 100 speeds the own swing", () => {
+    const own = newVagrant();
+    expect(own.adj.get(Dst.ATTACKSPEED) ?? 0).toBe(0);
+    own.apply({ type: 'setDestParam', dst: Dst.ATTACKSPEED, adj: 100, chg: -1 }, own.objectId);
+    expect(own.adj.get(Dst.ATTACKSPEED)).toBe(100);
+  });
+
+  it('an equip change keeps the buff layer, and RESETDESTPARAM_SYNC sets the total', () => {
+    const ring = itemProp({ id: 800, name: 'Ring', part: 13, destParams: [Dst.HP_MAX, -1, -1], adjParams: [40, -1, -1] });
+    const own = newVagrant();
+    own.apply({ type: 'setDestParam', dst: Dst.STA, adj: 2, chg: -1 }, own.objectId);
+    const sta = own.effective().sta;
+    own.equipped = { weapon: WOODEN_SWORD, armour: [ring] };
+    expect(own.effective().sta).toBe(sta);
+    // DST_SPEED's end: m_adjParamAry[DST_SPEED] = nTotal (MoverParam.cpp:2727-2750)
+    own.apply({ type: 'setDestParam', dst: Dst.SPEED, adj: 30, chg: -1 }, own.objectId);
+    own.apply({ type: 'resetDestParamSync', dst: Dst.SPEED, adj: 30, total: 10 }, own.objectId);
+    expect(own.adj.get(Dst.SPEED)).toBe(10);
+  });
+});
+
+describe('the buff layer after a world change (final review, Important 1)', () => {
+  it('a RESETDESTPARAM for a buff the layer never held changes nothing, and none takes it past zero', () => {
+    // a new world's OwnState starts with no layer: Heap Up's end (STA 2) must not leave STA 2 under the truth
+    const own = newVagrant();
+    const sta = own.effective().sta;
+    own.apply({ type: 'resetDestParam', dst: Dst.STA, adj: 2 }, own.objectId);
+    expect(own.effective().sta).toBe(sta);
+    own.apply({ type: 'setDestParam', dst: Dst.STA, adj: 1, chg: -1 }, own.objectId);
+    own.apply({ type: 'resetDestParam', dst: Dst.STA, adj: 2 }, own.objectId);
+    expect(own.effective().sta).toBe(sta);
+    // a debuff's (a negative adj) comes off the same way
+    own.apply({ type: 'setDestParam', dst: Dst.STA, adj: -3, chg: -1 }, own.objectId);
+    expect(own.effective().sta).toBe(sta - 3);
+    own.apply({ type: 'resetDestParam', dst: Dst.STA, adj: -3 }, own.objectId);
+    expect(own.effective().sta).toBe(sta);
   });
 });

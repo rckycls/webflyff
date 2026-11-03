@@ -265,9 +265,9 @@ describe('EffectModel: particles', () => {
       part({ texture: 'later', keys: [key(60)] }),
     ]);
     stepTo(effect, 64);
-    expect(draws(effect).some((d) => d.texture === 'later')).toBe(false);
+    expect(quads(effect).some((d) => d.texture === 'later')).toBe(false);
     effect.step();
-    expect(draws(effect).some((d) => d.texture === 'later')).toBe(true); // drawn at the jumped frame, 60
+    expect(quads(effect).some((d) => d.texture === 'later')).toBe(true); // drawn at the jumped frame, 60
   });
 });
 
@@ -276,12 +276,13 @@ describe('EffectModel: the end of the effect', () => {
     expect(endTick(model([part({ keys: [key(0), key(5)] })]), 50)).toBe(6);
   });
 
-  it('counts a part that is not drawn: not in use, or a mesh part; a part with no keys never counts', () => {
+  it('counts a part that is not drawn: not in use, or a mesh part with no model; a part with no keys never counts', () => {
     const off = model([part({ keys: [key(0), key(5)] }), part({ using: false, texture: 'off', keys: [key(0), key(8)] })]);
     expect(endTick(off, 50)).toBe(9);
-    const mesh = model([part({ keys: [key(0), key(5)] }), part({ type: 3, texture: null, model: 'models/x.glb', keys: [key(0), key(8)] })]);
+    // Piece 7 M2 draws a mesh part (below); one whose model was not converted is not drawn and still counts
+    const mesh = model([part({ keys: [key(0), key(5)] }), part({ type: 3, texture: null, model: null, keys: [key(0), key(8)] })]);
     stepTo(mesh, 7);
-    expect(draws(mesh)).toEqual([]); // mesh parts are not drawn in Piece 4
+    expect(draws(mesh)).toEqual([]);
     expect(endTick(mesh, 50)).toBe(2); // frame 9
     expect(endTick(model([part({ keys: [] })]), 50)).toBe(1);
   });
@@ -436,5 +437,51 @@ describe('neuzRandom', () => {
       expect(value).toBeLessThanOrEqual(f32(32767 / 50000));
       expect(f32(Math.round(value * 50000) / 50000)).toBe(value); // a whole number of 50000ths
     }
+  });
+});
+
+describe('EffectModel: mesh parts and the full rotation of Render2 (Piece 7 M2)', () => {
+  const arrowPart = (over: Partial<WebEffectPart> = {}): WebEffectPart => part({
+    type: 3, texture: null, model: 'models/obj_middlearrow_01.glb', alphaType: 1,
+    keys: [key(0, { pos: [0, 0, 1], scale: [2, 2, 2], alpha: 128 }), key(10, { pos: [0, 0, 1], scale: [2, 2, 2], alpha: 128 })],
+    ...over,
+  });
+
+  it("a mesh part is listed with its model, its key's matrix and alpha (CSfxPartMesh::Render, sfxbase.cpp:1072-1130)", () => {
+    const effect = model([arrowPart()]);
+    stepTo(effect, 1);
+    const [draw] = draws(effect, 90);
+    expect(draw).toMatchObject({ kind: 'mesh', part: 0, model: 'models/obj_middlearrow_01.glb', alpha: 128, additive: false });
+    // S( 2 ) * YawPitchRoll( 90 ): x to -z, z to x; the offset (0, 0, 1) turned the same, (1, 0, 0)
+    expectMatrix(draw!.matrix, [0, 0, -2, 0, 0, 2, 0, 0, 2, 0, 0, 0, 1, 0, 0, 1]);
+  });
+
+  it('a mesh part with no model is not listed', () => {
+    const effect = model([arrowPart({ model: null })]);
+    stepTo(effect, 1);
+    expect(draws(effect)).toEqual([]);
+  });
+
+  it('drawList2 turns a NORMAL quad by the whole rotation, and its offset by it then by posRotate (CSfxPartBill::Render2, :196-310)', () => {
+    const effect = model([part({ billType: 4, keys: [key(0, { pos: [0, 1, 0] }), key(10, { pos: [0, 1, 0] })] })]);
+    stepTo(effect, 1);
+    // a pitch of 90 (x): y goes to z, z to -y; the offset (0, 1, 0) to (0, 0, 1)
+    const [quad] = effect.drawList2([90, 0, 0], ONE, IDENTITY);
+    expectMatrix(quad!.matrix, [1, 0, 0, 0, 0, 0, 1, 0, 0, -1, 0, 0, 0, 0, 1, 1]);
+  });
+
+  it("drawList2 draws a mesh part by the yaw alone (Render2's SFXPARTTYPE_MESH, :2117-2121)", () => {
+    const effect = model([arrowPart()]);
+    stepTo(effect, 1);
+    expect(effect.drawList2([90, 90, 45], ONE, IDENTITY)).toEqual(draws(effect, 90));
+  });
+
+  it('rewind sends the frame back to 0, as the missiles do (m_nCurFrame = 0)', () => {
+    const effect = model([part({ keys: [key(0), key(30)] })]);
+    stepTo(effect, 20);
+    effect.rewind();
+    expect(effect.frame).toBe(0);
+    effect.step();
+    expect(effect.frame).toBe(1);
   });
 });

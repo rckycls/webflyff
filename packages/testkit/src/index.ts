@@ -5,6 +5,7 @@ export {
   writeCorrReq, writeCreateSfxObj, writeDamage, writeDefinedText, writeDelObj, writeDestAngle, writeDestPos,
   writeDoUseSkillPoint, writeEndSkillQueue, writeEnvironmentSetting, writeGameTimer, writeInitSkillPoint,
   writeMeleeAttack, writeMonsterProp, writeMotion, writeMoverAngle, writeMoverBehavior, writeMoverCorr,
+  writeCreateSfxAllow, writeDoEquip, writeMagicAttack, writeSetDestParam, writeSetJobSkill, writeSetSkillState, // Piece 7 M2
   writeMoverDeath, writeMoverMoved, writePlayMusic, writePlaySound, writePlaySoundFile, writeQueryGetDestObj, writeReplace, writeRevival, writeRevivalToLodestar,
   writeQuestChecked, writeRemoveQuest, writeSetQuest,
   writeSetActionPoint, writeSetDestObj, writeSetExperience, writeSetGrowthLearningPoint, writeSetLevel,

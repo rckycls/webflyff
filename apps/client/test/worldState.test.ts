@@ -11,11 +11,12 @@ import { terrainGround } from '../src/world/sim/collision';
 import type { Ground } from '../src/world/sim/collision';
 import { ActMsg, AniLoop, Mop, Mti, ObjSta, ObjStaF } from '../src/world/sim/constants';
 import { attackSpeed } from '../src/world/sim/params';
+import { Missiles } from '../src/world/combat/missiles';
 import { WorldState, isDie, isLive } from '../src/world/WorldState';
 import type { CombatEvent, Mover } from '../src/world/WorldState';
 import { catalogFiles, storeOf } from './helpers/gameDataFiles';
 import { gameDataOf, webMoverOf } from './helpers/movers';
-import { OWN_ID, STARTER_EQUIPMENT, VAGRANT, WOODEN_SWORD, ownAdded, ownGameData } from './helpers/ownState';
+import { MERCENARY, OWN_ID, STARTER_EQUIPMENT, VAGRANT, WOODEN_SWORD, itemProp, ownAdded, ownGameData } from './helpers/ownState';
 
 const f32 = Math.fround;
 
@@ -662,6 +663,7 @@ const GENERIC = AttackFlag.GENERIC;
 
 function combatData(): GameData {
   return ownGameData({
+    jobs: [VAGRANT, MERCENARY],
     movers: new Map([
       [11, moverProp(11, 'Male', 0.1)],
       [AIBATT, webMoverOf({ index: AIBATT, name: 'Aibatt', speed: 0.2, ai: AII_MONSTER, addHp: 120, killable: 1, belligerence: 3, atk1: AIBATT_ATK1 })],
@@ -1129,6 +1131,42 @@ describe('WorldState: the other fight messages', () => {
     expect(world.takeChanges().combat).toEqual([]);
   });
 
+  it('the own job change plays the level-up motion only when standing, its effect and its event (OnSetChangeJob, DPClient.cpp:3632-3641)', () => {
+    const { world, own, self } = combatWorld();
+    const skills = Array.from({ length: 45 }, (_, i) => ({ skill: i + 1, level: 0 }));
+    world.apply(OWN_ID, { type: 'setJobSkill', job: 1, skills });
+    expect(own.job).toBe(1);
+    expect([self.act.motion, self.act.motionOption]).toEqual([Mti.LEVELUP, Mop.FIXED]);
+    const changes = world.takeChanges();
+    expect(changes.combat).toEqual([{ kind: 'jobChanged', moverId: OWN_ID }]);
+    expect(changes.own).toEqual([{ kind: 'jobChanged', job: 1, title: 'Mercenary' }]);
+  });
+
+  it("another player's job change sets its job, and its HP max follows; running, it plays no motion (OnSetNearChangeJob, :3680-3703)", () => {
+    const { world } = combatWorld();
+    add(world, playerOf(PLAYER, 'Bob', { state: ObjSta.STAND }));
+    add(world, playerOf(PLAYER + 1, 'Runner', { state: ObjSta.FMOVE }));
+    const [bob, runner] = [world.movers.get(PLAYER)!, world.movers.get(PLAYER + 1)!];
+    world.apply(PLAYER, { type: 'setLevel', level: 15 });
+    expect(bob.maxHp).toBe(265);
+    world.takeChanges();
+    const skills = Array.from({ length: 20 }, (_, i) => ({ skill: i + 7, level: 0 }));
+    world.apply(PLAYER, { type: 'setNearJobSkill', job: 1, skills });
+    world.apply(PLAYER + 1, { type: 'setNearJobSkill', job: 1, skills });
+    expect([bob.added.player!.job, bob.maxHp]).toEqual([1, 288]);
+    expect([bob.act.motion, bob.act.motionOption]).toEqual([Mti.LEVELUP, Mop.FIXED]);
+    expect(runner.act.motion).toBe(Mti.STAND);
+    expect(world.takeChanges().combat).toEqual([
+      { kind: 'jobChanged', moverId: PLAYER }, { kind: 'jobChanged', moverId: PLAYER + 1 },
+    ]);
+  });
+
+  it('a job change of a mover not in view is read and dropped', () => {
+    const { world } = combatWorld();
+    world.apply(PLAYER + 9, { type: 'setNearJobSkill', job: 1, skills: [] });
+    expect(world.takeChanges().combat).toEqual([]);
+  });
+
   it('SETLEVEL sets a mover\'s HP to its max (m_nHitPoint = GetMaxHitPoint())', () => {
     const { world } = combatWorld();
     add(world, aibatt(MONSTER, AT, { hitPoint: 40 }));
@@ -1304,5 +1342,308 @@ describe('loadGameData', () => {
     expect(failure).toBeInstanceOf(Error);
     expect(failure).not.toBeInstanceOf(GameDataMissingError);
     expect((failure as Error).message).toMatch(/^no data\//);
+  });
+});
+
+describe('WorldState: the thrown yoyo (_ProcessStateAttack, ActionMoverState.cpp:1040-1078; Piece 7 M2)', () => {
+  /** `II_WEA_YOY_ITUN` (`propItem.txt:762`): IK3_YOYO, thrown as XI_ITEM_YOYO_ATK1 116. */
+  const ITUN = itemProp({ id: 381, name: 'Itun Yoyo', kind1: 1, kind2: 2, kind3: 11, handed: 2, part: 10, attackRange: 6, sfxMissile: 116 });
+  const RIGHT: Vec3 = [100.2, 1, 105];
+  const LEFT: Vec3 = [99.8, 1, 105];
+
+  it("a yoyo's quake frame throws from the right hand on ATK1 and the left on ATK2", () => {
+    const base = combatData();
+    const data = { ...base, itemProps: new Map([...base.itemProps, [ITUN.id, ITUN]]) };
+    const { world } = newWorld(data);
+    add(world, playerOf(PLAYER, 'Acro', { pos: [100, 0, 105], angle: 90 }));
+    const player = world.movers.get(PLAYER)!;
+    player.added.player!.worn = [{ part: 10, itemId: ITUN.id, flag: 0 }];
+    add(world, aibatt(MONSTER, [104, 0, 105]));
+    world.takeChanges();
+    const launched: unknown[] = [];
+    world.missiles = { launch: (l) => { launched.push(l); return launched.length; } };
+    world.handOf = (_id, hand) => (hand === 'right' ? RIGHT : LEFT);
+
+    const quakes = [false, true];
+    player.act.isEndFrame = () => false;
+    player.act.isAttrQuake = () => quakes.shift() ?? false;
+    world.apply(PLAYER, { type: 'meleeAttack', message: ActMsg.ATK1, targetId: MONSTER, param2: 0, param3: 0x00010000 });
+    steps(world, 3);
+    expect(launched).toEqual([{
+      cls: 'yoyo', sourceId: PLAYER, targetId: MONSTER, from: RIGHT, flightXi: 116, hitXi: -1, scale: 1, report: null,
+      yoyo: { hand: 'right', sourceAt: player.act.body.pos, dest: [104, 1, 105] },
+    }]);
+
+    // the swing over, ATK2: its quake throws from the left hand
+    player.act.isEndFrame = () => true;
+    steps(world, 1);
+    player.act.isEndFrame = () => false;
+    world.apply(PLAYER, { type: 'meleeAttack', message: ActMsg.ATK2, targetId: MONSTER, param2: 0, param3: 0x00010000 });
+    quakes.push(true);
+    steps(world, 2);
+    expect(launched).toHaveLength(2);
+    expect(launched[1]).toMatchObject({ from: LEFT, yoyo: { hand: 'left' } });
+
+    // a sword's quake frame throws nothing
+    player.added.player!.worn = [{ part: 10, itemId: WOODEN_SWORD.id, flag: 0 }];
+    player.act.isEndFrame = () => true;
+    steps(world, 1);
+    player.act.isEndFrame = () => false;
+    world.apply(PLAYER, { type: 'meleeAttack', message: ActMsg.ATK1, targetId: MONSTER, param2: 0, param3: 0x00010000 });
+    quakes.push(true);
+    steps(world, 2);
+    expect(launched).toHaveLength(2);
+  });
+});
+
+describe('WorldState: the shots of others and of the own player (OnMagicAttack, OnRangeAttack, OnCreateSfxAllow; Piece 7 M2)', () => {
+  /** `II_WEA_WAN_SEAL` (`propItem.txt:739`, `defineItem.h:130`: 231): IK3_WAND, its missile XI_FIR_WAND01. */
+  const SEAL_WAND = itemProp({ id: 231, name: 'Seal Wand', kind1: 1, kind2: 3, kind3: 6, handed: 1, part: 10, attackRange: 4, sfxMissile: 27 });
+  /** A monster's ranged attack item: WT_RANGE, thrown as XI_NPC_RAN_MAGICBALL (a CSfxItemWandAtk1, `CreateObj.cpp:69-75`). */
+  const MAGIC_BALL_ID = 9100;
+  const MAGIC_BALL = itemProp({ id: MAGIC_BALL_ID, name: 'Magic Ball', kind1: 1, kind2: 2, kind3: 0, weaponType: 8, sfxMissile: 1602 });
+  const LEFT: Vec3 = [99.8, 1.2, 105];
+
+  /** A world with the Seal Wand and the Magic Ball in its catalog; with `equipment`, the own level 15 player in it too. */
+  function shotWorld(equipment?: number[]) {
+    const base = combatData();
+    const data = { ...base, itemProps: new Map([...base.itemProps, [SEAL_WAND.id, SEAL_WAND], [MAGIC_BALL.id, MAGIC_BALL]]) };
+    const added: AddedMover = { ...ownAdded(15), pos: AT, angle: 90, state: ObjSta.STAND };
+    const own = equipment === undefined ? undefined : new OwnState(data, added, equipment);
+    const { world } = newWorld(data, terrainGround(() => 0), own);
+    if (own !== undefined) world.apply(OWN_ID, { type: 'addMover', mover: added }, true);
+    return { world };
+  }
+  const launches = (world: WorldState) => {
+    const launched: Array<Record<string, unknown>> = [];
+    world.missiles = { launch: (l) => { launched.push(l as unknown as Record<string, unknown>); return launched.length; } };
+    return launched;
+  };
+  const magicAttack = (targetId: number, power: number, sfxHitId = 0): WorldMessage =>
+    ({ type: 'magicAttack', message: ActMsg.ATK_MAGIC1, targetId, param2: 0, param3: 0, power, sfxHitId });
+
+  it("another player's MAGIC_ATTACK plays ATK_MAGIC1 and its missile flies without a report", () => {
+    const { world } = shotWorld();
+    add(world, playerOf(PLAYER, 'Mage', { pos: [100, 0, 105] }));
+    const mage = world.movers.get(PLAYER)!;
+    mage.added.player!.worn = [{ part: 10, itemId: SEAL_WAND.id, flag: 0 }];
+    add(world, aibatt(MONSTER, [104, 0, 105]));
+    world.takeChanges();
+    const launched = launches(world);
+    hitFrames(mage, [-1, 0]);
+    world.apply(PLAYER, magicAttack(MONSTER, 2, 9));
+    expect(mage.act.state & ObjSta.ATK_ALL).toBe(ObjSta.ATK_MAGIC1);
+    expect(mage.act.body.angle).toBe(90); // facing the Aibatt, east
+    steps(world, 2);
+    expect(launched).toEqual([{
+      cls: 'wand', sourceId: PLAYER, targetId: MONSTER, from: [100, 1, 105], flightXi: 27, hitXi: 22, scale: 1.7, report: null,
+    }]);
+  });
+
+  it('a busy mover keeps the magic attack for the end of its swing', () => {
+    const { world } = shotWorld();
+    add(world, playerOf(PLAYER, 'Mage', { pos: [100, 0, 105] }));
+    const mage = world.movers.get(PLAYER)!;
+    mage.added.player!.worn = [{ part: 10, itemId: SEAL_WAND.id, flag: 0 }];
+    add(world, aibatt(MONSTER, [104, 0, 105]));
+    world.takeChanges();
+    mage.act.isEndFrame = () => false;
+    world.apply(PLAYER, { type: 'meleeAttack', message: ActMsg.ATK1, targetId: MONSTER, param2: 0, param3: 0x00010000 });
+    world.apply(PLAYER, magicAttack(MONSTER, 1));
+    expect(mage.act.state & ObjSta.ATK_ALL).toBe(ObjSta.ATK1);
+    mage.act.isEndFrame = () => true;
+    steps(world, 1);
+    expect(mage.act.state & ObjSta.ATK_ALL).toBe(ObjSta.ATK_MAGIC1);
+  });
+
+  it("CREATESFXALLOW flies an arrow from the shooter's left hand to the target + 1 m", () => {
+    const { world } = shotWorld();
+    add(world, playerOf(PLAYER, 'Acro', { pos: [100, 0, 105] }));
+    add(world, aibatt(MONSTER, [104, 0, 105]));
+    world.takeChanges();
+    const launched = launches(world);
+    world.handOf = (id, hand) => (id === PLAYER && hand === 'left' ? LEFT : null);
+    world.apply(PLAYER, { type: 'createSfxAllow', arrowXi: 112, hitXi: 33, pos: [0, 0, 0], targetId: MONSTER });
+    expect(launched).toEqual([{
+      cls: 'arrow', sourceId: PLAYER, targetId: MONSTER, from: LEFT, flightXi: 112, hitXi: 33, scale: 1, report: null,
+    }]);
+    // at a target out of view, none
+    world.apply(PLAYER, { type: 'createSfxAllow', arrowXi: 112, hitXi: 33, pos: [0, 0, 0], targetId: 999 });
+    expect(launched).toHaveLength(1);
+  });
+
+  it("a monster's RANGE_ATTACK at the own player reports its hit with the monster as the attacker", () => {
+    const { world } = shotWorld(STARTER_EQUIPMENT);
+    add(world, aibatt(MONSTER, [104, 0, 100]));
+    world.takeChanges();
+    const reports: unknown[][] = [];
+    const missiles = new Missiles({
+      hit: (...a: unknown[]) => void reports.push(['hit', ...a]),
+      clear: (...a: unknown[]) => void reports.push(['clear', ...a]),
+    });
+    world.missiles = missiles;
+    const monster = world.movers.get(MONSTER)!;
+    hitFrames(monster, [-1, 0]);
+    world.apply(MONSTER, { type: 'rangeAttack', message: ActMsg.ATK_RANGE1, targetId: OWN_ID, param2: MAGIC_BALL_ID, param3: 0, sfxHitId: 77 });
+    expect(monster.act.state & ObjSta.ATK_ALL).toBe(ObjSta.ATK_RANGE1);
+    steps(world, 2);
+    expect(missiles.views().map((v) => v.xi)).toEqual([1602]);
+    for (let i = 0; i < 60 && reports.length === 0; i++) missiles.step({ movers: world.movers, boxOf: () => undefined });
+    expect(reports).toEqual([['hit', 77, 0, NULL_ID, MONSTER, 0, 0, 0]]);
+  });
+
+  it("the own wand's hit frame registers SFX_ID once and launches a missile carrying that id", () => {
+    const { world } = shotWorld([502, 506, 510, SEAL_WAND.id]);
+    add(world, aibatt(MONSTER, [104, 0, 100]));
+    world.takeChanges();
+    const self = world.self()!;
+    const launched = launches(world);
+    const registered: unknown[][] = [];
+    world.shots = { register: (...a: unknown[]) => { registered.push(a); return 5; } };
+    hitFrames(self, [-1, 0]);
+    expect(self.act.sendActMsg(ActMsg.ATK_MAGIC1, MONSTER)).toBe(true);
+    self.shot = { targetId: MONSTER, power: 3, sfxHitId: 0 };
+    steps(world, 3);
+    expect(registered).toEqual([[MONSTER, AttackFlag.MAGIC]]);
+    expect(launched).toEqual([{
+      cls: 'wand', sourceId: OWN_ID, targetId: MONSTER, from: [100, 1, 100], flightXi: 27, hitXi: 22, scale: 2.5,
+      report: { sfxHitId: 5, power: 3, skill: NULL_ID },
+    }]);
+  });
+});
+
+describe('WorldState: magic casting (DoUseSkill KT_MAGIC, OnMagicSkill; Piece 7 M2)', () => {
+  const level = (castingTime: number) => ({ reqMp: 5, reqFp: -1, cooldown: -1, skillCount: -1, castingTime, skillTime: -1, painTime: -1 });
+  /** `SI_ASS_HEAL_HEALING` (`propSkill.txt`): KT_MAGIC, a cast of 1066 (wind), its cast effect XI 275, on another (EXT_ANOTHERWITH). */
+  const HEALING = {
+    id: 44, name: 'Healing', jobType: 1, job: 2, handed: -1, attackRange: 5, reqLevel: 15, reqSkills: [], useMotion: 1066,
+    sfxHit: 285, exeTarget: 9, useChance: 1, skillType: 1, evildoing: -1, maxLevel: 20, comboStyle: 0, description: '', icon: null,
+    sfxCast: 275, levels: [level(600)],
+  } as unknown as import('@flyffweb/formats').WebSkill;
+  /** `SI_MAG_MAG_MENTALSTRIKE`: KT_MAGIC, a shot, a cast of 1063 (fire) with XI 274. */
+  const MENTAL_STRIKE = { ...HEALING, id: 121, name: 'Mental Strike', exeTarget: 14, useMotion: 1063, sfxCast: 274 } as typeof HEALING;
+  const OTHER_PLAYER = 6;
+
+  function castWorld() {
+    const base = combatData();
+    const data = {
+      ...base,
+      skills: new Map([[HEALING.id, HEALING], [MENTAL_STRIKE.id, MENTAL_STRIKE]]),
+      texts: new Map([
+        ['TID_GAME_SKILL_SELF', { id: 'TID_GAME_SKILL_SELF', text: 'You use %s.', color: 0xffffffff, textId: 700 }],
+        ['TID_GAME_SKILL_MATE', { id: 'TID_GAME_SKILL_MATE', text: '%s uses %s.', color: 0xffffffff, textId: 701 }],
+      ]),
+    };
+    const added: AddedMover = { ...ownAdded(15), pos: AT, angle: 90, state: ObjSta.STAND };
+    const own = new OwnState(data, added, STARTER_EQUIPMENT);
+    const { world } = newWorld(data, terrainGround(() => 0), own);
+    world.apply(OWN_ID, { type: 'addMover', mover: added }, true);
+    add(world, playerOf(PLAYER, 'Assist', { pos: [100, 0, 103] }));
+    add(world, playerOf(OTHER_PLAYER, 'Mate', { pos: [102, 0, 103] }));
+    add(world, aibatt(MONSTER, [104, 0, 100]));
+    world.takeChanges();
+    return { world, assist: world.movers.get(PLAYER)! };
+  }
+  const useSkill = (skill: number, targetId: number, castingTime: number, useType = 0): WorldMessage =>
+    ({ type: 'useSkill', skill, level: 1, targetId, useType, castingTime });
+
+  it('a KT_MAGIC USESKILL begins the cast with MAGICCASTING, or MAGICSKILL + 2 when queued or with no cast time', () => {
+    const { world, assist } = castWorld();
+    world.apply(PLAYER, useSkill(MENTAL_STRIKE.id, MONSTER, 9));
+    expect([assist.act.state & ObjSta.ATK_ALL, assist.act.motion]).toEqual([ObjSta.ATK_CASTING1, 1063]);
+    expect(assist.act.skillAct).toEqual({ skill: MENTAL_STRIKE.id, targetId: MONSTER, level: 1 });
+    world.apply(PLAYER, useSkill(MENTAL_STRIKE.id, MONSTER, 0, 2)); // SUT_QUEUEING
+    expect([assist.act.state & ObjSta.ATK_ALL, assist.act.motion]).toEqual([ObjSta.ATK_MAGICSKILL, 1065]);
+    world.apply(PLAYER, useSkill(MENTAL_STRIKE.id, MONSTER, 0));
+    expect([assist.act.state & ObjSta.ATK_ALL, assist.act.motion]).toEqual([ObjSta.ATK_MAGICSKILL, 1065]);
+  });
+
+  it('Healing at a dead target begins nothing', () => {
+    const { world, assist } = castWorld();
+    world.apply(OTHER_PLAYER, { type: 'setPointParam', param: DstParam.HP, value: 0 });
+    world.movers.get(OTHER_PLAYER)!.act.sendActMsg(ActMsg.DIE, 0, 0);
+    world.apply(PLAYER, useSkill(HEALING.id, OTHER_PLAYER, 9));
+    expect(assist.act.state & ObjSta.ATK_ALL).toBe(0);
+  });
+
+  it('a heal on another player prints "%s uses %s." to that player and "You use %s." to the caster', () => {
+    const { world } = castWorld();
+    world.apply(PLAYER, useSkill(HEALING.id, OWN_ID, 9));
+    expect(world.takeChanges().combat.filter((e) => e.kind === 'text')).toEqual([
+      { kind: 'text', textId: 701, args: '"Assist" "Healing"' },
+    ]);
+    world.apply(OWN_ID, useSkill(HEALING.id, OTHER_PLAYER, 9));
+    expect(world.takeChanges().combat.filter((e) => e.kind === 'text')).toEqual([{ kind: 'text', textId: 700, args: '"Healing"' }]);
+    // an attack skill prints nothing
+    world.apply(PLAYER, useSkill(MENTAL_STRIKE.id, OWN_ID, 9));
+    expect(world.takeChanges().combat.filter((e) => e.kind === 'text')).toEqual([]);
+  });
+
+  it('the cast effect plays on the caster for every skill that has one', () => {
+    const { world } = castWorld();
+    world.apply(PLAYER, useSkill(MENTAL_STRIKE.id, MONSTER, 9));
+    expect(world.takeChanges().combat.filter((e) => e.kind === 'cast')).toEqual([{ kind: 'cast', casterId: PLAYER, xi: 274 }]);
+  });
+});
+
+describe('WorldState: the skills\' shots (CCtrl::ShootSkill, Ctrl.cpp:1356-1418; Piece 7 M2)', () => {
+  const lv = (skillTime = -1, painTime = -1) => ({ reqMp: 5, reqFp: -1, cooldown: -1, skillCount: -1, castingTime: 0, skillTime, painTime });
+  const base = {
+    jobType: 1, job: 2, handed: -1, attackRange: 5, reqLevel: 15, reqSkills: [], sfxHit: -1, exeTarget: 14, useChance: 4,
+    evildoing: -1, maxLevel: 20, comboStyle: 0, description: '', icon: null,
+  };
+  /** `SI_ACR_BOW_JUNKBOW`: KT_SKILL, a bow's, its missile XI_SKILL_ACR_BOW_JUNKBOW02 536. */
+  const JUNK_BOW = { ...base, id: 204, name: 'Junk Bow', useMotion: 1100, skillType: 2, sfxMissile: 536, sfxHit: 545, linkKind: 12, levels: [lv()] } as unknown as import('@flyffweb/formats').WebSkill;
+  /** `SI_MAG_FIRE_HOTAIR`: KT_MAGIC, 3 s with a hit every second. */
+  const HOT_AIR = { ...base, id: 116, name: 'Hot Air', useMotion: 1063, skillType: 1, sfxMissile: 265, continuousPain: true, levels: [lv(3000, 1000)] } as unknown as import('@flyffweb/formats').WebSkill;
+  /** A plain shot skill (`CSfxShoot`): `SI_MAG_FIRE_FIRESTRIKE`'s missile 236 with no class of its own. */
+  const FIRE_STRIKE = { ...base, id: 111, name: 'Fire Strike', useMotion: 1063, skillType: 1, sfxMissile: 236, sfxHit: 237, levels: [lv()] } as unknown as import('@flyffweb/formats').WebSkill;
+
+  function skillWorld() {
+    const data = { ...combatData(), skills: new Map([JUNK_BOW, HOT_AIR, FIRE_STRIKE].map((s) => [s.id, s])) };
+    const added: AddedMover = { ...ownAdded(15), pos: AT, angle: 90, state: ObjSta.STAND };
+    const own = new OwnState(data, added, STARTER_EQUIPMENT);
+    const { world } = newWorld(data, terrainGround(() => 0), own);
+    world.apply(OWN_ID, { type: 'addMover', mover: added }, true);
+    add(world, playerOf(PLAYER, 'Mage', { pos: [100, 0, 103] }));
+    add(world, aibatt(MONSTER, [104, 0, 100]));
+    world.takeChanges();
+    const launched: Array<Record<string, unknown>> = [];
+    world.missiles = { launch: (l) => { launched.push(l as unknown as Record<string, unknown>); return launched.length; } };
+    const registered: unknown[][] = [];
+    world.shots = { register: (...a: unknown[]) => { registered.push(a); return registered.length; } };
+    return { world, launched, registered, self: world.self()!, mage: world.movers.get(PLAYER)! };
+  }
+  const use = (skill: number, targetId: number): WorldMessage => ({ type: 'useSkill', skill, level: 1, targetId, useType: 0, castingTime: 0 });
+
+  it("the own Junk Bow's four hit frames register four SFX_IDs with AF_MELEESKILL", () => {
+    const { world, launched, registered, self } = skillWorld();
+    hitFrames(self, [-1, 0, ...Array(4).fill(-1), 1, ...Array(4).fill(-1), 2, ...Array(4).fill(-1), 3]);
+    self.act.modelFrame = () => ({ current: 0, max: 94 }); // SklAcrBow, 94 frames: the 65% cut far off
+    world.apply(OWN_ID, use(JUNK_BOW.id, MONSTER));
+    steps(world, 40); // each hit holds the model 4 steps (m_nPause)
+    expect(registered).toEqual(Array(4).fill([MONSTER, AttackFlag.MELEESKILL, NULL_ID, 1]));
+    expect(launched.map((l) => l.cls)).toEqual(['junkBow', 'junkBow', 'junkBow', 'junkBow']);
+    expect(launched[0]).toMatchObject({ flightXi: 536, hitXi: 545, report: { sfxHitId: 1, power: 1, skill: JUNK_BOW.id } });
+  });
+
+  it('the own Hot Air registers with AF_MAGICSKILL and dwSkillTime / dwPainTime + 1', () => {
+    const { world, launched, registered, self } = skillWorld();
+    hitFrames(self, [-1, 0]);
+    world.apply(OWN_ID, use(HOT_AIR.id, MONSTER));
+    steps(world, 3);
+    expect(registered).toEqual([[MONSTER, AttackFlag.MAGICSKILL, NULL_ID, 4]]);
+    expect(launched).toMatchObject([{ cls: 'hotAir', flightXi: 265, hitXi: 1739, hotAir: { painTicks: 60, lastTicks: 180, maxDmgCnt: 4 } }]);
+  });
+
+  it("another player's shot skill flies and reports nothing", () => {
+    const { world, launched, registered, mage } = skillWorld();
+    hitFrames(mage, [-1, 0]);
+    world.apply(PLAYER, use(FIRE_STRIKE.id, MONSTER));
+    steps(world, 3);
+    expect(registered).toEqual([]);
+    expect(launched).toEqual([{
+      cls: 'shoot', sourceId: PLAYER, targetId: MONSTER, from: [100, 1, 103], flightXi: 236, hitXi: 237, scale: 1, report: null,
+    }]);
   });
 });

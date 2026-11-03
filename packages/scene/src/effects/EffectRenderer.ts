@@ -8,7 +8,13 @@ import {
 import { checkerTexture } from '../assets/placeholder';
 import type { TextureCache } from '../assets/loaders';
 import { EFFECT_QUAD, coneVertices } from './EffectModel';
-import type { EffectConeDraw, EffectDraw } from './EffectModel';
+import type { EffectConeDraw, EffectDraw, EffectMeshDraw } from './EffectModel';
+
+/** Piece 7 M2: one mesh of an effect's MESH model, its geometry in the web scene's handedness and its texture's key. */
+export interface EffectModelPart {
+  geometry: BufferGeometry;
+  texture: string | null;
+}
 
 /**
  * Draws what `EffectModel.drawList` says to: Neuz's `CSfxModel::Render` (`Source/_Common/sfxbase.cpp:2429-2505`) in
@@ -161,6 +167,9 @@ export class EffectRenderer {
   private readonly cones: ConeSlot[] = [];
   private quadsUsed = 0;
   private conesUsed = 0;
+  /** Piece 7 M2: the meshes the MESH parts' models are drawn with, their geometry the model's own. */
+  private readonly modelMeshes: EffectMesh[] = [];
+  private modelMeshesUsed = 0;
   private batches: Batch[] = [];
   /** `toWebMatrix`'s input, reused. */
   private readonly scratch = new Float32Array(16);
@@ -168,10 +177,14 @@ export class EffectRenderer {
   /**
    * @param textures  The texture of a logical key (`textures/sfx/...`), or null while it is still loading, when the part
    *                  is not drawn this frame. A part with no texture does not ask. `effectTextureProvider` makes one.
+   * @param models    Piece 7 M2: a MESH part's model by logical key (`models/<name>.glb`), as its meshes' geometries (in
+   *                  the web scene's handedness, as every converted model) with their textures' keys; null while it is
+   *                  still loading or cannot be had, when the part is not drawn. None: no mesh part is drawn.
    */
   constructor(
     scene: Scene,
     private readonly textures: (key: string) => Texture | null,
+    private readonly models: (key: string) => ReadonlyArray<EffectModelPart> | null = () => null,
   ) {
     this.root.name = 'effects';
     scene.add(this.root);
@@ -181,7 +194,8 @@ export class EffectRenderer {
   begin(): void {
     for (let i = 0; i < this.quadsUsed; i++) this.quads[i]!.visible = false;
     for (let i = 0; i < this.conesUsed; i++) this.cones[i]!.mesh.visible = false;
-    this.quadsUsed = this.conesUsed = 0;
+    for (let i = 0; i < this.modelMeshesUsed; i++) this.modelMeshes[i]!.visible = false;
+    this.quadsUsed = this.conesUsed = this.modelMeshesUsed = 0;
     this.batches = [];
   }
 
@@ -192,6 +206,10 @@ export class EffectRenderer {
   draw(list: EffectDraw[], at: Vec3, camera: Camera): void {
     const meshes: EffectMesh[] = [];
     for (const entry of list) {
+      if (entry.kind === 'mesh') {
+        this.drawModel(entry, at, meshes);
+        continue;
+      }
       const texture = entry.texture === null ? whiteTexture() : this.textures(entry.texture);
       if (texture === null) continue;
       const mesh = entry.kind === 'quad' ? this.takeQuad() : this.takeCone(entry);
@@ -232,8 +250,41 @@ export class EffectRenderer {
     }
     this.quads.length = 0;
     this.cones.length = 0;
-    this.quadsUsed = this.conesUsed = 0;
+    // the models' geometries are their provider's
+    for (const mesh of this.modelMeshes) mesh.material.dispose();
+    this.modelMeshes.length = 0;
+    this.quadsUsed = this.conesUsed = this.modelMeshesUsed = 0;
     this.batches = [];
+  }
+
+  /**
+   * Piece 7 M2: a MESH part (`CSfxPartMesh::Render`, `sfxbase.cpp:1072-1130`): each mesh of its model, with its texture
+   * (white for none), the key's alpha, the part's blend and depth written (`ZWRITEENABLE TRUE`, :1126-1128). A model
+   * still loading, or a texture, leaves its part out this frame.
+   */
+  private drawModel(entry: EffectMeshDraw, at: Vec3, meshes: EffectMesh[]): void {
+    const parts = this.models(entry.model);
+    if (parts === null) return;
+    for (const part of parts) {
+      const texture = part.texture === null ? whiteTexture() : this.textures(part.texture);
+      if (texture === null) continue;
+      let mesh = this.modelMeshes[this.modelMeshesUsed];
+      if (mesh === undefined) {
+        mesh = effectMesh(part.geometry);
+        mesh.material.depthWrite = true;
+        this.modelMeshes.push(mesh);
+        this.root.add(mesh);
+      }
+      this.modelMeshesUsed++;
+      mesh.geometry = part.geometry;
+      const { uniforms } = mesh.material;
+      uniforms.map!.value = texture;
+      uniforms.alpha!.value = entry.alpha / 255;
+      mesh.material.blending = entry.additive ? AdditiveBlending : NormalBlending;
+      this.place(mesh, entry.matrix, at);
+      mesh.visible = true;
+      meshes.push(mesh);
+    }
   }
 
   private takeQuad(): EffectMesh {

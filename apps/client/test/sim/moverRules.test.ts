@@ -647,3 +647,12 @@ describe('moverRules: OnActEndJump4 (MoverActEvent.cpp:2089-2098)', () => {
     expect(m.dest?.pos).toEqual([110, 0, 100]);
   });
 });
+
+describe('DST_SPEED (CMover::GetSpeed, MoverParam.cpp:3293-3311; Piece 7 M2)', () => {
+  it('DST_SPEED 10 makes the own run 10 % faster', async () => {
+    const { buffedSpeed } = await import('../../src/world/sim/moverRules');
+    const f32 = Math.fround;
+    expect(buffedSpeed(f32(0.1), 10)).toBe(f32(f32(0.1) * f32(1 + 10 / 100)));
+    expect(buffedSpeed(f32(0.1), 0)).toBe(f32(0.1));
+  });
+});

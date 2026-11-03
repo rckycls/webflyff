@@ -51,6 +51,14 @@ describe('the theme list', () => {
 });
 
 describe('the dialogue window (APP_DIALOG_EX, WndDialog.cpp)', () => {
+  it("lists the charge gauge's five pieces and the four first jobs' skill panels once each (Piece 7 M2)", () => {
+    const lower = THEME_FILES.map((file) => file.toLowerCase());
+    for (const file of ['gaumagchargebg.tga', 'gaumagchargehead.tga', 'gaumagchargebody.tga', 'gaumagchargebody2.tga',
+      'gaumagchargetail.tga', 'back_me.tga', 'back_as.tga', 'back_ma.tga', 'back_acr.tga']) {
+      expect(lower.filter((name) => name === file), file).toHaveLength(1);
+    }
+  });
+
   it('lists its background, its next-page button and the four quest papers once each', () => {
     const lower = THEME_FILES.map((file) => file.toLowerCase());
     for (const file of ['wnddialogex.tga', 'wndbuttenter.bmp', 'questuipapergreen.tga', 'questuipaperred.tga',

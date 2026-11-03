@@ -164,6 +164,57 @@ export function writeMeleeAttack(
 }
 
 /**
+ * Piece 7 M2: MAGIC_ATTACK, `CUserMng::AddMagicAttack` (`WORLDSERVER/User.cpp:4836-4848`): another mover's wand shot,
+ * `message` its `OBJMSG_ATK_MAGIC1`, then 0, 0, the charge and the missile's id.
+ */
+export function writeMagicAttack(objectId: number, message: number, targetId: number, power: number, sfxHitId: number): ScriptMessage {
+  return scripted(
+    objectId, MessageType.MAGIC_ATTACK, new ArWriter().u32(message).u32(targetId).i32(0).i32(0).i32(power).i32(sfxHitId),
+  );
+}
+
+/**
+ * Piece 7 M2: CREATESFXALLOW, `CUserMng::AddCreateSfxAllow` (`User.cpp:5098-5109`): another player's arrow and its hit
+ * effect, the target's position + 1 m (which the client ignores) and the target.
+ */
+export function writeCreateSfxAllow(objectId: number, arrowXi: number, hitXi: number, pos: Vec3, targetId: number): ScriptMessage {
+  return scripted(objectId, MessageType.CREATESFXALLOW, new ArWriter().u32(arrowXi).u32(hitXi).vec3(pos).i32(targetId));
+}
+
+/**
+ * Piece 7 M2: DOEQUIP, `CUserMng::AddDoEquip` (snapshot 0x0006, `readEquipItem`): the item's place in the inventory,
+ * the guild 0, put on or taken off, the item, option 0, flag 0 with its three bytes of padding (`EQUIP_INFO`), the part.
+ */
+export function writeDoEquip(objectId: number, itemObjectId: number, itemId: number, equip: boolean, part: number): ScriptMessage {
+  return scripted(
+    objectId, 0x0006,
+    new ArWriter().u8(itemObjectId).u32(0).u8(equip ? 1 : 0).u32(itemId).i32(0).u8(0).u8(0).u8(0).u8(0).i32(part),
+  );
+}
+
+/**
+ * Piece 7 M2: SET_JOB_SKILL, `CUser::AddSetChangeJob` (`WORLDSERVER/User.cpp:1204+`): the new job, its
+ * `MAX_SKILL_JOB` slots, and the unused `dwJobLv[MAX_JOB]`.
+ */
+export function writeSetJobSkill(objectId: number, job: number, skills: readonly SkillSlot[]): ScriptMessage {
+  if (skills.length !== MAX_SKILL_JOB) throw new Error(`a job change carries ${MAX_SKILL_JOB} skill slots, not ${skills.length}`);
+  const w = new ArWriter().i32(job);
+  for (const slot of skills) w.u32(slot.skill).u32(slot.level);
+  for (let i = 0; i < MAX_JOB; i++) w.u32(0);
+  return scripted(objectId, MessageType.SET_JOB_SKILL, w);
+}
+
+/** Piece 7 M2: SETSKILLSTATE (`CUserMng::AddSetSkillState`): a buff on `targetId`, its whole length `time` (ms). */
+export function writeSetSkillState(objectId: number, targetId: number, buffType: number, id: number, level: number, time: number): ScriptMessage {
+  return scripted(objectId, MessageType.SETSKILLSTATE, new ArWriter().u32(targetId).u16(buffType).u16(id).u32(level).u32(time));
+}
+
+/** Piece 7 M2: SETDESTPARAM (`CUserMng::AddSetDestParam`): a live buff's `dst` raised by `adj` (`chg` -1: none set). */
+export function writeSetDestParam(objectId: number, dst: number, adj: number, chg: number): ScriptMessage {
+  return scripted(objectId, MessageType.SETDESTPARAM, new ArWriter().i32(dst).i32(adj).i32(chg));
+}
+
+/**
  * DAMAGE: `CUserMng::AddDamage` (`WORLDSERVER/User.cpp:4474`): the attacker, the hit and the `AF_*` flags, then the
  * victim's position and angle when the flags have `AF_FLYING`. The server writes the position exactly then, so the
  * script refuses a `fly` without the flag and the flag without a `fly`: the reader goes by the flag, and a DAMAGE
@@ -577,14 +628,15 @@ export function writeAddPlayer(objectId: number, p: AddedMover): ScriptMessage {
 
 /**
  * `m_Inventory.Serialize( ar )` (`ObjSerializeOpt.cpp:254`): `CItemContainer<CItemElem>::Serialize`, the storing
- * side (`_Common/Item.h:898-922`). `m_apIndex` and the object indexes are written as a fresh container has them
- * (`CItemContainer::Clear`, :480-496: the bag's positions hold their own slot, the parts and their indexes `NULL_ID`),
- * which the browser reads past. Then the count and, per item, its slot (`ch`) and `CItemElem::Serialize`
+ * side (`_Common/Item.h:898-922`). `m_apIndex` is written as a container with `worn` on has it: the bag's positions
+ * hold their own slot (`CItemContainer::Clear`, :480-496), each part the object worn there (`worn`, the own ADD_OBJ's
+ * equipment object IDs), `NULL_ID` for none (Piece 7 M2: the browser reads the parts as a DOEQUIP changes them); the
+ * object indexes as a fresh container has them. Then the count and, per item, its slot (`ch`) and `CItemElem::Serialize`
  * (`ObjSerialize.cpp:33-37` and :51-88) with only the three kept values in it: no serial number, text, options,
  * piercing, keep time or pet. The storing side lists the filled slots in slot order, so `items` must be in rising
  * `objectId` order, each one of the 73 slots.
  */
-function writeInventory(w: ArWriter, items: readonly InventoryItem[]): void {
+function writeInventory(w: ArWriter, items: readonly InventoryItem[], worn: readonly number[]): void {
   items.forEach((item, i) => {
     if (!Number.isInteger(item.objectId) || item.objectId < 0 || item.objectId >= INVENTORY_SLOTS) {
       throw new Error(`inventory object ID ${item.objectId} is not one of the ${INVENTORY_SLOTS} slots`);
@@ -597,7 +649,7 @@ function writeInventory(w: ArWriter, items: readonly InventoryItem[]): void {
   const fresh = (): void => {
     for (let i = 0; i < INVENTORY_SLOTS; i++) w.u32(i < MAX_INVENTORY ? i : NULL_ID);
   };
-  fresh(); // m_apIndex
+  for (let i = 0; i < INVENTORY_SLOTS; i++) w.u32(i < MAX_INVENTORY ? i : worn[i - MAX_INVENTORY] ?? NULL_ID); // m_apIndex
   w.u8(items.length); // chSize
   for (const item of items) {
     w.u8(item.objectId) // ch
@@ -671,7 +723,7 @@ export function writeAddSelf(objectId: number, p: AddedMover): ScriptMessage {
     .i32(0) // m_nPlusMaxHitPoint
     .u8(0).u8(0).u8(0) // m_nAttackResistLeft, m_nAttackResistRight, m_nDefenseResist
     .i64(0n).i32(0); // m_nAngelExp, m_nAngelLevel (__VER >= 8)
-  writeInventory(w, own.inventory);
+  writeInventory(w, own.inventory, player.equipmentObjectIds);
   return scripted(objectId, MessageType.ADD_OBJ, w);
 }
 

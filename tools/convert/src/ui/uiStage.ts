@@ -161,6 +161,17 @@ export const THEME_FILES: readonly string[] = [
   'ButItemMinus.bmp',
   'ButtReset.bmp',
   'ButtFinish.bmp',
+  // Piece 7 M2: the wand's and the bow's charge gauge (CMover::RenderGauge, MoverRender.cpp:925-986; Neuz.cpp:1613-1617),
+  // and the four first jobs' panels of the skill window (CWndSkillTreeEx::InitItem, WndField.cpp:6803, :6835, :6867, :6875).
+  'GauMagChargeBG.TGA',
+  'GauMagChargeHead.TGA',
+  'GauMagChargeBody.TGA',
+  'GauMagChargeBody2.tga',
+  'GauMagChargeTail.TGA',
+  'Back_Me.TGA',
+  'Back_As.TGA',
+  'Back_Ma.TGA',
+  'Back_Acr.tga',
   // The dialogue window (APP_DIALOG_EX "WndDialogEx.tga", resdata.inc:13842), its next-page button (WIDC_BUTTON1
   // "wndButtEnter.bmp") and the four papers of its quest lists, keyed with white (WndDialog.cpp:254-257). Its answer
   // buttons are ButtYes, ButtNo, ButtCancel and ButtOk, above.

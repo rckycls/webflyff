@@ -163,6 +163,7 @@ function rig(options: RigOptions = {}) {
     },
     sendEndSkillQueue: () => void sent.push(['endSkillQueue']),
     sendDoUseSkillPoint: (skills: readonly SkillSlot[]) => void sent.push(['doUseSkillPoint', [...skills]]),
+    sendMagicAttack: () => {}, sendRangeAttack: () => {}, // Piece 7 M2: the wand's and the bow's shots, not used here
   };
   const focus = new Focus(session);
   const skills = new SkillUse(session, focus, () => numbers, () => now, data, { tick: () => 1000n, ground: () => ground });
@@ -271,7 +272,7 @@ describe('SkillUse: a bar slot (UseSkillShortCut, CMD_SetUseSkill, ProcessMoveAr
     // OnMeleeSkill: the caster's flash from its target's side, then the blow (flinch) and the effect (CreateSkillSfx)
     expect(r.combat.slice(hit - 1, hit + 1)).toEqual([
       { kind: 'spark', moverId: OWN_ID, fromId: MONSTER_ID },
-      { kind: 'skillHit', casterId: OWN_ID, targetId: MONSTER_ID, skill: CLEAN_HIT.id, landed: true },
+      { kind: 'skillHit', casterId: OWN_ID, targetId: MONSTER_ID, skill: CLEAN_HIT.id, landed: true, level: 1 },
     ]);
     expect(r.monster.act.state & ObjSta.DMG_ALL).toBe(ObjSta.DMG);
     expect(r.own.act.paused).toBe(4);
@@ -294,7 +295,7 @@ describe('SkillUse: a bar slot (UseSkillShortCut, CMD_SetUseSkill, ProcessMoveAr
     r.useSkill(OWN_ID, FLURRY.id, 1, MONSTER_ID);
     r.until(() => (r.own.act.state & ObjSta.ATK_ALL) === 0);
     expect(r.skillHits()).toEqual([1, 2, 3].map(() =>
-      ({ kind: 'skillHit', casterId: OWN_ID, targetId: MONSTER_ID, skill: FLURRY.id, landed: true })));
+      ({ kind: 'skillHit', casterId: OWN_ID, targetId: MONSTER_ID, skill: FLURRY.id, landed: true, level: 1 })));
     // OnActEndMeleeSkill: the skill in use goes with the state
     expect(r.own.act.skillAct).toBeNull();
   });
@@ -711,7 +712,7 @@ describe('WorldState: another player\'s USESKILL, and a monster\'s', () => {
     expect(r.player.act.state).toBe(ObjSta.ATK_MELEESKILL);
     expect(r.player.act.motion).toBe(Mti.VAG_ONE_OVERCUTTER);
     r.until(() => (r.player.act.state & ObjSta.ATK_ALL) === 0);
-    expect(r.skillHits()).toEqual([{ kind: 'skillHit', casterId: PLAYER_ID, targetId: MONSTER_ID, skill: OVER_CUT.id, landed: true }]);
+    expect(r.skillHits()).toEqual([{ kind: 'skillHit', casterId: PLAYER_ID, targetId: MONSTER_ID, skill: OVER_CUT.id, landed: true, level: 1 }]);
     r.useSkill(MONSTER_ID, CLEAN_HIT.id, 1, PLAYER_ID);
     expect(r.monster.act.state & ObjSta.ATK_ALL).toBe(0);
   });
@@ -835,5 +836,54 @@ describe('WorldState: CREATESFXOBJ (OnCreateSfxObj, DPClient.cpp:4038-4067)', ()
     const fxWorld = { movers: r.world.movers, selfId: OWN_ID, gameMaster: false, focusId: null, itemProps: new Map() };
     playCombatEvent(sfx[0]!, fxWorld, out);
     expect(effects).toEqual([{ xi: 108, pos: MONSTER_AT, followId: MONSTER_ID, followDest: true, sourceAngle: 270 }]);
+  });
+});
+
+describe('SkillUse: a bow skill needs arrows (CMD_SetUseSkill, IsBullet; Piece 7 M2)', () => {
+  it('a bow skill without arrows says "Equip arrows first." and sends nothing', () => {
+    // SI_ACR_BOW_AIMEDSHOT: a bow's KT_SKILL that needs IK2_BULLET
+    const AIMED_SHOT = {
+      ...vagrantSkills().get(1)!, id: 199, name: 'Aimed Shot', job: 2, linkKind: 12, linkKindBullet: 25, exeTarget: 14,
+      sfxMissile: 537, attackRange: 5,
+    } as WebSkill;
+    const r = rig({ catalog: [AIMED_SHOT], skills: [{ skill: AIMED_SHOT.id, level: 1 }, ...skillsAt(1, 1).slice(1)] });
+    r.tap(MONSTER_ID);
+    r.skills.useSlot(0);
+    r.steps(30);
+    expect(r.texts).toContain('TID_TIP_NEEDSATTACKITEM');
+    expect(r.sent).toEqual([]);
+  });
+});
+
+describe('SkillUse: the from-behind rule and Blinkpool (MoverMove.cpp:128-153; plan Decisions 8; Piece 7 M2)', () => {
+  // SI_ACR_YOYO_SNITCH: AS_BACK (dwAtkStyle 8), a yoyo's melee skill
+  const SNITCH = { ...vagrantSkills().get(1)!, id: 203, name: 'Snitch', job: 2, atkStyle: 8 } as WebSkill;
+  const BLINKPOOL = { ...vagrantSkills().get(1)!, id: 107, name: 'Blinkpool', job: 4, skillType: 1, exeTarget: 7, useChance: 12 } as WebSkill;
+
+  it('Snitch from the front says TID_GAME_NEVERKILLSTOP and sends nothing; from behind it goes', () => {
+    // the Aibatt 5 m east faces west (270): the own player is before it
+    const front = rig({ catalog: [SNITCH], skills: [{ skill: SNITCH.id, level: 1 }, ...skillsAt(1, 1).slice(1)] });
+    front.monster.act.body.angle = 270;
+    front.tap(MONSTER_ID);
+    front.skills.useSlot(0);
+    front.until(() => front.texts.length > 0);
+    expect(front.texts).toEqual(['TID_GAME_NEVERKILLSTOP']);
+    expect(front.sent.filter((s) => s[0] === 'useSkill')).toEqual([]);
+    // turned away (east, 90): the own player is behind it
+    const behind = rig({ catalog: [SNITCH], skills: [{ skill: SNITCH.id, level: 1 }, ...skillsAt(1, 1).slice(1)] });
+    behind.monster.act.body.angle = 90;
+    behind.tap(MONSTER_ID);
+    behind.skills.useSlot(0);
+    behind.until(() => behind.sent.some((s) => s[0] === 'useSkill'));
+    expect(behind.texts).toEqual([]);
+  });
+
+  it('Blinkpool says it is not in the browser yet and sends nothing', () => {
+    const r = rig({ catalog: [BLINKPOOL], skills: [{ skill: BLINKPOOL.id, level: 1 }, ...skillsAt(1, 1).slice(1)] });
+    r.tap(MONSTER_ID);
+    r.skills.useSlot(0);
+    r.steps(20);
+    expect(r.texts).toEqual(['WEB_BLINKPOOL_NOT_YET']);
+    expect(r.sent).toEqual([]);
   });
 });

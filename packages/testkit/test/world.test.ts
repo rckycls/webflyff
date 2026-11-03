@@ -10,6 +10,7 @@ import {
   GAMETIMER, encodeBundle, writeAddMonster, writeAddNpc, writeAddPlayer, writeAddSelf, writeClearUseSkill,
   writeCorrReq, writeCreateSfxObj, writeDamage, writeDefinedText, writeDelObj, writeDestAngle, writeDestPos,
   writeDoUseSkillPoint, writeEndSkillQueue, writeEnvironmentSetting, writeGameTimer, writeInitSkillPoint,
+  writeCreateSfxAllow, writeDoEquip, writeMagicAttack, writeSetDestParam, writeSetJobSkill, writeSetSkillState,
   writeMeleeAttack, writeMonsterProp, writeMotion, writeMoverAngle, writeMoverBehavior, writeMoverCorr,
   writeMoverDeath, writeMoverMoved, writeQueryGetDestObj, writeReplace, writeRevival, writeRevivalToLodestar,
   writeSetActionPoint, writeSetDestObj, writeSetExperience, writeSetGrowthLearningPoint, writeSetLevel,
@@ -157,6 +158,28 @@ it('every writer decodes to what it was given', () => {
     [
       'writeMeleeAttack', writeMeleeAttack(40, 29, 0xabcd, 0, 0x00010000), MessageType.MELEE_ATTACK,
       { type: 'meleeAttack', message: 29, targetId: 0xabcd, param2: 0, param3: 0x00010000 },
+    ],
+    // Piece 7 M2
+    [
+      'writeSetSkillState', writeSetSkillState(40, 0xabcd, 1, 49, 3, 60000), MessageType.SETSKILLSTATE,
+      { type: 'setSkillState', targetId: 0xabcd, buffType: 1, id: 49, level: 3, time: 60000 },
+    ],
+    ['writeSetDestParam', writeSetDestParam(40, 4, 2, -1), MessageType.SETDESTPARAM, { type: 'setDestParam', dst: 4, adj: 2, chg: -1 }],
+    [
+      'writeMagicAttack', writeMagicAttack(40, 36, 0xabcd, 2, 7), MessageType.MAGIC_ATTACK,
+      { type: 'magicAttack', message: 36, targetId: 0xabcd, param2: 0, param3: 0, power: 2, sfxHitId: 7 },
+    ],
+    [
+      'writeCreateSfxAllow', writeCreateSfxAllow(40, 112, 33, pos, 0xabcd), MessageType.CREATESFXALLOW,
+      { type: 'createSfxAllow', arrowXi: 112, hitXi: 33, pos, targetId: 0xabcd },
+    ],
+    [
+      'writeDoEquip', writeDoEquip(40, 44, 1962, true, 25), 0x0006,
+      { type: 'equipItem', objectId: 44, equip: true, itemId: 1962, option: 0, flag: 0, part: 25 },
+    ],
+    [
+      'writeSetJobSkill', writeSetJobSkill(40, 4, skillSlots([{ skill: 1, level: 0 }, { skill: 2, level: 0 }])), MessageType.SET_JOB_SKILL,
+      { type: 'setJobSkill', job: 4, skills: skillSlots([{ skill: 1, level: 0 }, { skill: 2, level: 0 }]) },
     ],
     [
       'writeDamage', writeDamage(41, 0x77, 12, AttackFlag.GENERIC | AttackFlag.CRITICAL), MessageType.DAMAGE,
@@ -481,7 +504,8 @@ const ownNumbers: OwnCharacter = {
     { objectId: 45, itemId: 2800, count: 3 },
   ],
   inventoryError: null,
-  inventorySlots: Array.from({ length: 73 }, (_, i) => i < 42 ? i : NULL_ID),
+  // the bag's positions their own slots, the parts the worn objects: 7 at PARTS_UPPER_BODY (2), 0 at 13
+  inventorySlots: Array.from({ length: 73 }, (_, i) => (i < 42 ? i : i === 44 ? 7 : i === 55 ? 0 : NULL_ID)),
 };
 const otherPlayer: AddedMover = {
   ...moverBase, index: 11, scale: 1, angle: 90.5, objectId: 31, isPlayer: true,
@@ -566,13 +590,13 @@ it('writeAddSelf writes the equipment IDs, the skill pairs, the fields up to the
   for (const id of ownPlayer.player!.equipmentObjectIds) expected.u32(id);
   for (const slot of ownNumbers.skills) expected.u32(slot.skill).u32(slot.level);
   expected.bytes(new Uint8Array(1 + 4 + 1 + 3 * 4 + 3 * 4 + 4 + 3 + 8 + 4));
-  // `CItemContainer::Serialize` (`_Common/Item.h:898-922`) over the 42 + 31 slots: `m_apIndex` as a fresh container
-  // has it (`Clear`, :480-496: the bag's 42 positions hold their own slot, the parts NULL_ID), the count, each item's
-  // slot and `CItemElem::Serialize`, then the object indexes, a fresh container's too.
+  // `CItemContainer::Serialize` (`_Common/Item.h:898-922`) over the 42 + 31 slots: `m_apIndex` as a container with the
+  // worn items on has it (the bag's 42 positions hold their own slot, each part its worn object or NULL_ID), the count,
+  // each item's slot and `CItemElem::Serialize`, then the object indexes, a fresh container's (`Clear`, :480-496).
   const fresh = (w: ArWriter): void => {
     for (let i = 0; i < 73; i++) w.u32(i < 42 ? i : NULL_ID);
   };
-  fresh(expected);
+  for (let i = 0; i < 73; i++) expected.u32(i < 42 ? i : ownPlayer.player!.equipmentObjectIds[i - 42]!);
   expected.u8(3);
   for (const item of ownNumbers.inventory!) {
     expected.u8(item.objectId) // ch
@@ -616,7 +640,9 @@ it("a character's numbers, skills and inventory read back slot by slot", () => {
     deathExp: 0n, deathLevel: 0, remainGP: 0, skills, inventory, inventoryError: null,
   };
   const mover = readSelf({ ...ownPlayer, player: { ...ownPlayer.player!, own } });
-  expect(mover.player?.own).toEqual({ ...own, inventorySlots: Array.from({ length: 73 }, (_, i) => i < 42 ? i : NULL_ID) });
+  // m_apIndex: the bag's positions hold their own slot, the parts the worn objects (Piece 7 M2: a DOEQUIP reads them)
+  const worn = ownPlayer.player!.equipmentObjectIds;
+  expect(mover.player?.own).toEqual({ ...own, inventorySlots: Array.from({ length: 73 }, (_, i) => i < 42 ? i : worn[i - 42]) });
   expect(mover.player?.own?.skills).toHaveLength(MAX_SKILL_JOB);
   mover.player?.own?.skills.forEach((slot, i) => expect(slot, `slot ${i}`).toEqual(skills[i]));
   expect(mover.player?.own?.inventory).toEqual(inventory);
@@ -629,7 +655,7 @@ it('an own character without numbers is written with nothing in them', () => {
   expect(mover.player?.own).toEqual({
     str: 0, sta: 0, dex: 0, int: 0, manaPoint: 0, fatiguePoint: 0, exp: 0n, skillLevel: 0, skillPoint: 0,
     deathExp: 0n, deathLevel: 0, remainGP: 0, skills: skillSlots([]), inventory: [], inventoryError: null,
-    inventorySlots: Array.from({ length: 73 }, (_, i) => i < 42 ? i : NULL_ID),
+    inventorySlots: Array.from({ length: 73 }, (_, i) => i < 42 ? i : ownPlayer.player!.equipmentObjectIds[i - 42]),
   });
   expect(mover.player?.equipmentObjectIds).toEqual(ownPlayer.player!.equipmentObjectIds);
 });

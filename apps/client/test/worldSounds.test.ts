@@ -161,4 +161,10 @@ describe('WorldSounds: the events of WorldState and OwnState', () => {
     world.ownEvent({ kind: 'quest', change: { kind: 'listsChanged' } }, 1);
     expect(music).toEqual([[19, 1], [20, 1], [20, 1]]);
   });
+
+  it('a job change plays BGM_IN_LEVELUP (OnSetChangeJob, DPClient.cpp:3638; Piece 7 M2)', () => {
+    const { world, music } = setup();
+    world.ownEvent({ kind: 'jobChanged', job: 1, title: 'Mercenary' }, 1);
+    expect(music).toEqual([[23, 1]]);
+  });
 });

@@ -79,7 +79,9 @@ describe.skipIf(!existsSync(`${ASSETS_DIR}index.json`))('the effects of the figh
       const drawn = played.draws.flat();
       expect(drawn.length, name).toBeGreaterThan(0);
       for (const entry of drawn) {
-        if (entry.texture !== null) expect(assets.has(entry.texture), `${name}: ${entry.texture}`).toBe(true);
+        // Piece 7 M2: a mesh part's entry names its model, whose texture is the model's own
+        const asset = entry.kind === 'mesh' ? entry.model : entry.texture;
+        if (asset !== null) expect(assets.has(asset), `${name}: ${asset}`).toBe(true);
         expect(entry.matrix.every(Number.isFinite), name).toBe(true);
       }
     },

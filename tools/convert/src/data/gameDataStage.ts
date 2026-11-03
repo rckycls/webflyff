@@ -367,6 +367,8 @@ function buildItemProps(env: Env, read: Reading): WebItemProp[] {
         destParams: [...prop.destParams],
         adjParams: [...prop.adjParams],
         sfxHit: prop.sfxObj3,
+        sfxMissile: prop.sfxObj2,
+        linkKindBullet: prop.linkKindBullet,
         model,
         dropModel,
         ...(prop.reflect ? { reflect: prop.reflect } : {}),

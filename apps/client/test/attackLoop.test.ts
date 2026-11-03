@@ -2,16 +2,16 @@ import { describe, expect, it } from 'vitest';
 import type { MoveReport, Vec3 } from '@flyffweb/protocol';
 import { NULL_ID } from '@flyffweb/protocol';
 import { ServerClock } from '../src/net/serverClock';
-import { APPROACH_REPORT_STEPS, AttackLoop, objRadius, setOwnDestObj } from '../src/world/combat/attackLoop';
+import { APPROACH_REPORT_STEPS, AttackLoop, chargeLevel, objRadius, setOwnDestObj } from '../src/world/combat/attackLoop';
 import { Focus } from '../src/world/combat/focus';
 import type { OwnState } from '../src/world/OwnState';
 import { terrainGround } from '../src/world/sim/collision';
 import type { CollisionObject, Ground } from '../src/world/sim/collision';
-import { ActMsg, Belli, ObjSta, ObjStaF } from '../src/world/sim/constants';
+import { ActMsg, Belli, Ik3, ObjSta, ObjStaF } from '../src/world/sim/constants';
 import { WorldState } from '../src/world/WorldState';
 import type { Mover } from '../src/world/WorldState';
 import { MI_FEMALE, MI_MALE, addedNpc, addedPlayer, webMoverOf } from './helpers/movers';
-import { OWN_ID, WOODEN_SWORD, newVagrant, ownAdded, ownGameData } from './helpers/ownState';
+import { OWN_ID, WOODEN_SWORD, itemProp, newVagrant, ownAdded, ownGameData } from './helpers/ownState';
 import { TRAFFIC_BUDGET, busiestSecond } from './helpers/traffic';
 
 const f32 = Math.fround;
@@ -29,7 +29,9 @@ type Sent =
   | ['destObj', number, number]
   | ['melee', number, number, number]
   | ['getDestObj', number, number]
-  | ['behavior', MoveReport];
+  | ['behavior', MoveReport]
+  | ['magic', number, number, number]
+  | ['range', number, number, number];
 
 const OWN_AT: Vec3 = [100, 0, 100];
 /** 6 m east of the own mover, which faces east (angle 90: D3D +x). */
@@ -131,17 +133,23 @@ function rig(options: RigOptions = {}) {
     sendGetDestObj: (fromId: number, destId: number) => void sent.push(['getDestObj', fromId, destId]),
     sendBehavior: (m: MoveReport) => void sent.push(['behavior', m]),
     sendSetTarget: (targetId: number, clear: 1 | 2) => void targets.push([targetId, clear]),
+    // Piece 7 M2: the wand's and the bow's shots
+    sendMagicAttack: (targetId: number, power: number, id: number) => void sent.push(['magic', targetId, power, id]),
+    sendRangeAttack: (targetId: number, power: number, id: number) => void sent.push(['range', targetId, power, id]),
   };
   const focus = new Focus(session);
   const state = 'own' in options ? options.own : newVagrant(level);
   let tick = 1000n;
   const loop = new AttackLoop(session, focus, world, () => state, { tick: () => (tick += 10n) }, data.movers, undefined, options.motionReady);
+  const texts: string[] = [];
+  loop.onText = (id) => void texts.push(id);
+  if (options.ground !== undefined) loop.ground = () => options.ground;
 
   let now = 10_000;
   /** Whether the last step ran the controls (`AttackLoop.step`'s answer). */
   let controls = true;
   const step = (): void => {
-    controls = loop.step();
+    controls = loop.step(false, now);
     world.step();
     frameMove();
     now += 1000 / 60;
@@ -160,7 +168,7 @@ function rig(options: RigOptions = {}) {
   /** A tap on `objectId`: pressed and let go before the next step. */
   const tap = (objectId: number, double = false): void => {
     loop.onMoverPressed(objectId, now, double);
-    loop.onReleased();
+    loop.onReleased(now);
   };
   const melee = (): Array<[number, number, number]> =>
     sent.filter((s) => s[0] === 'melee').map((s) => [s[1], s[2], s[3]] as [number, number, number]);
@@ -168,7 +176,7 @@ function rig(options: RigOptions = {}) {
     s[0] === 'destObj' ? `destObj ${s[1]}` : `ATK${(s[1] as number) - ActMsg.ATK1 + 1} ${s[2]}`);
   return {
     world, own, monster, loop, focus, sent, targets, step, steps, until, tap, melee, kinds, now: () => now,
-    controls: () => controls,
+    controls: () => controls, texts,
   };
 }
 
@@ -961,5 +969,303 @@ describe('AttackLoop.walkTo: a press on an NPC out of the menu range (ShowMoverM
     r.steps(240);
     expect(r.melee()).toEqual([]);
     expect(r.sent.filter((s) => s[0] === 'destObj')).toHaveLength(1);
+  });
+});
+
+// ---- Piece 7 M2: the wand and the bow ------------------------------------------------------------------------------
+
+/** `II_WEA_WAN_SEAL` (`propItem.txt:739`, `defineItem.h:130`: 231): IK3_WAND, AR_RANGE, 0.025, its missile XI_FIR_WAND01. */
+const SEAL_WAND = itemProp({
+  id: 231, name: 'Seal Wand', kind1: 1, kind2: 3, kind3: Ik3.WAND, handed: 1, part: 10, attackRange: 4,
+  attackSpeed: f32(0.025), sfxHit: 27, sfxMissile: 27, linkKindBullet: -1,
+});
+/** `II_WEA_BOW_WOODNE` (`propItem.txt:195`, `defineItem.h:222`: 431): IK3_BOW, two hands, AR_WAND, needs IK2_BULLET. */
+const WOODNESS_BOW = itemProp({
+  id: 431, name: 'Woodness Bow', kind1: 1, kind2: 2, kind3: Ik3.BOW, handed: 2, part: 10, attackRange: 5,
+  attackSpeed: f32(0.07), sfxHit: 33, sfxMissile: -1, linkKindBullet: 25,
+});
+/** `II_WEA_SEC_ACR_ARROW` (`propItem.txt:1962`, `defineItem.h:877`: 2028): IK2_BULLET, PARTS_BULLET, its missile XI_ITEM_RANGE_ATK1. */
+const ARROW = itemProp({ id: 2028, name: 'Arrow', kind1: 1, kind2: 25, kind3: 60, part: 25, sfxMissile: 112, packMax: 9999 });
+const ARROW_OBJECT = 7777;
+/** `II_WEA_YOY_ITUN` (`propItem.txt:762`, `defineItem.h:199`): IK3_YOYO, two hands, AR_HRANGE, 0.075, thrown as XI_ITEM_YOYO_ATK1. */
+const ITUN_YOYO = itemProp({
+  id: 381, name: 'Itun Yoyo', kind1: 1, kind2: 2, kind3: Ik3.YOYO, handed: 2, part: 10, attackRange: 6,
+  attackSpeed: f32(0.075), sfxHit: 17, sfxMissile: 116, linkKindBullet: -1,
+});
+
+/** A level 15 player holding `weapon`, with `arrows` in the arrow slot (none: an empty slot). */
+function holding(weapon: typeof SEAL_WAND, arrows = 0): OwnState {
+  const data = ownGameData({
+    itemProps: new Map([WOODEN_SWORD, SEAL_WAND, WOODNESS_BOW, ARROW, ITUN_YOYO].map((prop) => [prop.id, prop])),
+  });
+  const own = newVagrant(15, [weapon.id], data);
+  if (arrows > 0) {
+    own.inventory!.set(ARROW_OBJECT, { objectId: ARROW_OBJECT, itemId: ARROW.id, count: arrows });
+    own.equipmentObjectIds[25] = ARROW_OBJECT;
+  }
+  return own;
+}
+
+const shots = (sent: Sent[]): Sent[] => sent.filter((s) => s[0] === 'magic' || s[0] === 'range');
+
+describe('AttackLoop: the charge (CWndWorld::GetGaugePower, WndWorld.cpp:6454-6469; Piece 7 M2)', () => {
+  it('the charge levels are 0, 1, 2, 3, 4 from 0, 225, 675, 1125, 1575 ms; -1 in the lock-out', () => {
+    const levels = [0, 224, 225, 674, 675, 1124, 1125, 1574, 1575, 9000].map(chargeLevel);
+    expect(levels).toEqual([0, 0, 1, 1, 2, 2, 3, 3, 4, 4]);
+    expect(chargeLevel(-1)).toBe(-1);
+  });
+});
+
+describe('AttackLoop: the wand (CMD_SetMagicAttack, DoAttackMagic; Piece 7 M2)', () => {
+  /** Selects the monster, then holds a press on it `heldMs` and lets go: the let-go's shot. */
+  function chargeAndRelease(r: ReturnType<typeof rig>, heldMs: number): void {
+    r.tap(MONSTER_ID);
+    r.steps(40); // m_timerFocusAttack runs out
+    const at = r.now();
+    r.loop.onMoverPressed(MONSTER_ID, at, false);
+    while (r.now() < at + heldMs) {
+      r.loop.onMoverHeld(MONSTER_ID, r.now() - at);
+      r.step();
+    }
+    r.loop.onReleased(at + heldMs);
+  }
+
+  it('a let-go on the focused target shoots at its level: MAGIC_ATTACK with the power and the current id', () => {
+    const r = rig({ own: holding(SEAL_WAND) });
+    chargeAndRelease(r, 700);
+    r.steps(3);
+    expect(r.sent.filter((s) => s[0] === 'destObj')).toEqual([['destObj', MONSTER_ID, 15]]);
+    expect(shots(r.sent)).toEqual([['magic', MONSTER_ID, 2, 0]]);
+    expect(r.own.act.state & ObjSta.ATK_ALL).toBe(ObjSta.ATK_MAGIC1);
+  });
+
+  it('a press on a new target let go before 500 ms shoots nothing', () => {
+    const r = rig({ own: holding(SEAL_WAND) });
+    const at = r.now();
+    r.loop.onMoverPressed(MONSTER_ID, at, false);
+    r.loop.onMoverHeld(MONSTER_ID, 400);
+    r.loop.onReleased(at + 400);
+    r.steps(5);
+    expect(shots(r.sent)).toEqual([]);
+  });
+
+  it('held to level 4 a wand shoots on its own, then nothing for 1800 ms; at 3 with MP below 5', () => {
+    const r = rig({ own: holding(SEAL_WAND) });
+    r.tap(MONSTER_ID);
+    r.steps(40);
+    const at = r.now();
+    r.loop.onMoverPressed(MONSTER_ID, at, false);
+    while (r.now() < at + 1700) {
+      r.loop.onMoverHeld(MONSTER_ID, r.now() - at);
+      r.step();
+    }
+    expect(shots(r.sent)).toEqual([['magic', MONSTER_ID, 4, 0]]);
+    expect(r.loop.gauge(r.now())).toBe(4); // the lock-out draws it full
+    r.loop.onReleased(r.now()); // within the 1800 ms: nothing
+    r.steps(20);
+    expect(shots(r.sent)).toHaveLength(1);
+
+    const low = holding(SEAL_WAND);
+    low.mp = 4;
+    const l = rig({ own: low });
+    l.tap(MONSTER_ID);
+    l.steps(40);
+    const from = l.now();
+    l.loop.onMoverPressed(MONSTER_ID, from, false);
+    while (l.now() < from + 1300) {
+      l.loop.onMoverHeld(MONSTER_ID, l.now() - from);
+      l.step();
+    }
+    expect(shots(l.sent)).toEqual([['magic', MONSTER_ID, 3, 0]]);
+  });
+
+  it('no shot during the lock-out, and none while the last is still in its motion', () => {
+    const r = rig({ own: holding(SEAL_WAND) });
+    chargeAndRelease(r, 300);
+    r.steps(2);
+    expect(shots(r.sent)).toHaveLength(1);
+    // pressed and let go again at once, the shot's motion still playing: IsActAttack refuses the command
+    r.loop.onMoverPressed(MONSTER_ID, r.now(), false);
+    r.loop.onReleased(r.now());
+    r.steps(2);
+    expect(shots(r.sent)).toHaveLength(1);
+  });
+
+  it('a wand never auto-attacks, and the action mover refuses its swings', () => {
+    const r = rig({ own: holding(SEAL_WAND) });
+    r.tap(MONSTER_ID);
+    r.loop.attackButton();
+    expect(r.loop.autoAttack).toBe(false);
+    r.steps(60);
+    expect(r.melee()).toEqual([]);
+    r.step();
+    expect(r.own.act.sendActMsg(ActMsg.ATK1, MONSTER_ID)).toBe(false);
+  });
+
+  it('a blocked line of sight on arrival prints TID_GAME_BLOCKTARGETING and sends nothing', () => {
+    const ground = { ...terrainGround(() => 0), objectsNear: () => [wallAt(103)] };
+    const r = rig({ own: holding(SEAL_WAND), ground });
+    chargeAndRelease(r, 300);
+    r.steps(3);
+    expect(shots(r.sent)).toEqual([]);
+    expect(r.texts).toContain('TID_GAME_BLOCKTARGETING');
+  });
+
+  it('the gauge: none without a focus; 0 while not held; its level while held', () => {
+    const r = rig({ own: holding(SEAL_WAND) });
+    expect(r.loop.gauge(r.now())).toBeNull();
+    r.tap(MONSTER_ID);
+    r.steps(40);
+    expect(r.loop.gauge(r.now())).toBe(0);
+    const at = r.now();
+    r.loop.onMoverPressed(MONSTER_ID, at, false);
+    expect(r.loop.gauge(at + 700)).toBe(2);
+    expect(rig().loop.gauge(r.now())).toBeNull(); // a sword shows none
+  });
+
+  it('the Attack button held is not let go by the steps where no finger holds a mover (WorldScreen.step)', () => {
+    const r = rig({ own: holding(SEAL_WAND) });
+    r.tap(MONSTER_ID);
+    r.steps(40);
+    const at = r.now();
+    r.loop.attackButtonDown(at);
+    for (let i = 0; i < 70; i++) {
+      r.loop.onReleased(r.now()); // the screen's let-go of the tap, each step nothing is held on the canvas
+      r.step();
+    }
+    expect(shots(r.sent)).toEqual([]);
+    r.loop.attackButtonUp(at + 1200);
+    r.steps(3);
+    expect(shots(r.sent)).toEqual([['magic', MONSTER_ID, 3, 0]]);
+  });
+
+  it('the touch Attack button held charges and its release shoots, with a wand', () => {
+    const r = rig({ own: holding(SEAL_WAND) });
+    r.tap(MONSTER_ID);
+    r.steps(40);
+    const at = r.now();
+    r.loop.attackButtonDown(at);
+    r.loop.attackButtonUp(at + 1200);
+    r.steps(3);
+    expect(shots(r.sent)).toEqual([['magic', MONSTER_ID, 3, 0]]);
+  });
+});
+
+describe('AttackLoop: the bow (CMD_SetRangeAttack, IsBullet, DoAttackRange; Piece 7 M2)', () => {
+  it('the bow walks to 15 m and sends RANGE_ATTACK with the charge as its third field', () => {
+    const r = rig({ own: holding(WOODNESS_BOW, 10) });
+    // a press held on a new target: the auto-attack stays off, so the charged shot is not replaced by a level-0 one
+    const at = r.now();
+    r.loop.onMoverPressed(MONSTER_ID, at, false);
+    while (r.now() < at + 1200) {
+      r.loop.onMoverHeld(MONSTER_ID, r.now() - at);
+      r.step();
+    }
+    r.loop.onReleased(at + 1200);
+    r.steps(3);
+    expect(r.sent.filter((s) => s[0] === 'destObj')).toEqual([['destObj', MONSTER_ID, 15]]);
+    expect(shots(r.sent)).toEqual([['range', MONSTER_ID, 3, 0]]);
+    expect(r.own.act.state & ObjSta.ATK_ALL).toBe(ObjSta.ATK_RANGE1);
+  });
+
+  it('a bow auto-attacks with a level-0 shot each step while the button is up (UseFocusObj, WndWorld.cpp:6250-6253)', () => {
+    const r = rig({ own: holding(WOODNESS_BOW, 10) });
+    r.tap(MONSTER_ID);
+    r.steps(40);
+    r.tap(MONSTER_ID);
+    expect(r.loop.autoAttack).toBe(true);
+    r.steps(60);
+    const fired = shots(r.sent);
+    expect(fired.length).toBeGreaterThanOrEqual(3);
+    expect(fired.every((s) => s[0] === 'range' && s[2] === 0)).toBe(true);
+  });
+
+  it('no arrows: "Equip arrows first.", the auto-attack off, nothing sent', () => {
+    const r = rig({ own: holding(WOODNESS_BOW) });
+    r.tap(MONSTER_ID);
+    r.steps(40);
+    r.tap(MONSTER_ID);
+    r.steps(10);
+    expect(shots(r.sent)).toEqual([]);
+    expect(r.sent.filter((s) => s[0] === 'destObj')).toEqual([]);
+    expect(r.texts).toContain('TID_TIP_NEEDSATTACKITEM');
+    expect(r.loop.autoAttack).toBe(false);
+  });
+
+  it('refused for want of arrows, a tap once they are on shoots (the sequence of jobs.spec.ts)', () => {
+    const own = holding(WOODNESS_BOW);
+    own.inventory!.set(3, { objectId: 3, itemId: ARROW.id, count: 100 });
+    const r = rig({ own });
+    r.tap(MONSTER_ID);
+    r.steps(40);
+    r.tap(MONSTER_ID);
+    r.steps(10);
+    expect(r.texts).toContain('TID_TIP_NEEDSATTACKITEM');
+    own.equipmentObjectIds[25] = 3; // DOEQUIP of the arrows (OwnState.equipInventory)
+    r.steps(20);
+    r.tap(MONSTER_ID);
+    r.steps(10);
+    expect(shots(r.sent).length).toBeGreaterThan(0);
+  });
+
+  it('the last arrow spent, the next shot is refused', () => {
+    const own = holding(WOODNESS_BOW, 1);
+    const r = rig({ own });
+    r.tap(MONSTER_ID);
+    r.steps(40);
+    r.loop.onMoverPressed(MONSTER_ID, r.now(), false);
+    r.loop.onReleased(r.now());
+    r.steps(3);
+    expect(shots(r.sent)).toHaveLength(1);
+    // the server spends it: UPDATE_ITEM UI_NUM 0 (CMover::ArrowDown, Mover.cpp:8504-8549)
+    own.apply({ type: 'updateItem', itemType: 0, objectId: ARROW_OBJECT, param: 0, value: 0, time: 0 }, OWN_ID);
+    r.steps(MOTION_STEPS + 2);
+    r.loop.onMoverPressed(MONSTER_ID, r.now(), false);
+    r.loop.onReleased(r.now());
+    r.steps(3);
+    expect(shots(r.sent)).toHaveLength(1);
+    expect(r.texts).toContain('TID_TIP_NEEDSATTACKITEM');
+  });
+});
+
+// ---- Piece 7 M2: the yoyo ------------------------------------------------------------------------------------------
+
+describe('AttackLoop: the yoyo (CMD_SetMeleeAttack, ProcessMoveArrival, _ProcessStateAttack; Piece 7 M2)', () => {
+  const d = `destObj ${MONSTER_ID}`;
+  const atk = (n: number): string => `ATK${n} ${MONSTER_ID}`;
+
+  it('a yoyo walks to 6 m and swings ATK1 then ATK2, never ATK3', () => {
+    const r = rig({ own: holding(ITUN_YOYO) }); // level 15: a sword would chain to ATK4
+    r.tap(MONSTER_ID);
+    r.tap(MONSTER_ID);
+    r.until(() => r.kinds().length >= 5);
+    expect(r.kinds().slice(0, 5)).toEqual([d, atk(1), atk(2), d, atk(1)]);
+    expect(r.sent.filter((s) => s[0] === 'destObj')[0]).toEqual(['destObj', MONSTER_ID, 6]);
+  });
+
+  it("a yoyo's blocked line of sight on arrival prints the text and does not swing", () => {
+    const r = rig({ own: holding(ITUN_YOYO), ground: { ...terrainGround(() => 0), objectsNear: () => [wallAt(103)] } });
+    r.tap(MONSTER_ID);
+    r.tap(MONSTER_ID);
+    r.steps(30);
+    expect(r.melee()).toEqual([]);
+    expect(r.texts).toContain('TID_GAME_BLOCKTARGETING');
+  });
+});
+
+describe('AttackLoop: an Attack-button hold left over (final review, Important 3)', () => {
+  it('a press on the canvas ends an Attack-button hold whose let-go never came', () => {
+    const r = rig({ own: holding(SEAL_WAND) });
+    r.tap(MONSTER_ID);
+    r.steps(40);
+    r.loop.attackButtonDown(r.now()); // its let-go is lost
+    r.steps(5);
+    // a tap on the ground: the canvas's own press and let-go, and the loop lets the button's go with it
+    r.loop.onGroundPressed(false);
+    r.loop.onReleased(r.now());
+    r.steps(2);
+    expect(r.controls()).toBe(true);
+    r.steps(200); // no automatic shots with no finger down
+    expect(shots(r.sent)).toEqual([]);
   });
 });

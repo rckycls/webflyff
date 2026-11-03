@@ -28,6 +28,10 @@ export const Dst = {
   INT: 3,
   STA: 4,
   YOY_DMG: 5,
+  /** Piece 7 M2: the first jobs' buffs' (`Resource/defineAttribute.h`): Pan Barrier, Quick Step, Cat's Reflex. */
+  BLOCK_RANGE: 8,
+  SPEED: 11,
+  BLOCK_MELEE: 14,
   BOW_DMG: 6,
   CHR_CHANCECRITICAL: 9,
   ABILITY_MIN: 12,
@@ -46,9 +50,15 @@ export const Dst = {
   MP_MAX_RATE: 53,
   FP_MAX_RATE: 54,
   CHR_DMG: 63,
+  /** Piece 7 M2: Stone Hand's, Prevention's, and the bits of Dark Illusion's and Counter's. */
+  CHR_CHANCESTUN: 57,
+  AUTOHP: 58,
+  CHRSTATE: 64,
   ATKPOWER_RATE: 66,
   JUMPING: 68,
   ADJDEF_RATE: 72,
+  /** Piece 7 M2: `DST_SPELL_RATE` (`Resource/defineAttribute.h:325`): the cast time and speed. */
+  SPELL_RATE: 75,
   ATKPOWER: 83,
   TWOHANDMASTER_DMG: 86,
   YOYOMASTER_DMG: 87,

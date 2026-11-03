@@ -473,6 +473,15 @@ describe('readPropItem', () => {
       destParams: [4, 2, -1], // DST_STA, DST_DEX, none
       adjParams: [5, 5, -1],
       sfxObj3: 20, // XI_HIT_SWORD01
+      // Piece 7 M2: a sword makes no missile, needs no bullets, and has no skill's effects, style, push or pain
+      sfxObj: -1,
+      sfxObj2: -1,
+      sfxObj4: -1,
+      linkKind: -1,
+      linkKindBullet: -1,
+      atkStyle: -1,
+      dmgShift: -1,
+      continuousPain: -1,
       sfxObj5: -1,
       sndAttack1: 117, // SND_PC_DMGSWDM
       sndAttack2: 119, // SND_PC_DMGSWDC: the critical hit's sound (DPClient.cpp:1903-1907)

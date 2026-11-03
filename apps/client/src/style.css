@@ -2179,3 +2179,15 @@ fieldset:disabled .btn {
 .hud-dropbox-button { position: absolute; border: 1px solid #6b5a3a; border-radius: 3px; background: linear-gradient(#f6edd2, #d9c69a); color: #2a1e0a; font-size: 12px; padding: 0; }
 .hud-dropbox-button:disabled { color: #8a7d62; }
 .hud-dropbox-button:focus-visible { outline: 1px solid #fff; }
+
+/* Piece 7 M2: the own buffs (CWndBuffStatus: no frame, first at a third of the screen) and the target's under its bar */
+.hud-buffs { position: absolute; left: 33.3vw; top: 33.3vh; width: 238px; height: 136px; pointer-events: none; }
+.hud-buff { position: absolute; pointer-events: auto; }
+.hud-buff[data-harmful] img { filter: sepia(1) hue-rotate(250deg) saturate(3); }
+.hud-buff-seconds { position: absolute; left: 2px; top: 22px; color: #fff; font-size: 12px; text-shadow: 1px 1px 0 #000; pointer-events: none; }
+.hud-target-buffs { position: absolute; inset: 0; pointer-events: none; }
+/* on a phone the window sits under the status window, its icons 28 px at least (plan, Decisions 15) */
+@media (max-width: 1000px) and (pointer: coarse) {
+  .hud-buffs { left: 8px; top: 120px; }
+  .hud-buff { min-width: 28px; min-height: 28px; }
+}

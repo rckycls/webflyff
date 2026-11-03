@@ -168,6 +168,21 @@ describeClient('game data readers on the client packs', () => {
     console.log(`propMover.txt: ${movers.length} movers (${withSpeed} with a speed above 0, ${flying.length} flying); male speed ${male!.speed}`);
   });
 
+  it('propItem.txt: every wand has a missile, every bow needs bullets, the arrow has a missile (Piece 7 M2)', () => {
+    const items = readPropItem(scriptText('propItem.txt'), defines, strings, 'propItem.txt');
+    const IK3_WAND = defines.get('IK3_WAND')!;
+    const IK3_BOW = defines.get('IK3_BOW')!;
+    const wands = items.filter((item) => item.kind3 === IK3_WAND);
+    const bows = items.filter((item) => item.kind3 === IK3_BOW);
+    expect(wands).toHaveLength(54);
+    expect(bows).toHaveLength(42);
+    for (const wand of wands) expect(wand.sfxObj2, wand.name).toBe(defines.get('XI_FIR_WAND01'));
+    for (const bow of bows) expect(bow.linkKindBullet, bow.name).toBe(defines.get('IK2_BULLET'));
+    const arrow = items.find((item) => item.id === defines.get('II_WEA_SEC_ACR_ARROW'));
+    expect(arrow?.sfxObj2).toBe(defines.get('XI_ITEM_RANGE_ATK1'));
+    expect([defines.get('XI_FIR_WAND01'), defines.get('IK2_BULLET'), defines.get('XI_ITEM_RANGE_ATK1')]).toEqual([27, 25, 112]);
+  });
+
   it('propItem.txt: every row up to version 15 is read, with its id, name and body slot', () => {
     const text = scriptText('propItem.txt');
     const items = readPropItem(text, defines, strings, 'propItem.txt');

@@ -32,6 +32,7 @@ const f32 = Math.fround;
 /** SFXPARTTYPE (`sfxbase.h:17-22`). */
 const PART_BILL = 1;
 const PART_PARTICLE = 2;
+const PART_MESH = 3;
 const PART_CUSTOMMESH = 4;
 /** SFXPARTBILLTYPE (`sfxbase.h:23-28`). */
 const BILL_BILL = 1;
@@ -109,6 +110,8 @@ export interface EffectConeDraw extends Omit<EffectQuadDraw, 'kind'> {
   uv: Vec3;
   /** `m_nPoints`: the ring has `points * 2 + 1` vertex pairs. */
   points: number;
+  /** What the top V adds to `uv.y`: 0.02 in `Render` (`:1414`), 0.1 in `Render2` (Piece 7 M2); 0.02 when not given. */
+  topV?: number;
   /**
    * As a quad's, with one more thing first: the C++ multiplies the cone's vertices by the effect's scale, axis by axis,
    * before its world matrix (`:1407-1412`), and that scale is the first factor here.
@@ -116,7 +119,35 @@ export interface EffectConeDraw extends Omit<EffectQuadDraw, 'kind'> {
   matrix: number[];
 }
 
-export type EffectDraw = EffectQuadDraw | EffectConeDraw;
+/**
+ * Piece 7 M2: a MESH part's model (`CSfxPartMesh::Render`, `:1072-1130`), the `.o3d` its part names (`model`) drawn whole
+ * with `matrix`, the key's alpha as the texture factor, its blend, and depth written (`ZWRITEENABLE TRUE`, :1126-1128).
+ */
+export interface EffectMeshDraw {
+  kind: 'mesh';
+  part: number;
+  /** The model's logical key (`models/<name>.glb`). */
+  model: string;
+  matrix: number[];
+  alpha: number;
+  additive: boolean;
+}
+
+export type EffectDraw = EffectQuadDraw | EffectConeDraw | EffectMeshDraw;
+
+/**
+ * How the effect is turned: `CSfxModel::Render`'s heading alone (`m_vRotate.y`, `angle`) or, Piece 7 M2, `Render2`'s
+ * whole rotation too (`m_vRotate`, degrees: x pitch, y yaw, z roll; `:2063-2135`), which a missile in flight is drawn with.
+ */
+interface Turn {
+  angle: number;
+  rotation?: Vec3;
+}
+
+/** Piece 7 M2: `D3DXMatrixRotationYawPitchRoll` of a degree vector (x pitch, y yaw, z roll). */
+const yprOf = (degrees: Vec3): Matrix => yawPitchRollOf(degToRadVec(degrees));
+/** `Key.vPosRotate.y + 0.1f`: the cone's top V in `Render2` (`:1531`). */
+const CONE_TOP_V2 = f32(0.1);
 
 /**
  * The quad every BILL part and particle draws (`CSfxMng::RestoreDeviceObjects`, `:1845-1869`): half size
@@ -142,7 +173,7 @@ export function coneVertices(cone: EffectConeDraw): { positions: Float32Array; u
   const positions = new Float32Array(pairs * 6);
   const uvs = new Float32Array(pairs * 4);
   const [repeats, topV, bottomV] = cone.uv;
-  const vTop = f32(topV + CONE_TOP_V);
+  const vTop = f32(topV + (cone.topV ?? CONE_TOP_V));
   for (let i = 0; i < pairs; i++) {
     const a = degToRad(step * i);
     const s = f32(Math.sin(a));
@@ -339,7 +370,24 @@ export class EffectModel {
    *                camera that is `toWebMatrix` of its `matrixWorld` (the mirror is its own inverse).
    */
   drawList(angleY: number, scale: Vec3, invView: ArrayLike<number>): EffectDraw[] {
-    const angle = f32(angleY);
+    return this.draws({ angle: f32(angleY) }, scale, invView);
+  }
+
+  /**
+   * Piece 7 M2: `CSfxModel::Render2` (`:2063-2135`), what a missile in flight is drawn with: the whole `rotation` (degrees:
+   * x pitch, y yaw, z roll) turns the BILL, PARTICLE and CUSTOMMESH parts (their `Render2`s, `:196-310`, `:2143-2330`,
+   * `:1445-1560`); a MESH part takes the yaw alone (`Render( ..., m_vRotate.y, ... )`, :2117-2121).
+   */
+  drawList2(rotation: Vec3, scale: Vec3, invView: ArrayLike<number>): EffectDraw[] {
+    return this.draws({ angle: f32(rotation[1]), rotation: floats(rotation) }, scale, invView);
+  }
+
+  /** Piece 7 M2: `m_nCurFrame = 0`, as a missile sends its looping flight model back (`Sfx.cpp:884-888`, :978-981). */
+  rewind(): void {
+    this.curFrame = 0;
+  }
+
+  private draws(turn: Turn, scale: Vec3, invView: ArrayLike<number>): EffectDraw[] {
     const size = floats(scale);
     const camera = Array.from(invView, f32);
     camera[12] = camera[13] = camera[14] = 0;
@@ -347,17 +395,38 @@ export class EffectModel {
     this.effect.parts.forEach((part, i) => {
       if (!part.using) return;
       if (part.type === PART_BILL) {
-        const quad = this.billDraw(part, i, angle, size, camera);
+        const quad = this.billDraw(part, i, turn, size, camera);
         if (quad !== null) out.push(quad);
       } else if (part.type === PART_PARTICLE) {
-        this.particleDraws(part, i, this.particles[i]!, angle, size, camera, out);
+        this.particleDraws(part, i, this.particles[i]!, turn, size, camera, out);
       } else if (part.type === PART_CUSTOMMESH) {
-        const cone = this.coneDraw(part, i, angle, size, camera);
+        const cone = this.coneDraw(part, i, turn, size, camera);
         if (cone !== null) out.push(cone);
+      } else if (part.type === PART_MESH) {
+        const mesh = this.meshDraw(part, i, turn.angle, size);
+        if (mesh !== null) out.push(mesh);
       }
-      // MESH (3): not drawn in Piece 4 (spec §3.7)
     });
     return out;
+  }
+
+  /**
+   * Piece 7 M2: `CSfxPartMesh::Render( vPos, nFrame, fAngle, vScale )` (`:1072-1130`): scale = effect scale * key scale,
+   * then `YawPitchRoll( rotate + ( 0, angle, 0 ) )`; the offset `key.pos` turned by `YawPitchRoll( posRotate + ( 0, angle,
+   * 0 ) )` and multiplied by the effect scale. A part whose model was not converted draws nothing.
+   */
+  private meshDraw(part: WebEffectPart, index: number, angle: number, scale: Vec3): EffectMeshDraw | null {
+    if (part.model === null) return null;
+    const at = keyAt(part.keys, this.curFrame);
+    if (at === null) return null;
+    const { key } = at;
+    const sized = vecMul(scale, key.scale);
+    const local = multiply(scaling(sized[0], sized[1], sized[2]), turnedBy(key.rotate, angle));
+    const offset = vecMul(transformCoord(key.pos, turnedBy(key.posRotate, angle)), scale);
+    return {
+      kind: 'mesh', part: index, model: part.model, matrix: multiply(local, translation(offset[0], offset[1], offset[2])),
+      alpha: key.alpha & 0xff, additive: part.alphaType === ALPHA_GLOW,
+    };
   }
 
   /** :2723-2740: move, speed up and grow (unless `repeatScal`) every live particle, one frame older; drop the old. */
@@ -431,19 +500,29 @@ export class EffectModel {
    * Rx( 90 )`, NORMAL `S * YawPitchRoll( rotate + ( 0, angle, 0 ) )`; then the offset `key.pos` turned by
    * `YawPitchRoll( posRotate + ( 0, angle, 0 ) )` and multiplied by the effect scale (`:386-394`).
    */
-  private billDraw(part: WebEffectPart, index: number, angle: number, scale: Vec3, invView: Matrix): EffectQuadDraw | null {
+  private billDraw(part: WebEffectPart, index: number, turn: Turn, scale: Vec3, invView: Matrix): EffectQuadDraw | null {
     const texture = partTexture(part, this.curFrame);
     if (texture === undefined) return null;
     const at = keyAt(part.keys, this.curFrame);
     if (at === null) return null;
     const { key } = at;
+    const { angle, rotation } = turn;
     const sized = vecMul(scale, key.scale);
     const matScale = scaling(sized[0], sized[1], sized[2]);
     let local: Matrix;
-    if (part.billType === BILL_BOTTOM) local = product(matScale, rotationZ(degToRad(f32(key.rotate[2] - angle))), rotationX(RIGHT_ANGLE));
-    else if (part.billType === BILL_NORMAL) local = multiply(matScale, turnedBy(key.rotate, angle));
-    else local = product(matScale, rotationZ(degToRad(key.rotate[2])), invView); // BILL_BILL, BILL_POLE
-    const offset = vecMul(transformCoord(key.pos, turnedBy(key.posRotate, angle)), scale);
+    if (part.billType === BILL_BOTTOM) {
+      // Render2 turns a bottom quad by the roll (`Key.vRotate.z - fAngle.z`, :233), Render by the heading
+      const by = rotation === undefined ? angle : rotation[2];
+      local = product(matScale, rotationZ(degToRad(f32(key.rotate[2] - by))), rotationX(RIGHT_ANGLE));
+    } else if (part.billType === BILL_NORMAL) {
+      // Render2: S * YawPitchRoll( rotate ) * YawPitchRoll( fAngle ) (:248-256)
+      local = rotation === undefined ? multiply(matScale, turnedBy(key.rotate, angle)) : product(matScale, yprOf(key.rotate), yprOf(rotation));
+    } else {
+      local = product(matScale, rotationZ(degToRad(key.rotate[2])), invView); // BILL_BILL, BILL_POLE
+    }
+    // Render2: the offset turned by YawPitchRoll( fAngle ) * YawPitchRoll( posRotate ) (:260-266)
+    const placing = rotation === undefined ? turnedBy(key.posRotate, angle) : multiply(yprOf(rotation), yprOf(key.posRotate));
+    const offset = vecMul(transformCoord(key.pos, placing), scale);
     return {
       kind: 'quad', part: index, texture, billType: part.billType, matrix: multiply(local, translation(offset[0], offset[1], offset[2])),
       alpha: key.alpha & 0xff, additive: part.alphaType === ALPHA_GLOW,
@@ -465,18 +544,29 @@ export class EffectModel {
    * - alpha in integers: rising over `appear`, the key's until `keep`, falling to 0 at `disappear` (`:2679-2692`).
    */
   private particleDraws(
-    part: WebEffectPart, index: number, particles: readonly Particle[], angle: number, scale: Vec3, invView: Matrix, out: EffectDraw[],
+    part: WebEffectPart, index: number, particles: readonly Particle[], turn: Turn, scale: Vec3, invView: Matrix, out: EffectDraw[],
   ): void {
     const at = keyAt(part.keys, this.curFrame);
     if (at === null) return;
     const { key, prev, span } = at;
     const block = part.particle!;
+    const { angle, rotation } = turn;
     let orientation: Matrix;
-    if (part.billType === BILL_BOTTOM) orientation = multiply(rotationZ(degToRad(f32(key.rotate[2] - angle))), rotationX(RIGHT_ANGLE));
-    else if (part.billType === BILL_NORMAL) orientation = turnedBy(key.rotate, angle);
-    else orientation = multiply(rotationZ(degToRad(key.rotate[2])), invView); // BILL_BILL, BILL_POLE
-    const emitter = transformCoord(key.pos, turnedBy(key.posRotate, angle));
-    const spread = turnedBy(vecAdd(key.rotate, key.posRotate), angle);
+    if (part.billType === BILL_BOTTOM) {
+      // RenderParticles2 does not turn a bottom particle (:2180-2185)
+      const by = rotation === undefined ? angle : 0;
+      orientation = multiply(rotationZ(degToRad(f32(key.rotate[2] - by))), rotationX(RIGHT_ANGLE));
+    } else if (part.billType === BILL_NORMAL) {
+      orientation = rotation === undefined ? turnedBy(key.rotate, angle) : multiply(yprOf(key.rotate), yprOf(rotation));
+    } else {
+      orientation = multiply(rotationZ(degToRad(key.rotate[2])), invView); // BILL_BILL, BILL_POLE
+    }
+    // RenderParticles2: the emitter by YawPitchRoll( fAngle ) * YawPitchRoll( posRotate ), each particle by
+    // YawPitchRoll( rotate + posRotate ) * YawPitchRoll( fAngle ) (:2216-2222, :2282-2285)
+    const emitter = transformCoord(key.pos, rotation === undefined
+      ? turnedBy(key.posRotate, angle) : multiply(yprOf(rotation), yprOf(key.posRotate)));
+    const spread = rotation === undefined
+      ? turnedBy(vecAdd(key.rotate, key.posRotate), angle) : multiply(yprOf(vecAdd(key.rotate, key.posRotate)), yprOf(rotation));
     const through = span === 0 ? 0 : f32((this.curFrame - prev.frame) / span);
     for (const particle of particles) {
       const texture = part.texFrame > 1
@@ -508,23 +598,31 @@ export class EffectModel {
    * `YawPitchRoll( rotate + ( 0, angle, 0 ) )` (`:1331-1366`); the offset `key.pos` turned by the effect angle alone
    * (`posRotate` is not a turn here) and multiplied by the effect scale (`:1372-1385`).
    */
-  private coneDraw(part: WebEffectPart, index: number, angle: number, scale: Vec3, invView: Matrix): EffectConeDraw | null {
+  private coneDraw(part: WebEffectPart, index: number, turn: Turn, scale: Vec3, invView: Matrix): EffectConeDraw | null {
     const texture = partTexture(part, this.curFrame);
     if (texture === undefined) return null;
     const at = keyAt(part.keys, this.curFrame);
     if (at === null) return null;
     const { key } = at;
+    const { angle, rotation } = turn;
     let orientation: Matrix;
-    if (part.billType === BILL_BILL) orientation = multiply(rotationZ(degToRad(f32(key.rotate[2] - angle))), invView);
-    else if (part.billType === BILL_POLE) orientation = multiply(rotationZ(degToRad(key.rotate[2])), invView);
-    else if (part.billType === BILL_BOTTOM) orientation = multiply(rotationZ(degToRad(key.rotate[2])), rotationX(RIGHT_ANGLE));
-    else orientation = turnedBy(key.rotate, angle); // BILL_NORMAL
-    const offset = vecMul(transformCoord(key.pos, turnedBy([0, 0, 0], angle)), scale);
+    // Render2 (:1478-1507): BILL by the roll, NORMAL by YawPitchRoll( rotate ) * YawPitchRoll( fAngle )
+    if (part.billType === BILL_BILL) {
+      orientation = multiply(rotationZ(degToRad(f32(key.rotate[2] - (rotation === undefined ? angle : rotation[2])))), invView);
+    } else if (part.billType === BILL_POLE) {
+      orientation = multiply(rotationZ(degToRad(key.rotate[2])), invView);
+    } else if (part.billType === BILL_BOTTOM) {
+      orientation = multiply(rotationZ(degToRad(key.rotate[2])), rotationX(RIGHT_ANGLE));
+    } else {
+      orientation = rotation === undefined ? turnedBy(key.rotate, angle) : multiply(yprOf(key.rotate), yprOf(rotation));
+    }
+    // Render2: the offset turned by YawPitchRoll( fAngle ) (:1508-1513)
+    const offset = vecMul(transformCoord(key.pos, rotation === undefined ? turnedBy([0, 0, 0], angle) : yprOf(rotation)), scale);
     const placed = multiply(orientation, translation(offset[0], offset[1], offset[2]));
     return {
       kind: 'cone', part: index, texture, billType: part.billType, matrix: multiply(scaling(scale[0], scale[1], scale[2]), placed),
       top: key.scale[0], bottom: key.scale[2], height: key.scale[1], uv: [...key.posRotate], points: part.points,
-      alpha: key.alpha & 0xff, additive: part.alphaType === ALPHA_GLOW,
+      alpha: key.alpha & 0xff, additive: part.alphaType === ALPHA_GLOW, ...(rotation === undefined ? {} : { topV: CONE_TOP_V2 }),
     };
   }
 }
