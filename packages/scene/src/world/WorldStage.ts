@@ -124,6 +124,11 @@ export class WorldStage {
     this.streamer.update(at);
   }
 
+  /** From now on, the ring of tiles around the visible ones is downloaded too (`TileStreamer.startPreloading`). */
+  startPreloading(): void {
+    this.streamer.startPreloading();
+  }
+
   /** The ground height at `at` (web coordinates; see `TileStreamer.heightAt`), or null while its tile has not arrived. */
   heightAt(at: Vec3): number | null {
     return this.streamer.heightAt(at);

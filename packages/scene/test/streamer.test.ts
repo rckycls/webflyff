@@ -77,9 +77,11 @@ interface Setup {
   held?: string[];
   instantTextures?: boolean;
   tile?: (x: number, y: number) => WebTile;
+  /** `startPreloading` is called before the first update (the default), as the world calls it once it is on screen. */
+  preload?: boolean;
 }
 
-function setup({ missing = [], failing = [], held = [], instantTextures = true, tile = makeTile }: Setup = {}) {
+function setup({ missing = [], failing = [], held = [], instantTextures = true, tile = makeTile, preload = true }: Setup = {}) {
   const heldDownloads = new Map<string, () => void>();
   const store = {
     tile: vi.fn(async (_world: string, x: number, y: number): Promise<WebTile | null> => {
@@ -104,6 +106,7 @@ function setup({ missing = [], failing = [], held = [], instantTextures = true, 
   const textures = fakeTextures(instantTextures);
   const scene = new Scene();
   const streamer = new TileStreamer('wdtest', makeManifest(), store, scene, { textures, objects, shapes, overlay });
+  if (preload) streamer.startPreloading();
   const gpuBytes = () => overlay.addGpuBytes.mock.calls.reduce((sum, [n]) => sum + n, 0);
   const release = (key: string) => heldDownloads.get(key)?.();
   return { store, objects, shapes, groups, overlay, textures, scene, streamer, gpuBytes, release };
@@ -165,15 +168,75 @@ describe('TileStreamer', () => {
     expect(store.tile.mock.calls[0]![0]).toBe('wdtest');
   });
 
-  it('puts each tile’s ground and objects in the scene', async () => {
+  it('puts each visible tile’s ground and objects in the scene', async () => {
     const { scene, streamer, groups } = setup();
     streamer.update(middleOf(10, 10));
     await flush();
 
+    const visible = tilesInRange({ x: 10, y: 10 }, 1, [30, 30]).visible;
     const terrainMeshes = scene.children.flatMap((child) => child.children).filter((c) => c instanceof Mesh);
-    expect(terrainMeshes.length).toBeGreaterThanOrEqual(25);
+    expect(terrainMeshes.length).toBeGreaterThanOrEqual(9);
     expect(groups.size).toBe(25);
-    for (const group of groups.values()) expect(group.parent).toBe(scene);
+    for (const key of visible) expect(groups.get(key)!.parent).toBe(scene);
+    expect(scene.children).toHaveLength(9 * 2);
+  });
+
+  it('asks only for the visible tiles until startPreloading, then for the ring once they have settled', async () => {
+    const { store, streamer, textures } = setup({ preload: false, instantTextures: false });
+    streamer.update(middleOf(10, 10));
+    await flush();
+    const range = tilesInRange({ x: 10, y: 10 }, 1, [30, 30]);
+    expect(new Set(requested(store))).toEqual(new Set(range.visible));
+
+    streamer.startPreloading();
+    await flush();
+    expect(requested(store)).toHaveLength(9); // the visible tiles' ground is not in yet
+
+    textures.arrive();
+    await flush();
+    const asked = requested(store);
+    expect(asked).toHaveLength(25);
+    expect(new Set(asked.slice(9))).toEqual(new Set(range.preload));
+  });
+
+  it('keeps a ring tile out of the scene until it is visible, and takes it out when it goes back to the ring', async () => {
+    const { store, streamer, scene, groups } = setup();
+    streamer.update(middleOf(10, 10));
+    await flush();
+    // 12_10 is two tiles east: the ring
+    expect(groups.get('12_10')!.parent).toBeNull();
+    expect(streamer.loaded()).toContain('12_10');
+
+    streamer.update(middleOf(11, 10));
+    await flush();
+    expect(groups.get('12_10')!.parent).toBe(scene);
+    expect(scene.children).toHaveLength(9 * 2);
+
+    streamer.update(middleOf(10, 10));
+    await flush();
+    expect(groups.get('12_10')!.parent).toBeNull();
+    expect(streamer.loaded()).toContain('12_10');
+    expect(scene.children).toHaveLength(9 * 2);
+    expect(requested(store).filter((key) => key === '12_10')).toHaveLength(1);
+  });
+
+  it('loads the new visible tiles, then their ring, when the player crosses into another tile', async () => {
+    const { store, streamer, scene, groups, textures } = setup({ instantTextures: false });
+    streamer.update(middleOf(10, 10));
+    await flush();
+    // the player crosses east before the first ring was asked for: column 12 comes into view
+    streamer.update(middleOf(11, 10));
+    await flush();
+    const asked = requested(store);
+    expect(asked).toHaveLength(9 + 3);
+    expect(new Set(asked.slice(9))).toEqual(new Set(['12_9', '12_10', '12_11']));
+
+    textures.arrive();
+    await flush();
+    for (const key of ['12_9', '12_10', '12_11']) expect(groups.get(key)!.parent).toBe(scene);
+    const now = tilesInRange({ x: 11, y: 10 }, 1, [30, 30]);
+    expect(new Set(requested(store).slice(12))).toEqual(new Set(now.preload.filter((key) => !asked.includes(key))));
+    expect(requested(store).some((key) => key.startsWith('8_'))).toBe(false); // the old ring's far column, never asked for
   });
 
   it('counts a tile as loaded only once its ground textures have arrived', async () => {
@@ -288,7 +351,7 @@ describe('TileStreamer', () => {
     const asked = requested(store);
     expect(asked).toHaveLength(25 + 10);
     expect(new Set(asked).size).toBe(35);
-    expect(scene.children.length).toBe(25 * 2);
+    expect(scene.children.length).toBe(9 * 2); // the ring is loaded, not drawn
     disposed.mockRestore();
   });
 

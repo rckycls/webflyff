@@ -300,6 +300,10 @@ export class WorldScreen {
   private lastTime = 0;
   /** The time the rules steps took since the last frame (`simulate`), in ms, for the frame's `cpu`. */
   private simulatedMs = 0;
+  /** When the world was first drawn (`ClientPerf.onScreenAt`), in ms since 1970; null before. */
+  private onScreenAt: number | null = null;
+  /** The stage was told to download the ring of tiles around the visible ones (the frame after the first). */
+  private preloadStarted = false;
   private loadTimer: ReturnType<typeof setTimeout> | undefined;
   private lastError = '';
   /** The errors of applying a bundle said on the overlay, so that one that comes with every bundle is listed once. */
@@ -365,7 +369,10 @@ export class WorldScreen {
       perf: () => {
         if (this.page === undefined) throw new Error('no world page');
         const { overlay, renderer } = this.page;
-        return { ...overlay.snapshot(), renderer: rendererCounts(renderer), loadedTiles: this.stage?.loadedTiles() ?? [] };
+        return {
+          ...overlay.snapshot(), renderer: rendererCounts(renderer), loadedTiles: this.stage?.loadedTiles() ?? [],
+          onScreenAt: this.onScreenAt,
+        };
       },
       camera: () => toWebPosition(this.backCamera.view?.position ?? [0, 0, 0]),
       pause: () => {
@@ -1110,6 +1117,12 @@ export class WorldScreen {
       // the mark goes once the walk to its point is over: arrived, or ended by a key, a stop or the server
       this.mark!.follow(world.self()?.dest?.pos ?? null);
 
+      // the ring of tiles around the visible ones downloads only once the character is on screen: from the frame after
+      // the first (Piece 6 M5, part B: not part of the first load, tileStreamer.ts)
+      if (this.onScreenAt !== null && !this.preloadStarted) {
+        this.preloadStarted = true;
+        stage.startPreloading();
+      }
       // the map around the own mover, and the chase camera of the last rules step (of now, before the first)
       stage.focus(this.ownAt());
       const view = this.backCamera.view ?? this.follow(world, stage);
@@ -1138,6 +1151,7 @@ export class WorldScreen {
       // the world is on screen: `ready()` (a second call does nothing), and an ending from here on is a drop
       this.endingsAreDrops = true;
       this.resolveShown();
+      this.onScreenAt ??= performance.timeOrigin + performance.now();
     } catch (error) {
       // a frame that throws every frame must not fill the overlay with the same line sixty times a second; the console has
       // it too, with its stack, beside what came before it there (a lost WebGL context, errorHandlers.ts). A page that let

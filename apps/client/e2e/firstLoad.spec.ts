@@ -2,20 +2,25 @@
 // compressed"), on a production build (the `prod` project: `vite build`, then `vite preview`), as the viewer's
 // `character.spec.ts` checks its own (15 MB read as 15 MiB, as there).
 //
-// What counts: every request to the site the page or its workers started before `ready()` (the character on screen),
-// at its whole body as it came over the wire (Playwright's `responseBodySize`: the compressed size, as serveDist sends
-// JSON, binaries and models), waited for if it was still coming. Media streams are not counted: the music streams
-// while it plays (spec §9), and whether a track's request had ended at `ready()` was a race worth 2 MB. The page's own
-// Resource Timing misses some (a worker's requests, an image the lobby asked for twice), so it checks the other way:
-// every file it timed from before `ready()` was counted.
+// What counts: every request to the site the page or its workers started before the world was first drawn, the
+// character on screen (the client's `onScreenAt`, taken right after that frame), at its whole body as it came over the
+// wire (Playwright's `responseBodySize`: the compressed size, as serveDist sends JSON, binaries and models), waited for
+// if it was still coming. Not what was asked for after that frame, even while it still downloads: the ring of tiles
+// around the 3 x 3 starts the frame after (Piece 6 M5, part B), and the moment the test noticed `ready()`, tens of ms
+// later, counted it. Media streams are not counted: the music streams while it plays (spec §9), and whether a track's
+// request had ended at `ready()` was a race worth 2 MB. The page's own Resource Timing misses some (a worker's requests,
+// an image the lobby asked for twice), so it checks the other way: every file it timed from before that frame was
+// counted.
 
 import { expect, test } from '@playwright/test';
 import type { Request } from '@playwright/test';
 import { enterFlaris, playGateway } from './worldHarness';
 
 const BUDGET = 15 * 1024 * 1024;
-/** The longest a request started before `ready()` may take to end afterwards. */
+/** The longest a request started before the world was drawn may take to end afterwards. */
 const FINISH_MS = 60_000;
+/** Time for the request events of what started before the frame to reach the test (the network's events come apart from the page's). */
+const EVENTS_MS = 1_000;
 
 test('first load stays under 15 MB until the character is on screen', { tag: '@prod' }, async ({ page, baseURL }) => {
   await page.addInitScript(() => performance.setResourceTimingBufferSize(100_000));
@@ -24,10 +29,14 @@ test('first load stays under 15 MB until the character is on screen', { tag: '@p
   page.on('request', (request) => { if (request.url().startsWith(site)) started.push(request); });
   await playGateway(page);
   await enterFlaris(page);
-  const readyAt = await page.evaluate(() => performance.timeOrigin + performance.now());
+  const readyAt = (await page.evaluate(() => window.__client!.perf())).onScreenAt!;
+  expect(readyAt).not.toBeNull();
+  await page.waitForTimeout(EVENTS_MS);
 
-  const streams = started.filter((request) => request.resourceType() === 'media');
-  const counted = started.filter((request) => request.resourceType() !== 'media');
+  // both in ms since 1970: Playwright's `startTime` and the page's `timeOrigin + now()`
+  const before = started.filter((request) => request.timing().startTime < readyAt);
+  const streams = before.filter((request) => request.resourceType() === 'media');
+  const counted = before.filter((request) => request.resourceType() !== 'media');
   const sizes = await Promise.all(counted.map(async (request) => {
     const response = await request.response();
     if (response !== null) {
@@ -50,13 +59,14 @@ test('first load stays under 15 MB until the character is on screen', { tag: '@p
   const mib = (n: number): string => (n / 1048576).toFixed(2);
   const byKind = [...kinds].sort((a, b) => b[1] - a[1]).map(([kind, size]) => `${kind} ${mib(size)}`);
   test.info().annotations.push({ type: 'first load', description: `${bytes} bytes (${mib(bytes)} MiB) in ${urls.size} files` });
-  console.log(`first load: ${bytes} bytes (${mib(bytes)} MiB) in ${urls.size} files, ${streams.length} media streams not counted; MiB by kind: ${byKind.join(', ')}`);
+  console.log(`first load: ${bytes} bytes (${mib(bytes)} MiB) in ${urls.size} files, ${streams.length} media streams `
+    + `and ${started.length - before.length} requests after the first frame not counted; MiB by kind: ${byKind.join(', ')}`);
 
   const timed = await page.evaluate((at) => performance.getEntriesByType('resource')
     .filter((entry) => performance.timeOrigin + entry.startTime < at && entry.name.startsWith(location.origin + '/'))
     .filter((entry) => !['audio', 'video'].includes((entry as PerformanceResourceTiming).initiatorType))
     .map((entry) => entry.name), readyAt);
-  expect(timed.filter((name) => !urls.has(name)), 'files the page timed before ready() that the count missed').toEqual([]);
+  expect(timed.filter((name) => !urls.has(name)), 'files the page timed before the first frame that the count missed').toEqual([]);
   expect((await page.evaluate(() => window.__client!.perf())).errors).toEqual([]);
   expect(bytes).toBeLessThanOrEqual(BUDGET);
 });

@@ -21,6 +21,12 @@ export interface ClientStats extends SessionStats {
 export interface ClientPerf extends OverlaySnapshot {
   renderer: RendererCounts;
   loadedTiles: string[];
+  /**
+   * When the world was first drawn, the character on screen (`ready()`): `performance.timeOrigin + performance.now()`
+   * right after that frame, in ms since 1970, as Playwright's `request.timing().startTime`; null before. The first-load
+   * budget counts what was asked for before it.
+   */
+  onScreenAt: number | null;
 }
 
 /**

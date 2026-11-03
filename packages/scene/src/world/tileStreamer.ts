@@ -3,6 +3,18 @@
 // before the player gets near it. Everything further away is unloaded. Tiles are addressed `"x_y"`, x with web +x
 // and y with web -z (D3D +z), as the converter names them.
 //
+// Only the visible tiles are in the scene (Piece 6 M5, part B). Neuz draws the lands within `m_nVisibilityLand` of the
+// camera's land (CWorld::RenderTerrain, World3D.cpp:386-398, and its objects, :626-631), which is
+// `(int)( m_fFarPlane / ( MAP_SIZE * MPU ) )` (World.cpp:116) with `m_fFarPlane = 512` (World3D.cpp:50): 1, the 3 x 3
+// around it. The ring lies wholly past the far plane (Flaris' fog end, 400 m; a tile is 512 m), yet the whole-tile
+// bounding spheres of its meshes passed three.js' frustum test, and Flaris drew 24 draws and 265,000 triangles of it a
+// frame in the phone's view. Around the player's tile rather than the camera's: the same picture, since the far plane is
+// shorter than a tile. A ring tile's groups go into the scene when it becomes visible, and out when it goes back.
+//
+// The ring is not downloaded before the world is on screen: it waits for `startPreloading` (the client calls it the
+// frame after the world was first drawn, the viewer once its tiles are ready), and then for each update's visible tiles
+// to settle, so that the tiles in view never share the connection with it.
+//
 // A tile the world does not have, or whose download failed, becomes flat ground at height 0 and an error on the
 // overlay (global constraints: missing tile -> flat ground, never a hole).
 //
@@ -101,6 +113,12 @@ export class TileStreamer {
   private readonly radius: number;
   private center: TilePosition | null = null;
   private visible: string[] = [];
+  /** The ring of the last `update`. */
+  private preload: string[] = [];
+  /** `startPreloading` was called: the ring loads once each update's visible tiles have settled. */
+  private preloading = false;
+  /** Counts the waits for the visible tiles, so that only the latest one loads its ring. */
+  private generation = 0;
   /** One plane and one material for every flat tile. */
   private readonly flatGeometry: PlaneGeometry;
   private readonly flatMaterial = new MeshLambertMaterial({ color: 0x7a8a5a });
@@ -126,17 +144,30 @@ export class TileStreamer {
 
     const { visible, preload } = tilesInRange(center, this.radius, this.manifest.size);
     this.visible = visible;
+    this.preload = preload;
     const wanted = new Set([...visible, ...preload]);
     for (const [key, entry] of this.entries) {
       if (!wanted.has(key)) this.unload(entry);
     }
-    // visible first: the browser starts the downloads in the order they are asked for
-    for (const key of [...visible, ...preload]) {
+    for (const key of visible) {
       if (!this.entries.has(key)) this.load(key);
     }
+    // a ring tile that came into view goes into the scene, a visible one that went back to the ring out of it
+    for (const entry of this.entries.values()) this.place(entry);
+    this.preloadOnceSettled();
   }
 
-  /** The tiles whose ground is on screen. */
+  /**
+   * From now on, the ring around the player is downloaded once the visible tiles of each update have settled (at once
+   * for the current ring when they already have). Before the first call only the visible tiles are.
+   */
+  startPreloading(): void {
+    if (this.preloading) return;
+    this.preloading = true;
+    this.preloadOnceSettled();
+  }
+
+  /** The tiles whose ground is in: on screen, or (the ring) ready to be. */
   loaded(): string[] {
     return [...this.entries.values()].filter((entry) => entry.loaded).map((entry) => entry.key);
   }
@@ -168,7 +199,7 @@ export class TileStreamer {
     await Promise.all(pending);
   }
 
-  /** The number of tiles whose ground is on screen. */
+  /** The number of tiles whose ground is in (`loaded`). */
   count(): number {
     return this.loaded().length;
   }
@@ -179,6 +210,30 @@ export class TileStreamer {
     this.flatMaterial.dispose();
     this.center = null;
     this.visible = [];
+    this.preload = [];
+    this.generation++; // a wait still running loads nothing
+  }
+
+  /** Once the visible tiles of the last update have settled, the ring of that update, if preloading. */
+  private preloadOnceSettled(): void {
+    if (!this.preloading) return;
+    const generation = ++this.generation;
+    void this.ready().then(() => {
+      if (generation !== this.generation) return;
+      for (const key of this.preload) {
+        if (!this.entries.has(key)) this.load(key);
+      }
+    });
+  }
+
+  /** The tile's ground, objects and placeholder are in the scene while it is visible, and out of it otherwise. */
+  private place(entry: Entry): void {
+    const shown = this.visible.includes(entry.key);
+    for (const object of [entry.terrain?.group, entry.objects, entry.placeholder]) {
+      if (object === undefined || object === null) continue;
+      if (shown && object.parent !== this.scene) this.scene.add(object);
+      else if (!shown && object.parent === this.scene) this.scene.remove(object);
+    }
   }
 
   private load(key: string): void {
@@ -218,7 +273,7 @@ export class TileStreamer {
     entry.terrain = terrain;
     entry.bytes = terrain.gpuBytes();
     this.deps.overlay.addGpuBytes(entry.bytes);
-    this.scene.add(terrain.group);
+    this.place(entry);
 
     const ground = terrain.ready.then(() => {
       if (!entry.unloaded) entry.loaded = true;
@@ -226,7 +281,7 @@ export class TileStreamer {
     const objects = this.deps.objects.place(tile, this.manifest).then((group) => {
       if (entry.unloaded) return;
       entry.objects = group;
-      this.scene.add(group);
+      this.place(entry);
     });
     // the shapes keep `data`, not `tile`, whose light maps are let go of
     const shapes = this.deps.shapes?.place(data);
@@ -244,7 +299,7 @@ export class TileStreamer {
     // the plane is shared by every flat tile and is a few bytes: not counted
     entry.placeholder = mesh;
     entry.data = { x, y, heights: FLAT_HEIGHTS, objects: [] };
-    this.scene.add(mesh);
+    this.place(entry);
     entry.loaded = true;
   }
 

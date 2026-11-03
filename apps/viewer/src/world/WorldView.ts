@@ -270,6 +270,8 @@ export const worldView: ViewFactory = (ctx) => {
     const at: Vec3 = [player.x, 0, player.z];
     opened.focus(at);
     await Promise.all([opened.ready(), loadCharacter(opened)]);
+    // the ring around the view, once the tiles in it are in (the client waits for its first frame)
+    opened.startPreloading();
     height = opened.heightAt(at) ?? 0;
   };
 

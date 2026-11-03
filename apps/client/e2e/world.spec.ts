@@ -124,7 +124,9 @@ test.describe('the world screen against scripted servers', () => {
     const numbers = await perf();
     expect(numbers.triangles).toBeGreaterThan(0);
     expect(numbers.renderer.programs).toBeGreaterThan(0);
-    expect(numbers.loadedTiles).toHaveLength(25);
+    expect(numbers.onScreenAt).not.toBeNull();
+    // the ring around the 3 x 3 comes after the character is on screen (Piece 6 M5, part B)
+    await expect.poll(async () => (await perf()).loadedTiles.length, ON_FRAMES).toBe(25);
     expect(numbers.errors).toEqual([]);
   });
 
