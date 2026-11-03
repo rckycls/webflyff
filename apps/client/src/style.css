@@ -770,7 +770,9 @@ fieldset:disabled .btn {
   display: flex;
   flex-wrap: wrap;
   align-content: flex-start;
-  overflow: hidden;
+  overflow-x: hidden;
+  touch-action: pan-y;
+  scrollbar-width: thin;
   line-height: 18px;
 }
 
@@ -825,6 +827,22 @@ fieldset:disabled .btn {
 
 .hud-dialog[data-mobile-window] .dialog-text {
   line-height: 20px;
+}
+
+/* fingers (spec §3.1): taller keys and quest rows, and the next-page and answer buttons hit 8 px round their pictures */
+.hud-dialog[data-mobile-window] .dialog-keys {
+  line-height: 26px;
+}
+
+.hud-dialog[data-mobile-window] .dialog-quest-row {
+  min-height: 28px;
+}
+
+.hud-dialog[data-mobile-window] .dialog-enter::before,
+.hud-dialog[data-mobile-window] .dialog-answers > button::before {
+  content: '';
+  position: absolute;
+  inset: -8px;
 }
 
 /* fingers: 32 px items on a 34 px pitch (plan decision 6) */

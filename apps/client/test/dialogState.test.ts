@@ -113,3 +113,13 @@ describe('DialogState (CWndDialog, WndDialog.cpp)', () => {
     expect(s.apply({ kind: 'none' })).toBe('ignored');
   });
 });
+
+describe('DialogState: final review fixes', () => {
+  it('a list key press clears the page and the answers first (BeginText before the branch, WndDialog.cpp:379)', () => {
+    const s = state(NO_QUESTS, say('Will you?'), answer('__YES__', 'QUEST_BEGIN_YES'), newQuest('A', 'QUEST_BEGIN', 1));
+    expect(s.visibleAnswers).toHaveLength(1);
+    expect(s.pressKey(0, 0)).toBeNull();
+    expect([s.list, s.pages, s.answers, s.visibleAnswers]).toEqual(['new', [], [], []]);
+    expect(s.pressAnswer(0, 2000)).toBeNull();
+  });
+});

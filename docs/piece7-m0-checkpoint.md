@@ -69,15 +69,46 @@ Rulings made while building (from the ledger):
 - A drop during the dialogue is refused silently.
 - Trade keeps the old vendorType and 32-unit rules.
 
+## Final review
+
+A fresh reviewer read the whole branch and found nothing Critical. One fix pass, each fix test-first:
+- **A quest list showed over the last page's Yes / OK.** Pressing **New Quest** now clears the page and the answers
+  first, as `BeginText` does before the branch (WndDialog.cpp:379). Before, the Yes button stayed live over the list and
+  could accept a quest by accident.
+- **NPCs whose only entry the browser can't open** (the hair shop, the bank-only NPC, a shop of the special kind, a
+  teleporter with no destinations) did nothing at all. They now show their menu with that entry greyed.
+- **The menu stayed open when its NPC left or died.** It now closes, as the dialogue does.
+- **A long menu could run off a short phone's screen.** It is now kept inside the screen, 4 px from the edges.
+- **The keys area cut off a fourth row.** It now scrolls.
+- **Taps:** a tap on the text turns the page, as the spec asks. On phones the keys and quest rows are taller, and the
+  next and answer buttons hit 8 px round their pictures.
+- **The checklist:** step 7 could not pass, because the open dialogue lets nobody move (it is modal, as in Neuz). It now
+  checks the menu. Steps 10 (one greyed entry) and 11 (Benku's music on Dialog) are added.
+- **`world.spec.ts`:** its mover-selection test now closes Julia's re-opened menu with Escape before it taps the ground.
+  On a short phone the bigger menu covers that spot.
+
+Left as they are (minor, for later):
+- the refusal message `TID_GAME_DIALOGNODROPITEM` (the case can hardly be reached);
+- the no-Dialog-while-a-shop-is-open guard, which copies a misreading: Neuz's guard is about the player's own private
+  shop window. Owner to decide.
+- a key that cannot be encoded throws inside its click;
+- `$` in a key's tooltip text;
+- the quest row's space before `]` (M1 will show it);
+- the plain answers' colour (#505050 in Neuz);
+- the menu's text lookup on each tap;
+- the hard-coded "Conversation" and "Next".
+
 ## Evidence (this PC)
 
-- `npm test`: 165 files, 3,164 passed, 8 skipped.
+- `npm test`: 165 files, 3,170 passed, 8 skipped (after the review fixes).
 - `npm run typecheck`: exit 0.
 - Corpus, with `FLYFF_CLIENT` set:
   - `tools/convert/test/uiStage.corpus.test.ts` and `packages/formats/test/gameData.corpus.test.ts`: 24 passed;
   - every NPC picture is written, and Julia's is 200 × 240.
-- Browser, through the port-5175 config, chromium and phone: `dialogue.spec.ts`, `talking.spec.ts` and
-  `navigation.spec.ts`, 8 passed.
+- Browser, through the port-5175 config, chromium and phone, after the review fixes:
+  - `dialogue.spec.ts`, `talking.spec.ts`, `navigation.spec.ts` and `world.spec.ts`: 65 passed and 1 failed, the
+    phone's mover-selection test;
+  - that test, fixed: 2 passed.
 - Convert into piece7's `dist/assets`:
   - `--only "WndDialogEx*,wndButtEnter*,QuestUiPaper*,char_*,data"`: 98 ok, 82 warn, 0 failed;
   - `--only "char-*"`: 1 ok;
@@ -87,5 +118,5 @@ Rulings made while building (from the ledger):
 
 - The owner's device checklist (PC, Android phone, iPhone) and the full runs: `npm run test:e2e:client`,
   `npm run test:corpus`.
-- The final whole-branch review.
+- (The final whole-branch review is done; see above.)
 - Piece 6 is not merged. Once it is, `piece7` moves onto `main`.

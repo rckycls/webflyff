@@ -1290,10 +1290,12 @@ export class WorldScreen {
     this.taskBar!.update(this.own, this.data!);
     this.nearbyItems?.update(world.groundItems, self?.act.body.pos ?? null);
     if (this.own) this.inventoryWindow?.update(this.own);
-    // the dialogue goes with its NPC or when the player moves; the menu when the player moves (WndWorld.cpp:8052-8081)
+    // the dialogue and the menu go with their NPC or when the player moves (WndWorld.cpp:8052-8081)
     const dialogNpc = this.dialog?.npcId ?? null;
     if (dialogNpc !== null && !dialogueStays(world.movers.get(dialogNpc), self)) this.dialog!.close();
-    if (this.moverMenu?.isOpen === true && !ownStands(self)) this.moverMenu.close();
+    const menuNpc = this.moverMenu?.npcId ?? null;
+    if (this.moverMenu?.isOpen === true &&
+      (menuNpc === null ? !ownStands(self) : !dialogueStays(world.movers.get(menuNpc), self))) this.moverMenu.close();
     this.shopWindow?.update();
     this.teleporter?.update();
     if (this.worldMap?.isOpen === true) this.worldMap.update(this.mapView());
@@ -1544,16 +1546,16 @@ export class WorldScreen {
     }
     this.stopOwnMover();
     const data = this.data!.npcs.get(npc.added.npc!.characterKey.toLowerCase());
-    const sole = soleEntry(data);
+    // the base job is the Vagrant's (CMover::IsBaseJob)
+    const entries = npcMenuEntries(data, this.data!.texts, (this.own?.job ?? 0) === 0);
+    const sole = soleEntry(data, entries);
     if (sole !== null) {
       this.chooseNpcEntry(id, sole);
       return;
     }
     const at = this.menuPoint(id);
-    if (at === null) return;
-    // the base job is the Vagrant's (CMover::IsBaseJob)
-    const entries = npcMenuEntries(data, this.data!.texts, (this.own?.job ?? 0) === 0);
-    this.moverMenu!.open(entries, at, (entry) => this.chooseNpcEntry(id, entry));
+    if (at === null || entries.length === 0) return;
+    this.moverMenu!.open(entries, at, (entry) => this.chooseNpcEntry(id, entry), id);
   }
 
   /** The right and top of the NPC's bound rect (`GetBoundRect`, WndWorld.cpp:2661-2701), in the HUD layer's pixels. */

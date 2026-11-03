@@ -36,11 +36,19 @@ describe('npcMenuEntries (CWndWorld::ShowMoverMenu, WndWorld.cpp:6649-6684)', ()
   });
 
   it('one entry or none runs at once', () => {
-    expect(soleEntry({ key: 't', name: 'T', menus: [146] })).toBe(146);
-    expect(soleEntry({ key: 't', name: 'T', menus: [] })).toBe(0);
-    expect(soleEntry(undefined)).toBe(0);
-    expect(soleEntry({ key: 't', name: 'T', menus: [0, 2] })).toBeNull();
+    const sole = (npc: WebNpc | undefined) => soleEntry(npc, npcMenuEntries(npc, TEXTS, false));
+    expect(sole({ key: 't', name: 'T', menus: [146], teleports: [{ x: 1, z: 2 }] })).toBe(146);
+    expect(sole({ key: 't', name: 'T', menus: [] })).toBe(0);
+    expect(sole(undefined)).toBe(0);
+    expect(sole({ key: 't', name: 'T', menus: [0, 2] })).toBeNull();
     expect(MENU_RANGE).toBe(20);
+  });
+
+  it('a sole entry the browser cannot open shows the menu with it greyed instead', () => {
+    const sole = (npc: WebNpc) => soleEntry(npc, npcMenuEntries(npc, TEXTS, false));
+    expect(sole({ key: 'MaFl_InstantBank', name: 'Bank', menus: [9] })).toBeNull();
+    expect(sole({ key: 't', name: 'T', menus: [146] })).toBeNull(); // a teleporter with no destinations
+    expect(sole({ key: 't', name: 'T', menus: [2], vendorType: 1 })).toBeNull();
   });
 });
 
@@ -69,6 +77,29 @@ describe('MoverMenu (CWndMenu, WndControl.cpp:3337-3630)', () => {
     expect(choose).toHaveBeenCalledTimes(1);
     expect(choose).toHaveBeenCalledWith(2);
     expect(menu.isOpen).toBe(false);
+  });
+
+  it('remembers the NPC it was opened for until it closes', () => {
+    const menu = make();
+    menu.open(npcMenuEntries(JULIA, TEXTS, false), { x: 0, y: 0 }, vi.fn(), 9002);
+    expect(menu.npcId).toBe(9002);
+    menu.close();
+    expect(menu.npcId).toBeNull();
+  });
+
+  it('stays inside its layer: pushed back from the right and bottom edges, 4 px in', () => {
+    const layer = document.createElement('div');
+    Object.defineProperties(layer, { clientWidth: { value: 300 }, clientHeight: { value: 200 } });
+    document.body.append(layer);
+    const menu = new MoverMenu(document);
+    menus.push(menu);
+    layer.append(menu.element);
+    Object.defineProperties(menu.element, { offsetWidth: { value: 100 }, offsetHeight: { value: 150 } });
+    menu.open(npcMenuEntries(JULIA, TEXTS, false), { x: 280, y: 120 }, vi.fn());
+    expect([menu.element.style.left, menu.element.style.top]).toEqual(['196px', '46px']);
+    menu.open(npcMenuEntries(JULIA, TEXTS, false), { x: -20, y: -5 }, vi.fn());
+    expect([menu.element.style.left, menu.element.style.top]).toEqual(['4px', '4px']);
+    layer.remove();
   });
 
   it('a press outside or Escape closes it; no listener stays after close or dispose', () => {

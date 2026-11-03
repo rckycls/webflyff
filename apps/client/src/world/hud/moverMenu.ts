@@ -41,15 +41,25 @@ export function npcMenuEntries(npc: WebNpc | undefined, texts: Texts, ownIsBaseJ
     }));
 }
 
-/** OnCommand( nMenu ) at once when the NPC has one entry or none (WndWorld.cpp:6630-6645, :6688); null otherwise. */
-export function soleEntry(npc: WebNpc | undefined): number | null {
+/**
+ * OnCommand( nMenu ) at once when the NPC has one entry or none (WndWorld.cpp:6630-6645, :6688); null otherwise, and
+ * null too when that one entry is one the browser cannot open (`entries`, `npcMenuEntries`'s), so that its menu shows
+ * it greyed rather than a press doing nothing.
+ */
+export function soleEntry(npc: WebNpc | undefined, entries: readonly MenuEntry[]): number | null {
   const ids = [...new Set(npc?.menus ?? [])];
-  return ids.length <= 1 ? ids[0] ?? MMI.DIALOG : null;
+  if (ids.length > 1) return null;
+  if (ids.length === 0) return MMI.DIALOG;
+  return entries.find((entry) => entry.id === ids[0])?.enabled === true ? ids[0]! : null;
 }
+
+/** How far the menu stays from its layer's edges. */
+const EDGE = 4;
 
 export class MoverMenu {
   readonly element: HTMLElement;
   private choose: ((id: number) => void) | null = null;
+  private npc: number | null = null;
 
   constructor(private readonly doc: Document = document) {
     this.element = doc.createElement('div');
@@ -62,7 +72,13 @@ export class MoverMenu {
     return !this.element.hidden;
   }
 
-  open(entries: readonly MenuEntry[], at: { x: number; y: number }, choose: (id: number) => void): void {
+  /** The NPC the open menu is for, or null. */
+  get npcId(): number | null {
+    return this.npc;
+  }
+
+  /** Opens it at `at` (kept inside its layer) for the NPC `npcId`; `choose` hears an enabled entry's id. */
+  open(entries: readonly MenuEntry[], at: { x: number; y: number }, choose: (id: number) => void, npcId: number | null = null): void {
     this.close();
     this.element.replaceChildren(...entries.map((entry) => {
       const button = this.doc.createElement('button');
@@ -80,10 +96,15 @@ export class MoverMenu {
       });
       return button;
     }));
-    this.element.style.left = `${at.x}px`;
-    this.element.style.top = `${at.y}px`;
     this.choose = choose;
+    this.npc = npcId;
     this.element.hidden = false;
+    // on a small screen a long menu would run off it: pushed back inside the layer, once it has a size
+    const layer = this.element.parentElement;
+    const inside = (value: number, room: number, size: number): number =>
+      room > 0 ? Math.max(EDGE, Math.min(value, room - size - EDGE)) : value;
+    this.element.style.left = `${inside(at.x, layer?.clientWidth ?? 0, this.element.offsetWidth)}px`;
+    this.element.style.top = `${inside(at.y, layer?.clientHeight ?? 0, this.element.offsetHeight)}px`;
     this.doc.addEventListener('pointerdown', this.outside, true);
     this.doc.addEventListener('keydown', this.escape, true);
   }
@@ -93,6 +114,7 @@ export class MoverMenu {
     this.element.hidden = true;
     this.element.replaceChildren();
     this.choose = null;
+    this.npc = null;
     this.doc.removeEventListener('pointerdown', this.outside, true);
     this.doc.removeEventListener('keydown', this.escape, true);
   }

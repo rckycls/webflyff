@@ -23,7 +23,7 @@
 //
 // What the server sends is shown as text. The rules are DialogState's. Escape closes it (plan decision 4): its own key
 // listener comes before the modal backdrop's, which holds every other key. On a touch phone it is fitted whole and
-// centred (decision 6).
+// centred (decision 6), with larger hit areas (style.css). A tap on the text turns the page, as the spec asks (§3.1).
 
 import type { WebNpc } from '@flyffweb/formats';
 import type { NpcAction } from '@flyffweb/protocol';
@@ -115,7 +115,14 @@ export class DialogWindow {
     this.title = div('dialog-title', TITLE_RECT);
     this.text = div('dialog-text', TEXT_RECT);
     this.text.style.overflowY = 'auto';
+    // a tap on the text turns the page too (spec §3.1; Neuz has only the button): not one on a link or a button in it
+    this.text.addEventListener('click', (event) => {
+      if ((event.target as Element | null)?.closest('button') !== null || !this.state.hasNextPage || this.state.list !== null) return;
+      this.state.nextPage();
+      this.render();
+    });
     this.keys = div('dialog-keys', KEYS_RECT);
+    this.keys.style.overflowY = 'auto'; // a fourth row of keys scrolls rather than being cut off
     this.answers = doc.createElement('div');
     this.answers.className = 'dialog-answers';
     this.enter = pictureButton(doc, art, 'wndButtEnter.bmp', ENTER_RECT, ENTER_RECT.width, () => {

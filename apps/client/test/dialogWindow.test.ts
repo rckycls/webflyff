@@ -134,3 +134,24 @@ describe('DialogWindow (APP_DIALOG_EX, CWndDialog)', () => {
     expect(dialog.element.isConnected).toBe(false);
   });
 });
+
+describe('DialogWindow: final review fixes', () => {
+  it('a tap on the text turns the page (spec §3.1); a tap on a link does not', () => {
+    const { dialog, send, q } = make();
+    dialog.receive(say('first [go][k]'));
+    dialog.receive(say('second'));
+    q<HTMLButtonElement>('button.dialog-link')!.click();
+    expect(send).toHaveBeenCalledTimes(1); // the link sent, and the page went with BeginText
+    dialog.receive(say('one'));
+    dialog.receive(say('two'));
+    q('.dialog-text')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(q('.dialog-text')!.textContent).toContain('two');
+    q('.dialog-text')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(q('.dialog-text')!.textContent).toContain('two'); // the last page stays
+  });
+
+  it('the keys area scrolls when the keys outgrow it', () => {
+    const { q } = make();
+    expect(q('.dialog-keys')!.style.overflowY).toBe('auto');
+  });
+});

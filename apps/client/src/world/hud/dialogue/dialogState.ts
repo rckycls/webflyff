@@ -116,6 +116,7 @@ export class DialogState {
     if (key === undefined || this.locked(now)) return null;
     this.selectedKey = index;
     this.title = key.word;
+    this.beginText(); // before the branch, so a list never shows over the last page's answers (:379)
     const list = key.word === this.words.newQuest && this.newQuests.length > 0 ? 'new'
       : key.word === this.words.currentQuest && this.currentQuests.length > 0 ? 'current' : null;
     if (list !== null) {
@@ -151,11 +152,16 @@ export class DialogState {
     return now < this.lockedUntil;
   }
 
-  /** BeginText, then RunScript and its timer. */
-  private send(button: { key: string; param: number; quest: number }, now: number): DialogRequest {
+  /** `CWndDialog::BeginText` (:578-594): the pages, the links and the answers go. */
+  private beginText(): void {
     this.pages = [];
     this.page = 0;
     this.answers = [];
+  }
+
+  /** BeginText, then RunScript and its timer. */
+  private send(button: { key: string; param: number; quest: number }, now: number): DialogRequest {
+    this.beginText();
     this.lockedUntil = now + REQUEST_LOCK_MS;
     return { key: button.key, param: button.param, quest: button.quest };
   }

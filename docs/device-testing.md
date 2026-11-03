@@ -1003,7 +1003,7 @@ If something else fails, send me the lines from the first `failed` down to the e
 
 ## Piece 7, milestone 0: the classic NPC dialogue
 
-Talking to an NPC now works as in the Windows client. A tap on an NPC within 20 steps opens its menu beside it, or runs its only entry at once. The menu is a white box listing the NPC's entries in the game's order, with entries the browser cannot do yet greyed. **Dialog** opens the 512 × 320 dialogue window with the NPC's picture on the left, the text page by page with the arrow button, the keyword buttons below, and Yes / No / OK buttons on the last page. **Trade** and **Teleport** open the shop and the teleporter as before. A tap on an NPC farther away walks you to it, and a second tap opens the menu. The dialogue closes when you move, when the NPC leaves, on its close button, on Escape, or when the NPC ends the talk. Quest lines show in the dialogue (**New Quest**, **Quests in Progress**), but taking and handing in quests is milestone 1.
+Talking to an NPC now works as in the Windows client. A tap on an NPC within 20 steps opens its menu beside it, or runs its only entry at once. The menu is a white box listing the NPC's entries in the game's order, with entries the browser cannot do yet greyed. **Dialog** opens the 512 × 320 dialogue window with the NPC's picture on the left, the text page by page with the arrow button, the keyword buttons below, and Yes / No / OK buttons on the last page. **Trade** and **Teleport** open the shop and the teleporter as before. A tap on an NPC farther away walks you to it, and a second tap opens the menu. While the dialogue is open you cannot move, as in the Windows client (it holds the keys and hides the joystick); it closes when the NPC leaves, on its close button, on Escape, or when the NPC ends the talk. A tap on the text also turns the page. Quest lines show in the dialogue (**New Quest**, **Quests in Progress**), but taking and handing in quests is milestone 1.
 
 **What the test character needs:** any job, level 1 to 15, in Flaris, with at least one item in the inventory to drop, and enough penya for one shop item.
 
@@ -1019,21 +1019,23 @@ npm run dev:client
 
 1. **Julia's menu.** Tap Julia (Flaris, by the square). Success: a white menu at her right shoulder: Dialog, Trade, then Deposit, Guild Ranking, Guild Duel ranking, Overall guild ranking and Enter quiz event greyed. No Guild Warehouse.
 2. **Dialog.** Tap **Dialog**. Success: the dialogue window opens near the top (centred on the phone), with Julia's picture on the left and the title "Dialog". Her greeting shows, with **Introduction** and **Farewell** below. If she has a quest for you, **New Quest** is on its own row. A long text scrolls inside its box.
-3. **Pages and keys.** Tap **Introduction**. Success: her answer replaces the text, and the title reads "Introduction". Where the text has more pages, the small arrow at the right moves on, and Yes / No / OK buttons show only on the last page. Tapping two keys quickly sends only the first.
+3. **Pages and keys.** Tap **Introduction**. Success: her answer replaces the text, and the title reads "Introduction". Where the text has more pages, the small arrow at the right (or a tap on the text) moves on, and Yes / No / OK buttons show only on the last page. Tapping two keys quickly sends only the first. If she offers a quest with Yes / No, tap **New Quest**: the list shows, and the Yes / No buttons are gone.
 4. **The shop from the menu.** Close the dialogue, tap Luda (the shop next to Julia), and choose **Trade**. Success: her shop opens as before. Buy one item.
 5. **The teleporter.** Tap the Flaris teleporter NPC and choose **Teleport**. Success: the map of destinations opens as before.
 6. **Walking up.** Stand about 30 steps from an NPC and tap it. Success: no menu yet. You walk up to it, and a second tap opens the menu.
-7. **Moving closes it.** Open a dialogue, then press **W** (or push the joystick). Success: the window closes.
+7. **Moving closes the menu.** Tap Julia to open her menu, then press **W** (or push the joystick). Success: the menu closes. (The open dialogue does not let you move at all, as in the Windows client.)
 8. **After a drop.** Drop an item, then at once tap an NPC and choose **Dialog**. Success: nothing opens for 3 seconds. After that it opens.
 9. **Escape** (PC only). Open the menu and press Escape: it closes. Open the dialogue and press Escape: it closes.
+10. **An NPC with one entry the browser cannot open.** Tap the Flaris hair shop NPC (or the bank-only NPC). Success: a menu with that one entry, greyed (for example "Beauty Shop" or "Deposit"); tapping it does nothing.
+11. **An NPC's music.** Tap Benku (MaFl_Benku, in Flaris) and choose **Dialog**, with the music on (Start → Option). Success: his own track starts when the dialogue opens, not before. If you cannot find him, write `n/a`.
 
 ## Results
 
-| Device | Browser | 1. Menu | 2. Dialog | 3. Pages | 4. Shop | 5. Teleporter | 6. Walk up | 7. Moving | 8. Drop | 9. Escape | Notes |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| PC | Chrome | | | | | | | | | | |
-| Android phone | Chrome | | | | | | | | | n/a | |
-| iPhone | Safari | | | | | | | | | n/a | |
+| Device | Browser | 1. Menu | 2. Dialog | 3. Pages | 4. Shop | 5. Teleporter | 6. Walk up | 7. Moving | 8. Drop | 9. Escape | 10. One entry | 11. Music | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| PC | Chrome | | | | | | | | | | | | |
+| Android phone | Chrome | | | | | | | | | n/a | | | |
+| iPhone | Safari | | | | | | | | | n/a | | | |
 
 ## Pass and fail
 
