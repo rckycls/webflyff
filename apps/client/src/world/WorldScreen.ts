@@ -848,7 +848,7 @@ export class WorldScreen {
     inventoryWindow.onShopClose = () => this.shopWindow?.frame.close();
     this.teleporter = new TeleporterWindow(this.hudArt!, id => this.canTalk(id), (key, index) => session.sendTeleporter(key, index), doc);
     this.npcDialog = new NpcDialog(this.hudArt!, (id) => this.canTalk(id),
-      (id, key, param, quest) => session.sendNpcDialog(id, key, param, quest),
+      (id, key, param, quest) => session.sendNpcDialog(id, key, param, quest, this.world?.self()?.objectId ?? 0),
       (id) => {
         const npc = this.world!.movers.get(id)!;
         this.shopWindow!.open(id, npc.name, this.data!.npcs.get(npc.added.npc!.characterKey.toLowerCase())); this.npcDialog!.frame.close();

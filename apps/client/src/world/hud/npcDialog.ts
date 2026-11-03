@@ -76,8 +76,9 @@ export class NpcDialog {
         break;
       case 'clear': this.keys.replaceChildren(); break;
       case 'exit': this.frame.close(); break;
-      case 'unsupported': this.text.textContent = 'This NPC action is not available yet.'; break;
-      case 'end': break;
+      case 'newQuest': case 'currentQuest': case 'queryName':
+        this.text.textContent = 'This NPC action is not available yet.'; break;
+      case 'none': case 'initStat': case 'navigator': case 'removeNavigator': break;
     }
   }
   private request(key: string, param: number, quest: number): void {

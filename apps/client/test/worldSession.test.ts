@@ -160,12 +160,15 @@ describe('WorldSession, entering', () => {
     session.sendChat('nearby', 'Still connected');
     const r = new ArReader(cache.sent.at(-1)!); r.bytes(8); expect(r.string(1024)).toBe('Still connected');
   });
-  it('lets the server fill the script player object ID rather than sending the persistent character ID', async () => {
+  it('sends the dialogue opening with an empty key, and a request with the NPC and the player object', async () => {
     const { cache, session } = await playing();
-    session.sendNpcDialog(7, '#init');
+    session.sendNpcDialogOpen(7);
+    const open = new ArReader(cache.sent.at(-1)!); open.bytes(8);
+    expect([open.u32(), open.i32(), open.i32(), open.i32(), open.i32(), open.i32()]).toEqual([7, 0, 0, 0, 0, 0]); open.expectEnd();
+    session.sendNpcDialog(7, 'Introduction', 0, 0, 9000);
     const r = new ArReader(cache.sent.at(-1)!); r.bytes(8);
-    expect(r.u32()).toBe(7); expect(r.string(256)).toBe('#init');
-    expect([r.i32(), r.i32(), r.i32(), r.i32()]).toEqual([0, 0, 7, 0]); r.expectEnd();
+    expect(r.u32()).toBe(7); expect(r.string(256)).toBe('Introduction');
+    expect([r.i32(), r.i32(), r.i32(), r.i32()]).toEqual([0, 0, 7, 9000]); r.expectEnd();
   });
   it('waits 1 s after the cache channel opens, then sends PRE_JOIN', async () => {
     const { net, clock, login, cache, events } = await started();
