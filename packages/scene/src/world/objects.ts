@@ -103,8 +103,15 @@ interface ModelOnTile {
   positions: Float32Array;
   /** The view distance (OBJECT_DISTANCES); Infinity without the manifest's `modelDistant`. */
   limit: number;
+  /** The objects' extent on the ground: web x and z from `minX`, `minZ` to `maxX`, `maxZ`. */
+  minX: number;
+  minZ: number;
+  maxX: number;
+  maxZ: number;
   /** Which objects were in range at the last `update`; null before the first. */
   inRange: Uint8Array | null;
+  /** How many of them. */
+  kept: number;
 }
 
 interface TileRecord {
@@ -193,6 +200,16 @@ function keepInRange(model: ModelOnTile, camera: Vec3): boolean {
   const objects = positions.length / 3;
   let changed = model.inRange === null;
   const inRange = (model.inRange ??= new Uint8Array(objects));
+  // every object farther on the ground alone than the limit (the ring, most of the 3 x 3): none is looked at
+  const offX = Math.max(model.minX - camera[0], 0, camera[0] - model.maxX);
+  const offZ = Math.max(model.minZ - camera[2], 0, camera[2] - model.maxZ);
+  if (offX * offX + offZ * offZ > limit * limit) {
+    if (!changed && model.kept === 0) return false;
+    inRange.fill(0);
+    model.kept = 0;
+    for (const mesh of model.meshes.flat()) mesh.count = 0;
+    return true;
+  }
   let count = 0;
   for (let i = 0; i < objects; i++) {
     const dx = positions[i * 3]! - camera[0];
@@ -207,12 +224,15 @@ function keepInRange(model: ModelOnTile, camera: Vec3): boolean {
     count += inside;
   }
   if (!changed) return false;
+  model.kept = count;
   model.meshes.flat().forEach((mesh, m) => {
     const placed = model.placed[m]!;
     const array = mesh.instanceMatrix.array as Float32Array;
     let at = 0;
     for (let i = 0; i < objects; i++) {
-      if (inRange[i] === 1) array.set(placed.subarray(i * 16, i * 16 + 16), 16 * at++);
+      if (inRange[i] !== 1) continue;
+      for (let k = 0; k < 16; k++) array[16 * at + k] = placed[16 * i + k]!;
+      at++;
     }
     mesh.count = count;
     mesh.instanceMatrix.needsUpdate = true;
@@ -226,6 +246,9 @@ export class ObjectPool {
   private readonly tiles = new Map<string, TileRecord>();
   /** Models whose template has arrived and not been disposed. */
   private loadedModels = 0;
+  /** The camera of the last `update`, and whether a tile was placed since: a still camera over the same tiles changes nothing. */
+  private readonly lastCamera: [number, number, number] = [NaN, NaN, NaN];
+  private placedSince = false;
 
   constructor(
     private readonly store: Pick<AssetStore, 'bytes'>,
@@ -286,17 +309,25 @@ export class ObjectPool {
       const meshes = template.levels.map((parts) => parts.map((part) => instanced(part, matrices)));
       for (const level of meshes) for (const mesh of level) record.group.add(mesh);
       record.bytes += meshes.flat().length * matrices.length * INSTANCE_BYTES;
+      const xs = matrices.map(({ elements: e }) => e[12]!);
+      const zs = matrices.map(({ elements: e }) => e[14]!);
       const model: ModelOnTile = {
         meshes,
         switching: meshes.filter((level) => level.length > 0).length > 1,
         placed: meshes.flat().map((mesh) => (mesh.instanceMatrix.array as Float32Array).slice()),
         positions: Float32Array.from(matrices.flatMap(({ elements: e }) => [e[12]!, e[13]!, e[14]!])),
         limit: viewDistance(manifest.modelDistant?.[slot]),
+        minX: Math.min(...xs),
+        minZ: Math.min(...zs),
+        maxX: Math.max(...xs),
+        maxZ: Math.max(...zs),
         inRange: null,
+        kept: matrices.length,
       };
       record.models.push(model);
       if (model.switching) showLevel(model, 0);
     }
+    this.placedSince = true;
     this.overlay.addGpuBytes(record.bytes);
     return record.group;
   }
@@ -306,6 +337,10 @@ export class ObjectPool {
    * The instance buffers are rewritten only for a model whose set in range changed.
    */
   update(camera: Vec3): void {
+    const last = this.lastCamera;
+    if (!this.placedSince && last[0] === camera[0] && last[1] === camera[1] && last[2] === camera[2]) return;
+    [last[0], last[1], last[2]] = camera;
+    this.placedSince = false;
     for (const record of this.tiles.values()) {
       const dx = Math.max(record.minX - camera[0], 0, camera[0] - (record.minX + record.side));
       const dz = Math.max(record.minZ - camera[2], 0, camera[2] - (record.minZ + record.side));

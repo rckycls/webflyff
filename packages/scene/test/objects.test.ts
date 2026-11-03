@@ -301,6 +301,25 @@ describe('ObjectPool', () => {
       expect([box!.count, box!.visible]).toEqual([2, true]);
     });
 
+    it('culls the objects of a tile placed while the camera stands still', async () => {
+      const { pool } = setup();
+      await pool.place(makeTile(0, 0, [at(BOX, 100, 0, -150)]), viewed);
+      pool.update([100, 0, -100]);
+      const later = await pool.place(makeTile(1, 0, [at(BOX, 600, 0, -150)]), viewed);
+      pool.update([100, 0, -100]); // the same camera: the new tile is still culled
+      expect(instancesOf(later)[0]!.count).toBe(0);
+    });
+
+    it('shows the objects of a far tile again when the camera comes back', async () => {
+      const { pool } = setup();
+      const group = await pool.place(makeTile(0, 0, [at(BOX, 100, 0, -150)]), viewed);
+      pool.update([2000, 0, -150]);
+      pool.update([2100, 0, -150]);
+      expect(instancesOf(group)[0]!.count).toBe(0);
+      pool.update([100, 0, -100]);
+      expect([instancesOf(group)[0]!.count, instancesOf(group)[0]!.visible]).toEqual([1, true]);
+    });
+
     it("rewrites a model's instances only when the set in range changes", async () => {
       const { pool } = setup();
       const group = await pool.place(makeTile(0, 0, [at(BOX, 100, 0, -150), at(BOX, 100, 0, -170)]), viewed);
