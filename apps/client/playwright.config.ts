@@ -10,7 +10,7 @@
 // the `pictures` project, on the desktop) draw with SwiftShader (software WebGL), so that their baselines do not depend
 // on the GPU: one baseline per test file and name, for every platform. SwiftShader drew every test before; on the owner's
 // laptop (a 15 W Ryzen 7 5700U) it kept every core busy, the boost gave out after about 20 s, and a world of ~0.9 million
-// triangles a frame then drew at 1-2 fps even alone: screenshots and frame waits timed out (the M5 ledger's probes). On
+// triangles a frame then drew at 1-2 fps even alone: screenshots and frame waits timed out (docs/piece6-m5-checkpoint.md). On
 // its GPU the same four worlds draw at 20-24 fps. `E2E_SOFTWARE_GL=1` draws every test with SwiftShader again, for a
 // machine with no usable GPU.
 

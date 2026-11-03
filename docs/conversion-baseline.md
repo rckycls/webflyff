@@ -260,16 +260,16 @@ The test draws on the PC's GPU (Piece 6 M5, Task 3). Memory is the client's own 
 
 ## Client first load (Piece 6, milestone 5)
 
-What a device downloads before the character is on screen, measured by `apps/client/e2e/firstLoad.spec.ts` (`npm run test:firstload:client`), with a budget of 15 MB.
+What a device downloads before the character is on screen, measured by `apps/client/e2e/firstLoad.spec.ts` (`npm run test:firstload:client`), with a budget of 15 MiB (15,728,640 bytes), as the viewer's.
 - **The build:** a production build with the test hooks, in `node_modules/.cache/client-firstload`, served by `vite preview`.
-- **What counts:** the compressed bytes of every request finished by `ready()`, workers' included.
+- **What counts:** every request to the site that the page or its workers started before `ready()`, at its whole compressed body, waited for if it was still coming.
+- **What does not count:** media streams. The music streams while it plays (spec §9). Whether a track's request had ended at `ready()` was a race worth about 2 MiB.
+- **The check that nothing is missed:** every file the page's Resource Timing has from before `ready()` must be among those counted. Resource Timing itself misses some: the lobby's 1.14 MiB background picture `screen.png` gets no entry, so it read about 1 MiB low.
 
-| Run | Date | Bytes | By kind | Result |
+| Run | Date | Bytes | By kind (MiB) | Result |
 | --- | --- | --- | --- | --- |
-| Builder's three runs | 2026-11-03 | 17.1, 19.4 and 17.2 MB (decimal: 17,108,553 / 19,382,569 / 17,154,345 bytes) | textures 8.6 MB, models 2.5, worlds 1.5, ui 1.4, Basis transcoder 0.5, minimaps 0.3, client script 0.3, `index.json` 0.3, data 0.3, sound 0.3, collision 0.1, music 0.1 (the third run; the spread between runs is the music streaming) | **over the budget**: Part B's to bring down, textures first |
+| Builder's three runs | 2026-11-03 | 17,065,089, 17,099,606 and 17,099,606 bytes (16.27-16.31 MiB) | textures 8.60, models 2.51, worlds 1.52, ui 1.45, Basis transcoder 0.50, minimaps 0.34, then the client script, `index.json`, data, sound and collision at 0.1-0.3 each | **over the budget by 1.31 MiB**: Part B's to bring down, textures first |
 | Owner's run | | | | |
-
-(The MB in the "By kind" column are binary, 1 MiB.)
 
 ## Client performance per device (Piece 6, milestone 5)
 

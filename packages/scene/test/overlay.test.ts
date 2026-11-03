@@ -208,6 +208,15 @@ describe('Overlay placement', () => {
 });
 
 describe('Overlay render counts and frame times (Piece 6 M5)', () => {
+  it('shows no draws line, and null counts, until it is given render counts (the viewer never gives them)', () => {
+    vi.stubGlobal('performance', {});
+    const { overlay, root } = overlayOn();
+    overlay.frame(0.3);
+
+    expect(overlay.snapshot()).toMatchObject({ drawCalls: null, triangles: null });
+    expect(root.find('pre').textContent).not.toContain('draws');
+  });
+
   it('shows the draw calls and triangles it is given', () => {
     vi.stubGlobal('performance', {});
     const { overlay, root } = overlayOn();

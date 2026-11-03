@@ -16,9 +16,12 @@ export interface OverlaySnapshot {
   tiles: number;
   models: number;
   textures: number;
-  /** The world frame's draw calls and triangles (`renderer.info.render` right after its render), as the caller gives them. */
-  drawCalls: number;
-  triangles: number;
+  /**
+   * The world frame's draw calls and triangles (`renderer.info.render` right after its render), as the caller gives them;
+   * null (and no line) until it gives them, as in the viewer, which does not.
+   */
+  drawCalls: number | null;
+  triangles: number | null;
   device: string;
   /** The latest errors, oldest first (at most 100). */
   errors: string[];
@@ -64,7 +67,8 @@ export class Overlay {
   private nextFrame = 0;
   private sinceRedraw = 0;
   private counts = { tiles: 0, models: 0, textures: 0 };
-  private renderCounts = { drawCalls: 0, triangles: 0 };
+  /** The world frame's draw calls and triangles; null (no line) until the caller gives them. */
+  private renderCounts: { drawCalls: number; triangles: number } | null = null;
   /** The game client's bundles and the messages in them it could not read; null (no line) until it says. */
   private messageCounts: MessageCounts | null = null;
   private gpuBytes = 0;
@@ -167,7 +171,8 @@ export class Overlay {
       jsHeapBytes: jsHeapBytes(),
       gpuBytes: this.gpuBytes,
       ...this.counts,
-      ...this.renderCounts,
+      drawCalls: this.renderCounts?.drawCalls ?? null,
+      triangles: this.renderCounts?.triangles ?? null,
       device: this.device,
       errors: [...this.errors],
     };
@@ -190,9 +195,10 @@ export class Overlay {
       `fps ${s.fps.toFixed(1)}   frame ${s.frameMs.toFixed(1)} ms`,
       `heap ${s.jsHeapBytes === null ? 'n/a' : megabytes(s.jsHeapBytes)}   gpu (est) ${megabytes(s.gpuBytes)}`,
       `tiles ${s.tiles}   models ${s.models}   textures ${s.textures}`,
-      `draws ${s.drawCalls}   triangles ${s.triangles.toLocaleString('en-US')}`,
       `device: ${s.device}`,
     ];
+    const r = this.renderCounts;
+    if (r !== null) lines.splice(3, 0, `draws ${r.drawCalls}   triangles ${r.triangles.toLocaleString('en-US')}`);
     const m = this.messageCounts;
     if (m !== null) {
       lines.push(`bundles ${m.bundles}   indexed ${m.indexed}   messages skipped ${m.skipped}   mismatched ${m.mismatched}`);

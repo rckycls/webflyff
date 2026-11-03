@@ -997,6 +997,6 @@ There is no pass or fail for you here. Send me the table, and I'll compare it wi
 | --- | --- | --- |
 | `npm.cmd run test:e2e:client` | about 10-15 minutes (it now draws on the PC's GPU) | It ends with `… passed`, maybe a few `skipped`, and no `failed`. |
 | `npm.cmd run test:soak:client` | about 12 minutes | `1 passed`. Send me its `lap …` lines. |
-| `npm.cmd run test:firstload:client` | about 3 minutes | Known to fail today, at about 17-19 MB against 15 MB, mostly textures: that is Part B's. Send me its `first load:` line. |
+| `npm.cmd run test:firstload:client` | about 3 minutes | Known to fail today, at about 16.3 MiB against 15 MiB, mostly textures: that is Part B's. Send me its `first load:` line. |
 
 If something else fails, send me the lines from the first `failed` down to the end.
