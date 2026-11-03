@@ -244,6 +244,46 @@ The test checks that it measures what it says: `gc()` exists (`--expose-gc`), `j
 
 To try the test out quickly: `SOAK_MINUTES=1 SOAK_SIDE=150 npm run test:soak` (two laps of a 150 m square, about 2 minutes). The real run uses neither.
 
+## Client soak test (Piece 6, milestone 5)
+
+The client's memory over a scripted loop (spec §3.6), measured by `apps/client/e2e/soak.spec.ts` (`npm run test:soak:client`).
+- **The loop:** laps of a 600 m square from Flaris' square, the pretend server placing Webby every 50 m, six monsters and three players by the square.
+- **Each lap:** the six monsters are removed and added again.
+- **Pass:** the last lap within 110% of the first, and three.js' counts the same.
+
+The test draws on the PC's GPU (Piece 6 M5, Task 3). Memory is the client's own GPU estimate plus the JS heap after `gc()`, so it does not depend on the GPU.
+
+| Run | Date | Laps | Memory per lap (GPU estimate + heap) | three.js geometries / textures / programs | fps | Result |
+| --- | --- | --- | --- | --- | --- | --- |
+| Builder's quick run (`SOAK_MINUTES=2`) | 2026-11-03 | 3 | 266.8 (135.5 + 131.3), 266.1 (135.5 + 130.6), 266.2 (135.5 + 130.8) MB | 591 / 310 / 13 at every lap | 60 | passed |
+| Owner's full run (10 minutes) | | | | | | |
+
+## Client first load (Piece 6, milestone 5)
+
+What a device downloads before the character is on screen, measured by `apps/client/e2e/firstLoad.spec.ts` (`npm run test:firstload:client`), with a budget of 15 MB.
+- **The build:** a production build with the test hooks, in `node_modules/.cache/client-firstload`, served by `vite preview`.
+- **What counts:** the compressed bytes of every request finished by `ready()`, workers' included.
+
+| Run | Date | Bytes | By kind | Result |
+| --- | --- | --- | --- | --- |
+| Builder's three runs | 2026-11-03 | 17.1, 19.4 and 17.2 MB (decimal: 17,108,553 / 19,382,569 / 17,154,345 bytes) | textures 8.6 MB, models 2.5, worlds 1.5, ui 1.4, Basis transcoder 0.5, minimaps 0.3, client script 0.3, `index.json` 0.3, data 0.3, sound 0.3, collision 0.1, music 0.1 (the third run; the spread between runs is the music streaming) | **over the budget**: Part B's to bring down, textures first |
+| Owner's run | | | | |
+
+(The MB in the "By kind" column are binary, 1 MiB.)
+
+## Client performance per device (Piece 6, milestone 5)
+
+The owner's Stats panel readings, from the results table in [device-testing.md](device-testing.md) ("Piece 6, milestone 5"), one line per device at its worst spot.
+- **The builder's PC, for scale:** Chromium on the GPU drew the Flaris square with 327 draw calls and 897,209 triangles a frame in the phone's landscape view, and 292 / 619,009 in the desktop's.
+- **Under SwiftShader:** on that 15 W laptop part, a frame of that size drew at 8-10 fps for about 20 s, then 1.3-2 fps.
+
+| Device | Browser | Worst spot | fps | gpu (est) + heap | draws | triangles | 10-minute walk |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| iPhone | Safari | | | | | | |
+| Android phone | Chrome | | | | | | |
+| iPad | Safari | | | | | | |
+| Android tablet | Chrome | | | | | | |
+
 ## Reproducing
 
 ```

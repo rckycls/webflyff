@@ -923,3 +923,80 @@ Milestones 2 and 3 pass when every cell of both tables is `pass` and the tests b
 | `$env:FLYFF_CLIENT = 'C:\Users\silec\Desktop\FlyFF\Bakbak\Blouflash VS22 V15\Client'; npm run test:corpus` | about 10 minutes | No `failed`. Run `Remove-Item Env:FLYFF_CLIENT` afterwards. |
 
 If one fails, send me the lines from the first `failed` down to the end.
+
+## Piece 6, milestone 5: performance and memory
+
+How fast the game draws and how much memory it holds on each of your devices, measured with the Stats panel. M5 is judged on the **weakest** device against the targets:
+- at least 30 fps in Flaris, standing and running, with the HUD open and monsters and players in view;
+- at most about 400 MB (the `gpu (est)` and `heap` numbers added up);
+- after a 10-minute loop, memory within 10% of its start.
+
+**What changed in the Stats panel:**
+- It has a new line, `draws … triangles …`: what the world drew in its last frame.
+- Its `fps` is the real one. Before M5 it could never show under 4.
+
+**Start the client** from the piece6 folder, with the servers and the gateway in the VM, as in milestone 3:
+
+```bash
+$env:GATEWAY_PROXY = 'ws://192.168.100.141:8090'; npm.cmd run dev:client
+```
+
+**Open the Stats panel:**
+- On a phone or tablet, tap **Stats** in the row of small buttons.
+- On the PC, it is always open at the top left.
+- On each device, tap **set device name** once, so the panel says which device it is.
+
+**What the test character needs:** any character in Flaris. For players in view, a second account logged in on another device in Flaris.
+
+**The three spots.** Stand still for 10 seconds before each reading.
+1. **The Flaris square** (x 6968, z 3328, as the panel shows), standing still, with the Navigator and the chat open as they open by default.
+2. **Running:** run around the square for 30 seconds, and read the panel at the end while still running.
+3. **The field north of Flaris** (about x 7100, z 3638), with monsters in view. Read once standing, then once in the middle of a fight with one.
+
+**At each spot, write down:** fps, frame (ms), gpu (est), heap (`n/a` on Safari), draws and triangles. Do it on the iPhone, the Android phone, the iPad and the Android tablet, and on the PC as a reference.
+
+**The 10-minute walk, on the weakest device** (the one with the lowest fps at spot 3):
+1. In Flaris, after a minute, note `gpu (est)` and `heap`.
+2. Walk a closed loop around the same few streets for 10 minutes.
+3. Back where you started, note them again.
+
+## Results
+
+| Spot | Device | Browser | fps | frame ms | gpu (est) | heap | draws | triangles | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1. Square | iPhone | Safari | | | | | | | |
+| 1. Square | Android phone | Chrome | | | | | | | |
+| 1. Square | iPad | Safari | | | | | | | |
+| 1. Square | Android tablet | Chrome | | | | | | | |
+| 1. Square | PC | Chrome | | | | | | | |
+| 2. Running | iPhone | Safari | | | | | | | |
+| 2. Running | Android phone | Chrome | | | | | | | |
+| 2. Running | iPad | Safari | | | | | | | |
+| 2. Running | Android tablet | Chrome | | | | | | | |
+| 2. Running | PC | Chrome | | | | | | | |
+| 3. Field, standing | iPhone | Safari | | | | | | | |
+| 3. Field, standing | Android phone | Chrome | | | | | | | |
+| 3. Field, standing | iPad | Safari | | | | | | | |
+| 3. Field, standing | Android tablet | Chrome | | | | | | | |
+| 3. Field, standing | PC | Chrome | | | | | | | |
+| 3. Field, fighting | iPhone | Safari | | | | | | | |
+| 3. Field, fighting | Android phone | Chrome | | | | | | | |
+| 3. Field, fighting | iPad | Safari | | | | | | | |
+| 3. Field, fighting | Android tablet | Chrome | | | | | | | |
+| 3. Field, fighting | PC | Chrome | | | | | | | |
+
+The 10-minute walk on ____ (the weakest device): after 1 minute, gpu (est) ____, heap ____; after 10 minutes, gpu (est) ____, heap ____.
+
+## Pass and fail
+
+There is no pass or fail for you here. Send me the table, and I'll compare it with the targets. Part B of M5 then fixes what misses, cheapest first: draw calls, texture sizes, view distance, per-frame work, then shadow and effect detail. Anything that changes the look on a phone is shown to you before it is kept.
+
+**The tests (yours to run),** on the PC in PowerShell in the piece6 folder, with your own `npm run dev:client` stopped first:
+
+| Command | How long | Success |
+| --- | --- | --- |
+| `npm.cmd run test:e2e:client` | about 10-15 minutes (it now draws on the PC's GPU) | It ends with `… passed`, maybe a few `skipped`, and no `failed`. |
+| `npm.cmd run test:soak:client` | about 12 minutes | `1 passed`. Send me its `lap …` lines. |
+| `npm.cmd run test:firstload:client` | about 3 minutes | Known to fail today, at about 17-19 MB against 15 MB, mostly textures: that is Part B's. Send me its `first load:` line. |
+
+If something else fails, send me the lines from the first `failed` down to the end.
