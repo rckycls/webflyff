@@ -881,7 +881,12 @@ fieldset:disabled .btn {
   mask-repeat: no-repeat;
 }
 
-/* The status window (StatusWindow): the numbers over the bars, as CWndStatus::OnDraw places them */
+/* The status window (StatusWindow): the numbers over the bars, as CWndStatus::OnDraw places them; nothing it draws goes
+   past its client area (the owner's fix of 2026-11-05: long high-rate numbers and over-full bars did) */
+.hud-status > .hud-window-body {
+  overflow: hidden;
+}
+
 .hud-status-face {
   position: absolute;
   overflow: hidden;
@@ -2018,11 +2023,15 @@ fieldset:disabled .btn {
   .hud-shop .shop-money { display: none; }
   .hud-shop .shop-feedback { min-height: 12px; max-height: 12px; }
 }
-/* Native shop tabs live below the item list (CWndShop and AddVendorSlot). */
-.hud-shop .shop-tabs { margin: 0; padding: 0; gap: 0; height: 20px; min-height: 20px; }
-.hud-shop .shop-tabs button { min-height: 20px; height: 20px; border: 0; border-radius: 0; padding: 0 5px; background-color: transparent; background-position: left top, right top, center top; background-size: 8px 20px, 8px 20px, calc(100% - 16px) 20px; background-repeat: no-repeat; color: #4b4666; font: 11px/20px Arial, sans-serif; }
-.hud-shop .shop-tabs [aria-pressed=true] { background-color: transparent; color: #252039; }
-.hud-shop .shop-tabs button:disabled { color: #827e94; }
+/* Native shop tabs live below the item list (CWndShop and AddVendorSlot): one strip of WndTabTile pieces under them, laid
+   as CWndTabCtrl lays it (ShopWindow.drawTabStrip), the buttons see-through over it; the titles white, the chosen black
+   (CWndTabCtrl::OnDraw, WndControl.cpp:4221-4283). */
+.hud-shop .shop-tabs { position: relative; margin: 0; padding: 0; gap: 0; height: 20px; min-height: 20px; }
+.hud-shop .shop-tab-strip { position: absolute; inset: 0; pointer-events: none; }
+.hud-shop .shop-tab-strip > div { position: absolute; top: 0; height: 20px; background-size: 100% 100%; background-repeat: no-repeat; }
+.hud-shop .shop-tabs button { position: relative; min-height: 20px; height: 20px; border: 0; border-radius: 0; padding: 0 5px; background: none; color: #ffffff; font: 11px/20px Arial, sans-serif; }
+.hud-shop .shop-tabs [aria-pressed=true] { background: none; color: #000000; }
+.hud-shop .shop-tabs button:disabled { color: #ffffff8c; }
 .hud-shop .shop-price { display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 6px; flex-shrink: 0; font: 11px/20px Arial, sans-serif; }
 .hud-shop .shop-price output { flex: 1; max-width: 120px; }
 /* CTheme::RenderWndButton's default frame, gradient and pressed colours. */

@@ -47,15 +47,37 @@ export function pointPercent(value: number, max: number): number {
   return Math.sign(product) * Math.sign(max) * Math.floor((Math.abs(product) * 2 + Math.abs(max)) / (2 * Math.abs(max)));
 }
 
-/** `nWidthClient * value / max` (`MakeGaugeVertex`, int arithmetic): 0 for a max of 0, which the C++ would divide by. */
+/**
+ * `nWidthClient * value / max` (`MakeGaugeVertex`, int arithmetic): 0 for a max of 0, which the C++ would divide by. Kept
+ * within 0 and the bar's width (the owner's fix, 2026-11-05): a value over the maximum the client works out (the high-rate
+ * server's HP above the client's sum) drew the bar over the window's edge.
+ */
 export function barWidth(value: number, max: number, width = BAR_WIDTH): number {
-  return max <= 0 ? 0 : Math.trunc((width * value) / max);
+  return max <= 0 ? 0 : Math.min(width, Math.max(0, Math.trunc((width * value) / max)));
 }
 
-/** `(int)( ( (float)nWidthClient / GetMaxExp1() ) * GetExp1() )` (`:10357`): the EXP bar's width, in C floats. */
+/** `(int)( ( (float)nWidthClient / GetMaxExp1() ) * GetExp1() )` (`:10357`): the EXP bar's width, in C floats, kept in the bar. */
 export function expBarWidth(exp: bigint, needed: bigint, width = BAR_WIDTH): number {
   if (needed <= 0n) return 0;
-  return Math.trunc(f32(f32(width / f32(Number(needed))) * f32(Number(exp))));
+  return Math.min(width, Math.max(0, Math.trunc(f32(f32(width / f32(Number(needed))) * f32(Number(exp))))));
+}
+
+/** The units of `shortNumber`, largest first. */
+const SHORT_UNITS: ReadonlyArray<readonly [number, string]> = [[1e9, 'b'], [1e6, 'm'], [1e3, 'k']];
+
+/**
+ * The owner's rule for the status window's HP, MP and FP numbers (2026-11-05, not Neuz's): under 10,000 as it is, else in
+ * thousands (k), millions (m) or billions (b), one decimal under 100 of the unit and none from 100, cut rather than rounded
+ * so a bar short of full never reads as its maximum: 12,345 is "12.3k", 123,456 "123k", 1,250,000 "1.2m".
+ */
+export function shortNumber(value: number): string {
+  const size = Math.abs(value);
+  if (size < 10000) return String(value);
+  const sign = value < 0 ? '-' : '';
+  const [unit, suffix] = SHORT_UNITS.find(([u]) => size >= u)!;
+  // whole numbers until the last division, so 1,300,000 is 13 tenths and not 12.999...
+  const digits = size < 100 * unit ? Math.floor((size * 10) / unit) / 10 : Math.floor(size / unit);
+  return `${sign}${digits}${suffix}`;
 }
 
 /** A row of numbers over a bar: three places, as the modes draw them. */
@@ -176,16 +198,16 @@ export class StatusWindow {
     else this.frame.open(this.frame.position);
   }
 
-  /** The HP, MP or FP numbers of the mode (`OnDraw`, `:10566-10614`). */
+  /** The HP, MP or FP numbers of the mode (`OnDraw`, `:10566-10614`), 10,000 and more shortened (`shortNumber`). */
   private writePoints(row: Row, value: number, max: number): void {
     switch (this.display) {
       case 2:
-        this.write(row, [String(value), '/', String(max)]);
+        this.write(row, [shortNumber(value), '/', shortNumber(max)]);
         return;
       case 1:
         this.write(row, [
           `${pointPercent(value, max)}%`,
-          formatText(this.text('TID_GAME_WND_STATUS_PERCENT_POINT'), [value]),
+          formatText(this.text('TID_GAME_WND_STATUS_PERCENT_POINT'), [shortNumber(value)]),
         ]);
         return;
       default:

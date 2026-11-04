@@ -6,6 +6,10 @@ import type { OwnState } from '../OwnState';
 import { themeUrl } from './art';
 import type { UiArt } from './art';
 import { WindowFrame } from './frame';
+import { TAB_TILE, chosenTabTiles, tabStripTiles } from './tiles';
+
+/** The shop's four stock tabs (`CWndShop`, MAX_VENDOR_INVENTORY_TAB). */
+const SHOP_TABS = 4;
 
 interface ShopActions {
   open(id: number): void; close(): void;
@@ -107,10 +111,10 @@ export class ShopWindow {
     const heading = this.doc.createElement('div'); heading.className = 'shop-heading'; heading.textContent = 'Item List';
     heading.title = this.name;
     const tabs = this.doc.createElement('div'); tabs.className = 'shop-tabs';
-
+    const strip = this.doc.createElement('div'); strip.className = 'shop-tab-strip'; strip.setAttribute('aria-hidden', 'true');
+    tabs.append(strip);
     for (let i = 0; i < 4; i++) {
       const button = this.doc.createElement('button'); button.type = 'button'; button.textContent = this.metadata?.vendorTabs?.[i] ?? ''; button.setAttribute('aria-label', button.textContent || 'Stock tab ' + (i + 1));
-      button.style.backgroundImage = [this.tab === i ? 10 : 0, this.tab === i ? 13 : 3, this.tab === i ? 11 : 1].map(index => themeUrl(this.art, 'WndTabTile' + String(index).padStart(2, '0') + '.bmp')).join(',');
       button.disabled = !button.textContent.trim() && (this.tabs?.[i]?.length ?? 0) === 0;
       button.ariaPressed = String(this.tab === i); button.addEventListener('click', () => { this.tab = i; this.selection = null; this.draw(); }); tabs.append(button);
     }
@@ -138,6 +142,32 @@ export class ShopWindow {
       button.addEventListener('click', () => this.transact(kind)); controls.append(button);
     }
     body.append(heading, list, tabs, price, this.status, controls);
+    this.drawTabStrip(strip, tabs.clientWidth);
+  }
+
+  /**
+   * The tab strip as `CWndTabCtrl` lays it (tiles.ts): one strip of 8 px tiles under the four tabs (`tabStripTiles`), the
+   * chosen tab's tiles over it (`chosenTabTiles`: its slope 13 with 14 on the next tab), so the tabs join with smooth
+   * edges (the owner's fix of 2026-11-05: each tab drawn alone cut the slope off). The shop is wider than Neuz's, so each
+   * tab is as many whole tiles as fit (7 when nothing is measured) and the strip is stretched to the row's width.
+   */
+  private drawTabStrip(strip: HTMLElement, width: number): void {
+    const size = width > 0 ? Math.max(4, Math.floor(width / TAB_TILE / SHOP_TABS)) : 7;
+    const columns = size * SHOP_TABS;
+    const span = columns * TAB_TILE;
+    const percent = (px: number): string => `${Math.round((px / span) * 10000) / 100}%`;
+    const tile = (index: number, left: number, tileWidth: number): HTMLElement => {
+      const element = this.doc.createElement('div');
+      element.dataset.tile = String(index);
+      element.style.left = percent(left);
+      element.style.width = percent(tileWidth);
+      element.style.backgroundImage = themeUrl(this.art, `WndTabTile${String(index).padStart(2, '0')}.bmp`);
+      return element;
+    };
+    strip.replaceChildren(
+      ...tabStripTiles(columns, SHOP_TABS).map((index, i) => tile(index, i * TAB_TILE, TAB_TILE)),
+      ...chosenTabTiles(columns, SHOP_TABS, this.tab).map(({ index, left, width: w }) => tile(index, left, w)),
+    );
   }
   private transact(kind: 'buy' | 'sell'): void {
     if (!this.check()) return;

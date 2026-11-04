@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { expect, it, vi } from 'vitest';
 import { ShopWindow } from '../src/world/hud/shopWindow';
+import { tabStripTiles } from '../src/world/hud/tiles';
 import { newVagrant, ownGameData, itemProp } from './helpers/ownState';
 
 it('uses confirmed stock/inventory, validates quantity and refuses stale, equipped or unavailable items', () => {

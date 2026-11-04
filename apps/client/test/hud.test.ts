@@ -19,7 +19,7 @@ import { WindowFrame, escapeWindow, refitWindows, setLayoutBottom } from '../src
 import type { UiArt } from '../src/world/hud/art';
 import { Hud } from '../src/world/hud/hud';
 import { Caption, MessageLines, formatDefinedText } from '../src/world/hud/messages';
-import { StatusWindow } from '../src/world/hud/statusWindow';
+import { StatusWindow, shortNumber } from '../src/world/hud/statusWindow';
 import { TargetBar } from '../src/world/hud/targetBar';
 import { LogOutBox } from '../src/world/hud/logOutBox';
 import { CharacterWindow } from '../src/world/hud/characterWindow';
@@ -180,6 +180,48 @@ describe('StatusWindow (CWndStatus, WndField.cpp:10299-10631)', () => {
     expect(row(status, 'exp')).toBe('');
     expect(gauge(status, 'exp').hidden).toBe(true);
     expect(row(status, 'hp')).not.toBe('');
+  });
+
+  it('the owner\'s rule (not Neuz\'s): numbers of 10,000 and more read 10k, 12.3k, 100k, 1m, cut, never rounded up', () => {
+    expect(shortNumber(9999)).toBe('9999');
+    expect(shortNumber(10000)).toBe('10k');
+    expect(shortNumber(12345)).toBe('12.3k');
+    expect(shortNumber(99999)).toBe('99.9k');
+    expect(shortNumber(100000)).toBe('100k');
+    expect(shortNumber(123456)).toBe('123k');
+    expect(shortNumber(999999)).toBe('999k');
+    expect(shortNumber(1000000)).toBe('1m');
+    expect(shortNumber(1250000)).toBe('1.2m');
+    expect(shortNumber(123456789)).toBe('123m');
+    expect(shortNumber(2147483647)).toBe('2.1b');
+    expect(shortNumber(-12345)).toBe('-12.3k');
+    expect(shortNumber(0)).toBe('0');
+  });
+
+  it('shortens the HP, MP and FP numbers of 10,000 and more in both modes', () => {
+    const status = new StatusWindow(art, DATA);
+    const own = newVagrant();
+    own.maxHp = () => 1234567;
+    own.hp = 99999;
+    status.update(own, 'Webby');
+    expect(row(status, 'hp')).toBe('99.9k / 1.2m');
+    expect(row(status, 'mp')).toBe('63 / 63');
+    const body = status.frame.element.querySelector('.hud-window-body')!;
+    body.dispatchEvent(pointer('pointerdown', 50, 50));
+    body.dispatchEvent(pointer('pointerdown', 50, 50));
+    status.update(own, 'Webby');
+    expect(row(status, 'hp')).toBe('8% <99.9k>');
+  });
+
+  it('keeps the bars inside the window: a value over its maximum fills the bar, never past it', () => {
+    const status = new StatusWindow(art, DATA);
+    const own = newVagrant();
+    own.hp = 500; // the server's HP over the maximum the client works out
+    own.mp = -5;
+    status.update(own, 'Webby');
+    expect(gauge(status, 'hp').dataset.width).toBe('108');
+    expect(gauge(status, 'hp').style.width).toBe('108px');
+    expect(gauge(status, 'mp').dataset.width).toBe('0');
   });
 
   it('T toggles it, and the portrait goes in the face box', () => {
