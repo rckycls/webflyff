@@ -401,6 +401,11 @@ function buildItemProps(env: Env, read: Reading): WebItemProp[] {
         ...(prop.itemLevel !== -1 ? { itemLevel: prop.itemLevel } : {}),
         ...(prop.limitLevel !== -1 ? { limitLevel: prop.limitLevel } : {}),
         ...(prop.circleTime !== -1 ? { circleTime: prop.circleTime } : {}),
+        // 2026-11-05, the premium items: the cool-down (`dwSkillReady`, CCooltimeMgr::GetGroup takes > 0), the buff's
+        // time and how the item finds its target (EXT_ITEM 21 needs an item: Neuz's upgrade cursor)
+        ...(prop.skillReady > 0 ? { cooldownMs: prop.skillReady } : {}),
+        ...(prop.skillTime !== -1 ? { skillTime: prop.skillTime } : {}),
+        ...(prop.exeTarget !== -1 ? { exeTarget: prop.exeTarget } : {}),
         ...(prop.referStat1 !== -1 ? { referStat1: prop.referStat1 } : {}),
         // PutBaseResist's order (WndManager.cpp:5641-5674): electricity, fire, water, wind, earth; the file's is
         // electricity, fire, wind, water, earth

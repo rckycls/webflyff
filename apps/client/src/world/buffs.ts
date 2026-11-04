@@ -10,6 +10,8 @@
 
 /** `BUFF_ITEM` 0 and `BUFF_SKILL` 1 (`_Common/buff.h`): the common buffs a death removes. */
 const COMMON: ReadonlySet<number> = new Set([0, 1]);
+/** `BUFF_ITEM2`: an item's buff whose level is its end (on the wire, the seconds it has left). */
+const BUFF_ITEM2 = 3;
 /** `if( ( m_nCount & 63 ) == 0 )`: how often the times are looked at. */
 const CHECK_FRAMES = 64;
 
@@ -62,12 +64,16 @@ export class MoverBuffs {
     }
   }
 
-  /** The buffs at `now`, in ascending id (the map's order). */
+  /**
+   * The buffs at `now`, in ascending id (the map's order). A `BUFF_ITEM2`'s time is its level, the seconds it had left
+   * when it came (`CBuffItem2::SerializeLevel`, buff.cpp:604-620; shown so, `WndWorld.cpp:9330-9336`), 2026-11-05.
+   */
   list(now: number): BuffShown[] {
     return [...this.buffs.values()]
       .sort((a, b) => a.id - b.id || a.buffType - b.buffType)
-      .map(({ buffType, id, level, totalMs, since }) => ({
-        buffType, id, level, totalMs, leftMs: totalMs > 0 ? Math.max(0, totalMs - (now - since)) : 0,
-      }));
+      .map(({ buffType, id, level, totalMs, since }) => {
+        const total = buffType === BUFF_ITEM2 ? Math.max(0, level) * 1000 : totalMs;
+        return { buffType, id, level, totalMs: total, leftMs: total > 0 ? Math.max(0, total - (now - since)) : 0 };
+      });
   }
 }

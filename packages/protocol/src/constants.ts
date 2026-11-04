@@ -5,6 +5,8 @@
  */
 export const PacketType = {
   TELEPORTER: 0x88100100,
+  /** 2026-11-05: `PACKETTYPE_NPC_BUFF`, Buff Pang's menu entry (`CDPClient::SendNPCBuff`, `MsgHdr.h:666`). */
+  NPC_BUFF: 0xf000f813,
   QUERYTICKCOUNT: 0x0b,
   PING: 0x14,
   CLOSE_EXISTING_CONNECTION: 0x16,
@@ -235,6 +237,14 @@ export const MessageType = {
   QUERY_PLAYER_DATA: 0x0141,
   /** Piece 7 M3: a mover's state mode on, off or cancelled: an item cast (`CUserMng::AddStateMode`, `MsgHdr.h:1134`). */
   STATEMODE: 0x00df,
+  /**
+   * 2026-11-05: a skill applied to a mover in view, Buff Pang's buffs among them (`CUserMng::AddDoApplySkill`,
+   * `WORLDSERVER/UserLux.cpp:270-280`; `MsgHdr.h:1132`).
+   */
+  DOAPPLYUSESKILL: 0x00d7,
+  /** 2026-11-05: a premium timer, and all of them at join (`AddSMMode`, `AddSMModeAll`, `MsgHdr.h:957-958`). */
+  SM_MODE: 0x003f,
+  SM_MODE_ALL: 0x003e,
   /** Piece 7 M3: the Scroll of Return's village taken, no body (`CUser::AddReturnScroll`, `User.cpp:6636-6645`). */
   RETURNSCORLL: 0x00ad,
   /** Piece 7 M5: another flier's move, state and correction (`User.cpp:4937-5035`); its angle is MOVERANGLE. */

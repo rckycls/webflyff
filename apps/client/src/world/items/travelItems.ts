@@ -8,6 +8,7 @@
 //   the worlds' titles                Resource/World.inc:105-108,301-304 Kebaras "Azria", the miniroom "House"
 
 import type { WebItemProp } from '@flyffweb/formats';
+import { useOf } from './premiumItems';
 
 /** `IK2_BLINKWING` (`Resource/defineItemkind.h:40`): the Town and place Blinkwings, and the Escape Blinkwing. */
 export const IK2_BLINKWING = 22;
@@ -33,12 +34,13 @@ export function isTravelItem(prop: WebItemProp): boolean {
 }
 
 /**
- * What the bag (the PC's double-click, the phone's Use) sends: the consumables of before, the travel items, and (Piece 7
- * M5) the rides and the Accelor Fuel (`IK2_AIRFUEL` 23).
+ * What the bag (the PC's double-click, the phone's Use) and the task bar send: the consumables of before, the travel
+ * items, (Piece 7 M5) the rides and the Accelor Fuel (`IK2_AIRFUEL` 23), and (2026-11-05) every item Neuz sends DOUSEITEM
+ * for that the browser can follow: the premium items and scrolls, buffs and boxes (`useOf`, premiumItems.ts).
  */
 export function usableFromBag(prop: WebItemProp): boolean {
   return CONSUMABLES.includes(prop.kind2) || isTravelItem(prop) || (prop.part === 13 && prop.flight !== undefined) ||
-    prop.kind2 === 23;
+    prop.kind2 === 23 || useOf(prop) === 'use';
 }
 
 /** What `SendDoUseItem` looks at besides the item. */
@@ -58,6 +60,15 @@ export interface UseCheck {
   landAttr?: number;
   disguised?: boolean;
   sitting?: boolean;
+  /**
+   * 2026-11-05, the premium items: the focused mover DOUSEITEM names (`GetObjFocus`, NULL_ID with none:
+   * `WndField.cpp:2131-2134`), the wings' buff that is on, a Blessing on (`IsSMMode( SM_REVIVAL )`), and whether a skill
+   * point is spent (`m_nSkillPoint < GetCurrentMaxSkillPoint()`).
+   */
+  focusId?: number;
+  wing?: number | null;
+  revival?: boolean;
+  skillPointsSpent?: boolean;
 }
 
 /** A refusal: a line said in its TID's colour (with `args` for its `%s`), or a box with an OK button. */

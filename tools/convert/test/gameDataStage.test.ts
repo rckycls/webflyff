@@ -825,6 +825,23 @@ describe('the game-data stage', () => {
     }
   });
 
+  it('itemProps keep the use columns, each only when the row gives it (2026-11-05, premium items)', async () => {
+    const pill = itemRow('504', 'IDS_PROPITEM_TXT_000790', '=').split('	');
+    pill[76] = '5000'; // dwSkillReady: the cool-down
+    pill[86] = '3600000'; // dwSkillTime: the buff's
+    pill[87] = '21'; // dwExeTarget: EXT_ITEM
+    const bare = itemRow('503', 'IDS_PROPITEM_TXT_000792', 'PARTS_LOWER_BODY').split('	');
+    for (const at of [76, 86, 87]) bare[at] = '=';
+    const zero = itemRow('506', 'IDS_PROPITEM_TXT_000792', '=').split('	');
+    zero[76] = '0'; // no cool-down group without a time (CCooltimeMgr::GetGroup)
+    await client({ 'propItem.txt': script(pill.join('	'), bare.join('	'), zero.join('	')) });
+    const props = await catalog<WebItemProp[]>(await runData(), GAME_DATA_KEYS.itemProps);
+    expect(props.find((p) => p.id === 504)).toMatchObject({ cooldownMs: 5000, skillTime: 3600000, exeTarget: 21 });
+    for (const id of [503, 506]) {
+      for (const key of ['cooldownMs', 'skillTime', 'exeTarget']) expect(props.find((p) => p.id === id), `${id} ${key}`).not.toHaveProperty(key);
+    }
+  });
+
   it('itemEtc: the sets and the socket cards of propItemEtc.inc, when the packs hold it (2026-11-05)', async () => {
     await client({ 'propItemEtc.inc': script('SetItem 1 Darkness', '{', 'Elem', '{', '502 2', '503 3', '}', 'Avail', '{', '1 5 2', '}', '}',
       'Piercing 2001', '{', '1 5', '}') });

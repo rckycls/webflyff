@@ -9,7 +9,7 @@ import { readShop } from './shop';
 import { readCreateItem, readUpdateItem, readUpdateItemEx, readMoveItem, readEquipItem } from './items';
 import {
   readRemoveAllSkillInfluence, readRemoveSkillInfluence, readResetDestParam, readResetDestParamSync, readSetDestParam,
-  readSetSkillState,
+  readSetSkillState, readSmMode, readSmModeAll,
 } from './buffs';
 import {
   readCorrReq, readDamage, readDefinedText, readDefinedText1, readMeleeAttack, readMonsterProp, readMoverDeath,
@@ -23,7 +23,7 @@ import {
 } from './movement';
 import { readDelObj, readReplace, readSetPos, readSetPosAngle, readWorldReadInfo } from './place';
 import {
-  readClearUseSkill, readCreateSfxObj, readDoUseSkillPoint, readEndSkillQueue, readInitSkillPoint, readSetActionPoint,
+  readClearUseSkill, readCreateSfxObj, readDoApplySkill, readDoUseSkillPoint, readEndSkillQueue, readInitSkillPoint, readSetActionPoint,
   readUseSkill,
 } from './skills';
 import {
@@ -146,6 +146,9 @@ export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
     [MessageType.MONSTERPROP, readMonsterProp],
     [MessageType.TASKBAR, readTaskBar],
     [MessageType.USESKILL, readUseSkill],
+    [MessageType.DOAPPLYUSESKILL, readDoApplySkill],
+    [MessageType.SM_MODE, readSmMode],
+    [MessageType.SM_MODE_ALL, readSmModeAll],
     [MessageType.CLEAR_USESKILL, readClearUseSkill],
     [MessageType.DOUSESKILLPOINT, readDoUseSkillPoint],
     [MessageType.INITSKILLPOINT, readInitSkillPoint],

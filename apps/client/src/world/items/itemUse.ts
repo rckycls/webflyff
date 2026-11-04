@@ -4,10 +4,12 @@ import { IK2_AIRFUEL, flightSpeedOf, isRide, landRefusal, rideRefusal } from './
 import { RETURN_SCROLL, usableFromBag, useRefusal } from './travelItems';
 import type { Refusal, UseCheck } from './travelItems';
 import { PARTS_RIDE } from '../sim/constants';
+import { ItemCooldowns, bagConfirm, premiumRefusal, useConfirm } from './premiumItems';
 
 export const RESURRECTION_SCROLL = 10431;
 export interface ItemUseSender {
-  sendUseItem(objectId: number, part?: number, flightSpeed?: number): void;
+  /** DOUSEITEM; `targetId` the focused mover (2026-11-05), `NULL_ID` when not given. */
+  sendUseItem(objectId: number, part?: number, flightSpeed?: number, targetId?: number): void;
   sendRevival(): void;
   /** Piece 7 M5: DOEQUIP, which the worn ride's equipment cell lands with. */
   sendEquipItem?(objectId: number, part: number, flightSpeed: number): void;
@@ -23,10 +25,20 @@ export interface ItemUseTravel {
   say(refusal: Refusal): void;
   returnScroll: { begin(objectId: number): void };
   shopOpen?(): boolean;
+  /**
+   * 2026-11-05: opens Neuz's box (`CWndCommItemDlg`, `CWndRestateConfirm`) with the text of `tid`, OK and Cancel; OK runs
+   * `ok`. `boxOpen` says whether one is open; `now` is the cool-downs' clock (ms).
+   */
+  confirm?(tid: string, ok: () => void): void;
+  boxOpen?(): boolean;
+  now?(): number;
 }
 
-/** Where a use comes from: the bag (the PC's double-click, the phone's Use), the task bar, or RETURNSCORLL's answer. */
-export type UseFrom = 'bag' | 'bar' | 'again';
+/**
+ * Where a use comes from: the bag (the PC's double-click, the phone's Use), the task bar, RETURNSCORLL's answer, or a
+ * box's OK (2026-11-05: `bResult` FALSE, no box again).
+ */
+export type UseFrom = 'bag' | 'bar' | 'again' | 'confirmed';
 
 /** Requests only: server UPDATE_ITEM/SETPOINTPARAM/REVIVAL are the sole writers of the results. */
 export class ItemUse {
@@ -41,19 +53,50 @@ export class ItemUse {
    * Uses the item at `objectId`: the consumables, and with `travel` the Blinkwings and the Scroll of Return (Piece 7 M3),
    * through Neuz's refusals in its order; the Scroll first opens its box, and only its `'again'` sends it.
    */
-  use(objectId: number, from: UseFrom = 'bar'): boolean {
+  use(objectId: number, from: UseFrom = 'bar', focus?: number): boolean {
     const own = this.own(), item = own?.inventory?.get(objectId);
     const prop = item && this.props.get(item.itemId);
     if (!own || own.hp <= 0 || !item || item.count <= 0 || !prop || !usableFromBag(prop)) return false;
     const travel = this.travel;
+    let target: number | undefined;
     if (travel === undefined) {
       if (![11, 12, 14].includes(prop.kind2)) return false;
     } else {
-      if (from === 'bag' && travel.shopOpen?.() === true) {
+      const check = travel.check();
+      // 2026-11-05: the focused mover DOUSEITEM names, kept from the first press through a box (CWndCommItemDlg's)
+      target = focus ?? check.focusId;
+      if (from === 'bag') {
+        // CWndInventory's own checks before SendDoUseItem (WndField.cpp:2102-2620): a box already open, the bag's own
+        // boxes, then the trade
+        if (travel.boxOpen?.() === true) {
+          travel.say({ kind: 'say', tid: 'TID_TOOLTIP_ITEM_USING_ERROR' });
+          return false;
+        }
+        const bag = bagConfirm(prop, {
+          revival: check.revival ?? false, skillPointsSpent: check.skillPointsSpent ?? false, charged: item.charged === 1,
+        });
+        if (bag?.kind === 'say') {
+          travel.say(bag);
+          return false;
+        }
+        if (bag?.kind === 'box' && travel.confirm !== undefined) {
+          travel.confirm(bag.tid, () => void this.use(objectId, 'confirmed', target));
+          return true;
+        }
+      }
+      // the bag's trade check, and the box's OK's (CWndCommItemDlg::OnChildNotify, WndField.cpp:12937-12943)
+      if ((from === 'bag' || from === 'confirmed') && travel.shopOpen?.() === true) {
         travel.say({ kind: 'say', tid: 'TID_GAME_TRADELIMITUSING' });
         return false;
       }
-      const check = travel.check();
+      // 2026-11-05: SendDoUseItem's cool-down, the wings and the piercing protection
+      const premium = premiumRefusal({
+        prop, cooldowns: this.cooldowns, now: this.now(), disguised: check.disguised ?? false, wing: check.wing ?? null,
+      });
+      if (premium !== null) {
+        travel.say(premium);
+        return false;
+      }
       // Piece 7 M5: the Accelor Fuel is for a flier only (silently)
       if (prop.kind2 === IK2_AIRFUEL && !check.flying) return false;
       const worn = isRide(prop) && own.equipmentObjectIds.includes(objectId);
@@ -76,16 +119,41 @@ export class ItemUse {
       }
       // Piece 7 M5: a ride's DOUSEITEM carries PARTS_RIDE and its exact fFlightSpeed, worn or not
       if (isRide(prop)) {
-        this.session.sendUseItem(objectId, PARTS_RIDE, flightSpeedOf(prop));
+        if (target === undefined) this.session.sendUseItem(objectId, PARTS_RIDE, flightSpeedOf(prop));
+        else this.session.sendUseItem(objectId, PARTS_RIDE, flightSpeedOf(prop), target);
         return true;
       }
-      if (prop.id === RETURN_SCROLL && from !== 'again') {
+      if (prop.id === RETURN_SCROLL && (from === 'bag' || from === 'bar')) {
         travel.returnScroll.begin(objectId);
         return true;
       }
+      // 2026-11-05: SendDoUseItem's box (`bResult`): the protection and smelting scrolls; OK uses it with no box
+      const box = from === 'bag' || from === 'bar' ? useConfirm(prop) : null;
+      if (box !== null && travel.confirm !== undefined) {
+        travel.confirm(box, () => void this.use(objectId, 'confirmed', target));
+        return true;
+      }
     }
-    this.session.sendUseItem(objectId);
+    if (target === undefined) this.session.sendUseItem(objectId);
+    else this.session.sendUseItem(objectId, -1, -1, target);
     return true;
+  }
+
+  /**
+   * 2026-11-05: UPDATE_ITEM `UI_COOLTIME` for the own item at `objectId`, before the count changes: its cool-down group
+   * starts (`CDPClient::OnUpdateItem`, DPClient.cpp:3226-3245).
+   */
+  cooled(objectId: number): void {
+    const item = this.own()?.inventory?.get(objectId);
+    const prop = item && this.props.get(item.itemId);
+    if (prop) this.cooldowns.start(prop, this.now());
+  }
+
+  /** `CCooltimeMgr`: the groups' ends. */
+  private readonly cooldowns = new ItemCooldowns();
+
+  private now(): number {
+    return this.travel?.now?.() ?? performance.now();
   }
 
   /**

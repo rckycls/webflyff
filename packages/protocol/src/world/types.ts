@@ -56,6 +56,10 @@ export type WorldMessage = ChatMessage | NpcMessage | ShopMessage | QuestMessage
   | { type: 'rangeAttack'; message: number; targetId: number; param2: number; param3: number; sfxHitId: number }
   /** Piece 7 M2: the buffs' messages ([R §10]): a buff on `targetId` (`time` its whole length, ms), one gone, all gone. */
   | { type: 'setSkillState'; targetId: number; buffType: number; id: number; level: number; time: number }
+  /** 2026-11-05: a premium timer (`SM_*` `smType`) and the seconds it has left; 0 ends it (`OnSMMode`). */
+  | { type: 'smMode'; smType: number; seconds: number }
+  /** 2026-11-05: every running premium timer, at join (`OnSMModeAll`). */
+  | { type: 'smModeAll'; modes: Array<{ type: number; seconds: number }> }
   | { type: 'removeSkillInfluence'; buffType: number; id: number }
   | { type: 'removeAllSkillInfluence' }
   /** Piece 7 M2: a live buff's stat change, its end, and DST_SPEED's end with the total left (`m_adjParamAry`). */
@@ -165,6 +169,12 @@ export type WorldMessage = ChatMessage | NpcMessage | ShopMessage | QuestMessage
    * cast in the world server's ticks (`SEC1` is 15 there, `_Common/timer.h:133-140`).
    */
   | { type: 'useSkill'; skill: number; level: number; targetId: number; useType: number; castingTime: number }
+  /**
+   * 2026-11-05: the mover the message is about applied a skill to `targetId` (`OnDoApplySkill`, DPClient.cpp:15219-15243).
+   * Neuz runs the client's `DoApplySkill`, which for a buff only tests `HasBuff`; the buff comes as SETSKILLSTATE, its
+   * stats as SETDESTPARAM and its effect as CREATESFXOBJ (`CCtrl::ApplySkill`, `_Common/Ctrl.cpp:1115-1126`).
+   */
+  | { type: 'doApplySkill'; targetId: number; skill: number; level: number }
   /** The world server refused the own USESKILL (`OnClearUseSkill`): the request is answered, and nothing begins. */
   | { type: 'clearUseSkill' }
   /**

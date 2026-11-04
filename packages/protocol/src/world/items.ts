@@ -62,14 +62,16 @@ function checkId(id: number, max = 73): void {
   if (!Number.isInteger(id) || id < 0 || id >= max) throw new RangeError('invalid inventory index');
 }
 /**
- * CDPClient::SendDoUseItem (`DPClient.cpp:10860-10866`): MAKELONG(ITYPE_ITEM=0, inventory object id), target=NULL_ID,
- * `nPart` (the prop's `dwParts`: 13 for a ride, -1 for an item that is not worn), and under `__HACK_1023` the prop's
- * `fFlightSpeed` (-1 for `=`), which the server compares exactly with a ride's (Piece 7 M5).
+ * CDPClient::SendDoUseItem (`DPClient.cpp:10860-10866`): MAKELONG(ITYPE_ITEM=0, inventory object id), the target (the
+ * focused mover, `NULL_ID` with none: `WndField.cpp:2131-2134`, 2026-11-05), `nPart` (the prop's `dwParts`: 13 for a
+ * ride, -1 for an item that is not worn), and under `__HACK_1023` the prop's `fFlightSpeed` (-1 for `=`), which the
+ * server compares exactly with a ride's (Piece 7 M5).
  */
-export function encodeUseItem(objectId: number, part = -1, flightSpeed = -1): Uint8Array {
+export function encodeUseItem(objectId: number, part = -1, flightSpeed = -1, targetId = 0xffffffff): Uint8Array {
   checkId(objectId);
   if (!Number.isInteger(part) || part < -1 || part >= 31) throw new RangeError('invalid part');
-  return clientPacket(PacketType.DOUSEITEM).u32(objectId * 65536).u32(0xffffffff).i32(part).f32(flightSpeed).toBytes();
+  if (!Number.isInteger(targetId) || targetId < 0 || targetId > 0xffffffff) throw new RangeError('invalid target');
+  return clientPacket(PacketType.DOUSEITEM).u32(objectId * 65536).u32(targetId).i32(part).f32(flightSpeed).toBytes();
 }
 /** SendDoEquip (`DPClient.cpp:9336-9342`), with the `__HACK_1023` float: the prop's `fFlightSpeed`, -1 for `=`. */
 export function encodeEquipItem(objectId: number, part = -1, flightSpeed = -1): Uint8Array {

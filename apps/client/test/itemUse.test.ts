@@ -159,3 +159,87 @@ describe('the travel items (Piece 7 M3, SendDoUseItem, DPClient.cpp:10254-10431)
     expect(walking.sent).toEqual([]);
   });
 });
+
+describe('the premium items and scrolls (2026-11-05, SendDoUseItem and CWndInventory)', () => {
+  const BUFF = itemProp({ id: 26101, part: -1, kind2: 29 }); // a premium buff (IK2_BUFF)
+  const PILL = itemProp({ id: 700, part: -1, kind2: 14, kind3: 59, cooldownMs: 5000 });
+  const SPROTECT = itemProp({ id: 10464, part: -1, kind2: 19, kind3: 50 });
+  const RESKILL = itemProp({ id: 10434, part: -1, kind2: 19, kind3: 50 });
+  const BLESSING = itemProp({ id: 10430, part: -1, kind2: 19, kind3: 50 });
+  const RENAME = itemProp({ id: 10424, part: -1, kind2: 19, kind3: 50 });
+  const PROPS = new Map([[26101, BUFF], [700, PILL], [10464, SPROTECT], [10434, RESKILL], [10430, BLESSING], [10424, RENAME]]);
+  function rig(check: Record<string, unknown> = {}, boxOpen = false) {
+    const own = newVagrant();
+    [[11, 26101], [12, 700], [13, 10464], [14, 10434], [15, 10430], [16, 10424]]
+      .forEach(([objectId, itemId]) => own.inventory!.set(objectId!, { objectId: objectId!, itemId: itemId!, count: 3 }));
+    const sent: unknown[][] = [];
+    const said: unknown[] = [];
+    const boxes: Array<{ tid: string; ok: () => void }> = [];
+    let now = 0;
+    const use = new ItemUse(() => own, PROPS, { sendUseItem: (...args) => void sent.push(args), sendRevival: vi.fn() }, {
+      check: () => ({ worldId: 1, casting: false, standing: true, flying: false, returnBuff: false, focusId: 0x77, ...check }),
+      say: (refusal) => void said.push(refusal),
+      returnScroll: { begin: vi.fn() },
+      confirm: (tid, ok) => void boxes.push({ tid, ok }),
+      boxOpen: () => boxOpen,
+      now: () => now,
+    });
+    return { use, sent, said, boxes, setNow: (t: number) => { now = t; } };
+  }
+
+  it('a premium buff is sent from the bag and the bar, with the focused mover as Neuz sends it', () => {
+    const r = rig();
+    expect(r.use.use(11, 'bag')).toBe(true);
+    expect(r.use.use(11, 'bar')).toBe(true);
+    expect(r.sent).toEqual([[11, -1, -1, 0x77], [11, -1, -1, 0x77]]);
+  });
+
+  it('an item whose use is a window the browser lacks sends nothing', () => {
+    const r = rig();
+    expect(r.use.use(16, 'bag')).toBe(false);
+    expect(r.sent).toEqual([]);
+  });
+
+  it("the cool-down: UPDATE_ITEM UI_COOLTIME starts the group, and a use within it is refused", () => {
+    const r = rig();
+    expect(r.use.use(12, 'bar')).toBe(true);
+    r.use.cooled(12); // the server's answer
+    r.setNow(4000);
+    expect(r.use.use(12, 'bar')).toBe(false);
+    expect(r.said).toEqual([{ kind: 'say', tid: 'TID_GAME_ATTENTIONCOOLTIME' }]);
+    r.setNow(5001);
+    expect(r.use.use(12, 'bar')).toBe(true);
+    expect(r.sent).toHaveLength(2);
+  });
+
+  it("the protection scroll's box, from the bag and the bar; OK sends it with part -1", () => {
+    const r = rig();
+    expect(r.use.use(13, 'bar')).toBe(true);
+    expect(r.sent).toEqual([]);
+    expect(r.boxes.map((b) => b.tid)).toEqual(['TID_GAME_REGARDLESS_USE']);
+    r.boxes[0]!.ok();
+    expect(r.sent).toEqual([[13, -1, -1, 0x77]]);
+  });
+
+  it("the bag's own boxes: Re-Skill asks, from the bar it goes at once", () => {
+    const r = rig({ skillPointsSpent: true });
+    expect(r.use.use(14, 'bag')).toBe(true);
+    expect(r.boxes.map((b) => b.tid)).toEqual(['TID_GAME_SKILLINIT']);
+    expect(r.sent).toEqual([]);
+    r.boxes[0]!.ok();
+    expect(r.use.use(14, 'bar')).toBe(true);
+    expect(r.sent).toEqual([[14, -1, -1, 0x77], [14, -1, -1, 0x77]]);
+  });
+
+  it("Blessing while one is on is refused from the bag (SM_REVIVAL)", () => {
+    const r = rig({ revival: true });
+    expect(r.use.use(15, 'bag')).toBe(false);
+    expect(r.said).toEqual([{ kind: 'say', tid: 'TID_GAME_LIMITED_USE' }]);
+  });
+
+  it('with a box open, a use from the bag is refused (TID_TOOLTIP_ITEM_USING_ERROR)', () => {
+    const r = rig({}, true);
+    expect(r.use.use(11, 'bag')).toBe(false);
+    expect(r.said).toEqual([{ kind: 'say', tid: 'TID_TOOLTIP_ITEM_USING_ERROR' }]);
+  });
+});

@@ -42,6 +42,14 @@ describe('MoverBuffs (CBuffMgr, buff.cpp)', () => {
     expect(buffs.list(0)).toEqual([]);
   });
 
+  it("a BUFF_ITEM2's time is its level, the seconds it had left; it is the server's to end (2026-11-05)", () => {
+    const buffs = new MoverBuffs();
+    buffs.add(ITEM2, 10270, 7200, 0, 1000); // 2 hours left when it came
+    expect(buffs.list(11_000)).toEqual([{ buffType: ITEM2, id: 10270, level: 7200, leftMs: 7_190_000, totalMs: 7_200_000 }]);
+    for (let frame = 1; frame <= 128; frame++) buffs.step(8_000_000 + frame);
+    expect(buffs.list(8_000_200)).toEqual([{ buffType: ITEM2, id: 10270, level: 7200, leftMs: 0, totalMs: 7_200_000 }]);
+  });
+
   it('the list is in ascending skill id', () => {
     const buffs = new MoverBuffs();
     for (const id of [52, 20, 49]) buffs.add(SKILL, id, 1, 60000, 0);

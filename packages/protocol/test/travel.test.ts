@@ -57,6 +57,9 @@ describe('the travel packets (Piece 7 M3)', () => {
 
   it('decodeClientPacket names DOUSEITEM, STATEMODE and RETURNSCROLL', () => {
     expect(decodeWorldPacket(encodeUseItem(6))).toEqual({ type: 'useItem', objectId: 6, targetId: 0xffffffff, part: -1, flightSpeed: -1 });
+    // 2026-11-05: the focused mover, as Neuz names it
+    expect(decodeWorldPacket(encodeUseItem(6, -1, -1, 0x1234))).toEqual({ type: 'useItem', objectId: 6, targetId: 0x1234, part: -1, flightSpeed: -1 });
+    expect(() => encodeUseItem(6, -1, -1, -2)).toThrow();
     expect(decodeWorldPacket(encodeStateModeCancel())).toEqual({ type: 'stateMode', mode: 4, flag: 2 });
     expect(decodeWorldPacket(encodeReturnScroll(2))).toEqual({ type: 'returnScroll', select: 2 });
   });

@@ -20,7 +20,12 @@ import { defineConfig, devices } from '@playwright/test';
 
 const flyffwebRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
-const CLIENT_URL = 'http://localhost:5174/';
+/**
+ * The dev server's port: 5174, or `E2E_CLIENT_PORT` for a run beside another dev server (2026-11-05: a worktree's run
+ * must not take the owner's 5174).
+ */
+const CLIENT_PORT = process.env.E2E_CLIENT_PORT ?? '5174';
+const CLIENT_URL = `http://localhost:${CLIENT_PORT}/`;
 const PREVIEW_URL = 'http://localhost:4174/';
 /**
  * Where the `prod` project's build goes, relative to the client's root: a build with `VITE_TEST_HOOKS=1` must never be
@@ -86,7 +91,7 @@ export default defineConfig({
   webServer: [
     ...(runs('chromium', 'phone', 'pictures', 'soak', 'perf')
       ? [{
-          command: 'npm run dev:client -- --port 5174 --strictPort',
+          command: `npm run dev:client -- --port ${CLIENT_PORT} --strictPort`,
           url: CLIENT_URL,
           cwd: flyffwebRoot,
           // GATEWAY_PROXY emptied: one left in the owner's window would stop the dev server (both set), and empty is unset.

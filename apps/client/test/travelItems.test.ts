@@ -47,14 +47,16 @@ describe('the travel items (Piece 7 M3)', () => {
     expect(useRefusal(at({ prop: SCROLL, returnBuff: true, standing: false }))).toEqual({ kind: 'say', tid: 'TID_PK_STAND_LIMIT' });
   });
 
-  it('usableFromBag takes the travel items and the three old kinds', () => {
+  it('usableFromBag takes the travel items, the three old kinds and the premium ones', () => {
     expect(isTravelItem(TOWN)).toBe(true);
     expect(isTravelItem(SCROLL)).toBe(true);
     expect(isTravelItem(POTION)).toBe(false);
     for (const kind2 of [11, 12, 14]) expect(usableFromBag(prop({ kind2 }))).toBe(true);
     expect(usableFromBag(TOWN)).toBe(true);
     expect(usableFromBag(SCROLL)).toBe(true);
-    expect(usableFromBag(prop({ kind2: 19, id: 10431 }))).toBe(false); // another system item: the resurrection scroll
+    // 2026-11-05: any system item, as Neuz sends it (the resurrection scroll alive does nothing on the server; a gift box
+    // opens, which the browser cannot tell apart: propGiftbox.inc is the server's)
+    expect(usableFromBag(prop({ kind2: 19, id: 10431 }))).toBe(true);
     expect(usableFromBag(prop({ kind2: 2 }))).toBe(false);
   });
 

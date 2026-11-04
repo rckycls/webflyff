@@ -11,6 +11,17 @@ export function encodeTeleporter(key: string, index: number): Uint8Array {
   return clientPacket(PacketType.TELEPORTER).i32(bytes.length).bytes(bytes).i32(index).toBytes();
 }
 
+/**
+ * Buff Pang's menu entry (2026-11-05): `CDPClient::SendNPCBuff( m_szCharacterKey )` (`Neuz/DPClient.cpp:17387-17394`,
+ * `CWndWorld::OnCommand` MMI_NPC_BUFF, `_Interface/WndWorld.cpp:5131-5136`): the key alone, which the server reads with
+ * `ReadString( m_szKey, 64 )` (`CDPSrvr::OnNPCBuff`, `WORLDSERVER/DPSrvr.cpp:9076-9140`).
+ */
+export function encodeNpcBuff(key: string): Uint8Array {
+  const bytes = chatBytes(key, 63);
+  if (bytes.length === 0) throw new ProtocolError('Invalid NPC key');
+  return clientPacket(PacketType.NPC_BUFF).i32(bytes.length).bytes(bytes).toBytes();
+}
+
 /** The stat a FUNCTYPE_INITSTAT .. INITINT puts back to 15 (`OnRunScriptFunc`, DPClient.cpp:14374-14431). */
 export type InitStat = 'all' | 'str' | 'sta' | 'dex' | 'int';
 /** A RUNSCRIPTFUNC, by its `FUNCTYPE_*` (`_Network/MsgHdr.h:1416-1438`). */

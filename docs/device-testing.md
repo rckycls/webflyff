@@ -1362,3 +1362,40 @@ Milestone 5 passes when every cell of the table is `pass` (or `n/a` where it say
 | `npm run typecheck` | about 1 minute | It ends with no `error`. |
 | `$env:FLYFF_CLIENT = 'C:\Users\silec\Desktop\FlyFF\Bakbak\Blouflash VS22 V15\Client'; npm run test:corpus` | about 5 minutes | `… passed`, apart from two known stale tests in `tools/convert/test/gameData.corpus.test.ts` ("writes every catalog without a failure" and "skills: the levels are the rows …"), which fail on main too. |
 | `npm run test:e2e:client` | about 10 minutes | It ends with `… passed`, maybe a few `skipped`, and no `failed` (`flight.spec.ts` is the new file). |
+
+## 2026-11-05: Buff Pang, the buff icons, and premium items
+
+- **Buff Pang.** Its menu's **Get Buffed!** works: a low-level character gets its buffs, and their icons show.
+- **The buff icons move.** Press an icon and drag: the whole group follows, stays on the screen, and keeps its place until the page is reloaded (also after a Blinkwing to another world). A press beside the icons still goes to the world.
+- **On a phone the buff icons are half size.** The PC is unchanged.
+- **Premium items and scrolls are used** from the bag and the task bar as in the Windows client: buff scrolls, Amplification (ES) scrolls, Full Shout, Common Bank, Party Skill Full, Activition, Upcut Stone, Velocity, Blessing, Re-Stat, Re-Skill, boxes, and the like. Their buffs show with the item's icon and the time left under it ("59min", "3hr"); stacked ES scrolls share one icon with small copies under it; a premium timer (Full Shout, Common Bank ...) shows only in its last 30 minutes, as in the Windows client. Some ask first (the protection and smelting scrolls, Blessing, Re-Skill, Re-Stat): OK uses them.
+- **Not in the browser:** items that need a second item (upgrade cards, awakening scrolls) or open a window the browser lacks (name and guild name change, Custody, hair and face coupons, sex change, transmute, character seal, party summon, class change, pets, maps, tickets, monster summon, batteries).
+
+**What the test characters need:** a level 1-30 character in Flaris, by Buff Pang; and, in its bag, a few premium items from the web shop or a GM (for example an ES scroll, a Full Shout 15, a Scroll of SProtect, a Re-Skill, a gift box).
+
+**Start the client** from the buffs-premium folder (stop your own `npm run dev:client` first):
+
+```
+cd C:\Users\silec\Desktop\FlyFF\Bakbak\FlyffWeb-worktrees\buffs-premium
+$env:GATEWAY_PROXY = 'ws://<VM-IP>:8090'
+npm run dev:client
+```
+
+**Steps**, on the PC and a landscape phone:
+
+1. **Buff Pang.** Talk to Buff Pang in Flaris and choose **Get Buffed!** Success: four buff icons show (Quick Step, Haste, Heap Up and Accuracy, for an hour); a character above level 30 gets a line saying the level range instead.
+2. **Move the icons.** Press a buff icon and drag it across the screen. Success: the group follows and stays where it is let go; dragged at an edge, it stops at the edge; a tap beside the icons still walks.
+3. **Phone size** (phone only). Success: the buff icons are half the size they were, and their numbers still read.
+4. **A buff scroll.** Use an ES scroll from the task bar. Success: its icon shows with "59min" under it; the tooltip (PC) says the EXP bonus and the time left.
+5. **A premium timer.** Use a Full Shout 15. Success: it is used (the bag's count goes down); its icon shows only in its last 30 minutes, as in the Windows client.
+6. **A box.** Use a Scroll of SProtect (or Re-Skill from the bag). Success: a box asks first; Cancel does nothing, OK uses it.
+7. **A gift box.** Use a gift box. Success: the items it gives arrive in the bag, with a line naming each.
+
+## Results
+
+| Device | Browser | 1. Buff Pang | 2. Move | 3. Phone size | 4. Buff scroll | 5. Timer | 6. Box | 7. Gift box | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| PC | Chrome | | | n/a | | | | | |
+| Android phone | Chrome | | | | | | | | |
+| iPhone | Safari | | | | | | | | |
+| iPad | Safari | | | | | | | | |

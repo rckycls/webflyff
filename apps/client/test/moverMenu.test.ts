@@ -23,6 +23,16 @@ describe('npcMenuEntries (CWndWorld::ShowMoverMenu, WndWorld.cpp:6649-6684)', ()
     expect(enabled({ key: 't', name: 'T', menus: [0, 146], teleports: [{ x: 1, z: 2 }] })).toEqual([MMI.DIALOG, MMI.TELEPORTER]);
   });
 
+  it("Buff Pang's Get Buffed! (MMI_NPC_BUFF 74) is enabled, with its TID_MMI_DIALOG + 74 text", () => {
+    const pang: WebNpc = { key: 'MaFl_Helper', name: 'Buff Pang', menus: [0, 74] };
+    const texts = new Map([...TEXTS, text('TID_MMI_NPC_BUFF', 7074, 'Get Buffed!')]);
+    expect(npcMenuEntries(pang, texts, true)).toEqual([
+      { id: MMI.DIALOG, label: 'Dialog', enabled: true }, { id: MMI.NPC_BUFF, label: 'Get Buffed!', enabled: true },
+    ]);
+    expect(MMI.NPC_BUFF).toBe(74);
+    expect(soleEntry({ key: 'p', name: 'P', menus: [74] }, npcMenuEntries({ key: 'p', name: 'P', menus: [74] }, texts, false))).toBe(74);
+  });
+
   it('Arena entry is left out for a base job', () => {
     const npc: WebNpc = { key: 'a', name: 'A', menus: [0, 80] };
     expect(npcMenuEntries(npc, TEXTS, true).map((entry) => entry.id)).toEqual([0]);
