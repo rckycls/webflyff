@@ -14,6 +14,7 @@
 
 import type { WebItemProp } from '@flyffweb/formats';
 import type { Refusal } from './travelItems';
+import { windowOf } from './itemWindows';
 
 /**
  * The `IK2_*` the server uses (`DoUseItem`): REFRESHER 11, POTION 12, FOOD 14, SYSTEM 19, BLINKWING 22, AIRFUEL 23,
@@ -28,18 +29,18 @@ const EXT_ITEM = 21;
 const EXT_PET = 19;
 /** The upgrade cursor's kinds (`WndField.cpp:2351-2386`): ELECARD 37, PIERDICE 61, SOCKETCARD 62 and 2 63, RANDOM_SCROLL 101, ENCHANT 119. */
 const UPGRADE_IK3: ReadonlySet<number> = new Set([37, 61, 62, 63, 101, 119]);
-/** Kinds whose use is a window or a cursor: CREATE_MONSTER 85, PET 100, EGG 120, TICKET 122 (a layer list and DO_USE_ITEM_INPUT), VIS 138. */
-const WINDOW_IK3: ReadonlySet<number> = new Set([85, 100, 120, 122, 138]);
+/** Kinds whose use needs a system the browser lacks: PET 100, EGG 120, VIS 138. */
+const WINDOW_IK3: ReadonlySet<number> = new Set([100, 120, 138]);
 /**
- * The items whose use opens a window the browser lacks (`SendDoUseItem`, `CWndInventory`): name change 10424, class
- * change 10425, sex change 10220, guild name 10463, Custody 15083, hair 26410 and face 26411 coupons, item transmute
- * 26204 and 26218, party summon 26202, the character seal 26475 and 26476, pet naming 20039, the pet tamer's 21030 and
- * 21031, pet hatch 21036, pet life 21034, pet food 21037 and its mill 21038, attribute change 20037. (2026-11-05: the
- * maps, the batteries and Awakening Protection are used, with their boxes.)
+ * The items whose use opens a window the browser lacks (`SendDoUseItem`, `CWndInventory`): class change 10425 (whose
+ * server handler is off), guild name 10463, Custody 15083, hair 26410 and face 26411 coupons, the character seal 26475 and
+ * 26476, pet naming 20039, the pet tamer's 21030 and 21031, pet hatch 21036, pet life 21034, pet food 21037 and its mill
+ * 21038. (2026-11-05: the maps, the batteries and Awakening Protection are used, with their boxes; the name change, the
+ * sex change, the transmute, the party summon, the element change, the tickets and the monster summon have their
+ * windows, `windowOf` of itemWindows.ts.)
  */
 const WINDOW_IDS: ReadonlySet<number> = new Set([
-  10424, 10425, 10220, 10463, 15083, 26410, 26411, 26204, 26218, 26202, 26475, 26476, 20039, 21030, 21031, 21036, 21034,
-  21037, 21038, 20037,
+  10425, 10463, 15083, 26410, 26411, 26475, 26476, 20039, 21030, 21031, 21036, 21034, 21037, 21038,
 ]);
 /** The collector's batteries: the normal one (`TID_GAME_BETTERY_DESC`) and the cash ones (`TID_GAME_CACHE_BETTERY_DESC`). */
 const NORMAL_BATTERY = 26453;
@@ -72,13 +73,14 @@ export function confirmedTarget(prop: WebItemProp, focus: number, ownId: number)
 }
 
 /** What the bag and the task bar do with an item: use it, or leave it (Neuz's upgrade cursor, or a window), or nothing. */
-export type UseOf = 'use' | 'needsItem' | 'noWindow' | 'none';
+export type UseOf = 'use' | 'window' | 'needsItem' | 'noWindow' | 'none';
 
 /** What a use of `prop` from the bag or the task bar is (worn equipment and rides are the bag's and M5's). */
 export function useOf(prop: WebItemProp): UseOf {
   if (prop.part >= 0) return 'none';
   if (prop.exeTarget === EXT_ITEM || UPGRADE_IK3.has(prop.kind3)) return 'needsItem';
   if (WINDOW_IDS.has(prop.id) || WINDOW_IK3.has(prop.kind3) || prop.exeTarget === EXT_PET) return 'noWindow';
+  if (windowOf(prop) !== null) return 'window'; // 2026-11-05: itemWindows.ts
   return USE_KINDS.has(prop.kind2) || prop.skillTime !== undefined ? 'use' : 'none';
 }
 

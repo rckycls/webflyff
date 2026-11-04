@@ -166,11 +166,11 @@ describe('the premium items and scrolls (2026-11-05, SendDoUseItem and CWndInven
   const SPROTECT = itemProp({ id: 10464, part: -1, kind2: 19, kind3: 50 });
   const RESKILL = itemProp({ id: 10434, part: -1, kind2: 19, kind3: 50 });
   const BLESSING = itemProp({ id: 10430, part: -1, kind2: 19, kind3: 50 });
-  const RENAME = itemProp({ id: 10424, part: -1, kind2: 19, kind3: 50 });
-  const PROPS = new Map([[26101, BUFF], [700, PILL], [10464, SPROTECT], [10434, RESKILL], [10430, BLESSING], [10424, RENAME]]);
+  const RENAME = itemProp({ id: 15083, part: -1, kind2: 19, kind3: 50 }); // Custody: the bank's window
+  const PROPS = new Map([[26101, BUFF], [700, PILL], [10464, SPROTECT], [10434, RESKILL], [10430, BLESSING], [15083, RENAME]]);
   function rig(check: Record<string, unknown> = {}, boxOpen = false) {
     const own = newVagrant();
-    [[11, 26101], [12, 700], [13, 10464], [14, 10434], [15, 10430], [16, 10424]]
+    [[11, 26101], [12, 700], [13, 10464], [14, 10434], [15, 10430], [16, 15083]]
       .forEach(([objectId, itemId]) => own.inventory!.set(objectId!, { objectId: objectId!, itemId: itemId!, count: 3 }));
     const sent: unknown[][] = [];
     const said: unknown[] = [];
@@ -299,5 +299,28 @@ describe('the quick boxes and the maps (2026-11-05)', () => {
     r.use.use(6, 'bar');
     expect(r.maps()).toBe(1);
     expect(r.sent).toEqual([[6, -1, -1, 0x77], [6, -1, -1, 0x77]]);
+  });
+});
+
+describe('an item whose use is a window (2026-11-05, itemWindowFlows.ts)', () => {
+  it('goes to its window; when the window lets the use go on, DOUSEITEM goes', () => {
+    const own = newVagrant();
+    own.inventory!.set(3, { objectId: 3, itemId: 10424, count: 1 });
+    const sent: unknown[][] = [];
+    let open = true;
+    const opened: Array<[number, string]> = [];
+    const use = new ItemUse(() => own, new Map([[10424, itemProp({ id: 10424, part: -1, kind2: 19 })]]),
+      { sendUseItem: (...args) => void sent.push(args), sendRevival: vi.fn() }, {
+        check: () => ({ worldId: 1, casting: false, standing: true, flying: false, returnBuff: false, focusId: 0x77 }),
+        say: vi.fn(), returnScroll: { begin: vi.fn() },
+        window: (id, from) => { opened.push([id, from]); return open; },
+      });
+    expect(use.use(3, 'bag')).toBe(true);
+    expect(use.use(3, 'bar')).toBe(true);
+    expect(opened).toEqual([[3, 'bag'], [3, 'bar']]);
+    expect(sent).toEqual([]);
+    open = false;
+    use.use(3, 'bar');
+    expect(sent).toEqual([[3, -1, -1, 0x77]]);
   });
 });

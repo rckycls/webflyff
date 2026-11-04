@@ -33,6 +33,8 @@ const BUFF_ITEM = 0;
 const BUFF_ITEM2 = 3;
 /** `II_SYS_SYS_SCR_RETURN`: its icon always blinks, and its double-click goes back. */
 const RETURN_SCROLL = 10469;
+/** 2026-11-05: `II_SYS_SYS_SCR_PARTYSUMMON`: a party member's summon buff, whose double-click asks to go to the leader. */
+const PARTY_SUMMON = 26202;
 /** Two taps of a finger this near are a double-click (Windows' own double-click time). */
 const DOUBLE_TAP_MS = 500;
 /** An item buff of `dwSkillTime` 999999999 shows no time (`WndWorld.cpp:9318`). */
@@ -167,6 +169,8 @@ export interface BuffStatusOptions {
   items?: ItemsOf;
   /** A double-click (or a double tap) on the Scroll of Return's icon. */
   onReturnScroll?: () => void;
+  /** 2026-11-05: a double-click (or a double tap) on the party summon's buff icon. */
+  onPartySummon?: () => void;
   /** The taps' clock (ms). */
   now?: () => number;
   /** A text by its TID, for the time units and the tooltips (the English fallbacks when absent). */
@@ -298,7 +302,7 @@ export class BuffStatus {
         tooltip: () => [item.name, ...(buff.totalMs > 0 ? [clock(buff.leftMs)] : [])],
         blink: buff.id === RETURN_SCROLL ? 'always' : 'under', blinkLeftMs: buff.totalMs > 0 ? buff.leftMs : Infinity,
         blinkUnderMs: BLINK_MS, label: timed && buff.leftMs > 0 ? { kind: 'time', text: this.units(buff.leftMs) } : null,
-        goesBack: buff.id === RETURN_SCROLL,
+        goesBack: buff.id === RETURN_SCROLL || buff.id === PARTY_SUMMON,
       });
     }
     return looks;
@@ -378,13 +382,15 @@ export class BuffStatus {
       icon.append(label);
     }
     icon.addEventListener('pointerdown', (event) => this.startDrag(event as PointerEvent));
-    if (look.goesBack) this.goesBack(icon);
+    if (look.goesBack) this.goesBack(icon, look.key.includes(`:${PARTY_SUMMON}:`) ? () => this.options.onPartySummon?.() : () => this.options.onReturnScroll?.());
     return icon;
   }
 
-  /** Piece 7 M3: the Scroll of Return's icon: a double-click, or two taps within 500 ms, goes back. */
-  private goesBack(icon: HTMLElement): void {
-    const back = (): void => this.options.onReturnScroll?.();
+  /**
+   * Piece 7 M3: the Scroll of Return's icon: a double-click, or two taps within 500 ms, goes back; 2026-11-05: the party
+   * summon's asks to go to the leader (`CWndWorld::OnLButtonDblClk`, WndWorld.cpp:7268-7279).
+   */
+  private goesBack(icon: HTMLElement, back: () => void): void {
     icon.addEventListener('dblclick', back);
     let lastTap = -Infinity;
     icon.addEventListener('pointerup', (event) => {

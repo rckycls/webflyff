@@ -118,6 +118,11 @@ import { formatDefinedText } from './hud/messages';
 import { ItemUse } from './items/itemUse';
 import { SmTimers, skillPointsSpent } from './items/premiumItems';
 import { UpgradeCursor } from './items/upgradeCursor';
+import { ItemWindowFlows } from './items/itemWindowFlows';
+import type { ItemWindowPacket } from './items/itemWindowFlows';
+
+/** 2026-11-05: the worlds' titles a party summon's box names (World.inc's `SetTitle` through world.txt.txt). */
+const WORLD_NAMES: ReadonlyMap<number, string> = new Map([[1, 'Madrigal'], [2, 'Azria'], [3, 'Coral Island']]);
 import { ItemCast } from './items/itemCast';
 import { MoverBuffs } from './buffs';
 import type { BuffShown } from './buffs';
@@ -413,6 +418,8 @@ export class WorldScreen {
   private worldId = 0;
   private teleporter: TeleporterWindow | undefined;
   private itemUse: ItemUse | undefined;
+  /** 2026-11-05: the item windows' flows (the name change, the tickets, the summons ...). */
+  private itemWindows: ItemWindowFlows | undefined;
   /** 2026-11-05: the upgrade cursor, and whether its effect (XI_INT_INCHANT) is on the own mover. */
   private upgrade: UpgradeCursor | undefined;
   private upgradeEffectOn = false;
@@ -714,6 +721,14 @@ export class WorldScreen {
       // 2026-11-05: the premium timers (OnSMMode, OnSMModeAll), and an item's cool-down, before its count changes
       // (OnUpdateItem's UI_COOLTIME, DPClient.cpp:3226-3245)
       if (value.type === 'smMode') { this.smTimers.set(value.smType, value.seconds, performance.now()); continue; }
+      // 2026-11-05: the summons, a name changed, a sex or a face changed (OnSummon, OnSetPlayerName, OnSexChange, OnChangeFace)
+      if (value.type === 'summon') { this.itemWindows?.onSummon(value); continue; }
+      if (value.type === 'setPlayerName') { this.renamePlayer(value.playerId, value.name); continue; }
+      if (value.type === 'sexChange') { this.changeLook(world.movers.get(objectId), { index: value.index }); continue; }
+      if (value.type === 'changeFace') {
+        this.changeLook([...world.movers.values()].find((m) => m.added.player?.playerId === value.playerId), { face: value.face });
+        continue;
+      }
       if (value.type === 'resistSmMode') {
         this.resistElements = { left: value.left, right: value.right, defense: value.defense };
         continue;
@@ -962,6 +977,7 @@ export class WorldScreen {
     this.buffStatus = new BuffStatus(this.hudArt!, doc, {
       items: this.data!.itemProps, onReturnScroll: () => this.returnScroll?.goBack(), now: () => performance.now(),
       texts: (tid) => this.data?.texts.get(tid)?.text, place: this.buffPlace, onPlace: (at) => { this.buffPlace = at; },
+      onPartySummon: () => this.itemWindows?.partySummonBuff(),
     });
     this.targetBuffs = new TargetBuffs(this.hudArt!, doc);
     this.hud!.element.append(this.buffStatus.element, this.targetBuffs.element);
@@ -1045,6 +1061,24 @@ export class WorldScreen {
       boxOpen: () => this.messageBox?.isOpen === true,
       now: () => performance.now(),
       upgrade: { begin: (id) => this.upgrade?.begin(id) ?? false },
+      window: (id, from) => this.itemWindows?.open(id, from) ?? false,
+    });
+    // 2026-11-05: the item windows: the name change, the tickets, the sex and element changes, the transmute, the summons
+    this.itemWindows = new ItemWindowFlows({
+      own: () => this.own, props: this.data!.itemProps, setItems: new Set(this.data!.itemEtc?.setOf.keys() ?? []),
+      worldId: () => this.worldId, worldName: () => WORLD_NAMES.get(this.worldId) ?? '', partyName: () => this.party.name,
+      isLeader: () => this.party.isLeader(this.entry.character.playerId), focusId: () => this.focus?.targetId ?? NULL_ID,
+      text: (tid, args = []) => formatText(this.data?.texts.get(tid)?.text ?? '', args).replace(/\\n/g, '\n'),
+      prompt: (text, options, onAnswer, onCancel) => {
+        if (this.messageBox?.isOpen !== true) this.messageBox?.prompt(text, options, onAnswer, onCancel);
+      },
+      box: (text, ok, cancel) => {
+        if (text !== '' && this.messageBox?.isOpen !== true) this.messageBox?.open(text, 'okCancel', ok, cancel);
+      },
+      alert: (text) => { if (text !== '' && this.messageBox?.isOpen !== true) this.messageBox?.open(text, 'ok', () => {}); },
+      say: (tid, args = []) => this.sayRefusal(args.length > 0 ? { kind: 'say', tid, args: args[0]! } : { kind: 'say', tid }),
+      arm: (on) => this.armMonsterSummon(on),
+      send: (...packet) => this.sendItemWindow(packet),
     });
     // 2026-11-05: the upgrade cursor: Sunstone, Moonstone, the cards, the random and awakening scrolls, the Ultimate gem
     this.upgrade = new UpgradeCursor({
@@ -1148,8 +1182,11 @@ export class WorldScreen {
       land: (id) => { this.itemUse!.land(id); }, // Piece 7 M5: the worn ride's equipment cell
       // 2026-11-05: the upgrade cursor's target, its wait and its cancel
       upgrade: {
-        active: () => this.upgrade?.active ?? false, waitingTarget: () => this.upgrade?.waitingTarget ?? null,
-        pick: (id) => this.upgrade?.pick(id) ?? false, cancel: () => this.upgrade?.cancel(),
+        // the upgrade cursor's target, or the element change's or transmute's item (2026-11-05)
+        active: () => (this.upgrade?.active ?? false) || (this.itemWindows?.picking ?? false),
+        waitingTarget: () => this.upgrade?.waitingTarget ?? null,
+        pick: (id) => (this.itemWindows?.picking === true ? this.itemWindows.pick(id) : this.upgrade?.pick(id) ?? false),
+        cancel: () => { this.upgrade?.cancel(); this.itemWindows?.cancelPick(); },
       },
       drop: (id, count) => {
         if (this.dialog?.frame.isOpen === true) return; // no drop while the dialogue is open (DPClient.cpp:9378-9382)
@@ -1251,6 +1288,11 @@ export class WorldScreen {
     this.tap = new TapToWalk(
       renderer.domElement, (x, y) => this.pick(x, y), (error) => this.reportOnce(`tap: ${messageOf(error)}`, error),
       (press) => {
+        // 2026-11-05: an armed monster summon takes the press, on the ground it went down on
+        if (this.itemWindows?.armed === true) {
+          if (press.point !== undefined) this.placeMonster(press.point);
+          return true;
+        }
         const pressed = press.mover === null ? undefined : this.world?.movers.get(press.mover);
         if (press.mover === null) attackLoop.onGroundPressed(press.double);
         // in the air no NPC menu opens (WndWorld.cpp:7059, !IsFly()): the press goes to the air's selection (Piece 7 M5)
@@ -1901,7 +1943,10 @@ export class WorldScreen {
     this.inventoryWindow?.drawCooldowns((objectId) => this.itemUse?.cooldownDone(objectId) ?? null); // 2026-11-05
     // 2026-11-05: the upgrade cursor's wait, and its mode ended by a move (CWndWorld::Process, WndWorld.cpp:8050-8097)
     const upgradeSelf = this.world?.self();
-    if (upgradeSelf !== undefined && (upgradeSelf.act.state & ObjSta.MOVE_ALL) !== ObjSta.STAND) this.upgrade?.cancel();
+    if (upgradeSelf !== undefined && (upgradeSelf.act.state & ObjSta.MOVE_ALL) !== ObjSta.STAND) {
+      this.upgrade?.cancel();
+      this.itemWindows?.disarm(); // and the monster summon's cursor (WndManager.cpp:3377)
+    }
     this.upgrade?.step();
     this.inventoryWindow?.drawUpgrade();
     // the dialogue and the menu go with their NPC or when the player moves (WndWorld.cpp:8052-8081)
@@ -2017,6 +2062,73 @@ export class WorldScreen {
   }
 
   /** Piece 7 M3: a travel item's refusal: a line in its TID's colour (`%s` the world's title), or an OK box. */
+  /** 2026-11-05: an item window's packet, by the session's sender of its name. */
+  private sendItemWindow(packet: ItemWindowPacket): void {
+    const s = this.session;
+    switch (packet[0]) {
+      case 'querySetPlayerName': s.sendQuerySetPlayerName(packet[1], packet[2]); break;
+      case 'useItem': s.sendUseItem(packet[1], packet[2], -1, packet[3]); break;
+      case 'doUseItemInput': s.sendDoUseItemInput(packet[1], packet[2]); break;
+      case 'changeAttribute': s.sendChangeAttribute(packet[1], packet[2], packet[3]); break;
+      case 'itemTransy': s.sendItemTransy(packet[1], packet[2], packet[3]); break;
+      case 'summonParty': s.sendSummonParty(packet[1]); break;
+      case 'summonPartyConfirm': s.sendSummonPartyConfirm(packet[1], packet[2]); break;
+      case 'summonFriend': s.sendSummonFriend(packet[1], packet[2]); break;
+      case 'summonFriendAnswer': s.sendSummonFriendAnswer(packet[1], packet[2], packet[3]); break;
+      case 'createMonster': s.sendCreateMonster(packet[1], packet[2]); break;
+    }
+  }
+
+  /**
+   * 2026-11-05: the monster summon armed: Neuz's cursor effect (XI_CHR_CURSOR1, a CSfxCursor under the mouse) is a
+   * crosshair over the world here, with a line saying where to tap (a phone has no cursor).
+   */
+  private armMonsterSummon(on: boolean): void {
+    this.element.toggleAttribute('data-summon-armed', on);
+    if (on) this.hud?.messages.add('Click the ground within 15 m to place the monster.', 0xffffffff);
+  }
+
+  /** 2026-11-05: a press on the ground with the monster summon armed: its distance and land, to the flows. */
+  private placeMonster(point: Vec3): void {
+    const own = this.world?.self();
+    if (own === undefined) return;
+    const at = own.act.body.pos;
+    const distance = Math.hypot(point[0] - at[0], point[1] - at[1], point[2] - at[2]);
+    this.itemWindows?.place(point, distance, this.ground.landAttr(point[0], point[2]));
+  }
+
+  /**
+   * 2026-11-05: a player's new name (`OnSetPlayerName`, DPClient.cpp:15606-15670): its mover and name tag; the player's own
+   * says TID_GAME_CHANGENAME; XI_SYS_EXCHAN01 (108) plays on the mover.
+   */
+  private renamePlayer(playerId: number, name: string): void {
+    const world = this.world;
+    const mover = world === undefined ? undefined : [...world.movers.values()].find((m) => m.added.player?.playerId === playerId);
+    if (mover === undefined || mover.added.player === undefined) return;
+    mover.name = name;
+    mover.added.player.name = name;
+    this.recolorTags();
+    if (mover.isSelf) this.sayRefusal({ kind: 'say', tid: 'TID_GAME_CHANGENAME' });
+    const pos = mover.act.body.pos;
+    this.effects?.play({ xi: 108, pos: [pos[0], pos[1], pos[2]], followId: mover.objectId });
+  }
+
+  /**
+   * 2026-11-05: a player's sex (its mover's index, MI_MALE 11 or MI_FEMALE 12: `OnSexChange`, DPClient.cpp:14961-14990) or
+   * face (`OnChangeFace`, :6722-6750) changed: its model is made again.
+   */
+  private changeLook(mover: Mover | undefined, change: { index?: number; face?: number }): void {
+    const player = mover?.added.player;
+    if (mover === undefined || player === undefined) return;
+    if (change.index !== undefined) {
+      mover.added.index = change.index;
+      player.sex = change.index === 11 ? 0 : 1;
+    }
+    if (change.face !== undefined) player.headMesh = change.face;
+    this.views?.refresh(mover);
+    if (mover.isSelf && this.inventoryWindow?.frame.isOpen === true) void this.makePortrait(true);
+  }
+
   /**
    * 2026-11-05: the upgrade cursor's effect on the own mover, `XI_INT_INCHANT` (1716), from the material's double-click to
    * the send or a cancel (`m_pSfxUpgrade`, WndField.cpp:2392-2393, 13578-13582).
@@ -2613,6 +2725,9 @@ export class WorldScreen {
     this.wasFlying = false;
     this.upgrade?.reset(); // 2026-11-05: a world change ends the upgrade cursor and its wait
     this.upgrade = undefined;
+    this.itemWindows?.disarm();
+    this.itemWindows?.cancelPick();
+    this.itemWindows = undefined;
     this.upgradeEffectOn = false;
     this.messageBox?.dispose();
     this.selectVillage?.dispose();

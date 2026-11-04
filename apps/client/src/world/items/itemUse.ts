@@ -38,6 +38,8 @@ export interface ItemUseTravel {
   now?(): number;
   /** 2026-11-05: opens the world map (a map item from the bag). */
   openMap?(): void;
+  /** 2026-11-05: opens the item's window (`ItemWindowFlows.open`); false when it has none and the use goes on. */
+  window?(objectId: number, from: 'bag' | 'bar'): boolean;
   /** 2026-11-05: the upgrade cursor, which a material double-clicked in the bag starts (`UpgradeCursor.begin`). */
   upgrade?: { begin(objectId: number): boolean };
 }
@@ -157,6 +159,8 @@ export class ItemUse {
         travel.confirm(box, () => void this.use(objectId, 'confirmed', target), [prop.name]);
         return true;
       }
+      // 2026-11-05: an item whose use is a window (itemWindowFlows.ts): the window, unless it lets the use go on
+      if ((from === 'bag' || from === 'bar') && travel.window?.(objectId, from) === true) return true;
     }
     if (target === undefined) this.session.sendUseItem(objectId);
     else this.session.sendUseItem(objectId, -1, -1, target);

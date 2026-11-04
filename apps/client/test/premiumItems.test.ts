@@ -29,10 +29,13 @@ describe('useOf: what Neuz sends DOUSEITEM for', () => {
   it('an item that needs another item (EXT_ITEM, the upgrade cards) or a window the browser lacks is not used', () => {
     expect(useOf(prop({ kind2: 19, exeTarget: 21 }))).toBe('needsItem');
     for (const kind3 of [37, 61, 62, 63, 101, 119]) expect(useOf(prop({ kind2: 19, kind3 })), String(kind3)).toBe('needsItem');
-    for (const id of [10424, 10463, 15083, 26410, 26411, 10220, 26204, 26202, 26475, 26476, 20039, 20037, 10425]) {
+    for (const id of [10463, 15083, 26410, 26411, 26475, 26476, 20039, 10425]) {
       expect(useOf(prop({ id, kind2: 19 })), String(id)).toBe('noWindow');
     }
-    for (const kind3 of [85, 122, 120, 100, 138]) expect(useOf(prop({ kind2: 19, kind3 })), String(kind3)).toBe('noWindow');
+    for (const kind3 of [120, 100, 138]) expect(useOf(prop({ kind2: 19, kind3 })), String(kind3)).toBe('noWindow');
+    // 2026-11-05: the windows the browser has (itemWindows.ts)
+    for (const id of [10424, 10220, 26204, 26202, 20037]) expect(useOf(prop({ id, kind2: 19 })), String(id)).toBe('window');
+    for (const kind3 of [85, 122]) expect(useOf(prop({ kind2: 19, kind3 })), String(kind3)).toBe('window');
     expect(useOf(prop({ kind2: 14, exeTarget: 19 }))).toBe('noWindow'); // EXT_PET: the pet's food
     expect(useOf(prop({ kind2: 36 }))).toBe('use'); // IK2_TOCASH: the Funny Coin, after its box (2026-11-05)
   });

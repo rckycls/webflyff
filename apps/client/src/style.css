@@ -2295,6 +2295,15 @@ fieldset:disabled .btn {
   .hud-buffs[data-phone] .hud-buff-seconds, .hud-buffs[data-phone] .hud-buff-time { left: 1px; top: 10px; font-size: 8px; }
 }
 
+/* 2026-11-05: the monster summon armed: a crosshair over the world (Neuz's CSfxCursor, XI_CHR_CURSOR1) */
+.world[data-summon-armed] .world-view canvas { cursor: crosshair; }
+/* 2026-11-05: the message box's prompts (MessageBox.prompt): a text field, or a row of choices */
+.hud-message-input { position: absolute; box-sizing: border-box; padding: 1px 4px; border: 1px solid #8a6a52; background: #fff; color: #000; font: 12px Verdana, Geneva, Tahoma, sans-serif; }
+.hud-message-choices { position: absolute; display: flex; flex-wrap: wrap; gap: 4px; }
+.hud-message-choice { min-width: 34px; min-height: 22px; padding: 0 6px; border: 1px solid #8a6a52; border-radius: 2px; background: #f4e4d4; color: #000; font: 11px Verdana, Geneva, Tahoma, sans-serif; cursor: pointer; }
+.hud-message-choice[aria-pressed="true"] { background: #ffd76a; border-color: #5a3d20; }
+@media (pointer: coarse) { .hud-message-choice { min-height: 28px; } .hud-message-input { font-size: 16px; } }
+
 /* Piece 7 M4: the message box (CWndMessageBox MB_OK, hud/messageBox.ts) */
 .hud-message-text {
   position: absolute;

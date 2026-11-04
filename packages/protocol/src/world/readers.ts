@@ -44,6 +44,7 @@ import {
 } from './flight';
 import type { WorldMessage } from './types';
 import { readUltimate } from './upgrade';
+import { readChangeFace, readSexChange, readSummon } from './itemWindows';
 
 /**
  * The readers of the bundle messages the browser understands, by message type, for `readBundle`. Each copies
@@ -152,6 +153,9 @@ export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
     [MessageType.SM_MODE_ALL, readSmModeAll],
     [MessageType.RESISTSMMODE, readResistSmMode],
     [MessageType.ULTIMATE, readUltimate],
+    [MessageType.SUMMON, readSummon],
+    [MessageType.SEX_CHANGE, readSexChange],
+    [MessageType.CHANGEFACE, readChangeFace],
     [MessageType.CLEAR_USESKILL, readClearUseSkill],
     [MessageType.DOUSESKILLPOINT, readDoUseSkillPoint],
     [MessageType.INITSKILLPOINT, readInitSkillPoint],

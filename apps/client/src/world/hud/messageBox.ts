@@ -37,6 +37,10 @@ export class MessageBox {
   private readonly cancel: HTMLButtonElement;
   private onOk: () => void = () => {};
   private onCancel: () => void = () => {};
+  /** 2026-11-05: a prompt's text field and choices, and the choice made. */
+  private readonly input: HTMLInputElement;
+  private readonly choices: HTMLDivElement;
+  private chosen = 0;
 
   constructor(art: UiArt, doc: Document = document) {
     // its own size on a phone too (a phone rule makes its words 14 px): at the 0.7 of the other windows its text would be
@@ -70,7 +74,19 @@ export class MessageBox {
       ok();
     });
     this.cancel = button('cancel', 'Cancel', 'ButtCancel.tga', () => frame.close());
-    frame.body.append(text, this.ok, this.cancel);
+    // 2026-11-05: a prompt's text field and row of choices (`prompt`), under the text
+    const input = doc.createElement('input');
+    input.type = 'text';
+    input.className = 'hud-message-input';
+    input.hidden = true;
+    place(input, { left: 10, top: 50, width: CLIENT_WIDTH - 20, height: 20 });
+    const choices = doc.createElement('div');
+    choices.className = 'hud-message-choices';
+    choices.hidden = true;
+    place(choices, { left: 10, top: 46, width: CLIENT_WIDTH - 20, height: 26 });
+    frame.body.append(text, input, choices, this.ok, this.cancel);
+    this.input = input;
+    this.choices = choices;
     this.text = text;
     this.frame = frame;
     this.modal = new ModalBackdrop(frame, doc);
@@ -87,6 +103,46 @@ export class MessageBox {
 
   /** Shows `text` (as text) with OK (`'ok'`, MB_OK) or OK and Cancel (`'okCancel'`), centred; OK runs `onOk`, Cancel `onCancel`. */
   open(text: string, buttons: 'ok' | 'okCancel', onOk: () => void, onCancel: () => void = () => {}): void {
+    this.input.hidden = true;
+    this.choices.hidden = true;
+    this.text.style.height = `${CLIENT_HEIGHT - 45}px`;
+    this.show(text, buttons, onOk, onCancel);
+  }
+
+  /**
+   * 2026-11-05: a box that asks: `text`, then a text field (`input`, cut to `maxLength`: the name change's
+   * `CWndChangeName`, the friend summon's `CWndSummonFriend`) or a row of `choices`, the first chosen (the ticket's
+   * channels `CWndSelectCh`, the faces of `CWndChangeSex`, the elements of `CWndChangeAttribute`); OK hands `onAnswer` the
+   * field's value and the choice's index, Cancel runs `onCancel`.
+   */
+  prompt(
+    text: string, options: { input?: { maxLength: number }; choices?: readonly string[] },
+    onAnswer: (answer: { value: string; choice: number }) => void, onCancel: () => void = () => {},
+  ): void {
+    this.input.hidden = options.input === undefined;
+    this.input.value = '';
+    if (options.input !== undefined) this.input.maxLength = options.input.maxLength;
+    this.choices.hidden = options.choices === undefined;
+    this.chosen = 0;
+    const buttons = (options.choices ?? []).map((label, i) => {
+      const choice = this.choices.ownerDocument.createElement('button');
+      choice.type = 'button';
+      choice.className = 'hud-message-choice';
+      choice.textContent = label;
+      choice.setAttribute('aria-pressed', String(i === 0));
+      choice.addEventListener('click', () => {
+        this.chosen = i;
+        buttons.forEach((other, j) => other.setAttribute('aria-pressed', String(j === i)));
+      });
+      return choice;
+    });
+    this.choices.replaceChildren(...buttons);
+    this.text.style.height = '34px';
+    this.show(text, 'okCancel', () => onAnswer({ value: this.input.value, choice: this.chosen }), onCancel);
+    if (options.input !== undefined) this.input.focus();
+  }
+
+  private show(text: string, buttons: 'ok' | 'okCancel', onOk: () => void, onCancel: () => void): void {
     this.text.textContent = text;
     this.onOk = onOk;
     this.onCancel = onCancel;

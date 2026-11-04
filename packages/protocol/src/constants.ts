@@ -13,6 +13,17 @@ export const PacketType = {
   RANDOMSCROLL: 0xf000d00d,
   DO_USE_ITEM_TARGET: 0x70000004,
   ULTIMATE_ENCHANTWEAPON: 0xf000f113,
+  /** 2026-11-05: the item windows' packets (`MsgHdr.h`; world/itemWindows.ts). QUERYSETPLAYERNAME is also its answer. */
+  QUERYSETPLAYERNAME: 0x00000012,
+  SUMMON_FRIEND: 0xf000e001,
+  SUMMON_FRIEND_CONFIRM: 0xf000e002,
+  SUMMON_PARTY: 0xf000e003,
+  SUMMON_PARTY_CONFIRM: 0xf000e004,
+  SUMMON_FRIEND_CANCEL: 0xf000e005,
+  DO_USE_ITEM_INPUT: 0x8fffff00,
+  CHANGE_ATTRIBUTE: 0xf000d00e,
+  ITEMTRANSY: 0xf000d00c,
+  CREATEMONSTER: 0x0000002a,
   QUERYTICKCOUNT: 0x0b,
   PING: 0x14,
   CLOSE_EXISTING_CONNECTION: 0x16,
@@ -255,6 +266,10 @@ export const MessageType = {
   RESISTSMMODE: 0x005d,
   /** 2026-11-05: the Ultimate gem's answer (`CUser::AddUltimate`). */
   ULTIMATE: 0x0100,
+  /** 2026-11-05: the summons, the sex and the face changed (`MsgHdr.h:976, 1149, 1179`). */
+  SUMMON: 0x00ed,
+  SEX_CHANGE: 0x00dc,
+  CHANGEFACE: 0x004d,
   /** Piece 7 M3: the Scroll of Return's village taken, no body (`CUser::AddReturnScroll`, `User.cpp:6636-6645`). */
   RETURNSCORLL: 0x00ad,
   /** Piece 7 M5: another flier's move, state and correction (`User.cpp:4937-5035`); its angle is MOVERANGLE. */

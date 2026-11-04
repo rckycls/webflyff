@@ -243,6 +243,7 @@ export function encodeEndSkillQueue(): Uint8Array {
 export type WorldPacket =
   | { type: 'teleporter'; key: string; index: number }
   | { type: 'npcBuff'; key: string }
+  | { type: 'setPlayerName'; playerId: number; name: string }
   | { type: 'enchant' | 'piercing' | 'randomScroll'; targetId: number; materialId: number }
   | { type: 'doUseItemTarget'; materialId: number; targetId: number }
   | { type: 'ultimateEnchantWeapon'; targetId: number; materialId: number }
@@ -348,6 +349,11 @@ export function decodeWorldPacket(body: Uint8Array): WorldPacket {
     }
     case PacketType.BLOCK: {
       const value = readBlock(r); r.expectEnd(); return value;
+    }
+    // 2026-11-05: the name change's answer, to every client (`OnSetPlayerName`, DPClient.cpp:15606-15610)
+    case PacketType.QUERYSETPLAYERNAME: {
+      const playerId = r.u32(), name = r.string(42); r.expectEnd();
+      return { type: 'setPlayerName', playerId, name };
     }
     case PacketType.JOIN:
       return { type: 'join', body };

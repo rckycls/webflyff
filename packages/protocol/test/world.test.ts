@@ -67,6 +67,8 @@ describe('world constants', () => {
       DOAPPLYUSESKILL: 0x00d7,
       // 2026-11-05: the premium timers.
       SM_MODE: 0x003f, SM_MODE_ALL: 0x003e, RESISTSMMODE: 0x005d, ULTIMATE: 0x0100,
+      // 2026-11-05: the item windows' answers.
+      SUMMON: 0x00ed, SEX_CHANGE: 0x00dc, CHANGEFACE: 0x004d,
       // Piece 7 M5: flight.
       MOVERMOVED2: 0x00cc, MOVERBEHAVIOR2: 0x00cd, MOVERCORR2: 0x00c9, SETFUEL: 0x004b, MELEE_ATTACK2: 0x00e4, SENDACTMSG: 0x005c,
     });
