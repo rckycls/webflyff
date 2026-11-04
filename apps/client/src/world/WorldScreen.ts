@@ -97,6 +97,7 @@ import { PartyHpBars } from './render/PartyHpBars';
 import { partyEffects } from './fx/partyEffects';
 import type { PartyEffectContext, PartyMover } from './fx/partyEffects';
 import type { PartyHpMember } from './render/PartyHpBars';
+import { QuestMarkerIndex } from './quests/questMarkers';
 import { questLines, timedOut } from './quests/questLines';
 import { createQuestLookup } from './quests/questRules';
 import type { QuestCatalog, QuestNames, QuestOwner } from './quests/questRules';
@@ -139,6 +140,7 @@ import type { Page3d } from './page3d';
 import { DamageNumbers, screenProjector } from './render/DamageNumbers';
 import { MoverViews } from './render/MoverViews';
 import { NameTagLayer } from './render/NameTagLayer';
+import { WorldIndicatorLayer } from './render/WorldIndicatorLayer';
 import { lookOf } from './render/looks';
 import { MoveMark } from './render/moveMark';
 import { loadHeldItems, loadMoverModel, loadRideModel } from './render/moverModels';
@@ -273,6 +275,8 @@ export class WorldScreen {
   private tookOff = false;
   private views: MoverViews | undefined;
   private tags: NameTagLayer | undefined;
+  private indicators: WorldIndicatorLayer | undefined;
+  private readonly pendingAttackEmotes = new Map<number, number>();
   private keyboard: KeyboardInput | undefined;
   private joystick: Joystick | undefined;
   private tap: TapToWalk | undefined;
@@ -380,6 +384,7 @@ export class WorldScreen {
   private worldMapData: WebWorldMap | null = null;
   /** The quest catalog (Piece 7 M1; null without one: quests listed by id), the quest window and the tracker. */
   private questCatalog: QuestCatalog | null = null;
+  private questMarkerIndex: QuestMarkerIndex | null = null;
   private questWindow: QuestWindow | undefined;
   private questTracker: QuestTracker | undefined;
   /**
@@ -557,6 +562,7 @@ export class WorldScreen {
       this.services = services;
       this.data = data;
       [this.worldMapData, this.questCatalog, this.partyCatalog] = await optional;
+      this.questMarkerIndex = this.questCatalog === null ? null : new QuestMarkerIndex(this.questCatalog);
       if (this.over) return;
       const audio = this.audio;
       if (audio !== null) {
@@ -700,10 +706,19 @@ export class WorldScreen {
         continue;
       }
       if (value.type === 'chat' || value.type === 'shout' || value.type === 'whisper' || value.type === 'party' || value.type === 'guild' || value.type === 'system' || value.type === 'announcement') {
-        if (value.type === 'chat' && world.movers.get(objectId)?.kind !== 'player') continue;
         if (value.type === 'chat') {
-          this.chatWindow?.append('nearby', world.movers.get(objectId)?.name ?? 'Unknown', value.text);
           const speaker = world.movers.get(objectId);
+          // CUserMng::AddDlgEmoticon sends `!<index>` through AddChat; v15 DLGEMOT_ATTACK is index 0.
+          if (speaker?.kind === 'monster' && value.text === '!0') {
+            if ((speaker.added.npc?.activeAttack ?? 0) !== 0) {
+              const now = performance.now();
+              if (this.indicators) this.indicators.attack(objectId, now);
+              else this.pendingAttackEmotes.set(objectId, now + 5000);
+            }
+            continue;
+          }
+          if (speaker?.kind !== 'player') continue;
+          this.chatWindow?.append('nearby', world.movers.get(objectId)?.name ?? 'Unknown', value.text);
           if (speaker && this.data && nameTagOf(speaker, world.self(), this.data.nameColors, this.data.honorTitles)) this.speechBubbles?.say(objectId, value.text);
         }
         else this.chatWindow?.append(value.type, value.sender, value.text, value.type === 'whisper' ? value.recipient : undefined);
@@ -783,6 +798,10 @@ export class WorldScreen {
       if (mover.isSelf && this.inventoryWindow?.frame.isOpen) void this.makePortrait(true);
     };
     this.tags = new NameTagLayer(stage.scene, this.element.ownerDocument);
+    this.indicators = new WorldIndicatorLayer(stage.scene, this.element.ownerDocument);
+    const now = performance.now();
+    for (const [id, until] of this.pendingAttackEmotes) if (until > now) this.indicators.attack(id, until - 5000);
+    this.pendingAttackEmotes.clear();
     this.speechBubbles = new SpeechBubbleLayer(stage.scene, this.element.ownerDocument);
     this.startEffects(stage, services);
     this.startHud(services, folder);
@@ -791,6 +810,14 @@ export class WorldScreen {
     stage.ground();
     stage.focus(this.ownAt());
     const loaded = await Promise.all([stage.ready(), this.views.settled(), this.loadSheets(services, generation)]);
+    if (this.over || generation !== this.stageGeneration) return;
+    if (loaded[2]) {
+      try {
+        await this.indicators.loadArtwork(loaded[2], (key) => services.store.url(key));
+      } catch (error) {
+        this.reportOnce(`world indicators: ${messageOf(error)}`, error);
+      }
+    }
     if (this.over || generation !== this.stageGeneration) return;
     clearTimeout(this.loadTimer);
     this.showWorld(loaded[2]);
@@ -1553,6 +1580,12 @@ export class WorldScreen {
       this.cameraPlaced = true;
       this.groundItems?.update(world.groundItems, stage.camera, this.stepsRun);
       this.tags!.update(stage.camera, renderer.getSize(drawingSize).y, (objectId) => views.placeOf(objectId));
+      const owner = this.questOwner();
+      const quests = this.own?.quests ?? new Map();
+      const completed = this.own?.completedQuests ?? [];
+      const markerIndex = this.questMarkerIndex;
+      this.indicators!.sync(world.movers, (mover) => markerIndex?.forNpc(mover.added.npc?.characterKey ?? '', quests, completed, owner) ?? null, now);
+      this.indicators!.update(stage.camera, renderer.getSize(drawingSize).y, (objectId) => views.placeOf(objectId), now);
       this.speechBubbles?.update(stage.camera, drawingSize.y, (objectId) => views.placeOf(objectId));
       this.effects?.draw(stage.camera);
       const ownView = world.self();
@@ -2476,6 +2509,8 @@ export class WorldScreen {
     this.mark?.dispose();
     this.views?.dispose();
     this.tags?.dispose();
+    this.indicators?.dispose();
+    this.pendingAttackEmotes.clear();
     this.speechBubbles?.dispose();
     this.effectRenderer?.dispose();
     this.effectTextures?.dispose();
@@ -2536,7 +2571,7 @@ export class WorldScreen {
     this.paused = false;
     this.askedSteps = 0;
     for (const { reject } of this.stepsDrawn.splice(0)) reject(new Error('the world changed'));
-    for (const key of ['world', 'own', 'stage', 'views', 'tags', 'speechBubbles', 'keyboard', 'walkKey', 'joystick', 'tap',
+    for (const key of ['world', 'own', 'stage', 'views', 'tags', 'indicators', 'speechBubbles', 'keyboard', 'walkKey', 'joystick', 'tap',
       'focus', 'attackLoop', 'skillUse', 'mark', 'effects', 'effectRenderer', 'effectTextures', 'numbers', 'marks',
       'hud', 'hudArt', 'taskBar', 'attackButton', 'cameraControls', 'jumpButton', 'logOutBox', 'reviveWindow',
       'characterWindow', 'skillWindow', 'inventoryWindow', 'moverMenu', 'dialog', 'shopWindow', 'itemUse',

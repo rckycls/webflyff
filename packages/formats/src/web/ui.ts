@@ -19,6 +19,10 @@ export interface WebUiSheets {
   damageDigits: WebUiSheet;
   /** `Icon/icon_target.inc` (16 frames): the corner marks around the selected target, each of the four cells in its four flips. */
   targetCorners: WebUiSheet;
+  /** Original NPC head markers; v15 uses frames 1 (available), 2 (progress), 3 (ready), 4 (future). */
+  questEmoticons?: WebUiSheet;
+  /** Original monster dialog reactions; DLGEMOT_ATTACK is frame 0. */
+  dialogEmoticons?: WebUiSheet;
 }
 
 /** The logical key of the sheets catalog in the asset index. */

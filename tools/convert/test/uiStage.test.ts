@@ -310,6 +310,22 @@ describe('the UI stage on a small hand-made client', () => {
     ]);
   });
 
+  it('converts the original quest and dialog sheets with their script frames and transparency keys', async () => {
+    const run = await runUi({
+      'Icon/icon_QuestEmoticon.inc': 'number 5 texture "Icon/icon_QuestEmoticon.dds" 0xffff00ff serialize 5 32 32 0 0 0 0',
+      'Icon/icon_QuestEmoticon.dds': solidDds(160, 32, MAGENTA),
+      'Theme/Default/texDialogEmoticon.inc': 'number 1 texture "Theme/Default/texDialogEmoticon.dds" 0xffff00ff serialize 1 32 32 0 0 0 0',
+      'Theme/Default/texDialogEmoticon.dds': solidDds(32, 32, [255, 125, 0, 255]),
+    }, 'icon_QuestEmoticon,texDialogEmoticon');
+    const sheets = JSON.parse(await fs.readFile(path.join(out, run.writer.pathOf('data/uiSheets.json')!), 'utf8')) as WebUiSheets;
+    expect(sheets.questEmoticons?.frames[4]).toEqual({ x: 128, y: 0, w: 32, h: 32 });
+    expect(sheets.dialogEmoticons?.frames[0]).toEqual({ x: 0, y: 0, w: 32, h: 32 });
+    const quest = await png(run, sheets.questEmoticons!.image);
+    expect([...quest.data.slice(0, 4)]).toEqual([0, 0, 0, 0]);
+    const dialog = await png(run, sheets.dialogEmoticons!.image);
+    expect([...dialog.data.slice(0, 4)]).toEqual([255, 125, 0, 255]);
+  });
+
   it('reports a piece of the theme list that the client does not have as a warning, and a .jpg icon once', async () => {
     const run = await runUi();
 

@@ -39,12 +39,24 @@ export interface WebQuest {
   head: number;
   /** `SetCharacter`: the NPC that gives it. */
   npc?: string;
+  /** `SetMultiCharacter`: NPCs that give it, gated by an item when supplied. */
+  givers?: Array<{ npc: string; item: number }>;
   /** `SetEndCondCharacter`: the NPC that takes it back, and where. */
   endNpc?: string;
+  /** `SetEndCondMultiCharacter`: NPCs that take it back, gated by an item. */
+  endNpcs?: Array<{ npc: string; item: number }>;
   endGoal?: WebQuestGoal;
   levelMin?: number;
   levelMax?: number;
   jobs?: number[];
+  beginSex?: number;
+  beginGold?: number;
+  beginSkill?: [number, number];
+  beginPrevious?: { type: number; quests: number[] };
+  beginItems?: WebQuestItem[];
+  beginNotItems?: WebQuestItem[];
+  /** A non-default start condition the browser cannot evaluate safely. */
+  beginUnsupported?: true;
   /** `!SetRemove( n )`: the player cannot abandon it. */
   noRemove?: true;
   /** `SetRepeat`: it never joins the completed list. */

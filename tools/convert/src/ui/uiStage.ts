@@ -209,6 +209,8 @@ export const THEME_FILES: readonly string[] = [
 const SHEETS = [
   { field: 'damageDigits', dir: 'SFX', script: 'DmgEffect.inc' }, // CDamageNumMng::LoadTexture, 2DRender.cpp:2004
   { field: 'targetCorners', dir: 'Icon', script: 'icon_target.inc' }, // CWndWorld, WndWorld.cpp:3511
+  { field: 'questEmoticons', dir: 'Icon', script: 'icon_QuestEmoticon.inc', optional: true },
+  { field: 'dialogEmoticons', dir: 'Theme/Default', script: 'texDialogEmoticon.inc', optional: true },
 ] as const;
 
 /**
@@ -300,7 +302,10 @@ export function createUiStage(options: UiStageOptions = {}): Stage {
         try {
           sheets.push(await readSheet(ctx, spec));
         } catch (error) {
-          ctx.report.fail(KIND, `${spec.dir}/${spec.script}`, error);
+          if ('optional' in spec) {
+            if (all || wanted(spec.script)) ctx.report.warn(KIND, `${spec.dir}/${spec.script}`, String(error));
+          }
+          else ctx.report.fail(KIND, `${spec.dir}/${spec.script}`, error);
         }
       }
       const sheetKeys = new Map(sheets.map((sheet) => [sheet.picture, sheet.colorKey]));
@@ -351,13 +356,15 @@ export function createUiStage(options: UiStageOptions = {}): Stage {
       });
 
       // The catalog needs both sheets; it is written when a sheet's picture was let through.
-      if (sheets.length === SHEETS.length && sheets.some((sheet) => pictures.has(sheet.picture))) {
+      if (['damageDigits', 'targetCorners'].every((field) => sheets.some((sheet) => sheet.field === field)) && sheets.some((sheet) => pictures.has(sheet.picture))) {
         try {
           const sheetOf = (field: Sheet['field']): WebUiSheet => {
             const sheet = sheets.find((candidate) => candidate.field === field)!;
             return { image: iconKeyOf(path.basename(sheet.picture)), frames: sheet.pack.frames };
           };
           const catalog: WebUiSheets = { damageDigits: sheetOf('damageDigits'), targetCorners: sheetOf('targetCorners') };
+          if (sheets.some((sheet) => sheet.field === 'questEmoticons')) catalog.questEmoticons = sheetOf('questEmoticons');
+          if (sheets.some((sheet) => sheet.field === 'dialogEmoticons')) catalog.dialogEmoticons = sheetOf('dialogEmoticons');
           const json = new TextEncoder().encode(JSON.stringify(catalog));
           await ctx.writer.write(UI_SHEETS_KEY, json, sheets[0]!.script);
           ctx.report.ok(KIND, sheets[0]!.script, sheets.reduce((n, sheet) => n + sheet.bytes, 0), json.length);

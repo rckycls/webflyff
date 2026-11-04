@@ -167,6 +167,13 @@ export function readPropQuest(
           quest.npc = textOf(args[0]);
           break;
         }
+        case 'SetMultiCharacter': {
+          for (let i = 0; i + 1 < args.length; i += 2) {
+            const npc = textOf(args[i]);
+            if (npc) (quest.givers ??= []).push({ npc, item: numberOf(args[i + 1]) });
+          }
+          break;
+        }
         case 'SetEndCondCharacter': {
           // an empty key is the giver (Project.cpp:1959-1963)
           const npc = textOf(args[0]) || (quest.npc ?? '');
@@ -176,9 +183,23 @@ export function readPropQuest(
           if (at !== undefined) quest.endGoal = at;
           break;
         }
-        case 'SetEndCondMultiCharacter': endCondCharacter = true; break;
+        case 'SetEndCondMultiCharacter': {
+          endCondCharacter = true;
+          for (let i = 0; i + 1 < args.length; i += 2) {
+            const npc = textOf(args[i]);
+            if (npc) (quest.endNpcs ??= []).push({ npc, item: numberOf(args[i + 1]) });
+          }
+          break;
+        }
         case 'SetBeginCondLevel': quest.levelMin = n(0); quest.levelMax = n(1); break;
         case 'SetBeginCondJob': quest.jobs = args.map((arg) => numberOf(arg)); break;
+        case 'SetBeginCondSex': quest.beginSex = n(0); break;
+        case 'SetBeginCondGold': quest.beginGold = n(0); break;
+        case 'SetBeginCondSkillLvl': quest.beginSkill = [n(0), n(1)]; break;
+        case 'SetBeginCondPreviousQuest': quest.beginPrevious = { type: n(0), quests: args.slice(1).map((arg) => numberOf(arg)).filter((id) => id !== 0) }; break;
+        case 'SetBeginCondItem': (quest.beginItems ??= []).push(item(args, false)); break;
+        case 'SetBeginCondNotItem': (quest.beginNotItems ??= []).push(item(args, false)); break;
+        case 'SetBeginCondParty': if (args.some((arg) => numberOf(arg) !== 0)) quest.beginUnsupported = true; break;
         case 'SetRemove': if (n(0) === 0) quest.noRemove = true; else delete quest.noRemove; break;
         case 'SetRepeat': if (n(0) !== 0) quest.repeat = true; else delete quest.repeat; break;
         case 'SetEndCondLimitTime': quest.limitTime = n(0); break;
@@ -231,7 +252,9 @@ export function readPropQuest(
         case 'SetEndRewardPKValue': rewards().pk = [n(0), n(1)]; break;
         case 'SetEndRewardHide': if (n(0) !== 0) rewards().hidden = true; break;
         case 'SetDesc': if (state !== undefined) quest.states[state] = textOf(args[0]); break;
-        default: // read and dropped (SetDialog, QuestItem, the begin conditions it does not show ...)
+        default:
+          if (name.startsWith('SetBeginCond') && args.some((arg) => numberOf(arg) !== 0)) quest.beginUnsupported = true;
+          // Other statements are read and dropped (SetDialog, QuestItem, ...).
       }
     };
 
