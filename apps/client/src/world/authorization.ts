@@ -14,3 +14,23 @@ export const AUTH_GAMEMASTER = 0x4c;
 export function isGameMaster(authorization: number): boolean {
   return authorization >= AUTH_GAMEMASTER;
 }
+
+/**
+ * `GetAuthorizationRank` (`authorization.h:58-82`) as this server's Neuz is built (`VersionCommon.h:208-212`): its VIP
+ * letters rank with the players and its staff moderator under the game masters; -1 for a letter it has no rank for.
+ */
+const RANKS: ReadonlyMap<string, number> = new Map([
+  ['D', 0], ['F', 10], ['1', 11], ['2', 12], ['3', 13], ['G', 20], ['H', 30], ['J', 40], ['K', 45], ['L', 50], ['M', 60],
+  ['N', 70], ['O', 80], ['P', 90],
+]);
+
+/**
+ * `IsAuthorizationHigher` (`authorization.h:93-102`): the ranks compared, or the letters when either has none (2026-11-05:
+ * the chat's commands, `hud/chatCommands.ts`).
+ */
+export function isAuthorizationHigher(current: number, required: number): boolean {
+  const have = RANKS.get(String.fromCharCode(current)) ?? -1;
+  const need = RANKS.get(String.fromCharCode(required)) ?? -1;
+  if (have < 0 || need < 0) return required <= current;
+  return have >= need;
+}

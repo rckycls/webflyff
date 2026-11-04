@@ -369,6 +369,8 @@ export class WorldScreen {
   private skillWindow: SkillWindow | undefined;
   private inventoryWindow: InventoryWindow | undefined;
   private chatWindow: ChatWindow | undefined;
+  /** The authorization the chat's suggestions were last given (2026-11-05). */
+  private chatAuthorization = -1;
   private speechBubbles: SpeechBubbleLayer | undefined;
   private moverMenu: MoverMenu | undefined;
   /**
@@ -1970,6 +1972,12 @@ export class WorldScreen {
     this.targetBuffs?.update(target?.buffs.list(buffNow) ?? [], this.data!.skills, buffNow, this.element.clientWidth);
     const gameMaster = isGameMaster(self?.added.player?.authorization ?? 0);
     this.hud!.frame(now, this.own, self?.name ?? this.entry.character.name, target, gameMaster);
+    // 2026-11-05: the chat's command suggestions offer what the own account's authorization reaches
+    const authorization = self?.added.player?.authorization;
+    if (authorization !== undefined && authorization !== this.chatAuthorization) {
+      this.chatAuthorization = authorization;
+      this.chatWindow?.setAuthorization(authorization);
+    }
     this.taskBar!.update(this.own, this.barData());
     this.nearbyItems?.update(world.groundItems, self?.act.body.pos ?? null);
     if (this.own) this.inventoryWindow?.update(this.own);

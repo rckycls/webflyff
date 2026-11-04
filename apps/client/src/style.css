@@ -2476,3 +2476,18 @@ fieldset:disabled .btn {
 .hud-res-list-rows > [role="option"]:hover { background: #c8c8ff66; }
 .hud-res-list-rows > [aria-selected="true"] { background: #6464ff55; }
 @media (pointer: coarse) { .hud-res-edit input { font-size: 16px; } }
+
+/* 2026-11-05: the chat's command suggestions (ChatWindow, chatCommands.ts): a list over the line, the walked-to row lit */
+.hud-chat form { position: relative; }
+.chat-suggestions {
+  position: absolute; left: 3px; right: 3px; bottom: 100%; z-index: 5; max-height: 180px; overflow-y: auto;
+  border: 1px solid #a7775e; border-radius: 4px 4px 0 0; background: #fffaf2f2; color: #302c28; text-shadow: none;
+  font: 12px Arial, sans-serif; scrollbar-width: thin;
+}
+.chat-suggestions[hidden] { display: none; }
+.chat-suggestion { display: flex; align-items: baseline; gap: 8px; padding: 2px 6px; cursor: pointer; white-space: nowrap; }
+.chat-suggestion[aria-selected="true"], .chat-suggestion[role="option"]:hover { background: #c3d7fc; }
+.chat-suggestion-name { font-weight: bold; }
+.chat-suggestion-help { overflow: hidden; text-overflow: ellipsis; color: #6b5a4c; }
+.chat-suggestion-gm { margin-left: auto; padding: 0 4px; border-radius: 3px; background: #b03a2e; color: #fff; font-size: 10px; }
+@media (pointer: coarse) { .chat-suggestion { padding: 6px 8px; font-size: 14px; } }
