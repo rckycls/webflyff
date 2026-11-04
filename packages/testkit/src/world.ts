@@ -1,10 +1,10 @@
 import {
   ArWriter, AttackFlag, BUNDLE_MARKER, MAX_SHORTCUT_STRING, MAX_SKILL_JOB, MAX_SLOT_APPLET, MAX_SLOT_ITEM,
-  MAX_SLOT_ITEM_COUNT, MAX_SLOT_QUEUE, MessageType, NULL_ID, ObjectType, ProtocolError, ShortcutKind, writeQuest,
+  MAX_SLOT_ITEM_COUNT, MAX_SLOT_QUEUE, MessageType, NULL_ID, ObjectType, PacketType, ProtocolError, ShortcutKind, writeQuest,
 } from '@flyffweb/protocol';
 import type {
-  AddedMover, AddedNpc, AddedPlayer, InventoryItem, MonsterRate, MoveReport, OwnCharacter, OwnQuest, Shortcut, SkillSlot,
-  TaskBar, Vec3,
+  AddedMover, AddedNpc, AddedPlayer, InventoryItem, MonsterRate, MoveReport, OwnCharacter, OwnQuest, PartyBlock, PartyRequestSide,
+  PlayerDataRecord, Shortcut, SkillSlot, TaskBar, Vec3,
 } from '@flyffweb/protocol';
 
 /** One message of a scripted bundle. `fields` are the bytes after the object ID and the type, built by the caller. */
@@ -762,3 +762,97 @@ export function writeAddMonster(objectId: number, m: AddedMover): ScriptMessage 
 export function writeAddNpc(objectId: number, n: AddedMover): ScriptMessage {
   return scripted(objectId, MessageType.ADD_OBJ, npcFields(n, npcOf(n)));
 }
+
+// Piece 7 M4: the party's messages ([R §1.1]), each about the own mover as the world server writes them
+// (`CUser::AddPartyMember` and the like, `WORLDSERVER/User.cpp`), in the order of the readers (`world/party.ts`).
+
+/** `MAX_PARTYMODE` (`party.h:24-26`). */
+const PARTY_MODES = 5;
+
+/** PARTYMEMBER: the id, the two names, the size, then the party block when it has members (`CParty::Serialize`). */
+export function writePartyMember(objectId: number, playerId: number, leaderName: string, memberName: string, party: PartyBlock | null): ScriptMessage {
+  const w = new ArWriter().u32(playerId).string(leaderName).string(memberName).i32(party?.members.length ?? 0);
+  if (party !== null) {
+    w.u32(party.partyId).i32(party.kind).i32(party.members.length).i32(party.level).i32(party.exp).i32(party.point)
+      .i32(party.expMode).i32(party.itemMode).u32(party.duelPartyId);
+    for (let i = 0; i < PARTY_MODES; i++) w.i32(party.modeTime[i] ?? 0);
+    if (party.kind !== 0) w.string(party.name);
+    for (const member of party.members) w.u32(member.playerId).i32(member.removed ? 1 : 0);
+  }
+  return scripted(objectId, MessageType.PARTYMEMBER, w);
+}
+
+function writeSide(w: ArWriter, side: PartyRequestSide): ArWriter {
+  return w.u32(side.id).i32(side.level).i32(side.job).u8(side.sex);
+}
+
+/** PARTYREQEST: the leader's side, the member's, the leader's name, the troup flag. */
+export function writePartyRequest(objectId: number, leader: PartyRequestSide, member: PartyRequestSide, leaderName: string, troup = 0): ScriptMessage {
+  return scripted(objectId, MessageType.PARTYREQEST, writeSide(writeSide(new ArWriter(), leader), member).string(leaderName).i32(troup));
+}
+
+export const writePartyRequestCancel = (objectId: number, leaderId: number, memberId: number, mode: number): ScriptMessage =>
+  scripted(objectId, MessageType.PARTYREQESTCANCEL, new ArWriter().u32(leaderId).u32(memberId).i32(mode));
+export const writePartyExp = (objectId: number, exp: number, level: number, point: number): ScriptMessage =>
+  scripted(objectId, MessageType.PARTYEXP, new ArWriter().i32(exp).i32(level).i32(point));
+export const writePartyChangeLeader = (objectId: number, leaderId: number): ScriptMessage =>
+  scripted(objectId, MessageType.ADDPARTYCHANGELEADER, new ArWriter().u32(leaderId));
+export const writePartyChangeTroup = (objectId: number, name: string): ScriptMessage =>
+  scripted(objectId, MessageType.PARTYCHANGETROUP, new ArWriter().string(name));
+export const writePartyChangeName = (objectId: number, name: string): ScriptMessage =>
+  scripted(objectId, MessageType.PARTYCHANGENAME, new ArWriter().string(name));
+/** ADDPARTYNAME: the advanced-party name this player registered before. */
+export const writeMyPartyName = (objectId: number, name: string): ScriptMessage =>
+  scripted(objectId, MessageType.ADDPARTYNAME, new ArWriter().string(name));
+export const writePartyItemMode = (objectId: number, mode: number): ScriptMessage =>
+  scripted(objectId, MessageType.PARTYCHANGEITEMMODE, new ArWriter().i32(mode));
+export const writePartyExpMode = (objectId: number, mode: number): ScriptMessage =>
+  scripted(objectId, MessageType.PARTYCHANGEEXPMODE, new ArWriter().i32(mode));
+
+/** SETPARTYMODE: the mode, the skill time, on or off, and the points after an on. */
+export function writeSetPartyMode(objectId: number, mode: number, skillTime: number, on: boolean, point = 0): ScriptMessage {
+  const w = new ArWriter().i32(mode).u32(skillTime).i32(on ? 1 : 0);
+  if (on) w.i32(point);
+  return scripted(objectId, MessageType.SETPARTYMODE, w);
+}
+
+export const writeSetPartyMemberParam = (objectId: number, playerId: number, param: number, value: number): ScriptMessage =>
+  scripted(objectId, MessageType.SET_PARTY_MEMBER_PARAM, new ArWriter().u32(playerId).u8(param).i32(value));
+export const writePartyMapInfo = (objectId: number, index: number, pos: Vec3): ScriptMessage =>
+  scripted(objectId, MessageType.PARTYMAPINFO, new ArWriter().i32(index).vec3(pos));
+
+/** The party chat (`SNAPSHOTTYPE_PARTYCHAT` 0x0069, `CUser::AddPartyChat`): the speaker's object, its name, the text. */
+export const writePartyChat = (objectId: number, speakerId: number, name: string, text: string): ScriptMessage =>
+  scripted(objectId, 0x0069, new ArWriter().u32(speakerId).string(name).string(text));
+
+export const writePartySkillCall = (objectId: number, pos: Vec3): ScriptMessage =>
+  scripted(objectId, MessageType.PARTYSKILL_CALL, new ArWriter().vec3(pos));
+export const writePartySkillBlitz = (objectId: number, targetId: number): ScriptMessage =>
+  scripted(objectId, MessageType.PARTYSKILL_BLITZ, new ArWriter().u32(targetId));
+export const writePartySkillRetreat = (objectId: number): ScriptMessage =>
+  scripted(objectId, MessageType.PARTYSKILL_RETREAT, new ArWriter());
+export const writePartySkillSphereCircle = (objectId: number): ScriptMessage =>
+  scripted(objectId, MessageType.PARTYSKILL_SPHERECIRCLE, new ArWriter());
+
+/** The snapshot's ERRORPARTY (`CUser::AddSendErrorParty`): the code, and the skill after ERROR_NOTTARGET (207) alone. */
+export function writeErrorParty(objectId: number, code: number, skill = 0): ScriptMessage {
+  const w = new ArWriter().u32(code);
+  if (code === 207) w.u32(skill);
+  return scripted(objectId, MessageType.ERRORPARTY, w);
+}
+
+function writePlayerRecord(w: ArWriter, data: PlayerDataRecord): ArWriter {
+  return w.u8(data.job).u8(data.level).u8(data.sex).u8(0).i32(data.version).u8(data.login).u8(0).u8(0).u8(0);
+}
+
+/** QUERY_PLAYER_DATA's answer (`CUser::AddQueryPlayerData`): the id, the name, the 12-byte record. */
+export const writeQueryPlayerData = (objectId: number, playerId: number, name: string, data: PlayerDataRecord): ScriptMessage =>
+  scripted(objectId, MessageType.QUERY_PLAYER_DATA, writePlayerRecord(new ArWriter().u32(playerId).string(name), data));
+
+// The core's direct packets ([R §1.2]), whole, for `gateway.pushCache`: the packet type, then the fields.
+
+export const directErrorParty = (code: number): Uint8Array => new ArWriter().u32(PacketType.ERRORPARTY).u32(code).toBytes();
+export const directUpdatePlayerData = (playerId: number, data: PlayerDataRecord): Uint8Array =>
+  writePlayerRecord(new ArWriter().u32(PacketType.UPDATE_PLAYER_DATA).u32(playerId), data).toBytes();
+export const directLogout = (playerId: number): Uint8Array => new ArWriter().u32(PacketType.LOGOUT).u32(playerId).toBytes();
+export const directBlock = (gu: number, name: string): Uint8Array => new ArWriter().u32(PacketType.BLOCK).u8(gu).string(name).toBytes();

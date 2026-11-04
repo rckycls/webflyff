@@ -73,6 +73,8 @@ export function withoutSqlMarks(text: string): string {
 export type Carried =
   | { from: 'inventory'; objectId: number }
   | { from: 'skills'; skillIndex: number }
+  /** Piece 7 M4: a party skill of the party window's Skill tab (`CWndPartySkill::OnMouseMove`, `WndParty.cpp:938-965`). */
+  | { from: 'partySkills'; skill: number }
   | { from: 'item'; bar: number; slot: number }
   | { from: 'queue'; slot: number };
 
@@ -129,6 +131,13 @@ export class TaskBarEdits {
       return {
         kind: ShortcutKind.SKILL, id: carried.skillIndex, type: 0, index: slot?.skill ?? 0, userId: 0, data: 0,
         text: this.skillOf(carried.skillIndex)?.name ?? '',
+      };
+    }
+    if (carried.from === 'partySkills') {
+      // m_dwShortcut SHORTCUT_SKILL, m_dwType 2, m_dwId and m_dwIndex the skill, m_dwData 0, m_szString its name
+      const skill = this.bar.data.partySkills?.get(carried.skill);
+      return skill === undefined ? null : {
+        kind: ShortcutKind.SKILL, id: carried.skill, type: 2, index: carried.skill, userId: 0, data: 0, text: skill.name,
       };
     }
     if (carried.from === 'item') {
@@ -188,9 +197,11 @@ export class TaskBarEdits {
     if (target === 'applet') return;
     if (target !== 'bar' && target.row === 'item') {
       if (carried.from === 'item' && carried.bar === this.bar.bar && carried.slot === target.slot) return;
-      if (shortcut.kind === ShortcutKind.SKILL) {
-        const skill = shortcut.type === 2 ? undefined : this.skillOf(shortcut.id);
-        // a party skill (type 2) is the troupe's catalog's, which the browser has not: Neuz reads its combo style there
+      if (shortcut.kind === ShortcutKind.SKILL && shortcut.type === 2) {
+        // a party skill: every row of propTroupeSkill.txt is CT_GENERAL (Piece 7 M4, [R §8.1]), so any the catalog has
+        if (this.bar.data.partySkills?.has(shortcut.id) !== true) return;
+      } else if (shortcut.kind === ShortcutKind.SKILL) {
+        const skill = this.skillOf(shortcut.id);
         if (skill === undefined || !canPlaceOnBar(skill, own.skills[shortcut.id]?.level ?? 0)) return;
       }
       // a chat line's text loses its --, ', /* and */ before it goes on the slot (:1985-1992)

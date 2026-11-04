@@ -46,7 +46,7 @@ export { readPropJob } from './inc/propJob';
 export type { JobProp } from './inc/propJob';
 export { readEtcJobs } from './inc/etcJobs';
 export type { EtcJob } from './inc/etcJobs';
-export { readExpTable } from './inc/expTable';
+export { readExpTable, readPartyExpTable } from './inc/expTable';
 export type { ExpRow } from './inc/expTable';
 export { readTextClient } from './inc/textClient';
 export type { TextEntry } from './inc/textClient';
@@ -59,6 +59,8 @@ export type { MapFrame, MapMonsterPack, MapMonsterRow } from './inc/mapMonsterPa
 export { WORLD_MAP_KEY } from './web/worldMap';
 export type { WebWorldMap, WebWorldMapEntry } from './web/worldMap';
 export { QUESTS_KEY, QUEST_FILES, QUEST_KIND } from './web/quests';
+export { PARTY_KEY } from './web/party';
+export type { WebParty, WebPartySkill } from './web/party';
 export type { WebQuest, WebQuestGoal, WebQuestItem } from './web/quests';
 export { readIdFileScript } from './inc/soundScript';
 export { readRegions } from './world/regions';

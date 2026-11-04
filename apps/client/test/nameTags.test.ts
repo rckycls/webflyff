@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { WebMover } from '@flyffweb/formats';
+import { Scene } from 'three';
+import type { SpriteMaterial } from 'three';
+import { NameTagLayer } from '../src/world/render/NameTagLayer';
 import { nameTagOf, tagOpacity } from '../src/world/render/nameTags';
 import { addedNpc, addedPlayer, gameDataOf, moverFrom, webMoverOf } from './helpers/movers';
 
@@ -133,5 +136,56 @@ describe('tagOpacity', () => {
   it('stays within 0 and 1 beyond both ends', () => {
     expect(tagOpacity(55, 40)).toBe(0);
     expect(tagOpacity(-5, 40)).toBe(1);
+  });
+});
+
+describe('nameTagOf: the party (MoverRender.cpp:1403-1407)', () => {
+  const PARTY = 0xff70f070;
+  const tagInParty = (player: Parameters<typeof addedPlayer>[1], members: number[]) =>
+    nameTagOf(moverFrom(addedPlayer(1, { name: 'Rocky', playerId: 501, ...player }), data), undefined, colors, titles, (id) => members.includes(id));
+
+  it("a party member's name is 0xff70f070 unless another colour came first", () => {
+    expect(tagInParty({}, [501])?.color).toBe(PARTY);
+    // the own player too
+    expect(tagInParty({ self: true }, [501])?.color).toBe(PARTY);
+    expect(tagInParty({}, [777])?.color).toBe(0xfff0f0f0);
+    expect(tagInParty({ pkPropensity: 1 }, [501])?.color).toBe(0xff010203);
+    expect(tagInParty({ pkTime: 5000 }, [501])?.color).toBe(0xff040506);
+    expect(tagInParty({ authorization: auth('L') }, [501])?.color).toBe(0xff2d7cae);
+    // out of a party, as before
+    expect(nameTagOf(moverFrom(addedPlayer(1, { playerId: 501 }), data), undefined, colors, titles)?.color).toBe(0xfff0f0f0);
+  });
+
+  it('recolor changes the tags in place', () => {
+    const fills: string[] = [];
+    const context = {
+      font: '', textBaseline: '', lineJoin: '', lineWidth: 0, strokeStyle: '',
+      set fillStyle(value: string) { fills.push(value); },
+      measureText: (text: string) => ({ width: text.length * 7 }),
+      scale: () => {}, strokeText: () => {}, fillText: () => {},
+    };
+    const doc = { defaultView: { devicePixelRatio: 1 }, createElement: () => ({ width: 0, height: 0, getContext: () => context }) } as unknown as Document;
+    const scene = new Scene();
+    const layer = new NameTagLayer(scene, doc);
+    const rocky = moverFrom(addedPlayer(1, { name: 'Rocky', playerId: 501 }), data);
+    const webby = moverFrom(addedPlayer(2, { name: 'Webby', playerId: 502 }), data);
+    const movers = new Map([[1, rocky], [2, webby]]);
+    let party: number[] = [];
+    const tagOf = (mover: typeof rocky) => nameTagOf(mover, undefined, colors, titles, (id) => party.includes(id));
+    layer.sync({ added: [rocky, webby], removed: [], combat: [], own: [], dropped: 0 }, movers, tagOf);
+    expect(fills).toEqual(['rgb(240, 240, 240)', 'rgb(240, 240, 240)']);
+    const before = scene.children.find((child) => child.name === 'name tag 2');
+    party = [502];
+    layer.recolor(movers, tagOf);
+    // only Webby's tag is drawn again, green; nothing else changes
+    expect(fills).toEqual(['rgb(240, 240, 240)', 'rgb(240, 240, 240)', 'rgb(112, 240, 112)']);
+    expect(layer.count()).toBe(2);
+    expect(scene.children.filter((child) => child.name === 'name tag 2')).toHaveLength(1);
+    const after = scene.children.find((child) => child.name === 'name tag 2');
+    expect(after).not.toBeUndefined();
+    expect(((before as unknown as { material: SpriteMaterial }).material).map).not.toBe((after as unknown as { material: SpriteMaterial }).material.map);
+    layer.recolor(movers, tagOf);
+    expect(fills).toHaveLength(3);
+    layer.dispose();
   });
 });

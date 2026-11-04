@@ -330,6 +330,14 @@ export class WorldState {
     return this.own;
   }
 
+  /** `prj.GetUserByID( idPlayer )` (Piece 7 M4): the player in view with this database ID (`m_idPlayer`), the own one included. */
+  moverByPlayerId(playerId: number): Mover | undefined {
+    for (const mover of this.byId.values()) {
+      if (mover.kind === 'player' && mover.added.player?.playerId === playerId) return mover;
+    }
+    return undefined;
+  }
+
   /**
    * One message of a bundle, about the object `objectId`. A mover message for an ID not in view is ignored. `joining`
    * says the message is the JOIN bundle's (`fJoin`, `DPClient.cpp:909-911`), whose movers appear with no effect.

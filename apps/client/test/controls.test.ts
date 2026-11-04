@@ -612,10 +612,38 @@ describe('Piece 5 camera-relative movement and touch gestures', () => {
     r.canvas.fire('pointerup', 100, 50, 1100, { pointerType: 'touch' });
     expect(r.presses).toHaveLength(1);
     expect(r.presses[0]!.mover).toBe(7);
+    // Piece 7 M4: a finger's press says so (a phone opens a selected player's menu with it)
+    expect(r.presses[0]!.touch).toBe(true);
   });
 });
 
 describe('TapToWalk', () => {
+  it('a right press let go at its point on a mover is a menu press; moved, or on the ground, it is not (Piece 7 M4)', () => {
+    // OnRButtonUp (__IMPROVE_SYSTEM_VER15, WndWorld.cpp:7114-7131): `point == m_ptMouseSpot`, on a player
+    const canvas = new FakeCanvas();
+    const menus: number[] = [];
+    const presses: WorldPress[] = [];
+    let hit: TapHit = { mover: 7 };
+    new TapToWalk(canvas as unknown as HTMLElement, () => hit, undefined, (press) => presses.push(press), (mover) => menus.push(mover));
+    canvas.fire('pointerdown', 100, 50, 1000, { button: 2 });
+    canvas.fire('pointerup', 100, 50, 1200, { button: 2 });
+    expect([menus, presses]).toEqual([[7], []]);
+    canvas.fire('pointerdown', 100, 50, 2000, { button: 2 });
+    canvas.fire('pointerup', 101, 50, 2200, { button: 2 });
+    hit = { point: [1, 2, 3] };
+    canvas.fire('pointerdown', 100, 50, 3000, { button: 2 });
+    canvas.fire('pointerup', 100, 50, 3200, { button: 2 });
+    expect(menus).toEqual([7]);
+  });
+
+  it('a press with Alt held says so (Piece 7 M4)', () => {
+    const { canvas, presses } = tapToWalk(() => ({ mover: 7 }));
+    canvas.fire('pointerdown', 100, 50, 1000, { altKey: true });
+    canvas.fire('pointerup', 100, 50, 1050);
+    canvas.fire('pointerdown', 100, 50, 3000);
+    expect(presses.map((p) => p.alt)).toEqual([true, false]);
+  });
+
   it('a tap on the ground gives the point picked where it went down', () => {
     const { canvas, pick, tap } = tapToWalk();
     expect(tap.take()).toBeNull();
@@ -664,7 +692,10 @@ describe('TapToWalk', () => {
     const { canvas, pick, tap } = tapToWalk();
     canvas.fire('pointerdown', 100, 50, 0, { button: 2 });
     canvas.fire('pointerup', 100, 50, 10, { button: 2 });
-    expect(pick).not.toHaveBeenCalled();
+    // Piece 7 M4: a right press let go where it went down is picked for the player's menu, but it is no tap
+    expect(tap.take()).toBeNull();
+    expect(pick).toHaveBeenCalledTimes(1);
+    pick.mockClear();
     // a pinch: the second finger ends the first one's tap, and is none itself
     canvas.fire('pointerdown', 100, 50, 100, { pointerId: 5 });
     canvas.fire('pointerdown', 150, 50, 110, { pointerId: 6, isPrimary: false });
@@ -728,7 +759,7 @@ describe('TapToWalk', () => {
     const { canvas, tap, presses } = tapToWalk(() => ({ mover: 7 }));
     canvas.fire('pointerdown', 100, 50, 1000);
     // OnLButtonDown: picked and handed on at once; SetCapture keeps the pointer's let-go
-    expect(presses).toEqual([{ mover: 7, time: 1000, double: false }]);
+    expect(presses).toEqual([{ mover: 7, time: 1000, double: false, alt: false, touch: false }]);
     expect(canvas.captured).toEqual([1]);
     expect(tap.heldMover()).toEqual({ mover: 7, time: 1000 });
     // a drag or a long hold is still the press (moving the cursor away does not matter, [combat §2.1])
@@ -760,7 +791,7 @@ describe('TapToWalk', () => {
     const { canvas, tap, presses } = tapToWalk(() => hit);
     // OnLButtonDown's other branch (WndWorld.cpp:6919-6929) runs as the button goes down, a drag or not
     canvas.fire('pointerdown', 100, 50, 1000);
-    expect(presses).toEqual([{ mover: null, time: 1000, double: false }]);
+    expect(presses).toEqual([{ mover: null, time: 1000, double: false, alt: false, touch: false }]);
     expect(tap.heldMover()).toBeNull();
     canvas.fire('pointermove', 150, 50, 1100);
     canvas.fire('pointerup', 150, 50, 1200);
@@ -768,7 +799,7 @@ describe('TapToWalk', () => {
     hit = null;
     canvas.fire('pointerdown', 100, 50, 3000);
     canvas.fire('pointerup', 100, 50, 3010);
-    expect(presses.at(-1)).toEqual({ mover: null, time: 3000, double: false });
+    expect(presses.at(-1)).toEqual({ mover: null, time: 3000, double: false, alt: false, touch: false });
     expect(tap.take()).toBeNull();
     // a pick that throws hands on no press
     const other = new FakeCanvas();
@@ -827,7 +858,7 @@ describe('TapToWalk', () => {
     canvas.fire('pointerdown', 110, 70, 1000);
     canvas.fire('pointerup', 110, 70, 1010);
     expect(tap.take()).toBeNull();
-    expect(presses).toEqual([{ mover: null, time: 0, double: false }, { mover: 7, time: 1000, double: false }]);
+    expect(presses).toEqual([{ mover: null, time: 0, double: false, alt: false, touch: false }, { mover: 7, time: 1000, double: false, alt: false, touch: false }]);
     // beside the mover, the ground is picked as before
     canvas.fire('pointerdown', 170, 70, 2000);
     canvas.fire('pointerup', 170, 70, 2010);

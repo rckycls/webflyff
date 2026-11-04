@@ -32,6 +32,7 @@ import {
   FormatError,
   GAME_DATA_KEYS,
   OT,
+  PARTY_KEY,
   QUESTS_KEY,
   QUEST_FILES,
   WORLD_MAP_KEY,
@@ -72,7 +73,7 @@ import type { ClientFs } from '../ClientFs';
 import { SOUND_INC, effectSoundParts } from '../audio/audioSources';
 import { skeletonOfMotion } from '../models/skeletonFor';
 import type { AssetWriter } from '../output/AssetWriter';
-import { charPictureKeyOf, effectKeyOf, itemIconKeyOf, modelKeyOf, stem } from '../output/keys';
+import { charPictureKeyOf, effectKeyOf, iconKeyOf, itemIconKeyOf, modelKeyOf, stem } from '../output/keys';
 import type { Report } from '../output/Report';
 import type { Stage, StageContext } from '../run';
 import { matchesOnly, plural } from '../util';
@@ -80,6 +81,7 @@ import { readModelIndexes } from './modelIndexes';
 import type { ModelIndex } from './modelIndexes';
 import { buildAudio } from './audioCatalog';
 import { buildSkills } from './skillsCatalog';
+import { TROUPE_SKILL_FILE, buildParty } from './partyCatalog';
 import { WORLD_MAP_CNT, buildWorldMap } from './worldMapCatalog';
 
 const KIND = 'data';
@@ -609,6 +611,24 @@ export const gameDataStage: Stage = {
         }
       } catch (error) {
         ctx.report.fail(KIND, error instanceof FormatError ? error.file : QUEST_FILES[0], error);
+      }
+    }
+
+    // The party catalog (Piece 7 M4), optional in the same way: without propTroupeSkill.txt there is none, and the client
+    // offers no party skills (PARTY_KEY is not one of GAME_DATA_KEYS). A file that cannot be read fails it alone.
+    if (ctx.client.packs.has(TROUPE_SKILL_FILE)) {
+      try {
+        const read = new Reading(ctx.client);
+        const party = buildParty({
+          defines: env.defines, strings: env.strings,
+          iconKey: (file) => (ctx.client.find('Icon', file) === null ? null : iconKeyOf(file)),
+          warn: (source, message) => ctx.report.warn(KIND, source, message),
+        }, read);
+        const bytes = new TextEncoder().encode(JSON.stringify(party));
+        await ctx.writer.write(PARTY_KEY, bytes, TROUPE_SKILL_FILE);
+        ctx.report.ok(KIND, TROUPE_SKILL_FILE, read.bytes, bytes.length);
+      } catch (error) {
+        ctx.report.fail(KIND, error instanceof FormatError ? error.file : TROUPE_SKILL_FILE, error);
       }
     }
 

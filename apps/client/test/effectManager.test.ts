@@ -580,3 +580,38 @@ describe('EffectManager: missiles in flight and hits turned their own way (Piece
     expectMatrix((r.drawn().effects[0]!.list[0] as EffectQuadDraw).matrix, [0, 0, -1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 1]);
   });
 });
+
+describe('EffectManager: the party skills (Piece 7 M4, [R §8.4], [R §8.5])', () => {
+  const at7 = (pos: Vec3) => (id: number): { pos: Vec3 } | undefined => (id === 7 ? { pos } : undefined);
+
+  it('an effect with an angle keeps that heading while it follows its mover', async () => {
+    // Call's marker: SetAngle( fa ) after CreateSfx (DPClient.cpp:5433), then CSfx::Process moves it with the mover
+    const r = rig();
+    await play(r, { xi: Xi.GEN_LEVEL_UP01, pos: [0, 0, 0], followId: 7, angle: 90 });
+    steps(r, 1, at7([3, 0, 4]));
+    expect(headingOf(r.drawn().effects[0]!)).toBeCloseTo(90, 4);
+    steps(r, 5, at7([8, 0, -2]));
+    expect(r.drawn().effects[0]!.at).toEqual([8, f32(0 + LIFT_DRAW), -2]);
+    expect(headingOf(r.drawn().effects[0]!)).toBeCloseTo(90, 4);
+  });
+
+  it('lift: drawn that far over the mover it follows, instead of 0.2 m (CSfxTroBlitz::Render, Sfx.cpp:366-376)', async () => {
+    const r = rig();
+    await play(r, { xi: Xi.GEN_LEVEL_UP01, pos: [0, 0, 0], followId: 7, lift: 1.3 });
+    steps(r, 1, at7([2, 5, 2]));
+    expect(r.drawn().effects[0]!.at).toEqual([2, f32(5 + 1.3), 2]);
+  });
+
+  it('then: once over, the next plays at the mover it followed (CSfxTroStretching01::Process, Sfx.cpp:251-268)', async () => {
+    const r = rig();
+    await play(r, { xi: Xi.GEN_MONSTER_SPAWN01, pos: [0, 0, 0], followId: 7, then: { xi: Xi.GEN_LEVEL_UP01, pos: [0, 0, 0], followId: 7 } });
+    steps(r, 5, at7([1, 2, 3]));
+    expect(r.manager.count()).toBe(1);
+    // the spawn's 6th tick ends it; the level up starts where the mover is
+    steps(r, 1, at7([4, 2, 6]));
+    await settle();
+    expect(r.manager.count()).toBe(1);
+    expect(r.drawn().effects[0]!.at).toEqual([4, f32(f32(2 + 0.01) + LIFT_DRAW), 6]);
+  });
+
+});

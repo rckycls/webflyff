@@ -290,6 +290,17 @@ describe('WorldSession, entering', () => {
     expect((events[1] as EventOf<'messages'>).messages).toHaveLength(2);
   });
 
+  it("passes the core's direct party packets on as messages (Piece 7 M4)", async () => {
+    const { cache, events } = await playing();
+    cache.push(new ArWriter().u32(0xffffff10).u32(202).toBytes());
+    cache.push(new ArWriter().u32(0x7000000b).u32(70002).toBytes());
+    const values = events.filter((e): e is EventOf<'messages'> => e.type === 'messages').flatMap((e) => e.messages);
+    expect(values.map((m) => [m.objectId, m.type, m.value])).toEqual([
+      [NULL_ID, 0xffffff10, { type: 'errorParty', code: 202, skill: null }],
+      [NULL_ID, 0x7000000b, { type: 'playerLogout', playerId: 70002 }],
+    ]);
+  });
+
   it('an empty bundle is no event', async () => {
     const { cache, events } = await playing();
     cache.push(snapshot([]));
@@ -433,6 +444,21 @@ describe('WorldSession, sending while playing', () => {
     expect(events.map((e) => e.type)).toEqual(['entered']);
     session.sendEndSkillQueue();
     expect(cache.sent).toHaveLength(sent + 1);
+  });
+
+  it('the party senders write the own player id first (Piece 7 M4)', async () => {
+    const { cache, session } = await playing();
+    const sent = (): ArReader => { const r = new ArReader(cache.sent.at(-1)!); r.bytes(8); return r; };
+    session.sendPartyMemberRequest(70002);
+    let r = sent(); expect([r.u32(), r.u32(), r.i32()]).toEqual([500, 70002, 0]); r.expectEnd();
+    session.sendPartyItemMode(2);
+    r = sent(); expect([r.u32(), r.i32()]).toEqual([500, 2]); r.expectEnd();
+    session.sendRemovePartyMember(500);
+    r = sent(); expect([r.u32(), r.u32()]).toEqual([500, 500]); r.expectEnd();
+    session.sendBlock('Lead');
+    r = sent(); expect([r.u8(), r.string(64), r.string(64)]).toEqual([7, 'Webby', 'Lead']); r.expectEnd();
+    session.sendAddPartyMember({ id: 600, level: 20, job: 1, sex: 0 }, { id: 500, level: 15, job: 0, sex: 1 });
+    r = sent(); expect(Array.from({ length: 8 }, () => r.i32())).toEqual([600, 20, 1, 0, 500, 15, 0, 1]); r.expectEnd();
   });
 
   it('sends nothing before the world is entered', async () => {

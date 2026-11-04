@@ -37,7 +37,7 @@
 
 import { MAX_SLOT_APPLET, MAX_SLOT_ITEM, MAX_SLOT_ITEM_COUNT, MAX_SLOT_QUEUE, ShortcutKind } from '@flyffweb/protocol';
 import type { InventoryItem, Shortcut, TaskBar as TaskBarMessage } from '@flyffweb/protocol';
-import type { WebItemProp, WebSkill } from '@flyffweb/formats';
+import type { WebItemProp, WebPartySkill, WebSkill } from '@flyffweb/formats';
 import { watchTouch } from '@flyffweb/scene';
 import type { TouchWatch } from '@flyffweb/scene';
 import type { OwnState } from '../OwnState';
@@ -53,9 +53,11 @@ import { TaskMenu } from './taskMenu';
 
 /** The windows of Piece 4 a press on the task bar opens. */
 export type TaskBarWindow = 'character' | 'status' | 'skills' | 'inventory' | 'chat' | 'navigator' | 'worldmap' | 'option'
-  | 'quests';
+  | 'quests' | 'party';
 /** `APP_QUEST_EX_LIST` (Resource/ResData.h), the quest window (Piece 7 M1), Q (FuncApplet.cpp:229). */
 const APP_QUEST_EX_LIST = 859;
+/** `APP_PARTY` (Resource/ResData.h:100), the party window and its quick view (Piece 7 M4), P (FuncApplet.cpp:233). */
+const APP_PARTY = 195;
 
 /**
  * The applets whose window Piece 4 has, which `ObjectExecutor` opens (or closes) when they are pressed: from the Start
@@ -71,6 +73,7 @@ const WINDOWS: ReadonlyMap<number, TaskBarWindow> = new Map([
   [AppId.SKILL3, 'skills'],
   [AppId.OPTIONEX, 'option'],
   [APP_QUEST_EX_LIST, 'quests'],
+  [APP_PARTY, 'party'],
 ]);
 
 /**
@@ -98,6 +101,9 @@ const MENU: ReadonlyArray<{ id: number; text: string }> = [
   // CWndTaskMenu's APP_MAP line, 'World Map' (TID_APP_MAP), just before Navigator (WndTaskBar.cpp:2734-2738)
   { id: AppId.MAP, text: 'World Map' },
   { id: AppId.NAVIGATOR, text: 'Navigator' },
+  // CWndTaskMenu's APP_PARTY line, 'Party' (TID_APP_PARTY), in its Communication submenu (WndTaskBar.cpp:2670): the
+  // browser's menu is flat, so it stands before Option
+  { id: APP_PARTY, text: 'Party' },
   // CWndTaskMenu's APP_OPTIONEX line, 'Option' (TID_APP_OPTION), just before Log out (WndTaskBar.cpp:2638)
   { id: AppId.OPTIONEX, text: 'Option' },
   { id: AppId.LOGOUT, text: 'Log out' },
@@ -137,6 +143,8 @@ export interface TaskBarData {
   skills?: ReadonlyMap<number, WebSkill>;
   /** The texts catalog: the applets' descriptions, the action slot's button name, the bar's texts and their colours. */
   texts?: ReadonlyMap<string, { text: string; color?: number }>;
+  /** Piece 7 M4: the party skills (`data/party.json`, by id): a type-2 skill shortcut's icon and name. */
+  partySkills?: ReadonlyMap<number, Pick<WebPartySkill, 'name' | 'icon'>>;
 }
 
 /** `ICON_SIZE` and `SKILL_SIZE` (`WndTaskBar.cpp:183-184`): the slots of the applet row and the bars, and the action slot's. */
@@ -478,6 +486,11 @@ export class TaskBar {
     this.gestures.press({ from: 'skills', skillIndex }, event);
   }
 
+  /** Piece 7 M4: a party skill of the party window's Skill tab carried to the bar with the mouse, as `carrySkill`. */
+  carryPartySkill(skill: number, event: PointerEvent): void {
+    this.gestures.press({ from: 'partySkills', skill }, event);
+  }
+
   setInventoryShortcut(objectId: number, slot: number): void {
     if (!Number.isInteger(slot) || slot < 0 || slot >= 9 || !this.own?.inventory?.has(objectId)) return;
     this.edits.dropOn({ from: 'inventory', objectId }, { row: 'item', slot });
@@ -628,7 +641,13 @@ export class TaskBar {
       case ShortcutKind.ITEM:
         return this.itemView(row, i, own, data);
       case ShortcutKind.SKILL: {
-        const skillId = shortcut.type === 2 ? undefined : own.skills[shortcut.id]?.skill;
+        if (shortcut.type === 2) {
+          // Piece 7 M4: a party skill, the party catalog's (`WndTaskBar.cpp:403-476` reads `prj.GetPartySkill`)
+          const party = data.partySkills?.get(shortcut.id);
+          if (party === undefined || party.icon === null) return PLAIN_VIEW;
+          return { kind: 'skill', greyed: false, icon: party.icon, count: '', hotkey: '', name: party.name };
+        }
+        const skillId = own.skills[shortcut.id]?.skill;
         const skill = skillId === undefined ? undefined : data.skills?.get(skillId);
         if (skill === undefined || skill.icon === null) return PLAIN_VIEW;
         return { kind: 'skill', greyed: false, icon: skill.icon, count: '', hotkey: '', name: skill.name };
@@ -943,7 +962,9 @@ export class TaskBar {
 
   /** A shortcut's picture: a skill's or an item's icon of the catalogs, an applet's, or none. */
   private iconOf(shortcut: Shortcut): string | null {
-    if (shortcut.kind === ShortcutKind.SKILL) return shortcut.type === 2 ? null : this.edits.skillOf(shortcut.id)?.icon ?? null;
+    if (shortcut.kind === ShortcutKind.SKILL) {
+      return shortcut.type === 2 ? this.data.partySkills?.get(shortcut.id)?.icon ?? null : this.edits.skillOf(shortcut.id)?.icon ?? null;
+    }
     if (shortcut.kind === ShortcutKind.APPLET) {
       const icon = APPLETS.get(shortcut.id)?.icon;
       return icon ? themeKey(icon) : null;

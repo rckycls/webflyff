@@ -16,6 +16,8 @@ const COLOR_GAMEMASTER = 0xff2d7cae;
 const COLOR_ADMINISTRATOR = 0xffae2d2d;
 const COLOR_NPC = 0xffa0a0ff;
 const COLOR_MONSTER = 0xffffffa0;
+/** `COLOR_PARTY` (`Mover.h:39`): a party member's name still in the general colour (`MoverRender.cpp:1403-1407`). */
+const COLOR_PARTY = 0xff70f070;
 /** `0xfffff8dc`, the VIP colour (`MoverRender.cpp:1257-1258`, under `__BB_VIP_TITLES`, on in `Neuz/VersionCommon.h:209`). */
 const COLOR_VIP = 0xfffff8dc;
 /** The colour of an aggressive monster's name: `0xffff0000` (`MoverRender.cpp:1453`). */
@@ -42,14 +44,14 @@ const FADE_METRES = 10;
  * - A player: the name with the honour title in brackets before it (`CMover::GetTitle`, which is
  *   `CTitleManager::GetTitle( m_nHonor )`) and " [Admin]" or " [GM]" after it for those ranks. The colour is the chaotic
  *   one, else the pink (PK-ready) one, else the administrator's, the game master's, the VIP's, else the general one
- *   (`:1248-1261`).
+ *   (`:1248-1261`); a name still in the general colour of a member of the own party, the own one included, is
+ *   `COLOR_PARTY` (`g_Party.FindMember( m_idPlayer )`, `:1403-1407`): `inParty` takes the player's database ID.
  * - A monster or NPC: the name, in the NPC colour when peaceful, red when it attacks first, else the monster colour
  *   (`:1445-1457`).
  *
  * `viewer` changes nothing, as in Neuz: `CWorld::Render` picks a colour by the ranks of the viewer and the mover
  * (`World3D.cpp:1283-1298`), but `RenderName` sets a player's colour in every branch and an NPC's is fixed, so it is never used.
- * Not copied, for want of the data: the guild-war and party colours (`:1238-1245`, `:1404-1407`, they need the guild and
- * party ids), the structure line above an NPC of `character.inc` (`:1426-1437`) and the invisibility buff
+ * Not copied, for want of the data: the guild-war colours (`:1238-1245`, they need the guild ids), the structure line above an NPC of `character.inc` (`:1426-1437`) and the invisibility buff
  * (`IsMode`, `Mover.h:1704`).
  */
 export function nameTagOf(
@@ -57,11 +59,12 @@ export function nameTagOf(
   viewer: Mover | undefined,
   colors: WebNameColors,
   honorTitles: ReadonlyMap<number, string>,
+  inParty: (playerId: number) => boolean = () => false,
 ): NameTag | null {
   const player = mover.added.player;
   if (mover.kind === 'player' && player !== undefined) {
     if ((player.mode & TRANSPARENT_MODE) === TRANSPARENT_MODE) return null;
-    return { text: playerText(mover.name, player, honorTitles), color: playerColor(player, colors), maxDistance: FAR_LIMIT };
+    return { text: playerText(mover.name, player, honorTitles), color: playerColor(player, colors, inParty(player.playerId)), maxDistance: FAR_LIMIT };
   }
   const { belligerence } = mover.added;
   const peaceful = belligerence === Belli.PEACEFUL; // CMover::IsPeaceful
@@ -84,14 +87,14 @@ function playerText(name: string, player: AddedPlayer, honorTitles: ReadonlyMap<
 }
 
 /** `IsChaotic` is `m_dwPKPropensity > 0` and `IsPKPink` is `m_dwPKTime > 0` (`Mover.h:1227-1228`). */
-function playerColor(player: AddedPlayer, colors: WebNameColors): number {
+function playerColor(player: AddedPlayer, colors: WebNameColors, inParty: boolean): number {
   const rank = player.authorization;
   if (player.pkPropensity > 0) return colors.chaotic;
   if (player.pkTime > 0) return colors.ready;
   if (rank >= AUTH_ADMINISTRATOR) return COLOR_ADMINISTRATOR;
   if (rank >= AUTH_GAMEMASTER) return COLOR_GAMEMASTER;
   if (AUTH_GENERAL_VIP.includes(rank)) return COLOR_VIP;
-  return colors.general;
+  return inParty ? COLOR_PARTY : colors.general;
 }
 
 /**

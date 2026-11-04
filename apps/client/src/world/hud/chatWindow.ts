@@ -30,6 +30,8 @@ function iconButton(button: HTMLButtonElement, label: string, doc: Document): vo
 }
 export class ChatWindow {
   private view: ChatView = 'all';
+  /** In a party: the Party view sends to it (`setParty`). */
+  private party = false;
   private readonly tabs = new Map<ChatView, HTMLButtonElement>();
   readonly element: HTMLElement;
   private readonly log: HTMLElement;
@@ -85,11 +87,16 @@ export class ChatWindow {
       try {
         const text = this.input.value.trim();
         // FuncTextCmd.cpp registers the aliases; preserve the typed command for native server routing.
-        encodeChat('nearby', text); send('nearby', text, '');
+        // the Party view in a party is Neuz's party channel, which writes "/p " before the line (WndCommunication.cpp:212-216,
+        // :708-713); a typed command goes as typed
+        const channel: ChatChannel = this.view === 'party' && this.party && !text.startsWith('/') ? 'party' : 'nearby';
+        encodeChat(channel, text); send(channel, text, '');
         this.input.value = ''; this.feedback.textContent = ''; if (!this.mobile) this.input.focus();
       } catch (error) { this.feedback.textContent = error instanceof Error ? error.message : 'Unable to send message.'; }
     });
   }
+  /** In a party or not: with the Party view chosen, a typed line goes to the party while in one. */
+  setParty(inParty: boolean): void { this.party = inParty; }
   private selectView(view: ChatView): void {
     this.view = view;
     for (const [key, tab] of this.tabs) tab.setAttribute('aria-pressed', String(key === view));

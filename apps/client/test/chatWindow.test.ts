@@ -72,3 +72,21 @@ it('opens mobile chat without focusing the input and blurs it after sending', ()
     expect(chat.element.dataset.expanded).toBeUndefined();
   } finally { chat.dispose(); window.matchMedia = original; }
 });
+
+it('in a party, the Party view sends to the party; out of one, it sends nearby', () => {
+  const send = vi.fn(); const chat = new ChatWindow(send, vi.fn()); document.body.append(chat.element);
+  const input = chat.element.querySelector<HTMLInputElement>('[name=message]')!;
+  const submit = (text: string) => { input.value = text; chat.element.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true })); };
+  chat.element.querySelector<HTMLButtonElement>('[data-view="party"]')!.click();
+  submit('out of one'); expect(send).toHaveBeenLastCalledWith('nearby', 'out of one', '');
+  chat.setParty(true);
+  submit('hello team'); expect(send).toHaveBeenLastCalledWith('party', 'hello team', '');
+  // a typed command still goes as typed
+  submit('/s hi all'); expect(send).toHaveBeenLastCalledWith('nearby', '/s hi all', '');
+  chat.element.querySelector<HTMLButtonElement>('[data-view="all"]')!.click();
+  submit('everyone'); expect(send).toHaveBeenLastCalledWith('nearby', 'everyone', '');
+  chat.element.querySelector<HTMLButtonElement>('[data-view="party"]')!.click();
+  chat.setParty(false);
+  submit('left'); expect(send).toHaveBeenLastCalledWith('nearby', 'left', '');
+  chat.dispose();
+});

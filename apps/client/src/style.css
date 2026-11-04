@@ -2206,8 +2206,101 @@ fieldset:disabled .btn {
 .hud-buff[data-harmful] img { filter: sepia(1) hue-rotate(250deg) saturate(3); }
 .hud-buff-seconds { position: absolute; left: 2px; top: 22px; color: #fff; font-size: 12px; text-shadow: 1px 1px 0 #000; pointer-events: none; }
 .hud-target-buffs { position: absolute; inset: 0; pointer-events: none; }
-/* on a phone the window sits under the status window, its icons 28 px at least (plan, Decisions 15) */
+/* on a phone the window sits beside the status window (220 px at 0.63, Piece 7 M4: the party's quick view goes under it,
+   M4 plan Decisions 10), its icons 28 px at least (M2 plan, Decisions 15) */
 @media (max-width: 1000px) and (pointer: coarse) {
-  .hud-buffs { left: 8px; top: 120px; }
+  .hud-buffs { left: 147px; top: 8px; }
   .hud-buff { min-width: 28px; min-height: 28px; }
 }
+
+/* Piece 7 M4: the message box (CWndMessageBox MB_OK, hud/messageBox.ts) */
+.hud-message-text {
+  position: absolute;
+  overflow-y: auto;
+  color: #000000;
+  line-height: 14px;
+  white-space: pre-line;
+}
+
+/* Piece 7 M4: a radio drawn with ButtRadio.bmp (hud/radio.ts, CTheme::RenderWndButton_6Texture): six 14 x 14 frames,
+   0 and 1 unchecked (lit, at rest), 2 and 3 checked or pressed, 4 and 5 disabled; data-frame is the frame at rest */
+.hud-radio {
+  position: absolute;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #000000;
+  font: inherit;
+  text-align: left;
+}
+.hud-radio-box {
+  position: absolute;
+  left: 0;
+  top: calc(50% - 7px);
+  width: 14px;
+  height: 14px;
+  background-repeat: no-repeat;
+  background-position: -14px 0;
+}
+.hud-radio-label { position: absolute; top: 50%; transform: translateY(-50%); white-space: nowrap; }
+.hud-radio[data-frame="3"] .hud-radio-box { background-position: -42px 0; }
+.hud-radio[data-frame="4"] .hud-radio-box { background-position: -56px 0; }
+.hud-radio[data-frame="5"] .hud-radio-box { background-position: -70px 0; }
+.hud-radio[data-frame="1"]:active .hud-radio-box { background-position: -42px 0; }
+@media (hover: hover) {
+  .hud-radio[data-frame="1"]:hover .hud-radio-box { background-position: 0 0; }
+  .hud-radio[data-frame="3"]:hover .hud-radio-box,
+  .hud-radio[data-frame="1"]:active:hover .hud-radio-box { background-position: -28px 0; }
+}
+
+/* Piece 7 M4: the invite box (CWndPartyConfirm, hud/party/partyConfirm.ts) */
+.hud-party-confirm-text {
+  position: absolute;
+  color: #000000;
+  line-height: 14px;
+  white-space: pre-line;
+}
+
+/* Piece 7 M4: the party window (CWndParty, hud/party/partyWindow.ts): the theme's statics black, the group titles in its
+   blue as the quest window's; the member rows of CWndPartyInfo::OnDraw (memberList.ts) */
+.hud-party { color: #000000; font: 12px/16px Verdana, Arial, sans-serif; }
+.hud-party-group, .hud-party-label, .hud-party-value, .hud-party-members, .hud-party-skills, .hud-party-tabs { position: absolute; box-sizing: border-box; }
+.hud-party-group { color: #2c5c8c; font-weight: bold; white-space: nowrap; }
+.hud-party-label, .hud-party-value { white-space: nowrap; overflow: hidden; }
+.hud-party-members { overflow: hidden; }
+.hud-party-row { position: absolute; cursor: pointer; }
+.hud-party-row > div { position: absolute; }
+.hud-party-selected { background: rgba(255, 255, 0, 0.376); }
+.hud-party-box { box-sizing: border-box; border: 1px solid #000000; }
+.hud-party-text { white-space: nowrap; line-height: 15px; }
+.hud-party-hp { background-size: 100% 100%; }
+.hud-party-hp-fill { position: absolute; left: 0; top: 0; height: 100%; background-size: 110px 100%; background-color: #ff0000; background-blend-mode: multiply; opacity: 0.392; }
+.hud-party-tab { position: absolute; padding: 0 4px; border: 0; background: transparent; color: #ffffff; font: 11px/20px Arial, sans-serif; text-align: left; cursor: pointer; }
+.hud-party-tab[aria-pressed=true] { color: #000000; }
+
+/* Piece 7 M4: the party window's buttons and boxes (hud/party/partyWindow.ts, partyBoxes.ts) */
+.hud-party-quick { position: absolute; padding: 0; border: 1px solid #808080; border-radius: 2px; background: linear-gradient(#f0f0f0, #a0a0a0); }
+.hud-party-quick:disabled { opacity: 0.5; }
+.hud-party-leave, .hud-party-troup, .hud-party-name { color: #000000; font: 12px/16px Verdana, Arial, sans-serif; }
+.hud-party-box-text { position: absolute; line-height: 14px; white-space: pre-line; }
+.hud-party-name-edit { position: absolute; }
+.hud-party-name-edit input { position: absolute; inset: 0; width: 100%; height: 100%; box-sizing: border-box; padding: 0 4px; border: 0; background: transparent; color: #000000; font: inherit; }
+
+/* Piece 7 M4: the party's quick view (CWndPartyQuick, hud/party/partyQuick.ts) */
+.hud-party-quick-window { color: #000000; font: 11px/12px Verdana, Arial, sans-serif; }
+.hud-party-quick-row { position: absolute; cursor: pointer; }
+.hud-party-quick-row[data-lit] { box-shadow: inset 0 0 0 24px rgba(255, 255, 0, 0.376); }
+.hud-party-quick-text { position: absolute; white-space: nowrap; overflow: hidden; }
+.hud-party-quick-bar { position: absolute; background-size: 100% 100%; }
+.hud-party-quick-fill { position: absolute; left: 0; top: 0; height: 100%; background-size: 108px 100%; background-color: #ff0000; background-blend-mode: multiply; opacity: 0.392; }
+.hud-party-quick-detail { position: absolute; padding: 0; border: 1px solid #808080; border-radius: 2px; background: linear-gradient(#f0f0f0, #a0a0a0); }
+/* Piece 7 M4: the party window's Skill tab (CWndPartySkill, hud/party/partySkillTab.ts) */
+.hud-party-skill-grid { position: absolute; inset: 0; }
+.hud-party-skill { position: absolute; left: 0; top: 0; cursor: pointer; }
+.hud-party-skill img { pointer-events: auto; }
+.hud-party-skill-name { white-space: nowrap; line-height: 14px; pointer-events: auto; }
+/* the party skills' mode icons (CWndWorld::RenderBuff, hud/party/partyBuffRow.ts) */
+.hud-party-buffs { pointer-events: none; }
+.hud-party-buffs[hidden] { display: none; }
+.hud-party-buff { pointer-events: auto; }
+.hud-party-buff-time { position: absolute; left: 2px; top: 20px; color: rgb(240, 240, 0); font-size: 12px; text-shadow: 1px 1px 0 #000; pointer-events: none; }

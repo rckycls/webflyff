@@ -177,6 +177,16 @@ export interface EffectRequest {
    */
   seconds?: number;
   /**
+   * Piece 7 M4: what `Render` adds to y, instead of 0.2 m (or 0): Blitz's mark sits at its target's height less 0.7 times
+   * its scale (`CSfxTroBlitz::Render`, `Sfx.cpp:366-376`).
+   */
+  lift?: number;
+  /**
+   * Piece 7 M4: played when this one is over, at the position this one was at, a mover it follows having moved it there:
+   * Resting's first effect makes its second (`CSfxTroStretching01::Process`, `Sfx.cpp:251-268`).
+   */
+  then?: EffectRequest;
+  /**
    * Piece 7 M3: a `CSfxReady`, an item cast's ready effect: its model loops while this holds, and it is deleted the tick
    * it no longer does (its caster has left `STATE_BASEMOTION_MODE`), or when the mover it follows is gone
    * (`CSfxReady::Process`, `Sfx.cpp:3826-3837`).
@@ -204,6 +214,8 @@ interface Playing {
   scale: Vec3;
   /** What `Render` adds to y: 0.2, or 0 for the two classes that do not. */
   lift: number;
+  /** Piece 7 M4: `EffectRequest.then`. */
+  then: EffectRequest | null;
 }
 
 /**
@@ -284,13 +296,20 @@ export class EffectManager {
    * deleted when `find` has no such mover (unless it follows a destination).
    */
   step(find: (objectId: number) => { pos: Vec3 } | undefined): void {
+    const next: EffectRequest[] = [];
     this.effects = this.effects.filter((effect) => {
       effect.frame++;
       if (effect.whileTrue !== null) {
         if (!effect.whileTrue()) return false; // CSfxReady::Process: the cast is over
         if (effect.model.step()) effect.model.rewind();
       } else if (effect.seconds === null) {
-        if (effect.model.step()) return false;
+        if (effect.model.step()) {
+          // the next at the mover's position now (`CreateSfx( ..., pObjSrc->GetPos(), ... )`), else where this one was
+          const source = effect.then === null || effect.followId === null ? undefined : find(effect.followId);
+          const pos = source?.pos ?? effect.pos;
+          if (effect.then !== null) next.push({ ...effect.then, pos: [pos[0], pos[1], pos[2]] });
+          return false;
+        }
       } else {
         if (effect.model.step()) effect.model.rewind(); // m_nCurFrame = 0
         if (effect.frame > effect.seconds * 60) return false;
@@ -302,6 +321,7 @@ export class EffectManager {
       }
       return true;
     });
+    for (const request of next) this.play(request);
   }
 
   /**
@@ -437,7 +457,8 @@ export class EffectManager {
         whileTrue: request.whileTrue ?? null,
         angle: request.angle === undefined ? headingOf(request.xi, request.sourceAngle) : wrapAngle(f32(request.angle)),
         scale: [scale, scale, scale],
-        lift: plain ? DRAWN_LIFT : 0,
+        lift: request.lift ?? (plain ? DRAWN_LIFT : 0),
+        then: request.then ?? null,
       });
     } catch (error) {
       this.reportOnce(`start ${key}`, `effect ${key}: ${messageOf(error)}`);

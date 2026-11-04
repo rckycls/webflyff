@@ -729,7 +729,7 @@ describe('TaskBar (CWndTaskBar, WndTaskBar.cpp)', () => {
     expect(bar.element.querySelectorAll('.hud-slot[data-kind]')).toHaveLength(0);
     expect(bar.element.querySelector('.hud-taskbar-number')!.textContent).toBe('1');
     bar.element.querySelector<HTMLButtonElement>('.hud-taskbar-start')!.click();
-    bar.element.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')[8]!.click();
+    bar.element.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')[9]!.click();
     expect(calls).toEqual(['logOut']);
     // the own numbers come with no TASKBAR yet: still empty; then it comes
     const own = newVagrant();
@@ -851,32 +851,33 @@ describe('TaskBar (CWndTaskBar, WndTaskBar.cpp)', () => {
     expect(menu.hidden).toBe(false);
     expect(bar.menuOpen).toBe(true);
     const items = [...menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
-    expect(items.map((item) => item.getAttribute('aria-label'))).toEqual(['Status', 'Character', 'Skills', 'Inventory', 'Quest Diary', 'World Map', 'Navigator', 'Option', 'Log out']);
-    expect(items.map((item) => item.querySelector('.hud-menu-text')!.textContent)).toEqual(['Status', 'Character', 'Skills', 'Inventory', 'Quest Diary', 'World Map', 'Navigator', 'Option', 'Log out']);
+    expect(items.map((item) => item.getAttribute('aria-label'))).toEqual(['Status', 'Character', 'Skills', 'Inventory', 'Quest Diary', 'World Map', 'Navigator', 'Party', 'Option', 'Log out']);
+    expect(items.map((item) => item.querySelector('.hud-menu-text')!.textContent)).toEqual(['Status', 'Character', 'Skills', 'Inventory', 'Quest Diary', 'World Map', 'Navigator', 'Party', 'Option', 'Log out']);
     // every line has its window (the skill window's, milestone 2's, too)
-    expect(items.map((item) => item.disabled)).toEqual([false, false, false, false, false, false, false, false, false]);
+    expect(items.map((item) => item.disabled)).toEqual([false, false, false, false, false, false, false, false, false, false]);
     expect(items[0]!.querySelector<HTMLElement>('.hud-menu-icon')!.style.backgroundImage).toContain('/assets/ui/icon_status.png');
     // as CWndTaskMenu draws it (WndTaskBar.cpp:2646-2653), line i at (10, 50 + 22 i), 162 wide, with its applet's hotkey
     // (AppendMenu, :2746); each line takes its whole 22 px row, no gap between two (ruling R27). The picture,
     // WndTaskMenu.tga (192 x 496), is drawn in three: its top edge (0-50), the four lines' rows (50-138) and its bottom
-    // edge (the last 26 px), 274 px in all, for the nine lines the client has instead of Neuz's twenty
+    // edge (the last 26 px), 296 px in all, for the ten lines the client has instead of Neuz's twenty
     const slices = [...menu.querySelectorAll<HTMLElement>('.hud-menu-slice')];
     expect(slices.map((slice) => [slice.style.top, slice.style.height, slice.style.backgroundPosition])).toEqual([
-      ['0px', '50px', '0px 0px'], ['50px', '198px', '0px -50px'], ['248px', '26px', '0px -470px'],
+      ['0px', '50px', '0px 0px'], ['50px', '220px', '0px -50px'], ['270px', '26px', '0px -470px'],
     ]);
     expect(slices.every((slice) => slice.style.backgroundImage === 'url("/assets/ui/wndtaskmenu.png")')).toBe(true);
-    expect([menu.style.width, menu.style.height]).toEqual(['192px', '274px']);
+    expect([menu.style.width, menu.style.height]).toEqual(['192px', '296px']);
     expect(items.map((item) => [item.style.left, item.style.top, item.style.width, item.style.height])).toEqual([
       ['10px', '50px', '162px', '22px'], ['10px', '72px', '162px', '22px'], ['10px', '94px', '162px', '22px'],
       ['10px', '116px', '162px', '22px'], ['10px', '138px', '162px', '22px'], ['10px', '160px', '162px', '22px'],
       ['10px', '182px', '162px', '22px'],
       ['10px', '204px', '162px', '22px'],
       ['10px', '226px', '162px', '22px'],
+      ['10px', '248px', '162px', '22px'],
     ]);
-    expect(items.map((item) => item.querySelector('.hud-menu-hotkey')!.textContent)).toEqual(['T', 'H', 'K', 'I', 'Q', 'M', 'N', '', '']);
+    expect(items.map((item) => item.querySelector('.hud-menu-hotkey')!.textContent)).toEqual(['T', 'H', 'K', 'I', 'Q', 'M', 'N', 'P', '', '']);
     // the menu stands on the bar, its own scale
     expect(menu.style.bottom).toBe('48px');
-    items[8]!.click();
+    items[9]!.click();
     expect(calls).toEqual(['logOut']);
     expect(menu.hidden).toBe(true);
     // Start again opens it; Status opens the status window and closes the menu; Start twice, or a press elsewhere, closes it
@@ -1293,15 +1294,15 @@ describe('TaskBar: stackable items, names, focus and room (WndTaskBar.cpp)', () 
     expect(bar.element.querySelector<HTMLElement>('.hud-taskbar-strip')!.style.transform).toBe('scale(0.75)');
     expect([menu.style.transform, menu.style.bottom]).toEqual(['', '36px']);
     // 150 px high: 102 px above the bar
-    expect(menuOn(800, 150).menu.style.transform).toBe(`scale(${(150 - 48) / 274})`);
+    expect(menuOn(800, 150).menu.style.transform).toBe(`scale(${(150 - 48) / 296})`);
   });
 
   it('on a touch screen it is up to twice its size, as the room above the bar allows: a finger\'s 40 to 44 px a line', () => {
     onTouchScreen(() => {
       // A landscape phone leaves room for twice the 164px menu above the floating bar.
-      expect(menuOn(844, 390).menu.style.transform).toBe(`scale(${(390 - 48 * 720 / 620) / 274})`);
+      expect(menuOn(844, 390).menu.style.transform).toBe(`scale(${(390 - 48 * 720 / 620) / 296})`);
       // The compact 620px layout fills the width between the phone's side gutters.
-      expect(menuOn(750, 342).menu.style.transform).toBe(`scale(${(342 - 48 * (718 / 620)) / 274})`);
+      expect(menuOn(750, 342).menu.style.transform).toBe(`scale(${(342 - 48 * (718 / 620)) / 296})`);
     });
   });
 
@@ -1312,7 +1313,7 @@ describe('TaskBar: stackable items, names, focus and room (WndTaskBar.cpp)', () 
     Object.defineProperty(touch, 'pointerType', { value: 'touch' });
     document.body.dispatchEvent(touch);
     bar.update(newVagrantWithBar(), BAR_DATA);
-    expect(menu.style.transform).toBe(`scale(${(390 - 48 * (720 / 620)) / 274})`);
+    expect(menu.style.transform).toBe(`scale(${(390 - 48 * (720 / 620)) / 296})`);
   });
 
   it('keeps the mobile taskbar bounds while typing or clicking Send on a phone', () => {
@@ -2689,6 +2690,13 @@ describe('TaskBar: editing the bars (CWndTaskBar::OnDropIcon, WndTaskBar.cpp:187
     expect(calls.filter((call) => call === 'open skills')).toHaveLength(1);
   });
 
+  it("P and the Start menu's Party open the party window (APP_PARTY, FuncApplet.cpp:233; Piece 7 M4)", () => {
+    const own = vagrantWithSkills(5, 0, [3, 0, 0]);
+    const { calls } = editingOn(own);
+    key('keydown', 'KeyP');
+    expect(calls.at(-1)).toBe('open party');
+  });
+
   it("Q and the Start menu's Quest Diary open the quests window (APP_QUEST_EX_LIST, FuncApplet.cpp:229)", () => {
     const own = vagrantWithSkills(5, 0, [3, 0, 0]);
     const { calls } = editingOn(own);
@@ -2774,3 +2782,44 @@ describe('Hud: T and the carried shortcut', () => {
 
 /** A job skill's shortcut, `SHORTCUT_SKILL` type 0, to fill in. */
 const EMPTY_SKILL: Shortcut = { kind: ShortcutKind.SKILL, id: 0, type: 0, index: 0, userId: 0, data: 0, text: '' };
+
+describe('TaskBar: the party skills (Piece 7 M4, [R §8.1], [R §7.2])', () => {
+  const PARTY_SKILLS = new Map([[5, { id: 5, name: 'Linked Attack', description: 'More damage.', icon: 'ui/skill_trolinkattack.png' }]]);
+
+  it("a type-2 slot shows its party skill's icon; a party skill may be dropped on the applet and item rows", () => {
+    const own = newVagrantWithBar();
+    // m_dwType 2, m_dwId the troupe skill: on the applet row (CT_GENERAL, kept) and on the item row
+    own.taskBar = {
+      ...NEW_BAR,
+      applets: [...NEW_BAR.applets.filter((entry) => entry.slot !== 4), { slot: 4, shortcut: shortcut(ShortcutKind.SKILL, 5, 4, 0, 2) }],
+      items: [{ bar: 0, slot: 4, shortcut: shortcut(ShortcutKind.SKILL, 5, 4, 0, 2) }],
+    };
+    const record = recorder();
+    const bar = new TaskBar(art, record.actions);
+    bars.push(bar);
+    layer(800, 600).append(bar.element);
+    // without the party catalog: a plain slot
+    bar.update(own, BAR_DATA);
+    expect(shown(slot(bar, 'item', 4)).kind).toBe('plain');
+    bar.update(own, { ...BAR_DATA, partySkills: PARTY_SKILLS });
+    expect(shown(slot(bar, 'item', 4))).toMatchObject({ kind: 'skill', icon: 'url("/assets/ui/skill_trolinkattack.png")' });
+    expect(shown(slot(bar, 'applet', 4))).toMatchObject({ kind: 'skill', icon: 'url("/assets/ui/skill_trolinkattack.png")' });
+    // carried from the party window's Skill tab and let go on item slot 2: ADDITEMTASKBAR with Neuz's shortcut
+    const from = document.createElement('div');
+    document.body.append(from);
+    from.addEventListener('pointerdown', (event) => bar.carryPartySkill(5, event as PointerEvent));
+    from.dispatchEvent(pointer('pointerdown', 10, 10));
+    window.dispatchEvent(pointer('pointermove', 30, 30));
+    slot(bar, 'item', 2).dispatchEvent(pointer('pointerup', 30, 30));
+    expect(record.sent).toEqual([{
+      type: 'ADDITEMTASKBAR', bar: 0, slot: 2,
+      // the bar's SetShortcut writes m_dwData 1 on an item slot, as for a job skill
+      shortcut: { kind: ShortcutKind.SKILL, id: 5, type: 2, index: 2, userId: 0, data: 1, text: 'Linked Attack' },
+    }]);
+    // never on the action slot (not CT_STEP)
+    from.dispatchEvent(pointer('pointerdown', 10, 10));
+    window.dispatchEvent(pointer('pointermove', 30, 30));
+    slot(bar, 'queue', 0).dispatchEvent(pointer('pointerup', 30, 30));
+    expect(record.sent).toHaveLength(1);
+  });
+});

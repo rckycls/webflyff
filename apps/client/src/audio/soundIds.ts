@@ -24,6 +24,7 @@ export const BGM_EV_END = 20; // :1925, a quest ends or is removed
 export const BGM_IN_BOSS = 21; // :1927
 export const BGM_IN_DEATH = 22; // :1928
 export const BGM_IN_LEVELUP = 23; // :1929
+export const BGM_IN_FITUP = 25; // :1931, a new party and an advanced one (Piece 7 M4, OnAddPartyMember, OnPartyChangeTroup)
 
 /**
  * The worlds where the own death plays no music (CDPClient::OnMoverDeath, DPClient.cpp:2012-2034): WI_WORLD_GUILDWAR,

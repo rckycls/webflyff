@@ -32,6 +32,9 @@ interface Tag {
   sprite: Sprite;
   texture: CanvasTexture;
   maxDistance: number;
+  /** What it was drawn with, for `recolor`. */
+  text: string;
+  color: number;
   /** The canvas in CSS pixels. */
   width: number;
   height: number;
@@ -59,6 +62,22 @@ export class NameTagLayer {
       if (movers.get(mover.objectId) !== mover || this.tags.has(mover.objectId)) continue;
       const tag = tagOf(mover);
       if (tag !== null && tag.text !== '') this.add(mover.objectId, tag);
+    }
+  }
+
+  /**
+   * Asks `tagOf` again for every mover with a tag (the party changed: `COLOR_PARTY`): a tag whose text or colour differs
+   * is drawn again, one `tagOf` now gives none is dropped. The others stay as they are.
+   */
+  recolor(movers: ReadonlyMap<number, Mover>, tagOf: (mover: Mover) => NameTag | null): void {
+    for (const objectId of [...this.tags.keys()]) {
+      const mover = movers.get(objectId);
+      const old = this.tags.get(objectId);
+      if (mover === undefined || old === undefined) continue;
+      const tag = tagOf(mover);
+      if (tag !== null && tag.text === old.text && tag.color === old.color) continue;
+      this.remove(objectId);
+      if (tag !== null && tag.text !== '') this.add(objectId, tag);
     }
   }
 
@@ -128,7 +147,7 @@ export class NameTagLayer {
     sprite.renderOrder = 1;
     sprite.visible = false;
     this.scene.add(sprite);
-    this.tags.set(objectId, { sprite, texture, maxDistance: tag.maxDistance, width, height });
+    this.tags.set(objectId, { sprite, texture, maxDistance: tag.maxDistance, text: tag.text, color: tag.color, width, height });
   }
 
   private remove(objectId: number): void {

@@ -7,7 +7,7 @@ import type { WebWorldMap } from '@flyffweb/formats';
 import { WorldMap } from '../src/world/hud/worldMap';
 import type { MapView } from '../src/world/hud/worldMap';
 import { loadWorldMap } from '../src/world/worldMapData';
-import { mapPoint } from '../src/world/worldMapRules';
+import { arrowMatrix, mapPoint } from '../src/world/worldMapRules';
 
 const CNT = readFileSync(path.join(__dirname, 'fixtures', 'WdMadrigal.wld.cnt'), 'latin1');
 const MAP_OF: Record<number, number> = { 1: 5, 2: 4, 3: 3, 4: 7, 241: 1, 242: 2, 243: 6 };
@@ -294,5 +294,35 @@ describe("WorldMap: the quest destination (CWorldMap destination mode, WorldMap.
     map.toggle(FLARIS);
     map.toggle(FLARIS);
     expect(mark.hidden).toBe(true);
+  });
+});
+
+describe('WorldMap: the party (RenderWorldMap, WorldMap.cpp:806-821; RenderPlayer, :542-613, :742-784)', () => {
+  it('the world map draws a party arrow with its yellow name', () => {
+    const { map } = make();
+    map.toggle(FLARIS);
+    const lead = { pos: [6968 + 100, 100, 3328] as [number, number, number], name: 'Lead' };
+    map.update(FLARIS, [lead]);
+    const marks = [...map.element.querySelectorAll<HTMLElement>('.hud-worldmap-party')].filter((mark) => !mark.hidden);
+    expect(marks).toHaveLength(1);
+    const [mark] = marks;
+    const name = mark!.querySelector<HTMLElement>('.hud-worldmap-name')!;
+    expect(name.textContent).toBe('Lead');
+    expect(name.style.color).toBe('rgb(255, 255, 127)');
+    const picture = mark!.querySelector<HTMLElement>('.hud-worldmap-arrow-picture')!;
+    expect(picture.style.backgroundImage).toContain('ui/imgmaparrowparty.png');
+    // turned by its position, not a heading: atan2( x, z )
+    const yaw = Math.atan2(lead.pos[0], lead.pos[2]);
+    const [a, b, c, d] = arrowMatrix(yaw, 1280, 960);
+    expect(picture.style.transform).toBe(`matrix(${a}, ${b}, ${c}, ${d}, 0, 0)`);
+    // the own arrow and name are still the first, and green
+    expect(q(map, '.hud-worldmap-name')!.textContent).toBe('Rocky');
+    // off the map shown, a member's mark hides; gone from the list, it goes
+    press(q(map, '[data-map-button="3"]')!);
+    map.update(FLARIS, [lead]);
+    expect([...map.element.querySelectorAll<HTMLElement>('.hud-worldmap-party')].filter((m) => !m.hidden)).toHaveLength(0);
+    press(q(map, '[data-map-button="0"]')!);
+    map.update(FLARIS, []);
+    expect([...map.element.querySelectorAll<HTMLElement>('.hud-worldmap-party')].filter((m) => !m.hidden)).toHaveLength(0);
   });
 });

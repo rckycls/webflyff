@@ -15,7 +15,7 @@ import { Missiles } from '../src/world/combat/missiles';
 import { WorldState, isDie, isLive } from '../src/world/WorldState';
 import type { CombatEvent, Mover } from '../src/world/WorldState';
 import { catalogFiles, storeOf } from './helpers/gameDataFiles';
-import { gameDataOf, webMoverOf } from './helpers/movers';
+import { addedPlayer, gameDataOf, webMoverOf } from './helpers/movers';
 import { MERCENARY, OWN_ID, STARTER_EQUIPMENT, VAGRANT, WOODEN_SWORD, itemProp, ownAdded, ownGameData } from './helpers/ownState';
 
 const f32 = Math.fround;
@@ -1656,6 +1656,19 @@ describe('WorldState: the skills\' shots (CCtrl::ShootSkill, Ctrl.cpp:1356-1418;
     expect(launched).toEqual([{
       cls: 'shoot', sourceId: PLAYER, targetId: MONSTER, from: [100, 1, 103], flightXi: 236, hitXi: 237, scale: 1, report: null,
     }]);
+  });
+});
+
+describe('moverByPlayerId (prj.GetUserByID, Piece 7 M4)', () => {
+  it('finds a player in view by its database ID, the own one too; an ID not in view finds nothing', () => {
+    const world = new WorldState(gameDataOf(), new ServerClock(() => 0), terrainGround(() => 0));
+    world.apply(1, { type: 'addMover', mover: addedPlayer(1, { playerId: 70002 }) });
+    world.apply(2, { type: 'addMover', mover: addedPlayer(2, { playerId: 500, self: true }) });
+    expect(world.moverByPlayerId(70002)?.objectId).toBe(1);
+    expect(world.moverByPlayerId(500)?.objectId).toBe(2);
+    expect(world.moverByPlayerId(70003)).toBeUndefined();
+    world.apply(1, { type: 'delObj' });
+    expect(world.moverByPlayerId(70002)).toBeUndefined();
   });
 });
 

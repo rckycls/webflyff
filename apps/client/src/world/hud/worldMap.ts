@@ -5,12 +5,14 @@
 // has a close button; while it is open it holds every key (M and Escape close it) and keeps every press from the world.
 // Piece 7 M1 adds the quest destination (CWorldMap's destination mode): ButtDestination.bmp at a Madrigal spot. Neuz
 // forgets it when the map closes; here it lasts until cleared, since the 3-D arrow that would keep pointing is not drawn.
+// Piece 7 M4 adds the party (RenderWorldMap, WorldMap.cpp:806-821): after the own arrow, each member not oneself and not
+// offline, ImgMapArrowParty.bmp turned by its position (`partyArrowAngle`) and its name in 0xffffff7f.
 
 import type { MapMonsterRow, WebWorldMap, WebWorldMapEntry } from '@flyffweb/formats';
 import type { Vec3 } from '@flyffweb/protocol';
 import type { GameData } from '../gameData';
 import {
-  MAP_NONE, arrowMatrix, buttonFrame, buttonRect, cameraYaw, mapNumber, mapPoint, monsterTip,
+  MAP_NONE, arrowMatrix, buttonFrame, buttonRect, cameraYaw, mapNumber, mapPoint, monsterTip, partyArrowAngle,
 } from '../worldMapRules';
 import type { UiArt } from './art';
 import { cssRgb, themeUrl } from './art';
@@ -40,6 +42,15 @@ const FILL_4_3 = '#3b3d2f';
 const ARROW = { w: 37, h: 35, cx: 18, cy: 17 };
 /** The own name's colour (`RenderPlayer`, WorldMap.cpp:742-784). */
 const OWN_NAME = 0xff7fff7f;
+/** A party member's name (`RenderPlayer`, :781-782) and arrow (`ImgMapArrowParty.bmp`, 37x35, the theme's). */
+const PARTY_NAME = 0xffffff7f;
+const PARTY_ARROW = 'ImgMapArrowParty.bmp';
+
+/** A party member's mark: where it stands and its name. */
+export interface PartyMark {
+  pos: Vec3;
+  name: string;
+}
 /** The tooltip's text width (`PutToolTip`'s wrap, tooltip.cpp:204). */
 const TIP_WIDTH = 200;
 /** The element icons (`Icon/Icon_MonElemantkind.inc`, 5 frames of 16x16, frame `eElementType - 1`, tooltip.cpp:686). */
@@ -59,6 +70,10 @@ export class WorldMap {
   private readonly arrowAt: HTMLElement;
   private readonly arrow: HTMLElement;
   private readonly name: HTMLElement;
+  /** The party's marks, after the own arrow; one a member, made as needed. */
+  private readonly partyLayer: HTMLElement;
+  private readonly partyMarks: Array<{ at: HTMLElement; arrow: HTMLElement; name: HTMLElement }> = [];
+  private lastParty: readonly PartyMark[] = [];
   private readonly tip: HTMLElement;
   private readonly tipText: HTMLElement;
   private readonly closeButton: HTMLButtonElement;
@@ -129,6 +144,8 @@ export class WorldMap {
     this.name.className = 'hud-worldmap-name';
     this.name.style.color = cssRgb(OWN_NAME);
     this.arrowAt.append(this.arrow, this.name);
+    this.partyLayer = doc.createElement('div');
+    this.partyLayer.className = 'hud-worldmap-party-layer';
 
     this.tip = doc.createElement('div');
     this.tip.className = 'hud-worldmap-tip';
@@ -156,7 +173,7 @@ export class WorldMap {
     this.closeButton.append(cross);
     this.closeButton.addEventListener('click', () => this.close());
 
-    this.picture.append(this.icons, this.mark, ...this.buttons, this.arrowAt, this.tip, this.closeButton);
+    this.picture.append(this.icons, this.mark, ...this.buttons, this.arrowAt, this.partyLayer, this.tip, this.closeButton);
     this.area.append(this.picture);
     this.element.append(this.area);
   }
@@ -231,9 +248,13 @@ export class WorldMap {
     this.listen(false);
   }
 
-  /** A frame: the arrow and the name where the player stands, turned by the camera (`RenderPlayer`, :542-613). */
-  update(view: MapView): void {
+  /**
+   * A frame: the arrow and the name where the player stands, turned by the camera (`RenderPlayer`, :542-613), then the
+   * party's marks (`RenderWorldMap`, :806-821).
+   */
+  update(view: MapView, party: readonly PartyMark[] = this.lastParty): void {
     this.last = view;
+    this.lastParty = party;
     if (!this.isOpen || this.data === null) return;
     if (this.area.clientWidth !== this.laidOut.w || this.area.clientHeight !== this.laidOut.h) {
       // a resize, a rotation or a phone's toolbar while open: fit again, and draw at the new size
@@ -244,6 +265,7 @@ export class WorldMap {
     const { w, h } = this.size;
     const on = mapNumber(view.worldId, { x: view.pos[0], z: view.pos[2] }, this.data);
     this.arrowAt.hidden = this.shown !== 0 && this.shown !== on;
+    this.drawParty(view, party);
     if (this.arrowAt.hidden) return;
     const at = mapPoint(this.entry().bounds, { x: view.pos[0], z: view.pos[2] }, { left: 0, top: 0, width: w, height: h });
     this.arrowAt.style.left = `${at.x}px`;
@@ -251,6 +273,37 @@ export class WorldMap {
     const [a, b, c, d] = arrowMatrix(cameraYaw(view.camera, view.pos), w, h);
     this.arrow.style.transform = `matrix(${a}, ${b}, ${c}, ${d}, 0, 0)`;
     this.name.textContent = view.name;
+  }
+
+  /** Each member's arrow and name; a member off the map shown is skipped, as `RenderPlayer` returns (:542-543). */
+  private drawParty(view: MapView, party: readonly PartyMark[]): void {
+    const { w, h } = this.size;
+    const doc = this.element.ownerDocument;
+    while (this.partyMarks.length < party.length) {
+      const at = doc.createElement('div');
+      at.className = 'hud-worldmap-arrow hud-worldmap-party';
+      const arrow = doc.createElement('div');
+      arrow.className = 'hud-worldmap-arrow-picture';
+      arrow.style.backgroundImage = themeUrl(this.art, PARTY_ARROW);
+      const name = doc.createElement('div');
+      name.className = 'hud-worldmap-name';
+      name.style.color = cssRgb(PARTY_NAME);
+      at.append(arrow, name);
+      this.partyLayer.append(at);
+      this.partyMarks.push({ at, arrow, name });
+    }
+    this.partyMarks.forEach((mark, i) => {
+      const member = party[i];
+      const on = member === undefined ? MAP_NONE : mapNumber(view.worldId, { x: member.pos[0], z: member.pos[2] }, this.data!);
+      mark.at.hidden = member === undefined || (this.shown !== 0 && this.shown !== on);
+      if (member === undefined || mark.at.hidden) return;
+      const at = mapPoint(this.entry().bounds, { x: member.pos[0], z: member.pos[2] }, { left: 0, top: 0, width: w, height: h });
+      mark.at.style.left = `${at.x}px`;
+      mark.at.style.top = `${at.y}px`;
+      const [a, b, c, d] = arrowMatrix(partyArrowAngle(member.pos), w, h);
+      mark.arrow.style.transform = `matrix(${a}, ${b}, ${c}, ${d}, 0, 0)`;
+      if (mark.name.textContent !== member.name) mark.name.textContent = member.name;
+    });
   }
 
   dispose(): void {

@@ -473,6 +473,21 @@ describe('SkillUse: a bar slot (UseSkillShortCut, CMD_SetUseSkill, ProcessMoveAr
     expect(r.sent).toEqual([['destObj', MONSTER_ID, 2]]);
     expect(r.skills.commanding).toBe(true);
   });
+
+  it('a type-2 shortcut goes to onPartySkill, one call per tap', () => {
+    const r = rig();
+    const party: number[] = [];
+    r.skills.onPartySkill = (skill) => party.push(skill);
+    // m_dwType 2, m_dwId the troupe skill (WndManager.cpp:2782-2875): Linked Attack
+    r.skills.useShortcut({ ...skillShortcut(5, 1), type: 2 });
+    expect(party).toEqual([5]);
+    r.steps(3);
+    // nothing queued for the job skills, and no second call from the steps
+    expect(party).toEqual([5]);
+    expect(r.sent).toEqual([]);
+    r.skills.useShortcut({ ...skillShortcut(8, 1), type: 2 });
+    expect(party).toEqual([5, 8]);
+  });
 });
 
 describe('SkillUse: the answer to USESKILL (OnUseSkill, OnClearUseSkill, the 2 s guard)', () => {

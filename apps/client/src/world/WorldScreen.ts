@@ -76,6 +76,20 @@ import { QuestTracker } from './hud/quests/questTracker';
 import { QuestWindow } from './hud/quests/questWindow';
 import type { QuestWindowState } from './hud/quests/questWindow';
 import { loadQuests } from './quests/questCatalog';
+import type { WebParty } from '@flyffweb/formats';
+import type { MemberView, PartyView } from './hud/party/memberList';
+import { loadParty } from './party/partyCatalog';
+import { PartyHud } from './party/partyHud';
+import { navigatorKind, partyMapMarks } from './party/partyMarks';
+import { inviteCheck } from './party/partyRules';
+import { PartyState } from './party/partyState';
+import type { PartyEvent } from './party/partyState';
+import { PlayerDataCenter } from './party/playerData';
+import { MMI_INVITE_PARTY, menuInReach, playerMenuEntries } from './party/playerMenu';
+import { PartyHpBars } from './render/PartyHpBars';
+import { partyEffects } from './fx/partyEffects';
+import type { PartyEffectContext, PartyMover } from './fx/partyEffects';
+import type { PartyHpMember } from './render/PartyHpBars';
 import { questLines, timedOut } from './quests/questLines';
 import { createQuestLookup } from './quests/questRules';
 import type { QuestCatalog, QuestNames, QuestOwner } from './quests/questRules';
@@ -96,6 +110,7 @@ import { TeleporterWindow } from './hud/teleporterWindow';
 import { formatDefinedText } from './hud/messages';
 import { ItemUse } from './items/itemUse';
 import { ItemCast } from './items/itemCast';
+import { MoverBuffs } from './buffs';
 import type { BuffShown } from './buffs';
 import { ReturnScroll } from './items/returnScroll';
 import type { Refusal } from './items/travelItems';
@@ -109,7 +124,7 @@ import { GroundItems } from './items/groundItems';
 import { GroundModels, loadDropModel } from './items/groundModels';
 import { NearbyItems } from './items/nearbyItems';
 import { STATE_BASEMOTION_MODE, ShortcutKind } from '@flyffweb/protocol';
-import type { TaskBarWindow } from './hud/taskBar';
+import type { TaskBarData, TaskBarWindow } from './hud/taskBar';
 import { OwnMover, pickOnStage } from './ownMover';
 import { OwnState } from './OwnState';
 import { NoWebGLError, page3d, sceneAssets } from './page3d';
@@ -135,7 +150,7 @@ import { SimulationClock } from './simulationClock';
 import { WorldSession } from './WorldSession';
 import type { WorldEvent } from './WorldSession';
 import { WorldState, isDie, isLive } from './WorldState';
-import type { WorldChanges } from './WorldState';
+import type { Mover, WorldChanges } from './WorldState';
 
 const LOADING_TEXT = 'Entering the world…';
 /** The joystick's height over the bottom, as Piece 3's: the task bar's 48 px and 8 more. */
@@ -305,6 +320,25 @@ export class WorldScreen {
   private chatWindow: ChatWindow | undefined;
   private speechBubbles: SpeechBubbleLayer | undefined;
   private moverMenu: MoverMenu | undefined;
+  /**
+   * Piece 7 M4: `g_Party` and the player data, this login's: kept through a world change (plan Decisions 3), gone with
+   * the screen at a log-out or a reconnect. The party's messages reach them before the world's; their events wait for
+   * the windows while a world loads.
+   */
+  private readonly party = new PartyState({
+    ownPlayerId: () => this.entry.character.playerId,
+    inView: (playerId) => this.world?.moverByPlayerId(playerId) !== undefined,
+    nameInView: (playerId) => this.world?.moverByPlayerId(playerId)?.name ?? null,
+    skillName: (skill) => this.partyCatalog?.skills.find((s) => s.id === skill)?.name ?? '',
+    defaultName: () => this.data?.texts.get('TID_GAME_PARTY_NAME')?.text ?? 'Advance Party',
+  });
+  private readonly playerData = new PlayerDataCenter((playerId) => this.session.sendQueryPlayerData(playerId));
+  private partyCatalog: WebParty | null = null;
+  /** The party skills' mode icons, the screen's as the party is (final review: a world change kept the mode, not its icon). */
+  private readonly partyModeIcons = new MoverBuffs();
+  private partyHud: PartyHud | undefined;
+  private partyBars: PartyHpBars | undefined;
+  private readonly partyEvents: PartyEvent[] = [];
   private dialog: DialogWindow | undefined;
   /** `CWndWorld::m_dwDropTime` (WndWorld.cpp:590): when the player last dropped an item. */
   private lastDropAt = -Infinity;
@@ -483,9 +517,10 @@ export class WorldScreen {
       if (this.over) return;
       this.services = services;
       this.data = data;
-      [this.worldMapData, this.questCatalog] = await Promise.all([
+      [this.worldMapData, this.questCatalog, this.partyCatalog] = await Promise.all([
         loadWorldMap(services.store, (error) => this.reportOnce(`world map: ${messageOf(error)}`, error)),
         loadQuests(services.store, (error) => this.reportOnce(`quests: ${messageOf(error)}`, error)),
+        loadParty(services.store, (error) => this.reportOnce(`party: ${messageOf(error)}`, error)),
       ]);
       if (this.over) return;
       const audio = this.audio;
@@ -610,6 +645,12 @@ export class WorldScreen {
     const world = this.world!;
     for (const { objectId, value } of messages) {
       const self = world.self();
+      // Piece 7 M4: the player data and the party first (they ignore what is not theirs); their events to the windows
+      this.playerData.apply(value);
+      const partyEvents = this.party.apply(value);
+      this.playPartyEffects(value, partyEvents);
+      this.partyEvents.push(...partyEvents);
+      if (this.partyHud !== undefined && this.partyEvents.length > 0) this.partyHud.handle(this.partyEvents.splice(0));
       if (value.type === 'npcScript') {
         if (objectId === self?.objectId) this.npcScript(value.action);
         continue;
@@ -631,6 +672,9 @@ export class WorldScreen {
           if (speaker && this.data && nameTagOf(speaker, world.self(), this.data.nameColors, this.data.honorTitles)) this.speechBubbles?.say(objectId, value.text);
         }
         else this.chatWindow?.append(value.type, value.sender, value.text, value.type === 'whisper' ? value.recipient : undefined);
+        if (value.type === 'party' && value.speakerId !== undefined && value.text !== '' && world.movers.has(value.speakerId)) {
+          this.speechBubbles?.say(value.speakerId, value.text);
+        }
         continue;
       }
       if (value.type === 'chatReturn') {
@@ -831,6 +875,9 @@ export class WorldScreen {
     // Piece 7 M2: the charge gauge, over the canvas and under the windows (CMover::RenderGauge draws it with the world)
     this.chargeGauge = new ChargeGauge(this.hudArt!, doc);
     this.element.insertBefore(this.chargeGauge.element, this.hud!.element);
+    // Piece 7 M4: the HP bars over the party's members, drawn with the world as the gauge is (CMover::RenderHP)
+    this.partyBars = new PartyHpBars(this.hudArt!, doc);
+    this.element.insertBefore(this.partyBars.element, this.hud!.element);
     // Piece 7 M3: an item cast's gauge, there too (CMover::RenderCasting)
     this.castGauge = new CastGauge(this.hudArt!, doc);
     this.element.insertBefore(this.castGauge.element, this.hud!.element);
@@ -1005,6 +1052,23 @@ export class WorldScreen {
     inventoryWindow.onShopClose = () => this.shopWindow?.frame.close();
     this.teleporter = new TeleporterWindow(this.hudArt!, id => this.canTalk(id), (key, index) => session.sendTeleporter(key, index), doc);
     this.moverMenu = new MoverMenu(doc);
+    const partyHud = new PartyHud(this.hudArt!, this.data!.texts, () => this.partyCatalog, {
+      session,
+      say: (text, color) => this.hud?.messages.add(text, color),
+      music: (id) => this.sounds?.serverMusic(id),
+      recolor: () => this.recolorTags(),
+      target: (playerId) => this.focus?.select(playerId === null ? null : this.world?.moverByPlayerId(playerId)?.objectId ?? null),
+      quickAt: () => {
+        const status = this.hud?.status.frame.element.getBoundingClientRect(), layer = this.hud?.element.getBoundingClientRect();
+        return { x: 0, y: status === undefined || layer === undefined || status.height === 0 ? 112 : Math.round(status.bottom - layer.top) };
+      },
+      ownPlayerId: () => this.entry.character.playerId,
+      now: () => this.world?.nowMs() ?? 0,
+      carryPartySkill: (skill, event) => taskBar.carryPartySkill(skill, event),
+    }, this.party, this.partyModeIcons, doc);
+    this.partyHud = partyHud;
+    // a type-2 shortcut of the task bar: the party skill's rule (ObjectExecutor, WndManager.cpp:2779-2876)
+    skillUse.onPartySkill = (skill) => partyHud.useSkill(skill);
     // RunScript: the NPC and the player as nGlobal3 and nGlobal4 (WndDialog.cpp:234-240)
     // the dialogue's quest rows from the catalog and the own quests (Piece 7 M1: `[min~max] title`, the papers)
     const quests = createQuestLookup(() => this.questCatalog, () => this.own?.quests ?? new Map(), () => this.questOwner());
@@ -1034,7 +1098,7 @@ export class WorldScreen {
     this.skillWindow = skillWindow;
     this.optionWindow = this.audio === null ? undefined : new OptionWindow(this.hudArt!, this.audio, doc);
     for (const modal of [
-      logOutBox.modal, reviveWindow.modal, skillWindow.warning.modal, this.dialog.modal, questWindow.modal, messageBox.modal, selectVillage.modal,
+      logOutBox.modal, reviveWindow.modal, skillWindow.warning.modal, this.dialog.modal, questWindow.modal, messageBox.modal, selectVillage.modal, partyHud.messageBox.modal,
     ]) {
       modal.onChange = () => this.modalChanged();
     }
@@ -1044,8 +1108,10 @@ export class WorldScreen {
       selectVillage.element, characterWindow.frame.element,
       characterWindow.confirm.frame.element, skillWindow.frame.element, skillWindow.warning.element, reviveWindow.element,
       inventoryWindow.frame.element, this.nearbyItems.element, this.chatWindow.element, this.shopWindow.frame.element,
-      ...questWindow.elements, this.dialog.element, this.moverMenu.element,
+      ...questWindow.elements, this.dialog.element, this.moverMenu.element, ...partyHud.elements,
     );
+    // what the party said while the world loaded
+    if (this.partyEvents.length > 0) partyHud.handle(this.partyEvents.splice(0));
     if (this.optionWindow !== undefined) this.hud!.element.append(this.optionWindow.frame.element);
     // before the windows' own Escape (frame.ts), which closes a window only if this one leaves the key to it
     view.addEventListener('keydown', this.onEscape, true);
@@ -1054,9 +1120,16 @@ export class WorldScreen {
     this.tap = new TapToWalk(
       renderer.domElement, (x, y) => this.pick(x, y), (error) => this.reportOnce(`tap: ${messageOf(error)}`, error),
       (press) => {
+        const pressed = press.mover === null ? undefined : this.world?.movers.get(press.mover);
         if (press.mover === null) attackLoop.onGroundPressed(press.double);
-        else if (this.world?.movers.get(press.mover)?.kind === 'npc') this.pressNpc(press.mover);
-        else attackLoop.onMoverPressed(press.mover, press.time, press.double);
+        else if (pressed?.kind === 'npc') this.pressNpc(press.mover);
+        else if (pressed?.kind === 'player' && !pressed.isSelf && (press.alt || (press.touch && this.focus?.targetId === press.mover))) {
+          this.pressPlayer(press.mover);
+        } else attackLoop.onMoverPressed(press.mover, press.time, press.double);
+      },
+      (mover) => {
+        const pressed = this.world?.movers.get(mover);
+        if (pressed?.kind === 'player' && !pressed.isSelf) this.pressPlayer(mover);
       },
     );
     this.cameraControls = new CameraControls(renderer.domElement, (dx, dy) => this.backCamera.rotate(dx, dy));
@@ -1129,7 +1202,7 @@ export class WorldScreen {
     const changes = world.takeChanges();
     this.countDropped(changes.dropped);
     this.views!.sync(changes, world.movers);
-    this.tags!.sync(changes, world.movers, (mover) => nameTagOf(mover, world.self(), data.nameColors, data.honorTitles));
+    this.tags!.sync(changes, world.movers, (mover) => nameTagOf(mover, world.self(), data.nameColors, data.honorTitles, this.inParty));
     this.play(changes);
   }
 
@@ -1397,6 +1470,8 @@ export class WorldScreen {
       const ownView = world.self();
       this.chargeGauge?.update(this.attackLoop?.gauge(now) ?? null, ownView === undefined ? null : views.placeOf(ownView.objectId)?.head ?? null,
         stage.camera, drawingSize.x, drawingSize.y);
+      this.partyBars?.update(stage.camera, this.partyBarMembers(world, (objectId) => views.placeOf(objectId)?.head ?? null),
+        ownView?.objectId ?? null, drawingSize.x, drawingSize.y);
       // Piece 7 M3: the own cast's gauge, from its STATEMODE ON on the world's clock (RenderCasting: m_nReadyTime set)
       const cast = ownView?.stateMode !== undefined && (ownView.stateMode & STATE_BASEMOTION_MODE) !== 0 ? ownView.cast : null;
       const castMs = cast === null ? undefined : this.data?.itemProps.get(cast.itemId)?.castMs;
@@ -1568,7 +1643,7 @@ export class WorldScreen {
     this.targetBuffs?.update(target?.buffs.list(buffNow) ?? [], this.data!.skills, buffNow, this.element.clientWidth);
     const gameMaster = isGameMaster(self?.added.player?.authorization ?? 0);
     this.hud!.frame(now, this.own, self?.name ?? this.entry.character.name, target, gameMaster);
-    this.taskBar!.update(this.own, this.data!);
+    this.taskBar!.update(this.own, this.barData());
     this.nearbyItems?.update(world.groundItems, self?.act.body.pos ?? null);
     if (this.own) this.inventoryWindow?.update(this.own);
     // the dialogue and the menu go with their NPC or when the player moves (WndWorld.cpp:8052-8081)
@@ -1579,7 +1654,15 @@ export class WorldScreen {
       (menuNpc === null ? !ownStands(self) : !dialogueStays(world.movers.get(menuNpc), self))) this.moverMenu.close();
     this.shopWindow?.update();
     this.teleporter?.update();
-    if (this.worldMap?.isOpen === true) this.worldMap.update(this.mapView());
+    if (this.worldMap?.isOpen === true) this.worldMap.update(this.mapView(), this.partyMarks(world));
+    this.chatWindow?.setParty(this.party.size() > 0);
+    const partyHud = this.partyHud;
+    if (partyHud !== undefined && (partyHud.window.frame.isOpen || partyHud.quick.frame.isOpen)) {
+      partyHud.update(this.partyView(world), loop.autoAttack);
+    }
+    // the mode icons, while mode 4 is on or the leader is in view (RenderBuff, WndWorld.cpp:10637-10745)
+    const leader = this.party.members[0];
+    partyHud?.updateIcons(this.party.modeOn(4) || (leader !== undefined && world.moverByPlayerId(leader.playerId) !== undefined));
     if (this.questTracker !== undefined || this.questWindow !== undefined) {
       const questState = this.questState();
       this.questTracker?.update(questState);
@@ -1588,7 +1671,7 @@ export class WorldScreen {
     if (self !== undefined) this.minimap?.update(self.act.body.pos, this.backCamera.heading ?? 0,
       [...world.movers.values()].filter(mover => !mover.isSelf && mover.hp > 0 &&
         !isGameMaster(mover.added.player?.authorization ?? 0)).map(mover => ({
-        id: mover.objectId, kind: mover.kind, name: mover.name, pos: mover.act.body.pos,
+        id: mover.objectId, kind: navigatorKind(mover, this.party), name: mover.name, pos: mover.act.body.pos,
       })));
     this.reviveWindow?.update(this.itemUse?.canRevive ?? false);
     if (this.resized) {
@@ -1620,6 +1703,7 @@ export class WorldScreen {
       return;
     }
     if (window === 'chat') { this.chatWindow?.open(); return; }
+    if (window === 'party') { this.partyHud?.toggle(); return; }
     if (window === 'quests') { this.questWindow?.toggle(this.hud?.element.clientWidth ?? 0, this.questState()); return; }
     if (window === 'option') { this.optionWindow?.toggle(); return; }
     if (window === 'inventory') {
@@ -1713,7 +1797,7 @@ export class WorldScreen {
     const open = this.reviveWindow?.modal.isShown === true || this.logOutBox?.modal.isShown === true ||
       this.skillWindow?.warning.modal.isShown === true || this.dialog?.modal.isShown === true ||
       this.questWindow?.modal.isShown === true || this.messageBox?.modal.isShown === true ||
-      this.selectVillage?.modal.isShown === true;
+      this.selectVillage?.modal.isShown === true || this.partyHud?.messageBox.modal.isShown === true;
     this.element.classList.toggle('world-modal', open);
     if (!open) return;
     this.worldMap?.close();
@@ -1878,6 +1962,143 @@ export class WorldScreen {
     const at = this.menuPoint(id);
     if (at === null || entries.length === 0) return;
     this.moverMenu!.open(entries, at, (entry) => this.chooseNpcEntry(id, entry), id);
+  }
+
+  /**
+   * Piece 7 M4: a player's menu (`CWndWorld::ShowMoverMenu`, WndWorld.cpp:6517-6709; `OnRButtonUp`, :7114-7131): the
+   * auto-attack off and the player the focus; within 20 m the menu opens (the walk cleared), farther the player walks to it.
+   */
+  private pressPlayer(id: number): void {
+    const world = this.world!, player = world.movers.get(id), own = world.self();
+    if (player === undefined || own === undefined || own.act.isDie()) return;
+    this.attackLoop!.stop('move');
+    this.focus!.select(id);
+    if (!menuInReach(own.act.body.pos, player.act.body.pos)) {
+      this.attackLoop!.walkTo(id);
+      return;
+    }
+    this.stopOwnMover();
+    const at = this.menuPoint(id);
+    if (at === null) return;
+    this.moverMenu!.open(playerMenuEntries(this.data!.texts), at, (entry) => this.choosePlayerEntry(id, entry));
+  }
+
+  /** Invite (`OnCommand` MMI_INVITE_PARTY, :5639-5644, `InviteParty`, :11237-11266): the focus a player, the party's rule. */
+  private choosePlayerEntry(id: number, entry: number): void {
+    const player = this.world?.movers.get(id)?.added.player;
+    if (entry !== MMI_INVITE_PARTY || player === undefined || this.focus?.targetId !== id) return;
+    const check = inviteCheck(this.party, this.entry.character.playerId);
+    if ('send' in check) this.session.sendPartyMemberRequest(player.playerId);
+    else if ('box' in check) this.partyHud?.handle([{ kind: 'box', tid: check.box }]);
+    // in FULLPARTY1's colour (WndWorld.cpp:11255-11258)
+    else this.partyHud?.handle([{ kind: 'line', tid: check.line, args: [], color: this.data?.texts.get('TID_GAME_FULLPARTY1')?.color ?? null }]);
+  }
+
+  private readonly inParty = (playerId: number): boolean => this.party.isMember(playerId);
+
+  /** Piece 7 M4: the party skills' and the modes' effects (`partyEffects`), told to the test hooks as the fight's are. */
+  private playPartyEffects(value: WorldMessage, events: readonly PartyEvent[]): void {
+    const effects = this.effects, world = this.world;
+    if (effects === undefined || world === undefined) return;
+    const inputs: Array<Parameters<typeof partyEffects>[0]> = [];
+    if (value.type === 'partySkillCall' || value.type === 'partySkillBlitz' || value.type === 'partySkillRetreat'
+      || value.type === 'partySkillSphereCircle') inputs.push(value);
+    for (const event of events) if (event.kind === 'modeOn' || event.kind === 'modeOff') inputs.push(event);
+    if (inputs.length === 0) return;
+    const context = this.partyEffectContext(world);
+    for (const input of inputs) {
+      for (const request of partyEffects(input, context)) {
+        keep(this.playedSoFar.effects, { xi: request.xi, step: this.stepsRun });
+        effects.play(request);
+      }
+    }
+  }
+
+  /** What the party's effects read of the world: the movers in view by player id, their models' tops, the catalog. */
+  private partyEffectContext(world: WorldState): PartyEffectContext {
+    const views = this.views;
+    // `IsSit()`: the state's move part is OBJSTA_SIT (ActionMover.h)
+    const sitting = (mover: Mover): boolean => (mover.act.state & ObjSta.MOVE_ALL) === ObjSta.SIT;
+    const of = (mover: Mover | undefined): PartyMover | null => {
+      if (mover === undefined) return null;
+      const scale = mover.added.scale;
+      const place = views?.placeOf(mover.objectId);
+      const height = place === null || place === undefined || scale === 0 ? 0 : (place.head[1] - place.at[1]) / scale;
+      const [x, y, z] = mover.act.body.pos;
+      return { objectId: mover.objectId, pos: [x, y, z], height, scale, sitting: sitting(mover) };
+    };
+    const own = world.self();
+    const leaderSlot = this.party.members[0];
+    const members = this.party.members.map((slot) => of(world.moverByPlayerId(slot.playerId))).filter((m): m is PartyMover => m !== null);
+    return {
+      own: of(own),
+      isLeader: this.party.isLeader(this.entry.character.playerId),
+      leader: leaderSlot === undefined ? null : of(world.moverByPlayerId(leaderSlot.playerId)),
+      members,
+      mover: (objectId) => of(world.movers.get(objectId)),
+      skill: (id) => {
+        const row = this.partyCatalog?.skills.find((s) => s.id === id);
+        return row === undefined ? undefined : { sfx: row.sfx, sfx2: row.sfx2 };
+      },
+      restingOn: () => this.party.modeOn(2),
+      sits: (objectId) => {
+        const mover = this.world?.movers.get(objectId);
+        return mover !== undefined && sitting(mover);
+      },
+    };
+  }
+
+  /** The task bar's catalogs: the game data's, and the party skills (made once, when both are in). */
+  private taskBarData: TaskBarData | undefined;
+  private barData(): TaskBarData {
+    this.taskBarData ??= { ...this.data!, partySkills: new Map((this.partyCatalog?.skills ?? []).map((skill) => [skill.id, skill])) };
+    return this.taskBarData;
+  }
+
+  /** The members changed: every name tag's colour again (`COLOR_PARTY`). */
+  private recolorTags(): void {
+    const world = this.world, data = this.data;
+    if (world === undefined || data === undefined) return;
+    this.tags?.recolor(world.movers, (mover) => nameTagOf(mover, world.self(), data.nameColors, data.honorTitles, this.inParty));
+  }
+
+  /** What the party windows draw: each member from its mover in view, else from the player data (queried once). */
+  private partyView(world: WorldState): PartyView {
+    const jobs = this.data!.jobs;
+    const members = this.party.members.map((slot): MemberView => {
+      const mover = world.moverByPlayerId(slot.playerId);
+      if (mover !== undefined) {
+        const job = mover.added.player?.job ?? 0;
+        return {
+          playerId: slot.playerId, inView: true, removed: slot.removed, level: mover.level, job, jobName: jobs[job]?.title ?? '',
+          name: mover.name, hp: mover.hp, maxHp: mover.maxHp ?? 0,
+        };
+      }
+      const data = this.playerData.get(slot.playerId);
+      return {
+        playerId: slot.playerId, inView: false, removed: slot.removed, level: data.level, job: data.job, jobName: jobs[data.job]?.title ?? '',
+        name: data.name, hp: 0, maxHp: 0,
+      };
+    });
+    return { party: this.party, ownPlayerId: this.entry.character.playerId, members, exp: this.partyCatalog?.exp ?? [], catalog: this.partyCatalog };
+  }
+
+  /** The members in view but oneself whose model is drawn, for their HP bars (`CWndWorld::OnEraseBkgnd`, :1009-1031). */
+  private partyBarMembers(world: WorldState, headOf: (objectId: number) => Vec3 | null): PartyHpMember[] {
+    if (this.party.size() === 0) return [];
+    const bars: PartyHpMember[] = [];
+    for (const slot of this.party.members) {
+      const mover = world.moverByPlayerId(slot.playerId);
+      const head = mover === undefined || mover.isSelf ? null : headOf(mover.objectId);
+      if (mover !== undefined && head !== null) bars.push({ objectId: mover.objectId, head, hp: mover.hp, maxHp: mover.maxHp ?? 0 });
+    }
+    return bars;
+  }
+
+  /** The world map's party marks (`RenderWorldMap`, WorldMap.cpp:806-821). */
+  private partyMarks(world: WorldState): Array<{ pos: Vec3; name: string }> {
+    if (this.party.size() === 0) return [];
+    return partyMapMarks(this.party, this.entry.character.playerId, (playerId) => world.moverByPlayerId(playerId)?.act.body.pos ?? null, this.playerData);
   }
 
   /** The right and top of the NPC's bound rect (`GetBoundRect`, WndWorld.cpp:2661-2701), in the HUD layer's pixels. */
@@ -2056,6 +2277,8 @@ export class WorldScreen {
     if (this.world !== undefined) this.world.missiles = null;
     this.chargeGauge?.dispose();
     this.chargeGauge = undefined;
+    this.partyBars?.dispose();
+    this.partyBars = undefined;
     // Piece 7 M3: the cast's gauge and the Scroll of Return's windows go with the world; its ready effect went with the effects
     this.castGauge?.dispose();
     this.messageBox?.dispose();
@@ -2073,6 +2296,7 @@ export class WorldScreen {
     if (this.over) { this.chatWindow?.dispose(); this.chatWindow = undefined; }
     else this.chatWindow?.close();
     this.moverMenu?.dispose(); this.dialog?.dispose(); this.shopWindow?.dispose();
+    this.partyHud?.dispose();
     this.groundItems?.dispose();
     this.dropModels = undefined; // the ground items' own, disposed with them
     this.nearbyItems?.dispose();
@@ -2096,7 +2320,7 @@ export class WorldScreen {
       'hud', 'hudArt', 'taskBar', 'attackButton', 'cameraControls', 'jumpButton', 'logOutBox', 'reviveWindow',
       'characterWindow', 'skillWindow', 'inventoryWindow', 'moverMenu', 'dialog', 'shopWindow', 'itemUse',
       'itemActions', 'groundItems', 'nearbyItems', 'ownMover', 'simulationClock', 'minimap', 'teleporter', 'worldMap',
-      'questWindow', 'questTracker', 'itemCast', 'castGauge', 'messageBox', 'selectVillage', 'returnScroll'] as const) this[key] = undefined;
+      'questWindow', 'questTracker', 'itemCast', 'castGauge', 'messageBox', 'selectVillage', 'returnScroll', 'partyHud'] as const) this[key] = undefined;
   }
 
   /** Closes the connections and everything on screen, once, then tells the lobby. */

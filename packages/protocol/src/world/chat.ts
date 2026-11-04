@@ -7,7 +7,7 @@ export type ChatMessage =
   | { type: 'chat'; text: string }
   | { type: 'shout'; objectId: number; sender: string; text: string; color: number }
   | { type: 'whisper'; sender: string; recipient: string; text: string; fromId: number; toId: number; search: number }
-  | { type: 'party' | 'guild' | 'system' | 'announcement'; sender: string; text: string }
+  | { type: 'party' | 'guild' | 'system' | 'announcement'; sender: string; text: string; speakerId?: number }
   | { type: 'gmChat'; texts: string[] }
   | { type: 'chatReturn'; flag: number; text: string };
 
@@ -38,9 +38,14 @@ export function encodeChat(channel: ChatChannel, text: string, target = ''): Uin
   return clientPacket(0xff0000).i32(bytes.length).bytes(bytes).toBytes();
 }
 
-/** Native OnPartyChat, OnGuildChat and OnGMChat field order. */
+/**
+ * Native OnPartyChat, OnGuildChat and OnGMChat field order. Piece 7 M4: `OnPartyChat` reads the name into a
+ * `MAX_PLAYER` (42) buffer and keeps the speaker's object id for its bubble (`DPClient.cpp:5846-5876`).
+ */
 export function readSocial(r: ArReader, type: 'party' | 'guild'): ChatMessage {
-  r.u32(); return { type, sender: r.string(32), text: r.string(type === 'guild' ? 1024 : 260) };
+  const speakerId = r.u32();
+  if (type === 'party') return { type, sender: r.string(42), text: r.string(260), speakerId };
+  return { type, sender: r.string(32), text: r.string(1024) };
 }
 export function readGmSay(r: ArReader): ChatMessage {
   const sender = r.string(32); r.string(32);

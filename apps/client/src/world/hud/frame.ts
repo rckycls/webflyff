@@ -127,7 +127,7 @@ export class WindowFrame {
   private centered = false;
   /** The window's size as Neuz has it (`FrameLayout`), its frame, and the height it is shown at (`fit`). */
   private readonly width: number;
-  private readonly fullHeight: number;
+  private fullHeight: number;
   private readonly frame: HTMLElement;
   private readonly art: UiArt;
   private readonly tiled: boolean;
@@ -319,6 +319,17 @@ export class WindowFrame {
         frame.append(tile);
       }
     }
+  }
+
+  /**
+   * Piece 7 M4: a window whose height changes as it shows more or fewer rows (`SetWndRect`, the party's quick view,
+   * `CWndPartyQuick::SetActiveMember`): its frame is laid again at the new height.
+   */
+  setHeight(height: number): void {
+    if (height === this.fullHeight) return;
+    this.fullHeight = height;
+    this.shownHeight = -1;
+    this.fit();
   }
 
   /** Puts the window on top of the others (`SetFocus`): last in the stack, highest z-index. */

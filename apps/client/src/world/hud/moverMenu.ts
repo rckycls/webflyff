@@ -26,6 +26,12 @@ export const MENU_RANGE = 20;
 const TID_MMI_BASE = 7000;
 const FALLBACK: Readonly<Record<number, string>> = { [MMI.DIALOG]: 'Dialog', [MMI.TRADE]: 'Trade', [MMI.TELEPORTER]: 'Teleport' };
 
+/** Piece 7 M4: an entry's text, `TID_MMI_DIALOG + id` (`CWndMenu::AppendMenu`), or `fallback`. */
+export function menuLabel(id: number, texts: Texts, fallback: string): string {
+  for (const text of texts.values()) if (text.textId === TID_MMI_BASE + id) return text.text;
+  return fallback;
+}
+
 /** The menu ShowMoverMenu shows (WndWorld.cpp:6649-6684), in ascending MMI number. */
 export function npcMenuEntries(npc: WebNpc | undefined, texts: Texts, ownIsBaseJob: boolean): MenuEntry[] {
   const ids = [...new Set(npc?.menus ?? [])].sort((a, b) => a - b);

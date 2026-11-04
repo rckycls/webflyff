@@ -141,6 +141,9 @@ export interface ItemProp {
   subDefine: number;
   /** `dwComboStyle`: of a skill, where it can be put on the task bar and in the action slot, a `CT_*` value. */
   comboStyle: number;
+  /** Piece 7 M4: `dwSkillTime`, a party skill's mode length in ms (-1 for `=`), and `dwExp`, its cost in party points. */
+  skillTime: number;
+  exp: number;
   /** `szIcon`: the icon file (`itm_WeaSwoWooden.dds`); '' for none. */
   icon: string;
   /** `szTextFileName`: the text file of the item's GM command; '' for none. */
@@ -240,6 +243,9 @@ const KEPT: ReadonlySet<string> = new Set([
   'dwExpertMax',
   'dwSubDefine',
   'dwComboStyle',
+  // Piece 7 M4: a party skill's mode length and its cost in party points
+  'dwSkillTime',
+  'dwExp',
 ]);
 
 /** Removes trailing white space, the characters C `isspace` accepts (CString::TrimRight, ProjectCmn.cpp:331). */
@@ -360,6 +366,8 @@ export function readPropItem(
         expertMax: kept.dwExpertMax,
         subDefine: kept.dwSubDefine,
         comboStyle: kept.dwComboStyle,
+        skillTime: kept.dwSkillTime,
+        exp: kept.dwExp,
         icon,
         textFileName,
         command,

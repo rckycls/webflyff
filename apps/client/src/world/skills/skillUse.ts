@@ -214,14 +214,19 @@ export class SkillUse implements OwnSkills {
 
   /**
    * A shortcut of the task bar used, pressed or by its F-key, on an item bar or the applet row: `ObjectExecutor`'s
-   * `SHORTCUT_SKILL` (`WndManager.cpp:2776-2880`). A party skill (`m_dwType == 2`, a troupe's, :2782-2875: not Piece 4's)
-   * does nothing here; any other is `UseSkillShortCut( m_dwType, m_dwId )` (:2876-2879), whose `GetSkill( nType, nIdx )`
+   * `SHORTCUT_SKILL` (`WndManager.cpp:2776-2880`). A party skill (`m_dwType == 2`, a troupe's, :2782-2875) goes to
+   * `onPartySkill` with its id (Piece 7 M4: the screen runs its rule), once a press; any other is `UseSkillShortCut( m_dwType, m_dwId )` (:2876-2879), whose `GetSkill( nType, nIdx )`
    * reads `m_aJobSkill[ nIdx ]` whatever the type (`MoverParam.cpp:85-95`): `useSlot( m_dwId )`. A shortcut that is no
    * skill (an applet, an item) is not the skill use's.
    */
   useShortcut(shortcut: Shortcut): void {
-    if (shortcut.kind === ShortcutKind.SKILL && shortcut.type !== PARTY_SKILL) this.useSlot(shortcut.id);
+    if (shortcut.kind !== ShortcutKind.SKILL) return;
+    if (shortcut.type === PARTY_SKILL) this.onPartySkill(shortcut.id);
+    else this.useSlot(shortcut.id);
   }
+
+  /** Piece 7 M4: a party skill's shortcut used (`m_dwId` the troupe skill), which the screen sets. */
+  onPartySkill: (skill: number) => void = () => {};
 
   /**
    * A press on a skill shortcut, or its F-key: `UseSkillShortCut( 0, nIdx )` (`WndManager.cpp:6820-6864`), `skillIndex`

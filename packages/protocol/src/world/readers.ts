@@ -31,6 +31,13 @@ import {
 } from './quest';
 import { readPlayMusic, readPlaySound } from './sound';
 import { readTaskBar } from './taskBar';
+import {
+  readErrorParty, readMyPartyName, readPartyChangeLeader, readPartyChangeName, readPartyChangeTroup, readPartyExp,
+  readPartyExpMode, readPartyItemMode, readPartyMapInfo, readPartyMember, readPartyRequest, readPartyRequestCancel,
+  readPartySkillBlitz, readPartySkillCall, readPartySkillRetreat, readPartySkillSphereCircle, readSetPartyMemberParam,
+  readSetPartyMode,
+} from './party';
+import { readQueryPlayerData } from './playerData';
 import { readReturnScrollAck, readStateMode } from './travel';
 import type { WorldMessage } from './types';
 
@@ -90,6 +97,26 @@ export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
     [MessageType.SETDESTPARAM, readSetDestParam],
     [MessageType.RESETDESTPARAM, readResetDestParam],
     [MessageType.RESETDESTPARAM_SYNC, readResetDestParamSync],
+    // Piece 7 M4: the party ([R §1.1]) and the player data's answer ([R §4])
+    [MessageType.PARTYMEMBER, readPartyMember],
+    [MessageType.PARTYREQEST, readPartyRequest],
+    [MessageType.PARTYREQESTCANCEL, readPartyRequestCancel],
+    [MessageType.PARTYEXP, readPartyExp],
+    [MessageType.ADDPARTYCHANGELEADER, readPartyChangeLeader],
+    [MessageType.PARTYCHANGETROUP, readPartyChangeTroup],
+    [MessageType.PARTYCHANGENAME, readPartyChangeName],
+    [MessageType.ADDPARTYNAME, readMyPartyName],
+    [MessageType.PARTYCHANGEITEMMODE, readPartyItemMode],
+    [MessageType.PARTYCHANGEEXPMODE, readPartyExpMode],
+    [MessageType.SETPARTYMODE, readSetPartyMode],
+    [MessageType.SET_PARTY_MEMBER_PARAM, readSetPartyMemberParam],
+    [MessageType.PARTYMAPINFO, readPartyMapInfo],
+    [MessageType.PARTYSKILL_CALL, readPartySkillCall],
+    [MessageType.PARTYSKILL_BLITZ, readPartySkillBlitz],
+    [MessageType.PARTYSKILL_RETREAT, readPartySkillRetreat],
+    [MessageType.PARTYSKILL_SPHERECIRCLE, readPartySkillSphereCircle],
+    [MessageType.ERRORPARTY, readErrorParty],
+    [MessageType.QUERY_PLAYER_DATA, readQueryPlayerData],
     [MessageType.SET_JOB_SKILL, readSetJobSkill],
     [MessageType.SET_NEAR_JOB_SKILL, readSetNearJobSkill],
     [MessageType.DAMAGE, readDamage],

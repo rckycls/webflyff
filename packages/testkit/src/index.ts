@@ -11,6 +11,11 @@ export {
   writeReturnScrollAck, writeStateMode, writeUpdateItem, // Piece 7 M3
   writeSetActionPoint, writeSetDestObj, writeSetExperience, writeSetGrowthLearningPoint, writeSetLevel,
   writeSetPointParam, writeSetPos, writeSetPosAngle, writeSetState, writeTaskBar, writeUseSkill, writeWorldReadInfo,
+  // Piece 7 M4: the party
+  directBlock, directErrorParty, directLogout, directUpdatePlayerData, writeErrorParty, writeMyPartyName, writePartyChangeLeader,
+  writePartyChangeName, writePartyChangeTroup, writePartyChat, writePartyExp, writePartyExpMode, writePartyItemMode,
+  writePartyMapInfo, writePartyMember, writePartyRequest, writePartyRequestCancel, writePartySkillBlitz, writePartySkillCall,
+  writePartySkillRetreat, writePartySkillSphereCircle, writeQueryPlayerData, writeSetPartyMemberParam, writeSetPartyMode,
 } from './world';
 export type { ScriptMessage } from './world';
 export { newVagrantOwn } from './newVagrant';

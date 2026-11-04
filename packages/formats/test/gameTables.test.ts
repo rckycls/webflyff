@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readEtcJobs, readExpTable, readPropJob, readPropSkillAdd, readTextClient, readTexturePack } from '../src/index';
+import { readEtcJobs, readExpTable, readPartyExpTable, readPropJob, readPropSkillAdd, readTextClient, readTexturePack } from '../src/index';
 import { thrown } from './helpers/thrown';
 
 /** Script text with the CRLF line ends the shipped files use. */
@@ -190,6 +190,24 @@ describe('readExpTable', () => {
     expect(readExpTable(script('expCharacter', '{', '= = = =', '}'))).toEqual([
       { exp1: 4294967295n, exp2: 4294967295n, lpPoint: -1, limitExp: 4294967295n },
     ]);
+  });
+});
+
+describe('readPartyExpTable (Piece 7 M4)', () => {
+  // ExpTable.inc's expParty block as shipped: 0 based, `exp point` a row, after expCharacter and before expPartySkill
+  const EXP = script(
+    'expCharacter', '{', '0 0 0 0', '}',
+    'expParty // 0 based', '{', '//exp, point', '   0\t0  //  1', ' 200\t15  //  2', ' 250\t15  //  3', '}',
+    'expPartySkill', '{', '1 2', '}',
+  );
+
+  it('reads the rows of the expParty block, row index = level', () => {
+    expect(readPartyExpTable(EXP)).toEqual([{ exp: 0, point: 0 }, { exp: 200, point: 15 }, { exp: 250, point: 15 }]);
+  });
+
+  it('a file without the block throws', () => {
+    expect(thrown(() => readPartyExpTable(script('expCharacter', '{', '0 0 0 0', '}'), 'ExpTable.inc')).message)
+      .toMatch(/expParty/);
   });
 });
 

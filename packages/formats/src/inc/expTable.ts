@@ -92,3 +92,27 @@ export function readExpTable(text: string, file = 'ExpTable.inc'): ExpRow[] {
 
   return rows;
 }
+
+/** `MAX_PARTYLEVEL` (`_Common/ProjectCmn.h:28`): `m_aExpParty`'s rows. */
+const MAX_PARTYLEVEL = 10;
+
+/**
+ * Piece 7 M4: the `expParty` block of `ExpTable.inc` (`CProject::LoadExpTable`, `Project.cpp:3381-3392`), 0 based,
+ * `exp point` a row: row L is the EXP the party needs from level L to L + 1 and the points it gains then. A file
+ * without the block, a row that stops early and more than 10 rows throw a FormatError.
+ */
+export function readPartyExpTable(text: string, file = 'ExpTable.inc'): Array<{ exp: number; point: number }> {
+  const r = new ScriptReader(text, new Map(), new Map(), { file, reader: 'readPartyExpTable', cppRef: CPP_REF });
+  for (let subject = r.tokenOrEnd(); subject?.text !== 'expParty'; subject = r.tokenOrEnd()) {
+    if (subject === undefined) r.fail('the file has no expParty block');
+  }
+  const open = r.token('"{" of expParty');
+  if (open.text !== '{') r.fail(`expected "{" after expParty, found "${open.text}"`, open);
+  const rows: Array<{ exp: number; point: number }> = [];
+  for (let first = r.token('a row or "}"'); first.text[0] !== '}'; first = r.token('a row or "}" of expParty')) {
+    if (rows.length >= MAX_PARTYLEVEL) r.fail(`more than ${MAX_PARTYLEVEL} rows (MAX_PARTYLEVEL)`, first);
+    const exp = Number(int64(r, first, `Exp of row ${rows.length}`));
+    rows.push({ exp, point: r.number(`Point of row ${rows.length}`) });
+  }
+  return rows;
+}

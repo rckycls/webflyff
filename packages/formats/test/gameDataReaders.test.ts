@@ -498,6 +498,8 @@ describe('readPropItem', () => {
       expertMax: -1,
       subDefine: 39, // SND_ITEM_DROPDING1
       comboStyle: -1,
+      skillTime: -1, // Piece 7 M4
+      exp: -1,
       icon: 'Itm_WeaSwoSuho.dds', // """Itm_WeaSwoSuho.dds""" is "", the name, ""
       textFileName: '',
       command: '', // IDS_PROPITEM_TXT_008535

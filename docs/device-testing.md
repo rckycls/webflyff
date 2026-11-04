@@ -1247,3 +1247,62 @@ Milestone 3 passes when every cell of the table is `pass` (or `n/a` where it say
 | `npm run typecheck` | about 1 minute | It ends with no `error`. |
 | `$env:FLYFF_CLIENT = 'C:\Users\silec\Desktop\FlyFF\Bakbak\Blouflash VS22 V15\Client'; npm run test:corpus` | about 5 minutes | `… passed`, apart from two known stale tests in `tools/convert/test/gameData.corpus.test.ts` ("writes every catalog without a failure" and "skills: the levels are the rows …"), which fail on main too. |
 | `npm run test:e2e:client` | about 10 minutes | It ends with `… passed`, maybe a few `skipped`, and no `failed` (`travel-items.spec.ts` is the new file). |
+
+## Piece 7, milestone 4: parties
+
+Parties now work as in the Windows client. A player's menu (a right click on the PC, a second tap on a phone) invites, and the other player's box says Yes or No. The party window (P, or Start → Party) shows the members, the party's level, EXP and points, Leave, Hand Over, the item and EXP modes and the advanced party, with a Skill tab. The quick view shows each member's HP. Members' names are green, their HP bars float over them, they show on the Navigator and the world map, and the chat's Party view talks to the party. An advanced party's skills go on the task bar; their effects, icons and lines show.
+
+**The test characters:** two browser players (two accounts) in Flaris, near each other. Give one GM rights for `/partylevel <level> [points]` (`/plv`, GM level 3).
+
+**Start the client** from the piece7-m4 folder. Stop your own `npm run dev:client` first. Then, in PowerShell, with the servers and the gateway in the VM:
+
+```
+cd C:\Users\silec\Desktop\FlyFF\Bakbak\FlyffWeb-worktrees\piece7-m4
+$env:GATEWAY_PROXY = 'ws://<VM-IP>:8090'
+npm run dev:client
+```
+
+**Steps**, on the PC and a landscape phone (A is the GM, B the other player):
+
+1. **Forming.** A opens B's menu (PC: a right click on B; phone: tap B, then tap B again) and taps "Invite to join party". Success:
+   - B sees "A invites you to join the party. Do you accept?" and taps Yes;
+   - A sees "Party has been created." and "B has joined the party."; B sees "A has joined the party.";
+   - both see the other's name in green, and an HP bar over the other's head.
+2. **The windows.** P (and Start → Party). Success:
+   - the party window and the quick view open; P again closes both;
+   - on the phone, the window fills the screen and the quick view sits under the status window;
+   - a tap on B's row selects B as the target; as an Assist, Healing on B works (milestone 2).
+3. **EXP.** Kill a monster near each other. Success: the window's EXP (and, at a level up, the points) change.
+4. **Chat.** In the chat's Party view, A types a line. Success: B gets the line in the Party view, and a bubble over A.
+5. **Lead and leave.**
+   - A selects B's row and taps Hand Over. Success: B is the leader (the "L" moves, B's name is green in the windows).
+   - B leaves (Leave, then Yes). Success: "You have left the party." for B and "B has left the party." for A.
+   - Form the party again; the leader selects the other's row and taps Leave (a kick), then Yes. Success: the party ends for both.
+6. **Advanced.** The leader types `/plv 10`, then taps Change in the party window. Success:
+   - "Convert to an Advanced Party?", OK, then the name box with "Advance Party";
+   - a name like `1abc` is refused with its box; a good name (letters, 4 to 16) is sent, and the window shows it;
+   - `/plv 20 100`: the Skill tab shows the 8 skills, Linked Attack black, the higher ones red;
+   - drag Call and Linked Attack to the task bar and use them: Call's marks show over the leader (and over each member, pointing to the leader); Linked Attack's icon shows at the top of the screen with its time, and the line "The party skill Linked Attack has been used." shows.
+7. **Far.** Walk apart until the other is out of view. Success: the other's row turns grey, the HP bar goes, and the world map (M) shows the other's yellow arrow and name within about 10 s.
+8. **A Windows player in the party.** Part of milestone 6's live session: write `n/a` here.
+
+## Results
+
+| Device | Browser | 1. Forming | 2. Windows | 3. EXP | 4. Chat | 5. Lead and leave | 6. Advanced | 7. Far | 8. Windows | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| PC | Chrome | | | | | | | | n/a | |
+| Android phone | Chrome | | | | | | | | n/a | |
+| iPhone | Safari | | | | | | | | n/a | |
+
+## Pass and fail
+
+Milestone 4 passes when every cell of the table is `pass` (or `n/a` where it says so) and the tests below pass.
+
+**The tests (yours to run),** on the PC in PowerShell in the piece7-m4 folder, with your own `npm run dev:client` stopped first:
+
+| Command | How long | Success |
+| --- | --- | --- |
+| `npm test` | about 2 minutes | `Tests … passed`, and no `failed`. |
+| `npm run typecheck` | about 1 minute | It ends with no `error`. |
+| `$env:FLYFF_CLIENT = 'C:\Users\silec\Desktop\FlyFF\Bakbak\Blouflash VS22 V15\Client'; npm run test:corpus` | about 5 minutes | `… passed`, and no `failed`. |
+| `npm run test:e2e:client` | about 10 minutes | It ends with `… passed`, maybe a few `skipped`, and no `failed` (`party.spec.ts` is the new file). |

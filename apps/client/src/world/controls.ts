@@ -180,7 +180,14 @@ export interface WorldPress {
   mover: number | null;
   time: number;
   double: boolean;
+  /** Piece 7 M4: the Alt key was held as it went down (`GetAsyncKeyState( VK_MENU )`: a player's menu, :7065-7086). */
+  alt: boolean;
+  /** Piece 7 M4: a finger's press (a phone has no right button: a tap on the selected player opens its menu, plan Decisions 5). */
+  touch: boolean;
 }
+
+/** `PointerEvent.button` of the right (secondary) button. */
+const RIGHT_BUTTON = 2;
 
 type Listen = Pick<EventTarget, 'addEventListener' | 'removeEventListener'>;
 
@@ -204,7 +211,9 @@ type Listen = Pick<EventTarget, 'addEventListener' | 'removeEventListener'>;
  * to `report` (the overlay), and the press gives nothing; without `report` it is thrown.
  */
 export class TapToWalk {
-  private press: { pointerId: number; x: number; y: number; time: number; hit: TapHit | null; tap: boolean; deferred: boolean; double: boolean } | null = null;
+  private press: { pointerId: number; x: number; y: number; time: number; hit: TapHit | null; tap: boolean; deferred: boolean; double: boolean; alt: boolean } | null = null;
+  /** Piece 7 M4: where a right press went down (`m_ptMouseSpot`). */
+  private menuPress: { x: number; y: number } | null = null;
   /** The last press that went down, for the next one's double click; null after a double click's second press. */
   private last: { x: number; y: number; time: number } | null = null;
   private dest: Vec3 | null = null;
@@ -214,6 +223,8 @@ export class TapToWalk {
     private readonly pick: (ndcX: number, ndcY: number) => TapHit | null,
     private readonly report?: (error: unknown) => void,
     private readonly onPress?: (press: WorldPress) => void,
+    /** Piece 7 M4: a right press let go where it went down, on a mover (`OnRButtonUp`, `WndWorld.cpp:7114-7131`). */
+    private readonly onMenuPress?: (mover: number) => void,
   ) {
     canvas.addEventListener('pointerdown', this.onDown);
     canvas.addEventListener('pointermove', this.onMove);
@@ -253,6 +264,10 @@ export class TapToWalk {
 
   private readonly onDown = (event: PointerEvent): void => {
     this.press = null;
+    if (event.button === RIGHT_BUTTON && event.isPrimary) {
+      this.menuPress = { x: event.clientX, y: event.clientY };
+      return;
+    }
     if ((!event.isPrimary && event.pointerType !== 'touch') || event.button !== 0) return;
     const box = this.canvas.getBoundingClientRect();
     if (!(box.width > 0 && box.height > 0)) return;
@@ -270,11 +285,26 @@ export class TapToWalk {
       return;
     }
     const deferred = event.pointerType === 'touch';
-    this.press = { pointerId, x, y, time, hit, tap: true, deferred, double };
+    const alt = event.altKey === true;
+    this.press = { pointerId, x, y, time, hit, tap: true, deferred, double, alt };
     const mover = hit !== null && 'mover' in hit ? hit.mover : null;
     if (mover !== null) this.canvas.setPointerCapture?.(pointerId);
-    if (!deferred) this.onPress?.({ mover, time, double });
+    if (!deferred) this.onPress?.({ mover, time, double, alt, touch: false });
   };
+
+  /** The mover under a press, or null (the ground, nothing, or a pick that threw, which is reported). */
+  private moverAt(event: PointerEvent): number | null {
+    const box = this.canvas.getBoundingClientRect();
+    if (!(box.width > 0 && box.height > 0)) return null;
+    try {
+      const hit = this.pick(((event.clientX - box.left) / box.width) * 2 - 1, 1 - ((event.clientY - box.top) / box.height) * 2);
+      return hit !== null && 'mover' in hit ? hit.mover : null;
+    } catch (error) {
+      if (this.report === undefined) throw error;
+      this.report(error);
+      return null;
+    }
+  }
 
   private readonly onMove = (event: PointerEvent): void => {
     const press = this.press;
@@ -282,11 +312,20 @@ export class TapToWalk {
   };
 
   private readonly onUp = (event: PointerEvent): void => {
+    if (event.button === RIGHT_BUTTON) {
+      const menu = this.menuPress;
+      this.menuPress = null;
+      // the highlighted object as it is let go, only where it went down: a drag that turned the camera picks nothing
+      if (menu === null || menu.x !== event.clientX || menu.y !== event.clientY) return;
+      const mover = this.moverAt(event);
+      if (mover !== null) this.onMenuPress?.(mover);
+      return;
+    }
     const press = this.press;
     if (press === null || event.pointerId !== press.pointerId) return;
     this.press = null;
     if (!press.tap || moved(press, event) || event.timeStamp - press.time > TAP_HOLD_MS) return;
-    if (press.deferred) this.onPress?.({ mover: press.hit !== null && 'mover' in press.hit ? press.hit.mover : null, time: press.time, double: press.double });
+    if (press.deferred) this.onPress?.({ mover: press.hit !== null && 'mover' in press.hit ? press.hit.mover : null, time: press.time, double: press.double, alt: press.alt, touch: true });
     if (press.hit !== null && 'point' in press.hit) this.dest = press.hit.point;
   };
 

@@ -29,6 +29,9 @@ describe('world constants', () => {
     expect(PacketType.PLAYERMOVED).toBe(0xffffff01);
     expect(PacketType.PLAYERBEHAVIOR).toBe(0xffffff02);
     expect(PacketType.PLAYERCORR).toBe(0xffffff05);
+    // Piece 7 M4: the core's direct packets (MsgHdr.h:278, :658, :684, :355)
+    expect([PacketType.ERRORPARTY, PacketType.UPDATE_PLAYER_DATA, PacketType.LOGOUT, PacketType.BLOCK])
+      .toEqual([0xffffff10, 0xf000f808, 0x7000000b, 0xffffff5a]);
   });
   it('copies the snapshot message types of MsgHdr.h', () => {
     expect(MessageType).toEqual({
@@ -52,6 +55,12 @@ describe('world constants', () => {
       // Piece 7 M2: the buffs.
       SETSKILLSTATE: 0x004c, REMOVESKILLINFULENCE: 0x00f8, REMOVEALLSKILLINFULENCE: 0x00f4, SETDESTPARAM: 0x001c,
       RESETDESTPARAM: 0x001d, RESETDESTPARAM_SYNC: 0x9800,
+      // Piece 7 M4: the party and the player data.
+      ADDPARTYNAME: 0x0068, ADDPARTYCHANGELEADER: 0x0079, ERRORPARTY: 0x0081, PARTYMEMBER: 0x0082, PARTYREQEST: 0x0083,
+      PARTYREQESTCANCEL: 0x0084, PARTYEXP: 0x0085, PARTYCHANGETROUP: 0x0088, PARTYCHANGENAME: 0x0089,
+      PARTYSKILL_CALL: 0x008a, PARTYSKILL_BLITZ: 0x008b, PARTYSKILL_RETREAT: 0x008c, SETPARTYMODE: 0x008d,
+      PARTYSKILL_SPHERECIRCLE: 0x008e, PARTYCHANGEITEMMODE: 0x008f, PARTYCHANGEEXPMODE: 0x0090,
+      SET_PARTY_MEMBER_PARAM: 0x0091, PARTYMAPINFO: 0x003c, QUERY_PLAYER_DATA: 0x0141,
       // Piece 7 M3: the item cast and the Scroll of Return's answer.
       STATEMODE: 0x00df, RETURNSCORLL: 0x00ad,
     });

@@ -1,5 +1,5 @@
 import {
-  ArReader, CloseCode, MessageType, NULL_ID, ProtocolError, WORLD_READERS, decodeLoginMessage, decodeWorldPacket,
+  ArReader, CloseCode, MessageType, NULL_ID, PacketType, ProtocolError, WORLD_READERS, decodeLoginMessage, decodeWorldPacket,
   encodeAddItemTaskBar, encodeDestPos, encodeDoUseSkillPoint, encodeEndSkillQueue, encodeGetDestObj, encodeJoin,
   encodeMeleeAttack, encodeModifyStatus, encodePing, encodePlayerBehavior, encodePlayerCorr, encodePlayerMoved,
   encodePlayerSetDestObj, encodePreJoin, encodeRemoveItemTaskBar, encodeRevivalToLodestar, encodeSetTarget,
@@ -9,6 +9,11 @@ import {
   encodeQuestCheck, encodeRemoveQuest, encodeReturnScroll, encodeStateModeCancel,
 } from '@flyffweb/protocol';
 import { encodeMagicAttack, encodeRangeAttack, encodeSfxClear, encodeSfxHit, encodeSfxId } from '@flyffweb/protocol';
+import {
+  encodeAddPartyMember, encodeBlock, encodeChangeTroup, encodePartyChangeLeader, encodePartyExpMode, encodePartyItemMode,
+  encodePartyMemberCancel, encodePartyMemberRequest, encodePartySkillUse, encodeQueryPlayerData, encodeRemovePartyMember,
+} from '@flyffweb/protocol';
+import type { PartyRequestSide } from '@flyffweb/protocol';
 import type { BundleMessage, BundleResult, MoveReport, Shortcut, SkillSlot, Vec3, WorldMessage } from '@flyffweb/protocol';
 import { UNEXPECTED_PROBLEM, closeText, errorText } from '../lobby/errorText';
 import { GATEWAY_UNREACHABLE, PING_INTERVAL_MS, TIMEOUT_TEXT, systemClock } from '../lobby/LoginFlow';
@@ -121,6 +126,22 @@ export class WorldSession {
   sendMoveItem(source: number, destination: number): void { this.playingCache()?.send(encodeMoveItem(source, destination)); }
   sendDropItem(objectId: number, count: number, pos: Vec3): void { this.playingCache()?.send(encodeDropItem(objectId, count, pos)); }
   sendRevival(): void { this.playingCache()?.send(encodeRevival()); }
+  // Piece 7 M4: the party packets ([R §2]), with the own player id Neuz writes first (`g_pPlayer->m_idPlayer`)
+  sendPartyMemberRequest(targetId: number): void { this.playingCache()?.send(encodePartyMemberRequest(this.ownPlayerId(), targetId)); }
+  sendPartyMemberCancel(leaderId: number, memberId: number, mode: number): void {
+    this.playingCache()?.send(encodePartyMemberCancel(leaderId, memberId, mode));
+  }
+  sendAddPartyMember(leader: PartyRequestSide, member: PartyRequestSide): void { this.playingCache()?.send(encodeAddPartyMember(leader, member)); }
+  sendRemovePartyMember(leaveId: number): void { this.playingCache()?.send(encodeRemovePartyMember(this.ownPlayerId(), leaveId)); }
+  sendChangeTroup(name: string): void { this.playingCache()?.send(encodeChangeTroup(this.ownPlayerId(), name)); }
+  sendPartyChangeLeader(newLeaderId: number): void { this.playingCache()?.send(encodePartyChangeLeader(this.ownPlayerId(), newLeaderId)); }
+  sendPartyItemMode(mode: number): void { this.playingCache()?.send(encodePartyItemMode(this.ownPlayerId(), mode)); }
+  sendPartyExpMode(mode: number): void { this.playingCache()?.send(encodePartyExpMode(this.ownPlayerId(), mode)); }
+  sendPartySkillUse(skill: number): void { this.playingCache()?.send(encodePartySkillUse(this.ownPlayerId(), skill)); }
+  /** BLOCK 7 (`DPClient.cpp:4572`): an invite came while the invite box was open. */
+  sendBlock(inviterName: string): void { this.playingCache()?.send(encodeBlock(7, this.entry.character.name, inviterName)); }
+  sendQueryPlayerData(playerId: number): void { this.playingCache()?.send(encodeQueryPlayerData(playerId)); }
+  private ownPlayerId(): number { return this.entry.character.playerId; }
   readonly stats: SessionStats = { bundles: 0, indexed: 0, skipped: 0, mismatched: 0, unknownPackets: 0, droppedEvents: 0 };
   private phase: Phase = 'opening';
   private started = false;
@@ -425,6 +446,16 @@ export class WorldSession {
       case 'whisper':
         if (this.phase === 'playing') this.notify({ type: 'messages', messages: [{ objectId: NULL_ID, type: packet.type === 'guild' ? 0xffffff39 : packet.type === 'system' ? 0xff00ed : packet.type === 'definedText' ? 0xff00ec : 0xff00d4, value: packet }] });
         break;
+      case 'errorParty':
+      case 'updatePlayerData':
+      case 'playerLogout':
+      case 'block': {
+        // Piece 7 M4: the core's direct party packets ([R §1.2]), handed on as the direct chat packets are
+        const type = packet.type === 'errorParty' ? PacketType.ERRORPARTY : packet.type === 'updatePlayerData'
+          ? PacketType.UPDATE_PLAYER_DATA : packet.type === 'playerLogout' ? PacketType.LOGOUT : PacketType.BLOCK;
+        if (this.phase === 'playing') this.notify({ type: 'messages', messages: [{ objectId: NULL_ID, type, value: packet }] });
+        break;
+      }
       case 'keepAlive':
         // CDPClient::OnKeepAlive (Neuz/DPClient.cpp:961): answered at once, from the callback.
         this.cache?.send(encodeWorldKeepAlive());

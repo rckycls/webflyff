@@ -7,7 +7,8 @@ import { clientPacket } from '../world/packet';
 import { readDefinedText } from '../world/combat';
 import { readWhisper, readSocial, readGmSay } from '../world/chat';
 import { readAddItemTaskBar, readRemoveItemTaskBar, readSkillTaskBar } from '../world/taskBar';
-import type { Shortcut, SkillSlot } from '../world/types';
+import { readBlock, readPlayerLogout, readUpdatePlayerData } from '../world/playerData';
+import type { MessageOf, PartyRequestSide, Shortcut, SkillSlot } from '../world/types';
 import type { SlotMessenger } from './login';
 
 /** What `CDPClient::SendJoin` sends: the character that enters the world, and the account that owns it. */
@@ -242,6 +243,10 @@ export type WorldPacket =
   | ReturnType<typeof readDefinedText>
   | ReturnType<typeof readWhisper>
   | { type: 'guild' | 'system'; sender: string; text: string }
+  | MessageOf<'errorParty'>
+  | MessageOf<'updatePlayerData'>
+  | MessageOf<'playerLogout'>
+  | MessageOf<'block'>
   | { type: 'join'; body: Uint8Array }
   | { type: 'snapshot'; body: Uint8Array }
   | { type: 'keepAlive' }
@@ -262,6 +267,18 @@ export type WorldPacket =
   // The slots a SKILLTASKBAR names, in the order sent: Neuz sends all five, the server only overwrites those.
   | { type: 'skillTaskBar'; entries: Array<{ slot: number; shortcut: Shortcut }> }
   | { type: 'endSkillQueue' }
+  // Piece 7 M4: the party packets, by the encoders' parameter names ([R §2])
+  | { type: 'partyMemberRequest'; ownId: number; targetId: number; troup: number }
+  | { type: 'partyMemberCancel'; leaderId: number; memberId: number; mode: number }
+  | { type: 'addPartyMember'; leader: PartyRequestSide; member: PartyRequestSide }
+  | { type: 'removePartyMember'; ownId: number; leaveId: number }
+  | { type: 'changeTroup'; ownId: number; name: string }
+  | { type: 'partyLeaderChange'; ownId: number; newLeaderId: number }
+  | { type: 'partyItemModeChange'; ownId: number; mode: number }
+  | { type: 'partyExpModeChange'; ownId: number; mode: number }
+  | { type: 'partySkillUse'; ownId: number; skill: number }
+  | { type: 'blockRequest'; gu: number; ownName: string; inviterName: string }
+  | { type: 'queryPlayerData'; playerId: number; version: number }
   // Piece 7 M3: an item used (`objectId` the high word of `MAKELONG( ITYPE_ITEM, objId )`), the cast's cancel, and the
   // Scroll of Return's choice.
   | { type: 'useItem'; objectId: number; targetId: number; part: number }
@@ -300,6 +317,19 @@ export function decodeWorldPacket(body: Uint8Array): WorldPacket {
     }
     case 0xff00d4: {
       const whisper = readWhisper(r); r.expectEnd(); return whisper;
+    }
+    // Piece 7 M4: the core's direct packets ([R §1.2]): its ERRORPARTY has no skill (`CDPCacheSrvr::SendErrorParty`)
+    case PacketType.ERRORPARTY: {
+      const code = r.u32(); r.expectEnd(); return { type: 'errorParty', code, skill: null };
+    }
+    case PacketType.UPDATE_PLAYER_DATA: {
+      const value = readUpdatePlayerData(r); r.expectEnd(); return value;
+    }
+    case PacketType.LOGOUT: {
+      const value = readPlayerLogout(r); r.expectEnd(); return value;
+    }
+    case PacketType.BLOCK: {
+      const value = readBlock(r); r.expectEnd(); return value;
     }
     case PacketType.JOIN:
       return { type: 'join', body };
@@ -416,6 +446,44 @@ function decodeClientPacket(r: ArReader): WorldPacket {
     case PacketType.ENDSKILLQUEUE:
       r.expectEnd();
       return { type: 'endSkillQueue' };
+    // Piece 7 M4: the party packets, as the world or the core reads them ([R §2])
+    case PacketType.MEMBERREQUEST: {
+      const value = { type: 'partyMemberRequest', ownId: r.u32(), targetId: r.u32(), troup: r.i32() } as const; r.expectEnd(); return value;
+    }
+    case PacketType.MEMBERREQUESTCANCLE: {
+      const value = { type: 'partyMemberCancel', leaderId: r.u32(), memberId: r.u32(), mode: r.i32() } as const; r.expectEnd(); return value;
+    }
+    case PacketType.ADDPARTYMEMBER: {
+      const side = (): PartyRequestSide => ({ id: r.u32(), level: r.i32(), job: r.i32(), sex: r.u32() });
+      const value = { type: 'addPartyMember', leader: side(), member: side() } as const; r.expectEnd(); return value;
+    }
+    case PacketType.REMOVEPARTYMEMBER: {
+      const value = { type: 'removePartyMember', ownId: r.u32(), leaveId: r.u32() } as const; r.expectEnd(); return value;
+    }
+    case PacketType.CHANGETROUP: {
+      const ownId = r.u32();
+      if (r.i32() === 0) throw new ProtocolError('CHANGETROUP without a name');
+      const value = { type: 'changeTroup', ownId, name: r.string(33) } as const; r.expectEnd(); return value;
+    }
+    case PacketType.PARTYCHANGELEADER: {
+      const value = { type: 'partyLeaderChange', ownId: r.u32(), newLeaderId: r.u32() } as const; r.expectEnd(); return value;
+    }
+    case PacketType.PARTYCHANGEITEMMODE: {
+      const value = { type: 'partyItemModeChange', ownId: r.u32(), mode: r.i32() } as const; r.expectEnd(); return value;
+    }
+    case PacketType.PARTYCHANGEEXPMODE: {
+      const value = { type: 'partyExpModeChange', ownId: r.u32(), mode: r.i32() } as const; r.expectEnd(); return value;
+    }
+    case PacketType.PARTYSKILLUSE: {
+      const value = { type: 'partySkillUse', ownId: r.u32(), skill: r.i32() } as const; r.expectEnd(); return value;
+    }
+    case PacketType.BLOCK: {
+      const value = { type: 'blockRequest', gu: r.u8(), ownName: r.string(64), inviterName: r.string(64) } as const;
+      r.expectEnd(); return value;
+    }
+    case PacketType.QUERY_PLAYER_DATA: {
+      const value = { type: 'queryPlayerData', playerId: r.u32(), version: r.i32() } as const; r.expectEnd(); return value;
+    }
     case PacketType.DOUSEITEM: {
       const id = r.u32(), targetId = r.u32(), part = r.i32(); r.expectEnd();
       return { type: 'useItem', objectId: id >>> 16, targetId, part };

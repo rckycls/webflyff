@@ -59,6 +59,35 @@ export type WorldMessage = ChatMessage | NpcMessage | ShopMessage | QuestMessage
   | { type: 'setDestParam'; dst: number; adj: number; chg: number }
   | { type: 'resetDestParam'; dst: number; adj: number }
   | { type: 'resetDestParamSync'; dst: number; adj: number; total: number }
+  /** Piece 7 M4: the party ([R §1.1]); `party` is null when PARTYMEMBER says the receiver has none (its size 0). */
+  | { type: 'partyMember'; playerId: number; leaderName: string; memberName: string; party: PartyBlock | null }
+  | { type: 'partyRequest'; leader: PartyRequestSide; member: PartyRequestSide; leaderName: string; troup: number }
+  | { type: 'partyRequestCancel'; leaderId: number; memberId: number; mode: number }
+  | { type: 'partyExp'; exp: number; level: number; point: number }
+  | { type: 'partyChangeLeader'; leaderId: number }
+  | { type: 'partyChangeTroup'; name: string }
+  | { type: 'partyChangeName'; name: string }
+  /** The receiver's saved advanced-party name, at log-in (`m_szPartyName`). */
+  | { type: 'myPartyName'; name: string }
+  | { type: 'partyItemMode'; mode: number }
+  | { type: 'partyExpMode'; mode: number }
+  /** A party skill's mode on or off; `skillTime` is its length (ms), `point` the party's points, sent only when on. */
+  | { type: 'setPartyMode'; mode: number; skillTime: number; on: boolean; point: number | null }
+  | { type: 'setPartyMemberParam'; playerId: number; param: number; value: number }
+  /** A member's position (`index`: its slot), sent to members more than 32 m from it every 10 s. */
+  | { type: 'partyMapInfo'; index: number; pos: Vec3 }
+  /** The party skills' messages; Call's envelope objectId is the receiver, Sphere Circle's the leader's target. */
+  | { type: 'partySkillCall'; pos: Vec3 }
+  | { type: 'partySkillBlitz'; targetId: number }
+  | { type: 'partySkillRetreat' }
+  | { type: 'partySkillSphereCircle' }
+  /** ERRORPARTY, from a snapshot or the core's direct packet; `skill` only for ERROR_NOTTARGET (207). */
+  | { type: 'errorParty'; code: number; skill: number | null }
+  /** Piece 7 M4: the player data ([R §4]): a query's answer, the core's update, a log-out; and the core's BLOCK. */
+  | { type: 'playerData'; playerId: number; name: string; data: PlayerDataRecord }
+  | { type: 'updatePlayerData'; playerId: number; data: PlayerDataRecord }
+  | { type: 'playerLogout'; playerId: number }
+  | { type: 'block'; gu: number; name: string }
   /**
    * Piece 7 M3: a mover's `m_dwStateMode` and its flag (ON 0, OFF 1, CANCEL 2): an item cast; `itemId` the cast item's
    * prop id, sent with ON only (`OnStateMode`).
@@ -210,6 +239,42 @@ export interface MonsterRate {
   exp: number;
   itemDrop: number;
   penya: number;
+}
+
+/** Piece 7 M4: `CParty::Serialize`'s block (`_Common/party.cpp:215-240`): no names, levels or jobs (`__VER >= 11`). */
+export interface PartyBlock {
+  partyId: number;
+  /** `m_nKindTroup`: 0 a party, 1 an advanced party. */
+  kind: number;
+  level: number;
+  exp: number;
+  point: number;
+  expMode: number;
+  itemMode: number;
+  duelPartyId: number;
+  /** `m_nModeTime[5]`: 0 or 1 on the client. */
+  modeTime: number[];
+  /** `m_sParty`, only for an advanced party; '' otherwise. */
+  name: string;
+  /** In slot order, the leader first; `removed` is `m_bRemove` (logged out). */
+  members: Array<{ playerId: number; removed: boolean }>;
+}
+
+/** One side of PARTYREQEST, which ADDPARTYMEMBER echoes: `m_idPlayer`, `m_nLevel`, `m_nJob`, `GetSex()`. */
+export interface PartyRequestSide {
+  id: number;
+  level: number;
+  job: number;
+  sex: number;
+}
+
+/** `sPlayerData` (`_Common/playerdata.h:6-14`): `version` is `nVer`, `login` is `uLogin`. */
+export interface PlayerDataRecord {
+  job: number;
+  level: number;
+  sex: number;
+  version: number;
+  login: number;
 }
 
 /** The member of `WorldMessage` with this `type`, which is what that message's reader returns. */

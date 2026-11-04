@@ -194,6 +194,13 @@ export const THEME_FILES: readonly string[] = [
   'buttTreeOpen.tga',
   'buttTreeClose.tga',
   'ButtDestination.bmp',
+  // Piece 7 M4: the party window's buttons and radios (APP_PARTY, resdata.inc:21393-21602), the quick view's bar fill
+  // (WndPartyQuick.cpp:218-219), the world map's member arrow (WorldMap.cpp:92-103) and the HP bars over members
+  // (Neuz.cpp:1619-1621)
+  'ButtLeave.bmp', 'ButtChange.bmp', 'ButtTransper.bmp', 'ButtRadio.bmp',
+  'GauFillSmall.bmp',
+  'ImgMapArrowParty.bmp',
+  'GauPartyHpBG.TGA', 'GauPartyHp.TGA',
 ];
 
 /** The two glyph sheets: the script, and the field of WebUiSheets it fills. */

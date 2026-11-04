@@ -70,6 +70,14 @@ export function cameraYaw(camera: Vec3, player: Vec3): number {
 }
 
 /**
+ * A party member's arrow's turn (`RenderPlayer` with `bMyPlayer` false, WorldMap.cpp:595-598): `vDestNor = vPos`, the
+ * member's position itself, not a heading, so the arrow points away from the world's origin.
+ */
+export function partyArrowAngle(pos: Vec3): number {
+  return Math.atan2(pos[0], pos[2]);
+}
+
+/**
  * The arrow's CSS matrix `a, b, c, d` for a picture `width` by `height` (RenderPlayer, WorldMap.cpp:578-613, :725-738):
  * the 37x35 arrow scaled to 0.07 of the identity view (0.035 of the picture across per texel of the 37), turned
  * clockwise by `yaw`, and squeezed by the picture's aspect as the identity matrices draw it in Neuz.
