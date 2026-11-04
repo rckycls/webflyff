@@ -168,10 +168,10 @@ describe('inventory window', () => {
     const own = newVagrant(), data = ownGameData();
     data.itemProps.set(4805, itemProp({ id: 4805, part: -1, kind2: 22, kind3: 47 }));
     data.itemProps.set(10469, itemProp({ id: 10469, part: -1, kind2: 19, kind3: 50 }));
-    data.itemProps.set(10424, itemProp({ id: 10424, part: -1, kind2: 19 }));
+    data.itemProps.set(15083, itemProp({ id: 15083, part: -1, kind2: 19 }));
     own.inventory!.set(2, { objectId: 2, itemId: 4805, count: 5 });
     own.inventory!.set(8, { objectId: 8, itemId: 10469, count: 1 });
-    own.inventory!.set(9, { objectId: 9, itemId: 10424, count: 1 });
+    own.inventory!.set(9, { objectId: 9, itemId: 15083, count: 1 });
     const use = vi.fn();
     const ui = new InventoryWindow({ url: () => '', sheets: null }, data, { use, equip: vi.fn(), drop: vi.fn(), move: vi.fn(), shortcut: vi.fn() });
     document.body.append(ui.frame.element); ui.toggle(own);
@@ -183,7 +183,7 @@ describe('inventory window', () => {
     expect(use).toHaveBeenCalledWith(2);
     ui.frame.element.querySelector<HTMLButtonElement>('[data-bag-slot="8"]')!.click();
     expect(actions()).toEqual(['use', 'drop']);
-    // 2026-11-05: the Scroll of Name Change opens a window the browser lacks: no Use
+    // 2026-11-05: the Custody scroll opens the bank, which the browser lacks: no Use
     ui.frame.element.querySelector<HTMLButtonElement>('[data-bag-slot="9"]')!.click();
     expect(actions()).toEqual(['drop']);
     ui.dispose();

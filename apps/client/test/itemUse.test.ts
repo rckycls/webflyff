@@ -166,11 +166,11 @@ describe('the premium items and scrolls (2026-11-05, SendDoUseItem and CWndInven
   const SPROTECT = itemProp({ id: 10464, part: -1, kind2: 19, kind3: 50 });
   const RESKILL = itemProp({ id: 10434, part: -1, kind2: 19, kind3: 50 });
   const BLESSING = itemProp({ id: 10430, part: -1, kind2: 19, kind3: 50 });
-  const RENAME = itemProp({ id: 10424, part: -1, kind2: 19, kind3: 50 });
-  const PROPS = new Map([[26101, BUFF], [700, PILL], [10464, SPROTECT], [10434, RESKILL], [10430, BLESSING], [10424, RENAME]]);
+  const RENAME = itemProp({ id: 15083, part: -1, kind2: 19, kind3: 50 }); // Custody: the bank's window
+  const PROPS = new Map([[26101, BUFF], [700, PILL], [10464, SPROTECT], [10434, RESKILL], [10430, BLESSING], [15083, RENAME]]);
   function rig(check: Record<string, unknown> = {}, boxOpen = false) {
     const own = newVagrant();
-    [[11, 26101], [12, 700], [13, 10464], [14, 10434], [15, 10430], [16, 10424]]
+    [[11, 26101], [12, 700], [13, 10464], [14, 10434], [15, 10430], [16, 15083]]
       .forEach(([objectId, itemId]) => own.inventory!.set(objectId!, { objectId: objectId!, itemId: itemId!, count: 3 }));
     const sent: unknown[][] = [];
     const said: unknown[] = [];
@@ -241,5 +241,86 @@ describe('the premium items and scrolls (2026-11-05, SendDoUseItem and CWndInven
     const r = rig({}, true);
     expect(r.use.use(11, 'bag')).toBe(false);
     expect(r.said).toEqual([{ kind: 'say', tid: 'TID_TOOLTIP_ITEM_USING_ERROR' }]);
+  });
+});
+
+describe('an upgrade material from the bag (2026-11-05, WndField.cpp:2351-2398)', () => {
+  it('starts the upgrade cursor; from the task bar nothing is sent', () => {
+    const own = newVagrant();
+    own.inventory!.set(3, { objectId: 3, itemId: 2035, count: 5 });
+    const begun: number[] = [];
+    const sent: unknown[] = [];
+    const use = new ItemUse(() => own, new Map([[2035, itemProp({ id: 2035, part: -1, kind3: 119 })]]),
+      { sendUseItem: (...args) => void sent.push(args), sendRevival: vi.fn() }, {
+        check: () => ({ worldId: 1, casting: false, standing: true, flying: false, returnBuff: false }),
+        say: vi.fn(), returnScroll: { begin: vi.fn() }, upgrade: { begin: (id) => { begun.push(id); return true; } },
+      });
+    expect(use.use(3, 'bag')).toBe(true);
+    expect(begun).toEqual([3]);
+    expect(use.use(3, 'bar')).toBe(false);
+    expect(sent).toEqual([]);
+  });
+});
+
+describe('the quick boxes and the maps (2026-11-05)', () => {
+  function rig() {
+    const own = newVagrant();
+    [[3, 26453], [4, 26961], [5, 30000], [6, 4801]].forEach(([objectId, itemId]) =>
+      own.inventory!.set(objectId!, { objectId: objectId!, itemId: itemId!, count: 2 }));
+    const props = new Map([
+      [26453, itemProp({ id: 26453, part: -1, kind2: 19 })], [26961, itemProp({ id: 26961, part: -1, kind2: 19 })],
+      [30000, itemProp({ id: 30000, part: -1, kind2: 36, name: 'Funny Coin 1000' })], [4801, itemProp({ id: 4801, part: -1, kind2: 19 })],
+    ]);
+    const sent: unknown[][] = [];
+    const boxes: Array<{ tid: string; ok: () => void; args?: string[] }> = [];
+    let maps = 0;
+    const use = new ItemUse(() => own, props, { sendUseItem: (...args) => void sent.push(args), sendRevival: vi.fn() }, {
+      check: () => ({ worldId: 1, casting: false, standing: true, flying: false, returnBuff: false, focusId: 0x77 }),
+      say: vi.fn(), returnScroll: { begin: vi.fn() }, confirm: (tid, ok, args) => void boxes.push({ tid, ok, args }),
+      openMap: () => { maps++; },
+    });
+    return { own, use, sent, boxes, maps: () => maps };
+  }
+
+  it("a battery's OK names its own item id; the Funny Coin's NULL_ID and names the coin; Awakening Protection the player", () => {
+    const r = rig();
+    r.use.use(3, 'bar');
+    r.use.use(5, 'bag');
+    r.use.use(4, 'bar');
+    expect(r.boxes.map((b) => b.tid)).toEqual(['TID_GAME_BETTERY_DESC', 'TID_GAME_FUNNYCOIN_ASKUSE', 'TID_GAME_REGARDLESS_USE01']);
+    expect(r.boxes[1]!.args).toEqual(['Funny Coin 1000']);
+    r.boxes.forEach((b) => b.ok());
+    expect(r.sent).toEqual([[3, -1, -1, 26453], [5, -1, -1, 0xffffffff], [4, -1, -1, r.own.objectId]]);
+  });
+
+  it('a map from the bag opens the world map and is used; from the bar it is only used', () => {
+    const r = rig();
+    r.use.use(6, 'bag');
+    r.use.use(6, 'bar');
+    expect(r.maps()).toBe(1);
+    expect(r.sent).toEqual([[6, -1, -1, 0x77], [6, -1, -1, 0x77]]);
+  });
+});
+
+describe('an item whose use is a window (2026-11-05, itemWindowFlows.ts)', () => {
+  it('goes to its window; when the window lets the use go on, DOUSEITEM goes', () => {
+    const own = newVagrant();
+    own.inventory!.set(3, { objectId: 3, itemId: 10424, count: 1 });
+    const sent: unknown[][] = [];
+    let open = true;
+    const opened: Array<[number, string]> = [];
+    const use = new ItemUse(() => own, new Map([[10424, itemProp({ id: 10424, part: -1, kind2: 19 })]]),
+      { sendUseItem: (...args) => void sent.push(args), sendRevival: vi.fn() }, {
+        check: () => ({ worldId: 1, casting: false, standing: true, flying: false, returnBuff: false, focusId: 0x77 }),
+        say: vi.fn(), returnScroll: { begin: vi.fn() },
+        window: (id, from) => { opened.push([id, from]); return open; },
+      });
+    expect(use.use(3, 'bag')).toBe(true);
+    expect(use.use(3, 'bar')).toBe(true);
+    expect(opened).toEqual([[3, 'bag'], [3, 'bar']]);
+    expect(sent).toEqual([]);
+    open = false;
+    use.use(3, 'bar');
+    expect(sent).toEqual([[3, -1, -1, 0x77]]);
   });
 });

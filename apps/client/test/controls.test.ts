@@ -806,7 +806,7 @@ describe('TapToWalk', () => {
     const { canvas, tap, presses } = tapToWalk(() => hit);
     // OnLButtonDown's other branch (WndWorld.cpp:6919-6929) runs as the button goes down, a drag or not
     canvas.fire('pointerdown', 100, 50, 1000);
-    expect(presses).toEqual([{ mover: null, time: 1000, double: false, alt: false, touch: false }]);
+    expect(presses).toEqual([{ mover: null, time: 1000, double: false, alt: false, touch: false, point: [1, 2, 3] }]); // 2026-11-05: and where
     expect(tap.heldMover()).toBeNull();
     canvas.fire('pointermove', 150, 50, 1100);
     canvas.fire('pointerup', 150, 50, 1200);
@@ -908,7 +908,7 @@ describe('TapToWalk', () => {
     canvas.fire('pointerdown', 110, 70, 1000);
     canvas.fire('pointerup', 110, 70, 1010);
     expect(tap.take()).toBeNull();
-    expect(presses).toEqual([{ mover: null, time: 0, double: false, alt: false, touch: false }, { mover: 7, time: 1000, double: false, alt: false, touch: false }]);
+    expect(presses).toEqual([{ mover: null, time: 0, double: false, alt: false, touch: false, point: expect.any(Array) }, { mover: 7, time: 1000, double: false, alt: false, touch: false }]);
     // beside the mover, the ground is picked as before
     canvas.fire('pointerdown', 170, 70, 2000);
     canvas.fire('pointerup', 170, 70, 2010);

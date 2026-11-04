@@ -21,3 +21,13 @@ describe('SM_MODE and SM_MODE_ALL', () => {
     expect([MessageType.SM_MODE_ALL, MessageType.SM_MODE]).toEqual([0x003e, 0x003f]);
   });
 });
+
+describe('RESISTSMMODE (2026-11-05: the element stones, CUser::AddResistSMMode, User.cpp:2166-2177)', () => {
+  it('reads the left and right weapons\' and the defence\'s elements, 0xff for none', () => {
+    const w = new ArWriter().u32(PacketType.SNAPSHOT).u32(0x1234).u16(1);
+    w.u32(NULL_ID).u16(MessageType.RESISTSMMODE).u8(1).u8(0xff).u8(4);
+    const result = readBundle(w.toBytes(), WORLD_READERS);
+    expect(result.messages.map((m) => m.value)).toEqual([{ type: 'resistSmMode', left: 1, right: 0xff, defense: 4 }]);
+    expect(MessageType.RESISTSMMODE).toBe(0x005d);
+  });
+});

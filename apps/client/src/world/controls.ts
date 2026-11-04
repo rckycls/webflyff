@@ -205,6 +205,8 @@ export interface WorldPress {
   alt: boolean;
   /** Piece 7 M4: a finger's press (a phone has no right button: a tap on the selected player opens its menu, plan Decisions 5). */
   touch: boolean;
+  /** 2026-11-05: where on the ground or an object it went down, when not on a mover (the monster summon's place). */
+  point?: Vec3;
 }
 
 /** `PointerEvent.button` of the right (secondary) button. */
@@ -245,7 +247,7 @@ export class TapToWalk {
     private readonly canvas: HTMLElement,
     private readonly pick: (ndcX: number, ndcY: number) => TapHit | null,
     private readonly report?: (error: unknown) => void,
-    private readonly onPress?: (press: WorldPress) => void,
+    private readonly onPress?: (press: WorldPress) => unknown, // true: the press is taken (2026-11-05)
     /** Piece 7 M4: a right press let go where it went down, on a mover (`OnRButtonUp`, `WndWorld.cpp:7114-7131`). */
     private readonly onMenuPress?: (mover: number) => void,
     private readonly onRelease?: (time: number) => void,
@@ -313,7 +315,9 @@ export class TapToWalk {
     this.press = { pointerId, x, y, time, hit, tap: true, deferred, double, alt };
     const mover = hit !== null && 'mover' in hit ? hit.mover : null;
     if (mover !== null) this.canvas.setPointerCapture?.(pointerId);
-    if (!deferred) this.onPress?.({ mover, time, double, alt, touch: false });
+    // 2026-11-05: a press `onPress` takes for itself (true: the monster summon's place) walks nowhere
+    const point = hit !== null && 'point' in hit ? { point: hit.point } : {};
+    if (!deferred && this.onPress?.({ mover, time, double, alt, touch: false, ...point }) === true) this.press.tap = false;
   };
 
   /** The mover under a press, or null (the ground, nothing, or a pick that threw, which is reported). */
@@ -351,8 +355,10 @@ export class TapToWalk {
     if (!press.deferred) this.letGo(press, event);
     if (!press.tap || moved(press, event) || event.timeStamp - press.time > TAP_HOLD_MS) return;
     if (press.deferred) {
-      this.onPress?.({ mover: press.hit !== null && 'mover' in press.hit ? press.hit.mover : null, time: press.time, double: press.double, alt: press.alt, touch: true });
+      const point = press.hit !== null && 'point' in press.hit ? { point: press.hit.point } : {};
+      const taken = this.onPress?.({ mover: press.hit !== null && 'mover' in press.hit ? press.hit.mover : null, time: press.time, double: press.double, alt: press.alt, touch: true, ...point }) === true;
       this.letGo(press, event);
+      if (taken) return;
     }
     if (press.hit !== null && 'point' in press.hit) this.dest = press.hit.point;
   };

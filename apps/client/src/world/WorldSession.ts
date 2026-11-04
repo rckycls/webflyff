@@ -6,7 +6,10 @@ import {
   encodeSkillTaskBar, encodeUseSkill, encodeWorldKeepAlive, readBundle,
   encodeUseItem, encodeEquipItem, encodeMoveItem, encodeDropItem, encodeRevival, encodeChat,
   encodeNpcDialog, encodeNpcDialogOpen, encodeOpenShop, encodeCloseShop, encodeBuyItem, encodeSellItem, encodeTeleporter,
-  encodeNpcBuff, encodeQuestCheck, encodeRemoveQuest, encodeReturnScroll, encodeStateModeCancel,
+  encodeNpcBuff, encodeQuestCheck, encodeEnchant, encodePiercing, encodeRandomScroll, encodeDoUseItemTarget,
+  encodeUltimateEnchantWeapon, encodeQuerySetPlayerName, encodeSummonParty, encodeSummonPartyConfirm, encodeSummonFriend,
+  encodeSummonFriendConfirm, encodeSummonFriendCancel, encodeDoUseItemInput, encodeChangeAttribute, encodeItemTransy,
+  encodeCreateMonster, encodeRemoveQuest, encodeReturnScroll, encodeStateModeCancel,
 } from '@flyffweb/protocol';
 import { encodeMagicAttack, encodeRangeAttack, encodeSfxClear, encodeSfxHit, encodeSfxId } from '@flyffweb/protocol';
 import {
@@ -106,6 +109,28 @@ function replacePosition(body: Uint8Array): Vec3 {
  */
 export class WorldSession {
   sendTeleporter(key: string, index: number): void { this.playingCache()?.send(encodeTeleporter(key, index)); }
+  /** 2026-11-05: the upgrade cursor's packets (world/upgrade.ts in the protocol): each two inventory object ids. */
+  sendUpgrade(packet: 'enchant' | 'ultimateEnchantWeapon' | 'piercing' | 'randomScroll' | 'doUseItemTarget', first: number, second: number): void {
+    const encode = { enchant: encodeEnchant, ultimateEnchantWeapon: encodeUltimateEnchantWeapon, piercing: encodePiercing,
+      randomScroll: encodeRandomScroll, doUseItemTarget: encodeDoUseItemTarget }[packet];
+    this.playingCache()?.send(encode(first, second));
+  }
+  /** 2026-11-05: the item windows' packets (world/itemWindows.ts in the protocol). */
+  sendQuerySetPlayerName(objectId: number, name: string): void { this.playingCache()?.send(encodeQuerySetPlayerName(objectId, name)); }
+  sendSummonParty(objectId: number): void { this.playingCache()?.send(encodeSummonParty(objectId)); }
+  sendSummonPartyConfirm(leaderId: number, data: number): void { this.playingCache()?.send(encodeSummonPartyConfirm(leaderId, data)); }
+  sendSummonFriend(data: number, name: string): void { this.playingCache()?.send(encodeSummonFriend(data, name)); }
+  sendSummonFriendAnswer(yes: boolean, summonerId: number, data: number): void {
+    this.playingCache()?.send(yes ? encodeSummonFriendConfirm(summonerId, data) : encodeSummonFriendCancel(summonerId, data));
+  }
+  sendDoUseItemInput(objectId: number, input: string): void { this.playingCache()?.send(encodeDoUseItemInput(objectId, input)); }
+  sendChangeAttribute(targetId: number, scrollId: number, element: number): void {
+    this.playingCache()?.send(encodeChangeAttribute(targetId, scrollId, element));
+  }
+  sendItemTransy(targetId: number, scrollId: number, newItemId: number): void {
+    this.playingCache()?.send(encodeItemTransy(targetId, scrollId, newItemId));
+  }
+  sendCreateMonster(objectId: number, pos: Vec3): void { this.playingCache()?.send(encodeCreateMonster(objectId, pos)); }
   /** 2026-11-05: Buff Pang's Get Buffed! (`SendNPCBuff( m_szCharacterKey )`), the key as the NPC's ADD_OBJ gave it. */
   sendNpcBuff(key: string): void { this.playingCache()?.send(encodeNpcBuff(key)); }
   sendNpcDialogOpen(id: number): void { this.playingCache()?.send(encodeNpcDialogOpen(id)); }
@@ -492,6 +517,12 @@ export class WorldSession {
       case 'system':
       case 'whisper':
         if (this.phase === 'playing') this.notify({ type: 'messages', messages: [{ objectId: NULL_ID, type: packet.type === 'guild' ? 0xffffff39 : packet.type === 'system' ? 0xff00ed : packet.type === 'definedText' ? 0xff00ec : 0xff00d4, value: packet }] });
+        break;
+      case 'setPlayerName':
+        // 2026-11-05: the name change's answer, a packet of its own, handed on as the direct chat packets are
+        if (this.phase === 'playing') {
+          this.notify({ type: 'messages', messages: [{ objectId: NULL_ID, type: PacketType.QUERYSETPLAYERNAME, value: packet }] });
+        }
         break;
       case 'errorParty':
       case 'updatePlayerData':

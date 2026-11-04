@@ -58,6 +58,21 @@ export type WorldMessage = ChatMessage | NpcMessage | ShopMessage | QuestMessage
   | { type: 'setSkillState'; targetId: number; buffType: number; id: number; level: number; time: number }
   /** 2026-11-05: a premium timer (`SM_*` `smType`) and the seconds it has left; 0 ends it (`OnSMMode`). */
   | { type: 'smMode'; smType: number; seconds: number }
+  /** 2026-11-05: a summon (`OnSummon`): a friend summon's use, a friend's call, a party summon; another kind is `other`. */
+  | { type: 'summon'; kind: 'friendUse'; data: number; objectId: number }
+  | { type: 'summon'; kind: 'friendConfirm'; objectId: number; data: number; name: string; world: string }
+  | { type: 'summon'; kind: 'partyConfirm'; objectId: number; data: number; world: string }
+  | { type: 'summon'; kind: 'other' }
+  /** 2026-11-05: the mover's sex changed: its new index, MI_MALE 11 or MI_FEMALE 12 (`OnSexChange`). */
+  | { type: 'sexChange'; index: number }
+  /** 2026-11-05: a player's new face (`OnChangeFace`). */
+  | { type: 'changeFace'; playerId: number; face: number }
+  /** 2026-11-05: a player's new name, the name change's answer to every client (`OnSetPlayerName`). */
+  | { type: 'setPlayerName'; playerId: number; name: string }
+  /** 2026-11-05: the Ultimate gem's answer (`OnUltimate`): its state and result. */
+  | { type: 'ultimate'; state: number; result: number }
+  /** 2026-11-05: the element stones' elements (`SAI79`, 0xff none): the left and right weapons' and the defence's. */
+  | { type: 'resistSmMode'; left: number; right: number; defense: number }
   /** 2026-11-05: every running premium timer, at join (`OnSMModeAll`). */
   | { type: 'smModeAll'; modes: Array<{ type: number; seconds: number }> }
   | { type: 'removeSkillInfluence'; buffType: number; id: number }

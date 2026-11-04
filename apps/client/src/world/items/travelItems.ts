@@ -40,7 +40,7 @@ export function isTravelItem(prop: WebItemProp): boolean {
  */
 export function usableFromBag(prop: WebItemProp): boolean {
   return CONSUMABLES.includes(prop.kind2) || isTravelItem(prop) || (prop.part === 13 && prop.flight !== undefined) ||
-    prop.kind2 === 23 || useOf(prop) === 'use';
+    prop.kind2 === 23 || useOf(prop) === 'use' || useOf(prop) === 'window';
 }
 
 /** What `SendDoUseItem` looks at besides the item. */

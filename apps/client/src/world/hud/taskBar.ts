@@ -38,6 +38,7 @@
 import { MAX_SLOT_APPLET, MAX_SLOT_ITEM, MAX_SLOT_ITEM_COUNT, MAX_SLOT_QUEUE, ShortcutKind } from '@flyffweb/protocol';
 import type { InventoryItem, Shortcut, TaskBar as TaskBarMessage } from '@flyffweb/protocol';
 import { positionItemDetails } from './itemDetails';
+import { drawCooldown } from './cooldown';
 import type { WebItemProp, WebPartySkill, WebSkill } from '@flyffweb/formats';
 import { watchTouch } from '@flyffweb/scene';
 import type { TouchWatch } from '@flyffweb/scene';
@@ -151,6 +152,8 @@ export interface TaskBarData {
    * WndTaskBar.cpp:594); none without it.
    */
   itemTooltip?: (item: InventoryItem) => HTMLElement | null;
+  /** 2026-11-05: the share of an item's cool-down gone (its slot's sweep, `RenderRadar`), or null. */
+  cooldown?: (objectId: number) => number | null;
 }
 
 /** `ICON_SIZE` and `SKILL_SIZE` (`WndTaskBar.cpp:183-184`): the slots of the applet row and the bars, and the action slot's. */
@@ -557,9 +560,12 @@ export class TaskBar {
       if (shortcut.kind === ShortcutKind.ITEM) this.itemView(row, i, own, data);
     });
     const view = (row: Shortcut[], i: number): SlotView => (own === undefined ? EMPTY_VIEW : this.slotView(row, i, own, data));
-    this.appletSlots.forEach((slot, i) => this.draw(slot, view(applets, i)));
+    // 2026-11-05: an item shortcut's cool-down sweep (RenderRadar, WndTaskBar.cpp:848-857, 960-970)
+    const cooling = (shortcut: Shortcut | undefined): number | null =>
+      own !== undefined && shortcut?.kind === ShortcutKind.ITEM ? data.cooldown?.(shortcut.id) ?? null : null;
+    this.appletSlots.forEach((slot, i) => { this.draw(slot, view(applets, i)); drawCooldown(slot.element, cooling(applets[i])); });
     const bar = items[this.slotIndex]!;
-    this.itemSlots.forEach((slot, i) => this.draw(slot, view(bar, i)));
+    this.itemSlots.forEach((slot, i) => { this.draw(slot, view(bar, i)); drawCooldown(slot.element, cooling(bar[i])); });
     // m_nCurQueueNum slots of the action slot (:1017-1032)
     this.queueSlots.forEach((slot, i) => this.draw(slot, i < queueCount ? view(queue, i) : EMPTY_VIEW));
     const number = String(this.slotIndex + 1);

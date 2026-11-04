@@ -2273,6 +2273,17 @@ fieldset:disabled .btn {
 .hud-buff { position: absolute; pointer-events: auto; touch-action: none; user-select: none; -webkit-user-select: none; }
 .hud-buff[data-harmful] img { filter: sepia(1) hue-rotate(250deg) saturate(3); }
 .hud-buff-seconds { position: absolute; left: 2px; top: 22px; color: #fff; font-size: 12px; text-shadow: 1px 1px 0 #000; pointer-events: none; }
+/* 2026-11-05: an item's cool-down over its task bar slot and bag cell (RenderRadar, WndManager.cpp:143-180, hud/cooldown.ts):
+   a white wash of ARGB(120, 255, 255, 255) over the part of the sweep still to come, from 12 o'clock clockwise */
+[data-cooling]::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 2;
+  background: conic-gradient(transparent 0 var(--cool-done, 0%), rgba(255, 255, 255, 0.47) var(--cool-done, 0%) 100%);
+}
+/* 2026-11-05: the upgrade cursor (items/upgradeCursor.ts): Neuz's CUR_HAMMER over the bag while the mode is on (here the
+   crosshair: the cursor files are not converted), and the waiting target's Icon_ImgIncAni frames (a pulse here) */
+.hud-inventory[data-upgrading] .inventory-cell { cursor: crosshair; }
+.inventory-cell[data-upgrade-wait] { outline: 2px solid #ffd76a; animation: inventory-upgrade-wait 0.6s ease-in-out infinite; }
+@keyframes inventory-upgrade-wait { 50% { filter: brightness(1.9); } }
 /* 2026-11-05: an item buff's or premium timer's time, yellow (RenderOptBuffTime's ARGB 240, 240, 0) */
 .hud-buff-time { position: absolute; left: 2px; top: 22px; color: #f0f000; font-size: 11px; white-space: nowrap; text-shadow: 1px 1px 0 #000; pointer-events: none; }
 .hud-target-buffs { position: absolute; inset: 0; pointer-events: none; }
@@ -2283,6 +2294,15 @@ fieldset:disabled .btn {
   .hud-buffs { left: 147px; top: 8px; }
   .hud-buffs[data-phone] .hud-buff-seconds, .hud-buffs[data-phone] .hud-buff-time { left: 1px; top: 10px; font-size: 8px; }
 }
+
+/* 2026-11-05: the monster summon armed: a crosshair over the world (Neuz's CSfxCursor, XI_CHR_CURSOR1) */
+.world[data-summon-armed] .world-view canvas { cursor: crosshair; }
+/* 2026-11-05: the message box's prompts (MessageBox.prompt): a text field, or a row of choices */
+.hud-message-input { position: absolute; box-sizing: border-box; padding: 1px 4px; border: 1px solid #8a6a52; background: #fff; color: #000; font: 12px Verdana, Geneva, Tahoma, sans-serif; }
+.hud-message-choices { position: absolute; display: flex; flex-wrap: wrap; gap: 4px; }
+.hud-message-choice { min-width: 34px; min-height: 22px; padding: 0 6px; border: 1px solid #8a6a52; border-radius: 2px; background: #f4e4d4; color: #000; font: 11px Verdana, Geneva, Tahoma, sans-serif; cursor: pointer; }
+.hud-message-choice[aria-pressed="true"] { background: #ffd76a; border-color: #5a3d20; }
+@media (pointer: coarse) { .hud-message-choice { min-height: 28px; } .hud-message-input { font-size: 16px; } }
 
 /* Piece 7 M4: the message box (CWndMessageBox MB_OK, hud/messageBox.ts) */
 .hud-message-text {

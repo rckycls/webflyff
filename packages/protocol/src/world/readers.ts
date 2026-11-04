@@ -9,7 +9,7 @@ import { readShop } from './shop';
 import { readCreateItem, readUpdateItem, readUpdateItemEx, readMoveItem, readEquipItem } from './items';
 import {
   readRemoveAllSkillInfluence, readRemoveSkillInfluence, readResetDestParam, readResetDestParamSync, readSetDestParam,
-  readSetSkillState, readSmMode, readSmModeAll,
+  readResistSmMode, readSetSkillState, readSmMode, readSmModeAll,
 } from './buffs';
 import {
   readCorrReq, readDamage, readDefinedText, readDefinedText1, readMeleeAttack, readMonsterProp, readMoverDeath,
@@ -43,6 +43,8 @@ import {
   readMeleeAttack2, readMoverBehavior2, readMoverCorr2, readMoverMoved2, readSendActMsg, readSetFuel,
 } from './flight';
 import type { WorldMessage } from './types';
+import { readUltimate } from './upgrade';
+import { readChangeFace, readSexChange, readSummon } from './itemWindows';
 
 /**
  * The readers of the bundle messages the browser understands, by message type, for `readBundle`. Each copies
@@ -149,6 +151,11 @@ export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
     [MessageType.DOAPPLYUSESKILL, readDoApplySkill],
     [MessageType.SM_MODE, readSmMode],
     [MessageType.SM_MODE_ALL, readSmModeAll],
+    [MessageType.RESISTSMMODE, readResistSmMode],
+    [MessageType.ULTIMATE, readUltimate],
+    [MessageType.SUMMON, readSummon],
+    [MessageType.SEX_CHANGE, readSexChange],
+    [MessageType.CHANGEFACE, readChangeFace],
     [MessageType.CLEAR_USESKILL, readClearUseSkill],
     [MessageType.DOUSESKILLPOINT, readDoUseSkillPoint],
     [MessageType.INITSKILLPOINT, readInitSkillPoint],

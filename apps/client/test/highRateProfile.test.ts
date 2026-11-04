@@ -28,4 +28,24 @@ describe('authoritative high rate profile display', () => {
     own.apply({ type: 'profileStats', values }, OWN_ID + 1);
     expect(own.maxHp()).toBe(230);
   });
+
+  it("keeps the server's values across a world change: the server sends them again only when they change (2026-11-05)", () => {
+    // CUser::Notify sends HIGH_RATE_STATS when the values differ from the last sent; the own numbers are made anew from the
+    // next world's ADD_OBJ, so without this the awakenings, sets and sockets were gone until a re-equip changed them
+    const before = newVagrant();
+    before.apply({ type: 'profileStats', values }, OWN_ID);
+    const after = newVagrant();
+    after.keepServerStats(before);
+    expect(after.effective()).toEqual({ str: 500, sta: 600, dex: 700, int: 800 });
+    expect(after.maxHp()).toBe(2000000000);
+    // a new world's own values win over the kept ones
+    const fresh = newVagrant();
+    fresh.apply({ type: 'profileStats', values: [15, 15, 15, 15, 230, 63, 31, 8, 0, 0, 20, 400000, 150000, 0] }, OWN_ID);
+    fresh.keepServerStats(before);
+    expect(fresh.maxHp()).toBe(230);
+    // nothing to keep: the client's own formulas
+    const none = newVagrant();
+    none.keepServerStats(undefined);
+    expect(none.profileStats).toBeNull();
+  });
 });

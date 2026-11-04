@@ -76,12 +76,18 @@ export function createItemDetails(
  * 10 px clear of it, moved in when it would leave the screen (below the slot when there is no room above).
  */
 export function positionItemDetails(details: HTMLElement, anchorElement: HTMLElement, doc: Document): void {
+  // 2026-11-05 (the owner: a tooltip away from its item, and a thin one wrapping over many lines at the bag's right): it
+  // is measured at its own width at the screen's top left first. Measured where the CSS first puts it (past the left
+  // edge), it shrank to its narrowest word, and its place and height were worked out from that size.
+  Object.assign(details.style, { left: '0px', top: '0px', right: 'auto', width: 'max-content' });
   const anchor = anchorElement.getBoundingClientRect(), rect = details.getBoundingClientRect(), view = doc.defaultView;
+  // a fixed box under a moved or scaled window starts at that window's corner, not the screen's: measured here, at 0 0
+  const originX = rect.left, originY = rect.top;
   const width = rect.width || 230, height = rect.height || 80;
   const screenWidth = view?.innerWidth ?? 1280, screenHeight = view?.innerHeight ?? 720;
   let x = anchor.left, y = anchor.top - height - 10;
   if (x + width + 8 > screenWidth) x = screenWidth - width - 8;
   if (y < 8) y = Math.min(anchor.bottom + 10, screenHeight - height - 8);
-  details.style.left = Math.max(8, x) + 'px'; details.style.right = 'auto';
-  details.style.top = Math.max(8, y) + 'px';
+  details.style.left = Math.max(8, x) - originX + 'px';
+  details.style.top = Math.max(8, y) - originY + 'px';
 }

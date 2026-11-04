@@ -171,6 +171,15 @@ export class OwnState {
   profileStats: readonly number[] | null = null;
 
   /**
+   * 2026-11-05: the server's values of the own numbers before a world change, kept unless the new world sent its own: the
+   * server sends HIGH_RATE_STATS only when they change (`CUser::Notify`), and these numbers are made anew from the next
+   * world's ADD_OBJ, so without this the awakenings, sets and sockets were gone until a re-equip changed them.
+   */
+  keepServerStats(previous: OwnState | undefined): void {
+    if (this.profileStats === null && previous?.profileStats != null) this.profileStats = previous.profileStats;
+  }
+
+  /**
    * `added` is the own ADD_OBJ (its HP is `m_nHitPoint`; its `player.own` the rest) and `equipment` the lobby's item IDs
    * of the character, which dress it (`ownWorn`) and make `equipped`. Throws when `added` is not the own character's, and
    * a `GameDataMissingError` when the job table has no row for its job: the game files are older than the server's.
@@ -728,6 +737,15 @@ function itemUpdated(item: InventoryItem, param: number, value: number): Invento
     case UI_PIERCING: {
       const list = pierced(item.piercing, value);
       return list === undefined ? item : withField(item, 'piercing', list);
+    }
+    case UI_RANDOMOPTITEMID: {
+      // 2026-11-05: a random scroll's stat, the low byte of the awakening's field (`SetRandomOpt`, Item.h:169)
+      const next = ((item.randomOption ?? 0n) & ~0xffn) | BigInt(value & 0xff);
+      if (next === 0n) {
+        const { randomOption: _, ...rest } = item;
+        return rest;
+      }
+      return { ...item, randomOption: next };
     }
     case UI_ULTIMATE_PIERCING: {
       const list = pierced(item.ultimate, value);

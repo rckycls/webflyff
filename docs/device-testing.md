@@ -1399,3 +1399,22 @@ npm run dev:client
 | Android phone | Chrome | | | | | | | | |
 | iPhone | Safari | | | | | | | | |
 | iPad | Safari | | | | | | | | |
+
+### More checks for the same branch (second round, 2026-11-05)
+
+8. **Sunstone.** Double-click a Sunstone in the bag (phone: tap it, then **Use**), then click a weapon or armour piece in the bag. Success: the cursor changes and an effect plays on the character; about 4 s later the item becomes +1 (or the failure line shows). From +3, a box asks first. A ring is refused with "This item cannot be used."
+9. **Moonstone.** The same with a ring or earring. Success: it becomes +1.
+10. **Element and socket cards, random scrolls, awakening scrolls.** The same flow; a random scroll asks once more after the wait.
+11. **Cancel.** Start with a Sunstone, then right-click the bag or walk. Success: the cursor and effect go; nothing is sent.
+12. **Item tooltips.** Hover items in the bag's right-most column. Success: the tooltip is whole and wide, next to the item, never thin with many short lines.
+13. **Awakenings after a teleport.** With an awakened item worn, note the Character window's stats, then use a Blinkwing. Success: the stats stay the same after the trip.
+14. **Cool-down.** Use a food item with a cool-down from the task bar. Success: a light sweep runs over its slot (and its bag cell) until it can be used again.
+15. **Batteries, Funny Coin, Awakening Protection.** Each asks first; OK uses it.
+16. **Name change.** Use a Scroll of Name Change, type a new name, OK. Success: a name under 4 letters or starting with a digit is refused in a box; a good one renames the character (its name tag too) with "Player name successfully changed."
+17. **Tickets.** Use a Kebaras ticket outside Kebaras: choose Channel 1 or 2. Success: the character goes to Kebaras on that channel. Used inside Kebaras, it asks "Would you like to leave?" and OK brings you back.
+18. **Sex change.** Unequip the armour, use the Transy scroll, pick a face. Success: the character turns into the other sex with that face; with armour on it says to unequip first.
+19. **Element change.** Use a Sokchang scroll, click a weapon with an element upgrade in the bag, choose an element. Success: the weapon's element changes.
+20. **Transmute.** Use a transmute scroll, click an unequipped armour piece. Success: a box shows the piece and its other-sex twin; OK changes it.
+21. **Party summon.** As party leader, use a party summon scroll. Success: the members get a box; double-clicking the summon icon in the buffs then asks, and OK brings them to the leader.
+22. **Friend summon.** Use a friend summon scroll, type a friend's name. Success: the friend is asked; on OK they come to you.
+23. **Monster summon** (in Madrigal). Use a monster summon scroll, then click the ground near you. Success: a monster appears; too far away says so.
