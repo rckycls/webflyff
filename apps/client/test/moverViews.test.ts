@@ -1244,12 +1244,12 @@ describe('flight (Piece 7 M5)', () => {
   };
   const RIDE = { speed: f32(0.0023), turn: f32(0.6), pitch: 1, motion: 31 };
 
-  async function flying(model = fakeModel()) {
+  async function flying(model = fakeModel(), motions: RigOptions['motions'] = undefined) {
     const broom = new Group();
     broom.name = 'broom';
     const release = vi.fn();
     const loadRide = vi.fn(async () => ({ object: broom, release }));
-    const r = rig(async () => model, undefined, undefined, { itemProps: new Map([[5000, BROOM]]), loadRide });
+    const r = rig(async () => model, undefined, undefined, { itemProps: new Map([[5000, BROOM]]), loadRide, motions });
     const flier = moverFrom(addedPlayer(8, {}, { pos: [0, 50, 0] }));
     r.add(flier);
     await r.views.settled();
@@ -1285,18 +1285,126 @@ describe('flight (Piece 7 M5)', () => {
     expect(holder.rotation.x).toBeCloseTo((30 * Math.PI) / 180, 6);
   });
 
-  it('a flying stand plays ride.motion + FSTAND1, and a broom rides on the root bone', async () => {
+  it('a flying stand plays ride.motion + FSTAND1', async () => {
     const model = fakeModel();
-    const hips = new Bone();
-    hips.position.set(0, 0.8, 0);
-    model.root.add(hips);
-    const { r, flier, broom } = await flying(model);
+    const { r, flier } = await flying(model);
     expect(flier.act.motion).toBe(31);
     r.views.update(r.movers, 1 / 60);
     await r.views.settled();
     r.views.update(r.movers, 1 / 60);
     expect(model.mixer.existingAction(r.motions.get('m31')!.clip)?.isRunning()).toBe(true);
-    // IK3_STICK: the ride at the root bone's height (MoverRender.cpp:588-595)
-    expect(broom.position.y).toBeCloseTo(0.8, 6);
+  });
+
+  it('a broom sits at the hips of a model as the assembler builds it, its joints plain nodes, on the pose of this frame (2026-11-05)', async () => {
+    // assembleCharacter hangs the skeleton glb's joints, which GLTFLoader makes plain Object3Ds, under a node "skeleton";
+    // bone 0 (Bip02) is its first child. It found no Bone, so every broom was drawn at the feet.
+    const model = fakeModel();
+    const skeleton = new Object3D();
+    skeleton.name = 'skeleton';
+    const bip = new Object3D();
+    bip.name = 'Bip02';
+    bip.position.set(0, 0.8, 0);
+    skeleton.add(bip);
+    model.root.add(skeleton);
+    const times = Array.from({ length: 31 }, (_, i) => i / 30);
+    const crouch = loopMotion(new AnimationClip('m31', -1, [new NumberKeyframeTrack('Bip02.position[y]', times, times.map((t) => 0.7 + 0.2 * t))]));
+    const { r, broom } = await flying(model, { m31: () => crouch });
+    expect(model.root.getObjectByProperty('isBone', true)).toBeUndefined();
+    for (let i = 0; i < 3; i++) {
+      r.views.update(r.movers, 0.1);
+      expect(broom.position.y).toBeGreaterThan(0.6);
+      expect(broom.position.y).toBeCloseTo(bip.position.y, 6);
+    }
+  });
+});
+
+describe('MoverViews.refresh: a change of gear keeps the mover drawn (2026-11-05: it vanished until the new model came)', () => {
+  const lookB: MoverLook = { ...look, parts: ['other part'] };
+  /** A model load that fails later, for the test of a missing part. */
+  function failing(): { promise: Promise<AssembledCharacter>; reject: (error: Error) => void } {
+    let reject!: (error: Error) => void;
+    const promise = new Promise<AssembledCharacter>((_, r) => (reject = r));
+    return { promise, reject };
+  }
+  function geared(loads: Array<() => Promise<AssembledCharacter>>): Rig & { player: Mover; wear(l: MoverLook): void } {
+    let current = look;
+    let n = 0;
+    const r = rig(async () => loads[Math.min(n++, loads.length - 1)]!(), () => current);
+    const player = moverFrom(addedPlayer(7));
+    r.add(player);
+    return { ...r, player, wear: (l) => { current = l; } };
+  }
+
+  it('keeps the old model in the scene, tagged and pickable, until the new one is in, then puts it in the same holder', async () => {
+    const old = fakeModel();
+    const next = later();
+    const r = geared([async () => old, () => next.promise]);
+    await r.views.settled();
+    r.views.update(r.movers, 0);
+    const holder = old.root.parent!;
+    r.wear(lookB);
+    r.views.refresh(r.player);
+    r.views.update(r.movers, 1 / 60);
+    expect(inScene(r.scene, old.root)).toBe(true);
+    expect(r.views.count()).toBe(1);
+    expect(r.views.placeOf(7)).not.toBeNull();
+    expect(r.views.pickCandidate(7)).not.toBeNull();
+    expect(old.release).not.toHaveBeenCalled();
+    const fresh = fakeModel();
+    next.resolve(fresh);
+    await r.views.settled();
+    r.views.update(r.movers, 1 / 60);
+    expect(fresh.root.parent).toBe(holder);
+    expect(inScene(r.scene, fresh.root)).toBe(true);
+    expect(inScene(r.scene, old.root)).toBe(false);
+    expect(old.release).toHaveBeenCalledTimes(1);
+    expect(r.views.count()).toBe(1);
+    r.views.dispose();
+  });
+
+  it('a newer refresh wins: the older one\'s model, coming last, is let go and never drawn', async () => {
+    const old = fakeModel();
+    const first = later();
+    const second = later();
+    const r = geared([async () => old, () => first.promise, () => second.promise]);
+    await r.views.settled();
+    r.views.refresh(r.player);
+    r.views.refresh(r.player);
+    const a = fakeModel();
+    const b = fakeModel();
+    second.resolve(b);
+    await Promise.resolve();
+    first.resolve(a);
+    await r.views.settled();
+    expect(inScene(r.scene, b.root)).toBe(true);
+    expect(inScene(r.scene, a.root)).toBe(false);
+    expect(a.release).toHaveBeenCalledTimes(1);
+    expect(old.release).toHaveBeenCalledTimes(1);
+    r.views.dispose();
+  });
+
+  it('a new model that cannot be had leaves the old one drawn, and says why', async () => {
+    const old = fakeModel();
+    const next = failing();
+    const r = geared([async () => old, () => next.promise]);
+    await r.views.settled();
+    r.views.refresh(r.player);
+    next.reject(new Error('part missing'));
+    await r.views.settled();
+    expect(inScene(r.scene, old.root)).toBe(true);
+    expect(old.release).not.toHaveBeenCalled();
+    expect(r.overlay.error).toHaveBeenCalled();
+    r.views.dispose();
+  });
+
+  it('the new model goes on at the frame of the motion the old one was at', async () => {
+    const r = geared([async () => fakeModel(), async () => fakeModel()]);
+    await r.views.settled();
+    for (let i = 0; i < 10; i++) r.views.step(r.movers);
+    const before = r.player.act.modelFrame();
+    r.views.refresh(r.player);
+    await r.views.settled();
+    expect(r.player.act.modelFrame()).toEqual(before);
+    r.views.dispose();
   });
 });

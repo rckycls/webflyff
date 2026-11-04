@@ -26,8 +26,8 @@
 //
 // Piece 4 uses no item (Piece 5): an item shortcut shows its icon, and a stackable item its count, greyed. Skills come from
 // the skills catalog of milestone 2 (`TaskBarData.skills`), and without it a skill is a plain greyed slot, as every other
-// kind is (motions, chat lines ...). The applet row is not edited: the browser has no ADDAPPLETTASKBAR or
-// REMOVEAPPLETTASKBAR (see `TaskBarEdits.dropOn`). The edits are `taskBarEdits.ts`', the drag and the long press
+// kind is (motions, chat lines ...). The applet row takes a shortcut let go on it (ADDAPPLETTASKBAR) and loses one to a
+// right click (REMOVEAPPLETTASKBAR), 2026-11-05 (see `TaskBarEdits.dropOn`). The edits are `taskBarEdits.ts`', the drag and the long press
 // `slotGestures.ts`'.
 //
 // The edits, for a mouse and for a finger (spec §3.11): with the mouse a shortcut is dragged (from the skill window, or from
@@ -813,6 +813,12 @@ export class TaskBar {
 
     for (const slot of [...this.appletSlots, ...this.itemSlots, ...this.queueSlots]) slot.element.remove();
     this.appletSlots = this.makeSlots('applet', layout.applets, layout.appletX, ICON_SIZE, (i) => this.pressApplet(i));
+    // a right click takes an applet slot's shortcut off (OnRButtonUp's RECT_APPLET, 2026-11-05)
+    this.appletSlots.forEach((slot, i) => slot.element.addEventListener('contextmenu', (event) => {
+      event.preventDefault();
+      if (byFinger(event) || this.gestures.holding) return;
+      this.edits.rightClickApplet(i);
+    }));
     this.itemSlots = this.makeSlots('item', MAX_SLOT_ITEM, layout.itemX, ICON_SIZE, (i) => this.pressItemSlot(i));
     this.queueSlots = this.makeSlots('queue', MAX_SLOT_QUEUE, layout.queueX, SKILL_SIZE, (i) => this.pressQueueSlot(i));
     for (const [row, slots] of [['item', this.itemSlots], ['queue', this.queueSlots]] as const) {
@@ -894,6 +900,7 @@ export class TaskBar {
    * any other shortcut is the owner's (a skill of the applet row is used as a bar's is).
    */
   private pressApplet(i: number): void {
+    if (this.placePicked({ row: 'applet', slot: i })) return;
     const shortcut = this.loaded.applets[i]!;
     if (shortcut.kind === ShortcutKind.APPLET) this.execute(shortcut.id);
     else if (shortcut.kind !== ShortcutKind.NONE) this.actions.useAppletSlot(i, shortcut);
@@ -920,14 +927,14 @@ export class TaskBar {
   }
 
   /**
-   * A press while a finger's pick waits: in the skill window, or on a slot of the item row or the action slot (whose tap
-   * then places it), it keeps; anywhere else (the world, the applet row, the bar's buttons, another window) it lets it go.
+   * A press while a finger's pick waits: in the skill window, or on a slot of the item row, the action slot or the applet
+   * row (whose tap then places it), it keeps; anywhere else (the world, the bar's buttons, another window) it lets it go.
    */
   private readonly onPressWhilePicked = (event: Event): void => {
     const target = event.target as Element | null;
     if (target !== null && this.pickedWithin?.contains(target) === true) return;
     const slot = typeof target?.closest === 'function' ? target.closest<HTMLElement>('.hud-slot[data-row]') : null;
-    if (slot !== null && this.strip.contains(slot) && (slot.dataset.row === 'item' || slot.dataset.row === 'queue')) return;
+    if (slot !== null && this.strip.contains(slot) && (slot.dataset.row === 'item' || slot.dataset.row === 'queue' || slot.dataset.row === 'applet')) return;
     this.dropPick();
   };
 

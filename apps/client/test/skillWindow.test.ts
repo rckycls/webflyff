@@ -126,3 +126,40 @@ describe('the skill window for the four first jobs (Piece 7 M2)', () => {
     }
   });
 });
+
+describe('the skill window for the second jobs (2026-11-05: their skills were never drawn)', () => {
+  /** `SI_PSY_NLG_DEMONOLGY` and `SI_MAG_MAG_MENTALSTRIKE`: a Psykeeper's own skill and its Magician skill. */
+  const DEMONOLOGY: WebSkill = { ...CLEAN_HIT, id: 160, name: 'Demonology', jobType: 2, job: 12, reqLevel: 60, icon: 'ui/skill_psynlgdemonolgy.png' };
+  const MENTAL: WebSkill = { ...CLEAN_HIT, id: 121, name: 'Mental Strike', jobType: 1, job: 4, reqLevel: 15, icon: 'ui/skill_magmagmentalstr.png' };
+  const jobs = Array.from({ length: 32 }, (_, i) => ({ ...MERCENARY, title: i === 0 ? 'Vagrant' : i === 4 ? 'Magician' : i === 12 ? 'Psykeeper' : `Job ${i}` }));
+
+  it('places a second job\'s skills in the lower section ( nRectX - 8 + 6, nRectY - 228 + 346 ), 2 px up', () => {
+    // GetSkillPoint, WndField.cpp:7307: Demonology at ( 34, 260 ) of MAX_PROFESSIONAL; WIDC_STATIC7's top left ( 6, 346 )
+    expect(skillPlaceOf(160)).toEqual({ x: 32, y: 376 });
+    // SI_KNT_TWOSW_CHARGE ( 34, 260 ), :7213; SI_RAG_BOW_SILENTARROW ( 134, 312 ), :7350
+    expect(skillPlaceOf(133)).toEqual({ x: 32, y: 376 });
+    expect(skillPlaceOf(220)).toEqual({ x: 132, y: 428 });
+  });
+
+  it('a Psykeeper, a Psykeeper Master and Hero: both panels, the titles Vagrant, Magician and Psykeeper, every skill', () => {
+    const skills = new Map([...SKILLS, [121, MENTAL], [160, DEMONOLOGY]]);
+    for (const job of [12, 22, 30]) {
+      const own = newVagrant(60, undefined, ownGameData({ skills, jobs }));
+      const slots: SkillSlot[] = Array.from({ length: 45 }, (_, i) => (
+        i < 3 ? { skill: i + 1, level: 1 } : i === 3 ? { skill: 121, level: 0 } : i === 4 ? { skill: 160, level: 0 } : { skill: NULL_ID, level: 0 }
+      ));
+      own.apply({ type: 'setJobSkill', job, skills: slots }, OWN_ID);
+      const tree = new SkillWindow(art, { skills, texts: new Map(), jobs }, () => {}, hand);
+      windows.push(tree);
+      layer().append(tree.frame.element, tree.warning.element);
+      tree.toggle(own);
+      const panels = [...tree.frame.element.querySelectorAll<HTMLImageElement>('.hud-skills-job-panel, .hud-skills-pro-panel')].filter((img) => !img.hidden);
+      expect(panels.map((img) => [img.getAttribute('src'), img.style.left, img.style.top])).toEqual([
+        ['/assets/ui/back_ma.png', '6px', '170px'], ['/assets/ui/back_psy.png', '6px', '348px'],
+      ]);
+      expect(titles(tree)).toEqual(['Vagrant', 'Magician', 'Psykeeper']);
+      expect(shown(tree).map(([id]) => id)).toEqual(['1', '2', '3', '121', '160']);
+      tree.dispose();
+    }
+  });
+});

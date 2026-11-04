@@ -613,7 +613,9 @@ function newVagrantWithBar() {
 type Sent =
   | { type: 'ADDITEMTASKBAR'; bar: number; slot: number; shortcut: Shortcut }
   | { type: 'REMOVEITEMTASKBAR'; bar: number; slot: number }
-  | { type: 'SKILLTASKBAR'; queue: Array<Shortcut | null> };
+  | { type: 'SKILLTASKBAR'; queue: Array<Shortcut | null> }
+  | { type: 'ADDAPPLETTASKBAR'; slot: number; shortcut: Shortcut }
+  | { type: 'REMOVEAPPLETTASKBAR'; slot: number };
 
 /**
  * Actions that record what the task bar asks for (`calls`), what it sends (`sent`) and the lines it says (`said`);
@@ -633,6 +635,8 @@ function recorder() {
     sendAddItemTaskBar: (bar, slot, added) => void sent.push({ type: 'ADDITEMTASKBAR', bar, slot, shortcut: added }),
     sendRemoveItemTaskBar: (bar, slot) => void sent.push({ type: 'REMOVEITEMTASKBAR', bar, slot }),
     sendSkillTaskBar: (queue) => void sent.push({ type: 'SKILLTASKBAR', queue: [...queue] }),
+    sendAddAppletTaskBar: (slot, added) => void sent.push({ type: 'ADDAPPLETTASKBAR', slot, shortcut: added }),
+    sendRemoveAppletTaskBar: (slot) => void sent.push({ type: 'REMOVEAPPLETTASKBAR', slot }),
     queueRunning: () => running.value,
     say: (text, color) => void said.push({ text, color }),
   };
@@ -2614,14 +2618,14 @@ describe('TaskBar: editing the bars (CWndTaskBar::OnDropIcon, WndTaskBar.cpp:187
     // a right click takes one off too (OnRButtonUp)
     slot(bar, 'item', 2).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }));
     expect(sent.at(-1)).toEqual({ type: 'REMOVEITEMTASKBAR', bar: 0, slot: 2 });
-    // let go on the applet row, which the browser does not edit: it stays where it was
+    // let go on the applet row, it moves there (ADDAPPLETTASKBAR, then REMOVEITEMTASKBAR; 2026-11-05)
     drag(slot(bar, 'item', 8), slot(bar, 'applet', 4));
-    expect(sent).toHaveLength(4);
-    expect(shown(slot(bar, 'item', 8)).kind).toBe('plain');
+    expect(sent.slice(4).map((p) => p.type)).toEqual(['ADDAPPLETTASKBAR', 'REMOVEITEMTASKBAR']);
+    expect([shown(slot(bar, 'item', 8)).kind, shown(slot(bar, 'applet', 4)).kind]).toEqual(['', 'plain']);
     // a press that never moved is a press
     slot(bar, 'item', 5).dispatchEvent(pointer('pointerdown', 10, 10));
     window.dispatchEvent(pointer('pointerup', 11, 11));
-    expect(sent).toHaveLength(4);
+    expect(sent).toHaveLength(6);
   });
 
   it('with a finger: a skill tapped, then a slot, goes there; a long press on a slot offers Remove, which takes it off', () => {
@@ -2879,5 +2883,62 @@ describe('the Character and Skill windows: the 2026-11-04 audit', () => {
         expect(skillOf(tree, 2).hasAttribute('data-chosen')).toBe(false);
       });
     });
+  });
+});
+
+describe('TaskBar: the applet row and the action slot (2026-11-05)', () => {
+  const rightClick = (element: Element) => element.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }));
+  const drag = (from: Element, to: Element) => {
+    from.dispatchEvent(pointer('pointerdown', 10, 10));
+    window.dispatchEvent(pointer('pointermove', 30, 30));
+    to.dispatchEvent(pointer('pointerup', 30, 30));
+  };
+
+  it('Clean Hit dropped on an applet slot sends ADDAPPLETTASKBAR; Flurry (CT_CIRCLE) is refused there; a right click takes it off', () => {
+    const own = vagrantWithSkills(5, 0, [3, 1, 0]);
+    const { bar, sent } = editingOn(own);
+    const { tree } = skillWindowOn(own, bar);
+    // OnDropIcon's RECT_APPLET (WndTaskBar.cpp:1773-1830): a CT_STEP or CT_GENERAL skill; SetShortcut's m_dwData 0
+    drag(skillOf(tree, 1), slot(bar, 'applet', 4));
+    expect(sent).toEqual([{
+      type: 'ADDAPPLETTASKBAR', slot: 4,
+      shortcut: { kind: ShortcutKind.SKILL, id: 0, type: 0, index: 4, userId: 0, data: 0, text: 'Clean Hit' },
+    }]);
+    expect(shown(slot(bar, 'applet', 4))).toMatchObject({ kind: 'skill', icon: 'url("/assets/ui/skill_vagonecleanh.png")' });
+    drag(skillOf(tree, 2), slot(bar, 'applet', 3));
+    expect(sent).toHaveLength(1);
+    // OnRButtonUp's RECT_APPLET (:1476-1488)
+    rightClick(slot(bar, 'applet', 4));
+    expect(sent.at(-1)).toEqual({ type: 'REMOVEAPPLETTASKBAR', slot: 4 });
+    expect(shown(slot(bar, 'applet', 4)).kind).toBe('');
+  });
+
+  it('with a finger: a skill tapped, then an applet slot, goes there', () => {
+    const own = vagrantWithSkills(5, 0, [3, 0, 0]);
+    const { bar, sent } = editingOn(own);
+    const { tree } = skillWindowOn(own, bar);
+    skillOf(tree, 1).dispatchEvent(touch('pointerdown'));
+    skillOf(tree, 1).click();
+    expect(bar.pickedSkill).toBe(0);
+    slot(bar, 'applet', 2).dispatchEvent(touch('pointerdown'));
+    slot(bar, 'applet', 2).click();
+    expect(sent).toEqual([{
+      type: 'ADDAPPLETTASKBAR', slot: 2,
+      shortcut: { kind: ShortcutKind.SKILL, id: 0, type: 0, index: 2, userId: 0, data: 0, text: 'Clean Hit' },
+    }]);
+    expect(bar.pickedSkill).toBe(null);
+  });
+
+  it('a right click on an empty square of the action slot takes off its last skill; on a skill, that skill', () => {
+    const own = vagrantWithSkills(5, 0, [3, 1, 1]);
+    const entry = (id: number, index: number): Shortcut => ({ ...EMPTY_SKILL, id, index, data: 2 });
+    own.taskBar = { ...NEW_BAR, queue: [entry(0, 0), entry(1, 1), entry(2, 2)] };
+    const { bar, sent } = editingOn(own);
+    rightClick(slot(bar, 'queue', 4));
+    expect(sent).toHaveLength(1);
+    const after = (sent[0] as { queue: Array<Shortcut | null> }).queue;
+    expect(after.map((s) => s?.id ?? null)).toEqual([0, 1, null, null, null]);
+    rightClick(slot(bar, 'queue', 1));
+    expect((sent[1] as { queue: Array<Shortcut | null> }).queue.map((s) => s?.id ?? null)).toEqual([0, null, null, null, null]);
   });
 });

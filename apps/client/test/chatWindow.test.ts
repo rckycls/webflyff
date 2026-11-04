@@ -90,3 +90,36 @@ it('in a party, the Party view sends to the party; out of one, it sends nearby',
   submit('left'); expect(send).toHaveBeenLastCalledWith('nearby', 'left', '');
   chat.dispose();
 });
+
+it('Arrow Up brings back the lines sent before, newest first, and Arrow Down goes the other way (2026-11-05)', () => {
+  // CWndChat keeps the last 20 lines sent (MAX_HISTORY_STRING, WndCommunication.cpp:15, :822-828) and EN_UP recalls them (:741-755)
+  const send = vi.fn();
+  const chat = new ChatWindow(send, vi.fn()); document.body.append(chat.element);
+  chat.open();
+  const input = chat.element.querySelector<HTMLInputElement>('[name="message"]')!;
+  const form = chat.element.querySelector('form')!;
+  const say = (text: string) => { input.value = text; form.dispatchEvent(new Event('submit', { cancelable: true })); };
+  const key = (name: string) => {
+    const event = new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true });
+    input.dispatchEvent(event);
+    return event.defaultPrevented;
+  };
+  key('ArrowUp'); expect(input.value).toBe('');
+  say('one'); say('two'); say('three');
+  expect(key('ArrowUp')).toBe(true); expect(input.value).toBe('three');
+  key('ArrowUp'); expect(input.value).toBe('two');
+  key('ArrowUp'); expect(input.value).toBe('one');
+  key('ArrowUp'); expect(input.value).toBe('one');
+  expect(key('ArrowDown')).toBe(true); expect(input.value).toBe('two');
+  key('ArrowDown'); expect(input.value).toBe('three');
+  key('ArrowDown'); expect(input.value).toBe('');
+  // a line being typed comes back after the newest
+  input.value = 'draft'; key('ArrowUp'); expect(input.value).toBe('three');
+  key('ArrowDown'); expect(input.value).toBe('draft');
+  // the same line twice in a row is kept once; only 20 are kept
+  say('three');
+  for (let i = 0; i < 25; i++) say(`line ${i}`);
+  for (let i = 0; i < 30; i++) key('ArrowUp');
+  expect(input.value).toBe('line 5');
+  chat.dispose();
+});

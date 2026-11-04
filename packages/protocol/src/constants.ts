@@ -50,6 +50,10 @@ export const PacketType = {
   USESKILL: 0x00ff0020,
   /** `PACKETTYPE_DOUSESKILLPOINT`: the client spends skill points, with all 45 skills (`CDPClient::SendDoUseSkillPoint`). */
   DOUSESKILLPOINT: 0x000f0003,
+  /** `PACKETTYPE_REMOVEAPPLETTASKBAR` (`MsgHdr.h:270`): the client empties a slot of the applet row (`SendRemoveAppletTaskBar`). */
+  REMOVEAPPLETTASKBAR: 0xffffff0a,
+  /** `PACKETTYPE_ADDAPPLETTASKBAR` (`MsgHdr.h:271`): the client puts a shortcut on the applet row (`SendAddAppletTaskBar`). */
+  ADDAPPLETTASKBAR: 0xffffff0b,
   /** `PACKETTYPE_ADDITEMTASKBAR`: the client puts a shortcut on an item bar (`CDPClient::SendAddItemTaskBar`). */
   ADDITEMTASKBAR: 0xffffff0c,
   /** `PACKETTYPE_REMOVEITEMTASKBAR`: the client empties a slot of an item bar (`CDPClient::SendRemoveItemTaskBar`). */

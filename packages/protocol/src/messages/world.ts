@@ -6,7 +6,9 @@ import { MAX_SKILL_JOB, readSkills } from '../world/own';
 import { clientPacket } from '../world/packet';
 import { readDefinedText } from '../world/combat';
 import { readWhisper, readSocial, readGmSay } from '../world/chat';
-import { readAddItemTaskBar, readRemoveItemTaskBar, readSkillTaskBar } from '../world/taskBar';
+import {
+  readAddAppletTaskBar, readAddItemTaskBar, readRemoveAppletTaskBar, readRemoveItemTaskBar, readSkillTaskBar,
+} from '../world/taskBar';
 import { readBlock, readPlayerLogout, readUpdatePlayerData } from '../world/playerData';
 import type { MessageOf, PartyRequestSide, Shortcut, SkillSlot } from '../world/types';
 import { readAngleReport, readFlightReport } from '../world/flight';
@@ -266,6 +268,9 @@ export type WorldPacket =
   | { type: 'doUseSkillPoint'; skills: SkillSlot[] }
   | { type: 'addItemTaskBar'; bar: number; slot: number; shortcut: Shortcut }
   | { type: 'removeItemTaskBar'; bar: number; slot: number }
+  // the applet row (2026-11-05)
+  | { type: 'addAppletTaskBar'; slot: number; shortcut: Shortcut }
+  | { type: 'removeAppletTaskBar'; slot: number }
   // The slots a SKILLTASKBAR names, in the order sent: Neuz sends all five, the server only overwrites those.
   | { type: 'skillTaskBar'; entries: Array<{ slot: number; shortcut: Shortcut }> }
   | { type: 'endSkillQueue' }
@@ -441,6 +446,16 @@ function decodeClientPacket(r: ArReader): WorldPacket {
       const { bar, slot, shortcut } = readAddItemTaskBar(r);
       r.expectEnd();
       return { type: 'addItemTaskBar', bar, slot, shortcut };
+    }
+    case PacketType.ADDAPPLETTASKBAR: {
+      const { slot, shortcut } = readAddAppletTaskBar(r);
+      r.expectEnd();
+      return { type: 'addAppletTaskBar', slot, shortcut };
+    }
+    case PacketType.REMOVEAPPLETTASKBAR: {
+      const { slot } = readRemoveAppletTaskBar(r);
+      r.expectEnd();
+      return { type: 'removeAppletTaskBar', slot };
     }
     case PacketType.REMOVEITEMTASKBAR: {
       const { bar, slot } = readRemoveItemTaskBar(r);

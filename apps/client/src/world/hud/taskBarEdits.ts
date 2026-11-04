@@ -22,6 +22,8 @@ import type { TaskBarData } from './taskBar';
 export const EMPTY: Shortcut = { kind: ShortcutKind.NONE, id: 0, type: 0, index: 0, userId: 0, data: 0, text: '' };
 
 /** `m_dwData` of a shortcut: where it is, the applet row 0, an item bar 1, the action slot 2 (`SetShortcut`, `SetSkillQueue`). */
+/** `SetShortcut`'s `nWhere`, which it stores in `m_dwData`: 0 the applet row, 1 an item bar, 2 the action slot. */
+const WHERE_APPLET = 0;
 const WHERE_ITEM = 1;
 const WHERE_QUEUE = 2;
 
@@ -82,7 +84,7 @@ export type Carried =
  * Where a carried shortcut is let go: a slot of the item row or of the action slot, the applet row, elsewhere on the bar,
  * or off it (null).
  */
-export type DropTarget = { row: 'item' | 'queue'; slot: number } | 'applet' | 'bar' | null;
+export type DropTarget = { row: 'item' | 'queue' | 'applet'; slot: number } | 'bar' | null;
 
 /** Where the edits go: the packets, the action slot's chain, and the lines they print. */
 export interface TaskBarEditActions {
@@ -90,6 +92,10 @@ export interface TaskBarEditActions {
   sendAddItemTaskBar(bar: number, slot: number, shortcut: Shortcut): void;
   /** REMOVEITEMTASKBAR (`CDPClient::SendRemoveItemTaskBar`): slot `slot` of item bar `bar` emptied. */
   sendRemoveItemTaskBar(bar: number, slot: number): void;
+  /** ADDAPPLETTASKBAR (`CDPClient::SendAddAppletTaskBar`): `shortcut` put on applet slot `slot`. */
+  sendAddAppletTaskBar(slot: number, shortcut: Shortcut): void;
+  /** REMOVEAPPLETTASKBAR (`CDPClient::SendRemoveAppletTaskBar`): applet slot `slot` emptied. */
+  sendRemoveAppletTaskBar(slot: number): void;
   /** SKILLTASKBAR (`CDPClient::SendSkillTaskBar`): the action slot's 5 slots, `null` for an empty one. */
   sendSkillTaskBar(queue: ReadonlyArray<Shortcut | null>): void;
   /** `CWndTaskBar::m_nExecute != 0`: the action slot's chain runs (`SkillUse.execute`), and the action slot takes no edit. */
@@ -172,8 +178,8 @@ export class TaskBarEdits {
    *   taken out first, unsent (`RemoveSkillQueue( i, FALSE )`), and put back where it is let go.
    * - From the bar, once it has gone somewhere else on the bar (or anywhere on it that takes nothing), its slot is emptied
    *   (:2073-2090): Neuz takes a shortcut off a slot when it is let go on the bar's empty parts too.
-   * The applet row takes nothing here, for want of ADDAPPLETTASKBAR: a shortcut let go there stays where it was (Neuz would
-   * move it there).
+   * - On a slot of the applet row (2026-11-05): a skill of `CT_STEP` or `CT_GENERAL` only (`OnDropIcon`'s RECT_APPLET,
+   *   `WndTaskBar.cpp:1773-1830`), any other shortcut; ADDAPPLETTASKBAR with `m_dwData` 0.
    *
    * Two departures: an item slot's shortcut comes off the bar it was taken from (Neuz empties that slot but sends the
    * REMOVEITEMTASKBAR for the bar shown at the drop, which a digit may have changed in between); and a skill moved within
@@ -194,7 +200,19 @@ export class TaskBarEdits {
       if (slot !== undefined && (slot.level <= 0 || !this.playerHasSkillOpen(slot.skill))) return;
     }
     if (shortcut.id === 0 && shortcut.text === '' && shortcut.kind !== ShortcutKind.SKILLFUN && shortcut.kind !== ShortcutKind.ITEM) return;
-    if (target === 'applet') return;
+    if (target !== 'bar' && target.row === 'applet') {
+      // the same skills as the item row: a party skill the catalog has, or one of CT_STEP or CT_GENERAL above level 0
+      if (shortcut.kind === ShortcutKind.SKILL && shortcut.type === 2) {
+        if (this.bar.data.partySkills?.has(shortcut.id) !== true) return;
+      } else if (shortcut.kind === ShortcutKind.SKILL) {
+        const skill = this.skillOf(shortcut.id);
+        if (skill === undefined || !canPlaceOnBar(skill, own.skills[shortcut.id]?.level ?? 0)) return;
+      }
+      const text = shortcut.kind === ShortcutKind.CHAT ? withoutSqlMarks(shortcut.text) : shortcut.text;
+      this.setAppletShortcut(target.slot, { ...shortcut, text });
+      if (fromBar) this.removeCarried(carried);
+      return;
+    }
     if (target !== 'bar' && target.row === 'item') {
       if (carried.from === 'item' && carried.bar === this.bar.bar && carried.slot === target.slot) return;
       if (shortcut.kind === ShortcutKind.SKILL && shortcut.type === 2) {
@@ -225,8 +243,21 @@ export class TaskBarEdits {
     if (row === 'item') {
       if (this.bar.bars.items[bar]![i]!.kind !== ShortcutKind.NONE) this.removeItemShortcut(bar, i);
     } else {
-      this.removeSkillQueue(i);
+      // an empty square takes off the last skill (2026-11-05, the owner's rule; Neuz does nothing there)
+      const { queue, queueCount } = this.bar.bars;
+      const empty = i >= queueCount || queue[i]!.kind === ShortcutKind.NONE;
+      if (empty && queueCount > 0) this.removeSkillQueue(queueCount - 1);
+      else if (!empty) this.removeSkillQueue(i);
     }
+  }
+
+  /** A right click on applet slot `i` (`OnRButtonUp`'s RECT_APPLET, `WndTaskBar.cpp:1476-1488`): emptied, REMOVEAPPLETTASKBAR. */
+  rightClickApplet(i: number): void {
+    const { bars } = this.bar;
+    if (i < 0 || i >= bars.applets.length || bars.applets[i]!.kind === ShortcutKind.NONE) return;
+    bars.applets[i] = EMPTY;
+    this.bar.commit();
+    this.actions.sendRemoveAppletTaskBar(i);
   }
 
   /**
@@ -263,6 +294,15 @@ export class TaskBarEdits {
     remember(bars, own, data, row, slot, shortcut);
     this.bar.commit();
     this.actions.sendAddItemTaskBar(bar, slot, shortcut);
+  }
+
+  /** `SetShortcut( nIndex, ..., 0 )` on the applet row (`m_dwData` 0), then ADDAPPLETTASKBAR. */
+  private setAppletShortcut(slot: number, from: Shortcut): void {
+    const { bars } = this.bar;
+    const shortcut: Shortcut = { kind: from.kind, id: from.id, type: from.type, index: slot, userId: 0, data: WHERE_APPLET, text: from.text };
+    bars.applets[slot] = shortcut;
+    this.bar.commit();
+    this.actions.sendAddAppletTaskBar(slot, shortcut);
   }
 
   /** `lpShortcut->Empty()` and REMOVEITEMTASKBAR for slot `slot` of bar `bar`. */

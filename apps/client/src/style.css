@@ -620,7 +620,9 @@ fieldset:disabled .btn {
   padding: 4px 26px 0 10px;
   overflow: hidden;
   white-space: nowrap;
-  /* Arial Black9, the title font, in the window's colour (white) */
+  /* Arial Black9, the title font, white whatever the window's own text colour (2026-11-05: a window of black text, the
+     party's, had a black title) */
+  color: #ffffff;
   font-weight: bold;
   text-shadow: 1px 1px #000000;
   cursor: move;
@@ -1315,14 +1317,16 @@ fieldset:disabled .btn {
 .hud-skills-picture,
 .hud-skills-chosen,
 .hud-skills-points,
-.hud-skills-job-panel {
+.hud-skills-job-panel,
+.hud-skills-pro-panel {
   position: absolute;
   background-repeat: no-repeat;
 }
 
 /* the first job's panel (AfterSkinTexture): a picture under the skills, never in the way of a press (2026-11-04 audit:
-   without a position it was drawn at the window's top) */
-.hud-skills-job-panel {
+   without a position it was drawn at the window's top); the second job's the same (2026-11-05) */
+.hud-skills-job-panel,
+.hud-skills-pro-panel {
   pointer-events: none;
 }
 
@@ -1951,7 +1955,7 @@ fieldset:disabled .btn {
 .hud-chat form { padding: 0; margin: 0; gap: 0; border-width: 1px; }
 .hud-chat input, .hud-chat select, .hud-chat form button { box-sizing: border-box; min-height: 17px; height: 17px; padding: 0 3px; line-height: 15px; }
 /* Classic shop paired with the existing inventory. */
-.hud-shop > .hud-window-title { text-align: center; color: #527baf; text-shadow: 1px 1px #fff; }
+.hud-shop > .hud-window-title { text-align: center; }
 .hud-shop > .hud-window-body { width: calc(100% - 12px) !important; height: calc(100% - 32px) !important; padding: 6px; gap: 4px; overflow: hidden; color: #382d25; }
 .shop-heading { flex-shrink: 0; color: #62818b; font: 12px/16px Arial, sans-serif; }
 .hud-shop .shop-tabs { display: flex; flex-shrink: 0; gap: 2px; margin: 0; }
@@ -2032,6 +2036,12 @@ fieldset:disabled .btn {
 .hud-character-landscape,
 .hud-skills-landscape { background: #f4ece3; border-radius: 6px; }
 .world:has(:is(.hud-character-landscape, .hud-skills-landscape):not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack) { visibility: hidden; }
+/* the party window, fitted whole to a phone: the window's buttons off it, and its 12 px text in the columns laid out for it
+   (2026-11-05: the phone's 14 px cut "Distribute Item"); the fit scales it up */
+@media (max-width: 1000px) and (pointer: coarse) {
+  .world:has(.hud-party:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack) { visibility: hidden; }
+  .hud-party[data-mobile-window] { font-size: 12px; }
+}
 .hud-character-landscape { font-size: 15px !important; }
 .hud-character-landscape .hud-char-page { height: 240px !important; background: #fff; }
 .hud-character-landscape .hud-char-text { height: 18px; line-height: 18px; }
@@ -2312,6 +2322,8 @@ fieldset:disabled .btn {
 .hud-party-members { overflow: hidden; }
 .hud-party-row { position: absolute; cursor: pointer; }
 .hud-party-row > div { position: absolute; }
+/* the tab strip's pictures side by side (2026-11-05: without a position they stacked into a bar down past the window) */
+.hud-party-tabs > div { position: absolute; }
 .hud-party-selected { background: rgba(255, 255, 0, 0.376); }
 .hud-party-box { box-sizing: border-box; border: 1px solid #000000; }
 .hud-party-text { white-space: nowrap; line-height: 15px; }

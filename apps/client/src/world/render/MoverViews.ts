@@ -178,6 +178,8 @@ interface View {
   scrAngleX: number;
   /** Piece 7 M5: the ride drawn under a flier (`m_pRide`): its item, its model once loaded, and its `dwItemKind3`. */
   ride: { itemId: number; object: Object3D | null; release: (() => void) | null; kind3: number } | null;
+  /** The load `refresh` started for a new look, until its model is swapped in; a newer refresh replaces it. */
+  swap: object | null;
 }
 
 /** Piece 7 M5: `IK3_STICK` (`defineItemkind.h:116`): a broom or a stick, drawn at the rider's root bone's height. */
@@ -252,11 +254,67 @@ export class MoverViews {
     }
   }
 
-  /** Equipment confirmation invalidates the assembled parts and held models, with normal async-load disposal. */
+  /**
+   * An equip or unequip changed the mover's look. Neuz swaps the part on the model it has (`CMover::DoEquip`:
+   * `TakeOffParts`, `MoverEquip.cpp:1109`; `LoadElement`, :1345), so the mover never leaves the screen. Here the model
+   * drawn stays, playing on, until the new look's model, its hands' items and its motion are in; then the two are
+   * swapped in the same holder in one go, at the same frame of the motion. A newer refresh wins over one still loading;
+   * a new model that cannot be had leaves the old one drawn. A mover with nothing drawn yet is simply made again.
+   */
   refresh(mover: Mover): void {
-    const old = this.views.get(mover.objectId);
-    if (old) this.drop(old);
-    this.add(mover);
+    const view = this.views.get(mover.objectId);
+    const look = this.lookFor(mover);
+    if (view === undefined || view.mover !== mover || view.model === null || look === null) {
+      if (view !== undefined) this.drop(view);
+      this.add(mover);
+      return;
+    }
+    const swap = {};
+    view.swap = swap;
+    const held = this.loadHeld(look, this.report);
+    const act = mover.act;
+    const keyNow = (): string | null =>
+      look.motion(motionFor(act.motion, this.handNow({ ...view, look }), act.stateFlag, act.motionOption));
+    this.track((async () => {
+      let loaded: AssembledCharacter | Object3D | null = null;
+      try {
+        loaded = await this.load(look, this.report);
+      } catch (error) {
+        this.report(`${moverLabel(mover)}: ${messageOf(error)}`);
+      }
+      const items = await held;
+      for (let key = keyNow(); key !== null && this.clip(key).loading; key = keyNow()) await this.clip(key).ready;
+      if (loaded === null || view.gone || view.swap !== swap) {
+        if (loaded !== null && 'release' in loaded) loaded.release();
+        for (const item of items) item.release();
+        return;
+      }
+      view.swap = null;
+      this.takeOff(view);
+      view.look = look;
+      try {
+        this.attach(view, loaded, true);
+      } catch (error) {
+        this.report(`${moverLabel(mover)}: ${messageOf(error)}`);
+        this.detach(view, loaded);
+        this.showPlaceholder(view);
+      }
+      this.hold(view, items);
+    })());
+  }
+
+  /** Takes the model drawn and the items of its hands out of the view's holder and lets them go (`refresh`). */
+  private takeOff(view: View): void {
+    const model = view.model;
+    if (model === null) return;
+    model.root.removeFromParent();
+    model.release();
+    for (const held of view.held) held.release();
+    view.held = [];
+    this.overlay.addGpuBytes(-view.bytes);
+    view.bytes = 0;
+    view.model = null;
+    view.action = null;
   }
 
   /**
@@ -302,10 +360,12 @@ export class MoverViews {
       // Piece 7 M5: YawPitchRoll( -angle, -angleX, 0 ) (CMover::SetAngleX): in the web's axes the pitch is +x
       holder.rotation.x = (view.scrAngleX * Math.PI) / 180;
       holder.scale.setScalar(view.mover.added.scale);
+      if (view.model !== null) {
+        this.play(view);
+        view.model.mixer.update(dt);
+      }
+      // after the frame's pose: CModelObject::Render animates m_mUpdateBone before the ride is drawn (MoverRender.cpp:572, :651)
       this.raiseRide(view);
-      if (view.model === null) continue;
-      this.play(view);
-      view.model.mixer.update(dt);
     }
   }
 
@@ -468,14 +528,16 @@ export class MoverViews {
 
   /**
    * Piece 7 M5: a broom or a stick (`IK3_STICK`) is drawn at the height of the rider's root bone (`GetMatrixBone( 0 )->_42`,
-   * `MoverRender.cpp:588-595`); any other ride at the rider's feet.
+   * `MoverRender.cpp:601-607`); any other ride at the rider's feet. Bone 0 is the first joint under the skeleton glb's
+   * `skeleton` node (skeletonGlb.ts builds them in bone order); the assembled joints are plain nodes, not Bones, so a
+   * look for a Bone found none and drew every broom at the feet (2026-11-05).
    */
   private raiseRide(view: View): void {
     const object = view.ride?.object;
     if (!object) return;
     let y = 0;
     if (view.ride!.kind3 === IK3_STICK && view.model !== null) {
-      const bone = view.model.root.getObjectByProperty('isBone', true);
+      const bone = view.model.root.getObjectByName('skeleton')?.children[0];
       if (bone) y = bone.position.y;
     }
     object.position.y = y;
@@ -491,7 +553,7 @@ export class MoverViews {
       // ADD_OBJ ends with InitInterpolation (ObjSerializeOpt.cpp:764): a new mover is drawn where it is
       scrPos: copy(mover.act.body.pos), scrAngle: mover.act.body.angle, frame: startFrame(mover.act.motionSets),
       action: null, played: -1, gone: false, spark: idleSpark(), sparkUniforms: sparkUniforms(), dmgCnt: 0,
-      scrAngleX: mover.act.angleX, ride: null,
+      scrAngleX: mover.act.angleX, ride: null, swap: null,
     };
     this.views.set(mover.objectId, view);
     const { look } = view;
@@ -528,7 +590,7 @@ export class MoverViews {
     })().finally(async () => this.hold(view, await held)));
   }
 
-  private attach(view: View, loaded: AssembledCharacter | Object3D): void {
+  private attach(view: View, loaded: AssembledCharacter | Object3D, keepFrame = false): void {
     const model = 'release' in loaded ? loaded : null;
     const root = model?.root ?? (loaded as Object3D);
     // the top of the model's box, as RenderName projects pBB->m_vPos[0] (MoverRender.cpp:1349-1356), at scale 1
@@ -543,8 +605,9 @@ export class MoverViews {
     view.bytes = bytes;
     view.model = model;
     const act = view.mover.act;
-    // the model comes on at the first frame of the motion the rules have set
-    view.frame = startFrame(act.motionSets);
+    // the model comes on at the first frame of the motion the rules have set; one swapped in by `refresh` goes on at the
+    // frame the old one was at (LoadElement leaves CModel's frame alone), so a swing's hit frame is not passed twice
+    if (!keepFrame) view.frame = startFrame(act.motionSets);
     act.isEndFrame = () => this.isEndFrame(view);
     act.isAttrHit = () => this.isAttrHit(view);
     act.isAttrQuake = () => this.isAttrQuake(view);

@@ -49,7 +49,7 @@ import { formatText } from './format';
 import { WindowFrame } from './frame';
 import { ModalBackdrop } from './modal';
 import { byFinger } from './slotGestures';
-import { JOB_PANELS, PANEL_AT, skillPlaceOf } from './skillPlaces';
+import { JOB_PANELS, PANEL_AT, PRO_PANELS, PRO_PANEL_AT, jobLineOf, sectionOf, skillPlaceOf } from './skillPlaces';
 import { EDIT, editTiles } from './tiles';
 
 /** What the window reads of the catalogs: the skills, the texts (with their colours) and the jobs' names. */
@@ -143,6 +143,8 @@ const VAGRANT_PICTURE: ControlRect = { left: 62, top: 104, width: 125, height: 2
  */
 const SKILL_ICON = 27;
 const PHONE_EXPERT = { left: 276, top: 100, pitchX: 48, pitchY: 60, columns: 5 } as const;
+/** The second job's skills on a phone: the third section, the same grid (2026-11-05). */
+const PHONE_PRO = { left: 536, top: 100, pitchX: 48, pitchY: 60, columns: 5 } as const;
 /** The four `Back_*` panels' size (`Client/Theme/Default`, all 225 x 135). */
 const PANEL_SIZE = { width: 225, height: 135 } as const;
 /** The chosen skill's icon, at its own size (`Render( p2DRender, lpWndCtrl->rect.TopLeft() )`, :7869). */
@@ -258,6 +260,8 @@ export class SkillWindow {
   private readonly mobile: boolean;
   /** Piece 7 M2: the first job's panel (`m_atexJobPannel[0]`), and the skill IDs the skills are laid out for. */
   private readonly jobPanel: HTMLImageElement;
+  /** The second job's panel (`m_atexJobPannel[1]`), in the lower section. */
+  private readonly proPanel: HTMLImageElement;
   private laidOut = '';
 
   constructor(
@@ -347,7 +351,10 @@ export class SkillWindow {
     this.jobPanel.draggable = false;
     this.jobPanel.hidden = true;
     place(this.jobPanel, { left: PANEL_AT.x, top: PANEL_AT.y, width: PANEL_SIZE.width, height: PANEL_SIZE.height });
-    body.append(this.jobPanel);
+    this.proPanel = this.jobPanel.cloneNode() as HTMLImageElement;
+    this.proPanel.className = 'hud-skills-pro-panel'; // the second job's, at WIDC_STATIC7 + 2 px (2026-11-05)
+    place(this.proPanel, { left: PRO_PANEL_AT.x, top: PRO_PANEL_AT.y, width: PANEL_SIZE.width, height: PANEL_SIZE.height });
+    body.append(this.jobPanel, this.proPanel);
 
     const button = (name: ButtonName, press: () => void): HTMLButtonElement => {
       const { rect, picture, quarter, tip } = BUTTONS[name];
@@ -457,9 +464,11 @@ export class SkillWindow {
     const points = String(plan.points);
     if (this.points.textContent !== points) this.points.textContent = points;
     const jobTitle = this.data.jobs[JOB_VAGRANT]?.title ?? '';
-    // InitItem's titles (:6769-6776, :6801-6880): the Vagrant's name; a first job's name, then none
-    const expert = own.job >= MAX_JOBBASE && own.job < MAX_EXPERT ? this.data.jobs[own.job]?.title ?? '' : '';
-    const titles = [jobTitle, expert, ''];
+    // InitItem's titles (:6769-6776, :6801-6905): the Vagrant's name; the first job's name; the second job's name, or none
+    const line = jobLineOf(own.job);
+    const expert = line.first === null ? '' : this.data.jobs[line.first]?.title ?? '';
+    const professional = line.second === null ? '' : this.data.jobs[line.second]?.title ?? '';
+    const titles = [jobTitle, expert, professional];
     this.sectionTitles.forEach((title, i) => {
       if (title.textContent !== titles[i]) title.textContent = titles[i]!;
     });
@@ -503,25 +512,33 @@ export class SkillWindow {
     if (key !== this.laidOut) {
       this.laidOut = key;
       for (const skill of this.skills.splice(0)) skill.element.remove();
-      let expert = 0;
+      const counts = [0, 0];
       for (const skillId of ids) {
-        const base = skillId <= 3;
+        const section = sectionOf(skillId)!;
+        const grid = section === 2 ? PHONE_PRO : PHONE_EXPERT;
+        const n = section === 2 ? counts[1]! : counts[0]!;
         const at = !this.mobile
           ? { left: skillPlaceOf(skillId)!.x, top: skillPlaceOf(skillId)!.y }
-          : base
+          : section === 0
             ? { left: 28 + (skillId - 1) * 80, top: 111 }
             : {
-              left: PHONE_EXPERT.left + (expert % PHONE_EXPERT.columns) * PHONE_EXPERT.pitchX,
-              top: PHONE_EXPERT.top + Math.trunc(expert / PHONE_EXPERT.columns) * PHONE_EXPERT.pitchY,
+              left: grid.left + (n % grid.columns) * grid.pitchX,
+              top: grid.top + Math.trunc(n / grid.columns) * grid.pitchY,
             };
-        if (!base) expert++;
+        if (section === 1) counts[0]!++;
+        if (section === 2) counts[1]!++;
         this.skills.push(this.skillElement(skillId, at));
       }
     }
-    const panel = JOB_PANELS[own.job];
-    this.jobPanel.hidden = this.mobile || panel === undefined;
-    if (panel !== undefined && this.jobPanel.getAttribute('src') !== this.art.url(themeKey(panel))) {
-      this.jobPanel.src = this.art.url(themeKey(panel));
+    // the first job's panel, and a second job's own under it (InitItem's strTex[0] and strTex[1], 2026-11-05)
+    const line = jobLineOf(own.job);
+    const panels: Array<[HTMLImageElement, string | undefined]> = [
+      [this.jobPanel, line.first === null ? undefined : JOB_PANELS[line.first]],
+      [this.proPanel, line.second === null ? undefined : PRO_PANELS[line.second]],
+    ];
+    for (const [img, panel] of panels) {
+      img.hidden = this.mobile || panel === undefined;
+      if (panel !== undefined && img.getAttribute('src') !== this.art.url(themeKey(panel))) img.src = this.art.url(themeKey(panel));
     }
   }
 

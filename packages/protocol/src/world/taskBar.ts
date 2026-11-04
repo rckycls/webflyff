@@ -179,6 +179,40 @@ export function readAddItemTaskBar(r: ArReader): { bar: number; slot: number; sh
   return { bar, slot, shortcut: readShortcut(r, true) };
 }
 
+/**
+ * ADDAPPLETTASKBAR: `CDPClient::SendAddAppletTaskBar` (`Neuz/DPClient.cpp:11002-11013`): the applet slot (`BYTE`), the
+ * shortcut's six `DWORD`s and, for `SHORTCUT_CHAT` alone, its text, as ADDITEMTASKBAR writes them. Neuz sends it when a
+ * shortcut is dropped on the applet row (`CWndTaskBar::SetShortcut`, `WndTaskBar.cpp:1664`; 2026-11-05).
+ */
+export function encodeAddAppletTaskBar(slot: number, shortcut: Shortcut): Uint8Array {
+  checkEditSlot('applet slot', slot, MAX_SLOT_APPLET);
+  const w = writeShortcutFields(clientPacket(PacketType.ADDAPPLETTASKBAR).u8(slot), shortcut);
+  if (shortcut.kind === ShortcutKind.CHAT) {
+    if (shortcut.text.length >= MAX_SHORTCUT_STRING) {
+      throw new ProtocolError(`a chat shortcut's text of ${shortcut.text.length} characters does not fit a char[${MAX_SHORTCUT_STRING}]`);
+    }
+    w.string(shortcut.text);
+  }
+  return w.toBytes();
+}
+
+/** REMOVEAPPLETTASKBAR: `CDPClient::SendRemoveAppletTaskBar` (`Neuz/DPClient.cpp:10996-11001`): the applet slot (`BYTE`). */
+export function encodeRemoveAppletTaskBar(slot: number): Uint8Array {
+  checkEditSlot('applet slot', slot, MAX_SLOT_APPLET);
+  return clientPacket(PacketType.REMOVEAPPLETTASKBAR).u8(slot).toBytes();
+}
+
+/** The fields of a browser ADDAPPLETTASKBAR after its type (`CDPSrvr::OnAddAppletTaskBar`). */
+export function readAddAppletTaskBar(r: ArReader): { slot: number; shortcut: Shortcut } {
+  const slot = readByteSlot(r, 'applet slot', MAX_SLOT_APPLET);
+  return { slot, shortcut: readShortcut(r, true) };
+}
+
+/** The field of a browser REMOVEAPPLETTASKBAR after its type (`CDPSrvr::OnRemoveAppletTaskBar`). */
+export function readRemoveAppletTaskBar(r: ArReader): { slot: number } {
+  return { slot: readByteSlot(r, 'applet slot', MAX_SLOT_APPLET) };
+}
+
 /** The fields of a browser REMOVEITEMTASKBAR after its type (`CDPSrvr::OnRemoveItemTaskBar`, `DPSrvr.cpp:12477`). */
 export function readRemoveItemTaskBar(r: ArReader): { bar: number; slot: number } {
   const bar = readByteSlot(r, 'item bar', MAX_SLOT_ITEM_COUNT);

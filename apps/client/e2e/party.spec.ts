@@ -96,6 +96,17 @@ test('invite from the player menu: MEMBERREQUEST; the new party fills the window
   await expect(column(page, 'mark')).toHaveText(['L', 'M']);
   await expect(column(page, 'name')).toHaveText(['Webby', 'Lead']);
   await expect(rows(page).nth(1).locator('.hud-party-hp-fill')).toHaveCSS('width', '110px');
+  // 2026-11-05: the tab pictures sit in one row inside their strip (each was a block, stacked into a long bar down the
+  // screen), and the title is white
+  const strip = (await page.locator('.hud-party .hud-party-tabs').boundingBox())!;
+  const tiles = await page.locator('.hud-party .hud-party-tabs > div').evaluateAll((els) =>
+    els.map((el) => { const r = el.getBoundingClientRect(); return [r.top, r.bottom]; }));
+  expect(tiles.length).toBeGreaterThan(0);
+  for (const [top, bottom] of tiles) {
+    expect(top).toBeGreaterThanOrEqual(strip.y - 1);
+    expect(bottom).toBeLessThanOrEqual(strip.y + strip.height + 1);
+  }
+  await expect(page.locator('.hud-party .hud-window-title')).toHaveCSS('color', 'rgb(255, 255, 255)');
   await expect(page.locator('.hud-party-quick-window')).toBeVisible();
   await expect(page.locator('.hud-party-quick-row:not([hidden])')).toHaveCount(2);
 });

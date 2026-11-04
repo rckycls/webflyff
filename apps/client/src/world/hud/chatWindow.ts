@@ -4,6 +4,9 @@ import type { ChatChannel } from '@flyffweb/protocol';
 /** Session-local chat. Only server echoes enter the transcript; text is never interpreted as markup. */
 type ChatView = ChatChannel | 'all' | 'system' | 'announcement';
 
+/** `MAX_HISTORY_STRING` (`WndCommunication.cpp:15`): the lines sent that Arrow Up can bring back. */
+const MAX_HISTORY = 20;
+
 const ICONS: Record<string, string> = {
   Send: 'M3 10 21 3 14 21 11 13 3 10ZM11 13 21 3',
   Chat: 'M4 4H20V16H11L6 21V16H4Z',
@@ -39,6 +42,11 @@ export class ChatWindow {
   private readonly input: HTMLInputElement;
   private readonly feedback: HTMLElement;
   private readonly toggle: HTMLButtonElement;
+  /** The lines sent, oldest first: CWndChat's m_strHistory, at most MAX_HISTORY_STRING (WndCommunication.cpp:15, :822-828). */
+  private readonly history: string[] = [];
+  /** The line of `history` shown by Arrow Up or Down, or -1 while none is; `draft` is what was typed before. */
+  private recalled = -1;
+  private draft = '';
   constructor(send: (channel: ChatChannel, text: string, target: string) => void,
     onFocus: () => void, private readonly doc: Document = document) {
     this.element = doc.createElement('section'); this.element.className = 'hud-chat';
@@ -81,6 +89,9 @@ export class ChatWindow {
       if (event.key === 'Escape') { event.preventDefault(); this.close(); }
     });
     this.element.addEventListener('keyup', (event) => event.stopPropagation());
+    this.input.addEventListener('keydown', (event) => {
+      if (event.key === 'ArrowUp' || event.key === 'ArrowDown') this.recall(event);
+    });
     this.form.addEventListener('submit', (event) => {
       event.preventDefault();
       if (this.mobile) { this.close(); button.blur(); }
@@ -91,9 +102,34 @@ export class ChatWindow {
         // :708-713); a typed command goes as typed
         const channel: ChatChannel = this.view === 'party' && this.party && !text.startsWith('/') ? 'party' : 'nearby';
         encodeChat(channel, text); send(channel, text, '');
+        this.remember(text);
         this.input.value = ''; this.feedback.textContent = ''; if (!this.mobile) this.input.focus();
       } catch (error) { this.feedback.textContent = error instanceof Error ? error.message : 'Unable to send message.'; }
     });
+  }
+  /**
+   * Arrow Up shows the line sent before the one shown (EN_UP, WndCommunication.cpp:741-755), stopping at the oldest; Arrow
+   * Down the one after it, then what was being typed (2026-11-05: Neuz has Up only, and wraps round).
+   */
+  private recall(event: KeyboardEvent): void {
+    const up = event.key === 'ArrowUp';
+    if (this.history.length === 0 || (!up && this.recalled < 0)) return;
+    event.preventDefault();
+    if (up) {
+      if (this.recalled < 0) { this.draft = this.input.value; this.recalled = this.history.length; }
+      this.recalled = Math.max(0, this.recalled - 1);
+    } else {
+      this.recalled += 1;
+    }
+    if (this.recalled >= this.history.length) { this.recalled = -1; this.input.value = this.draft; } else this.input.value = this.history[this.recalled]!;
+    const end = this.input.value.length;
+    this.input.setSelectionRange(end, end);
+  }
+  /** A line sent goes to the end of `history` (once, if it is the last line again), the oldest out past 20. */
+  private remember(text: string): void {
+    if (this.history.at(-1) !== text) this.history.push(text);
+    if (this.history.length > MAX_HISTORY) this.history.shift();
+    this.recalled = -1; this.draft = '';
   }
   /** In a party or not: with the Party view chosen, a typed line goes to the party while in one. */
   setParty(inParty: boolean): void { this.party = inParty; }

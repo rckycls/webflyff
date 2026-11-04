@@ -1,6 +1,6 @@
 import {
   ArReader, CloseCode, MessageType, NULL_ID, PacketType, ProtocolError, WORLD_READERS, decodeLoginMessage, decodeWorldPacket,
-  encodeAddItemTaskBar, encodeDestPos, encodeDoUseSkillPoint, encodeEndSkillQueue, encodeGetDestObj, encodeJoin,
+  encodeAddAppletTaskBar, encodeAddItemTaskBar, encodeDestPos, encodeRemoveAppletTaskBar, encodeDoUseSkillPoint, encodeEndSkillQueue, encodeGetDestObj, encodeJoin,
   encodeMeleeAttack, encodeModifyStatus, encodePing, encodePlayerBehavior, encodePlayerCorr, encodePlayerMoved,
   encodePlayerSetDestObj, encodePreJoin, encodeRemoveItemTaskBar, encodeRevivalToLodestar, encodeSetTarget,
   encodeSkillTaskBar, encodeUseSkill, encodeWorldKeepAlive, readBundle,
@@ -380,6 +380,16 @@ export class WorldSession {
    */
   sendAddItemTaskBar(bar: number, slot: number, shortcut: Shortcut): void {
     this.playingCache()?.send(encodeAddItemTaskBar(bar, slot, shortcut));
+  }
+
+  /** ADDAPPLETTASKBAR (`CDPClient::SendAddAppletTaskBar`, `Neuz/DPClient.cpp:11002`): `shortcut` into applet slot `slot`. */
+  sendAddAppletTaskBar(slot: number, shortcut: Shortcut): void {
+    this.playingCache()?.send(encodeAddAppletTaskBar(slot, shortcut));
+  }
+
+  /** REMOVEAPPLETTASKBAR (`CDPClient::SendRemoveAppletTaskBar`, `Neuz/DPClient.cpp:10996`): applet slot `slot` emptied. */
+  sendRemoveAppletTaskBar(slot: number): void {
+    this.playingCache()?.send(encodeRemoveAppletTaskBar(slot));
   }
 
   /** REMOVEITEMTASKBAR (`CDPClient::SendRemoveItemTaskBar`, `Neuz/DPClient.cpp:11008`): slot `slot` of item bar `bar` emptied. Sent only while playing. */

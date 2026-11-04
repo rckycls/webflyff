@@ -39,7 +39,9 @@ export type { BundleMessage, BundleResult, MessageHeader, MessageReader } from '
 export { WORLD_READERS } from './world/readers';
 export { MAX_SKILL_JOB } from './world/own';
 export { encodeUseItem, encodeEquipItem, encodeMoveItem, encodeDropItem, encodeRevival } from './world/items';
-export { encodeAddItemTaskBar, encodeRemoveItemTaskBar, encodeSkillTaskBar } from './world/taskBar';
+export {
+  encodeAddAppletTaskBar, encodeAddItemTaskBar, encodeRemoveAppletTaskBar, encodeRemoveItemTaskBar, encodeSkillTaskBar,
+} from './world/taskBar';
 export type {
   AddedMover, AddedNpc, AddedPlayer, GroundItem, InventoryItem, MonsterRate, OwnCharacter, Shortcut, SkillSlot, TaskBar,
   WorldMessage, WornPart, MessageOf, PartyBlock, PartyRequestSide, PlayerDataRecord,

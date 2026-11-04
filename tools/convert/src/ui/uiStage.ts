@@ -177,6 +177,8 @@ export const THEME_FILES: readonly string[] = [
   'Back_As.TGA',
   'Back_Ma.TGA',
   'Back_Acr.tga',
+  // the second jobs' panels (2026-11-05, CWndSkillTreeEx::InitItem's strTex[1])
+  'Back_Night.TGA', 'Back_Blade.TGA', 'Back_Jst.TGA', 'Back_Rag.TGA', 'Back_Ring.TGA', 'Back_Bill.TGA', 'Back_Psy.TGA', 'Back_Ele.TGA',
   // The dialogue window (APP_DIALOG_EX "WndDialogEx.tga", resdata.inc:13842), its next-page button (WIDC_BUTTON1
   // "wndButtEnter.bmp") and the four papers of its quest lists, keyed with white (WndDialog.cpp:254-257). Its answer
   // buttons are ButtYes, ButtNo, ButtCancel and ButtOk, above.

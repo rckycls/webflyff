@@ -213,8 +213,7 @@ export class SlotGestures {
     if (element === null || typeof element.closest !== 'function' || !this.host.strip.contains(element)) return null;
     const slot = element.closest<HTMLElement>('.hud-slot[data-row]');
     const row = slot?.dataset.row;
-    if (row === 'applet') return 'applet';
-    if ((row === 'item' || row === 'queue') && slot !== null && slot !== undefined) return { row, slot: Number(slot.dataset.slot) };
+    if ((row === 'item' || row === 'queue' || row === 'applet') && slot !== null && slot !== undefined) return { row, slot: Number(slot.dataset.slot) };
     return 'bar';
   }
 

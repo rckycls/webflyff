@@ -496,6 +496,8 @@ class Player implements SkillPlayer {
     };
     const data = { itemProps: gameData.itemProps, skills: gameData.skills, texts: gameData.texts };
     const edits = new TaskBarEdits({ bars, own: this.own, data, bar: SKILL_BAR, commit: () => {} }, {
+      sendAddAppletTaskBar: (slot, shortcut) => session.sendAddAppletTaskBar(slot, shortcut),
+      sendRemoveAppletTaskBar: (slot) => session.sendRemoveAppletTaskBar(slot),
       sendAddItemTaskBar: (bar, at, shortcut) => {
         session.sendAddItemTaskBar(bar, at, shortcut);
         this.sentAddItemTaskBar.push({ bar, slot: at, shortcut });

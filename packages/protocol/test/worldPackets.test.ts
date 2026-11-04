@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ArWriter, DPID_UNKNOWN, MAX_SKILL_JOB, NULL_ID, PacketType, ProtocolError, ShortcutKind, bytesToHex, decodeWorldPacket,
-  encodeAddItemTaskBar, encodeDoUseSkillPoint, encodeEndSkillQueue, encodeGetDestObj, encodeMeleeAttack,
+  encodeAddAppletTaskBar, encodeAddItemTaskBar, encodeDoUseSkillPoint, encodeRemoveAppletTaskBar, encodeEndSkillQueue, encodeGetDestObj, encodeMeleeAttack,
   encodeModifyStatus, encodePlayerSetDestObj, encodeRemoveItemTaskBar, encodeRevivalToLodestar, encodeSetTarget,
   encodeSkillTaskBar, encodeUseSkill,
 } from '../src';
@@ -428,5 +428,23 @@ describe('the skill packets: decodeWorldPacket', () => {
         expect(() => decodeWorldPacket(full.subarray(0, length)), `cut at ${length} of ${full.length}`).toThrow();
       }
     }
+  });
+});
+
+describe('the applet row (2026-11-05: skills could not be dropped on it)', () => {
+  it('encodeAddAppletTaskBar writes what SendAddAppletTaskBar writes (DPClient.cpp:11002-11013): the slot, the six fields', () => {
+    const s = skillShortcut(0, 4, 0);
+    const expected = new ArWriter().u32(DPID_UNKNOWN).u32(0xffffff0b).u8(4).u32(6).u32(0).u32(0).u32(4).u32(0).u32(0);
+    expect(hex(encodeAddAppletTaskBar(4, s))).toBe(hex(expected.toBytes()));
+    expect(decodeWorldPacket(encodeAddAppletTaskBar(4, s))).toEqual({ type: 'addAppletTaskBar', slot: 4, shortcut: s });
+    // MAX_SLOT_APPLET 18
+    expect(() => encodeAddAppletTaskBar(18, s)).toThrow(ProtocolError);
+  });
+
+  it('encodeRemoveAppletTaskBar writes what SendRemoveAppletTaskBar writes (:10996-11001): the slot', () => {
+    expect(hex(encodeRemoveAppletTaskBar(4))).toBe(hex(new ArWriter().u32(DPID_UNKNOWN).u32(0xffffff0a).u8(4).toBytes()));
+    expect(decodeWorldPacket(encodeRemoveAppletTaskBar(4))).toEqual({ type: 'removeAppletTaskBar', slot: 4 });
+    expect(PacketType.ADDAPPLETTASKBAR).toBe(0xffffff0b);
+    expect(PacketType.REMOVEAPPLETTASKBAR).toBe(0xffffff0a);
   });
 });

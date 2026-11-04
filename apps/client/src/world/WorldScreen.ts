@@ -1021,6 +1021,8 @@ export class WorldScreen {
       useActionSlot: () => skillUse.useActionSlot(),
       sendAddItemTaskBar: (bar, slot, shortcut) => session.sendAddItemTaskBar(bar, slot, shortcut),
       sendRemoveItemTaskBar: (bar, slot) => session.sendRemoveItemTaskBar(bar, slot),
+      sendAddAppletTaskBar: (slot, shortcut) => session.sendAddAppletTaskBar(slot, shortcut),
+      sendRemoveAppletTaskBar: (slot) => session.sendRemoveAppletTaskBar(slot),
       sendSkillTaskBar: (queue) => session.sendSkillTaskBar(queue),
       queueRunning: () => skillUse.execute !== 0,
       say: (text, color) => this.hud?.messages.add(text, color),
