@@ -2,7 +2,7 @@
 
 The items the premium research (`2026-11-05-buffs-premium-research.md`) left out, read from Neuz and the world server
 at V15. Paths are under `Source/`. Built so far: the upgrade cursor (§1), the quick boxes (§2), the element stones'
-timers and the cool-down sweep. The rest (§3, §4) is what is left, with what each needs.
+timers and the cool-down sweep, then the windows of §3 (rulings in §5). What is left is §4, with what each needs.
 
 ## 1. The upgrade cursor (built)
 
@@ -32,7 +32,7 @@ timers and the cool-down sweep. The rest (§3, §4) is what is left, with what e
 - Awakening Protection 26961: `CheckConfirm`'s box TID_GAME_REGARDLESS_USE01, OK sends DOUSEITEM naming the player.
 - The maps 4801, 4802: the bag's double-click toggles the world map (`CWndMap`, `WndMap.cpp:41-53`) and DOUSEITEM goes too.
 
-## 3. Small to medium windows (not built yet)
+## 3. Small to medium windows (built: the message box's prompts, `items/itemWindowFlows.ts`)
 
 | Item | Window | Packet | Server answer |
 |---|---|---|---|
@@ -59,3 +59,14 @@ timers and the cool-down sweep. The rest (§3, §4) is what is left, with what e
 - **Guild name 10463:** needs a guild. **Housing:** needs the housing rooms.
 - **Class change 10425:** the server's handler is commented out (`CDPSrvr::OnChangeJob`, `WORLDSERVER/DPSrvr.cpp:2480-2560`),
   so it does nothing on this server.
+
+## 5. Rulings of the windows' round
+
+- The windows are the message box with a text field or a row of choices (`MessageBox.prompt`), not Neuz's own window
+  pictures; the sex change has no 3D preview (faces 1 to 5), the transmute shows "piece → twin" in a box.
+- The element change and the transmute take their item from the bag the way the upgrade cursor does (a click on it),
+  where Neuz drops the item into the window.
+- The name change's InvalidName list is not converted; the database still refuses a name in use (TID_DIAG_0034).
+- The monster summon's cursor effect is a crosshair over the world and a line saying where to click; the safe regions are
+  the server's to refuse (the browser has no region data).
+- World titles for the party summon's box: Madrigal, Azria, Coral Island (World.inc's titles are not converted).
