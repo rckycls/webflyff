@@ -9,7 +9,7 @@ import { readShop } from './shop';
 import { readCreateItem, readUpdateItem, readUpdateItemEx, readMoveItem, readEquipItem } from './items';
 import {
   readRemoveAllSkillInfluence, readRemoveSkillInfluence, readResetDestParam, readResetDestParamSync, readSetDestParam,
-  readSetSkillState, readSmMode, readSmModeAll,
+  readResistSmMode, readSetSkillState, readSmMode, readSmModeAll,
 } from './buffs';
 import {
   readCorrReq, readDamage, readDefinedText, readDefinedText1, readMeleeAttack, readMonsterProp, readMoverDeath,
@@ -149,6 +149,7 @@ export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
     [MessageType.DOAPPLYUSESKILL, readDoApplySkill],
     [MessageType.SM_MODE, readSmMode],
     [MessageType.SM_MODE_ALL, readSmModeAll],
+    [MessageType.RESISTSMMODE, readResistSmMode],
     [MessageType.CLEAR_USESKILL, readClearUseSkill],
     [MessageType.DOUSESKILLPOINT, readDoUseSkillPoint],
     [MessageType.INITSKILLPOINT, readInitSkillPoint],

@@ -153,3 +153,16 @@ describe('skillPointsSpent (GetCurrentMaxSkillPoint, Mover.cpp:1905-1936)', () =
     expect(skillPointsSpent(869, [{ skill: 200, level: 20 }], 24, SKILLS)).toBe(true);
   });
 });
+
+describe('the cool-down sweep (RenderRadar, WndManager.cpp:143-180)', () => {
+  it("a group's share done, from its start to its end; none outside it", () => {
+    const cooldowns = new ItemCooldowns();
+    const pill = prop({ kind2: 14, kind3: 59, cooldownMs: 4000 });
+    expect(cooldowns.progress(pill, 0)).toBeNull();
+    cooldowns.start(pill, 1000);
+    expect(cooldowns.progress(pill, 2000)).toBe(0.25);
+    expect(cooldowns.progress(prop({ kind2: 14, kind3: 59, cooldownMs: 1 }), 3000)).toBe(0.5); // the group's, not the item's
+    expect(cooldowns.progress(pill, 5000)).toBeNull();
+    expect(cooldowns.progress(prop({ kind2: 12 }), 2000)).toBeNull();
+  });
+});

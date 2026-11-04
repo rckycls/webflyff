@@ -1,4 +1,5 @@
 import { createItemDetails, ownTooltipContext, positionItemDetails } from './itemDetails';
+import { drawCooldown } from './cooldown';
 import type { OwnState } from '../OwnState';
 import type { GameData } from '../gameData';
 import { themeUrl } from './art';
@@ -225,6 +226,19 @@ export class InventoryWindow {
       if (this.mobile || this.hoverAnchor !== cell) return;
       this.hoverAnchor = null; this.actionsOpen = false; this.drawDetails();
     });
+  }
+
+  /**
+   * 2026-11-05: each bag cell's cool-down sweep (`RenderRadar` in the item list, `WndItemCtrl.cpp:540-550`): `done` gives
+   * the share gone for an item's object, or null. One call a frame while the bag is open.
+   */
+  drawCooldowns(done: (objectId: number) => number | null): void {
+    const own = this.own;
+    if (!own || !this.frame.isOpen) return;
+    for (const cell of this.frame.element.querySelectorAll<HTMLElement>('[data-bag-slot]')) {
+      const id = own.inventorySlots[Number(cell.dataset.bagSlot)];
+      drawCooldown(cell, id === undefined || !own.inventory?.has(id) ? null : done(id));
+    }
   }
 
   private itemAt(part: number) {

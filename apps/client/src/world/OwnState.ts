@@ -171,6 +171,15 @@ export class OwnState {
   profileStats: readonly number[] | null = null;
 
   /**
+   * 2026-11-05: the server's values of the own numbers before a world change, kept unless the new world sent its own: the
+   * server sends HIGH_RATE_STATS only when they change (`CUser::Notify`), and these numbers are made anew from the next
+   * world's ADD_OBJ, so without this the awakenings, sets and sockets were gone until a re-equip changed them.
+   */
+  keepServerStats(previous: OwnState | undefined): void {
+    if (this.profileStats === null && previous?.profileStats != null) this.profileStats = previous.profileStats;
+  }
+
+  /**
    * `added` is the own ADD_OBJ (its HP is `m_nHitPoint`; its `player.own` the rest) and `equipment` the lobby's item IDs
    * of the character, which dress it (`ownWorn`) and make `equipped`. Throws when `added` is not the own character's, and
    * a `GameDataMissingError` when the job table has no row for its job: the game files are older than the server's.

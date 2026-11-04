@@ -152,6 +152,13 @@ export class ItemUse {
   /** `CCooltimeMgr`: the groups' ends. */
   private readonly cooldowns = new ItemCooldowns();
 
+  /** 2026-11-05: the share of the cool-down gone for the own item at `objectId` (its slot's sweep), or null. */
+  cooldownDone(objectId: number): number | null {
+    const item = this.own()?.inventory?.get(objectId);
+    const prop = item && this.props.get(item.itemId);
+    return prop ? this.cooldowns.progress(prop, this.now()) : null;
+  }
+
   private now(): number {
     return this.travel?.now?.() ?? performance.now();
   }

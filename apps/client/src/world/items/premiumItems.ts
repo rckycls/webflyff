@@ -60,17 +60,32 @@ export function cooldownGroup(prop: WebItemProp): number {
 /** `CCooltimeMgr`: each group's end; UPDATE_ITEM `UI_COOLTIME` starts one (`SetTime( group, GetCoolTime() )`). */
 export class ItemCooldowns {
   private readonly ends = new Map<number, number>();
+  /** `m_bases`: when each group's wait began (the sweep's start). */
+  private readonly bases = new Map<number, number>();
 
   /** The item of `prop` was used at `now` (ms): its group waits its `dwSkillReady`. */
   start(prop: WebItemProp, now: number): void {
     const group = cooldownGroup(prop);
-    if (group !== 0) this.ends.set(group, now + prop.cooldownMs!);
+    if (group === 0) return;
+    this.ends.set(group, now + prop.cooldownMs!);
+    this.bases.set(group, now);
   }
 
   /** `CanUse`: no group, or its time is past. */
   ready(prop: WebItemProp, now: number): boolean {
     const group = cooldownGroup(prop);
     return group === 0 || now > (this.ends.get(group) ?? -Infinity);
+  }
+
+  /**
+   * The share of the group's wait gone at `now` (0 to 1), for the slot's sweep (`dwCur - dwBase` of `dwEnd - dwBase`,
+   * `WndTaskBar.cpp:848-857`); null when the item has no group or it does not wait.
+   */
+  progress(prop: WebItemProp, now: number): number | null {
+    const group = cooldownGroup(prop);
+    const end = this.ends.get(group), base = this.bases.get(group);
+    if (group === 0 || end === undefined || base === undefined || now >= end) return null;
+    return (now - base) / (end - base);
   }
 }
 

@@ -58,6 +58,8 @@ export type WorldMessage = ChatMessage | NpcMessage | ShopMessage | QuestMessage
   | { type: 'setSkillState'; targetId: number; buffType: number; id: number; level: number; time: number }
   /** 2026-11-05: a premium timer (`SM_*` `smType`) and the seconds it has left; 0 ends it (`OnSMMode`). */
   | { type: 'smMode'; smType: number; seconds: number }
+  /** 2026-11-05: the element stones' elements (`SAI79`, 0xff none): the left and right weapons' and the defence's. */
+  | { type: 'resistSmMode'; left: number; right: number; defense: number }
   /** 2026-11-05: every running premium timer, at join (`OnSMModeAll`). */
   | { type: 'smModeAll'; modes: Array<{ type: number; seconds: number }> }
   | { type: 'removeSkillInfluence'; buffType: number; id: number }

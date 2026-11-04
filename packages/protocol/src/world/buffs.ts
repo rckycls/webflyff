@@ -64,6 +64,18 @@ export function readSmMode(r: ArReader): MessageOf<'smMode'> {
   return { type: 'smMode', smType, seconds };
 }
 
+/**
+ * RESISTSMMODE (2026-11-05), about NULL_ID: the element stones' elements, `BYTE` each, the left and right weapons' and the
+ * defence's (`SAI79` FIRE 1 .. EARTH 5, 0xff none; `CUser::AddResistSMMode`, `User.cpp:2166-2177`; `OnResistSMMode`,
+ * `DPClient.cpp:6054-6125`).
+ */
+export function readResistSmMode(r: ArReader): MessageOf<'resistSmMode'> {
+  const left = r.u8();
+  const right = r.u8();
+  const defense = r.u8();
+  return { type: 'resistSmMode', left, right, defense };
+}
+
 /** SM_MODE_ALL (2026-11-05), at join: `short n`, then `n` times `int nType, DWORD seconds` (`AddSMModeAll`, User.cpp:2127-2163). */
 export function readSmModeAll(r: ArReader): MessageOf<'smModeAll'> {
   const count = r.i16();

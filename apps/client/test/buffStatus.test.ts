@@ -385,12 +385,29 @@ describe('the premium timers (SM modes, CWndWorld::RenderSMBuff, WndWorld.cpp:10
     status.dispose();
   });
 
-  it('under 60 s it blinks; the resist modes (16-18) are left out', () => {
+  it('under 60 s it blinks; a resist mode with no element known is left out', () => {
     const status = make();
     status.update([], SKILLS, 0, { sm: [{ type: 8, seconds: 59 }, { type: 16, seconds: 50 }] });
     const icons = status.element.querySelectorAll<HTMLElement>('.hud-buff');
     expect(icons).toHaveLength(1);
     expect(Number(icons[0]!.style.opacity)).toBeLessThan(192 / 255);
+    status.dispose();
+  });
+
+  it("the element stones (16-18) show their element's stone (OnResistSMMode, DPClient.cpp:6070-6125)", () => {
+    const stones = new Map([
+      [10277, { name: 'Fire Stone', icon: 'ui/item/itm_fire.png' }], [10280, { name: 'Lightning Stone', icon: 'ui/item/itm_elec.png' }],
+      [10284, { name: 'Wind Defense Stone', icon: 'ui/item/itm_dewind.png' }],
+    ]);
+    const status = new BuffStatus(art, document, { items: stones, texts: (tid) => TEXTS[tid] });
+    status.update([], SKILLS, 0, {
+      sm: [{ type: 16, seconds: 600 }, { type: 17, seconds: 600 }, { type: 18, seconds: 600 }],
+      resist: { left: 1, right: 3, defense: 4 }, // FIRE, ELECTRICITY, WIND
+    });
+    const names = [...status.element.querySelectorAll<HTMLElement>('.hud-buff')].map((icon) => icon.title.split('\n')[0]);
+    expect(names).toEqual(['Fire Stone', 'Lightning Stone', 'Wind Defense Stone']);
+    status.update([], SKILLS, 1, { sm: [{ type: 16, seconds: 600 }], resist: { left: 0xff, right: 0xff, defense: 0xff } });
+    expect(status.element.hidden).toBe(true);
     status.dispose();
   });
 });

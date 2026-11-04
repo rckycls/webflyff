@@ -245,6 +245,8 @@ export const MessageType = {
   /** 2026-11-05: a premium timer, and all of them at join (`AddSMMode`, `AddSMModeAll`, `MsgHdr.h:957-958`). */
   SM_MODE: 0x003f,
   SM_MODE_ALL: 0x003e,
+  /** 2026-11-05: the element stones' elements (`AddResistSMMode`, `MsgHdr.h:995`). */
+  RESISTSMMODE: 0x005d,
   /** Piece 7 M3: the Scroll of Return's village taken, no body (`CUser::AddReturnScroll`, `User.cpp:6636-6645`). */
   RETURNSCORLL: 0x00ad,
   /** Piece 7 M5: another flier's move, state and correction (`User.cpp:4937-5035`); its angle is MOVERANGLE. */

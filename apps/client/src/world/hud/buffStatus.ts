@@ -52,6 +52,16 @@ const SM_ITEMS: ReadonlyMap<number, number> = new Map([
   [10, 10218], [11, 10366], [12, 10367], [13, 10369], [14, 10368], [15, 10270], [19, 10435], [20, 10430], [21, 10432],
   [22, 30057], [23, 30058], [24, 26557], [25, 26559],
 ]);
+/**
+ * The element stones' modes, `SM_RESIST_ATTACK_LEFT` 16, `_RIGHT` 17 and `SM_RESIST_DEFENSE` 18: the stone of the element
+ * RESISTSMMODE names (`OnResistSMMode`, `DPClient.cpp:6070-6125`), by `SAI79` FIRE 1, WATER 2, ELECTRICITY 3, WIND 4,
+ * EARTH 5: the attack stones 10277, 10278, 10280, 10279, 10281 and the defence ones 10282, 10283, 10285, 10284, 10286.
+ */
+const RESIST_ATTACK: readonly number[] = [0, 10277, 10278, 10280, 10279, 10281];
+const RESIST_DEFENSE: readonly number[] = [0, 10282, 10283, 10285, 10284, 10286];
+/** The elements RESISTSMMODE gave, 0xff for none. */
+export interface ResistElements { left: number; right: number; defense: number }
+
 /** `SM_STR_DOWN` .. `SM_INT_DOWN`: shown whatever their time. */
 const SM_PENALTIES: ReadonlySet<number> = new Set([11, 12, 13, 14]);
 /** `SM_REVIVAL`: it never blinks. */
@@ -202,14 +212,14 @@ export class BuffStatus {
    * frame (the blinking). The icons are made again only when what they show changes; from frame to frame their alpha,
    * time and tooltip change in place (a tooltip, and a phone's frames, need the same element).
    */
-  update(buffs: readonly BuffShown[], skills: SkillsOf, now: number, extra: { sm?: readonly SmShown[]; level?: number } = {}): void {
+  update(buffs: readonly BuffShown[], skills: SkillsOf, now: number, extra: { sm?: readonly SmShown[]; level?: number; resist?: ResistElements } = {}): void {
     void now;
     const scale = this.phone() ? PHONE_SCALE : 1;
     const looks: Look[] = [
       ...buffs.filter((b) => b.buffType === BUFF_SKILL && skills.has(b.id)).sort((a, b) => a.id - b.id)
         .map((b) => this.skillLook(b, skills.get(b.id)!)),
       ...this.itemLooks(buffs, extra.level ?? 1),
-      ...this.smLooks(extra.sm ?? []),
+      ...this.smLooks(extra.sm ?? [], extra.resist),
     ];
     this.element.hidden = looks.length === 0;
     const listed = `${scale}|${looks.map((look) => look.key).join(',')}`;
@@ -316,16 +326,16 @@ export class BuffStatus {
   }
 
   /** `RenderSMBuff`: each SM mode in its last 30 minutes (the stat penalties always), with its item's icon. */
-  private smLooks(sm: readonly SmShown[]): Look[] {
+  private smLooks(sm: readonly SmShown[], resist?: ResistElements): Look[] {
     const items = this.options.items;
     if (items === undefined) return [];
     return [...sm].sort((a, b) => a.type - b.type).flatMap(({ type, seconds }): Look[] => {
-      const item = items.get(SM_ITEMS.get(type) ?? 0);
+      const itemId = smItem(type, resist), item = items.get(itemId);
       // `0 == days && 0 == hours && minutes <= 30`: to 30:59
       if (seconds <= 0 || item === undefined || (seconds >= 31 * 60 && !SM_PENALTIES.has(type))) return [];
       const whenDying = item.circleTime === 1;
       return [{
-        key: `sm:${type}`, name: item.name, icon: item.icon, copies: 0, harmful: false,
+        key: `sm:${type}:${itemId}`, name: item.name, icon: item.icon, copies: 0, harmful: false,
         tooltip: () => [item.name, whenDying ? this.text('TID_GAME_COND_USE', 'Takes effect when player dies.') : clock(seconds * 1000)],
         blink: type === SM_REVIVAL ? 'never' : 'under', blinkLeftMs: seconds * 1000, blinkUnderMs: 60_000,
         label: whenDying ? null : { kind: 'time', text: this.units(seconds * 1000) }, goesBack: false,
@@ -477,4 +487,13 @@ export class BuffStatus {
     this.element.style.left = `${px}px`;
     this.element.style.top = `${py}px`;
   }
+}
+
+/** The item an SM mode is shown with: `dwSMItemID`, an element stone's by the element RESISTSMMODE named (0: none). */
+function smItem(type: number, resist: ResistElements | undefined): number {
+  if (type === 16 || type === 17 || type === 18) {
+    const element = resist === undefined ? 0xff : type === 16 ? resist.left : type === 17 ? resist.right : resist.defense;
+    return (type === 18 ? RESIST_DEFENSE : RESIST_ATTACK)[element] ?? 0;
+  }
+  return SM_ITEMS.get(type) ?? 0;
 }

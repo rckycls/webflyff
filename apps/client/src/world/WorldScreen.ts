@@ -320,6 +320,8 @@ export class WorldScreen {
    * server sends them once (`AddSMModeAll`, DPDatabaseClient.cpp:1093).
    */
   private readonly smTimers = new SmTimers();
+  /** 2026-11-05: the element stones' elements (RESISTSMMODE; `m_nAttackResistLeft` ..., 0xff none, `Mover.cpp:388-390`). */
+  private resistElements = { left: 0xff, right: 0xff, defense: 0xff };
   /**
    * The damage numbers and the corners around the target, each drawn in a layer of its glyph sheet over the canvas
    * (`spriteLayers`); none of either when the sheets cannot be had.
@@ -649,6 +651,7 @@ export class WorldScreen {
     for (const { value } of messages) {
       if (value.type === 'addMover' && value.mover.player?.self === true) added ??= value.mover;
     }
+    const previousOwn = this.own;
     if (added !== undefined) {
       this.own = new OwnState(this.data!, added, this.entry.character.equipment,
         (questId) => this.questCatalog?.get(questId)?.repeat === true);
@@ -659,6 +662,8 @@ export class WorldScreen {
     this.world = new WorldState(this.data!, this.entry.clock, this.ground, this.own);
     this.entered = pos;
     this.apply(messages, true);
+    // 2026-11-05: the server's numbers (awakenings, sets, sockets) stay over a world change, as it sends them only anew
+    if (this.own !== previousOwn) this.own?.keepServerStats(previousOwn);
     // Piece 7 M3: the buffs the player had in the world before, with the time each had left
     const self = this.world.self();
     const now = this.world.nowMs();
@@ -705,6 +710,10 @@ export class WorldScreen {
       // 2026-11-05: the premium timers (OnSMMode, OnSMModeAll), and an item's cool-down, before its count changes
       // (OnUpdateItem's UI_COOLTIME, DPClient.cpp:3226-3245)
       if (value.type === 'smMode') { this.smTimers.set(value.smType, value.seconds, performance.now()); continue; }
+      if (value.type === 'resistSmMode') {
+        this.resistElements = { left: value.left, right: value.right, defense: value.defense };
+        continue;
+      }
       if (value.type === 'smModeAll') {
         for (const mode of value.modes) this.smTimers.set(mode.type, mode.seconds, performance.now());
         continue;
@@ -1851,7 +1860,7 @@ export class WorldScreen {
     // 2026-11-05: the premium timers after the item buffs, and the own level the ES scrolls' bonus depends on
     this.smTimers.tick(performance.now());
     this.buffStatus?.update(self?.buffs.list(buffNow) ?? [], this.data!.skills, buffNow, {
-      sm: this.smTimers.list(), level: this.own?.level ?? 1,
+      sm: this.smTimers.list(), level: this.own?.level ?? 1, resist: this.resistElements,
     });
     this.targetBuffs?.update(target?.buffs.list(buffNow) ?? [], this.data!.skills, buffNow, this.element.clientWidth);
     const gameMaster = isGameMaster(self?.added.player?.authorization ?? 0);
@@ -1859,6 +1868,7 @@ export class WorldScreen {
     this.taskBar!.update(this.own, this.barData());
     this.nearbyItems?.update(world.groundItems, self?.act.body.pos ?? null);
     if (this.own) this.inventoryWindow?.update(this.own);
+    this.inventoryWindow?.drawCooldowns((objectId) => this.itemUse?.cooldownDone(objectId) ?? null); // 2026-11-05
     // the dialogue and the menu go with their NPC or when the player moves (WndWorld.cpp:8052-8081)
     const dialogNpc = this.dialog?.npcId ?? null;
     if (dialogNpc !== null && !dialogueStays(world.movers.get(dialogNpc), self)) this.dialog!.close();
@@ -2304,6 +2314,8 @@ export class WorldScreen {
       // an item shortcut's tooltip, as PutToolTip_Item with flag 0 draws it (2026-11-05)
       itemTooltip: (item) => createItemDetails(this.element.ownerDocument, this.hudArt!, this.data!, item,
         this.data!.itemProps.get(item.itemId), ownTooltipContext(this.own, item, 'other')),
+      // 2026-11-05: an item shortcut's cool-down sweep
+      cooldown: (objectId) => this.itemUse?.cooldownDone(objectId) ?? null,
     };
     return this.taskBarData;
   }
