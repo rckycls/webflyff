@@ -83,6 +83,11 @@ export function setLayoutBottom(layer: Element, px: number): void {
   layoutBottoms.set(layer, px);
 }
 
+/** 2026-11-05: what `setLayoutBottom` keeps free of `layer`'s bottom (0 if nothing), for the buff display's moves. */
+export function layoutBottomOf(layer: Element): number {
+  return layoutBottoms.get(layer) ?? 0;
+}
+
 function stackOf(doc: Document): WindowFrame[] {
   let stack = stacks.get(doc);
   if (stack === undefined) {

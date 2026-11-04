@@ -6,7 +6,7 @@ import {
   encodeSkillTaskBar, encodeUseSkill, encodeWorldKeepAlive, readBundle,
   encodeUseItem, encodeEquipItem, encodeMoveItem, encodeDropItem, encodeRevival, encodeChat,
   encodeNpcDialog, encodeNpcDialogOpen, encodeOpenShop, encodeCloseShop, encodeBuyItem, encodeSellItem, encodeTeleporter,
-  encodeQuestCheck, encodeRemoveQuest, encodeReturnScroll, encodeStateModeCancel,
+  encodeNpcBuff, encodeQuestCheck, encodeRemoveQuest, encodeReturnScroll, encodeStateModeCancel,
 } from '@flyffweb/protocol';
 import { encodeMagicAttack, encodeRangeAttack, encodeSfxClear, encodeSfxHit, encodeSfxId } from '@flyffweb/protocol';
 import {
@@ -106,6 +106,8 @@ function replacePosition(body: Uint8Array): Vec3 {
  */
 export class WorldSession {
   sendTeleporter(key: string, index: number): void { this.playingCache()?.send(encodeTeleporter(key, index)); }
+  /** 2026-11-05: Buff Pang's Get Buffed! (`SendNPCBuff( m_szCharacterKey )`), the key as the NPC's ADD_OBJ gave it. */
+  sendNpcBuff(key: string): void { this.playingCache()?.send(encodeNpcBuff(key)); }
   sendNpcDialogOpen(id: number): void { this.playingCache()?.send(encodeNpcDialogOpen(id)); }
   sendNpcDialog(id: number, key: string, param: number, quest: number, playerId: number): void {
     this.playingCache()?.send(encodeNpcDialog(id, key, param, quest, playerId));
@@ -119,9 +121,12 @@ export class WorldSession {
   sendChat(channel: import('@flyffweb/protocol').ChatChannel, text: string, target = ''): void {
     this.playingCache()?.send(encodeChat(channel, text, target));
   }
-  /** DOUSEITEM: `part` and `flightSpeed` are the prop's `dwParts` and `fFlightSpeed` for a ride (Piece 7 M5). */
-  sendUseItem(objectId: number, part = -1, flightSpeed = -1): void {
-    this.playingCache()?.send(encodeUseItem(objectId, part, flightSpeed));
+  /**
+   * DOUSEITEM: `part` and `flightSpeed` are the prop's `dwParts` and `fFlightSpeed` for a ride (Piece 7 M5); `targetId`
+   * the focused mover (2026-11-05), NULL_ID with none.
+   */
+  sendUseItem(objectId: number, part = -1, flightSpeed = -1, targetId: number = NULL_ID): void {
+    this.playingCache()?.send(encodeUseItem(objectId, part, flightSpeed, targetId));
   }
   /** Piece 7 M3: the item cast's cancel (`SendStateModeCancel`). */
   sendStateModeCancel(): void { this.playingCache()?.send(encodeStateModeCancel()); }

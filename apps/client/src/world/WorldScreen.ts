@@ -116,6 +116,7 @@ import { WorldSounds } from './sound/worldSounds';
 import { TeleporterWindow } from './hud/teleporterWindow';
 import { formatDefinedText } from './hud/messages';
 import { ItemUse } from './items/itemUse';
+import { SmTimers, skillPointsSpent } from './items/premiumItems';
 import { ItemCast } from './items/itemCast';
 import { MoverBuffs } from './buffs';
 import type { BuffShown } from './buffs';
@@ -130,7 +131,7 @@ import { ItemActions } from './items/itemActions';
 import { GroundItems } from './items/groundItems';
 import { GroundModels, loadDropModel } from './items/groundModels';
 import { NearbyItems } from './items/nearbyItems';
-import { STATE_BASEMOTION_MODE, ShortcutKind } from '@flyffweb/protocol';
+import { NULL_ID, STATE_BASEMOTION_MODE, ShortcutKind } from '@flyffweb/protocol';
 import type { TaskBarData, TaskBarWindow } from './hud/taskBar';
 import { OwnMover, pickOnStage } from './ownMover';
 import { OwnState } from './OwnState';
@@ -312,6 +313,13 @@ export class WorldScreen {
   /** Piece 7 M2: the own buffs' icons (`CWndBuffStatus`) and the target's under its bar (`RenderMoverBuff`). */
   private buffStatus: BuffStatus | undefined;
   private targetBuffs: TargetBuffs | undefined;
+  /** 2026-11-05: where the own buffs' display was dragged to, kept for the next world's (null: the CSS's place). */
+  private buffPlace: { x: number; y: number } | null = null;
+  /**
+   * 2026-11-05: the premium timers (`m_dwSMTime`), from SM_MODE_ALL at join and SM_MODE after; kept across worlds, as the
+   * server sends them once (`AddSMModeAll`, DPDatabaseClient.cpp:1093).
+   */
+  private readonly smTimers = new SmTimers();
   /**
    * The damage numbers and the corners around the target, each drawn in a layer of its glyph sheet over the canvas
    * (`spriteLayers`); none of either when the sheets cannot be had.
@@ -654,7 +662,11 @@ export class WorldScreen {
     // Piece 7 M3: the buffs the player had in the world before, with the time each had left
     const self = this.world.self();
     const now = this.world.nowMs();
-    for (const b of this.carriedBuffs) self?.buffs.add(b.buffType, b.id, b.level, b.totalMs > 0 ? b.leftMs : 0, now);
+    // (2026-11-05: a BUFF_ITEM2's level is the seconds it has left, its time the server's to end)
+    for (const b of this.carriedBuffs) {
+      if (b.buffType === 3) self?.buffs.add(b.buffType, b.id, Math.ceil(b.leftMs / 1000), 0, now);
+      else self?.buffs.add(b.buffType, b.id, b.level, b.totalMs > 0 ? b.leftMs : 0, now);
+    }
     this.carriedBuffs = [];
     this.loadTimer = setTimeout(() => { if (generation === this.stageGeneration) this.end(TOO_SLOW_TEXT); }, LOAD_LIMIT_MS);
     void this.openStage(folder, services, generation).catch((error: unknown) => {
@@ -689,6 +701,16 @@ export class WorldScreen {
       if (value.type === 'npcScript') {
         if (objectId === self?.objectId) this.npcScript(value.action);
         continue;
+      }
+      // 2026-11-05: the premium timers (OnSMMode, OnSMModeAll), and an item's cool-down, before its count changes
+      // (OnUpdateItem's UI_COOLTIME, DPClient.cpp:3226-3245)
+      if (value.type === 'smMode') { this.smTimers.set(value.smType, value.seconds, performance.now()); continue; }
+      if (value.type === 'smModeAll') {
+        for (const mode of value.modes) this.smTimers.set(mode.type, mode.seconds, performance.now());
+        continue;
+      }
+      if (value.type === 'updateItem' && value.itemType === 0 && value.param === 8 && objectId === self?.objectId) {
+        this.itemUse?.cooled(value.objectId);
       }
       if (value.type === 'delObj') this.speechBubbles?.remove(objectId);
       if (value.type === 'playMusic') { this.sounds?.serverMusic(value.music); continue; }
@@ -923,8 +945,10 @@ export class WorldScreen {
     this.turboGauge = new TurboGauge(this.hudArt!, doc);
     this.element.insertBefore(this.turboGauge.element, this.hud!.element);
     // the item buffs too, and the Scroll of Return's icon goes back (Piece 7 M3)
+    // 2026-11-05: it moves, and keeps where it was put for the next world's; the item buffs' and premium timers' texts
     this.buffStatus = new BuffStatus(this.hudArt!, doc, {
       items: this.data!.itemProps, onReturnScroll: () => this.returnScroll?.goBack(), now: () => performance.now(),
+      texts: (tid) => this.data?.texts.get(tid)?.text, place: this.buffPlace, onPlace: (at) => { this.buffPlace = at; },
     });
     this.targetBuffs = new TargetBuffs(this.hudArt!, doc);
     this.hud!.element.append(this.buffStatus.element, this.targetBuffs.element);
@@ -997,6 +1021,13 @@ export class WorldScreen {
       say: (refusal) => this.sayRefusal(refusal),
       returnScroll,
       shopOpen: () => this.shopWindow?.frame.isOpen === true,
+      // 2026-11-05: Neuz's item boxes (CWndCommItemDlg, CWndRestateConfirm) as the message box, OK and Cancel
+      confirm: (tid, ok) => {
+        const text = this.data?.texts.get(tid)?.text ?? '';
+        if (text !== '' && this.messageBox?.isOpen !== true) this.messageBox?.open(text, 'okCancel', ok);
+      },
+      boxOpen: () => this.messageBox?.isOpen === true,
+      now: () => performance.now(),
     });
     const itemActions = new ItemActions(() => this.own, () => this.world!.self()!.act.body.pos,
       () => this.world!.groundItems, this.data!.itemProps, session, (pos) => {
@@ -1817,7 +1848,11 @@ export class WorldScreen {
     const target = targetId === null ? null : world.movers.get(targetId) ?? null;
     // Piece 7 M2: the buffs' icons, the own and the target's, on the world's clock
     const buffNow = world.nowMs();
-    this.buffStatus?.update(self?.buffs.list(buffNow) ?? [], this.data!.skills, buffNow);
+    // 2026-11-05: the premium timers after the item buffs, and the own level the ES scrolls' bonus depends on
+    this.smTimers.tick(performance.now());
+    this.buffStatus?.update(self?.buffs.list(buffNow) ?? [], this.data!.skills, buffNow, {
+      sm: this.smTimers.list(), level: this.own?.level ?? 1,
+    });
     this.targetBuffs?.update(target?.buffs.list(buffNow) ?? [], this.data!.skills, buffNow, this.element.clientWidth);
     const gameMaster = isGameMaster(self?.added.player?.authorization ?? 0);
     this.hud!.frame(now, this.own, self?.name ?? this.entry.character.name, target, gameMaster);
@@ -1855,6 +1890,7 @@ export class WorldScreen {
     if (this.resized) {
       this.resized = false;
       refitWindows(this.element.ownerDocument);
+      this.buffStatus?.refit(); // 2026-11-05: a moved buff display stays on the screen too
     }
     this.attackButton!.update(loop.canAttackFocus);
     const ownMover = this.world?.self();
@@ -1912,6 +1948,7 @@ export class WorldScreen {
     const own = this.world?.self();
     const now = this.world?.nowMs() ?? 0;
     const at = own?.act.body.pos;
+    const itemBuffs = own?.buffs.list(now).filter((b) => b.buffType === 0) ?? [];
     return {
       worldId: this.worldId,
       casting: this.itemCast?.casting ?? false,
@@ -1923,7 +1960,14 @@ export class WorldScreen {
       worldFly: !(this.data?.noFlyWorlds.has(this.worldId) ?? false),
       landAttr: at === undefined ? HAttr.NONE : this.ground.landAttr(at[0], at[2]),
       sitting: own !== undefined && (own.act.stateFlag & ObjStaF.SIT) !== 0,
-      disguised: false,
+      // 2026-11-05: a disguise (an item buff of IK3_TEXT_DISGUISE 81) and the wings' buff; the focus DOUSEITEM names;
+      // a Blessing on; a skill point spent
+      disguised: itemBuffs.some((b) => this.data?.itemProps.get(b.id)?.kind3 === 81),
+      wing: itemBuffs.find((b) => b.id === 10223 || b.id === 6319)?.id ?? null,
+      focusId: this.focus?.targetId ?? NULL_ID,
+      revival: this.smTimers.has(20),
+      skillPointsSpent: this.own !== undefined &&
+        skillPointsSpent(this.own.skillPoint, this.own.skills, this.own.job, this.data?.skills ?? new Map()),
     };
   }
 
@@ -2321,7 +2365,11 @@ export class WorldScreen {
     return { x: canvas.left - layer.left + rect.right, y: canvas.top - layer.top + rect.top };
   }
 
-  /** `CWndWorld::OnCommand` for an NPC's entry: Dialog (:5163-5177), Trade (:5251-5386), Teleport (:5949-5969). */
+  /**
+   * `CWndWorld::OnCommand` for an NPC's entry: Dialog (:5163-5177), Trade (:5251-5386), Teleport (:5949-5969), and
+   * (2026-11-05) Buff Pang's Get Buffed!, which sends the NPC's key and nothing else (:5131-5136); the server gives the
+   * buffs (SETSKILLSTATE) or says why not (DEFINEDTEXT `TID_GAME_NPCBUFF_*`).
+   */
   private chooseNpcEntry(id: number, entry: number): void {
     const npc = this.world?.movers.get(id);
     if (npc === undefined || npc.kind !== 'npc') return;
@@ -2339,6 +2387,8 @@ export class WorldScreen {
     } else if (entry === MMI.TELEPORTER && data !== undefined) {
       this.dialog?.close();
       this.teleporter!.open(id, data);
+    } else if (entry === MMI.NPC_BUFF) {
+      this.session.sendNpcBuff(npc.added.npc!.characterKey);
     }
   }
 

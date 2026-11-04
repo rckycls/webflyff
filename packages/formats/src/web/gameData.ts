@@ -186,6 +186,14 @@ export interface WebItemProp {
    * earth, the order `PutBaseResist` prints them in (not the file's).
    */
   resists?: number[];
+  // 2026-11-05, the premium items; each absent where the row says `=` (or 0 for the cool-down), and in catalogs converted
+  // before
+  /** `dwSkillReady` > 0: the cool-down of the item's group, in ms (`CCooltimeMgr::GetGroup`, `GetCoolTime`). */
+  cooldownMs?: number;
+  /** `dwSkillTime`: the length of the buff the item gives, in ms (999999999 for one with no end). */
+  skillTime?: number;
+  /** `dwExeTarget`: how the item finds its target, an `EXT_*` value (EXT_ITEM 21: another item, `IsNeedTarget`). */
+  exeTarget?: number;
 }
 
 /** A set of `propItemEtc.inc` (`CSetItem`, Project.cpp:4162-4206): its pieces, and what wearing some of them gives. */

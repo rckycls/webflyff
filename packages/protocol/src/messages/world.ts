@@ -242,6 +242,7 @@ export function encodeEndSkillQueue(): Uint8Array {
 
 export type WorldPacket =
   | { type: 'teleporter'; key: string; index: number }
+  | { type: 'npcBuff'; key: string }
   | { type: 'removeQuest'; questId: number }
   | { type: 'questCheck'; questId: number; check: boolean }
   | ReturnType<typeof readDefinedText>
@@ -380,6 +381,11 @@ function decodeClientPacket(r: ArReader): WorldPacket {
       const key = r.string(63), index = r.i32(); r.expectEnd();
       if (key.length === 0 || index < 0) throw new ProtocolError('Invalid teleporter destination');
       return { type: 'teleporter', key, index };
+    }
+    case PacketType.NPC_BUFF: {
+      const key = r.string(64); r.expectEnd();
+      if (key.length === 0) throw new ProtocolError('Invalid NPC key');
+      return { type: 'npcBuff', key };
     }
     case PacketType.REMOVEQUEST: {
       const questId = r.u32(); r.expectEnd();

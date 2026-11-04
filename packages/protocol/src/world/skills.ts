@@ -19,6 +19,18 @@ export function readUseSkill(r: ArReader): MessageOf<'useSkill'> {
 }
 
 /**
+ * DOAPPLYUSESKILL (2026-11-05): `CDPClient::OnDoApplySkill` (`Neuz/DPClient.cpp:15219-15243`): `ar >> idTarget >> dwSkill
+ * >> dwLevel` (`OBJID`, `DWORD`, `DWORD`), written by `CUserMng::AddDoApplySkill` (`WORLDSERVER/UserLux.cpp:270-280`) to
+ * everyone in view of the mover; Buff Pang sends one after each buff it gives (`CDPSrvr::OnNPCBuff`, `DPSrvr.cpp:9123`).
+ */
+export function readDoApplySkill(r: ArReader): MessageOf<'doApplySkill'> {
+  const targetId = r.u32();
+  const skill = r.u32();
+  const level = r.u32();
+  return { type: 'doApplySkill', targetId, skill, level };
+}
+
+/**
  * CLEAR_USESKILL: `CDPClient::OnClearUseSkill` (`Neuz/DPClient.cpp:3952`) takes only the object ID, so there are no
  * fields. The world server sends it when `CMover::DoUseSkill` refuses a USESKILL (`CDPSrvr::OnUseSkill`,
  * `WORLDSERVER/DPSrvrLux.cpp:96`, through `CUser::AddHdr`, `User.cpp:655`, which writes the object ID and the type).

@@ -276,6 +276,16 @@ export function writeSetSkillState(objectId: number, targetId: number, buffType:
   return scripted(objectId, MessageType.SETSKILLSTATE, new ArWriter().u32(targetId).u16(buffType).u16(id).u32(level).u32(time));
 }
 
+/** 2026-11-05: DOAPPLYUSESKILL (`CUserMng::AddDoApplySkill`): `objectId` applied `skill` at `level` to `targetId`. */
+export function writeDoApplySkill(objectId: number, targetId: number, skill: number, level: number): ScriptMessage {
+  return scripted(objectId, MessageType.DOAPPLYUSESKILL, new ArWriter().u32(targetId).u32(skill).u32(level));
+}
+
+/** 2026-11-05: SM_MODE (`CUser::AddSMMode`), about NULL_ID: the premium timer `type` with `seconds` left (0 ends it). */
+export function writeSmMode(type: number, seconds: number): ScriptMessage {
+  return scripted(0xffffffff, MessageType.SM_MODE, new ArWriter().i32(type).u32(seconds));
+}
+
 /** Piece 7 M2: SETDESTPARAM (`CUserMng::AddSetDestParam`): a live buff's `dst` raised by `adj` (`chg` -1: none set). */
 export function writeSetDestParam(objectId: number, dst: number, adj: number, chg: number): ScriptMessage {
   return scripted(objectId, MessageType.SETDESTPARAM, new ArWriter().i32(dst).i32(adj).i32(chg));

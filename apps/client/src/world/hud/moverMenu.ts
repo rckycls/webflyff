@@ -19,12 +19,14 @@ import type { Texts } from '../gameData';
 
 export interface MenuEntry { id: number; label: string; enabled: boolean }
 /** The MMI ids the browser acts on (Resource/defineNeuz.h:92-305). */
-export const MMI = { DIALOG: 0, TRADE: 2, GUILDBANKING: 15, ARENA_ENTER: 80, TELEPORTER: 146 } as const;
+export const MMI = { DIALOG: 0, TRADE: 2, GUILDBANKING: 15, NPC_BUFF: 74, ARENA_ENTER: 80, TELEPORTER: 146 } as const;
 /** ShowMoverMenu's range (`distSq < 20 * 20`, WndWorld.cpp:6520-6523). */
 export const MENU_RANGE = 20;
 /** TID_MMI_DIALOG: an entry's text is this + its id. */
 const TID_MMI_BASE = 7000;
-const FALLBACK: Readonly<Record<number, string>> = { [MMI.DIALOG]: 'Dialog', [MMI.TRADE]: 'Trade', [MMI.TELEPORTER]: 'Teleport' };
+const FALLBACK: Readonly<Record<number, string>> = {
+  [MMI.DIALOG]: 'Dialog', [MMI.TRADE]: 'Trade', [MMI.NPC_BUFF]: 'Get Buffed!', [MMI.TELEPORTER]: 'Teleport',
+};
 
 /** Piece 7 M4: an entry's text, `TID_MMI_DIALOG + id` (`CWndMenu::AppendMenu`), or `fallback`. */
 export function menuLabel(id: number, texts: Texts, fallback: string): string {
@@ -42,7 +44,8 @@ export function npcMenuEntries(npc: WebNpc | undefined, texts: Texts, ownIsBaseJ
     .map((id) => ({
       id,
       label: labels.get(TID_MMI_BASE + id) ?? FALLBACK[id] ?? 'Unavailable',
-      enabled: id === MMI.DIALOG || (id === MMI.TRADE && !npc?.vendorType) ||
+      // 2026-11-05: Buff Pang's entry only sends its key (MMI_NPC_BUFF, WndWorld.cpp:5131-5136)
+      enabled: id === MMI.DIALOG || (id === MMI.TRADE && !npc?.vendorType) || id === MMI.NPC_BUFF ||
         (id === MMI.TELEPORTER && (npc?.teleports?.length ?? 0) > 0),
     }));
 }

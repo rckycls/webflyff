@@ -63,6 +63,10 @@ describe('world constants', () => {
       SET_PARTY_MEMBER_PARAM: 0x0091, PARTYMAPINFO: 0x003c, QUERY_PLAYER_DATA: 0x0141,
       // Piece 7 M3: the item cast and the Scroll of Return's answer.
       STATEMODE: 0x00df, RETURNSCORLL: 0x00ad,
+      // 2026-11-05: Buff Pang's applied skills.
+      DOAPPLYUSESKILL: 0x00d7,
+      // 2026-11-05: the premium timers.
+      SM_MODE: 0x003f, SM_MODE_ALL: 0x003e,
       // Piece 7 M5: flight.
       MOVERMOVED2: 0x00cc, MOVERBEHAVIOR2: 0x00cd, MOVERCORR2: 0x00c9, SETFUEL: 0x004b, MELEE_ATTACK2: 0x00e4, SENDACTMSG: 0x005c,
     });

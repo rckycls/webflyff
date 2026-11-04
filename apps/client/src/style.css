@@ -2269,15 +2269,19 @@ fieldset:disabled .btn {
 
 /* Piece 7 M2: the own buffs (CWndBuffStatus: no frame, first at a third of the screen) and the target's under its bar */
 .hud-buffs { position: absolute; left: 33.3vw; top: 33.3vh; width: 238px; height: 136px; pointer-events: none; }
-.hud-buff { position: absolute; pointer-events: auto; }
+/* 2026-11-05: an icon is dragged by a finger too (the display moves, hud/buffStatus.ts), so the page does not pan under it */
+.hud-buff { position: absolute; pointer-events: auto; touch-action: none; user-select: none; -webkit-user-select: none; }
 .hud-buff[data-harmful] img { filter: sepia(1) hue-rotate(250deg) saturate(3); }
 .hud-buff-seconds { position: absolute; left: 2px; top: 22px; color: #fff; font-size: 12px; text-shadow: 1px 1px 0 #000; pointer-events: none; }
+/* 2026-11-05: an item buff's or premium timer's time, yellow (RenderOptBuffTime's ARGB 240, 240, 0) */
+.hud-buff-time { position: absolute; left: 2px; top: 22px; color: #f0f000; font-size: 11px; white-space: nowrap; text-shadow: 1px 1px 0 #000; pointer-events: none; }
 .hud-target-buffs { position: absolute; inset: 0; pointer-events: none; }
 /* on a phone the window sits beside the status window (220 px at 0.63, Piece 7 M4: the party's quick view goes under it,
-   M4 plan Decisions 10), its icons 28 px at least (M2 plan, Decisions 15) */
+   M4 plan Decisions 10); 2026-11-05, the owner: the icons are half size (19.2 px, set in buffStatus.ts), their numbers as
+   small as stays readable */
 @media (max-width: 1000px) and (pointer: coarse) {
   .hud-buffs { left: 147px; top: 8px; }
-  .hud-buff { min-width: 28px; min-height: 28px; }
+  .hud-buffs[data-phone] .hud-buff-seconds, .hud-buffs[data-phone] .hud-buff-time { left: 1px; top: 10px; font-size: 8px; }
 }
 
 /* Piece 7 M4: the message box (CWndMessageBox MB_OK, hud/messageBox.ts) */

@@ -55,6 +55,24 @@ export function readResetDestParamSync(r: ArReader): MessageOf<'resetDestParamSy
 }
 
 /**
+ * SM_MODE (2026-11-05): a premium timer of the player, about `NULL_ID` (`CUser::AddSMMode`, `WORLDSERVER/User.cpp:2090-2125`;
+ * `CDPClient::OnSMMode`, `Neuz/DPClient.cpp:5884-5965`): `int nType`, `DWORD` the seconds it has left (0 when it ends).
+ */
+export function readSmMode(r: ArReader): MessageOf<'smMode'> {
+  const smType = r.i32();
+  const seconds = r.u32();
+  return { type: 'smMode', smType, seconds };
+}
+
+/** SM_MODE_ALL (2026-11-05), at join: `short n`, then `n` times `int nType, DWORD seconds` (`AddSMModeAll`, User.cpp:2127-2163). */
+export function readSmModeAll(r: ArReader): MessageOf<'smModeAll'> {
+  const count = r.i16();
+  const modes: Array<{ type: number; seconds: number }> = [];
+  for (let i = 0; i < count; i++) modes.push({ type: r.i32(), seconds: r.u32() });
+  return { type: 'smModeAll', modes };
+}
+
+/**
  * `m_buffs.Serialize( ar )` (`__BUFF_1107`, `ObjSerializeOpt.cpp:758`): `CBuffMgr::Serialize` (`_Common/buff.cpp:901`)
  * reads the count (`size_t`, 4 bytes on x86), then per buff `WORD wType` and `IBuff::Serialize` (:124): `m_wId`
  * (`WORD`), the level (`DWORD m_dwLevel`; a `BUFF_ITEM2`'s `time_t`, 4 bytes too: `_USE_32BIT_TIME_T`) and the time left
