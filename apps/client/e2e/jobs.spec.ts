@@ -5,7 +5,7 @@
 // missile lands. The servers, Flaris and the helpers are worldHarness.ts's.
 
 import { expect, test } from '@playwright/test';
-import type { Locator, Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
 import { NULL_ID, PacketType } from '@flyffweb/protocol';
 import type { AddedMover, InventoryItem, OwnCharacter, SkillSlot } from '@flyffweb/protocol';
 import {
@@ -17,7 +17,7 @@ import type { ClientMover } from '../src/testHooks';
 import { ObjSta } from '../src/world/sim/constants';
 import {
   BASE, MADRIGAL, MALE_VAGRANT, MI_MALE, MONSTER_ID, ON_FRAMES, SELF_ID, SELF_PLAYER, SQUARE, aibatt, enterFlaris,
-  hudTexts, playGateway, recordHudTexts, self, sentOf, tapMover,
+  hudTexts, playGateway, recordHudTexts, self, sentOf, tapMover, targetsOf,
 } from './worldHarness';
 import type { Gateway, Sent } from './worldHarness';
 
@@ -82,25 +82,37 @@ const shotsOf = (gateway: Gateway) => ({
 });
 
 /**
- * Holds a press on the Aibatt `ms` ms, then lets go: the mouse on the desktop; on the phone the Attack button, held with a
- * finger (plan Decisions 4).
+ * A press on the Aibatt and its let-go, made on the page itself: on the canvas where the Aibatt is drawn (the mouse, or on
+ * the phone a finger), or on the phone's Attack button (`'button'`). The press went down `before` ms ago; the page waits
+ * `wait` ms; then the let-go comes, `held` ms after the press. The client goes by the events' own times, so the press
+ * lasts `held` ms however late a busy page runs this, where a hold timed from the test lasts longer under load. The
+ * pointer is the mouse's id, which every page has, so that the canvas can keep it.
+ */
+async function pressAibatt(page: Page, on: 'canvas' | 'button', { before = 0, wait = 0, held }: { before?: number; wait?: number; held: number }): Promise<void> {
+  const touch = isTouch();
+  const at = on === 'button' ? [0.5, 0.5] : (await page.evaluate((id) => window.__client!.screenOf(id), MONSTER_ID))!;
+  await page.evaluate(async ({ touch, selector, at, before, wait, held }) => {
+    const target = document.querySelector(selector)!;
+    const box = target.getBoundingClientRect();
+    const init = {
+      pointerType: touch ? 'touch' : 'mouse', pointerId: 1, isPrimary: true, button: 0, bubbles: true, cancelable: true,
+      clientX: box.left + box.width * at[0]!, clientY: box.top + box.height * at[1]!,
+    };
+    const stamped = (event: Event, timeStamp: number): Event => Object.defineProperty(event, 'timeStamp', { value: timeStamp });
+    const down = performance.now() - before;
+    target.dispatchEvent(stamped(new PointerEvent('pointerdown', { ...init, buttons: 1 }), down));
+    if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+    target.dispatchEvent(stamped(new PointerEvent('pointerup', init), down + held));
+  }, { touch, selector: on === 'button' ? '.hud-attack' : '.world-view canvas', at, before, wait, held });
+}
+
+/**
+ * Holds a press on the Aibatt `ms` ms, the rules running meanwhile, then lets go: the mouse on the desktop; on the phone
+ * the Attack button, held with a finger (plan Decisions 4).
  */
 async function holdOnAibatt(page: Page, ms: number): Promise<void> {
-  if (isTouch()) {
-    const button: Locator = page.locator('.hud-attack');
-    await expect(button).toBeEnabled(ON_FRAMES);
-    const finger = { pointerType: 'touch', pointerId: 1, isPrimary: true, button: 0 };
-    await button.dispatchEvent('pointerdown', finger);
-    await page.waitForTimeout(ms);
-    await button.dispatchEvent('pointerup', finger);
-    return;
-  }
-  const at = (await page.evaluate((id) => window.__client!.screenOf(id), MONSTER_ID))!;
-  const box = (await page.locator('.world-view canvas').boundingBox())!;
-  await page.mouse.move(box.x + box.width * at[0], box.y + box.height * at[1]);
-  await page.mouse.down();
-  await page.waitForTimeout(ms);
-  await page.mouse.up();
+  if (isTouch()) await expect(page.locator('.hud-attack')).toBeEnabled(ON_FRAMES);
+  await pressAibatt(page, isTouch() ? 'button' : 'canvas', { wait: ms, held: ms });
 }
 
 test.describe('the first jobs against the pretend world server (Piece 7 M2)', () => {
@@ -131,8 +143,8 @@ test.describe('the first jobs against the pretend world server (Piece 7 M2)', ()
     await tapMover(page, MONSTER_ID);
     await page.waitForTimeout(700); // m_timerFocusAttack runs out (WndWorld.cpp:571)
     await expect(page.locator('.charge-gauge')).toBeVisible(ON_FRAMES);
-    await holdOnAibatt(page, 1000);
-    // the charge of 1 s is level 2 (GetGaugePower: 675 to 1124 ms)
+    await holdOnAibatt(page, 900);
+    // a charge of 0.9 s is level 2 (GetGaugePower: 675 to 1124 ms)
     await expect.poll(() => shotsOf(gateway).magic.length, ON_FRAMES).toBe(1);
     const [shot] = shotsOf(gateway).magic;
     expect([field(shot!, 0), field(shot!, 1), field(shot!, 4), field(shot!, 5)]).toEqual([OBJMSG_ATK_MAGIC1, MONSTER_ID, 2, 0]);
@@ -143,6 +155,27 @@ test.describe('the first jobs against the pretend world server (Piece 7 M2)', ()
     await expect.poll(() => shotsOf(gateway).sfxHit.length, ON_FRAMES).toBe(1);
     const [hit] = shotsOf(gateway).sfxHit;
     expect([field(hit!, 0), field(hit!, 1), field(hit!, 3)]).toEqual([1, 2, SELF_ID]);
+
+    // then a quick tap on it as a new target, let go 100 ms after its press and handled 700 ms later by a busy page: its
+    // let-go is judged at its own time, within the new target's 500 ms of m_timerFocusAttack (OnLButtonUp,
+    // WndWorld.cpp:6484-6503), so it shoots nothing, however late the next rules step comes. Escape lets the focus go
+    // before (the tap selects anew) and after; once the second Escape's SETTARGET is in, so is all the page sent before.
+    const cleared = () => targetsOf(gateway).filter(([id]) => id === NULL_ID).length;
+    await page.keyboard.press('Escape');
+    await expect.poll(cleared, ON_FRAMES).toBe(1);
+    await expect(page.locator('.charge-gauge')).toBeHidden(ON_FRAMES);
+    await pressAibatt(page, 'canvas', { before: 800, held: 100 });
+    await expect.poll(() => targetsOf(gateway).at(-1), ON_FRAMES).toEqual([MONSTER_ID, 2]);
+    // the gauge back is a frame drawn after the tap; ten more make sure the rules stepped on
+    await expect(page.locator('.charge-gauge')).toBeVisible(ON_FRAMES);
+    await page.evaluate(() => new Promise<void>((resolve) => {
+      let frames = 0;
+      const frame = (): void => { if (++frames >= 10) resolve(); else requestAnimationFrame(frame); };
+      requestAnimationFrame(frame);
+    }));
+    await page.keyboard.press('Escape');
+    await expect.poll(cleared, ON_FRAMES).toBe(2);
+    expect(shotsOf(gateway).magic).toHaveLength(1);
     expect(await errorsOf(page)).toEqual([]);
   });
 

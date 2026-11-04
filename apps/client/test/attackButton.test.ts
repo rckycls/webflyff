@@ -77,3 +77,23 @@ describe('AttackButton: a let-go off the button (final review, Important 3)', ()
     button.dispose();
   });
 });
+
+/** `event` as an input event the page was given at `timeStamp` ms (`Event.timeStamp`). */
+const stamped = (event: Event, timeStamp: number): Event => Object.defineProperty(event, 'timeStamp', { value: timeStamp });
+
+describe('AttackButton: the times of its press and let-go (the phone wand e2e under load)', () => {
+  it('hands each the time of the event that made it, as the canvas presses are timed, not the time its handler ran', () => {
+    const pressed = vi.fn();
+    const released = vi.fn();
+    const button = new AttackButton(pressed, document, { onRelease: released });
+    document.body.append(button.element);
+    button.update(true);
+    button.element.dispatchEvent(stamped(touch('pointerdown'), 1000));
+    document.body.dispatchEvent(stamped(touch('pointerup'), 1900));
+    expect([pressed.mock.calls, released.mock.calls]).toEqual([[[1000]], [[1900]]]);
+    // a key's click (detail 0: not a touch's own click) is a press and its let-go at the click's time
+    button.element.dispatchEvent(stamped(new MouseEvent('click', { bubbles: true, detail: 0 }), 3000));
+    expect([pressed.mock.calls.at(-1), released.mock.calls.at(-1)]).toEqual([[3000], [3000]]);
+    button.dispose();
+  });
+});

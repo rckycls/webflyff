@@ -1027,14 +1027,14 @@ export class WorldScreen {
     // the Start menu opens where the joystick stands, which is over the windows' layer: it hides while the menu is open
     this.taskBar.onMenuChange = (open) => this.element.classList.toggle('world-menu-open', open);
     // held with a wand or a bow it charges, and its let-go shoots (Piece 7 M2, plan Decisions 4)
-    this.attackButton = new AttackButton(() => {
+    this.attackButton = new AttackButton((time) => {
       // Piece 7 M5: in the air the button is held to attack (ControlFlying's m_bLButtonDown)
       if (this.world?.self()?.act.isFlying() === true) this.flightAttack = true;
-      else attackLoop.attackButtonDown(performance.now());
+      else attackLoop.attackButtonDown(time);
     }, doc, {
-      onRelease: () => {
+      onRelease: (time) => {
         if (this.flightAttack) this.flightAttack = false;
-        else attackLoop.attackButtonUp(performance.now());
+        else attackLoop.attackButtonUp(time);
       },
     });
     this.jumpButton = new AttackButton(() => { this.jumpRequested = true; }, doc, { label: 'Jump', className: 'hud-jump' });
@@ -1186,6 +1186,7 @@ export class WorldScreen {
         const pressed = this.world?.movers.get(mover);
         if (pressed?.kind === 'player' && !pressed.isSelf) this.pressPlayer(mover);
       },
+      (time) => attackLoop.onReleased(time), // OnLButtonUp, at the let-go's own time
     );
     this.cameraControls = new CameraControls(renderer.domElement, (dx, dy) => this.backCamera.rotate(dx, dy));
     // Piece 7 M5: in the air the right drag steers (ControlFlying's mouse, mode 0)
@@ -1641,7 +1642,9 @@ export class WorldScreen {
     const shopPosition = this.shopWindow?.frame.isOpen ? own?.act.body.pos : undefined;
     const loop = this.attackLoop!;
     const held = this.tap!.heldMover();
-    if (held === null) loop.onReleased(now);
+    // a let-go came with its own time (the tap's onRelease); a press that ended with none (the page lost the focus, a
+    // second finger) is let go here, without a shot
+    if (held === null) loop.onReleased();
     else loop.onMoverHeld(held.mover, now - held.time);
     const tap = this.tap!.take();
     const walkKey = this.walkKey!.held();

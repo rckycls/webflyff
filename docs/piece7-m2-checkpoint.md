@@ -121,7 +121,7 @@ A fresh reviewer read the whole branch (4517c3a..b86ca33, before the rebase onto
 **Left for later (Minor):**
 - **Missiles in the air at a world change.** The browser drops them and sends no SFX_CLEAR (the plan asked for none). Neuz clears them, and the server keeps only 32 ids, so ids left over could in time erase live ones. A REPLACE within the same world keeps missiles flying, where Neuz drops them.
 - **Strong Wind's push angle.** It comes from the arrival step; Neuz keeps the step before's. The local push also truncates the angle and does not check a knocked-back target.
-- **A model that fails to load.** With only a placeholder, a wand or bow tap still sends MAGIC_ATTACK or RANGE_ATTACK, but no missile and no SFX_ID follow. The melee path guards against this.
+- **A model that fails to load.** With only a placeholder, a wand or bow tap still sends MAGIC_ATTACK or RANGE_ATTACK, but no missile and no SFX_ID follow. The melee path guards against this. *Fixed after the merge (branch `piece7-m2-wandfix`): the shot now waits at its target for a motion the browser can play, as a swing does. A motion still downloading under load did the same, and failed the phone wand e2e with no SFX_ID.*
 - **The last arrow.** When the stack runs out, the arrow slot still points at its old object id. Neuz takes it off first. Nothing reads it wrong today.
 
 **Calls about the review:**

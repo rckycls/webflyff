@@ -22,12 +22,14 @@ export class AttackButton {
   /**
    * `onPress` is called at each press of the button while it is enabled; `onRelease`, when given, once at the let-go of
    * that press (pointerup or pointercancel; a mouse click or a key is a press and its let-go at once): with a wand or a
-   * bow the button is held to charge (Piece 7 M2, plan Decisions 4).
+   * bow the button is held to charge (Piece 7 M2, plan Decisions 4). Each is given the time of the event that made it
+   * (`Event.timeStamp`, in the clock of `performance.now()`), as the canvas's presses are timed (`TapToWalk`), so that a
+   * busy page that runs the handler late does not lengthen the charge.
    */
   constructor(
-    onPress: () => void,
+    onPress: (time: number) => void,
     doc: Document = document,
-    options: { label?: string; className?: string; onRelease?: () => void } = {},
+    options: { label?: string; className?: string; onRelease?: (time: number) => void } = {},
   ) {
     const element = doc.createElement('button');
     element.type = 'button';
@@ -38,19 +40,19 @@ export class AttackButton {
     let held = false;
     /** The finger that holds it (Piece 7 M5): another finger's let-go (the stick's, another button's) is not this one's. */
     let holder: number | null = null;
-    const letGo = () => { holder = null; if (held) { held = false; options.onRelease?.(); } };
+    const letGo = (time: number) => { holder = null; if (held) { held = false; options.onRelease?.(time); } };
     const release = (event: Event) => {
       const id = (event as PointerEvent).pointerId;
       if (holder !== null && id !== undefined && id !== holder) return;
-      letGo();
+      letGo(event.timeStamp);
     };
-    const activate = () => { if (!element.disabled) { held = true; onPress(); } element.blur(); };
+    const activate = (event: Event) => { if (!element.disabled) { held = true; onPress(event.timeStamp); } element.blur(); };
     element.addEventListener('pointerdown', (event) => {
       touchPressed = event.pointerType === 'touch';
       event.preventDefault();
       if (touchPressed) {
         holder = event.pointerId ?? null;
-        activate(); // secondary touches need not produce a compatibility click
+        activate(event); // secondary touches need not produce a compatibility click
       }
     });
     element.addEventListener('pointerup', release);
@@ -66,8 +68,8 @@ export class AttackButton {
     element.disabled = true;
     element.addEventListener('click', (event) => {
       if (touchPressed && event.detail !== 0) { touchPressed = false; return; }
-      activate();
-      letGo();
+      activate(event);
+      letGo(event.timeStamp);
     });
     this.element = element;
     // a finger on the screen: the button shows from then on, as the joystick does

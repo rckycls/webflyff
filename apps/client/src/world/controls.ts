@@ -222,7 +222,9 @@ type Listen = Pick<EventTarget, 'addEventListener' | 'removeEventListener'>;
  * - Mouse presses go to `onPress` immediately. Touch waits for a valid tap, so a camera/joystick drag cannot select or attack.
  * - A press on a mover is held (`heldMover`) until it is let go, however far it moves (moving the cursor away does not
  *   matter to Neuz's hold, [combat §2.1]); the canvas keeps the pointer (`SetCapture`, :6842), so that its let-go comes
- *   here.
+ *   here. The let-go goes to `onRelease` as it comes, with its time, as `OnLButtonUp` judges a wand's or a bow's shot
+ *   then (`WndWorld.cpp:6471-6503`), not at the next rules step: a mouse press's when it is let go, cancelled or its
+ *   pointer lost, a finger's tap's right after its press.
  * - A press on the ground is a tap where the player walks (`m_bFreeMove`, :6989-6997, and `ControlGround`'s destination
  *   at the point, `WndWorldControlPlayer.cpp:299-361`): `take`. Neuz sets the destination as the button goes down, and
  *   drags with it held turn the camera; here a press is a tap only if it is let go within 300 ms and 8 px of where it
@@ -246,6 +248,7 @@ export class TapToWalk {
     private readonly onPress?: (press: WorldPress) => void,
     /** Piece 7 M4: a right press let go where it went down, on a mover (`OnRButtonUp`, `WndWorld.cpp:7114-7131`). */
     private readonly onMenuPress?: (mover: number) => void,
+    private readonly onRelease?: (time: number) => void,
   ) {
     canvas.addEventListener('pointerdown', this.onDown);
     canvas.addEventListener('pointermove', this.onMove);
@@ -345,19 +348,29 @@ export class TapToWalk {
     const press = this.press;
     if (press === null || event.pointerId !== press.pointerId) return;
     this.press = null;
+    if (!press.deferred) this.letGo(press, event);
     if (!press.tap || moved(press, event) || event.timeStamp - press.time > TAP_HOLD_MS) return;
-    if (press.deferred) this.onPress?.({ mover: press.hit !== null && 'mover' in press.hit ? press.hit.mover : null, time: press.time, double: press.double, alt: press.alt, touch: true });
+    if (press.deferred) {
+      this.onPress?.({ mover: press.hit !== null && 'mover' in press.hit ? press.hit.mover : null, time: press.time, double: press.double, alt: press.alt, touch: true });
+      this.letGo(press, event);
+    }
     if (press.hit !== null && 'point' in press.hit) this.dest = press.hit.point;
   };
 
   private readonly onCancel = (event: PointerEvent): void => {
-    if (event.pointerId === this.press?.pointerId) this.press = null;
+    const press = this.press;
+    if (press === null || event.pointerId !== press.pointerId) return;
+    this.press = null;
+    if (!press.deferred) this.letGo(press, event);
   };
 
   /** The canvas lost the pointer it kept (the press's let-go will not come here). */
-  private readonly onLost = (event: PointerEvent): void => {
-    if (this.press !== null && event.pointerId === this.press.pointerId) this.press = null;
-  };
+  private readonly onLost = this.onCancel;
+
+  /** The let-go, at `event`'s time, of a press on a mover that was handed on. */
+  private letGo(press: { hit: TapHit | null }, event: PointerEvent): void {
+    if (press.hit !== null && 'mover' in press.hit) this.onRelease?.(event.timeStamp);
+  }
 }
 
 const moved = (from: { x: number; y: number }, to: PointerEvent): boolean =>

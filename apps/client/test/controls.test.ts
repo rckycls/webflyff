@@ -826,6 +826,41 @@ describe('TapToWalk', () => {
     expect(pressed).toEqual([]);
   });
 
+  it('hands on the let-go of a press on a mover with the time it came (OnLButtonUp), not the next step\'s', () => {
+    const canvas = new FakeCanvas();
+    const presses: WorldPress[] = [];
+    const releases: number[] = [];
+    let hit: TapHit = { mover: 7 };
+    // the let-go follows M4's right-press callback (none here)
+    new TapToWalk(canvas as unknown as HTMLElement, () => hit, undefined, (press) => presses.push(press), undefined, (time) => releases.push(time));
+    // a mouse press held on the mover: handed on as it goes down, its let-go as it comes up, moved or not
+    canvas.fire('pointerdown', 100, 50, 1000);
+    expect(releases).toEqual([]);
+    canvas.fire('pointermove', 180, 50, 1500);
+    canvas.fire('pointerup', 180, 50, 2500);
+    expect(releases).toEqual([2500]);
+    // a finger's tap: its press and its let-go both as it comes up, each at its own time
+    canvas.fire('pointerdown', 100, 50, 4000, { pointerType: 'touch' });
+    canvas.fire('pointerup', 100, 50, 4100, { pointerType: 'touch' });
+    expect(presses.at(-1)).toMatchObject({ mover: 7, time: 4000, double: false, touch: true });
+    expect(releases).toEqual([2500, 4100]);
+    // a finger's drag hands on no press, so no let-go either; nor a press on the ground
+    canvas.fire('pointerdown', 100, 50, 6000, { pointerType: 'touch' });
+    canvas.fire('pointermove', 150, 50, 6050, { pointerType: 'touch' });
+    canvas.fire('pointerup', 150, 50, 6100, { pointerType: 'touch' });
+    hit = { point: [1, 2, 3] };
+    canvas.fire('pointerdown', 100, 50, 8000);
+    canvas.fire('pointerup', 100, 50, 8100);
+    expect(releases).toEqual([2500, 4100]);
+    // a held press cancelled, or its capture lost, is let go then
+    hit = { mover: 7 };
+    canvas.fire('pointerdown', 100, 50, 10000);
+    canvas.fire('pointercancel', 100, 50, 10500);
+    canvas.fire('pointerdown', 100, 50, 12000);
+    canvas.fire('lostpointercapture', 100, 50, 12700);
+    expect(releases).toEqual([2500, 4100, 10500, 12700]);
+  });
+
   it('a second press within 500 ms and 2 px of the first is a double click\'s (GetDoubleClickTime, SM_CXDOUBLECLK)', () => {
     let hit: TapHit = { point: [1, 2, 3] };
     const { canvas, presses } = tapToWalk(() => hit);

@@ -1055,6 +1055,20 @@ describe('AttackLoop: the wand (CMD_SetMagicAttack, DoAttackMagic; Piece 7 M2)',
     expect(r.own.act.state & ObjSta.ATK_ALL).toBe(ObjSta.ATK_MAGIC1);
   });
 
+  it('a shot waits, standing at its target, for a motion the browser can play, as a swing does: MAGIC_ATTACK then', () => {
+    // a shot started on a missing motion ends at once with no hit frame: its MAGIC_ATTACK would get no SFX_ID
+    let ready = false;
+    const r = rig({ own: holding(SEAL_WAND), motionReady: () => ready });
+    chargeAndRelease(r, 700);
+    r.steps(30);
+    expect(shots(r.sent)).toEqual([]);
+    expect(r.own.act.state & (ObjSta.ATK_ALL | ObjSta.MOVE_ALL)).toBe(ObjSta.STAND);
+    ready = true;
+    r.steps(3);
+    expect(shots(r.sent)).toEqual([['magic', MONSTER_ID, 2, 0]]);
+    expect(r.own.act.state & ObjSta.ATK_ALL).toBe(ObjSta.ATK_MAGIC1);
+  });
+
   it('a press on a new target let go before 500 ms shoots nothing', () => {
     const r = rig({ own: holding(SEAL_WAND) });
     const at = r.now();
@@ -1180,6 +1194,24 @@ describe('AttackLoop: the bow (CMD_SetRangeAttack, IsBullet, DoAttackRange; Piec
     r.loop.onReleased(at + 1200);
     r.steps(3);
     expect(r.sent.filter((s) => s[0] === 'destObj')).toEqual([['destObj', MONSTER_ID, 15]]);
+    expect(shots(r.sent)).toEqual([['range', MONSTER_ID, 3, 0]]);
+    expect(r.own.act.state & ObjSta.ATK_ALL).toBe(ObjSta.ATK_RANGE1);
+  });
+
+  it('a bow\'s charged shot waits for a motion the browser can play too, before RANGE_ATTACK', () => {
+    let ready = false;
+    const r = rig({ own: holding(WOODNESS_BOW, 10), motionReady: () => ready });
+    const at = r.now();
+    r.loop.onMoverPressed(MONSTER_ID, at, false);
+    while (r.now() < at + 1200) {
+      r.loop.onMoverHeld(MONSTER_ID, r.now() - at);
+      r.step();
+    }
+    r.loop.onReleased(at + 1200);
+    r.steps(30);
+    expect(shots(r.sent)).toEqual([]);
+    ready = true;
+    r.steps(3);
     expect(shots(r.sent)).toEqual([['range', MONSTER_ID, 3, 0]]);
     expect(r.own.act.state & ObjSta.ATK_ALL).toBe(ObjSta.ATK_RANGE1);
   });

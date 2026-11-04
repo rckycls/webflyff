@@ -450,8 +450,8 @@ export class AttackLoop {
    * held, as `OnLButtonDblClk` takes it (`WndWorld.cpp:7248-7260`): the auto-attack goes on unless the hand holds a wand.
    */
   /**
-   * Piece 7 M2: a press of the Attack button with a wand or a bow is under way. The screen lets go of the canvas's press
-   * at each step no finger holds a mover there (`WorldScreen.step`); that let-go is not the button's.
+   * Piece 7 M2: a press of the Attack button with a wand or a bow is under way. The canvas's let-go (`TapToWalk`'s, or the
+   * screen's at a step for a press that ended with none, `WorldScreen.step`) is not the button's.
    */
   private attackButtonHeld = false;
 
@@ -1003,6 +1003,13 @@ export class AttackLoop {
     if (mover === undefined) return true;
     own.act.sendActMsg(ActMsg.STAND);
     if (cmd.kind === 'range') own.act.sendActMsg(ActMsg.STOP_TURN);
+    // the shot waits there, standing, for a motion the browser can play, as a swing does (useFocusObj): one begun on a
+    // motion still loading or missing ends with no hit frame, its MAGIC_ATTACK or RANGE_ATTACK told with no SFX_ID after
+    // it. The walk stays on, so this arrival comes again at the next step.
+    if (!this.motionReady(own, Mti.ATK1)) {
+      this.cmd = cmd;
+      return true;
+    }
     clearDestObj(own);
     if (cmd.kind === 'magic') this.doAttackMagic(own, mover, cmd.power, state);
     else this.doAttackRange(own, mover, cmd.power, state);
