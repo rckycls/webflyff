@@ -2458,3 +2458,21 @@ fieldset:disabled .btn {
 /* a phone window over the world hides the flight buttons as it hides Jump and Attack */
 .world:has(:is(.hud-quests, .hud-inventory)[data-mobile-window]:not([hidden])) .hud-flight,
 .world:has(:is(.hud-character-landscape, .hud-skills-landscape, .hud-select-village, .hud-teleporter):not([hidden])) .hud-flight { visibility: hidden; }
+
+/* 2026-11-05: windows laid out from resdata.inc (ResWindow, hud/resWindow.ts): statics, texts, edit boxes, lists and
+   custom areas at their rects, in Neuz's black 12 px font */
+.hud-res-window { color: #000000; }
+.hud-res-static, .hud-res-text, .hud-res-edit, .hud-res-custom, .hud-res-list { position: absolute; }
+.hud-res-picture { background-repeat: no-repeat; }
+.hud-res-static-text { position: absolute; left: 0; top: 0; right: 0; line-height: 14px; white-space: pre-line; }
+.hud-res-static-text.is-centred { text-align: center; }
+.hud-res-text-body { position: absolute; overflow-y: auto; line-height: 14px; white-space: pre-line; }
+.hud-res-edit input {
+  position: absolute; left: 3px; top: 2px; right: 3px; bottom: 2px; width: calc(100% - 6px); box-sizing: border-box;
+  padding: 0; border: 0; outline: none; background: transparent; color: #000000; font: inherit; line-height: 14px;
+}
+.hud-res-list-rows { position: absolute; overflow-y: auto; }
+.hud-res-list-rows > [role="option"] { height: 16px; padding: 0 3px; line-height: 16px; white-space: nowrap; cursor: pointer; }
+.hud-res-list-rows > [role="option"]:hover { background: #c8c8ff66; }
+.hud-res-list-rows > [aria-selected="true"] { background: #6464ff55; }
+@media (pointer: coarse) { .hud-res-edit input { font-size: 16px; } }
