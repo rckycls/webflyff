@@ -33,6 +33,7 @@ import {
   AUDIO_KEY,
   FormatError,
   GAME_DATA_KEYS,
+  ITEM_ETC_KEY,
   OT,
   PARTY_KEY,
   QUESTS_KEY,
@@ -48,7 +49,9 @@ import {
   readExpTable,
   readHonorTitles,
   readPkSetting,
+  readAccessories,
   readPropItem,
+  readPropItemEtc,
   readPropJob,
   readPropMover,
   readPropQuest,
@@ -153,6 +156,11 @@ interface Env {
 }
 
 /** A catalog being built: reads pack files and counts the bytes. */
+/** The sets and the socket cards (`CProject::LoadPiercingAvail`, Project.cpp:4137). */
+const ITEM_ETC_FILE = 'propItemEtc.inc';
+/** The accessories' refine stats (`CAccessoryProperty::LoadScript`, accessory.cpp:39). */
+const ACCESSORY_FILE = 'accessory.inc';
+
 class Reading {
   bytes = 0;
 
@@ -385,6 +393,20 @@ function buildItemProps(env: Env, read: Reading): WebItemProp[] {
         dropModel,
         ...(prop.reflect ? { reflect: prop.reflect } : {}),
         icon: prop.icon === '' ? null : itemIconKeyOf(prop.icon),
+        // 2026-11-05: the tooltip's columns, each only when the row gives it
+        ...(prop.itemJob !== -1 ? { job: prop.itemJob } : {}),
+        ...(prop.itemSex !== -1 ? { sex: prop.itemSex } : {}),
+        ...(prop.endurance !== -1 ? { endurance: prop.endurance } : {}),
+        ...(prop.flag > 0 ? { flag: prop.flag } : {}),
+        ...(prop.itemLevel !== -1 ? { itemLevel: prop.itemLevel } : {}),
+        ...(prop.limitLevel !== -1 ? { limitLevel: prop.limitLevel } : {}),
+        ...(prop.circleTime !== -1 ? { circleTime: prop.circleTime } : {}),
+        ...(prop.referStat1 !== -1 ? { referStat1: prop.referStat1 } : {}),
+        // PutBaseResist's order (WndManager.cpp:5641-5674): electricity, fire, water, wind, earth; the file's is
+        // electricity, fire, wind, water, earth
+        ...(prop.resists.some((value) => value !== 0)
+          ? { resists: [prop.resists[0]!, prop.resists[1]!, prop.resists[3]!, prop.resists[2]!, prop.resists[4]!] }
+          : {}),
       };
     });
 
@@ -662,6 +684,26 @@ export const gameDataStage: Stage = {
         }
       } catch (error) {
         ctx.report.fail(KIND, error instanceof FormatError ? error.file : QUEST_FILES[0], error);
+      }
+    }
+
+    // The sets and the socket cards (2026-11-05), optional in the same way: without propItemEtc.inc the item tooltip has no
+    // set and socket lines (ITEM_ETC_KEY is not one of GAME_DATA_KEYS). A file that cannot be read fails it alone.
+    if (ctx.client.packs.has(ITEM_ETC_FILE)) {
+      try {
+        const read = new Reading(ctx.client);
+        const etc = {
+          ...readPropItemEtc(read.text(ITEM_ETC_FILE), env.defines, env.strings, ITEM_ETC_FILE),
+          // the accessories' refine stats (CAccessoryProperty), when the packs hold accessory.inc
+          ...(ctx.client.packs.has(ACCESSORY_FILE)
+            ? { accessories: readAccessories(read.text(ACCESSORY_FILE), env.defines, ACCESSORY_FILE) }
+            : {}),
+        };
+        const bytes = new TextEncoder().encode(JSON.stringify(etc));
+        await ctx.writer.write(ITEM_ETC_KEY, bytes, ITEM_ETC_FILE);
+        ctx.report.ok(KIND, ITEM_ETC_FILE, read.bytes, bytes.length);
+      } catch (error) {
+        ctx.report.fail(KIND, error instanceof FormatError ? error.file : ITEM_ETC_FILE, error);
       }
     }
 

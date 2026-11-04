@@ -59,6 +59,12 @@ describe('native inventory snapshots', () => {
     expect(read(0x18, new ArWriter().u8(0).u8(6).u8(8).u32(4).u32(0).toBytes()))
       .toEqual({ type: 'updateItem', itemType: 0, objectId: 6, param: 8, value: 4, time: 0 });
   });
+  it('reads UPDATE_ITEM_EX, the new awakening of an item (SNAPSHOTTYPE_UPDATE_ITEM_EX 0x0140, DPClient.cpp:3194-3207; 2026-11-05)', () => {
+    // BYTE id, char cParam (UI_RANDOMOPTITEMID 10), __int64 iValue
+    expect(read(0x140, new ArWriter().u8(6).u8(10).i64(0x0123456789abcdefn).toBytes()))
+      .toEqual({ type: 'updateItemEx', objectId: 6, param: 10, value: 0x0123456789abcdefn });
+    expect(() => read(0x140, new ArWriter().u8(73).u8(10).i64(1n).toBytes())).toThrow();
+  });
   it('reads bag positions for MOVEITEM, independently of item object IDs', () => {
     expect(read(4, new ArWriter().u8(0).u8(2).u8(41).toBytes()))
       .toEqual({ type: 'moveItem', itemType: 0, source: 2, destination: 41 });

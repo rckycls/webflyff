@@ -294,6 +294,9 @@ describe('ADD_OBJ (OnAddObj)', () => {
     serialNumber?: number;
     text?: string;
     hitPoint?: number;
+    abilityOption?: number;
+    resist?: number;
+    resistOption?: number;
     piercing?: number[];
     ultimate?: number[];
     visKeepTimes?: number[];
@@ -314,8 +317,9 @@ describe('ADD_OBJ (OnAddObj)', () => {
       .u32(item.objectId).u32(item.itemId).u32(x.serialNumber ?? 0).string(x.text ?? '')
       .i16(item.count) // m_nItemNum (short)
       .u8(0).i32(x.hitPoint ?? 0).i32(0) // m_nRepairNumber (BYTE), m_nHitPoint (int), m_nRepair (int)
-      .u8(0).i32(0).u32(0) // m_byFlag (BYTE), m_nAbilityOption (int), m_idGuild (DWORD)
-      .u8(0).i32(0).i32(0); // m_bItemResist (BYTE), m_nResistAbilityOption (int), m_nResistSMItemId (int)
+      .u8(0).i32(x.abilityOption ?? 0).u32(0) // m_byFlag (BYTE), m_nAbilityOption (int), m_idGuild (DWORD)
+      // m_bItemResist (BYTE), m_nResistAbilityOption (int), m_nResistSMItemId (int)
+      .u8(x.resist ?? 0).i32(x.resistOption ?? 0).i32(0);
     // m_piercing: the cards, the ultimate jewels (__EXT_PIERCING), the vis keep times (__PETVIS), each as its count
     // and then a DWORD (a time_t for the keep times, 4 bytes with _USE_32BIT_TIME_T) per entry
     for (const list of [x.piercing ?? [], x.ultimate ?? [], x.visKeepTimes ?? []]) {
@@ -521,6 +525,17 @@ describe('ADD_OBJ (OnAddObj)', () => {
     const own = ownOf(readOne(PLAYER, selfFields({ ...newCharacter, inventory: [pierced, after] }, { extras })));
     // The item after it is read from where the first one ends.
     expect(own).toMatchObject({ inventory: [pierced, after], inventoryError: null });
+  });
+
+  it('keeps what the item tooltip shows: the upgrade, the element, the sockets, the awakening (2026-11-05)', () => {
+    const sword: InventoryItem = { objectId: 10, itemId: 3001, count: 1 };
+    const extras = new Map<number, ItemExtras>([[10, {
+      abilityOption: 7, resist: 2, resistOption: 5, piercing: [7001, 0, 0], ultimate: [9001], randomOption: 0x0123456789abcdefn,
+    }]]);
+    const own = ownOf(readOne(PLAYER, selfFields({ ...newCharacter, inventory: [sword] }, { extras })));
+    expect(own?.inventory).toEqual([{
+      ...sword, abilityOption: 7, resist: 2, resistOption: 5, piercing: [7001, 0, 0], ultimate: [9001], randomOption: 0x0123456789abcdefn,
+    }]);
   });
 
   it('a slot listed twice holds the later item, and an item ID of 0 empties its slot, as m_apItem[ch] does', () => {

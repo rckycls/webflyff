@@ -6,7 +6,7 @@ import { readNpcScript } from './npc';
 import { readCreateSfxAllow, readMagicAttack, readRangeAttack } from './combat';
 import { readSetJobSkill, readSetNearJobSkill } from './jobs';
 import { readShop } from './shop';
-import { readCreateItem, readUpdateItem, readMoveItem, readEquipItem } from './items';
+import { readCreateItem, readUpdateItem, readUpdateItemEx, readMoveItem, readEquipItem } from './items';
 import {
   readRemoveAllSkillInfluence, readRemoveSkillInfluence, readResetDestParam, readResetDestParamSync, readSetDestParam,
   readSetSkillState,
@@ -71,6 +71,7 @@ export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
     [0x0004, readMoveItem],
     [0x0006, readEquipItem],
     [0x0018, readUpdateItem],
+    [0x0140, readUpdateItemEx], // SNAPSHOTTYPE_UPDATE_ITEM_EX: the awakening (2026-11-05)
     [MessageType.MOVERMOVED, readMoverMoved],
     [MessageType.MOVERBEHAVIOR, readMoverBehavior],
     [MessageType.MOVERCORR, readMoverCorr],

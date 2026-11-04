@@ -37,6 +37,7 @@
 
 import { MAX_SLOT_APPLET, MAX_SLOT_ITEM, MAX_SLOT_ITEM_COUNT, MAX_SLOT_QUEUE, ShortcutKind } from '@flyffweb/protocol';
 import type { InventoryItem, Shortcut, TaskBar as TaskBarMessage } from '@flyffweb/protocol';
+import { positionItemDetails } from './itemDetails';
 import type { WebItemProp, WebPartySkill, WebSkill } from '@flyffweb/formats';
 import { watchTouch } from '@flyffweb/scene';
 import type { TouchWatch } from '@flyffweb/scene';
@@ -145,6 +146,11 @@ export interface TaskBarData {
   texts?: ReadonlyMap<string, { text: string; color?: number }>;
   /** Piece 7 M4: the party skills (`data/party.json`, by id): a type-2 skill shortcut's icon and name. */
   partySkills?: ReadonlyMap<number, Pick<WebPartySkill, 'name' | 'icon'>>;
+  /**
+   * 2026-11-05: the tooltip of an item shortcut's item, shown while the mouse is over its slot (`PutToolTip_Item` with flag 0,
+   * WndTaskBar.cpp:594); none without it.
+   */
+  itemTooltip?: (item: InventoryItem) => HTMLElement | null;
 }
 
 /** `ICON_SIZE` and `SKILL_SIZE` (`WndTaskBar.cpp:183-184`): the slots of the applet row and the bars, and the action slot's. */
@@ -320,6 +326,8 @@ export class TaskBar {
   private loaded: LoadedBars = TaskBar.load(null, null, { itemProps: new Map() });
   /** The own numbers and the catalogs of the last `update`, which the edits read. */
   private own: OwnState | undefined;
+  /** The item tooltip shown over an item shortcut (2026-11-05). */
+  private itemTip: HTMLElement | undefined;
   private data: TaskBarData = { itemProps: new Map() };
   private layout: TaskBarLayout = taskBarLayout(0);
   /** The window was resized (or the bar not yet laid out in a layer with a width): `update` lays it out again. */
@@ -569,6 +577,7 @@ export class TaskBar {
 
   /** Takes the bar off and lets go of the keys. */
   dispose(): void {
+    this.hideItemTip();
     this.menu.dispose();
     this.dropPick();
     this.gestures.dispose();
@@ -820,6 +829,12 @@ export class TaskBar {
       this.edits.rightClickApplet(i);
     }));
     this.itemSlots = this.makeSlots('item', MAX_SLOT_ITEM, layout.itemX, ICON_SIZE, (i) => this.pressItemSlot(i));
+    // the item tooltip while the mouse is over an item shortcut (2026-11-05); a press, which may start a drag, takes it away
+    this.itemSlots.forEach((slot, i) => {
+      slot.element.addEventListener('mouseenter', () => this.showItemTip(i, slot.element));
+      slot.element.addEventListener('mouseleave', () => this.hideItemTip());
+      slot.element.addEventListener('pointerdown', () => this.hideItemTip());
+    });
     this.queueSlots = this.makeSlots('queue', MAX_SLOT_QUEUE, layout.queueX, SKILL_SIZE, (i) => this.pressQueueSlot(i));
     for (const [row, slots] of [['item', this.itemSlots], ['queue', this.queueSlots]] as const) {
       slots.forEach((slot, i) => this.editable(slot.element, row, i));
@@ -904,6 +919,26 @@ export class TaskBar {
     const shortcut = this.loaded.applets[i]!;
     if (shortcut.kind === ShortcutKind.APPLET) this.execute(shortcut.id);
     else if (shortcut.kind !== ShortcutKind.NONE) this.actions.useAppletSlot(i, shortcut);
+  }
+
+  /** The tooltip of the item on slot `i` of the bar shown, above `anchor` (not for a finger, nor while a shortcut is carried). */
+  private showItemTip(i: number, anchor: HTMLElement): void {
+    this.hideItemTip();
+    if (this.carrying || this.view.matchMedia?.('(pointer: coarse)').matches === true) return;
+    const shortcut = this.loaded.items[this.slotIndex]?.[i];
+    if (shortcut === undefined || shortcut.kind !== ShortcutKind.ITEM) return;
+    const item = this.own?.inventory?.get(shortcut.id);
+    const tip = item === undefined ? null : this.data.itemTooltip?.(item) ?? null;
+    if (tip === null) return;
+    tip.classList.add('hud-taskbar-tooltip');
+    this.doc.body.append(tip);
+    positionItemDetails(tip, anchor, this.doc);
+    this.itemTip = tip;
+  }
+
+  private hideItemTip(): void {
+    this.itemTip?.remove();
+    this.itemTip = undefined;
   }
 
   /** A press on slot `i` of the bar shown: with a skill picked by a finger, the skill goes there; else it is used. */

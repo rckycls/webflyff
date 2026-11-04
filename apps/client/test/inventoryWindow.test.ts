@@ -44,6 +44,7 @@ describe('inventory window', () => {
   it('shows native descriptions only while hovering the desktop item and wheels exactly one row', () => {
     const own = newVagrant(), data = ownGameData();
     data.itemProps.set(2800, { ...itemProp({ id: 2800, part: -1, kind2: 14 }), description: 'Restores 100 HP.' });
+    (data.texts as Map<string, { id: string; text: string; color: number }>).set('TID_ITEM_INFO', { id: 'TID_ITEM_INFO', text: 'Description: %s', color: 0xffffffff });
     own.inventory!.set(6, { objectId: 6, itemId: 2800, count: 2 });
     const ui = new InventoryWindow({ url: () => '', sheets: null }, data, { use: vi.fn(), equip: vi.fn(), drop: vi.fn(), move: vi.fn(), shortcut: vi.fn() });
     document.body.append(ui.frame.element); ui.toggle(own);

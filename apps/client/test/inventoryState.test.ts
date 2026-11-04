@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { OwnState } from '../src/world/OwnState';
 import { ownAdded, ownGameData, itemProp } from './helpers/ownState';
 import { equipmentPart } from '../src/world/items/equipment';
+import { ServerClock } from '../src/net/serverClock';
+import { terrainGround } from '../src/world/sim/collision';
+import { WorldState } from '../src/world/WorldState';
 
 function setup() {
   const added = ownAdded();
@@ -53,6 +56,46 @@ describe('authoritative inventory state', () => {
     expect(own.equipmentObjectIds[10]).toBe(0xffffffff);
     expect(own.inventorySlots.slice(0, 42)).toContain(6);
     expect(own.equipped.weapon).toBeNull();
+  });
+  it('keeps what the item tooltip shows up to date: the awakening, the upgrade, the element, the sockets (2026-11-05)', () => {
+    const { own, id } = setup();
+    const update = (param: number, value: number) => own.apply({ type: 'updateItem', itemType: 0, objectId: 6, param, value, time: 0 }, id);
+    const revision = own.inventoryRevision;
+    // CMover::UpdateItemEx's UI_RANDOMOPTITEMID (MoverParam.cpp:3832-3858)
+    own.apply({ type: 'updateItemEx', objectId: 6, param: 10, value: 0x1234n }, id);
+    expect(own.inventory!.get(6)!.randomOption).toBe(0x1234n);
+    expect(own.inventoryRevision).toBe(revision + 1);
+    // CMover::UpdateItem (MoverParam.cpp:3862-): UI_AO 3, UI_RAO 4, UI_IR 5, UI_PIERCING_SIZE 6, UI_PIERCING 7 (LOWORD the
+    // socket, HIWORD the card), UI_ULTIMATE_PIERCING_SIZE 13, UI_ULTIMATE_PIERCING 14
+    update(3, 7); update(5, 2); update(4, 4); update(6, 3); update(7, (7001 << 16) | 1); update(13, 2); update(14, 9001 << 16);
+    expect(own.inventory!.get(6)).toEqual({
+      objectId: 6, itemId: 2800, count: 3, randomOption: 0x1234n, abilityOption: 7, resist: 2, resistOption: 4,
+      piercing: [0, 7001, 0], ultimate: [9001, 0],
+    });
+    // the upgrades stop at 20 (__EXT_ENCHANT); a socket past the size is not set; an awakening of 0 is none
+    update(3, 25); update(7, (7002 << 16) | 5); update(6, 1);
+    own.apply({ type: 'updateItemEx', objectId: 6, param: 10, value: 0n }, id);
+    expect(own.inventory!.get(6)).toMatchObject({ abilityOption: 20, piercing: [0] });
+    expect(own.inventory!.get(6)!.randomOption).toBeUndefined();
+    // another object's message is not the player's
+    own.apply({ type: 'updateItemEx', objectId: 6, param: 10, value: 5n }, id + 1);
+    expect(own.inventory!.get(6)!.randomOption).toBeUndefined();
+  });
+  it('keeps the sex of the character, which the item tooltip judges SEX lines by (PutSex; 2026-11-05)', () => {
+    const added = ownAdded();
+    added.player!.sex = 1;
+    expect(new OwnState(ownGameData(), added, []).sex).toBe(1);
+  });
+  it('the world hands UPDATE_ITEM_EX to the own numbers (2026-11-05)', () => {
+    const added = ownAdded();
+    added.player!.own!.inventory = [{ objectId: 6, itemId: 2800, count: 3 }];
+    added.player!.own!.inventorySlots = Array.from({ length: 73 }, (_, i) => i < 42 ? i : 0xffffffff);
+    const data = ownGameData();
+    const own = new OwnState(data, added, []);
+    const world = new WorldState(data, new ServerClock(() => 0), terrainGround(() => 0), own);
+    world.apply(added.objectId, { type: 'addMover', mover: added });
+    world.apply(added.objectId, { type: 'updateItemEx', objectId: 6, param: 10, value: 77n });
+    expect(own.inventory!.get(6)!.randomOption).toBe(77n);
   });
   it('uses MOVEITEM confirmation to merge up to packMax while preserving object IDs', () => {
     const { own, id } = setup();

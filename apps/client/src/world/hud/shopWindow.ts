@@ -1,4 +1,4 @@
-import { createItemDetails, positionItemDetails } from './itemDetails';
+import { createItemDetails, ownTooltipContext, positionItemDetails } from './itemDetails';
 import type { WebNpc } from '@flyffweb/formats';
 import type { InventoryItem } from '@flyffweb/protocol';
 import type { GameData } from '../gameData';
@@ -94,7 +94,9 @@ export class ShopWindow {
   private showDetails(item: InventoryItem, anchor: HTMLElement): void {
     if (!this.frame.isOpen || this.doc.defaultView?.matchMedia?.('(pointer: coarse)').matches) return;
     this.hideDetails();
-    const details = createItemDetails(this.doc, item, this.data.itemProps.get(item.itemId));
+    // the tooltip as APP_SHOP_ asks for it: with the buy price
+    const details = createItemDetails(this.doc, this.art, this.data, item, this.data.itemProps.get(item.itemId),
+      ownTooltipContext(this.own(), item, 'shop'));
     details.classList.add('shop-item-details');
     (this.frame.element.parentElement ?? this.doc.body).append(details);
     positionItemDetails(details, anchor, this.doc); this.hoverDetails = details;

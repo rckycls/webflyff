@@ -1681,6 +1681,21 @@ fieldset:disabled .btn {
 }
 .inventory-details strong { flex: 1 0 100%; color: #382b20; }
 .inventory-details button, .inventory-details select { min-height: 28px; }
+
+/* 2026-11-05: the item tooltip as Neuz's CToolTip draws it (tooltip.cpp): nine WndTooltipTile tiles 8 px around the text,
+   the text 3 px in and wrapped at 200 px, each run in its own colour (itemDetails.ts) */
+.inventory-details.hud-item-tooltip {
+  width: auto; max-width: 228px; padding: 11px; border: 0; border-radius: 0; background: none; box-shadow: none;
+  color: #000; font: 12px/15px Arial, Helvetica, sans-serif; text-align: left; isolation: isolate;
+}
+.hud-item-tooltip-frame {
+  position: absolute; inset: 0; z-index: -1; display: grid; pointer-events: none;
+  grid-template-columns: 16px 1fr 16px; grid-template-rows: 16px 1fr 16px;
+}
+.hud-item-tooltip-frame > div { background-repeat: repeat; background-size: 16px 16px; }
+.hud-item-tooltip-text { flex: 1 0 100%; max-width: 200px; white-space: pre-wrap; overflow-wrap: break-word; }
+.hud-item-tooltip-line { min-height: 15px; }
+.hud-taskbar-tooltip.hud-item-tooltip { position: fixed; right: auto; z-index: 95; pointer-events: none; }
 .inventory-details input[type=number] { width: 55px; }
 .hud-inventory[data-mobile-window] { left: auto !important; right: 12px; top: 8px !important; width: var(--mobile-inventory-width, calc(100% - 24px)) !important; height: calc(100% - var(--hud-taskbar-height, 48px) - 16px) !important; transform: none !important; z-index: 60 !important; border-radius: 6px; background: repeating-linear-gradient(#fdf5ee 0 2px, #f6e6dc 2px 4px); box-shadow: inset 0 0 0 2px #dba98c, 0 2px 8px #0005; }
 .hud-inventory[data-mobile-window] > .hud-window-frame { display: none; }

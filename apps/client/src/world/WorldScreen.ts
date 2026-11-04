@@ -72,6 +72,7 @@ import { OptionWindow } from './hud/optionWindow';
 import { DropBox } from './hud/dropBox';
 import type { BoxState, KeptLogin } from '../lobby/reconnect';
 import { TaskBar } from './hud/taskBar';
+import { createItemDetails, ownTooltipContext } from './hud/itemDetails';
 import { InventoryWindow } from './hud/inventoryWindow';
 import { ChatWindow } from './hud/chatWindow';
 import { MENU_RANGE, MMI, MoverMenu, npcMenuEntries, soleEntry } from './hud/moverMenu';
@@ -2254,7 +2255,12 @@ export class WorldScreen {
   /** The task bar's catalogs: the game data's, and the party skills (made once, when both are in). */
   private taskBarData: TaskBarData | undefined;
   private barData(): TaskBarData {
-    this.taskBarData ??= { ...this.data!, partySkills: new Map((this.partyCatalog?.skills ?? []).map((skill) => [skill.id, skill])) };
+    this.taskBarData ??= {
+      ...this.data!, partySkills: new Map((this.partyCatalog?.skills ?? []).map((skill) => [skill.id, skill])),
+      // an item shortcut's tooltip, as PutToolTip_Item with flag 0 draws it (2026-11-05)
+      itemTooltip: (item) => createItemDetails(this.element.ownerDocument, this.hudArt!, this.data!, item,
+        this.data!.itemProps.get(item.itemId), ownTooltipContext(this.own, item, 'other')),
+    };
     return this.taskBarData;
   }
 

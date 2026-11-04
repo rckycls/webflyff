@@ -7,7 +7,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { WebMover, WebSkill } from '@flyffweb/formats';
 import { NULL_ID, ShortcutKind } from '@flyffweb/protocol';
-import type { Shortcut, SkillSlot, TaskBar as TaskBarMessage } from '@flyffweb/protocol';
+import type { InventoryItem, Shortcut, SkillSlot, TaskBar as TaskBarMessage } from '@flyffweb/protocol';
 import { ServerClock } from '../src/net/serverClock';
 import { AttackLoop } from '../src/world/combat/attackLoop';
 import { Focus } from '../src/world/combat/focus';
@@ -2927,6 +2927,34 @@ describe('TaskBar: the applet row and the action slot (2026-11-05)', () => {
       shortcut: { kind: ShortcutKind.SKILL, id: 0, type: 0, index: 2, userId: 0, data: 0, text: 'Clean Hit' },
     }]);
     expect(bar.pickedSkill).toBe(null);
+  });
+
+  it('an item shortcut shows its item tooltip while the mouse is over it, above the slot (WndTaskBar.cpp:594)', () => {
+    const own = vagrantWithSkills(5, 0, [3, 0, 0]);
+    const record = recorder();
+    const bar = new TaskBar(art, record.actions);
+    bars.push(bar);
+    layer(800, 600).append(bar.element);
+    const asked: InventoryItem[] = [];
+    bar.update(own, { ...EDIT_DATA, itemTooltip: (item) => {
+      asked.push(item);
+      const tip = document.createElement('div');
+      tip.className = 'test-item-tip';
+      return tip;
+    } });
+    const lollipops = slot(bar, 'item', 0);
+    lollipops.dispatchEvent(new MouseEvent('mouseenter'));
+    expect(asked.map((item) => item.objectId)).toEqual([NEW_BAR.items[0]!.shortcut.id]);
+    expect(document.querySelectorAll('.test-item-tip')).toHaveLength(1);
+    lollipops.dispatchEvent(new MouseEvent('mouseleave'));
+    expect(document.querySelectorAll('.test-item-tip')).toHaveLength(0);
+    // an empty slot has none; a press takes it away (a drag starts there)
+    slot(bar, 'item', 5).dispatchEvent(new MouseEvent('mouseenter'));
+    expect(asked).toHaveLength(1);
+    lollipops.dispatchEvent(new MouseEvent('mouseenter'));
+    lollipops.dispatchEvent(pointer('pointerdown', 10, 10));
+    expect(document.querySelectorAll('.test-item-tip')).toHaveLength(0);
+    window.dispatchEvent(pointer('pointerup', 10, 10));
   });
 
   it('a right click on an empty square of the action slot takes off its last skill; on a skill, that skill', () => {

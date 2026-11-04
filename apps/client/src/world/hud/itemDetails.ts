@@ -1,30 +1,87 @@
-import type { InventoryItem } from '@flyffweb/protocol';
-import type { WebItemProp } from '@flyffweb/formats';
+// The item tooltip on screen (2026-11-05), drawn as Neuz's `CToolTip` draws `PutToolTip_Item`'s text
+// (Source/_Interface/tooltip.cpp): the theme's nine `WndTooltipTile00-08.tga` tiles 8 px around the text, the text 3 px in
+// and wrapped at 200 px, each run in its colour and style. The lines are `itemTooltip`'s. It no longer says the count,
+// which Neuz never prints (the count is on the icon).
 
-/** Shared item information for bag and shop hover cards. */
-export function createItemDetails(doc: Document, item: InventoryItem, prop: WebItemProp | undefined): HTMLElement {
-    const details = doc.createElement('div'); details.className = 'inventory-details';
-    details.setAttribute('role', 'group'); details.setAttribute('aria-label', 'Item details');
-    const title = doc.createElement('strong'); title.textContent = prop?.name ?? `Unknown item #${item.itemId}`;
-    const count = doc.createElement('div'); count.className = 'inventory-item-info'; count.textContent = `Quantity: ${item.count}`;
-    details.append(title, count);
-    if (prop) {
-      const info = doc.createElement('div'); info.className = 'inventory-item-info';
-      const names: Record<number, string> = { 2: 'Suit', 4: 'Gloves', 5: 'Boots', 6: 'Helmet', 8: 'Cloak', 10: 'Weapon', 11: 'Shield', 19: 'Necklace', 20: 'Ring', 22: 'Earring', 26: 'Fashion hat', 27: 'Fashion suit', 28: 'Fashion gloves', 29: 'Fashion boots' };
-      info.textContent = prop.part >= 0 ? `${names[prop.part] ?? 'Equipment'}${prop.abilityMax > 0 ? ` · ${prop.kind1 === 1 ? 'Attack' : 'Defence'} ${prop.abilityMin}–${prop.abilityMax}` : ''}` : [11, 12, 14].includes(prop.kind2) ? 'Consumable' : 'Item';
-      details.append(info);
-      if (prop.description) {
-        const description = doc.createElement('div'); description.className = 'inventory-item-description';
-        description.textContent = prop.description; details.append(description);
-      }
-    }
-    return details;
+import type { WebItemProp } from '@flyffweb/formats';
+import type { InventoryItem } from '@flyffweb/protocol';
+import type { OwnState } from '../OwnState';
+import { itemTooltip } from '../items/itemTooltip';
+import type { TooltipContext, TooltipData, TooltipFlag, TooltipLine } from '../items/itemTooltip';
+import { themeUrl } from './art';
+import type { UiArt } from './art';
+
+/** An empty equipment slot (`NULL_ID`). */
+const NO_ITEM = 0xffffffff;
+
+/** The context the own player gives a tooltip: who judges the requirement colours, what is worn, whether this is. */
+export function ownTooltipContext(
+  own: OwnState | undefined, item: InventoryItem, flag: TooltipFlag, shopOpen = false,
+): TooltipContext {
+  if (own === undefined) return { flag, viewer: null, shopOpen };
+  const worn = (part: number): InventoryItem | undefined => {
+    const id = own.equipmentObjectIds[part];
+    return id === undefined || id === NO_ITEM ? undefined : own.inventory?.get(id);
+  };
+  return {
+    flag, viewer: { sex: own.sex, job: own.job, level: own.level }, worn,
+    isWorn: own.equipmentObjectIds.includes(item.objectId), shopOpen,
+  };
 }
 
+/** `#RRGGBB` of a tooltip colour. */
+const css = (color: number): string => `#${color.toString(16).padStart(6, '0')}`;
+
+/** The tooltip of `item` (`prop` its row of propItem.txt, undefined for an item the catalog lacks). */
+export function createItemDetails(
+  doc: Document, art: UiArt, data: TooltipData, item: InventoryItem, prop: WebItemProp | undefined, ctx: TooltipContext,
+): HTMLElement {
+  const details = doc.createElement('div');
+  details.className = 'inventory-details hud-item-tooltip';
+  details.setAttribute('role', 'group');
+  details.setAttribute('aria-label', 'Item details');
+  // the frame: 0 top-left, 1 top, 2 top-right, 3 left, 4 centre, 5 right, 6 bottom-left, 7 bottom, 8 bottom-right
+  const frame = doc.createElement('div');
+  frame.className = 'hud-item-tooltip-frame';
+  frame.setAttribute('aria-hidden', 'true');
+  for (let i = 0; i < 9; i++) {
+    const tile = doc.createElement('div');
+    tile.style.backgroundImage = themeUrl(art, `WndTooltipTile${String(i).padStart(2, '0')}.tga`);
+    frame.append(tile);
+  }
+  const text = doc.createElement('div');
+  text.className = 'hud-item-tooltip-text';
+  const lines: TooltipLine[] = prop === undefined
+    ? [[{ text: `Unknown item #${item.itemId}`, color: 0x2e70a9, bold: true }]]
+    : itemTooltip(item, prop, data, ctx);
+  for (const line of lines) {
+    const row = doc.createElement('div');
+    row.className = 'hud-item-tooltip-line';
+    for (const run of line) {
+      const span = doc.createElement('span');
+      span.textContent = run.text;
+      span.style.color = css(run.color);
+      if (run.bold) span.style.fontWeight = 'bold';
+      if (run.strike) span.style.textDecoration = 'line-through';
+      row.append(span);
+    }
+    text.append(row);
+  }
+  details.append(frame, text);
+  return details;
+}
+
+/**
+ * Where Neuz puts an item tooltip (`CToolTip::PutToolTip`'s position 0, tooltip.cpp:406-490): above the hovered slot,
+ * 10 px clear of it, moved in when it would leave the screen (below the slot when there is no room above).
+ */
 export function positionItemDetails(details: HTMLElement, anchorElement: HTMLElement, doc: Document): void {
   const anchor = anchorElement.getBoundingClientRect(), rect = details.getBoundingClientRect(), view = doc.defaultView;
   const width = rect.width || 230, height = rect.height || 80;
-  const x = anchor.right + width + 8 <= (view?.innerWidth ?? 1280) ? anchor.right + 8 : anchor.left - width - 8;
+  const screenWidth = view?.innerWidth ?? 1280, screenHeight = view?.innerHeight ?? 720;
+  let x = anchor.left, y = anchor.top - height - 10;
+  if (x + width + 8 > screenWidth) x = screenWidth - width - 8;
+  if (y < 8) y = Math.min(anchor.bottom + 10, screenHeight - height - 8);
   details.style.left = Math.max(8, x) + 'px'; details.style.right = 'auto';
-  details.style.top = Math.max(8, Math.min(anchor.top, (view?.innerHeight ?? 720) - height - 8)) + 'px';
+  details.style.top = Math.max(8, y) + 'px';
 }

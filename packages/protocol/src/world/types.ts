@@ -17,6 +17,8 @@ export type WorldMessage = ChatMessage | NpcMessage | ShopMessage | QuestMessage
   | { type: 'addItem'; item: GroundItem }
   | { type: 'createItem'; itemType: number; item: InventoryItem; stacks: Array<{ objectId: number; count: number }> }
   | { type: 'updateItem'; itemType: number; objectId: number; param: number; value: number; time: number }
+  // SNAPSHOTTYPE_UPDATE_ITEM_EX (2026-11-05): UI_RANDOMOPTITEMID's 64-bit value, the item's new awakening
+  | { type: 'updateItemEx'; objectId: number; param: number; value: bigint }
   | { type: 'moveItem'; itemType: number; source: number; destination: number }
   | { type: 'equipItem'; objectId: number; equip: boolean; itemId: number; option: number; flag: number; part: number }
   /** ADD_OBJ of a mover (`OT_MOVER`): a player, a monster or an NPC came into view. */
@@ -312,7 +314,29 @@ export interface SkillSlot { skill: number; level: number }
  * bar's item shortcut name. `itemId` is `m_dwItemId`, the item's ID in `propItem.txt`, and `count` is `m_nItemNum`
  * (a `short`), how many of it the stack holds.
  */
-export interface InventoryItem { objectId: number; itemId: number; count: number; flag?: number; charged?: number }
+/**
+ * An item of a container (`CItemElem`). The fields the item tooltip shows are kept when they are not 0 or empty
+ * (2026-11-05; `CWndMgr::PutToolTip_Item`).
+ */
+export interface InventoryItem {
+  objectId: number;
+  itemId: number;
+  count: number;
+  flag?: number;
+  charged?: number;
+  /** `m_nAbilityOption`: the upgrade, the +N after the name. */
+  abilityOption?: number;
+  /** `m_bItemResist`: the element, a `SAI79::ePropType` (1 fire, 2 water, 3 electricity, 4 wind, 5 earth). */
+  resist?: number;
+  /** `m_nResistAbilityOption`: the element's upgrade. */
+  resistOption?: number;
+  /** `m_piercing`'s cards: one entry a socket, 0 for an empty one (`CPiercing::Serialize`). */
+  piercing?: number[];
+  /** `m_piercing`'s ultimate jewels (`__EXT_PIERCING`), one entry a socket. */
+  ultimate?: number[];
+  /** `m_iRandomOptItemId` (`__int64`, `__SYS_IDENTIFY`): the awakening and the blessing, bit-packed. */
+  randomOption?: bigint;
+}
 export interface GroundItem { index: number; scale: number; pos: Vec3; angle: number; item: InventoryItem }
 
 /**

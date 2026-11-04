@@ -5,7 +5,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { GAME_DATA_KEYS, QUESTS_KEY, WORLD_NO_FLY_KEY } from '@flyffweb/formats';
+import { GAME_DATA_KEYS, ITEM_ETC_KEY, QUESTS_KEY, WORLD_NO_FLY_KEY } from '@flyffweb/formats';
 import type {
   ModelElem,
   WebEffectsIndex,
@@ -724,6 +724,7 @@ describe('the game-data stage', () => {
       weaponType: 1, attackSpeed: Math.fround(0.085), attackRange: 1, destParams: [14, -1, -1], adjParams: [5, -3, -1],
       sfxHit: 20, sfxMissile: -1, linkKindBullet: -1,
       model: 'models/item_weasword.glb', dropModel: 'models/item_weasword.glb', icon: 'ui/item/itm_weasword.png',
+      job: 0, sex: 0, endurance: 9000000, itemLevel: 1, limitLevel: 1, // the base row's tooltip columns (2026-11-05)
     });
     expect(props[2]!.attackSpeed).not.toBe(0.085);
 
@@ -733,6 +734,7 @@ describe('the game-data stage', () => {
       weaponType: -1, attackSpeed: -1, attackRange: -1, destParams: [-1, -1, -1], adjParams: [-1, -1, -1],
       sfxHit: -1, sfxMissile: -1, linkKindBullet: -1,
       model: null, dropModel: 'models/item_genmatsuitbox.glb', icon: 'ui/item/itm_mvag01upper.png',
+      job: 0, sex: 0, endurance: 9000000, itemLevel: 1, limitLevel: 1,
     });
     expect(props[1]).toMatchObject({ id: 503, name: 'Pike Suit', part: 3, model: null });
   });
@@ -797,6 +799,56 @@ describe('the game-data stage', () => {
     const run = await runData();
     expect(run.report.failures).toEqual([]);
     expect(await catalog<number[]>(run, WORLD_NO_FLY_KEY)).toEqual([0, 41, 42]);
+  });
+
+  it('itemProps keep the tooltip columns, each only when the row gives it (2026-11-05)', async () => {
+    const gear = itemRow('502', 'IDS_PROPITEM_TXT_000790', 'PARTS_UPPER_BODY').split('	');
+    gear[17] = '4'; // dwFlag: IP_FLAG_EQUIP_BIND
+    gear[85] = '3600'; // dwCircleTime
+    gear[91] = '3'; // dwReferStat1: ARMOR_SET
+    gear[98] = '0.1'; // fItemResistElecricity
+    gear[100] = '0.2'; // fItemResistWind
+    gear[102] = '0.29'; // fItemResistEarth: 0.29f * 100.0f is 29 in float32
+    gear[116] = '45'; // dwLimitLevel1
+    const bare = itemRow('503', 'IDS_PROPITEM_TXT_000792', 'PARTS_LOWER_BODY').split('	');
+    for (const at of [8, 11, 13, 23, 116]) bare[at] = '='; // dwItemJob, dwItemSex, dwEndurance, dwItemLV, dwLimitLevel1
+    await client({ 'propItem.txt': script(gear.join('	'), bare.join('	')) });
+    const props = await catalog<WebItemProp[]>(await runData(), GAME_DATA_KEYS.itemProps);
+    // the resistances in PutBaseResist's order: electricity, fire, water, wind, earth
+    expect(props.find((p) => p.id === 502)).toMatchObject({
+      job: 0, sex: 0, endurance: 9000000, flag: 4, itemLevel: 1, limitLevel: 45, circleTime: 3600, referStat1: 3,
+      resists: [10, 0, 0, 20, 29],
+    });
+    const plain = props.find((p) => p.id === 503)!;
+    for (const key of ['job', 'sex', 'endurance', 'flag', 'itemLevel', 'limitLevel', 'circleTime', 'referStat1', 'resists']) {
+      expect(plain, key).not.toHaveProperty(key);
+    }
+  });
+
+  it('itemEtc: the sets and the socket cards of propItemEtc.inc, when the packs hold it (2026-11-05)', async () => {
+    await client({ 'propItemEtc.inc': script('SetItem 1 Darkness', '{', 'Elem', '{', '502 2', '503 3', '}', 'Avail', '{', '1 5 2', '}', '}',
+      'Piercing 2001', '{', '1 5', '}') });
+    const run = await runData();
+    expect(run.report.failures).toEqual([]);
+    expect(await catalog(run, ITEM_ETC_KEY)).toEqual({
+      sets: [{ id: 1, name: 'Darkness', elems: [{ itemId: 502, part: 2 }, { itemId: 503, part: 3 }], avail: [{ dst: 1, adj: 5, count: 2 }] }],
+      piercing: [{ itemId: 2001, params: [{ dst: 1, adj: 5 }] }],
+    });
+  });
+
+  it('itemEtc carries the accessories of accessory.inc when the packs hold it too (2026-11-05)', async () => {
+    await client({ 'propItemEtc.inc': script('Piercing 2001', '{', '1 5', '}'), 'accessory.inc': script('Accessory', '{', '2100', '{', '0 { 1 5 }', '}', '}') });
+    const run = await runData();
+    expect(run.report.failures).toEqual([]);
+    const etc = await catalog<{ accessories: Array<{ itemId: number; levels: unknown[][] }> }>(run, ITEM_ETC_KEY);
+    expect(etc.accessories.map((a) => [a.itemId, a.levels[0]])).toEqual([[2100, [{ dst: 1, adj: 5 }]]]);
+  });
+
+  it('writes no itemEtc without propItemEtc.inc', async () => {
+    await client();
+    const run = await runData();
+    expect(run.report.failures).toEqual([]);
+    expect(run.writer.pathOf(ITEM_ETC_KEY)).toBeUndefined();
   });
 
   it('writes no worldNoFly without a .wld', async () => {

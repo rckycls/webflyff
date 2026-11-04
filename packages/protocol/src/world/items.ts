@@ -24,6 +24,13 @@ export function readCreateItem(r: ArReader): MessageOf<'createItem'> {
   });
   return { type: 'createItem', itemType, item, stacks };
 }
+/**
+ * SNAPSHOTTYPE_UPDATE_ITEM_EX (`MsgHdr.h:1219`, `CDPClient::OnUpdateItemEx`, `Neuz/DPClient.cpp:3194-3207`): `BYTE id`,
+ * `char cParam` (only `UI_RANDOMOPTITEMID` 10 does anything, `CMover::UpdateItemEx`), `__int64 iValue`. An inventory item.
+ */
+export function readUpdateItemEx(r: ArReader): MessageOf<'updateItemEx'> {
+  return { type: 'updateItemEx', objectId: index(r, 73), param: r.u8(), value: r.i64() };
+}
 /** V15 PETVIS always appends dwTime, even for ordinary stack updates. UI_NUM=0; UI_COOLTIME=8 also sets count. */
 export function readUpdateItem(r: ArReader): MessageOf<'updateItem'> {
   return { type: 'updateItem', itemType: r.u8(), objectId: index(r, 73), param: r.u8(), value: r.u32(), time: r.u32() };

@@ -163,6 +163,60 @@ export interface WebItemProp {
    * no file.
    */
   icon: string | null;
+  // 2026-11-05, the item tooltip (`CWndMgr::MakeToolTipText`); each absent where the row says `=` (or 0 for `flag`), and
+  // in catalogs converted before
+  /** `dwItemJob`: the job the item needs (`PutJob`). */
+  job?: number;
+  /** `dwItemSex`: the sex the item needs, 0 male, 1 female (`PutSex`). */
+  sex?: number;
+  /** `dwEndurance`: present (any value) unless the row says `=`, which hides the min`max line (`PutItemMinMax`). */
+  endurance?: number;
+  /** `dwFlag`: `IP_FLAG_*` bits; 0x04 `IP_FLAG_EQUIP_BIND` soul-links the item once worn. */
+  flag?: number;
+  /** `dwItemLV`: an element card's level (`PutItemResist`). */
+  itemLevel?: number;
+  /** `dwLimitLevel1`: the level the item needs (`PutLevel`). */
+  limitLevel?: number;
+  /** `dwCircleTime`: how long the item lasts in seconds, 1 for "when the player dies" (`PutKeepTime`). */
+  circleTime?: number;
+  /** `dwReferStat1`: 0 general, 1 unique, 2 ultimate weapon, 3 set armour (the name's colour, `PutItemName`). */
+  referStat1?: number;
+  /**
+   * The base resistances (`nItemResist*`, `(int)( f * 100.0f )`), absent when all are 0: electricity, fire, water, wind,
+   * earth, the order `PutBaseResist` prints them in (not the file's).
+   */
+  resists?: number[];
+}
+
+/** A set of `propItemEtc.inc` (`CSetItem`, Project.cpp:4162-4206): its pieces, and what wearing some of them gives. */
+export interface WebSetItem {
+  id: number;
+  /** The set's name, through the string table. */
+  name: string;
+  /** The pieces in file order: each item and the part it is worn on. */
+  elems: Array<{ itemId: number; part: number }>;
+  /** What `count` pieces worn give, sorted by `count` as `CSetItem::SortItemAvail` leaves them. */
+  avail: Array<{ dst: number; adj: number; count: number }>;
+}
+
+/** A socket card of `propItemEtc.inc` (`PIERCINGAVAIL`): what it gives an item it is socketed in. */
+export interface WebPiercingAvail {
+  itemId: number;
+  params: Array<{ dst: number; adj: number }>;
+}
+
+/** An accessory of `accessory.inc` (`CAccessoryProperty`): what it gives at each refine level, 0 to 20. */
+export interface WebAccessory {
+  itemId: number;
+  levels: Array<Array<{ dst: number; adj: number }>>;
+}
+
+/** `data/itemEtc.json`: the sets and the socket cards, and the accessories' refine stats (2026-11-05). */
+export interface WebItemEtc {
+  sets: WebSetItem[];
+  piercing: WebPiercingAvail[];
+  /** Absent when the client has no accessory.inc. */
+  accessories?: WebAccessory[];
 }
 
 /** A non-player character of `character.inc` and its two sister files. */
@@ -339,6 +393,12 @@ export interface WebSkillLevelTimes {
  * Optional, so not one of GAME_DATA_KEYS: without it every world allows flight, as the `.wld`'s default does.
  */
 export const WORLD_NO_FLY_KEY = 'data/worldNoFly.json';
+
+/**
+ * 2026-11-05: the set items and the socket cards of `propItemEtc.inc`, a `WebItemEtc`. Optional, so not one of
+ * GAME_DATA_KEYS: without it the item tooltip has no set and socket lines.
+ */
+export const ITEM_ETC_KEY = 'data/itemEtc.json';
 
 /** The logical keys of the catalogs in the asset index. */
 export const GAME_DATA_KEYS = {

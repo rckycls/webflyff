@@ -129,6 +129,8 @@ export class OwnState {
   readonly objectId: number;
   /** `m_nJob`: SET_JOB_SKILL changes it (`changeJob`). */
   job: number;
+  /** `GetSex()`: 0 male, 1 female; the item tooltip judges its SEX line by it (2026-11-05). */
+  readonly sex: number;
   /** The job's row of `propJob.inc`, which the formulas read, and its name (`title`, `GetJobString`). */
   jobProp: WebJob;
   private levelNow: number;
@@ -187,6 +189,7 @@ export class OwnState {
     if (jobProp === undefined) throw new GameDataMissingError([`${GAME_DATA_KEYS.jobs} (job ${player.job})`]);
     this.objectId = added.objectId;
     this.job = player.job;
+    this.sex = player.sex;
     this.jobProp = jobProp;
     this.levelNow = player.level;
     this.stats = { str: own.str, sta: own.sta, dex: own.dex, int: own.int };
@@ -372,6 +375,22 @@ export class OwnState {
         if (message.itemType === 0 && item && (message.param === 0 || message.param === 8)) {
           if ((message.value | 0) <= 0) this.inventory!.delete(message.objectId);
           else this.inventory!.set(message.objectId, { ...item, count: message.value });
+          this.inventoryRevision++;
+        } else if (message.itemType === 0 && item && objectId === this.objectId) {
+          const changed = itemUpdated(item, message.param, message.value);
+          if (changed !== item) {
+            this.inventory!.set(message.objectId, changed);
+            this.inventoryRevision++;
+          }
+        }
+        return [];
+      }
+      case 'updateItemEx': {
+        // CMover::UpdateItemEx (MoverParam.cpp:3832-3858): UI_RANDOMOPTITEMID, the item's new awakening (2026-11-05)
+        const item = this.inventory?.get(message.objectId);
+        if (item && objectId === this.objectId && message.param === UI_RANDOMOPTITEMID) {
+          const { randomOption: _, ...rest } = item;
+          this.inventory!.set(message.objectId, message.value === 0n ? rest : { ...rest, randomOption: message.value });
           this.inventoryRevision++;
         }
         return [];
@@ -661,5 +680,59 @@ export class OwnState {
     if (this.mp < mp) this.mp = mp;
     const fp = Math.trunc(this.maxFp() * rate / 10);
     if (this.fp < fp) this.fp = fp;
+  }
+}
+
+/** `UI_*` (`_Common/Mover.h:62-80`): what an UPDATE_ITEM changes on an item. */
+const UI_AO = 3;
+const UI_RAO = 4;
+const UI_IR = 5;
+const UI_PIERCING_SIZE = 6;
+const UI_PIERCING = 7;
+const UI_RANDOMOPTITEMID = 10;
+const UI_ULTIMATE_PIERCING_SIZE = 13;
+const UI_ULTIMATE_PIERCING = 14;
+/** The most an upgrade or an element's upgrade goes to (`__EXT_ENCHANT`, `UpdateItem`'s dwMax). */
+const MAX_UPGRADE = 20;
+
+/** A field that is 0 or empty is left off the item, as the reader leaves it off (`readInventoryItem`). */
+function withField<K extends keyof InventoryItem>(item: InventoryItem, key: K, value: InventoryItem[K] | 0): InventoryItem {
+  const { [key]: _, ...rest } = item;
+  const empty = value === 0 || value === undefined || (Array.isArray(value) && value.length === 0);
+  return (empty ? rest : { ...rest, [key]: value }) as InventoryItem;
+}
+
+/** A socket list made `size` long (`SetPiercingSize`): the cards kept, the new sockets empty. */
+function resized(list: readonly number[] | undefined, size: number): number[] {
+  return Array.from({ length: Math.max(0, size) }, (_, i) => list?.[i] ?? 0);
+}
+
+/** A card or jewel put in socket `LOWORD( value )` (`SetPiercingItem`), which must be within the list. */
+function pierced(list: readonly number[] | undefined, value: number): number[] | undefined {
+  const at = value & 0xffff;
+  if (list === undefined || at >= list.length) return undefined;
+  return list.map((card, i) => (i === at ? value >>> 16 : card));
+}
+
+/**
+ * The item after an UPDATE_ITEM of the fields the tooltip shows (`CMover::UpdateItem`, `MoverParam.cpp:3862-`, 2026-11-05):
+ * the upgrade, the element and its upgrade, the sockets. Any other `param` leaves it as it is.
+ */
+function itemUpdated(item: InventoryItem, param: number, value: number): InventoryItem {
+  switch (param) {
+    case UI_AO: return withField(item, 'abilityOption', Math.min(value, MAX_UPGRADE));
+    case UI_RAO: return withField(item, 'resistOption', Math.min(value, MAX_UPGRADE));
+    case UI_IR: return withField(item, 'resist', value & 0xff);
+    case UI_PIERCING_SIZE: return withField(item, 'piercing', resized(item.piercing, value));
+    case UI_ULTIMATE_PIERCING_SIZE: return withField(item, 'ultimate', resized(item.ultimate, value));
+    case UI_PIERCING: {
+      const list = pierced(item.piercing, value);
+      return list === undefined ? item : withField(item, 'piercing', list);
+    }
+    case UI_ULTIMATE_PIERCING: {
+      const list = pierced(item.ultimate, value);
+      return list === undefined ? item : withField(item, 'ultimate', list);
+    }
+    default: return item;
   }
 }

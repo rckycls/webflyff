@@ -133,7 +133,9 @@ test('talking: chat typing, channels, peaceful NPC dialogue and authoritative bu
   if (!isMobile) {
     await shop.locator('[data-stock-id="1"]').hover();
     await expect(page.locator('.shop-item-details')).toContainText('Lollipop');
-    await expect(page.locator('.shop-item-details')).toContainText('Quantity: 99');
+    // the item tooltip as the shop asks for it (2026-11-05): the buy price, never the count, which is on the icon
+    await expect(page.locator('.shop-item-details')).toContainText('Price : ');
+    await expect(page.locator('.shop-item-details')).not.toContainText('99');
     await page.screenshot({ path: info.outputPath('shop-hover.png') });
     await shop.locator('.shop-heading').hover(); await expect(page.locator('.shop-item-details')).toHaveCount(0);
   }

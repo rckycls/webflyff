@@ -1,4 +1,4 @@
-import { createItemDetails, positionItemDetails } from './itemDetails';
+import { createItemDetails, ownTooltipContext, positionItemDetails } from './itemDetails';
 import type { OwnState } from '../OwnState';
 import type { GameData } from '../gameData';
 import { themeUrl } from './art';
@@ -181,7 +181,8 @@ export class InventoryWindow {
       cell.className = 'inventory-equipped-cell'; cell.dataset.silent = ''; cell.dataset.equipmentPart = String(part);
       Object.assign(cell.style, { left: `${x}px`, top: `${y}px`, width: `${size}px`, height: `${size}px` });
       cell.setAttribute('aria-label', item ? `Equipped ${prop?.name ?? 'Unknown equipment'}` : `Empty equipment slot ${part}`);
-      cell.title = item ? prop?.name ?? 'Unknown equipment' : `Equipment slot ${part}`;
+      // a worn item shows the item tooltip (CWndInventory::OnMouseWndSurface, WndField.cpp:1151); an empty slot its name
+      if (item) cell.removeAttribute('title'); else cell.title = `Equipment slot ${part}`;
       if (prop?.icon) { const img = this.doc.createElement('img'); img.src = this.art.url(prop.icon); img.alt = ''; cell.append(img); }
       cell.addEventListener('click', () => { if (!item) return; if (this.shopSelect) { this.shopSelect(item.objectId); return; } this.selected = item.objectId; this.actionsOpen = this.mobile || this.hoverAnchor === cell; this.drawDetails(); });
       this.hoverItem(cell, item?.objectId);
@@ -242,7 +243,9 @@ export class InventoryWindow {
     const item = this.selected === null ? undefined : own.inventory?.get(this.selected);
     if (!item || !this.actionsOpen || (this.shopSelect && this.mobile)) return;
     const prop = this.data.itemProps.get(item.itemId);
-    const details = createItemDetails(this.doc, item, prop);
+    // the tooltip as APP_INVENTORY asks for it: the selling price while a shop is open, the set +N on a worn piece
+    const details = createItemDetails(this.doc, this.art, this.data, item, prop,
+      ownTooltipContext(own, item, 'inventory', this.shopSelect !== undefined));
     const close = this.doc.createElement('button'); close.type = 'button'; close.className = 'inventory-details-close';
     close.textContent = '×'; close.setAttribute('aria-label', 'Close item details');
     close.addEventListener('click', () => { this.actionsOpen = false; this.drawDetails(); }); details.append(close);

@@ -360,6 +360,7 @@ export class WorldState {
       }
       case 'createItem':
       case 'updateItem':
+      case 'updateItemEx': // the awakening (2026-11-05)
       case 'moveItem':
         this.toOwn(message, objectId);
         return;

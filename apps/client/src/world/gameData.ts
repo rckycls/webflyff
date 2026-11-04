@@ -1,4 +1,4 @@
-import { GAME_DATA_KEYS, WORLD_NO_FLY_KEY } from '@flyffweb/formats';
+import { GAME_DATA_KEYS, ITEM_ETC_KEY, WORLD_NO_FLY_KEY } from '@flyffweb/formats';
 import type {
   ExpRow,
   TextEntry,
@@ -6,6 +6,7 @@ import type {
   WebEffectsIndex,
   WebExpRow,
   WebHonorTitles,
+  WebItemEtc,
   WebItemModel,
   WebItemProp,
   WebJob,
@@ -17,6 +18,8 @@ import type {
   WebWorlds,
 } from '@flyffweb/formats';
 import type { AssetStore } from '@flyffweb/scene';
+import { itemEtcOf } from './items/itemTooltip';
+import type { ItemEtc } from './items/itemTooltip';
 
 /** NULL_ID, written `=` in `propItem.txt`: the `exclusive` and `baseIgnore` of an item that takes off and hides nothing. */
 export const NO_PART = -1;
@@ -74,6 +77,8 @@ export interface GameData {
    * `data/worldNoFly.json`: every world then allows flight, the `.wld`'s default.
    */
   noFlyWorlds: ReadonlySet<number>;
+  /** 2026-11-05: the sets, socket cards and accessories the item tooltip shows; absent without `data/itemEtc.json`. */
+  itemEtc?: ItemEtc;
 }
 
 /**
@@ -138,6 +143,7 @@ export async function loadGameData(store: Pick<AssetStore, 'json' | 'url'>): Pro
     store.json<WebSkill[]>(GAME_DATA_KEYS.skills),
   ]);
   const noFly = store.url(WORLD_NO_FLY_KEY) === null ? [] : await store.json<number[]>(WORLD_NO_FLY_KEY);
+  const itemEtc = store.url(ITEM_ETC_KEY) === null ? undefined : itemEtcOf(await store.json<WebItemEtc>(ITEM_ETC_KEY));
   return {
     movers: new Map(movers.map((mover) => [mover.index, withLaterColumns(mover)])),
     items: new Map(items.map((item) => [item.id, withHides(item)])),
@@ -156,5 +162,6 @@ export async function loadGameData(store: Pick<AssetStore, 'json' | 'url'>): Pro
     effects: new Map(Object.entries(effects).map(([id, effect]) => [Number(id), effect])),
     skills: new Map(skills.map((skill) => [skill.id, skill])),
     noFlyWorlds: new Set(noFly),
+    ...(itemEtc !== undefined ? { itemEtc } : {}),
   };
 }

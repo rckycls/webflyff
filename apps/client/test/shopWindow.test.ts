@@ -95,14 +95,19 @@ it('uses resource store labels below the list and removes search and placeholder
 
 it('shows shared inventory-style hover details and keeps descriptions out of the button footer', () => {
   const own = newVagrant(), data = ownGameData(); own.gold = 100;
-  data.itemProps.set(2800, { ...itemProp({ id: 2800, part: 2, abilityMin: 3, abilityMax: 7 }), name: 'Test Suit', description: '<script>safe text</script>', cost: 10 });
+  data.itemProps.set(2800, { ...itemProp({ id: 2800, part: 2, abilityMin: 3, abilityMax: 7, endurance: 100 }), name: 'Test Suit', description: '<script>safe text</script>', cost: 10 });
+  // the tooltip's texts (2026-11-05: the item tooltip as Neuz writes it)
+  for (const [id, text] of [['TID_GAME_TOOLTIP_DEFENSE_B', 'DEF'], ['TID_ITEM_INFO', 'Description: %s'], ['TID_GAME_TOOLTIP_COST2', 'Price : %s']]) {
+    (data.texts as Map<string, { id: string; text: string; color: number }>).set(id!, { id: id!, text: text!, color: 0xffffffff });
+  }
   const ui = new ShopWindow({ url: () => '', sheets: null }, data, () => own, () => true, { open: vi.fn(), close: vi.fn(), buy: vi.fn(), sell: vi.fn() });
   document.body.append(ui.frame.element); ui.open(7, 'Luda'); ui.receive(7, [[{ objectId: 1, itemId: 2800, count: 99 }], [], [], []]);
   const item = ui.frame.element.querySelector<HTMLButtonElement>('[data-stock-id="1"]')!;
   item.dispatchEvent(new MouseEvent('mouseenter'));
   const tooltip = document.querySelector('.shop-item-details')!;
-  expect(tooltip.textContent).toContain('Test Suit'); expect(tooltip.textContent).toContain('Quantity: 99');
-  expect(tooltip.textContent).toContain('Defence 3–7'); expect(tooltip.textContent).toContain('<script>safe text</script>'); expect(tooltip.querySelector('script')).toBeNull();
+  // the name, the defence, the description and the buy price; never the count, which is on the icon
+  expect(tooltip.textContent).toContain('Test Suit'); expect(tooltip.textContent).not.toContain('99');
+  expect(tooltip.textContent).toContain('DEF 3 ~ 7'); expect(tooltip.textContent).toContain('Price : 10'); expect(tooltip.textContent).toContain('<script>safe text</script>'); expect(tooltip.querySelector('script')).toBeNull();
   item.dispatchEvent(new MouseEvent('mouseleave')); expect(document.querySelector('.shop-item-details')).toBeNull();
   item.click(); expect(ui.frame.element.querySelector<HTMLElement>('.shop-feedback')!.hidden).toBe(true);
   expect(ui.frame.body.lastElementChild!.className).toBe('shop-controls');

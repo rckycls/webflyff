@@ -146,21 +146,27 @@ export function readInventoryItem(r: ArReader, slotId?: number): InventoryItem {
   r.i32(); // m_nHitPoint (int, :94)
   r.i32(); // m_nRepair (int, :95)
   const flag = r.u8(); // m_byFlag (BYTE, :96)
-  r.i32(); // m_nAbilityOption (int, :97)
+  const abilityOption = r.i32(); // m_nAbilityOption (int, :97)
   r.u32(); // m_idGuild (DWORD, :98)
-  r.u8(); // m_bItemResist (BYTE, :99)
-  r.i32(); // m_nResistAbilityOption (int, :100)
+  const resist = r.u8(); // m_bItemResist (BYTE, :99)
+  const resistOption = r.i32(); // m_nResistAbilityOption (int, :100)
   r.i32(); // m_nResistSMItemId (int, :101)
-  skipPiercing(r); // m_piercing.Serialize( ar ) (:103)
+  const { piercing, ultimate } = readPiercing(r); // m_piercing.Serialize( ar ) (:103)
   const charged = r.i32(); // m_bCharged (BOOL, :104)
-  r.i64(); // m_iRandomOptItemId (__int64; __VER >= 11, __SYS_IDENTIFY, :106)
+  const randomOption = r.i64(); // m_iRandomOptItemId (__int64; __VER >= 11, __SYS_IDENTIFY, :106)
   // m_dwKeepTime (DWORD, :110), then `if( m_dwKeepTime )` the time left, a time_t (:112-119): 4 bytes, since both
   // Neuz and the world server define _USE_32BIT_TIME_T (Neuz/StdAfx.h:10, WORLDSERVER/StdAfx.h:4)
   if (r.u32() !== 0) r.i32();
   // BYTE bPet, then `if( bPet )` the pet (__VER >= 9, __PET_0410, :121-128); the storing side writes 1 or 0 (:76-84)
   if (r.u8() !== 0) skipPet(r);
   r.i32(); // m_bTranformVisPet (BOOL; __VER >= 15, __PETVIS, :131)
-  return { objectId, itemId, count, ...(flag ? { flag } : {}), ...(charged ? { charged } : {}) };
+  return {
+    objectId, itemId, count, ...(flag ? { flag } : {}), ...(charged ? { charged } : {}),
+    // what the item tooltip shows, when there is something to show (2026-11-05)
+    ...(abilityOption !== 0 ? { abilityOption } : {}), ...(resist !== 0 ? { resist } : {}),
+    ...(resistOption !== 0 ? { resistOption } : {}), ...(piercing.length > 0 ? { piercing } : {}),
+    ...(ultimate.length > 0 ? { ultimate } : {}), ...(randomOption !== 0n ? { randomOption } : {}),
+  };
 }
 
 /**
@@ -168,10 +174,12 @@ export function readInventoryItem(r: ArReader, slotId?: number): InventoryItem {
  * `size_t` count (4 bytes on x86) and then that many 4-byte entries. The C++ reads as many entries as the count says,
  * even past the `MAX_PIERCING_*` that `SetPiercingSize` caps the list at.
  */
-function skipPiercing(r: ArReader): void {
-  r.bytes(4 * r.u32()); // nSize, then DWORD dwItem each: the cards (:57-65)
-  r.bytes(4 * r.u32()); // nSize, then DWORD dwItem each: the ultimate jewels (__VER >= 12, __EXT_PIERCING, :66-76)
+function readPiercing(r: ArReader): { piercing: number[]; ultimate: number[] } {
+  const list = (): number[] => Array.from({ length: r.u32() }, () => r.u32());
+  const piercing = list(); // nSize, then DWORD dwItem each: the cards (:57-65)
+  const ultimate = list(); // nSize, then DWORD dwItem each: the ultimate jewels (__VER >= 12, __EXT_PIERCING, :66-76)
   r.bytes(4 * r.u32()); // nSize, then time_t tmTemp each (4 bytes): the vis keep times (__VER >= 15, __PETVIS, :77-86)
+  return { piercing, ultimate };
 }
 
 /** `CPet::Serialize`, the loading side (`_Common/pet.cpp:325-338`; storing :313-324). */

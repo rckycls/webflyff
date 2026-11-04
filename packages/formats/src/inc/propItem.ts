@@ -174,6 +174,28 @@ export interface ItemProp {
   textFileName: string;
   /** `szCommand`: the description, through the string table (the file calls the column szComment). */
   command: string;
+  // 2026-11-05, the item tooltip (`CWndMgr::MakeToolTipText`, WndManager.cpp:6550-6746); -1 where the row says `=`
+  /** `dwItemJob`: the job the item needs (`PutJob`). */
+  itemJob: number;
+  /** `dwItemSex`: the sex the item needs, 0 male, 1 female (`PutSex`). */
+  itemSex: number;
+  /** `dwEndurance`: only whether it is -1 matters, which hides the min~max line (`PutItemMinMax`). */
+  endurance: number;
+  /** `dwFlag`: `IP_FLAG_*` bits; 0x04 `IP_FLAG_EQUIP_BIND` is soul-linked once worn. */
+  flag: number;
+  /** `dwItemLV`: the level of an element card (`PutItemResist`). */
+  itemLevel: number;
+  /** `dwLimitLevel1`: the level the item needs (`PutLevel`). */
+  limitLevel: number;
+  /** `dwCircleTime`: how long the item lasts, in seconds; 1 is "when the player dies" (`PutKeepTime`). */
+  circleTime: number;
+  /** `dwReferStat1`: `WEAPON_GENERAL` 0, `WEAPON_UNIQUE` 1, `WEAPON_ULTIMATE` 2, `ARMOR_SET` 3 (the name's colour, `PutItemName`). */
+  referStat1: number;
+  /**
+   * The five `fItemResist*` columns in file order (electricity, fire, wind, water, earth), each as LoadPropItem keeps it:
+   * `(int)( scanner.GetFloat() * 100.0f )` (ProjectCmn.cpp:436-440), in float32.
+   */
+  resists: number[];
 }
 
 const READER = 'readPropItem';
@@ -274,10 +296,21 @@ const KEPT: ReadonlySet<string> = new Set([
   // Piece 7 M4: a party skill's mode length and its cost in party points
   'dwSkillTime',
   'dwExp',
+  // 2026-11-05: the item tooltip
+  'dwItemJob',
+  'dwItemSex',
+  'dwEndurance',
+  'dwFlag',
+  'dwItemLV',
+  'dwLimitLevel1',
+  'dwCircleTime',
 ]);
 
+/** The five resistance columns, in file order (ProjectCmn.cpp:436-440). */
+const RESISTS = ['fItemResistElecricity', 'fItemResistFire', 'fItemResistWind', 'fItemResistWater', 'fItemResistEarth'] as const;
+
 /** The float columns the rows keep: the attack speed, and a ride's (Piece 7 M5). */
-const FLOATS_KEPT: ReadonlySet<string> = new Set(['fAttackSpeed', 'fFlightSpeed', 'fFlightLRAngle', 'fFlightTBAngle']);
+const FLOATS_KEPT: ReadonlySet<string> = new Set(['fAttackSpeed', 'fFlightSpeed', 'fFlightLRAngle', 'fFlightTBAngle', ...RESISTS]);
 
 /** Removes trailing white space, the characters C `isspace` accepts (CString::TrimRight, ProjectCmn.cpp:331). */
 const trimRight = (s: string): string => s.replace(/[ \t\n\v\f\r]+$/, '');
@@ -417,6 +450,16 @@ export function readPropItem(
         icon,
         textFileName,
         command,
+        itemJob: kept.dwItemJob,
+        itemSex: kept.dwItemSex,
+        endurance: kept.dwEndurance,
+        flag: kept.dwFlag,
+        itemLevel: kept.dwItemLV,
+        limitLevel: kept.dwLimitLevel1,
+        circleTime: kept.dwCircleTime,
+        referStat1: kept.dwReferStat1,
+        // a float times 100.0f is a float (/fp:precise, SSE2), then truncated to int
+        resists: RESISTS.map((column) => Math.trunc(Math.fround(floats[column]! * 100))),
       });
     }
     version = r.numberOrEnd('the version');

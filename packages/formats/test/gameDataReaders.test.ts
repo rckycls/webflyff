@@ -503,6 +503,9 @@ describe('readPropItem', () => {
       icon: 'Itm_WeaSwoSuho.dds', // """Itm_WeaSwoSuho.dds""" is "", the name, ""
       textFileName: '',
       command: '', // IDS_PROPITEM_TXT_008535
+      // 2026-11-05: the tooltip columns
+      itemJob: 1, itemSex: -1, endurance: 7200000, flag: -1, itemLevel: 200, limitLevel: 60, circleTime: -1, referStat1: 2,
+      resists: [0, 0, 0, 0, 0],
     });
     expect(suit).toMatchObject({
       kind1: 2,
@@ -535,6 +538,21 @@ describe('readPropItem', () => {
     const food = DEFAULT.replace(row('IDS_PROPITEM_TXT_000000 1 1 IK1_SYSTEM'), row('IDS_PROPITEM_TXT_000000 1 99 IK1_SYSTEM'));
     expect(food).not.toBe(DEFAULT);
     expect(readPropItem(script(food, SUIT), DEFINES, STRINGS).map((item) => item.packMax)).toEqual([99, 1]);
+  });
+
+  it('reads the columns the item tooltip shows: job, sex, endurance, flag, level, required level, duration, refer stat, resistances (2026-11-05)', () => {
+    const [suit, sword] = readPropItem(script(SUIT, SWORD), DEFINES, STRINGS);
+    // dwItemJob, dwItemSex, dwEndurance, dwFlag, dwItemLV, dwLimitLevel1, dwCircleTime, dwReferStat1, and the five
+    // fItemResist columns as LoadPropItem keeps them, (int)( f * 100.0f ) (ProjectCmn.cpp:436-440), in file order
+    expect(suit).toMatchObject({
+      itemJob: 0, itemSex: 0, endurance: 9000000, flag: -1, itemLevel: 1, limitLevel: 1, circleTime: -1, referStat1: -1,
+      resists: [0, 0, 0, 0, 0],
+    });
+    expect(sword).toMatchObject({ itemJob: 1, itemSex: -1, endurance: 7200000, limitLevel: 60, referStat1: 2 });
+    // a float times 100.0f in float32: 0.29f * 100.0f is 29.0f, where doubles would give 28.999...
+    const resistant = SUIT.replace(row('= = = 0 0 0 0 0 0 = ='), row('= = = 0.15 0 0 0 0.29 0 = ='));
+    expect(resistant).not.toBe(SUIT);
+    expect(readPropItem(script(resistant), DEFINES, STRINGS)[0]!.resists).toEqual([15, 0, 0, 0, 29]);
   });
 
   it('reads dwBasePartsIgnore, the base part a worn item hides', () => {
