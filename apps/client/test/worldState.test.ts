@@ -1658,3 +1658,48 @@ describe('WorldState: the skills\' shots (CCtrl::ShootSkill, Ctrl.cpp:1356-1418;
     }]);
   });
 });
+
+describe('WorldState: the item cast (OnStateMode, DPClient.cpp:12381-12440; Piece 7 M3)', () => {
+  const casting = (objectId: number, itemId?: number): AddedMover => {
+    const p = playerOf(objectId, 'Late');
+    p.player!.stateMode = 4;
+    if (itemId !== undefined) p.player!.useItemId = itemId;
+    return p;
+  };
+
+  it('STATEMODE ON starts a cast and says so', () => {
+    const { world } = newWorld();
+    add(world, playerOf(7, 'Caster'));
+    steps(world, 6);
+    world.takeChanges();
+    world.apply(7, { type: 'stateMode', mode: 4, flag: 0, itemId: 4805 });
+    const m = world.movers.get(7)!;
+    expect(m.stateMode).toBe(4);
+    expect(m.cast).toEqual({ itemId: 4805, startedAt: world.nowMs() });
+    expect(world.takeChanges().combat).toContainEqual({ kind: 'itemCast', moverId: 7, itemId: 4805, fresh: true });
+  });
+
+  it('OFF and CANCEL end it', () => {
+    const { world } = newWorld();
+    add(world, playerOf(7, 'Caster'));
+    for (const flag of [1, 2]) {
+      world.apply(7, { type: 'stateMode', mode: 4, flag: 0, itemId: 4805 });
+      world.apply(7, { type: 'stateMode', mode: 0, flag, itemId: null });
+      const m = world.movers.get(7)!;
+      expect(m.cast).toBeNull();
+      expect(m.stateMode & 4).toBe(0);
+    }
+  });
+
+  it('a mover added mid-cast has the effect and no clock (OnAddObj, DPClient.cpp:1380-1391)', () => {
+    const { world } = newWorld();
+    add(world, casting(8, 4805));
+    expect(world.movers.get(8)!.cast).toEqual({ itemId: 4805, startedAt: null });
+    expect(world.takeChanges().combat).toContainEqual({ kind: 'itemCast', moverId: 8, itemId: 4805, fresh: false });
+    // the mode without an item (a virtual use, an Escape) has no effect
+    add(world, casting(9));
+    expect(world.movers.get(9)!.cast).toBeNull();
+    expect(world.movers.get(9)!.stateMode).toBe(4);
+    expect(world.takeChanges().combat.filter((e) => e.kind === 'itemCast')).toEqual([]);
+  });
+});

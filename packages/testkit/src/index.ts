@@ -8,6 +8,7 @@ export {
   writeCreateSfxAllow, writeDoEquip, writeMagicAttack, writeSetDestParam, writeSetJobSkill, writeSetSkillState, // Piece 7 M2
   writeMoverDeath, writeMoverMoved, writePlayMusic, writePlaySound, writePlaySoundFile, writeQueryGetDestObj, writeReplace, writeRevival, writeRevivalToLodestar,
   writeQuestChecked, writeRemoveQuest, writeSetQuest,
+  writeReturnScrollAck, writeStateMode, writeUpdateItem, // Piece 7 M3
   writeSetActionPoint, writeSetDestObj, writeSetExperience, writeSetGrowthLearningPoint, writeSetLevel,
   writeSetPointParam, writeSetPos, writeSetPosAngle, writeSetState, writeTaskBar, writeUseSkill, writeWorldReadInfo,
 } from './world';

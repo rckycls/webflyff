@@ -1180,3 +1180,70 @@ Milestone 2 passes when every cell of the table is `pass` (or `n/a` where it say
 | `npm run typecheck` | about 1 minute | It ends with no `error`. |
 | `$env:FLYFF_CLIENT = 'C:\Users\silec\Desktop\FlyFF\Bakbak\Blouflash VS22 V15\Client'; npm run test:corpus` | about 5 minutes | `… passed`, and no `failed`. |
 | `npm run test:e2e:client` | about 10 minutes | It ends with `… passed`, maybe a few `skipped`, and no `failed` (`jobs.spec.ts` is the new file). |
+
+## Piece 7, milestone 3: Blinkwings and scrolls
+
+The Town Blinkwing, the place Blinkwings and the Scroll of Return now work from the inventory and the task bar, as in the Windows client.
+
+- **The cast.** Using a Blinkwing starts the server's 10-second cast (the Scroll of Return's is 4 seconds). The character stands with the Blinkwing's ready effect around it, and a gauge fills over its head. The other players see the effect too.
+- **Cancelling.** Walking forward or back, jumping, tapping the ground, using a skill, attacking or being hit cancels the cast. Turning does not.
+- **The move.** When the cast ends, the server moves the character: in the same world the camera follows, and another world goes through the loading screen.
+- **The Scroll of Return.**
+  - Using it first asks with a box, then a window to choose Flaris, "Sain City" or "Darken City".
+  - Its 4-hour buff icon always blinks.
+  - Double-clicking that icon (two taps on a phone) brings you back to where you used it.
+- **Refusals** show the Windows client's lines. Using a Blinkwing while walking says "You can use it when you stand up."; a level that is too low is the server's refusal, after the cast.
+
+**What the test characters need:**
+- any character in Flaris with some penya, for Marche's shop;
+- a GM account, to give a Blinkwing of Volcan (item 4811) and a Scroll of Return (item 10469).
+
+**Start the client** from the piece7 folder as for milestone 0 (stop your own `npm run dev:client` first):
+
+```
+cd C:\Users\silec\Desktop\FlyFF\Bakbak\FlyffWeb-worktrees\piece7
+$env:GATEWAY_PROXY = 'ws://<VM-IP>:8090'
+npm run dev:client
+```
+
+**Steps**, on the PC and a landscape phone:
+
+1. **Buy Blinkwings.** Talk to Marche (Flaris' magic shop) and open the third tab. Success: it sells the Blinkwings of Flaris, Saint Morning and Darkon and the Town Blinkwing. Buy a Town Blinkwing and a Blinkwing of Saint Morning.
+2. **A Town Blinkwing from the task bar.** Walk out of town, put the Town Blinkwing on the task bar and use it (F1, or a tap). Success:
+   - the ready effect plays around the character;
+   - the gauge over the head fills over 10 seconds;
+   - the character then stands at Flaris' revival point;
+   - the count in the bag goes down by one.
+3. **Cancel by walking.** Use a Blinkwing, then walk forward (W, or the joystick) during the cast. Success: the effect and the gauge go, and the character stays where it is. Turning alone (A and D) does not cancel it.
+4. **Refused while walking.** Hold W (on the phone, hold the joystick) and use a Blinkwing. Success: "You can use it when you stand up." shows, and nothing happens.
+5. **Another world.** As a GM, give yourself a Blinkwing of Volcan and use it from the bag (double-click, or a tap then **Use**). Success: after the cast, the loading screen, then Volcane.
+6. **The Scroll of Return.** As a GM, give yourself a Scroll of Return and use it.
+   - Success: a box asks whether to use the item; OK opens "Choose the Village to Return" with Flaris checked.
+   - Pick "Sain City" and OK. Success: after 4 seconds the character is in Saint Morning, and the scroll's icon blinks among the buffs.
+   - Double-click the icon (two quick taps on the phone). Success: after 4 seconds the character is back where it used the scroll, and the icon goes.
+   - Known gap: after logging out and back in while the scroll's 4 hours run, its icon (and so its way back) is missing; the browser does not read the own character's buffs at entry yet. A change of world keeps it.
+7. **The phone** (phone only). Do steps 2, 3 and 6 on the phone. Success:
+   - the gauge sits over the head;
+   - the village window is whole on the screen, with readable text, and its radios and OK can be tapped;
+   - the joystick hides while the window is open.
+
+## Results
+
+| Device | Browser | 1. Buy | 2. Town | 3. Cancel | 4. Refused | 5. World | 6. Scroll | 7. Phone | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| PC | Chrome | | | | | | | n/a | |
+| Android phone | Chrome | | | | | | | | |
+| iPhone | Safari | | | | | | | | |
+
+## Pass and fail
+
+Milestone 3 passes when every cell of the table is `pass` (or `n/a` where it says so) and the tests below pass.
+
+**The tests (yours to run),** on the PC in PowerShell in the piece7 folder, with your own `npm run dev:client` stopped first:
+
+| Command | How long | Success |
+| --- | --- | --- |
+| `npm test` | about 2 minutes | `Tests … passed`, and no `failed`. |
+| `npm run typecheck` | about 1 minute | It ends with no `error`. |
+| `$env:FLYFF_CLIENT = 'C:\Users\silec\Desktop\FlyFF\Bakbak\Blouflash VS22 V15\Client'; npm run test:corpus` | about 5 minutes | `… passed`, apart from two known stale tests in `tools/convert/test/gameData.corpus.test.ts` ("writes every catalog without a failure" and "skills: the levels are the rows …"), which fail on main too. |
+| `npm run test:e2e:client` | about 10 minutes | It ends with `… passed`, maybe a few `skipped`, and no `failed` (`travel-items.spec.ts` is the new file). |

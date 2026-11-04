@@ -273,6 +273,11 @@ export class AttackLoop {
     private readonly moverProps: ReadonlyMap<number, Pick<WebMover, 'killable'>>,
     private readonly skills?: OwnSkills,
     private readonly motionReady: (mover: Mover, motion: number) => boolean = () => true,
+    /**
+     * Piece 7 M3: true while an item casts, having sent its cancel (`ItemCast.interrupt`): an attack command is refused
+     * (`IsAttackAble`, `Mover.cpp:6484-6494`). Asked where a command is made, never by the per-frame checks (Decision 4).
+     */
+    private readonly interruptCast: () => boolean = () => false,
   ) {}
 
   /** `m_bAutoAttack`. */
@@ -788,6 +793,7 @@ export class AttackLoop {
     if (hand?.kind2 === IK2_TOOLS) return;
     if (own.act.state & ObjSta.ATK_ALL) return;
     if (this.ownIsDead()) return;
+    if (this.interruptCast()) return; // Piece 7 M3
     // Combat approaches the target at run speed, even if the player was walking.
     if (own.act.sendActMsg(ActMsg.MODE_RUN)) this.session.sendBehavior(own.act.report(this.clock.tick()));
     this.setDestObj(own, targetId, hand?.kind3 === Ik3.YOYO ? attackRangeOf(hand.attackRange) : 0);
@@ -803,6 +809,7 @@ export class AttackLoop {
     if (own.act.state & ObjSta.ATK_ALL) return;
     if (this.ownIsDead()) return;
     if (this.handKind3() !== Ik3.WAND) return;
+    if (this.interruptCast()) return; // Piece 7 M3
     this.setDestObj(own, targetId, attackRangeOf(AR_WAND));
     this.cmd = { kind: 'magic', targetId, power };
   }
@@ -817,6 +824,7 @@ export class AttackLoop {
     if (this.ownIsDead()) return;
     const bow = this.own()?.equipped.weapon;
     if (bow?.kind3 !== Ik3.BOW || !this.isBullet(bow)) return;
+    if (this.interruptCast()) return; // Piece 7 M3
     this.setDestObj(own, targetId, attackRangeOf(bow.attackRange));
     this.cmd = { kind: 'range', targetId, power };
   }

@@ -2,6 +2,7 @@ import type { ArReader } from '../ar/ArReader';
 import { ProtocolError } from '../errors';
 import { readInventoryItem } from './own';
 import type { GroundItem, MessageOf } from './types';
+import { PacketType } from '../constants';
 import type { Vec3 } from '../constants';
 import { clientPacket } from './packet';
 
@@ -56,7 +57,7 @@ function checkId(id: number, max = 73): void {
 /** CDPClient::SendDoUseItem: MAKELONG(ITYPE_ITEM=0, inventory object id), target=NULL_ID, nPart=-1. */
 export function encodeUseItem(objectId: number): Uint8Array {
   checkId(objectId);
-  return clientPacket(0x00ff0021).u32(objectId * 65536).u32(0xffffffff).i32(-1).toBytes();
+  return clientPacket(PacketType.DOUSEITEM).u32(objectId * 65536).u32(0xffffffff).i32(-1).toBytes();
 }
 /** SendDoEquip, including the __HACK_1023 float (only checked for flying equipment). */
 export function encodeEquipItem(objectId: number, part = -1): Uint8Array {

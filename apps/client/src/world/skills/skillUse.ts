@@ -80,6 +80,8 @@ export interface SkillUseWorld {
   tick?: () => bigint;
   /** The land and objects the own character stands among, for the line of sight; none, nothing is in the way. */
   ground?: () => Ground | undefined;
+  /** Piece 7 M3: true while an item casts, having sent its cancel (`ItemCast.interrupt`): the skill is refused. */
+  interruptCast?: () => boolean;
 }
 
 /** The spec's guard against a server that drops a request without a word (§3.11, [skills §8.3]): 2 s, then it is over. */
@@ -531,6 +533,8 @@ export class SkillUse implements OwnSkills {
     const slot = this.own()?.skills[index];
     const skill = slot === undefined ? undefined : this.data.skills.get(slot.skill);
     if (skill === undefined) return false;
+    // Piece 7 M3: an item casting (STATE_BASEMOTION_MODE): its cancel, and no skill (MoverMsg.cpp:196-202)
+    if (this.world.interruptCast?.() === true) return false;
     // Piece 7 M2: Blinkpool's teleport (SendTeleSkill, MoverActEvent.cpp:533-551) is not built: refused with a word
     if (skill.id === BLINKPOOL) {
       this.onText(BLINKPOOL_NOT_YET);

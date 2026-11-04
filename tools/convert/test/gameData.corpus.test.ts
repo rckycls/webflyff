@@ -321,6 +321,15 @@ describeClient('the game-data stage on the real client', () => {
     expect(itemProps.filter((p) => p.icon !== null).length).toBeGreaterThan(4900);
   });
 
+  it("the travel items' cast and ready effect (Piece 7 M3, [R §1])", async () => {
+    const byId = new Map((await catalog<WebItemProp[]>(GAME_DATA_KEYS.itemProps)).map((p) => [p.id, p]));
+    expect(byId.get(4805)).toMatchObject({ name: 'Town Blinkwing', kind2: 22, kind3: 47, castMs: 10000, sfxReady: 118 });
+    expect(byId.get(4806)).toMatchObject({ kind3: 45, castMs: 10000, sfxReady: 118 });
+    expect(byId.get(4811)).toMatchObject({ weaponType: 203, castMs: 10000 });
+    expect(byId.get(10469)).toMatchObject({ kind2: 19, kind3: 50, castMs: 4000 });
+    expect(byId.get(10469)).not.toHaveProperty('sfxReady');
+  });
+
   it("itemProps: the new character's food stacks (dwPackMax 99, propItem.txt:1744-1745) and its sword does not", async () => {
     const itemProps = await catalog<WebItemProp[]>(GAME_DATA_KEYS.itemProps);
     const packMax = (name: string): number | undefined => itemProps.find((p) => p.id === defines.get(name))?.packMax;

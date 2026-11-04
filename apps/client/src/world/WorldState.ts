@@ -1,4 +1,4 @@
-import { AttackFlag, DstParam, NULL_ID } from '@flyffweb/protocol';
+import { AttackFlag, DstParam, NULL_ID, STATE_BASEMOTION_MODE, StateModeFlag } from '@flyffweb/protocol';
 import type { WebSkill } from '@flyffweb/formats';
 import type { AddedMover, AddedPlayer, Vec3, WorldMessage } from '@flyffweb/protocol';
 import type { ServerClock } from '../net/serverClock';
@@ -71,6 +71,14 @@ export interface Mover extends SimMover {
   /** Piece 7 M2: the buffs on the mover (`m_buffs`), and its speed before `DST_SPEED` (`m_fSpeed` times its factor). */
   buffs: MoverBuffs;
   baseSpeed: number;
+  /** Piece 7 M3: `m_dwStateMode`, a player's from its ADD_OBJ, then STATEMODE's (`OnStateMode`, `DPClient.cpp:12381-12440`). */
+  stateMode: number;
+  /**
+   * Piece 7 M3: the item the mover casts (`m_dwUseItemId`, a prop id) while in `STATE_BASEMOTION_MODE`, or null: from
+   * STATEMODE ON, at the world's clock (`m_nReadyTime = timeGetTime()`, the own gauge's start), or from an ADD_OBJ met
+   * mid-cast, with no start (`OnAddObj`, `:1380-1391`, makes the effect and leaves `m_nReadyTime` 0: no gauge).
+   */
+  cast: { itemId: number; startedAt: number | null } | null;
   /** The ADD_OBJ the mover came from: the model, the look and the worn parts are read from it. */
   added: AddedMover;
   /** `CMover::m_szName`: the player's own, the character's from `character.inc`, or the monster's from `propMover.txt`. '' where unknown. */
@@ -148,7 +156,12 @@ export type CombatEvent =
    * Piece 7 M2: the mover's model lit in `color` (`m_SparkInfo`) from behind it, `AngleToVectorXZ( fromAngle, -1 )`: the
    * white flash of a magic skill's shot (`MoverActEvent.cpp:655-664`). The cyan of a cast is the views' own, each step.
    */
-  | { kind: 'tint'; moverId: number; color: Vec3; fromAngle: number };
+  | { kind: 'tint'; moverId: number; color: Vec3; fromAngle: number }
+  /**
+   * Piece 7 M3: the mover casts `itemId` (a prop id): `CreateItemReadySfx` of its `dwSfxObj` at the mover. `fresh` for
+   * STATEMODE ON (`OnStateMode`), false for a mover added mid-cast (`OnAddObj`).
+   */
+  | { kind: 'itemCast'; moverId: number; itemId: number; fresh: boolean };
 
 /**
  * What changed in view since the last `takeChanges`. A caller applies `removed` first, then `added`:
@@ -430,6 +443,15 @@ export class WorldState {
       case 'removeSkillInfluence': // :14993-15003
         m.buffs.remove(message.buffType, message.id);
         break;
+      case 'stateMode': // Piece 7 M3, OnStateMode (:12381-12440): the mode, and ON's ready effect
+        m.stateMode = message.mode;
+        if (message.flag === StateModeFlag.ON && message.itemId !== null) {
+          m.cast = { itemId: message.itemId, startedAt: this.nowMs() };
+          this.combat({ kind: 'itemCast', moverId: m.objectId, itemId: message.itemId, fresh: true });
+        } else if (message.flag !== StateModeFlag.ON) {
+          m.cast = null;
+        }
+        break;
       case 'removeAllSkillInfluence': // :15005-15010
         m.buffs.removeCommon();
         break;
@@ -567,6 +589,8 @@ export class WorldState {
     this.byId.set(objectId, mover);
     if (mover.isSelf) this.own = mover;
     this.pendingAdded.push(mover);
+    // Piece 7 M3: a mover met mid-cast gets its ready effect (OnAddObj, DPClient.cpp:1380-1391)
+    if (mover.cast !== null) this.combat({ kind: 'itemCast', moverId: objectId, itemId: mover.cast.itemId, fresh: false });
     const own = this.own;
     if (joining || added.isPlayer || own === undefined) return;
     const [x, , z] = mover.act.body.pos;
@@ -631,10 +655,13 @@ export class WorldState {
     }
     const isSelf = added.player?.self === true;
     const level = added.isPlayer ? added.player?.level ?? 1 : Math.max(prop?.level ?? 1, 1);
+    const stateMode = added.player?.stateMode ?? 0;
+    const useItemId = added.player?.useItemId;
     const mover: Mover = {
       objectId, act, dest: null, corr: null, speedFactor, isSelf, kind, added, name, flying: prop?.flying === true,
       buffs: this.buffsOf(added), baseSpeed: speed,
       hp: added.hitPoint, level, maxHp: this.maxHpOf(added, level),
+      stateMode, cast: (stateMode & STATE_BASEMOTION_MODE) !== 0 && useItemId !== undefined ? { itemId: useItemId, startedAt: null } : null,
     };
     const numbers = this.numbers;
     if (isSelf && numbers?.objectId === objectId) {

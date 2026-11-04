@@ -72,6 +72,12 @@ export const PacketType = {
   SFX_CLEAR: 0x00ff0024,
   /** `PACKETTYPE_SFX_HIT`: a missile landed (`CDPClient::SendSfxHit`, `MsgHdr.h:192`); the server deals its damage then. */
   SFX_HIT: 0x00ff00d2,
+  /** Piece 7 M3: `PACKETTYPE_DOUSEITEM`, an item used (`CDPClient::SendDoUseItem`, `MsgHdr.h:149`). */
+  DOUSEITEM: 0x00ff0021,
+  /** Piece 7 M3: `PACKETTYPE_STATEMODE`, the item cast's cancel (`CDPClient::SendStateModeCancel`, `MsgHdr.h:389`). */
+  STATEMODE: 0xffffff7a,
+  /** Piece 7 M3: `PACKETTYPE_RETURNSCROLL`, the Scroll of Return's village or the way back (`MsgHdr.h:552`). */
+  RETURNSCROLL: 0xf000d010,
   ERROR_STRING: 0x70000003,
   LOGIN_PROTECT_NUMPAD: 0x88100200,
   LOGIN_PROTECT_CERT: 0x88100201,
@@ -177,6 +183,10 @@ export const MessageType = {
   SETDESTPARAM: 0x001c,
   RESETDESTPARAM: 0x001d,
   RESETDESTPARAM_SYNC: 0x9800,
+  /** Piece 7 M3: a mover's state mode on, off or cancelled: an item cast (`CUserMng::AddStateMode`, `MsgHdr.h:1134`). */
+  STATEMODE: 0x00df,
+  /** Piece 7 M3: the Scroll of Return's village taken, no body (`CUser::AddReturnScroll`, `User.cpp:6636-6645`). */
+  RETURNSCORLL: 0x00ad,
   ADD_OBJ: 0x00f0,
   DEL_OBJ: 0x00f1,
   REPLACE: 0x00f2,

@@ -742,6 +742,19 @@ describe('the game-data stage', () => {
     ]);
   });
 
+  it('item props carry castMs and sfxReady only with a cast (Piece 7 M3)', async () => {
+    const cast = weaponRow('505', 'IDS_PROPITEM_TXT_000793').split('\t');
+    cast[75] = '10000'; // dwSkillReadyType: a Blinkwing's 10 s cast
+    cast[79] = '118'; // dwSfxObj: XI_BLINKWING_READY
+    const effectOnly = weaponRow('503', 'IDS_PROPITEM_TXT_000793').split('\t');
+    effectOnly[79] = '118'; // an effect with no cast is no ready effect: CreateItemReadySfx runs at STATEMODE ON only
+    await client({ 'propItem.txt': script(cast.join('\t'), effectOnly.join('\t')) });
+    const props = await catalog<WebItemProp[]>(await runData(), GAME_DATA_KEYS.itemProps);
+    expect(props.find((p) => p.id === 505)).toMatchObject({ castMs: 10000, sfxReady: 118 });
+    const plain = props.find((p) => p.id === 503)!;
+    for (const key of ['castMs', 'sfxReady']) expect(plain).not.toHaveProperty(key);
+  });
+
   it('itemProps: a row repeated in propItem.txt keeps the last, and an item with no icon has none', async () => {
     // CFixedArray::SetAtGrow replaces the slot
     const bare = itemRow('503', 'IDS_PROPITEM_TXT_000792', 'PARTS_LOWER_BODY').split('	');

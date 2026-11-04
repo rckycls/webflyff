@@ -1199,12 +1199,15 @@ fieldset:disabled .btn {
 
 /* The box that asks before logging out (LogOutBox, CWndLogOut over CWndMessageBox): the text in black; OK and Cancel are
    picture buttons (ButtOk.tga, ButtCancel.tga, 72 px a state) */
-.hud-logout-text {
+.hud-logout-text,
+.hud-message-text {
   position: absolute;
   color: #000000;
   line-height: 14px;
   white-space: normal;
 }
+/* Piece 7 M3: a message box's text may be longer than the log-out box's (the Scroll of Return's question) */
+.hud-message-text { overflow-y: auto; }
 
 /* A button drawn with a theme picture (pictureButton, CTheme::RenderWndButton_4Texture): the picture's quarters,
    --hud-quarter wide, are the highlighted, normal, pushed and disabled states. A touch screen has no pointer over a
@@ -2059,6 +2062,23 @@ fieldset:disabled .btn {
 }
 
 .hud-teleporter > .hud-window-body { overflow: hidden; }
+
+/* Piece 7 M3: the Scroll of Return's village window (CWndSelectVillage): black text, three radios drawn from
+   ButtRadio.bmp's 14 px frames with their label 2 px after the picture (CTheme::RenderWndButtonRadio) */
+.hud-select-village-prompt { position: absolute; color: #000000; line-height: 18px; }
+.hud-village-radio {
+  position: absolute; display: flex; align-items: center; gap: 2px; min-height: 0; padding: 0; border: 0;
+  background: none; color: #000000; font: inherit; text-align: left; cursor: pointer;
+}
+.hud-village-radio-icon { flex: none; width: 14px; height: 14px; background-repeat: no-repeat; }
+@media (max-width: 1000px) and (pointer: coarse) {
+  .world:has(.hud-select-village:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack) { visibility: hidden; }
+  .hud-village-radio::before { content: ''; position: absolute; inset: -4px 0; }
+  /* the window stays at its own size on a phone (mobileScale 1): its words at the phones' 14 px */
+  .hud-select-village :is(.hud-select-village-prompt, .hud-village-radio) { font-size: 14px; white-space: nowrap; }
+  /* the message box too (MessageBox, mobileScale 1): a long question scrolls in its text box */
+  .hud-message .hud-message-text { font-size: 14px; line-height: 16px; }
+}
 .teleporter-map { position: absolute; inset: 0; background: center / 100% 100% no-repeat; }
 .teleporter-map button { position: absolute; width: 20px; height: 20px; min-height: 0; padding: 0; border: 0; background: center / 16px 16px no-repeat; transform: translate(-50%, -50%); cursor: pointer; }
 .teleporter-map button:hover, .teleporter-map button:focus-visible { background-size: 20px 20px; outline: 1px solid #fff8; }

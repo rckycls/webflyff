@@ -168,6 +168,11 @@ export const THEME_FILES: readonly string[] = [
   'GauMagChargeBody.TGA',
   'GauMagChargeBody2.tga',
   'GauMagChargeTail.TGA',
+  // Piece 7 M3: an item cast's gauge (CMover::RenderCasting, MoverRender.cpp:1982-2043; Neuz.cpp:1624-1625), and the
+  // Scroll of Return's village radios (APP_COMM_SELECTVIL, resdata.inc:24294-24356)
+  'GauAccelBG.TGA',
+  'GauAccelInner.TGA',
+  'ButtRadio.bmp',
   'Back_Me.TGA',
   'Back_As.TGA',
   'Back_Ma.TGA',

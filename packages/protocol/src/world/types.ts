@@ -59,6 +59,13 @@ export type WorldMessage = ChatMessage | NpcMessage | ShopMessage | QuestMessage
   | { type: 'setDestParam'; dst: number; adj: number; chg: number }
   | { type: 'resetDestParam'; dst: number; adj: number }
   | { type: 'resetDestParamSync'; dst: number; adj: number; total: number }
+  /**
+   * Piece 7 M3: a mover's `m_dwStateMode` and its flag (ON 0, OFF 1, CANCEL 2): an item cast; `itemId` the cast item's
+   * prop id, sent with ON only (`OnStateMode`).
+   */
+  | { type: 'stateMode'; mode: number; flag: number; itemId: number | null }
+  /** Piece 7 M3: RETURNSCORLL, the Scroll of Return's village taken: the scroll is to be used again (`OnReturnScrollACK`). */
+  | { type: 'returnScrollAck' }
   /** Another mover's arrow (`arrowXi`) at `targetId`, hitting with `hitXi`; Neuz ignores `pos` (`OnCreateSfxAllow`). */
   | { type: 'createSfxAllow'; arrowXi: number; hitXi: number; pos: Vec3; targetId: number }
   /** The own job change: the new job and all 45 skill slots (`OnSetChangeJob`). */
@@ -314,6 +321,11 @@ export interface AddedPlayer {
   /** `m_dwMode` and `m_dwStateMode`: flag sets. */
   mode: number;
   stateMode: number;
+  /**
+   * Piece 7 M3: the prop id of the item `m_dwUseItemId` names, which the world server writes for a mover casting one
+   * (`ObjSerializeOpt.cpp:155-163`); present only when it is not 0.
+   */
+  useItemId?: number;
   /** `m_dwPKTime`: the milliseconds of pink state left (the world server sends `m_dwPKTime - GetTickCount()`), or 0. */
   pkTime: number;
   pkValue: number;

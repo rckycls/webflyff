@@ -52,6 +52,8 @@ describe('world constants', () => {
       // Piece 7 M2: the buffs.
       SETSKILLSTATE: 0x004c, REMOVESKILLINFULENCE: 0x00f8, REMOVEALLSKILLINFULENCE: 0x00f4, SETDESTPARAM: 0x001c,
       RESETDESTPARAM: 0x001d, RESETDESTPARAM_SYNC: 0x9800,
+      // Piece 7 M3: the item cast and the Scroll of Return's answer.
+      STATEMODE: 0x00df, RETURNSCORLL: 0x00ad,
     });
     expect(BUNDLE_MARKER).toBe(0x31434f54);
   });

@@ -179,6 +179,20 @@ describe('WorldSession, entering', () => {
     const check = new ArReader(cache.sent.at(-1)!); check.u32();
     expect([check.u32(), check.i32(), check.i32()]).toEqual([0x88100110, 151, 1]); check.expectEnd();
   });
+  it('sendStateModeCancel and sendReturnScroll send only while playing (Piece 7 M3)', async () => {
+    const { cache, session } = await playing();
+    session.sendStateModeCancel();
+    const cancel = new ArReader(cache.sent.at(-1)!); cancel.u32();
+    expect([cancel.u32(), cancel.u32(), cancel.u8()]).toEqual([0xffffff7a, 4, 2]); cancel.expectEnd();
+    session.sendReturnScroll(1);
+    const scroll = new ArReader(cache.sent.at(-1)!); scroll.u32();
+    expect([scroll.u32(), scroll.i32()]).toEqual([0xf000d010, 1]); scroll.expectEnd();
+    session.leave();
+    const sent = cache.sent.length;
+    session.sendStateModeCancel();
+    session.sendReturnScroll(-1);
+    expect(cache.sent).toHaveLength(sent);
+  });
   it('waits 1 s after the cache channel opens, then sends PRE_JOIN', async () => {
     const { net, clock, login, cache, events } = await started();
     expect(net.targets).toEqual([LOGIN_SERVER, CACHE_SERVER]);

@@ -65,6 +65,14 @@ describeClient('the UI stage on the real client', () => {
     expect(reportJson.warnings[0]!.message).toContain('.jpg');
   });
 
+  it("writes the casting gauge's and the village window's radio pictures (Piece 7 M3)", async () => {
+    for (const [file, size] of [['GauAccelBG.TGA', [112, 16]], ['GauAccelInner.TGA', [112, 16]], ['ButtRadio.bmp', [84, 14]]] as const) {
+      expect(THEME_FILES, file).toContain(file);
+      const png = await readPng(iconKeyOf(file));
+      expect([png.width, png.height], file).toEqual(size);
+    }
+  });
+
   it('has every piece of the theme list in the client and writes it', () => {
     expect(reportJson.warnings.filter((w) => /not in/.test(w.message))).toEqual([]);
     for (const file of THEME_FILES) {

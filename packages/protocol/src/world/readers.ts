@@ -31,6 +31,7 @@ import {
 } from './quest';
 import { readPlayMusic, readPlaySound } from './sound';
 import { readTaskBar } from './taskBar';
+import { readReturnScrollAck, readStateMode } from './travel';
 import type { WorldMessage } from './types';
 
 /**
@@ -79,6 +80,9 @@ export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
     [MessageType.MAGIC_ATTACK, readMagicAttack],
     [MessageType.RANGE_ATTACK, readRangeAttack],
     [MessageType.CREATESFXALLOW, readCreateSfxAllow],
+    // Piece 7 M3: the item cast and the Scroll of Return's answer
+    [MessageType.STATEMODE, readStateMode],
+    [MessageType.RETURNSCORLL, readReturnScrollAck],
     // Piece 7 M2: the buffs
     [MessageType.SETSKILLSTATE, readSetSkillState],
     [MessageType.REMOVESKILLINFULENCE, readRemoveSkillInfluence],

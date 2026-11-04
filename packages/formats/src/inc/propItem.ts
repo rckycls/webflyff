@@ -88,6 +88,8 @@ export interface ItemProp {
   sfxObj: number;
   sfxObj2: number;
   sfxObj4: number;
+  /** Piece 7 M3: `dwSkillReadyType` of an item, its cast in ms (a Blinkwing's 10000; `IsItemRedyTime`, Mover.cpp:8582-8627). Absent for `=`. */
+  skillReadyType?: number;
   /** `dwLinkKind` and `dwLinkKindBullet` (Piece 7 M2): the weapon a skill needs, the bullets a bow or a bow skill needs. */
   linkKind: number;
   linkKindBullet: number;
@@ -221,6 +223,8 @@ const KEPT: ReadonlySet<string> = new Set([
   'dwSndAttack1',
   'dwSndAttack2',
   'dwReferStat1',
+  // Piece 7 M3: an item's cast
+  'dwSkillReadyType',
   // the columns of a skill row
   'dwReqDisLV',
   'dwReSkill1',
@@ -335,6 +339,7 @@ export function readPropItem(
         sfxObj: kept.dwSfxObj,
         sfxObj2: kept.dwSfxObj2,
         sfxObj4: kept.dwSfxObj4,
+        ...(kept.dwSkillReadyType > 0 ? { skillReadyType: kept.dwSkillReadyType } : {}),
         linkKind: kept.dwLinkKind,
         linkKindBullet: kept.dwLinkKindBullet,
         atkStyle: kept.dwAtkStyle,

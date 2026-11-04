@@ -50,6 +50,8 @@ function wallAt(x: number): CollisionObject {
 
 interface RigOptions {
   motionReady?: () => boolean;
+  /** Piece 7 M3: the item cast's guard (`ItemCast.interrupt`). */
+  interruptCast?: () => boolean;
   level?: number;
   /** The own state the loop reads; `newVagrant( level )` unless given. */
   own?: OwnState | undefined;
@@ -140,7 +142,9 @@ function rig(options: RigOptions = {}) {
   const focus = new Focus(session);
   const state = 'own' in options ? options.own : newVagrant(level);
   let tick = 1000n;
-  const loop = new AttackLoop(session, focus, world, () => state, { tick: () => (tick += 10n) }, data.movers, undefined, options.motionReady);
+  const loop = new AttackLoop(
+    session, focus, world, () => state, { tick: () => (tick += 10n) }, data.movers, undefined, options.motionReady, options.interruptCast,
+  );
   const texts: string[] = [];
   loop.onText = (id) => void texts.push(id);
   if (options.ground !== undefined) loop.ground = () => options.ground;
@@ -1267,5 +1271,32 @@ describe('AttackLoop: an Attack-button hold left over (final review, Important 3
     expect(r.controls()).toBe(true);
     r.steps(200); // no automatic shots with no finger down
     expect(shots(r.sent)).toEqual([]);
+  });
+});
+
+describe('AttackLoop: an item cast (IsAttackAble, Mover.cpp:6484-6494; Piece 7 M3)', () => {
+  it('an attack press during a cast cancels it and attacks nothing, then attacks once the cast is over', () => {
+    let casting = true;
+    let asked = 0;
+    const r = rig({ interruptCast: () => { asked++; return casting; } });
+    r.tap(MONSTER_ID);
+    r.tap(MONSTER_ID); // the second press attacks
+    r.steps(30);
+    expect(asked).toBeGreaterThan(0);
+    expect(r.kinds()).toEqual([]);
+    casting = false; // the server's CANCEL: the auto-attack goes ahead
+    r.until(() => r.melee().length > 0);
+  });
+
+  it('the per-frame attack check sends no cancel (Review Focus 1)', () => {
+    let asked = 0;
+    const r = rig({ interruptCast: () => { asked++; return true; } });
+    r.tap(MONSTER_ID); // selected, not attacked
+    for (let i = 0; i < 60; i++) {
+      void r.loop.canAttackFocus;
+      r.loop.gauge(r.now());
+      r.step();
+    }
+    expect(asked).toBe(0);
   });
 });

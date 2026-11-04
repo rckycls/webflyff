@@ -125,6 +125,30 @@ describe('inventory window', () => {
     expect(equip).toHaveBeenCalledWith(7);
     ui.dispose();
   });
+
+  it("the phone's Use shows for a Blinkwing and the Scroll of Return (Piece 7 M3)", () => {
+    const own = newVagrant(), data = ownGameData();
+    data.itemProps.set(4805, itemProp({ id: 4805, part: -1, kind2: 22, kind3: 47 }));
+    data.itemProps.set(10469, itemProp({ id: 10469, part: -1, kind2: 19, kind3: 50 }));
+    data.itemProps.set(10431, itemProp({ id: 10431, part: -1, kind2: 19 }));
+    own.inventory!.set(2, { objectId: 2, itemId: 4805, count: 5 });
+    own.inventory!.set(8, { objectId: 8, itemId: 10469, count: 1 });
+    own.inventory!.set(9, { objectId: 9, itemId: 10431, count: 1 });
+    const use = vi.fn();
+    const ui = new InventoryWindow({ url: () => '', sheets: null }, data, { use, equip: vi.fn(), drop: vi.fn(), move: vi.fn(), shortcut: vi.fn() });
+    document.body.append(ui.frame.element); ui.toggle(own);
+    ui.frame.element.setAttribute('data-mobile-window', ''); ui.update(own, true);
+    const actions = () => [...ui.frame.element.querySelectorAll<HTMLElement>('[data-item-action]')].map((el) => el.dataset.itemAction);
+    ui.frame.element.querySelector<HTMLButtonElement>('[data-bag-slot="2"]')!.click();
+    expect(actions()).toEqual(['use', 'drop']);
+    ui.frame.element.querySelector<HTMLButtonElement>('[data-item-action="use"]')!.click();
+    expect(use).toHaveBeenCalledWith(2);
+    ui.frame.element.querySelector<HTMLButtonElement>('[data-bag-slot="8"]')!.click();
+    expect(actions()).toEqual(['use', 'drop']);
+    ui.frame.element.querySelector<HTMLButtonElement>('[data-bag-slot="9"]')!.click(); // the resurrection scroll: the revive window's
+    expect(actions()).toEqual(['drop']);
+    ui.dispose();
+  });
   it('only requests a drop after dragging a bag item to the game canvas and confirming its quantity', () => {
     const own = newVagrant(), data = ownGameData(), drop = vi.fn(), equip = vi.fn();
     own.inventory!.set(6, { objectId: 6, itemId: 21, count: 2 });

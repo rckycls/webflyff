@@ -262,6 +262,11 @@ export type WorldPacket =
   // The slots a SKILLTASKBAR names, in the order sent: Neuz sends all five, the server only overwrites those.
   | { type: 'skillTaskBar'; entries: Array<{ slot: number; shortcut: Shortcut }> }
   | { type: 'endSkillQueue' }
+  // Piece 7 M3: an item used (`objectId` the high word of `MAKELONG( ITYPE_ITEM, objId )`), the cast's cancel, and the
+  // Scroll of Return's choice.
+  | { type: 'useItem'; objectId: number; targetId: number; part: number }
+  | { type: 'stateMode'; mode: number; flag: number }
+  | { type: 'returnScroll'; select: number }
   | { type: 'unknown'; packetType: number };
 
 /**
@@ -411,6 +416,18 @@ function decodeClientPacket(r: ArReader): WorldPacket {
     case PacketType.ENDSKILLQUEUE:
       r.expectEnd();
       return { type: 'endSkillQueue' };
+    case PacketType.DOUSEITEM: {
+      const id = r.u32(), targetId = r.u32(), part = r.i32(); r.expectEnd();
+      return { type: 'useItem', objectId: id >>> 16, targetId, part };
+    }
+    case PacketType.STATEMODE: {
+      const mode = r.u32(), flag = r.u8(); r.expectEnd();
+      return { type: 'stateMode', mode, flag };
+    }
+    case PacketType.RETURNSCROLL: {
+      const select = r.i32(); r.expectEnd();
+      return { type: 'returnScroll', select };
+    }
     default:
       return { type: 'unknown', packetType };
   }

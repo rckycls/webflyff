@@ -369,6 +369,10 @@ function buildItemProps(env: Env, read: Reading): WebItemProp[] {
         sfxHit: prop.sfxObj3,
         sfxMissile: prop.sfxObj2,
         linkKindBullet: prop.linkKindBullet,
+        // Piece 7 M3: the cast, and its ready effect (made at STATEMODE ON only, so kept only with a cast)
+        ...(prop.skillReadyType !== undefined
+          ? { castMs: prop.skillReadyType, ...(prop.sfxObj > 0 ? { sfxReady: prop.sfxObj } : {}) }
+          : {}),
         model,
         dropModel,
         ...(prop.reflect ? { reflect: prop.reflect } : {}),

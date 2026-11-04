@@ -176,6 +176,12 @@ export interface EffectRequest {
    * (`CSfx::Process`, `SfxObj.cpp:148-158`), as a buff's lasting effect does (`dwSfxObj4`). Without it, once.
    */
   seconds?: number;
+  /**
+   * Piece 7 M3: a `CSfxReady`, an item cast's ready effect: its model loops while this holds, and it is deleted the tick
+   * it no longer does (its caster has left `STATE_BASEMOTION_MODE`), or when the mover it follows is gone
+   * (`CSfxReady::Process`, `Sfx.cpp:3826-3837`).
+   */
+  whileTrue?: () => boolean;
 }
 
 /** One effect in the world: a `CSfx`. */
@@ -190,6 +196,8 @@ interface Playing {
   /** Piece 7 M2: `m_nSec` (seconds) and `m_nFrame`, for an effect that loops for a time; null plays once. */
   seconds: number | null;
   frame: number;
+  /** Piece 7 M3: a `CSfxReady`'s test, or null. */
+  whileTrue: (() => boolean) | null;
   /** `GetAngle()`, degrees, as `SetAngle` stores it. */
   angle: number;
   /** `GetScale()`. */
@@ -278,7 +286,10 @@ export class EffectManager {
   step(find: (objectId: number) => { pos: Vec3 } | undefined): void {
     this.effects = this.effects.filter((effect) => {
       effect.frame++;
-      if (effect.seconds === null) {
+      if (effect.whileTrue !== null) {
+        if (!effect.whileTrue()) return false; // CSfxReady::Process: the cast is over
+        if (effect.model.step()) effect.model.rewind();
+      } else if (effect.seconds === null) {
         if (effect.model.step()) return false;
       } else {
         if (effect.model.step()) effect.model.rewind(); // m_nCurFrame = 0
@@ -423,6 +434,7 @@ export class EffectManager {
         keepWhenGone: request.followDest === true,
         seconds: request.seconds !== undefined && request.seconds > 0 ? request.seconds : null,
         frame: 0,
+        whileTrue: request.whileTrue ?? null,
         angle: request.angle === undefined ? headingOf(request.xi, request.sourceAngle) : wrapAngle(f32(request.angle)),
         scale: [scale, scale, scale],
         lift: plain ? DRAWN_LIFT : 0,

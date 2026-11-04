@@ -6,7 +6,7 @@ import {
   encodeSkillTaskBar, encodeUseSkill, encodeWorldKeepAlive, readBundle,
   encodeUseItem, encodeEquipItem, encodeMoveItem, encodeDropItem, encodeRevival, encodeChat,
   encodeNpcDialog, encodeNpcDialogOpen, encodeOpenShop, encodeCloseShop, encodeBuyItem, encodeSellItem, encodeTeleporter,
-  encodeQuestCheck, encodeRemoveQuest,
+  encodeQuestCheck, encodeRemoveQuest, encodeReturnScroll, encodeStateModeCancel,
 } from '@flyffweb/protocol';
 import { encodeMagicAttack, encodeRangeAttack, encodeSfxClear, encodeSfxHit, encodeSfxId } from '@flyffweb/protocol';
 import type { BundleMessage, BundleResult, MoveReport, Shortcut, SkillSlot, Vec3, WorldMessage } from '@flyffweb/protocol';
@@ -113,6 +113,10 @@ export class WorldSession {
     this.playingCache()?.send(encodeChat(channel, text, target));
   }
   sendUseItem(objectId: number): void { this.playingCache()?.send(encodeUseItem(objectId)); }
+  /** Piece 7 M3: the item cast's cancel (`SendStateModeCancel`). */
+  sendStateModeCancel(): void { this.playingCache()?.send(encodeStateModeCancel()); }
+  /** Piece 7 M3: the Scroll of Return's village (0-2) or the way back (-1) (`SendReturnScroll`). */
+  sendReturnScroll(select: number): void { this.playingCache()?.send(encodeReturnScroll(select)); }
   sendEquipItem(objectId: number, part = -1): void { this.playingCache()?.send(encodeEquipItem(objectId, part)); }
   sendMoveItem(source: number, destination: number): void { this.playingCache()?.send(encodeMoveItem(source, destination)); }
   sendDropItem(objectId: number, count: number, pos: Vec3): void { this.playingCache()?.send(encodeDropItem(objectId, count, pos)); }

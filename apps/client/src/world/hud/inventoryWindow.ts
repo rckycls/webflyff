@@ -5,6 +5,7 @@ import { themeUrl } from './art';
 import type { UiArt } from './art';
 import { WindowFrame } from './frame';
 import { fitsEquipmentSlot } from '../items/equipment';
+import { usableFromBag } from '../items/travelItems';
 
 export interface InventoryActions {
   use(id: number): void;
@@ -242,7 +243,7 @@ export class InventoryWindow {
         button('unequip', 'Unequip', () => this.actions.equip(item.objectId));
       } else {
         if (prop && prop.part >= 0 && prop.part < 31 && prop.part !== 13) button('equip', 'Equip', () => this.actions.equip(item.objectId));
-        if (prop && [11, 12, 14].includes(prop.kind2)) button('use', 'Use', () => this.actions.use(item.objectId));
+        if (prop && usableFromBag(prop)) button('use', 'Use', () => this.actions.use(item.objectId)); // Piece 7 M3: and the travel items
         button('drop', 'Drop', () => this.requestDrop(item.objectId));
       }
     }

@@ -15,6 +15,7 @@ import {
   writeMoverDeath, writeMoverMoved, writeQueryGetDestObj, writeReplace, writeRevival, writeRevivalToLodestar,
   writeSetActionPoint, writeSetDestObj, writeSetExperience, writeSetGrowthLearningPoint, writeSetLevel,
   writeSetPointParam, writeSetPos, writeSetPosAngle, writeSetState, writeTaskBar, writeUseSkill, writeWorldReadInfo,
+  writeReturnScrollAck, writeStateMode, writeUpdateItem,
 } from '../src';
 
 it('encodeBundle writes the table', () => {
@@ -172,6 +173,17 @@ it('every writer decodes to what it was given', () => {
     [
       'writeCreateSfxAllow', writeCreateSfxAllow(40, 112, 33, pos, 0xabcd), MessageType.CREATESFXALLOW,
       { type: 'createSfxAllow', arrowXi: 112, hitXi: 33, pos, targetId: 0xabcd },
+    ],
+    // Piece 7 M3
+    [
+      'writeStateMode (ON)', writeStateMode(40, 4, 0, 4805), MessageType.STATEMODE,
+      { type: 'stateMode', mode: 4, flag: 0, itemId: 4805 },
+    ],
+    ['writeStateMode (OFF)', writeStateMode(40, 0, 1), MessageType.STATEMODE, { type: 'stateMode', mode: 0, flag: 1, itemId: null }],
+    ['writeReturnScrollAck', writeReturnScrollAck(40), MessageType.RETURNSCORLL, { type: 'returnScrollAck' }],
+    [
+      'writeUpdateItem', writeUpdateItem(40, 2, 0, 4), 0x0018,
+      { type: 'updateItem', itemType: 0, objectId: 2, param: 0, value: 4, time: 0 },
     ],
     [
       'writeDoEquip', writeDoEquip(40, 44, 1962, true, 25), 0x0006,

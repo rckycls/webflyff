@@ -77,6 +77,8 @@ type Sent =
   | ['getDestObj'];
 
 interface RigOptions {
+  /** Piece 7 M3: the item cast's guard (`ItemCast.interrupt`). */
+  interruptCast?: () => boolean;
   /** The own skill slots; Clean Hit and Flurry at 1 by default. */
   skills?: SkillSlot[];
   /** The action slot's shortcuts (TASKBAR's queue); none by default. */
@@ -166,7 +168,9 @@ function rig(options: RigOptions = {}) {
     sendMagicAttack: () => {}, sendRangeAttack: () => {}, // Piece 7 M2: the wand's and the bow's shots, not used here
   };
   const focus = new Focus(session);
-  const skills = new SkillUse(session, focus, () => numbers, () => now, data, { tick: () => 1000n, ground: () => ground });
+  const skills = new SkillUse(session, focus, () => numbers, () => now, data, {
+    tick: () => 1000n, ground: () => ground, ...(options.interruptCast !== undefined ? { interruptCast: options.interruptCast } : {}),
+  });
   const loop = new AttackLoop(session, focus, world, () => numbers, { tick: () => 1000n }, data.movers, skills);
   skills.attack = loop;
   world.onUseSkill = (casterId, message, started) => skills.onUseSkill(casterId, message, started);
@@ -885,5 +889,18 @@ describe('SkillUse: the from-behind rule and Blinkpool (MoverMove.cpp:128-153; p
     r.steps(20);
     expect(r.texts).toEqual(['WEB_BLINKPOOL_NOT_YET']);
     expect(r.sent).toEqual([]);
+  });
+});
+
+describe('SkillUse: an item cast (CMD_SetUseSkill, MoverMsg.cpp:196-202; Piece 7 M3)', () => {
+  it('a skill during a cast sends the cancel and is not used', () => {
+    let asked = 0;
+    const r = rig({ interruptCast: () => { asked++; return true; } });
+    r.tap(MONSTER_ID);
+    r.skills.useSlot(0);
+    r.steps(30);
+    expect(asked).toBeGreaterThan(0);
+    expect(r.sent).toEqual([]);
+    expect(r.skills.commanding).toBe(false);
   });
 });

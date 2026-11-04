@@ -204,6 +204,29 @@ export function writeSetJobSkill(objectId: number, job: number, skills: readonly
   return scripted(objectId, MessageType.SET_JOB_SKILL, w);
 }
 
+/**
+ * Piece 7 M3: STATEMODE (`CUserMng::AddStateMode`, `User.cpp:5171-5209`): the mover's state mode and its flag (ON 0, OFF
+ * 1, CANCEL 2), with ON the cast item's prop id.
+ */
+export function writeStateMode(objectId: number, mode: number, flag: number, itemId?: number): ScriptMessage {
+  const w = new ArWriter().u32(mode).u8(flag);
+  if (flag === 0) w.u32(itemId ?? 0);
+  return scripted(objectId, MessageType.STATEMODE, w);
+}
+
+/** Piece 7 M3: RETURNSCORLL (`CUser::AddReturnScroll`, `User.cpp:6636-6645`): no body. */
+export function writeReturnScrollAck(objectId: number): ScriptMessage {
+  return scripted(objectId, MessageType.RETURNSCORLL, new ArWriter());
+}
+
+/**
+ * Piece 7 M3: UPDATE_ITEM 0x0018 (`CUser::AddUpdateItem`, `User.cpp:1136-1150`): the inventory's (type 0) item at
+ * `itemObjectId` gets `value` in its `param` (`UI_NUM` 0, the count; 0 and below remove it), time 0.
+ */
+export function writeUpdateItem(objectId: number, itemObjectId: number, param: number, value: number): ScriptMessage {
+  return scripted(objectId, 0x0018, new ArWriter().u8(0).u8(itemObjectId).u8(param).u32(value).u32(0));
+}
+
 /** Piece 7 M2: SETSKILLSTATE (`CUserMng::AddSetSkillState`): a buff on `targetId`, its whole length `time` (ms). */
 export function writeSetSkillState(objectId: number, targetId: number, buffType: number, id: number, level: number, time: number): ScriptMessage {
   return scripted(objectId, MessageType.SETSKILLSTATE, new ArWriter().u32(targetId).u16(buffType).u16(id).u32(level).u32(time));
@@ -569,7 +592,7 @@ function playerStart(m: AddedMover, p: AddedPlayer, stats: readonly number[] = [
     .u32(0) // m_idGuildCloak
     .u8(0) // m_idparty > 0 is false
     .u8(p.authorization).u32(p.mode).u32(p.stateMode)
-    .u32(0) // no ride item
+    .u32(p.useItemId ?? 0) // the cast item's prop id (ObjSerializeOpt.cpp:155-163), or 0
     .u32(p.pkTime).i32(p.pkValue).u32(p.pkPropensity).u32(0) // m_dwPKExp
     .i32(0).u8(0) // m_nFame, m_nDuel
     .i32(p.honor);

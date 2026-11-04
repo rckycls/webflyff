@@ -133,3 +133,58 @@ describe('the icons from frame to frame (final review, Minor 6 graded Important)
     target.dispose();
   });
 });
+
+describe('the item buffs and the Scroll of Return (CWndWorld::RenderBuffIcon, WndWorld.cpp:9691-9760; Piece 7 M3)', () => {
+  const ITEMS = new Map([
+    [10469, { name: 'Scroll of Return', icon: 'ui/item/itm_sysscrreturn.png' }],
+    [10270, { name: 'Grilled Eel', icon: 'ui/item/itm_eel.png' }],
+  ]);
+  const itemBuff = (id: number, leftMs: number): BuffShown => ({ buffType: 0, id, level: 0, leftMs, totalMs: 14_400_000 });
+
+  it("an item buff shows the item's icon, after the skill buffs", () => {
+    const status = new BuffStatus(art, document, { items: ITEMS });
+    status.update([itemBuff(10270, 3_600_000), buff(49, 50000)], SKILLS, 0);
+    const icons = [...status.element.querySelectorAll<HTMLElement>('.hud-buff')];
+    expect(icons.map((i) => i.querySelector('img')!.getAttribute('src')))
+      .toEqual(['/assets/ui/icon/skill_49.png', '/assets/ui/item/itm_eel.png']);
+    expect(icons[1]!.title).toContain('Grilled Eel');
+    // the second, on the next place of the row
+    expect(icons[1]!.style.left).toBe('34px');
+  });
+
+  it("the Scroll of Return's icon blinks, with hours left", () => {
+    const status = new BuffStatus(art, document, { items: ITEMS });
+    status.update([itemBuff(10469, 3_600_000)], SKILLS, 0);
+    const icon = status.element.querySelector<HTMLElement>('.hud-buff')!;
+    const first = Number(icon.style.opacity);
+    status.update([itemBuff(10469, 3_599_000)], SKILLS, 1);
+    expect(Number(icon.style.opacity)).toBeLessThan(first); // bFlash = TRUE for II_SYS_SYS_SCR_RETURN (:9725)
+  });
+
+  it('a double-click on it goes back', () => {
+    let back = 0;
+    const status = new BuffStatus(art, document, { items: ITEMS, onReturnScroll: () => back++ });
+    status.update([itemBuff(10270, 3_600_000), itemBuff(10469, 3_600_000)], SKILLS, 0);
+    const [eel, scroll] = [...status.element.querySelectorAll<HTMLElement>('.hud-buff')];
+    eel!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    expect(back).toBe(0);
+    scroll!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    expect(back).toBe(1);
+  });
+
+  it('two taps within 500 ms go back, two 600 ms apart do not', () => {
+    let back = 0;
+    let now = 1000;
+    const status = new BuffStatus(art, document, { items: ITEMS, onReturnScroll: () => back++, now: () => now });
+    status.update([itemBuff(10469, 3_600_000)], SKILLS, 0);
+    const scroll = status.element.querySelector<HTMLElement>('.hud-buff')!;
+    const tap = (): void => void scroll.dispatchEvent(Object.assign(new Event('pointerup', { bubbles: true }), { pointerType: 'touch' }));
+    tap();
+    now += 600;
+    tap();
+    expect(back).toBe(0);
+    now += 400;
+    tap();
+    expect(back).toBe(1);
+  });
+});

@@ -95,11 +95,20 @@ import { WorldSounds } from './sound/worldSounds';
 import { TeleporterWindow } from './hud/teleporterWindow';
 import { formatDefinedText } from './hud/messages';
 import { ItemUse } from './items/itemUse';
+import { ItemCast } from './items/itemCast';
+import type { BuffShown } from './buffs';
+import { ReturnScroll } from './items/returnScroll';
+import type { Refusal } from './items/travelItems';
+import { castFill } from './items/travelItems';
+import { CastGauge } from './render/CastGauge';
+import { MessageBox } from './hud/messageBox';
+import { SelectVillageWindow } from './hud/selectVillageWindow';
+import { formatText } from './hud/format';
 import { ItemActions } from './items/itemActions';
 import { GroundItems } from './items/groundItems';
 import { GroundModels, loadDropModel } from './items/groundModels';
 import { NearbyItems } from './items/nearbyItems';
-import { ShortcutKind } from '@flyffweb/protocol';
+import { STATE_BASEMOTION_MODE, ShortcutKind } from '@flyffweb/protocol';
 import type { TaskBarWindow } from './hud/taskBar';
 import { OwnMover, pickOnStage } from './ownMover';
 import { OwnState } from './OwnState';
@@ -243,6 +252,17 @@ export class WorldScreen {
   private missiles: Missiles | undefined;
   private missileWorld: MissileWorld | undefined;
   private chargeGauge: ChargeGauge | undefined;
+  /**
+   * Piece 7 M3: the own item cast (its cancel), its gauge over the head, and the Scroll of Return's question box, village
+   * window and flow; the box also shows the guild war's Blinkwing refusal.
+   */
+  private itemCast: ItemCast | undefined;
+  /** Piece 7 M3: the own buffs kept from the world left by a REPLACE, for the new world's own mover. */
+  private carriedBuffs: BuffShown[] = [];
+  private castGauge: CastGauge | undefined;
+  private messageBox: MessageBox | undefined;
+  private selectVillage: SelectVillageWindow | undefined;
+  private returnScroll: ReturnScroll | undefined;
   /** Piece 7 M2: the own buffs' icons (`CWndBuffStatus`) and the target's under its bar (`RenderMoverBuff`). */
   private buffStatus: BuffStatus | undefined;
   private targetBuffs: TargetBuffs | undefined;
@@ -503,6 +523,10 @@ export class WorldScreen {
     // an ending while the waiting events are handled (the map is not available) ends the ones after it too
     if (this.over) return;
     if (event.type === 'transition') {
+      // Piece 7 M3 (final review, Important 1): the own buffs go with the player, as the new world's own ADD_OBJ carries
+      // them (CMover::Serialize's m_buffs), which the browser does not read yet (M2 Decision 9)
+      const own = this.world?.self();
+      this.carriedBuffs = own === undefined ? [] : own.buffs.list(this.world!.nowMs());
       this.disposeWorld();
       this.element.replaceChildren(h('p', { class: 'world-status', role: 'status' }, LOADING_TEXT), this.leaveButton);
       const folder = this.data!.worlds.get(event.worldId);
@@ -557,6 +581,11 @@ export class WorldScreen {
     this.world = new WorldState(this.data!, this.entry.clock, this.ground, this.own);
     this.entered = pos;
     this.apply(messages, true);
+    // Piece 7 M3: the buffs the player had in the world before, with the time each had left
+    const self = this.world.self();
+    const now = this.world.nowMs();
+    for (const b of this.carriedBuffs) self?.buffs.add(b.buffType, b.id, b.level, b.totalMs > 0 ? b.leftMs : 0, now);
+    this.carriedBuffs = [];
     this.loadTimer = setTimeout(() => { if (generation === this.stageGeneration) this.end(TOO_SLOW_TEXT); }, LOAD_LIMIT_MS);
     void this.openStage(folder, services, generation).catch((error: unknown) => {
       if (!this.over && generation === this.stageGeneration) {
@@ -623,6 +652,12 @@ export class WorldScreen {
       }
       if (value.type === 'queryGetDestObj') {
         this.attackLoop?.onQueryGetDestObj(value.fromId);
+        continue;
+      }
+      if (value.type === 'returnScrollAck') {
+        // Piece 7 M3: OnReturnScrollACK (DPClient.cpp:677, :15784-15787): the scroll used again, with no box
+        const id = this.returnScroll?.answered() ?? null;
+        if (id !== null) this.itemUse?.use(id, 'again');
         continue;
       }
       if (world.movers.has(objectId)) {
@@ -796,7 +831,13 @@ export class WorldScreen {
     // Piece 7 M2: the charge gauge, over the canvas and under the windows (CMover::RenderGauge draws it with the world)
     this.chargeGauge = new ChargeGauge(this.hudArt!, doc);
     this.element.insertBefore(this.chargeGauge.element, this.hud!.element);
-    this.buffStatus = new BuffStatus(this.hudArt!, doc);
+    // Piece 7 M3: an item cast's gauge, there too (CMover::RenderCasting)
+    this.castGauge = new CastGauge(this.hudArt!, doc);
+    this.element.insertBefore(this.castGauge.element, this.hud!.element);
+    // the item buffs too, and the Scroll of Return's icon goes back (Piece 7 M3)
+    this.buffStatus = new BuffStatus(this.hudArt!, doc, {
+      items: this.data!.itemProps, onReturnScroll: () => this.returnScroll?.goBack(), now: () => performance.now(),
+    });
     this.targetBuffs = new TargetBuffs(this.hudArt!, doc);
     this.hud!.element.append(this.buffStatus.element, this.targetBuffs.element);
     this.minimap?.open();
@@ -807,9 +848,12 @@ export class WorldScreen {
     // above the task bar (48 px, smaller on a narrow screen) and out of the safe area under it
     this.joystick = new Joystick(this.element, { floating: true, onClaim: () => this.tap?.reset() });
     this.focus = new Focus(this.session, (objectId) => this.isLive(objectId));
+    // Piece 7 M3: the own item cast; a skill or an attack during it sends its cancel and is refused
+    this.itemCast = new ItemCast(() => this.world?.self(), this.session);
+    const interruptCast = (): boolean => this.itemCast?.interrupt() ?? false;
     // the skill use and the attack loop share the own mover's one command, the reserved skill and the auto-attack
     const skillUse = new SkillUse(this.session, this.focus, () => this.own, () => performance.now(), this.data!, {
-      tick: () => this.entry.clock.tick(), ground: () => this.ground,
+      tick: () => this.entry.clock.tick(), ground: () => this.ground, interruptCast,
     });
     // the web's own line where Neuz would teleport (Blinkpool, plan Decisions 8); the catalog's texts for the rest
     skillUse.onText = (id) => (id === BLINKPOOL_NOT_YET
@@ -818,7 +862,7 @@ export class WorldScreen {
     this.skillUse = skillUse;
     const attackLoop = new AttackLoop(
       this.session, this.focus, this.world!, () => this.own, this.entry.clock, this.data!.movers, skillUse,
-      (mover, motion) => this.views!.motionReady(mover, motion),
+      (mover, motion) => this.views!.motionReady(mover, motion), interruptCast,
     );
     skillUse.attack = attackLoop;
     this.world!.onUseSkill = (casterId, message, started) => skillUse.onUseSkill(casterId, message, started);
@@ -850,7 +894,19 @@ export class WorldScreen {
     attackLoop.onText = (id) => this.say(id);
     attackLoop.ground = () => this.ground;
     const session = this.session;
-    this.itemUse = new ItemUse(() => this.own, this.data!.itemProps, session);
+    // Piece 7 M3: the Blinkwings and the Scroll of Return go through Neuz's refusals; the Scroll through its two windows
+    const messageBox = new MessageBox(this.hudArt!, doc);
+    this.messageBox = messageBox;
+    const selectVillage = new SelectVillageWindow(this.hudArt!, doc);
+    this.selectVillage = selectVillage;
+    const returnScroll = new ReturnScroll(messageBox, selectVillage, session, this.data!.texts);
+    this.returnScroll = returnScroll;
+    this.itemUse = new ItemUse(() => this.own, this.data!.itemProps, session, {
+      check: () => this.useCheck(),
+      say: (refusal) => this.sayRefusal(refusal),
+      returnScroll,
+      shopOpen: () => this.shopWindow?.frame.isOpen === true,
+    });
     const itemActions = new ItemActions(() => this.own, () => this.world!.self()!.act.body.pos,
       () => this.world!.groundItems, this.data!.itemProps, session, (pos) => {
         attackLoop.stop('move');
@@ -917,7 +973,7 @@ export class WorldScreen {
     this.reviveWindow = reviveWindow;
     reviveWindow.onStand = () => this.itemUse!.revive();
     const inventoryWindow = new InventoryWindow(this.hudArt!, this.data!, {
-      use: (id) => { this.itemUse!.use(id); }, equip: (id) => { itemActions.equip(id); },
+      use: (id) => { this.itemUse!.use(id, 'bag'); }, equip: (id) => { itemActions.equip(id); },
       drop: (id, count) => {
         if (this.dialog?.frame.isOpen === true) return; // no drop while the dialogue is open (DPClient.cpp:9378-9382)
         this.sounds?.drop();
@@ -977,12 +1033,15 @@ export class WorldScreen {
     const skillWindow = new SkillWindow(this.hudArt!, this.data!, (skills) => void skillUse.spendSkillPoints(skills), taskBar, doc);
     this.skillWindow = skillWindow;
     this.optionWindow = this.audio === null ? undefined : new OptionWindow(this.hudArt!, this.audio, doc);
-    for (const modal of [logOutBox.modal, reviveWindow.modal, skillWindow.warning.modal, this.dialog.modal, questWindow.modal]) {
+    for (const modal of [
+      logOutBox.modal, reviveWindow.modal, skillWindow.warning.modal, this.dialog.modal, questWindow.modal, messageBox.modal, selectVillage.modal,
+    ]) {
       modal.onChange = () => this.modalChanged();
     }
     this.hud!.element.append(
       this.questTracker.element, this.teleporter.frame.element,
-      taskBar.element, this.attackButton.element, this.jumpButton.element, mobileTools, logOutBox.element, characterWindow.frame.element,
+      taskBar.element, this.attackButton.element, this.jumpButton.element, mobileTools, logOutBox.element, messageBox.element,
+      selectVillage.element, characterWindow.frame.element,
       characterWindow.confirm.frame.element, skillWindow.frame.element, skillWindow.warning.element, reviveWindow.element,
       inventoryWindow.frame.element, this.nearbyItems.element, this.chatWindow.element, this.shopWindow.frame.element,
       ...questWindow.elements, this.dialog.element, this.moverMenu.element,
@@ -1103,6 +1162,17 @@ export class WorldScreen {
     // the own death opens the revive window after its chat line (`OnMoverDeath`, DPClient.cpp:2040-2072); one before the
     // windows are up (the world still loading) leaves it to Escape
     this.reviveWindow?.play(changes.own);
+    // Piece 7 M3: an own cast's start re-arms its cancel, and one begun while not standing is cancelled at once
+    // (OnStateMode, DPClient.cpp:12419-12422); a hit on or by the own player cancels it (OnDamage, :1843-1846)
+    const selfId = this.world?.self()?.objectId;
+    for (const event of changes.combat) {
+      if (event.kind === 'itemCast' && event.fresh && event.moverId === selfId) {
+        this.itemCast?.started();
+        if (!this.useCheck().standing) this.itemCast?.interrupt();
+      } else if (event.kind === 'hit' && selfId !== undefined && (event.victimId === selfId || event.attackerId === selfId)) {
+        this.itemCast?.interrupt();
+      }
+    }
     const sounds = this.sounds;
     const soundWorld = this.world;
     if (sounds !== null && soundWorld !== undefined) {
@@ -1144,6 +1214,19 @@ export class WorldScreen {
       if (event.kind === 'swing') {
         const motion = world.movers.get(event.attackerId)?.act.motion ?? -1;
         keep(played.swings, { attackerId: event.attackerId, motion, step });
+      }
+      if (event.kind === 'itemCast') {
+        // Piece 7 M3: CreateItemReadySfx( dwSfxObj ) at the caster, a CSfxReady that lasts while it casts (Sfx.cpp:3826-3837)
+        const xi = this.data!.itemProps.get(event.itemId)?.sfxReady;
+        const caster = world.movers.get(event.moverId);
+        if (xi !== undefined && caster !== undefined) {
+          const id = event.moverId;
+          out.effect({
+            xi, pos: [caster.act.body.pos[0], caster.act.body.pos[1], caster.act.body.pos[2]], followId: id,
+            whileTrue: () => ((world.movers.get(id)?.stateMode ?? 0) & STATE_BASEMOTION_MODE) !== 0,
+          });
+        }
+        continue;
       }
       playCombatEvent(event, fxWorld, out);
     }
@@ -1314,6 +1397,13 @@ export class WorldScreen {
       const ownView = world.self();
       this.chargeGauge?.update(this.attackLoop?.gauge(now) ?? null, ownView === undefined ? null : views.placeOf(ownView.objectId)?.head ?? null,
         stage.camera, drawingSize.x, drawingSize.y);
+      // Piece 7 M3: the own cast's gauge, from its STATEMODE ON on the world's clock (RenderCasting: m_nReadyTime set)
+      const cast = ownView?.stateMode !== undefined && (ownView.stateMode & STATE_BASEMOTION_MODE) !== 0 ? ownView.cast : null;
+      const castMs = cast === null ? undefined : this.data?.itemProps.get(cast.itemId)?.castMs;
+      const fill = cast === null || cast.startedAt === null || castMs === undefined || this.world === undefined
+        ? null : castFill(this.world.nowMs() - cast.startedAt, castMs);
+      this.castGauge?.update(fill, ownView === undefined ? null : views.placeOf(ownView.objectId)?.head ?? null,
+        stage.camera, drawingSize.x, drawingSize.y);
 
       const { tiles, models } = stage.counts();
       overlay.setCounts({ tiles, models: models + views.count(), textures: this.services!.textures.size() });
@@ -1404,6 +1494,9 @@ export class WorldScreen {
       const cameraAngle = this.backCamera.heading === null ? own.act.body.angle : 180 - this.backCamera.heading * 180 / Math.PI;
       const intent = controlIntent(this.keyboard!.intent(), this.joystick!.intent(), cameraAngle);
       if (movesOrTurns(intent) || jump || tap !== null) this.itemActions?.cancel();
+      // Piece 7 M3: a walk forward or back, a jump or a tap on the ground cancels an item cast; a turn does not
+      // (WndWorldControlPlayer.cpp:341, :422-433, :487-505)
+      if (intent.forward !== 0 || jump || tap !== null) this.itemCast?.interrupt();
       if (movesOrTurns(intent)) loop.stop('move');
       this.itemActions?.step(now);
       // the task bar's skills, then the reserved skill's branch of Process, which leaves neither the attack nor the controls
@@ -1550,6 +1643,34 @@ export class WorldScreen {
   }
 
   /**
+   * Piece 7 M3: what `SendDoUseItem` checks of the own player for an item with a cast ([R §2]): the world, the cast,
+   * standing (`GetMoveState() == OBJSTA_STAND`), flying (none before M5) and the Scroll of Return's buff.
+   */
+  private useCheck(): { worldId: number; casting: boolean; standing: boolean; flying: boolean; returnBuff: boolean } {
+    const own = this.world?.self();
+    const now = this.world?.nowMs() ?? 0;
+    return {
+      worldId: this.worldId,
+      casting: this.itemCast?.casting ?? false,
+      standing: own === undefined || (own.act.state & ObjSta.MOVE_ALL) === ObjSta.STAND,
+      flying: false,
+      returnBuff: own?.buffs.list(now).some((b) => b.buffType === 0 && b.id === 10469) === true,
+    };
+  }
+
+  /** Piece 7 M3: a travel item's refusal: a line in its TID's colour (`%s` the world's title), or an OK box. */
+  private sayRefusal(refusal: Refusal): void {
+    const entry = this.data?.texts.get(refusal.tid);
+    const text = entry?.text ?? '';
+    if (refusal.kind === 'box') {
+      if (text !== '' && this.messageBox?.isOpen !== true) this.messageBox?.open(text, 'ok', () => {});
+      return;
+    }
+    if (text === '') return;
+    this.hud?.messages.add(refusal.args === undefined ? text : formatText(text, [refusal.args]), entry!.color);
+  }
+
+  /**
    * The Start menu's Log out (`ObjectExecutor`'s APP_LOGOUT, `WndManager.cpp:2610-2621`): refused while the player fights
    * (`IsAttackMode`: a swing started in the last 10 s), with `TID_PK_COMBAT_END` in red among the server messages; otherwise
    * the box that asks first (`CWndLogOut`), whose OK leaves.
@@ -1591,7 +1712,8 @@ export class WorldScreen {
   private modalChanged(): void {
     const open = this.reviveWindow?.modal.isShown === true || this.logOutBox?.modal.isShown === true ||
       this.skillWindow?.warning.modal.isShown === true || this.dialog?.modal.isShown === true ||
-      this.questWindow?.modal.isShown === true;
+      this.questWindow?.modal.isShown === true || this.messageBox?.modal.isShown === true ||
+      this.selectVillage?.modal.isShown === true;
     this.element.classList.toggle('world-modal', open);
     if (!open) return;
     this.worldMap?.close();
@@ -1642,7 +1764,7 @@ export class WorldScreen {
     }
     if (
       this.reviveWindow?.isOpen === true || this.logOutBox?.isOpen === true || this.characterWindow?.confirm.isOpen === true ||
-      this.skillWindow?.warning.isOpen === true
+      this.skillWindow?.warning.isOpen === true || this.messageBox?.isOpen === true || this.selectVillage?.isOpen === true
     ) {
       return;
     }
@@ -1934,6 +2056,10 @@ export class WorldScreen {
     if (this.world !== undefined) this.world.missiles = null;
     this.chargeGauge?.dispose();
     this.chargeGauge = undefined;
+    // Piece 7 M3: the cast's gauge and the Scroll of Return's windows go with the world; its ready effect went with the effects
+    this.castGauge?.dispose();
+    this.messageBox?.dispose();
+    this.selectVillage?.dispose();
     this.buffStatus?.dispose();
     this.buffStatus = undefined;
     this.targetBuffs?.dispose();
@@ -1970,7 +2096,7 @@ export class WorldScreen {
       'hud', 'hudArt', 'taskBar', 'attackButton', 'cameraControls', 'jumpButton', 'logOutBox', 'reviveWindow',
       'characterWindow', 'skillWindow', 'inventoryWindow', 'moverMenu', 'dialog', 'shopWindow', 'itemUse',
       'itemActions', 'groundItems', 'nearbyItems', 'ownMover', 'simulationClock', 'minimap', 'teleporter', 'worldMap',
-      'questWindow', 'questTracker'] as const) this[key] = undefined;
+      'questWindow', 'questTracker', 'itemCast', 'castGauge', 'messageBox', 'selectVillage', 'returnScroll'] as const) this[key] = undefined;
   }
 
   /** Closes the connections and everything on screen, once, then tells the lobby. */
@@ -2013,7 +2139,7 @@ export class WorldScreen {
     this.releaseControls();
     this.moverMenu?.close();
     for (const window of [this.shopWindow, this.dialog, this.teleporter, this.inventoryWindow, this.characterWindow,
-      this.skillWindow, this.optionWindow]) window?.frame.close();
+      this.skillWindow, this.optionWindow, this.messageBox, this.selectVillage]) window?.frame.close();
     this.worldMap?.close();
     this.audio?.stopWorld();
     this.stopAsking(); // nothing is left to lose by closing the page

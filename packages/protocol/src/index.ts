@@ -52,3 +52,4 @@ export * from './world/npc';
 export * from './world/quest';
 export * from './world/shop';
 export * from './world/shots';
+export * from './world/travel';

@@ -116,7 +116,9 @@ function readPlayer(r: ArReader, self: boolean): AddedPlayer {
   const authorization = r.u8(); // (char&)m_dwAuthorization: the low byte of a DWORD zeroed before
   const mode = r.u32();
   const stateMode = r.u32();
-  r.u32(); // m_dwUseItemId (the world server writes the ride item's ID, :157-161)
+  // m_dwUseItemId: the world server writes the prop id of the inventory item it names, or 0 (ObjSerializeOpt.cpp:155-163);
+  // Piece 7 M3 keeps it, as OnAddObj makes a casting mover's ready effect from it (DPClient.cpp:1380-1391)
+  const useItemId = r.u32();
   // __VER >= 8 (__S8_PK)
   const pkTime = r.u32();
   const pkValue = r.i32();
@@ -131,7 +133,7 @@ function readPlayer(r: ArReader, self: boolean): AddedPlayer {
 
   const base = {
     self, name, sex, skinSet, hairMesh, hairColor, headMesh, playerId, job, sta, dex, level, authorization, mode,
-    stateMode, pkTime, pkValue, pkPropensity, honor,
+    stateMode, ...(useItemId !== 0 ? { useItemId } : {}), pkTime, pkValue, pkPropensity, honor,
   };
   if (self) {
     const { equipmentObjectIds, numbers } = readOwnEquipment(r, { str, sta, dex, int });

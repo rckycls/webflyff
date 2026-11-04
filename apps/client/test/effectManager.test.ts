@@ -178,6 +178,24 @@ describe('EffectManager: following (CSfx::Process, SfxObj.cpp:134-238)', () => {
     expect(r.manager.count()).toBe(0);
   });
 
+  it('an effect with whileTrue loops until it is false (CSfxReady::Process, Sfx.cpp:3826-3837; Piece 7 M3)', async () => {
+    const r = rig();
+    let casting = true;
+    await play(r, { xi: Xi.GEN_LEVEL_UP01, pos: [0, 0, 0], followId: 7, whileTrue: () => casting });
+    steps(r, 600, () => ({ pos: [0, 0, 0] })); // ten seconds: its model ended and began again many times
+    expect(r.manager.count()).toBe(1);
+    casting = false;
+    steps(r, 1, () => ({ pos: [0, 0, 0] }));
+    expect(r.manager.count()).toBe(0);
+  });
+
+  it('an effect with whileTrue still ends with the mover it follows', async () => {
+    const r = rig();
+    await play(r, { xi: Xi.GEN_LEVEL_UP01, pos: [0, 0, 0], followId: 7, whileTrue: () => true });
+    steps(r, 1, nobody);
+    expect(r.manager.count()).toBe(0);
+  });
+
   it('ends with the mover it follows: the source is gone (SfxObj.cpp:231-233)', async () => {
     const r = rig();
     await play(r, { xi: Xi.GEN_LEVEL_UP01, pos: [0, 0, 0], followId: 7 });

@@ -136,6 +136,13 @@ export interface WebItemProp {
   sfxMissile?: number;
   /** `dwLinkKindBullet`: the `IK2_*` its bullets must be (`IK2_BULLET` 25 for a bow, `CMover::IsBullet`); -1 for none. */
   linkKindBullet?: number;
+  /**
+   * Piece 7 M3: `dwSkillReadyType`, the item's cast in ms before the server uses it (a Blinkwing's 10000, the Scroll of
+   * Return's 4000; `IsItemRedyTime`). Absent for an item with none, and in catalogs converted before M3.
+   */
+  castMs?: number;
+  /** Piece 7 M3: `dwSfxObj` of an item with a cast, its ready effect (`XI_BLINKWING_READY` 118, `CreateItemReadySfx`). */
+  sfxReady?: number;
   /** OT_ITEM ground model, including the box used for worn parts; absent in older catalogs. */
   dropModel?: string | null;
   /** Positive nReflect requests the drop's camera-normal reflection map. */
