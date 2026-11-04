@@ -117,6 +117,7 @@ import { TeleporterWindow } from './hud/teleporterWindow';
 import { formatDefinedText } from './hud/messages';
 import { ItemUse } from './items/itemUse';
 import { SmTimers, skillPointsSpent } from './items/premiumItems';
+import { UpgradeCursor } from './items/upgradeCursor';
 import { ItemCast } from './items/itemCast';
 import { MoverBuffs } from './buffs';
 import type { BuffShown } from './buffs';
@@ -412,6 +413,9 @@ export class WorldScreen {
   private worldId = 0;
   private teleporter: TeleporterWindow | undefined;
   private itemUse: ItemUse | undefined;
+  /** 2026-11-05: the upgrade cursor, and whether its effect (XI_INT_INCHANT) is on the own mover. */
+  private upgrade: UpgradeCursor | undefined;
+  private upgradeEffectOn = false;
   private itemActions: ItemActions | undefined;
   private groundItems: GroundItems | undefined;
   /** The ground items' models, which the ring of tiles waits for (`settled`). */
@@ -1031,12 +1035,33 @@ export class WorldScreen {
       returnScroll,
       shopOpen: () => this.shopWindow?.frame.isOpen === true,
       // 2026-11-05: Neuz's item boxes (CWndCommItemDlg, CWndRestateConfirm) as the message box, OK and Cancel
-      confirm: (tid, ok) => {
-        const text = this.data?.texts.get(tid)?.text ?? '';
+      confirm: (tid, ok, args = []) => {
+        // the catalog keeps Neuz's "\n" as two characters: a line break in the box
+        const text = formatText(this.data?.texts.get(tid)?.text ?? '', args).replace(/\\n/g, '\n');
         if (text !== '' && this.messageBox?.isOpen !== true) this.messageBox?.open(text, 'okCancel', ok);
       },
+      // 2026-11-05: a map item from the bag toggles the world map, as CWndMap does at V15 (WndMap.cpp:41-53)
+      openMap: () => this.openWindow('worldmap'),
       boxOpen: () => this.messageBox?.isOpen === true,
       now: () => performance.now(),
+      upgrade: { begin: (id) => this.upgrade?.begin(id) ?? false },
+    });
+    // 2026-11-05: the upgrade cursor: Sunstone, Moonstone, the cards, the random and awakening scrolls, the Ultimate gem
+    this.upgrade = new UpgradeCursor({
+      own: () => this.own, props: this.data!.itemProps, now: () => performance.now(),
+      hasItemBuff: (itemId) => {
+        const self = this.world?.self();
+        return self?.buffs.list(this.world!.nowMs()).some((b) => b.buffType === 0 && b.id === itemId) === true;
+      },
+      boxOpen: () => this.messageBox?.isOpen === true,
+      say: (tid) => this.sayRefusal({ kind: 'say', tid }),
+      confirm: (tid, args, ok, cancel) => {
+        const text = formatText(this.data?.texts.get(tid)?.text ?? '', args).replace(/\\n/g, '\n');
+        if (text !== '' && this.messageBox?.isOpen !== true) this.messageBox?.open(text, 'okCancel', ok, cancel);
+        else cancel();
+      },
+      effect: (on) => this.upgradeEffect(on),
+      send: ({ packet, first, second }) => this.session.sendUpgrade(packet, first, second),
     });
     const itemActions = new ItemActions(() => this.own, () => this.world!.self()!.act.body.pos,
       () => this.world!.groundItems, this.data!.itemProps, session, (pos) => {
@@ -1121,6 +1146,11 @@ export class WorldScreen {
     const inventoryWindow = new InventoryWindow(this.hudArt!, this.data!, {
       use: (id) => { this.itemUse!.use(id, 'bag'); }, equip: (id) => { itemActions.equip(id); },
       land: (id) => { this.itemUse!.land(id); }, // Piece 7 M5: the worn ride's equipment cell
+      // 2026-11-05: the upgrade cursor's target, its wait and its cancel
+      upgrade: {
+        active: () => this.upgrade?.active ?? false, waitingTarget: () => this.upgrade?.waitingTarget ?? null,
+        pick: (id) => this.upgrade?.pick(id) ?? false, cancel: () => this.upgrade?.cancel(),
+      },
       drop: (id, count) => {
         if (this.dialog?.frame.isOpen === true) return; // no drop while the dialogue is open (DPClient.cpp:9378-9382)
         this.sounds?.drop();
@@ -1869,6 +1899,11 @@ export class WorldScreen {
     this.nearbyItems?.update(world.groundItems, self?.act.body.pos ?? null);
     if (this.own) this.inventoryWindow?.update(this.own);
     this.inventoryWindow?.drawCooldowns((objectId) => this.itemUse?.cooldownDone(objectId) ?? null); // 2026-11-05
+    // 2026-11-05: the upgrade cursor's wait, and its mode ended by a move (CWndWorld::Process, WndWorld.cpp:8050-8097)
+    const upgradeSelf = this.world?.self();
+    if (upgradeSelf !== undefined && (upgradeSelf.act.state & ObjSta.MOVE_ALL) !== ObjSta.STAND) this.upgrade?.cancel();
+    this.upgrade?.step();
+    this.inventoryWindow?.drawUpgrade();
     // the dialogue and the menu go with their NPC or when the player moves (WndWorld.cpp:8052-8081)
     const dialogNpc = this.dialog?.npcId ?? null;
     if (dialogNpc !== null && !dialogueStays(world.movers.get(dialogNpc), self)) this.dialog!.close();
@@ -1982,6 +2017,18 @@ export class WorldScreen {
   }
 
   /** Piece 7 M3: a travel item's refusal: a line in its TID's colour (`%s` the world's title), or an OK box. */
+  /**
+   * 2026-11-05: the upgrade cursor's effect on the own mover, `XI_INT_INCHANT` (1716), from the material's double-click to
+   * the send or a cancel (`m_pSfxUpgrade`, WndField.cpp:2392-2393, 13578-13582).
+   */
+  private upgradeEffect(on: boolean): void {
+    this.upgradeEffectOn = on;
+    const self = this.world?.self();
+    if (!on || self === undefined) return;
+    const pos = self.act.body.pos;
+    this.effects?.play({ xi: 1716, pos: [pos[0], pos[1], pos[2]], followId: self.objectId, whileTrue: () => this.upgradeEffectOn });
+  }
+
   private sayRefusal(refusal: Refusal): void {
     const entry = this.data?.texts.get(refusal.tid);
     const text = entry?.text ?? '';
@@ -2564,6 +2611,9 @@ export class WorldScreen {
     this.flyingSeen = null;
     this.tookOff = false;
     this.wasFlying = false;
+    this.upgrade?.reset(); // 2026-11-05: a world change ends the upgrade cursor and its wait
+    this.upgrade = undefined;
+    this.upgradeEffectOn = false;
     this.messageBox?.dispose();
     this.selectVillage?.dispose();
     this.buffStatus?.dispose();

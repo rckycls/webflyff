@@ -2279,6 +2279,11 @@ fieldset:disabled .btn {
   content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 2;
   background: conic-gradient(transparent 0 var(--cool-done, 0%), rgba(255, 255, 255, 0.47) var(--cool-done, 0%) 100%);
 }
+/* 2026-11-05: the upgrade cursor (items/upgradeCursor.ts): Neuz's CUR_HAMMER over the bag while the mode is on (here the
+   crosshair: the cursor files are not converted), and the waiting target's Icon_ImgIncAni frames (a pulse here) */
+.hud-inventory[data-upgrading] .inventory-cell { cursor: crosshair; }
+.inventory-cell[data-upgrade-wait] { outline: 2px solid #ffd76a; animation: inventory-upgrade-wait 0.6s ease-in-out infinite; }
+@keyframes inventory-upgrade-wait { 50% { filter: brightness(1.9); } }
 /* 2026-11-05: an item buff's or premium timer's time, yellow (RenderOptBuffTime's ARGB 240, 240, 0) */
 .hud-buff-time { position: absolute; left: 2px; top: 22px; color: #f0f000; font-size: 11px; white-space: nowrap; text-shadow: 1px 1px 0 #000; pointer-events: none; }
 .hud-target-buffs { position: absolute; inset: 0; pointer-events: none; }

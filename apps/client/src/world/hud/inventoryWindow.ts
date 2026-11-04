@@ -1,5 +1,6 @@
 import { createItemDetails, ownTooltipContext, positionItemDetails } from './itemDetails';
 import { drawCooldown } from './cooldown';
+import { upgradeKindOf } from '../items/upgradeItems';
 import type { OwnState } from '../OwnState';
 import type { GameData } from '../gameData';
 import { themeUrl } from './art';
@@ -21,6 +22,11 @@ export interface InventoryActions {
   drop(id: number, count: number): void;
   move(source: number, destination: number): void;
   shortcut(id: number, slot: number): void;
+  /**
+   * 2026-11-05: the upgrade cursor (items/upgradeCursor.ts): whether it is on, the item its wait is for, a bag item
+   * clicked as its target (true when taken), and its cancel (a right click, the bag closing).
+   */
+  upgrade?: { active(): boolean; waitingTarget(): number | null; pick(id: number): boolean; cancel(): void };
 }
 
 export class InventoryWindow {
@@ -42,7 +48,9 @@ export class InventoryWindow {
     this.frame.element.style.setProperty('--classic-inventory-art', themeUrl(art, 'WndInventory3D.tga'));
     doc.addEventListener('dragover', this.onDragOver);
     doc.addEventListener('drop', this.onDrop);
-    this.frame.onClose = () => { if (this.shopSelect) this.onShopClose?.(); this.dragged = null; this.actionsOpen = false; this.frame.element.querySelector('.inventory-drop-dialog')?.remove(); };
+    this.frame.onClose = () => { if (this.shopSelect) this.onShopClose?.(); this.dragged = null; this.actionsOpen = false; this.frame.element.querySelector('.inventory-drop-dialog')?.remove(); this.actions.upgrade?.cancel(); };
+    // 2026-11-05: a right click on the bag ends the upgrade mode (CWndInventory::OnRButtonUp, WndField.cpp:2806)
+    this.frame.element.addEventListener('contextmenu', () => this.actions.upgrade?.cancel());
   }
 
   setPreview(canvas: HTMLCanvasElement): void {
@@ -139,6 +147,8 @@ export class InventoryWindow {
       else if (item) cell.append('?');
       if (item) { const count = this.doc.createElement('span'); count.textContent = String(item.count); cell.append(count); }
       cell.addEventListener('click', () => {
+        // 2026-11-05: in the upgrade mode a click is its target's (CWndItemCtrl::OnLButtonDown); an empty cell does nothing
+        if (this.actions.upgrade?.active() === true) { if (item) this.actions.upgrade.pick(id); return; }
         if (this.shopSelect) { this.selected = item ? id : null; this.actionsOpen = false; this.drawDetails(); this.shopSelect(item ? id : -1); return; }
         this.selected = item ? id : null; this.actionsOpen = item !== undefined && (this.mobile || this.hoverAnchor === cell);
         this.drawDetails();
@@ -241,6 +251,20 @@ export class InventoryWindow {
     }
   }
 
+  /**
+   * 2026-11-05: the upgrade mode on the bag (the hammer cursor, CUR_HAMMER) and the waiting target's cell (its
+   * `Icon_ImgIncAni` frames, here a CSS pulse). One call a frame while the bag is open.
+   */
+  drawUpgrade(): void {
+    const own = this.own, upgrade = this.actions.upgrade;
+    if (!own || !this.frame.isOpen) return;
+    this.frame.element.toggleAttribute('data-upgrading', upgrade?.active() === true);
+    const waiting = upgrade?.waitingTarget() ?? null;
+    for (const cell of this.frame.element.querySelectorAll<HTMLElement>('[data-bag-slot]')) {
+      cell.toggleAttribute('data-upgrade-wait', waiting !== null && own.inventorySlots[Number(cell.dataset.bagSlot)] === waiting);
+    }
+  }
+
   private itemAt(part: number) {
     const item = this.own?.inventory?.get(this.own.equipmentObjectIds[part]!);
     return item && fitsEquipmentSlot(this.data.itemProps.get(item.itemId), part) ? item : undefined;
@@ -272,7 +296,8 @@ export class InventoryWindow {
         button('unequip', 'Unequip', () => (isRideProp(prop) ? this.actions.land?.(item.objectId) : this.actions.equip(item.objectId)));
       } else {
         if (prop && prop.part >= 0 && prop.part < 31 && prop.part !== 13) button('equip', 'Equip', () => this.actions.equip(item.objectId));
-        if (prop && usableFromBag(prop)) button('use', 'Use', () => this.actions.use(item.objectId)); // Piece 7 M3: and the travel items
+        // Piece 7 M3: and the travel items; 2026-11-05: and the upgrade materials, which start the upgrade mode
+        if (prop && (usableFromBag(prop) || upgradeKindOf(prop) !== null)) button('use', 'Use', () => this.actions.use(item.objectId));
         button('drop', 'Drop', () => this.requestDrop(item.objectId));
       }
     }

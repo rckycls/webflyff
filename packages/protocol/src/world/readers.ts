@@ -43,6 +43,7 @@ import {
   readMeleeAttack2, readMoverBehavior2, readMoverCorr2, readMoverMoved2, readSendActMsg, readSetFuel,
 } from './flight';
 import type { WorldMessage } from './types';
+import { readUltimate } from './upgrade';
 
 /**
  * The readers of the bundle messages the browser understands, by message type, for `readBundle`. Each copies
@@ -150,6 +151,7 @@ export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
     [MessageType.SM_MODE, readSmMode],
     [MessageType.SM_MODE_ALL, readSmModeAll],
     [MessageType.RESISTSMMODE, readResistSmMode],
+    [MessageType.ULTIMATE, readUltimate],
     [MessageType.CLEAR_USESKILL, readClearUseSkill],
     [MessageType.DOUSESKILLPOINT, readDoUseSkillPoint],
     [MessageType.INITSKILLPOINT, readInitSkillPoint],

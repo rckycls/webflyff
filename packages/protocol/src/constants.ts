@@ -7,6 +7,12 @@ export const PacketType = {
   TELEPORTER: 0x88100100,
   /** 2026-11-05: `PACKETTYPE_NPC_BUFF`, Buff Pang's menu entry (`CDPClient::SendNPCBuff`, `MsgHdr.h:666`). */
   NPC_BUFF: 0xf000f813,
+  /** 2026-11-05: the upgrade cursor's packets (`MsgHdr.h`; world/upgrade.ts). */
+  ENCHANT: 0xf000b024,
+  PIERCING: 0xf000b025,
+  RANDOMSCROLL: 0xf000d00d,
+  DO_USE_ITEM_TARGET: 0x70000004,
+  ULTIMATE_ENCHANTWEAPON: 0xf000f113,
   QUERYTICKCOUNT: 0x0b,
   PING: 0x14,
   CLOSE_EXISTING_CONNECTION: 0x16,
@@ -247,6 +253,8 @@ export const MessageType = {
   SM_MODE_ALL: 0x003e,
   /** 2026-11-05: the element stones' elements (`AddResistSMMode`, `MsgHdr.h:995`). */
   RESISTSMMODE: 0x005d,
+  /** 2026-11-05: the Ultimate gem's answer (`CUser::AddUltimate`). */
+  ULTIMATE: 0x0100,
   /** Piece 7 M3: the Scroll of Return's village taken, no body (`CUser::AddReturnScroll`, `User.cpp:6636-6645`). */
   RETURNSCORLL: 0x00ad,
   /** Piece 7 M5: another flier's move, state and correction (`User.cpp:4937-5035`); its angle is MOVERANGLE. */

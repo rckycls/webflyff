@@ -80,6 +80,10 @@ describe('authoritative inventory state', () => {
     // another object's message is not the player's
     own.apply({ type: 'updateItemEx', objectId: 6, param: 10, value: 5n }, id + 1);
     expect(own.inventory!.get(6)!.randomOption).toBeUndefined();
+    // 2026-11-05: a random scroll's UPDATE_ITEM UI_RANDOMOPTITEMID sets the low byte only (SetRandomOpt, Item.h:169)
+    own.apply({ type: 'updateItemEx', objectId: 6, param: 10, value: 0x1200n }, id);
+    update(10, 0x1f5);
+    expect(own.inventory!.get(6)!.randomOption).toBe(0x12f5n);
   });
   it('keeps the sex of the character, which the item tooltip judges SEX lines by (PutSex; 2026-11-05)', () => {
     const added = ownAdded();

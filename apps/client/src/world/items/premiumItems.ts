@@ -17,9 +17,12 @@ import type { Refusal } from './travelItems';
 
 /**
  * The `IK2_*` the server uses (`DoUseItem`): REFRESHER 11, POTION 12, FOOD 14, SYSTEM 19, BLINKWING 22, AIRFUEL 23,
- * GMTEXT 27, BUFF 29, WARP 30, SKILL 31, BUFF2 33, BUFF_TOGIFT 37 (`Resource/defineItemkind.h:29-55`).
+ * GMTEXT 27, BUFF 29, WARP 30, SKILL 31, BUFF2 33, TOCASH 36 (the Funny Coin, after its box), BUFF_TOGIFT 37
+ * (`Resource/defineItemkind.h:29-55`).
  */
-const USE_KINDS: ReadonlySet<number> = new Set([11, 12, 14, 19, 22, 23, 27, 29, 30, 31, 33, 37]);
+const USE_KINDS: ReadonlySet<number> = new Set([11, 12, 14, 19, 22, 23, 27, 29, 30, 31, 33, 36, 37]);
+/** `IK2_TOCASH`: the Funny Coin (`__FUNNY_COIN`, DPClient.cpp:10543-10552). */
+const IK2_TOCASH = 36;
 /** `EXT_ITEM` 21 (`IsNeedTarget`, `_Common/Item.cpp:758-765`) and `EXT_PET` 19 (`Resource/define.h:57-59`). */
 const EXT_ITEM = 21;
 const EXT_PET = 19;
@@ -31,13 +34,42 @@ const WINDOW_IK3: ReadonlySet<number> = new Set([85, 100, 120, 122, 138]);
  * The items whose use opens a window the browser lacks (`SendDoUseItem`, `CWndInventory`): name change 10424, class
  * change 10425, sex change 10220, guild name 10463, Custody 15083, hair 26410 and face 26411 coupons, item transmute
  * 26204 and 26218, party summon 26202, the character seal 26475 and 26476, pet naming 20039, the pet tamer's 21030 and
- * 21031, pet hatch 21036, pet life 21034, pet food 21037 and its mill 21038, attribute change 20037, the maps 4801 and
- * 4802, the collector's batteries 26453-26455 and 26560, awakening protection 26961 (the Vis confirm).
+ * 21031, pet hatch 21036, pet life 21034, pet food 21037 and its mill 21038, attribute change 20037. (2026-11-05: the
+ * maps, the batteries and Awakening Protection are used, with their boxes.)
  */
 const WINDOW_IDS: ReadonlySet<number> = new Set([
   10424, 10425, 10220, 10463, 15083, 26410, 26411, 26204, 26218, 26202, 26475, 26476, 20039, 21030, 21031, 21036, 21034,
-  21037, 21038, 20037, 4801, 4802, 26453, 26454, 26455, 26560, 26961,
+  21037, 21038, 20037,
 ]);
+/** The collector's batteries: the normal one (`TID_GAME_BETTERY_DESC`) and the cash ones (`TID_GAME_CACHE_BETTERY_DESC`). */
+const NORMAL_BATTERY = 26453;
+const CASH_BATTERIES: ReadonlySet<number> = new Set([26454, 26455, 26560]);
+/** `II_SYS_SYS_SCR_AWAKESAFE`: Awakening Protection, whose box `CheckConfirm` opens (WndManager.cpp:7698-7712). */
+const AWAKESAFE = 26961;
+/** The maps of Flaris and Saint Morning (`OpenMap`, WndField.cpp:2407-2415): the bag's double-click opens the world map. */
+const MAPS: ReadonlySet<number> = new Set([4801, 4802]);
+
+/** A map item: the bag's double-click opens the world map too (at V15 `CWndMap` toggles it, WndMap.cpp:41-53). */
+export function isMapItem(prop: WebItemProp): boolean {
+  return MAPS.has(prop.id);
+}
+
+/** `CheckConfirm`'s box (both the bag and the task bar, before `SendDoUseItem`): Awakening Protection's question, or null. */
+export function checkConfirm(prop: WebItemProp): string | null {
+  return prop.id === AWAKESAFE ? 'TID_GAME_REGARDLESS_USE01' : null;
+}
+
+/**
+ * The object a box's OK names in DOUSEITEM: `CWndCommItemDlg`'s `m_dwCtrlId` is a battery's own item id
+ * (DPClient.cpp:10652-10662), the Funny Coin's YES sends NULL_ID (WndField.cpp:23590-23600), Awakening Protection's the
+ * player (WndPetSys.cpp:2955); the rest keep the focus of the first press.
+ */
+export function confirmedTarget(prop: WebItemProp, focus: number, ownId: number): number {
+  if (prop.id === NORMAL_BATTERY || CASH_BATTERIES.has(prop.id)) return prop.id;
+  if (prop.kind2 === IK2_TOCASH) return 0xffffffff;
+  if (prop.id === AWAKESAFE) return ownId;
+  return focus;
+}
 
 /** What the bag and the task bar do with an item: use it, or leave it (Neuz's upgrade cursor, or a window), or nothing. */
 export type UseOf = 'use' | 'needsItem' | 'noWindow' | 'none';
@@ -131,6 +163,10 @@ export function premiumRefusal(check: PremiumCheck): Refusal | null {
  * uses the item with no box (`CWndCommItemDlg`, `bResult` FALSE).
  */
 export function useConfirm(prop: WebItemProp): string | null {
+  // 2026-11-05: the batteries (CWndCommItemDlg, :10652-10662) and the Funny Coin (CWndFunnyCoinConfirm, "%s" its name)
+  if (prop.id === NORMAL_BATTERY) return 'TID_GAME_BETTERY_DESC';
+  if (CASH_BATTERIES.has(prop.id)) return 'TID_GAME_CACHE_BETTERY_DESC';
+  if (prop.kind2 === IK2_TOCASH) return 'TID_GAME_FUNNYCOIN_ASKUSE';
   switch (prop.id) {
     case 10464: case 10488: case 26473: return 'TID_GAME_REGARDLESS_USE';
     case 10468: case 26203: return 'TID_GAME_LV7OVER_NOTUSE';

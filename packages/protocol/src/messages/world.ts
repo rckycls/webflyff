@@ -243,6 +243,9 @@ export function encodeEndSkillQueue(): Uint8Array {
 export type WorldPacket =
   | { type: 'teleporter'; key: string; index: number }
   | { type: 'npcBuff'; key: string }
+  | { type: 'enchant' | 'piercing' | 'randomScroll'; targetId: number; materialId: number }
+  | { type: 'doUseItemTarget'; materialId: number; targetId: number }
+  | { type: 'ultimateEnchantWeapon'; targetId: number; materialId: number }
   | { type: 'removeQuest'; questId: number }
   | { type: 'questCheck'; questId: number; check: boolean }
   | ReturnType<typeof readDefinedText>
@@ -381,6 +384,16 @@ function decodeClientPacket(r: ArReader): WorldPacket {
       const key = r.string(63), index = r.i32(); r.expectEnd();
       if (key.length === 0 || index < 0) throw new ProtocolError('Invalid teleporter destination');
       return { type: 'teleporter', key, index };
+    }
+    case PacketType.ENCHANT: case PacketType.PIERCING: case PacketType.RANDOMSCROLL: case PacketType.ULTIMATE_ENCHANTWEAPON: {
+      const targetId = r.u32(), materialId = r.u32(); r.expectEnd();
+      const type = packetType === PacketType.ENCHANT ? 'enchant' : packetType === PacketType.PIERCING ? 'piercing'
+        : packetType === PacketType.RANDOMSCROLL ? 'randomScroll' : 'ultimateEnchantWeapon';
+      return { type, targetId, materialId };
+    }
+    case PacketType.DO_USE_ITEM_TARGET: {
+      const materialId = r.u32(), targetId = r.u32(); r.expectEnd();
+      return { type: 'doUseItemTarget', materialId, targetId };
     }
     case PacketType.NPC_BUFF: {
       const key = r.string(64); r.expectEnd();

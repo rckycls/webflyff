@@ -4,7 +4,11 @@ import { IK2_AIRFUEL, flightSpeedOf, isRide, landRefusal, rideRefusal } from './
 import { RETURN_SCROLL, usableFromBag, useRefusal } from './travelItems';
 import type { Refusal, UseCheck } from './travelItems';
 import { PARTS_RIDE } from '../sim/constants';
-import { ItemCooldowns, bagConfirm, premiumRefusal, useConfirm } from './premiumItems';
+import { ItemCooldowns, bagConfirm, checkConfirm, confirmedTarget, isMapItem, premiumRefusal, useConfirm } from './premiumItems';
+
+/** `NULL_ID`: no focused mover. */
+const NULL_TARGET = 0xffffffff;
+import { upgradeKindOf } from './upgradeItems';
 
 export const RESURRECTION_SCROLL = 10431;
 export interface ItemUseSender {
@@ -29,9 +33,13 @@ export interface ItemUseTravel {
    * 2026-11-05: opens Neuz's box (`CWndCommItemDlg`, `CWndRestateConfirm`) with the text of `tid`, OK and Cancel; OK runs
    * `ok`. `boxOpen` says whether one is open; `now` is the cool-downs' clock (ms).
    */
-  confirm?(tid: string, ok: () => void): void;
+  confirm?(tid: string, ok: () => void, args?: string[]): void;
   boxOpen?(): boolean;
   now?(): number;
+  /** 2026-11-05: opens the world map (a map item from the bag). */
+  openMap?(): void;
+  /** 2026-11-05: the upgrade cursor, which a material double-clicked in the bag starts (`UpgradeCursor.begin`). */
+  upgrade?: { begin(objectId: number): boolean };
 }
 
 /**
@@ -56,6 +64,11 @@ export class ItemUse {
   use(objectId: number, from: UseFrom = 'bar', focus?: number): boolean {
     const own = this.own(), item = own?.inventory?.get(objectId);
     const prop = item && this.props.get(item.itemId);
+    // 2026-11-05: an upgrade material double-clicked in the bag starts the upgrade mode (WndField.cpp:2351-2398); from the
+    // task bar Neuz sends DOUSEITEM, which the server does nothing with
+    if (from === 'bag' && own && own.hp > 0 && item && prop && this.travel?.upgrade !== undefined && upgradeKindOf(prop) !== null) {
+      return this.travel.upgrade.begin(objectId);
+    }
     if (!own || own.hp <= 0 || !item || item.count <= 0 || !prop || !usableFromBag(prop)) return false;
     const travel = this.travel;
     let target: number | undefined;
@@ -83,12 +96,22 @@ export class ItemUse {
           travel.confirm(bag.tid, () => void this.use(objectId, 'confirmed', target));
           return true;
         }
+        // 2026-11-05: a map opens the world map (OpenMap, WndField.cpp:2407-2415), and DOUSEITEM goes too
+        if (isMapItem(prop)) travel.openMap?.();
       }
       // the bag's trade check, and the box's OK's (CWndCommItemDlg::OnChildNotify, WndField.cpp:12937-12943)
       if ((from === 'bag' || from === 'confirmed') && travel.shopOpen?.() === true) {
         travel.say({ kind: 'say', tid: 'TID_GAME_TRADELIMITUSING' });
         return false;
       }
+      // 2026-11-05: CheckConfirm's box before SendDoUseItem, from the bag and the task bar (Awakening Protection)
+      const checked = from === 'bag' || from === 'bar' ? checkConfirm(prop) : null;
+      if (checked !== null && travel.confirm !== undefined) {
+        travel.confirm(checked, () => void this.use(objectId, 'confirmed', target));
+        return true;
+      }
+      // the object a box's OK names: a battery's id, the Funny Coin's NULL_ID, Awakening Protection's player
+      if (from === 'confirmed') target = confirmedTarget(prop, target ?? NULL_TARGET, own.objectId);
       // 2026-11-05: SendDoUseItem's cool-down, the wings and the piercing protection
       const premium = premiumRefusal({
         prop, cooldowns: this.cooldowns, now: this.now(), disguised: check.disguised ?? false, wing: check.wing ?? null,
@@ -130,7 +153,8 @@ export class ItemUse {
       // 2026-11-05: SendDoUseItem's box (`bResult`): the protection and smelting scrolls; OK uses it with no box
       const box = from === 'bag' || from === 'bar' ? useConfirm(prop) : null;
       if (box !== null && travel.confirm !== undefined) {
-        travel.confirm(box, () => void this.use(objectId, 'confirmed', target));
+        // the Funny Coin's names the item (`TID_GAME_FUNNYCOIN_ASKUSE`'s %s)
+        travel.confirm(box, () => void this.use(objectId, 'confirmed', target), [prop.name]);
         return true;
       }
     }

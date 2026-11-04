@@ -1399,3 +1399,14 @@ npm run dev:client
 | Android phone | Chrome | | | | | | | | |
 | iPhone | Safari | | | | | | | | |
 | iPad | Safari | | | | | | | | |
+
+### More checks for the same branch (second round, 2026-11-05)
+
+8. **Sunstone.** Double-click a Sunstone in the bag (phone: tap it, then **Use**), then click a weapon or armour piece in the bag. Success: the cursor changes and an effect plays on the character; about 4 s later the item becomes +1 (or the failure line shows). From +3, a box asks first. A ring is refused with "This item cannot be used."
+9. **Moonstone.** The same with a ring or earring. Success: it becomes +1.
+10. **Element and socket cards, random scrolls, awakening scrolls.** The same flow; a random scroll asks once more after the wait.
+11. **Cancel.** Start with a Sunstone, then right-click the bag or walk. Success: the cursor and effect go; nothing is sent.
+12. **Item tooltips.** Hover items in the bag's right-most column. Success: the tooltip is whole and wide, next to the item, never thin with many short lines.
+13. **Awakenings after a teleport.** With an awakened item worn, note the Character window's stats, then use a Blinkwing. Success: the stats stay the same after the trip.
+14. **Cool-down.** Use a food item with a cool-down from the task bar. Success: a light sweep runs over its slot (and its bag cell) until it can be used again.
+15. **Batteries, Funny Coin, Awakening Protection.** Each asks first; OK uses it.

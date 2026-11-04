@@ -6,7 +6,8 @@ import {
   encodeSkillTaskBar, encodeUseSkill, encodeWorldKeepAlive, readBundle,
   encodeUseItem, encodeEquipItem, encodeMoveItem, encodeDropItem, encodeRevival, encodeChat,
   encodeNpcDialog, encodeNpcDialogOpen, encodeOpenShop, encodeCloseShop, encodeBuyItem, encodeSellItem, encodeTeleporter,
-  encodeNpcBuff, encodeQuestCheck, encodeRemoveQuest, encodeReturnScroll, encodeStateModeCancel,
+  encodeNpcBuff, encodeQuestCheck, encodeEnchant, encodePiercing, encodeRandomScroll, encodeDoUseItemTarget,
+  encodeUltimateEnchantWeapon, encodeRemoveQuest, encodeReturnScroll, encodeStateModeCancel,
 } from '@flyffweb/protocol';
 import { encodeMagicAttack, encodeRangeAttack, encodeSfxClear, encodeSfxHit, encodeSfxId } from '@flyffweb/protocol';
 import {
@@ -106,6 +107,12 @@ function replacePosition(body: Uint8Array): Vec3 {
  */
 export class WorldSession {
   sendTeleporter(key: string, index: number): void { this.playingCache()?.send(encodeTeleporter(key, index)); }
+  /** 2026-11-05: the upgrade cursor's packets (world/upgrade.ts in the protocol): each two inventory object ids. */
+  sendUpgrade(packet: 'enchant' | 'ultimateEnchantWeapon' | 'piercing' | 'randomScroll' | 'doUseItemTarget', first: number, second: number): void {
+    const encode = { enchant: encodeEnchant, ultimateEnchantWeapon: encodeUltimateEnchantWeapon, piercing: encodePiercing,
+      randomScroll: encodeRandomScroll, doUseItemTarget: encodeDoUseItemTarget }[packet];
+    this.playingCache()?.send(encode(first, second));
+  }
   /** 2026-11-05: Buff Pang's Get Buffed! (`SendNPCBuff( m_szCharacterKey )`), the key as the NPC's ADD_OBJ gave it. */
   sendNpcBuff(key: string): void { this.playingCache()?.send(encodeNpcBuff(key)); }
   sendNpcDialogOpen(id: number): void { this.playingCache()?.send(encodeNpcDialogOpen(id)); }

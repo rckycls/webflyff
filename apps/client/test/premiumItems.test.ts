@@ -4,7 +4,8 @@
 import { describe, expect, it } from 'vitest';
 import type { WebItemProp } from '@flyffweb/formats';
 import {
-  ItemCooldowns, SmTimers, bagConfirm, cooldownGroup, premiumRefusal, skillPointsSpent, useConfirm, useOf,
+  ItemCooldowns, SmTimers, bagConfirm, checkConfirm, confirmedTarget, cooldownGroup, isMapItem, premiumRefusal, skillPointsSpent,
+  useConfirm, useOf,
 } from '../src/world/items/premiumItems';
 import { usableFromBag } from '../src/world/items/travelItems';
 
@@ -28,12 +29,12 @@ describe('useOf: what Neuz sends DOUSEITEM for', () => {
   it('an item that needs another item (EXT_ITEM, the upgrade cards) or a window the browser lacks is not used', () => {
     expect(useOf(prop({ kind2: 19, exeTarget: 21 }))).toBe('needsItem');
     for (const kind3 of [37, 61, 62, 63, 101, 119]) expect(useOf(prop({ kind2: 19, kind3 })), String(kind3)).toBe('needsItem');
-    for (const id of [10424, 10463, 15083, 26410, 26411, 10220, 26204, 26202, 26475, 26476, 20039, 20037, 4801, 10425]) {
+    for (const id of [10424, 10463, 15083, 26410, 26411, 10220, 26204, 26202, 26475, 26476, 20039, 20037, 10425]) {
       expect(useOf(prop({ id, kind2: 19 })), String(id)).toBe('noWindow');
     }
     for (const kind3 of [85, 122, 120, 100, 138]) expect(useOf(prop({ kind2: 19, kind3 })), String(kind3)).toBe('noWindow');
     expect(useOf(prop({ kind2: 14, exeTarget: 19 }))).toBe('noWindow'); // EXT_PET: the pet's food
-    expect(useOf(prop({ kind2: 36 }))).toBe('none'); // IK2_TOCASH: the Funny Coin's window
+    expect(useOf(prop({ kind2: 36 }))).toBe('use'); // IK2_TOCASH: the Funny Coin, after its box (2026-11-05)
   });
 
   it('worn equipment is not used (the bag equips it)', () => {
@@ -164,5 +165,24 @@ describe('the cool-down sweep (RenderRadar, WndManager.cpp:143-180)', () => {
     expect(cooldowns.progress(prop({ kind2: 14, kind3: 59, cooldownMs: 1 }), 3000)).toBe(0.5); // the group's, not the item's
     expect(cooldowns.progress(pill, 5000)).toBeNull();
     expect(cooldowns.progress(prop({ kind2: 12 }), 2000)).toBeNull();
+  });
+});
+
+describe('the quick boxes (2026-11-05: batteries, Funny Coin, Awakening Protection) and the maps', () => {
+  it('are used now, each with its box and the object its OK names', () => {
+    for (const id of [26453, 26454, 26455, 26560, 26961, 4801, 4802]) expect(useOf(prop({ id, kind2: 19 })), String(id)).toBe('use');
+    expect(useOf(prop({ id: 30000, kind2: 36 }))).toBe('use'); // IK2_TOCASH
+    expect(useConfirm(prop({ id: 26453 }))).toBe('TID_GAME_BETTERY_DESC');
+    expect(useConfirm(prop({ id: 26454 }))).toBe('TID_GAME_CACHE_BETTERY_DESC');
+    expect(useConfirm(prop({ id: 26560 }))).toBe('TID_GAME_CACHE_BETTERY_DESC');
+    expect(useConfirm(prop({ id: 30000, kind2: 36 }))).toBe('TID_GAME_FUNNYCOIN_ASKUSE');
+    expect(checkConfirm(prop({ id: 26961 }))).toBe('TID_GAME_REGARDLESS_USE01');
+    expect(checkConfirm(prop({ id: 26205 }))).toBeNull();
+    // CWndCommItemDlg's m_dwCtrlId: a battery's own id; the Funny Coin NULL_ID; Awakening Protection the player
+    expect(confirmedTarget(prop({ id: 26453 }), 0x77, 9)).toBe(26453);
+    expect(confirmedTarget(prop({ id: 30000, kind2: 36 }), 0x77, 9)).toBe(0xffffffff);
+    expect(confirmedTarget(prop({ id: 26961 }), 0x77, 9)).toBe(9);
+    expect(confirmedTarget(prop({ id: 10464 }), 0x77, 9)).toBe(0x77);
+    expect(isMapItem(prop({ id: 4801 }))).toBe(true);
   });
 });

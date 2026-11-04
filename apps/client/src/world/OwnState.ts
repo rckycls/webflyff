@@ -738,6 +738,15 @@ function itemUpdated(item: InventoryItem, param: number, value: number): Invento
       const list = pierced(item.piercing, value);
       return list === undefined ? item : withField(item, 'piercing', list);
     }
+    case UI_RANDOMOPTITEMID: {
+      // 2026-11-05: a random scroll's stat, the low byte of the awakening's field (`SetRandomOpt`, Item.h:169)
+      const next = ((item.randomOption ?? 0n) & ~0xffn) | BigInt(value & 0xff);
+      if (next === 0n) {
+        const { randomOption: _, ...rest } = item;
+        return rest;
+      }
+      return { ...item, randomOption: next };
+    }
     case UI_ULTIMATE_PIERCING: {
       const list = pierced(item.ultimate, value);
       return list === undefined ? item : withField(item, 'ultimate', list);
