@@ -2,6 +2,11 @@
 export class CameraControls {
   private press: { id: number; x: number; y: number; dragging: boolean; touch: boolean } | null = null;
   private readonly arrows = new Set<string>();
+  /**
+   * Piece 7 M5: in flight a right mouse drag steers the flier (`ControlFlying`'s mouse, Neuz's mode 0): called with each
+   * move's pixels, it answers true when it took the move, which then does not turn the camera. Touch drags never steer.
+   */
+  steer: ((dx: number, dy: number) => boolean) | null = null;
 
   constructor(
     private readonly canvas: HTMLElement,
@@ -50,6 +55,12 @@ export class CameraControls {
     if (press === null || press.id !== event.pointerId) return;
     const dx = event.clientX - press.x;
     const dy = event.clientY - press.y;
+    if (!press.touch && this.steer !== null && (dx !== 0 || dy !== 0) && this.steer(dx, dy)) {
+      press.x = event.clientX;
+      press.y = event.clientY;
+      event.preventDefault();
+      return;
+    }
     if (!press.dragging && Math.hypot(dx, dy) <= 8) return;
     press.dragging = true;
     press.x = event.clientX;

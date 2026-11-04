@@ -205,6 +205,29 @@ describe('moverRules: corrections (CDPClient::OnMoverMoved, __SYNC_1217)', () =>
   });
 });
 
+describe('moverRules: flying monsters (Piece 7 M5, Decision 6)', () => {
+  it('a flying monster moves in 3-D toward its destination and does not fall', () => {
+    // OBJTYPE_FLYING: FMOVE is AngleToVector( angle, -angleX, speed ), TURNMOVE sets angleX, and there is no gravity
+    const m: SimMover = {
+      objectId: 1, act: new ActionMover({ pos: [100, 50, 100], angle: 0, speed: f32(0.1), flying: true }), dest: null,
+      corr: null, speedFactor: 1,
+    };
+    setDestPos(m, [100, 60, 90], true);
+    stepMover(m, nobody);
+    expect(m.act.angleX).toBeLessThan(0); // nose up: GetDegreeX of a point above
+    expect(m.act.state & ObjSta.MOVE_ALL).toBe(ObjSta.FMOVE);
+    steps(m, 30);
+    expect(m.act.body.pos[1]).toBeGreaterThan(50.5);
+    expect(m.act.body.pos[2]).toBeLessThan(99);
+    // standing, it neither falls nor drifts
+    applyMotion(m, ActMsg.STAND);
+    const at = [...m.act.body.pos];
+    steps(m, 30);
+    expect(m.act.body.pos).toEqual(at);
+    expect(m.act.angleX).toBe(0); // STAND levels a flying NPC (ActionMoverMsg.cpp:117-121)
+  });
+});
+
 describe('moverRules: MOVERCORR (CDPClient::OnMoverCorr, DPClient.cpp:8929-8955)', () => {
   it('a correction is taken at once: the point, the angle and the correction under way go, and the mover stays there', () => {
     // the mover runs to a reported point (a correction with an action, OnMoverMoved) and turns to an angle

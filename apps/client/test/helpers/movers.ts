@@ -25,6 +25,7 @@ export function gameDataOf(parts: Partial<GameData> = {}): GameData {
     texts: new Map(),
     effects: new Map(),
     skills: new Map(),
+    noFlyWorlds: new Set(),
     ...parts,
   };
 }

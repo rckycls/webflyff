@@ -30,6 +30,22 @@ describe('AttackButton: the let-go (Piece 7 M2)', () => {
     button.dispose();
   });
 
+  it("another finger's let-go does not release a held button (Piece 7 M5, Review Focus 5)", () => {
+    const pressed = vi.fn();
+    const released = vi.fn();
+    const button = new AttackButton(pressed, document, { onRelease: released });
+    document.body.append(button.element);
+    button.update(true);
+    button.element.dispatchEvent(touch('pointerdown'));
+    // the stick's thumb, or a tap on another button, lifts: its pointerup bubbles to the document
+    document.body.dispatchEvent(Object.assign(touch('pointerup'), { pointerId: 2 }));
+    document.body.dispatchEvent(Object.assign(touch('pointercancel'), { pointerId: 3 }));
+    expect(released).not.toHaveBeenCalled();
+    document.body.dispatchEvent(touch('pointerup')); // its own finger, off the button
+    expect(released).toHaveBeenCalledTimes(1);
+    button.dispose();
+  });
+
   it('a disabled button presses nothing and releases nothing; a click is a press and its let-go', () => {
     const pressed = vi.fn();
     const released = vi.fn();

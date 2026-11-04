@@ -7,6 +7,38 @@ function key(type: 'keydown' | 'keyup', code: string): Event {
 }
 
 describe('KeyboardInput', () => {
+  it('forgets the presses no one took, and prevents the default of the keys asked (Piece 7 M5)', () => {
+    const target = new EventTarget();
+    const keyboard = new KeyboardInput(target);
+    target.dispatchEvent(key('keydown', 'KeyX'));
+    keyboard.clearPressed();
+    expect(keyboard.takePressed('KeyX')).toBe(false);
+    keyboard.preventDefault = (code) => code === 'Tab';
+    const cancelable = (code: string): Event => Object.assign(new Event('keydown', { cancelable: true }), { code });
+    const tab = cancelable('Tab');
+    target.dispatchEvent(tab);
+    expect(tab.defaultPrevented).toBe(true);
+    const z = cancelable('KeyZ');
+    target.dispatchEvent(z);
+    expect(z.defaultPrevented).toBe(false);
+    keyboard.dispose();
+  });
+
+  it('tells a key held, and a press once (Piece 7 M5)', () => {
+    const target = new EventTarget();
+    const keyboard = new KeyboardInput(target);
+    target.dispatchEvent(key('keydown', 'KeyX'));
+    target.dispatchEvent(key('keydown', 'KeyX')); // the key's repeat
+    expect(keyboard.held('KeyX')).toBe(true);
+    expect(keyboard.takePressed('KeyX')).toBe(true);
+    expect(keyboard.takePressed('KeyX')).toBe(false);
+    target.dispatchEvent(key('keyup', 'KeyX'));
+    expect(keyboard.held('KeyX')).toBe(false);
+    target.dispatchEvent(key('keydown', 'KeyX'));
+    expect(keyboard.takePressed('KeyX')).toBe(true);
+    keyboard.dispose();
+  });
+
   it('can reserve arrows for camera control while WASD still moves', () => {
     const target = new EventTarget();
     const keyboard = new KeyboardInput(target, { arrows: false });

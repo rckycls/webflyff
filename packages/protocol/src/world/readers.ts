@@ -39,6 +39,9 @@ import {
 } from './party';
 import { readQueryPlayerData } from './playerData';
 import { readReturnScrollAck, readStateMode } from './travel';
+import {
+  readMeleeAttack2, readMoverBehavior2, readMoverCorr2, readMoverMoved2, readSendActMsg, readSetFuel,
+} from './flight';
 import type { WorldMessage } from './types';
 
 /**
@@ -89,6 +92,13 @@ export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
     [MessageType.CREATESFXALLOW, readCreateSfxAllow],
     // Piece 7 M3: the item cast and the Scroll of Return's answer
     [MessageType.STATEMODE, readStateMode],
+    // Piece 7 M5: flight
+    [MessageType.MOVERMOVED2, readMoverMoved2],
+    [MessageType.MOVERBEHAVIOR2, readMoverBehavior2],
+    [MessageType.MOVERCORR2, readMoverCorr2],
+    [MessageType.SETFUEL, readSetFuel],
+    [MessageType.MELEE_ATTACK2, readMeleeAttack2],
+    [MessageType.SENDACTMSG, readSendActMsg],
     [MessageType.RETURNSCORLL, readReturnScrollAck],
     // Piece 7 M2: the buffs
     [MessageType.SETSKILLSTATE, readSetSkillState],

@@ -4,7 +4,7 @@
 // objects come from collision.ts. D3D coordinates throughout: x with a tile's column, z with its row (web z is -z),
 // and floats as the C++ keeps them (`f32` at every store).
 
-import { MAP_SIZE, cleanHeight, heightFlag } from '@flyffweb/formats';
+import { MAP_SIZE, NUM_PATCHES_PER_SIDE, PATCH_SIZE, cleanHeight, heightFlag } from '@flyffweb/formats';
 import type { WebTile, WorldManifest } from '@flyffweb/formats';
 import { sampleHeight } from './heightSampler';
 
@@ -65,6 +65,17 @@ export interface Ground {
    * (nothing written). Optional: a Ground without it stands movers on `terrainHeight`, and no land slides them.
    */
   landTri?(x: number, z: number, out: Float32Array): boolean;
+  /**
+   * Piece 7 M5: `CWorld::GetWaterHeight` (`World.cpp:1696-1716`)'s `byWaterTexture`, the water of the patch under
+   * `((int)x, (int)z)` (`WTYPE_NONE` 0, `WTYPE_CLOUD` 1, `WTYPE_WATER` 2), or null off the world and where no tile is
+   * loaded. Optional: a Ground without it has no water.
+   */
+  waterTexture?(x: number, z: number): number | null;
+  /**
+   * Piece 7 M5: the world's size in metres along D3D x and z (`WORLD_WIDTH * m_iMPU`), which `ClipX` and `ClipZ`
+   * keep a flier inside (`World.h:761-782`). Optional: a Ground without it has no edge.
+   */
+  extent?: readonly [number, number];
 }
 
 /**
@@ -108,11 +119,15 @@ const EVEN_OVER: readonly number[] = [0, 2, 3];
 const ODD_UNDER: readonly number[] = [0, 2, 1];
 const ODD_OVER: readonly number[] = [1, 2, 3];
 
-/** What the land of a `Ground` reads from a tile: its raw heights, `HGT_*` flags still added (`WebTile.heights`). */
-export type TileHeights = Pick<WebTile, 'heights'>;
+/**
+ * What the land of a `Ground` reads from a tile: its raw heights, `HGT_*` flags still added (`WebTile.heights`), and
+ * its water bytes (`WebTile.water`), which a tile without them reads as no water.
+ */
+export type TileHeights = Pick<WebTile, 'heights'> & Partial<Pick<WebTile, 'water'>>;
 
-/** The land part of a `Ground`, its three functions; `landTri` is always there. */
-export type TileLand = Pick<Ground, 'terrainHeight' | 'landAttr'> & Required<Pick<Ground, 'landTri'>>;
+/** The land part of a `Ground`; `landTri`, `waterTexture` and `extent` are always there. */
+export type TileLand = Pick<Ground, 'terrainHeight' | 'landAttr'> &
+  Required<Pick<Ground, 'landTri' | 'waterTexture' | 'extent'>>;
 
 /**
  * The land of a `Ground` from the tiles' heights, for a world of `size` tiles of 128 cells of `mpu` meters:
@@ -164,5 +179,22 @@ export function tileLand(
   };
   const landTri = (x: number, z: number, out: Float32Array): boolean => landTriangle(x, z, mpu, cleanHeightAt, out);
 
-  return { terrainHeight, landAttr, landTri };
+  /**
+   * `CWorld::GetWaterHeight( int x, int z )` (`World.cpp:1696-1716`, the vector form truncating x and z, `World.h:466`)
+   * and `CLandscape::GetWaterHeight` (`lod.cpp:1652-1655`): the patch's `byWaterTexture`, in whole metres over whole
+   * cells.
+   */
+  const waterTexture = (x: number, z: number): number | null => {
+    const ix = Math.trunc(x);
+    const iz = Math.trunc(z);
+    if (ix < 0 || iz < 0 || ix >= side * size[0] || iz >= side * size[1]) return null; // VecInWorld
+    const cx = Math.trunc(ix / mpu);
+    const cz = Math.trunc(iz / mpu);
+    const tile = tileAt(Math.trunc(cx / MAP_SIZE), Math.trunc(cz / MAP_SIZE));
+    if (tile === null) return null;
+    const patch = Math.trunc((cx % MAP_SIZE) / PATCH_SIZE) + Math.trunc((cz % MAP_SIZE) / PATCH_SIZE) * NUM_PATCHES_PER_SIDE;
+    return tile.water?.[patch * 2 + 1] ?? 0;
+  };
+
+  return { terrainHeight, landAttr, landTri, waterTexture, extent: [side * size[0], side * size[1]] };
 }

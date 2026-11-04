@@ -1,4 +1,4 @@
-import { GAME_DATA_KEYS } from '@flyffweb/formats';
+import { GAME_DATA_KEYS, WORLD_NO_FLY_KEY } from '@flyffweb/formats';
 import type {
   ExpRow,
   TextEntry,
@@ -69,6 +69,11 @@ export interface GameData {
    * each with its levels of `propSkillAdd.csv`. The common skills (items' and buffs' effects) are not in it.
    */
   skills: Map<number, WebSkill>;
+  /**
+   * Piece 7 M5: the worlds whose `.wld` says `fly 0` (`CWorld::m_bFly` false), by world id. Empty without the optional
+   * `data/worldNoFly.json`: every world then allows flight, the `.wld`'s default.
+   */
+  noFlyWorlds: ReadonlySet<number>;
 }
 
 /**
@@ -132,6 +137,7 @@ export async function loadGameData(store: Pick<AssetStore, 'json' | 'url'>): Pro
     store.json<WebEffectsIndex>(GAME_DATA_KEYS.effectsIndex),
     store.json<WebSkill[]>(GAME_DATA_KEYS.skills),
   ]);
+  const noFly = store.url(WORLD_NO_FLY_KEY) === null ? [] : await store.json<number[]>(WORLD_NO_FLY_KEY);
   return {
     movers: new Map(movers.map((mover) => [mover.index, withLaterColumns(mover)])),
     items: new Map(items.map((item) => [item.id, withHides(item)])),
@@ -149,5 +155,6 @@ export async function loadGameData(store: Pick<AssetStore, 'json' | 'url'>): Pro
     ])),
     effects: new Map(Object.entries(effects).map(([id, effect]) => [Number(id), effect])),
     skills: new Map(skills.map((skill) => [skill.id, skill])),
+    noFlyWorlds: new Set(noFly),
   };
 }

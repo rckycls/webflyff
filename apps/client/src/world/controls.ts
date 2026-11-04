@@ -74,6 +74,27 @@ function axis(value: number, length: number, was: -1 | 0 | 1): -1 | 0 | 1 {
   return share >= AXIS_ON ? 1 : share <= -AXIS_ON ? -1 : 0;
 }
 
+/** Piece 7 M5: the stick's flight keys, as W, S, A and D. */
+export interface FlightStick {
+  dive: boolean;
+  climb: boolean;
+  left: boolean;
+  right: boolean;
+}
+
+export const NO_FLIGHT_STICK: Readonly<FlightStick> = { dive: false, climb: false, left: false, right: false };
+
+/**
+ * Piece 7 M5 (Decision 4): the stick in flight: forward dives (W), back climbs (S), sideways turns (A, D), each axis by
+ * the walk's sectors (`AXIS_ON`, kept down to `AXIS_OFF` from `previous`).
+ */
+export function flightStick(stick: MoveIntent, previous: Readonly<FlightStick> = NO_FLIGHT_STICK): FlightStick {
+  const length = Math.hypot(stick.forward, stick.turn);
+  const forward = axis(stick.forward, length, previous.dive ? 1 : previous.climb ? -1 : 0);
+  const turn = axis(stick.turn, length, previous.right ? 1 : previous.left ? -1 : 0);
+  return { dive: forward === 1, climb: forward === -1, left: turn === -1, right: turn === 1 };
+}
+
 /**
  * What the keys and the joystick ask for: a positive forward is forward (the keyboard's W), a positive turn right (D).
  * `previous` is what the frame before asked for: an axis that counted goes on counting a little past its sector's

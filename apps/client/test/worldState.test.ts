@@ -1,16 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { AttackFlag, DstParam, NULL_ID } from '@flyffweb/protocol';
-import type { AddedMover, MonsterRate, MoveReport, TaskBar, Vec3, WorldMessage } from '@flyffweb/protocol';
+import type { AddedMover, FlightReport, MonsterRate, MoveReport, TaskBar, Vec3, WorldMessage } from '@flyffweb/protocol';
 import { GAME_DATA_KEYS } from '@flyffweb/formats';
-import type { WebMover } from '@flyffweb/formats';
+import type { WebItemProp, WebMover } from '@flyffweb/formats';
 import { ServerClock } from '../src/net/serverClock';
 import { GameDataMissingError, loadGameData } from '../src/world/gameData';
 import type { GameData } from '../src/world/gameData';
 import { OwnState } from '../src/world/OwnState';
-import { terrainGround } from '../src/world/sim/collision';
+import { HAttr, terrainGround } from '../src/world/sim/collision';
 import type { Ground } from '../src/world/sim/collision';
 import { ActMsg, AniLoop, Mop, Mti, ObjSta, ObjStaF } from '../src/world/sim/constants';
 import { attackSpeed } from '../src/world/sim/params';
+import { wrapAngle } from '../src/world/sim/ActionMover';
 import { Missiles } from '../src/world/combat/missiles';
 import { WorldState, isDie, isLive } from '../src/world/WorldState';
 import type { CombatEvent, Mover } from '../src/world/WorldState';
@@ -87,6 +88,207 @@ describe('ground item lifecycle', () => {
     expect(world.groundItems.size).toBe(1);
     world.apply(90, { type: 'delObj' });
     expect(world.groundItems.size).toBe(0);
+  });
+});
+
+// ---- flight (Piece 7 M5) ------------------------------------------------------------------------------------------
+
+/** The Magic Broom (II_RID_RID_BOR_MAGIC01, 5000) as the converter writes it. */
+const BROOM: WebItemProp = {
+  id: 5000, name: 'Magic Broom', packMax: 1, kind1: 4, kind2: 26, kind3: 70, handed: -1, part: 13, abilityMin: -1,
+  abilityMax: -1, weaponType: -1, attackSpeed: -1, attackRange: -1, destParams: [-1, -1, -1], adjParams: [-1, -1, -1],
+  sfxHit: -1, model: 'models/item_ridbormagic01.glb', icon: null,
+  flight: { speed: f32(0.0023), speedText: '0.0023', turn: f32(0.6), pitch: 1, limit: 1, fuelMax: 1200, accelFuelMax: 12, motion: 31 },
+};
+const flightData = (): GameData => ({ ...gameData(), itemProps: new Map([[5000, BROOM]]) });
+const rideOn = (objectId: number, equip = true): WorldMessage =>
+  ({ type: 'equipItem', objectId: 7, itemId: 5000, equip, flag: 0, option: 0, part: 13 });
+/** A flier's ADD_OBJ: flying (OBJSTAF_FLY) and wearing the broom. */
+function flierOf(objectId: number, extra: Partial<AddedMover> = {}, self = false): AddedMover {
+  const added = playerOf(objectId, self ? 'Me' : 'Flier', { pos: [100, 30, 100], stateFlag: ObjStaF.FLY, ...extra }, self);
+  if (self) {
+    // the own ADD_OBJ leaves worn empty (addObj.ts): the ride is the inventory item in the equipment's PARTS_RIDE slot
+    const own = ownAdded().player!.own!;
+    const slots = Array.from({ length: 73 }, (_, i) => (i === 42 + 13 ? 3 : 0xffffffff));
+    added.player!.own = { ...own, inventory: [...(own.inventory ?? []), { objectId: 3, itemId: 5000, count: 1 }], inventorySlots: slots };
+  } else {
+    added.player!.worn = [{ part: 13, itemId: 5000, flag: 0 }];
+  }
+  added.player!.fuel = 900;
+  return added;
+}
+const flight = (pos: Vec3, extra: Partial<FlightReport> = {}): FlightReport => ({
+  pos, delta: [0, 0, 0], angle: 0, angleX: 0, accPower: 0, turnAngle: 0, state: ObjSta.FMOVE, stateFlag: ObjStaF.FLY,
+  motion: 38, motionEx: 0, loop: AniLoop.LOOP, motionOption: Mop.FIXED, tick: SERVER_TICK, ...extra,
+});
+
+describe('flight in the world (Piece 7 M5)', () => {
+  it('DOEQUIP of the ride makes the own mover fly, and landing falls', () => {
+    const { world } = newWorld(flightData());
+    add(world, playerOf(OWN_ID, 'Me', { pos: [100, 20, 100] }, true));
+    const me = world.movers.get(OWN_ID)!;
+    world.takeChanges();
+    world.apply(OWN_ID, rideOn(OWN_ID));
+    expect(me.act.stateFlag & ObjStaF.FLY).toBe(ObjStaF.FLY);
+    expect(me.act.rideItemId).toBe(5000);
+    expect(me.act.fuel).toBe(1200); // m_nFuel -1 takes dwFFuelReMax (ActionMoverMsg.cpp:1068-1072)
+    expect(world.takeChanges().combat).toContainEqual({ kind: 'flight', moverId: OWN_ID, flying: true });
+    steps(world, 5);
+    expect(me.act.body.pos[1]).toBe(20); // hovering: no gravity
+    expect(me.act.motion).toBe(31); // MTI_FSTAND1
+    me.act.delta[1] = f32(-0.05);
+    world.apply(OWN_ID, rideOn(OWN_ID, false));
+    expect(me.act.stateFlag & ObjStaF.FLY).toBe(0);
+    expect(me.act.delta[1]).toBe(f32(-0.05)); // MODE_GROUND keeps the fall
+    expect(me.act.angleX).toBe(0);
+    expect(world.takeChanges().combat).toContainEqual({ kind: 'flight', moverId: OWN_ID, flying: false });
+    let fell = false;
+    for (let i = 0; i < 600 && me.act.body.pos[1] > 0; i++) {
+      world.step();
+      fell ||= (me.act.state & ObjSta.JUMP_ALL) === ObjSta.SJUMP3;
+    }
+    steps(world, 60);
+    expect(fell).toBe(true);
+    expect(me.act.body.pos[1]).toBe(0);
+    expect(me.act.state & ObjSta.JUMP_ALL).toBe(0);
+  });
+
+  it('a forced landing falls to the ground (Review Focus 3)', () => {
+    const { world } = newWorld(flightData(), terrainGround(() => 0, (_x, z) => (z < 99 ? HAttr.NOFLY : HAttr.NONE)));
+    add(world, flierOf(OWN_ID, { state: ObjSta.FMOVE, stateFlag: ObjStaF.FLY | ObjStaF.ACC }, true));
+    const me = world.movers.get(OWN_ID)!;
+    world.takeChanges();
+    for (let i = 0; i < 600 && me.act.stateFlag & ObjStaF.FLY; i++) world.step();
+    expect(me.act.stateFlag & ObjStaF.FLY).toBe(0);
+    expect(me.act.body.pos[2]).toBeGreaterThanOrEqual(99); // the step into NOFLY land was taken back
+    expect(world.takeChanges().combat).toContainEqual({ kind: 'flight', moverId: OWN_ID, flying: false });
+    steps(world, 600);
+    expect(me.act.body.pos[1]).toBe(0);
+  });
+
+  it('an own ADD_OBJ with FLY and a ride enters flying (Review Focus 2)', () => {
+    const { world } = newWorld(flightData());
+    add(world, flierOf(OWN_ID, {}, true));
+    const me = world.movers.get(OWN_ID)!;
+    expect(me.act.rideItemId).toBe(5000);
+    expect(me.act.ride).toEqual({ speed: f32(0.0023), turn: f32(0.6), pitch: 1, motion: 31 });
+    expect(me.act.fuel).toBe(900);
+    steps(world, 10);
+    expect(me.act.stateFlag & ObjStaF.FLY).toBe(ObjStaF.FLY);
+    expect(me.act.body.pos[1]).toBe(30);
+  });
+
+  it("another player's MOVERMOVED2 moves it in the air, and a late one snaps", () => {
+    const { world, time } = newWorld(flightData());
+    add(world, flierOf(1));
+    const other = world.movers.get(1)!;
+    world.apply(1, { type: 'moverMoved2', move: flight([110, 30, 90], { angle: 45 }), frames: 37 });
+    expect(other.dest?.pos).toEqual([110, 30, 90]);
+    expect(other.corr?.remnant).toBe(37);
+    steps(world, 10);
+    expect(other.act.body.pos[0]).toBeGreaterThan(100);
+    expect(other.act.body.pos[2]).toBeLessThan(100);
+    time.now += 1000; // 60 steps old: past nFrame
+    world.apply(1, { type: 'moverMoved2', move: flight([150, 40, 150], { angle: 90, angleX: -5 }), frames: 37 });
+    expect(other.act.body.pos).toEqual([150, 40, 150]);
+    expect(other.act.angleX).toBe(-5);
+  });
+
+  it('MOVERANGLE turns it', () => {
+    const { world } = newWorld(flightData());
+    add(world, flierOf(1));
+    const other = world.movers.get(1)!;
+    world.apply(1, {
+      type: 'moverAngle', pos: [100, 30, 90], delta: [0, 0, 0], angle: 90, angleX: -10, accPower: 0, turnAngle: 0,
+      tick: SERVER_TICK,
+    });
+    expect(other.corr?.remnant).toBe(37);
+    steps(world, 40);
+    expect(other.act.body.angle).toBe(wrapAngle(90));
+    expect(other.act.angleX).toBe(-10);
+  });
+
+  it('SETFUEL sets accFuel, and fuel 0 stops the acceleration', () => {
+    const { world } = newWorld(flightData());
+    add(world, flierOf(1, { stateFlag: ObjStaF.FLY | ObjStaF.ACC }));
+    const other = world.movers.get(1)!;
+    world.apply(1, { type: 'setFuel', fuel: 10, accFuel: 500 });
+    expect([other.act.fuel, other.act.accFuel]).toEqual([10, 500]);
+    expect(other.act.stateFlag & ObjStaF.ACC).toBe(ObjStaF.ACC);
+    world.apply(1, { type: 'setFuel', fuel: 0, accFuel: 500 });
+    expect(other.act.stateFlag & ObjStaF.ACC).toBe(0);
+  });
+
+  it('SENDACTMSG TURBO_OFF turns the turbo off', () => {
+    const { world } = newWorld(flightData());
+    add(world, flierOf(1, { stateFlag: ObjStaF.FLY | ObjStaF.ACC | ObjStaF.TURBO }));
+    world.apply(1, { type: 'sendActMsg', message: ActMsg.MODE_TURBO_OFF, fly: true, param1: 0, param2: 0, param3: 0 });
+    expect(world.movers.get(1)!.act.stateFlag & ObjStaF.TURBO).toBe(0);
+  });
+
+  it('SETPOS stops the acceleration', () => {
+    const { world } = newWorld(flightData());
+    add(world, flierOf(1, { stateFlag: ObjStaF.FLY | ObjStaF.ACC }));
+    world.apply(1, { type: 'setPos', pos: [120, 30, 100] });
+    expect(world.movers.get(1)!.act.stateFlag & ObjStaF.ACC).toBe(0);
+  });
+
+  it('a flier set down from a hover falls to the ground (m_bGround, ActionMover.cpp:276-285)', () => {
+    const { world } = newWorld(flightData());
+    add(world, playerOf(OWN_ID, 'Me', { pos: [100, 0, 100] }, true));
+    const me = world.movers.get(OWN_ID)!;
+    steps(world, 10); // standing on the ground
+    world.apply(OWN_ID, rideOn(OWN_ID));
+    world.apply(OWN_ID, { type: 'setPos', pos: [100, 8, 100] }); // the server places the hovering flier
+    steps(world, 10);
+    expect(me.act.body.pos[1]).toBe(8);
+    world.apply(OWN_ID, rideOn(OWN_ID, false));
+    steps(world, 240);
+    expect(me.act.body.pos[1]).toBe(0);
+    expect(me.act.state & ObjSta.JUMP_ALL).toBe(0);
+  });
+
+  it("another flier crossing NOFLY land is not landed here: UnequipRide is the own player's (MoverEquip.cpp:2575-2583)", () => {
+    const { world } = newWorld(flightData(), terrainGround(() => 0, (_x, z) => (z < 99 ? HAttr.NOFLY : HAttr.NONE)));
+    add(world, flierOf(1, { state: ObjSta.FMOVE, stateFlag: ObjStaF.FLY | ObjStaF.ACC }));
+    const other = world.movers.get(1)!;
+    steps(world, 120);
+    expect(other.act.stateFlag & ObjStaF.FLY).toBe(ObjStaF.FLY);
+  });
+
+  it("a landing clears the destination: another's in-air chase does not pull it back up (DoFakeEquip's ClearDest)", () => {
+    const { world } = newWorld(flightData());
+    add(world, flierOf(1));
+    const other = world.movers.get(1)!;
+    world.apply(1, { type: 'moverMoved2', move: flight([110, 30, 90], { angle: 45 }), frames: 37 });
+    steps(world, 5);
+    world.apply(1, rideOn(1, false));
+    expect(other.dest?.pos ?? null).toBeNull();
+    steps(world, 400);
+    expect(other.act.body.pos[1]).toBe(0);
+    expect(other.act.stateFlag & ObjStaF.FLY).toBe(0);
+  });
+
+  it('a hit flier plays its ride\'s flinch, MTA_FDMG1 (MoverAttack.cpp:2055-2059)', () => {
+    const { world } = newWorld(flightData());
+    add(world, flierOf(1));
+    const other = world.movers.get(1)!;
+    steps(world, 2);
+    other.act.setDamaged();
+    expect(other.act.motion).toBe(31 + 9);
+    expect(other.act.motionOption).toBe(Mop.FIXED | Mop.NO_TRANS);
+  });
+
+  it('another player taking off and landing (DOEQUIP part 13) flies and lands it', () => {
+    const { world } = newWorld(flightData());
+    add(world, playerOf(1, 'Other', { pos: [100, 0, 100] }));
+    world.apply(1, rideOn(1));
+    const other = world.movers.get(1)!;
+    expect(other.act.stateFlag & ObjStaF.FLY).toBe(ObjStaF.FLY);
+    expect(other.added.player!.worn).toContainEqual({ part: 13, itemId: 5000, flag: 0 });
+    world.apply(1, rideOn(1, false));
+    expect(other.act.stateFlag & ObjStaF.FLY).toBe(0);
+    expect(other.act.ride).toBeNull();
   });
 });
 
@@ -442,7 +644,7 @@ describe('WorldState: stepping', () => {
     expect(other.movers.get(2)!.act.body.speed).toBe(f32(0.2));
   });
 
-  it('a flier is placed but not stepped', () => {
+  it('a flier whose ride is not known is placed but not stepped', () => {
     const { world } = newWorld();
     add(world, playerOf(1, 'Flier', { state: ObjSta.FMOVE, stateFlag: ObjStaF.FLY, angle: 90 }));
     add(world, playerOf(2, 'Walker', { state: ObjSta.FMOVE, angle: 90 }));
@@ -451,14 +653,15 @@ describe('WorldState: stepping', () => {
     near(world.movers.get(2)!.act.body.pos[0], 101);
   });
 
-  it('a flying monster (dwFlying 1) is a flier too: placed but not stepped, so the ground does not pull it down', () => {
+  it('a flying monster (dwFlying 1) is stepped by the flying rules: the ground does not pull it down (Piece 7 M5)', () => {
     // CActionMover::ProcessCollision (ActionMover.cpp:183): IsFly() || pProp->dwFlying == 1 moves with the flying rules
     const { world } = newWorld(gameData(), terrainGround(() => -5));
     add(world, npcOf(1, 22, '', { state: ObjSta.FMOVE, angle: 90 }));
     add(world, npcOf(2, 20, '', { state: ObjSta.FMOVE, angle: 90 }));
     steps(world, 10);
     expect(world.movers.get(1)!.flying).toBe(true);
-    expect(world.movers.get(1)!.act.body.pos).toEqual([100, 0, 100]);
+    near(world.movers.get(1)!.act.body.pos[0], 101); // it runs on, level, at half its table speed
+    expect(world.movers.get(1)!.act.body.pos[1]).toBe(0);
     expect(world.movers.get(2)!.flying).toBe(false);
     near(world.movers.get(2)!.act.body.pos[0], 101); // the Aibatt runs on, at half its table speed
     expect(world.movers.get(2)!.act.body.pos[1]).toBeLessThan(0); // and falls toward the ground
@@ -603,7 +806,7 @@ describe('WorldState: the messages and the rules (OnMoverMoved and the others)',
     expect(runner.act.state & ObjSta.MOVE_ALL).toBe(ObjSta.STAND);
   });
 
-  it('MOVERANGLE changes nothing on the ground, as OnMoverAngle returns for a mover that is not flying', () => {
+  it('MOVERANGLE changes nothing on the ground, as OnMoverAngle returns for a mover that is not flying (still so in M5)', () => {
     const { world } = newWorld();
     add(world, playerOf(1, 'Walker', { angle: 30 }));
     const walker = world.movers.get(1)!;

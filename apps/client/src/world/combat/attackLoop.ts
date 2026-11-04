@@ -6,11 +6,14 @@
 // `stepMover`'s following of the destination object, and the swings are `ActionMover`'s.
 
 import type { WebMover } from '@flyffweb/formats';
+import type { Vec3 } from '@flyffweb/protocol';
 import type { ModelBox } from '@flyffweb/scene';
 import type { OwnState } from '../OwnState';
 import type { ActionMover } from '../sim/ActionMover';
 import { getDegree, wrapAngle } from '../sim/ActionMover';
 import type { Ground } from '../sim/collision';
+import { dot, normalize } from '../sim/d3dx';
+import { getDegreeX } from '../sim/flightCollision';
 import { ActMsg, Belli, Ik3, Mti, ObjSta, ObjStaF } from '../sim/constants';
 import { clearDestObj, setDestObj } from '../sim/moverRules';
 import type { SimMover } from '../sim/moverRules';
@@ -27,7 +30,7 @@ const f32 = Math.fround;
 /** What the attack loop sends. */
 export type AttackLoopSession = Pick<
   WorldSession, 'sendDestObj' | 'sendMeleeAttack' | 'sendGetDestObj' | 'sendBehavior' | 'sendMagicAttack' | 'sendRangeAttack'
->;
+> & Partial<Pick<WorldSession, 'sendMeleeAttack2'>>;
 
 /** Piece 7 M2: `MAX_POWER_GAUGE` and `POWER_ATK_DELAY` (`WndWorld.cpp:81-82`), `MAX_CHARGE_LEVEL` (`DefineCommon.h:25`). */
 const MAX_POWER_GAUGE = 1800;
@@ -105,12 +108,32 @@ export function objRadius({ min, max }: ModelBox, scale: number): number {
  * not peaceful (`IsPeaceful`, the ADD_OBJ's `m_dwBelligerence`) and, the player on the ground, not flying (`dwFlying`).
  * The attack loop's step adds what the C++ does with a refusal; the attack button asks it alone (`canAttackFocus`).
  */
-export function attackAble(target: Mover, moverProps: ReadonlyMap<number, Pick<WebMover, 'killable'>>): boolean {
+export function attackAble(
+  target: Mover, moverProps: ReadonlyMap<number, Pick<WebMover, 'killable'>>, ownFlying = false,
+): boolean {
   if (target.added.isPlayer || isDie(target)) return false;
   const prop = moverProps.get(target.added.index);
   if (prop === undefined || prop.killable === 0) return false;
   if (target.added.belligerence === Belli.PEACEFUL) return false;
-  return !target.flying;
+  // Piece 7 M5: IsAttackAbleNPC (Mover.cpp:6615-6618): a flier hits only flying monsters, a walker only grounded ones
+  return ownFlying ? target.flying : !target.flying;
+}
+
+/** Piece 7 M5: `cosf( D3DXToRadian( 60.0f ) )`: a wand fires in the air at a target within 60 degrees of the nose. */
+const WAND_CONE = f32(Math.cos((60 * Math.PI) / 180));
+/** Piece 7 M5: the air swing's reach and the wand's (`IsRangeObj( pObj, 3.0f )`, `IsRangeObj( pObj, 64.0f )`). */
+const AIR_SWING_RANGE = 3;
+const AIR_WAND_RANGE = 64;
+/** Piece 7 M5: the targets Tab cycles lie within 15 degrees of where the camera looks (`MoverRender.cpp:739-756`). */
+const FLY_TARGET_CONE = Math.cos((15 * Math.PI) / 180);
+
+/** `CObj::IsRangeObj` as the rules have it: in 3-D, under 0.8 of each radius plus `range`. */
+function inRangeObj(a: Mover, b: Mover, range: number): boolean {
+  const r = f32(f32(f32(a.radius ?? 0) * 0.8) + f32(f32(f32(b.radius ?? 0) * 0.8) + range));
+  const pa = a.act.body.pos;
+  const pb = b.act.body.pos;
+  const d = (pa[0] - pb[0]) ** 2 + (pa[1] - pb[1]) ** 2 + (pa[2] - pb[2]) ** 2;
+  return d < r * r;
 }
 
 /** The branch `CWndWorld::Process` runs (`WndWorld.cpp:8513-8537`): the attack, `ControlPlayer`, or neither. */
@@ -314,7 +337,7 @@ export class AttackLoop {
     if (this.ownIsDead()) return false;
     const id = this.focus.targetId;
     const target = id === null ? undefined : this.world.movers.get(id);
-    return target !== undefined && attackAble(target, this.moverProps);
+    return target !== undefined && attackAble(target, this.moverProps, this.world.self()?.act.isFlying() === true);
   }
 
   /**
@@ -335,6 +358,15 @@ export class AttackLoop {
    */
   onMoverPressed(objectId: number, now: number, double: boolean): void {
     if (this.ownIsDead()) return;
+    // Piece 7 M5 (Decision 5): in the air a press selects a killable flying monster, and nothing else (WndWorld.cpp:6868-6883)
+    if (this.world.self()?.act.isFlying() === true) {
+      const target = this.world.movers.get(objectId);
+      this.buttonDown = true; // m_bLButtonDown: held, the air attack swings
+      if (target === undefined || !attackAble(target, this.moverProps, true) || this.focus.targetId === objectId) return;
+      this.focus.select(objectId);
+      this.renderTarget = objectId;
+      return;
+    }
     // a press of its own ends an Attack-button hold whose let-go never came (attackButtonDown holds it again after)
     this.attackButtonHeld = false;
     this.buttonDown = true;
@@ -523,6 +555,7 @@ export class AttackLoop {
    * `g_pPlayer->SetDestObj( pTarget )`, range 0, with no command, so nothing opens on arrival (`MoverMove.cpp:256-259`).
    */
   walkTo(objectId: number): void {
+    if (this.world.self()?.act.isFlying() === true) return; // Piece 7 M5: nobody walks in the air
     const own = this.world.self();
     if (own === undefined) return;
     this.stop('move');
@@ -585,6 +618,11 @@ export class AttackLoop {
     const own = this.world.self();
     if (own === undefined) return true;
     this.bind(own);
+    // Piece 7 M5: in the air the attack is ControlFlying's (WndWorldControlPlayer.cpp:797-833), and nobody walks
+    if (own.act.isFlying()) {
+      this.airAttack(own);
+      return false;
+    }
     let controls = false;
     if (!skillBranch) {
       const branch = this.processBranch();
@@ -602,6 +640,86 @@ export class AttackLoop {
     // Piece 7 M2: what `OnEraseBkgnd` does after `Process` each drawn frame: the automatic shot of a held charge
     if (now !== undefined) this.automaticShot(own, now);
     return controls;
+  }
+
+  /**
+   * Piece 7 M5: the left button held, Insert, or the phone's Attack held: `ControlFlying` attacks the focus each step.
+   */
+  attackHeld = false;
+  /** Piece 7 M5: `m_aFlyTarget`'s place (`m_nSelect`), and the mover tracked (`m_idTracking`, `MVRF_TRACKING`). */
+  private flySelect = 0;
+  private trackingId: number | null = null;
+
+  /**
+   * Piece 7 M5: `ControlFlying`'s attack (`WndWorldControlPlayer.cpp:797-833`): with the button held at an attackable
+   * focus, a wand fires (`DoAttackMagic( pObj, 0 )`) at a target within 60 degrees of the nose (`AngleToVector( angle,
+   * -angleX )`) and 64 m; any other hand swings (ATK1) within 3 m, and MELEE_ATTACK2 goes out as the swing starts.
+   */
+  private airAttack(own: Mover): void {
+    const id = this.focus.targetId;
+    const target = id === null ? undefined : this.world.movers.get(id);
+    if (target === undefined || !(this.buttonDown || this.attackHeld)) return;
+    if (!this.isAttackAble(target)) return;
+    if (this.holdsWand()) {
+      const a = own.act;
+      const yaw = (a.body.angle * Math.PI) / 180;
+      const pitch = (-a.angleX * Math.PI) / 180;
+      const front: Vec3 = [Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch)];
+      const to = normalize([
+        target.act.body.pos[0] - a.body.pos[0], target.act.body.pos[1] - a.body.pos[1], target.act.body.pos[2] - a.body.pos[2],
+      ]);
+      if (dot(front, to) < WAND_CONE || !inRangeObj(own, target, AIR_WAND_RANGE)) return;
+      const state = this.own();
+      if (state !== undefined) this.doAttackMagic(own, target, 0, state);
+      return;
+    }
+    if (!inRangeObj(own, target, AIR_SWING_RANGE)) return;
+    if (own.act.actMsgError(ActMsg.ATK1, target.objectId) === 1) this.session.sendMeleeAttack2?.(ActMsg.ATK1, target.objectId);
+  }
+
+  /**
+   * Piece 7 M5: Tab in the air (`ControlFlying`, :774-794): the next of the killable flying movers within 15 degrees of
+   * the camera's forward (`cameraForward`, D3D), nearest first, becomes the focus and the tracked mover.
+   */
+  nextFlyTarget(cameraForward: Vec3): void {
+    const own = this.world.self();
+    if (own === undefined || !own.act.isFlying()) return;
+    const forward = normalize(cameraForward);
+    const at = own.act.body.pos;
+    const targets = [...this.world.movers.values()]
+      .filter((m) => m !== own && attackAble(m, this.moverProps, true))
+      .map((m) => {
+        const v: Vec3 = [m.act.body.pos[0] - at[0], m.act.body.pos[1] - at[1], m.act.body.pos[2] - at[2]];
+        return { m, d: Math.hypot(...v), facing: dot(normalize(v), forward) };
+      })
+      .filter((t) => t.facing >= FLY_TARGET_CONE)
+      .sort((a, b) => a.d - b.d);
+    if (targets.length === 0) return;
+    if (this.flySelect >= targets.length) this.flySelect = 0;
+    const next = targets[this.flySelect++]!.m;
+    this.focus.select(next.objectId);
+    this.renderTarget = next.objectId;
+    if (this.trackingId !== null) this.trackingId = next.objectId;
+  }
+
+  /**
+   * Piece 7 M5: Z in the air (`ControlFlying`, :751-773): tracking of the focused mover on, or off (also with no focus).
+   * While on, the flier turns toward it each step (`ProcessFlyTracking`, the rules' `tracking`).
+   */
+  toggleTracking(): void {
+    const own = this.world.self();
+    if (own === undefined) return;
+    const id = this.focus.targetId;
+    const target = id === null ? undefined : this.world.movers.get(id);
+    this.trackingId = this.trackingId === null && target !== undefined ? target.objectId : null;
+    own.act.tracking = () => {
+      const tracked = this.trackingId === null ? undefined : this.world.movers.get(this.trackingId);
+      if (tracked === undefined) return null;
+      const from = own.act.body.pos;
+      const to = tracked.act.body.pos;
+      const yaw = getDegree(to, from);
+      return { yawTo: yaw > 180 ? yaw - 360 : yaw, pitchTo: getDegreeX(to, from) };
+    };
   }
 
   /**
@@ -753,7 +871,7 @@ export class AttackLoop {
    */
   isAttackAble(target: Mover): boolean {
     if (!target.added.isPlayer && isDie(target)) this.focus.select(null);
-    const able = attackAble(target, this.moverProps);
+    const able = attackAble(target, this.moverProps, this.world.self()?.act.isFlying() === true);
     if (!able) this.auto = false;
     return able;
   }

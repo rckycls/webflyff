@@ -25,11 +25,19 @@ describe('native inventory snapshots', () => {
     expect(result.mismatched).toEqual([3]);
     expect(result.messages[0]?.value).toMatchObject({ type: 'updateItem', value: 2 });
   });
+  it('DOUSEITEM and DOEQUIP of a ride carry part 13 and its exact float (Piece 7 M5, DPClient.cpp:10860-10866, :9336-9342)', () => {
+    const use = new ArReader(encodeUseItem(3, 13, Math.fround(0.0023))); use.bytes(8);
+    expect([use.u32(), use.u32(), use.i32(), use.f32()]).toEqual([3 << 16, 0xffffffff, 13, Math.fround(0.0023)]);
+    const equip = new ArReader(encodeEquipItem(3, 13, Math.fround(0.0023))); equip.bytes(8);
+    expect([equip.u32(), equip.i32(), equip.f32()]).toEqual([3, 13, Math.fround(0.0023)]);
+  });
   it('writes native object IDs, signed part, short quantity and revival header', () => {
+    // Piece 7 M5: both end with the item's fFlightSpeed (`__HACK_1023`), -1 for an item without one (`=`)
     const r = new ArReader(encodeUseItem(6));
-    expect([r.u32(), r.u32(), r.u32(), r.u32(), r.i32()]).toEqual([0xffffffff, 0xff0021, 6 << 16, 0xffffffff, -1]);
+    expect([r.u32(), r.u32(), r.u32(), r.u32(), r.i32(), r.f32()]).toEqual([0xffffffff, 0xff0021, 6 << 16, 0xffffffff, -1, -1]);
+    r.expectEnd();
     const equip = new ArReader(encodeEquipItem(6)); equip.bytes(8);
-    expect([equip.u32(), equip.i32(), equip.f32()]).toEqual([6, -1, 0]);
+    expect([equip.u32(), equip.i32(), equip.f32()]).toEqual([6, -1, -1]);
     expect(encodeMoveItem(0, 41).slice(8)).toEqual(Uint8Array.of(0, 0, 41));
     const drop = new ArReader(encodeDropItem(6, 2, [1, 2, 3])); drop.bytes(8);
     expect([drop.u32(), drop.u32(), drop.i16(), drop.vec3()]).toEqual([0, 6, 2, [1, 2, 3]]);

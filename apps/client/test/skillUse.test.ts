@@ -230,6 +230,18 @@ function rig(options: RigOptions = {}) {
 
 const distance = (a: Vec3, b: Vec3): number => Math.hypot(a[0] - b[0], a[2] - b[2]);
 
+describe('SkillUse: in the air (Piece 7 M5, MoverMsg.cpp:176)', () => {
+  it('no skill in the air', () => {
+    const r = rig();
+    r.tap(MONSTER_ID);
+    r.own.act.modeFly(5000, { speed: Math.fround(0.0023), turn: Math.fround(0.6), pitch: 1, motion: 31 }, 1200);
+    r.skills.useSlot(0);
+    r.step();
+    expect(r.sent).toEqual([]);
+    expect(r.skills.commanding).toBe(false);
+  });
+});
+
 describe('SkillUse: a bar slot (UseSkillShortCut, CMD_SetUseSkill, ProcessMoveArrival)', () => {
   it('walks to an Aibatt 5 m away with PLAYERSETDESTOBJ( target, 2.0 ), sends USESKILL( 0, target, SUT_NORMAL ) on arrival, and plays nothing before the server\'s word', () => {
     const r = rig();

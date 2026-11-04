@@ -36,12 +36,22 @@ export class AttackButton {
     element.setAttribute('aria-label', options.label ?? LABEL);
     let touchPressed = false;
     let held = false;
-    const release = () => { if (held) { held = false; options.onRelease?.(); } };
+    /** The finger that holds it (Piece 7 M5): another finger's let-go (the stick's, another button's) is not this one's. */
+    let holder: number | null = null;
+    const letGo = () => { holder = null; if (held) { held = false; options.onRelease?.(); } };
+    const release = (event: Event) => {
+      const id = (event as PointerEvent).pointerId;
+      if (holder !== null && id !== undefined && id !== holder) return;
+      letGo();
+    };
     const activate = () => { if (!element.disabled) { held = true; onPress(); } element.blur(); };
     element.addEventListener('pointerdown', (event) => {
       touchPressed = event.pointerType === 'touch';
       event.preventDefault();
-      if (touchPressed) activate(); // secondary touches need not produce a compatibility click
+      if (touchPressed) {
+        holder = event.pointerId ?? null;
+        activate(); // secondary touches need not produce a compatibility click
+      }
     });
     element.addEventListener('pointerup', release);
     element.addEventListener('pointercancel', release);
@@ -57,7 +67,7 @@ export class AttackButton {
     element.addEventListener('click', (event) => {
       if (touchPressed && event.detail !== 0) { touchPressed = false; return; }
       activate();
-      release();
+      letGo();
     });
     this.element = element;
     // a finger on the screen: the button shows from then on, as the joystick does

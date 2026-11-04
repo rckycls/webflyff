@@ -5,7 +5,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { GAME_DATA_KEYS, QUESTS_KEY } from '@flyffweb/formats';
+import { GAME_DATA_KEYS, QUESTS_KEY, WORLD_NO_FLY_KEY } from '@flyffweb/formats';
 import type {
   ModelElem,
   WebEffectsIndex,
@@ -520,14 +520,20 @@ describe('the game-data stage', () => {
     await fs.rm(out, { recursive: true, force: true });
   });
 
-  /** Lays out the fixture client, `packed` replacing or removing (undefined) some of its pack files. */
-  async function client(packed: Record<string, string | undefined> = {}): Promise<void> {
+  /**
+   * Lays out the fixture client, `packed` replacing or removing (undefined) some of its pack files, with `loose` files
+   * (a world's `.wld`) besides the fixture's.
+   */
+  async function client(packed: Record<string, string | undefined> = {}, loose: Record<string, string> = {}): Promise<void> {
     const files = { ...PACKED, ...packed };
     await writeFakeClient(root, {
       packed: Object.entries(files).flatMap(([name, content]) =>
         content === undefined ? [] : [{ name, data: text(content) }],
       ),
-      loose: Object.fromEntries([...CHR_FILES, 'Icon/skill_VagOneCleanh.dds'].map((file) => [file, 'not read'])),
+      loose: {
+        ...Object.fromEntries([...CHR_FILES, 'Icon/skill_VagOneCleanh.dds'].map((file) => [file, 'not read'])),
+        ...loose,
+      },
     });
   }
 
@@ -753,6 +759,49 @@ describe('the game-data stage', () => {
     expect(props.find((p) => p.id === 505)).toMatchObject({ castMs: 10000, sfxReady: 118 });
     const plain = props.find((p) => p.id === 503)!;
     for (const key of ['castMs', 'sfxReady']) expect(plain).not.toHaveProperty(key);
+  });
+
+  it("a ride keeps its flight columns, the speed's text exact (Piece 7 M5)", async () => {
+    const ride = itemRow('5000', 'IDS_PROPITEM_TXT_000790', '13').split('\t');
+    ride[5] = '4'; // dwItemKind1: IK1_RIDE
+    ride[84] = '31'; // dwUseMotion: MTI_FSTAND1_A
+    ride[109] = '0.0023'; // fFlightSpeed
+    ride[110] = '0.6'; // fFlightLRAngle
+    ride[111] = '1'; // fFlightTBAngle
+    ride[112] = '='; // dwFlightLimit: NULL_ID is level 1 (MoverEquip.cpp:1493-1495)
+    ride[113] = '1200'; // dwFFuelReMax
+    ride[114] = '12'; // dwAFuelReMax
+    await client({ 'propItem.txt': script(ride.join('\t')) });
+    const props = await catalog<WebItemProp[]>(await runData(), GAME_DATA_KEYS.itemProps);
+    expect(props.find((p) => p.id === 5000)!.flight).toEqual({
+      speed: Math.fround(0.0023), speedText: '0.0023', turn: Math.fround(0.6), pitch: 1, limit: 1, fuelMax: 1200,
+      accelFuelMax: 12, motion: 31,
+    });
+  });
+
+  it('a non-ride has no flight (Piece 7 M5)', async () => {
+    const notRide = itemRow('503', 'IDS_PROPITEM_TXT_000792', 'PARTS_LOWER_BODY').split('\t');
+    notRide[109] = '0.0023'; // a speed on an armour is not a ride's
+    await client({ 'propItem.txt': script(notRide.join('\t'), weaponRow('505', 'IDS_PROPITEM_TXT_000793')) });
+    const props = await catalog<WebItemProp[]>(await runData(), GAME_DATA_KEYS.itemProps);
+    for (const prop of props) expect(prop, String(prop.id)).not.toHaveProperty('flight');
+  });
+
+  it('worldNoFly lists the fly 0 worlds (Piece 7 M5, WorldFile.cpp:88-92)', async () => {
+    await client({}, {
+      'World/WdTest/WdTest.wld': script('size 1, 1', 'fly 0'),
+      'World/WdMadrigal/WdMadrigal.wld': script('size 1, 1'), // fly is TRUE when the file does not say
+      'World/WdHeaven06_1/WdHeaven06_1.wld': script('size 1, 1', 'fly 0'), // two ids open this folder
+      'World/WdHeaven06/WdHeaven06.wld': script('fly 1'),
+    });
+    const run = await runData();
+    expect(run.report.failures).toEqual([]);
+    expect(await catalog<number[]>(run, WORLD_NO_FLY_KEY)).toEqual([0, 41, 42]);
+  });
+
+  it('writes no worldNoFly without a .wld', async () => {
+    await client();
+    expect((await runData()).writer.pathOf(WORLD_NO_FLY_KEY)).toBeUndefined();
   });
 
   it('itemProps: a row repeated in propItem.txt keeps the last, and an item with no icon has none', async () => {

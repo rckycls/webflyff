@@ -16,6 +16,7 @@ import {
   writeSetActionPoint, writeSetDestObj, writeSetExperience, writeSetGrowthLearningPoint, writeSetLevel,
   writeSetPointParam, writeSetPos, writeSetPosAngle, writeSetState, writeTaskBar, writeUseSkill, writeWorldReadInfo,
   writeReturnScrollAck, writeStateMode, writeUpdateItem,
+  writeMeleeAttack2, writeMoverBehavior2, writeMoverCorr2, writeMoverMoved2, writeSendActMsg, writeSetFuel,
 } from '../src';
 
 it('encodeBundle writes the table', () => {
@@ -78,6 +79,8 @@ const move: MoveReport = {
   pos, delta, angle: 90.5, state: 0x11, stateFlag: 0x2, motion: 0x15, motionEx: -1, loop: 3, motionOption: 4,
   tick: 123456789012n,
 };
+/** Piece 7 M5: a flying move, with the flight fields (f32 values, which read back as they are). */
+const flight = { ...move, stateFlag: 0x18, angleX: -12.5, accPower: Math.fround(0.001725), turnAngle: Math.fround(0.6) };
 
 const rates: MonsterRate[] = [
   { name: 'Aibatt', hitPoint: 100, attackPower: 101, defence: 102, exp: 103, itemDrop: 104, penya: 105 },
@@ -173,6 +176,19 @@ it('every writer decodes to what it was given', () => {
     [
       'writeCreateSfxAllow', writeCreateSfxAllow(40, 112, 33, pos, 0xabcd), MessageType.CREATESFXALLOW,
       { type: 'createSfxAllow', arrowXi: 112, hitXi: 33, pos, targetId: 0xabcd },
+    ],
+    // Piece 7 M5
+    ['writeMoverMoved2', writeMoverMoved2(40, flight, 37), MessageType.MOVERMOVED2, { type: 'moverMoved2', move: flight, frames: 37 }],
+    ['writeMoverBehavior2', writeMoverBehavior2(40, flight), MessageType.MOVERBEHAVIOR2, { type: 'moverBehavior2', move: flight }],
+    ['writeMoverCorr2', writeMoverCorr2(40, flight), MessageType.MOVERCORR2, { type: 'moverCorr2', move: flight }],
+    ['writeSetFuel', writeSetFuel(40, 1200, 12000), MessageType.SETFUEL, { type: 'setFuel', fuel: 1200, accFuel: 12000 }],
+    [
+      'writeMeleeAttack2', writeMeleeAttack2(40, 29, 0xabcd), MessageType.MELEE_ATTACK2,
+      { type: 'meleeAttack2', message: 29, targetId: 0xabcd, param2: 0, param3: 0 },
+    ],
+    [
+      'writeSendActMsg', writeSendActMsg(40, 25, true, 0, 0, 0), MessageType.SENDACTMSG,
+      { type: 'sendActMsg', message: 25, fly: true, param1: 0, param2: 0, param3: 0 },
     ],
     // Piece 7 M3
     [

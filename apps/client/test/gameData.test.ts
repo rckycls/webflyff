@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GAME_DATA_KEYS } from '@flyffweb/formats';
+import { GAME_DATA_KEYS, WORLD_NO_FLY_KEY } from '@flyffweb/formats';
 import type { WebExpRow, WebItemProp, WebJob, WebMover, WebSkill } from '@flyffweb/formats';
 import { GameDataMissingError, loadGameData } from '../src/world/gameData';
 import { catalogFiles, storeOf } from './helpers/gameDataFiles';
@@ -46,6 +46,17 @@ describe('loadGameData: the combat catalogs', () => {
     expect(store.asked.sort()).toEqual(Object.values(GAME_DATA_KEYS).sort());
     expect(store.asked).toHaveLength(Object.values(GAME_DATA_KEYS).length);
     for (const key of NEW_KEYS) expect(store.asked, key).toContain(key);
+  });
+
+  it('without worldNoFly every world allows flight (Piece 7 M5)', async () => {
+    const store = storeOf(catalogFiles());
+    expect((await loadGameData(store)).noFlyWorlds.size).toBe(0);
+    expect(store.asked).not.toContain(WORLD_NO_FLY_KEY);
+  });
+
+  it('worldNoFly names the worlds without flight (Piece 7 M5)', async () => {
+    const data = await loadGameData(storeOf(catalogFiles({ [WORLD_NO_FLY_KEY]: [203, 41] })));
+    expect([...data.noFlyWorlds].sort((a, b) => a - b)).toEqual([41, 203]);
   });
 
   it('itemProps are looked up by item id', async () => {

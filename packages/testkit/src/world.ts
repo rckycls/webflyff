@@ -3,8 +3,8 @@ import {
   MAX_SLOT_ITEM_COUNT, MAX_SLOT_QUEUE, MessageType, NULL_ID, ObjectType, PacketType, ProtocolError, ShortcutKind, writeQuest,
 } from '@flyffweb/protocol';
 import type {
-  AddedMover, AddedNpc, AddedPlayer, InventoryItem, MonsterRate, MoveReport, OwnCharacter, OwnQuest, PartyBlock, PartyRequestSide,
-  PlayerDataRecord, Shortcut, SkillSlot, TaskBar, Vec3,
+  AddedMover, AddedNpc, AddedPlayer, FlightReport, InventoryItem, MonsterRate, MoveReport, OwnCharacter, OwnQuest, PartyBlock,
+  PartyRequestSide, PlayerDataRecord, Shortcut, SkillSlot, TaskBar, Vec3,
 } from '@flyffweb/protocol';
 
 /** One message of a scripted bundle. `fields` are the bytes after the object ID and the type, built by the caller. */
@@ -202,6 +202,50 @@ export function writeSetJobSkill(objectId: number, job: number, skills: readonly
   for (const slot of skills) w.u32(slot.skill).u32(slot.level);
   for (let i = 0; i < MAX_JOB; i++) w.u32(0);
   return scripted(objectId, MessageType.SET_JOB_SKILL, w);
+}
+
+/**
+ * Piece 7 M5: a flier's fields as `CUserMng::AddMoverMoved2` (`WORLDSERVER/User.cpp`) writes them: v, vd, f, fAngleX,
+ * fAccPower, fTurnAngle, the state, the flag, the motion, nMotionEx, nLoop, the option and the tick.
+ */
+function flightFields(m: FlightReport): ArWriter {
+  return new ArWriter().vec3(m.pos).vec3(m.delta).f32(m.angle).f32(m.angleX).f32(m.accPower).f32(m.turnAngle)
+    .u32(m.state).u32(m.stateFlag).u32(m.motion).i32(m.motionEx).i32(m.loop).u32(m.motionOption).i64(m.tick);
+}
+
+/** Piece 7 M5: MOVERMOVED2: the flier's report, then `BYTE nFrame` (`CDPClient::OnMoverMoved2`). */
+export function writeMoverMoved2(objectId: number, move: FlightReport, frames: number): ScriptMessage {
+  return scripted(objectId, MessageType.MOVERMOVED2, flightFields(move).u8(frames));
+}
+
+/** Piece 7 M5: MOVERBEHAVIOR2 (`CDPClient::OnMoverBehavior2`). */
+export function writeMoverBehavior2(objectId: number, move: FlightReport): ScriptMessage {
+  return scripted(objectId, MessageType.MOVERBEHAVIOR2, flightFields(move));
+}
+
+/** Piece 7 M5: MOVERCORR2 (`CDPClient::OnMoverCorr2`). */
+export function writeMoverCorr2(objectId: number, move: FlightReport): ScriptMessage {
+  return scripted(objectId, MessageType.MOVERCORR2, flightFields(move));
+}
+
+/** Piece 7 M5: SETFUEL (`CUser::AddSetFuel`): `int nFuel`, `int tmAccFuel`. */
+export function writeSetFuel(objectId: number, fuel: number, accFuel: number): ScriptMessage {
+  return scripted(objectId, MessageType.SETFUEL, new ArWriter().i32(fuel).i32(accFuel));
+}
+
+/** Piece 7 M5: MELEE_ATTACK2 (`CUserMng::AddMeleeAttack2`): the message, the target, `nParam2` and `nParam3` 0. */
+export function writeMeleeAttack2(objectId: number, message: number, targetId: number): ScriptMessage {
+  return scripted(objectId, MessageType.MELEE_ATTACK2, new ArWriter().u32(message).u32(targetId).i32(0).i32(0));
+}
+
+/** Piece 7 M5: SENDACTMSG (`CUserMng::AddSendActMsg`): the message, `BOOL bFly`, and three parameters. */
+export function writeSendActMsg(
+  objectId: number, message: number, fly: boolean, param1: number, param2: number, param3: number,
+): ScriptMessage {
+  return scripted(
+    objectId, MessageType.SENDACTMSG,
+    new ArWriter().i32(message).i32(fly ? 1 : 0).i32(param1).i32(param2).i32(param3),
+  );
 }
 
 /**
@@ -587,7 +631,7 @@ function playerStart(m: AddedMover, p: AddedPlayer, stats: readonly number[] = [
     .string(p.name).u8(p.sex).u8(p.skinSet).u8(p.hairMesh).u32(p.hairColor).u8(p.headMesh).u32(p.playerId).u8(p.job)
     .u16(stats[0]).u16(stats[1]).u16(stats[2]).u16(stats[3]) // m_nStr, m_nSta, m_nDex, m_nInt
     .u16(p.level)
-    .i32(0).i32(0) // m_nFuel, m_tmAccFuel
+    .i32(p.fuel ?? -1).i32(p.accFuel ?? 0) // m_nFuel (-1 without a ride), m_tmAccFuel
     .u8(0) // m_idGuild > 0 is false: no guild and war IDs follow
     .u32(0) // m_idGuildCloak
     .u8(0) // m_idparty > 0 is false

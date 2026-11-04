@@ -1,7 +1,7 @@
 import type { Vec3 } from '@flyffweb/protocol';
 import type { CollisionObject } from './collision';
 import {
-  add, calcSlideVec, dot, faceNormal, inverse, normalize, scale, set, sub, touchRayTri, touchesAabb, transformCoord,
+  add, calcSlideVec, dot, faceNormal, inverse, normalize, scale, set, sub, touchAabbLine, touchRayTri, touchesAabb, transformCoord,
   transformCoordTo, vecLength, withoutTranslation,
 } from './d3dx';
 import type { Matrix } from './d3dx';
@@ -102,6 +102,25 @@ export function touchedBy(obj: CollisionObject, start: Vec3, end: Vec3): Float32
   return inv !== null && touchesBox(obj, inv, start, end) ? inv : null;
 }
 
+/**
+ * `IsTouchOBB_Line` with its `pvIntersect` (`xUtil3D.cpp:211-227`; Piece 7 M5, `CWorld::GetFullHeight`): where the
+ * line from `start` to `end` meets the object's box (the mesh's bounds standing in, as in `touchesBox`), in the world,
+ * or null.
+ */
+export function boxEntry(obj: CollisionObject, start: Vec3, end: Vec3): Vec3 | null {
+  const inv = inverseOf(obj.matrix);
+  const box = boxOf(obj.triangles);
+  if (inv === null || box === null) return null;
+  const at: Vec3 = [0, 0, 0];
+  if (!touchAabbLine(box, transformCoordTo(boxStart, start, inv), transformCoordTo(boxEnd, end, inv), at)) return null;
+  return transformCoord(at, obj.matrix);
+}
+
+/** The world matrix without its translation (`mTM._41 = mTM._42 = mTM._43 = 0`), worked out once a matrix. */
+export function rotationOfObject(obj: CollisionObject): Float32Array {
+  return rotationOf(obj.matrix);
+}
+
 /** The line from `pos` to `end` in the model's space: from `linePos` along `lineDir` (`sub` of the two ends). */
 const linePos: Vec3 = [0, 0, 0];
 const lineDir: Vec3 = [0, 0, 0];
@@ -119,10 +138,24 @@ function modelLine(inv: Matrix, pos: Vec3, end: Vec3): void {
  * first triangle in the mesh's order (not the nearest) that it meets, or null.
  */
 export function findTouchTriLine(obj: CollisionObject, inv: Matrix, pos: Vec3, end: Vec3): number | null {
+  return findTouchTriIndex(obj, inv, pos, end) === null ? null : touchedAt;
+}
+
+/** What the last `findTouchTriIndex` that found a triangle met it at, along the line. */
+let touchedAt = 0;
+
+/**
+ * `FindTouchTriLine`'s `pTri` (Piece 7 M5, `ProcessCollisionReflection`): the offset in `obj.triangles` of that first
+ * triangle (9 floats a triangle, model space), or null.
+ */
+export function findTouchTriIndex(obj: CollisionObject, inv: Matrix, pos: Vec3, end: Vec3): number | null {
   modelLine(inv, pos, end);
   for (let i = 0; i + 9 <= obj.triangles.length; i += 9) {
     const t = touchRayTri(obj.triangles, i, linePos, lineDir);
-    if (t !== null && t >= 0 && t < 1) return t;
+    if (t !== null && t >= 0 && t < 1) {
+      touchedAt = t;
+      return i;
+    }
   }
   return null;
 }

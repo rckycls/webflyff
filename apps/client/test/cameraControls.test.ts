@@ -15,6 +15,26 @@ describe('camera gestures', () => {
     expect(turns).toEqual([[30, 7]]);
     controls.dispose();
   });
+  it('in flight a right mouse drag steers instead of turning the camera (Piece 7 M5)', () => {
+    const canvas = new EventTarget();
+    const turns: number[][] = [];
+    const steered: number[][] = [];
+    const controls = new CameraControls(canvas as HTMLElement, (x, y) => turns.push([x, y]));
+    controls.steer = (dx, dy) => { steered.push([dx, dy]); return true; };
+    pointer(canvas, 'pointerdown', 1, 0, 0, 2, 'mouse');
+    pointer(canvas, 'pointermove', 1, 3, 2, 2, 'mouse'); // no 8 px threshold: every move steers
+    pointer(canvas, 'pointermove', 1, 7, 2, 2, 'mouse');
+    expect(steered).toEqual([[3, 2], [4, 0]]);
+    expect(turns).toEqual([]);
+    // a touch drag still turns the camera; on the ground (steer answers false) the mouse does too
+    pointer(canvas, 'pointerup', 1, 7, 2, 2, 'mouse');
+    controls.steer = () => false;
+    pointer(canvas, 'pointerdown', 2, 0, 0, 2, 'mouse');
+    pointer(canvas, 'pointermove', 2, 20, 0, 2, 'mouse');
+    expect(turns).toEqual([[20, 0]]);
+    controls.dispose();
+  });
+
   it('holds arrow keys as camera rotation and releases them on blur', () => {
     const canvas = new EventTarget();
     const keys = new EventTarget();

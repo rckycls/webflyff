@@ -19,6 +19,9 @@ export const SND_WALK_LANDSOFT = 1202; // :345
 /** `BGM_*` (Resource/defineSound.h). */
 export const BGM_TITLE = 1; // :1899
 export const BGM_TH_GENERAL = 8; // :1911
+/** Piece 7 M5: the first flight's music, and every later one's (defineSound.h:1916, :1922; MoverEquip.cpp:1804-1821). */
+export const BGM_TH_FLYING = 13;
+export const BGM_EV_LIGHTWING = 17;
 export const BGM_EV_START = 19; // :1924, a quest begins (CMover::SetQuest, MoverParam.cpp:3475-3577)
 export const BGM_EV_END = 20; // :1925, a quest ends or is removed
 export const BGM_IN_BOSS = 21; // :1927

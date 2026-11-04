@@ -86,11 +86,12 @@ function objectHead(index: number, scaleTimes100: number, angleTimes10: number, 
  */
 function playerCommon(
   w: ArWriter, name: string, guild: boolean, party: boolean, stats: readonly number[] = [15, 16, 17, 18], useItemId = 0,
+  fuel: readonly [number, number] = [-1, 0],
 ): ArWriter {
   w.string(name).u8(1).u8(2).u8(3).u32(0xff112233).u8(4) // name, sex, skin set, hair mesh, hair colour, head mesh
     .u32(777).u8(9) // m_idPlayer, m_nJob
     .u16(stats[0]).u16(stats[1]).u16(stats[2]).u16(stats[3]).u16(65) // m_nStr, m_nSta, m_nDex, m_nInt, level
-    .i32(-1).i32(0); // m_nFuel, m_tmAccFuel
+    .i32(fuel[0]).i32(fuel[1]); // m_nFuel, m_tmAccFuel
   if (guild) w.u8(1).u32(42).u32(3); else w.u8(0); // m_idGuild, m_idWar
   w.u32(42); // m_idGuildCloak
   if (party) w.u8(1).u32(9).u32(0); else w.u8(0); // m_idparty, m_idDuelParty
@@ -113,11 +114,11 @@ const playerBase = {
 };
 
 /** Another player (METHOD_EXCLUDE_ITEM): `OnAddObj` sees an object ID that is not `g_pPlayer`'s. */
-function otherPlayerFields(useItemId = 0): ArWriter {
+function otherPlayerFields(useItemId = 0, fuel: readonly [number, number] = [-1, 0]): ArWriter {
   const w = objectHead(11, 100, 905, OTHER)
     // m_dwMotion, m_bPlayer, m_nHitPoint, state, state flag, m_dwBelligerence, m_dwMoverSfxId
     .u16(0x15).u8(1).i32(1234).u32(0x11).u32(0x2).u8(0).u32(NULL_ID);
-  playerCommon(w, 'Hero', true, true, undefined, useItemId)
+  playerCommon(w, 'Hero', true, true, undefined, useItemId, fuel)
     .string('Cheap swords') // m_vtInfo.GetTitle()
     .u8(3) // uSize, then uParts, (u_short)m_dwItemId and m_byFlag for each
     .u8(2).u16(500).u8(0)
@@ -142,6 +143,11 @@ describe('ADD_OBJ (OnAddObj)', () => {
         },
       },
     });
+  });
+
+  it("keeps a player's fuel when it is not the default (Piece 7 M5, ObjSerializeOpt.cpp:128-129)", () => {
+    const added = readOne(OTHER, otherPlayerFields(0, [1200, 12000]).toBytes()) as { mover: { player: { fuel?: number; accFuel?: number } } };
+    expect([added.mover.player.fuel, added.mover.player.accFuel]).toEqual([1200, 12000]);
   });
 
   it('keeps the cast item of a mover in view (Piece 7 M3, ObjSerializeOpt.cpp:155-163)', () => {

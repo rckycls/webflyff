@@ -4,6 +4,7 @@
 
 import type { PkColors } from '../inc/pkSetting';
 import type { JobProp } from '../inc/propJob';
+import type { RideFlight } from '../inc/propItem';
 
 /** One mover of `propMover.txt`, with the converted files its model, skeleton and motions are in. */
 export interface WebMover {
@@ -143,6 +144,8 @@ export interface WebItemProp {
   castMs?: number;
   /** Piece 7 M3: `dwSfxObj` of an item with a cast, its ready effect (`XI_BLINKWING_READY` 118, `CreateItemReadySfx`). */
   sfxReady?: number;
+  /** Piece 7 M5: a ride's flight columns (`IK1_RIDE` only); absent on other items and in catalogs converted before M5. */
+  flight?: RideFlight;
   /** OT_ITEM ground model, including the box used for worn parts; absent in older catalogs. */
   dropModel?: string | null;
   /** Positive nReflect requests the drop's camera-normal reflection map. */
@@ -330,6 +333,12 @@ export interface WebSkillLevelTimes {
   adjParams: number[];
   chgParams: number[];
 }
+
+/**
+ * Piece 7 M5: the ids of the worlds whose `.wld` says `fly 0` (`CWorld::m_bFly`, `WorldFile.cpp:88-92`), a `number[]`.
+ * Optional, so not one of GAME_DATA_KEYS: without it every world allows flight, as the `.wld`'s default does.
+ */
+export const WORLD_NO_FLY_KEY = 'data/worldNoFly.json';
 
 /** The logical keys of the catalogs in the asset index. */
 export const GAME_DATA_KEYS = {

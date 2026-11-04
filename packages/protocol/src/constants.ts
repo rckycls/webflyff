@@ -78,6 +78,15 @@ export const PacketType = {
   STATEMODE: 0xffffff7a,
   /** Piece 7 M3: `PACKETTYPE_RETURNSCROLL`, the Scroll of Return's village or the way back (`MsgHdr.h:552`). */
   RETURNSCROLL: 0xf000d010,
+  /** Piece 7 M5: `PACKETTYPE_DOEQUIP`, an item put on or taken off, with the ride's float (`SendDoEquip`, `MsgHdr.h:129`). */
+  DOEQUIP: 0x00ff000b,
+  /** Piece 7 M5: the flight packets (`MsgHdr.h:262-307`): a flier's move, its state, its correction and its angle. */
+  PLAYERMOVED2: 0xffffff03,
+  PLAYERBEHAVIOR2: 0xffffff04,
+  PLAYERCORR2: 0xffffff06,
+  PLAYERANGLE: 0xffffff29,
+  /** Piece 7 M5: `PACKETTYPE_MELEE_ATTACK2`, a flier's attack, with no float (`SendMeleeAttack2`, `MsgHdr.h:139`). */
+  MELEE_ATTACK2: 0x00ff0014,
   ERROR_STRING: 0x70000003,
   /** Piece 7 M4: the core's direct packets ([R §1.2], `MsgHdr.h:278`, :658, :684, :355): a party error, a player's data,
    *  a log-out of a party or guild member or friend, and a BLOCK (gu 7: the invitee's box was already open). */
@@ -224,6 +233,16 @@ export const MessageType = {
   STATEMODE: 0x00df,
   /** Piece 7 M3: the Scroll of Return's village taken, no body (`CUser::AddReturnScroll`, `User.cpp:6636-6645`). */
   RETURNSCORLL: 0x00ad,
+  /** Piece 7 M5: another flier's move, state and correction (`User.cpp:4937-5035`); its angle is MOVERANGLE. */
+  MOVERMOVED2: 0x00cc,
+  MOVERBEHAVIOR2: 0x00cd,
+  MOVERCORR2: 0x00c9,
+  /** Piece 7 M5: the own fuel and turbo fuel (`CUser::AddSetFuel`, `User.cpp:2440-2450`). */
+  SETFUEL: 0x004b,
+  /** Piece 7 M5: another flier's attack (`CUserMng::AddMeleeAttack2`, `User.cpp:4845-4857`). */
+  MELEE_ATTACK2: 0x00e4,
+  /** Piece 7 M5: an action message for a mover, the server's TURBO_OFF among them (`UserLux.cpp:283-295`). */
+  SENDACTMSG: 0x005c,
   ADD_OBJ: 0x00f0,
   DEL_OBJ: 0x00f1,
   REPLACE: 0x00f2,

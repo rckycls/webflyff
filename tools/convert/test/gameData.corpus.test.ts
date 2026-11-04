@@ -25,6 +25,7 @@ import {
   readPropSkillAdd,
   readTextClient,
   readWorldInc,
+  WORLD_NO_FLY_KEY,
   webName,
 } from '@flyffweb/formats';
 import type {
@@ -328,6 +329,16 @@ describeClient('the game-data stage on the real client', () => {
     expect(byId.get(4811)).toMatchObject({ weaponType: 203, castMs: 10000 });
     expect(byId.get(10469)).toMatchObject({ kind2: 19, kind3: 50, castMs: 4000 });
     expect(byId.get(10469)).not.toHaveProperty('sfxReady');
+  });
+
+  it('the rides and the worlds (Piece 7 M5)', async () => {
+    const byId = new Map((await catalog<WebItemProp[]>(GAME_DATA_KEYS.itemProps)).map((p) => [p.id, p]));
+    expect(byId.get(5000)!.flight).toMatchObject({ speedText: '0.0023', motion: 31 }); // MTI_FSTAND1_A
+    expect(byId.get(5101)!.flight).toMatchObject({ motion: 61 });
+    expect(byId.get(5104)!.flight).toMatchObject({ speed: Math.fround(0.0035), turn: Math.fround(0.76) });
+    const noFly = await catalog<number[]>(WORLD_NO_FLY_KEY);
+    expect(noFly).toContain(203);
+    for (const id of [1, 2, 3]) expect(noFly).not.toContain(id);
   });
 
   it("itemProps: the new character's food stacks (dwPackMax 99, propItem.txt:1744-1745) and its sword does not", async () => {

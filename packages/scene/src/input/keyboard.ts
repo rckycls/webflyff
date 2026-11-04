@@ -22,6 +22,8 @@ type Listen = Pick<EventTarget, 'addEventListener' | 'removeEventListener'>;
 export class KeyboardInput {
   private jumpPressed = false;
   private readonly down = new Set<string>();
+  /** Piece 7 M5: the keys pressed (not held over) since `takePressed` last took them. */
+  private readonly pressed = new Set<string>();
   private readonly onKeyDown = (event: Event): void => {
     const { code } = event as KeyboardEvent;
     const field = (event.target as HTMLElement | null);
@@ -32,6 +34,8 @@ export class KeyboardInput {
       if (!this.down.has(code)) this.jumpPressed = true;
     }
     if (FORWARD.has(code) || BACKWARD.has(code) || LEFT.has(code) || RIGHT.has(code)) event.preventDefault?.();
+    if (this.preventDefault?.(code) === true) event.preventDefault?.();
+    if (!this.down.has(code)) this.pressed.add(code);
     this.down.add(code);
   };
   private readonly onKeyUp = (event: Event): void => {
@@ -56,6 +60,26 @@ export class KeyboardInput {
     };
   }
 
+  /** Piece 7 M5: the keys whose default its owner takes over now (Tab in the air), by `code`; none without it. */
+  preventDefault: ((code: string) => boolean) | null = null;
+
+  /** Piece 7 M5: forgets the presses no one took (the ground's, before a take-off). */
+  clearPressed(): void {
+    this.pressed.clear();
+  }
+
+  /** Piece 7 M5: whether the key (by `code`) is held now. */
+  held(code: string): boolean {
+    return this.down.has(code);
+  }
+
+  /** Piece 7 M5: whether the key was pressed since the last call for it (the key's repeat does not count). */
+  takePressed(code: string): boolean {
+    const was = this.pressed.has(code);
+    this.pressed.delete(code);
+    return was;
+  }
+
   takeJump(): boolean {
     const pressed = this.jumpPressed;
     this.jumpPressed = false;
@@ -65,6 +89,7 @@ export class KeyboardInput {
   /** Lets go of every key, as losing the focus does: for a page that was hidden without losing it first. */
   reset(): void {
     this.down.clear();
+    this.pressed.clear();
     this.jumpPressed = false;
   }
 

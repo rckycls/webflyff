@@ -32,9 +32,13 @@ export function isTravelItem(prop: WebItemProp): boolean {
   return prop.kind2 === IK2_BLINKWING || prop.id === RETURN_SCROLL;
 }
 
-/** What the bag (the PC's double-click, the phone's Use) sends: the consumables of before, and the travel items. */
+/**
+ * What the bag (the PC's double-click, the phone's Use) sends: the consumables of before, the travel items, and (Piece 7
+ * M5) the rides and the Accelor Fuel (`IK2_AIRFUEL` 23).
+ */
 export function usableFromBag(prop: WebItemProp): boolean {
-  return CONSUMABLES.includes(prop.kind2) || isTravelItem(prop);
+  return CONSUMABLES.includes(prop.kind2) || isTravelItem(prop) || (prop.part === 13 && prop.flight !== undefined) ||
+    prop.kind2 === 23;
 }
 
 /** What `SendDoUseItem` looks at besides the item. */
@@ -48,6 +52,12 @@ export interface UseCheck {
   flying: boolean;
   /** The own mover has the Scroll of Return's buff (`HasBuff( BUFF_ITEM, II_SYS_SYS_SCR_RETURN )`). */
   returnBuff: boolean;
+  /** Piece 7 M5, for a ride: the level, the world's `fly`, the land under the mover, a disguise, and sitting. */
+  level?: number;
+  worldFly?: boolean;
+  landAttr?: number;
+  disguised?: boolean;
+  sitting?: boolean;
 }
 
 /** A refusal: a line said in its TID's colour (with `args` for its `%s`), or a box with an OK button. */

@@ -174,7 +174,14 @@ interface View {
   sparkUniforms: SparkUniforms;
   /** `CMover::m_nDmgCnt`: the steps a hit still shakes the drawing for. */
   dmgCnt: number;
+  /** Piece 7 M5: the drawn pitch (`m_fAngX`, followed as the angle is), degrees, positive nose down. */
+  scrAngleX: number;
+  /** Piece 7 M5: the ride drawn under a flier (`m_pRide`): its item, its model once loaded, and its `dwItemKind3`. */
+  ride: { itemId: number; object: Object3D | null; release: (() => void) | null; kind3: number } | null;
 }
+
+/** Piece 7 M5: `IK3_STICK` (`defineItemkind.h:116`): a broom or a stick, drawn at the rider's root bone's height. */
+const IK3_STICK = 41;
 
 /** `RANK_SUPER` (`Resource/defineAttribute.h:165`): a boss that a hit does not shake (`MoverRender.cpp:286`). */
 const RANK_SUPER = 7;
@@ -188,6 +195,8 @@ export interface MoverViewsOptions {
    * and a player's footstep (`ProcessWalkSound`, Mover.cpp:3202-3219), each at the mover's FlyFF position.
    */
   sounds?: { motion(at: Vec, id: number): void; footstep(at: Vec): void };
+  /** Piece 7 M5: the model of a ride (its item's `model` key, `models/item_*.glb`); without it no ride is drawn. */
+  loadRide?: (key: string) => Promise<{ object: Object3D; release: () => void }>;
 }
 
 /**
@@ -261,6 +270,7 @@ export class MoverViews {
     for (const view of this.views.values()) {
       if (movers.get(view.mover.objectId) !== view.mover) continue;
       interpolate(view);
+      this.syncRide(view);
       if (view.dmgCnt > 0) view.dmgCnt--;
       // Piece 7 M2: a cast lights its caster cyan from behind at each of its steps (ProcessStateMagicCasting, :714-724)
       const atk = view.mover.act.state & ObjSta.ATK_ALL;
@@ -289,7 +299,10 @@ export class MoverViews {
       holder.position.set(...toWebPosition(this.shaken(view) ? shakenPos(view.scrPos, this.random) : view.scrPos));
       setSparkUniforms(view.sparkUniforms, view.spark);
       holder.rotation.y = (view.scrAngle * Math.PI) / 180;
+      // Piece 7 M5: YawPitchRoll( -angle, -angleX, 0 ) (CMover::SetAngleX): in the web's axes the pitch is +x
+      holder.rotation.x = (view.scrAngleX * Math.PI) / 180;
       holder.scale.setScalar(view.mover.added.scale);
+      this.raiseRide(view);
       if (view.model === null) continue;
       this.play(view);
       view.model.mixer.update(dt);
@@ -413,15 +426,72 @@ export class MoverViews {
     this.clips.clear();
   }
 
+  /**
+   * Piece 7 M5: `m_pRide`: a flier's ride is loaded into its holder (`SetRide`, `ActionMoverMsg.cpp:1090-1101`), and
+   * taken out as it lands; a ride whose model is not converted is not drawn.
+   */
+  private syncRide(view: View): void {
+    const act = view.mover.act;
+    const want = act.isFlying() ? act.rideItemId : null;
+    if (want === (view.ride?.itemId ?? null)) return;
+    this.dropRide(view);
+    if (want === null) return;
+    const prop = this.itemProps.get(want);
+    const ride: NonNullable<View['ride']> = { itemId: want, object: null, release: null, kind3: prop?.kind3 ?? -1 };
+    view.ride = ride;
+    const key = prop?.model;
+    const load = this.options.loadRide;
+    if (!key || !load) return;
+    const task = load(key).then(
+      ({ object, release }) => {
+        if (view.ride !== ride || view.gone || this.disposed) {
+          release(); // landed, gone or disposed while it loaded
+          return;
+        }
+        ride.object = object;
+        ride.release = release;
+        view.holder.add(object);
+      },
+      () => {},
+    );
+    this.pending.add(task);
+    void task.finally(() => this.pending.delete(task));
+  }
+
+  /** Piece 7 M5: the ride drawn is taken out of the holder and its model let go. */
+  private dropRide(view: View): void {
+    const ride = view.ride;
+    view.ride = null;
+    if (ride?.object) view.holder.remove(ride.object);
+    ride?.release?.();
+  }
+
+  /**
+   * Piece 7 M5: a broom or a stick (`IK3_STICK`) is drawn at the height of the rider's root bone (`GetMatrixBone( 0 )->_42`,
+   * `MoverRender.cpp:588-595`); any other ride at the rider's feet.
+   */
+  private raiseRide(view: View): void {
+    const object = view.ride?.object;
+    if (!object) return;
+    let y = 0;
+    if (view.ride!.kind3 === IK3_STICK && view.model !== null) {
+      const bone = view.model.root.getObjectByProperty('isBone', true);
+      if (bone) y = bone.position.y;
+    }
+    object.position.y = y;
+  }
+
   private add(mover: Mover): void {
     const holder = new Group();
     holder.name = `mover ${mover.objectId}`;
+    holder.rotation.order = 'YXZ'; // Piece 7 M5: yaw, then pitch, as YawPitchRoll
     this.scene.add(holder);
     const view: View = {
       mover, look: this.lookFor(mover), holder, model: null, held: [], head: null, placeholder: false, bytes: 0,
       // ADD_OBJ ends with InitInterpolation (ObjSerializeOpt.cpp:764): a new mover is drawn where it is
       scrPos: copy(mover.act.body.pos), scrAngle: mover.act.body.angle, frame: startFrame(mover.act.motionSets),
       action: null, played: -1, gone: false, spark: idleSpark(), sparkUniforms: sparkUniforms(), dmgCnt: 0,
+      scrAngleX: mover.act.angleX, ride: null,
     };
     this.views.set(mover.objectId, view);
     const { look } = view;
@@ -550,6 +620,7 @@ export class MoverViews {
 
   private drop(view: View): void {
     view.gone = true;
+    this.dropRide(view);
     this.views.delete(view.mover.objectId);
     view.holder.removeFromParent();
     if (view.model !== null) {
@@ -860,6 +931,10 @@ export class MoverViews {
  */
 function interpolate(view: View): void {
   const { pos, angle } = view.mover.act.body;
+  // Piece 7 M5 (Decision 9): the pitch is followed as the position is, an eighth of the way a step for others
+  const angleX = view.mover.act.angleX;
+  if (view.mover.isSelf || Math.abs(angleX - view.scrAngleX) < 0.01) view.scrAngleX = angleX;
+  else view.scrAngleX += (angleX - view.scrAngleX) / 8;
   if (view.mover.isSelf) {
     view.scrPos = copy(pos);
     view.scrAngle = angle;

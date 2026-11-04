@@ -102,8 +102,8 @@ function readPlayer(r: ArReader, self: boolean): AddedPlayer {
   const dex = r.u16(); // (u_short&)m_nDex
   const int = r.u16(); // (u_short&)m_nInt
   const level = r.u16(); // (u_short&)m_nLevel
-  r.i32(); // m_nFuel
-  r.i32(); // m_tmAccFuel
+  const fuel = r.i32(); // m_nFuel (Piece 7 M5: kept when not -1)
+  const accFuel = r.i32(); // m_tmAccFuel (kept when not 0)
   if (r.u8() === 1) { // `if( u1 == 1 )`, exactly 1
     r.u32(); // m_idGuild
     r.u32(); // m_idWar
@@ -134,6 +134,7 @@ function readPlayer(r: ArReader, self: boolean): AddedPlayer {
   const base = {
     self, name, sex, skinSet, hairMesh, hairColor, headMesh, playerId, job, sta, dex, level, authorization, mode,
     stateMode, ...(useItemId !== 0 ? { useItemId } : {}), pkTime, pkValue, pkPropensity, honor,
+    ...(fuel !== -1 ? { fuel } : {}), ...(accFuel !== 0 ? { accFuel } : {}),
   };
   if (self) {
     const { equipmentObjectIds, numbers } = readOwnEquipment(r, { str, sta, dex, int });

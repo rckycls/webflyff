@@ -6,10 +6,17 @@ import type { UiArt } from './art';
 import { WindowFrame } from './frame';
 import { fitsEquipmentSlot } from '../items/equipment';
 import { usableFromBag } from '../items/travelItems';
+import { isRide } from '../items/rideItems';
+import type { WebItemProp } from '@flyffweb/formats';
+
+/** Piece 7 M5: a ride's prop (`PARTS_RIDE` with flight columns). */
+const isRideProp = (prop: WebItemProp | undefined): boolean => prop !== undefined && isRide(prop);
 
 export interface InventoryActions {
   use(id: number): void;
   equip(id: number): void;
+  /** Piece 7 M5: the worn ride's equipment cell lands it (`ItemUse.land`). */
+  land?(id: number): void;
   drop(id: number, count: number): void;
   move(source: number, destination: number): void;
   shortcut(id: number, slot: number): void;
@@ -139,7 +146,8 @@ export class InventoryWindow {
       cell.addEventListener('dblclick', (event) => {
         event.preventDefault();
         if (!item || this.mobile || this.shopSelect) return;
-        if ((prop?.part ?? -1) >= 0) this.actions.equip(id); else this.actions.use(id);
+        // a ride (PARTS_RIDE) is used, not equipped (Piece 7 M5)
+        if ((prop?.part ?? -1) >= 0 && !isRideProp(prop)) this.actions.equip(id); else this.actions.use(id);
       });
       cell.draggable = !!item && !this.mobile && !this.shopSelect;
       cell.addEventListener('dragstart', (event) => {
@@ -177,7 +185,11 @@ export class InventoryWindow {
       if (prop?.icon) { const img = this.doc.createElement('img'); img.src = this.art.url(prop.icon); img.alt = ''; cell.append(img); }
       cell.addEventListener('click', () => { if (!item) return; if (this.shopSelect) { this.shopSelect(item.objectId); return; } this.selected = item.objectId; this.actionsOpen = this.mobile || this.hoverAnchor === cell; this.drawDetails(); });
       this.hoverItem(cell, item?.objectId);
-      cell.addEventListener('dblclick', (event) => { event.preventDefault(); if (item && !this.mobile && !this.shopSelect) this.actions.equip(item.objectId); });
+      cell.addEventListener('dblclick', (event) => {
+        event.preventDefault();
+        if (!item || this.mobile || this.shopSelect) return;
+        if (isRideProp(prop)) this.actions.land?.(item.objectId); else this.actions.equip(item.objectId);
+      });
       equipment.append(cell);
     }
     scroll.append(grid);
@@ -240,7 +252,7 @@ export class InventoryWindow {
         el.disabled = own.hp <= 0; el.addEventListener('click', () => { run(); el.blur(); }); details.append(el);
       };
       if (own.equipmentObjectIds.some((id, part) => id === item.objectId && this.itemAt(part))) {
-        button('unequip', 'Unequip', () => this.actions.equip(item.objectId));
+        button('unequip', 'Unequip', () => (isRideProp(prop) ? this.actions.land?.(item.objectId) : this.actions.equip(item.objectId)));
       } else {
         if (prop && prop.part >= 0 && prop.part < 31 && prop.part !== 13) button('equip', 'Equip', () => this.actions.equip(item.objectId));
         if (prop && usableFromBag(prop)) button('use', 'Use', () => this.actions.use(item.objectId)); // Piece 7 M3: and the travel items

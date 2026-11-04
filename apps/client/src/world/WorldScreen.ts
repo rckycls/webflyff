@@ -40,7 +40,12 @@ import { Missiles } from './combat/missiles';
 import type { MissileWorld } from './combat/missiles';
 import { OwnShots } from './combat/ownShots';
 import { Focus } from './combat/focus';
-import { TapToWalk, WalkKey, controlIntent, movesOrTurns } from './controls';
+import { NO_FLIGHT_STICK, TapToWalk, WalkKey, controlIntent, flightStick, movesOrTurns } from './controls';
+import type { FlightStick } from './controls';
+import { FlightControl } from './flightControl';
+import type { FlightInput } from './flightControl';
+import { FlightButtons } from './hud/flightButtons';
+import { TurboGauge } from './render/TurboGauge';
 import { isGameMaster } from './authorization';
 import { WARM_UP_EFFECTS, playCombatEvent, playOwnEvent } from './fx/combatEffects';
 import type { CombatFxOut, CombatFxWorld } from './fx/combatEffects';
@@ -113,7 +118,7 @@ import { ItemCast } from './items/itemCast';
 import { MoverBuffs } from './buffs';
 import type { BuffShown } from './buffs';
 import { ReturnScroll } from './items/returnScroll';
-import type { Refusal } from './items/travelItems';
+import type { Refusal, UseCheck } from './items/travelItems';
 import { castFill } from './items/travelItems';
 import { CastGauge } from './render/CastGauge';
 import { MessageBox } from './hud/messageBox';
@@ -134,7 +139,7 @@ import { MoverViews } from './render/MoverViews';
 import { NameTagLayer } from './render/NameTagLayer';
 import { lookOf } from './render/looks';
 import { MoveMark } from './render/moveMark';
-import { loadHeldItems, loadMoverModel } from './render/moverModels';
+import { loadHeldItems, loadMoverModel, loadRideModel } from './render/moverModels';
 import { nameTagOf } from './render/nameTags';
 import type { TapHit } from './render/picking';
 import { latestOnly, renderPortrait } from './render/portrait';
@@ -142,7 +147,10 @@ import { SpriteLayer } from './render/SpriteLayer';
 import { TargetMarks, attackMarks, focusRect } from './render/TargetMarks';
 import type { ScreenRect } from './render/TargetMarks';
 import { HAttr } from './sim/collision';
-import { Mti, ObjSta } from './sim/constants';
+import { Mti, ObjSta, ObjStaF, PARTS_RIDE } from './sim/constants';
+
+/** Piece 7 M5: the ground's field of view (`WorldStage`'s 45 degrees, `fDiv` 4), which a landing gives back. */
+const GROUND_FOV = 45;
 import { BLINKPOOL_NOT_YET, SkillUse } from './skills/skillUse';
 import { transformCoord } from './sim/d3dx';
 import { STEPS_PER_SECOND, catchUp } from './sim/stepper';
@@ -239,7 +247,28 @@ export class WorldScreen {
     landAttr: (x, z) => this.stage?.ground().landAttr(x, z) ?? HAttr.NONE,
     objectsNear: (x, z, range) => this.stage?.ground().objectsNear(x, z, range) ?? [],
     landTri: (x, z, out) => this.stage?.ground().landTri?.(x, z, out) ?? false,
+    // Piece 7 M5: the water (the 85 m floor over cloud) and the world's size (ClipX, ClipZ) of the flight collision
+    waterTexture: (x, z) => this.stage?.ground().waterTexture?.(x, z) ?? null,
   };
+  /** Piece 7 M5: the own flier's controls, the phone's flight buttons, and the turbo gauge. */
+  private flightControl: FlightControl | undefined;
+  private flightButtons: FlightButtons | undefined;
+  private turboGauge: TurboGauge | undefined;
+  /** Piece 7 M5: the right drag's steering since the last step, the phone's buttons, and the stick's flight keys. */
+  private flightMouse = { dx: 0, dy: 0 };
+  private flightAccelerate: boolean | undefined;
+  private flightTurbo = false;
+  private flightAttack = false;
+  private flightStickWas: FlightStick = NO_FLIGHT_STICK;
+  /** Piece 7 M5: the speed the HUD shows (`g_nFlySpeed`), and whether the own mover flew the step before. */
+  private flightSpeed = 0;
+  private wasFlying = false;
+  /**
+   * Piece 7 M5: the own mover the flight controls have seen flying (null on the ground), and whether its flight began
+   * with a take-off this session saw (a DOEQUIP): one that entered the world flying sends PLAYERBEHAVIOR2 once.
+   */
+  private flyingSeen: Mover | null = null;
+  private tookOff = false;
   private views: MoverViews | undefined;
   private tags: NameTagLayer | undefined;
   private keyboard: KeyboardInput | undefined;
@@ -463,6 +492,7 @@ export class WorldScreen {
       ready: () => this.shown,
       movers: () => [...(this.world?.movers.values() ?? [])].map((m) => ({
         objectId: m.objectId, name: m.name, pos: [...m.act.body.pos], hp: m.hp, motion: m.act.motion, state: m.act.state,
+        angle: m.act.body.angle, angleX: m.act.angleX, stateFlag: m.act.stateFlag, rideItemId: m.act.rideItemId,
       })),
       own: () => {
         const own = this.own;
@@ -725,6 +755,8 @@ export class WorldScreen {
       return;
     }
     this.stage = stage;
+    // Piece 7 M5: the world's size for the flight collision's edge (ClipX, ClipZ)
+    (this.ground as { extent?: readonly [number, number] }).extent = stage.ground().extent;
     const { size, mapSize, mpu } = stage.manifest;
     this.world!.setItemBounds(size[0] * mapSize * mpu, size[1] * mapSize * mpu);
     const { overlay } = this.page!;
@@ -737,6 +769,7 @@ export class WorldScreen {
         this.own?.inventory ? this.own.equipmentObjectIds.map((id) => this.own!.inventory!.get(id)?.itemId ?? 0) : equipment),
       (key) => loadMotion(services, key), loadHeldItems(services, data), data.itemProps, {
         moverProps: data.movers,
+        loadRide: loadRideModel(services), // Piece 7 M5
         sounds: { motion: (at, id) => this.sounds?.motion(at, id), footstep: (at) => this.sounds?.footstep(at) },
       },
     );
@@ -881,6 +914,9 @@ export class WorldScreen {
     // Piece 7 M3: an item cast's gauge, there too (CMover::RenderCasting)
     this.castGauge = new CastGauge(this.hudArt!, doc);
     this.element.insertBefore(this.castGauge.element, this.hud!.element);
+    // Piece 7 M5: the turbo gauge over the own flier (CMover::RenderTurboGauge)
+    this.turboGauge = new TurboGauge(this.hudArt!, doc);
+    this.element.insertBefore(this.turboGauge.element, this.hud!.element);
     // the item buffs too, and the Scroll of Return's icon goes back (Piece 7 M3)
     this.buffStatus = new BuffStatus(this.hudArt!, doc, {
       items: this.data!.itemProps, onReturnScroll: () => this.returnScroll?.goBack(), now: () => performance.now(),
@@ -891,6 +927,9 @@ export class WorldScreen {
     this.element.addEventListener('contextmenu', this.onContextMenu);
     this.page?.overlay.setCompact(view.matchMedia?.('(max-width: 1000px) and (pointer: coarse)').matches === true);
     this.keyboard = new KeyboardInput(view, { arrows: false });
+    // Piece 7 M5: in the air Tab is the targets', not the page's focus
+    this.keyboard.preventDefault = (code) => code === 'Tab' && this.world?.self()?.act.isFlying() === true;
+    this.flightControl = new FlightControl(this.session, this.entry.clock); // Piece 7 M5
     this.walkKey = new WalkKey(view);
     // above the task bar (48 px, smaller on a narrow screen) and out of the safe area under it
     this.joystick = new Joystick(this.element, { floating: true, onClaim: () => this.tap?.reset() });
@@ -988,10 +1027,23 @@ export class WorldScreen {
     // the Start menu opens where the joystick stands, which is over the windows' layer: it hides while the menu is open
     this.taskBar.onMenuChange = (open) => this.element.classList.toggle('world-menu-open', open);
     // held with a wand or a bow it charges, and its let-go shoots (Piece 7 M2, plan Decisions 4)
-    this.attackButton = new AttackButton(() => attackLoop.attackButtonDown(performance.now()), doc, {
-      onRelease: () => attackLoop.attackButtonUp(performance.now()),
+    this.attackButton = new AttackButton(() => {
+      // Piece 7 M5: in the air the button is held to attack (ControlFlying's m_bLButtonDown)
+      if (this.world?.self()?.act.isFlying() === true) this.flightAttack = true;
+      else attackLoop.attackButtonDown(performance.now());
+    }, doc, {
+      onRelease: () => {
+        if (this.flightAttack) this.flightAttack = false;
+        else attackLoop.attackButtonUp(performance.now());
+      },
     });
     this.jumpButton = new AttackButton(() => { this.jumpRequested = true; }, doc, { label: 'Jump', className: 'hud-jump' });
+    // Piece 7 M5: Accelerate (held), Turbo and Land in the air (Decision 4)
+    this.flightButtons = new FlightButtons(doc, {
+      accelerate: (held) => { this.flightAccelerate = held; },
+      turbo: () => { this.flightTurbo = true; },
+      land: () => this.landRide(),
+    });
     const mobileTools = doc.createElement('div');
     mobileTools.className = 'hud-mobile-tools';
     mobileTools.setAttribute('role', 'toolbar');
@@ -1021,6 +1073,7 @@ export class WorldScreen {
     reviveWindow.onStand = () => this.itemUse!.revive();
     const inventoryWindow = new InventoryWindow(this.hudArt!, this.data!, {
       use: (id) => { this.itemUse!.use(id, 'bag'); }, equip: (id) => { itemActions.equip(id); },
+      land: (id) => { this.itemUse!.land(id); }, // Piece 7 M5: the worn ride's equipment cell
       drop: (id, count) => {
         if (this.dialog?.frame.isOpen === true) return; // no drop while the dialogue is open (DPClient.cpp:9378-9382)
         this.sounds?.drop();
@@ -1104,7 +1157,8 @@ export class WorldScreen {
     }
     this.hud!.element.append(
       this.questTracker.element, this.teleporter.frame.element,
-      taskBar.element, this.attackButton.element, this.jumpButton.element, mobileTools, logOutBox.element, messageBox.element,
+      taskBar.element, this.attackButton.element, this.jumpButton.element, this.flightButtons.element, mobileTools,
+      logOutBox.element, messageBox.element,
       selectVillage.element, characterWindow.frame.element,
       characterWindow.confirm.frame.element, skillWindow.frame.element, skillWindow.warning.element, reviveWindow.element,
       inventoryWindow.frame.element, this.nearbyItems.element, this.chatWindow.element, this.shopWindow.frame.element,
@@ -1122,7 +1176,8 @@ export class WorldScreen {
       (press) => {
         const pressed = press.mover === null ? undefined : this.world?.movers.get(press.mover);
         if (press.mover === null) attackLoop.onGroundPressed(press.double);
-        else if (pressed?.kind === 'npc') this.pressNpc(press.mover);
+        // in the air no NPC menu opens (WndWorld.cpp:7059, !IsFly()): the press goes to the air's selection (Piece 7 M5)
+        else if (pressed?.kind === 'npc' && this.world?.self()?.act.isFlying() !== true) this.pressNpc(press.mover);
         else if (pressed?.kind === 'player' && !pressed.isSelf && (press.alt || (press.touch && this.focus?.targetId === press.mover))) {
           this.pressPlayer(press.mover);
         } else attackLoop.onMoverPressed(press.mover, press.time, press.double);
@@ -1133,6 +1188,13 @@ export class WorldScreen {
       },
     );
     this.cameraControls = new CameraControls(renderer.domElement, (dx, dy) => this.backCamera.rotate(dx, dy));
+    // Piece 7 M5: in the air the right drag steers (ControlFlying's mouse, mode 0)
+    this.cameraControls.steer = (dx, dy) => {
+      if (this.world?.self()?.act.isFlying() !== true) return false;
+      this.flightMouse.dx += dx;
+      this.flightMouse.dy += dy;
+      return true;
+    };
     this.mark = new MoveMark(this.stage!.scene);
     this.ownMover = new OwnMover(this.session, this.entry.clock, this.mark);
     doc.addEventListener('visibilitychange', this.onVisibility);
@@ -1231,7 +1293,25 @@ export class WorldScreen {
    */
   private play(changes: WorldChanges): void {
     this.hud?.play(changes.combat, changes.own, this.own);
-    for (const event of changes.own) if (event.kind === 'quest') this.playQuest(event.change);
+    for (const event of changes.own) {
+      if (event.kind === 'quest') this.playQuest(event.change);
+      else if (event.kind === 'speed') this.flightSpeed = event.shown; // Piece 7 M5
+    }
+    // Piece 7 M5: the own mover took off (MODE_FLY: the focus goes, ActionMoverMsg.cpp:1084-1089) or entered flying
+    // (PLAYERBEHAVIOR2 once), or landed (the phone's Accelerate is let go)
+    const flier = this.world?.self();
+    for (const event of changes.combat) {
+      if (event.kind !== 'flight') continue;
+      if (event.flying) this.sounds?.flightMusic(event.moverId === flier?.objectId);
+      if (flier === undefined || event.moverId !== flier.objectId) continue;
+      if (event.flying) {
+        this.focus?.select(null);
+        this.tookOff = true;
+      } else {
+        this.flightAccelerate = undefined;
+        this.flyingSeen = null;
+      }
+    }
     // the own death opens the revive window after its chat line (`OnMoverDeath`, DPClient.cpp:2040-2072); one before the
     // windows are up (the world still loading) leaves it to Escape
     this.reviveWindow?.play(changes.own);
@@ -1479,6 +1559,12 @@ export class WorldScreen {
         ? null : castFill(this.world.nowMs() - cast.startedAt, castMs);
       this.castGauge?.update(fill, ownView === undefined ? null : views.placeOf(ownView.objectId)?.head ?? null,
         stage.camera, drawingSize.x, drawingSize.y);
+      // Piece 7 M5: the turbo gauge over the own flier, and the phone's flight buttons
+      const flying = ownView?.act.isFlying() === true;
+      this.turboGauge?.update(flying ? ownView!.act.accFuel : null, flying && (ownView!.act.stateFlag & ObjStaF.TURBO) !== 0,
+        this.flightSpeed, this.stepsRun, flying ? views.placeOf(ownView!.objectId)?.head ?? null : null,
+        stage.camera, drawingSize.x, drawingSize.y);
+      this.flightButtons?.update(flying, flying && ownView!.act.accFuel > 0);
 
       const { tiles, models } = stage.counts();
       overlay.setCounts({ tiles, models: models + views.count(), textures: this.services!.textures.size() });
@@ -1559,7 +1645,14 @@ export class WorldScreen {
     else loop.onMoverHeld(held.mover, now - held.time);
     const tap = this.tap!.take();
     const walkKey = this.walkKey!.held();
+    // Piece 7 M5: the world's fly (CWorld::m_bFly) from the worlds without flight
+    world.worldFly = !(this.data?.noFlyWorlds.has(this.worldId) ?? false);
+    if (own !== undefined && own.act.isFlying()) {
+      this.stepFlight(own, world, stage, loop, now);
+      return;
+    }
     this.jumpRequested = this.keyboard!.takeJump() || this.jumpRequested;
+    this.keyboard!.clearPressed(); // Piece 7 M5: X, Z and Tab pressed on the ground do nothing at a take-off
     const airborne = own !== undefined && (own.act.state & ObjSta.JUMP_ALL) !== 0;
     const jump = this.jumpRequested && own !== undefined && !own.act.isDie() &&
       (own.act.state & (ObjSta.JUMP_ALL | ObjSta.ATK_ALL | ObjSta.DMG_ALL)) === 0 && !this.skillUse!.pending;
@@ -1598,6 +1691,81 @@ export class WorldScreen {
     }
     this.numbers?.step();
     this.follow(world, stage);
+  }
+
+  /**
+   * Piece 7 M5: a rules step of the own flier: `ControlFlying` (`FlightControl.control`) with the keys (W, S, A, D, Space,
+   * X, Z, Tab, Insert), the right drag, the phone's stick and buttons; the air attack (the attack loop's); the world's
+   * step; `FlushPlayerAngle`, and PLAYERCORR2 for a collision; then the views, the sounds, the effects and the camera
+   * as on the ground.
+   */
+  private stepFlight(own: Mover, world: WorldState, stage: WorldStage, loop: AttackLoop, now: number): void {
+    // the first step of a flier that entered the world flying (no take-off seen): PLAYERBEHAVIOR2 once
+    if (this.flyingSeen !== own) {
+      this.flyingSeen = own;
+      if (!this.tookOff) this.flightControl!.entered(own);
+    }
+    this.tookOff = false;
+    const keys = this.keyboard!;
+    const stick = flightStick(this.joystick!.intent(), this.flightStickWas);
+    this.flightStickWas = stick;
+    const mouse = this.flightMouse.dx !== 0 || this.flightMouse.dy !== 0 ? { ...this.flightMouse } : null;
+    this.flightMouse = { dx: 0, dy: 0 };
+    const input: FlightInput = {
+      dive: keys.held('KeyW') || stick.dive,
+      climb: keys.held('KeyS') || stick.climb,
+      left: keys.held('KeyA') || stick.left,
+      right: keys.held('KeyD') || stick.right,
+      accelerateToggle: keys.takeJump(),
+      ...(this.flightAccelerate !== undefined ? { accelerateHeld: this.flightAccelerate } : {}),
+      turboToggle: keys.takePressed('KeyX') || this.flightTurbo,
+      trackToggle: keys.takePressed('KeyZ'),
+      nextTarget: keys.takePressed('Tab'),
+      attack: keys.held('Insert') || this.flightAttack,
+      mouse,
+    };
+    this.flightTurbo = false;
+    this.jumpRequested = false;
+    if (input.trackToggle) loop.toggleTracking();
+    if (input.nextTarget) {
+      const view = this.backCamera.view;
+      const forward: Vec3 = view === null ? [0, 0, -1] : toWebPosition([
+        view.target[0] - view.position[0], view.target[1] - view.position[1], view.target[2] - view.position[2],
+      ]);
+      loop.nextFlyTarget(forward);
+    }
+    loop.attackHeld = input.attack;
+    loop.step(false, now);
+    this.flightControl!.control(own, input, stage.ground());
+    world.step();
+    const flight = own.act.flight;
+    if (flight?.turned) this.flightControl!.postAngle();
+    this.flightControl!.flushAngle(own);
+    if (own.corrReport) {
+      own.corrReport = null;
+      if (own.act.isFlying()) this.flightControl!.corr2(own);
+    }
+    this.syncViews();
+    this.views?.step(world.movers);
+    this.stepAudio(world);
+    this.effects?.step((objectId) => world.movers.get(objectId)?.act.body);
+    const missiles = this.missiles;
+    if (missiles !== undefined && this.missileWorld !== undefined) {
+      for (const hit of missiles.step(this.missileWorld)) {
+        this.effects?.play({ xi: hit.xi, pos: hit.pos, angle: hit.angle, ...(hit.scale !== undefined ? { scale: hit.scale } : {}) });
+      }
+      this.effects?.stepMissiles(missiles.views());
+    }
+    this.numbers?.step();
+    this.follow(world, stage);
+  }
+
+  /** Piece 7 M5: the Land button: the worn ride used again (`ItemUse`), which lands. */
+  private landRide(): void {
+    const own = this.own;
+    const objectId = own?.equipmentObjectIds[PARTS_RIDE];
+    if (own === undefined || objectId === undefined || own.inventory?.get(objectId) === undefined) return;
+    this.itemUse?.use(objectId, 'bar');
   }
 
   /**
@@ -1730,15 +1898,22 @@ export class WorldScreen {
    * Piece 7 M3: what `SendDoUseItem` checks of the own player for an item with a cast ([R §2]): the world, the cast,
    * standing (`GetMoveState() == OBJSTA_STAND`), flying (none before M5) and the Scroll of Return's buff.
    */
-  private useCheck(): { worldId: number; casting: boolean; standing: boolean; flying: boolean; returnBuff: boolean } {
+  private useCheck(): Omit<UseCheck, 'prop'> {
     const own = this.world?.self();
     const now = this.world?.nowMs() ?? 0;
+    const at = own?.act.body.pos;
     return {
       worldId: this.worldId,
       casting: this.itemCast?.casting ?? false,
       standing: own === undefined || (own.act.state & ObjSta.MOVE_ALL) === ObjSta.STAND,
-      flying: false,
+      // Piece 7 M5: flying, and what a ride's use and landing look at
+      flying: own !== undefined && (own.act.stateFlag & ObjStaF.FLY) !== 0,
       returnBuff: own?.buffs.list(now).some((b) => b.buffType === 0 && b.id === 10469) === true,
+      level: this.own?.level ?? own?.level ?? 1,
+      worldFly: !(this.data?.noFlyWorlds.has(this.worldId) ?? false),
+      landAttr: at === undefined ? HAttr.NONE : this.ground.landAttr(at[0], at[2]),
+      sitting: own !== undefined && (own.act.stateFlag & ObjStaF.SIT) !== 0,
+      disguised: false,
     };
   }
 
@@ -1895,7 +2070,26 @@ export class WorldScreen {
    * stage's land and objects and eased back out after a hit (`BackCamera`).
    */
   private follow(world: WorldState, stage: WorldStage): ChaseView {
-    return this.backCamera.follow(this.ownAt(), world.self()?.act.body.angle ?? 0, stage.ground());
+    const own = world.self();
+    // Piece 7 M5: the flight camera, and its field of view (CBackCamera in flight, CWorld::Projection)
+    if (own !== undefined && own.act.isFlying()) {
+      const flag = own.act.stateFlag;
+      const view = this.backCamera.followFlight(
+        this.ownAt(), own.act.body.angle, own.act.angleX, (flag & ObjStaF.ACC) !== 0, (flag & ObjStaF.TURBO) !== 0, stage.ground(),
+      );
+      if (stage.camera.fov !== view.fov) {
+        stage.camera.fov = view.fov;
+        stage.camera.updateProjectionMatrix();
+      }
+      this.wasFlying = true;
+      return view;
+    }
+    if (this.wasFlying) {
+      this.wasFlying = false;
+      stage.camera.fov = GROUND_FOV;
+      stage.camera.updateProjectionMatrix();
+    }
+    return this.backCamera.follow(this.ownAt(), own?.act.body.angle ?? 0, stage.ground());
   }
 
   /**
@@ -2281,6 +2475,18 @@ export class WorldScreen {
     this.partyBars = undefined;
     // Piece 7 M3: the cast's gauge and the Scroll of Return's windows go with the world; its ready effect went with the effects
     this.castGauge?.dispose();
+    // Piece 7 M5: the flight's pieces, and what they held
+    this.turboGauge?.dispose();
+    this.turboGauge = undefined;
+    this.flightButtons?.dispose();
+    this.flightButtons = undefined;
+    this.flightAccelerate = undefined;
+    this.flightTurbo = false;
+    this.flightAttack = false;
+    this.flightMouse = { dx: 0, dy: 0 };
+    this.flyingSeen = null;
+    this.tookOff = false;
+    this.wasFlying = false;
     this.messageBox?.dispose();
     this.selectVillage?.dispose();
     this.buffStatus?.dispose();

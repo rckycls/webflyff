@@ -113,6 +113,24 @@ async function plainModel(gltf: GLTF, textures: SceneServices['textures']): Prom
 }
 
 /** Gives `keys` back to the cache and disposes the geometry and materials of the meshes under `root`; once. */
+/**
+ * Piece 7 M5: a ride's model (its item's `model` key), drawn as a held item is: its lod0 with its textures. A model that
+ * cannot be had rejects (the ride is then not drawn).
+ */
+export function loadRideModel(
+  services: Pick<SceneServices, 'store' | 'loaders' | 'textures'>,
+): (key: string) => Promise<{ object: Object3D; release: () => void }> {
+  const { store, loaders, textures } = services;
+  return async (key) => {
+    const gltf = await loadGltf(store, loaders.gltf, key);
+    const lod = gltf.scene.getObjectByName('lod0');
+    if (lod === undefined) throw new Error('the model has no "lod0" node');
+    for (const child of [...gltf.scene.children]) if (child !== lod) child.removeFromParent();
+    const keys = await applyTextures(lod, textures);
+    return { object: gltf.scene, release: releaser(gltf.scene, keys, textures) };
+  };
+}
+
 function releaser(root: Object3D, keys: readonly string[], textures: SceneServices['textures']): () => void {
   let released = false;
   return () => {

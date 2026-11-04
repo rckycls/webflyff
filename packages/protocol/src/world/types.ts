@@ -1,5 +1,6 @@
 import type { Vec3 } from '../constants';
 import type { MoveReport } from '../messages/world';
+import type { FlightReport } from './flight';
 
 /**
  * One message of a JOIN or SNAPSHOT bundle, as the matching `CDPClient::On*` handler (`Neuz/DPClient.cpp`) reads
@@ -95,6 +96,16 @@ export type WorldMessage = ChatMessage | NpcMessage | ShopMessage | QuestMessage
   | { type: 'stateMode'; mode: number; flag: number; itemId: number | null }
   /** Piece 7 M3: RETURNSCORLL, the Scroll of Return's village taken: the scroll is to be used again (`OnReturnScrollACK`). */
   | { type: 'returnScrollAck' }
+  /**
+   * Piece 7 M5: another flier's move (with `nFrame`), state and correction; the own fuel and turbo fuel (ms); another
+   * flier's attack; and an action message for the mover (`bFly`: the message is a flight one), the server's TURBO_OFF.
+   */
+  | { type: 'moverMoved2'; move: FlightReport; frames: number }
+  | { type: 'moverBehavior2'; move: FlightReport }
+  | { type: 'moverCorr2'; move: FlightReport }
+  | { type: 'setFuel'; fuel: number; accFuel: number }
+  | { type: 'meleeAttack2'; message: number; targetId: number; param2: number; param3: number }
+  | { type: 'sendActMsg'; message: number; fly: boolean; param1: number; param2: number; param3: number }
   /** Another mover's arrow (`arrowXi`) at `targetId`, hitting with `hitXi`; Neuz ignores `pos` (`OnCreateSfxAllow`). */
   | { type: 'createSfxAllow'; arrowXi: number; hitXi: number; pos: Vec3; targetId: number }
   /** The own job change: the new job and all 45 skill slots (`OnSetChangeJob`). */
@@ -391,6 +402,12 @@ export interface AddedPlayer {
    * (`ObjSerializeOpt.cpp:155-163`); present only when it is not 0.
    */
   useItemId?: number;
+  /**
+   * Piece 7 M5: `m_nFuel` and `m_tmAccFuel` (`ObjSerializeOpt.cpp:128-129`), present only when not the defaults −1 and
+   * 0: the flight fuel and the turbo's milliseconds.
+   */
+  fuel?: number;
+  accFuel?: number;
   /** `m_dwPKTime`: the milliseconds of pink state left (the world server sends `m_dwPKTime - GetTickCount()`), or 0. */
   pkTime: number;
   pkValue: number;

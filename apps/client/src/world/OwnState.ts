@@ -31,6 +31,8 @@ import type { Equipped, ParamAdjust, Stats } from './sim/params';
  * - `quest`: the quests changed (Piece 7 M1; see `QuestChange`).
  */
 export type OwnEvent =
+  /** Piece 7 M5: the own flier's speed as the HUD shows it (`g_nFlySpeed`), once a flying step. */
+  | { kind: 'speed'; shown: number }
   | { kind: 'levelUp'; from: number; to: number; chatLine: boolean }
   | { kind: 'patternUp'; level: 2 | 8 | 12 }
   | { kind: 'refilled' }

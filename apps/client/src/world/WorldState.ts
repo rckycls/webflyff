@@ -15,8 +15,11 @@ import { ActionMover, getDegree, wrapAngle } from './sim/ActionMover';
 import type { Ground } from './sim/collision';
 import { ActMsg, Ext, Ik3, Kt, Mti, ObjSta, ObjStaF, Si, Sut } from './sim/constants';
 import {
-  applyDestPos, applyMotion, applyMoved, applyMoverCorr, buffedSpeed, clearDestObj, setDestAngle, setDestObj, stepMover,
+  resetForRide, applyBehavior2, applyDestPos, applyMotion, applyMoved, applyMoved2, applyMoverAngle, applyMoverCorr, applyMoverCorr2,
+  buffedSpeed, clearDestObj, setDestAngle, setDestObj, stepMover,
 } from './sim/moverRules';
+import { PARTS_RIDE } from './sim/constants';
+import type { FlightRide } from './sim/flight';
 import type { SimMover } from './sim/moverRules';
 import { Dst, FISTS, NO_ADJUST, attackSpeed, maxHitPoint, monsterMaxHitPoint } from './sim/params';
 
@@ -161,7 +164,9 @@ export type CombatEvent =
    * Piece 7 M3: the mover casts `itemId` (a prop id): `CreateItemReadySfx` of its `dwSfxObj` at the mover. `fresh` for
    * STATEMODE ON (`OnStateMode`), false for a mover added mid-cast (`OnAddObj`).
    */
-  | { kind: 'itemCast'; moverId: number; itemId: number; fresh: boolean };
+  | { kind: 'itemCast'; moverId: number; itemId: number; fresh: boolean }
+  /** Piece 7 M5: the mover took off (`flying`) or landed: its ride is drawn or taken away, and the own camera changes. */
+  | { kind: 'flight'; moverId: number; flying: boolean };
 
 /**
  * What changed in view since the last `takeChanges`. A caller applies `removed` first, then `added`:
@@ -361,6 +366,8 @@ export class WorldState {
       case 'equipItem': {
         this.toOwn(message, objectId);
         const mover = this.byId.get(objectId);
+        // Piece 7 M5: a ride worn or taken off flies or lands its mover (MODE_FLY, MODE_GROUND; MoverEquip.cpp:1817-1828)
+        if (mover) this.rideChanged(mover, message.itemId, message.equip);
         const player = mover?.added.player;
         if (mover && player) {
           if (mover.isSelf) player.equipmentObjectIds = [...(this.numbers?.equipmentObjectIds ?? player.equipmentObjectIds)];
@@ -422,8 +429,31 @@ export class WorldState {
       case 'moverCorr': // OnMoverCorr (:8929): another player's PLAYERCORR, passed on
         applyMoverCorr(m, message.move);
         break;
-      case 'moverAngle':
-        // OnMoverAngle (:8887) starts with `if( IsFly() == FALSE ) return;`: it is the flier's correction
+      case 'moverAngle': // OnMoverAngle (:8893): a flier's PLAYERANGLE; on the ground it does nothing
+        applyMoverAngle(m, message);
+        break;
+      // Piece 7 M5: the fliers' reports (:8726-8989)
+      case 'moverMoved2':
+        applyMoved2(m, message.move, message.frames, this.clock.offsetMs(message.move.tick));
+        break;
+      case 'moverBehavior2':
+        applyBehavior2(m, message.move, this.clock.offsetMs(message.move.tick));
+        break;
+      case 'moverCorr2':
+        applyMoverCorr2(m, message.move);
+        break;
+      case 'setFuel': // OnSetFuel (:4026-4040): no fuel stops the thrust
+        m.act.fuel = message.fuel;
+        if (message.fuel === 0) m.act.sendActMsg(ActMsg.ACC_STOP);
+        m.act.accFuel = message.accFuel;
+        break;
+      case 'sendActMsg': // OnSendActMsg (:14935-14951): ProcessActMsg1 or 2 as the server says, nParam4 1
+        if (message.fly === ((m.act.stateFlag & ObjStaF.FLY) !== 0)) {
+          m.act.sendActMsg(message.message, message.param1, message.param2, message.param3);
+        }
+        break;
+      case 'meleeAttack2': // OnMeleeAttack2 (:3823-3837): the air swing (its rules are Task 11's)
+        m.act.sendActMsg(message.message, message.targetId, message.param2, message.param3);
         break;
       case 'destPos': // OnSetDestPos (:3731)
         applyDestPos(m, message.pos, message.forward);
@@ -551,9 +581,43 @@ export class WorldState {
     const now = this.nowMs();
     for (const m of this.byId.values()) {
       m.buffs.step(now);
-      if (m.act.stateFlag & ObjStaF.FLY || m.flying) continue;
       stepMover(m, this.find, this.ground);
+      const flight = m.act.flight;
+      if (flight === null) continue;
+      // UnequipRide (MoverEquip.cpp:2575-2583): NOFLY land, or a world without flight, takes the ride off here
+      if (flight.unequip && m.isSelf) this.land(m); // only the own player finds its ride (GetEquipItem)
+      if (m.isSelf) this.pendingOwn.push({ kind: 'speed', shown: flight.speedShown });
     }
+  }
+
+  /**
+   * Piece 7 M5: the world's `fly` (`CWorld::m_bFly`, the `.wld`'s; `GameData.noFlyWorlds`), which the world screen
+   * sets as it enters a world. Without flight every flier is landed by `ProcessCollisionFly`.
+   */
+  worldFly = true;
+
+  /**
+   * Piece 7 M5: a ride (`PARTS_RIDE` with flight columns) worn flies its mover (`OBJMSG_MODE_FLY`, `nParam3` 1: no test)
+   * and one taken off lands it (`OBJMSG_MODE_GROUND`); any other item does nothing here.
+   */
+  private rideChanged(m: Mover, itemId: number, equip: boolean): void {
+    const prop = this.data.itemProps.get(itemId);
+    if (prop?.flight === undefined || prop.part !== PARTS_RIDE) return;
+    // DoEquip clears the destinations and the correction (MoverEquip.cpp:1825-1827); another's DoFakeEquip, ClearDest
+    resetForRide(m, m.isSelf);
+    if (equip) {
+      m.act.modeFly(itemId, rideOf(prop.flight), prop.flight.fuelMax);
+      this.combat({ kind: 'flight', moverId: m.objectId, flying: true });
+    } else if (m.act.stateFlag & ObjStaF.FLY) {
+      this.land(m);
+    }
+  }
+
+  /** Piece 7 M5: `OBJMSG_MODE_GROUND` on the mover, and the change told. */
+  private land(m: Mover): void {
+    if (m.isSelf) resetForRide(m, true);
+    m.act.modeGround();
+    this.combat({ kind: 'flight', moverId: m.objectId, flying: false });
   }
 
   /** Piece 7 M2: the world's own clock, ms, from its steps (60 a second): the buffs' times run on it. */
@@ -643,10 +707,20 @@ export class WorldState {
     const tableSpeed = f32(prop?.speed ?? 0);
     const halved = !added.isPlayer && prop?.ai === AII_MONSTER;
     const speed = f32((halved ? f32(tableSpeed / 2) : tableSpeed) * f32(speedFactor));
-    const act = new ActionMover({ pos: added.pos, angle: added.angle, speed, isPlayer: added.isPlayer });
+    const flyingNpc = !added.isPlayer && prop?.flying === true;
+    const act = new ActionMover({ pos: added.pos, angle: added.angle, speed, isPlayer: added.isPlayer, flying: flyingNpc });
     act.motion = added.motion;
     act.stateFlag = added.stateFlag >>> 0;
     act.state = added.state >>> 0;
+    // Piece 7 M5: the fuel, and a flier's ride (the worn PARTS_RIDE item: CMover::Serialize's SetRide)
+    if (added.player?.fuel !== undefined) act.fuel = added.player.fuel;
+    if (added.player?.accFuel !== undefined) act.accFuel = added.player.accFuel;
+    if (act.stateFlag & ObjStaF.FLY) {
+      const rideId = rideItemOf(added);
+      const flight = rideId === undefined ? undefined : this.data.itemProps.get(rideId)?.flight;
+      if (rideId !== undefined && flight !== undefined) act.setRide(rideId, rideOf(flight));
+    }
+    act.worldFly = () => this.worldFly;
 
     let kind: MoverKind;
     let name: string;
@@ -1317,6 +1391,7 @@ export class WorldState {
   private setPos(m: Mover, pos: Vec3): void {
     m.act.body.pos = [f32(pos[0]), f32(pos[1]), f32(pos[2])];
     m.act.clearDest(); // the rules' ClearDest from its first step or destination on; until then there is none
+    m.act.sendActMsg(ActMsg.ACC_STOP); // Piece 7 M5 (:2271)
     m.act.sendActMsg(ActMsg.STOP_TURN);
     m.act.sendActMsg(ActMsg.STAND);
   }
@@ -1326,4 +1401,24 @@ export class WorldState {
     m.act.body.pos = [f32(pos[0]), f32(pos[1]), f32(pos[2])];
     m.act.body.angle = wrapAngle(angle);
   }
+}
+
+/** Piece 7 M5: the flight rules' columns of a ride's prop. */
+function rideOf(flight: NonNullable<import('@flyffweb/formats').WebItemProp['flight']>): FlightRide {
+  return { speed: flight.speed, turn: flight.turn, pitch: flight.pitch, motion: flight.motion };
+}
+
+/**
+ * Piece 7 M5: a player's worn ride, by its ADD_OBJ: another player's worn PARTS_RIDE part; the own one's (whose ADD_OBJ
+ * lists no worn parts) is the inventory item in its equipment's PARTS_RIDE slot (`inventorySlots`, else the player
+ * part's `equipmentObjectIds`, as `OwnState` reads them).
+ */
+function rideItemOf(added: AddedMover): number | undefined {
+  const player = added.player;
+  if (player === undefined) return undefined;
+  const worn = player.worn.find((w) => w.part === PARTS_RIDE)?.itemId;
+  if (worn !== undefined || player.own === null) return worn;
+  const slots = player.own.inventorySlots;
+  const objectId = slots !== undefined ? slots[42 + PARTS_RIDE] : player.equipmentObjectIds[PARTS_RIDE];
+  return player.own.inventory?.find((item) => item.objectId === objectId)?.itemId;
 }

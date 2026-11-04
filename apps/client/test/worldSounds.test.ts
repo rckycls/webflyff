@@ -168,3 +168,25 @@ describe('WorldSounds: the events of WorldState and OwnState', () => {
     expect(music).toEqual([[23, 1]]);
   });
 });
+
+describe('WorldSounds: flight (Piece 7 M5, MoverEquip.cpp:1804-1821)', () => {
+  it('the first flight plays BGM_TH_FLYING, every later one BGM_EV_LIGHTWING', () => {
+    const { world, music } = setup();
+    world.flightMusic(true);
+    world.flightMusic(true);
+    world.flightMusic(true);
+    expect(music).toEqual([[13, 1], [17, 1], [17, 1]]);
+  });
+});
+
+describe('WorldSounds: flight music is the own take-off only (MoverEquip.cpp:1808-1821; DoFakeEquip plays none)', () => {
+  it("another player's take-off plays nothing", () => {
+    const { world, music } = setup();
+    world.flightMusic(false);
+    expect(music).toEqual([]);
+    world.flightMusic(true);
+    world.flightMusic(false);
+    world.flightMusic(true);
+    expect(music).toEqual([[13, 1], [17, 1]]);
+  });
+});

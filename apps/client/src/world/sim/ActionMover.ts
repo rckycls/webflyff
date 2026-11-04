@@ -1,8 +1,11 @@
-import type { MoveReport, Vec3 } from '@flyffweb/protocol';
+import type { FlightReport, MoveReport, Vec3 } from '@flyffweb/protocol';
 import { NO_CEILING, collideMove, overHeight, processUnderCollision } from './collision';
 import type { Ground } from './collision';
-import { ActMsg, AniLoop, Ik3, Mop, Mti, ObjSta, ObjStaF } from './constants';
+import { ActMsg, AniLoop, Ik3, Mop, Mta, Mti, ObjSta, ObjStaF } from './constants';
 import { dot, normalize, vecLength } from './d3dx';
+import { flightActMsg, flightStates, flyMove } from './flight';
+import type { FlightRide, FlightState } from './flight';
+import { collideFly, forcedSet2, halfForcedSet } from './flightCollision';
 
 /**
  * The part of `CMover` the ground rules move: its position, its angle and its speed. Positions are D3D coordinates
@@ -24,6 +27,28 @@ export interface MoverBody {
    * attack speed (`ProcessAniSpeed`) and ends a swing as a player (`_ProcessStateAttack`). Default `false`.
    */
   isPlayer?: boolean;
+  /**
+   * Piece 7 M5: an `OBJTYPE_FLYING` mover (`propMover.txt`'s `dwFlying` 1, `IsFlyingNPC`): it keeps the ground's states,
+   * but runs along its pitch (`AngleToVector( angle, -angleX, speed )`), turns its pitch with TURNMOVE, does not fall
+   * and collides as a flier (Decision 6). Default `false`.
+   */
+  flying?: boolean;
+}
+
+/** Piece 7 M5: what a flying step gave its owner (`ProcessFlyMove` and `ProcessCollisionFly`). */
+export interface FlightStep {
+  /** `g_nFlySpeed`, the speed the own flier's HUD shows. */
+  speedShown: number;
+  /** The move drifted (Neuz's dust). */
+  drift: boolean;
+  /** Tracking turned the flier (`PostPlayerAngle`). */
+  turned: boolean;
+  /** The state was empty and the flier stood (`SendPlayerMoved2` for the own one, `ActionMover.cpp:222-230`). */
+  stood: boolean;
+  /** NOFLY land, or a world without flight: the ride comes off (`UnequipRide`). */
+  unequip: boolean;
+  /** `HATTR_DIE` land. */
+  died: boolean;
 }
 
 /** `m_dwMotion = -1` in a `DWORD` (`CMover::Init`, `Mover.cpp:228`, and `ActionForceSet`): no motion yet. */
@@ -137,6 +162,19 @@ const toFloats = (v: Vec3): Vec3 => [f32(v[0]), f32(v[1]), f32(v[2])];
 function moveDelta(out: Vec3, theta: number, s: number): void {
   out[0] = f32(f32(Math.sin(theta)) * s);
   out[2] = f32(-f32(Math.cos(theta)) * s);
+}
+
+/**
+ * Piece 7 M5: `AngleToVector( &vDelta, fAngXZ, fAngH, fSpeed )` (`Source/_Common/xUtil3D.h:25-35`) in floats: the move
+ * along the yaw `angleXZ` and the pitch `angleH` (a flying NPC passes `-angleX`).
+ */
+function angleToVector(out: Vec3, angleXZ: number, angleH: number, speed: number): void {
+  const xz = radians(angleXZ);
+  const h = radians(angleH);
+  const dist = f32(f32(Math.cos(-h)) * speed);
+  out[0] = f32(f32(Math.sin(xz)) * dist);
+  out[2] = f32(-f32(Math.cos(xz)) * dist);
+  out[1] = f32(-f32(Math.sin(-h)) * speed);
 }
 
 /** The `s` of `moveDelta` for a move state: `fSpeed` running, `fSpeed/4.0f` walking, `-fSpeed/5.0f` backward. */
@@ -297,6 +335,25 @@ export class ActionMover {
    * `ClearActParam`), and so does the own character's next skill command (`CMD_SetUseSkill`, `MoverMsg.cpp:418`).
    */
   skillAct: SkillAct | null = null;
+  /** Piece 7 M5: `CObj::m_fAngX`, the pitch (positive nose down), which `SetAngleX` keeps as it is given. */
+  angleX = 0;
+  /** Piece 7 M5: `m_fAccPower`, the thrust, and `m_fTurnAngle`, the turn a step of a flier. */
+  accPower = 0;
+  turnAngle = 0;
+  /** Piece 7 M5: `CMover::m_nFuel` (-1 until a ride gives it its `dwFFuelReMax`) and `m_tmAccFuel`, the turbo's. */
+  fuel = -1;
+  accFuel = 0;
+  /** Piece 7 M5: the worn ride's flight columns (`m_dwRideItemIdx`'s prop), and its item id; null on the ground. */
+  ride: FlightRide | null = null;
+  rideItemId: number | null = null;
+  /** Piece 7 M5: what the last flying step gave; null after a step on the ground. */
+  flight: FlightStep | null = null;
+  /** Piece 7 M5: the world's `fly` (`CWorld::m_bFly`). Its owner, the world, sets it. */
+  worldFly: () => boolean = () => true;
+  /** Piece 7 M5: `CanCollisionFly`: the own player, or a mover with no destination. The rules set it. */
+  canCollideFly: () => boolean = () => true;
+  /** Piece 7 M5: the own flier's tracking (Z): the target's yaw and pitch from it, or null. Its owner sets it. */
+  tracking: () => { yawTo: number; pitchTo: number } | null = () => null;
 
   /**
    * `m_pModel->IsEndFrame()`: whether the motion has played to its end. No model plays it here, so by default every
@@ -427,18 +484,125 @@ export class ActionMover {
     body.angle = wrapAngle(body.angle);
   }
 
+  /** Piece 7 M5: the body's position and angle, as `FlightState` names them. */
+  get pos(): Vec3 {
+    return this.body.pos;
+  }
+  set pos(v: Vec3) {
+    this.body.pos = v;
+  }
+  get angle(): number {
+    return this.body.angle;
+  }
+  set angle(v: number) {
+    this.body.angle = v;
+  }
+
+  /** Piece 7 M5: `IsFly()` with a known ride: the flight rules move it. */
+  isFlying(): boolean {
+    return (this.stateFlag & ObjStaF.FLY) !== 0 && this.ride !== null;
+  }
+
+  /** This mover as the flight rules see it; only while it has a ride. */
+  private get flier(): FlightState {
+    return this as unknown as FlightState;
+  }
+
+  /** `CMover::SetMotion`, for the flight rules (`FlightState.playMotion`). */
+  playMotion(motion: number, loop: number, option: number): void {
+    this.setMotion(motion, loop, option);
+  }
+
+  /**
+   * Piece 7 M5: `OBJMSG_MODE_FLY` as a worn ride sends it (`MoverEquip.cpp:1823`, `nParam3` 1: no test), in
+   * `ProcessActMsg1` (`ActionMoverMsg.cpp:1044-1104`): the flying flag, a fuel of -1 filled from the ride, every state
+   * ended, and the ride (`SetRide`). The focus, the camera and the skill bar are the own mover's owner's.
+   */
+  modeFly(rideItemId: number, ride: FlightRide, fuelMax: number): void {
+    this.stateFlag = (this.stateFlag | ObjStaF.FLY) >>> 0;
+    if (this.fuel === -1) this.fuel = fuelMax;
+    this.clearState();
+    this.setRide(rideItemId, ride);
+  }
+
+  /**
+   * Piece 7 M5: `OBJMSG_MODE_GROUND` from a ride taken off (`nParam3` 1, `ActionMoverMsg2.cpp:271-307`): no flying, no
+   * thrust, every state ended, the pitch level and no ride. The fall (`delta.y`) is kept.
+   */
+  modeGround(): void {
+    this.stateFlag = (this.stateFlag & ~(ObjStaF.FLY | ObjStaF.ACC)) >>> 0;
+    this.clearState();
+    this.angleX = 0;
+    this.ride = null;
+    this.rideItemId = null;
+  }
+
+  /** Piece 7 M5: `CMover::SetRide`: the ride a flier sits on, as an ADD_OBJ of a flier names it. */
+  setRide(rideItemId: number, ride: FlightRide): void {
+    this.rideItemId = rideItemId;
+    this.ride = ride;
+  }
+
+  /**
+   * Piece 7 M5: `CMover::ActionForceSet2`'s mover part (`MoverParam.cpp:3366-3387`): the position, the angle and the
+   * pitch, `ForcedSet2` (refused, keeping the state, when it would flip flying), and the motion. True when `ForcedSet2`
+   * took the state, which is when it calls `DefaultSet`.
+   */
+  forceSet2(r: FlightReport): boolean {
+    this.body.pos = toFloats(r.pos);
+    this.body.angle = wrapAngle(r.angle);
+    this.angleX = f32(r.angleX);
+    const took = forcedSet2(this.flier, r, (this.stateFlag & ObjStaF.FLY) !== 0);
+    if (took) this.motionEx = r.motionEx;
+    this.motion = NO_MOTION;
+    this.setMotion(r.motion, r.loop, r.motionOption);
+    return took;
+  }
+
+  /** Piece 7 M5: `CMover::HalfForceSet`'s mover part (`MoverParam.cpp:3389-3399`): the place, the angles and the move. */
+  halfForceSet(r: Pick<FlightReport, 'pos' | 'delta' | 'angle' | 'angleX' | 'accPower' | 'turnAngle'>): void {
+    this.body.pos = toFloats(r.pos);
+    this.body.angle = wrapAngle(r.angle);
+    this.angleX = f32(r.angleX);
+    halfForcedSet(this.flier, r as FlightReport);
+  }
+
   /**
    * `CActionMover::SendActMsg` (`ActionMover.cpp:337`) on the ground: true when `ProcessActMsg1` returns 1 (a swing
    * returns `AF_GENERIC`, 1). The parameters are `nParam1` to `nParam3`; where the C++ passes a `CMover*` (the attacker
    * of `DIE`), its object ID.
    */
   sendActMsg(msg: number, ...params: number[]): boolean {
-    return this.processActMsg1(msg, params[0] ?? 0, params[1] ?? 0, params[2] ?? 0) === 1;
+    return this.actMsgError(msg, ...params) === 1;
   }
 
   /** Piece 7 M2: `SendActMsg`'s own answer, which `DoAttackMagic` and `DoAttackRange` return: 1 started, 0 busy, below 0 refused. */
   actMsgError(msg: number, ...params: number[]): number {
+    if (this.stateFlag & ObjStaF.FLY) return this.processActMsg2(msg, params[0] ?? 0, params[1] ?? 0, params[2] ?? 0, params[3] ?? 0);
     return this.processActMsg1(msg, params[0] ?? 0, params[1] ?? 0, params[2] ?? 0);
+  }
+
+  /**
+   * Piece 7 M5: `ProcessActMsg2` (`ActionMoverMsg2.cpp:30-357`), a flier's messages: MODE_GROUND (`modeGround`), DIE
+   * (:223-259), and the rest the flight rules' (`flightActMsg`). Without a known ride nothing is done.
+   */
+  private processActMsg2(msg: number, param1: number, param2: number, param3: number, param4: number): number {
+    if (msg === ActMsg.MODE_GROUND) {
+      this.modeGround();
+      return 1;
+    }
+    if (this.ride === null) return 0;
+    if (msg === ActMsg.ATK1) return this.swingInAir(param1); // :138-173
+    if (msg === ActMsg.ATK_MAGIC1) return this.shotInAir(param1); // :174-203
+    if (msg === ActMsg.DIE) {
+      flightActMsg(this.flier, ActMsg.STAND);
+      this.resetState(ObjSta.TURN_ALL);
+      this.setState(ObjSta.DMG_ALL, ObjSta.DEAD);
+      this.delta[0] = this.delta[2] = 0;
+      this.setMotion(Mti.DIE1, AniLoop.CONT);
+      return 1;
+    }
+    return flightActMsg(this.flier, msg, param1, param2, param3, param4);
   }
 
   /** Joystick air control: change horizontal travel while preserving the native jump and vertical velocity. */
@@ -508,6 +672,11 @@ export class ActionMover {
     if (this.state & (ObjSta.JUMP_ALL | ObjSta.ATK_ALL)) return;
     if (this.state & ObjSta.ACTION_ALL) return;
     this.motion = NO_MOTION;
+    // Piece 7 M5: a flier flinches on its ride (MoverAttack.cpp:2055-2059)
+    if (this.stateFlag & ObjStaF.FLY) {
+      if (this.ride !== null) this.setMotion(this.ride.motion + Mta.FDMG1, AniLoop.ONE_PLAY, Mop.FIXED | Mop.NO_TRANS);
+      return;
+    }
     this.setMotion(Mti.DMG1 + (this.rand() % 2), AniLoop.ONE_PLAY);
   }
 
@@ -577,12 +746,15 @@ export class ActionMover {
    * the height part and is no collision), or the head a ceiling (:378-382).
    */
   step(ground?: Ground): { collided: boolean } {
+    this.flight = null;
+    if (this.stateFlag & ObjStaF.FLY) return this.ride === null ? { collided: false } : this.stepFly(ground);
     const pos = toFloats(this.body.pos);
     this.deltaAccu = [0, 0, 0];
     this.processAniSpeed();
     this.processAction(pos);
     this.count++; // m_nCount++, at the end of ProcessAction (ActionMover.cpp:331)
     if (this.atkCnt > 0) this.atkCnt++; // Mover.cpp:3872-3873, after the actions
+    if (this.body.flying) return this.collideFlying(pos, ground);
     const dy = this.deltaAccu[1]; // vDelta, the function's own copy of m_vDeltaAccu (:131)
     let collided = false; // fResult
     if (this.moved) {
@@ -604,6 +776,122 @@ export class ActionMover {
     this.posLast = copy(pos);
     if (placed) this.body.pos = pos;
     return { collided: placed && collided };
+  }
+
+  /**
+   * Piece 7 M5: `OBJMSG_ATK1` in the air (`ActionMoverMsg2.cpp:138-173`): at a target in view and alive, the combat flag,
+   * the swing's state and the ride's `MTA_FATK1` once. The own mover's range test (3 m) and its MELEE_ATTACK2 are the
+   * attack loop's, which sends ATK1 only in range and the packet when this starts it.
+   */
+  private swingInAir(targetId: number): number {
+    if ((this.state & ObjSta.ATK_ALL) === ObjSta.ATK1) return 0;
+    this.hitId = targetId;
+    this.targetId = targetId;
+    const target = this.findMover(targetId);
+    if (target === undefined || target.isDie()) return -2;
+    this.stateFlag = (this.stateFlag | ObjStaF.COMBAT) >>> 0;
+    this.setState(ObjSta.ATK_ALL, ObjSta.ATK1);
+    this.setMotion(this.ride!.motion + Mta.FATK1, AniLoop.ONE_PLAY, Mop.NO_TRANS | Mop.SWDFORCE | Mop.FIXED);
+    return 1;
+  }
+
+  /** Piece 7 M5: `OBJMSG_ATK_MAGIC1` in the air (:174-203): the wand's shot, standing still in the air to fire it. */
+  private shotInAir(targetId: number): number {
+    if (this.state & ObjSta.ACTION_ALL) return 0;
+    if (this.state & ObjSta.ATK_ALL) return 0;
+    if (this.findMover(targetId) === undefined) return -1;
+    if (this.state & ObjSta.DMG_ALL) this.resetState(ObjSta.DMG_ALL);
+    this.targetId = targetId;
+    this.stateFlag = (this.stateFlag | ObjStaF.COMBAT) >>> 0;
+    flightActMsg(this.flier, ActMsg.STOP_TURN);
+    flightActMsg(this.flier, ActMsg.STAND);
+    this.setState(ObjSta.ATK_ALL, ObjSta.ATK_MAGIC1);
+    this.setMotion(this.ride!.motion + Mta.FATK1, AniLoop.ONE_PLAY, Mop.NO_TRANS | Mop.SWDFORCE | Mop.FIXED);
+    return 1;
+  }
+
+  /**
+   * Piece 7 M5: `_ProcessStateAttack2` (`ActionMoverState2.cpp:555-600`): the air swing ends with its motion; a paused
+   * model counts a step off; one past a hit frame hits its target (`onHit`) and holds 5 steps for a player. The wand's
+   * shot is `ProcessStateAttackMagic`, as on the ground.
+   */
+  private processStateAttack2(): void {
+    const atk = this.state & ObjSta.ATK_ALL;
+    if (atk === ObjSta.ATK1) {
+      if (this.isEndFrame()) this.resetState(ObjSta.ATK_ALL);
+      if (this.paused > 0) {
+        this.paused--;
+        return;
+      }
+      const hit = this.isAttrHit();
+      if (hit < 0) return;
+      const target = this.hitId === null ? undefined : this.findMover(this.hitId);
+      if (target === undefined || target.isDie()) return;
+      this.onHit(hit, ObjSta.ATK1);
+      this.paused = this.body.isPlayer ? 5 : 0;
+    } else if (atk === ObjSta.ATK_MAGIC1) {
+      if (this.isEndFrame()) this.resetState(ObjSta.ATK_ALL);
+      if (this.isAttrHit() >= 0) this.onAttackMagic();
+    }
+  }
+
+  /**
+   * Piece 7 M5: a flier's step (`CMover::Process`, `Mover.cpp:3802-3906`): `ProcessAction`'s flying part
+   * (`ActionMover.cpp:210-334`: an empty state stands, else `ProcessState2` for the move, turn and look groups, and the
+   * hurt states; `ProcessFlyMove` in place of gravity; the outside force), then `ProcessCollisionFly` and `SetPos`.
+   * The attack states are Task 11's. Without `ground` the move is added as it is.
+   */
+  private stepFly(ground: Ground | undefined): { collided: boolean } {
+    const s = this.flier;
+    this.body.pos = toFloats(this.body.pos);
+    this.deltaAccu = [0, 0, 0];
+    this.processAniSpeed();
+    let stood = false;
+    if (this.state === 0) {
+      flightActMsg(s, ActMsg.STAND);
+      stood = true;
+    } else {
+      flightStates(s);
+      if (this.state & ObjSta.ATK_ALL) this.processStateAttack2();
+      // ProcessState2's OBJSTA_DMG: the flinch ends with its motion (ActionMoverState2.cpp:530-533)
+      if ((this.state & ObjSta.DMG_ALL) === ObjSta.DMG && this.isEndFrame()) this.resetState(ObjSta.DMG_ALL);
+    }
+    // m_bGround (ActionMover.cpp:276-285): a move, or a height change since the last step, takes the flier off the ground,
+    // so that a landing falls
+    const e = this.deltaE;
+    this.moved = this.delta[0] !== 0 || this.delta[2] !== 0 || e[0] !== 0 || e[1] !== 0 || e[2] !== 0;
+    if (this.delta[1] !== 0 || this.moved) this.ground = 0;
+    else if (Math.abs(f32(this.body.pos[1] - this.posLast[1])) > MOVED_HEIGHT) this.ground = 0;
+    const moved = flyMove(s, this.tracking());
+    this.addOutsideForce();
+    this.count++;
+    if (this.atkCnt > 0) this.atkCnt++;
+    let result = { collided: false, unequip: false, died: false };
+    if (ground) {
+      result = collideFly(s, this.deltaAccu, ground, this.worldFly(), this.canCollideFly());
+    } else {
+      const p = this.body.pos;
+      for (let i = 0; i < 3; i++) p[i] = f32(p[i]! + this.deltaAccu[i]!);
+    }
+    this.posLast = copy(this.body.pos);
+    this.flight = { ...moved, stood, unequip: result.unequip, died: result.died };
+    return { collided: result.collided };
+  }
+
+  /**
+   * Piece 7 M5: a flying monster's collision (`ProcessCollisionFly`, as `IsFly() || dwFlying == 1` asks,
+   * `ActionMover.cpp:176-191`), `pos` being where its step starts.
+   */
+  private collideFlying(pos: Vec3, ground: Ground | undefined): { collided: boolean } {
+    this.body.pos = pos;
+    let collided = false;
+    if (ground) {
+      collided = collideFly(this.flier, this.deltaAccu, ground, this.worldFly(), this.canCollideFly()).collided;
+    } else {
+      for (let i = 0; i < 3; i++) pos[i] = f32(pos[i]! + this.deltaAccu[i]!);
+    }
+    this.posLast = copy(this.body.pos);
+    return { collided };
   }
 
   /**
@@ -696,11 +984,17 @@ export class ActionMover {
     this.moved = this.delta[0] !== 0 || this.delta[2] !== 0 || e[0] !== 0 || e[1] !== 0 || e[2] !== 0;
     if (this.delta[1] !== 0 || this.moved) this.ground = 0;
     else if (Math.abs(f32(vPos[1] - this.posLast[1])) > MOVED_HEIGHT) this.ground = 0;
-    // gravity, except while vanishing after death
-    if ((this.state & ObjSta.DMG_ALL) !== ObjSta.DISAPPEAR && this.ground !== 1) {
+    // gravity, except while vanishing after death, and for a flying monster (bFly, ActionMover.cpp:216-218, :290)
+    if (!this.body.flying && (this.state & ObjSta.DMG_ALL) !== ObjSta.DISAPPEAR && this.ground !== 1) {
       this.delta[1] = f32(this.delta[1] - GRAVITY);
       if (this.delta[1] < -0.5) this.delta[1] = -0.5;
     }
+    this.addOutsideForce();
+  }
+
+  /** The end of `ProcessAction` (:300-327): the outside force joins the delta, the step's move is kept, the force fades. */
+  private addOutsideForce(): void {
+    const e = this.deltaE;
     if (this.isDie()) e[0] = e[1] = e[2] = 0;
     // the outside force joins the delta (m_vDelta += m_vDeltaE), then fades, unless the mover is knocked flying
     for (let i = 0; i < 3; i++) {
@@ -840,6 +1134,7 @@ export class ActionMover {
         if (this.state & ObjSta.ATK_ALL) return -2;
         if (this.inDamage()) return -3;
         this.body.angle = wrapAngle(param1);
+        if (this.body.flying) this.angleX = f32(param2); // a flying NPC's pitch (ActionMoverMsg.cpp:270-271)
         this.processActMsg1(ActMsg.STOP_TURN, 0, 0, 0);
         this.processActMsg1(ActMsg.FORWARD, 0, 0, 0);
         return 1;
@@ -1073,7 +1368,8 @@ export class ActionMover {
         break;
       case ObjSta.FMOVE: { // :194-241, not flying
         const walk = (this.stateFlag & ObjStaF.WALK) !== 0;
-        moveDelta(this.delta, theta, moveSpeed(ObjSta.FMOVE, walk, speed)!);
+        if (this.body.flying) angleToVector(this.delta, this.body.angle, -this.angleX, moveSpeed(ObjSta.FMOVE, walk, speed)!);
+        else moveDelta(this.delta, theta, moveSpeed(ObjSta.FMOVE, walk, speed)!);
         if (this.state !== ObjSta.FMOVE) break;
         this.setMotion(walk ? Mti.WALK : Mti.RUN);
         break;
@@ -1385,6 +1681,11 @@ export class ActionMover {
   private stopMove(): void {
     this.resetState(ObjSta.MOVE_ALL);
     this.delta[0] = this.delta[2] = 0;
+    // a flying NPC also stops rising or diving, and levels (ActionMoverMsg.cpp:115-121, :143-149)
+    if (this.body.flying) {
+      this.delta[1] = 0;
+      this.angleX = 0;
+    }
   }
 
   /** `IsActJump() || IsActAttack() || IsActDamage() || IsAction()`, which keep a mover from sitting down or up. */

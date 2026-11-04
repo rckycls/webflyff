@@ -9,6 +9,8 @@ import { readWhisper, readSocial, readGmSay } from '../world/chat';
 import { readAddItemTaskBar, readRemoveItemTaskBar, readSkillTaskBar } from '../world/taskBar';
 import { readBlock, readPlayerLogout, readUpdatePlayerData } from '../world/playerData';
 import type { MessageOf, PartyRequestSide, Shortcut, SkillSlot } from '../world/types';
+import { readAngleReport, readFlightReport } from '../world/flight';
+import type { AngleReport, FlightReport } from '../world/flight';
 import type { SlotMessenger } from './login';
 
 /** What `CDPClient::SendJoin` sends: the character that enters the world, and the account that owns it. */
@@ -281,9 +283,16 @@ export type WorldPacket =
   | { type: 'queryPlayerData'; playerId: number; version: number }
   // Piece 7 M3: an item used (`objectId` the high word of `MAKELONG( ITYPE_ITEM, objId )`), the cast's cancel, and the
   // Scroll of Return's choice.
-  | { type: 'useItem'; objectId: number; targetId: number; part: number }
+  | { type: 'useItem'; objectId: number; targetId: number; part: number; flightSpeed: number }
   | { type: 'stateMode'; mode: number; flag: number }
   | { type: 'returnScroll'; select: number }
+  // Piece 7 M5: an item worn (with its flight float), and a flier's reports and air attack.
+  | { type: 'equipItem'; objectId: number; part: number; flightSpeed: number }
+  | { type: 'playerMoved2'; move: FlightReport; frames: number }
+  | { type: 'playerBehavior2'; move: FlightReport }
+  | { type: 'playerCorr2'; move: FlightReport }
+  | ({ type: 'playerAngle' } & AngleReport)
+  | { type: 'meleeAttack2'; message: number; targetId: number; param2: number; param3: number }
   | { type: 'unknown'; packetType: number };
 
 /**
@@ -485,8 +494,8 @@ function decodeClientPacket(r: ArReader): WorldPacket {
       const value = { type: 'queryPlayerData', playerId: r.u32(), version: r.i32() } as const; r.expectEnd(); return value;
     }
     case PacketType.DOUSEITEM: {
-      const id = r.u32(), targetId = r.u32(), part = r.i32(); r.expectEnd();
-      return { type: 'useItem', objectId: id >>> 16, targetId, part };
+      const id = r.u32(), targetId = r.u32(), part = r.i32(), flightSpeed = r.f32(); r.expectEnd();
+      return { type: 'useItem', objectId: id >>> 16, targetId, part, flightSpeed };
     }
     case PacketType.STATEMODE: {
       const mode = r.u32(), flag = r.u8(); r.expectEnd();
@@ -495,6 +504,30 @@ function decodeClientPacket(r: ArReader): WorldPacket {
     case PacketType.RETURNSCROLL: {
       const select = r.i32(); r.expectEnd();
       return { type: 'returnScroll', select };
+    }
+    case PacketType.DOEQUIP: {
+      const objectId = r.u32(), part = r.i32(), flightSpeed = r.f32(); r.expectEnd();
+      return { type: 'equipItem', objectId, part, flightSpeed };
+    }
+    case PacketType.PLAYERMOVED2: {
+      const move = readFlightReport(r), frames = r.u8(); r.expectEnd();
+      return { type: 'playerMoved2', move, frames };
+    }
+    case PacketType.PLAYERBEHAVIOR2: {
+      const move = readFlightReport(r); r.expectEnd();
+      return { type: 'playerBehavior2', move };
+    }
+    case PacketType.PLAYERCORR2: {
+      const move = readFlightReport(r); r.expectEnd();
+      return { type: 'playerCorr2', move };
+    }
+    case PacketType.PLAYERANGLE: {
+      const angle = readAngleReport(r); r.expectEnd();
+      return { type: 'playerAngle', ...angle };
+    }
+    case PacketType.MELEE_ATTACK2: {
+      const message = r.u32(), targetId = r.u32(), param2 = r.i32(), param3 = r.i32(); r.expectEnd();
+      return { type: 'meleeAttack2', message, targetId, param2, param3 };
     }
     default:
       return { type: 'unknown', packetType };

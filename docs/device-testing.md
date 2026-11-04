@@ -1306,3 +1306,59 @@ Milestone 4 passes when every cell of the table is `pass` (or `n/a` where it say
 | `npm run typecheck` | about 1 minute | It ends with no `error`. |
 | `$env:FLYFF_CLIENT = 'C:\Users\silec\Desktop\FlyFF\Bakbak\Blouflash VS22 V15\Client'; npm run test:corpus` | about 5 minutes | `… passed`, and no `failed`. |
 | `npm run test:e2e:client` | about 10 minutes | It ends with `… passed`, maybe a few `skipped`, and no `failed` (`party.spec.ts` is the new file). |
+
+## Piece 7, milestone 5: flying
+
+The rides now fly, as in the Windows client: brooms, boards and sticks, from level 20 (the Beginner's stick at any level).
+
+- **Taking off and landing.** Using a ride from the task bar or the bag takes off; using it again (or the ride's slot in the inventory, or **Land** on the phone) lands, and the character falls to the ground. The ride is drawn under the character, and the camera follows behind it and tilts with it.
+- **Flying on the PC.** Space starts and stops the thrust, W dives (only above the ground), S climbs, A and D turn, and holding the right mouse button steers with the mouse. X turns the turbo on and off once the turbo has fuel: the view widens, the camera comes in close, and a gauge over the head shows the turbo's fuel, with the speed beside it. The arrows still turn the camera.
+- **Flying on the phone.** The stick turns (sideways), dives (forward) and climbs (back). **Accelerate** (it reads **Go**) takes the Jump button's place and thrusts while held, whatever the other fingers do; **Turbo** and **Land** sit beside it. Attack stays.
+- **Fighting in the air.** Only flying monsters can be fought in the air (and only walking ones on the ground). Click or tap one to select it (the Windows client needs Tab; Tab works too; nothing else can be picked in the air, and NPCs' menus wait for the ground), then hold the left button, Insert, or the phone's Attack: the swing hits within 3 m; a wand fires when the target is in front within 64 m. Z follows the selected target. No skills in the air.
+- **Places without flight.** Flying into a place where flight is forbidden puts the character down, as the Windows client does. Taking off there is refused with "You cannot fly here."
+- **Others flying** are seen on their rides, tilting as they climb and dive.
+
+**What the test characters need:**
+- a level 20 character with some penya in Flaris, for Dior's shop (the Magic Broom and the Accelor Fuel);
+- a second account (any level), to watch from.
+
+**Start the client** from the piece7 folder as for milestone 0 (stop your own `npm run dev:client` first):
+
+```
+cd C:\Users\silec\Desktop\FlyFF\Bakbak\FlyffWeb-worktrees\piece7
+$env:GATEWAY_PROXY = 'ws://<VM-IP>:8090'
+npm run dev:client
+```
+
+**Steps**, on the PC and a landscape phone:
+
+1. **Buy a ride.** Talk to Dior in Flaris and buy a Magic Broom and an Accelor Fuel. Success: both are in the bag.
+2. **Take off from the task bar.** Put the broom on the task bar and use it (F1, or a tap). Success: the character sits on the broom, in the air, and the flying music plays (the first time; another track after that).
+3. **Fly.** Press Space, then steer with W/S and A/D, and with the mouse while the right button is held. Success: the character flies along its nose, climbs and dives, and turns; Space again stops the thrust and it glides to a stop; the camera stays behind and tilts with the nose.
+4. **Turbo.** Use the Accelor Fuel while flying, then press X with the thrust on. Success: the gauge over the head fills, the view widens and the camera comes in close; the gauge empties, and the turbo stops by itself when it is empty.
+5. **Fight in the air.** Fly to a Small Mothbee near Flaris, select it (a click, or Tab) and hold the left button. Success: the character swings at it within reach and the damage numbers show; a ground monster cannot be selected for an attack in the air.
+6. **No flight there.** Fly into a place where flight is forbidden. Success: the character is put down there and falls to the ground.
+7. **Land from the bag.** Take off again, then double-click the broom in the bag (or its slot in the inventory). Success: the character falls to the ground and stands. Over water or a cliff edge it may refuse to land: try again over open ground.
+8. **Seen by another.** Log the second account in beside the first and fly with the first. Success: the second sees the first on its broom, moving and tilting smoothly.
+9. **The phone** (phone only). Do steps 2 to 7 on the phone, with the stick, **Go** (Accelerate) held while the other thumb steers and taps **Turbo**, and **Land**. Success: the three buttons show only while flying, cover neither the stick nor Attack, and do what they say.
+
+## Results
+
+| Device | Browser | 1. Buy | 2. Take off | 3. Fly | 4. Turbo | 5. Fight | 6. No flight | 7. Land | 8. Seen | 9. Phone | Notes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| PC | Chrome | | | | | | | | | n/a | |
+| Android phone | Chrome | | | | | | | | | | |
+| iPhone | Safari | | | | | | | | | | |
+
+## Pass and fail
+
+Milestone 5 passes when every cell of the table is `pass` (or `n/a` where it says so) and the tests below pass.
+
+**The tests (yours to run),** on the PC in PowerShell in the piece7 folder, with your own `npm run dev:client` stopped first:
+
+| Command | How long | Success |
+| --- | --- | --- |
+| `npm test` | about 2 minutes | `Tests … passed`, and no `failed`. |
+| `npm run typecheck` | about 1 minute | It ends with no `error`. |
+| `$env:FLYFF_CLIENT = 'C:\Users\silec\Desktop\FlyFF\Bakbak\Blouflash VS22 V15\Client'; npm run test:corpus` | about 5 minutes | `… passed`, apart from two known stale tests in `tools/convert/test/gameData.corpus.test.ts` ("writes every catalog without a failure" and "skills: the levels are the rows …"), which fail on main too. |
+| `npm run test:e2e:client` | about 10 minutes | It ends with `… passed`, maybe a few `skipped`, and no `failed` (`flight.spec.ts` is the new file). |

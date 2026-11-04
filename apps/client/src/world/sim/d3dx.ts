@@ -191,10 +191,24 @@ export function faceNormalTo(out: Vec3, tris: ArrayLike<number>, i: number): Vec
 
 /** `IsTouchAABB_Line` (`xUtil3D.cpp:127-203`): whether the line from `v1` to `v2` touches the box, in floats. */
 export function touchesAabb(box: ArrayLike<number>, v1: Vec3, v2: Vec3): boolean {
+  return touchAabbLine(box, v1, v2, null);
+}
+
+/**
+ * `IsTouchAABB_Line` with its `pvIntersect` (Piece 7 M5, `GetFullHeight`): as `touchesAabb`, writing into `out` (when
+ * given) the point it found: the start or the end when inside the box, else where the line crosses the face it touched.
+ */
+export function touchAabbLine(box: ArrayLike<number>, v1: Vec3, v2: Vec3, out: Vec3 | null): boolean {
   const code1 = outCode(box, v1);
-  if (code1 === 0) return true;
+  if (code1 === 0) {
+    if (out) set(out, v1);
+    return true;
+  }
   const code2 = outCode(box, v2);
-  if (code2 === 0) return true;
+  if (code2 === 0) {
+    if (out) set(out, v2);
+    return true;
+  }
   if ((code1 & code2) > 0) return false;
   // the plane the start is outside of, axis by axis: where the line crosses it must be within the other two
   for (let k = 0; k < 3; k++) {
@@ -203,10 +217,12 @@ export function touchesAabb(box: ArrayLike<number>, v1: Vec3, v2: Vec3): boolean
     const d = f32(v2[k]! - v1[k]!);
     const s = f32(at - v1[k]!);
     let within = true;
-    for (let j = 0; j < 3 && within; j++) {
+    if (out) out[k] = at;
+    for (let j = 0; j < 3; j++) {
       if (j === k) continue;
       const p = f32(v1[j]! + f32(f32(s * f32(v2[j]! - v1[j]!)) / d));
-      within = p <= box[3 + j]! && p >= box[j]!;
+      if (out) out[j] = p;
+      within &&= p <= box[3 + j]! && p >= box[j]!;
     }
     if (within) return true;
   }

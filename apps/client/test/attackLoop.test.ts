@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { MoveReport, Vec3 } from '@flyffweb/protocol';
 import { NULL_ID } from '@flyffweb/protocol';
 import { ServerClock } from '../src/net/serverClock';
-import { APPROACH_REPORT_STEPS, AttackLoop, chargeLevel, objRadius, setOwnDestObj } from '../src/world/combat/attackLoop';
+import { APPROACH_REPORT_STEPS, AttackLoop, attackAble, chargeLevel, objRadius, setOwnDestObj } from '../src/world/combat/attackLoop';
 import { Focus } from '../src/world/combat/focus';
 import type { OwnState } from '../src/world/OwnState';
 import { terrainGround } from '../src/world/sim/collision';
@@ -20,6 +20,9 @@ const f32 = Math.fround;
 const AIBATT = 20;
 const MONSTER_ID = 30;
 const OTHER_MONSTER_ID = 31;
+/** Piece 7 M5: a flying monster (`dwFlying` 1) and its object ID. */
+const MOTHBEE = 22;
+const FLIER_ID = 33;
 const NPC_ID = 40;
 const PLAYER_ID = 50;
 /** How many steps the fake model plays each motion for before `IsEndFrame` (a swing included). */
@@ -28,6 +31,7 @@ const MOTION_STEPS = 12;
 type Sent =
   | ['destObj', number, number]
   | ['melee', number, number, number]
+  | ['melee2', number, number]
   | ['getDestObj', number, number]
   | ['behavior', MoveReport]
   | ['magic', number, number, number]
@@ -62,6 +66,8 @@ interface RigOptions {
   ownFirst?: boolean;
   /** The land and objects; flat land with nothing on it by default. */
   ground?: Ground;
+  /** Piece 7 M5: a flying monster (Mothbee, dwFlying 1) at this place too. */
+  flierAt?: Vec3;
 }
 
 /**
@@ -78,6 +84,7 @@ function rig(options: RigOptions = {}) {
       [MI_MALE, webMoverOf({ index: MI_MALE, name: 'Male', speed: 0.1, ai: 1, killable: 1 })],
       [MI_FEMALE, webMoverOf({ index: MI_FEMALE, name: 'Female', speed: 0.1, ai: 1, killable: 1 })],
       [AIBATT, webMoverOf({ index: AIBATT, name: 'Aibatt', killable: options.killable ?? 1, belligerence: Belli.ACTIVEATTACK })],
+      [MOTHBEE, webMoverOf({ index: MOTHBEE, name: 'Mothbee', killable: 1, belligerence: Belli.ACTIVEATTACK, flying: true })],
     ]),
   });
   const world = new WorldState(data, new ServerClock(() => 0), options.ground ?? terrainGround(() => 0));
@@ -101,6 +108,9 @@ function rig(options: RigOptions = {}) {
     mover: addedNpc(NPC_ID, MI_FEMALE, { characterKey: 'MaFl_Juria' }, { pos: [103, 0, 103], belligerence: Belli.PEACEFUL }),
   });
   add({ type: 'addMover', mover: addedPlayer(PLAYER_ID, {}, { pos: [103, 0, 97] }) });
+  if (options.flierAt !== undefined) {
+    add({ type: 'addMover', mover: addedNpc(FLIER_ID, MOTHBEE, {}, { pos: options.flierAt, state: ObjSta.STAND, belligerence: Belli.ACTIVEATTACK }) });
+  }
   if (options.ownFirst === false) addOwn();
   world.takeChanges();
   const own = world.self()!;
@@ -138,6 +148,8 @@ function rig(options: RigOptions = {}) {
     // Piece 7 M2: the wand's and the bow's shots
     sendMagicAttack: (targetId: number, power: number, id: number) => void sent.push(['magic', targetId, power, id]),
     sendRangeAttack: (targetId: number, power: number, id: number) => void sent.push(['range', targetId, power, id]),
+    // Piece 7 M5: the swing in the air
+    sendMeleeAttack2: (message: number, targetId: number) => void sent.push(['melee2', message, targetId]),
   };
   const focus = new Focus(session);
   const state = 'own' in options ? options.own : newVagrant(level);
@@ -1298,5 +1310,101 @@ describe('AttackLoop: an item cast (IsAttackAble, Mover.cpp:6484-6494; Piece 7 M
       r.step();
     }
     expect(asked).toBe(0);
+  });
+});
+
+describe('AttackLoop: in the air (Piece 7 M5, ControlFlying, WndWorldControlPlayer.cpp:797-833)', () => {
+  const RIDE = { speed: f32(0.0023), turn: f32(0.6), pitch: 1, motion: 31 };
+  /** The own mover flying at its place, 2 m up, facing east (angle 90, +X). */
+  function flying(flierAt: Vec3, own?: OwnState) {
+    const r = rig({ flierAt, ...(own === undefined ? {} : { own }) });
+    r.own.act.body.pos = [OWN_AT[0], 2, OWN_AT[2]];
+    r.own.act.modeFly(5000, RIDE, 1200);
+    r.own.act.step();
+    return r;
+  }
+
+  it("in the air a walker's monster cannot be attacked, a flying one can", () => {
+    const r = flying([OWN_AT[0] + 2, 2, OWN_AT[2]]);
+    const props = new Map([[AIBATT, { killable: 1 }], [MOTHBEE, { killable: 1 }]]);
+    const flier = r.world.movers.get(FLIER_ID)!;
+    expect(attackAble(r.monster, props, true)).toBe(false);
+    expect(attackAble(flier, props, true)).toBe(true);
+    expect(attackAble(flier, props, false)).toBe(false); // IsAttackAbleNPC: a walker hits no flier
+    expect(attackAble(r.monster, props, false)).toBe(true);
+  });
+
+  it('the in-air attack sends MELEE_ATTACK2 within 3 m', () => {
+    const r = flying([OWN_AT[0] + 2, 2, OWN_AT[2]]);
+    r.tap(FLIER_ID); // Decision 5: a click selects a flying monster in the air
+    expect(r.focus.targetId).toBe(FLIER_ID);
+    r.loop.attackHeld = true;
+    r.step();
+    expect(r.sent.filter((s) => s[0] === 'melee2')).toEqual([['melee2', ActMsg.ATK1, FLIER_ID]]);
+    expect(r.own.act.state & ObjSta.ATK_ALL).toBe(ObjSta.ATK1);
+    expect(r.own.act.motion).toBe(31 + 10); // MTA_FATK1
+    const far = flying([OWN_AT[0] + 8, 2, OWN_AT[2]]);
+    far.tap(FLIER_ID);
+    far.loop.attackHeld = true;
+    far.steps(10);
+    expect(far.sent.filter((s) => s[0] === 'melee2')).toEqual([]);
+    expect(far.sent.filter((s) => s[0] === 'destObj')).toEqual([]); // nobody walks in the air
+  });
+
+  it('a wand fires in the air only inside 60° and 64 m', () => {
+    const ahead = flying([OWN_AT[0] + 30, 2, OWN_AT[2]], holding(SEAL_WAND));
+    ahead.tap(FLIER_ID);
+    ahead.loop.attackHeld = true;
+    ahead.step();
+    expect(shots(ahead.sent)).toEqual([['magic', FLIER_ID, 0, expect.any(Number)]]);
+    const behind = flying([OWN_AT[0] - 30, 2, OWN_AT[2]], holding(SEAL_WAND));
+    behind.tap(FLIER_ID);
+    behind.loop.attackHeld = true;
+    behind.steps(5);
+    expect(shots(behind.sent)).toEqual([]);
+    const beyond = flying([OWN_AT[0] + 70, 2, OWN_AT[2]], holding(SEAL_WAND));
+    beyond.tap(FLIER_ID);
+    beyond.loop.attackHeld = true;
+    beyond.steps(5);
+    expect(shots(beyond.sent)).toEqual([]);
+  });
+
+  it('Tab cycles the flying targets ahead', () => {
+    const r = flying([OWN_AT[0] + 20, 2, OWN_AT[2]]);
+    r.loop.nextFlyTarget([1, 0, 0]); // the camera looks east, D3D
+    expect(r.focus.targetId).toBe(FLIER_ID);
+    r.focus.select(null);
+    r.loop.nextFlyTarget([-1, 0, 0]); // looking west: nothing flies there
+    expect(r.focus.targetId).toBeNull();
+  });
+
+  it('tracking (Z) points the flier at the focus', () => {
+    const r = flying([OWN_AT[0], 12, OWN_AT[2] - 20]);
+    r.tap(FLIER_ID);
+    r.loop.toggleTracking();
+    const to = r.own.act.tracking();
+    expect(to).not.toBeNull();
+    expect(to!.yawTo).toBeCloseTo(0, 3); // north, -Z
+    expect(to!.pitchTo).toBeLessThan(0); // above: nose up
+    r.loop.toggleTracking();
+    expect(r.own.act.tracking()).toBeNull();
+  });
+});
+
+describe('AttackLoop: a press in the air (Piece 7 M5, Decision 5; WndWorld.cpp:6868-6883, 7059)', () => {
+  it('selects a flying monster only, and walks nowhere', () => {
+    const r = rig({ flierAt: [OWN_AT[0] + 2, 2, OWN_AT[2]] });
+    r.own.act.body.pos = [OWN_AT[0], 2, OWN_AT[2]];
+    r.own.act.modeFly(5000, { speed: f32(0.0023), turn: f32(0.6), pitch: 1, motion: 31 }, 1200);
+    r.own.act.step();
+    r.tap(MONSTER_ID); // a ground monster
+    r.tap(NPC_ID);
+    r.tap(PLAYER_ID);
+    r.loop.walkTo(NPC_ID);
+    r.steps(5);
+    expect(r.focus.targetId).toBeNull();
+    expect(r.sent).toEqual([]);
+    r.tap(FLIER_ID);
+    expect(r.focus.targetId).toBe(FLIER_ID);
   });
 });

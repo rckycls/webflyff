@@ -21,6 +21,9 @@ export const ObjSta = {
   LTURN: 0x00000100,
   RTURN: 0x00000200,
   TURN_ALL: 0x00000300,
+  /** Piece 7 M5: a flier's nose going up, and down (`MoverMsg.h:29-30`). */
+  LOOKUP: 0x00000400,
+  LOOKDOWN: 0x00000800,
   LOOK_ALL: 0x00000c00,
   SJUMP1: 0x00005000,
   SJUMP2: 0x00006000,
@@ -71,8 +74,13 @@ export const ObjStaF = {
   WALK: 0x00000002,
   SIT: 0x00000004,
   FLY: 0x00000008,
+  /** Piece 7 M5: a flier's thrust is on (`MoverMsg.h:99`). */
+  ACC: 0x00000010,
   /** A custom motion is playing. */
   ETC: 0x00000020,
+  /** Piece 7 M5: the sharp turn, and the turbo (`MoverMsg.h:101-102`). */
+  ACCTURN: 0x00000040,
+  TURBO: 0x00000080,
 } as const;
 
 /**
@@ -95,6 +103,13 @@ export const ActMsg = {
   MODE_COMBAT: 18,
   MODE_WALK: 20,
   MODE_RUN: 21,
+  /** Piece 7 M5: onto the ride and off it, the turbo, and the thrust (`MoverMsg.h:129-135`). */
+  MODE_FLY: 22,
+  MODE_GROUND: 23,
+  MODE_TURBO_ON: 24,
+  MODE_TURBO_OFF: 25,
+  ACC_START: 27,
+  ACC_STOP: 28,
   /** The four swings of a melee combo, at the object ID in the first parameter. */
   ATK1: 29,
   ATK2: 30,
@@ -119,6 +134,10 @@ export const ActMsg = {
   /** A plain blow, and a blow that knocks the victim flying (`CActionMover::SendDamageForce`). */
   DAMAGE: 41,
   DAMAGE_FORCE: 42,
+  /** Piece 7 M5: a flier's nose up, down, and level again (`MoverMsg.h:150-152`). */
+  LOOKUP: 43,
+  LOOKDOWN: 44,
+  STOP_LOOK: 45,
   /** Turn to the angle in the first parameter and run (`CMover::ProcessMove` sends it toward a destination). */
   TURNMOVE: 47,
 } as const;
@@ -275,3 +294,32 @@ export const AniLoop = {
  * `CDPClient::SendPlayerMoved` has `PresupposePos` predict.
  */
 export const MAX_CORR_SIZE_45 = 22;
+
+/**
+ * Piece 7 M5: `MTA_*` (`Resource/defineNeuz.h:917-932`), a rider's motions as offsets from the ride's `dwUseMotion`
+ * (`MTI_FSTAND1`, 31, for a broom).
+ */
+export const Mta = {
+  FSTAND1: 0,
+  FIDLE1: 1,
+  FIDLE2: 2,
+  FLTURN1: 3,
+  FLTURN2: 4,
+  FRTURN1: 5,
+  FRTURN2: 6,
+  FRUNNING1: 7,
+  FRUNNING2: 8,
+  FDMG1: 9,
+  FATK1: 10,
+  FATK2: 11,
+  FATK3: 12,
+} as const;
+
+/** Piece 7 M5: `PARTS_RIDE` (`defineItemkind.h`), the body slot of a ride. */
+export const PARTS_RIDE = 13;
+
+/**
+ * Piece 7 M5: `MAX_CORR_SIZE_150` (`Source/_AIInterface/ActionMover.h:58`, the client's value): how many steps ahead
+ * `CDPClient::SendPlayerMoved2` has `PresupposePos2` predict, sent as `nFrame`.
+ */
+export const MAX_CORR_SIZE_150 = 37;

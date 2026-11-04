@@ -19,6 +19,28 @@
 
 import { ScriptReader } from '../script/cscript';
 
+/**
+ * Piece 7 M5: a ride's flight columns (`IK1_RIDE` rows only). `speed` is `fFlightSpeed` as the C `float` and
+ * `speedText` the column as written: the server compares the DOUSEITEM/DOEQUIP float with the prop's exactly, and
+ * `Math.fround(parseFloat(speedText))` gives it back. `turn` and `pitch` are `fFlightLRAngle` and `fFlightTBAngle`;
+ * `limit` is `dwFlightLimit`, NULL_ID read as 1 (`MoverEquip.cpp:1493-1495`), the flight level the rider needs;
+ * `fuelMax` and `accelFuelMax` are `dwFFuelReMax` and `dwAFuelReMax`; `motion` is `dwUseMotion`, the rider's
+ * stand motion (an `MTI_*` id).
+ */
+export interface RideFlight {
+  speed: number;
+  speedText: string;
+  turn: number;
+  pitch: number;
+  limit: number;
+  fuelMax: number;
+  accelFuelMax: number;
+  motion: number;
+}
+
+/** `IK1_RIDE` (`defineItemkind.h:13`). */
+const IK1_RIDE = 4;
+
 export interface ItemProp {
   /** Positive nReflect enables the native reflection pass. */
   reflect?: number;
@@ -144,6 +166,8 @@ export interface ItemProp {
   /** Piece 7 M4: `dwSkillTime`, a party skill's mode length in ms (-1 for `=`), and `dwExp`, its cost in party points. */
   skillTime: number;
   exp: number;
+  /** Piece 7 M5: a ride's flight columns; absent on every other row. */
+  flight?: RideFlight;
   /** `szIcon`: the icon file (`itm_WeaSwoWooden.dds`); '' for none. */
   icon: string;
   /** `szTextFileName`: the text file of the item's GM command; '' for none. */
@@ -228,6 +252,10 @@ const KEPT: ReadonlySet<string> = new Set([
   'dwReferStat1',
   // Piece 7 M3: an item's cast
   'dwSkillReadyType',
+  // Piece 7 M5: a ride's level and fuel
+  'dwFlightLimit',
+  'dwFFuelReMax',
+  'dwAFuelReMax',
   // the columns of a skill row
   'dwReqDisLV',
   'dwReSkill1',
@@ -247,6 +275,9 @@ const KEPT: ReadonlySet<string> = new Set([
   'dwSkillTime',
   'dwExp',
 ]);
+
+/** The float columns the rows keep: the attack speed, and a ride's (Piece 7 M5). */
+const FLOATS_KEPT: ReadonlySet<string> = new Set(['fAttackSpeed', 'fFlightSpeed', 'fFlightLRAngle', 'fFlightTBAngle']);
 
 /** Removes trailing white space, the characters C `isspace` accepts (CString::TrimRight, ProjectCmn.cpp:331). */
 const trimRight = (s: string): string => s.replace(/[ \t\n\v\f\r]+$/, '');
@@ -286,16 +317,17 @@ export function readPropItem(
     let name = trimRight(r.token('szName').text);
 
     const kept: Record<string, number> = {};
-    let attackSpeed = -1;
-    let attackSpeedText = '=';
+    // the floats the rows keep, as C floats, and as written: the token, a sign being a token of its own, which
+    // GetFloat folds into the number
+    const floats: Record<string, number> = {};
+    const floatTexts: Record<string, string> = {};
     for (const [column, kind] of ITEM_COLUMNS) {
       if (kind === 'float') {
         const value = r.float(column);
-        if (column === 'fAttackSpeed') {
-          attackSpeed = Math.fround(value); // prop.fAttackSpeed is a float
-          // the token as written; a sign is a token of its own, which GetFloat folds into the number
+        if (FLOATS_KEPT.has(column)) {
+          floats[column] = Math.fround(value); // ItemProp's columns are floats
           const written = r.lastToken()!.text;
-          attackSpeedText = value < 0 && written !== '=' ? `-${written}` : written;
+          floatTexts[column] = value < 0 && written !== '=' ? `-${written}` : written;
         }
         continue;
       }
@@ -336,8 +368,8 @@ export function readPropItem(
         abilityMin: kept.dwAbilityMin,
         abilityMax: kept.dwAbilityMax,
         weaponType: kept.dwWeaponType,
-        attackSpeed,
-        attackSpeedText,
+        attackSpeed: floats.fAttackSpeed,
+        attackSpeedText: floatTexts.fAttackSpeed,
         attackRange: kept.dwAttackRange,
         destParams: [kept.dwDestParam0, kept.dwDestParam1, kept.dwDestParam2],
         adjParams: [kept.nAdjParamVal0, kept.nAdjParamVal1, kept.nAdjParamVal2],
@@ -368,6 +400,20 @@ export function readPropItem(
         comboStyle: kept.dwComboStyle,
         skillTime: kept.dwSkillTime,
         exp: kept.dwExp,
+        ...(kept.dwItemKind1 === IK1_RIDE
+          ? {
+            flight: {
+              speed: floats.fFlightSpeed,
+              speedText: floatTexts.fFlightSpeed,
+              turn: floats.fFlightLRAngle,
+              pitch: floats.fFlightTBAngle,
+              limit: kept.dwFlightLimit === -1 ? 1 : kept.dwFlightLimit,
+              fuelMax: kept.dwFFuelReMax,
+              accelFuelMax: kept.dwAFuelReMax,
+              motion: kept.dwUseMotion,
+            },
+          }
+          : {}),
         icon,
         textFileName,
         command,

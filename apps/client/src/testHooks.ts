@@ -41,6 +41,12 @@ export interface ClientMover {
   hp: number;
   motion: number;
   state: number;
+  /** Piece 7 M5: the angle and pitch in degrees, and the state flag (`OBJSTAF_FLY` 8, `ACC` 16, `TURBO` 128). */
+  angle: number;
+  angleX: number;
+  stateFlag: number;
+  /** Piece 7 M5: the ride drawn (its item id), or null. */
+  rideItemId: number | null;
 }
 
 /**

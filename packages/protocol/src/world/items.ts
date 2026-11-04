@@ -54,16 +54,21 @@ export function readGroundItem(r: ArReader): GroundItem {
 function checkId(id: number, max = 73): void {
   if (!Number.isInteger(id) || id < 0 || id >= max) throw new RangeError('invalid inventory index');
 }
-/** CDPClient::SendDoUseItem: MAKELONG(ITYPE_ITEM=0, inventory object id), target=NULL_ID, nPart=-1. */
-export function encodeUseItem(objectId: number): Uint8Array {
-  checkId(objectId);
-  return clientPacket(PacketType.DOUSEITEM).u32(objectId * 65536).u32(0xffffffff).i32(-1).toBytes();
-}
-/** SendDoEquip, including the __HACK_1023 float (only checked for flying equipment). */
-export function encodeEquipItem(objectId: number, part = -1): Uint8Array {
+/**
+ * CDPClient::SendDoUseItem (`DPClient.cpp:10860-10866`): MAKELONG(ITYPE_ITEM=0, inventory object id), target=NULL_ID,
+ * `nPart` (the prop's `dwParts`: 13 for a ride, -1 for an item that is not worn), and under `__HACK_1023` the prop's
+ * `fFlightSpeed` (-1 for `=`), which the server compares exactly with a ride's (Piece 7 M5).
+ */
+export function encodeUseItem(objectId: number, part = -1, flightSpeed = -1): Uint8Array {
   checkId(objectId);
   if (!Number.isInteger(part) || part < -1 || part >= 31) throw new RangeError('invalid part');
-  return clientPacket(0x00ff000b).u32(objectId).i32(part).f32(0).toBytes();
+  return clientPacket(PacketType.DOUSEITEM).u32(objectId * 65536).u32(0xffffffff).i32(part).f32(flightSpeed).toBytes();
+}
+/** SendDoEquip (`DPClient.cpp:9336-9342`), with the `__HACK_1023` float: the prop's `fFlightSpeed`, -1 for `=`. */
+export function encodeEquipItem(objectId: number, part = -1, flightSpeed = -1): Uint8Array {
+  checkId(objectId);
+  if (!Number.isInteger(part) || part < -1 || part >= 31) throw new RangeError('invalid part');
+  return clientPacket(PacketType.DOEQUIP).u32(objectId).i32(part).f32(flightSpeed).toBytes();
 }
 export function encodeMoveItem(source: number, destination: number): Uint8Array {
   checkId(source, 42); checkId(destination, 42);

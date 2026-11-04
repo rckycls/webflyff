@@ -12,9 +12,11 @@ import { encodeMagicAttack, encodeRangeAttack, encodeSfxClear, encodeSfxHit, enc
 import {
   encodeAddPartyMember, encodeBlock, encodeChangeTroup, encodePartyChangeLeader, encodePartyExpMode, encodePartyItemMode,
   encodePartyMemberCancel, encodePartyMemberRequest, encodePartySkillUse, encodeQueryPlayerData, encodeRemovePartyMember,
+  encodeMeleeAttack2, encodePlayerAngle, encodePlayerBehavior2, encodePlayerCorr2, encodePlayerMoved2,
 } from '@flyffweb/protocol';
 import type { PartyRequestSide } from '@flyffweb/protocol';
 import type { BundleMessage, BundleResult, MoveReport, Shortcut, SkillSlot, Vec3, WorldMessage } from '@flyffweb/protocol';
+import type { AngleReport, FlightReport } from '@flyffweb/protocol';
 import { UNEXPECTED_PROBLEM, closeText, errorText } from '../lobby/errorText';
 import { GATEWAY_UNREACHABLE, PING_INTERVAL_MS, TIMEOUT_TEXT, systemClock } from '../lobby/LoginFlow';
 import type { FlowClock, WorldEntry } from '../lobby/LoginFlow';
@@ -117,12 +119,17 @@ export class WorldSession {
   sendChat(channel: import('@flyffweb/protocol').ChatChannel, text: string, target = ''): void {
     this.playingCache()?.send(encodeChat(channel, text, target));
   }
-  sendUseItem(objectId: number): void { this.playingCache()?.send(encodeUseItem(objectId)); }
+  /** DOUSEITEM: `part` and `flightSpeed` are the prop's `dwParts` and `fFlightSpeed` for a ride (Piece 7 M5). */
+  sendUseItem(objectId: number, part = -1, flightSpeed = -1): void {
+    this.playingCache()?.send(encodeUseItem(objectId, part, flightSpeed));
+  }
   /** Piece 7 M3: the item cast's cancel (`SendStateModeCancel`). */
   sendStateModeCancel(): void { this.playingCache()?.send(encodeStateModeCancel()); }
   /** Piece 7 M3: the Scroll of Return's village (0-2) or the way back (-1) (`SendReturnScroll`). */
   sendReturnScroll(select: number): void { this.playingCache()?.send(encodeReturnScroll(select)); }
-  sendEquipItem(objectId: number, part = -1): void { this.playingCache()?.send(encodeEquipItem(objectId, part)); }
+  sendEquipItem(objectId: number, part = -1, flightSpeed = -1): void {
+    this.playingCache()?.send(encodeEquipItem(objectId, part, flightSpeed));
+  }
   sendMoveItem(source: number, destination: number): void { this.playingCache()?.send(encodeMoveItem(source, destination)); }
   sendDropItem(objectId: number, count: number, pos: Vec3): void { this.playingCache()?.send(encodeDropItem(objectId, count, pos)); }
   sendRevival(): void { this.playingCache()?.send(encodeRevival()); }
@@ -244,6 +251,31 @@ export class WorldSession {
    */
   sendCorr(m: MoveReport): void {
     this.playingCache()?.send(encodePlayerCorr(m));
+  }
+
+  /** Piece 7 M5: PLAYERMOVED2 (`CDPClient::SendPlayerMoved2`), the flier's predicted report and `nFrame`. */
+  sendMoved2(r: FlightReport, frames: number): void {
+    this.playingCache()?.send(encodePlayerMoved2(r, frames));
+  }
+
+  /** Piece 7 M5: PLAYERBEHAVIOR2 (`CDPClient::SendPlayerBehavior2`). */
+  sendBehavior2(r: FlightReport): void {
+    this.playingCache()?.send(encodePlayerBehavior2(r));
+  }
+
+  /** Piece 7 M5: PLAYERCORR2 (`CDPClient::SendPlayerCorr2`), with Neuz's turn angle in the pitch's slot. */
+  sendCorr2(r: FlightReport): void {
+    this.playingCache()?.send(encodePlayerCorr2(r));
+  }
+
+  /** Piece 7 M5: PLAYERANGLE (`CDPClient::FlushPlayerAngle`). */
+  sendAngle(r: AngleReport): void {
+    this.playingCache()?.send(encodePlayerAngle(r));
+  }
+
+  /** Piece 7 M5: MELEE_ATTACK2 (`CDPClient::SendMeleeAttack2`), the air attack. */
+  sendMeleeAttack2(message: number, targetId: number): void {
+    this.playingCache()?.send(encodeMeleeAttack2(message, targetId));
   }
 
   /** The client's SNAPSHOT with one DESTPOS (`CDPClient::SendSnapshot`): a click-to-move. Sent only while playing. */

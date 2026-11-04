@@ -55,3 +55,4 @@ export * from './world/quest';
 export * from './world/shop';
 export * from './world/shots';
 export * from './world/travel';
+export * from './world/flight';

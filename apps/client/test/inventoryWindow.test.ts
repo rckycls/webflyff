@@ -126,6 +126,43 @@ describe('inventory window', () => {
     ui.dispose();
   });
 
+  it('a ride shows Use on the phone, and its equipment cell lands it (Piece 7 M5)', () => {
+    const own = newVagrant(), data = ownGameData();
+    data.itemProps.set(5000, itemProp({
+      id: 5000, part: 13, kind1: 4, kind2: 20,
+      flight: { speed: Math.fround(0.0023), speedText: '0.0023', turn: Math.fround(0.6), pitch: 1, limit: 1, fuelMax: 1200, accelFuelMax: 12, motion: 31 },
+    }));
+    data.itemProps.set(5100, itemProp({ id: 5100, part: -1, kind2: 23 }));
+    own.inventory!.set(3, { objectId: 3, itemId: 5000, count: 1 });
+    own.inventory!.set(4, { objectId: 4, itemId: 5100, count: 1 });
+    const use = vi.fn(), equip = vi.fn(), land = vi.fn();
+    const ui = new InventoryWindow({ url: () => '', sheets: null }, data, { use, equip, land, drop: vi.fn(), move: vi.fn(), shortcut: vi.fn() });
+    document.body.append(ui.frame.element); ui.toggle(own);
+    // the PC: a ride's double-click in the bag uses it
+    ui.frame.element.querySelector<HTMLButtonElement>('[data-bag-slot="3"]')!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    expect(use).toHaveBeenCalledWith(3);
+    expect(equip).not.toHaveBeenCalled();
+    // worn, its equipment cell's double-click lands it
+    own.equipmentObjectIds[13] = 3; own.inventoryRevision++; ui.update(own);
+    ui.frame.element.querySelector<HTMLButtonElement>('[data-equipment-part="13"]')!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    expect(land).toHaveBeenCalledWith(3);
+    expect(equip).not.toHaveBeenCalled();
+    // the phone: Use for the ride and the fuel; the worn ride's Unequip lands
+    own.equipmentObjectIds[13] = 0xffffffff; own.inventoryRevision++;
+    ui.frame.element.setAttribute('data-mobile-window', ''); ui.update(own, true);
+    const actions = () => [...ui.frame.element.querySelectorAll<HTMLElement>('[data-item-action]')].map((el) => el.dataset.itemAction);
+    ui.frame.element.querySelector<HTMLButtonElement>('[data-bag-slot="3"]')!.click();
+    expect(actions()).toEqual(['use', 'drop']);
+    ui.frame.element.querySelector<HTMLButtonElement>('[data-bag-slot="4"]')!.click();
+    expect(actions()).toEqual(['use', 'drop']);
+    own.equipmentObjectIds[13] = 3; own.inventoryRevision++; ui.update(own);
+    ui.frame.element.querySelector<HTMLButtonElement>('[data-equipment-part="13"]')!.click();
+    expect(actions()).toEqual(['unequip']);
+    ui.frame.element.querySelector<HTMLButtonElement>('[data-item-action="unequip"]')!.click();
+    expect(land).toHaveBeenLastCalledWith(3);
+    ui.dispose();
+  });
+
   it("the phone's Use shows for a Blinkwing and the Scroll of Return (Piece 7 M3)", () => {
     const own = newVagrant(), data = ownGameData();
     data.itemProps.set(4805, itemProp({ id: 4805, part: -1, kind2: 22, kind3: 47 }));

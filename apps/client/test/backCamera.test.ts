@@ -137,3 +137,83 @@ describe('BackCamera (CBackCamera::Process, Camera.cpp:398-423)', () => {
     expect(camera.view!.target[0]).toBe(100);
   });
 });
+
+describe('the flight camera (Piece 7 M5, CBackCamera::Process in flight, Camera.cpp:184-446)', () => {
+  const open: Ground = { terrainHeight: () => 0, landAttr: () => HAttr.NONE, objectsNear: () => [] };
+  /** The mover at D3D (100, 50, 100), as the web position `followFlight` takes. */
+  const AT_D3D: Vec3 = [100, 50, 100];
+  const AT = toWebPosition(AT_D3D);
+  const settle = (camera: BackCamera, angle: number, angleX = 0, acc = false, turbo = false, n = 200) => {
+    let view = camera.followFlight(AT, angle, angleX, acc, turbo, open);
+    for (let i = 1; i < n; i++) view = camera.followFlight(AT, angle, angleX, acc, turbo, open);
+    return { ...view, d3d: toWebPosition(view.position), look: toWebPosition(view.target) };
+  };
+
+  it('in flight the camera follows the heading', () => {
+    const north = settle(new BackCamera(), 0); // angle 0 faces -Z: the camera is behind, at +Z
+    expect(north.d3d[2]).toBeGreaterThan(AT_D3D[2] + 14);
+    expect(north.d3d[0]).toBeCloseTo(AT_D3D[0], 3);
+    expect(north.look).toEqual([AT_D3D[0], f32(AT_D3D[1] + 1.3), AT_D3D[2]].map((v, i) => (i === 1 ? expect.closeTo(v, 5) : v)));
+    const east = settle(new BackCamera(), 90); // angle 90 faces +X: the camera at -X
+    expect(east.d3d[0]).toBeLessThan(AT_D3D[0] - 14);
+    expect(east.fov).toBe(45);
+  });
+
+  it('angleX lifts the pitch, up to 80', () => {
+    const height = (angleX: number) => settle(new BackCamera(), 0, angleX).d3d[1] - (AT_D3D[1] + 0.9);
+    // m_fRoty -12 + m_fZoom 6 * 4 + angleX, the offset (0, 0, -16) turned up by it
+    expect(height(0)).toBeCloseTo(16 * Math.sin((12 * Math.PI) / 180), 3);
+    expect(height(30)).toBeCloseTo(16 * Math.sin((42 * Math.PI) / 180), 3);
+    expect(height(90)).toBeCloseTo(16 * Math.sin((80 * Math.PI) / 180), 3);
+  });
+
+  it('the offset eases a tenth a step', () => {
+    const camera = new BackCamera();
+    const before = settle(camera, 0).d3d;
+    const after = toWebPosition(camera.followFlight(AT, 90, 0, false, false, open).position);
+    const dest = settle(new BackCamera(), 90).d3d;
+    for (let i = 0; i < 3; i++) expect(after[i]!).toBeCloseTo(before[i]! + (dest[i]! - before[i]!) / 10, 3);
+  });
+
+  it('turbo widens the view to 90° and brings the camera to 2 m', () => {
+    const camera = new BackCamera();
+    const cruise = settle(camera, 0, 0, true, false, 20);
+    expect(cruise.fov).toBe(45);
+    const turbo = settle(camera, 0, 0, true, true, 200);
+    expect(turbo.fov).toBe(90);
+    const eye: Vec3 = [AT_D3D[0], AT_D3D[1] + 0.9, AT_D3D[2]];
+    expect(vecLength(sub(turbo.d3d, eye))).toBeCloseTo(2, 3);
+    // the turbo off, with the thrust on, the view narrows back by 0.05 a step
+    const back = camera.followFlight(AT, 0, 0, true, false, open);
+    expect(back.fov).toBeCloseTo(180 / 2.05, 3);
+    // without the thrust it is 45 at once (m_nZoomLevel 0)
+    expect(camera.followFlight(AT, 0, 0, false, false, open).fov).toBe(45);
+  });
+
+  it('back on the ground the camera keeps its heading (Decision 8)', () => {
+    const camera = new BackCamera();
+    settle(camera, 90);
+    camera.follow(AT, 0, open);
+    expect(camera.heading).toBeCloseTo(Math.PI - Math.PI / 2, 6);
+  });
+});
+
+describe('the flight camera turns with the arrows (Piece 7 M5, Decision 3)', () => {
+  it('rotate() swings it round the flier, and a new flight starts straight behind', () => {
+    const open: Ground = { terrainHeight: () => 0, landAttr: () => HAttr.NONE, objectsNear: () => [] };
+    const at = toWebPosition([100, 50, 100] as Vec3);
+    const camera = new BackCamera();
+    const behind = () => {
+      let v = camera.followFlight(at, 0, 0, false, false, open);
+      for (let i = 0; i < 200; i++) v = camera.followFlight(at, 0, 0, false, false, open);
+      return toWebPosition(v.position);
+    };
+    const straight = behind();
+    expect(straight[0]).toBeCloseTo(100, 3);
+    for (let i = 0; i < 30; i++) camera.rotate(4, 0); // ArrowRight held half a second
+    const swung = behind();
+    expect(Math.abs(swung[0] - 100)).toBeGreaterThan(1);
+    camera.follow(at, 0, open); // landed
+    expect(behind()[0]).toBeCloseTo(100, 3); // the next flight's camera starts unturned (Unlock)
+  });
+});

@@ -179,6 +179,25 @@ describe('WorldSession, entering', () => {
     const check = new ArReader(cache.sent.at(-1)!); check.u32();
     expect([check.u32(), check.i32(), check.i32()]).toEqual([0x88100110, 151, 1]); check.expectEnd();
   });
+  it('sends the flight packets and the ride float only while playing (Piece 7 M5)', async () => {
+    const { cache, session } = await playing();
+    const fly = { ...MOVE, angleX: 5, accPower: Math.fround(0.001725), turnAngle: Math.fround(0.6) };
+    const types = (): number[] => cache.sent.map((b) => new ArReader(b).bytes(4) && new DataView(b.buffer, b.byteOffset + 4, 4).getUint32(0, true));
+    const before = cache.sent.length;
+    session.sendMoved2(fly, 37);
+    session.sendBehavior2(fly);
+    session.sendCorr2(fly);
+    session.sendAngle(fly);
+    session.sendMeleeAttack2(29, 7);
+    session.sendUseItem(3, 13, Math.fround(0.0023));
+    session.sendEquipItem(3, 13, Math.fround(0.0023));
+    expect(types().slice(before)).toEqual([0xffffff03, 0xffffff04, 0xffffff06, 0xffffff29, 0x00ff0014, 0x00ff0021, 0x00ff000b]);
+    session.leave();
+    const sent = cache.sent.length;
+    session.sendMoved2(fly, 37);
+    session.sendAngle(fly);
+    expect(cache.sent).toHaveLength(sent);
+  });
   it('sendStateModeCancel and sendReturnScroll send only while playing (Piece 7 M3)', async () => {
     const { cache, session } = await playing();
     session.sendStateModeCancel();

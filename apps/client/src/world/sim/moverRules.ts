@@ -1,8 +1,10 @@
-import type { MoveReport, Vec3 } from '@flyffweb/protocol';
+import type { AngleReport, FlightReport, MoveReport, Vec3 } from '@flyffweb/protocol';
 import { getDegree, wrapAngle } from './ActionMover';
 import type { ActionMover } from './ActionMover';
 import type { Ground } from './collision';
-import { ActMsg, MAX_CORR_SIZE_45, ObjSta, ObjStaF } from './constants';
+import { ActMsg, MAX_CORR_SIZE_150, MAX_CORR_SIZE_45, ObjSta, ObjStaF } from './constants';
+import type { FlightState } from './flight';
+import { approachFlight, getDegreeX } from './flightCollision';
 
 /**
  * How Neuz moves the movers of other clients between the server's messages, and walks any mover to a point or after
@@ -24,6 +26,8 @@ const NO_DEST_ANGLE = -1;
 const DEST_ANGLE_SET = f32(-0.001);
 /** `4.001f`: on the ground a destination angle is taken this close to it (`Mover.cpp:4665`). */
 const ANGLE_NEAR = f32(4.001);
+/** Piece 7 M5: a flier's `0.601f` (`Mover.cpp:4666`). */
+const FLY_ANGLE_NEAR = f32(0.601);
 /** `m_dwMotionArrive` (`Mover.cpp:493`): what a mover does on arriving. `OnMotionArrive` changes it; not in Piece 3. */
 const ARRIVE_MOTION = ActMsg.STAND;
 /** `0.8f`: `CObj::IsRangeObj` counts this much of each radius (`Obj.cpp:802-806`). */
@@ -61,6 +65,11 @@ export interface CorrState {
   remnant: number;
   /** `m_fCrrSpd`: `GetSpeed`'s answer while not 0. `DefaultSet` zeroes it. */
   speed: number;
+  /**
+   * Piece 7 M5: `m_CorrAction.fHalf`: the action is a MOVERANGLE's that came with none before it, whose arrival takes
+   * only the place, the angles and the move (`HalfForceSet`). A flier's action is a `FlightReport`.
+   */
+  half?: boolean;
 }
 
 /** A mover as these rules move it. */
@@ -150,6 +159,8 @@ function bind(m: SimMover): void {
   if (bound.get(m.act) === m) return;
   bound.set(m.act, m);
   m.act.clearDest = () => clearDest(m);
+  // Piece 7 M5: CanCollisionFly (ActionMoverCollision.cpp:7-16): the own player, or a mover with no destination
+  m.act.canCollideFly = () => m.isSelf === true || isEmptyDest(m);
   m.act.onActDrop = () => onActCorr(m, false);
   m.act.onEndJump4 = () => onActEndJump4(m);
 }
@@ -198,7 +209,10 @@ function clearDestAngle(m: SimMover): void {
 
 /** `memset( &m_CorrAction, 0, sizeof(CORR_ACTION) )`: the correction's action is no longer valid. */
 function dropCorrAction(m: SimMover): void {
-  if (m.corr) m.corr.action = null;
+  if (m.corr) {
+    m.corr.action = null;
+    m.corr.half = false;
+  }
   tidyCorr(m);
 }
 
@@ -233,6 +247,144 @@ function actionForceSet(m: SimMover, move: MoveReport): void {
   clearDestAngle(m);
   if (m.act.forceSet(move)) defaultSet(m);
   tidyCorr(m);
+}
+
+/**
+ * Piece 7 M5: `CMover::ActionForceSet2` (`MoverParam.cpp:3366-3387`): `m_uRemnantCorrFrm = 0`, `ClearDest` and
+ * `ClearDestAngle`, then the flier's report taken (`ActionMover.forceSet2`), `DefaultSet` when its state was.
+ */
+function actionForceSet2(m: SimMover, move: FlightReport): void {
+  if (m.corr) m.corr.remnant = 0;
+  clearDest(m);
+  clearDestAngle(m);
+  if (m.act.forceSet2(move)) defaultSet(m);
+  tidyCorr(m);
+}
+
+/** Piece 7 M5: `CMover::HalfForceSet` (`MoverParam.cpp:3389-3399`): the place, the angles and the move only. */
+function halfForceSet(m: SimMover, move: FlightReport): void {
+  if (m.corr) m.corr.remnant = 0;
+  clearDest(m);
+  clearDestAngle(m);
+  m.act.halfForceSet(move);
+  defaultSet(m);
+}
+
+/** A report's age in steps, `(int)( (float)g_TickCount.GetOffset( nTickCount ) / 16.6667f )`. */
+const ageInSteps = (offsetMs: number): number => Math.trunc(f32(f32(offsetMs) / STEP_MS));
+
+/** Piece 7 M5: `m_CorrAction` filled with a flier's report, valid (`DefaultSet` first). */
+function keepFlightAction(m: SimMover, move: FlightReport): CorrState {
+  const corr = (m.corr ??= { action: null, remnant: 0, speed: 0 });
+  corr.speed = 0; // DefaultSet
+  corr.action = { ...move, pos: copy(move.pos), delta: copy(move.delta) } as FlightReport;
+  return corr;
+}
+
+/**
+ * Piece 7 M5: `CDPClient::OnMoverMoved2` (`DPClient.cpp:8726-8829`), another flier's PLAYERMOVED2. Only a flier takes it.
+ * Older than `frames` steps it is taken at once, and so is a standing report more than 0.1 away behind the reported
+ * facing (90 to 270 degrees off). Otherwise the report is kept for the correction, and: standing, a change of look or
+ * of turn is taken as a message (a turn as a destination angle); any other heads for the reported point over `frames`
+ * steps (the chase, `approachFlight`).
+ */
+export function applyMoved2(m: SimMover, move: FlightReport, frames: number, offsetMs: number): void {
+  const act = m.act;
+  if ((act.stateFlag & ObjStaF.FLY) === 0) return;
+  if (ageInSteps(offsetMs) >= frames) {
+    actionForceSet2(m, move);
+    return;
+  }
+  if (move.state & ObjSta.STAND) {
+    const v = minus(move.pos, act.body.pos);
+    if (dot(v, v) > 0.01) {
+      const diff = Math.abs(f32(getDegree(move.pos, act.body.pos) - move.angle));
+      if (diff > 90 && diff < 270) {
+        actionForceSet2(m, move);
+        return;
+      }
+    }
+  }
+  const corr = keepFlightAction(m, move);
+  const standing = (move.state & ObjSta.MOVE_ALL) === ObjSta.STAND;
+  const turnState = move.state & ObjSta.TURN_ALL;
+  const lookState = move.state & ObjSta.LOOK_ALL;
+  const ownLook = act.state & ObjSta.LOOK_ALL;
+  const ownTurn = act.state & ObjSta.TURN_ALL;
+  let look = false;
+  if (standing && ownLook === 0 && lookState !== 0) {
+    look = true;
+    act.sendActMsg(lookState === ObjSta.LOOKUP ? ActMsg.LOOKUP : ActMsg.LOOKDOWN);
+  } else if (standing && ownLook !== 0 && lookState === 0) {
+    look = true;
+    act.sendActMsg(ActMsg.STOP_LOOK);
+  }
+  if (standing && ownTurn === 0 && turnState !== 0) {
+    setDestAngle(m, move.angle, turnState === ObjSta.LTURN);
+  } else if (standing && ownTurn !== 0 && turnState === 0) {
+    clearDestAngle(m);
+    act.sendActMsg(ActMsg.STOP_TURN);
+    act.body.angle = wrapAngle(move.angle);
+  } else {
+    if (look) return;
+    clearDestAngle(m);
+    corr.remnant = frames;
+    setDestPos(m, move.pos, true);
+  }
+}
+
+/**
+ * Piece 7 M5: `CDPClient::OnMoverBehavior2` (`DPClient.cpp:8831-8891`): only a flier takes it. A flying report younger
+ * than `MAX_CORR_SIZE_150` steps (its age less 70, "an accidental error" twice) is kept and headed for over the steps
+ * left; an older one, or one that lands (which `ForcedSet2` refuses to flip), is taken at once.
+ */
+export function applyBehavior2(m: SimMover, move: FlightReport, offsetMs: number): void {
+  if ((m.act.stateFlag & ObjStaF.FLY) === 0) return;
+  const delay = ageInSteps(offsetMs) - REVISION * 2;
+  if ((move.stateFlag & ObjStaF.FLY) === 0 || delay >= MAX_CORR_SIZE_150) {
+    actionForceSet2(m, move);
+    return;
+  }
+  const corr = keepFlightAction(m, move);
+  clearDestAngle(m);
+  corr.remnant = MAX_CORR_SIZE_150 - delay;
+  setDestPos(m, move.pos, true);
+}
+
+/**
+ * Piece 7 M5: `CDPClient::OnMoverAngle` (`DPClient.cpp:8893-8927`), a flier's PLAYERANGLE: only a flier takes it. The
+ * place, the angles and the move go into the kept action (its other fields stay; with none kept, the mover's own, and
+ * the arrival takes only these: `fHalf`), which is headed for over `MAX_CORR_SIZE_150` steps.
+ */
+export function applyMoverAngle(m: SimMover, r: AngleReport): void {
+  const act = m.act;
+  if ((act.stateFlag & ObjStaF.FLY) === 0) return;
+  const corr = (m.corr ??= { action: null, remnant: 0, speed: 0 });
+  corr.speed = 0; // DefaultSet
+  const was = corr.action as FlightReport | null;
+  corr.half = was === null;
+  const base: FlightReport = was ?? {
+    ...act.report(r.tick), angleX: act.angleX, accPower: act.accPower, turnAngle: act.turnAngle,
+  };
+  corr.action = {
+    ...base, pos: copy(r.pos), delta: copy(r.delta), angle: r.angle, angleX: r.angleX, accPower: r.accPower,
+    turnAngle: r.turnAngle,
+  } as FlightReport;
+  clearDestAngle(m);
+  corr.remnant = MAX_CORR_SIZE_150;
+  setDestPos(m, r.pos, true);
+}
+
+/**
+ * Piece 7 M5: `CDPClient::OnMoverCorr2` (`DPClient.cpp:8964-8989`): only a flier takes it: `ClearDestPos`,
+ * `ClearDestAngle`, the kept action dropped, and the report taken at once.
+ */
+export function applyMoverCorr2(m: SimMover, move: FlightReport): void {
+  if ((m.act.stateFlag & ObjStaF.FLY) === 0) return;
+  clearDestPos(m);
+  clearDestAngle(m);
+  dropCorrAction(m);
+  actionForceSet2(m, move);
 }
 
 /**
@@ -323,6 +475,18 @@ export function applyMotion(m: SimMover, msg: number): void {
     dropCorrAction(m);
   }
   m.act.sendActMsg(msg, 0, 0, 1);
+}
+
+/**
+ * Piece 7 M5: what a ride put on or off clears: the own player's `DoEquip` `ClearDest`, `ClearDestAngle` and the
+ * correction (`MoverEquip.cpp:1825-1827`); another's `DoFakeEquip` only `ClearDest` (`:1879-1908`).
+ */
+export function resetForRide(m: SimMover, own: boolean): void {
+  if (m.dest === null && m.corr === null) return;
+  clearDest(m);
+  if (!own) return;
+  clearDestAngle(m);
+  dropCorrAction(m);
 }
 
 /**
@@ -453,17 +617,27 @@ function processMove(m: SimMover, find: (objectId: number) => SimMover | undefin
     }
     destPos = target.act.body.pos;
     if (isRangeObj(target, m, d.range)) {
-      processMoveArrival(m, target);
+      // a flier only stops following (MoverMove.cpp:410-418)
+      if (act.stateFlag & ObjStaF.FLY) clearDestObj(m);
+      else processMoveArrival(m, target);
       return;
     }
   }
   const corr = m.corr;
+  // Piece 7 M5: the chase in the air (MoverMove.cpp:428-439): TURNMOVE toward the point while frames remain
+  if (act.isFlying()) {
+    if (corr && corr.remnant > 0) {
+      corr.remnant = approachFlight(act as unknown as FlightState, destPos, corr.remnant);
+      tidyCorr(m);
+    }
+    return;
+  }
   if (corr && corr.remnant > 0) {
     corr.remnant--;
     tidyCorr(m);
   }
-  // m_bForward is always true; GetDegreeX's second parameter only turns a flying NPC up or down
-  act.sendActMsg(ActMsg.TURNMOVE, Math.trunc(getDegree(destPos, pos)));
+  // m_bForward is always true; GetDegreeX's second parameter turns a flying NPC up or down (Piece 7 M5)
+  act.sendActMsg(ActMsg.TURNMOVE, Math.trunc(getDegree(destPos, pos)), Math.trunc(getDegreeX(destPos, pos)));
 }
 
 /**
@@ -496,7 +670,8 @@ function isRangeObj(obj: SimMover, other: SimMover, range: number): boolean {
 function enforcedGhostCorr(m: SimMover): void {
   const corr = m.corr;
   if (!corr?.action || corr.remnant !== 1) return;
-  actionForceSet(m, corr.action);
+  if (corr.action.stateFlag & ObjStaF.FLY) actionForceSet2(m, corr.action as FlightReport);
+  else actionForceSet(m, corr.action);
   dropCorrAction(m);
 }
 
@@ -509,7 +684,8 @@ function approachGhostAngle(m: SimMover): void {
   const d = m.dest;
   if (!d || !(d.angle > DEST_ANGLE_SET)) return;
   const act = m.act;
-  if (Math.abs(f32(act.body.angle - d.angle)) < ANGLE_NEAR) {
+  const flying = (act.stateFlag & ObjStaF.FLY) !== 0;
+  if (Math.abs(f32(act.body.angle - d.angle)) < (flying ? FLY_ANGLE_NEAR : ANGLE_NEAR)) {
     const action = m.corr?.action;
     if (!action) {
       act.body.angle = wrapAngle(d.angle);
@@ -521,7 +697,8 @@ function approachGhostAngle(m: SimMover): void {
       dropCorrAction(m);
     }
   } else {
-    act.sendActMsg(d.left ? ActMsg.LTURN : ActMsg.RTURN, 0);
+    // a flier turns at 0.6 a step: (int)( 0.6f * 100.0f ) (Mover.cpp:4684-4688)
+    act.sendActMsg(d.left ? ActMsg.LTURN : ActMsg.RTURN, flying ? 60 : 0);
   }
 }
 
@@ -534,7 +711,9 @@ function onArriveAtPos(m: SimMover): void {
   if (!action) {
     m.act.sendActMsg(ARRIVE_MOTION);
   } else {
-    actionForceSet(m, action);
+    if (m.corr?.half) halfForceSet(m, action as FlightReport);
+    else if (action.stateFlag & ObjStaF.FLY) actionForceSet2(m, action as FlightReport);
+    else actionForceSet(m, action);
     dropCorrAction(m);
   }
   clearDestPos(m);

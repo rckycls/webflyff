@@ -6,7 +6,7 @@ import type { MoveReport } from '@flyffweb/protocol';
 import { NO_INTENT, joystickIntent } from '@flyffweb/scene';
 import type { MoveIntent } from '@flyffweb/scene';
 import {
-  STANDING, TapToWalk, WalkKey, controlIntent, desiredFrom, driveOwnMover, movesOrTurns, restingIn,
+  STANDING, TapToWalk, WalkKey, controlIntent, desiredFrom, driveOwnMover, flightStick, movesOrTurns, restingIn,
 } from '../src/world/controls';
 import type { ControlIntent, Desired, WorldPress } from '../src/world/controls';
 import { OwnMover } from '../src/world/ownMover';
@@ -33,6 +33,21 @@ const keys = (forward: number, turn: number, shift = false): ControlIntent =>
   controlIntent({ forward, turn, run: shift }, NO_INTENT);
 const desired = (move: Desired['move'], turn: Desired['turn'], walk: boolean): Desired => ({ move, turn, walk });
 const NOTHING = { moved: false, behavior: false };
+
+describe('flightStick (Piece 7 M5, Decision 4)', () => {
+  it('the stick forward dives, back climbs, sideways turns', () => {
+    const push = (forward: number, turn: number): MoveIntent => ({ forward, turn, run: true });
+    expect(flightStick(push(1, 0))).toEqual({ dive: true, climb: false, left: false, right: false });
+    expect(flightStick(push(-1, 0))).toEqual({ dive: false, climb: true, left: false, right: false });
+    expect(flightStick(push(0, -1))).toEqual({ dive: false, climb: false, left: true, right: false });
+    expect(flightStick(push(0.7, 0.7))).toEqual({ dive: true, climb: false, left: false, right: true });
+    expect(flightStick(push(0, 0))).toEqual({ dive: false, climb: false, left: false, right: false });
+    // a share under 0.4 starts nothing; one that counts goes on down to 0.3
+    expect(flightStick(push(0.35, 1))).toEqual({ dive: false, climb: false, left: false, right: true });
+    const diving = flightStick(push(1, 0));
+    expect(flightStick(push(0.35, 1), diving).dive).toBe(true);
+  });
+});
 
 describe('desiredFrom', () => {
   it('reads forward and back from the sign of forward', () => {

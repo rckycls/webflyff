@@ -274,6 +274,19 @@ describe('tileLand', () => {
     expect(ground.landAttr(-1, 10)).toBe(0);
   });
 
+  it("waterTexture reads the patch's byWaterTexture (GetWaterHeight), and extent is the world in metres (Piece 7 M5)", () => {
+    const land = landTile(1, 0);
+    // patch (2, 3) of the tile: 8 cells (PATCH_SIZE) a patch, WATERHEIGHT { byWaterHeight, byWaterTexture }
+    land.water[(2 + 3 * 16) * 2 + 1] = 1; // WTYPE_CLOUD
+    const ground = tileLand(makeManifest(), (tx, tz) => (tx === 1 && tz === 0 ? land : null));
+    const x = (MAP_SIZE + 2 * 8 + 3) * MPU;
+    expect(ground.waterTexture(x, (3 * 8 + 1) * MPU)).toBe(1);
+    expect(ground.waterTexture(x + 8 * MPU, (3 * 8 + 1) * MPU)).toBe(0);
+    expect(ground.waterTexture(10, 10)).toBeNull(); // no tile loaded
+    expect(ground.waterTexture(-1, 10)).toBeNull(); // off the world
+    expect(ground.extent).toEqual([4 * MAP_SIZE * MPU, 4 * MAP_SIZE * MPU]);
+  });
+
   it('gives the land height without the flags, and the land triangle of GetLandTri, where a tile is loaded', () => {
     const land = landTile(0, 0);
     land.heights[1 + SIDE] = 5 + HGT.NOWALK;

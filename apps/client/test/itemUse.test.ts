@@ -30,6 +30,72 @@ describe('items use native requests without predicting results', () => {
   });
 });
 
+describe('the rides and the fuel (Piece 7 M5, SendDoUseItem)', () => {
+  const f32 = Math.fround;
+  const BROOM = itemProp({
+    id: 5000, part: 13, kind1: 4, kind2: 20, castMs: 2500, // the Magic Broom's dwSkillReadyType
+    flight: { speed: f32(0.0023), speedText: '0.0023', turn: f32(0.6), pitch: 1, limit: 1, fuelMax: 1200, accelFuelMax: 12, motion: 31 },
+  });
+  const FUEL = itemProp({ id: 5100, part: -1, kind2: 23 });
+  function rig(over: Record<string, unknown> = {}, worn = false) {
+    const own = newVagrant(20);
+    own.inventory!.set(3, { objectId: 3, itemId: 5000, count: 1 });
+    own.inventory!.set(4, { objectId: 4, itemId: 5100, count: 2 });
+    if (worn) own.equipmentObjectIds[13] = 3;
+    const used: unknown[][] = [];
+    const equipped: unknown[][] = [];
+    const said: unknown[] = [];
+    const use = new ItemUse(() => own, new Map([[5000, BROOM], [5100, FUEL]]), {
+      sendUseItem: (...args: number[]) => void used.push(args), sendRevival: vi.fn(),
+      sendEquipItem: (...args: number[]) => void equipped.push(args),
+    }, {
+      check: () => ({
+        worldId: 1, casting: false, standing: true, flying: false, returnBuff: false, level: 20, worldFly: true,
+        landAttr: 0, disguised: false, sitting: false, ...over,
+      }),
+      say: (refusal) => void said.push(refusal),
+      returnScroll: { begin: vi.fn() },
+    });
+    return { use, used, equipped, said };
+  }
+
+  it('a ride is used with part 13 and its exact float', () => {
+    const r = rig();
+    expect(r.use.use(3, 'bag')).toBe(true);
+    expect(r.used).toEqual([[3, 13, Math.fround(0.0023)]]); // Math.fround(parseFloat(speedText))
+  });
+
+  it('a refused ride says why and sends nothing', () => {
+    const r = rig({ level: 19 });
+    expect(r.use.use(3, 'bag')).toBe(false);
+    expect(r.said).toEqual([{ kind: 'say', tid: 'TID_GAME_USEAIRCRAFT' }]);
+    expect(r.used).toEqual([]);
+  });
+
+  it('a worn ride lands, unless the land refuses it (silently)', () => {
+    const r = rig({ flying: true }, true);
+    expect(r.use.use(3, 'bar')).toBe(true);
+    expect(r.used).toEqual([[3, 13, Math.fround(0.0023)]]);
+    const refused = rig({ flying: true, landAttr: 1 }, true); // HATTR_NOWALK
+    expect(refused.use.use(3, 'bar')).toBe(false);
+    expect(refused.said).toEqual([]);
+    // the equipment cell's double-click: DOEQUIP with the float
+    const cell = rig({ flying: true }, true);
+    expect(cell.use.land(3)).toBe(true);
+    expect(cell.equipped).toEqual([[3, 13, Math.fround(0.0023)]]);
+    expect(rig({ flying: true, sitting: true }, true).use.land(3)).toBe(false);
+  });
+
+  it('Accelor Fuel only while flying', () => {
+    const ground = rig();
+    expect(ground.use.use(4, 'bag')).toBe(false);
+    expect(ground.said).toEqual([]);
+    const air = rig({ flying: true });
+    expect(air.use.use(4, 'bag')).toBe(true);
+    expect(air.used).toEqual([[4]]);
+  });
+});
+
 describe('the travel items (Piece 7 M3, SendDoUseItem, DPClient.cpp:10254-10431)', () => {
   const TOWN = itemProp({ id: 4805, part: -1, kind2: 22, kind3: 47, castMs: 10000, sfxReady: 118 });
   const SCROLL = itemProp({ id: 10469, part: -1, kind2: 19, kind3: 50, castMs: 4000 });

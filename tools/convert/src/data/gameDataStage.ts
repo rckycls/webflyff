@@ -13,6 +13,7 @@
 //   data/texts.json        every client text of textClient.inc, by TID name (WebTexts)
 //   data/effectsIndex.json XI id to the effect file and scale of its OT_SFX entry in mdlDyna.inc (WebEffectsIndex)
 //   data/skills.json       every job skill of propSkill.txt with its levels of propSkillAdd.csv (WebSkill[], skillsCatalog.ts)
+//   data/worldNoFly.json   (optional, Piece 7 M5) the ids of the worlds whose .wld says fly 0 (number[])
 //
 // It runs after the models stage, and after the effects and UI stages whose files the effects index and the item icons
 // name (`effects/<web name>.json`, `ui/item/<web name>.png`, the keys of output/keys.ts; this stage does not check that
@@ -26,6 +27,7 @@
 // `--only` filters world folders and model/texture base names; this stage runs when there is no filter or when the
 // glob matches the name `data` (so `--only data` runs just this stage, the others finding nothing named `data`).
 
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import {
   AUDIO_KEY,
@@ -36,6 +38,7 @@ import {
   QUESTS_KEY,
   QUEST_FILES,
   WORLD_MAP_KEY,
+  WORLD_NO_FLY_KEY,
   decodeScript,
   loadDefines,
   loadStrings,
@@ -51,6 +54,7 @@ import {
   readPropQuest,
   readTextClient,
   readWorldInc,
+  readWld,
   webName,
 } from '@flyffweb/formats';
 import type {
@@ -375,6 +379,8 @@ function buildItemProps(env: Env, read: Reading): WebItemProp[] {
         ...(prop.skillReadyType !== undefined
           ? { castMs: prop.skillReadyType, ...(prop.sfxObj > 0 ? { sfxReady: prop.sfxObj } : {}) }
           : {}),
+        // Piece 7 M5: a ride's flight columns
+        ...(prop.flight !== undefined ? { flight: { ...prop.flight } } : {}),
         model,
         dropModel,
         ...(prop.reflect ? { reflect: prop.reflect } : {}),
@@ -498,6 +504,32 @@ function buildWorlds(env: Env, read: Reading): WebWorlds {
   return Object.fromEntries(valid.sort((a, b) => a[0] - b[0]).map(([id, fileName]) => [String(id), webName(fileName)]));
 }
 
+/**
+ * Piece 7 M5: the ids of the worlds of World.inc whose `.wld` (`World/<file name>/<file name>.wld`, where
+ * `CWorld::OpenWorld` reads it) says `fly 0`, in id order; null when no world's `.wld` is in the client. A `.wld` that
+ * cannot be read is a warning, and that world is taken to allow flight, the `.wld`'s default.
+ */
+function buildWorldNoFly(env: Env, read: Reading): number[] | null {
+  const fileNames = new Map<number, string>();
+  for (const world of readWorldInc(read.text('World.inc'), env.defines, 'World.inc')) fileNames.set(world.id, world.fileName);
+  const noFly: number[] = [];
+  let found = 0;
+  for (const [id, fileName] of [...fileNames].sort((a, b) => a[0] - b[0])) {
+    if (fileName === '') continue;
+    const file = env.client.find(`World/${fileName}`, `${fileName}.wld`);
+    if (file === null) continue;
+    found += 1;
+    try {
+      const bytes = new Uint8Array(readFileSync(file));
+      read.bytes += bytes.length;
+      if (!readWld(decodeScript(bytes), file).fly) noFly.push(id);
+    } catch (error) {
+      env.report.warn(KIND, file, `not read, so world ${id} allows flight: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  return found === 0 ? null : noFly;
+}
+
 // ---- the stage ---------------------------------------------------------------------------------------------------
 
 export const gameDataStage: Stage = {
@@ -564,6 +596,25 @@ export const gameDataStage: Stage = {
         // a FormatError names the file it came from (the model index, say); anything else is about the catalog
         ctx.report.fail(KIND, error instanceof FormatError ? error.file : source, error);
       }
+    }
+
+    // The worlds without flight (Piece 7 M5), optional: written when some world's .wld is in the client. A World.inc that
+    // cannot be read has already failed the worlds catalog, so it is not reported again here.
+    try {
+      const read = new Reading(ctx.client);
+      let noFly: number[] | null = null;
+      try {
+        noFly = buildWorldNoFly(env, read);
+      } catch (error) {
+        if (!(error instanceof FormatError && error.file === 'World.inc')) throw error;
+      }
+      if (noFly !== null) {
+        const bytes = new TextEncoder().encode(JSON.stringify(noFly));
+        await ctx.writer.write(WORLD_NO_FLY_KEY, bytes, 'World.inc');
+        ctx.report.ok(KIND, 'World.inc', read.bytes, bytes.length);
+      }
+    } catch (error) {
+      ctx.report.fail(KIND, error instanceof FormatError ? error.file : 'World.inc', error);
     }
 
     // The world map (Piece 6 M1), optional: without the continent file there is no catalog, and the client still logs in

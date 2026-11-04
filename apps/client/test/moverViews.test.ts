@@ -125,6 +125,8 @@ interface RigOptions {
   random?: (n: number) => number;
   /** Where the motions' sounds and the footsteps go. */
   sounds?: MoverViewsOptions['sounds'];
+  /** Piece 7 M5: the ride models. */
+  loadRide?: MoverViewsOptions['loadRide'];
 }
 
 function rig(
@@ -144,7 +146,7 @@ function rig(
     return loaded;
   };
   const views = new MoverViews(scene, load, overlay, lookFor, loadMotion, loadHeld, options.itemProps ?? new Map(), {
-    moverProps: options.moverProps, random: options.random, sounds: options.sounds,
+    moverProps: options.moverProps, random: options.random, sounds: options.sounds, loadRide: options.loadRide,
   });
   const movers = new Map<number, Mover>();
   const sync = (changes: WorldChanges) => views.sync(changes, movers);
@@ -1229,5 +1231,72 @@ describe('MoverViews: the sounds of the motions and the footsteps (ModelObject.c
     await r.views.settled();
     for (let i = 0; i < 8; i++) r.views.step(r.movers);
     expect(steps).toEqual([[...player.act.body.pos]]);
+  });
+});
+
+describe('flight (Piece 7 M5)', () => {
+  const f32 = Math.fround;
+  const BROOM: WebItemProp = {
+    id: 5000, name: 'Magic Broom', packMax: 1, kind1: 4, kind2: 20, kind3: 41, handed: -1, part: 13, abilityMin: -1,
+    abilityMax: -1, weaponType: -1, attackSpeed: -1, attackRange: -1, destParams: [-1, -1, -1], adjParams: [-1, -1, -1],
+    sfxHit: -1, model: 'models/item_ridbormagic01.glb', icon: null,
+    flight: { speed: f32(0.0023), speedText: '0.0023', turn: f32(0.6), pitch: 1, limit: 1, fuelMax: 1200, accelFuelMax: 12, motion: 31 },
+  };
+  const RIDE = { speed: f32(0.0023), turn: f32(0.6), pitch: 1, motion: 31 };
+
+  async function flying(model = fakeModel()) {
+    const broom = new Group();
+    broom.name = 'broom';
+    const release = vi.fn();
+    const loadRide = vi.fn(async () => ({ object: broom, release }));
+    const r = rig(async () => model, undefined, undefined, { itemProps: new Map([[5000, BROOM]]), loadRide });
+    const flier = moverFrom(addedPlayer(8, {}, { pos: [0, 50, 0] }));
+    r.add(flier);
+    await r.views.settled();
+    flier.act.modeFly(5000, RIDE, 1200);
+    flier.act.step();
+    r.views.step(r.movers);
+    await r.views.settled();
+    r.views.update(r.movers, 1 / 60);
+    return { r, flier, broom, loadRide, model, release };
+  }
+
+  it("a flier shows its ride's model and drops it on landing", async () => {
+    const { r, flier, broom, loadRide, release } = await flying();
+    expect(loadRide).toHaveBeenCalledWith('models/item_ridbormagic01.glb');
+    expect(inScene(r.scene, broom)).toBe(true);
+    flier.act.modeGround();
+    r.views.step(r.movers);
+    r.views.update(r.movers, 1 / 60);
+    expect(inScene(r.scene, broom)).toBe(false);
+    expect(release).toHaveBeenCalledTimes(1); // its geometry and textures let go
+  });
+
+  it('the holder pitches by angleX', async () => {
+    const { r, flier } = await flying();
+    flier.act.angleX = 30;
+    r.views.step(r.movers); // another's pitch is followed an eighth of the way a step (Decision 9)
+    r.views.update(r.movers, 1 / 60);
+    const holder = r.scene.getObjectByName('mover 8')!;
+    expect(holder.rotation.x).toBeCloseTo((30 / 8 * Math.PI) / 180, 6);
+    for (let i = 0; i < 120; i++) r.views.step(r.movers);
+    r.views.update(r.movers, 1 / 60);
+    expect(holder.rotation.order).toBe('YXZ');
+    expect(holder.rotation.x).toBeCloseTo((30 * Math.PI) / 180, 6);
+  });
+
+  it('a flying stand plays ride.motion + FSTAND1, and a broom rides on the root bone', async () => {
+    const model = fakeModel();
+    const hips = new Bone();
+    hips.position.set(0, 0.8, 0);
+    model.root.add(hips);
+    const { r, flier, broom } = await flying(model);
+    expect(flier.act.motion).toBe(31);
+    r.views.update(r.movers, 1 / 60);
+    await r.views.settled();
+    r.views.update(r.movers, 1 / 60);
+    expect(model.mixer.existingAction(r.motions.get('m31')!.clip)?.isRunning()).toBe(true);
+    // IK3_STICK: the ride at the root bone's height (MoverRender.cpp:588-595)
+    expect(broom.position.y).toBeCloseTo(0.8, 6);
   });
 });

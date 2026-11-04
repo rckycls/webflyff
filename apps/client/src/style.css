@@ -2304,3 +2304,55 @@ fieldset:disabled .btn {
 .hud-party-buffs[hidden] { display: none; }
 .hud-party-buff { pointer-events: auto; }
 .hud-party-buff-time { position: absolute; left: 2px; top: 20px; color: rgb(240, 240, 0); font-size: 12px; text-shadow: 1px 1px 0 #000; pointer-events: none; }
+/* Piece 7 M5: the phone's flight buttons (Decision 4). Accelerate takes the Jump's place, Turbo and Land sit above it;
+   the ground's Jump hides while they show. */
+.hud-flight { position: absolute; inset: 0; pointer-events: none; }
+.hud-flight[hidden] { display: none !important; }
+.hud-flight-button {
+  position: absolute;
+  padding: 0;
+  border: 2px solid #d7b579;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 22%, #576574e6, #202e42e6 55%, #0c1528ed);
+  box-shadow: inset 0 1px 2px #fff5, inset 0 -3px 6px #0008, 0 3px 9px #07102088;
+  color: #f4e6c8;
+  font: 700 14px/1 system-ui, sans-serif;
+  pointer-events: auto;
+  cursor: pointer;
+  touch-action: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.hud-flight-button[hidden] { display: none !important; }
+.hud-flight-button::after { content: attr(data-label); }
+.hud-flight-button:active:not(:disabled) { transform: scale(.95); filter: brightness(1.2); }
+.hud-flight-button:disabled { opacity: 0.48; cursor: default; }
+.hud-flight-button:focus-visible { outline: 2px solid #c2e9ff; outline-offset: 3px; }
+.hud-flight-accelerate {
+  right: calc(var(--game-safe-right, 0px) + 30px);
+  bottom: calc(var(--hud-taskbar-height, 48px) + 108px);
+  width: 64px; height: 64px;
+}
+.hud-flight-turbo {
+  right: calc(var(--game-safe-right, 0px) + 104px);
+  bottom: calc(var(--hud-taskbar-height, 48px) + 100px);
+  width: 52px; height: 52px;
+}
+.hud-flight-land {
+  right: calc(var(--game-safe-right, 0px) + 104px);
+  bottom: calc(var(--hud-taskbar-height, 48px) + 30px);
+  width: 52px; height: 52px;
+}
+.world:has(.hud-flight:not([hidden])) .hud-jump { visibility: hidden; }
+@media (max-width: 1000px) and (max-height: 400px) and (pointer: coarse) {
+  .hud-flight-accelerate {
+    width: 52px; height: 52px;
+    right: calc(var(--game-safe-right, 0px) + 22px);
+    bottom: calc(var(--hud-taskbar-height, 48px) - var(--game-safe-bottom, 0px) + 98px);
+  }
+  .hud-flight-turbo, .hud-flight-land { width: 44px; height: 44px; right: calc(var(--game-safe-right, 0px) + 88px); }
+  .hud-flight-turbo { bottom: calc(var(--hud-taskbar-height, 48px) - var(--game-safe-bottom, 0px) + 92px); }
+  .hud-flight-land { bottom: calc(var(--hud-taskbar-height, 48px) - var(--game-safe-bottom, 0px) + 30px); }
+}
+/* a phone window over the world hides the flight buttons as it hides Jump and Attack */
+.world:has(:is(.hud-quests, .hud-inventory)[data-mobile-window]:not([hidden])) .hud-flight,
+.world:has(:is(.hud-character-landscape, .hud-skills-landscape, .hud-select-village, .hud-teleporter):not([hidden])) .hud-flight { visibility: hidden; }

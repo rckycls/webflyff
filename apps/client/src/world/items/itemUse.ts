@@ -1,10 +1,17 @@
 import type { WebItemProp } from '@flyffweb/formats';
 import type { OwnState } from '../OwnState';
+import { IK2_AIRFUEL, flightSpeedOf, isRide, landRefusal, rideRefusal } from './rideItems';
 import { RETURN_SCROLL, usableFromBag, useRefusal } from './travelItems';
 import type { Refusal, UseCheck } from './travelItems';
+import { PARTS_RIDE } from '../sim/constants';
 
 export const RESURRECTION_SCROLL = 10431;
-export interface ItemUseSender { sendUseItem(objectId: number): void; sendRevival(): void }
+export interface ItemUseSender {
+  sendUseItem(objectId: number, part?: number, flightSpeed?: number): void;
+  sendRevival(): void;
+  /** Piece 7 M5: DOEQUIP, which the worn ride's equipment cell lands with. */
+  sendEquipItem?(objectId: number, part: number, flightSpeed: number): void;
+}
 
 /**
  * Piece 7 M3: what the travel items need from the world (`SendDoUseItem`, `Neuz/DPClient.cpp:10254-10431`): the use's
@@ -46,10 +53,31 @@ export class ItemUse {
         travel.say({ kind: 'say', tid: 'TID_GAME_TRADELIMITUSING' });
         return false;
       }
-      const refusal = useRefusal({ prop, ...travel.check() });
+      const check = travel.check();
+      // Piece 7 M5: the Accelor Fuel is for a flier only (silently)
+      if (prop.kind2 === IK2_AIRFUEL && !check.flying) return false;
+      const worn = isRide(prop) && own.equipmentObjectIds.includes(objectId);
+      if (isRide(prop)) {
+        if (worn && landRefusal({ sitting: check.sitting ?? false, landAttr: check.landAttr ?? 0 })) return false;
+        const rideRefused = rideRefusal({
+          prop, level: check.level ?? own.level, worldFly: check.worldFly ?? true, landAttr: check.landAttr ?? 0,
+          disguised: check.disguised ?? false, worn,
+        });
+        if (rideRefused !== null) {
+          travel.say(rideRefused);
+          return false;
+        }
+      }
+      // IsUseItemReadyTime is TRUE at once for an equipped item (Mover.cpp:2770-2773): a worn ride's cast is not tested
+      const refusal = worn ? null : useRefusal({ prop, ...check });
       if (refusal !== null) {
         travel.say(refusal);
         return false;
+      }
+      // Piece 7 M5: a ride's DOUSEITEM carries PARTS_RIDE and its exact fFlightSpeed, worn or not
+      if (isRide(prop)) {
+        this.session.sendUseItem(objectId, PARTS_RIDE, flightSpeedOf(prop));
+        return true;
       }
       if (prop.id === RETURN_SCROLL && from !== 'again') {
         travel.returnScroll.begin(objectId);
@@ -57,6 +85,21 @@ export class ItemUse {
       }
     }
     this.session.sendUseItem(objectId);
+    return true;
+  }
+
+  /**
+   * Piece 7 M5: the worn ride's equipment cell, double-clicked: DOEQUIP with its part and float (`SendDoEquip`), unless
+   * the land refuses the landing (`IsUnEquipAble`, silently).
+   */
+  land(objectId: number): boolean {
+    const own = this.own(), item = own?.inventory?.get(objectId);
+    const prop = item && this.props.get(item.itemId);
+    if (!own || own.hp <= 0 || !item || !prop || !isRide(prop) || !own.equipmentObjectIds.includes(objectId)) return false;
+    const check = this.travel?.check();
+    if (landRefusal({ sitting: check?.sitting ?? false, landAttr: check?.landAttr ?? 0 })) return false;
+    if (this.session.sendEquipItem === undefined) return false;
+    this.session.sendEquipItem(objectId, PARTS_RIDE, flightSpeedOf(prop));
     return true;
   }
 
