@@ -11,6 +11,7 @@ import { installClickSound } from './audio/clickSound';
 import { GameAudio } from './audio/gameAudio';
 import { PREFETCHED } from './audio/soundIds';
 import { lobbyAssets } from './lobby/skin';
+import { pageGameData } from './pageAssets';
 import './lobby/lobby.css';
 
 const root = document.getElementById('app');
@@ -37,6 +38,9 @@ const audio = new GameAudio({
   report: (error) => console.warn(error.message),
 });
 installClickSound(root, (id) => audio.play(id));
+// the game data loads as the page does (2026-11-04 loading audit: it waited for the character list); a failure is said
+// where the world needs it
+void pageGameData().catch(() => {});
 void lobbyAssets().then(async (store) => {
   audio.setCatalog(await loadAudio(store, (error) => console.warn(error.message)), store);
   audio.prefetch(PREFETCHED);

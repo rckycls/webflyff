@@ -8,7 +8,7 @@ import {
 } from '@flyffweb/scene';
 import type { SceneServices } from '@flyffweb/scene';
 import type { WebGLRenderer } from 'three';
-import { loadGameData } from './gameData';
+import { pageAssets, pageGameData } from '../pageAssets';
 import type { GameData } from './gameData';
 
 /** The page's renderer and overlay. */
@@ -95,13 +95,14 @@ function releasePage3d(): void {
 
 /**
  * The asset index, the loaders and the game data, loaded once a page; a failure is forgotten, so the next entry tries
- * again. Game files older than the game data reject with `loadGameData`'s `GameDataMissingError`.
+ * again. The index and the game data are the page's (`pageAssets`, `pageGameData`), shared with the lobby. Game files older than the game data reject with `loadGameData`'s `GameDataMissingError`.
  */
 export function sceneAssets(p: Page3d): Promise<{ services: SceneServices; data: GameData }> {
   if (assets === undefined) {
     const loading = (async () => {
-      const services = await loadSceneServices(p.renderer, p.overlay);
-      return { services, data: await loadGameData(services.store) };
+      const store = await pageAssets();
+      const [services, data] = await Promise.all([loadSceneServices(p.renderer, p.overlay, undefined, store), pageGameData()]);
+      return { services, data };
     })();
     assets = loading;
     loading.catch(() => {

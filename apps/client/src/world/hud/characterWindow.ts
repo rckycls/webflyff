@@ -316,8 +316,8 @@ export class CharacterWindow {
         move(`[data-label="${stat}"]`, 236, top);
         move(`[data-value="${stat}"]`, 294, top);
         move(`[data-count="${stat}"]`, 340, top - 3);
-        move(`[data-button="${stat}-plus"]`, 390, top);
-        move(`[data-button="${stat}-minus"]`, 412, top);
+        move(`[data-button="${stat}-plus"]`, 388, top);
+        move(`[data-button="${stat}-minus"]`, 424, top);
       });
       move('[data-button="apply"]', 252, 174);
       move('[data-button="reset"]', 352, 174);
@@ -374,27 +374,34 @@ export class CharacterWindow {
     const virtual: Stats = { str: stats.str + c.str, sta: stats.sta + c.sta, dex: stats.dex + c.dex, int: stats.int + c.int };
     // RenderATK compares the ranges of GetVirtualATK and GetHitMinMax; both ends move by the same nPlus (an unrefined weapon
     // multiplies by 1), so the means differ when the ranges do (but where both fall under 0, which `__JEFF_11` shows as 0)
-    const atk = own.profileStats?.[7] ?? attackShown(job, level, stats, eq, adj);
-    const virtualAtk = attackShown(job, level, virtual, eq, adj);
-    const atkPreview = !own.profileStats && (c.str !== 0 || c.dex !== 0 || c.int !== 0) && virtualAtk !== atk;
+    // with the high-rate server's own numbers (profileStats), the preview is those numbers moved by the client's difference
+    // (2026-11-04 audit: they were never previewed, as that packet always comes from the real server)
+    const profile = own.profileStats;
+    const atkClient = attackShown(job, level, stats, eq, adj);
+    const atk = profile?.[7] ?? atkClient;
+    const virtualAtk = atk + attackShown(job, level, virtual, eq, adj) - atkClient;
+    const atkPreview = (c.str !== 0 || c.dex !== 0 || c.int !== 0) && virtualAtk !== atk;
     this.show('atk', String(atkPreview ? virtualAtk : atk), blink(atkPreview), atkPreview);
     // GetVirtualDEF floors at 0 after the DEF multiplier where GetShowDefense floors before it: they differ only for a
     // multiplier under 0 (DST_ADJDEF_RATE below -100), which nothing the browser knows of gives
-    const def = own.profileStats?.[8] ?? defenceShown(job, level, stats, eq, adj);
-    const virtualDef = defenceShown(job, level, virtual, eq, adj);
-    const defPreview = !own.profileStats && c.sta !== 0 && virtualDef !== def;
+    const defClient = defenceShown(job, level, stats, eq, adj);
+    const def = profile?.[8] ?? defClient;
+    const virtualDef = def + defenceShown(job, level, virtual, eq, adj) - defClient;
+    const defPreview = c.sta !== 0 && virtualDef !== def;
     this.show('def', String(defPreview ? virtualDef : def), blink(defPreview), defPreview);
-    const critical = own.profileStats?.[9] ?? criticalShown(job, stats, adj);
-    const virtualCritical = criticalShown(job, virtual, adj);
-    const criticalPreview = !own.profileStats && c.dex !== 0 && virtualCritical !== critical;
+    const criticalClient = criticalShown(job, stats, adj);
+    const critical = profile?.[9] ?? criticalClient;
+    const virtualCritical = critical + criticalShown(job, virtual, adj) - criticalClient;
+    const criticalPreview = c.dex !== 0 && virtualCritical !== critical;
     this.show('critical', `${criticalPreview ? virtualCritical : critical}%`, blink(criticalPreview), criticalPreview);
     // GetVirtualATKSpeed takes a speed under 0 to 0.1 where GetAttackSpeed takes one under 0.1: they differ only for a
     // speed from 0 to 0.1, which needs a DST_ATTACKSPEED far below anything the browser knows of
     const weaponSpeed = (eq.weapon ?? FISTS).attackSpeed;
     const speed = attackSpeed(job, weaponSpeed, level, stats.dex, adj);
     const virtualSpeed = attackSpeed(job, weaponSpeed, level, virtual.dex, adj);
-    const speedPreview = !own.profileStats && c.dex !== 0 && virtualSpeed.speed !== speed.speed;
-    this.show('speed', `${speedPreview ? virtualSpeed.shown : (own.profileStats?.[10] ?? speed.shown)}%`, blink(speedPreview), speedPreview);
+    const speedShown = profile?.[10] ?? speed.shown;
+    const speedPreview = c.dex !== 0 && virtualSpeed.speed !== speed.speed;
+    this.show('speed', `${speedPreview ? speedShown + virtualSpeed.shown - speed.shown : speedShown}%`, blink(speedPreview), speedPreview);
 
     // the stats (:3244-3286): GetStr() and the others, black as the base, blue above it, red below it
     let color = BLACK;

@@ -69,15 +69,16 @@ export interface SceneServices {
 }
 
 /**
- * Fetches the asset index (`<assetBase>index.json`, `/assets/` by default) and makes the loaders and the texture cache
- * that go with `renderer`. Rejects when the index cannot be had.
+ * Fetches the asset index (`<assetBase>index.json`, `/assets/` by default), or takes the page's (`store`), and makes the
+ * loaders and the texture cache that go with `renderer`. Rejects when the index cannot be had.
  */
 export async function loadSceneServices(
   renderer: WebGLRenderer,
   overlay: Overlay,
   assetBase?: string,
+  existing?: AssetStore,
 ): Promise<SceneServices> {
-  const store = await AssetStore.load(assetBase);
+  const store = existing ?? await AssetStore.load(assetBase);
   const loaders = createLoaders(renderer);
   const textures = new TextureCache(store, (url) => loadKtx2(loaders.ktx2, url), overlay);
   return { renderer, store, loaders, textures, overlay };

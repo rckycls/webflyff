@@ -344,6 +344,7 @@ export class SkillWindow {
     this.jobPanel = doc.createElement('img');
     this.jobPanel.className = 'hud-skills-job-panel';
     this.jobPanel.alt = '';
+    this.jobPanel.draggable = false;
     this.jobPanel.hidden = true;
     place(this.jobPanel, { left: PANEL_AT.x, top: PANEL_AT.y, width: PANEL_SIZE.width, height: PANEL_SIZE.height });
     body.append(this.jobPanel);
@@ -666,21 +667,27 @@ export class SkillWindow {
   /**
    * A skill as `OnDraw` draws it (:7812-7845): open and of a level, its icon and its level digit; open and at level 0, its
    * icon only while the mouse is over it; not open, nothing over the window's picture. Picked by a finger, it is marked.
+   * On a phone, which has neither the job panel's picture nor a hover, every placed skill is drawn, dimmed while it is
+   * closed or at level 0, and the chosen skill (the one + and - change: the chosen box is hidden there) keeps a mark.
    */
   private drawSkill(skill: ShownSkill, plan: SkillPlan, levels: readonly SkillSlot[], own: OwnState): void {
     const slot = skill.index < 0 ? undefined : levels[skill.index];
     const prop = slot === undefined || slot.skill === NULL_ID ? undefined : this.data.skills.get(slot.skill);
     const active = slot !== undefined && plan.active(skill.index);
     const level = slot?.level ?? 0;
-    const showIcon = prop !== undefined && active && (level > 0 || this.hovered === skill.index);
+    const showIcon = prop !== undefined && (this.mobile || (active && (level > 0 || this.hovered === skill.index)));
+    const dim = this.mobile && prop !== undefined && (!active || level === 0);
+    const chosen = skill.index >= 0 && this.focus === skill.index;
     const digit = prop !== undefined && active && level > 0 ? digitFrame(level, prop, own, slot!) : -1;
     const picked = skill.index >= 0 && this.hand.pickedSkill === skill.index;
-    const shown = `${showIcon ? prop!.icon ?? '' : ''}|${digit}|${picked}|${active}|${prop?.name ?? ''}`;
+    const shown = `${showIcon ? prop!.icon ?? '' : ''}|${digit}|${picked}|${active}|${prop?.name ?? ''}|${dim}|${chosen}`;
     if (skill.shown === shown) return;
     skill.shown = shown;
     skill.icon.style.backgroundImage = showIcon && prop!.icon !== null ? `url(${JSON.stringify(this.art.url(prop!.icon))})` : '';
     this.showDigit(skill.digit, digit);
     skill.element.toggleAttribute('data-picked', picked);
+    skill.element.toggleAttribute('data-dim', dim);
+    skill.element.toggleAttribute('data-chosen', chosen);
     skill.element.toggleAttribute('data-active', active);
     skill.element.dataset.level = String(level);
     if (prop === undefined) skill.element.removeAttribute('aria-label');
@@ -801,7 +808,8 @@ export class ReSkillWarning {
     doc: Document = document,
   ) {
     const text = (id: string): string => texts.get(id)?.text ?? '';
-    const frame = new WindowFrame(WARNING_TITLE, art, { width: WARNING_WIDTH, height: WARNING_HEIGHT }, doc);
+    // its own size on a phone too, as the stat points' box (2026-11-04 audit)
+    const frame = new WindowFrame(WARNING_TITLE, art, { width: WARNING_WIDTH, height: WARNING_HEIGHT, mobileScale: 1, fitWhole: true }, doc);
     frame.element.classList.add('hud-confirm');
     frame.onClose = () => {
       this.modal.hide();
@@ -855,10 +863,8 @@ export class ReSkillWarning {
   open(closeWindow: boolean): void {
     this.closeWindow = closeWindow;
     this.modal.show();
-    const layer = this.modal.element.parentElement;
-    const x = Math.trunc((layer?.clientWidth ?? 0) / 2) - WARNING_WIDTH / 2;
-    const y = Math.trunc((layer?.clientHeight ?? 0) / 2) - WARNING_HEIGHT / 2;
-    this.frame.open({ x, y });
+    // the frame's own centring, which counts its scale on a phone (2026-11-04 audit: it was 45-50 px off there)
+    this.frame.open('center');
   }
 
   close(): void {

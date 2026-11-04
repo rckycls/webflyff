@@ -225,6 +225,8 @@ test.describe('the world screen against scripted servers', () => {
     const tileAsked = page.waitForRequest(/\/assets\/worlds\/.*\/tiles\//);
     const gateway = await playGateway(page);
     await startEntering(page);
+    // the world's own tiles, once its cache connection is open (the character list's prefetch asks for some before Enter)
+    await expect.poll(() => gateway.sent.some((s) => s.port === Port.CACHE)).toBe(true);
     await tileAsked;
     await expect(page.getByText('Entering the world…')).toBeVisible();
     await page.getByRole('button', { name: 'Leave' }).click();

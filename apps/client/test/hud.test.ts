@@ -1846,6 +1846,26 @@ describe('CharacterWindow (CWndCharInfo, WndField.cpp:3012-4110; CWndStateConfir
     ]);
   });
 
+  it("with the server's own numbers (profileStats), the placed points still preview: the server's ATK and DEF plus the client's difference", () => {
+    const { character } = windowOn();
+    const own = newVagrant();
+    own.remainGP = 4;
+    character.update(own, ENTRY, RED_PHASE);
+    const clientAtk = Number(shown(character, 'atk'));
+    const clientDef = Number(shown(character, 'def'));
+    // the high-rate server's numbers: ATK 500, DEF 400, critical 9, speed 77
+    own.profileStats = [15, 15, 15, 15, 230, 63, 31, 500, 400, 9, 77, 0, 0, 0];
+    character.update(own, ENTRY, RED_PHASE);
+    expect([shown(character, 'atk'), shown(character, 'def')]).toEqual(['500', '400']);
+    expect(value(character, 'atk').dataset.preview).toBeUndefined();
+    for (const name of ['str-plus', 'str-plus', 'sta-plus', 'sta-plus']) button(character, name).click();
+    character.update(own, ENTRY, RED_PHASE);
+    // STR 17 and STA 17 make the client's ATK 30 and DEF 6 (the test above): the server's numbers move by as much
+    expect([shown(character, 'atk'), shown(character, 'def')]).toEqual([String(500 + 30 - clientAtk), String(400 + 6 - clientDef)]);
+    expect(value(character, 'atk').dataset.preview).toBe('');
+    expect(value(character, 'def').style.color).toBe('rgb(255, 0, 0)');
+  });
+
   it('with 4 points: + on STR twice and STA twice makes Stat Points 0 and disables every +; the preview ATK and DEF blink red', () => {
     const { character } = windowOn();
     const own = newVagrant();
@@ -2821,5 +2841,43 @@ describe('TaskBar: the party skills (Piece 7 M4, [R §8.1], [R §7.2])', () => {
     window.dispatchEvent(pointer('pointermove', 30, 30));
     slot(bar, 'queue', 0).dispatchEvent(pointer('pointerup', 30, 30));
     expect(record.sent).toHaveLength(1);
+  });
+});
+
+describe('the Character and Skill windows: the 2026-11-04 audit', () => {
+  describe('the Skill window on a phone', () => {
+    const PHONE = '(max-width: 1000px) and (pointer: coarse)';
+    const onPhone = (run: () => void) => {
+      Object.defineProperty(window, 'matchMedia', {
+        configurable: true, value: (query: string) => ({ matches: query === PHONE || query === '(pointer: coarse)' }),
+      });
+      try {
+        run();
+      } finally {
+        delete (window as { matchMedia?: unknown }).matchMedia;
+      }
+    };
+    const icon = (w: SkillWindow, id: number) => skillOf(w, id).querySelector<HTMLElement>('.hud-skill-icon')!.style.backgroundImage;
+
+    it('shows every placed skill, dimmed at level 0 (it has no job panel and no hover), and marks the chosen skill, which + keeps', () => {
+      onPhone(() => {
+        const own = vagrantWithSkills(5, 3, [0, 0, 0]);
+        const { tree } = skillWindowOn(own, recordingHand().hand);
+        // Clean Hit, Flurry and Over Cut at level 0: each icon shown, dimmed
+        for (const id of [1, 2, 3]) {
+          expect(icon(tree, id)).not.toBe('');
+          expect(skillOf(tree, id).hasAttribute('data-dim')).toBe(true);
+        }
+        // a tap chooses Clean Hit; + places a level, which drops the finger's pick but not the choice
+        skillOf(tree, 1).dispatchEvent(touch('pointerdown'));
+        skillOf(tree, 1).dispatchEvent(touch('pointerup'));
+        skillOf(tree, 1).click();
+        expect(skillOf(tree, 1).hasAttribute('data-chosen')).toBe(true);
+        skillButton(tree, 'plus').click();
+        expect(skillOf(tree, 1).hasAttribute('data-chosen')).toBe(true);
+        expect(skillOf(tree, 1).hasAttribute('data-dim')).toBe(false);
+        expect(skillOf(tree, 2).hasAttribute('data-chosen')).toBe(false);
+      });
+    });
   });
 });

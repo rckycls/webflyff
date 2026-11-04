@@ -81,6 +81,7 @@ import { QuestTracker } from './hud/quests/questTracker';
 import { QuestWindow } from './hud/quests/questWindow';
 import type { QuestWindowState } from './hud/quests/questWindow';
 import { loadQuests } from './quests/questCatalog';
+import { pageAssets } from '../pageAssets';
 import type { WebParty } from '@flyffweb/formats';
 import type { MemberView, PartyView } from './hud/party/memberList';
 import { loadParty } from './party/partyCatalog';
@@ -543,15 +544,18 @@ export class WorldScreen {
     try {
       this.session.start().catch((error: unknown) => this.fail(error));
       this.page = page3d(this.element.ownerDocument);
+      // the optional catalogs beside the game data (2026-11-04 loading audit: they waited for it), from the page's index
+      const store = await pageAssets();
+      const optional = Promise.all([
+        loadWorldMap(store, (error) => this.reportOnce(`world map: ${messageOf(error)}`, error)),
+        loadQuests(store, (error) => this.reportOnce(`quests: ${messageOf(error)}`, error)),
+        loadParty(store, (error) => this.reportOnce(`party: ${messageOf(error)}`, error)),
+      ]);
       const { services, data } = await sceneAssets(this.page);
       if (this.over) return;
       this.services = services;
       this.data = data;
-      [this.worldMapData, this.questCatalog, this.partyCatalog] = await Promise.all([
-        loadWorldMap(services.store, (error) => this.reportOnce(`world map: ${messageOf(error)}`, error)),
-        loadQuests(services.store, (error) => this.reportOnce(`quests: ${messageOf(error)}`, error)),
-        loadParty(services.store, (error) => this.reportOnce(`party: ${messageOf(error)}`, error)),
-      ]);
+      [this.worldMapData, this.questCatalog, this.partyCatalog] = await optional;
       if (this.over) return;
       const audio = this.audio;
       if (audio !== null) {

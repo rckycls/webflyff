@@ -13,6 +13,8 @@ import { serverView } from './views/serverView';
 import { h } from './views/dom';
 import type { View } from './views/dom';
 import { frameLobby, skinLobby } from './skin';
+import { WorldPrefetch } from './worldPrefetch';
+import { pageAssets, pageGameData } from '../pageAssets';
 
 type Screen = 'login' | 'alreadyConnected' | 'servers' | 'characters' | 'create' | 'delete';
 
@@ -32,6 +34,8 @@ export class LobbyApp {
   private view: View | undefined;
   private servers: ServerEntry[] = [];
   private characters: CharacterSummary[] = [];
+  /** The selected character's world, fetched into the browser's cache while the list is shown (`WorldPrefetch`). */
+  private readonly prefetch = new WorldPrefetch(pageAssets, async (worldId) => (await pageGameData()).worlds.get(worldId));
   /** The account last typed, so a player sent back to the login form does not type it again. */
   private account = '';
   /** Holds at most one `role="alert"` element. */
@@ -139,6 +143,11 @@ export class LobbyApp {
       onCreate: (slot) => this.showCreate(slot),
       onEnter: (character) => this.enter(character),
       onDelete: (character) => this.showDelete(character),
+      // the selected character's world into the cache while the player looks (2026-11-04 loading audit)
+      onSelect: (character) => {
+        if (character === undefined) this.prefetch.abort();
+        else void this.prefetch.start(character.worldId, character.position);
+      },
       onChangeChannel: () => this.changeChannel(),
       onLogout: () => this.logout(),
     }));
@@ -201,6 +210,8 @@ export class LobbyApp {
    */
   private enter(character: CharacterSummary, reconnected = false): void {
     this.onPlayTap();
+    // what is in flight finishes: the world's own requests for the same files wait for it
+    this.prefetch.stop();
     const entry = this.flow.handOver(character.slot);
     if (entry === undefined) {
       this.setAlert(UNEXPECTED_PROBLEM);
@@ -296,6 +307,7 @@ export class LobbyApp {
     const first = this.view === undefined;
     this.screen = screen;
     this.view = view;
+    if (screen !== 'characters') this.prefetch.abort();
     frameLobby(view.element);
     this.stage.dataset.screen = screen;
     this.stage.replaceChildren(view.element);

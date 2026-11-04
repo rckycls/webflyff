@@ -1,13 +1,8 @@
-import { AssetStore } from '@flyffweb/scene';
+import { pageAssets } from '../pageAssets';
 import { themeKey } from '../world/hud/art';
 
-let assets: Promise<AssetStore> | undefined;
-
-/** The lobby's asset store, loaded once (the audio catalog is read from it too); rejects when it cannot be had. */
-export function lobbyAssets(): Promise<AssetStore> {
-  assets ??= AssetStore.load();
-  return assets;
-}
+/** The lobby's asset store: the page's (`pageAssets`), which the 3-D side reads too; rejects when it cannot be had. */
+export const lobbyAssets = pageAssets;
 
 /** Original Default.thm wallpaper and window/button textures; login remains usable if assets are unavailable. */
 export async function skinLobby(root: HTMLElement): Promise<void> {
@@ -22,7 +17,7 @@ export async function skinLobby(root: HTMLElement): Promise<void> {
     }
     if (pictures.slice(0, 8).every(picture => store.url(themeKey(picture)))) root.style.setProperty('--lobby-button-label-size', '0px');
   } catch {
-    assets = undefined;
+    // the page's store forgets a failed index itself: the login stays usable without the skin
   }
 }
 

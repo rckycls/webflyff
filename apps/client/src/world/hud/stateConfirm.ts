@@ -54,7 +54,8 @@ export class StateConfirm {
 
   constructor(art: UiArt, private readonly texts: StateConfirmTexts, private readonly onYes: () => void, doc: Document = document) {
     this.doc = doc;
-    const frame = new WindowFrame(TITLE, art, { width: WIDTH, height: HEIGHT }, doc);
+    // its own size on a phone too (2026-11-04 audit: at 0.7 the phone's 14 px text ran out of its 52 px text box)
+    const frame = new WindowFrame(TITLE, art, { width: WIDTH, height: HEIGHT, mobileScale: 1, fitWhole: true }, doc);
     frame.element.classList.add('hud-confirm');
     frame.onClose = () => this.listen(false);
     const box = doc.createElement('div');
@@ -96,11 +97,9 @@ export class StateConfirm {
     let message = this.text('TID_GAME_CHARSTATUS_APPLY_Q');
     if (baseJob) message += `\n${this.text('TID_DIAG_0082')}`;
     this.message.textContent = message;
-    const layer = this.frame.element.parentElement;
-    const x = Math.trunc((layer?.clientWidth ?? 0) / 2) - WIDTH / 2;
-    const y = Math.trunc((layer?.clientHeight ?? 0) / 2) - HEIGHT / 2;
     if (!this.isOpen) this.listen(true);
-    this.frame.open({ x, y });
+    // the frame's own centring, which counts its scale on a phone (2026-11-04 audit: it was 45-50 px off there)
+    this.frame.open('center');
   }
 
   close(): void {

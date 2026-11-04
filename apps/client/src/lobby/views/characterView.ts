@@ -5,6 +5,8 @@ import type { View } from './dom';
 
 export interface CharacterViewOptions {
   characters: CharacterSummary[];
+  /** A slot was chosen (and the first, as the list opens): its character, or undefined for an empty slot. */
+  onSelect?: (character: CharacterSummary | undefined) => void;
   /** The player picked an empty slot. */
   onCreate(slot: number): void;
   /** The player pressed Enter on a character. */
@@ -61,6 +63,7 @@ export function characterView(options: CharacterViewOptions): View {
     h('div', { class: 'actions' }, channel, create, logout),
   );
   const select = (selected: HTMLElement): void => {
+    options.onSelect?.(options.characters.find((c) => c.slot === slots.indexOf(selected)));
     for (const slot of slots) {
       const active = slot === selected;
       slot.classList.toggle('selected', active);

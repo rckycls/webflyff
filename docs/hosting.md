@@ -316,7 +316,17 @@ Paste this, with your own site address and your own `FlyffWeb` path. In a Caddyf
 
 ```
 play.example.com {
-	encode zstd gzip
+	encode zstd gzip {
+		match {
+			header Content-Type text/*
+			header Content-Type application/json*
+			header Content-Type application/javascript*
+			header Content-Type image/svg+xml*
+			header Content-Type application/wasm*
+			header Content-Type application/octet-stream*
+			header Content-Type model/gltf-binary*
+		}
+	}
 	handle /connect/* {
 		reverse_proxy 127.0.0.1:8090
 	}
@@ -338,7 +348,7 @@ play.example.com {
 What it does:
 
 - Sound and music (Piece 6, milestone 2) are plain files of `dist\assets`: `.wav` effects, `.ogg` music and `.mp3` copies, served as `audio/wav`, `audio/ogg` and `audio/mpeg`. Caddy's `file_server` sends those types and answers the Range requests a browser streams music with. They are already compressed, or small, so `encode` leaves them alone. They add about 240 MB to `dist\assets`, fetched only as each sound first plays.
-- `encode zstd gzip` compresses supported responses. Fingerprinted game files are cached for one year as immutable; the mutable asset index and reports do not get this policy. New conversions produce new fingerprinted URLs.
+- `encode zstd gzip` compresses the types its `match` lists. Caddy's own list leaves out `application/octet-stream` and `model/gltf-binary`, which are the map tiles and collision files (`.bin`) and the models (`.glb`): about 16 MB a first entry into a world that compress to a fraction of that (a tile to 3-6 %). The list above is Caddy's usual text types plus those two. Fingerprinted game files are cached for one year as immutable; the mutable asset index and reports do not get this policy. New conversions produce new fingerprinted URLs.
 
 - `/connect/*` goes to the gateway. Caddy passes WebSocket connections through by itself and adds the player's address in the `X-Forwarded-For` header, which is what the gateway reads (because of `trustedProxies`).
 - `/assets/*` is read from `FlyffWeb\dist`, so `/assets/x` is the file `FlyffWeb\dist\assets\x`: where `npm run convert` writes.
@@ -402,6 +412,14 @@ curl.exe -s -o NUL -w "%{http_code}" https://play.example.com/assets/report.json
 ```
 
 Success: it prints `404`. Any other number, `200` especially, means the `respond /assets/report.json 404` line is missing or in the wrong place in the Caddyfile.
+
+6. Check that the models and map tiles are sent compressed. Open `dist\assets\index.json` in Notepad, search for `models/`, and copy the path after it (it looks like `models/obj_mamaprbox04.0123456789.glb`). Then, with that path:
+
+```
+curl.exe -s -o NUL -D - -H "Accept-Encoding: zstd, gzip" https://play.example.com/assets/models/obj_mamaprbox04.0123456789.glb
+```
+
+Success: among the lines it prints is `Content-Encoding: zstd` (or `gzip`). Without that line, the `match` block of `encode` is missing from the Caddyfile, and every first entry into a world downloads several times the bytes it needs.
 
 ## Updating later
 
@@ -471,7 +489,7 @@ Then run `nssm restart flyff-gateway`. A misspelt limit name stops the gateway w
 
 The game files are served from this machine, over this machine's internet connection. A player downloads many megabytes the first time they enter the world (the target is at most 15 MB until the character is on screen), more as they walk into new areas and meet new monsters, and every player does that over your upload speed. The lobby itself is a few kilobytes and uses none of these files.
 
-When the machine's upload becomes the limit, move `/assets/` to a CDN (a service that serves files from servers close to the player): upload `dist\assets` there, and send `/assets/*` to it instead of to the `file_server` in the Caddyfile. Also worth doing then: compress the `.json`, `.bin` and `.glb` files, as the viewer's server does (`packages/scene/vite/serveDist.ts`).
+When the machine's upload becomes the limit, move `/assets/` to a CDN (a service that serves files from servers close to the player): upload `dist\assets` there, and send `/assets/*` to it instead of to the `file_server` in the Caddyfile. The CDN must compress the `.json`, `.bin` and `.glb` files too, as the Caddyfile above does and the viewer's server does (`packages/scene/vite/serveDist.ts`).
 
 ## Background tabs and session lifetime
 
