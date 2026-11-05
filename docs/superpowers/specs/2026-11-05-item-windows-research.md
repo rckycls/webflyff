@@ -62,6 +62,9 @@ timers and the cool-down sweep, then the windows of §3 (rulings in §5). What i
 
 ## 5. Rulings of the windows' round
 
+> Superseded on 2026-11-05 by `2026-11-05-ui-fixes-research.md` §2-§3: each window is now Neuz's own window, the
+> sex change has its 3D preview, and items go in by a drop or a click.
+
 - The windows are the message box with a text field or a row of choices (`MessageBox.prompt`), not Neuz's own window
   pictures; the sex change has no 3D preview (faces 1 to 5), the transmute shows "piece → twin" in a box.
 - The element change and the transmute take their item from the bag the way the upgrade cursor does (a click on it),
