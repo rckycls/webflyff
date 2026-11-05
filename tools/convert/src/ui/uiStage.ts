@@ -348,6 +348,7 @@ export function createUiStage(options: UiStageOptions = {}): Stage {
       for (const sheet of sheets) add(sheet.picture, iconKeyOf);
       // the cursors: their mask is their transparency, so no colour key (ui/anvil.png)
       for (const name of CURSOR_FILES) {
+        if (!wanted(name)) continue;
         const src = ctx.client.find('Cursor', name);
         if (src === null) ctx.report.warn(KIND, `Cursor/${name}`, `${name} is not in Client/Cursor, so it is not converted`);
         else if (wanted(src)) pictures.set(src, { src, key: iconKeyOf(path.basename(src)), colorKey: 0 });
