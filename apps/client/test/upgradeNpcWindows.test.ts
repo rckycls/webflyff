@@ -152,6 +152,28 @@ describe('SmeltSafetyWindow (CWndSmeltSafety)', () => {
     expect(r.die()).toBe(false);
   });
 
+  it('Shift fills a column from the stack (the materials to 10, the scrolls to the materials) and empties the unused (2026-11-05)', () => {
+    const r = rig();
+    const safety = new SmeltSafetyWindow(r.host);
+    safety.open('normal');
+    safety.take(4);
+    safety.take(5, true); // five Sunstones: five rows
+    expect(r.reserved.get(5)).toBe(5);
+    safety.take(7, true); // two SProtects for five rows: two
+    expect(r.reserved.get(7)).toBe(2);
+    safety.take(5, true); // no Sunstone left: nothing
+    expect(r.reserved.get(5)).toBe(5);
+    const window = r.layer.querySelector<HTMLElement>('.hud-smelt-safety')!;
+    const dblclick = (control: string, shiftKey: boolean): void => {
+      window.querySelector(`[data-control="${control}"]`)!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, shiftKey }));
+    };
+    dblclick('MATERIAL3', false); // one out: four rows
+    expect(r.reserved.get(5)).toBe(4);
+    dblclick('MATERIAL0', true); // every unused material out, the scrolls trimmed with them
+    expect(r.reserved.has(5)).toBe(false);
+    expect(r.reserved.has(7)).toBe(false);
+  });
+
   it('Safe Piercing: Moonstone and GProtect, no smelting column; START with too little gold is refused', () => {
     const r = rig();
     const safety = new SmeltSafetyWindow(r.host);

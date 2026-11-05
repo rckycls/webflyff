@@ -96,8 +96,8 @@ function drawIcon(host: UpgradeNpcHost, box: HTMLElement, prop: WebItemProp | nu
   box.append(holder);
 }
 
-/** A slot takes a bag item dropped on it (the bag's drag, `application/x-flyff-inventory`). */
-function takeDrops(box: HTMLElement, take: (objectId: number) => void): void {
+/** A slot takes a bag item dropped on it (the bag's drag, `application/x-flyff-inventory`), with Shift held or not. */
+function takeDrops(box: HTMLElement, take: (objectId: number, shift: boolean) => void): void {
   box.ondragover = (event) => {
     if (event.dataTransfer?.types.includes('application/x-flyff-inventory') === true) event.preventDefault();
   };
@@ -105,7 +105,7 @@ function takeDrops(box: HTMLElement, take: (objectId: number) => void): void {
     const id = Number(event.dataTransfer?.getData('application/x-flyff-inventory'));
     if (!Number.isFinite(id)) return;
     event.preventDefault();
-    take(id);
+    take(id, event.shiftKey);
   };
 }
 
@@ -390,8 +390,12 @@ export class SmeltSafetyWindow {
     this.close();
   }
 
-  /** A bag item double-clicked or dropped while open (`SetItem`, :24428-24692): the target, or into its column. */
-  take(objectId: number): void {
+  /**
+   * A bag item double-clicked or dropped while open (`SetItem`, :24428-24692): the target, or into its column; with Shift
+   * (2026-11-05, the owner's ask, as Neuz does: `AddListItem` in a loop) its column filled while the stack has a piece
+   * left: the materials to 10, the scrolls to the materials.
+   */
+  take(objectId: number, shift = false): void {
     if (!this.isOpen) return;
     if (this.running) {
       this.host.say('TID_GAME_SMELT_SAFETY_ERROR12');
@@ -412,15 +416,26 @@ export class SmeltSafetyWindow {
       this.refresh();
       return;
     }
+    const more = (): boolean => free(this.host, objectId) > 0;
     if (this.isMaterial(prop)) {
-      if (this.materialCount < SMELT_MAX) this.add('material', objectId);
+      while (this.materialCount < SMELT_MAX && more()) {
+        this.add('material', objectId);
+        if (!shift) break;
+      }
     } else if (this.isScroll1(prop)) {
-      if (this.scroll1Count < this.materialCount) this.add('scroll1', objectId);
-      else if (this.scroll1Count < SMELT_MAX) this.host.say(this.noMaterial());
+      if (this.scroll1Count < this.materialCount) {
+        while (this.scroll1Count < this.materialCount && more()) {
+          this.add('scroll1', objectId);
+          if (!shift) break;
+        }
+      } else if (this.scroll1Count < SMELT_MAX) this.host.say(this.noMaterial());
     } else if (this.isScroll2(prop)) {
       if (this.scroll2Count < this.materialCount) {
         this.scroll2Count = Math.max(this.currentRow, this.scroll2Count);
-        this.add('scroll2', objectId);
+        while (this.scroll2Count < this.materialCount && more()) {
+          this.add('scroll2', objectId);
+          if (!shift) break;
+        }
       } else if (this.scroll2Count < SMELT_MAX) {
         this.host.say(this.noMaterial());
       }
@@ -471,8 +486,8 @@ export class SmeltSafetyWindow {
 
   private wire(window: ResWindow): void {
     const target = window.control('WIDC_STATIC1').parentElement!;
-    takeDrops(target, (id) => this.take(id));
-    takeDrops(window.frame.body, (id) => this.take(id));
+    takeDrops(target, (id, shift) => this.take(id, shift));
+    takeDrops(window.frame.body, (id, shift) => this.take(id, shift));
     // a double-click on the target slot takes it out, the rows reset (OnLButtonDblClk, :24249-24378)
     target.ondblclick = () => {
       if (this.running || this.target === null) return;
@@ -484,7 +499,7 @@ export class SmeltSafetyWindow {
     for (let i = 0; i < SMELT_MAX; i++) {
       for (const [column, key] of [['MATERIAL', 'material'], ['SCROLL1_', 'scroll1'], ['SCROLL2_', 'scroll2']] as const) {
         if (!MODES[this.mode].wide && key === 'scroll2') continue;
-        window.control(`${column}${i}`).parentElement!.ondblclick = () => this.removeLast(key);
+        window.control(`${column}${i}`).parentElement!.ondblclick = (event) => this.removeLast(key, event.shiftKey);
       }
     }
     const input = window.input('WIDC_EDIT_MAX_GRADE');
@@ -561,8 +576,11 @@ export class SmeltSafetyWindow {
     else this.scroll2Count++;
   }
 
-  /** A double-click on a column: its last unused cell out, the scrolls trimmed to the materials left. */
-  private removeLast(key: 'material' | 'scroll1' | 'scroll2'): void {
+  /**
+   * A double-click on a column: its last unused cell out (with Shift every unused one), the scrolls trimmed to the
+   * materials left.
+   */
+  private removeLast(key: 'material' | 'scroll1' | 'scroll2', shift = false): void {
     if (this.running) return;
     const take = (column: 'material' | 'scroll1' | 'scroll2', index: number): void => {
       const cell = this.rows[index]!;
@@ -571,16 +589,18 @@ export class SmeltSafetyWindow {
     };
     if (key === 'material') {
       if (this.materialCount <= this.currentRow) return;
-      this.materialCount--;
-      take('material', this.materialCount);
+      do {
+        this.materialCount--;
+        take('material', this.materialCount);
+      } while (shift && this.materialCount > this.currentRow);
       while (this.scroll1Count > this.materialCount) take('scroll1', --this.scroll1Count);
       while (this.scroll2Count > this.materialCount) take('scroll2', --this.scroll2Count);
     } else if (key === 'scroll1') {
       if (this.scroll1Count <= this.currentRow) return;
-      take('scroll1', --this.scroll1Count);
+      do take('scroll1', --this.scroll1Count); while (shift && this.scroll1Count > this.currentRow);
     } else {
       if (this.scroll2Count <= this.currentRow) return;
-      take('scroll2', --this.scroll2Count);
+      do take('scroll2', --this.scroll2Count); while (shift && this.scroll2Count > this.currentRow);
     }
     this.refresh();
   }

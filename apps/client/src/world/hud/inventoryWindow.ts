@@ -15,8 +15,9 @@ import type { WebItemProp } from '@flyffweb/formats';
 const isRideProp = (prop: WebItemProp | undefined): boolean => prop !== undefined && isRide(prop);
 
 export interface InventoryActions {
-  use(id: number): void;
-  equip(id: number): void;
+  /** 2026-11-05: `shift`, Shift held on the double-click (the safe upgrade fills a column with it). */
+  use(id: number, shift?: boolean): void;
+  equip(id: number, shift?: boolean): void;
   /** Piece 7 M5: the worn ride's equipment cell lands it (`ItemUse.land`). */
   land?(id: number): void;
   drop(id: number, count: number): void;
@@ -176,7 +177,7 @@ export class InventoryWindow {
         if (!item || this.mobile || this.shopSelect) return;
         if (held) return; // a held item is not used (IsUsingItem)
         // a ride (PARTS_RIDE) is used, not equipped (Piece 7 M5)
-        if ((prop?.part ?? -1) >= 0 && !isRideProp(prop)) this.actions.equip(id); else this.actions.use(id);
+        if ((prop?.part ?? -1) >= 0 && !isRideProp(prop)) this.actions.equip(id, event.shiftKey); else this.actions.use(id, event.shiftKey);
       });
       cell.draggable = !!item && !held && !this.mobile && !this.shopSelect;
       cell.addEventListener('dragstart', (event) => {

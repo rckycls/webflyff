@@ -1258,8 +1258,8 @@ export class WorldScreen {
     reviveWindow.onStand = () => this.itemUse!.revive();
     const inventoryWindow = new InventoryWindow(this.hudArt!, this.data!, {
       // 2026-11-05: a double-click (or Use) while the Upgrade Specialist's window is open puts the item in it (WndField.cpp:2262-2272)
-      use: (id) => { if (!this.takeIntoUpgradeWindow(id)) this.itemUse!.use(id, 'bag'); },
-      equip: (id) => { if (!this.takeIntoUpgradeWindow(id)) itemActions.equip(id); },
+      use: (id, shift) => { if (!this.takeIntoUpgradeWindow(id, shift === true)) this.itemUse!.use(id, 'bag'); },
+      equip: (id, shift) => { if (!this.takeIntoUpgradeWindow(id, shift === true)) itemActions.equip(id); },
       land: (id) => { this.itemUse!.land(id); }, // Piece 7 M5: the worn ride's equipment cell
       // 2026-11-05: the upgrade cursor's target, its wait and its cancel
       upgrade: {
@@ -1553,8 +1553,8 @@ export class WorldScreen {
   }
 
   /** 2026-11-05: a bag item double-clicked (or its Use or Equip) while an Upgrade Specialist window is open goes in it. */
-  private takeIntoUpgradeWindow(objectId: number): boolean {
-    if (this.upgradeNpc?.safety.isOpen === true) this.upgradeNpc.safety.take(objectId);
+  private takeIntoUpgradeWindow(objectId: number, shift = false): boolean {
+    if (this.upgradeNpc?.safety.isOpen === true) this.upgradeNpc.safety.take(objectId, shift);
     else if (this.upgradeNpc?.piercing.isOpen === true) this.upgradeNpc.piercing.take(objectId);
     else return false;
     return true;
