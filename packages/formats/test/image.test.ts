@@ -1,3 +1,4 @@
+import { readCur } from '../src/image/cur';
 import { describe, expect, it } from 'vitest';
 import {
   FormatError,
@@ -959,5 +960,37 @@ describe('decodeImage', () => {
     expect(error.file).toBe('a.png');
     expect(error.message).toMatch(/\.png/);
     expect(() => decodeImage(dds, 'noextension')).toThrow(FormatError);
+  });
+});
+
+describe('readCur (2026-11-05, Client/Cursor/anvil.cur)', () => {
+  /** A 2 x 2 24-bit cursor, hotspot (1, 0): red, green over blue, see-through (the mask's set bit). */
+  function cursor(): Uint8Array {
+    const bytes = new Uint8Array(6 + 16 + 40 + 2 * 8 + 2 * 4);
+    const view = new DataView(bytes.buffer);
+    view.setUint16(2, 2, true); view.setUint16(4, 1, true);
+    bytes[6] = 2; bytes[7] = 2; view.setUint16(10, 1, true); view.setUint16(12, 0, true);
+    view.setUint32(14, 40 + 16 + 8, true); view.setUint32(18, 22, true);
+    view.setUint32(22, 40, true); view.setInt32(26, 2, true); view.setInt32(30, 4, true);
+    view.setUint16(34, 1, true); view.setUint16(36, 24, true);
+    // colours, bottom row first: blue, (anything); then red, green (BGR, rows of 8 bytes)
+    bytes.set([255, 0, 0, 9, 9, 9], 62);
+    bytes.set([0, 0, 255, 0, 255, 0], 70);
+    // the mask, bottom row first: the second pixel of the bottom row is see-through
+    bytes[78] = 0b01000000;
+    bytes[82] = 0;
+    return bytes;
+  }
+
+  it('reads the colours top row first, the mask as alpha, and the hotspot', () => {
+    const { image, hotspot } = readCur(cursor(), 'anvil.cur');
+    expect(hotspot).toEqual({ x: 1, y: 0 });
+    expect([image.width, image.height]).toEqual([2, 2]);
+    expect([...image.data]).toEqual([255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 0, 0, 0, 0]);
+    expect(decodeImage(cursor(), 'ANVIL.CUR').data).toEqual(image.data);
+  });
+
+  it('refuses what is not a cursor', () => {
+    expect(() => readCur(new Uint8Array(30), 'x.cur')).toThrow(/not a cursor/);
   });
 });

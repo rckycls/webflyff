@@ -4,6 +4,7 @@
 
 import { FormatError } from '../errors';
 import { readBmp } from './bmp';
+import { readCur } from './cur';
 import { readDds } from './dds';
 import { readTga } from './tga';
 import type { RgbaImage } from './types';
@@ -15,7 +16,7 @@ function extensionOf(file: string): string {
   return dot < 0 ? '' : name.slice(dot + 1).toLowerCase();
 }
 
-/** Decodes a `.dds`, `.tga` or `.bmp` file (any letter case) into RGBA pixels. `file` is used for its extension and in errors. */
+/** Decodes a `.dds`, `.tga`, `.bmp` or `.cur` (2026-11-05, the hammer cursor) file (any letter case) into RGBA pixels. `file` is used for its extension and in errors. */
 export function decodeImage(bytes: Uint8Array, file: string): RgbaImage {
   switch (extensionOf(file)) {
     case 'dds':
@@ -24,6 +25,8 @@ export function decodeImage(bytes: Uint8Array, file: string): RgbaImage {
       return readTga(bytes, file);
     case 'bmp':
       return readBmp(bytes, file);
+    case 'cur':
+      return readCur(bytes, file).image;
     default: {
       const ext = extensionOf(file);
       throw new FormatError(

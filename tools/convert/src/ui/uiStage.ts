@@ -203,7 +203,17 @@ export const THEME_FILES: readonly string[] = [
   'GauFillSmall.bmp',
   'ImgMapArrowParty.bmp',
   'GauPartyHpBG.TGA', 'GauPartyHp.TGA',
+  // 2026-11-05, the item windows in Neuz's look (docs/superpowers/specs/2026-11-05-ui-fixes-research.md): a text's scroll
+  // bar (CWndScrollBar, WndControl.cpp:1599-1793), the sex change's face arrows (APP_CHANGESEX), the element change's slot
+  // and OK (APP_CHANGE_ATTRIBUTE), the item slots (APP_ITEM_TRANSY, APP_PIERCING), the coin by the piercing's cost, and
+  // the safe upgrade's bars, gauge, results and buttons (APP_SMELT_SAFETY); ButtStart.bmp is above
+  'ButtVScrUp.tga', 'ButtVScrDown.tga', 'ButtVScrBar.bmp', 'ButtVScrPUp.bmp', 'ButtVScrPBar.bmp', 'ButtVScrPDown.bmp',
+  'Buttleft2.bmp', 'Buttright2.bmp', 'WndChgElemItem.bmp', 'ButOk2.bmp', 'WndElemItemBlank.tga', 'ButtMoney.tga',
+  'Window02.bmp', 'SafetyGauge.bmp', 'SafetySuccess.bmp', 'SafetyFailure.bmp', 'Buttstop.bmp',
 ];
+
+/** 2026-11-05: the cursors of Client/Cursor the browser shows (Neuz.cpp:280-300): the upgrade mode's hammer, CUR_HAMMER. */
+export const CURSOR_FILES: readonly string[] = ['anvil.cur'];
 
 /** The two glyph sheets: the script, and the field of WebUiSheets it fills. */
 const SHEETS = [
@@ -336,6 +346,12 @@ export function createUiStage(options: UiStageOptions = {}): Stage {
         }
       }
       for (const sheet of sheets) add(sheet.picture, iconKeyOf);
+      // the cursors: their mask is their transparency, so no colour key (ui/anvil.png)
+      for (const name of CURSOR_FILES) {
+        const src = ctx.client.find('Cursor', name);
+        if (src === null) ctx.report.warn(KIND, `Cursor/${name}`, `${name} is not in Client/Cursor, so it is not converted`);
+        else if (wanted(src)) pictures.set(src, { src, key: iconKeyOf(path.basename(src)), colorKey: 0 });
+      }
 
       const jpegs = PICTURE_FOLDERS.flatMap(({ dir }) => ctx.client.list(dir, JPEG)).filter(wanted);
       if (jpegs.length > 0) {

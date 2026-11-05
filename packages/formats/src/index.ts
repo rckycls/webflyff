@@ -85,6 +85,8 @@ export type { DdsImage } from './image/dds';
 export { readTga } from './image/tga';
 export { readBmp } from './image/bmp';
 export { decodeImage } from './image/decode';
+export { readCur } from './image/cur';
+export type { CursorImage } from './image/cur';
 export { flipWinding, toWebMatrix, toWebMatrixInto, toWebPosition, toWebQuaternion } from './web/handedness';
 export { webName } from './web/webName';
 export { collisionKey, decodeCollisionBin, encodeCollisionBin } from './web/collisionBin';
