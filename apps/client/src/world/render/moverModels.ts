@@ -13,8 +13,8 @@ import {
   unionModelBoxes,
 } from '@flyffweb/scene';
 import type { AssembledCharacter, HeldSlot, SceneServices } from '@flyffweb/scene';
-import type { Material, Object3D, Texture } from 'three';
-import { AnimationMixer, Color, Group, Mesh, MeshBasicMaterial, SRGBColorSpace } from 'three';
+import type { AnimationClip, Material, Object3D, Texture } from 'three';
+import { AnimationMixer, Color, Group, Mesh, MeshBasicMaterial, SRGBColorSpace, SkinnedMesh } from 'three';
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { GameData } from '../gameData';
 import { heldModels } from './looks';
@@ -119,16 +119,46 @@ async function plainModel(gltf: GLTF, textures: SceneServices['textures']): Prom
  */
 export function loadRideModel(
   services: Pick<SceneServices, 'store' | 'loaders' | 'textures'>,
-): (key: string) => Promise<{ object: Object3D; release: () => void }> {
+): (key: string) => Promise<RideModel> {
   const { store, loaders, textures } = services;
   return async (key) => {
     const gltf = await loadGltf(store, loaders.gltf, key);
     const lod = gltf.scene.getObjectByName('lod0');
     if (lod === undefined) throw new Error('the model has no "lod0" node');
-    for (const child of [...gltf.scene.children]) if (child !== lod) child.removeFromParent();
+    let skinned = false;
+    lod.traverse((object) => { if (object instanceof SkinnedMesh) skinned = true; });
+    if (!skinned) {
+      for (const child of [...gltf.scene.children]) if (child !== lod) child.removeFromParent();
+      const keys = await applyTextures(lod, textures);
+      return { object: gltf.scene, release: releaser(gltf.scene, keys, textures) };
+    }
+    // 2026-11-05: a wing (IK3_WING), the only boned rides: the skin keeps its own skeleton (removing it froze the wings in
+    // their bind pose at the world's origin), and its stand and walk motions come along (`OBJMSG_MODE_FLY`,
+    // ActionMoverMsg.cpp:1092-1102; `GetMotionFileName`, ModelObject.cpp:374-386)
     const keys = await applyTextures(lod, textures);
-    return { object: gltf.scene, release: releaser(gltf.scene, keys, textures) };
+    lod.traverse((object) => { object.frustumCulled = false; });
+    const name = key.replace(/^models\//, '').replace(/\.glb$/, '');
+    const clip = async (motion: string): Promise<AnimationClip | null> => {
+      try {
+        return (await loadGltf(store, loaders.gltf, `motions/${name}/${name}_${motion}.glb`)).animations[0] ?? null;
+      } catch {
+        return null;
+      }
+    };
+    const [stand, walk] = await Promise.all([clip('stand'), clip('walk')]);
+    return {
+      object: gltf.scene, release: releaser(gltf.scene, keys, textures), mixer: new AnimationMixer(gltf.scene),
+      motions: { stand, walk },
+    };
   };
+}
+
+/** A ride's model: a broom's or a board's mesh; a wing's with its skeleton, its mixer and its stand and walk motions. */
+export interface RideModel {
+  object: Object3D;
+  release: () => void;
+  mixer?: AnimationMixer;
+  motions?: { stand: AnimationClip | null; walk: AnimationClip | null };
 }
 
 function releaser(root: Object3D, keys: readonly string[], textures: SceneServices['textures']): () => void {

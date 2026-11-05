@@ -14,7 +14,7 @@ import type { MoverViewsOptions } from '../src/world/render/MoverViews';
 import type { MoverLook } from '../src/world/render/looks';
 import { loadHeldItems, loadMoverModel } from '../src/world/render/moverModels';
 import type { HeldItem } from '../src/world/render/moverModels';
-import { ActMsg, Mti, ObjSta } from '../src/world/sim/constants';
+import { ActMsg, Mti, ObjSta, ObjStaF } from '../src/world/sim/constants';
 import { transformCoord } from '../src/world/sim/d3dx';
 import { FISTS, attackSpeed } from '../src/world/sim/params';
 import type { Mover, WorldChanges } from '../src/world/WorldState';
@@ -1315,6 +1315,52 @@ describe('flight (Piece 7 M5)', () => {
       expect(broom.position.y).toBeGreaterThan(0.6);
       expect(broom.position.y).toBeCloseTo(bip.position.y, 6);
     }
+  });
+
+  it('wings sit on the back: turned as Spine2 by RotZ(-90) RotX(180), at the Neck, nudged for the feathers; they flap (2026-11-05)', async () => {
+    const WINGS: WebItemProp = { ...BROOM, id: 5819, name: 'Elegant White Wings', kind3: 137, model: 'models/item_ridridwinfeather01.glb' };
+    const model = fakeModel();
+    const skeleton = new Object3D();
+    skeleton.name = 'skeleton';
+    const spine = new Object3D();
+    spine.name = 'Bip02 Spine2';
+    spine.position.set(0, 1.2, 0);
+    const neck = new Object3D();
+    neck.name = 'Bip02 Neck';
+    neck.position.set(0, 0.3, 0.05);
+    spine.add(neck);
+    skeleton.add(spine);
+    model.root.add(skeleton);
+    const wings = new Group();
+    const flap = new Object3D();
+    flap.name = 'BoneF';
+    wings.add(flap);
+    const stand = new AnimationClip('stand', 1, [new NumberKeyframeTrack('BoneF.position[x]', [0, 1], [0, 1])]);
+    const walk = new AnimationClip('walk', 1, [new NumberKeyframeTrack('BoneF.position[y]', [0, 1], [0, 1])]);
+    const mixer = new AnimationMixer(wings);
+    const loadRide = vi.fn(async () => ({ object: wings, release: vi.fn(), mixer, motions: { stand, walk } }));
+    const r = rig(async () => model, undefined, undefined, { itemProps: new Map([[5819, WINGS]]), loadRide });
+    const flier = moverFrom(addedPlayer(8, {}, { pos: [0, 50, 0] }));
+    r.add(flier);
+    await r.views.settled();
+    flier.act.modeFly(5819, RIDE, 1200);
+    flier.act.step();
+    r.views.step(r.movers);
+    await r.views.settled();
+    r.views.update(r.movers, 1 / 60);
+    expect(wings.matrixAutoUpdate).toBe(false);
+    const at = new Vector3().setFromMatrixPosition(wings.matrix);
+    expect([at.x, at.y, at.z].map((v) => Math.round(v * 1000) / 1000)).toEqual([0, 1.48, -0.05]);
+    // a wing's x goes along the spine's y, its y along x, its z backwards
+    const e = wings.matrix.elements;
+    expect([e[0], e[1], e[2], e[4], e[5], e[6], e[8], e[9], e[10]].map((v) => Math.round(v))).toEqual([0, 1, 0, 1, 0, 0, 0, 0, -1]);
+    expect(mixer.existingAction(stand)?.isRunning()).toBe(true);
+    flier.act.stateFlag |= ObjStaF.ACC;
+    r.views.update(r.movers, 1 / 60);
+    expect(mixer.existingAction(walk)?.isRunning()).toBe(true);
+    // the buff wings' place: event 0 in Spine2's space (D3D z mirrored), back in D3D
+    const back = r.views.backAt(8)!;
+    expect(back.map((v) => Math.round(v * 1000) / 1000)).toEqual([0.165, 51.203, -0.069]);
   });
 });
 

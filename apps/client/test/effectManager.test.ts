@@ -189,6 +189,21 @@ describe('EffectManager: following (CSfx::Process, SfxObj.cpp:134-238)', () => {
     expect(r.manager.count()).toBe(0);
   });
 
+  it('a place effect (CSfxRotate, 2026-11-05) goes to its point each tick, unlifted, turned to its angle, and ends with null', async () => {
+    const r = rig();
+    let at: { pos: [number, number, number]; angle: number } | null = { pos: [1, 2, 3], angle: -90 };
+    await play(r, { xi: Xi.GEN_LEVEL_UP01, pos: [0, 0, 0], whileTrue: () => true, place: () => at });
+    steps(r, 1, nobody);
+    expect(r.drawn().effects[0]!.at).toEqual([1, 2, 3]);
+    expect(headingOf(r.drawn().effects[0]!)).toBeCloseTo(270, 1);
+    at = { pos: [4, 5, 6], angle: 0 };
+    steps(r, 1, nobody);
+    expect(r.drawn().effects[0]!.at).toEqual([4, 5, 6]);
+    at = null;
+    steps(r, 1, nobody);
+    expect(r.manager.count()).toBe(0);
+  });
+
   it('an effect with whileTrue still ends with the mover it follows', async () => {
     const r = rig();
     await play(r, { xi: Xi.GEN_LEVEL_UP01, pos: [0, 0, 0], followId: 7, whileTrue: () => true });

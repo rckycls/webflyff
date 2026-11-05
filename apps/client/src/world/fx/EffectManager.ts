@@ -192,6 +192,11 @@ export interface EffectRequest {
    * (`CSfxReady::Process`, `Sfx.cpp:3826-3837`).
    */
   whileTrue?: () => boolean;
+  /**
+   * 2026-11-05: a `CSfxRotate` (`Sfx.cpp:3373-3432`, the buff wings' XI_NAT_WINGANGEL01): each tick at the point this
+   * gives (D3D) and turned to its angle (`SetAngle( -mover.GetAngle() )`), not lifted; gone when it gives null.
+   */
+  place?: () => { pos: Vec3; angle: number } | null;
 }
 
 /** One effect in the world: a `CSfx`. */
@@ -216,6 +221,8 @@ interface Playing {
   lift: number;
   /** Piece 7 M4: `EffectRequest.then`. */
   then: EffectRequest | null;
+  /** 2026-11-05: `EffectRequest.place`. */
+  place: (() => { pos: Vec3; angle: number } | null) | null;
 }
 
 /**
@@ -313,6 +320,12 @@ export class EffectManager {
       } else {
         if (effect.model.step()) effect.model.rewind(); // m_nCurFrame = 0
         if (effect.frame > effect.seconds * 60) return false;
+      }
+      if (effect.place !== null) {
+        const at = effect.place();
+        if (at === null) return false;
+        effect.pos = [f32(at.pos[0]), f32(at.pos[1]), f32(at.pos[2])];
+        effect.angle = wrapAngle(f32(at.angle));
       }
       if (effect.followId !== null) {
         const source = find(effect.followId);
@@ -457,8 +470,9 @@ export class EffectManager {
         whileTrue: request.whileTrue ?? null,
         angle: request.angle === undefined ? headingOf(request.xi, request.sourceAngle) : wrapAngle(f32(request.angle)),
         scale: [scale, scale, scale],
-        lift: request.lift ?? (plain ? DRAWN_LIFT : 0),
+        lift: request.place !== undefined ? 0 : request.lift ?? (plain ? DRAWN_LIFT : 0),
         then: request.then ?? null,
+        place: request.place ?? null,
       });
     } catch (error) {
       this.reportOnce(`start ${key}`, `effect ${key}: ${messageOf(error)}`);

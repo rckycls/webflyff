@@ -166,6 +166,10 @@ import { Mti, ObjSta, ObjStaF, PARTS_RIDE } from './sim/constants';
 
 /** Piece 7 M5: the ground's field of view (`WorldStage`'s 45 degrees, `fDiv` 4), which a landing gives back. */
 const GROUND_FOV = 45;
+/** 2026-11-05: the buff wings (`II_CHR_MAG_TRI_ANGELWING`, `II_SYS_SYS_EVE_WINGS`), their effect and its 1.1 s look. */
+const BUFF_WINGS: ReadonlySet<number> = new Set([10223, 6319]);
+const XI_NAT_WINGANGEL01 = 1095;
+const WING_CHECK_MS = 1100;
 /** `MTI_STAND2` (`Resource/defineNeuz.h`): the female model's GenStand2, the sex change preview's pose (2026-11-05). */
 const MTI_STAND2 = 199;
 import { BLINKPOOL_NOT_YET, SkillUse } from './skills/skillUse';
@@ -383,6 +387,9 @@ export class WorldScreen {
   private bagDieFlag = false;
   /** 2026-11-05: the Upgrade Specialist's windows. */
   private upgradeNpc: { piercing: PiercingWindow; safety: SmeltSafetyWindow } | undefined;
+  /** 2026-11-05: the movers whose buff wings show (`m_pSfxWing`), and when they were last looked at. */
+  private readonly wingEffects = new Set<number>();
+  private lastWingCheck = 0;
   /** 2026-11-05: the ticket in use (`CMover::GetTicket`), drawn faded in the bag. */
   private ticketInUse: number | null = null;
   /** The authorization the chat's suggestions were last given (2026-11-05). */
@@ -1517,6 +1524,38 @@ export class WorldScreen {
     return !this.bagDieFlag || held >= (this.own?.inventory?.get(objectId)?.count ?? 0);
   }
 
+  /**
+   * 2026-11-05: the buff wings (`CMover::Process`, Mover.cpp:3738-3754): every 1.1 s, a mover with the item buff of the
+   * Wings of an Angel (10223) or the Cupid Wings (6319) gets XI_NAT_WINGANGEL01 on its back, which follows its back
+   * point turned as it is (`CSfxRotate`) and goes with the buff.
+   */
+  private syncBuffWings(now: number): void {
+    const world = this.world;
+    if (world === undefined || now - this.lastWingCheck < WING_CHECK_MS) return;
+    this.lastWingCheck = now;
+    const nowMs = world.nowMs();
+    for (const [id, mover] of world.movers) {
+      const on = mover.buffs.list(nowMs).some((b) => b.buffType === 0 && BUFF_WINGS.has(b.id));
+      if (!on) {
+        this.wingEffects.delete(id);
+        continue;
+      }
+      if (this.wingEffects.has(id)) continue;
+      const at = this.views?.backAt(id) ?? null;
+      if (at === null) continue; // its model is still loading: the next look
+      this.wingEffects.add(id);
+      this.effects?.play({
+        xi: XI_NAT_WINGANGEL01, pos: at, whileTrue: () => this.wingEffects.has(id),
+        place: () => {
+          const pos = this.views?.backAt(id) ?? null;
+          const angle = this.world?.movers.get(id)?.act.body.angle;
+          return pos === null || angle === undefined ? null : { pos, angle: -angle };
+        },
+      });
+    }
+    for (const id of this.wingEffects) if (!world.movers.has(id)) this.wingEffects.delete(id);
+  }
+
   /** 2026-11-05: a window holds a bag item, or lets it go (`SetExtra`): the bag draws it faded and keeps it put. */
   private reserveItem(objectId: number, on: boolean): void {
     const count = (this.bagReserved.get(objectId) ?? 0) + (on ? 1 : -1);
@@ -2122,6 +2161,7 @@ export class WorldScreen {
       this.upgradeNpc?.safety.dismiss();
     }
     this.upgrade?.step();
+    this.syncBuffWings(performance.now());
     this.upgradeNpc?.safety.step();
     this.inventoryWindow?.drawUpgrade();
     // the dialogue and the menu go with their NPC or when the player moves (WndWorld.cpp:8052-8081)
@@ -2916,6 +2956,7 @@ export class WorldScreen {
     this.upgradeNpc?.piercing.close();
     this.upgradeNpc?.safety.close();
     this.upgradeNpc = undefined;
+    this.wingEffects.clear();
     this.bagDieFlag = false;
     this.bagReserved.clear();
     this.upgradeEffectOn = false;

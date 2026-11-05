@@ -15,8 +15,8 @@ import { attachHeld, geometryBytes, handPosition } from '@flyffweb/scene';
 import type { AssembledCharacter, LoopedMotion, ModelBox, Overlay } from '@flyffweb/scene';
 import { toWebPosition } from '@flyffweb/formats';
 import type { MotionEvents, Vec3, WebItemProp, WebMover } from '@flyffweb/formats';
-import type { AnimationAction, Object3D, Scene } from 'three';
-import { AnimationClip, Box3, CapsuleGeometry, Group, LoopOnce, LoopRepeat, Mesh, MeshLambertMaterial } from 'three';
+import type { AnimationAction, AnimationMixer, Object3D, Scene } from 'three';
+import { AnimationClip, Box3, CapsuleGeometry, Group, LoopOnce, LoopRepeat, Matrix4, Mesh, MeshLambertMaterial, Vector3 } from 'three';
 import { motionFor } from '../sim/ActionMover';
 import type { ModelFrame as ActionModelFrame, MotionHand } from '../sim/ActionMover';
 import { AniLoop, Ik3, Mop, Mti, ObjSta, ObjStaF } from '../sim/constants';
@@ -27,7 +27,7 @@ import { isDie } from '../WorldState';
 import type { Mover, WorldChanges } from '../WorldState';
 import { MI_FEMALE, MI_MALE, Parts } from './looks';
 import type { MoverLook } from './looks';
-import type { HeldItem } from './moverModels';
+import type { HeldItem, RideModel } from './moverModels';
 import { moverMatrix } from './picking';
 import type { PickCandidate } from './picking';
 import {
@@ -177,13 +177,33 @@ interface View {
   /** Piece 7 M5: the drawn pitch (`m_fAngX`, followed as the angle is), degrees, positive nose down. */
   scrAngleX: number;
   /** Piece 7 M5: the ride drawn under a flier (`m_pRide`): its item, its model once loaded, and its `dwItemKind3`. */
-  ride: { itemId: number; object: Object3D | null; release: (() => void) | null; kind3: number } | null;
+  ride: {
+    itemId: number; object: Object3D | null; release: (() => void) | null; kind3: number;
+    /** 2026-11-05: a wing's mixer, its stand and walk motions, and the one playing (`WingMotionSetting`). */
+    mixer: AnimationMixer | null; motions: NonNullable<RideModel['motions']> | null; playing: 'stand' | 'walk' | null;
+  } | null;
   /** The load `refresh` started for a new look, until its model is swapped in; a newer refresh replaces it. */
   swap: object | null;
 }
 
 /** Piece 7 M5: `IK3_STICK` (`defineItemkind.h:116`): a broom or a stick, drawn at the rider's root bone's height. */
 const IK3_STICK = 41;
+/** 2026-11-05: `IK3_WING` (`defineItemkind.h:199`): the wings, on the rider's back. */
+const IK3_WING = 137;
+/** `II_RID_RID_WIN_FEATHER01`, `_02`: nudged (0, -0.02, +0.1) in D3D, z mirrored here (MoverRender.cpp:632-640). */
+const FEATHER_WINGS: ReadonlySet<number> = new Set([5819, 5820]);
+const FEATHER_NUDGE = new Vector3(0, -0.02, -0.1);
+/** `RotZ( -90 ) * RotX( 180 )` (MoverRender.cpp:622-628): a wing's (x, y, z) to (y, x, -z) in Spine2's space. */
+const WING_TURN = new Matrix4().set(0, 1, 0, 0, 1, 0, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1);
+/** A wing's blend between its motions, seconds. */
+const WING_BLEND = 0.2;
+/** Event 0 of `mvr_male.chr` and `mvr_female.chr`, in Spine2's space (D3D): the buff wings' place. */
+const MALE_BACK: Vec3 = [0.1648, 0.003, -0.0687];
+const FEMALE_BACK: Vec3 = [0.1873, 0.004, -0.0715];
+const WING_HOLDER = new Matrix4();
+const WING_MATRIX = new Matrix4();
+const WING_NECK = new Matrix4();
+const WING_POINT = new Vector3();
 
 /** `RANK_SUPER` (`Resource/defineAttribute.h:165`): a boss that a hit does not shake (`MoverRender.cpp:286`). */
 const RANK_SUPER = 7;
@@ -198,7 +218,7 @@ export interface MoverViewsOptions {
    */
   sounds?: { motion(at: Vec, id: number): void; footstep(at: Vec): void };
   /** Piece 7 M5: the model of a ride (its item's `model` key, `models/item_*.glb`); without it no ride is drawn. */
-  loadRide?: (key: string) => Promise<{ object: Object3D; release: () => void }>;
+  loadRide?: (key: string) => Promise<RideModel>;
 }
 
 /**
@@ -364,6 +384,8 @@ export class MoverViews {
         this.play(view);
         view.model.mixer.update(dt);
       }
+      // 2026-11-05: a wing flaps: its stand motion, its walk while the thrust is on (WingMotionSetting, Mover.cpp:10704-10738)
+      this.flapWing(view, dt);
       // after the frame's pose: CModelObject::Render animates m_mUpdateBone before the ride is drawn (MoverRender.cpp:572, :651)
       this.raiseRide(view);
     }
@@ -497,19 +519,23 @@ export class MoverViews {
     this.dropRide(view);
     if (want === null) return;
     const prop = this.itemProps.get(want);
-    const ride: NonNullable<View['ride']> = { itemId: want, object: null, release: null, kind3: prop?.kind3 ?? -1 };
+    const ride: NonNullable<View['ride']> = {
+      itemId: want, object: null, release: null, kind3: prop?.kind3 ?? -1, mixer: null, motions: null, playing: null,
+    };
     view.ride = ride;
     const key = prop?.model;
     const load = this.options.loadRide;
     if (!key || !load) return;
     const task = load(key).then(
-      ({ object, release }) => {
+      ({ object, release, mixer, motions }) => {
         if (view.ride !== ride || view.gone || this.disposed) {
           release(); // landed, gone or disposed while it loaded
           return;
         }
         ride.object = object;
         ride.release = release;
+        ride.mixer = mixer ?? null;
+        ride.motions = motions ?? null;
         view.holder.add(object);
       },
       () => {},
@@ -535,12 +561,83 @@ export class MoverViews {
   private raiseRide(view: View): void {
     const object = view.ride?.object;
     if (!object) return;
+    if (view.ride!.kind3 === IK3_WING) {
+      this.placeWing(view, object);
+      return;
+    }
     let y = 0;
     if (view.ride!.kind3 === IK3_STICK && view.model !== null) {
       const bone = view.model.root.getObjectByName('skeleton')?.children[0];
       if (bone) y = bone.position.y;
     }
     object.position.y = y;
+  }
+
+  /**
+   * 2026-11-05: a wing's motion (`WingMotionSetting`, `Mover.cpp:10704-10738`): the stand motion (loaded at the mount),
+   * the walk while the thrust is on (`OBJSTAF_ACC`), looped and blended; a turn keeps the one playing.
+   */
+  private flapWing(view: View, dt: number): void {
+    const ride = view.ride;
+    if (ride === null || ride.mixer === null || ride.motions === null) return;
+    const want = (view.mover.act.stateFlag & ObjStaF.ACC) !== 0 && ride.motions.walk !== null ? 'walk' : 'stand';
+    if (want !== ride.playing) {
+      const clip = ride.motions[want];
+      const previous = ride.playing === null ? null : ride.motions[ride.playing];
+      if (clip !== null) {
+        const action = ride.mixer.clipAction(clip);
+        action.reset().setLoop(LoopRepeat, Infinity).play();
+        if (previous !== null) ride.mixer.clipAction(previous).crossFadeTo(action, WING_BLEND, false);
+        ride.playing = want;
+      }
+    }
+    ride.mixer.update(dt);
+  }
+
+  /**
+   * 2026-11-05: a wing on its rider's back (`MoverRender.cpp:610-646`): turned as the rider's Spine2 (bone 4) by
+   * `RotZ( -90 ) RotX( 180 )`, at the rider's Neck (bone 5); the feather wings nudged 0.02 down and 0.1 back.
+   */
+  private placeWing(view: View, object: Object3D): void {
+    const bones = this.backBones(view);
+    if (bones === null) return;
+    const { holder } = view;
+    holder.updateMatrixWorld(true);
+    const inverse = WING_HOLDER.copy(holder.matrixWorld).invert();
+    const turn = WING_MATRIX.multiplyMatrices(inverse, bones.spine.matrixWorld);
+    const at = WING_POINT.setFromMatrixPosition(WING_NECK.multiplyMatrices(inverse, bones.neck.matrixWorld));
+    if (FEATHER_WINGS.has(view.ride!.itemId)) at.add(FEATHER_NUDGE);
+    turn.setPosition(at);
+    object.matrixAutoUpdate = false;
+    object.matrix.multiplyMatrices(turn, WING_TURN);
+    object.matrixWorldNeedsUpdate = true;
+  }
+
+  /** The rider's Spine2 and Neck, the joints a wing hangs from (and the buff wings' effect sits on); null without. */
+  private backBones(view: View): { spine: Object3D; neck: Object3D } | null {
+    const skeleton = view.model?.root.getObjectByName('skeleton');
+    if (skeleton === undefined) return null;
+    let spine: Object3D | null = null, neck: Object3D | null = null;
+    skeleton.traverse((joint) => {
+      if (spine === null && /Spine2$/.test(joint.name)) spine = joint;
+      if (neck === null && /Neck$/.test(joint.name)) neck = joint;
+    });
+    return spine === null || neck === null ? null : { spine, neck };
+  }
+
+  /**
+   * 2026-11-05: where a mover's back is, in D3D (`GetEventPos( 0 )`: the skeleton's event 0 in Spine2's space, the buff
+   * wings' effect's place, `CSfxRotate`, Sfx.cpp:3373-3432); null with no model or no such joint.
+   */
+  backAt(objectId: number): Vec3 | null {
+    const view = this.views.get(objectId);
+    if (view === undefined || view.model === null) return null;
+    const bones = this.backBones(view);
+    if (bones === null) return null;
+    const event = view.mover.added.index === MI_FEMALE ? FEMALE_BACK : MALE_BACK;
+    bones.spine.updateWorldMatrix(true, false);
+    const at = WING_POINT.set(event[0], event[1], -event[2]).applyMatrix4(bones.spine.matrixWorld);
+    return toWebPosition([at.x, at.y, at.z]);
   }
 
   private add(mover: Mover): void {
