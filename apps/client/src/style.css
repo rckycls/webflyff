@@ -2480,7 +2480,7 @@ fieldset:disabled .btn {
 .hud-res-edit input {
   position: absolute; left: 3px; top: 3px; right: 3px; bottom: 0; width: calc(100% - 6px); height: calc(100% - 3px);
   box-sizing: border-box; padding: 0; border: 0; outline: none; background: transparent; color: #000000; font: inherit;
-  line-height: 14px;
+  line-height: 14px; min-height: 0; border-radius: 0;
 }
 .hud-res-edit-words { position: absolute; left: 3px; top: 3px; right: 3px; bottom: 0; overflow: hidden; line-height: 14px; white-space: pre-line; word-break: break-all; }
 .hud-res-list-rows { position: absolute; overflow-y: auto; }

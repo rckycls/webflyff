@@ -122,7 +122,10 @@ test('talking: chat typing, channels, peaceful NPC dialogue and authoritative bu
   await expect(shop.locator('.shop-search, .shop-awaken, .shop-reference-filters')).toHaveCount(0);
   await expect(shop.locator('.shop-tabs button').first()).toHaveText('Weapons');
   expect(await shop.getByLabel('Base item price').evaluate(el => getComputedStyle(el).backgroundRepeat)).toBe(Array(9).fill('no-repeat').join(', '));
-  expect(await shop.locator('.shop-tabs button').first().evaluate(el => getComputedStyle(el).backgroundRepeat)).toBe(Array(3).fill('no-repeat').join(', '));
+  // 2026-11-05: the tabs are one strip of WndTabTile pieces laid as CWndTabCtrl lays it, the chosen tab whole over it
+  expect(await shop.locator('.shop-tab-strip > [data-tile]').count()).toBeGreaterThanOrEqual(4 * 4 + 4);
+  expect(await shop.locator('.shop-tabs button').first().evaluate(el => getComputedStyle(el).backgroundImage)).toBe('none');
+  await page.screenshot({ path: info.outputPath('shop-tabs.png') });
   if (normalBag) {
     expect(inventoryRect.width).toBeCloseTo(normalBag.width, 0); expect(inventoryRect.height).toBeCloseTo(normalBag.height, 0);
     expect(inventoryRect.x).toBeCloseTo(normalBag.x, 0); expect(inventoryRect.y).toBeCloseTo(normalBag.y, 0);
