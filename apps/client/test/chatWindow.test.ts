@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { expect, it, vi } from 'vitest';
 import { ChatWindow } from '../src/world/hud/chatWindow';
-import { suggest } from '../src/world/hud/chatCommands';
+import { lineAction, suggest } from '../src/world/hud/chatCommands';
 
 it('validates sending, isolates typing and retains a bounded, safe transcript', () => {
   const send = vi.fn(), focus = vi.fn(), worldKey = vi.fn();
@@ -127,55 +127,77 @@ it('Arrow Up brings back the lines sent before, newest first, and Arrow Down goe
 
 // 2026-11-05: "/" typed lists the commands the account may use (FuncTextCmd.cpp's table), the GM ones for a GM only
 const COMMANDS = [
-  { names: ['shout', 's'], usage: '[text]', help: 'Shout', auth: 'F'.charCodeAt(0) },
-  { names: ['say', 'w'], usage: '[name] [text]', help: 'Whisper', auth: 'F'.charCodeAt(0) },
-  { names: ['summon', 'su'], usage: '[name]', help: 'Summon a player', auth: 'L'.charCodeAt(0) },
-  { names: ['shutdown'], usage: '', help: 'Stop the server', auth: 'P'.charCodeAt(0) },
+  { names: ['shout', 's'], usage: '<text>', help: 'Shout', auth: 'F'.charCodeAt(0), route: 'both' as const },
+  { names: ['say', 'say'], usage: '<name> <text>', help: 'Whisper', auth: 'F'.charCodeAt(0), route: 'server' as const },
+  { names: ['position', 'pos'], usage: '', help: 'Show your position', auth: 'F'.charCodeAt(0), route: 'client' as const },
+  { names: ['summon', 'su'], usage: '<name>', help: 'Summon a player', auth: 'L'.charCodeAt(0), route: 'server' as const },
+  { names: ['getgold', 'gg'], usage: '<amount>', help: 'Get Penya', auth: 'P'.charCodeAt(0), route: 'server' as const },
 ];
 
-it('suggests the commands a "/" starts, by long or short name, and only those the account may use', () => {
-  expect(suggest('hello', 70, COMMANDS)).toEqual({ typing: false, rows: [] });
-  expect(suggest('/', 70, COMMANDS).rows.map((r) => r.name)).toEqual(['shout', 'say']);
-  expect(suggest('/S', 70, COMMANDS).rows.map((r) => r.name)).toEqual(['shout', 'say']);
-  expect(suggest('/w', 70, COMMANDS).rows.map((r) => r.name)).toEqual(['w']);
+it('lists every command the account may use by its long name, sorted, the typed one highlighted (CWndCommand)', () => {
+  expect(suggest('hello', 70, COMMANDS)).toEqual({ typing: false, rows: [], selected: -1 });
+  const player = suggest('/', 70, COMMANDS);
+  expect(player.rows.map((r) => r.name)).toEqual(['position', 'say', 'shout']);
+  expect(player.selected).toBe(-1);
+  expect(suggest('/sh', 70, COMMANDS).selected).toBe(2);
   // a game master ('L') sees the GM's, not the administrator's; a VIP ('1') ranks with the players (authorization.h:58-82)
-  expect(suggest('/s', 'L'.charCodeAt(0), COMMANDS).rows.map((r) => r.name)).toEqual(['shout', 'say', 'summon']);
-  expect(suggest('/s', 'P'.charCodeAt(0), COMMANDS).rows.map((r) => r.name)).toEqual(['shout', 'say', 'summon', 'shutdown']);
-  expect(suggest('/', '1'.charCodeAt(0), COMMANDS).rows.map((r) => r.name)).toEqual(['shout', 'say']);
+  expect(suggest('/', 'L'.charCodeAt(0), COMMANDS).rows.map((r) => r.name)).toEqual(['position', 'say', 'shout', 'summon']);
+  expect(suggest('/', 'P'.charCodeAt(0), COMMANDS).rows.map((r) => r.name)).toEqual(['getgold', 'position', 'say', 'shout', 'summon']);
+  expect(suggest('/', '1'.charCodeAt(0), COMMANDS).rows.map((r) => r.name)).toEqual(['position', 'say', 'shout']);
   // after the name, its usage alone
   expect(suggest('/su Rocky', 'L'.charCodeAt(0), COMMANDS)).toMatchObject({ typing: false, rows: [{ name: 'su' }] });
 });
 
-it('shows the suggestions over the line; the arrows walk them, Tab takes one, Escape hides them', () => {
-  const send = vi.fn();
+it('a line as ParsingCommand takes it: sent, run here (TCM_CLIENT), or dropped (unknown, refused); an emoticon is sent', () => {
+  const emoticons = ['laugh', 'cat face'];
+  expect(lineAction('hello', 70, COMMANDS, emoticons)).toEqual({ kind: 'send' });
+  expect(lineAction('/s hi', 70, COMMANDS, emoticons)).toEqual({ kind: 'send' });
+  expect(lineAction('/pos', 70, COMMANDS, emoticons)).toEqual({ kind: 'client', command: 'position', args: '' });
+  expect(lineAction('/su Bob', 70, COMMANDS, emoticons)).toEqual({ kind: 'drop' });
+  expect(lineAction('/su Bob', 'L'.charCodeAt(0), COMMANDS, emoticons)).toEqual({ kind: 'send' });
+  expect(lineAction('/Shout hi', 70, COMMANDS, emoticons)).toEqual({ kind: 'drop' }); // exact case, as CString's ==
+  expect(lineAction('/nothing', 70, COMMANDS, emoticons)).toEqual({ kind: 'drop' });
+  expect(lineAction('/Laugh', 70, COMMANDS, emoticons)).toEqual({ kind: 'send' });
+  expect(lineAction('/cat face', 70, COMMANDS, emoticons)).toEqual({ kind: 'send' });
+});
+
+it('shows the list over the line; the highlight follows the typing, Enter or Tab takes it, Escape hides it', () => {
+  const send = vi.fn(), local = vi.fn();
   const chat = new ChatWindow(send, vi.fn(), document, COMMANDS); document.body.append(chat.element);
+  chat.onClientCommand = local;
   const input = chat.element.querySelector<HTMLInputElement>('[name=message]')!;
   const list = chat.element.querySelector<HTMLElement>('.chat-suggestions')!;
   const type = (value: string) => { input.value = value; input.dispatchEvent(new Event('input')); };
   const key = (key: string) => input.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
   const names = () => [...list.querySelectorAll<HTMLElement>('.chat-suggestion')].map((row) => row.dataset.command);
-  type('/s');
+  const submit = () => chat.element.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+  type('/');
   expect(list.hidden).toBe(false);
-  expect(names()).toEqual(['shout', 'say']);
+  expect(names()).toEqual(['position', 'say', 'shout']);
   expect(list.querySelector('.chat-suggestion-gm')).toBeNull();
   chat.setAuthorization('L'.charCodeAt(0));
-  expect(names()).toEqual(['shout', 'say', 'summon']);
+  expect(names()).toEqual(['position', 'say', 'shout', 'summon']);
   expect(list.querySelector('[data-command="summon"] .chat-suggestion-gm')!.textContent).toBe('GM');
-  key('ArrowDown'); key('ArrowDown');
+  type('/sa');
   expect(list.querySelector('[aria-selected="true"]')!.getAttribute('data-command')).toBe('say');
-  key('Tab');
-  expect(input.value).toBe('/say ');
+  key('ArrowDown');
+  expect(list.querySelector('[aria-selected="true"]')!.getAttribute('data-command')).toBe('shout');
+  key('Enter');
+  expect(input.value).toBe('/shout ');
+  expect(send).not.toHaveBeenCalled();
   // the usage stays shown while the words are typed
-  expect(list.hidden).toBe(false);
-  expect(list.textContent).toContain('/say [name] [text]');
+  expect(list.textContent).toContain('/shout <text>');
   type('/su');
   key('Escape');
   expect(list.hidden).toBe(true);
-  expect(chat.typing).toBe(true);
-  // Enter with no row walked to sends the line as typed
   type('/s hi');
-  chat.element.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+  submit();
   expect(send).toHaveBeenLastCalledWith('nearby', '/s hi', '');
-  expect(list.hidden).toBe(true);
+  type('/pos');
+  submit();
+  expect(local).toHaveBeenCalledWith('position', '');
+  type('/unknown');
+  submit();
+  expect(send).toHaveBeenCalledTimes(1);
   chat.dispose();
 });

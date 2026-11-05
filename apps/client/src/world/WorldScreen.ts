@@ -1282,6 +1282,21 @@ export class WorldScreen {
     }, doc);
     this.inventoryWindow = inventoryWindow;
     this.chatWindow ??= new ChatWindow((channel, text, target) => this.session.sendChat(channel, text, target), () => this.stopOwnMover(), doc);
+    // 2026-11-05: the client commands Neuz runs itself (TCM_CLIENT, FuncTextCmd.cpp): /position and /Time print; the
+    // others (the trade, whisper and party toggles, the block list) have no option or window here, and send nothing
+    this.chatWindow.onClientCommand = (command) => {
+      if (command === 'position') {
+        const pos = this.world?.self()?.act.body.pos;
+        const entry = this.data?.texts.get('TID_GAME_NOWPOSITION');
+        if (pos !== undefined && entry !== undefined) {
+          this.hud?.messages.add(formatText(entry.text, [pos[0], pos[1], pos[2]]), entry.color);
+        }
+      } else if (command === 'Time') {
+        const now = new Date();
+        const two = (n: number): string => String(n).padStart(2, '0');
+        this.hud?.messages.add(`Real Time - ${two(now.getHours())}:${two(now.getMinutes())}:${two(now.getSeconds())}`, WHITE);
+      }
+    };
     this.shopWindow = new ShopWindow(this.hudArt!, this.data!, () => this.own, (id) => this.canTalk(id), {
       open: (id) => session.sendOpenShop(id), close: () => session.sendCloseShop(),
       // the trade sound of a buy confirmed and of a sale (WndShop.cpp:655, :232-235)

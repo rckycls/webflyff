@@ -1,9 +1,9 @@
 import { encodeChat } from '@flyffweb/protocol';
 import type { ChatChannel } from '@flyffweb/protocol';
 import { isGameMaster } from '../authorization';
-import { AUTH_GENERAL, suggest } from './chatCommands';
+import { AUTH_GENERAL, lineAction, suggest } from './chatCommands';
 import type { ChatCommand, Suggestion } from './chatCommands';
-import { CHAT_COMMANDS } from './chatCommandTable';
+import { CHAT_COMMANDS, EMOTICONS } from './chatCommandTable';
 
 /** Session-local chat. Only server echoes enter the transcript; text is never interpreted as markup. */
 type ChatView = ChatChannel | 'all' | 'system' | 'announcement';
@@ -105,7 +105,8 @@ export class ChatWindow {
     this.suggestions.hidden = true;
     this.form.prepend(this.suggestions);
     this.input.setAttribute('aria-autocomplete', 'list');
-    this.input.addEventListener('input', () => { this.picked = -1; this.suggest(); });
+    // the highlight follows what is typed (SelectString, WndCommunication.cpp:890-899)
+    this.input.addEventListener('input', () => { this.picked = -2; this.suggest(); });
     this.input.addEventListener('keydown', (event) => {
       if (this.suggestionKey(event)) return;
       if (event.key === 'ArrowUp' || event.key === 'ArrowDown') this.recall(event);
@@ -119,7 +120,11 @@ export class ChatWindow {
         // the Party view in a party is Neuz's party channel, which writes "/p " before the line (WndCommunication.cpp:212-216,
         // :708-713); a typed command goes as typed
         const channel: ChatChannel = this.view === 'party' && this.party && !text.startsWith('/') ? 'party' : 'nearby';
-        encodeChat(channel, text); send(channel, text, '');
+        // 2026-11-05: as ParsingChat and ParsingCommand do (FuncTextCmd.cpp:5549-5650): a client command runs here, an
+        // unknown or refused one goes nowhere, the rest is sent
+        const action = lineAction(text, this.authorization, this.commands, EMOTICONS);
+        if (action.kind === 'send') { encodeChat(channel, text); send(channel, text, ''); }
+        else if (action.kind === 'client') this.onClientCommand(action.command, action.args);
         this.remember(text);
         this.input.value = ''; this.feedback.textContent = ''; this.suggest(); if (!this.mobile) this.input.focus();
       } catch (error) { this.feedback.textContent = error instanceof Error ? error.message : 'Unable to send message.'; }
@@ -149,6 +154,9 @@ export class ChatWindow {
     if (this.history.length > MAX_HISTORY) this.history.shift();
     this.recalled = -1; this.draft = '';
   }
+  /** 2026-11-05: a client command typed (TCM_CLIENT: /position, /Time ...), with what follows its name. */
+  onClientCommand: (command: string, args: string) => void = () => {};
+
   /** The own account's authorization (`m_dwAuthorization`, ADD_OBJ): which commands the suggestions offer. */
   setAuthorization(authorization: number): void {
     this.authorization = authorization;
@@ -157,8 +165,9 @@ export class ChatWindow {
 
   /** The suggestions for the line as it is: shown while it starts with "/" and some command matches. */
   private suggest(): void {
-    const { typing, rows } = suggest(this.input.value, this.authorization, this.commands);
+    const { typing, rows, selected } = suggest(this.input.value, this.authorization, this.commands);
     this.rows = typing ? rows : [];
+    if (this.picked === -2) this.picked = selected;
     if (this.picked >= this.rows.length) this.picked = this.rows.length - 1;
     const doc = this.doc;
     this.suggestions.replaceChildren(...rows.map(({ command, name }, i) => {
@@ -203,11 +212,14 @@ export class ChatWindow {
         event.preventDefault();
         this.take(Math.max(0, this.picked));
         return true;
-      case 'Enter':
-        if (this.picked < 0) return false;
+      case 'Enter': {
+        // a row other than what is typed is taken, and nothing is sent (WndCommunication.cpp:758-778)
+        const row = this.rows[this.picked];
+        if (row === undefined || this.input.value.slice(1) === row.name) return false;
         event.preventDefault();
         this.take(this.picked);
         return true;
+      }
       case 'Escape':
         event.preventDefault();
         event.stopPropagation();
