@@ -57,6 +57,14 @@ describe('authoritative inventory state', () => {
     expect(own.inventorySlots.slice(0, 42)).toContain(6);
     expect(own.equipped.weapon).toBeNull();
   });
+  it('a first use of a ticket gives it a keep time (UI_KEEPTIME 11, minutes), and UI_FLAG 9 its flag from the high word', () => {
+    const { own, id } = setup();
+    const update = (param: number, value: number) => own.apply({ type: 'updateItem', itemType: 0, objectId: 6, param, value, time: 0 }, id);
+    update(11, 1440);
+    expect(own.inventory!.get(6)!.keepTime).toBe(86400);
+    update(9, (1 << 16) | 6);
+    expect(own.inventory!.get(6)!.flag).toBe(1);
+  });
   it('keeps what the item tooltip shows up to date: the awakening, the upgrade, the element, the sockets (2026-11-05)', () => {
     const { own, id } = setup();
     const update = (param: number, value: number) => own.apply({ type: 'updateItem', itemType: 0, objectId: 6, param, value, time: 0 }, id);

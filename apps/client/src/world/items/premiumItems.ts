@@ -69,6 +69,9 @@ export function confirmedTarget(prop: WebItemProp, focus: number, ownId: number)
   if (prop.id === NORMAL_BATTERY || CASH_BATTERIES.has(prop.id)) return prop.id;
   if (prop.kind2 === IK2_TOCASH) return 0xffffffff;
   if (prop.id === AWAKESAFE) return ownId;
+  // 2026-11-05: CWndRestateConfirm's SetInformation names its parameter as its member (WndField.cpp:25519-25524), which
+  // stays 0: its YES sends 0, not the focus
+  if (RESTATE.has(prop.id)) return 0;
   return focus;
 }
 

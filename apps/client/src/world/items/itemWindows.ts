@@ -147,3 +147,22 @@ export function createMonsterRefusal(check: { distance: number; worldId: number;
   if (check.worldId !== MADRIGAL || NO_PLACE.has(check.landAttr)) return 'TID_GAME_CREATEMON_F_AREA';
   return null;
 }
+
+/**
+ * 2026-11-05: the ticket in use, which the bag draws faded (`CMover::GetTicket`, `_Common/Mover.cpp:11666-11692`): the
+ * first item buff (`BUFF_ITEM`) whose item is a ticket (`GetBuffByIk3( IK3_TICKET )`), then the first bag item, by object
+ * id, of that ticket with a keep time that is not expired; null for none.
+ */
+export function ticketInUse(
+  items: Iterable<Pick<InventoryItem, 'objectId' | 'itemId' | 'flag' | 'keepTime'>>, props: ReadonlyMap<number, WebItemProp>,
+  itemBuffs: readonly number[],
+): number | null {
+  const buff = itemBuffs.find((id) => props.get(id)?.kind3 === IK3_TICKET);
+  if (buff === undefined) return null;
+  let found: number | null = null;
+  for (const item of items) {
+    if (item.itemId !== buff || item.keepTime === undefined || ((item.flag ?? 0) & EXPIRED) !== 0) continue;
+    if (found === null || item.objectId < found) found = item.objectId;
+  }
+  return found;
+}

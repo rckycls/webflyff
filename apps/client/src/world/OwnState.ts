@@ -698,7 +698,9 @@ const UI_RAO = 4;
 const UI_IR = 5;
 const UI_PIERCING_SIZE = 6;
 const UI_PIERCING = 7;
+const UI_FLAG = 9;
 const UI_RANDOMOPTITEMID = 10;
+const UI_KEEPTIME = 11;
 const UI_ULTIMATE_PIERCING_SIZE = 13;
 const UI_ULTIMATE_PIERCING = 14;
 /** The most an upgrade or an element's upgrade goes to (`__EXT_ENCHANT`, `UpdateItem`'s dwMax). */
@@ -751,6 +753,10 @@ function itemUpdated(item: InventoryItem, param: number, value: number): Invento
       const list = pierced(item.ultimate, value);
       return list === undefined ? item : withField(item, 'ultimate', list);
     }
+    // 2026-11-05: an item expired (UI_FLAG, MAKELONG( index, byFlag ): the flag the high word), and a ticket's first use
+    // (UI_KEEPTIME, minutes; MoverParam.cpp:4027-4047)
+    case UI_FLAG: return withField(item, 'flag', (value >>> 16) & 0xff);
+    case UI_KEEPTIME: return { ...item, keepTime: value * 60 };
     default: return item;
   }
 }

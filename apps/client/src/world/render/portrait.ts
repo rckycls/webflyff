@@ -65,17 +65,38 @@ export async function renderPortrait(
   renderer: WebGLRenderer, model: AssembledCharacter, motion: LoopedMotion | null, doc: Document,
   fullBody = false,
 ): Promise<HTMLCanvasElement> {
+  // V15 inventory WIDC_CUSTOM20: scale 1.2, translation y=-0.6 (WndField.cpp:1439-1440).
+  return renderPreview(renderer, model, motion, doc, fullBody
+    ? { width: 120, height: 174, scale: 1.2, turn: 0, drop: -0.6 }
+    : { width: FACE_WIDTH, height: FACE_HEIGHT, scale: SCALE, turn: TURN, drop: DROP });
+}
+
+/** A preview's box and the model's matrix: its size in CSS pixels, scale, turn about Y (radians, web) and drop. */
+export interface PreviewView {
+  width: number;
+  height: number;
+  scale: number;
+  turn: number;
+  drop: number;
+}
+
+/**
+ * `renderPortrait` for any box (2026-11-05: the sex change's 150 x 130 head, scale 4.5, no turn, lowered 5.6 for a male
+ * player and 5.8 for a female one, WndChangeFace.cpp:166-215): the same camera, unlit, the first frame of `motion`.
+ */
+export async function renderPreview(
+  renderer: WebGLRenderer, model: AssembledCharacter, motion: LoopedMotion | null, doc: Document, view: PreviewView,
+): Promise<HTMLCanvasElement> {
   const ratio = renderer.getPixelRatio();
-  const cssWidth = fullBody ? 120 : FACE_WIDTH, cssHeight = fullBody ? 174 : FACE_HEIGHT;
+  const cssWidth = view.width, cssHeight = view.height;
   const width = Math.round(cssWidth * ratio);
   const height = Math.round(cssHeight * ratio);
 
   const { root } = model;
   unlit(root);
-  // V15 inventory WIDC_CUSTOM20: scale 1.2, translation y=-0.6 (WndField.cpp:1439-1440).
-  root.scale.setScalar(fullBody ? 1.2 : SCALE);
-  root.rotation.set(0, fullBody ? 0 : TURN, 0);
-  root.position.set(0, fullBody ? -.6 : DROP, 0);
+  root.scale.setScalar(view.scale);
+  root.rotation.set(0, view.turn, 0);
+  root.position.set(0, view.drop, 0);
   if (motion !== null) {
     model.mixer.clipAction(motion.clip).play();
     model.mixer.setTime(motion.frameTime(0));

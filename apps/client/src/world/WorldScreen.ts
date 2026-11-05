@@ -119,6 +119,8 @@ import { formatDefinedText } from './hud/messages';
 import { ItemUse } from './items/itemUse';
 import { SmTimers, skillPointsSpent } from './items/premiumItems';
 import { UpgradeCursor } from './items/upgradeCursor';
+import { ConfirmBoxes, boxOf } from './items/confirmBoxes';
+import { ticketInUse } from './items/itemWindows';
 import { ItemWindowFlows } from './items/itemWindowFlows';
 import type { ItemWindowPacket } from './items/itemWindowFlows';
 
@@ -148,12 +150,12 @@ import { DamageNumbers, screenProjector } from './render/DamageNumbers';
 import { MoverViews } from './render/MoverViews';
 import { NameTagLayer } from './render/NameTagLayer';
 import { WorldIndicatorLayer } from './render/WorldIndicatorLayer';
-import { lookOf } from './render/looks';
+import { lookOf, ownWorn, sexChangeLook } from './render/looks';
 import { MoveMark } from './render/moveMark';
 import { loadHeldItems, loadMoverModel, loadRideModel } from './render/moverModels';
 import { nameTagOf } from './render/nameTags';
 import type { TapHit } from './render/picking';
-import { latestOnly, renderPortrait } from './render/portrait';
+import { latestOnly, renderPortrait, renderPreview } from './render/portrait';
 import { SpriteLayer } from './render/SpriteLayer';
 import { TargetMarks, attackMarks, focusRect } from './render/TargetMarks';
 import type { ScreenRect } from './render/TargetMarks';
@@ -162,6 +164,8 @@ import { Mti, ObjSta, ObjStaF, PARTS_RIDE } from './sim/constants';
 
 /** Piece 7 M5: the ground's field of view (`WorldStage`'s 45 degrees, `fDiv` 4), which a landing gives back. */
 const GROUND_FOV = 45;
+/** `MTI_STAND2` (`Resource/defineNeuz.h`): the female model's GenStand2, the sex change preview's pose (2026-11-05). */
+const MTI_STAND2 = 199;
 import { BLINKPOOL_NOT_YET, SkillUse } from './skills/skillUse';
 import { transformCoord } from './sim/d3dx';
 import { STEPS_PER_SECOND, catchUp } from './sim/stepper';
@@ -369,6 +373,12 @@ export class WorldScreen {
   private skillWindow: SkillWindow | undefined;
   private inventoryWindow: InventoryWindow | undefined;
   private chatWindow: ChatWindow | undefined;
+  /** 2026-11-05: Neuz's item boxes (confirmBoxes.ts). */
+  private confirmBoxes: ConfirmBoxes | undefined;
+  /** 2026-11-05: the bag's items a window holds (`CItemBase::m_dwExtra`), by object: drawn faded, not dragged nor used. */
+  private readonly bagReserved = new Map<number, number>();
+  /** 2026-11-05: the ticket in use (`CMover::GetTicket`), drawn faded in the bag. */
+  private ticketInUse: number | null = null;
   /** The authorization the chat's suggestions were last given (2026-11-05). */
   private chatAuthorization = -1;
   private speechBubbles: SpeechBubbleLayer | undefined;
@@ -1074,20 +1084,24 @@ export class WorldScreen {
     this.selectVillage = selectVillage;
     const returnScroll = new ReturnScroll(messageBox, selectVillage, session, this.data!.texts);
     this.returnScroll = returnScroll;
+    // 2026-11-05: Neuz's item boxes, each its own window (confirmBoxes.ts); a new box replaces the one open (SAFE_DELETE)
+    const confirmBoxes = new ConfirmBoxes(this.hudArt!, () => this.hud?.element ?? null,
+      () => this.inventoryWindow?.frame.isOpen === true, doc);
+    this.confirmBoxes = confirmBoxes;
     this.itemUse = new ItemUse(() => this.own, this.data!.itemProps, session, {
       check: () => this.useCheck(),
       say: (refusal) => this.sayRefusal(refusal),
       returnScroll,
       shopOpen: () => this.shopWindow?.frame.isOpen === true,
-      // 2026-11-05: Neuz's item boxes (CWndCommItemDlg, CWndRestateConfirm) as the message box, OK and Cancel
+      // 2026-11-05: Neuz's item boxes (CWndCommItemDlg, CWndRestateConfirm, CWndFunnyCoinConfirm, CWndConfirmVis)
       confirm: (tid, ok, args = []) => {
         // the catalog keeps Neuz's "\n" as two characters: a line break in the box
         const text = formatText(this.data?.texts.get(tid)?.text ?? '', args).replace(/\\n/g, '\n');
-        if (text !== '' && this.messageBox?.isOpen !== true) this.messageBox?.open(text, 'okCancel', ok);
+        if (text !== '') confirmBoxes.open(boxOf(tid), text, { ok });
       },
       // 2026-11-05: a map item from the bag toggles the world map, as CWndMap does at V15 (WndMap.cpp:41-53)
       openMap: () => this.openWindow('worldmap'),
-      boxOpen: () => this.messageBox?.isOpen === true,
+      boxOpen: () => this.messageBox?.isOpen === true || confirmBoxes.isOpen,
       now: () => performance.now(),
       upgrade: { begin: (id) => this.upgrade?.begin(id) ?? false },
       window: (id, from) => this.itemWindows?.open(id, from) ?? false,
@@ -1097,13 +1111,13 @@ export class WorldScreen {
       own: () => this.own, props: this.data!.itemProps, setItems: new Set(this.data!.itemEtc?.setOf.keys() ?? []),
       worldId: () => this.worldId, worldName: () => WORLD_NAMES.get(this.worldId) ?? '', partyName: () => this.party.name,
       isLeader: () => this.party.isLeader(this.entry.character.playerId), focusId: () => this.focus?.targetId ?? NULL_ID,
+      ownName: () => this.world?.self()?.name ?? this.entry.character.name,
       text: (tid, args = []) => formatText(this.data?.texts.get(tid)?.text ?? '', args).replace(/\\n/g, '\n'),
-      prompt: (text, options, onAnswer, onCancel) => {
-        if (this.messageBox?.isOpen !== true) this.messageBox?.prompt(text, options, onAnswer, onCancel);
-      },
-      box: (text, ok, cancel) => {
-        if (text !== '' && this.messageBox?.isOpen !== true) this.messageBox?.open(text, 'okCancel', ok, cancel);
-      },
+      box: (text, ok) => { if (text !== '') confirmBoxes.open('commItem', text, { ok }); },
+      reserve: (id, on) => this.reserveItem(id, on),
+      facePreview: (face) => this.sexChangePreview(face),
+      friends: () => [], // the messenger's friends (ADDFRIENDGAMEJOIN) are not read yet: the name is typed
+      ui: { art: this.hudArt!, doc, layer: () => this.hud?.element ?? null },
       alert: (text) => { if (text !== '' && this.messageBox?.isOpen !== true) this.messageBox?.open(text, 'ok', () => {}); },
       say: (tid, args = []) => this.sayRefusal(args.length > 0 ? { kind: 'say', tid, args: args[0]! } : { kind: 'say', tid }),
       arm: (on) => this.armMonsterSummon(on),
@@ -1116,11 +1130,13 @@ export class WorldScreen {
         const self = this.world?.self();
         return self?.buffs.list(this.world!.nowMs()).some((b) => b.buffType === 0 && b.id === itemId) === true;
       },
-      boxOpen: () => this.messageBox?.isOpen === true,
+      // the smelt safety box is not modal: a press on another bag item opens a new one in its place (WndItemCtrl.cpp:851-920)
+      boxOpen: () => this.messageBox?.isOpen === true || (confirmBoxes.isOpen && confirmBoxes.openKind !== 'smeltSafety'),
       say: (tid) => this.sayRefusal({ kind: 'say', tid }),
+      // CWndSmeltSafetyConfirm and CWndRandomScrollConfirm: any close of the smelt box ends the mode (its OnDestroy)
       confirm: (tid, args, ok, cancel) => {
         const text = formatText(this.data?.texts.get(tid)?.text ?? '', args).replace(/\\n/g, '\n');
-        if (text !== '' && this.messageBox?.isOpen !== true) this.messageBox?.open(text, 'okCancel', ok, cancel);
+        if (text !== '') confirmBoxes.open(boxOf(tid), text, { ok, closed: cancel });
         else cancel();
       },
       effect: (on) => this.upgradeEffect(on),
@@ -1217,6 +1233,10 @@ export class WorldScreen {
         pick: (id) => (this.itemWindows?.picking === true ? this.itemWindows.pick(id) : this.upgrade?.pick(id) ?? false),
         cancel: () => { this.upgrade?.cancel(); this.itemWindows?.cancelPick(); },
       },
+      // 2026-11-05: the items a window holds (SetExtra) and the ticket in use, faded; the hammer in the upgrade mode only
+      held: (id) => this.bagReserved.has(id),
+      inUse: (id) => id === this.ticketInUse,
+      hammer: () => this.upgrade?.active === true,
       drop: (id, count) => {
         if (this.dialog?.frame.isOpen === true) return; // no drop while the dialogue is open (DPClient.cpp:9378-9382)
         this.sounds?.drop();
@@ -1400,6 +1420,49 @@ export class WorldScreen {
     } catch (error) {
       if (!this.over) report(messageOf(error));
     }
+  }
+
+  /**
+   * 2026-11-05: the sex change's preview (`CWndChangeSex::OnDraw`, WndChangeFace.cpp:131-244): the other sex's head with
+   * the face `face`, the player's hair mesh and weapons, the first frame of GenStand2 (a female model) or GenStand (a male
+   * one, which has no GenStand2), drawn once; null when it cannot be had.
+   */
+  private async sexChangePreview(face: number): Promise<HTMLCanvasElement | null> {
+    const player = this.world?.self()?.added.player;
+    const services = this.services, data = this.data, page = this.page;
+    if (player === undefined || services === undefined || data === undefined || page === undefined) return null;
+    const own = this.own;
+    const equipment = own?.inventory ? own.equipmentObjectIds.map((id) => own.inventory!.get(id)?.itemId ?? 0) : [];
+    const look = sexChangeLook(player.sex, player.hairMesh, face, ownWorn(equipment, data), data);
+    const male = player.sex === 0; // SEX_MALE: the female model is shown
+    const report = (message: string): void => this.reportOnce(`sex change preview: ${message}`, new Error(message));
+    try {
+      const model = await loadMoverModel(services)(look, report);
+      const held = await loadHeldItems(services, data)(look, report);
+      try {
+        for (const item of held) attachHeld(model, item.item, item.slot);
+        const key = look.motion(male ? MTI_STAND2 : Mti.STAND);
+        const motion = key === null ? null : await loadMotion(services, key);
+        if (this.over) return null;
+        return await renderPreview(page.renderer, model, motion, this.element.ownerDocument, {
+          width: 150, height: 130, scale: 4.5, turn: 0, drop: male ? -5.6 : -5.8,
+        });
+      } finally {
+        for (const item of held) { item.item.removeFromParent(); item.release(); }
+        model.release();
+      }
+    } catch (error) {
+      if (!this.over) report(messageOf(error));
+      return null;
+    }
+  }
+
+  /** 2026-11-05: a window holds a bag item, or lets it go (`SetExtra`): the bag draws it faded and keeps it put. */
+  private reserveItem(objectId: number, on: boolean): void {
+    const count = (this.bagReserved.get(objectId) ?? 0) + (on ? 1 : -1);
+    if (count > 0) this.bagReserved.set(objectId, count);
+    else this.bagReserved.delete(objectId);
+    if (this.own) this.inventoryWindow?.update(this.own, true);
   }
 
   /**
@@ -1980,6 +2043,13 @@ export class WorldScreen {
     }
     this.taskBar!.update(this.own, this.barData());
     this.nearbyItems?.update(world.groundItems, self?.act.body.pos ?? null);
+    // 2026-11-05: the ticket in use (GetTicket), which the bag draws faded: redrawn when it changes
+    const ticket = this.own?.inventory && self !== undefined ? ticketInUse(this.own.inventory.values(), this.data!.itemProps,
+      self.buffs.list(buffNow).filter((b) => b.buffType === 0).map((b) => b.id)) : null;
+    if (ticket !== this.ticketInUse) {
+      this.ticketInUse = ticket;
+      if (this.own) this.inventoryWindow?.update(this.own, true);
+    }
     if (this.own) this.inventoryWindow?.update(this.own);
     this.inventoryWindow?.drawCooldowns((objectId) => this.itemUse?.cooldownDone(objectId) ?? null); // 2026-11-05
     // 2026-11-05: the upgrade cursor's wait, and its mode ended by a move (CWndWorld::Process, WndWorld.cpp:8050-8097)
@@ -1987,6 +2057,7 @@ export class WorldScreen {
     if (upgradeSelf !== undefined && (upgradeSelf.act.state & ObjSta.MOVE_ALL) !== ObjSta.STAND) {
       this.upgrade?.cancel();
       this.itemWindows?.disarm(); // and the monster summon's cursor (WndManager.cpp:3377)
+      this.itemWindows?.playerMoved(); // and the element change (WndWorld.cpp:8487-8491)
     }
     this.upgrade?.step();
     this.inventoryWindow?.drawUpgrade();
@@ -2768,9 +2839,11 @@ export class WorldScreen {
     this.wasFlying = false;
     this.upgrade?.reset(); // 2026-11-05: a world change ends the upgrade cursor and its wait
     this.upgrade = undefined;
-    this.itemWindows?.disarm();
-    this.itemWindows?.cancelPick();
+    this.itemWindows?.dispose();
     this.itemWindows = undefined;
+    this.confirmBoxes?.dispose();
+    this.confirmBoxes = undefined;
+    this.bagReserved.clear();
     this.upgradeEffectOn = false;
     this.messageBox?.dispose();
     this.selectVillage?.dispose();

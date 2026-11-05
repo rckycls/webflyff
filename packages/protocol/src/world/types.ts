@@ -361,6 +361,11 @@ export interface InventoryItem {
   ultimate?: number[];
   /** `m_iRandomOptItemId` (`__int64`, `__SYS_IDENTIFY`): the awakening and the blessing, bit-packed. */
   randomOption?: bigint;
+  /**
+   * 2026-11-05: `m_dwKeepTime` set (an item with a time of its own once used, a ticket): the seconds it had left when read
+   * (`CItemElem::Serialize`, ObjSerialize.cpp:110-119), or UI_KEEPTIME's minutes as seconds. Absent for none.
+   */
+  keepTime?: number;
 }
 export interface GroundItem { index: number; scale: number; pos: Vec3; angle: number; item: InventoryItem }
 

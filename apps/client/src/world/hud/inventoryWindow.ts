@@ -27,6 +27,12 @@ export interface InventoryActions {
    * clicked as its target (true when taken), and its cancel (a right click, the bag closing).
    */
   upgrade?: { active(): boolean; waitingTarget(): number | null; pick(id: number): boolean; cancel(): void };
+  /** 2026-11-05: an item a window holds (`m_dwExtra`): drawn faded, neither used nor dragged. */
+  held?(id: number): boolean;
+  /** 2026-11-05: an item in use, drawn faded and still usable (the ticket in use, `CMover::GetTicket`). */
+  inUse?(id: number): boolean;
+  /** 2026-11-05: the hammer over the bag: the upgrade mode's (`m_bIsUpgradeMode`), not a window's pick. */
+  hammer?(): boolean;
 }
 
 export class InventoryWindow {
@@ -46,6 +52,9 @@ export class InventoryWindow {
     this.frame = new WindowFrame('Inventory', art, { width: 240, height: 464, texture: 'WndInventory3D.tga' }, doc);
     this.frame.element.classList.add('hud-inventory');
     this.frame.element.style.setProperty('--classic-inventory-art', themeUrl(art, 'WndInventory3D.tga'));
+    // 2026-11-05: the hammer cursor (ui/anvil.png, the converter's from Client/Cursor/anvil.cur), its hotspot the top left
+    const hammer = art.url('ui/anvil.png');
+    if (hammer !== '') this.frame.element.style.setProperty('--hud-hammer', `url(${JSON.stringify(hammer)}) 0 0, crosshair`);
     doc.addEventListener('dragover', this.onDragOver);
     doc.addEventListener('drop', this.onDrop);
     this.frame.onClose = () => { if (this.shopSelect) this.onShopClose?.(); this.dragged = null; this.actionsOpen = false; this.frame.element.querySelector('.inventory-drop-dialog')?.remove(); this.actions.upgrade?.cancel(); };
@@ -142,6 +151,10 @@ export class InventoryWindow {
       const id = own.inventorySlots[slot]!, item = own.inventory.get(id), prop = item && this.data.itemProps.get(item.itemId);
       const cell = this.doc.createElement('button'); cell.type = 'button'; cell.dataset.bagSlot = String(slot); cell.dataset.silent = '';
       cell.className = 'inventory-cell'; cell.classList.toggle('is-selected', id === this.selected && item !== undefined);
+      // 2026-11-05: an item in use drawn at alpha 60 (CWndItemCtrl::OnDraw, WndItemCtrl.cpp:472-487): one a window holds
+      // (SetExtra), which is not used nor dragged, and the ticket in use (GetTicket)
+      const held = item !== undefined && this.actions.held?.(id) === true;
+      if (item !== undefined && (held || this.actions.inUse?.(id) === true)) cell.classList.add('is-in-use');
       cell.setAttribute('aria-label', item ? `${prop?.name ?? 'Unknown item'} ×${item.count}, slot ${slot + 1}` : `Empty slot ${slot + 1}`);
       if (prop?.icon) { const icon = this.doc.createElement('img'); icon.src = this.art.url(prop.icon); icon.alt = ''; cell.append(icon); }
       else if (item) cell.append('?');
@@ -157,10 +170,11 @@ export class InventoryWindow {
       cell.addEventListener('dblclick', (event) => {
         event.preventDefault();
         if (!item || this.mobile || this.shopSelect) return;
+        if (held) return; // a held item is not used (IsUsingItem)
         // a ride (PARTS_RIDE) is used, not equipped (Piece 7 M5)
         if ((prop?.part ?? -1) >= 0 && !isRideProp(prop)) this.actions.equip(id); else this.actions.use(id);
       });
-      cell.draggable = !!item && !this.mobile && !this.shopSelect;
+      cell.draggable = !!item && !held && !this.mobile && !this.shopSelect;
       cell.addEventListener('dragstart', (event) => {
         if (!item || this.mobile || this.own?.equipmentObjectIds.includes(id)) { event.preventDefault(); return; }
         this.dragged = { id, itemId: item.itemId };
@@ -258,7 +272,7 @@ export class InventoryWindow {
   drawUpgrade(): void {
     const own = this.own, upgrade = this.actions.upgrade;
     if (!own || !this.frame.isOpen) return;
-    this.frame.element.toggleAttribute('data-upgrading', upgrade?.active() === true);
+    this.frame.element.toggleAttribute('data-upgrading', (this.actions.hammer?.() ?? upgrade?.active()) === true);
     const waiting = upgrade?.waitingTarget() ?? null;
     for (const cell of this.frame.element.querySelectorAll<HTMLElement>('[data-bag-slot]')) {
       cell.toggleAttribute('data-upgrade-wait', waiting !== null && own.inventorySlots[Number(cell.dataset.bagSlot)] === waiting);

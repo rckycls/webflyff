@@ -2290,7 +2290,11 @@ fieldset:disabled .btn {
 }
 /* 2026-11-05: the upgrade cursor (items/upgradeCursor.ts): Neuz's CUR_HAMMER over the bag while the mode is on (here the
    crosshair: the cursor files are not converted), and the waiting target's Icon_ImgIncAni frames (a pulse here) */
-.hud-inventory[data-upgrading] .inventory-cell { cursor: crosshair; }
+/* 2026-11-05: the hammer (CUR_HAMMER, Client/Cursor/anvil.cur, hotspot 0 0) over the whole bag in the upgrade mode
+   (CWndInventory::SetEnchantCursor, WndField.cpp:2818-2828); an item in use drawn at alpha 60 (WndItemCtrl.cpp:472-487),
+   its count as ever */
+.hud-inventory[data-upgrading], .hud-inventory[data-upgrading] * { cursor: var(--hud-hammer, crosshair) !important; }
+.inventory-cell.is-in-use img { opacity: 0.235; }
 .inventory-cell[data-upgrade-wait] { outline: 2px solid #ffd76a; animation: inventory-upgrade-wait 0.6s ease-in-out infinite; }
 @keyframes inventory-upgrade-wait { 50% { filter: brightness(1.9); } }
 /* 2026-11-05: an item buff's or premium timer's time, yellow (RenderOptBuffTime's ARGB 240, 240, 0) */
@@ -2459,22 +2463,44 @@ fieldset:disabled .btn {
 .world:has(:is(.hud-quests, .hud-inventory)[data-mobile-window]:not([hidden])) .hud-flight,
 .world:has(:is(.hud-character-landscape, .hud-skills-landscape, .hud-select-village, .hud-teleporter):not([hidden])) .hud-flight { visibility: hidden; }
 
-/* 2026-11-05: windows laid out from resdata.inc (ResWindow, hud/resWindow.ts): statics, texts, edit boxes, lists and
-   custom areas at their rects, in Neuz's black 12 px font */
+/* 2026-11-05: windows laid out from resdata.inc (ResWindow, hud/resWindow.ts), drawn as Neuz's controls draw them: a plain
+   static's title blue (0xff2e70a9) at (2, 2), a group box's white at (4, 4), both drawn twice a pixel apart; a text's black
+   words 6 px in, lines of the font + 5; an edit's 3 px in; a list's rows dark grey, orange under the pointer, blue chosen */
 .hud-res-window { color: #000000; }
 .hud-res-static, .hud-res-text, .hud-res-edit, .hud-res-custom, .hud-res-list { position: absolute; }
-.hud-res-picture { background-repeat: no-repeat; }
-.hud-res-static-text { position: absolute; left: 0; top: 0; right: 0; line-height: 14px; white-space: pre-line; }
-.hud-res-static-text.is-centred { text-align: center; }
-.hud-res-text-body { position: absolute; overflow-y: auto; line-height: 14px; white-space: pre-line; }
-.hud-res-edit input {
-  position: absolute; left: 3px; top: 2px; right: 3px; bottom: 2px; width: calc(100% - 6px); box-sizing: border-box;
-  padding: 0; border: 0; outline: none; background: transparent; color: #000000; font: inherit; line-height: 14px;
+.hud-res-static.is-picture { background-repeat: no-repeat; }
+.hud-res-static-text {
+  position: absolute; left: 2px; top: 2px; right: 0; line-height: 14px; white-space: nowrap;
+  color: rgb(46, 112, 169); text-shadow: 1px 0 0 currentColor;
 }
+.hud-res-static.is-group .hud-res-static-text { left: 4px; top: 3px; color: #ffffff; }
+.hud-res-text-body { position: absolute; overflow: hidden; line-height: 14px; white-space: pre-line; overflow-wrap: anywhere; }
+.hud-res-text-body.is-scrolled { overflow-y: auto; scrollbar-width: none; }
+.hud-res-text-body.is-scrolled::-webkit-scrollbar { display: none; }
+.hud-res-edit input {
+  position: absolute; left: 3px; top: 3px; right: 3px; bottom: 0; width: calc(100% - 6px); height: calc(100% - 3px);
+  box-sizing: border-box; padding: 0; border: 0; outline: none; background: transparent; color: #000000; font: inherit;
+  line-height: 14px;
+}
+.hud-res-edit-words { position: absolute; left: 3px; top: 3px; right: 3px; bottom: 0; overflow: hidden; line-height: 14px; white-space: pre-line; word-break: break-all; }
 .hud-res-list-rows { position: absolute; overflow-y: auto; }
-.hud-res-list-rows > [role="option"] { height: 16px; padding: 0 3px; line-height: 16px; white-space: nowrap; cursor: pointer; }
-.hud-res-list-rows > [role="option"]:hover { background: #c8c8ff66; }
-.hud-res-list-rows > [aria-selected="true"] { background: #6464ff55; }
+.hud-res-list-rows > [role='option'] { height: 15px; line-height: 15px; white-space: nowrap; color: rgb(64, 64, 64); cursor: pointer; }
+.hud-res-list-rows > [role='option']:hover { color: rgb(255, 128, 0); }
+.hud-res-list-rows > [aria-selected='true'] { color: rgb(64, 64, 255); }
+.hud-res-scroll { position: absolute; background-size: 100% 100%; }
+.hud-res-scroll-arrow { z-index: 1; }
+.hud-res-scroll-thumb { position: absolute; left: 0; width: 16px; display: flex; flex-direction: column; pointer-events: auto; }
+.hud-res-scroll-thumb[hidden] { display: none; }
+.hud-res-scroll-thumb > div { flex: none; height: 4px; background-size: 100% 100%; }
+.hud-res-scroll-thumb > [data-part='middle'] { flex: 1; }
+.hud-res-combo-drop { z-index: 1; }
+.hud-res-combo-list { position: absolute; z-index: 3; }
+.hud-res-combo-list[hidden] { display: none; }
+.hud-res-combo-rows { position: absolute; left: 3px; top: 3px; right: 3px; bottom: 3px; overflow-y: auto; }
+.hud-res-combo-rows > [role='option'] { height: 15px; line-height: 15px; color: rgb(64, 64, 64); cursor: pointer; }
+.hud-res-combo-rows > [role='option']:hover { color: rgb(255, 128, 0); }
+.hud-res-slot { position: absolute; width: 32px; height: 32px; }
+.hud-res-slot img { display: block; width: 32px; height: 32px; }
 @media (pointer: coarse) { .hud-res-edit input { font-size: 16px; } }
 
 /* 2026-11-05: the chat's command suggestions (ChatWindow, chatCommands.ts): a list over the line, the walked-to row lit */
@@ -2491,3 +2517,18 @@ fieldset:disabled .btn {
 .chat-suggestion-help { overflow: hidden; text-overflow: ellipsis; color: #6b5a4c; }
 .chat-suggestion-gm { margin-left: auto; padding: 0 4px; border-radius: 3px; background: #b03a2e; color: #fff; font-size: 10px; }
 @media (pointer: coarse) { .chat-suggestion { padding: 6px 8px; font-size: 14px; } }
+
+/* 2026-11-05: the item windows' own drawings (itemWindowFlows.ts): the element change's icons 1.5 times their size and the
+   chosen one's purple glow 2 px out and 6 in (CWndChangeAttribute::FillRect, WndField.cpp:23030-23057); its help's blue
+   bold title; the sex change's preview 6 px left of its box (WndChangeFace.cpp:176-187) */
+.hud-res-element { background-size: 192px 24px; background-repeat: no-repeat; cursor: pointer; }
+.hud-res-element.is-chosen::after {
+  content: ''; position: absolute; inset: -2px; pointer-events: none;
+  background:
+    linear-gradient(to right, rgb(187, 0, 255), rgba(255, 255, 255, 0)) left / 8px 100% no-repeat,
+    linear-gradient(to left, rgb(187, 0, 255), rgba(255, 255, 255, 0)) right / 8px 100% no-repeat,
+    linear-gradient(to bottom, rgb(187, 0, 255), rgba(255, 255, 255, 0)) top / 100% 8px no-repeat,
+    linear-gradient(to top, rgb(187, 0, 255), rgba(255, 255, 255, 0)) bottom / 100% 8px no-repeat;
+}
+.hud-res-words-title { color: rgb(0, 0, 255); font-weight: bold; }
+.hud-res-preview { position: absolute; left: -6px; top: 0; pointer-events: none; }

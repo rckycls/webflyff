@@ -305,3 +305,17 @@ export function lookOf(mover: Mover, data: GameData, ownEquipment: readonly numb
     held: { right: null, left: null },
   };
 }
+
+/**
+ * 2026-11-05: the sex change's preview (`CWndChangeSex::OnInitialUpdate`, `_Interface/WndChangeFace.cpp:245-267`): the
+ * other sex's bones and bare parts (`UpdateParts` with the other sex), the player's hair mesh with its colour not set (the
+ * lines are commented out, :225-229: the raw texture), the head `face` (0 to 4), and the player's weapons and shield.
+ */
+export function sexChangeLook(sex: number, hairMesh: number, face: number, worn: readonly WornPart[], data: GameData): MoverLook {
+  const held = new Set<number>([Parts.LWEAPON, Parts.RWEAPON, Parts.SHIELD]);
+  const look = humanLook({
+    gender: sex === Sex.MALE ? 'female' : 'male', hairMesh, headMesh: face, hairColor: 0xffffffff,
+    worn: worn.filter((w) => held.has(w.part)),
+  }, data);
+  return { ...look, hairColor: null };
+}

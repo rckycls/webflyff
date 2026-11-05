@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import type { WebItemProp } from '@flyffweb/formats';
 import {
-  attributeRefusal, createMonsterRefusal, nameRefusal, sexChangeRefusal, ticketUse, transyRefusal, transyTwin, windowOf,
+  attributeRefusal, createMonsterRefusal, nameRefusal, sexChangeRefusal, ticketInUse, ticketUse, transyRefusal, transyTwin, windowOf,
 } from '../src/world/items/itemWindows';
 
 const prop = (over: Partial<WebItemProp>): WebItemProp => ({
@@ -100,5 +100,18 @@ describe('createMonsterRefusal (WndWorldControlPlayer.cpp:240-285)', () => {
     expect(createMonsterRefusal({ distance: 16, worldId: 1, landAttr: 0 })).toBe('TID_GAME_CREATEMON_F_15');
     expect(createMonsterRefusal({ distance: 10, worldId: 2, landAttr: 0 })).toBe('TID_GAME_CREATEMON_F_AREA');
     expect(createMonsterRefusal({ distance: 10, worldId: 1, landAttr: 1 })).toBe('TID_GAME_CREATEMON_F_AREA');
+  });
+});
+
+describe('ticketInUse (2026-11-05, CMover::GetTicket)', () => {
+  const props = new Map([[26529, prop({ id: 26529, kind2: 19, kind3: 122 })], [500, prop({ id: 500 })]]);
+  it('the first bag item of the ticket whose item buff is on, with a keep time, not expired', () => {
+    const items = [
+      { objectId: 9, itemId: 26529, keepTime: 600 }, { objectId: 4, itemId: 26529, keepTime: 600 },
+      { objectId: 2, itemId: 26529 }, { objectId: 3, itemId: 26529, keepTime: 600, flag: 1 },
+    ];
+    expect(ticketInUse(items, props, [500, 26529])).toBe(4);
+    expect(ticketInUse(items, props, [500])).toBeNull();
+    expect(ticketInUse([{ objectId: 2, itemId: 26529 }], props, [26529])).toBeNull();
   });
 });

@@ -156,7 +156,8 @@ export function readInventoryItem(r: ArReader, slotId?: number): InventoryItem {
   const randomOption = r.i64(); // m_iRandomOptItemId (__int64; __VER >= 11, __SYS_IDENTIFY, :106)
   // m_dwKeepTime (DWORD, :110), then `if( m_dwKeepTime )` the time left, a time_t (:112-119): 4 bytes, since both
   // Neuz and the world server define _USE_32BIT_TIME_T (Neuz/StdAfx.h:10, WORLDSERVER/StdAfx.h:4)
-  if (r.u32() !== 0) r.i32();
+  // 2026-11-05: kept as the seconds left when read (the ticket in use is one with a keep time, CMover::GetTicket)
+  const keepTime = r.u32() !== 0 ? r.i32() : undefined;
   // BYTE bPet, then `if( bPet )` the pet (__VER >= 9, __PET_0410, :121-128); the storing side writes 1 or 0 (:76-84)
   if (r.u8() !== 0) skipPet(r);
   r.i32(); // m_bTranformVisPet (BOOL; __VER >= 15, __PETVIS, :131)
@@ -166,6 +167,7 @@ export function readInventoryItem(r: ArReader, slotId?: number): InventoryItem {
     ...(abilityOption !== 0 ? { abilityOption } : {}), ...(resist !== 0 ? { resist } : {}),
     ...(resistOption !== 0 ? { resistOption } : {}), ...(piercing.length > 0 ? { piercing } : {}),
     ...(ultimate.length > 0 ? { ultimate } : {}), ...(randomOption !== 0n ? { randomOption } : {}),
+    ...(keepTime !== undefined ? { keepTime } : {}),
   };
 }
 
