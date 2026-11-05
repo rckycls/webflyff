@@ -66,7 +66,7 @@ describe('world constants', () => {
       // 2026-11-05: Buff Pang's applied skills.
       DOAPPLYUSESKILL: 0x00d7,
       // 2026-11-05: the premium timers.
-      SM_MODE: 0x003f, SM_MODE_ALL: 0x003e, RESISTSMMODE: 0x005d, ULTIMATE: 0x0100,
+      SM_MODE: 0x003f, SM_MODE_ALL: 0x003e, RESISTSMMODE: 0x005d, ULTIMATE: 0x0100, SMELT_SAFETY: 0x9900,
       // 2026-11-05: the item windows' answers.
       SUMMON: 0x00ed, SEX_CHANGE: 0x00dc, CHANGEFACE: 0x004d,
       // Piece 7 M5: flight.

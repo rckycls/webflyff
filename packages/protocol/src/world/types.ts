@@ -71,6 +71,8 @@ export type WorldMessage = ChatMessage | NpcMessage | ShopMessage | QuestMessage
   | { type: 'setPlayerName'; playerId: number; name: string }
   /** 2026-11-05: the Ultimate gem's answer (`OnUltimate`): its state and result. */
   | { type: 'ultimate'; state: number; result: number }
+  /** 2026-11-05: a safe upgrade's answer (`OnSmeltSafety`): 0 refused, 1 success, 2 failure, 3 at the most. */
+  | { type: 'smeltSafety'; result: number }
   /** 2026-11-05: the element stones' elements (`SAI79`, 0xff none): the left and right weapons' and the defence's. */
   | { type: 'resistSmMode'; left: number; right: number; defense: number }
   /** 2026-11-05: every running premium timer, at join (`OnSMModeAll`). */

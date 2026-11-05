@@ -31,6 +31,10 @@ export interface InventoryActions {
   held?(id: number): boolean;
   /** 2026-11-05: an item in use, drawn faded and still usable (the ticket in use, `CMover::GetTicket`). */
   inUse?(id: number): boolean;
+  /** 2026-11-05: the pieces of a stack a window holds under the safe upgrade's die flag: the count shows the rest. */
+  reservedCount?(id: number): number;
+  /** 2026-11-05: the bag closed (the windows that go with it: the piercing and the safe upgrade). */
+  closed?(): void;
   /** 2026-11-05: the hammer over the bag: the upgrade mode's (`m_bIsUpgradeMode`), not a window's pick. */
   hammer?(): boolean;
 }
@@ -57,7 +61,7 @@ export class InventoryWindow {
     if (hammer !== '') this.frame.element.style.setProperty('--hud-hammer', `url(${JSON.stringify(hammer)}) 0 0, crosshair`);
     doc.addEventListener('dragover', this.onDragOver);
     doc.addEventListener('drop', this.onDrop);
-    this.frame.onClose = () => { if (this.shopSelect) this.onShopClose?.(); this.dragged = null; this.actionsOpen = false; this.frame.element.querySelector('.inventory-drop-dialog')?.remove(); this.actions.upgrade?.cancel(); };
+    this.frame.onClose = () => { if (this.shopSelect) this.onShopClose?.(); this.dragged = null; this.actionsOpen = false; this.frame.element.querySelector('.inventory-drop-dialog')?.remove(); this.actions.upgrade?.cancel(); this.actions.closed?.(); };
     // 2026-11-05: a right click on the bag ends the upgrade mode (CWndInventory::OnRButtonUp, WndField.cpp:2806)
     this.frame.element.addEventListener('contextmenu', () => this.actions.upgrade?.cancel());
   }
@@ -158,7 +162,7 @@ export class InventoryWindow {
       cell.setAttribute('aria-label', item ? `${prop?.name ?? 'Unknown item'} ×${item.count}, slot ${slot + 1}` : `Empty slot ${slot + 1}`);
       if (prop?.icon) { const icon = this.doc.createElement('img'); icon.src = this.art.url(prop.icon); icon.alt = ''; cell.append(icon); }
       else if (item) cell.append('?');
-      if (item) { const count = this.doc.createElement('span'); count.textContent = String(item.count); cell.append(count); }
+      if (item) { const count = this.doc.createElement('span'); count.textContent = String(item.count - (this.actions.reservedCount?.(id) ?? 0)); cell.append(count); }
       cell.addEventListener('click', () => {
         // 2026-11-05: in the upgrade mode a click is its target's (CWndItemCtrl::OnLButtonDown); an empty cell does nothing
         if (this.actions.upgrade?.active() === true) { if (item) this.actions.upgrade.pick(id); return; }

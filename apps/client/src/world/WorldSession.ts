@@ -7,7 +7,7 @@ import {
   encodeUseItem, encodeEquipItem, encodeMoveItem, encodeDropItem, encodeRevival, encodeChat,
   encodeNpcDialog, encodeNpcDialogOpen, encodeOpenShop, encodeCloseShop, encodeBuyItem, encodeSellItem, encodeTeleporter,
   encodeNpcBuff, encodeQuestCheck, encodeEnchant, encodePiercing, encodeRandomScroll, encodeDoUseItemTarget,
-  encodeUltimateEnchantWeapon, encodeQuerySetPlayerName, encodeSummonParty, encodeSummonPartyConfirm, encodeSummonFriend,
+  encodeUltimateEnchantWeapon, encodePiercingSize, encodeSmeltSafety, encodeQuerySetPlayerName, encodeSummonParty, encodeSummonPartyConfirm, encodeSummonFriend,
   encodeSummonFriendConfirm, encodeSummonFriendCancel, encodeDoUseItemInput, encodeChangeAttribute, encodeItemTransy,
   encodeCreateMonster, encodeRemoveQuest, encodeReturnScroll, encodeStateModeCancel,
 } from '@flyffweb/protocol';
@@ -114,6 +114,13 @@ export class WorldSession {
     const encode = { enchant: encodeEnchant, ultimateEnchantWeapon: encodeUltimateEnchantWeapon, piercing: encodePiercing,
       randomScroll: encodeRandomScroll, doUseItemTarget: encodeDoUseItemTarget }[packet];
     this.playingCache()?.send(encode(first, second));
+  }
+  /** 2026-11-05: the Upgrade Specialist's piercing and one safe upgrade (NULL_ID for an empty last field). */
+  sendPiercingSize(itemId: number, moonstoneId: number, protectId: number): void {
+    this.playingCache()?.send(encodePiercingSize(itemId, moonstoneId, protectId));
+  }
+  sendSmeltSafety(itemId: number, materialId: number, scrollId: number, smeltingId: number): void {
+    this.playingCache()?.send(encodeSmeltSafety(itemId, materialId, scrollId, smeltingId));
   }
   /** 2026-11-05: the item windows' packets (world/itemWindows.ts in the protocol). */
   sendQuerySetPlayerName(objectId: number, name: string): void { this.playingCache()?.send(encodeQuerySetPlayerName(objectId, name)); }

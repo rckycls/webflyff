@@ -39,6 +39,39 @@ export const encodeDoUseItemTarget = (materialId: number, targetId: number): Uin
 export const encodeUltimateEnchantWeapon = (weaponId: number, gemId: number): Uint8Array =>
   two(PacketType.ULTIMATE_ENCHANTWEAPON, weaponId, gemId);
 
+/** An inventory object id, or NULL_ID for none (the last fields of PIERCING_SIZE and SMELT_SAFETY). */
+function checkIdOrNull(id: number): void {
+  if (id !== 0xffffffff) checkId(id);
+}
+
+/**
+ * 2026-11-05: the Upgrade Specialist's piercing (`CDPClient::SendPiercingSize`, `DPClient.cpp:14824-14831`): the item, the
+ * Moonstone, and the GProtect or NULL_ID.
+ */
+export function encodePiercingSize(itemId: number, moonstoneId: number, protectId: number): Uint8Array {
+  checkId(itemId);
+  checkId(moonstoneId);
+  checkIdOrNull(protectId);
+  return clientPacket(PacketType.PIERCING_SIZE).u32(itemId).u32(moonstoneId).u32(protectId).toBytes();
+}
+
+/**
+ * 2026-11-05: one safe upgrade (`CDPClient::SendSmeltSafety`, `DPClient.cpp:18740-18746`): the item, the material, the
+ * protection scroll, and the smelting scroll or NULL_ID.
+ */
+export function encodeSmeltSafety(itemId: number, materialId: number, scrollId: number, smeltingId: number): Uint8Array {
+  checkId(itemId);
+  checkId(materialId);
+  checkId(scrollId);
+  checkIdOrNull(smeltingId);
+  return clientPacket(PacketType.SMELT_SAFETY).u32(itemId).u32(materialId).u32(scrollId).u32(smeltingId).toBytes();
+}
+
+/** SMELT_SAFETY (`CDPClient::OnSmeltSafety`, `DPClient.cpp:18748-18783`): its result byte. */
+export function readSmeltSafety(r: ArReader): MessageOf<'smeltSafety'> {
+  return { type: 'smeltSafety', result: r.u8() };
+}
+
 /** ULTIMATE (`CDPClient::OnUltimate`): its state and result, which the Ultimate windows the browser lacks would show. */
 export function readUltimate(r: ArReader): MessageOf<'ultimate'> {
   const state = r.u8();

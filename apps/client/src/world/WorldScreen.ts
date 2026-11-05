@@ -121,6 +121,8 @@ import { SmTimers, skillPointsSpent } from './items/premiumItems';
 import { UpgradeCursor } from './items/upgradeCursor';
 import { ConfirmBoxes, boxOf } from './items/confirmBoxes';
 import { ticketInUse } from './items/itemWindows';
+import { PiercingWindow, SmeltSafetyWindow } from './items/upgradeNpcWindows';
+import type { UpgradeNpcHost } from './items/upgradeNpcWindows';
 import { ItemWindowFlows } from './items/itemWindowFlows';
 import type { ItemWindowPacket } from './items/itemWindowFlows';
 
@@ -377,6 +379,10 @@ export class WorldScreen {
   private confirmBoxes: ConfirmBoxes | undefined;
   /** 2026-11-05: the bag's items a window holds (`CItemBase::m_dwExtra`), by object: drawn faded, not dragged nor used. */
   private readonly bagReserved = new Map<number, number>();
+  /** 2026-11-05: the safe upgrade's "die flag" on the bag (`SetDieFlag`): a stack held in part is drawn and counted down. */
+  private bagDieFlag = false;
+  /** 2026-11-05: the Upgrade Specialist's windows. */
+  private upgradeNpc: { piercing: PiercingWindow; safety: SmeltSafetyWindow } | undefined;
   /** 2026-11-05: the ticket in use (`CMover::GetTicket`), drawn faded in the bag. */
   private ticketInUse: number | null = null;
   /** The authorization the chat's suggestions were last given (2026-11-05). */
@@ -741,6 +747,7 @@ export class WorldScreen {
       if (value.type === 'smMode') { this.smTimers.set(value.smType, value.seconds, performance.now()); continue; }
       // 2026-11-05: the summons, a name changed, a sex or a face changed (OnSummon, OnSetPlayerName, OnSexChange, OnChangeFace)
       if (value.type === 'summon') { this.itemWindows?.onSummon(value); continue; }
+      if (value.type === 'smeltSafety') { this.upgradeNpc?.safety.onResult(value.result); continue; }
       if (value.type === 'setPlayerName') { this.renamePlayer(value.playerId, value.name); continue; }
       if (value.type === 'sexChange') { this.changeLook(world.movers.get(objectId), { index: value.index }); continue; }
       if (value.type === 'changeFace') {
@@ -1123,6 +1130,26 @@ export class WorldScreen {
       arm: (on) => this.armMonsterSummon(on),
       send: (...packet) => this.sendItemWindow(packet),
     });
+    // 2026-11-05: the Upgrade Specialist's Piercing and Safe Upgrade windows (upgradeNpcWindows.ts)
+    const upgradeNpcHost: UpgradeNpcHost = {
+      own: () => this.own, props: this.data!.itemProps,
+      text: (tid) => this.data?.texts.get(tid)?.text ?? '',
+      say: (tid) => this.sayRefusal({ kind: 'say', tid }),
+      ask: (tid, ok) => {
+        const text = (this.data?.texts.get(tid)?.text ?? '').replace(/\\n/g, '\n');
+        if (text !== '' && this.messageBox?.isOpen !== true) this.messageBox?.open(text, 'okCancel', ok);
+      },
+      reserve: (id, on) => this.reserveItem(id, on),
+      reserved: (id) => this.bagReserved.get(id) ?? 0,
+      dieFlag: (on) => { this.bagDieFlag = on; if (this.own) this.inventoryWindow?.update(this.own, true); },
+      openBag: () => { if (this.inventoryWindow?.frame.isOpen !== true) this.openWindow('inventory'); },
+      effect: (on) => this.upgradeEffect(on),
+      sendPiercingSize: (item, moon, protect) => this.session.sendPiercingSize(item, moon, protect),
+      sendSmeltSafety: (item, material, scroll, smelting) => this.session.sendSmeltSafety(item, material, scroll, smelting),
+      now: () => performance.now(),
+      ui: { art: this.hudArt!, doc, layer: () => this.hud?.element ?? null },
+    };
+    this.upgradeNpc = { piercing: new PiercingWindow(upgradeNpcHost), safety: new SmeltSafetyWindow(upgradeNpcHost) };
     // 2026-11-05: the upgrade cursor: Sunstone, Moonstone, the cards, the random and awakening scrolls, the Ultimate gem
     this.upgrade = new UpgradeCursor({
       own: () => this.own, props: this.data!.itemProps, now: () => performance.now(),
@@ -1223,7 +1250,13 @@ export class WorldScreen {
     this.reviveWindow = reviveWindow;
     reviveWindow.onStand = () => this.itemUse!.revive();
     const inventoryWindow = new InventoryWindow(this.hudArt!, this.data!, {
-      use: (id) => { this.itemUse!.use(id, 'bag'); }, equip: (id) => { itemActions.equip(id); },
+      // 2026-11-05: a double-click (or Use) while the Upgrade Specialist's window is open puts the item in it (WndField.cpp:2262-2272)
+      use: (id) => {
+        if (this.upgradeNpc?.safety.isOpen === true) this.upgradeNpc.safety.take(id);
+        else if (this.upgradeNpc?.piercing.isOpen === true) this.upgradeNpc.piercing.take(id);
+        else this.itemUse!.use(id, 'bag');
+      },
+      equip: (id) => { itemActions.equip(id); },
       land: (id) => { this.itemUse!.land(id); }, // Piece 7 M5: the worn ride's equipment cell
       // 2026-11-05: the upgrade cursor's target, its wait and its cancel
       upgrade: {
@@ -1234,7 +1267,9 @@ export class WorldScreen {
         cancel: () => { this.upgrade?.cancel(); this.itemWindows?.cancelPick(); },
       },
       // 2026-11-05: the items a window holds (SetExtra) and the ticket in use, faded; the hammer in the upgrade mode only
-      held: (id) => this.bagReserved.has(id),
+      held: (id) => this.bagHeld(id),
+      closed: () => { this.upgradeNpc?.piercing.dismiss(); this.upgradeNpc?.safety.dismiss(); },
+      reservedCount: (id) => (this.bagDieFlag ? this.bagReserved.get(id) ?? 0 : 0),
       inUse: (id) => id === this.ticketInUse,
       hammer: () => this.upgrade?.active === true,
       drop: (id, count) => {
@@ -1455,6 +1490,16 @@ export class WorldScreen {
       if (!this.over) report(messageOf(error));
       return null;
     }
+  }
+
+  /**
+   * 2026-11-05: an item the bag keeps put and draws faded (`IsUsingItem`, WndItemCtrl.cpp:472-487): any piece held by a
+   * window, or with the safe upgrade's die flag every piece.
+   */
+  private bagHeld(objectId: number): boolean {
+    const held = this.bagReserved.get(objectId) ?? 0;
+    if (held === 0) return false;
+    return !this.bagDieFlag || held >= (this.own?.inventory?.get(objectId)?.count ?? 0);
   }
 
   /** 2026-11-05: a window holds a bag item, or lets it go (`SetExtra`): the bag draws it faded and keeps it put. */
@@ -2058,8 +2103,11 @@ export class WorldScreen {
       this.upgrade?.cancel();
       this.itemWindows?.disarm(); // and the monster summon's cursor (WndManager.cpp:3377)
       this.itemWindows?.playerMoved(); // and the element change (WndWorld.cpp:8487-8491)
+      this.upgradeNpc?.piercing.dismiss(); // and the Upgrade Specialist's windows (:8360-8362, :8493-8495)
+      this.upgradeNpc?.safety.dismiss();
     }
     this.upgrade?.step();
+    this.upgradeNpc?.safety.step();
     this.inventoryWindow?.drawUpgrade();
     // the dialogue and the menu go with their NPC or when the player moves (WndWorld.cpp:8052-8081)
     const dialogNpc = this.dialog?.npcId ?? null;
@@ -2672,6 +2720,13 @@ export class WorldScreen {
       this.teleporter!.open(id, data);
     } else if (entry === MMI.NPC_BUFF) {
       this.session.sendNpcBuff(npc.added.npc!.characterKey);
+    } else if (entry === MMI.PIERCING) {
+      // 2026-11-05: the Upgrade Specialist (:5681-5733): Piercing, nothing while a shop is open
+      if (this.shopWindow?.frame.isOpen !== true) this.upgradeNpc?.piercing.open();
+    } else if (entry === MMI.SMELT_SAFETY_GENERAL || entry === MMI.SMELT_SAFETY_ACCESSORY || entry === MMI.SMELT_SAFETY_PIERCING) {
+      // :5989-6033: the safe upgrade in its mode, any open one deleted first
+      const mode = entry === MMI.SMELT_SAFETY_GENERAL ? 'normal' : entry === MMI.SMELT_SAFETY_ACCESSORY ? 'accessory' : 'piercing';
+      this.upgradeNpc?.safety.open(mode);
     }
   }
 
@@ -2843,6 +2898,10 @@ export class WorldScreen {
     this.itemWindows = undefined;
     this.confirmBoxes?.dispose();
     this.confirmBoxes = undefined;
+    this.upgradeNpc?.piercing.close();
+    this.upgradeNpc?.safety.close();
+    this.upgradeNpc = undefined;
+    this.bagDieFlag = false;
     this.bagReserved.clear();
     this.upgradeEffectOn = false;
     this.messageBox?.dispose();

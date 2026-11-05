@@ -13,6 +13,9 @@ export const PacketType = {
   RANDOMSCROLL: 0xf000d00d,
   DO_USE_ITEM_TARGET: 0x70000004,
   ULTIMATE_ENCHANTWEAPON: 0xf000f113,
+  /** 2026-11-05: the Upgrade Specialist's piercing and safe upgrade (`MsgHdr.h:515, 753`; world/upgrade.ts). */
+  PIERCING_SIZE: 0xf000d008,
+  SMELT_SAFETY: 0x70007000,
   /** 2026-11-05: the item windows' packets (`MsgHdr.h`; world/itemWindows.ts). QUERYSETPLAYERNAME is also its answer. */
   QUERYSETPLAYERNAME: 0x00000012,
   SUMMON_FRIEND: 0xf000e001,
@@ -266,6 +269,8 @@ export const MessageType = {
   RESISTSMMODE: 0x005d,
   /** 2026-11-05: the Ultimate gem's answer (`CUser::AddUltimate`). */
   ULTIMATE: 0x0100,
+  /** 2026-11-05: the safe upgrade's answer (`CUser::AddSmeltSafety`, `MsgHdr.h:1301`): a byte. */
+  SMELT_SAFETY: 0x9900,
   /** 2026-11-05: the summons, the sex and the face changed (`MsgHdr.h:976, 1149, 1179`). */
   SUMMON: 0x00ed,
   SEX_CHANGE: 0x00dc,

@@ -2532,3 +2532,14 @@ fieldset:disabled .btn {
 }
 .hud-res-words-title { color: rgb(0, 0, 255); font-weight: bold; }
 .hud-res-preview { position: absolute; left: -6px; top: 0; pointer-events: none; }
+
+/* 2026-11-05: the Upgrade Specialist's windows (upgradeNpcWindows.ts): centred statics (WSS_ALIGNHCENTER), the safe
+   upgrade's result pictures over Window02.bmp and its progress gauge, SafetyGauge.bmp cut in three slices of 4 px
+   (CTheme::RenderGauge), the target's pulse while the run is on */
+.hud-res-static-text.is-centred { left: 0; right: 0; text-align: center; }
+.hud-smelt-safety [data-result] { background-repeat: no-repeat; }
+.hud-safety-gauge {
+  position: absolute; left: 0; top: 0; height: 32px; box-sizing: border-box; border-style: solid; border-width: 0 4px;
+  border-image: var(--hud-safety-gauge) 0 4 fill / 0 4px stretch; pointer-events: none;
+}
+.hud-smelt-safety [data-upgrade-wait] .hud-res-slot { animation: inventory-upgrade-wait 0.6s ease-in-out infinite; }

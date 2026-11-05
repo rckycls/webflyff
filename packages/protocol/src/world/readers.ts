@@ -43,7 +43,7 @@ import {
   readMeleeAttack2, readMoverBehavior2, readMoverCorr2, readMoverMoved2, readSendActMsg, readSetFuel,
 } from './flight';
 import type { WorldMessage } from './types';
-import { readUltimate } from './upgrade';
+import { readSmeltSafety, readUltimate } from './upgrade';
 import { readChangeFace, readSexChange, readSummon } from './itemWindows';
 
 /**
@@ -153,6 +153,7 @@ export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
     [MessageType.SM_MODE_ALL, readSmModeAll],
     [MessageType.RESISTSMMODE, readResistSmMode],
     [MessageType.ULTIMATE, readUltimate],
+    [MessageType.SMELT_SAFETY, readSmeltSafety],
     [MessageType.SUMMON, readSummon],
     [MessageType.SEX_CHANGE, readSexChange],
     [MessageType.CHANGEFACE, readChangeFace],
