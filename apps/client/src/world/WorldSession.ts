@@ -10,6 +10,7 @@ import {
   encodeUltimateEnchantWeapon, encodePiercingSize, encodeSmeltSafety, encodeQuerySetPlayerName, encodeSummonParty, encodeSummonPartyConfirm, encodeSummonFriend,
   encodeSummonFriendConfirm, encodeSummonFriendCancel, encodeDoUseItemInput, encodeChangeAttribute, encodeItemTransy,
   encodeCreateMonster, encodeRemoveQuest, encodeReturnScroll, encodeStateModeCancel, encodePetRelease,
+  encodeUsePetFeed, encodeMakePetFeed, encodePetTamerMistake, encodePetTamerMiracle, encodeFeedPocketInactive, encodeClearPetName,
 } from '@flyffweb/protocol';
 import { encodeMagicAttack, encodeRangeAttack, encodeSfxClear, encodeSfxHit, encodeSfxId } from '@flyffweb/protocol';
 import {
@@ -143,6 +144,19 @@ export class WorldSession {
   sendNpcBuff(key: string): void { this.playingCache()?.send(encodeNpcBuff(key)); }
   /** 2026-11-09 (pets R2): the own raised pet's menu's release (`SendPetRelease`, `DPClient.cpp:16450-16454`). */
   sendPetRelease(): void { this.playingCache()?.send(encodePetRelease()); }
+  /**
+   * 2026-11-09 (pets R3): the raised pet's care (`DPClient.cpp:16458-16498`, `:18441-18444`): the food used at once
+   * (`SendUsePetFeed`), the food mill's OK (`SendMakePetFeed`, the tool `NULL_ID` at the tamer), the tamer's mistake and
+   * miracle, the feed pocket's off-switch and the tamer's rename cancel.
+   */
+  sendUsePetFeed(feedObjectId: number): void { this.playingCache()?.send(encodeUsePetFeed(feedObjectId)); }
+  sendMakePetFeed(materialObjectId: number, count: number, toolObjectId: number = NULL_ID): void {
+    this.playingCache()?.send(encodeMakePetFeed(materialObjectId, toolObjectId, count));
+  }
+  sendPetTamerMistake(scrollObjectId: number): void { this.playingCache()?.send(encodePetTamerMistake(scrollObjectId)); }
+  sendPetTamerMiracle(scrollObjectId: number): void { this.playingCache()?.send(encodePetTamerMiracle(scrollObjectId)); }
+  sendFeedPocketInactive(): void { this.playingCache()?.send(encodeFeedPocketInactive()); }
+  sendClearPetName(): void { this.playingCache()?.send(encodeClearPetName()); }
   sendNpcDialogOpen(id: number): void { this.playingCache()?.send(encodeNpcDialogOpen(id)); }
   sendNpcDialog(id: number, key: string, param: number, quest: number, playerId: number): void {
     this.playingCache()?.send(encodeNpcDialog(id, key, param, quest, playerId));

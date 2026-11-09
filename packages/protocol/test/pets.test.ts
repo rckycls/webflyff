@@ -8,7 +8,9 @@ import {
 } from '@flyffweb/testkit';
 import type { ScriptMessage } from '@flyffweb/testkit';
 import {
-  ArReader, ArWriter, MessageType, NULL_ID, PacketType, WORLD_READERS, decodeWorldPacket, encodePetRelease, readBundle,
+  ArReader, ArWriter, MessageType, NULL_ID, PacketType, WORLD_READERS, decodeWorldPacket, encodeClearPetName,
+  encodeFeedPocketInactive, encodeMakePetFeed, encodePetRelease, encodePetTamerMiracle, encodePetTamerMistake, encodeUsePetFeed,
+  readBundle,
 } from '../src';
 import type { AddedMover, AddedPlayer, InventoryItem, OwnCharacter, PetData, WorldMessage } from '../src';
 
@@ -167,5 +169,50 @@ describe('the client\'s PET_RELEASE (CDPClient::SendPetRelease, DPClient.cpp:164
     r.expectEnd();
     expect(PacketType.PET_RELEASE).toBe(0xf000f600);
     expect(decodeWorldPacket(encodePetRelease())).toEqual({ type: 'petRelease' });
+  });
+});
+
+describe("the client's pet care packets (DPClient.cpp:16458-16498, :18441-18444; pets R3)", () => {
+  const body = (bytes: Uint8Array, type: number): ArReader => {
+    const r = new ArReader(bytes);
+    expect(r.u32()).toBe(0xffffffff); // DPID_UNKNOWN
+    expect(r.u32()).toBe(type);
+    return r;
+  };
+
+  it("USE_PET_FEED 0xf000f601: the food's object id alone (__PET_0519, as OnUsePetFeed reads it, DPSrvr.cpp:8054-8122)", () => {
+    const r = body(encodeUsePetFeed(7), 0xf000f601);
+    expect(r.u32()).toBe(7);
+    r.expectEnd();
+    expect(PacketType.USE_PET_FEED).toBe(0xf000f601);
+    expect(decodeWorldPacket(encodeUsePetFeed(7))).toEqual({ type: 'usePetFeed', feedObjectId: 7 });
+  });
+
+  it('MAKE_PET_FEED 0xf000f605: material, tool (NULL_ID at the tamer), then the count as a short (DPSrvr.cpp:8130-8133)', () => {
+    const r = body(encodeMakePetFeed(12, NULL_ID, 300), 0xf000f605);
+    expect(r.u32()).toBe(12);
+    expect(r.u32()).toBe(NULL_ID);
+    expect(r.i16()).toBe(300);
+    r.expectEnd();
+    expect(decodeWorldPacket(encodeMakePetFeed(12, 30, 1))).toEqual({ type: 'makePetFeed', materialObjectId: 12, toolObjectId: 30, count: 1 });
+    expect(() => encodeMakePetFeed(12, NULL_ID, 0x8000)).toThrow(RangeError);
+  });
+
+  it("PET_TAMER_MISTAKE 0xf000f602 and PET_TAMER_MIRACLE 0xf000f603: the scroll's object id", () => {
+    const mistake = body(encodePetTamerMistake(4), 0xf000f602);
+    expect(mistake.u32()).toBe(4);
+    mistake.expectEnd();
+    const miracle = body(encodePetTamerMiracle(5), 0xf000f603);
+    expect(miracle.u32()).toBe(5);
+    miracle.expectEnd();
+    expect(decodeWorldPacket(encodePetTamerMistake(4))).toEqual({ type: 'petTamerMistake', scrollObjectId: 4 });
+    expect(decodeWorldPacket(encodePetTamerMiracle(5))).toEqual({ type: 'petTamerMiracle', scrollObjectId: 5 });
+  });
+
+  it('FEED_POCKET_INACTIVE 0xf000f604 and CLEAR_PET_NAME 0x8fffff01: the type alone', () => {
+    body(encodeFeedPocketInactive(), 0xf000f604).expectEnd();
+    body(encodeClearPetName(), 0x8fffff01).expectEnd();
+    expect(decodeWorldPacket(encodeFeedPocketInactive())).toEqual({ type: 'feedPocketInactive' });
+    expect(decodeWorldPacket(encodeClearPetName())).toEqual({ type: 'clearPetName' });
   });
 });

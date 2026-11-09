@@ -9,6 +9,8 @@
 //   CDPClient::OnActivateVisPet         Neuz/DPClient.cpp:19002-19029            VISPET_ACTIVATE 0x8801 (__VER >= 15, __PETVIS)
 //   CDPClient::OnChangeMoverSfx         Neuz/DPClient.cpp:19032-19042            MOVER_CHANGESFX 0x8800 (__PETVIS)
 //   CDPClient::SendPetRelease           Neuz/DPClient.cpp:16450-16454            the client's PET_RELEASE 0xf000f600 (R2)
+//   CDPClient::SendUsePetFeed .. SendFeedPocketInactive DPClient.cpp:16458-16498  USE_PET_FEED 0xf000f601 .. MAKE_PET_FEED 0xf000f605 (R3)
+//   CDPClient::SendClearPetName         Neuz/DPClient.cpp:18441-18444            CLEAR_PET_NAME 0x8fffff01 (R3)
 
 import type { ArReader } from '../ar/ArReader';
 import { PacketType } from '../constants';
@@ -89,6 +91,61 @@ export function readPetCall(r: ArReader): PetMessage {
  */
 export function encodePetRelease(): Uint8Array {
   return clientPacket(PacketType.PET_RELEASE).toBytes();
+}
+
+/** A bag object id (`m_dwObjId`) or `NULL_ID`, as a DWORD. */
+function checkObjectId(id: number): void {
+  if (!Number.isInteger(id) || id < 0 || id > 0xffffffff) throw new RangeError('invalid object id');
+}
+
+/**
+ * 2026-11-09 (pets R3): `CDPClient::SendUsePetFeed` (`DPClient.cpp:16458-16469`, `__PET_0519`): the food's object id
+ * alone; `CDPSrvr::OnUsePetFeed` (`WORLDSERVER/DPSrvr.cpp:8054-8122`) feeds the whole stack, as much as fits.
+ */
+export function encodeUsePetFeed(feedObjectId: number): Uint8Array {
+  checkObjectId(feedObjectId);
+  return clientPacket(PacketType.USE_PET_FEED).u32(feedObjectId).toBytes();
+}
+
+/**
+ * 2026-11-09 (pets R3): `SendMakePetFeed( dwMaterialId, nNum, dwToolId )` (`DPClient.cpp:16471-16477`), written
+ * `ar << dwMaterialId << dwToolId << nNum`: the material's object id, the feed maker's (`NULL_ID` at the tamer) and the
+ * count as a short (`OnMakePetFeed`, `DPSrvr.cpp:8125-8227`).
+ */
+export function encodeMakePetFeed(materialObjectId: number, toolObjectId: number, count: number): Uint8Array {
+  checkObjectId(materialObjectId);
+  checkObjectId(toolObjectId);
+  if (!Number.isInteger(count) || count < -0x8000 || count > 0x7fff) throw new RangeError('invalid count');
+  return clientPacket(PacketType.MAKE_PET_FEED).u32(materialObjectId).u32(toolObjectId).i16(count).toBytes();
+}
+
+/** 2026-11-09 (pets R3): `SendPetTamerMistake( dwId )` (`DPClient.cpp:16479-16485`): the scroll's object id. */
+export function encodePetTamerMistake(scrollObjectId: number): Uint8Array {
+  checkObjectId(scrollObjectId);
+  return clientPacket(PacketType.PET_TAMER_MISTAKE).u32(scrollObjectId).toBytes();
+}
+
+/** 2026-11-09 (pets R3): `SendPetTamerMiracle( dwId )` (`DPClient.cpp:16487-16492`): the scroll's object id. */
+export function encodePetTamerMiracle(scrollObjectId: number): Uint8Array {
+  checkObjectId(scrollObjectId);
+  return clientPacket(PacketType.PET_TAMER_MIRACLE).u32(scrollObjectId).toBytes();
+}
+
+/**
+ * 2026-11-09 (pets R3): `SendFeedPocketInactive` (`DPClient.cpp:16494-16498`), sent when the feed pocket's buff is
+ * double-clicked (`CWndWorld::OnLButtonDblClk`, `WndWorld.cpp:7280-7283`): the type alone (`OnFeedPocketInactive`,
+ * `DPSrvr.cpp:8329-8338`).
+ */
+export function encodeFeedPocketInactive(): Uint8Array {
+  return clientPacket(PacketType.FEED_POCKET_INACTIVE).toBytes();
+}
+
+/**
+ * 2026-11-09 (pets R3): `SendClearPetName` (`DPClient.cpp:18441-18444`, `SendHdr`), the Pet Tamer's `MMI_RENAME_CANCEL`
+ * (`WndWorld.cpp:5237-5240`): the type alone (`OnClearPetName`, `DPSrvr.cpp:9831-9845`).
+ */
+export function encodeClearPetName(): Uint8Array {
+  return clientPacket(PacketType.CLEAR_PET_NAME).toBytes();
 }
 
 /** PET_RELEASE: `OnPetRelease` (`DPClient.cpp:16420-16448`): nothing more. */

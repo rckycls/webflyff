@@ -9,6 +9,16 @@ export const PacketType = {
   NPC_BUFF: 0xf000f813,
   /** 2026-11-09 (pets R2): `PACKETTYPE_PET_RELEASE`, the own raised pet sent back from its menu (`MsgHdr.h:626`). */
   PET_RELEASE: 0xf000f600,
+  /**
+   * 2026-11-09 (pets R3): the raised pet's care (`MsgHdr.h:627-631`, `:775`; world/pets.ts): the food, the tamer's mistake
+   * and miracle, the feed pocket's off-switch, the food mill, and the tamer's rename cancel (`__PET_1024`).
+   */
+  USE_PET_FEED: 0xf000f601,
+  PET_TAMER_MISTAKE: 0xf000f602,
+  PET_TAMER_MIRACLE: 0xf000f603,
+  FEED_POCKET_INACTIVE: 0xf000f604,
+  MAKE_PET_FEED: 0xf000f605,
+  CLEAR_PET_NAME: 0x8fffff01,
   /** 2026-11-05: the upgrade cursor's packets (`MsgHdr.h`; world/upgrade.ts). */
   ENCHANT: 0xf000b024,
   PIERCING: 0xf000b025,

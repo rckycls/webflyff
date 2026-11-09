@@ -245,6 +245,11 @@ export type WorldPacket =
   | { type: 'npcBuff'; key: string }
   /** 2026-11-09 (pets R2): the own raised pet sent back (`SendPetRelease`). */
   | { type: 'petRelease' }
+  /** 2026-11-09 (pets R3): the raised pet's care (world/pets.ts), by the encoders' parameter names. */
+  | { type: 'usePetFeed'; feedObjectId: number }
+  | { type: 'makePetFeed'; materialObjectId: number; toolObjectId: number; count: number }
+  | { type: 'petTamerMistake' | 'petTamerMiracle'; scrollObjectId: number }
+  | { type: 'feedPocketInactive' | 'clearPetName' }
   | { type: 'setPlayerName'; playerId: number; name: string }
   | { type: 'enchant' | 'piercing' | 'randomScroll'; targetId: number; materialId: number }
   | { type: 'doUseItemTarget'; materialId: number; targetId: number }
@@ -411,6 +416,21 @@ function decodeClientPacket(r: ArReader): WorldPacket {
     case PacketType.PET_RELEASE: // 2026-11-09 (pets R2): the type alone
       r.expectEnd();
       return { type: 'petRelease' };
+    case PacketType.USE_PET_FEED: { // 2026-11-09 (pets R3)
+      const feedObjectId = r.u32(); r.expectEnd();
+      return { type: 'usePetFeed', feedObjectId };
+    }
+    case PacketType.MAKE_PET_FEED: {
+      const materialObjectId = r.u32(), toolObjectId = r.u32(), count = r.i16(); r.expectEnd();
+      return { type: 'makePetFeed', materialObjectId, toolObjectId, count };
+    }
+    case PacketType.PET_TAMER_MISTAKE: case PacketType.PET_TAMER_MIRACLE: {
+      const scrollObjectId = r.u32(); r.expectEnd();
+      return { type: packetType === PacketType.PET_TAMER_MISTAKE ? 'petTamerMistake' : 'petTamerMiracle', scrollObjectId };
+    }
+    case PacketType.FEED_POCKET_INACTIVE: case PacketType.CLEAR_PET_NAME:
+      r.expectEnd();
+      return { type: packetType === PacketType.FEED_POCKET_INACTIVE ? 'feedPocketInactive' : 'clearPetName' };
     case PacketType.REMOVEQUEST: {
       const questId = r.u32(); r.expectEnd();
       return { type: 'removeQuest', questId };
