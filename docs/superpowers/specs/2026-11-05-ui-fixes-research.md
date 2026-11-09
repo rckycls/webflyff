@@ -147,5 +147,10 @@ next, titles white and the chosen black.
   level - 1; sized by `propEnchant.inc`: a plain weapon from +6 (0.3 to 0.7), an Ultimate from +1 (0.3 to 1.2); from
   element level 4 the element's own `XI_NAT_<elem>01` stream too. Other players' upgrade and element come from ADD_OBJ's
   and EQUIP's `nOption`, now kept. Not built: the electric weapons' lightning (`RenderItemElec_Adv`).
+  Fixed the same day (d58f59d): a hand keeps 28 first-stream and 16 element-stream effects at once (`MAX_PARTS_FIRE`,
+  `MAX_PARTS_FIRE_2`, `CPartsFire`'s slots). The glow files loop for ever, so the first 28 stay and no more are made; the
+  web had made a new one 15 times a second without end (34 fps after 12 s). All 60 `_adv` glow files of this client are
+  one file (a white shimmer, `sfx_itemnon10adv.dds`); the element's colour is only its second stream, from element level
+  4. A staff's line (`m_vForce1-4`) is a short bar across its head, so its glow is there.
 - **Master and Hero marks** (`RenderName`, `MoverRender.cpp:1495-1563`): `icon_Expert1-6` by a Master's ten levels from
   60 to 120, `icon_Hero` for a Hero, after the name.
