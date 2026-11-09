@@ -32,12 +32,20 @@ describe('useOf: what Neuz sends DOUSEITEM for', () => {
     for (const id of [10463, 15083, 26410, 26411, 26475, 26476, 20039, 10425]) {
       expect(useOf(prop({ id, kind2: 19 })), String(id)).toBe('noWindow');
     }
-    for (const kind3 of [120, 100, 138]) expect(useOf(prop({ kind2: 19, kind3 })), String(kind3)).toBe('noWindow');
+    // the raised pet (IK3_EGG 120) and the vis (IK3_VIS 138) wait for their windows (pets R1, B1)
+    for (const kind3 of [120, 138]) expect(useOf(prop({ kind2: 19, kind3 })), String(kind3)).toBe('noWindow');
     // 2026-11-05: the windows the browser has (itemWindows.ts)
     for (const id of [10424, 10220, 26204, 26202, 20037]) expect(useOf(prop({ id, kind2: 19 })), String(id)).toBe('window');
     for (const kind3 of [85, 122]) expect(useOf(prop({ kind2: 19, kind3 })), String(kind3)).toBe('window');
     expect(useOf(prop({ kind2: 14, exeTarget: 19 }))).toBe('noWindow'); // EXT_PET: the pet's food
     expect(useOf(prop({ kind2: 36 }))).toBe('use'); // IK2_TOCASH: the Funny Coin, after its box (2026-11-05)
+  });
+
+  it('a pick-up pet (IK3_PET 100, any kind2) is used: a plain DOUSEITEM summons or recalls it (pets P1)', () => {
+    // CMover::DoUseItem: IK3_PET calls DoUseEatPet (MoverSkill.cpp:1704-1705); the bag sends DOUSEITEM (WndField.cpp:2635-2642)
+    const pet = prop({ id: 30003, kind2: 1, kind3: 100 });
+    expect(useOf(pet)).toBe('use');
+    expect(usableFromBag(pet)).toBe(true);
   });
 
   it('worn equipment is not used (the bag equips it)', () => {

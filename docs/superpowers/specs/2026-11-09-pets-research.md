@@ -174,9 +174,10 @@ the pet is more than 1 m away (XZ). No server packets: the pet is local only.
 
 **Client special cases for pets** (`dwAI` `AII_PET` or `AII_EGG`): name and HP bar placed at `GetScrPos`, not `GetPos`
 (`MoverRender.cpp:1333`, `:1772`; `_Interface/WndWorld.cpp:2674`); the shadow too (`World3D.cpp:1052`); the motion speed
-follows the move speed like a monster's (`Mover.cpp:3844-3846`); no collision for pure pets
-(`_AIInterface/ActionMoverCollision.cpp:172-185`); **another player's raised pet cannot be clicked** (`GetId() ==
-NULL_ID` and not the own pet, `World3D.cpp:2703-2707`).
+follows the move speed like a monster's (`Mover.cpp:3844-3846`); **another player's raised pet cannot be clicked**
+(`GetId() == NULL_ID` and not the own pet, `World3D.cpp:2703-2707`). The collision exceptions for pets and client-made
+movers (`_AIInterface/ActionMoverCollision.cpp:172-191`) are overruled by `bColl = TRUE;` (`:193`): pets collide like
+any mover (corrected 2026-11-09).
 
 **Windows** (all in `_Interface/WndPetSys.cpp` unless noted; sizes from `Resource/resdata.inc`):
 
@@ -272,7 +273,10 @@ pet goes and the item vanishes (`CUser::CheckFiniteItem`, `WORLDSERVER/User.cpp:
 
 There is **almost nothing pet-specific on the client**. The pet comes as a normal NPC ADD_OBJ and moves with the usual
 DESTPOS and MOVERSETDESTOBJ; the item comes with the usual CREATE_ITEM and the ground item's DEL_OBJ. The only rules are the
-`AII_PET` ones in 2.3 (screen position for the name, shadow, motion speed, no collision). It **can** be clicked (it has a
+`AII_PET` ones in 2.3 (screen position for the name, shadow, motion speed). In FlyffWeb (2026-11-09, P1) none of them
+needs a change: names are already drawn at the drawn position (`MoverViews.placeOf`), the attack loop never attacks a
+peaceful mover (`combat/attackLoop.ts:117`), and the move-speed factor of the motion (`Mover.cpp:3829-3863`) is left out
+for every mover alike. It **can** be clicked (it has a
 server id). The client does **not** know which mover is its own pick-up pet: `SetEatPetId` is only called for buff pets
 (`DPClient.cpp:19008`), so `IsUsingEatPet` (`Mover.cpp:11242-11258`) is false on the client for a plain pick-up pet and
 its bag slot is not faded.
