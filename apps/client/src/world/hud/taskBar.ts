@@ -56,11 +56,13 @@ import { itemIconOf } from '../pets/petStatus';
 
 /** The windows of Piece 4 a press on the task bar opens. */
 export type TaskBarWindow = 'character' | 'status' | 'skills' | 'inventory' | 'chat' | 'navigator' | 'worldmap' | 'option'
-  | 'quests' | 'party';
+  | 'quests' | 'party' | 'messenger';
 /** `APP_QUEST_EX_LIST` (Resource/ResData.h), the quest window (Piece 7 M1), Q (FuncApplet.cpp:229). */
 const APP_QUEST_EX_LIST = 859;
 /** `APP_PARTY` (Resource/ResData.h:100), the party window and its quick view (Piece 7 M4), P (FuncApplet.cpp:233). */
 const APP_PARTY = 195;
+/** 2026-11-10: `APP_MESSENGER_EX` (Resource/ResData.h:207), the Messenger (friends-say), E (FuncApplet.cpp:260). */
+const APP_MESSENGER_EX = 302;
 
 /**
  * The applets whose window Piece 4 has, which `ObjectExecutor` opens (or closes) when they are pressed: from the Start
@@ -77,6 +79,7 @@ const WINDOWS: ReadonlyMap<number, TaskBarWindow> = new Map([
   [AppId.OPTIONEX, 'option'],
   [APP_QUEST_EX_LIST, 'quests'],
   [APP_PARTY, 'party'],
+  [APP_MESSENGER_EX, 'messenger'],
 ]);
 
 /**
@@ -107,6 +110,9 @@ const MENU: ReadonlyArray<{ id: number; text: string }> = [
   // 2026-11-09: CWndTaskMenu's APP_COMMUNICATION_CHAT line, 'Chatting' (TID_APP_COMMUNICATION_CHAT), the first of its
   // Communication submenu (WndTaskBar.cpp:2658-2660): it opens the chat again once it was closed
   { id: 1014, text: 'Chatting' },
+  // 2026-11-10: CWndTaskMenu's APP_MESSENGER_ line, 'Messenger' (TID_APP_MESSENGER), the second of its Communication
+  // submenu (WndTaskBar.cpp:2661)
+  { id: APP_MESSENGER_EX, text: 'Messenger' },
   // CWndTaskMenu's APP_PARTY line, 'Party' (TID_APP_PARTY), in its Communication submenu (WndTaskBar.cpp:2670): the
   // browser's menu is flat, so it stands before Option
   { id: APP_PARTY, text: 'Party' },

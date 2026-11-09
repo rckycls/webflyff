@@ -93,7 +93,10 @@ import { inviteCheck } from './party/partyRules';
 import { PartyState } from './party/partyState';
 import type { PartyEvent } from './party/partyState';
 import { PlayerDataCenter } from './party/playerData';
-import { MMI_INVITE_PARTY, menuInReach, playerMenuEntries } from './party/playerMenu';
+import { FriendHud } from './friends/friendHud';
+import { Messenger, loadFriendOptions, saveFriendOptions } from './friends/messenger';
+import type { FriendEvent } from './friends/messenger';
+import { MMI_ADD_MESSENGER, MMI_INVITE_PARTY, menuInReach, playerMenuEntries } from './party/playerMenu';
 import { PartyHpBars } from './render/PartyHpBars';
 import { partyEffects } from './fx/partyEffects';
 import type { PartyEffectContext, PartyMover } from './fx/partyEffects';
@@ -453,6 +456,14 @@ export class WorldScreen {
   private partyHud: PartyHud | undefined;
   private partyBars: PartyHpBars | undefined;
   private readonly partyEvents: PartyEvent[] = [];
+  /**
+   * 2026-11-10: the friend list (`m_RTMessenger`), the screen's as the party is; its windows (`FriendHud`) go with the
+   * world. Its events wait for the windows while a world loads; GETFRIENDSTATE is sent at once.
+   */
+  private readonly messenger = new Messenger();
+  private readonly friendOptions = loadFriendOptions((() => { try { return globalThis.localStorage ?? null; } catch { return null; } })());
+  private friendHud: FriendHud | undefined;
+  private readonly friendEvents: FriendEvent[] = [];
   private dialog: DialogWindow | undefined;
   /** `CWndWorld::m_dwDropTime` (WndWorld.cpp:590): when the player last dropped an item. */
   private lastDropAt = -Infinity;
@@ -783,6 +794,16 @@ export class WorldScreen {
       this.playPartyEffects(value, partyEvents);
       this.partyEvents.push(...partyEvents);
       if (this.partyHud !== undefined && this.partyEvents.length > 0) this.partyHud.handle(this.partyEvents.splice(0));
+      // 2026-11-10: the friend list; GETFRIENDSTATE at once, the rest to the windows
+      for (const event of this.messenger.apply(value, this.entry.character.playerId)) {
+        if (event.kind === 'askStates') this.session.sendGetFriendState();
+        else this.friendEvents.push(event);
+      }
+      if (this.friendHud !== undefined && this.friendEvents.length > 0) this.friendHud.handle(this.friendEvents.splice(0));
+      // 2026-11-10: a `/say` line (OnSay, DPClient.cpp:11911-12074)
+      if (value.type === 'say') { this.friendHud?.onSay(value); continue; }
+      // 2026-11-10: a blocked friend's whisper, and another's with /whisperrefuse (OnWhisper, DPClient.cpp:11790-11831, :11899-11903)
+      if (value.type === 'whisper' && this.friendHud?.dropWhisper(value) === true) continue;
       if (value.type === 'npcScript') {
         if (objectId === self?.objectId) this.npcScript(value.action);
         continue;
@@ -1482,6 +1503,8 @@ export class WorldScreen {
     // 2026-11-05: the client commands Neuz runs itself (TCM_CLIENT, FuncTextCmd.cpp): /position and /Time print; the
     // others (the trade, whisper and party toggles, the block list) have no option or window here, and send nothing
     this.chatWindow.onClientCommand = (command) => {
+      // 2026-11-10: /wa /wr /ma /mr /ca /cr (FuncTextCmd.cpp:3776-3823)
+      if (this.friendHud?.clientCommand(command) === true) return;
       if (command === 'position') {
         const pos = this.world?.self()?.act.body.pos;
         const entry = this.data?.texts.get('TID_GAME_NOWPOSITION');
@@ -1530,6 +1553,38 @@ export class WorldScreen {
       carryPartySkill: (skill, event) => taskBar.carryPartySkill(skill, event),
     }, this.party, this.partyModeIcons, doc);
     this.partyHud = partyHud;
+    // 2026-11-10: the Messenger and the private messages (friends/friendHud.ts)
+    const friendHud = new FriendHud(this.hudArt!, this.data!.texts, {
+      session: {
+        sendAddFriend: (askerId, askerSex, askerJob) =>
+          session.sendAddFriend(askerId, askerSex, askerJob, this.entry.character.sex, this.own?.job ?? this.entry.character.job),
+        sendAddFriendRequest: (targetId) => session.sendAddFriendRequest(targetId),
+        sendAddFriendNameRequest: (name) => session.sendAddFriendNameRequest(name),
+        sendFriendCancel: (askerId) => session.sendFriendCancel(askerId),
+        sendGetFriendState: () => session.sendGetFriendState(),
+        sendSetFriendState: (state) => session.sendSetFriendState(state),
+        sendFriendIntercept: (friendId) => session.sendFriendIntercept(friendId),
+        sendRemoveFriend: (friendId) => session.sendRemoveFriend(friendId),
+        sendFriendBlock: (gu, other) => session.sendFriendBlock(gu, other),
+        sendChatLine: (line) => { try { session.sendChat('nearby', line); } catch { /* a character the game's code page lacks */ } },
+      },
+      say: (text, color) => this.hud?.messages.add(text, color),
+      ownName: () => this.world?.self()?.name ?? this.entry.character.name,
+      ownPlayerId: () => this.entry.character.playerId,
+      worldId: () => this.worldId,
+      gameMaster: () => isGameMaster(this.world?.self()?.added.player?.authorization ?? 0),
+      inParty: (playerId) => this.party.isMember(playerId),
+      invite: (playerId) => this.inviteToParty(playerId),
+      playerData: (playerId) => this.playerData.get(playerId),
+      jobName: (job) => this.data?.jobs[job]?.title ?? '',
+      serverName: () => this.entry.serverName,
+      channelName: () => this.entry.channelName,
+      now: () => performance.now(),
+      // SND_INF_MESSENGERRING (Resource/defineSound.h:17)
+      ring: () => this.sounds?.serverSound(12),
+      saveOptions: (options) => saveFriendOptions((() => { try { return globalThis.localStorage ?? null; } catch { return null; } })(), options),
+    }, this.messenger, this.friendOptions, doc);
+    this.friendHud = friendHud;
     // a type-2 shortcut of the task bar: the party skill's rule (ObjectExecutor, WndManager.cpp:2779-2876)
     skillUse.onPartySkill = (skill) => partyHud.useSkill(skill);
     // RunScript: the NPC and the player as nGlobal3 and nGlobal4 (WndDialog.cpp:234-240)
@@ -1562,6 +1617,7 @@ export class WorldScreen {
     this.optionWindow = this.audio === null ? undefined : new OptionWindow(this.hudArt!, this.audio, doc);
     for (const modal of [
       logOutBox.modal, reviveWindow.modal, skillWindow.warning.modal, this.dialog.modal, questWindow.modal, messageBox.modal, selectVillage.modal, partyHud.messageBox.modal,
+      friendHud.messageBox.modal,
     ]) {
       modal.onChange = () => this.modalChanged();
     }
@@ -1574,8 +1630,12 @@ export class WorldScreen {
       inventoryWindow.frame.element, this.nearbyItems.element,
       ...(this.chatWindow instanceof NeuzChat ? this.chatWindow.elements : [this.chatWindow.element]), this.shopWindow.frame.element,
       this.petWindows.element, this.buffPet.element,
-      ...questWindow.elements, this.dialog.element, this.moverMenu.element, ...partyHud.elements,
+      ...questWindow.elements, this.dialog.element, this.moverMenu.element, ...partyHud.elements, ...friendHud.elements,
     );
+    // what the friend list said while the world loaded
+    if (this.friendEvents.length > 0) friendHud.handle(this.friendEvents.splice(0));
+    // 2026-11-10: a key or a press brings the own state back from auto-absent (SetMessengerAutoState, Neuz.cpp:1362, :1418)
+    this.element.addEventListener('pointerdown', this.onFriendInput, true);
     if (this.chatWindow instanceof NeuzChat) {
       // at the bottom left on the task bar; Guild is enabled in a guild (the character's guild, JOIN)
       this.chatWindow.show();
@@ -2489,6 +2549,7 @@ export class WorldScreen {
     // the mode icons, while mode 4 is on or the leader is in view (RenderBuff, WndWorld.cpp:10637-10745)
     const leader = this.party.members[0];
     partyHud?.updateIcons(this.party.modeOn(4) || (leader !== undefined && world.moverByPlayerId(leader.playerId) !== undefined));
+    this.friendHud?.update();
     if (this.questTracker !== undefined || this.questWindow !== undefined) {
       const questState = this.questState();
       this.questTracker?.update(questState);
@@ -2532,6 +2593,8 @@ export class WorldScreen {
     }
     if (window === 'chat') { this.chatWindow?.open(); return; }
     if (window === 'party') { this.partyHud?.toggle(); return; }
+    // 2026-11-10: APP_MESSENGER_EX, E (FuncApplet.cpp:260)
+    if (window === 'messenger') { this.friendHud?.toggle(); return; }
     if (window === 'quests') { this.questWindow?.toggle(this.hud?.element.clientWidth ?? 0, this.questState()); return; }
     if (window === 'option') { this.optionWindow?.toggle(); return; }
     if (window === 'inventory') {
@@ -2950,9 +3013,19 @@ export class WorldScreen {
   /** Invite (`OnCommand` MMI_INVITE_PARTY, :5639-5644, `InviteParty`, :11237-11266): the focus a player, the party's rule. */
   private choosePlayerEntry(id: number, entry: number): void {
     const player = this.world?.movers.get(id)?.added.player;
+    // 2026-11-10: "Add to my list" (MMI_ADD_MESSENGER, WndWorld.cpp:5141-5159)
+    if (entry === MMI_ADD_MESSENGER && player !== undefined) {
+      this.friendHud?.addFromMenu(player.playerId, this.world?.movers.get(id)?.name ?? '');
+      return;
+    }
     if (entry !== MMI_INVITE_PARTY || player === undefined || this.focus?.targetId !== id) return;
+    this.inviteToParty(player.playerId);
+  }
+
+  /** `CWndWorld::InviteParty` (:11237-11266) for a player id: the party's rule, then MEMBERREQUEST, a box or a line. */
+  private inviteToParty(playerId: number): void {
     const check = inviteCheck(this.party, this.entry.character.playerId);
-    if ('send' in check) this.session.sendPartyMemberRequest(player.playerId);
+    if ('send' in check) this.session.sendPartyMemberRequest(playerId);
     else if ('box' in check) this.partyHud?.handle([{ kind: 'box', tid: check.box }]);
     // in FULLPARTY1's colour (WndWorld.cpp:11255-11258)
     else this.partyHud?.handle([{ kind: 'line', tid: check.line, args: [], color: this.data?.texts.get('TID_GAME_FULLPARTY1')?.color ?? null }]);
@@ -3213,7 +3286,11 @@ export class WorldScreen {
    * The keys as the world gets them, for the skill use's `m_SkillTimerStop`: any key going down
    * (`CWndWorld::OnKeyDown`, `WndWorld.cpp:7756`) and any let go (`OnKeyUp`, :7734).
    */
+  /** 2026-11-10: a press, for the Messenger's auto-absent (`SetMessengerAutoState`). */
+  private readonly onFriendInput = (): void => { this.friendHud?.input(); };
+
   private readonly onKeyDown = (event: KeyboardEvent): void => {
+    this.friendHud?.input();
     if (this.chatWindow?.typing || this.dropBox !== undefined) return;
     if (event.key === 'Enter' && !event.repeat && !(event.target as HTMLElement | null)?.closest?.('input,textarea,select,[contenteditable="true"]')) {
       event.preventDefault();
@@ -3385,6 +3462,9 @@ export class WorldScreen {
     else this.chatWindow?.close();
     this.moverMenu?.dispose(); this.dialog?.dispose(); this.shopWindow?.dispose();
     this.partyHud?.dispose();
+    this.friendHud?.dispose();
+    this.friendHud = undefined;
+    this.element.removeEventListener('pointerdown', this.onFriendInput, true);
     this.groundItems?.dispose();
     this.dropModels = undefined; // the ground items' own, disposed with them
     this.nearbyItems?.dispose();

@@ -34,7 +34,7 @@ describe('the player\'s menu ([R §5.1])', () => {
   it('the entries in Neuz\'s order, Invite alone enabled', () => {
     expect(playerMenuEntries(TEXTS)).toEqual([
       { id: 2, label: 'Trade', enabled: false },
-      { id: 5, label: 'Add to my list', enabled: false },
+      { id: 5, label: 'Add to my list', enabled: true },
       { id: 6, label: 'Invite to join party', enabled: true },
       { id: 12, label: 'Follow', enabled: false },
       { id: 24, label: 'View equipment', enabled: false },

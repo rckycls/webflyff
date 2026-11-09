@@ -20,6 +20,11 @@ import {
   encodeMeleeAttack2, encodePlayerAngle, encodePlayerBehavior2, encodePlayerCorr2, encodePlayerMoved2,
 } from '@flyffweb/protocol';
 import type { PartyRequestSide } from '@flyffweb/protocol';
+// 2026-11-10: the messenger's packets (friends-say)
+import {
+  encodeAddFriend, encodeAddFriendNameRequest, encodeAddFriendRequest, encodeFriendCancel, encodeFriendIntercept, encodeGetFriendState,
+  encodeRemoveFriend, encodeSetFriendState, friendPacketTypeOf,
+} from '@flyffweb/protocol';
 import type { BundleMessage, BundleResult, MoveReport, Shortcut, SkillSlot, Vec3, WorldMessage } from '@flyffweb/protocol';
 import type { AngleReport, FlightReport } from '@flyffweb/protocol';
 import { UNEXPECTED_PROBLEM, closeText, errorText } from '../lobby/errorText';
@@ -219,6 +224,20 @@ export class WorldSession {
   /** BLOCK 7 (`DPClient.cpp:4572`): an invite came while the invite box was open. */
   sendBlock(inviterName: string): void { this.playingCache()?.send(encodeBlock(7, this.entry.character.name, inviterName)); }
   sendQueryPlayerData(playerId: number): void { this.playingCache()?.send(encodeQueryPlayerData(playerId)); }
+  // 2026-11-10: the messenger's packets (friends-say research §6), with the own player id Neuz writes
+  /** `SendAddFriend`: the Confirm's Yes, with the asker's and one's own sex and job. */
+  sendAddFriend(askerId: number, askerSex: number, askerJob: number, ownSex: number, ownJob: number): void {
+    this.playingCache()?.send(encodeAddFriend(askerId, this.ownPlayerId(), askerSex, ownSex, askerJob, ownJob));
+  }
+  sendAddFriendRequest(targetId: number): void { this.playingCache()?.send(encodeAddFriendRequest(this.ownPlayerId(), targetId)); }
+  sendAddFriendNameRequest(name: string): void { this.playingCache()?.send(encodeAddFriendNameRequest(this.ownPlayerId(), name)); }
+  sendFriendCancel(askerId: number): void { this.playingCache()?.send(encodeFriendCancel(askerId, this.ownPlayerId())); }
+  sendGetFriendState(): void { this.playingCache()?.send(encodeGetFriendState(this.ownPlayerId())); }
+  sendSetFriendState(state: number): void { this.playingCache()?.send(encodeSetFriendState(this.ownPlayerId(), state)); }
+  sendFriendIntercept(friendId: number): void { this.playingCache()?.send(encodeFriendIntercept(this.ownPlayerId(), friendId)); }
+  sendRemoveFriend(friendId: number): void { this.playingCache()?.send(encodeRemoveFriend(this.ownPlayerId(), friendId)); }
+  /** BLOCK `gu` (`SendBlock( gu, g_pPlayer->GetName(), other )`): 1 /wr, 2 /mr, 6 a Confirm already open. */
+  sendFriendBlock(gu: number, other: string): void { this.playingCache()?.send(encodeBlock(gu, this.entry.character.name, other)); }
   private ownPlayerId(): number { return this.entry.character.playerId; }
   readonly stats: SessionStats = { bundles: 0, indexed: 0, skipped: 0, mismatched: 0, unknownPackets: 0, droppedEvents: 0 };
   private phase: Phase = 'opening';
@@ -579,6 +598,20 @@ export class WorldSession {
         if (this.phase === 'playing') this.notify({ type: 'messages', messages: [{ objectId: NULL_ID, type, value: packet }] });
         break;
       }
+      case 'friendJoin':
+      case 'friendLogout':
+      case 'friendStates':
+      case 'friendState':
+      case 'friendIntercept':
+      case 'friendNoIntercept':
+      case 'friendNameNotFound':
+      case 'friendRemovedState':
+      case 'say':
+        // 2026-11-10: the core's messenger packets and SAY, handed on as the direct chat packets are
+        if (this.phase === 'playing') {
+          this.notify({ type: 'messages', messages: [{ objectId: NULL_ID, type: friendPacketTypeOf(packet), value: packet }] });
+        }
+        break;
       case 'keepAlive':
         // CDPClient::OnKeepAlive (Neuz/DPClient.cpp:961): answered at once, from the callback.
         this.cache?.send(encodeWorldKeepAlive());

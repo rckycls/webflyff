@@ -11,7 +11,8 @@
 //   MMI_CHEER 31              Cheer                       always (:6607)
 //   MMI_INVITE_CAMPUS 151     Request Mentor-Pupil Bond   always, or Cancel for a pupil (:6608-6618)
 //
-// Only the invite is the browser's; the rest are shown greyed, as the NPC menu's (plan Decisions 4).
+// Only the invite and (2026-11-10, friends-say) "Add to my list" are the browser's; the rest are shown greyed, as the NPC
+// menu's (plan Decisions 4).
 
 import type { Vec3 } from '@flyffweb/protocol';
 import type { Texts } from '../gameData';
@@ -19,6 +20,8 @@ import { MENU_RANGE, menuLabel } from '../hud/moverMenu';
 import type { MenuEntry } from '../hud/moverMenu';
 
 export const MMI_INVITE_PARTY = 6;
+/** 2026-11-10: MMI_ADD_MESSENGER, "Add to my list" (`WndWorld.cpp:5141-5159`, friends/friendHud.ts `addFromMenu`). */
+export const MMI_ADD_MESSENGER = 5;
 /** TID_GAME_MENU_CAMPUS_INVITATION, not TID_MMI_DIALOG + 151 (:6610). */
 const MMI_INVITE_CAMPUS = 151;
 
@@ -31,7 +34,7 @@ export function playerMenuEntries(texts: Texts): MenuEntry[] {
   return ENTRIES.map(([id, english]) => ({
     id,
     label: id === MMI_INVITE_CAMPUS ? (texts.get('TID_GAME_MENU_CAMPUS_INVITATION')?.text ?? english) : menuLabel(id, texts, english),
-    enabled: id === MMI_INVITE_PARTY,
+    enabled: id === MMI_INVITE_PARTY || id === MMI_ADD_MESSENGER,
   }));
 }
 

@@ -225,6 +225,11 @@ export const THEME_FILES: readonly string[] = [
   // tamer's miracle button (CWndPetMiracle, :1371) and the buttons the pet windows' layouts name (APP_PET_FOODMILL and
   // APP_PET_TRANS_EGGS "ButCancel2.bmp", APP_PET_MIRACLE "ButMiracle.bmp", resdata.inc:9228, :22714, :9321)
   'PetStatusBg.tga', 'PetLevelBg.tga', 'BuffpetStatusBg .tga', 'ButChance.bmp', 'ButCancel2.bmp', 'ButMiracle.bmp',
+  // 2026-11-10, the Messenger (docs/superpowers/specs/2026-11-10-friends-say-research.md §2, §5): APP_MESSENGER_EX's
+  // buttons (resdata.inc:2190-2297; their pictures set again in CWndMessengerEx::OnInitialUpdate, WndMessenger.cpp:720-769)
+  // and the mail icon (:716), APP_MESSAGE's Send (resdata.inc:23665) and APP_INSTANTMSG's picture (:25074)
+  'ButtMsgRight.bmp', 'ButtMessAdd.bmp', 'ButtMessNote.bmp', 'ButtMessengerChannel.bmp', 'ButtMessengerState.bmp',
+  'ButtMessengerLevel.bmp', 'ButtMessengerJob.bmp', 'ButtMessengerChar.bmp', 'WndMail.dds', 'ButtSend.bmp', 'WndInstantMsg.tga',
 ];
 
 /** 2026-11-05: the cursors of Client/Cursor the browser shows (Neuz.cpp:280-300): the upgrade mode's hammer, CUR_HAMMER. */
