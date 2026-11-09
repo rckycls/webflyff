@@ -3,11 +3,12 @@
 // drive it as the world opens and closes it.
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { AnimationMixer, Group } from 'three';
+import { AnimationClip, AnimationMixer, Group } from 'three';
+import type { WebGLRenderTarget, WebGLRenderer } from 'three';
 import type { PetData } from '@flyffweb/protocol';
 import { writePetCall, writePetRelease } from '@flyffweb/testkit';
 import type { ScriptMessage } from '@flyffweb/testkit';
-import type { AssembledCharacter } from '@flyffweb/scene';
+import type { AssembledCharacter, LoopedMotion } from '@flyffweb/scene';
 import { ServerClock } from '../src/net/serverClock';
 import { WindowFrame } from '../src/world/hud/frame';
 import { MMI } from '../src/world/hud/moverMenu';
@@ -17,7 +18,7 @@ import type { PetChange } from '../src/world/OwnState';
 import { PetWindows } from '../src/world/pets/petWindows';
 import type { PetWindowsHost } from '../src/world/pets/petWindows';
 import { petMoverId } from '../src/world/pets/raisedPet';
-import { EGG_CAMERA, PET_CAMERAS, petCamera } from '../src/world/render/petPortrait';
+import { EGG_CAMERA, PET_CAMERAS, PetPortrait, petCamera } from '../src/world/render/petPortrait';
 import { terrainGround } from '../src/world/sim/collision';
 import { WorldState } from '../src/world/WorldState';
 import { OWN_ID, STARTER_EQUIPMENT } from './helpers/ownState';
@@ -245,5 +246,53 @@ describe('the pet window as the world opens and closes it (pets/petWindows.ts)',
     p.windows.status.close();
     expect(p.windows.portrait.shown).toBe(false);
     expect(p.models[0]!.release).toHaveBeenCalledOnce();
+  });
+});
+
+describe('the portrait\'s drawing (render/petPortrait.ts, pets review)', () => {
+  /** A renderer that keeps the targets it draws into, and holds each read until `finishRead`. */
+  function fakeRenderer() {
+    const targets = new Set<WebGLRenderTarget>();
+    const reads: Array<() => void> = [];
+    const renderer = {
+      getPixelRatio: () => 1, getRenderTarget: () => null,
+      setRenderTarget: (target: WebGLRenderTarget | null) => { if (target !== null) targets.add(target); },
+      getClearColor: (color: unknown) => color, getClearAlpha: () => 1, setClearColor: () => {}, clear: () => {}, render: () => {},
+      readRenderTargetPixelsAsync: () => new Promise<void>((resolve) => { reads.push(resolve); }),
+    } as unknown as WebGLRenderer;
+    const finishRead = async (): Promise<void> => {
+      reads.shift()!();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    };
+    return { renderer, targets, reads, finishRead };
+  }
+  /** A motion of 4 frames, half a frame a step. */
+  const motion = (): LoopedMotion => ({
+    clip: new AnimationClip('stand', 4 / 30, []), frames: 4, frameTime: (n) => n / 30,
+    events: { perSlerp: 0.5 } as LoopedMotion['events'],
+  });
+
+  it('draws each frame into one render target, one read at a time, and lets it go with the model (window closed)', async () => {
+    const noContext = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null); // jsdom draws nothing
+    const portrait = new PetPortrait(document);
+    const r = fakeRenderer();
+    portrait.show(fakeModel(), motion(), EGG_CAMERA);
+    portrait.draw(r.renderer);
+    portrait.step();
+    portrait.draw(r.renderer); // a read on its way: no other
+    expect(r.reads).toHaveLength(1);
+    await r.finishRead();
+    for (let i = 0; i < 3; i++) {
+      portrait.draw(r.renderer);
+      await r.finishRead();
+      portrait.step();
+    }
+    expect(r.targets.size).toBe(1);
+    const [target] = [...r.targets];
+    const dispose = vi.spyOn(target!, 'dispose');
+    expect(dispose).not.toHaveBeenCalled();
+    portrait.clear(); // SAFE_DELETE( m_pPetModel ): the window closed
+    expect(dispose).toHaveBeenCalledOnce();
+    noContext.mockRestore();
   });
 });

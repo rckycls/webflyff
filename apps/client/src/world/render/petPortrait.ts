@@ -22,7 +22,7 @@
 import type { AssembledCharacter, LoopedMotion } from '@flyffweb/scene';
 import { Scene } from 'three';
 import type { WebGLRenderer } from 'three';
-import { drawPicture, portraitCamera, unlit } from './portrait';
+import { PictureTarget, drawPicture, portraitCamera, unlit } from './portrait';
 
 const f32 = Math.fround;
 
@@ -105,6 +105,8 @@ export class PetPortrait {
   /** Where a read lands before it is copied to `canvas`, so that a read for a model gone draws nothing. */
   private readonly scratch: HTMLCanvasElement;
   private readonly scene = new Scene();
+  /** 2026-11-09 (pets review): one render target for every frame drawn, let go with the model (`clear`). */
+  private readonly picture = new PictureTarget();
   private model: AssembledCharacter | null = null;
   private motion: LoopedMotion | null = null;
   private camera: PetCamera | null = null;
@@ -154,7 +156,7 @@ export class PetPortrait {
     this.drawnFrame = -1;
   }
 
-  /** `SAFE_DELETE( m_pPetModel )`: the model released and the picture emptied. */
+  /** `SAFE_DELETE( m_pPetModel )`: the model released, the picture emptied and its render target let go. */
   clear(): void {
     this.generation++;
     if (this.model !== null) {
@@ -165,6 +167,7 @@ export class PetPortrait {
     this.motion = null;
     this.camera = null;
     this.drawnFrame = -1;
+    this.picture.dispose();
     this.canvas.width = this.canvas.width; // a canvas given its width again is emptied
   }
 
@@ -193,7 +196,7 @@ export class PetPortrait {
     this.drawnFrame = this.frame;
     this.reading = true;
     const generation = this.generation;
-    drawPicture(renderer, this.scene, view, this.scratch, this.width, this.height)
+    drawPicture(renderer, this.scene, view, this.scratch, this.width, this.height, this.picture)
       .then(() => {
         if (generation !== this.generation) return;
         const { canvas, scratch } = this;

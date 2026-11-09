@@ -127,18 +127,18 @@ export function portraitCamera(cssWidth: number, cssHeight: number): Orthographi
  * pixels at the renderer's pixel ratio), and puts the picture in `canvas` once read (2026-11-09, pets R2: what
  * `renderPreview` did inline, for the pet window's portrait that is drawn again as its motion plays). The renderer's
  * target and clear colour are as they were as soon as the picture is drawn; its pixels come back with the asynchronous
- * read (Piece 6 M5). Rejects if the read fails.
+ * read (Piece 6 M5). Rejects if the read fails. 2026-11-09 (pets review): a picture drawn again and again gives its own
+ * `kept` target, which is used and kept; without one a target is made for this picture and let go after its read.
  */
 export async function drawPicture(
   renderer: WebGLRenderer, scene: Scene, camera: OrthographicCamera, canvas: HTMLCanvasElement, cssWidth: number,
-  cssHeight: number,
+  cssHeight: number, kept?: PictureTarget,
 ): Promise<void> {
   const ratio = renderer.getPixelRatio();
   const width = Math.round(cssWidth * ratio);
   const height = Math.round(cssHeight * ratio);
-  const target = new WebGLRenderTarget(width, height);
-  target.texture.colorSpace = SRGBColorSpace;
-  const pixels = new Uint8Array(width * height * 4);
+  const picture = kept ?? new PictureTarget();
+  const { target, pixels } = picture.take(width, height);
   const oldTarget = renderer.getRenderTarget();
   const oldColor = renderer.getClearColor(new Color());
   const oldAlpha = renderer.getClearAlpha();
@@ -154,7 +154,7 @@ export async function drawPicture(
     }
     await renderer.readRenderTargetPixelsAsync(target, 0, 0, width, height, pixels);
   } finally {
-    target.dispose();
+    if (kept === undefined) picture.dispose();
   }
 
   if (canvas.width !== width) canvas.width = width;
@@ -177,6 +177,35 @@ export async function drawPicture(
     }
   }
   context.putImageData(image, 0, 0);
+}
+
+/**
+ * 2026-11-09 (pets review): the render target and pixel buffer of a picture drawn again and again (the pet windows'
+ * portraits, a frame of their motion each time), kept rather than made and let go each frame: made at the first `take`,
+ * resized when the size changes, let go by `dispose` (the window closed) and made again by the next `take`. Its owner
+ * reads one picture at a time, the buffer being shared. A read on its way when it is let go is not harmed: the read
+ * copies the target out as it starts (`readRenderTargetPixelsAsync`'s `readPixels` into its own buffer).
+ */
+export class PictureTarget {
+  private target: WebGLRenderTarget | null = null;
+  private pixels = new Uint8Array(0);
+
+  /** The target and the buffer for a picture `width` x `height` device pixels. */
+  take(width: number, height: number): { target: WebGLRenderTarget; pixels: Uint8Array } {
+    if (this.target === null) {
+      this.target = new WebGLRenderTarget(width, height);
+      this.target.texture.colorSpace = SRGBColorSpace;
+    } else if (this.target.width !== width || this.target.height !== height) {
+      this.target.setSize(width, height);
+    }
+    if (this.pixels.length !== width * height * 4) this.pixels = new Uint8Array(width * height * 4);
+    return { target: this.target, pixels: this.pixels };
+  }
+
+  dispose(): void {
+    this.target?.dispose();
+    this.target = null;
+  }
 }
 
 /**
