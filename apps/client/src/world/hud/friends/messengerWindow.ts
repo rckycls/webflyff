@@ -97,10 +97,9 @@ export class MessengerWindow {
   private shown = '';
 
   constructor(private readonly art: UiArt, private readonly text: (id: string, english: string) => string, private readonly doc: Document = document) {
-    const mobile = doc.defaultView?.matchMedia?.('(max-width: 1000px) and (pointer: coarse)').matches === true;
-    const frame = new WindowFrame(TITLE, art, mobile
-      ? { width: WIDTH, height: HEIGHT, mobileScale: 1, fitWhole: true }
-      : { width: WIDTH, height: HEIGHT }, doc);
+    // 2026-11-10 (owner): on a phone the phones' smaller size (the frame's 0.7, as the other windows), not fitted to the
+    // whole screen
+    const frame = new WindowFrame(TITLE, art, { width: WIDTH, height: HEIGHT }, doc);
     frame.element.classList.add('hud-messenger');
     const body = frame.body;
 
