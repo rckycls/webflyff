@@ -506,6 +506,8 @@ describe('readPropItem', () => {
       // 2026-11-05: the tooltip columns
       itemJob: 1, itemSex: -1, endurance: 7200000, flag: -1, itemLevel: 200, limitLevel: 60, circleTime: -1, referStat1: 2,
       resists: [0, 0, 0, 0, 0],
+      // 2026-11-09: no needed vis, and TRUE: not used up
+      referTarget1: -1, referTarget2: -1, permanence: 1,
     });
     expect(suit).toMatchObject({
       kind1: 2,
@@ -553,6 +555,16 @@ describe('readPropItem', () => {
     const resistant = SUIT.replace(row('= = = 0 0 0 0 0 0 = ='), row('= = = 0.15 0 0 0 0.29 0 = ='));
     expect(resistant).not.toBe(SUIT);
     expect(readPropItem(script(resistant), DEFINES, STRINGS)[0]!.resists).toEqual([15, 0, 0, 0, 29]);
+  });
+
+  it("reads dwReferTarget1, dwReferTarget2 (a vis's needed vis) and bPermanence, -1 for `=` (2026-11-09)", () => {
+    const cells = SUIT.split('\t');
+    cells[9] = '0'; // bPermanence
+    cells[93] = '26446'; // dwReferTarget1
+    cells[94] = '26447'; // dwReferTarget2
+    const [vis, fists] = readPropItem(script(cells.join('\t'), DEFAULT), DEFINES, STRINGS);
+    expect(vis).toMatchObject({ referTarget1: 26446, referTarget2: 26447, permanence: 0 });
+    expect(fists).toMatchObject({ referTarget1: -1, referTarget2: -1, permanence: -1 });
   });
 
   it('reads dwBasePartsIgnore, the base part a worn item hides', () => {

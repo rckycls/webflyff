@@ -192,6 +192,14 @@ export interface ItemProp {
   /** `dwReferStat1`: `WEAPON_GENERAL` 0, `WEAPON_UNIQUE` 1, `WEAPON_ULTIMATE` 2, `ARMOR_SET` 3 (the name's colour, `PutItemName`). */
   referStat1: number;
   /**
+   * 2026-11-09: `dwReferTarget1` and `dwReferTarget2`, -1 for `=`. Of a vis (`IK3_VIS`), the vis the buff pet must hold
+   * first (`CMover::SetValidNeedVis`, `IsSatisfyNeedVis`, MoverSkill.cpp:4204-4275); of a skill, `RT_*` rules.
+   */
+  referTarget1: number;
+  referTarget2: number;
+  /** 2026-11-09: `bPermanence`, -1 for `=`: TRUE (1) is not used up (`CItemElem::UseItem`, Item.cpp:272-276). */
+  permanence: number;
+  /**
    * The five `fItemResist*` columns in file order (electricity, fire, wind, water, earth), each as LoadPropItem keeps it:
    * `(int)( scanner.GetFloat() * 100.0f )` (ProjectCmn.cpp:436-440), in float32.
    */
@@ -272,6 +280,10 @@ const KEPT: ReadonlySet<string> = new Set([
   'dwSndAttack1',
   'dwSndAttack2',
   'dwReferStat1',
+  // 2026-11-09: a vis's needed vis, and whether an item is used up
+  'dwReferTarget1',
+  'dwReferTarget2',
+  'bPermanence',
   // Piece 7 M3: an item's cast
   'dwSkillReadyType',
   // Piece 7 M5: a ride's level and fuel
@@ -458,6 +470,9 @@ export function readPropItem(
         limitLevel: kept.dwLimitLevel1,
         circleTime: kept.dwCircleTime,
         referStat1: kept.dwReferStat1,
+        referTarget1: kept.dwReferTarget1,
+        referTarget2: kept.dwReferTarget2,
+        permanence: kept.bPermanence,
         // a float times 100.0f is a float (/fp:precise, SSE2), then truncated to int
         resists: RESISTS.map((column) => Math.trunc(Math.fround(floats[column]! * 100))),
       });

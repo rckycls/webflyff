@@ -416,6 +416,10 @@ function buildItemProps(env: Env, read: Reading): WebItemProp[] {
         ...(prop.skillTime !== -1 ? { skillTime: prop.skillTime } : {}),
         ...(prop.exeTarget !== -1 ? { exeTarget: prop.exeTarget } : {}),
         ...(prop.referStat1 !== -1 ? { referStat1: prop.referStat1 } : {}),
+        // 2026-11-09, the pets: a vis's needed vis (its minutes and grade are abilityMin and abilityMax), and permanence
+        ...(prop.referTarget1 !== -1 ? { referTarget1: prop.referTarget1 } : {}),
+        ...(prop.referTarget2 !== -1 ? { referTarget2: prop.referTarget2 } : {}),
+        ...(prop.permanence !== -1 ? { permanence: prop.permanence } : {}),
         // PutBaseResist's order (WndManager.cpp:5641-5674): electricity, fire, water, wind, earth; the file's is
         // electricity, fire, wind, water, earth
         ...(prop.resists.some((value) => value !== 0)

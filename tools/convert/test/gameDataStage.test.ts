@@ -727,6 +727,7 @@ describe('the game-data stage', () => {
       sfxHit: 20, sfxMissile: -1, linkKindBullet: -1,
       model: 'models/item_weasword.glb', dropModel: 'models/item_weasword.glb', icon: 'ui/item/itm_weasword.png',
       job: 0, sex: 0, endurance: 9000000, itemLevel: 1, limitLevel: 1, // the base row's tooltip columns (2026-11-05)
+      permanence: 1, // bPermanence TRUE (2026-11-09)
     });
     expect(props[2]!.attackSpeed).not.toBe(0.085);
 
@@ -736,7 +737,7 @@ describe('the game-data stage', () => {
       weaponType: -1, attackSpeed: -1, attackRange: -1, destParams: [-1, -1, -1], adjParams: [-1, -1, -1],
       sfxHit: -1, sfxMissile: -1, linkKindBullet: -1,
       model: null, dropModel: 'models/item_genmatsuitbox.glb', icon: 'ui/item/itm_mvag01upper.png',
-      job: 0, sex: 0, endurance: 9000000, itemLevel: 1, limitLevel: 1,
+      job: 0, sex: 0, endurance: 9000000, itemLevel: 1, limitLevel: 1, permanence: 1,
     });
     expect(props[1]).toMatchObject({ id: 503, name: 'Pike Suit', part: 3, model: null });
   });
@@ -842,6 +843,24 @@ describe('the game-data stage', () => {
     for (const id of [503, 506]) {
       for (const key of ['cooldownMs', 'skillTime', 'exeTarget']) expect(props.find((p) => p.id === id), `${id} ${key}`).not.toHaveProperty(key);
     }
+  });
+
+  it("itemProps keep a vis's needed vis and permanence, each only when the row gives it (2026-11-09, pets)", async () => {
+    const vis = itemRow('504', 'IDS_PROPITEM_TXT_000790', '=').split('\t');
+    vis[30] = '10080'; // dwAbilityMin: a level 3 vis's minutes
+    vis[31] = '3'; // dwAbilityMax: its grade
+    vis[93] = '501'; // dwReferTarget1
+    vis[94] = '502'; // dwReferTarget2
+    vis[9] = '0'; // bPermanence
+    const bare = itemRow('503', 'IDS_PROPITEM_TXT_000792', 'PARTS_LOWER_BODY').split('\t');
+    for (const at of [9, 93, 94]) bare[at] = '=';
+    await client({ 'propItem.txt': script(vis.join('\t'), bare.join('\t')) });
+    const props = await catalog<WebItemProp[]>(await runData(), GAME_DATA_KEYS.itemProps);
+    expect(props.find((p) => p.id === 504)).toMatchObject({
+      abilityMin: 10080, abilityMax: 3, referTarget1: 501, referTarget2: 502, permanence: 0,
+    });
+    const plain = props.find((p) => p.id === 503)!;
+    for (const key of ['referTarget1', 'referTarget2', 'permanence']) expect(plain, key).not.toHaveProperty(key);
   });
 
   it('itemEtc: the sets and the socket cards of propItemEtc.inc, when the packs hold it (2026-11-05)', async () => {

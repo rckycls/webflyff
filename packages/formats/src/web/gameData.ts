@@ -201,6 +201,16 @@ export interface WebItemProp {
   skillTime?: number;
   /** `dwExeTarget`: how the item finds its target, an `EXT_*` value (EXT_ITEM 21: another item, `IsNeedTarget`). */
   exeTarget?: number;
+  // 2026-11-09, the pets; each absent where the row says `=`, and in catalogs converted before
+  /**
+   * `dwReferTarget1`, `dwReferTarget2`: of a vis (`IK3_VIS`), the vis items a buff pet must hold for this one to work
+   * (`CMover::SetValidNeedVis`, `IsSatisfyNeedVis`, MoverSkill.cpp:4204-4275; the tooltip's `PutNeededVis`). A vis's
+   * minutes and grade are `abilityMin` and `abilityMax`.
+   */
+  referTarget1?: number;
+  referTarget2?: number;
+  /** `bPermanence`: TRUE (1) is an item that is not used up (`CItemElem::UseItem`, Item.cpp:272-276). */
+  permanence?: number;
 }
 
 /** A set of `propItemEtc.inc` (`CSetItem`, Project.cpp:4162-4206): its pieces, and what wearing some of them gives. */
