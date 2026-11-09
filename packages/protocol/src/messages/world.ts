@@ -14,6 +14,8 @@ import type { MessageOf, PartyRequestSide, Shortcut, SkillSlot } from '../world/
 import { readAngleReport, readFlightReport } from '../world/flight';
 import type { AngleReport, FlightReport } from '../world/flight';
 import type { SlotMessenger } from './login';
+import { readFriendPacket, readFriendRequestPacket } from '../world/friends';
+import type { FriendDirectMessage, FriendRequestPacket } from '../world/friends';
 
 /** What `CDPClient::SendJoin` sends: the character that enters the world, and the account that owns it. */
 export interface JoinRequest {
@@ -316,6 +318,9 @@ export type WorldPacket =
   | { type: 'playerCorr2'; move: FlightReport }
   | ({ type: 'playerAngle' } & AngleReport)
   | { type: 'meleeAttack2'; message: number; targetId: number; param2: number; param3: number }
+  // 2026-11-10: the messenger's direct packets and SAY, and the messenger packets the browser sends (world/friends.ts)
+  | FriendDirectMessage
+  | FriendRequestPacket
   | { type: 'unknown'; packetType: number };
 
 /**
@@ -386,8 +391,12 @@ export function decodeWorldPacket(body: Uint8Array): WorldPacket {
       r.expectEnd();
       return { type: 'replace', worldId };
     }
-    default:
+    default: {
+      // 2026-11-10: the messenger's direct packets and SAY (world/friends.ts)
+      const friend = readFriendPacket(packetType, r);
+      if (friend !== null) { r.expectEnd(); return friend; }
       return { type: 'unknown', packetType };
+    }
   }
 }
 
@@ -624,7 +633,11 @@ function decodeClientPacket(r: ArReader): WorldPacket {
       const message = r.u32(), targetId = r.u32(), param2 = r.i32(), param3 = r.i32(); r.expectEnd();
       return { type: 'meleeAttack2', message, targetId, param2, param3 };
     }
-    default:
+    default: {
+      // 2026-11-10: the messenger's packets the browser sends (world/friends.ts)
+      const friend = readFriendRequestPacket(packetType, r);
+      if (friend !== null) { r.expectEnd(); return friend; }
       return { type: 'unknown', packetType };
+    }
   }
 }

@@ -38,6 +38,10 @@ import {
   readSetPartyMode,
 } from './party';
 import { readQueryPlayerData } from './playerData';
+import {
+  FriendMessageType, readFriendAdded, readFriendError, readFriendGameJoin, readFriendRemoved, readFriendRequest,
+  readFriendRequestCancel,
+} from './friends';
 import { readReturnScrollAck, readStateMode } from './travel';
 import {
   readMeleeAttack2, readMoverBehavior2, readMoverCorr2, readMoverMoved2, readSendActMsg, readSetFuel,
@@ -134,6 +138,13 @@ export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
     [MessageType.PARTYSKILL_SPHERECIRCLE, readPartySkillSphereCircle],
     [MessageType.ERRORPARTY, readErrorParty],
     [MessageType.QUERY_PLAYER_DATA, readQueryPlayerData],
+    // 2026-11-10: the messenger (world/friends.ts)
+    [FriendMessageType.ADDFRIENDGAMEJOIN, readFriendGameJoin],
+    [FriendMessageType.ADDFRIEND, readFriendAdded],
+    [FriendMessageType.ADDFRIENDREQEST, readFriendRequest],
+    [FriendMessageType.ADDFRIENDCANCEL, readFriendRequestCancel],
+    [FriendMessageType.REMOVEFRIEND, readFriendRemoved],
+    [FriendMessageType.ADDFRIENDERROR, readFriendError],
     [MessageType.SET_JOB_SKILL, readSetJobSkill],
     [MessageType.SET_NEAR_JOB_SKILL, readSetNearJobSkill],
     [MessageType.DAMAGE, readDamage],

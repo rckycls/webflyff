@@ -50,6 +50,7 @@ export { CloseCode } from './gatewayCloseCodes';
 export { parseRecording } from './recording';
 export type { RecordedPacket, Recording } from './recording';
 export * from './world/chat';
+export * from './world/friends';
 export * from './world/npc';
 export * from './world/party';
 export * from './world/playerData';

@@ -23,6 +23,11 @@ export {
   writePetResurrectionResult, writePetSetExp, writePetState, writeSetPetName, writeVisPetActivate,
 } from './world';
 export type { ScriptMessage } from './world';
+export {
+  directFriendIntercept, directFriendJoin, directFriendLogout, directFriendNameNotFound, directFriendNoIntercept,
+  directFriendStates, directOneFriendState, directRemoveFriendState, directSay, directSetFriendState, directWhisper,
+  writeFriendAdded, writeFriendError, writeFriendGameJoin, writeFriendRemoved, writeFriendRequest, writeFriendRequestCancel,
+} from './friends';
 export { newVagrantOwn } from './newVagrant';
 export { createWorldScript } from './worldScript';
 export type { ReplyOptions, WorldScript, WorldScriptOptions } from './worldScript';
