@@ -20,9 +20,14 @@ import type { Texts } from '../gameData';
 export interface MenuEntry { id: number; label: string; enabled: boolean }
 /** The MMI ids the browser acts on (Resource/defineNeuz.h:92-305). */
 export const MMI = {
-  DIALOG: 0, TRADE: 2, GUILDBANKING: 15, PIERCING: 23, NPC_BUFF: 74, ARENA_ENTER: 80, SMELT_SAFETY_GENERAL: 134,
-  SMELT_SAFETY_ACCESSORY: 135, SMELT_SAFETY_PIERCING: 136, TELEPORTER: 146,
+  DIALOG: 0, TRADE: 2, GUILDBANKING: 15, PIERCING: 23, PET_STATUS: 49, PET_RELEASE: 50, NPC_BUFF: 74, ARENA_ENTER: 80,
+  SMELT_SAFETY_GENERAL: 134, SMELT_SAFETY_ACCESSORY: 135, SMELT_SAFETY_PIERCING: 136, TELEPORTER: 146,
 } as const;
+/**
+ * 2026-11-09 (pets R1): the own raised pet's entries (`MaFl_Pet`, `Resource/character.inc:5880-5891`): its status window
+ * and its release (`WndWorld.cpp:5877-5898`), which R2 wires (`WorldScreen.choosePetEntry`).
+ */
+const PET_ENTRIES: ReadonlySet<number> = new Set([MMI.PET_STATUS, MMI.PET_RELEASE]);
 /** 2026-11-05: the Upgrade Specialist's entries the browser opens (upgradeNpcWindows.ts). */
 const UPGRADE_ENTRIES: ReadonlySet<number> = new Set([
   MMI.PIERCING, MMI.SMELT_SAFETY_GENERAL, MMI.SMELT_SAFETY_ACCESSORY, MMI.SMELT_SAFETY_PIERCING,
@@ -53,7 +58,7 @@ export function npcMenuEntries(npc: WebNpc | undefined, texts: Texts, ownIsBaseJ
       label: labels.get(TID_MMI_BASE + id) ?? FALLBACK[id] ?? 'Unavailable',
       // 2026-11-05: Buff Pang's entry only sends its key (MMI_NPC_BUFF, WndWorld.cpp:5131-5136)
       enabled: id === MMI.DIALOG || (id === MMI.TRADE && !npc?.vendorType) || id === MMI.NPC_BUFF || UPGRADE_ENTRIES.has(id) ||
-        (id === MMI.TELEPORTER && (npc?.teleports?.length ?? 0) > 0),
+        (id === MMI.TELEPORTER && (npc?.teleports?.length ?? 0) > 0) || PET_ENTRIES.has(id),
     }));
 }
 

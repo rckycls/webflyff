@@ -21,6 +21,7 @@ import type { PartyRequestSide } from '@flyffweb/protocol';
 import type { BundleMessage, BundleResult, MoveReport, Shortcut, SkillSlot, Vec3, WorldMessage } from '@flyffweb/protocol';
 import type { AngleReport, FlightReport } from '@flyffweb/protocol';
 import { UNEXPECTED_PROBLEM, closeText, errorText } from '../lobby/errorText';
+import { serverIdOf } from './pets/raisedPet';
 import { GATEWAY_UNREACHABLE, PING_INTERVAL_MS, TIMEOUT_TEXT, systemClock } from '../lobby/LoginFlow';
 import type { FlowClock, WorldEntry } from '../lobby/LoginFlow';
 import type { OpenChannel, PacketChannel } from '../net/PacketChannel';
@@ -158,7 +159,7 @@ export class WorldSession {
    * the focused mover (2026-11-05), NULL_ID with none.
    */
   sendUseItem(objectId: number, part = -1, flightSpeed = -1, targetId: number = NULL_ID): void {
-    this.playingCache()?.send(encodeUseItem(objectId, part, flightSpeed, targetId));
+    this.playingCache()?.send(encodeUseItem(objectId, part, flightSpeed, serverIdOf(targetId)));
   }
   /** Piece 7 M3: the item cast's cancel (`SendStateModeCancel`). */
   sendStateModeCancel(): void { this.playingCache()?.send(encodeStateModeCancel()); }
@@ -322,10 +323,11 @@ export class WorldSession {
 
   /**
    * SETTARGET (`CDPClient::SendSetTarget`, `Neuz/DPClient.cpp:9886`): `clear` 1 releases the target, 2 focuses it
-   * (`NULL_ID` with 2 clears the focus). Sent only while playing.
+   * (`NULL_ID` with 2 clears the focus). Sent only while playing. A raised pet the browser made goes as its `GetId()`,
+   * `NULL_ID` (`serverIdOf`, pets R1), as it does to DOUSEITEM, PLAYERSETDESTOBJ and USESKILL.
    */
   sendSetTarget(targetId: number, clear: 1 | 2): void {
-    this.playingCache()?.send(encodeSetTarget(targetId, clear));
+    this.playingCache()?.send(encodeSetTarget(serverIdOf(targetId), clear));
   }
 
   /**
@@ -333,7 +335,7 @@ export class WorldSession {
    * stop at (0 for a melee attack). Sent only while playing.
    */
   sendDestObj(targetId: number, range: number): void {
-    this.playingCache()?.send(encodePlayerSetDestObj(targetId, range));
+    this.playingCache()?.send(encodePlayerSetDestObj(serverIdOf(targetId), range));
   }
 
   /**
@@ -400,7 +402,7 @@ export class WorldSession {
    * target, `SUT_NORMAL` 0 (a bar slot) or `SUT_QUEUESTART` 1 (the action slot), and the Ctrl key. Sent only while playing.
    */
   sendUseSkill(index: number, targetId: number, useType: 0 | 1, control = false): void {
-    this.playingCache()?.send(encodeUseSkill(index, targetId, useType, control));
+    this.playingCache()?.send(encodeUseSkill(index, serverIdOf(targetId), useType, control));
   }
 
   /**

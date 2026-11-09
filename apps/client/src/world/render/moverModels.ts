@@ -13,6 +13,7 @@ import {
   unionModelBoxes,
 } from '@flyffweb/scene';
 import type { AssembledCharacter, HeldSlot, SceneServices } from '@flyffweb/scene';
+import { textureExKey } from '@flyffweb/formats';
 import type { AnimationClip, Material, Object3D, Texture } from 'three';
 import { AnimationMixer, Color, Group, Mesh, MeshBasicMaterial, SRGBColorSpace, SkinnedMesh } from 'three';
 import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -82,12 +83,38 @@ export function loadMoverModel(
     }));
     const loaded = parts.flatMap((part) => (part === null ? [] : [part]));
     if (loaded.length === 0) throw new Error(`none of its parts could be loaded (${look.parts.join(', ')})`);
+    if (look.textureEx !== undefined) useTextureSet(loaded.map((part) => part.gltf.scene), look.textureEx, store, report);
     if (skeleton === null) return plainModel(loaded[0]!.gltf, textures);
     const hair = loaded.find((part) => partSlot(part.key) === 'hair')?.gltf.scene.getObjectByName('lod0');
     const character = await assembleCharacter(await skeleton, loaded.map((part) => part.gltf), textures);
     if (hair !== undefined && look.hairColor !== null) tintHair(hair, look.hairColor);
     return character;
   };
+}
+
+/**
+ * 2026-11-09 (pets R1): `CObject3D::SetTextureEx` (`Object3D.cpp:2511-2549`) for the look's set: every material of the
+ * parts takes set `set` of its texture (`textureExKey`, as `LoadTextureEx` names it, :2477-2508) before the textures are
+ * fetched. A set the asset index lacks leaves the material its own texture, and is said to `report` (Neuz would draw the
+ * material with none).
+ */
+export function useTextureSet(
+  scenes: readonly Object3D[], set: number, store: Pick<SceneServices['store'], 'url'>, report: (message: string) => void,
+): void {
+  const missing = new Set<string>();
+  for (const scene of scenes) {
+    scene.traverse((object) => {
+      if (!(object instanceof Mesh)) return;
+      for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
+        const key: unknown = material.userData.texture;
+        if (typeof key !== 'string' || !/^textures\/[^/]+\.ktx2$/.test(key)) continue;
+        const setKey = textureExKey(key, set);
+        if (store.url(setKey) !== null) material.userData.texture = setKey;
+        else missing.add(setKey);
+      }
+    });
+  }
+  for (const key of missing) report(`texture set ${key} is not in the asset index: the model's own texture is drawn`);
 }
 
 /**

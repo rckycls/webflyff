@@ -1,4 +1,4 @@
-import { GAME_DATA_KEYS, ITEM_ETC_KEY, WORLD_NO_FLY_KEY } from '@flyffweb/formats';
+import { GAME_DATA_KEYS, ITEM_ETC_KEY, PETS_KEY, WORLD_NO_FLY_KEY } from '@flyffweb/formats';
 import type {
   ExpRow,
   TextEntry,
@@ -13,6 +13,7 @@ import type {
   WebMover,
   WebNameColors,
   WebNpc,
+  WebPets,
   WebSkill,
   WebTexts,
   WebWorlds,
@@ -79,6 +80,11 @@ export interface GameData {
   noFlyWorlds: ReadonlySet<number>;
   /** 2026-11-05: the sets, socket cards and accessories the item tooltip shows; absent without `data/itemEtc.json`. */
   itemEtc?: ItemEtc;
+  /**
+   * 2026-11-09 (pets R1): the raised pets' table of `pet.inc` (`CPetProperty`), `pets.kinds[PK_*]`; absent without
+   * `data/pets.json`: a summoned egg is still drawn (`MI_PET_EGG`), a hatched pet is not.
+   */
+  pets?: WebPets;
 }
 
 /**
@@ -144,6 +150,7 @@ export async function loadGameData(store: Pick<AssetStore, 'json' | 'url'>): Pro
   ]);
   const noFly = store.url(WORLD_NO_FLY_KEY) === null ? [] : await store.json<number[]>(WORLD_NO_FLY_KEY);
   const itemEtc = store.url(ITEM_ETC_KEY) === null ? undefined : itemEtcOf(await store.json<WebItemEtc>(ITEM_ETC_KEY));
+  const pets = store.url(PETS_KEY) === null ? undefined : await store.json<WebPets>(PETS_KEY); // pets R1
   return {
     movers: new Map(movers.map((mover) => [mover.index, withLaterColumns(mover)])),
     items: new Map(items.map((item) => [item.id, withHides(item)])),
@@ -163,5 +170,6 @@ export async function loadGameData(store: Pick<AssetStore, 'json' | 'url'>): Pro
     skills: new Map(skills.map((skill) => [skill.id, skill])),
     noFlyWorlds: new Set(noFly),
     ...(itemEtc !== undefined ? { itemEtc } : {}),
+    ...(pets !== undefined ? { pets } : {}),
   };
 }

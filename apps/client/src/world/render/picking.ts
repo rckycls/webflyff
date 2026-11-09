@@ -75,6 +75,11 @@ export interface PickCandidate {
   world: Matrix;
   dead: boolean;
   isPlayer: boolean;
+  /**
+   * 2026-11-09 (pets R1): a raised pet the browser made for a mover other than the active one: never picked
+   * (`GetId() == NULL_ID && pObj != g_pPlayer->m_pet.GetObj()`, `World3D.cpp:2703-2707`).
+   */
+  othersPet?: boolean;
 }
 
 /** `CModel::IsNullBoundBox` (`Model.h:138`): a box with no size, or the one a model starts with (`m_vMin.x == 65535`). */
@@ -118,7 +123,8 @@ export function intersectBB(orig: Vec3, dir: Vec3, world: Matrix, box: ModelBox)
  * `CWorld::PickObject_Fast` for movers (`World3D.cpp:2655-2733`), `bBoundBox` TRUE, the own mover not among the
  * `candidates`: the mover whose box the ray from `orig` along `dir` (`pickRay`) hits and whose origin is nearest the ray's
  * start, or null. Of the candidates, a non-player that is dead is left out (:2698-2702, `IsDie`; a dead player is
- * not, as only `bOnlyNPC`, the Tab key's, leaves players out), and so is a model with no box (`IsNullBoundBox`). They are
+ * not, as only `bOnlyNPC`, the Tab key's, leaves players out), and so is another's raised pet (`othersPet`, :2703-2707,
+ * pets R1), and a model with no box (`IsNullBoundBox`). They are
  * tried from the nearest origin (the list is sorted far to near by `m_fDistCamera`, :671 and :758, and picked from its
  * end, :2717), so it is not the box hit nearest that wins; the first one hit within `farPlane` (`CWorld::m_fFarPlane`,
  * in lengths of `dir`) is the pick (:2723-2728), a hit at or past it being passed over.
@@ -131,7 +137,7 @@ export function intersectBB(orig: Vec3, dir: Vec3, world: Matrix, box: ModelBox)
 export function pickMover(orig: Vec3, dir: Vec3, candidates: readonly PickCandidate[], farPlane: number): number | null {
   const near: Array<{ candidate: PickCandidate; distance: number }> = [];
   for (const candidate of candidates) {
-    if (!candidate.isPlayer && candidate.dead) continue;
+    if (!candidate.isPlayer && (candidate.dead || candidate.othersPet === true)) continue;
     if (isNullBox(candidate.box)) continue;
     const { world } = candidate;
     near.push({ candidate, distance: vecLength(sub([world[12]!, world[13]!, world[14]!], orig)) });

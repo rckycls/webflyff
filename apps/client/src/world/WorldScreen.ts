@@ -123,6 +123,9 @@ import { ConfirmBoxes, boxOf } from './items/confirmBoxes';
 import { ticketInUse } from './items/itemWindows';
 import { PiercingWindow, SmeltSafetyWindow } from './items/upgradeNpcWindows';
 import { WeaponGlows, glowOf, weaponOption } from './render/weaponGlow';
+import { ParticleLayer } from './render/ParticleLayer';
+import { PetParticles, createPetParticle } from './pets/petParticles';
+import { isClientMade } from './pets/raisedPet';
 import type { GlowingWeapon, WeaponOption } from './render/weaponGlow';
 import type { UpgradeNpcHost } from './items/upgradeNpcWindows';
 import { ItemWindowFlows } from './items/itemWindowFlows';
@@ -318,6 +321,9 @@ export class WorldScreen {
   private effectTextures: EffectTextureProvider | undefined;
   /** Piece 7 M2: the models the effects' mesh parts draw (the wand's flight model among them). */
   private effectModels: EffectModels | undefined;
+  /** 2026-11-09 (pets R1): `g_ParticleMng`'s particles (an S pet's sparkle), stepped with the rules, and their drawing. */
+  private readonly petParticles = new PetParticles();
+  private particleLayer: ParticleLayer | undefined;
   /**
    * Piece 7 M2: the missiles in flight (the wand's, the bow's, the monsters', a thrown yoyo), what they read of the world,
    * the own missiles' ids and reports, and the charge gauge over the own head.
@@ -850,6 +856,7 @@ export class WorldScreen {
         this.views?.snap(objectId);
         if (objectId === self?.objectId) this.backCamera.relocate();
       }
+      if (value.type === 'setPetName') this.recolorTags(); // pets R1: the pet mover's new name (OnSetPetName)
     }
   }
 
@@ -930,6 +937,8 @@ export class WorldScreen {
     this.effects = effects;
     effects.made = (xi, pos) => this.sounds?.effect(xi, { x: pos[0], y: pos[1], z: pos[2] });
     for (const xi of WARM_UP_EFFECTS) effects.preload(xi, (key) => void textures.get(key));
+    this.petParticles.clear();
+    this.particleLayer = new ParticleLayer(stage.scene, services.textures); // pets R1
   }
 
   /**
@@ -1655,6 +1664,7 @@ export class WorldScreen {
    */
   private play(changes: WorldChanges): void {
     this.hud?.play(changes.combat, changes.own, this.own);
+    this.playPets(changes); // pets R1
     for (const event of changes.own) {
       if (event.kind === 'quest') this.playQuest(event.change);
       else if (event.kind === 'speed') this.flightSpeed = event.shown; // Piece 7 M5
@@ -1746,6 +1756,32 @@ export class WorldScreen {
       playCombatEvent(event, fxWorld, out);
     }
     for (const event of changes.own) playOwnEvent(event, fxWorld, out);
+  }
+
+  /**
+   * 2026-11-09 (pets R1): what the raised pets' events show. A pet mover gone (released, levelled up, its owner gone or
+   * moved) is no longer the focus (`CWorld::Process` for a deleted object, `AttackLoop.onRemoved`). An S pet sparkles at
+   * its drawn place along its owner's angles (`CreatePetParticle`, `Mover.cpp:10802-10833`). The own pet's boxes:
+   * `TID_GAME_PETEGG_HATCH` (`OnPetSetExp`, `DPClient.cpp:16526-16535`) and `TID_GAME_PET_LIFE` with the lives gained
+   * (`OnPetState`, :16590-16593). Its status window (`shown`, `hidden`, `released`) is R2's.
+   */
+  private playPets(changes: WorldChanges): void {
+    const world = this.world, views = this.views;
+    for (const id of changes.removed) if (isClientMade(id)) this.attackLoop?.onRemoved(id);
+    for (const event of changes.combat) {
+      if (event.kind !== 'petSparkle' || world === undefined || views === undefined) continue;
+      const owner = world.movers.get(event.ownerId);
+      const at = views.drawnAt(event.petId);
+      if (owner === undefined || at === null) continue;
+      createPetParticle(this.petParticles, { angle: owner.act.body.angle, angleX: owner.act.angleX, y: owner.act.body.pos[1] }, at);
+    }
+    for (const event of changes.own) {
+      if (event.kind !== 'pet') continue;
+      if (event.change.kind === 'hatchable') this.sayRefusal({ kind: 'box', tid: 'TID_GAME_PETEGG_HATCH' });
+      if (event.change.kind !== 'lifeGained') continue;
+      const text = this.data?.texts.get('TID_GAME_PET_LIFE')?.text ?? '';
+      if (text !== '' && this.messageBox?.isOpen !== true) this.messageBox?.open(formatText(text, [event.change.count]), 'ok', () => {});
+    }
   }
 
   /**
@@ -1916,6 +1952,7 @@ export class WorldScreen {
       this.indicators!.update(stage.camera, renderer.getSize(drawingSize).y, (objectId) => views.placeOf(objectId), now);
       this.speechBubbles?.update(stage.camera, drawingSize.y, (objectId) => views.placeOf(objectId));
       this.effects?.draw(stage.camera);
+      this.particleLayer?.draw(this.petParticles); // pets R1
       const ownView = world.self();
       this.chargeGauge?.update(this.attackLoop?.gauge(now) ?? null, ownView === undefined ? null : views.placeOf(ownView.objectId)?.head ?? null,
         stage.camera, drawingSize.x, drawingSize.y);
@@ -2062,6 +2099,7 @@ export class WorldScreen {
       this.effects?.stepMissiles(missiles.views());
     }
     this.numbers?.step();
+    this.petParticles.step(); // pets R1: g_ParticleMng.Process (Neuz.cpp:1100)
     this.follow(world, stage);
   }
 
@@ -2129,6 +2167,7 @@ export class WorldScreen {
       this.effects?.stepMissiles(missiles.views());
     }
     this.numbers?.step();
+    this.petParticles.step(); // pets R1: g_ParticleMng.Process (Neuz.cpp:1100)
     this.follow(world, stage);
   }
 
@@ -2840,8 +2879,17 @@ export class WorldScreen {
       // :5989-6033: the safe upgrade in its mode, any open one deleted first
       const mode = entry === MMI.SMELT_SAFETY_GENERAL ? 'normal' : entry === MMI.SMELT_SAFETY_ACCESSORY ? 'accessory' : 'piercing';
       this.upgradeNpc?.safety.open(mode);
+    } else if (entry === MMI.PET_STATUS || entry === MMI.PET_RELEASE) {
+      this.choosePetEntry(entry);
     }
   }
+
+  /**
+   * 2026-11-09 (pets R1): the own raised pet's menu (`MaFl_Pet`; `CWndWorld::OnCommand`, `WndWorld.cpp:5877-5898`):
+   * `MMI_PET_STATUS` toggles its status window, `MMI_PET_RELEASE` sends PET_RELEASE and closes the window. A stub: the
+   * window and the message are R2's (docs/superpowers/plans/2026-11-09-pets-rest.md).
+   */
+  private choosePetEntry(_entry: number): void {}
 
   /** A RUNSCRIPTFUNC for the player (`CDPClient::OnRunScriptFunc`, DPClient.cpp:14265-14476). */
   private npcScript(action: NpcAction): void {
@@ -2983,6 +3031,9 @@ export class WorldScreen {
     this.effectRenderer?.dispose();
     this.effectTextures?.dispose();
     this.effectModels?.dispose();
+    this.particleLayer?.dispose(); // pets R1
+    this.particleLayer = undefined;
+    this.petParticles.clear();
     this.missiles?.dispose(); // the world they flew in is gone: nothing is reported
     this.missiles = undefined;
     this.missileWorld = undefined;

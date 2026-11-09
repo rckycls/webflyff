@@ -137,7 +137,8 @@ export class WorldSounds {
 
   /**
    * What a combat event of the rules plays: a melee hit that lands (`attackerHit`, the hit frame of the swing), a
-   * DAMAGE with AF_CRITICAL, and a skill's launch on its hit frame (`skillHit`, where the skill's effect is made). `mover`
+   * DAMAGE with AF_CRITICAL, a skill's launch on its hit frame (`skillHit`, where the skill's effect is made), and a raised
+   * pet's release and level up (pets R1, by file name: `named`). `mover`
    * is a mover in view: its FlyFF position and its active-hand item (`WorldState.handItem`).
    */
   combatEvent(event: CombatEvent, mover: (id: number) => { pos: Vec; weapon: number | null } | undefined): void {
@@ -150,7 +151,20 @@ export class WorldSounds {
     } else if (event.kind === 'skillHit') {
       const caster = mover(event.casterId);
       if (caster !== undefined) this.skillCast(caster.pos, event.skill);
+    } else if (event.kind === 'petReleased') {
+      this.named('ItemGnCollector.wav'); // pets R1: PetRelease (Mover.cpp:11188)
+    } else if (event.kind === 'petLevelUp') {
+      this.named('PCSkillCastCheer.wav'); // pets R1: CreatePetSfx (Mover.cpp:11158)
     }
+  }
+
+  /**
+   * 2026-11-09 (pets R1): `PLAYSND( "file.wav" )` (`dsutil.h:219-222`): a WAV Neuz plays by its file name, with no place
+   * (full volume), by the catalog's `named` keys; nothing when the catalog has none.
+   */
+  named(file: string): void {
+    const key = this.catalog?.named?.[file];
+    if (key !== undefined) this.audio.playKey(key);
   }
 
   /**

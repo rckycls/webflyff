@@ -166,9 +166,9 @@ function moveDelta(out: Vec3, theta: number, s: number): void {
 
 /**
  * Piece 7 M5: `AngleToVector( &vDelta, fAngXZ, fAngH, fSpeed )` (`Source/_Common/xUtil3D.h:25-35`) in floats: the move
- * along the yaw `angleXZ` and the pitch `angleH` (a flying NPC passes `-angleX`).
+ * along the yaw `angleXZ` and the pitch `angleH` (a flying NPC passes `-angleX`); also a raised pet's two sides (pets R1).
  */
-function angleToVector(out: Vec3, angleXZ: number, angleH: number, speed: number): void {
+export function angleToVector(out: Vec3, angleXZ: number, angleH: number, speed: number): void {
   const xz = radians(angleXZ);
   const h = radians(angleH);
   const dist = f32(f32(Math.cos(-h)) * speed);

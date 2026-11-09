@@ -16,8 +16,9 @@ import type { Ground } from './sim/collision';
 import { ActMsg, Ext, Ik3, Kt, Mti, ObjSta, ObjStaF, Si, Sut } from './sim/constants';
 import {
   resetForRide, applyBehavior2, applyDestPos, applyMotion, applyMoved, applyMoved2, applyMoverAngle, applyMoverCorr, applyMoverCorr2,
-  buffedSpeed, clearDestObj, setDestAngle, setDestObj, stepMover,
+  buffedSpeed, clearDestObj, setDestAngle, setDestObj, setDestPos, stepMover,
 } from './sim/moverRules';
+import { PetFlag, PetLevel, eggDestination, petModelIndex, petMoverId } from './pets/raisedPet';
 import { PARTS_RIDE } from './sim/constants';
 import type { FlightRide } from './sim/flight';
 import type { SimMover } from './sim/moverRules';
@@ -52,6 +53,11 @@ const NO_ITEM_SPEED = 1;
  * whatever their number, as Neuz logs every one.
  */
 const MAX_PENDING_COMBAT = 1024;
+
+/** `CF_SEC` on the client (`Mover.cpp:3485-3487`): a player runs `ProcessPet` when `( m_nCount & 63 ) == 0` (pets R1). */
+const CF_SEC = 63;
+/** The own raised pet's character key (`ProcessPet`, `Mover.cpp:10883-10884`): `MaFl_Pet` of `character.inc` (pets R1). */
+const PET_CHARACTER = 'MaFl_Pet';
 
 /** `NO_ATTACK_MODE` (`_Common/authorization.h:112`): a player in it uses no skill (`DoUseSkill`, `MoverSkill.cpp:317`). */
 const NO_ATTACK_MODE = 0x00000040;
@@ -109,6 +115,36 @@ export interface Mover extends SimMover {
    * would have none either.
    */
   maxHp: number | null;
+  /**
+   * 2026-11-09 (pets R1): `CMover::m_pet` (`CClientPet`, `Mover.h:424-447`) and, for a player whose numbers are not the
+   * world's, its `m_dwPetId`: the raised pet it has out and the mover made for it. Made the first time it is needed.
+   */
+  pet?: ClientPet;
+  /**
+   * 2026-11-09 (pets R1): a raised pet's mover, which the browser made (`isClientMade`): its owner's object id
+   * (`CAIEgg::m_idOwner`).
+   */
+  petOwner?: number;
+}
+
+/**
+ * 2026-11-09 (pets R1): a mover's `CClientPet` (`Mover.h:424-447`) and `m_dwPetId`, the raised pet the client draws for
+ * it (`CMover::ProcessPet`, `Mover.cpp:10839-10929`; [R] = docs/superpowers/specs/2026-11-09-pets-research.md §2.3).
+ */
+export interface ClientPet {
+  /**
+   * `m_dwPetId` of a mover whose numbers are not the world's (`OwnState.petSlot` is the own one's): the pet's model and
+   * level, `MAKELONG( index, level )` (ADD_OBJ, PET_CALL, PET_LEVELUP), or null for `NULL_ID`.
+   */
+  id: { modelIndex: number; level: number } | null;
+  /** `m_pObj`: the object id of the pet mover made for it (`petMoverId`), or null while there is none. */
+  moverId: number | null;
+  /** `m_nLevelup`: why the pet mover is to be made again (`PetFlag`); its making plays it and puts back 0. */
+  levelup: number;
+  /** `m_szName` (`__PET_1024`): the pet's name, '' for none. */
+  name: string;
+  /** `m_nCount` (`Mover.cpp:3965`): the steps the mover has run, whose every 64th runs `ProcessPet`. */
+  steps: number;
 }
 
 /**
@@ -166,7 +202,19 @@ export type CombatEvent =
    */
   | { kind: 'itemCast'; moverId: number; itemId: number; fresh: boolean }
   /** Piece 7 M5: the mover took off (`flying`) or landed: its ride is drawn or taken away, and the own camera changes. */
-  | { kind: 'flight'; moverId: number; flying: boolean };
+  | { kind: 'flight'; moverId: number; flying: boolean }
+  /** 2026-11-09 (pets R1): PET_RELEASE's `PetRelease` on `ownerId` (`Mover.cpp:11180-11190`): `ItemGnCollector.wav`. */
+  | { kind: 'petReleased'; ownerId: number }
+  /**
+   * 2026-11-09 (pets R1): `CreatePetSfx` (`Mover.cpp:11148-11178`): the pet of `ownerId` made again after a level up,
+   * `PCSkillCastCheer.wav`.
+   */
+  | { kind: 'petLevelUp'; ownerId: number }
+  /**
+   * 2026-11-09 (pets R1): an S pet's sparkle (`ProcessPet`, `Mover.cpp:10915-10929`): `CreatePetParticle` of the owner
+   * `ownerId` at its pet `petId`'s drawn place (`GetScrPos`), every 64th step of the owner.
+   */
+  | { kind: 'petSparkle'; ownerId: number; petId: number };
 
 /**
  * What changed in view since the last `takeChanges`. A caller applies `removed` first, then `added`:
@@ -565,6 +613,27 @@ export class WorldState {
       case 'setNearJobSkill': // OnSetNearChangeJob (:3680-3703): another player's
         this.setNearJob(m, message.job);
         break;
+      // 2026-11-09 (pets R1): the raised pets (:16398-16632, :18446-18467)
+      case 'petCall':
+        this.petCall(m, message);
+        break;
+      case 'petRelease':
+        this.petRelease(m);
+        break;
+      case 'petLevelup':
+        this.petLevelup(m, message);
+        break;
+      case 'pet':
+        this.petWhole(m, message);
+        break;
+      case 'petState': // OnPetState, OnPetSetExp and OnPetFeed: the own pet item's numbers (GetPet() finds none for others)
+      case 'petSetExp':
+      case 'petFeed':
+        if (this.numbersOf(m) !== undefined) this.toOwn(message, objectId);
+        break;
+      case 'setPetName':
+        this.setPetName(m, message.name);
+        break;
       // addOther, environmentSetting, worldReadInfo, replace, queryGetDestObj: not kept here; clearUseSkill and
       // endSkillQueue are the own skill use's (`SkillUse`)
       default:
@@ -584,6 +653,7 @@ export class WorldState {
     const now = this.nowMs();
     for (const m of this.byId.values()) {
       m.buffs.step(now);
+      if (m.added.isPlayer) this.petStep(m); // pets R1: a pet made here is stepped later in this loop
       stepMover(m, this.find, this.ground);
       const flight = m.act.flight;
       if (flight === null) continue;
@@ -681,6 +751,8 @@ export class WorldState {
   private remove(objectId: number): void {
     const old = this.byId.get(objectId);
     if (old === undefined) return;
+    // pets R1: the mover's raised pet goes with it (OnRemoveObj, DPClient.cpp:1660-1666)
+    if (old.pet !== undefined) this.dropPet(old.pet);
     this.byId.delete(objectId);
     if (old === this.own) this.own = undefined;
     const unseen = this.pendingAdded.indexOf(old);
@@ -777,7 +849,22 @@ export class WorldState {
       ? this.doAttackMagic(mover, kept.targetId, kept.power)
       : this.doAttackRange(mover, kept.targetId, kept.param3, kept.sfxHitId));
     if (added.isPlayer && !isSelf) act.attackSpeed = () => this.attackSpeedOf(mover);
+    if (added.player !== undefined) mover.pet = this.addedPet(added.player, isSelf && numbers?.objectId === objectId);
     return mover;
+  }
+
+  /**
+   * 2026-11-09 (pets R1): a player's raised pet as its ADD_OBJ gives it: another's `m_dwPetId` and name
+   * (`ObjSerializeOpt.cpp:664-672`); the own one's id is `OwnState.petSlot` and its name the pet item's (:593-603,
+   * `m_pet.SetName( pPet->GetName() )`).
+   */
+  private addedPet(player: AddedPlayer, own: boolean): ClientPet {
+    if (own) return { id: null, moverId: null, levelup: 0, name: this.numbers?.petItem()?.pet?.name ?? '', steps: 0 };
+    const pet = player.pet;
+    return {
+      id: pet === undefined ? null : { modelIndex: pet.modelIndex, level: pet.level }, moverId: null, levelup: 0,
+      name: pet?.name ?? '', steps: 0,
+    };
   }
 
   /**
@@ -939,6 +1026,204 @@ export class WorldState {
     m.added.player.job = job;
     m.maxHp = this.maxHpOf(m.added, m.level);
     this.jobChanged(m);
+  }
+
+  // ---- 2026-11-09 (pets R1): the raised pets ([R] = docs/superpowers/specs/2026-11-09-pets-research.md §2.3) ----------
+
+  /** `CMover::m_pet` of `m`, made the first time it is needed (`CClientPet::CClientPet`, `Mover.cpp:11809-11817`). */
+  private clientPet(m: Mover): ClientPet {
+    return (m.pet ??= { id: null, moverId: null, levelup: 0, name: '', steps: 0 });
+  }
+
+  /**
+   * `CMover::HasActivatedSystemPet` (`Mover.h:792`): `m_dwPetId` is set, the own one's in its numbers (`petSlot`).
+   */
+  private hasPetOut(m: Mover): boolean {
+    const numbers = this.numbersOf(m);
+    return numbers !== undefined ? numbers.petSlot !== null : this.clientPet(m).id !== null;
+  }
+
+  /**
+   * The pet's level `ProcessPet` tests for the sparkle: the own pet item's (`GetPetItem()->m_pPet->GetLevel()`), another's
+   * `HIWORD( GetPetId() )`; null for none.
+   */
+  private petLevelOf(m: Mover): number | null {
+    const numbers = this.numbersOf(m);
+    if (numbers !== undefined) return numbers.petItem()?.pet?.level ?? null;
+    return this.clientPet(m).id?.level ?? null;
+  }
+
+  /**
+   * The model `ProcessPet` makes the pet of (`Mover.cpp:10850-10860`): the own pet item's `CPet::GetIndex`, another's
+   * `LOWORD( GetPetId() )`; 0 for none, which makes no pet.
+   */
+  private petIndexOf(m: Mover): number {
+    const numbers = this.numbersOf(m);
+    if (numbers !== undefined) {
+      const pet = numbers.petItem()?.pet;
+      return pet === undefined ? 0 : petModelIndex(pet, this.data.pets);
+    }
+    return this.clientPet(m).id?.modelIndex ?? 0;
+  }
+
+  /** A player's step: `ProcessPet` on every 64th (`( m_nCount & CF_SEC ) == 0`, `CF_SEC` 63, `Mover.cpp:3765-3770`). */
+  private petStep(m: Mover): void {
+    const pet = this.clientPet(m);
+    if ((pet.steps & CF_SEC) === 0) this.processPet(m, pet);
+    pet.steps++; // ++m_nCount, at the end of Process (:3965)
+  }
+
+  /**
+   * The client half of `CMover::ProcessPet` (`Mover.cpp:10839-10929`). With a pet out and no pet mover, the pet mover is
+   * made (`makePet`) when its model is known; with none out, a pet mover left is deleted (the own one's status window
+   * closes: `hidden`). An S pet then sparkles (`CreatePetParticle`, `petSparkle`).
+   */
+  private processPet(m: Mover, pet: ClientPet): void {
+    const own = this.numbersOf(m) !== undefined;
+    if (this.hasPetOut(m)) {
+      if (pet.moverId === null) {
+        const index = this.petIndexOf(m);
+        if (index > 0) this.makePet(m, pet, index, own);
+      }
+    } else if (pet.moverId !== null) {
+      this.dropPet(pet);
+      if (own) this.pendingOwn.push({ kind: 'pet', change: { kind: 'hidden' } });
+    }
+    if (pet.moverId !== null && this.petLevelOf(m) === PetLevel.S) {
+      this.combat({ kind: 'petSparkle', ownerId: m.objectId, petId: pet.moverId });
+    }
+  }
+
+  /**
+   * The pet mover of `owner` (`ProcessPet`, `Mover.cpp:10862-10889`): `CreateObj( OT_MOVER, index )` (its prop's speed,
+   * HP and belligerence, `CreateObj.cpp:604-660`; its model's scale is not in the catalog: 1), the pet's name when it has
+   * one, `InitMotion( MTI_STAND )`, the egg's AI with the owner (`CAIEgg`, `eggAi`) and its speed (`speedOwner`), at the
+   * owner's position, drawn there at once (`m_vScrPos`, `InitInterpolation`), with no server id (`petMoverId`); the own one
+   * is the NPC `MaFl_Pet`, whose menu has the pet's status and release. Then `CreatePetSfx` (:11148-11178): a level up's
+   * sound (`petLevelUp`); and the own one's status window opens (`shown`, with the flag for the miracle window).
+   * A model with no mover row makes nothing (CreateObj fails), and is tried again at the next `ProcessPet`.
+   */
+  private makePet(owner: Mover, pet: ClientPet, index: number, own: boolean): void {
+    const prop = this.data.movers.get(index);
+    if (prop === undefined) return;
+    const objectId = petMoverId(owner.objectId);
+    const pos = owner.act.body.pos;
+    const added: AddedMover = {
+      index, scale: 1, pos: [pos[0], pos[1], pos[2]], angle: 0, objectId, motion: Mti.STAND, isPlayer: false,
+      hitPoint: 0, state: 0, stateFlag: 0, belligerence: prop.belligerence,
+      sfxId: NULL_ID,
+      npc: {
+        hairMesh: 0, hairColor: 0, headMesh: 0, characterKey: own ? PET_CHARACTER : '', worn: [], activeAttack: 0,
+        movePattern: 0, moveEvent: 0, moveEventCount: 0, speedFactor: 1,
+      },
+    };
+    const mover = this.build(objectId, added);
+    // a peaceful NPC (IsNPC() && IsPeaceful()), whoever owns it; `build` names one without a key a monster
+    mover.kind = 'npc';
+    mover.hp = mover.maxHp ?? 0; // InitProp: m_nHitPoint = GetMaxHitPoint() (Mover.cpp:1531)
+    mover.name = pet.name !== '' ? pet.name : prop.name;
+    mover.petOwner = owner.objectId;
+    mover.speedOwner = () => this.byId.get(owner.objectId);
+    mover.ai = () => this.eggAi(mover);
+    this.byId.set(objectId, mover);
+    this.pendingAdded.push(mover);
+    pet.moverId = objectId;
+    if (pet.levelup === PetFlag.LEVEL_UP) this.combat({ kind: 'petLevelUp', ownerId: owner.objectId });
+    if (own) this.pendingOwn.push({ kind: 'pet', change: { kind: 'shown', levelup: pet.levelup } });
+    pet.levelup = 0;
+  }
+
+  /** `m_pet.GetObj()->Delete(); m_pet.SetObj( NULL )`: the pet mover goes, as a DEL_OBJ takes a mover. */
+  private dropPet(pet: ClientPet): void {
+    const id = pet.moverId;
+    if (id === null) return;
+    pet.moverId = null;
+    this.remove(id);
+  }
+
+  /**
+   * `CAIEgg::MoveProcessIdle` (`pet.cpp:493-570`), each step after the pet's `ProcessMove`: nothing for a dead or flying
+   * pet; else to the side of the owner nearer it, once more than 1 m away (`eggDestination`), with `MoveToDst`'s
+   * `SetDestPos( vDst, true, FALSE )` and `m_nCorr = -1` (:477-483). An owner out of view leaves it be (the C++ would read
+   * through the NULL; the owner's DEL_OBJ takes the pet first).
+   */
+  private eggAi(pet: Mover): void {
+    const owner = pet.petOwner === undefined ? undefined : this.byId.get(pet.petOwner);
+    if (owner === undefined || isDie(pet) || (pet.act.state & ObjSta.DMG_FLY_ALL) !== 0) return;
+    const { pos, angle } = owner.act.body;
+    const to = eggDestination({ pos, angle, angleX: owner.act.angleX }, pet.act.body.pos, this.ground.terrainHeight(pos[0], pos[2]) ?? 0);
+    if (to === null) return;
+    setDestPos(pet, to, true);
+    pet.nCorr = -1;
+  }
+
+  /**
+   * `CDPClient::OnPetCall` (`DPClient.cpp:16398-16418`): the own player's `m_dwPetId` is the item's object id (its
+   * numbers'), another's `MAKELONG( index, level )`; then the name.
+   */
+  private petCall(m: Mover, message: MessageOf<'petCall'>): void {
+    const pet = this.clientPet(m);
+    if (this.numbersOf(m) !== undefined) this.toOwn(message, m.objectId);
+    else pet.id = { modelIndex: message.modelIndex, level: message.level };
+    pet.name = message.name;
+  }
+
+  /**
+   * `CDPClient::OnPetRelease` (`DPClient.cpp:16420-16448`) and the client's `CMover::PetRelease` (`Mover.cpp:11180-11190`):
+   * the pet mover deleted, `SetPetId( NULL_ID )`, `ItemGnCollector.wav`; the own player's windows of the pet close
+   * (`released`); the name emptied.
+   */
+  private petRelease(m: Mover): void {
+    const pet = this.clientPet(m);
+    this.dropPet(pet);
+    if (this.numbersOf(m) !== undefined) this.toOwn({ type: 'petRelease' }, m.objectId);
+    else pet.id = null;
+    this.combat({ kind: 'petReleased', ownerId: m.objectId });
+    pet.name = '';
+  }
+
+  /**
+   * `CDPClient::OnPetLevelup` (`DPClient.cpp:16500-16512`), which the server sends to the others only
+   * (`CUserMng::AddPetLevelup`, `WORLDSERVER/User.cpp:7920-7933`): the new `m_dwPetId`, and the client's
+   * `CMover::PetLevelup` (`Mover.cpp:10959-10968`): a pet mover there is deleted with `PF_PET_LEVEL_UP`, so that
+   * `ProcessPet` makes it again with the new model and the level up's sound.
+   */
+  private petLevelup(m: Mover, message: MessageOf<'petLevelup'>): void {
+    if (this.numbersOf(m) !== undefined) return;
+    const pet = this.clientPet(m);
+    pet.id = { modelIndex: message.modelIndex, level: message.level };
+    if (pet.moverId === null) return;
+    pet.levelup = PetFlag.LEVEL_UP;
+    this.dropPet(pet);
+  }
+
+  /**
+   * `CDPClient::OnPet` (`DPClient.cpp:16540-16567`), the own player's: the pet item's pet replaced (its numbers'); with a
+   * pet item, `m_pet.SetLevelup( flag )`, and for a flag with the pet mover there, the item takes the pet's item id
+   * (`GetItemId`) and the mover is deleted, to be made again with the new model (`ProcessPet`).
+   */
+  private petWhole(m: Mover, message: MessageOf<'pet'>): void {
+    const numbers = this.numbersOf(m);
+    if (numbers === undefined) return;
+    this.toOwn(message, m.objectId);
+    if (numbers.petItem() === undefined) return;
+    const pet = this.clientPet(m);
+    pet.levelup = message.flag;
+    if (message.flag === PetFlag.PET || pet.moverId === null) return;
+    numbers.takePetItemId();
+    this.dropPet(pet);
+  }
+
+  /**
+   * `CDPClient::OnSetPetName` (`DPClient.cpp:18446-18467`): `m_pet`'s name, and its mover's (the prop's name for none);
+   * the own player's pet item takes it too, with its line (its numbers').
+   */
+  private setPetName(m: Mover, name: string): void {
+    const pet = this.clientPet(m);
+    pet.name = name;
+    const mover = pet.moverId === null ? undefined : this.byId.get(pet.moverId);
+    if (mover !== undefined) mover.name = name !== '' ? name : this.data.movers.get(mover.added.index)?.name ?? '';
+    if (this.numbersOf(m) !== undefined) this.toOwn({ type: 'setPetName', name }, m.objectId);
   }
 
   /**
@@ -1392,6 +1677,8 @@ export class WorldState {
    * scene does.
    */
   private setPos(m: Mover, pos: Vec3): void {
+    // pets R1: the raised pet is deleted, and ProcessPet makes it again at the new place (:2236-2238, :2265-2267)
+    if (m.pet !== undefined) this.dropPet(m.pet);
     m.act.body.pos = [f32(pos[0]), f32(pos[1]), f32(pos[2])];
     m.act.clearDest(); // the rules' ClearDest from its first step or destination on; until then there is none
     m.act.sendActMsg(ActMsg.ACC_STOP); // Piece 7 M5 (:2271)

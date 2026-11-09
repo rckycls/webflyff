@@ -1,8 +1,9 @@
 import { GAME_DATA_KEYS } from '@flyffweb/formats';
 import type { WebItemProp, WebJob } from '@flyffweb/formats';
-import { DstParam, QS_END } from '@flyffweb/protocol';
-import type { AddedMover, InitStat, InventoryItem, OwnQuest, SkillSlot, TaskBar, WorldMessage } from '@flyffweb/protocol';
+import { DstParam, NULL_ID, QS_END } from '@flyffweb/protocol';
+import type { AddedMover, InitStat, InventoryItem, OwnQuest, PetData, SkillSlot, TaskBar, WorldMessage } from '@flyffweb/protocol';
 import { GameDataMissingError } from './gameData';
+import { IK3_EGG, PetLevel, petItemId } from './pets/raisedPet';
 import type { GameData } from './gameData';
 import { Parts, ownWorn } from './render/looks';
 import { equipmentPart } from './items/equipment';
@@ -46,7 +47,34 @@ export type OwnEvent =
    * Piece 7 M2: SET_JOB_SKILL changed the job (`OnSetChangeJob`, `DPClient.cpp:3600-3654`): the level-up effect and
    * music, and the chat line `TID_EVE_CHGJOB` with the job's name (`title`, `GetJobString`).
    */
-  | { kind: 'jobChanged'; job: number; title: string };
+  | { kind: 'jobChanged'; job: number; title: string }
+  /** 2026-11-09 (pets R1): the own raised pet (`PetChange`). */
+  | { kind: 'pet'; change: PetChange };
+
+/**
+ * 2026-11-09 (pets R1): what happened to the own raised pet, for its status window (R2) and its boxes:
+ * - `shown`: its mover was made (`CMover::ProcessPet`, `Mover.cpp:10862-10889`): the status window opens unless it is
+ *   open; `levelup` is the flag it was made with (`m_pet.GetLevelup()`; `PF_PET_GET_AVAIL` hands the miracle window its
+ *   two steps, `CreatePetSfx`, :11163-11173);
+ * - `hidden`: its mover was deleted with no pet out (`ProcessPet`, :10900-10913): the status window closes;
+ * - `released`: PET_RELEASE (`OnPetRelease`, `DPClient.cpp:16420-16448`): the status, miracle and food windows close;
+ * - `changed`: PET, PET_STATE, PET_SET_EXP or PET_FEED changed its numbers, which the window draws;
+ * - `hatchable`: PET_SET_EXP brought its EXP to the most, the box `TID_GAME_PETEGG_HATCH` (`OnPetSetExp`, :16514-16538);
+ * - `lifeGained`: PET_STATE brought `count` more lives, the box `TID_GAME_PET_LIFE` (`OnPetState`, :16586-16594);
+ * - `named`: SET_PET_NAME, the line `TID_GAME_NAME_PET_S00` (`OnSetPetName`, :18462-18466).
+ */
+export type PetChange =
+  | { kind: 'shown'; levelup: number }
+  | { kind: 'hidden' }
+  | { kind: 'released' }
+  | { kind: 'changed' }
+  | { kind: 'hatchable' }
+  | { kind: 'lifeGained'; count: number }
+  | { kind: 'named' };
+
+/** `MAX_PET_EGG_EXP` and `MAX_PET_EXP` (`_Common/pet.h:86-87`): the EXP of a full egg and of a full pet. */
+const MAX_PET_EGG_EXP = 50000;
+const MAX_PET_EXP = 100000;
 
 /**
  * How a quest message changed the own quests (`CDPClient::OnSetQuest`, `DPClient.cpp:8444-8573`; `CMover::SetQuest`,
@@ -169,6 +197,12 @@ export class OwnState {
   private readonly buffAdjust = new Map<number, number>();
   /** Owner-only server display snapshot, refreshed after any stat change. */
   profileStats: readonly number[] | null = null;
+  /**
+   * 2026-11-09 (pets R1): the own player's `CMover::m_dwPetId`: the bag object id of the summoned raised pet's item, or
+   * null for `NULL_ID`. The own ADD_OBJ brings it (`own.petSlot`; the server keeps it over a relog), PET_CALL sets it and
+   * PET_RELEASE clears it (`OnPetCall`, `OnPetRelease`, `DPClient.cpp:16398-16448`).
+   */
+  petSlot: number | null;
 
   /**
    * 2026-11-05: the server's values of the own numbers before a world change, kept unless the new world sent its own: the
@@ -224,6 +258,112 @@ export class OwnState {
       i < 42 ? i : this.equipmentObjectIds[i - 42] ?? 0xffffffff);
     this.worn = wornBy(equipment, data);
     this.adjust = equipAdjust(this.worn);
+    this.petSlot = own.petSlot ?? null;
+  }
+
+  /**
+   * 2026-11-09 (pets R1): `CMover::GetPetItem` (`Mover.cpp:10939-10947`): the bag item at `petSlot` when it is an egg or a
+   * hatched pet (`IsPet`, `IK3_EGG`); undefined with no pet out, or no such item.
+   */
+  petItem(): InventoryItem | undefined {
+    const item = this.petSlot === null ? undefined : this.inventory?.get(this.petSlot);
+    return item !== undefined && this.isPet(item) ? item : undefined;
+  }
+
+  /** `CItemElem::IsPet` (`Item.h:214`): an item of `IK3_EGG`. */
+  private isPet(item: InventoryItem): boolean {
+    return this.data.itemProps.get(item.itemId)?.kind3 === IK3_EGG;
+  }
+
+  /**
+   * 2026-11-09 (pets R1): what `OnPet` does to the pet's item when the pet's mover is made again
+   * (`DPClient.cpp:16558-16563`): `m_dwItemId = m_pPet->GetItemId()`, the egg's item or the kind's (a kind the table
+   * lacks leaves it). Its icon (`SetTexture`) is the bag's.
+   */
+  takePetItemId(): void {
+    const item = this.petItem();
+    const itemId = item?.pet === undefined ? null : petItemId(item.pet, this.data.pets);
+    if (item === undefined || itemId === null || itemId === item.itemId) return;
+    this.inventory!.set(item.objectId, { ...item, itemId });
+    this.inventoryRevision++;
+  }
+
+  /** The pet `item` carries is now `pet` (a new item: the old one and its pet are not changed in place). */
+  private setPet(item: InventoryItem, pet: PetData): void {
+    this.inventory!.set(item.objectId, { ...item, pet });
+    this.inventoryRevision++;
+  }
+
+  /** `CPet::SetExp` (`pet.cpp:351-354`): at most `GetMaxExp()`, 50,000 for the egg and 100,000 for a pet. */
+  private static petExp(pet: PetData, exp: number): number {
+    return Math.min(exp >>> 0, pet.level === PetLevel.EGG ? MAX_PET_EGG_EXP : MAX_PET_EXP);
+  }
+
+  /**
+   * `CPet::SetEnergy` (`pet.cpp:341-349`): at most `GetMaxEnergy()`, the level's of the table (`CPetProperty::GetMaxEnergy`,
+   * :98-103), 1 for the egg; with no table the server's number stands.
+   */
+  private petEnergy(pet: PetData, energy: number): number {
+    const max = pet.level >= PetLevel.D && pet.level <= PetLevel.S ? this.data.pets?.maxEnergy[pet.level - 1] : 1;
+    return max === undefined ? energy : Math.min(energy, max);
+  }
+
+  /**
+   * 2026-11-09 (pets R1): the pet messages about the own player (`DPClient.cpp:16398-16617`, `:18446-18467`); `OnPet`'s
+   * item id and mover are `WorldState`'s (`takePetItemId`).
+   */
+  private onPet(message: Extract<WorldMessage, { type: `pet${string}` | 'setPetName' }>): OwnEvent[] {
+    const changed: OwnEvent = { kind: 'pet', change: { kind: 'changed' } };
+    switch (message.type) {
+      case 'petCall': // OnPetCall (:16398-16418): SetPetId( dwPetId ), the item's object id
+        this.petSlot = message.itemObjectId === NULL_ID ? null : message.itemObjectId;
+        return [];
+      case 'petRelease': // OnPetRelease (:16420-16448): PetRelease's SetPetId( NULL_ID ), and the pet's windows close
+        this.petSlot = null;
+        return [{ kind: 'pet', change: { kind: 'released' } }];
+      case 'pet': { // OnPet (:16540-16567): a copy of the pet in place of the pet item's (`operator=`, no limits)
+        const item = this.petItem();
+        if (item === undefined) return [];
+        this.setPet(item, { ...message.pet, availLevels: [...message.pet.availLevels] });
+        return [changed];
+      }
+      case 'petState': { // OnPetState (:16569-16600): by the item, an egg's life being 0 (`CPet::GetLife`, pet.cpp:356-359)
+        const item = this.inventory?.get(message.itemObjectId);
+        const pet = item?.pet;
+        if (item === undefined || pet === undefined || !this.isPet(item)) return [];
+        const oldLife = pet.level === PetLevel.EGG ? 0 : pet.life;
+        const life = message.life;
+        this.setPet(item, {
+          ...pet, life, energy: this.petEnergy(pet, message.energy), exp: OwnState.petExp(pet, message.exp),
+        });
+        return oldLife < life ? [changed, { kind: 'pet', change: { kind: 'lifeGained', count: life - oldLife } }] : [changed];
+      }
+      case 'petSetExp': { // OnPetSetExp (:16514-16538): at the most, the box that says it can hatch (or level up)
+        const item = this.petItem();
+        const pet = item?.pet;
+        if (item === undefined || pet === undefined) return [];
+        const exp = OwnState.petExp(pet, message.exp);
+        this.setPet(item, { ...pet, exp });
+        const full = exp === (pet.level === PetLevel.EGG ? MAX_PET_EGG_EXP : MAX_PET_EXP);
+        return full ? [changed, { kind: 'pet', change: { kind: 'hatchable' } }] : [changed];
+      }
+      case 'petFeed': { // OnPetFeed (:16602-16617): GetPet()->SetEnergy
+        const item = this.petItem();
+        const pet = item?.pet;
+        if (item === undefined || pet === undefined) return [];
+        this.setPet(item, { ...pet, energy: this.petEnergy(pet, message.energy) });
+        return [changed];
+      }
+      case 'setPetName': { // OnSetPetName (:18462-18466): GetPet()->SetName, and the line
+        const item = this.petItem();
+        const pet = item?.pet;
+        if (item === undefined || pet === undefined) return [];
+        this.setPet(item, { ...pet, name: message.name });
+        return [{ kind: 'pet', change: { kind: 'named' } }];
+      }
+      default: // PET_MILL and QUE_PETRESURRECTION_RESULT are their windows' (R3, R4)
+        return [];
+    }
   }
 
   /**
@@ -458,6 +598,14 @@ export class OwnState {
       case 'revivalToLodestar':
         this.onRevivalLodestar();
         return [{ kind: 'revived' }];
+      case 'petCall': // 2026-11-09 (pets R1)
+      case 'petRelease':
+      case 'pet':
+      case 'petState':
+      case 'petSetExp':
+      case 'petFeed':
+      case 'setPetName':
+        return this.onPet(message);
       default:
         return [];
     }
