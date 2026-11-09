@@ -1,6 +1,6 @@
 import { QS_END, type OwnQuest } from '@flyffweb/protocol';
 import type { WebQuest, WebQuestItem } from '@flyffweb/formats';
-import { isEndQuestCondition, type QuestCatalog, type QuestOwner } from './questRules';
+import { isEndQuestCondition, petTermsMet, type QuestCatalog, type QuestOwner } from './questRules';
 
 export type QuestMarker = 'available' | 'future' | 'inProgress' | 'ready';
 interface QuestLink { quest: WebQuest; item: number }
@@ -69,6 +69,8 @@ function beginAllowed(
   if (quest.beginSex !== undefined && quest.beginSex !== -1 && quest.beginSex !== owner.sex) return false;
   if ((quest.beginGold ?? 0) > owner.gold) return false;
   if (quest.beginSkill !== undefined && owner.skillLevel(quest.beginSkill[0]) < quest.beginSkill[1]) return false;
+  // 2026-11-09 (pets R3): the summoned raised pet's EXP percent and level (Mover.cpp:9956-9970, :10323-10337)
+  if (!petTermsMet(owner.pet, quest.beginPetExp, quest.beginPetLevel)) return false;
   if (quest.beginPrevious !== undefined && !quest.beginPrevious.quests.every((id) => {
     const active = current.has(id), done = completed.includes(id);
     switch (quest.beginPrevious!.type) {

@@ -89,6 +89,14 @@ export function petMaxExp(level: number): number {
   return level === PetLevel.EGG ? MAX_PET_EGG_EXP : MAX_PET_EXP;
 }
 
+/**
+ * 2026-11-09 (pets R3): `CPet::GetExpPercent` (`pet.h:139`): `GetExp() * 100 / GetMaxExp()` in whole numbers, which the
+ * quests' pet terms read (`Mover.cpp:9365-9381`).
+ */
+export function petWholeExpPercent(pet: Pick<PetData, 'level' | 'exp'>): number {
+  return Math.trunc((pet.exp * 100) / petMaxExp(pet.level));
+}
+
 /** `CPet::GetLife` (`pet.cpp:356-359`): an egg has none. */
 export function petLife(pet: Pick<PetData, 'level' | 'life'>): number {
   return pet.level === PetLevel.EGG ? 0 : pet.life;

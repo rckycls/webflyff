@@ -99,7 +99,7 @@ import type { PartyEffectContext, PartyMover } from './fx/partyEffects';
 import type { PartyHpMember } from './render/PartyHpBars';
 import { QuestMarkerIndex } from './quests/questMarkers';
 import { questLines, timedOut } from './quests/questLines';
-import { createQuestLookup } from './quests/questRules';
+import { createQuestLookup, questPet } from './quests/questRules';
 import type { QuestCatalog, QuestNames, QuestOwner } from './quests/questRules';
 import type { QuestChange } from './OwnState';
 import { expNeeded, expPercent } from './sim/params';
@@ -1862,6 +1862,8 @@ export class WorldScreen {
         return count;
       },
       completed: own.completedQuests,
+      // 2026-11-09 (pets R3): the summoned raised pet's level and whole EXP percent (`GetPet`, the quests' pet terms)
+      pet: questPet(own.petItem()?.pet),
     };
   }
 
