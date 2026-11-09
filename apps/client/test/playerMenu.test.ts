@@ -31,7 +31,7 @@ function partyOf(members: number[]): PartyState {
 }
 
 describe('the player\'s menu ([R §5.1])', () => {
-  it('the entries in Neuz\'s order, Invite alone enabled', () => {
+  it('the entries in Neuz\'s order, Invite and (2026-11-10) Add to my list enabled', () => {
     expect(playerMenuEntries(TEXTS)).toEqual([
       { id: 2, label: 'Trade', enabled: false },
       { id: 5, label: 'Add to my list', enabled: true },

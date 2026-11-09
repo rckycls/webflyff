@@ -656,7 +656,8 @@ fieldset:disabled .btn {
 /* The NPC's mover menu (CWndMenu, WndControl.cpp:3337-3630; moverMenu.ts): a 3 px frame of ARGB(255,226,198,181), white
    inside, 10 + 22 px per item tall; items 20 px on a 22 px pitch from (2, 2), as wide as the widest text + 60, the text
    24 px in, black; a hovered item gets ARGB(155,200,200,200) and a round outline of ARGB(255,240,240,240). Verdana 9. */
-.hud-mover-menu {
+/* 2026-11-10: the Messenger's menus (friends/friendHud.ts) are CWndMenus too, with a class of their own */
+.hud-mover-menu, .hud-friend-menu {
   position: absolute;
   z-index: 30;
   display: inline-flex;
@@ -670,7 +671,7 @@ fieldset:disabled .btn {
   font: 12px Verdana, Tahoma, sans-serif;
 }
 
-.hud-mover-menu[hidden] {
+.hud-mover-menu[hidden], .hud-friend-menu[hidden] {
   display: none;
 }
 

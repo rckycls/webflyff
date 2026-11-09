@@ -16,6 +16,7 @@ import type { MessageOf } from '@flyffweb/protocol';
 import type { Texts } from '../gameData';
 import type { UiArt } from '../hud/art';
 import { formatText } from '../hud/format';
+import { layoutBottomOf } from '../hud/frame';
 import { MessageBox } from '../hud/messageBox';
 import { MoverMenu } from '../hud/moverMenu';
 import type { MenuEntry } from '../hud/moverMenu';
@@ -105,7 +106,8 @@ export class FriendHud {
     this.confirm = new FriendConfirm(art, doc);
     this.messageBox = new MessageBox(art, doc);
     this.menu = new MoverMenu(doc);
-    this.menu.element.classList.add('hud-friend-menu');
+    // its own class: the world's menu is the only .hud-mover-menu
+    this.menu.element.className = 'hud-friend-menu';
 
     this.window.onSort = (key) => { this.rows(key); };
     this.window.onAdd = () => { if (!this.addWindow.frame.isOpen) this.addWindow.open(); };
@@ -166,10 +168,11 @@ export class FriendHud {
   /** APP_MESSENGER_: on or off. Opening it with friends asks their states (`OnInitialUpdate`, :669-678). */
   toggle(): void {
     if (this.window.frame.isOpen) { this.window.frame.close(); return; }
-    // at the layout's bottom-right corner (:771-775)
+    // at the layout's bottom-right corner (:771-775), above the task bar (`GetLayoutRect`)
     const layer = this.window.frame.element.parentElement;
     const size = this.window.frame.scaledSize;
-    this.window.frame.open({ x: Math.max(0, (layer?.clientWidth ?? size.width) - size.width), y: Math.max(0, (layer?.clientHeight ?? size.height) - size.height) });
+    const bottom = (layer?.clientHeight ?? size.height) - (layer === null ? 0 : layoutBottomOf(layer));
+    this.window.frame.open({ x: Math.max(0, (layer?.clientWidth ?? size.width) - size.width), y: Math.max(0, bottom - size.height) });
     if (this.messenger.friends.size > 0) this.screen.session.sendGetFriendState();
   }
 
@@ -345,7 +348,7 @@ export class FriendHud {
     this.instants.set(name, instant);
     this.host()?.append(instant.frame.element);
     const host = this.window.frame.element.parentElement;
-    instant.frame.open(instantPlace(n, host?.clientWidth ?? 0, host?.clientHeight ?? 0));
+    instant.frame.open(instantPlace(n, host?.clientWidth ?? 0, (host?.clientHeight ?? 0) - (host === null ? 0 : layoutBottomOf(host))));
     return instant;
   }
 
