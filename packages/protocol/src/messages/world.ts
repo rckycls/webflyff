@@ -16,6 +16,8 @@ import type { AngleReport, FlightReport } from '../world/flight';
 import type { SlotMessenger } from './login';
 import { readFriendPacket, readFriendRequestPacket } from '../world/friends';
 import type { FriendDirectMessage, FriendRequestPacket } from '../world/friends';
+import { readVendorRequestPacket } from '../world/vendor';
+import type { VendorRequestPacket } from '../world/vendor';
 
 /** What `CDPClient::SendJoin` sends: the character that enters the world, and the account that owns it. */
 export interface JoinRequest {
@@ -325,6 +327,8 @@ export type WorldPacket =
   // 2026-11-10: the messenger's direct packets and SAY, and the messenger packets the browser sends (world/friends.ts)
   | FriendDirectMessage
   | FriendRequestPacket
+  // 2026-11-10: the personal shop's packets the browser sends (world/vendor.ts)
+  | VendorRequestPacket
   | { type: 'unknown'; packetType: number };
 
 /**
@@ -652,6 +656,9 @@ function decodeClientPacket(r: ArReader): WorldPacket {
       // 2026-11-10: the messenger's packets the browser sends (world/friends.ts)
       const friend = readFriendRequestPacket(packetType, r);
       if (friend !== null) { r.expectEnd(); return friend; }
+      // 2026-11-10: the personal shop's (world/vendor.ts)
+      const vendor = readVendorRequestPacket(packetType, r);
+      if (vendor !== null) { r.expectEnd(); return vendor; }
       return { type: 'unknown', packetType };
     }
   }

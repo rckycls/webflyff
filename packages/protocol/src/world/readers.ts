@@ -43,6 +43,10 @@ import {
   readFriendRequestCancel,
 } from './friends';
 import { readReturnScrollAck, readStateMode } from './travel';
+import {
+  VendorMessageType, readChatting, readPVendorClose, readPVendorItemNum, readPVendorItems, readPVendorOpen,
+  readRegisterPVendorItem, readUnregisterPVendorItem,
+} from './vendor';
 import { readCmdSetSkillLevel, readDisguise, readModifyMode, readNoDisguise, readServerText } from './gm';
 import {
   readMeleeAttack2, readMoverBehavior2, readMoverCorr2, readMoverMoved2, readSendActMsg, readSetFuel,
@@ -152,6 +156,14 @@ export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
     [FriendMessageType.ADDFRIENDCANCEL, readFriendRequestCancel],
     [FriendMessageType.REMOVEFRIEND, readFriendRemoved],
     [FriendMessageType.ADDFRIENDERROR, readFriendError],
+    // 2026-11-10: the personal shop and its chat room (world/vendor.ts)
+    [VendorMessageType.PVENDOR_OPEN, readPVendorOpen],
+    [VendorMessageType.PVENDOR_CLOSE, readPVendorClose],
+    [VendorMessageType.REGISTER_PVENDOR_ITEM, readRegisterPVendorItem],
+    [VendorMessageType.UNREGISTER_PVENDOR_ITEM, readUnregisterPVendorItem],
+    [VendorMessageType.PVENDOR_ITEM, readPVendorItems],
+    [VendorMessageType.PVENDOR_ITEM_NUM, readPVendorItemNum],
+    [VendorMessageType.CHATTING, readChatting],
     [MessageType.SET_JOB_SKILL, readSetJobSkill],
     [MessageType.SET_NEAR_JOB_SKILL, readSetNearJobSkill],
     [MessageType.DAMAGE, readDamage],
