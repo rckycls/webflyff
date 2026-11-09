@@ -34,8 +34,11 @@ const DROP = -7.8;
 const EYE = [0, 0.7, 3.5] as const;
 const LOOK_AT = [0, 0, -3] as const;
 
-/** Each part's material made unlit: its texture as it is (`SetLight( FALSE )`), the hair's tint (already unlit) kept. */
-function unlit(root: Object3D): void {
+/**
+ * Each part's material made unlit: its texture as it is (`SetLight( FALSE )`), the hair's tint (already unlit) kept.
+ * 2026-11-09 (pets R2): also the pet window's portrait (`SetDiffuse( 0, 0, 0 )`, `SetAmbient( 1, 1, 1 )`).
+ */
+export function unlit(root: Object3D): void {
   root.traverse((object) => {
     if (!(object instanceof Mesh)) return;
     object.frustumCulled = false;
@@ -87,11 +90,7 @@ export interface PreviewView {
 export async function renderPreview(
   renderer: WebGLRenderer, model: AssembledCharacter, motion: LoopedMotion | null, doc: Document, view: PreviewView,
 ): Promise<HTMLCanvasElement> {
-  const ratio = renderer.getPixelRatio();
   const cssWidth = view.width, cssHeight = view.height;
-  const width = Math.round(cssWidth * ratio);
-  const height = Math.round(cssHeight * ratio);
-
   const { root } = model;
   unlit(root);
   root.scale.setScalar(view.scale);
@@ -103,11 +102,40 @@ export async function renderPreview(
   }
   const scene = new Scene();
   scene.add(root);
-  const viewWidth = VIEW_HEIGHT * (cssWidth / cssHeight);
-  const camera = new OrthographicCamera(-viewWidth / 2, viewWidth / 2, VIEW_HEIGHT / 2, -VIEW_HEIGHT / 2, NEAR, FAR);
+  const camera = portraitCamera(cssWidth, cssHeight);
   camera.position.set(...EYE);
   camera.lookAt(...LOOK_AT);
+  const canvas = doc.createElement('canvas');
+  const reading = drawPicture(renderer, scene, camera, canvas, cssWidth, cssHeight);
+  scene.remove(root);
+  await reading;
+  return canvas;
+}
 
+/**
+ * `D3DXMatrixOrthoLH( h * aspect, h, ... )` of a box `cssWidth` x `cssHeight` (`h = cos( fov / 2 ) / sin( fov / 2 )`),
+ * the projection of every window's 3D picture (the status window's face, `WndField.cpp:10672-10679`; the pet window's,
+ * `WndPetSys.cpp:647-654`). The caller places and turns it.
+ */
+export function portraitCamera(cssWidth: number, cssHeight: number): OrthographicCamera {
+  const viewWidth = VIEW_HEIGHT * (cssWidth / cssHeight);
+  return new OrthographicCamera(-viewWidth / 2, viewWidth / 2, VIEW_HEIGHT / 2, -VIEW_HEIGHT / 2, NEAR, FAR);
+}
+
+/**
+ * Draws `scene` from `camera` with `renderer` into a render target the size of `canvas`'s box (`cssWidth` x `cssHeight` CSS
+ * pixels at the renderer's pixel ratio), and puts the picture in `canvas` once read (2026-11-09, pets R2: what
+ * `renderPreview` did inline, for the pet window's portrait that is drawn again as its motion plays). The renderer's
+ * target and clear colour are as they were as soon as the picture is drawn; its pixels come back with the asynchronous
+ * read (Piece 6 M5). Rejects if the read fails.
+ */
+export async function drawPicture(
+  renderer: WebGLRenderer, scene: Scene, camera: OrthographicCamera, canvas: HTMLCanvasElement, cssWidth: number,
+  cssHeight: number,
+): Promise<void> {
+  const ratio = renderer.getPixelRatio();
+  const width = Math.round(cssWidth * ratio);
+  const height = Math.round(cssHeight * ratio);
   const target = new WebGLRenderTarget(width, height);
   target.texture.colorSpace = SRGBColorSpace;
   const pixels = new Uint8Array(width * height * 4);
@@ -123,20 +151,18 @@ export async function renderPreview(
     } finally {
       renderer.setRenderTarget(oldTarget);
       renderer.setClearColor(oldColor, oldAlpha);
-      scene.remove(root);
     }
     await renderer.readRenderTargetPixelsAsync(target, 0, 0, width, height, pixels);
   } finally {
     target.dispose();
   }
 
-  const canvas = doc.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
+  if (canvas.width !== width) canvas.width = width;
+  if (canvas.height !== height) canvas.height = height;
   canvas.style.width = `${cssWidth}px`;
   canvas.style.height = `${cssHeight}px`;
   const context = canvas.getContext('2d');
-  if (context === null) return canvas;
+  if (context === null) return;
   const image = context.createImageData(width, height);
   // the target's rows go up from the bottom; what was drawn is opaque, as with blending off (:10727)
   for (let y = 0; y < height; y++) {
@@ -151,7 +177,6 @@ export async function renderPreview(
     }
   }
   context.putImageData(image, 0, 0);
-  return canvas;
 }
 
 /**

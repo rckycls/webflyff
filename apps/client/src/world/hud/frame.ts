@@ -252,6 +252,14 @@ export class WindowFrame {
   }
 
   /**
+   * 2026-11-09 (pets R2): the window's size on its layer, in CSS pixels as shown (scaled on a phone): `GetWndRect()`'s, which
+   * the pet window opens beside (`CWndPetStatus::OnInitialUpdate`).
+   */
+  get size(): { width: number; height: number } {
+    return { width: this.width * this.scale, height: this.shownHeight * this.scale };
+  }
+
+  /**
    * Keeps the open window on its layer after the screen changed size (a resize, a turn of the device), as `open` keeps
    * it: from where it was put, so that it goes back there when the screen is big enough again. The layer hides what is
    * past its edges, and Neuz, whose screen never changes size under a window, has nothing of this. Its height is fitted

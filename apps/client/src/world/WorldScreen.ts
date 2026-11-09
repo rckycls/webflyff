@@ -22,7 +22,7 @@ import {
   EffectRenderer, Joystick, KeyboardInput, WorldStage, effectTextureProvider, loadGltf, loopMotion, neuzRandom, attachHeld,
   rendererCounts,
 } from '@flyffweb/scene';
-import type { EffectTextureProvider, Ground, LoopedMotion, SceneServices } from '@flyffweb/scene';
+import type { AssembledCharacter, EffectTextureProvider, Ground, LoopedMotion, SceneServices } from '@flyffweb/scene';
 import type { WebGLRenderer } from 'three';
 import { Vector2, Vector3 } from 'three';
 import { isUpright } from '../landscape';
@@ -125,7 +125,8 @@ import { PiercingWindow, SmeltSafetyWindow } from './items/upgradeNpcWindows';
 import { WeaponGlows, glowOf, weaponOption } from './render/weaponGlow';
 import { ParticleLayer } from './render/ParticleLayer';
 import { PetParticles, createPetParticle } from './pets/petParticles';
-import { isClientMade } from './pets/raisedPet';
+import { isClientMade, petMoverId } from './pets/raisedPet';
+import { PetWindows } from './pets/petWindows';
 import { petBuffTooltip } from './pets/petStatus';
 import type { GlowingWeapon, WeaponOption } from './render/weaponGlow';
 import type { UpgradeNpcHost } from './items/upgradeNpcWindows';
@@ -410,6 +411,8 @@ export class WorldScreen {
   private ticketInUse: number | null = null;
   /** 2026-11-09 (pets R2): the summoned raised pet's bag slot the bag was last drawn with (`GetPetId()`, drawn faded). */
   private bagPetSlot: number | null = null;
+  /** 2026-11-09 (pets R2): the raised pet's status window and its portrait (pets/petWindows.ts). */
+  private petWindows: PetWindows | undefined;
   /** The authorization the chat's suggestions were last given (2026-11-05). */
   private chatAuthorization = -1;
   private speechBubbles: SpeechBubbleLayer | undefined;
@@ -1317,6 +1320,18 @@ export class WorldScreen {
       shortcut: (id, slot) => taskBar.setInventoryShortcut(id, slot),
     }, doc);
     this.inventoryWindow = inventoryWindow;
+    // 2026-11-09 (pets R2): the raised pet's status window (CWndPetStatus) and its portrait
+    this.petWindows = new PetWindows(this.hudArt!, this.data!, {
+      own: () => this.own,
+      statusFrame: () => this.hud?.status.frame ?? null,
+      sendPetRelease: () => this.session.sendPetRelease(),
+      petMover: () => {
+        const self = this.world?.self();
+        return self === undefined ? undefined : this.world?.movers.get(petMoverId(self.objectId));
+      },
+      loadPortrait: (mover) => this.petPortraitModel(mover),
+      renderer: () => this.page?.renderer ?? null,
+    }, doc, (error) => this.reportOnce(`pet portrait: ${messageOf(error)}`, error));
     this.chatWindow ??= new ChatWindow((channel, text, target) => this.session.sendChat(channel, text, target), () => this.stopOwnMover(), doc);
     // 2026-11-05: the client commands Neuz runs itself (TCM_CLIENT, FuncTextCmd.cpp): /position and /Time print; the
     // others (the trade, whisper and party toggles, the block list) have no option or window here, and send nothing
@@ -1411,6 +1426,7 @@ export class WorldScreen {
       selectVillage.element, characterWindow.frame.element,
       characterWindow.confirm.frame.element, skillWindow.frame.element, skillWindow.warning.element, reviveWindow.element,
       inventoryWindow.frame.element, this.nearbyItems.element, this.chatWindow.element, this.shopWindow.frame.element,
+      this.petWindows.element,
       ...questWindow.elements, this.dialog.element, this.moverMenu.element, ...partyHud.elements,
     );
     // what the party said while the world loaded
@@ -1777,7 +1793,7 @@ export class WorldScreen {
    * moved) is no longer the focus (`CWorld::Process` for a deleted object, `AttackLoop.onRemoved`). An S pet sparkles at
    * its drawn place along its owner's angles (`CreatePetParticle`, `Mover.cpp:10802-10833`). The own pet's boxes:
    * `TID_GAME_PETEGG_HATCH` (`OnPetSetExp`, `DPClient.cpp:16526-16535`) and `TID_GAME_PET_LIFE` with the lives gained
-   * (`OnPetState`, :16590-16593). Its status window (`shown`, `hidden`, `released`) is R2's.
+   * (`OnPetState`, :16590-16593). Its status window (`shown`, `hidden`, `released`): PetWindows (pets R2).
    */
   private playPets(changes: WorldChanges): void {
     const world = this.world, views = this.views;
@@ -1791,6 +1807,7 @@ export class WorldScreen {
     }
     for (const event of changes.own) {
       if (event.kind !== 'pet') continue;
+      this.petWindows?.onPet(event.change); // pets R2: the status window opens and closes
       if (event.change.kind === 'hatchable') this.sayRefusal({ kind: 'box', tid: 'TID_GAME_PETEGG_HATCH' });
       if (event.change.kind !== 'lifeGained') continue;
       const text = this.data?.texts.get('TID_GAME_PET_LIFE')?.text ?? '';
@@ -2114,6 +2131,7 @@ export class WorldScreen {
     }
     this.numbers?.step();
     this.petParticles.step(); // pets R1: g_ParticleMng.Process (Neuz.cpp:1100)
+    this.petWindows?.step(); // pets R2: the pet window's portrait, CWndPetStatus::Process
     this.follow(world, stage);
   }
 
@@ -2182,6 +2200,7 @@ export class WorldScreen {
     }
     this.numbers?.step();
     this.petParticles.step(); // pets R1: g_ParticleMng.Process (Neuz.cpp:1100)
+    this.petWindows?.step(); // pets R2: the pet window's portrait, CWndPetStatus::Process
     this.follow(world, stage);
   }
 
@@ -2262,6 +2281,7 @@ export class WorldScreen {
       if (this.own) this.inventoryWindow?.update(this.own, true);
     }
     if (this.own) this.inventoryWindow?.update(this.own);
+    this.petWindows?.frame(); // 2026-11-09 (pets R2): the pet's status window, drawn as OnDraw draws it each frame
     this.inventoryWindow?.drawCooldowns((objectId) => this.itemUse?.cooldownDone(objectId) ?? null); // 2026-11-05
     // 2026-11-05: the upgrade cursor's wait, and its mode ended by a move (CWndWorld::Process, WndWorld.cpp:8050-8097)
     const upgradeSelf = this.world?.self();
@@ -2905,11 +2925,43 @@ export class WorldScreen {
   }
 
   /**
-   * 2026-11-09 (pets R1): the own raised pet's menu (`MaFl_Pet`; `CWndWorld::OnCommand`, `WndWorld.cpp:5877-5898`):
-   * `MMI_PET_STATUS` toggles its status window, `MMI_PET_RELEASE` sends PET_RELEASE and closes the window. A stub: the
-   * window and the message are R2's (docs/superpowers/plans/2026-11-09-pets-rest.md).
+   * 2026-11-09 (pets R1, R2): the own raised pet's menu (`MaFl_Pet`; `CWndWorld::OnCommand`, `WndWorld.cpp:5877-5898`):
+   * `MMI_PET_STATUS` toggles its status window, `MMI_PET_RELEASE` sends PET_RELEASE and closes the window (PetWindows).
    */
-  private choosePetEntry(_entry: number): void {}
+  private choosePetEntry(entry: number): void {
+    this.petWindows?.choose(entry);
+  }
+
+  /**
+   * 2026-11-09 (pets R2): the pet window's portrait model (`CWndPetStatus::Process`, `WndPetSys.cpp:998-1023`): the own pet
+   * mover's model with its texture set, loaded for the portrait alone, and its stand motion (the egg's idle, which
+   * mdlDyna.inc lists as its MTI_STAND). Null when it cannot be had, said once.
+   */
+  private async petPortraitModel(mover: Mover): Promise<{ model: AssembledCharacter; motion: LoopedMotion | null } | null> {
+    const services = this.services, data = this.data;
+    if (services === undefined || data === undefined) return null;
+    const look = lookOf(mover, data, []);
+    if (look === null) return null;
+    const report = (message: string): void => this.reportOnce(`pet portrait: ${message}`, new Error(message));
+    try {
+      const model = await loadMoverModel(services)(look, report);
+      const key = look.motion(Mti.STAND);
+      let motion: LoopedMotion | null = null;
+      try {
+        motion = key === null ? null : await loadMotion(services, key);
+      } catch (error) {
+        report(messageOf(error)); // the model still stands, in its first pose
+      }
+      if (this.over) {
+        model.release();
+        return null;
+      }
+      return { model, motion };
+    } catch (error) {
+      if (!this.over) report(messageOf(error));
+      return null;
+    }
+  }
 
   /** A RUNSCRIPTFUNC for the player (`CDPClient::OnRunScriptFunc`, DPClient.cpp:14265-14476). */
   private npcScript(action: NpcAction): void {
@@ -3052,6 +3104,8 @@ export class WorldScreen {
     this.effectTextures?.dispose();
     this.effectModels?.dispose();
     this.particleLayer?.dispose(); // pets R1
+    this.petWindows?.dispose(); // pets R2
+    this.petWindows = undefined;
     this.particleLayer = undefined;
     this.petParticles.clear();
     this.missiles?.dispose(); // the world they flew in is gone: nothing is reported
