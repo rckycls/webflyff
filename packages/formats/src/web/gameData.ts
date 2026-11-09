@@ -408,6 +408,24 @@ export const WORLD_NO_FLY_KEY = 'data/worldNoFly.json';
  */
 export const ITEM_ETC_KEY = 'data/itemEtc.json';
 
+/**
+ * 2026-11-09: the chat's catalog (the converter's `chat` stage), a `WebChat`. Optional, so not one of GAME_DATA_KEYS:
+ * without it the chat filters no word and its Help window is empty.
+ */
+export const CHAT_KEY = 'data/chat.json';
+
+/** Filter_ENG.inc (__FILTER_0705): the words of letters, in lower case, and the other entries, each with its replacement. */
+export interface WebChatFilter {
+  alpha: Record<string, string>;
+  nonAlpha: Record<string, string>;
+}
+
+/** data/chat.json: the word filter, and help.inc's texts by keyword. */
+export interface WebChat {
+  filter: WebChatFilter;
+  help: Record<string, string>;
+}
+
 /** The logical keys of the catalogs in the asset index. */
 export const GAME_DATA_KEYS = {
   movers: 'data/movers.json',

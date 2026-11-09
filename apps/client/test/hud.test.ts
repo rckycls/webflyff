@@ -775,7 +775,7 @@ describe('TaskBar (CWndTaskBar, WndTaskBar.cpp)', () => {
     expect(bar.element.querySelectorAll('.hud-slot[data-kind]')).toHaveLength(0);
     expect(bar.element.querySelector('.hud-taskbar-number')!.textContent).toBe('1');
     bar.element.querySelector<HTMLButtonElement>('.hud-taskbar-start')!.click();
-    bar.element.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')[9]!.click();
+    bar.element.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')[10]!.click();
     expect(calls).toEqual(['logOut']);
     // the own numbers come with no TASKBAR yet: still empty; then it comes
     const own = newVagrant();
@@ -897,21 +897,21 @@ describe('TaskBar (CWndTaskBar, WndTaskBar.cpp)', () => {
     expect(menu.hidden).toBe(false);
     expect(bar.menuOpen).toBe(true);
     const items = [...menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
-    expect(items.map((item) => item.getAttribute('aria-label'))).toEqual(['Status', 'Character', 'Skills', 'Inventory', 'Quest Diary', 'World Map', 'Navigator', 'Party', 'Option', 'Log out']);
-    expect(items.map((item) => item.querySelector('.hud-menu-text')!.textContent)).toEqual(['Status', 'Character', 'Skills', 'Inventory', 'Quest Diary', 'World Map', 'Navigator', 'Party', 'Option', 'Log out']);
+    expect(items.map((item) => item.getAttribute('aria-label'))).toEqual(['Status', 'Character', 'Skills', 'Inventory', 'Quest Diary', 'World Map', 'Navigator', 'Chatting', 'Party', 'Option', 'Log out']);
+    expect(items.map((item) => item.querySelector('.hud-menu-text')!.textContent)).toEqual(['Status', 'Character', 'Skills', 'Inventory', 'Quest Diary', 'World Map', 'Navigator', 'Chatting', 'Party', 'Option', 'Log out']);
     // every line has its window (the skill window's, milestone 2's, too)
-    expect(items.map((item) => item.disabled)).toEqual([false, false, false, false, false, false, false, false, false, false]);
+    expect(items.map((item) => item.disabled)).toEqual([false, false, false, false, false, false, false, false, false, false, false]);
     expect(items[0]!.querySelector<HTMLElement>('.hud-menu-icon')!.style.backgroundImage).toContain('/assets/ui/icon_status.png');
     // as CWndTaskMenu draws it (WndTaskBar.cpp:2646-2653), line i at (10, 50 + 22 i), 162 wide, with its applet's hotkey
     // (AppendMenu, :2746); each line takes its whole 22 px row, no gap between two (ruling R27). The picture,
     // WndTaskMenu.tga (192 x 496), is drawn in three: its top edge (0-50), the four lines' rows (50-138) and its bottom
-    // edge (the last 26 px), 296 px in all, for the ten lines the client has instead of Neuz's twenty
+    // edge (the last 26 px), 318 px in all, for the eleven lines the client has instead of Neuz's twenty
     const slices = [...menu.querySelectorAll<HTMLElement>('.hud-menu-slice')];
     expect(slices.map((slice) => [slice.style.top, slice.style.height, slice.style.backgroundPosition])).toEqual([
-      ['0px', '50px', '0px 0px'], ['50px', '220px', '0px -50px'], ['270px', '26px', '0px -470px'],
+      ['0px', '50px', '0px 0px'], ['50px', '242px', '0px -50px'], ['292px', '26px', '0px -470px'],
     ]);
     expect(slices.every((slice) => slice.style.backgroundImage === 'url("/assets/ui/wndtaskmenu.png")')).toBe(true);
-    expect([menu.style.width, menu.style.height]).toEqual(['192px', '296px']);
+    expect([menu.style.width, menu.style.height]).toEqual(['192px', '318px']);
     expect(items.map((item) => [item.style.left, item.style.top, item.style.width, item.style.height])).toEqual([
       ['10px', '50px', '162px', '22px'], ['10px', '72px', '162px', '22px'], ['10px', '94px', '162px', '22px'],
       ['10px', '116px', '162px', '22px'], ['10px', '138px', '162px', '22px'], ['10px', '160px', '162px', '22px'],
@@ -919,11 +919,12 @@ describe('TaskBar (CWndTaskBar, WndTaskBar.cpp)', () => {
       ['10px', '204px', '162px', '22px'],
       ['10px', '226px', '162px', '22px'],
       ['10px', '248px', '162px', '22px'],
+      ['10px', '270px', '162px', '22px'],
     ]);
-    expect(items.map((item) => item.querySelector('.hud-menu-hotkey')!.textContent)).toEqual(['T', 'H', 'K', 'I', 'Q', 'M', 'N', 'P', '', '']);
+    expect(items.map((item) => item.querySelector('.hud-menu-hotkey')!.textContent)).toEqual(['T', 'H', 'K', 'I', 'Q', 'M', 'N', '', 'P', '', '']);
     // the menu stands on the bar, its own scale
     expect(menu.style.bottom).toBe('48px');
-    items[9]!.click();
+    items[10]!.click();
     expect(calls).toEqual(['logOut']);
     expect(menu.hidden).toBe(true);
     // Start again opens it; Status opens the status window and closes the menu; Start twice, or a press elsewhere, closes it
@@ -1340,15 +1341,15 @@ describe('TaskBar: stackable items, names, focus and room (WndTaskBar.cpp)', () 
     expect(bar.element.querySelector<HTMLElement>('.hud-taskbar-strip')!.style.transform).toBe('scale(0.75)');
     expect([menu.style.transform, menu.style.bottom]).toEqual(['', '36px']);
     // 150 px high: 102 px above the bar
-    expect(menuOn(800, 150).menu.style.transform).toBe(`scale(${(150 - 48) / 296})`);
+    expect(menuOn(800, 150).menu.style.transform).toBe(`scale(${(150 - 48) / 318})`);
   });
 
   it('on a touch screen it is up to twice its size, as the room above the bar allows: a finger\'s 40 to 44 px a line', () => {
     onTouchScreen(() => {
       // A landscape phone leaves room for twice the 164px menu above the floating bar.
-      expect(menuOn(844, 390).menu.style.transform).toBe(`scale(${(390 - 48 * 720 / 620) / 296})`);
+      expect(menuOn(844, 390).menu.style.transform).toBe(`scale(${(390 - 48 * 720 / 620) / 318})`);
       // The compact 620px layout fills the width between the phone's side gutters.
-      expect(menuOn(750, 342).menu.style.transform).toBe(`scale(${(342 - 48 * (718 / 620)) / 296})`);
+      expect(menuOn(750, 342).menu.style.transform).toBe(`scale(${(342 - 48 * (718 / 620)) / 318})`);
     });
   });
 
@@ -1359,7 +1360,7 @@ describe('TaskBar: stackable items, names, focus and room (WndTaskBar.cpp)', () 
     Object.defineProperty(touch, 'pointerType', { value: 'touch' });
     document.body.dispatchEvent(touch);
     bar.update(newVagrantWithBar(), BAR_DATA);
-    expect(menu.style.transform).toBe(`scale(${(390 - 48 * (720 / 620)) / 296})`);
+    expect(menu.style.transform).toBe(`scale(${(390 - 48 * (720 / 620)) / 318})`);
   });
 
   it('keeps the mobile taskbar bounds while typing or clicking Send on a phone', () => {
@@ -2826,6 +2827,34 @@ describe('TaskBar: editing the bars (CWndTaskBar::OnDropIcon, WndTaskBar.cpp:187
     window.dispatchEvent(pointer('pointermove', 30, 30));
     slot(bar, 'item', 4).dispatchEvent(pointer('pointerup', 30, 30));
     expect(sent[0]).toEqual({ type: 'ADDITEMTASKBAR', bar: 0, slot: 4, shortcut: { ...chat, index: 4, text: 'hi there ' } });
+  });
+
+  it('2026-11-09: the chat\'s macro mark carried to the bar makes a chat line (CWndMacroChat), drawn and used; 10 at most', () => {
+    const own = vagrantWithSkills(5, 0, [3, 0, 0]);
+    const { bar, sent, said, calls } = editingOn(own);
+    // CWndMacroChat::OnLButtonDown: SHORTCUT_CHAT, m_dwId 0, the line's first 127 bytes (WndCommunication.cpp:100-128)
+    bar.carryChat(`hi--there ${'x'.repeat(200)}`, pointer('pointerdown', 10, 10) as PointerEvent);
+    window.dispatchEvent(pointer('pointermove', 30, 30));
+    slot(bar, 'item', 2).dispatchEvent(pointer('pointerup', 30, 30));
+    const text = `hithere ${'x'.repeat(200)}`.slice(0, 127 - 2);
+    expect(sent[0]).toEqual({ type: 'ADDITEMTASKBAR', bar: 0, slot: 2,
+      shortcut: { kind: ShortcutKind.CHAT, id: 0, type: 0, index: 2, userId: 0, data: 1, text } });
+    // icon_MacroChat.dds, its line its name (SetTaskBarTexture, WndTaskBar.cpp:457-460; PutTooTip :582-585)
+    expect(shown(slot(bar, 'item', 2))).toMatchObject({ kind: 'chat', greyed: false });
+    expect(shown(slot(bar, 'item', 2)).icon).toContain('icon_macrochat');
+    slot(bar, 'item', 2).click();
+    expect(calls).toContain('useSlot 0 2');
+    // ten chat lines already on the bars: the 11th is refused (SetShortcut, WndTaskBar.cpp:1520-1539)
+    const chat: Shortcut = { kind: ShortcutKind.CHAT, id: 0, type: 0, index: 0, userId: 0, data: 1, text: 'hi' };
+    own.taskBar = { ...NEW_BAR, items: Array.from({ length: 10 }, (_, i) => ({ bar: 1, slot: i % 9, shortcut: { ...chat, index: i % 9 } }))
+      .concat([{ bar: 2, slot: 0, shortcut: chat }]) };
+    const full = editingOn(own);
+    full.bar.carryChat('one more', pointer('pointerdown', 10, 10) as PointerEvent);
+    window.dispatchEvent(pointer('pointermove', 30, 30));
+    slot(full.bar, 'item', 5).dispatchEvent(pointer('pointerup', 30, 30));
+    expect(full.sent).toEqual([]);
+    expect(full.said.map((line) => line.color)).toEqual([0xffff0000]);
+    void said;
   });
 });
 

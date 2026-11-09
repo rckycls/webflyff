@@ -96,7 +96,8 @@ test('quests: the window, the detail, a check and the tracker, progress lines, a
   // 4. a kill: the line among the messages and in the chat, the tracker's count
   gateway.pushCache(script.later([writeSetQuest(SELF_ID, { ...QUEST, kills: [4, 0] })]));
   await expect(page.locator('.hud-messages')).toContainText('Defeat Small Aibatt (4/10)');
-  await expect.poll(() => page.locator('.hud-chat').evaluate((el) => el.textContent ?? '')).toContain('Defeat Small Aibatt (4/10)');
+  // the desktop's chat (2026-11-09) puts a game line in its System window (CWndMgr::PutString, WndManager.cpp:4166-4172)
+  await expect.poll(() => page.locator('.hud-chat, .hud-neuz-chat-log').evaluate((el) => el.textContent ?? '')).toContain('Defeat Small Aibatt (4/10)');
   await expect(tracker.locator('.tracker-row').first()).toHaveText('Defeat Small Aibatt (4/10)');
   if (isMobile) {
     // 8. the tracker clear of the joystick, the attack and jump buttons and the task bar

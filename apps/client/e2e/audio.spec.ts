@@ -101,6 +101,8 @@ test('audio: an Option window open at logout is gone in the next world, whose Es
   await page.getByRole('button', { name: /Channel 1/ }).click();
   await page.getByRole('button', { name: 'Enter Webby' }).click();
   await page.evaluate(() => window.__client!.ready());
+  // 2026-11-09: on the desktop the chat is a window Escape closes, the one on top: it goes first (Neuz's GetWndBase)
+  if (!isMobile) { await page.keyboard.press('Escape'); await expect(page.locator('.hud-neuz-chat')).toBeHidden(); }
   await page.keyboard.press('Escape');
   await expect(page.getByRole('menuitem', { name: 'Log out', exact: true })).toBeVisible();
   expect(errors).toEqual([]);

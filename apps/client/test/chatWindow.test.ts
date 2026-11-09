@@ -2,6 +2,7 @@
 import { expect, it, vi } from 'vitest';
 import { ChatWindow } from '../src/world/hud/chatWindow';
 import { lineAction, suggest } from '../src/world/hud/chatCommands';
+import { CHAT_COMMANDS } from '../src/world/hud/chatCommandTable';
 
 it('validates sending, isolates typing and retains a bounded, safe transcript', () => {
   const send = vi.fn(), focus = vi.fn(), worldKey = vi.fn();
@@ -44,13 +45,18 @@ it('isolates channel views and includes announcements in System and Chat', () =>
   chat.dispose();
 });
 
-it('passes native slash aliases unchanged without channel or recipient controls', () => {
-  const send = vi.fn(); const chat = new ChatWindow(send, vi.fn()); document.body.append(chat.element);
+it('sends the commands as Neuz does: shout, party and guild chat as /s, /p, /g; a whisper as typed (2026-11-09)', () => {
+  const send = vi.fn(), clock = { now: 0 };
+  const chat = new ChatWindow(send, vi.fn(), document, CHAT_COMMANDS, () => clock.now); document.body.append(chat.element);
+  chat.setParty(true);
   expect(chat.element.querySelector('select, [name=recipient]')).toBeNull();
   const input = chat.element.querySelector<HTMLInputElement>('[name=message]')!;
-  for (const command of ['/s hello', '/shout hello', '/w Rocky hi', '/whisper Rocky hi', '/p hello', '/partychat hello', '/g hello', '/GuildChat hello']) {
-    input.value = command; chat.element.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
-    expect(send).toHaveBeenLastCalledWith('nearby', command, '');
+  for (const [typed, sent] of [['/s hello', '/s hello'], ['/shout hi', '/s hi'], ['/w Rocky hi', '/w Rocky hi'],
+    ['/whisper Rocky hi', '/whisper Rocky hi'], ['/p hello', '/p hello'], ['/partychat hi', '/p hi'], ['/g hello', '/g hello'],
+    ['/GuildChat hi', '/g hi']]) {
+    clock.now += 5000;
+    input.value = typed!; chat.element.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+    expect(send).toHaveBeenLastCalledWith('nearby', sent, '');
   }
   chat.dispose();
 });
@@ -74,14 +80,18 @@ it('opens mobile chat without focusing the input and blurs it after sending', ()
   } finally { chat.dispose(); window.matchMedia = original; }
 });
 
-it('in a party, the Party view sends to the party; out of one, it sends nearby', () => {
-  const send = vi.fn(); const chat = new ChatWindow(send, vi.fn()); document.body.append(chat.element);
+it('in a party, the Party view sends to the party ("/p "); out of one, it sends nearby', () => {
+  const send = vi.fn(), clock = { now: 0 };
+  const chat = new ChatWindow(send, vi.fn(), document, CHAT_COMMANDS, () => clock.now); document.body.append(chat.element);
   const input = chat.element.querySelector<HTMLInputElement>('[name=message]')!;
-  const submit = (text: string) => { input.value = text; chat.element.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true })); };
+  const submit = (text: string) => {
+    clock.now += 5000;
+    input.value = text; chat.element.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
+  };
   chat.element.querySelector<HTMLButtonElement>('[data-view="party"]')!.click();
   submit('out of one'); expect(send).toHaveBeenLastCalledWith('nearby', 'out of one', '');
   chat.setParty(true);
-  submit('hello team'); expect(send).toHaveBeenLastCalledWith('party', 'hello team', '');
+  submit('hello team'); expect(send).toHaveBeenLastCalledWith('nearby', '/p hello team', '');
   // a typed command still goes as typed
   submit('/s hi all'); expect(send).toHaveBeenLastCalledWith('nearby', '/s hi all', '');
   chat.element.querySelector<HTMLButtonElement>('[data-view="all"]')!.click();

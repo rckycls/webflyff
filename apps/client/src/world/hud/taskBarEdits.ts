@@ -78,7 +78,17 @@ export type Carried =
   /** Piece 7 M4: a party skill of the party window's Skill tab (`CWndPartySkill::OnMouseMove`, `WndParty.cpp:938-965`). */
   | { from: 'partySkills'; skill: number }
   | { from: 'item'; bar: number; slot: number }
-  | { from: 'queue'; slot: number };
+  | { from: 'queue'; slot: number }
+  /**
+   * 2026-11-09: the chat's line, carried by its macro mark (`CWndMacroChat::OnLButtonDown`, WndCommunication.cpp:100-128):
+   * `SHORTCUT_CHAT`, `m_dwId` 0, the line's first `MAX_SHORTCUT_STRING - 1` (127) bytes.
+   */
+  | { from: 'chat'; text: string };
+
+/** `MAX_SHORTCUT_STRING` (128): a chat shortcut's text holds 127 bytes. */
+const CHAT_TEXT = 127;
+/** `SetShortcut`'s cap (WndTaskBar.cpp:1520-1539): ten chat shortcuts on the bars and the applet row. */
+const MOST_CHAT = 10;
 
 /**
  * Where a carried shortcut is let go: a slot of the item row or of the action slot, the applet row, elsewhere on the bar,
@@ -146,6 +156,11 @@ export class TaskBarEdits {
         kind: ShortcutKind.SKILL, id: carried.skill, type: 2, index: carried.skill, userId: 0, data: 0, text: skill.name,
       };
     }
+    if (carried.from === 'chat') {
+      return carried.text === '' ? null : {
+        kind: ShortcutKind.CHAT, id: 0, type: 0, index: 0, userId: 0, data: 0, text: carried.text.slice(0, CHAT_TEXT),
+      };
+    }
     if (carried.from === 'item') {
       const shortcut = bars.items[carried.bar]![carried.slot]!;
       return shortcut.kind === ShortcutKind.NONE ? null : shortcut;
@@ -200,6 +215,12 @@ export class TaskBarEdits {
       if (slot !== undefined && (slot.level <= 0 || !this.playerHasSkillOpen(slot.skill))) return;
     }
     if (shortcut.id === 0 && shortcut.text === '' && shortcut.kind !== ShortcutKind.SKILLFUN && shortcut.kind !== ShortcutKind.ITEM) return;
+    // 2026-11-09: a new chat line past the tenth on the bars is refused (SetShortcut, WndTaskBar.cpp:1520-1539)
+    if (carried.from === 'chat' && target !== 'bar' && (target.row === 'item' || target.row === 'applet') && this.chatShortcuts() >= MOST_CHAT) {
+      const entry = this.bar.data.texts?.get('TID_GAME_MAX_SHORTCUT_CHAT');
+      this.actions.say(entry?.text ?? 'You can only place 10 sentences here.', entry?.color ?? 0xffff0000);
+      return;
+    }
     if (target !== 'bar' && target.row === 'applet') {
       // the same skills as the item row: a party skill the catalog has, or one of CT_STEP or CT_GENERAL above level 0
       if (shortcut.kind === ShortcutKind.SKILL && shortcut.type === 2) {
@@ -270,6 +291,12 @@ export class TaskBarEdits {
     const skill = this.bar.data.skills?.get(skillId);
     if (own === undefined || skill === undefined) return false;
     return checkSkill(skill, own.level, (id) => own.skills.find((slot) => slot.skill === id)?.level);
+  }
+
+  /** The chat shortcuts on the 8 item bars and the applet row. */
+  private chatShortcuts(): number {
+    const { items, applets } = this.bar.bars;
+    return [...items.flat(), ...applets].filter((shortcut) => shortcut.kind === ShortcutKind.CHAT).length;
   }
 
   /** The bar's shortcut `carried` comes off its slot (the end of `OnDropIcon`, :2073-2090). */

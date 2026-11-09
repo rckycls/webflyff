@@ -131,25 +131,33 @@ test("an invite received: the box, Yes sends ADDPARTYMEMBER with the request's v
   await expect(box).toBeHidden();
 });
 
-test('party chat: the Party view sends /partychat; a PARTYCHAT shows its line', async ({ page }) => {
+test('party chat: the Party view sends "/p text"; a PARTYCHAT shows its line', async ({ page, isMobile }) => {
   const script = scriptOf();
   const gateway = await playGateway(page, script);
   await enterFlaris(page);
   gateway.pushCache(script.later([writePartyMember(SELF_ID, LEAD, 'Webby', 'Lead', partyOf([WEBBY, LEAD]))]));
-  // the chat opened, then its Party view
-  const chatWindow = page.locator('.hud-chat');
-  await chatWindow.getByRole('button', { name: 'Chat', exact: true }).click();
-  await chatWindow.locator('[data-view="party"]').click();
+  // the chat opened, then its Party view; on the desktop (2026-11-09) Neuz's Party tab, enabled in a party, which puts
+  // "/p " in the line (WndCommunication.cpp:212-216, :708-713)
+  const chatWindow = page.locator(isMobile ? '.hud-chat' : '.hud-neuz-chat');
   const input = chatWindow.getByRole('textbox', { name: 'Chat message' });
-  await input.fill('hello team');
+  if (isMobile) {
+    await chatWindow.getByRole('button', { name: 'Chat', exact: true }).click();
+    await chatWindow.locator('[data-view="party"]').click();
+    await input.fill('hello team');
+  } else {
+    await chatWindow.getByRole('radio', { name: 'Party' }).click();
+    await expect(input).toHaveValue('/p ');
+    await input.press('End'); await input.pressSequentially('hello team');
+  }
   await input.press('Enter');
   const CHAT = 0xff0000;
   await expect.poll(() => sentOf(gateway, CHAT).length).toBe(1);
   const chat = new ArReader(new Uint8Array(sentOf(gateway, CHAT)[0]!.body));
   chat.u32(); chat.u32();
-  expect(chat.string(1024)).toBe('/partychat hello team');
+  // both chats send it as Neuz's party chat does: "/p text" (TextCmd_PartyChat's client half, FuncTextCmd.cpp:2107-2128)
+  expect(chat.string(1024)).toBe('/p hello team');
   gateway.pushCache(script.later([writePartyChat(SELF_ID, LEAD_ID, 'Lead', 'hi back')]));
-  await expect(page.locator('.chat-transcript')).toContainText('hi back');
+  await expect(page.locator('.chat-transcript, .hud-neuz-chat .neuz-chat-text')).toContainText(isMobile ? 'hi back' : '[Lead] hi back');
 });
 
 test("the leader's item radio sends PARTYCHANGEITEMMODE once; the echo checks it", async ({ page }) => {

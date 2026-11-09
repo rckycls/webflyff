@@ -456,7 +456,7 @@ test.describe('the world screen against scripted servers', () => {
   // monster, a DEFINEDTEXT as a line of the server messages (its TID found by the number defineText.h gives it), T, and
   // Escape in Neuz's order (WndManager.cpp:3295-3427: the target first, never the status window, then the Start menu);
   // logging out takes them off with the screen
-  test('the status window shows the own numbers, the target bar the tapped monster, and a server text its line', async ({ page }) => {
+  test('the status window shows the own numbers, the target bar the tapped monster, and a server text its line', async ({ page, isMobile }) => {
     const gateway = await playGateway(page);
     await enterFlaris(page);
     const status = page.locator('.hud-status');
@@ -492,6 +492,8 @@ test.describe('the world screen against scripted servers', () => {
     await expect.poll(() => targetsOf(gateway)).toEqual([[MONSTER_ID, 2], [MONSTER_ID, 1], [NULL_ID, 2]]);
     await expect(status).toBeVisible();
     // with nothing to clear and no window it closes, it opens the Start menu
+    // 2026-11-09: on the desktop the chat is a window Escape closes, the one on top: it goes first (Neuz's GetWndBase)
+    if (!isMobile) { await page.keyboard.press('Escape'); await expect(page.locator('.hud-neuz-chat')).toBeHidden(); }
     await page.keyboard.press('Escape');
     await expect(page.getByRole('menu')).toBeVisible();
     await expect(status).toBeVisible();
@@ -624,7 +626,7 @@ test.describe('the world screen against scripted servers', () => {
     // on the phone held on its side (342 px high) the bar starts at 0.87 of it
     const canvas = (await page.locator('.world-view canvas').boundingBox())!;
     const barTop = (await page.locator('.hud-taskbar-strip').boundingBox())!.y;
-    const composerTop = (await page.locator('.hud-chat form').boundingBox())?.y ?? barTop;
+    const composerTop = (await page.locator('.hud-chat form, .hud-neuz-chat .neuz-chat-edit').boundingBox())?.y ?? barTop;
     await tapWorld(page, isMobile ? 0.7 : 0.5,
       isMobile ? 0.65 : Math.min(0.92, (Math.min(barTop, composerTop) - 8 - canvas.y) / canvas.height));
     // the tap's step walks there and sends the DESTPOS; 10 more (1/6 s) and Webby is on the way, far from the point

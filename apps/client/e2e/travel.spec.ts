@@ -30,7 +30,7 @@ test('travel: buffers a delayed destination snapshot, keeps the cache open, and 
   const closed = gateway.closed.length;
   const joins = sentOf(gateway, PacketType.JOIN).length;
   gateway.pushCache(script.later([{ objectId: SELF_ID, type: 1, fields: new ArWriter().string('Travel history').toBytes() }]));
-  await expect(page.locator('.chat-transcript')).toContainText('Travel history');
+  await expect(page.locator('.chat-transcript, .hud-neuz-chat .neuz-chat-text')).toContainText('Travel history');
   await page.getByRole('button', { name: 'Start', exact: true }).click();
   gateway.pushCache(replacePacket(MARS, MARS_POS));
   await expect(page.getByRole('button', { name: 'Start', exact: true })).toBeHidden();
@@ -46,7 +46,7 @@ test('travel: buffers a delayed destination snapshot, keeps the cache open, and 
   await expect(page.locator('.world-hud')).toHaveCount(1);
   await expect(page.locator('.hud-taskbar-strip')).toHaveCount(1);
   await expect(page.locator('.world')).not.toHaveClass(/world-menu-open|world-modal/);
-  await expect(page.locator('.chat-transcript')).toContainText('Travel history');
+  await expect(page.locator('.chat-transcript, .hud-neuz-chat .neuz-chat-text')).toContainText('Travel history');
   await page.screenshot({ path: test.info().outputPath('travel-mars.png') });
   gateway.pushCache(script.later([writeReplace(NULL_ID, MADRIGAL, SQUARE), writeAddSelf(SELF_ID, self)]));
   await expect(page.locator('.world')).toHaveAttribute('data-world-id', String(MADRIGAL));
