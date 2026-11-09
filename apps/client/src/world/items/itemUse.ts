@@ -48,6 +48,11 @@ export interface ItemUseTravel {
    * sent its food; `target` the focused mover DOUSEITEM would name.
    */
   pet?(objectId: number, target: number): boolean;
+  /**
+   * 2026-11-09 (pets B1): `CheckConfirm`'s buff pet boxes (`WndManager.cpp:7646-7692`): a vis or the vis key with a buff
+   * pet out, and Pet Magic (`BuffPetWindows.checkConfirm`); true when a box opened, whose OK uses the item `'confirmed'`.
+   */
+  visConfirm?(objectId: number): boolean;
 }
 
 /**
@@ -112,6 +117,8 @@ export class ItemUse {
         travel.say({ kind: 'say', tid: 'TID_GAME_TRADELIMITUSING' });
         return false;
       }
+      // 2026-11-09 (pets B1): CheckConfirm's buff pet boxes first (WndManager.cpp:7646-7692)
+      if ((from === 'bag' || from === 'bar') && travel.visConfirm?.(objectId) === true) return true;
       // 2026-11-05: CheckConfirm's box before SendDoUseItem, from the bag and the task bar (Awakening Protection)
       const checked = from === 'bag' || from === 'bar' ? checkConfirm(prop) : null;
       if (checked !== null && travel.confirm !== undefined) {

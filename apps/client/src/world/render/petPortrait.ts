@@ -15,6 +15,9 @@
 // frame the motion moves on; the picture is drawn into a render target and read back to the portrait's canvas, one read
 // at a time, as the status window's face is (Piece 6 M5): the window's HTML is over the 3D view, where Neuz's viewport
 // drew into the window itself.
+//
+// 2026-11-09 (pets B1): the buff pet window's portrait too (`CWndBuffPetStatus::OnDraw`, `WndPetSys.cpp:2293-2437`): its
+// face box is 64 x 84, and its camera is made from the model (`buffPetCamera`).
 
 import type { AssembledCharacter, LoopedMotion } from '@flyffweb/scene';
 import { Scene } from 'three';
@@ -47,6 +50,32 @@ export const PET_CAMERAS: readonly PetCamera[] = [
   { pos: [3.0, 6.0, -12.0], lookAt: [-2.0, 3.0, 3.0], scale: 4.5 },
   { pos: [4.0, 3.0, -10.0], lookAt: [-6.0, 6.0, 3.0], scale: 5.0 },
 ];
+
+/**
+ * 2026-11-09 (pets B1): the buff pet window's camera (`CWndBuffPetStatus::OnDraw`, `WndPetSys.cpp:2380-2399`): from the
+ * model's event point 0 (`m_vEvent[ 0 ]`), shrunk or grown by mdlDyna.inc's scale as the C++ does it (:2384-2388), plus
+ * (0.5, 1.8, -3); at (-0.24, 0.28, 1); the model scaled to 1.5 over its radius (`GetRadius`: half its box's diagonal,
+ * `Model.cpp:97-102`). `box` is the model's (D3D, its own space), `modelScale` the entry's `m_fScale`.
+ */
+export function buffPetCamera(
+  event: readonly [number, number, number], box: { min: readonly number[]; max: readonly number[] }, modelScale: number,
+): PetCamera {
+  const s = f32(modelScale);
+  let factor = 1;
+  if (s < 1 && s > f32(0.001)) factor = f32(s - f32(s * f32(f32(0.5) + f32(f32(1 - s) * f32(0.01)))));
+  else if (s > 1) factor = f32(s - f32(s * f32(f32(0.9) + f32(s * f32(0.01)))));
+  const at = event.map((v) => f32(v * factor));
+  const d = [0, 1, 2].map((i) => f32((box.max[i] ?? 0) - (box.min[i] ?? 0)));
+  const radius = f32(f32(Math.hypot(d[0]!, d[1]!, d[2]!)) / 2);
+  return {
+    pos: [f32(at[0]! + f32(0.5)), f32(at[1]! + f32(1.8)), f32(at[2]! - 3)],
+    lookAt: [-0.24, 0.28, 1.0],
+    scale: radius > 0 ? f32(f32(1 / radius) * f32(1.5)) : 1,
+  };
+}
+
+/** The buff pet window's face box (`WIDC_CUSTOM1` of APP_BUFFPET_STATUS, `resdata.inc:2703`): (8, 6) to (72, 90). */
+export const BUFF_PET_FACE = { width: 64, height: 84 } as const;
 
 /** The egg's camera (`OnDraw`, :676-686): from (0, 5, -4) at (0, 0, 3), scale 5. */
 export const EGG_CAMERA: PetCamera = { pos: [0, 5, -4], lookAt: [0, 0, 3], scale: 5 };
@@ -86,10 +115,17 @@ export class PetPortrait {
   /** Bumped by every `show` and `clear`: a read that comes back for an older model draws nothing more. */
   private generation = 0;
 
-  constructor(doc: Document, private readonly report: (error: unknown) => void = () => {}) {
+  /** The face box's size in CSS pixels: the pet window's 64 x 68 unless given (the buff pet window's, pets B1). */
+  private readonly width: number;
+  private readonly height: number;
+
+  constructor(doc: Document, private readonly report: (error: unknown) => void = () => {},
+    size: { width: number; height: number } = { width: PET_FACE_WIDTH, height: PET_FACE_HEIGHT }) {
+    this.width = size.width;
+    this.height = size.height;
     this.canvas = doc.createElement('canvas');
-    this.canvas.style.width = `${PET_FACE_WIDTH}px`;
-    this.canvas.style.height = `${PET_FACE_HEIGHT}px`;
+    this.canvas.style.width = `${this.width}px`;
+    this.canvas.style.height = `${this.height}px`;
     this.scratch = doc.createElement('canvas');
   }
 
@@ -150,14 +186,14 @@ export class PetPortrait {
     const { model, camera } = this;
     if (model === null || camera === null || this.reading || this.frame === this.drawnFrame) return;
     if (this.motion !== null) model.mixer.setTime(timeOf(this.motion, this.frame));
-    const view = portraitCamera(PET_FACE_WIDTH, PET_FACE_HEIGHT);
+    const view = portraitCamera(this.width, this.height);
     // D3D's left-handed place, Z mirrored for the web's right-handed one (as portrait.ts's EYE and LOOK_AT)
     view.position.set(camera.pos[0], camera.pos[1], -camera.pos[2]);
     view.lookAt(camera.lookAt[0], camera.lookAt[1], -camera.lookAt[2]);
     this.drawnFrame = this.frame;
     this.reading = true;
     const generation = this.generation;
-    drawPicture(renderer, this.scene, view, this.scratch, PET_FACE_WIDTH, PET_FACE_HEIGHT)
+    drawPicture(renderer, this.scene, view, this.scratch, this.width, this.height)
       .then(() => {
         if (generation !== this.generation) return;
         const { canvas, scratch } = this;

@@ -16,6 +16,7 @@ import type { WebItemProp } from '@flyffweb/formats';
 import type { Refusal } from './travelItems';
 import { windowOf } from './itemWindows';
 import { petItemUse } from '../pets/petCare';
+import { IK3_VIS, II_SYS_SYS_SCR_PET_MAGIC, II_SYS_SYS_VIS_KEY01 } from '../pets/buffPet';
 
 /**
  * The `IK2_*` the server uses (`DoUseItem`): REFRESHER 11, POTION 12, FOOD 14, SYSTEM 19, BLINKWING 22, AIRFUEL 23,
@@ -32,8 +33,6 @@ const IK2_TOCASH = 36;
 const EXT_ITEM = 21;
 /** The upgrade cursor's kinds (`WndField.cpp:2351-2386`): ELECARD 37, PIERDICE 61, SOCKETCARD 62 and 2 63, RANDOM_SCROLL 101, ENCHANT 119. */
 const UPGRADE_IK3: ReadonlySet<number> = new Set([37, 61, 62, 63, 101, 119]);
-/** Kinds whose use needs a system the browser lacks: VIS 138 (the buff pet's vis). */
-const WINDOW_IK3: ReadonlySet<number> = new Set([138]);
 /**
  * 2026-11-09 (pets P1): `IK3_PET`, a pick-up pet (and a buff pet). Whatever its kind2, the bag sends DOUSEITEM
  * (`WndField.cpp:2635-2642`) and the server summons or recalls it (`CMover::DoUseItem`, `MoverSkill.cpp:1704-1705`,
@@ -79,12 +78,15 @@ export function checkConfirm(prop: WebItemProp): string | null {
 /**
  * The object a box's OK names in DOUSEITEM: `CWndCommItemDlg`'s `m_dwCtrlId` is a battery's own item id
  * (DPClient.cpp:10652-10662), the Funny Coin's YES sends NULL_ID (WndField.cpp:23590-23600), Awakening Protection's the
- * player (WndPetSys.cpp:2955); the rest keep the focus of the first press.
+ * player (WndPetSys.cpp:2955), and so the vis, the vis key and Pet Magic (2026-11-09, pets B1: `m_objid`
+ * `g_pPlayer->GetId()`, `CheckConfirm`, WndManager.cpp:7658-7685; `SendEquipPacket`, WndPetSys.cpp:2949-2952); the rest
+ * keep the focus of the first press.
  */
 export function confirmedTarget(prop: WebItemProp, focus: number, ownId: number): number {
   if (prop.id === NORMAL_BATTERY || CASH_BATTERIES.has(prop.id)) return prop.id;
   if (prop.kind2 === IK2_TOCASH) return 0xffffffff;
   if (prop.id === AWAKESAFE) return ownId;
+  if (prop.kind3 === IK3_VIS || prop.id === II_SYS_SYS_VIS_KEY01 || prop.id === II_SYS_SYS_SCR_PET_MAGIC) return ownId;
   // 2026-11-05: CWndRestateConfirm's SetInformation names its parameter as its member (WndField.cpp:25519-25524), which
   // stays 0: its YES sends 0, not the focus
   if (RESTATE.has(prop.id)) return 0;
@@ -98,7 +100,9 @@ export type UseOf = 'use' | 'window' | 'needsItem' | 'noWindow' | 'none';
 export function useOf(prop: WebItemProp): UseOf {
   if (prop.part >= 0) return 'none';
   if (prop.exeTarget === EXT_ITEM || UPGRADE_IK3.has(prop.kind3)) return 'needsItem';
-  if (WINDOW_IDS.has(prop.id) || WINDOW_IK3.has(prop.kind3)) return 'noWindow';
+  // 2026-11-09 (pets B1): the vis (IK3_VIS 138) is used now: `CheckConfirm`'s box with a buff pet out, then DOUSEITEM,
+  // which the server puts in the buff pet (`CUser::OnDoUseItem`, `WORLDSERVER/User.cpp:3006-3024`)
+  if (WINDOW_IDS.has(prop.id)) return 'noWindow';
   if (windowOf(prop) !== null) return 'window'; // 2026-11-05: itemWindows.ts
   const pet = petItemUse(prop); // 2026-11-09 (pets R3): the pet's windows; its food is sent at once
   if (pet !== null) return pet === 'feed' ? 'use' : 'window';

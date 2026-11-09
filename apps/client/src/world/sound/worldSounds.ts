@@ -9,7 +9,7 @@ import type { OwnEvent } from '../OwnState';
 import type { CombatEvent } from '../WorldState';
 import {
   BGM_EV_END, BGM_EV_LIGHTWING, BGM_EV_START, BGM_IN_BOSS, BGM_TH_FLYING, BGM_IN_DEATH, BGM_IN_LEVELUP, NO_DEATH_MUSIC, RANK_BOSS, SND_INF_GROUNDDROP,
-  SND_INF_GROUNDPICKUP, SND_INF_OPEN, SND_INF_TRADE, SND_WALK_LANDSOFT, XI_SOUNDS,
+  SND_INF_EQUIPACCESSORY, SND_INF_GROUNDPICKUP, SND_INF_OPEN, SND_INF_TRADE, SND_WALK_LANDSOFT, XI_SOUNDS,
 } from '../../audio/soundIds';
 import { equipSound } from './soundRules';
 import type { Vec } from './soundRules';
@@ -193,13 +193,19 @@ export class WorldSounds {
     this.flownOnce = true;
   }
 
-  ownEvent(event: OwnEvent, worldId: number): void {
+  /**
+   * An own event's sound; `ownAt` is the own player's place (2026-11-09, pets B1: a buff pet's vis changed by UPDATE_ITEM,
+   * `PLAYSND( SND_INF_EQUIPACCESSORY, &g_pPlayer->GetPos() )`, `MoverParam.cpp:3986-4010`).
+   */
+  ownEvent(event: OwnEvent, worldId: number, ownAt?: Vec): void {
     if (event.kind === 'died') this.ownDeath(worldId);
     else if (event.kind === 'levelUp' || event.kind === 'jobChanged') this.ownLevelUp();
     else if (event.kind === 'quest') {
       const change = event.change.kind;
       if (change === 'started') this.music.play(BGM_EV_START, 1);
       else if (change === 'ended' || change === 'removed') this.music.play(BGM_EV_END, 1);
+    } else if (event.kind === 'visPet' && event.change.kind === 'vis') {
+      this.audio.play(SND_INF_EQUIPACCESSORY, ownAt);
     }
   }
 

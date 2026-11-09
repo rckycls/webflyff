@@ -2587,3 +2587,13 @@ fieldset:disabled .btn {
 .hud-pet-mill-count { position: absolute; right: -4px; bottom: -16px; white-space: nowrap; line-height: 14px; color: rgb(0, 0, 255); pointer-events: none; }
 .hud-pet-miracle-grade { position: absolute; left: 8px; top: 3px; white-space: nowrap; line-height: 12px; color: #ffffff; font-weight: bold; }
 .hud-pet-miracle-step { position: absolute; left: 0; top: 4px; width: 90px; height: 90px; pointer-events: none; }
+
+/* 2026-11-09 (pets B1): the buff pet window (buffPetStatusWindow.ts, CWndBuffPetStatus::OnDraw): an icon (or the lock) of
+   32 px at each slot's top left, over the slots' pictures; "BuffpetStatusBg .tga" over them at the face box's left - 12 and
+   top - 22; the model in the face box over all */
+.hud-buffpet-slot { position: absolute; }
+.hud-buffpet-slot img { position: absolute; left: 0; top: 0; width: 32px; height: 32px; pointer-events: none; }
+.hud-buffpet-slot img[hidden], .hud-buffpet-back[hidden], .hud-buffpet-face[hidden], .hud-buffpet-face canvas[hidden] { display: none; }
+.hud-buffpet-back { position: absolute; background-repeat: no-repeat; pointer-events: none; }
+.hud-buffpet-face { position: absolute; pointer-events: none; }
+.hud-buffpet-face canvas { display: block; }

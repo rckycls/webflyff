@@ -32,8 +32,8 @@ describe('useOf: what Neuz sends DOUSEITEM for', () => {
     for (const id of [10463, 15083, 26410, 26411, 26475, 26476, 10425]) {
       expect(useOf(prop({ id, kind2: 19 })), String(id)).toBe('noWindow');
     }
-    // the vis (IK3_VIS 138) waits for its window (pets B1)
-    expect(useOf(prop({ kind2: 19, kind3: 138 }))).toBe('noWindow');
+    // 2026-11-09 (pets B1): the vis (IK3_VIS 138) is used, CheckConfirm's box first with a buff pet out
+    expect(useOf(prop({ kind2: 19, kind3: 138 }))).toBe('use');
     // 2026-11-05: the windows the browser has (itemWindows.ts)
     for (const id of [10424, 10220, 26204, 26202, 20037]) expect(useOf(prop({ id, kind2: 19 })), String(id)).toBe('window');
     for (const kind3 of [85, 122]) expect(useOf(prop({ kind2: 19, kind3 })), String(kind3)).toBe('window');
