@@ -52,6 +52,7 @@ import { SlotGestures, byFinger } from './slotGestures';
 import { EMPTY, TaskBarEdits, remember, stacks } from './taskBarEdits';
 import type { Carried, DropTarget, LoadedBars, TaskBarEditActions } from './taskBarEdits';
 import { TaskMenu } from './taskMenu';
+import { itemIconOf } from '../pets/petStatus';
 
 /** The windows of Piece 4 a press on the task bar opens. */
 export type TaskBarWindow = 'character' | 'status' | 'skills' | 'inventory' | 'chat' | 'navigator' | 'worldmap' | 'option'
@@ -140,7 +141,7 @@ export interface TaskBarActions extends TaskBarEditActions {
 /** The catalogs the bar draws and edits with. */
 export interface TaskBarData {
   /** The item catalog: an item shortcut's icon, name and `dwPackMax` (`WebItemProp`). */
-  itemProps: ReadonlyMap<number, Pick<WebItemProp, 'icon' | 'name' | 'packMax'>>;
+  itemProps: ReadonlyMap<number, Pick<WebItemProp, 'icon' | 'name' | 'packMax' | 'kind3'>>;
   /**
    * The skills catalog of milestone 2 (`GameData.skills`, by skill id): a skill's icon, name, combo style and the rules'
    * columns. Without it a skill is a plain slot, and no skill goes on the bar.
@@ -719,7 +720,8 @@ export class TaskBar {
       for (const other of inventory.values()) if (other.itemId === itemId) total += other.count;
       count = String(total);
     }
-    return { kind: 'item', greyed: false, icon: prop?.icon ?? null, count, hotkey: '', name: prop?.name ?? '' };
+    // 2026-11-09 (pets R2): a raised pet's icon by its level (`SetTexture`, Item.cpp:81-117)
+    return { kind: 'item', greyed: false, icon: itemIconOf(item, prop), count, hotkey: '', name: prop?.name ?? '' };
   }
 
   /** Puts `view` in `slot`, if it is not what it shows. */
@@ -1033,7 +1035,7 @@ export class TaskBar {
     }
     if (shortcut.kind === ShortcutKind.ITEM) {
       const item = this.own?.inventory?.get(shortcut.id);
-      return item === undefined ? null : this.data.itemProps.get(item.itemId)?.icon ?? null;
+      return item === undefined ? null : itemIconOf(item, this.data.itemProps.get(item.itemId)); // pets R2
     }
     return null;
   }

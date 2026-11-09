@@ -137,6 +137,8 @@ describe('ADD_OBJ (OnAddObj)', () => {
         motion: 0x15, isPlayer: true, hitPoint: 1234, state: 0x11, stateFlag: 0x2, belligerence: 0, sfxId: NULL_ID,
         player: {
           ...playerBase, self: false, own: null, shopTitle: 'Cheap swords', equipmentObjectIds: [],
+          // 2026-11-09 (pets M0): MAKELONG( 3, 5 ) and the pet's name, kept
+          pet: { modelIndex: 3, level: 5, name: 'Rex' },
           worn: [
             // 2026-11-09: each part's nOption (written as its index here) is kept
             { part: 2, itemId: 500, flag: 0, option: 2 }, { part: 10, itemId: 21, flag: 1, option: 10 },

@@ -18,6 +18,9 @@ export {
   writePartyChangeName, writePartyChangeTroup, writePartyChat, writePartyExp, writePartyExpMode, writePartyItemMode,
   writePartyMapInfo, writePartyMember, writePartyRequest, writePartyRequestCancel, writePartySkillBlitz, writePartySkillCall,
   writePartySkillRetreat, writePartySkillSphereCircle, writeQueryPlayerData, writeSetPartyMemberParam, writeSetPartyMode,
+  // 2026-11-09: the pets
+  writeMoverChangeSfx, writePet, writePetCall, writePetFeed, writePetLevelup, writePetMill, writePetRelease,
+  writePetResurrectionResult, writePetSetExp, writePetState, writeSetPetName, writeVisPetActivate,
 } from './world';
 export type { ScriptMessage } from './world';
 export { newVagrantOwn } from './newVagrant';

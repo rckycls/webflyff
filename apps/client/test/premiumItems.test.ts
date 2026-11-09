@@ -29,15 +29,45 @@ describe('useOf: what Neuz sends DOUSEITEM for', () => {
   it('an item that needs another item (EXT_ITEM, the upgrade cards) or a window the browser lacks is not used', () => {
     expect(useOf(prop({ kind2: 19, exeTarget: 21 }))).toBe('needsItem');
     for (const kind3 of [37, 61, 62, 63, 101, 119]) expect(useOf(prop({ kind2: 19, kind3 })), String(kind3)).toBe('needsItem');
-    for (const id of [10463, 15083, 26410, 26411, 26475, 26476, 20039, 10425]) {
+    for (const id of [10463, 15083, 26410, 26411, 26475, 26476, 10425]) {
       expect(useOf(prop({ id, kind2: 19 })), String(id)).toBe('noWindow');
     }
-    for (const kind3 of [120, 100, 138]) expect(useOf(prop({ kind2: 19, kind3 })), String(kind3)).toBe('noWindow');
+    // 2026-11-09 (pets B1): the vis (IK3_VIS 138) is used, CheckConfirm's box first with a buff pet out
+    expect(useOf(prop({ kind2: 19, kind3: 138 }))).toBe('use');
     // 2026-11-05: the windows the browser has (itemWindows.ts)
     for (const id of [10424, 10220, 26204, 26202, 20037]) expect(useOf(prop({ id, kind2: 19 })), String(id)).toBe('window');
     for (const kind3 of [85, 122]) expect(useOf(prop({ kind2: 19, kind3 })), String(kind3)).toBe('window');
-    expect(useOf(prop({ kind2: 14, exeTarget: 19 }))).toBe('noWindow'); // EXT_PET: the pet's food
+    // 2026-11-09 (pets R3): an EXT_PET item is used (SendDoUseItem first wants a pet out, itemUse.ts)
+    expect(useOf(prop({ kind2: 19, exeTarget: 19 }))).toBe('use');
     expect(useOf(prop({ kind2: 36 }))).toBe('use'); // IK2_TOCASH: the Funny Coin, after its box (2026-11-05)
+  });
+
+  it('a pick-up pet (IK3_PET 100, any kind2) is used: a plain DOUSEITEM summons or recalls it (pets P1)', () => {
+    // CMover::DoUseItem: IK3_PET calls DoUseEatPet (MoverSkill.cpp:1704-1705); the bag sends DOUSEITEM (WndField.cpp:2635-2642)
+    const pet = prop({ id: 30003, kind2: 1, kind3: 100 });
+    expect(useOf(pet)).toBe('use');
+    expect(usableFromBag(pet)).toBe(true);
+  });
+
+  it('a raised pet\'s egg or hatched pet (IK3_EGG 120, IK2_GENERAL) is used: DOUSEITEM summons or recalls it (pets R2)', () => {
+    // CMover::DoUseItem: IK3_EGG calls DoUseSystemPet (MoverSkill.cpp:1701-1702, :4025-4031)
+    for (const id of [21029, 21039]) {
+      const egg = prop({ id, kind2: 1, kind3: 120 });
+      expect(useOf(egg), String(id)).toBe('use');
+      expect(usableFromBag(egg), String(id)).toBe(true);
+    }
+  });
+
+  it("the raised pet's items have their windows; its food is sent at once (pets R3, DPClient.cpp:10614-10661, :10845-10857)", () => {
+    // the naming scroll, the tamer's mistake and miracle, the life scroll, the hatch scroll, the feed maker
+    for (const id of [20039, 21030, 21031, 21034, 21036, 21038]) {
+      expect(useOf(prop({ id, kind2: 19, kind3: 50, exeTarget: id === 21038 ? undefined : 19 })), String(id)).toBe('window');
+    }
+    expect(useOf(prop({ id: 21037, kind2: 19, kind3: 121, exeTarget: 19 }))).toBe('use');
+    // the tonics, the feed pockets, the S pet's food and the second life scroll: plain DOUSEITEMs
+    for (const [id, kind2] of [[21032, 19], [21033, 19], [21035, 19], [26531, 29], [26573, 33], [26562, 19]] as const) {
+      expect(useOf(prop({ id, kind2, kind3: 50 })), String(id)).toBe('use');
+    }
   });
 
   it('worn equipment is not used (the bag equips it)', () => {

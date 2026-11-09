@@ -452,9 +452,21 @@ export class MoverViews {
     for (const view of this.views.values()) {
       if (view.mover.objectId === except) continue;
       const candidate = candidateOf(view);
-      if (candidate !== null) found.push(candidate);
+      if (candidate === null) continue;
+      // pets R1: a raised pet that is not the active mover's (`except`) is never picked (World3D.cpp:2703-2707)
+      const owner = view.mover.petOwner;
+      found.push(owner !== undefined && owner !== except ? { ...candidate, othersPet: true } : candidate);
     }
     return found;
+  }
+
+  /**
+   * 2026-11-09 (pets R1): where the mover `objectId` is drawn (`GetScrPos`, `m_vScrPos`), in D3D: an S pet's sparkle
+   * starts there (`ProcessPet`, `Mover.cpp:10915-10929`). Null for a mover with no view.
+   */
+  drawnAt(objectId: number): Vec3 | null {
+    const view = this.views.get(objectId);
+    return view === undefined ? null : copy(view.scrPos);
   }
 
   /**

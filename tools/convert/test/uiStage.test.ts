@@ -67,6 +67,14 @@ describe('the dialogue window (APP_DIALOG_EX, WndDialog.cpp)', () => {
     }
   });
 
+  it("lists the pet windows' pictures once each, the buff pet's with the space in its name (2026-11-09)", () => {
+    const lower = THEME_FILES.map((file) => file.toLowerCase());
+    for (const file of ['petstatusbg.tga', 'petlevelbg.tga', 'buffpetstatusbg .tga', 'butchance.bmp', 'butcancel2.bmp',
+      'butmiracle.bmp', 'butok2.bmp', 'wndelemitemblank.tga', 'wndchgelemitem.bmp']) {
+      expect(lower.filter((name) => name === file), file).toHaveLength(1);
+    }
+  });
+
   it("lists the quest window's buttons, the tree's pictures and the map's destination mark once each", () => {
     const lower = THEME_FILES.map((file) => file.toLowerCase());
     for (const file of ['buttremovequest.bmp', 'buttclose.tga', 'buttcheck.bmp', 'butttreeopen.tga', 'butttreeclose.tga',
@@ -95,6 +103,15 @@ describe('the dialogue window (APP_DIALOG_EX, WndDialog.cpp)', () => {
     const picture = await read('ui/char/char_juria.png');
     expect([picture.data[3], picture.data[7]]).toEqual([0, 255]);
     expect(writer.pathOf('ui/char_juria.png')).toBeUndefined();
+  });
+
+  it('writes the buff pet window\'s "BuffpetStatusBg .tga" under ui/buffpetstatusbg-.png, magenta keyed (2026-11-09)', async () => {
+    await writeFakeClient(root, { loose: { 'Theme/Default/BuffpetStatusBg .tga': tga32(2, 1, [MAGENTA, [1, 2, 3, 255]]) } });
+    const writer = new AssetWriter(out);
+    const ctx: StageContext = { client: await ClientFs.open(root), writer, report: new Report(), jobs: 1, outDir: out };
+    await createUiStage({ themeFiles: ['BuffpetStatusBg .tga'] }).run(ctx);
+    const picture = PNG.sync.read(await fs.readFile(path.join(out, ...writer.pathOf('ui/buffpetstatusbg-.png')!.split('/'))));
+    expect([picture.data[3], picture.data[7]]).toEqual([0, 255]);
   });
 });
 

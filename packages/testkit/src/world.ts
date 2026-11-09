@@ -3,7 +3,7 @@ import {
   MAX_SLOT_ITEM_COUNT, MAX_SLOT_QUEUE, MessageType, NULL_ID, ObjectType, PacketType, ProtocolError, ShortcutKind, writeQuest,
 } from '@flyffweb/protocol';
 import type {
-  AddedMover, AddedNpc, AddedPlayer, FlightReport, InventoryItem, MonsterRate, MoveReport, OwnCharacter, OwnQuest, PartyBlock,
+  AddedMover, AddedNpc, AddedPlayer, FlightReport, InventoryItem, MonsterRate, MoveReport, OwnCharacter, OwnQuest, PartyBlock, PetData,
   PartyRequestSide, PlayerDataRecord, Shortcut, SkillSlot, TaskBar, Vec3,
 } from '@flyffweb/protocol';
 
@@ -265,10 +265,11 @@ export function writeReturnScrollAck(objectId: number): ScriptMessage {
 
 /**
  * Piece 7 M3: UPDATE_ITEM 0x0018 (`CUser::AddUpdateItem`, `User.cpp:1136-1150`): the inventory's (type 0) item at
- * `itemObjectId` gets `value` in its `param` (`UI_NUM` 0, the count; 0 and below remove it), time 0.
+ * `itemObjectId` gets `value` in its `param` (`UI_NUM` 0, the count; 0 and below remove it), and `time` (0 unless given;
+ * 2026-11-09, pets B1: `UI_PETVIS_ITEM`'s minutes, `CItemUpgrade::SetPetVisItem`, `ItemUpgrade.cpp:1623`).
  */
-export function writeUpdateItem(objectId: number, itemObjectId: number, param: number, value: number): ScriptMessage {
-  return scripted(objectId, 0x0018, new ArWriter().u8(0).u8(itemObjectId).u8(param).u32(value).u32(0));
+export function writeUpdateItem(objectId: number, itemObjectId: number, param: number, value: number, time = 0): ScriptMessage {
+  return scripted(objectId, 0x0018, new ArWriter().u8(0).u8(itemObjectId).u8(param).u32(value).u32(time));
 }
 
 /** Piece 7 M2: SETSKILLSTATE (`CUserMng::AddSetSkillState`): a buff on `targetId`, its whole length `time` (ms). */
@@ -700,7 +701,10 @@ export function writeAddPlayer(objectId: number, p: AddedMover): ScriptMessage {
   }
   const w = playerStart(p, player).string(player.shopTitle).u8(player.worn.length);
   for (const part of player.worn) w.u8(part.part).u16(part.itemId).u8(part.flag);
-  return scripted(objectId, MessageType.ADD_OBJ, w.u32(NULL_ID).string('').u32(0));
+  // dwPetId, MAKELONG( index, level ) or NULL_ID, and its name (2026-11-09: `player.pet`), then no buffs
+  const pet = player.pet;
+  const petId = pet === undefined ? NULL_ID : ((pet.level << 16) | (pet.modelIndex & 0xffff)) >>> 0;
+  return scripted(objectId, MessageType.ADD_OBJ, w.u32(petId).string(pet?.name ?? '').u32(0));
 }
 
 /**
@@ -729,24 +733,66 @@ function writeInventory(w: ArWriter, items: readonly InventoryItem[], worn: read
   for (let i = 0; i < INVENTORY_SLOTS; i++) w.u32(i < MAX_INVENTORY ? i : worn[i - MAX_INVENTORY] ?? NULL_ID); // m_apIndex
   w.u8(items.length); // chSize
   for (const item of items) {
-    w.u8(item.objectId) // ch
-      .u32(item.objectId).u32(item.itemId).u32(0).string('') // m_dwObjId, m_dwItemId, m_liSerialNumber, m_szItemText
-      .i16(item.count) // m_nItemNum (short)
-      .u8(0).i32(0).i32(0) // m_nRepairNumber, m_nHitPoint, m_nRepair
-      // what the item tooltip shows (2026-11-05): m_byFlag, m_nAbilityOption, m_idGuild; m_bItemResist,
-      // m_nResistAbilityOption, m_nResistSMItemId
-      .u8(item.flag ?? 0).i32(item.abilityOption ?? 0).u32(0)
-      .u8(item.resist ?? 0).i32(item.resistOption ?? 0).i32(0);
-    // m_piercing: the cards, the ultimate jewels, no vis keep times (piercing.cpp:38-53)
-    for (const list of [item.piercing ?? [], item.ultimate ?? [], []]) {
-      w.u32(list.length);
-      for (const card of list) w.u32(card);
-    }
-    w.i32(item.charged ?? 0).i64(item.randomOption ?? 0n).u32(0) // m_bCharged, m_iRandomOptItemId, m_dwKeepTime 0 (no time left follows)
-      .u8(0) // (BYTE)0x00: no pet
-      .i32(0); // m_bTranformVisPet
+    w.u8(item.objectId); // ch
+    writeItemElem(w, item);
   }
   fresh(); // adwObjIndex: each slot's m_dwObjIndex
+}
+
+/**
+ * `CItemElem::Serialize`, the storing side (`ObjSerialize.cpp:33-37` and :51-88), with the kept values in it and
+ * nothing else: no serial number, text or keep time. 2026-11-09 (pets M0): the item's raised pet (`CPet::Serialize`,
+ * `pet.cpp:313-324`), its vis keep times (the third piercing list) and `m_bTranformVisPet`, when the item has them.
+ */
+function writeItemElem(w: ArWriter, item: InventoryItem): void {
+  w.u32(item.objectId).u32(item.itemId).u32(0).string('') // m_dwObjId, m_dwItemId, m_liSerialNumber, m_szItemText
+    .i16(item.count) // m_nItemNum (short)
+    .u8(0).i32(0).i32(0) // m_nRepairNumber, m_nHitPoint, m_nRepair
+    // what the item tooltip shows (2026-11-05): m_byFlag, m_nAbilityOption, m_idGuild; m_bItemResist,
+    // m_nResistAbilityOption, m_nResistSMItemId
+    .u8(item.flag ?? 0).i32(item.abilityOption ?? 0).u32(0)
+    .u8(item.resist ?? 0).i32(item.resistOption ?? 0).i32(0);
+  // m_piercing: the cards, the ultimate jewels, the vis keep times (piercing.cpp:38-53)
+  for (const list of [item.piercing ?? [], item.ultimate ?? []]) {
+    w.u32(list.length);
+    for (const card of list) w.u32(card);
+  }
+  const visKeepTimes = item.visKeepTimes ?? [];
+  w.u32(visKeepTimes.length);
+  for (const seconds of visKeepTimes) w.i32(seconds); // GetVisKeepTime( i ) - time_null()
+  w.i32(item.charged ?? 0).i64(item.randomOption ?? 0n).u32(0); // m_bCharged, m_iRandomOptItemId, m_dwKeepTime 0 (no time left follows)
+  if (item.pet === undefined) {
+    w.u8(0); // (BYTE)0x00: no pet
+  } else {
+    const pet = item.pet;
+    if (pet.availLevels.length !== PL_MAX) throw new Error(`a pet has ${PL_MAX} stat steps, not ${pet.availLevels.length}`);
+    w.u8(1).u8(pet.kind).u8(pet.level).u32(pet.exp).u16(pet.energy).u16(pet.life)
+      .bytes(Uint8Array.from(pet.availLevels)).string(pet.name);
+  }
+  w.i32(item.transformVisPet === true ? 1 : 0); // m_bTranformVisPet
+}
+
+/** `PL_MAX` (`_Common/pet.h:16`): the 6 bytes of `CPet::m_anAvailLevel`. `MAX_BANK` (`ProjectCmn.h:9`): a bank's slots. */
+const PL_MAX = 6;
+const MAX_BANK = 42;
+
+/**
+ * 2026-11-09 (pets M0): the three banks (`m_Bank[k].Serialize`, `ObjSerializeOpt.cpp:255-256`; `Item.h:898-922`), each
+ * 42 slots: `m_apIndex` as a fresh container has it, the count, each item's slot and `CItemElem`, the object indexes.
+ * `banks` lists each bank's items in rising slot order (`objectId` 0 to 41).
+ */
+function writeBanks(w: ArWriter, banks: readonly (readonly InventoryItem[])[]): void {
+  for (let k = 0; k < 3; k++) {
+    const items = banks[k] ?? [];
+    for (let i = 0; i < MAX_BANK; i++) w.u32(i); // m_apIndex
+    w.u8(items.length);
+    for (const item of items) {
+      if (item.objectId < 0 || item.objectId >= MAX_BANK) throw new Error(`bank slot ${item.objectId} is not one of ${MAX_BANK}`);
+      w.u8(item.objectId);
+      writeItemElem(w, item);
+    }
+    for (let i = 0; i < MAX_BANK; i++) w.u32(NULL_ID); // adwObjIndex
+  }
 }
 
 /**
@@ -760,8 +806,13 @@ function writeInventory(w: ArWriter, items: readonly InventoryItem[], worn: read
  * script ends the message after the inventory. `own.inventory` must be the list to write (`[]` for none) and
  * `own.inventoryError` `null`: a failed read's `null` and error are what the reader gives, not something to write.
  * The bundle's player object ID must be `objectId`, as `CUser::Open` makes it (`User.cpp:315`).
+ *
+ * 2026-11-09 (pets M0): with `own.petSlot` or `options.banks`, the script goes on with the three banks (`banks`, empty
+ * by default) and `dwPetId` (`own.petSlot`, or `NULL_ID`), and ends there.
  */
-export function writeAddSelf(objectId: number, p: AddedMover): ScriptMessage {
+export function writeAddSelf(
+  objectId: number, p: AddedMover, options: { banks?: readonly (readonly InventoryItem[])[] } = {},
+): ScriptMessage {
   const player = playerOf(p, true);
   if (player.equipmentObjectIds.length !== MAX_HUMAN_PARTS) {
     throw new Error(`the own character needs ${MAX_HUMAN_PARTS} equipment object IDs, not `
@@ -807,6 +858,10 @@ export function writeAddSelf(objectId: number, p: AddedMover): ScriptMessage {
     .u8(0).u8(0).u8(0) // m_nAttackResistLeft, m_nAttackResistRight, m_nDefenseResist
     .i64(0n).i32(0); // m_nAngelExp, m_nAngelLevel (__VER >= 8)
   writeInventory(w, own.inventory, player.equipmentObjectIds);
+  if (own.petSlot !== undefined || options.banks !== undefined) {
+    writeBanks(w, options.banks ?? []);
+    w.u32(own.petSlot ?? NULL_ID); // dwPetId (__VER >= 9, __PET_0410)
+  }
   return scripted(objectId, MessageType.ADD_OBJ, w);
 }
 
@@ -916,3 +971,69 @@ export const directUpdatePlayerData = (playerId: number, data: PlayerDataRecord)
   writePlayerRecord(new ArWriter().u32(PacketType.UPDATE_PLAYER_DATA).u32(playerId), data).toBytes();
 export const directLogout = (playerId: number): Uint8Array => new ArWriter().u32(PacketType.LOGOUT).u32(playerId).toBytes();
 export const directBlock = (gu: number, name: string): Uint8Array => new ArWriter().u32(PacketType.BLOCK).u8(gu).string(name).toBytes();
+
+// 2026-11-09 (pets M0): the pet messages, as the world server writes them (`WORLDSERVER/User.cpp`), in the order of the
+// readers (`world/pets.ts`).
+
+/** PET_CALL: `CUserMng::AddPetCall` (`User.cpp:7884-7906`): the item's object ID, the `MI_PET_*` model, the level, the name. */
+export function writePetCall(objectId: number, itemObjectId: number, modelIndex: number, level: number, name: string): ScriptMessage {
+  return scripted(objectId, MessageType.PET_CALL, new ArWriter().u32(itemObjectId).u32(modelIndex).u8(level).string(name));
+}
+
+/** PET_RELEASE: `CUserMng::AddPetRelease` (`User.cpp:7908-7918`): nothing more. */
+export function writePetRelease(objectId: number): ScriptMessage {
+  return scripted(objectId, MessageType.PET_RELEASE, new ArWriter());
+}
+
+/** PET_LEVELUP: `CUserMng::AddPetLevelup` (`User.cpp:7920-7933`): `MAKELONG( index, level )`. */
+export function writePetLevelup(objectId: number, modelIndex: number, level: number): ScriptMessage {
+  return scripted(objectId, MessageType.PET_LEVELUP, new ArWriter().u32(((level << 16) | (modelIndex & 0xffff)) >>> 0));
+}
+
+/** PET_SET_EXP: `CUser::AddPetSetExp` (`User.cpp:3065-3073`). */
+export function writePetSetExp(objectId: number, exp: number): ScriptMessage {
+  return scripted(objectId, MessageType.PET_SET_EXP, new ArWriter().u32(exp));
+}
+
+/** PET: `CUser::AddPet` (`User.cpp:3075-3084`): `CPet::Serialize`, then the BYTE flag. */
+export function writePet(objectId: number, pet: PetData, flag: number): ScriptMessage {
+  if (pet.availLevels.length !== PL_MAX) throw new Error(`a pet has ${PL_MAX} stat steps, not ${pet.availLevels.length}`);
+  const w = new ArWriter().u8(pet.kind).u8(pet.level).u32(pet.exp).u16(pet.energy).u16(pet.life)
+    .bytes(Uint8Array.from(pet.availLevels)).string(pet.name).u8(flag);
+  return scripted(objectId, MessageType.PET, w);
+}
+
+/** PET_STATE: `CUser::AddPetState` (`User.cpp:3055-3063`). */
+export function writePetState(objectId: number, itemObjectId: number, life: number, energy: number, exp: number): ScriptMessage {
+  return scripted(objectId, MessageType.PET_STATE, new ArWriter().u32(itemObjectId).u16(life).u16(energy).u32(exp));
+}
+
+/** PET_FEED: `CUserMng::AddPetFeed` (`User.cpp:7935-7945`). */
+export function writePetFeed(objectId: number, energy: number): ScriptMessage {
+  return scripted(objectId, MessageType.PET_FEED, new ArWriter().u16(energy));
+}
+
+/** PET_MILL: `CUser::AddPetFoodMill` (`User.cpp:3086-3094`). */
+export function writePetMill(objectId: number, result: number, count: number): ScriptMessage {
+  return scripted(objectId, MessageType.PET_MILL, new ArWriter().i32(result).i32(count));
+}
+
+/** QUE_PETRESURRECTION_RESULT: `CUser::AddQuePetResurrectionResult` (`User.cpp:3663-3670`), about `NULL_ID`: a BOOL. */
+export function writePetResurrectionResult(ok: boolean): ScriptMessage {
+  return scripted(NULL_ID, MessageType.QUE_PETRESURRECTION_RESULT, new ArWriter().i32(ok ? 1 : 0));
+}
+
+/** SET_PET_NAME: `CUserMng::AddSetPetName` (`User.cpp:7872-7881`). */
+export function writeSetPetName(objectId: number, name: string): ScriptMessage {
+  return scripted(objectId, MessageType.SET_PET_NAME, new ArWriter().string(name));
+}
+
+/** MOVER_CHANGESFX: `CUserMng::AddChangeMoverSfxId` (`User.cpp:8719-8728`). */
+export function writeMoverChangeSfx(objectId: number, sfxId: number): ScriptMessage {
+  return scripted(objectId, MessageType.MOVER_CHANGESFX, new ArWriter().u32(sfxId));
+}
+
+/** VISPET_ACTIVATE: `CUser::AddActivateVisPet` (`User.cpp:8709-8717`): the item and the pet's mover, `NULL_ID` both when it went. */
+export function writeVisPetActivate(objectId: number, itemObjectId: number, petMoverId: number): ScriptMessage {
+  return scripted(objectId, MessageType.VISPET_ACTIVATE, new ArWriter().u32(itemObjectId).u32(petMoverId));
+}

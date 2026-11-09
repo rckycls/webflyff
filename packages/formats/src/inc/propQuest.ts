@@ -200,6 +200,10 @@ export function readPropQuest(
         case 'SetBeginCondItem': (quest.beginItems ??= []).push(item(args, false)); break;
         case 'SetBeginCondNotItem': (quest.beginNotItems ??= []).push(item(args, false)); break;
         case 'SetBeginCondParty': if (args.some((arg) => numberOf(arg) !== 0)) quest.beginUnsupported = true; break;
+        // 2026-11-09, the raised pet's terms (Project.cpp:1709-1718, :2039-2049): the later statement wins, the default
+        // (-1 for a level, PL_EGG being 0; 0 for an EXP percent) is no term
+        case 'SetBeginCondPetLevel': if (n(0) !== -1) quest.beginPetLevel = n(0); else delete quest.beginPetLevel; break;
+        case 'SetBeginCondPetExp': if (n(0) !== 0) quest.beginPetExp = n(0); else delete quest.beginPetExp; break;
         case 'SetRemove': if (n(0) === 0) quest.noRemove = true; else delete quest.noRemove; break;
         case 'SetRepeat': if (n(0) !== 0) quest.repeat = true; else delete quest.repeat; break;
         case 'SetEndCondLimitTime': quest.limitTime = n(0); break;
@@ -237,8 +241,8 @@ export function readPropQuest(
         // the end terms the browser cannot judge: unsupported once set to anything but their default
         case 'SetEndCondParty': if (args.some((arg) => numberOf(arg) !== 0)) unsupported.add('party'); break;
         case 'SetEndCondGuild': if (args.some((arg) => numberOf(arg) !== 0)) unsupported.add('guild'); break;
-        case 'SetEndCondPetLevel': if (n(0) !== -1) unsupported.add('pet'); break;
-        case 'SetEndCondPetExp': if (n(0) !== 0) unsupported.add('pet'); break;
+        case 'SetEndCondPetLevel': if (n(0) !== -1) quest.endPetLevel = n(0); else delete quest.endPetLevel; break;
+        case 'SetEndCondPetExp': if (n(0) !== 0) quest.endPetExp = n(0); else delete quest.endPetExp; break;
         case 'SetEndCondDisguise': unsupported.add('disguise'); break;
         case 'SetEndCondKarmaPoint': unsupported.add('karma'); break;
         case 'SetEndCondChaotic': if (n(0) !== 0) unsupported.add('chaotic'); break;
@@ -251,6 +255,8 @@ export function readPropQuest(
         case 'SetEndRewardSkillPoint': rewards().skillPoints = n(0); break;
         case 'SetEndRewardPKValue': rewards().pk = [n(0), n(1)]; break;
         case 'SetEndRewardHide': if (n(0) !== 0) rewards().hidden = true; break;
+        // TRUE whatever the arguments (`SetEndRewardPetLevelup();`, Project.cpp:2167-2170)
+        case 'SetEndRewardPetLevelup': rewards().petLevelup = true; break;
         case 'SetDesc': if (state !== undefined) quest.states[state] = textOf(args[0]); break;
         default:
           if (name.startsWith('SetBeginCond') && args.some((arg) => numberOf(arg) !== 0)) quest.beginUnsupported = true;

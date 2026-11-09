@@ -100,6 +100,13 @@ describe('the audio catalog', () => {
     expect(audio.music[10]!.ogg).toBe('music/bgmth3return.ogg');
   });
 
+  it('lists the WAVs played by file name (PLAYSND( "name.wav" )) by the name as the C++ writes it (2026-11-09)', async () => {
+    // the folder's file differs in case; ItemGnCollector.wav is not in the folder
+    const keys = new Set(['sound/infclick.wav', 'sound/pcskillcastcheer.wav']);
+    const audio = (await build({}, { 'Sound/PcSkillCastCheer.WAV': 'RIFF' }, keys))!;
+    expect(audio.named).toEqual({ 'PCSkillCastCheer.wav': 'sound/pcskillcastcheer.wav' });
+  });
+
   it('keeps the sound columns of the props and the NPC music that name one', async () => {
     const audio = (await build())!;
     expect(audio.items).toEqual({ 505: { attack1: 115, attack2: 119, drop: 39 } });

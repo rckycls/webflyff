@@ -5,7 +5,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { GAME_DATA_KEYS, ITEM_ETC_KEY, QUESTS_KEY, WORLD_NO_FLY_KEY } from '@flyffweb/formats';
+import { GAME_DATA_KEYS, ITEM_ETC_KEY, PETS_KEY, QUESTS_KEY, WORLD_NO_FLY_KEY } from '@flyffweb/formats';
 import type {
   ModelElem,
   WebEffectsIndex,
@@ -17,6 +17,7 @@ import type {
   WebMover,
   WebNameColors,
   WebNpc,
+  WebPets,
   WebSkill,
   WebTexts,
   WebWorlds,
@@ -57,6 +58,7 @@ const DEFINES = script(
   '#define MODELTYPE_ANIMATED_MESH 2',
   '#define MD_MID 2',
   '#define ATEX_NONE 0',
+  '#define ATEX_02 2',
   '#define MTI_STAND 0',
   '#define MTI_WALK 3',
   '#define MTI_RUN 5',
@@ -725,6 +727,7 @@ describe('the game-data stage', () => {
       sfxHit: 20, sfxMissile: -1, linkKindBullet: -1,
       model: 'models/item_weasword.glb', dropModel: 'models/item_weasword.glb', icon: 'ui/item/itm_weasword.png',
       job: 0, sex: 0, endurance: 9000000, itemLevel: 1, limitLevel: 1, // the base row's tooltip columns (2026-11-05)
+      permanence: 1, // bPermanence TRUE (2026-11-09)
     });
     expect(props[2]!.attackSpeed).not.toBe(0.085);
 
@@ -734,7 +737,7 @@ describe('the game-data stage', () => {
       weaponType: -1, attackSpeed: -1, attackRange: -1, destParams: [-1, -1, -1], adjParams: [-1, -1, -1],
       sfxHit: -1, sfxMissile: -1, linkKindBullet: -1,
       model: null, dropModel: 'models/item_genmatsuitbox.glb', icon: 'ui/item/itm_mvag01upper.png',
-      job: 0, sex: 0, endurance: 9000000, itemLevel: 1, limitLevel: 1,
+      job: 0, sex: 0, endurance: 9000000, itemLevel: 1, limitLevel: 1, permanence: 1,
     });
     expect(props[1]).toMatchObject({ id: 503, name: 'Pike Suit', part: 3, model: null });
   });
@@ -842,6 +845,24 @@ describe('the game-data stage', () => {
     }
   });
 
+  it("itemProps keep a vis's needed vis and permanence, each only when the row gives it (2026-11-09, pets)", async () => {
+    const vis = itemRow('504', 'IDS_PROPITEM_TXT_000790', '=').split('\t');
+    vis[30] = '10080'; // dwAbilityMin: a level 3 vis's minutes
+    vis[31] = '3'; // dwAbilityMax: its grade
+    vis[93] = '501'; // dwReferTarget1
+    vis[94] = '502'; // dwReferTarget2
+    vis[9] = '0'; // bPermanence
+    const bare = itemRow('503', 'IDS_PROPITEM_TXT_000792', 'PARTS_LOWER_BODY').split('\t');
+    for (const at of [9, 93, 94]) bare[at] = '=';
+    await client({ 'propItem.txt': script(vis.join('\t'), bare.join('\t')) });
+    const props = await catalog<WebItemProp[]>(await runData(), GAME_DATA_KEYS.itemProps);
+    expect(props.find((p) => p.id === 504)).toMatchObject({
+      abilityMin: 10080, abilityMax: 3, referTarget1: 501, referTarget2: 502, permanence: 0,
+    });
+    const plain = props.find((p) => p.id === 503)!;
+    for (const key of ['referTarget1', 'referTarget2', 'permanence']) expect(plain, key).not.toHaveProperty(key);
+  });
+
   it('itemEtc: the sets and the socket cards of propItemEtc.inc, when the packs hold it (2026-11-05)', async () => {
     await client({ 'propItemEtc.inc': script('SetItem 1 Darkness', '{', 'Elem', '{', '502 2', '503 3', '}', 'Avail', '{', '1 5 2', '}', '}',
       'Piercing 2001', '{', '1 5', '}') });
@@ -866,6 +887,58 @@ describe('the game-data stage', () => {
     const run = await runData();
     expect(run.report.failures).toEqual([]);
     expect(run.writer.pathOf(ITEM_ETC_KEY)).toBeUndefined();
+  });
+
+  it('pets: the raised pets table of pet.inc, when the packs hold it (2026-11-09)', async () => {
+    await client({
+      'pet.inc': script(
+        'AvailDestParam',
+        '{',
+        '\tDST_STR\t1\t2\t4\t7\t11\t16\t22\t29\t37\tII_WEA_HAN_HAND\tMI_AIBATT1\tMI_ORPHAN\tMI_ORPHAN\t900',
+        '}',
+        'FeedEnergy 0 { 1 575 7 14 }',
+        'FeedEnergy 1 { 1 575 28 28 }',
+        'IncrementExp { 250 125 62 31 }',
+        'MaxEnergy { 180 300 420 600 1500 }',
+        'Penalty { 0.16 0 0 0 }',
+      ),
+    });
+    const run = await runData();
+    expect(run.report.failures).toEqual([]);
+    expect(await catalog<WebPets>(run, PETS_KEY)).toEqual({
+      kinds: [{ kind: 0, dst: 1, steps: [1, 2, 4, 7, 11, 16, 22, 29, 37], itemId: 11, models: [20, 21, 21], hatchWeight: 900 }],
+      feedEnergy: [[{ costMin: 1, costMax: 575, energyMin: 7, energyMax: 14 }], [{ costMin: 1, costMax: 575, energyMin: 28, energyMax: 28 }]],
+      incrementExp: [250, 125, 62, 31],
+      maxEnergy: [180, 300, 420, 600, 1500],
+      penalty: [{ exp: Math.fround(0.16), energy: 0 }, { exp: 0, energy: 0 }],
+    });
+  });
+
+  it('writes no pets without pet.inc, and a pet.inc that cannot be read fails alone', async () => {
+    await client();
+    expect((await runData()).writer.pathOf(PETS_KEY)).toBeUndefined();
+
+    await client({ 'pet.inc': 'FeedEnergy 2 { }' });
+    const run = await runData();
+    expect(run.writer.pathOf(PETS_KEY)).toBeUndefined();
+    expect(run.report.failures.map((failure) => failure.source)).toEqual(['pet.inc']);
+    expect(run.writer.pathOf(GAME_DATA_KEYS.movers)).toBeDefined();
+  });
+
+  it('movers keep the extra texture set of their mdlDyna.inc entry, 0 left out (2026-11-09)', async () => {
+    const plain = entry('Aibatt1', 'MI_AIBATT1', 'MODELTYPE_ANIMATED_MESH');
+    await client({ 'mdlDyna.inc': MDL_DYNA.replace(plain, plain.replace('ATEX_NONE', 'ATEX_02')) });
+    const movers = await catalog<WebMover[]>(await runData(), GAME_DATA_KEYS.movers);
+    expect(movers.find((mover) => mover.index === 20)).toMatchObject({ textureEx: 2, model: 'models/mvr_aibatt1.glb' });
+    expect(movers.find((mover) => mover.index === 11)).not.toHaveProperty('textureEx');
+  });
+
+  it('movers keep the scale of their mdlDyna.inc entry as a C float, 1 left out (pets R2)', async () => {
+    const plain = entry('Aibatt1', 'MI_AIBATT1', 'MODELTYPE_ANIMATED_MESH');
+    await client({ 'mdlDyna.inc': MDL_DYNA.replace(plain, plain.replace('1.0f', '1.1f')) });
+    const movers = await catalog<WebMover[]>(await runData(), GAME_DATA_KEYS.movers);
+    expect(movers.find((mover) => mover.index === 20)?.modelScale).toBe(Math.fround(1.1));
+    expect(movers.find((mover) => mover.index === 11)).not.toHaveProperty('modelScale');
   });
 
   it('writes no worldNoFly without a .wld', async () => {

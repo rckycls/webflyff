@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import type { OwnQuest } from '@flyffweb/protocol';
 import type { WebQuest } from '@flyffweb/formats';
 import {
-  conditionRows, createQuestLookup, isEndQuestCondition, rewardLines, type QuestNames, type QuestOwner,
+  conditionRows, createQuestLookup, isEndQuestCondition, petTermsMet, questPet, rewardLines, type QuestNames, type QuestOwner,
 } from '../src/world/quests/questRules';
+import { QuestMarkerIndex } from '../src/world/quests/questMarkers';
 
 const MERCENARY: WebQuest = {
   id: 151, title: 'The Path of the Mercenary', head: 6051, npc: 'MaFl_Mustang', endNpc: 'MaFl_Mustang',
@@ -122,5 +123,49 @@ describe('createQuestLookup (M0 QuestLookup)', () => {
     expect(lookup.isReadyToHandIn(151)).toBe(true);
     expect(lookup.isReadyToHandIn(83)).toBe(false); // not current
     expect(createQuestLookup(() => null, () => current, () => owner()).titleOf(151)).toBeUndefined();
+  });
+});
+
+describe("the raised pet's quest terms (pets R3; Mover.cpp:9365-9381, :9956-9970, :10323-10337)", () => {
+  // QUEST_PETTAME01 (Resource/propQuest.inc:17545-17565): begin with the egg out, end with it at 100% EXP
+  const PETTAME01: WebQuest = {
+    id: 1176, title: 'Raising Pet 1', head: 6004, npc: 'MaFl_PetTamer', endNpc: 'MaFl_PetTamer', levelMin: 1, levelMax: 129,
+    repeat: true, beginPetLevel: 0, endPetLevel: 0, endPetExp: 100, rewards: { petLevelup: true }, states: { 0: 'Feed it.', 14: '' },
+  };
+
+  it('GetExpPercent is the whole percent of 50,000 for the egg and 100,000 for a pet', () => {
+    expect(questPet(undefined)).toBeNull();
+    expect(questPet({ level: 0, exp: 49999 })).toEqual({ level: 0, expPercent: 99 });
+    expect(questPet({ level: 0, exp: 50000 })).toEqual({ level: 0, expPercent: 100 });
+    expect(questPet({ level: 2, exp: 99999 })).toEqual({ level: 2, expPercent: 99 });
+  });
+
+  it('an EXP percent of 0 and a level of -1 are no term; otherwise a pet must be out', () => {
+    expect(petTermsMet(null, undefined, undefined)).toBe(true);
+    expect(petTermsMet(null, 0, -1)).toBe(true);
+    expect(petTermsMet(null, undefined, 0)).toBe(false);
+    expect(petTermsMet({ level: 0, expPercent: 0 }, undefined, 0)).toBe(true);
+    expect(petTermsMet({ level: 1, expPercent: 100 }, 100, 0)).toBe(false);
+    expect(petTermsMet({ level: 0, expPercent: 99 }, 100, 0)).toBe(false);
+    expect(petTermsMet({ level: 0, expPercent: 100 }, 100, 0)).toBe(true);
+  });
+
+  it('QUEST_PETTAME01 is ready only with the egg out at 100%', () => {
+    expect(isEndQuestCondition(quest(1176), PETTAME01, owner())).toBe(false);
+    expect(isEndQuestCondition(quest(1176), PETTAME01, owner({}, { pet: questPet({ level: 0, exp: 49999 }) }))).toBe(false);
+    expect(isEndQuestCondition(quest(1176), PETTAME01, owner({}, { pet: questPet({ level: 0, exp: 50000 }) }))).toBe(true);
+    expect(isEndQuestCondition(quest(1176), PETTAME01, owner({}, { pet: questPet({ level: 1, exp: 100000 }) }))).toBe(false);
+    // no row for the pet terms (MakeQuestConditionItems has none): only "Meet <NPC>"
+    expect(conditionRows(quest(1176), PETTAME01, owner(), NAMES, TEXTS).map((row) => row.text)).toEqual(['#bMeet MaFl_PetTamer#nb']);
+  });
+
+  it('the tamer offers QUEST_PETTAME01 only with the egg out (its marker, __IsBeginQuestCondition)', () => {
+    const index = new QuestMarkerIndex(new Map([[PETTAME01.id, PETTAME01]]));
+    expect(index.forNpc('MaFl_PetTamer', new Map(), [], owner())).toBeNull();
+    expect(index.forNpc('MaFl_PetTamer', new Map(), [], owner({}, { pet: { level: 1, expPercent: 0 } }))).toBeNull();
+    expect(index.forNpc('MaFl_PetTamer', new Map(), [], owner({}, { pet: { level: 0, expPercent: 3 } }))).toBe('available');
+    const current = new Map([[1176, quest(1176)]]);
+    expect(index.forNpc('MaFl_PetTamer', current, [], owner({}, { pet: { level: 0, expPercent: 50 } }))).toBe('inProgress');
+    expect(index.forNpc('MaFl_PetTamer', current, [], owner({}, { pet: { level: 0, expPercent: 100 } }))).toBe('ready');
   });
 });

@@ -9,6 +9,7 @@ import { ItemCooldowns, bagConfirm, checkConfirm, confirmedTarget, isMapItem, pr
 /** `NULL_ID`: no focused mover. */
 const NULL_TARGET = 0xffffffff;
 import { upgradeKindOf } from './upgradeItems';
+import { needsPet } from '../pets/petCare';
 
 export const RESURRECTION_SCROLL = 10431;
 export interface ItemUseSender {
@@ -42,6 +43,16 @@ export interface ItemUseTravel {
   window?(objectId: number, from: 'bag' | 'bar'): boolean;
   /** 2026-11-05: the upgrade cursor, which a material double-clicked in the bag starts (`UpgradeCursor.begin`). */
   upgrade?: { begin(objectId: number): boolean };
+  /**
+   * 2026-11-09 (pets R3): the raised pet's items (`PetCareWindows.use`): true when the use opened the item's window or
+   * sent its food; `target` the focused mover DOUSEITEM would name.
+   */
+  pet?(objectId: number, target: number): boolean;
+  /**
+   * 2026-11-09 (pets B1): `CheckConfirm`'s buff pet boxes (`WndManager.cpp:7646-7692`): a vis or the vis key with a buff
+   * pet out, and Pet Magic (`BuffPetWindows.checkConfirm`); true when a box opened, whose OK uses the item `'confirmed'`.
+   */
+  visConfirm?(objectId: number): boolean;
 }
 
 /**
@@ -106,6 +117,8 @@ export class ItemUse {
         travel.say({ kind: 'say', tid: 'TID_GAME_TRADELIMITUSING' });
         return false;
       }
+      // 2026-11-09 (pets B1): CheckConfirm's buff pet boxes first (WndManager.cpp:7646-7692)
+      if ((from === 'bag' || from === 'bar') && travel.visConfirm?.(objectId) === true) return true;
       // 2026-11-05: CheckConfirm's box before SendDoUseItem, from the bag and the task bar (Awakening Protection)
       const checked = from === 'bag' || from === 'bar' ? checkConfirm(prop) : null;
       if (checked !== null && travel.confirm !== undefined) {
@@ -159,6 +172,13 @@ export class ItemUse {
         travel.confirm(box, () => void this.use(objectId, 'confirmed', target), [prop.name]);
         return true;
       }
+      // 2026-11-09 (pets R3): an item for the raised pet needs one out (`EXT_PET`, DPClient.cpp:10605-10613), any box or
+      // not; then the pet's items' own branches (`bResult`, :10614-10661; the naming scroll, :10845-10857)
+      if (needsPet(prop) && own.petItem()?.pet === undefined) {
+        travel.say({ kind: 'say', tid: 'TID_GAME_PET_NOT_FOUND' });
+        return false;
+      }
+      if ((from === 'bag' || from === 'bar') && travel.pet?.(objectId, target ?? NULL_TARGET) === true) return true;
       // 2026-11-05: an item whose use is a window (itemWindowFlows.ts): the window, unless it lets the use go on
       if ((from === 'bag' || from === 'bar') && travel.window?.(objectId, from) === true) return true;
     }

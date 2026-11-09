@@ -9,7 +9,9 @@ import {
   encodeNpcBuff, encodeQuestCheck, encodeEnchant, encodePiercing, encodeRandomScroll, encodeDoUseItemTarget,
   encodeUltimateEnchantWeapon, encodePiercingSize, encodeSmeltSafety, encodeQuerySetPlayerName, encodeSummonParty, encodeSummonPartyConfirm, encodeSummonFriend,
   encodeSummonFriendConfirm, encodeSummonFriendCancel, encodeDoUseItemInput, encodeChangeAttribute, encodeItemTransy,
-  encodeCreateMonster, encodeRemoveQuest, encodeReturnScroll, encodeStateModeCancel,
+  encodeCreateMonster, encodeRemoveQuest, encodeReturnScroll, encodeStateModeCancel, encodePetRelease,
+  encodeUsePetFeed, encodeMakePetFeed, encodePetTamerMistake, encodePetTamerMiracle, encodeFeedPocketInactive, encodeClearPetName,
+  encodeRemoveVis, encodeSwapVis, encodeQuePetResurrection, encodeTransformItem, encodePickupPetAwakeningCancel,
 } from '@flyffweb/protocol';
 import { encodeMagicAttack, encodeRangeAttack, encodeSfxClear, encodeSfxHit, encodeSfxId } from '@flyffweb/protocol';
 import {
@@ -21,6 +23,7 @@ import type { PartyRequestSide } from '@flyffweb/protocol';
 import type { BundleMessage, BundleResult, MoveReport, Shortcut, SkillSlot, Vec3, WorldMessage } from '@flyffweb/protocol';
 import type { AngleReport, FlightReport } from '@flyffweb/protocol';
 import { UNEXPECTED_PROBLEM, closeText, errorText } from '../lobby/errorText';
+import { serverIdOf } from './pets/raisedPet';
 import { GATEWAY_UNREACHABLE, PING_INTERVAL_MS, TIMEOUT_TEXT, systemClock } from '../lobby/LoginFlow';
 import type { FlowClock, WorldEntry } from '../lobby/LoginFlow';
 import type { OpenChannel, PacketChannel } from '../net/PacketChannel';
@@ -140,6 +143,37 @@ export class WorldSession {
   sendCreateMonster(objectId: number, pos: Vec3): void { this.playingCache()?.send(encodeCreateMonster(objectId, pos)); }
   /** 2026-11-05: Buff Pang's Get Buffed! (`SendNPCBuff( m_szCharacterKey )`), the key as the NPC's ADD_OBJ gave it. */
   sendNpcBuff(key: string): void { this.playingCache()?.send(encodeNpcBuff(key)); }
+  /** 2026-11-09 (pets R2): the own raised pet's menu's release (`SendPetRelease`, `DPClient.cpp:16450-16454`). */
+  sendPetRelease(): void { this.playingCache()?.send(encodePetRelease()); }
+  /**
+   * 2026-11-09 (pets R3): the raised pet's care (`DPClient.cpp:16458-16498`, `:18441-18444`): the food used at once
+   * (`SendUsePetFeed`), the food mill's OK (`SendMakePetFeed`, the tool `NULL_ID` at the tamer), the tamer's mistake and
+   * miracle, the feed pocket's off-switch and the tamer's rename cancel.
+   */
+  sendUsePetFeed(feedObjectId: number): void { this.playingCache()?.send(encodeUsePetFeed(feedObjectId)); }
+  sendMakePetFeed(materialObjectId: number, count: number, toolObjectId: number = NULL_ID): void {
+    this.playingCache()?.send(encodeMakePetFeed(materialObjectId, toolObjectId, count));
+  }
+  sendPetTamerMistake(scrollObjectId: number): void { this.playingCache()?.send(encodePetTamerMistake(scrollObjectId)); }
+  sendPetTamerMiracle(scrollObjectId: number): void { this.playingCache()?.send(encodePetTamerMiracle(scrollObjectId)); }
+  sendFeedPocketInactive(): void { this.playingCache()?.send(encodeFeedPocketInactive()); }
+  sendClearPetName(): void { this.playingCache()?.send(encodeClearPetName()); }
+  /**
+   * 2026-11-09 (pets B1): the buff pet window's vis out, after its confirm box (`SendRemoveVis`), and a vis dragged to
+   * another slot (`SendSwapVis`, `DPClient.cpp:18988-19000`).
+   */
+  sendRemoveVis(slot: number): void { this.playingCache()?.send(encodeRemoveVis(slot)); }
+  sendSwapVis(slot1: number, slot2: number): void { this.playingCache()?.send(encodeSwapVis(slot1, slot2)); }
+  /**
+   * 2026-11-09 (pets R4): the Pet Tamer's rare windows: the pet trade's OK (`SendQuePetResurrection`,
+   * `DPClient.cpp:17416-17421`), the egg exchange's OK (`SendTransformItem`, :17996-18002) and the awakening cancel's
+   * (`SendPickupPetAwakeningCancel`, :18004-18009).
+   */
+  sendQuePetResurrection(itemObjectId: number): void { this.playingCache()?.send(encodeQuePetResurrection(itemObjectId)); }
+  sendTransformItem(transform: number, parts: ReadonlyArray<{ objectId: number; count: number }>): void {
+    this.playingCache()?.send(encodeTransformItem(transform, parts));
+  }
+  sendPickupPetAwakeningCancel(itemObjectId: number): void { this.playingCache()?.send(encodePickupPetAwakeningCancel(itemObjectId)); }
   sendNpcDialogOpen(id: number): void { this.playingCache()?.send(encodeNpcDialogOpen(id)); }
   sendNpcDialog(id: number, key: string, param: number, quest: number, playerId: number): void {
     this.playingCache()?.send(encodeNpcDialog(id, key, param, quest, playerId));
@@ -158,7 +192,7 @@ export class WorldSession {
    * the focused mover (2026-11-05), NULL_ID with none.
    */
   sendUseItem(objectId: number, part = -1, flightSpeed = -1, targetId: number = NULL_ID): void {
-    this.playingCache()?.send(encodeUseItem(objectId, part, flightSpeed, targetId));
+    this.playingCache()?.send(encodeUseItem(objectId, part, flightSpeed, serverIdOf(targetId)));
   }
   /** Piece 7 M3: the item cast's cancel (`SendStateModeCancel`). */
   sendStateModeCancel(): void { this.playingCache()?.send(encodeStateModeCancel()); }
@@ -312,7 +346,7 @@ export class WorldSession {
 
   /** Piece 7 M5: MELEE_ATTACK2 (`CDPClient::SendMeleeAttack2`), the air attack. */
   sendMeleeAttack2(message: number, targetId: number): void {
-    this.playingCache()?.send(encodeMeleeAttack2(message, targetId));
+    this.playingCache()?.send(encodeMeleeAttack2(message, serverIdOf(targetId)));
   }
 
   /** The client's SNAPSHOT with one DESTPOS (`CDPClient::SendSnapshot`): a click-to-move. Sent only while playing. */
@@ -322,10 +356,13 @@ export class WorldSession {
 
   /**
    * SETTARGET (`CDPClient::SendSetTarget`, `Neuz/DPClient.cpp:9886`): `clear` 1 releases the target, 2 focuses it
-   * (`NULL_ID` with 2 clears the focus). Sent only while playing.
+   * (`NULL_ID` with 2 clears the focus). Sent only while playing. A raised pet the browser made goes as its `GetId()`,
+   * `NULL_ID` (`serverIdOf`, pets R1), as it does to DOUSEITEM, PLAYERSETDESTOBJ and USESKILL; and (pets review) to
+   * GETDESTOBJ, MELEE_ATTACK, MELEE_ATTACK2, MAGIC_ATTACK, RANGE_ATTACK and SFX_ID. The other senders take an item, a
+   * player id, the own mover, or an NPC chosen from a menu entry the pets' character keys do not have.
    */
   sendSetTarget(targetId: number, clear: 1 | 2): void {
-    this.playingCache()?.send(encodeSetTarget(targetId, clear));
+    this.playingCache()?.send(encodeSetTarget(serverIdOf(targetId), clear));
   }
 
   /**
@@ -333,7 +370,7 @@ export class WorldSession {
    * stop at (0 for a melee attack). Sent only while playing.
    */
   sendDestObj(targetId: number, range: number): void {
-    this.playingCache()?.send(encodePlayerSetDestObj(targetId, range));
+    this.playingCache()?.send(encodePlayerSetDestObj(serverIdOf(targetId), range));
   }
 
   /**
@@ -341,22 +378,22 @@ export class WorldSession {
    * item's `fAttackSpeed` as the server compares it. Sent only while playing.
    */
   sendMeleeAttack(message: number, targetId: number, attackSpeed: number): void {
-    this.playingCache()?.send(encodeMeleeAttack(message, targetId, attackSpeed));
+    this.playingCache()?.send(encodeMeleeAttack(message, serverIdOf(targetId), attackSpeed));
   }
 
   /** MAGIC_ATTACK (`CDPClient::SendMagicAttack`, `DPClient.cpp:9841`): the wand's shot. Sent only while playing. */
   sendMagicAttack(targetId: number, power: number, sfxHitId: number): void {
-    this.playingCache()?.send(encodeMagicAttack(targetId, power, sfxHitId));
+    this.playingCache()?.send(encodeMagicAttack(serverIdOf(targetId), power, sfxHitId));
   }
 
   /** RANGE_ATTACK (`CDPClient::SendRangeAttack`, `DPClient.cpp:9848`): the bow's shot. Sent only while playing. */
   sendRangeAttack(targetId: number, power: number, sfxHitId: number): void {
-    this.playingCache()?.send(encodeRangeAttack(targetId, power, sfxHitId));
+    this.playingCache()?.send(encodeRangeAttack(serverIdOf(targetId), power, sfxHitId));
   }
 
   /** SFX_ID (`CDPClient::SendSfxID`, `DPClient.cpp:9876`): a missile of the own player's. Sent only while playing. */
   sendSfxId(targetId: number, sfxHitId: number, type: number, skill?: number, maxDmgCnt?: number): void {
-    this.playingCache()?.send(encodeSfxId(targetId, sfxHitId, type, skill, maxDmgCnt));
+    this.playingCache()?.send(encodeSfxId(serverIdOf(targetId), sfxHitId, type, skill, maxDmgCnt));
   }
 
   /** SFX_HIT (`CDPClient::SendSfxHit`, `DPClient.cpp:11230`): a missile landed. Sent only while playing. */
@@ -371,10 +408,11 @@ export class WorldSession {
 
   /**
    * GETDESTOBJ (`CDPClient::SendGetDestObj`, `Neuz/DPClient.cpp:10941`): the answer to QUERYGETDESTOBJ, with the object
-   * ID the query named and the player's own destination. Sent only while playing.
+   * ID the query named and the player's own destination. Sent only while playing. 2026-11-09 (pets review): a raised
+   * pet the browser made goes as its `GetId()`, `NULL_ID` (`serverIdOf`), as the fight's packets send their target.
    */
   sendGetDestObj(fromId: number, destId: number): void {
-    this.playingCache()?.send(encodeGetDestObj(fromId, destId));
+    this.playingCache()?.send(encodeGetDestObj(fromId, serverIdOf(destId)));
   }
 
   /** REVIVAL_TO_LODESTAR (`CDPClient::SendHdr`, `Neuz/DPClient.cpp:11253`): revive at the lodestar. Sent only while playing. */
@@ -400,7 +438,7 @@ export class WorldSession {
    * target, `SUT_NORMAL` 0 (a bar slot) or `SUT_QUEUESTART` 1 (the action slot), and the Ctrl key. Sent only while playing.
    */
   sendUseSkill(index: number, targetId: number, useType: 0 | 1, control = false): void {
-    this.playingCache()?.send(encodeUseSkill(index, targetId, useType, control));
+    this.playingCache()?.send(encodeUseSkill(index, serverIdOf(targetId), useType, control));
   }
 
   /**

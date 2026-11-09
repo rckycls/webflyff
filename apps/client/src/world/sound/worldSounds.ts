@@ -9,7 +9,7 @@ import type { OwnEvent } from '../OwnState';
 import type { CombatEvent } from '../WorldState';
 import {
   BGM_EV_END, BGM_EV_LIGHTWING, BGM_EV_START, BGM_IN_BOSS, BGM_TH_FLYING, BGM_IN_DEATH, BGM_IN_LEVELUP, NO_DEATH_MUSIC, RANK_BOSS, SND_INF_GROUNDDROP,
-  SND_INF_GROUNDPICKUP, SND_INF_TRADE, SND_WALK_LANDSOFT, XI_SOUNDS,
+  SND_INF_EQUIPACCESSORY, SND_INF_GROUNDPICKUP, SND_INF_OPEN, SND_INF_TRADE, SND_WALK_LANDSOFT, XI_SOUNDS,
 } from '../../audio/soundIds';
 import { equipSound } from './soundRules';
 import type { Vec } from './soundRules';
@@ -63,6 +63,14 @@ export class WorldSounds {
   /** A buy confirmed or a sale (WndShop.cpp:655, :232-235). */
   shop(): void {
     this.audio.play(SND_INF_TRADE);
+  }
+
+  /**
+   * 2026-11-09 (pets R3): `PLAYSND( "InfOpen.wav" )`, each turn of the tamer's miracle's spins (`CWndPetMiracle::Process`,
+   * `WndPetSys.cpp:1473-1620`): the file of Sound that sound.inc names SND_INF_OPEN, played by that id.
+   */
+  infOpen(): void {
+    this.audio.play(SND_INF_OPEN);
   }
 
   /** An inventory item dropped on the world, before any confirm (WndWorld.cpp:7828-7830). */
@@ -137,7 +145,8 @@ export class WorldSounds {
 
   /**
    * What a combat event of the rules plays: a melee hit that lands (`attackerHit`, the hit frame of the swing), a
-   * DAMAGE with AF_CRITICAL, and a skill's launch on its hit frame (`skillHit`, where the skill's effect is made). `mover`
+   * DAMAGE with AF_CRITICAL, a skill's launch on its hit frame (`skillHit`, where the skill's effect is made), and a raised
+   * pet's release and level up (pets R1, by file name: `named`). `mover`
    * is a mover in view: its FlyFF position and its active-hand item (`WorldState.handItem`).
    */
   combatEvent(event: CombatEvent, mover: (id: number) => { pos: Vec; weapon: number | null } | undefined): void {
@@ -150,7 +159,20 @@ export class WorldSounds {
     } else if (event.kind === 'skillHit') {
       const caster = mover(event.casterId);
       if (caster !== undefined) this.skillCast(caster.pos, event.skill);
+    } else if (event.kind === 'petReleased') {
+      this.named('ItemGnCollector.wav'); // pets R1: PetRelease (Mover.cpp:11188)
+    } else if (event.kind === 'petLevelUp') {
+      this.named('PCSkillCastCheer.wav'); // pets R1: CreatePetSfx (Mover.cpp:11158)
     }
+  }
+
+  /**
+   * 2026-11-09 (pets R1): `PLAYSND( "file.wav" )` (`dsutil.h:219-222`): a WAV Neuz plays by its file name, with no place
+   * (full volume), by the catalog's `named` keys; nothing when the catalog has none.
+   */
+  named(file: string): void {
+    const key = this.catalog?.named?.[file];
+    if (key !== undefined) this.audio.playKey(key);
   }
 
   /**
@@ -171,13 +193,19 @@ export class WorldSounds {
     this.flownOnce = true;
   }
 
-  ownEvent(event: OwnEvent, worldId: number): void {
+  /**
+   * An own event's sound; `ownAt` is the own player's place (2026-11-09, pets B1: a buff pet's vis changed by UPDATE_ITEM,
+   * `PLAYSND( SND_INF_EQUIPACCESSORY, &g_pPlayer->GetPos() )`, `MoverParam.cpp:3986-4010`).
+   */
+  ownEvent(event: OwnEvent, worldId: number, ownAt?: Vec): void {
     if (event.kind === 'died') this.ownDeath(worldId);
     else if (event.kind === 'levelUp' || event.kind === 'jobChanged') this.ownLevelUp();
     else if (event.kind === 'quest') {
       const change = event.change.kind;
       if (change === 'started') this.music.play(BGM_EV_START, 1);
       else if (change === 'ended' || change === 'removed') this.music.play(BGM_EV_END, 1);
+    } else if (event.kind === 'visPet' && event.change.kind === 'vis') {
+      this.audio.play(SND_INF_EQUIPACCESSORY, ownAt);
     }
   }
 

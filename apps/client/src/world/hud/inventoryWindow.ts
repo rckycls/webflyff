@@ -9,7 +9,12 @@ import { WindowFrame } from './frame';
 import { fitsEquipmentSlot } from '../items/equipment';
 import { usableFromBag } from '../items/travelItems';
 import { isRide } from '../items/rideItems';
+import { itemIconOf, itemName } from '../pets/petStatus';
 import type { WebItemProp } from '@flyffweb/formats';
+import type { InventoryItem } from '@flyffweb/protocol';
+
+/** `CItemElem::expired` (`m_byFlag`, `_Common/Item.h:119`). */
+const ITEM_EXPIRED = 0x01;
 
 /** Piece 7 M5: a ride's prop (`PARTS_RIDE` with flight columns). */
 const isRideProp = (prop: WebItemProp | undefined): boolean => prop !== undefined && isRide(prop);
@@ -38,6 +43,8 @@ export interface InventoryActions {
   closed?(): void;
   /** 2026-11-05: the hammer over the bag: the upgrade mode's (`m_bIsUpgradeMode`), not a window's pick. */
   hammer?(): boolean;
+  /** 2026-11-09 (pets R2): the own player has the buff, for the tooltips that ask (PutPetFeedPocket). */
+  hasBuff?(buffType: number, id: number): boolean;
 }
 
 export class InventoryWindow {
@@ -47,6 +54,9 @@ export class InventoryWindow {
   private own: OwnState | undefined;
   private selected: number | null = null;
   private revision = -1;
+  /** 2026-11-09 (pets review): the pet numbers' revision the open tooltip was drawn at, and the item it was drawn of. */
+  private petRevision = -1;
+  private detailsItem: InventoryItem | undefined;
   private preview: HTMLCanvasElement | undefined;
   private actionsOpen = false;
   private dragged: { id: number; itemId: number } | null = null;
@@ -103,8 +113,15 @@ export class InventoryWindow {
       const scale = mobile ? Math.max(.5, Math.min((width - 12) / 456, (height - 42) / 252)) : 1;
       this.frame.element.style.setProperty('--classic-inventory-scale', String(scale));
     }
-    if (!this.frame.isOpen || (!force && this.revision === own.inventoryRevision)) return;
+    if (!this.frame.isOpen) return;
+    if (!force && this.revision === own.inventoryRevision) {
+      // 2026-11-09 (pets review): the pet's numbers (PET_STATE about once a second) are not the bag's: the open tooltip
+      // alone shows them again, as Neuz's tooltip is put each frame the mouse is on the item
+      if (this.petRevision !== own.petRevision) { this.petRevision = own.petRevision; this.refreshDetails(own); }
+      return;
+    }
     this.revision = own.inventoryRevision;
+    this.petRevision = own.petRevision;
     const body = this.frame.body;
     const scrollTop = body.querySelector('.inventory-bag-scroll')?.scrollTop ?? 0;
     this.hoverAnchor = null;
@@ -160,9 +177,15 @@ export class InventoryWindow {
       // (SetExtra), which is not used nor dragged, and the ticket in use (GetTicket)
       const held = item !== undefined && this.actions.held?.(id) === true;
       if (item !== undefined && (held || this.actions.inUse?.(id) === true)) cell.classList.add('is-in-use');
-      cell.setAttribute('aria-label', item ? `${prop?.name ?? 'Unknown item'} ×${item.count}, slot ${slot + 1}` : `Empty slot ${slot + 1}`);
-      if (prop?.icon) { const icon = this.doc.createElement('img'); icon.src = this.art.url(prop.icon); icon.alt = ''; cell.append(icon); }
-      else if (item) cell.append('?');
+      // 2026-11-09 (pets R2): the name of `GetName` (a raised pet's "Cage"), the icon of `SetTexture` (by its pet's level)
+      const name = item !== undefined && prop !== undefined ? itemName(item, prop, this.data) : 'Unknown item';
+      cell.setAttribute('aria-label', item ? `${name} ×${item.count}, slot ${slot + 1}` : `Empty slot ${slot + 1}`);
+      const iconKey = item === undefined ? null : itemIconOf(item, prop);
+      if (iconKey) {
+        const icon = this.doc.createElement('img'); icon.src = this.art.url(iconKey); icon.alt = ''; cell.append(icon);
+        // 2026-11-09 (pets R2): an expired item (a dead pet) tinted ARGB(alpha, 255, 100, 100) (RanderIcon, WndItemCtrl.cpp:345-361)
+        if (((item?.flag ?? 0) & ITEM_EXPIRED) !== 0) cell.append(this.expiredTint(iconKey));
+      } else if (item) cell.append('?');
       if (item) { const count = this.doc.createElement('span'); count.textContent = String(item.count - (this.actions.reservedCount?.(id) ?? 0)); cell.append(count); }
       cell.addEventListener('click', () => {
         // 2026-11-05: in the upgrade mode a click is its target's (CWndItemCtrl::OnLButtonDown); an empty cell does nothing
@@ -246,6 +269,19 @@ export class InventoryWindow {
     this.drawDetails();
   }
 
+  /**
+   * 2026-11-09 (pets R2): `Render2( ..., D3DCOLOR_ARGB( nalpha, 255, 100, 100 ) )`, the icon times (1, 100/255, 100/255):
+   * a red over the icon, multiplied, cut to the icon's shape (its own alpha as the mask), as the gauges are drawn.
+   */
+  private expiredTint(iconKey: string): HTMLElement {
+    const tint = this.doc.createElement('i');
+    tint.className = 'inventory-expired';
+    const url = `url(${JSON.stringify(this.art.url(iconKey))})`;
+    tint.style.setProperty('-webkit-mask-image', url);
+    tint.style.setProperty('mask-image', url);
+    return tint;
+  }
+
   private hoverItem(cell: HTMLElement, id: number | undefined): void {
     cell.addEventListener('mouseenter', () => {
       if (this.mobile || id === undefined || this.dragged) return;
@@ -297,12 +333,12 @@ export class InventoryWindow {
       cell.classList.toggle('is-selected', own.inventorySlots[Number(cell.dataset.bagSlot)] === this.selected);
     }
     this.frame.body.querySelector('.inventory-details')?.remove();
+    this.detailsItem = undefined;
     const item = this.selected === null ? undefined : own.inventory?.get(this.selected);
     if (!item || !this.actionsOpen || (this.shopSelect && this.mobile)) return;
     const prop = this.data.itemProps.get(item.itemId);
-    // the tooltip as APP_INVENTORY asks for it: the selling price while a shop is open, the set +N on a worn piece
-    const details = createItemDetails(this.doc, this.art, this.data, item, prop,
-      ownTooltipContext(own, item, 'inventory', this.shopSelect !== undefined));
+    const details = this.tooltipOf(own, item);
+    this.detailsItem = item;
     const close = this.doc.createElement('button'); close.type = 'button'; close.className = 'inventory-details-close';
     close.textContent = '×'; close.setAttribute('aria-label', 'Close item details');
     close.addEventListener('click', () => { this.actionsOpen = false; this.drawDetails(); }); details.append(close);
@@ -324,6 +360,30 @@ export class InventoryWindow {
     if (!this.mobile && this.hoverAnchor) {
       positionItemDetails(details, this.hoverAnchor, this.doc);
     }
+  }
+
+  /** The tooltip as APP_INVENTORY asks for it: the selling price while a shop is open, the set +N on a worn piece. */
+  private tooltipOf(own: OwnState, item: InventoryItem): HTMLElement {
+    return createItemDetails(this.doc, this.art, this.data, item, this.data.itemProps.get(item.itemId),
+      ownTooltipContext(own, item, 'inventory', this.shopSelect !== undefined, this.actions.hasBuff?.bind(this.actions)));
+  }
+
+  /**
+   * 2026-11-09 (pets review): the open tooltip's text and frame made again when its item was (a pet's numbers), in place:
+   * the close and Use/Equip buttons stay on the page, so a press on them is not lost.
+   */
+  private refreshDetails(own: OwnState): void {
+    const shown = this.detailsItem;
+    const details = this.frame.body.querySelector<HTMLElement>('.inventory-details');
+    if (shown === undefined || details === null) return;
+    const item = own.inventory?.get(shown.objectId);
+    if (item === shown) return;
+    if (item === undefined || item.itemId !== shown.itemId) { this.drawDetails(); return; }
+    const fresh = this.tooltipOf(own, item);
+    for (const child of [...details.children]) if (child.tagName !== 'BUTTON') child.remove();
+    details.prepend(...fresh.children);
+    this.detailsItem = item;
+    if (!this.mobile && this.hoverAnchor) positionItemDetails(details, this.hoverAnchor, this.doc);
   }
 
   private requestDrop(id: number): void {

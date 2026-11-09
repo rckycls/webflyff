@@ -263,6 +263,18 @@ describe('the item buffs and the Scroll of Return (CWndWorld::RenderBuffIcon, Wn
     expect(back).toBe(1);
   });
 
+  it("the feed pocket's double-click turns it off (SendFeedPocketInactive, WndWorld.cpp:7280-7283; pets R3)", () => {
+    let off = 0, back = 0;
+    const items = new Map([...ITEMS, [21035, { name: 'Feed Bag', icon: 'ui/item/itm_syssysscrpetfeedpocket.png' }]]);
+    const status = new BuffStatus(art, document, { items, onFeedPocket: () => off++, onReturnScroll: () => back++ });
+    status.update([itemBuff(10270, 3_600_000), itemBuff(21035, 3_600_000)], SKILLS, 0);
+    const [eel, pocket] = [...status.element.querySelectorAll<HTMLElement>('.hud-buff')];
+    eel!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    expect(off).toBe(0);
+    pocket!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    expect([off, back]).toEqual([1, 0]);
+  });
+
   it("an item buff's time is under it in RenderOptBuffTime's units; 999999999 ms shows none (WndWorld.cpp:9315-9330, 11197-11227)", () => {
     const texts = (tid: string): string | undefined =>
       ({ TID_PK_LIMIT_DAY: '%.1dday', TID_PK_LIMIT_HOUR: '%.1dhr', TID_PK_LIMIT_MINUTE: '%.1dmin', TID_PK_LIMIT_SECOND: '%.1dsec' })[tid];

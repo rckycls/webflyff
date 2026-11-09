@@ -57,6 +57,16 @@ export interface WebQuest {
   beginNotItems?: WebQuestItem[];
   /** A non-default start condition the browser cannot evaluate safely. */
   beginUnsupported?: true;
+  /**
+   * 2026-11-09: `SetBeginCondPetLevel` (`m_nBeginCondPetLevel`, Project.cpp:1714-1718): the summoned raised pet must be at
+   * this level, `PL_*` (PL_EGG 0). Absent for the default -1, no term (Mover.cpp:9964-9970, :10331-10337).
+   */
+  beginPetLevel?: number;
+  /**
+   * 2026-11-09: `SetBeginCondPetExp` (`m_nBeginCondPetExp`, Project.cpp:1709-1713): the summoned pet's EXP percent must be at
+   * least this (`CPet::GetExpPercent`). Absent for the default 0, no term (Mover.cpp:9956-9962, :10323-10329).
+   */
+  beginPetExp?: number;
   /** `!SetRemove( n )`: the player cannot abandon it. */
   noRemove?: true;
   /** `SetRepeat`: it never joins the completed list. */
@@ -74,7 +84,20 @@ export interface WebQuest {
   endSkill?: [number, number];
   endState?: number;
   endCompleteQuests?: { oper: number; quests: number[] };
-  /** End conditions set to anything but their default that the browser cannot judge ('party', 'guild', 'pet' ...). */
+  /**
+   * 2026-11-09: `SetEndCondPetLevel` (`m_nEndCondPetLevel`, Project.cpp:2039-2043): the summoned raised pet must be at this
+   * level (`__IsEndQuestCondition`, Mover.cpp:9374-9381). Absent for the default -1, no term.
+   */
+  endPetLevel?: number;
+  /**
+   * 2026-11-09: `SetEndCondPetExp` (`m_nEndCondPetExp`, Project.cpp:2044-2049): the summoned pet's EXP percent must be at
+   * least this (Mover.cpp:9366-9373). Absent for the default 0, no term.
+   */
+  endPetExp?: number;
+  /**
+   * End conditions set to anything but their default that the browser cannot judge ('party', 'guild', 'disguise', 'karma',
+   * 'chaotic'). The pet terms were 'pet' here before 2026-11-09; they are `endPetLevel` and `endPetExp` now.
+   */
   unsupported?: string[];
   rewards?: {
     items?: WebQuestItem[];
@@ -83,6 +106,11 @@ export interface WebQuest {
     skillPoints?: number;
     pk?: [number, number];
     hidden?: true;
+    /**
+     * 2026-11-09: `SetEndRewardPetLevelup` (`m_bEndRewardPetLevelup`, Project.cpp:2167-2170): the server raises the summoned
+     * pet a level (ScriptHelper.cpp:352).
+     */
+    petLevelup?: true;
   };
   /** `state N { SetDesc( ... ) }`: the description of each state. */
   states: Record<number, string>;

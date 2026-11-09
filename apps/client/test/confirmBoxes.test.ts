@@ -41,6 +41,17 @@ describe('ConfirmBoxes', () => {
     expect(r.boxes.isOpen).toBe(false);
   });
 
+  it('gives a close for the box it opened, which does nothing once another box took its place (pets review)', () => {
+    const r = rig();
+    const close = r.boxes.open('confirmVis', 'Delete the Bead of STR? ', { ok: vi.fn() });
+    close();
+    expect(r.boxes.isOpen).toBe(false);
+    const stale = r.boxes.open('confirmVis', 'first', { ok: vi.fn() });
+    r.boxes.open('commItem', 'second', { ok: vi.fn() });
+    stale();
+    expect(r.boxes.openKind).toBe('commItem');
+  });
+
   it('a new box replaces the one open, which goes without its answers (SAFE_DELETE)', () => {
     const r = rig();
     const first = { ok: vi.fn(), closed: vi.fn() };

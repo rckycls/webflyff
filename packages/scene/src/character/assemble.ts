@@ -56,6 +56,12 @@ export interface AssembledCharacter {
    * whose grips had no forearm bones), and for a mover that has no skeleton.
    */
   readonly grips: SkeletonGrips | null;
+  /**
+   * 2026-11-09 (pets): the event points of the first part (`CModelObject::GetObject3D()`'s `m_vEvent`, ModelObject.h:205),
+   * in D3D coordinates as stored (`ModelBoxExtras.events`); empty for a file with none and for a glb of an older
+   * conversion, where Neuz's are all 0 (`memset`, Object3D.cpp:523). Absent on a model made another way.
+   */
+  readonly events?: readonly Vec3[];
   /** Gives the textures back to the cache and disposes the parts' geometry and materials. Safe to call twice. */
   release(): void;
 }
@@ -78,6 +84,19 @@ export function modelBoxOf(scene: Pick<Object3D, 'userData'>, where: string): Mo
   if (bbMin === undefined && bbMax === undefined) return null;
   if (!isVec3(bbMin) || !isVec3(bbMax)) throw new Error(`${where}: its box is not in the shape the converter writes`);
   return { min: [...bbMin], max: [...bbMax] };
+}
+
+/**
+ * 2026-11-09 (pets): the event points a converted model glb carries on its scene (`ModelBoxExtras.events`), copied; empty
+ * for a glb without them. Throws, naming `where`, when they are not in the shape the converter writes (at most 8 points).
+ */
+export function modelEventsOf(scene: Pick<Object3D, 'userData'>, where: string): Vec3[] {
+  const { events } = scene.userData as Partial<Record<keyof ModelBoxExtras, unknown>>;
+  if (events === undefined) return [];
+  if (!Array.isArray(events) || events.length > 8 || !events.every(isVec3)) {
+    throw new Error(`${where}: its event points are not in the shape the converter writes`);
+  }
+  return events.map((point): Vec3 => [...point]);
 }
 
 /** A CModelObject's `m_vMin` and `m_vMax` before any part is loaded (ModelObject.cpp:77-78). */
@@ -173,6 +192,7 @@ export async function assembleCharacter(
     });
     return lod;
   });
+  const events = parts.length === 0 ? [] : modelEventsOf(parts[0]!.scene, 'part 0');
 
   const root = new Group();
   root.name = 'character';
@@ -187,6 +207,7 @@ export async function assembleCharacter(
     root,
     mixer,
     grips,
+    events,
     box() {
       return unionModelBoxes(partBoxes);
     },

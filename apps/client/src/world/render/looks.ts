@@ -31,6 +31,12 @@ export interface MoverLook {
    * every hand of a mover that is not dressed. `heldModels` says what is drawn there.
    */
   held: { right: number | null; left: number | null };
+  /**
+   * 2026-11-09 (pets R1): the model's extra texture set (`WebMover.textureEx`, `m_nTextureEx`, 1 to 7), which every
+   * material draws with in place of its own texture (`CMover::Render`, `MoverRender.cpp:388-391`); absent for none. A
+   * raised pet's three stages are one mesh and differ only by this.
+   */
+  textureEx?: number;
 }
 
 /** `MI_MALE` and `MI_FEMALE` (`Resource/defineObj.h:954-955`): the bodies of players and human NPCs, with no model of their own. */
@@ -308,6 +314,7 @@ export function lookOf(mover: Mover, data: GameData, ownEquipment: readonly numb
   return {
     skeleton: prop.skeleton, parts: [prop.model], motion: motionOf(prop.motions, null), hairColor: null,
     held: { right: null, left: null },
+    ...(prop.textureEx !== undefined && prop.textureEx > 0 ? { textureEx: prop.textureEx } : {}), // pets R1
   };
 }
 

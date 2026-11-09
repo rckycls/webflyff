@@ -220,6 +220,11 @@ export const THEME_FILES: readonly string[] = [
   'WndChatEdit00_1.tga', 'WndChatEdit01.tga', 'WndChatEdit02.tga',
   'ButtChatChat.BMP', 'ButtChatWhisper.BMP', 'ButtChatShout.BMP', 'ButtChatTroupe.BMP', 'ButtChatGuild.BMP',
   'ButtChatFilter.BMP', 'ButtChatLock.bmp', 'ButtWndLock.tga', 'wndButtMacroChat.bmp',
+  // 2026-11-09, the pet windows (WndPetSys.cpp): the raised pet's window (CWndPetStatus::OnInitialUpdate, :810-811), the
+  // buff pet's, whose file name has a space before the dot (CWndBuffPetStatus, :2257; key `ui/buffpetstatusbg-.png`), the
+  // tamer's miracle button (CWndPetMiracle, :1371) and the buttons the pet windows' layouts name (APP_PET_FOODMILL and
+  // APP_PET_TRANS_EGGS "ButCancel2.bmp", APP_PET_MIRACLE "ButMiracle.bmp", resdata.inc:9228, :22714, :9321)
+  'PetStatusBg.tga', 'PetLevelBg.tga', 'BuffpetStatusBg .tga', 'ButChance.bmp', 'ButCancel2.bmp', 'ButMiracle.bmp',
 ];
 
 /** 2026-11-05: the cursors of Client/Cursor the browser shows (Neuz.cpp:280-300): the upgrade mode's hammer, CUR_HAMMER. */

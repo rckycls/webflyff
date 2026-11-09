@@ -2,6 +2,7 @@
 // naming the files the audio stage wrote (docs/superpowers/specs/2026-11-02-piece6-m2-sound-research.md):
 //
 //   sounds    sound.inc                         CSoundManager::LoadScript (dsutil.cpp:39-60)
+//   named     NAMED_SOUNDS (2026-11-09)         PLAYSND( "name.wav" ) (dsutil.h:219-222)
 //   music     default.bgm                       CMusicMng::LoadScript (Music2.cpp:195-213)
 //   worlds    each World.inc world's .wld bgm   CWorld::OpenWorld (WorldFile.cpp:94-97)
 //             and .rgn region rows              CWorld::LoadRegion, ReadRegion (WorldFile.cpp:413-553, :775-809)
@@ -52,11 +53,16 @@ export function buildAudio(env: AudioEnv): WebAudio | null {
     env.warn('Client/sound.inc', 'not in the client folder, so there is no audio catalog');
     return null;
   }
-  const audio: WebAudio = { sounds: {}, music: {}, worlds: {}, effects: {}, items: {}, skills: {}, movers: {}, npcMusic: {} };
+  const named: Record<string, string> = {};
+  const audio: WebAudio = { sounds: {}, named, music: {}, worlds: {}, effects: {}, items: {}, skills: {}, movers: {}, npcMusic: {} };
 
   for (const [id, file] of sources.sounds) {
     const key = soundKeyOf(file);
     if (env.has(key)) audio.sounds[id] = key;
+  }
+  for (const [name, file] of sources.named) {
+    const key = soundKeyOf(file);
+    if (env.has(key)) named[name] = key;
   }
   for (const [xi, file] of sources.effects) {
     const key = soundKeyOf(file);

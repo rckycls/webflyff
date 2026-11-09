@@ -15,6 +15,8 @@
 import type { WebItemProp } from '@flyffweb/formats';
 import type { Refusal } from './travelItems';
 import { windowOf } from './itemWindows';
+import { petItemUse } from '../pets/petCare';
+import { IK3_VIS, II_SYS_SYS_SCR_PET_MAGIC, II_SYS_SYS_VIS_KEY01 } from '../pets/buffPet';
 
 /**
  * The `IK2_*` the server uses (`DoUseItem`): REFRESHER 11, POTION 12, FOOD 14, SYSTEM 19, BLINKWING 22, AIRFUEL 23,
@@ -24,23 +26,36 @@ import { windowOf } from './itemWindows';
 const USE_KINDS: ReadonlySet<number> = new Set([11, 12, 14, 19, 22, 23, 27, 29, 30, 31, 33, 36, 37]);
 /** `IK2_TOCASH`: the Funny Coin (`__FUNNY_COIN`, DPClient.cpp:10543-10552). */
 const IK2_TOCASH = 36;
-/** `EXT_ITEM` 21 (`IsNeedTarget`, `_Common/Item.cpp:758-765`) and `EXT_PET` 19 (`Resource/define.h:57-59`). */
+/**
+ * `EXT_ITEM` 21 (`IsNeedTarget`, `_Common/Item.cpp:758-765`). (2026-11-09, pets R3: an `EXT_PET` item, the pet's, is used
+ * now; `SendDoUseItem` first wants a pet out, itemUse.ts.)
+ */
 const EXT_ITEM = 21;
-const EXT_PET = 19;
 /** The upgrade cursor's kinds (`WndField.cpp:2351-2386`): ELECARD 37, PIERDICE 61, SOCKETCARD 62 and 2 63, RANDOM_SCROLL 101, ENCHANT 119. */
 const UPGRADE_IK3: ReadonlySet<number> = new Set([37, 61, 62, 63, 101, 119]);
-/** Kinds whose use needs a system the browser lacks: PET 100, EGG 120, VIS 138. */
-const WINDOW_IK3: ReadonlySet<number> = new Set([100, 120, 138]);
+/**
+ * 2026-11-09 (pets P1): `IK3_PET`, a pick-up pet (and a buff pet). Whatever its kind2, the bag sends DOUSEITEM
+ * (`WndField.cpp:2635-2642`) and the server summons or recalls it (`CMover::DoUseItem`, `MoverSkill.cpp:1704-1705`,
+ * `DoUseEatPet` :4033-4039). The pet is a server NPC (`AII_PET`, `BELLI_PEACEFUL`) that ADD_OBJ brings and the move
+ * messages walk; the client needs nothing more for it (docs/superpowers/specs/2026-11-09-pets-research.md §3).
+ */
+const IK3_PET = 100;
+/**
+ * 2026-11-09 (pets R2): `IK3_EGG`, the raised pet's egg and the hatched pets. The bag sends a plain DOUSEITEM and the
+ * server summons or recalls it (`CMover::DoUseItem`, `MoverSkill.cpp:1701-1702`, `DoUseSystemPet` :4025-4031); a dead
+ * one's `TID_GAME_PET_DEAD` is the server's answer. The client makes the pet's mover itself (pets R1).
+ */
+const IK3_EGG = 120;
 /**
  * The items whose use opens a window the browser lacks (`SendDoUseItem`, `CWndInventory`): class change 10425 (whose
  * server handler is off), guild name 10463, Custody 15083, hair 26410 and face 26411 coupons, the character seal 26475 and
- * 26476, pet naming 20039, the pet tamer's 21030 and 21031, pet hatch 21036, pet life 21034, pet food 21037 and its mill
- * 21038. (2026-11-05: the maps, the batteries and Awakening Protection are used, with their boxes; the name change, the
+ * 26476. (2026-11-05: the maps, the batteries and Awakening Protection are used, with their boxes; the name change, the
  * sex change, the transmute, the party summon, the element change, the tickets and the monster summon have their
- * windows, `windowOf` of itemWindows.ts.)
+ * windows, `windowOf` of itemWindows.ts. 2026-11-09, pets R3: pet naming 20039, the pet tamer's 21030 and 21031, pet
+ * hatch 21036, pet life 21034, pet food 21037 and its mill 21038 have their windows or their packet, petCareWindows.ts.)
  */
 const WINDOW_IDS: ReadonlySet<number> = new Set([
-  10425, 10463, 15083, 26410, 26411, 26475, 26476, 20039, 21030, 21031, 21036, 21034, 21037, 21038,
+  10425, 10463, 15083, 26410, 26411, 26475, 26476,
 ]);
 /** The collector's batteries: the normal one (`TID_GAME_BETTERY_DESC`) and the cash ones (`TID_GAME_CACHE_BETTERY_DESC`). */
 const NORMAL_BATTERY = 26453;
@@ -63,12 +78,15 @@ export function checkConfirm(prop: WebItemProp): string | null {
 /**
  * The object a box's OK names in DOUSEITEM: `CWndCommItemDlg`'s `m_dwCtrlId` is a battery's own item id
  * (DPClient.cpp:10652-10662), the Funny Coin's YES sends NULL_ID (WndField.cpp:23590-23600), Awakening Protection's the
- * player (WndPetSys.cpp:2955); the rest keep the focus of the first press.
+ * player (WndPetSys.cpp:2955), and so the vis, the vis key and Pet Magic (2026-11-09, pets B1: `m_objid`
+ * `g_pPlayer->GetId()`, `CheckConfirm`, WndManager.cpp:7658-7685; `SendEquipPacket`, WndPetSys.cpp:2949-2952); the rest
+ * keep the focus of the first press.
  */
 export function confirmedTarget(prop: WebItemProp, focus: number, ownId: number): number {
   if (prop.id === NORMAL_BATTERY || CASH_BATTERIES.has(prop.id)) return prop.id;
   if (prop.kind2 === IK2_TOCASH) return 0xffffffff;
   if (prop.id === AWAKESAFE) return ownId;
+  if (prop.kind3 === IK3_VIS || prop.id === II_SYS_SYS_VIS_KEY01 || prop.id === II_SYS_SYS_SCR_PET_MAGIC) return ownId;
   // 2026-11-05: CWndRestateConfirm's SetInformation names its parameter as its member (WndField.cpp:25519-25524), which
   // stays 0: its YES sends 0, not the focus
   if (RESTATE.has(prop.id)) return 0;
@@ -82,8 +100,13 @@ export type UseOf = 'use' | 'window' | 'needsItem' | 'noWindow' | 'none';
 export function useOf(prop: WebItemProp): UseOf {
   if (prop.part >= 0) return 'none';
   if (prop.exeTarget === EXT_ITEM || UPGRADE_IK3.has(prop.kind3)) return 'needsItem';
-  if (WINDOW_IDS.has(prop.id) || WINDOW_IK3.has(prop.kind3) || prop.exeTarget === EXT_PET) return 'noWindow';
+  // 2026-11-09 (pets B1): the vis (IK3_VIS 138) is used now: `CheckConfirm`'s box with a buff pet out, then DOUSEITEM,
+  // which the server puts in the buff pet (`CUser::OnDoUseItem`, `WORLDSERVER/User.cpp:3006-3024`)
+  if (WINDOW_IDS.has(prop.id)) return 'noWindow';
   if (windowOf(prop) !== null) return 'window'; // 2026-11-05: itemWindows.ts
+  const pet = petItemUse(prop); // 2026-11-09 (pets R3): the pet's windows; its food is sent at once
+  if (pet !== null) return pet === 'feed' ? 'use' : 'window';
+  if (prop.kind3 === IK3_PET || prop.kind3 === IK3_EGG) return 'use'; // 2026-11-09: pets P1, R2
   return USE_KINDS.has(prop.kind2) || prop.skillTime !== undefined ? 'use' : 'none';
 }
 

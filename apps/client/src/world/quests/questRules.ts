@@ -4,18 +4,20 @@
 //                                                            met (the time, the patrol, each kill, the skill, the gold,
 //                                                            the level, the EXP percent, the state, the completed quests,
 //                                                            the one-of items, each end item); the dialogue flag is not
-//                                                            a term
+//                                                            a term; 2026-11-09 (pets R3): the summoned raised pet's
+//                                                            EXP percent and level (:9365-9381)
 //   MakeQuestConditionItems   _Interface/WndQuest.cpp:1887-2352 the detail's and the tracker's rows, only at the last
 //                                                            state: the time, the kills, the items, the patrol, the
 //                                                            one-of items, the dialogue, then "Meet <NPC>"; a met row
 //                                                            is wrapped grey (MakeString, :2354)
 //   CWndQuestDetail rewards   WndQuest.cpp:1795-1875          the reward lines, "????" when hidden
 //
-// The terms the browser cannot judge (party, guild, pet, disguise, karma, chaotic: `WebQuest.unsupported`) are never met.
-// Their rows, and the skill row, are not drawn (plan decision 6).
+// The terms the browser cannot judge (party, guild, disguise, karma, chaotic: `WebQuest.unsupported`) are never met.
+// Their rows, and the skill row, are not drawn (plan decision 6). The pet terms have no row in Neuz either.
 
-import type { OwnQuest } from '@flyffweb/protocol';
+import type { OwnQuest, PetData } from '@flyffweb/protocol';
 import { QS_END } from '@flyffweb/protocol';
+import { petWholeExpPercent } from '../pets/petStatus';
 import type { WebQuest, WebQuestGoal, WebQuestItem } from '@flyffweb/formats';
 import type { Texts } from '../gameData';
 import { formatText } from '../hud/format';
@@ -33,6 +35,33 @@ export interface QuestOwner {
   skillLevel(skill: number): number;
   itemCount(item: number): number;
   completed: readonly number[];
+  /**
+   * 2026-11-09 (pets R3): the summoned raised pet (`CMover::GetPet`, `Mover.cpp:10951-10957`): its level (`PL_*`, 0 the
+   * egg) and `CPet::GetExpPercent` (`pet.h:139`); null or absent with none out.
+   */
+  pet?: QuestPet | null;
+}
+
+/** The summoned raised pet as the quest terms read it. */
+export interface QuestPet {
+  level: number;
+  expPercent: number;
+}
+
+/** 2026-11-09 (pets R3): the own pet item's pet (`GetPet`) as the terms read it, null for none. */
+export function questPet(pet: Pick<PetData, 'level' | 'exp'> | undefined): QuestPet | null {
+  return pet === undefined ? null : { level: pet.level, expPercent: petWholeExpPercent(pet) };
+}
+
+/**
+ * 2026-11-09 (pets R3): the raised pet's terms, to begin (`__IsBeginQuestCondition`, Mover.cpp:9956-9970;
+ * `__IsNextLevelQuest`, :10323-10337) or to end (`__IsEndQuestCondition`, :9365-9381): an EXP percent of 0 and a level of
+ * -1 are no term (absent here); otherwise a pet must be out with `GetExpPercent() >= exp` and `GetLevel() == level`.
+ */
+export function petTermsMet(pet: QuestPet | null | undefined, exp: number | undefined, level: number | undefined): boolean {
+  if (exp !== undefined && exp !== 0 && (pet == null || pet.expPercent < exp)) return false;
+  if (level !== undefined && level !== -1 && (pet == null || pet.level !== level)) return false;
+  return true;
 }
 
 export interface QuestNames {
@@ -80,6 +109,7 @@ export function isEndQuestCondition(quest: OwnQuest, prop: WebQuest, owner: Ques
     (owner.level < prop.endLevel[0] || owner.level > prop.endLevel[1])) return false;
   if (prop.endExpPercent !== undefined && (prop.endExpPercent[0] !== 0 || prop.endExpPercent[1] !== 0) &&
     (owner.expPercent < prop.endExpPercent[0] || owner.expPercent > prop.endExpPercent[1])) return false;
+  if (!petTermsMet(owner.pet, prop.endPetExp, prop.endPetLevel)) return false; // 2026-11-09 (pets R3)
   if ((prop.endState ?? 0) === 0 ? quest.state !== lastState(prop) : quest.state !== prop.endState) return false;
   const done = prop.endCompleteQuests;
   if (done !== undefined && done.oper !== 0) {

@@ -106,6 +106,35 @@ describe('readPropQuest (CProject::LoadPropQuest, Project.cpp:1368-2517)', () =>
     expect(quest!.unsupported).toEqual(['party']);
   });
 
+  it("reads the raised pet's terms and the pet level-up reward of the Pet Tamer's quests (2026-11-09)", () => {
+    // QUEST_PETTAME02's setting (D to C, propQuest.inc:17635-17642)
+    const [quest] = read(`QUEST_OLD
+    {
+      setting
+      {
+        SetCharacter( "MaFl_PetTamer" );
+        SetBeginCondPetLevel( 1 );
+        SetEndCondPetLevel( 1 );
+        SetEndCondPetExp( 100 );
+        SetEndRewardPetLevelup();
+      }
+    }`);
+    expect(quest).toMatchObject({ beginPetLevel: 1, endPetLevel: 1, endPetExp: 100, rewards: { petLevelup: true } });
+    // a pet level is not a term the browser cannot judge, and level 0 (the egg) is a real term
+    expect(quest).not.toHaveProperty('unsupported');
+    expect(quest).not.toHaveProperty('beginUnsupported');
+    expect(read('QUEST_OLD { setting { SetBeginCondPetLevel( 0 ); SetBeginCondPetExp( 50 ); } }')[0])
+      .toMatchObject({ beginPetLevel: 0, beginPetExp: 50 });
+  });
+
+  it('the pet terms at their defaults (-1 for a level, 0 for EXP) are no term; a later statement wins', () => {
+    const [quest] = read(`QUEST_OLD { setting {
+      SetBeginCondPetLevel( 2 ); SetBeginCondPetLevel( -1 ); SetBeginCondPetExp( 0 );
+      SetEndCondPetLevel( 3 ); SetEndCondPetLevel( -1 ); SetEndCondPetExp( 0 );
+    } }`);
+    expect(quest).toEqual({ id: 900, title: '', head: 0, states: {} });
+  });
+
   it('a title-only entry is a folder with no conditions', () => {
     expect(read('QUEST_OLD { SetTitle( "1st Job Change" ); setting { SetHeadQuest( 6001 ); } }'))
       .toEqual([{ id: 900, title: '1st Job Change', head: 6001, states: {} }]);

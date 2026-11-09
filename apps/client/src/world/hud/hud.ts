@@ -106,6 +106,9 @@ export class Hud {
         case 'died':
           this.line('TID_GAME_DEATH');
           break;
+        case 'pet': // pets R1: the own pet named (OnSetPetName, DPClient.cpp:18465)
+          if (event.change.kind === 'named') this.line('TID_GAME_NAME_PET_S00');
+          break;
         case 'jobChanged': { // Piece 7 M2: OnSetJobSkill's line, `GetJobString()` in it (DPClient.cpp:3646-3647)
           const entry = this.data.texts.get('TID_EVE_CHGJOB');
           if (entry !== undefined && entry.text !== '') this.messages.add(formatText(entry.text, [event.title]), entry.color);

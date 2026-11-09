@@ -9,6 +9,7 @@ import type { WebMover } from '@flyffweb/formats';
 import type { Vec3 } from '@flyffweb/protocol';
 import type { ModelBox } from '@flyffweb/scene';
 import type { OwnState } from '../OwnState';
+import { isClientMade } from '../pets/raisedPet';
 import type { ActionMover } from '../sim/ActionMover';
 import { getDegree, wrapAngle } from '../sim/ActionMover';
 import type { Ground } from '../sim/collision';
@@ -765,10 +766,12 @@ export class AttackLoop {
   /**
    * `CDPClient::OnQueryGetDestObj` (`Neuz/DPClient.cpp:8985-8991`): the server's copy of the player arrived first and
    * asks what it follows; while the own mover follows an object (`!IsEmptyDestObj()`), GETDESTOBJ answers with it.
+   * 2026-11-09 (pets review): `m_idDest` is the object's `GetId()` (`SetDestObj( CCtrl* )`, `Mover.h:1001`), `NULL_ID` for a
+   * raised pet the client made, and `IsEmptyDestObj` is `m_idDest == NULL_ID` (:1011): following one answers nothing.
    */
   onQueryGetDestObj(fromId: number): void {
     const dest = this.world.self()?.dest?.targetId ?? null;
-    if (dest !== null) this.session.sendGetDestObj(fromId, dest);
+    if (dest !== null && !isClientMade(dest)) this.session.sendGetDestObj(fromId, dest);
   }
 
   /**

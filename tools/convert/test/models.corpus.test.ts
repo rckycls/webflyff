@@ -144,7 +144,14 @@ async function runSweep(): Promise<Sweep> {
       const skeleton = choice.kind === 'chr' ? skeletons.get(choice.chr)! : null;
       const glb = await buildModelGlb(model, skeleton, (texture) => `textures/${texture.toLowerCase()}.ktx2`);
       await validate(name, glb);
-      checkExtras('models', name, glb, { bbMin: Array.from(model.bbMin), bbMax: Array.from(model.bbMax) });
+      // the box; a weapon's sword-trail points when its first two are set (2026-11-09); the event points when the file
+      // has any (pets), all as stored
+      const forced = model.forces.length >= 2 && model.forces[0]![0] !== 0 && model.forces[1]![0] !== 0;
+      checkExtras('models', name, glb, {
+        bbMin: Array.from(model.bbMin), bbMax: Array.from(model.bbMax),
+        ...(forced ? { forces: model.forces.map((v) => Array.from(v)) } : {}),
+        ...(model.events.length > 0 ? { events: model.events.map((v) => Array.from(v)) } : {}),
+      });
       s.converted.models++;
     } catch (error) {
       s.failures.push(`${name}: ${error instanceof Error ? error.message : String(error)}`);

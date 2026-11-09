@@ -12,7 +12,8 @@ import { approachFlight, getDegreeX } from './flightCollision';
  * (`Source/_Common/Mover.h:468-487`) and `CMover::ProcessMove` (`Source/_Common/MoverMove.cpp:344-450`), with
  * Neuz's `__SYNC_1217`, `__BS_ADJUST_SYNC` and `__BS_FIX_ARRIVEPOS_ALGO` on (`Source/Neuz/VersionCommon.h:154,246,255`).
  * Ground only: fliers (`IsFly`, `OnMoverMoved2`, `ActionForceSet2`, `HalfForceSet`), ships (`__IAOBJ0622` is off)
- * and an egg's speed (`AII_EGG`) are left out. Floats as in `ActionMover.ts`: `f32` at every float store.
+ * are left out; an egg's speed (`AII_EGG`) and its AI are the raised pet's (`speedOwner`, `ai`; pets R1). Floats as in
+ * `ActionMover.ts`: `f32` at every float store.
  */
 
 const f32 = Math.fround;
@@ -131,6 +132,16 @@ export interface SimMover {
    * (the attack loop, whose hold it ends) sets it.
    */
   releaseButton?: () => void;
+  /**
+   * 2026-11-09 (pets R1): `CObj::ProcessAI` (`Obj.cpp:286-290`), the mover's AI, which `CMover::Process` runs every step
+   * right after `ProcessMove` (`Mover.cpp:3794-3802`): a raised pet's `CAIEgg`. The browser runs no other mover's AI.
+   */
+  ai?: () => void;
+  /**
+   * 2026-11-09 (pets R1): an `AII_EGG` mover's owner while it is in view: `CMover::GetSpeed` gives the owner's speed for
+   * the pet's (`pOwner->GetSpeed( pOwner->m_pActMover->m_fSpeed )`, `MoverParam.cpp:3275-3285`), before anything of its own.
+   */
+  speedOwner?: () => SimMover | undefined;
 }
 
 const copy = (v: Vec3): Vec3 => [v[0], v[1], v[2]];
@@ -232,6 +243,8 @@ export function buffedSpeed(speed: number, adj: number): number {
 
 /** `CMover::GetSpeed( m_pActMover->m_fSpeed )` (`MoverParam.cpp:3248-3289`): `m_fCrrSpd` while it is set. */
 function getSpeed(m: SimMover): number {
+  const owner = m.speedOwner?.(); // pets R1: an egg runs at its owner's speed
+  if (owner !== undefined) return getSpeed(owner);
   const corrected = m.corr?.speed ?? 0;
   return corrected !== 0 ? corrected : f32(m.profileSpeed?.() ?? m.act.body.speed);
 }
@@ -533,14 +546,15 @@ export function isEmptyDest(m: SimMover): boolean {
 /**
  * One 60 Hz step of `CMover::Process` (`Mover.cpp:3488-3906`) for any mover: `m_nCorr` counted down (:3524-3525),
  * `ProcessMove`, then `act.step()` at `GetSpeed`, and `OnActCollision` where the step met something (:3899-3905).
- * `find` is `prj.GetCtrl` for the followed object; `ground` goes to `act.step`. Left out of `Process`: the active
- * mover's `SetDestObj` sends, `ProcessAI`, `ProcessMovePattern` and the drawing.
+ * `find` is `prj.GetCtrl` for the followed object; `ground` goes to `act.step`. `ProcessAI` runs the mover's `ai` (a
+ * raised pet's, pets R1). Left out of `Process`: the active mover's `SetDestObj` sends, `ProcessMovePattern` and the drawing.
  */
 export function stepMover(m: SimMover, find: (objectId: number) => SimMover | undefined, ground?: Ground): void {
   bind(m);
   if (m.nCorr !== undefined && m.nCorr > 0) m.nCorr--;
   if (m.approachWait !== undefined && m.approachWait > 0) m.approachWait--;
   processMove(m, find);
+  m.ai?.(); // pets R1: ProcessAI, after ProcessMove (Mover.cpp:3794-3802)
   const body = m.act.body;
   const own = body.speed;
   const speed = getSpeed(m);

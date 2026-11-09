@@ -243,6 +243,19 @@ export function encodeEndSkillQueue(): Uint8Array {
 export type WorldPacket =
   | { type: 'teleporter'; key: string; index: number }
   | { type: 'npcBuff'; key: string }
+  /** 2026-11-09 (pets R2): the own raised pet sent back (`SendPetRelease`). */
+  | { type: 'petRelease' }
+  /** 2026-11-09 (pets R3): the raised pet's care (world/pets.ts), by the encoders' parameter names. */
+  | { type: 'usePetFeed'; feedObjectId: number }
+  | { type: 'makePetFeed'; materialObjectId: number; toolObjectId: number; count: number }
+  | { type: 'petTamerMistake' | 'petTamerMiracle'; scrollObjectId: number }
+  | { type: 'feedPocketInactive' | 'clearPetName' }
+  /** 2026-11-09 (pets B1): the buff pet window's vis out and swap (world/pets.ts). */
+  | { type: 'removeVis'; slot: number }
+  | { type: 'swapVis'; slot1: number; slot2: number }
+  /** 2026-11-09 (pets R4): the Pet Tamer's pet trade, egg exchange and awakening cancel (world/pets.ts). */
+  | { type: 'quePetResurrection' | 'pickupPetAwakeningCancel'; itemObjectId: number }
+  | { type: 'transformItem'; transform: number; parts: Array<{ objectId: number; count: number }> }
   | { type: 'setPlayerName'; playerId: number; name: string }
   | { type: 'enchant' | 'piercing' | 'randomScroll'; targetId: number; materialId: number }
   | { type: 'doUseItemTarget'; materialId: number; targetId: number }
@@ -405,6 +418,48 @@ function decodeClientPacket(r: ArReader): WorldPacket {
       const key = r.string(64); r.expectEnd();
       if (key.length === 0) throw new ProtocolError('Invalid NPC key');
       return { type: 'npcBuff', key };
+    }
+    case PacketType.PET_RELEASE: // 2026-11-09 (pets R2): the type alone
+      r.expectEnd();
+      return { type: 'petRelease' };
+    case PacketType.USE_PET_FEED: { // 2026-11-09 (pets R3)
+      const feedObjectId = r.u32(); r.expectEnd();
+      return { type: 'usePetFeed', feedObjectId };
+    }
+    case PacketType.MAKE_PET_FEED: {
+      const materialObjectId = r.u32(), toolObjectId = r.u32(), count = r.i16(); r.expectEnd();
+      return { type: 'makePetFeed', materialObjectId, toolObjectId, count };
+    }
+    case PacketType.PET_TAMER_MISTAKE: case PacketType.PET_TAMER_MIRACLE: {
+      const scrollObjectId = r.u32(); r.expectEnd();
+      return { type: packetType === PacketType.PET_TAMER_MISTAKE ? 'petTamerMistake' : 'petTamerMiracle', scrollObjectId };
+    }
+    case PacketType.FEED_POCKET_INACTIVE: case PacketType.CLEAR_PET_NAME:
+      r.expectEnd();
+      return { type: packetType === PacketType.FEED_POCKET_INACTIVE ? 'feedPocketInactive' : 'clearPetName' };
+    case PacketType.VISPET_REMOVEVIS: { // 2026-11-09 (pets B1)
+      const slot = r.i32(); r.expectEnd();
+      return { type: 'removeVis', slot };
+    }
+    case PacketType.VISPET_SWAPVIS: {
+      const slot1 = r.i32(), slot2 = r.i32(); r.expectEnd();
+      return { type: 'swapVis', slot1, slot2 };
+    }
+    case PacketType.QUE_PETRESURRECTION: case PacketType.PICKUP_PET_AWAKENING_CANCEL: { // 2026-11-09 (pets R4)
+      const itemObjectId = r.u32(); r.expectEnd();
+      return { type: packetType === PacketType.QUE_PETRESURRECTION ? 'quePetResurrection' : 'pickupPetAwakeningCancel', itemObjectId };
+    }
+    case PacketType.TRANSFORM_ITEM: { // CTransformStuff::Serialize's loading side (pet.cpp:705-718), each part 8 bytes
+      const transform = r.i32(), size = r.u32();
+      if (size * 8 !== r.remaining()) throw new ProtocolError('Invalid TRANSFORM_ITEM size');
+      const parts: Array<{ objectId: number; count: number }> = [];
+      for (let i = 0; i < size; i++) {
+        const objectId = r.u32(), count = r.i16();
+        r.u16(); // the struct's padding
+        parts.push({ objectId, count });
+      }
+      r.expectEnd();
+      return { type: 'transformItem', transform, parts };
     }
     case PacketType.REMOVEQUEST: {
       const questId = r.u32(); r.expectEnd();

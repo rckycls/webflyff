@@ -7,6 +7,28 @@ export const PacketType = {
   TELEPORTER: 0x88100100,
   /** 2026-11-05: `PACKETTYPE_NPC_BUFF`, Buff Pang's menu entry (`CDPClient::SendNPCBuff`, `MsgHdr.h:666`). */
   NPC_BUFF: 0xf000f813,
+  /** 2026-11-09 (pets R2): `PACKETTYPE_PET_RELEASE`, the own raised pet sent back from its menu (`MsgHdr.h:626`). */
+  PET_RELEASE: 0xf000f600,
+  /**
+   * 2026-11-09 (pets R3): the raised pet's care (`MsgHdr.h:627-631`, `:775`; world/pets.ts): the food, the tamer's mistake
+   * and miracle, the feed pocket's off-switch, the food mill, and the tamer's rename cancel (`__PET_1024`).
+   */
+  USE_PET_FEED: 0xf000f601,
+  PET_TAMER_MISTAKE: 0xf000f602,
+  PET_TAMER_MIRACLE: 0xf000f603,
+  FEED_POCKET_INACTIVE: 0xf000f604,
+  MAKE_PET_FEED: 0xf000f605,
+  CLEAR_PET_NAME: 0x8fffff01,
+  /** 2026-11-09 (pets B1): the buff pet window's vis out and vis swap (`MsgHdr.h:804-805`, `__PETVIS`; world/pets.ts). */
+  VISPET_REMOVEVIS: 0x88000000,
+  VISPET_SWAPVIS: 0x88000001,
+  /**
+   * 2026-11-09 (pets R4): the Pet Tamer's rare windows (`MsgHdr.h:681`, `:768`, `:771`; world/pets.ts): the pet trade for a
+   * revival scroll piece (`__JEFF_11`), the egg exchange and the pick-up pet's awakening cancel (`__PET_0519`).
+   */
+  QUE_PETRESURRECTION: 0x70000009,
+  TRANSFORM_ITEM: 0x8fff000d,
+  PICKUP_PET_AWAKENING_CANCEL: 0x8fff000f,
   /** 2026-11-05: the upgrade cursor's packets (`MsgHdr.h`; world/upgrade.ts). */
   ENCHANT: 0xf000b024,
   PIERCING: 0xf000b025,
@@ -291,6 +313,19 @@ export const MessageType = {
   DEL_OBJ: 0x00f1,
   REPLACE: 0x00f2,
   WORLD_READINFO: 0x9910,
+  // 2026-11-09 (pets M0): the pets (`MsgHdr.h:1194-1201`, `:1237`, `:1271`, `:1309-1310`; world/pets.ts)
+  PET_CALL: 0x0110,
+  PET_RELEASE: 0x0111,
+  PET_LEVELUP: 0x0112,
+  PET_SET_EXP: 0x0113,
+  PET: 0x0114,
+  PET_STATE: 0x0115,
+  PET_FEED: 0x0116,
+  PET_MILL: 0x0117,
+  QUE_PETRESURRECTION_RESULT: 0x0203,
+  SET_PET_NAME: 0x9100,
+  MOVER_CHANGESFX: 0x8800,
+  VISPET_ACTIVATE: 0x8801,
 } as const;
 
 /**
