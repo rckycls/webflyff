@@ -44,6 +44,11 @@ const IK3_EGG = 120;
 const RETURN_SCROLL = 10469;
 /** 2026-11-05: `II_SYS_SYS_SCR_PARTYSUMMON`: a party member's summon buff, whose double-click asks to go to the leader. */
 const PARTY_SUMMON = 26202;
+/**
+ * 2026-11-09 (pets R3): `II_SYS_SYS_SCR_PET_FEED_POCKET`: the feed pocket's buff, whose double-click turns it off
+ * (`SendFeedPocketInactive`, `CWndWorld::OnLButtonDblClk`, `WndWorld.cpp:7280-7283`).
+ */
+const FEED_POCKET = 21035;
 /** Two taps of a finger this near are a double-click (Windows' own double-click time). */
 const DOUBLE_TAP_MS = 500;
 /** An item buff of `dwSkillTime` 999999999 shows no time (`WndWorld.cpp:9318`). */
@@ -104,7 +109,7 @@ interface Look {
   blinkUnderMs: number;
   /** The skill buffs' seconds on the icon, or an item's time in units under it, or nothing. */
   label: { kind: 'seconds' | 'time'; text: string } | null;
-  /** The Scroll of Return's: a double-click goes back. */
+  /** The Scroll of Return's: a double-click goes back (the party summon's and, pets R3, the feed pocket's do their own). */
   goesBack: boolean;
 }
 const PER_ROW = 7;
@@ -180,6 +185,8 @@ export interface BuffStatusOptions {
   onReturnScroll?: () => void;
   /** 2026-11-05: a double-click (or a double tap) on the party summon's buff icon. */
   onPartySummon?: () => void;
+  /** 2026-11-09 (pets R3): a double-click (or a double tap) on the feed pocket's buff icon. */
+  onFeedPocket?: () => void;
   /** The taps' clock (ms). */
   now?: () => number;
   /** A text by its TID, for the time units and the tooltips (the English fallbacks when absent). */
@@ -324,7 +331,7 @@ export class BuffStatus {
         tooltip: () => [item.name, ...(buff.totalMs > 0 ? [clock(buff.leftMs)] : [])],
         blink: buff.id === RETURN_SCROLL ? 'always' : 'under', blinkLeftMs: buff.totalMs > 0 ? buff.leftMs : Infinity,
         blinkUnderMs: BLINK_MS, label: timed && buff.leftMs > 0 ? { kind: 'time', text: this.units(buff.leftMs) } : null,
-        goesBack: buff.id === RETURN_SCROLL || buff.id === PARTY_SUMMON,
+        goesBack: buff.id === RETURN_SCROLL || buff.id === PARTY_SUMMON || buff.id === FEED_POCKET,
       });
     }
     return looks;
@@ -420,8 +427,15 @@ export class BuffStatus {
       icon.append(label);
     }
     icon.addEventListener('pointerdown', (event) => this.startDrag(event as PointerEvent));
-    if (look.goesBack) this.goesBack(icon, look.key.includes(`:${PARTY_SUMMON}:`) ? () => this.options.onPartySummon?.() : () => this.options.onReturnScroll?.());
+    if (look.goesBack) this.goesBack(icon, this.doubleClickOf(look.key));
     return icon;
+  }
+
+  /** What a double-click on the icon of `key` does: the party summon's, the feed pocket's (pets R3) or the Scroll of Return's. */
+  private doubleClickOf(key: string): () => void {
+    if (key.includes(`:${PARTY_SUMMON}:`)) return () => this.options.onPartySummon?.();
+    if (key.includes(`:${FEED_POCKET}:`)) return () => this.options.onFeedPocket?.();
+    return () => this.options.onReturnScroll?.();
   }
 
   /**

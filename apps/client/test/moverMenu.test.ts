@@ -33,6 +33,15 @@ describe('npcMenuEntries (CWndWorld::ShowMoverMenu, WndWorld.cpp:6649-6684)', ()
     expect(soleEntry({ key: 'p', name: 'P', menus: [74] }, npcMenuEntries({ key: 'p', name: 'P', menus: [74] }, texts, false))).toBe(74);
   });
 
+  it("the Pet Tamer's food mill and rename cancel are enabled; R4's egg exchange, resurrections and awakening cancel greyed (pets R3)", () => {
+    // MaFl_PetTamer (Resource/character.inc:6164-6188): DIALOG, FOODMILL 58, EGG01 96, RES 77, RES01 78, AWAK_CANCEL 104, RENAME_CANCEL 120
+    const tamer: WebNpc = { key: 'MaFl_PetTamer', name: 'Pet Tamer', menus: [0, 58, 96, 77, 78, 104, 120] };
+    const entries = npcMenuEntries(tamer, TEXTS, false);
+    expect(entries.map((entry) => entry.id)).toEqual([0, 58, 77, 78, 96, 104, 120]);
+    expect(entries.filter((entry) => entry.enabled).map((entry) => entry.id)).toEqual([MMI.DIALOG, MMI.PET_FOODMILL, MMI.RENAME_CANCEL]);
+    expect([MMI.PET_FOODMILL, MMI.RENAME_CANCEL]).toEqual([58, 120]);
+  });
+
   it('Arena entry is left out for a base job', () => {
     const npc: WebNpc = { key: 'a', name: 'A', menus: [0, 80] };
     expect(npcMenuEntries(npc, TEXTS, true).map((entry) => entry.id)).toEqual([0]);
