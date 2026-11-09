@@ -56,13 +56,18 @@ import { itemIconOf } from '../pets/petStatus';
 
 /** The windows of Piece 4 a press on the task bar opens. */
 export type TaskBarWindow = 'character' | 'status' | 'skills' | 'inventory' | 'chat' | 'navigator' | 'worldmap' | 'option'
-  | 'quests' | 'party' | 'messenger';
+  | 'quests' | 'party' | 'messenger' | 'vendor';
 /** `APP_QUEST_EX_LIST` (Resource/ResData.h), the quest window (Piece 7 M1), Q (FuncApplet.cpp:229). */
 const APP_QUEST_EX_LIST = 859;
 /** `APP_PARTY` (Resource/ResData.h:100), the party window and its quick view (Piece 7 M4), P (FuncApplet.cpp:233). */
 const APP_PARTY = 195;
 /** 2026-11-10: `APP_MESSENGER_EX` (Resource/ResData.h:207), the Messenger (friends-say), E (FuncApplet.cpp:260). */
 const APP_MESSENGER_EX = 302;
+/**
+ * 2026-11-10: `APP_VENDOR_REVISION` (Resource/ResData.h), the personal shop (docs/superpowers/specs/2026-11-10-personal-shop-
+ * research.md §2.1), with no hot key (FuncApplet.cpp:223).
+ */
+const APP_VENDOR_REVISION = 591;
 
 /**
  * The applets whose window Piece 4 has, which `ObjectExecutor` opens (or closes) when they are pressed: from the Start
@@ -80,6 +85,7 @@ const WINDOWS: ReadonlyMap<number, TaskBarWindow> = new Map([
   [APP_QUEST_EX_LIST, 'quests'],
   [APP_PARTY, 'party'],
   [APP_MESSENGER_EX, 'messenger'],
+  [APP_VENDOR_REVISION, 'vendor'],
 ]);
 
 /**
@@ -102,6 +108,9 @@ const MENU: ReadonlyArray<{ id: number; text: string }> = [
   { id: AppId.CHARACTER3, text: 'Character' },
   { id: AppId.SKILL3, text: 'Skills' },
   { id: 1003, text: 'Inventory' },
+  // 2026-11-10: CWndTaskMenu's APP_VENDOR_REVISION line, 'Private Shop' (TID_APP_VENDOR), after Inventory and before Skill
+  // (WndTaskBar.cpp:2612-2613)
+  { id: APP_VENDOR_REVISION, text: 'Private Shop' },
   // CWndTaskMenu's APP_QUEST_EX_LIST line, 'Quest Diary' (TID_APP_QUEST, WndTaskBar.cpp:2623)
   { id: APP_QUEST_EX_LIST, text: 'Quest Diary' },
   // CWndTaskMenu's APP_MAP line, 'World Map' (TID_APP_MAP), just before Navigator (WndTaskBar.cpp:2734-2738)

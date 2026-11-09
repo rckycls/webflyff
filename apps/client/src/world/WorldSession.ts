@@ -238,6 +238,8 @@ export class WorldSession {
   sendRemoveFriend(friendId: number): void { this.playingCache()?.send(encodeRemoveFriend(this.ownPlayerId(), friendId)); }
   /** BLOCK `gu` (`SendBlock( gu, g_pPlayer->GetName(), other )`): 1 /wr, 2 /mr, 6 a Confirm already open. */
   sendFriendBlock(gu: number, other: string): void { this.playingCache()?.send(encodeBlock(gu, this.entry.character.name, other)); }
+  /** 2026-11-10: a personal shop packet (world/vendor.ts's encoders: PVENDOR_*, the shop's chat room), as it is. */
+  sendVendor(bytes: Uint8Array): void { this.playingCache()?.send(bytes); }
   private ownPlayerId(): number { return this.entry.character.playerId; }
   readonly stats: SessionStats = { bundles: 0, indexed: 0, skipped: 0, mismatched: 0, unknownPackets: 0, droppedEvents: 0 };
   private phase: Phase = 'opening';

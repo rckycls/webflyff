@@ -230,6 +230,15 @@ export const THEME_FILES: readonly string[] = [
   // and the mail icon (:716), APP_MESSAGE's Send (resdata.inc:23665) and APP_INSTANTMSG's picture (:25074)
   'ButtMsgRight.bmp', 'ButtMessAdd.bmp', 'ButtMessNote.bmp', 'ButtMessengerChannel.bmp', 'ButtMessengerState.bmp',
   'ButtMessengerLevel.bmp', 'ButtMessengerJob.bmp', 'ButtMessengerChar.bmp', 'WndMail.dds', 'ButtSend.bmp', 'WndInstantMsg.tga',
+  // 2026-11-10, the personal shop (docs/superpowers/specs/2026-11-10-personal-shop-research.md §1-§3): APP_VENDOR_REVISION's
+  // Chat (resdata.inc:3716-3880; Reset is above), the keypads' buttons and number boxes of APP_VENDOREX_SELL and
+  // APP_VENDOREX_BUY (:12278, :12977; Plus and Minus are above), the focus arrow (WndRegVend.cpp:91), the mark of a slot
+  // under a carried item (WndVendorCtrl.cpp:49) and the title balloon's three pieces (DialogMsg.cpp:40-42)
+  'ButtChat.BMP', 'ButItemNum0.BMP', 'ButItemNum1.BMP', 'ButItemNum2.BMP', 'ButItemNum3.BMP', 'ButItemNum4.BMP',
+  'ButItemNum5.BMP', 'ButItemNum6.BMP', 'ButItemNum7.BMP', 'ButItemNum8.BMP', 'ButItemNum9.BMP', 'ButItemNum00.BMP',
+  'ButItemNum000.BMP', 'ButItemMin.BMP', 'ButItemMax.BMP', 'ButItemMulti.BMP', 'ButItemDivid.BMP', 'ButItemEqua.BMP',
+  'Window04.bmp', 'WndVenderArrowEx.tga', 'WndPosMark.tga', 'texDialogBox_left.tga', 'texDialogBox_center.TGA',
+  'texDialogBox_right.tga',
 ];
 
 /** 2026-11-05: the cursors of Client/Cursor the browser shows (Neuz.cpp:280-300): the upgrade mode's hammer, CUR_HAMMER. */

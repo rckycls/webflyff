@@ -30,8 +30,12 @@ const ENTRIES: ReadonlyArray<[number, string]> = [
   [31, 'Cheer'], [MMI_INVITE_CAMPUS, 'Request Mentor-Pupil Bond'],
 ];
 
-export function playerMenuEntries(texts: Texts): MenuEntry[] {
-  return ENTRIES.map(([id, english]) => ({
+/** 2026-11-10: MMI_QUERYEQUIP, the one line of a seller's menu (`__CSC_VER12_1`, WndWorld.cpp:6544-6547). */
+const MMI_QUERYEQUIP = 24;
+
+/** `vendor`: the player has an open personal shop, and its menu is "View equipment" alone (greyed here, as before). */
+export function playerMenuEntries(texts: Texts, vendor = false): MenuEntry[] {
+  return ENTRIES.filter(([id]) => !vendor || id === MMI_QUERYEQUIP).map(([id, english]) => ({
     id,
     label: id === MMI_INVITE_CAMPUS ? (texts.get('TID_GAME_MENU_CAMPUS_INVITATION')?.text ?? english) : menuLabel(id, texts, english),
     enabled: id === MMI_INVITE_PARTY || id === MMI_ADD_MESSENGER,

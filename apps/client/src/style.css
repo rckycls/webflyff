@@ -2700,3 +2700,93 @@ fieldset:disabled .btn {
   :is(.hud-messenger, .hud-add-friend, .hud-friend-confirm, .hud-message, .hud-instant-message) :is(input, textarea),
   .hud-messenger .hud-messenger-tab { font-size: 14px; }
 }
+/* 2026-11-10: the personal shop (vendor/personalShop.ts; docs/superpowers/specs/2026-11-10-personal-shop-research.md).
+   The desktop's windows are their resdata.inc entries; the slot control (CWndVendorCtrl::OnDraw, WndVendorCtrl.cpp:157-233)
+   draws each slot's icon at its top left, the name at (+50, +3) in black, the price at (+50, +17) in its colour, the count
+   at the icon's bottom right in 0xff1010ff, all in m_pFontText (Verdana 12 px); WndPosMark.tga on a slot under a carried
+   item. The balloons are texDialogBox's three pieces round the title (DialogMsg.cpp:630-716). */
+.hud-vendor, .hud-vendor-sell, .hud-vendor-buy, .hud-vendor-chat { color: #000000; font: 12px/14px Verdana, Arial, sans-serif; }
+.vendor-slots { overflow: visible; }
+.vendor-slot { position: absolute; }
+.vendor-slot.is-filled { cursor: pointer; }
+.vendor-slot-icon { position: absolute; left: 0; top: 0; width: 32px; height: 32px; transform-origin: top left; }
+.vendor-slot:hover .vendor-slot-icon { transform: scale(1.15); }
+.vendor-slot-icon.is-expired { filter: sepia(1) saturate(5) hue-rotate(-40deg); }
+.vendor-slot-name, .vendor-slot-price, .vendor-slot-count { position: absolute; white-space: nowrap; line-height: 14px; pointer-events: none; }
+.vendor-slot-name { left: 50px; top: 3px; color: #000000; }
+.vendor-slot-price { left: 50px; top: 17px; }
+.vendor-slot-count { right: 150px; top: 19px; color: rgb(16, 16, 255); }
+.vendor-slot.is-carried-over::before { content: ''; position: absolute; left: 0; top: 0; width: 32px; height: 32px; background-image: var(--vendor-mark); pointer-events: none; }
+.vendor-pad-arrow { position: absolute; background-repeat: no-repeat; pointer-events: none; }
+.hud-vendor-sell [data-control='WIDC_SELLNUM'], .hud-vendor-sell [data-control='WIDC_SELLPRI'] { cursor: pointer; }
+/* the chat room's tab control: its texts over the strip of tabs at the bottom (CWndTabCtrl) */
+.vendor-chat-tabs { overflow: hidden; }
+.vendor-chat-pane { position: absolute; left: 0; top: 0; right: 0; bottom: 20px; overflow-y: auto; padding: 6px; box-sizing: border-box; background: #ffffff; white-space: pre-wrap; overflow-wrap: anywhere; }
+.vendor-chat-strip { position: absolute; left: 0; right: 0; bottom: 0; height: 20px; display: flex; gap: 2px; }
+.vendor-chat-tab { flex: 0 0 auto; min-width: 72px; height: 20px; padding: 0 8px; border: 1px solid #8a9bb0; border-radius: 0 0 4px 4px; background: #c8d8ea; color: #ffffff; font: 11px/18px Arial, sans-serif; }
+.vendor-chat-tab[aria-pressed='true'] { background: #ffffff; color: #000000; }
+.vendor-chat-tab[hidden] { display: none; }
+.vendor-chat-text { min-height: 14px; }
+
+.vendor-signs { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.vendor-sign { position: absolute; left: 0; top: 0; height: 32px; pointer-events: none; }
+.vendor-sign[hidden] { display: none; }
+.vendor-sign > div { position: absolute; top: 0; height: 32px; background-repeat: no-repeat; }
+.vendor-sign-left { left: 0; width: 32px; }
+.vendor-sign-center { left: 32px; width: var(--sign-center); background-size: 100% 100%; }
+.vendor-sign-right { left: calc(32px + var(--sign-center)); width: 32px; }
+.vendor-sign-text { position: absolute; left: 32px; top: 10px; white-space: nowrap; font: 12px/14px Verdana, Arial, sans-serif; }
+.vendor-signs[data-phone] .vendor-sign { pointer-events: auto; cursor: pointer; }
+.vendor-signs[data-phone] .vendor-sign-text { top: 8px; font-size: 14px; line-height: 16px; }
+
+/* The phone: the shop is a panel at the left as the NPC shop's, the bag at the right; its keypads are sheets of number
+   fields for the phone keyboard; the chat room a panel over the bag. Every text 14 px or more. */
+.vendor-phone { display: flex; flex-direction: column; gap: 4px; padding: 4px; box-sizing: border-box; font-size: 14px; }
+.vendor-phone-head { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
+.vendor-phone-head label { display: flex; align-items: center; gap: 6px; font-size: 14px; color: #3d5f80; }
+.vendor-phone-head input { flex: 1; min-width: 0; height: 32px; box-sizing: border-box; font-size: 16px; padding: 2px 6px; border: 1px solid #c4bdb4; border-radius: 6px; background: #fffaf6; }
+.vendor-phone-buttons { display: flex; gap: 4px; }
+.vendor-phone button, .vendor-sheet button, .vendor-chat-phone button {
+  min-height: 36px; padding: 2px 8px; border: 1px solid #3232329b; border-radius: 4px; font: 14px Arial, sans-serif;
+  background: linear-gradient(#fffffffA, #969696c8, #00000032); color: #ffffff; text-shadow: 1px 1px #000000;
+}
+.vendor-phone-buttons button { flex: 1; }
+.vendor-phone button[hidden] { display: none; }
+.vendor-phone-hint { margin: 0; flex-shrink: 0; font-size: 14px; line-height: 16px; color: #6b5a44; }
+.vendor-phone-hint:empty { display: none; }
+.vendor-phone-slots { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.vendor-phone-row { display: flex; align-items: center; gap: 6px; min-height: 40px; padding: 2px 4px; border-radius: 4px; background: #fffaf6; box-shadow: inset 0 0 0 1px #e2cfc0; }
+.vendor-phone-row.is-chosen { box-shadow: inset 0 0 0 2px #3d8bd6; }
+.vendor-phone-icon { flex: 0 0 32px; width: 32px; height: 32px; }
+.vendor-phone-icon img { width: 32px; height: 32px; }
+.vendor-phone-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.vendor-phone-text .vendor-slot-name, .vendor-phone-text .vendor-slot-price { position: static; font-size: 14px; line-height: 17px; overflow: hidden; text-overflow: ellipsis; }
+.vendor-phone-row:not(.is-filled) .vendor-slot-name { color: #8c7b66; }
+.vendor-sheet { display: flex; flex-direction: column; gap: 6px; padding: 6px; box-sizing: border-box; font-size: 14px; }
+.vendor-sheet-row { display: flex; align-items: center; gap: 6px; font-size: 14px; color: #3d5f80; }
+.vendor-sheet-row > span:first-child { flex: 0 0 86px; }
+.vendor-sheet-row input { flex: 1; min-width: 0; height: 34px; box-sizing: border-box; font-size: 16px; padding: 2px 6px; border: 1px solid #c4bdb4; border-radius: 6px; background: #fffaf6; text-align: right; }
+.vendor-sheet-row output { flex: 1; text-align: right; font-size: 14px; color: #000000; }
+.vendor-sheet-minmax { display: flex; gap: 4px; }
+.vendor-sheet-buttons { display: flex; gap: 8px; justify-content: center; margin-top: auto; }
+.vendor-sheet-buttons button { min-width: 96px; min-height: 40px; }
+.vendor-chat-phone { display: flex; flex-direction: column; gap: 4px; padding: 4px; box-sizing: border-box; font-size: 14px; }
+.vendor-chat-phone .vendor-chat-tabs { position: relative; flex: 1; min-height: 0; }
+.vendor-chat-phone .vendor-chat-strip { height: 32px; }
+.vendor-chat-phone .vendor-chat-pane { bottom: 32px; font-size: 14px; line-height: 17px; }
+.vendor-chat-phone .vendor-chat-tab { height: 32px; font-size: 14px; line-height: 28px; }
+.vendor-chat-users { flex-shrink: 0; max-height: 40px; overflow-y: auto; font-size: 14px; color: #404040; }
+.vendor-chat-users > div { display: inline; }
+.vendor-chat-users > div:not(:last-child)::after { content: ', '; }
+.vendor-chat-line { display: flex; gap: 4px; flex-shrink: 0; }
+.vendor-chat-line input { flex: 1; min-width: 0; height: 36px; box-sizing: border-box; font-size: 16px; padding: 2px 6px; border: 1px solid #c4bdb4; border-radius: 6px; }
+@media (max-width: 1000px) and (pointer: coarse) {
+  .hud-vendor[data-mobile-window] { left: 12px !important; right: auto; top: 8px !important; transform: none !important; height: calc(100% - var(--hud-taskbar-height, 48px) - 16px) !important; width: calc(100% - var(--bag-window-width, 60%) - 36px) !important; border-radius: 6px; background: repeating-linear-gradient(#fdf5ee 0 2px, #f6e6dc 2px 4px); box-shadow: inset 0 0 0 2px #dba98c, 0 2px 8px #0005; overflow: hidden; }
+  .hud-vendor-chat[data-mobile-window] { left: auto !important; right: 12px; top: 8px !important; transform: none !important; height: calc(100% - var(--hud-taskbar-height, 48px) - 16px) !important; width: var(--bag-window-width, 50%) !important; z-index: 61 !important; border-radius: 6px; background: repeating-linear-gradient(#fdf5ee 0 2px, #f6e6dc 2px 4px); box-shadow: inset 0 0 0 2px #dba98c, 0 2px 8px #0005; overflow: hidden; }
+  :is(.hud-vendor, .hud-vendor-chat)[data-mobile-window] > .hud-window-frame { display: none; }
+  :is(.hud-vendor, .hud-vendor-chat)[data-mobile-window] > .hud-window-title { height: 28px !important; font-size: 14px; line-height: 28px; background: linear-gradient(#fdf1e6, #e6c9b4); box-shadow: 0 1px 2px #795431; }
+  :is(.hud-vendor, .hud-vendor-chat)[data-mobile-window] > .hud-window-body { left: 6px !important; top: 34px !important; width: calc(100% - 12px) !important; height: calc(100% - 42px) !important; }
+  :is(.hud-vendor, .hud-vendor-chat)[data-mobile-window] > .hud-window-close { left: auto !important; right: 14px; }
+  .hud-vendor-sell, .hud-vendor-buy, .hud-vendor-sell :is(input, button), .hud-vendor-buy :is(input, button, output) { font-size: 14px; }
+  .world:has(.hud-vendor:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack) { visibility: hidden; }
+}
