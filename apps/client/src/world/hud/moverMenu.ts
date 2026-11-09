@@ -21,8 +21,8 @@ export interface MenuEntry { id: number; label: string; enabled: boolean }
 /** The MMI ids the browser acts on (Resource/defineNeuz.h:92-305). */
 export const MMI = {
   DIALOG: 0, TRADE: 2, GUILDBANKING: 15, PIERCING: 23, PET_STATUS: 49, PET_RELEASE: 50, PET_FOODMILL: 58, NPC_BUFF: 74,
-  ARENA_ENTER: 80, RENAME_CANCEL: 120, SMELT_SAFETY_GENERAL: 134, SMELT_SAFETY_ACCESSORY: 135, SMELT_SAFETY_PIERCING: 136,
-  TELEPORTER: 146,
+  PET_RES: 77, PET_RES01: 78, ARENA_ENTER: 80, PET_EGG01: 96, PET_AWAK_CANCEL: 104, RENAME_CANCEL: 120,
+  SMELT_SAFETY_GENERAL: 134, SMELT_SAFETY_ACCESSORY: 135, SMELT_SAFETY_PIERCING: 136, TELEPORTER: 146,
 } as const;
 /**
  * 2026-11-09 (pets R1): the own raised pet's entries (`MaFl_Pet`, `Resource/character.inc:5880-5891`): its status window
@@ -31,10 +31,15 @@ export const MMI = {
 const PET_ENTRIES: ReadonlySet<number> = new Set([MMI.PET_STATUS, MMI.PET_RELEASE]);
 /**
  * 2026-11-09 (pets R3): the Pet Tamer's entries the browser opens (`MaFl_PetTamer`, `Resource/character.inc:6164-6188`): the
- * food mill (`WndWorld.cpp:5863-5876`) and the rename cancel (`:5237-5240`). The egg exchange, the resurrections and the
- * awakening cancel are R4's.
+ * food mill (`WndWorld.cpp:5863-5876`) and the rename cancel (`:5237-5240`); (pets R4) the egg exchange (`:5098-5113`), the
+ * pet trade for a revival scroll piece (`MMI_PET_RES`, `:4423-4438`) and the pick-up pet's awakening cancel (`:5231-5235`).
+ * `MMI_PET_RES01` (the pieces for a revival scroll) has no case of its own: `OnCommand`'s `default` opens the exchange
+ * script's window (`CWndDialogEvent` with its MMI, `__TRADESYS`, `:5971-5985`; `Resource/Exchange_Script.txt`), which the
+ * browser lacks, so it stays greyed.
  */
-const TAMER_ENTRIES: ReadonlySet<number> = new Set([MMI.PET_FOODMILL, MMI.RENAME_CANCEL]);
+const TAMER_ENTRIES: ReadonlySet<number> = new Set([
+  MMI.PET_FOODMILL, MMI.RENAME_CANCEL, MMI.PET_EGG01, MMI.PET_RES, MMI.PET_AWAK_CANCEL,
+]);
 /** 2026-11-05: the Upgrade Specialist's entries the browser opens (upgradeNpcWindows.ts). */
 const UPGRADE_ENTRIES: ReadonlySet<number> = new Set([
   MMI.PIERCING, MMI.SMELT_SAFETY_GENERAL, MMI.SMELT_SAFETY_ACCESSORY, MMI.SMELT_SAFETY_PIERCING,

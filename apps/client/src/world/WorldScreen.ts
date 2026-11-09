@@ -129,6 +129,8 @@ import { isClientMade, petMoverId } from './pets/raisedPet';
 import { PetWindows } from './pets/petWindows';
 import { PetCareWindows } from './pets/petCareWindows';
 import type { PetCarePacket } from './pets/petCareWindows';
+import { PetTamerWindows } from './pets/petTamerWindows';
+import type { PetTamerPacket } from './pets/petTamerWindows';
 import { petBuffTooltip } from './pets/petStatus';
 import { BuffPetAuras } from './pets/buffPetAura';
 import { BuffPetWindows } from './pets/buffPetWindows';
@@ -422,6 +424,8 @@ export class WorldScreen {
   private petWindows: PetWindows | undefined;
   /** 2026-11-09 (pets R3): the raised pet's care windows: the food mill, the tamer's miracle, the scrolls' boxes. */
   private petCare: PetCareWindows | undefined;
+  /** 2026-11-09 (pets R4): the Pet Tamer's egg exchange, awakening cancel and pet trade (pets/petTamerWindows.ts). */
+  private petTamer: PetTamerWindows | undefined;
   /** 2026-11-09 (pets B1): the buff pet's window, its slots and the vis boxes (pets/buffPetWindows.ts). */
   private buffPet: BuffPetWindows | undefined;
   /** The authorization the chat's suggestions were last given (2026-11-05). */
@@ -789,6 +793,8 @@ export class WorldScreen {
       if (value.type === 'smeltSafety') { this.upgradeNpc?.safety.onResult(value.result); continue; }
       // 2026-11-09 (pets R3): the food mill's answer (OnPetFoodMill, DPClient.cpp:16619-16632)
       if (value.type === 'petMill') { this.petCare?.onMill(value.result, value.count); continue; }
+      // 2026-11-09 (pets R4): the pet trade's answer (OnQuePetResurrectionResult, DPClient.cpp:17423-17431)
+      if (value.type === 'petResurrectionResult') { this.petTamer?.onTradeResult(value.ok); continue; }
       if (value.type === 'setPlayerName') { this.renamePlayer(value.playerId, value.name); continue; }
       if (value.type === 'sexChange') { this.changeLook(world.movers.get(objectId), { index: value.index }); continue; }
       if (value.type === 'changeFace') {
@@ -1317,6 +1323,9 @@ export class WorldScreen {
     const inventoryWindow = new InventoryWindow(this.hudArt!, this.data!, {
       // 2026-11-05: a double-click (or Use) while the Upgrade Specialist's window is open puts the item in it (WndField.cpp:2262-2272)
       use: (id, shift) => {
+        // 2026-11-09 (pets R4): with a Pet Tamer window open its clicks took the item; the double-click does no more (the
+        // egg exchange's bag path returns at once, WndField.cpp:2237-2259)
+        if (this.petTamer?.picking === true) return;
         if (this.takeIntoUpgradeWindow(id, shift === true)) return;
         // 2026-11-09 (pets R3): no use while the food mill is open (CWndInventory::OnChildNotify, WndField.cpp:2589-2592)
         if (this.petCare?.millOpen === true) this.sayRefusal({ kind: 'say', tid: 'TID_SBEVE_NOTUSEITEM' });
@@ -1327,11 +1336,14 @@ export class WorldScreen {
       // 2026-11-05: the upgrade cursor's target, its wait and its cancel
       upgrade: {
         // the upgrade cursor's target, or the element change's or transmute's item (2026-11-05)
-        // 2026-11-09 (pets R3): and the food mill's item
-        active: () => (this.upgrade?.active ?? false) || (this.itemWindows?.picking ?? false) || (this.petCare?.picking ?? false),
+        // 2026-11-09 (pets R3): and the food mill's item; (pets R4) and the Pet Tamer's egg exchange's, awakening cancel's
+        // and pet trade's
+        active: () => (this.upgrade?.active ?? false) || (this.itemWindows?.picking ?? false) || (this.petCare?.picking ?? false)
+          || (this.petTamer?.picking ?? false),
         waitingTarget: () => this.upgrade?.waitingTarget ?? null,
         pick: (id) => (this.itemWindows?.picking === true ? this.itemWindows.pick(id)
-          : this.petCare?.picking === true ? this.petCare.pick(id) : this.upgrade?.pick(id) ?? false),
+          : this.petCare?.picking === true ? this.petCare.pick(id)
+            : this.petTamer?.picking === true ? this.petTamer.pick(id) : this.upgrade?.pick(id) ?? false),
         cancel: () => { this.upgrade?.cancel(); this.itemWindows?.cancelPick(); },
       },
       // 2026-11-05: the items a window holds (SetExtra) and the ticket in use, faded; the hammer in the upgrade mode only
@@ -1387,6 +1399,25 @@ export class WorldScreen {
       statusOpen: () => petWindows.status.isOpen,
       lock: (on, level, slot) => petWindows.status.lockShowLevel(on, level, slot),
       sound: () => this.sounds?.infOpen(),
+      ui: { art: this.hudArt!, doc, layer: () => this.hud?.element ?? null },
+    });
+    // 2026-11-09 (pets R4): the Pet Tamer's egg exchange, pick-up pet awakening cancel and pet trade
+    this.petTamer = new PetTamerWindows({
+      own: () => this.own, props: this.data!.itemProps,
+      text: (tid) => (this.data?.texts.get(tid)?.text ?? '').replace(/\\n/g, '\n'),
+      say: (tid, color) => {
+        const entry = this.data?.texts.get(tid);
+        if (entry !== undefined && entry.text !== '') this.hud?.messages.add(entry.text, color ?? entry.color);
+      },
+      alert: (text) => { if (text !== '' && this.messageBox?.isOpen !== true) this.messageBox?.open(text, 'ok', () => {}); },
+      send: (...packet) => this.sendPetTamer(packet),
+      reserve: (id, on) => this.reserveItem(id, on),
+      held: (id) => (this.bagReserved.get(id) ?? 0) > 0,
+      // IsUsing: the summoned raised pet's item and the ticket in use (an egg is neither a feed pocket nor a ticket)
+      inUse: (id) => id === this.ticketInUse || id === this.own?.petSlot,
+      openBag: () => { if (this.inventoryWindow?.frame.isOpen !== true) this.openWindow('inventory'); },
+      tooltipData: this.data!,
+      tooltipContext: (item) => ownTooltipContext(this.own, item, 'other'),
       ui: { art: this.hudArt!, doc, layer: () => this.hud?.element ?? null },
     });
     // 2026-11-09 (pets B1): the buff pet's window (CWndBuffPetStatus) and its boxes (CWndConfirmVis)
@@ -2538,6 +2569,16 @@ export class WorldScreen {
     }
   }
 
+  /** 2026-11-09 (pets R4): the Pet Tamer's windows' packets, by WorldSession's senders. */
+  private sendPetTamer(packet: PetTamerPacket): void {
+    const s = this.session;
+    switch (packet[0]) {
+      case 'transformItem': s.sendTransformItem(packet[1], packet[2]); break;
+      case 'pickupPetAwakeningCancel': s.sendPickupPetAwakeningCancel(packet[1]); break;
+      case 'quePetResurrection': s.sendQuePetResurrection(packet[1]); break;
+    }
+  }
+
   /**
    * 2026-11-05: the monster summon armed: Neuz's cursor effect (XI_CHR_CURSOR1, a CSfxCursor under the mouse) is a
    * crosshair over the world here, with a line saying where to tap (a phone has no cursor).
@@ -3032,6 +3073,12 @@ export class WorldScreen {
       this.petCare?.tamerMill(); // 2026-11-09 (pets R3): the Pet Tamer's food mill (:5863-5876)
     } else if (entry === MMI.RENAME_CANCEL) {
       this.session.sendClearPetName(); // 2026-11-09 (pets R3): the Pet Tamer's rename cancel (:5237-5240)
+    } else if (entry === MMI.PET_EGG01) {
+      this.petTamer?.openEggs(); // 2026-11-09 (pets R4): the egg exchange (:5098-5113)
+    } else if (entry === MMI.PET_AWAK_CANCEL) {
+      this.petTamer?.openAwakCancel(); // the pick-up pet's awakening cancel (:5231-5235)
+    } else if (entry === MMI.PET_RES) {
+      this.petTamer?.openTrade(); // the pet trade for a revival scroll piece (:4423-4438, __JEFF_11)
     }
   }
 
@@ -3219,6 +3266,8 @@ export class WorldScreen {
     this.petWindows = undefined;
     this.petCare?.dispose(); // pets R3
     this.petCare = undefined;
+    this.petTamer?.dispose(); // pets R4
+    this.petTamer = undefined;
     this.buffPet?.dispose(); // pets B1
     this.buffPet = undefined;
     this.particleLayer = undefined;
