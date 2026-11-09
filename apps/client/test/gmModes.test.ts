@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { INVISIBLE_ALPHA, Mode, bodyAlpha, isInvisible, modeLine, showsBubble } from '../src/world/gmModes';
+import { INVISIBLE_ALPHA, Mode, bodyAlpha, isFrozen, isInvisible, modeLine, showsBubble } from '../src/world/gmModes';
 
 const TEXTS: Record<string, string> = {
   TID_ADMIN_IMMORTAL: 'Undying1', TID_ADMIN_IMMORTALHALF: 'Undying2', TID_ADMIN_INVISIBLE: 'Invisible',
@@ -46,6 +46,12 @@ describe('an invisible player (TRANSPARENT_MODE) as Neuz draws it', () => {
     expect(bodyAlpha(player(ADMIN, Mode.TRANSPARENT), GM)).toBe(INVISIBLE_ALPHA);
     expect(bodyAlpha(player(GM, Mode.TRANSPARENT), PLAYER)).toBe(0);
     expect(bodyAlpha(player(GM, Mode.TRANSPARENT), HELPER)).toBe(0);
+  });
+
+  it('isFrozen reads DONMOVE_MODE (/freeze)', () => {
+    expect(isFrozen(player(PLAYER, Mode.DONMOVE))).toBe(true);
+    expect(isFrozen(player(PLAYER, Mode.TRANSPARENT))).toBe(false);
+    expect(isFrozen(undefined)).toBe(false);
   });
 
   it('showsBubble: no bubble for an invisible game master, the own one included (WndManager.cpp:4101)', () => {

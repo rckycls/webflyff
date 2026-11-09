@@ -16,7 +16,7 @@ import { ArReader, ArWriter, NULL_ID } from '@flyffweb/protocol';
 import type { AddedMover } from '@flyffweb/protocol';
 import { createWorldScript, writeAddPlayer, writeAddSelf } from '@flyffweb/testkit';
 import type { ScriptMessage } from '@flyffweb/testkit';
-import { BASE, MADRIGAL, MALE_VAGRANT, MI_MALE, SELF_ID, SELF_PLAYER, SQUARE, enterFlaris, groundAt, playGateway, self, sentOf } from './worldHarness';
+import { BASE, MADRIGAL, MALE_VAGRANT, MI_MALE, SELF_ID, SELF_PLAYER, SQUARE, enterFlaris, groundAt, ownAt, playGateway, self, sentOf } from './worldHarness';
 
 test.setTimeout(120_000);
 
@@ -139,6 +139,24 @@ test("a player: a game master's command goes nowhere, and a game master is seen 
   await say('Hello');
   await expect.poll(() => sentLines(gateway)).toEqual(['Hello']);
   await expect(gameLog).not.toContainText('teleport');
+  // frozen by a game master (/freeze, DONMOVE_MODE): the keys move nothing (ControlPlayer); thawed, they do (the
+  // desktop's keys; the phone's joystick goes through the same gate, WorldScreen.step)
+  if (!isMobile) {
+    await page.keyboard.press('Escape');
+    const walk = async (): Promise<boolean> => {
+      const before = await ownAt(page);
+      await page.keyboard.down('KeyW'); await page.waitForTimeout(600); await page.keyboard.up('KeyW');
+      const after = await ownAt(page);
+      return Math.hypot(after[0] - before[0], after[2] - before[2]) > 0.2;
+    };
+    gateway.pushCache(script.later([modifyMode(SELF_ID, 0x8)]));
+    await expect.poll(async () => (await tagOf(page, SELF_ID)) !== undefined).toBe(true);
+    await page.waitForTimeout(300);
+    expect(await walk()).toBe(false);
+    gateway.pushCache(script.later([modifyMode(SELF_ID, 0)]));
+    await page.waitForTimeout(300);
+    expect(await walk()).toBe(true);
+  }
   // the visible game master goes invisible: gone from sight; the invisible one comes back
   gateway.pushCache(script.later([modifyMode(GUIDE, TRANSPARENT), modifyMode(WATCHER, 0)]));
   await expect.poll(async () => (await tagOf(page, GUIDE))?.alpha).toBe(0);

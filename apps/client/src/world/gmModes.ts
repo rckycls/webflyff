@@ -88,3 +88,12 @@ export function bodyAlpha(mover: ModeHolder, viewerAuthorization: number): numbe
 export function showsBubble(speaker: ModeHolder): boolean {
   return !(isInvisible(speaker) && (speaker.added.player?.authorization ?? 0) >= 0x4c);
 }
+
+/**
+ * A player frozen by /freeze (`DONMOVE_MODE`): its own client lets it do nothing, neither move nor click nor attack
+ * (`ControlPlayer`, `WndWorldControlPlayer.cpp:21-22`; `UseFocusObj`, `OnLButtonDown`, `MenuException`,
+ * `WndWorld.cpp:6205, :6729-6730, :11503-11504`).
+ */
+export function isFrozen(mover: { added: { player?: { mode: number } } } | undefined): boolean {
+  return ((mover?.added.player?.mode ?? 0) & Mode.DONMOVE) !== 0;
+}

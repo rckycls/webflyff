@@ -47,7 +47,7 @@ import type { FlightInput } from './flightControl';
 import { FlightButtons } from './hud/flightButtons';
 import { TurboGauge } from './render/TurboGauge';
 import { isGameMaster } from './authorization';
-import { Mode, bodyAlpha, isInvisible, modeLine, showsBubble } from './gmModes';
+import { Mode, bodyAlpha, isFrozen, isInvisible, modeLine, showsBubble } from './gmModes';
 import { runClientHalf } from './gmCommands';
 import { CHATSTY } from './hud/chatRules';
 import { WARM_UP_EFFECTS, playCombatEvent, playOwnEvent } from './fx/combatEffects';
@@ -1639,6 +1639,8 @@ export class WorldScreen {
     this.tap = new TapToWalk(
       renderer.domElement, (x, y) => this.pick(x, y), (error) => this.reportOnce(`tap: ${messageOf(error)}`, error),
       (press) => {
+        // 2026-11-10: a frozen player (/freeze, DONMOVE_MODE) does nothing with a press (OnLButtonDown, WndWorld.cpp:6729-6730)
+        if (isFrozen(this.world?.self())) return true;
         // 2026-11-05: an armed monster summon takes the press, on the ground it went down on
         if (this.itemWindows?.armed === true) {
           if (press.point !== undefined) this.placeMonster(press.point);
@@ -2313,7 +2315,10 @@ export class WorldScreen {
     const jump = this.jumpRequested && own !== undefined && !own.act.isDie() &&
       (own.act.state & (ObjSta.JUMP_ALL | ObjSta.ATK_ALL | ObjSta.DMG_ALL)) === 0 && !this.skillUse!.pending;
     if (jump || airborne || own?.act.isDie()) this.jumpRequested = false;
-    if (own !== undefined) {
+    // 2026-11-10: a frozen player (/freeze) neither moves nor attacks (ControlPlayer, WndWorldControlPlayer.cpp:21-22;
+    // UseFocusObj, WndWorld.cpp:6205)
+    if (own !== undefined && isFrozen(own)) this.jumpRequested = false;
+    else if (own !== undefined) {
       // the keys' Shift no longer changes the gait: X toggles it (spec §1)
       const cameraAngle = this.backCamera.heading === null ? own.act.body.angle : 180 - this.backCamera.heading * 180 / Math.PI;
       const intent = controlIntent(this.keyboard!.intent(), this.joystick!.intent(), cameraAngle);
