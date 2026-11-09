@@ -145,6 +145,7 @@ name looks; the code is the only source.
 | CMDSETSKILLLEVEL and DISGUISE/NODISGUISE had no reader | /skilllevel(All) and /disguise showed nothing |
 | TCM_BOTH halves were skipped | /skilllevel sent "/skilllevel 5" (the server read skill 5, level 0); /ip ignored the focus; /ci and /id with no words, /ritem, /pier, /mpf were sent raw |
 | /position and /Time printed in the screen's message lines | Neuz writes them in the chat's System window |
+| /freeze was not kept by the frozen player's own client | Neuz's own checks stop a frozen player's keys, clicks and attacks (`ControlPlayer`, `WndWorldControlPlayer.cpp:21-22`; `UseFocusObj`, `OnLButtonDown`, `MenuException`, `WndWorld.cpp:6205, :6729-6730, :11503-11504`); the server does not |
 
 Left out on purpose: the `__BB_*` features (`__BB_VIP_AUTH_LEVELS`, `__BB_STAFF_MODERATOR_AUTH` and its command gate
 `FTC:5499-5548, :5580-5587`, `__BB_VIP_TITLES`'s name colour). No owner-made GM command was found in the table itself;
