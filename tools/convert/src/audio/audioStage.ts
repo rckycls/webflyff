@@ -1,12 +1,13 @@
 // The audio stage (Piece 6 M2): the game's sound effects and music, copied as they are, plus an MP3 copy of each track
 // made with FFmpeg for the browsers that play no Ogg.
 //
-//   sound/<web name>.wav    each WAV that sound.inc or a mdlDyna.inc effect names and the folder has (mono 16-bit PCM,
-//                           which every browser decodes: docs/superpowers/specs/2026-11-02-piece6-m2-sound-research.md §1)
+//   sound/<web name>.wav    each WAV that sound.inc, a mdlDyna.inc effect or NAMED_SOUNDS (2026-11-09) names and the folder
+//                           has (mono 16-bit PCM, which every browser decodes:
+//                           docs/superpowers/specs/2026-11-02-piece6-m2-sound-research.md §1)
 //   music/<web name>.ogg    each track default.bgm names and the folder has, once however many ids name it
 //   music/<web name>.mp3    its MP3 copy; none when FFmpeg is missing, which is one failure of the run
 //
-// The 179 WAVs and 4 tracks no script names are not copied. A name the folder lacks is warned about once per kind,
+// The other WAVs (179 before NAMED_SOUNDS) and the 4 tracks no script names are not copied. A name the folder lacks is warned about once per kind,
 // in one list. The data stage, which runs after this one, lists in data/audio.json only what this stage wrote.
 //
 // `--only audio` runs the stage; a glob that does not match its name runs it for the files whose base name matches.
@@ -57,7 +58,8 @@ export function createAudioStage(options: AudioStageOptions = {}): Stage {
         ctx.report.warn(SOUND_KIND, 'mdlDyna.inc', `not read, so no effect sound is copied: ${(error as Error).message}`);
       }
       const sources = audioSources(ctx.client, defines, parts);
-      if (!all && ![...sources.sounds.values(), ...sources.effects.values(), ...sources.music.values()].some(wanted)) return;
+      const named = [...sources.named.values()];
+      if (!all && ![...sources.sounds.values(), ...sources.effects.values(), ...named, ...sources.music.values()].some(wanted)) return;
 
       for (const script of sources.absent) ctx.report.warn(STAGE, script, 'not in the client folder');
       if (sources.missingSounds.length > 0) {
@@ -69,7 +71,7 @@ export function createAudioStage(options: AudioStageOptions = {}): Stage {
           `${plural(sources.missingMusic.length, 'track')} not in the folder, so their ids play nothing: ${someOf(sources.missingMusic)}`);
       }
 
-      const wavs = [...new Set([...sources.sounds.values(), ...sources.effects.values()])].filter(wanted).sort();
+      const wavs = [...new Set([...sources.sounds.values(), ...sources.effects.values(), ...named])].filter(wanted).sort();
       const oggs = [...new Set(sources.music.values())].filter(wanted).sort();
       const copy = async (kind: string, key: string, file: string): Promise<void> => {
         try {

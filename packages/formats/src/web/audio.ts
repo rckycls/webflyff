@@ -26,6 +26,12 @@ export interface WebWorldMusic {
 export interface WebAudio {
   /** Sound id → `sound/<web name>.wav` (`sound.inc`), for the files that exist. */
   sounds: Record<number, string>;
+  /**
+   * 2026-11-09: a WAV Neuz plays by file name, `PLAYSND( "PCSkillCastCheer.wav" )` (dsutil.h:219-222), as the C++ writes
+   * the name → its `sound/<web name>.wav`: the raised pet's level-up cheer (Mover.cpp:11158) and its release
+   * (`ItemGnCollector.wav`, :11190). Only the files that exist; absent in catalogs converted before.
+   */
+  named?: Record<string, string>;
   /** Music id → its keys (`default.bgm`). Two ids of one file share them; `mp3` is null without FFmpeg. */
   music: Record<number, { ogg: string; mp3: string | null }>;
   /** World id → its music, for the worlds of World.inc whose folder has a `.wld` or a `.rgn`. */

@@ -5,6 +5,7 @@
 //   Client/sound.inc     id → a WAV of Sound\ (DIR_SOUND, path.h:13; CSoundManager::LoadScript, dsutil.cpp:39-60)
 //   Music/default.bgm    id → a path of the client folder, `music\BgmTo1Flaris.ogg` (CMusicMng::LoadScript, Music2.cpp)
 //   mdlDyna.inc          an SFX entry's part, a WAV of Sound\ played when the effect is made (CreateObj.cpp:328-329)
+//   NAMED_SOUNDS         the WAVs of Sound\ the code plays by file name, `PLAYSND( "name.wav" )` (dsutil.h:219-222)
 //
 // Names are found without regard to case, as Windows finds them: default.bgm's `BgmTh3Return.ogg` is `Bgmth3Return.ogg`
 // on disk.
@@ -21,14 +22,22 @@ const SOUND_DIR = 'Sound';
 /** MODELTYPE_SFX (Source/_Common/Model.h:14). */
 const MODELTYPE_SFX = 4;
 
+/**
+ * 2026-11-09: the WAVs the browser plays by file name, as Neuz's `PLAYSND( "name.wav" )` does (no id): the raised pet's
+ * level-up cheer (CMover::CreatePetSfx, Mover.cpp:11158) and its release (CMover::PetRelease, :11190).
+ */
+export const NAMED_SOUNDS: readonly string[] = ['PCSkillCastCheer.wav', 'ItemGnCollector.wav'];
+
 export interface AudioSources {
   /** Sound id → the WAV's path in the client folder. */
   sounds: Map<number, string>;
+  /** A name of NAMED_SOUNDS → the WAV's path in the client folder. */
+  named: Map<string, string>;
   /** Music id → the track's path in the client folder. */
   music: Map<number, string>;
   /** `XI_*` id → the path of its effect's WAV. */
   effects: Map<number, string>;
-  /** The names the scripts give that the folder lacks, `sound.inc`'s and the effects' first, then `default.bgm`'s. */
+  /** The names the folder lacks: `sound.inc`'s, the effects' and NAMED_SOUNDS' in `missingSounds`, `default.bgm`'s in `missingMusic`. */
   missingSounds: string[];
   missingMusic: string[];
   /** The scripts that are not in the folder (`Client/sound.inc`, `Music/default.bgm`). */
@@ -51,7 +60,8 @@ export function audioSources(
   client: ClientFs, defines: ReadonlyMap<string, number>, effectParts: ReadonlyMap<number, string>,
 ): AudioSources {
   const out: AudioSources = {
-    sounds: new Map(), music: new Map(), effects: new Map(), missingSounds: [], missingMusic: [], absent: [], bytes: 0,
+    sounds: new Map(), named: new Map(), music: new Map(), effects: new Map(), missingSounds: [], missingMusic: [], absent: [],
+    bytes: 0,
   };
   const script = (where: { dir: string; name: string }): Map<number, string> | null => {
     const file = client.find(where.dir, where.name);
@@ -74,6 +84,11 @@ export function audioSources(
     const file = client.find(SOUND_DIR, name);
     if (file === null) missing(out.missingSounds, name);
     else out.effects.set(xi, file);
+  }
+  for (const name of NAMED_SOUNDS) {
+    const file = client.find(SOUND_DIR, name);
+    if (file === null) missing(out.missingSounds, name);
+    else out.named.set(name, file);
   }
   for (const [id, written] of script(DEFAULT_BGM) ?? []) {
     const parts = written.split(/[\\/]/).filter((part) => part !== '');

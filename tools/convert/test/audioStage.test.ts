@@ -78,6 +78,8 @@ describe('the audio stage on a small hand-made client', () => {
         'Sound/InfTrade.wav': 'RIFF trade',
         'Sound/PcCure.wav': 'RIFF cure',
         'Sound/Unnamed.wav': 'RIFF named by nothing',
+        // played by file name (NAMED_SOUNDS, 2026-11-09); ItemGnCollector.wav is left out
+        'Sound/PCSkillCastCheer.wav': 'RIFF cheer',
         'Music/default.bgm': DEFAULT_BGM,
         'Music/BgmDu1Mystery.ogg': 'OggS title',
         'Music/Bgmth3Return.ogg': 'OggS return',
@@ -92,10 +94,10 @@ describe('the audio stage on a small hand-made client', () => {
     return { writer, report: JSON.parse(await fs.readFile(path.join(out, 'report.json'), 'utf8')) as ReportJson, out };
   }
 
-  it('writes the WAVs that sound.inc and mdlDyna.inc name, and each track as Ogg and MP3', async () => {
+  it('writes the WAVs that sound.inc, mdlDyna.inc and NAMED_SOUNDS name, and each track as Ogg and MP3', async () => {
     const run = await runAudio();
-    for (const key of ['sound/infclick.wav', 'sound/inftrade.wav', 'sound/pccure.wav', 'music/bgmdu1mystery.ogg',
-      'music/bgmth3return.ogg', 'music/bgmdu1mystery.mp3', 'music/bgmth3return.mp3']) {
+    for (const key of ['sound/infclick.wav', 'sound/inftrade.wav', 'sound/pccure.wav', 'sound/pcskillcastcheer.wav',
+      'music/bgmdu1mystery.ogg', 'music/bgmth3return.ogg', 'music/bgmdu1mystery.mp3', 'music/bgmth3return.mp3']) {
       expect(run.writer.pathOf(key), key).toBeDefined();
     }
     expect(run.writer.pathOf('sound/unnamed.wav')).toBeUndefined();
@@ -105,7 +107,7 @@ describe('the audio stage on a small hand-made client', () => {
     // the two ids of BgmTh3Return.ogg are one file, copied and encoded once
     expect(run.report.kinds.music).toMatchObject({ ok: 2, failed: 0 });
     expect(run.report.kinds.musicMp3).toMatchObject({ ok: 2, failed: 0 });
-    expect(run.report.kinds.sound).toMatchObject({ ok: 3, failed: 0 });
+    expect(run.report.kinds.sound).toMatchObject({ ok: 4, failed: 0 });
     expect(mp3s.sort()).toEqual(['BgmDu1Mystery.ogg', 'Bgmth3Return.ogg']);
     expect(run.report.failures).toEqual([]);
   });
@@ -116,6 +118,7 @@ describe('the audio stage on a small hand-made client', () => {
     const music = run.report.warnings.filter((w) => w.kind === 'music');
     expect(sound).toHaveLength(1);
     expect(sound[0]!.message).toContain('Gone.wav');
+    expect(sound[0]!.message).toContain('ItemGnCollector.wav');
     expect(music).toHaveLength(1);
     expect(music[0]!.message).toContain('Gone.ogg');
   });
