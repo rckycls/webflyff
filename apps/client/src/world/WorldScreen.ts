@@ -17,7 +17,7 @@ import { SpeechBubbleLayer } from './render/SpeechBubbleLayer';
 
 import { UI_SHEETS_KEY, toWebPosition } from '@flyffweb/formats';
 import type { Vec3, WebEffect, WebUiSheet, WebUiSheets, WebWorldMap } from '@flyffweb/formats';
-import type { AddedMover, BundleMessage, NpcAction, Shortcut, WorldMessage } from '@flyffweb/protocol';
+import type { AddedMover, BundleMessage, InventoryItem, NpcAction, Shortcut, WorldMessage } from '@flyffweb/protocol';
 import {
   EffectRenderer, Joystick, KeyboardInput, WorldStage, effectTextureProvider, loadGltf, loopMotion, neuzRandom, attachHeld,
   rendererCounts,
@@ -72,7 +72,7 @@ import { OptionWindow } from './hud/optionWindow';
 import { DropBox } from './hud/dropBox';
 import type { BoxState, KeptLogin } from '../lobby/reconnect';
 import { TaskBar } from './hud/taskBar';
-import { createItemDetails, ownTooltipContext } from './hud/itemDetails';
+import { createItemDetails, ownTooltipContext, positionItemDetails } from './hud/itemDetails';
 import { InventoryWindow } from './hud/inventoryWindow';
 import { ChatWindow } from './hud/chatWindow';
 import { NeuzChat } from './hud/neuzChat';
@@ -94,9 +94,10 @@ import { PartyState } from './party/partyState';
 import type { PartyEvent } from './party/partyState';
 import { PlayerDataCenter } from './party/playerData';
 import { FriendHud } from './friends/friendHud';
+import { TradeHud } from './trade/tradeHud';
 import { Messenger, loadFriendOptions, saveFriendOptions } from './friends/messenger';
 import type { FriendEvent } from './friends/messenger';
-import { MMI_ADD_MESSENGER, MMI_INVITE_PARTY, menuInReach, playerMenuEntries } from './party/playerMenu';
+import { MMI_ADD_MESSENGER, MMI_INVITE_PARTY, MMI_TRADE, menuInReach, playerMenuEntries } from './party/playerMenu';
 import { PartyHpBars } from './render/PartyHpBars';
 import { partyEffects } from './fx/partyEffects';
 import type { PartyEffectContext, PartyMover } from './fx/partyEffects';
@@ -160,7 +161,7 @@ import { ItemActions } from './items/itemActions';
 import { GroundItems } from './items/groundItems';
 import { GroundModels, loadDropModel } from './items/groundModels';
 import { NearbyItems } from './items/nearbyItems';
-import { NULL_ID, STATE_BASEMOTION_MODE, ShortcutKind } from '@flyffweb/protocol';
+import { NULL_ID, STATE_BASEMOTION_MODE, ShortcutKind, isTradeMessage } from '@flyffweb/protocol';
 import type { TaskBarData, TaskBarWindow } from './hud/taskBar';
 import { OwnMover, pickOnStage } from './ownMover';
 import { OwnState } from './OwnState';
@@ -463,6 +464,9 @@ export class WorldScreen {
   private readonly messenger = new Messenger();
   private readonly friendOptions = loadFriendOptions((() => { try { return globalThis.localStorage ?? null; } catch { return null; } })());
   private friendHud: FriendHud | undefined;
+  /** 2026-11-10: the player trade's windows (trade/tradeHud.ts), and the tooltip over a trade slot. */
+  private tradeHud: TradeHud | undefined;
+  private tradeTooltip: HTMLElement | null = null;
   private readonly friendEvents: FriendEvent[] = [];
   private dialog: DialogWindow | undefined;
   /** `CWndWorld::m_dwDropTime` (WndWorld.cpp:590): when the player last dropped an item. */
@@ -802,6 +806,9 @@ export class WorldScreen {
       if (this.friendHud !== undefined && this.friendEvents.length > 0) this.friendHud.handle(this.friendEvents.splice(0));
       // 2026-11-10: a `/say` line (OnSay, DPClient.cpp:11911-12074)
       if (value.type === 'say') { this.friendHud?.onSay(value); continue; }
+      // 2026-11-10: the player trade's snapshots (trade/tradeState.ts), and the asked side's refusals (OnBlock gu 3, 4, 5, 8)
+      if (isTradeMessage(value)) { this.tradeHud?.handle(objectId, value); continue; }
+      if (value.type === 'block') this.tradeHud?.onBlock(value);
       // 2026-11-10: a blocked friend's whisper, and another's with /whisperrefuse (OnWhisper, DPClient.cpp:11790-11831, :11899-11903)
       if (value.type === 'whisper' && this.friendHud?.dropWhisper(value) === true) continue;
       if (value.type === 'npcScript') {
@@ -911,7 +918,7 @@ export class WorldScreen {
       }
       if (world.movers.has(objectId)) {
         if (value.type === 'moverDeath') this.attackLoop?.onMoverDeath(objectId, value.attackerId);
-        else if (value.type === 'delObj') this.attackLoop?.onRemoved(objectId);
+        else if (value.type === 'delObj') { this.attackLoop?.onRemoved(objectId); this.tradeHud?.removed(objectId); }
       }
       world.apply(objectId, value, joining);
       this.skillUse?.onMessage(objectId, value, world.self());
@@ -1362,6 +1369,8 @@ export class WorldScreen {
     const inventoryWindow = new InventoryWindow(this.hudArt!, this.data!, {
       // 2026-11-05: a double-click (or Use) while the Upgrade Specialist's window is open puts the item in it (WndField.cpp:2262-2272)
       use: (id, shift) => {
+        // 2026-11-10: no use while trading (CWndInventory::OnChildNotify, WndField.cpp:2541-2547)
+        if (this.tradeLimit()) return;
         // 2026-11-09 (pets R4): with a Pet Tamer window open its clicks took the item; the double-click does no more (the
         // egg exchange's bag path returns at once, WndField.cpp:2237-2259)
         if (this.petTamer?.picking === true) return;
@@ -1370,7 +1379,7 @@ export class WorldScreen {
         if (this.petCare?.millOpen === true) this.sayRefusal({ kind: 'say', tid: 'TID_SBEVE_NOTUSEITEM' });
         else this.itemUse!.use(id, 'bag');
       },
-      equip: (id, shift) => { if (!this.takeIntoUpgradeWindow(id, shift === true)) itemActions.equip(id); },
+      equip: (id, shift) => { if (!this.tradeLimit() && !this.takeIntoUpgradeWindow(id, shift === true)) itemActions.equip(id); },
       land: (id) => { this.itemUse!.land(id); }, // Piece 7 M5: the worn ride's equipment cell
       // 2026-11-05: the upgrade cursor's target, its wait and its cancel
       upgrade: {
@@ -1386,10 +1395,12 @@ export class WorldScreen {
         cancel: () => { this.upgrade?.cancel(); this.itemWindows?.cancelPick(); },
       },
       // 2026-11-05: the items a window holds (SetExtra) and the ticket in use, faded; the hammer in the upgrade mode only
-      held: (id) => this.bagHeld(id),
+      // 2026-11-10: and the items in the trade (`SetExtra`, CVTInfo::TradeSetItem)
+      held: (id) => this.bagHeld(id) || (this.tradeHud?.extraOf(id) ?? 0) > 0,
       // 2026-11-09 (pets R3): and the food mill (CWndInventory::OnDestroy, WndField.cpp:1092-1096)
       closed: () => { this.upgradeNpc?.piercing.dismiss(); this.upgradeNpc?.safety.dismiss(); this.petCare?.bagClosed(); },
-      reservedCount: (id) => (this.bagDieFlag ? this.bagReserved.get(id) ?? 0 : 0),
+      // 2026-11-10: a stack in the trade shows the count less the traded (`m_nItemNum - GetExtra()`, WndItemCtrl.cpp:705-708)
+      reservedCount: (id) => (this.bagDieFlag ? this.bagReserved.get(id) ?? 0 : 0) + this.tradeExtraShown(id),
       // 2026-11-09 (pets R2): and the summoned raised pet's item (`g_pPlayer->GetPetId()`, WndItemCtrl.cpp:472-487)
       inUse: (id) => id === this.ticketInUse || id === this.own?.petSlot,
       hammer: () => this.upgrade?.active === true,
@@ -1401,7 +1412,8 @@ export class WorldScreen {
         this.sounds?.drop();
         if (itemActions.drop(id, count)) this.lastDropAt = performance.now();
       },
-      move: (source, dest) => { itemActions.move(source, dest); },
+      // 2026-11-10: no move inside the bag while trading (CWndInventory::OnDropIcon, WndField.cpp:2862-2876)
+      move: (source, dest) => { if (!this.tradeLimit()) itemActions.move(source, dest); },
       shortcut: (id, slot) => taskBar.setInventoryShortcut(id, slot),
     }, doc);
     this.inventoryWindow = inventoryWindow;
@@ -1585,6 +1597,40 @@ export class WorldScreen {
       saveOptions: (options) => saveFriendOptions((() => { try { return globalThis.localStorage ?? null; } catch { return null; } })(), options),
     }, this.messenger, this.friendOptions, doc);
     this.friendHud = friendHud;
+    // 2026-11-10: the player trade (trade/tradeHud.ts)
+    const tradeHud = new TradeHud(this.hudArt!, this.data!.texts, {
+      session: {
+        sendConfirmTrade: (targetId) => session.sendConfirmTrade(targetId),
+        sendConfirmTradeCancel: (askerId) => session.sendConfirmTradeCancel(askerId),
+        sendTrade: (askerId) => session.sendTrade(askerId),
+        sendTradePut: (slot, itemType, objectId, count) => session.sendTradePut(slot, itemType, objectId, count),
+        sendTradeOk: () => session.sendTradeOk(),
+        sendTradeCancel: (mode) => session.sendTradeCancel(mode),
+        sendTradePutGold: (gold) => session.sendTradePutGold(gold),
+        sendTradeConfirm: () => session.sendTradeConfirm(),
+        sendTradeBlock: (gu, askerName) => session.sendTradeBlock(gu, askerName),
+      },
+      ownObjectId: () => this.world?.self()?.objectId ?? NULL_ID,
+      ownPlayerId: () => this.entry.character.playerId,
+      ownName: () => this.world?.self()?.name ?? this.entry.character.name,
+      nameOf: (objectId) => this.world?.movers.get(objectId)?.name ?? '',
+      ownItems: () => this.own?.inventory ?? null,
+      ownGold: () => this.own?.gold ?? 0,
+      prop: (itemId) => this.data?.itemProps.get(itemId),
+      say: (text, color) => this.hud?.messages.add(text, color),
+      box: (text) => { if (this.messageBox?.isOpen !== true) this.messageBox?.open(text, 'ok', () => {}); },
+      openInventory: () => { if (this.own && !inventoryWindow.frame.isOpen) inventoryWindow.toggle(this.own); },
+      npcShopOpen: () => this.shopWindow?.frame.isOpen === true,
+      addOwnGold: (delta) => this.own?.addGold(delta),
+      consent: (mine, theirs, partner, gold) => this.own?.tradeConsent(mine, theirs, partner, gold),
+      refreshBag: () => { if (this.own) inventoryWindow.update(this.own, true); },
+      showTooltip: (item, anchor) => this.showTradeTooltip(item, anchor),
+    }, doc);
+    this.tradeHud = tradeHud;
+    // the phone has no drag: a tap on a bag item or on the penya puts it in the trade
+    inventoryWindow.trade = {
+      active: () => tradeHud.windowOpen, tapItem: (id) => tradeHud.tapItem(id), tapPenya: () => tradeHud.tapPenya(),
+    };
     // a type-2 shortcut of the task bar: the party skill's rule (ObjectExecutor, WndManager.cpp:2779-2876)
     skillUse.onPartySkill = (skill) => partyHud.useSkill(skill);
     // RunScript: the NPC and the player as nGlobal3 and nGlobal4 (WndDialog.cpp:234-240)
@@ -1617,7 +1663,7 @@ export class WorldScreen {
     this.optionWindow = this.audio === null ? undefined : new OptionWindow(this.hudArt!, this.audio, doc);
     for (const modal of [
       logOutBox.modal, reviveWindow.modal, skillWindow.warning.modal, this.dialog.modal, questWindow.modal, messageBox.modal, selectVillage.modal, partyHud.messageBox.modal,
-      friendHud.messageBox.modal,
+      friendHud.messageBox.modal, tradeHud.gold.window.modal!,
     ]) {
       modal.onChange = () => this.modalChanged();
     }
@@ -1631,6 +1677,7 @@ export class WorldScreen {
       ...(this.chatWindow instanceof NeuzChat ? this.chatWindow.elements : [this.chatWindow.element]), this.shopWindow.frame.element,
       this.petWindows.element, this.buffPet.element,
       ...questWindow.elements, this.dialog.element, this.moverMenu.element, ...partyHud.elements, ...friendHud.elements,
+      ...tradeHud.elements,
     );
     // what the friend list said while the world loaded
     if (this.friendEvents.length > 0) friendHud.handle(this.friendEvents.splice(0));
@@ -1857,6 +1904,39 @@ export class WorldScreen {
       }
       this.weaponGlows.tick(weapons);
     }
+  }
+
+  /**
+   * 2026-11-10: "You cannot use items while trading." (TID_GAME_TRADELIMITUSING, WndField.cpp:2541-2547, :2862-2876): true,
+   * with the line, while the trade window is open.
+   */
+  private tradeLimit(): boolean {
+    if (this.tradeHud?.windowOpen !== true) return false;
+    this.say('TID_GAME_TRADELIMITUSING');
+    return true;
+  }
+
+  /** 2026-11-10: the traded count a bag stack shows less (only a stack shows a count in Neuz, `dwPackMax > 1`). */
+  private tradeExtraShown(objectId: number): number {
+    const extra = this.tradeHud?.extraOf(objectId) ?? 0;
+    if (extra === 0) return 0;
+    const item = this.own?.inventory?.get(objectId);
+    return (this.data?.itemProps.get(item?.itemId ?? -1)?.packMax ?? 1) > 1 ? extra : 0;
+  }
+
+  /** 2026-11-10: a trade slot's tooltip (`PutToolTip_Item`, flag 0, WndTradeCtrl.cpp:67-75), or none. */
+  private showTradeTooltip(item: InventoryItem | null, anchor: HTMLElement | null): void {
+    this.tradeTooltip?.remove();
+    this.tradeTooltip = null;
+    const window = this.tradeHud?.window.frame.element;
+    if (item === null || anchor === null || window === undefined || this.data === undefined) return;
+    const doc = this.element.ownerDocument;
+    const ctx = ownTooltipContext(this.own, item, 'other');
+    const tooltip = createItemDetails(doc, this.hudArt!, this.data, item, this.data.itemProps.get(item.itemId), ctx);
+    tooltip.classList.add('hud-trade-tooltip');
+    window.append(tooltip);
+    positionItemDetails(tooltip, anchor, doc);
+    this.tradeTooltip = tooltip;
   }
 
   /** 2026-11-05: a window holds a bag item, or lets it go (`SetExtra`): the bag draws it faded and keeps it put. */
@@ -3013,6 +3093,11 @@ export class WorldScreen {
   /** Invite (`OnCommand` MMI_INVITE_PARTY, :5639-5644, `InviteParty`, :11237-11266): the focus a player, the party's rule. */
   private choosePlayerEntry(id: number, entry: number): void {
     const player = this.world?.movers.get(id)?.added.player;
+    // 2026-11-10: "Trade" (MMI_TRADE, WndWorld.cpp:5251-5358): the request, to a player
+    if (entry === MMI_TRADE && player !== undefined) {
+      this.tradeHud?.requestTrade(id);
+      return;
+    }
     // 2026-11-10: "Add to my list" (MMI_ADD_MESSENGER, WndWorld.cpp:5141-5159)
     if (entry === MMI_ADD_MESSENGER && player !== undefined) {
       this.friendHud?.addFromMenu(player.playerId, this.world?.movers.get(id)?.name ?? '');
@@ -3464,6 +3549,9 @@ export class WorldScreen {
     this.partyHud?.dispose();
     this.friendHud?.dispose();
     this.friendHud = undefined;
+    this.tradeHud?.reset();
+    this.tradeHud = undefined;
+    this.showTradeTooltip(null, null);
     this.element.removeEventListener('pointerdown', this.onFriendInput, true);
     this.groundItems?.dispose();
     this.dropModels = undefined; // the ground items' own, disposed with them

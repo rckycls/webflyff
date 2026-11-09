@@ -2700,3 +2700,70 @@ fieldset:disabled .btn {
   :is(.hud-messenger, .hud-add-friend, .hud-friend-confirm, .hud-message, .hud-instant-message) :is(input, textarea),
   .hud-messenger .hud-messenger-tab { font-size: 14px; }
 }
+
+/* 2026-11-10: the player trade (hud/trade/tradeWindows.ts; docs/superpowers/specs/2026-11-10-trade-research.md §3-§5).
+   CWndTrade is WndTrade.tga (the names' and penya's boxes and the "penya" labels are in it); each CWndTradeCtrl is 25
+   slots of 32 px 3 px in, a stack's traded count blue (0xff1010ff) at the bottom right (WndTradeCtrl.cpp:48-94). */
+.hud-trade-grid { position: absolute; }
+.hud-trade-cell { position: absolute; width: 32px; height: 32px; }
+.hud-trade-cell img { width: 32px; height: 32px; object-fit: contain; pointer-events: none; }
+.hud-trade-cell span {
+  position: absolute; right: 0; bottom: 0; color: #1010ff; font: bold 10px/11px Arial, sans-serif; pointer-events: none;
+}
+.hud-trade-cell .hud-trade-expired {
+  position: absolute; left: 0; top: 0; width: 32px; height: 32px; pointer-events: none;
+  background: rgb(255, 100, 100); mix-blend-mode: multiply;
+  -webkit-mask-size: 32px 32px; mask-size: 32px 32px; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+}
+.hud-trade .hud-res-static-text { color: #000; text-shadow: none; left: 6px; top: 3px; }
+.hud-trade [data-trade$="penya"] .hud-res-static-text { left: auto; right: 6px; }
+.hud-trade.is-locked .hud-trade-grid, .hud-trade.is-locked .hud-picture-button { pointer-events: none; }
+.hud-trade-tooltip.hud-item-tooltip { position: fixed; right: auto; z-index: 95; pointer-events: none; }
+.hud-trade-confirm .hud-res-text-body { color: rgb(46, 112, 169); text-align: center; }
+
+/* The phone: the trade beside the phone's bag (as the shop is), its windows' words 14 px and their buttons words, not
+   pictures, tall enough for a finger; the quantity box's field 16 px (no zoom on focus) with the number keyboard. */
+@media (max-width: 1000px) and (pointer: coarse) {
+  .world:has(.hud-trade:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack) { visibility: hidden; }
+  .hud-trade {
+    left: 8px !important; top: 8px !important; transform: none !important; z-index: 60 !important;
+    width: calc(100% - var(--bag-window-width, 60%) - 28px) !important; min-width: 344px;
+    height: calc(100% - var(--hud-taskbar-height, 48px) - 16px) !important;
+    border-radius: 6px; background: repeating-linear-gradient(#fdf5ee 0 2px, #f6e6dc 2px 4px); box-shadow: inset 0 0 0 2px #dba98c, 0 2px 8px #0005;
+  }
+  .hud-trade > .hud-window-frame { display: none; }
+  .hud-trade > .hud-window-title { height: 26px !important; border-radius: 6px 6px 0 0; background: linear-gradient(#f7d8c4, #e2b394); font-size: 14px; }
+  .hud-trade > .hud-window-close { left: auto !important; right: 8px; }
+  .hud-trade > .hud-window-body {
+    left: 4px !important; top: 30px !important; width: calc(100% - 8px) !important; height: calc(100% - 34px) !important;
+    display: grid; grid-template-columns: repeat(6, 1fr); grid-template-rows: 20px 166px 20px 36px; gap: 3px 4px;
+    align-content: start; justify-items: center; overflow-y: auto;
+  }
+  .hud-trade > .hud-window-body > * { position: relative !important; left: auto !important; top: auto !important; }
+  .hud-trade [data-trade] { width: 100% !important; height: 20px !important; }
+  .hud-trade [data-trade] .hud-res-static-text { position: static; display: block; font-size: 14px; line-height: 20px; text-align: center; }
+  .hud-trade [data-trade$="penya"] .hud-res-static-text::before { content: 'Penya '; color: #3b3bb5; }
+  .hud-trade [data-trade="their-name"] { grid-area: 1 / 1 / 2 / 4; }
+  .hud-trade [data-trade="my-name"] { grid-area: 1 / 4 / 2 / 7; }
+  .hud-trade .hud-trade-grid[data-side="theirs"] { grid-area: 2 / 1 / 3 / 4; }
+  .hud-trade .hud-trade-grid[data-side="mine"] { grid-area: 2 / 4 / 3 / 7; }
+  .hud-trade .hud-trade-grid { width: 166px !important; height: 166px !important; border-radius: 4px; background: #fffaf5; box-shadow: inset 0 0 0 1px #dba98c; }
+  .hud-trade .hud-trade-grid[data-side="mine"] { box-shadow: inset 0 0 0 2px #e2a06e; }
+  .hud-trade [data-trade="their-penya"] { grid-area: 3 / 1 / 4 / 4; }
+  .hud-trade [data-trade="my-penya"] { grid-area: 3 / 4 / 4 / 7; }
+  .hud-trade [data-control="WIDC_OK_YOU"] { grid-area: 4 / 1 / 5 / 3; }
+  .hud-trade [data-control="WIDC_CANCEL"] { grid-area: 4 / 3 / 5 / 5; }
+  .hud-trade [data-control="WIDC_OK_I"] { grid-area: 4 / 5 / 5 / 7; }
+  .hud-trade-cell span { font-size: 14px; line-height: 14px; text-shadow: 1px 1px #fff; }
+  :is(.hud-trade, .hud-trade-request, .hud-trade-confirm, .hud-trade-gold) .hud-picture-button {
+    box-sizing: border-box; width: 100% !important; max-width: 104px; height: 34px !important; border: 1px solid #b07d5c; border-radius: 4px;
+    background: linear-gradient(#fff7ef, #ecd2bd) !important; color: #3a2414; font: 14px/32px Arial, sans-serif; text-align: center;
+  }
+  :is(.hud-trade, .hud-trade-request, .hud-trade-confirm, .hud-trade-gold) .hud-picture-button::after { content: attr(aria-label); }
+  :is(.hud-trade, .hud-trade-request, .hud-trade-confirm, .hud-trade-gold) .hud-picture-button:disabled { opacity: 0.55; background: #d9c8bb !important; }
+  .hud-trade [data-control="WIDC_OK_YOU"]::after { content: 'OK'; }
+  :is(.hud-trade-request, .hud-trade-confirm, .hud-trade-gold) .hud-picture-button { width: 80px !important; max-width: none; height: 30px !important; line-height: 28px; }
+  :is(.hud-trade-request, .hud-trade-confirm, .hud-trade-gold) :is(.hud-res-static-text, .hud-res-text-body),
+  :is(.hud-trade-request, .hud-trade-confirm, .hud-trade-gold) > .hud-window-title { font-size: 14px; }
+  .hud-trade-gold .hud-res-edit input { font-size: 16px; }
+}

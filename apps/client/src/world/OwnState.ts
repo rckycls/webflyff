@@ -6,6 +6,8 @@ import { GameDataMissingError } from './gameData';
 import { IK3_EGG, PetLevel, petItemId } from './pets/raisedPet';
 import { MAX_VIS } from './pets/buffPet';
 import type { VisPet } from './pets/buffPet';
+import { BAG_POSITIONS, tradeConsent } from './trade/itemContainer';
+import type { ItemContainer, TradeSlot } from './trade/itemContainer';
 import type { GameData } from './gameData';
 import { Parts, ownWorn } from './render/looks';
 import { equipmentPart } from './items/equipment';
@@ -331,6 +333,34 @@ export class OwnState {
     }
     const now = this.clock(), size = item.piercing?.length ?? 0;
     this.visEnds.set(item.objectId, left.slice(0, MAX_VIS).map((seconds, i) => (i < size ? now + seconds : 0)));
+  }
+
+  /**
+   * 2026-11-10 (trade research §4, §5.5): the penya the client moves itself, `CMover::AddGold( n, FALSE )`: the own penya
+   * put in the trade comes off (`OnTradePutGold`, DPClient.cpp:2655-2660), the partner's comes in at the end
+   * (`TradeConsent`); kept within 0 and INT_MAX (`Mover.cpp:567-606`).
+   */
+  addGold(delta: number): void {
+    if (delta === 0) return;
+    this.gold = Math.max(0, Math.min(0x7fffffff, this.gold + delta));
+    this.inventoryRevision++;
+  }
+
+  /**
+   * 2026-11-10: `CVTInfo::TradeConsent` (`MoverItem.cpp:132-215`) on the bag: the own traded items out, the partner's in
+   * (`tradeConsent`, trade/itemContainer.ts), then the partner's penya. A raised pet or buff pet that came keeps its times.
+   */
+  tradeConsent(
+    mine: ReadonlyArray<TradeSlot | null>, theirs: ReadonlyArray<TradeSlot | null>, partner: ItemContainer, gold: number,
+  ): void {
+    if (this.inventory === null) return;
+    const before = new Map(this.inventory);
+    const packMax = (itemId: number): number => this.data.itemProps.get(itemId)?.packMax ?? 1;
+    tradeConsent({ items: this.inventory, slots: this.inventorySlots, positions: BAG_POSITIONS }, mine, partner, theirs, packMax);
+    for (const [id, item] of this.inventory) if (before.get(id)?.itemId !== item.itemId) this.keepVisEnds(item);
+    for (const id of before.keys()) if (!this.inventory.has(id)) this.visEnds.delete(id);
+    this.inventoryRevision++;
+    this.addGold(gold);
   }
 
   /**

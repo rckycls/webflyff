@@ -839,7 +839,8 @@ export function writeAddSelf(
   }
   const w = playerStart(p, player, [own.str, own.sta, own.dex, own.int])
     .u16(own.manaPoint).u16(own.fatiguePoint) // (u_short)m_nManaPoint, (u_short)m_nFatiguePoint
-    .i32(0).i32(0).u32(0) // m_nTutorialState, m_nFxp, dwGold
+    // m_nTutorialState, m_nFxp, dwGold (2026-11-10, trade: the own penya when given)
+    .i32(0).i32(0).u32(own.gold ?? 0)
     // m_nExp1, m_nSkillLevel, m_nSkillPoint, m_nDeathExp, m_nDeathLevel
     .i64(own.exp).i32(own.skillLevel).i32(own.skillPoint).i64(own.deathExp).i32(own.deathLevel);
   for (let i = 0; i < MAX_JOB; i++) w.u32(0); // dwJobLv

@@ -51,6 +51,11 @@ export class InventoryWindow {
   readonly frame: WindowFrame;
   shopSelect?: (id: number) => void;
   onShopClose?: () => void;
+  /**
+   * 2026-11-10 (trade): while the trade window is open the phone, which has no drag, puts a tapped item or the tapped
+   * penya in the trade (the desktop drags them onto the own grid, CWndTradeCtrl::OnDropIcon).
+   */
+  trade?: { active(): boolean; tapItem(id: number): void; tapPenya(): void };
   private own: OwnState | undefined;
   private selected: number | null = null;
   private revision = -1;
@@ -191,6 +196,7 @@ export class InventoryWindow {
         // 2026-11-05: in the upgrade mode a click is its target's (CWndItemCtrl::OnLButtonDown); an empty cell does nothing
         if (this.actions.upgrade?.active() === true) { if (item) this.actions.upgrade.pick(id); return; }
         if (this.shopSelect) { this.selected = item ? id : null; this.actionsOpen = false; this.drawDetails(); this.shopSelect(item ? id : -1); return; }
+        if (this.mobile && item && this.trade?.active() === true) { if (!held) this.trade.tapItem(id); return; }
         this.selected = item ? id : null; this.actionsOpen = item !== undefined && (this.mobile || this.hoverAnchor === cell);
         this.drawDetails();
       });
@@ -262,6 +268,13 @@ export class InventoryWindow {
     }
     const footer = this.doc.createElement('div'); footer.className = 'inventory-money';
     footer.setAttribute('aria-label', 'Penya'); footer.textContent = own.gold.toLocaleString('en-US');
+    // 2026-11-10 (trade): the penya sack (`CWndGold`, WndField.cpp:490-500), dragged onto the own trade grid; tapped on a phone
+    footer.draggable = !this.mobile;
+    footer.addEventListener('dragstart', (event) => {
+      event.dataTransfer?.setData('application/x-flyff-penya', String(own.gold));
+      if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+    });
+    footer.addEventListener('click', () => { if (this.mobile && this.trade?.active() === true) this.trade.tapPenya(); });
     bag.append(scroll, footer);
     bagBox.append(bag); equipmentBox.append(equipment); sections.append(equipmentBox, bagBox);
     body.append(sections);
