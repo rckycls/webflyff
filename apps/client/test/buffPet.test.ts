@@ -202,7 +202,7 @@ function pretendWorld() {
   const statusFrame = new WindowFrame('', art, { width: 220, height: 112, texture: 'WndStatus2.tga' }, document);
   document.body.append(statusFrame.element);
   statusFrame.open({ x: 0, y: 0 });
-  const confirms: Array<{ text: string; ok: () => void; parent: unknown }> = [];
+  const confirms: Array<{ text: string; ok: () => void; parent: unknown; close: () => void }> = [];
   const host: BuffPetHost = {
     own: () => own, props: data.itemProps, texts: data.texts,
     statusFrame: () => statusFrame, worldRight: () => 1280,
@@ -211,7 +211,11 @@ function pretendWorld() {
     modelScale: () => 1,
     loadPortrait: vi.fn(async () => ({ model: fakeModel(), motion: null })),
     renderer: () => null,
-    confirm: (text, ok, parent) => { confirms.push({ text, ok, parent }); },
+    confirm: (text, ok, parent) => {
+      const close = vi.fn();
+      confirms.push({ text, ok, parent, close });
+      return close;
+    },
     use: vi.fn(), sendRemoveVis: vi.fn(), sendSwapVis: vi.fn(),
     tooltipData: data, tooltipContext: (item) => ownTooltipContext(own, item, 'other'),
     ui: { art, doc: document },
@@ -421,6 +425,19 @@ describe('CWndBuffPetStatus in the pretend world (pets/buffPetWindows.ts, hud/bu
     expect(p.windows.checkConfirm(BAG_VIS)).toBe(true);
     p.confirms.at(-1)!.ok();
     expect(p.host.use).toHaveBeenCalledWith(BAG_VIS);
+  });
+
+  it('the box the window asked in goes with the window (its child, m_pWndConfirmVis); Pet Magic\'s stays (pets review)', () => {
+    const p = pretendWorld();
+    expect(p.windows.checkConfirm(BAG_MAGIC)).toBe(true); // g_WndMng.m_pWndConfirmVis, no parent (WndManager.cpp:7676-7690)
+    const magic = p.confirms.at(-1)!;
+    p.send(writeVisPetActivate(OWN_ID, BAG_PET, PET_MOVER));
+    p.windows.frame();
+    slotsOf(p.windows)[0]!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    const child = p.confirms.at(-1)!; // DoModal_ConfirmQuestion: Initialize( this, APP_CONFIRM_ENTER ) (WndPetSys.cpp:2708-2720)
+    p.send(writeVisPetActivate(OWN_ID, NULL_ID, NULL_ID)); // SAFE_DELETE( m_pWndBuffPetStatus ), its children with it
+    expect(child.close).toHaveBeenCalledOnce();
+    expect(magic.close).not.toHaveBeenCalled();
   });
 
   it("a slot's tooltip is the vis with its time left as its keep time (OnMouseWndSurface, PutKeepTime)", () => {

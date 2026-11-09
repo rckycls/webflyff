@@ -253,7 +253,12 @@ export class PetCareWindows {
     this.drawMiracle();
   }
 
-  /** PET_RELEASE about the own player: the miracle window closes (`OnPetRelease`, :16437-16439). */
+  /**
+   * PET_RELEASE about the own player: the miracle window closes (`OnPetRelease`, :16437-16439). Its
+   * `g_WndMng.m_pWndFoodConfirm` (:16441-16442) is the food's count box, `CWndFoodConfirm( 1 )`, which V15 never makes (the
+   * food is used at once, `__PET_0519`, :10637-10649); the food mill's count box is the mill's own (`m_pWndFoodConfrim`,
+   * WndPetSys.cpp:1770-1774), which stays (2026-11-09, pets review).
+   */
   released(): void {
     this.window(PET_MIRACLE).close();
   }

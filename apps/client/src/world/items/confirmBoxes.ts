@@ -85,9 +85,10 @@ export class ConfirmBoxes {
   /**
    * Opens the box `kind` with `text` (its catalog "\n" already line breaks), replacing any box open; centred on the layer,
    * or on `parent` (2026-11-09, pets B1: `MoveParentCenter` of a box made with a parent window, the buff pet window's
-   * `CWndConfirmVis`, WndPetSys.cpp:2718, :2927-2931).
+   * `CWndConfirmVis`, WndPetSys.cpp:2718, :2927-2931). 2026-11-09 (pets review): it gives this box's close, for a parent
+   * window that goes (its child deleted with it), which does nothing once the box has gone or another took its place.
    */
-  open(kind: BoxKind, text: string, answers: BoxAnswers, parent?: { x: number; y: number; width: number; height: number }): void {
+  open(kind: BoxKind, text: string, answers: BoxAnswers, parent?: { x: number; y: number; width: number; height: number }): () => void {
     if (this.open_ !== null) {
       // SAFE_DELETE of the box before: it goes without its answers
       const old = this.open_;
@@ -96,10 +97,12 @@ export class ConfirmBoxes {
     }
     const window = this.window(kind);
     window.setText(BOXES[kind].text, text);
-    this.open_ = { kind, answers, answered: false };
+    const opened = { kind, answers, answered: false };
+    this.open_ = opened;
     const { width, height } = BOXES[kind].layout;
     window.open(parent === undefined ? 'center'
       : { x: parent.x + (parent.width - width) / 2, y: parent.y + (parent.height - height) / 2 });
+    return () => { if (this.open_ === opened) window.close(); };
   }
 
   /** Closes the box open, as its close button does. */

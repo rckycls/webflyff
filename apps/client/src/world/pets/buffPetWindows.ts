@@ -72,8 +72,11 @@ export interface BuffPetHost {
   /** The model and stand motion of `mover`, loaded for the portrait alone; null when it cannot be had. */
   loadPortrait(mover: Mover): Promise<{ model: AssembledCharacter; motion: LoopedMotion | null } | null>;
   renderer(): WebGLRenderer | null;
-  /** `CWndConfirmVis` with `text`: OK (or Enter) runs `ok`; centred on `parent` (`MoveParentCenter`), else the screen. */
-  confirm(text: string, ok: () => void, parent: { x: number; y: number; width: number; height: number } | null): void;
+  /**
+   * `CWndConfirmVis` with `text`: OK (or Enter) runs `ok`; centred on `parent` (`MoveParentCenter`), else the screen. It
+   * gives the box's close (pets review: a box the window made goes with it), or nothing.
+   */
+  confirm(text: string, ok: () => void, parent: { x: number; y: number; width: number; height: number } | null): (() => void) | void;
   /** `SendDoUseItem( MAKELONG( ITYPE_ITEM, id ), g_pPlayer->GetId() )`: the bag item `objectId` used, naming the player. */
   use(objectId: number): void;
   sendRemoveVis(slot: number): void;
@@ -97,6 +100,11 @@ export class BuffPetWindows {
   private tooltip: HTMLElement | null = null;
   /** The slot under the pointer and its element, and the clock's second its tooltip was made at (it is made again each second). */
   private hovered: { slot: number; anchor: HTMLElement; at: number } | null = null;
+  /**
+   * 2026-11-09 (pets review): the close of the box the window asked in (`m_pWndConfirmVis`, made by
+   * `DoModal_ConfirmQuestion` with the window as its parent, `WndPetSys.cpp:2708-2720`), which goes with the window.
+   */
+  private childBox: (() => void) | null = null;
 
   constructor(private readonly host: BuffPetHost, report: (error: unknown) => void = () => {}) {
     const { art, doc } = host.ui;
@@ -112,6 +120,10 @@ export class BuffPetWindows {
       closed();
       this.dropPortrait();
       this.unhover();
+      // the window deleted (SAFE_DELETE on VISPET_ACTIVATE, Destroy): its child box with it
+      const box = this.childBox;
+      this.childBox = null;
+      box?.();
     };
   }
 
@@ -282,7 +294,9 @@ export class BuffPetWindows {
     const text = confirmVisText(section, this.host.texts, visName, petName);
     const frame = this.status.frame;
     const parent = overWindow && frame.isOpen ? { ...frame.position, ...frame.size } : null;
-    this.host.confirm(text, ok, parent);
+    const close = this.host.confirm(text, ok, parent);
+    // the window's own box (its child) or g_WndMng's (Pet Magic's, WndManager.cpp:7676-7690), which outlives it
+    this.childBox = parent !== null && typeof close === 'function' ? close : null;
   }
 
   /**
