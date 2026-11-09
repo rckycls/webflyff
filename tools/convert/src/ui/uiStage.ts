@@ -210,6 +210,16 @@ export const THEME_FILES: readonly string[] = [
   'ButtVScrUp.tga', 'ButtVScrDown.tga', 'ButtVScrBar.bmp', 'ButtVScrPUp.bmp', 'ButtVScrPBar.bmp', 'ButtVScrPDown.bmp',
   'Buttleft2.bmp', 'Buttright2.bmp', 'WndChgElemItem.bmp', 'ButOk2.bmp', 'WndElemItemBlank.tga', 'ButtMoney.tga',
   'Window02.bmp', 'SafetyGauge.bmp', 'SafetySuccess.bmp', 'SafetyFailure.bmp', 'Buttstop.bmp',
+  // 2026-11-09, the chat window in Neuz's look (docs/superpowers/specs/2026-11-09-chat-desktop-research.md):
+  // APP_COMMUNICATION_CHAT and APP_CHAT_LOG are "WndTile308.tga", tiled, so their frame is WndTile300 to WndTile311
+  // (CWndNeuz::AdditionalSkinTexture, WndNeuz.cpp:276-278); the strip under the line (CWndChat::AdditionalSkinTexture,
+  // WndCommunication.cpp:419-427, :1294-1312); the tabs, Lock, Filter and the move lock (resdata.inc:21640-21738); the
+  // picture over the line's left end while it holds words (CWndMacroChat::OnInitialUpdate, WndCommunication.cpp:137).
+  // ButtChatSystem.bmp is converted from Client/Icon, which holds the same file.
+  ...numbered('WndTile3', 0, 11, '.tga'),
+  'WndChatEdit00_1.tga', 'WndChatEdit01.tga', 'WndChatEdit02.tga',
+  'ButtChatChat.BMP', 'ButtChatWhisper.BMP', 'ButtChatShout.BMP', 'ButtChatTroupe.BMP', 'ButtChatGuild.BMP',
+  'ButtChatFilter.BMP', 'ButtChatLock.bmp', 'ButtWndLock.tga', 'wndButtMacroChat.bmp',
 ];
 
 /** 2026-11-05: the cursors of Client/Cursor the browser shows (Neuz.cpp:280-300): the upgrade mode's hammer, CUR_HAMMER. */
