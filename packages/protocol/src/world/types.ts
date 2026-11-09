@@ -11,8 +11,9 @@ import type { ChatMessage } from './chat';
 import type { NpcMessage } from './npc';
 import type { OwnQuest, QuestMessage } from './quest';
 import type { ShopMessage } from './shop';
+import type { PetData, PetMessage } from './pets';
 
-export type WorldMessage = ChatMessage | NpcMessage | ShopMessage | QuestMessage
+export type WorldMessage = ChatMessage | NpcMessage | ShopMessage | QuestMessage | PetMessage
   | { type: 'profileStats'; values: number[] }
   | { type: 'addItem'; item: GroundItem }
   | { type: 'createItem'; itemType: number; item: InventoryItem; stacks: Array<{ objectId: number; count: number }> }
@@ -372,6 +373,15 @@ export interface InventoryItem {
    * (`CItemElem::Serialize`, ObjSerialize.cpp:110-119), or UI_KEEPTIME's minutes as seconds. Absent for none.
    */
   keepTime?: number;
+  /** 2026-11-09 (pets M0): the raised pet an egg or pet item carries (`CItemElem::m_pPet`, `ObjSerialize.cpp:120-129`). */
+  pet?: PetData;
+  /**
+   * 2026-11-09 (pets M0): a buff pet's vis end times (`CPiercing::m_vtmPetVis`, `piercing.cpp:77-86`), as the seconds
+   * each had left when read, one per vis slot; the vis themselves are `piercing`. Absent for none.
+   */
+  visKeepTimes?: number[];
+  /** 2026-11-09 (pets M0): `m_bTranformVisPet`, a pick-up pet made a buff pet by the Pet Magic scroll (`__PETVIS`). */
+  transformVisPet?: true;
 }
 export interface GroundItem { index: number; scale: number; pos: Vec3; angle: number; item: InventoryItem }
 
@@ -425,6 +435,12 @@ export interface OwnCharacter {
    * `ProtocolError`'s message, for example `item 3 of 7: need 4 bytes but only 2 remain at offset 812`.
    */
   inventoryError: string | null;
+  /**
+   * 2026-11-09 (pets M0): the bag object ID of the summoned raised pet's item, the `dwPetId` after the three banks
+   * (`ObjSerializeOpt.cpp:585-603`), which the server keeps across a relog. Absent when none is summoned (`NULL_ID`) or
+   * when the inventory or the banks could not be read.
+   */
+  petSlot?: number;
 }
 
 /**
@@ -490,6 +506,12 @@ export interface AddedPlayer {
   own: OwnCharacter | null;
   /** `m_vtInfo.GetTitle()`, the title of the player's private shop (another player only; '' for the own character). */
   shopTitle: string;
+  /**
+   * 2026-11-09 (pets M0): another player's summoned raised pet, when its `dwPetId` is not `NULL_ID`
+   * (`ObjSerializeOpt.cpp:299-316`, read :664-672): `MAKELONG( CPet::GetIndex(), level )` split into the pet's
+   * `MI_PET_*` model and its level, and the pet's name ('' for none). The own character's is `own.petSlot`.
+   */
+  pet?: { modelIndex: number; level: number; name: string };
 }
 
 /** The NPC part of `CMover::Serialize` (`_Common/ObjSerializeOpt.cpp:689`), which monsters take too. */

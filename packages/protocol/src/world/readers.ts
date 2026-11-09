@@ -45,6 +45,10 @@ import {
 import type { WorldMessage } from './types';
 import { readSmeltSafety, readUltimate } from './upgrade';
 import { readChangeFace, readSexChange, readSummon } from './itemWindows';
+import {
+  readMoverChangeSfx, readPetCall, readPetFeed, readPetLevelup, readPetMill, readPetRelease, readPetResurrectionResult,
+  readPetSetExp, readPetState, readPetWhole, readSetPetName, readVisPetActivate,
+} from './pets';
 
 /**
  * The readers of the bundle messages the browser understands, by message type, for `readBundle`. Each copies
@@ -165,4 +169,17 @@ export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
     [MessageType.CREATESFXOBJ, readCreateSfxObj],
     [MessageType.PLAYMUSIC, readPlayMusic],
     [MessageType.PLAYSOUND, readPlaySound],
+    // 2026-11-09 (pets M0): the pets, kept and not yet used (world/pets.ts)
+    [MessageType.PET_CALL, readPetCall],
+    [MessageType.PET_RELEASE, readPetRelease],
+    [MessageType.PET_LEVELUP, readPetLevelup],
+    [MessageType.PET_SET_EXP, readPetSetExp],
+    [MessageType.PET, readPetWhole],
+    [MessageType.PET_STATE, readPetState],
+    [MessageType.PET_FEED, readPetFeed],
+    [MessageType.PET_MILL, readPetMill],
+    [MessageType.QUE_PETRESURRECTION_RESULT, readPetResurrectionResult],
+    [MessageType.SET_PET_NAME, readSetPetName],
+    [MessageType.MOVER_CHANGESFX, readMoverChangeSfx],
+    [MessageType.VISPET_ACTIVATE, readVisPetActivate],
   ]);

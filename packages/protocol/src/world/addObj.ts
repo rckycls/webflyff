@@ -3,6 +3,7 @@ import { readBuffs } from './buffs';
 import type { MessageHeader } from '../bundle';
 import { ObjectType } from '../constants';
 import { readOwnAfterEquipment } from './own';
+import { MAX_PET_NAME } from './pets';
 import { readGroundItem } from './items';
 import { readQuest, readQuestIds } from './quest';
 import type { OwnNumbers } from './own';
@@ -18,7 +19,8 @@ const MAX_JOB = 32;
 const NAME_BUFFER = 32; // m_szName, ObjSerializeOpt.cpp:424
 const CHARACTER_KEY_BUFFER = 32; // m_szCharacterKey, :692
 const MAX_VENDORNAME = 48; // _Common/ProjectCmn.h:14
-const MAX_PET_NAME = 17; // _Common/pet.h:105
+/** `NULL_ID`: another player with no raised pet out. */
+const NULL_ID = 0xffffffff;
 
 /**
  * ADD_OBJ: `CDPClient::OnAddObj` (`Neuz/DPClient.cpp:1053`): `ar >> (BYTE &)dwObjType >> dwObjIndex`, then
@@ -153,9 +155,12 @@ function readPlayer(r: ArReader, self: boolean): AddedPlayer {
     const option = options[part] ?? 0;
     worn.push({ part, itemId, flag, ...(option !== 0 ? { option } : {}) });
   }
-  r.u32(); // dwPetId (__VER >= 9, __PET_0410)
-  r.string(MAX_PET_NAME); // szPetName (__PET_1024)
-  return { ...base, worn, equipmentObjectIds: [], own: null, shopTitle };
+  // 2026-11-09 (pets M0): the summoned raised pet, MAKELONG( CPet::GetIndex(), level ) or NULL_ID (__VER >= 9,
+  // __PET_0410, :664-667), and its name (__PET_1024, :668-672)
+  const petId = r.u32();
+  const petName = r.string(MAX_PET_NAME);
+  const pet = petId === NULL_ID ? undefined : { modelIndex: petId & 0xffff, level: petId >>> 16, name: petName };
+  return { ...base, worn, equipmentObjectIds: [], own: null, shopTitle, ...(pet !== undefined ? { pet } : {}) };
 }
 
 /**

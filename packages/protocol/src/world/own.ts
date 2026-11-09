@@ -1,5 +1,6 @@
 import type { ArReader } from '../ar/ArReader';
 import { ProtocolError } from '../errors';
+import { readPet } from './pets';
 import type { InventoryItem, OwnCharacter, SkillSlot } from './types';
 
 /**
@@ -16,30 +17,65 @@ export const MAX_SKILL_JOB = 45;
 const INVENTORY_SLOTS = 42 + 31;
 /** The `nBufSize` of `ReadString( m_szItemText, 32 )` (`ObjSerialize.cpp:43`). */
 const ITEM_TEXT_BUFFER = 32;
-/** `PL_MAX` (`enum PETLEVEL`, `_Common/pet.h:16`): the 6 bytes of `CPet::m_anAvailLevel`. */
-const PL_MAX = 6;
-/** `MAX_PET_NAME` (`_Common/pet.h:105`, `__PET_1024`): the `nBufSize` of the pet name's `ReadString`. */
-const MAX_PET_NAME = 17;
 
 /** What `OwnCharacter` holds before the skill array: the numbers `readOwnEquipment` reads on its way to the IDs. */
-export type OwnNumbers = Omit<OwnCharacter, 'skills' | 'inventory' | 'inventoryError' | 'inventorySlots'>;
+export type OwnNumbers = Omit<OwnCharacter, 'skills' | 'inventory' | 'inventoryError' | 'inventorySlots' | 'petSlot'>;
+
+/** `MAX_BANK` (`_Common/ProjectCmn.h:9`): each bank's `m_dwItemMax` (`SetItemContainer( ITYPE_ITEM, MAX_BANK )`, `Mover.cpp:1474`). */
+const MAX_BANK = 42;
+/** `NULL_ID`: no pet summoned. */
+const NULL_ID = 0xffffffff;
 
 /**
  * The rest of the own character's METHOD_NONE block (`CMover::Serialize`, `_Common/ObjSerializeOpt.cpp:509-640`),
  * from where `readOwnEquipment` stopped, after the `m_aEquipInfo[i].dwId` loop (:557-558): the skill array, then the
- * fields up to the inventory and the inventory (`readInventoryPart`). It completes `numbers` into the
- * `OwnCharacter`, and leaves the reader at the end of the message.
+ * fields up to the inventory and the inventory (`readInventoryPart`), then (2026-11-09, pets M0) the three banks, read
+ * past, and the summoned pet's slot (`readPetSlot`). It completes `numbers` into the `OwnCharacter`, and leaves the
+ * reader at the end of the message.
  */
 export function readOwnAfterEquipment(r: ArReader, numbers: OwnNumbers): OwnCharacter {
   const skills = readSkills(r);
   const { inventory, inventoryError, inventorySlots } = readInventoryPart(r);
-  // The reader stops here, after the inventory, or wherever the inventory part failed. The C++ goes on with
-  // `m_Bank[k].Serialize` for the three banks (:586-587), `dwPetId` (:594-596), `m_Pocket.Serialize` (:606),
-  // `m_dwMute` (:610, __JEFF_9_20), the honour titles (:616-634), `m_idCampus` and `m_nCampusPoint` (:637-638), then
-  // the buffs. None of them is read yet (they stay with Piece 5): they are skipped, and whatever reads them next
+  const petSlot = inventory === null ? undefined : readPetSlot(r);
+  // The reader stops here, after the pet slot, or wherever the inventory or the banks failed. The C++ goes on with
+  // `m_Pocket.Serialize` (:606), `m_dwMute` (:610, __JEFF_9_20), the honour titles (:616-634), `m_idCampus` and
+  // `m_nCampusPoint` (:637-638), then the buffs. None of them is read yet: they are skipped, and whatever reads them next
   // replaces this `skipRest`.
   r.skipRest();
-  return { ...numbers, skills, inventory, inventoryError, ...(inventorySlots ? { inventorySlots } : {}) };
+  return {
+    ...numbers, skills, inventory, inventoryError, ...(inventorySlots ? { inventorySlots } : {}),
+    ...(petSlot !== undefined ? { petSlot } : {}),
+  };
+}
+
+/**
+ * The three banks, read past (`m_Bank[k].Serialize( ar )`, :586-587: `CItemContainer::Serialize` with 42 slots,
+ * `_Common/Item.h:923-944`: `m_apIndex`, the count, each item's slot and `CItemElem`, the object indexes), then `DWORD
+ * dwPetId` (__VER >= 9, __PET_0410, :594-596): the summoned pet's bag object ID, undefined for `NULL_ID`. A
+ * `ProtocolError` (the bytes run out, or a count or a slot out of range) gives undefined too: the inventory before it is
+ * kept. Any other error is a bug and propagates.
+ */
+function readPetSlot(r: ArReader): number | undefined {
+  try {
+    for (let k = 0; k < 3; k++) {
+      r.bytes(4 * MAX_BANK); // ar.Read( m_apIndex, sizeof(DWORD) * m_dwItemMax )
+      const at = r.position();
+      const count = r.u8(); // chSize
+      if (count > MAX_BANK) throw new ProtocolError(`bank ${k}: ${count} items, more than its ${MAX_BANK} slots`, at);
+      for (let i = 0; i < count; i++) {
+        const slotAt = r.position();
+        const slot = r.u8(); // ch
+        if (slot >= MAX_BANK) throw new ProtocolError(`bank ${k}: slot ${slot} outside its ${MAX_BANK}`, slotAt);
+        readInventoryItem(r, slot); // m_apItem[ch].Serialize( ar )
+      }
+      r.bytes(4 * MAX_BANK); // ar.Read( adwObjIndex, sizeof(DWORD) * m_dwItemMax )
+    }
+    const petId = r.u32(); // ar >> dwPetId; SetPetId( dwPetId )
+    return petId === NULL_ID ? undefined : petId;
+  } catch (error) {
+    if (!(error instanceof ProtocolError)) throw error;
+    return undefined;
+  }
 }
 
 /**
@@ -151,7 +187,7 @@ export function readInventoryItem(r: ArReader, slotId?: number): InventoryItem {
   const resist = r.u8(); // m_bItemResist (BYTE, :99)
   const resistOption = r.i32(); // m_nResistAbilityOption (int, :100)
   r.i32(); // m_nResistSMItemId (int, :101)
-  const { piercing, ultimate } = readPiercing(r); // m_piercing.Serialize( ar ) (:103)
+  const { piercing, ultimate, visKeepTimes } = readPiercing(r); // m_piercing.Serialize( ar ) (:103)
   const charged = r.i32(); // m_bCharged (BOOL, :104)
   const randomOption = r.i64(); // m_iRandomOptItemId (__int64; __VER >= 11, __SYS_IDENTIFY, :106)
   // m_dwKeepTime (DWORD, :110), then `if( m_dwKeepTime )` the time left, a time_t (:112-119): 4 bytes, since both
@@ -159,8 +195,9 @@ export function readInventoryItem(r: ArReader, slotId?: number): InventoryItem {
   // 2026-11-05: kept as the seconds left when read (the ticket in use is one with a keep time, CMover::GetTicket)
   const keepTime = r.u32() !== 0 ? r.i32() : undefined;
   // BYTE bPet, then `if( bPet )` the pet (__VER >= 9, __PET_0410, :121-128); the storing side writes 1 or 0 (:76-84)
-  if (r.u8() !== 0) skipPet(r);
-  r.i32(); // m_bTranformVisPet (BOOL; __VER >= 15, __PETVIS, :131)
+  // 2026-11-09: the raised pet is kept (pets M0)
+  const pet = r.u8() !== 0 ? readPet(r) : undefined;
+  const transformVisPet = r.i32() !== 0; // m_bTranformVisPet (BOOL; __VER >= 15, __PETVIS, :131)
   return {
     objectId, itemId, count, ...(flag ? { flag } : {}), ...(charged ? { charged } : {}),
     // what the item tooltip shows, when there is something to show (2026-11-05)
@@ -168,6 +205,8 @@ export function readInventoryItem(r: ArReader, slotId?: number): InventoryItem {
     ...(resistOption !== 0 ? { resistOption } : {}), ...(piercing.length > 0 ? { piercing } : {}),
     ...(ultimate.length > 0 ? { ultimate } : {}), ...(randomOption !== 0n ? { randomOption } : {}),
     ...(keepTime !== undefined ? { keepTime } : {}),
+    ...(pet !== undefined ? { pet } : {}), ...(visKeepTimes.length > 0 ? { visKeepTimes } : {}),
+    ...(transformVisPet ? { transformVisPet: true as const } : {}),
   };
 }
 
@@ -176,21 +215,12 @@ export function readInventoryItem(r: ArReader, slotId?: number): InventoryItem {
  * `size_t` count (4 bytes on x86) and then that many 4-byte entries. The C++ reads as many entries as the count says,
  * even past the `MAX_PIERCING_*` that `SetPiercingSize` caps the list at.
  */
-function readPiercing(r: ArReader): { piercing: number[]; ultimate: number[] } {
+function readPiercing(r: ArReader): { piercing: number[]; ultimate: number[]; visKeepTimes: number[] } {
   const list = (): number[] => Array.from({ length: r.u32() }, () => r.u32());
   const piercing = list(); // nSize, then DWORD dwItem each: the cards (:57-65)
   const ultimate = list(); // nSize, then DWORD dwItem each: the ultimate jewels (__VER >= 12, __EXT_PIERCING, :66-76)
-  r.bytes(4 * r.u32()); // nSize, then time_t tmTemp each (4 bytes): the vis keep times (__VER >= 15, __PETVIS, :77-86)
-  return { piercing, ultimate };
-}
-
-/** `CPet::Serialize`, the loading side (`_Common/pet.cpp:325-338`; storing :313-324). */
-function skipPet(r: ArReader): void {
-  r.u8(); // m_nKind (BYTE)
-  r.u8(); // (BYTE &)m_nLevel
-  r.u32(); // m_dwExp (DWORD)
-  r.u16(); // m_wEnergy (WORD)
-  r.u16(); // m_wLife (WORD)
-  r.bytes(PL_MAX); // ar.Read( m_anAvailLevel, sizeof(BYTE) * PL_MAX )
-  r.string(MAX_PET_NAME); // ReadString( m_szName, MAX_PET_NAME ) (__PET_1024)
+  // nSize, then time_t tmTemp each (4 bytes): the vis keep times as seconds left (__VER >= 15, __PETVIS, :77-86); a buff
+  // pet's vis are its `piercing` entries (2026-11-09: kept, pets M0)
+  const visKeepTimes = Array.from({ length: r.u32() }, () => r.i32());
+  return { piercing, ultimate, visKeepTimes };
 }
