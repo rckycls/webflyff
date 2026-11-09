@@ -2676,7 +2676,7 @@ fieldset:disabled .btn {
 .hud-messenger-spacer { position: absolute; pointer-events: none; }
 .hud-messenger-row { position: absolute; cursor: pointer; user-select: none; }
 .hud-messenger-row > div { position: absolute; }
-.hud-messenger-text { white-space: nowrap; overflow: hidden; line-height: 14px; pointer-events: none; }
+.hud-messenger-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 14px; pointer-events: none; }
 .hud-messenger-tip { pointer-events: auto; }
 .hud-messenger-tabs > div { position: absolute; }
 .hud-messenger-tab { position: absolute; padding: 0 4px; border: 0; background: transparent; color: #ffffff; font: 11px/20px Arial, sans-serif; text-align: left; cursor: pointer; }

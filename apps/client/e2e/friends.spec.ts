@@ -95,13 +95,21 @@ test('the Messenger from Start: the list, its icons, a log-in notice and the men
   await page.locator('.hud-friend-menu [data-menu-entry="3"]').click();
   await expect.poll(() => sentOf(gateway, FriendPacket.SETFRIENDSTATE).length).toBe(1);
   expect(fieldsOf(sentOf(gateway, FriendPacket.SETFRIENDSTATE)[0]!.body, 2)).toEqual([WEBBY, 3]);
-  // the window stays inside the screen on the phone too
+  // 2026-11-10 (owner): it opens centred across and above the task bar; on the phone at the phones' 0.7, not the whole
+  // screen
+  const phone = test.info().project.name === 'phone';
   const box = (await page.locator('.hud-messenger').boundingBox())!;
-  const view = page.viewportSize()!;
-  expect(box.x).toBeGreaterThanOrEqual(-1);
-  expect(box.y + box.height).toBeLessThanOrEqual(view.height + 1);
+  const layer = (await page.locator('.hud-messenger').evaluate((el) => {
+    const r = el.parentElement!.getBoundingClientRect();
+    return { x: r.x, width: r.width };
+  }));
+  expect(Math.abs(box.x + box.width / 2 - (layer.x + layer.width / 2))).toBeLessThanOrEqual(2);
+  expect(Math.abs(box.width - 352 * (phone ? 0.7 : 1))).toBeLessThanOrEqual(1);
+  const bar = (await page.locator('.hud-taskbar-strip').boundingBox())!;
+  expect(box.y).toBeGreaterThan(0);
+  expect(box.y + box.height).toBeLessThanOrEqual(bar.y + 1);
   // the phone's text is 14 px at least
-  if (test.info().project.name === 'phone') {
+  if (phone) {
     expect(await rows(page).nth(0).locator('[data-column="name"]').evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(14);
   }
 });

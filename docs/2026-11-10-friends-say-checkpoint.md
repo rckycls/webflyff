@@ -14,7 +14,9 @@ Branch `friends-say` (worktree `FlyffWeb-worktrees/friends-say`), from main f7f4
 - **Friend list** (`apps/client/src/world/friends/messenger.ts`): `CRTMessenger` and what each handler does. It is the
   screen's, so a world change keeps it. GETFRIENDSTATE goes out when the list comes, when a friend is added and when the
   window opens.
-- **Messenger window** (`hud/friends/messengerWindow.ts`), `CWndMessengerEx`, 352 x 368 "Messenger":
+- **Messenger window** (`hud/friends/messengerWindow.ts`), `CWndMessengerEx`, 352 x 368 "Messenger". Owner change
+  (2026-11-10): it opens centred above the task bar (Neuz: bottom right), and on a phone at the phones' 0.7 size like
+  the other windows (it was fitted to the whole screen):
   - the own 32 px state icon, the name, "(state)", and the server and channel names;
   - the state menu (Online, AFK, Addict Mode, Eating, Resting / Vending, Moving, Offline), which sends SETFRIENDSTATE;
   - the five column heads, sorting as the C++ comparisons do (each press flips its own direction);
@@ -64,8 +66,8 @@ Branch `friends-say` (worktree `FlyffWeb-worktrees/friends-say`), from main f7f4
 ## Device checklist entry
 
 > **Messenger and /say** (desktop and landscape phone).
-> 1. Log in with a character that has friends. Press E (desktop) or Start → Messenger. The window opens at the bottom
->    right, titled "Messenger", with your name, "(Online)" and the server and channel names. Online friends are listed
+> 1. Log in with a character that has friends. Press E (desktop) or Start → Messenger. The window opens in the middle
+>    of the screen (smaller on the phone), titled "Messenger", with your name, "(Online)" and the server and channel names. Online friends are listed
 >    first with a channel and state icon, their level, job icons and name.
 > 2. Press each column head twice; the order flips.
 > 3. Right-click (long-press on the phone) a friend: Message, Block, Delete, Invite to join party. Block turns the name
@@ -76,7 +78,8 @@ Branch `friends-say` (worktree `FlyffWeb-worktrees/friends-say`), from main f7f4
 > 6. Press + and add a name; the other player gets "... wants to be your friend. Do you accept?"; Yes adds both.
 > 7. Have a friend log in: a pop-up says "Namehas logged into the game."
 > 8. Type `/wr`, then have someone whisper you: nothing shows, and they are told you refuse whispers. `/wa` turns it back.
-> 9. Phone: all texts readable (14 px), the window fits the screen, and closing it brings back the joystick.
+> 9. Phone: the Messenger opens in the middle at about two thirds of its desktop size; the texts are 14 px; closing it
+>    brings back the joystick.
 
 ## Main folder: convert command
 

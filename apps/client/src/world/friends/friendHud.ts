@@ -168,11 +168,9 @@ export class FriendHud {
   /** APP_MESSENGER_: on or off. Opening it with friends asks their states (`OnInitialUpdate`, :669-678). */
   toggle(): void {
     if (this.window.frame.isOpen) { this.window.frame.close(); return; }
-    // at the layout's bottom-right corner (:771-775), above the task bar (`GetLayoutRect`)
-    const layer = this.window.frame.element.parentElement;
-    const size = this.window.frame.scaledSize;
-    const bottom = (layer?.clientHeight ?? size.height) - (layer === null ? 0 : layoutBottomOf(layer));
-    this.window.frame.open({ x: Math.max(0, (layer?.clientWidth ?? size.width) - size.width), y: Math.max(0, bottom - size.height) });
+    // 2026-11-10 (owner): centred above the task bar, on the desktop and the phone (Neuz: the layout's bottom-right
+    // corner, `WndMessenger.cpp:771-775`)
+    this.window.frame.open('center');
     if (this.messenger.friends.size > 0) this.screen.session.sendGetFriendState();
   }
 
