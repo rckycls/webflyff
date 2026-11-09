@@ -39,8 +39,8 @@ import { IK3_VIS, MAX_VIS, NeedVis, checkConfirmVis, confirmVisText, validVisTab
 import type { ConfirmVisSection } from './buffPet';
 
 /**
- * The event point 0 of the pet's model (`pObj3D->m_vEvent[ 0 ]`, `OnDraw` :2381), which the converted models do not keep:
- * the portrait's camera starts from the model's origin instead.
+ * The event point 0 of the pet's model (`pObj3D->m_vEvent[ 0 ]`, `OnDraw` :2381): the model glb's (2026-11-09, pets R4),
+ * else 0, as Neuz's is for a file with none (`memset`, Object3D.cpp:523) and as a glb of an older conversion gives it.
  */
 const NO_EVENT_POINT: readonly [number, number, number] = [0, 0, 0];
 
@@ -183,7 +183,8 @@ export class BuffPetWindows {
         loaded.model.release();
         return;
       }
-      const camera = buffPetCamera(NO_EVENT_POINT, loaded.model.box(), this.host.modelScale(mover.added.index));
+      const event = loaded.model.events?.[0] ?? NO_EVENT_POINT;
+      const camera = buffPetCamera(event, loaded.model.box(), this.host.modelScale(mover.added.index));
       this.portrait.show(loaded.model, loaded.motion, camera);
     });
   }

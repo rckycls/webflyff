@@ -18,7 +18,7 @@ import {
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { describe, expect, it, vi } from 'vitest';
 import type { MotionEvents } from '@flyffweb/formats';
-import { assembleCharacter, loopMotion } from '../src/character/assemble';
+import { assembleCharacter, loopMotion, modelEventsOf } from '../src/character/assemble';
 
 /** A chain of bones under a node named `skeleton`, as the converter writes them (names as GLTFLoader leaves them). */
 function skeletonScene(names: string[]): { scene: Group; bones: Bone[] } {
@@ -254,6 +254,35 @@ describe('the box of an assembled character', () => {
     const character = await assembleCharacter({ scene: skeleton.scene }, [part], fakeCache());
 
     expect(character.box()).toEqual({ min: [-1, 0, -2], max: [1, 2, 3] });
+  });
+
+  describe('event points (2026-11-09, pets: the buff pet window\'s camera)', () => {
+    it("are the first part's (GetObject3D, m_Element[0]), read from its glb's scene extras; none, or an older glb, gives []", async () => {
+      const glbPart = (extras: object) => new GLTFLoader().parseAsync(
+        JSON.stringify({
+          asset: { version: '2.0' },
+          nodes: [{ name: 'skeleton' }, { name: 'lod0' }],
+          scenes: [{ nodes: [0, 1], extras: { bbMin: [0, 0, 0], bbMax: [1, 1, 1], ...extras } }],
+          scene: 0,
+        }),
+        '',
+      );
+      const first = await glbPart({ events: [[0.25, 1, -0.5], [0, 2, 0]] });
+      const second = await glbPart({ events: [[9, 9, 9]] });
+      const character = await assembleCharacter({ scene: skeletonScene(NAMES).scene }, [first, second], fakeCache());
+      expect(character.events).toEqual([[0.25, 1, -0.5], [0, 2, 0]]);
+      const older = await assembleCharacter({ scene: skeletonScene(NAMES).scene }, [await glbPart({})], fakeCache());
+      expect(older.events).toEqual([]);
+      expect((await assembleCharacter({ scene: skeletonScene(NAMES).scene }, [], fakeCache())).events).toEqual([]);
+    });
+
+    it('names the part whose points are not three numbers each, or more than MAX_MDL_EVENT (8)', async () => {
+      const bad = partScene(NAMES, 't.ktx2');
+      bad.scene.userData.events = [[0, 0]];
+      await expect(assembleCharacter({ scene: skeletonScene(NAMES).scene }, [bad], fakeCache())).rejects.toThrow(/part 0.*event/);
+      expect(() => modelEventsOf({ userData: { events: new Array(9).fill([0, 0, 0]) } }, 'the model')).toThrow(/the model.*event/);
+      expect(modelEventsOf({ userData: {} }, 'the model')).toEqual([]);
+    });
   });
 
   describe('grips', () => {

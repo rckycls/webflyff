@@ -8,6 +8,7 @@ import {
   d3dColor,
   loadGltf,
   modelBoxOf,
+  modelEventsOf,
   noonLight,
   partSlot,
   unionModelBoxes,
@@ -118,14 +119,15 @@ export function useTextureSet(
 }
 
 /**
- * A model that is not animated: its `lod0` with its textures, a mixer that has nothing to play, its own box and no
- * grips (it has no skeleton).
+ * A model that is not animated: its `lod0` with its textures, a mixer that has nothing to play, its own box and event
+ * points (2026-11-09, pets) and no grips (it has no skeleton).
  */
 async function plainModel(gltf: GLTF, textures: SceneServices['textures']): Promise<AssembledCharacter> {
   const lod = gltf.scene.getObjectByName('lod0');
   if (lod === undefined) throw new Error('the model has no "lod0" node');
   const box = modelBoxOf(gltf.scene, 'the model');
   const boxes = box === null ? [] : [box];
+  const events = modelEventsOf(gltf.scene, 'the model');
   const root = new Group();
   root.add(lod);
   const keys = await applyTextures(lod, textures);
@@ -133,6 +135,7 @@ async function plainModel(gltf: GLTF, textures: SceneServices['textures']): Prom
     root,
     mixer: new AnimationMixer(root),
     grips: null,
+    events,
     box: () => unionModelBoxes(boxes),
     addBox: (added) => void boxes.push({ min: [...added.min], max: [...added.max] }),
     release: releaser(root, keys, textures),

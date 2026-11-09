@@ -327,6 +327,19 @@ describe('CWndBuffPetStatus in the pretend world (pets/buffPetWindows.ts, hud/bu
     await vi.waitFor(() => expect(p.windows.portrait.shown).toBe(true));
   });
 
+  it("starts the portrait's camera from the model's event point 0 (m_vEvent[ 0 ], WndPetSys.cpp:2381; pets R4)", async () => {
+    const p = pretendWorld();
+    const shown: Array<readonly number[]> = [];
+    vi.spyOn(p.windows.portrait, 'show').mockImplementation((_model, _motion, camera) => void shown.push(camera.pos));
+    const withEvents = { ...fakeModel(), events: [[0.25, 1, -0.5], [9, 9, 9]] } as unknown as AssembledCharacter;
+    vi.mocked(p.host.loadPortrait).mockResolvedValueOnce({ model: withEvents, motion: null });
+    p.send(writeVisPetActivate(OWN_ID, BAG_PET, PET_MOVER), writeAddNpc(PET_MOVER, p.petMover));
+    p.windows.frame();
+    await vi.waitFor(() => expect(shown).toHaveLength(1));
+    // m_fScale 1: the point as it is, + (0.5, 1.8, -3)
+    expect(shown[0]).toEqual([0.75, Math.fround(1 + Math.fround(1.8)), -3.5]);
+  });
+
   it('a double-click asks to take a vis out, OK sends VISPET_REMOVEVIS (OnLButtonDblClk, CWndConfirmVis)', () => {
     const p = pretendWorld();
     p.send(writeVisPetActivate(OWN_ID, BAG_PET, PET_MOVER));
