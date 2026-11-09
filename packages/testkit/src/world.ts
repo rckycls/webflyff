@@ -265,10 +265,11 @@ export function writeReturnScrollAck(objectId: number): ScriptMessage {
 
 /**
  * Piece 7 M3: UPDATE_ITEM 0x0018 (`CUser::AddUpdateItem`, `User.cpp:1136-1150`): the inventory's (type 0) item at
- * `itemObjectId` gets `value` in its `param` (`UI_NUM` 0, the count; 0 and below remove it), time 0.
+ * `itemObjectId` gets `value` in its `param` (`UI_NUM` 0, the count; 0 and below remove it), and `time` (0 unless given;
+ * 2026-11-09, pets B1: `UI_PETVIS_ITEM`'s minutes, `CItemUpgrade::SetPetVisItem`, `ItemUpgrade.cpp:1623`).
  */
-export function writeUpdateItem(objectId: number, itemObjectId: number, param: number, value: number): ScriptMessage {
-  return scripted(objectId, 0x0018, new ArWriter().u8(0).u8(itemObjectId).u8(param).u32(value).u32(0));
+export function writeUpdateItem(objectId: number, itemObjectId: number, param: number, value: number, time = 0): ScriptMessage {
+  return scripted(objectId, 0x0018, new ArWriter().u8(0).u8(itemObjectId).u8(param).u32(value).u32(time));
 }
 
 /** Piece 7 M2: SETSKILLSTATE (`CUserMng::AddSetSkillState`): a buff on `targetId`, its whole length `time` (ms). */

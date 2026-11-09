@@ -4,6 +4,8 @@ import { DstParam, NULL_ID, QS_END } from '@flyffweb/protocol';
 import type { AddedMover, InitStat, InventoryItem, OwnQuest, PetData, SkillSlot, TaskBar, WorldMessage } from '@flyffweb/protocol';
 import { GameDataMissingError } from './gameData';
 import { IK3_EGG, PetLevel, petItemId } from './pets/raisedPet';
+import { MAX_VIS } from './pets/buffPet';
+import type { VisPet } from './pets/buffPet';
 import type { GameData } from './gameData';
 import { Parts, ownWorn } from './render/looks';
 import { equipmentPart } from './items/equipment';
@@ -49,7 +51,25 @@ export type OwnEvent =
    */
   | { kind: 'jobChanged'; job: number; title: string }
   /** 2026-11-09 (pets R1): the own raised pet (`PetChange`). */
-  | { kind: 'pet'; change: PetChange };
+  | { kind: 'pet'; change: PetChange }
+  /** 2026-11-09 (pets B1): the own buff pet (`VisPetChange`). */
+  | { kind: 'visPet'; change: VisPetChange };
+
+/**
+ * 2026-11-09 (pets B1): what happened to the own buff pet (V15 `__PETVIS`):
+ * - `activated`: VISPET_ACTIVATE named a pet item (`OnActivateVisPet`, `DPClient.cpp:19011-19023`): the buff pet window
+ *   opens unless it is open;
+ * - `deactivated`: it named none: the window closes (:19024-19028);
+ * - `vis`: UPDATE_ITEM `UI_PETVIS_SIZE`, `UI_PETVIS_ITEM` or `UI_PETVIS_ITEMSWAP` changed a pet item's vis
+ *   (`CMover::UpdateItem`, `MoverParam.cpp:3981-4012`), each playing `SND_INF_EQUIPACCESSORY` at the own player.
+ */
+export type VisPetChange =
+  | { kind: 'activated' }
+  | { kind: 'deactivated' }
+  | { kind: 'vis' };
+
+/** `time_null()` on the client: the clock's whole seconds (`time_t`). */
+const wallSeconds = (): number => Math.floor(Date.now() / 1000);
 
 /**
  * 2026-11-09 (pets R1): what happened to the own raised pet, for its status window (R2) and its boxes:
@@ -203,6 +223,19 @@ export class OwnState {
    * PET_RELEASE clears it (`OnPetCall`, `OnPetRelease`, `DPClient.cpp:16398-16448`).
    */
   petSlot: number | null;
+  /**
+   * 2026-11-09 (pets B1): `m_objIdVisPet` and `m_oiEatPet` as VISPET_ACTIVATE sets them (`SetVisPetItem`, `SetEatPetId`,
+   * `DPClient.cpp:19008-19009`): the bag object id of the buff pet item out and the server id of its mover; null for
+   * `NULL_ID` (`HasActivatedVisPet`, `Mover.h:810`).
+   */
+  visPetSlot: number | null = null;
+  eatPetId: number | null = null;
+  /**
+   * 2026-11-09 (pets B1): `m_vtmPetVis` of the bag's items as end times in `time_null()` seconds, by object id: the
+   * seconds each had left as it came, added to the clock then (`CPiercing::Serialize`, `piercing.cpp:77-86`), so that a
+   * vis's time counts down; UPDATE_ITEM's `UI_PETVIS_*` change them.
+   */
+  private readonly visEnds = new Map<number, number[]>();
 
   /**
    * 2026-11-05: the server's values of the own numbers before a world change, kept unless the new world sent its own: the
@@ -218,10 +251,12 @@ export class OwnState {
    * of the character, which dress it (`ownWorn`) and make `equipped`. Throws when `added` is not the own character's, and
    * a `GameDataMissingError` when the job table has no row for its job: the game files are older than the server's.
    * `repeats` tells a repeatable quest (the catalog's `repeat`), which an end never adds to the completed quests.
+   * `clock` is `time_null()`, whole seconds (2026-11-09, pets B1: the buff pet's vis times).
    */
   constructor(
     private readonly data: GameData, added: AddedMover, equipment: readonly number[],
     private readonly repeats: (questId: number) => boolean = () => false,
+    readonly clock: () => number = wallSeconds,
   ) {
     const player = added.player;
     const own = player?.own;
@@ -259,6 +294,37 @@ export class OwnState {
     this.worn = wornBy(equipment, data);
     this.adjust = equipAdjust(this.worn);
     this.petSlot = own.petSlot ?? null;
+    for (const item of this.inventory?.values() ?? []) this.keepVisEnds(item);
+  }
+
+  /**
+   * 2026-11-09 (pets B1): `CMover::GetVisPetItem` (`Mover.h:808`): the bag item of `m_objIdVisPet`, undefined with no buff
+   * pet out or no such item.
+   */
+  visPetItem(): InventoryItem | undefined {
+    return this.visPetSlot === null ? undefined : this.inventory?.get(this.visPetSlot);
+  }
+
+  /** 2026-11-09 (pets B1): the vis of the bag item `objectId` (its piercing list and end times), undefined for none. */
+  visPetOf(objectId: number): VisPet | undefined {
+    const item = this.inventory?.get(objectId);
+    if (item === undefined) return undefined;
+    return { piercing: item.piercing ?? [], ends: this.visEnds.get(objectId) ?? [] };
+  }
+
+  /**
+   * 2026-11-09 (pets B1): the end times of an item that came (`CPiercing::Serialize`, `piercing.cpp:77-86`): the list
+   * `SetVisKeepTimeSize` makes (at most `MAX_VIS`), each `tmTemp + time_null()` within the piercing list (`SetVisKeepTime`
+   * sets no other, :163-169).
+   */
+  private keepVisEnds(item: InventoryItem): void {
+    const left = item.visKeepTimes;
+    if (left === undefined || left.length === 0) {
+      this.visEnds.delete(item.objectId);
+      return;
+    }
+    const now = this.clock(), size = item.piercing?.length ?? 0;
+    this.visEnds.set(item.objectId, left.slice(0, MAX_VIS).map((seconds, i) => (i < size ? now + seconds : 0)));
   }
 
   /**
@@ -513,8 +579,14 @@ export class OwnState {
       case 'createItem':
         if (message.itemType === 0 && this.inventory !== null) {
           for (const stack of message.stacks) {
-            if (stack.count > 0) this.inventory.set(stack.objectId, { ...message.item, ...stack });
-            else this.inventory.delete(stack.objectId);
+            if (stack.count > 0) {
+              const item = { ...message.item, ...stack };
+              this.inventory.set(stack.objectId, item);
+              this.keepVisEnds(item); // 2026-11-09 (pets B1)
+            } else {
+              this.inventory.delete(stack.objectId);
+              this.visEnds.delete(stack.objectId);
+            }
           }
           this.inventoryRevision++;
         }
@@ -522,9 +594,16 @@ export class OwnState {
       case 'updateItem': {
         const item = this.inventory?.get(message.objectId);
         if (message.itemType === 0 && item && (message.param === 0 || message.param === 8)) {
-          if ((message.value | 0) <= 0) this.inventory!.delete(message.objectId);
-          else this.inventory!.set(message.objectId, { ...item, count: message.value });
+          if ((message.value | 0) <= 0) {
+            this.inventory!.delete(message.objectId);
+            this.visEnds.delete(message.objectId);
+          } else {
+            this.inventory!.set(message.objectId, { ...item, count: message.value });
+          }
           this.inventoryRevision++;
+        } else if (message.itemType === 0 && item && objectId === this.objectId && message.param >= UI_PETVIS_SIZE &&
+          message.param <= UI_TRANSFORM_VISPET) {
+          return this.updateVis(item, message.param, message.value, message.time); // 2026-11-09 (pets B1)
         } else if (message.itemType === 0 && item && objectId === this.objectId) {
           const changed = itemUpdated(item, message.param, message.value);
           if (changed !== item) {
@@ -606,9 +685,72 @@ export class OwnState {
       case 'petFeed':
       case 'setPetName':
         return this.onPet(message);
+      case 'visPetActivate': { // 2026-11-09 (pets B1): OnActivateVisPet (DPClient.cpp:19002-19029)
+        this.eatPetId = message.petMoverId === NULL_ID ? null : message.petMoverId;
+        this.visPetSlot = message.itemObjectId === NULL_ID ? null : message.itemObjectId;
+        return [{ kind: 'visPet', change: { kind: this.visPetSlot !== null ? 'activated' : 'deactivated' } }];
+      }
       default:
         return [];
     }
+  }
+
+  /**
+   * 2026-11-09 (pets B1): UPDATE_ITEM's buff pet changes (`CMover::UpdateItem`, `MoverParam.cpp:3980-4020`; `Mover.h:82-89`):
+   * - `UI_PETVIS_SIZE` 15: `SetPiercingSize` (at most `MAX_PIERCING_WEAPON` 10, new slots empty) and `SetVisKeepTimeSize`
+   *   (at most `MAX_VIS`, new times 0);
+   * - `UI_PETVIS_ITEM` 16: the vis `HIWORD` in slot `LOWORD` (0 empties it), its end `dwTime` minutes from now
+   *   (`SetVisKeepTime( wIndex, dwTime * 60 + time_null() )`), each only within its list;
+   * - `UI_PETVIS_ITEMSWAP` 17: the vis and times of slots `LOWORD` and `HIWORD` swapped (`SetSwapVisItem`, `Item.cpp:795-808`),
+   *   unless one is past the list;
+   * - `UI_TRANSFORM_VISPET` 18: `m_bTranformVisPet = dwValue` and `m_bCharged = TRUE` (the Pet Magic scroll).
+   * The first three play `SND_INF_EQUIPACCESSORY` (`vis`); the fourth no sound.
+   */
+  private updateVis(item: InventoryItem, param: number, value: number, minutes: number): OwnEvent[] {
+    const piercing = [...(item.piercing ?? [])];
+    const ends = [...(this.visEnds.get(item.objectId) ?? [])];
+    const low = value & 0xffff, high = value >>> 16;
+    const endAt = (n: number): number => (n < piercing.length && n < ends.length ? ends[n]! : 0);
+    const setEnd = (n: number, end: number): void => { if (n < piercing.length && n < ends.length) ends[n] = end; };
+    let next: InventoryItem;
+    switch (param) {
+      case UI_PETVIS_SIZE: {
+        const size = Math.min(value | 0, MAX_PIERCING_WEAPON);
+        piercing.length = Math.max(0, size);
+        piercing.fill(0, item.piercing?.length ?? 0);
+        const times = Math.max(0, Math.min(value | 0, MAX_VIS));
+        const old = ends.length;
+        ends.length = times;
+        ends.fill(0, old);
+        next = withField(item, 'piercing', piercing);
+        break;
+      }
+      case UI_PETVIS_ITEM:
+        if (low < piercing.length) piercing[low] = high;
+        setEnd(low, (minutes >>> 0) * 60 + this.clock());
+        next = withField(item, 'piercing', piercing);
+        break;
+      case UI_PETVIS_ITEMSWAP: {
+        if (low >= piercing.length || high >= piercing.length) return [];
+        const id = piercing[low]!, end = endAt(low);
+        piercing[low] = piercing[high]!;
+        setEnd(low, endAt(high));
+        piercing[high] = id;
+        setEnd(high, end);
+        next = withField(item, 'piercing', piercing);
+        break;
+      }
+      default: { // UI_TRANSFORM_VISPET
+        const { transformVisPet: _, ...rest } = item;
+        next = { ...(value !== 0 ? { ...rest, transformVisPet: true as const } : rest), charged: 1 };
+        break;
+      }
+    }
+    this.inventory!.set(item.objectId, next);
+    if (ends.length > 0) this.visEnds.set(item.objectId, ends);
+    else this.visEnds.delete(item.objectId);
+    this.inventoryRevision++;
+    return param === UI_TRANSFORM_VISPET ? [] : [{ kind: 'visPet', change: { kind: 'vis' } }];
   }
 
   /** Server MOVEITEM executes CItemContainer::Swap, including automatic stack merging. */
@@ -851,6 +993,13 @@ const UI_RANDOMOPTITEMID = 10;
 const UI_KEEPTIME = 11;
 const UI_ULTIMATE_PIERCING_SIZE = 13;
 const UI_ULTIMATE_PIERCING = 14;
+/** 2026-11-09 (pets B1): the buff pet's (`__PETVIS`, `Mover.h:82-86`). */
+const UI_PETVIS_SIZE = 15;
+const UI_PETVIS_ITEM = 16;
+const UI_PETVIS_ITEMSWAP = 17;
+const UI_TRANSFORM_VISPET = 18;
+/** `MAX_PIERCING_WEAPON` (`_Network/CmnHdr.h`): what `SetPiercingSize` cuts a list to (`piercing.cpp:90-96`). */
+const MAX_PIERCING_WEAPON = 10;
 /** The most an upgrade or an element's upgrade goes to (`__EXT_ENCHANT`, `UpdateItem`'s dwMax). */
 const MAX_UPGRADE = 20;
 

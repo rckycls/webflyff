@@ -125,6 +125,12 @@ export interface Mover extends SimMover {
    * (`CAIEgg::m_idOwner`).
    */
   petOwner?: number;
+  /**
+   * 2026-11-09 (pets B1): `CMover::m_dwMoverSfxId` (`Mover.h:811`), the effect linked to the mover (a buff pet's aura,
+   * `XI_BUFFPET_GRADE1-3`), `NULL_ID` for none: the ADD_OBJ's (`ObjSerializeOpt.cpp:110-112`), then MOVER_CHANGESFX's
+   * (`OnChangeMoverSfx`, `DPClient.cpp:19032-19042`).
+   */
+  moverSfxId: number;
 }
 
 /**
@@ -634,6 +640,13 @@ export class WorldState {
       case 'setPetName':
         this.setPetName(m, message.name);
         break;
+      // 2026-11-09 (pets B1): the buff pets (`__PETVIS`, :19002-19042)
+      case 'moverChangeSfx': // OnChangeMoverSfx: m_dwMoverSfxId, and SetSfxBuffPet (the aura, WorldScreen's)
+        m.moverSfxId = message.sfxId;
+        break;
+      case 'visPetActivate': // OnActivateVisPet: g_pPlayer's
+        if (this.numbersOf(m) !== undefined) this.toOwn(message, objectId);
+        break;
       // addOther, environmentSetting, worldReadInfo, replace, queryGetDestObj: not kept here; clearUseSkill and
       // endSkillQueue are the own skill use's (`SkillUse`)
       default:
@@ -816,7 +829,7 @@ export class WorldState {
     const useItemId = added.player?.useItemId;
     const mover: Mover = {
       objectId, act, dest: null, corr: null, speedFactor, isSelf, kind, added, name, flying: prop?.flying === true,
-      buffs: this.buffsOf(added), baseSpeed: speed,
+      buffs: this.buffsOf(added), baseSpeed: speed, moverSfxId: added.sfxId,
       hp: added.hitPoint, level, maxHp: this.maxHpOf(added, level),
       stateMode, cast: (stateMode & STATE_BASEMOTION_MODE) !== 0 && useItemId !== undefined ? { itemId: useItemId, startedAt: null } : null,
     };
