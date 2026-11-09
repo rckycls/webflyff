@@ -265,6 +265,10 @@ export type WorldPacket =
   | ReturnType<typeof readDefinedText>
   | ReturnType<typeof readWhisper>
   | { type: 'guild' | 'system'; sender: string; text: string }
+  /** 2026-11-10: the core's answers to /count and /ip, and /system's notice (`OnGetPlayerCount`, `OnGetPlayerAddr`, `OnSystem`). */
+  | { type: 'playerCount'; count: number }
+  | { type: 'playerAddr'; name: string; addr: string }
+  | { type: 'systemNotice'; text: string }
   | MessageOf<'errorParty'>
   | MessageOf<'updatePlayerData'>
   | MessageOf<'playerLogout'>
@@ -356,6 +360,17 @@ export function decodeWorldPacket(body: Uint8Array): WorldPacket {
     }
     case PacketType.UPDATE_PLAYER_DATA: {
       const value = readUpdatePlayerData(r); r.expectEnd(); return value;
+    }
+    // 2026-11-10: OnGetPlayerCount (DPClient.cpp:12106-12116, a WORD), OnGetPlayerAddr (:12092-12104, MAX_PLAYER and 16),
+    // OnSystem (:12144-12158, 512)
+    case PacketType.GETPLAYERCOUNT: {
+      const count = r.u16(); r.expectEnd(); return { type: 'playerCount', count };
+    }
+    case PacketType.GETPLAYERADDR: {
+      const name = r.string(42), addr = r.string(16); r.expectEnd(); return { type: 'playerAddr', name, addr };
+    }
+    case PacketType.SYSTEM: {
+      const text = r.string(512); r.expectEnd(); return { type: 'systemNotice', text };
     }
     case PacketType.LOGOUT: {
       const value = readPlayerLogout(r); r.expectEnd(); return value;

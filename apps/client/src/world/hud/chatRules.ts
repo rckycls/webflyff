@@ -66,7 +66,7 @@ export type ChatSource =
   | { kind: 'shout'; sender: string; text: string; color?: number }
   | { kind: 'party' | 'guild'; sender: string; text: string }
   | { kind: 'announcement'; text: string }
-  | { kind: 'game'; text: string; color?: number };
+  | { kind: 'game'; text: string; color?: number; style?: number };
 
 /** A line as the chat keeps it: its text, ARGB colour and style; `said` for one said nearby (its bubble). */
 export interface ChatLine {
@@ -107,7 +107,8 @@ export function chatLine(source: ChatSource, own: string): ChatLine {
     case 'announcement':
       return { text: source.text, color: ANNOUNCE_COLOR, style: CHATSTY.SYSTEM };
     case 'game':
-      return { text: source.text, color: source.color ?? WHITE, style: CHATSTY.GAME };
+      // 2026-11-10: PutString with another style (OnGetPlayerCount's CHATSTY_GENERAL), else the game's
+      return { text: source.text, color: source.color ?? WHITE, style: source.style ?? CHATSTY.GAME };
   }
 }
 

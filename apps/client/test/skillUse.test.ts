@@ -804,6 +804,14 @@ describe('OwnState: the skill messages (OnDoUseSkillPoint, OnInitSkillPoint, OnS
     expect(r.numbers.skillPoint).toBe(6);
   });
 
+  it('CMDSETSKILLLEVEL sets one skill the player has, and says so; one it lacks changes nothing (2026-11-10, /skilllevel)', () => {
+    const r = rig({ skills: skillsAt(1, 1, 1) });
+    expect(r.numbers.apply({ type: 'cmdSetSkillLevel', skill: FLURRY.id, level: 9 }, OWN_ID))
+      .toEqual([{ kind: 'skillLevelSet', skill: FLURRY.id, level: 9 }]);
+    expect(r.numbers.skills.find((s) => s.skill === FLURRY.id)?.level).toBe(9);
+    expect(r.numbers.apply({ type: 'cmdSetSkillLevel', skill: 999, level: 9 }, OWN_ID)).toEqual([]);
+  });
+
   it('INITSKILLPOINT sets the three levels to 0 and the points to the value, with the level-up effect when they rose', () => {
     const r = rig({ skills: skillsAt(3, 3, 1) });
     r.numbers.skillPoint = 2;

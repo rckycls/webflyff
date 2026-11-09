@@ -1919,3 +1919,29 @@ describe('WorldState: the item cast (OnStateMode, DPClient.cpp:12381-12440; Piec
     expect(world.takeChanges().combat.filter((e) => e.kind === 'itemCast')).toEqual([]);
   });
 });
+
+describe('MODIFYMODE (2026-11-10, OnModifyMode DPClient.cpp:12278-12283)', () => {
+  it("sets a player's whole m_dwMode, the own one's too; a monster's is ignored", () => {
+    const { world } = newWorld();
+    world.apply(1, { type: 'addMover', mover: addedPlayer(1, { authorization: 0x50, mode: 0x2 }) });
+    world.apply(2, { type: 'addMover', mover: addedPlayer(2, { playerId: 500, self: true, authorization: 0x50 }) });
+    world.apply(1, { type: 'modifyMode', mode: 0 });
+    world.apply(2, { type: 'modifyMode', mode: 0x3 });
+    expect(world.movers.get(1)!.added.player!.mode).toBe(0);
+    expect(world.movers.get(2)!.added.player!.mode).toBe(0x3);
+  });
+});
+
+describe('DISGUISE and NODISGUISE (2026-11-10, OnDisguise and OnNoDisguise, DPClient.cpp:13706-13750)', () => {
+  it("a player takes the mover's index (SetIndex, Mover.cpp:8901-8930), and its own sex's again after", () => {
+    const { world } = newWorld();
+    world.apply(1, { type: 'addMover', mover: addedPlayer(1, { authorization: 0x50, sex: 1 }) });
+    const gm = world.movers.get(1)!;
+    world.apply(1, { type: 'disguise', moverIndex: 20 });
+    expect(gm.added.index).toBe(20);
+    world.apply(1, { type: 'noDisguise' });
+    expect(gm.added.index).toBe(12); // MI_FEMALE
+    world.apply(1, { type: 'disguise', moverIndex: 9999 }); // no such mover: CMover.SetIndex fails, nothing changes
+    expect(gm.added.index).toBe(12);
+  });
+});

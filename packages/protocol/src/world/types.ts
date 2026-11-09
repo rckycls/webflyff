@@ -118,6 +118,17 @@ export type WorldMessage = ChatMessage | NpcMessage | ShopMessage | QuestMessage
    * prop id, sent with ON only (`OnStateMode`).
    */
   | { type: 'stateMode'; mode: number; flag: number; itemId: number | null }
+  /** 2026-11-10: a mover's whole `m_dwMode` (`OnModifyMode`): invisible, undying, frozen ... */
+  | { type: 'modifyMode'; mode: number }
+  /** 2026-11-10: a server line (`TEXT_GENERAL` 1, `TEXT_DIAG` 2); /skilllevel's answer; /disguise and /noDisguise. */
+  | { type: 'serverText'; state: number; text: string }
+  | { type: 'cmdSetSkillLevel'; skill: number; level: number }
+  | { type: 'disguise'; moverIndex: number }
+  | { type: 'noDisguise' }
+  /** 2026-11-10: the core's direct answers, handed on as messages (`WorldSession`): /count, /ip and /system. */
+  | { type: 'playerCount'; count: number }
+  | { type: 'playerAddr'; name: string; addr: string }
+  | { type: 'systemNotice'; text: string }
   /** Piece 7 M3: RETURNSCORLL, the Scroll of Return's village taken: the scroll is to be used again (`OnReturnScrollACK`). */
   | { type: 'returnScrollAck' }
   /**

@@ -54,7 +54,9 @@ const FADE_METRES = 10;
 /**
  * `CMover::RenderName` (`Source/_Common/MoverRender.cpp:1219`) with `__VER >= 13` and `__HONORABLE_TITLE` (the branch
  * `:1236-1288`), and the distance and transparency tests of its caller `CWorld::Render` (`World3D.cpp:1265-1300`).
- * Null for a transparent mover (`IsMode( TRANSPARENT_MODE )`, `World3D.cpp:1282`).
+ * Null for a transparent mover (`IsMode( TRANSPARENT_MODE )`, `World3D.cpp:1282`), but for the own one (2026-11-10, the
+ * owner's request: "I should be able to see my name and icons whatever I am"; Neuz hides the own one too, and draws the
+ * own body faint, `MoverRender.cpp:517-531`, which `bodyAlpha` copies).
  * - A player: the name with the honour title in brackets before it (`CMover::GetTitle`, which is
  *   `CTitleManager::GetTitle( m_nHonor )`) and " [Admin]" or " [GM]" after it for those ranks. The colour is the chaotic
  *   one, else the pink (PK-ready) one, else the administrator's, the game master's, the VIP's, else the general one
@@ -78,7 +80,7 @@ export function nameTagOf(
 ): NameTag | null {
   const player = mover.added.player;
   if (mover.kind === 'player' && player !== undefined) {
-    if ((player.mode & TRANSPARENT_MODE) === TRANSPARENT_MODE) return null;
+    if ((player.mode & TRANSPARENT_MODE) === TRANSPARENT_MODE && !mover.isSelf) return null;
     const mark = legendMark(player.job, player.level, jobs);
     return {
       text: playerText(mover.name, player, honorTitles), color: playerColor(player, colors, inParty(player.playerId)), maxDistance: FAR_LIMIT,

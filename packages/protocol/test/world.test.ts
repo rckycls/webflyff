@@ -67,6 +67,8 @@ describe('world constants', () => {
       SET_PARTY_MEMBER_PARAM: 0x0091, PARTYMAPINFO: 0x003c, QUERY_PLAYER_DATA: 0x0141,
       // Piece 7 M3: the item cast and the Scroll of Return's answer.
       STATEMODE: 0x00df, RETURNSCORLL: 0x00ad,
+      // 2026-11-10: the game masters' answers (MsgHdr.h:1012, :1068, :1130, :1158-1159).
+      MODIFYMODE: 0x00d3, TEXT: 0x00a0, CMDSETSKILLLEVEL: 0x006b, DISGUISE: 0x00f5, NODISGUISE: 0x00f6,
       // 2026-11-05: Buff Pang's applied skills.
       DOAPPLYUSESKILL: 0x00d7,
       // 2026-11-05: the premium timers.

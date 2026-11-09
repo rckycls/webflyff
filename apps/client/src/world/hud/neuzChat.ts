@@ -192,7 +192,7 @@ export class NeuzChat {
   /** The Help button's window (`CWndHelpInstant`, APP_HELP_INSTANT). */
   readonly helpWindow: ResWindow;
   /** 2026-11-05: a client command typed (TCM_CLIENT: /position, /Time ...), with what follows its name. */
-  onClientCommand: (command: string, args: string) => void = () => {};
+  onClientCommand: (command: string, args: string, line: string) => void = () => {};
   private readonly doc: Document;
   private readonly art: UiArt;
   private readonly now: () => number;
@@ -552,14 +552,14 @@ export class NeuzChat {
    * The phone chat's way in (chatWindow.ts's `append`), as Neuz writes each kind: 'system' is a game line (the screen's
    * messages and the System window), "[sender] text" when it has a sender (`OnGMSay`, DPClient.cpp:12076-12089).
    */
-  append(channel: ChatChannel | 'system' | 'announcement', sender: string, text: string, recipient?: string, color?: number): void {
+  append(channel: ChatChannel | 'system' | 'announcement', sender: string, text: string, recipient?: string, color?: number, style?: number): void {
     switch (channel) {
       case 'nearby': this.put({ kind: 'general', sender, text }); break;
       case 'whisper': this.put({ kind: 'whisper', sender, recipient: recipient ?? '', text }); break;
       case 'shout': this.put({ kind: 'shout', sender, text, color }); break;
       case 'party': case 'guild': this.put({ kind: channel, sender, text }); break;
       case 'announcement': this.put({ kind: 'announcement', text }); break;
-      case 'system': this.put({ kind: 'game', text: sender === '' ? text : `[${sender}] ${text}`, color: color ?? (sender === '' ? undefined : NO_WAKE) }); break;
+      case 'system': this.put({ kind: 'game', text: sender === '' ? text : `[${sender}] ${text}`, color: color ?? (sender === '' ? undefined : NO_WAKE), ...(style !== undefined ? { style } : {}) }); break;
     }
   }
 
@@ -651,7 +651,7 @@ export class NeuzChat {
     } catch (error) {
       this.direct(error instanceof Error ? error.message : 'Unable to send message.', 0xffff0000);
     }
-    if (outcome.client !== undefined) this.onClientCommand(outcome.client.command, outcome.client.args);
+    if (outcome.client !== undefined) this.onClientCommand(outcome.client.command, outcome.client.args, outcome.client.line);
     for (const note of outcome.notes) {
       if (note.game === true) this.put({ kind: 'game', text: note.text, color: note.color });
       else this.direct(note.text, note.color);

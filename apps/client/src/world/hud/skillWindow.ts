@@ -409,6 +409,16 @@ export class SkillWindow {
   }
 
   /**
+   * 2026-11-10: the chosen skill's ID while the window is open (`GetSkill( GetCurSelect() )->dwSkill`, /skilllevel's,
+   * FuncTextCmd.cpp:1365-1384); null when it is closed or none is chosen.
+   */
+  get chosenSkill(): number | null {
+    if (!this.frame.isOpen || this.focus === null || this.plan === null) return null;
+    const slot = this.plan.result()[this.focus];
+    return slot === undefined || slot.skill === NULL_ID ? null : slot.skill;
+  }
+
+  /**
    * K, the applet and the Start menu (`CWndMgr::ObjectExecutor`, `WndManager.cpp:2579-2603`): closed, the window opens at the
    * bottom right of the room above the task bar (`OnInitialUpdate`, :8034-8040), with the own skills (`InitItem`); open, it
    * closes, unless points were placed, when the box asks first and closes it after (`InitItem( TRUE )`); with the box open,
@@ -440,6 +450,7 @@ export class SkillWindow {
     switch (message.type) {
       case 'doUseSkillPoint':
       case 'initSkillPoint':
+      case 'cmdSetSkillLevel': // 2026-11-10: InitItem again (OnCmdSetSkillLevel, DPClient.cpp:13551-13556)
         break;
       case 'setJobSkill':
         if (objectId !== own.objectId) return;

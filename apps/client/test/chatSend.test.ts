@@ -115,7 +115,7 @@ describe('ChatSender: commands (ParsingCommand and the client halves)', () => {
     const { s } = sender();
     expect(sent(s.line('/w Rocky hi', PLAYER))).toBe('/w Rocky hi');
     expect(s.line('/nosuch thing', PLAYER)).toEqual({ notes: [] });
-    expect(s.line('/position', PLAYER)).toEqual({ client: { command: 'position', args: '' }, notes: [] });
+    expect(s.line('/position', PLAYER)).toEqual({ client: { command: 'position', args: '', line: '/position' }, notes: [] });
   });
 });
 

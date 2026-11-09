@@ -75,19 +75,23 @@ export class NameTagLayer {
   }
 
   /**
-   * Asks `tagOf` again for every mover with a tag (the party changed: `COLOR_PARTY`): a tag whose text or colour differs
-   * is drawn again, one `tagOf` now gives none is dropped. The others stay as they are.
+   * Asks `tagOf` again for every mover in view (the party changed: `COLOR_PARTY`; a mode changed: MODIFYMODE): a tag whose
+   * text or colour differs is drawn again, one `tagOf` now gives none is dropped, and a mover that had none gets one when
+   * `tagOf` now gives it (2026-11-10: a player seen again after /noinvisible). The others stay as they are.
    */
   recolor(movers: ReadonlyMap<number, Mover>, tagOf: (mover: Mover) => NameTag | null): void {
-    for (const objectId of [...this.tags.keys()]) {
-      const mover = movers.get(objectId);
+    for (const objectId of [...this.tags.keys()]) if (!movers.has(objectId)) this.remove(objectId);
+    movers.forEach((mover, objectId) => {
       const old = this.tags.get(objectId);
-      if (mover === undefined || old === undefined) continue;
       const tag = tagOf(mover);
-      if (tag !== null && tag.text === old.text && tag.color === old.color && (tag.mark ?? null) === old.mark) continue;
+      if (old === undefined) {
+        if (tag !== null && tag.text !== '') this.add(objectId, tag);
+        return;
+      }
+      if (tag !== null && tag.text === old.text && tag.color === old.color && (tag.mark ?? null) === old.mark) return;
       this.remove(objectId);
       if (tag !== null && tag.text !== '') this.add(objectId, tag);
-    }
+    });
   }
 
   /**
@@ -114,6 +118,11 @@ export class NameTagLayer {
   /** The movers that have a tag. */
   count(): number {
     return this.tags.size;
+  }
+
+  /** 2026-11-10: the text of the mover's tag, or null when it has none (for the tests' hooks). */
+  textOf(objectId: number): string | null {
+    return this.tags.get(objectId)?.text ?? null;
   }
 
   dispose(): void {

@@ -53,7 +53,9 @@ export type OwnEvent =
   /** 2026-11-09 (pets R1): the own raised pet (`PetChange`). */
   | { kind: 'pet'; change: PetChange }
   /** 2026-11-09 (pets B1): the own buff pet (`VisPetChange`). */
-  | { kind: 'visPet'; change: VisPetChange };
+  | { kind: 'visPet'; change: VisPetChange }
+  /** 2026-11-10: a game master's /skilllevel set a skill's level (`OnCmdSetSkillLevel`): its chat line. */
+  | { kind: 'skillLevelSet'; skill: number; level: number };
 
 /**
  * 2026-11-09 (pets B1): what happened to the own buff pet (V15 `__PETVIS`):
@@ -567,6 +569,14 @@ export class OwnState {
       case 'doUseSkillPoint':
         this.onDoUseSkillPoint(message);
         return [];
+      case 'cmdSetSkillLevel': {
+        // 2026-11-10: OnCmdSetSkillLevel (DPClient.cpp:13531-13560): g_pPlayer->GetSkill( dwSkill )'s level, a skill the
+        // player lacks left alone
+        const slot = this.skills.find((s) => s.skill === message.skill);
+        if (slot === undefined) return [];
+        slot.level = message.level;
+        return [{ kind: 'skillLevelSet', skill: message.skill, level: message.level }];
+      }
       case 'initSkillPoint':
         return this.onInitSkillPoint(message.skillPoint);
       case 'setActionPoint':

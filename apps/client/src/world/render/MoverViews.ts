@@ -184,6 +184,8 @@ interface View {
   } | null;
   /** The load `refresh` started for a new look, until its model is swapped in; a newer refresh replaces it. */
   swap: object | null;
+  /** 2026-11-10: how opaque the body was last drawn (`alphaOf`): 1 whole, 0 not drawn, else an invisible one's blend. */
+  alpha: number;
 }
 
 /** Piece 7 M5: `IK3_STICK` (`defineItemkind.h:116`): a broom or a stick, drawn at the rider's root bone's height. */
@@ -219,6 +221,13 @@ export interface MoverViewsOptions {
   sounds?: { motion(at: Vec, id: number): void; footstep(at: Vec): void };
   /** Piece 7 M5: the model of a ride (its item's `model` key, `models/item_*.glb`); without it no ride is drawn. */
   loadRide?: (key: string) => Promise<RideModel>;
+  /**
+   * 2026-11-10: how opaque a mover's body is drawn (`bodyAlpha`, `gmModes.ts`): 1 whole, 0 not at all, else an invisible
+   * player's blend (`MoverRender.cpp:517-531`), whose ride is then not drawn (:591-714). Every body whole without it.
+   */
+  alphaOf?: (mover: Mover) => number;
+  /** 2026-11-10: a mover that cannot be clicked (an invisible one, `WndWorld.cpp:6372`). */
+  unpickable?: (mover: Mover) => boolean;
 }
 
 /**
@@ -388,7 +397,46 @@ export class MoverViews {
       this.flapWing(view, dt);
       // after the frame's pose: CModelObject::Render animates m_mUpdateBone before the ride is drawn (MoverRender.cpp:572, :651)
       this.raiseRide(view);
+      // 2026-11-10: an invisible player's body (MoverRender.cpp:517-531), again each frame while it is not whole, for the
+      // parts that load later
+      const alpha = this.options.alphaOf?.(view.mover) ?? 1;
+      if (alpha !== 1 || view.alpha !== 1) this.fade(view, alpha);
     }
+  }
+
+  /**
+   * 2026-11-10: the body drawn at `alpha` (`SetBlendFactor`): its own materials made see-through, or made whole again;
+   * at 0 not drawn at all. The ride is drawn only when the body is whole (`MoverRender.cpp:591-714`). The placeholder's
+   * material, which every placeholder shares, is left whole.
+   */
+  private fade(view: View, alpha: number): void {
+    view.alpha = alpha;
+    view.holder.visible = alpha > 0;
+    const ride = view.ride?.object ?? null;
+    if (ride !== null) ride.visible = alpha === 1;
+    view.holder.traverse((object) => {
+      if (!(object instanceof Mesh)) return;
+      for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
+        if (material === this.placeholderMaterial) continue;
+        const kept = material.userData.whole as { transparent: boolean; opacity: number; depthWrite: boolean } | undefined;
+        if (alpha === 1) {
+          if (kept === undefined) continue;
+          material.transparent = kept.transparent;
+          material.opacity = kept.opacity;
+          material.depthWrite = kept.depthWrite;
+          delete material.userData.whole;
+          material.needsUpdate = true;
+          continue;
+        }
+        if (kept === undefined) {
+          material.userData.whole = { transparent: material.transparent, opacity: material.opacity, depthWrite: material.depthWrite };
+          material.transparent = true;
+          material.depthWrite = false;
+          material.needsUpdate = true;
+        }
+        material.opacity = alpha * ((material.userData.whole as { opacity: number }).opacity);
+      }
+    });
   }
 
   /**
@@ -451,6 +499,8 @@ export class MoverViews {
     const found: PickCandidate[] = [];
     for (const view of this.views.values()) {
       if (view.mover.objectId === except) continue;
+      // 2026-11-10: an invisible player is not clicked, whoever clicks (SelectObj, WndWorld.cpp:6372)
+      if (this.options.unpickable?.(view.mover) === true) continue;
       const candidate = candidateOf(view);
       if (candidate === null) continue;
       // pets R1: a raised pet that is not the active mover's (`except`) is never picked (World3D.cpp:2703-2707)
@@ -674,7 +724,7 @@ export class MoverViews {
       // ADD_OBJ ends with InitInterpolation (ObjSerializeOpt.cpp:764): a new mover is drawn where it is
       scrPos: copy(mover.act.body.pos), scrAngle: mover.act.body.angle, frame: startFrame(mover.act.motionSets),
       action: null, played: -1, gone: false, spark: idleSpark(), sparkUniforms: sparkUniforms(), dmgCnt: 0,
-      scrAngleX: mover.act.angleX, ride: null, swap: null,
+      scrAngleX: mover.act.angleX, ride: null, swap: null, alpha: 1,
     };
     this.views.set(mover.objectId, view);
     const { look } = view;

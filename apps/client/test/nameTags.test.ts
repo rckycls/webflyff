@@ -78,7 +78,11 @@ describe('nameTagOf: players', () => {
   it('a transparent mover has no tag', () => {
     expect(tagOfPlayer({ mode: TRANSPARENT_MODE })).toBeNull();
     expect(tagOfPlayer({ mode: 0x1 | TRANSPARENT_MODE | 0x100 })).toBeNull();
-    expect(tagOfPlayer({ self: true, mode: TRANSPARENT_MODE })).toBeNull(); // the own character is no exception
+    // 2026-11-10, the owner's request: the own name and mark stay, whatever the authority and mode (Neuz hides the own
+    // one too, World3D.cpp:1282); the others' still go
+    expect(tagOfPlayer({ self: true, mode: TRANSPARENT_MODE, authorization: auth('P') })).toEqual({
+      text: 'Rocky [Admin]', color: 0xffae2d2d, maxDistance: 100,
+    });
     expect(tagOfPlayer({ mode: 0x1 | 0x100 })).not.toBeNull(); // other modes (invincible, no community) still show
   });
 
@@ -186,6 +190,29 @@ describe('nameTagOf: the party (MoverRender.cpp:1403-1407)', () => {
     expect(((before as unknown as { material: SpriteMaterial }).material).map).not.toBe((after as unknown as { material: SpriteMaterial }).material.map);
     layer.recolor(movers, tagOf);
     expect(fills).toHaveLength(3);
+    layer.dispose();
+  });
+
+  it('recolor gives a tag to a mover that had none, and takes it from one that goes invisible (2026-11-10, MODIFYMODE)', () => {
+    const context = {
+      font: '', textBaseline: '', lineJoin: '', lineWidth: 0, strokeStyle: '', fillStyle: '',
+      measureText: (text: string) => ({ width: text.length * 7 }),
+      scale: () => {}, strokeText: () => {}, fillText: () => {},
+    };
+    const doc = { defaultView: { devicePixelRatio: 1 }, createElement: () => ({ width: 0, height: 0, getContext: () => context }) } as unknown as Document;
+    const layer = new NameTagLayer(new Scene(), doc);
+    // a game master who came in view invisible (/invisible), then is seen again (/noinvisible)
+    const gm = moverFrom(addedPlayer(3, { name: 'Poreotix', authorization: auth('P'), mode: TRANSPARENT_MODE }), data);
+    const movers = new Map([[3, gm]]);
+    const tagOf = (mover: typeof gm) => nameTagOf(mover, undefined, colors, titles);
+    layer.sync({ added: [gm], removed: [], combat: [], own: [], dropped: 0 }, movers, tagOf);
+    expect(layer.count()).toBe(0);
+    gm.added.player!.mode = 0;
+    layer.recolor(movers, tagOf);
+    expect(layer.count()).toBe(1);
+    gm.added.player!.mode = TRANSPARENT_MODE;
+    layer.recolor(movers, tagOf);
+    expect(layer.count()).toBe(0);
     layer.dispose();
   });
 });
