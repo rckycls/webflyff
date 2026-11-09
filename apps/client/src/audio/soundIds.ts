@@ -4,6 +4,8 @@
 
 /** `SND_*` (Resource/defineSound.h). */
 export const SND_INF_CLICK = 1; // :6
+/** 2026-11-09 (pets R3): "InfOpen.wav" (Client/sound.inc), which the tamer's miracle plays by file name. */
+export const SND_INF_OPEN = 2; // :7
 export const SND_INF_TRADE = 4; // :9
 export const SND_INF_INVENTORYDROP = 5; // :10
 export const SND_INF_GROUNDDROP = 6; // :11

@@ -9,7 +9,7 @@ import type { OwnEvent } from '../OwnState';
 import type { CombatEvent } from '../WorldState';
 import {
   BGM_EV_END, BGM_EV_LIGHTWING, BGM_EV_START, BGM_IN_BOSS, BGM_TH_FLYING, BGM_IN_DEATH, BGM_IN_LEVELUP, NO_DEATH_MUSIC, RANK_BOSS, SND_INF_GROUNDDROP,
-  SND_INF_GROUNDPICKUP, SND_INF_TRADE, SND_WALK_LANDSOFT, XI_SOUNDS,
+  SND_INF_GROUNDPICKUP, SND_INF_OPEN, SND_INF_TRADE, SND_WALK_LANDSOFT, XI_SOUNDS,
 } from '../../audio/soundIds';
 import { equipSound } from './soundRules';
 import type { Vec } from './soundRules';
@@ -63,6 +63,14 @@ export class WorldSounds {
   /** A buy confirmed or a sale (WndShop.cpp:655, :232-235). */
   shop(): void {
     this.audio.play(SND_INF_TRADE);
+  }
+
+  /**
+   * 2026-11-09 (pets R3): `PLAYSND( "InfOpen.wav" )`, each turn of the tamer's miracle's spins (`CWndPetMiracle::Process`,
+   * `WndPetSys.cpp:1473-1620`): the file of Sound that sound.inc names SND_INF_OPEN, played by that id.
+   */
+  infOpen(): void {
+    this.audio.play(SND_INF_OPEN);
   }
 
   /** An inventory item dropped on the world, before any confirm (WndWorld.cpp:7828-7830). */

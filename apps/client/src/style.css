@@ -2580,3 +2580,10 @@ fieldset:disabled .btn {
   background-image: linear-gradient(rgb(100, 255, 255), rgba(0, 0, 0, 0.2) 40%, rgba(0, 150, 150, 0.78));
 }
 .hud-pet-tooltip.hud-item-tooltip { position: fixed; right: auto; z-index: 95; pointer-events: none; }
+
+/* 2026-11-09 (pets R3): the care windows (petCareWindows.ts): the food mill's "Count : n" in 0xff0000ff, its right at the
+   slot's left + 36 and its bottom at its top + 48 (CWndPetFoodMill::OnDraw); the miracle's grades white and bold at
+   (8, 3) of their boxes, its step icons (90 x 90) at their boxes' left and top + 4 (CWndPetMiracle::OnDraw) */
+.hud-pet-mill-count { position: absolute; right: -4px; bottom: -16px; white-space: nowrap; line-height: 14px; color: rgb(0, 0, 255); pointer-events: none; }
+.hud-pet-miracle-grade { position: absolute; left: 8px; top: 3px; white-space: nowrap; line-height: 12px; color: #ffffff; font-weight: bold; }
+.hud-pet-miracle-step { position: absolute; left: 0; top: 4px; width: 90px; height: 90px; pointer-events: none; }

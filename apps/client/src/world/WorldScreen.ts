@@ -127,6 +127,8 @@ import { ParticleLayer } from './render/ParticleLayer';
 import { PetParticles, createPetParticle } from './pets/petParticles';
 import { isClientMade, petMoverId } from './pets/raisedPet';
 import { PetWindows } from './pets/petWindows';
+import { PetCareWindows } from './pets/petCareWindows';
+import type { PetCarePacket } from './pets/petCareWindows';
 import { petBuffTooltip } from './pets/petStatus';
 import type { GlowingWeapon, WeaponOption } from './render/weaponGlow';
 import type { UpgradeNpcHost } from './items/upgradeNpcWindows';
@@ -413,6 +415,8 @@ export class WorldScreen {
   private bagPetSlot: number | null = null;
   /** 2026-11-09 (pets R2): the raised pet's status window and its portrait (pets/petWindows.ts). */
   private petWindows: PetWindows | undefined;
+  /** 2026-11-09 (pets R3): the raised pet's care windows: the food mill, the tamer's miracle, the scrolls' boxes. */
+  private petCare: PetCareWindows | undefined;
   /** The authorization the chat's suggestions were last given (2026-11-05). */
   private chatAuthorization = -1;
   private speechBubbles: SpeechBubbleLayer | undefined;
@@ -776,6 +780,8 @@ export class WorldScreen {
       // 2026-11-05: the summons, a name changed, a sex or a face changed (OnSummon, OnSetPlayerName, OnSexChange, OnChangeFace)
       if (value.type === 'summon') { this.itemWindows?.onSummon(value); continue; }
       if (value.type === 'smeltSafety') { this.upgradeNpc?.safety.onResult(value.result); continue; }
+      // 2026-11-09 (pets R3): the food mill's answer (OnPetFoodMill, DPClient.cpp:16619-16632)
+      if (value.type === 'petMill') { this.petCare?.onMill(value.result, value.count); continue; }
       if (value.type === 'setPlayerName') { this.renamePlayer(value.playerId, value.name); continue; }
       if (value.type === 'sexChange') { this.changeLook(world.movers.get(objectId), { index: value.index }); continue; }
       if (value.type === 'changeFace') {
@@ -1056,6 +1062,8 @@ export class WorldScreen {
       items: this.data!.itemProps, onReturnScroll: () => this.returnScroll?.goBack(), now: () => performance.now(),
       texts: (tid) => this.data?.texts.get(tid)?.text, place: this.buffPlace, onPlace: (at) => { this.buffPlace = at; },
       onPartySummon: () => this.itemWindows?.partySummonBuff(),
+      // 2026-11-09 (pets R3): the feed pocket's buff double-clicked turns it off (WndWorld.cpp:7280-7283)
+      onFeedPocket: () => this.session.sendFeedPocketInactive(),
       // 2026-11-09 (pets R2): BUFF_PET's icon by the own pet's level, and its tooltip (PutPetTooltipInfo)
       petLevel: () => this.own?.petItem()?.pet?.level ?? null,
       petTooltip: () => {
@@ -1151,6 +1159,8 @@ export class WorldScreen {
       now: () => performance.now(),
       upgrade: { begin: (id) => this.upgrade?.begin(id) ?? false },
       window: (id, from) => this.itemWindows?.open(id, from) ?? false,
+      // 2026-11-09 (pets R3): the raised pet's items (pets/petCareWindows.ts)
+      pet: (id, target) => this.petCare?.use(id, target) ?? false,
     });
     // 2026-11-05: the item windows: the name change, the tickets, the sex and element changes, the transmute, the summons
     this.itemWindows = new ItemWindowFlows({
@@ -1290,20 +1300,28 @@ export class WorldScreen {
     reviveWindow.onStand = () => this.itemUse!.revive();
     const inventoryWindow = new InventoryWindow(this.hudArt!, this.data!, {
       // 2026-11-05: a double-click (or Use) while the Upgrade Specialist's window is open puts the item in it (WndField.cpp:2262-2272)
-      use: (id, shift) => { if (!this.takeIntoUpgradeWindow(id, shift === true)) this.itemUse!.use(id, 'bag'); },
+      use: (id, shift) => {
+        if (this.takeIntoUpgradeWindow(id, shift === true)) return;
+        // 2026-11-09 (pets R3): no use while the food mill is open (CWndInventory::OnChildNotify, WndField.cpp:2589-2592)
+        if (this.petCare?.millOpen === true) this.sayRefusal({ kind: 'say', tid: 'TID_SBEVE_NOTUSEITEM' });
+        else this.itemUse!.use(id, 'bag');
+      },
       equip: (id, shift) => { if (!this.takeIntoUpgradeWindow(id, shift === true)) itemActions.equip(id); },
       land: (id) => { this.itemUse!.land(id); }, // Piece 7 M5: the worn ride's equipment cell
       // 2026-11-05: the upgrade cursor's target, its wait and its cancel
       upgrade: {
         // the upgrade cursor's target, or the element change's or transmute's item (2026-11-05)
-        active: () => (this.upgrade?.active ?? false) || (this.itemWindows?.picking ?? false),
+        // 2026-11-09 (pets R3): and the food mill's item
+        active: () => (this.upgrade?.active ?? false) || (this.itemWindows?.picking ?? false) || (this.petCare?.picking ?? false),
         waitingTarget: () => this.upgrade?.waitingTarget ?? null,
-        pick: (id) => (this.itemWindows?.picking === true ? this.itemWindows.pick(id) : this.upgrade?.pick(id) ?? false),
+        pick: (id) => (this.itemWindows?.picking === true ? this.itemWindows.pick(id)
+          : this.petCare?.picking === true ? this.petCare.pick(id) : this.upgrade?.pick(id) ?? false),
         cancel: () => { this.upgrade?.cancel(); this.itemWindows?.cancelPick(); },
       },
       // 2026-11-05: the items a window holds (SetExtra) and the ticket in use, faded; the hammer in the upgrade mode only
       held: (id) => this.bagHeld(id),
-      closed: () => { this.upgradeNpc?.piercing.dismiss(); this.upgradeNpc?.safety.dismiss(); },
+      // 2026-11-09 (pets R3): and the food mill (CWndInventory::OnDestroy, WndField.cpp:1092-1096)
+      closed: () => { this.upgradeNpc?.piercing.dismiss(); this.upgradeNpc?.safety.dismiss(); this.petCare?.bagClosed(); },
       reservedCount: (id) => (this.bagDieFlag ? this.bagReserved.get(id) ?? 0 : 0),
       // 2026-11-09 (pets R2): and the summoned raised pet's item (`g_pPlayer->GetPetId()`, WndItemCtrl.cpp:472-487)
       inUse: (id) => id === this.ticketInUse || id === this.own?.petSlot,
@@ -1331,7 +1349,30 @@ export class WorldScreen {
       },
       loadPortrait: (mover) => this.petPortraitModel(mover),
       renderer: () => this.page?.renderer ?? null,
+      // 2026-11-09 (pets R3): the pet made again after the tamer's miracle: its window spins to the new steps
+      miracle: () => this.petCare?.miracleResult(),
     }, doc, (error) => this.reportOnce(`pet portrait: ${messageOf(error)}`, error));
+    // 2026-11-09 (pets R3): the raised pet's care: the food, the food mill, the tamer's scrolls, the life and naming scrolls
+    const petWindows = this.petWindows;
+    this.petCare = new PetCareWindows({
+      own: () => this.own, props: this.data!.itemProps,
+      text: (tid, args = []) => formatText(this.data?.texts.get(tid)?.text ?? '', args).replace(/\\n/g, '\n'),
+      say: (tid, args = []) => {
+        const entry = this.data?.texts.get(tid);
+        if (entry !== undefined && entry.text !== '') this.hud?.messages.add(formatText(entry.text, args), entry.color);
+      },
+      box: (text, ok) => { if (text !== '') confirmBoxes.open('commItem', text, { ok }); },
+      alert: (text) => { if (text !== '' && this.messageBox?.isOpen !== true) this.messageBox?.open(text, 'ok', () => {}); },
+      shopOpen: () => this.shopWindow?.frame.isOpen === true,
+      use: (id, from, target) => void this.itemUse?.use(id, from, target),
+      send: (...packet) => this.sendPetCare(packet),
+      reserve: (id, on) => this.reserveItem(id, on),
+      openBag: () => { if (this.inventoryWindow?.frame.isOpen !== true) this.openWindow('inventory'); },
+      statusOpen: () => petWindows.status.isOpen,
+      lock: (on, level, slot) => petWindows.status.lockShowLevel(on, level, slot),
+      sound: () => this.sounds?.infOpen(),
+      ui: { art: this.hudArt!, doc, layer: () => this.hud?.element ?? null },
+    });
     this.chatWindow ??= new ChatWindow((channel, text, target) => this.session.sendChat(channel, text, target), () => this.stopOwnMover(), doc);
     // 2026-11-05: the client commands Neuz runs itself (TCM_CLIENT, FuncTextCmd.cpp): /position and /Time print; the
     // others (the trade, whisper and party toggles, the block list) have no option or window here, and send nothing
@@ -1808,6 +1849,7 @@ export class WorldScreen {
     for (const event of changes.own) {
       if (event.kind !== 'pet') continue;
       this.petWindows?.onPet(event.change); // pets R2: the status window opens and closes
+      if (event.change.kind === 'released') this.petCare?.released(); // pets R3: and the miracle window
       if (event.change.kind === 'hatchable') this.sayRefusal({ kind: 'box', tid: 'TID_GAME_PETEGG_HATCH' });
       if (event.change.kind !== 'lifeGained') continue;
       const text = this.data?.texts.get('TID_GAME_PET_LIFE')?.text ?? '';
@@ -2134,6 +2176,7 @@ export class WorldScreen {
     this.numbers?.step();
     this.petParticles.step(); // pets R1: g_ParticleMng.Process (Neuz.cpp:1100)
     this.petWindows?.step(); // pets R2: the pet window's portrait, CWndPetStatus::Process
+    this.petCare?.step(); // pets R3: the tamer's miracle's spins, CWndPetMiracle::Process
     this.follow(world, stage);
   }
 
@@ -2203,6 +2246,7 @@ export class WorldScreen {
     this.numbers?.step();
     this.petParticles.step(); // pets R1: g_ParticleMng.Process (Neuz.cpp:1100)
     this.petWindows?.step(); // pets R2: the pet window's portrait, CWndPetStatus::Process
+    this.petCare?.step(); // pets R3: the tamer's miracle's spins, CWndPetMiracle::Process
     this.follow(world, stage);
   }
 
@@ -2430,6 +2474,18 @@ export class WorldScreen {
       case 'summonFriend': s.sendSummonFriend(packet[1], packet[2]); break;
       case 'summonFriendAnswer': s.sendSummonFriendAnswer(packet[1], packet[2], packet[3]); break;
       case 'createMonster': s.sendCreateMonster(packet[1], packet[2]); break;
+    }
+  }
+
+  /** 2026-11-09 (pets R3): the care windows' packets, by WorldSession's senders. */
+  private sendPetCare(packet: PetCarePacket): void {
+    const s = this.session;
+    switch (packet[0]) {
+      case 'usePetFeed': s.sendUsePetFeed(packet[1]); break;
+      case 'makePetFeed': s.sendMakePetFeed(packet[1], packet[3], packet[2]); break;
+      case 'petTamerMistake': s.sendPetTamerMistake(packet[1]); break;
+      case 'petTamerMiracle': s.sendPetTamerMiracle(packet[1]); break;
+      case 'doUseItemInput': s.sendDoUseItemInput(packet[1], packet[2]); break;
     }
   }
 
@@ -2923,6 +2979,10 @@ export class WorldScreen {
       this.upgradeNpc?.safety.open(mode);
     } else if (entry === MMI.PET_STATUS || entry === MMI.PET_RELEASE) {
       this.choosePetEntry(entry);
+    } else if (entry === MMI.PET_FOODMILL) {
+      this.petCare?.tamerMill(); // 2026-11-09 (pets R3): the Pet Tamer's food mill (:5863-5876)
+    } else if (entry === MMI.RENAME_CANCEL) {
+      this.session.sendClearPetName(); // 2026-11-09 (pets R3): the Pet Tamer's rename cancel (:5237-5240)
     }
   }
 
@@ -3108,6 +3168,8 @@ export class WorldScreen {
     this.particleLayer?.dispose(); // pets R1
     this.petWindows?.dispose(); // pets R2
     this.petWindows = undefined;
+    this.petCare?.dispose(); // pets R3
+    this.petCare = undefined;
     this.particleLayer = undefined;
     this.petParticles.clear();
     this.missiles?.dispose(); // the world they flew in is gone: nothing is reported

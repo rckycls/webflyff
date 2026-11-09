@@ -15,6 +15,7 @@
 import type { WebItemProp } from '@flyffweb/formats';
 import type { Refusal } from './travelItems';
 import { windowOf } from './itemWindows';
+import { petItemUse } from '../pets/petCare';
 
 /**
  * The `IK2_*` the server uses (`DoUseItem`): REFRESHER 11, POTION 12, FOOD 14, SYSTEM 19, BLINKWING 22, AIRFUEL 23,
@@ -24,9 +25,11 @@ import { windowOf } from './itemWindows';
 const USE_KINDS: ReadonlySet<number> = new Set([11, 12, 14, 19, 22, 23, 27, 29, 30, 31, 33, 36, 37]);
 /** `IK2_TOCASH`: the Funny Coin (`__FUNNY_COIN`, DPClient.cpp:10543-10552). */
 const IK2_TOCASH = 36;
-/** `EXT_ITEM` 21 (`IsNeedTarget`, `_Common/Item.cpp:758-765`) and `EXT_PET` 19 (`Resource/define.h:57-59`). */
+/**
+ * `EXT_ITEM` 21 (`IsNeedTarget`, `_Common/Item.cpp:758-765`). (2026-11-09, pets R3: an `EXT_PET` item, the pet's, is used
+ * now; `SendDoUseItem` first wants a pet out, itemUse.ts.)
+ */
 const EXT_ITEM = 21;
-const EXT_PET = 19;
 /** The upgrade cursor's kinds (`WndField.cpp:2351-2386`): ELECARD 37, PIERDICE 61, SOCKETCARD 62 and 2 63, RANDOM_SCROLL 101, ENCHANT 119. */
 const UPGRADE_IK3: ReadonlySet<number> = new Set([37, 61, 62, 63, 101, 119]);
 /** Kinds whose use needs a system the browser lacks: VIS 138 (the buff pet's vis). */
@@ -47,13 +50,13 @@ const IK3_EGG = 120;
 /**
  * The items whose use opens a window the browser lacks (`SendDoUseItem`, `CWndInventory`): class change 10425 (whose
  * server handler is off), guild name 10463, Custody 15083, hair 26410 and face 26411 coupons, the character seal 26475 and
- * 26476, pet naming 20039, the pet tamer's 21030 and 21031, pet hatch 21036, pet life 21034, pet food 21037 and its mill
- * 21038. (2026-11-05: the maps, the batteries and Awakening Protection are used, with their boxes; the name change, the
+ * 26476. (2026-11-05: the maps, the batteries and Awakening Protection are used, with their boxes; the name change, the
  * sex change, the transmute, the party summon, the element change, the tickets and the monster summon have their
- * windows, `windowOf` of itemWindows.ts.)
+ * windows, `windowOf` of itemWindows.ts. 2026-11-09, pets R3: pet naming 20039, the pet tamer's 21030 and 21031, pet
+ * hatch 21036, pet life 21034, pet food 21037 and its mill 21038 have their windows or their packet, petCareWindows.ts.)
  */
 const WINDOW_IDS: ReadonlySet<number> = new Set([
-  10425, 10463, 15083, 26410, 26411, 26475, 26476, 20039, 21030, 21031, 21036, 21034, 21037, 21038,
+  10425, 10463, 15083, 26410, 26411, 26475, 26476,
 ]);
 /** The collector's batteries: the normal one (`TID_GAME_BETTERY_DESC`) and the cash ones (`TID_GAME_CACHE_BETTERY_DESC`). */
 const NORMAL_BATTERY = 26453;
@@ -95,8 +98,10 @@ export type UseOf = 'use' | 'window' | 'needsItem' | 'noWindow' | 'none';
 export function useOf(prop: WebItemProp): UseOf {
   if (prop.part >= 0) return 'none';
   if (prop.exeTarget === EXT_ITEM || UPGRADE_IK3.has(prop.kind3)) return 'needsItem';
-  if (WINDOW_IDS.has(prop.id) || WINDOW_IK3.has(prop.kind3) || prop.exeTarget === EXT_PET) return 'noWindow';
+  if (WINDOW_IDS.has(prop.id) || WINDOW_IK3.has(prop.kind3)) return 'noWindow';
   if (windowOf(prop) !== null) return 'window'; // 2026-11-05: itemWindows.ts
+  const pet = petItemUse(prop); // 2026-11-09 (pets R3): the pet's windows; its food is sent at once
+  if (pet !== null) return pet === 'feed' ? 'use' : 'window';
   if (prop.kind3 === IK3_PET || prop.kind3 === IK3_EGG) return 'use'; // 2026-11-09: pets P1, R2
   return USE_KINDS.has(prop.kind2) || prop.skillTime !== undefined ? 'use' : 'none';
 }
