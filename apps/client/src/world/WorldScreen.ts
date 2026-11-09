@@ -45,6 +45,8 @@ import type { FlightStick } from './controls';
 import { FlightControl } from './flightControl';
 import type { FlightInput } from './flightControl';
 import { FlightButtons } from './hud/flightButtons';
+import { MobileTools } from './hud/mobileTools';
+import { AppId } from './hud/applets';
 import { TurboGauge } from './render/TurboGauge';
 import { isGameMaster } from './authorization';
 import { Mode, bodyAlpha, isFrozen, isInvisible, modeLine, showsBubble } from './gmModes';
@@ -301,6 +303,8 @@ export class WorldScreen {
   /** Piece 7 M5: the own flier's controls, the phone's flight buttons, and the turbo gauge. */
   private flightControl: FlightControl | undefined;
   private flightButtons: FlightButtons | undefined;
+  /** The phone's window shortcuts at the top right. */
+  private mobileTools: MobileTools | undefined;
   private turboGauge: TurboGauge | undefined;
   /** Piece 7 M5: the right drag's steering since the last step, the phone's buttons, and the stick's flight keys. */
   private flightMouse = { dx: 0, dy: 0 };
@@ -1374,23 +1378,16 @@ export class WorldScreen {
       turbo: () => { this.flightTurbo = true; },
       land: () => this.landRide(),
     });
-    const mobileTools = doc.createElement('div');
-    mobileTools.className = 'hud-mobile-tools';
-    mobileTools.setAttribute('role', 'toolbar');
-    mobileTools.setAttribute('aria-label', 'Window shortcuts');
-    for (const [label, action] of [
-      ['Skill', () => this.openWindow('skills')],
-      ['Bag', () => this.openWindow('inventory')],
-      ['Character', () => this.openWindow('character')],
-      ['Stats', () => { statsButton.ariaExpanded = String(this.page!.overlay.togglePanel()); }],
-    ] as const) {
-      const button = doc.createElement('button');
-      button.type = 'button';
-      button.textContent = label;
-      button.addEventListener('click', () => { action(); button.blur(); });
-      mobileTools.append(button);
-    }
-    const statsButton = mobileTools.lastElementChild as HTMLButtonElement;
+    // 2026-11-10 (owner): the phone's shortcuts show the Start menu's icons of their windows (APP_SKILL3, APP_INVENTORY,
+    // APP_CHARACTER3); Stats, the diagnostics panel, is no Neuz window and keeps its text
+    const mobileTools = new MobileTools(this.hudArt!, [
+      { label: 'Skill', applet: AppId.SKILL3, run: () => this.openWindow('skills') },
+      { label: 'Bag', applet: AppId.INVENTORY, run: () => this.openWindow('inventory') },
+      { label: 'Character', applet: AppId.CHARACTER3, run: () => this.openWindow('character') },
+      { label: 'Stats', applet: null, run: () => { statsButton.ariaExpanded = String(this.page!.overlay.togglePanel()); } },
+    ], doc);
+    this.mobileTools = mobileTools;
+    const statsButton = mobileTools.buttons.at(-1)!;
     statsButton.ariaExpanded = 'false';
     const logOutBox = new LogOutBox(this.hudArt!, this.data!.texts, () => this.leave(), doc);
     this.logOutBox = logOutBox;
@@ -1670,7 +1667,7 @@ export class WorldScreen {
     }
     this.hud!.element.append(
       this.questTracker.element, this.teleporter.frame.element,
-      taskBar.element, this.attackButton.element, this.jumpButton.element, this.flightButtons.element, mobileTools,
+      taskBar.element, this.attackButton.element, this.jumpButton.element, this.flightButtons.element, mobileTools.element,
       logOutBox.element, messageBox.element,
       selectVillage.element, characterWindow.frame.element,
       characterWindow.confirm.frame.element, skillWindow.frame.element, skillWindow.warning.element, reviveWindow.element,
@@ -3506,6 +3503,8 @@ export class WorldScreen {
     this.turboGauge = undefined;
     this.flightButtons?.dispose();
     this.flightButtons = undefined;
+    this.mobileTools?.dispose();
+    this.mobileTools = undefined;
     this.flightAccelerate = undefined;
     this.flightTurbo = false;
     this.flightAttack = false;

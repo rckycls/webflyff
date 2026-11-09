@@ -32,7 +32,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { UI_SHEETS_KEY, decodeImage, decodeScript, readTexturePack, webName } from '@flyffweb/formats';
 import type { RgbaImage, TexturePack, WebUiSheet, WebUiSheets } from '@flyffweb/formats';
-import { charPictureKeyOf, iconKeyOf, itemIconKeyOf } from '../output/keys';
+import { bareIconKeyOf, charPictureKeyOf, iconKeyOf, itemIconKeyOf } from '../output/keys';
 import type { Stage, StageContext } from '../run';
 import { encodePng } from '../textures/convertTexture';
 import { listed, matchesOnly, plural, runLimited } from '../util';
@@ -263,12 +263,73 @@ export function applyColorKey(image: RgbaImage, key: number): RgbaImage {
   return { width: image.width, height: image.height, data };
 }
 
+/**
+ * 2026-11-10 (owner): the icons the phone's window shortcuts show alone, with no box or border (MobileTools,
+ * apps/client/src/world/hud/mobileTools.ts): APP_SKILL3's, APP_INVENTORY's and APP_CHARACTER3's in the Start menu
+ * (CWndMgr::AddAllApplet, FuncApplet.cpp:214, :210, :204). Each is also written frameless (`stripIconFrame`) as
+ * `ui/bare/<web name>.png`.
+ */
+export const BARE_ICONS: readonly string[] = ['Icon_Skill.dds', 'Icon_Inventory.dds', 'Icon_Character.dds'];
+
+/** The size of the Start menu's applet icons (Client/Icon/Icon_*.dds), and the panel their frame draws: (1, 1) to (30, 30). */
+const ICON_SIZE = 32;
+const PANEL_FIRST = 1;
+const PANEL_LAST = 30;
+
+/**
+ * An applet icon without its frame. The Start menu's applet icons are drawn on one frame: a white panel from (1, 1) to
+ * (30, 30) whose top two rows, left and right columns and bottom row are its rim (the orange and red edge). The rim, and the
+ * white of the panel reached from its inside edge without crossing the drawing, become transparent black; the drawing, and
+ * any white it encloses, stay. A picture of another size, or with no white just inside the rim, is returned as it is;
+ * otherwise a copy.
+ */
+export function stripIconFrame(image: RgbaImage): RgbaImage {
+  if (image.width !== ICON_SIZE || image.height !== ICON_SIZE) return image;
+  const { width, data: source } = image;
+  const index = (x: number, y: number): number => (y * width + x) * 4;
+  const white = (x: number, y: number): boolean => {
+    const i = index(x, y);
+    return source[i] === 255 && source[i + 1] === 255 && source[i + 2] === 255 && source[i + 3] === 255;
+  };
+  // inside the rim: x from 2 to 29, y from 3 to 29
+  const left = PANEL_FIRST + 1;
+  const right = PANEL_LAST - 1;
+  const top = PANEL_FIRST + 2;
+  const bottom = PANEL_LAST - 1;
+  if (!white(left, top)) return image;
+  const data = new Uint8Array(source);
+  const clear = (x: number, y: number): void => { data.fill(0, index(x, y), index(x, y) + 4); };
+  for (let y = PANEL_FIRST; y <= PANEL_LAST; y++) {
+    for (let x = PANEL_FIRST; x <= PANEL_LAST; x++) {
+      if (x < left || x > right || y < top || y > bottom) clear(x, y);
+    }
+  }
+  // the panel's white, from every white pixel along the inside edge, 4-connected
+  const seen = new Uint8Array(width * image.height);
+  const stack: Array<[number, number]> = [];
+  const visit = (x: number, y: number): void => {
+    if (x < left || x > right || y < top || y > bottom || seen[y * width + x] === 1 || !white(x, y)) return;
+    seen[y * width + x] = 1;
+    stack.push([x, y]);
+  };
+  for (let x = left; x <= right; x++) { visit(x, top); visit(x, bottom); }
+  for (let y = top; y <= bottom; y++) { visit(left, y); visit(right, y); }
+  while (stack.length > 0) {
+    const [x, y] = stack.pop()!;
+    clear(x, y);
+    visit(x - 1, y); visit(x + 1, y); visit(x, y - 1); visit(x, y + 1);
+  }
+  return { width, height: image.height, data };
+}
+
 /** A picture to convert. */
 interface Picture {
   src: string;
   /** The logical key the PNG is written under. */
   key: string;
   colorKey: number;
+  /** The key of its frameless copy (`BARE_ICONS`), if it has one. */
+  bareKey?: string;
 }
 
 /** A sheet's script, read: its frames, and the client file of its picture. */
@@ -305,11 +366,13 @@ async function readSheet(ctx: StageContext, spec: (typeof SHEETS)[number]): Prom
   return { field: spec.field, script, bytes: raw.length, pack: readTexturePack(text, script, { width, height }), picture, colorKey };
 }
 
-async function convertPicture({ src, key, colorKey }: Picture, ctx: StageContext): Promise<void> {
+async function convertPicture({ src, key, colorKey, bareKey }: Picture, ctx: StageContext): Promise<void> {
   const bytes = new Uint8Array(await fs.readFile(src));
-  const png = encodePng(applyColorKey(decodeImage(bytes, src), colorKey), true);
+  const image = applyColorKey(decodeImage(bytes, src), colorKey);
+  const png = encodePng(image, true);
   await ctx.writer.write(key, png, src);
   ctx.report.ok(KIND, src, bytes.length, png.length);
+  if (bareKey !== undefined) await ctx.writer.write(bareKey, encodePng(stripIconFrame(image), true), src);
 }
 
 export interface UiStageOptions {
@@ -356,6 +419,12 @@ export function createUiStage(options: UiStageOptions = {}): Stage {
         }
       };
       for (const { dir, keyOf } of PICTURE_FOLDERS) for (const src of ctx.client.list(dir, PICTURE)) add(src, keyOf);
+      // the phone shortcuts' icons, also frameless (2026-11-10)
+      const bare = new Set(BARE_ICONS.map((file) => file.toLowerCase()));
+      for (const src of ctx.client.list(PICTURE_FOLDERS[0]!.dir, PICTURE)) {
+        const picture = pictures.get(src);
+        if (picture !== undefined && bare.has(path.basename(src).toLowerCase())) picture.bareKey = bareIconKeyOf(path.basename(src));
+      }
       for (const name of themeFiles) {
         if (!wanted(name)) continue;
         const src = ctx.client.find(THEME_DIR, name);
