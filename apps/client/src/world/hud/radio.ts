@@ -32,6 +32,56 @@ export interface RadioButton {
   disabled: boolean;
 }
 
+/**
+ * 2026-11-09: a radio or check whose picture is the whole button, six frames of `frame` px side by side (the chat's tabs,
+ * ButtChatChat.BMP's 46 x 17; Lock, System; ButtWndLock.tga's 15 x 14), as `RenderWndButtonRadio` / `Check` draw one:
+ * the frame `radioFrame` picks at the rect's top left, and the title at `frame + 2`, past a button no wider than a
+ * frame, so not seen (ITheme.cpp:1533-1575). With `label`, the title is drawn beside the frame (the filter's checks, a
+ * ButtCheck.bmp frame of 14). The style sheet picks the frame (`.hud-six-frame`, `data-frame`, `--hud-frame`).
+ */
+export function sixFrameButton(
+  doc: Document, art: UiArt, picture: string, frame: number, rect: ControlRect,
+  options: { role: 'radio' | 'checkbox'; name: string; label?: string; tooltip?: string }, press: () => void,
+): RadioButton {
+  const element = doc.createElement('button');
+  element.type = 'button';
+  element.className = 'hud-six-frame';
+  element.tabIndex = -1;
+  element.setAttribute('role', options.role);
+  element.setAttribute('aria-label', options.name);
+  if (options.tooltip !== undefined) element.title = options.tooltip;
+  element.addEventListener('mousedown', (event) => event.preventDefault());
+  place(element, rect);
+  element.style.setProperty('--hud-frame', `${frame}px`);
+  const box = doc.createElement('span');
+  box.className = 'hud-six-frame-picture';
+  box.style.width = `${Math.min(frame, rect.width)}px`;
+  box.style.backgroundImage = themeUrl(art, picture);
+  element.append(box);
+  if (options.label !== undefined) {
+    const title = doc.createElement('span');
+    title.className = 'hud-radio-label';
+    title.style.left = `${frame + 2}px`;
+    title.textContent = options.label;
+    element.append(title);
+    element.toggleAttribute('data-labelled', true);
+  }
+  element.addEventListener('click', press);
+  let checked = false;
+  const draw = (): void => {
+    element.setAttribute('aria-checked', String(checked));
+    element.dataset.frame = String(radioFrame({ checked, disabled: element.disabled, highlighted: false, pressed: false }));
+  };
+  draw();
+  return {
+    element,
+    get checked() { return checked; },
+    set checked(value: boolean) { checked = value; draw(); },
+    get disabled() { return element.disabled; },
+    set disabled(value: boolean) { element.disabled = value; draw(); },
+  };
+}
+
 export function radioButton(doc: Document, art: UiArt, label: string, rect: ControlRect, press: () => void): RadioButton {
   const element = doc.createElement('button');
   element.type = 'button';

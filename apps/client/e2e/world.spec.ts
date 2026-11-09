@@ -624,7 +624,7 @@ test.describe('the world screen against scripted servers', () => {
     // on the phone held on its side (342 px high) the bar starts at 0.87 of it
     const canvas = (await page.locator('.world-view canvas').boundingBox())!;
     const barTop = (await page.locator('.hud-taskbar-strip').boundingBox())!.y;
-    const composerTop = (await page.locator('.hud-chat form').boundingBox())?.y ?? barTop;
+    const composerTop = (await page.locator('.hud-chat form, .hud-neuz-chat .neuz-chat-edit').boundingBox())?.y ?? barTop;
     await tapWorld(page, isMobile ? 0.7 : 0.5,
       isMobile ? 0.65 : Math.min(0.92, (Math.min(barTop, composerTop) - 8 - canvas.y) / canvas.height));
     // the tap's step walks there and sends the DESTPOS; 10 more (1/6 s) and Webby is on the way, far from the point

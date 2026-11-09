@@ -2543,3 +2543,64 @@ fieldset:disabled .btn {
   border-image: var(--hud-safety-gauge) 0 4 fill / 0 4px stretch; pointer-events: none;
 }
 .hud-smelt-safety [data-upgrade-wait] .hud-res-slot { animation: inventory-upgrade-wait 0.6s ease-in-out infinite; }
+
+/* 2026-11-09: the desktop chat, Neuz's chat window (neuzChat.ts; docs/superpowers/specs/2026-11-09-chat-desktop-research.md):
+   the WndTile300-311 frame, the WndChatEdit strip painted under the line, the words in each line's own colour on 14 px
+   (the 9-point theme font and 2 px between lines, WndCommunication.cpp:405), plain, no shadow; the line's words black on
+   the strip's white field. The System window is the same frame and text. */
+.hud-neuz-chat, .hud-neuz-chat-log { font: 12px Arial, sans-serif; color: #ffffff; }
+.neuz-chat-strip { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.neuz-chat-strip > div { position: absolute; height: 47px; background-repeat: no-repeat; }
+.neuz-chat-text { position: absolute; }
+.neuz-chat-words {
+  position: absolute; overflow-x: hidden; overflow-y: auto; scrollbar-width: none; overscroll-behavior: contain;
+  line-height: 14px; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.neuz-chat-words::-webkit-scrollbar { display: none; }
+/* m_timerInputTimeOut: 300 s after the last use the words go, the scroll bar stays */
+.neuz-chat-text[data-faded] .neuz-chat-line { visibility: hidden; }
+.neuz-chat-edit { position: absolute; }
+.neuz-chat-edit input {
+  position: absolute; left: 0; top: 0; width: 100%; height: 100%; box-sizing: border-box; margin: 0; padding: 0 3px;
+  border: 0; border-radius: 0; outline: none; background: transparent; color: #000000; font: 12px Arial, sans-serif;
+  min-height: 0; line-height: 18px;
+}
+.neuz-chat-edit input:focus-visible { outline: none; }
+/* CWndMacroChat draws its picture only while the line holds words */
+.neuz-chat-macro { position: absolute; background-repeat: no-repeat; pointer-events: none; }
+.neuz-chat-macro:not([data-full]) { background-image: none !important; }
+/* the System window's menu (CWndMenu, as .hud-mover-menu) */
+.neuz-chat-menu {
+  position: absolute; z-index: 2; box-sizing: border-box; border: 3px solid #e2c6b5; padding: 2px 0 0; background: #ffffff;
+  font: 12px Verdana, Tahoma, sans-serif;
+}
+.neuz-chat-menu[hidden] { display: none; }
+.neuz-chat-menu > button {
+  display: block; width: 100px; height: 20px; margin: 0 2px 2px; padding: 0 0 0 24px; border: 0; background: transparent;
+  color: #000000; font: inherit; text-align: left; cursor: pointer;
+}
+.neuz-chat-menu > button:hover { background: rgba(200, 200, 200, 0.61); }
+/* the filter's checks: black words beside the ButtCheck.bmp frame */
+.hud-chat-filter .hud-six-frame { color: #000000; }
+
+/* 2026-11-09: a radio or check whose picture holds six frames (sixFrameButton, radio.ts; CTheme::RenderWndButton_6Texture):
+   0 and 1 unchecked (lit, at rest), 2 and 3 checked or pressed, 4 and 5 disabled; data-frame is the frame at rest */
+.hud-six-frame {
+  position: absolute; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left;
+  cursor: pointer; -webkit-tap-highlight-color: transparent;
+}
+.hud-six-frame:disabled { cursor: default; }
+.hud-six-frame-picture {
+  position: absolute; left: 0; top: 0; height: 100%; background-repeat: no-repeat;
+  background-position: calc(-1 * var(--hud-frame, 0px)) 0;
+}
+.hud-six-frame[data-labelled] .hud-six-frame-picture { top: calc(50% - 7px); height: 14px; }
+.hud-six-frame[data-frame="3"] .hud-six-frame-picture { background-position: calc(-3 * var(--hud-frame, 0px)) 0; }
+.hud-six-frame[data-frame="4"] .hud-six-frame-picture { background-position: calc(-4 * var(--hud-frame, 0px)) 0; }
+.hud-six-frame[data-frame="5"] .hud-six-frame-picture { background-position: calc(-5 * var(--hud-frame, 0px)) 0; }
+.hud-six-frame[data-frame="1"]:active .hud-six-frame-picture { background-position: calc(-3 * var(--hud-frame, 0px)) 0; }
+@media (hover: hover) {
+  .hud-six-frame[data-frame="1"]:hover .hud-six-frame-picture { background-position: 0 0; }
+  .hud-six-frame[data-frame="3"]:hover .hud-six-frame-picture,
+  .hud-six-frame[data-frame="1"]:active:hover .hud-six-frame-picture { background-position: calc(-2 * var(--hud-frame, 0px)) 0; }
+}

@@ -240,7 +240,11 @@ export class ResWindow {
         });
         text.textContent = control.text ?? '';
         element.append(text);
-        if (scroll) element.append(this.scrollBar(text, rect));
+        if (scroll) {
+          const bar = textScrollBar(doc, this.art, text, rect);
+          this.scrollBars.push(bar.draw);
+          element.append(bar.element);
+        }
         this.controls.set(control.id, text);
         return element;
       }
@@ -320,67 +324,83 @@ export class ResWindow {
     this.controls.set(id, input);
     return input;
   }
+}
 
-  /**
-   * A text's scroll bar on its right 16 px: the arrows at its ends (a line a press), ButtVScrBar stretched between, and the
-   * thumb (PUp, PBar stretched, PDown) only while the words are more than fit. The wheel and a finger scroll the words.
-   */
-  private scrollBar(text: HTMLElement, rect: ControlRect): HTMLElement {
-    const doc = this.doc;
-    const height = Math.trunc(rect.height / 4) * 4;
-    const bar = doc.createElement('div');
-    bar.className = 'hud-res-scroll';
-    place(bar, { left: rect.width - SCROLL, top: 0, width: SCROLL, height });
-    bar.style.backgroundImage = themeUrl(this.art, 'ButtVScrBar.bmp');
-    const arrow = (picture: string, top: number, step: number): HTMLButtonElement => {
-      const button = pictureButton(doc, this.art, picture, { left: 0, top, width: SCROLL, height: SCROLL }, SCROLL, () => {
-        text.scrollTop += step;
-        draw();
-      });
-      button.classList.add('hud-res-scroll-arrow');
-      return button;
-    };
-    const up = arrow('ButtVScrUp.tga', 0, -LINE);
-    up.setAttribute('aria-label', 'Scroll up');
-    const down = arrow('ButtVScrDown.tga', height - SCROLL, LINE);
-    down.setAttribute('aria-label', 'Scroll down');
-    const thumb = doc.createElement('div');
-    thumb.className = 'hud-res-scroll-thumb';
-    for (const [picture, part] of [['ButtVScrPUp.bmp', 'top'], ['ButtVScrPBar.bmp', 'middle'], ['ButtVScrPDown.bmp', 'bottom']] as const) {
-      const piece = doc.createElement('div');
-      piece.dataset.part = part;
-      piece.style.backgroundImage = themeUrl(this.art, picture);
-      thumb.append(piece);
-    }
-    bar.append(up, down, thumb);
-    const track = height - 2 * SCROLL;
-    const draw = (): void => {
-      const total = text.scrollHeight, shown = text.clientHeight;
-      thumb.hidden = total <= shown || shown <= 0;
-      if (thumb.hidden) return;
-      const size = Math.max(THUMB_MIN, Math.round((track * shown) / total));
-      const top = SCROLL + Math.round(((track - size) * text.scrollTop) / Math.max(1, total - shown));
-      thumb.style.top = `${top}px`;
-      thumb.style.height = `${size}px`;
-    };
-    text.classList.add('is-scrolled');
-    text.addEventListener('scroll', draw);
-    // the thumb dragged: the words follow it
-    thumb.addEventListener('pointerdown', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      const startY = event.clientY, startTop = text.scrollTop;
-      const size = thumb.offsetHeight || THUMB_MIN;
-      const move = (e: PointerEvent): void => {
-        const range = Math.max(1, track - size);
-        text.scrollTop = startTop + ((e.clientY - startY) * (text.scrollHeight - text.clientHeight)) / range;
-        draw();
-      };
-      const up = (): void => { doc.removeEventListener('pointermove', move); doc.removeEventListener('pointerup', up); };
-      doc.addEventListener('pointermove', move);
-      doc.addEventListener('pointerup', up);
+/** A text's scroll bar (`textScrollBar`): its element, `draw` after the words change, `setHeight` after the text's does. */
+export interface TextScrollBar {
+  readonly element: HTMLElement;
+  draw(): void;
+  setHeight(height: number): void;
+}
+
+/**
+ * A text's scroll bar on its right 16 px: the arrows at its ends (a line a press), ButtVScrBar stretched between, and the
+ * thumb (PUp, PBar stretched, PDown) only while the words are more than fit. The wheel and a finger scroll the words.
+ * (2026-11-09: taken out of ResWindow, for the chat's text, whose height changes with the window: `setHeight`.)
+ */
+export function textScrollBar(doc: Document, art: UiArt, text: HTMLElement, rect: ControlRect): TextScrollBar {
+  let height = Math.trunc(rect.height / 4) * 4;
+  const bar = doc.createElement('div');
+  bar.className = 'hud-res-scroll';
+  place(bar, { left: rect.width - SCROLL, top: 0, width: SCROLL, height });
+  bar.style.backgroundImage = themeUrl(art, 'ButtVScrBar.bmp');
+  const arrow = (picture: string, top: number, step: number): HTMLButtonElement => {
+    const button = pictureButton(doc, art, picture, { left: 0, top, width: SCROLL, height: SCROLL }, SCROLL, () => {
+      text.scrollTop += step;
+      draw();
     });
-    this.scrollBars.push(draw);
-    return bar;
+    button.classList.add('hud-res-scroll-arrow');
+    return button;
+  };
+  const up = arrow('ButtVScrUp.tga', 0, -LINE);
+  up.setAttribute('aria-label', 'Scroll up');
+  const down = arrow('ButtVScrDown.tga', height - SCROLL, LINE);
+  down.setAttribute('aria-label', 'Scroll down');
+  const thumb = doc.createElement('div');
+  thumb.className = 'hud-res-scroll-thumb';
+  for (const [picture, part] of [['ButtVScrPUp.bmp', 'top'], ['ButtVScrPBar.bmp', 'middle'], ['ButtVScrPDown.bmp', 'bottom']] as const) {
+    const piece = doc.createElement('div');
+    piece.dataset.part = part;
+    piece.style.backgroundImage = themeUrl(art, picture);
+    thumb.append(piece);
   }
+  bar.append(up, down, thumb);
+  let track = height - 2 * SCROLL;
+  const draw = (): void => {
+    const total = text.scrollHeight, shown = text.clientHeight;
+    thumb.hidden = total <= shown || shown <= 0;
+    if (thumb.hidden) return;
+    const size = Math.max(THUMB_MIN, Math.round((track * shown) / total));
+    const top = SCROLL + Math.round(((track - size) * text.scrollTop) / Math.max(1, total - shown));
+    thumb.style.top = `${top}px`;
+    thumb.style.height = `${size}px`;
+  };
+  text.classList.add('is-scrolled');
+  text.addEventListener('scroll', draw);
+  // the thumb dragged: the words follow it
+  thumb.addEventListener('pointerdown', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const startY = event.clientY, startTop = text.scrollTop;
+    const size = thumb.offsetHeight || THUMB_MIN;
+    const move = (e: PointerEvent): void => {
+      const range = Math.max(1, track - size);
+      text.scrollTop = startTop + ((e.clientY - startY) * (text.scrollHeight - text.clientHeight)) / range;
+      draw();
+    };
+    const up = (): void => { doc.removeEventListener('pointermove', move); doc.removeEventListener('pointerup', up); };
+    doc.addEventListener('pointermove', move);
+    doc.addEventListener('pointerup', up);
+  });
+  return {
+    element: bar,
+    draw,
+    setHeight(next: number): void {
+      height = Math.trunc(next / 4) * 4;
+      track = height - 2 * SCROLL;
+      bar.style.height = `${height}px`;
+      down.style.top = `${height - SCROLL}px`;
+      draw();
+    },
+  };
 }

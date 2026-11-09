@@ -75,6 +75,7 @@ import { TaskBar } from './hud/taskBar';
 import { createItemDetails, ownTooltipContext } from './hud/itemDetails';
 import { InventoryWindow } from './hud/inventoryWindow';
 import { ChatWindow } from './hud/chatWindow';
+import { NeuzChat } from './hud/neuzChat';
 import { MENU_RANGE, MMI, MoverMenu, npcMenuEntries, soleEntry } from './hud/moverMenu';
 import { DialogWindow } from './hud/dialogue/dialogWindow';
 import { parseDialogText } from './hud/dialogue/dialogText';
@@ -384,7 +385,8 @@ export class WorldScreen {
   /** The skill tree window with its box (`CWndSkillTreeEx`, §3.11), which K, the applet and the Start menu open. */
   private skillWindow: SkillWindow | undefined;
   private inventoryWindow: InventoryWindow | undefined;
-  private chatWindow: ChatWindow | undefined;
+  /** The phone's chat (chatWindow.ts), or the desktop's, Neuz's chat window (neuzChat.ts, 2026-11-09). */
+  private chatWindow: ChatWindow | NeuzChat | undefined;
   /** 2026-11-05: Neuz's item boxes (confirmBoxes.ts). */
   private confirmBoxes: ConfirmBoxes | undefined;
   /** 2026-11-05: the bag's items a window holds (`CItemBase::m_dwExtra`), by object: drawn faded, not dragged nor used. */
@@ -787,7 +789,8 @@ export class WorldScreen {
       this.messageSounds(objectId, value, self);
       if (value.type === 'shopStock') { this.shopWindow?.receive(objectId, value.tabs); continue; }
       if (value.type === 'gmChat') {
-        for (const text of value.texts) this.chatWindow?.append('system', '', text);
+        // OnGMChat: each line an announcement (TID_ADMIN_ANNOUNCE, DPClient.cpp:6707-6719)
+        for (const text of value.texts) this.chatWindow?.append('announcement', '', text);
         continue;
       }
       if (value.type === 'chat' || value.type === 'shout' || value.type === 'whisper' || value.type === 'party' || value.type === 'guild' || value.type === 'system' || value.type === 'announcement') {
@@ -806,7 +809,8 @@ export class WorldScreen {
           this.chatWindow?.append('nearby', world.movers.get(objectId)?.name ?? 'Unknown', value.text);
           if (speaker && this.data && nameTagOf(speaker, world.self(), this.data.nameColors, this.data.honorTitles)) this.speechBubbles?.say(objectId, value.text);
         }
-        else this.chatWindow?.append(value.type, value.sender, value.text, value.type === 'whisper' ? value.recipient : undefined);
+        else this.chatWindow?.append(value.type, value.sender, value.text, value.type === 'whisper' ? value.recipient : undefined,
+          value.type === 'shout' ? value.color : undefined);
         if (value.type === 'party' && value.speakerId !== undefined && value.text !== '' && world.movers.has(value.speakerId)) {
           this.speechBubbles?.say(value.speakerId, value.text);
         }
@@ -817,8 +821,8 @@ export class WorldScreen {
         continue;
       }
       if (value.type === 'definedText' && this.data) {
-        const text = formatDefinedText(this.data.texts, value.textId, value.args).text;
-        if (text) this.chatWindow?.append('system', '', text);
+        const { text, color } = formatDefinedText(this.data.texts, value.textId, value.args);
+        if (text) this.chatWindow?.append('system', '', text, undefined, color);
         if (text) this.shopWindow?.feedback(text);
       }
       if (value.type === 'replace') {
@@ -1294,7 +1298,14 @@ export class WorldScreen {
       shortcut: (id, slot) => taskBar.setInventoryShortcut(id, slot),
     }, doc);
     this.inventoryWindow = inventoryWindow;
-    this.chatWindow ??= new ChatWindow((channel, text, target) => this.session.sendChat(channel, text, target), () => this.stopOwnMover(), doc);
+    // the phone keeps its chat; elsewhere Neuz's chat window (2026-11-09, docs/superpowers/specs/2026-11-09-chat-desktop-research.md)
+    const phone = view.matchMedia?.('(max-width: 1000px) and (pointer: coarse)').matches === true;
+    this.chatWindow ??= phone
+      ? new ChatWindow((channel, text, target) => this.session.sendChat(channel, text, target), () => this.stopOwnMover(), doc)
+      : new NeuzChat({
+        send: (text) => this.session.sendChat('nearby', text, ''), onFocus: () => this.stopOwnMover(),
+        ownName: () => this.world?.self()?.name ?? this.entry.character.name, art: this.hudArt!, doc,
+      });
     // 2026-11-05: the client commands Neuz runs itself (TCM_CLIENT, FuncTextCmd.cpp): /position and /Time print; the
     // others (the trade, whisper and party toggles, the block list) have no option or window here, and send nothing
     this.chatWindow.onClientCommand = (command) => {
@@ -1387,9 +1398,16 @@ export class WorldScreen {
       logOutBox.element, messageBox.element,
       selectVillage.element, characterWindow.frame.element,
       characterWindow.confirm.frame.element, skillWindow.frame.element, skillWindow.warning.element, reviveWindow.element,
-      inventoryWindow.frame.element, this.nearbyItems.element, this.chatWindow.element, this.shopWindow.frame.element,
+      inventoryWindow.frame.element, this.nearbyItems.element,
+      ...(this.chatWindow instanceof NeuzChat ? this.chatWindow.elements : [this.chatWindow.element]), this.shopWindow.frame.element,
       ...questWindow.elements, this.dialog.element, this.moverMenu.element, ...partyHud.elements,
     );
+    if (this.chatWindow instanceof NeuzChat) {
+      // at the bottom left on the task bar; Guild is enabled in a guild (the character's guild, JOIN)
+      this.chatWindow.show();
+      this.chatWindow.setGuild(this.entry.character.guildId !== 0);
+      for (const modal of this.chatWindow.modals) modal.onChange = () => this.modalChanged();
+    }
     // what the party said while the world loaded
     if (this.partyEvents.length > 0) partyHud.handle(this.partyEvents.splice(0));
     if (this.optionWindow !== undefined) this.hud!.element.append(this.optionWindow.frame.element);
@@ -2250,6 +2268,7 @@ export class WorldScreen {
         id: mover.objectId, kind: navigatorKind(mover, this.party), name: mover.name, pos: mover.act.body.pos,
       })));
     this.reviveWindow?.update(this.itemUse?.canRevive ?? false);
+    if (this.chatWindow instanceof NeuzChat) this.chatWindow.update();
     if (this.resized) {
       this.resized = false;
       refitWindows(this.element.ownerDocument);

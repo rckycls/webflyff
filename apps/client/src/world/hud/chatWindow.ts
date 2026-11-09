@@ -1,15 +1,12 @@
 import { encodeChat } from '@flyffweb/protocol';
 import type { ChatChannel } from '@flyffweb/protocol';
-import { isGameMaster } from '../authorization';
-import { AUTH_GENERAL, lineAction, suggest } from './chatCommands';
-import type { ChatCommand, Suggestion } from './chatCommands';
+import { AUTH_GENERAL, lineAction } from './chatCommands';
+import type { ChatCommand } from './chatCommands';
 import { CHAT_COMMANDS, EMOTICONS } from './chatCommandTable';
+import { ChatHistory, CommandSuggestions } from './chatInput';
 
 /** Session-local chat. Only server echoes enter the transcript; text is never interpreted as markup. */
 type ChatView = ChatChannel | 'all' | 'system' | 'announcement';
-
-/** `MAX_HISTORY_STRING` (`WndCommunication.cpp:15`): the lines sent that Arrow Up can bring back. */
-const MAX_HISTORY = 20;
 
 const ICONS: Record<string, string> = {
   Send: 'M3 10 21 3 14 21 11 13 3 10ZM11 13 21 3',
@@ -46,15 +43,10 @@ export class ChatWindow {
   private readonly input: HTMLInputElement;
   private readonly feedback: HTMLElement;
   private readonly toggle: HTMLButtonElement;
-  /** The lines sent, oldest first: CWndChat's m_strHistory, at most MAX_HISTORY_STRING (WndCommunication.cpp:15, :822-828). */
-  private readonly history: string[] = [];
-  /** The line of `history` shown by Arrow Up or Down, or -1 while none is; `draft` is what was typed before. */
-  private recalled = -1;
-  private draft = '';
-  /** 2026-11-05: the command suggestions, their rows, the one walked to (-1 none) and the account's authorization. */
-  private readonly suggestions: HTMLElement;
-  private rows: Suggestion[] = [];
-  private picked = -1;
+  /** The lines sent, which the arrows bring back (chatInput.ts). */
+  private readonly history = new ChatHistory();
+  /** 2026-11-05: the command suggestions over the line (chatInput.ts). */
+  private readonly suggestions: CommandSuggestions;
   private authorization = AUTH_GENERAL;
   constructor(send: (channel: ChatChannel, text: string, target: string) => void,
     onFocus: () => void, private readonly doc: Document = document,
@@ -100,16 +92,13 @@ export class ChatWindow {
     });
     this.element.addEventListener('keyup', (event) => event.stopPropagation());
     // 2026-11-05: the command suggestions over the line ("/" typed): the arrows walk them, Tab or a click takes one
-    this.suggestions = doc.createElement('div'); this.suggestions.className = 'chat-suggestions';
-    this.suggestions.setAttribute('role', 'listbox'); this.suggestions.setAttribute('aria-label', 'Chat commands');
-    this.suggestions.hidden = true;
-    this.form.prepend(this.suggestions);
-    this.input.setAttribute('aria-autocomplete', 'list');
+    this.suggestions = new CommandSuggestions(this.input, doc, commands);
+    this.form.prepend(this.suggestions.element);
     // the highlight follows what is typed (SelectString, WndCommunication.cpp:890-899)
-    this.input.addEventListener('input', () => { this.picked = -2; this.suggest(); });
+    this.input.addEventListener('input', () => this.suggestions.onInput());
     this.input.addEventListener('keydown', (event) => {
-      if (this.suggestionKey(event)) return;
-      if (event.key === 'ArrowUp' || event.key === 'ArrowDown') this.recall(event);
+      if (this.suggestions.key(event)) return;
+      if (event.key === 'ArrowUp' || event.key === 'ArrowDown') this.history.recall(event, this.input);
     });
     this.form.addEventListener('submit', (event) => {
       event.preventDefault();
@@ -125,34 +114,10 @@ export class ChatWindow {
         const action = lineAction(text, this.authorization, this.commands, EMOTICONS);
         if (action.kind === 'send') { encodeChat(channel, text); send(channel, text, ''); }
         else if (action.kind === 'client') this.onClientCommand(action.command, action.args);
-        this.remember(text);
-        this.input.value = ''; this.feedback.textContent = ''; this.suggest(); if (!this.mobile) this.input.focus();
+        this.history.remember(text);
+        this.input.value = ''; this.feedback.textContent = ''; this.suggestions.update(); if (!this.mobile) this.input.focus();
       } catch (error) { this.feedback.textContent = error instanceof Error ? error.message : 'Unable to send message.'; }
     });
-  }
-  /**
-   * Arrow Up shows the line sent before the one shown (EN_UP, WndCommunication.cpp:741-755), stopping at the oldest; Arrow
-   * Down the one after it, then what was being typed (2026-11-05: Neuz has Up only, and wraps round).
-   */
-  private recall(event: KeyboardEvent): void {
-    const up = event.key === 'ArrowUp';
-    if (this.history.length === 0 || (!up && this.recalled < 0)) return;
-    event.preventDefault();
-    if (up) {
-      if (this.recalled < 0) { this.draft = this.input.value; this.recalled = this.history.length; }
-      this.recalled = Math.max(0, this.recalled - 1);
-    } else {
-      this.recalled += 1;
-    }
-    if (this.recalled >= this.history.length) { this.recalled = -1; this.input.value = this.draft; } else this.input.value = this.history[this.recalled]!;
-    const end = this.input.value.length;
-    this.input.setSelectionRange(end, end);
-  }
-  /** A line sent goes to the end of `history` (once, if it is the last line again), the oldest out past 20. */
-  private remember(text: string): void {
-    if (this.history.at(-1) !== text) this.history.push(text);
-    if (this.history.length > MAX_HISTORY) this.history.shift();
-    this.recalled = -1; this.draft = '';
   }
   /** 2026-11-05: a client command typed (TCM_CLIENT: /position, /Time ...), with what follows its name. */
   onClientCommand: (command: string, args: string) => void = () => {};
@@ -160,87 +125,7 @@ export class ChatWindow {
   /** The own account's authorization (`m_dwAuthorization`, ADD_OBJ): which commands the suggestions offer. */
   setAuthorization(authorization: number): void {
     this.authorization = authorization;
-    this.suggest();
-  }
-
-  /** The suggestions for the line as it is: shown while it starts with "/" and some command matches. */
-  private suggest(): void {
-    const { typing, rows, selected } = suggest(this.input.value, this.authorization, this.commands);
-    this.rows = typing ? rows : [];
-    if (this.picked === -2) this.picked = selected;
-    if (this.picked >= this.rows.length) this.picked = this.rows.length - 1;
-    const doc = this.doc;
-    this.suggestions.replaceChildren(...rows.map(({ command, name }, i) => {
-      const row = doc.createElement('div');
-      row.className = 'chat-suggestion';
-      row.dataset.command = command.names[0]!;
-      if (typing) {
-        row.setAttribute('role', 'option');
-        row.setAttribute('aria-selected', String(i === this.picked));
-        // a press would take the focus from the line first: the row is taken on the press itself
-        row.addEventListener('pointerdown', (event) => { event.preventDefault(); this.take(i); });
-      }
-      const head = doc.createElement('span'); head.className = 'chat-suggestion-name';
-      head.textContent = `/${name}${command.usage ? ` ${command.usage}` : ''}`;
-      const others = command.names.filter((n) => n !== name).map((n) => `/${n}`).join(' ');
-      const rest = doc.createElement('span'); rest.className = 'chat-suggestion-help';
-      rest.textContent = [others, command.help].filter(Boolean).join(' · ');
-      row.append(head, rest);
-      if (isGameMaster(command.auth)) {
-        const badge = doc.createElement('span'); badge.className = 'chat-suggestion-gm'; badge.textContent = 'GM';
-        row.append(badge);
-      }
-      return row;
-    }));
-    this.suggestions.hidden = rows.length === 0;
-    this.input.setAttribute('aria-expanded', String(rows.length > 0 && typing));
-    this.suggestions.querySelector('[aria-selected="true"]')?.scrollIntoView?.({ block: 'nearest' });
-  }
-
-  /** The keys the open suggestions take: the arrows walk them, Tab (or Enter on a walked-to row) takes one, Escape hides them. */
-  private suggestionKey(event: KeyboardEvent): boolean {
-    if (this.suggestions.hidden || this.rows.length === 0) return false;
-    const count = this.rows.length;
-    switch (event.key) {
-      case 'ArrowDown':
-      case 'ArrowUp':
-        event.preventDefault();
-        this.picked = event.key === 'ArrowDown' ? (this.picked + 1) % count : (this.picked <= 0 ? count : this.picked) - 1;
-        this.suggest();
-        return true;
-      case 'Tab':
-        event.preventDefault();
-        this.take(Math.max(0, this.picked));
-        return true;
-      case 'Enter': {
-        // a row other than what is typed is taken, and nothing is sent (WndCommunication.cpp:758-778)
-        const row = this.rows[this.picked];
-        if (row === undefined || this.input.value.slice(1) === row.name) return false;
-        event.preventDefault();
-        this.take(this.picked);
-        return true;
-      }
-      case 'Escape':
-        event.preventDefault();
-        event.stopPropagation();
-        this.suggestions.hidden = true;
-        this.rows = [];
-        return true;
-      default:
-        return false;
-    }
-  }
-
-  /** The suggestion `i` goes in the line, "/name ", for its words to be typed after it. */
-  private take(i: number): void {
-    const row = this.rows[i];
-    if (row === undefined) return;
-    this.input.value = `/${row.name} `;
-    this.picked = -1;
-    const end = this.input.value.length;
-    this.input.setSelectionRange(end, end);
-    this.suggest();
-    this.input.focus();
+    this.suggestions.setAuthorization(authorization);
   }
 
   /** In a party or not: with the Party view chosen, a typed line goes to the party while in one. */
@@ -264,7 +149,8 @@ export class ChatWindow {
     if (this.typing) (this.doc.activeElement as HTMLElement).blur();
     delete this.element.dataset.expanded; this.toggle.ariaExpanded = 'false';
   }
-  append(channel: ChatChannel | 'system' | 'announcement', sender: string, text: string, recipient?: string): void {
+  /** `_color`: the desktop chat's (neuzChat.ts); the phone colours a line by its channel. */
+  append(channel: ChatChannel | 'system' | 'announcement', sender: string, text: string, recipient?: string, _color?: number): void {
     const bottom = this.log.scrollHeight - this.log.clientHeight - this.log.scrollTop < 24;
     const line = this.doc.createElement('div'); line.dataset.channel = channel;
     line.textContent = `[${channel}] ${sender.slice(0, 32)}${recipient ? ` → ${recipient.slice(0, 32)}` : ''}${sender ? ': ' : ''}${text.slice(0, 1023)}`;

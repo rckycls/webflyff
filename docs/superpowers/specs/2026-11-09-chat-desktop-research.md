@@ -179,7 +179,30 @@ client area `w` x `h` (518 x 118 at the default size):
 
 ## 8. Online sources
 
-Filled in from the web research (below).
+Online writing on the classic (pre-V19) chat is thin. What was found agrees with the C++ above, with two conflicts:
+
+- **Look and place**: bottom left, on the task bar, a see-through dark message area, a peach strip with blue rounded
+  tabs, orange Lock / Filter / SYSTEM, a pale line. The GALA Lab guide's picture
+  (https://www.en-galalab.flyff.com/user-interface, image
+  https://static.wixstatic.com/media/415671_a285de64a35c498ba0c730adf824daa5~mv2.png); a 2009 game-play video
+  (https://www.youtube.com/watch?v=marpTGfXQzs) with pink "[Name]" shouts; an old screenshot with "Name : text" lines
+  (https://miro.medium.com/v2/resize:fit:1100/1*NWyZ-OZM_IMpIEpLFAcNLw.jpeg, from
+  https://medium.com/usability-testing/usability-and-flight-53e2fdeabcc5). The gold chat on the gpotato.com.br wiki
+  (Messagebox.png) is V19's interface, not V15's.
+- **Tabs**: Chat, Whisper, Shout, Troupe, Guild in the GALA picture (an older picture: V15's ButtChatTroupe.BMP says
+  "Party"); /w, /s, /p, /g; each tab has its own filter ("Select each tab and click the filter button", gpotato wiki).
+- **Filter**: "select what kind of messages show up in your chat box" (GALA Lab;
+  https://flyff-wiki.gpotato.com.br/wiki/New_Pang_Tutorial). **System**: "a small window to show you recent whispers,
+  PMs, and official ingame messages" (GALA Lab); "All the messages except for chat are displayed in the System Window"
+  (gpotato wiki).
+- **Right-click a name in the chat to whisper** (New_Pang_Tutorial). **Enter** "Activates the Chat Box and enters any
+  text you have typed" (https://flyff-wiki.gpotato.com.br/wiki/Hot_Key.html).
+- **Colours** (GALA Lab): whisper yellow, shout purple-pink, party green, guild light pink.
+- **Conflicts**, where the C++ wins: GALA Lab says Lock stops the chat from moving (in V15 that is the separate move lock;
+  Lock keeps the line open after Enter, `:848-872`); the gpotato hot-key page says the Down arrow brings back old lines
+  (V15 uses Up, `:741`).
+
+Nothing was found online on the resizing, the fading, the macro mark or the anti-spam; those rest on the C++ alone.
 
 ## 9. Today's desktop chat, and how it differs
 

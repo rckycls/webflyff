@@ -50,7 +50,91 @@ export interface FrameLayout {
    * WndField.cpp:12219): its caption is still drawn, but it has no close button. True by default.
    */
   closeButton?: boolean;
+  /**
+   * 2026-11-09: false for a window without `WBS_CAPTION` (the chat, `APP_COMMUNICATION_CHAT` 0x410040): no title bar, and
+   * a press on any part its controls leave free moves it (`IsPickupSpace` is the whole window, WndBase.cpp:2003-2023).
+   * True by default.
+   */
+  caption?: boolean;
+  /**
+   * 2026-11-09: the start of the tiles' file names: the layout's picture less its last 6 characters
+   * (`AdditionalSkinTexture`, WndNeuz.cpp:276-278): 'WndTile' for "WndTile07.tga" and its kind, 'WndTile3' for the chat's
+   * "WndTile308.tga". 'WndTile' by default.
+   */
+  tiles?: string;
+  /** 2026-11-09: the client area's insets of a window with no caption (left, top, right, bottom; the chat's 4 4 6 6). */
+  insets?: readonly [number, number, number, number];
+  /**
+   * 2026-11-09: `WBS_THICKFRAME`: the edges can be dragged (`GetResizeDir`, `WndBase.cpp:1967-2001`), down to this least
+   * size (the window's `AdjustMinRect`).
+   */
+  resize?: { width: number; height: number };
 }
+
+/** `GetResizeDir`'s band: 6 px in from the window's edges. */
+const RESIZE_BAND = 6;
+/** The drag moves an edge in whole tiles (`pt.x = ( pt.x / 16 ) * 16`, WndBase.cpp:1196-1198). */
+const RESIZE_STEP = 16;
+
+/**
+ * Which edge a press at (`x`, `y`) of a `width` x `height` window drags (`GetResizeDir`, `WndBase.cpp:1967-2001`): 1 top,
+ * 2 bottom, 3 left, 4 right, 5 top left, 6 top right, 7 bottom left, 8 bottom right, 0 none.
+ */
+export function resizeDirection(x: number, y: number, width: number, height: number): number {
+  if (x < 0 || y < 0 || x >= width || y >= height) return 0;
+  const left = x < RESIZE_BAND, right = x > width - RESIZE_BAND, top = y < RESIZE_BAND, bottom = y > height - RESIZE_BAND;
+  if (left && top) return 5;
+  if (right && top) return 6;
+  if (left && bottom) return 7;
+  if (right && bottom) return 8;
+  if (top) return 1;
+  if (bottom) return 2;
+  if (left) return 3;
+  if (right) return 4;
+  return 0;
+}
+
+/** A window's rectangle on its layer. */
+export interface WindowRect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * The rectangle a drag of edge `dir` by (`dx`, `dy`) from `old` gives (`WindowProc`, `WndBase.cpp:1171-1230`): the drag
+ * cut to whole steps of 16 px toward 0, an edge within 10 px of the room's (the layer above the task bar) put onto it,
+ * then the least size kept from the edge that did not move (`AdjustMinRect`, `:2480-2499`).
+ */
+export function resizeRect(
+  old: WindowRect, dir: number, dx: number, dy: number, room: { width: number; height: number },
+  least: { width: number; height: number },
+): WindowRect {
+  const sx = Math.trunc(dx / RESIZE_STEP) * RESIZE_STEP;
+  const sy = Math.trunc(dy / RESIZE_STEP) * RESIZE_STEP;
+  let left = old.left, top = old.top, right = old.left + old.width, bottom = old.top + old.height;
+  if (dir === 1 || dir === 5 || dir === 6) top += sy;
+  if (dir === 2 || dir === 7 || dir === 8) bottom += sy;
+  if (dir === 3 || dir === 5 || dir === 7) left += sx;
+  if (dir === 4 || dir === 6 || dir === 8) right += sx;
+  if (top < CLING) top = 0;
+  if (bottom > room.height - CLING) bottom = room.height;
+  if (left < CLING) left = 0;
+  if (right > room.width - CLING) right = room.width;
+  if (right - left < least.width) {
+    if (left > old.left) left = right - least.width;
+    else right = left + least.width;
+  }
+  if (bottom - top < least.height) {
+    if (top > old.top) top = bottom - least.height;
+    else bottom = top + least.height;
+  }
+  return { left, top, width: right - left, height: bottom - top };
+}
+
+/** The resize cursors of `OnSetCursor` (`WndNeuz.cpp:680-700`), by `resizeDirection`. */
+const RESIZE_CURSORS = ['', 'ns-resize', 'ns-resize', 'ew-resize', 'ew-resize', 'nwse-resize', 'nesw-resize', 'nesw-resize', 'nwse-resize'];
 
 /** A window with no layout of its own. */
 const DEFAULT_LAYOUT: FrameLayout = { width: 256, height: 256 };
@@ -80,7 +164,10 @@ const layoutBottoms = new WeakMap<Element, number>();
  * `WndTaskBar.cpp:1176-1178`), inside which the windows are kept as they move (`m_bCling`, `WndBase.cpp:1261`).
  */
 export function setLayoutBottom(layer: Element, px: number): void {
+  const changed = layoutBottoms.get(layer) !== px;
   layoutBottoms.set(layer, px);
+  // 2026-11-09: the open windows keep to the new room (the chat, put on the bar, goes onto it)
+  if (changed) refitWindows(layer.ownerDocument);
 }
 
 /** 2026-11-05: what `setLayoutBottom` keeps free of `layer`'s bottom (0 if nothing), for the buff display's moves. */
@@ -131,7 +218,7 @@ export class WindowFrame {
   private placed = { x: 0, y: 0 };
   private centered = false;
   /** The window's size as Neuz has it (`FrameLayout`), its frame, and the height it is shown at (`fit`). */
-  private readonly width: number;
+  private width: number;
   private fullHeight: number;
   private readonly frame: HTMLElement;
   private readonly art: UiArt;
@@ -140,6 +227,17 @@ export class WindowFrame {
   private scale = 1;
   private readonly mobileScale: number;
   private readonly fitWhole: boolean;
+  /** 2026-11-09: the options of a window with no caption (the chat): see `FrameLayout`. */
+  private readonly caption: boolean;
+  private readonly tilePrefix: string;
+  /** The client area's insets: left, top, right, bottom. */
+  private readonly insets: readonly [number, number, number, number];
+  private readonly least: { width: number; height: number } | undefined;
+  private resizing: { pointerId: number; dir: number; x: number; y: number; old: WindowRect } | null = null;
+  /** 2026-11-09: false while the move lock is on (`WBS_MOVE` taken away, WndCommunication.cpp:678-689); the edges still drag. */
+  movable = true;
+  /** 2026-11-09: called with the new size each time an edge is dragged to one (`OnSize`). */
+  onResize?: (width: number, height: number) => void;
 
   constructor(title: string, art: UiArt, layout: FrameLayout = DEFAULT_LAYOUT, doc: Document = document) {
     this.doc = doc;
@@ -151,6 +249,10 @@ export class WindowFrame {
     this.shownHeight = height;
     this.art = art;
     this.tiled = layout.texture === undefined;
+    this.caption = layout.caption ?? true;
+    this.tilePrefix = layout.tiles ?? 'WndTile';
+    this.insets = this.caption ? [CLIENT_LEFT, CAPTION + CLIENT_TOP, CLIENT_RIGHT, CLIENT_BOTTOM] : layout.insets ?? [0, 0, 0, 0];
+    this.least = layout.resize;
     const element = doc.createElement('div');
     element.className = 'hud-window';
     element.hidden = true;
@@ -183,19 +285,84 @@ export class WindowFrame {
 
     const body = doc.createElement('div');
     body.className = 'hud-window-body';
-    body.style.left = `${CLIENT_LEFT}px`;
-    body.style.top = `${CAPTION + CLIENT_TOP}px`;
-    body.style.width = `${Math.max(0, width - CLIENT_LEFT - CLIENT_RIGHT)}px`;
-    body.style.height = `${Math.max(0, height - CAPTION - CLIENT_TOP - CLIENT_BOTTOM)}px`;
+    const [left, top, right, bottom] = this.insets;
+    body.style.left = `${left}px`;
+    body.style.top = `${top}px`;
+    body.style.width = `${Math.max(0, width - left - right)}px`;
+    body.style.height = `${Math.max(0, height - top - bottom)}px`;
     this.body = body;
 
-    element.append(frame, titleBar, body);
+    element.append(frame);
+    if (this.caption) element.append(titleBar);
+    element.append(body);
     if (layout.closeButton !== false) element.append(close);
     this.element = element;
     this.setTitle(title);
 
-    element.addEventListener('pointerdown', () => this.raise());
+    element.addEventListener('pointerdown', (event) => {
+      this.raise();
+      if (!this.caption) this.press(event);
+    });
     titleBar.addEventListener('pointerdown', (event) => this.startDrag(event));
+    if (this.least !== undefined) element.addEventListener('pointermove', (event) => this.hover(event));
+  }
+
+  /** Where a pointer is on the window: its point in the window's own pixels. */
+  private local(event: PointerEvent): { x: number; y: number } {
+    const rect = this.element.getBoundingClientRect();
+    return { x: (event.clientX - rect.left) / this.scale, y: (event.clientY - rect.top) / this.scale };
+  }
+
+  /**
+   * 2026-11-09: a press on a window with no caption: within 6 px of an edge it drags that edge (`WBS_THICKFRAME`); else,
+   * on a part no control takes, it moves the window (`WBS_MOVE`, which the move lock takes away).
+   */
+  private press(event: PointerEvent): void {
+    if (event.button !== 0 || this.drag !== null || this.resizing !== null) return;
+    const { x, y } = this.local(event);
+    const dir = this.least === undefined ? 0 : resizeDirection(x, y, this.width, this.shownHeight);
+    if (dir !== 0) {
+      const { x: left, y: top } = this.position;
+      this.resizing = { pointerId: event.pointerId ?? 0, dir, x: event.clientX, y: event.clientY,
+        old: { left, top, width: this.width, height: this.shownHeight } };
+      const view = this.view();
+      view.addEventListener('pointermove', this.onMove);
+      view.addEventListener('pointerup', this.onUp);
+      view.addEventListener('pointercancel', this.onUp);
+      event.preventDefault();
+      return;
+    }
+    const target = event.target as Element | null;
+    if (!this.movable || target?.closest?.('button, input, textarea, select, a, [data-press]') != null) return;
+    this.startDrag(event);
+  }
+
+  /** The resize cursor over the edges' band (`OnSetCursor`, WndNeuz.cpp:680-700). */
+  private hover(event: PointerEvent): void {
+    if (this.drag !== null || this.resizing !== null) return;
+    const { x, y } = this.local(event);
+    this.element.style.cursor = RESIZE_CURSORS[resizeDirection(x, y, this.width, this.shownHeight)]!;
+  }
+
+  /**
+   * 2026-11-09: the window made `width` x `height` (an edge dragged, `SetWndRect`): its frame laid again, its client
+   * area as much bigger or smaller, and `onResize` told.
+   */
+  setSize(width: number, height: number): void {
+    if (width === this.width && height === this.fullHeight) return;
+    this.width = width;
+    this.element.style.width = `${width}px`;
+    const [left, , right] = this.insets;
+    this.body.style.width = `${Math.max(0, width - left - right)}px`;
+    this.fullHeight = height;
+    this.shownHeight = -1;
+    this.fit();
+    this.onResize?.(width, this.shownHeight);
+  }
+
+  /** The window's size as it is shown. */
+  get size(): { width: number; height: number } {
+    return { width: this.width, height: this.shownHeight };
   }
 
   get isOpen(): boolean {
@@ -290,7 +457,7 @@ export class WindowFrame {
     if (height === this.shownHeight) return;
     this.shownHeight = height;
     this.element.style.height = `${height}px`;
-    this.body.style.height = `${Math.max(0, height - CAPTION - CLIENT_TOP - CLIENT_BOTTOM)}px`;
+    this.body.style.height = `${Math.max(0, height - this.insets[1] - this.insets[3])}px`;
     if (this.tiled) {
       this.frame.replaceChildren();
       this.tile(this.frame, this.art, this.width, height);
@@ -320,7 +487,7 @@ export class WindowFrame {
         tile.style.top = `${y * TILE}px`;
         tile.style.width = `${columns * TILE}px`;
         tile.style.height = `${rows * TILE}px`;
-        tile.style.backgroundImage = themeUrl(art, `WndTile${String(index).padStart(2, '0')}.tga`);
+        tile.style.backgroundImage = themeUrl(art, `${this.tilePrefix}${String(index).padStart(2, '0')}.tga`);
         frame.append(tile);
       }
     }
@@ -377,6 +544,22 @@ export class WindowFrame {
   }
 
   private readonly onMove = (event: PointerEvent): void => {
+    const resizing = this.resizing;
+    if (resizing !== null && (event.pointerId ?? 0) === resizing.pointerId) {
+      const layer = this.element.parentElement;
+      const room = {
+        width: layer?.clientWidth ?? 0,
+        height: (layer?.clientHeight ?? 0) - (layer === null ? 0 : layoutBottoms.get(layer) ?? 0),
+      };
+      const rect = resizeRect(resizing.old, resizing.dir, (event.clientX - resizing.x) / this.scale,
+        (event.clientY - resizing.y) / this.scale, room, this.least!);
+      this.centered = false;
+      this.element.style.left = `${rect.left}px`;
+      this.element.style.top = `${rect.top}px`;
+      this.placed = { x: rect.left, y: rect.top };
+      this.setSize(rect.width, rect.height);
+      return;
+    }
     const drag = this.drag;
     if (drag === null || (event.pointerId ?? 0) !== drag.pointerId) return;
     this.centered = false;
@@ -386,10 +569,12 @@ export class WindowFrame {
 
   private readonly onUp = (event: PointerEvent): void => {
     if (this.drag !== null && (event.pointerId ?? 0) === this.drag.pointerId) this.endDrag();
+    if (this.resizing !== null && (event.pointerId ?? 0) === this.resizing.pointerId) this.endDrag();
   };
 
   private endDrag(): void {
     this.drag = null;
+    this.resizing = null;
     const view = this.view();
     view.removeEventListener('pointermove', this.onMove);
     view.removeEventListener('pointerup', this.onUp);
