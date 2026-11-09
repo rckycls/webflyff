@@ -47,6 +47,7 @@ import { readCmdSetSkillLevel, readDisguise, readModifyMode, readNoDisguise, rea
 import {
   readMeleeAttack2, readMoverBehavior2, readMoverCorr2, readMoverMoved2, readSendActMsg, readSetFuel,
 } from './flight';
+import { TRADE_READERS } from './trade';
 import type { WorldMessage } from './types';
 import { readSmeltSafety, readUltimate } from './upgrade';
 import { readChangeFace, readSexChange, readSummon } from './itemWindows';
@@ -200,4 +201,6 @@ export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
     [MessageType.SET_PET_NAME, readSetPetName],
     [MessageType.MOVER_CHANGESFX, readMoverChangeSfx],
     [MessageType.VISPET_ACTIVATE, readVisPetActivate],
+    // 2026-11-10: the player trade (world/trade.ts)
+    ...TRADE_READERS,
   ]);

@@ -230,6 +230,9 @@ export const THEME_FILES: readonly string[] = [
   // and the mail icon (:716), APP_MESSAGE's Send (resdata.inc:23665) and APP_INSTANTMSG's picture (:25074)
   'ButtMsgRight.bmp', 'ButtMessAdd.bmp', 'ButtMessNote.bmp', 'ButtMessengerChannel.bmp', 'ButtMessengerState.bmp',
   'ButtMessengerLevel.bmp', 'ButtMessengerJob.bmp', 'ButtMessengerChar.bmp', 'WndMail.dds', 'ButtSend.bmp', 'WndInstantMsg.tga',
+  // 2026-11-10, the player trade (docs/superpowers/specs/2026-11-10-trade-research.md §3, §8): APP_TRADE's picture
+  // (resdata.inc:21942, not tiled) and its gold-clear button (:21994), hidden in V15 (WndField.cpp:9031-9038)
+  'WndTrade.tga', 'ButtClearGold.tga',
 ];
 
 /** 2026-11-05: the cursors of Client/Cursor the browser shows (Neuz.cpp:280-300): the upgrade mode's hammer, CUR_HAMMER. */

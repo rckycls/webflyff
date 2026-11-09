@@ -27,6 +27,10 @@ import {
 } from '@flyffweb/protocol';
 import type { BundleMessage, BundleResult, MoveReport, Shortcut, SkillSlot, Vec3, WorldMessage } from '@flyffweb/protocol';
 import type { AngleReport, FlightReport } from '@flyffweb/protocol';
+import {
+  encodeConfirmTrade, encodeConfirmTradeCancel, encodeTrade, encodeTradeCancel, encodeTradeConfirm, encodeTradeOk, encodeTradePut,
+  encodeTradePutGold,
+} from '@flyffweb/protocol';
 import { UNEXPECTED_PROBLEM, closeText, errorText } from '../lobby/errorText';
 import { serverIdOf } from './pets/raisedPet';
 import { GATEWAY_UNREACHABLE, PING_INTERVAL_MS, TIMEOUT_TEXT, systemClock } from '../lobby/LoginFlow';
@@ -238,6 +242,19 @@ export class WorldSession {
   sendRemoveFriend(friendId: number): void { this.playingCache()?.send(encodeRemoveFriend(this.ownPlayerId(), friendId)); }
   /** BLOCK `gu` (`SendBlock( gu, g_pPlayer->GetName(), other )`): 1 /wr, 2 /mr, 6 a Confirm already open. */
   sendFriendBlock(gu: number, other: string): void { this.playingCache()?.send(encodeBlock(gu, this.entry.character.name, other)); }
+  // 2026-11-10: the player trade's packets (trade research §7, `DPClient.cpp:9411-9469`)
+  sendConfirmTrade(targetId: number): void { this.playingCache()?.send(encodeConfirmTrade(targetId)); }
+  sendConfirmTradeCancel(askerId: number): void { this.playingCache()?.send(encodeConfirmTradeCancel(askerId)); }
+  sendTrade(askerId: number): void { this.playingCache()?.send(encodeTrade(askerId)); }
+  sendTradePut(slot: number, itemType: number, itemObjectId: number, count: number): void {
+    this.playingCache()?.send(encodeTradePut(slot, itemType, itemObjectId, count));
+  }
+  sendTradeOk(): void { this.playingCache()?.send(encodeTradeOk()); }
+  sendTradeCancel(mode = 0): void { this.playingCache()?.send(encodeTradeCancel(mode)); }
+  sendTradePutGold(gold: number): void { this.playingCache()?.send(encodeTradePutGold(gold)); }
+  sendTradeConfirm(): void { this.playingCache()?.send(encodeTradeConfirm()); }
+  /** BLOCK `gu` (`OnConfirmTrade`, :2555-2593): 3 refuse, 4 repairing, 5 a trade or a request open, 8 a bank open. */
+  sendTradeBlock(gu: number, askerName: string): void { this.playingCache()?.send(encodeBlock(gu, this.entry.character.name, askerName)); }
   private ownPlayerId(): number { return this.entry.character.playerId; }
   readonly stats: SessionStats = { bundles: 0, indexed: 0, skipped: 0, mismatched: 0, unknownPackets: 0, droppedEvents: 0 };
   private phase: Phase = 'opening';

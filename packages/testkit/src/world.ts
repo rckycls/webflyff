@@ -739,6 +739,11 @@ function writeInventory(w: ArWriter, items: readonly InventoryItem[], worn: read
   fresh(); // adwObjIndex: each slot's m_dwObjIndex
 }
 
+/** 2026-11-10 (trade): `writeInventory` for TRADE's container, the other player's inventory (`CUser::AddTrade`). */
+export function writeItemContainer(w: ArWriter, items: readonly InventoryItem[], worn: readonly number[] = []): void {
+  writeInventory(w, items, worn);
+}
+
 /**
  * `CItemElem::Serialize`, the storing side (`ObjSerialize.cpp:33-37` and :51-88), with the kept values in it and
  * nothing else: no serial number, text or keep time. 2026-11-09 (pets M0): the item's raised pet (`CPet::Serialize`,
@@ -834,7 +839,8 @@ export function writeAddSelf(
   }
   const w = playerStart(p, player, [own.str, own.sta, own.dex, own.int])
     .u16(own.manaPoint).u16(own.fatiguePoint) // (u_short)m_nManaPoint, (u_short)m_nFatiguePoint
-    .i32(0).i32(0).u32(0) // m_nTutorialState, m_nFxp, dwGold
+    // m_nTutorialState, m_nFxp, dwGold (2026-11-10, trade: the own penya when given)
+    .i32(0).i32(0).u32(own.gold ?? 0)
     // m_nExp1, m_nSkillLevel, m_nSkillPoint, m_nDeathExp, m_nDeathLevel
     .i64(own.exp).i32(own.skillLevel).i32(own.skillPoint).i64(own.deathExp).i32(own.deathLevel);
   for (let i = 0; i < MAX_JOB; i++) w.u32(0); // dwJobLv
