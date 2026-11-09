@@ -5,6 +5,7 @@ import { ServerClock } from '../src/net/serverClock';
 import { APPROACH_REPORT_STEPS, AttackLoop, attackAble, chargeLevel, objRadius, setOwnDestObj } from '../src/world/combat/attackLoop';
 import { Focus } from '../src/world/combat/focus';
 import type { OwnState } from '../src/world/OwnState';
+import { petMoverId } from '../src/world/pets/raisedPet';
 import { terrainGround } from '../src/world/sim/collision';
 import type { CollisionObject, Ground } from '../src/world/sim/collision';
 import { ActMsg, Belli, Ik3, ObjSta, ObjStaF } from '../src/world/sim/constants';
@@ -962,6 +963,17 @@ describe('AttackLoop: QUERYGETDESTOBJ (CDPClient::OnQueryGetDestObj, DPClient.cp
     r.until(() => r.melee().length > 0);
     r.loop.onQueryGetDestObj(OWN_ID);
     expect(r.sent.filter((s) => s[0] === 'getDestObj')).toHaveLength(1);
+  });
+
+  it('is not answered while the player follows a raised pet the browser made: its GetId() NULL_ID is no dest (pets review)', () => {
+    // IsEmptyDestObj (Mover.h:1011) is m_idDest == NULL_ID, and SetDestObj( pObj ) keeps pObj->GetId() (:1001)
+    const r = rig();
+    r.tap(MONSTER_ID);
+    r.tap(MONSTER_ID);
+    r.step();
+    r.own.dest = { ...r.own.dest!, targetId: petMoverId(PLAYER_ID) };
+    r.loop.onQueryGetDestObj(OWN_ID);
+    expect(r.sent.filter((s) => s[0] === 'getDestObj')).toEqual([]);
   });
 });
 

@@ -346,7 +346,7 @@ export class WorldSession {
 
   /** Piece 7 M5: MELEE_ATTACK2 (`CDPClient::SendMeleeAttack2`), the air attack. */
   sendMeleeAttack2(message: number, targetId: number): void {
-    this.playingCache()?.send(encodeMeleeAttack2(message, targetId));
+    this.playingCache()?.send(encodeMeleeAttack2(message, serverIdOf(targetId)));
   }
 
   /** The client's SNAPSHOT with one DESTPOS (`CDPClient::SendSnapshot`): a click-to-move. Sent only while playing. */
@@ -357,7 +357,9 @@ export class WorldSession {
   /**
    * SETTARGET (`CDPClient::SendSetTarget`, `Neuz/DPClient.cpp:9886`): `clear` 1 releases the target, 2 focuses it
    * (`NULL_ID` with 2 clears the focus). Sent only while playing. A raised pet the browser made goes as its `GetId()`,
-   * `NULL_ID` (`serverIdOf`, pets R1), as it does to DOUSEITEM, PLAYERSETDESTOBJ and USESKILL.
+   * `NULL_ID` (`serverIdOf`, pets R1), as it does to DOUSEITEM, PLAYERSETDESTOBJ and USESKILL; and (pets review) to
+   * GETDESTOBJ, MELEE_ATTACK, MELEE_ATTACK2, MAGIC_ATTACK, RANGE_ATTACK and SFX_ID. The other senders take an item, a
+   * player id, the own mover, or an NPC chosen from a menu entry the pets' character keys do not have.
    */
   sendSetTarget(targetId: number, clear: 1 | 2): void {
     this.playingCache()?.send(encodeSetTarget(serverIdOf(targetId), clear));
@@ -376,22 +378,22 @@ export class WorldSession {
    * item's `fAttackSpeed` as the server compares it. Sent only while playing.
    */
   sendMeleeAttack(message: number, targetId: number, attackSpeed: number): void {
-    this.playingCache()?.send(encodeMeleeAttack(message, targetId, attackSpeed));
+    this.playingCache()?.send(encodeMeleeAttack(message, serverIdOf(targetId), attackSpeed));
   }
 
   /** MAGIC_ATTACK (`CDPClient::SendMagicAttack`, `DPClient.cpp:9841`): the wand's shot. Sent only while playing. */
   sendMagicAttack(targetId: number, power: number, sfxHitId: number): void {
-    this.playingCache()?.send(encodeMagicAttack(targetId, power, sfxHitId));
+    this.playingCache()?.send(encodeMagicAttack(serverIdOf(targetId), power, sfxHitId));
   }
 
   /** RANGE_ATTACK (`CDPClient::SendRangeAttack`, `DPClient.cpp:9848`): the bow's shot. Sent only while playing. */
   sendRangeAttack(targetId: number, power: number, sfxHitId: number): void {
-    this.playingCache()?.send(encodeRangeAttack(targetId, power, sfxHitId));
+    this.playingCache()?.send(encodeRangeAttack(serverIdOf(targetId), power, sfxHitId));
   }
 
   /** SFX_ID (`CDPClient::SendSfxID`, `DPClient.cpp:9876`): a missile of the own player's. Sent only while playing. */
   sendSfxId(targetId: number, sfxHitId: number, type: number, skill?: number, maxDmgCnt?: number): void {
-    this.playingCache()?.send(encodeSfxId(targetId, sfxHitId, type, skill, maxDmgCnt));
+    this.playingCache()?.send(encodeSfxId(serverIdOf(targetId), sfxHitId, type, skill, maxDmgCnt));
   }
 
   /** SFX_HIT (`CDPClient::SendSfxHit`, `DPClient.cpp:11230`): a missile landed. Sent only while playing. */
@@ -406,10 +408,11 @@ export class WorldSession {
 
   /**
    * GETDESTOBJ (`CDPClient::SendGetDestObj`, `Neuz/DPClient.cpp:10941`): the answer to QUERYGETDESTOBJ, with the object
-   * ID the query named and the player's own destination. Sent only while playing.
+   * ID the query named and the player's own destination. Sent only while playing. 2026-11-09 (pets review): a raised
+   * pet the browser made goes as its `GetId()`, `NULL_ID` (`serverIdOf`), as the fight's packets send their target.
    */
   sendGetDestObj(fromId: number, destId: number): void {
-    this.playingCache()?.send(encodeGetDestObj(fromId, destId));
+    this.playingCache()?.send(encodeGetDestObj(fromId, serverIdOf(destId)));
   }
 
   /** REVIVAL_TO_LODESTAR (`CDPClient::SendHdr`, `Neuz/DPClient.cpp:11253`): revive at the lodestar. Sent only while playing. */

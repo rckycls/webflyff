@@ -4,6 +4,7 @@ import {
   encodeDestPos, encodeDoUseSkillPoint, encodeEndSkillQueue, encodeGetDestObj, encodeJoin, encodeMeleeAttack, encodeModifyStatus,
   encodePing, encodePlayerBehavior, encodePlayerCorr, encodePlayerMoved, encodePlayerSetDestObj, encodePreJoin,
   encodeRemoveItemTaskBar, encodeRevivalToLodestar, encodeSetTarget, encodeSkillTaskBar, encodeUseSkill, encodeWorldKeepAlive,
+  encodeMagicAttack, encodeMeleeAttack2, encodeRangeAttack, encodeSfxId, encodeUseItem,
 } from '@flyffweb/protocol';
 import type { AddedMover, CharacterSummary, MoveReport, Shortcut, SlotMessenger, Vec3 } from '@flyffweb/protocol';
 import {
@@ -13,6 +14,7 @@ import type { ScriptMessage } from '@flyffweb/testkit';
 import type { WorldEntry } from '../src/lobby/LoginFlow';
 import type { OpenChannel } from '../src/net/PacketChannel';
 import { ServerClock } from '../src/net/serverClock';
+import { petMoverId } from '../src/world/pets/raisedPet';
 import { WorldSession } from '../src/world/WorldSession';
 import type { WorldEvent } from '../src/world/WorldSession';
 import { fakeChannels, fakeClock, typeOfClientBody } from './helpers/fakeChannel';
@@ -443,6 +445,26 @@ describe('WorldSession, sending while playing', () => {
     const { session, cache } = await playing();
     for (const { send } of FIGHT_SENDS) send(session);
     expect(cache.sent.slice(1).map(hex)).toEqual(FIGHT_SENDS.map(({ bytes }) => hex(bytes)));
+  });
+
+  it('sends a raised pet the browser made as its GetId(), NULL_ID, in every packet that names a mover (pets review)', async () => {
+    const { session, cache } = await playing();
+    const pet = petMoverId(77);
+    const sends: Array<[(s: WorldSession) => void, Uint8Array]> = [
+      [(s) => s.sendSetTarget(pet, 2), encodeSetTarget(NULL_ID, 2)],
+      [(s) => s.sendDestObj(pet, 0), encodePlayerSetDestObj(NULL_ID, 0)],
+      [(s) => s.sendMeleeAttack(29, pet, 1), encodeMeleeAttack(29, NULL_ID, 1)],
+      [(s) => s.sendMeleeAttack2(29, pet), encodeMeleeAttack2(29, NULL_ID)],
+      [(s) => s.sendMagicAttack(pet, 2, 3), encodeMagicAttack(NULL_ID, 2, 3)],
+      [(s) => s.sendRangeAttack(pet, 2, 3), encodeRangeAttack(NULL_ID, 2, 3)],
+      [(s) => s.sendSfxId(pet, 3, 1), encodeSfxId(NULL_ID, 3, 1)],
+      // OnQueryGetDestObj (DPClient.cpp:8985-8991): GetDestId(), the pet's GetId()
+      [(s) => s.sendGetDestObj(5, pet), encodeGetDestObj(5, NULL_ID)],
+      [(s) => s.sendUseSkill(0, pet, 0), encodeUseSkill(0, NULL_ID, 0)],
+      [(s) => s.sendUseItem(4, -1, -1, pet), encodeUseItem(4, -1, -1, NULL_ID)],
+    ];
+    for (const [send] of sends) send(session);
+    expect(cache.sent.slice(1).map(hex)).toEqual(sends.map(([, bytes]) => hex(bytes)));
   });
 
   it('sends USESKILL, DOUSESKILLPOINT, the task-bar edits and ENDSKILLQUEUE to the cache server', async () => {
