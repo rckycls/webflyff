@@ -1,9 +1,11 @@
 import { encodeChat } from '@flyffweb/protocol';
 import type { ChatChannel } from '@flyffweb/protocol';
-import { AUTH_GENERAL, lineAction } from './chatCommands';
+import { AUTH_GENERAL } from './chatCommands';
 import type { ChatCommand } from './chatCommands';
 import { CHAT_COMMANDS, EMOTICONS } from './chatCommandTable';
 import { ChatHistory, CommandSuggestions } from './chatInput';
+import { ChatSender } from './chatSend';
+import type { SendOutcome, WordFilter } from './chatSend';
 
 /** Session-local chat. Only server echoes enter the transcript; text is never interpreted as markup. */
 type ChatView = ChatChannel | 'all' | 'system' | 'announcement';
@@ -48,9 +50,14 @@ export class ChatWindow {
   /** 2026-11-05: the command suggestions over the line (chatInput.ts). */
   private readonly suggestions: CommandSuggestions;
   private authorization = AUTH_GENERAL;
-  constructor(send: (channel: ChatChannel, text: string, target: string) => void,
+  /** 2026-11-09: ParsingChat's rules, the desktop chat's too (chatSend.ts): the anti-spam, the word filter, the cut. */
+  private readonly sender: ChatSender;
+  /** A text of textClient.inc by its TID name, for the sender's red lines (`setTexts`). */
+  private texts: (id: string) => { text: string; color: number } | undefined = () => undefined;
+  constructor(private readonly send: (channel: ChatChannel, text: string, target: string) => void,
     onFocus: () => void, private readonly doc: Document = document,
-    private readonly commands: readonly ChatCommand[] = CHAT_COMMANDS) {
+    private readonly commands: readonly ChatCommand[] = CHAT_COMMANDS, now: () => number = () => performance.now()) {
+    this.sender = new ChatSender({ now, text: (id) => this.texts(id), commands, emoticons: EMOTICONS });
     this.element = doc.createElement('section'); this.element.className = 'hud-chat';
     this.element.setAttribute('aria-label', 'Chat');
     this.toggle = doc.createElement('button'); this.toggle.type = 'button'; this.toggle.textContent = 'Chat';
@@ -105,17 +112,15 @@ export class ChatWindow {
       if (this.mobile) { this.close(); button.blur(); }
       try {
         const text = this.input.value.trim();
-        // FuncTextCmd.cpp registers the aliases; preserve the typed command for native server routing.
         // the Party view in a party is Neuz's party channel, which writes "/p " before the line (WndCommunication.cpp:212-216,
-        // :708-713); a typed command goes as typed
-        const channel: ChatChannel = this.view === 'party' && this.party && !text.startsWith('/') ? 'party' : 'nearby';
-        // 2026-11-05: as ParsingChat and ParsingCommand do (FuncTextCmd.cpp:5549-5650): a client command runs here, an
-        // unknown or refused one goes nowhere, the rest is sent
-        const action = lineAction(text, this.authorization, this.commands, EMOTICONS);
-        if (action.kind === 'send') { encodeChat(channel, text); send(channel, text, ''); }
-        else if (action.kind === 'client') this.onClientCommand(action.command, action.args);
-        this.history.remember(text);
-        this.input.value = ''; this.feedback.textContent = ''; this.suggestions.update(); if (!this.mobile) this.input.focus();
+        // :708-713); a typed command goes as typed. 2026-11-09: then as ParsingChat sends it (chatSend.ts): a client
+        // command runs here, an unknown or refused one goes nowhere, shout, party and guild chat as "/s", "/p", "/g", a
+        // plain line through the anti-spam and the word filter
+        const line = this.view === 'party' && this.party && text !== '' && !text.startsWith('/') ? `/p ${text}` : text;
+        this.feedback.textContent = '';
+        this.apply(this.sender.line(line, { authorization: this.authorization, partySize: this.party ? 2 : 0 }));
+        if (text !== '') this.history.remember(text);
+        this.input.value = ''; this.suggestions.update(); if (!this.mobile) this.input.focus();
       } catch (error) { this.feedback.textContent = error instanceof Error ? error.message : 'Unable to send message.'; }
     });
   }
@@ -130,6 +135,27 @@ export class ChatWindow {
 
   /** In a party or not: with the Party view chosen, a typed line goes to the party while in one. */
   setParty(inParty: boolean): void { this.party = inParty; }
+
+  /** 2026-11-09: the texts of textClient.inc, for the anti-spam's lines. */
+  setTexts(texts: (id: string) => { text: string; color: number } | undefined): void { this.texts = texts; }
+
+  /** 2026-11-09: the word filter of `data/chat.json`. */
+  setFilter(filter: WordFilter | null): void { this.sender.setFilter(filter); }
+
+  /** 2026-11-09: the world entered again: the anti-spam's warnings start again. */
+  restart(): void { this.sender.restart(); }
+
+  /** 2026-11-09: a chat shortcut of the task bar used: its line, as a shortcut's. */
+  runShortcut(text: string): void {
+    this.apply(this.sender.line(text, { authorization: this.authorization, partySize: this.party ? 2 : 0, shortcut: true }));
+  }
+
+  /** What a line does: sent as it comes out, run here, and its red lines in the chat. */
+  private apply(outcome: SendOutcome): void {
+    if (outcome.send !== undefined) { encodeChat('nearby', outcome.send); this.send('nearby', outcome.send, ''); }
+    if (outcome.client !== undefined) this.onClientCommand(outcome.client.command, outcome.client.args);
+    for (const note of outcome.notes) this.append('system', '', note.text);
+  }
   private selectView(view: ChatView): void {
     this.view = view;
     for (const [key, tab] of this.tabs) tab.setAttribute('aria-pressed', String(key === view));

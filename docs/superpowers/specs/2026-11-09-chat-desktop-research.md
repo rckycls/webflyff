@@ -174,8 +174,32 @@ client area `w` x `h` (518 x 118 at the default size):
 ## 7. Things the chat does that are not the window
 
 - **Instant help**: every 2 minutes, with the option on (it is by default, `HwOption.cpp:177`), a yellow "[Help] <tip>"
-  line from `Client/Client/instantHelp.inc` (`OnDraw`, `:183-198`).
+  line from `Client/Client/instantHelp.inc` (`OnDraw`, `:183-198`). **But this client's instantHelp.inc has its whole
+  list inside a `/* */` comment** (its lines 4-24), so `m_strArray` stays empty and V15 shows no tip at all.
 - The speech bubbles of lines said nearby (`g_DialogMsg`, `WndManager.cpp:4155-4163`): the web client has them already.
+- **The word filter** (`__FILTER_0705`, `Neuz/VersionCommon.h:49`): `WordChange` (`WndManager.cpp:3723-3795`) turns every
+  word (a run `CScanner` does not split, so "word." is one) whose lower case is in Filter_ENG.inc's letters-only list
+  into as many asterisks, and replaces every other entry by its replacement (SlangWord 0). Plain lines, shouts, party and
+  guild chat go through it; whispers do not.
+- **The commands' client halves** (`FuncTextCmd.cpp`): shout (`IsRight`, the same shout within 3 s, the anti-spam,
+  "/s text"), party chat (a party of two, else `TID_GAME_PARTYNOTCHAT`; "/p text"), guild chat ("/g text"). Neuz sends
+  them under their short names whatever was typed.
+- **Chat shortcuts** (`CWndMacroChat`, `WndCommunication.cpp:100-128`): the macro mark picks up the line's first 127
+  bytes as a `SHORTCUT_CHAT`; let go on the task bar it loses "--", "'", "/*" and "*/" (`OnDropIcon`, `WndTaskBar.cpp:
+  1985-1992`), ten at most (`SetShortcut`, :1520-1539, `TID_GAME_MAX_SHORTCUT_CHAT`); its picture is icon_MacroChat.dds
+  (:457-460), its tooltip its line (:582-585); used, it goes through `ParsingChat` as a shortcut (`m_bShortcutCommand`,
+  `WndManager.cpp:2702-2716`: 3 s between shortcuts).
+- **Keys while typing** (`Neuz.cpp:1222-1231`): the line takes every key but Escape and F1 to F9, which the game still
+  gets: Escape clears the target or closes the window on top (the chat, being focused), F1 to F9 use the task bar.
+- **The mouse on the chat's free parts** goes to the world too: `OnLButtonDown`, `OnLButtonUp`, `OnRButtonDown`,
+  `OnRButtonUp` and `OnMouseMove` hand each to `m_pWndWorld` (`:1122-1283`), so a press on the messages also walks or
+  picks, and a right drag there turns the camera.
+- **The Help button** opens "Fast Help" (`CWndHelpInstant`, `WndHelp.cpp:589-604`; APP_HELP_INSTANT 304 x 304) with
+  `prj.GetHelp( "Chatting Window" )`, help.inc's text (`Masquerade.prj`'s `help "Client\help.inc"`). help.inc's keyword
+  is "Chatting window": the lookup is exact (`CMapStringToString`), so V15's window opens empty.
+- **Whisper replies** (`OnReturnSay`, `DPClient.cpp:12442-12470`): "[name] text", `TID_GAME_MSGNOTTRANSELF` or
+  `TID_GAME_MSGNOTEXIST`; a whisper that found no one: `TID_GAME_NOTLOGIN` (`OnWhisper`, :11880-11885).
+- **Kept for the next time**: the chat's place and Lock (regInfo.dat, `SerializeRegInfo`), each tab's filter (neuz.ini).
 
 ## 8. Online sources
 
@@ -232,7 +256,14 @@ text buttons, a pale green form with a Send button.
 | 18 | The line's errors in a feedback row under the line | as red lines in the chat (`PutString( ..., 0xffff0000 )`) |
 | 19 | No macro mark | the macro picture over the line's left end while it holds words; dragged to the task bar (§2) |
 | 20 | Same line twice, or lines fast: sent | the anti-spam rules: refused, red lines, a 3-minute block (§4) |
-| 21 | No instant help | a "[Help]" tip every 2 minutes (§7) |
+| 21 | No instant help | none either: the tips are commented out in this client (§7) |
+| 22 | Shout, party, guild sent as typed, no word filter | "/s", "/p", "/g", filtered (§7) |
+| 23 | Chat lines on the task bar: a greyed slot that does nothing | the macro mark's shortcuts, run as typed lines (§7) |
+| 24 | Escape and F1-F9 while typing: the line's | the game's (§7) |
+| 25 | The mouse on the chat: the chat's only | the world's too (§7) |
+| 26 | Help: nothing | the Fast Help window (§7) |
+| 27 | Whisper replies: "Whisper unavailable: X" | `TID_GAME_MSGNOTEXIST` "X does not exist." and the others (§7) |
+| 28 | Nothing kept between sessions | place, Lock, filters (§7) |
 
 Things that already match: Enter on the world opens the line; Escape leaves it; the keys typed never reach the game; the
 `/` list, the history and the commands (2026-11-05); the speech bubbles; a press on the world takes the focus from the

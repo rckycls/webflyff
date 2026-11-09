@@ -78,14 +78,38 @@ describe('NeuzChat: the window', () => {
     expect($(chat, '.neuz-chat-text').style.height).toBe(`${150 - 39}px`);
   });
 
-  it('Close hides it; Enter opens it again, where it was, the line focused (the Start menu has no Chatting line yet)', () => {
+  it('Close hides it; Enter then does nothing; the Start menu\'s Chatting opens it again, where it was', () => {
     const { chat } = make();
     $<HTMLButtonElement>(chat, '[aria-label="Close"]').click();
+    expect(chat.element.hidden).toBe(true);
+    chat.open(true);
     expect(chat.element.hidden).toBe(true);
     chat.open();
     expect(chat.element.hidden).toBe(false);
     expect(chat.element.style.top).toBe(`${720 - 128}px`);
     expect(document.activeElement).toBe(input(chat));
+  });
+
+  it('Escape, even while typing, closes the window on top: the chat, the line given up (Neuz.cpp:1222-1231, GetWndBase)', () => {
+    const { chat } = make();
+    chat.open(true);
+    expect(chat.typing).toBe(true);
+    key(input(chat), 'Escape');
+    expect(chat.element.hidden).toBe(true);
+    expect(chat.typing).toBe(false);
+  });
+
+  it('F1 to F9 typed in the line reach the game (Neuz.cpp:1222-1223); the other keys do not', () => {
+    const worldKey = vi.fn();
+    window.addEventListener('keydown', worldKey);
+    const { chat } = make();
+    chat.open(true);
+    key(input(chat), 'a');
+    expect(worldKey).not.toHaveBeenCalled();
+    key(input(chat), 'F3');
+    expect(worldKey).toHaveBeenCalledTimes(1);
+    expect(input(chat).dataset.fkeys).toBe('');
+    window.removeEventListener('keydown', worldKey);
   });
 
   it('shown again in a new layer (the world entered again), it stays closed, or where it was put', () => {
@@ -102,6 +126,50 @@ describe('NeuzChat: the window', () => {
     layer().append(...chat.elements);
     chat.show();
     expect(chat.element.hidden).toBe(true);
+  });
+
+  it('a press on its free parts goes to the world under it too; one on a control does not (CWndChat::OnLButtonDown ...)', () => {
+    const forward = vi.fn();
+    const { chat } = make({ forward });
+    chat.put({ kind: 'general', sender: 'Rocky', text: 'hi' });
+    $(chat, '.neuz-chat-line').dispatchEvent(new MouseEvent('pointerdown', { button: 2, bubbles: true }));
+    $(chat, '.neuz-chat-words').dispatchEvent(new MouseEvent('pointerup', { button: 2, bubbles: true }));
+    expect(forward.mock.calls.map(([event]) => event.type)).toEqual(['pointerdown', 'pointerup']);
+    $(chat, '[aria-label="Lock"]').dispatchEvent(new MouseEvent('pointerdown', { button: 0, bubbles: true }));
+    input(chat).dispatchEvent(new MouseEvent('pointerdown', { button: 0, bubbles: true }));
+    expect(forward).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps Lock, the filters and its place for the next time (regInfo.dat, neuz.ini)', () => {
+    const saved = new Map<string, string>();
+    const storage = { getItem: (k: string) => saved.get(k) ?? null, setItem: (k: string, v: string) => void saved.set(k, v) } as Storage;
+    const { chat } = make({ storage });
+    $<HTMLButtonElement>(chat, '[aria-label="Lock"]').click();
+    $<HTMLButtonElement>(chat, '[aria-label="Option"]').click();
+    chat.filterWindow.element.querySelector<HTMLButtonElement>('[aria-label="Shout"]')!.click();
+    chat.frame.element.dispatchEvent(new MouseEvent('pointerdown', { clientX: 200, clientY: 620, button: 0, bubbles: true }));
+    window.dispatchEvent(new MouseEvent('pointermove', { clientX: 300, clientY: 520, bubbles: true }));
+    window.dispatchEvent(new MouseEvent('pointerup', { clientX: 300, clientY: 520, bubbles: true }));
+    chat.frame.setSize(560, 160);
+    chat.dispose();
+    const { chat: again } = make({ storage });
+    expect($(again, '[aria-label="Lock"]').getAttribute('aria-checked')).toBe('true');
+    expect(again.frame.position).toEqual({ x: 100, y: 492 });
+    expect(again.frame.size).toEqual({ width: 560, height: 160 });
+    again.put({ kind: 'shout', sender: 'Rocky', text: 'hey' });
+    expect(lines(again)).toEqual([]);
+  });
+
+  it('Help opens the Fast Help window with help.inc\'s "Chatting window" text (CWndHelpInstant)', () => {
+    const { chat } = make();
+    chat.setHelp({ 'Chatting window': '   It is located right above the task bar.\n\n   ' });
+    $<HTMLButtonElement>(chat, '[aria-label="Help"]').click();
+    const help = chat.helpWindow.frame.element;
+    expect(help.hidden).toBe(false);
+    expect(help.getAttribute('aria-label')).toBe('Fast Help');
+    expect(help.querySelector('.hud-res-text-body')!.textContent).toContain('It is located right above the task bar.');
+    help.querySelector<HTMLButtonElement>('[data-control="WIDC_CLOSE"]')!.click();
+    expect(help.hidden).toBe(true);
   });
 
   it('the move lock keeps it still', () => {
@@ -161,6 +229,21 @@ describe('NeuzChat: the line', () => {
     expect(ran).toHaveBeenCalledWith('position', '');
   });
 
+  it('a line within 0.7 s of the last is not sent: a red line in the chat (ParsingChat); a shortcut runs as typed', () => {
+    const { chat, send, clock } = make({
+      text: (id) => (id === 'TID_GAME_ERROR_CHATTING_1' ? { text: 'spam!', color: 0xffff0000 } : undefined),
+    });
+    chat.open(); type(chat, 'one'); key(input(chat), 'Enter');
+    clock.now += 100;
+    chat.open(); type(chat, 'two'); key(input(chat), 'Enter');
+    expect(send.mock.calls).toEqual([['one']]);
+    expect(lines(chat)).toEqual(['spam!']);
+    clock.now += 5000;
+    chat.setFilter({ alpha: { jerk: '*' }, nonAlpha: {} });
+    chat.runShortcut('hi jerk');
+    expect(send).toHaveBeenLastCalledWith('hi ****');
+  });
+
   it('"/r " becomes "/whisper <the last whisperer> "', () => {
     const { chat } = make();
     chat.put({ kind: 'whisper', sender: 'Rocky', recipient: 'Webby', text: 'psst' });
@@ -169,12 +252,21 @@ describe('NeuzChat: the line', () => {
     expect(input(chat).value).toBe('/whisper Rocky ');
   });
 
-  it('the macro mark shows while the line holds words', () => {
-    const { chat } = make();
+  it('the macro mark shows while the line holds words; a press on it carries the line to the task bar', () => {
+    const carry = vi.fn();
+    const { chat } = make({ carry });
     const macro = $(chat, '.neuz-chat-macro');
     expect(macro.dataset.full).toBeUndefined();
+    macro.dispatchEvent(new MouseEvent('pointerdown', { button: 0, bubbles: true }));
+    expect(carry).not.toHaveBeenCalled();
     type(chat, 'hi');
     expect(macro.dataset.full).toBe('true');
+    const before = chat.frame.position;
+    macro.dispatchEvent(new MouseEvent('pointerdown', { clientX: 5, clientY: 700, button: 0, bubbles: true }));
+    expect(carry).toHaveBeenCalledWith('hi', expect.anything());
+    window.dispatchEvent(new MouseEvent('pointermove', { clientX: 300, clientY: 400, bubbles: true }));
+    window.dispatchEvent(new MouseEvent('pointerup', { clientX: 300, clientY: 400, bubbles: true }));
+    expect(chat.frame.position).toEqual(before);
   });
 });
 

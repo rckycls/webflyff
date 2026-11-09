@@ -99,8 +99,10 @@ export type { WebEffect, WebEffectPart } from './web/effect';
 export { UI_SHEETS_KEY } from './web/ui';
 export type { WebUiSheet, WebUiSheets } from './web/ui';
 export type { ModelBoxExtras, SkeletonExtras, SkeletonGrips } from './web/modelExtras';
-export { GAME_DATA_KEYS, ITEM_ETC_KEY, WORLD_NO_FLY_KEY } from './web/gameData';
+export { CHAT_KEY, GAME_DATA_KEYS, ITEM_ETC_KEY, WORLD_NO_FLY_KEY } from './web/gameData';
 export type {
+  WebChat,
+  WebChatFilter,
   WebEffectRef,
   WebEffectsIndex,
   WebExpRow,

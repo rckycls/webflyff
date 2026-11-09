@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { ArReader, ArWriter, NULL_ID, PacketType } from '@flyffweb/protocol';
 import { createWorldScript, newVagrantOwn, writeAddMonster, writeAddSelf, writeDelObj, writeSetPointParam } from '@flyffweb/testkit';
 import type { ScriptMessage } from '@flyffweb/testkit';
-import { MADRIGAL, NPC_ID, SELF_ID, SELF_PLAYER, SQUARE, enterFlaris, groundAt, julia, ownAt, playGateway, self, sentOf, tapMover } from './worldHarness';
+import { MADRIGAL, NPC_ID, SELF_ID, SELF_PLAYER, SQUARE, destPosOf, enterFlaris, groundAt, julia, ownAt, playGateway, self, sentOf, tapMover } from './worldHarness';
 
 test.setTimeout(120_000);
 const message = (objectId: number, type: number, fields: ArWriter): ScriptMessage => ({ objectId, type, fields: fields.toBytes() });
@@ -92,7 +92,9 @@ test('talking: chat typing, channels, peaceful NPC dialogue and authoritative bu
   await expect(log).toContainText(isMobile ? '[whisper] Rocky → Webby: Hello back' : '<- [Rocky] Hello back');
   gateway.pushCache(script.later([message(SELF_ID, 0xa9, new ArWriter().i32(3).string('Missing'))]));
   // a game line: on the desktop, the System window's (PutString's default style, WndManager.cpp:4166-4172)
-  await expect(isMobile ? log : page.locator('.hud-neuz-chat-log .neuz-chat-text')).toContainText('Whisper unavailable: Missing');
+  await expect(isMobile ? log : page.locator('.hud-neuz-chat-log .neuz-chat-text')).toContainText('Missing does not exist.');
+  // 2026-11-09: a shout shares the anti-spam's clocks (0.7 s and 1 s after a plain line, FuncTextCmd.cpp:1946-2004)
+  await page.waitForTimeout(1100);
   await input.fill('/s Anyone here?');
   await send(); await expect.poll(sentText).toBe('/s Anyone here?');
   gateway.pushCache(script.later([message(SELF_ID, 0xd0, new ArWriter().u32(SELF_ID).string('Webby').string('Anyone here?').u32(0xffff99cc))]));
@@ -192,7 +194,7 @@ test('talking: chat typing, channels, peaceful NPC dialogue and authoritative bu
   expect((await page.evaluate(() => window.__client!.stats())).errors).toEqual([]);
 });
 
-test('the desktop chat: the chat window of Neuz V15 (tabs, Lock, filter, System, right-click, resize, move)', async ({ page, isMobile }, info) => {
+test('the desktop chat: the chat window of Neuz V15 (tabs, Lock, filter, System, anti-spam, macro, Help, resize, move, Escape)', async ({ page, isMobile }, info) => {
   test.skip(isMobile, 'the phone keeps its own chat');
   const script = createWorldScript({ playerObjectId: SELF_ID, worldId: MADRIGAL, pos: SQUARE,
     self: writeAddSelf(SELF_ID, { ...self, player: { ...SELF_PLAYER, own: newVagrantOwn(), equipmentObjectIds: Array(31).fill(NULL_ID) } }),
@@ -221,10 +223,24 @@ test('the desktop chat: the chat window of Neuz V15 (tabs, Lock, filter, System,
   await chat.getByRole('checkbox', { name: 'Lock', exact: true }).click();
   await page.keyboard.press('Enter');
   await expect(input).toBeFocused(); await expect(input).toHaveValue('/s ');
+  await page.waitForTimeout(1100);
   await input.fill('again'); await input.press('Enter');
   await expect.poll(sentText).toBe('again');
   await expect(input).toBeFocused();
   await chat.getByRole('checkbox', { name: 'Lock', exact: true }).click();
+  // ParsingChat: the word filter (Filter_ENG.inc, data/chat.json), and a plain line within 0.7 s of the last refused
+  await page.waitForTimeout(1100);
+  // the two lines sent at once, so a slow machine still sends the second within 0.7 s
+  await page.evaluate(() => {
+    const line = document.querySelector<HTMLInputElement>('.hud-neuz-chat input[aria-label="Chat message"]')!;
+    for (const text of ['you asshole', 'too fast']) {
+      line.focus(); line.value = text;
+      line.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    }
+  });
+  await expect.poll(sentText).toBe('you *******');
+  await expect(log).toContainText('The last message could not be transmitted due to chat spam limitations.');
+  expect(sentText()).toBe('you *******');
   // the Shout tab shows General and Shout: a whisper goes to the System window
   gateway.pushCache(new ArWriter().u32(0xff00d4).string('Rocky').string('Webby').string('psst').u32(501).u32(500).i32(0).toBytes());
   gateway.pushCache(script.later([message(SELF_ID, 0xd0, new ArWriter().u32(SELF_ID).string('Webby').string('Anyone?').u32(0xffff99cc))]));
@@ -244,7 +260,24 @@ test('the desktop chat: the chat window of Neuz V15 (tabs, Lock, filter, System,
   gateway.pushCache(script.later([message(SELF_ID, 0xd0, new ArWriter().u32(SELF_ID).string('Tom').string('wts').u32(0xffff99cc))]));
   await log.locator('.neuz-chat-line', { hasText: '[Tom] wts' }).click({ button: 'right' });
   await expect(input).toHaveValue('/whisper Tom '); await expect(input).toBeFocused();
-  await input.fill(''); await input.press('Escape');
+  // the macro mark carries the line to the task bar (CWndMacroChat): a chat shortcut, which F1 runs, typed in the line too
+  await input.fill('see you at the fountain');
+  const macro = (await chat.locator('.neuz-chat-macro').boundingBox())!;
+  const target = (await page.locator('.hud-slot[data-row="item"][data-slot="0"]').boundingBox())!;
+  await page.mouse.move(macro.x + 8, macro.y + 8); await page.mouse.down();
+  await page.mouse.move(target.x + 16, target.y + 16, { steps: 6 }); await page.mouse.up();
+  await expect.poll(() => sentOf(gateway, 0xffffff0c).length).toBe(1);
+  await expect(page.locator('.hud-slot[data-row="item"][data-slot="0"]')).toHaveAttribute('data-kind', 'chat');
+  await page.waitForTimeout(1100);
+  await input.focus(); await page.keyboard.press('F1');
+  await expect.poll(sentText).toBe('see you at the fountain');
+  await input.fill('');
+  // Help: the Fast Help window, help.inc's text for the chat
+  await chat.getByRole('button', { name: 'Help' }).click();
+  const help = page.locator('.hud-chat-help');
+  await expect(help).toContainText('It is located right above the task bar.');
+  await help.getByRole('button', { name: 'Close' }).click();
+  await expect(help).toBeHidden();
   // Option: this tab's five checks, its own disabled; Shout off hides the shouts
   await chat.getByRole('button', { name: 'Option' }).click();
   const filter = page.locator('.hud-chat-filter');
@@ -279,12 +312,25 @@ test('the desktop chat: the chat window of Neuz V15 (tabs, Lock, filter, System,
   await page.mouse.move(locked.x + 200, locked.y + 30); await page.mouse.down();
   await page.mouse.move(locked.x + 300, locked.y + 10, { steps: 4 }); await page.mouse.up();
   expect((await chat.boundingBox())!.x).toBeCloseTo(locked.x, 0);
-  // Close closes it; Enter opens it again where it was (the web's Start menu has no Chatting line yet)
+  // a click on the messages goes to the world under them too (CWndChat::OnLButtonDown): a walk there
+  const walks = destPosOf(gateway).length;
+  await page.mouse.click(locked.x + 260, locked.y + 30);
+  await page.evaluate(() => window.__client!.step(2));
+  await expect.poll(() => destPosOf(gateway).length).toBeGreaterThan(walks);
+  // Escape, even while typing, closes the window on top, the chat; Enter then does nothing; the Start menu's Chatting
+  // opens it again where it was
   const closedAt = (await chat.boundingBox())!;
-  await chat.getByRole('button', { name: 'Close' }).click();
+  await page.keyboard.press('Enter'); await expect(input).toBeFocused();
+  await page.keyboard.press('Escape');
   await expect(chat).toBeHidden();
   await page.keyboard.press('Enter');
+  await expect(chat).toBeHidden();
+  await page.getByRole('button', { name: 'Start', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Chatting', exact: true }).click();
   await expect(chat).toBeVisible(); await expect(input).toBeFocused();
   expect((await chat.boundingBox())!.x).toBeCloseTo(closedAt.x, 0);
+  // Close closes it too
+  await chat.getByRole('button', { name: 'Close' }).click();
+  await expect(chat).toBeHidden();
   expect((await page.evaluate(() => window.__client!.stats())).errors).toEqual([]);
 });

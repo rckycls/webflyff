@@ -253,7 +253,7 @@ test.describe('fighting against the pretend world server', () => {
   });
 
   // Spec §3.5: the Aibatt attacks Webby where it stands, then kills it; Lodestar brings it back where the server says
-  test("the Aibatt's swing and an own-hurt number, then the own death and the lodestar's revival", async ({ page }) => {
+  test("the Aibatt's swing and an own-hurt number, then the own death and the lodestar's revival", async ({ page, isMobile }) => {
     const script = fight();
     // OnRevivalLodestar (WORLDSERVER/DPSrvr.cpp:11296-11416, __VER >= 9): REVIVAL_TO_LODESTAR, the points at 20 % of their
     // maxima (230, 63, 32: (int) 46, 12, 6), then the lodestar (a REPLACE in the same world, which is a SETPOS)
@@ -299,6 +299,8 @@ test.describe('fighting against the pretend world server', () => {
     expect(at[1]).toBeCloseTo(groundAt(LODESTAR[0], LODESTAR[2]), 1);
     expect((await moverOf(page, SELF_ID))!.state & ObjSta.DIE_ALL).toBe(0);
     // alive, Escape no longer opens the revive window: with nothing to clear, the Start menu (WndManager.cpp:3421-3427)
+    // 2026-11-09: on the desktop the chat is a window Escape closes, the one on top: it goes first (Neuz's GetWndBase)
+    if (!isMobile) { await page.keyboard.press('Escape'); await expect(page.locator('.hud-neuz-chat')).toBeHidden(); }
     await page.keyboard.press('Escape');
     await expect(page.getByRole('menu')).toBeVisible();
     await expect(revive).toBeHidden();

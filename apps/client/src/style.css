@@ -2569,6 +2569,7 @@ fieldset:disabled .btn {
 /* CWndMacroChat draws its picture only while the line holds words */
 .neuz-chat-macro { position: absolute; background-repeat: no-repeat; pointer-events: none; }
 .neuz-chat-macro:not([data-full]) { background-image: none !important; }
+.neuz-chat-macro[data-full] { pointer-events: auto; cursor: pointer; }
 /* the System window's menu (CWndMenu, as .hud-mover-menu) */
 .neuz-chat-menu {
   position: absolute; z-index: 2; box-sizing: border-box; border: 3px solid #e2c6b5; padding: 2px 0 0; background: #ffffff;
@@ -2580,6 +2581,8 @@ fieldset:disabled .btn {
   color: #000000; font: inherit; text-align: left; cursor: pointer;
 }
 .neuz-chat-menu > button:hover { background: rgba(200, 200, 200, 0.61); }
+/* the Help window's text keeps help.inc's three spaces before each paragraph (CProject::LoadHelp) */
+.hud-chat-help .hud-res-text-body { white-space: pre-wrap; color: #000000; }
 /* the filter's checks: black words beside the ButtCheck.bmp frame */
 .hud-chat-filter .hud-six-frame { color: #000000; }
 

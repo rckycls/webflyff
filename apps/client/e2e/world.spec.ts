@@ -456,7 +456,7 @@ test.describe('the world screen against scripted servers', () => {
   // monster, a DEFINEDTEXT as a line of the server messages (its TID found by the number defineText.h gives it), T, and
   // Escape in Neuz's order (WndManager.cpp:3295-3427: the target first, never the status window, then the Start menu);
   // logging out takes them off with the screen
-  test('the status window shows the own numbers, the target bar the tapped monster, and a server text its line', async ({ page }) => {
+  test('the status window shows the own numbers, the target bar the tapped monster, and a server text its line', async ({ page, isMobile }) => {
     const gateway = await playGateway(page);
     await enterFlaris(page);
     const status = page.locator('.hud-status');
@@ -492,6 +492,8 @@ test.describe('the world screen against scripted servers', () => {
     await expect.poll(() => targetsOf(gateway)).toEqual([[MONSTER_ID, 2], [MONSTER_ID, 1], [NULL_ID, 2]]);
     await expect(status).toBeVisible();
     // with nothing to clear and no window it closes, it opens the Start menu
+    // 2026-11-09: on the desktop the chat is a window Escape closes, the one on top: it goes first (Neuz's GetWndBase)
+    if (!isMobile) { await page.keyboard.press('Escape'); await expect(page.locator('.hud-neuz-chat')).toBeHidden(); }
     await page.keyboard.press('Escape');
     await expect(page.getByRole('menu')).toBeVisible();
     await expect(status).toBeVisible();

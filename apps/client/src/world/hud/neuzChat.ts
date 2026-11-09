@@ -11,16 +11,19 @@
 //                                                                       then 500 go; any but the help yellow shows the words
 //   CWndChat::Process             WndCommunication.cpp:493-516          the words hidden 300 s after the last use; "/r "
 //   CWndChat::OnRButtonDown       WndCommunication.cpp:1159-1258        a right-click whispers the line's sender
-//   CWndMacroChat::OnDraw         WndCommunication.cpp:93-99            the macro mark while the line holds words
+//   CWndMacroChat                 WndCommunication.cpp:93-138           the macro mark while the line holds words; a press
+//                                                                       carries the line to the task bar (taskBarEdits.ts)
+//   CWndChat::OnLButtonDown ...   WndCommunication.cpp:1122-1283        the mouse on the free parts handed to the world too
 //   CWndChatLog                   WndCommunication.cpp:1317-1515        the System window and its "Hide" menu
 //   CWndChatFilter                _Interface/WndChatFilter.cpp           this tab's five checks
+//   CWndHelpInstant               _Interface/WndHelp.cpp:589-604         the Help button's Fast Help window
 //   CWndMgr::PutString            _Interface/WndManager.cpp:4027-4174   where a line goes
+//   CWndMgr::ParsingChat          WndManager.cpp:3820-3999               a line sent: chatSend.ts
+//   SerializeRegInfo, neuz.ini    WndCommunication.cpp:592-612           what is kept for the next time: chatSettings.ts
 //
-// Departures, each for the web: Escape leaves the line, and the chat never closes by Escape (in Neuz the window Escape
-// closes may be the chat; with it closed Enter does nothing, so a player could lose the chat); a press on the messages
-// does not also act on the world under them (CWndChat::OnLButtonDown, :1143-1157); Enter opens a closed chat (the
-// web's Start menu has no Chatting line yet); the macro mark is drawn but not
-// dragged (the task bar does not run chat shortcuts yet); Help has no help window to open.
+// Escape and F1 to F9 are the game's even while the line is typed in (Neuz.cpp:1222-1231): Escape clears the target or
+// closes the window on top, which is the chat while it is typed in (CWndBase::GetWndBase passes it over no more than any
+// window, WndBase.cpp:2048-2095); with the chat closed Enter does nothing until the Start menu's Chatting opens it.
 
 import { encodeChat } from '@flyffweb/protocol';
 import type { ChatChannel } from '@flyffweb/protocol';
@@ -28,10 +31,14 @@ import type { UiArt } from './art';
 import { cssRgb, themeUrl } from './art';
 import { pictureButton, place } from './button';
 import type { ControlRect } from './button';
-import { AUTH_GENERAL, lineAction } from './chatCommands';
+import { AUTH_GENERAL } from './chatCommands';
 import type { ChatCommand } from './chatCommands';
 import { CHAT_COMMANDS, EMOTICONS } from './chatCommandTable';
 import { ChatHistory, CommandSuggestions } from './chatInput';
+import { ChatSender } from './chatSend';
+import { readChatSettings, writeChatSettings } from './chatSettings';
+import type { ChatSettings } from './chatSettings';
+import type { SendOutcome, WordFilter } from './chatSend';
 import {
   CHATSTY, CHAT_TABS, DEFAULT_FILTERS, chatLayout, chatLine, editStrip, focusPrefix, logGets, replyLine, tabShows,
   whisperNameOf, whisperedName,
@@ -54,8 +61,19 @@ export interface NeuzChatOptions {
   art: UiArt;
   doc?: Document;
   commands?: readonly ChatCommand[];
-  /** The clock of the fade (`m_timerInputTimeOut`), in ms. */
+  /** The clock of the fade (`m_timerInputTimeOut`) and of the anti-spam, in ms. */
   now?: () => number;
+  /** A text of textClient.inc by its TID name (the anti-spam's red lines). */
+  text?: (id: string) => { text: string; color: number } | undefined;
+  /** The line carried to the task bar by the macro mark, from the press `event` (`CWndMacroChat::OnLButtonDown`). */
+  carry?: (text: string, event: PointerEvent) => void;
+  /**
+   * A press, move or let-go of the mouse on the chat's free parts, for the world under it (CWndChat's OnLButtonDown,
+   * OnLButtonUp, OnRButtonDown, OnRButtonUp, OnMouseMove hand each to `m_pWndWorld`, WndCommunication.cpp:1122-1283).
+   */
+  forward?: (event: PointerEvent) => void;
+  /** Where Lock, the filters and the chat's place are kept for the next time (chatSettings.ts); none keeps nothing. */
+  storage?: Storage | null;
 }
 
 /** APP_COMMUNICATION_CHAT's size, and the client area 4 4 6 6 in (`SetWndRect`, :1001-1016). */
@@ -91,6 +109,12 @@ const FILTER_CHECKS = [
   { name: 'Party', rect: [18, 54, 90, 70], style: CHATSTY.PARTY },
   { name: 'Guild', rect: [118, 54, 206, 70], style: CHATSTY.GUILD },
 ] as const;
+
+/** The chat's help key (APP_COMMUNICATION_CHAT's, resdata.inc:21607, resData.txt.txt). */
+const HELP_KEY = 'Chatting Window';
+
+/** The keys a field of the chat passes on to the game (`Neuz.cpp:1222-1223`). */
+const GAME_KEYS = /^(Escape|F[1-9])$/;
 
 /** The strip's pictures' widths (all 47 high): WndChatEdit00_1.tga, 01, 02. */
 const STRIP_WIDTHS: Record<string, number> = { 'WndChatEdit00_1.tga': 128, 'WndChatEdit01.tga': 16, 'WndChatEdit02.tga': 32 };
@@ -165,6 +189,8 @@ export class NeuzChat {
   readonly frame: WindowFrame;
   readonly systemWindow: WindowFrame;
   readonly filterWindow: ResWindow;
+  /** The Help button's window (`CWndHelpInstant`, APP_HELP_INSTANT). */
+  readonly helpWindow: ResWindow;
   /** 2026-11-05: a client command typed (TCM_CLIENT: /position, /Time ...), with what follows its name. */
   onClientCommand: (command: string, args: string) => void = () => {};
   private readonly doc: Document;
@@ -191,13 +217,21 @@ export class NeuzChat {
   /** `m_nChatChannel` as a tab's index, and each tab's filter (`m_dwChatFilter`). */
   private tab = 0;
   private readonly filters = [...DEFAULT_FILTERS];
+  /** What was kept from the last time (chatSettings.ts): Lock, the filters, the chat's place once it was moved. */
+  private readonly settings: ChatSettings;
   /** Every line kept (`m_aChatString`, `m_aChatColor`, `m_aChatStyle`), whatever the tab. */
   private readonly kept: ChatLine[] = [];
   /** `m_strCharName`: whom the last "/w name" line sent went to; `m_szWhisperName`: who whispered last. */
   private lastWhispered = '';
   private lastWhisperer = '';
   private lastUse: number;
+  /** help.inc's texts by keyword (`data/chat.json`). */
+  private helpTexts: Readonly<Record<string, string>> = {};
   private authorization = AUTH_GENERAL;
+  /** In a party (the Party tab enabled; `g_Party.GetSizeofMember() >= 2` for party chat). */
+  private party = false;
+  /** ParsingChat's rules: the anti-spam, the word filter, the 120-byte cut (chatSend.ts). */
+  private readonly sender: ChatSender;
   /** Where the chat was when it was closed, to open there again. */
   private at = { x: 0, y: Number.MAX_SAFE_INTEGER };
   /** Whether `show` has put the chat up once. */
@@ -209,6 +243,9 @@ export class NeuzChat {
     this.now = options.now ?? (() => performance.now());
     this.lastUse = this.now();
     this.commands = options.commands ?? CHAT_COMMANDS;
+    this.settings = readChatSettings(options.storage);
+    this.filters.splice(0, this.filters.length, ...this.settings.filters);
+    this.sender = new ChatSender({ now: this.now, text: (id) => options.text?.(id), commands: this.commands, emoticons: EMOTICONS });
 
     // the window: no caption, WndTile300-311, its client area 4 4 6 6 in, its edges dragged
     const frame = this.frame = new WindowFrame('Chatting', art, {
@@ -216,8 +253,10 @@ export class NeuzChat {
       closeButton: false,
     }, doc);
     frame.element.classList.add('hud-neuz-chat');
-    frame.escapeCloses = false;
-    frame.onResize = () => this.layout();
+    frame.onResize = () => { this.layout(); this.keepPlace(); };
+    frame.onPlaced = () => this.keepPlace();
+    // closed by its Close or by Escape: the line given up, its place kept to open there again
+    frame.onClose = () => { this.close(); this.at = frame.position; };
     this.strip = doc.createElement('div');
     this.strip.className = 'neuz-chat-strip';
     frame.body.before(this.strip);
@@ -235,7 +274,8 @@ export class NeuzChat {
     const rect = { left: 0, top: 0, width: 46, height: 17 };
     this.lock = sixFrameButton(doc, art, 'ButtChatLock.bmp', 46, rect, {
       role: 'checkbox', name: 'Lock', tooltip: 'Allows you to chat constantly without pressing Enter after every message.',
-    }, () => { this.lock.checked = !this.lock.checked; });
+    }, () => { this.lock.checked = !this.lock.checked; this.keep(); });
+    this.lock.checked = this.settings.lock;
     this.option = pictureButton(doc, art, 'ButtChatFilter.BMP', { left: 0, top: 0, width: 44, height: 16 }, 44, () => this.openFilter());
     this.option.setAttribute('aria-label', 'Option');
     this.option.title = 'Filter function which allows you to filter the chatting.';
@@ -247,7 +287,7 @@ export class NeuzChat {
         this.moveLock.checked = !this.moveLock.checked;
         frame.movable = !this.moveLock.checked;
       });
-    this.help = pictureButton(doc, art, 'ButtWndHelp.tga', { left: 0, top: 0, width: 15, height: 14 }, 15, () => {});
+    this.help = pictureButton(doc, art, 'ButtWndHelp.tga', { left: 0, top: 0, width: 15, height: 14 }, 15, () => this.openHelp());
     this.help.setAttribute('aria-label', 'Help');
     this.help.title = 'Chatting Window';
     this.closeButton = pictureButton(doc, art, 'ButtWndExit.tga', { left: 0, top: 0, width: 15, height: 14 }, 15, () => this.hide());
@@ -256,6 +296,13 @@ export class NeuzChat {
     this.macro = doc.createElement('div');
     this.macro.className = 'neuz-chat-macro';
     this.macro.style.backgroundImage = themeUrl(art, 'wndButtMacroChat.bmp');
+    this.macro.dataset.press = '';
+    // CWndMacroChat::OnLButtonDown (:100-128): while the line holds words, a press picks it up for the task bar
+    this.macro.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0 || this.input.value === '') return;
+      event.preventDefault();
+      options.carry?.(this.input.value, event);
+    });
     this.edit = doc.createElement('div');
     this.edit.className = 'neuz-chat-edit';
     const input = this.input = doc.createElement('input');
@@ -265,6 +312,8 @@ export class NeuzChat {
     input.maxLength = 259;
     input.autocomplete = 'off';
     input.spellcheck = false;
+    // F1 to F9 typed in the line still use the task bar (Neuz.cpp:1222-1223)
+    input.dataset.fkeys = '';
     this.suggestions = new CommandSuggestions(input, doc, this.commands);
     this.edit.append(this.suggestions.element, input);
     frame.body.append(this.text.element, ...this.tabs.map((t) => t.element), this.lock.element, this.option,
@@ -276,7 +325,8 @@ export class NeuzChat {
       resize: LOG_LEAST, closeButton: false,
     }, doc);
     log.element.classList.add('hud-neuz-chat-log');
-    log.escapeCloses = false;
+    // Escape closes it as any window (the System check put out)
+    log.onClose = () => { this.system.checked = false; this.menu.hidden = true; };
     this.logText = new ChatText(doc, art, 'System messages');
     log.body.append(this.logText.element);
     log.onResize = (width, height) => this.logText.place({ left: 0, top: 0, width: width - 10, height: height - 10 });
@@ -314,10 +364,24 @@ export class NeuzChat {
           this.filters[this.tab] = button.checked ? this.filters[this.tab]! & ~check.style : this.filters[this.tab]! | check.style;
           this.drawChecks();
           this.rebuild();
+          this.keep();
         });
       return button;
     });
     this.filterWindow.frame.body.append(...this.checks.map((check) => check.element));
+
+    // the Help button's window (WTBID_HELP, WndNeuz.cpp:354-364): APP_HELP_INSTANT "WndTile02.tga" 304 x 304
+    // (resdata.inc:23550-23578), its text the help of the chat's help key (CWndHelpInstant::OnInitialUpdate,
+    // WndHelp.cpp:589-604), centred
+    this.helpWindow = new ResWindow({
+      title: 'Fast Help', width: 304, height: 304,
+      controls: [
+        { kind: 'text', id: 'WIDC_TEXT1', rect: [8, 8, 288, 232], tile: 'WndEditTile00.tga', scroll: true },
+        { kind: 'button', id: 'WIDC_CLOSE', rect: [112, 240, 184, 260], picture: 'ButtClose.tga', label: 'Close', quarter: 72 },
+      ],
+    }, art, doc);
+    this.helpWindow.frame.element.classList.add('hud-chat-help');
+    this.helpWindow.button('WIDC_CLOSE').addEventListener('click', () => this.helpWindow.close());
 
     // the line
     input.addEventListener('focus', () => {
@@ -334,12 +398,12 @@ export class NeuzChat {
     input.addEventListener('keydown', (event) => {
       if (this.suggestions.key(event)) return;
       if (event.key === 'Enter') { event.preventDefault(); this.submit(); }
-      else if (event.key === 'Escape') { event.preventDefault(); this.close(); }
       else if (event.key === 'ArrowUp' || event.key === 'ArrowDown') this.history.recall(event, input);
     });
     // the keys typed in the chat are the chat's, never the game's
     for (const element of [frame.element, log.element]) {
-      element.addEventListener('keydown', (event) => event.stopPropagation());
+      // the keys typed in the chat are the chat's, but Escape and F1 to F9, which go on to the game (Neuz.cpp:1222-1231)
+      element.addEventListener('keydown', (event) => { if (!GAME_KEYS.test(event.key)) event.stopPropagation(); });
       element.addEventListener('keyup', (event) => event.stopPropagation());
       element.addEventListener('focusin', () => options.onFocus());
     }
@@ -352,6 +416,15 @@ export class NeuzChat {
       input.focus();
       this.drawMacro();
     });
+    // the chat's free parts (the messages, the frame) hand the mouse to the world under them too (:1122-1283): a press there
+    // also walks, picks or turns the camera; a control (a button, the line, the scroll bar) keeps its own
+    for (const type of ['pointerdown', 'pointermove', 'pointerup'] as const) {
+      frame.element.addEventListener(type, (event) => {
+        const target = event.target as Element | null;
+        if (target?.closest?.('button, input, textarea, select, a, [data-press], .hud-res-scroll') != null) return;
+        options.forward?.(event);
+      });
+    }
     // a control used: the words show again (OnChildNotify, :616-620)
     frame.body.addEventListener('click', () => this.touch());
     doc.addEventListener('pointerdown', this.onOutsidePress, true);
@@ -361,7 +434,7 @@ export class NeuzChat {
 
   /** The chat's windows, for the windows' layer: the chat, the System window, the filter (with its backdrop). */
   get elements(): HTMLElement[] {
-    return [this.frame.element, this.systemWindow.element, this.filterWindow.element];
+    return [this.frame.element, this.systemWindow.element, this.filterWindow.element, this.helpWindow.element];
   }
 
   /** The filter's backdrop, for the world to hold its input while it is up. */
@@ -386,6 +459,12 @@ export class NeuzChat {
   show(): void {
     if (!this.shown) {
       this.shown = true;
+      // where it was the last time (regInfo.dat), else at the bottom left
+      const place = this.settings.place;
+      if (place !== undefined) {
+        this.frame.setSize(place.width, place.height);
+        this.at = { x: place.x, y: place.y };
+      }
       this.frame.open(this.at);
     }
     for (const frame of [this.frame, this.systemWindow]) frame.refit();
@@ -393,15 +472,17 @@ export class NeuzChat {
   }
 
   /**
-   * Gives the line the focus (Enter on the world, `Neuz.cpp:1325-1339`). A closed chat opens first, where it was: in Neuz
-   * Enter needs the chat open and the Start menu's Chatting opens it, but the web's Start menu has no Chatting line yet.
+   * Gives the line the focus, the chat on top (`SetFocus`): Enter on the world (`fromEnter`, `Neuz.cpp:1325-1339`), which
+   * needs the chat open; the Start menu's Chatting (APP_COMMUNICATION_CHAT) opens it first, where it was.
    */
-  open(): void {
+  open(fromEnter = false): void {
     if (!this.frame.isOpen) {
+      if (fromEnter) return;
       this.shown = true;
       this.frame.open(this.at);
       this.layout();
     }
+    this.frame.raise();
     this.input.focus();
   }
 
@@ -413,13 +494,36 @@ export class NeuzChat {
 
   /** Closes the chat (`WIDC_CLOSE`); the System window stays as it is. */
   hide(): void {
-    this.close();
-    this.at = this.frame.position;
     this.frame.close();
   }
 
+  /** help.inc's texts (`data/chat.json`), for the Help button's window. */
+  setHelp(help: Readonly<Record<string, string>> | undefined): void { this.helpTexts = help ?? {}; }
+
+  /**
+   * The Help button: the chat's help key, IDS_RESDATA_INC_002645 "Chatting Window", looked up in help.inc. Neuz looks it
+   * up as it is (`CMapStringToString::Lookup`), and help.inc's keyword is "Chatting window": the window opened empty.
+   * Here the case is not minded, so it shows the chat's help.
+   */
+  private openHelp(): void {
+    const key = Object.keys(this.helpTexts).find((name) => name.toLowerCase() === HELP_KEY.toLowerCase());
+    this.helpWindow.setText('WIDC_TEXT1', key === undefined ? '' : this.helpTexts[key]!);
+    this.helpWindow.open();
+  }
+
   /** In a party or not: the Party tab is enabled in one (`OnDraw`, :212-216). */
-  setParty(inParty: boolean): void { this.tabs[3]!.disabled = !inParty; }
+  setParty(inParty: boolean): void { this.party = inParty; this.tabs[3]!.disabled = !inParty; }
+
+  /** The word filter of `data/chat.json` (none until it is read). */
+  setFilter(filter: WordFilter | null): void { this.sender.setFilter(filter); }
+
+  /** The world entered again: the anti-spam's warnings start again (`SetWarningCounter( 0 )`, WndManager.cpp:2149-2150). */
+  restart(): void { this.sender.restart(); }
+
+  /** A chat shortcut of the task bar used (`ObjectExecutor`, WndManager.cpp:2702-2716): its line, as a shortcut's. */
+  runShortcut(text: string): void {
+    this.apply(this.sender.line(text, { authorization: this.authorization, partySize: this.party ? 2 : 0, shortcut: true }));
+  }
 
   /** In a guild or not: the Guild tab is enabled in one. */
   setGuild(inGuild: boolean): void { this.tabs[4]!.disabled = !inGuild; }
@@ -467,10 +571,27 @@ export class NeuzChat {
   dispose(): void {
     this.doc.removeEventListener('pointerdown', this.onOutsidePress, true);
     this.filterWindow.dispose();
+    this.helpWindow.dispose();
     this.frame.close();
     this.systemWindow.close();
     this.frame.element.remove();
     this.systemWindow.element.remove();
+  }
+
+  /** Lock and the filters kept for the next time. */
+  private keep(): void {
+    this.settings.lock = this.lock.checked;
+    this.settings.filters = [...this.filters];
+    writeChatSettings(this.options.storage, this.settings);
+  }
+
+  /** The chat's place kept once it was moved or resized (`SerializeRegInfo`'s rectangle). */
+  private keepPlace(): void {
+    if (!this.shown || !this.frame.isOpen) return;
+    const { x, y } = this.frame.position;
+    const { width, height } = this.frame.size;
+    this.settings.place = { x, y, width, height };
+    this.keep();
   }
 
   /** The words shown again, the fade's clock started again (`m_timerInputTimeOut.Reset()`). */
@@ -511,13 +632,7 @@ export class NeuzChat {
     const text = typed.trimStart();
     if (text !== '') {
       this.history.remember(text);
-      try {
-        const action = lineAction(text, this.authorization, this.commands, EMOTICONS);
-        if (action.kind === 'send') { encodeChat('nearby', text); this.options.send(text); }
-        else if (action.kind === 'client') this.onClientCommand(action.command, action.args);
-      } catch (error) {
-        this.put({ kind: 'game', text: error instanceof Error ? error.message : 'Unable to send message.', color: 0xffff0000 });
-      }
+      this.apply(this.sender.line(text, { authorization: this.authorization, partySize: this.party ? 2 : 0 }));
       const name = whisperedName(text);
       if (name !== undefined) this.lastWhispered = name;
     }
@@ -527,6 +642,26 @@ export class NeuzChat {
     this.touch();
     // Lock keeps the line's focus for the next line; else it goes back to the world (:848-872)
     if (!this.lock.checked) this.close();
+  }
+
+  /** What a line does: sent, run here, and its red lines (into the chat's text, `pWndChat->PutString`, or game lines). */
+  private apply(outcome: SendOutcome): void {
+    try {
+      if (outcome.send !== undefined) { encodeChat('nearby', outcome.send); this.options.send(outcome.send); }
+    } catch (error) {
+      this.direct(error instanceof Error ? error.message : 'Unable to send message.', 0xffff0000);
+    }
+    if (outcome.client !== undefined) this.onClientCommand(outcome.client.command, outcome.client.args);
+    for (const note of outcome.notes) {
+      if (note.game === true) this.put({ kind: 'game', text: note.text, color: note.color });
+      else this.direct(note.text, note.color);
+    }
+  }
+
+  /** `CWndChat::PutString`: a line into the chat's text alone, not kept for the tabs (:969-995). */
+  private direct(text: string, color: number): void {
+    this.text.add({ text, color, style: CHATSTY.GAME });
+    if (color !== NO_WAKE) this.touch();
   }
 
   private drawMacro(): void {

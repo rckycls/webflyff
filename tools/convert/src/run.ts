@@ -2,6 +2,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { ClientFs } from './ClientFs';
 import { audioStage } from './audio/audioStage';
+import { chatStage } from './data/chatCatalog';
 import { gameDataStage } from './data/gameDataStage';
 import { effectsStage } from './effects/effectsStage';
 import { modelsStage } from './models/modelsStage';
@@ -45,6 +46,8 @@ export const DEFAULT_STAGES: readonly Stage[] = [
   uiStage,
   worldsStage,
   audioStage,
+  // 2026-11-09: the chat's catalog, on its own (`--only chat`); it names no other stage's file
+  chatStage,
   gameDataStage,
 ];
 

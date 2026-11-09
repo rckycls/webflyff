@@ -238,6 +238,8 @@ export class WindowFrame {
   movable = true;
   /** 2026-11-09: called with the new size each time an edge is dragged to one (`OnSize`). */
   onResize?: (width: number, height: number) => void;
+  /** 2026-11-09: called when a drag of the window or of an edge ends (the window's place to keep). */
+  onPlaced?: () => void;
 
   constructor(title: string, art: UiArt, layout: FrameLayout = DEFAULT_LAYOUT, doc: Document = document) {
     this.doc = doc;
@@ -319,6 +321,9 @@ export class WindowFrame {
    */
   private press(event: PointerEvent): void {
     if (event.button !== 0 || this.drag !== null || this.resizing !== null) return;
+    // a control takes its own press, at the edges too (the focus is the child's, WndBase.cpp:1335-1370)
+    const target = event.target as Element | null;
+    if (target?.closest?.('button, input, textarea, select, a, [data-press]') != null) return;
     const { x, y } = this.local(event);
     const dir = this.least === undefined ? 0 : resizeDirection(x, y, this.width, this.shownHeight);
     if (dir !== 0) {
@@ -332,8 +337,7 @@ export class WindowFrame {
       event.preventDefault();
       return;
     }
-    const target = event.target as Element | null;
-    if (!this.movable || target?.closest?.('button, input, textarea, select, a, [data-press]') != null) return;
+    if (!this.movable) return;
     this.startDrag(event);
   }
 
@@ -505,7 +509,7 @@ export class WindowFrame {
   }
 
   /** Puts the window on top of the others (`SetFocus`): last in the stack, highest z-index. */
-  private raise(): void {
+  raise(): void {
     if (!this.open_) return;
     const stack = stackOf(this.doc);
     const index = stack.indexOf(this);
@@ -573,8 +577,10 @@ export class WindowFrame {
   };
 
   private endDrag(): void {
+    const moved = this.drag !== null || this.resizing !== null;
     this.drag = null;
     this.resizing = null;
+    if (moved) this.onPlaced?.();
     const view = this.view();
     view.removeEventListener('pointermove', this.onMove);
     view.removeEventListener('pointerup', this.onUp);

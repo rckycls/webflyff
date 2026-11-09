@@ -103,6 +103,9 @@ const MENU: ReadonlyArray<{ id: number; text: string }> = [
   // CWndTaskMenu's APP_MAP line, 'World Map' (TID_APP_MAP), just before Navigator (WndTaskBar.cpp:2734-2738)
   { id: AppId.MAP, text: 'World Map' },
   { id: AppId.NAVIGATOR, text: 'Navigator' },
+  // 2026-11-09: CWndTaskMenu's APP_COMMUNICATION_CHAT line, 'Chatting' (TID_APP_COMMUNICATION_CHAT), the first of its
+  // Communication submenu (WndTaskBar.cpp:2658-2660): it opens the chat again once it was closed
+  { id: 1014, text: 'Chatting' },
   // CWndTaskMenu's APP_PARTY line, 'Party' (TID_APP_PARTY), in its Communication submenu (WndTaskBar.cpp:2670): the
   // browser's menu is flat, so it stands before Option
   { id: APP_PARTY, text: 'Party' },
@@ -261,7 +264,7 @@ export function actionPointLit(actionPoint: number): number {
  * name (for a screen reader: what `PutTooTip` would say first; '' for none).
  */
 interface SlotView {
-  kind: '' | 'item' | 'skill' | 'applet' | 'plain';
+  kind: '' | 'item' | 'skill' | 'applet' | 'plain' | 'chat';
   greyed: boolean;
   icon: string | null;
   count: string;
@@ -270,6 +273,8 @@ interface SlotView {
 }
 
 const EMPTY_VIEW: SlotView = { kind: '', greyed: false, icon: null, count: '', hotkey: '', name: '' };
+/** 2026-11-09: a chat shortcut's picture, Client/Icon's icon_MacroChat.dds (`SetTaskBarTexture`, WndTaskBar.cpp:457-460). */
+const CHAT_ICON = themeKey('icon_MacroChat.dds');
 /** A shortcut Piece 4 has nothing to draw with: a plain greyed slot. */
 const PLAIN_VIEW: SlotView = { kind: 'plain', greyed: true, icon: null, count: '', hotkey: '', name: '' };
 
@@ -497,6 +502,11 @@ export class TaskBar {
     this.gestures.press({ from: 'skills', skillIndex }, event);
   }
 
+  /** 2026-11-09: the chat's line carried to the bar by its macro mark (`CWndMacroChat`), as `carrySkill`. */
+  carryChat(text: string, event: PointerEvent): void {
+    this.gestures.press({ from: 'chat', text }, event);
+  }
+
   /** Piece 7 M4: a party skill of the party window's Skill tab carried to the bar with the mouse, as `carrySkill`. */
   carryPartySkill(skill: number, event: PointerEvent): void {
     this.gestures.press({ from: 'partySkills', skill }, event);
@@ -638,7 +648,9 @@ export class TaskBar {
    *   hotkey over it (:889-896); called its description (`m_pAppletDesc`);
    * - an item: see `itemView`;
    * - a skill: its icon and name from the skills catalog (milestone 2), a plain greyed slot without it;
-   * - anything else (motions, chat lines ...): a plain greyed slot.
+   * - a chat line (2026-11-09): icon_MacroChat.dds (`SetTaskBarTexture`, :457-460), called its line (`PutTooTip`,
+   *   :582-585);
+   * - anything else (motions ...): a plain greyed slot.
    */
   private slotView(row: Shortcut[], i: number, own: OwnState, data: TaskBarData): SlotView {
     const shortcut = row[i]!;
@@ -655,6 +667,8 @@ export class TaskBar {
       }
       case ShortcutKind.ITEM:
         return this.itemView(row, i, own, data);
+      case ShortcutKind.CHAT:
+        return { kind: 'chat', greyed: false, icon: CHAT_ICON, count: '', hotkey: '', name: shortcut.text };
       case ShortcutKind.SKILL: {
         if (shortcut.type === 2) {
           // Piece 7 M4: a party skill, the party catalog's (`WndTaskBar.cpp:403-476` reads `prj.GetPartySkill`)
@@ -754,7 +768,7 @@ export class TaskBar {
         queue = true;
       } else {
         item = shortcut.kind === ShortcutKind.SKILL || shortcut.kind === ShortcutKind.APPLET || shortcut.kind === ShortcutKind.ITEM ||
-          shortcut.kind === ShortcutKind.MOTION;
+          shortcut.kind === ShortcutKind.MOTION || shortcut.kind === ShortcutKind.CHAT;
       }
     }
     const shown = `${item}|${queue}`;
@@ -1060,8 +1074,10 @@ export class TaskBar {
    * a field.
    */
   private readonly onKeyDown = (event: KeyboardEvent): void => {
-    if (event.ctrlKey || event.altKey || event.metaKey || typing(event.target)) return;
     const fKey = /^F([1-9])$/.exec(event.code);
+    // 2026-11-09: the desktop chat's line passes F1 to F9 on (data-fkeys; Neuz.cpp:1222-1223)
+    const passed = fKey !== null && (event.target as HTMLElement | null)?.dataset?.fkeys !== undefined;
+    if (event.ctrlKey || event.altKey || event.metaKey || (typing(event.target) && !passed)) return;
     if (fKey !== null) {
       // F5 would reload the page, F1 open the browser's help...
       event.preventDefault();

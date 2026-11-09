@@ -131,7 +131,7 @@ test("an invite received: the box, Yes sends ADDPARTYMEMBER with the request's v
   await expect(box).toBeHidden();
 });
 
-test('party chat: the Party view sends /partychat; a PARTYCHAT shows its line', async ({ page, isMobile }) => {
+test('party chat: the Party view sends "/p text"; a PARTYCHAT shows its line', async ({ page, isMobile }) => {
   const script = scriptOf();
   const gateway = await playGateway(page, script);
   await enterFlaris(page);
@@ -154,7 +154,8 @@ test('party chat: the Party view sends /partychat; a PARTYCHAT shows its line', 
   await expect.poll(() => sentOf(gateway, CHAT).length).toBe(1);
   const chat = new ArReader(new Uint8Array(sentOf(gateway, CHAT)[0]!.body));
   chat.u32(); chat.u32();
-  expect(chat.string(1024)).toBe(isMobile ? '/partychat hello team' : '/p hello team');
+  // both chats send it as Neuz's party chat does: "/p text" (TextCmd_PartyChat's client half, FuncTextCmd.cpp:2107-2128)
+  expect(chat.string(1024)).toBe('/p hello team');
   gateway.pushCache(script.later([writePartyChat(SELF_ID, LEAD_ID, 'Lead', 'hi back')]));
   await expect(page.locator('.chat-transcript, .hud-neuz-chat .neuz-chat-text')).toContainText(isMobile ? 'hi back' : '[Lead] hi back');
 });

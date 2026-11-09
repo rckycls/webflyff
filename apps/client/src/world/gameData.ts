@@ -1,4 +1,5 @@
-import { GAME_DATA_KEYS, ITEM_ETC_KEY, WORLD_NO_FLY_KEY } from '@flyffweb/formats';
+import { CHAT_KEY, GAME_DATA_KEYS, ITEM_ETC_KEY, WORLD_NO_FLY_KEY } from '@flyffweb/formats';
+import type { WebChat } from '@flyffweb/formats';
 import type {
   ExpRow,
   TextEntry,
@@ -79,6 +80,8 @@ export interface GameData {
   noFlyWorlds: ReadonlySet<number>;
   /** 2026-11-05: the sets, socket cards and accessories the item tooltip shows; absent without `data/itemEtc.json`. */
   itemEtc?: ItemEtc;
+  /** 2026-11-09: the chat's word filter and help texts; absent without `data/chat.json` (the converter's `chat` stage). */
+  chat?: WebChat;
 }
 
 /**
@@ -144,6 +147,7 @@ export async function loadGameData(store: Pick<AssetStore, 'json' | 'url'>): Pro
   ]);
   const noFly = store.url(WORLD_NO_FLY_KEY) === null ? [] : await store.json<number[]>(WORLD_NO_FLY_KEY);
   const itemEtc = store.url(ITEM_ETC_KEY) === null ? undefined : itemEtcOf(await store.json<WebItemEtc>(ITEM_ETC_KEY));
+  const chat = store.url(CHAT_KEY) === null ? undefined : await store.json<WebChat>(CHAT_KEY);
   return {
     movers: new Map(movers.map((mover) => [mover.index, withLaterColumns(mover)])),
     items: new Map(items.map((item) => [item.id, withHides(item)])),
@@ -163,5 +167,6 @@ export async function loadGameData(store: Pick<AssetStore, 'json' | 'url'>): Pro
     skills: new Map(skills.map((skill) => [skill.id, skill])),
     noFlyWorlds: new Set(noFly),
     ...(itemEtc !== undefined ? { itemEtc } : {}),
+    ...(chat !== undefined ? { chat } : {}),
   };
 }

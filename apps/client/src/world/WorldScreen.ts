@@ -17,7 +17,7 @@ import { SpeechBubbleLayer } from './render/SpeechBubbleLayer';
 
 import { UI_SHEETS_KEY, toWebPosition } from '@flyffweb/formats';
 import type { Vec3, WebEffect, WebUiSheet, WebUiSheets, WebWorldMap } from '@flyffweb/formats';
-import type { AddedMover, BundleMessage, NpcAction, WorldMessage } from '@flyffweb/protocol';
+import type { AddedMover, BundleMessage, NpcAction, Shortcut, WorldMessage } from '@flyffweb/protocol';
 import {
   EffectRenderer, Joystick, KeyboardInput, WorldStage, effectTextureProvider, loadGltf, loopMotion, neuzRandom, attachHeld,
   rendererCounts,
@@ -793,6 +793,13 @@ export class WorldScreen {
         for (const text of value.texts) this.chatWindow?.append('announcement', '', text);
         continue;
       }
+      // 2026-11-09: a whisper that found no one (`nSearch`): "That player is not connected." in its place (OnWhisper,
+      // DPClient.cpp:11880-11885)
+      if (value.type === 'whisper' && value.search !== 0) {
+        const entry = this.data?.texts.get('TID_GAME_NOTLOGIN');
+        this.chatWindow?.append('system', '', entry?.text ?? 'That player is not connected.', undefined, entry?.color);
+        continue;
+      }
       if (value.type === 'chat' || value.type === 'shout' || value.type === 'whisper' || value.type === 'party' || value.type === 'guild' || value.type === 'system' || value.type === 'announcement') {
         if (value.type === 'chat') {
           const speaker = world.movers.get(objectId);
@@ -817,7 +824,14 @@ export class WorldScreen {
         continue;
       }
       if (value.type === 'chatReturn') {
-        this.chatWindow?.append('system', '', value.flag === 1 ? value.text : value.flag === 2 ? 'You cannot whisper to yourself.' : `Whisper unavailable: ${value.text}`);
+        // 2026-11-09: as OnReturnSay writes it (DPClient.cpp:12442-12470): "[name] text" for 1, TID_GAME_MSGNOTTRANSELF
+        // for 2, else TID_GAME_MSGNOTEXIST with the name; a game line in TID_GAME_MSGNOTEXIST's colour
+        const texts = this.data?.texts;
+        const color = texts?.get('TID_GAME_MSGNOTEXIST')?.color;
+        const line = value.flag === 1 ? `[${world.movers.get(objectId)?.name ?? ''}] ${value.text}`
+          : value.flag === 2 ? texts?.get('TID_GAME_MSGNOTTRANSELF')?.text ?? 'You cannot send a PM to yourself, silly.'
+          : formatText(texts?.get('TID_GAME_MSGNOTEXIST')?.text ?? '%s does not exist.', [value.text]);
+        this.chatWindow?.append('system', '', line, undefined, color);
         continue;
       }
       if (value.type === 'definedText' && this.data) {
@@ -1209,8 +1223,8 @@ export class WorldScreen {
       open: (window) => this.openWindow(window),
       logOut: () => this.logOut(),
       // a skill shortcut is the skill use's (`ObjectExecutor`'s SHORTCUT_SKILL); the slots' items are used in Piece 5
-      useSlot: (_bar, _slot, shortcut) => { if (shortcut.kind === ShortcutKind.ITEM) this.itemUse!.use(shortcut.id); else skillUse.useShortcut(shortcut); },
-      useAppletSlot: (_slot, shortcut) => { if (shortcut.kind === ShortcutKind.ITEM) this.itemUse!.use(shortcut.id); else skillUse.useShortcut(shortcut); },
+      useSlot: (_bar, _slot, shortcut) => this.useShortcut(shortcut, skillUse),
+      useAppletSlot: (_slot, shortcut) => this.useShortcut(shortcut, skillUse),
       useActionSlot: () => skillUse.useActionSlot(),
       sendAddItemTaskBar: (bar, slot, shortcut) => session.sendAddItemTaskBar(bar, slot, shortcut),
       sendRemoveItemTaskBar: (bar, slot) => session.sendRemoveItemTaskBar(bar, slot),
@@ -1305,7 +1319,19 @@ export class WorldScreen {
       : new NeuzChat({
         send: (text) => this.session.sendChat('nearby', text, ''), onFocus: () => this.stopOwnMover(),
         ownName: () => this.world?.self()?.name ?? this.entry.character.name, art: this.hudArt!, doc,
+        text: (id) => this.data?.texts.get(id),
+        carry: (text, event) => this.taskBar?.carryChat(text, event),
+        // the mouse on the chat's free parts goes to the world under it too, as Neuz hands it on (neuzChat.ts)
+        forward: (event) => this.page?.renderer.domElement.dispatchEvent(new PointerEvent(event.type, event)),
+        // Lock, the filters and the chat's place kept for the next time (regInfo.dat, neuz.ini; chatSettings.ts)
+        storage: (() => { try { return view.localStorage; } catch { return null; } })(),
       });
+    // 2026-11-09: ParsingChat's rules for both chats (chatSend.ts): the texts of their red lines, the word filter of
+    // data/chat.json, and the anti-spam's warnings started again on entering the world (WndManager.cpp:2149-2150)
+    if (this.chatWindow instanceof ChatWindow) this.chatWindow.setTexts((id) => this.data?.texts.get(id));
+    this.chatWindow.setFilter(this.data?.chat?.filter ?? null);
+    if (this.chatWindow instanceof NeuzChat) this.chatWindow.setHelp(this.data?.chat?.help);
+    this.chatWindow.restart();
     // 2026-11-05: the client commands Neuz runs itself (TCM_CLIENT, FuncTextCmd.cpp): /position and /Time print; the
     // others (the trade, whisper and party toggles, the block list) have no option or window here, and send nothing
     this.chatWindow.onClientCommand = (command) => {
@@ -2528,7 +2554,8 @@ export class WorldScreen {
    * (`if( CWndBase::m_GlobalShortcut.IsEmpty() )`, `WndManager.cpp:3383`).
    */
   private readonly onEscape = (event: KeyboardEvent): void => {
-    if (this.chatWindow?.typing || this.dropBox !== undefined) return;
+    // 2026-11-09: the desktop chat's line passes Escape on to the game (Neuz.cpp:1222-1231); the phone's keeps it
+    if ((this.chatWindow?.typing === true && this.chatWindow instanceof ChatWindow) || this.dropBox !== undefined) return;
     if (this.worldMap?.isOpen === true) return; // the map's own key hold closes it, and Escape does nothing else
     // the NPC's menu and the dialogue take Escape themselves (plan decision 4)
     if (this.moverMenu?.isOpen === true || this.dialog?.frame.isOpen === true) return;
@@ -2908,11 +2935,23 @@ export class WorldScreen {
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     if (this.chatWindow?.typing || this.dropBox !== undefined) return;
     if (event.key === 'Enter' && !event.repeat && !(event.target as HTMLElement | null)?.closest?.('input,textarea,select,[contenteditable="true"]')) {
-      event.preventDefault(); this.chatWindow?.open(); return;
+      event.preventDefault();
+      if (this.chatWindow instanceof NeuzChat) this.chatWindow.open(true); else this.chatWindow?.open();
+      return;
     }
     this.skillUse?.keyDown();
   };
   private readonly onKeyUp = (): void => this.skillUse?.keyUp();
+
+  /**
+   * A shortcut of the task bar used (`ObjectExecutor`, `WndManager.cpp:2520-2716`): an item, a chat line (2026-11-09:
+   * `ParsingChat` with `m_bShortcutCommand`, :2702-2716), or a skill's.
+   */
+  private useShortcut(shortcut: Shortcut, skillUse: SkillUse): void {
+    if (shortcut.kind === ShortcutKind.ITEM) this.itemUse!.use(shortcut.id);
+    else if (shortcut.kind === ShortcutKind.CHAT) this.chatWindow?.runShortcut(shortcut.text);
+    else skillUse.useShortcut(shortcut);
+  }
 
   /**
    * A resize or a turn of the device: the next frame keeps the open windows on the screen (`drawHud`). Turned upright, the

@@ -562,7 +562,7 @@ describe('the game-data stage', () => {
   }
 
   it('runs last among the default stages, after the effects and UI stages whose files it names', () => {
-    expect(DEFAULT_STAGES.map((s) => s.name)).toEqual(['textures', 'models', 'effects', 'ui', 'worlds', 'audio', 'data']);
+    expect(DEFAULT_STAGES.map((s) => s.name)).toEqual(['textures', 'models', 'effects', 'ui', 'worlds', 'audio', 'chat', 'data']);
   });
 
   it('writes the optional quest catalog from the quest files the packs hold', async () => {
