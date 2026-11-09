@@ -11,7 +11,7 @@ import {
   encodeSummonFriendConfirm, encodeSummonFriendCancel, encodeDoUseItemInput, encodeChangeAttribute, encodeItemTransy,
   encodeCreateMonster, encodeRemoveQuest, encodeReturnScroll, encodeStateModeCancel, encodePetRelease,
   encodeUsePetFeed, encodeMakePetFeed, encodePetTamerMistake, encodePetTamerMiracle, encodeFeedPocketInactive, encodeClearPetName,
-  encodeRemoveVis, encodeSwapVis,
+  encodeRemoveVis, encodeSwapVis, encodeQuePetResurrection, encodeTransformItem, encodePickupPetAwakeningCancel,
 } from '@flyffweb/protocol';
 import { encodeMagicAttack, encodeRangeAttack, encodeSfxClear, encodeSfxHit, encodeSfxId } from '@flyffweb/protocol';
 import {
@@ -164,6 +164,16 @@ export class WorldSession {
    */
   sendRemoveVis(slot: number): void { this.playingCache()?.send(encodeRemoveVis(slot)); }
   sendSwapVis(slot1: number, slot2: number): void { this.playingCache()?.send(encodeSwapVis(slot1, slot2)); }
+  /**
+   * 2026-11-09 (pets R4): the Pet Tamer's rare windows: the pet trade's OK (`SendQuePetResurrection`,
+   * `DPClient.cpp:17416-17421`), the egg exchange's OK (`SendTransformItem`, :17996-18002) and the awakening cancel's
+   * (`SendPickupPetAwakeningCancel`, :18004-18009).
+   */
+  sendQuePetResurrection(itemObjectId: number): void { this.playingCache()?.send(encodeQuePetResurrection(itemObjectId)); }
+  sendTransformItem(transform: number, parts: ReadonlyArray<{ objectId: number; count: number }>): void {
+    this.playingCache()?.send(encodeTransformItem(transform, parts));
+  }
+  sendPickupPetAwakeningCancel(itemObjectId: number): void { this.playingCache()?.send(encodePickupPetAwakeningCancel(itemObjectId)); }
   sendNpcDialogOpen(id: number): void { this.playingCache()?.send(encodeNpcDialogOpen(id)); }
   sendNpcDialog(id: number, key: string, param: number, quest: number, playerId: number): void {
     this.playingCache()?.send(encodeNpcDialog(id, key, param, quest, playerId));

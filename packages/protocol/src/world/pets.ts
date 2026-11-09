@@ -12,6 +12,9 @@
 //   CDPClient::SendUsePetFeed .. SendFeedPocketInactive DPClient.cpp:16458-16498  USE_PET_FEED 0xf000f601 .. MAKE_PET_FEED 0xf000f605 (R3)
 //   CDPClient::SendClearPetName         Neuz/DPClient.cpp:18441-18444            CLEAR_PET_NAME 0x8fffff01 (R3)
 //   CDPClient::SendRemoveVis, SendSwapVis Neuz/DPClient.cpp:18988-19000          VISPET_REMOVEVIS 0x88000000, VISPET_SWAPVIS 0x88000001 (B1)
+//   CDPClient::SendQuePetResurrection   Neuz/DPClient.cpp:17416-17421            QUE_PETRESURRECTION 0x70000009 (R4)
+//   CDPClient::SendTransformItem        Neuz/DPClient.cpp:17996-18002            TRANSFORM_ITEM 0x8fff000d, CTransformStuff (R4)
+//   CDPClient::SendPickupPetAwakeningCancel DPClient.cpp:18004-18009             PICKUP_PET_AWAKENING_CANCEL 0x8fff000f (R4)
 
 import type { ArReader } from '../ar/ArReader';
 import { PacketType } from '../constants';
@@ -176,6 +179,53 @@ export function encodeSwapVis(slot1: number, slot2: number): Uint8Array {
   checkVisSlot(slot1);
   checkVisSlot(slot2);
   return clientPacket(PacketType.VISPET_SWAPVIS).i32(slot1).i32(slot2).toBytes();
+}
+
+/**
+ * 2026-11-09 (pets R4): `CDPClient::SendQuePetResurrection( int nItem )` (`DPClient.cpp:17416-17421`, `__JEFF_11`), the Pet
+ * Tamer's trade window's OK (`CWndPetRes::OnChildNotify`, `_Interface/WndPetRes.cpp:102-127`): the raised pet item's
+ * object id, as an int. `CDPSrvr::OnQuePetResurrection` (`WORLDSERVER/DPSrvr.cpp:9167-9210`) takes a B, A or S pet that is
+ * neither out nor dead, gives the revival scroll piece of its class and answers QUE_PETRESURRECTION_RESULT.
+ */
+export function encodeQuePetResurrection(itemObjectId: number): Uint8Array {
+  checkObjectId(itemObjectId);
+  return clientPacket(PacketType.QUE_PETRESURRECTION).u32(itemObjectId).toBytes();
+}
+
+/** A part of `CTransformStuff` (`TransformStuffComponent`, `_Common/pet.h:198-213`): a bag item's object id and a count. */
+export interface TransformComponent {
+  objectId: number;
+  count: number;
+}
+
+/**
+ * 2026-11-09 (pets R4): `CDPClient::SendTransformItem( stuff )` (`DPClient.cpp:17996-18002`, `__PET_0519`), the egg
+ * exchange's OK (`CWndPetTransEggs::OnChildNotify`, `_Interface/WndPetSys.cpp:2102-2120`), as `CTransformStuff::Serialize`
+ * writes it (`_Common/pet.cpp:692-720`): `int m_nTransform` (0, the eggs), the count (a `size_t`, 4 bytes in the Win32
+ * build), then each part as its memory (`ar.Write( &part, sizeof(TransformStuffComponent) )`): `int nItem` (the object
+ * id), `short nNum`, and the 2 bytes MSVC's packing pads the struct with to 8 (0 here; the server reads and drops them).
+ * The server takes exactly `transformitem.inc`'s `stuff` count (10 for the eggs) and refuses the lot otherwise.
+ */
+export function encodeTransformItem(transform: number, parts: readonly TransformComponent[]): Uint8Array {
+  if (!Number.isInteger(transform) || transform < -0x80000000 || transform > 0x7fffffff) throw new RangeError('invalid transform');
+  const w = clientPacket(PacketType.TRANSFORM_ITEM).i32(transform).u32(parts.length);
+  for (const { objectId, count } of parts) {
+    checkObjectId(objectId);
+    if (!Number.isInteger(count) || count < -0x8000 || count > 0x7fff) throw new RangeError('invalid count');
+    w.u32(objectId).i16(count).u16(0);
+  }
+  return w.toBytes();
+}
+
+/**
+ * 2026-11-09 (pets R4): `CDPClient::SendPickupPetAwakeningCancel( DWORD dwItem )` (`DPClient.cpp:18004-18009`,
+ * `__PET_0519`), the Pet Tamer's awakening cancel's button (`CWndPetAwakCancel::OnChildNotify`,
+ * `_Interface/WndPetSys.cpp:86-101`): the pick-up pet item's object id. `CDPSrvr::OnPickupPetAwakeningCancel`
+ * (`DPSrvr.cpp:9787-9812`) wants the player near the tamer and answers with a DEFINEDTEXT.
+ */
+export function encodePickupPetAwakeningCancel(itemObjectId: number): Uint8Array {
+  checkObjectId(itemObjectId);
+  return clientPacket(PacketType.PICKUP_PET_AWAKENING_CANCEL).u32(itemObjectId).toBytes();
 }
 
 /** PET_RELEASE: `OnPetRelease` (`DPClient.cpp:16420-16448`): nothing more. */

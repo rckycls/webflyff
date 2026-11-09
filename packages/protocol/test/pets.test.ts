@@ -10,7 +10,7 @@ import type { ScriptMessage } from '@flyffweb/testkit';
 import {
   ArReader, ArWriter, MAX_VIS, MessageType, NULL_ID, PacketType, WORLD_READERS, decodeWorldPacket, encodeClearPetName,
   encodeFeedPocketInactive, encodeMakePetFeed, encodePetRelease, encodePetTamerMiracle, encodePetTamerMistake, encodeRemoveVis,
-  encodeSwapVis, encodeUsePetFeed,
+  encodeSwapVis, encodeUsePetFeed, encodePickupPetAwakeningCancel, encodeQuePetResurrection, encodeTransformItem,
   readBundle,
 } from '../src';
 import type { AddedMover, AddedPlayer, InventoryItem, OwnCharacter, PetData, WorldMessage } from '../src';
@@ -247,5 +247,48 @@ describe("the buff pet window's vis packets (CDPClient::SendRemoveVis, SendSwapV
     expect(() => encodeRemoveVis(9)).toThrow(RangeError);
     expect(() => encodeRemoveVis(-1)).toThrow(RangeError);
     expect(() => encodeSwapVis(0, 9)).toThrow(RangeError);
+  });
+});
+
+describe("the Pet Tamer's rare packets (DPClient.cpp:17416-17421, :17996-18009; pets R4)", () => {
+  const body = (bytes: Uint8Array, type: number): ArReader => {
+    const r = new ArReader(bytes);
+    expect(r.u32()).toBe(0xffffffff); // DPID_UNKNOWN
+    expect(r.u32()).toBe(type);
+    return r;
+  };
+
+  it("QUE_PETRESURRECTION 0x70000009: the pet item's object id as an int (CDPSrvr::OnQuePetResurrection, DPSrvr.cpp:9172-9173)", () => {
+    const r = body(encodeQuePetResurrection(14), 0x70000009);
+    expect(r.i32()).toBe(14);
+    r.expectEnd();
+    expect(PacketType.QUE_PETRESURRECTION).toBe(0x70000009);
+    expect(decodeWorldPacket(encodeQuePetResurrection(14))).toEqual({ type: 'quePetResurrection', itemObjectId: 14 });
+  });
+
+  it('PICKUP_PET_AWAKENING_CANCEL 0x8fff000f: the pick-up pet item\'s object id (OnPickupPetAwakeningCancel, DPSrvr.cpp:9797-9798)', () => {
+    const r = body(encodePickupPetAwakeningCancel(6), 0x8fff000f);
+    expect(r.u32()).toBe(6);
+    r.expectEnd();
+    expect(decodeWorldPacket(encodePickupPetAwakeningCancel(6))).toEqual({ type: 'pickupPetAwakeningCancel', itemObjectId: 6 });
+  });
+
+  it('TRANSFORM_ITEM 0x8fff000d: CTransformStuff::Serialize, each part 8 bytes (int nItem, short nNum, 2 bytes of padding)', () => {
+    const parts = Array.from({ length: 10 }, (_, i) => ({ objectId: 20 + i, count: 1 }));
+    const bytes = encodeTransformItem(0, parts);
+    // DPID_UNKNOWN, the type, m_nTransform, the size_t count, then 10 x sizeof(TransformStuffComponent) 8
+    expect(bytes.byteLength).toBe(4 + 4 + 4 + 4 + 10 * 8);
+    const r = body(bytes, 0x8fff000d);
+    expect(r.i32()).toBe(0);
+    expect(r.u32()).toBe(10);
+    for (let i = 0; i < 10; i++) {
+      expect(r.i32()).toBe(20 + i);
+      expect(r.i16()).toBe(1);
+      expect(r.u16()).toBe(0);
+    }
+    r.expectEnd();
+    expect(decodeWorldPacket(bytes)).toEqual({ type: 'transformItem', transform: 0, parts });
+    expect(() => encodeTransformItem(0, [{ objectId: 1, count: 0x8000 }])).toThrow(RangeError);
+    expect(() => encodeTransformItem(0, [{ objectId: -1, count: 1 }])).toThrow(RangeError);
   });
 });

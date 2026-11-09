@@ -22,6 +22,13 @@ export const PacketType = {
   /** 2026-11-09 (pets B1): the buff pet window's vis out and vis swap (`MsgHdr.h:804-805`, `__PETVIS`; world/pets.ts). */
   VISPET_REMOVEVIS: 0x88000000,
   VISPET_SWAPVIS: 0x88000001,
+  /**
+   * 2026-11-09 (pets R4): the Pet Tamer's rare windows (`MsgHdr.h:681`, `:768`, `:771`; world/pets.ts): the pet trade for a
+   * revival scroll piece (`__JEFF_11`), the egg exchange and the pick-up pet's awakening cancel (`__PET_0519`).
+   */
+  QUE_PETRESURRECTION: 0x70000009,
+  TRANSFORM_ITEM: 0x8fff000d,
+  PICKUP_PET_AWAKENING_CANCEL: 0x8fff000f,
   /** 2026-11-05: the upgrade cursor's packets (`MsgHdr.h`; world/upgrade.ts). */
   ENCHANT: 0xf000b024,
   PIERCING: 0xf000b025,
