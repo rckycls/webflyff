@@ -147,7 +147,8 @@ the summoned pet; for others `MAKELONG( model index, level )`. It arrives in ADD
   `:664-672`).
 
 **The pet mover is made by the client.** `pet.h:10-13` says so: the server keeps only the data. `CMover::ProcessPet`
-(`_Common/Mover.cpp:10839-10937`, called every frame at `:3770`), when `m_dwPetId` is set and there is no pet object:
+(`_Common/Mover.cpp:10839-10937`, called at `:3770` for a player once every 64 frames, `( m_nCount & CF_SEC ) == 0` with
+`CF_SEC` 63 on the client, `:3485-3487`; corrected 2026-11-09, R1), when `m_dwPetId` is set and there is no pet object:
 
 1. model index: own pet `CPet::GetIndex()` (`pet.cpp:390-401`: `MI_PET_EGG`, else `m_adwIndex[0]` for D-C, `[1]` for
    B-A, `[2]` for S); others `LOWORD( dwPetId )`;
@@ -156,11 +157,11 @@ the summoned pet; for others `MAKELONG( model index, level )`. It arrives in ADD
 3. `CreatePetSfx` (`:11148-11178`): after a level-up plays `PCSkillCastCheer.wav`; after the tamer's miracle feeds the
    miracle window;
 4. the own player's pet window opens (`CWndPetStatus`).
-5. An S pet (own: its level; others: `HIWORD( dwPetId )`) sprays 4 particles a frame (`:10915-10929`;
+5. An S pet (own: its level; others: `HIWORD( dwPetId )`) sprays 4 particles each time (`:10915-10929`;
    `CreatePetParticle`, `:10802-10833`, `g_ParticleMng` kinds 13-23, the angel's particle system).
 
 Without `m_dwPetId` the object is deleted (`:10900-10913`). `PetRelease` (`:11180-11190`) deletes it and plays
-`ItemGnCollector.wav`. `PetLevelup` on the client (`:10961-10968`) deletes it, so the next frame rebuilds it with the new
+`ItemGnCollector.wav`. `PetLevelup` on the client (`:10961-10968`) deletes it, so the next `ProcessPet` rebuilds it with the new
 model and the level-up sound.
 
 **How it moves**: `CAIEgg::MoveProcessIdle` (`pet.cpp:493-570`): every AI tick, take the two points 1 m to the owner's
