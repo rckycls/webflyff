@@ -1096,8 +1096,8 @@ export class WorldState {
 
   /**
    * The pet mover of `owner` (`ProcessPet`, `Mover.cpp:10862-10889`): `CreateObj( OT_MOVER, index )` (its prop's speed,
-   * HP and belligerence, `CreateObj.cpp:604-660`; its model's scale is not in the catalog: 1), the pet's name when it has
-   * one, `InitMotion( MTI_STAND )`, the egg's AI with the owner (`CAIEgg`, `eggAi`) and its speed (`speedOwner`), at the
+   * HP and belligerence, `CreateObj.cpp:604-660`; its model's scale, `SetIndex`'s `ResetScale`, `Mover.cpp:8931`, pets R2),
+   * the pet's name when it has one, `InitMotion( MTI_STAND )`, the egg's AI with the owner (`CAIEgg`, `eggAi`) and its speed (`speedOwner`), at the
    * owner's position, drawn there at once (`m_vScrPos`, `InitInterpolation`), with no server id (`petMoverId`); the own one
    * is the NPC `MaFl_Pet`, whose menu has the pet's status and release. Then `CreatePetSfx` (:11148-11178): a level up's
    * sound (`petLevelUp`); and the own one's status window opens (`shown`, with the flag for the miracle window).
@@ -1109,8 +1109,8 @@ export class WorldState {
     const objectId = petMoverId(owner.objectId);
     const pos = owner.act.body.pos;
     const added: AddedMover = {
-      index, scale: 1, pos: [pos[0], pos[1], pos[2]], angle: 0, objectId, motion: Mti.STAND, isPlayer: false,
-      hitPoint: 0, state: 0, stateFlag: 0, belligerence: prop.belligerence,
+      index, scale: prop.modelScale ?? 1, pos: [pos[0], pos[1], pos[2]], angle: 0, objectId, motion: Mti.STAND,
+      isPlayer: false, hitPoint: 0, state: 0, stateFlag: 0, belligerence: prop.belligerence,
       sfxId: NULL_ID,
       npc: {
         hairMesh: 0, hairColor: 0, headMesh: 0, characterKey: own ? PET_CHARACTER : '', worn: [], activeAttack: 0,

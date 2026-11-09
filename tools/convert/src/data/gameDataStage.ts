@@ -232,6 +232,9 @@ function buildMovers(env: Env, read: Reading): WebMover[] {
       // 2026-11-09: the extra texture set the mover draws with (`m_nTextureEx`, MoverRender.cpp:388-391)
       const textureEx = elem.extra[6] ?? 0;
       if (textureEx > 0) mover.textureEx = textureEx;
+      // 2026-11-09 (pets R2): the scale a mover the client makes takes (`m_fScale`, `CObj::ResetScale`), a C float
+      const modelScale = Math.fround(elem.extra[3] ?? 1);
+      if (modelScale !== 1) mover.modelScale = modelScale;
 
       const file = modelFileName(elem);
       const animated = elem.modelType === MODELTYPE_ANIMATED_MESH;

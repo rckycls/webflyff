@@ -933,6 +933,14 @@ describe('the game-data stage', () => {
     expect(movers.find((mover) => mover.index === 11)).not.toHaveProperty('textureEx');
   });
 
+  it('movers keep the scale of their mdlDyna.inc entry as a C float, 1 left out (pets R2)', async () => {
+    const plain = entry('Aibatt1', 'MI_AIBATT1', 'MODELTYPE_ANIMATED_MESH');
+    await client({ 'mdlDyna.inc': MDL_DYNA.replace(plain, plain.replace('1.0f', '1.1f')) });
+    const movers = await catalog<WebMover[]>(await runData(), GAME_DATA_KEYS.movers);
+    expect(movers.find((mover) => mover.index === 20)?.modelScale).toBe(Math.fround(1.1));
+    expect(movers.find((mover) => mover.index === 11)).not.toHaveProperty('modelScale');
+  });
+
   it('writes no worldNoFly without a .wld', async () => {
     await client();
     expect((await runData()).writer.pathOf(WORLD_NO_FLY_KEY)).toBeUndefined();

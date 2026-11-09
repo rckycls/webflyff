@@ -198,6 +198,17 @@ describe('the own raised pet', () => {
     expect(petEvents(p.step(200).own)).toEqual([]); // made once
   });
 
+  it('takes its model\'s scale (ResetScale, Mover.cpp:8931), 1 for a model with none (pets R2)', () => {
+    const data = petData();
+    const scaled = { ...data, movers: new Map([...data.movers, [MI_PET_EGG, { ...data.movers.get(MI_PET_EGG)!, modelScale: f32(1.1) }]]) };
+    const p = pretendWorld(pet(), true, scaled);
+    p.step();
+    expect(petOf(p.world, OWN_ID)?.added.scale).toBe(f32(1.1));
+    const plain = pretendWorld(pet());
+    plain.step();
+    expect(petOf(plain.world, OWN_ID)?.added.scale).toBe(1);
+  });
+
   it('makes nothing with no pet out, nor a hatched pet without pets.json', () => {
     expect(petOf(pretendWorld(pet(), false).world, OWN_ID)).toBeUndefined();
     const p = pretendWorld(pet({ level: 2 }), true, petData(false));

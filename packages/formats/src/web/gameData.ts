@@ -71,6 +71,13 @@ export interface WebMover {
    * are one mesh and differ only by this. Absent for 0 (ATEX_NONE), and in movers.json written before.
    */
   textureEx?: number;
+  /**
+   * 2026-11-09 (pets R2): `ModelElem::m_fScale` of the mover's mdlDyna.inc entry, a C float: the scale a mover the client
+   * makes itself takes (`CMover::SetIndex`'s `ResetScale`, `Mover.cpp:8931`; `CObj::ResetScale`, `Obj.cpp:390-395`), as a
+   * raised pet is (1.1 for the white tiger, `mdlDyna.inc:19384`). A server mover's ADD_OBJ scale already holds it (the
+   * server's `SetIndex` set it before `m_vScale` was written). Absent for 1, and in movers.json written before.
+   */
+  modelScale?: number;
 }
 
 /** An item that shows a model on the body when worn (`mdlDyna.inc` OT_ITEM entries that have a part). */
