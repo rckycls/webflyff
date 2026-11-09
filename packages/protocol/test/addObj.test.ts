@@ -138,7 +138,9 @@ describe('ADD_OBJ (OnAddObj)', () => {
         player: {
           ...playerBase, self: false, own: null, shopTitle: 'Cheap swords', equipmentObjectIds: [],
           worn: [
-            { part: 2, itemId: 500, flag: 0 }, { part: 10, itemId: 21, flag: 1 }, { part: 27, itemId: 4100, flag: 0 },
+            // 2026-11-09: each part's nOption (written as its index here) is kept
+            { part: 2, itemId: 500, flag: 0, option: 2 }, { part: 10, itemId: 21, flag: 1, option: 10 },
+            { part: 27, itemId: 4100, flag: 0, option: 27 },
           ],
         },
       },

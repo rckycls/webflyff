@@ -9,6 +9,20 @@ export interface NameTag {
   color: number;
   /** How far from the camera the tag is shown, in metres (`fDistLimit`). */
   maxDistance: number;
+  /** 2026-11-09: the Master or Hero mark after the name (`legendMark`): its picture's key, or none. */
+  mark?: string | null;
+}
+
+/**
+ * 2026-11-09: the mark after a player's name (`RenderName`, MoverRender.cpp:1495-1563, `__VER >= 10`): a Master's
+ * (`GetLegendChar`, the job's `dwJobType` JTYPE_MASTER) at levels 60 to 120, icon_Expert1 to 6 by its ten levels; a
+ * Hero's icon_Hero at any level. The job catalog names the type: `JOB_*_MASTER`, `JOB_*_HERO`.
+ */
+export function legendMark(job: number, level: number, jobs: ReadonlyArray<{ name: string }>): string | null {
+  const name = jobs[job]?.name ?? '';
+  if (name.endsWith('_HERO')) return 'ui/icon_hero.png';
+  if (!name.endsWith('_MASTER') || level < 60 || level > 120) return null;
+  return `ui/icon_expert${Math.min(6, Math.floor((level - 60) / 10) + 1)}.png`;
 }
 
 // `COLOR_*` (`Source/_Common/Mover.h:34-38`)
@@ -60,11 +74,16 @@ export function nameTagOf(
   colors: WebNameColors,
   honorTitles: ReadonlyMap<number, string>,
   inParty: (playerId: number) => boolean = () => false,
+  jobs: ReadonlyArray<{ name: string }> = [],
 ): NameTag | null {
   const player = mover.added.player;
   if (mover.kind === 'player' && player !== undefined) {
     if ((player.mode & TRANSPARENT_MODE) === TRANSPARENT_MODE) return null;
-    return { text: playerText(mover.name, player, honorTitles), color: playerColor(player, colors, inParty(player.playerId)), maxDistance: FAR_LIMIT };
+    const mark = legendMark(player.job, player.level, jobs);
+    return {
+      text: playerText(mover.name, player, honorTitles), color: playerColor(player, colors, inParty(player.playerId)), maxDistance: FAR_LIMIT,
+      ...(mark !== null ? { mark } : {}),
+    };
   }
   const { belligerence } = mover.added;
   const peaceful = belligerence === Belli.PEACEFUL; // CMover::IsPeaceful

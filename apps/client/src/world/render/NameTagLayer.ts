@@ -25,6 +25,12 @@ const LINE_PX = 15;
 /** `CMover::RenderName` writes the text from 20 px above the projected top of the model and 3 px left of centred (`MoverRender.cpp:1358-1363`). */
 const ABOVE_PX = 20;
 const LEFT_PX = 3;
+/**
+ * 2026-11-09: the Master or Hero mark (`RenderName`, MoverRender.cpp:1495-1563): 25 x 25, its left at half the name's
+ * width right of the head point (3 px after the name, which is 3 px left of centred), its bottom 5 px above the point.
+ */
+const MARK_PX = 25;
+const MARK_BOTTOM_PX = 5;
 /** The canvas is drawn at the screen's pixel ratio, as the renderer is (at most 2: `createRenderer`). */
 const MAX_PIXEL_RATIO = 2;
 
@@ -35,6 +41,7 @@ interface Tag {
   /** What it was drawn with, for `recolor`. */
   text: string;
   color: number;
+  mark: string | null;
   /** The canvas in CSS pixels. */
   width: number;
   height: number;
@@ -53,6 +60,8 @@ export class NameTagLayer {
   constructor(
     private readonly scene: Scene,
     private readonly doc: Document,
+    /** 2026-11-09: a picture's URL by its key (the marks'), '' for one the store lacks. */
+    private readonly url: (key: string) => string = () => '',
   ) {}
 
   /** Drops the tags of the movers that left and makes one for each mover that came, unless `tagOf` gives it none. */
@@ -75,7 +84,7 @@ export class NameTagLayer {
       const old = this.tags.get(objectId);
       if (mover === undefined || old === undefined) continue;
       const tag = tagOf(mover);
-      if (tag !== null && tag.text === old.text && tag.color === old.color) continue;
+      if (tag !== null && tag.text === old.text && tag.color === old.color && (tag.mark ?? null) === old.mark) continue;
       this.remove(objectId);
       if (tag !== null && tag.text !== '') this.add(objectId, tag);
     }
@@ -117,8 +126,17 @@ export class NameTagLayer {
     const context = canvas.getContext('2d');
     if (context === null) return;
     context.font = FONT;
-    const width = Math.ceil(context.measureText(tag.text).width) + 2 * OUTLINE_PX;
-    const height = LINE_PX + 2 * OUTLINE_PX;
+    const textWidth = Math.ceil(context.measureText(tag.text).width);
+    // the box round the head point (0, 0), y down: the text's top 20 px above it and 3 px left of centred, the mark after
+    const mark = tag.mark ?? null;
+    const textLeft = -Math.floor(textWidth / 2) - LEFT_PX, textTop = -ABOVE_PX;
+    const markLeft = Math.ceil(textWidth / 2), markTop = -(MARK_PX + MARK_BOTTOM_PX);
+    const left = textLeft - OUTLINE_PX;
+    const top = Math.min(textTop - OUTLINE_PX, mark === null ? Infinity : markTop);
+    const right = Math.max(textLeft + textWidth + OUTLINE_PX, mark === null ? -Infinity : markLeft + MARK_PX);
+    const bottom = textTop + LINE_PX + OUTLINE_PX;
+    const width = right - left;
+    const height = bottom - top;
     canvas.width = Math.ceil(width * ratio);
     canvas.height = Math.ceil(height * ratio);
     // resizing the canvas resets its state
@@ -128,9 +146,9 @@ export class NameTagLayer {
     context.lineJoin = 'round';
     context.lineWidth = 2 * OUTLINE_PX;
     context.strokeStyle = OUTLINE_COLOR;
-    context.strokeText(tag.text, OUTLINE_PX, OUTLINE_PX);
+    context.strokeText(tag.text, textLeft - left, textTop - top);
     context.fillStyle = cssColor(tag.color);
-    context.fillText(tag.text, OUTLINE_PX, OUTLINE_PX);
+    context.fillText(tag.text, textLeft - left, textTop - top);
 
     const texture = new CanvasTexture(canvas);
     texture.colorSpace = SRGBColorSpace;
@@ -142,12 +160,23 @@ export class NameTagLayer {
     const sprite = new Sprite(material);
     sprite.name = `name tag ${objectId}`;
     // anchored on the head: the text's top 20 px above it (with the outline over that) and 3 px left of centred
-    sprite.center.set(0.5 + LEFT_PX / width, 1 - (ABOVE_PX + OUTLINE_PX) / height);
+    sprite.center.set(-left / width, 1 + top / height);
     // written after the world, as Neuz writes names last
     sprite.renderOrder = 1;
     sprite.visible = false;
     this.scene.add(sprite);
-    this.tags.set(objectId, { sprite, texture, maxDistance: tag.maxDistance, text: tag.text, color: tag.color, width, height });
+    this.tags.set(objectId, { sprite, texture, maxDistance: tag.maxDistance, text: tag.text, color: tag.color, mark, width, height });
+    // the mark is drawn into the tag once its picture is in
+    const src = mark === null ? '' : this.url(mark);
+    if (src !== '') {
+      const image = new Image();
+      image.onload = () => {
+        if (this.tags.get(objectId)?.texture !== texture) return; // the tag was drawn again or dropped meanwhile
+        context.drawImage(image, markLeft - left, markTop - top, MARK_PX, MARK_PX);
+        texture.needsUpdate = true;
+      };
+      image.src = src;
+    }
   }
 
   private remove(objectId: number): void {

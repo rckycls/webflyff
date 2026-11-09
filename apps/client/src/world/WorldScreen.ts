@@ -398,6 +398,7 @@ export class WorldScreen {
   /** 2026-11-05: the movers whose buff wings show (`m_pSfxWing`), and when they were last looked at. */
   private readonly wingEffects = new Set<number>();
   private lastWingCheck = 0;
+  private lastTagCheck = 0;
   /** 2026-11-05: the ticket in use (`CMover::GetTicket`), drawn faded in the bag. */
   private ticketInUse: number | null = null;
   /** The authorization the chat's suggestions were last given (2026-11-05). */
@@ -881,7 +882,8 @@ export class WorldScreen {
       this.views?.refresh(mover);
       if (mover.isSelf && this.inventoryWindow?.frame.isOpen) void this.makePortrait(true);
     };
-    this.tags = new NameTagLayer(stage.scene, this.element.ownerDocument);
+    // 2026-11-09: the Master and Hero marks' pictures from the store
+    this.tags = new NameTagLayer(stage.scene, this.element.ownerDocument, (key) => this.services?.store.url(key) ?? '');
     this.indicators = new WorldIndicatorLayer(stage.scene, this.element.ownerDocument);
     const now = performance.now();
     for (const [id, until] of this.pendingAttackEmotes) if (until > now) this.indicators.attack(id, until - 5000);
@@ -1624,7 +1626,7 @@ export class WorldScreen {
     const changes = world.takeChanges();
     this.countDropped(changes.dropped);
     this.views!.sync(changes, world.movers);
-    this.tags!.sync(changes, world.movers, (mover) => nameTagOf(mover, world.self(), data.nameColors, data.honorTitles, this.inParty));
+    this.tags!.sync(changes, world.movers, (mover) => nameTagOf(mover, world.self(), data.nameColors, data.honorTitles, this.inParty, data.jobs));
     this.play(changes);
   }
 
@@ -2213,6 +2215,11 @@ export class WorldScreen {
     }
     this.upgrade?.step();
     this.syncBuffWings(performance.now());
+    // 2026-11-09: the name tags again once a second, for a Master's mark that changes with the level (and a job change)
+    if (performance.now() - this.lastTagCheck > 1000) {
+      this.lastTagCheck = performance.now();
+      this.recolorTags();
+    }
     this.upgradeNpc?.safety.step();
     this.inventoryWindow?.drawUpgrade();
     // the dialogue and the menu go with their NPC or when the player moves (WndWorld.cpp:8052-8081)
@@ -2749,7 +2756,7 @@ export class WorldScreen {
   private recolorTags(): void {
     const world = this.world, data = this.data;
     if (world === undefined || data === undefined) return;
-    this.tags?.recolor(world.movers, (mover) => nameTagOf(mover, world.self(), data.nameColors, data.honorTitles, this.inParty));
+    this.tags?.recolor(world.movers, (mover) => nameTagOf(mover, world.self(), data.nameColors, data.honorTitles, this.inParty, data.jobs));
   }
 
   /** What the party windows draw: each member from its mover in view, else from the player data (queried once). */

@@ -3,7 +3,7 @@ import type { WebMover } from '@flyffweb/formats';
 import { Scene } from 'three';
 import type { SpriteMaterial } from 'three';
 import { NameTagLayer } from '../src/world/render/NameTagLayer';
-import { nameTagOf, tagOpacity } from '../src/world/render/nameTags';
+import { legendMark, nameTagOf, tagOpacity } from '../src/world/render/nameTags';
 import { addedNpc, addedPlayer, gameDataOf, moverFrom, webMoverOf } from './helpers/movers';
 
 // The colours of PKSetting.inc are not all the code has: a different set shows the tag takes them from `nameColors`
@@ -187,5 +187,19 @@ describe('nameTagOf: the party (MoverRender.cpp:1403-1407)', () => {
     layer.recolor(movers, tagOf);
     expect(fills).toHaveLength(3);
     layer.dispose();
+  });
+});
+
+describe('legendMark (2026-11-09, RenderName MoverRender.cpp:1495-1563)', () => {
+  const jobs = Array.from({ length: 32 }, (_, i) => ({ name: i >= 24 ? 'JOB_KNIGHT_HERO' : i >= 16 ? 'JOB_KNIGHT_MASTER' : 'JOB_KNIGHT' }));
+  it("a Master's icon_Expert1 to 6 by its ten levels from 60 to 120, a Hero's icon_Hero, none for the others", () => {
+    expect(legendMark(16, 59, jobs)).toBeNull();
+    expect(legendMark(16, 60, jobs)).toBe('ui/icon_expert1.png');
+    expect(legendMark(16, 79, jobs)).toBe('ui/icon_expert2.png');
+    expect(legendMark(16, 110, jobs)).toBe('ui/icon_expert6.png');
+    expect(legendMark(16, 120, jobs)).toBe('ui/icon_expert6.png');
+    expect(legendMark(16, 121, jobs)).toBeNull();
+    expect(legendMark(24, 125, jobs)).toBe('ui/icon_hero.png');
+    expect(legendMark(8, 100, jobs)).toBeNull();
   });
 });
