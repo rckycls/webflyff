@@ -3374,7 +3374,8 @@ export class WorldScreen {
     if (this.chatWindow?.typing || this.dropBox !== undefined) return;
     if (event.key === 'Enter' && !event.repeat && !(event.target as HTMLElement | null)?.closest?.('input,textarea,select,[contenteditable="true"]')) {
       event.preventDefault();
-      if (this.chatWindow instanceof NeuzChat) this.chatWindow.open(true); else this.chatWindow?.open();
+      // the chat shown if it was closed (2026-11-10, the owner's), its line focused
+      this.chatWindow?.open();
       return;
     }
     this.skillUse?.keyDown();

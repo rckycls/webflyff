@@ -23,7 +23,8 @@
 //
 // Escape and F1 to F9 are the game's even while the line is typed in (Neuz.cpp:1222-1231): Escape clears the target or
 // closes the window on top, which is the chat while it is typed in (CWndBase::GetWndBase passes it over no more than any
-// window, WndBase.cpp:2048-2095); with the chat closed Enter does nothing until the Start menu's Chatting opens it.
+// window, WndBase.cpp:2048-2095). With the chat closed, Enter shows it again (2026-11-10, the owner's: Neuz's does
+// nothing, and only the Start menu's Chatting opens it).
 
 import { encodeChat } from '@flyffweb/protocol';
 import type { ChatChannel } from '@flyffweb/protocol';
@@ -472,12 +473,12 @@ export class NeuzChat {
   }
 
   /**
-   * Gives the line the focus, the chat on top (`SetFocus`): Enter on the world (`fromEnter`, `Neuz.cpp:1325-1339`), which
-   * needs the chat open; the Start menu's Chatting (APP_COMMUNICATION_CHAT) opens it first, where it was.
+   * Gives the line the focus, the chat on top (`SetFocus`): Enter on the world (`Neuz.cpp:1325-1339`) or the Start menu's
+   * Chatting (APP_COMMUNICATION_CHAT). A closed chat opens first, where it was. (2026-11-10, the owner's: Enter shows it
+   * too; Neuz's Enter does nothing while the chat is closed, and only the Start menu opens it.)
    */
-  open(fromEnter = false): void {
+  open(): void {
     if (!this.frame.isOpen) {
-      if (fromEnter) return;
       this.shown = true;
       this.frame.open(this.at);
       this.layout();

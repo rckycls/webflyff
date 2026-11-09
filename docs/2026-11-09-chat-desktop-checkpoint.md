@@ -31,8 +31,8 @@ world opens) the chat is Neuz V15's chat window. The phone keeps its own chat wi
   "Hide".
 - **Lock**: on, the line keeps the focus after Enter, for the next line; off (the default), the focus goes back to the
   world.
-- **Help**: the "Fast Help" window with help.inc's chat text. **Close** closes the chat; then Enter does nothing, and
-  the Start menu's new **Chatting** line opens it again where it was.
+- **Help**: the "Fast Help" window with help.inc's chat text. **Close** closes the chat; Enter (2026-11-10, the
+  owner's: in Neuz it does nothing then) or the Start menu's new **Chatting** line opens it again where it was.
 - **Escape and F1-F9**: they are the game's even while the line is typed in. Escape clears the target, else closes the
   window on top, which is the chat while you type in it (and, with nothing else open, the chat). F1-F9 use the task bar.
 - **The macro mark**: while the line holds words, drag the speech bubble to the task bar: a chat shortcut (its picture
@@ -141,4 +141,4 @@ Scroll of Return test, which fails on main already.
 
 **By eye**, on the PC: the chat at the bottom left looks like the old client's; drag an edge, drag the messages, try each
 tab, Lock, Option, System, Help, a right-click on a name, "/r ", the bubble dragged to the task bar and its F-key, Escape
-(the chat closes; the Start menu's Chatting brings it back), and a reload (the chat where you left it).
+(the chat closes; Enter or the Start menu's Chatting brings it back), and a reload (the chat where you left it).
