@@ -20,6 +20,12 @@ export interface ModelBoxExtras {
    * (`x != 0`, as `CreateParticle` tests them, ModelObject.cpp): the line the upgrade and element glow runs along.
    */
   forces?: Vec3[];
+  /**
+   * 2026-11-09 (pets): the file's event points `m_vEvent` (D3D, as stored; at most `MAX_MDL_EVENT` 8, Object3D.cpp:985-987),
+   * written when it has any; the ones it lacks are 0 (`memset`, :523). The buff pet window's camera starts from point 0
+   * (`CWndBuffPetStatus::OnDraw`, `_Interface/WndPetSys.cpp:2381`).
+   */
+  events?: Vec3[];
 }
 
 /**

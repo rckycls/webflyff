@@ -258,6 +258,18 @@ describe('buildModelGlb (synthetic models)', () => {
     expect(doc.getRoot().listScenes()[0]!.getExtras()).toEqual({ bbMin: [-1, 0, -2], bbMax: [6, 7, 8] });
   });
 
+  it("writes the event points of a file that has any, as stored (m_vEvent; the buff pet window's camera, pets)", async () => {
+    // two points; a file with none writes no `events`
+    const near = gmObject({ bbMin: [0, 0, 0], bbMax: [1, 1, 1] });
+    const model = o3dModel([[near]], { events: [[0.25, 0.5, -0.75], [0, 1, 0]] });
+    const doc = await readGlb(await buildModelGlb(model, null, noTextures));
+    expect(doc.getRoot().listScenes()[0]!.getExtras()).toEqual({
+      bbMin: [0, 0, 0], bbMax: [1, 1, 1], events: [[0.25, 0.5, -0.75], [0, 1, 0]],
+    });
+    const none = await readGlb(await buildModelGlb(o3dModel([[near]]), null, noTextures));
+    expect(none.getRoot().listScenes()[0]!.getExtras()).toEqual({ bbMin: [0, 0, 0], bbMax: [1, 1, 1] });
+  });
+
   it('writes the box of a model with a skeleton too, and keeps an inverted one as it is stored', async () => {
     // 82 client models store bbMin above bbMax on an axis (Item_RidRidStiDragon.o3d); the client unions them as they
     // are, so the glb does not sort them.

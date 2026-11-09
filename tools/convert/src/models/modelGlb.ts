@@ -37,6 +37,8 @@
 // Box: the scene's extras hold `bbMin` and `bbMax`, the file's own box exactly as stored (D3D space, z not negated;
 // `ModelBoxExtras`). CModelObject::LoadElement (ModelObject.cpp:738-744) unions that box over the parts it loads,
 // and the picking and range rules read it back (`GetRadius`, `IntersectBB`), so it is not converted like a drawing.
+// The same extras hold a weapon's sword-trail points (`forces`) and, when the file has any, its event points (`events`,
+// `m_vEvent`), both as stored.
 
 import type { Document, Material, Mesh, Node, Skin } from '@gltf-transform/core';
 import { NO_BONE, flipWinding, toWebPosition, toWebQuaternion } from '@flyffweb/formats';
@@ -277,6 +279,8 @@ function modelBoxExtras(model: O3dModel): ModelBoxExtras {
   return {
     bbMin: [minX, minY, minZ], bbMax: [maxX, maxY, maxZ],
     ...(forced ? { forces: model.forces.map(([x, y, z]): Vec3 => [x, y, z]) } : {}),
+    // 2026-11-09 (pets): the event points, for the buff pet window's camera (CWndBuffPetStatus::OnDraw, m_vEvent[ 0 ])
+    ...(model.events.length > 0 ? { events: model.events.map(([x, y, z]): Vec3 => [x, y, z]) } : {}),
   };
 }
 
