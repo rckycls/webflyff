@@ -7,7 +7,9 @@ import {
   writeSetPetName, writeVisPetActivate,
 } from '@flyffweb/testkit';
 import type { ScriptMessage } from '@flyffweb/testkit';
-import { ArWriter, MessageType, NULL_ID, PacketType, WORLD_READERS, readBundle } from '../src';
+import {
+  ArReader, ArWriter, MessageType, NULL_ID, PacketType, WORLD_READERS, decodeWorldPacket, encodePetRelease, readBundle,
+} from '../src';
 import type { AddedMover, AddedPlayer, InventoryItem, OwnCharacter, PetData, WorldMessage } from '../src';
 
 const PLAYER = 9;
@@ -154,5 +156,16 @@ describe('the own summoned pet\'s slot, after the three banks (ObjSerializeOpt.c
     const [value] = read([cut]);
     expect(ownOf(value!)?.inventory).toEqual(newVagrantOwn().inventory);
     expect(ownOf(value!)?.petSlot).toBeUndefined();
+  });
+});
+
+describe('the client\'s PET_RELEASE (CDPClient::SendPetRelease, DPClient.cpp:16450-16454; pets R2)', () => {
+  it('is the type alone after DPID_UNKNOWN, as CDPSrvr::OnPetRelease reads it (DPSrvr.cpp:8036-8052)', () => {
+    const r = new ArReader(encodePetRelease());
+    expect(r.u32()).toBe(0xffffffff);
+    expect(r.u32()).toBe(0xf000f600);
+    r.expectEnd();
+    expect(PacketType.PET_RELEASE).toBe(0xf000f600);
+    expect(decodeWorldPacket(encodePetRelease())).toEqual({ type: 'petRelease' });
   });
 });

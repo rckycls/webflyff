@@ -243,6 +243,8 @@ export function encodeEndSkillQueue(): Uint8Array {
 export type WorldPacket =
   | { type: 'teleporter'; key: string; index: number }
   | { type: 'npcBuff'; key: string }
+  /** 2026-11-09 (pets R2): the own raised pet sent back (`SendPetRelease`). */
+  | { type: 'petRelease' }
   | { type: 'setPlayerName'; playerId: number; name: string }
   | { type: 'enchant' | 'piercing' | 'randomScroll'; targetId: number; materialId: number }
   | { type: 'doUseItemTarget'; materialId: number; targetId: number }
@@ -406,6 +408,9 @@ function decodeClientPacket(r: ArReader): WorldPacket {
       if (key.length === 0) throw new ProtocolError('Invalid NPC key');
       return { type: 'npcBuff', key };
     }
+    case PacketType.PET_RELEASE: // 2026-11-09 (pets R2): the type alone
+      r.expectEnd();
+      return { type: 'petRelease' };
     case PacketType.REMOVEQUEST: {
       const questId = r.u32(); r.expectEnd();
       return { type: 'removeQuest', questId };

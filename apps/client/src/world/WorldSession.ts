@@ -9,7 +9,7 @@ import {
   encodeNpcBuff, encodeQuestCheck, encodeEnchant, encodePiercing, encodeRandomScroll, encodeDoUseItemTarget,
   encodeUltimateEnchantWeapon, encodePiercingSize, encodeSmeltSafety, encodeQuerySetPlayerName, encodeSummonParty, encodeSummonPartyConfirm, encodeSummonFriend,
   encodeSummonFriendConfirm, encodeSummonFriendCancel, encodeDoUseItemInput, encodeChangeAttribute, encodeItemTransy,
-  encodeCreateMonster, encodeRemoveQuest, encodeReturnScroll, encodeStateModeCancel,
+  encodeCreateMonster, encodeRemoveQuest, encodeReturnScroll, encodeStateModeCancel, encodePetRelease,
 } from '@flyffweb/protocol';
 import { encodeMagicAttack, encodeRangeAttack, encodeSfxClear, encodeSfxHit, encodeSfxId } from '@flyffweb/protocol';
 import {
@@ -141,6 +141,8 @@ export class WorldSession {
   sendCreateMonster(objectId: number, pos: Vec3): void { this.playingCache()?.send(encodeCreateMonster(objectId, pos)); }
   /** 2026-11-05: Buff Pang's Get Buffed! (`SendNPCBuff( m_szCharacterKey )`), the key as the NPC's ADD_OBJ gave it. */
   sendNpcBuff(key: string): void { this.playingCache()?.send(encodeNpcBuff(key)); }
+  /** 2026-11-09 (pets R2): the own raised pet's menu's release (`SendPetRelease`, `DPClient.cpp:16450-16454`). */
+  sendPetRelease(): void { this.playingCache()?.send(encodePetRelease()); }
   sendNpcDialogOpen(id: number): void { this.playingCache()?.send(encodeNpcDialogOpen(id)); }
   sendNpcDialog(id: number, key: string, param: number, quest: number, playerId: number): void {
     this.playingCache()?.send(encodeNpcDialog(id, key, param, quest, playerId));

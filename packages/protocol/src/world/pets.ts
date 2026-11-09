@@ -8,8 +8,11 @@
 //   CDPClient::OnSetPetName             Neuz/DPClient.cpp:18446-18467            SET_PET_NAME 0x9100 (__PET_1024)
 //   CDPClient::OnActivateVisPet         Neuz/DPClient.cpp:19002-19029            VISPET_ACTIVATE 0x8801 (__VER >= 15, __PETVIS)
 //   CDPClient::OnChangeMoverSfx         Neuz/DPClient.cpp:19032-19042            MOVER_CHANGESFX 0x8800 (__PETVIS)
+//   CDPClient::SendPetRelease           Neuz/DPClient.cpp:16450-16454            the client's PET_RELEASE 0xf000f600 (R2)
 
 import type { ArReader } from '../ar/ArReader';
+import { PacketType } from '../constants';
+import { clientPacket } from './packet';
 
 /** `PL_MAX` (`enum PETLEVEL`, `_Common/pet.h:16`): the 6 bytes of `CPet::m_anAvailLevel`. */
 const PL_MAX = 6;
@@ -77,6 +80,15 @@ export function readPetCall(r: ArReader): PetMessage {
   const level = r.u8(); // (BYTE)nPetLevel
   const name = r.string(MAX_PET_NAME); // ReadString( szPetName, MAX_PET_NAME ) (__PET_1024)
   return { type: 'petCall', itemObjectId, modelIndex, level, name };
+}
+
+/**
+ * 2026-11-09 (pets R2): the client's PET_RELEASE (`CDPClient::SendPetRelease`, `DPClient.cpp:16450-16454`), from the own
+ * pet's menu (`MMI_PET_RELEASE`, `WndWorld.cpp:5891-5898`): the type alone; `CDPSrvr::OnPetRelease`
+ * (`WORLDSERVER/DPSrvr.cpp:8036-8052`) reads nothing and sends the pet back, or says `TID_GAME_PET_NOT_FOUND`.
+ */
+export function encodePetRelease(): Uint8Array {
+  return clientPacket(PacketType.PET_RELEASE).toBytes();
 }
 
 /** PET_RELEASE: `OnPetRelease` (`DPClient.cpp:16420-16448`): nothing more. */

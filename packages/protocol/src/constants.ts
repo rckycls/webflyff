@@ -7,6 +7,8 @@ export const PacketType = {
   TELEPORTER: 0x88100100,
   /** 2026-11-05: `PACKETTYPE_NPC_BUFF`, Buff Pang's menu entry (`CDPClient::SendNPCBuff`, `MsgHdr.h:666`). */
   NPC_BUFF: 0xf000f813,
+  /** 2026-11-09 (pets R2): `PACKETTYPE_PET_RELEASE`, the own raised pet sent back from its menu (`MsgHdr.h:626`). */
+  PET_RELEASE: 0xf000f600,
   /** 2026-11-05: the upgrade cursor's packets (`MsgHdr.h`; world/upgrade.ts). */
   ENCHANT: 0xf000b024,
   PIERCING: 0xf000b025,
