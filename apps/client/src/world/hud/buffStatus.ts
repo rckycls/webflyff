@@ -24,6 +24,10 @@
 // level (`GetSystemPetTextureKey`, `WndWorld.cpp:9160-9182`, :9219-9228; petBuffIcon), no time and no blinking (its total
 // is 0), and the pet's tooltip (`PutPetTooltipInfo`, :9371-9379). The item buffs are now in the buffs' map order
 // (`MAKELONG( id, type )`, `buff.h:212`): the BUFF_ITEMs by id, the pet's, then the BUFF_ITEM2s by id.
+//
+// 2026-11-09 (pets B1): the buff pet's `BUFF_EQUIP` (4, `SetPetVisDST`, `MoverSkill.cpp:4122`), last of the item buffs, with
+// the pet item's icon (`RenderBuffIcon`, `WndWorld.cpp:9209-9218`; its texture, :3594-3596), no time under it (:9323-9325),
+// and the tooltip of its name and the buff pet's vis (`PutVisPetInfo` of `GetVisPetItem` of that item, :9392-9401).
 
 import type { WebItemProp, WebSkill } from '@flyffweb/formats';
 import type { BuffShown } from '../buffs';
@@ -40,6 +44,9 @@ const BUFF_ITEM2 = 3;
 /** 2026-11-09 (pets R2): `BUFF_PET` (`_Common/SkillInfluence.h:6`), the raised pet's stat, and `IK3_EGG`. */
 const BUFF_PET = 2;
 const IK3_EGG = 120;
+/** 2026-11-09 (pets B1): `BUFF_EQUIP` (`_Common/buff.h`), the buff pet item's, and `IK3_PET`. */
+const BUFF_EQUIP = 4;
+const IK3_PET = 100;
 /** `II_SYS_SYS_SCR_RETURN`: its icon always blinks, and its double-click goes back. */
 const RETURN_SCROLL = 10469;
 /** 2026-11-05: `II_SYS_SYS_SCR_PARTYSUMMON`: a party member's summon buff, whose double-click asks to go to the leader. */
@@ -203,6 +210,11 @@ export interface BuffStatusOptions {
   petLevel?: () => number | null;
   /** 2026-11-09 (pets R2): the own pet item's tooltip (`PutPetTooltipInfo( GetPetItem() )`), null with none. */
   petTooltip?: () => string[] | null;
+  /**
+   * 2026-11-09 (pets B1): `PutVisPetInfo`'s lines of the own buff pet item when it is of item `itemId` (`GetVisPetItem`),
+   * null when it is not.
+   */
+  visPetTooltip?: (itemId: number) => string[] | null;
 }
 
 /** The time units under an item's icon (`RenderOptBuffTime`, `WndWorld.cpp:11197-11227`). */
@@ -306,7 +318,8 @@ export class BuffStatus {
     const items = this.options.items;
     if (items === undefined) return [];
     const shown = buffs
-      .filter((b) => (b.buffType === BUFF_ITEM || b.buffType === BUFF_ITEM2 || b.buffType === BUFF_PET) && items.has(b.id))
+      .filter((b) => (b.buffType === BUFF_ITEM || b.buffType === BUFF_ITEM2 || b.buffType === BUFF_PET || b.buffType === BUFF_EQUIP) &&
+        items.has(b.id))
       .sort((a, b) => a.buffType - b.buffType || a.id - b.id);
     const looks: Look[] = [];
     const esDone = new Set<number>();
@@ -325,10 +338,13 @@ export class BuffStatus {
         continue;
       }
       const item = items.get(buff.id)!;
-      const timed = buff.totalMs > 0 && buff.totalMs !== ENDLESS_MS;
+      // 2026-11-09 (pets B1): BUFF_EQUIP shows no time, under the icon or in the tooltip (:9323-9325, :9510-9511)
+      const equip = buff.buffType === BUFF_EQUIP;
+      const timed = buff.totalMs > 0 && buff.totalMs !== ENDLESS_MS && !equip;
+      const vis = (): string[] | null => (item.kind3 === IK3_PET ? this.options.visPetTooltip?.(buff.id) ?? null : null);
       looks.push({
         key: `${buff.buffType}:${buff.id}:${timed}`, name: item.name, icon: item.icon, copies: 0, harmful: false,
-        tooltip: () => [item.name, ...(buff.totalMs > 0 ? [clock(buff.leftMs)] : [])],
+        tooltip: () => [item.name, ...(vis() ?? (buff.totalMs > 0 && !equip ? [clock(buff.leftMs)] : []))],
         blink: buff.id === RETURN_SCROLL ? 'always' : 'under', blinkLeftMs: buff.totalMs > 0 ? buff.leftMs : Infinity,
         blinkUnderMs: BLINK_MS, label: timed && buff.leftMs > 0 ? { kind: 'time', text: this.units(buff.leftMs) } : null,
         goesBack: buff.id === RETURN_SCROLL || buff.id === PARTY_SUMMON || buff.id === FEED_POCKET,

@@ -9,9 +9,14 @@
 // 2026-11-09 (pets R2): the raised pet's lines (PutPetKind of a hatched one, PutPetInfo, PutPetFeedPocket but its time
 // left, as PutKeepTime's), from the pet the item carries (pets M0) and pet.inc (C1).
 //
-// Not shown, for want of the data (the rulings of the 2026-11-05 work): the vis lines (PutVisPetInfo, PutNeededVis), the
-// cooldown (PutCoolTime), an item's own time left (PutKeepTime's second half), the guild cloak's guild name, the couple ring's name, the sealed character, the Ultimate
-// gems (PutAddedOpt), the "Before tax price" line, red-chip prices, and the player's own DST_ABILITY_MIN/MAX in min~max.
+// 2026-11-09 (pets B1): the vis lines: PutNeededVis for a vis, PutVisPetInfo for a buff pet item, and PutKeepTime's time
+// left of a vis (the slot's end in the buff pet window, else the prop's minutes), from the vis the items carry (pets M0)
+// and their end times (OwnState), with `time_null()` (`TooltipContext.now`).
+//
+// Not shown, for want of the data (the rulings of the 2026-11-05 work): the cooldown (PutCoolTime), an item's own time
+// left (PutKeepTime's second half, but a vis's), the guild cloak's guild name, the couple ring's name, the sealed
+// character, the Ultimate gems (PutAddedOpt), the "Before tax price" line, red-chip prices, and the player's own
+// DST_ABILITY_MIN/MAX in min~max.
 
 import type { WebItemEtc, WebItemProp, WebMover, WebPets, WebPiercingAvail, WebSetItem } from '@flyffweb/formats';
 import type { InventoryItem, PetData } from '@flyffweb/protocol';
@@ -21,6 +26,8 @@ import { PetLevel } from '../pets/raisedPet';
 import {
   availDestParam, itemName, petExpPercent, petGradeTid, petLife, petMaxEnergy, petMaxExp, petStatText,
 } from '../pets/petStatus';
+import { NeedVis, isVisPet, satisfyNeedVis, visEndAt, visKeepTimeText, visTimeLeft } from '../pets/buffPet';
+import type { VisPet } from '../pets/buffPet';
 
 /** A piece of a line: its text, its colour (0xRRGGBB) and its style (`ESSTY_BOLD`, `ESSTY_STRIKETHROUGH`). */
 export interface TooltipRun {
@@ -55,6 +62,17 @@ export interface TooltipContext {
   hasBuff?: (buffType: number, id: number) => boolean;
   /** 2026-11-09 (pets R2): how many of the item the bag holds (`GetItemNumForClient`, MoverParam.cpp:3631-3646). */
   countOf?: (itemId: number) => number;
+  /** 2026-11-09 (pets B1): `time_null()`, whole seconds, which the vis times are counted against; 0 unless given. */
+  now?: number;
+  /** 2026-11-09 (pets B1): the item's vis and their end times (a buff pet item's `CPiercing`); its piercing list alone else. */
+  visPet?: VisPet;
+  /** 2026-11-09 (pets B1): the own buff pet out (`GetVisPetItem`), for PutNeededVis; none says every need is missing. */
+  activeVisPet?: VisPet;
+  /**
+   * 2026-11-09 (pets B1): the item's `m_dwKeepTime` as an end in `time_null()` seconds: the vis of a buff pet window's slot
+   * (`CWndBuffPetStatus::OnMouseWndSurface`, WndPetSys.cpp:2833-2835).
+   */
+  keepEnd?: number;
 }
 
 /** The sets, socket cards and accessories (`data/itemEtc.json`), as the tooltip looks them up. */
@@ -177,6 +195,8 @@ const IK3_ELECARD = 37;
 const IK3_PET = 100;
 const IK3_EGG = 120;
 const IK3_VIS = 138;
+/** `NULL_ID`: a `dwReferTarget` or `dwDestParam` of none. */
+const NULL_ID = 0xffffffff;
 const GEAR_KINDS: ReadonlySet<number> = new Set([2, 3, 7, 8, 9, 10, 22]); // WEAPON_*, ARMOR, ARMORETC, CLOTH, CLOTHETC, BLINKWING
 const MEDICINE_KINDS: ReadonlySet<number> = new Set([11, 12, 14]); // REFRESHER, POTION, FOOD
 /** `ExpUpItem`'s column (Project.cpp:5163-5201): the weapons, then helmet, suit, gauntlet, boots, shield. */
@@ -423,10 +443,17 @@ export function itemTooltip(item: InventoryItem, prop: WebItemProp, data: Toolti
   } else if (prop.kind2 === IK2_JEWELRY) {
     baseItemOpt();
   } else if (prop.kind2 === IK2_SYSTEM && prop.kind3 === IK3_VIS) {
+    putNeededVis(); // 2026-11-09 (pets B1)
     baseItemOpt();
   }
 
-  // 12. PutKeepTime's duration (:5846-5869); the item's own time left is not kept
+  // 9. 2026-11-09 (pets B1): PutVisPetInfo (:6715-6718)
+  if (isVisPet(item, prop)) {
+    const pet = ctx.visPet ?? { piercing: item.piercing ?? [], ends: [] };
+    for (const line of visPetInfo(pet, data, ctx.now ?? 0)) put(`\n${line.text}`, line.color);
+  }
+
+  // 12. PutKeepTime's duration (:5846-5869); the item's own time left is not kept, but a vis's (2026-11-09, pets B1)
   if (prop.circleTime !== undefined) {
     put('\n', TIME);
     if (prop.circleTime === 1) {
@@ -437,6 +464,7 @@ export function itemTooltip(item: InventoryItem, prop: WebItemProp, data: Toolti
       put(format('TID_TOOLTIP_DATE', Math.trunc(s / 86400), Math.trunc((s % 86400) / 3600), Math.trunc((s % 3600) / 60), s % 60), TIME);
     }
   }
+  if (prop.kind3 === IK3_VIS) putVisKeepTime();
 
   // 13. PutJob (:6001-6116)
   if (prop.job !== undefined) {
@@ -559,6 +587,33 @@ export function itemTooltip(item: InventoryItem, prop: WebItemProp, data: Toolti
     if (prop.abilityMin !== -1) put(`\n${format('TID_GAME_TOOLTIP_MAXRECOVER', prop.abilityMin)}`, GENERAL);
   }
 
+  function putNeededVis(): void {
+    // PutNeededVis (:7429-7476): each needed vis (`dwReferTarget1/2`, neither 0 nor NULL_ID) "\nNeeded: <name>", in red when
+    // the own buff pet lacks it (`IsSatisfyNeedVis`; with no buff pet out, both), else black
+    const state = ctx.activeVisPet === undefined ? NeedVis.FAILED_BOTH
+      : satisfyNeedVis(ctx.activeVisPet, prop, data.itemProps, ctx.now ?? 0);
+    [prop.referTarget1, prop.referTarget2].forEach((need, i) => {
+      if (need === undefined || need === 0 || need === NULL_ID) return;
+      const failed = state === NeedVis.FAILED_BOTH || state === (i === 0 ? NeedVis.FAILED_1ST : NeedVis.FAILED_2ND);
+      put(`\n${text('TID_GAME_BUFFPET_REQUIRE')}: ${data.itemProps.get(need)?.name ?? ''}`, failed ? RED : GENERAL);
+    });
+  }
+
+  function putVisKeepTime(): void {
+    // PutKeepTime's second half for a vis (:5866-5956): its end (`m_dwKeepTime`) less now, or, with none or one past, the
+    // prop's minutes (`dwAbilityMin`, a vis in the bag); the words of the vis branch, then TID_TOOLTIP_PERIOD
+    let keep = ctx.keepEnd ?? 0;
+    let t = keep - (ctx.now ?? 0);
+    if (t <= 0) {
+      keep = prop.abilityMin;
+      t = Math.trunc(Math.fround(keep * 60));
+    }
+    if (keep === 0 || (flag & FLAG_EXPIRED) !== 0) return;
+    const words = t > 0 ? visKeepTimeText(t, data.texts) : '';
+    put('\n', GENERAL);
+    put(words + text('TID_TOOLTIP_PERIOD'), TIME);
+  }
+
   function putPetKind(): void {
     // IsVisPet (Item.h:273): a buff pet by its prop, or one the Pet Magic scroll made; IsEgg (Item.cpp:787-792): an egg
     // item with no pet, or a pet at the egg's level
@@ -654,6 +709,38 @@ export function itemTooltip(item: InventoryItem, prop: WebItemProp, data: Toolti
     }
     if (kind === 1 && size > 0) put(`\n${text('TID_GAME_BLESSING_WARNING')}`, RED);
   }
+}
+
+/**
+ * 2026-11-09 (pets B1): `PutVisPetInfo` (:7479-7609) of a buff pet's vis, a line each: the stats of every vis in time
+ * (`time_null() < GetVisKeepTime`) whose needs are met (`IsSatisfyNeedVis`), added up by DST in ascending DST (a
+ * `std::map`), in the piercing colour; then each vis's name and time left (`visTimeLeft`), green while it lasts, red past
+ * it. Also the buff bar's tooltip of the buff pet (`BUFF_EQUIP`, `WndWorld.cpp:9392-9401`).
+ */
+export function visPetInfo(pet: VisPet, data: Pick<TooltipData, 'texts' | 'itemProps'>, now: number): Array<{ text: string; color: number }> {
+  const sums = new Map<number, number>();
+  pet.piercing.forEach((id, i) => {
+    const vis = data.itemProps.get(id);
+    if (vis === undefined || now >= visEndAt(pet, i)) return;
+    if (satisfyNeedVis(pet, vis, data.itemProps, now) !== NeedVis.SUCCESS) return;
+    vis.destParams.forEach((dst, k) => {
+      if (dst === -1 || dst === NULL_ID) return;
+      sums.set(dst, (sums.get(dst) ?? 0) + (vis.adjParams[k] ?? 0));
+    });
+  });
+  const name = (dst: number): string => data.texts.get(DST_NAMES.get(dst) ?? '')?.text ?? '';
+  const lines = [...sums].sort((a, b) => a[0] - b[0]).map(([dst, value]) => ({
+    text: isDstRate(dst) ? `${name(dst)}${signed(rateValue(dst, value))}%` : `${name(dst)}${signed(value)}`, color: PIERCING,
+  }));
+  for (let i = 0; i < 9; i++) {
+    const id = pet.piercing[i] ?? 0;
+    const vis = id === 0 || id === NULL_ID ? undefined : data.itemProps.get(id);
+    if (vis === undefined) continue;
+    // `DWORD dwKeepTime`, then `time_t t = dwKeepTime - time_null()`
+    const t = (visEndAt(pet, i) >>> 0) - now;
+    lines.push({ text: `${vis.name} (${visTimeLeft(t, data.texts)})`, color: t > 0 ? TIME : RED });
+  }
+  return lines;
 }
 
 /** `GetATKSpeedString` (:107-121), the TID of the attack speed's word. */

@@ -16,13 +16,18 @@ const NO_ITEM = 0xffffffff;
 
 /**
  * The context the own player gives a tooltip: who judges the requirement colours, what is worn, whether this is; 2026-11-09
- * (pets R2) how many of an item the bag holds (`GetItemNumForClient`) and, when given, the own buffs (`hasBuff`).
+ * (pets R2) how many of an item the bag holds (`GetItemNumForClient`) and, when given, the own buffs (`hasBuff`); (pets B1)
+ * the clock (`time_null()`), a bag item's vis and their end times, and the own buff pet's (`GetVisPetItem`).
  */
 export function ownTooltipContext(
   own: OwnState | undefined, item: InventoryItem, flag: TooltipFlag, shopOpen = false,
   hasBuff?: (buffType: number, id: number) => boolean,
 ): TooltipContext {
   if (own === undefined) return { flag, viewer: null, shopOpen };
+  const inBag = flag !== 'shop' && own.inventory?.get(item.objectId)?.itemId === item.itemId;
+  const visPet = inBag ? own.visPetOf(item.objectId) : undefined;
+  const active = own.visPetItem();
+  const activeVisPet = active === undefined ? undefined : own.visPetOf(active.objectId);
   const worn = (part: number): InventoryItem | undefined => {
     const id = own.equipmentObjectIds[part];
     return id === undefined || id === NO_ITEM ? undefined : own.inventory?.get(id);
@@ -35,6 +40,7 @@ export function ownTooltipContext(
   return {
     flag, viewer: { sex: own.sex, job: own.job, level: own.level }, worn,
     isWorn: own.equipmentObjectIds.includes(item.objectId), shopOpen, countOf, ...(hasBuff !== undefined ? { hasBuff } : {}),
+    now: own.clock(), ...(visPet !== undefined ? { visPet } : {}), ...(activeVisPet !== undefined ? { activeVisPet } : {}),
   };
 }
 
