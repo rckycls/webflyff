@@ -38,6 +38,14 @@ export function weaponOption(packed: number): WeaponOption {
 
 /** `MAX_PARTS_FIRE`: the points along the line (`g_Option.m_nSfxLevel` 5). */
 export const GLOW_POINTS = 28;
+/**
+ * 2026-11-09: `MAX_PARTS_FIRE` and `MAX_PARTS_FIRE_2` (`ModelGlobal.h:144-146`): the first stream's and the element
+ * stream's effects a hand keeps at once (`CPartsFire::m_pList`, `m_pList_2`). `Create` fills a free slot or does nothing,
+ * and a slot frees only when its effect is over (`CPartsFire::Render`, ModelGlobal.cpp:399-460). The glow files loop
+ * (`repeat`), so the first 28 and 16 stay for as long as the hand holds that kind of glow.
+ */
+export const GLOW_SLOTS = 28;
+export const GLOW_SLOTS_2 = 16;
 /** propEnchant.inc's `NORMAL_SCAL` and `ALL_SCAL`: the effects' size by the upgrade +1 to +10. */
 const NORMAL_SCAL = [0, 0, 0, 0, 0, 0.3, 0.4, 0.5, 0.6, 0.7];
 const ULTIMATE_SCAL = [0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1, 1.1, 1.2];
@@ -53,6 +61,8 @@ const SECOND: readonly (number | null)[] = [null, 1070, 1076, null, 1083, 1101];
 
 /** What a weapon glows with: its first stream's effect and size, and the element stream's effect; null for none. */
 export interface Glow {
+  /** `nType` (`PE_GEN` ... `PE_EARTH_AL`): the element, plus 6 for an Ultimate. A new kind starts the hand's slots over. */
+  kind: number;
   first: { xi: number; scale: number } | null;
   second: number | null;
 }
@@ -80,7 +90,7 @@ export function glowOf(prop: Pick<WebItemProp, 'referStat1'>, option: WeaponOpti
   const base = (ultimate ? FIRST_ULTIMATE : FIRST)[element]!;
   const first = scale > 0 ? { xi: base + Math.max(elementLevel, 1) - 1, scale } : null;
   const second = element !== 0 && element !== ELEC && step > 0 ? SECOND[element]! + step : null;
-  return first === null && second === null ? null : { first, second };
+  return first === null && second === null ? null : { kind: (ultimate ? 6 : 0) + element, first, second };
 }
 
 /** The size of an effect at the fraction `t` of the line (CreateParticle's bands). */
@@ -104,17 +114,33 @@ export interface GlowEffect {
   pos: Vec3;
   scale?: number;
   place: () => { pos: Vec3; angle: number } | null;
+  /** Its slot frees when the effect is over (the effect manager's `ended`). */
+  ended: () => void;
+}
+
+/**
+ * A hand's `CPartsFire`: the kind it was made for and how many of its slots are taken. A new kind (the element or the
+ * Ultimate changed) deletes it and its effects (`CreateParticle`, ModelObject.cpp:1984-2000), as does putting the weapon
+ * away (`DestroyPart`, :496-504); here also a hand whose weapon no longer glows.
+ */
+interface Fire {
+  kind: number;
+  first: number;
+  second: number;
+  alive: boolean;
 }
 
 const point = new Vector3();
 
 /**
  * The glows of the movers in view: `tick` once a 60 Hz frame with each mover's held weapons; it walks each mover's
- * counter (one counter a model, as `m_nEffectCount`, stepped by each weapon) and every 4th frame makes the effects.
+ * counter (one counter a model, as `m_nEffectCount`, stepped by each weapon) and every 4th frame makes the effects into
+ * the hand's free slots.
  */
 export class WeaponGlows {
   private frame = 0;
   private readonly counters = new Map<number, number>();
+  private readonly fires = new Map<Object3D, Fire>();
 
   constructor(private readonly play: (effect: GlowEffect) => void) {}
 
@@ -122,25 +148,38 @@ export class WeaponGlows {
     this.frame++;
     const make = (this.frame & 3) === 0;
     const seen = new Set<number>();
+    const held = new Set<Object3D>();
     for (const [objectId, weapons] of weaponsOf) {
       seen.add(objectId);
       for (const weapon of weapons) {
         const forces = weapon.object.userData.forces as Vec3[] | undefined;
         if (forces === undefined || forces.length < 2) continue;
+        held.add(weapon.object);
+        let fire = this.fires.get(weapon.object);
+        if (fire !== undefined && fire.kind !== weapon.glow.kind) fire.alive = false;
+        if (fire === undefined || !fire.alive) {
+          fire = { kind: weapon.glow.kind, first: 0, second: 0, alive: true };
+          this.fires.set(weapon.object, fire);
+        }
+        const lines = [[forces[0]!, forces[1]!]];
+        if (forces.length >= 4 && forces[2]![0] !== 0 && forces[3]![0] !== 0) lines.push([forces[2]!, forces[3]!]);
+        const { first, second } = weapon.glow;
         const count = this.counters.get(objectId) ?? 0;
         if (count >= GLOW_POINTS) {
-          this.counters.set(objectId, 0); // the frame the counter starts over makes nothing that shows
+          this.counters.set(objectId, 0);
+          // the frame the counter starts over: `Create` at the line's (0, 0, 0) with a scale of 0, an effect that never
+          // shows and keeps its slot, one for each line
+          if (make && first !== null) fire.first = Math.min(GLOW_SLOTS, fire.first + lines.length);
           continue;
         }
         this.counters.set(objectId, count + 1);
         if (!make) continue;
         const t = count / GLOW_POINTS;
-        const lines = [[forces[0]!, forces[1]!]];
-        if (forces.length >= 4 && forces[2]![0] !== 0 && forces[3]![0] !== 0) lines.push([forces[2]!, forces[3]!]);
+        const owner = fire;
         for (const [from, to] of lines) {
           const at = lerp(from!, to!, t);
           const follow = (): { pos: Vec3; angle: number } | null => {
-            if (weapon.object.parent === null) return null; // the weapon was put away or its mover is gone
+            if (!owner.alive || weapon.object.parent === null) return null; // a new kind, or the weapon was put away
             weapon.object.updateWorldMatrix(true, false);
             const web = toWebPosition(at);
             point.set(web[0], web[1], web[2]).applyMatrix4(weapon.object.matrixWorld);
@@ -148,13 +187,23 @@ export class WeaponGlows {
           };
           const start = follow();
           if (start === null) continue;
-          const { first, second } = weapon.glow;
-          if (first !== null) this.play({ xi: first.xi, pos: start.pos, scale: bandScale(t) * first.scale, place: follow });
-          if (second !== null && t > 0.1 && t < 0.93) this.play({ xi: second, pos: start.pos, place: follow });
+          if (first !== null && owner.first < GLOW_SLOTS) {
+            owner.first++;
+            this.play({ xi: first.xi, pos: start.pos, scale: bandScale(t) * first.scale, place: follow, ended: () => { owner.first--; } });
+          }
+          if (second !== null && t > 0.1 && t < 0.93 && owner.second < GLOW_SLOTS_2) {
+            owner.second++;
+            this.play({ xi: second, pos: start.pos, place: follow, ended: () => { owner.second--; } });
+          }
         }
       }
     }
     for (const id of this.counters.keys()) if (!seen.has(id)) this.counters.delete(id);
+    for (const [object, fire] of this.fires) {
+      if (held.has(object)) continue;
+      fire.alive = false;
+      this.fires.delete(object);
+    }
   }
 }
 

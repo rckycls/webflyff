@@ -197,6 +197,11 @@ export interface EffectRequest {
    * gives (D3D) and turned to its angle (`SetAngle( -mover.GetAngle() )`), not lifted; gone when it gives null.
    */
   place?: () => { pos: Vec3; angle: number } | null;
+  /**
+   * 2026-11-09: called once when the effect is gone (over, dropped, or never started: an unknown id, a file that cannot
+   * be had), for a caller that keeps a fixed number of them, as `CPartsFire` keeps its slots.
+   */
+  ended?: () => void;
 }
 
 /** One effect in the world: a `CSfx`. */
@@ -223,6 +228,8 @@ interface Playing {
   then: EffectRequest | null;
   /** 2026-11-05: `EffectRequest.place`. */
   place: (() => { pos: Vec3; angle: number } | null) | null;
+  /** 2026-11-09: `EffectRequest.ended`. */
+  ended: (() => void) | null;
 }
 
 /**
@@ -278,12 +285,16 @@ export class EffectManager {
    * at once.
    */
   play(given: EffectRequest): void {
-    if (given.xi <= 0) return;
+    if (given.xi <= 0) {
+      given.ended?.();
+      return;
+    }
     // a copy: an effect that waits for its file reads the request when the file arrives, not when it was played
     const request: EffectRequest = { ...given, pos: [given.pos[0], given.pos[1], given.pos[2]] };
     const ref = this.data.effects.get(request.xi);
     if (ref === undefined) {
       this.reportOnce(`xi ${request.xi}`, `effect XI ${request.xi}: not in the effects index`);
+      request.ended?.();
       return;
     }
     this.made?.(request.xi, request.pos);
@@ -294,6 +305,7 @@ export class EffectManager {
     }
     void this.file(ref.effect).then((effect) => {
       if (effect !== null) this.start(effect, ref.effect, request, ref.scale);
+      else request.ended?.();
     });
   }
 
@@ -304,7 +316,8 @@ export class EffectManager {
    */
   step(find: (objectId: number) => { pos: Vec3 } | undefined): void {
     const next: EffectRequest[] = [];
-    this.effects = this.effects.filter((effect) => {
+    const before = this.effects;
+    this.effects = before.filter((effect) => {
       effect.frame++;
       if (effect.whileTrue !== null) {
         if (!effect.whileTrue()) return false; // CSfxReady::Process: the cast is over
@@ -334,6 +347,10 @@ export class EffectManager {
       }
       return true;
     });
+    if (this.effects.length !== before.length) {
+      const kept = new Set(this.effects);
+      for (const effect of before) if (!kept.has(effect)) effect.ended?.();
+    }
     for (const request of next) this.play(request);
   }
 
@@ -473,9 +490,11 @@ export class EffectManager {
         lift: request.place !== undefined ? 0 : request.lift ?? (plain ? DRAWN_LIFT : 0),
         then: request.then ?? null,
         place: request.place ?? null,
+        ended: request.ended ?? null,
       });
     } catch (error) {
       this.reportOnce(`start ${key}`, `effect ${key}: ${messageOf(error)}`);
+      request.ended?.();
     }
   }
 

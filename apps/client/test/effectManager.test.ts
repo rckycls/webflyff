@@ -204,6 +204,23 @@ describe('EffectManager: following (CSfx::Process, SfxObj.cpp:134-238)', () => {
     expect(r.manager.count()).toBe(0);
   });
 
+  it('says once when an effect is gone (2026-11-09, ended): dropped, over, or an id the index lacks', async () => {
+    const r = rig();
+    const ended: string[] = [];
+    let at: { pos: [number, number, number]; angle: number } | null = { pos: [1, 2, 3], angle: 0 };
+    await play(r, { xi: Xi.GEN_LEVEL_UP01, pos: [0, 0, 0], whileTrue: () => true, place: () => at, ended: () => ended.push('placed') });
+    await play(r, { xi: Xi.GEN_LEVEL_UP01, pos: [0, 0, 0], seconds: 1, ended: () => ended.push('timed') });
+    steps(r, 1, nobody);
+    expect(ended).toEqual([]);
+    at = null;
+    steps(r, 1, nobody);
+    expect(ended).toEqual(['placed']);
+    steps(r, 120, nobody);
+    expect(ended).toEqual(['placed', 'timed']);
+    r.manager.play({ xi: 999_999, pos: [0, 0, 0], ended: () => ended.push('unknown') });
+    expect(ended).toEqual(['placed', 'timed', 'unknown']);
+  });
+
   it('an effect with whileTrue still ends with the mover it follows', async () => {
     const r = rig();
     await play(r, { xi: Xi.GEN_LEVEL_UP01, pos: [0, 0, 0], followId: 7, whileTrue: () => true });
