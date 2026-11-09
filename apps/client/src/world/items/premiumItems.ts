@@ -29,8 +29,8 @@ const EXT_ITEM = 21;
 const EXT_PET = 19;
 /** The upgrade cursor's kinds (`WndField.cpp:2351-2386`): ELECARD 37, PIERDICE 61, SOCKETCARD 62 and 2 63, RANDOM_SCROLL 101, ENCHANT 119. */
 const UPGRADE_IK3: ReadonlySet<number> = new Set([37, 61, 62, 63, 101, 119]);
-/** Kinds whose use needs a system the browser lacks: EGG 120 (the raised pet), VIS 138 (the buff pet's vis). */
-const WINDOW_IK3: ReadonlySet<number> = new Set([120, 138]);
+/** Kinds whose use needs a system the browser lacks: VIS 138 (the buff pet's vis). */
+const WINDOW_IK3: ReadonlySet<number> = new Set([138]);
 /**
  * 2026-11-09 (pets P1): `IK3_PET`, a pick-up pet (and a buff pet). Whatever its kind2, the bag sends DOUSEITEM
  * (`WndField.cpp:2635-2642`) and the server summons or recalls it (`CMover::DoUseItem`, `MoverSkill.cpp:1704-1705`,
@@ -38,6 +38,12 @@ const WINDOW_IK3: ReadonlySet<number> = new Set([120, 138]);
  * messages walk; the client needs nothing more for it (docs/superpowers/specs/2026-11-09-pets-research.md §3).
  */
 const IK3_PET = 100;
+/**
+ * 2026-11-09 (pets R2): `IK3_EGG`, the raised pet's egg and the hatched pets. The bag sends a plain DOUSEITEM and the
+ * server summons or recalls it (`CMover::DoUseItem`, `MoverSkill.cpp:1701-1702`, `DoUseSystemPet` :4025-4031); a dead
+ * one's `TID_GAME_PET_DEAD` is the server's answer. The client makes the pet's mover itself (pets R1).
+ */
+const IK3_EGG = 120;
 /**
  * The items whose use opens a window the browser lacks (`SendDoUseItem`, `CWndInventory`): class change 10425 (whose
  * server handler is off), guild name 10463, Custody 15083, hair 26410 and face 26411 coupons, the character seal 26475 and
@@ -91,7 +97,7 @@ export function useOf(prop: WebItemProp): UseOf {
   if (prop.exeTarget === EXT_ITEM || UPGRADE_IK3.has(prop.kind3)) return 'needsItem';
   if (WINDOW_IDS.has(prop.id) || WINDOW_IK3.has(prop.kind3) || prop.exeTarget === EXT_PET) return 'noWindow';
   if (windowOf(prop) !== null) return 'window'; // 2026-11-05: itemWindows.ts
-  if (prop.kind3 === IK3_PET) return 'use'; // 2026-11-09: pets P1
+  if (prop.kind3 === IK3_PET || prop.kind3 === IK3_EGG) return 'use'; // 2026-11-09: pets P1, R2
   return USE_KINDS.has(prop.kind2) || prop.skillTime !== undefined ? 'use' : 'none';
 }
 

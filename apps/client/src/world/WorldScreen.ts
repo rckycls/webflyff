@@ -126,6 +126,7 @@ import { WeaponGlows, glowOf, weaponOption } from './render/weaponGlow';
 import { ParticleLayer } from './render/ParticleLayer';
 import { PetParticles, createPetParticle } from './pets/petParticles';
 import { isClientMade } from './pets/raisedPet';
+import { petBuffTooltip } from './pets/petStatus';
 import type { GlowingWeapon, WeaponOption } from './render/weaponGlow';
 import type { UpgradeNpcHost } from './items/upgradeNpcWindows';
 import { ItemWindowFlows } from './items/itemWindowFlows';
@@ -407,6 +408,8 @@ export class WorldScreen {
   private lastTagCheck = 0;
   /** 2026-11-05: the ticket in use (`CMover::GetTicket`), drawn faded in the bag. */
   private ticketInUse: number | null = null;
+  /** 2026-11-09 (pets R2): the summoned raised pet's bag slot the bag was last drawn with (`GetPetId()`, drawn faded). */
+  private bagPetSlot: number | null = null;
   /** The authorization the chat's suggestions were last given (2026-11-05). */
   private chatAuthorization = -1;
   private speechBubbles: SpeechBubbleLayer | undefined;
@@ -1050,6 +1053,13 @@ export class WorldScreen {
       items: this.data!.itemProps, onReturnScroll: () => this.returnScroll?.goBack(), now: () => performance.now(),
       texts: (tid) => this.data?.texts.get(tid)?.text, place: this.buffPlace, onPlace: (at) => { this.buffPlace = at; },
       onPartySummon: () => this.itemWindows?.partySummonBuff(),
+      // 2026-11-09 (pets R2): BUFF_PET's icon by the own pet's level, and its tooltip (PutPetTooltipInfo)
+      petLevel: () => this.own?.petItem()?.pet?.level ?? null,
+      petTooltip: () => {
+        const item = this.own?.petItem();
+        const prop = item === undefined ? undefined : this.data?.itemProps.get(item.itemId);
+        return item === undefined || prop === undefined || this.data === undefined ? null : petBuffTooltip(item, prop, this.data);
+      },
     });
     this.targetBuffs = new TargetBuffs(this.hudArt!, doc);
     this.hud!.element.append(this.buffStatus.element, this.targetBuffs.element);
@@ -1292,8 +1302,12 @@ export class WorldScreen {
       held: (id) => this.bagHeld(id),
       closed: () => { this.upgradeNpc?.piercing.dismiss(); this.upgradeNpc?.safety.dismiss(); },
       reservedCount: (id) => (this.bagDieFlag ? this.bagReserved.get(id) ?? 0 : 0),
-      inUse: (id) => id === this.ticketInUse,
+      // 2026-11-09 (pets R2): and the summoned raised pet's item (`g_pPlayer->GetPetId()`, WndItemCtrl.cpp:472-487)
+      inUse: (id) => id === this.ticketInUse || id === this.own?.petSlot,
       hammer: () => this.upgrade?.active === true,
+      // 2026-11-09 (pets R2): the own buffs, for the feed pocket's tooltip (PutPetFeedPocket)
+      hasBuff: (buffType, id) => this.world?.self()?.buffs.list(this.world.nowMs())
+        .some((buff) => buff.buffType === buffType && buff.id === id) === true,
       drop: (id, count) => {
         if (this.dialog?.frame.isOpen === true) return; // no drop while the dialogue is open (DPClient.cpp:9378-9382)
         this.sounds?.drop();
@@ -2239,6 +2253,12 @@ export class WorldScreen {
       self.buffs.list(buffNow).filter((b) => b.buffType === 0).map((b) => b.id)) : null;
     if (ticket !== this.ticketInUse) {
       this.ticketInUse = ticket;
+      if (this.own) this.inventoryWindow?.update(this.own, true);
+    }
+    // 2026-11-09 (pets R2): the summoned raised pet's item, drawn faded, likewise
+    const petSlot = this.own?.petSlot ?? null;
+    if (petSlot !== this.bagPetSlot) {
+      this.bagPetSlot = petSlot;
       if (this.own) this.inventoryWindow?.update(this.own, true);
     }
     if (this.own) this.inventoryWindow?.update(this.own);

@@ -19,9 +19,15 @@
 // - Each item buff has its time under it in `RenderOptBuffTime`'s units (`WndWorld.cpp:9315-9336, 11197-11227`); the ES
 //   scrolls of a kind share one icon (`RenderExpBuffIcon`, :10236-10517); the premium timers (SM modes) follow the item
 //   buffs (`RenderSMBuff`, :10519-10624).
+//
+// 2026-11-09 (pets R2): the raised pet's `BUFF_PET` (2), whose id is the pet's item, with the item's icon by the own pet's
+// level (`GetSystemPetTextureKey`, `WndWorld.cpp:9160-9182`, :9219-9228; petBuffIcon), no time and no blinking (its total
+// is 0), and the pet's tooltip (`PutPetTooltipInfo`, :9371-9379). The item buffs are now in the buffs' map order
+// (`MAKELONG( id, type )`, `buff.h:212`): the BUFF_ITEMs by id, the pet's, then the BUFF_ITEM2s by id.
 
 import type { WebItemProp, WebSkill } from '@flyffweb/formats';
 import type { BuffShown } from '../buffs';
+import { petBuffIcon } from '../pets/petStatus';
 import type { UiArt } from './art';
 import { formatText } from './format';
 import { layoutBottomOf } from './frame';
@@ -31,6 +37,9 @@ const BUFF_SKILL = 1;
 /** Piece 7 M3: `BUFF_ITEM` and `BUFF_ITEM2`: an item's buffs, shown with the item's icon. */
 const BUFF_ITEM = 0;
 const BUFF_ITEM2 = 3;
+/** 2026-11-09 (pets R2): `BUFF_PET` (`_Common/SkillInfluence.h:6`), the raised pet's stat, and `IK3_EGG`. */
+const BUFF_PET = 2;
+const IK3_EGG = 120;
 /** `II_SYS_SYS_SCR_RETURN`: its icon always blinks, and its double-click goes back. */
 const RETURN_SCROLL = 10469;
 /** 2026-11-05: `II_SYS_SYS_SCR_PARTYSUMMON`: a party member's summon buff, whose double-click asks to go to the leader. */
@@ -40,7 +49,7 @@ const DOUBLE_TAP_MS = 500;
 /** An item buff of `dwSkillTime` 999999999 shows no time (`WndWorld.cpp:9318`). */
 const ENDLESS_MS = 999_999_999;
 
-export type ItemsOf = ReadonlyMap<number, Pick<WebItemProp, 'name' | 'icon'> & { circleTime?: number }>;
+export type ItemsOf = ReadonlyMap<number, Pick<WebItemProp, 'name' | 'icon'> & { circleTime?: number; kind3?: number }>;
 
 /** A premium timer (`m_dwSMTime[type]`): its `SM_*` type and the seconds it has left. */
 export interface SmShown { type: number; seconds: number }
@@ -183,6 +192,10 @@ export interface BuffStatusOptions {
   onPlace?: (at: { x: number; y: number }) => void;
   /** The room the task bar takes off the layer's bottom; by default the windows' (`setLayoutBottom`). */
   layoutBottom?: () => number;
+  /** 2026-11-09 (pets R2): the own summoned raised pet's level (`g_pPlayer->GetPet()->GetLevel()`), null for none. */
+  petLevel?: () => number | null;
+  /** 2026-11-09 (pets R2): the own pet item's tooltip (`PutPetTooltipInfo( GetPetItem() )`), null with none. */
+  petTooltip?: () => string[] | null;
 }
 
 /** The time units under an item's icon (`RenderOptBuffTime`, `WndWorld.cpp:11197-11227`). */
@@ -278,15 +291,24 @@ export class BuffStatus {
     };
   }
 
-  /** The item buffs in their order, the ES scrolls of a kind as one icon where the first of them is. */
+  /**
+   * The item buffs in the map's order (`MAKELONG( id, type )`: by type, then id), the ES scrolls of a kind as one icon
+   * where the first of them is, the raised pet's among them (2026-11-09).
+   */
   private itemLooks(buffs: readonly BuffShown[], level: number): Look[] {
     const items = this.options.items;
     if (items === undefined) return [];
-    const shown = buffs.filter((b) => (b.buffType === BUFF_ITEM || b.buffType === BUFF_ITEM2) && items.has(b.id))
-      .sort((a, b) => a.id - b.id);
+    const shown = buffs
+      .filter((b) => (b.buffType === BUFF_ITEM || b.buffType === BUFF_ITEM2 || b.buffType === BUFF_PET) && items.has(b.id))
+      .sort((a, b) => a.buffType - b.buffType || a.id - b.id);
     const looks: Look[] = [];
     const esDone = new Set<number>();
     for (const buff of shown) {
+      if (buff.buffType === BUFF_PET) {
+        const look = this.petLook(buff, items.get(buff.id)!);
+        if (look !== null) looks.push(look);
+        continue;
+      }
       const kind = ES_KINDS.find((k) => k.ids.includes(buff.id));
       if (kind !== undefined) {
         if (esDone.has(kind.base)) continue;
@@ -306,6 +328,22 @@ export class BuffStatus {
       });
     }
     return looks;
+  }
+
+  /**
+   * 2026-11-09 (pets R2): a `BUFF_PET` (`RenderBuffIcon`, `WndWorld.cpp:9219-9228`): the texture of
+   * `GetSystemPetTextureKey`, none of which leaves the icon out (`pp == NULL`, :9230-9231; Neuz keeps its place empty);
+   * no time and no blinking (`GetTotal()` is 0, :9239-9246); an `IK3_EGG` item's tooltip is the own pet item's
+   * (`PutPetTooltipInfo`, :9371-9379), else the item's name.
+   */
+  private petLook(buff: BuffShown, item: ItemsOf extends ReadonlyMap<number, infer I> ? I : never): Look | null {
+    const icon = petBuffIcon({ id: buff.id, icon: item.icon, kind3: item.kind3 ?? -1 }, this.options.petLevel?.() ?? null);
+    if (icon === null) return null;
+    return {
+      key: `${BUFF_PET}:${buff.id}:${icon}`, name: item.name, icon, copies: 0, harmful: false,
+      tooltip: () => (item.kind3 === IK3_EGG ? this.options.petTooltip?.() : null) ?? [item.name],
+      blink: 'never', blinkLeftMs: Infinity, blinkUnderMs: 0, label: null, goesBack: false,
+    };
   }
 
   /** `RenderExpBuffIcon`: one icon of the kind's first id, the copies under it, the bonus and each one's time. */

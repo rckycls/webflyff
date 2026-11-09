@@ -32,8 +32,8 @@ describe('useOf: what Neuz sends DOUSEITEM for', () => {
     for (const id of [10463, 15083, 26410, 26411, 26475, 26476, 20039, 10425]) {
       expect(useOf(prop({ id, kind2: 19 })), String(id)).toBe('noWindow');
     }
-    // the raised pet (IK3_EGG 120) and the vis (IK3_VIS 138) wait for their windows (pets R1, B1)
-    for (const kind3 of [120, 138]) expect(useOf(prop({ kind2: 19, kind3 })), String(kind3)).toBe('noWindow');
+    // the vis (IK3_VIS 138) waits for its window (pets B1)
+    expect(useOf(prop({ kind2: 19, kind3: 138 }))).toBe('noWindow');
     // 2026-11-05: the windows the browser has (itemWindows.ts)
     for (const id of [10424, 10220, 26204, 26202, 20037]) expect(useOf(prop({ id, kind2: 19 })), String(id)).toBe('window');
     for (const kind3 of [85, 122]) expect(useOf(prop({ kind2: 19, kind3 })), String(kind3)).toBe('window');
@@ -46,6 +46,15 @@ describe('useOf: what Neuz sends DOUSEITEM for', () => {
     const pet = prop({ id: 30003, kind2: 1, kind3: 100 });
     expect(useOf(pet)).toBe('use');
     expect(usableFromBag(pet)).toBe(true);
+  });
+
+  it('a raised pet\'s egg or hatched pet (IK3_EGG 120, IK2_GENERAL) is used: DOUSEITEM summons or recalls it (pets R2)', () => {
+    // CMover::DoUseItem: IK3_EGG calls DoUseSystemPet (MoverSkill.cpp:1701-1702, :4025-4031)
+    for (const id of [21029, 21039]) {
+      const egg = prop({ id, kind2: 1, kind3: 120 });
+      expect(useOf(egg), String(id)).toBe('use');
+      expect(usableFromBag(egg), String(id)).toBe(true);
+    }
   });
 
   it('worn equipment is not used (the bag equips it)', () => {

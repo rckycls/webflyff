@@ -2295,6 +2295,14 @@ fieldset:disabled .btn {
    its count as ever */
 .hud-inventory[data-upgrading], .hud-inventory[data-upgrading] * { cursor: var(--hud-hammer, crosshair) !important; }
 .inventory-cell.is-in-use img { opacity: 0.235; }
+/* 2026-11-09 (pets R2): an expired item (a dead pet) is RanderIcon's Render2 with ARGB(alpha, 255, 100, 100): its icon times
+   that red, here a red multiplied over it in the icon's shape (WndItemCtrl.cpp:345-361) */
+.inventory-cell .inventory-expired {
+  position: absolute; left: 0; top: 0; width: 32px; height: 32px; pointer-events: none;
+  background: rgb(255, 100, 100); mix-blend-mode: multiply;
+  -webkit-mask-size: 32px 32px; mask-size: 32px 32px; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+}
+.inventory-cell.is-in-use .inventory-expired { opacity: 0.235; }
 .inventory-cell[data-upgrade-wait] { outline: 2px solid #ffd76a; animation: inventory-upgrade-wait 0.6s ease-in-out infinite; }
 @keyframes inventory-upgrade-wait { 50% { filter: brightness(1.9); } }
 /* 2026-11-05: an item buff's or premium timer's time, yellow (RenderOptBuffTime's ARGB 240, 240, 0) */
