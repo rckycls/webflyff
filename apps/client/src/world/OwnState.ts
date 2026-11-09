@@ -202,7 +202,13 @@ export class OwnState {
   inventory: Map<number, InventoryItem> | null;
   inventorySlots: number[];
   readonly equipmentObjectIds: number[];
+  /** Bumped when what the bag and the shop draw changes (an item, its count, id, level, name or flags). */
   inventoryRevision = 0;
+  /**
+   * 2026-11-09 (pets review): bumped when a raised pet's numbers change (PET_STATE, which the server sends about once a
+   * second, PET_SET_EXP, PET_FEED, and the rest): what the pet windows and an open tooltip draw, not the bag's cells.
+   */
+  petRevision = 0;
   gold = 0;
   readonly inventoryError: string | null;
   /** The shortcut bars, once the TASKBAR message after the ADD_OBJ has come. */
@@ -352,12 +358,20 @@ export class OwnState {
     if (item === undefined || itemId === null || itemId === item.itemId) return;
     this.inventory!.set(item.objectId, { ...item, itemId });
     this.inventoryRevision++;
+    this.petRevision++;
   }
 
-  /** The pet `item` carries is now `pet` (a new item: the old one and its pet are not changed in place). */
+  /**
+   * The pet `item` carries is now `pet` (a new item: the old one and its pet are not changed in place). 2026-11-09 (pets
+   * review): the pet's numbers are `petRevision`'s; the bag and the shop are drawn again (`inventoryRevision`) only when
+   * what they show changes: the icon by the level (`SetTexture`) and the "Cage" name by the kind, level and name
+   * (`GetName`). PET_STATE comes about once a second (`ProcessPetEnergy`, `Mover.cpp:11028-11112`).
+   */
   private setPet(item: InventoryItem, pet: PetData): void {
+    const old = item.pet;
     this.inventory!.set(item.objectId, { ...item, pet });
-    this.inventoryRevision++;
+    this.petRevision++;
+    if (old === undefined || old.level !== pet.level || old.kind !== pet.kind || old.name !== pet.name) this.inventoryRevision++;
   }
 
   /** `CPet::SetExp` (`pet.cpp:351-354`): at most `GetMaxExp()`, 50,000 for the egg and 100,000 for a pet. */

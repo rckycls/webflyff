@@ -13,7 +13,9 @@ import {
 } from '../src/world/pets/petStatus';
 import { II_PET_EGG } from '../src/world/pets/raisedPet';
 import { STARTER_EQUIPMENT } from './helpers/ownState';
-import { II_FEED_POCKET, II_TIGER, PETS, TIGER_C, art, ownAddObj, pet, petData, petItem, texts } from './helpers/petData';
+import {
+  EGG_SLOT, II_FEED_POCKET, II_TIGER, PETS, TIGER_C, art, ownAddObj, pet, petData, petItem, texts,
+} from './helpers/petData';
 
 afterEach(() => {
   document.body.replaceChildren();
@@ -125,6 +127,38 @@ describe('the pet item in the bag (CWndItemCtrl) and its tooltip (PutPetInfo, Pu
     expect(texts(itemTooltip(used, prop, data, on))).toEqual(['Pet Feed Pocket (Active)', 'Pet food count: 12', 'Eats the food in the bag.']);
     expect(texts(itemTooltip(used, prop, data, { ...on, hasBuff: () => false })))
       .toEqual(['Pet Feed Pocket (Inactive)', 'Eats the food in the bag.']);
+  });
+
+  it('is not drawn again for the pet\'s numbers (PET_STATE, PET_SET_EXP, PET_FEED); its open tooltip shows them', () => {
+    // the server sends PET_STATE about once a second (ProcessPetEnergy, Mover.cpp:11028-11112): the bag and the shop
+    // keep their cells, the tooltip and the Use/Equip panel; the name and level (SET_PET_NAME, PET) are the bag's
+    const data = petData();
+    const own = new OwnState(data, ownAddObj(TIGER_C, true), STARTER_EQUIPMENT);
+    const ui = new InventoryWindow(art, data, { use: vi.fn(), equip: vi.fn(), drop: vi.fn(), move: vi.fn(), shortcut: vi.fn() });
+    document.body.append(ui.frame.element);
+    ui.toggle(own);
+    const cell = cellOf(ui);
+    cell.dispatchEvent(new MouseEvent('mouseenter'));
+    const details = ui.frame.element.querySelector('.inventory-details')!;
+    expect(details.textContent).toContain('P.Hp : 150 / 300');
+    const revision = own.inventoryRevision, petRevision = own.petRevision;
+    own.apply({ type: 'petState', itemObjectId: EGG_SLOT, life: 3, energy: 120, exp: 12345 }, own.objectId);
+    own.apply({ type: 'petSetExp', exp: 20000 }, own.objectId);
+    own.apply({ type: 'petFeed', energy: 140 }, own.objectId);
+    expect(own.inventoryRevision).toBe(revision);
+    expect(own.petRevision).toBe(petRevision + 3);
+    ui.update(own);
+    expect(cellOf(ui)).toBe(cell);
+    expect(ui.frame.element.querySelector('.inventory-details')).toBe(details);
+    expect(details.textContent).toContain('P.Hp : 140 / 300');
+    expect(details.textContent).toContain('Exp : 20.00%');
+    own.apply({ type: 'setPetName', name: 'Tigger' }, own.objectId);
+    expect(own.inventoryRevision).toBe(revision + 1);
+    own.apply({ type: 'pet', pet: { ...TIGER_C, level: 3 }, flag: 1 }, own.objectId);
+    expect(own.inventoryRevision).toBe(revision + 2);
+    ui.update(own);
+    expect(cellOf(ui).getAttribute('aria-label')).toMatch(/^White Tiger Cage/); // PET's whole pet: its name ''
+    ui.dispose();
   });
 });
 
