@@ -77,14 +77,26 @@ test('the seller: an item up with its price, the shop named and opened, a sale, 
     await sell.locator('[data-control="WIDC_OK"]').click();
   } else {
     await expect(shop.locator('.vendor-phone-row')).toHaveCount(20);
-    // the phone: a tap on the potion in the bag puts it on the first free slot; the sheet's number fields
+    // the phone: the shop's only text field is its name (the phone keyboard comes up for it alone)
+    await expect(shop.locator('input, textarea')).toHaveCount(1);
+    // a tap on the potion in the bag puts it on the first free slot; the sheet has the in-game numpad and no text field
     await bag.locator('[data-bag-slot="6"]').tap();
     const sell = page.locator('.hud-vendor-sell');
     await expect(sell).toBeVisible();
-    await expect(sell.locator('input[name="quantity"]')).toHaveValue('5');
-    await expect(sell.locator('input[name="price"]')).toHaveAttribute('inputmode', 'numeric');
-    await sell.locator('input[name="price"]').fill('1000');
-    expect(await sell.locator('input[name="price"]').evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(14);
+    await expect(sell.locator('input, textarea')).toHaveCount(0);
+    expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe('INPUT');
+    await expect(sell.locator('[data-field="quantity"]')).toHaveText('5');
+    // Unit Price tapped, then 1 and 000 on the numpad
+    await sell.locator('[data-field="price"]').tap();
+    await expect(sell.locator('[data-field="price"]')).toHaveAttribute('aria-pressed', 'true');
+    await sell.locator('[data-pad-key="1"]').tap();
+    await sell.locator('[data-pad-key="000"]').tap();
+    await expect(sell.locator('[data-field="price"]')).toHaveText('1,000');
+    // keys a finger can press, their text 14 px or more
+    const key = sell.locator('[data-pad-key="5"]');
+    expect((await key.boundingBox())!.height).toBeGreaterThanOrEqual(40);
+    expect(await key.evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(14);
+    await page.screenshot({ path: info.outputPath('seller-numpad.png') });
     await sell.locator('[data-vendor-button="ok"]').tap();
   }
   await expect.poll(() => sent(gateway, VendorPacket.REGISTER_PVENDOR_ITEM).length).toBe(1);
@@ -191,8 +203,15 @@ test('the buyer: the balloon, the shop asked for, a buy with a quantity, the sho
     await expect(row.locator('.vendor-slot-name')).toContainText('x10');
     await row.tap();
     await expect(buy).toBeVisible();
-    await buy.locator('input[name="quantity"]').fill('1');
-    await expect(buy.locator('output').nth(1)).toHaveText('50');
+    // the in-game numpad, no text field: C, then 1
+    await expect(buy.locator('input, textarea')).toHaveCount(0);
+    await expect(buy.locator('[data-field="quantity"]')).toHaveText('10');
+    await expect(buy.locator('[data-field="total"]')).toHaveText('500');
+    await buy.locator('[data-pad-key="escape"]').tap();
+    await buy.locator('[data-pad-key="1"]').tap();
+    await expect(buy.locator('[data-field="quantity"]')).toHaveText('1');
+    await expect(buy.locator('[data-field="total"]')).toHaveText('50');
+    await page.screenshot({ path: info.outputPath('buyer-numpad.png') });
     await buy.locator('[data-vendor-button="ok"]').tap();
   }
   await expect.poll(() => sent(gateway, VendorPacket.BUY_PVENDOR_ITEM).length).toBe(1);

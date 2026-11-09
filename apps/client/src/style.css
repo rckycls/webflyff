@@ -2849,14 +2849,23 @@ fieldset:disabled .btn {
 .vendor-phone-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .vendor-phone-text .vendor-slot-name, .vendor-phone-text .vendor-slot-price { position: static; font-size: 14px; line-height: 17px; overflow: hidden; text-overflow: ellipsis; }
 .vendor-phone-row:not(.is-filled) .vendor-slot-name { color: #8c7b66; }
-.vendor-sheet { display: flex; flex-direction: column; gap: 6px; padding: 6px; box-sizing: border-box; font-size: 14px; }
-.vendor-sheet-row { display: flex; align-items: center; gap: 6px; font-size: 14px; color: #3d5f80; }
-.vendor-sheet-row > span:first-child { flex: 0 0 86px; }
-.vendor-sheet-row input { flex: 1; min-width: 0; height: 34px; box-sizing: border-box; font-size: 16px; padding: 2px 6px; border: 1px solid #c4bdb4; border-radius: 6px; background: #fffaf6; text-align: right; }
-.vendor-sheet-row output { flex: 1; text-align: right; font-size: 14px; color: #000000; }
-.vendor-sheet-minmax { display: flex; gap: 4px; }
-.vendor-sheet-buttons { display: flex; gap: 8px; justify-content: center; margin-top: auto; }
-.vendor-sheet-buttons button { min-width: 96px; min-height: 40px; }
+/* 2026-11-10 (the owner): the phone's keypad sheets: the values at the left (tapped to choose the one typed into), the
+   in-game numpad at the right in place of the phone keyboard; keys sized for a finger, text 14 px or more. */
+.vendor-sheet { display: flex; gap: 8px; padding: 6px; box-sizing: border-box; font-size: 14px; }
+.hud-vendor-sell:focus, .hud-vendor-buy:focus { outline: none; }
+.vendor-sheet-side { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.vendor-sheet-value { display: flex; flex-direction: column; gap: 2px; font-size: 14px; line-height: 17px; color: #3d5f80; }
+.vendor-sheet-value > :is(button, output) {
+  display: block; min-height: 34px; box-sizing: border-box; padding: 0 8px; border: 1px solid #c4bdb4; border-radius: 6px;
+  background: #fffaf6; color: #000000; font: 18px/32px Arial, sans-serif; text-align: right; text-shadow: none;
+  white-space: nowrap; overflow: hidden;
+}
+.vendor-sheet .vendor-sheet-value > button { background: #fffaf6; color: #000000; text-shadow: none; }
+.vendor-sheet .vendor-sheet-value > button[aria-pressed='true'] { border-color: #3d8bd6; box-shadow: inset 0 0 0 2px #3d8bd6; }
+.vendor-sheet-buttons { display: flex; gap: 8px; margin-top: auto; }
+.vendor-sheet-buttons button { flex: 1; min-height: 40px; }
+.vendor-numpad { flex: 0 0 auto; display: grid; grid-template-columns: repeat(var(--numpad-columns, 4), 50px); grid-auto-rows: 50px; gap: 4px; align-content: center; }
+.vendor-sheet .vendor-numpad button { min-height: 0; padding: 0; font: 18px Arial, sans-serif; touch-action: manipulation; }
 .vendor-chat-phone { display: flex; flex-direction: column; gap: 4px; padding: 4px; box-sizing: border-box; font-size: 14px; }
 .vendor-chat-phone .vendor-chat-tabs { position: relative; flex: 1; min-height: 0; }
 .vendor-chat-phone .vendor-chat-strip { height: 32px; }
@@ -2874,6 +2883,7 @@ fieldset:disabled .btn {
   :is(.hud-vendor, .hud-vendor-chat)[data-mobile-window] > .hud-window-title { height: 28px !important; font-size: 14px; line-height: 28px; background: linear-gradient(#fdf1e6, #e6c9b4); box-shadow: 0 1px 2px #795431; }
   :is(.hud-vendor, .hud-vendor-chat)[data-mobile-window] > .hud-window-body { left: 6px !important; top: 34px !important; width: calc(100% - 12px) !important; height: calc(100% - 42px) !important; }
   :is(.hud-vendor, .hud-vendor-chat)[data-mobile-window] > .hud-window-close { left: auto !important; right: 14px; }
-  .hud-vendor-sell, .hud-vendor-buy, .hud-vendor-sell :is(input, button), .hud-vendor-buy :is(input, button, output) { font-size: 14px; }
+  /* the keypad sheets over the bag (60) and the chat panel (61), which they open from */
+  .hud-vendor-sell, .hud-vendor-buy { font-size: 14px; z-index: 62 !important; }
   .world:has(.hud-vendor:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack) { visibility: hidden; }
 }
