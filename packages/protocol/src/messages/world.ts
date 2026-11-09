@@ -250,6 +250,9 @@ export type WorldPacket =
   | { type: 'makePetFeed'; materialObjectId: number; toolObjectId: number; count: number }
   | { type: 'petTamerMistake' | 'petTamerMiracle'; scrollObjectId: number }
   | { type: 'feedPocketInactive' | 'clearPetName' }
+  /** 2026-11-09 (pets B1): the buff pet window's vis out and swap (world/pets.ts). */
+  | { type: 'removeVis'; slot: number }
+  | { type: 'swapVis'; slot1: number; slot2: number }
   | { type: 'setPlayerName'; playerId: number; name: string }
   | { type: 'enchant' | 'piercing' | 'randomScroll'; targetId: number; materialId: number }
   | { type: 'doUseItemTarget'; materialId: number; targetId: number }
@@ -431,6 +434,14 @@ function decodeClientPacket(r: ArReader): WorldPacket {
     case PacketType.FEED_POCKET_INACTIVE: case PacketType.CLEAR_PET_NAME:
       r.expectEnd();
       return { type: packetType === PacketType.FEED_POCKET_INACTIVE ? 'feedPocketInactive' : 'clearPetName' };
+    case PacketType.VISPET_REMOVEVIS: { // 2026-11-09 (pets B1)
+      const slot = r.i32(); r.expectEnd();
+      return { type: 'removeVis', slot };
+    }
+    case PacketType.VISPET_SWAPVIS: {
+      const slot1 = r.i32(), slot2 = r.i32(); r.expectEnd();
+      return { type: 'swapVis', slot1, slot2 };
+    }
     case PacketType.REMOVEQUEST: {
       const questId = r.u32(); r.expectEnd();
       return { type: 'removeQuest', questId };

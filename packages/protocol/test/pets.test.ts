@@ -8,8 +8,9 @@ import {
 } from '@flyffweb/testkit';
 import type { ScriptMessage } from '@flyffweb/testkit';
 import {
-  ArReader, ArWriter, MessageType, NULL_ID, PacketType, WORLD_READERS, decodeWorldPacket, encodeClearPetName,
-  encodeFeedPocketInactive, encodeMakePetFeed, encodePetRelease, encodePetTamerMiracle, encodePetTamerMistake, encodeUsePetFeed,
+  ArReader, ArWriter, MAX_VIS, MessageType, NULL_ID, PacketType, WORLD_READERS, decodeWorldPacket, encodeClearPetName,
+  encodeFeedPocketInactive, encodeMakePetFeed, encodePetRelease, encodePetTamerMiracle, encodePetTamerMistake, encodeRemoveVis,
+  encodeSwapVis, encodeUsePetFeed,
   readBundle,
 } from '../src';
 import type { AddedMover, AddedPlayer, InventoryItem, OwnCharacter, PetData, WorldMessage } from '../src';
@@ -214,5 +215,37 @@ describe("the client's pet care packets (DPClient.cpp:16458-16498, :18441-18444;
     body(encodeClearPetName(), 0x8fffff01).expectEnd();
     expect(decodeWorldPacket(encodeFeedPocketInactive())).toEqual({ type: 'feedPocketInactive' });
     expect(decodeWorldPacket(encodeClearPetName())).toEqual({ type: 'clearPetName' });
+  });
+});
+
+describe("the buff pet window's vis packets (CDPClient::SendRemoveVis, SendSwapVis, DPClient.cpp:18988-19000; pets B1)", () => {
+  const body = (bytes: Uint8Array, type: number): ArReader => {
+    const r = new ArReader(bytes);
+    expect(r.u32()).toBe(0xffffffff); // DPID_UNKNOWN
+    expect(r.u32()).toBe(type);
+    return r;
+  };
+
+  it('VISPET_REMOVEVIS 0x88000000: the slot as an int (CDPSrvr::OnRemoveVis, DPSrvr.cpp:10061-10071)', () => {
+    const r = body(encodeRemoveVis(8), 0x88000000);
+    expect(r.i32()).toBe(8);
+    r.expectEnd();
+    expect(PacketType.VISPET_REMOVEVIS).toBe(0x88000000);
+    expect(decodeWorldPacket(encodeRemoveVis(3))).toEqual({ type: 'removeVis', slot: 3 });
+  });
+
+  it('VISPET_SWAPVIS 0x88000001: the two slots as ints, in order (CDPSrvr::OnSwapVis, DPSrvr.cpp:10073-10083)', () => {
+    const r = body(encodeSwapVis(0, 2), 0x88000001);
+    expect(r.i32()).toBe(0);
+    expect(r.i32()).toBe(2);
+    r.expectEnd();
+    expect(decodeWorldPacket(encodeSwapVis(4, 1))).toEqual({ type: 'swapVis', slot1: 4, slot2: 1 });
+  });
+
+  it('refuses a slot outside 0 to MAX_VIS - 1 (MAX_VIS 9, CmnHdr.h:568)', () => {
+    expect(MAX_VIS).toBe(9);
+    expect(() => encodeRemoveVis(9)).toThrow(RangeError);
+    expect(() => encodeRemoveVis(-1)).toThrow(RangeError);
+    expect(() => encodeSwapVis(0, 9)).toThrow(RangeError);
   });
 });

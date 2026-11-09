@@ -19,6 +19,9 @@ export const PacketType = {
   FEED_POCKET_INACTIVE: 0xf000f604,
   MAKE_PET_FEED: 0xf000f605,
   CLEAR_PET_NAME: 0x8fffff01,
+  /** 2026-11-09 (pets B1): the buff pet window's vis out and vis swap (`MsgHdr.h:804-805`, `__PETVIS`; world/pets.ts). */
+  VISPET_REMOVEVIS: 0x88000000,
+  VISPET_SWAPVIS: 0x88000001,
   /** 2026-11-05: the upgrade cursor's packets (`MsgHdr.h`; world/upgrade.ts). */
   ENCHANT: 0xf000b024,
   PIERCING: 0xf000b025,

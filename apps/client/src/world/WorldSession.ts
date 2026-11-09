@@ -11,6 +11,7 @@ import {
   encodeSummonFriendConfirm, encodeSummonFriendCancel, encodeDoUseItemInput, encodeChangeAttribute, encodeItemTransy,
   encodeCreateMonster, encodeRemoveQuest, encodeReturnScroll, encodeStateModeCancel, encodePetRelease,
   encodeUsePetFeed, encodeMakePetFeed, encodePetTamerMistake, encodePetTamerMiracle, encodeFeedPocketInactive, encodeClearPetName,
+  encodeRemoveVis, encodeSwapVis,
 } from '@flyffweb/protocol';
 import { encodeMagicAttack, encodeRangeAttack, encodeSfxClear, encodeSfxHit, encodeSfxId } from '@flyffweb/protocol';
 import {
@@ -157,6 +158,12 @@ export class WorldSession {
   sendPetTamerMiracle(scrollObjectId: number): void { this.playingCache()?.send(encodePetTamerMiracle(scrollObjectId)); }
   sendFeedPocketInactive(): void { this.playingCache()?.send(encodeFeedPocketInactive()); }
   sendClearPetName(): void { this.playingCache()?.send(encodeClearPetName()); }
+  /**
+   * 2026-11-09 (pets B1): the buff pet window's vis out, after its confirm box (`SendRemoveVis`), and a vis dragged to
+   * another slot (`SendSwapVis`, `DPClient.cpp:18988-19000`).
+   */
+  sendRemoveVis(slot: number): void { this.playingCache()?.send(encodeRemoveVis(slot)); }
+  sendSwapVis(slot1: number, slot2: number): void { this.playingCache()?.send(encodeSwapVis(slot1, slot2)); }
   sendNpcDialogOpen(id: number): void { this.playingCache()?.send(encodeNpcDialogOpen(id)); }
   sendNpcDialog(id: number, key: string, param: number, quest: number, playerId: number): void {
     this.playingCache()?.send(encodeNpcDialog(id, key, param, quest, playerId));

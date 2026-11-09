@@ -11,6 +11,7 @@
 //   CDPClient::SendPetRelease           Neuz/DPClient.cpp:16450-16454            the client's PET_RELEASE 0xf000f600 (R2)
 //   CDPClient::SendUsePetFeed .. SendFeedPocketInactive DPClient.cpp:16458-16498  USE_PET_FEED 0xf000f601 .. MAKE_PET_FEED 0xf000f605 (R3)
 //   CDPClient::SendClearPetName         Neuz/DPClient.cpp:18441-18444            CLEAR_PET_NAME 0x8fffff01 (R3)
+//   CDPClient::SendRemoveVis, SendSwapVis Neuz/DPClient.cpp:18988-19000          VISPET_REMOVEVIS 0x88000000, VISPET_SWAPVIS 0x88000001 (B1)
 
 import type { ArReader } from '../ar/ArReader';
 import { PacketType } from '../constants';
@@ -146,6 +147,35 @@ export function encodeFeedPocketInactive(): Uint8Array {
  */
 export function encodeClearPetName(): Uint8Array {
   return clientPacket(PacketType.CLEAR_PET_NAME).toBytes();
+}
+
+/** `MAX_VIS` (`_Network/CmnHdr.h:568`): a buff pet's vis slots, 0 to 8. */
+export const MAX_VIS = 9;
+
+/** A vis slot of the buff pet, 0 to `MAX_VIS` - 1. */
+function checkVisSlot(slot: number): void {
+  if (!Number.isInteger(slot) || slot < 0 || slot >= MAX_VIS) throw new RangeError('invalid vis slot');
+}
+
+/**
+ * 2026-11-09 (pets B1): `CDPClient::SendRemoveVis( nPos )` (`DPClient.cpp:18988-18993`, `__PETVIS`): the slot as an int,
+ * sent from the buff pet window's confirm box (`CWndConfirmVis::SendEquipPacket`, `_Interface/WndPetSys.cpp:2950`);
+ * `CDPSrvr::OnRemoveVis` (`WORLDSERVER/DPSrvr.cpp:10061-10071`) empties it (`CItemUpgrade::RemovePetVisItem`).
+ */
+export function encodeRemoveVis(slot: number): Uint8Array {
+  checkVisSlot(slot);
+  return clientPacket(PacketType.VISPET_REMOVEVIS).i32(slot).toBytes();
+}
+
+/**
+ * 2026-11-09 (pets B1): `CDPClient::SendSwapVis( nPos1, nPos2 )` (`DPClient.cpp:18995-19000`): a vis dragged from one slot
+ * of the buff pet window to another (`CWndBuffPetStatus::OnDropIcon`, `WndPetSys.cpp:2504-2515`); `CDPSrvr::OnSwapVis`
+ * (`DPSrvr.cpp:10073-10083`) answers with UPDATE_ITEM `UI_PETVIS_ITEMSWAP` (`WORLDSERVER/ItemUpgrade.cpp:1671-1681`).
+ */
+export function encodeSwapVis(slot1: number, slot2: number): Uint8Array {
+  checkVisSlot(slot1);
+  checkVisSlot(slot2);
+  return clientPacket(PacketType.VISPET_SWAPVIS).i32(slot1).i32(slot2).toBytes();
 }
 
 /** PET_RELEASE: `OnPetRelease` (`DPClient.cpp:16420-16448`): nothing more. */
