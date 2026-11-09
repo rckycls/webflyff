@@ -26,6 +26,12 @@ export const iconKeyOf = (iconFile: string): string => `ui/${webName(stem(iconFi
 export const itemIconKeyOf = (iconFile: string): string => `ui/item/${webName(stem(iconFile))}.png`;
 
 /**
+ * `ui/bare/<web name>.png` of a Client/Icon applet icon written without its frame (`stripIconFrame`, the UI stage's
+ * `BARE_ICONS`), which the phone's window shortcuts show (2026-11-10).
+ */
+export const bareIconKeyOf = (iconFile: string): string => `ui/bare/${webName(stem(iconFile))}.png`;
+
+/**
  * `ui/char/<web name>.png` of an NPC's dialogue picture (`m_szChar`, `char_Juria.tga`), as the UI stage writes the pictures
  * of Client/Char, where CWndDialog loads them from (`MakePath( "char\\", m_szChar )`, WndDialog.cpp:294).
  */

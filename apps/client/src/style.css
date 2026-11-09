@@ -1533,30 +1533,47 @@ fieldset:disabled .btn {
 }
 
 /* Touch actions: gilded rims and clear fantasy silhouettes, with native vector assets. */
+/* The phone's window shortcuts at the top right (MobileTools), 2026-11-10 (owner): the Start menu's icon of each window alone,
+   with no box or border; Stats, which has none, its text alone, outlined to read over the world. Each press area is at
+   least 60 x 48, taller and larger than the 32 px text buttons it replaces (Skill 47, Bag 45, Character 81, Stats 53 wide)
+   and on their middle line (24 px down); the icon is 32 px, or the whole multiple of it in device pixels that MobileTools
+   sets, unsmoothed. */
 .hud-mobile-tools { display: none; }
 .hud-mobile-tools > button {
-  min-height: 32px;
-  padding: 6px 10px;
-  border: 1px solid #d7b579;
-  border-radius: 8px;
-  background: #202e42e8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 60px;
+  height: 48px;
+  margin: 0;
+  padding: 0 8px;
+  border: 0;
+  background: none;
   color: #fff4d5;
-  font: 12px/1 Verdana, sans-serif;
+  font: 14px/1 Verdana, sans-serif;
+  text-shadow: 0 0 2px #000000, 0 0 2px #000000, 1px 1px 1px #000000;
   pointer-events: auto;
   touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
-.hud-mobile-tools > button:active { background: #465970; }
-.hud-mobile-tools > button:focus-visible { outline: 2px solid #c2e9ff; }
+.hud-mobile-tools > button:active { filter: brightness(1.4); }
+.hud-mobile-tools > button:focus-visible { outline: 2px solid #c2e9ff; outline-offset: -2px; }
+.hud-mobile-tool-icon {
+  flex: none;
+  width: var(--hud-mobile-icon, 32px);
+  height: var(--hud-mobile-icon, 32px);
+  background: no-repeat 0 0 / 100% 100%;
+  image-rendering: pixelated;
+}
 /* The floating bar's dimensions and safe-area centering come from its native layout. */
 /* The HUD is already above the home-indicator inset; cancel it for the bar alone. */
 .hud-taskbar.is-floating { bottom: calc(0px - var(--game-safe-bottom, 0px)); }
 @media (max-width: 1000px) and (pointer: coarse) {
   .hud-mobile-tools {
     display: flex;
-    gap: 6px;
     position: absolute;
     z-index: 50;
-    top: 8px;
+    top: 0;
     right: calc(var(--game-safe-right, 0px) + 12px);
   }
   .world #overlay > button:last-child { display: none; }

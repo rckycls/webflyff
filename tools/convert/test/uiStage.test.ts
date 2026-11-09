@@ -12,7 +12,7 @@ import { AssetWriter } from '../src/output/AssetWriter';
 import { Report } from '../src/output/Report';
 import { DEFAULT_STAGES } from '../src/run';
 import type { StageContext } from '../src/run';
-import { THEME_FILES, applyColorKey, createUiStage } from '../src/ui/uiStage';
+import { BARE_ICONS, THEME_FILES, applyColorKey, createUiStage, stripIconFrame } from '../src/ui/uiStage';
 import { makeTempDir, writeFakeClient } from './helpers/fakeClient';
 import { MAGENTA, bmp24, dds, solidDds, tga32 } from './helpers/images';
 import type { ReportJson, Run } from './helpers/worldRun';
@@ -163,6 +163,57 @@ describe('applyColorKey', () => {
     const original = image([MAGENTA]);
     applyColorKey(original, 0xffff00ff);
     expect(Array.from(original.data)).toEqual(MAGENTA);
+  });
+});
+
+/**
+ * A Start-menu applet icon as Client/Icon has it (Icon_Skill.dds and the others, 32 x 32): magenta outside, the rim (the top
+ * two rows, the left and right columns and the bottom row of the panel from (1, 1) to (30, 30)), the white panel, and a
+ * drawing: an ink square from (10, 10) to (20, 20) with white inside it.
+ */
+function framedIcon(): number[][] {
+  const pixels: number[][] = [];
+  for (let y = 0; y < 32; y++) {
+    for (let x = 0; x < 32; x++) {
+      if (x === 0 || y === 0 || x === 31 || y === 31) pixels.push(MAGENTA);
+      else if (y <= 2 || y === 30 || x === 1 || x === 30) pixels.push([255, 165, 140, 255]);
+      else if (x >= 10 && x <= 20 && y >= 10 && y <= 20) pixels.push(x === 10 || x === 20 || y === 10 || y === 20 ? [10, 20, 30, 255] : [255, 255, 255, 255]);
+      else pixels.push([255, 255, 255, 255]);
+    }
+  }
+  return pixels;
+}
+
+const imageOf = (pixels: number[][], width = 32, height = 32): RgbaImage =>
+  ({ width, height, data: Uint8Array.from(pixels.flat()) });
+const at = (image: RgbaImage, x: number, y: number): number[] => [...image.data.slice((y * image.width + x) * 4, (y * image.width + x) * 4 + 4)];
+
+describe('stripIconFrame (2026-11-10, the phone shortcuts: the icon alone)', () => {
+  it('clears the rim and the white panel around the drawing, and keeps the drawing and the white inside it', () => {
+    const bare = stripIconFrame(imageOf(framedIcon()));
+    for (const [x, y] of [[1, 1], [15, 1], [15, 2], [1, 15], [30, 15], [15, 30], [30, 30]]) expect(at(bare, x!, y!), `rim ${x},${y}`).toEqual([0, 0, 0, 0]);
+    for (const [x, y] of [[2, 3], [5, 5], [29, 29], [9, 15], [21, 15]]) expect(at(bare, x!, y!), `panel ${x},${y}`).toEqual([0, 0, 0, 0]);
+    expect(at(bare, 10, 10)).toEqual([10, 20, 30, 255]);
+    expect(at(bare, 20, 15)).toEqual([10, 20, 30, 255]);
+    expect(at(bare, 15, 15)).toEqual([255, 255, 255, 255]); // enclosed by the drawing: kept
+  });
+
+  it('leaves a picture of another size, or with no white panel, alone', () => {
+    const small = imageOf([[255, 255, 255, 255]], 1, 1);
+    expect(stripIconFrame(small)).toBe(small);
+    const noPanel = imageOf(Array.from({ length: 32 * 32 }, () => [1, 2, 3, 255]));
+    expect(stripIconFrame(noPanel)).toBe(noPanel);
+  });
+
+  it('does not change the picture it is given', () => {
+    const image = imageOf(framedIcon());
+    const before = [...image.data];
+    stripIconFrame(image);
+    expect([...image.data]).toEqual(before);
+  });
+
+  it('names the three icons of the phone shortcuts: Skill, Inventory, Character (FuncApplet.cpp:214, :210, :204)', () => {
+    expect(BARE_ICONS.map((file) => file.toLowerCase())).toEqual(['icon_skill.dds', 'icon_inventory.dds', 'icon_character.dds']);
   });
 });
 
@@ -370,6 +421,29 @@ describe('the UI stage on a small hand-made client', () => {
 
     expect(run.report.failures).toHaveLength(1);
     expect(run.report.failures[0]!.message).toMatch(/name collision on "ui\/itm_foo\.png"/);
+  });
+
+  it("writes a bare copy of the phone shortcuts' icons under ui/bare/, and the icon itself as before", async () => {
+    const run = await runUi({ 'Icon/icon_skill.dds': dds(32, 32, framedIcon()), 'Icon/Icon_Status.dds': dds(32, 32, framedIcon()) });
+    expect(run.report.failures).toEqual([]);
+    const full = await png(run, 'ui/icon_skill.png');
+    expect(pixel(full, 5, 5)).toEqual([255, 255, 255, 255]);
+    expect(pixel(full, 15, 1)).toEqual([255, 165, 140, 255]);
+    const bare = await png(run, 'ui/bare/icon_skill.png');
+    expect([bare.width, bare.height]).toEqual([32, 32]);
+    expect(pixel(bare, 5, 5)).toEqual([0, 0, 0, 0]);
+    expect(pixel(bare, 15, 1)).toEqual([0, 0, 0, 0]);
+    expect(pixel(bare, 10, 10)).toEqual([10, 20, 30, 255]);
+    // only the icons the shortcuts show
+    expect(run.writer.pathOf('ui/icon_status.png')).toBeDefined();
+    expect(run.writer.pathOf('ui/bare/icon_status.png')).toBeUndefined();
+  });
+
+  it('writes the bare copy with --only naming the icon', async () => {
+    const run = await runUi({ 'Icon/icon_skill.dds': dds(32, 32, framedIcon()) }, 'icon_skill');
+    expect(run.writer.pathOf('ui/icon_skill.png')).toBeDefined();
+    expect(run.writer.pathOf('ui/bare/icon_skill.png')).toBeDefined();
+    expect(run.writer.pathOf('ui/itm_foo.png')).toBeUndefined();
   });
 
   describe('--only', () => {
