@@ -2725,6 +2725,8 @@ fieldset:disabled .btn {
    pictures, tall enough for a finger; the quantity box's field 16 px (no zoom on focus) with the number keyboard. */
 @media (max-width: 1000px) and (pointer: coarse) {
   .world:has(.hud-trade:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack) { visibility: hidden; }
+  /* the request and the final box open over the phone's bag and the trade panel (both z-index 60), as Neuz's open on top */
+  :is(.hud-trade-request, .hud-trade-confirm) { z-index: 70 !important; }
   .hud-trade {
     left: 8px !important; top: 8px !important; transform: none !important; z-index: 60 !important;
     width: calc(100% - var(--bag-window-width, 60%) - 28px) !important; min-width: 344px;
