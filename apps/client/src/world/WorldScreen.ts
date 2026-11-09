@@ -122,6 +122,8 @@ import { UpgradeCursor } from './items/upgradeCursor';
 import { ConfirmBoxes, boxOf } from './items/confirmBoxes';
 import { ticketInUse } from './items/itemWindows';
 import { PiercingWindow, SmeltSafetyWindow } from './items/upgradeNpcWindows';
+import { WeaponGlows, glowOf, weaponOption } from './render/weaponGlow';
+import type { GlowingWeapon, WeaponOption } from './render/weaponGlow';
 import type { UpgradeNpcHost } from './items/upgradeNpcWindows';
 import { ItemWindowFlows } from './items/itemWindowFlows';
 import type { ItemWindowPacket } from './items/itemWindowFlows';
@@ -169,6 +171,10 @@ const GROUND_FOV = 45;
 /** 2026-11-05: the buff wings (`II_CHR_MAG_TRI_ANGELWING`, `II_SYS_SYS_EVE_WINGS`), their effect and its 1.1 s look. */
 const BUFF_WINGS: ReadonlySet<number> = new Set([10223, 6319]);
 const XI_NAT_WINGANGEL01 = 1095;
+/** `PARTS_LWEAPON`, `PARTS_RWEAPON`; `TRANSPARENT_MODE` (authorization.h): the glow's parts, and no glow while invisible. */
+const PARTS_LWEAPON = 9;
+const PARTS_RWEAPON = 10;
+const TRANSPARENT_MODE = 0x2;
 const WING_CHECK_MS = 1100;
 /** `MTI_STAND2` (`Resource/defineNeuz.h`): the female model's GenStand2, the sex change preview's pose (2026-11-05). */
 const MTI_STAND2 = 199;
@@ -387,6 +393,8 @@ export class WorldScreen {
   private bagDieFlag = false;
   /** 2026-11-05: the Upgrade Specialist's windows. */
   private upgradeNpc: { piercing: PiercingWindow; safety: SmeltSafetyWindow } | undefined;
+  /** 2026-11-09: the held weapons' upgrade and element glow (render/weaponGlow.ts). */
+  private readonly weaponGlows = new WeaponGlows((effect) => this.effects?.play(effect));
   /** 2026-11-05: the movers whose buff wings show (`m_pSfxWing`), and when they were last looked at. */
   private readonly wingEffects = new Set<number>();
   private lastWingCheck = 0;
@@ -1560,6 +1568,43 @@ export class WorldScreen {
     return true;
   }
 
+  /**
+   * 2026-11-09: the glow's frames (`CreateParticle` runs once a drawn frame): one a rules step, for the players in view
+   * holding a weapon, with each weapon's option (the own items' from the bag, the others' `m_aEquipInfo[].nOption`).
+   */
+  private tickGlows(steps: number): void {
+    const world = this.world, views = this.views, data = this.data;
+    if (world === undefined || views === undefined || data === undefined) return;
+    for (let i = 0; i < Math.min(steps, 4); i++) {
+      const weapons: Array<[number, GlowingWeapon[]]> = [];
+      for (const [id, mover] of world.movers) {
+        const player = mover.added.player;
+        if (player === undefined || (player.mode & TRANSPARENT_MODE) !== 0) continue;
+        const held = views.heldWeapons(id);
+        if (held.length === 0) continue;
+        const glowing: GlowingWeapon[] = [];
+        for (const { hand, object } of held) {
+          const part = hand === 'right' ? PARTS_RWEAPON : PARTS_LWEAPON;
+          let itemId: number | undefined, option: WeaponOption;
+          if (mover.isSelf) {
+            const item = this.own?.inventory?.get(this.own.equipmentObjectIds[part] ?? NULL_ID);
+            itemId = item?.itemId;
+            option = { upgrade: item?.abilityOption ?? 0, element: item?.resist ?? 0, elementLevel: item?.resistOption ?? 0 };
+          } else {
+            const worn = player.worn.find((w) => w.part === part);
+            itemId = worn?.itemId;
+            option = weaponOption(worn?.option ?? 0);
+          }
+          const prop = itemId === undefined ? undefined : data.itemProps.get(itemId);
+          const glow = prop === undefined ? null : glowOf(prop, option);
+          if (glow !== null) glowing.push({ object, glow });
+        }
+        if (glowing.length > 0) weapons.push([id, glowing]);
+      }
+      this.weaponGlows.tick(weapons);
+    }
+  }
+
   /** 2026-11-05: a window holds a bag item, or lets it go (`SetExtra`): the bag draws it faded and keeps it put. */
   private reserveItem(objectId: number, on: boolean): void {
     const count = (this.bagReserved.get(objectId) ?? 0) + (on ? 1 : -1);
@@ -1839,6 +1884,7 @@ export class WorldScreen {
       const steps = asked ?? 0;
       for (let i = 0; i < steps; i++) this.step(world, stage, views, now);
       views.update(world.movers, steps / STEPS_PER_SECOND);
+      this.tickGlows(steps); // 2026-11-09: the held weapons' upgrade and element glow
       // the mark goes once the walk to its point is over: arrived, or ended by a key, a stop or the server
       this.mark!.follow(world.self()?.dest?.pos ?? null);
 
@@ -1923,6 +1969,7 @@ export class WorldScreen {
       this.syncViews(); this.measureRadii(world, views);
       catchUp(steps, this.audio ? (on) => this.audio!.hold(on) : undefined, () => this.step(world, stage, views, now));
       views.update(world.movers, steps / STEPS_PER_SECOND);
+      this.tickGlows(steps); // 2026-11-09: the held weapons' upgrade and element glow
       stage.focus(this.ownAt());
     } catch (error) { this.reportOnce(`simulation: ${messageOf(error)}`, error instanceof Error ? error : new Error(String(error))); }
     // the rules steps share the page's thread with the frames: the next frame's `cpu` counts them

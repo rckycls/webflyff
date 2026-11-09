@@ -40,7 +40,7 @@
 
 import type { Document, Material, Mesh, Node, Skin } from '@gltf-transform/core';
 import { NO_BONE, flipWinding, toWebPosition, toWebQuaternion } from '@flyffweb/formats';
-import type { GmObject, MaterialBlock, ModelBoxExtras, MotionKey, O3dModel, Skeleton } from '@flyffweb/formats';
+import type { GmObject, MaterialBlock, ModelBoxExtras, MotionKey, O3dModel, Skeleton, Vec3 } from '@flyffweb/formats';
 import {
   IDENTITY,
   addAccessor,
@@ -272,7 +272,12 @@ class Materials {
 function modelBoxExtras(model: O3dModel): ModelBoxExtras {
   const [minX, minY, minZ] = model.bbMin;
   const [maxX, maxY, maxZ] = model.bbMax;
-  return { bbMin: [minX, minY, minZ], bbMax: [maxX, maxY, maxZ] };
+  // 2026-11-09: the sword-trail points of a weapon, for its upgrade and element glow (CModelObject::CreateParticle)
+  const forced = model.forces.length >= 2 && model.forces[0]![0] !== 0 && model.forces[1]![0] !== 0;
+  return {
+    bbMin: [minX, minY, minZ], bbMax: [maxX, maxY, maxZ],
+    ...(forced ? { forces: model.forces.map(([x, y, z]): Vec3 => [x, y, z]) } : {}),
+  };
 }
 
 /**

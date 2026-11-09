@@ -625,6 +625,18 @@ export class MoverViews {
     return spine === null || neck === null ? null : { spine, neck };
   }
 
+  /** 2026-11-09: the weapons a mover holds now (its right and left weapon parts, drawn), for their glow. */
+  heldWeapons(objectId: number): Array<{ hand: 'right' | 'left'; object: Object3D }> {
+    const view = this.views.get(objectId);
+    if (view === undefined || view.model === null) return [];
+    return view.held.flatMap((held) => (held.hand && held.item.parent !== null ? [{ hand: held.hand, object: held.item }] : []));
+  }
+
+  /** The movers with views, by object id. */
+  get objectIds(): IterableIterator<number> {
+    return this.views.keys();
+  }
+
   /**
    * 2026-11-05: where a mover's back is, in D3D (`GetEventPos( 0 )`: the skeleton's event 0 in Spine2's space, the buff
    * wings' effect's place, `CSfxRotate`, Sfx.cpp:3373-3432); null with no model or no such joint.

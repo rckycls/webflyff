@@ -206,6 +206,8 @@ function heldBy(worn: readonly WornPart[]): MoverLook['held'] {
 export interface HeldModel {
   model: string;
   slot: HeldSlot;
+  /** 2026-11-09: the weapon part it is (PARTS_RWEAPON or _LWEAPON, for its glow); null for a shield or a yoyo's copy. */
+  hand?: 'right' | 'left' | null;
 }
 
 /**
@@ -223,13 +225,16 @@ export function heldModels(held: MoverLook['held'], data: GameData): HeldModel[]
   const right = held.right === null ? undefined : data.itemProps.get(held.right);
   if (right?.model) {
     const { model } = right;
-    if (right.kind3 === Ik3.KNUCKLEHAMMER) out.push({ model, slot: 'knuckle' });
-    else if (right.kind3 === Ik3.BOW) out.push({ model, slot: 'left' });
-    else if (right.kind3 === Ik3.YOYO) out.push({ model, slot: 'right' }, { model, slot: 'left' });
-    else out.push({ model, slot: 'right' });
+    if (right.kind3 === Ik3.KNUCKLEHAMMER) out.push({ model, slot: 'knuckle', hand: 'right' });
+    else if (right.kind3 === Ik3.BOW) out.push({ model, slot: 'left', hand: 'right' });
+    else if (right.kind3 === Ik3.YOYO) out.push({ model, slot: 'right', hand: 'right' }, { model, slot: 'left', hand: null });
+    else out.push({ model, slot: 'right', hand: 'right' });
   }
   const left = held.left === null ? undefined : data.itemProps.get(held.left);
-  if (left?.model) out.push({ model: left.model, slot: left.part === Parts.SHIELD ? 'shield' : 'left' });
+  if (left?.model) {
+    const shield = left.part === Parts.SHIELD;
+    out.push({ model: left.model, slot: shield ? 'shield' : 'left', hand: shield ? null : 'left' });
+  }
   return out;
 }
 

@@ -127,7 +127,8 @@ function readPlayer(r: ArReader, self: boolean): AddedPlayer {
   r.i32(); // m_nFame
   r.u8(); // (u_char&)m_nDuel
   const honor = r.i32(); // int nTemp (__VER >= 13, __HONORABLE_TITLE)
-  r.bytes(4 * MAX_HUMAN_PARTS); // m_aEquipInfo[i].nOption (int)
+  // m_aEquipInfo[i].nOption (int): 2026-11-09 kept, the worn weapons' upgrade and element for their glow
+  const options = Array.from({ length: MAX_HUMAN_PARTS }, () => r.i32());
   r.i32(); // m_nGuildCombatState
   r.bytes(4 * SM_MAX); // m_dwSMTime[j] (DWORD)
 
@@ -149,7 +150,8 @@ function readPlayer(r: ArReader, self: boolean): AddedPlayer {
     const part = r.u8(); // uParts
     const itemId = r.u16(); // u2
     const flag = r.u8(); // m_aEquipInfo[uParts].byFlag
-    worn.push({ part, itemId, flag });
+    const option = options[part] ?? 0;
+    worn.push({ part, itemId, flag, ...(option !== 0 ? { option } : {}) });
   }
   r.u32(); // dwPetId (__VER >= 9, __PET_0410)
   r.string(MAX_PET_NAME); // szPetName (__PET_1024)

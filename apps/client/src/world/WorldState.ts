@@ -381,7 +381,9 @@ export class WorldState {
             player.worn = player.worn.filter((w) => w.part !== part);
             const exclusive = this.data.items.get(message.itemId)?.exclusive ?? -1;
             if (message.equip && exclusive >= 0) player.worn = player.worn.filter((w) => w.part !== exclusive);
-            if (message.equip) player.worn.push({ part, itemId: message.itemId, flag: message.flag });
+            if (message.equip) {
+              player.worn.push({ part, itemId: message.itemId, flag: message.flag, ...(message.option !== 0 ? { option: message.option } : {}) });
+            }
           }
           this.onEquipmentChange(mover);
         }

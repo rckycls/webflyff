@@ -180,6 +180,8 @@ export interface HeldItem {
   /** The glb's scene with its `lod0` alone, textured; the scene's userData has the item's box (`ModelBoxExtras`). */
   item: Object3D;
   slot: HeldSlot;
+  /** 2026-11-09: the weapon part it is, for its glow (`HeldModel.hand`). */
+  hand?: 'right' | 'left' | null;
   /** Gives the textures back to the cache and disposes the geometry and materials. Safe to call twice. */
   release(): void;
 }
@@ -196,7 +198,7 @@ export function loadHeldItems(
   const { store, loaders, textures } = services;
   const failed = new Set<string>();
   return async (look, report) => {
-    const items = await Promise.all(heldModels(look.held, data).map(async ({ model, slot }): Promise<HeldItem[]> => {
+    const items = await Promise.all(heldModels(look.held, data).map(async ({ model, slot, hand }): Promise<HeldItem[]> => {
       if (failed.has(model)) return [];
       try {
         const gltf = await loadGltf(store, loaders.gltf, model);
@@ -205,7 +207,7 @@ export function loadHeldItems(
         // the character view draws lod0 (assemble.ts), and so does the hand
         for (const child of [...gltf.scene.children]) if (child !== lod) child.removeFromParent();
         const keys = await applyTextures(lod, textures);
-        return [{ item: gltf.scene, slot, release: releaser(gltf.scene, keys, textures) }];
+        return [{ item: gltf.scene, slot, hand: hand ?? null, release: releaser(gltf.scene, keys, textures) }];
       } catch (error) {
         if (!failed.has(model)) report(`held item ${model}: ${messageOf(error)}`);
         failed.add(model);

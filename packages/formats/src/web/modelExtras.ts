@@ -15,6 +15,11 @@ import type { Vec3 } from '../binary/BinaryReader';
 export interface ModelBoxExtras {
   bbMin: Vec3;
   bbMax: Vec3;
+  /**
+   * 2026-11-09: a weapon's sword-trail points `m_vForce1..4` (D3D, as stored), written when the first two are set
+   * (`x != 0`, as `CreateParticle` tests them, ModelObject.cpp): the line the upgrade and element glow runs along.
+   */
+  forces?: Vec3[];
 }
 
 /**

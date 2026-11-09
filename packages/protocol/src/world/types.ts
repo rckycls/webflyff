@@ -326,7 +326,11 @@ export type MessageOf<T extends WorldMessage['type']> = Extract<WorldMessage, { 
  * player's parts carry `flag` (`m_byFlag`); an NPC's is 0. The player's own character has no such list: see
  * `AddedPlayer.equipmentObjectIds`.
  */
-export interface WornPart { part: number; itemId: number; flag: number }
+/**
+ * A part another player wears (`m_aEquipInfo`). `option`, when not 0, is its `nOption` (2026-11-09): the upgrade in the
+ * low byte, the element (`SAI79`) in bits 16-23, the element's level in bits 24-31 (MoverRender.cpp:75-77).
+ */
+export interface WornPart { part: number; itemId: number; flag: number; option?: number }
 
 /**
  * One slot of the own character's `m_aJobSkill` (a `SKILL`, `_Common/Item.h:308-314`: `DWORD dwSkill`, `DWORD
