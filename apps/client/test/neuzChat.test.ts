@@ -78,21 +78,24 @@ describe('NeuzChat: the window', () => {
     expect($(chat, '.neuz-chat-text').style.height).toBe(`${150 - 39}px`);
   });
 
-  it('Close hides it; Enter then does nothing; the Start menu\'s Chatting opens it again, where it was', () => {
+  it('Close hides it; Enter shows it again where it was, the line focused (2026-11-10, the owner\'s; Neuz does nothing)', () => {
     const { chat } = make();
     $<HTMLButtonElement>(chat, '[aria-label="Close"]').click();
-    expect(chat.element.hidden).toBe(true);
-    chat.open(true);
     expect(chat.element.hidden).toBe(true);
     chat.open();
     expect(chat.element.hidden).toBe(false);
     expect(chat.element.style.top).toBe(`${720 - 128}px`);
     expect(document.activeElement).toBe(input(chat));
+    // the Start menu's Chatting does the same
+    $<HTMLButtonElement>(chat, '[aria-label="Close"]').click();
+    chat.open();
+    expect(chat.element.hidden).toBe(false);
+    expect(document.activeElement).toBe(input(chat));
   });
 
   it('Escape, even while typing, closes the window on top: the chat, the line given up (Neuz.cpp:1222-1231, GetWndBase)', () => {
     const { chat } = make();
-    chat.open(true);
+    chat.open();
     expect(chat.typing).toBe(true);
     key(input(chat), 'Escape');
     expect(chat.element.hidden).toBe(true);
@@ -103,7 +106,7 @@ describe('NeuzChat: the window', () => {
     const worldKey = vi.fn();
     window.addEventListener('keydown', worldKey);
     const { chat } = make();
-    chat.open(true);
+    chat.open();
     key(input(chat), 'a');
     expect(worldKey).not.toHaveBeenCalled();
     key(input(chat), 'F3');
@@ -348,5 +351,6 @@ describe('NeuzChat: the messages', () => {
     for (let i = 0; i < 1000; i++) chat.put({ kind: 'party', sender: 'Lead', text: `${i}` });
     expect(lines(chat).length).toBeLessThan(1000);
     expect(lines(chat).at(-1)).toBe('[Lead] 999');
-  });
+    // 2000 lines through jsdom: a busy machine running other test files beside it passes the default 5 s
+  }, 30_000);
 });

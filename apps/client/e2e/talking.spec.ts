@@ -317,13 +317,16 @@ test('the desktop chat: the chat window of Neuz V15 (tabs, Lock, filter, System,
   await page.mouse.click(locked.x + 260, locked.y + 30);
   await page.evaluate(() => window.__client!.step(2));
   await expect.poll(() => destPosOf(gateway).length).toBeGreaterThan(walks);
-  // Escape, even while typing, closes the window on top, the chat; Enter then does nothing; the Start menu's Chatting
-  // opens it again where it was
+  // Escape, even while typing, closes the window on top, the chat; Enter shows it again where it was (2026-11-10, the
+  // owner's: Neuz's Enter does nothing while it is closed); so does the Start menu's Chatting
   const closedAt = (await chat.boundingBox())!;
   await page.keyboard.press('Enter'); await expect(input).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(chat).toBeHidden();
   await page.keyboard.press('Enter');
+  await expect(chat).toBeVisible(); await expect(input).toBeFocused();
+  expect((await chat.boundingBox())!.x).toBeCloseTo(closedAt.x, 0);
+  await page.keyboard.press('Escape');
   await expect(chat).toBeHidden();
   await page.getByRole('button', { name: 'Start', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Chatting', exact: true }).click();
