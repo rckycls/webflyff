@@ -333,6 +333,8 @@ describeClient('game data readers on the client packs', () => {
     }
     const all = readCharacterInc(scriptText('character.inc'), defines, strings, 'character.inc');
     expect(all.find((c) => c.key === 'MaFl_Mikyel')?.name).toBe('Mikyel');
+    // 2026-11-09 (pets review): the buff pet's menu, MMI_BUFFPET_STATUS and MMI_BUFFPET_RELEASE (character.inc:7783-7790)
+    expect(all.find((c) => c.key === 'MaFl_BuffPet')?.menus).toEqual([141, 142]);
     expect(total).toBeGreaterThan(400);
   });
 

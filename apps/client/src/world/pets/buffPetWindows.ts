@@ -20,6 +20,11 @@
 //   CWndMgr::CheckConfirm               _Interface/WndManager.cpp:7640-7717      a vis or the vis key used with a buff pet
 //                                                                                out opens the window (unless open) and
 //                                                                                asks; Pet Magic asks, centred
+//   CWndWorld::OnCommand                _Interface/WndWorld.cpp:5899-5925        MaFl_BuffPet's menu (the key `Process`
+//                                                                                gives the pet mover): MMI_BUFFPET_STATUS
+//                                                                                toggles the window (a new one each
+//                                                                                time), MMI_BUFFPET_RELEASE uses the buff
+//                                                                                pet item naming the player (pets review)
 
 import type { WebItemProp } from '@flyffweb/formats';
 import type { InventoryItem } from '@flyffweb/protocol';
@@ -31,12 +36,17 @@ import { BuffPetStatusWindow } from '../hud/buffPetStatusWindow';
 import type { SlotView } from '../hud/buffPetStatusWindow';
 import type { WindowFrame } from '../hud/frame';
 import { createItemDetails, positionItemDetails } from '../hud/itemDetails';
+import { MMI } from '../hud/moverMenu';
 import type { TooltipContext, TooltipData } from '../items/itemTooltip';
 import type { OwnState, VisPetChange } from '../OwnState';
 import { BUFF_PET_FACE, PetPortrait, buffPetCamera } from '../render/petPortrait';
+import { setCharacterKey } from '../WorldState';
 import type { Mover } from '../WorldState';
 import { IK3_VIS, MAX_VIS, NeedVis, checkConfirmVis, confirmVisText, validVisTable, visEndAt } from './buffPet';
 import type { ConfirmVisSection } from './buffPet';
+
+/** The key `Process` gives the buff pet's mover (`WndPetSys.cpp:2455`): `MaFl_BuffPet` (`character.inc:7783-7790`). */
+const BUFF_PET_CHARACTER = 'MaFl_BuffPet';
 
 /**
  * The event point 0 of the pet's model (`pObj3D->m_vEvent[ 0 ]`, `OnDraw` :2381): the model glb's (2026-11-09, pets R4),
@@ -132,6 +142,21 @@ export class BuffPetWindows {
     return true;
   }
 
+  /**
+   * `CWndWorld::OnCommand` (`WndWorld.cpp:5899-5925`) for MaFl_BuffPet's entries: `MMI_BUFFPET_STATUS` destroys an open
+   * window, else makes a new one; `MMI_BUFFPET_RELEASE` sends DOUSEITEM of `GetVisPetItem()` naming the player (the
+   * window closes on the VISPET_ACTIVATE that answers).
+   */
+  choose(entry: number): void {
+    if (entry === MMI.BUFFPET_STATUS) {
+      if (this.status.isOpen) this.status.close();
+      else this.openUnlessOpen();
+    } else if (entry === MMI.BUFFPET_RELEASE) {
+      const item = this.host.own()?.visPetItem();
+      if (item !== undefined) this.host.use(item.objectId);
+    }
+  }
+
   /** `Process`'s `FrameMove` of the shared model: the portrait's motion a frame on, each step of the world. */
   step(): void {
     if (this.status.isOpen) this.portrait.step();
@@ -167,11 +192,13 @@ export class BuffPetWindows {
   }
 
   /**
-   * `Process` (:2446-2463): the pet mover's model taken (`m_pPetModel`, here a copy loaded for the portrait) and its name
-   * the title; `OnDraw`'s camera (:2366-2399) from the model's box and scale.
+   * `Process` (:2446-2463): the pet mover given the key `MaFl_BuffPet` (its menu, pets review), its model taken
+   * (`m_pPetModel`, here a copy loaded for the portrait) and its name the title; `OnDraw`'s camera (:2366-2399) from the
+   * model's box and scale.
    */
   private findModel(mover: Mover): void {
     const of = `${mover.objectId}:${mover.added.index}`;
+    setCharacterKey(mover, BUFF_PET_CHARACTER);
     this.portraitOf = of;
     this.status.setTitle(mover.name);
     this.status.modelReady(true);

@@ -252,6 +252,21 @@ export function isLive(m: Mover): boolean {
 }
 
 /**
+ * 2026-11-09 (pets review): `lstrcpy( pMover->m_szCharacterKey, key )` on a mover in view, as `CWndBuffPetStatus::Process`
+ * does to the own buff pet's (`MaFl_BuffPet`, `WndPetSys.cpp:2453-2455`): a non-player with a key is an NPC here (`build`),
+ * whose press opens the key's menu (`ShowMoverMenu`); its name (`m_szName`) stays.
+ */
+export function setCharacterKey(m: Mover, key: string): void {
+  if (m.added.isPlayer) return;
+  const npc = m.added.npc ?? {
+    hairMesh: 0, hairColor: 0, headMesh: 0, characterKey: '', worn: [], activeAttack: 0, movePattern: 0, moveEvent: 0,
+    moveEventCount: 0, speedFactor: 1,
+  };
+  m.added = { ...m.added, npc: { ...npc, characterKey: key } };
+  if (key !== '') m.kind = 'npc';
+}
+
+/**
  * The item ID of another player's `m_aEquipInfo[PARTS_RWEAPON]` (its worn right-hand part, expired or not), which the
  * client's `GetActiveHandItemProp` takes for it (`Mover.cpp:2942-2947`); null for an empty hand.
  */

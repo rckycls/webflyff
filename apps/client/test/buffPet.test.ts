@@ -15,6 +15,7 @@ import { ServerClock } from '../src/net/serverClock';
 import type { GameData } from '../src/world/gameData';
 import { BuffStatus } from '../src/world/hud/buffStatus';
 import { WindowFrame } from '../src/world/hud/frame';
+import { MMI, npcMenuEntries } from '../src/world/hud/moverMenu';
 import { ownTooltipContext } from '../src/world/hud/itemDetails';
 import { confirmedTarget, useOf } from '../src/world/items/premiumItems';
 import { itemTooltip, visPetInfo } from '../src/world/items/itemTooltip';
@@ -93,6 +94,8 @@ function buffPetData(): GameData {
     ]),
     itemProps: new Map([...ownGameData().itemProps, ...PROP_MAP]),
     texts: TEXT_MAP,
+    // Resource/character.inc:7783-7790: MMI_BUFFPET_STATUS, MMI_BUFFPET_RELEASE (defineNeuz.h:267-268)
+    npcs: new Map([['mafl_buffpet', { key: 'MaFl_BuffPet', name: '', menus: [141, 142] }]]),
   });
 }
 
@@ -325,6 +328,32 @@ describe('CWndBuffPetStatus in the pretend world (pets/buffPetWindows.ts, hud/bu
     expect(p.windows.status.frame.element.getAttribute('aria-label')).toBe('Tiny Tanuki');
     expect(p.host.loadPortrait).toHaveBeenCalledOnce();
     await vi.waitFor(() => expect(p.windows.portrait.shown).toBe(true));
+  });
+
+  it("gives the pet mover MaFl_BuffPet as the open window takes its model; its menu toggles the window and releases the pet (pets review)", () => {
+    const p = pretendWorld();
+    const mover = () => p.world.movers.get(PET_MOVER)!;
+    p.send(writeVisPetActivate(OWN_ID, BAG_PET, PET_MOVER));
+    p.windows.status.close();
+    p.send(writeAddNpc(PET_MOVER, p.petMover));
+    p.windows.frame();
+    // Process runs only while the window is open (WndPetSys.cpp:2439-2467)
+    expect([mover().kind, mover().added.npc?.characterKey ?? '']).toEqual(['monster', '']);
+    p.windows.choose(MMI.BUFFPET_STATUS); // a new window (WndWorld.cpp:5899-5912)
+    expect(p.windows.status.isOpen).toBe(true);
+    p.windows.frame();
+    // lstrcpy( pMyBuffPet->m_szCharacterKey, "MaFl_BuffPet" ) (:2453-2455): an NPC with a menu; m_szName stays
+    expect([mover().kind, mover().added.npc?.characterKey, mover().name]).toEqual(['npc', 'MaFl_BuffPet', 'Tiny Tanuki']);
+    const entries = npcMenuEntries(p.data.npcs.get(mover().added.npc!.characterKey.toLowerCase()), p.data.texts, false);
+    expect(entries.map((e) => [e.id, e.enabled])).toEqual([[MMI.BUFFPET_STATUS, true], [MMI.BUFFPET_RELEASE, true]]);
+    p.windows.choose(MMI.BUFFPET_STATUS); // open: Destroy
+    expect(p.windows.status.isOpen).toBe(false);
+    // MMI_BUFFPET_RELEASE (:5915-5922): DOUSEITEM of GetVisPetItem() naming the player; the window stays for VISPET_ACTIVATE
+    p.windows.choose(MMI.BUFFPET_RELEASE);
+    expect(p.host.use).toHaveBeenCalledWith(BAG_PET);
+    p.send(writeVisPetActivate(OWN_ID, NULL_ID, NULL_ID));
+    p.windows.choose(MMI.BUFFPET_RELEASE); // no buff pet item: nothing
+    expect(p.host.use).toHaveBeenCalledTimes(1);
   });
 
   it("starts the portrait's camera from the model's event point 0 (m_vEvent[ 0 ], WndPetSys.cpp:2381; pets R4)", async () => {

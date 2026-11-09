@@ -1432,8 +1432,9 @@ export class WorldScreen {
       renderer: () => this.page?.renderer ?? null,
       // the catalog keeps Neuz's "\n" as two characters: a line break in the box
       confirm: (text, ok, parent) => this.confirmBoxes?.open('confirmVis', text.replace(/\\n/g, '\n'), { ok }, parent ?? undefined),
-      // SendEquipPacket's SendDoUseItem( MAKELONG( ITYPE_ITEM, id ), g_pPlayer->GetId() ) (WndPetSys.cpp:2949-2952)
-      use: (id) => void this.itemUse?.use(id, 'confirmed'),
+      // SendEquipPacket's SendDoUseItem( MAKELONG( ITYPE_ITEM, id ), g_pPlayer->GetId() ) (WndPetSys.cpp:2949-2952), and
+      // MMI_BUFFPET_RELEASE's (WndWorld.cpp:5915-5922): the player named, not the focus (pets review)
+      use: (id) => void this.itemUse?.use(id, 'confirmed', this.own?.objectId),
       sendRemoveVis: (slot) => this.session.sendRemoveVis(slot),
       sendSwapVis: (slot1, slot2) => this.session.sendSwapVis(slot1, slot2),
       tooltipData: this.data!,
@@ -3069,6 +3070,8 @@ export class WorldScreen {
       this.upgradeNpc?.safety.open(mode);
     } else if (entry === MMI.PET_STATUS || entry === MMI.PET_RELEASE) {
       this.choosePetEntry(entry);
+    } else if (entry === MMI.BUFFPET_STATUS || entry === MMI.BUFFPET_RELEASE) {
+      this.buffPet?.choose(entry); // 2026-11-09 (pets review): MaFl_BuffPet's menu (:5899-5925)
     } else if (entry === MMI.PET_FOODMILL) {
       this.petCare?.tamerMill(); // 2026-11-09 (pets R3): the Pet Tamer's food mill (:5863-5876)
     } else if (entry === MMI.RENAME_CANCEL) {

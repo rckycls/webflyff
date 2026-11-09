@@ -22,13 +22,16 @@ export interface MenuEntry { id: number; label: string; enabled: boolean }
 export const MMI = {
   DIALOG: 0, TRADE: 2, GUILDBANKING: 15, PIERCING: 23, PET_STATUS: 49, PET_RELEASE: 50, PET_FOODMILL: 58, NPC_BUFF: 74,
   PET_RES: 77, PET_RES01: 78, ARENA_ENTER: 80, PET_EGG01: 96, PET_AWAK_CANCEL: 104, RENAME_CANCEL: 120,
-  SMELT_SAFETY_GENERAL: 134, SMELT_SAFETY_ACCESSORY: 135, SMELT_SAFETY_PIERCING: 136, TELEPORTER: 146,
+  SMELT_SAFETY_GENERAL: 134, SMELT_SAFETY_ACCESSORY: 135, SMELT_SAFETY_PIERCING: 136, BUFFPET_STATUS: 141,
+  BUFFPET_RELEASE: 142, TELEPORTER: 146,
 } as const;
 /**
  * 2026-11-09 (pets R1): the own raised pet's entries (`MaFl_Pet`, `Resource/character.inc:5880-5891`): its status window
- * and its release (`WndWorld.cpp:5877-5898`), which R2 wires (`WorldScreen.choosePetEntry`).
+ * and its release (`WndWorld.cpp:5877-5898`), which R2 wires (`WorldScreen.choosePetEntry`). (pets review) The own buff
+ * pet's (`MaFl_BuffPet`, :7783-7790, the key its window gives its mover): its window and its release (:5899-5925,
+ * `BuffPetWindows.choose`).
  */
-const PET_ENTRIES: ReadonlySet<number> = new Set([MMI.PET_STATUS, MMI.PET_RELEASE]);
+const PET_ENTRIES: ReadonlySet<number> = new Set([MMI.PET_STATUS, MMI.PET_RELEASE, MMI.BUFFPET_STATUS, MMI.BUFFPET_RELEASE]);
 /**
  * 2026-11-09 (pets R3): the Pet Tamer's entries the browser opens (`MaFl_PetTamer`, `Resource/character.inc:6164-6188`): the
  * food mill (`WndWorld.cpp:5863-5876`) and the rename cancel (`:5237-5240`); (pets R4) the egg exchange (`:5098-5113`), the
