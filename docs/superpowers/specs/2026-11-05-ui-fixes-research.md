@@ -135,3 +135,17 @@ next, titles white and the chosen black.
 - The Madrigal time line of `/Time` (the browser has no game clock); the client toggles' effects.
 - Safe Element Upgrade (167) and the safe upgrade's Shift fill (a phone has no Shift).
 - The piercing window opens centred, not beside the bag.
+
+## 10. The second round (2026-11-09)
+
+- **Shift in the safe upgrade:** Shift with a double-click (or a drop) fills a column from the stack, as Neuz's
+  `AddListItem` loop: the materials to 10, a protection or smelting scroll up to the materials; a Shift double-click on a
+  column takes every unused cell out.
+- **The weapon glow** (`CMover::SetRenderPartsEffect`, `CModelObject::CreateParticle`, `CPartsFire`): effects made one
+  after another along the weapon's sword-trail line (the `.o3d`'s `m_vForce1..4`, now in the model glbs' extras),
+  following the weapon: `XI_NAT_NONE01_ADV` (no element) or the element's `_ADV` (Ultimate: `_AL`), plus the element
+  level - 1; sized by `propEnchant.inc`: a plain weapon from +6 (0.3 to 0.7), an Ultimate from +1 (0.3 to 1.2); from
+  element level 4 the element's own `XI_NAT_<elem>01` stream too. Other players' upgrade and element come from ADD_OBJ's
+  and EQUIP's `nOption`, now kept. Not built: the electric weapons' lightning (`RenderItemElec_Adv`).
+- **Master and Hero marks** (`RenderName`, `MoverRender.cpp:1495-1563`): `icon_Expert1-6` by a Master's ten levels from
+  60 to 120, `icon_Hero` for a Hero, after the name.
