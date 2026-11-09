@@ -31,3 +31,7 @@ export {
 export { newVagrantOwn } from './newVagrant';
 export { createWorldScript } from './worldScript';
 export type { ReplyOptions, WorldScript, WorldScriptOptions } from './worldScript';
+export {
+  writeConfirmTrade, writeConfirmTradeCancel, writeTrade, writeTradeCancel, writeTradeConsent, writeTradeLastConfirm,
+  writeTradeLastConfirmOk, writeTradeOk, writeTradePull, writeTradePut, writeTradePutError, writeTradePutGold,
+} from './trade';

@@ -121,6 +121,20 @@ function readInventoryPart(r: ArReader): Pick<OwnCharacter, 'inventory' | 'inven
   }
 }
 
+/**
+ * 2026-11-10 (trade research §7): a whole inventory as `CItemContainer<CItemElem>::Serialize` stores it (`Item.h:892-944`):
+ * `m_apIndex` (73 DWORDs, bag positions then parts to object IDs), the items (`readInventory`) and the object indexes, read
+ * past. TRADE sends the other player's inventory this way (`CUser::AddTrade`, `WORLDSERVER/User.cpp:798-808`).
+ */
+export function readItemContainer(r: ArReader): { slots: number[]; items: InventoryItem[] } {
+  const at = r.position();
+  const slots = Array.from({ length: INVENTORY_SLOTS }, () => r.u32());
+  if (slots.some((id) => id !== 0xffffffff && id >= INVENTORY_SLOTS)) {
+    throw new ProtocolError('invalid inventory index mapping', at);
+  }
+  return { slots, items: readInventory(r, { part: 'the inventory' }) };
+}
+
 /** The fields between the skill array and the inventory (loading :568-584, storing :239-253), none of them kept. */
 function skipBeforeInventory(r: ArReader): void {
   r.u8(); // (BYTE&)m_nCheerPoint (:569), an int that :568 zeroes first

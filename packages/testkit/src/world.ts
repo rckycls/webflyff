@@ -739,6 +739,11 @@ function writeInventory(w: ArWriter, items: readonly InventoryItem[], worn: read
   fresh(); // adwObjIndex: each slot's m_dwObjIndex
 }
 
+/** 2026-11-10 (trade): `writeInventory` for TRADE's container, the other player's inventory (`CUser::AddTrade`). */
+export function writeItemContainer(w: ArWriter, items: readonly InventoryItem[], worn: readonly number[] = []): void {
+  writeInventory(w, items, worn);
+}
+
 /**
  * `CItemElem::Serialize`, the storing side (`ObjSerialize.cpp:33-37` and :51-88), with the kept values in it and
  * nothing else: no serial number, text or keep time. 2026-11-09 (pets M0): the item's raised pet (`CPet::Serialize`,

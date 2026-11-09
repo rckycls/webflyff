@@ -209,7 +209,8 @@ with `DPID_UNKNOWN` and the type):
 | `TRADECONFIRM` | 0x00ff002f | nothing |
 | `BLOCK` | 0xffffff5a | `BYTE gu, string myName, string askerName` |
 
-World to client, in the snapshot (`MsgHdr.h:887-936`; handlers `DPClient.cpp:501-513, 626`; senders `User.cpp:798-908`):
+World to client, in the snapshot (`MsgHdr.h:887-936`; handlers `DPClient.cpp:501-513, 626`; senders `User.cpp:798-908`,
+`User.h:272-275`):
 
 | Snapshot | Type | Object id | Body |
 |---|---|---|---|
@@ -219,11 +220,11 @@ World to client, in the snapshot (`MsgHdr.h:887-936`; handlers `DPClient.cpp:501
 | `TRADEPULL` | 0x0009 | who pulled | `BYTE slot` |
 | `TRADEOK` | 0x000a | who pressed | nothing |
 | `TRADECANCEL` | 0x000b | who cancelled, or `NULL_ID` | `u_long idPlayer, int mode` |
-| `TRADECONSENT` | 0x000c | me | nothing |
+| `TRADECONSENT` | 0x000c | `NULL_ID` (`WORLDSERVER/User.h:273`) | nothing |
 | `TRADEPUTGOLD` | 0x0020 | who put | `DWORD penya` |
 | `CONFIRMTRADE` | 0x0022 | the asker | nothing |
 | `CONFIRMTRADECANCEL` | 0x0023 | the asked | nothing |
-| `TRADELASTCONFIRM` | 0x002b | me | nothing |
+| `TRADELASTCONFIRM` | 0x002b | `NULL_ID` (`User.h:274`) | nothing |
 | `TRADELASTCONFIRMOK` | 0x002c | who pressed Yes | nothing |
 
 `BLOCK` comes back as a direct packet `PACKETTYPE_BLOCK` (`DPClient.cpp:210, 8336-8392`): `BYTE gu, string name`.
