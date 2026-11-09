@@ -14,6 +14,7 @@
 //   data/effectsIndex.json XI id to the effect file and scale of its OT_SFX entry in mdlDyna.inc (WebEffectsIndex)
 //   data/skills.json       every job skill of propSkill.txt with its levels of propSkillAdd.csv (WebSkill[], skillsCatalog.ts)
 //   data/worldNoFly.json   (optional, Piece 7 M5) the ids of the worlds whose .wld says fly 0 (number[])
+//   data/pets.json         (optional, 2026-11-09) the raised pets' table of pet.inc (WebPets)
 //
 // It runs after the models stage, and after the effects and UI stages whose files the effects index and the item icons
 // name (`effects/<web name>.json`, `ui/item/<web name>.png`, the keys of output/keys.ts; this stage does not check that
@@ -36,6 +37,7 @@ import {
   ITEM_ETC_KEY,
   OT,
   PARTY_KEY,
+  PETS_KEY,
   QUESTS_KEY,
   QUEST_FILES,
   WORLD_MAP_KEY,
@@ -49,6 +51,7 @@ import {
   readExpTable,
   readHonorTitles,
   readPkSetting,
+  readPetInc,
   readAccessories,
   readPropItem,
   readPropItemEtc,
@@ -160,6 +163,8 @@ interface Env {
 const ITEM_ETC_FILE = 'propItemEtc.inc';
 /** The accessories' refine stats (`CAccessoryProperty::LoadScript`, accessory.cpp:39). */
 const ACCESSORY_FILE = 'accessory.inc';
+/** The raised pets' table (`CPetProperty::LoadScript`, pet.cpp:124; CProject::OpenProject, Project.cpp:614). */
+const PET_FILE = 'pet.inc';
 
 class Reading {
   bytes = 0;
@@ -223,6 +228,10 @@ function buildMovers(env: Env, read: Reading): WebMover[] {
         warn('propMover.txt', `${who} has no mover entry in mdlDyna.inc, so it has no model, skeleton or motions`);
         return mover;
       }
+
+      // 2026-11-09: the extra texture set the mover draws with (`m_nTextureEx`, MoverRender.cpp:388-391)
+      const textureEx = elem.extra[6] ?? 0;
+      if (textureEx > 0) mover.textureEx = textureEx;
 
       const file = modelFileName(elem);
       const animated = elem.modelType === MODELTYPE_ANIMATED_MESH;
@@ -709,6 +718,19 @@ export const gameDataStage: Stage = {
         ctx.report.ok(KIND, ITEM_ETC_FILE, read.bytes, bytes.length);
       } catch (error) {
         ctx.report.fail(KIND, error instanceof FormatError ? error.file : ITEM_ETC_FILE, error);
+      }
+    }
+
+    // The raised pets' table (2026-11-09), optional in the same way: without pet.inc there is none (PETS_KEY is not one of
+    // GAME_DATA_KEYS). A file that cannot be read fails it alone.
+    if (ctx.client.packs.has(PET_FILE)) {
+      try {
+        const read = new Reading(ctx.client);
+        const bytes = new TextEncoder().encode(JSON.stringify(readPetInc(read.text(PET_FILE), env.defines, PET_FILE)));
+        await ctx.writer.write(PETS_KEY, bytes, PET_FILE);
+        ctx.report.ok(KIND, PET_FILE, read.bytes, bytes.length);
+      } catch (error) {
+        ctx.report.fail(KIND, error instanceof FormatError ? error.file : PET_FILE, error);
       }
     }
 

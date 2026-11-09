@@ -34,6 +34,7 @@ export { readPropMover } from './inc/propMover';
 export type { MoverProp } from './inc/propMover';
 export { readPropItem } from './inc/propItem';
 export { readAccessories, readPropItemEtc } from './inc/propItemEtc';
+export { readPetInc } from './inc/petInc';
 export type { ItemProp, RideFlight } from './inc/propItem';
 export { readPropSkillAdd } from './inc/propSkillAdd';
 export type { SkillAddProp } from './inc/propSkillAdd';
@@ -99,7 +100,8 @@ export type { WebEffect, WebEffectPart } from './web/effect';
 export { UI_SHEETS_KEY } from './web/ui';
 export type { WebUiSheet, WebUiSheets } from './web/ui';
 export type { ModelBoxExtras, SkeletonExtras, SkeletonGrips } from './web/modelExtras';
-export { GAME_DATA_KEYS, ITEM_ETC_KEY, WORLD_NO_FLY_KEY } from './web/gameData';
+export { GAME_DATA_KEYS, ITEM_ETC_KEY, PETS_KEY, WORLD_NO_FLY_KEY } from './web/gameData';
+export { textureExKey, textureExName } from './web/textureEx';
 export type {
   WebEffectRef,
   WebEffectsIndex,
@@ -115,6 +117,9 @@ export type {
   WebMover,
   WebNameColors,
   WebNpc,
+  WebPetFeedEnergy,
+  WebPetKind,
+  WebPets,
   WebSkill,
   WebSkillLevelTimes,
   WebTexts,

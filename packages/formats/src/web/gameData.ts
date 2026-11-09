@@ -64,6 +64,13 @@ export interface WebMover {
    * of an id the mover does not list, so a lookup that misses falls back to "0".
    */
   motions: Record<string, string>;
+  /**
+   * 2026-11-09: `ModelElem::m_nTextureEx` of the mover's mdlDyna.inc entry (`ATEX_01` ...), 1 to 7: the model draws with
+   * its extra texture set (`MoverRender.cpp:388-391`, `CObject3D::SetTextureEx`, Object3D.cpp:2511-2549), each material's
+   * texture with `-et0N` after its title (`LoadTextureEx`, :2477-2508; `textureExKey`). The three stages of a raised pet
+   * are one mesh and differ only by this. Absent for 0 (ATEX_NONE), and in movers.json written before.
+   */
+  textureEx?: number;
 }
 
 /** An item that shows a model on the body when worn (`mdlDyna.inc` OT_ITEM entries that have a part). */
@@ -407,6 +414,59 @@ export const WORLD_NO_FLY_KEY = 'data/worldNoFly.json';
  * GAME_DATA_KEYS: without it the item tooltip has no set and socket lines.
  */
 export const ITEM_ETC_KEY = 'data/itemEtc.json';
+
+/** One kind of raised pet: a row of `pet.inc`'s `AvailDestParam` block (`PETAVAILPARAM`, `_Common/pet.h:41-49`). */
+export interface WebPetKind {
+  /** The kind, a `PK_*` value (`Resource/define.h:250-258`): the row's place in the block. */
+  kind: number;
+  /** `dwDstParam`: the stat the pet gives, a `DST_*` value. */
+  dst: number;
+  /**
+   * `m_anParam[0..8]`: the 9 step values. Each level reached rolls one step (`m_anAvailLevel`), and the pet gives the sum
+   * of the steps' values (`CPet::GetAvailDestParam`, `pet.cpp:378-388`).
+   */
+  steps: number[];
+  /** `m_dwItemId`: the item the pet is once hatched (`CPet::GetItemId`, `pet.h:147-152`; the egg is `II_PET_EGG`). */
+  itemId: number;
+  /** `m_adwIndex[0..2]`: the mover (`MI_*`) at D and C, at B and A, at S (`CPet::GetIndex`, `pet.cpp:390-401`). */
+  models: [number, number, number];
+  /** `m_dwProbability`: the chance out of 10,000 that an egg hatches into this kind (`CPetProperty::Hatch`, `pet.cpp:78-89`). */
+  hatchWeight: number;
+}
+
+/** A row of a `FeedEnergy` block (`FEEDENERGY`): an item whose `dwCost` is in the range makes this much food. */
+export interface WebPetFeedEnergy {
+  costMin: number;
+  costMax: number;
+  energyMin: number;
+  energyMax: number;
+}
+
+/**
+ * 2026-11-09: `data/pets.json`, the raised pets' table of `pet.inc` (`CPetProperty::LoadScript`, `_Common/pet.cpp:124-240`).
+ * Optional: absent without the file (`PETS_KEY` is not one of GAME_DATA_KEYS).
+ */
+export interface WebPets {
+  /** The kinds, `kinds[PK_*]`. */
+  kinds: WebPetKind[];
+  /**
+   * `m_aFeedEnergy[0]` and `[1]`: the food an item gives by its cost (`GetFeedEnergy`, `pet.cpp:64-76`), `[0]` at the Pet
+   * Tamer's mill and `[1]` with the feed maker (`pet.inc`'s comments).
+   */
+  feedEnergy: [WebPetFeedEnergy[], WebPetFeedEnergy[]];
+  /** `m_adwIncrementExp`: the EXP a minute (of 100,000) at D, C, B, A (`GetIncrementExp`, `pet.cpp:91-96`). */
+  incrementExp: number[];
+  /** `m_awMaxEnergy`: the most energy at D, C, B, A, S (`GetMaxEnergy`, `pet.cpp:98-103`; an egg's is 1). */
+  maxEnergy: number[];
+  /**
+   * `m_aPenalty[PL_D..PL_S]`: what a release costs at D to S (`GetPenalty`, `pet.cpp:37-42`): `exp`, the EXP percent lost
+   * (`fExp`, a C float), and `energy` (`wEnergy`).
+   */
+  penalty: Array<{ exp: number; energy: number }>;
+}
+
+/** 2026-11-09: the raised pets' table, a `WebPets`. Optional: not one of GAME_DATA_KEYS. */
+export const PETS_KEY = 'data/pets.json';
 
 /** The logical keys of the catalogs in the asset index. */
 export const GAME_DATA_KEYS = {
