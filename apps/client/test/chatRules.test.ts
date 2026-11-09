@@ -32,6 +32,9 @@ describe('chatLine: a line as DPClient.cpp writes it', () => {
     expect(chatLine({ kind: 'game', text: 'You got 3 Penya', color: 0xffff0000 }, 'Webby'))
       .toEqual({ text: 'You got 3 Penya', color: 0xffff0000, style: CHATSTY.GAME });
     expect(chatLine({ kind: 'game', text: 'x' }, 'Webby').color).toBe(0xffffffff);
+    // 2026-11-10: a game line with another style (OnGetPlayerCount's CHATSTY_GENERAL) keeps it
+    expect(chatLine({ kind: 'game', text: '[World CCU] 3', style: CHATSTY.GENERAL }, 'Webby').style).toBe(CHATSTY.GENERAL);
+    expect(chatLine({ kind: 'game', text: 'x' }, 'Webby').style).toBe(CHATSTY.GAME);
   });
 });
 

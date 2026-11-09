@@ -226,7 +226,7 @@ describe('NeuzChat: the line', () => {
     expect(send).not.toHaveBeenCalled();
     chat.open();
     type(chat, '/position'); key(input(chat), 'Enter');
-    expect(ran).toHaveBeenCalledWith('position', '');
+    expect(ran).toHaveBeenCalledWith('position', '', '/position');
   });
 
   it('a line within 0.7 s of the last is not sent: a red line in the chat (ParsingChat); a shortcut runs as typed', () => {

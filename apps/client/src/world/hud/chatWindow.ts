@@ -125,7 +125,7 @@ export class ChatWindow {
     });
   }
   /** 2026-11-05: a client command typed (TCM_CLIENT: /position, /Time ...), with what follows its name. */
-  onClientCommand: (command: string, args: string) => void = () => {};
+  onClientCommand: (command: string, args: string, line: string) => void = () => {};
 
   /** The own account's authorization (`m_dwAuthorization`, ADD_OBJ): which commands the suggestions offer. */
   setAuthorization(authorization: number): void {
@@ -153,7 +153,7 @@ export class ChatWindow {
   /** What a line does: sent as it comes out, run here, and its red lines in the chat. */
   private apply(outcome: SendOutcome): void {
     if (outcome.send !== undefined) { encodeChat('nearby', outcome.send); this.send('nearby', outcome.send, ''); }
-    if (outcome.client !== undefined) this.onClientCommand(outcome.client.command, outcome.client.args);
+    if (outcome.client !== undefined) this.onClientCommand(outcome.client.command, outcome.client.args, outcome.client.line);
     for (const note of outcome.notes) this.append('system', '', note.text);
   }
   private selectView(view: ChatView): void {
@@ -176,7 +176,7 @@ export class ChatWindow {
     delete this.element.dataset.expanded; this.toggle.ariaExpanded = 'false';
   }
   /** `_color`: the desktop chat's (neuzChat.ts); the phone colours a line by its channel. */
-  append(channel: ChatChannel | 'system' | 'announcement', sender: string, text: string, recipient?: string, _color?: number): void {
+  append(channel: ChatChannel | 'system' | 'announcement', sender: string, text: string, recipient?: string, _color?: number, _style?: number): void {
     const bottom = this.log.scrollHeight - this.log.clientHeight - this.log.scrollTop < 24;
     const line = this.doc.createElement('div'); line.dataset.channel = channel;
     line.textContent = `[${channel}] ${sender.slice(0, 32)}${recipient ? ` → ${recipient.slice(0, 32)}` : ''}${sender ? ': ' : ''}${text.slice(0, 1023)}`;

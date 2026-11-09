@@ -127,6 +127,9 @@ interface RigOptions {
   sounds?: MoverViewsOptions['sounds'];
   /** Piece 7 M5: the ride models. */
   loadRide?: MoverViewsOptions['loadRide'];
+  /** 2026-11-10: the invisible bodies' blend and who cannot be clicked. */
+  alphaOf?: MoverViewsOptions['alphaOf'];
+  unpickable?: MoverViewsOptions['unpickable'];
 }
 
 function rig(
@@ -147,6 +150,7 @@ function rig(
   };
   const views = new MoverViews(scene, load, overlay, lookFor, loadMotion, loadHeld, options.itemProps ?? new Map(), {
     moverProps: options.moverProps, random: options.random, sounds: options.sounds, loadRide: options.loadRide,
+    alphaOf: options.alphaOf, unpickable: options.unpickable,
   });
   const movers = new Map<number, Mover>();
   const sync = (changes: WorldChanges) => views.sync(changes, movers);
@@ -213,6 +217,35 @@ describe('MoverViews', () => {
     // the name tag goes on the top of the model, scaled with it
     expect(r.views.placeOf(7)).toEqual({ at: toWebPosition(aibatt.act.body.pos), head: [6970, 103, -3330] });
     expect(r.views.count()).toBe(1);
+  });
+
+  it('draws an invisible body see-through or not at all, as alphaOf says, and whole again after (2026-11-10)', async () => {
+    const model = fakeModel();
+    const box = model.root.children[0] as Mesh;
+    const material = new MeshStandardMaterial();
+    box.material = material;
+    let alpha = 80 / 255;
+    const r = rig(async () => model, undefined, undefined, { alphaOf: () => alpha, unpickable: () => alpha !== 1 });
+    const gm = moverFrom(addedPlayer(7));
+    r.add(gm);
+    await r.views.settled();
+    r.views.update(r.movers, 0);
+    const holder = model.root.parent!;
+    expect(holder.visible).toBe(true);
+    expect(material.transparent).toBe(true);
+    expect(material.opacity).toBeCloseTo(80 / 255);
+    expect(r.views.pickCandidates(undefined)).toEqual([]);
+    alpha = 0;
+    r.views.update(r.movers, 0);
+    expect(holder.visible).toBe(false);
+    alpha = 1;
+    r.views.update(r.movers, 0);
+    expect(holder.visible).toBe(true);
+    expect(material.transparent).toBe(false);
+    expect(material.opacity).toBe(1);
+    expect(material.depthWrite).toBe(true);
+    expect(r.views.pickCandidates(undefined).map((c) => c.objectId)).toEqual([7]);
+    r.views.dispose();
   });
 
   it('releases a model that resolves after its mover was removed', async () => {

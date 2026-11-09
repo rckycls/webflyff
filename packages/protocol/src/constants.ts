@@ -141,6 +141,10 @@ export const PacketType = {
   ERRORPARTY: 0xffffff10,
   UPDATE_PLAYER_DATA: 0xf000f808,
   LOGOUT: 0x7000000b,
+  /** 2026-11-10: the core's answers to /ip and /count, and /system's notice to all (`MsgHdr.h:207-210`). */
+  GETPLAYERADDR: 0x00ff00e7,
+  GETPLAYERCOUNT: 0x00ff00e8,
+  SYSTEM: 0x00ff00ea,
   BLOCK: 0xffffff5a,
   /** Piece 7 M4: the party packets the client sends ([R §2], `MsgHdr.h:279-314`), and the player data's query (:653). */
   ADDPARTYMEMBER: 0xffffff11,
@@ -279,6 +283,15 @@ export const MessageType = {
   QUERY_PLAYER_DATA: 0x0141,
   /** Piece 7 M3: a mover's state mode on, off or cancelled: an item cast (`CUserMng::AddStateMode`, `MsgHdr.h:1134`). */
   STATEMODE: 0x00df,
+  /** 2026-11-10: a mover's whole `m_dwMode` after a game master's command (`CUserMng::AddModifyMode`, `MsgHdr.h:1130`). */
+  MODIFYMODE: 0x00d3,
+  /** 2026-11-10: `SNAPSHOTTYPE_TEXT` (`MsgHdr.h:1068`): a server line, its state byte first (`__S_SERVER_UNIFY`). */
+  TEXT: 0x00a0,
+  /** 2026-11-10: `SNAPSHOTTYPE_CMDSETSKILLLEVEL` (`MsgHdr.h:1012`): /skilllevel's answer. */
+  CMDSETSKILLLEVEL: 0x006b,
+  /** 2026-11-10: `SNAPSHOTTYPE_DISGUISE`, `_NODISGUISE` (`MsgHdr.h:1158-1159`): /disguise and /noDisguise. */
+  DISGUISE: 0x00f5,
+  NODISGUISE: 0x00f6,
   /**
    * 2026-11-05: a skill applied to a mover in view, Buff Pang's buffs among them (`CUserMng::AddDoApplySkill`,
    * `WORLDSERVER/UserLux.cpp:270-280`; `MsgHdr.h:1132`).

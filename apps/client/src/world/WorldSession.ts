@@ -582,6 +582,12 @@ export class WorldSession {
       case 'whisper':
         if (this.phase === 'playing') this.notify({ type: 'messages', messages: [{ objectId: NULL_ID, type: packet.type === 'guild' ? 0xffffff39 : packet.type === 'system' ? 0xff00ed : packet.type === 'definedText' ? 0xff00ec : 0xff00d4, value: packet }] });
         break;
+      // 2026-11-10: the core's answers to /count and /ip, and /system's notice
+      case 'playerCount':
+      case 'playerAddr':
+      case 'systemNotice':
+        if (this.phase === 'playing') this.notify({ type: 'messages', messages: [{ objectId: NULL_ID, type: packet.type === 'playerCount' ? PacketType.GETPLAYERCOUNT : packet.type === 'playerAddr' ? PacketType.GETPLAYERADDR : PacketType.SYSTEM, value: packet }] });
+        break;
       case 'setPlayerName':
         // 2026-11-05: the name change's answer, a packet of its own, handed on as the direct chat packets are
         if (this.phase === 'playing') {

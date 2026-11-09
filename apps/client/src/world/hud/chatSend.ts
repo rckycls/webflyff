@@ -42,7 +42,7 @@ export interface SendNote {
 /** What a line does: the text sent (`SendChat`), a client command run, and the lines printed. */
 export interface SendOutcome {
   send?: string;
-  client?: { command: string; args: string };
+  client?: { command: string; args: string; line: string };
   notes: SendNote[];
 }
 
@@ -221,7 +221,7 @@ export class ChatSender {
   private command(text: string, ctx: SendContext): SendOutcome {
     const action = lineAction(text, ctx.authorization, this.options.commands, this.options.emoticons);
     if (action.kind === 'drop') return { notes: [] };
-    if (action.kind === 'client') return { client: { command: action.command, args: action.args }, notes: [] };
+    if (action.kind === 'client') return { client: { command: action.command, args: action.args, line: action.line }, notes: [] };
     const rest = text.slice(1);
     const space = rest.indexOf(' ');
     const word = space < 0 ? rest : rest.slice(0, space);

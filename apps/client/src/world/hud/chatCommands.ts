@@ -15,6 +15,7 @@
 // The web adds what an English Neuz leaves out: each row's words (its usage) and a GM mark, and the arrows walk the list.
 
 import { isAuthorizationHigher } from '../authorization';
+import { CLIENT_HALVES } from '../gmCommands';
 import type { CommandRoute } from './chatCommandTable';
 
 /** A command of FuncTextCmd.cpp's table: its names (the long one first), what follows it, and the authorization it needs. */
@@ -65,7 +66,7 @@ export function suggest(
 }
 
 /** What a sent line does (`ParsingChat`, `ParsingCommand`): goes to the server, runs in the client, or goes nowhere. */
-export type LineAction = { kind: 'send' } | { kind: 'client'; command: string; args: string } | { kind: 'drop' };
+export type LineAction = { kind: 'send' } | { kind: 'client'; command: string; args: string; line: string } | { kind: 'drop' };
 
 /**
  * A line as Neuz handles it: plain text, a server command the account may use, and an emoticon (`/laugh`, matched without
@@ -84,6 +85,9 @@ export function lineAction(
     return !line.includes('#') && emoticons.some((e) => e.toLowerCase() === lower) ? { kind: 'send' } : { kind: 'drop' };
   }
   if (!isAuthorizationHigher(authorization, command.auth)) return { kind: 'drop' };
-  if (command.route === 'client') return { kind: 'client', command: command.names[0]!, args: space < 0 ? '' : rest.slice(space + 1) };
+  // 2026-11-10: a TCM_BOTH command whose client half decides what goes (gmCommands.ts) runs here too, with the line typed
+  if (command.route === 'client' || CLIENT_HALVES.has(command.names[0]!)) {
+    return { kind: 'client', command: command.names[0]!, args: space < 0 ? '' : rest.slice(space + 1), line };
+  }
   return { kind: 'send' };
 }

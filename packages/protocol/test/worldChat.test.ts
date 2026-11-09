@@ -42,7 +42,8 @@ it('reads native party, guild, GM and announcement routes and sends social comma
   expect(party).toMatchObject({ type: 'party', sender: 'Party', text: 'hello' });
   expect(decodeWorldPacket(new ArWriter().u32(0xffffff39).u32(1).string('Guild').string('hello').toBytes())).toMatchObject({ type: 'guild', sender: 'Guild' });
   expect(decodeWorldPacket(new ArWriter().u32(0xff00ed).string('GM').string('Player').string('notice').toBytes())).toMatchObject({ type: 'system', sender: 'GM', text: 'notice' });
-  expect(WORLD_READERS.get(0xa0)!(new ArReader(new ArWriter().string('event').toBytes()), { objectId: 1, playerObjectId: 1 })).toMatchObject({ type: 'announcement', text: 'event' });
+  // 2026-11-10: SNAPSHOTTYPE_TEXT is a server line with its state byte first (gm.test.ts)
+  expect(WORLD_READERS.get(0xa0)!(new ArReader(new ArWriter().u8(1).string('event').toBytes()), { objectId: 1, playerObjectId: 1 })).toMatchObject({ type: 'serverText', text: 'event' });
   expect(() => WORLD_READERS.get(0x4f)!(new ArReader(new ArWriter().i32(1025).toBytes()), { objectId: 1, playerObjectId: 1 })).toThrow();
   for (const [channel, command] of [['party', '/partychat hello'], ['guild', '/GuildChat hello']] as const) {
     const r = new ArReader(encodeChat(channel, 'hello')); r.bytes(8); expect(r.string(1024)).toBe(command); r.expectEnd();

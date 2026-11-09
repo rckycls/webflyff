@@ -32,6 +32,10 @@ const AII_MONSTER = 2;
 const II_WEA_HAN_HAND = 11;
 /** `NULL_ID`, an item column written `=`: no item. */
 const NULL_ITEM = -1;
+/** `MI_MALE`, `MI_FEMALE` (`Resource/defineObj.h`): a player's own bodies, which /noDisguise gives back. */
+const MI_MALE_INDEX = 11;
+const MI_FEMALE_INDEX = 12;
+
 /** `MATCHLESS_MODE` (`_Common/authorization.h:106`): a player in it takes no blow (`PreProcessDamage`). */
 const MATCHLESS_MODE = 0x00000001;
 /**
@@ -561,6 +565,21 @@ export class WorldState {
         } else if (message.flag !== StateModeFlag.ON) {
           m.cast = null;
         }
+        break;
+      case 'modifyMode': // 2026-11-10, OnModifyMode (:12278-12283): the whole m_dwMode of a player in view, the own one's too
+        if (m.added.player !== undefined) m.added.player.mode = message.mode;
+        break;
+      case 'disguise': { // 2026-11-10, OnDisguise (:13706-13730): SetIndex( dwMoverIdx ), Mover.cpp:8901-8930; the view is made again
+        const prop = this.data.movers.get(message.moverIndex);
+        if (prop === undefined) break; // "property not found": nothing changes
+        m.added.index = message.moverIndex;
+        m.added.scale = prop.modelScale ?? 1;
+        break;
+      }
+      case 'noDisguise': // OnNoDisguise (:13732-13750), NoDisguise (Mover.cpp:8882-8892): the own sex's body again
+        if (m.added.player === undefined || m.added.index === MI_MALE_INDEX || m.added.index === MI_FEMALE_INDEX) break;
+        m.added.index = m.added.player.sex === 0 ? MI_MALE_INDEX : MI_FEMALE_INDEX;
+        m.added.scale = 1;
         break;
       case 'removeAllSkillInfluence': // :15005-15010
         m.buffs.removeCommon();

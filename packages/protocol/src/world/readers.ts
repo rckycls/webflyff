@@ -1,7 +1,7 @@
 import type { MessageReader } from '../bundle';
 import { MessageType } from '../constants';
 import { readAddObj } from './addObj';
-import { readChat, readShout, readReturnSay, readSocial, readGmChat, readAnnouncement } from './chat';
+import { readChat, readShout, readReturnSay, readSocial, readGmChat } from './chat';
 import { readNpcScript } from './npc';
 import { readCreateSfxAllow, readMagicAttack, readRangeAttack } from './combat';
 import { readSetJobSkill, readSetNearJobSkill } from './jobs';
@@ -43,6 +43,7 @@ import {
   readFriendRequestCancel,
 } from './friends';
 import { readReturnScrollAck, readStateMode } from './travel';
+import { readCmdSetSkillLevel, readDisguise, readModifyMode, readNoDisguise, readServerText } from './gm';
 import {
   readMeleeAttack2, readMoverBehavior2, readMoverCorr2, readMoverMoved2, readSendActMsg, readSetFuel,
 } from './flight';
@@ -65,7 +66,8 @@ export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
     [0x8871, r => ({ type: 'profileStats', values: Array.from({ length: 14 }, () => r.i32()) })],
     [0x0069, r => readSocial(r, 'party')],
     [0x004f, readGmChat],
-    [0x00a0, readAnnouncement],
+    // 2026-11-10: SNAPSHOTTYPE_TEXT with its state byte (it was read as an announcement without it, and lost)
+    [MessageType.TEXT, readServerText],
     [0x0001, readChat],
     [0x00d0, readShout],
     [0x00a9, readReturnSay],
@@ -103,6 +105,11 @@ export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
     [MessageType.CREATESFXALLOW, readCreateSfxAllow],
     // Piece 7 M3: the item cast and the Scroll of Return's answer
     [MessageType.STATEMODE, readStateMode],
+    // 2026-11-10: the game masters' modes
+    [MessageType.MODIFYMODE, readModifyMode],
+    [MessageType.CMDSETSKILLLEVEL, readCmdSetSkillLevel],
+    [MessageType.DISGUISE, readDisguise],
+    [MessageType.NODISGUISE, readNoDisguise],
     // Piece 7 M5: flight
     [MessageType.MOVERMOVED2, readMoverMoved2],
     [MessageType.MOVERBEHAVIOR2, readMoverBehavior2],

@@ -101,6 +101,11 @@ export interface ClientHooks {
    * left (where a tap lands on it); null if the mover is not drawn.
    */
   screenOf(objectId: number): [number, number] | null;
+  /**
+   * 2026-11-10: the name tags over the movers' heads, by object ID: the text drawn, and how opaque its mover's body is
+   * (`bodyAlpha`: 1 whole, 0 not drawn, else an invisible player's blend).
+   */
+  tags(): Array<{ objectId: number; text: string | null; alpha: number }>;
 }
 
 declare global {
@@ -134,6 +139,7 @@ export function createClientHooks(): ClientHooks {
     step: async (steps) => current().step(steps),
     played: () => current().played(),
     screenOf: (objectId) => current().screenOf(objectId),
+    tags: () => current().tags(),
   };
 }
 

@@ -162,7 +162,7 @@ it('a line as ParsingCommand takes it: sent, run here (TCM_CLIENT), or dropped (
   const emoticons = ['laugh', 'cat face'];
   expect(lineAction('hello', 70, COMMANDS, emoticons)).toEqual({ kind: 'send' });
   expect(lineAction('/s hi', 70, COMMANDS, emoticons)).toEqual({ kind: 'send' });
-  expect(lineAction('/pos', 70, COMMANDS, emoticons)).toEqual({ kind: 'client', command: 'position', args: '' });
+  expect(lineAction('/pos', 70, COMMANDS, emoticons)).toEqual({ kind: 'client', command: 'position', args: '', line: '/pos' });
   expect(lineAction('/su Bob', 70, COMMANDS, emoticons)).toEqual({ kind: 'drop' });
   expect(lineAction('/su Bob', 'L'.charCodeAt(0), COMMANDS, emoticons)).toEqual({ kind: 'send' });
   expect(lineAction('/Shout hi', 70, COMMANDS, emoticons)).toEqual({ kind: 'drop' }); // exact case, as CString's ==
@@ -205,7 +205,7 @@ it('shows the list over the line; the highlight follows the typing, Enter or Tab
   expect(send).toHaveBeenLastCalledWith('nearby', '/s hi', '');
   type('/pos');
   submit();
-  expect(local).toHaveBeenCalledWith('position', '');
+  expect(local).toHaveBeenCalledWith('position', '', '/pos');
   type('/unknown');
   submit();
   expect(send).toHaveBeenCalledTimes(1);

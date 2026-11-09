@@ -47,6 +47,9 @@ import type { FlightInput } from './flightControl';
 import { FlightButtons } from './hud/flightButtons';
 import { TurboGauge } from './render/TurboGauge';
 import { isGameMaster } from './authorization';
+import { Mode, bodyAlpha, isFrozen, isInvisible, modeLine, showsBubble } from './gmModes';
+import { runClientHalf } from './gmCommands';
+import { CHATSTY } from './hud/chatRules';
 import { WARM_UP_EFFECTS, playCombatEvent, playOwnEvent } from './fx/combatEffects';
 import type { CombatFxOut, CombatFxWorld } from './fx/combatEffects';
 import { EffectManager } from './fx/EffectManager';
@@ -209,6 +212,8 @@ const LOADING_TEXT = 'Entering the world…';
 const COMBAT_END_COLOR = 0xffff0000;
 /** `PutString`'s colour when none is given (`WndManager.h:641`): the quest lines without a TID colour. */
 const WHITE = 0xffffffff;
+/** `TEXT_DIAG` (`MsgHdr.h:1574`): a server text shown in a box (`OnText`, `OpenMessageBoxUpper`). */
+const TEXT_DIAG = 2;
 const NOT_AVAILABLE_TEXT = "This map isn't available in the browser yet.";
 const NO_WEBGL_TEXT = "This browser can't show the 3D world (WebGL is off or not supported).";
 const OUT_OF_DATE_TEXT = 'The game files on the server are out of date.';
@@ -623,6 +628,10 @@ export class WorldScreen {
         };
       },
       screenOf: (objectId) => this.screenOf(objectId),
+      tags: () => [...(this.world?.movers.values() ?? [])].map((m) => ({
+        objectId: m.objectId, text: this.tags?.textOf(m.objectId) ?? null,
+        alpha: bodyAlpha(m, this.world?.self()?.added.player?.authorization ?? 0),
+      })),
     });
     void this.start();
   }
@@ -866,7 +875,8 @@ export class WorldScreen {
           }
           if (speaker?.kind !== 'player') continue;
           this.chatWindow?.append('nearby', world.movers.get(objectId)?.name ?? 'Unknown', value.text);
-          if (speaker && this.data && nameTagOf(speaker, world.self(), this.data.nameColors, this.data.honorTitles)) this.speechBubbles?.say(objectId, value.text);
+          // 2026-11-10: no bubble for an invisible game master (PutString, WndManager.cpp:4100-4102)
+          if (speaker && showsBubble(speaker)) this.speechBubbles?.say(objectId, value.text);
         }
         else this.chatWindow?.append(value.type, value.sender, value.text, value.type === 'whisper' ? value.recipient : undefined,
           value.type === 'shout' ? value.color : undefined);
@@ -884,6 +894,27 @@ export class WorldScreen {
           : value.flag === 2 ? texts?.get('TID_GAME_MSGNOTTRANSELF')?.text ?? 'You cannot send a PM to yourself, silly.'
           : formatText(texts?.get('TID_GAME_MSGNOTEXIST')?.text ?? '%s does not exist.', [value.text]);
         this.chatWindow?.append('system', '', line, undefined, color);
+        continue;
+      }
+      // 2026-11-10: the game masters' answers. OnText (DPClient.cpp:1582-1604): a green game line, or a box (TEXT_DIAG);
+      // OnGetPlayerCount (:12106-12116): TID_ADMIN_WORLDCOUNT in the chat; OnGetPlayerAddr (:12092-12104): "[IP] name :
+      // addr" in blue; OnSystem (:12144-12158): TID_ADMIN_ANNOUNCE in the chat and as a caption
+      if (value.type === 'serverText') {
+        if (value.state === TEXT_DIAG) { if (this.messageBox?.isOpen !== true) this.messageBox?.open(value.text, 'ok', () => {}); }
+        else this.chatWindow?.append('system', '', value.text, undefined, 0xff00ff00);
+        continue;
+      }
+      if (value.type === 'playerCount' || value.type === 'playerAddr' || value.type === 'systemNotice') {
+        const texts = this.data?.texts;
+        if (value.type === 'playerAddr') this.chatWindow?.append('system', '', `[IP] ${value.name} : ${value.addr}`, undefined, 0xff0000ff);
+        else if (value.type === 'playerCount') {
+          const entry = texts?.get('TID_ADMIN_WORLDCOUNT');
+          this.chatWindow?.append('system', '', formatText(entry?.text ?? '[World CCU] %d', [value.count]), undefined, entry?.color, CHATSTY.GENERAL);
+        } else {
+          const line = formatText(texts?.get('TID_ADMIN_ANNOUNCE')?.text ?? '%s', [value.text]);
+          this.chatWindow?.append('announcement', '', line);
+          this.hud?.caption.show(line);
+        }
         continue;
       }
       if (value.type === 'definedText' && this.data) {
@@ -921,6 +952,13 @@ export class WorldScreen {
         if (objectId === self?.objectId) this.backCamera.relocate();
       }
       if (value.type === 'setPetName') this.recolorTags(); // pets R1: the pet mover's new name (OnSetPetName)
+      if (value.type === 'modifyMode') this.onModifyMode(objectId, value.mode);
+      // 2026-11-10: a disguise's body (SetIndex): the model made again, and the tag
+      if (value.type === 'disguise' || value.type === 'noDisguise') {
+        const mover = world.movers.get(objectId);
+        if (mover !== undefined) this.views?.refresh(mover);
+        this.recolorTags();
+      }
     }
   }
 
@@ -947,6 +985,10 @@ export class WorldScreen {
         moverProps: data.movers,
         loadRide: loadRideModel(services), // Piece 7 M5
         sounds: { motion: (at, id) => this.sounds?.motion(at, id), footstep: (at) => this.sounds?.footstep(at) },
+        // 2026-11-10: an invisible player: the own body faint, another seen faint by a game master only, and never clicked
+        // (MoverRender.cpp:517-531, WndWorld.cpp:6372)
+        alphaOf: (mover) => bodyAlpha(mover, this.world?.self()?.added.player?.authorization ?? 0),
+        unpickable: isInvisible,
       },
     );
     this.world!.onEquipmentChange = (mover) => {
@@ -1500,22 +1542,27 @@ export class WorldScreen {
     this.chatWindow.setFilter(this.data?.chat?.filter ?? null);
     if (this.chatWindow instanceof NeuzChat) this.chatWindow.setHelp(this.data?.chat?.help);
     this.chatWindow.restart();
-    // 2026-11-05: the client commands Neuz runs itself (TCM_CLIENT, FuncTextCmd.cpp): /position and /Time print; the
-    // others (the trade, whisper and party toggles, the block list) have no option or window here, and send nothing
-    this.chatWindow.onClientCommand = (command) => {
-      // 2026-11-10: /wa /wr /ma /mr /ca /cr (FuncTextCmd.cpp:3776-3823)
+    // the client commands Neuz runs itself (TCM_CLIENT), and the TCM_BOTH ones whose client half decides what is sent
+    // (2026-11-10, gmCommands.ts): their lines go to the System window (PutString), their line to the server as chat
+    this.chatWindow.onClientCommand = (command, args, line) => {
+      // 2026-11-10 (friends-say): /wa /wr /ma /mr /ca /cr (FuncTextCmd.cpp:3776-3823)
       if (this.friendHud?.clientCommand(command) === true) return;
-      if (command === 'position') {
-        const pos = this.world?.self()?.act.body.pos;
-        const entry = this.data?.texts.get('TID_GAME_NOWPOSITION');
-        if (pos !== undefined && entry !== undefined) {
-          this.hud?.messages.add(formatText(entry.text, [pos[0], pos[1], pos[2]]), entry.color);
-        }
-      } else if (command === 'Time') {
-        const now = new Date();
-        const two = (n: number): string => String(n).padStart(2, '0');
-        this.hud?.messages.add(`Real Time - ${two(now.getHours())}:${two(now.getMinutes())}:${two(now.getSeconds())}`, WHITE);
-      }
+      const world = this.world, data = this.data;
+      if (world === undefined || data === undefined) return;
+      const targetId = this.focus?.targetId ?? null;
+      const focused = targetId === null ? undefined : world.movers.get(targetId);
+      const chosen = this.skillWindow?.chosenSkill ?? null;
+      const skill = chosen === null ? undefined : data.skills.get(chosen);
+      const result = runClientHalf(command, args, line, {
+        focus: focused === undefined ? null : { isPlayer: focused.kind === 'player', name: focused.name },
+        chosenSkill: chosen === null ? null : { skill: chosen, name: skill?.name ?? '', expertMax: skill?.maxLevel ?? 0 },
+        foodMillOpen: this.petCare?.millOpen === true, jobs: data.jobs, pos: world.self()?.act.body.pos ?? [0, 0, 0],
+        now: new Date(), text: (id) => data.texts.get(id),
+      });
+      for (const printed of result.lines) this.chatWindow?.append('system', '', printed.text, undefined, printed.color);
+      if (result.send !== undefined) this.session.sendChat('nearby', result.send, '');
+      if (result.openFoodMill === true) this.petCare?.tamerMill(); // a new CWndPetFoodMill with no feed maker (:390-402)
+      if (result.clearPetName === true) this.session.sendClearPetName();
     };
     this.shopWindow = new ShopWindow(this.hudArt!, this.data!, () => this.own, (id) => this.canTalk(id), {
       open: (id) => session.sendOpenShop(id), close: () => session.sendCloseShop(),
@@ -1652,6 +1699,8 @@ export class WorldScreen {
     this.tap = new TapToWalk(
       renderer.domElement, (x, y) => this.pick(x, y), (error) => this.reportOnce(`tap: ${messageOf(error)}`, error),
       (press) => {
+        // 2026-11-10: a frozen player (/freeze, DONMOVE_MODE) does nothing with a press (OnLButtonDown, WndWorld.cpp:6729-6730)
+        if (isFrozen(this.world?.self())) return true;
         // 2026-11-05: an armed monster summon takes the press, on the ground it went down on
         if (this.itemWindows?.armed === true) {
           if (press.point !== undefined) this.placeMonster(press.point);
@@ -1911,6 +1960,14 @@ export class WorldScreen {
     for (const event of changes.own) {
       if (event.kind === 'quest') this.playQuest(event.change);
       else if (event.kind === 'speed') this.flightSpeed = event.shown; // Piece 7 M5
+      else if (event.kind === 'skillLevelSet') {
+        // 2026-11-10: OnCmdSetSkillLevel (DPClient.cpp:13539-13546): TID_GAME_SKILLLEVELUP in TID_GAME_REAPSKILL's colour
+        const entry = this.data?.texts.get('TID_GAME_SKILLLEVELUP');
+        const name = this.data?.skills.get(event.skill)?.name;
+        if (entry !== undefined && name !== undefined) {
+          this.chatWindow?.append('system', '', formatText(entry.text, [name, event.level]), undefined, this.data?.texts.get('TID_GAME_REAPSKILL')?.color);
+        }
+      }
     }
     // Piece 7 M5: the own mover took off (MODE_FLY: the focus goes, ActionMoverMsg.cpp:1084-1089) or entered flying
     // (PLAYERBEHAVIOR2 once), or landed (the phone's Accelerate is let go)
@@ -2318,7 +2375,10 @@ export class WorldScreen {
     const jump = this.jumpRequested && own !== undefined && !own.act.isDie() &&
       (own.act.state & (ObjSta.JUMP_ALL | ObjSta.ATK_ALL | ObjSta.DMG_ALL)) === 0 && !this.skillUse!.pending;
     if (jump || airborne || own?.act.isDie()) this.jumpRequested = false;
-    if (own !== undefined) {
+    // 2026-11-10: a frozen player (/freeze) neither moves nor attacks (ControlPlayer, WndWorldControlPlayer.cpp:21-22;
+    // UseFocusObj, WndWorld.cpp:6205)
+    if (own !== undefined && isFrozen(own)) this.jumpRequested = false;
+    else if (own !== undefined) {
       // the keys' Shift no longer changes the gait: X toggles it (spec §1)
       const cameraAngle = this.backCamera.heading === null ? own.act.body.angle : 180 - this.backCamera.heading * 180 / Math.PI;
       const intent = controlIntent(this.keyboard!.intent(), this.joystick!.intent(), cameraAngle);
@@ -2472,6 +2532,9 @@ export class WorldScreen {
   private drawHud(world: WorldState, now: number): void {
     const self = world.self();
     const loop = this.attackLoop!;
+    // 2026-11-10: a focus that went invisible is let go, each frame (CWndWorld, WndWorld.cpp:1054)
+    const focused = this.focus!.targetId === null ? undefined : world.movers.get(this.focus!.targetId);
+    if (focused !== undefined && isInvisible(focused)) this.focus!.select(null);
     const targetId = loop.renderTargetId ?? this.focus!.targetId;
     const target = targetId === null ? null : world.movers.get(targetId) ?? null;
     // Piece 7 M2: the buffs' icons, the own and the target's, on the world's clock
@@ -2556,7 +2619,7 @@ export class WorldScreen {
       this.questWindow?.update(questState);
     }
     if (self !== undefined) this.minimap?.update(self.act.body.pos, this.backCamera.heading ?? 0,
-      [...world.movers.values()].filter(mover => !mover.isSelf && mover.hp > 0 &&
+      [...world.movers.values()].filter(mover => !mover.isSelf && mover.hp > 0 && !isInvisible(mover) &&
         !isGameMaster(mover.added.player?.authorization ?? 0)).map(mover => ({
         id: mover.objectId, kind: navigatorKind(mover, this.party), name: mover.name, pos: mover.act.body.pos,
       })));
@@ -3099,6 +3162,22 @@ export class WorldScreen {
     return this.taskBarData;
   }
 
+  /**
+   * 2026-11-10: `CDPClient::OnModifyMode` (`DPClient.cpp:12278-12379`), after the mode is set (`WorldState`): the tags
+   * again (an invisible player has none, `World3D.cpp:1282`); to the own game master, the line of its modes on
+   * (`modeLine`); to the own player with unread mail, `TID_MAIL_RECEIVE` (:12358-12376; its instant message window left out).
+   */
+  private onModifyMode(objectId: number, mode: number): void {
+    this.recolorTags();
+    const self = this.world?.self();
+    if (self === undefined || objectId !== self.objectId) return;
+    const text = (id: string) => this.data?.texts.get(id);
+    const line = modeLine(mode, self.added.player?.authorization ?? 0, text);
+    if (line !== null) this.chatWindow?.append('system', '', line.text, undefined, line.color);
+    const mail = text('TID_MAIL_RECEIVE');
+    if ((mode & Mode.MAILBOX) !== 0 && mail !== undefined) this.chatWindow?.append('system', '', mail.text, undefined, line?.color ?? text('TID_ADMIN_NORMAL')?.color);
+  }
+
   /** The members changed: every name tag's colour again (`COLOR_PARTY`). */
   private recolorTags(): void {
     const world = this.world, data = this.data;
@@ -3133,7 +3212,8 @@ export class WorldScreen {
     const bars: PartyHpMember[] = [];
     for (const slot of this.party.members) {
       const mover = world.moverByPlayerId(slot.playerId);
-      const head = mover === undefined || mover.isSelf ? null : headOf(mover.objectId);
+      // 2026-11-10: no bar over an invisible member (RenderHP, MoverRender.cpp:1741-1742)
+      const head = mover === undefined || mover.isSelf || isInvisible(mover) ? null : headOf(mover.objectId);
       if (mover !== undefined && head !== null) bars.push({ objectId: mover.objectId, head, hp: mover.hp, maxHp: mover.maxHp ?? 0 });
     }
     return bars;
