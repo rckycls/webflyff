@@ -749,7 +749,7 @@ export function writeItemContainer(w: ArWriter, items: readonly InventoryItem[],
  * nothing else: no serial number, text or keep time. 2026-11-09 (pets M0): the item's raised pet (`CPet::Serialize`,
  * `pet.cpp:313-324`), its vis keep times (the third piercing list) and `m_bTranformVisPet`, when the item has them.
  */
-function writeItemElem(w: ArWriter, item: InventoryItem): void {
+export function writeItemElem(w: ArWriter, item: InventoryItem): void {
   w.u32(item.objectId).u32(item.itemId).u32(0).string('') // m_dwObjId, m_dwItemId, m_liSerialNumber, m_szItemText
     .i16(item.count) // m_nItemNum (short)
     .u8(0).i32(0).i32(0) // m_nRepairNumber, m_nHitPoint, m_nRepair

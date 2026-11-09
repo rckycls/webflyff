@@ -28,6 +28,11 @@ export {
   directFriendStates, directOneFriendState, directRemoveFriendState, directSay, directSetFriendState, directWhisper,
   writeFriendAdded, writeFriendError, writeFriendGameJoin, writeFriendRemoved, writeFriendRequest, writeFriendRequestCancel,
 } from './friends';
+export {
+  writeChattingDelete, writeChattingEnter, writeChattingLine, writeChattingNew, writeChattingRemove, writeChattingState,
+  writePVendorClose, writePVendorItemNum, writePVendorItems, writePVendorOpen, writeRegisterPVendorItem,
+  writeUnregisterPVendorItem,
+} from './vendor';
 export { newVagrantOwn } from './newVagrant';
 export { createWorldScript } from './worldScript';
 export type { ReplyOptions, WorldScript, WorldScriptOptions } from './worldScript';

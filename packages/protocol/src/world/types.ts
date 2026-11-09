@@ -14,8 +14,9 @@ import type { ShopMessage } from './shop';
 import type { PetData, PetMessage } from './pets';
 import type { FriendMessage } from './friends';
 import type { TradeMessage } from './trade';
+import type { VendorMessage } from './vendor';
 
-export type WorldMessage = ChatMessage | NpcMessage | ShopMessage | QuestMessage | PetMessage | FriendMessage | TradeMessage
+export type WorldMessage = ChatMessage | NpcMessage | ShopMessage | QuestMessage | PetMessage | FriendMessage | TradeMessage | VendorMessage
   | { type: 'profileStats'; values: number[] }
   | { type: 'addItem'; item: GroundItem }
   | { type: 'createItem'; itemType: number; item: InventoryItem; stacks: Array<{ objectId: number; count: number }> }

@@ -115,6 +115,12 @@ import type { QuestChange } from './OwnState';
 import { expNeeded, expPercent } from './sim/params';
 import { dialogueStays, ownStands } from './hud/dialogue/dialogueStays';
 import { ShopWindow } from './hud/shopWindow';
+import { wordChange } from './hud/chatSend';
+import { PersonalShop, cameraDistance } from './vendor/personalShop';
+import {
+  encodeBuyPVendorItem, encodeChatting, encodeCloseChattingRoom, encodeEnterChattingRoom, encodeOpenChattingRoom, encodePVendorClose,
+  encodePVendorOpen, encodeQueryPVendorItem, encodeRegisterPVendorItem, encodeUnregisterPVendorItem,
+} from '@flyffweb/protocol';
 import { Minimap } from './hud/minimap';
 import { WorldMap } from './hud/worldMap';
 import type { MapView } from './hud/worldMap';
@@ -215,6 +221,11 @@ const LOADING_TEXT = 'Entering the world…';
 const COMBAT_END_COLOR = 0xffff0000;
 /** `PutString`'s colour when none is given (`WndManager.h:641`): the quest lines without a TID colour. */
 const WHITE = 0xffffffff;
+/** 2026-11-10: the personal shop's messages (world/vendor.ts), which `PersonalShop.apply` takes. */
+const VENDOR_MESSAGES: ReadonlySet<WorldMessage['type']> = new Set<WorldMessage['type']>([
+  'pvendorOpen', 'pvendorClose', 'registerPVendorItem', 'unregisterPVendorItem', 'pvendorItems', 'pvendorItemNum',
+  'chattingEnter', 'chattingNew', 'chattingDelete', 'chattingRemove', 'chattingLine', 'chattingState',
+]);
 /** `TEXT_DIAG` (`MsgHdr.h:1574`): a server text shown in a box (`OnText`, `OpenMessageBoxUpper`). */
 const TEXT_DIAG = 2;
 const NOT_AVAILABLE_TEXT = "This map isn't available in the browser yet.";
@@ -481,6 +492,9 @@ export class WorldScreen {
   /** `CWndWorld::m_dwDropTime` (WndWorld.cpp:590): when the player last dropped an item. */
   private lastDropAt = -Infinity;
   private shopWindow: ShopWindow | undefined;
+  /** 2026-11-10: the personal shop (vendor/personalShop.ts): the own shop, another's, the balloons and the shop's chat. */
+  private personalShop: PersonalShop | undefined;
+  private vendorRevision = -1;
   private minimap: Minimap | undefined;
   /** The world map (Piece 6 M1), its catalog (null without one) and its monster switch, kept across world changes. */
   private worldMap: WorldMap | undefined;
@@ -860,6 +874,8 @@ export class WorldScreen {
       if (value.type === 'playSound') { this.sounds?.serverSound(value.sound); continue; }
       this.messageSounds(objectId, value, self);
       if (value.type === 'shopStock') { this.shopWindow?.receive(objectId, value.tabs); continue; }
+      // 2026-11-10: the personal shop's snapshots and its chat room (OnPVendor*, OnChatting)
+      if (VENDOR_MESSAGES.has(value.type)) { this.personalShop?.apply(objectId, value); continue; }
       if (value.type === 'gmChat') {
         // OnGMChat: each line an announcement (TID_ADMIN_ANNOUNCE, DPClient.cpp:6707-6719)
         for (const text of value.texts) this.chatWindow?.append('announcement', '', text);
@@ -887,7 +903,8 @@ export class WorldScreen {
           if (speaker?.kind !== 'player') continue;
           this.chatWindow?.append('nearby', world.movers.get(objectId)?.name ?? 'Unknown', value.text);
           // 2026-11-10: no bubble for an invisible game master (PutString, WndManager.cpp:4100-4102)
-          if (speaker && showsBubble(speaker)) this.speechBubbles?.say(objectId, value.text);
+          // 2026-11-10: and none for a seller (PutString, WndManager.cpp:4097-4098)
+          if (speaker && showsBubble(speaker) && this.personalShop?.hasShop(objectId) !== true) this.speechBubbles?.say(objectId, value.text);
         }
         else this.chatWindow?.append(value.type, value.sender, value.text, value.type === 'whisper' ? value.recipient : undefined,
           value.type === 'shout' ? value.color : undefined);
@@ -955,6 +972,9 @@ export class WorldScreen {
         if (value.type === 'moverDeath') this.attackLoop?.onMoverDeath(objectId, value.attackerId);
         else if (value.type === 'delObj') { this.attackLoop?.onRemoved(objectId); this.tradeHud?.removed(objectId); }
       }
+      // 2026-11-10: a seller's title from ADD_OBJ (DPClient.cpp:1356-1359), and its balloon gone with it
+      if (value.type === 'addMover') this.personalShop?.added(value.mover);
+      else if (value.type === 'delObj') this.personalShop?.removed(objectId);
       world.apply(objectId, value, joining);
       this.skillUse?.onMessage(objectId, value, world.self());
       this.skillWindow?.onMessage(objectId, value, this.own);
@@ -1592,6 +1612,8 @@ export class WorldScreen {
       if (this.own) inventoryWindow.update(this.own, true);
     };
     inventoryWindow.onShopClose = () => this.shopWindow?.frame.close();
+    // 2026-11-10: the personal shop (docs/superpowers/specs/2026-11-10-personal-shop-research.md)
+    this.personalShop = this.makePersonalShop(inventoryWindow, messageBox, doc);
     this.teleporter = new TeleporterWindow(this.hudArt!, id => this.canTalk(id), (key, index) => session.sendTeleporter(key, index), doc);
     this.moverMenu = new MoverMenu(doc);
     const partyHud = new PartyHud(this.hudArt!, this.data!.texts, () => this.partyCatalog, {
@@ -1722,6 +1744,7 @@ export class WorldScreen {
       this.petWindows.element, this.buffPet.element,
       ...questWindow.elements, this.dialog.element, this.moverMenu.element, ...partyHud.elements, ...friendHud.elements,
       ...tradeHud.elements,
+      ...(this.personalShop?.elements.slice(1) ?? []),
     );
     // what the friend list said while the world loaded
     if (this.friendEvents.length > 0) friendHud.handle(this.friendEvents.splice(0));
@@ -1745,6 +1768,8 @@ export class WorldScreen {
       (press) => {
         // 2026-11-10: a frozen player (/freeze, DONMOVE_MODE) does nothing with a press (OnLButtonDown, WndWorld.cpp:6729-6730)
         if (isFrozen(this.world?.self())) return true;
+        // 2026-11-10: nor a seller with an item up, nor anyone with a shop window open (WndWorld.cpp:6721-6728)
+        if (this.personalShop?.blocksWorld === true) return true;
         // 2026-11-05: an armed monster summon takes the press, on the ground it went down on
         if (this.itemWindows?.armed === true) {
           if (press.point !== undefined) this.placeMonster(press.point);
@@ -1754,12 +1779,19 @@ export class WorldScreen {
         if (press.mover === null) attackLoop.onGroundPressed(press.double);
         // in the air no NPC menu opens (WndWorld.cpp:7059, !IsFly()): the press goes to the air's selection (Piece 7 M5)
         else if (pressed?.kind === 'npc' && this.world?.self()?.act.isFlying() !== true) this.pressNpc(press.mover);
-        else if (pressed?.kind === 'player' && !pressed.isSelf && (press.alt || (press.touch && this.focus?.targetId === press.mover))) {
+        // 2026-11-10: a seller's shop asked for (WndWorld.cpp:7019-7048): within 20 of the camera, without Alt
+        else if (pressed?.kind === 'player' && !pressed.isSelf && this.stage !== undefined
+          && this.personalShop?.press(press.mover, cameraDistance(this.stage.camera, this.views?.placeOf(press.mover)?.at ?? [1e9, 1e9, 1e9]), press.alt) === true) {
+          attackLoop.stop('move');
+          this.focus?.select(press.mover);
+        } else if (pressed?.kind === 'player' && !pressed.isSelf && (press.alt || (press.touch && this.focus?.targetId === press.mover))) {
           this.pressPlayer(press.mover);
         } else attackLoop.onMoverPressed(press.mover, press.time, press.double);
       },
       (mover) => {
         const pressed = this.world?.movers.get(mover);
+        // 2026-11-10: no right click for a seller with an item up (OnRButtonDown, WndWorld.cpp:7157-7158)
+        if (this.personalShop?.blocksActions === true) return;
         if (pressed?.kind === 'player' && !pressed.isSelf) this.pressPlayer(mover);
       },
       (time) => attackLoop.onReleased(time), // OnLButtonUp, at the let-go's own time
@@ -2337,6 +2369,11 @@ export class WorldScreen {
       this.indicators!.sync(world.movers, (mover) => markerIndex?.forNpc(mover.added.npc?.characterKey ?? '', quests, completed, owner) ?? null, now);
       this.indicators!.update(stage.camera, renderer.getSize(drawingSize).y, (objectId) => views.placeOf(objectId), now);
       this.speechBubbles?.update(stage.camera, drawingSize.y, (objectId) => views.placeOf(objectId));
+      // 2026-11-10: the sellers' balloons (CDialogMsg::Render's vendor part, DialogMsg.cpp:630-716)
+      if (this.personalShop !== undefined && this.hud !== undefined) {
+        this.personalShop.frame(stage.camera, renderer.domElement.getBoundingClientRect(), this.hud.element.getBoundingClientRect(),
+          (objectId) => views.placeOf(objectId));
+      }
       this.effects?.draw(stage.camera);
       this.particleLayer?.draw(this.petParticles); // pets R1
       const ownView = world.self();
@@ -2454,7 +2491,8 @@ export class WorldScreen {
     if (jump || airborne || own?.act.isDie()) this.jumpRequested = false;
     // 2026-11-10: a frozen player (/freeze) neither moves nor attacks (ControlPlayer, WndWorldControlPlayer.cpp:21-22;
     // UseFocusObj, WndWorld.cpp:6205)
-    if (own !== undefined && isFrozen(own)) this.jumpRequested = false;
+    // 2026-11-10: and a seller with an item up does not move (ControlPlayer, WndWorldControlPlayer.cpp:30)
+    if (own !== undefined && (isFrozen(own) || this.personalShop?.blocksActions === true)) this.jumpRequested = false;
     else if (own !== undefined) {
       // the keys' Shift no longer changes the gait: X toggles it (spec §1)
       const cameraAngle = this.backCamera.heading === null ? own.act.body.angle : 180 - this.backCamera.heading * 180 / Math.PI;
@@ -2679,6 +2717,11 @@ export class WorldScreen {
     if (this.moverMenu?.isOpen === true &&
       (menuNpc === null ? !ownStands(self) : !dialogueStays(world.movers.get(menuNpc), self))) this.moverMenu.close();
     this.shopWindow?.update();
+    // 2026-11-10: the personal shop's slots follow the bag (the names and counts of the own items)
+    if (this.own !== undefined && this.own.inventoryRevision !== this.vendorRevision) {
+      this.vendorRevision = this.own.inventoryRevision;
+      this.personalShop?.refresh();
+    }
     this.teleporter?.update();
     if (this.worldMap?.isOpen === true) this.worldMap.update(this.mapView(), this.partyMarks(world));
     this.chatWindow?.setParty(this.party.size() > 0);
@@ -2735,6 +2778,9 @@ export class WorldScreen {
     if (window === 'party') { this.partyHud?.toggle(); return; }
     // 2026-11-10: APP_MESSENGER_EX, E (FuncApplet.cpp:260)
     if (window === 'messenger') { this.friendHud?.toggle(); return; }
+    // 2026-11-10: APP_VENDOR_REVISION, the personal shop (the Summon Angel window that refuses it, WndManager.cpp:2686-2695,
+    // is not in the browser)
+    if (window === 'vendor') { this.personalShop?.toggle(); return; }
     if (window === 'quests') { this.questWindow?.toggle(this.hud?.element.clientWidth ?? 0, this.questState()); return; }
     if (window === 'option') { this.optionWindow?.toggle(); return; }
     if (window === 'inventory') {
@@ -3147,7 +3193,8 @@ export class WorldScreen {
     this.stopOwnMover();
     const at = this.menuPoint(id);
     if (at === null) return;
-    this.moverMenu!.open(playerMenuEntries(this.data!.texts), at, (entry) => this.choosePlayerEntry(id, entry));
+    // 2026-11-10: a seller's menu is "View equipment" alone (__CSC_VER12_1, WndWorld.cpp:6544-6547)
+    this.moverMenu!.open(playerMenuEntries(this.data!.texts, this.personalShop?.hasShop(id) === true), at, (entry) => this.choosePlayerEntry(id, entry));
   }
 
   /** Invite (`OnCommand` MMI_INVITE_PARTY, :5639-5644, `InviteParty`, :11237-11266): the focus a player, the party's rule. */
@@ -3165,6 +3212,69 @@ export class WorldScreen {
     }
     if (entry !== MMI_INVITE_PARTY || player === undefined || this.focus?.targetId !== id) return;
     this.inviteToParty(player.playerId);
+  }
+
+  /**
+   * 2026-11-10: the personal shop and what it asks of the screen: the packets, the bag (held items, its phone tap-to-pick),
+   * the boxes, the windows that keep it shut, the name rules and the APP_VENDOR tooltip.
+   */
+  private makePersonalShop(inventoryWindow: InventoryWindow, messageBox: MessageBox, doc: Document): PersonalShop {
+    const session = this.session;
+    const send = (bytes: () => Uint8Array): void => session.sendVendor(bytes());
+    let tooltip: HTMLElement | undefined;
+    const shop: PersonalShop = new PersonalShop({
+      doc, art: this.hudArt!, data: this.data!,
+      send: {
+        open: (title) => send(() => encodePVendorOpen(title)),
+        close: (vendorId) => send(() => encodePVendorClose(vendorId)),
+        register: (slot, objectId, count, cost) => send(() => encodeRegisterPVendorItem(slot, objectId, count, cost)),
+        unregister: (slot) => send(() => encodeUnregisterPVendorItem(slot)),
+        query: (vendorId) => send(() => encodeQueryPVendorItem(vendorId)),
+        buy: (vendorId, slot, itemId, count) => { this.sounds?.shop(); send(() => encodeBuyPVendorItem(vendorId, slot, itemId, count)); },
+        enterChat: (roomId) => send(() => encodeEnterChattingRoom(roomId)),
+        chat: (text) => send(() => encodeChatting(text)),
+        openChat: () => send(() => encodeOpenChattingRoom()),
+        closeChat: () => send(() => encodeCloseChattingRoom()),
+      },
+      own: () => this.own,
+      self: () => this.world?.self(),
+      mover: (objectId) => this.world?.movers.get(objectId),
+      say: (text, color) => this.hud?.messages.add(text, color ?? WHITE),
+      box: (text, buttons, onOk, onCancel) => messageBox.open(text, buttons, onOk, onCancel),
+      inventory: {
+        open: () => {
+          if (this.own === undefined) return;
+          if (!inventoryWindow.frame.isOpen) { inventoryWindow.toggle(this.own); void this.makePortrait(true); }
+        },
+        frame: inventoryWindow.frame,
+        reserve: (objectId, on) => this.reserveItem(objectId, on),
+        held: (objectId) => this.bagHeld(objectId),
+        // the phone has no drag: the bag's tap picks the item, as the NPC shop's sale does
+        pick: (choose) => {
+          if (choose !== undefined && !shop.window.phone) return;
+          inventoryWindow.shopSelect = choose;
+          if (this.own) inventoryWindow.update(this.own, true);
+        },
+      },
+      // CWndVendor::Initialize (WndVendor.cpp:204-213) and SetVendor's dialogue (:67-68)
+      busy: () => this.shopWindow?.frame.isOpen === true || this.dialog?.frame.isOpen === true,
+      invalidNames: () => this.partyCatalog?.invalidNames ?? [],
+      wordChange: (text) => wordChange(text, this.data?.chat?.filter ?? null),
+      tooltip: (item, cost, anchor) => {
+        tooltip?.remove();
+        tooltip = undefined;
+        if (item === null || anchor === null || doc.defaultView?.matchMedia?.('(pointer: coarse)').matches === true) return;
+        const ctx = { ...ownTooltipContext(this.own, item, 'other'), flag: 'vendor' as const, vendorCost: cost };
+        tooltip = createItemDetails(doc, this.hudArt!, this.data!, item, this.data!.itemProps.get(item.itemId), ctx);
+        tooltip.classList.add('shop-item-details');
+        (anchor.closest('.hud-window')?.parentElement ?? doc.body).append(tooltip);
+        positionItemDetails(tooltip, anchor, doc);
+      },
+    });
+    // the sellers already in view (their ADD_OBJ came before the windows), and the balloons under every window
+    for (const mover of this.world?.movers.values() ?? []) shop.added(mover.added);
+    this.hud?.element.prepend(shop.signs.element);
+    return shop;
   }
 
   /** `CWndWorld::InviteParty` (:11237-11266) for a player id: the party's rule, then MEMBERREQUEST, a box or a line. */
@@ -3335,6 +3445,8 @@ export class WorldScreen {
       this.session.sendNpcDialogOpen(id);
       this.sounds?.npcDialog(npc.added.npc!.characterKey);
     } else if (entry === MMI.TRADE && !data?.vendorType && this.canTalk(id)) {
+      // 2026-11-10: not with a personal shop window open (CWndShop::OnInitialUpdate, WndShop.cpp:774)
+      if (this.personalShop?.isOpen === true) return;
       this.dialog?.close();
       this.shopWindow!.open(id, npc.name, data);
     } else if (entry === MMI.TELEPORTER && data !== undefined) {
@@ -3469,6 +3581,8 @@ export class WorldScreen {
    * `ParsingChat` with `m_bShortcutCommand`, :2702-2716), or a skill's.
    */
   private useShortcut(shortcut: Shortcut, skillUse: SkillUse): void {
+    // 2026-11-10: no item or skill of a seller with an item up (ObjectExecutor, WndManager.cpp:2726, :2781)
+    if (this.personalShop?.blocksActions === true && (shortcut.kind === ShortcutKind.ITEM || shortcut.kind === ShortcutKind.SKILL)) return;
     if (shortcut.kind === ShortcutKind.ITEM) this.itemUse!.use(shortcut.id);
     else if (shortcut.kind === ShortcutKind.CHAT) this.chatWindow?.runShortcut(shortcut.text);
     else skillUse.useShortcut(shortcut);
@@ -3626,6 +3740,12 @@ export class WorldScreen {
     if (this.over) { this.chatWindow?.dispose(); this.chatWindow = undefined; }
     else this.chatWindow?.close();
     this.moverMenu?.dispose(); this.dialog?.dispose(); this.shopWindow?.dispose();
+    // 2026-11-10: the personal shop's windows and balloons go with the world (the server shuts a shop on a world change)
+    if (this.personalShop !== undefined) {
+      this.personalShop.reset();
+      for (const element of this.personalShop.elements) element.remove();
+      this.personalShop = undefined;
+    }
     this.partyHud?.dispose();
     this.friendHud?.dispose();
     this.friendHud = undefined;

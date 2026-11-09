@@ -18,6 +18,8 @@ import { readFriendPacket, readFriendRequestPacket } from '../world/friends';
 import type { FriendDirectMessage, FriendRequestPacket } from '../world/friends';
 import { readTradeRequestPacket } from '../world/trade';
 import type { TradeRequestPacket } from '../world/trade';
+import { readVendorRequestPacket } from '../world/vendor';
+import type { VendorRequestPacket } from '../world/vendor';
 
 /** What `CDPClient::SendJoin` sends: the character that enters the world, and the account that owns it. */
 export interface JoinRequest {
@@ -329,6 +331,8 @@ export type WorldPacket =
   | FriendRequestPacket
   // 2026-11-10: the player trade's packets the browser sends (world/trade.ts)
   | TradeRequestPacket
+  // 2026-11-10: the personal shop's packets the browser sends (world/vendor.ts)
+  | VendorRequestPacket
   | { type: 'unknown'; packetType: number };
 
 /**
@@ -659,6 +663,9 @@ function decodeClientPacket(r: ArReader): WorldPacket {
       // 2026-11-10: the player trade's (world/trade.ts)
       const trade = readTradeRequestPacket(packetType, r);
       if (trade !== null) { r.expectEnd(); return trade; }
+      // 2026-11-10: the personal shop's (world/vendor.ts)
+      const vendor = readVendorRequestPacket(packetType, r);
+      if (vendor !== null) { r.expectEnd(); return vendor; }
       return { type: 'unknown', packetType };
     }
   }

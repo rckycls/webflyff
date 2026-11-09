@@ -40,7 +40,7 @@ export interface TooltipRun {
 export type TooltipLine = TooltipRun[];
 
 /** The window that asks (the C++ `flag`): the inventory (`APP_INVENTORY`), the NPC shop (`APP_SHOP_`), or another (0). */
-export type TooltipFlag = 'inventory' | 'shop' | 'other';
+export type TooltipFlag = 'inventory' | 'shop' | 'other' | 'vendor';
 
 /** The player the "can you use it" colours are judged for (`pMover`, :6563-6569). */
 export interface TooltipViewer {
@@ -58,6 +58,8 @@ export interface TooltipContext {
   isWorn?: boolean;
   /** With the inventory flag: an NPC shop is open, so the selling price shows (PutItemGold). */
   shopOpen?: boolean;
+  /** 2026-11-10: with the vendor flag (`APP_VENDOR`), the personal shop's unit price (`m_nCost`, WndManager.cpp:5809-5822). */
+  vendorCost?: number;
   /** 2026-11-09 (pets R2): the own player has the buff (`HasBuff( type, id )`), for PutPetFeedPocket. */
   hasBuff?: (buffType: number, id: number) => boolean;
   /** 2026-11-09 (pets R2): how many of the item the bag holds (`GetItemNumForClient`, MoverParam.cpp:3631-3646). */
@@ -494,6 +496,9 @@ export function itemTooltip(item: InventoryItem, prop: WebItemProp, data: Toolti
     put(`\n${format('TID_GAME_TOOLTIP_COST2', withCommas(Math.max(1, cost)))}`, GENERAL);
   } else if (ctx.flag === 'inventory' && ctx.shopOpen === true && cost !== -1) {
     put(`\n${format('TID_GAME_TOOLTIP_SHELLCOST2', withCommas(Math.max(1, Math.trunc((cost >>> 0) / 4))))}`, GENERAL);
+  } else if (ctx.flag === 'vendor' && ctx.vendorCost !== undefined) {
+    // 2026-11-10: a personal shop's slot (`flag == APP_VENDOR`, WndManager.cpp:5809-5822): its own price
+    put(`\n${format('TID_GAME_TOOLTIP_SHELLCOST2', withCommas(ctx.vendorCost >>> 0))}`, GENERAL);
   }
 
   // 17. PutSetItemOpt (:4941-4993)

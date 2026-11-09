@@ -255,6 +255,8 @@ export class WorldSession {
   sendTradeConfirm(): void { this.playingCache()?.send(encodeTradeConfirm()); }
   /** BLOCK `gu` (`OnConfirmTrade`, :2555-2593): 3 refuse, 4 repairing, 5 a trade or a request open, 8 a bank open. */
   sendTradeBlock(gu: number, askerName: string): void { this.playingCache()?.send(encodeBlock(gu, this.entry.character.name, askerName)); }
+  /** 2026-11-10: a personal shop packet (world/vendor.ts's encoders: PVENDOR_*, the shop's chat room), as it is. */
+  sendVendor(bytes: Uint8Array): void { this.playingCache()?.send(bytes); }
   private ownPlayerId(): number { return this.entry.character.playerId; }
   readonly stats: SessionStats = { bundles: 0, indexed: 0, skipped: 0, mismatched: 0, unknownPackets: 0, droppedEvents: 0 };
   private phase: Phase = 'opening';

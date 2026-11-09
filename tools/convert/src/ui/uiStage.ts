@@ -233,6 +233,15 @@ export const THEME_FILES: readonly string[] = [
   // 2026-11-10, the player trade (docs/superpowers/specs/2026-11-10-trade-research.md §3, §8): APP_TRADE's picture
   // (resdata.inc:21942, not tiled) and its gold-clear button (:21994), hidden in V15 (WndField.cpp:9031-9038)
   'WndTrade.tga', 'ButtClearGold.tga',
+  // 2026-11-10, the personal shop (docs/superpowers/specs/2026-11-10-personal-shop-research.md §1-§3): APP_VENDOR_REVISION's
+  // Chat (resdata.inc:3716-3880; Reset is above), the keypads' buttons and number boxes of APP_VENDOREX_SELL and
+  // APP_VENDOREX_BUY (:12278, :12977; Plus and Minus are above), the focus arrow (WndRegVend.cpp:91), the mark of a slot
+  // under a carried item (WndVendorCtrl.cpp:49) and the title balloon's three pieces (DialogMsg.cpp:40-42)
+  'ButtChat.BMP', 'ButItemNum0.BMP', 'ButItemNum1.BMP', 'ButItemNum2.BMP', 'ButItemNum3.BMP', 'ButItemNum4.BMP',
+  'ButItemNum5.BMP', 'ButItemNum6.BMP', 'ButItemNum7.BMP', 'ButItemNum8.BMP', 'ButItemNum9.BMP', 'ButItemNum00.BMP',
+  'ButItemNum000.BMP', 'ButItemMin.BMP', 'ButItemMax.BMP', 'ButItemMulti.BMP', 'ButItemDivid.BMP', 'ButItemEqua.BMP',
+  'Window04.bmp', 'WndVenderArrowEx.tga', 'WndPosMark.tga', 'texDialogBox_left.tga', 'texDialogBox_center.TGA',
+  'texDialogBox_right.tga',
 ];
 
 /** 2026-11-05: the cursors of Client/Cursor the browser shows (Neuz.cpp:280-300): the upgrade mode's hammer, CUR_HAMMER. */
