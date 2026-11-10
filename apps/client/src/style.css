@@ -1598,14 +1598,16 @@ fieldset:disabled .btn {
   }
   .world #overlay:has(pre[hidden]) { background: none !important; padding: 0 !important; }
 }
+/* 2026-11-10 (owner): Attack, Jump and the flight buttons in the windows' colours (the phone panels' beige, #dba98c
+   border, #795431 shade), a dark brown ring and shadow keeping them clear of the world behind */
 .hud-attack,
 .hud-jump {
   position: absolute;
   padding: 0;
-  border: 2px solid #d7b579;
+  border: 2px solid #dba98c;
   border-radius: 50%;
-  background: radial-gradient(circle at 35% 22%, #576574e6, #202e42e6 55%, #0c1528ed);
-  box-shadow: inset 0 1px 2px #fff5, inset 0 -3px 6px #0008, 0 3px 9px #07102088;
+  background: radial-gradient(circle at 35% 25%, #fffaf4, #fbe9dc 40%, #efcdb6 75%, #e2b394);
+  box-shadow: 0 0 0 1px #795431, inset 0 1px 2px #fff, inset 0 -3px 6px #b07a5666, 0 3px 8px #0007;
   pointer-events: auto;
   cursor: pointer;
   touch-action: none;
@@ -1624,7 +1626,7 @@ fieldset:disabled .btn {
   content: '';
   position: absolute;
   background: no-repeat center / contain;
-  filter: drop-shadow(0 2px 2px #07101b);
+  filter: drop-shadow(0 1px 1px #79543188);
   pointer-events: none;
 }
 .hud-attack::before { inset: 15px; background-image: url('./icons/attack.svg'); }
@@ -1632,11 +1634,13 @@ fieldset:disabled .btn {
 
 .hud-attack:active:not(:disabled), .hud-jump:active:not(:disabled) {
   transform: scale(.95);
-  filter: brightness(1.2);
+  filter: brightness(.92);
 }
 
 .hud-attack:disabled, .hud-jump:disabled {
-  opacity: 0.48;
+  /* greyed but solid enough to read over the world (a light disc at half its opacity all but vanished) */
+  opacity: 0.72;
+  filter: saturate(.3) brightness(.92);
   cursor: default;
 }
 
@@ -1740,6 +1744,11 @@ fieldset:disabled .btn {
 .hud-inventory[data-mobile-window] { left: auto !important; right: 12px; top: 8px !important; width: var(--mobile-inventory-width, calc(100% - 24px)) !important; height: calc(100% - var(--hud-taskbar-height, 48px) - 16px) !important; transform: none !important; z-index: 60 !important; border-radius: 6px; background: repeating-linear-gradient(#fdf5ee 0 2px, #f6e6dc 2px 4px); box-shadow: inset 0 0 0 2px #dba98c, 0 2px 8px #0005; }
 .hud-inventory[data-mobile-window] > .hud-window-frame { display: none; }
 .hud-inventory[data-mobile-window] > .hud-window-title { height: 28px !important; background-image: var(--classic-inventory-art); background-size: 100% 590px; background-position: top left; box-shadow: 0 1px 2px #795431; }
+/* 2026-11-10 (owner): the picture's columns 0-232 only: its last 7 (the PC window's right frame and drop shadow), stretched
+   across the phone's wide title, drew a second little frame right of the close button */
+@media (max-width: 1000px) and (pointer: coarse) {
+  .hud-inventory[data-mobile-window] > .hud-window-title { background-size: calc(100% * 240 / 233) 590px; border-radius: 6px 6px 0 0; }
+}
 .hud-inventory[data-mobile-window] > .hud-window-body { top: 34px !important; width: calc(100% - 12px) !important; height: calc(100% - 42px) !important; }
 .hud-inventory[data-mobile-window] > .hud-window-close { left: auto !important; right: 14px; }
 .hud-inventory[data-mobile-window] .inventory-sections { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
@@ -1841,6 +1850,8 @@ fieldset:disabled .btn {
   .world:has(.hud-inventory[data-mobile-window]:not([hidden])) .joystick,
   .world:has(.hud-inventory[data-mobile-window]:not([hidden])) .hud-jump,
   .world:has(.hud-inventory[data-mobile-window]:not([hidden])) .hud-attack { visibility: hidden; }
+  /* 2026-11-10 (owner): the Navigator's edge and close button showed beside the bag's close button; it hides with the bag */
+  .world:has(.hud-inventory[data-mobile-window]:not([hidden])) .hud-navigator { visibility: hidden; }
 }
 @media (max-width: 1000px) and (pointer: coarse) {
   .world-hud { overflow: visible; }
@@ -2115,6 +2126,8 @@ fieldset:disabled .btn {
 .hud-skills-landscape .hud-skills-group-title { font-size: 18px; line-height: 24px; }
 .hud-skills-landscape .hud-skills-points { font-size: 20px; line-height: 24px; }
 .hud-skills-landscape .hud-skills-picture { background-size: 100% 100%; }
+/* 2026-11-10: the arrows of the first and second jobs' sections (SkillWindow's phone tree), under the skills, no presses */
+.hud-skills-landscape .hud-skills-tree { position: absolute; overflow: visible; pointer-events: none; }
 .hud-skills-landscape [data-button]::before { inset: -8px !important; }
 /* + and - are 30 px apart: each reaches 8 px outward and 3 px towards the other (2026-11-04 audit: 4 px was about 20 px) */
 .hud-skills-landscape [data-button='plus']::before { inset: -8px -3px -8px -8px !important; }
@@ -2462,11 +2475,13 @@ fieldset:disabled .btn {
 .hud-flight-button {
   position: absolute;
   padding: 0;
-  border: 2px solid #d7b579;
+  /* 2026-11-10 (owner): the windows' colours, as Attack and Jump */
+  border: 2px solid #dba98c;
   border-radius: 50%;
-  background: radial-gradient(circle at 35% 22%, #576574e6, #202e42e6 55%, #0c1528ed);
-  box-shadow: inset 0 1px 2px #fff5, inset 0 -3px 6px #0008, 0 3px 9px #07102088;
-  color: #f4e6c8;
+  background: radial-gradient(circle at 35% 25%, #fffaf4, #fbe9dc 40%, #efcdb6 75%, #e2b394);
+  box-shadow: 0 0 0 1px #795431, inset 0 1px 2px #fff, inset 0 -3px 6px #b07a5666, 0 3px 8px #0007;
+  color: #5a3320;
+  text-shadow: 0 1px 0 #fff8;
   font: 700 14px/1 system-ui, sans-serif;
   pointer-events: auto;
   cursor: pointer;
@@ -2475,8 +2490,8 @@ fieldset:disabled .btn {
 }
 .hud-flight-button[hidden] { display: none !important; }
 .hud-flight-button::after { content: attr(data-label); }
-.hud-flight-button:active:not(:disabled) { transform: scale(.95); filter: brightness(1.2); }
-.hud-flight-button:disabled { opacity: 0.48; cursor: default; }
+.hud-flight-button:active:not(:disabled) { transform: scale(.95); filter: brightness(.92); }
+.hud-flight-button:disabled { opacity: 0.72; filter: saturate(.3) brightness(.92); cursor: default; }
 .hud-flight-button:focus-visible { outline: 2px solid #c2e9ff; outline-offset: 3px; }
 .hud-flight-accelerate {
   right: calc(var(--game-safe-right, 0px) + 30px);
