@@ -3324,3 +3324,81 @@ fieldset:disabled .btn {
   .hud-post-read [data-control="WIDC_BUTTON3"] { grid-area: 5 / 4; width: 100% !important; }
   .hud-post-read :is([data-control="WIDC_STATIC3"], [data-control="WIDC_STATIC4"])[data-filled="true"] { box-shadow: inset 0 0 0 2px #e2a06e; }
 }
+
+/* 2026-11-10: Summon Angel's window (angel/summonAngelWindow.ts; docs/superpowers/specs/2026-11-10-summon-angel-research.md §3).
+   CWndSummonAngel::OnDraw (WndSummonAngel.cpp:58-122): the two stones' icons at (30, 218) and (30, 306), a slot's stone at
+   its top left, the slot under a carried item filled 0x60ffff00, and the rates' "%" at x 415 in 0xff2e70a9. The angels'
+   EXP gauges (render/AngelLayer.ts) are a layer over the canvas. */
+.hud-summon-angel .hud-res-slot { left: 0; top: 0; }
+.hud-summon-angel [data-angel-slot].is-drag-over::after { content: ''; position: absolute; inset: 0; background: rgba(255, 255, 0, 0.376); pointer-events: none; }
+.hud-summon-angel-stone { position: absolute; width: 32px; height: 32px; pointer-events: none; }
+.hud-summon-angel-percent { position: absolute; color: #2e70a9; font-size: 12px; line-height: 14px; pointer-events: none; }
+.angel-gauge img[data-piece="fill"] { object-fit: cover; object-position: left; }
+
+/* The phone: the window a panel at the left beside the phone's bag (as the jewel windows), a tap on a bag stone putting it
+   in the first empty slot of its row and a tap on a slot taking it out; the slots 44 px in a grid of six (the stone's icon,
+   then five), the text, the rates and the white angel's lines 14 px, the three buttons 36 px words. */
+@media (max-width: 1000px) and (pointer: coarse) {
+  .world:has(.hud-summon-angel:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack) { visibility: hidden; }
+  .hud-summon-angel {
+    left: 8px !important; top: 8px !important; transform: none !important; z-index: 60 !important;
+    width: calc(100% - var(--bag-window-width, 60%) - 28px) !important; min-width: 300px;
+    height: calc(100% - var(--hud-taskbar-height, 48px) - 16px) !important;
+    border-radius: 6px; background: repeating-linear-gradient(#fdf5ee 0 2px, #f6e6dc 2px 4px); box-shadow: inset 0 0 0 2px #dba98c, 0 2px 8px #0005;
+  }
+  .hud-summon-angel > .hud-window-frame { display: none; }
+  .hud-summon-angel > .hud-window-title { height: 26px !important; border-radius: 6px 6px 0 0; background: linear-gradient(#f7d8c4, #e2b394); font-size: 14px; }
+  .hud-summon-angel > .hud-window-close { left: auto !important; right: 8px; }
+  .hud-summon-angel > .hud-window-body {
+    left: 4px !important; top: 30px !important; width: calc(100% - 8px) !important; height: calc(100% - 34px) !important;
+    display: grid; grid-template-columns: repeat(6, 1fr); grid-auto-rows: auto; gap: 4px; justify-items: center; align-items: center;
+    overflow-y: auto; font-size: 14px;
+  }
+  .hud-summon-angel > .hud-window-body > * { position: relative !important; left: auto !important; top: auto !important; }
+  .hud-summon-angel [data-control="WIDC_TEXT1"] {
+    grid-area: 1 / 1 / 2 / -1; align-self: stretch; width: 100% !important; height: 96px !important;
+    border-radius: 4px; background: #fffaf6; box-shadow: inset 0 0 0 1px #e2cfc0;
+  }
+  .hud-summon-angel [data-control="WIDC_TEXT1"] > :not(.hud-res-text-body) { display: none; }
+  .hud-summon-angel .hud-res-text-body {
+    position: absolute !important; inset: 4px 6px !important; width: auto !important; height: auto !important;
+    overflow-y: auto; font-size: 14px; line-height: 17px;
+  }
+  .hud-summon-angel-stone[data-stone="sun"] { grid-area: 2 / 1 / 4 / 2; }
+  .hud-summon-angel-stone[data-stone="moon"] { grid-area: 4 / 1 / 6 / 2; }
+  .hud-summon-angel :is([data-angel-slot="0"], [data-angel-slot="1"], [data-angel-slot="2"], [data-angel-slot="3"], [data-angel-slot="4"]) { grid-row: 2; }
+  .hud-summon-angel :is([data-angel-slot="5"], [data-angel-slot="6"], [data-angel-slot="7"], [data-angel-slot="8"], [data-angel-slot="9"]) { grid-row: 3; }
+  .hud-summon-angel :is([data-angel-slot="10"], [data-angel-slot="11"], [data-angel-slot="12"], [data-angel-slot="13"], [data-angel-slot="14"]) { grid-row: 4; }
+  .hud-summon-angel :is([data-angel-slot="15"], [data-angel-slot="16"], [data-angel-slot="17"], [data-angel-slot="18"], [data-angel-slot="19"]) { grid-row: 5; }
+  .hud-summon-angel [data-angel-slot] {
+    width: 44px !important; height: 44px !important; background-position: 6px 6px; border-radius: 4px; box-shadow: inset 0 0 0 1px #dba98c;
+  }
+  .hud-summon-angel [data-angel-slot] .hud-res-slot { left: 6px; top: 6px; }
+  .hud-summon-angel [data-angel-slot][data-filled] { box-shadow: inset 0 0 0 2px #3d8bd6; }
+  .hud-summon-angel [data-control="WIDC_STATIC2"], .hud-summon-angel-percent { display: none; }
+  .hud-summon-angel :is([data-control="WIDC_STATIC3"], [data-control="WIDC_STATIC4"], [data-control="WIDC_STATIC5"],
+    [data-control="WIDC_STATIC6"], [data-control="WIDC_STATIC1"], [data-control="WIDC_STATIC7"],
+    [data-control="WIDC_STATIC_RED"], [data-control="WIDC_STATIC_BLUE"], [data-control="WIDC_STATIC_GREEN"]) {
+    width: 100% !important; height: 20px !important; justify-self: stretch;
+  }
+  .hud-summon-angel :is([data-control^="WIDC_STATIC"]) .hud-res-static-text { position: static; display: block; font-size: 14px; line-height: 20px; white-space: nowrap; }
+  .hud-summon-angel [data-control="WIDC_STATIC3"] { grid-area: 6 / 1 / 7 / 5; }
+  .hud-summon-angel [data-control="WIDC_STATIC4"] { grid-area: 7 / 1 / 8 / 5; }
+  .hud-summon-angel [data-control="WIDC_STATIC5"] { grid-area: 8 / 1 / 9 / 5; }
+  .hud-summon-angel [data-control="WIDC_STATIC_RED"] { grid-area: 6 / 5 / 7 / -1; }
+  .hud-summon-angel [data-control="WIDC_STATIC_BLUE"] { grid-area: 7 / 5 / 8 / -1; }
+  .hud-summon-angel [data-control="WIDC_STATIC_GREEN"] { grid-area: 8 / 5 / 9 / -1; }
+  .hud-summon-angel :is([data-control="WIDC_STATIC_RED"], [data-control="WIDC_STATIC_BLUE"], [data-control="WIDC_STATIC_GREEN"]) .hud-res-static-text { text-align: right; }
+  .hud-summon-angel :is([data-control="WIDC_STATIC_RED"], [data-control="WIDC_STATIC_BLUE"], [data-control="WIDC_STATIC_GREEN"]) .hud-res-static-text::after { content: ' %'; color: #2e70a9; }
+  .hud-summon-angel [data-control="WIDC_STATIC6"] { grid-area: 9 / 1 / 10 / -1; }
+  .hud-summon-angel [data-control="WIDC_STATIC1"] { grid-area: 10 / 1 / 11 / -1; }
+  .hud-summon-angel [data-control="WIDC_STATIC7"] { grid-area: 11 / 1 / 12 / -1; }
+  .hud-summon-angel [data-control="WIDC_RESET"] { grid-area: 12 / 1 / 13 / 3; }
+  .hud-summon-angel [data-control="WIDC_CANCEL"] { grid-area: 12 / 3 / 13 / 5; }
+  .hud-summon-angel [data-control="WIDC_START"] { grid-area: 12 / 5 / 13 / -1; }
+  .hud-summon-angel .hud-picture-button {
+    box-sizing: border-box; width: 100% !important; min-width: 0; height: 36px !important; border: 1px solid #b07d5c; border-radius: 4px;
+    background: linear-gradient(#fff7ef, #ecd2bd) !important; color: #3a2414; font: 14px/34px Arial, sans-serif; text-align: center;
+  }
+  .hud-summon-angel .hud-picture-button::after { content: attr(aria-label); }
+}

@@ -146,6 +146,12 @@ import { ConfirmBoxes, boxOf } from './items/confirmBoxes';
 import { ticketInUse } from './items/itemWindows';
 import { PiercingWindow, SmeltSafetyWindow } from './items/upgradeNpcWindows';
 import { JewelWindows } from './items/jewelWindows';
+// 2026-11-10: Summon Angel (docs/superpowers/specs/2026-11-10-summon-angel-research.md)
+import { SummonAngelWindow } from './angel/summonAngelWindow';
+import { AngelFollowers, createAngelParticle } from './angel/angelFollow';
+import { ANGELS, angelPercent, angelTarget, isAngelBuff } from './angel/angelRules';
+import { AngelGauges, AngelLayer } from './render/AngelLayer';
+import type { AngelModel, AngelShown } from './render/AngelLayer';
 import { WeaponGlows, glowOf, weaponOption } from './render/weaponGlow';
 import { ParticleLayer } from './render/ParticleLayer';
 import { PetParticles, createPetParticle } from './pets/petParticles';
@@ -180,7 +186,7 @@ import { ItemActions } from './items/itemActions';
 import { GroundItems } from './items/groundItems';
 import { GroundModels, loadDropModel } from './items/groundModels';
 import { NearbyItems } from './items/nearbyItems';
-import { NULL_ID, STATE_BASEMOTION_MODE, ShortcutKind, isBankMessage, isGuildMessage, isPostMessage, isTradeMessage } from '@flyffweb/protocol';
+import { EVE_PK, NULL_ID, STATE_BASEMOTION_MODE, ShortcutKind, isBankMessage, isGuildMessage, isPostMessage, isTradeMessage } from '@flyffweb/protocol';
 // 2026-11-10: the guild (guild/guildBook.ts, guild/guildHud.ts)
 import { GuildBook } from './guild/guildBook';
 import type { GuildContext, GuildEvent } from './guild/guildBook';
@@ -275,6 +281,21 @@ async function loadMotion(services: SceneServices, key: string): Promise<LoopedM
   const clip = (await loadGltf(services.store, services.loaders.gltf, key)).animations[0];
   if (clip === undefined) throw new Error('the file has no animation');
   return loopMotion(clip);
+}
+
+/**
+ * 2026-11-10 (Summon Angel): an angel's model, `szTextFile`.chr/.o3d/_stand01.ani (`CMover::Process`, Mover.cpp:3588-3594),
+ * its stand motion playing on; without the motion it stands still.
+ */
+async function loadAngelModel(services: SceneServices, name: string): Promise<AngelModel> {
+  const character = await loadMoverModel(services)({
+    skeleton: `skeletons/${name}.glb`, parts: [`models/${name}.glb`], motion: () => null, hairColor: null, held: { right: null, left: null },
+  }, () => {});
+  try {
+    const motion = await loadMotion(services, `motions/${name}/${name}_stand01.glb`);
+    character.mixer.clipAction(motion.clip).play();
+  } catch { /* no motion: it stands */ }
+  return { object: character.root, mixer: character.mixer, release: () => character.release() };
 }
 
 const drawingSize = new Vector2();
@@ -450,6 +471,18 @@ export class WorldScreen {
   private upgradeNpc: { piercing: PiercingWindow; safety: SmeltSafetyWindow } | undefined;
   /** 2026-11-10: Peach's Create Jewels and Jewel Setting (items/jewelWindows.ts). */
   private jewels: JewelWindows | undefined;
+  /**
+   * 2026-11-10: Summon Angel: the Priest of Confession's window, the angels following their players and their models and
+   * gauges, the own angel's EXP and level (`m_nAngelExp`, `m_nAngelLevel`), the 100% box's latch (`m_bAngelFinish`) and
+   * `g_eLocal`'s states (EVE_PK).
+   */
+  private summonAngel: SummonAngelWindow | undefined;
+  private readonly angelFollowers = new AngelFollowers();
+  private angelLayer: AngelLayer | undefined;
+  private angelGauges: AngelGauges | undefined;
+  private angelInfo = { exp: 0n, level: 0 };
+  private angelFinish = false;
+  private localEvents = new Map<number, number>();
   /** 2026-11-09: the held weapons' upgrade and element glow (render/weaponGlow.ts). */
   private readonly weaponGlows = new WeaponGlows((effect) => this.effects?.play(effect));
   /** 2026-11-05: the movers whose buff wings show (`m_pSfxWing`), and when they were last looked at. */
@@ -687,6 +720,10 @@ export class WorldScreen {
         // 2026-11-10 (guild): the guild line ("name|colour|logo key", '' for none)
         guild: this.tags?.guildOf(m.objectId) ?? null,
       })),
+      // 2026-11-10 (Summon Angel): the angels and whether their models are drawn
+      angels: () => [...this.angelFollowers.all()].map(([ownerId, angel]) => ({
+        ownerId, itemId: angel.itemId, pos: [...angel.pos] as Vec3, drawn: this.angelLayer?.drawn().includes(ownerId) === true,
+      })),
     });
     void this.start();
   }
@@ -810,6 +847,8 @@ export class WorldScreen {
     if (added !== undefined) {
       this.own = new OwnState(this.data!, added, this.entry.character.equipment,
         (questId) => this.questCatalog?.get(questId)?.repeat === true);
+      // 2026-11-10: the angel's EXP and level (ObjSerializeOpt.cpp:582-583)
+      this.angelInfo = { exp: added.player?.own?.angelExp ?? 0n, level: added.player?.own?.angelLevel ?? 0 };
     }
     const inventoryError = this.own?.inventoryError ?? null;
     if (inventoryError !== null) this.page?.overlay.error(`own inventory: ${inventoryError}`);
@@ -894,6 +933,17 @@ export class WorldScreen {
       if (value.type === 'smeltSafety') { this.upgradeNpc?.safety.onResult(value.result); continue; }
       // 2026-11-10: Create Jewels' and Jewel Setting's answers (OnUltimateWeapon, DPClient.cpp:11577-11643)
       if (value.type === 'ultimate') { this.jewels?.onUltimate(value); continue; }
+      // 2026-11-10: the angel's EXP, and "Your Angel has reached full Exp." (OnAngelInfo, DPClient.cpp:11337-11354); the local
+      // events, EVE_PK's among them (OnFlyffEvent, OnSetLocalEvent, :6183-6199, :6260-6265)
+      if (value.type === 'angel') {
+        if (value.info !== undefined && objectId === self?.objectId) {
+          this.angelInfo = { exp: value.info.exp, level: value.info.level };
+          if (value.info.complete) this.say('TID_GAME_COMPLETE_ANGEL');
+        }
+        continue;
+      }
+      if (value.type === 'flyffEvent') { this.localEvents = new Map(value.events.map(({ id, state }) => [id, state])); continue; }
+      if (value.type === 'setLocalEvent') { this.localEvents.set(value.id, value.state); continue; }
       // 2026-11-09 (pets R3): the food mill's answer (OnPetFoodMill, DPClient.cpp:16619-16632)
       if (value.type === 'petMill') { this.petCare?.onMill(value.result, value.count); continue; }
       // 2026-11-09 (pets R4): the pet trade's answer (OnQuePetResurrectionResult, DPClient.cpp:17423-17431)
@@ -1017,7 +1067,10 @@ export class WorldScreen {
         continue;
       }
       if (world.movers.has(objectId)) {
-        if (value.type === 'moverDeath') this.attackLoop?.onMoverDeath(objectId, value.attackerId);
+        if (value.type === 'moverDeath') {
+          this.attackLoop?.onMoverDeath(objectId, value.attackerId);
+          this.angelFollowers.died(objectId); // 2026-11-10: its angel made again (DPClient.cpp:1980-1987)
+        }
         else if (value.type === 'delObj') { this.attackLoop?.onRemoved(objectId); this.tradeHud?.removed(objectId); }
       }
       // 2026-11-10: a seller's title from ADD_OBJ (DPClient.cpp:1356-1359), and its balloon gone with it
@@ -1124,6 +1177,9 @@ export class WorldScreen {
     for (const xi of WARM_UP_EFFECTS) effects.preload(xi, (key) => void textures.get(key));
     this.petParticles.clear();
     this.particleLayer = new ParticleLayer(stage.scene, services.textures); // pets R1
+    this.angelFollowers.clear();
+    this.angelLayer?.dispose();
+    this.angelLayer = new AngelLayer(stage.scene, (name) => loadAngelModel(services, name)); // 2026-11-10: the angels
   }
 
   /**
@@ -1227,6 +1283,9 @@ export class WorldScreen {
     // Piece 7 M3: an item cast's gauge, there too (CMover::RenderCasting)
     this.castGauge = new CastGauge(this.hudArt!, doc);
     this.element.insertBefore(this.castGauge.element, this.hud!.element);
+    // 2026-11-10: the angels' EXP gauges (CMover::RenderAngelStatus)
+    this.angelGauges = new AngelGauges(this.hudArt!, doc);
+    this.element.insertBefore(this.angelGauges.element, this.hud!.element);
     // Piece 7 M5: the turbo gauge over the own flier (CMover::RenderTurboGauge)
     this.turboGauge = new TurboGauge(this.hudArt!, doc);
     this.element.insertBefore(this.turboGauge.element, this.hud!.element);
@@ -1236,6 +1295,9 @@ export class WorldScreen {
       items: this.data!.itemProps, onReturnScroll: () => this.returnScroll?.goBack(), now: () => performance.now(),
       texts: (tid) => this.data?.texts.get(tid)?.text, place: this.buffPlace, onPlace: (at) => { this.buffPlace = at; },
       onPartySummon: () => this.itemWindows?.partySummonBuff(),
+      // 2026-11-10: the angel's icon: its percent, its blink at 100, and a press on a PK server (WndWorld.cpp:6769-6794)
+      angelPercent: (itemId) => (isAngelBuff(this.data?.itemProps.get(itemId)) ? this.ownAngelPercent(itemId) : null),
+      onAngelPress: () => { if ((this.localEvents.get(EVE_PK) ?? 0) !== 0) this.session.sendAngelBuff(); },
       // 2026-11-09 (pets R3): the feed pocket's buff double-clicked turns it off (WndWorld.cpp:7280-7283)
       onFeedPocket: () => this.session.sendFeedPocketInactive(),
       // 2026-11-09 (pets R2): BUFF_PET's icon by the own pet's level, and its tooltip (PutPetTooltipInfo)
@@ -1406,6 +1468,28 @@ export class WorldScreen {
       closeBag: () => this.inventoryWindow?.frame.close(),
       ui: { art: this.hudArt!, doc, layer: () => this.hud?.element ?? null },
     });
+    // 2026-11-10: the Priest of Confession's Summon Angel (angel/summonAngelWindow.ts)
+    this.summonAngel = new SummonAngelWindow({
+      own: () => this.own, props: this.data!.itemProps,
+      text: (tid) => this.data?.texts.get(tid)?.text ?? '',
+      questText: () => this.data?.ultimate?.descriptions.summonAngel,
+      alert: (text) => { if (text !== '' && this.messageBox?.isOpen !== true) this.messageBox?.open(text, 'ok', () => {}); },
+      reserve: (id, on) => this.reserveItem(id, on),
+      reserved: (id) => this.bagReserved.get(id) ?? 0,
+      dieFlag: (on) => { this.bagDieFlag = on; if (this.own) this.inventoryWindow?.update(this.own, true); },
+      sendCreateAngel: (text) => this.session.sendCreateAngel(text),
+      openBag: () => { if (this.inventoryWindow?.frame.isOpen !== true) this.openWindow('inventory'); },
+      closeBag: () => this.inventoryWindow?.frame.close(),
+      bagOpen: () => this.inventoryWindow?.frame.isOpen === true,
+      bagRect: () => {
+        const frame = this.inventoryWindow?.frame, layer = this.hud?.element;
+        if (frame?.isOpen !== true || layer === undefined) return null;
+        const bag = frame.element.getBoundingClientRect(), at = layer.getBoundingClientRect();
+        return { x: bag.left - at.left, y: bag.top - at.top, width: bag.width };
+      },
+      mobile: () => doc.defaultView?.matchMedia?.('(max-width: 1000px) and (pointer: coarse)').matches === true,
+      ui: { art: this.hudArt!, doc, layer: () => this.hud?.element ?? null },
+    });
     // 2026-11-05: the upgrade cursor: Sunstone, Moonstone, the cards, the random and awakening scrolls, the Ultimate gem
     this.upgrade = new UpgradeCursor({
       own: () => this.own, props: this.data!.itemProps, now: () => performance.now(),
@@ -1501,6 +1585,7 @@ export class WorldScreen {
       use: (id, shift) => {
         // 2026-11-10: no use while trading (CWndInventory::OnChildNotify, WndField.cpp:2541-2547)
         if (this.tradeLimit()) return;
+        if (this.summonAngelUse(id)) return; // 2026-11-10: the Summon Angel window open
         // 2026-11-09 (pets R4): with a Pet Tamer window open its clicks took the item; the double-click does no more (the
         // egg exchange's bag path returns at once, WndField.cpp:2237-2259)
         if (this.petTamer?.picking === true) return;
@@ -1509,7 +1594,9 @@ export class WorldScreen {
         if (this.petCare?.millOpen === true) this.sayRefusal({ kind: 'say', tid: 'TID_SBEVE_NOTUSEITEM' });
         else this.itemUse!.use(id, 'bag');
       },
-      equip: (id, shift) => { if (!this.tradeLimit() && !this.takeIntoUpgradeWindow(id, shift === true)) itemActions.equip(id); },
+      equip: (id, shift) => {
+        if (!this.tradeLimit() && !this.summonAngelUse(id) && !this.takeIntoUpgradeWindow(id, shift === true)) itemActions.equip(id);
+      },
       land: (id) => { this.itemUse!.land(id); }, // Piece 7 M5: the worn ride's equipment cell
       // 2026-11-05: the upgrade cursor's target, its wait and its cancel
       upgrade: {
@@ -1529,8 +1616,11 @@ export class WorldScreen {
       held: (id) => this.bagHeld(id) || (this.tradeHud?.extraOf(id) ?? 0) > 0,
       // 2026-11-09 (pets R3): and the food mill (CWndInventory::OnDestroy, WndField.cpp:1092-1096)
       // 2026-11-10: and Create Jewels (CWndInventory::OnDestroy, WndField.cpp:1036-1045)
-      // 2026-11-10 (bank-mail): and the bank (CWndInventory::OnDestroy, WndField.cpp:1103-1105)
-      closed: () => { this.upgradeNpc?.piercing.dismiss(); this.upgradeNpc?.safety.dismiss(); this.petCare?.bagClosed(); this.jewels?.bagClosed(); this.bankHud?.bagClosed(); },
+      // 2026-11-10 (bank-mail): and the bank (CWndInventory::OnDestroy, WndField.cpp:1103-1105); and Summon Angel (:1022-1026)
+      closed: () => {
+        this.upgradeNpc?.piercing.dismiss(); this.upgradeNpc?.safety.dismiss(); this.petCare?.bagClosed(); this.jewels?.bagClosed();
+        this.bankHud?.bagClosed(); this.summonAngel?.bagClosed();
+      },
       // 2026-11-10: a stack in the trade shows the count less the traded (`m_nItemNum - GetExtra()`, WndItemCtrl.cpp:705-708)
       reservedCount: (id) => (this.bagDieFlag ? this.bagReserved.get(id) ?? 0 : 0) + this.tradeExtraShown(id),
       // 2026-11-09 (pets R2): and the summoned raised pet's item (`g_pPlayer->GetPetId()`, WndItemCtrl.cpp:472-487)
@@ -1543,6 +1633,8 @@ export class WorldScreen {
         if (this.dialog?.frame.isOpen === true) return; // no drop while the dialogue is open (DPClient.cpp:9378-9382)
         // 2026-11-10 (bank-mail): nor while the bank is open (WndWorld.cpp:7776-7797)
         if (this.bankHud?.isOpen === true) { this.say('TID_GAME_TRADELIMITITEM'); return; }
+        // 2026-11-10: nor while the Summon Angel window is (CWndWorld::OnDropIcon, WndWorld.cpp:7786-7795)
+        if (this.summonAngel?.isOpen === true) { this.say('TID_GAME_TRADELIMITITEM'); return; }
         this.sounds?.drop();
         if (itemActions.drop(id, count)) this.lastDropAt = performance.now();
       },
@@ -1786,6 +1878,7 @@ export class WorldScreen {
       box: (text) => { if (this.messageBox?.isOpen !== true) this.messageBox?.open(text, 'ok', () => {}); },
       openInventory: () => { if (this.own && !inventoryWindow.frame.isOpen) inventoryWindow.toggle(this.own); },
       npcShopOpen: () => this.shopWindow?.frame.isOpen === true || this.bankHud?.isOpen === true,
+      summonAngelOpen: () => this.summonAngel?.isOpen === true, // 2026-11-10
       addOwnGold: (delta) => this.own?.addGold(delta),
       consent: (mine, theirs, partner, gold) => this.own?.tradeConsent(mine, theirs, partner, gold),
       refreshBag: () => { if (this.own) inventoryWindow.update(this.own, true); },
@@ -1853,13 +1946,17 @@ export class WorldScreen {
     // the phone has no drag: a tap on a bag item or on the penya puts it in the trade
     inventoryWindow.trade = {
       // 2026-11-10: and a tap on a bag item puts it in the open jewel window, where a drop would take it
-      // 2026-11-10 (bank-mail): and into the open bank, or onto the mail being written
-      active: () => tradeHud.windowOpen || this.jewels?.isOpen === true || bankHud.isOpen || postHud.sending,
+      // 2026-11-10 (bank-mail): and into the open bank, or onto the mail being written; and in the Summon Angel window, where
+      // the double-click would put it
+      active: () => tradeHud.windowOpen || this.jewels?.isOpen === true || bankHud.isOpen || postHud.sending ||
+        this.summonAngel?.isOpen === true,
       tapItem: (id) => {
         if (tradeHud.windowOpen) tradeHud.tapItem(id);
         else if (bankHud.isOpen) bankHud.tapItem(id);
         else if (postHud.sending) postHud.tapItem(id);
-        else if (this.jewels?.isOpen === true && !this.jewels.tapItem(id)) this.sayRefusal({ kind: 'say', tid: 'TID_SBEVE_NOTUSEITEM' });
+        else if (this.summonAngel?.isOpen === true) this.summonAngelUse(id);
+        else if (this.jewels?.isOpen === true) { if (!this.jewels.tapItem(id)) this.sayRefusal({ kind: 'say', tid: 'TID_SBEVE_NOTUSEITEM' }); }
+        else tradeHud.tapItem(id);
       },
       tapPenya: () => { if (bankHud.isOpen && !tradeHud.windowOpen) bankHud.tapPenya(); else tradeHud.tapPenya(); },
     };
@@ -2108,6 +2205,101 @@ export class WorldScreen {
       });
     }
     for (const id of this.wingEffects) if (!world.movers.has(id)) this.wingEffects.delete(id);
+  }
+
+  /**
+   * 2026-11-10: a bag item double-clicked (or tapped) while the Summon Angel window is open: a stone goes in, any other use
+   * says TID_GAME_TRADELIMITUSING (CWndInventory::OnChildNotify, WndField.cpp:2146-2160, :2548-2552). False when it is shut.
+   */
+  private summonAngelUse(objectId: number): boolean {
+    if (this.summonAngel?.isOpen !== true) return false;
+    if (!this.summonAngel.take(objectId)) this.say('TID_GAME_TRADELIMITUSING');
+    return true;
+  }
+
+  /**
+   * 2026-11-10: MMI_SUMMON_ANGEL (WndWorld.cpp:4783-4872): refused while the trade or a shop is open (the repair, beauty
+   * shop, bank, post and guild bank windows of its checks are not the browser's yet) and while it is open; else the bag
+   * and the window.
+   */
+  private openSummonAngel(): void {
+    if (this.tradeHud?.windowOpen === true || this.shopWindow?.frame.isOpen === true) {
+      this.say('TID_GAME_TRADENOTSUMMONANGEL');
+      return;
+    }
+    if (this.summonAngel?.isOpen === true) {
+      this.say('TID_GAME_SUMMONANGELUSING');
+      return;
+    }
+    this.summonAngel?.open();
+  }
+
+  /**
+   * 2026-11-10: the own angel's EXP percent (`( m_nAngelExp * 100 ) / maxExp`, WndWorld.cpp:9247-9266), of the angel buff
+   * `itemId` (or whichever the player has); null without an angel buff.
+   */
+  private ownAngelPercent(itemId?: number): number | null {
+    const world = this.world, data = this.data, self = world?.self();
+    if (world === undefined || data === undefined || self === undefined) return null;
+    const buff = self.buffs.list(world.nowMs())
+      .find((b) => b.buffType === 0 && isAngelBuff(data.itemProps.get(b.id)) && (itemId === undefined || b.id === itemId));
+    if (buff === undefined) return null;
+    const target = angelTarget(data.itemProps.get(buff.id)?.adjParams?.[0] ?? 100, this.angelInfo.level, data.exp);
+    return angelPercent(this.angelInfo.exp, target);
+  }
+
+  /** 2026-11-10: the angel buff's item of a player in view (`HasBuffByIk3( IK3_ANGEL_BUFF )` and `IsPlayer()`), or null. */
+  private angelItemOf(mover: Mover, now: number): number | null {
+    if (mover.added.player === undefined || this.data === undefined) return null;
+    const props = this.data.itemProps;
+    const buff = mover.buffs.list(now).find((b) => b.buffType === 0 && isAngelBuff(props.get(b.id)) && ANGELS.has(b.id));
+    return buff?.id ?? null;
+  }
+
+  /**
+   * 2026-11-10: a rules step of the angels (`CMover::Process`'s angel, `AngelMoveProcess`, Mover.cpp:3560-3627,
+   * :3972-4021): each player's angel made, moved and sparkling.
+   */
+  private stepAngels(world: WorldState): void {
+    const now = world.nowMs();
+    const players = [...world.movers.values()].map((mover) => ({
+      id: mover.objectId, pos: mover.act.body.pos, speed: mover.act.body.speed, angelItem: this.angelItemOf(mover, now),
+    }));
+    this.angelFollowers.step(players, (id, angel, itemId) => {
+      const owner = world.movers.get(id), kind = ANGELS.get(itemId)?.particle;
+      if (owner === undefined || kind === undefined) return;
+      createAngelParticle(this.petParticles, { angle: owner.act.body.angle, angleX: owner.act.angleX, y: owner.act.body.pos[1] }, angel, kind);
+    });
+  }
+
+  /** 2026-11-10: the angels the layer draws: each one's place, its player's turn and its model; none of an invisible player. */
+  private angelsShown(world: WorldState): Map<number, AngelShown> {
+    const shown = new Map<number, AngelShown>();
+    for (const [id, angel] of this.angelFollowers.all()) {
+      const mover = world.movers.get(id), model = ANGELS.get(angel.itemId)?.model;
+      if (mover === undefined || model === undefined || isInvisible(mover)) continue;
+      shown.set(id, { pos: angel.pos, angle: mover.act.body.angle, model });
+    }
+    return shown;
+  }
+
+  /**
+   * 2026-11-10: the angels' gauges (RenderHP's RenderAngelStatus, for the own player and the party's members in view,
+   * WndWorld.cpp:1009-1041): the own angel's EXP; a member's, whose EXP Neuz does not know, the background alone.
+   */
+  private angelGaugesShown(world: WorldState): Map<number, { pos: Vec3; scale: number; fill: number | null }> {
+    const shown = new Map<number, { pos: Vec3; scale: number; fill: number | null }>();
+    const self = world.self();
+    for (const [id, angel] of this.angelFollowers.all()) {
+      const mover = world.movers.get(id);
+      if (mover === undefined || isInvisible(mover)) continue;
+      const isSelf = mover === self;
+      const member = !isSelf && mover.added.player !== undefined && this.party.members.some((slot) => slot.playerId === mover.added.player!.playerId);
+      if (!isSelf && !member) continue;
+      const percent = isSelf ? this.ownAngelPercent(angel.itemId) : null;
+      shown.set(id, { pos: angel.pos, scale: mover.added.scale, fill: percent === null ? null : percent / 100 });
+    }
+    return shown;
   }
 
   /** 2026-11-05: a bag item double-clicked (or its Use or Equip) while an Upgrade Specialist window is open goes in it. */
@@ -2526,6 +2718,7 @@ export class WorldScreen {
       const steps = asked ?? 0;
       for (let i = 0; i < steps; i++) this.step(world, stage, views, now);
       views.update(world.movers, steps / STEPS_PER_SECOND);
+      this.angelLayer?.update(this.angelsShown(world), steps / STEPS_PER_SECOND); // 2026-11-10
       this.tickGlows(steps); // 2026-11-09: the held weapons' upgrade and element glow
       // the mark goes once the walk to its point is over: arrived, or ended by a key, a stop or the server
       this.mark!.follow(world.self()?.dest?.pos ?? null);
@@ -2574,6 +2767,19 @@ export class WorldScreen {
         ? null : castFill(this.world.nowMs() - cast.startedAt, castMs);
       this.castGauge?.update(fill, ownView === undefined ? null : views.placeOf(ownView.objectId)?.head ?? null,
         stage.camera, drawingSize.x, drawingSize.y);
+      // 2026-11-10: the angels' gauges; at 100 the box "Please click the Angle buff icon." once (m_bAngelFinish,
+      // WndWorld.cpp:9267-9277)
+      this.angelGauges?.update(this.angelGaugesShown(world), stage.camera, drawingSize.x, drawingSize.y);
+      const angel = this.ownAngelPercent();
+      if (angel === 100) {
+        if (!this.angelFinish) {
+          this.angelFinish = true;
+          const text = this.data?.texts.get('TID_GAME_ANGELEXP_END')?.text ?? '';
+          if (text !== '' && this.messageBox?.isOpen !== true) this.messageBox?.open(text, 'ok', () => {});
+        }
+      } else if (angel !== null) {
+        this.angelFinish = false;
+      }
       // Piece 7 M5: the turbo gauge over the own flier, and the phone's flight buttons
       const flying = ownView?.act.isFlying() === true;
       this.turboGauge?.update(flying ? ownView!.act.accFuel : null, flying && (ownView!.act.stateFlag & ObjStaF.TURBO) !== 0,
@@ -2617,6 +2823,7 @@ export class WorldScreen {
       this.syncViews(); this.measureRadii(world, views);
       catchUp(steps, this.audio ? (on) => this.audio!.hold(on) : undefined, () => this.step(world, stage, views, now));
       views.update(world.movers, steps / STEPS_PER_SECOND);
+      this.angelLayer?.update(this.angelsShown(world), steps / STEPS_PER_SECOND); // 2026-11-10
       this.tickGlows(steps); // 2026-11-09: the held weapons' upgrade and element glow
       stage.focus(this.ownAt());
     } catch (error) { this.reportOnce(`simulation: ${messageOf(error)}`, error instanceof Error ? error : new Error(String(error))); }
@@ -2712,6 +2919,7 @@ export class WorldScreen {
       this.effects?.stepMissiles(missiles.views());
     }
     this.numbers?.step();
+    this.stepAngels(world); // 2026-11-10: the angels (CMover::Process)
     this.petParticles.step(); // pets R1: g_ParticleMng.Process (Neuz.cpp:1100)
     this.petWindows?.step(); // pets R2: the pet window's portrait, CWndPetStatus::Process
     this.petCare?.step(); // pets R3: the tamer's miracle's spins, CWndPetMiracle::Process
@@ -2783,6 +2991,7 @@ export class WorldScreen {
       this.effects?.stepMissiles(missiles.views());
     }
     this.numbers?.step();
+    this.stepAngels(world); // 2026-11-10: the angels (CMover::Process)
     this.petParticles.step(); // pets R1: g_ParticleMng.Process (Neuz.cpp:1100)
     this.petWindows?.step(); // pets R2: the pet window's portrait, CWndPetStatus::Process
     this.petCare?.step(); // pets R3: the tamer's miracle's spins, CWndPetMiracle::Process
@@ -2884,6 +3093,7 @@ export class WorldScreen {
       this.jewels?.dismiss(); // 2026-11-10: and the jewel windows (:8198-8222)
       this.bankHud?.moved(); // 2026-11-10 (bank-mail): and the bank (:8313-8337)
       this.postHud?.moved(); // and the post (:8383-8394)
+      this.summonAngel?.dismiss(); // 2026-11-10: and Summon Angel with the bag (:8154-8165)
     }
     this.upgrade?.step();
     this.syncBuffWings(performance.now());
@@ -2977,9 +3187,12 @@ export class WorldScreen {
     if (window === 'messenger') { this.friendHud?.toggle(); return; }
     // 2026-11-10: APP_GUILD, G (FuncApplet.cpp:245): the guild window, opened even without a guild (WndGuild.cpp:115-125)
     if (window === 'guild') { this.guildHud?.toggle(); return; }
-    // 2026-11-10: APP_VENDOR_REVISION, the personal shop (the Summon Angel window that refuses it, WndManager.cpp:2686-2695,
-    // is not in the browser)
-    if (window === 'vendor') { this.personalShop?.toggle(); return; }
+    // 2026-11-10: APP_VENDOR_REVISION, the personal shop, refused while the Summon Angel window is open (WndManager.cpp:2685-2695)
+    if (window === 'vendor') {
+      if (this.summonAngel?.isOpen === true) this.say('TID_GAME_SUMMONANGELUSING');
+      else this.personalShop?.toggle();
+      return;
+    }
     if (window === 'quests') { this.questWindow?.toggle(this.hud?.element.clientWidth ?? 0, this.questState()); return; }
     if (window === 'option') { this.optionWindow?.toggle(); return; }
     if (window === 'inventory') {
@@ -3691,6 +3904,8 @@ export class WorldScreen {
       this.session.sendNpcDialogOpen(id);
       this.sounds?.npcDialog(npc.added.npc!.characterKey);
     } else if (entry === MMI.TRADE && !data?.vendorType && this.canTalk(id)) {
+      // 2026-11-10: not with the Summon Angel window open (WndWorld.cpp:5305-5312)
+      if (this.summonAngel?.isOpen === true) { this.say('TID_GAME_SUMMONANGELUSING'); return; }
       // 2026-11-10: not with a personal shop window open (CWndShop::OnInitialUpdate, WndShop.cpp:774)
       if (this.personalShop?.isOpen === true) return;
       // 2026-11-10 (bank-mail): nor with the bank open (WndWorld.cpp:5253-5259)
@@ -3723,6 +3938,8 @@ export class WorldScreen {
       this.jewels?.setting.open(); // 2026-11-10: Jewel Setting (:4958-4971)
     } else if (entry === MMI.SMELT_EXTRACTION) {
       this.jewels?.extraction.open(); // 2026-11-10: Create Jewels (:4972-4985)
+    } else if (entry === MMI.SUMMON_ANGEL) {
+      this.openSummonAngel(); // 2026-11-10: the Priest of Confession's Summon Angel (:4783-4872)
     } else if (entry === MMI.PET_STATUS || entry === MMI.PET_RELEASE) {
       this.choosePetEntry(entry);
     } else if (entry === MMI.BUFFPET_STATUS || entry === MMI.BUFFPET_RELEASE) {
@@ -3985,6 +4202,14 @@ export class WorldScreen {
     this.upgradeNpc = undefined;
     this.jewels?.close();
     this.jewels = undefined;
+    // 2026-11-10: Summon Angel
+    this.summonAngel?.close();
+    this.summonAngel = undefined;
+    this.angelLayer?.dispose();
+    this.angelLayer = undefined;
+    this.angelGauges?.dispose();
+    this.angelGauges = undefined;
+    this.angelFollowers.clear();
     this.wingEffects.clear();
     this.auras.clear(); // 2026-11-09 (pets B1)
     this.bagDieFlag = false;

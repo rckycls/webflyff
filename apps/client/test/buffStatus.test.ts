@@ -423,3 +423,29 @@ describe('the premium timers (SM modes, CWndWorld::RenderSMBuff, WndWorld.cpp:10
     status.dispose();
   });
 });
+
+describe('the angel\'s buff icon (2026-11-10, Summon Angel; CWndWorld::RenderBuffIcon, WndWorld.cpp:9247-9370)', () => {
+  const ITEMS = new Map([[30036, { name: 'Blue Angel', icon: 'ui/item/itm_sys_sys_que_angelblue.png', kind3: 95 }]]);
+  const angelBuff: BuffShown = { buffType: 0, id: 30036, level: 0, leftMs: 999_000_000, totalMs: 999_999_999 };
+
+  it('its tooltip has the percent after the name; it blinks only at 100; a press asks for the full angel', () => {
+    let percent = 42, presses = 0;
+    const status = new BuffStatus(art, document, {
+      items: ITEMS, angelPercent: (id) => (id === 30036 ? percent : null), onAngelPress: () => presses++,
+    });
+    status.update([angelBuff], SKILLS, 0);
+    const icon = status.element.querySelector<HTMLElement>('.hud-buff')!;
+    expect(icon.title.split('\n')[0]).toBe('Blue Angel   42%');
+    const steady = Number(icon.style.opacity);
+    status.update([angelBuff], SKILLS, 1);
+    expect(Number(icon.style.opacity)).toBe(steady);
+    percent = 100;
+    status.update([angelBuff], SKILLS, 2);
+    status.update([angelBuff], SKILLS, 3);
+    expect(Number(icon.style.opacity)).toBeLessThan(steady);
+    expect(icon.title.split('\n')[0]).toBe('Blue Angel   100%');
+    icon.click();
+    expect(presses).toBe(1);
+    status.dispose();
+  });
+});

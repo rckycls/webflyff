@@ -35,7 +35,7 @@ const NULL_ID = 0xffffffff;
  */
 export function readOwnAfterEquipment(r: ArReader, numbers: OwnNumbers): OwnCharacter {
   const skills = readSkills(r);
-  const { inventory, inventoryError, inventorySlots, bank } = readInventoryPart(r);
+  const { inventory, inventoryError, inventorySlots, bank, angelExp, angelLevel } = readInventoryPart(r);
   const banks = inventory === null ? undefined : readBanksAndPetSlot(r);
   const petSlot = banks?.petSlot;
   // 2026-11-10 (bank-mail): the banks are kept, with the slot and penya read before the inventory
@@ -48,6 +48,8 @@ export function readOwnAfterEquipment(r: ArReader, numbers: OwnNumbers): OwnChar
   return {
     ...numbers, skills, inventory, inventoryError, ...(inventorySlots ? { inventorySlots } : {}),
     ...(petSlot !== undefined ? { petSlot } : {}), ...(bank !== undefined && !emptyBank(bank) ? { bank } : {}),
+    // 2026-11-10 (Summon Angel): only when there is an angel's (both 0 before any summon)
+    ...(angelExp !== undefined && angelLevel !== undefined && (angelExp !== 0n || angelLevel !== 0) ? { angelExp, angelLevel } : {}),
   };
 }
 
@@ -123,15 +125,17 @@ interface Where { part: string }
  * boundary (the caller skips the rest) and keeps the numbers and skills read before it: `inventory` is then `null`
  * and `inventoryError` names the part and the error. Any other error is a bug and propagates.
  */
-function readInventoryPart(r: ArReader): Pick<OwnCharacter, 'inventory' | 'inventoryError' | 'inventorySlots' | 'bank'> {
+function readInventoryPart(
+  r: ArReader,
+): Pick<OwnCharacter, 'inventory' | 'inventoryError' | 'inventorySlots' | 'bank' | 'angelExp' | 'angelLevel'> {
   const where: Where = { part: 'before the inventory' };
   try {
-    const bank = skipBeforeInventory(r);
+    const { bank, angelExp, angelLevel } = skipBeforeInventory(r);
     const inventorySlots = Array.from({ length: INVENTORY_SLOTS }, () => r.u32());
     if (inventorySlots.some((id) => id !== 0xffffffff && id >= INVENTORY_SLOTS)) {
       throw new ProtocolError('invalid inventory index mapping', r.position());
     }
-    return { inventory: readInventory(r, where), inventoryError: null, inventorySlots, bank };
+    return { inventory: readInventory(r, where), inventoryError: null, inventorySlots, bank, angelExp, angelLevel };
   } catch (error) {
     if (!(error instanceof ProtocolError)) throw error;
     return { inventory: null, inventoryError: `${where.part}: ${error.message}` };
@@ -153,10 +157,10 @@ export function readItemContainer(r: ArReader): { slots: number[]; items: Invent
 }
 
 /**
- * The fields between the skill array and the inventory (loading :568-584, storing :239-253); only the bank's are kept
- * (2026-11-10, bank-mail), the banks themselves follow the inventory.
+ * The fields between the skill array and the inventory (loading :568-584, storing :239-253): the bank's are kept
+ * (2026-11-10, bank-mail; the banks themselves follow the inventory), and the angel's EXP and level (2026-11-10, Summon Angel).
  */
-function skipBeforeInventory(r: ArReader): OwnBank {
+function skipBeforeInventory(r: ArReader): { bank: OwnBank; angelExp: bigint; angelLevel: number } {
   r.u8(); // (BYTE&)m_nCheerPoint (:569), an int that :568 zeroes first
   r.u32(); // m_dwTickCheer (DWORD, :569): the server's m_dwTickCheer - GetTickCount(), which :570 makes a tick again
   const slot = r.u8(); // m_nSlot (BYTE, :571)
@@ -166,9 +170,10 @@ function skipBeforeInventory(r: ArReader): OwnBank {
   r.u8(); // m_nAttackResistLeft (BYTE, :578)
   r.u8(); // m_nAttackResistRight (BYTE, :579)
   r.u8(); // m_nDefenseResist (BYTE, :580)
-  r.i64(); // m_nAngelExp (EXPINTEGER, an __int64; __VER >= 8, __CSC_VER8_5, :582)
-  r.i32(); // m_nAngelLevel (LONG, :583)
-  return { slot, gold, players };
+  // 2026-11-10 (Summon Angel): the angel's EXP and level are kept
+  const angelExp = r.i64(); // m_nAngelExp (EXPINTEGER, an __int64; __VER >= 8, __CSC_VER8_5, :582)
+  const angelLevel = r.i32(); // m_nAngelLevel (LONG, :583)
+  return { bank: { slot, gold, players }, angelExp, angelLevel };
 }
 
 /**

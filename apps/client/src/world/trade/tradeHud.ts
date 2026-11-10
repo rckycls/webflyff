@@ -59,6 +59,8 @@ export interface TradeHudScreen {
   openInventory(): void;
   /** An NPC shop is open (the trade window closes itself, :9043-9047). */
   npcShopOpen(): boolean;
+  /** 2026-11-10: the Summon Angel window is open: a request is refused with BLOCK 8, and the own one too. */
+  summonAngelOpen?(): boolean;
   /** The own penya changed by the trade (`AddGold( n, FALSE )`). */
   addOwnGold(delta: number): void;
   /** TRADECONSENT's moves on the own bag (`CVTInfo::TradeConsent`). */
@@ -152,7 +154,12 @@ export class TradeHud {
 
   /** The menu's Trade (`MMI_TRADE`, WndWorld.cpp:5251-5358), for a player in view. */
   requestTrade(targetId: number): void {
-    // the bank, mail, beauty shop, summon angel and repair windows of the checks are not the browser's
+    // the bank, mail, beauty shop and repair windows of the checks are not the browser's; 2026-11-10: the Summon Angel
+    // window's is (WndWorld.cpp:5305-5312), before the trade's own
+    if (this.screen.summonAngelOpen?.() === true) {
+      this.line('TID_GAME_SUMMONANGELUSING');
+      return;
+    }
     if (this.request.isOpen || this.windowOpen) {
       this.line('TID_GAME_YETTRADE');
       return;
@@ -166,6 +173,7 @@ export class TradeHud {
     const events = this.state.apply(objectId, message, {
       ownObjectId: this.screen.ownObjectId(), ownPlayerId: this.screen.ownPlayerId(),
       nameOf: (id) => this.screen.nameOf(id), requestOpen: () => this.request.isOpen,
+      summonAngelOpen: () => this.screen.summonAngelOpen?.() === true,
     });
     this.run(events);
   }

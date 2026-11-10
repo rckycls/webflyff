@@ -6,7 +6,9 @@
 //                          and `LEVEL_GEM { <jewel> <min> <max> ... }`
 //   descriptions           Client/SmeltJewel.inc and Client/SmeltExtraction.inc (loose in the client folder), as
 //                          CWndSmeltJewel::SetDescription and CWndExtraction::SetDescription load them (`CScript::Load`'s
-//                          whole text, WndField.cpp:20405-20417, :19831-19843)
+//                          whole text, WndField.cpp:20405-20417, :19831-19843); 2026-11-10, and Client/summonAngelQuest.inc,
+//                          the Summon Angel window's text (`SetQuestText( scanner.m_pProg )`, WndWorld.cpp:4861-4869;
+//                          docs/superpowers/specs/2026-11-10-summon-angel-research.md)
 //
 // It runs when there is no `--only`, or when a glob matches `ultimate`: `--only ultimate` writes this catalog alone, so a
 // folder whose data/itemProps.json is kept by hand needs no `--only data`. The packs' Ultimate_GemAbility.txt is the one
@@ -22,7 +24,7 @@ const STAGE = 'ultimate';
 const KIND = 'data';
 const GEM_FILE = 'Ultimate_GemAbility.txt';
 const DESCRIPTION_DIR = 'Client';
-const DESCRIPTIONS = { jewel: 'SmeltJewel.inc', extraction: 'SmeltExtraction.inc' } as const;
+const DESCRIPTIONS = { jewel: 'SmeltJewel.inc', extraction: 'SmeltExtraction.inc', summonAngel: 'summonAngelQuest.inc' } as const;
 
 /** The words of a script as CScanner gives them here: words and braces; `//` and `/* *\/` comments out. */
 function words(text: string): string[] {

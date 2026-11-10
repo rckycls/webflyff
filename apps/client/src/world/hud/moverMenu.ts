@@ -30,6 +30,8 @@ export const MMI = {
   ARENA_EXIT: 81, HEAVEN_TOWER: 97,
   /** 2026-11-10 (bank-mail): Deposit (the bank, bank/bankHud.ts) and Mailbox (the post, post/postHud.ts). */
   BANKING: 9, POST: 25,
+  /** 2026-11-10: the Priest of Confession's Summon Angel (angel/summonAngelWindow.ts; defineNeuz.h:136). */
+  SUMMON_ANGEL: 43,
 } as const;
 /**
  * 2026-11-10: the Arena's and the Forsaken Tower's entries: Enter and Leave Arena send their header
@@ -59,6 +61,8 @@ const UPGRADE_ENTRIES: ReadonlySet<number> = new Set([
   MMI.PIERCING, MMI.SMELT_SAFETY_GENERAL, MMI.SMELT_SAFETY_ACCESSORY, MMI.SMELT_SAFETY_PIERCING,
   // 2026-11-10: Peach's Jewel Setting and Create Jewels (items/jewelWindows.ts)
   MMI.SMELT_JEWEL, MMI.SMELT_EXTRACTION,
+  // 2026-11-10: the Priest of Confession's Summon Angel (angel/summonAngelWindow.ts)
+  MMI.SUMMON_ANGEL,
 ]);
 /** ShowMoverMenu's range (`distSq < 20 * 20`, WndWorld.cpp:6520-6523). */
 export const MENU_RANGE = 20;

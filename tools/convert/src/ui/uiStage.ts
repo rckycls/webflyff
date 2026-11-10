@@ -259,6 +259,10 @@ export const THEME_FILES: readonly string[] = [
   // (resdata.inc:10679) and its NOT USE cover (WndBank.cpp:122); APP_POST_READ's Reply (:25539-25649); the inbox's table and
   // its read mark (CWndPostReceive::OnInitialUpdate, WndField.cpp:15378-15380)
   'WndCommonBank.tga', 'WndCommonBankNotUse.tga', 'ButtReply.tga', 'WndPostTable.tga', 'WndNotUse.tga',
+  // 2026-11-10, Summon Angel (docs/superpowers/specs/2026-11-10-summon-angel-research.md): APP_SUMMON_ANGEL's Reset and
+  // Start (resdata.inc:4647, :4656; Cancel's ButCancel2 is above) and the angel's EXP gauge over it (CNeuzApp,
+  // Neuz.cpp:1642-1643; CMover::RenderAngelStatus, MoverRender.cpp:1907-1979)
+  'reset.bmp', 'ButtVoteStart.BMP', 'GauAngelExpBG.tga', 'GauAngelExp.tga',
 ];
 
 /**

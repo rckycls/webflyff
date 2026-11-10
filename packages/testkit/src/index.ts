@@ -47,6 +47,7 @@ export {
   writePutItemBank, writeUpdateBankItem,
 } from './bank';
 export { writeMail, writeMailBox, writeMailBoxReq, writeModifyMode, writeRemoveMail } from './post';
+export { writeAngelInfo, writeFlyffEvent, writeSetLocalEvent } from './angel'; // 2026-11-10: Summon Angel
 export {
   directAddGuildMember, directChgMaster, directGuild, directGuildChat, directGuildClass, directGuildError,
   directGuildMemberLevel, directGuildMemberLogin, directGuildNickname, directGuildSetName, directRemoveGuildMember,

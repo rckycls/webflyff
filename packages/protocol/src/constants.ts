@@ -45,6 +45,9 @@ export const PacketType = {
   /** 2026-11-10: Create Jewels and Jewel Setting (`MsgHdr.h:610, 613`; world/upgrade.ts). */
   ULTIMATE_MAKEGEM: 0xf000f111,
   ULTIMATE_SETGEM: 0xf000f114,
+  /** 2026-11-10: Summon Angel's start and the full angel's buff icon (`MsgHdr.h:254, 256`; world/angel.ts). */
+  CREATEANGEL: 0x00fff000,
+  ANGELBUFF: 0x00fff002,
   /** 2026-11-05: the Upgrade Specialist's piercing and safe upgrade (`MsgHdr.h:515, 753`; world/upgrade.ts). */
   PIERCING_SIZE: 0xf000d008,
   SMELT_SAFETY: 0x70007000,
@@ -314,6 +317,14 @@ export const MessageType = {
   RESISTSMMODE: 0x005d,
   /** 2026-11-05: the Ultimate gem's answer (`CUser::AddUltimate`). */
   ULTIMATE: 0x0100,
+  /**
+   * 2026-11-10: the angel's EXP and level (`CUser::AddAngelInfo`; `MsgHdr.h:1185`), and a local event's state, EVE_PK's
+   * among them (`MsgHdr.h:1088`; world/angel.ts).
+   */
+  ANGEL: 0x00b1,
+  /** 2026-11-10: every local event's state at join (`CUser::AddFlyffEvent`, `MsgHdr.h:1087`; world/angel.ts). */
+  FLYFF_EVENT: 0x00b2,
+  SET_LOCAL_EVENT: 0x00b3,
   /** 2026-11-05: the safe upgrade's answer (`CUser::AddSmeltSafety`, `MsgHdr.h:1301`): a byte. */
   SMELT_SAFETY: 0x9900,
   /** 2026-11-05: the summons, the sex and the face changed (`MsgHdr.h:976, 1149, 1179`). */

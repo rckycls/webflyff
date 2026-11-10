@@ -118,6 +118,8 @@ interface Look {
   label: { kind: 'seconds' | 'time'; text: string } | null;
   /** The Scroll of Return's: a double-click goes back (the party summon's and, pets R3, the feed pocket's do their own). */
   goesBack: boolean;
+  /** 2026-11-10: the angel's: a press asks for the full angel's item (`OnLButtonDown`, WndWorld.cpp:6769-6794). */
+  press?: () => void;
 }
 const PER_ROW = 7;
 const PITCH = 34;
@@ -215,6 +217,13 @@ export interface BuffStatusOptions {
    * null when it is not.
    */
   visPetTooltip?: (itemId: number) => string[] | null;
+  /**
+   * 2026-11-10 (Summon Angel): the own angel's EXP percent when `itemId` is an angel's buff (`IK3_ANGEL_BUFF`), else null:
+   * its tooltip says it (`"   %d%%"`, WndWorld.cpp:9359-9370) and at 100 it blinks (:9267-9275).
+   */
+  angelPercent?: (itemId: number) => number | null;
+  /** 2026-11-10: a press on the angel's icon (`SendAngelBuff` on a PK server, WndWorld.cpp:6769-6794). */
+  onAngelPress?: () => void;
 }
 
 /** The time units under an item's icon (`RenderOptBuffTime`, `WndWorld.cpp:11197-11227`). */
@@ -342,12 +351,15 @@ export class BuffStatus {
       const equip = buff.buffType === BUFF_EQUIP;
       const timed = buff.totalMs > 0 && buff.totalMs !== ENDLESS_MS && !equip;
       const vis = (): string[] | null => (item.kind3 === IK3_PET ? this.options.visPetTooltip?.(buff.id) ?? null : null);
+      // 2026-11-10 (Summon Angel): the angel's percent after its name, and its blink at 100 (WndWorld.cpp:9247-9277, :9359-9370)
+      const angel = this.options.angelPercent?.(buff.id) ?? null;
       looks.push({
         key: `${buff.buffType}:${buff.id}:${timed}`, name: item.name, icon: item.icon, copies: 0, harmful: false,
-        tooltip: () => [item.name, ...(vis() ?? (buff.totalMs > 0 && !equip ? [clock(buff.leftMs)] : []))],
-        blink: buff.id === RETURN_SCROLL ? 'always' : 'under', blinkLeftMs: buff.totalMs > 0 ? buff.leftMs : Infinity,
+        tooltip: () => [angel === null ? item.name : `${item.name}   ${angel}%`, ...(vis() ?? (buff.totalMs > 0 && !equip ? [clock(buff.leftMs)] : []))],
+        blink: buff.id === RETURN_SCROLL || angel === 100 ? 'always' : 'under', blinkLeftMs: buff.totalMs > 0 ? buff.leftMs : Infinity,
         blinkUnderMs: BLINK_MS, label: timed && buff.leftMs > 0 ? { kind: 'time', text: this.units(buff.leftMs) } : null,
         goesBack: buff.id === RETURN_SCROLL || buff.id === PARTY_SUMMON || buff.id === FEED_POCKET,
+        ...(angel !== null ? { press: () => this.options.onAngelPress?.() } : {}),
       });
     }
     return looks;
@@ -444,6 +456,9 @@ export class BuffStatus {
     }
     icon.addEventListener('pointerdown', (event) => this.startDrag(event as PointerEvent));
     if (look.goesBack) this.goesBack(icon, this.doubleClickOf(look.key));
+    // 2026-11-10: the angel's icon: a press (a click that did not move the display)
+    const press = look.press;
+    if (press !== undefined) icon.addEventListener('click', () => { if (!this.dragged) press(); });
     return icon;
   }
 

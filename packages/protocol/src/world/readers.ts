@@ -57,6 +57,7 @@ import { TRADE_READERS } from './trade';
 import { GUILD_READERS } from './guild';
 import type { WorldMessage } from './types';
 import { readSmeltSafety, readUltimate } from './upgrade';
+import { readAngel, readFlyffEvent, readSetLocalEvent } from './angel'; // 2026-11-10: Summon Angel
 import { readChangeFace, readSexChange, readSummon } from './itemWindows';
 import {
   readMoverChangeSfx, readPetCall, readPetFeed, readPetLevelup, readPetMill, readPetRelease, readPetResurrectionResult,
@@ -191,6 +192,10 @@ export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
     [MessageType.SM_MODE_ALL, readSmModeAll],
     [MessageType.RESISTSMMODE, readResistSmMode],
     [MessageType.ULTIMATE, readUltimate],
+    // 2026-11-10: the angel's EXP and the local events (Summon Angel)
+    [MessageType.ANGEL, readAngel],
+    [MessageType.FLYFF_EVENT, readFlyffEvent],
+    [MessageType.SET_LOCAL_EVENT, readSetLocalEvent],
     [MessageType.SMELT_SAFETY, readSmeltSafety],
     [MessageType.SUMMON, readSummon],
     [MessageType.SEX_CHANGE, readSexChange],

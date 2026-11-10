@@ -63,6 +63,7 @@ export * from './world/gm';
 export * from './world/vendor';
 export * from './world/flight';
 export * from './world/upgrade';
+export * from './world/angel'; // 2026-11-10: Summon Angel
 export * from './world/itemWindows';
 export * from './world/pets';
 export * from './world/trade';
