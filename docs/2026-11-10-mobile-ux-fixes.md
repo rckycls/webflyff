@@ -26,7 +26,12 @@ None. No new pictures; nothing for the main folder to convert.
 
 - `npm run typecheck`: clean.
 - `npx vitest run`: 4228 passed, 5 failed, the 5 already failing on main (`looks.test.ts` x3, `inventoryWindow.test.ts` x2: "keeps desktop double click working after single-click inspection", "a ride shows Use on the phone ...").
-- Playwright, port 5188: see the hand-over for the run's result.
+- Playwright, port 5188, `phone` and `chromium`: `mobileUx` 6/6. With `items windows controls topRightIcons uiFixes
+  mobileAudit jobs flight` (the filter also took `travel-items`): 55 passed, 11 skipped, 6 failed. The 6 are not this
+  work: run on main's client sources (df57fb7) in the same worktree, `items.spec.ts:77` (both projects),
+  `travel-items.spec.ts:142` (desktop) and `travel-items.spec.ts:158` (both: 4 `.hud-message` boxes, a strict-mode clash)
+  fail the same way; `travel-items.spec.ts:117` (desktop, walking cancels the cast) timed out once under load and passed
+  4/4 alone on this branch.
 
 ## For the owner
 
@@ -36,6 +41,7 @@ Full e2e, as usual (from `FlyffWeb`, with the dev server on 5174 stopped or `E2E
 npx playwright test -c apps/client/playwright.config.ts --project=phone --project=chromium mobileUx items windows controls mobileAudit jobs flight
 ```
 
-Pass: all pass, except failures already on main (`landscape.spec.ts:221` is not in this list).
+Pass: all pass, except the failures already on main: `items.spec.ts:77` (both), `travel-items.spec.ts:142` (desktop) and
+`:158` (both), if the filter takes `travel-items` too (`items` matches it).
 
 By hand on a phone: open the bag, tap an item, tap Use or Equip (the tooltip closes); drag the bag (rows jump, the lines stay); look at the bag's top right (one close button only); open Skill as a 2nd job (arrows in all three sections); look at Attack and Jump over the world.
