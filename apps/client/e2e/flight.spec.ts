@@ -233,13 +233,16 @@ test('fight in the air: the Mothbee selected and the attack held send MELEE_ATTA
   expect(await errorsOf(page)).toEqual([]);
 });
 
-/** Webby flies up under thrust (Space, then S held: the nose up) until it is `up` m over the ground: the PC's keys. */
+/**
+ * Webby flies up under thrust (Space, then W held: the nose up, the owner's reversal of 2026-11-11) until it is `up` m over
+ * the ground: the PC's keys.
+ */
 async function climb(page: Page, up: number): Promise<void> {
   await page.keyboard.press('Space');
   await expect.poll(async () => (await own(page)).stateFlag & ACC, ON_FRAMES).toBe(ACC);
-  await page.keyboard.down('s');
+  await page.keyboard.down('w');
   await expect.poll(async () => heightOver(await own(page)), ON_FRAMES).toBeGreaterThan(up);
-  await page.keyboard.up('s');
+  await page.keyboard.up('w');
 }
 
 /** How high the mover is over the terrain under it. */

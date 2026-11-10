@@ -133,8 +133,14 @@ export function resizeRect(
   return { left, top, width: right - left, height: bottom - top };
 }
 
-/** The resize cursors of `OnSetCursor` (`WndNeuz.cpp:680-700`), by `resizeDirection`. */
-const RESIZE_CURSORS = ['', 'ns-resize', 'ns-resize', 'ew-resize', 'ew-resize', 'nwse-resize', 'nesw-resize', 'nesw-resize', 'nwse-resize'];
+/**
+ * The resize cursors of `OnSetCursor` (`WndNeuz.cpp:680-730`), by `resizeDirection`: top and bottom CUR_RESIZE_VERT, left and
+ * right CUR_RESIZE_HORI, top-left and bottom-right CUR_RESIZE_HV1, top-right and bottom-left CUR_RESIZE_HV2; 2026-11-11 the
+ * V15 pictures (`cursors.ts`, set on the world as custom properties), the browser's own where they are missing.
+ */
+const RESIZE_CURSORS = ['', 'var(--cur-resize-vert, ns-resize)', 'var(--cur-resize-vert, ns-resize)',
+  'var(--cur-resize-hori, ew-resize)', 'var(--cur-resize-hori, ew-resize)', 'var(--cur-resize-hv1, nwse-resize)',
+  'var(--cur-resize-hv2, nesw-resize)', 'var(--cur-resize-hv2, nesw-resize)', 'var(--cur-resize-hv1, nwse-resize)'];
 
 /** A window with no layout of its own. */
 const DEFAULT_LAYOUT: FrameLayout = { width: 256, height: 256 };
@@ -345,7 +351,11 @@ export class WindowFrame {
   private hover(event: PointerEvent): void {
     if (this.drag !== null || this.resizing !== null) return;
     const { x, y } = this.local(event);
-    this.element.style.cursor = RESIZE_CURSORS[resizeDirection(x, y, this.width, this.shownHeight)]!;
+    const dir = resizeDirection(x, y, this.width, this.shownHeight);
+    this.element.style.cursor = RESIZE_CURSORS[dir]!;
+    // 2026-11-11: on an edge, what lies on it shows the same cursor (style.css: `[data-resize] *` inherits it)
+    if (dir !== 0) this.element.dataset.resize = '';
+    else delete this.element.dataset.resize;
   }
 
   /**

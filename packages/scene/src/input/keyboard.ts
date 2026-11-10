@@ -86,6 +86,16 @@ export class KeyboardInput {
     return pressed;
   }
 
+  /**
+   * 2026-11-11: lets go of every key but `kept`, which stay held (the world map passes the moves' keys on, so their let-go
+   * still comes here); the presses not yet taken are forgotten.
+   */
+  releaseExcept(kept: ReadonlySet<string>): void {
+    for (const code of [...this.down]) if (!kept.has(code)) this.down.delete(code);
+    this.pressed.clear();
+    this.jumpPressed = false;
+  }
+
   /** Lets go of every key, as losing the focus does: for a page that was hidden without losing it first. */
   reset(): void {
     this.down.clear();

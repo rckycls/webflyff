@@ -21,9 +21,9 @@ const f32 = Math.fround;
 
 /** What the player asks of the flier this step. */
 export interface FlightInput {
-  /** W: the nose down (only above the ground). */
+  /** The nose down (only above the ground): S on the PC since 2026-11-11 (`flightKeys`; Neuz's W). */
   dive: boolean;
-  /** S: the nose up. */
+  /** The nose up: W on the PC since 2026-11-11 (Neuz's S). */
   climb: boolean;
   /** A and D: turn. */
   left: boolean;

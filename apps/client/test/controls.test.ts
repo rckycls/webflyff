@@ -6,7 +6,7 @@ import type { MoveReport } from '@flyffweb/protocol';
 import { NO_INTENT, joystickIntent } from '@flyffweb/scene';
 import type { MoveIntent } from '@flyffweb/scene';
 import {
-  STANDING, TapToWalk, WalkKey, controlIntent, desiredFrom, driveOwnMover, flightStick, movesOrTurns, restingIn,
+  STANDING, TapToWalk, WalkKey, controlIntent, desiredFrom, driveOwnMover, flightKeys, flightStick, movesOrTurns, restingIn,
 } from '../src/world/controls';
 import type { ControlIntent, Desired, WorldPress } from '../src/world/controls';
 import { OwnMover } from '../src/world/ownMover';
@@ -507,6 +507,21 @@ describe('the gait (spec §1): X toggles walking and running, the keys move at t
     expect(movesOrTurns(keys(0, -1))).toBe(true);
     expect(movesOrTurns(controlIntent(NO_INTENT, joystickIntent(2, -2)))).toBe(false); // the dead zone
     expect(movesOrTurns(controlIntent(NO_INTENT, joystickIntent(0, -30)))).toBe(true);
+  });
+});
+
+describe('flightKeys (2026-11-11: the owner reversed W and S)', () => {
+  const held = (...codes: string[]) => (code: string): boolean => codes.includes(code);
+  it('W climbs, S dives, A and D turn as on the ground', () => {
+    expect(flightKeys(held('KeyW'))).toEqual({ dive: false, climb: true, left: false, right: false });
+    expect(flightKeys(held('KeyS'))).toEqual({ dive: true, climb: false, left: false, right: false });
+    expect(flightKeys(held('KeyA'))).toEqual({ dive: false, climb: false, left: true, right: false });
+    expect(flightKeys(held('KeyD'))).toEqual({ dive: false, climb: false, left: false, right: true });
+    expect(flightKeys(held())).toEqual({ dive: false, climb: false, left: false, right: false });
+  });
+  it('the phone stick is unchanged: forward still dives', () => {
+    const stick = flightStick({ forward: 1, turn: 0, run: true });
+    expect(flightKeys(held(), stick)).toEqual({ dive: true, climb: false, left: false, right: false });
   });
 });
 

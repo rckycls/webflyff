@@ -46,7 +46,8 @@ import { Missiles } from './combat/missiles';
 import type { MissileWorld } from './combat/missiles';
 import { OwnShots } from './combat/ownShots';
 import { Focus } from './combat/focus';
-import { NO_FLIGHT_STICK, TapToWalk, WalkKey, controlIntent, flightStick, movesOrTurns } from './controls';
+import { NO_FLIGHT_STICK, TapToWalk, WalkKey, controlIntent, flightKeys, flightStick, movesOrTurns } from './controls';
+import { AutoRunKeys, autoRunStops } from './autoRun';
 import type { FlightStick } from './controls';
 import { FlightControl } from './flightControl';
 import type { FlightInput } from './flightControl';
@@ -72,6 +73,8 @@ import { CameraControls } from './cameraControls';
 import { blockBrowserGestures } from './browserGestures';
 import { CharacterWindow } from './hud/characterWindow';
 import { escapeWindow, refitWindows } from './hud/frame';
+import { cursorProperties, worldCursor } from './hud/cursors';
+import type { WorldHover } from './hud/cursors';
 import type { UiArt } from './hud/art';
 import { Hud } from './hud/hud';
 import { escapeStep } from './hud/escape';
@@ -127,7 +130,7 @@ import {
   encodePVendorOpen, encodeQueryPVendorItem, encodeRegisterPVendorItem, encodeUnregisterPVendorItem,
 } from '@flyffweb/protocol';
 import { Minimap } from './hud/minimap';
-import { WorldMap } from './hud/worldMap';
+import { MAP_PASSED_KEYS, WorldMap } from './hud/worldMap';
 import type { MapView } from './hud/worldMap';
 import { loadWorldMap } from './worldMapData';
 import { loadAudio } from '../audio/audioCatalog';
@@ -206,13 +209,14 @@ import { MoveMark } from './render/moveMark';
 import { loadHeldItems, loadMoverModel, loadRideModel } from './render/moverModels';
 import { guildLine, nameTagOf } from './render/nameTags';
 import type { GuildLine } from './render/nameTags';
+import { pickMoverAt } from './render/picking';
 import type { TapHit } from './render/picking';
 import { latestOnly, renderPortrait, renderPreview } from './render/portrait';
 import { SpriteLayer } from './render/SpriteLayer';
 import { TargetMarks, attackMarks, focusRect } from './render/TargetMarks';
 import type { ScreenRect } from './render/TargetMarks';
 import { HAttr } from './sim/collision';
-import { Mti, ObjSta, ObjStaF, PARTS_RIDE } from './sim/constants';
+import { Belli, Mti, ObjSta, ObjStaF, PARTS_RIDE } from './sim/constants';
 
 /** Piece 7 M5: the ground's field of view (`WorldStage`'s 45 degrees, `fDiv` 4), which a landing gives back. */
 const GROUND_FOV = 45;
@@ -377,6 +381,10 @@ export class WorldScreen {
   private tap: TapToWalk | undefined;
   /** X, the walk key (spec §1). */
   private walkKey: WalkKey | undefined;
+  /** 2026-11-11: the double W's lock forward (`m_bAutoRun`, autoRun.ts). */
+  private autoRun: AutoRunKeys | undefined;
+  /** 2026-11-11: an attack or a skill was under way at the last ground step: one that starts stops the auto-run. */
+  private attackingWas = false;
   /** The mover the player selected (`CWorld::m_pObjFocus`), which the server is told of. */
   private focus: Focus | undefined;
   /** The own character's auto-attack: the presses on a mover, the attack each rules step, what stops it. */
@@ -627,6 +635,10 @@ export class WorldScreen {
   private onScreenAt: number | null = null;
   /** This world's stage has been drawn once; reset with the stage (travel). */
   private stageDrawn = false;
+  /** 2026-11-11: where the mouse is over the world (normalized device coordinates), for its cursor; null off it. */
+  private hoverAt: { x: number; y: number } | null = null;
+  private hoverMoved = false;
+  private hoverFrames = 0;
   /** This world's stage was told to download the ring of tiles around the visible ones (the frame after its first). */
   private preloadStarted = false;
   private loadTimer: ReturnType<typeof setTimeout> | undefined;
@@ -677,6 +689,7 @@ export class WorldScreen {
     this.leaveButton = h('button', { type: 'button', class: 'world-leave' }, 'Leave');
     this.leaveButton.addEventListener('click', () => this.leave());
     this.element = h('div', { class: 'world' }, h('p', { class: 'world-status', role: 'status' }, LOADING_TEXT), this.leaveButton);
+    this.element.dataset.loading = ''; // 2026-11-11: CUR_DELAY until the world is first drawn (cursors.ts)
     root.append(this.element);
     this.releaseBrowserGestures = blockBrowserGestures(this.element, this.element.ownerDocument.defaultView ?? window);
     // from here to every ending, closing, reloading or leaving the page asks the player first; the ending lifts it
@@ -1197,6 +1210,10 @@ export class WorldScreen {
       sheets: null,
     };
     this.hudArt = art;
+    // 2026-11-11: the V15 cursors (cursors.ts) as the world's custom properties; style.css shows them on a computer. A
+    // missing picture is left to the browser's own cursor, unreported.
+    for (const [name, value] of cursorProperties((key) => services.store.url(key) ?? '')) this.element.style.setProperty(name, value);
+    this.element.dataset.cursors = '';
     this.hud = new Hud(this.element.ownerDocument, art, this.data!);
     this.hud.inArena = () => isArena(this.worldId); // 2026-11-10: TID_GAME_DEATH_ARENA (DPClient.cpp:2045-2052)
     this.minimap = new Minimap(art, this.stage!.manifest, folder, key => services.store.url(key), this.element.ownerDocument);
@@ -1325,6 +1342,7 @@ export class WorldScreen {
     this.keyboard.preventDefault = (code) => code === 'Tab' && this.world?.self()?.act.isFlying() === true;
     this.flightControl = new FlightControl(this.session, this.entry.clock); // Piece 7 M5
     this.walkKey = new WalkKey(view);
+    this.autoRun = new AutoRunKeys(view); // 2026-11-11
     // above the task bar (48 px, smaller on a narrow screen) and out of the safe area under it
     this.joystick = new Joystick(this.element, { floating: true, onClaim: () => this.tap?.reset() });
     this.focus = new Focus(this.session, (objectId) => this.isLive(objectId));
@@ -1721,9 +1739,10 @@ export class WorldScreen {
     // the phone keeps its chat; elsewhere Neuz's chat window (2026-11-09, docs/superpowers/specs/2026-11-09-chat-desktop-research.md)
     const phone = view.matchMedia?.('(max-width: 1000px) and (pointer: coarse)').matches === true;
     this.chatWindow ??= phone
-      ? new ChatWindow((channel, text, target) => this.session.sendChat(channel, text, target), () => this.stopOwnMover(), doc)
+      // 2026-11-11: the chat takes the keys only; a walk to a clicked point, the auto-run and a flight go on (letGoOfKeys)
+      ? new ChatWindow((channel, text, target) => this.session.sendChat(channel, text, target), () => { this.letGoOfKeys(); this.joystick?.reset(); }, doc)
       : new NeuzChat({
-        send: (text) => this.session.sendChat('nearby', text, ''), onFocus: () => this.stopOwnMover(),
+        send: (text) => this.session.sendChat('nearby', text, ''), onFocus: () => this.letGoOfKeys(),
         ownName: () => this.world?.self()?.name ?? this.entry.character.name, art: this.hudArt!, doc,
         text: (id) => this.data?.texts.get(id),
         carry: (text, event) => this.taskBar?.carryChat(text, event),
@@ -1972,7 +1991,7 @@ export class WorldScreen {
     const questNames = this.questNames();
     const destination = (goal: { x: number; z: number }): void => {
       this.worldMap?.showDestination(this.mapView(), goal);
-      if (this.worldMap?.isOpen === true) this.releaseControls();
+      if (this.worldMap?.isOpen === true) this.releaseForMap();
     };
     const questWindow = new QuestWindow(this.hudArt!, this.data!.texts, questNames, {
       check: (questId, check) => session.sendQuestCheck(questId, check),
@@ -2044,6 +2063,8 @@ export class WorldScreen {
           return true;
         }
         const pressed = press.mover === null ? undefined : this.world?.movers.get(press.mover);
+        // 2026-11-11: a press on a mover (a target, an NPC, a player) ends the auto-run (autoRun.ts)
+        if (press.mover !== null) this.autoRun?.stop();
         if (press.mover === null) attackLoop.onGroundPressed(press.double);
         // in the air no NPC menu opens (WndWorld.cpp:7059, !IsFly()): the press goes to the air's selection (Piece 7 M5)
         else if (pressed?.kind === 'npc' && this.world?.self()?.act.isFlying() !== true) this.pressNpc(press.mover);
@@ -2065,6 +2086,9 @@ export class WorldScreen {
       (time) => attackLoop.onReleased(time), // OnLButtonUp, at the let-go's own time
     );
     this.cameraControls = new CameraControls(renderer.domElement, (dx, dy) => this.backCamera.rotate(dx, dy));
+    // 2026-11-11: the mouse over the world, for its cursor (`updateCursor`)
+    renderer.domElement.addEventListener('pointermove', this.onWorldHover);
+    renderer.domElement.addEventListener('pointerleave', this.onWorldLeave);
     // Piece 7 M5: in the air the right drag steers (ControlFlying's mouse, mode 0)
     this.cameraControls.steer = (dx, dy) => {
       if (this.world?.self()?.act.isFlying() !== true) return false;
@@ -2795,10 +2819,12 @@ export class WorldScreen {
       overlay.setRenderCounts({ drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles });
       this.drawScreenLayers(world, stage, views, renderer);
       this.drawHud(world, now);
+      this.updateCursor(world, stage, views); // 2026-11-11
       // the world is on screen: `ready()` (a second call does nothing), and an ending from here on is a drop
       this.endingsAreDrops = true;
       this.resolveShown();
       this.stageDrawn = true;
+      delete this.element.dataset.loading;
       this.onScreenAt ??= performance.timeOrigin + performance.now();
     } catch (error) {
       // a frame that throws every frame must not fill the overlay with the same line sixty times a second; the console has
@@ -2887,9 +2913,17 @@ export class WorldScreen {
     // 2026-11-10: and a seller with an item up does not move (ControlPlayer, WndWorldControlPlayer.cpp:30)
     if (own !== undefined && (isFrozen(own) || this.personalShop?.blocksActions === true)) this.jumpRequested = false;
     else if (own !== undefined) {
+      // 2026-11-11: the auto-run's stops (autoRun.ts), then its lock: W held (bUp = TRUE, WndWorldControlPlayer.cpp:192-193)
+      const attacking = loop.autoAttack || loop.commanding || this.skillUse!.commanding;
+      if (autoRunStops({
+        dead: own.act.isDie(), sitting: (own.act.stateFlag & ObjStaF.SIT) !== 0, flying: false, tapped: tap !== null,
+        attacking: attacking && !this.attackingWas,
+      })) this.autoRun?.stop();
+      this.attackingWas = attacking;
+      const keys = this.keyboard!.intent();
       // the keys' Shift no longer changes the gait: X toggles it (spec §1)
       const cameraAngle = this.backCamera.heading === null ? own.act.body.angle : 180 - this.backCamera.heading * 180 / Math.PI;
-      const intent = controlIntent(this.keyboard!.intent(), this.joystick!.intent(), cameraAngle);
+      const intent = controlIntent(this.autoRun?.on === true ? { ...keys, forward: 1 } : keys, this.joystick!.intent(), cameraAngle);
       if (movesOrTurns(intent) || jump || tap !== null) this.itemActions?.cancel();
       // Piece 7 M3: a walk forward or back, a jump or a tap on the ground cancels an item cast; a turn does not
       // (WndWorldControlPlayer.cpp:341, :422-433, :487-505)
@@ -2940,16 +2974,14 @@ export class WorldScreen {
       if (!this.tookOff) this.flightControl!.entered(own);
     }
     this.tookOff = false;
+    this.autoRun?.stop(); // 2026-11-11: a take-off ends the auto-run (MoverEquip.cpp:1820)
     const keys = this.keyboard!;
     const stick = flightStick(this.joystick!.intent(), this.flightStickWas);
     this.flightStickWas = stick;
     const mouse = this.flightMouse.dx !== 0 || this.flightMouse.dy !== 0 ? { ...this.flightMouse } : null;
     this.flightMouse = { dx: 0, dy: 0 };
     const input: FlightInput = {
-      dive: keys.held('KeyW') || stick.dive,
-      climb: keys.held('KeyS') || stick.climb,
-      left: keys.held('KeyA') || stick.left,
-      right: keys.held('KeyD') || stick.right,
+      ...flightKeys((code) => keys.held(code), stick),
       accelerateToggle: keys.takeJump(),
       ...(this.flightAccelerate !== undefined ? { accelerateHeld: this.flightAccelerate } : {}),
       turboToggle: keys.takePressed('KeyX') || this.flightTurbo,
@@ -3177,8 +3209,9 @@ export class WorldScreen {
       // ObjectExecutor does nothing while the NPC dialog is open (WndManager.cpp:2570-2576)
       if (this.dialog?.frame.isOpen === true) return;
       this.worldMap?.toggle(this.mapView());
-      // the map holds the keys and the presses from here: what was held lets go (the plan's Ruling 4)
-      if (this.worldMap?.isOpen === true) this.releaseControls();
+      // the map holds the presses and the keys but the moves' from here: what it holds lets go (the plan's Ruling 4;
+      // 2026-11-11: the moves' keys stay held, so a walk or a flight goes on under it, releaseForMap)
+      if (this.worldMap?.isOpen === true) this.releaseForMap();
       return;
     }
     if (window === 'chat') { this.chatWindow?.open(); return; }
@@ -3418,6 +3451,67 @@ export class WorldScreen {
     this.walkKey?.reset();
     this.joystick?.reset();
     this.tap?.reset();
+  }
+
+  /**
+   * 2026-11-11: the world map opened: as `releaseControls`, but the keys that move (`MAP_PASSED_KEYS`) stay held, since
+   * they go on to the game under the map (Neuz's map takes only the left press, `Neuz.cpp:1246-1250`): a walk with W
+   * held, the auto-run, a walk to a clicked point and a flight all go on.
+   */
+  private releaseForMap(): void {
+    this.cameraControls?.reset();
+    this.taskBar?.closeMenu();
+    this.keyboard?.releaseExcept(MAP_PASSED_KEYS);
+    this.joystick?.reset();
+    this.tap?.reset();
+  }
+
+  /**
+   * 2026-11-11: the chat took the keyboard: the moves' keys let go, as Neuz clears W, A, S and D (and Q, E) while the chat
+   * has the focus (`ControlGround`, `WndWorldControlPlayer.cpp:142-150`), and nothing else: a walk to a clicked point, the
+   * auto-run (`m_bAutoRun` is not touched) and a flight go on. (It was `stopOwnMover`, which ended them all.)
+   */
+  private letGoOfKeys(): void {
+    this.keyboard?.reset();
+    this.walkKey?.reset();
+    this.jumpRequested = false;
+  }
+
+  /** 2026-11-11: the mouse moved over the world (a mouse's only: a finger shows no cursor). */
+  private readonly onWorldHover = (event: PointerEvent): void => {
+    if (event.pointerType !== 'mouse') return;
+    const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    if (!(box.width > 0 && box.height > 0)) return;
+    this.hoverAt = { x: ((event.clientX - box.left) / box.width) * 2 - 1, y: 1 - ((event.clientY - box.top) / box.height) * 2 };
+    this.hoverMoved = true;
+  };
+
+  private readonly onWorldLeave = (): void => {
+    this.hoverAt = null;
+  };
+
+  /**
+   * 2026-11-11: the world's cursor (`worldCursor`, `CWndWorld::OnSetCursor`) on the canvas's `data-cursor`, which style.css
+   * shows: the mover under the mouse picked as it moves, and every 10th frame while it rests, as Neuz highlights one each
+   * frame (`WndWorld.cpp:1084-1087`), so that a monster that walks under a still mouse is seen. A dead player highlights
+   * nothing (:1084-1085). The world takes no press with the own shop up or the shop window open, or Jewel Setting open.
+   */
+  private updateCursor(world: WorldState, stage: WorldStage, views: MoverViews): void {
+    const at = this.hoverAt;
+    if (at === null || !this.cameraPlaced) return;
+    if (!this.hoverMoved && ++this.hoverFrames < 10) return;
+    this.hoverMoved = false;
+    this.hoverFrames = 0;
+    const own = world.self();
+    let hover: WorldHover = null;
+    if (own !== undefined && !own.act.isDie()) {
+      const id = pickMoverAt(stage.camera, at.x, at.y, views.pickCandidates(own.objectId));
+      const mover = id === null ? undefined : world.movers.get(id);
+      if (mover !== undefined) hover = { peaceful: mover.added.belligerence === Belli.PEACEFUL, player: mover.added.isPlayer };
+    }
+    const cursor = worldCursor(hover, this.personalShop?.blocksWorld === true || this.jewels?.setting.isOpen === true);
+    const canvas = this.page?.renderer.domElement;
+    if (canvas !== undefined && canvas.dataset.cursor !== cursor) canvas.dataset.cursor = cursor;
   }
 
   /** What the world map draws the player from: the world, the own mover and the camera in D3D, the own name. */
@@ -4090,6 +4184,7 @@ export class WorldScreen {
    * and continues through the simulation clock.
    */
   private stopOwnMover(): void {
+    this.autoRun?.stop(); // 2026-11-11
     this.keyboard?.reset();
     this.walkKey?.reset();
     this.joystick?.reset();
@@ -4145,8 +4240,12 @@ export class WorldScreen {
     this.cameraControls?.dispose();
     this.keyboard?.dispose();
     this.walkKey?.dispose();
+    this.autoRun?.dispose();
     this.joystick?.dispose();
     this.tap?.dispose();
+    this.page?.renderer.domElement.removeEventListener('pointermove', this.onWorldHover);
+    this.page?.renderer.domElement.removeEventListener('pointerleave', this.onWorldLeave);
+    this.hoverAt = null;
     this.mark?.dispose();
     this.views?.dispose();
     this.tags?.dispose();
@@ -4274,7 +4373,7 @@ export class WorldScreen {
     this.paused = false;
     this.askedSteps = 0;
     for (const { reject } of this.stepsDrawn.splice(0)) reject(new Error('the world changed'));
-    for (const key of ['world', 'own', 'stage', 'views', 'tags', 'indicators', 'speechBubbles', 'keyboard', 'walkKey', 'joystick', 'tap',
+    for (const key of ['world', 'own', 'stage', 'views', 'tags', 'indicators', 'speechBubbles', 'keyboard', 'walkKey', 'autoRun', 'joystick', 'tap',
       'focus', 'attackLoop', 'skillUse', 'mark', 'effects', 'effectRenderer', 'effectTextures', 'numbers', 'marks',
       'hud', 'hudArt', 'taskBar', 'attackButton', 'cameraControls', 'jumpButton', 'logOutBox', 'reviveWindow',
       'characterWindow', 'skillWindow', 'inventoryWindow', 'moverMenu', 'dialog', 'shopWindow', 'itemUse',

@@ -273,8 +273,14 @@ export const THEME_FILES: readonly string[] = [
 const GUILD_LOGO = /^icon_cloakslogo\d{2}\.jpe?g$/i;
 export const guildLogoKeyOf = (file: string): string => `ui/logo/${file.toLowerCase().replace(/\.jpeg$/, '.jpg')}`;
 
-/** 2026-11-05: the cursors of Client/Cursor the browser shows (Neuz.cpp:280-300): the upgrade mode's hammer, CUR_HAMMER. */
-export const CURSOR_FILES: readonly string[] = ['anvil.cur'];
+/**
+ * The cursors of Client/Cursor the browser shows (Neuz.cpp:284-299): 2026-11-05 the upgrade mode's hammer, CUR_HAMMER;
+ * 2026-11-11 the rest of the set (apps/client/src/world/hud/cursors.ts). CUR_DOOR, CUR_GATE and CUR_LEVER are never loaded.
+ */
+export const CURSOR_FILES: readonly string[] = [
+  'anvil.cur', 'curAttack.cur', 'curBase.cur', 'curCamera.cur', 'curControl.cur', 'curDelay.cur', 'edit.cur', 'curGetItem.cur',
+  'curHelp.cur', 'curNo.cur', 'curNPC.cur', 'curSelect.cur', 'hori.cur', 'resize_h.cur', 'cur00001.cur', 'cur00002.cur',
+];
 
 /** The two glyph sheets: the script, and the field of WebUiSheets it fills. */
 const SHEETS = [

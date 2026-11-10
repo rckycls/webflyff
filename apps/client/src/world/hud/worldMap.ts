@@ -2,7 +2,8 @@
 // full-screen picture of the continent the player stands in, with its nine picture buttons (the World, the seven
 // continents and the monster switch), the player's arrow and name, and the monster icons with their tooltips. It sends
 // nothing. Browser adaptations (the plan's rulings): it fills the world view as Neuz fills the screen, keeping 4:3; it
-// has a close button; while it is open it holds every key (M and Escape close it) and keeps every press from the world.
+// has a close button; while it is open it holds every key (M and Escape close it) but the moves' (`MAP_PASSED_KEYS`, 2026-11-11)
+// and keeps every press from the world.
 // Piece 7 M1 adds the quest destination (CWorldMap's destination mode): ButtDestination.bmp at a Madrigal spot. Neuz
 // forgets it when the map closes; here it lasts until cleared, since the 3-D arrow that would keep pointing is not drawn.
 // Piece 7 M4 adds the party (RenderWorldMap, WorldMap.cpp:806-821): after the own arrow, each member not oneself and not
@@ -17,6 +18,13 @@ import {
 import type { UiArt } from './art';
 import { cssRgb, themeUrl } from './art';
 import { holdKey } from './modal';
+
+/**
+ * 2026-11-11: the keys that go on to the game while the map is open: W, A, S and D, Space (the jump, the thrust) and X (the
+ * walk, the turbo). Neuz's map takes only the left press (`CNeuzApp::MsgProc`, `Neuz/Neuz.cpp:1246-1250`), so a walk,
+ * the auto-run or a flight goes on under it, and the keys still steer.
+ */
+export const MAP_PASSED_KEYS: ReadonlySet<string> = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'KeyX']);
 
 /** What the map draws the player from: the world, the own mover's and the camera's D3D positions, the own name. */
 export interface MapView {
@@ -508,8 +516,9 @@ export class WorldMap {
     }
   }
 
-  /** Every key is held while the map is open; M and Escape, pressed, close it. */
+  /** Every key but the moves' is held while the map is open; M and Escape, pressed, close it. */
   private readonly onKey = (event: KeyboardEvent): void => {
+    if (MAP_PASSED_KEYS.has(event.code) && !event.ctrlKey && !event.altKey && !event.metaKey) return;
     holdKey(event);
     if (event.type !== 'keydown' || event.repeat || event.ctrlKey || event.altKey || event.metaKey) return;
     if (event.code === 'KeyM' || event.key === 'Escape') {
