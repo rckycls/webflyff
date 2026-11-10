@@ -25,6 +25,7 @@ export class AmountBox {
   private readonly sheet: { frame: WindowFrame; value: HTMLElement; caption: HTMLElement; question: HTMLElement } | null;
   private pad = new CountPad(0);
   private max = 0;
+  private min = 1;
 
   constructor(art: UiArt, private readonly doc: Document = document) {
     if (!isPhone(doc)) {
@@ -48,7 +49,7 @@ export class AmountBox {
     const buttons = doc.createElement('div');
     buttons.className = 'vendor-sheet-buttons';
     buttons.append(
-      textButton(doc, 'OK', () => this.ok(Math.max(1, Math.min(this.pad.count, this.max))), 'ok'),
+      textButton(doc, 'OK', () => this.ok(Math.max(this.min, Math.min(this.pad.count, this.max))), 'ok'),
       textButton(doc, 'Cancel', () => this.close(), 'cancel'),
     );
     side.append(question, box.row, buttons);
@@ -68,9 +69,13 @@ export class AmountBox {
     return this.desktop?.isOpen ?? this.sheet?.frame.isOpen ?? false;
   }
 
-  /** "Item" with "Move how many items?" / "Number:", or "Penya" with its two lines; the amount set to all of it (`max`). */
-  open(title: string, question: string, label: string, max: number): void {
+  /**
+   * "Item" with "Move how many items?" / "Number:", or "Penya" with its two lines; the amount set to all of it (`max`), at
+   * least `min` (the mail's penya may be 0).
+   */
+  open(title: string, question: string, label: string, max: number, min = 1): void {
     this.max = max;
+    this.min = min;
     if (this.desktop !== null) {
       this.desktop.open(title, question, label, max);
       return;

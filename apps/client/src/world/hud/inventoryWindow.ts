@@ -433,7 +433,12 @@ export class InventoryWindow {
   private foreignType(event: DragEvent): string | null {
     const types = this.foreignDrop?.types() ?? [];
     const target = event.target as Node | null;
-    if (types.length === 0 || !this.frame.isOpen || target === null || !this.frame.element.contains(target)) return null;
+    if (types.length === 0 || !this.frame.isOpen) return null;
+    // over the bag, or over a modal's backdrop where the bag lies under it (the post's read window is modal)
+    const r = this.frame.element.getBoundingClientRect();
+    const over = (target !== null && this.frame.element.contains(target))
+      || (event.clientX >= r.left && event.clientX < r.right && event.clientY >= r.top && event.clientY < r.bottom);
+    if (!over) return null;
     return types.find((type) => event.dataTransfer?.types.includes(type) === true) ?? null;
   }
 
