@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ArWriter, PacketType, PROTOCOL_VERSION, encodeCertify, encodeCloseExistingConnection, encodeErrorReply, encodeKeepAlive,
-  hashPassword,
+  encryptCertifyPassword, hashPassword,
 } from '@flyffweb/protocol';
 import { checkCertifierPacket } from '../src/certifierFilter';
 
@@ -47,5 +47,30 @@ describe('checkCertifierPacket (website spec §3.5)', () => {
       .string('a'.repeat(32)).toBytes())).toBe('account');
     // longer than the buffer: the reader refuses it
     expect(checkCertifierPacket(encodeCloseExistingConnection('a'.repeat(42), 'a'.repeat(32)))).toBe('malformed');
+  });
+});
+
+// The CERTIFY password block (final review): the certifier copies the first 42 decrypted bytes with no terminator
+// (dpcertifier.cpp:370) and then reads and copies them as a C string (:378, :405), so a block whose start is not the
+// hash and its NUL overruns its buffers. The browser sends md5 hex, zero-padded, encrypted (encryptCertifyPassword).
+describe('the CERTIFY password block', () => {
+  const certifyWith = (block: Uint8Array) =>
+    new ArWriter().u32(PacketType.CERTIFY).string(PROTOCOL_VERSION).string('hero_01').bytes(block).toBytes();
+
+  it('refuses a block with no terminator in the 42 bytes the certifier copies', () => {
+    expect(checkCertifierPacket(certifyWith(encryptCertifyPassword('x'.repeat(42))))).toBe('password');
+  });
+  it('refuses a block that is not a hash: a quote, capitals, the wrong length', () => {
+    expect(checkCertifierPacket(certifyWith(encryptCertifyPassword(`${'a'.repeat(31)}'`)))).toBe('password');
+    expect(checkCertifierPacket(certifyWith(encryptCertifyPassword('A'.repeat(32))))).toBe('password');
+    expect(checkCertifierPacket(certifyWith(encryptCertifyPassword('a'.repeat(31))))).toBe('password');
+    expect(checkCertifierPacket(certifyWith(encryptCertifyPassword('a'.repeat(33))))).toBe('password');
+  });
+  it('refuses a missing or cut block', () => {
+    expect(checkCertifierPacket(new ArWriter().u32(PacketType.CERTIFY).string(PROTOCOL_VERSION).string('hero_01').toBytes())).toBe('malformed');
+    expect(checkCertifierPacket(certifyWith(encryptCertifyPassword(hashPassword('abc12345')).subarray(0, 671)))).toBe('malformed');
+  });
+  it('passes the block the browser sends', () => {
+    expect(checkCertifierPacket(certifyWith(encryptCertifyPassword(hashPassword('abc12345'))))).toBeUndefined();
   });
 });

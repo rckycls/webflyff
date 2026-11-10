@@ -286,7 +286,7 @@ Refused connections get `refused` lines instead, at most one per address and rea
 
 A `refused` line never holds what the browser sent, such as its page address or path: only the address and the reason.
 
-The gateway also guards the certifier: on a certifier route it lets through only the four packets the browser sends (log in, close an old session, keep alive, error reply), with an account name of 1 to 32 plain characters and no `'`, and a password hash of 32 hex digits. Anything else ends that connection (code 4006) with a line `forbidden <address> <route> <reason>`, the reason being `type`, `account`, `password` or `malformed`. This closes a hole in the certifier that would let a crafted packet run SQL on `ACCOUNT_DBF`. The lobby never sends such a packet, so a `forbidden` line means someone tried. Step 9.7 checks it.
+The gateway also guards the certifier: on a certifier route it lets through only the four packets the browser sends (log in, close an old session, keep alive, error reply), with an account name of 1 to 32 plain characters and no `'`, and a password hash of 32 hex digits (in a login packet, the encrypted password must start with such a hash and its end mark, or the certifier would read and write past its buffers). Anything else ends that connection (code 4006) with a line `forbidden <address> <route> <reason>`, the reason being `type`, `account`, `password` or `malformed`. This closes a hole in the certifier that would let a crafted packet run SQL on `ACCOUNT_DBF`. The lobby never sends such a packet, so a `forbidden` line means someone tried. Step 9.7 checks it.
 
 ## Step 6b. The web service: sign-up and server status
 
