@@ -20,6 +20,8 @@ import { readTradeRequestPacket } from '../world/trade';
 import type { TradeRequestPacket } from '../world/trade';
 import { readVendorRequestPacket } from '../world/vendor';
 import type { VendorRequestPacket } from '../world/vendor';
+import { readGuildPacket, readGuildRequestPacket } from '../world/guild';
+import type { GuildDirectMessage, GuildRequestPacket } from '../world/guild';
 
 /** What `CDPClient::SendJoin` sends: the character that enters the world, and the account that owns it. */
 export interface JoinRequest {
@@ -336,6 +338,9 @@ export type WorldPacket =
   | TradeRequestPacket
   // 2026-11-10: the personal shop's packets the browser sends (world/vendor.ts)
   | VendorRequestPacket
+  // 2026-11-10: the guild's direct packets, and the guild packets the browser sends (world/guild.ts)
+  | GuildDirectMessage
+  | GuildRequestPacket
   | { type: 'unknown'; packetType: number };
 
 /**
@@ -421,6 +426,9 @@ export function decodeWorldPacket(body: Uint8Array): WorldPacket {
       // 2026-11-10: the messenger's direct packets and SAY (world/friends.ts)
       const friend = readFriendPacket(packetType, r);
       if (friend !== null) { r.expectEnd(); return friend; }
+      // 2026-11-10: the guild's (world/guild.ts)
+      const guild = readGuildPacket(packetType, r);
+      if (guild !== null) { r.expectEnd(); return guild; }
       return { type: 'unknown', packetType };
     }
   }
@@ -677,6 +685,9 @@ function decodeClientPacket(r: ArReader): WorldPacket {
       // 2026-11-10: the personal shop's (world/vendor.ts)
       const vendor = readVendorRequestPacket(packetType, r);
       if (vendor !== null) { r.expectEnd(); return vendor; }
+      // 2026-11-10: the guild's (world/guild.ts)
+      const guild = readGuildRequestPacket(packetType, r);
+      if (guild !== null) { r.expectEnd(); return guild; }
       return { type: 'unknown', packetType };
     }
   }

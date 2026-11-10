@@ -656,8 +656,9 @@ fieldset:disabled .btn {
 /* The NPC's mover menu (CWndMenu, WndControl.cpp:3337-3630; moverMenu.ts): a 3 px frame of ARGB(255,226,198,181), white
    inside, 10 + 22 px per item tall; items 20 px on a 22 px pitch from (2, 2), as wide as the widest text + 60, the text
    24 px in, black; a hovered item gets ARGB(155,200,200,200) and a round outline of ARGB(255,240,240,240). Verdana 9. */
-/* 2026-11-10: the Messenger's menus (friends/friendHud.ts) are CWndMenus too, with a class of their own */
-.hud-mover-menu, .hud-friend-menu {
+/* 2026-11-10: the Messenger's menus (friends/friendHud.ts) are CWndMenus too, with a class of their own; and the guild's
+   member menu (guild/guildHud.ts) */
+.hud-mover-menu, .hud-friend-menu, .hud-guild-menu {
   position: absolute;
   z-index: 30;
   display: inline-flex;
@@ -671,7 +672,7 @@ fieldset:disabled .btn {
   font: 12px Verdana, Tahoma, sans-serif;
 }
 
-.hud-mover-menu[hidden], .hud-friend-menu[hidden] {
+.hud-mover-menu[hidden], .hud-friend-menu[hidden], .hud-guild-menu[hidden] {
   display: none;
 }
 
@@ -2957,4 +2958,55 @@ fieldset:disabled .btn {
   .hud-jewel .hud-picture-button::after { content: attr(aria-label); }
   .hud-jewel .hud-picture-button:disabled { opacity: 0.55; background: #d9c8bb !important; }
   .hud-jewel-weapon { width: 64px; height: 64px; }
+}
+
+/* 2026-11-10: the guild (guild/guildHud.ts, hud/guild/*.ts; docs/superpowers/specs/2026-11-10-guild-research.md §3).
+   CWndGuild's five tabs are their resdata.inc entries in the tab control; the member list (CWndGuildTabMember::OnDraw,
+   WndGuildTabMember.cpp:218-449) draws 18 px rows: the rank icons, the job icons (an offline member's tinted 0xffff6464),
+   the level, the name and the nickname in black, an offline member grey (0xff909090), the chosen blue. The logos are the
+   24 x 24 Icon_CloakSLogo pictures, drawn opaque; the logo window rings the chosen one in magenta (WndGuildTabInfo.cpp:203-220). */
+.hud-guild, .hud-guild-dialog { color: #000000; font: 12px/16px Verdana, Arial, sans-serif; }
+.hud-guild-page, .hud-guild-tabs { position: absolute; }
+.hud-guild-page[hidden] { display: none; }
+.hud-guild-tabs > div { position: absolute; }
+.hud-guild-tab { position: absolute; padding: 0 4px; border: 0; background: transparent; color: #ffffff; font: 11px/20px Arial, sans-serif; text-align: left; cursor: pointer; white-space: nowrap; overflow: hidden; }
+.hud-guild-tab[aria-pressed=true] { color: #000000; }
+.hud-guild-members { position: absolute; overflow: hidden auto; scrollbar-width: none; touch-action: pan-y; }
+.hud-guild-members::-webkit-scrollbar { display: none; }
+.hud-guild-spacer { position: absolute; pointer-events: none; }
+.hud-guild-member { position: absolute; cursor: pointer; user-select: none; }
+.hud-guild-member > div { position: absolute; }
+.hud-guild-member-text { white-space: nowrap; overflow: hidden; line-height: 14px; pointer-events: none; }
+.hud-guild-icon { background-repeat: no-repeat; pointer-events: none; }
+.hud-guild-icon[hidden] { display: none; }
+.hud-guild-icon[data-tint] { filter: sepia(1) saturate(5) hue-rotate(-40deg) brightness(1.05); }
+.hud-guild-rank-icon { background-repeat: no-repeat; }
+.hud-guild .hud-res-custom[data-logo], .hud-guild-logo-cell { background-size: 24px 24px; background-repeat: no-repeat; }
+.hud-guild-logo-cell { position: absolute; padding: 0; border: 0; background-color: transparent; cursor: pointer; }
+.hud-guild-logo-cell[aria-pressed=true] { box-shadow: 0 0 0 2px #ff00ff; }
+.hud-guild-notice-text {
+  position: absolute; left: 3px; top: 3px; width: calc(100% - 6px); height: calc(100% - 6px); box-sizing: border-box; padding: 0;
+  border: 0; outline: none; resize: none; background: transparent; color: #000000; font: inherit; line-height: 14px;
+}
+.hud-guild .hud-res-text-body { color: #000000; }
+.hud-guild-invite { z-index: 40; }
+/* The phone: the window fitted whole on the screen (its frame's fitWhole), every word 14 px, the picture buttons short
+   words a finger can read (as the trade's and the shop's), the text fields 16 px (no zoom on focus); a tap on a member
+   opens its menu (no right click). The joystick and the shortcuts hide while the guild window is open. */
+@media (max-width: 1000px) and (pointer: coarse) {
+  .world:has(.hud-guild:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack) { visibility: hidden; }
+  .hud-guild, .hud-guild-dialog, .hud-guild-menu,
+  :is(.hud-guild, .hud-guild-dialog) :is(.hud-res-static-text, .hud-res-text-body, .hud-guild-member-text, .hud-window-title),
+  .hud-guild .hud-guild-tab { font-size: 14px; }
+  .hud-guild .hud-guild-tab { padding: 0 2px; text-align: center; }
+  :is(.hud-guild, .hud-guild-dialog) .hud-res-static-text { text-shadow: none; }
+  :is(.hud-guild-dialog) input, .hud-guild-notice-text { font-size: 16px; }
+  :is(.hud-guild, .hud-guild-dialog) .hud-picture-button[data-word] {
+    box-sizing: border-box; border: 1px solid #b07d5c; border-radius: 3px; background: linear-gradient(#fff7ef, #ecd2bd) !important;
+    color: #3a2414; font: 14px/18px Arial, sans-serif; text-align: center; white-space: nowrap; overflow: hidden; padding: 0;
+  }
+  :is(.hud-guild, .hud-guild-dialog) .hud-picture-button[data-word]::after { content: attr(data-word); }
+  :is(.hud-guild, .hud-guild-dialog) .hud-picture-button[data-word]:disabled { opacity: 0.55; background: #d9c8bb !important; }
+  .hud-guild-member { min-height: 18px; }
+  .hud-guild-member[data-selected] { background: #dfe6ff; }
 }

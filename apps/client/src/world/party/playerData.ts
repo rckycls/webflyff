@@ -30,6 +30,19 @@ export class PlayerDataCenter {
     return this.entry(playerId, true);
   }
 
+  /** 2026-11-10 (guild): the entry when known, asking nothing (`GetPlayerString`, the removed member's line). */
+  peek(playerId: number): Readonly<PlayerData> | undefined {
+    return this.entries.get(playerId);
+  }
+
+  /**
+   * 2026-11-10 (guild): `GetPlayerData( id, FALSE )`, as `OnGuild` reads it before its one QUERY_PLAYER_DATA2
+   * (DPClient.cpp:12662-12684): the version known, an empty entry made without a query when unknown.
+   */
+  version(playerId: number): number {
+    return this.entry(playerId, false).version;
+  }
+
   apply(message: WorldMessage): void {
     switch (message.type) {
       case 'playerData': {

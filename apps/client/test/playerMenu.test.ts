@@ -43,6 +43,13 @@ describe('the player\'s menu ([R §5.1])', () => {
     ]);
   });
 
+  it('2026-11-10: "Invite to join guild" after the party\'s invite, only for a viewer whose rank may invite (WndWorld.cpp:6556-6565)', () => {
+    const entries = playerMenuEntries(TEXTS, false, true);
+    expect(entries.map((entry) => entry.id)).toEqual([2, 5, 6, 7, 12, 24, 31, 151]);
+    expect(entries[3]).toEqual({ id: 7, label: 'Invite to join guild', enabled: true });
+    expect(playerMenuEntries(TEXTS, true, true).map((entry) => entry.id)).toEqual([24]);
+  });
+
   it('the menu is in reach under 20 m', () => {
     expect(menuInReach([100, 0, 100], [119, 0, 100])).toBe(true);
     expect(menuInReach([100, 0, 100], [120, 0, 100])).toBe(false);

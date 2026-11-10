@@ -56,7 +56,9 @@ import { itemIconOf } from '../pets/petStatus';
 
 /** The windows of Piece 4 a press on the task bar opens. */
 export type TaskBarWindow = 'character' | 'status' | 'skills' | 'inventory' | 'chat' | 'navigator' | 'worldmap' | 'option'
-  | 'quests' | 'party' | 'messenger' | 'vendor';
+  | 'quests' | 'party' | 'messenger' | 'vendor' | 'guild';
+/** 2026-11-10: `APP_GUILD` (Resource/ResData.h:228), the guild window (guild research §3), G (FuncApplet.cpp:245). */
+const APP_GUILD = 323;
 /** `APP_QUEST_EX_LIST` (Resource/ResData.h), the quest window (Piece 7 M1), Q (FuncApplet.cpp:229). */
 const APP_QUEST_EX_LIST = 859;
 /** `APP_PARTY` (Resource/ResData.h:100), the party window and its quick view (Piece 7 M4), P (FuncApplet.cpp:233). */
@@ -86,6 +88,7 @@ const WINDOWS: ReadonlyMap<number, TaskBarWindow> = new Map([
   [APP_PARTY, 'party'],
   [APP_MESSENGER_EX, 'messenger'],
   [APP_VENDOR_REVISION, 'vendor'],
+  [APP_GUILD, 'guild'],
 ]);
 
 /**
@@ -125,6 +128,9 @@ const MENU: ReadonlyArray<{ id: number; text: string }> = [
   // CWndTaskMenu's APP_PARTY line, 'Party' (TID_APP_PARTY), in its Communication submenu (WndTaskBar.cpp:2670): the
   // browser's menu is flat, so it stands before Option
   { id: APP_PARTY, text: 'Party' },
+  // 2026-11-10: CWndTaskMenu's APP_GUILD line, 'Guild' (TID_APP_COMPANY), right after Party in its Communication submenu
+  // (WndTaskBar.cpp:2670-2671)
+  { id: APP_GUILD, text: 'Guild' },
   // CWndTaskMenu's APP_OPTIONEX line, 'Option' (TID_APP_OPTION), just before Log out (WndTaskBar.cpp:2638)
   { id: AppId.OPTIONEX, text: 'Option' },
   { id: AppId.LOGOUT, text: 'Log out' },

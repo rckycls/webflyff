@@ -58,6 +58,8 @@ export interface FriendHudScreen {
   inParty(playerId: number): boolean;
   /** Invite to the party (`CWndWorld::InviteParty`). */
   invite(playerId: number): void;
+  /** 2026-11-10 (guild): the Guild tab's rows, the own guild's members (`CWndGuildCtrlEx::UpdatePlayerList`). */
+  guildRows?(): FriendRow[];
   playerData(playerId: number): Readonly<PlayerData>;
   jobName(job: number): string;
   serverName(): string;
@@ -91,6 +93,7 @@ export class FriendHud {
   readonly messages = new Map<string, MessageWindow>();
   readonly instants = new Map<string, InstantMessage>();
   private readonly sort = new FriendSort();
+  private readonly guildSort = new FriendSort();
   private request: Request | null = null;
 
   constructor(
@@ -109,14 +112,15 @@ export class FriendHud {
     // its own class: the world's menu is the only .hud-mover-menu
     this.menu.element.className = 'hud-friend-menu';
 
-    this.window.onSort = (key) => { this.rows(key); };
+    this.window.onSort = (key, tab) => { if (tab === 1) this.guildRows(key); else this.rows(key); };
     this.window.onAdd = () => { if (!this.addWindow.frame.isOpen) this.addWindow.open(); };
     this.window.onStateMenu = (at) => this.menu.open(this.stateEntries(), at, (state) => {
       // `FRS_ONLINE <= nID < MAX_FRIENDSTAT`: SETFRIENDSTATE, the core tells everyone (:844-848)
       if (state >= FRS.ONLINE && state < MAX_FRIENDSTAT) screen.session.sendSetFriendState(state);
     });
     this.window.onOpen = (row) => this.doubleClick(row);
-    this.window.onMenu = (row, at) => this.openMenu(row, at);
+    // the Guild tab has no menu (`CWndGuildCtrlEx` has no OnRButtonUp)
+    this.window.onMenu = (row, at, tab) => { if (tab === 0) this.openMenu(row, at); };
     this.addWindow.onOk = (name) => this.addByName(name);
     this.confirm.onYes = () => {
       const request = this.request;
@@ -180,6 +184,15 @@ export class FriendHud {
     return press === undefined ? this.sort.refresh(rows) : this.sort.press(press, rows);
   }
 
+  /**
+   * 2026-11-10 (guild): the Guild tab's rows, sorted as the Friend tab's (`CWndGuildCtrlEx` uses the same comparisons,
+   * `WndMessengerCtrl.cpp:28-195`, and starts on the state, :1069-1070).
+   */
+  private guildRows(press?: SortKey): FriendRow[] {
+    const rows = this.screen.guildRows?.() ?? [];
+    return press === undefined ? this.guildSort.refresh(rows) : this.guildSort.press(press, rows);
+  }
+
   /** Every frame: the open windows, and the instant messages' time. */
   update(): void {
     const now = this.screen.now();
@@ -194,6 +207,7 @@ export class FriendHud {
       serverName: cutServerName(this.screen.serverName()),
       channelName: cutServerName(this.screen.channelName()),
       rows: this.rows(),
+      guildRows: this.guildRows(),
       jobName: (job) => this.screen.jobName(job),
     });
   }

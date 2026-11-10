@@ -106,11 +106,13 @@ function readPlayer(r: ArReader, self: boolean): AddedPlayer {
   const level = r.u16(); // (u_short&)m_nLevel
   const fuel = r.i32(); // m_nFuel (Piece 7 M5: kept when not -1)
   const accFuel = r.i32(); // m_tmAccFuel (kept when not 0)
+  // 2026-11-10 (guild): the guild, its war and the worn guild cloak's guild are kept (ObjSerializeOpt.cpp:136-140, :447-451)
+  let guildId = 0, warId = 0;
   if (r.u8() === 1) { // `if( u1 == 1 )`, exactly 1
-    r.u32(); // m_idGuild
-    r.u32(); // m_idWar
+    guildId = r.u32(); // m_idGuild
+    warId = r.u32(); // m_idWar
   }
-  r.u32(); // m_idGuildCloak
+  const guildCloak = r.u32(); // m_idGuildCloak
   if (r.u8() === 1) {
     r.u32(); // m_idparty
     r.u32(); // m_idDuelParty
@@ -138,6 +140,7 @@ function readPlayer(r: ArReader, self: boolean): AddedPlayer {
     self, name, sex, skinSet, hairMesh, hairColor, headMesh, playerId, job, sta, dex, level, authorization, mode,
     stateMode, ...(useItemId !== 0 ? { useItemId } : {}), pkTime, pkValue, pkPropensity, honor,
     ...(fuel !== -1 ? { fuel } : {}), ...(accFuel !== 0 ? { accFuel } : {}),
+    ...(guildId !== 0 ? { guildId } : {}), ...(warId !== 0 ? { warId } : {}), ...(guildCloak !== 0 ? { guildCloak } : {}),
   };
   if (self) {
     const { equipmentObjectIds, numbers } = readOwnEquipment(r, { str, sta, dex, int });

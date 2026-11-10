@@ -11,6 +11,35 @@ export interface NameTag {
   maxDistance: number;
   /** 2026-11-09: the Master or Hero mark after the name (`legendMark`): its picture's key, or none. */
   mark?: string | null;
+  /** 2026-11-10: the guild line above the name (`guildLine`): its text, colour and logo picture's key. */
+  guild?: GuildLine;
+}
+
+/** The guild line of a player's tag (guild research §5). */
+export interface GuildLine {
+  text: string;
+  color: number;
+  /** The logo's picture key (`Icon_CloakSLogoNN.jpg`), or null for a guild with none. */
+  logo: string | null;
+}
+
+/** What the tag reads of a player's guild: its name and logo (0 none), and whether the player is its master. */
+export interface TagGuild {
+  name: string;
+  logo: number;
+  master: boolean;
+}
+
+/** `0xFFFFFF99`: the guild line of the guild's master (`MoverRender.cpp:1586-1588`); everyone else's is white. */
+const COLOR_GUILD_MASTER = 0xffffff99;
+const COLOR_GUILD = 0xffffffff;
+
+/**
+ * 2026-11-10: the guild line (`RenderName`, `MoverRender.cpp:1484-1660`): the guild's name, no brackets, white, the
+ * master's light yellow; the 24 x 24 logo when it has one. (The Guild Siege's colours are the siege's, not here.)
+ */
+export function guildLine(guild: TagGuild, logoKey: (logo: number) => string): GuildLine {
+  return { text: guild.name, color: guild.master ? COLOR_GUILD_MASTER : COLOR_GUILD, logo: guild.logo === 0 ? null : logoKey(guild.logo) };
 }
 
 /**
@@ -77,14 +106,17 @@ export function nameTagOf(
   honorTitles: ReadonlyMap<number, string>,
   inParty: (playerId: number) => boolean = () => false,
   jobs: ReadonlyArray<{ name: string }> = [],
+  /** 2026-11-10: the guild line of a player, or undefined (no guild known for it). */
+  guildOf: (mover: Mover) => GuildLine | undefined = () => undefined,
 ): NameTag | null {
   const player = mover.added.player;
   if (mover.kind === 'player' && player !== undefined) {
     if ((player.mode & TRANSPARENT_MODE) === TRANSPARENT_MODE && !mover.isSelf) return null;
     const mark = legendMark(player.job, player.level, jobs);
+    const guild = guildOf(mover);
     return {
       text: playerText(mover.name, player, honorTitles), color: playerColor(player, colors, inParty(player.playerId)), maxDistance: FAR_LIMIT,
-      ...(mark !== null ? { mark } : {}),
+      ...(mark !== null ? { mark } : {}), ...(guild !== undefined ? { guild } : {}),
     };
   }
   const { belligerence } = mover.added;

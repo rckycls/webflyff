@@ -41,3 +41,10 @@ export {
   writeTradeLastConfirmOk, writeTradeOk, writeTradePull, writeTradePut, writeTradePutError, writeTradePutGold,
 } from './trade';
 export { writeUltimate } from './ultimate'; // 2026-11-10: the jewel windows' answers
+export {
+  directAddGuildMember, directChgMaster, directGuild, directGuildChat, directGuildClass, directGuildError,
+  directGuildMemberLevel, directGuildMemberLogin, directGuildNickname, directGuildSetName, directRemoveGuildMember,
+  guildMember, guildWhole, writeAllGuilds, writeCreateGuild, writeDestroyGuild, writeGuild, writeGuildAuthority,
+  writeGuildContribution, writeGuildInvite, writeGuildLogo, writeGuildNotice, writeGuildPenya, writeGuildRealPenya,
+  writeSetGuild, writeSetWar,
+} from './guild';

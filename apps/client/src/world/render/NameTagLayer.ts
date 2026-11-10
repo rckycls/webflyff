@@ -31,6 +31,15 @@ const LEFT_PX = 3;
  */
 const MARK_PX = 25;
 const MARK_BOTTOM_PX = 5;
+/**
+ * 2026-11-10 (guild): the guild line 12 px above the name (`vOut.y - 32` against `- 20`), centred the same way, and the
+ * 24 x 24 logo left of the wider of the two lines, 2 px off it, its top 29 px above the head point (`RenderName`,
+ * `MoverRender.cpp:1569-1646`). The logo is drawn opaque (DESTBLEND ZERO): its black stays black.
+ */
+const GUILD_ABOVE_PX = 32;
+const LOGO_PX = 24;
+const LOGO_GAP_PX = 2;
+const LOGO_BOTTOM_PX = 5;
 /** The canvas is drawn at the screen's pixel ratio, as the renderer is (at most 2: `createRenderer`). */
 const MAX_PIXEL_RATIO = 2;
 
@@ -42,6 +51,8 @@ interface Tag {
   text: string;
   color: number;
   mark: string | null;
+  /** 2026-11-10: the guild line it was drawn with ('' for none), for `recolor` and the tests. */
+  guild: string;
   /** The canvas in CSS pixels. */
   width: number;
   height: number;
@@ -53,6 +64,10 @@ const cssColor = (argb: number): string => {
 };
 
 const at = new Vector3();
+
+/** A tag's guild line as one string ('' for none): what `recolor` compares and the tests read. */
+const guildKey = (tag: NameTag): string =>
+  (tag.guild === undefined ? '' : `${tag.guild.text}|${tag.guild.color.toString(16)}|${tag.guild.logo ?? ''}`);
 
 export class NameTagLayer {
   private readonly tags = new Map<number, Tag>();
@@ -88,7 +103,7 @@ export class NameTagLayer {
         if (tag !== null && tag.text !== '') this.add(objectId, tag);
         return;
       }
-      if (tag !== null && tag.text === old.text && tag.color === old.color && (tag.mark ?? null) === old.mark) return;
+      if (tag !== null && tag.text === old.text && tag.color === old.color && (tag.mark ?? null) === old.mark && guildKey(tag) === old.guild) return;
       this.remove(objectId);
       if (tag !== null && tag.text !== '') this.add(objectId, tag);
     });
@@ -125,6 +140,11 @@ export class NameTagLayer {
     return this.tags.get(objectId)?.text ?? null;
   }
 
+  /** 2026-11-10: the guild line of the mover's tag ("name|colour|logo"), '' for none, null without a tag (the tests' hooks). */
+  guildOf(objectId: number): string | null {
+    return this.tags.get(objectId)?.guild ?? null;
+  }
+
   dispose(): void {
     for (const objectId of [...this.tags.keys()]) this.remove(objectId);
   }
@@ -138,11 +158,20 @@ export class NameTagLayer {
     const textWidth = Math.ceil(context.measureText(tag.text).width);
     // the box round the head point (0, 0), y down: the text's top 20 px above it and 3 px left of centred, the mark after
     const mark = tag.mark ?? null;
+    const guild = tag.guild;
+    const guildWidth = guild === undefined ? 0 : Math.ceil(context.measureText(guild.text).width);
+    // the mark and the logo go by the wider of the two lines (`:1514-1522`, `:1631-1642`)
+    const wide = Math.max(textWidth, guildWidth);
     const textLeft = -Math.floor(textWidth / 2) - LEFT_PX, textTop = -ABOVE_PX;
-    const markLeft = Math.ceil(textWidth / 2), markTop = -(MARK_PX + MARK_BOTTOM_PX);
-    const left = textLeft - OUTLINE_PX;
-    const top = Math.min(textTop - OUTLINE_PX, mark === null ? Infinity : markTop);
-    const right = Math.max(textLeft + textWidth + OUTLINE_PX, mark === null ? -Infinity : markLeft + MARK_PX);
+    const guildLeft = -Math.floor(guildWidth / 2) - LEFT_PX, guildTop = -GUILD_ABOVE_PX;
+    const logo = guild?.logo ?? null;
+    const logoLeft = -Math.floor(wide / 2) - (LOGO_PX + LOGO_GAP_PX), logoTop = -(LOGO_PX + LOGO_BOTTOM_PX);
+    const markLeft = Math.ceil(wide / 2), markTop = -(MARK_PX + MARK_BOTTOM_PX);
+    const left = Math.min(textLeft - OUTLINE_PX, guild === undefined ? Infinity : guildLeft - OUTLINE_PX, logo === null ? Infinity : logoLeft);
+    const top = Math.min(textTop - OUTLINE_PX, mark === null ? Infinity : markTop, guild === undefined ? Infinity : guildTop - OUTLINE_PX,
+      logo === null ? Infinity : logoTop);
+    const right = Math.max(textLeft + textWidth + OUTLINE_PX, mark === null ? -Infinity : markLeft + MARK_PX,
+      guild === undefined ? -Infinity : guildLeft + guildWidth + OUTLINE_PX);
     const bottom = textTop + LINE_PX + OUTLINE_PX;
     const width = right - left;
     const height = bottom - top;
@@ -158,6 +187,11 @@ export class NameTagLayer {
     context.strokeText(tag.text, textLeft - left, textTop - top);
     context.fillStyle = cssColor(tag.color);
     context.fillText(tag.text, textLeft - left, textTop - top);
+    if (guild !== undefined) {
+      context.strokeText(guild.text, guildLeft - left, guildTop - top);
+      context.fillStyle = cssColor(guild.color);
+      context.fillText(guild.text, guildLeft - left, guildTop - top);
+    }
 
     const texture = new CanvasTexture(canvas);
     texture.colorSpace = SRGBColorSpace;
@@ -174,18 +208,23 @@ export class NameTagLayer {
     sprite.renderOrder = 1;
     sprite.visible = false;
     this.scene.add(sprite);
-    this.tags.set(objectId, { sprite, texture, maxDistance: tag.maxDistance, text: tag.text, color: tag.color, mark, width, height });
-    // the mark is drawn into the tag once its picture is in
-    const src = mark === null ? '' : this.url(mark);
-    if (src !== '') {
+    this.tags.set(objectId, {
+      sprite, texture, maxDistance: tag.maxDistance, text: tag.text, color: tag.color, mark, guild: guildKey(tag), width, height,
+    });
+    // the mark and the logo are drawn into the tag once their pictures are in
+    const picture = (key: string | null, x: number, y: number, size: number): void => {
+      const src = key === null ? '' : this.url(key);
+      if (src === '') return;
       const image = new Image();
       image.onload = () => {
         if (this.tags.get(objectId)?.texture !== texture) return; // the tag was drawn again or dropped meanwhile
-        context.drawImage(image, markLeft - left, markTop - top, MARK_PX, MARK_PX);
+        context.drawImage(image, x - left, y - top, size, size);
         texture.needsUpdate = true;
       };
       image.src = src;
-    }
+    };
+    picture(mark, markLeft, markTop, MARK_PX);
+    picture(logo, logoLeft, logoTop, LOGO_PX);
   }
 
   private remove(objectId: number): void {
