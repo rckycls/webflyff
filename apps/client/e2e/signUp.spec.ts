@@ -1,23 +1,43 @@
-// The sign-up page (website spec §3.3) against a mocked web service: the rules checked first, each answer's message, a
-// second press while sending, an old ticket renewed, and the new name handed to the game's login at /play.
+// The sign-up page (website spec §3.3) against a mocked web service that keeps the real one's ticket rules (a ticket
+// is good from 3 s after it was given, and once): the rules checked first, each answer's message, a second press while
+// sending, a press at once after the page opened, an old ticket renewed and sent again, the trap field, and the new name
+// handed to the game's login at /play.
 
 import { expect, test } from '@playwright/test';
 import type { Page, Route } from '@playwright/test';
 
-interface Mock { tickets: number; posts: unknown[] }
+/** The page waits until its ticket is 3 s old before it sends: what follows a press can take that long. */
+const afterSend = expect.configure({ timeout: 10_000 });
 
-/** The ticket answers t1, t2, ...; each sign-up POST is recorded and answered by `answer` (by its number, from 1). */
-async function mockService(page: Page, answer: (n: number) => { status: number; body: unknown; delayMs?: number }): Promise<Mock> {
-  const mock: Mock = { tickets: 0, posts: [] };
+interface Mock { tickets: number; posts: Record<string, unknown>[]; early: number }
+type Answer = { status: number; body: unknown; delayMs?: number };
+
+/**
+ * The ticket answers t1, t2, ...; a sign-up POST is recorded, refused with `ticket` as the service does when its ticket
+ * is under 3 s old (`early`, counted) or used, and otherwise answered by `answer` (by the POST's number, from 1).
+ */
+async function mockService(page: Page, answer: (n: number) => Answer): Promise<Mock> {
+  const mock: Mock = { tickets: 0, posts: [], early: 0 };
+  const givenAt = new Map<string, number>();
+  const used = new Set<string>();
   await page.route('**/api/sign-up/ticket', (route) => {
     mock.tickets += 1;
+    givenAt.set(`t${mock.tickets}`, Date.now());
     return route.fulfill({ json: { ticket: `t${mock.tickets}` } });
   });
   await page.route('**/api/sign-up', async (route: Route) => {
-    mock.posts.push(route.request().postDataJSON());
-    const { status, body, delayMs = 0 } = answer(mock.posts.length);
+    const body = route.request().postDataJSON() as Record<string, unknown>;
+    mock.posts.push(body);
+    const ticket = String(body.ticket);
+    if (Date.now() - (givenAt.get(ticket) ?? Infinity) < 3000) mock.early += 1;
+    if (Date.now() - (givenAt.get(ticket) ?? Infinity) < 3000 || used.has(ticket)) {
+      await route.fulfill({ status: 400, json: { error: 'ticket' } });
+      return;
+    }
+    used.add(ticket);
+    const { status, body: reply, delayMs = 0 } = answer(mock.posts.length);
     if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
-    await route.fulfill({ status, json: body });
+    await route.fulfill({ status, json: reply });
   });
   return mock;
 }
@@ -36,7 +56,7 @@ test('success hands the name to the game', async ({ page }) => {
   await expect.poll(() => mock.tickets).toBe(1);
   await fill(page, ' Hero_01 ');
   await signUp(page).click();
-  await expect(page.getByText('Account created.')).toBeVisible();
+  await afterSend(page.getByText('Account created.')).toBeVisible();
   expect(mock.posts).toEqual([{ account: 'hero_01', password: 'abc12345', email: '', website: '', ticket: 't1' }]);
   await page.getByRole('link', { name: 'Play now' }).click();
   await expect(page).toHaveURL(/\/play\/$/);
@@ -47,7 +67,18 @@ test('success hands the name to the game', async ({ page }) => {
   await expect(page.getByLabel('Account')).toHaveValue('', { timeout: 20_000 });
 });
 
+test('a press at once after the page opens waits until the ticket is good', async ({ page }) => {
+  const mock = await mockService(page, () => ({ status: 201, body: { ok: true } }));
+  await page.goto('/sign-up/');
+  await fill(page, 'hero_01');
+  await signUp(page).click();
+  await afterSend(page.getByText('Account created.')).toBeVisible();
+  expect(mock.posts).toHaveLength(1);
+  expect(mock.early).toBe(0);
+});
+
 test('shows each refusal, keeping the fields but the passwords', async ({ page }) => {
+  test.setTimeout(60_000);
   const answers = [
     { status: 409, body: { error: 'taken' }, text: 'That account name is taken.' },
     { status: 429, body: { error: 'too_many' }, text: 'Too many sign-ups from your network. Try again later.' },
@@ -55,18 +86,21 @@ test('shows each refusal, keeping the fields but the passwords', async ({ page }
     { status: 500, body: { error: 'server' }, text: 'Something went wrong. Please try again later.' },
     { status: 400, body: { error: 'invalid', field: 'email' }, text: 'Enter a valid email address, or leave it empty.' },
   ];
-  await mockService(page, (n) => answers[n - 1]!);
+  const mock = await mockService(page, (n) => answers[n - 1]!);
   await page.goto('/sign-up/');
   for (const { text } of answers) {
     await fill(page, 'hero_01');
     await page.getByLabel('Email (optional)').fill('a@b.cd');
     await signUp(page).click();
-    await expect(page.getByText(text)).toBeVisible();
+    await afterSend(page.getByText(text)).toBeVisible();
     await expect(page.getByLabel('Account', { exact: true })).toHaveValue('hero_01');
     await expect(page.getByLabel('Email (optional)')).toHaveValue('a@b.cd');
     await expect(page.getByLabel('Password', { exact: true })).toHaveValue('');
     await expect(page.getByLabel('Confirm password', { exact: true })).toHaveValue('');
   }
+  // each refusal spent its ticket, and each send waited for a new one to be good
+  expect(mock.posts.map((post) => post.ticket)).toEqual(['t1', 't2', 't3', 't4', 't5']);
+  expect(mock.early).toBe(0);
 });
 
 test('checks the rules before sending', async ({ page }) => {
@@ -91,33 +125,56 @@ test('a second press while sending does nothing', async ({ page }) => {
   await expect(signUp(page)).toBeDisabled();
   // a second submit (Enter, or a tap that got past the disabled button)
   await page.locator('form').evaluate((form: HTMLFormElement) => form.requestSubmit());
-  await expect(page.getByText('Account created.')).toBeVisible();
+  await afterSend(page.getByText('Account created.')).toBeVisible();
   expect(mock.posts).toHaveLength(1);
   await expect(page.getByText('That account name is taken.')).toHaveCount(0);
 });
 
-test('an old ticket is renewed and the fields kept', async ({ page }) => {
+test('an old ticket is renewed and the form sent again by itself', async ({ page }) => {
+  // the first POST's ticket is too old (a page left open over 30 minutes)
   const mock = await mockService(page, (n) => (n === 1 ? { status: 400, body: { error: 'ticket' } } : { status: 201, body: { ok: true } }));
   await page.goto('/sign-up/');
   await fill(page, 'hero_01');
   await signUp(page).click();
-  await expect(page.getByText('Please press Sign up again.')).toBeVisible();
-  await expect.poll(() => mock.tickets).toBe(2);
-  await expect(page.getByLabel('Account', { exact: true })).toHaveValue('hero_01');
-  await expect(page.getByLabel('Password', { exact: true })).toHaveValue('abc12345');
-  await signUp(page).click();
-  await expect(page.getByText('Account created.')).toBeVisible();
-  expect((mock.posts[1] as { ticket: string }).ticket).toBe('t2');
+  await afterSend(page.getByText('Account created.')).toBeVisible();
+  expect(mock.tickets).toBe(2);
+  expect(mock.posts.map((post) => post.ticket)).toEqual(['t1', 't2']);
+  expect(mock.early).toBe(0);
 });
 
-test('the trap field is off screen and out of the tab order', async ({ page }) => {
-  await mockService(page, () => ({ status: 201, body: { ok: true } }));
+test('a ticket refused twice asks for one more press, with every field kept', async ({ page }) => {
+  const mock = await mockService(page, (n) => (n <= 2 ? { status: 400, body: { error: 'ticket' } } : { status: 201, body: { ok: true } }));
   await page.goto('/sign-up/');
-  const trap = page.locator('input[name="website"]');
+  await fill(page, 'hero_01');
+  await signUp(page).click();
+  await afterSend(page.getByText('Please press Sign up again.')).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByLabel('Account', { exact: true })).toHaveValue('hero_01');
+  await expect(page.getByLabel('Password', { exact: true })).toHaveValue('abc12345');
+  await expect(signUp(page)).toBeEnabled();
+  await signUp(page).click();
+  await afterSend(page.getByText('Account created.')).toBeVisible();
+  expect(mock.posts.map((post) => post.ticket)).toEqual(['t1', 't2', 't3']);
+  expect(mock.early).toBe(0);
+});
+
+test('the trap field is off screen, out of the tab order, and named so that no form filler fills it', async ({ page }) => {
+  const mock = await mockService(page, () => ({ status: 201, body: { ok: true } }));
+  await page.goto('/sign-up/');
+  const trap = page.locator('.trap input');
+  await expect(trap).toHaveCount(1);
   await expect(trap).toHaveAttribute('tabindex', '-1');
   await expect(trap).toHaveAttribute('autocomplete', 'off');
   await expect(page.locator('.trap')).toHaveAttribute('aria-hidden', 'true');
   expect(await trap.evaluate((input) => input.getBoundingClientRect().right)).toBeLessThanOrEqual(0);
+  // nothing a password or identity manager matches: no website, url, homepage, name, email or company
+  const words = await trap.evaluate((input: HTMLInputElement) =>
+    [input.name, input.id, input.labels?.[0]?.textContent ?? '', input.placeholder].join(' ').toLowerCase());
+  expect(words).not.toMatch(/web|site|url|home|name|mail|company|address|phone/);
+  // the service still gets it as `website`
+  await fill(page, 'hero_01');
+  await signUp(page).click();
+  await afterSend(page.getByText('Account created.')).toBeVisible();
+  expect(mock.posts[0]).toMatchObject({ website: '' });
 });
 
 test.describe('portrait phone', () => {

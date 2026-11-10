@@ -38,17 +38,21 @@ const fields = {
   email: field('email', 'Email (optional)', { type: 'email', autocomplete: 'email', maxlength: '120' }),
 };
 // The trap: people never see or reach it; a bot that fills every input fills it too (the service then creates nothing).
-const website = el('input', { type: 'text', name: 'website', id: 'site-website', tabindex: '-1', autocomplete: 'off' });
-const trap = el('div', { class: 'trap', 'aria-hidden': 'true' }, el('label', { for: website.id }, 'Website'), website);
+// Its name, id and label are words no password or identity manager matches (not website, url, name, email...), so that
+// a form filler never fills it for a real person, who would then be told 'created' with nothing made. The service still
+// gets it as `website`.
+const website = el('input', { type: 'text', name: 'hp_check', id: 'hp-check', tabindex: '-1', autocomplete: 'off' });
+const trap = el('div', { class: 'trap', 'aria-hidden': 'true' }, el('label', { for: website.id }, 'Leave this empty'), website);
 
 const alert = el('p', { class: 'site-alert', role: 'alert' });
+const progress = el('p', { class: 'site-progress', role: 'status' });
 const submit = el('button', { type: 'submit', class: 'site-button' }, 'Sign up');
 const form = el('form', { class: 'site-panel site-form', novalidate: '' },
   el('h2', {}, 'Make an account'),
   ...Object.values(fields).map((f) => f.box),
   trap,
   alert,
-  el('div', { class: 'site-actions' }, submit));
+  el('div', { class: 'site-actions' }, submit, progress));
 
 root.replaceChildren(
   el('header', { class: 'site-top' }, siteLogo()),
@@ -57,8 +61,19 @@ root.replaceChildren(
 );
 showLobbyArt();
 
-let ticket: Promise<string | undefined> = api.ticket();
+/**
+ * The service takes a ticket from 3 s after it gave it (a bot that posts at once is refused): a ticket is kept with the
+ * time it came, and the form is sent only once it is that old, with a little room. A press sooner waits, with 'Sending…'.
+ */
+const TICKET_GOOD_AFTER_MS = 3200;
+interface Ticket { value: string; cameAt: number }
+const fetchTicket = async (): Promise<Ticket | undefined> => {
+  const value = await api.ticket();
+  return value === undefined ? undefined : { value, cameAt: performance.now() };
+};
+let ticket: Promise<Ticket | undefined> = fetchTicket();
 let sending = false;
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function clearMessages(): void {
   alert.textContent = '';
@@ -108,11 +123,12 @@ function invalidProblem(name: SignUpField | undefined, values: ReturnType<typeof
 }
 
 /**
- * The answer's message. A ticket refused (too old, or used) is renewed and every field kept, so the player only presses
- * again. Any other refusal spent the ticket: a new one is fetched, and the passwords are cleared (spec §4).
+ * The answer's message. A ticket refused twice (the form is sent again by itself once, below) is renewed and every field
+ * kept, so the player only presses again. Any other refusal spent the ticket: a new one is fetched, and the passwords
+ * are cleared (spec §4).
  */
 function refused(answer: Exclude<SignUpAnswer, { ok: true }>): void {
-  ticket = api.ticket();
+  ticket = fetchTicket();
   if (answer.error === 'ticket') {
     alert.textContent = MESSAGES.ticket;
     return;
@@ -137,20 +153,33 @@ form.addEventListener('submit', (event) => {
   }
   sending = true;
   submit.disabled = true;
+  const account = normalizeAccount(values.account);
+  /** One send with the current ticket (a new one if there is none), once it is good; `undefined` when none can be had. */
+  const sendOnce = async (): Promise<SignUpAnswer | undefined> => {
+    const held = (await ticket) ?? (await (ticket = fetchTicket()));
+    if (held === undefined) return undefined;
+    const wait = held.cameAt + TICKET_GOOD_AFTER_MS - performance.now();
+    if (wait > 0) {
+      progress.textContent = 'Sending…';
+      await sleep(wait);
+    }
+    return api.send({ account, password: values.password, email: values.email, website: website.value, ticket: held.value });
+  };
   void (async () => {
     try {
-      const sent = (await ticket) ?? (await (ticket = api.ticket()));
-      if (sent === undefined) {
-        alert.textContent = MESSAGES.failed;
-        return;
+      let answer = await sendOnce();
+      // a ticket too old (a page left open over 30 minutes) or already used: a new one, and the same form again, once
+      if (answer !== undefined && !answer.ok && answer.error === 'ticket') {
+        ticket = fetchTicket();
+        answer = await sendOnce();
       }
-      const account = normalizeAccount(values.account);
-      const answer = await api.send({ account, password: values.password, email: values.email, website: website.value, ticket: sent });
-      if (answer.ok) created(account);
+      if (answer === undefined) alert.textContent = MESSAGES.failed;
+      else if (answer.ok) created(account);
       else refused(answer);
     } finally {
       sending = false;
       submit.disabled = false;
+      progress.textContent = '';
     }
   })();
 });

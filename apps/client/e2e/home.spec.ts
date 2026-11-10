@@ -26,7 +26,8 @@ test('shows the online count, the news and the links', async ({ page }) => {
 test('the art fills the page; Play stands out and Sign up stays quiet', async ({ page }) => {
   await statusAnswers(page, { online: true, players: 3, checkedAt: '2026-11-11T00:00:00.000Z' });
   await page.goto('/');
-  await expect(page.locator('html')).toHaveClass(/has-art/);
+  // the art comes after the page, with the 2 MB asset index: slow on a busy machine's first read
+  await expect(page.locator('html')).toHaveClass(/has-art/, { timeout: 20_000 });
   const art = await page.evaluate(() => {
     const layer = getComputedStyle(document.body, '::before');
     return { image: layer.backgroundImage, position: layer.position, width: parseFloat(layer.width), height: parseFloat(layer.height) };

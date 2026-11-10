@@ -107,7 +107,9 @@ html.has-art .site-top .site-logo { height: 100%; }
   color: var(--gold-ink); cursor: pointer; font: 800 17px/1.2 var(--font); text-decoration: none;
 }
 .site-button:disabled { opacity: 0.6; cursor: default; }
-.site-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.site-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.site-progress { margin: 0; color: var(--muted); font-size: 15px; }
+.site-progress:empty { display: none; }
 .site-back { width: min(720px, calc(100% - 24px)); margin: 0 auto; padding: 0 4px; font-size: 15px; }
 
 /* The sign-up form. Inputs at 16 px: a phone zooms in on a smaller one. */
