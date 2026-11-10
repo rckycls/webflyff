@@ -31,7 +31,7 @@ const TEXTS: Record<string, string> = {
   TID_TOOLTIP_MAXHP: 'Max. HP', TID_TOOLTIP_ATKPOWER_VALUE: 'Attack', TID_TOOLTIP_DST_CRITICAL_RATE: 'Critical Chance',
   TID_TOOLTIP_DEFENCE: 'DEF', TID_TOOLTIP_SPEED: 'Speed', TID_TOOLTIP_ATKPOWER: 'Increased Attack', TID_GAME_TOOLTIPALLSTAT: 'All Stat',
   TID_TOOLTIP_HITRATE: 'Hit', TID_GAME_TOOLTIPBLOCKRATE: 'Block', TID_TOOLTIP_DST_HP_MAX_RATE: 'Increased HP',
-  TID_GAME_TOOLTIPCONDITIONRATE: 'Add Magical Power',
+  TID_GAME_TOOLTIPCONDITIONRATE: 'Add Magical Power', TID_TOOLTIP_DST_MELEE_STEALHP: 'Steal HP',
 };
 const texts = new Map<string, ClientText>(Object.entries(TEXTS).map(([id, text]) => [id, { id, text, color: 0xffffffff }]));
 
@@ -229,5 +229,31 @@ describe('itemEtcOf: data/itemEtc.json as the tooltip looks it up', () => {
     expect(etc.piercing.get(2001)).toEqual([{ dst: 66, adj: 3 }]);
     expect(etc.accessories.get(2100)?.[0]).toEqual([{ dst: 1, adj: 5 }]);
     expect(itemEtcOf({ sets: [], piercing: [] }).accessories.size).toBe(0);
+  });
+});
+
+describe('the item tooltip: an Ultimate weapon\'s set jewels (2026-11-10, jewels research §4)', () => {
+  const ULTIMATE = {
+    abilities: [
+      { dst: 35, jewels: [{ jewel: 2032, ability: 2040, values: [455, 910, 1365, 1820, 2730] }] },
+      { dst: 83, jewels: [{ jewel: 2032, ability: 2045, values: [25, 50, 75, 100, 150] }] },
+      { dst: 81, jewels: [{ jewel: 2032, ability: 2055, values: [10, 15, 25, 30, 45] }] },
+    ],
+    levelGems: [], descriptions: {},
+  };
+  const sword = { ...WOODEN_SWORD, name: 'Ultimate Sword', referStat1: 2, endurance: 100 };
+
+  it('the name makes room for the icon; the jewels\' stats end it in red, steal HP in % (PutItemName, PutAddedOpt)', () => {
+    const lines = itemTooltip(item({ ultimate: [2045, 2040, 2045, 2055, 0] }), sword, { ...DATA, ultimate: ULTIMATE }, OTHER);
+    expect(textOf(lines)[0]).toBe('             Ultimate Sword');
+    // in rising DST order (the C++ map): HP 35, steal HP 81, ATK 83
+    expect(textOf(lines).slice(-3)).toEqual(['Max. HP+455', 'Steal HP+10%', 'Attack+50']);
+    expect(lineOf(lines, 'Attack+50')).toEqual([{ text: 'Attack+50', color: 0xff0000 }]);
+  });
+
+  it('a weapon not Ultimate has neither; nor has an Ultimate one without the catalog', () => {
+    expect(textOf(itemTooltip(item({ ultimate: [2045] }), { ...sword, referStat1: 1 }, { ...DATA, ultimate: ULTIMATE }, OTHER))[0])
+      .toBe('Ultimate Sword');
+    expect(textOf(itemTooltip(item({ ultimate: [2045] }), sword, DATA, OTHER)).at(-1)).not.toBe('Attack+25');
   });
 });

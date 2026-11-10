@@ -40,3 +40,4 @@ export {
   writeConfirmTrade, writeConfirmTradeCancel, writeTrade, writeTradeCancel, writeTradeConsent, writeTradeLastConfirm,
   writeTradeLastConfirmOk, writeTradeOk, writeTradePull, writeTradePut, writeTradePutError, writeTradePutGold,
 } from './trade';
+export { writeUltimate } from './ultimate'; // 2026-11-10: the jewel windows' answers

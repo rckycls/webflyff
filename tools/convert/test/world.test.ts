@@ -103,7 +103,7 @@ const seedModel = (key: string) => async (writer: AssetWriter) => {
 
 describe('worlds stage', () => {
   it('runs after the textures, models, effects and UI stages, and before the game-data stage', () => {
-    expect(DEFAULT_STAGES.map((s) => s.name)).toEqual(['textures', 'models', 'effects', 'ui', 'worlds', 'audio', 'chat', 'data']);
+    expect(DEFAULT_STAGES.map((s) => s.name)).toEqual(['textures', 'models', 'effects', 'ui', 'worlds', 'audio', 'chat', 'ultimate', 'data']);
   });
 });
 

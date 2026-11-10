@@ -266,6 +266,9 @@ export type WorldPacket =
   | { type: 'enchant' | 'piercing' | 'randomScroll'; targetId: number; materialId: number }
   | { type: 'doUseItemTarget'; materialId: number; targetId: number }
   | { type: 'ultimateEnchantWeapon'; targetId: number; materialId: number }
+  /** 2026-11-10: Create Jewels and Jewel Setting (world/upgrade.ts). */
+  | { type: 'ultimateMakeGem'; weaponId: number }
+  | { type: 'ultimateSetGem'; weaponId: number; jewelId: number }
   | { type: 'removeQuest'; questId: number }
   | { type: 'questCheck'; questId: number; check: boolean }
   | ReturnType<typeof readDefinedText>
@@ -441,6 +444,14 @@ function decodeClientPacket(r: ArReader): WorldPacket {
       const type = packetType === PacketType.ENCHANT ? 'enchant' : packetType === PacketType.PIERCING ? 'piercing'
         : packetType === PacketType.RANDOMSCROLL ? 'randomScroll' : 'ultimateEnchantWeapon';
       return { type, targetId, materialId };
+    }
+    case PacketType.ULTIMATE_MAKEGEM: {
+      const weaponId = r.u32(); r.expectEnd();
+      return { type: 'ultimateMakeGem', weaponId };
+    }
+    case PacketType.ULTIMATE_SETGEM: {
+      const weaponId = r.u32(), jewelId = r.u32(); r.expectEnd();
+      return { type: 'ultimateSetGem', weaponId, jewelId };
     }
     case PacketType.DO_USE_ITEM_TARGET: {
       const materialId = r.u32(), targetId = r.u32(); r.expectEnd();

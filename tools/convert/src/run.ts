@@ -3,6 +3,7 @@ import path from 'node:path';
 import { ClientFs } from './ClientFs';
 import { audioStage } from './audio/audioStage';
 import { chatStage } from './data/chatCatalog';
+import { ultimateStage } from './data/ultimateCatalog';
 import { gameDataStage } from './data/gameDataStage';
 import { effectsStage } from './effects/effectsStage';
 import { modelsStage } from './models/modelsStage';
@@ -48,6 +49,8 @@ export const DEFAULT_STAGES: readonly Stage[] = [
   audioStage,
   // 2026-11-09: the chat's catalog, on its own (`--only chat`); it names no other stage's file
   chatStage,
+  // 2026-11-10: the jewel windows' catalog, on its own (`--only ultimate`); it names no other stage's file
+  ultimateStage,
   gameDataStage,
 ];
 

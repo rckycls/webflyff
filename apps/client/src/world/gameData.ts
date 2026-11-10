@@ -1,5 +1,5 @@
-import { CHAT_KEY, GAME_DATA_KEYS, ITEM_ETC_KEY, PETS_KEY, WORLD_NO_FLY_KEY } from '@flyffweb/formats';
-import type { WebChat } from '@flyffweb/formats';
+import { CHAT_KEY, GAME_DATA_KEYS, ITEM_ETC_KEY, PETS_KEY, ULTIMATE_KEY, WORLD_NO_FLY_KEY } from '@flyffweb/formats';
+import type { WebChat, WebUltimate } from '@flyffweb/formats';
 import type {
   ExpRow,
   TextEntry,
@@ -83,6 +83,8 @@ export interface GameData {
   itemEtc?: ItemEtc;
   /** 2026-11-09: the chat's word filter and help texts; absent without `data/chat.json` (the converter's `chat` stage). */
   chat?: WebChat;
+  /** 2026-11-10: the set jewels' stats and the jewel windows' descriptions; absent without `data/ultimate.json`. */
+  ultimate?: WebUltimate;
   /**
    * 2026-11-09 (pets R1): the raised pets' table of `pet.inc` (`CPetProperty`), `pets.kinds[PK_*]`; absent without
    * `data/pets.json`: a summoned egg is still drawn (`MI_PET_EGG`), a hatched pet is not.
@@ -154,6 +156,7 @@ export async function loadGameData(store: Pick<AssetStore, 'json' | 'url'>): Pro
   const noFly = store.url(WORLD_NO_FLY_KEY) === null ? [] : await store.json<number[]>(WORLD_NO_FLY_KEY);
   const itemEtc = store.url(ITEM_ETC_KEY) === null ? undefined : itemEtcOf(await store.json<WebItemEtc>(ITEM_ETC_KEY));
   const chat = store.url(CHAT_KEY) === null ? undefined : await store.json<WebChat>(CHAT_KEY);
+  const ultimate = store.url(ULTIMATE_KEY) === null ? undefined : await store.json<WebUltimate>(ULTIMATE_KEY);
   const pets = store.url(PETS_KEY) === null ? undefined : await store.json<WebPets>(PETS_KEY); // pets R1
   return {
     movers: new Map(movers.map((mover) => [mover.index, withLaterColumns(mover)])),
@@ -175,6 +178,7 @@ export async function loadGameData(store: Pick<AssetStore, 'json' | 'url'>): Pro
     noFlyWorlds: new Set(noFly),
     ...(itemEtc !== undefined ? { itemEtc } : {}),
     ...(chat !== undefined ? { chat } : {}),
+    ...(ultimate !== undefined ? { ultimate } : {}),
     ...(pets !== undefined ? { pets } : {}),
   };
 }

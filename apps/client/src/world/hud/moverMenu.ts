@@ -24,6 +24,8 @@ export const MMI = {
   PET_RES: 77, PET_RES01: 78, ARENA_ENTER: 80, PET_EGG01: 96, PET_AWAK_CANCEL: 104, RENAME_CANCEL: 120,
   SMELT_SAFETY_GENERAL: 134, SMELT_SAFETY_ACCESSORY: 135, SMELT_SAFETY_PIERCING: 136, BUFFPET_STATUS: 141,
   BUFFPET_RELEASE: 142, TELEPORTER: 146,
+  /** 2026-11-10: Jewel Setting and Create Jewels (jewels/jewelWindows.ts). */
+  SMELT_JEWEL: 52, SMELT_EXTRACTION: 53,
 } as const;
 /**
  * 2026-11-09 (pets R1): the own raised pet's entries (`MaFl_Pet`, `Resource/character.inc:5880-5891`): its status window
@@ -46,6 +48,8 @@ const TAMER_ENTRIES: ReadonlySet<number> = new Set([
 /** 2026-11-05: the Upgrade Specialist's entries the browser opens (upgradeNpcWindows.ts). */
 const UPGRADE_ENTRIES: ReadonlySet<number> = new Set([
   MMI.PIERCING, MMI.SMELT_SAFETY_GENERAL, MMI.SMELT_SAFETY_ACCESSORY, MMI.SMELT_SAFETY_PIERCING,
+  // 2026-11-10: Peach's Jewel Setting and Create Jewels (items/jewelWindows.ts)
+  MMI.SMELT_JEWEL, MMI.SMELT_EXTRACTION,
 ]);
 /** ShowMoverMenu's range (`distSq < 20 * 20`, WndWorld.cpp:6520-6523). */
 export const MENU_RANGE = 20;
