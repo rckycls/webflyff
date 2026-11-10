@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { serveDist } from '@flyffweb/scene/vite/serveDist.ts';
 import { defineConfig } from 'vite';
 import { devGatewayProxy } from './devGatewayProxy.ts';
+import { siteContent } from './siteContent.ts';
 import { siteRoutes } from './siteRoutes.ts';
 
 // This file is FlyffWeb/apps/client/vite.config.ts. The root scripts run Vite from FlyffWeb with `--config` pointing here,
@@ -23,7 +24,7 @@ export default defineConfig(({ command }) => {
     appType: 'mpa',
     // No publicDir: dist/assets is ~1 GB and a build would copy it. serveDist serves the world's assets in place, as for the viewer.
     publicDir: false,
-    plugins: [serveDist({ distDir: path.join(flyffwebRoot, 'dist') }), siteRoutes()],
+    plugins: [serveDist({ distDir: path.join(flyffwebRoot, 'dist') }), siteRoutes(), siteContent(path.join(clientRoot, 'content'))],
     define: gateway?.define,
     // `host` makes the dev server reachable from a phone on the same Wi-Fi.
     // `/api` is the web service (apps/web), as Caddy passes it on the hosted site; `WEB_API` points elsewhere.
