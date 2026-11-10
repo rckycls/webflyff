@@ -12,7 +12,7 @@
 
 import { encodeAddGuildMember, encodeChgMaster, encodeDestroyGuild, encodeGuildAuthority, encodeGuildClass,
   encodeGuildInvite, encodeGuildLogo, encodeGuildMemberLevel, encodeGuildNickname, encodeGuildNotice, encodeGuildPenya,
-  encodeGuildSetName, encodeQueryPlayerData2, encodeRemoveGuildMember } from '@flyffweb/protocol';
+  encodeGuildSetName, encodeQueryPlayerData2, encodeQuerySetGuildName, encodeRemoveGuildMember } from '@flyffweb/protocol';
 import type { Texts } from '../gameData';
 import type { UiArt } from '../hud/art';
 import { formatText } from '../hud/format';
@@ -82,6 +82,11 @@ export class GuildHud {
   private inviterId = 0;
   private nicknameTarget = 0;
   private payRank = 0;
+  /**
+   * The name window's `m_nId` (`WndGuildName.cpp:84-149`): 0xff from the Information tab (GUILD_SETNAME), else the rename
+   * scroll's object id, or 0x7f for the server's forced rename (QUERYSETGUILDNAME).
+   */
+  private nameId = 0xff;
 
   constructor(
     art: UiArt,
@@ -155,6 +160,18 @@ export class GuildHud {
   /** The player menu's "Invite to join guild" (`InviteCompany`): the siege checks are siege-only; the packet. */
   inviteMover(objectId: number): void {
     this.send(encodeGuildInvite(objectId));
+  }
+
+  /**
+   * The guild rename scroll `II_SYS_SYS_SCR_GCHANAM` used (`SendDoUseItem`, `DPClient.cpp:10525-10535`: its object id), or
+   * the server's forced rename (`FUNCTYPE_QUERYSETGUILDNAME`, :14469-14479: 0x7f): the name window, which closes at once
+   * without a guild (`WndGuildName.cpp:39-60`); its OK sends QUERYSETGUILDNAME.
+   */
+  openRename(nameId: number): void {
+    const guild = this.guild;
+    if (guild === null) return;
+    this.nameId = nameId;
+    this.nameWindow.open(guild.name);
   }
 
   // --- the book's events ---
@@ -269,6 +286,7 @@ export class GuildHud {
     switch (button) {
       case 'name':
         if (guild.name !== '') { this.box('TID_GAME_GUILDNOTCHGNAME', 'The guild name can only be changed once.'); return; }
+        this.nameId = 0xff;
         this.nameWindow.open(guild.name);
         return;
       case 'notice':
@@ -291,7 +309,9 @@ export class GuildHud {
     const check = guildNameCheck(typed, this.screen.nameCatalog());
     if (!check.ok) { this.box(check.box, ''); return false; }
     const guild = this.guild;
-    if (guild !== null) this.send(encodeGuildSetName(this.own, guild.guildId, check.value));
+    if (guild === null) return true;
+    if (this.nameId === 0xff) this.send(encodeGuildSetName(this.own, guild.guildId, check.value));
+    else this.send(encodeQuerySetGuildName(this.nameId, check.value));
     return true;
   }
 

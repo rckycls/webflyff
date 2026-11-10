@@ -46,6 +46,8 @@ export type ItemWindowPacket =
 export interface ItemWindowHost {
   own(): OwnState | undefined;
   props: ReadonlyMap<number, WebItemProp>;
+  /** 2026-11-10 (guild): the guild rename scroll's window, the guild's name window with the scroll's object id. */
+  openGuildName?(objectId: number): void;
   /** The set pieces' item ids (propItemEtc.inc), which the transmute's twin must match. */
   setItems: ReadonlySet<number>;
   worldId(): number;
@@ -137,6 +139,9 @@ export class ItemWindowFlows {
     switch (kind) {
       case 'rename':
         this.openRename(objectId);
+        return true;
+      case 'guildName':
+        this.host.openGuildName?.(objectId);
         return true;
       case 'ticket': {
         const use = ticketUse(prop, item, this.host.worldId());

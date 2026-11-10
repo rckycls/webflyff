@@ -17,7 +17,7 @@ import type { WebItemProp } from '@flyffweb/formats';
 import type { InventoryItem } from '@flyffweb/protocol';
 
 /** The item windows the browser has. */
-export type ItemWindow = 'rename' | 'partySummon' | 'ticket' | 'sexChange' | 'attribute' | 'transy' | 'createMonster';
+export type ItemWindow = 'rename' | 'partySummon' | 'ticket' | 'sexChange' | 'attribute' | 'transy' | 'createMonster' | 'guildName';
 
 /** `IK3_TICKET` 122 and `IK3_CREATE_MONSTER` 85. */
 const IK3_TICKET = 122;
@@ -25,6 +25,8 @@ const IK3_CREATE_MONSTER = 85;
 /** `II_SYS_SYS_SCR_CHANAM`, `_PARTYSUMMON`, `II_CHR_SYS_SCR_TRANSY`, `II_SYS_SYS_SCR_SOKCHANG`, `ITEMTRANSY_A` / `_B`. */
 const ITEM_WINDOWS: ReadonlyMap<number, ItemWindow> = new Map([
   [10424, 'rename'], [26202, 'partySummon'], [10220, 'sexChange'], [20037, 'attribute'], [26204, 'transy'], [26218, 'transy'],
+  // 2026-11-10 (guild): II_SYS_SYS_SCR_GCHANAM, the guild name window (DPClient.cpp:10525-10535)
+  [10463, 'guildName'],
 ]);
 
 /** The window `prop`'s use opens, or null. */

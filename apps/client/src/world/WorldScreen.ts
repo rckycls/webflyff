@@ -1323,6 +1323,8 @@ export class WorldScreen {
     // 2026-11-05: the item windows: the name change, the tickets, the sex and element changes, the transmute, the summons
     this.itemWindows = new ItemWindowFlows({
       own: () => this.own, props: this.data!.itemProps, setItems: new Set(this.data!.itemEtc?.setOf.keys() ?? []),
+      // 2026-11-10 (guild): the guild rename scroll (guild/guildHud.ts `openRename`)
+      openGuildName: (objectId) => this.guildHud?.openRename(objectId),
       worldId: () => this.worldId, worldName: () => WORLD_NAMES.get(this.worldId) ?? '', partyName: () => this.party.name,
       isLeader: () => this.party.isLeader(this.entry.character.playerId), focusId: () => this.focus?.targetId ?? NULL_ID,
       ownName: () => this.world?.self()?.name ?? this.entry.character.name,
@@ -3615,8 +3617,9 @@ export class WorldScreen {
         this.own?.initStat(action.stat, action.remainGP);
         return;
       case 'queryName':
-        this.reportOnce(`npc: the ${action.of === 'player' ? 'rename' : 'guild name'} window is not in the browser`,
-          new Error(`QUERYSET${action.of === 'player' ? 'PLAYER' : 'GUILD'}NAME`));
+        // 2026-11-10 (guild): FUNCTYPE_QUERYSETGUILDNAME opens the guild's name window with 0x7f (DPClient.cpp:14469-14479)
+        if (action.of === 'guild') { this.guildHud?.openRename(0x7f); return; }
+        this.reportOnce('npc: the rename window is not in the browser', new Error('QUERYSETPLAYERNAME'));
         return;
       case 'navigator':
       case 'removeNavigator':
