@@ -15,8 +15,10 @@ import type { PetData, PetMessage } from './pets';
 import type { FriendMessage } from './friends';
 import type { TradeMessage } from './trade';
 import type { VendorMessage } from './vendor';
+import type { GuildDirectMessage, GuildMessage } from './guild';
 
 export type WorldMessage = ChatMessage | NpcMessage | ShopMessage | QuestMessage | PetMessage | FriendMessage | TradeMessage | VendorMessage
+  | GuildMessage | GuildDirectMessage
   | { type: 'profileStats'; values: number[] }
   | { type: 'addItem'; item: GroundItem }
   | { type: 'createItem'; itemType: number; item: InventoryItem; stacks: Array<{ objectId: number; count: number }> }
@@ -498,6 +500,13 @@ export interface AddedPlayer {
    */
   fuel?: number;
   accFuel?: number;
+  /**
+   * 2026-11-10 (guild): `m_idGuild` and `m_idWar` (behind their flag byte) and `m_idGuildCloak`, the guild of the worn
+   * guild cloak (`ObjSerializeOpt.cpp:136-140`); present only when not 0.
+   */
+  guildId?: number;
+  warId?: number;
+  guildCloak?: number;
   /** `m_dwPKTime`: the milliseconds of pink state left (the world server sends `m_dwPKTime - GetTickCount()`), or 0. */
   pkTime: number;
   pkValue: number;

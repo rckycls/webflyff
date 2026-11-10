@@ -642,9 +642,11 @@ function playerStart(m: AddedMover, p: AddedPlayer, stats: readonly number[] = [
     .string(p.name).u8(p.sex).u8(p.skinSet).u8(p.hairMesh).u32(p.hairColor).u8(p.headMesh).u32(p.playerId).u8(p.job)
     .u16(stats[0]).u16(stats[1]).u16(stats[2]).u16(stats[3]) // m_nStr, m_nSta, m_nDex, m_nInt
     .u16(p.level)
-    .i32(p.fuel ?? -1).i32(p.accFuel ?? 0) // m_nFuel (-1 without a ride), m_tmAccFuel
-    .u8(0) // m_idGuild > 0 is false: no guild and war IDs follow
-    .u32(0) // m_idGuildCloak
+    .i32(p.fuel ?? -1).i32(p.accFuel ?? 0); // m_nFuel (-1 without a ride), m_tmAccFuel
+  // m_idGuild > 0 (2026-11-10: the guild research §4): the flag, then the guild and war IDs
+  if ((p.guildId ?? 0) > 0) w.u8(1).u32(p.guildId!).u32(p.warId ?? 0);
+  else w.u8(0);
+  w.u32(p.guildCloak ?? 0) // m_idGuildCloak
     .u8(0) // m_idparty > 0 is false
     .u8(p.authorization).u32(p.mode).u32(p.stateMode)
     .u32(p.useItemId ?? 0) // the cast item's prop id (ObjSerializeOpt.cpp:155-163), or 0

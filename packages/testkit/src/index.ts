@@ -40,3 +40,10 @@ export {
   writeConfirmTrade, writeConfirmTradeCancel, writeTrade, writeTradeCancel, writeTradeConsent, writeTradeLastConfirm,
   writeTradeLastConfirmOk, writeTradeOk, writeTradePull, writeTradePut, writeTradePutError, writeTradePutGold,
 } from './trade';
+export {
+  directAddGuildMember, directChgMaster, directGuild, directGuildChat, directGuildClass, directGuildError,
+  directGuildMemberLevel, directGuildMemberLogin, directGuildNickname, directGuildSetName, directRemoveGuildMember,
+  guildMember, guildWhole, writeAllGuilds, writeCreateGuild, writeDestroyGuild, writeGuild, writeGuildAuthority,
+  writeGuildContribution, writeGuildInvite, writeGuildLogo, writeGuildNotice, writeGuildPenya, writeGuildRealPenya,
+  writeSetGuild, writeSetWar,
+} from './guild';

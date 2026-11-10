@@ -137,6 +137,8 @@ describe('ADD_OBJ (OnAddObj)', () => {
         motion: 0x15, isPlayer: true, hitPoint: 1234, state: 0x11, stateFlag: 0x2, belligerence: 0, sfxId: NULL_ID,
         player: {
           ...playerBase, self: false, own: null, shopTitle: 'Cheap swords', equipmentObjectIds: [],
+          // 2026-11-10 (guild): m_idGuild, m_idWar and m_idGuildCloak, kept
+          guildId: 42, warId: 3, guildCloak: 42,
           // 2026-11-09 (pets M0): MAKELONG( 3, 5 ) and the pet's name, kept
           pet: { modelIndex: 3, level: 5, name: 'Rex' },
           worn: [
