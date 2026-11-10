@@ -6,9 +6,9 @@
 import type { WebItemProp } from '@flyffweb/formats';
 import type { InventoryItem } from '@flyffweb/protocol';
 import type { OwnState } from '../OwnState';
-import { itemTooltip } from '../items/itemTooltip';
+import { itemTooltip, ultimateSockets } from '../items/itemTooltip';
 import type { TooltipContext, TooltipData, TooltipFlag, TooltipLine } from '../items/itemTooltip';
-import { themeUrl } from './art';
+import { themeKey, themeUrl } from './art';
 import type { UiArt } from './art';
 
 /** An empty equipment slot (`NULL_ID`). */
@@ -104,7 +104,38 @@ export function createItemDetails(
     ? [[{ text: `Unknown item #${item.itemId}`, color: 0x2e70a9, bold: true }]]
     : itemTooltip(item, prop, data, ctx);
   details.append(tooltipFrame(doc, art), tooltipText(doc, lines));
+  const sockets = prop === undefined ? null : ultimateSockets(item, prop);
+  if (sockets !== null) details.append(...ultimateMarks(doc, art, data, sockets));
   return details;
+}
+
+/**
+ * 2026-11-10: an Ultimate item's marks (`CToolTip`, tooltip.cpp:745-780): Icon_Ultimate.dds at the top left (10, 8), and
+ * with open sockets a 36 px band at the bottom, a WndChgElemItem.bmp a socket every 38 px, each with its jewel's icon.
+ */
+function ultimateMarks(doc: Document, art: UiArt, data: TooltipData, sockets: readonly number[]): HTMLElement[] {
+  const icon = doc.createElement('img');
+  icon.className = 'hud-item-tooltip-ultimate';
+  icon.src = art.url(themeKey('Icon_Ultimate.dds'));
+  icon.alt = '';
+  if (sockets.length === 0) return [icon];
+  const row = doc.createElement('div');
+  row.className = 'hud-item-tooltip-sockets';
+  for (const jewel of sockets) {
+    const socket = doc.createElement('div');
+    socket.className = 'hud-item-tooltip-socket';
+    socket.style.backgroundImage = themeUrl(art, 'WndChgElemItem.bmp');
+    const prop = jewel === 0 ? undefined : data.itemProps.get(jewel);
+    if (prop?.icon) {
+      const img = doc.createElement('img');
+      img.src = art.url(prop.icon);
+      img.alt = prop.name;
+      socket.append(img);
+      socket.dataset.jewel = String(jewel);
+    }
+    row.append(socket);
+  }
+  return [icon, row];
 }
 
 /**

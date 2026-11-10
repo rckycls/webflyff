@@ -15,10 +15,14 @@
 //
 // Not shown, for want of the data (the rulings of the 2026-11-05 work): the cooldown (PutCoolTime), an item's own time
 // left (PutKeepTime's second half, but a vis's), the guild cloak's guild name, the couple ring's name, the sealed
-// character, the Ultimate gems (PutAddedOpt), the "Before tax price" line, red-chip prices, and the player's own
+// character, the "Before tax price" line, red-chip prices, and the player's own
 // DST_ABILITY_MIN/MAX in min~max.
+//
+// 2026-11-10 (docs/superpowers/specs/2026-11-10-jewels-research.md §4): an Ultimate item's name makes room for its icon, and
+// an Ultimate weapon ends with its set jewels' stats (PutAddedOpt), from data/ultimate.json; `ultimateSockets` gives the
+// socket row `CToolTip::SetUltimateToolTip` draws.
 
-import type { WebItemEtc, WebItemProp, WebMover, WebPets, WebPiercingAvail, WebSetItem } from '@flyffweb/formats';
+import type { WebItemEtc, WebItemProp, WebMover, WebPets, WebPiercingAvail, WebSetItem, WebUltimate } from '@flyffweb/formats';
 import type { InventoryItem, PetData } from '@flyffweb/protocol';
 import type { Texts } from '../gameData';
 import { formatText } from '../hud/format';
@@ -28,6 +32,7 @@ import {
 } from '../pets/petStatus';
 import { NeedVis, isVisPet, satisfyNeedVis, visEndAt, visKeepTimeText, visTimeLeft } from '../pets/buffPet';
 import type { VisPet } from '../pets/buffPet';
+import { isUltimate, ultimateDestParams } from './ultimateRules';
 
 /** A piece of a line: its text, its colour (0xRRGGBB) and its style (`ESSTY_BOLD`, `ESSTY_STRIKETHROUGH`). */
 export interface TooltipRun {
@@ -105,6 +110,8 @@ export interface TooltipData {
   /** 2026-11-09 (pets R2): the movers' names (a pet's "Cage" name) and the raised pets' table (its stat and energy). */
   movers?: ReadonlyMap<number, Pick<WebMover, 'name'>>;
   pets?: WebPets;
+  /** 2026-11-10: the set jewels' stats (`data/ultimate.json`); none without the catalog. */
+  ultimate?: WebUltimate;
 }
 
 // ---- colours (dwItemColor[FIRST_TC], :533-595) ---------------------------------------------------------------------
@@ -125,6 +132,13 @@ const SET_EFFECT = 0xff9d00;
 /** 2026-11-09 (pets R2): dwResistSM and dwResistSM1 (:558-559), PutPetInfo's grade and bonus lines. */
 const RESIST_SM = 0x009e00;
 const RESIST_SM1 = 0xff0000;
+/** 2026-11-10: dwAddedOpt7 (:581), PutAddedOpt's lines (`__EXT_PIERCING`, :5276-5277). */
+const ADDED_OPT = 0xff0000;
+/** PutAddedOpt's DSTs, `nAddedOptDST` (:5205-5213): HP, ATK, DEF, steal HP, PvP damage, STR, STA, DEX, INT; the 4th and 5th in %. */
+const ADDED_OPT_DSTS: readonly number[] = [35, 83, 26, 81, 80, 1, 4, 2, 3];
+const ADDED_OPT_RATES: ReadonlySet<number> = new Set([81, 80]);
+/** The spaces before an Ultimate item's name, room for Icon_Ultimate.dds (PutItemName, :4597-4600). */
+const ULTIMATE_NAME_ROOM = '             ';
 /** dwEffective0..3: the min~max numbers by the refine multiplier (:5047-5056). */
 const EFFECTIVE = [0x000000, 0x00ff00, 0xff0000, 0x808080] as const;
 
@@ -373,7 +387,7 @@ export function itemTooltip(item: InventoryItem, prop: WebItemProp, data: Toolti
   if ((flag & FLAG_BINDS) !== 0 && !BIND_PREFIX_SKIPPED.has(prop.id) && prop.flag !== IP_FLAG_EQUIP_BIND) {
     name = `${text('TID_GAME_TOOLTIP_ITEM_BINDS')} ${name}`;
   }
-  put(name, nameColor, { bold: true });
+  put(isUltimate(prop) ? `${ULTIMATE_NAME_ROOM}${name}` : name, nameColor, { bold: true });
   if (option !== 0) put(` ${signed(option)}`, nameColor, { bold: true });
   const sockets = item.piercing ?? [];
   if (sockets.length > 0 && prop.id !== SEAL_CHARACTER) {
@@ -545,6 +559,15 @@ export function itemTooltip(item: InventoryItem, prop: WebItemProp, data: Toolti
 
   // 21. PutAwakeningBlessing (:4719-4830)
   putAwakening();
+
+  // 22. PutAddedOpt (:5182-5284, called at :6744 for an Ultimate weapon): the set jewels' stats
+  if (isUltimate(prop)) {
+    for (const [dst, value] of ultimateDestParams(item.ultimate ?? [], data.ultimate)) {
+      if (!ADDED_OPT_DSTS.includes(dst) || dstName(dst) === '') continue;
+      put(`
+${dstName(dst)}+${value}${ADDED_OPT_RATES.has(dst) ? '%' : ''}`, ADDED_OPT);
+    }
+  }
 
   return lines;
 
@@ -756,4 +779,12 @@ function attackSpeedText(speed: number): string {
   if (speed < 0.08) return 'TID_GAME_FAST';
   if (speed < 0.17) return 'TID_GAME_VERYFAST';
   return 'TID_GAME_FASTEST';
+}
+
+/**
+ * 2026-11-10: the socket row under an Ultimate item's tooltip (`CToolTip::SetUltimateToolTip`, tooltip.cpp:887-901, drawn at
+ * :757-780): one WndChgElemItem.bmp a socket open, each with its jewel's icon (0 for none); null for an item not Ultimate.
+ */
+export function ultimateSockets(item: InventoryItem, prop: WebItemProp): number[] | null {
+  return isUltimate(prop) ? [...(item.ultimate ?? [])] : null;
 }
