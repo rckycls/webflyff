@@ -323,6 +323,11 @@ export class AttackLoop {
     return this.auto;
   }
 
+  /** 2026-11-11: a melee, magic or range command under way (`m_oaCmd`): one that starts ends the auto-run. */
+  get commanding(): boolean {
+    return this.cmd !== null;
+  }
+
   /** 2026-11-10: the own side of `IsArenaTarget` (`attackAble`'s `own`): the world and where the own mover stands. */
   private arenaSide(): ArenaSide | undefined {
     const own = this.world.self();

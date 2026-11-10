@@ -3402,3 +3402,23 @@ fieldset:disabled .btn {
   }
   .hud-summon-angel .hud-picture-button::after { content: attr(aria-label); }
 }
+/* 2026-11-11: the V15 cursors (world/hud/cursors.ts) on a computer; a phone shows none. The world sets their custom
+   properties (--cur-base ...) from the converter's pictures; each falls back to the browser's own. Every window and control
+   is CUR_BASE (WndBase.cpp:2270-2273), an edit box CUR_EDIT (WndEditCtrl.cpp:1333-1342), what lies on a window's edge its
+   resize cursor (frame.ts), the dialog's answers and keys CUR_SELECT and its context words CUR_HELP (WndDialog.cpp:161-232),
+   a dropped item CUR_GETITEM, the world what the canvas's data-cursor says (worldCursor, WndWorld.cpp:2562-2660), and
+   CUR_DELAY while the world first loads. The bag's hammer (!important, above) and the summon's crosshair stay. */
+@media (hover: hover) and (pointer: fine) {
+  .world[data-cursors], .world[data-cursors] * { cursor: var(--cur-base, default); }
+  .world[data-cursors] input:is(:not([type]), [type=text], [type=password], [type=number], [type=search]):not([readonly]),
+  .world[data-cursors] textarea:not([readonly]) { cursor: var(--cur-edit, text); }
+  .world[data-cursors] [data-resize] * { cursor: inherit; }
+  .world[data-cursors] :is(.dialog-answer, .dialog-key, [data-dialog-answer]),
+  .world[data-cursors] :is(.dialog-answer, .dialog-key, [data-dialog-answer]) * { cursor: var(--cur-select, pointer); }
+  .world[data-cursors] .dialog-link:not(.dialog-answer) { cursor: var(--cur-help, help); }
+  .world[data-cursors] [data-ground-item], .world[data-cursors] [data-ground-item] * { cursor: var(--cur-get-item, pointer); }
+  .world[data-cursors]:not([data-summon-armed]) .world-view canvas[data-cursor="attack"] { cursor: var(--cur-attack, pointer); }
+  .world[data-cursors]:not([data-summon-armed]) .world-view canvas[data-cursor="npc"] { cursor: var(--cur-npc, pointer); }
+  .world[data-cursors]:not([data-summon-armed]) .world-view canvas[data-cursor="no"] { cursor: var(--cur-no, not-allowed); }
+  .world[data-cursors][data-loading], .world[data-cursors][data-loading] * { cursor: var(--cur-delay, wait); }
+}

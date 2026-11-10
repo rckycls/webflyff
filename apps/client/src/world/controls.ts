@@ -85,6 +85,20 @@ export interface FlightStick {
 export const NO_FLIGHT_STICK: Readonly<FlightStick> = { dive: false, climb: false, left: false, right: false };
 
 /**
+ * 2026-11-11: the PC's flight keys, with the stick (`flightStick`): W climbs and S dives, the owner's choice, where Neuz's W
+ * dives (`bUp` sends OBJMSG_LOOKDOWN, S OBJMSG_LOOKUP: `ControlFlying`, `WndWorldControlPlayer.cpp:847-861`); A and D
+ * turn as in Neuz (:863-879), the way they turn on the ground. The phone's stick stays as it was (forward dives).
+ */
+export function flightKeys(held: (code: string) => boolean, stick: Readonly<FlightStick> = NO_FLIGHT_STICK): FlightStick {
+  return {
+    dive: held('KeyS') || stick.dive,
+    climb: held('KeyW') || stick.climb,
+    left: held('KeyA') || stick.left,
+    right: held('KeyD') || stick.right,
+  };
+}
+
+/**
  * Piece 7 M5 (Decision 4): the stick in flight: forward dives (W), back climbs (S), sideways turns (A, D), each axis by
  * the walk's sectors (`AXIS_ON`, kept down to `AXIS_OFF` from `previous`).
  */

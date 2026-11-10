@@ -150,6 +150,15 @@ export function pickMover(orig: Vec3, dir: Vec3, candidates: readonly PickCandid
   return null;
 }
 
+/**
+ * 2026-11-11: the mover under the mouse at (`ndcX`, `ndcY`), as `CWndWorld` highlights one each frame (`m_pSelectObj`,
+ * `WndWorld.cpp:1084-1087`, `:6422-6435`) for the cursor (`OnSetCursor`): `pickMover` on the camera's ray; null for none.
+ */
+export function pickMoverAt(camera: Camera, ndcX: number, ndcY: number, candidates: readonly PickCandidate[]): number | null {
+  const ray = pickRay(camera, ndcX, ndcY);
+  return ray === null ? null : pickMover(ray.orig, ray.dir, candidates, FAR_PLANE);
+}
+
 /** What a tap lands on: a mover (its object ID), or a point of the land or an object (D3D). */
 export type TapHit = { mover: number } | { point: Vec3 };
 

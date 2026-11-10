@@ -4,7 +4,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WORLD_MAP_KEY, readContinents } from '@flyffweb/formats';
 import type { WebWorldMap } from '@flyffweb/formats';
-import { WorldMap } from '../src/world/hud/worldMap';
+import { MAP_PASSED_KEYS, WorldMap } from '../src/world/hud/worldMap';
 import type { MapView } from '../src/world/hud/worldMap';
 import { loadWorldMap } from '../src/world/worldMapData';
 import { arrowMatrix, mapPoint } from '../src/world/worldMapRules';
@@ -110,7 +110,7 @@ describe('WorldMap: opening and closing (CWndMap::Initialize, WorldMap.cpp:922-9
     const heard = vi.fn();
     window.addEventListener('keydown', heard);
     map.toggle(FLARIS);
-    key('KeyW', 'w');
+    key('KeyI', 'i');
     expect(heard).not.toHaveBeenCalled();
     key('KeyM', 'm');
     expect(map.isOpen).toBe(false);
@@ -120,8 +120,20 @@ describe('WorldMap: opening and closing (CWndMap::Initialize, WorldMap.cpp:922-9
     map.toggle(FLARIS);
     q(map, '[data-worldmap-close]')!.click();
     expect(map.isOpen).toBe(false);
-    key('KeyW', 'w');
+    key('KeyI', 'i');
     expect(heard).toHaveBeenCalledTimes(1);
+    window.removeEventListener('keydown', heard);
+  });
+
+  it('2026-11-11: passes the keys that move the player on to the game, as the map of Neuz takes only the left press', () => {
+    const { map } = make();
+    const heard = vi.fn();
+    window.addEventListener('keydown', heard);
+    map.toggle(FLARIS);
+    for (const [code, k] of [['KeyW', 'w'], ['KeyA', 'a'], ['KeyS', 's'], ['KeyD', 'd'], ['Space', ' '], ['KeyX', 'x']] as const) key(code, k);
+    expect(heard).toHaveBeenCalledTimes(6);
+    expect(map.isOpen).toBe(true);
+    expect([...MAP_PASSED_KEYS].sort()).toEqual(['KeyA', 'KeyD', 'KeyS', 'KeyW', 'KeyX', 'Space']);
     window.removeEventListener('keydown', heard);
   });
 

@@ -105,8 +105,8 @@ test('world map: M and the Start menu open Flaris; the buttons, the monster deta
   expect(gameplaySent(gateway)).toBe(sentBefore);
 });
 
-test('world map: opened while walking, the walk stops, nothing is sent while it is open, and W walks again after', async ({ page, isMobile }) => {
-  test.skip(isMobile, 'a keyboard case: the touch path is the same releaseControls');
+test('world map: opened while walking, the walk goes on under it (2026-11-11), W let go stops it, and W walks again after', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'a keyboard case');
   const gateway = await playGateway(page);
   await enterFlaris(page);
   const moves = () => sentOf(gateway, PacketType.PLAYERMOVED).length;
@@ -115,13 +115,17 @@ test('world map: opened while walking, the walk stops, nothing is sent while it 
   await expect.poll(moves).toBeGreaterThan(walking);
   await page.keyboard.press('KeyM');
   await expect(worldMap(page)).toBeVisible();
-  // the held W lets go as the map opens (its ordinary stop), then nothing more while it is open
+  // the moves' keys go on to the game under the map (Neuz's map takes only the left press): the held W walks on
+  const before = await ownAt(page);
+  await page.waitForTimeout(1_000);
+  expect(Math.hypot((await ownAt(page))[0] - before[0], (await ownAt(page))[2] - before[2])).toBeGreaterThan(0.5);
+  // its let-go comes too: the walk stops, then nothing more while it is open
+  await page.keyboard.up('KeyW');
   await page.waitForTimeout(2_000);
   const [open, at] = [gameplaySent(gateway), await ownAt(page)];
   await page.waitForTimeout(3_000);
   expect(gameplaySent(gateway)).toBe(open);
   expect(await ownAt(page)).toEqual(at);
-  await page.keyboard.up('KeyW');
   await page.keyboard.press('KeyM');
   await expect(worldMap(page)).toBeHidden();
   const closed = moves();
