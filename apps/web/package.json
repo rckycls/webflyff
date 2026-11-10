@@ -1,0 +1,13 @@
+{
+  "name": "@flyffweb/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@flyffweb/protocol": "*",
+    "mssql": "^12.7.14"
+  },
+  "devDependencies": {
+    "@types/mssql": "^12.3.0"
+  }
+}
