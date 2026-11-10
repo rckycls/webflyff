@@ -1,3 +1,6 @@
+import { BankHud } from './bank/bankHud';
+import { BANK_DRAG, BANK_PENYA_DRAG } from './hud/bank/bankWindows';
+import { COMMON_BANK_TIMERS } from './bank/bankBook';
 import { SpeechBubbleLayer } from './render/SpeechBubbleLayer';
 // The world screen (spec §3.2, §3.5): "Entering the world…" with a Leave button while the session enters, then the world in
 // 3D with its movers and their name tags, the joystick and the measurement overlay. It wires the parts together:
@@ -173,7 +176,7 @@ import { ItemActions } from './items/itemActions';
 import { GroundItems } from './items/groundItems';
 import { GroundModels, loadDropModel } from './items/groundModels';
 import { NearbyItems } from './items/nearbyItems';
-import { NULL_ID, STATE_BASEMOTION_MODE, ShortcutKind, isGuildMessage, isTradeMessage } from '@flyffweb/protocol';
+import { NULL_ID, STATE_BASEMOTION_MODE, ShortcutKind, isBankMessage, isGuildMessage, isTradeMessage } from '@flyffweb/protocol';
 // 2026-11-10: the guild (guild/guildBook.ts, guild/guildHud.ts)
 import { GuildBook } from './guild/guildBook';
 import type { GuildContext, GuildEvent } from './guild/guildBook';
@@ -496,6 +499,9 @@ export class WorldScreen {
   /** 2026-11-10: the player trade's windows (trade/tradeHud.ts), and the tooltip over a trade slot. */
   private tradeHud: TradeHud | undefined;
   private tradeTooltip: HTMLElement | null = null;
+  /** 2026-11-10 (bank-mail): the bank's windows (bank/bankHud.ts), and the tooltip over a bank's item. */
+  private bankHud: BankHud | undefined;
+  private bankTooltip: HTMLElement | null = null;
   private readonly friendEvents: FriendEvent[] = [];
   /**
    * 2026-11-10: the guilds (`g_GuildMng`, guild/guildBook.ts), the screen's as the friend list is; its windows
@@ -860,6 +866,8 @@ export class WorldScreen {
       if (value.type === 'say') { this.friendHud?.onSay(value); continue; }
       // 2026-11-10: the player trade's snapshots (trade/tradeState.ts), and the asked side's refusals (OnBlock gu 3, 4, 5, 8)
       if (isTradeMessage(value)) { this.tradeHud?.handle(objectId, value); continue; }
+      // 2026-11-10 (bank-mail): the bank's windows hear its snapshots; the own state (WorldState.toOwn) applies the contents
+      if (isBankMessage(value) && objectId === self?.objectId) this.bankHud?.handle(value);
       if (value.type === 'block') this.tradeHud?.onBlock(value);
       // 2026-11-10: a blocked friend's whisper, and another's with /whisperrefuse (OnWhisper, DPClient.cpp:11790-11831, :11899-11903)
       if (value.type === 'whisper' && this.friendHud?.dropWhisper(value) === true) continue;
@@ -1330,6 +1338,8 @@ export class WorldScreen {
       own: () => this.own, props: this.data!.itemProps, setItems: new Set(this.data!.itemEtc?.setOf.keys() ?? []),
       // 2026-11-10 (guild): the guild rename scroll (guild/guildHud.ts `openRename`)
       openGuildName: (objectId) => this.guildHud?.openRename(objectId),
+      // 2026-11-10 (bank-mail): the Scroll of Private Custody (bank/bankHud.ts `useScroll`)
+      openBank: (objectId, itemId) => this.bankHud?.useScroll(objectId, itemId),
       worldId: () => this.worldId, worldName: () => WORLD_NAMES.get(this.worldId) ?? '', partyName: () => this.party.name,
       isLeader: () => this.party.isLeader(this.entry.character.playerId), focusId: () => this.focus?.targetId ?? NULL_ID,
       ownName: () => this.world?.self()?.name ?? this.entry.character.name,
@@ -1507,7 +1517,8 @@ export class WorldScreen {
       held: (id) => this.bagHeld(id) || (this.tradeHud?.extraOf(id) ?? 0) > 0,
       // 2026-11-09 (pets R3): and the food mill (CWndInventory::OnDestroy, WndField.cpp:1092-1096)
       // 2026-11-10: and Create Jewels (CWndInventory::OnDestroy, WndField.cpp:1036-1045)
-      closed: () => { this.upgradeNpc?.piercing.dismiss(); this.upgradeNpc?.safety.dismiss(); this.petCare?.bagClosed(); this.jewels?.bagClosed(); },
+      // 2026-11-10 (bank-mail): and the bank (CWndInventory::OnDestroy, WndField.cpp:1103-1105)
+      closed: () => { this.upgradeNpc?.piercing.dismiss(); this.upgradeNpc?.safety.dismiss(); this.petCare?.bagClosed(); this.jewels?.bagClosed(); this.bankHud?.bagClosed(); },
       // 2026-11-10: a stack in the trade shows the count less the traded (`m_nItemNum - GetExtra()`, WndItemCtrl.cpp:705-708)
       reservedCount: (id) => (this.bagDieFlag ? this.bagReserved.get(id) ?? 0 : 0) + this.tradeExtraShown(id),
       // 2026-11-09 (pets R2): and the summoned raised pet's item (`g_pPlayer->GetPetId()`, WndItemCtrl.cpp:472-487)
@@ -1518,6 +1529,8 @@ export class WorldScreen {
         .some((buff) => buff.buffType === buffType && buff.id === id) === true,
       drop: (id, count) => {
         if (this.dialog?.frame.isOpen === true) return; // no drop while the dialogue is open (DPClient.cpp:9378-9382)
+        // 2026-11-10 (bank-mail): nor while the bank is open (WndWorld.cpp:7776-7797)
+        if (this.bankHud?.isOpen === true) { this.say('TID_GAME_TRADELIMITITEM'); return; }
         this.sounds?.drop();
         if (itemActions.drop(id, count)) this.lastDropAt = performance.now();
       },
@@ -1753,22 +1766,54 @@ export class WorldScreen {
       say: (text, color) => this.hud?.messages.add(text, color),
       box: (text) => { if (this.messageBox?.isOpen !== true) this.messageBox?.open(text, 'ok', () => {}); },
       openInventory: () => { if (this.own && !inventoryWindow.frame.isOpen) inventoryWindow.toggle(this.own); },
-      npcShopOpen: () => this.shopWindow?.frame.isOpen === true,
+      npcShopOpen: () => this.shopWindow?.frame.isOpen === true || this.bankHud?.isOpen === true,
       addOwnGold: (delta) => this.own?.addGold(delta),
       consent: (mine, theirs, partner, gold) => this.own?.tradeConsent(mine, theirs, partner, gold),
       refreshBag: () => { if (this.own) inventoryWindow.update(this.own, true); },
       showTooltip: (item, anchor) => this.showTradeTooltip(item, anchor),
     }, doc);
     this.tradeHud = tradeHud;
+    // 2026-11-10 (bank-mail): the bank (bank/bankHud.ts)
+    const bankHud = new BankHud(this.hudArt!, this.data!.texts, {
+      send: (bytes) => session.sendBankMail(bytes),
+      say: (text, color) => this.hud?.messages.add(text, color),
+      box: (text) => { if (this.messageBox?.isOpen !== true) this.messageBox?.open(text, 'ok', () => {}); },
+      bank: () => this.own?.bank ?? null,
+      bagItems: () => this.own?.inventory ?? null,
+      ownGold: () => this.own?.gold ?? 0,
+      worn: (objectId) => this.own?.equipmentObjectIds.includes(objectId) === true,
+      prop: (itemId) => this.data?.itemProps.get(itemId),
+      commonBank: () => COMMON_BANK_TIMERS.some((sm) => this.smTimers.has(sm)),
+      tradeOpen: () => tradeHud.windowOpen,
+      npcShopOpen: () => this.shopWindow?.frame.isOpen === true,
+      openInventory: () => { if (this.own && !inventoryWindow.frame.isOpen) inventoryWindow.toggle(this.own); },
+      closeInventory: () => inventoryWindow.frame.close(),
+      inventoryFrame: () => inventoryWindow.frame,
+      showTooltip: (item, anchor, host) => this.showBankTooltip(item, anchor, host),
+    }, doc);
+    this.bankHud = bankHud;
+    // 2026-11-10 (bank-mail): a bank's item or penya dragged onto the bag (CWndInventory::OnChildNotify, WndField.cpp:1863-1950)
+    inventoryWindow.foreignDrop = {
+      types: () => (bankHud.isOpen ? [BANK_DRAG, BANK_PENYA_DRAG] : []),
+      drop: (type, data) => {
+        if (type === BANK_PENYA_DRAG) bankHud.dropOnBag({ bank: Number(data) });
+        else if (type === BANK_DRAG) {
+          const [bank, objectId] = data.split(':').map(Number);
+          bankHud.dropOnBag({ bank: bank ?? -1, objectId: objectId ?? -1 });
+        }
+      },
+    };
     // the phone has no drag: a tap on a bag item or on the penya puts it in the trade
     inventoryWindow.trade = {
       // 2026-11-10: and a tap on a bag item puts it in the open jewel window, where a drop would take it
-      active: () => tradeHud.windowOpen || this.jewels?.isOpen === true,
+      // 2026-11-10 (bank-mail): and into the open bank
+      active: () => tradeHud.windowOpen || this.jewels?.isOpen === true || bankHud.isOpen,
       tapItem: (id) => {
-        if (this.jewels?.isOpen !== true || tradeHud.windowOpen) tradeHud.tapItem(id);
-        else if (!this.jewels.tapItem(id)) this.sayRefusal({ kind: 'say', tid: 'TID_SBEVE_NOTUSEITEM' });
+        if (tradeHud.windowOpen) tradeHud.tapItem(id);
+        else if (bankHud.isOpen) bankHud.tapItem(id);
+        else if (this.jewels?.isOpen === true && !this.jewels.tapItem(id)) this.sayRefusal({ kind: 'say', tid: 'TID_SBEVE_NOTUSEITEM' });
       },
-      tapPenya: () => tradeHud.tapPenya(),
+      tapPenya: () => { if (bankHud.isOpen && !tradeHud.windowOpen) bankHud.tapPenya(); else tradeHud.tapPenya(); },
     };
     // a type-2 shortcut of the task bar: the party skill's rule (ObjectExecutor, WndManager.cpp:2779-2876)
     skillUse.onPartySkill = (skill) => partyHud.useSkill(skill);
@@ -1802,7 +1847,7 @@ export class WorldScreen {
     this.optionWindow = this.audio === null ? undefined : new OptionWindow(this.hudArt!, this.audio, doc);
     for (const modal of [
       logOutBox.modal, reviveWindow.modal, skillWindow.warning.modal, this.dialog.modal, questWindow.modal, messageBox.modal, selectVillage.modal, partyHud.messageBox.modal,
-      friendHud.messageBox.modal, tradeHud.gold.window.modal!, ...guildHud.modals,
+      friendHud.messageBox.modal, tradeHud.gold.window.modal!, ...guildHud.modals, bankHud.amount.modal,
     ]) {
       modal.onChange = () => this.modalChanged();
     }
@@ -1816,7 +1861,7 @@ export class WorldScreen {
       ...(this.chatWindow instanceof NeuzChat ? this.chatWindow.elements : [this.chatWindow.element]), this.shopWindow.frame.element,
       this.petWindows.element, this.buffPet.element,
       ...questWindow.elements, this.dialog.element, this.moverMenu.element, ...partyHud.elements, ...friendHud.elements,
-      ...tradeHud.elements, ...guildHud.elements,
+      ...tradeHud.elements, ...guildHud.elements, ...bankHud.elements,
       ...(this.personalShop?.elements.slice(1) ?? []),
     );
     // what the friend list said while the world loaded
@@ -2095,6 +2140,19 @@ export class WorldScreen {
     window.append(tooltip);
     positionItemDetails(tooltip, anchor, doc);
     this.tradeTooltip = tooltip;
+  }
+
+  /** 2026-11-10 (bank-mail): a bank's item tooltip (`PutToolTip_Item( ..., APP_INVENTORY )`, WndItemCtrl.cpp:212-245), or none. */
+  private showBankTooltip(item: InventoryItem | null, anchor: HTMLElement | null, host: HTMLElement | null): void {
+    this.bankTooltip?.remove();
+    this.bankTooltip = null;
+    if (item === null || anchor === null || host === null || this.data === undefined) return;
+    const doc = this.element.ownerDocument;
+    const tooltip = createItemDetails(doc, this.hudArt!, this.data, item, this.data.itemProps.get(item.itemId), ownTooltipContext(this.own, item, 'other'));
+    tooltip.classList.add('hud-trade-tooltip');
+    host.append(tooltip);
+    positionItemDetails(tooltip, anchor, doc);
+    this.bankTooltip = tooltip;
   }
 
   /** 2026-11-05: a window holds a bag item, or lets it go (`SetExtra`): the bag draws it faded and keeps it put. */
@@ -2776,6 +2834,7 @@ export class WorldScreen {
       this.upgradeNpc?.piercing.dismiss(); // and the Upgrade Specialist's windows (:8360-8362, :8493-8495)
       this.upgradeNpc?.safety.dismiss();
       this.jewels?.dismiss(); // 2026-11-10: and the jewel windows (:8198-8222)
+      this.bankHud?.moved(); // 2026-11-10 (bank-mail): and the bank (:8313-8337)
     }
     this.upgrade?.step();
     this.syncBuffWings(performance.now());
@@ -2816,6 +2875,7 @@ export class WorldScreen {
     partyHud?.updateIcons(this.party.modeOn(4) || (leader !== undefined && world.moverByPlayerId(leader.playerId) !== undefined));
     this.friendHud?.update();
     this.guildHud?.update();
+    this.bankHud?.update(); // 2026-11-10 (bank-mail): drawn live from the own banks
     if (this.questTracker !== undefined || this.questWindow !== undefined) {
       const questState = this.questState();
       this.questTracker?.update(questState);
@@ -3289,6 +3349,8 @@ export class WorldScreen {
     const player = this.world?.movers.get(id)?.added.player;
     // 2026-11-10: "Trade" (MMI_TRADE, WndWorld.cpp:5251-5358): the request, to a player
     if (entry === MMI_TRADE && player !== undefined) {
+      // 2026-11-10 (bank-mail): not with the bank open (TID_GAME_BANKTRADESELF, WndWorld.cpp:5253-5259)
+      if (this.bankHud?.isOpen === true) { this.say('TID_GAME_BANKTRADESELF'); return; }
       this.tradeHud?.requestTrade(id);
       return;
     }
@@ -3349,7 +3411,7 @@ export class WorldScreen {
         },
       },
       // CWndVendor::Initialize (WndVendor.cpp:204-213) and SetVendor's dialogue (:67-68)
-      busy: () => this.shopWindow?.frame.isOpen === true || this.dialog?.frame.isOpen === true,
+      busy: () => this.shopWindow?.frame.isOpen === true || this.dialog?.frame.isOpen === true || this.bankHud?.isOpen === true,
       invalidNames: () => this.partyCatalog?.invalidNames ?? [],
       wordChange: (text) => wordChange(text, this.data?.chat?.filter ?? null),
       tooltip: (item, cost, anchor) => {
@@ -3576,8 +3638,12 @@ export class WorldScreen {
     } else if (entry === MMI.TRADE && !data?.vendorType && this.canTalk(id)) {
       // 2026-11-10: not with a personal shop window open (CWndShop::OnInitialUpdate, WndShop.cpp:774)
       if (this.personalShop?.isOpen === true) return;
+      // 2026-11-10 (bank-mail): nor with the bank open (WndWorld.cpp:5253-5259)
+      if (this.bankHud?.isOpen === true) { this.say('TID_GAME_BANKTRADESELF'); return; }
       this.dialog?.close();
       this.shopWindow!.open(id, npc.name, data);
+    } else if (entry === MMI.BANKING) {
+      this.bankHud?.request(); // 2026-11-10 (bank-mail): Deposit (:5451-5536)
     } else if (entry === MMI.TELEPORTER && data !== undefined) {
       this.dialog?.close();
       this.teleporter!.open(id, data);
@@ -3891,6 +3957,10 @@ export class WorldScreen {
     this.tradeHud?.reset();
     this.tradeHud = undefined;
     this.showTradeTooltip(null, null);
+    // 2026-11-10 (bank-mail)
+    this.bankHud?.reset();
+    this.bankHud = undefined;
+    this.showBankTooltip(null, null, null);
     this.element.removeEventListener('pointerdown', this.onFriendInput, true);
     this.groundItems?.dispose();
     this.dropModels = undefined; // the ground items' own, disposed with them

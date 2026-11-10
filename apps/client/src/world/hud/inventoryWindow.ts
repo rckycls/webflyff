@@ -56,6 +56,12 @@ export class InventoryWindow {
    * penya in the trade (the desktop drags them onto the own grid, CWndTradeCtrl::OnDropIcon).
    */
   trade?: { active(): boolean; tapItem(id: number): void; tapPenya(): void };
+  /**
+   * 2026-11-10 (bank-mail): drags that started in another window and land on the bag (`CWndInventory::OnChildNotify`'s
+   * WIN_ITEMDROP, WndField.cpp:1863-1950, :2015-2032): a bank's item or penya, a mail's item or penya. `types` are the drag
+   * types taken; `drop` hears the first one present and its data.
+   */
+  foreignDrop?: { types(): readonly string[]; drop(type: string, data: string): void };
   private own: OwnState | undefined;
   private selected: number | null = null;
   private revision = -1;
@@ -419,10 +425,28 @@ export class InventoryWindow {
     dialog.append(title, quantity, confirm, cancel); this.frame.element.append(dialog);
   }
 
-  private readonly onDragOver = (event: DragEvent): void => { if (this.dragged) event.preventDefault(); };
+  private readonly onDragOver = (event: DragEvent): void => {
+    if (this.dragged || this.foreignType(event) !== null) event.preventDefault();
+  };
+
+  /** 2026-11-10 (bank-mail): the foreign drag type over the open bag, or null. */
+  private foreignType(event: DragEvent): string | null {
+    const types = this.foreignDrop?.types() ?? [];
+    const target = event.target as Node | null;
+    if (types.length === 0 || !this.frame.isOpen || target === null || !this.frame.element.contains(target)) return null;
+    return types.find((type) => event.dataTransfer?.types.includes(type) === true) ?? null;
+  }
+
   private readonly onDrop = (event: DragEvent): void => {
     const drag = this.dragged; this.dragged = null;
-    if (!drag) return;
+    if (!drag) {
+      const type = this.foreignType(event);
+      if (type !== null && event.dataTransfer !== null) {
+        event.preventDefault();
+        this.foreignDrop!.drop(type, event.dataTransfer.getData(type));
+      }
+      return;
+    }
     event.preventDefault();
     const current = this.own?.inventory?.get(drag.id);
     const source = this.own?.inventorySlots.indexOf(drag.id) ?? -1;

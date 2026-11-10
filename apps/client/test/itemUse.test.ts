@@ -166,11 +166,11 @@ describe('the premium items and scrolls (2026-11-05, SendDoUseItem and CWndInven
   const SPROTECT = itemProp({ id: 10464, part: -1, kind2: 19, kind3: 50 });
   const RESKILL = itemProp({ id: 10434, part: -1, kind2: 19, kind3: 50 });
   const BLESSING = itemProp({ id: 10430, part: -1, kind2: 19, kind3: 50 });
-  const RENAME = itemProp({ id: 15083, part: -1, kind2: 19, kind3: 50 }); // Custody: the bank's window
-  const PROPS = new Map([[26101, BUFF], [700, PILL], [10464, SPROTECT], [10434, RESKILL], [10430, BLESSING], [15083, RENAME]]);
+  const RENAME = itemProp({ id: 10425, part: -1, kind2: 19, kind3: 50 }); // the class change: a window the browser lacks
+  const PROPS = new Map([[26101, BUFF], [700, PILL], [10464, SPROTECT], [10434, RESKILL], [10430, BLESSING], [10425, RENAME]]);
   function rig(check: Record<string, unknown> = {}, boxOpen = false) {
     const own = newVagrant();
-    [[11, 26101], [12, 700], [13, 10464], [14, 10434], [15, 10430], [16, 15083]]
+    [[11, 26101], [12, 700], [13, 10464], [14, 10434], [15, 10430], [16, 10425]]
       .forEach(([objectId, itemId]) => own.inventory!.set(objectId!, { objectId: objectId!, itemId: itemId!, count: 3 }));
     const sent: unknown[][] = [];
     const said: unknown[] = [];

@@ -48,6 +48,8 @@ export interface ItemWindowHost {
   props: ReadonlyMap<number, WebItemProp>;
   /** 2026-11-10 (guild): the guild rename scroll's window, the guild's name window with the scroll's object id. */
   openGuildName?(objectId: number): void;
+  /** 2026-11-10 (bank-mail): the Custody scroll's use, OPENBANKWND with its object and item ids (bank/bankHud.ts). */
+  openBank?(objectId: number, itemId: number): void;
   /** The set pieces' item ids (propItemEtc.inc), which the transmute's twin must match. */
   setItems: ReadonlySet<number>;
   worldId(): number;
@@ -142,6 +144,9 @@ export class ItemWindowFlows {
         return true;
       case 'guildName':
         this.host.openGuildName?.(objectId);
+        return true;
+      case 'custody':
+        this.host.openBank?.(objectId, prop.id);
         return true;
       case 'ticket': {
         const use = ticketUse(prop, item, this.host.worldId());

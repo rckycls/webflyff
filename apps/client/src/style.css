@@ -3010,3 +3010,97 @@ fieldset:disabled .btn {
   .hud-guild-member { min-height: 18px; }
   .hud-guild-member[data-selected] { background: #dfe6ff; }
 }
+
+/* 2026-11-10 (bank-mail): the bank (hud/bank/bankWindows.ts; docs/superpowers/specs/2026-11-10-bank-mail-research.md §1).
+   CWndBank is WndCommonBank.tga (the panels, the "$" marks, the penya bags and boxes are in it); each grid is CWndItemCtrl's
+   4 x 5 cells of 32 px over 42 slots, packed, the hovered item 4 px larger, a stack's count at the bottom right in
+   0xffb0b0f0 over 0xff0000ff (WndItemCtrl.cpp:664-716); WndCommonBankNotUse.tga at alpha 50 over a bank not usable. */
+.hud-bank-grid {
+  position: absolute; display: grid; grid-template-columns: repeat(4, 32px); grid-auto-rows: 32px; overflow: hidden scroll;
+  scrollbar-width: none; scroll-snap-type: y mandatory;
+}
+.hud-bank-grid::-webkit-scrollbar { display: none; }
+.hud-bank-cell { position: relative; width: 32px; height: 32px; scroll-snap-align: start; }
+.hud-bank-cell img { width: 32px; height: 32px; object-fit: contain; pointer-events: none; }
+.hud-bank-cell[data-object-id]:hover img { transform: scale(1.125); }
+.hud-bank-cell span {
+  position: absolute; right: 1px; bottom: 0; color: #b0b0f0; text-shadow: 1px 1px #0000ff; font: bold 10px/11px Arial, sans-serif;
+  pointer-events: none;
+}
+.hud-bank-cell .hud-trade-expired {
+  position: absolute; left: 0; top: 0; width: 32px; height: 32px; pointer-events: none;
+  background: rgb(255, 100, 100); mix-blend-mode: multiply;
+  -webkit-mask-size: 32px 32px; mask-size: 32px 32px; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+}
+.hud-bank-tab[data-usable=false] .hud-bank-scroll { visibility: hidden; }
+.hud-bank-cover { background-repeat: no-repeat; }
+.hud-bank-cover[hidden] { display: none; }
+.hud-bank-coin[data-usable=true] { cursor: grab; }
+.hud-bank .hud-res-static-text { left: 4px; top: 1px; }
+.hud-bank-phone-tabs { display: none; }
+.hud-tab-strip { position: absolute; }
+.hud-tab-tile { position: absolute; top: 0; height: 20px; background-size: 100% 100%; }
+.hud-tab-title {
+  position: absolute; top: 0; height: 20px; padding: 0 4px; border: 0; background: transparent; color: #ffffff;
+  font: 11px/20px Arial, sans-serif; text-align: left; cursor: pointer;
+}
+.hud-tab-title[aria-pressed=true] { color: #000000; }
+.hud-bank-pin .hud-res-edit input { letter-spacing: 2px; }
+
+/* The phone: the bank is a panel beside the phone's bag (as the trade's), one bank at a time chosen by its tabs; a tap on a
+   bank's item takes it out, a tap on a bag item puts it in the bank shown, a tap on the penya moves penya (the count's box is
+   the shop's number pad). The PIN windows open over the panels; their buttons are words; the PIN fields 16 px. */
+@media (max-width: 1000px) and (pointer: coarse) {
+  .world:has(.hud-bank:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack) { visibility: hidden; }
+  .hud-bank-pin { z-index: 70 !important; }
+  .hud-bank {
+    left: 8px !important; top: 8px !important; transform: none !important; z-index: 60 !important;
+    width: calc(100% - var(--bag-window-width, 60%) - 28px) !important; min-width: 300px;
+    height: calc(100% - var(--hud-taskbar-height, 48px) - 16px) !important;
+    border-radius: 6px; background: repeating-linear-gradient(#fdf5ee 0 2px, #f6e6dc 2px 4px); box-shadow: inset 0 0 0 2px #dba98c, 0 2px 8px #0005;
+  }
+  .hud-bank > .hud-window-frame { display: none; }
+  .hud-bank > .hud-window-title { height: 26px !important; border-radius: 6px 6px 0 0; background: linear-gradient(#f7d8c4, #e2b394); font-size: 14px; }
+  .hud-bank > .hud-window-close { left: auto !important; right: 8px; }
+  .hud-bank > .hud-window-body {
+    left: 4px !important; top: 30px !important; width: calc(100% - 8px) !important; height: calc(100% - 34px) !important;
+    display: flex; flex-direction: column; gap: 6px; overflow: hidden;
+  }
+  .hud-bank > .hud-window-body > * { position: relative !important; left: auto !important; top: auto !important; }
+  .hud-bank .hud-bank-phone-tabs { display: flex; gap: 4px; flex: 0 0 auto; }
+  .hud-bank-phone-tabs button {
+    flex: 1; height: 34px; border: 1px solid #b07d5c; border-radius: 4px; background: linear-gradient(#fff7ef, #ecd2bd);
+    color: #3a2414; font: 14px/32px Arial, sans-serif;
+  }
+  .hud-bank-phone-tabs button[aria-selected=true] { background: #e2a06e; color: #000000; font-weight: bold; }
+  .hud-bank .hud-bank-tab, .hud-bank [data-bank-gold], .hud-bank .hud-bank-coin, .hud-bank .hud-bank-cover { display: none !important; }
+  .hud-bank[data-shown-bank="0"] :is(.hud-bank-tab[data-bank="0"], [data-bank-gold="0"]),
+  .hud-bank[data-shown-bank="1"] :is(.hud-bank-tab[data-bank="1"], [data-bank-gold="1"]),
+  .hud-bank[data-shown-bank="2"] :is(.hud-bank-tab[data-bank="2"], [data-bank-gold="2"]) { display: block !important; }
+  .hud-bank .hud-bank-tab { flex: 1 1 auto; min-height: 0; width: 100% !important; height: auto !important; }
+  .hud-bank .hud-bank-tab > :is(.hud-bank-scroll, .hud-tab-strip) { display: none; }
+  .hud-bank .hud-bank-grid {
+    position: absolute !important; inset: 0 !important; width: auto !important; height: auto !important; box-sizing: border-box;
+    padding: 4px; grid-template-columns: repeat(auto-fill, 44px); grid-auto-rows: 44px; gap: 2px; justify-content: center;
+    overflow-y: auto; scroll-snap-type: none; touch-action: pan-y; border-radius: 4px; background: #fffaf5; box-shadow: inset 0 0 0 1px #dba98c;
+  }
+  .hud-bank .hud-bank-cell { width: 44px; height: 44px; border-radius: 3px; background: #f3e4d8; }
+  .hud-bank .hud-bank-cell img { width: 40px; height: 40px; margin: 2px; }
+  .hud-bank .hud-bank-cell span { font-size: 14px; line-height: 14px; color: #1010ff; text-shadow: 1px 1px #ffffff; }
+  .hud-bank .hud-bank-tab[data-usable=false]::after {
+    content: 'NOT USE'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: #c0303033; color: #a00000; font: bold 16px Arial, sans-serif; pointer-events: none;
+  }
+  .hud-bank [data-bank-gold] { width: 100% !important; height: 34px !important; flex: 0 0 auto; border-radius: 4px; background: #fffaf5; box-shadow: inset 0 0 0 1px #dba98c; }
+  .hud-bank [data-bank-gold] .hud-res-static-text { position: static; display: block; font: 14px/34px Arial, sans-serif; color: #000000; text-align: center; text-shadow: none; }
+  .hud-bank [data-bank-gold] .hud-res-static-text::before { content: 'Penya '; color: #3b3bb5; }
+  .hud-bank-pin, .hud-bank-pin :is(.hud-res-static-text, .hud-window-title) { font-size: 14px; }
+  .hud-bank-pin .hud-res-edit input { font-size: 16px; }
+  .hud-bank-pin .hud-picture-button {
+    box-sizing: border-box; height: 30px !important; border: 1px solid #b07d5c; border-radius: 4px;
+    background: linear-gradient(#fff7ef, #ecd2bd) !important; color: #3a2414; font: 14px/28px Arial, sans-serif; text-align: center;
+  }
+  .hud-bank-pin .hud-picture-button::after { content: attr(aria-label); }
+  .hud-amount-box, .hud-amount-box .hud-window-title { font-size: 14px; }
+  .hud-amount-question { margin: 0; font-size: 14px; line-height: 17px; color: #000000; }
+}
