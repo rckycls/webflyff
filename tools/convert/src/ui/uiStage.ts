@@ -242,7 +242,24 @@ export const THEME_FILES: readonly string[] = [
   'ButItemNum000.BMP', 'ButItemMin.BMP', 'ButItemMax.BMP', 'ButItemMulti.BMP', 'ButItemDivid.BMP', 'ButItemEqua.BMP',
   'Window04.bmp', 'WndVenderArrowEx.tga', 'WndPosMark.tga', 'texDialogBox_left.tga', 'texDialogBox_center.TGA',
   'texDialogBox_right.tga',
+  // 2026-11-10, the guild (docs/superpowers/specs/2026-11-10-guild-research.md §3, appendix A): APP_GUILD_TABINFO's four
+  // buttons (resdata.inc:5142-5232), APP_GUILD_TABMEMBER_EX's column heads (:14902-14938, set again in
+  // CWndGuildTabMember::OnInitialUpdate, WndGuildTabMember.cpp:471-527), APP_GUILD_TABAPPELLATION's salary buttons
+  // (:5694-5730), APP_GUILD_TABGUILDWAR's three (:7455-7473; LANG_ENG's ButtGuildDuel.bmp, WndGuildTabWar.cpp:104-110) and
+  // APP_GUILD_NOTICE's three (:3264-3282)
+  'ButtName.BMP', 'ButtNotice.BMP', 'ButtSetlogo.BMP', 'ButtDismiss.BMP', 'ButtGuildMemberTabMLevel.bmp',
+  'ButtGuildMemberTabJob.bmp', 'ButtGuildMemberTabLevel.bmp', 'ButtGuildMemberTabChar.bmp', 'ButtGuildMemberTabAlias.bmp',
+  'ButtPay.BMP', 'ButtGuildWar.BMP', 'ButtGuildDuel.bmp', 'ButtPeace.BMP', 'ButtGiveUp.BMP', 'ButtNoticeNew.BMP',
+  'ButtNoticeStart.BMP', 'ButtNoticeEdit.BMP',
 ];
+
+/**
+ * 2026-11-10 (guild): the guild logos, `Icon_CloakSLogo01.jpg` .. `27.jpg` of DIR_ICON (`CWndWorld`, `WndWorld.cpp:3667-3677`):
+ * 24 x 24 JPEGs. No decoder of the converter reads JPEG, and Neuz draws them opaque (DESTBLEND ZERO, `MoverRender.cpp:1621`),
+ * so they are copied as they are, for the browser to draw: `ui/logo/icon_cloakslogoNN.jpg`.
+ */
+const GUILD_LOGO = /^icon_cloakslogo\d{2}\.jpe?g$/i;
+export const guildLogoKeyOf = (file: string): string => `ui/logo/${file.toLowerCase().replace(/\.jpeg$/, '.jpg')}`;
 
 /** 2026-11-05: the cursors of Client/Cursor the browser shows (Neuz.cpp:280-300): the upgrade mode's hammer, CUR_HAMMER. */
 export const CURSOR_FILES: readonly string[] = ['anvil.cur'];
@@ -455,7 +472,19 @@ export function createUiStage(options: UiStageOptions = {}): Stage {
         else if (wanted(src)) pictures.set(src, { src, key: iconKeyOf(path.basename(src)), colorKey: 0 });
       }
 
-      const jpegs = PICTURE_FOLDERS.flatMap(({ dir }) => ctx.client.list(dir, JPEG)).filter(wanted);
+      const allJpegs = PICTURE_FOLDERS.flatMap(({ dir }) => ctx.client.list(dir, JPEG)).filter(wanted);
+      // 2026-11-10 (guild): the guild logos are copied as they are (`GUILD_LOGO`); the other JPEGs stay unconverted
+      const logos = allJpegs.filter((file) => GUILD_LOGO.test(path.basename(file)));
+      for (const src of logos) {
+        try {
+          const bytes = new Uint8Array(await fs.readFile(src));
+          await ctx.writer.write(guildLogoKeyOf(path.basename(src)), bytes, src);
+          ctx.report.ok(KIND, src, bytes.length, bytes.length);
+        } catch (error) {
+          ctx.report.fail(KIND, src, error);
+        }
+      }
+      const jpegs = allJpegs.filter((file) => !GUILD_LOGO.test(path.basename(file)));
       if (jpegs.length > 0) {
         ctx.report.warn(
           KIND,

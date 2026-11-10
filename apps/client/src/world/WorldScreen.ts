@@ -666,6 +666,8 @@ export class WorldScreen {
       tags: () => [...(this.world?.movers.values() ?? [])].map((m) => ({
         objectId: m.objectId, text: this.tags?.textOf(m.objectId) ?? null,
         alpha: bodyAlpha(m, this.world?.self()?.added.player?.authorization ?? 0),
+        // 2026-11-10 (guild): the guild line ("name|colour|logo key", '' for none)
+        guild: this.tags?.guildOf(m.objectId) ?? null,
       })),
     });
     void this.start();

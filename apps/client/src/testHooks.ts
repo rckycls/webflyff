@@ -105,7 +105,7 @@ export interface ClientHooks {
    * 2026-11-10: the name tags over the movers' heads, by object ID: the text drawn, and how opaque its mover's body is
    * (`bodyAlpha`: 1 whole, 0 not drawn, else an invisible player's blend).
    */
-  tags(): Array<{ objectId: number; text: string | null; alpha: number }>;
+  tags(): Array<{ objectId: number; text: string | null; alpha: number; guild?: string | null }>;
 }
 
 declare global {

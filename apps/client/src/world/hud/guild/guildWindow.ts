@@ -25,6 +25,7 @@ import type { ResControl, ResLayout, TextScrollBar } from '../resWindow';
 import { sixFrameButton } from '../radio';
 import type { RadioButton } from '../radio';
 import { TAB_TILE, TAB_TILE_HEIGHT, chosenTabTiles, tabStripTiles } from '../tiles';
+import { phoneWords } from './guildDialogs';
 import { jobFrames, playerDataFrame } from '../../friends/friendRules';
 import type { Guild } from '../../guild/guildBook';
 import {
@@ -230,6 +231,7 @@ export class GuildWindow {
     for (const [key, label, picture, rect] of MEMBER_HEADS) {
       const head = pictureButton(doc, art, picture, rect, rect.width, () => this.onSort(key));
       head.dataset.sort = key;
+      head.dataset.word = label;
       head.setAttribute('aria-label', label);
       this.heads.push(head);
       member.append(head);
@@ -486,7 +488,9 @@ export class GuildWindow {
   }
 
   private pageOnly(layout: ResLayout): ResWindow {
-    return new ResWindow(layout, this.art, this.doc);
+    const window = new ResWindow(layout, this.art, this.doc);
+    phoneWords(window);
+    return window;
   }
 
   private moveInto(name: string, window: ResWindow): void {

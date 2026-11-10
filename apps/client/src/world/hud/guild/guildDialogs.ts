@@ -92,10 +92,30 @@ const PAY: ResLayout = {
   ],
 };
 
-/** A window of the guild: its ResWindow with the guild's class, and its first field focused on open. */
+/**
+ * The phone shows the picture buttons as words (style.css, as the trade's and the shop's): a short word for each, so
+ * that 14 px text fits the button's own width.
+ */
+const PHONE_WORDS: Readonly<Record<string, string>> = {
+  'Setup Guild Name': 'Name', 'Setup Notice': 'Notice', 'Setup Logo': 'Logo', 'Disband Guild': 'Disband',
+  'Apply Settings': 'Apply', 'Declare Guild Duel': 'Declare', 'Propose Cease-fire': 'Peace', 'Give Up Guild Duel': 'Give up',
+  'New Notice': 'New', 'Open Notice': 'Post', 'Modify Notice': 'Edit', CANCEL: 'Cancel', YES: 'Yes', NO: 'No',
+};
+
+/** Each button of a guild window gets its phone word (`data-word`). */
+export function phoneWords(window: ResWindow): void {
+  for (const control of window.layout.controls) {
+    if (control.kind !== 'button') continue;
+    const label = control.label.startsWith('Setup ') && control.label.endsWith(' pay') ? 'Set' : control.label;
+    window.button(control.id).dataset.word = PHONE_WORDS[label] ?? label;
+  }
+}
+
+/** A window of the guild: its ResWindow with the guild's class and its buttons' phone words. */
 function guildWindow(layout: ResLayout, className: string, art: UiArt, doc: Document): ResWindow {
   const window = new ResWindow(layout, art, doc);
   window.frame.element.classList.add('hud-guild-dialog', className);
+  phoneWords(window);
   return window;
 }
 

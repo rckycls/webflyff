@@ -46,23 +46,24 @@ describeClient('the UI stage on the real client', () => {
     await fs.rm(out, { recursive: true, force: true });
   });
 
-  it('writes every picture without a failure; only the .jpg icons are left out, with one warning', () => {
+  it('writes every picture without a failure; the guild logos (the only .jpg icons) are copied as they are', () => {
     expect(reportJson.failures).toEqual([]);
     const pictures = client.list('Icon', /\.(dds|tga|bmp)$/i).length;
     const itemPictures = client.list('Item', /\.(dds|tga|bmp)$/i).length;
     const charPictures = client.list('Char', /\.(dds|tga|bmp)$/i).length;
     const minimaps = client.list('World', /\d{2}-\d{2}\.dds$/i, true).length; // the landscapes' DDS (Piece 5 M4)
-    const jpegs = client.list('Icon', /\.jpe?g$/i).length;
+    const logos = client.list('Icon', /^icon_cloakslogo\d{2}\.jpe?g$/i).length;
     expect(pictures).toBeGreaterThan(450);
     expect(itemPictures).toBeGreaterThan(3000);
     expect(charPictures).toBeGreaterThan(70); // the NPCs' dialogue pictures
     expect(minimaps).toBeGreaterThan(900);
-    expect(jpegs).toBeGreaterThan(0);
+    // 2026-11-10 (guild): Icon_CloakSLogo01..27.jpg, the only JPEGs of DIR_ICON
+    expect(logos).toBe(27);
+    expect(client.list('Icon', /\.jpe?g$/i).length).toBe(logos);
     // every picture of Client/Icon, Client/Item and Client/Char, the minimaps, every piece of the theme list,
-    // DmgEffect.dds and the sheets catalog
-    expect(reportJson.kinds.ui!.ok).toBe(pictures + itemPictures + charPictures + minimaps + THEME_FILES.length + 1 + 1);
-    expect(reportJson.warnings.filter((w) => w.kind === 'ui')).toHaveLength(1);
-    expect(reportJson.warnings[0]!.message).toContain('.jpg');
+    // DmgEffect.dds, the sheets catalog and the logos
+    expect(reportJson.kinds.ui!.ok).toBe(pictures + itemPictures + charPictures + minimaps + THEME_FILES.length + 1 + 1 + logos);
+    expect(reportJson.warnings.filter((w) => w.kind === 'ui')).toHaveLength(0);
   });
 
   it("writes the casting gauge's and the village window's radio pictures (Piece 7 M3)", async () => {
