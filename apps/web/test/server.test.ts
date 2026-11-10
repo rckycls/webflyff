@@ -9,6 +9,7 @@ import type { AccountStore } from '../src/accountStore';
 import { parseWebConfig } from '../src/config';
 import type { WebConfig } from '../src/config';
 import { HourlyLimit } from '../src/hourlyLimit';
+import { RefusalLog } from '../src/refusalLog';
 import { createWebServer } from '../src/server';
 import { StatusCache } from '../src/status';
 import { TicketBook } from '../src/ticket';
@@ -42,6 +43,7 @@ async function start(config: WebConfig = baseConfig): Promise<Started> {
     ticketsByAddress: new HourlyLimit(config.limits.ticketsPerHourPerAddress, clock),
     status: new StatusCache(async () => ({ online: true, players: 4, checkedAt: '2026-11-11T00:00:00.000Z' }), clock),
     log: { info: (line) => lines.push(line), warn: (line) => lines.push(line) },
+    refusals: new RefusalLog({ info: (line) => lines.push(line), warn: (line) => lines.push(line) }),
   });
   servers.push(server);
   server.listen(0, '127.0.0.1');

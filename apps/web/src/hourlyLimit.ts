@@ -21,6 +21,14 @@ export class HourlyLimit {
     else times.push(this.now());
   }
 
+  /** Takes back the newest entry of `key`: a place reserved for something that did not happen after all. */
+  release(key: string): void {
+    const times = this.entries.get(key);
+    if (times === undefined) return;
+    times.pop();
+    if (times.length === 0) this.entries.delete(key);
+  }
+
   /** How many keys are kept (for the tests). */
   size(): number {
     return this.entries.size;

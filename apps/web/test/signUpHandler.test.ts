@@ -5,6 +5,7 @@ import { beforeEach, expect, it } from 'vitest';
 import type { AccountStore } from '../src/accountStore';
 import { parseWebConfig } from '../src/config';
 import { HourlyLimit } from '../src/hourlyLimit';
+import { RefusalLog } from '../src/refusalLog';
 import { handleSignUp } from '../src/signUpHandler';
 import type { SignUpDeps, SignUpRequest } from '../src/signUpHandler';
 import { TicketBook } from '../src/ticket';
@@ -44,6 +45,7 @@ beforeEach(() => {
     createdByAddress: new HourlyLimit(config.limits.createdPerHourPerAddress, clock),
     createdInAll: new HourlyLimit(config.limits.createdPerHour, clock),
     log: { info: (line) => lines.push(line), warn: (line) => lines.push(line) },
+    refusals: new RefusalLog({ info: (line) => lines.push(line), warn: (line) => lines.push(line) }),
   };
 });
 
@@ -205,4 +207,63 @@ it('never logs the password, email or ticket, nor a line break from the body', a
     expect(line).not.toContain(ticket.split('.')[2]);
     expect(line).not.toMatch(/[\r\n]/);
   }
+});
+
+/** A store whose creates answer only when `release()` is called, as a slow database does. */
+function slowStore(): FakeStore & { release(): void } {
+  const waiting: Array<() => void> = [];
+  const store = new FakeStore();
+  const create = store.create.bind(store);
+  store.create = (...args) => new Promise<number>((resolve, reject) => {
+    waiting.push(() => { create(...args).then(resolve, reject); });
+  });
+  return Object.assign(store, { release: () => { for (const go of waiting.splice(0)) go(); } });
+}
+
+it('counts the accounts being made, so requests sent at once cannot pass the limits', async () => {
+  const slow = slowStore();
+  const at = { ...deps, store: slow };
+  const answers = Promise.all(Array.from({ length: 20 }, (_, i) => handleSignUp(post(form({ account: `hero_s${i}` })), at)));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  slow.release();
+  const statuses = (await answers).map((answer) => answer.status);
+  expect(statuses.filter((status) => status === 201)).toHaveLength(3);
+  expect(statuses.filter((status) => status === 429)).toHaveLength(17);
+  expect(slow.calls).toHaveLength(3);
+});
+
+it('pauses at 60 in all for requests sent at once from many addresses', async () => {
+  const slow = slowStore();
+  const at = { ...deps, store: slow };
+  const answers = Promise.all(Array.from({ length: 70 }, (_, i) =>
+    handleSignUp(post(form({ account: `hero_m${i}` }), { address: `192.0.2.${i}` }), at)));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  slow.release();
+  const statuses = (await answers).map((answer) => answer.status);
+  expect(statuses.filter((status) => status === 201)).toHaveLength(60);
+  expect(slow.calls).toHaveLength(60);
+});
+
+it('gives the place back when the name is taken or the database fails', async () => {
+  store.answer = 0;
+  for (let i = 0; i < 3; i++) expect((await handleSignUp(post(form({ account: `hero_g${i}` })), deps)).status).toBe(409);
+  store.answer = new Error('down');
+  for (let i = 0; i < 3; i++) expect((await handleSignUp(post(form({ account: `hero_h${i}` })), deps)).status).toBe(500);
+  store.answer = 1;
+  for (let i = 0; i < 3; i++) expect((await handleSignUp(post(form({ account: `hero_k${i}` })), deps)).status).toBe(201);
+  expect((await handleSignUp(post(form({ account: 'hero_k3' })), deps)).status).toBe(429);
+});
+
+it('does not let a flood of refused requests fill the log', async () => {
+  for (let i = 0; i < 200; i++) await handleSignUp(post(form(), { origin: 'https://evil.example' }), deps);
+  for (let i = 0; i < 200; i++) await handleSignUp(post('{not json'), deps);
+  for (let i = 0; i < 40; i++) await handleSignUp(post(form({ account: 'abc' })), deps); // 20 invalid, then too_many
+  expect(lines.filter((line) => line.endsWith(' forbidden'))).toHaveLength(1);
+  expect(lines.filter((line) => line.endsWith(' invalid'))).toHaveLength(1);
+  expect(lines.filter((line) => line.endsWith(' too_many'))).toHaveLength(1);
+  // the attempts that reached the rules are each written: at most 20 an hour from an address
+  expect(lines.filter((line) => line.endsWith(' invalid:account'))).toHaveLength(20);
+  deps.refusals.flush();
+  expect(lines).toContain('signup 203.0.113.7 forbidden x199 more in the last minute');
+  expect(lines).toContain('signup 203.0.113.7 too_many x19 more in the last minute');
 });

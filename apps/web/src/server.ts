@@ -69,7 +69,7 @@ export function createWebServer(deps: WebServerDeps): Server {
 
     if (path === '/api/sign-up/ticket' && req.method === 'GET') {
       if (!deps.ticketsByAddress.allows(address)) {
-        log.info(`ticket ${address} too_many`);
+        deps.refusals.note(`ticket ${address} too_many`, `ticket ${address} too_many`);
         send(res, 429, { error: 'too_many' });
         return;
       }

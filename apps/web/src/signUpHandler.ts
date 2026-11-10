@@ -12,12 +12,15 @@
 //    else or a database error → 500 server.
 //
 // One log line per request: `signup <address> <account or -> <result>`. Never the password, the email or the ticket.
+// The refusals a flood can repeat (type, size, forbidden, a body that is not a form, past the attempts) go through a
+// RefusalLog: the first of a kind each minute, then a count.
 
 import { checkSignUp, hashPassword, normalizeAccount } from '@flyffweb/protocol';
 import type { AccountStore } from './accountStore';
 import type { WebConfig } from './config';
 import type { HourlyLimit } from './hourlyLimit';
 import type { Logger } from './log';
+import type { RefusalLog } from './refusalLog';
 import type { TicketBook } from './ticket';
 
 export const MAX_BODY_BYTES = 1024;
@@ -34,6 +37,8 @@ export interface SignUpDeps {
   createdByAddress: HourlyLimit;
   createdInAll: HourlyLimit;
   log: Logger;
+  /** Where the refusals a flood can repeat go, so that they cannot fill the log. */
+  refusals: RefusalLog;
 }
 
 const FIELDS = ['account', 'password', 'email', 'website', 'ticket'] as const;
@@ -70,16 +75,21 @@ export async function handleSignUp(req: SignUpRequest, deps: SignUpDeps): Promis
     deps.log.info(`signup ${address} ${name} ${result}`);
     return { status, body };
   };
+  /** An answer a flood can repeat without end (before the attempt is counted, or past the attempts): logged capped. */
+  const refuse = (status: number, body: Record<string, unknown>, result: string): HttpAnswer => {
+    deps.refusals.note(`signup ${address} ${result}`, `signup ${address} ${name} ${result}`);
+    return { status, body };
+  };
 
-  if (req.contentType?.toLowerCase().startsWith('application/json') !== true) return answer(415, { error: 'type' }, 'type');
-  if (req.body.length > MAX_BODY_BYTES) return answer(413, { error: 'size' }, 'size');
-  if (req.origin !== deps.config.siteOrigin) return answer(403, { error: 'forbidden' }, 'forbidden');
+  if (req.contentType?.toLowerCase().startsWith('application/json') !== true) return refuse(415, { error: 'type' }, 'type');
+  if (req.body.length > MAX_BODY_BYTES) return refuse(413, { error: 'size' }, 'size');
+  if (req.origin !== deps.config.siteOrigin) return refuse(403, { error: 'forbidden' }, 'forbidden');
   const form = readForm(req.body);
-  if (form === undefined) return answer(400, { error: 'invalid' }, 'invalid');
+  if (form === undefined) return refuse(400, { error: 'invalid' }, 'invalid');
   name = logName(form.account);
 
   // every attempt that gets this far counts, whatever comes of it
-  if (!deps.attempts.allows(address)) return answer(429, { error: 'too_many' }, 'too_many');
+  if (!deps.attempts.allows(address)) return refuse(429, { error: 'too_many' }, 'too_many');
   deps.attempts.add(address);
 
   if (deps.tickets.check(form.ticket) !== 'ok') return answer(400, { error: 'ticket' }, 'ticket');
@@ -92,21 +102,29 @@ export async function handleSignUp(req: SignUpRequest, deps: SignUpDeps): Promis
   if (!deps.createdByAddress.allows(address)) return answer(429, { error: 'too_many' }, 'too_many');
   if (!deps.createdInAll.allows(ALL)) return answer(429, { error: 'paused' }, 'paused');
 
+  // The places are taken now, before the database answers: requests sent at once all pass the checks above before
+  // any of them is made, so a place counted only afterwards would let every one of them through. One that is not
+  // made after all gives its places back.
+  deps.createdByAddress.add(address);
+  deps.createdInAll.add(ALL);
+  const giveBack = () => {
+    deps.createdByAddress.release(address);
+    deps.createdInAll.release(ALL);
+  };
+
   let made: number;
   try {
     made = await deps.store.create(normalizeAccount(form.account), hashPassword(form.password), email);
   } catch (error) {
+    giveBack();
     // the database's message, on one line, with nothing of the request's secrets in it
     let message = String((error as Error)?.message ?? error).replace(/[\r\n]+/g, ' ');
     for (const secret of [form.password, email, form.ticket]) if (secret !== '') message = message.split(secret).join('***');
     deps.log.warn(`signup database error: ${message}`);
     return answer(500, { error: 'server' }, 'error');
   }
-  if (made === 1) {
-    deps.createdByAddress.add(address);
-    deps.createdInAll.add(ALL);
-    return answer(201, { ok: true }, 'created');
-  }
+  if (made === 1) return answer(201, { ok: true }, 'created');
+  giveBack();
   if (made === 0) return answer(409, { error: 'taken' }, 'taken');
   return answer(500, { error: 'server' }, 'error');
 }

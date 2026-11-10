@@ -36,3 +36,17 @@ it('deletes keys with no entries left', () => {
   l.allows('c');
   expect(l.size()).toBe(0);
 });
+
+it('gives back the newest entry of a key', () => {
+  let t = 0;
+  const l = new HourlyLimit(2, () => t);
+  l.add('x');
+  t = 1000;
+  l.add('x');
+  expect(l.allows('x')).toBe(false);
+  l.release('x');
+  expect(l.allows('x')).toBe(true);
+  l.release('x');
+  l.release('x'); // nothing left: no error
+  expect(l.size()).toBe(0);
+});

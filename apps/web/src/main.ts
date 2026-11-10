@@ -3,6 +3,7 @@ import { parseArgs } from 'node:util';
 import { parseWebConfig, type WebConfig } from './config';
 import { HourlyLimit } from './hourlyLimit';
 import { consoleLogger } from './log';
+import { RefusalLog } from './refusalLog';
 import { createWebServer } from './server';
 import { sqlAccountStore } from './sqlAccountStore';
 import { loadStatus, StatusCache } from './status';
@@ -43,6 +44,7 @@ const server = createWebServer({
   config,
   store,
   log: consoleLogger,
+  refusals: new RefusalLog(consoleLogger),
   tickets: new TicketBook(config.ticketSecret, clock),
   attempts: new HourlyLimit(config.limits.attemptsPerHour, clock),
   createdByAddress: new HourlyLimit(config.limits.createdPerHourPerAddress, clock),

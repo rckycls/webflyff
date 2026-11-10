@@ -81,6 +81,11 @@ ticket.
 
 `ticket <address> too_many` lines are an address past its tickets for the hour.
 
+So that a flood cannot fill the disk, the refusals a program can repeat without end (`type`, `size`, `forbidden`, `invalid`
+alone, `too_many` past the 20 tries, and `ticket ... too_many`) are written once a minute per address and kind; the
+minute's end adds `signup <address> <result> x<n> more in the last minute`, and past 50 addresses in a minute only
+`<n> more refused requests from other addresses in the last minute`.
+
 ## News and screenshots
 
 The home page shows the 5 newest news posts and up to 6 screenshots. Both are read when the site is built, so a new post
