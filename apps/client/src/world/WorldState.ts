@@ -435,6 +435,11 @@ export class WorldState {
       case 'updateItem':
       case 'updateItemEx': // the awakening (2026-11-05)
       case 'moveItem':
+      // 2026-11-10 (bank-mail): the bank's changes of the own banks, bag and penya
+      case 'putItemBank':
+      case 'getItemBank':
+      case 'updateBankItem':
+      case 'putGoldBank':
         this.toOwn(message, objectId);
         return;
       case 'equipItem': {

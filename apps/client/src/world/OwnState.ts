@@ -6,7 +6,8 @@ import { GameDataMissingError } from './gameData';
 import { IK3_EGG, PetLevel, petItemId } from './pets/raisedPet';
 import { MAX_VIS } from './pets/buffPet';
 import type { VisPet } from './pets/buffPet';
-import { BAG_POSITIONS, tradeConsent } from './trade/itemContainer';
+import { BAG_POSITIONS, containerAdd, tradeConsent } from './trade/itemContainer';
+import { BankBook } from './bank/bankBook';
 import type { ItemContainer, TradeSlot } from './trade/itemContainer';
 import type { GameData } from './gameData';
 import { Parts, ownWorn } from './render/looks';
@@ -233,6 +234,8 @@ export class OwnState {
    * PET_RELEASE clears it (`OnPetCall`, `OnPetRelease`, `DPClient.cpp:16398-16448`).
    */
   petSlot: number | null;
+  /** 2026-11-10 (bank-mail): the account's three banks (`m_Bank`, `m_dwGoldBank`, `m_idPlayerBank`, `m_nSlot`). */
+  readonly bank: BankBook;
   /**
    * 2026-11-09 (pets B1): `m_objIdVisPet` and `m_oiEatPet` as VISPET_ACTIVATE sets them (`SetVisPetItem`, `SetEatPetId`,
    * `DPClient.cpp:19008-19009`): the bag object id of the buff pet item out and the server id of its mover; null for
@@ -304,6 +307,7 @@ export class OwnState {
     this.worn = wornBy(equipment, data);
     this.adjust = equipAdjust(this.worn);
     this.petSlot = own.petSlot ?? null;
+    this.bank = new BankBook(own.bank);
     for (const item of this.inventory?.values() ?? []) this.keepVisEnds(item);
   }
 
@@ -345,6 +349,21 @@ export class OwnState {
   addGold(delta: number): void {
     if (delta === 0) return;
     this.gold = Math.max(0, Math.min(0x7fffffff, this.gold + delta));
+    this.inventoryRevision++;
+  }
+
+  /** An item's `dwPackMax`, 1 for one that does not stack (or that the catalog lacks). */
+  readonly packMax = (itemId: number): number => this.data.itemProps.get(itemId)?.packMax ?? 1;
+
+  /**
+   * 2026-11-10 (bank-mail): `m_Inventory.Add( pItemElem )` (GETITEMBANK, and a mail's item): onto the bag's stacks first, then
+   * the first empty bag position (`containerAdd`). A raised pet or buff pet that came keeps its times.
+   */
+  bagAdd(item: InventoryItem): void {
+    if (this.inventory === null) return;
+    const before = new Map(this.inventory);
+    containerAdd({ items: this.inventory, slots: this.inventorySlots, positions: BAG_POSITIONS }, item, this.packMax);
+    for (const [id, now] of this.inventory) if (before.get(id) !== now) this.keepVisEnds(now);
     this.inventoryRevision++;
   }
 
@@ -679,6 +698,21 @@ export class OwnState {
       }
       case 'moveItem':
         if (message.itemType === 0) this.moveInventory(message.source, message.destination);
+        return [];
+      // 2026-11-10 (bank-mail): the bank's snapshots, as Neuz's handlers change g_pPlayer (DPClient.cpp:2881-3021)
+      case 'putItemBank':
+        this.bank.put(message.bank, message.item, this.packMax);
+        return [];
+      case 'getItemBank': // OnGetItemBank: m_Inventory.Add( &itemElem )
+        this.bagAdd(message.item);
+        return [];
+      case 'updateBankItem':
+        this.bank.update(message.bank, message.objectId, message.param, message.value);
+        return [];
+      case 'putGoldBank': // OnPutGoldBank: m_dwGoldBank[nSlot], SetGold( dwGold )
+        this.bank.setGold(message.bank, message.bankGold);
+        this.gold = message.gold;
+        this.inventoryRevision++;
         return [];
       case 'equipItem': {
         const prop = this.data.itemProps.get(message.itemId);

@@ -13,6 +13,8 @@ import { cssRgb, themeUrl } from '../art';
 import { place } from '../button';
 import { WindowFrame } from '../frame';
 import { ResWindow } from '../resWindow';
+import { COUNT_KEYS, dropTyping, isPhone, numpad, textButton as sharedTextButton, valueBox } from '../numpad';
+import type { NumpadKey } from '../numpad';
 import { BUY, CHAT, PAD_KEYS, SELL, VENDOR } from './vendorLayouts';
 import { BuyPad, SellPad } from '../../vendor/vendorKeypad';
 import type { PadKey } from '../../vendor/vendorKeypad';
@@ -46,23 +48,15 @@ export interface VendorWindowActions {
   tooltip(slot: number | null, anchor: HTMLElement | null): void;
 }
 
-const PHONE = '(max-width: 1000px) and (pointer: coarse)';
 /** 2026-11-10: the phone's keypad sheets, wide enough for the numpad beside the values (a landscape phone has ~360 px above the bar). */
 const PHONE_SHEET = { sellWidth: 540, buyWidth: 480, height: 290 };
-export const isPhone = (doc: Document): boolean => doc.defaultView?.matchMedia?.(PHONE).matches === true;
 
 /** The slot font: `m_pFontText` (Verdana 9 points, 12 px); the measure for the 108 px cut. */
 const SLOT_FONT = '12px Verdana, sans-serif';
 
-/** A plain button of the phone panels. */
-function textButton(doc: Document, label: string, press: () => void, name?: string): HTMLButtonElement {
-  const button = doc.createElement('button');
-  button.type = 'button';
-  button.textContent = label;
-  if (name !== undefined) button.dataset.vendorButton = name;
-  button.addEventListener('click', press);
-  return button;
-}
+/** A plain button of the phone panels, found by `data-vendor-button`. */
+const textButton = (doc: Document, label: string, press: () => void, name?: string): HTMLButtonElement =>
+  sharedTextButton(doc, label, press, name, 'vendorButton');
 
 /**
  * The shop window, `CWndVendor`: the seller's set-up (the name, OK, Cancel, Reset, Chat, drops on the slots, right clicks
@@ -389,32 +383,6 @@ function keyOf(event: KeyboardEvent, calculator: boolean): PadKey | null {
 }
 
 /**
- * A value of a phone sheet: its caption over its number (with commas). With `choose`, a button that a tap makes the one the
- * numpad types into (Neuz's click on Quantity or Unit Price, WndRegVend.cpp:115-136); else a plain output. Never a text
- * field: the phone keyboard does not come up (2026-11-10, the owner: the numpad in its place).
- */
-function valueBox(doc: Document, label: string, name: string, choose?: () => void): { row: HTMLElement; value: HTMLElement } {
-  const row = doc.createElement('div');
-  row.className = 'vendor-sheet-value';
-  const caption = doc.createElement('span');
-  caption.textContent = label;
-  let value: HTMLElement;
-  if (choose !== undefined) {
-    const button = doc.createElement('button');
-    button.type = 'button';
-    button.addEventListener('click', choose);
-    value = button;
-  } else value = doc.createElement('output');
-  value.dataset.field = name;
-  value.setAttribute('aria-label', label);
-  row.append(caption, value);
-  return { row, value };
-}
-
-/** A key of the phone's numpad: its face, the pad key it presses and a name for a screen reader. */
-type NumpadKey = readonly [face: string, key: PadKey, name?: string];
-
-/**
  * The registration's keys, as CWndRegVend has them (resdata.inc:12278-): the digits, 00, 000, Min, Max, the calculator's
  * + - * / = and Backspace (`OnChar` 8), five to a row.
  */
@@ -424,40 +392,8 @@ const SELL_KEYS: readonly NumpadKey[] = [
   ['1', '1'], ['2', '2'], ['3', '3'], ['\u2212', '-', 'Minus'], ['Max', 'max'],
   ['0', '0'], ['00', '00'], ['000', '000'], ['+', '+', 'Plus'], ['=', '=', 'Equals'],
 ];
-/** The buy keypad's keys, as CWndVendorBuy has them (resdata.inc:12977-): the digits, 00, 000, Min, Max, and Backspace and
- * Escape (`OnChar` 8 and 27, here C), four to a row. */
-const BUY_KEYS: readonly NumpadKey[] = [
-  ['7', '7'], ['8', '8'], ['9', '9'], ['\u232b', 'back', 'Backspace'],
-  ['4', '4'], ['5', '5'], ['6', '6'], ['Min', 'min'],
-  ['1', '1'], ['2', '2'], ['3', '3'], ['Max', 'max'],
-  ['0', '0'], ['00', '00'], ['000', '000'], ['C', 'escape', 'Clear'],
-];
-
-/** The phone's in-game numpad: Neuz's keypad keys, sized for a finger, in place of the phone keyboard. */
-function numpad(doc: Document, keys: readonly NumpadKey[], columns: number, press: (key: PadKey) => void): HTMLElement {
-  const pad = doc.createElement('div');
-  pad.className = 'vendor-numpad';
-  pad.style.setProperty('--numpad-columns', String(columns));
-  for (const [face, key, name] of keys) {
-    const button = doc.createElement('button');
-    button.type = 'button';
-    button.textContent = face;
-    button.dataset.padKey = key;
-    if (name !== undefined) button.setAttribute('aria-label', name);
-    // the press does not take the focus from the sheet (its keys stay the hardware keyboard's)
-    button.addEventListener('pointerdown', (event) => event.preventDefault());
-    button.addEventListener('click', () => press(key));
-    pad.append(button);
-  }
-  return pad;
-}
-
-/** A sheet opening takes the focus from any text field (the shop's name), so the phone keyboard goes away. */
-function dropTyping(doc: Document, sheet: HTMLElement): void {
-  const active = doc.activeElement;
-  if (active instanceof HTMLElement && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) active.blur();
-  sheet.focus({ preventScroll: true });
-}
+/** The buy keypad's keys, as CWndVendorBuy has them (resdata.inc:12977-): the shared count keys (numpad.ts). */
+const BUY_KEYS = COUNT_KEYS;
 
 /**
  * `CWndRegVend` (APP_VENDOREX_SELL): Quantity and Unit Price, typed with its keypad or the keys, the arrow on the focused
