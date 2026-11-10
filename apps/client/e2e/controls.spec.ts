@@ -94,7 +94,9 @@ test('camera gestures, jump and phone controls share the world without stray act
     await expect(page.locator('#overlay pre')).toBeVisible();
     await tools.getByRole('button', { name: 'Stats', exact: true }).tap();
     await expect(page.locator('#overlay pre')).toBeHidden();
-    expect((await tools.boundingBox())!.x).toBeGreaterThan(size.width / 2);
+    // 2026-11-10 (owner): the shortcuts run from the status window to the Navigator, in one row
+    const statusBox = (await page.locator('.hud-status').boundingBox())!;
+    expect((await tools.boundingBox())!.x).toBeGreaterThanOrEqual(statusBox.x + statusBox.width);
     const jump = await page.locator('.hud-jump').boundingBox();
     const attack = await page.locator('.hud-attack').boundingBox();
     expect(jump!.y + jump!.height).toBeLessThan(attack!.y);

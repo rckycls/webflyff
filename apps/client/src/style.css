@@ -1533,20 +1533,21 @@ fieldset:disabled .btn {
 }
 
 /* Touch actions: gilded rims and clear fantasy silhouettes, with native vector assets. */
-/* The phone's window shortcuts at the top right (MobileTools), 2026-11-10 (owner): the Start menu's icon of each window alone,
-   with no box or border; Stats, which has none, its text alone, outlined to read over the world. Each press area is at
-   least 60 x 48, taller and larger than the 32 px text buttons it replaces (Skill 47, Bag 45, Character 81, Stats 53 wide)
-   and on their middle line (24 px down); the icon is 32 px, or the whole multiple of it in device pixels that MobileTools
-   sets, unsmoothed. */
+/* The phone's window shortcuts at the top right (MobileTools), 2026-11-10 (owner): the Start menu's icons of the important
+   windows (MOBILE_SHORTCUTS), each alone with no box or border, smoothed; Stats, which has none, its text alone, outlined to
+   read over the world. One row from the status window to the Navigator, on the old text buttons' middle line (24 px down);
+   on the phone the target bar and the quest list go under it (owner's choice). An icon's press area is 48 px high, and as
+   wide as the icon plus half the space the first version left between two icons, which was 60 px less the icon: about
+   12 px on a Pixel 7 (was 23). The icon is 32 px, or the whole multiple of it in device pixels that MobileTools sets. */
 .hud-mobile-tools { display: none; }
 .hud-mobile-tools > button {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 60px;
+  min-width: 48px;
   height: 48px;
   margin: 0;
-  padding: 0 8px;
+  padding: 0 6px;
   border: 0;
   background: none;
   color: #fff4d5;
@@ -1556,6 +1557,11 @@ fieldset:disabled .btn {
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
 }
+.hud-mobile-tools > button[data-icon] {
+  min-width: 0;
+  width: calc(var(--hud-mobile-icon, 32px) + (60px - var(--hud-mobile-icon, 32px)) / 2);
+  padding: 0;
+}
 .hud-mobile-tools > button:active { filter: brightness(1.4); }
 .hud-mobile-tools > button:focus-visible { outline: 2px solid #c2e9ff; outline-offset: -2px; }
 .hud-mobile-tool-icon {
@@ -1563,8 +1569,13 @@ fieldset:disabled .btn {
   width: var(--hud-mobile-icon, 32px);
   height: var(--hud-mobile-icon, 32px);
   background: no-repeat 0 0 / 100% 100%;
-  image-rendering: pixelated;
 }
+/* A narrow phone keeps the shortcuts that fit between the status window (139 px) and the Navigator (122 px and its 14 px):
+   all 8 from 740 px wide, then 7, 6, 5, and 4 under 600 px (Bag, Skill, Character, Quest at 568 px) */
+@media (max-width: 739px) and (pointer: coarse) { .hud-mobile-tools > [data-rank='8'] { display: none; } }
+@media (max-width: 699px) and (pointer: coarse) { .hud-mobile-tools > [data-rank='7'] { display: none; } }
+@media (max-width: 649px) and (pointer: coarse) { .hud-mobile-tools > [data-rank='6'] { display: none; } }
+@media (max-width: 599px) and (pointer: coarse) { .hud-mobile-tools > [data-rank='5'] { display: none; } }
 /* The floating bar's dimensions and safe-area centering come from its native layout. */
 /* The HUD is already above the home-indicator inset; cancel it for the bar alone. */
 .hud-taskbar.is-floating { bottom: calc(0px - var(--game-safe-bottom, 0px)); }
@@ -1805,10 +1816,11 @@ fieldset:disabled .btn {
   .hud-quest-tracker:hover .tracker-title:not(.selected) { color: #a11c46; }
   .hud-quest-tracker:hover .tracker-row:not(.selected, .met) { color: #7950ff; }
 }
-/* On a touch phone: under the top-right shortcuts, left of the attack and jump buttons, at most three quests tall and
-   scrolling, clear of the task bar; moved left with the Navigator as the shortcuts are */
+/* On a touch phone: under the top-right shortcuts and the target bar under them (96 px down: the bar ends at 48 + 0.7 x 56;
+   2026-11-10, the owner's layout), left of the attack and jump buttons, at most three quests tall and scrolling, clear of
+   the task bar; moved left with the Navigator as the shortcuts are */
 @media (max-width: 1000px) and (pointer: coarse) {
-  .hud-quest-tracker { top: calc(env(safe-area-inset-top, 0px) + 56px); right: calc(var(--game-safe-right, 0px) + 100px); width: 200px; max-height: min(162px, calc(100% - var(--hud-taskbar-height, 48px) - 72px)); font-size: 14px; line-height: 18px; scrollbar-width: thin; }
+  .hud-quest-tracker { top: calc(env(safe-area-inset-top, 0px) + 96px); right: calc(var(--game-safe-right, 0px) + 100px); width: 200px; max-height: min(162px, calc(100% - var(--hud-taskbar-height, 48px) - 112px)); font-size: 14px; line-height: 18px; scrollbar-width: thin; }
   .tracker-title, .tracker-row { min-height: 18px; }
   .world:has(.hud-navigator:not([hidden])) .hud-quest-tracker { right: calc(var(--game-safe-right, 0px) + 136px); }
 }
@@ -1826,7 +1838,8 @@ fieldset:disabled .btn {
 }
 @media (max-width: 1000px) and (pointer: coarse) {
   .world-hud { overflow: visible; }
-  .hud-target { transform: scale(.7); transform-origin: top center; }
+  /* 2026-11-10 (owner's layout): under the row of window shortcuts, which runs across the top centre */
+  .hud-target { top: 48px; transform: scale(.7); transform-origin: top center; }
 }
 
 /* The Start menu opens where Piece 3's joystick stands, under the windows' layer: it hides while the menu is open

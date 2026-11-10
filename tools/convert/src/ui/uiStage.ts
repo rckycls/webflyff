@@ -277,11 +277,15 @@ export function applyColorKey(image: RgbaImage, key: number): RgbaImage {
 
 /**
  * 2026-11-10 (owner): the icons the phone's window shortcuts show alone, with no box or border (MobileTools,
- * apps/client/src/world/hud/mobileTools.ts): APP_SKILL3's, APP_INVENTORY's and APP_CHARACTER3's in the Start menu
- * (CWndMgr::AddAllApplet, FuncApplet.cpp:214, :210, :204). Each is also written frameless (`stripIconFrame`) as
- * `ui/bare/<web name>.png`.
+ * apps/client/src/world/hud/mobileTools.ts), the Start menu's (CWndMgr::AddAllApplet): APP_STATUS1's (FuncApplet.cpp:179),
+ * APP_CHARACTER3's (:204), APP_INVENTORY's (:210), APP_SKILL3's (:214), APP_QUEST_EX_LIST's (:229), APP_MAP's, the generic
+ * applet icon (:184), APP_MESSENGER_'s (:260) and APP_PARTY's (:233). Each is also written frameless (`stripIconFrame`)
+ * as `ui/bare/<web name>.png`.
  */
-export const BARE_ICONS: readonly string[] = ['Icon_Skill.dds', 'Icon_Inventory.dds', 'Icon_Character.dds'];
+export const BARE_ICONS: readonly string[] = [
+  'Icon_Status.dds', 'Icon_Character.dds', 'Icon_Inventory.dds', 'Icon_Skill.dds', 'Icon_Quest.dds', 'Icon_Applet.dds',
+  'Icon_Messenger.dds', 'Icon_Troupe.dds',
+];
 
 /** The size of the Start menu's applet icons (Client/Icon/Icon_*.dds), and the panel their frame draws: (1, 1) to (30, 30). */
 const ICON_SIZE = 32;

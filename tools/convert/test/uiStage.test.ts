@@ -212,8 +212,11 @@ describe('stripIconFrame (2026-11-10, the phone shortcuts: the icon alone)', () 
     expect([...image.data]).toEqual(before);
   });
 
-  it('names the three icons of the phone shortcuts: Skill, Inventory, Character (FuncApplet.cpp:214, :210, :204)', () => {
-    expect(BARE_ICONS.map((file) => file.toLowerCase())).toEqual(['icon_skill.dds', 'icon_inventory.dds', 'icon_character.dds']);
+  it("names the phone shortcuts' eight icons, in the Start menu's order (FuncApplet.cpp:179-260)", () => {
+    expect(BARE_ICONS.map((file) => file.toLowerCase())).toEqual([
+      'icon_status.dds', 'icon_character.dds', 'icon_inventory.dds', 'icon_skill.dds', 'icon_quest.dds', 'icon_applet.dds',
+      'icon_messenger.dds', 'icon_troupe.dds',
+    ]);
   });
 });
 
@@ -424,7 +427,7 @@ describe('the UI stage on a small hand-made client', () => {
   });
 
   it("writes a bare copy of the phone shortcuts' icons under ui/bare/, and the icon itself as before", async () => {
-    const run = await runUi({ 'Icon/icon_skill.dds': dds(32, 32, framedIcon()), 'Icon/Icon_Status.dds': dds(32, 32, framedIcon()) });
+    const run = await runUi({ 'Icon/icon_skill.dds': dds(32, 32, framedIcon()), 'Icon/Icon_Motion.dds': dds(32, 32, framedIcon()) });
     expect(run.report.failures).toEqual([]);
     const full = await png(run, 'ui/icon_skill.png');
     expect(pixel(full, 5, 5)).toEqual([255, 255, 255, 255]);
@@ -435,8 +438,8 @@ describe('the UI stage on a small hand-made client', () => {
     expect(pixel(bare, 15, 1)).toEqual([0, 0, 0, 0]);
     expect(pixel(bare, 10, 10)).toEqual([10, 20, 30, 255]);
     // only the icons the shortcuts show
-    expect(run.writer.pathOf('ui/icon_status.png')).toBeDefined();
-    expect(run.writer.pathOf('ui/bare/icon_status.png')).toBeUndefined();
+    expect(run.writer.pathOf('ui/icon_motion.png')).toBeDefined();
+    expect(run.writer.pathOf('ui/bare/icon_motion.png')).toBeUndefined();
   });
 
   it('writes the bare copy with --only naming the icon', async () => {
