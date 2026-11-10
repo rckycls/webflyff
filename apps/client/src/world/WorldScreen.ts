@@ -1,3 +1,6 @@
+import { PostHud } from './post/postHud';
+import { MAIL_DRAG, MAIL_PENYA_DRAG } from './hud/post/postWindows';
+import { MailNotice } from './hud/mailNotice';
 import { BankHud } from './bank/bankHud';
 import { BANK_DRAG, BANK_PENYA_DRAG } from './hud/bank/bankWindows';
 import { COMMON_BANK_TIMERS } from './bank/bankBook';
@@ -176,7 +179,7 @@ import { ItemActions } from './items/itemActions';
 import { GroundItems } from './items/groundItems';
 import { GroundModels, loadDropModel } from './items/groundModels';
 import { NearbyItems } from './items/nearbyItems';
-import { NULL_ID, STATE_BASEMOTION_MODE, ShortcutKind, isBankMessage, isGuildMessage, isTradeMessage } from '@flyffweb/protocol';
+import { NULL_ID, STATE_BASEMOTION_MODE, ShortcutKind, isBankMessage, isGuildMessage, isPostMessage, isTradeMessage } from '@flyffweb/protocol';
 // 2026-11-10: the guild (guild/guildBook.ts, guild/guildHud.ts)
 import { GuildBook } from './guild/guildBook';
 import type { GuildContext, GuildEvent } from './guild/guildBook';
@@ -501,6 +504,9 @@ export class WorldScreen {
   private tradeTooltip: HTMLElement | null = null;
   /** 2026-11-10 (bank-mail): the bank's windows (bank/bankHud.ts), and the tooltip over a bank's item. */
   private bankHud: BankHud | undefined;
+  /** 2026-11-10 (bank-mail): the post's windows (post/postHud.ts) and the new-mail notice (hud/mailNotice.ts). */
+  private postHud: PostHud | undefined;
+  private mailNotice: MailNotice | undefined;
   private bankTooltip: HTMLElement | null = null;
   private readonly friendEvents: FriendEvent[] = [];
   /**
@@ -868,6 +874,8 @@ export class WorldScreen {
       if (isTradeMessage(value)) { this.tradeHud?.handle(objectId, value); continue; }
       // 2026-11-10 (bank-mail): the bank's windows hear its snapshots; the own state (WorldState.toOwn) applies the contents
       if (isBankMessage(value) && objectId === self?.objectId) this.bankHud?.handle(value);
+      // 2026-11-10 (bank-mail): the post's (no own state: its items and penya come as CREATEITEM and the penya's point)
+      if (isPostMessage(value)) { if (objectId === self?.objectId) this.postHud?.handle(value); continue; }
       if (value.type === 'block') this.tradeHud?.onBlock(value);
       // 2026-11-10: a blocked friend's whisper, and another's with /whisperrefuse (OnWhisper, DPClient.cpp:11790-11831, :11899-11903)
       if (value.type === 'whisper' && this.friendHud?.dropWhisper(value) === true) continue;
@@ -1792,11 +1800,39 @@ export class WorldScreen {
       showTooltip: (item, anchor, host) => this.showBankTooltip(item, anchor, host),
     }, doc);
     this.bankHud = bankHud;
-    // 2026-11-10 (bank-mail): a bank's item or penya dragged onto the bag (CWndInventory::OnChildNotify, WndField.cpp:1863-1950)
+    // 2026-11-10 (bank-mail): the post (post/postHud.ts)
+    const postHud = new PostHud(this.hudArt!, this.data!.texts, {
+      send: (bytes) => session.sendBankMail(bytes),
+      say: (text, color) => this.hud?.messages.add(text, color),
+      box: (text) => { if (this.messageBox?.isOpen !== true) this.messageBox?.open(text, 'ok', () => {}); },
+      confirm: (text, onOk) => this.messageBox?.open(text, 'okCancel', onOk),
+      bagItems: () => this.own?.inventory ?? null,
+      ownGold: () => this.own?.gold ?? 0,
+      worn: (objectId) => this.own?.equipmentObjectIds.includes(objectId) === true,
+      prop: (itemId) => this.data?.itemProps.get(itemId),
+      playerName: (playerId) => this.playerData.get(playerId).name,
+      friends: () => this.messenger.entries().map(([playerId]) => playerId).sort((a, b) => a - b)
+        .map((playerId) => this.playerData.get(playerId).name).filter((name) => name !== ''),
+      tradeOpen: () => tradeHud.windowOpen,
+      bankOpen: () => bankHud.isOpen,
+      bankPinOpen: () => bankHud.confirm.isOpen || bankHud.password.isOpen,
+      npcShopOpen: () => this.shopWindow?.frame.isOpen === true,
+      openInventory: () => { if (this.own && !inventoryWindow.frame.isOpen) inventoryWindow.toggle(this.own); },
+      reserve: (objectId, on) => this.reserveItem(objectId, on),
+      showTooltip: (item, anchor, host) => this.showBankTooltip(item, anchor, host),
+      now: () => Date.now(),
+    }, doc);
+    this.postHud = postHud;
+    this.mailNotice = new MailNotice(this.hudArt!, this.data!.texts.get('TID_MAIL_RECEIVE')?.text ?? 'New mail has arrived', doc);
+    friendHud.window.frame.body.append(this.mailNotice.messengerMark);
+    // 2026-11-10 (bank-mail): a bank's item or penya dragged onto the bag (CWndInventory::OnChildNotify, WndField.cpp:1863-1950),
+    // and a mail's (:2015-2032)
     inventoryWindow.foreignDrop = {
-      types: () => (bankHud.isOpen ? [BANK_DRAG, BANK_PENYA_DRAG] : []),
+      types: () => [...(bankHud.isOpen ? [BANK_DRAG, BANK_PENYA_DRAG] : []), ...(postHud.read.isOpen ? [MAIL_DRAG, MAIL_PENYA_DRAG] : [])],
       drop: (type, data) => {
-        if (type === BANK_PENYA_DRAG) bankHud.dropOnBag({ bank: Number(data) });
+        if (type === MAIL_DRAG) postHud.dropOnBag('item');
+        else if (type === MAIL_PENYA_DRAG) postHud.dropOnBag('gold');
+        else if (type === BANK_PENYA_DRAG) bankHud.dropOnBag({ bank: Number(data) });
         else if (type === BANK_DRAG) {
           const [bank, objectId] = data.split(':').map(Number);
           bankHud.dropOnBag({ bank: bank ?? -1, objectId: objectId ?? -1 });
@@ -1806,11 +1842,12 @@ export class WorldScreen {
     // the phone has no drag: a tap on a bag item or on the penya puts it in the trade
     inventoryWindow.trade = {
       // 2026-11-10: and a tap on a bag item puts it in the open jewel window, where a drop would take it
-      // 2026-11-10 (bank-mail): and into the open bank
-      active: () => tradeHud.windowOpen || this.jewels?.isOpen === true || bankHud.isOpen,
+      // 2026-11-10 (bank-mail): and into the open bank, or onto the mail being written
+      active: () => tradeHud.windowOpen || this.jewels?.isOpen === true || bankHud.isOpen || postHud.sending,
       tapItem: (id) => {
         if (tradeHud.windowOpen) tradeHud.tapItem(id);
         else if (bankHud.isOpen) bankHud.tapItem(id);
+        else if (postHud.sending) postHud.tapItem(id);
         else if (this.jewels?.isOpen === true && !this.jewels.tapItem(id)) this.sayRefusal({ kind: 'say', tid: 'TID_SBEVE_NOTUSEITEM' });
       },
       tapPenya: () => { if (bankHud.isOpen && !tradeHud.windowOpen) bankHud.tapPenya(); else tradeHud.tapPenya(); },
@@ -1847,7 +1884,7 @@ export class WorldScreen {
     this.optionWindow = this.audio === null ? undefined : new OptionWindow(this.hudArt!, this.audio, doc);
     for (const modal of [
       logOutBox.modal, reviveWindow.modal, skillWindow.warning.modal, this.dialog.modal, questWindow.modal, messageBox.modal, selectVillage.modal, partyHud.messageBox.modal,
-      friendHud.messageBox.modal, tradeHud.gold.window.modal!, ...guildHud.modals, bankHud.amount.modal,
+      friendHud.messageBox.modal, tradeHud.gold.window.modal!, ...guildHud.modals, bankHud.amount.modal, ...postHud.modals,
     ]) {
       modal.onChange = () => this.modalChanged();
     }
@@ -1861,7 +1898,7 @@ export class WorldScreen {
       ...(this.chatWindow instanceof NeuzChat ? this.chatWindow.elements : [this.chatWindow.element]), this.shopWindow.frame.element,
       this.petWindows.element, this.buffPet.element,
       ...questWindow.elements, this.dialog.element, this.moverMenu.element, ...partyHud.elements, ...friendHud.elements,
-      ...tradeHud.elements, ...guildHud.elements, ...bankHud.elements,
+      ...tradeHud.elements, ...guildHud.elements, ...bankHud.elements, ...postHud.elements, this.mailNotice.element,
       ...(this.personalShop?.elements.slice(1) ?? []),
     );
     // what the friend list said while the world loaded
@@ -2835,6 +2872,7 @@ export class WorldScreen {
       this.upgradeNpc?.safety.dismiss();
       this.jewels?.dismiss(); // 2026-11-10: and the jewel windows (:8198-8222)
       this.bankHud?.moved(); // 2026-11-10 (bank-mail): and the bank (:8313-8337)
+      this.postHud?.moved(); // and the post (:8383-8394)
     }
     this.upgrade?.step();
     this.syncBuffWings(performance.now());
@@ -2876,6 +2914,10 @@ export class WorldScreen {
     this.friendHud?.update();
     this.guildHud?.update();
     this.bankHud?.update(); // 2026-11-10 (bank-mail): drawn live from the own banks
+    this.postHud?.update();
+    // the new-mail notice follows the own MODE_MAILBOX (ADD_OBJ, MODIFYMODE)
+    const mailOn = ((self?.added.player?.mode ?? 0) & Mode.MAILBOX) !== 0;
+    if (this.mailNotice !== undefined && this.mailNotice.shown !== mailOn) this.mailNotice.set(mailOn);
     if (this.questTracker !== undefined || this.questWindow !== undefined) {
       const questState = this.questState();
       this.questTracker?.update(questState);
@@ -3349,8 +3391,9 @@ export class WorldScreen {
     const player = this.world?.movers.get(id)?.added.player;
     // 2026-11-10: "Trade" (MMI_TRADE, WndWorld.cpp:5251-5358): the request, to a player
     if (entry === MMI_TRADE && player !== undefined) {
-      // 2026-11-10 (bank-mail): not with the bank open (TID_GAME_BANKTRADESELF, WndWorld.cpp:5253-5259)
+      // 2026-11-10 (bank-mail): not with the bank open (TID_GAME_BANKTRADESELF, WndWorld.cpp:5253-5259), nor the post (:5260-5265)
       if (this.bankHud?.isOpen === true) { this.say('TID_GAME_BANKTRADESELF'); return; }
+      if (this.postHud?.isOpen === true) { this.say('TID_MAIL_OTHERWORK'); return; }
       this.tradeHud?.requestTrade(id);
       return;
     }
@@ -3644,6 +3687,8 @@ export class WorldScreen {
       this.shopWindow!.open(id, npc.name, data);
     } else if (entry === MMI.BANKING) {
       this.bankHud?.request(); // 2026-11-10 (bank-mail): Deposit (:5451-5536)
+    } else if (entry === MMI.POST) {
+      this.postHud?.open(); // 2026-11-10 (bank-mail): the Post Box's Mailbox (:4525-4612)
     } else if (entry === MMI.TELEPORTER && data !== undefined) {
       this.dialog?.close();
       this.teleporter!.open(id, data);
@@ -3960,6 +4005,10 @@ export class WorldScreen {
     // 2026-11-10 (bank-mail)
     this.bankHud?.reset();
     this.bankHud = undefined;
+    this.postHud?.reset();
+    this.postHud = undefined;
+    this.mailNotice?.element.remove();
+    this.mailNotice = undefined;
     this.showBankTooltip(null, null, null);
     this.element.removeEventListener('pointerdown', this.onFriendInput, true);
     this.groundItems?.dispose();

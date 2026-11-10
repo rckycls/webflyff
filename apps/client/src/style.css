@@ -3104,3 +3104,152 @@ fieldset:disabled .btn {
   .hud-amount-box, .hud-amount-box .hud-window-title { font-size: 14px; }
   .hud-amount-question { margin: 0; font-size: 14px; line-height: 17px; color: #000000; }
 }
+
+/* 2026-11-10 (bank-mail): the post (hud/post/postWindows.ts; research §2). CWndPost's two pages in its tab control, the strip at
+   the bottom; the Send page's labels on WndEditTile200 (group statics, white words); the inbox drawn as CWndPostReceive::OnDraw
+   draws it: WndPostTable.tga at alpha 150, rows of 40 px, the icon at (19, +2), WndNotUse.tga at alpha 110 over a read mail's, the
+   sender at (69, +3) black, the time left at (202, +3) in its colour, the title at (69, +18) in RGB(0, 0, 190), the chosen row
+   ARGB(32, 190, 0, 0). The new-mail mark blinks between alpha 50 and 255 (WndMessenger.cpp:622-639). */
+.hud-post-page { position: absolute; }
+.hud-post-page[hidden] { display: none; }
+.hud-post.is-waiting > .hud-window-body { pointer-events: none; }
+.hud-post-text {
+  position: absolute; left: 3px; top: 3px; width: calc(100% - 6px); height: calc(100% - 6px); box-sizing: border-box; padding: 0;
+  border: 0; outline: none; resize: none; background: transparent; color: #000000; font: inherit; line-height: 14px;
+}
+.hud-post-slot { background-repeat: no-repeat; }
+.hud-post-slot img { position: absolute; left: 0; top: 0; width: 32px; height: 32px; pointer-events: none; }
+.hud-post-slot span, .hud-post-row-icon span {
+  position: absolute; right: 1px; bottom: 0; color: #b0b0f0; text-shadow: 1px 1px #0000ff; font: bold 10px/11px Arial, sans-serif;
+  pointer-events: none;
+}
+.hud-post-coin { background-repeat: no-repeat; cursor: pointer; }
+.hud-post-table { position: absolute; opacity: 0.588; background-repeat: no-repeat; pointer-events: none; }
+.hud-post-list {
+  position: absolute; overflow: hidden scroll; scrollbar-width: none; scroll-snap-type: y mandatory; font: 12px/14px Arial, sans-serif;
+}
+.hud-post-list::-webkit-scrollbar { display: none; }
+.hud-post-row { position: relative; height: 40px; scroll-snap-align: start; cursor: pointer; user-select: none; }
+.hud-post-row[aria-selected=true] { background: rgba(190, 0, 0, 0.125); }
+.hud-post-row > div { position: absolute; white-space: nowrap; pointer-events: none; }
+.hud-post-row-icon { left: 6px; top: 6px; width: 32px; height: 32px; }
+.hud-post-row-icon img { width: 32px; height: 32px; }
+.hud-post-row-read { position: absolute; left: 0; top: -1px; width: 32px; height: 32px; opacity: 0.431; background-repeat: no-repeat; }
+.hud-post-row-sender { left: 56px; top: 7px; color: #000000; }
+.hud-post-row-time { left: 189px; top: 7px; }
+.hud-post-row-time[data-late] { left: 186px; }
+.hud-post-row-title { left: 56px; top: 22px; color: rgb(0, 0, 190); }
+.hud-post-read .hud-res-edit-words { position: absolute; left: 3px; top: 2px; right: 3px; white-space: nowrap; overflow: hidden; color: #000000; }
+.hud-post-question .hud-res-text-body { color: #000000; white-space: pre-line; }
+@keyframes hud-mail-blink { from { opacity: 0.196; } to { opacity: 1; } }
+.hud-messenger-mail { position: absolute; animation: hud-mail-blink 0.45s ease-in-out infinite alternate; }
+.hud-mail-notice {
+  position: absolute; z-index: 20; top: 4px; right: calc(var(--game-safe-right, 0px) + 8px); width: 24px; height: 24px;
+  animation: hud-mail-blink 0.45s ease-in-out infinite alternate;
+}
+.world:has(.hud-navigator:not([hidden])) .hud-mail-notice { right: calc(var(--game-safe-right, 0px) + 140px); }
+:is(.hud-mail-notice, .hud-messenger-mail) img { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
+:is(.hud-mail-notice, .hud-messenger-mail)[hidden] { display: none; }
+
+/* The phone: the post and the read window are panels beside the bag (as the trade and the bank are), the tabs two big buttons on
+   top, the Send page a form a finger can fill (the receiver, title and text on the phone keyboard; the penya on the number pad of
+   the shop), the inbox rows taller and scrolled by touch; a tap reads a mail, attaches the bag item tapped, takes the item or the
+   penya of a mail. Every word 14 px or more, every field 16 px. */
+@media (max-width: 1000px) and (pointer: coarse) {
+  .world:has(:is(.hud-post, .hud-post-read):not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack) { visibility: hidden; }
+  .hud-mail-notice { top: 56px; width: 32px; height: 32px; }
+  :is(.hud-post, .hud-post-read) {
+    left: 8px !important; top: 8px !important; transform: none !important; z-index: 60 !important;
+    width: calc(100% - var(--bag-window-width, 60%) - 28px) !important; min-width: 320px;
+    height: calc(100% - var(--hud-taskbar-height, 48px) - 16px) !important;
+    border-radius: 6px; background: repeating-linear-gradient(#fdf5ee 0 2px, #f6e6dc 2px 4px); box-shadow: inset 0 0 0 2px #dba98c, 0 2px 8px #0005;
+    font-size: 14px;
+  }
+  :is(.hud-post, .hud-post-read) > .hud-window-frame { display: none; }
+  :is(.hud-post, .hud-post-read) > .hud-window-title { height: 26px !important; border-radius: 6px 6px 0 0; background: linear-gradient(#f7d8c4, #e2b394); font-size: 14px; }
+  :is(.hud-post, .hud-post-read) > .hud-window-close { left: auto !important; right: 8px; }
+  :is(.hud-post, .hud-post-read) > .hud-window-body {
+    left: 4px !important; top: 30px !important; width: calc(100% - 8px) !important; height: calc(100% - 34px) !important; overflow: hidden;
+  }
+  :is(.hud-post, .hud-post-read) .hud-edit-tiles { display: none; }
+  :is(.hud-post, .hud-post-read) :is(.hud-res-edit, .hud-res-text) { background: #ffffff; box-shadow: inset 0 0 0 1px #dba98c; border-radius: 4px; }
+  :is(.hud-post, .hud-post-read) .hud-res-static-text { position: static; display: block; font: 14px/30px Arial, sans-serif; color: #3d5f80; text-shadow: none; white-space: nowrap; }
+  :is(.hud-post, .hud-post-read) input, .hud-post-text { font-size: 16px !important; }
+  :is(.hud-post, .hud-post-read, .hud-post-question, .hud-post-request) .hud-picture-button {
+    box-sizing: border-box; height: 36px !important; border: 1px solid #b07d5c; border-radius: 4px; background: linear-gradient(#fff7ef, #ecd2bd) !important;
+    color: #3a2414; font: 14px/34px Arial, sans-serif; text-align: center; overflow: hidden; white-space: nowrap;
+  }
+  :is(.hud-post, .hud-post-read, .hud-post-question, .hud-post-request) .hud-picture-button::after { content: attr(aria-label); }
+  :is(.hud-post-question, .hud-post-request), :is(.hud-post-question, .hud-post-request) :is(.hud-res-static-text, .hud-res-text-body, .hud-window-title) { font-size: 14px; }
+  /* the tab control: the tabs on top as two buttons, the page under them */
+  .hud-post .hud-post-tabs { position: absolute !important; inset: 0 !important; width: auto !important; height: auto !important; display: flex; flex-direction: column; gap: 6px; }
+  .hud-post .hud-post-strip { position: relative !important; left: auto !important; top: auto !important; width: 100% !important; height: 36px !important; order: -1; }
+  .hud-post .hud-tab-strip { position: static; display: flex; gap: 4px; width: 100% !important; height: 36px !important; }
+  .hud-post .hud-tab-tile { display: none; }
+  .hud-post .hud-tab-title {
+    position: static !important; flex: 1; width: auto !important; height: 36px; border: 1px solid #b07d5c; border-radius: 4px;
+    background: linear-gradient(#fff7ef, #ecd2bd); color: #3a2414; font: 14px/34px Arial, sans-serif; text-align: center;
+  }
+  .hud-post .hud-tab-title[aria-pressed=true] { background: #e2a06e; color: #000000; font-weight: bold; }
+  .hud-post .hud-post-page { position: relative !important; left: auto !important; top: auto !important; width: 100% !important; height: auto !important; flex: 1 1 auto; min-height: 0; }
+  .hud-post .hud-post-page[hidden] { display: none !important; }
+  /* the Send page: Receiver, Title, the text, then the item, the penya and Send, then the fee */
+  .hud-post [data-page="send"]:not([hidden]) {
+    display: grid; grid-template-columns: 72px 1fr 96px; grid-template-rows: 32px 32px minmax(48px, 1fr) 44px 22px; gap: 4px 6px;
+    overflow-y: auto;
+  }
+  .hud-post [data-page="send"] > * { position: relative !important; left: auto !important; top: auto !important; width: auto !important; height: auto !important; }
+  .hud-post [data-page="send"] [data-control="WIDC_STATIC1"] { grid-area: 1 / 1; }
+  .hud-post [data-page="send"] [data-control="WIDC_COMBOBOX1"] { grid-area: 1 / 2 / 2 / 4; }
+  .hud-post [data-page="send"] [data-control="WIDC_STATIC5"] { grid-area: 2 / 1; }
+  .hud-post [data-page="send"] [data-control="WIDC_EDIT2"] { grid-area: 2 / 2 / 3 / 4; }
+  .hud-post [data-page="send"] [data-control="WIDC_EDIT3"] { grid-area: 3 / 1 / 4 / 4; background: #ffffff; box-shadow: inset 0 0 0 1px #dba98c; border-radius: 4px; }
+  .hud-post [data-page="send"] [data-control="WIDC_STATIC3"] { grid-area: 4 / 1; width: 44px !important; height: 44px !important; border-radius: 4px; background: #f3e4d8 !important; box-shadow: inset 0 0 0 1px #dba98c; }
+  .hud-post [data-page="send"] [data-control="WIDC_STATIC2"] { display: none; }
+  .hud-post [data-page="send"] [data-control="WIDC_EDIT4"] { grid-area: 4 / 2; }
+  .hud-post [data-page="send"] [data-control="WIDC_EDIT4"]::before { content: 'Penya'; position: absolute; left: 6px; top: 1px; font: 14px/14px Arial, sans-serif; color: #3d5f80; }
+  .hud-post [data-page="send"] [data-control="WIDC_SEND"] { grid-area: 4 / 3; width: 100% !important; height: 44px !important; }
+  .hud-post [data-page="send"] [data-control="WIDC_STATIC4"] { grid-area: 5 / 1 / 6 / 4; }
+  .hud-post [data-page="send"] [data-control="WIDC_STATIC4"] .hud-res-static-text { font: 14px/22px Arial, sans-serif; color: #000000; text-align: center; }
+  .hud-post [data-page="send"] :is(.hud-res-edit, .hud-res-combo) input { position: absolute; inset: 0; width: 100% !important; height: 100% !important; box-sizing: border-box; padding: 0 6px; }
+  .hud-post [data-page="send"] [data-control="WIDC_EDIT4"] input { padding-top: 14px; }
+  .hud-post [data-page="send"] .hud-res-combo-drop { left: auto !important; right: 4px; top: 8px !important; }
+  .hud-post [data-page="send"] .hud-res-combo-list { font-size: 14px; }
+  .hud-post .hud-post-slot img { width: 40px; height: 40px; left: 2px; top: 2px; }
+  :is(.hud-post, .hud-post-read) .hud-post-slot span { font-size: 14px; line-height: 14px; color: #1010ff; text-shadow: 1px 1px #ffffff; }
+  /* the inbox: the rows taller, scrolled by a finger */
+  .hud-post .hud-post-inbox { position: absolute !important; inset: 0 !important; width: auto !important; height: auto !important; }
+  .hud-post .hud-post-table, .hud-post .hud-post-scroll { display: none; }
+  .hud-post .hud-post-list {
+    position: absolute !important; inset: 0 !important; width: auto !important; height: auto !important; overflow-y: auto; scroll-snap-type: none;
+    touch-action: pan-y; border-radius: 4px; background: #fffaf5; box-shadow: inset 0 0 0 1px #dba98c; font: 14px/17px Arial, sans-serif;
+  }
+  .hud-post .hud-post-row { height: 52px; border-bottom: 1px solid #ead2c2; }
+  .hud-post .hud-post-row-icon { left: 6px; top: 6px; width: 40px; height: 40px; }
+  .hud-post .hud-post-row-icon img, .hud-post .hud-post-row-read { width: 40px; height: 40px; background-size: 40px 40px; }
+  .hud-post .hud-post-row-icon span { font-size: 14px; line-height: 14px; color: #1010ff; text-shadow: 1px 1px #ffffff; }
+  .hud-post .hud-post-row-sender { left: 54px; top: 7px; right: 70px; overflow: hidden; text-overflow: ellipsis; font-weight: bold; }
+  .hud-post .hud-post-row-time, .hud-post .hud-post-row-time[data-late] { left: auto; right: 8px; top: 7px; }
+  .hud-post .hud-post-row-title { left: 54px; top: 27px; right: 8px; overflow: hidden; text-overflow: ellipsis; }
+  /* the read window: Sender, Title, the text, the item and the penya, the buttons */
+  .hud-post-read > .hud-window-body {
+    display: grid; grid-template-columns: 64px 1fr 1fr 1fr; grid-template-rows: 32px 32px minmax(48px, 1fr) 46px 38px; gap: 4px 6px;
+  }
+  .hud-post-read > .hud-window-body > * { position: relative !important; left: auto !important; top: auto !important; width: auto !important; height: auto !important; }
+  .hud-post-read [data-control="WIDC_STATIC1"] { grid-area: 1 / 1; }
+  .hud-post-read [data-control="WIDC_EDIT1"] { grid-area: 1 / 2 / 2 / 5; }
+  .hud-post-read [data-control="WIDC_STATIC2"] { grid-area: 2 / 1; }
+  .hud-post-read [data-control="WIDC_EDIT2"] { grid-area: 2 / 2 / 3 / 5; }
+  .hud-post-read [data-control="WIDC_TEXT1"] { grid-area: 3 / 1 / 4 / 5; }
+  .hud-post-read [data-control="WIDC_TEXT1"] .hud-res-text-body { position: absolute; inset: 4px 6px !important; width: auto !important; height: auto !important; overflow-y: auto; font-size: 14px; line-height: 17px; color: #000000; white-space: pre-wrap; }
+  .hud-post-read [data-control="WIDC_TEXT1"] .hud-res-scroll { display: none; }
+  .hud-post-read .hud-res-edit-words { font: 14px/30px Arial, sans-serif; top: 0; left: 6px; }
+  .hud-post-read [data-control="WIDC_STATIC3"] { grid-area: 4 / 1; width: 44px !important; height: 44px !important; border-radius: 4px; background: #f3e4d8 !important; box-shadow: inset 0 0 0 1px #dba98c; }
+  .hud-post-read [data-control="WIDC_STATIC3"] img { width: 40px; height: 40px; left: 2px; top: 2px; }
+  .hud-post-read [data-control="WIDC_STATIC4"] { grid-area: 4 / 2; width: 40px !important; height: 40px !important; background-position: center; border-radius: 4px; box-shadow: inset 0 0 0 1px #dba98c; }
+  .hud-post-read [data-control="WIDC_EDIT3"] { grid-area: 4 / 3 / 5 / 5; }
+  .hud-post-read [data-control="WIDC_BUTTON1"] { grid-area: 5 / 1 / 6 / 3; width: 100% !important; }
+  .hud-post-read [data-control="WIDC_BUTTON2"] { grid-area: 5 / 3; width: 100% !important; }
+  .hud-post-read [data-control="WIDC_BUTTON3"] { grid-area: 5 / 4; width: 100% !important; }
+  .hud-post-read :is([data-control="WIDC_STATIC3"], [data-control="WIDC_STATIC4"])[data-filled="true"] { box-shadow: inset 0 0 0 2px #e2a06e; }
+}
