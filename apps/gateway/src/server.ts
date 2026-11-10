@@ -125,6 +125,8 @@ export async function startGateway(config: GatewayConfig, log: Logger = consoleL
     log.info(`open ${address} ${routeKey}`);
     const life = relay.done.then((result) => {
       giveBack();
+      // the certifier allow-list's reason (website spec §3.5): a word, never what the packet held
+      if (result.refused !== undefined) log.info(`forbidden ${address} ${routeKey} ${result.refused}`);
       log.info(closeLine(address, routeKey, result.closeCode, result.bytesUp, result.bytesDown));
       relays.delete(life);
     });

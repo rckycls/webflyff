@@ -2,8 +2,8 @@ import net from 'node:net';
 import type { WebSocket } from 'ws';
 import { afterEach, expect, it, vi } from 'vitest';
 import {
-  ArWriter, CloseCode, DPID_UNKNOWN, PacketType, bytesToHex, encodeGatewayClientAddr, encodeProtocolIdBody, encodeServerFrame,
-  encodeWorldKeepAlive,
+  ArWriter, CloseCode, DPID_UNKNOWN, PacketType, bytesToHex, encodeCertify, encodeCloseExistingConnection, encodeErrorReply,
+  encodeGatewayClientAddr, encodeKeepAlive, encodeProtocolIdBody, encodeServerFrame, encodeWorldKeepAlive, hashPassword,
 } from '@flyffweb/protocol';
 import { startFakeFlyffServer, type FakeFlyffServerOptions } from '@flyffweb/testkit';
 import { DEFAULT_LIMITS } from '../src/config';
@@ -116,10 +116,12 @@ it('sends the client address first on certifier routes, then relays both ways', 
   const server = await startFakeFlyffServer({ onBody: (b, reply) => { if (b[0] === 0xfc) reply(new Uint8Array([0xfd, 0, 0, 0])); } });
   cleanups.push(() => server.close());
   const h = await harness({ route: { host: '127.0.0.1', port: server.port, role: 'certifier' }, clientAddress: '10.0.0.9', sendClientAddr: true, limits: DEFAULT_LIMITS });
-  h.client.send(new Uint8Array([0xfc, 0, 0, 0]));          // may arrive before the protocol ID: must be held
+  // a CERTIFY as the browser sends it (the certifier route lets only the browser's packets through, website spec §3.5)
+  const certify = encodeCertify('hero_01', hashPassword('abc12345'));
+  h.client.send(certify);                                   // may arrive before the protocol ID: must be held
   await server.waitForBodies(2);
   expect(bytesToHex(server.received[0]!)).toBe(bytesToHex(encodeGatewayClientAddr('10.0.0.9')));
-  expect(bytesToHex(server.received[1]!)).toBe('fc000000');
+  expect(bytesToHex(server.received[1]!)).toBe(bytesToHex(certify));
   await expect.poll(() => h.messages.map(bytesToHex)).toEqual(['fd000000']); // protocol-ID body never forwarded
   expect(server.crcErrors).toBe(0);
 });
@@ -142,11 +144,11 @@ it.each<{ name: string; role: Role; sendClientAddr: boolean }>([
 ])('never sends the client address on $name', async ({ role, sendClientAddr }) => {
   const server = await fakeServer();
   const h = await harness(relayOptions(server.port, role, { sendClientAddr }));
-  h.client.send(new Uint8Array([0xfc, 0, 0, 0]));
-  h.client.send(new Uint8Array([0xfd, 0, 0, 0]));
+  h.client.send(encodeKeepAlive());
+  h.client.send(encodeErrorReply());
   await server.waitForBodies(2);
   // The client address would have been the first body.
-  expect(server.received.map(bytesToHex)).toEqual(['fc000000', 'fd000000']);
+  expect(server.received.map(bytesToHex)).toEqual(['18000000', 'fe000000']);
   expect(server.crcErrors).toBe(0);
 });
 
@@ -210,13 +212,14 @@ it('closes with 4004 on a packet one byte over the limit, and relays one at the 
 it('holds up to four packets sent before the protocol ID and sends them in order', async () => {
   const server = await fakeServer({ holdProtocolId: true });
   const h = await harness(relayOptions(server.port, 'certifier', { sendClientAddr: true }));
-  for (let n = 1; n <= 4; n++) h.client.send(new Uint8Array([0xfc, n, 0, 0]));
+  // KEEP_ALIVE and ERROR, by turns: packets the certifier route lets through (website spec §3.5)
+  for (let n = 1; n <= 4; n++) h.client.send(n % 2 === 1 ? encodeKeepAlive() : encodeErrorReply());
   await h.flush(); // the relay has all four, and the server has not announced its protocol ID
   expect(server.received).toEqual([]);
 
   server.releaseProtocolId();
   await server.waitForBodies(5);
-  expect(server.received.map(bytesToHex)).toEqual([clientAddr('10.0.0.9'), 'fc010000', 'fc020000', 'fc030000', 'fc040000']);
+  expect(server.received.map(bytesToHex)).toEqual([clientAddr('10.0.0.9'), '18000000', 'fe000000', '18000000', 'fe000000']);
   expect(server.crcErrors).toBe(0);
 
   h.client.close(1000);
@@ -391,11 +394,11 @@ it('destroys the TCP connection when the browser closes the WebSocket', async ()
 
 it('counts the body bytes it relayed each way, and nothing else', async () => {
   const server = await fakeServer({
-    onBody: (b, reply) => { if (b[0] === 0xfc) reply(new Uint8Array([0xfd, 1, 2, 3, 4])); },
+    onBody: (b, reply) => { if (b[0] === 0x18 || b[0] === 0xfe) reply(new Uint8Array([0xfd, 1, 2, 3, 4])); },
   });
   const h = await harness(relayOptions(server.port, 'certifier', { sendClientAddr: true }));
-  h.client.send(new Uint8Array([0xfc, 0, 0]));          // 3 bytes
-  h.client.send(new Uint8Array([0xfc, 9, 9, 9, 9]));    // 5 bytes
+  h.client.send(encodeKeepAlive());                     // 4 bytes
+  h.client.send(encodeErrorReply());                    // 4 bytes
   await expect.poll(() => h.messages.length).toBe(2);   // 2 x 5 bytes back
   h.client.close(1000);
   // Not counted: the 8-byte protocol-ID body, the injected client-address packet, the 13-byte frame headers.
@@ -436,4 +439,44 @@ it('throws at once, and opens no connection, for a client address that is not do
     expect(() => startRelay(ws, relayOptions(1, 'certifier', { clientAddress })), JSON.stringify(clientAddress)).toThrow(/clientAddress/);
   }
   expect(connect).not.toHaveBeenCalled();
+});
+
+// The certifier allow-list (website spec §3.5): the close-existing packet whose `'` would run SQL in the certifier.
+const sqlClose = encodeCloseExistingConnection("x';DROP TABLE ACCOUNT_TBL--", 'a'.repeat(32));
+
+it('ends a certifier connection with 4006 on a refused packet, which never reaches the certifier', async () => {
+  const server = await fakeServer();
+  const h = await harness(relayOptions(server.port, 'certifier'));
+  h.client.send(encodeKeepAlive());
+  await server.waitForBodies(1);
+  h.client.send(sqlClose);
+  await expect(h.closed).resolves.toEqual({ code: CloseCode.FORBIDDEN_PACKET });
+  await expect(h.result).resolves.toMatchObject({ closeCode: 4006, refused: 'account' });
+  expect(server.received.map(bytesToHex)).toEqual([bytesToHex(encodeKeepAlive())]);
+});
+
+it('refuses a certifier packet held before the protocol ID too', async () => {
+  const server = await fakeServer({ holdProtocolId: true });
+  const h = await harness(relayOptions(server.port, 'certifier'));
+  h.client.send(new ArWriter().u32(PacketType.PING).toBytes());
+  await expect(h.result).resolves.toMatchObject({ closeCode: 4006, refused: 'type' });
+  expect(server.received).toEqual([]);
+});
+
+it('passes the browser certifier packets, and the same bytes on a login route', async () => {
+  const certifier = await fakeServer();
+  const h = await harness(relayOptions(certifier.port, 'certifier'));
+  const allowed = [encodeCertify('hero_01', hashPassword('abc12345')), encodeCloseExistingConnection('hero_01', hashPassword('abc12345')),
+    encodeKeepAlive(), encodeErrorReply()];
+  for (const body of allowed) h.client.send(body);
+  await certifier.waitForBodies(4);
+  expect(certifier.received.map(bytesToHex)).toEqual(allowed.map(bytesToHex));
+
+  const login = await fakeServer();
+  const l = await harness(relayOptions(login.port, 'login'));
+  l.client.send(sqlClose);
+  await login.waitForBodies(1);
+  expect(bytesToHex(login.received[0]!)).toBe(bytesToHex(sqlClose));
+  const result = l.close().then(() => l.result);
+  await expect(result).resolves.not.toHaveProperty('refused');
 });

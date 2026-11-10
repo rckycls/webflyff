@@ -2,7 +2,7 @@ import http from 'node:http';
 import net from 'node:net';
 import { afterEach, expect, it, vi } from 'vitest';
 import { WebSocket, type ClientOptions } from 'ws';
-import { bytesToHex, encodeGatewayClientAddr } from '@flyffweb/protocol';
+import { bytesToHex, encodeCloseExistingConnection, encodeGatewayClientAddr } from '@flyffweb/protocol';
 import { startFakeFlyffServer, type FakeFlyffServer, type FakeFlyffServerOptions } from '@flyffweb/testkit';
 import { DEFAULT_LIMITS, type GatewayConfig, type Limits } from '../src/config';
 import { startGateway, type Gateway } from '../src/server';
@@ -418,4 +418,13 @@ it('closes with 1011, logs nothing and gives both slots back when the relay cann
   next.ws.send(keepAlive);
   await t.fake.waitForBodies(1);
   expect(t.logs).toEqual([`open 127.0.0.1 ${LOGIN}`]);
+});
+
+it('logs the certifier allow-list refusal, and nothing the packet held', async () => {
+  const t = await setup();
+  const browser = await t.browser(CERTIFIER);
+  browser.ws.send(encodeCloseExistingConnection("x';DROP TABLE ACCOUNT_TBL--", 'a'.repeat(32)));
+  await expect(browser.closed).resolves.toBe(4006);
+  await expect.poll(() => t.logs.filter((line) => line.startsWith('forbidden '))).toEqual(['forbidden 127.0.0.1 172.31.238.55:23000 account']);
+  for (const line of t.logs) expect(line).not.toContain('DROP');
 });
