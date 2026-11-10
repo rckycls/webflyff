@@ -43,7 +43,7 @@ export const EXTRACTION: ResLayout = {
   title: 'Create Jewels', width: 272, height: 208,
   controls: [
     { kind: 'static', id: 'WIDC_PIC_SLOT', rect: [112, 24, 144, 56], picture: SLOT },
-    { kind: 'text', id: 'WIDC_TEXT1', rect: [16, 68, 250, 134], tile: EDIT },
+    { kind: 'text', id: 'WIDC_TEXT1', rect: [16, 68, 250, 134], tile: EDIT, scroll: true },
     { kind: 'button', id: 'WIDC_START', rect: [98, 144, 162, 164], picture: 'ButtStart.bmp', label: 'Start', quarter: 64 },
   ],
 };
@@ -57,7 +57,7 @@ export const SMELT_JEWEL: ResLayout = {
   controls: [
     { kind: 'static', id: 'WIDC_STATIC6', rect: [16, 16, 176, 246], picture: 'Window01.bmp' },
     { kind: 'custom', id: 'WIDC_CUSTOM1', rect: [16, 16, 176, 246] },
-    { kind: 'text', id: 'WIDC_TEXT1', rect: [12, 260, 236, 358], tile: EDIT },
+    { kind: 'text', id: 'WIDC_TEXT1', rect: [12, 260, 236, 358], tile: EDIT, scroll: true },
     ...SOCKET_IDS.map((id, i) => ({ kind: 'static' as const, id, rect: [192, 32 + 42 * i, 224, 64 + 42 * i] as const, picture: SLOT })),
     { kind: 'button', id: 'WIDC_START', rect: [90, 366, 154, 386], picture: 'ButtStart.bmp', label: 'Start', quarter: 64 },
   ],

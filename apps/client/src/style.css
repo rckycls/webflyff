@@ -2882,3 +2882,69 @@ fieldset:disabled .btn {
   .hud-vendor-sell, .hud-vendor-buy, .hud-vendor-sell :is(input, button), .hud-vendor-buy :is(input, button, output) { font-size: 14px; }
   .world:has(.hud-vendor:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack) { visibility: hidden; }
 }
+
+/* 2026-11-10: the jewel windows (items/jewelWindows.ts; docs/superpowers/specs/2026-11-10-jewels-research.md §2-§3).
+   Jewel Setting's weapon over Window01 (its icon in place of the turning model) and the white of START's turn
+   (OnDraw :20285-20297); each socket's cover, WndDisableRed/Blue/Black.bmp, under its jewel. */
+.hud-jewel .hud-res-slot { left: 0; top: 0; background-repeat: no-repeat; }
+.hud-jewel-setting [data-control="WIDC_CUSTOM1"] { display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.hud-jewel-setting [data-control="WIDC_CUSTOM1"]::after {
+  content: ''; position: absolute; inset: 0; background: rgb(240, 255, 255); opacity: var(--jewel-white, 0); pointer-events: none;
+}
+.hud-jewel-weapon { width: 64px; height: 64px; image-rendering: pixelated; pointer-events: none; }
+
+/* The phone: the window a panel at the left beside the phone's bag (as the trade and the shop), a tap putting a bag item
+   in and a tap on a filled slot taking it out; the slots 44 px, the description and START's word 14 px. */
+@media (max-width: 1000px) and (pointer: coarse) {
+  .world:has(.hud-jewel:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack) { visibility: hidden; }
+  .hud-jewel {
+    left: 8px !important; top: 8px !important; transform: none !important; z-index: 60 !important;
+    width: calc(100% - var(--bag-window-width, 60%) - 28px) !important; min-width: 300px;
+    height: calc(100% - var(--hud-taskbar-height, 48px) - 16px) !important;
+    border-radius: 6px; background: repeating-linear-gradient(#fdf5ee 0 2px, #f6e6dc 2px 4px); box-shadow: inset 0 0 0 2px #dba98c, 0 2px 8px #0005;
+  }
+  .hud-jewel > .hud-window-frame { display: none; }
+  .hud-jewel > .hud-window-title { height: 26px !important; border-radius: 6px 6px 0 0; background: linear-gradient(#f7d8c4, #e2b394); font-size: 14px; }
+  .hud-jewel > .hud-window-close { left: auto !important; right: 8px; }
+  .hud-jewel > .hud-window-body {
+    left: 4px !important; top: 30px !important; width: calc(100% - 8px) !important; height: calc(100% - 34px) !important;
+    display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; justify-items: center; align-items: center; overflow-y: auto;
+  }
+  .hud-jewel > .hud-window-body > * { position: relative !important; left: auto !important; top: auto !important; }
+  .hud-jewel-extraction > .hud-window-body { grid-template-rows: 48px minmax(64px, 1fr) 40px; }
+  .hud-jewel-setting > .hud-window-body { grid-template-rows: 96px 48px minmax(64px, 1fr) 40px; }
+  .hud-jewel [data-control="WIDC_PIC_SLOT"] { grid-area: 1 / 1 / 2 / -1; }
+  .hud-jewel :is([data-control="WIDC_PIC_SLOT"], [data-socket]) {
+    width: 44px !important; height: 44px !important; background-position: 6px 6px; border-radius: 4px; box-shadow: inset 0 0 0 1px #dba98c;
+  }
+  .hud-jewel :is([data-control="WIDC_PIC_SLOT"], [data-socket]) .hud-res-slot { left: 6px; top: 6px; }
+  .hud-jewel :is([data-control="WIDC_PIC_SLOT"], [data-socket])[data-filled] { box-shadow: inset 0 0 0 2px #3d8bd6; }
+  .hud-jewel-setting :is([data-control="WIDC_STATIC6"], [data-control="WIDC_CUSTOM1"]) {
+    grid-area: 1 / 1 / 2 / -1; width: 100% !important; height: 96px !important; background-size: 100% 100%;
+  }
+  .hud-jewel-setting [data-control="WIDC_CUSTOM1"][data-filled] { box-shadow: inset 0 0 0 2px #3d8bd6; border-radius: 6px; }
+  .hud-jewel-setting [data-control="WIDC_STATIC1"] { grid-area: 2 / 1; }
+  .hud-jewel-setting [data-control="WIDC_STATIC2"] { grid-area: 2 / 2; }
+  .hud-jewel-setting [data-control="WIDC_STATIC3"] { grid-area: 2 / 3; }
+  .hud-jewel-setting [data-control="WIDC_STATIC4"] { grid-area: 2 / 4; }
+  .hud-jewel-setting [data-control="WIDC_STATIC5"] { grid-area: 2 / 5; }
+  .hud-jewel [data-control="WIDC_TEXT1"] {
+    grid-column: 1 / -1; align-self: stretch; width: 100% !important; height: auto !important; min-height: 64px;
+    border-radius: 4px; background: #fffaf6; box-shadow: inset 0 0 0 1px #e2cfc0;
+  }
+  .hud-jewel [data-control="WIDC_TEXT1"] > :not(.hud-res-text-body) { display: none; }
+  .hud-jewel .hud-res-text-body {
+    position: absolute !important; inset: 4px 6px !important; width: auto !important; height: auto !important;
+    overflow-y: auto; font-size: 14px; line-height: 17px;
+  }
+  .hud-jewel-extraction [data-control="WIDC_TEXT1"] { grid-row: 2; }
+  .hud-jewel-setting [data-control="WIDC_TEXT1"] { grid-row: 3; }
+  .hud-jewel [data-control="WIDC_START"] { grid-column: 1 / -1; }
+  .hud-jewel .hud-picture-button {
+    box-sizing: border-box; width: 50% !important; min-width: 120px; height: 36px !important; border: 1px solid #b07d5c; border-radius: 4px;
+    background: linear-gradient(#fff7ef, #ecd2bd) !important; color: #3a2414; font: 14px/34px Arial, sans-serif; text-align: center;
+  }
+  .hud-jewel .hud-picture-button::after { content: attr(aria-label); }
+  .hud-jewel .hud-picture-button:disabled { opacity: 0.55; background: #d9c8bb !important; }
+  .hud-jewel-weapon { width: 64px; height: 64px; }
+}
