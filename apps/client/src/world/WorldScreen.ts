@@ -138,6 +138,7 @@ import { UpgradeCursor } from './items/upgradeCursor';
 import { ConfirmBoxes, boxOf } from './items/confirmBoxes';
 import { ticketInUse } from './items/itemWindows';
 import { PiercingWindow, SmeltSafetyWindow } from './items/upgradeNpcWindows';
+import { JewelWindows } from './items/jewelWindows';
 import { WeaponGlows, glowOf, weaponOption } from './render/weaponGlow';
 import { ParticleLayer } from './render/ParticleLayer';
 import { PetParticles, createPetParticle } from './pets/petParticles';
@@ -434,6 +435,8 @@ export class WorldScreen {
   private bagDieFlag = false;
   /** 2026-11-05: the Upgrade Specialist's windows. */
   private upgradeNpc: { piercing: PiercingWindow; safety: SmeltSafetyWindow } | undefined;
+  /** 2026-11-10: Peach's Create Jewels and Jewel Setting (items/jewelWindows.ts). */
+  private jewels: JewelWindows | undefined;
   /** 2026-11-09: the held weapons' upgrade and element glow (render/weaponGlow.ts). */
   private readonly weaponGlows = new WeaponGlows((effect) => this.effects?.play(effect));
   /** 2026-11-05: the movers whose buff wings show (`m_pSfxWing`), and when they were last looked at. */
@@ -848,6 +851,8 @@ export class WorldScreen {
       // 2026-11-05: the summons, a name changed, a sex or a face changed (OnSummon, OnSetPlayerName, OnSexChange, OnChangeFace)
       if (value.type === 'summon') { this.itemWindows?.onSummon(value); continue; }
       if (value.type === 'smeltSafety') { this.upgradeNpc?.safety.onResult(value.result); continue; }
+      // 2026-11-10: Create Jewels' and Jewel Setting's answers (OnUltimateWeapon, DPClient.cpp:11577-11643)
+      if (value.type === 'ultimate') { this.jewels?.onUltimate(value); continue; }
       // 2026-11-09 (pets R3): the food mill's answer (OnPetFoodMill, DPClient.cpp:16619-16632)
       if (value.type === 'petMill') { this.petCare?.onMill(value.result, value.count); continue; }
       // 2026-11-09 (pets R4): the pet trade's answer (OnQuePetResurrectionResult, DPClient.cpp:17423-17431)
@@ -1333,6 +1338,22 @@ export class WorldScreen {
       ui: { art: this.hudArt!, doc, layer: () => this.hud?.element ?? null },
     };
     this.upgradeNpc = { piercing: new PiercingWindow(upgradeNpcHost), safety: new SmeltSafetyWindow(upgradeNpcHost) };
+    // 2026-11-10: Peach's Create Jewels and Jewel Setting (items/jewelWindows.ts)
+    this.jewels = new JewelWindows({
+      own: () => this.own, props: this.data!.itemProps, ultimate: () => this.data?.ultimate,
+      text: (tid) => this.data?.texts.get(tid)?.text ?? '',
+      alert: (text) => { if (text !== '' && this.messageBox?.isOpen !== true) this.messageBox?.open(text, 'ok', () => {}); },
+      say: (tid) => this.sayRefusal({ kind: 'say', tid }),
+      reserve: (id, on) => this.reserveItem(id, on),
+      reserved: (id) => this.bagReserved.get(id) ?? 0,
+      sound: (file) => this.sounds?.file(file),
+      soundId: (id) => this.sounds?.serverSound(id),
+      sendMakeGem: (weapon) => this.session.sendUltimateMakeGem(weapon),
+      sendSetGem: (weapon, jewel) => this.session.sendUltimateSetGem(weapon, jewel),
+      mobile: () => doc.defaultView?.matchMedia?.('(max-width: 1000px) and (pointer: coarse)').matches === true,
+      openBag: () => { if (this.inventoryWindow?.frame.isOpen !== true) this.openWindow('inventory'); },
+      ui: { art: this.hudArt!, doc, layer: () => this.hud?.element ?? null },
+    });
     // 2026-11-05: the upgrade cursor: Sunstone, Moonstone, the cards, the random and awakening scrolls, the Ultimate gem
     this.upgrade = new UpgradeCursor({
       own: () => this.own, props: this.data!.itemProps, now: () => performance.now(),
@@ -1457,7 +1478,8 @@ export class WorldScreen {
       // 2026-11-10: and the items in the trade (`SetExtra`, CVTInfo::TradeSetItem)
       held: (id) => this.bagHeld(id) || (this.tradeHud?.extraOf(id) ?? 0) > 0,
       // 2026-11-09 (pets R3): and the food mill (CWndInventory::OnDestroy, WndField.cpp:1092-1096)
-      closed: () => { this.upgradeNpc?.piercing.dismiss(); this.upgradeNpc?.safety.dismiss(); this.petCare?.bagClosed(); },
+      // 2026-11-10: and Create Jewels (CWndInventory::OnDestroy, WndField.cpp:1036-1045)
+      closed: () => { this.upgradeNpc?.piercing.dismiss(); this.upgradeNpc?.safety.dismiss(); this.petCare?.bagClosed(); this.jewels?.bagClosed(); },
       // 2026-11-10: a stack in the trade shows the count less the traded (`m_nItemNum - GetExtra()`, WndItemCtrl.cpp:705-708)
       reservedCount: (id) => (this.bagDieFlag ? this.bagReserved.get(id) ?? 0 : 0) + this.tradeExtraShown(id),
       // 2026-11-09 (pets R2): and the summoned raised pet's item (`g_pPlayer->GetPetId()`, WndItemCtrl.cpp:472-487)
@@ -1695,7 +1717,10 @@ export class WorldScreen {
     this.tradeHud = tradeHud;
     // the phone has no drag: a tap on a bag item or on the penya puts it in the trade
     inventoryWindow.trade = {
-      active: () => tradeHud.windowOpen, tapItem: (id) => tradeHud.tapItem(id), tapPenya: () => tradeHud.tapPenya(),
+      // 2026-11-10: and a tap on a bag item puts it in the open jewel window, where a drop would take it
+      active: () => tradeHud.windowOpen || this.jewels?.isOpen === true,
+      tapItem: (id) => { if (this.jewels?.isOpen === true && !tradeHud.windowOpen) this.jewels.tapItem(id); else tradeHud.tapItem(id); },
+      tapPenya: () => tradeHud.tapPenya(),
     };
     // a type-2 shortcut of the task bar: the party skill's rule (ObjectExecutor, WndManager.cpp:2779-2876)
     skillUse.onPartySkill = (skill) => partyHud.useSkill(skill);
@@ -1770,6 +1795,8 @@ export class WorldScreen {
         if (isFrozen(this.world?.self())) return true;
         // 2026-11-10: nor a seller with an item up, nor anyone with a shop window open (WndWorld.cpp:6721-6728)
         if (this.personalShop?.blocksWorld === true) return true;
+        // 2026-11-10: nor with Jewel Setting open (OnLButtonDown, WndWorld.cpp:6761-6762)
+        if (this.jewels?.setting.isOpen === true) return true;
         // 2026-11-05: an armed monster summon takes the press, on the ground it went down on
         if (this.itemWindows?.armed === true) {
           if (press.point !== undefined) this.placeMonster(press.point);
@@ -1943,6 +1970,8 @@ export class WorldScreen {
   private takeIntoUpgradeWindow(objectId: number, shift = false): boolean {
     if (this.upgradeNpc?.safety.isOpen === true) this.upgradeNpc.safety.take(objectId, shift);
     else if (this.upgradeNpc?.piercing.isOpen === true) this.upgradeNpc.piercing.take(objectId);
+    // 2026-11-10: a jewel window takes its kind (WndField.cpp:2288-2350); the bag refuses anything else (:2577-2584)
+    else if (this.jewels?.isOpen === true) { if (!this.jewels.take(objectId)) this.sayRefusal({ kind: 'say', tid: 'TID_SBEVE_NOTUSEITEM' }); }
     else return false;
     return true;
   }
@@ -2695,6 +2724,7 @@ export class WorldScreen {
       this.itemWindows?.playerMoved(); // and the element change (WndWorld.cpp:8487-8491)
       this.upgradeNpc?.piercing.dismiss(); // and the Upgrade Specialist's windows (:8360-8362, :8493-8495)
       this.upgradeNpc?.safety.dismiss();
+      this.jewels?.dismiss(); // 2026-11-10: and the jewel windows (:8198-8222)
     }
     this.upgrade?.step();
     this.syncBuffWings(performance.now());
@@ -2709,6 +2739,7 @@ export class WorldScreen {
       this.recolorTags();
     }
     this.upgradeNpc?.safety.step();
+    this.jewels?.setting.step(performance.now()); // 2026-11-10: Jewel Setting's turn (Process, WndField.cpp:19993-20050)
     this.inventoryWindow?.drawUpgrade();
     // the dialogue and the menu go with their NPC or when the player moves (WndWorld.cpp:8052-8081)
     const dialogNpc = this.dialog?.npcId ?? null;
@@ -3461,6 +3492,10 @@ export class WorldScreen {
       // :5989-6033: the safe upgrade in its mode, any open one deleted first
       const mode = entry === MMI.SMELT_SAFETY_GENERAL ? 'normal' : entry === MMI.SMELT_SAFETY_ACCESSORY ? 'accessory' : 'piercing';
       this.upgradeNpc?.safety.open(mode);
+    } else if (entry === MMI.SMELT_JEWEL) {
+      this.jewels?.setting.open(); // 2026-11-10: Jewel Setting (:4958-4971)
+    } else if (entry === MMI.SMELT_EXTRACTION) {
+      this.jewels?.extraction.open(); // 2026-11-10: Create Jewels (:4972-4985)
     } else if (entry === MMI.PET_STATUS || entry === MMI.PET_RELEASE) {
       this.choosePetEntry(entry);
     } else if (entry === MMI.BUFFPET_STATUS || entry === MMI.BUFFPET_RELEASE) {
@@ -3720,6 +3755,8 @@ export class WorldScreen {
     this.upgradeNpc?.piercing.close();
     this.upgradeNpc?.safety.close();
     this.upgradeNpc = undefined;
+    this.jewels?.close();
+    this.jewels = undefined;
     this.wingEffects.clear();
     this.auras.clear(); // 2026-11-09 (pets B1)
     this.bagDieFlag = false;

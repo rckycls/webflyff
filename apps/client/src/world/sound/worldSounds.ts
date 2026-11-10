@@ -3,6 +3,7 @@
 // moment the C++ site plays its sound; nothing else in the world plays one, so no event plays a sound twice.
 // Positions are FlyFF positions (D3D), as `PLAYSND( id, &pos )` is given them.
 
+import { webName } from '@flyffweb/formats';
 import type { WebAudio } from '@flyffweb/formats';
 import { AttackFlag } from '@flyffweb/protocol';
 import type { OwnEvent } from '../OwnState';
@@ -173,6 +174,14 @@ export class WorldSounds {
   named(file: string): void {
     const key = this.catalog?.named?.[file];
     if (key !== undefined) this.audio.playKey(key);
+  }
+
+  /**
+   * 2026-11-10: `PLAYSND( file )` of a WAV the catalog's `named` may lack: its key there, else the audio stage's own key for
+   * the file (`sound/<web name>`, written when an effect names it, as PcSkillD-Counter01.wav); a key with no file is silent.
+   */
+  file(name: string): void {
+    this.audio.playKey(this.catalog?.named?.[name] ?? `sound/${webName(name)}`);
   }
 
   /**
