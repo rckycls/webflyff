@@ -1351,7 +1351,9 @@ export class WorldScreen {
       sendMakeGem: (weapon) => this.session.sendUltimateMakeGem(weapon),
       sendSetGem: (weapon, jewel) => this.session.sendUltimateSetGem(weapon, jewel),
       mobile: () => doc.defaultView?.matchMedia?.('(max-width: 1000px) and (pointer: coarse)').matches === true,
+      bagOpen: () => this.inventoryWindow?.frame.isOpen === true,
       openBag: () => { if (this.inventoryWindow?.frame.isOpen !== true) this.openWindow('inventory'); },
+      closeBag: () => this.inventoryWindow?.frame.close(),
       ui: { art: this.hudArt!, doc, layer: () => this.hud?.element ?? null },
     });
     // 2026-11-05: the upgrade cursor: Sunstone, Moonstone, the cards, the random and awakening scrolls, the Ultimate gem
@@ -1719,7 +1721,10 @@ export class WorldScreen {
     inventoryWindow.trade = {
       // 2026-11-10: and a tap on a bag item puts it in the open jewel window, where a drop would take it
       active: () => tradeHud.windowOpen || this.jewels?.isOpen === true,
-      tapItem: (id) => { if (this.jewels?.isOpen === true && !tradeHud.windowOpen) this.jewels.tapItem(id); else tradeHud.tapItem(id); },
+      tapItem: (id) => {
+        if (this.jewels?.isOpen !== true || tradeHud.windowOpen) tradeHud.tapItem(id);
+        else if (!this.jewels.tapItem(id)) this.sayRefusal({ kind: 'say', tid: 'TID_SBEVE_NOTUSEITEM' });
+      },
       tapPenya: () => tradeHud.tapPenya(),
     };
     // a type-2 shortcut of the task bar: the party skill's rule (ObjectExecutor, WndManager.cpp:2779-2876)

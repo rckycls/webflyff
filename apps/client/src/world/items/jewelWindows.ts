@@ -81,9 +81,14 @@ export interface JewelHost {
   soundId(id: number): void;
   sendMakeGem(weaponId: number): void;
   sendSetGem(weaponId: number, jewelId: number): void;
-  /** A phone: a tap puts a bag item in, a tap on a filled slot takes it out, and the bag opens beside the window. */
+  /**
+   * A phone: a tap puts a bag item in, a tap on a filled slot takes it out, and the bag opens beside the window (and closes
+   * with it when the window opened it).
+   */
   mobile(): boolean;
+  bagOpen(): boolean;
   openBag(): void;
+  closeBag(): void;
   ui: { art: UiArt; doc: Document; layer(): HTMLElement | null };
 }
 
@@ -164,8 +169,23 @@ abstract class JewelWindow {
     this.reset();
     this.draw();
     window.open();
-    // a phone has no drag: the bag opens beside the window, for its taps
-    if (this.host.mobile()) this.host.openBag();
+    // a phone has no drag: the bag opens beside the window, for its taps, and closes with it (else it covers the world)
+    if (this.host.mobile() && !this.host.bagOpen()) {
+      this.openedBag = true;
+      this.host.openBag();
+    }
+  }
+
+  /** The phone's bag opened by this window, closed again when it closes. */
+  private openedBag = false;
+
+  /** OnDestroy: the held items let go, and the bag this window opened closed. */
+  private closed(): void {
+    this.reset();
+    if (this.openedBag) {
+      this.openedBag = false;
+      this.host.closeBag();
+    }
   }
 
   close(): void {
@@ -193,7 +213,7 @@ abstract class JewelWindow {
     const window = new ResWindow(this.layout(), this.host.ui.art, this.host.ui.doc);
     window.frame.element.classList.add('hud-jewel', this.className());
     description(window, this.host.ui.doc, this.host.ultimate()?.descriptions[this.descriptionKey()]);
-    window.onClose = () => this.reset();
+    window.onClose = () => this.closed();
     this.wire(window);
     this.window = window;
     this.attach(window);

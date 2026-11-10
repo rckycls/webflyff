@@ -49,7 +49,7 @@ function rig(mobile = false) {
     sound: (file) => void sounds.push(file), soundId: (id) => void sounds.push(id),
     sendMakeGem: (weapon) => void sent.push(['makeGem', weapon]),
     sendSetGem: (weapon, jewel) => void sent.push(['setGem', weapon, jewel]),
-    mobile: () => mobile, openBag: () => { bagOpened = true; },
+    mobile: () => mobile, bagOpen: () => bagOpened, openBag: () => { bagOpened = true; }, closeBag: () => { bagOpened = false; },
     ui: { art: { url: (key) => `/assets/${key}`, sheets: null }, doc: document, layer: () => layer },
   };
   return { own, host, reserved, said, alerts, sounds, sent, layer, windows: new JewelWindows(host), bagOpened: () => bagOpened };
@@ -120,6 +120,11 @@ describe('Create Jewels (CWndExtraction)', () => {
     expect(r.bagOpened()).toBe(true);
     r.windows.bagClosed();
     expect(r.windows.extraction.isOpen).toBe(false);
+    // the window that opened the phone's bag closes it with itself
+    r.windows.setting.open();
+    expect(r.bagOpened()).toBe(true);
+    r.windows.setting.close();
+    expect(r.bagOpened()).toBe(false);
   });
 });
 

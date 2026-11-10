@@ -1719,7 +1719,7 @@ fieldset:disabled .btn {
 .hud-item-tooltip-text { flex: 1 0 100%; max-width: 200px; white-space: pre-wrap; overflow-wrap: break-word; }
 .hud-item-tooltip-line { min-height: 15px; }
 /* 2026-11-10: an Ultimate item's icon and socket row (CToolTip, tooltip.cpp:745-780; itemDetails.ts ultimateMarks) */
-.hud-item-tooltip-ultimate { position: absolute; left: 10px; top: 8px; width: 32px; height: 32px; pointer-events: none; }
+.hud-item-tooltip-ultimate { position: absolute; left: 10px; top: 8px; pointer-events: none; } /* Icon_Ultimate.dds, 51 x 14 */
 .hud-item-tooltip-sockets { flex: 1 0 100%; display: flex; gap: 6px; height: 36px; padding: 4px 0 0 max(0px, calc(50% - 94px)); box-sizing: border-box; }
 .hud-item-tooltip-socket { flex: 0 0 32px; width: 32px; height: 32px; background-repeat: no-repeat; }
 .hud-item-tooltip-socket img { display: block; width: 32px; height: 32px; }
