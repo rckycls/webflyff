@@ -67,7 +67,9 @@ describe('inventory window', () => {
     clock.mockRestore();
     ui.dispose();
   });
-  it('slows touch travel by half and snaps back to a row after dragging', () => {
+  it('slows touch travel by half and moves the items a whole row at a time, never across the dividers', () => {
+    // 2026-11-10 (mobile-ux-fixes): Neuz scrolls the bag in rows (`GetScrollPos() * nWidth`, WndItemCtrl.cpp:446-454); a
+    // finger's drag went pixel by pixel, so the items slid across the bag's fixed dividers while it moved
     const ui = new InventoryWindow({ url: () => '', sheets: null }, ownGameData(), {
       use: vi.fn(), equip: vi.fn(), drop: vi.fn(), move: vi.fn(), shortcut: vi.fn(),
     });
@@ -79,11 +81,56 @@ describe('inventory window', () => {
       scroll.dispatchEvent(event); return event;
     };
     expect(touch('touchstart', 100).defaultPrevented).toBe(false);
-    expect(touch('touchmove', 60).defaultPrevented).toBe(true);
-    expect(scroll.scrollTop).toBe(20);
+    expect(touch('touchmove', 80).defaultPrevented).toBe(true);
+    expect(scroll.scrollTop).toBe(0); // 10 px of travel: not yet half a row
+    touch('touchmove', 60);
+    expect(scroll.scrollTop).toBe(32); // 20 px: past half a row, the next row
+    touch('touchmove', 30);
+    expect(scroll.scrollTop).toBe(32); // 35 px: still the same row
     touch('touchend'); expect(scroll.scrollTop).toBe(32);
     expect(scroll.style.scrollSnapType).toBe('');
     touch('touchstart', 100); touch('touchend'); expect(scroll.scrollTop).toBe(32);
+    ui.dispose();
+  });
+  it("the phone's item buttons close the tooltip they are on (2026-11-10, owner)", () => {
+    const own = newVagrant(), data = ownGameData();
+    data.itemProps.set(2800, itemProp({ id: 2800, part: -1, kind2: 14 }));
+    own.inventory!.set(6, { objectId: 6, itemId: 2800, count: 2 });
+    own.inventory!.set(7, { objectId: 7, itemId: 21, count: 1 });
+    const use = vi.fn(), equip = vi.fn();
+    const ui = new InventoryWindow({ url: () => '', sheets: null }, data, { use, equip, drop: vi.fn(), move: vi.fn(), shortcut: vi.fn() });
+    document.body.append(ui.frame.element); ui.toggle(own);
+    ui.frame.element.setAttribute('data-mobile-window', ''); ui.update(own, true);
+    const details = () => ui.frame.element.querySelector('.inventory-details');
+    const tap = (selector: string) => ui.frame.element.querySelector<HTMLButtonElement>(selector)!.click();
+    // Use: the action runs and the tooltip closes
+    tap('[data-bag-slot="6"]');
+    expect(details()).not.toBeNull();
+    tap('[data-item-action="use"]');
+    expect(use).toHaveBeenCalledWith(6);
+    expect(details()).toBeNull();
+    // and stays closed when the bag draws again (the server's answer)
+    own.inventoryRevision++; ui.update(own);
+    expect(details()).toBeNull();
+    // Equip
+    tap('[data-bag-slot="7"]');
+    tap('[data-item-action="equip"]');
+    expect(equip).toHaveBeenCalledWith(7);
+    expect(details()).toBeNull();
+    // Unequip, from the worn piece's cell
+    own.equipmentObjectIds[10] = 7; own.inventoryRevision++; ui.update(own);
+    tap('[data-equipment-part="10"]');
+    tap('[data-item-action="unequip"]');
+    expect(equip).toHaveBeenLastCalledWith(7);
+    expect(details()).toBeNull();
+    // Drop: its quantity box opens in the tooltip's place
+    tap('[data-bag-slot="6"]');
+    tap('[data-item-action="drop"]');
+    expect(details()).toBeNull();
+    expect(ui.frame.element.querySelector('.inventory-drop-dialog')).not.toBeNull();
+    // a tap on the item again opens the tooltip again
+    tap('[data-bag-slot="6"]');
+    expect(details()).not.toBeNull();
     ui.dispose();
   });
   it('keeps desktop double click working after single-click inspection', () => {

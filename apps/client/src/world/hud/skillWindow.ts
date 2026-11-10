@@ -139,12 +139,90 @@ const VAGRANT_PICTURE: ControlRect = { left: 62, top: 104, width: 125, height: 2
 /**
  * The places of the skills (`GetSkillPoint`, `skillPlaces.ts`): the Vagrant's three at WIDC_CUSTOM2-4 and, Piece 7 M2, the
  * four first jobs' 65, drawn and pressed 27 x 27 (:7816-7823, :8288-8296). On a phone the Vagrant's sit 80 px apart in the
- * first section and the others in the second, 5 a row, in the order of their slots (`PHONE_EXPERT`).
+ * first section, the first job's in the second and the second job's in the third (`phoneTree`).
  */
 const SKILL_ICON = 27;
-const PHONE_EXPERT = { left: 276, top: 100, pitchX: 48, pitchY: 60, columns: 5 } as const;
-/** The second job's skills on a phone: the third section, the same grid (2026-11-05). */
-const PHONE_PRO = { left: 536, top: 100, pitchX: 48, pitchY: 60, columns: 5 } as const;
+/** The phone's three sections side by side: a 32 px title, and under it the panel the skills stand in. */
+const phoneTitle = (i: number): ControlRect => ({ left: 8 + i * 260, top: 48, width: 248, height: 32 });
+const phonePanel = (i: number): ControlRect => ({ left: 8 + i * 260, top: 92, width: 248, height: 304 });
+/**
+ * 2026-11-10 (owner: the first section had arrows, the second and third none): on a phone the first and second jobs'
+ * skills stand as the PC's tree, `GetSkillPoint`'s places stretched to their section, at most 1.4 times across and 2.4
+ * down, the columns centred; and an arrow joins each skill to the skills of its own section that need it (`reqSkills`,
+ * the skill's dwReSkill1-2), as the PC's job panels (`Back_*.tga`, too small for the phone's 40 px icons) draw them.
+ */
+const PHONE_TREE = { padX: 4, padY: 8, icon: 40, maxScaleX: 1.4, maxScaleY: 2.4 } as const;
+/** The arrows' grey, as the Vagrant's picture draws its two (ImgSkillVagrant.tga): a light shaft and head in a darker rim. */
+const LINK = { rim: '#8c8c8c', fill: '#e8e8e8', rimWidth: 5, fillWidth: 2.5, head: 9, headHalf: 6 } as const;
+const SVG = 'http://www.w3.org/2000/svg';
+
+/** Where the phone draws the skills `ids` of one job section (`panel`): the PC's places stretched and centred in it. */
+function phoneTree(ids: readonly number[], panel: ControlRect): Map<number, { left: number; top: number }> {
+  const places = ids.map((id) => [id, skillPlaceOf(id)!] as const);
+  if (places.length === 0) return new Map();
+  const xs = places.map(([, place]) => place.x), ys = places.map(([, place]) => place.y);
+  const x0 = Math.min(...xs), y0 = Math.min(...ys);
+  const rangeX = Math.max(...xs) - x0, rangeY = Math.max(...ys) - y0;
+  const roomX = panel.width - 2 * PHONE_TREE.padX - PHONE_TREE.icon;
+  const roomY = panel.height - 2 * PHONE_TREE.padY - PHONE_TREE.icon;
+  const sx = rangeX > 0 ? Math.min(roomX / rangeX, PHONE_TREE.maxScaleX) : 0;
+  const sy = rangeY > 0 ? Math.min(roomY / rangeY, PHONE_TREE.maxScaleY) : 0;
+  const left = panel.left + PHONE_TREE.padX + (roomX - rangeX * sx) / 2;
+  const top = panel.top + PHONE_TREE.padY;
+  return new Map(places.map(([id, place]) => [
+    id, { left: Math.round(left + (place.x - x0) * sx), top: Math.round(top + (place.y - y0) * sy) },
+  ]));
+}
+
+/**
+ * The arrow from the skill at `from` to the one at `to` that needs it, in `panel`'s pixels: straight down (or up) within a
+ * column, else out of the skill's side, along a line a little past it that the arrows from one skill share (the job
+ * panels' brackets), and into the other skill's side. Its rim goes in `rims`, its shaft and head in `fills`.
+ */
+function drawLink(doc: Document, name: string, from: { left: number; top: number }, to: { left: number; top: number },
+  panel: ControlRect, rims: Element, fills: Element): void {
+  const size = PHONE_TREE.icon, half = size / 2;
+  const fx = from.left - panel.left, fy = from.top - panel.top, tx = to.left - panel.left, ty = to.top - panel.top;
+  let points: Array<[number, number]>;
+  if (Math.abs(tx - fx) < half) {
+    points = ty >= fy ? [[fx + half, fy + size + 2], [tx + half, ty - 2]] : [[fx + half, fy - 2], [tx + half, ty + size + 2]];
+  } else if (tx > fx) {
+    const bend = fx + size + (tx - fx - size) * .4;
+    points = [[fx + size + 2, fy + half], [bend, fy + half], [bend, ty + half], [tx - 2, ty + half]];
+  } else {
+    const bend = fx - (fx - tx - size) * .4;
+    points = [[fx - 2, fy + half], [bend, fy + half], [bend, ty + half], [tx + size + 2, ty + half]];
+  }
+  points = points.filter(([x, y], i) => i === 0 || x !== points[i - 1]![0] || y !== points[i - 1]![1]);
+  // the head: its tip at the last point, as long as the last stretch allows
+  const [ex, ey] = points[points.length - 1]!, [px, py] = points[points.length - 2]!;
+  const length = Math.hypot(ex - px, ey - py);
+  const ux = (ex - px) / length, uy = (ey - py) / length;
+  const head = Math.max(4, Math.min(LINK.head, length));
+  const base: [number, number] = [ex - ux * head, ey - uy * head];
+  const shaft = [...points.slice(0, -1), base].map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+  const line = (stroke: string, width: number): Element => {
+    const path = doc.createElementNS(SVG, 'polyline');
+    path.setAttribute('points', shaft);
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke', stroke);
+    path.setAttribute('stroke-width', String(width));
+    path.setAttribute('stroke-linejoin', 'round');
+    return path;
+  };
+  rims.append(line(LINK.rim, LINK.rimWidth));
+  const fill = line(LINK.fill, LINK.fillWidth);
+  fill.setAttribute('data-link', name);
+  const tip = doc.createElementNS(SVG, 'polygon');
+  const w = LINK.headHalf;
+  tip.setAttribute('points', [[ex, ey], [base[0] - uy * w, base[1] + ux * w], [base[0] + uy * w, base[1] - ux * w]]
+    .map(([x, y]) => `${x!.toFixed(1)},${y!.toFixed(1)}`).join(' '));
+  tip.setAttribute('fill', LINK.fill);
+  tip.setAttribute('stroke', LINK.rim);
+  tip.setAttribute('stroke-width', '1.5');
+  tip.setAttribute('stroke-linejoin', 'round');
+  fills.append(fill, tip);
+}
 /** The four `Back_*` panels' size (`Client/Theme/Default`, all 225 x 135). */
 const PANEL_SIZE = { width: 225, height: 135 } as const;
 /** The chosen skill's icon, at its own size (`Render( p2DRender, lpWndCtrl->rect.TopLeft() )`, :7869). */
@@ -262,6 +340,8 @@ export class SkillWindow {
   private readonly jobPanel: HTMLImageElement;
   /** The second job's panel (`m_atexJobPannel[1]`), in the lower section. */
   private readonly proPanel: HTMLImageElement;
+  /** 2026-11-10: the phone's arrows of sections 1 and 2 (the first and second jobs'), by section. */
+  private readonly trees = new Map<number, SVGSVGElement>();
   private laidOut = '';
 
   constructor(
@@ -293,14 +373,28 @@ export class SkillWindow {
 
     // the sections (the frame's skin: the tiles under everything drawn)
     SECTIONS.forEach((section, i) => {
-      const title = this.mobile ? { left: 8 + i * 260, top: 48, width: 248, height: 32 } : section.title;
-      const panel = this.mobile ? { left: 8 + i * 260, top: 92, width: 248, height: 304 } : section.panel;
+      const title = this.mobile ? phoneTitle(i) : section.title;
+      const panel = this.mobile ? phonePanel(i) : section.panel;
       const box = doc.createElement('div');
       box.className = 'hud-skills-box';
       box.classList.add('hud-skills-panel');
       box.dataset.section = String(i);
       place(box, panel);
       box.append(editTiles(doc, art, Math.trunc(panel.width / EDIT), Math.trunc(panel.height / EDIT)));
+      body.append(box);
+      // 2026-11-10: the phone's arrows of the first and second jobs' sections, over the panel and under the skills
+      if (this.mobile && i > 0) {
+        const tree = doc.createElementNS(SVG, 'svg');
+        tree.setAttribute('class', 'hud-skills-tree');
+        tree.setAttribute('data-section', String(i));
+        tree.setAttribute('aria-hidden', 'true');
+        tree.setAttribute('width', String(panel.width));
+        tree.setAttribute('height', String(panel.height));
+        tree.setAttribute('viewBox', `0 0 ${panel.width} ${panel.height}`);
+        Object.assign(tree.style, { left: `${panel.left}px`, top: `${panel.top}px` });
+        this.trees.set(i, tree);
+        body.append(tree);
+      }
       const head = doc.createElement('div');
       head.className = 'hud-skills-box';
       head.classList.add('hud-skills-heading');
@@ -313,7 +407,7 @@ export class SkillWindow {
       arrow.className = 'hud-skills-arrow';
       place(arrow, { left: title.left + title.width - ARROW.fromRight, top: title.top, width: ARROW.size, height: ARROW.size });
       arrow.style.backgroundImage = themeUrl(art, 'LvUp.bmp');
-      body.append(box, head, arrow);
+      body.append(head, arrow);
     });
     const label = doc.createElement('div');
     label.className = 'hud-skills-box';
@@ -523,23 +617,17 @@ export class SkillWindow {
     if (key !== this.laidOut) {
       this.laidOut = key;
       for (const skill of this.skills.splice(0)) skill.element.remove();
-      const counts = [0, 0];
+      const trees = [1, 2].map((section) => phoneTree(ids.filter((id) => sectionOf(id) === section), phonePanel(section)));
       for (const skillId of ids) {
         const section = sectionOf(skillId)!;
-        const grid = section === 2 ? PHONE_PRO : PHONE_EXPERT;
-        const n = section === 2 ? counts[1]! : counts[0]!;
         const at = !this.mobile
           ? { left: skillPlaceOf(skillId)!.x, top: skillPlaceOf(skillId)!.y }
           : section === 0
             ? { left: 28 + (skillId - 1) * 80, top: 111 }
-            : {
-              left: grid.left + (n % grid.columns) * grid.pitchX,
-              top: grid.top + Math.trunc(n / grid.columns) * grid.pitchY,
-            };
-        if (section === 1) counts[0]!++;
-        if (section === 2) counts[1]!++;
+            : trees[section - 1]!.get(skillId)!;
         this.skills.push(this.skillElement(skillId, at));
       }
+      this.drawLinks();
     }
     // the first job's panel, and a second job's own under it (InitItem's strTex[0] and strTex[1], 2026-11-05)
     const line = jobLineOf(own.job);
@@ -550,6 +638,25 @@ export class SkillWindow {
     for (const [img, panel] of panels) {
       img.hidden = this.mobile || panel === undefined;
       if (panel !== undefined && img.getAttribute('src') !== this.art.url(themeKey(panel))) img.src = this.art.url(themeKey(panel));
+    }
+  }
+
+  /**
+   * 2026-11-10: the phone's arrows, drawn anew with the skills: in each job section, from every skill to each skill shown in
+   * the same section that needs it (a need on a skill of another section, the job before, has none, as on the PC's panels).
+   */
+  private drawLinks(): void {
+    for (const [section, tree] of this.trees) {
+      const panel = phonePanel(section);
+      const rims = this.doc.createElementNS(SVG, 'g'), fills = this.doc.createElementNS(SVG, 'g');
+      const shown = new Map(this.skills.filter((skill) => sectionOf(skill.skillId) === section).map((skill) => [skill.skillId, skill.at]));
+      for (const [skillId, at] of shown) {
+        for (const need of this.data.skills.get(skillId)?.reqSkills ?? []) {
+          const from = shown.get(need.skill);
+          if (from !== undefined && need.skill !== skillId) drawLink(this.doc, `${need.skill}>${skillId}`, from, at, panel, rims, fills);
+        }
+      }
+      tree.replaceChildren(rims, fills);
     }
   }
 

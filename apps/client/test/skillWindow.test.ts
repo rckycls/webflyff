@@ -109,21 +109,108 @@ describe('the skill window for the four first jobs (Piece 7 M2)', () => {
     expect(titles(tree)).toEqual(['Vagrant', 'Mercenary', '']);
   });
 
-  it('the phone layout lists the job\'s skills in their slot order, in the second section', () => {
-    Object.defineProperty(window, 'matchMedia', {
-      configurable: true, value: (query: string) => ({ matches: query === '(max-width: 1000px) and (pointer: coarse)' }),
-    });
-    try {
+  it('the phone layout lays the job\'s skills out as the PC\'s tree, in the second section', () => {
+    onPhone(() => {
       const own = vagrant15();
       own.apply(jobChange(), OWN_ID);
       const tree = windowOn(own);
+      // Splmash ( 34, 109 ) over Protection ( 34, 161 ): one column, centred in the section, 52 px apart stretched 2.4 times
       expect(shown(tree)).toEqual([
-        ['1', '28px', '111px'], ['2', '108px', '111px'], ['3', '188px', '111px'], ['4', '276px', '100px'], ['9', '324px', '100px'],
+        ['1', '28px', '111px'], ['2', '108px', '111px'], ['3', '188px', '111px'], ['4', '372px', '100px'], ['9', '372px', '225px'],
       ]);
       expect(panel(tree)?.hidden ?? true).toBe(true);
-    } finally {
-      delete (window as { matchMedia?: unknown }).matchMedia;
-    }
+    });
+  });
+});
+
+/** Runs `body` with the phone's media query matched. */
+function onPhone(body: () => void): void {
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true, value: (query: string) => ({ matches: query === '(max-width: 1000px) and (pointer: coarse)' }),
+  });
+  try {
+    body();
+  } finally {
+    delete (window as { matchMedia?: unknown }).matchMedia;
+  }
+}
+
+describe("the phone's arrows in the first- and second-job sections (2026-11-10, owner: the first section's only had them)", () => {
+  const skill = (id: number, job: number, reqs: number[] = []): WebSkill => ({
+    ...CLEAN_HIT, id, name: `Skill ${id}`, jobType: job < 6 ? 1 : 2, job, reqLevel: 15,
+    reqSkills: reqs.map((req) => ({ skill: req, level: 1 })), icon: `ui/skill_${id}.png`,
+  });
+  // the Magician's (job 4): Mental Strike, Blinkpool and Swordwind need it, Flame Ball needs it, Flame Geyser needs Flame Ball,
+  // Fire Strike needs Flame Geyser; the Elementor's (13): Firebird needs Fire Strike (the section above), Burningfield needs
+  // Firebird, Earthquake needs Stone Spear (not in the set), Meteo Shower needs Burningfield and Earthquake
+  const magic = [skill(121, 4), skill(107, 4, [121]), skill(64, 4, [121]), skill(69, 4, [121]), skill(65, 4, [64]), skill(30, 4, [65])];
+  const elementor = [skill(168, 13, [30]), skill(170, 13, [168]), skill(176, 13, [174]), skill(183, 13, [170, 176])];
+  const catalog = new Map([CLEAN_HIT, FLURRY, OVER_CUT, ...magic, ...elementor].map((s) => [s.id, s]));
+  const jobs = Array.from({ length: 32 }, (_, i) => ({ ...MERCENARY, title: `Job ${i}` }));
+
+  function elementorWindow(): SkillWindow {
+    const own = newVagrant(70, undefined, ownGameData({ skills: catalog, jobs }));
+    const ids = [1, 2, 3, ...magic.map((s) => s.id), ...elementor.map((s) => s.id)];
+    const slots: SkillSlot[] = Array.from({ length: 45 }, (_, i) => ({ skill: ids[i] ?? NULL_ID, level: 0 }));
+    own.apply({ type: 'setJobSkill', job: 13, skills: slots }, OWN_ID);
+    const tree = new SkillWindow(art, { skills: catalog, texts: new Map(), jobs }, () => {}, hand);
+    windows.push(tree);
+    layer().append(tree.frame.element, tree.warning.element);
+    tree.toggle(own);
+    return tree;
+  }
+  const at = (tree: SkillWindow, id: number) => {
+    const element = tree.frame.element.querySelector<HTMLElement>(`.hud-skill[data-skill="${id}"]`)!;
+    return { left: parseFloat(element.style.left), top: parseFloat(element.style.top) };
+  };
+  const links = (tree: SkillWindow, section: number) => [...tree.frame.element
+    .querySelectorAll(`.hud-skills-tree[data-section="${section}"] [data-link]`)].map((link) => link.getAttribute('data-link'));
+
+  it('lays each section out as the PC\'s tree: a skill\'s column and row kept, 40 px icons', () => {
+    onPhone(() => {
+      const tree = elementorWindow();
+      // the first job's: Blinkpool under Mental Strike, Flame Ball beside it, Swordwind under Flame Ball, Flame Geyser next
+      expect(at(tree, 107).left).toBe(at(tree, 121).left);
+      expect(at(tree, 107).top).toBeGreaterThan(at(tree, 121).top + 40);
+      expect(at(tree, 64).top).toBe(at(tree, 121).top);
+      expect(at(tree, 64).left).toBeGreaterThan(at(tree, 121).left + 40);
+      expect(at(tree, 69).left).toBe(at(tree, 64).left);
+      expect(at(tree, 69).top).toBeGreaterThan(at(tree, 64).top + 40);
+      expect(at(tree, 65).left).toBeGreaterThan(at(tree, 64).left + 40);
+      // within the second section ( 268, 92, 248 x 304 ) and the third ( 528, 92, 248 x 304 )
+      for (const id of magic.map((s) => s.id)) {
+        expect(at(tree, id).left).toBeGreaterThanOrEqual(268);
+        expect(at(tree, id).left + 40).toBeLessThanOrEqual(268 + 248);
+        expect(at(tree, id).top + 40).toBeLessThanOrEqual(92 + 304);
+      }
+      for (const id of elementor.map((s) => s.id)) {
+        expect(at(tree, id).left).toBeGreaterThanOrEqual(528);
+        expect(at(tree, id).left + 40).toBeLessThanOrEqual(528 + 248);
+      }
+      // Meteo Shower ( 134, 246 ) sits between Burningfield's row ( 234 ) and Earthquake's ( 260 )
+      expect(at(tree, 183).top).toBeGreaterThan(at(tree, 170).top);
+      expect(at(tree, 183).top).toBeLessThan(at(tree, 176).top);
+    });
+  });
+
+  it('draws an arrow from each skill to the skills of its own section that need it, none across sections', () => {
+    onPhone(() => {
+      const tree = elementorWindow();
+      expect(links(tree, 1)).toEqual(['121>107', '121>64', '121>69', '64>65', '65>30']);
+      // Fire Strike > Firebird crosses into the section above, Stone Spear is not shown: neither has an arrow
+      expect(links(tree, 2)).toEqual(['168>170', '170>183', '176>183']);
+      // the arrows are under the icons, and take no presses
+      const svg = tree.frame.element.querySelector<SVGElement>('.hud-skills-tree[data-section="1"]')!;
+      const first = tree.frame.element.querySelector('.hud-skill')!;
+      expect(svg.compareDocumentPosition(first) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+      expect(svg.getAttribute('aria-hidden')).toBe('true');
+    });
+  });
+
+  it('the PC keeps its panels and draws no arrows of its own', () => {
+    const tree = elementorWindow();
+    expect(tree.frame.element.querySelectorAll('.hud-skills-tree')).toHaveLength(0);
+    expect(at(tree, 121)).toEqual({ left: 31, top: 172 });
   });
 });
 

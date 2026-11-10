@@ -168,7 +168,12 @@ export class InventoryWindow {
       if (!touch.dragged && Math.abs(distance) < 4) return;
       event.preventDefault();
       touch.dragged = true; scroll.style.scrollSnapType = 'none';
-      scroll.scrollTop = Math.max(0, touch.top + distance * .5 / touch.scale);
+      // 2026-11-10 (mobile-ux-fixes): a whole row at a time, as Neuz scrolls the bag (`GetScrollPos() * nWidth`,
+      // WndItemCtrl.cpp:446-454): the items never stand across the bag's dividers, which stay put; the last row's offset
+      // is the bound (the bag scrolls a few px past its 7 rows)
+      const room = scroll.scrollHeight - scroll.clientHeight;
+      const last = room > 0 ? Math.round(room / 32) * 32 : Infinity;
+      scroll.scrollTop = Math.max(0, Math.min(last, Math.round((touch.top + distance * .5 / touch.scale) / 32) * 32));
     }, { passive: false });
     scroll.addEventListener('touchend', finishTouch);
     scroll.addEventListener('touchcancel', finishTouch);
@@ -356,9 +361,12 @@ export class InventoryWindow {
     close.textContent = '×'; close.setAttribute('aria-label', 'Close item details');
     close.addEventListener('click', () => { this.actionsOpen = false; this.drawDetails(); }); details.append(close);
     if (this.mobile) {
+      // 2026-11-10 (owner): a tap on Use, Equip, Unequip or Drop closes the tooltip it is on; a tap on the item opens it again
       const button = (action: string, label: string, run: () => void) => {
         const el = this.doc.createElement('button'); el.type = 'button'; el.dataset.itemAction = action; el.textContent = label;
-        el.disabled = own.hp <= 0; el.addEventListener('click', () => { run(); el.blur(); }); details.append(el);
+        el.disabled = own.hp <= 0;
+        el.addEventListener('click', () => { el.blur(); this.actionsOpen = false; this.drawDetails(); run(); });
+        details.append(el);
       };
       if (own.equipmentObjectIds.some((id, part) => id === item.objectId && this.itemAt(part))) {
         button('unequip', 'Unequip', () => (isRideProp(prop) ? this.actions.land?.(item.objectId) : this.actions.equip(item.objectId)));
