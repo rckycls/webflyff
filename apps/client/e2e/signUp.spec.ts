@@ -40,10 +40,11 @@ test('success hands the name to the game', async ({ page }) => {
   expect(mock.posts).toEqual([{ account: 'hero_01', password: 'abc12345', email: '', website: '', ticket: 't1' }]);
   await page.getByRole('link', { name: 'Play now' }).click();
   await expect(page).toHaveURL(/\/play\/$/);
-  await expect(page.getByLabel('Account')).toHaveValue('hero_01');
+  // the game's page: its first compile in the dev server can take a while
+  await expect(page.getByLabel('Account')).toHaveValue('hero_01', { timeout: 20_000 });
   // the name is handed over once: a reload of /play does not fill it again
   await page.reload();
-  await expect(page.getByLabel('Account')).toHaveValue('');
+  await expect(page.getByLabel('Account')).toHaveValue('', { timeout: 20_000 });
 });
 
 test('shows each refusal, keeping the fields but the passwords', async ({ page }) => {

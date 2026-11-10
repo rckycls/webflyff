@@ -3,6 +3,7 @@
 import { expect, test } from '@playwright/test';
 
 test('home links to the game and to sign-up', async ({ page }) => {
+  await page.route('**/api/status', (route) => route.fulfill({ json: { online: false, players: 0, checkedAt: '' } }));
   await page.goto('/');
   await expect(page.getByRole('link', { name: 'Play', exact: true })).toHaveAttribute('href', '/play/');
   await expect(page.getByRole('link', { name: 'Sign up', exact: true })).toHaveAttribute('href', '/sign-up/');
@@ -11,7 +12,8 @@ test('home links to the game and to sign-up', async ({ page }) => {
 test('/play shows the lobby', async ({ page }) => {
   await page.goto('/play');
   await expect(page).toHaveURL(/\/play\/$/);
-  await expect(page.getByLabel('Account')).toBeVisible();
+  // the game's page: its first compile in the dev server can take a while
+  await expect(page.getByLabel('Account')).toBeVisible({ timeout: 20_000 });
 });
 
 test('/sign-up has its page', async ({ page }) => {

@@ -22,6 +22,26 @@ test('shows the online count, the news and the links', async ({ page }) => {
   await expect(page.getByText('Windows and Mac browsers · Android phones and tablets · iPhone and iPad')).toBeVisible();
 });
 
+// The owner's design (2026-11-11): the game's art over the whole page, minimal; Play stands out, Sign up stays quiet.
+test('the art fills the page; Play stands out and Sign up stays quiet', async ({ page }) => {
+  await statusAnswers(page, { online: true, players: 3, checkedAt: '2026-11-11T00:00:00.000Z' });
+  await page.goto('/');
+  await expect(page.locator('html')).toHaveClass(/has-art/);
+  const art = await page.evaluate(() => {
+    const layer = getComputedStyle(document.body, '::before');
+    return { image: layer.backgroundImage, position: layer.position, width: parseFloat(layer.width), height: parseFloat(layer.height) };
+  });
+  expect(art.image).toContain('screen.');
+  expect(art.position).toBe('fixed');
+  expect(art.width).toBeGreaterThanOrEqual(page.viewportSize()!.width - 1);
+  expect(art.height).toBeGreaterThanOrEqual(page.viewportSize()!.height - 1);
+  const play = (await page.getByRole('link', { name: 'Play', exact: true }).boundingBox())!;
+  const signUp = (await page.getByRole('link', { name: 'Sign up', exact: true }).boundingBox())!;
+  expect(play.width * play.height).toBeGreaterThan(2 * signUp.width * signUp.height);
+  // Play is on the first screen
+  expect(play.y + play.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+});
+
 test('shows Offline', async ({ page }) => {
   await statusAnswers(page, { online: false, players: 0, checkedAt: '2026-11-11T00:00:00.000Z' });
   await page.goto('/');

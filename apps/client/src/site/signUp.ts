@@ -4,7 +4,7 @@
 import { checkSignUp, normalizeAccount } from '@flyffweb/protocol';
 import type { SignUpField, SignUpProblem } from '@flyffweb/protocol';
 import { pageSessionStorage, putSignUpAccount } from './handoff';
-import { el, siteHeader, siteRoot } from './page';
+import { el, showLobbyArt, siteLogo, siteRoot } from './page';
 import { SignUpApi } from './signUpApi';
 import type { SignUpAnswer } from './signUpApi';
 import './site.css';
@@ -51,10 +51,11 @@ const form = el('form', { class: 'site-panel site-form', novalidate: '' },
   el('div', { class: 'site-actions' }, submit));
 
 root.replaceChildren(
-  siteHeader(el('p', { class: 'site-badge' }, 'Closed Beta')),
+  el('header', { class: 'site-top' }, siteLogo()),
   form,
   el('p', { class: 'site-back' }, el('a', { href: '/' }, 'Home')),
 );
+showLobbyArt();
 
 let ticket: Promise<string | undefined> = api.ticket();
 let sending = false;

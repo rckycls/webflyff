@@ -37,10 +37,15 @@ async function askStatus(fetchFn: typeof fetch): Promise<StatusAnswer | 'unreach
 export function watchStatus(el: HTMLElement, fetchFn: typeof fetch, doc: Document): () => void {
   let timer: ReturnType<typeof setInterval> | undefined;
   let stopped = false;
-  el.textContent = statusText('checking');
+  const show = (answer: StatusAnswer | 'unreachable' | 'checking') => {
+    el.textContent = statusText(answer);
+    // for the page's dot: green online, grey offline, none when not known
+    el.dataset.state = answer === 'checking' ? 'checking' : answer === 'unreachable' ? 'unknown' : answer.online ? 'online' : 'offline';
+  };
+  show('checking');
   const ask = async () => {
     const answer = await askStatus(fetchFn);
-    if (!stopped) el.textContent = statusText(answer);
+    if (!stopped) show(answer);
   };
   const follow = () => {
     clearInterval(timer);

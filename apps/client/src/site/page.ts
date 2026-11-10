@@ -1,5 +1,6 @@
-// What the site's pages share: a small element builder and the header with the game's logo. The pages show outside data
-// as text only (`textContent`); the only HTML they insert is the news and about text, escaped when the page was built.
+// What the site's pages share: a small element builder, the game's art behind the whole page, and the logo. The pages
+// show outside data as text only (`textContent`); the only HTML they insert is the news and about text, escaped when the
+// page was built.
 
 import { lobbyPicture } from './siteArt';
 
@@ -15,24 +16,28 @@ export function el<K extends keyof HTMLElementTagNameMap>(
   return element;
 }
 
-/** The page's `<main id="site">`. */
-export function siteRoot(): HTMLElement {
+/** The page's `<main id="site">`, with the page's class. */
+export function siteRoot(className = 'site-page'): HTMLElement {
   const root = document.getElementById('site');
   if (root === null) throw new Error('the page has no #site');
-  root.className = 'site-page';
+  root.className = className;
   return root;
 }
 
 /**
- * The header: the word FlyFF, shown as the login screen's picture (which carries the logo) once the asset index gives
- * it, and what follows it (the label, the buttons). Without the picture the word stays.
+ * The login screen's picture (which carries the FlyFF logo at its top centre) behind the whole page, once the asset
+ * index gives it (`html.has-art`, site.css). Without it the page keeps its sky gradient and shows the word FlyFF.
  */
-export function siteHeader(...children: (Node | string)[]): HTMLElement {
-  const header = el('header', { class: 'site-hero' }, el('h1', { class: 'site-logo' }, el('a', { href: '/' }, 'FlyFF')), ...children);
+export function showLobbyArt(): void {
   void lobbyPicture(fetch.bind(window)).then((url) => {
     if (url === null) return;
-    header.style.setProperty('--site-screen', `url(${JSON.stringify(url)})`);
-    header.classList.add('has-picture');
+    const html = document.documentElement;
+    html.style.setProperty('--site-screen', `url(${JSON.stringify(url)})`);
+    html.classList.add('has-art');
   });
-  return header;
+}
+
+/** The logo: the word FlyFF, a link home. Over the art it is hidden from the eye (the art shows the logo) but not from a screen reader. */
+export function siteLogo(): HTMLElement {
+  return el('h1', { class: 'site-logo' }, el('a', { href: '/' }, 'FlyFF'));
 }
