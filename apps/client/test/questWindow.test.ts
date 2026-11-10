@@ -29,46 +29,84 @@ const state = (extra: Partial<QuestWindowState> = {}): QuestWindowState => ({
 });
 
 const windows: QuestWindow[] = [];
-afterEach(() => { for (const window of windows.splice(0)) window.dispose(); });
-function make(first: QuestWindowState = state()) {
+afterEach(() => {
+  for (const window of windows.splice(0)) window.dispose();
+  document.body.replaceChildren();
+});
+/** The windows in a layer of `size` (jsdom lays nothing out, so the layer's size is given). */
+function make(first: QuestWindowState = state(), size = { width: 0, height: 0 }) {
   const actions = { check: vi.fn(), abandon: vi.fn(), destination: vi.fn(), say: vi.fn() };
   const window = new QuestWindow(art, new Map(), NAMES, actions, document);
   windows.push(window);
-  for (const element of window.elements) document.body.append(element);
-  window.toggle(800, first);
+  const layer = document.createElement('div');
+  Object.defineProperty(layer, 'clientWidth', { value: size.width });
+  Object.defineProperty(layer, 'clientHeight', { value: size.height });
+  document.body.append(layer);
+  for (const element of window.elements) layer.append(element);
+  window.toggle(size.width, first);
   const q = <T extends HTMLElement = HTMLElement>(selector: string) => document.querySelector<T>(selector);
   const qa = (selector: string) => [...document.querySelectorAll<HTMLElement>(selector)];
-  return { window, actions, q, qa };
+  const general = () => q('[data-quest-tab="6001"]')!.click();
+  const filter = (value: 'all' | 'current' | 'completed') => {
+    q('.quest-filter-field')!.click();
+    q(`.quest-filter-list [data-filter="${value}"]`)!.click();
+  };
+  return { window, actions, q, qa, general, filter };
 }
 
 describe('QuestWindow (APP_QUEST_EX_LIST, APP_QUEST_EX_DETAIL; WndQuest.cpp)', () => {
-  it('four tabs titled by 6000-6003, General selected, In Progress by default; the tab and filter survive reopening', () => {
-    const { window, q, qa } = make();
+  it('opens on Scenario and In Progress (TreeInformation.cpp:36-37); the tab and filter survive reopening', () => {
+    const { window, q, qa, general, filter } = make();
     expect(window.list.isOpen).toBe(true);
     expect(qa('[data-quest-tab]').map((tab) => tab.textContent)).toEqual(['Scenario', 'General', 'Request Office', 'Event']);
-    expect(q('[data-quest-tab="6001"]')!.getAttribute('aria-pressed')).toBe('true');
-    const filter = q<HTMLSelectElement>('select.quest-filter')!;
-    expect(filter.value).toBe('current');
-    q('[data-quest-tab="6000"]')!.click();
-    filter.value = 'all';
-    filter.dispatchEvent(new Event('change'));
+    expect(q('[data-quest-tab="6000"]')!.getAttribute('aria-pressed')).toBe('true');
+    expect(q('.quest-filter-field')!.textContent).toBe('In Progress');
+    expect(qa('[data-quest-id]')).toEqual([]);
+    general();
+    filter('all');
     window.toggle(800, state());
     expect(window.list.isOpen).toBe(false);
     window.toggle(800, state());
-    expect(q('[data-quest-tab="6000"]')!.getAttribute('aria-pressed')).toBe('true');
-    expect(q<HTMLSelectElement>('select.quest-filter')!.value).toBe('all');
+    expect(q('[data-quest-tab="6001"]')!.getAttribute('aria-pressed')).toBe('true');
+    expect(q('.quest-filter-field')!.textContent).toBe('All Quests');
   });
 
-  it('the tree shows folders with the open and close pictures and leaves; a completed leaf is grey with no box', () => {
-    const { q, qa } = make();
-    q<HTMLSelectElement>('select.quest-filter')!.value = 'all';
-    q('select.quest-filter')!.dispatchEvent(new Event('change'));
-    const folder = q('[data-quest-folder="6051"]')!;
-    expect(folder.querySelector('img')!.getAttribute('src')).toContain('butttreeopen');
-    folder.click();
-    expect(q('[data-quest-folder="6051"] img')!.getAttribute('src')).toContain('butttreeclose');
+  it('the tab strip is at the bottom of the tiled tab control, its titles centred, the chosen one black', () => {
+    const { q } = make();
+    const control = q('.quest-tabctrl')!;
+    expect(control.style.top).toBe('28px');
+    expect(control.style.height).toBe('300px');
+    // rows − 2 of 8 px: (300 / 8 − 2) × 8 = 280 (CWndTabCtrl::AdditionalSkinTexture, WndControl.cpp:4396-4398)
+    const strip = control.querySelector<HTMLElement>('.hud-tab-strip')!;
+    expect(strip.style.top).toBe('280px');
+    expect(strip.classList.contains('quest-tab-strip')).toBe(true);
+    expect(control.querySelector('.hud-edit-tiles')).not.toBeNull();
+  });
+
+  it('the header bars are WndEditTile200 bars; the detail\'s title is empty (resData.txt.txt:6719)', () => {
+    const { window, q, qa, general } = make();
+    expect(q('.hud-quests .quest-header')!.textContent).toBe('Quest List');
+    expect(q<HTMLElement>('.hud-quests .quest-header .hud-edit-tiles > div')!.style.backgroundImage).toContain('wndedittile200');
+    general();
+    q('[data-quest-id="151"] .quest-title')!.click();
+    expect(window.detail.isOpen).toBe(true);
+    expect(qa('.hud-quest-detail .quest-header').map((bar) => bar.textContent)).toEqual(['Quest Contents', 'Requirement', 'Reward']);
+    expect(q('.hud-quest-detail > .hud-window-title')!.textContent).toBe('');
+    expect(window.detail.element.getAttribute('aria-label')).toBe('The Path of the Mercenary');
+  });
+
+  it('a folder opens or closes by its picture or a double press; one press only chooses it (WndControl.cpp:1306-1385)', () => {
+    const { q, qa, general, filter } = make();
+    general();
+    filter('all');
+    expect(q('[data-quest-folder="6051"] .quest-fold img')!.getAttribute('src')).toContain('butttreeopen');
+    q('[data-quest-folder="6051"] .quest-folder-title')!.click();
+    expect(q('[data-quest-id="151"]')).not.toBeNull();
+    expect(q('[data-quest-folder="6051"]')!.classList.contains('selected')).toBe(true);
+    q('[data-quest-folder="6051"] .quest-fold')!.click();
+    expect(q('[data-quest-folder="6051"] .quest-fold img')!.getAttribute('src')).toContain('butttreeclose');
     expect(q('[data-quest-id="151"]')).toBeNull();
-    q('[data-quest-folder="6051"]')!.click();
+    q('[data-quest-folder="6051"] .quest-folder-title')!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
     expect(q('[data-quest-id="151"] .quest-check')).not.toBeNull();
     const done = q('[data-quest-id="83"]')!;
     expect(done.classList.contains('completed')).toBe(true);
@@ -76,8 +114,19 @@ describe('QuestWindow (APP_QUEST_EX_LIST, APP_QUEST_EX_DETAIL; WndQuest.cpp)', (
     expect(qa('[data-quest-id]').map((leaf) => leaf.dataset.questId)).toEqual(['151', '84', '83']);
   });
 
+  it('the chosen row is blue text with no bar, 16 px a level', () => {
+    const { q, general } = make();
+    general();
+    q('[data-quest-id="151"] .quest-title')!.click();
+    const leaf = q('[data-quest-id="151"]')!;
+    expect(leaf.classList.contains('selected')).toBe(true);
+    expect(leaf.style.paddingLeft).toBe('16px');
+    expect(q('[data-quest-folder="6051"]')!.style.paddingLeft).toBe('0px');
+  });
+
   it('a tick sends check; the box shows what QUEST_CHECKED says, not the click', () => {
-    const { window, actions, q } = make();
+    const { window, actions, q, general } = make();
+    general();
     q('[data-quest-id="151"] .quest-check')!.click();
     expect(actions.check).toHaveBeenCalledWith(151, true);
     expect(q('[data-quest-id="151"] .quest-check')!.dataset.checked).toBe('false');
@@ -89,27 +138,65 @@ describe('QuestWindow (APP_QUEST_EX_LIST, APP_QUEST_EX_DETAIL; WndQuest.cpp)', (
 
   it('a sixth tick sends nothing and says why', () => {
     const five = new Map([1, 2, 3, 4, 5, 151].map((id) => [id, own(id)]));
-    const { actions, q } = make(state({ current: five, checked: [1, 2, 3, 4, 5] }));
+    const { actions, q, general } = make(state({ current: five, checked: [1, 2, 3, 4, 5] }));
+    general();
     q('[data-quest-id="151"] .quest-check')!.click();
     expect(actions.check).not.toHaveBeenCalled();
     expect(actions.say).toHaveBeenCalledWith('You cannot check that anymore.');
   });
 
-  it('a leaf toggles the detail with its state text, rows (met ones grey) and rewards', () => {
-    const { window, q } = make();
+  it('a leaf toggles the detail with its state text, rows and rewards, each on edit tiles with a scroll bar', () => {
+    const { window, q, general } = make();
+    general();
     q('[data-quest-id="151"] .quest-title')!.click();
     expect(window.detail.isOpen).toBe(true);
     expect(q('.quest-contents')!.textContent).toContain('Slay 10 Small Aibatts.');
     expect(q('.quest-conditions')!.textContent).toContain('Defeat Small Aibatt (3/10)');
     expect(q('.quest-rewards')!.textContent).toContain('Penya: 1500');
+    for (const words of ['.quest-contents', '.quest-conditions', '.quest-rewards']) {
+      const box = q(words)!.parentElement!;
+      expect(box.querySelector('.hud-edit-tiles'), words).not.toBeNull();
+      expect(box.querySelector('.hud-res-scroll'), words).not.toBeNull();
+    }
     q('[data-quest-id="151"] .quest-title')!.click();
+    expect(window.detail.isOpen).toBe(false);
+    // the tree keeps its choice (m_pFocusElem) when the detail closes
+    expect(q('[data-quest-id="151"]')!.classList.contains('selected')).toBe(true);
+  });
+
+  it('a new tab or filter closes the detail (WndQuest.cpp:1230-1234)', () => {
+    const { window, q, general, filter } = make();
+    general();
+    q('[data-quest-id="151"] .quest-title')!.click();
+    q('[data-quest-tab="6002"]')!.click();
+    expect(window.detail.isOpen).toBe(false);
+    general();
+    q('[data-quest-id="151"] .quest-title')!.click();
+    expect(window.detail.isOpen).toBe(true);
+    filter('all');
     expect(window.detail.isOpen).toBe(false);
   });
 
-  it('abandon is offered only for a removable current quest', () => {
-    const { window, actions, q } = make();
+  it('the filter is a read-only combo box: its field and drop button open the list under it', () => {
+    const { q, qa } = make();
+    const list = q('.quest-filter-list')!;
+    expect(list.hidden).toBe(true);
+    expect(q('.quest-filter .hud-edit-tiles')).not.toBeNull();
+    q('.quest-filter .hud-res-combo-drop')!.click();
+    expect(list.hidden).toBe(false);
+    expect(qa('.quest-filter-list [data-filter]').map((row) => row.textContent)).toEqual(['All Quests', 'In Progress', 'Completed']);
+    q('.quest-filter-field')!.click();
+    expect(list.hidden).toBe(true);
+    expect(q('select')).toBeNull();
+  });
+
+  it('abandon is offered only for a removable current quest; the box closes the detail and keeps the quest', () => {
+    const { window, actions, q, general } = make();
+    general();
     const remove = () => q<HTMLButtonElement>('button.quest-remove')!;
-    expect(remove().disabled).toBe(true); // nothing selected
+    expect(remove().disabled).toBe(true); // nothing chosen
+    q('[data-quest-folder="6051"] .quest-folder-title')!.click();
+    expect(remove().disabled).toBe(true); // a folder
     q('[data-quest-id="151"] .quest-title')!.click();
     expect(remove().disabled).toBe(false);
     window.update(state({ dialogueOpen: true }));
@@ -119,6 +206,7 @@ describe('QuestWindow (APP_QUEST_EX_LIST, APP_QUEST_EX_DETAIL; WndQuest.cpp)', (
     expect(remove().disabled).toBe(true);
     q('[data-quest-id="151"] .quest-title')!.click();
     remove().click();
+    expect(window.detail.isOpen).toBe(false);
     expect(q('.quest-confirm')!.textContent).toContain('Are you going to cancel the quest?');
     q<HTMLButtonElement>('.quest-confirm [data-button="cancel"]')!.click();
     expect(actions.abandon).not.toHaveBeenCalled();
@@ -128,25 +216,29 @@ describe('QuestWindow (APP_QUEST_EX_LIST, APP_QUEST_EX_DETAIL; WndQuest.cpp)', (
     expect(actions.abandon).toHaveBeenCalledWith(151);
   });
 
-  it('a row with a goal calls destination; one without does nothing', () => {
-    const { actions, q } = make();
+  it('a row with a goal calls destination and turns blue; one without does nothing', () => {
+    const { actions, q, general } = make();
+    general();
     q('[data-quest-id="151"] .quest-title')!.click();
     q<HTMLButtonElement>('.quest-conditions [data-row="0"]')!.click();
     expect(actions.destination).toHaveBeenCalledWith({ x: 7128, z: 3333, text: 1 });
+    expect(q('.quest-conditions [data-row="0"]')!.classList.contains('selected')).toBe(true);
     q('[data-quest-id="84"] .quest-title')!.click();
     q<HTMLButtonElement>('.quest-conditions [data-row="0"]')!.click();
     expect(actions.destination).toHaveBeenCalledTimes(1);
   });
 
   it('catalog titles go in as text', () => {
-    const { q } = make();
+    const { q, general } = make();
+    general();
     const title = q('[data-quest-id="84"] .quest-title')!;
     expect(title.textContent).toBe('<b>x</b>');
     expect(title.querySelector('b')).toBeNull();
   });
 
   it('an update that changes nothing keeps the rows, so a press between two frames lands', () => {
-    const { window, q } = make();
+    const { window, q, general } = make();
+    general();
     const row = q('[data-quest-id="151"]');
     window.update(state());
     expect(q('[data-quest-id="151"]')).toBe(row);
@@ -163,6 +255,39 @@ describe('QuestWindow (APP_QUEST_EX_LIST, APP_QUEST_EX_DETAIL; WndQuest.cpp)', (
     expect(window.list.isOpen).toBe(false);
     window.update(state({ current: new Map([[151, own(151, 4)], [84, own(84)]]) }));
     expect(q('.quest-conditions')!.textContent).toContain('Defeat Small Aibatt (4/10)');
+  });
+
+  it('the detail docks at the list\'s right edge less 2 px and follows it (WndQuest.cpp:1177-1189)', async () => {
+    const { window, q, general } = make(state(), { width: 1280, height: 720 });
+    general();
+    q('[data-quest-id="151"] .quest-title')!.click();
+    const at = window.list.position;
+    expect(window.detail.position).toEqual({ x: at.x + 334, y: at.y });
+    window.list.open({ x: 100, y: 60 });
+    await Promise.resolve();
+    expect(window.detail.position).toEqual({ x: 434, y: 60 });
+  });
+
+  it('opens in the middle of the screen (MoveParentCenter, WndQuest.cpp:1157-1159)', () => {
+    const { window } = make(state(), { width: 1280, height: 720 });
+    expect(window.list.position).toEqual({ x: (1280 - 336) / 2, y: (720 - 416) / 2 });
+  });
+
+  it('on a phone: the frame\'s 0.7, the list centred, then the list and its detail centred together', () => {
+    const original = window.matchMedia;
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true });
+    try {
+      const { window: quests, q, general } = make(state(), { width: 900, height: 400 });
+      expect(quests.list.element.hasAttribute('data-mobile-window')).toBe(true);
+      expect(quests.list.position.x).toBe(Math.round((900 - 336 * 0.7) / 2));
+      general();
+      q('[data-quest-id="151"] .quest-title')!.click();
+      const left = (900 - (336 + 272 - 2) * 0.7) / 2;
+      expect(Math.abs(quests.list.position.x - left)).toBeLessThanOrEqual(1);
+      expect(Math.abs(quests.detail.position.x - (left + 334 * 0.7))).toBeLessThanOrEqual(1);
+      q('[data-quest-id="151"] .quest-title')!.click();
+      expect(quests.list.position.x).toBe(Math.round((900 - 336 * 0.7) / 2));
+    } finally { window.matchMedia = original; }
   });
 
   it('dispose removes both windows and their listeners', () => {

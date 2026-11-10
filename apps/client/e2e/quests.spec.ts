@@ -57,12 +57,15 @@ test('quests: the window, the detail, a check and the tracker, progress lines, a
   await openQuests(page, isMobile);
   const list = page.locator('.hud-quests');
   await expect(list).toBeVisible();
+  // 2026-11-11: V15 opens on the Scenario tab (TreeInformation.cpp:36); the quest is under General
+  await expect(list.locator('[data-quest-tab="6000"]')).toHaveAttribute('aria-pressed', 'true');
+  await list.locator('[data-quest-tab="6001"]').click();
   await expect(list.locator('[data-quest-tab="6001"]')).toHaveAttribute('aria-pressed', 'true');
   await expect(list.locator('[data-quest-folder="6051"]')).toContainText('1st Job Change');
   const leaf = list.locator('[data-quest-id="151"]');
   await expect(leaf.locator('.quest-title')).toHaveText('The Path of the Mercenary');
   if (isMobile) {
-    // 8. a full-screen panel inside the screen
+    // 8. the window inside the screen (2026-11-11: the frame's 0.7, centred; questWindow.spec.ts measures it)
     const viewport = page.viewportSize()!;
     const box = (await list.boundingBox())!;
     expect(box.x).toBeGreaterThanOrEqual(0);
@@ -77,7 +80,9 @@ test('quests: the window, the detail, a check and the tracker, progress lines, a
   await expect(detail).toBeVisible();
   await expect(detail.locator('.quest-conditions')).toContainText('Defeat Small Aibatt (3/10)');
   await expect(detail.locator('.quest-rewards')).toContainText('Penya: 1500');
-  if (isMobile) expect(await apart(list, detail)).toBe(true);
+  // the detail docked at the list's right edge less 2 px (WndQuest.cpp:1666-1674), the phone's too (2026-11-11)
+  const [listBox, detailBox] = [(await list.boundingBox())!, (await detail.boundingBox())!];
+  expect(detailBox.x).toBeGreaterThanOrEqual(listBox.x + listBox.width - 3);
 
   // 3. a tick sends QUEST_CHECK 151, 1; the box and the tracker follow QUEST_CHECKED
   await leaf.locator('.quest-check').click();
