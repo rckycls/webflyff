@@ -116,7 +116,9 @@ export class ChatWindow {
         // :708-713); a typed command goes as typed. 2026-11-09: then as ParsingChat sends it (chatSend.ts): a client
         // command runs here, an unknown or refused one goes nowhere, shout, party and guild chat as "/s", "/p", "/g", a
         // plain line through the anti-spam and the word filter
-        const line = this.view === 'party' && this.party && text !== '' && !text.startsWith('/') ? `/p ${text}` : text;
+        // 2026-11-10 (guild): and the Guild view in a guild is the guild channel, "/g " before the line (WndCommunication.cpp:713-718)
+        const line = text === '' || text.startsWith('/') ? text
+          : this.view === 'party' && this.party ? `/p ${text}` : this.view === 'guild' && this.guild ? `/g ${text}` : text;
         this.feedback.textContent = '';
         this.apply(this.sender.line(line, { authorization: this.authorization, partySize: this.party ? 2 : 0 }));
         if (text !== '') this.history.remember(text);
@@ -135,6 +137,18 @@ export class ChatWindow {
 
   /** In a party or not: with the Party view chosen, a typed line goes to the party while in one. */
   setParty(inParty: boolean): void { this.party = inParty; }
+
+  /**
+   * 2026-11-10 (guild): in a guild or not: the Guild view is enabled in one (`WndCommunication.cpp:216`), and a line typed
+   * in it goes to the guild.
+   */
+  setGuild(inGuild: boolean): void {
+    this.guild = inGuild;
+    const tab = this.tabs.get('guild');
+    if (tab !== undefined) tab.disabled = !inGuild;
+    if (!inGuild && this.view === 'guild') this.selectView('all');
+  }
+  private guild = false;
 
   /** 2026-11-09: the texts of textClient.inc, for the anti-spam's lines. */
   setTexts(texts: (id: string) => { text: string; color: number } | undefined): void { this.texts = texts; }

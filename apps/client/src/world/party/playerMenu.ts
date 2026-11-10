@@ -4,7 +4,8 @@
 //   MMI_TRADE 2               Trade                       always (:6552); 2026-11-10: the trade (trade/tradeHud.ts)
 //   MMI_ADD_MESSENGER 5       Add to my list              always (:6553)
 //   MMI_INVITE_PARTY 6        Invite to join party        always, never greyed (:6554); the click: InviteParty
-//   MMI_INVITE_COMPANY 7      Invite to join guild        in a guild that may invite (:6556-6565): no guild here
+//   MMI_INVITE_COMPANY 7      Invite to join guild        in a guild whose rank may invite (:6556-6565); 2026-11-10: the guild
+//                                                         (guild/guildHud.ts `inviteMover`)
 //   MMI_DUEL 10, _PARTY 11    the duels                   event EVE_18 and a fight area (:6583-6599): out of scope
 //   MMI_TRACE 12              Follow                      always (:6605)
 //   MMI_QUERYEQUIP 24         View equipment              always (:6606)
@@ -26,21 +27,28 @@ export const MMI_TRADE = 2;
 export const MMI_ADD_MESSENGER = 5;
 /** TID_GAME_MENU_CAMPUS_INVITATION, not TID_MMI_DIALOG + 151 (:6610). */
 const MMI_INVITE_CAMPUS = 151;
+/** 2026-11-10: MMI_INVITE_COMPANY (`Resource/defineNeuz.h:99`), "Invite to join guild" (`WndWorld.cpp:5645-5650`). */
+export const MMI_INVITE_COMPANY = 7;
 
 const ENTRIES: ReadonlyArray<[number, string]> = [
-  [MMI_TRADE, 'Trade'], [5, 'Add to my list'], [MMI_INVITE_PARTY, 'Invite to join party'], [12, 'Follow'], [24, 'View equipment'],
+  [MMI_TRADE, 'Trade'], [5, 'Add to my list'], [MMI_INVITE_PARTY, 'Invite to join party'],
+  [MMI_INVITE_COMPANY, 'Invite to join guild'], [12, 'Follow'], [24, 'View equipment'],
   [31, 'Cheer'], [MMI_INVITE_CAMPUS, 'Request Mentor-Pupil Bond'],
 ];
 
 /** 2026-11-10: MMI_QUERYEQUIP, the one line of a seller's menu (`__CSC_VER12_1`, WndWorld.cpp:6544-6547). */
 const MMI_QUERYEQUIP = 24;
 
-/** `vendor`: the player has an open personal shop, and its menu is "View equipment" alone (greyed here, as before). */
-export function playerMenuEntries(texts: Texts, vendor = false): MenuEntry[] {
-  return ENTRIES.filter(([id]) => !vendor || id === MMI_QUERYEQUIP).map(([id, english]) => ({
+/**
+ * `vendor`: the player has an open personal shop, and its menu is "View equipment" alone (greyed here, as before).
+ * `guildInvite` (2026-11-10): the viewer is in a guild whose rank may invite (`PF_INVITATION`, :6556-6565): the invite line
+ * is there, enabled; otherwise it is not in the menu at all.
+ */
+export function playerMenuEntries(texts: Texts, vendor = false, guildInvite = false): MenuEntry[] {
+  return ENTRIES.filter(([id]) => (!vendor || id === MMI_QUERYEQUIP) && (id !== MMI_INVITE_COMPANY || guildInvite)).map(([id, english]) => ({
     id,
     label: id === MMI_INVITE_CAMPUS ? (texts.get('TID_GAME_MENU_CAMPUS_INVITATION')?.text ?? english) : menuLabel(id, texts, english),
-    enabled: id === MMI_INVITE_PARTY || id === MMI_ADD_MESSENGER || id === MMI_TRADE,
+    enabled: id === MMI_INVITE_PARTY || id === MMI_ADD_MESSENGER || id === MMI_TRADE || id === MMI_INVITE_COMPANY,
   }));
 }
 

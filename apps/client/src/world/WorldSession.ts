@@ -25,6 +25,9 @@ import {
   encodeAddFriend, encodeAddFriendNameRequest, encodeAddFriendRequest, encodeFriendCancel, encodeFriendIntercept, encodeGetFriendState,
   encodeRemoveFriend, encodeSetFriendState, friendPacketTypeOf,
 } from '@flyffweb/protocol';
+// 2026-11-10: the guild's direct packets
+import { guildPacketTypeOf } from '@flyffweb/protocol';
+import type { GuildDirectMessage } from '@flyffweb/protocol';
 import type { BundleMessage, BundleResult, MoveReport, Shortcut, SkillSlot, Vec3, WorldMessage } from '@flyffweb/protocol';
 import type { AngleReport, FlightReport } from '@flyffweb/protocol';
 import {
@@ -257,6 +260,8 @@ export class WorldSession {
   sendTradeBlock(gu: number, askerName: string): void { this.playingCache()?.send(encodeBlock(gu, this.entry.character.name, askerName)); }
   /** 2026-11-10: a personal shop packet (world/vendor.ts's encoders: PVENDOR_*, the shop's chat room), as it is. */
   sendVendor(bytes: Uint8Array): void { this.playingCache()?.send(bytes); }
+  /** 2026-11-10: a guild packet the guild windows built (guild/guildHud.ts). */
+  sendGuild(bytes: Uint8Array): void { this.playingCache()?.send(bytes); }
   private ownPlayerId(): number { return this.entry.character.playerId; }
   readonly stats: SessionStats = { bundles: 0, indexed: 0, skipped: 0, mismatched: 0, unknownPackets: 0, droppedEvents: 0 };
   private phase: Phase = 'opening';
@@ -635,6 +640,24 @@ export class WorldSession {
         // 2026-11-10: the core's messenger packets and SAY, handed on as the direct chat packets are
         if (this.phase === 'playing') {
           this.notify({ type: 'messages', messages: [{ objectId: NULL_ID, type: friendPacketTypeOf(packet), value: packet }] });
+        }
+        break;
+      case 'guildWhole':
+      case 'guildMemberAdded':
+      case 'guildMemberRemoved':
+      case 'guildMemberLevel':
+      case 'guildClass':
+      case 'guildMasterChanged':
+      case 'guildNickname':
+      case 'guildMemberLogin':
+      case 'guildGameJoin':
+      case 'guildError':
+      case 'guildSetName':
+      case 'guildMsgControl':
+        // 2026-11-10: the core's guild packets, handed on as the friends' are (guild research §4). GUILD_GAMEJOIN comes
+        // before the world's JOIN (CGuildMng::AddConnection) and is dropped then; V15 makes no use of it.
+        if (this.phase === 'playing') {
+          this.notify({ type: 'messages', messages: [{ objectId: NULL_ID, type: guildPacketTypeOf(packet as GuildDirectMessage), value: packet as GuildDirectMessage }] });
         }
         break;
       case 'keepAlive':

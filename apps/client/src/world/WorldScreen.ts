@@ -102,7 +102,7 @@ import { FriendHud } from './friends/friendHud';
 import { TradeHud } from './trade/tradeHud';
 import { Messenger, loadFriendOptions, saveFriendOptions } from './friends/messenger';
 import type { FriendEvent } from './friends/messenger';
-import { MMI_ADD_MESSENGER, MMI_INVITE_PARTY, MMI_TRADE, menuInReach, playerMenuEntries } from './party/playerMenu';
+import { MMI_ADD_MESSENGER, MMI_INVITE_COMPANY, MMI_INVITE_PARTY, MMI_TRADE, menuInReach, playerMenuEntries } from './party/playerMenu';
 import { PartyHpBars } from './render/PartyHpBars';
 import { partyEffects } from './fx/partyEffects';
 import type { PartyEffectContext, PartyMover } from './fx/partyEffects';
@@ -172,7 +172,12 @@ import { ItemActions } from './items/itemActions';
 import { GroundItems } from './items/groundItems';
 import { GroundModels, loadDropModel } from './items/groundModels';
 import { NearbyItems } from './items/nearbyItems';
-import { NULL_ID, STATE_BASEMOTION_MODE, ShortcutKind, isTradeMessage } from '@flyffweb/protocol';
+import { NULL_ID, STATE_BASEMOTION_MODE, ShortcutKind, isGuildMessage, isTradeMessage } from '@flyffweb/protocol';
+// 2026-11-10: the guild (guild/guildBook.ts, guild/guildHud.ts)
+import { GuildBook } from './guild/guildBook';
+import type { GuildContext, GuildEvent } from './guild/guildBook';
+import { GuildHud } from './guild/guildHud';
+import { canInvite, logoKey } from './guild/guildRules';
 import type { TaskBarData, TaskBarWindow } from './hud/taskBar';
 import { OwnMover, pickOnStage } from './ownMover';
 import { OwnState } from './OwnState';
@@ -185,7 +190,8 @@ import { WorldIndicatorLayer } from './render/WorldIndicatorLayer';
 import { lookOf, ownWorn, sexChangeLook } from './render/looks';
 import { MoveMark } from './render/moveMark';
 import { loadHeldItems, loadMoverModel, loadRideModel } from './render/moverModels';
-import { nameTagOf } from './render/nameTags';
+import { guildLine, nameTagOf } from './render/nameTags';
+import type { GuildLine } from './render/nameTags';
 import type { TapHit } from './render/picking';
 import { latestOnly, renderPortrait, renderPreview } from './render/portrait';
 import { SpriteLayer } from './render/SpriteLayer';
@@ -488,6 +494,13 @@ export class WorldScreen {
   private tradeHud: TradeHud | undefined;
   private tradeTooltip: HTMLElement | null = null;
   private readonly friendEvents: FriendEvent[] = [];
+  /**
+   * 2026-11-10: the guilds (`g_GuildMng`, guild/guildBook.ts), the screen's as the friend list is; its windows
+   * (`GuildHud`) go with the world. Its events wait for the windows while a world loads.
+   */
+  private readonly guildBook = new GuildBook();
+  private readonly guildEvents: GuildEvent[] = [];
+  private guildHud: GuildHud | undefined;
   private dialog: DialogWindow | undefined;
   /** `CWndWorld::m_dwDropTime` (WndWorld.cpp:590): when the player last dropped an item. */
   private lastDropAt = -Infinity;
@@ -831,6 +844,13 @@ export class WorldScreen {
         else this.friendEvents.push(event);
       }
       if (this.friendHud !== undefined && this.friendEvents.length > 0) this.friendHud.handle(this.friendEvents.splice(0));
+      // 2026-11-10: the guild's messages (guild/guildBook.ts); their events to the windows once they exist
+      if (isGuildMessage(value)) {
+        this.guildEvents.push(...this.guildBook.apply(objectId, value, this.guildContext(world)));
+        if (this.guildHud !== undefined && this.guildEvents.length > 0) this.guildHud.handle(this.guildEvents.splice(0));
+        else if (this.guildEvents.some((event) => event.kind === 'tags')) this.recolorTags();
+        continue;
+      }
       // 2026-11-10: a `/say` line (OnSay, DPClient.cpp:11911-12074)
       if (value.type === 'say') { this.friendHud?.onSay(value); continue; }
       // 2026-11-10: the player trade's snapshots (trade/tradeState.ts), and the asked side's refusals (OnBlock gu 3, 4, 5, 8)
@@ -908,7 +928,9 @@ export class WorldScreen {
         }
         else this.chatWindow?.append(value.type, value.sender, value.text, value.type === 'whisper' ? value.recipient : undefined,
           value.type === 'shout' ? value.color : undefined);
-        if (value.type === 'party' && value.speakerId !== undefined && value.text !== '' && world.movers.has(value.speakerId)) {
+        // 2026-11-10: and the guild's, over the speaker in view (OnGuildChat, DPClient.cpp:12870-12875; Neuz's guild skin
+        // `texDialogBoxGuild` is not drawn: the bubble is the one of every chat)
+        if ((value.type === 'party' || value.type === 'guild') && value.speakerId !== undefined && value.text !== '' && world.movers.has(value.speakerId)) {
           this.speechBubbles?.say(value.speakerId, value.text);
         }
         continue;
@@ -1653,6 +1675,8 @@ export class WorldScreen {
       gameMaster: () => isGameMaster(this.world?.self()?.added.player?.authorization ?? 0),
       inParty: (playerId) => this.party.isMember(playerId),
       invite: (playerId) => this.inviteToParty(playerId),
+      // 2026-11-10: the Guild tab's rows (guild/guildHud.ts)
+      guildRows: () => this.guildHud?.messengerRows() ?? [],
       playerData: (playerId) => this.playerData.get(playerId),
       jobName: (job) => this.data?.jobs[job]?.title ?? '',
       serverName: () => this.entry.serverName,
@@ -1663,6 +1687,21 @@ export class WorldScreen {
       saveOptions: (options) => saveFriendOptions((() => { try { return globalThis.localStorage ?? null; } catch { return null; } })(), options),
     }, this.messenger, this.friendOptions, doc);
     this.friendHud = friendHud;
+    // 2026-11-10: the guild's windows (guild/guildHud.ts)
+    const guildHud = new GuildHud(this.hudArt!, this.data!.texts, {
+      send: (bytes) => session.sendGuild(bytes),
+      ownPlayerId: () => this.entry.character.playerId,
+      say: (text, color) => this.hud?.messages.add(text, color),
+      playerData: (playerId) => this.playerData.get(playerId),
+      playerVersion: (playerId) => this.playerData.version(playerId),
+      recolorTags: () => this.recolorTags(),
+      setChatGuild: (inGuild) => this.chatWindow?.setGuild(inGuild),
+      playMusic: (id) => this.sounds?.serverMusic(id),
+      nameCatalog: () => ({ invalidNames: this.partyCatalog?.invalidNames ?? [], letters: this.partyCatalog?.letters ?? '' }),
+      openMessage: (name) => { friendHud.openMessage(name); },
+      now: () => Math.floor(Date.now() / 1000),
+    }, this.guildBook, (key) => this.services?.store.url(key) ?? '', doc);
+    this.guildHud = guildHud;
     // 2026-11-10: the player trade (trade/tradeHud.ts)
     const tradeHud = new TradeHud(this.hudArt!, this.data!.texts, {
       session: {
@@ -1729,7 +1768,7 @@ export class WorldScreen {
     this.optionWindow = this.audio === null ? undefined : new OptionWindow(this.hudArt!, this.audio, doc);
     for (const modal of [
       logOutBox.modal, reviveWindow.modal, skillWindow.warning.modal, this.dialog.modal, questWindow.modal, messageBox.modal, selectVillage.modal, partyHud.messageBox.modal,
-      friendHud.messageBox.modal, tradeHud.gold.window.modal!,
+      friendHud.messageBox.modal, tradeHud.gold.window.modal!, ...guildHud.modals,
     ]) {
       modal.onChange = () => this.modalChanged();
     }
@@ -1743,19 +1782,22 @@ export class WorldScreen {
       ...(this.chatWindow instanceof NeuzChat ? this.chatWindow.elements : [this.chatWindow.element]), this.shopWindow.frame.element,
       this.petWindows.element, this.buffPet.element,
       ...questWindow.elements, this.dialog.element, this.moverMenu.element, ...partyHud.elements, ...friendHud.elements,
-      ...tradeHud.elements,
+      ...tradeHud.elements, ...guildHud.elements,
       ...(this.personalShop?.elements.slice(1) ?? []),
     );
     // what the friend list said while the world loaded
     if (this.friendEvents.length > 0) friendHud.handle(this.friendEvents.splice(0));
+    // and the guild (its log-in GUILD's member data, an invite)
+    if (this.guildEvents.length > 0) guildHud.handle(this.guildEvents.splice(0));
     // 2026-11-10: a key or a press brings the own state back from auto-absent (SetMessengerAutoState, Neuz.cpp:1362, :1418)
     this.element.addEventListener('pointerdown', this.onFriendInput, true);
     if (this.chatWindow instanceof NeuzChat) {
       // at the bottom left on the task bar; Guild is enabled in a guild (the character's guild, JOIN)
       this.chatWindow.show();
-      this.chatWindow.setGuild(this.entry.character.guildId !== 0);
       for (const modal of this.chatWindow.modals) modal.onChange = () => this.modalChanged();
     }
+    // 2026-11-10: the own mover's guild (its ADD_OBJ, SET_GUILD), on the desktop chat and the phone's
+    this.chatWindow.setGuild((this.world?.self()?.added.player?.guildId ?? this.entry.character.guildId) !== 0);
     // what the party said while the world loaded
     if (this.partyEvents.length > 0) partyHud.handle(this.partyEvents.splice(0));
     if (this.optionWindow !== undefined) this.hud!.element.append(this.optionWindow.frame.element);
@@ -2036,7 +2078,7 @@ export class WorldScreen {
     const changes = world.takeChanges();
     this.countDropped(changes.dropped);
     this.views!.sync(changes, world.movers);
-    this.tags!.sync(changes, world.movers, (mover) => nameTagOf(mover, world.self(), data.nameColors, data.honorTitles, this.inParty, data.jobs));
+    this.tags!.sync(changes, world.movers, (mover) => nameTagOf(mover, world.self(), data.nameColors, data.honorTitles, this.inParty, data.jobs, this.guildTagOf));
     this.play(changes);
   }
 
@@ -2733,6 +2775,7 @@ export class WorldScreen {
     const leader = this.party.members[0];
     partyHud?.updateIcons(this.party.modeOn(4) || (leader !== undefined && world.moverByPlayerId(leader.playerId) !== undefined));
     this.friendHud?.update();
+    this.guildHud?.update();
     if (this.questTracker !== undefined || this.questWindow !== undefined) {
       const questState = this.questState();
       this.questTracker?.update(questState);
@@ -2778,6 +2821,8 @@ export class WorldScreen {
     if (window === 'party') { this.partyHud?.toggle(); return; }
     // 2026-11-10: APP_MESSENGER_EX, E (FuncApplet.cpp:260)
     if (window === 'messenger') { this.friendHud?.toggle(); return; }
+    // 2026-11-10: APP_GUILD, G (FuncApplet.cpp:245): the guild window, opened even without a guild (WndGuild.cpp:115-125)
+    if (window === 'guild') { this.guildHud?.toggle(); return; }
     // 2026-11-10: APP_VENDOR_REVISION, the personal shop (the Summon Angel window that refuses it, WndManager.cpp:2686-2695,
     // is not in the browser)
     if (window === 'vendor') { this.personalShop?.toggle(); return; }
@@ -3194,7 +3239,9 @@ export class WorldScreen {
     const at = this.menuPoint(id);
     if (at === null) return;
     // 2026-11-10: a seller's menu is "View equipment" alone (__CSC_VER12_1, WndWorld.cpp:6544-6547)
-    this.moverMenu!.open(playerMenuEntries(this.data!.texts, this.personalShop?.hasShop(id) === true), at, (entry) => this.choosePlayerEntry(id, entry));
+    // 2026-11-10: "Invite to join guild" in a guild whose rank may invite (WndWorld.cpp:6556-6565)
+    const guildInvite = canInvite(this.guildBook.own(this.entry.character.playerId), this.entry.character.playerId);
+    this.moverMenu!.open(playerMenuEntries(this.data!.texts, this.personalShop?.hasShop(id) === true, guildInvite), at, (entry) => this.choosePlayerEntry(id, entry));
   }
 
   /** Invite (`OnCommand` MMI_INVITE_PARTY, :5639-5644, `InviteParty`, :11237-11266): the focus a player, the party's rule. */
@@ -3208,6 +3255,11 @@ export class WorldScreen {
     // 2026-11-10: "Add to my list" (MMI_ADD_MESSENGER, WndWorld.cpp:5141-5159)
     if (entry === MMI_ADD_MESSENGER && player !== undefined) {
       this.friendHud?.addFromMenu(player.playerId, this.world?.movers.get(id)?.name ?? '');
+      return;
+    }
+    // 2026-11-10: "Invite to join guild" (MMI_INVITE_COMPANY, InviteCompany, WndWorld.cpp:11268-11282): the player's object
+    if (entry === MMI_INVITE_COMPANY && player !== undefined) {
+      this.guildHud?.inviteMover(id);
       return;
     }
     if (entry !== MMI_INVITE_PARTY || player === undefined || this.focus?.targetId !== id) return;
@@ -3374,7 +3426,44 @@ export class WorldScreen {
   private recolorTags(): void {
     const world = this.world, data = this.data;
     if (world === undefined || data === undefined) return;
-    this.tags?.recolor(world.movers, (mover) => nameTagOf(mover, world.self(), data.nameColors, data.honorTitles, this.inParty, data.jobs));
+    this.tags?.recolor(world.movers, (mover) => nameTagOf(mover, world.self(), data.nameColors, data.honorTitles, this.inParty, data.jobs, this.guildTagOf));
+  }
+
+  /** 2026-11-10: a player's guild line (`CMover::GetGuild`, `Mover.cpp:8137-8160`): its guild's name and logo, or none. */
+  private readonly guildTagOf = (mover: Mover): GuildLine | undefined => {
+    const player = mover.added.player;
+    if (player === undefined) return undefined;
+    const guild = this.guildBook.shownGuild(player.guildId, player.playerId, this.entry.character.playerId);
+    if (guild === undefined) return undefined;
+    return guildLine({ name: guild.name, logo: guild.logo, master: guild.masterId === player.playerId }, logoKey);
+  };
+
+  /** 2026-11-10: what the guild book reads of the world (guild/guildBook.ts `GuildContext`). */
+  private guildContext(world: WorldState): GuildContext {
+    const self = world.self();
+    // the own mover's guild and war (its ADD_OBJ, then SET_GUILD / SET_WAR on it)
+    if (self?.added.player !== undefined) this.guildBook.setOwn(self.added.player.guildId ?? 0, self.added.player.warId ?? 0);
+    const playerOf = (objectId: number) => world.movers.get(objectId)?.added.player;
+    return {
+      ownObjectId: self?.objectId ?? NULL_ID,
+      ownPlayerId: this.entry.character.playerId,
+      moverGuild: (objectId) => { const player = playerOf(objectId); return player === undefined ? undefined : player.guildId ?? 0; },
+      setMoverGuild: (objectId, guildId) => {
+        const player = playerOf(objectId);
+        if (player === undefined) return;
+        if (guildId === 0) delete player.guildId; else player.guildId = guildId;
+      },
+      setMoverWar: (objectId, warId) => {
+        const player = playerOf(objectId);
+        if (player === undefined) return;
+        if (warId === 0) delete player.warId; else player.warId = warId;
+      },
+      playerInView: (playerId) => {
+        const mover = world.moverByPlayerId(playerId);
+        return mover === undefined ? undefined : { objectId: mover.objectId, name: mover.name };
+      },
+      playerName: (playerId) => this.playerData.peek(playerId)?.name ?? '',
+    };
   }
 
   /** What the party windows draw: each member from its mover in view, else from the player data (queried once). */
@@ -3749,6 +3838,9 @@ export class WorldScreen {
     this.partyHud?.dispose();
     this.friendHud?.dispose();
     this.friendHud = undefined;
+    // 2026-11-10: the guild's windows go with the world; the guild book stays (the screen's)
+    this.guildHud?.dispose();
+    this.guildHud = undefined;
     this.tradeHud?.reset();
     this.tradeHud = undefined;
     this.showTradeTooltip(null, null);

@@ -45,7 +45,8 @@ export function encodeChat(channel: ChatChannel, text: string, target = ''): Uin
 export function readSocial(r: ArReader, type: 'party' | 'guild'): ChatMessage {
   const speakerId = r.u32();
   if (type === 'party') return { type, sender: r.string(42), text: r.string(260), speakerId };
-  return { type, sender: r.string(32), text: r.string(1024) };
+  // 2026-11-10 (guild): the speaker kept, for the bubble over a speaker in view (OnGuildChat, DPClient.cpp:12870-12875)
+  return { type, sender: r.string(32), text: r.string(1024), speakerId };
 }
 export function readGmSay(r: ArReader): ChatMessage {
   const sender = r.string(32); r.string(32);

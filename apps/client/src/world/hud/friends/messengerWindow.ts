@@ -11,7 +11,9 @@
 //   OnLButtonUp, OnLButtonDblClk,    WndMessengerCtrl.cpp:567-630, :816-903    select, open the Message window, the menu
 //   OnRButtonUp
 //
-// The Guild and Mentor-Pupil tabs are drawn, but their lists stay empty: the browser keeps no guild or campus member list.
+// The Guild tab (2026-11-10, guild research §5) lists the own guild's members as `CWndGuildCtrlEx` does
+// (`WndMessengerCtrl.cpp:1094-1419`): the same columns and sort, a double click opens a message; it has no menu. The
+// Mentor-Pupil tab is drawn, but its list stays empty: the browser keeps no campus member list.
 // The note button and the mail icon wait for the memos and the post (research §9).
 
 import type { UiArt } from '../art';
@@ -66,28 +68,32 @@ export interface MessengerView {
   channelName: string;
   /** The Friend tab's rows, sorted. */
   rows: readonly FriendRow[];
+  /** 2026-11-10: the Guild tab's rows, sorted (none outside a guild). */
+  guildRows?: readonly FriendRow[];
   /** The job's name of a row (its tooltip). */
   jobName: (job: number) => string;
 }
 
 export class MessengerWindow {
   readonly frame: WindowFrame;
-  /** A column head pressed, on the Friend tab. */
-  onSort: (key: SortKey) => void = () => {};
+  /** A column head pressed, on the Friend tab (0) or the Guild tab (1). */
+  onSort: (key: SortKey, tab: number) => void = () => {};
   /** The arrow by the state: open the state menu at this point of the window layer. */
   onStateMenu: (at: { x: number; y: number }) => void = () => {};
   onAdd: () => void = () => {};
   /** A row double-clicked. */
   onOpen: (row: FriendRow) => void = () => {};
-  /** A row right-clicked, at this point of the window layer. */
-  onMenu: (row: FriendRow, at: { x: number; y: number }) => void = () => {};
-  /** `m_nCurSelect`: an index into the sorted rows, or -1. */
+  /** A row right-clicked, at this point of the window layer, on its tab. */
+  onMenu: (row: FriendRow, at: { x: number; y: number }, tab: number) => void = () => {};
+  /** `m_nCurSelect`: an index into the current tab's sorted rows, or -1. */
   selected = -1;
   private tab = 0;
   private readonly tabTiles: HTMLElement;
   private readonly panels: HTMLElement[];
-  private readonly list: HTMLElement;
-  private readonly scroll: TextScrollBar;
+  /** The Friend tab's list and the Guild tab's (2026-11-10), each with its scroll bar. */
+  private readonly lists: HTMLElement[] = [];
+  private readonly scrolls: TextScrollBar[] = [];
+  private readonly listed: Array<readonly FriendRow[]> = [[], []];
   private readonly ownIcon: HTMLElement;
   private readonly name: HTMLElement[];
   private readonly state: HTMLElement;
@@ -133,7 +139,7 @@ export class MessengerWindow {
     stateButton.setAttribute('aria-label', 'Status');
     body.append(stateButton);
     for (const [key, label, picture, rect] of HEADS) {
-      const head = pictureButton(doc, art, picture, rect, rect.width, () => { if (this.tab === 0) this.onSort(key); });
+      const head = pictureButton(doc, art, picture, rect, rect.width, () => { if (this.tab < 2) this.onSort(key, this.tab); });
       head.dataset.sort = key;
       head.setAttribute('aria-label', label);
       body.append(head);
@@ -148,32 +154,36 @@ export class MessengerWindow {
     note.disabled = true;
     body.append(add, note);
 
-    // the tab control: the Friend list, and the Guild and Mentor-Pupil panels
+    // the tab control: the Friend list, the Guild list (2026-11-10) and the Mentor-Pupil panel
     const panelRect = { left: TABS.left, top: TABS.top, width: TABS.width, height: TABS.height - STRIP };
-    const friendPanel = doc.createElement('div');
-    friendPanel.className = 'hud-messenger-panel';
-    place(friendPanel, panelRect);
-    this.list = doc.createElement('div');
-    this.list.className = 'hud-messenger-list';
-    this.list.setAttribute('role', 'list');
-    place(this.list, { left: 0, top: 0, width: panelRect.width, height: panelRect.height });
-    this.list.addEventListener('scroll', () => {
-      // a row a step (`CWndScrollBar` of the list, its page the height / 20)
-      const snapped = Math.round(this.list.scrollTop / PITCH) * PITCH;
-      if (snapped !== this.list.scrollTop) this.list.scrollTop = snapped;
-    });
-    this.list.addEventListener('click', (event) => this.press(event, 'select'));
-    this.list.addEventListener('dblclick', (event) => this.press(event, 'open'));
-    this.list.addEventListener('contextmenu', (event) => { event.preventDefault(); this.press(event, 'menu'); });
-    this.scroll = textScrollBar(doc, art, this.list, { left: 0, top: 0, width: panelRect.width, height: panelRect.height });
-    friendPanel.append(this.list, this.scroll.element);
     const empty = (): HTMLElement => {
       const panel = doc.createElement('div');
       panel.className = 'hud-messenger-panel';
       place(panel, panelRect);
       return panel;
     };
-    this.panels = [friendPanel, empty(), empty()];
+    const listPanel = (tab: number): HTMLElement => {
+      const panel = empty();
+      const list = doc.createElement('div');
+      list.className = 'hud-messenger-list';
+      list.dataset.tab = String(tab);
+      list.setAttribute('role', 'list');
+      place(list, { left: 0, top: 0, width: panelRect.width, height: panelRect.height });
+      list.addEventListener('scroll', () => {
+        // a row a step (`CWndScrollBar` of the list, its page the height / 20)
+        const snapped = Math.round(list.scrollTop / PITCH) * PITCH;
+        if (snapped !== list.scrollTop) list.scrollTop = snapped;
+      });
+      list.addEventListener('click', (event) => this.press(event, 'select', tab));
+      list.addEventListener('dblclick', (event) => this.press(event, 'open', tab));
+      list.addEventListener('contextmenu', (event) => { event.preventDefault(); this.press(event, 'menu', tab); });
+      const scroll = textScrollBar(doc, art, list, { left: 0, top: 0, width: panelRect.width, height: panelRect.height });
+      panel.append(list, scroll.element);
+      this.lists.push(list);
+      this.scrolls.push(scroll);
+      return panel;
+    };
+    this.panels = [listPanel(0), listPanel(1), empty()];
     body.append(...this.panels);
     this.tabTiles = doc.createElement('div');
     this.tabTiles.className = 'hud-messenger-tabs';
@@ -189,6 +199,7 @@ export class MessengerWindow {
 
   /** The chosen tab (`WIDC_TABCTRL1`'s change, :829-841). */
   showTab(tab: number): void {
+    if (tab !== this.tab) { this.selected = -1; this.shown = ''; }
     this.tab = tab;
     this.panels.forEach((panel, i) => { panel.hidden = i !== tab; });
     const columns = Math.trunc(TABS.width / TAB_TILE);
@@ -225,26 +236,37 @@ export class MessengerWindow {
     // the server and channel on the Friend and Guild tabs; the campus points on Mentor-Pupil (not kept here: blank)
     this.setText(this.server, this.tab === 2 ? '' : view.serverName);
     this.setText(this.channel, this.tab === 2 ? '' : view.channelName);
-    this.rows = view.rows;
-    if (this.selected >= view.rows.length) this.selected = -1;
-    const key = JSON.stringify([view.rows, this.selected]);
+    const lists = [view.rows, view.guildRows ?? []];
+    const current = lists[Math.min(this.tab, 1)]!;
+    if (this.selected >= (this.tab < 2 ? current.length : 0)) this.selected = -1;
+    const key = JSON.stringify([lists, this.selected, this.tab]);
     if (key === this.shown) return;
     this.shown = key;
-    this.list.replaceChildren(...view.rows.map((row, i) => this.rowElement(row, i, view.jobName(row.job))));
-    // the rows' full height, so that the list scrolls by rows below its last
-    const spacer = this.doc.createElement('div');
-    spacer.className = 'hud-messenger-spacer';
-    place(spacer, { left: 0, top: 0, width: 1, height: TOP + PITCH * view.rows.length });
-    this.list.append(spacer);
-    this.scroll.draw();
+    lists.forEach((rows, tab) => {
+      this.listed[tab] = rows;
+      const list = this.lists[tab]!;
+      const selected = tab === this.tab ? this.selected : -1;
+      list.replaceChildren(...rows.map((row, i) => this.rowElement(row, i, view.jobName(row.job), selected)));
+      // the rows' full height, so that the list scrolls by rows below its last
+      const spacer = this.doc.createElement('div');
+      spacer.className = 'hud-messenger-spacer';
+      place(spacer, { left: 0, top: 0, width: 1, height: TOP + PITCH * rows.length });
+      list.append(spacer);
+      this.scrolls[tab]!.draw();
+    });
   }
 
-  /** The rows shown (for the tests). */
+  /** The Friend tab's rows shown (for the tests). */
   get shownRows(): readonly FriendRow[] {
-    return this.rows;
+    return this.listed[0]!;
   }
 
-  private rowElement(row: FriendRow, index: number, jobName: string): HTMLElement {
+  /** 2026-11-10: the Guild tab's rows shown (for the tests). */
+  get shownGuildRows(): readonly FriendRow[] {
+    return this.listed[1]!;
+  }
+
+  private rowElement(row: FriendRow, index: number, jobName: string, selected: number): HTMLElement {
     const doc = this.doc;
     const element = doc.createElement('div');
     element.className = 'hud-messenger-row';
@@ -280,24 +302,24 @@ export class MessengerWindow {
     name.className = 'hud-messenger-text';
     name.dataset.column = 'name';
     name.textContent = nameText(row.name);
-    name.style.color = cssRgb(nameColor(row, index === this.selected));
+    name.style.color = cssRgb(nameColor(row, index === selected));
     place(name, { left: 226, top: 3, width: 84, height: 14 });
     element.append(name);
-    if (index === this.selected) element.dataset.selected = '';
+    if (index === selected) element.dataset.selected = '';
     return element;
   }
 
-  private press(event: MouseEvent, kind: 'select' | 'open' | 'menu'): void {
+  private press(event: MouseEvent, kind: 'select' | 'open' | 'menu', tab: number): void {
     const target = (event.target as Element | null)?.closest?.('.hud-messenger-row') as HTMLElement | null;
     const index = target === null ? -1 : Number(target.dataset.index);
-    const row = index >= 0 ? this.rows[index] : undefined;
+    const row = index >= 0 ? this.listed[tab]?.[index] : undefined;
     if (row === undefined) return;
     this.selected = index;
     this.shown = '';
     if (kind === 'open') this.onOpen(row);
     if (kind === 'menu') {
       const layer = this.frame.element.parentElement?.getBoundingClientRect();
-      this.onMenu(row, { x: Math.round(event.clientX - (layer?.left ?? 0)), y: Math.round(event.clientY - (layer?.top ?? 0)) });
+      this.onMenu(row, { x: Math.round(event.clientX - (layer?.left ?? 0)), y: Math.round(event.clientY - (layer?.top ?? 0)) }, tab);
     }
   }
 
