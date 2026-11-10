@@ -28,10 +28,13 @@ export default defineConfig(({ command }) => {
     plugins: [serveDist({ distDir: path.join(flyffwebRoot, 'dist') }), siteRoutes(), siteContent(path.join(clientRoot, 'content'))],
     define: gateway?.define,
     // `host` makes the dev server reachable from a phone on the same Wi-Fi.
-    // `/api` is the web service (apps/web), as Caddy passes it on the hosted site; `WEB_API` points elsewhere.
+    // `/api` is the web service (apps/web), as Caddy passes it on the hosted site; `WEB_API` points elsewhere. Both proxies
+    // are the dev server's only: a build has none.
     server: {
       port: DEV_PORT, host: true,
-      proxy: { ...gateway?.proxy, '/api': { target: process.env.WEB_API ?? 'http://127.0.0.1:8091', changeOrigin: false } },
+      proxy: command === 'serve'
+        ? { ...gateway?.proxy, '/api': { target: process.env.WEB_API ?? 'http://127.0.0.1:8091', changeOrigin: false } }
+        : undefined,
     },
     // `vite preview` sends the site's security headers, as Caddy does, so the `prod` e2e project runs the game under its
     // Content-Security-Policy (e2e/securityHeaders.spec.ts); its WebSockets go to a gateway on this machine. The dev server
