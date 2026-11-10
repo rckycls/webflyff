@@ -271,6 +271,8 @@ export class WorldSession {
   sendVendor(bytes: Uint8Array): void { this.playingCache()?.send(bytes); }
   /** 2026-11-10: a guild packet the guild windows built (guild/guildHud.ts). */
   sendGuild(bytes: Uint8Array): void { this.playingCache()?.send(bytes); }
+  /** 2026-11-10 (bank-mail): a bank or post packet the bank's or the post's windows built (bank/bankHud.ts, post/postHud.ts). */
+  sendBankMail(bytes: Uint8Array): void { this.playingCache()?.send(bytes); }
   private ownPlayerId(): number { return this.entry.character.playerId; }
   readonly stats: SessionStats = { bundles: 0, indexed: 0, skipped: 0, mismatched: 0, unknownPackets: 0, droppedEvents: 0 };
   private phase: Phase = 'opening';

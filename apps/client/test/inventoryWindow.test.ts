@@ -230,9 +230,9 @@ describe('inventory window', () => {
     expect(use).toHaveBeenCalledWith(2);
     ui.frame.element.querySelector<HTMLButtonElement>('[data-bag-slot="8"]')!.click();
     expect(actions()).toEqual(['use', 'drop']);
-    // 2026-11-05: the Custody scroll opens the bank, which the browser lacks: no Use
+    // 2026-11-10 (bank-mail): the Custody scroll opens the bank: Use
     ui.frame.element.querySelector<HTMLButtonElement>('[data-bag-slot="9"]')!.click();
-    expect(actions()).toEqual(['drop']);
+    expect(actions()).toEqual(['use', 'drop']);
     ui.dispose();
   });
   it('only requests a drop after dragging a bag item to the game canvas and confirming its quantity', () => {

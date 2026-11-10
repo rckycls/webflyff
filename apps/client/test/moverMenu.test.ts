@@ -17,8 +17,9 @@ describe('npcMenuEntries (CWndWorld::ShowMoverMenu, WndWorld.cpp:6649-6684)', ()
 
   it("Dialog, a shop's Trade and a teleporter's Teleport are enabled; the rest is greyed", () => {
     const enabled = (npc: WebNpc) => npcMenuEntries(npc, TEXTS, false).filter((entry) => entry.enabled).map((entry) => entry.id);
-    expect(enabled(JULIA)).toEqual([MMI.DIALOG, MMI.TRADE]);
-    expect(enabled({ ...JULIA, vendorType: 1 })).toEqual([MMI.DIALOG]);
+    // 2026-11-10 (bank-mail): and Deposit
+    expect(enabled(JULIA)).toEqual([MMI.DIALOG, MMI.TRADE, MMI.BANKING]);
+    expect(enabled({ ...JULIA, vendorType: 1 })).toEqual([MMI.DIALOG, MMI.BANKING]);
     expect(enabled({ key: 't', name: 'T', menus: [0, 146] })).toEqual([MMI.DIALOG]);
     expect(enabled({ key: 't', name: 'T', menus: [0, 146], teleports: [{ x: 1, z: 2 }] })).toEqual([MMI.DIALOG, MMI.TELEPORTER]);
   });
@@ -71,12 +72,14 @@ describe('npcMenuEntries (CWndWorld::ShowMoverMenu, WndWorld.cpp:6649-6684)', ()
     expect(sole({ key: 't', name: 'T', menus: [] })).toBe(0);
     expect(sole(undefined)).toBe(0);
     expect(sole({ key: 't', name: 'T', menus: [0, 2] })).toBeNull();
+    // 2026-11-10 (bank-mail): Banker Pang's Deposit and the Post Box's Mailbox run at once
+    expect(sole({ key: 'MaFl_InstantBank', name: 'Bank', menus: [9] })).toBe(MMI.BANKING);
+    expect(sole({ key: 'MaFl_Postbox', name: 'Post Box', menus: [25] })).toBe(MMI.POST);
     expect(MENU_RANGE).toBe(20);
   });
 
   it('a sole entry the browser cannot open shows the menu with it greyed instead', () => {
     const sole = (npc: WebNpc) => soleEntry(npc, npcMenuEntries(npc, TEXTS, false));
-    expect(sole({ key: 'MaFl_InstantBank', name: 'Bank', menus: [9] })).toBeNull();
     expect(sole({ key: 't', name: 'T', menus: [146] })).toBeNull(); // a teleporter with no destinations
     expect(sole({ key: 't', name: 'T', menus: [2], vendorType: 1 })).toBeNull();
   });
@@ -94,14 +97,14 @@ describe('MoverMenu (CWndMenu, WndControl.cpp:3337-3630)', () => {
     expect([menu.element.style.left, menu.element.style.top]).toEqual(['120px', '80px']);
     const buttons = [...menu.element.querySelectorAll<HTMLButtonElement>('button[data-menu-entry]')];
     expect(buttons.map((button) => button.dataset.menuEntry)).toEqual(['0', '2', '9', '16', '17', '18', '137']);
-    expect(buttons.map((button) => button.disabled)).toEqual([false, false, true, true, true, true, true]);
+    expect(buttons.map((button) => button.disabled)).toEqual([false, false, false, true, true, true, true]);
   });
 
   it('choosing an enabled entry calls back once and closes; a greyed one does nothing', () => {
     const menu = make();
     const choose = vi.fn();
     menu.open(npcMenuEntries(JULIA, TEXTS, false), { x: 0, y: 0 }, choose);
-    menu.element.querySelector<HTMLButtonElement>('[data-menu-entry="9"]')!.click();
+    menu.element.querySelector<HTMLButtonElement>('[data-menu-entry="16"]')!.click();
     expect(choose).not.toHaveBeenCalled();
     menu.element.querySelector<HTMLButtonElement>('[data-menu-entry="2"]')!.click();
     expect(choose).toHaveBeenCalledTimes(1);

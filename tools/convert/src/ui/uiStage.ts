@@ -255,6 +255,10 @@ export const THEME_FILES: readonly string[] = [
   'ButtGuildMemberTabJob.bmp', 'ButtGuildMemberTabLevel.bmp', 'ButtGuildMemberTabChar.bmp', 'ButtGuildMemberTabAlias.bmp',
   'ButtPay.BMP', 'ButtGuildWar.BMP', 'ButtGuildDuel.bmp', 'ButtPeace.BMP', 'ButtGiveUp.BMP', 'ButtNoticeNew.BMP',
   'ButtNoticeStart.BMP', 'ButtNoticeEdit.BMP',
+  // 2026-11-10, the bank and the post (docs/superpowers/specs/2026-11-10-bank-mail-research.md): APP_COMMON_BANK's picture
+  // (resdata.inc:10679) and its NOT USE cover (WndBank.cpp:122); APP_POST_READ's Reply (:25539-25649); the inbox's table and
+  // its read mark (CWndPostReceive::OnInitialUpdate, WndField.cpp:15378-15380)
+  'WndCommonBank.tga', 'WndCommonBankNotUse.tga', 'ButtReply.tga', 'WndPostTable.tga', 'WndNotUse.tga',
 ];
 
 /**

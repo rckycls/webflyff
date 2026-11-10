@@ -98,3 +98,43 @@ export function chosenTabTiles(columns: number, tabs: number, chosen: number): T
   }
   return tiles;
 }
+
+/**
+ * 2026-11-10 (bank-mail): a whole strip of tabs, `width` px long and 20 px tall, as `CWndTabCtrl` draws it under its pages:
+ * the strip's tiles (`tabStripTiles`), the chosen tab's over them (`chosenTabTiles`) and each title over its share, the chosen
+ * one black, the others white (`OnDraw`, :4220-4285). A press on a title calls `choose` with its index.
+ */
+export function tabStrip(
+  doc: Document, art: UiArt, width: number, titles: readonly string[], chosen: number, choose?: (tab: number) => void,
+): HTMLElement {
+  const strip = doc.createElement('div');
+  strip.className = 'hud-tab-strip';
+  strip.style.width = `${width}px`;
+  strip.style.height = `${TAB_TILE_HEIGHT}px`;
+  const columns = Math.trunc(width / TAB_TILE);
+  const tile = (index: number, left: number, tileWidth = TAB_TILE): HTMLElement => {
+    const element = doc.createElement('div');
+    element.className = 'hud-tab-tile';
+    element.style.left = `${left}px`;
+    element.style.width = `${tileWidth}px`;
+    element.style.backgroundImage = themeUrl(art, `WndTabTile${String(index).padStart(2, '0')}.bmp`);
+    return element;
+  };
+  const tiles = tabStripTiles(columns, titles.length).map((index, i) => tile(index, i * TAB_TILE));
+  for (const piece of chosenTabTiles(columns, titles.length, chosen)) tiles.push(tile(piece.index, piece.left, piece.width));
+  const share = Math.trunc(columns / Math.max(titles.length, 1)) * TAB_TILE;
+  const buttons = titles.map((title, i) => {
+    const button = doc.createElement('button');
+    button.type = 'button';
+    button.className = 'hud-tab-title';
+    button.dataset.tab = String(i);
+    button.setAttribute('aria-pressed', String(i === chosen));
+    button.textContent = title;
+    button.style.left = `${i * share}px`;
+    button.style.width = `${share}px`;
+    if (choose !== undefined) button.addEventListener('click', () => choose(i));
+    return button;
+  });
+  strip.append(...tiles, ...buttons);
+  return strip;
+}

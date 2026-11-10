@@ -28,6 +28,8 @@ export const MMI = {
   SMELT_JEWEL: 52, SMELT_EXTRACTION: 53,
   /** 2026-11-10: Leave Arena (Harold) and the Forsaken Tower (hud/heavenTowerWindow.ts). */
   ARENA_EXIT: 81, HEAVEN_TOWER: 97,
+  /** 2026-11-10 (bank-mail): Deposit (the bank, bank/bankHud.ts) and Mailbox (the post, post/postHud.ts). */
+  BANKING: 9, POST: 25,
 } as const;
 /**
  * 2026-11-10: the Arena's and the Forsaken Tower's entries: Enter and Leave Arena send their header
@@ -85,7 +87,8 @@ export function npcMenuEntries(npc: WebNpc | undefined, texts: Texts, ownIsBaseJ
       // 2026-11-05: Buff Pang's entry only sends its key (MMI_NPC_BUFF, WndWorld.cpp:5131-5136)
       enabled: id === MMI.DIALOG || (id === MMI.TRADE && !npc?.vendorType) || id === MMI.NPC_BUFF || UPGRADE_ENTRIES.has(id) ||
         (id === MMI.TELEPORTER && (npc?.teleports?.length ?? 0) > 0) || PET_ENTRIES.has(id) || TAMER_ENTRIES.has(id) ||
-        ARENA_TOWER_ENTRIES.has(id),
+        ARENA_TOWER_ENTRIES.has(id) ||
+        id === MMI.BANKING || id === MMI.POST,
     }));
 }
 

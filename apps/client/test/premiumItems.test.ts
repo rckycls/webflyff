@@ -29,8 +29,10 @@ describe('useOf: what Neuz sends DOUSEITEM for', () => {
   it('an item that needs another item (EXT_ITEM, the upgrade cards) or a window the browser lacks is not used', () => {
     expect(useOf(prop({ kind2: 19, exeTarget: 21 }))).toBe('needsItem');
     for (const kind3 of [37, 61, 62, 63, 101, 119]) expect(useOf(prop({ kind2: 19, kind3 })), String(kind3)).toBe('needsItem');
-    // 2026-11-10: the guild name scroll 10463 has its window now (guild/guildHud.ts `openRename`)
-    for (const id of [15083, 26410, 26411, 26475, 26476, 10425]) {
+    // 2026-11-10: the guild name scroll 10463 has its window now (guild/guildHud.ts `openRename`), and (bank-mail) the Custody
+    // scroll 15083 opens the bank
+    expect(useOf(prop({ id: 15083, kind2: 19 }))).toBe('window');
+    for (const id of [26410, 26411, 26475, 26476, 10425]) {
       expect(useOf(prop({ id, kind2: 19 })), String(id)).toBe('noWindow');
     }
     // 2026-11-09 (pets B1): the vis (IK3_VIS 138) is used, CheckConfirm's box first with a buff pet out

@@ -1,6 +1,6 @@
 export { ProtocolError } from './errors';
 export { bytesToHex, hexToBytes } from './hex';
-export { decodeText, encodeAscii } from './text';
+export { decodeText, encodeAscii, encodeGameText } from './text';
 export { ArReader } from './ar/ArReader';
 export { ArWriter } from './ar/ArWriter';
 export { crc32 } from './framing/crc32';
@@ -43,7 +43,7 @@ export {
   encodeAddAppletTaskBar, encodeAddItemTaskBar, encodeRemoveAppletTaskBar, encodeRemoveItemTaskBar, encodeSkillTaskBar,
 } from './world/taskBar';
 export type {
-  AddedMover, AddedNpc, AddedPlayer, GroundItem, InventoryItem, MonsterRate, OwnCharacter, Shortcut, SkillSlot, TaskBar,
+  AddedMover, AddedNpc, AddedPlayer, GroundItem, InventoryItem, MonsterRate, OwnBank, OwnCharacter, Shortcut, SkillSlot, TaskBar,
   WorldMessage, WornPart, MessageOf, PartyBlock, PartyRequestSide, PlayerDataRecord,
 } from './world/types';
 export { CloseCode } from './gatewayCloseCodes';
@@ -67,3 +67,5 @@ export * from './world/itemWindows';
 export * from './world/pets';
 export * from './world/trade';
 export * from './world/guild';
+export * from './world/bank';
+export * from './world/post';

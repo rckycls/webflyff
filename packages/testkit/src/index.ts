@@ -41,6 +41,12 @@ export {
   writeTradeLastConfirmOk, writeTradeOk, writeTradePull, writeTradePut, writeTradePutError, writeTradePutGold,
 } from './trade';
 export { writeUltimate } from './ultimate'; // 2026-11-10: the jewel windows' answers
+// 2026-11-10: the bank and the post
+export {
+  writeBankIsFull, writeBankWindow, writeChangeBankPass, writeConfirmBankPass, writeGetItemBank, writePutGoldBank,
+  writePutItemBank, writeUpdateBankItem,
+} from './bank';
+export { writeMail, writeMailBox, writeMailBoxReq, writeModifyMode, writeRemoveMail } from './post';
 export {
   directAddGuildMember, directChgMaster, directGuild, directGuildChat, directGuildClass, directGuildError,
   directGuildMemberLevel, directGuildMemberLogin, directGuildNickname, directGuildSetName, directRemoveGuildMember,
