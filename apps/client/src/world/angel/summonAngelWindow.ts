@@ -81,6 +81,7 @@ export interface SummonAngelHost {
   /** The bag (`CreateApplet( APP_INVENTORY )`), its place in the layer for the window's, and its close. */
   openBag(): void;
   closeBag(): void;
+  bagOpen(): boolean;
   bagRect(): { x: number; y: number; width: number } | null;
   /** A phone: a tap puts a bag item in, a tap on a filled slot takes it out. */
   mobile(): boolean;
@@ -103,6 +104,8 @@ export class SummonAngelWindow {
   private readonly slots = new AngelSlots();
   /** `m_nowStarting`: START sent, until the window lets everything go (at once, `ReFreshAll( TRUE )`). */
   private starting = false;
+  /** A phone's bag this window opened, closed with it (else it covers the world), as the jewel windows' (2026-11-10). */
+  private openedBag = false;
 
   constructor(private readonly host: SummonAngelHost) {}
 
@@ -123,6 +126,7 @@ export class SummonAngelWindow {
     const window = this.make();
     this.reset();
     this.starting = false;
+    this.openedBag = this.host.mobile() && !this.host.bagOpen();
     this.host.openBag();
     this.host.dieFlag(true);
     this.draw();
@@ -263,6 +267,10 @@ export class SummonAngelWindow {
     this.reset();
     this.starting = false;
     this.host.dieFlag(false);
+    if (this.openedBag) {
+      this.openedBag = false;
+      this.host.closeBag();
+    }
   }
 
   private attach(window: ResWindow): void {
@@ -308,7 +316,7 @@ export class SummonAngelWindow {
       const prop = itemId === undefined ? undefined : this.host.props.get(itemId);
       box.toggleAttribute('data-filled', objectId !== null);
       box.title = prop?.name ?? '';
-      if (prop?.icon === undefined) return;
+      if (prop?.icon === undefined || prop.icon === null) return;
       const holder = doc.createElement('div');
       holder.className = 'hud-res-slot';
       const icon = doc.createElement('img');

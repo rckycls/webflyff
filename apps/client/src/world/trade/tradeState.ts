@@ -61,6 +61,8 @@ export interface TradeContext {
   nameOf(objectId: number): string;
   /** The asked side's open windows (`OnConfirmTrade`'s checks): the request window. */
   requestOpen(): boolean;
+  /** 2026-11-10: the Summon Angel window is open (BLOCK 8, DPClient.cpp:2589-2595). */
+  summonAngelOpen?(): boolean;
 }
 
 const emptySide = (): TradeSide => ({ slots: Array.from({ length: MAX_TRADE }, () => null), gold: 0, ok: false });
@@ -122,6 +124,8 @@ export class TradeState {
         if (name === '') return []; // `prj.GetMover( objid )` not in view
         // a trade or a request already open: BLOCK 5 (:2569-2581)
         if (this.open || ctx.requestOpen()) return [{ kind: 'refuse', gu: 5, askerName: name }];
+        // 2026-11-10: the Summon Angel window open: BLOCK 8 (:2589-2595)
+        if (ctx.summonAngelOpen?.() === true) return [{ kind: 'refuse', gu: 8, askerName: name }];
         return [{ kind: 'request', askerId: objectId, name }];
       }
       case 'confirmTradeCancel':

@@ -106,6 +106,11 @@ export interface ClientHooks {
    * (`bodyAlpha`: 1 whole, 0 not drawn, else an invisible player's blend).
    */
   tags(): Array<{ objectId: number; text: string | null; alpha: number; guild?: string | null }>;
+  /**
+   * 2026-11-10 (Summon Angel): the angels following their players: the player's object ID, the angel buff's item, its place
+   * (D3D) and whether its model is drawn.
+   */
+  angels?(): Array<{ ownerId: number; itemId: number; pos: Vec3; drawn: boolean }>;
 }
 
 declare global {
@@ -140,6 +145,7 @@ export function createClientHooks(): ClientHooks {
     played: () => current().played(),
     screenOf: (objectId) => current().screenOf(objectId),
     tags: () => current().tags(),
+    angels: () => current().angels?.() ?? [],
   };
 }
 

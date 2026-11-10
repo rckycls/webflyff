@@ -7,7 +7,7 @@ import {
   encodeUseItem, encodeEquipItem, encodeMoveItem, encodeDropItem, encodeRevival, encodeChat,
   encodeNpcDialog, encodeNpcDialogOpen, encodeOpenShop, encodeCloseShop, encodeBuyItem, encodeSellItem, encodeTeleporter,
   encodeNpcBuff, encodeQuestCheck, encodeEnchant, encodePiercing, encodeRandomScroll, encodeDoUseItemTarget,
-  encodeUltimateEnchantWeapon, encodeUltimateMakeGem, encodeUltimateSetGem, encodePiercingSize, encodeSmeltSafety, encodeQuerySetPlayerName, encodeSummonParty, encodeSummonPartyConfirm, encodeSummonFriend,
+  encodeAngelBuff, encodeCreateAngel, encodeUltimateEnchantWeapon, encodeUltimateMakeGem, encodeUltimateSetGem, encodePiercingSize, encodeSmeltSafety, encodeQuerySetPlayerName, encodeSummonParty, encodeSummonPartyConfirm, encodeSummonFriend,
   encodeSummonFriendConfirm, encodeSummonFriendCancel, encodeDoUseItemInput, encodeChangeAttribute, encodeItemTransy,
   encodeCreateMonster, encodeRemoveQuest, encodeReturnScroll, encodeStateModeCancel, encodePetRelease,
   encodeUsePetFeed, encodeMakePetFeed, encodePetTamerMistake, encodePetTamerMiracle, encodeFeedPocketInactive, encodeClearPetName,
@@ -139,6 +139,9 @@ export class WorldSession {
   }
   /** 2026-11-10: Create Jewels' weapon, and Jewel Setting's weapon and jewel (world/upgrade.ts in the protocol). */
   sendUltimateMakeGem(weaponId: number): void { this.playingCache()?.send(encodeUltimateMakeGem(weaponId)); }
+  /** 2026-11-10: Summon Angel's START (CREATEANGEL) and the full angel's buff icon (ANGELBUFF). */
+  sendCreateAngel(text: string): void { this.playingCache()?.send(encodeCreateAngel(text)); }
+  sendAngelBuff(): void { this.playingCache()?.send(encodeAngelBuff()); }
   sendUltimateSetGem(weaponId: number, jewelId: number): void { this.playingCache()?.send(encodeUltimateSetGem(weaponId, jewelId)); }
   /** 2026-11-05: the item windows' packets (world/itemWindows.ts in the protocol). */
   sendQuerySetPlayerName(objectId: number, name: string): void { this.playingCache()?.send(encodeQuerySetPlayerName(objectId, name)); }

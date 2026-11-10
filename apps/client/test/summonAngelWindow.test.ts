@@ -41,7 +41,7 @@ function rig(options: { mobile?: boolean; bag?: { x: number; y: number; width: n
     reserved: (id) => reserved.get(id) ?? 0,
     dieFlag: (on) => { die = on; },
     sendCreateAngel: (text) => void sent.push(text),
-    openBag: () => { bag = true; }, closeBag: () => { bag = false; },
+    openBag: () => { bag = true; }, closeBag: () => { bag = false; }, bagOpen: () => bag,
     bagRect: () => (options.bag === undefined ? { x: 600, y: 40, width: 200 } : options.bag),
     mobile: () => options.mobile === true,
     ui: { art: { url: (key) => `/assets/${key}`, sheets: null }, doc: document, layer: () => layer },
@@ -124,6 +124,10 @@ describe('the Summon Angel window (CWndSummonAngel)', () => {
     phone.window.tapItem(4);
     el(phone.layer, '[data-angel-slot="10"]').click();
     expect(phone.window.slotIds[10]).toBeNull();
+    // the phone's bag it opened closes with it
+    expect(phone.bag()).toBe(true);
+    phone.window.close();
+    expect(phone.bag()).toBe(false);
   });
 
   it('START with fewer than 3 stones says ERROR2; with 3 sends CREATEANGEL once and lets everything go', () => {

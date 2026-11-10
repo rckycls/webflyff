@@ -26,6 +26,8 @@ export const MMI = {
   BUFFPET_RELEASE: 142, TELEPORTER: 146,
   /** 2026-11-10: Jewel Setting and Create Jewels (jewels/jewelWindows.ts). */
   SMELT_JEWEL: 52, SMELT_EXTRACTION: 53,
+  /** 2026-11-10: the Priest of Confession's Summon Angel (angel/summonAngelWindow.ts; defineNeuz.h:136). */
+  SUMMON_ANGEL: 43,
 } as const;
 /**
  * 2026-11-09 (pets R1): the own raised pet's entries (`MaFl_Pet`, `Resource/character.inc:5880-5891`): its status window
@@ -50,6 +52,8 @@ const UPGRADE_ENTRIES: ReadonlySet<number> = new Set([
   MMI.PIERCING, MMI.SMELT_SAFETY_GENERAL, MMI.SMELT_SAFETY_ACCESSORY, MMI.SMELT_SAFETY_PIERCING,
   // 2026-11-10: Peach's Jewel Setting and Create Jewels (items/jewelWindows.ts)
   MMI.SMELT_JEWEL, MMI.SMELT_EXTRACTION,
+  // 2026-11-10: the Priest of Confession's Summon Angel (angel/summonAngelWindow.ts)
+  MMI.SUMMON_ANGEL,
 ]);
 /** ShowMoverMenu's range (`distSq < 20 * 20`, WndWorld.cpp:6520-6523). */
 export const MENU_RANGE = 20;

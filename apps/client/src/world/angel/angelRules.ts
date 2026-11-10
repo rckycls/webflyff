@@ -11,7 +11,7 @@
 //   CMover::RenderAngelStatus           _Common/MoverRender.cpp:1951-1978        the EXP target (also WndWorld.cpp:9247-9266)
 
 import type { AngelStack } from '@flyffweb/protocol';
-import type { ExpRow } from '../gameData';
+import type { ExpRow } from '@flyffweb/formats';
 
 /** `II_GEN_MAT_ORICHALCUM01` 2035 ("Sunstone") and `_01_1` 2082; `II_GEN_MAT_MOONSTONE` 2036 and `_1` 2083 (`defineItem.h:886-944`). */
 export const SUNSTONES: readonly number[] = [2035, 2082];
