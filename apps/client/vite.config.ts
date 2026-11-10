@@ -4,6 +4,7 @@ import { serveDist } from '@flyffweb/scene/vite/serveDist.ts';
 import { defineConfig } from 'vite';
 import { devGatewayProxy } from './devGatewayProxy.ts';
 import { siteContent } from './siteContent.ts';
+import { siteHeaders } from './siteHeaders.ts';
 import { siteRoutes } from './siteRoutes.ts';
 
 // This file is FlyffWeb/apps/client/vite.config.ts. The root scripts run Vite from FlyffWeb with `--config` pointing here,
@@ -32,6 +33,10 @@ export default defineConfig(({ command }) => {
       port: DEV_PORT, host: true,
       proxy: { ...gateway?.proxy, '/api': { target: process.env.WEB_API ?? 'http://127.0.0.1:8091', changeOrigin: false } },
     },
+    // `vite preview` sends the site's security headers, as Caddy does, so the `prod` e2e project runs the game under its
+    // Content-Security-Policy (e2e/securityHeaders.spec.ts); its WebSockets go to a gateway on this machine. The dev server
+    // sends none, so that hot reload keeps working.
+    preview: { headers: siteHeaders('ws://localhost:* ws://127.0.0.1:*') },
     build: {
       // The same target as the viewer: Safari 16.0 instead of Vite's default 16.4, because the spec's browsers include iOS / iPadOS 16.
       target: ['chrome111', 'edge111', 'firefox114', 'safari16'],

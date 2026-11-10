@@ -37,7 +37,9 @@ function pathnameOf(url: string | undefined): string | null {
 }
 
 /** The middleware: a redirect, or the 404 page made by `notFoundPage` (its HTML) with status 404, or the next handler. */
-function middleware(notFoundPage: (req: Connect.IncomingMessage) => Promise<string>): Connect.NextHandleFunction {
+function middleware(
+  notFoundPage: (req: Connect.IncomingMessage) => Promise<string>, headers: () => Record<string, string> = () => ({}),
+): Connect.NextHandleFunction {
   return (req: Connect.IncomingMessage, res: ServerResponse, next: Connect.NextFunction) => {
     if (req.method !== 'GET' && req.method !== 'HEAD') return next();
     const pathname = pathnameOf(req.url);
@@ -45,12 +47,12 @@ function middleware(notFoundPage: (req: Connect.IncomingMessage) => Promise<stri
     if (route === null) return next();
     if ('redirect' in route) {
       const query = req.url?.includes('?') === true ? req.url.slice(req.url.indexOf('?')) : '';
-      res.writeHead(301, { Location: route.redirect + query });
+      res.writeHead(301, { ...headers(), Location: route.redirect + query });
       res.end();
       return;
     }
     notFoundPage(req).then((html) => {
-      res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.writeHead(404, { ...headers(), 'Content-Type': 'text/html; charset=utf-8' });
       res.end(req.method === 'HEAD' ? undefined : html);
     }, next);
   };
@@ -71,7 +73,9 @@ export function siteRoutes(): Plugin {
       }));
     },
     configurePreviewServer(server) {
-      server.middlewares.use(middleware(() => readFile(path.join(outDir, '404.html'), 'utf8')));
+      // its own answers carry the preview's headers too (vite.config.ts: the site's security headers)
+      const headers = () => Object.fromEntries(Object.entries(server.config.preview.headers ?? {}).map(([k, v]) => [k, String(v)]));
+      server.middlewares.use(middleware(() => readFile(path.join(outDir, '404.html'), 'utf8'), headers));
     },
   };
 }
