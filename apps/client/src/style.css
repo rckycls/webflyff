@@ -3110,7 +3110,7 @@ fieldset:disabled .btn {
    draws it: WndPostTable.tga at alpha 150, rows of 40 px, the icon at (19, +2), WndNotUse.tga at alpha 110 over a read mail's, the
    sender at (69, +3) black, the time left at (202, +3) in its colour, the title at (69, +18) in RGB(0, 0, 190), the chosen row
    ARGB(32, 190, 0, 0). The new-mail mark blinks between alpha 50 and 255 (WndMessenger.cpp:622-639). */
-.hud-post-page { position: absolute; }
+.hud-post-page, .hud-post-strip, .hud-post-inbox { position: absolute; }
 .hud-post-page[hidden] { display: none; }
 .hud-post.is-waiting > .hud-window-body { pointer-events: none; }
 .hud-post-text {
@@ -3213,7 +3213,14 @@ fieldset:disabled .btn {
   .hud-post [data-page="send"] [data-control="WIDC_STATIC4"] .hud-res-static-text { font: 14px/22px Arial, sans-serif; color: #000000; text-align: center; }
   .hud-post [data-page="send"] :is(.hud-res-edit, .hud-res-combo) input { position: absolute; inset: 0; width: 100% !important; height: 100% !important; box-sizing: border-box; padding: 0 6px; }
   .hud-post [data-page="send"] [data-control="WIDC_EDIT4"] input { padding-top: 14px; }
-  .hud-post [data-page="send"] .hud-res-combo-drop { left: auto !important; right: 4px; top: 8px !important; }
+  .hud-post [data-page="send"] .hud-res-combo-drop {
+    left: auto !important; right: 2px; top: 2px !important; width: 30px !important; height: calc(100% - 4px) !important; border: 0;
+    border-radius: 3px; background: #f3e4d8 !important; color: #3a2414; font: 14px/26px Arial, sans-serif; text-align: center;
+  }
+  .hud-post [data-page="send"] .hud-res-combo-drop::after { content: "▼"; }
+  .hud-post [data-page="send"] .hud-res-combo-list { width: 100% !important; z-index: 5; }
+  .hud-post [data-page="send"] .hud-res-combo-list [role=option] { min-height: 32px; padding: 0 8px; font: 14px/32px Arial, sans-serif; }
+  :is(.hud-post, .hud-post-read) .hud-res-static.is-group .hud-res-static-text { color: #3d5f80; }
   .hud-post [data-page="send"] .hud-res-combo-list { font-size: 14px; }
   .hud-post .hud-post-slot img { width: 40px; height: 40px; left: 2px; top: 2px; }
   :is(.hud-post, .hud-post-read) .hud-post-slot span { font-size: 14px; line-height: 14px; color: #1010ff; text-shadow: 1px 1px #ffffff; }
