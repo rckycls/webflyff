@@ -131,6 +131,8 @@ import { MusicRules } from './sound/musicRules';
 import { listenerAngle } from './sound/soundRules';
 import { WorldSounds } from './sound/worldSounds';
 import { TeleporterWindow } from './hud/teleporterWindow';
+import { HeavenTowerWindow } from './hud/heavenTowerWindow';
+import { isArena } from './combat/arena';
 import { formatDefinedText } from './hud/messages';
 import { ItemUse } from './items/itemUse';
 import { SmTimers, skillPointsSpent } from './items/premiumItems';
@@ -539,6 +541,8 @@ export class WorldScreen {
   /** The world the player is in (`enter`). */
   private worldId = 0;
   private teleporter: TeleporterWindow | undefined;
+  /** 2026-11-10: the Forsaken Tower's window (MMI_HEAVEN_TOWER). */
+  private heavenTower: HeavenTowerWindow | undefined;
   private itemUse: ItemUse | undefined;
   /** 2026-11-05: the item windows' flows (the name change, the tickets, the summons ...). */
   private itemWindows: ItemWindowFlows | undefined;
@@ -1123,6 +1127,7 @@ export class WorldScreen {
     };
     this.hudArt = art;
     this.hud = new Hud(this.element.ownerDocument, art, this.data!);
+    this.hud.inArena = () => isArena(this.worldId); // 2026-11-10: TID_GAME_DEATH_ARENA (DPClient.cpp:2045-2052)
     this.minimap = new Minimap(art, this.stage!.manifest, folder, key => services.store.url(key), this.element.ownerDocument);
     this.hud.element.append(this.minimap.frame.element);
     this.worldMap = new WorldMap(art, this.worldMapData, this.data!, (id) => this.say(id), this.element.ownerDocument);
@@ -1263,6 +1268,8 @@ export class WorldScreen {
       (mover, motion) => this.views!.motionReady(mover, motion), interruptCast,
     );
     skillUse.attack = attackLoop;
+    // 2026-11-10: the Arena's rule asks the world the own mover is in (IsArenaTarget, combat/arena.ts)
+    attackLoop.worldId = () => this.worldId;
     this.world!.onUseSkill = (casterId, message, started) => skillUse.onUseSkill(casterId, message, started);
     this.attackLoop = attackLoop;
     // Piece 7 M2: the own missiles' ids and reports, the missiles of everyone, and what the attack loop says and tests
@@ -1665,6 +1672,13 @@ export class WorldScreen {
     // 2026-11-10: the personal shop (docs/superpowers/specs/2026-11-10-personal-shop-research.md)
     this.personalShop = this.makePersonalShop(inventoryWindow, messageBox, doc);
     this.teleporter = new TeleporterWindow(this.hudArt!, id => this.canTalk(id), (key, index) => session.sendTeleporter(key, index), doc);
+    // 2026-11-10: the Forsaken Tower's window, its entrance box the shared message box (MB_OKCANCEL)
+    this.heavenTower = new HeavenTowerWindow({
+      text: (tid) => this.data?.texts.get(tid)?.text ?? '',
+      say: (tid) => this.say(tid),
+      confirm: (text, ok) => messageBox.open(text, 'okCancel', ok),
+      send: (floor) => session.sendHeavenTowerTeleport(floor),
+    }, this.hudArt!, doc);
     this.moverMenu = new MoverMenu(doc);
     const partyHud = new PartyHud(this.hudArt!, this.data!.texts, () => this.partyCatalog, {
       session,
@@ -1807,7 +1821,7 @@ export class WorldScreen {
       modal.onChange = () => this.modalChanged();
     }
     this.hud!.element.append(
-      this.questTracker.element, this.teleporter.frame.element,
+      this.questTracker.element, this.teleporter.frame.element, this.heavenTower.element,
       taskBar.element, this.attackButton.element, this.jumpButton.element, this.flightButtons.element, mobileTools.element,
       logOutBox.element, messageBox.element,
       selectVillage.element, characterWindow.frame.element,
@@ -2826,7 +2840,8 @@ export class WorldScreen {
         !isGameMaster(mover.added.player?.authorization ?? 0)).map(mover => ({
         id: mover.objectId, kind: navigatorKind(mover, this.party), name: mover.name, pos: mover.act.body.pos,
       })));
-    this.reviveWindow?.update(this.itemUse?.canRevive ?? false);
+    // 2026-11-10: in the Arena "Revive here" is always greyed (CWndRevival::OnDraw, WndField.cpp:12161-12172)
+    this.reviveWindow?.update((this.itemUse?.canRevive ?? false) && !isArena(this.worldId));
     if (this.chatWindow instanceof NeuzChat) this.chatWindow.update();
     if (this.resized) {
       this.resized = false;
@@ -3581,6 +3596,12 @@ export class WorldScreen {
     } else if (entry === MMI.TELEPORTER && data !== undefined) {
       this.dialog?.close();
       this.teleporter!.open(id, data);
+    } else if (entry === MMI.ARENA_ENTER) {
+      this.session.sendArenaEnter(); // 2026-11-10: SendHdr( PACKETTYPE_ARENA_ENTER ) (:5928-5930); the server REPLACEs
+    } else if (entry === MMI.ARENA_EXIT) {
+      this.session.sendArenaExit(); // SendHdr( PACKETTYPE_ARENA_EXIT ) (:5931-5933)
+    } else if (entry === MMI.HEAVEN_TOWER) {
+      this.heavenTower?.open(); // 2026-11-10: the Forsaken Tower's window (:5115-5129)
     } else if (entry === MMI.NPC_BUFF) {
       this.session.sendNpcBuff(npc.added.npc!.characterKey);
     } else if (entry === MMI.PIERCING) {
@@ -3901,6 +3922,8 @@ export class WorldScreen {
     this.questWindow?.dispose();
     this.questTracker?.dispose();
     this.teleporter?.dispose();
+    this.heavenTower?.dispose();
+    this.heavenTower = undefined;
     this.hud?.dispose();
     this.sheetPictures = [];
     this.stage?.dispose();
@@ -3959,6 +3982,7 @@ export class WorldScreen {
     this.moverMenu?.close();
     for (const window of [this.shopWindow, this.dialog, this.teleporter, this.inventoryWindow, this.characterWindow,
       this.skillWindow, this.optionWindow, this.messageBox, this.selectVillage]) window?.frame.close();
+    this.heavenTower?.close();
     this.worldMap?.close();
     this.audio?.stopWorld();
     this.stopAsking(); // nothing is left to lose by closing the page

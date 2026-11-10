@@ -26,7 +26,14 @@ export const MMI = {
   BUFFPET_RELEASE: 142, TELEPORTER: 146,
   /** 2026-11-10: Jewel Setting and Create Jewels (jewels/jewelWindows.ts). */
   SMELT_JEWEL: 52, SMELT_EXTRACTION: 53,
+  /** 2026-11-10: Leave Arena (Harold) and the Forsaken Tower (hud/heavenTowerWindow.ts). */
+  ARENA_EXIT: 81, HEAVEN_TOWER: 97,
 } as const;
+/**
+ * 2026-11-10: the Arena's and the Forsaken Tower's entries: Enter and Leave Arena send their header
+ * (`WndWorld.cpp:5927-5934`), the tower opens its window (`:5115-5129`).
+ */
+const ARENA_TOWER_ENTRIES: ReadonlySet<number> = new Set([MMI.ARENA_ENTER, MMI.ARENA_EXIT, MMI.HEAVEN_TOWER]);
 /**
  * 2026-11-09 (pets R1): the own raised pet's entries (`MaFl_Pet`, `Resource/character.inc:5880-5891`): its status window
  * and its release (`WndWorld.cpp:5877-5898`), which R2 wires (`WorldScreen.choosePetEntry`). (pets review) The own buff
@@ -77,7 +84,8 @@ export function npcMenuEntries(npc: WebNpc | undefined, texts: Texts, ownIsBaseJ
       label: labels.get(TID_MMI_BASE + id) ?? FALLBACK[id] ?? 'Unavailable',
       // 2026-11-05: Buff Pang's entry only sends its key (MMI_NPC_BUFF, WndWorld.cpp:5131-5136)
       enabled: id === MMI.DIALOG || (id === MMI.TRADE && !npc?.vendorType) || id === MMI.NPC_BUFF || UPGRADE_ENTRIES.has(id) ||
-        (id === MMI.TELEPORTER && (npc?.teleports?.length ?? 0) > 0) || PET_ENTRIES.has(id) || TAMER_ENTRIES.has(id),
+        (id === MMI.TELEPORTER && (npc?.teleports?.length ?? 0) > 0) || PET_ENTRIES.has(id) || TAMER_ENTRIES.has(id) ||
+        ARENA_TOWER_ENTRIES.has(id),
     }));
 }
 

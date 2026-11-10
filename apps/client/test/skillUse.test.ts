@@ -939,3 +939,32 @@ describe('SkillUse: an item cast (CMD_SetUseSkill, MoverMsg.cpp:196-202; Piece 7
     expect(r.skills.commanding).toBe(false);
   });
 });
+
+describe('SkillUse: an attack skill on another player (2026-11-10; CMD_SetUseSkill\'s IsAttackAble, MoverMsg.cpp:209-224)', () => {
+  /** The own mover at the Arena circle's centre (490, 507) and the player 3 m north of it. */
+  const intoArena = (r: ReturnType<typeof rig>, worldId: number): void => {
+    r.loop.worldId = () => worldId;
+    r.own.act.body.pos = [490, 0, 507];
+    r.player.act.body.pos = [490, 0, 504];
+  };
+
+  it('goes out in the Arena, inside its circle: the walk to the player, then USESKILL at them', () => {
+    const r = rig();
+    intoArena(r, 208);
+    r.tap(PLAYER_ID);
+    r.skills.useSlot(0);
+    r.step();
+    expect(r.sent[0]).toEqual(['destObj', PLAYER_ID, 2]);
+    r.until(() => r.sent.some((s) => s[0] === 'useSkill'));
+    expect(r.sent.find((s) => s[0] === 'useSkill')).toEqual(['useSkill', 0, PLAYER_ID, 0]);
+  });
+
+  it('is refused anywhere else, with the same places', () => {
+    const r = rig();
+    intoArena(r, 1);
+    r.tap(PLAYER_ID);
+    r.skills.useSlot(0);
+    r.steps(30);
+    expect(r.sent).toEqual([]);
+  });
+});

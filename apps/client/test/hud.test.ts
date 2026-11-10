@@ -56,6 +56,7 @@ const TEXTS: Texts = new Map([
   text('TID_GAME_NPCBUFF_LEVELLIMIT', 3573, 'Only level %s~%s character can get buffs.', 0xfff00000),
   text('TID_GAME_LEVELUP', 601, 'Level up! You can increase your stats in your character window.', 0xffccffcc),
   text('TID_GAME_DEATH', 602, 'Press ESC and go back to Lodestar(Town) or Lodelight(Field) for resurrecting.', 0xff00ffff),
+  text('TID_GAME_DEATH_ARENA', 3677, 'Please press ESC and resurrect.', 0xff00ffff),
   text('TID_GAME_PATTERNUP', 610, 'You are learning new attack patterns!', 0xffccffcc),
   text('TID_EVE_LEVEL15', 504, "Now it's time to choose your job.", 0xff3366ff),
   text('TID_EVE_CHGJOB', 500, 'Welcome to the wonderful world of %ss!', 0xff3366ff),
@@ -556,6 +557,14 @@ describe('Hud: what the world and the own numbers show', () => {
     expect(shown(hud).slice(3)).toEqual([
       'Press ESC and go back to Lodestar(Town) or Lodelight(Field) for resurrecting.',
     ]);
+    hud.dispose();
+  });
+
+  it('2026-11-10: a death in the Arena says TID_GAME_DEATH_ARENA instead (OnMoverDeath, DPClient.cpp:2045-2052)', () => {
+    const hud = hudOn();
+    hud.inArena = () => true;
+    hud.play([], [{ kind: 'died' }], newVagrant(15));
+    expect(shown(hud)).toEqual(['Please press ESC and resurrect.']);
     hud.dispose();
   });
 

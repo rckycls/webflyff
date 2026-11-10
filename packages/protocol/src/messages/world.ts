@@ -251,6 +251,9 @@ export function encodeEndSkillQueue(): Uint8Array {
 export type WorldPacket =
   | { type: 'teleporter'; key: string; index: number }
   | { type: 'npcBuff'; key: string }
+  /** 2026-11-10: the Arena's enter and leave, and the Forsaken Tower's floor (world/arenaTower.ts). */
+  | { type: 'arenaEnter' | 'arenaExit' }
+  | { type: 'heavenTowerTeleport'; floor: number }
   /** 2026-11-09 (pets R2): the own raised pet sent back (`SendPetRelease`). */
   | { type: 'petRelease' }
   /** 2026-11-09 (pets R3): the raised pet's care (world/pets.ts), by the encoders' parameter names. */
@@ -464,6 +467,16 @@ function decodeClientPacket(r: ArReader): WorldPacket {
     case PacketType.DO_USE_ITEM_TARGET: {
       const materialId = r.u32(), targetId = r.u32(); r.expectEnd();
       return { type: 'doUseItemTarget', materialId, targetId };
+    }
+    case PacketType.ARENA_ENTER: // 2026-11-10: the type alone (SendHdr)
+      r.expectEnd();
+      return { type: 'arenaEnter' };
+    case PacketType.ARENA_EXIT:
+      r.expectEnd();
+      return { type: 'arenaExit' };
+    case PacketType.HEAVENTOWER_TELEPORT: {
+      const floor = r.i32(); r.expectEnd();
+      return { type: 'heavenTowerTeleport', floor };
     }
     case PacketType.NPC_BUFF: {
       const key = r.string(64); r.expectEnd();

@@ -27,6 +27,13 @@ export const PacketType = {
    * revival scroll piece (`__JEFF_11`), the egg exchange and the pick-up pet's awakening cancel (`__PET_0519`).
    */
   QUE_PETRESURRECTION: 0x70000009,
+  /**
+   * 2026-11-10: the Arena's enter and leave (`__JEFF_11_4`, `MsgHdr.h:686-687`) and the Forsaken Tower's teleport
+   * (`__VER >= 12`, `MsgHdr.h:713`; world/arenaTower.ts).
+   */
+  ARENA_ENTER: 0x70000010,
+  ARENA_EXIT: 0x70000011,
+  HEAVENTOWER_TELEPORT: 0x70001008,
   TRANSFORM_ITEM: 0x8fff000d,
   PICKUP_PET_AWAKENING_CANCEL: 0x8fff000f,
   /** 2026-11-05: the upgrade cursor's packets (`MsgHdr.h`; world/upgrade.ts). */

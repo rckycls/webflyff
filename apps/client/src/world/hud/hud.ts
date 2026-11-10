@@ -52,6 +52,11 @@ export class Hud {
    * `CWndTaskBar::Process` only while none is (`WndTaskBar.cpp:2331-2338`). None, without a bar.
    */
   carrying?: () => boolean;
+  /**
+   * 2026-11-10: whether the own player is in the Arena (`IsArena`): its death says TID_GAME_DEATH_ARENA in place of
+   * TID_GAME_DEATH (`CDPClient::OnMoverDeath`, `Neuz/DPClient.cpp:2045-2052`, `__JEFF_11_4`).
+   */
+  inArena: () => boolean = () => false;
 
   constructor(
     private readonly doc: Document,
@@ -104,7 +109,7 @@ export class Hud {
           if (event.chatLine) this.line('TID_GAME_RECCURENCE');
           break;
         case 'died':
-          this.line('TID_GAME_DEATH');
+          this.line(this.inArena() ? 'TID_GAME_DEATH_ARENA' : 'TID_GAME_DEATH');
           break;
         case 'pet': // pets R1: the own pet named (OnSetPetName, DPClient.cpp:18465)
           if (event.change.kind === 'named') this.line('TID_GAME_NAME_PET_S00');

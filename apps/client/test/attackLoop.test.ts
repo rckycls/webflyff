@@ -69,6 +69,9 @@ interface RigOptions {
   ground?: Ground;
   /** Piece 7 M5: a flying monster (Mothbee, dwFlying 1) at this place too. */
   flierAt?: Vec3;
+  /** 2026-11-10: every mover moved by this much (the Arena's circle is around 490, 507), and the own world's id. */
+  shift?: Vec3;
+  worldId?: number;
 }
 
 /**
@@ -90,6 +93,11 @@ function rig(options: RigOptions = {}) {
   });
   const world = new WorldState(data, new ServerClock(() => 0), options.ground ?? terrainGround(() => 0));
   const add = (added: Parameters<WorldState['apply']>[1] & { type: 'addMover' }): void => {
+    const s = options.shift;
+    if (s !== undefined) {
+      const p = added.mover.pos;
+      added = { ...added, mover: { ...added.mover, pos: [p[0] + s[0], p[1] + s[1], p[2] + s[2]] } };
+    }
     world.apply(added.mover.objectId, added);
   };
   const addOwn = (): void => add({ type: 'addMover', mover: { ...ownAdded(level), pos: OWN_AT, angle: 90, state: ObjSta.STAND } });
@@ -161,6 +169,7 @@ function rig(options: RigOptions = {}) {
   const texts: string[] = [];
   loop.onText = (id) => void texts.push(id);
   if (options.ground !== undefined) loop.ground = () => options.ground;
+  if (options.worldId !== undefined) loop.worldId = () => options.worldId!;
 
   let now = 10_000;
   /** Whether the last step ran the controls (`AttackLoop.step`'s answer). */
@@ -1450,5 +1459,52 @@ describe('AttackLoop: a press in the air (Piece 7 M5, Decision 5; WndWorld.cpp:6
     expect(r.sent).toEqual([]);
     r.tap(FLIER_ID);
     expect(r.focus.targetId).toBe(FLIER_ID);
+  });
+});
+
+describe('AttackLoop: another player in the Arena (2026-11-10; IsAttackAble, Mover.cpp:6500-6517; IsArenaTarget, MoverAttack.cpp:1953-1972)', () => {
+  /** Everyone moved so that the own mover stands at the circle's centre (490, 507): the player is 4.2 m off. */
+  const IN_CIRCLE: Vec3 = [390, 0, 407];
+  /** Everyone moved to the Arena's arrival (540, 485), outside the circle. */
+  const AT_ARRIVAL: Vec3 = [440, 0, 385];
+
+  it('a player inside the circle is attacked, by the presses and by the attack button', () => {
+    const r = rig({ shift: IN_CIRCLE, worldId: 208 });
+    const player = r.world.movers.get(PLAYER_ID)!;
+    expect(attackAble(player, new Map(), false, { worldId: 208, pos: r.own.act.body.pos })).toBe(true);
+    r.tap(PLAYER_ID);
+    expect(r.loop.canAttackFocus).toBe(true);
+    r.tap(PLAYER_ID); // pressing the target again: the auto-attack (WndWorld.cpp:6892-6910)
+    expect(r.loop.autoAttack).toBe(true);
+    r.until(() => r.melee().length > 0);
+    expect(r.melee()[0]![1]).toBe(PLAYER_ID);
+    const button = rig({ shift: IN_CIRCLE, worldId: 208 });
+    button.tap(PLAYER_ID);
+    button.loop.attackButton();
+    button.until(() => button.melee().length > 0);
+    expect(button.melee()[0]![1]).toBe(PLAYER_ID);
+  });
+
+  it('nobody else: the same player anywhere but the Arena, or at the arrival outside the circle', () => {
+    for (const r of [rig({ shift: IN_CIRCLE, worldId: 1 }), rig({ shift: AT_ARRIVAL, worldId: 208 }), rig({ shift: IN_CIRCLE })]) {
+      r.tap(PLAYER_ID);
+      expect(r.loop.canAttackFocus).toBe(false);
+      r.tap(PLAYER_ID);
+      r.loop.attackButton();
+      r.steps(60);
+      expect(r.sent).toEqual([]);
+      expect(r.loop.autoAttack).toBe(false); // a refusal turns it off (Mover.cpp:6564-6567)
+    }
+  });
+
+  it('nor a dead player, nor oneself; the monsters there are as anywhere', () => {
+    const r = rig({ shift: IN_CIRCLE, worldId: 208 });
+    const arena = { worldId: 208, pos: r.own.act.body.pos };
+    const player = r.world.movers.get(PLAYER_ID)!;
+    expect(attackAble(r.own, new Map(), false, arena)).toBe(false);
+    player.act.sendActMsg(ActMsg.DIE, ActMsg.DAMAGE, OWN_ID);
+    expect(attackAble(player, new Map(), false, arena)).toBe(false);
+    r.tap(MONSTER_ID);
+    expect(r.loop.canAttackFocus).toBe(true);
   });
 });
