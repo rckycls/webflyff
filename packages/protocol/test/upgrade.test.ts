@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ArReader, ArWriter, MessageType, NULL_ID, PacketType, WORLD_READERS, decodeWorldPacket, encodeDoUseItemTarget,
   encodeEnchant, encodePiercing, encodePiercingSize, encodeRandomScroll, encodeSmeltSafety, encodeUltimateEnchantWeapon, readBundle,
+  encodeUltimateMakeGem, encodeUltimateSetGem, UltimateResult, UltimateState,
 } from '../src';
 
 const fields = (bytes: Uint8Array): number[] => {
@@ -74,5 +75,46 @@ describe('the Upgrade Specialist\'s packets (2026-11-05)', () => {
     const result = readBundle(w.toBytes(), WORLD_READERS);
     expect(result.skipped).toEqual([]);
     expect(result.messages.map((m) => m.value)).toEqual([{ type: 'smeltSafety', result: 2 }, expect.objectContaining({ type: 'definedText' })]);
+  });
+});
+
+describe('the jewel windows\' packets (2026-11-10, jewels research §5)', () => {
+  const words = (bytes: Uint8Array): number[] => {
+    const r = new ArReader(bytes);
+    const out: number[] = [];
+    while (r.remaining() > 0) out.push(r.u32());
+    return out;
+  };
+
+  it('ULTIMATE_MAKEGEM: the weapon (SendUltimateMakeGem, DPClient.cpp:16347-16352)', () => {
+    expect(words(encodeUltimateMakeGem(12))).toEqual([NULL_ID, 0xf000f111, 12]);
+    expect(decodeWorldPacket(encodeUltimateMakeGem(12))).toEqual({ type: 'ultimateMakeGem', weaponId: 12 });
+    expect(() => encodeUltimateMakeGem(73)).toThrow();
+  });
+
+  it('ULTIMATE_SETGEM: the weapon, then the jewel (SendUltimateSetGem, :16363-16369)', () => {
+    expect(words(encodeUltimateSetGem(12, 4))).toEqual([NULL_ID, 0xf000f114, 12, 4]);
+    expect(decodeWorldPacket(encodeUltimateSetGem(12, 4))).toEqual({ type: 'ultimateSetGem', weaponId: 12, jewelId: 4 });
+    expect(() => encodeUltimateSetGem(12, -1)).toThrow();
+    expect([PacketType.ULTIMATE_MAKEGEM, PacketType.ULTIMATE_SETGEM]).toEqual([0xf000f111, 0xf000f114]);
+  });
+
+  it('ULTIMATE MAKEGEM carries the count after the result (AddUltimateMakeGem, User.cpp:7821-7831)', () => {
+    const w = new ArWriter().u32(PacketType.SNAPSHOT).u32(0x1234).u16(3);
+    w.u32(0x1234).u16(MessageType.ULTIMATE).u8(UltimateState.MAKEGEM).i32(UltimateResult.SUCCESS).i32(5);
+    w.u32(0x1234).u16(MessageType.ULTIMATE).u8(UltimateState.SETGEM).i32(UltimateResult.FAILED);
+    w.u32(0x1234).u16(MessageType.DEFINEDTEXT1).i32(2205);
+    const result = readBundle(w.toBytes(), WORLD_READERS);
+    expect(result.skipped).toEqual([]);
+    expect(result.messages.map((m) => m.value)).toEqual([
+      { type: 'ultimate', state: 3, result: 0, count: 5 },
+      { type: 'ultimate', state: 4, result: 1 },
+      expect.objectContaining({ type: 'definedText' }),
+    ]);
+  });
+
+  it('the states and results are MsgHdr.h:1585-1590 and UltimateWeapon.h:19', () => {
+    expect(UltimateState).toEqual({ MAKEITEM: 1, TRANSWEAPON: 2, MAKEGEM: 3, SETGEM: 4, REMOVEGEM: 5, ENCHANTWEAPON: 6 });
+    expect(UltimateResult).toEqual({ SUCCESS: 0, FAILED: 1, CANCEL: 2, ISULTIMATE: 3, INVENTORY: 4, ISNOTULTIMATE: 5 });
   });
 });

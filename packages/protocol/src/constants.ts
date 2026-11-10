@@ -35,6 +35,9 @@ export const PacketType = {
   RANDOMSCROLL: 0xf000d00d,
   DO_USE_ITEM_TARGET: 0x70000004,
   ULTIMATE_ENCHANTWEAPON: 0xf000f113,
+  /** 2026-11-10: Create Jewels and Jewel Setting (`MsgHdr.h:610, 613`; world/upgrade.ts). */
+  ULTIMATE_MAKEGEM: 0xf000f111,
+  ULTIMATE_SETGEM: 0xf000f114,
   /** 2026-11-05: the Upgrade Specialist's piercing and safe upgrade (`MsgHdr.h:515, 753`; world/upgrade.ts). */
   PIERCING_SIZE: 0xf000d008,
   SMELT_SAFETY: 0x70007000,
