@@ -50,7 +50,8 @@ No server or gateway change is needed.
 
 ## Tests
 
-- Builder runs (this branch): `npm run typecheck` clean; `npx vitest run` (see the report for the count); the new e2e spec
+- Builder runs (this branch): `npm run typecheck` clean; `npx vitest run` 4199 passed, 9 skipped, 5 failed (only the old
+  ones: `looks.test.ts` x3, `inventoryWindow.test.ts` x2); the new e2e spec
   passes on both projects:
   `npx playwright test -c .superpowers/playwright.jewels.config.ts jewels.spec.ts --project=chromium --project=phone`
   (`.superpowers/` is not committed; on main use the client's config, below).
