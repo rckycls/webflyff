@@ -458,8 +458,11 @@ export interface WebUltimate {
   abilities: Array<{ dst: number; jewels: WebUltimateJewel[] }>;
   /** LEVEL_GEM: the jewel a weapon of `min`..`max` breaks into (`GetGemKind`, :104-115). */
   levelGems: Array<{ jewel: number; min: number; max: number }>;
-  /** `Client/SmeltJewel.inc` and `Client/SmeltExtraction.inc` as `CScript::Load` gives them (parsing strings). */
-  descriptions: { jewel?: string; extraction?: string };
+  /**
+   * `Client/SmeltJewel.inc` and `Client/SmeltExtraction.inc` as `CScript::Load` gives them (parsing strings); 2026-11-10,
+   * `Client/summonAngelQuest.inc`, the Summon Angel window's text (WndWorld.cpp:4861-4869).
+   */
+  descriptions: { jewel?: string; extraction?: string; summonAngel?: string };
 }
 
 /** Filter_ENG.inc (__FILTER_0705): the words of letters, in lower case, and the other entries, each with its replacement. */

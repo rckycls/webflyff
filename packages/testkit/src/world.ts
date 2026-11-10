@@ -864,7 +864,7 @@ export function writeAddSelf(
     .u32(0).u32(0).u32(0) // m_idPlayerBank[k]
     .i32(0) // m_nPlusMaxHitPoint
     .u8(0).u8(0).u8(0) // m_nAttackResistLeft, m_nAttackResistRight, m_nDefenseResist
-    .i64(0n).i32(0); // m_nAngelExp, m_nAngelLevel (__VER >= 8)
+    .i64(own.angelExp ?? 0n).i32(own.angelLevel ?? 0); // m_nAngelExp, m_nAngelLevel (__VER >= 8; 2026-11-10, Summon Angel)
   writeInventory(w, own.inventory, player.equipmentObjectIds);
   if (own.petSlot !== undefined || options.banks !== undefined) {
     writeBanks(w, options.banks ?? []);

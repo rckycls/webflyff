@@ -21,6 +21,8 @@ import type { TradeRequestPacket } from '../world/trade';
 import { readVendorRequestPacket } from '../world/vendor';
 import type { VendorRequestPacket } from '../world/vendor';
 import { readGuildPacket, readGuildRequestPacket } from '../world/guild';
+import { parseCreateAngelText } from '../world/angel';
+import type { AngelStack } from '../world/angel';
 import type { GuildDirectMessage, GuildRequestPacket } from '../world/guild';
 
 /** What `CDPClient::SendJoin` sends: the character that enters the world, and the account that owns it. */
@@ -271,6 +273,9 @@ export type WorldPacket =
   /** 2026-11-10: Create Jewels and Jewel Setting (world/upgrade.ts). */
   | { type: 'ultimateMakeGem'; weaponId: number }
   | { type: 'ultimateSetGem'; weaponId: number; jewelId: number }
+  /** 2026-11-10: Summon Angel's START (its text and the stacks in it) and the full angel's buff icon (world/angel.ts). */
+  | { type: 'createAngel'; text: string; parts: AngelStack[] }
+  | { type: 'angelBuff' }
   | { type: 'removeQuest'; questId: number }
   | { type: 'questCheck'; questId: number; check: boolean }
   | ReturnType<typeof readDefinedText>
@@ -456,6 +461,15 @@ function decodeClientPacket(r: ArReader): WorldPacket {
     case PacketType.ULTIMATE_MAKEGEM: {
       const weaponId = r.u32(); r.expectEnd();
       return { type: 'ultimateMakeGem', weaponId };
+    }
+    case PacketType.CREATEANGEL: {
+      // the server reads it into a buffer of 1024 (research §5)
+      const text = r.string(1024); r.expectEnd();
+      return { type: 'createAngel', text, parts: parseCreateAngelText(text) };
+    }
+    case PacketType.ANGELBUFF: {
+      r.expectEnd();
+      return { type: 'angelBuff' };
     }
     case PacketType.ULTIMATE_SETGEM: {
       const weaponId = r.u32(), jewelId = r.u32(); r.expectEnd();

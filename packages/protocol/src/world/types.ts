@@ -77,6 +77,15 @@ export type WorldMessage = ChatMessage | NpcMessage | ShopMessage | QuestMessage
   | { type: 'setPlayerName'; playerId: number; name: string }
   /** 2026-11-05: the Ultimate gem's answer (`OnUltimate`): its state and result. */
   | { type: 'ultimate'; state: number; result: number; count?: number }
+  /**
+   * 2026-11-10: the angel (`OnAngel`): its state, and ANGEL_INFO's EXP, level (`m_nAngelLevel`, the summoner's level + 1
+   * at the summon) and whether it just became full (`TID_GAME_COMPLETE_ANGEL`).
+   */
+  | { type: 'angel'; state: number; info?: { exp: bigint; level: number; complete: boolean } }
+  /** 2026-11-10: a local event on or off (`OnSetLocalEvent`, `g_eLocal.SetState`): EVE_PK's among them. */
+  | { type: 'setLocalEvent'; id: number; state: number }
+  /** 2026-11-10: every local event's state at join (`OnFlyffEvent`, `g_eLocal.Serialize`): the ones not 0. */
+  | { type: 'flyffEvent'; events: Array<{ id: number; state: number }> }
   /** 2026-11-05: a safe upgrade's answer (`OnSmeltSafety`): 0 refused, 1 success, 2 failure, 3 at the most. */
   | { type: 'smeltSafety'; result: number }
   /** 2026-11-05: the element stones' elements (`SAI79`, 0xff none): the left and right weapons' and the defence's. */
@@ -445,6 +454,12 @@ export interface OwnCharacter {
   inventory: InventoryItem[] | null;
   /** Bag positions 0..41, equipment positions 42..72 -> inventory object IDs, including empty allocations. */
   inventorySlots?: number[];
+  /**
+   * 2026-11-10 (Summon Angel): `m_nAngelExp` and `m_nAngelLevel` (`ObjSerializeOpt.cpp:582-583`), the summoned angel's EXP
+   * and the level its full EXP is of; absent when the part before the inventory could not be read.
+   */
+  angelExp?: bigint;
+  angelLevel?: number;
   /**
    * `null` when the inventory was read. Otherwise what went wrong between the end of the skill array and the end of the
    * inventory (the bytes ran out, or a count or a field was out of range): the part being read, then the

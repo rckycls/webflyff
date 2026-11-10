@@ -35,7 +35,7 @@ const NULL_ID = 0xffffffff;
  */
 export function readOwnAfterEquipment(r: ArReader, numbers: OwnNumbers): OwnCharacter {
   const skills = readSkills(r);
-  const { inventory, inventoryError, inventorySlots } = readInventoryPart(r);
+  const { inventory, inventoryError, inventorySlots, angelExp, angelLevel } = readInventoryPart(r);
   const petSlot = inventory === null ? undefined : readPetSlot(r);
   // The reader stops here, after the pet slot, or wherever the inventory or the banks failed. The C++ goes on with
   // `m_Pocket.Serialize` (:606), `m_dwMute` (:610, __JEFF_9_20), the honour titles (:616-634), `m_idCampus` and
@@ -45,6 +45,8 @@ export function readOwnAfterEquipment(r: ArReader, numbers: OwnNumbers): OwnChar
   return {
     ...numbers, skills, inventory, inventoryError, ...(inventorySlots ? { inventorySlots } : {}),
     ...(petSlot !== undefined ? { petSlot } : {}),
+    // 2026-11-10 (Summon Angel): only when there is an angel's (both 0 before any summon)
+    ...(angelExp !== undefined && angelLevel !== undefined && (angelExp !== 0n || angelLevel !== 0) ? { angelExp, angelLevel } : {}),
   };
 }
 
@@ -106,15 +108,17 @@ interface Where { part: string }
  * boundary (the caller skips the rest) and keeps the numbers and skills read before it: `inventory` is then `null`
  * and `inventoryError` names the part and the error. Any other error is a bug and propagates.
  */
-function readInventoryPart(r: ArReader): Pick<OwnCharacter, 'inventory' | 'inventoryError' | 'inventorySlots'> {
+function readInventoryPart(
+  r: ArReader,
+): Pick<OwnCharacter, 'inventory' | 'inventoryError' | 'inventorySlots' | 'angelExp' | 'angelLevel'> {
   const where: Where = { part: 'before the inventory' };
   try {
-    skipBeforeInventory(r);
+    const angel = skipBeforeInventory(r);
     const inventorySlots = Array.from({ length: INVENTORY_SLOTS }, () => r.u32());
     if (inventorySlots.some((id) => id !== 0xffffffff && id >= INVENTORY_SLOTS)) {
       throw new ProtocolError('invalid inventory index mapping', r.position());
     }
-    return { inventory: readInventory(r, where), inventoryError: null, inventorySlots };
+    return { inventory: readInventory(r, where), inventoryError: null, inventorySlots, ...angel };
   } catch (error) {
     if (!(error instanceof ProtocolError)) throw error;
     return { inventory: null, inventoryError: `${where.part}: ${error.message}` };
@@ -136,7 +140,7 @@ export function readItemContainer(r: ArReader): { slots: number[]; items: Invent
 }
 
 /** The fields between the skill array and the inventory (loading :568-584, storing :239-253), none of them kept. */
-function skipBeforeInventory(r: ArReader): void {
+function skipBeforeInventory(r: ArReader): { angelExp: bigint; angelLevel: number } {
   r.u8(); // (BYTE&)m_nCheerPoint (:569), an int that :568 zeroes first
   r.u32(); // m_dwTickCheer (DWORD, :569): the server's m_dwTickCheer - GetTickCount(), which :570 makes a tick again
   r.u8(); // m_nSlot (BYTE, :571)
@@ -146,8 +150,10 @@ function skipBeforeInventory(r: ArReader): void {
   r.u8(); // m_nAttackResistLeft (BYTE, :578)
   r.u8(); // m_nAttackResistRight (BYTE, :579)
   r.u8(); // m_nDefenseResist (BYTE, :580)
-  r.i64(); // m_nAngelExp (EXPINTEGER, an __int64; __VER >= 8, __CSC_VER8_5, :582)
-  r.i32(); // m_nAngelLevel (LONG, :583)
+  // 2026-11-10 (Summon Angel): the angel's EXP and level are kept
+  const angelExp = r.i64(); // m_nAngelExp (EXPINTEGER, an __int64; __VER >= 8, __CSC_VER8_5, :582)
+  const angelLevel = r.i32(); // m_nAngelLevel (LONG, :583)
+  return { angelExp, angelLevel };
 }
 
 /**

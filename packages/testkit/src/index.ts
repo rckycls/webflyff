@@ -41,6 +41,7 @@ export {
   writeTradeLastConfirmOk, writeTradeOk, writeTradePull, writeTradePut, writeTradePutError, writeTradePutGold,
 } from './trade';
 export { writeUltimate } from './ultimate'; // 2026-11-10: the jewel windows' answers
+export { writeAngelInfo, writeFlyffEvent, writeSetLocalEvent } from './angel'; // 2026-11-10: Summon Angel
 export {
   directAddGuildMember, directChgMaster, directGuild, directGuildChat, directGuildClass, directGuildError,
   directGuildMemberLevel, directGuildMemberLogin, directGuildNickname, directGuildSetName, directRemoveGuildMember,

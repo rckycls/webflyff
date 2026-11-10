@@ -255,6 +255,10 @@ export const THEME_FILES: readonly string[] = [
   'ButtGuildMemberTabJob.bmp', 'ButtGuildMemberTabLevel.bmp', 'ButtGuildMemberTabChar.bmp', 'ButtGuildMemberTabAlias.bmp',
   'ButtPay.BMP', 'ButtGuildWar.BMP', 'ButtGuildDuel.bmp', 'ButtPeace.BMP', 'ButtGiveUp.BMP', 'ButtNoticeNew.BMP',
   'ButtNoticeStart.BMP', 'ButtNoticeEdit.BMP',
+  // 2026-11-10, Summon Angel (docs/superpowers/specs/2026-11-10-summon-angel-research.md): APP_SUMMON_ANGEL's Reset and
+  // Start (resdata.inc:4647, :4656; Cancel's ButCancel2 is above) and the angel's EXP gauge over it (CNeuzApp,
+  // Neuz.cpp:1642-1643; CMover::RenderAngelStatus, MoverRender.cpp:1907-1979)
+  'reset.bmp', 'ButtVoteStart.BMP', 'GauAngelExpBG.tga', 'GauAngelExp.tga',
 ];
 
 /**
