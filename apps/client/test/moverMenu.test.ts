@@ -49,6 +49,16 @@ describe('npcMenuEntries (CWndWorld::ShowMoverMenu, WndWorld.cpp:6649-6684)', ()
     expect(npcMenuEntries(npc, TEXTS, false).map((entry) => entry.id)).toEqual([0, 80]);
   });
 
+  it('2026-11-10: Lay\'s Enter Arena, Harold\'s Leave Arena and the Forsaken Tower are enabled; the tower runs at once', () => {
+    // MaFl_Ray, MaFl_Harold, MaFl_HEAVENMAN (Resource/character.inc:6598-6611, 6515-6531, 6951-6966)
+    const enabled = (npc: WebNpc) => npcMenuEntries(npc, TEXTS, false).filter((entry) => entry.enabled).map((entry) => entry.id);
+    expect(enabled({ key: 'MaFl_Ray', name: 'Lay', menus: [0, 80] })).toEqual([MMI.DIALOG, MMI.ARENA_ENTER]);
+    expect(enabled({ key: 'MaFl_Harold', name: 'Harold', menus: [0, 81] })).toEqual([MMI.DIALOG, MMI.ARENA_EXIT]);
+    const tower: WebNpc = { key: 'MaFl_HEAVENMAN', name: 'Forsaken Tower Manager', menus: [97] };
+    expect(soleEntry(tower, npcMenuEntries(tower, TEXTS, false))).toBe(MMI.HEAVEN_TOWER);
+    expect([MMI.ARENA_ENTER, MMI.ARENA_EXIT, MMI.HEAVEN_TOWER]).toEqual([80, 81, 97]);
+  });
+
   it('labels are TID_MMI_DIALOG + id', () => {
     expect(npcMenuEntries(JULIA, TEXTS, false).find((entry) => entry.id === 9)!.label).toBe('Deposit');
     const bare = npcMenuEntries({ key: 't', name: 'T', menus: [0, 2, 146] }, new Map(), false);

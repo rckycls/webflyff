@@ -7,6 +7,7 @@ import {
   encodeUseItem, encodeEquipItem, encodeMoveItem, encodeDropItem, encodeRevival, encodeChat,
   encodeNpcDialog, encodeNpcDialogOpen, encodeOpenShop, encodeCloseShop, encodeBuyItem, encodeSellItem, encodeTeleporter,
   encodeNpcBuff, encodeQuestCheck, encodeEnchant, encodePiercing, encodeRandomScroll, encodeDoUseItemTarget,
+  encodeArenaEnter, encodeArenaExit, encodeHeavenTowerTeleport,
   encodeUltimateEnchantWeapon, encodeUltimateMakeGem, encodeUltimateSetGem, encodePiercingSize, encodeSmeltSafety, encodeQuerySetPlayerName, encodeSummonParty, encodeSummonPartyConfirm, encodeSummonFriend,
   encodeSummonFriendConfirm, encodeSummonFriendCancel, encodeDoUseItemInput, encodeChangeAttribute, encodeItemTransy,
   encodeCreateMonster, encodeRemoveQuest, encodeReturnScroll, encodeStateModeCancel, encodePetRelease,
@@ -158,6 +159,11 @@ export class WorldSession {
   sendCreateMonster(objectId: number, pos: Vec3): void { this.playingCache()?.send(encodeCreateMonster(objectId, pos)); }
   /** 2026-11-05: Buff Pang's Get Buffed! (`SendNPCBuff( m_szCharacterKey )`), the key as the NPC's ADD_OBJ gave it. */
   sendNpcBuff(key: string): void { this.playingCache()?.send(encodeNpcBuff(key)); }
+  /** 2026-11-10: Enter and Leave Arena (`SendHdr( PACKETTYPE_ARENA_ENTER / _EXIT )`, `WndWorld.cpp:5927-5934`). */
+  sendArenaEnter(): void { this.playingCache()?.send(encodeArenaEnter()); }
+  sendArenaExit(): void { this.playingCache()?.send(encodeArenaExit()); }
+  /** 2026-11-10: the Forsaken Tower's OK (`SendTeleportToHeavenTower( nFloor )`, `DPClient.cpp:17828-17835`), floors 1-5. */
+  sendHeavenTowerTeleport(floor: number): void { this.playingCache()?.send(encodeHeavenTowerTeleport(floor)); }
   /** 2026-11-09 (pets R2): the own raised pet's menu's release (`SendPetRelease`, `DPClient.cpp:16450-16454`). */
   sendPetRelease(): void { this.playingCache()?.send(encodePetRelease()); }
   /**

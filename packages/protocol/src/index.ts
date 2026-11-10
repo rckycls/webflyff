@@ -52,6 +52,7 @@ export type { RecordedPacket, Recording } from './recording';
 export * from './world/chat';
 export * from './world/friends';
 export * from './world/npc';
+export * from './world/arenaTower';
 export * from './world/party';
 export * from './world/playerData';
 export * from './world/quest';
