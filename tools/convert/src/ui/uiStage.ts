@@ -242,6 +242,10 @@ export const THEME_FILES: readonly string[] = [
   'ButItemNum000.BMP', 'ButItemMin.BMP', 'ButItemMax.BMP', 'ButItemMulti.BMP', 'ButItemDivid.BMP', 'ButItemEqua.BMP',
   'Window04.bmp', 'WndVenderArrowEx.tga', 'WndPosMark.tga', 'texDialogBox_left.tga', 'texDialogBox_center.TGA',
   'texDialogBox_right.tga',
+  // 2026-11-10, the jewel windows (docs/superpowers/specs/2026-11-10-jewels-research.md §3): APP_SMELT_JEWEL's weapon
+  // background (resdata.inc:9054) and its sockets' covers, unopened, set and waiting (CWndSmeltJewel::OnDraw,
+  // WndField.cpp:20230-20290); ButtStart, WndChgElemItem and WndEditTile00 are above
+  'Window01.bmp', 'WndDisableRed.bmp', 'WndDisableBlue.bmp', 'WndDisableBlack.bmp',
 ];
 
 /** 2026-11-05: the cursors of Client/Cursor the browser shows (Neuz.cpp:280-300): the upgrade mode's hammer, CUR_HAMMER. */

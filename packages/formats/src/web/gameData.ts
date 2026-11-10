@@ -438,6 +438,30 @@ export const ITEM_ETC_KEY = 'data/itemEtc.json';
  */
 export const CHAT_KEY = 'data/chat.json';
 
+/**
+ * 2026-11-10: the jewel windows' catalog (the converter's `ultimate` stage; docs/superpowers/specs/2026-11-10-jewels-research.md),
+ * a `WebUltimate`. Optional, so not one of GAME_DATA_KEYS: without it the tooltip has no set jewels' lines and the windows
+ * no description.
+ */
+export const ULTIMATE_KEY = 'data/ultimate.json';
+
+/** One jewel of an ABILITY block: the jewel, the ability jewel it becomes, and the stat for 1 to 5 of it set. */
+export interface WebUltimateJewel {
+  jewel: number;
+  ability: number;
+  values: number[];
+}
+
+/** `Ultimate_GemAbility.txt` (`CUltimateWeapon::Load_GemAbility`, _Common/UltimateWeapon.cpp:46-102) and the descriptions. */
+export interface WebUltimate {
+  /** Each ABILITY block: its DST and its jewels. */
+  abilities: Array<{ dst: number; jewels: WebUltimateJewel[] }>;
+  /** LEVEL_GEM: the jewel a weapon of `min`..`max` breaks into (`GetGemKind`, :104-115). */
+  levelGems: Array<{ jewel: number; min: number; max: number }>;
+  /** `Client/SmeltJewel.inc` and `Client/SmeltExtraction.inc` as `CScript::Load` gives them (parsing strings). */
+  descriptions: { jewel?: string; extraction?: string };
+}
+
 /** Filter_ENG.inc (__FILTER_0705): the words of letters, in lower case, and the other entries, each with its replacement. */
 export interface WebChatFilter {
   alpha: Record<string, string>;
