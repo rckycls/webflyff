@@ -103,7 +103,7 @@ async function holdJoystick(page: Page): Promise<() => Promise<void>> {
 test.describe('landscape (spec §3.10)', () => {
   test('the cover shows over the login form while the page is upright, and goes once it is wide again', async ({ page }) => {
     await page.setViewportSize(UPRIGHT);
-    await page.goto('/');
+    await page.goto('/play/');
     const logInButton = page.getByRole('button', { name: 'Log in' });
     await expect(page.getByRole('dialog', { name: isTouch() ? TOUCH_TEXT : PC_TEXT })).toBeVisible();
     await expect(cover(page)).toHaveText(isTouch() ? TOUCH_TEXT : PC_TEXT);
@@ -124,7 +124,7 @@ test.describe('landscape (spec §3.10)', () => {
     await playGateway(page, flaris, {
       certify: (n) => (n === 1 ? errorPacket(DUPLICATE_ACCOUNT) : serverList(FOUR_CHANNELS)),
     });
-    await page.goto('/');
+    await page.goto('/play/');
     await expect(page.getByRole('button', { name: 'Log in' })).toBeVisible();
     await expectNoScroll(page, 'the login form');
 

@@ -2,7 +2,7 @@ import { watchTouch } from '@flyffweb/scene';
 import { clientConfig } from './config';
 import { installLandscape } from './landscape';
 import { LobbyApp } from './lobby/LobbyApp';
-import { LoginFlow } from './lobby/LoginFlow';
+import { LoginFlow, systemClock } from './lobby/LoginFlow';
 import { openWebSocketChannel } from './net/webSocketChannel';
 import { installTestHooks } from './testHooks';
 import { WorldScreen } from './world/WorldScreen';
@@ -12,6 +12,7 @@ import { GameAudio } from './audio/gameAudio';
 import { PREFETCHED } from './audio/soundIds';
 import { lobbyAssets } from './lobby/skin';
 import { pageGameData } from './pageAssets';
+import { pageSessionStorage, takeSignUpAccount } from './site/handoff';
 import './lobby/lobby.css';
 
 const root = document.getElementById('app');
@@ -53,6 +54,7 @@ const openChannel = openWebSocketChannel(clientConfig.gatewayUrl);
 let app: LobbyApp | undefined;
 const flow = new LoginFlow(openChannel, clientConfig.certifierAddress, (event) => app?.handle(event));
 // Entering opens the world screen over the page; when the world is over, `done` brings the login form back with its message.
+// The name just made at /sign-up fills the login form once (website spec §3.3).
 app = new LobbyApp(root, flow, (entry, done, onDrop, reconnected) => {
   WorldScreen.open(root, entry, openChannel, done, audio, onDrop, reconnected);
-}, () => void landscape.requestLock(), audio);
+}, () => void landscape.requestLock(), audio, systemClock, takeSignUpAccount(pageSessionStorage()));

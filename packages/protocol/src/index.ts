@@ -12,6 +12,9 @@ export { aes128CbcDecrypt, aes128CbcEncrypt } from './crypto/aes128';
 export {
   CERTIFY_BLOCK_BYTES, CERTIFY_KEY_TEXT, PASSWORD_SALT, deleteKey, encryptCertifyPassword, hashPassword,
 } from './crypto/password';
+export { normalizeIPv4, resolveClientAddress } from './net/clientAddress';
+export { checkSignUp, DEFAULT_RESERVED_NAMES, normalizeAccount } from './web/signUp';
+export type { ReservedNames, SignUpField, SignUpForm, SignUpProblem } from './web/signUp';
 export {
   AttackFlag, BUNDLE_MARKER, DPID_UNKNOWN, DstParam, MAX_CHARACTER_SLOTS, MAX_SHORTCUT_STRING, MAX_SLOT_APPLET,
   MAX_SLOT_ITEM, MAX_SLOT_ITEM_COUNT, MAX_SLOT_QUEUE, MessageType, NULL_ID, ObjectType, PacketType, Port,

@@ -10,7 +10,7 @@ test("the character list fetches Webby's world before Enter, and the asset index
   const urls: string[] = [];
   page.on('request', (request) => urls.push(new URL(request.url()).pathname));
   await playGateway(page);
-  await page.goto('/');
+  await page.goto('/play/');
   await logIn(page);
   await page.getByRole('button', { name: /Channel 1/ }).click();
   await expect(page.getByRole('button', { name: 'Enter Webby' })).toBeVisible();

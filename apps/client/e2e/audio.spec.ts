@@ -28,7 +28,7 @@ const soundsPlayed = (page: Page): Promise<number[]> => page.evaluate(() => wind
 test('audio: nothing is downloaded before the first tap, which starts the title track on the login form', async ({ page }) => {
   const errors = errorsOf(page);
   const tracks = tracksOf(page);
-  await page.goto('/');
+  await page.goto('/play/');
   await expect(page.getByLabel('Account')).toBeVisible();
   await page.waitForTimeout(1500); // the audio catalog is in by now; without a gesture nothing starts
   expect(tracks).toEqual([]);

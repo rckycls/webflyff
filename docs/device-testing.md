@@ -9,6 +9,7 @@ For the owner. This file has a part per piece:
 - [Piece 4, milestone 2: skills](#piece-4-milestone-2-skills);
 - [Piece 5, milestone 1: controls and layout](piece5-m1-checkpoint.md), accepted;
 - [Piece 5, milestone 2: items](piece5-m2-checkpoint.md), awaiting owner checks.
+- [The website: home, sign-up and /play](#the-website-home-sign-up-and-play) (2026-11-11), at the end.
 
 From Piece 4 on, the game is played sideways: hold phones and tablets in landscape for every checklist in the client parts. See [Hold every device sideways](#hold-every-device-sideways).
 
@@ -1418,3 +1419,30 @@ npm run dev:client
 21. **Party summon.** As party leader, use a party summon scroll. Success: the members get a box; double-clicking the summon icon in the buffs then asks, and OK brings them to the leader.
 22. **Friend summon.** Use a friend summon scroll, type a friend's name. Success: the friend is asked; on OK they come to you.
 23. **Monster summon** (in Madrigal). Use a monster summon scroll, then click the ground near you. Success: a monster appears; too far away says so.
+
+## The website: home, sign-up and /play
+
+The site (2026-11-11) has a home page at `/`, account creation at `/sign-up/` and the game at `/play/`. **Home and sign-up are the exception to "hold it sideways":** check them upright (portrait) and sideways (landscape) on every device. Only `/play/` shows the "Turn your device sideways" cover.
+
+**Before you start:** the game servers, the gateway and the web service running in the VM (`npm run web` there, with `apps/web/web.config.json` and the login from `apps/web/sql/Install-WebLogin.ps1`), and the dev server on your PC (`npm run dev:client`, which passes `/api` to the web service: set `:WEB_API = 'http://<VM-IP>:8091'` first when the web service runs in the VM, make it listen on the VM's address in `listen.host`, and set `siteOrigin` to the page address the devices use, `http://<PC-IP>:5174`, or every sign-up is refused). Open `http://<PC-IP>:5174/` on each device.
+
+Steps on each device, upright and then sideways:
+
+1. **Home.** The game's art fills the page, with the FlyFF logo at the top, the **Closed Beta** label, a big gold **Play** button, the status (`Online · N players`, or `Offline`), and a small **Sign up** under it. Scroll: **News** with the closed beta post, then **About** with the text, "Screenshots coming soon" and the devices line. Success: nothing is cut off, nothing scrolls sideways, the text is easy to read, and upright there is no "turn your device" cover.
+2. **Status.** Stop the web service in the VM, reload the home page. Success: "Status unavailable", and **Play** still works. Start it again.
+3. **Sign up.** Tap **Sign up**. Success: the form fits, tapping a field does not zoom the page, and the phone's keyboard does not start the account name with a capital letter. Type a 3-letter name and press **Sign up**: the length message shows under the name. Then make a real account (a new name, a password with a letter and a number, the same again in Confirm). Success: "Account created." with **Play now**.
+4. **Log in with it.** Tap **Play now**. Success: `/play/` opens with the new name already in the login form. Type the password and log in: the server list shows, as with any account.
+5. **Limits** (one device is enough). Make two more accounts from the same network, then a fourth. Success: the fourth says "Too many sign-ups from your network. Try again later." (a restart of the web service clears it).
+6. **Page not found.** Open `http://<PC-IP>:5174/no-such-page`. Success: "Page not found" with a **Home** button.
+
+### Results
+
+| Device | Home upright | Home sideways | Sign-up upright | Sign-up sideways | Logs in at /play | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| Android phone |  |  |  |  |  |  |
+| Android tablet |  |  |  |  |  |  |
+| iPhone |  |  |  |  |  |  |
+| iPad |  |  |  |  |  |  |
+| PC browser |  |  |  |  |  |  |
+
+**Pass:** every device passes steps 1 to 4 upright and sideways, and step 5 once. On iPhone and iPad also check that the game at `/play/` enters the world on the hosted site (with the security headers, which the dev server does not send), as part of [docs/hosting.md](hosting.md) step 9.

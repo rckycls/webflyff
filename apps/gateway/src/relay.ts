@@ -4,6 +4,7 @@ import {
   ArWriter, CloseCode, DPID_UNKNOWN, PacketType, ProtocolError, ServerFrameReader, encodeClientFrame,
   encodeGatewayClientAddr, encodePing, encodeWorldKeepAlive, readProtocolId,
 } from '@flyffweb/protocol';
+import { checkCertifierPacket, type CertifierRefusal } from './certifierFilter';
 import { normalizeIPv4 } from './clientAddress';
 import type { Limits, RouteTarget } from './config';
 import { RateWindow } from './limits';
@@ -33,6 +34,8 @@ export interface RelayResult {
   bytesUp: number;
   /** Packet body bytes passed from the server to the browser. Not counted: frame headers, the protocol ID. */
   bytesDown: number;
+  /** Why the certifier allow-list ended the connection (website spec §3.5), when it did. */
+  refused?: CertifierRefusal;
 }
 
 /**
@@ -113,6 +116,7 @@ export function startRelay(ws: WebSocket, opts: RelayOptions): { done: Promise<R
   let closeCode: number = CloseCode.SERVER_CLOSED;
   let bytesUp = 0;
   let bytesDown = 0;
+  let refused: CertifierRefusal | undefined;
 
   ws.binaryType = 'nodebuffer';
   const tcp = net.connect({ host: route.host, port: route.port });
@@ -211,7 +215,7 @@ export function startRelay(ws: WebSocket, opts: RelayOptions): { done: Promise<R
   tcp.on('error', () => finish(connected ? CloseCode.SERVER_CLOSED : CloseCode.SERVER_UNREACHABLE));
   tcp.on('close', () => {
     finish(CloseCode.SERVER_CLOSED);
-    resolveDone({ closeCode, bytesUp, bytesDown });
+    resolveDone({ closeCode, bytesUp, bytesDown, ...(refused !== undefined ? { refused } : {}) });
   });
 
   ws.on('message', (data, isBinary) => {
@@ -228,6 +232,9 @@ export function startRelay(ws: WebSocket, opts: RelayOptions): { done: Promise<R
     if (body.byteLength > limits.maxPacketBytes) {
       finish(CloseCode.LIMIT);
     } else if (isClientAddrPacket(body)) {
+      finish(CloseCode.FORBIDDEN_PACKET);
+    } else if (route.role === 'certifier' && (refused = checkCertifierPacket(body)) !== undefined) {
+      // the certifier allow-list (website spec §3.5): only the browser's four packets, with checked names and hashes
       finish(CloseCode.FORBIDDEN_PACKET);
     } else if (protocolId !== undefined) {
       forward(body);

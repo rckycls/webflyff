@@ -1,0 +1,19 @@
+{
+  "listen": { "host": "127.0.0.1", "port": 8091 },
+  "siteOrigin": "https://play.example.com",
+  "trustedProxies": ["127.0.0.1"],
+  "sql": {
+    "host": "127.0.0.1",
+    "port": 1433,
+    "user": "flyffweb_site",
+    "password": "the password given to Install-WebLogin.ps1",
+    "accountDatabase": "ACCOUNT_DBF",
+    "characterDatabase": "CHARACTER_01_DBF",
+    "trustServerCertificate": true
+  },
+  "ticketSecret": "replace with 32 or more random characters, never shared",
+  "servers": {
+    "certifier": { "host": "127.0.0.1", "port": 23000 },
+    "login": { "host": "127.0.0.1", "port": 28000 }
+  }
+}

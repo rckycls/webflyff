@@ -263,7 +263,7 @@ export async function logIn(page: Page): Promise<void> {
 
 /** Logs in, picks Channel 1 and taps Enter on Webby. */
 export async function tapEnter(page: Page): Promise<void> {
-  await page.goto('/');
+  await page.goto('/play/');
   await logIn(page);
   await page.getByRole('button', { name: /Channel 1/ }).click();
   await page.getByRole('button', { name: 'Enter Webby' }).click();

@@ -7,13 +7,19 @@ Read [Before a public launch](#before-a-public-launch) before you tell anyone th
 ## How the parts fit
 
 ```
-phone --https (port 443)--> Caddy --+--> the built client and the game files (read from disk)
+phone --https (port 443)--> Caddy --+--> the site's pages and the game files (read from disk)
+                                     |     /  home   /sign-up/  sign-up   /play/  the game
                                      |
                                      +--> /connect/...  --> the gateway (127.0.0.1:8090) --> the servers
-                                                            (certifier 23000, login 28000, cache 5400)
+                                     |                      (certifier 23000, login 28000, cache 5400)
+                                     |
+                                     +--> /api/...      --> the web service (127.0.0.1:8091) --> SQL Server
+                                                            (makes accounts, tells the server status)
 ```
 
-- **Caddy** is a small web server. It holds the HTTPS certificate (it gets one from Let's Encrypt by itself), serves the client's files, and passes everything under `/connect/` on to the gateway.
+- **Caddy** is a small web server. It holds the HTTPS certificate (it gets one from Let's Encrypt by itself), serves the site's pages and the game's files, passes everything under `/connect/` on to the gateway and everything under `/api/` on to the web service, and adds the security headers to every answer.
+- **The site** has three pages: the home page at `/` (news, the server status, a **Play** button), account creation at `/sign-up/`, and the game at `/play/`. Any other address gets a "Page not found" page.
+- **The web service** (`apps/web`) makes accounts for the sign-up page and tells the home page whether the game is online. It is the only part that talks to SQL Server, with a login that may run two procedures and nothing else (step 6b). It only listens on this machine (`127.0.0.1`).
 - **The gateway** turns the browser's WebSocket into the plain connection the game servers expect. It only listens on this machine (`127.0.0.1`), so the internet can reach it only through Caddy.
 - **The game servers** (the 7 programs in `Program\`) stay as they are. Their ports are **closed** to the internet: only the gateway, on the same machine, talks to them.
 
@@ -121,7 +127,7 @@ The last line clears them again. Do not skip it: the variables stay set in that 
 
 (Command Prompt: `set "VITE_GATEWAY_URL=wss://play.example.com" && set "VITE_CERTIFIER_ADDRESS=172.31.238.55:23000" && npm run build:client`, and close the window afterwards.)
 
-Success: it ends with `built in` and a time, and `$FlyffWeb\apps\client\dist` holds `index.html` and a folder `client` with one `.js` and one `.css` file. Check that the address is inside the build:
+Success: it ends with `built in` and a time, and `$FlyffWeb\apps\client\dist` holds `index.html` (home), `sign-up\index.html`, `play\index.html` (the game), `404.html` and a folder `client` with the pages' `.js` and `.css` files. Check that the address is inside the build:
 
 ```
 Select-String -Path "$FlyffWeb\apps\client\dist\client\*.js" -Pattern 'wss://play.example.com' -SimpleMatch -List | Select-Object Filename
@@ -131,7 +137,23 @@ It must print the `.js` file's name. Nothing printed means the variable was not 
 
 Where the files go: the client's own files are under `apps\client\dist\client\` (so on the web they are at `/client/...`), because `/assets/` is reserved for the converted game files in `dist\assets`.
 
-You must **build again whenever the domain or `NEUZ_IPSET` changes**, and after every update of the client's code.
+You must **build again whenever the domain or `NEUZ_IPSET` changes**, after every update of the client's code, and after a new news post or screenshot (see [apps/web/README.md](../apps/web/README.md#news-and-screenshots)).
+
+**Before every deploy, check the build** (it makes its own build in a temporary folder, so it does not touch `apps\client\dist`):
+
+```
+npm run check:public-build
+```
+
+Success: it ends with `check:public-build: ok (no test hooks; home and sign-up load no game code)`. Anything else names what is wrong in the code: test hooks that a public build would keep, or a home or sign-up page that loads the game's code. Do not put such a build on the internet; ask Claude.
+
+Then check the build you made above has no test hooks either (they are only for the automated tests, and a window where `VITE_TEST_HOOKS` was set would build them in):
+
+```
+Select-String -Path "$FlyffWeb\apps\client\dist\client\*.js" -Pattern '__client' -SimpleMatch -List | Select-Object Filename
+```
+
+Success: it prints nothing. A file name printed means that build has the test hooks: open a new PowerShell window and build again.
 
 ## Step 4. The new servers: certifier, login, world and cache
 
@@ -264,6 +286,74 @@ Refused connections get `refused` lines instead, at most one per address and rea
 
 A `refused` line never holds what the browser sent, such as its page address or path: only the address and the reason.
 
+The gateway also guards the certifier: on a certifier route it lets through only the four packets the browser sends (log in, close an old session, keep alive, error reply), with an account name of 1 to 32 plain characters and no `'`, and a password hash of 32 hex digits (in a login packet, the encrypted password must start with such a hash and its end mark, or the certifier would read and write past its buffers). Anything else ends that connection (code 4006) with a line `forbidden <address> <route> <reason>`, the reason being `type`, `account`, `password` or `malformed`. This closes a hole in the certifier that would let a crafted packet run SQL on `ACCOUNT_DBF`. The lobby never sends such a packet, so a `forbidden` line means someone tried. Step 9.7 checks it.
+
+## Step 6b. The web service: sign-up and server status
+
+The sign-up page makes accounts through this service, and the home page asks it whether the game is online. Its settings, logs and limits are in [apps/web/README.md](../apps/web/README.md).
+
+1. **The database login.** The service logs in to SQL Server as `flyffweb_site`, a login that may run `usp_CreateNewAccount` and `usp_WebOnlineCount` and nothing else. Make it once, on the machine where SQL Server runs, in PowerShell (administrator):
+
+```
+cd "$FlyffWeb\apps\web\sql"
+powershell -ExecutionPolicy Bypass -File .\Install-WebLogin.ps1
+```
+
+It asks twice for the new login's password: choose a long one (at least 12 characters) that you use nowhere else, and keep it for the next part. Options: `-Server .\SQLEXPRESS` if it cannot find the instance, `-User sa` to make the login with a SQL login instead of your Windows one, `-TcpPort 1433` if SQL Server listens on another TCP port.
+
+Success: it ends with `Check passed: flyffweb_site logged in on 127.0.0.1,1433 and sees N player(s) online.` If it warns that SQL Server takes Windows logins only, turn on "SQL Server and Windows Authentication mode" and restart SQL Server; if the TCP check fails, turn on TCP/IP for the instance (SQL Server Configuration Manager) and run it again with the right `-TcpPort`. Running it again only sets the password anew.
+
+2. **The settings file.** It holds the database password and the ticket secret, so it lives **outside** `FlyffWeb` and outside every folder Caddy serves, in a folder only administrators and the services (SYSTEM) can read:
+
+```
+New-Item -ItemType Directory -Force C:\flyff-web
+Copy-Item "$FlyffWeb\apps\web\web.config.example.json" C:\flyff-web\web.config.json
+icacls C:\flyff-web /inheritance:r /grant:r "SYSTEM:(OI)(CI)F" "Administrators:(OI)(CI)F"
+notepad C:\flyff-web\web.config.json
+```
+
+In Notepad set:
+
+| Setting | Value |
+| --- | --- |
+| `siteOrigin` | `https://play.example.com`, exactly as the address bar shows it, no slash at the end. Only this page may send a sign-up. |
+| `sql.password` | The password you gave `Install-WebLogin.ps1`. |
+| `sql.port` | The `-TcpPort` you used (1433 by default). |
+| `ticketSecret` | 32 or more random characters. Make them with `-join ((48..57)+(65..90)+(97..122) \| Get-Random -Count 48 \| ForEach-Object {[char]$_})` and paste the result. |
+| `servers` | The certifier's and the login server's real ports on this machine (23000 and 28000): the home page says **Online** when both answer. |
+
+`listen` stays `127.0.0.1` port `8091`, and `trustedProxies` stays `["127.0.0.1"]` (Caddy). Check `icacls C:\flyff-web` afterwards: it must list only `NT AUTHORITY\SYSTEM` and `BUILTIN\Administrators`.
+
+3. **A first run by hand:**
+
+```
+cd $FlyffWeb
+npx tsx apps/web/src/main.ts --config C:\flyff-web\web.config.json
+```
+
+Success: it prints a line ending in `listening 127.0.0.1:8091` and stays running. A mistake in the settings prints `web: cannot use ...` with the setting's name, and stops. Stop it with `Ctrl` + `C`.
+
+4. **As a Windows service** (administrator PowerShell, with `$FlyffWeb` set):
+
+```
+nssm install flyffweb-site "C:\Program Files\nodejs\node.exe"
+nssm set flyffweb-site DisplayName "FlyffWeb Site"
+nssm set flyffweb-site AppParameters "--import tsx apps\web\src\main.ts --config C:\flyff-web\web.config.json"
+nssm set flyffweb-site AppDirectory "$FlyffWeb"
+nssm set flyffweb-site AppStdout C:\flyff-logs\web.log
+nssm set flyffweb-site AppStderr C:\flyff-logs\web.log
+nssm set flyffweb-site AppRotateFiles 1
+nssm set flyffweb-site AppRotateOnline 1
+nssm set flyffweb-site AppRotateBytes 10000000
+nssm start flyffweb-site
+nssm status flyffweb-site
+curl.exe -s http://127.0.0.1:8091/api/status
+```
+
+Success: `SERVICE_RUNNING`, and the last line prints something like `{"online":true,"players":0,"checkedAt":"2026-..."}`. `"players":null` means the database did not answer: read `C:\flyff-logs\web.log`. After a change to the settings file, run `nssm restart flyffweb-site`.
+
+If the web service stops, the game keeps working: only sign-up and the home page's status are missing ("Status unavailable"), and NSSM starts it again.
+
 ## Step 7. Open port 443
 
 Do this before Caddy starts, because Let's Encrypt must reach port 443 to give out the certificate.
@@ -301,7 +391,7 @@ Success: both print nothing. If a rule shows up with `Enabled True`, `Direction 
 
 The gateway still reaches the servers, because connections from the machine to itself (`127.0.0.1`) are not filtered by the firewall.
 
-**The router.** If the machine is behind a home router, forward **TCP 443** (and 80 if you opened it) to the machine's address on your network. Forward nothing else: not 23000, 28000, 5400 or 8090.
+**The router.** If the machine is behind a home router, forward **TCP 443** (and 80 if you opened it) to the machine's address on your network. Forward nothing else: not 23000, 28000, 5400, 8090 (the gateway), 8091 (the web service) or 1433 (SQL Server).
 
 ## Step 8. Caddy
 
@@ -315,7 +405,18 @@ notepad C:\caddy\Caddyfile
 Paste this, with your own site address and your own `FlyffWeb` path. In a Caddyfile on Windows, write the path with **forward slashes**, and put it in quotes when it has spaces:
 
 ```
+(site-headers) {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' wss://{host}; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+	}
+}
+
 play.example.com {
+	import site-headers
 	encode zstd gzip {
 		match {
 			header Content-Type text/*
@@ -330,6 +431,12 @@ play.example.com {
 	handle /connect/* {
 		reverse_proxy 127.0.0.1:8090
 	}
+	handle /api/* {
+		request_body {
+			max_size 4KB
+		}
+		reverse_proxy 127.0.0.1:8091
+	}
 	handle /assets/* {
 		respond /assets/report.json 404
 		@fingerprinted path_regexp fingerprinted \.[0-9a-f]{10}\.[a-z0-9]+$
@@ -339,8 +446,16 @@ play.example.com {
 	}
 	handle {
 		root * "D:/FlyFF/Blouflash VS22 V15/FlyffWeb/apps/client/dist"
-		try_files {path} /index.html
+		try_files {path} {path}/index.html
 		file_server
+	}
+	handle_errors 404 {
+		import site-headers
+		root * "D:/FlyFF/Blouflash VS22 V15/FlyffWeb/apps/client/dist"
+		rewrite * /404.html
+		file_server {
+			status 404
+		}
 	}
 }
 ```
@@ -353,7 +468,12 @@ What it does:
 - `/connect/*` goes to the gateway. Caddy passes WebSocket connections through by itself and adds the player's address in the `X-Forwarded-For` header, which is what the gateway reads (because of `trustedProxies`).
 - `/assets/*` is read from `FlyffWeb\dist`, so `/assets/x` is the file `FlyffWeb\dist\assets\x`: where `npm run convert` writes.
 - The `respond /assets/report.json 404` line keeps one file private. `npm run convert` leaves a `report.json` in that folder, and it holds the folder paths of the computer that did the converting. Everything else in `dist\assets` is meant to be public, so only this file is blocked: a visitor who asks for it gets "not found". The line sits inside the `/assets/*` block, before `file_server`, so it takes effect before the file is served. Step 9 checks it.
-- Everything else is read from `FlyffWeb\apps\client\dist`: the lobby page, and its files under `/client/`. A path with no file behind it gets `index.html`.
+- `/api/*` goes to the web service (step 6b), with bodies of at most 4 KB (a sign-up is a few hundred bytes; the service itself takes at most 1 KB).
+- Everything else is read from `FlyffWeb\apps\client\dist`: the home page, `/sign-up/`, the game at `/play/`, and their files under `/client/`. `/play` and `/sign-up` without the slash find their page too (`try_files {path} {path}/index.html`). A path with no page or file behind it gets the "Page not found" page, `404.html`, with the status 404 (`handle_errors 404`; it needs Caddy 2.8 or newer). Old bookmarks of the game at `/` now land on the home page, whose **Play** button leads to `/play/`.
+- `(site-headers)` is the set of security headers every answer gets, error pages included (`import site-headers`). They are the same as `apps/client/siteHeaders.ts`, which the automated tests run the game under; a test checks this guide carries them word for word:
+  - `Strict-Transport-Security`: browsers use only HTTPS for the site for a year (Caddy already sends `http://` to `https://`).
+  - `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy`: no guessing of file types, no full addresses sent to other sites, no camera, microphone or location.
+  - `Content-Security-Policy`: the pages may run only the site's own scripts (no inline script), connect only to the site and its gateway (`wss://{host}`, which Caddy fills in with the site's name), and cannot be shown inside another site's frame. Two sources the game needs: `'wasm-unsafe-eval'` for the texture decoder, which is WebAssembly, and `'unsafe-eval'` because that decoder's glue code builds functions from strings in its worker; without it no world loads. `'unsafe-inline'` in `style-src` is for the inline styles the pages and the game set.
 
 Save it as **`Caddyfile` with no `.txt` at the end**: `dir C:\caddy` must list `Caddyfile`, not `Caddyfile.txt`.
 
@@ -384,8 +504,8 @@ Success: `SERVICE_RUNNING`.
 
 ## Step 9. Check it from outside
 
-1. On a phone **on mobile data** (Wi-Fi off), open `https://play.example.com`. You should see the **FlyFF** heading and a **Log in** form, with the padlock showing a valid certificate.
-2. Log in with a test account, pick a channel, and look at the character list. Then tap **Enter** on a character: after "Entering the world…" the world opens around the character, with a **Leave** button.
+1. On a phone **on mobile data** (Wi-Fi off), open `https://play.example.com`. You should see the home page (the game's art, **Play**, the news, and the status **Online · N players**), with the padlock showing a valid certificate. Open `https://play.example.com/no-such-page`: it shows "Page not found".
+2. Tap **Sign up**, make a new account, and tap **Play now**: the login form at `/play/` has the new name filled in. Log in with it, pick a channel, and look at the character list. Then tap **Enter** on a character: after "Entering the world…" the world opens around the character, with a **Leave** button.
 3. On the machine, look at the end of the gateway's log:
 
 ```
@@ -401,9 +521,12 @@ Test-NetConnection play.example.com -Port 443
 Test-NetConnection play.example.com -Port 23000
 Test-NetConnection play.example.com -Port 28000
 Test-NetConnection play.example.com -Port 5400
+Test-NetConnection play.example.com -Port 8090
+Test-NetConnection play.example.com -Port 8091
+Test-NetConnection play.example.com -Port 1433
 ```
 
-Success: `TcpTestSucceeded : True` for 443 and `False` for the other three.
+Success: `TcpTestSucceeded : True` for 443 and `False` for all the others (the servers, the gateway, the web service and SQL Server).
 
 5. Check that the one private file is not served. (This works from any computer. `curl.exe` comes with Windows.)
 
@@ -421,24 +544,45 @@ curl.exe -s -o NUL -D - -H "Accept-Encoding: zstd, gzip" https://play.example.co
 
 Success: among the lines it prints is `Content-Encoding: zstd` (or `gzip`). Without that line, the `match` block of `encode` is missing from the Caddyfile, and every first entry into a world downloads several times the bytes it needs.
 
+7. Check the security headers, the 404 page and the web service through Caddy (any computer):
+
+```
+curl.exe -s -o NUL -D - https://play.example.com/
+curl.exe -s -o NUL -w "%{http_code}" https://play.example.com/no-such-page
+curl.exe -s https://play.example.com/api/status
+```
+
+Success: the first prints, among its lines, `Strict-Transport-Security`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy` and `Content-Security-Policy` (with `wss://play.example.com` in it, not `{host}`); the second prints `404`; the third prints `{"online":true,"players":...}`. Then check that the gateway refuses the certifier packet that could run SQL. On the machine, in `$FlyffWeb`, with your own route key and site address:
+
+```
+npx tsx apps/gateway/scripts/sendBadClose.ts ws://127.0.0.1:8090 172.31.238.55:23000 https://play.example.com
+```
+
+Success: it prints `refused (4006)`, and the gateway log gets a line `forbidden 127.0.0.1 172.31.238.55:23000 account`.
+
 ## Updating later
 
-After a new version of the code (a `git pull` in `FlyffWeb`, or a copied-in folder). **Stop the gateway first.** The service runs from the `node_modules` folder, and `npm ci` deletes that folder first; Windows does not let it delete files that a running program is using, so `npm ci` fails and can leave the folder half-removed. While the gateway is stopped, players see "Cannot reach the game gateway.", so pick a quiet time. It takes a minute or two.
+After a new version of the code (a `git pull` in `FlyffWeb`, or a copied-in folder). **Stop the gateway and the web service first.** Both run from the `node_modules` folder, and `npm ci` deletes that folder first; Windows does not let it delete files that a running program is using, so `npm ci` fails and can leave the folder half-removed. While the gateway is stopped, players see "Cannot reach the game gateway.", so pick a quiet time. It takes a minute or two.
 
 Open PowerShell **as administrator**, set `$FlyffWeb` again in it (the line from "Names used below"), then:
 
 ```
 nssm stop flyff-gateway
+nssm stop flyffweb-site
 nssm status flyff-gateway
+nssm status flyffweb-site
 cd $FlyffWeb
 npm ci
+npm run check:public-build
 $env:VITE_GATEWAY_URL = 'wss://play.example.com'; $env:VITE_CERTIFIER_ADDRESS = '172.31.238.55:23000'; npm run build:client
 Remove-Item Env:VITE_GATEWAY_URL, Env:VITE_CERTIFIER_ADDRESS
 nssm start flyff-gateway
+nssm start flyffweb-site
 nssm status flyff-gateway
+nssm status flyffweb-site
 ```
 
-Success: the first `nssm status` says `SERVICE_STOPPED` (if it says anything else, wait a few seconds and ask again before you go on), `npm ci` and the build end without red `npm error` lines, and the last `nssm status` says `SERVICE_RUNNING`. If you also changed `gateway.config.json`, the start picks it up.
+Success: the first two `nssm status` say `SERVICE_STOPPED` (if one says anything else, wait a few seconds and ask again before you go on), `npm ci` and the build end without red `npm error` lines, the check ends with `check:public-build: ok`, and the last two `nssm status` say `SERVICE_RUNNING`. If you also changed `gateway.config.json` or the web service's settings, the start picks them up.
 
 Caddy reads the new client files from disk straight away; it needs no restart. A phone that had the page open should reload it. (If you ever start the gateway by hand with `npm run gateway` instead, stop it with `Ctrl` + `C` before `npm ci` for the same reason.)
 
@@ -522,4 +666,10 @@ There is no logout timer based on tab focus. Closing the browser WebSocket destr
 | Everyone disconnected at once, nobody can log in for about 10 minutes | The servers' connection-flood limiter: the old certifier or login server is still running, or `Certifier.ini` or `LoginServer.ini` has no `Gateway` line. See step 4 and [Before a public launch](#before-a-public-launch). |
 | The error log in `Program` has `Gateway … not added` | A `Gateway` line in `Certifier.ini` or `LoginServer.ini` (both servers write this line) is not a plain IPv4 address (a typo, say), or there are more than 8 of them. Find the address the line names in those two files, fix it, and restart that server. |
 | Every line in the gateway log shows `127.0.0.1` | `trustedProxies` does not list `127.0.0.1`, or Caddy is not the one passing the connection. |
+| The home page says "Status unavailable" | The web service is not running (`nssm status flyffweb-site`), or Caddy has no `handle /api/*` block. Read `C:\flyff-logs\web.log`. The game itself still works. |
+| The home page says "Online" without a number of players | The web service cannot read the count from SQL Server (it waits 2 seconds). Check `sql` in `C:\flyff-web\web.config.json` and run `Install-WebLogin.ps1` again; its check says what fails. |
+| Sign-up always says "Something went wrong. Please try again later." | Read `C:\flyff-logs\web.log`. `forbidden` on every line: `siteOrigin` in the settings is not the page address exactly (`https://play.example.com`, no slash at the end). `error` lines: the database refused, and a `signup database error:` line says why (a wrong `sql.password`, a missing `usp_CreateNewAccount`). Fix it, then `nssm restart flyffweb-site`. |
+| Sign-up says "Too many sign-ups from your network." or "Sign-ups are paused for a few minutes." | The limits: 3 accounts an hour from one address, 60 an hour in all, 20 tries an hour from one address. They clear by themselves within the hour, or at once with `nssm restart flyffweb-site`. See [apps/web/README.md](../apps/web/README.md#limits). |
+| An account made at sign-up cannot log in | Look for its `created` line in `C:\flyff-logs\web.log`. Names are stored in lower case, as the game's login reads them. An account made by the old FlyffPortal cannot log in at all (it stored its password another way): make a new one. |
+| A `forbidden <address> <route> <reason>` line in the gateway log | The gateway refused a certifier packet the lobby never sends: someone tried the certifier hole the gateway closes (step 6). Nothing reached the certifier. |
 | The certifier's error log has `GATEWAY_CLIENT_ADDR refused from ...` | The patched certifier does not list the address the gateway connects from. Read the "When to add a second line" note in [server-patches/README.md](../server-patches/README.md). Never add an address you do not recognise. |
