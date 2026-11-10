@@ -2813,6 +2813,7 @@ export class WorldScreen {
       this.effects?.stepMissiles(missiles.views());
     }
     this.numbers?.step();
+    this.stepAngels(world); // 2026-11-10: the angels (CMover::Process)
     this.petParticles.step(); // pets R1: g_ParticleMng.Process (Neuz.cpp:1100)
     this.petWindows?.step(); // pets R2: the pet window's portrait, CWndPetStatus::Process
     this.petCare?.step(); // pets R3: the tamer's miracle's spins, CWndPetMiracle::Process
