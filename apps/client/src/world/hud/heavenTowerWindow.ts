@@ -70,10 +70,17 @@ export class HeavenTowerWindow {
   readonly window: ResWindow;
   /** `m_nChoiceNum`: the line pressed last, -1 for none. */
   private chosen = -1;
+  /**
+   * Whether a press went down on the window since it opened. On a phone the tap on the NPC opens the window under the
+   * finger, and the browser then sends that tap's click to the line now there (a "ghost click"); a line takes a click only
+   * after a press of its own.
+   */
+  private pressed = false;
 
   constructor(private readonly host: HeavenTowerHost, art: UiArt, doc: Document = document) {
     this.window = new ResWindow(HEAVEN_TOWER, art, doc);
     this.window.frame.element.classList.add('hud-heaven-tower');
+    this.window.frame.element.addEventListener('pointerdown', () => { this.pressed = true; }, true);
     this.window.onClose = () => this.choose(-1);
     this.window.setText('WIDC_TEXT1', host.text('TID_TOOLTIP_HEAVENTOWER'));
     const rows = this.window.control('WIDC_LISTBOX1');
@@ -82,7 +89,11 @@ export class HeavenTowerWindow {
       row.setAttribute('role', 'option');
       row.dataset.floor = String(line + 1);
       row.textContent = `${line + 1}. ${host.text(floorTid(line))}`;
-      row.addEventListener('click', () => this.press(line));
+      row.addEventListener('click', () => {
+        if (!this.pressed) return; // the opening tap's click, not a press on the line
+        this.pressed = false;
+        this.press(line);
+      });
       rows.append(row);
     }
   }
@@ -103,6 +114,7 @@ export class HeavenTowerWindow {
       return;
     }
     this.choose(-1);
+    this.pressed = false;
     this.window.open('center');
   }
 

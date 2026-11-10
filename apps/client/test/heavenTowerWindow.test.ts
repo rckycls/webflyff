@@ -24,6 +24,12 @@ const TEXTS: Record<string, string> = {
 
 afterEach(() => document.body.replaceChildren());
 
+/** A press on a line as a finger or the mouse makes it: the press goes down on it, then its click. */
+const press = (row: HTMLElement): void => {
+  row.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+  row.click();
+};
+
 function rig() {
   const said: string[] = [], sent: number[] = [];
   let box: { text: string; ok: () => void } | null = null;
@@ -65,7 +71,7 @@ describe('the Forsaken Tower window (CWndHeavenTower)', () => {
   it('a floor asks with its cost; OK sends the floor and closes the window', () => {
     const r = rig();
     r.window.open();
-    r.rows()[2]!.click();
+    press(r.rows()[2]!);
     expect(r.rows()[2]!.dataset.chosen).toBe('');
     expect(r.box()!.text).toBe('You need to pay 50000 penya to enter floor B3.');
     expect(r.sent).toEqual([]);
@@ -77,15 +83,24 @@ describe('the Forsaken Tower window (CWndHeavenTower)', () => {
   it('floor B5 costs 100000; B6 says it is private and OK sends nothing; "Do not Enter." closes', () => {
     const r = rig();
     r.window.open();
-    r.rows()[4]!.click();
+    press(r.rows()[4]!);
     expect(r.box()!.text).toBe('You need to pay 100000 penya to enter floor B5.');
-    r.rows()[5]!.click();
+    press(r.rows()[5]!);
     expect(r.box()!.text).toBe('You cannot enter a private area.');
     r.box()!.ok();
     expect(r.sent).toEqual([]);
     expect(r.window.isOpen).toBe(true);
-    r.rows()[6]!.click();
+    press(r.rows()[6]!);
     expect(r.window.isOpen).toBe(false);
     expect(r.sent).toEqual([]);
+  });
+
+  it('takes no click without its own press: the opening tap of a phone lands on a line as a click alone', () => {
+    const r = rig();
+    r.window.open();
+    r.rows()[2]!.click();
+    expect(r.box()).toBeNull();
+    press(r.rows()[2]!);
+    expect(r.box()).not.toBeNull();
   });
 });
