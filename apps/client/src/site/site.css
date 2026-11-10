@@ -53,6 +53,24 @@ a { color: #1a4e8a; }
 }
 .site-devices { margin: 8px 0 0; color: #333; font-size: 14px; }
 
+/* The sign-up form. Inputs at 16 px: a phone zooms in on a smaller one. */
+.site-form h2 { margin-bottom: 12px; }
+.site-field { margin: 0 0 12px; }
+.site-field label { display: block; margin-bottom: 4px; font-weight: bold; }
+.site-field input {
+  width: 100%; min-height: 40px; padding: 6px 10px; border: 1px solid #aaa; border-radius: 8px; background: #fff;
+  box-shadow: inset 1px 2px 3px #5555; color: #111; font: 16px Arial, sans-serif;
+}
+.site-field input[aria-invalid='true'] { border-color: #b3261e; }
+.site-hint { margin: 4px 0 0; color: #555; font-size: 14px; }
+.site-field-message, .site-alert { margin: 4px 0 0; color: #b3261e; font-size: 14px; font-weight: bold; }
+.site-field-message:empty, .site-alert:empty { display: none; }
+.site-alert { margin: 0 0 12px; font-size: 16px; }
+.site-form .site-actions { justify-content: flex-start; }
+.site-back { margin: 0; padding: 0 4px; }
+/* off screen, out of the tab order and hidden from screen readers (the trap, spec §3.4) */
+.trap { position: absolute; left: -10000px; top: auto; width: 1px; height: 1px; overflow: hidden; }
+
 @media (max-width: 480px) {
   .site-page { padding: 8px 8px 24px; }
   .site-hero.has-picture { min-height: 220px; }

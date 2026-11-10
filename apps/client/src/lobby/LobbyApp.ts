@@ -75,7 +75,10 @@ export class LobbyApp {
     private readonly audio: { title(): void } | null = null,
     /** The reconnect's 5 minutes run on it. */
     private readonly clock: FlowClock = systemClock,
+    /** The account the login form starts with: the name just made at /sign-up (website spec §3.3), or none. */
+    initialAccount = '',
   ) {
+    this.account = initialAccount.trim();
     this.mount();
     this.showLogin();
   }
