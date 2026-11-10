@@ -1,3 +1,5 @@
+import { BANK_READERS } from './bank';
+import { POST_READERS } from './post';
 import type { MessageReader } from '../bundle';
 import { MessageType } from '../constants';
 import { readAddObj } from './addObj';
@@ -218,4 +220,7 @@ export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
     ...TRADE_READERS,
     // 2026-11-10: the guild (world/guild.ts)
     ...GUILD_READERS,
+    // 2026-11-10: the bank and the post (world/bank.ts, world/post.ts)
+    ...BANK_READERS,
+    ...POST_READERS,
   ]);

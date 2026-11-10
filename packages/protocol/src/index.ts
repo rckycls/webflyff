@@ -1,6 +1,6 @@
 export { ProtocolError } from './errors';
 export { bytesToHex, hexToBytes } from './hex';
-export { decodeText, encodeAscii } from './text';
+export { decodeText, encodeAscii, encodeGameText } from './text';
 export { ArReader } from './ar/ArReader';
 export { ArWriter } from './ar/ArWriter';
 export { crc32 } from './framing/crc32';
@@ -66,3 +66,5 @@ export * from './world/itemWindows';
 export * from './world/pets';
 export * from './world/trade';
 export * from './world/guild';
+export * from './world/bank';
+export * from './world/post';

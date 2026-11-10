@@ -1,7 +1,7 @@
 import type { ArReader } from '../ar/ArReader';
 import { ProtocolError } from '../errors';
 import { readPet } from './pets';
-import type { InventoryItem, OwnCharacter, SkillSlot } from './types';
+import type { InventoryItem, OwnBank, OwnCharacter, SkillSlot } from './types';
 
 /**
  * `MAX_SKILL_JOB` (`_Common/Mover.h:96-100`, the `__VER >= 10` branch): `MAX_JOB_SKILL` 3 + `MAX_EXPERT_SKILL` 20 +
@@ -35,8 +35,11 @@ const NULL_ID = 0xffffffff;
  */
 export function readOwnAfterEquipment(r: ArReader, numbers: OwnNumbers): OwnCharacter {
   const skills = readSkills(r);
-  const { inventory, inventoryError, inventorySlots } = readInventoryPart(r);
-  const petSlot = inventory === null ? undefined : readPetSlot(r);
+  const { inventory, inventoryError, inventorySlots, bank } = readInventoryPart(r);
+  const banks = inventory === null ? undefined : readBanksAndPetSlot(r);
+  const petSlot = banks?.petSlot;
+  // 2026-11-10 (bank-mail): the banks are kept, with the slot and penya read before the inventory
+  if (bank !== undefined && banks?.containers !== undefined) bank.containers = banks.containers;
   // The reader stops here, after the pet slot, or wherever the inventory or the banks failed. The C++ goes on with
   // `m_Pocket.Serialize` (:606), `m_dwMute` (:610, __JEFF_9_20), the honour titles (:616-634), `m_idCampus` and
   // `m_nCampusPoint` (:637-638), then the buffs. None of them is read yet: they are skipped, and whatever reads them next
@@ -44,37 +47,51 @@ export function readOwnAfterEquipment(r: ArReader, numbers: OwnNumbers): OwnChar
   r.skipRest();
   return {
     ...numbers, skills, inventory, inventoryError, ...(inventorySlots ? { inventorySlots } : {}),
-    ...(petSlot !== undefined ? { petSlot } : {}),
+    ...(petSlot !== undefined ? { petSlot } : {}), ...(bank !== undefined && !emptyBank(bank) ? { bank } : {}),
   };
 }
 
+/** A bank with nothing in it (slot 0, no penya, no player, no item) is left out, as the other optional fields are. */
+function emptyBank(bank: OwnBank): boolean {
+  return bank.slot === 0 && bank.gold.every((gold) => gold === 0) && bank.players.every((id) => id === 0)
+    && (bank.containers ?? []).every((container) => container.items.length === 0);
+}
+
 /**
- * The three banks, read past (`m_Bank[k].Serialize( ar )`, :586-587: `CItemContainer::Serialize` with 42 slots,
- * `_Common/Item.h:923-944`: `m_apIndex`, the count, each item's slot and `CItemElem`, the object indexes), then `DWORD
- * dwPetId` (__VER >= 9, __PET_0410, :594-596): the summoned pet's bag object ID, undefined for `NULL_ID`. A
- * `ProtocolError` (the bytes run out, or a count or a slot out of range) gives undefined too: the inventory before it is
- * kept. Any other error is a bug and propagates.
+ * The three banks (`m_Bank[k].Serialize( ar )`, :586-587: `CItemContainer::Serialize` with 42 slots, `_Common/Item.h:923-944`:
+ * `m_apIndex`, the count, each item's slot and `CItemElem`, the object indexes), kept since 2026-11-10 (bank-mail), then `DWORD
+ * dwPetId` (__VER >= 9, __PET_0410, :594-596): the summoned pet's bag object ID, undefined for `NULL_ID`. A `ProtocolError`
+ * (the bytes run out, or a count or a slot out of range) gives neither: the inventory before it is kept. Any other error is a
+ * bug and propagates.
  */
-function readPetSlot(r: ArReader): number | undefined {
+function readBanksAndPetSlot(r: ArReader): { containers?: Array<{ slots: number[]; items: InventoryItem[] }>; petSlot?: number } {
+  const containers: Array<{ slots: number[]; items: InventoryItem[] }> = [];
   try {
     for (let k = 0; k < 3; k++) {
-      r.bytes(4 * MAX_BANK); // ar.Read( m_apIndex, sizeof(DWORD) * m_dwItemMax )
+      const slots = Array.from({ length: MAX_BANK }, () => r.u32()); // ar.Read( m_apIndex, sizeof(DWORD) * m_dwItemMax )
       const at = r.position();
       const count = r.u8(); // chSize
       if (count > MAX_BANK) throw new ProtocolError(`bank ${k}: ${count} items, more than its ${MAX_BANK} slots`, at);
+      const items = new Map<number, InventoryItem>();
       for (let i = 0; i < count; i++) {
         const slotAt = r.position();
         const slot = r.u8(); // ch
         if (slot >= MAX_BANK) throw new ProtocolError(`bank ${k}: slot ${slot} outside its ${MAX_BANK}`, slotAt);
-        readInventoryItem(r, slot); // m_apItem[ch].Serialize( ar )
+        items.set(slot, readInventoryItem(r, slot)); // m_apItem[ch].Serialize( ar )
       }
       r.bytes(4 * MAX_BANK); // ar.Read( adwObjIndex, sizeof(DWORD) * m_dwItemMax )
+      containers.push({ slots, items: [...items.values()].filter((item) => item.itemId !== 0) });
     }
-    const petId = r.u32(); // ar >> dwPetId; SetPetId( dwPetId )
-    return petId === NULL_ID ? undefined : petId;
   } catch (error) {
     if (!(error instanceof ProtocolError)) throw error;
-    return undefined;
+    return {};
+  }
+  try {
+    const petId = r.u32(); // ar >> dwPetId; SetPetId( dwPetId )
+    return { containers, ...(petId === NULL_ID ? {} : { petSlot: petId }) };
+  } catch (error) {
+    if (!(error instanceof ProtocolError)) throw error;
+    return { containers };
   }
 }
 
@@ -106,15 +123,15 @@ interface Where { part: string }
  * boundary (the caller skips the rest) and keeps the numbers and skills read before it: `inventory` is then `null`
  * and `inventoryError` names the part and the error. Any other error is a bug and propagates.
  */
-function readInventoryPart(r: ArReader): Pick<OwnCharacter, 'inventory' | 'inventoryError' | 'inventorySlots'> {
+function readInventoryPart(r: ArReader): Pick<OwnCharacter, 'inventory' | 'inventoryError' | 'inventorySlots' | 'bank'> {
   const where: Where = { part: 'before the inventory' };
   try {
-    skipBeforeInventory(r);
+    const bank = skipBeforeInventory(r);
     const inventorySlots = Array.from({ length: INVENTORY_SLOTS }, () => r.u32());
     if (inventorySlots.some((id) => id !== 0xffffffff && id >= INVENTORY_SLOTS)) {
       throw new ProtocolError('invalid inventory index mapping', r.position());
     }
-    return { inventory: readInventory(r, where), inventoryError: null, inventorySlots };
+    return { inventory: readInventory(r, where), inventoryError: null, inventorySlots, bank };
   } catch (error) {
     if (!(error instanceof ProtocolError)) throw error;
     return { inventory: null, inventoryError: `${where.part}: ${error.message}` };
@@ -135,19 +152,23 @@ export function readItemContainer(r: ArReader): { slots: number[]; items: Invent
   return { slots, items: readInventory(r, { part: 'the inventory' }) };
 }
 
-/** The fields between the skill array and the inventory (loading :568-584, storing :239-253), none of them kept. */
-function skipBeforeInventory(r: ArReader): void {
+/**
+ * The fields between the skill array and the inventory (loading :568-584, storing :239-253); only the bank's are kept
+ * (2026-11-10, bank-mail), the banks themselves follow the inventory.
+ */
+function skipBeforeInventory(r: ArReader): OwnBank {
   r.u8(); // (BYTE&)m_nCheerPoint (:569), an int that :568 zeroes first
   r.u32(); // m_dwTickCheer (DWORD, :569): the server's m_dwTickCheer - GetTickCount(), which :570 makes a tick again
-  r.u8(); // m_nSlot (BYTE, :571)
-  r.bytes(4 * 3); // m_dwGoldBank[k] (DWORD, :572-573)
-  r.bytes(4 * 3); // m_idPlayerBank[k] (u_long, :574-575)
+  const slot = r.u8(); // m_nSlot (BYTE, :571)
+  const gold = [r.u32(), r.u32(), r.u32()]; // m_dwGoldBank[k] (DWORD, :572-573)
+  const players = [r.u32(), r.u32(), r.u32()]; // m_idPlayerBank[k] (u_long, :574-575)
   r.i32(); // m_nPlusMaxHitPoint (LONG, :577)
   r.u8(); // m_nAttackResistLeft (BYTE, :578)
   r.u8(); // m_nAttackResistRight (BYTE, :579)
   r.u8(); // m_nDefenseResist (BYTE, :580)
   r.i64(); // m_nAngelExp (EXPINTEGER, an __int64; __VER >= 8, __CSC_VER8_5, :582)
   r.i32(); // m_nAngelLevel (LONG, :583)
+  return { slot, gold, players };
 }
 
 /**

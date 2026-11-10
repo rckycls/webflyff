@@ -16,9 +16,11 @@ import type { FriendMessage } from './friends';
 import type { TradeMessage } from './trade';
 import type { VendorMessage } from './vendor';
 import type { GuildDirectMessage, GuildMessage } from './guild';
+import type { BankMessage } from './bank';
+import type { PostMessage } from './post';
 
 export type WorldMessage = ChatMessage | NpcMessage | ShopMessage | QuestMessage | PetMessage | FriendMessage | TradeMessage | VendorMessage
-  | GuildMessage | GuildDirectMessage
+  | GuildMessage | GuildDirectMessage | BankMessage | PostMessage
   | { type: 'profileStats'; values: number[] }
   | { type: 'addItem'; item: GroundItem }
   | { type: 'createItem'; itemType: number; item: InventoryItem; stacks: Array<{ objectId: number; count: number }> }
@@ -457,6 +459,21 @@ export interface OwnCharacter {
    * when the inventory or the banks could not be read.
    */
   petSlot?: number;
+  /**
+   * 2026-11-10 (bank-mail): the account's three banks as the own ADD_OBJ carries them (`ObjSerializeOpt.cpp:571-575, 586-587`):
+   * the own character's slot, each bank's penya and the player in each slot (0 for none), and the banks' items. `containers`
+   * is absent when the banks could not be read (the inventory before them is kept).
+   */
+  bank?: OwnBank;
+}
+
+/** 2026-11-10 (bank-mail): `m_nSlot`, `m_dwGoldBank[3]`, `m_idPlayerBank[3]`, `m_Bank[3]`. */
+export interface OwnBank {
+  slot: number;
+  gold: number[];
+  players: number[];
+  /** Each bank's `m_apIndex` (42 positions to object ids) and items (`objectId` = the storage index). */
+  containers?: Array<{ slots: number[]; items: InventoryItem[] }>;
 }
 
 /**

@@ -818,7 +818,8 @@ function writeBanks(w: ArWriter, banks: readonly (readonly InventoryItem[])[]): 
  * by default) and `dwPetId` (`own.petSlot`, or `NULL_ID`), and ends there.
  */
 export function writeAddSelf(
-  objectId: number, p: AddedMover, options: { banks?: readonly (readonly InventoryItem[])[] } = {},
+  objectId: number, p: AddedMover,
+  options: { banks?: readonly (readonly InventoryItem[])[]; bank?: { slot?: number; gold?: readonly number[]; players?: readonly number[] } } = {},
 ): ScriptMessage {
   const player = playerOf(p, true);
   if (player.equipmentObjectIds.length !== MAX_HUMAN_PARTS) {
@@ -859,9 +860,10 @@ export function writeAddSelf(
   for (const id of player.equipmentObjectIds) w.u32(id); // m_aEquipInfo[i].dwId
   for (const slot of own.skills) w.u32(slot.skill).u32(slot.level); // m_aJobSkill[i]: dwSkill, dwLevel
   w.u8(0).u32(0) // (BYTE)m_nCheerPoint, m_dwTickCheer - GetTickCount()
-    .u8(0) // m_nSlot
-    .u32(0).u32(0).u32(0) // m_dwGoldBank[k]
-    .u32(0).u32(0).u32(0) // m_idPlayerBank[k]
+    // m_nSlot, m_dwGoldBank[k], m_idPlayerBank[k] (2026-11-10, bank-mail: `options.bank`, else none)
+    .u8(options.bank?.slot ?? 0)
+    .u32(options.bank?.gold?.[0] ?? 0).u32(options.bank?.gold?.[1] ?? 0).u32(options.bank?.gold?.[2] ?? 0)
+    .u32(options.bank?.players?.[0] ?? 0).u32(options.bank?.players?.[1] ?? 0).u32(options.bank?.players?.[2] ?? 0)
     .i32(0) // m_nPlusMaxHitPoint
     .u8(0).u8(0).u8(0) // m_nAttackResistLeft, m_nAttackResistRight, m_nDefenseResist
     .i64(0n).i32(0); // m_nAngelExp, m_nAngelLevel (__VER >= 8)

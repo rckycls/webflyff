@@ -24,3 +24,22 @@ export function encodeAscii(text: string): Uint8Array {
   }
   return out;
 }
+
+const characters = new Map(Array.from({ length: 256 }, (_, byte) => [decodeText(Uint8Array.of(byte)), byte]));
+
+/**
+ * 2026-11-10 (bank-mail; first the guild's `guildString`): a text the player typed, in the game's code page (windows-1252, as
+ * the chat's), for `CAr::WriteString`: at most `max` bytes, no control character but line breaks when `lineBreaks`. The
+ * windows check their own rules first; this only refuses what cannot be sent.
+ */
+export function encodeGameText(text: string, max: number, lineBreaks = false): Uint8Array {
+  if (text.length > max) throw new RangeError(`Enter at most ${max} characters.`);
+  return Uint8Array.from(Array.from(text, (character) => {
+    const byte = characters.get(character);
+    const control = byte === undefined || byte < 0x20 || byte === 0x7f;
+    if (control && !(lineBreaks && (character === '\n' || character === '\r'))) {
+      throw new RangeError('This character cannot be sent in the game text encoding.');
+    }
+    return byte ?? 0;
+  }));
+}

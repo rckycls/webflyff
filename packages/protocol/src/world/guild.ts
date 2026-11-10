@@ -35,7 +35,7 @@
 // (:114-143), `CGuildRank::Serialize` (`_Common/guild.h:551-585`), `CGuildWar::Serialize` (`_Common/guildwar.cpp:41-61`).
 
 import type { ArReader } from '../ar/ArReader';
-import { decodeText } from '../text';
+import { decodeText, encodeGameText } from '../text';
 import type { ArWriter } from '../ar/ArWriter';
 import { clientPacket } from './packet';
 
@@ -488,22 +488,9 @@ export function guildPacketTypeOf(message: GuildDirectMessage): number {
 
 // --- the client's packets ---
 
-const characters = new Map(Array.from({ length: 256 }, (_, byte) => [decodeText(Uint8Array.of(byte)), byte]));
-
-/**
- * `CAr::WriteString` of a guild text in the game's code page (windows-1252, as the chat's): at most `max` bytes, no control
- * character but the notice's line breaks. The windows check the rules first; this only refuses what cannot be sent.
- */
+/** `CAr::WriteString` of a guild text in the game's code page (`encodeGameText`, text.ts). */
 function guildString(w: ArWriter, text: string, max: number, lineBreaks = false): ArWriter {
-  if (text.length > max) throw new RangeError(`Enter at most ${max} characters.`);
-  const bytes = Uint8Array.from(Array.from(text, (character) => {
-    const byte = characters.get(character);
-    const control = byte === undefined || byte < 0x20 || byte === 0x7f;
-    if (control && !(lineBreaks && (character === '\n' || character === '\r'))) {
-      throw new RangeError('This character cannot be sent in the game text encoding.');
-    }
-    return byte ?? 0;
-  }));
+  const bytes = encodeGameText(text, max, lineBreaks);
   return w.i32(bytes.length).bytes(bytes);
 }
 
