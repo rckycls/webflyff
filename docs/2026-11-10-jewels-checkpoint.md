@@ -23,15 +23,16 @@ Research: `docs/superpowers/specs/2026-11-10-jewels-research.md`.
   - success: "Jewel creation succeeded!", the success sound, and the window closes; failure: "Jewel creation failed!" and
     the sockets read again;
   - while it is open, a click in the world does nothing (as Neuz); it closes when the player moves.
-- **The tooltip of an Ultimate weapon**: the name leaves room for the Ultimate icon, drawn at the top left; its set
+- **The tooltip of an Ultimate weapon**: the name leaves room for the Ultimate icon (Icon_Ultimate.dds, 51 x 14), drawn at
+  the top left; its set
   jewels' stats end the tooltip in red ("Max. HP+455", "Steal HP+10%", ...); the socket row at the bottom shows each open
   socket with its jewel.
 - **Protocol**: `encodeUltimateMakeGem`, `encodeUltimateSetGem`, `UltimateState`, `UltimateResult`; ULTIMATE's MAKEGEM count
   is read now (before, a MAKEGEM answer would have broken the rest of its bundle). Testkit `writeUltimate`.
 - **Converter**: a new `ultimate` stage writes `data/ultimate.json` (the packs' `Ultimate_GemAbility.txt` and the two window
   descriptions); the UI stage converts `Window01.bmp` and `WndDisableRed/Blue/Black.bmp`.
-- **Phone** (landscape): each window is a panel at the left beside the bag (which opens with it); a tap puts a bag item in
-  where a drop would; a tap on a filled slot takes it out; slots 44 px, START a 36 px word button, the description 14 px
+- **Phone** (landscape): each window is a panel at the left beside the bag (which opens with it, and closes with it when the
+  window opened it, so the world can be tapped again); a tap puts a bag item in where a drop would; a tap on a filled slot takes it out; slots 44 px, START a 36 px word button, the description 14 px
   and scrolling; the joystick and action buttons hide while it is open.
 
 ## What is left
@@ -55,7 +56,7 @@ No server or gateway change is needed.
   (`.superpowers/` is not committed; on main use the client's config, below).
 - For the owner, on main after the merge:
   - `npx playwright test -c apps/client/playwright.config.ts jewels.spec.ts --project=chromium --project=phone`: passes
-    both (about 1 minute each; Jewel Setting's turn takes 6 s).
+    both (about 20 s each here, Jewel Setting's turn taking 6 s); pictures of each step in `test-results/`.
   - `npm run test:e2e:client`: no new failures against main.
 
 ## In-game checklist (owner)

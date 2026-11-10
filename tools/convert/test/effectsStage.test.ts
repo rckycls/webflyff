@@ -89,7 +89,7 @@ const loose = (extra: Record<string, string | Uint8Array> = {}): Record<string, 
 
 describe('effects stage', () => {
   it('runs after the textures and models stages, and before the UI, worlds and data stages', () => {
-    expect(DEFAULT_STAGES.map((s) => s.name)).toEqual(['textures', 'models', 'effects', 'ui', 'worlds', 'audio', 'chat', 'data']);
+    expect(DEFAULT_STAGES.map((s) => s.name)).toEqual(['textures', 'models', 'effects', 'ui', 'worlds', 'audio', 'chat', 'ultimate', 'data']);
   });
 });
 
