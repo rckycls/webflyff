@@ -47,6 +47,8 @@ export interface VendorWindowActions {
 }
 
 const PHONE = '(max-width: 1000px) and (pointer: coarse)';
+/** 2026-11-10: the phone's keypad sheets, wide enough for the numpad beside the values (a landscape phone has ~360 px above the bar). */
+const PHONE_SHEET = { sellWidth: 540, buyWidth: 480, height: 290 };
 export const isPhone = (doc: Document): boolean => doc.defaultView?.matchMedia?.(PHONE).matches === true;
 
 /** The slot font: `m_pFontText` (Verdana 9 points, 12 px); the measure for the 108 px cut. */
@@ -386,26 +388,76 @@ function keyOf(event: KeyboardEvent, calculator: boolean): PadKey | null {
   return null;
 }
 
-/** A labelled number field of a phone sheet: digits only, the phone's number keyboard. */
-function numberField(doc: Document, label: string, name: string): { row: HTMLElement; input: HTMLInputElement } {
-  const row = doc.createElement('label');
-  row.className = 'vendor-sheet-row';
+/**
+ * A value of a phone sheet: its caption over its number (with commas). With `choose`, a button that a tap makes the one the
+ * numpad types into (Neuz's click on Quantity or Unit Price, WndRegVend.cpp:115-136); else a plain output. Never a text
+ * field: the phone keyboard does not come up (2026-11-10, the owner: the numpad in its place).
+ */
+function valueBox(doc: Document, label: string, name: string, choose?: () => void): { row: HTMLElement; value: HTMLElement } {
+  const row = doc.createElement('div');
+  row.className = 'vendor-sheet-value';
   const caption = doc.createElement('span');
   caption.textContent = label;
-  const input = doc.createElement('input');
-  input.type = 'text';
-  input.inputMode = 'numeric';
-  input.pattern = '[0-9]*';
-  input.autocomplete = 'off';
-  input.enterKeyHint = 'done';
-  input.name = name;
-  input.addEventListener('keyup', (event) => event.stopPropagation());
-  row.append(caption, input);
-  return { row, input };
+  let value: HTMLElement;
+  if (choose !== undefined) {
+    const button = doc.createElement('button');
+    button.type = 'button';
+    button.addEventListener('click', choose);
+    value = button;
+  } else value = doc.createElement('output');
+  value.dataset.field = name;
+  value.setAttribute('aria-label', label);
+  row.append(caption, value);
+  return { row, value };
 }
 
-/** The digits of a typed field, at most 10 (the pads' own limit). */
-const digitsOf = (text: string): string => text.replace(/\D/g, '').slice(0, 10) || '0';
+/** A key of the phone's numpad: its face, the pad key it presses and a name for a screen reader. */
+type NumpadKey = readonly [face: string, key: PadKey, name?: string];
+
+/**
+ * The registration's keys, as CWndRegVend has them (resdata.inc:12278-): the digits, 00, 000, Min, Max, the calculator's
+ * + - * / = and Backspace (`OnChar` 8), five to a row.
+ */
+const SELL_KEYS: readonly NumpadKey[] = [
+  ['7', '7'], ['8', '8'], ['9', '9'], ['\u00f7', '/', 'Divide'], ['\u232b', 'back', 'Backspace'],
+  ['4', '4'], ['5', '5'], ['6', '6'], ['\u00d7', '*', 'Times'], ['Min', 'min'],
+  ['1', '1'], ['2', '2'], ['3', '3'], ['\u2212', '-', 'Minus'], ['Max', 'max'],
+  ['0', '0'], ['00', '00'], ['000', '000'], ['+', '+', 'Plus'], ['=', '=', 'Equals'],
+];
+/** The buy keypad's keys, as CWndVendorBuy has them (resdata.inc:12977-): the digits, 00, 000, Min, Max, and Backspace and
+ * Escape (`OnChar` 8 and 27, here C), four to a row. */
+const BUY_KEYS: readonly NumpadKey[] = [
+  ['7', '7'], ['8', '8'], ['9', '9'], ['\u232b', 'back', 'Backspace'],
+  ['4', '4'], ['5', '5'], ['6', '6'], ['Min', 'min'],
+  ['1', '1'], ['2', '2'], ['3', '3'], ['Max', 'max'],
+  ['0', '0'], ['00', '00'], ['000', '000'], ['C', 'escape', 'Clear'],
+];
+
+/** The phone's in-game numpad: Neuz's keypad keys, sized for a finger, in place of the phone keyboard. */
+function numpad(doc: Document, keys: readonly NumpadKey[], columns: number, press: (key: PadKey) => void): HTMLElement {
+  const pad = doc.createElement('div');
+  pad.className = 'vendor-numpad';
+  pad.style.setProperty('--numpad-columns', String(columns));
+  for (const [face, key, name] of keys) {
+    const button = doc.createElement('button');
+    button.type = 'button';
+    button.textContent = face;
+    button.dataset.padKey = key;
+    if (name !== undefined) button.setAttribute('aria-label', name);
+    // the press does not take the focus from the sheet (its keys stay the hardware keyboard's)
+    button.addEventListener('pointerdown', (event) => event.preventDefault());
+    button.addEventListener('click', () => press(key));
+    pad.append(button);
+  }
+  return pad;
+}
+
+/** A sheet opening takes the focus from any text field (the shop's name), so the phone keyboard goes away. */
+function dropTyping(doc: Document, sheet: HTMLElement): void {
+  const active = doc.activeElement;
+  if (active instanceof HTMLElement && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) active.blur();
+  sheet.focus({ preventScroll: true });
+}
 
 /**
  * `CWndRegVend` (APP_VENDOREX_SELL): Quantity and Unit Price, typed with its keypad or the keys, the arrow on the focused
@@ -417,7 +469,7 @@ export class SellPadWindow {
   pad: SellPad = new SellPad(1);
   private readonly res: ResWindow | null;
   private readonly arrow: HTMLElement | null = null;
-  private fields: [HTMLInputElement, HTMLInputElement] | null = null;
+  private fields: [HTMLElement, HTMLElement] | null = null;
   slot = -1;
   objectId = -1;
 
@@ -444,32 +496,25 @@ export class SellPadWindow {
       res.frame.element.addEventListener('keydown', (event) => this.onKey(event));
     } else {
       this.res = null;
-      const frame = new WindowFrame(SELL.title, art, { width: SELL.width, height: 220, mobileScale: 1, fitWhole: true }, doc);
+      // 2026-11-10 (the owner): the phone's sheet has the keypad as an in-game numpad, and no text field: Quantity and Unit
+      // Price are tapped to choose the one it types into, as Neuz's are clicked
+      const frame = new WindowFrame(SELL.title, art, { width: PHONE_SHEET.sellWidth, height: PHONE_SHEET.height, mobileScale: 1, fitWhole: true }, doc);
       this.frame = frame;
       this.element = frame.element;
       frame.body.classList.add('vendor-sheet');
-      const count = numberField(doc, 'Quantity', 'quantity');
-      const price = numberField(doc, 'Unit Price', 'price');
-      this.fields = [count.input, price.input];
-      for (const [focus, input] of this.fields.entries()) {
-        input.addEventListener('input', () => { this.pad.values[focus as 0 | 1] = digitsOf(input.value); });
-        input.addEventListener('keydown', (event) => { event.stopPropagation(); if (event.key === 'Enter') this.submit(this.pad.result()); });
-      }
-      const minMax = (focus: 0 | 1): HTMLElement => {
-        const box = doc.createElement('span');
-        box.className = 'vendor-sheet-minmax';
-        box.append(
-          textButton(doc, 'Min', () => { this.pad.focus = focus; this.pad.press('min'); this.draw(); }),
-          textButton(doc, 'Max', () => { this.pad.focus = focus; this.pad.press('max'); this.draw(); }),
-        );
-        return box;
-      };
-      count.row.append(minMax(0));
-      price.row.append(minMax(1));
+      const count = valueBox(doc, 'Quantity', 'quantity', () => { this.pad.focus = 0; this.draw(); });
+      const price = valueBox(doc, 'Unit Price', 'price', () => { this.pad.focus = 1; this.draw(); });
+      this.fields = [count.value, price.value];
+      const side = doc.createElement('div');
+      side.className = 'vendor-sheet-side';
       const buttons = doc.createElement('div');
       buttons.className = 'vendor-sheet-buttons';
       buttons.append(textButton(doc, 'OK', () => this.submit(this.pad.result()), 'ok'), textButton(doc, 'Cancel', () => this.close(), 'cancel'));
-      frame.body.append(count.row, price.row, buttons);
+      side.append(count.row, price.row, buttons);
+      frame.body.append(side, numpad(doc, SELL_KEYS, 5, (key) => { this.pad.press(key); this.draw(); }));
+      // a hardware keyboard's keys still type, as on the desktop
+      frame.element.tabIndex = -1;
+      frame.element.addEventListener('keydown', (event) => this.onKey(event));
     }
     this.frame.element.classList.add('hud-vendor-sell');
   }
@@ -486,8 +531,7 @@ export class SellPadWindow {
     if (this.res !== null) this.res.open('center');
     else this.frame.open('center');
     this.draw();
-    if (this.fields !== null) this.fields[this.pad.focus].focus();
-    else this.frame.element.focus();
+    dropTyping(this.doc, this.frame.element);
   }
 
   close(): void {
@@ -514,8 +558,10 @@ export class SellPadWindow {
       const top = this.pad.focus === 0 ? 8 : 32;
       if (this.arrow !== null) place(this.arrow, { left: 86 - 4, top: top - 4, width: 128, height: 24 });
     } else if (this.fields !== null) {
-      this.fields[0].value = this.pad.values[0];
-      this.fields[1].value = this.pad.values[1];
+      for (const [focus, field] of this.fields.entries()) {
+        field.textContent = withCommas(Number(this.pad.values[focus as 0 | 1]));
+        field.setAttribute('aria-pressed', String(this.pad.focus === focus));
+      }
     }
     this.frame.element.dataset.focus = String(this.pad.focus);
   }
@@ -528,7 +574,7 @@ export class BuyPadWindow {
   pad: BuyPad = new BuyPad(1, 0);
   slot = -1;
   private readonly res: ResWindow | null;
-  private field: HTMLInputElement | null = null;
+  private field: HTMLElement | null = null;
   private price: HTMLElement | null = null;
   private total: HTMLElement | null = null;
 
@@ -542,54 +588,29 @@ export class BuyPadWindow {
       res.button('WIDC_OK').addEventListener('click', () => this.submit(this.pad.count));
       res.button('WIDC_CANCEL').addEventListener('click', () => this.close());
       res.frame.element.tabIndex = -1;
-      res.frame.element.addEventListener('keydown', (event) => {
-        event.stopPropagation();
-        if (event.key === 'Enter') { event.preventDefault(); this.submit(this.pad.count); return; }
-        if (event.key === 'Escape') { event.preventDefault(); this.pad.press('escape'); this.draw(); return; }
-        const key = keyOf(event, false);
-        if (key === null) return;
-        event.preventDefault();
-        this.pad.press(key);
-        this.draw();
-      });
+      res.frame.element.addEventListener('keydown', (event) => this.onKey(event));
     } else {
       this.res = null;
-      const frame = new WindowFrame(BUY.title, art, { width: BUY.width, height: 220, mobileScale: 1, fitWhole: true }, doc);
+      // 2026-11-10 (the owner): the phone's sheet has the keypad as an in-game numpad, and no text field
+      const frame = new WindowFrame(BUY.title, art, { width: PHONE_SHEET.buyWidth, height: PHONE_SHEET.height, mobileScale: 1, fitWhole: true }, doc);
       this.frame = frame;
       this.element = frame.element;
       frame.body.classList.add('vendor-sheet');
-      const count = numberField(doc, 'Quantity', 'quantity');
-      this.field = count.input;
-      count.input.addEventListener('input', () => {
-        this.pad.press('escape');
-        for (const digit of digitsOf(count.input.value)) this.pad.press(digit as PadKey);
-        this.draw(false);
-      });
-      count.input.addEventListener('keydown', (event) => { event.stopPropagation(); if (event.key === 'Enter') this.submit(this.pad.count); });
-      const minMax = doc.createElement('span');
-      minMax.className = 'vendor-sheet-minmax';
-      minMax.append(
-        textButton(doc, 'Min', () => { this.pad.press('min'); this.draw(); }),
-        textButton(doc, 'Max', () => { this.pad.press('max'); this.draw(); }),
-      );
-      count.row.append(minMax);
-      const line = (label: string): HTMLElement => {
-        const row = doc.createElement('div');
-        row.className = 'vendor-sheet-row';
-        const caption = doc.createElement('span');
-        caption.textContent = label;
-        const value = doc.createElement('output');
-        row.append(caption, value);
-        frame.body.append(row);
-        return value;
-      };
-      frame.body.append(count.row);
-      this.price = line('Price');
-      this.total = line('Total Cost');
+      const count = valueBox(doc, 'Quantity', 'quantity');
+      const price = valueBox(doc, 'Price', 'price');
+      const total = valueBox(doc, 'Total Cost', 'total');
+      this.field = count.value;
+      this.price = price.value;
+      this.total = total.value;
+      const side = doc.createElement('div');
+      side.className = 'vendor-sheet-side';
       const buttons = doc.createElement('div');
       buttons.className = 'vendor-sheet-buttons';
       buttons.append(textButton(doc, 'OK', () => this.submit(this.pad.count), 'ok'), textButton(doc, 'Cancel', () => this.close(), 'cancel'));
-      frame.body.append(buttons);
+      side.append(count.row, price.row, total.row, buttons);
+      frame.body.append(side, numpad(doc, BUY_KEYS, 4, (key) => { this.pad.press(key); this.draw(); }));
+      frame.element.tabIndex = -1;
+      frame.element.addEventListener('keydown', (event) => this.onKey(event));
     }
     this.frame.element.classList.add('hud-vendor-buy');
   }
@@ -604,21 +625,32 @@ export class BuyPadWindow {
     if (this.res !== null) this.res.open('center');
     else this.frame.open('center');
     this.draw();
-    if (this.field !== null) this.field.focus();
-    else this.frame.element.focus();
+    dropTyping(this.doc, this.frame.element);
   }
 
   close(): void {
     this.frame.close();
   }
 
-  private draw(field = true): void {
+  /** The keys (`OnChar`): digits, Backspace, Escape; Enter is OK. */
+  private onKey(event: KeyboardEvent): void {
+    event.stopPropagation();
+    if (event.key === 'Enter') { event.preventDefault(); this.submit(this.pad.count); return; }
+    if (event.key === 'Escape') { event.preventDefault(); this.pad.press('escape'); this.draw(); return; }
+    const key = keyOf(event, false);
+    if (key === null) return;
+    event.preventDefault();
+    this.pad.press(key);
+    this.draw();
+  }
+
+  private draw(): void {
     if (this.res !== null) {
       this.res.setText('WIDC_BUYNUM', withCommas(this.pad.count));
       this.res.setText('WIDC_STATIC4', withCommas(this.pad.cost));
       this.res.setText('WIDC_STATIC5', withCommas(this.pad.total));
     } else {
-      if (field && this.field !== null) this.field.value = this.pad.value;
+      if (this.field !== null) this.field.textContent = withCommas(this.pad.count);
       if (this.price !== null) this.price.textContent = withCommas(this.pad.cost);
       if (this.total !== null) this.total.textContent = withCommas(this.pad.total);
     }
