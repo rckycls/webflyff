@@ -25,6 +25,9 @@ export const AppId = {
   CHARACTER3: 764,
   SKILL3: 622,
   INVENTORY: 1003,
+  QUEST_EX_LIST: 859,
+  MESSENGER_EX: 302,
+  PARTY: 195,
   LOGOUT: 1100,
   /** The Option window (Piece 6 M2: its sound sliders only). */
   OPTIONEX: 412,

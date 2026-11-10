@@ -45,8 +45,7 @@ import type { FlightStick } from './controls';
 import { FlightControl } from './flightControl';
 import type { FlightInput } from './flightControl';
 import { FlightButtons } from './hud/flightButtons';
-import { MobileTools } from './hud/mobileTools';
-import { AppId } from './hud/applets';
+import { MOBILE_SHORTCUTS, MobileTools } from './hud/mobileTools';
 import { TurboGauge } from './render/TurboGauge';
 import { isGameMaster } from './authorization';
 import { Mode, bodyAlpha, isFrozen, isInvisible, modeLine, showsBubble } from './gmModes';
@@ -1454,12 +1453,10 @@ export class WorldScreen {
       turbo: () => { this.flightTurbo = true; },
       land: () => this.landRide(),
     });
-    // 2026-11-10 (owner): the phone's shortcuts show the Start menu's icons of their windows (APP_SKILL3, APP_INVENTORY,
-    // APP_CHARACTER3); Stats, the diagnostics panel, is no Neuz window and keeps its text
+    // 2026-11-10 (owner): the phone's shortcuts show the Start menu's icons of the important windows (MOBILE_SHORTCUTS);
+    // Stats, the diagnostics panel, is no Neuz window and keeps its text
     const mobileTools = new MobileTools(this.hudArt!, [
-      { label: 'Skill', applet: AppId.SKILL3, run: () => this.openWindow('skills') },
-      { label: 'Bag', applet: AppId.INVENTORY, run: () => this.openWindow('inventory') },
-      { label: 'Character', applet: AppId.CHARACTER3, run: () => this.openWindow('character') },
+      ...MOBILE_SHORTCUTS.map(({ label, applet, window, rank }) => ({ label, applet, rank, run: () => this.openWindow(window) })),
       { label: 'Stats', applet: null, run: () => { statsButton.ariaExpanded = String(this.page!.overlay.togglePanel()); } },
     ], doc);
     this.mobileTools = mobileTools;

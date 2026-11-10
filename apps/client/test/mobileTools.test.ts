@@ -5,7 +5,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppId } from '../src/world/hud/applets';
 import type { UiArt } from '../src/world/hud/art';
-import { MobileTools, iconCssSize } from '../src/world/hud/mobileTools';
+import { MOBILE_SHORTCUTS, MobileTools, iconCssSize } from '../src/world/hud/mobileTools';
 
 const art = (have: (key: string) => boolean = () => true): UiArt => ({
   url: (key) => (have(key) ? `/assets/${key}` : ''),
@@ -28,6 +28,34 @@ function rig(uiArt = art()) {
   const button = (label: string) => tools.buttons.find((b) => b.getAttribute('aria-label') === label)!;
   return { run, tools, button };
 }
+
+describe('MOBILE_SHORTCUTS (2026-11-10, owner: the important windows of the Start menu)', () => {
+  it("lists eight Start-menu windows in CWndTaskMenu's order (WndTaskBar.cpp:2595-2734), each with its applet's icon", () => {
+    expect(MOBILE_SHORTCUTS.map(({ label, applet, window }) => [label, applet, window])).toEqual([
+      ['Status', AppId.STATUS1, 'status'],
+      ['Character', AppId.CHARACTER3, 'character'],
+      ['Bag', AppId.INVENTORY, 'inventory'],
+      ['Skill', AppId.SKILL3, 'skills'],
+      ['Quest', AppId.QUEST_EX_LIST, 'quests'],
+      ['World Map', AppId.MAP, 'worldmap'],
+      ['Messenger', AppId.MESSENGER_EX, 'messenger'],
+      ['Party', AppId.PARTY, 'party'],
+    ]);
+  });
+
+  it('ranks them for a narrow phone: Bag, Skill, Character and Quest stay longest, Status goes first', () => {
+    const byRank = [...MOBILE_SHORTCUTS].sort((a, b) => a.rank - b.rank).map(({ label }) => label);
+    expect(byRank).toEqual(['Bag', 'Skill', 'Character', 'Quest', 'Party', 'World Map', 'Messenger', 'Status']);
+  });
+
+  it('marks each button with its rank', () => {
+    const tools = new MobileTools(art(), MOBILE_SHORTCUTS.map((shortcut) => ({ ...shortcut, run: () => {} })), document);
+    expect(tools.buttons.map((b) => [b.getAttribute('aria-label'), b.dataset.rank])).toEqual(
+      MOBILE_SHORTCUTS.map(({ label, rank }) => [label, String(rank)]),
+    );
+    tools.dispose();
+  });
+});
 
 describe('MobileTools', () => {
   it('is a toolbar named Window shortcuts', () => {
