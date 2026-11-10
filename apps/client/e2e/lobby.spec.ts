@@ -7,7 +7,7 @@ import {
 import { hairColorFor } from '../src/lobby/appearance';
 
 test('shows the login form and reports an unreachable gateway', async ({ page }) => {
-  await page.goto('/');
+  await page.goto('/play/');
   await expect(page.getByRole('button', { name: 'Log in' })).toBeVisible();
   await page.getByLabel('Account').fill('webtester');
   await page.getByLabel('Password').fill('password1');
@@ -119,7 +119,7 @@ const enterable = (characters: CharacterRow[]): Respond => ({ type, body }, repl
   }
 };
 
-async function logIn(page: Page, path = '/'): Promise<void> {
+async function logIn(page: Page, path = '/play/'): Promise<void> {
   await page.goto(path);
   await page.getByLabel('Account').fill(' WebTester ');
   await page.getByLabel('Password').fill('password1');
@@ -151,7 +151,7 @@ async function expectPhoneFriendly(page: Page): Promise<void> {
 test('classic lobby artwork, previews and bounds', async ({ page }, info) => {
   test.setTimeout(90_000);
   await playGateway(page, { certifier: listing([FLYFF, OPEN_CHANNEL]), login: enterable([WEBBY]) });
-  await page.goto('/');
+  await page.goto('/play/');
   await expect.poll(() => page.locator('#app').evaluate(el => getComputedStyle(el).backgroundImage)).toContain('screen.');
   await page.screenshot({ path: info.outputPath('login.png') });
   await page.getByLabel('Account').fill('webtester');

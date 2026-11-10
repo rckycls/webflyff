@@ -24,6 +24,7 @@
     "dev:client": "vite --config apps/client/vite.config.ts --host",
     "build:client": "vite build --config apps/client/vite.config.ts",
     "preview:client": "vite preview --config apps/client/vite.config.ts --host",
+    "check:public-build": "tsx apps/client/scripts/checkPublicBuild.ts",
     "test:e2e:client": "playwright test -c apps/client/playwright.config.ts --project=chromium --project=phone --project=pictures",
     "test:soak:client": "playwright test -c apps/client/playwright.config.ts --project=soak",
     "test:firstload:client": "playwright test -c apps/client/playwright.config.ts --project=prod",
