@@ -23,6 +23,15 @@ const NULL_ID = 0xffffffff;
 const MOONSTONES: ReadonlySet<number> = new Set([2036, 2083]);
 const SUNSTONES: ReadonlySet<number> = new Set([2035, 2082]);
 const ORICHALCUM02 = 2034;
+/**
+ * 2026-11-11 (Safe Element): the five element cards `IsElementalCard` takes (_Common/Item.cpp:387-398), by element
+ * (`SAI79` FIRE 1, WATER 2, ELECTRICITY 3, WIND 4, EARTH 5): Flame, River, Generator, Cyclone, Desert.
+ */
+const ELEMENT_CARDS: ReadonlyMap<number, number> = new Map([[1, 3206], [2, 3211], [3, 3216], [4, 3226], [5, 3221]]);
+const isElementalCard = (id: number): boolean => [...ELEMENT_CARDS.values()].includes(id);
+/** `II_SYS_SYS_SCR_SMELTING2`, the Scroll of Smelting (Elements), and `ELEMENTAL_NON_USING_SCROLL2_LEVEL` (WndField.h:2480). */
+const SMELTING2 = 10489;
+const ELEMENT_SCROLL2_LEVEL = 10;
 /** The scrolls: SProtect, GProtect, XProtect, AProtect; Smelting. */
 const SPROTECT = 10464;
 const GPROTECT = 10465;
@@ -243,8 +252,8 @@ export class PiercingWindow {
   }
 }
 
-/** The safe upgrade's modes (`WND_NORMAL`, `WND_ACCESSARY`, `WND_PIERCING`). */
-export type SafetyMode = 'normal' | 'accessory' | 'piercing';
+/** The safe upgrade's modes (`WND_NORMAL`, `WND_ACCESSARY`, `WND_PIERCING`; 2026-11-11 `WND_ELEMENT`, WndField.h:2471-2475). */
+export type SafetyMode = 'normal' | 'accessory' | 'piercing' | 'element';
 
 /** `SMELT_MAX`: the rows; `ENCHANT_TIME`: 2 s between the sends; the rows' pitch and the result bar's width. */
 const SMELT_MAX = 10;
@@ -292,6 +301,12 @@ const MODES: Record<SafetyMode, ModeRules> = {
   piercing: {
     title: 'TID_GAME_SMELTSAFETY_PIERCING', nowTitle: 'TID_GAME_SMELT_SAFETY_NOW_PIERCING', maxTitle: 'TID_GAME_SMELT_SAFETY_MAX_PIERCING',
     wide: false, missing: 'TID_GAME_SMELT_SAFETY_ERROR11', noMaterial: 'TID_GAME_SMELT_SAFETY_ERROR05', refusal: 'TID_GAME_SMELT_SAFETY_ERROR02',
+  },
+  // 2026-11-11: Safe Element Upgrade (MMI 167, WndWorld.cpp:6035-6050): NORMAL's look and labels (WndField.cpp:23695-23811)
+  // with its own title and errors (:24095-24101, :24549-24556)
+  element: {
+    title: 'TID_GAME_SMELTSAFETY_ELEMENT', nowTitle: 'TID_GAME_SMELT_SAFETY_NOW_GRADE', maxTitle: 'TID_GAME_SMELT_SAFETY_MAX_GRADE',
+    wide: true, missing: 'TID_GAME_SMELT_SAFETY_ERROR20', noMaterial: 'TID_GAME_SMELT_SAFETY_ERROR17', refusal: 'TID_GAME_SMELT_SAFETY_ERROR01',
   },
 };
 
@@ -341,6 +356,8 @@ export class SmeltSafetyWindow {
   /** `m_bResultSwitch`: the gauge shows (from START or an answer until the send). */
   private resultSwitch = false;
   private timer: { start: number; end: number } | null = null;
+  /** 2026-11-11: `m_pSelectedElementalCardItemProp`, Safe Element's card chosen for an item with no element yet. */
+  private chosenCard: number | null = null;
 
   constructor(private readonly host: UpgradeNpcHost) {
     this.resetRows();
@@ -439,10 +456,19 @@ export class SmeltSafetyWindow {
       } else if (this.scroll2Count < SMELT_MAX) {
         this.host.say(this.noMaterial());
       }
+    } else if (this.mode === 'element' && isElementalCard(prop.id)) {
+      // 2026-11-11: a card Safe Element does not take here (WndField.cpp:24625-24638)
+      const resist = this.host.own()?.inventory?.get(this.target)?.resist ?? 0;
+      this.host.say(resist !== 0 ? 'TID_GAME_SMELT_SAFETY_ERROR18' : 'TID_GAME_SMELT_SAFETY_ERROR19');
     } else {
       this.host.say('TID_GAME_SMELT_SAFETY_ERROR06');
     }
     this.refresh();
+  }
+
+  /** 2026-11-11: Safe Element's card chosen, for the tests. */
+  get elementCard(): number | null {
+    return this.chosenCard;
   }
 
   /** SMELT_SAFETY's answer (`OnSmeltSafety`, DPClient.cpp:18748-18783): 1 success, 2 failure; 0 and 3 change nothing. */
@@ -595,6 +621,7 @@ export class SmeltSafetyWindow {
       } while (shift && this.materialCount > this.currentRow);
       while (this.scroll1Count > this.materialCount) take('scroll1', --this.scroll1Count);
       while (this.scroll2Count > this.materialCount) take('scroll2', --this.scroll2Count);
+      if (this.materialCount === this.currentRow) this.chosenCard = null; // :24293-24295
     } else if (key === 'scroll1') {
       if (this.scroll1Count <= this.currentRow) return;
       do take('scroll1', --this.scroll1Count); while (shift && this.scroll1Count > this.currentRow);
@@ -616,11 +643,14 @@ export class SmeltSafetyWindow {
   private resetRows(): void {
     this.rows = Array.from({ length: SMELT_MAX }, () => ({ material: null, scroll1: null, scroll2: null, result: null }));
     this.materialCount = this.scroll1Count = this.scroll2Count = this.currentRow = 0;
+    this.chosenCard = null; // ResetData (:24754-24756)
   }
 
-  /** `DisableScroll2` (:24740-24762): from +7 (or an Ultimate) the smelting scrolls go back. */
+  /** `DisableScroll2` (:24740-24762): from +7 (or an Ultimate) the smelting scrolls go back; Safe Element's from 10. */
   private disableScroll2(): void {
-    if (this.mode !== 'normal' || (this.currentValue() < SCROLL2_LEVEL && !this.isUltimate())) return;
+    if (this.mode === 'element') {
+      if (this.currentValue() < ELEMENT_SCROLL2_LEVEL) return;
+    } else if (this.mode !== 'normal' || (this.currentValue() < SCROLL2_LEVEL && !this.isUltimate())) return;
     for (const row of this.rows) {
       if (row.scroll2 !== null) this.host.reserve(row.scroll2, false);
       row.scroll2 = null;
@@ -647,12 +677,13 @@ export class SmeltSafetyWindow {
   private currentValue(): number {
     const item = this.target === null ? undefined : this.host.own()?.inventory?.get(this.target);
     if (item === undefined) return 0;
+    if (this.mode === 'element') return item.resistOption ?? 0; // GetResistAbilityOption (:25148-25150)
     return this.mode === 'piercing' ? item.piercing?.length ?? 0 : item.abilityOption ?? 0;
   }
 
   /** `GetDefaultMaxSmeltValue` (:25197-25234): 10, 20 for an accessory, 4 sockets for a suit. */
   private defaultMax(): number {
-    if (this.mode === 'accessory') return 20;
+    if (this.mode === 'accessory' || this.mode === 'element') return 20;
     if (this.mode === 'piercing') return this.targetProp()?.kind3 === IK3_SUIT ? MAX_PIERCING_SUIT : MAX_PIERCING_WEAPON;
     return 10;
   }
@@ -660,20 +691,37 @@ export class SmeltSafetyWindow {
   private acceptsTarget(prop: WebItemProp): boolean {
     if (this.mode === 'normal') return [IK2_ARMOR, IK2_WEAPON_MAGIC, IK2_WEAPON_DIRECT, IK2_ARMORETC].includes(prop.kind2);
     if (this.mode === 'accessory') return prop.kind2 === IK2_JEWELRY;
+    // 2026-11-11: `IsEleRefineryAble` (Item.cpp:374-385): a suit or a weapon
+    if (this.mode === 'element') return prop.kind3 === IK3_SUIT || prop.kind2 === IK2_WEAPON_DIRECT || prop.kind2 === IK2_WEAPON_MAGIC;
     return isPierceAble(prop, 0, false);
   }
 
   private isMaterial(prop: WebItemProp): boolean {
     if (this.mode === 'normal') return this.isUltimate() ? prop.id === ORICHALCUM02 : SUNSTONES.has(prop.id);
+    if (this.mode === 'element') {
+      // `IsAcceptableMaterial` (:24992-25044): the item's element's card; with none, the first card chooses the kind
+      const resist = this.target === null ? 0 : this.host.own()?.inventory?.get(this.target)?.resist ?? 0;
+      const own = ELEMENT_CARDS.get(resist);
+      if (own !== undefined) return prop.id === own;
+      if (this.materialCount === this.currentRow) {
+        if (!isElementalCard(prop.id)) return false;
+        this.chosenCard = prop.id;
+        return true;
+      }
+      return prop.id === this.chosenCard;
+    }
     return MOONSTONES.has(prop.id);
   }
 
   private isScroll1(prop: WebItemProp): boolean {
     if (this.mode === 'normal') return prop.id === (this.isUltimate() ? XPROTECT : SPROTECT);
+    if (this.mode === 'element') return prop.id === SPROTECT; // :25083-25088
     return prop.id === (this.mode === 'accessory' ? APROTECT : GPROTECT);
   }
 
   private isScroll2(prop: WebItemProp): boolean {
+    // 2026-11-11: Safe Element's Smelting (Elements) under 10 (:25110-25117)
+    if (this.mode === 'element') return prop.id === SMELTING2 && this.currentValue() < ELEMENT_SCROLL2_LEVEL;
     return this.mode === 'normal' && prop.id === SMELTING && this.currentValue() < SCROLL2_LEVEL && !this.isUltimate();
   }
 
@@ -689,6 +737,15 @@ export class SmeltSafetyWindow {
   private placeholders(): { material: number | null; scroll1: number | null; scroll2: number | null } {
     if (this.mode === 'piercing') return { material: 2036, scroll1: GPROTECT, scroll2: null };
     if (this.mode === 'accessory') return { material: 2036, scroll1: APROTECT, scroll2: null };
+    if (this.mode === 'element') {
+      // the item's element's card, else the card chosen, else none; SProtect always; Smelting (Elements) under 10
+      // (DrawListItem :24805-24852, :24879-24891, :24907-24917)
+      const resist = this.target === null ? 0 : this.host.own()?.inventory?.get(this.target)?.resist ?? 0;
+      return {
+        material: ELEMENT_CARDS.get(resist) ?? this.chosenCard, scroll1: SPROTECT,
+        scroll2: this.target !== null && this.currentValue() < ELEMENT_SCROLL2_LEVEL ? SMELTING2 : null,
+      };
+    }
     if (this.target === null) return { material: null, scroll1: null, scroll2: null };
     const ultimate = this.isUltimate();
     return {

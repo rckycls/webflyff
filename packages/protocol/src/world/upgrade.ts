@@ -109,6 +109,18 @@ export function encodeRepairItem(objectIds: readonly number[]): Uint8Array {
   return w.toBytes();
 }
 
+/** 2026-11-11: Remove a Pierced Card (`CDPClient::SendPiercingRemove`, DPClient.cpp:14760-14765): the item. */
+export function encodePiercingRemove(itemId: number): Uint8Array {
+  checkId(itemId);
+  return clientPacket(PacketType.PIERCINGREMOVE).u32(itemId).toBytes();
+}
+
+/** 2026-11-11: Remove Element upgrading (`CDPClient::SendRemoveAttribute`, DPClient.cpp:14734-14739): the item. */
+export function encodeRemoveAttribute(itemId: number): Uint8Array {
+  checkId(itemId);
+  return clientPacket(PacketType.REMOVE_ATTRIBUTE).u32(itemId).toBytes();
+}
+
 /** ULTIMATE's states (`MsgHdr.h:1585-1590`). */
 export const UltimateState = { MAKEITEM: 1, TRANSWEAPON: 2, MAKEGEM: 3, SETGEM: 4, REMOVEGEM: 5, ENCHANTWEAPON: 6 } as const;
 /** ULTIMATE's results (`CUltimateWeapon`'s enum, `_Common/UltimateWeapon.h:19`). */
@@ -140,6 +152,11 @@ export function encodeSmeltSafety(itemId: number, materialId: number, scrollId: 
   checkId(scrollId);
   checkIdOrNull(smeltingId);
   return clientPacket(PacketType.SMELT_SAFETY).u32(itemId).u32(materialId).u32(scrollId).u32(smeltingId).toBytes();
+}
+
+/** 2026-11-11: REMOVE_ATTRIBUTE (`CDPClient::OnRemoveAttributeResult`, DPClient.cpp:6415-6423): its BOOL. */
+export function readRemoveAttribute(r: ArReader): MessageOf<'removeAttribute'> {
+  return { type: 'removeAttribute', success: r.i32() !== 0 };
 }
 
 /** SMELT_SAFETY (`CDPClient::OnSmeltSafety`, `DPClient.cpp:18748-18783`): its result byte. */

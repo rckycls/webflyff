@@ -8,6 +8,7 @@ import {
   encodeEnchant, encodePiercing, encodePiercingSize, encodeRandomScroll, encodeSmeltSafety, encodeUltimateEnchantWeapon, readBundle,
   encodeUltimateMakeGem, encodeUltimateSetGem, UltimateResult, UltimateState,
   encodeRepairItem, encodeUltimateMakeItem, encodeUltimateRemoveGem, encodeUltimateTransWeapon,
+  encodePiercingRemove, encodeRemoveAttribute,
 } from '../src';
 
 const fields = (bytes: Uint8Array): number[] => {
@@ -148,6 +149,24 @@ describe('the item NPC windows\' packets (2026-11-11, docs/superpowers/specs/202
     expect(decodeWorldPacket(encodeUltimateRemoveGem(12, 4))).toEqual({ type: 'ultimateRemoveGem', weaponId: 12, gemId: 4 });
     expect([PacketType.ULTIMATE_MAKEITEM, PacketType.ULTIMATE_TRANSWEAPON, PacketType.ULTIMATE_REMOVEGEM])
       .toEqual([0xf000f110, 0xf000f112, 0xf000f115]);
+  });
+
+  it('PIERCINGREMOVE and REMOVE_ATTRIBUTE: the item (DPClient.cpp:14760-14765, :14734-14739)', () => {
+    expect(words(encodePiercingRemove(9))).toEqual([NULL_ID, 0xf000f809, 9]);
+    expect(words(encodeRemoveAttribute(9))).toEqual([NULL_ID, 0xf000d00b, 9]);
+    expect(decodeWorldPacket(encodePiercingRemove(9))).toEqual({ type: 'piercingRemove', itemId: 9 });
+    expect(decodeWorldPacket(encodeRemoveAttribute(9))).toEqual({ type: 'removeAttribute', itemId: 9 });
+  });
+
+  it('REMOVE_ATTRIBUTE 0x0122: a BOOL (AddRemoveAttribute, User.cpp:7813-7821)', () => {
+    const w = new ArWriter().u32(PacketType.SNAPSHOT).u32(0x1234).u16(2);
+    w.u32(0x1234).u16(MessageType.REMOVE_ATTRIBUTE).i32(1);
+    w.u32(0x1234).u16(MessageType.REMOVE_ATTRIBUTE).i32(0);
+    const result = readBundle(w.toBytes(), WORLD_READERS);
+    expect(result.skipped).toEqual([]);
+    expect(result.messages.map((m) => m.value)).toEqual([
+      { type: 'removeAttribute', success: true }, { type: 'removeAttribute', success: false },
+    ]);
   });
 
   it('REPAIRITEM: a BYTE count, then each object id as a BYTE (SendRepairItem, DPClient.cpp:14150-14190)', () => {

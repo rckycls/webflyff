@@ -58,7 +58,7 @@ import {
 import { TRADE_READERS } from './trade';
 import { GUILD_READERS } from './guild';
 import type { WorldMessage } from './types';
-import { readSmeltSafety, readUltimate } from './upgrade';
+import { readRemoveAttribute, readSmeltSafety, readUltimate } from './upgrade';
 import { readAngel, readFlyffEvent, readSetLocalEvent } from './angel'; // 2026-11-10: Summon Angel
 import { readChangeFace, readSexChange, readSummon } from './itemWindows';
 import {
@@ -199,6 +199,7 @@ export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
     [MessageType.FLYFF_EVENT, readFlyffEvent],
     [MessageType.SET_LOCAL_EVENT, readSetLocalEvent],
     [MessageType.SMELT_SAFETY, readSmeltSafety],
+    [MessageType.REMOVE_ATTRIBUTE, readRemoveAttribute], // 2026-11-11
     [MessageType.SUMMON, readSummon],
     [MessageType.SEX_CHANGE, readSexChange],
     [MessageType.CHANGEFACE, readChangeFace],

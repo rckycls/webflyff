@@ -289,6 +289,7 @@ export type WorldPacket =
   | { type: 'ultimateTransWeapon'; weaponId: number; gem1Id: number; gem2Id: number }
   | { type: 'ultimateRemoveGem'; weaponId: number; gemId: number }
   | { type: 'repairItem'; objectIds: number[] }
+  | { type: 'piercingRemove' | 'removeAttribute'; itemId: number }
   /** 2026-11-10: Summon Angel's START (its text and the stacks in it) and the full angel's buff icon (world/angel.ts). */
   | { type: 'createAngel'; text: string; parts: AngelStack[] }
   | { type: 'angelBuff' }
@@ -505,6 +506,10 @@ function decodeClientPacket(r: ArReader): WorldPacket {
     case PacketType.ULTIMATE_REMOVEGEM: {
       const weaponId = r.u32(), gemId = r.u32(); r.expectEnd();
       return { type: 'ultimateRemoveGem', weaponId, gemId };
+    }
+    case PacketType.PIERCINGREMOVE: case PacketType.REMOVE_ATTRIBUTE: {
+      const itemId = r.u32(); r.expectEnd();
+      return { type: packetType === PacketType.PIERCINGREMOVE ? 'piercingRemove' : 'removeAttribute', itemId };
     }
     case PacketType.REPAIRITEM: {
       const count = r.u8();

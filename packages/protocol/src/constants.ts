@@ -53,6 +53,9 @@ export const PacketType = {
   ULTIMATE_TRANSWEAPON: 0xf000f112,
   ULTIMATE_REMOVEGEM: 0xf000f115,
   REPAIRITEM: 0x00ff00b5,
+  /** 2026-11-11: the Upgrade Specialist's card and element removals (`MsgHdr.h:660, 521`, `REMVOE` sic; world/upgrade.ts). */
+  PIERCINGREMOVE: 0xf000f809,
+  REMOVE_ATTRIBUTE: 0xf000d00b,
   /** 2026-11-10: Summon Angel's start and the full angel's buff icon (`MsgHdr.h:254, 256`; world/angel.ts). */
   CREATEANGEL: 0x00fff000,
   ANGELBUFF: 0x00fff002,
@@ -335,6 +338,8 @@ export const MessageType = {
   SET_LOCAL_EVENT: 0x00b3,
   /** 2026-11-05: the safe upgrade's answer (`CUser::AddSmeltSafety`, `MsgHdr.h:1301`): a byte. */
   SMELT_SAFETY: 0x9900,
+  /** 2026-11-11: Remove Element upgrading's answer (`CUser::AddRemoveAttribute`, User.cpp:7813-7821; `MsgHdr.h:1184`): a BOOL. */
+  REMOVE_ATTRIBUTE: 0x0122,
   /** 2026-11-05: the summons, the sex and the face changed (`MsgHdr.h:976, 1149, 1179`). */
   SUMMON: 0x00ed,
   SEX_CHANGE: 0x00dc,
