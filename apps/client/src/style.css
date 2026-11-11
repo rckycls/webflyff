@@ -3667,6 +3667,7 @@ fieldset:disabled .btn {
   /* ResistItem: the item's slot and the buttons, a short panel over the chat line; the never-finished upgrade's slots and
      labels are left off */
   .hud-jewel.hud-resist-item { height: 220px !important; }
+  .world:has(.hud-resist-item:not([hidden])) .hud-chat { width: min(480px, calc(100% - var(--bag-window-width, 60%) - 36px)) !important; }
   .hud-resist-item :is([data-control="WIDC_CUSTOM1"], [data-control="WIDC_CUSTOM2"], [data-control="WIDC_CUSTOM4"],
     [data-control="WIDC_CUSTOM5"], [data-control="WIDC_CUSTOM6"], [data-control="WIDC_STATIC2"], [data-control="WIDC_STATIC3"],
     [data-control="WIDC_STATIC4"], [data-control="WIDC_STATIC5"], [data-control="WIDC_STATIC6"], [data-control="WIDC_STATIC8"],
