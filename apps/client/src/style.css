@@ -2972,6 +2972,10 @@ fieldset:disabled .btn {
   content: ''; position: absolute; inset: 0; background: rgb(240, 255, 255); opacity: var(--jewel-white, 0); pointer-events: none;
 }
 .hud-jewel-weapon { width: 64px; height: 64px; image-rendering: pixelated; pointer-events: none; }
+/* 2026-11-11: the weapon's 3D model (render/weaponPortrait.ts) over the whole box, the icon gone once it is drawn */
+.hud-jewel-model { position: absolute; left: 0; top: 0; pointer-events: none; }
+.hud-jewel-setting [data-control="WIDC_CUSTOM1"]:not([data-model]) .hud-jewel-model,
+.hud-jewel-setting [data-control="WIDC_CUSTOM1"][data-model] .hud-jewel-weapon { display: none; }
 
 /* The phone: the window a panel at the left beside the phone's bag (as the trade and the shop), a tap putting a bag item
    in and a tap on a filled slot taking it out; the slots 44 px, the description and START's word 14 px. */
@@ -3027,6 +3031,7 @@ fieldset:disabled .btn {
   .hud-jewel .hud-picture-button::after { content: attr(aria-label); }
   .hud-jewel .hud-picture-button:disabled { opacity: 0.55; background: #d9c8bb !important; }
   .hud-jewel-weapon { width: 64px; height: 64px; }
+  .hud-jewel-model { left: 50%; width: auto !important; height: 100% !important; aspect-ratio: 160 / 230; transform: translateX(-50%); }
 }
 
 /* 2026-11-10: the guild (guild/guildHud.ts, hud/guild/*.ts; docs/superpowers/specs/2026-11-10-guild-research.md §3).

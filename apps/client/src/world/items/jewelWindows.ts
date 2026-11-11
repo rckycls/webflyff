@@ -11,8 +11,8 @@
 // into Create Jewels. A phone, which has no drag, taps a bag item in: to the place a drop would take it. The bag holds
 // what a window holds (`SetExtra`).
 //
-// Jewel Setting draws the weapon's 3D model turning in WIDC_CUSTOM1 (OnDraw :20053-20230); the browser draws its icon
-// there instead, turning while START runs (the checkpoint's plan has the model).
+// Jewel Setting draws the weapon's 3D model turning in WIDC_CUSTOM1 (OnDraw :20053-20230): 2026-11-11, the browser too
+// (render/weaponPortrait.ts), its icon shown until the model's first picture (or for good where no model can be had).
 
 import type { WebItemProp, WebUltimate } from '@flyffweb/formats';
 import { UltimateResult, UltimateState } from '@flyffweb/protocol';
@@ -22,7 +22,10 @@ import { parseDialogText } from '../hud/dialogue/dialogText';
 import { formatText } from '../hud/format';
 import { ResWindow } from '../hud/resWindow';
 import type { ResLayout } from '../hud/resWindow';
+import type { WebGLRenderer } from 'three';
 import type { OwnState } from '../OwnState';
+import { WeaponPortrait, smeltJewelCamera } from '../render/weaponPortrait';
+import type { WeaponModel } from '../render/weaponPortrait';
 import { canCreateJewels, gemKind, isJewel, isUltimate, usableSocket } from './ultimateRules';
 
 /** SND_INF_UPGRADESUCCESS (Resource/defineSound.h:19), "InfUpgradeSuccess.wav". */
@@ -89,6 +92,12 @@ export interface JewelHost {
   bagOpen(): boolean;
   openBag(): void;
   closeBag(): void;
+  /**
+   * 2026-11-11: the weapon's model for Jewel Setting (`LoadModel( OT_ITEM, dwItemId )`, WndField.cpp:20283), loaded for it
+   * alone, or null; and the page's renderer that draws it. Without them the weapon's icon stays.
+   */
+  loadWeapon?(itemId: number): Promise<WeaponModel | null>;
+  renderer?(): WebGLRenderer | null;
   ui: { art: UiArt; doc: Document; layer(): HTMLElement | null };
 }
 
@@ -352,7 +361,13 @@ export class SmeltJewelWindow extends JewelWindow {
   private addRot = 2;
   private rotate = 0;
   private alpha = 0;
+  /** 2026-11-11: `m_nEyeYPos`, the eye drawn in during START's last steps (Process :19982-19986). */
+  private eyeY = 0;
   private lastStep = 0;
+  /** 2026-11-11: the turning weapon, made with the window; the item id of the model shown or on its way. */
+  private portrait: WeaponPortrait | null = null;
+  private modelOf: number | null = null;
+  private loading = 0;
 
   protected layout(): ResLayout { return SMELT_JEWEL; }
   protected className(): string { return 'hud-jewel-setting'; }
@@ -426,8 +441,13 @@ export class SmeltJewelWindow extends JewelWindow {
     const frames = Math.min(Math.floor((now - this.lastStep) / FRAME_MS), 30);
     if (frames <= 0) return;
     this.lastStep += frames * FRAME_MS;
-    for (let i = 0; i < frames && this.running; i++) this.frame();
+    for (let i = 0; i < frames; i++) {
+      if (this.running) this.frame();
+      // OnDraw's `m_fRotate += m_fAddRot` (:20129-20130): the weapon turns all the time, faster through START
+      if (this.weapon !== null) this.rotate = (this.rotate + this.addRot) % 360;
+    }
     this.drawTurn();
+    this.drawModel();
   }
 
   /** `ReceiveResult` (:20437-20462). */
@@ -457,6 +477,7 @@ export class SmeltJewelWindow extends JewelWindow {
   }
 
   protected wire(window: ResWindow): void {
+    this.portrait = new WeaponPortrait(this.host.ui.doc);
     takeDrops(window.control('WIDC_CUSTOM1'), (objectId) => this.setWeapon(objectId));
     SOCKET_IDS.forEach((id, socket) => {
       const box = window.control(id).parentElement!;
@@ -480,6 +501,14 @@ export class SmeltJewelWindow extends JewelWindow {
     this.running = false;
     this.alpha = 0;
     this.addRot = 2;
+    this.rotate = 0;
+    this.eyeY = 0;
+    this.dropModel();
+  }
+
+  /** The turning weapon's state, for the tests: its turn, the eye's move, and whether a model is shown. */
+  get turn(): { rotate: number; addRot: number; eyeY: number; model: boolean } {
+    return { rotate: this.rotate, addRot: this.addRot, eyeY: this.eyeY, model: this.portrait?.shown === true };
   }
 
   /** `InitializeJewel` (:20464-20520): the weapon's sockets read, the usable one found, the jewel put in let go. */
@@ -495,11 +524,14 @@ export class SmeltJewelWindow extends JewelWindow {
     return !this.running && this.weapon !== null && this.usable >= 0 && this.usable < SOCKETS && this.jewel !== null;
   }
 
+  /** `Process` while START runs (:19970-20006): each step faster; the last ten move the eye in and whiten. */
   private frame(): void {
-    this.rotate += this.addRot;
     if (this.count > this.delay) {
       this.addRot += 4;
-      if (this.delay < 10) this.alpha = Math.min(this.alpha + 18, 230);
+      if (this.delay < 10) {
+        this.eyeY -= 0.4;
+        this.alpha = Math.min(this.alpha + 18, 230);
+      }
       this.delay -= 1;
       if (this.delay < 0) {
         this.running = false;
@@ -507,6 +539,7 @@ export class SmeltJewelWindow extends JewelWindow {
         this.rotate = 0;
         this.addRot = 2;
         this.alpha = 0;
+        this.eyeY = 0;
         if (this.weapon !== null && this.jewel !== null) this.host.sendSetGem(this.weapon, this.jewel);
         this.draw();
       }
@@ -515,12 +548,48 @@ export class SmeltJewelWindow extends JewelWindow {
     this.count++;
   }
 
+  /**
+   * 2026-11-11: the weapon's model (`m_pMainItem`, made when the weapon goes in, :20283): loaded for the weapon in, let go
+   * when it goes; drawn each frame at the turn, the eye moved during START (:20117-20120).
+   */
+  private drawModel(): void {
+    const area = this.window?.control('WIDC_CUSTOM1');
+    const portrait = this.portrait;
+    if (area === undefined || portrait === null) return;
+    const item = this.weapon === null ? undefined : this.host.own()?.inventory?.get(this.weapon);
+    const itemId = item?.itemId ?? null;
+    if (itemId !== this.modelOf) {
+      this.dropModel();
+      this.modelOf = itemId;
+      const prop = itemId === null ? undefined : this.host.props.get(itemId);
+      if (itemId !== null && prop !== undefined && this.host.loadWeapon !== undefined) {
+        const ticket = ++this.loading;
+        void this.host.loadWeapon(itemId).then((model) => {
+          if (model === null) return;
+          if (ticket !== this.loading || this.modelOf !== itemId) model.release();
+          else portrait.show(model, smeltJewelCamera(prop.kind3, prop.handed));
+        });
+      }
+    }
+    const renderer = this.host.renderer?.() ?? null;
+    if (renderer !== null && portrait.shown) portrait.draw(renderer, this.rotate, this.running ? this.eyeY : 0);
+    if (portrait.canvas.parentElement !== area) area.prepend(portrait.canvas);
+    area.toggleAttribute('data-model', portrait.drawn);
+  }
+
+  private dropModel(): void {
+    this.loading++;
+    this.modelOf = null;
+    this.portrait?.clear();
+    this.window?.control('WIDC_CUSTOM1').removeAttribute('data-model');
+  }
+
   /** The weapon turning and the white over it while START runs (OnDraw :20160-20165, :20285-20297). */
   private drawTurn(): void {
     const area = this.window?.control('WIDC_CUSTOM1');
     if (area === undefined) return;
     const icon = area.querySelector<HTMLElement>('.hud-jewel-weapon');
-    if (icon !== null) icon.style.transform = this.running ? `rotate(${this.rotate % 360}deg)` : '';
+    if (icon !== null) icon.style.transform = this.running ? `rotate(${this.rotate}deg)` : '';
     area.style.setProperty('--jewel-white', String(this.alpha / 255));
   }
 

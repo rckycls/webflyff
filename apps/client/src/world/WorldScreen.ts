@@ -29,7 +29,7 @@ import {
   rendererCounts,
 } from '@flyffweb/scene';
 import type { AssembledCharacter, EffectTextureProvider, Ground, LoopedMotion, SceneServices } from '@flyffweb/scene';
-import type { WebGLRenderer } from 'three';
+import type { Object3D, WebGLRenderer } from 'three';
 import { Vector2, Vector3 } from 'three';
 import { isUpright } from '../landscape';
 import { UNEXPECTED_PROBLEM } from '../lobby/errorText';
@@ -208,6 +208,7 @@ import { MoverViews } from './render/MoverViews';
 import { NameTagLayer } from './render/NameTagLayer';
 import { WorldIndicatorLayer } from './render/WorldIndicatorLayer';
 import { lookOf, ownWorn, sexChangeLook } from './render/looks';
+import type { MoverLook } from './render/looks';
 import { MoveMark } from './render/moveMark';
 import { loadHeldItems, loadMoverModel, loadRideModel } from './render/moverModels';
 import { guildLine, nameTagOf } from './render/nameTags';
@@ -1509,6 +1510,9 @@ export class WorldScreen {
       bagOpen: () => this.inventoryWindow?.frame.isOpen === true,
       openBag: () => { if (this.inventoryWindow?.frame.isOpen !== true) this.openWindow('inventory'); },
       closeBag: () => this.inventoryWindow?.frame.close(),
+      // 2026-11-11: Jewel Setting's turning weapon (render/weaponPortrait.ts)
+      loadWeapon: (itemId) => this.weaponModel(itemId),
+      renderer: () => this.page?.renderer ?? null,
       ui: { art: this.hudArt!, doc, layer: () => this.hud?.element ?? null },
     });
     // 2026-11-10: the Priest of Confession's Summon Angel (angel/summonAngelWindow.ts)
@@ -4175,6 +4179,25 @@ export class WorldScreen {
       if (!this.over) report(messageOf(error));
       return null;
     }
+  }
+
+  /**
+   * 2026-11-11: an item's model alone (`LoadModel( OT_ITEM, dwItemId )`), as a hand holds it (`loadHeldItems`), for Jewel
+   * Setting's turning weapon. Null when it cannot be had, said once.
+   */
+  private async weaponModel(itemId: number): Promise<{ item: Object3D; release(): void } | null> {
+    const services = this.services, data = this.data;
+    if (services === undefined || data === undefined) return null;
+    const report = (message: string): void => this.reportOnce(`jewel weapon: ${message}`, new Error(message));
+    const look = { held: { right: itemId, left: null } } as unknown as MoverLook;
+    const [first, ...rest] = await loadHeldItems(services, data)(look, report);
+    for (const extra of rest) extra.release();
+    if (first === undefined) return null;
+    if (this.over) {
+      first.release();
+      return null;
+    }
+    return { item: first.item, release: first.release };
   }
 
   /** A RUNSCRIPTFUNC for the player (`CDPClient::OnRunScriptFunc`, DPClient.cpp:14265-14476). */
