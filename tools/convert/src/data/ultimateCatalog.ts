@@ -24,7 +24,15 @@ const STAGE = 'ultimate';
 const KIND = 'data';
 const GEM_FILE = 'Ultimate_GemAbility.txt';
 const DESCRIPTION_DIR = 'Client';
-const DESCRIPTIONS = { jewel: 'SmeltJewel.inc', extraction: 'SmeltExtraction.inc', summonAngel: 'summonAngelQuest.inc' } as const;
+// 2026-11-11: and the item NPC windows' (docs/superpowers/specs/2026-11-11-item-npc-windows-research.md §3-§4): Create Shining
+// Oricalkum (WndField.cpp:19215-19227), the weapon change and its jewel table (:20827-20858), Remove Jewel (:22531-22563),
+// Remove Element upgrading (:21873-21889) and Remove a Pierced Card (:22206-22235)
+const DESCRIPTIONS = {
+  jewel: 'SmeltJewel.inc', extraction: 'SmeltExtraction.inc', summonAngel: 'summonAngelQuest.inc',
+  mixJewel: 'SmeltMixJewel.inc', changeUnique: 'SmeltChangeUniqueWeapon.inc', changeUltimate: 'SmeltChangeUltimateWeapon.inc',
+  changeUniqueInfo: 'ChangeUniqueWeaponInfo.inc', changeUltimateInfo: 'ChangeUltimateWeaponInfo.inc',
+  removeJewel: 'SmeltRemoveJewel.inc', removeAttribute: 'RemoveAttribute.inc', removePiercing: 'SmeltRemovePiercing.inc',
+} as const;
 
 /** The words of a script as CScanner gives them here: words and braces; `//` and `/* *\/` comments out. */
 function words(text: string): string[] {
