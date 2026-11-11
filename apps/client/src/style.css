@@ -3619,7 +3619,8 @@ fieldset:disabled .btn {
 /* The phone: each a panel beside the bag as the jewel windows (.hud-jewel), its slots 44 px, its texts, labels and buttons
    across the panel, a tap on a bag item putting it in; the confirm boxes over the panel. */
 @media (max-width: 1000px) and (pointer: coarse) {
-  .world:has(.hud-npc-item:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack) { visibility: hidden; }
+  /* (the ResistItem window keeps the phone's Chat button and line free: its next /ResistItem is typed with it open) */
+  .world:has(.hud-npc-item:not([hidden]):not(.hud-resist-item)) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack) { visibility: hidden; }
   :is(.hud-mix-jewel-confirm, .hud-remove-attribute-confirm) { z-index: 70 !important; }
   .hud-npc-item > .hud-window-body { grid-template-rows: none; grid-auto-rows: min-content; align-content: start; }
   .hud-npc-item [data-slot] {
@@ -3658,7 +3659,9 @@ fieldset:disabled .btn {
     gap: 4px; justify-content: center;
   }
   .hud-repair .hud-repair-cell { position: relative; left: auto !important; top: auto !important; }
-  /* ResistItem: the item's slot and the buttons; the never-finished upgrade's slots and labels are left off */
+  /* ResistItem: the item's slot and the buttons, a short panel over the chat line; the never-finished upgrade's slots and
+     labels are left off */
+  .hud-jewel.hud-resist-item { height: 220px !important; }
   .hud-resist-item :is([data-control="WIDC_CUSTOM1"], [data-control="WIDC_CUSTOM2"], [data-control="WIDC_CUSTOM4"],
     [data-control="WIDC_CUSTOM5"], [data-control="WIDC_CUSTOM6"], [data-control="WIDC_STATIC2"], [data-control="WIDC_STATIC3"],
     [data-control="WIDC_STATIC4"], [data-control="WIDC_STATIC5"], [data-control="WIDC_STATIC6"], [data-control="WIDC_STATIC8"],
