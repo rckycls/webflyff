@@ -3455,6 +3455,8 @@ fieldset:disabled .btn {
    that scrolls; text 14 px, lines and buttons 40 px for a finger, the pictures' buttons as words. */
 @media (max-width: 1000px) and (pointer: coarse) {
   .world:has(.hud-lord:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack) { visibility: hidden; }
+  /* the event icons under the phone's row of top icons */
+  .hud-lord-events { top: 56px; }
   .hud-lord {
     left: calc(50% - min(280px, 50% - 8px)) !important; top: 8px !important; transform: none !important; z-index: 60 !important;
     width: min(560px, calc(100% - 16px)) !important; height: calc(100% - var(--hud-taskbar-height, 48px) - 16px) !important;

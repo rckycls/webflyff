@@ -23,7 +23,7 @@ const label = (id: string, rect: ResControl['rect'], text = ''): ResControl => (
 const button = (id: string, rect: ResControl['rect'], picture: string, text: string): ResControl => ({ kind: 'button', id, rect, picture, label: text });
 
 export const LORD_INFO: ResLayout = {
-  title: 'Lord info Window', width: 304, height: 320, texture: 'WndTile00.tga',
+  title: 'Lord info Window', width: 304, height: 320,
   controls: [
     group('WIDC_STATIC1', [8, 8, 112, 24], 'Status'),
     group('WIDC_STATIC2', [8, 36, 112, 52], 'Lord'),
@@ -39,7 +39,7 @@ export const LORD_INFO: ResLayout = {
 };
 
 export const LORD_TENDER: ResLayout = {
-  title: 'Bid', width: 304, height: 576, texture: 'WndTile00.tga',
+  title: 'Bid', width: 304, height: 576,
   controls: [
     group('WIDC_STATIC1', [8, 8, 144, 24], 'Current application fee'),
     { kind: 'edit', id: 'WIDC_EDIT1', rect: [154, 8, 284, 26], tile: EDIT, maxLength: 10 },
@@ -55,7 +55,7 @@ export const LORD_TENDER: ResLayout = {
 };
 
 export const LORD_STATE: ResLayout = {
-  title: 'Candidate registration Status', width: 432, height: 320, texture: 'WndTile00.tga',
+  title: 'Candidate registration Status', width: 432, height: 320,
   controls: [
     label('WIDC_STATIC7', [8, 8, 232, 24], '* Minimum number of voting people condition(Live) :'),
     label('WIDC_LIVE', [232, 8, 328, 24]),
@@ -69,7 +69,7 @@ export const LORD_STATE: ResLayout = {
 };
 
 export const LORD_PLEDGE: ResLayout = {
-  title: 'Pledge', width: 304, height: 272, texture: 'WndTile00.tga',
+  title: 'Pledge', width: 304, height: 272,
   controls: [
     { kind: 'text', id: 'WIDC_TEXT1', rect: [8, 8, 288, 200], tile: EDIT, scroll: true },
     // EBS_AUTOVSCROLL | EBS_WANTRETURN: a text area, put in by the window
@@ -79,7 +79,7 @@ export const LORD_PLEDGE: ResLayout = {
 };
 
 export const LORD_VOTE: ResLayout = {
-  title: 'Vote', width: 352, height: 288, texture: 'WndTile00.tga',
+  title: 'Vote', width: 352, height: 288,
   controls: [
     label('WIDC_STATIC1', [18, 10, 68, 26], 'Level'),
     label('WIDC_STATIC2', [74, 10, 202, 26], 'Name'),
@@ -91,7 +91,7 @@ export const LORD_VOTE: ResLayout = {
 };
 
 export const LORD_EVENT: ResLayout = {
-  title: "Lord's Event Window", width: 320, height: 208, texture: 'WndTile00.tga',
+  title: "Lord's Event Window", width: 320, height: 208,
   controls: [
     group('WIDC_STATIC1', [8, 28, 136, 44], 'Exp Up Event'),
     group('WIDC_STATIC2', [8, 60, 136, 76], 'Drop Up Event'),
@@ -113,7 +113,7 @@ export const LORD_SKILL_ICONS: ReadonlyArray<readonly [number, number]> = [
 ];
 
 export const LORD_SKILL: ResLayout = {
-  title: 'Lord Skill', width: 192, height: 272, texture: 'WndTile00.tga',
+  title: 'Lord Skill', width: 192, height: 272,
   controls: [
     { kind: 'text', id: 'WIDC_TEXT1', rect: [8, 8, 176, 68], tile: EDIT },
     ...LORD_SKILL_ICONS.map(([x, y], i): ResControl => ({ kind: 'custom', id: `WIDC_CUSTOM${i + 1}`, rect: [x, y, x + 32, y + 32] })),
@@ -121,7 +121,7 @@ export const LORD_SKILL: ResLayout = {
 };
 
 export const LORD_SKILL_CONFIRM: ResLayout = {
-  title: '', width: 272, height: 208, texture: 'WndTile00.tga',
+  title: '', width: 272, height: 208,
   controls: [
     { kind: 'text', id: 'WIDC_TEXT1', rect: [8, 8, 256, 96], tile: EDIT },
     { kind: 'edit', id: 'WIDC_EDIT1', rect: [8, 110, 248, 134], tile: EDIT, maxLength: 31 },
