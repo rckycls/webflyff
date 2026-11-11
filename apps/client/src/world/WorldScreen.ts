@@ -1498,6 +1498,8 @@ export class WorldScreen {
       sendSmeltSafety: (item, material, scroll, smelting) => this.session.sendSmeltSafety(item, material, scroll, smelting),
       now: () => performance.now(),
       mobile: () => doc.defaultView?.matchMedia?.('(max-width: 1000px) and (pointer: coarse)').matches === true,
+      bagOpen: () => this.inventoryWindow?.frame.isOpen === true,
+      closeBag: () => this.inventoryWindow?.frame.close(),
       ui: { art: this.hudArt!, doc, layer: () => this.hud?.element ?? null },
     };
     this.upgradeNpc = { piercing: new PiercingWindow(upgradeNpcHost), safety: new SmeltSafetyWindow(upgradeNpcHost) };

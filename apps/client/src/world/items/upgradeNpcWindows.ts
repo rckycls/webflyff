@@ -84,6 +84,9 @@ export interface UpgradeNpcHost {
   now(): number;
   /** 2026-11-11: a phone, where a tap on a slot takes its item out (the desktop's double-click). */
   mobile?(): boolean;
+  /** 2026-11-11: the bag is open; close it (a phone's bag opened by the safe upgrade closes with it, as the jewel windows'). */
+  bagOpen?(): boolean;
+  closeBag?(): void;
   ui: { art: UiArt; doc: Document; layer(): HTMLElement | null };
 }
 
@@ -355,6 +358,8 @@ export class SmeltSafetyWindow {
   private currentRow = 0;
   private goal = 0;
   private running = false;
+  /** 2026-11-11: a phone's bag this window opened, closed again with it (else it covers the world). */
+  private openedBag = false;
   /** `m_bResultSwitch`: the gauge shows (from START or an answer until the send). */
   private resultSwitch = false;
   private timer: { start: number; end: number } | null = null;
@@ -401,6 +406,7 @@ export class SmeltSafetyWindow {
     this.resetRows();
     this.running = false;
     this.timer = null;
+    this.openedBag = this.host.mobile?.() === true && this.host.bagOpen?.() === false;
     this.host.openBag();
     this.host.dieFlag(true);
     this.refresh();
@@ -572,6 +578,10 @@ export class SmeltSafetyWindow {
       if (this.target !== null) this.host.reserve(this.target, false);
       this.target = null;
       this.host.dieFlag(false);
+      if (this.openedBag) {
+        this.openedBag = false;
+        this.host.closeBag?.();
+      }
     };
   }
 
