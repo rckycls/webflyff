@@ -758,7 +758,7 @@ export function writeItemElem(w: ArWriter, item: InventoryItem): void {
     // what the item tooltip shows (2026-11-05): m_byFlag, m_nAbilityOption, m_idGuild; m_bItemResist,
     // m_nResistAbilityOption, m_nResistSMItemId
     .u8(item.flag ?? 0).i32(item.abilityOption ?? 0).u32(0)
-    .u8(item.resist ?? 0).i32(item.resistOption ?? 0).i32(0);
+    .u8(item.resist ?? 0).i32(item.resistOption ?? 0).i32(item.resistSMItemId ?? 0);
   // m_piercing: the cards, the ultimate jewels, the vis keep times (piercing.cpp:38-53)
   for (const list of [item.piercing ?? [], item.ultimate ?? []]) {
     w.u32(list.length);

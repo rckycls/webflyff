@@ -265,7 +265,7 @@ export function readInventoryItem(r: ArReader, slotId?: number): InventoryItem {
   r.u32(); // m_idGuild (DWORD, :98)
   const resist = r.u8(); // m_bItemResist (BYTE, :99)
   const resistOption = r.i32(); // m_nResistAbilityOption (int, :100)
-  r.i32(); // m_nResistSMItemId (int, :101)
+  const resistSMItemId = r.i32(); // m_nResistSMItemId (int, :101); 2026-11-11 kept for /ResistItem's window
   const { piercing, ultimate, visKeepTimes } = readPiercing(r); // m_piercing.Serialize( ar ) (:103)
   const charged = r.i32(); // m_bCharged (BOOL, :104)
   const randomOption = r.i64(); // m_iRandomOptItemId (__int64; __VER >= 11, __SYS_IDENTIFY, :106)
@@ -279,6 +279,7 @@ export function readInventoryItem(r: ArReader, slotId?: number): InventoryItem {
   const transformVisPet = r.i32() !== 0; // m_bTranformVisPet (BOOL; __VER >= 15, __PETVIS, :131)
   return {
     objectId, itemId, count, ...(flag ? { flag } : {}), ...(charged ? { charged } : {}),
+    ...(resistSMItemId !== 0 ? { resistSMItemId } : {}),
     ...(repairNumber !== 0 ? { repairNumber } : {}), ...(hitPoint !== 0 ? { hitPoint } : {}), ...(repair !== 0 ? { repair } : {}),
     // what the item tooltip shows, when there is something to show (2026-11-05)
     ...(abilityOption !== 0 ? { abilityOption } : {}), ...(resist !== 0 ? { resist } : {}),

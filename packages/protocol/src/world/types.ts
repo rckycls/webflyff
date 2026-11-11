@@ -394,6 +394,8 @@ export interface InventoryItem {
   repairNumber?: number;
   hitPoint?: number;
   repair?: number;
+  /** 2026-11-11: `m_nResistSMItemId`, a premium element stone's on the item; absent for none (the GM's ResistItem window). */
+  resistSMItemId?: number;
   /** `m_nAbilityOption`: the upgrade, the +N after the name. */
   abilityOption?: number;
   /** `m_bItemResist`: the element, a `SAI79::ePropType` (1 fire, 2 water, 3 electricity, 4 wind, 5 earth). */
