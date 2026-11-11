@@ -43,8 +43,11 @@ weapon in its first slot (worn: "Please unequip the item first."; a premium elem
 `/ResistItem element rao ao` sends `/ritem objid element rao ao` as chat; wrong words or an empty slot send nothing.
 
 **Phone (landscape)**: each window is a panel at the left beside the bag (as the jewel windows), a tap on a bag item puts it
-in, a tap on a filled slot takes it out, slots 44 px, words 14 px, buttons 36 px words. A tap now also puts an item in the
-Upgrade Specialist's Piercing and Safe Upgrade windows (before, only the bag's Use did).
+in, a tap on a filled slot takes it out, slots 44 px, words 14 px, buttons 36 px words. The Safe Upgrade window (all four
+modes, Safe Element among them) is now such a panel too: before, the phone's bag covered it and its Start. Its body is a
+grid (the item, NOW and the goal with +/-, then the ten rows, then Start, Stop, Reset as words); a tap on a bag item puts it
+in, a tap on a cell takes the column's last one out. The ResistItem panel is short, so the phone's Chat stays free for the
+next `/ResistItem`.
 
 **Protocol** (`world/upgrade.ts`): ULTIMATE_MAKEITEM, ULTIMATE_TRANSWEAPON, ULTIMATE_REMOVEGEM, PIERCINGREMOVE,
 REMOVE_ATTRIBUTE (both ways), REPAIRITEM; the bag item's `repairNumber`, `hitPoint`, `repair`, `resistSMItemId`.
