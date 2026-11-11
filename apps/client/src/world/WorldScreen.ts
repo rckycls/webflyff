@@ -152,6 +152,8 @@ import { ConfirmBoxes, boxOf } from './items/confirmBoxes';
 import { ticketInUse } from './items/itemWindows';
 import { PiercingWindow, SmeltSafetyWindow } from './items/upgradeNpcWindows';
 import { JewelWindows } from './items/jewelWindows';
+import { ItemNpcWindows } from './items/itemNpcWindows';
+import type { NpcWindowPacket } from './items/npcWindowKit';
 // 2026-11-10: Summon Angel (docs/superpowers/specs/2026-11-10-summon-angel-research.md)
 import { SummonAngelWindow } from './angel/summonAngelWindow';
 import { AngelFollowers, createAngelParticle } from './angel/angelFollow';
@@ -483,6 +485,8 @@ export class WorldScreen {
   private upgradeNpc: { piercing: PiercingWindow; safety: SmeltSafetyWindow } | undefined;
   /** 2026-11-10: Peach's Create Jewels and Jewel Setting (items/jewelWindows.ts). */
   private jewels: JewelWindows | undefined;
+  /** 2026-11-11: the rest of the jewel and safe upgrade menus, the Repair window and the GM's ResistItem window. */
+  private itemNpc: ItemNpcWindows | undefined;
   /**
    * 2026-11-10: Summon Angel: the Priest of Confession's window, the angels following their players and their models and
    * gauges, the own angel's EXP and level (`m_nAngelExp`, `m_nAngelLevel`), the 100% box's latch (`m_bAngelFinish`) and
@@ -963,7 +967,9 @@ export class WorldScreen {
       if (value.type === 'summon') { this.itemWindows?.onSummon(value); continue; }
       if (value.type === 'smeltSafety') { this.upgradeNpc?.safety.onResult(value.result); continue; }
       // 2026-11-10: Create Jewels' and Jewel Setting's answers (OnUltimateWeapon, DPClient.cpp:11577-11643)
-      if (value.type === 'ultimate') { this.jewels?.onUltimate(value); continue; }
+      if (value.type === 'ultimate') { this.jewels?.onUltimate(value); this.itemNpc?.onUltimate(value); continue; }
+      // 2026-11-11: Remove Element upgrading's answer (OnRemoveAttributeResult, DPClient.cpp:6415-6423)
+      if (value.type === 'removeAttribute') { this.itemNpc?.removeAttribute.onResult(value.success); continue; }
       // 2026-11-10: the angel's EXP, and "Your Angel has reached full Exp." (OnAngelInfo, DPClient.cpp:11337-11354); the local
       // events, EVE_PK's among them (OnFlyffEvent, OnSetLocalEvent, :6183-6199, :6260-6265)
       if (value.type === 'angel') {
@@ -1515,6 +1521,39 @@ export class WorldScreen {
       renderer: () => this.page?.renderer ?? null,
       ui: { art: this.hudArt!, doc, layer: () => this.hud?.element ?? null },
     });
+    // 2026-11-11: the item NPC windows (items/itemNpcWindows.ts)
+    this.itemNpc = new ItemNpcWindows({
+      own: () => this.own, props: this.data!.itemProps, ultimate: () => this.data?.ultimate,
+      text: (tid) => (this.data?.texts.get(tid)?.text ?? '').replace(/\\n/g, '\n'),
+      alert: (text) => { if (text !== '' && this.messageBox?.isOpen !== true) this.messageBox?.open(text, 'ok', () => {}); },
+      say: (tid, color) => {
+        const text = this.data?.texts.get(tid)?.text ?? '';
+        if (text !== '') this.hud?.messages.add(text, this.data!.texts.get(color ?? tid)?.color ?? 0xffffffff);
+      },
+      reserve: (id, on) => this.reserveItem(id, on),
+      reserved: (id) => this.bagReserved.get(id) ?? 0,
+      dieFlag: (on) => { this.bagDieFlag = on; if (this.own) this.inventoryWindow?.update(this.own, true); },
+      send: (packet) => this.sendItemNpc(packet),
+      mobile: () => doc.defaultView?.matchMedia?.('(max-width: 1000px) and (pointer: coarse)').matches === true,
+      bagOpen: () => this.inventoryWindow?.frame.isOpen === true,
+      openBag: () => { if (this.inventoryWindow?.frame.isOpen !== true) this.openWindow('inventory'); },
+      closeBag: () => this.inventoryWindow?.frame.close(),
+      bagRect: () => {
+        const frame = this.inventoryWindow?.frame, layer = this.hud?.element;
+        if (frame?.isOpen !== true || layer === undefined) return null;
+        const bag = frame.element.getBoundingClientRect(), at = layer.getBoundingClientRect();
+        return { x: bag.left - at.left, y: bag.top - at.top, width: bag.width };
+      },
+      ui: { art: this.hudArt!, doc, layer: () => this.hud?.element ?? null },
+    }, {
+      cards: () => this.data?.itemEtc?.piercing ?? new Map(),
+      // MMI_REPAIR's refusals (WndWorld.cpp:5388-5440): the bank, a trade, a shop, Summon Angel, a vendor
+      repairBusy: () => this.bankHud?.isOpen === true ? 'TID_GAME_REPAIR_TAKEBANK'
+        : this.tradeHud?.windowOpen === true ? 'TID_GAME_REPAIR_TAKETRADE'
+          : this.shopWindow?.frame.isOpen === true ? 'TID_GAME_REPAIR_TAKESHOP'
+            : this.summonAngel?.isOpen === true ? 'TID_GAME_SUMMONANGELUSING'
+              : this.personalShop?.blocksWorld === true ? 'TID_GAME_REPAIR_TRADEING' : null,
+    });
     // 2026-11-10: the Priest of Confession's Summon Angel (angel/summonAngelWindow.ts)
     this.summonAngel = new SummonAngelWindow({
       own: () => this.own, props: this.data!.itemProps,
@@ -1670,6 +1709,7 @@ export class WorldScreen {
       closed: () => {
         this.upgradeNpc?.piercing.dismiss(); this.upgradeNpc?.safety.dismiss(); this.petCare?.bagClosed(); this.jewels?.bagClosed();
         this.bankHud?.bagClosed(); this.summonAngel?.bagClosed();
+        this.itemNpc?.bagClosed(); // 2026-11-11: and the item NPC windows it closes (:1015-1075)
       },
       // 2026-11-10: a stack in the trade shows the count less the traded (`m_nItemNum - GetExtra()`, WndItemCtrl.cpp:705-708)
       reservedCount: (id) => (this.bagDieFlag ? this.bagReserved.get(id) ?? 0 : 0) + this.tradeExtraShown(id),
@@ -1804,11 +1844,13 @@ export class WorldScreen {
         focus: focused === undefined ? null : { isPlayer: focused.kind === 'player', name: focused.name },
         chosenSkill: chosen === null ? null : { skill: chosen, name: skill?.name ?? '', expertMax: skill?.maxLevel ?? 0 },
         foodMillOpen: this.petCare?.millOpen === true, jobs: data.jobs, pos: world.self()?.act.body.pos ?? [0, 0, 0],
+        resistItemSlot: this.itemNpc?.resistItem.isOpen === true ? this.itemNpc.resistItem.slot : undefined,
         now: new Date(), text: (id) => data.texts.get(id),
       });
       for (const printed of result.lines) this.chatWindow?.append('system', '', printed.text, undefined, printed.color);
       if (result.send !== undefined) this.session.sendChat('nearby', result.send, '');
       if (result.openFoodMill === true) this.petCare?.tamerMill(); // a new CWndPetFoodMill with no feed maker (:390-402)
+      if (result.openResistItem === true) this.itemNpc?.resistItem.open(); // 2026-11-11: CWndUpgradeBase (FuncTextCmd.cpp:1614-1620)
       if (result.clearPetName === true) this.session.sendClearPetName();
     };
     this.shopWindow = new ShopWindow(this.hudArt!, this.data!, () => this.own, (id) => this.canTalk(id), {
@@ -2020,13 +2062,15 @@ export class WorldScreen {
       // 2026-11-10 (bank-mail): and into the open bank, or onto the mail being written; and in the Summon Angel window, where
       // the double-click would put it
       active: () => tradeHud.windowOpen || this.jewels?.isOpen === true || bankHud.isOpen || postHud.sending ||
-        this.summonAngel?.isOpen === true,
+        this.summonAngel?.isOpen === true || this.itemNpc?.isOpen === true,
       tapItem: (id) => {
         if (tradeHud.windowOpen) tradeHud.tapItem(id);
         else if (bankHud.isOpen) bankHud.tapItem(id);
         else if (postHud.sending) postHud.tapItem(id);
         else if (this.summonAngel?.isOpen === true) this.summonAngelUse(id);
         else if (this.jewels?.isOpen === true) { if (!this.jewels.tapItem(id)) this.sayRefusal({ kind: 'say', tid: 'TID_SBEVE_NOTUSEITEM' }); }
+        // 2026-11-11: and in the open item NPC window, where a drop would put it
+        else if (this.itemNpc?.isOpen === true) { if (this.itemNpc.tapItem(id) === 'refused') this.sayRefusal({ kind: 'say', tid: 'TID_SBEVE_NOTUSEITEM' }); }
         else tradeHud.tapItem(id);
       },
       tapPenya: () => { if (bankHud.isOpen && !tradeHud.windowOpen) bankHud.tapPenya(); else tradeHud.tapPenya(); },
@@ -2384,7 +2428,12 @@ export class WorldScreen {
     else if (this.upgradeNpc?.piercing.isOpen === true) this.upgradeNpc.piercing.take(objectId);
     // 2026-11-10: a jewel window takes its kind (WndField.cpp:2288-2350); the bag refuses anything else (:2577-2584)
     else if (this.jewels?.isOpen === true) { if (!this.jewels.take(objectId)) this.sayRefusal({ kind: 'say', tid: 'TID_SBEVE_NOTUSEITEM' }); }
-    else return false;
+    // 2026-11-11: an item NPC window takes its kinds (WndField.cpp:2151-2289), refuses (:2552-2577) or lets the bag use it
+    else if (this.itemNpc?.isOpen === true) {
+      const press = this.itemNpc.take(objectId, shift);
+      if (press === 'pass') return false;
+      if (press === 'refused') this.sayRefusal({ kind: 'say', tid: 'TID_SBEVE_NOTUSEITEM' });
+    } else return false;
     return true;
   }
 
@@ -3176,6 +3225,7 @@ export class WorldScreen {
       this.upgradeNpc?.piercing.dismiss(); // and the Upgrade Specialist's windows (:8360-8362, :8493-8495)
       this.upgradeNpc?.safety.dismiss();
       this.jewels?.dismiss(); // 2026-11-10: and the jewel windows (:8198-8222)
+      this.itemNpc?.dismiss(); // 2026-11-11: and the item NPC windows (:8198-8496)
       this.bankHud?.moved(); // 2026-11-10 (bank-mail): and the bank (:8313-8337)
       this.postHud?.moved(); // and the post (:8383-8394)
       this.summonAngel?.dismiss(); // 2026-11-10: and Summon Angel with the bag (:8154-8165)
@@ -4116,10 +4166,30 @@ export class WorldScreen {
     } else if (entry === MMI.PIERCING) {
       // 2026-11-05: the Upgrade Specialist (:5681-5733): Piercing, nothing while a shop is open
       if (this.shopWindow?.frame.isOpen !== true) this.upgradeNpc?.piercing.open();
-    } else if (entry === MMI.SMELT_SAFETY_GENERAL || entry === MMI.SMELT_SAFETY_ACCESSORY || entry === MMI.SMELT_SAFETY_PIERCING) {
-      // :5989-6033: the safe upgrade in its mode, any open one deleted first
-      const mode = entry === MMI.SMELT_SAFETY_GENERAL ? 'normal' : entry === MMI.SMELT_SAFETY_ACCESSORY ? 'accessory' : 'piercing';
+    } else if (entry === MMI.SMELT_SAFETY_GENERAL || entry === MMI.SMELT_SAFETY_ACCESSORY || entry === MMI.SMELT_SAFETY_PIERCING ||
+      entry === MMI.SMELT_SAFETY_ELEMENT) {
+      // :5989-6050: the safe upgrade in its mode, any open one deleted first; 2026-11-11 refused in a trade or one's own shop
+      // (TID_GAME_SMELT_SAFETY_ERROR16), and Safe Element (MMI 167, :6035-6050)
+      if (this.tradeHud?.windowOpen === true || this.personalShop?.blocksActions === true) {
+        this.say('TID_GAME_SMELT_SAFETY_ERROR16');
+        return;
+      }
+      const mode = entry === MMI.SMELT_SAFETY_GENERAL ? 'normal' : entry === MMI.SMELT_SAFETY_ACCESSORY ? 'accessory'
+        : entry === MMI.SMELT_SAFETY_PIERCING ? 'piercing' : 'element';
       this.upgradeNpc?.safety.open(mode);
+    } else if (entry === MMI.SMELT_MIXJEWEL) {
+      this.itemNpc?.jewels.mix.open(); // 2026-11-11: Create Shining Oricalkum (:4942-4957)
+    } else if (entry === MMI.SMELT_CHANGEGWEAPON || entry === MMI.SMELT_CHANGEUWEAPON) {
+      // 2026-11-11: Create Unique / Ultimate Weapon (:4986-5027)
+      this.itemNpc?.jewels.change.openAs(entry === MMI.SMELT_CHANGEGWEAPON ? 'unique' : 'ultimate');
+    } else if (entry === MMI.SMELT_REMOVE_JEWEL) {
+      this.itemNpc?.jewels.removeJewel.open(); // 2026-11-11: Remove Jewel (:5081-5096)
+    } else if (entry === MMI.ATTRIBUTE) {
+      this.itemNpc?.removeAttribute.open(); // 2026-11-11: Remove Element upgrading (:5045-5060)
+    } else if (entry === MMI.SMELT_REMOVE_PIERCING) {
+      this.itemNpc?.removePiercing.open(); // 2026-11-11: Remove a Pierced Card (:5061-5080)
+    } else if (entry === MMI.REPAIR) {
+      this.itemNpc?.repair.open(); // 2026-11-11: the Repair window (:5388-5450)
     } else if (entry === MMI.SMELT_JEWEL) {
       this.jewels?.setting.open(); // 2026-11-10: Jewel Setting (:4958-4971)
     } else if (entry === MMI.SMELT_EXTRACTION) {
@@ -4199,6 +4269,12 @@ export class WorldScreen {
       return null;
     }
     return { item: first.item, release: first.release };
+  }
+
+  /** 2026-11-11: an item NPC window's packet (world/upgrade.ts in the protocol; the ResistItem line as chat). */
+  private sendItemNpc(packet: NpcWindowPacket): void {
+    if (packet.type === 'chat') this.session.sendChat('nearby', packet.text, '');
+    else this.session.sendItemNpc(packet);
   }
 
   /** A RUNSCRIPTFUNC for the player (`CDPClient::OnRunScriptFunc`, DPClient.cpp:14265-14476). */
@@ -4413,6 +4489,8 @@ export class WorldScreen {
     this.upgradeNpc = undefined;
     this.jewels?.close();
     this.jewels = undefined;
+    this.itemNpc?.close();
+    this.itemNpc = undefined;
     // 2026-11-10: Summon Angel
     this.summonAngel?.close();
     this.summonAngel = undefined;

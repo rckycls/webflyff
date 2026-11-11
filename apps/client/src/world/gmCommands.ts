@@ -14,11 +14,13 @@
 //   TextCmd_CreateItem    :2537-2550                  no words: CWndAdminCreateItem (left out), nothing sent
 //   TextCmd_indirect      :3350-3363                  no words: CWndIndirectTalk (left out), nothing sent
 //   TextCmd_MakePetFeed   :390-402                    the food mill opened first (nothing sent); open, the line goes
-//   TextCmd_ResistItem    :1613-1661                  needs CWndUpgradeBase (APP_TEST), TextCmd_Piercing :1711-1738 needs
-//                                                     APP_PIERCING with an item: neither window is in the web, nothing sent
+//   TextCmd_ResistItem    :1613-1661                  2026-11-11: CWndUpgradeBase (APP_TEST) opened first, then "/ritem ..."
+//                                                     (items/resistItemWindow.ts)
+//   TextCmd_Piercing      :1711-1738                  needs APP_PIERCING with an item: not wired, nothing sent
 
 import type { Vec3 } from '@flyffweb/protocol';
 import { formatText } from './hud/format';
+import { resistItemLine } from './items/resistItemWindow';
 
 /** The TCM_BOTH commands whose client half decides what is sent: `lineAction` hands them here like a TCM_CLIENT one. */
 export const CLIENT_HALVES: ReadonlySet<string> = new Set([
@@ -33,6 +35,8 @@ export interface ClientHalfContext {
   chosenSkill: { skill: number; name: string; expertMax: number } | null;
   /** `g_WndMng.m_pWndPetFoodMill` is open. */
   foodMillOpen: boolean;
+  /** 2026-11-11: the GM's ResistItem window's first slot (null empty), undefined while it is closed. */
+  resistItemSlot?: number | null;
   /** The jobs' names (`prj.m_aJob[i].szName`), by job. */
   jobs: ReadonlyArray<{ title?: string }>;
   /** `g_pPlayer->GetPos()`, and the PC's clock. */
@@ -46,6 +50,8 @@ export interface ClientHalfResult {
   send?: string;
   lines: Array<{ text: string; color: number }>;
   openFoodMill?: boolean;
+  /** 2026-11-11: open the GM's ResistItem window (CWndUpgradeBase, APP_TEST). */
+  openResistItem?: boolean;
   clearPetName?: boolean;
 }
 
@@ -115,8 +121,14 @@ export function runClientHalf(command: string, args: string, line: string, ctx: 
       return words === '' ? { lines: [] } : { send: line, lines: [] };
     case 'makepetfeed':
       return ctx.foodMillOpen ? { send: line, lines: [] } : { lines: [], openFoodMill: true };
+    case 'ResistItem': {
+      // 2026-11-11: the window opened first; open, "/ritem objid element rao ao" (items/resistItemWindow.ts)
+      const out = resistItemLine(args, ctx.resistItemSlot);
+      if (out === null) return { lines: [] };
+      return 'open' in out ? { lines: [], openResistItem: true } : { send: out.send, lines: [] };
+    }
     default:
-      // ResistItem, Piercing (their windows are not in the web); the trade, party and shout toggles and the block list
+      // Piercing (its window's item is not read here); the trade, party and shout toggles and the block list
       // (no option or window here; the whisper, friend and log-in ones are the Messenger's, friends/friendHud.ts, run
       // before this); destroyguild (no guilds in the web)
       return { lines: [] };
