@@ -15,6 +15,7 @@
 //   data/skills.json       every job skill of propSkill.txt with its levels of propSkillAdd.csv (WebSkill[], skillsCatalog.ts)
 //   data/worldNoFly.json   (optional, Piece 7 M5) the ids of the worlds whose .wld says fly 0 (number[])
 //   data/pets.json         (optional, 2026-11-09) the raised pets' table of pet.inc (WebPets)
+//   data/honorNeeds.json   (optional, 2026-11-11) honour id to the count that earns the title, of honorList.txt (WebHonorNeeds)
 //
 // It runs after the models stage, and after the effects and UI stages whose files the effects index and the item icons
 // name (`effects/<web name>.json`, `ui/item/<web name>.png`, the keys of output/keys.ts; this stage does not check that
@@ -34,6 +35,7 @@ import {
   AUDIO_KEY,
   FormatError,
   GAME_DATA_KEYS,
+  HONOR_NEEDS_KEY,
   ITEM_ETC_KEY,
   OT,
   PARTY_KEY,
@@ -49,6 +51,7 @@ import {
   readCharacterInc,
   readEtcJobs,
   readExpTable,
+  readHonorNeeds,
   readHonorTitles,
   readPkSetting,
   readPetInc,
@@ -68,6 +71,7 @@ import type {
   ModelElem,
   WebEffectsIndex,
   WebExpRow,
+  WebHonorNeeds,
   WebHonorTitles,
   WebItemModel,
   WebItemProp,
@@ -532,6 +536,12 @@ function buildHonorTitles(env: Env, read: Reading): WebHonorTitles {
   return Object.fromEntries([...titles].sort((a, b) => a[0] - b[0]).map(([id, title]) => [String(id), title]));
 }
 
+/** 2026-11-11 (honour window): the titles' needs of the same file (`GetNeedCount( id, -1 )`). */
+function buildHonorNeeds(env: Env, read: Reading): WebHonorNeeds {
+  const needs = readHonorNeeds(read.text('honorList.txt'), env.defines, env.strings, 'honorList.txt');
+  return Object.fromEntries([...needs].sort((a, b) => a[0] - b[0]).map(([id, need]) => [String(id), need]));
+}
+
 function buildWorlds(env: Env, read: Reading): WebWorlds {
   // CWorldMng::LoadScript stores each world with CFixedArray::SetAtGrow (worldmng.cpp:359), which overwrites the slot of
   // an id it has already read: the later world wins whole
@@ -638,6 +648,26 @@ export const gameDataStage: Stage = {
       } catch (error) {
         // a FormatError names the file it came from (the model index, say); anything else is about the catalog
         ctx.report.fail(KIND, error instanceof FormatError ? error.file : source, error);
+      }
+    }
+
+    // The honour titles' needs (2026-11-11, the honour window), optional: HONOR_NEEDS_KEY is not one of GAME_DATA_KEYS, so
+    // game files converted before it still load. An honorList.txt that cannot be read has already failed the honour titles,
+    // so it is not reported again here.
+    const needsRead = new Reading(ctx.client);
+    let needs: WebHonorNeeds | null = null;
+    try {
+      needs = buildHonorNeeds(env, needsRead);
+    } catch {
+      // reported with the honour titles
+    }
+    if (needs !== null) {
+      try {
+        const bytes = new TextEncoder().encode(JSON.stringify(needs));
+        await ctx.writer.write(HONOR_NEEDS_KEY, bytes, 'honorList.txt');
+        ctx.report.ok(KIND, 'honorList.txt', needsRead.bytes, bytes.length);
+      } catch (error) {
+        ctx.report.fail(KIND, 'honorList.txt', error);
       }
     }
 

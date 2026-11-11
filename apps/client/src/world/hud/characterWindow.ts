@@ -21,17 +21,39 @@
 //   CWndCharInfo::GetVirtual*       WndField.cpp:3864-4056             the preview
 //   CWndCharInfo::RenderATK         WndField.cpp:4057-4099             ATK
 //
-// The page's PVP/PK part (fame, PK value and propensity, :3449-3489) and the Fame/Master tab's page (CWndHonor) are not
-// drawn: the browser reads none of their numbers (stats §3.2). The tooltips of the stat rows (:3298-3368) are not copied.
+// The page's PVP/PK part (fame, PK value and propensity, :3449-3489) is not drawn: the browser reads none of its numbers
+// (stats §3.2). The tooltips of the stat rows (:3298-3368) are not copied.
+//
+// 2026-11-11: the second tab's page, Fame/Master (`CWndHonor`, APP_HONOR), the earned honour titles to pick one from:
+//
+//   resdata.inc APP_HONOR           Resource/resdata.inc:1241-1270     192 x 432, no frame; the list WIDC_LISTBOX1
+//                                                                     "WndEditTile00.tga" tiled at (6, 8) to (172, 382)
+//                                                                     with a scroll bar (0x20000000, WBS_VSCROLL,
+//                                                                     WndStyle.h:34); ButtOk.tga WIDC_BUTTON1 at (48, 390)
+//                                                                     to (120, 410)
+//   CWndHonor::OnDraw               WndField.cpp:4072-4086             with no title earned, TID_GAME_NO_TITLE in black at
+//                                                                     the list's (left + 5, top + 8)
+//   CWndHonor::OnInitialUpdate      WndField.cpp:4088-4095             RefreshList; the chosen row red (255, 0, 0)
+//   CWndHonor::RefreshList          WndField.cpp:4097-4122             no row chosen, the button disabled; with titles,
+//                                                                     TID_GAME_NOT_SELECTED_TITLE first, then each title
+//   CWndHonor::OnChildNotify        WndField.cpp:4138-4170             a row picks -1 or its title and enables the button;
+//                                                                     the button disables itself and sends the pick
+//                                                                     (SendReqHonorTitleChange)
+//   CWndListBox                     WndControl.cpp:1802-1990           rows from (3, 3), grey (64, 64, 64), orange under the
+//                                                                     mouse (`__VER >= 15`)
+//   CWndTabCtrl::OnLButtonDown      WndControl.cpp:4460-4490           a press in a tab's share of the strip chooses it
 
 import { FISTS, attackShown, attackSpeed, criticalShown, defenceShown } from '../sim/params';
 import type { Stats } from '../sim/params';
 import type { OwnState } from '../OwnState';
+import type { EarnedTitle } from '../honor/honorBook';
 import { cssRgb, themeUrl } from './art';
 import type { UiArt } from './art';
 import { pictureButton, place } from './button';
 import type { ControlRect } from './button';
 import { WindowFrame } from './frame';
+import { textScrollBar } from './resWindow';
+import type { TextScrollBar } from './resWindow';
 import { StateConfirm } from './stateConfirm';
 import { EDIT, TAB_TILE, TAB_TILE_HEIGHT, chosenTabTiles, editTiles, tabStripTiles } from './tiles';
 
@@ -147,6 +169,22 @@ const APPLY_QUARTER = 50;
 const PLUS_SIGN = '+';
 const MINUS_SIGN = '-';
 
+// ---- the Fame/Master page (CWndHonor), from its top left ------------------------------------------------------------
+
+/** `WIDC_LISTBOX1` (resdata.inc:1250): (6, 8) to (172, 382); its scroll bar the right 16 px (`VSCROLL_WIDTH`). */
+const HONOR_LIST: ControlRect = { left: 6, top: 8, width: 166, height: 374 };
+const HONOR_SCROLL = 16;
+/** The rows from (3, 3) in the list (`PaintListBox`, :1863-1914). */
+const HONOR_ROWS_INSET = 3;
+/** `WIDC_BUTTON1` "ButtOk.tga" (resdata.inc:1259): (48, 390) to (120, 410), its four states 72 px each. */
+const HONOR_OK: ControlRect = { left: 48, top: 390, width: 72, height: 20 };
+const OK_QUARTER = 72;
+/** TID_GAME_NO_TITLE at the list's (left + 5, top + 8) (`OnDraw`, :4083). */
+const NO_TITLE_AT = { x: HONOR_LIST.left + 5, y: HONOR_LIST.top + 8 };
+/** The phone's page (the tab's 448 x 240): the list on the left, OK under the words on the right. */
+const PHONE_HONOR_LIST: ControlRect = { left: 8, top: 8, width: 300, height: 224 };
+const PHONE_HONOR_OK: ControlRect = { left: 324, top: 178, width: 112, height: 46 };
+
 /** A value of the page: its element, and what it shows, kept to touch the DOM only when it changes. */
 interface Value {
   element: HTMLElement;
@@ -161,10 +199,15 @@ interface Value {
  * (WndManager.cpp:2650-2700); `update` is given the own numbers and the lobby's entry each frame and draws them. Closing
  * it forgets the counts and the confirm box, as `Destroy` deletes the page with them. Apply, after Yes, calls `onApply`
  * with the counts (MODIFY_STATUS).
+ *
+ * 2026-11-11: the tabs choose the page; the Fame/Master page lists the titles `setHonor` gives, and its OK calls
+ * `onHonorChange` with the pick (HONOR_CHANGE_REQ: an honour id, or -1 for none).
  */
 export class CharacterWindow {
   readonly frame: WindowFrame;
   readonly confirm: StateConfirm;
+  /** OK on the Fame/Master page: the title picked (`m_nSelectedId`), -1 for none. */
+  onHonorChange: (honor: number) => void = () => {};
   private countsNow: StatCounts = { ...NO_COUNTS };
   /** The own numbers of the last `update`: `GetRemainGP()` for the controls, `IsBaseJob()` for the confirm box. */
   private own: OwnState | undefined;
@@ -175,6 +218,21 @@ export class CharacterWindow {
   private readonly apply: HTMLButtonElement;
   private readonly reset: HTMLButtonElement;
   private readonly mobile: boolean;
+  private readonly art: UiArt;
+  /** The tab chosen (`m_nCurSelect`), and the pages it shows one of. */
+  private chosenTab = CHOSEN_TAB;
+  private readonly strip: HTMLElement;
+  private readonly pages: HTMLElement[];
+  private readonly stripColumns: number;
+  private readonly tabRect: ControlRect;
+  /** The Fame/Master page: its rows, the words of an empty list, OK, the scroll bar. */
+  private readonly honorRows: HTMLElement;
+  private readonly honorEmpty: HTMLElement;
+  private readonly honorOk: HTMLButtonElement;
+  private readonly honorScroll: TextScrollBar | null;
+  /** `m_vecTitle`, and `m_nSelectedId`. */
+  private honorTitles: readonly EarnedTitle[] = [];
+  private honorPick = -1;
 
   constructor(
     art: UiArt,
@@ -184,6 +242,7 @@ export class CharacterWindow {
   ) {
     const mobile = doc.defaultView?.matchMedia?.('(max-width: 1000px) and (pointer: coarse)').matches === true;
     this.mobile = mobile;
+    this.art = art;
     const tabRect = mobile ? { left: 8, top: 12, width: 464, height: 272 } : TAB;
     const frame = new WindowFrame(TITLE, art, mobile
       ? { width: 480, height: 320, mobileScale: 1, fitWhole: true }
@@ -204,14 +263,55 @@ export class CharacterWindow {
     place(tab, tabRect);
     const columns = Math.trunc((tabRect.width - TAB_RIGHT) / EDIT);
     tab.append(editTiles(doc, art, columns, Math.trunc(tabRect.height / EDIT)));
-    tab.append(...this.tabStrip(doc, art, columns, tabRect));
+    this.stripColumns = columns;
+    this.tabRect = tabRect;
+    this.strip = doc.createElement('div');
+    this.strip.className = 'hud-char-strip';
+    tab.append(this.strip);
 
+    const pageRect = { left: 0, top: 0, width: tabRect.width - (mobile ? 16 : 0), height: tabRect.height - TAB_STRIP };
     const page = doc.createElement('div');
     page.className = 'hud-char-page';
-    place(page, { left: 0, top: 0, width: tabRect.width - (mobile ? 16 : 0), height: tabRect.height - TAB_STRIP });
+    page.dataset.page = '0';
+    place(page, pageRect);
     if (!mobile) page.style.backgroundImage = themeUrl(art, PAGE_PICTURE);
-    tab.append(page);
+
+    // 2026-11-11: the Fame/Master page (APP_HONOR), no frame and no picture: the tab control's tiles show under it
+    const honor = doc.createElement('div');
+    honor.className = 'hud-char-page hud-honor-page';
+    honor.dataset.page = '1';
+    place(honor, pageRect);
+    const listRect = mobile ? PHONE_HONOR_LIST : HONOR_LIST;
+    const list = doc.createElement('div');
+    list.className = 'hud-honor-list';
+    place(list, listRect);
+    const scrollWidth = mobile ? 0 : HONOR_SCROLL;
+    list.append(editTiles(doc, art, Math.trunc((listRect.width - scrollWidth) / EDIT), Math.trunc(listRect.height / EDIT)));
+    const rows = doc.createElement('div');
+    rows.className = 'hud-honor-rows';
+    rows.setAttribute('role', 'listbox');
+    rows.setAttribute('aria-label', this.text('TID_GAME_TITLE_HONOR'));
+    const inset = mobile ? 0 : HONOR_ROWS_INSET;
+    place(rows, { left: inset, top: inset, width: listRect.width - scrollWidth - inset, height: listRect.height - 2 * inset });
+    list.append(rows);
+    this.honorRows = rows;
+    this.honorScroll = mobile ? null : textScrollBar(doc, art, rows, listRect);
+    if (this.honorScroll !== null) list.append(this.honorScroll.element);
+    const empty = this.textAt(doc, mobile ? listRect.left + 12 : NO_TITLE_AT.x, mobile ? listRect.top + 12 : NO_TITLE_AT.y);
+    empty.classList.add('hud-honor-empty');
+    empty.textContent = this.text('TID_GAME_NO_TITLE');
+    empty.style.color = cssRgb(BLACK);
+    this.honorEmpty = empty;
+    const ok = pictureButton(doc, art, 'ButtOk.tga', mobile ? PHONE_HONOR_OK : HONOR_OK, OK_QUARTER, () => this.sendHonor());
+    ok.dataset.button = 'honor-ok';
+    ok.setAttribute('aria-label', 'OK');
+    this.honorOk = ok;
+    honor.append(list, empty, ok);
+    this.pages = [page, honor];
+    tab.append(page, honor);
     frame.body.append(tab);
+    this.drawTabs(doc, art);
+    this.setHonor([], -1);
 
     const label = (id: string, name: string, x: number, y: number, color = LABEL_COLOR): HTMLElement => {
       const element = this.textAt(doc, x, y);
@@ -335,6 +435,58 @@ export class CharacterWindow {
   /** The points being placed on each stat. */
   get counts(): StatCounts {
     return { ...this.countsNow };
+  }
+
+  /** The tab chosen: 0 the Character page, 1 Fame/Master. */
+  get tab(): number {
+    return this.chosenTab;
+  }
+
+  /**
+   * `CWndHonor::RefreshList` (:4097-4122): the list made again from the earned titles (`m_vecEarned`), no row chosen and OK
+   * disabled; `current` (the own `m_nHonor`) is the pick until a row is chosen. With titles, "No Title" comes first.
+   */
+  setHonor(earned: readonly EarnedTitle[], current: number): void {
+    this.honorTitles = earned;
+    this.honorPick = current;
+    this.honorOk.disabled = true;
+    const doc = this.honorRows.ownerDocument;
+    const names = earned.length > 0 ? [this.text('TID_GAME_NOT_SELECTED_TITLE'), ...earned.map((title) => title.title)] : [];
+    this.honorRows.replaceChildren(...names.map((name, i) => {
+      const row = doc.createElement('div');
+      row.setAttribute('role', 'option');
+      row.setAttribute('aria-selected', 'false');
+      row.dataset.honor = String(i === 0 ? -1 : earned[i - 1]!.id);
+      row.textContent = name;
+      row.addEventListener('click', () => this.chooseHonor(i));
+      return row;
+    }));
+    this.honorRows.scrollTop = 0;
+    // OnDraw: the words of an empty list
+    this.honorEmpty.hidden = earned.length > 0;
+    this.honorScroll?.draw();
+  }
+
+  /** A press on a tab (`CWndTabCtrl::OnLButtonDown`, :4460-4490): its page shown, the strip drawn with it chosen. */
+  chooseTab(tab: number): void {
+    if (tab < 0 || tab >= TABS.length || tab === this.chosenTab) return;
+    this.chosenTab = tab;
+    this.drawTabs(this.strip.ownerDocument);
+    this.honorScroll?.draw();
+  }
+
+  /** A row of the list (`OnChildNotify` WIDC_LISTBOX1, :4143-4158): the first is -1, the others their title; OK enabled. */
+  private chooseHonor(index: number): void {
+    this.honorPick = index === 0 ? -1 : this.honorTitles[index - 1]!.id;
+    for (const [i, row] of [...this.honorRows.children].entries()) row.setAttribute('aria-selected', String(i === index));
+    this.honorOk.disabled = false;
+  }
+
+  /** OK (`OnChildNotify` WIDC_BUTTON1, :4159-4165): disabled again, and the pick sent (SendReqHonorTitleChange). */
+  private sendHonor(): void {
+    if (this.honorOk.disabled) return;
+    this.honorOk.disabled = true;
+    this.onHonorChange(this.honorPick);
   }
 
   /** H, the applet and Start: opens at the top left on desktop or centered on mobile; closes if already open. */
@@ -516,10 +668,13 @@ export class CharacterWindow {
 
   /**
    * The strip of tabs under the page (`tabStripTiles`), the chosen tab over it (`chosenTabTiles`) and the titles (`OnDraw`,
-   * :4221-4283): 2 px into each tab, the chosen one black and the others white (ALIGN_LEFT, `__VER >= 15`). Only the
-   * page's tab does anything: the Fame/Master page is not the browser's.
+   * :4221-4283): 2 px into each tab, the chosen one black and the others white (ALIGN_LEFT, `__VER >= 15`). Each title is
+   * a button over its tab's share of the strip's last 18 px (`OnLButtonDown`, :4460-4490), 40 px tall on the phone; the
+   * chosen tab's page is shown, the other hidden.
    */
-  private tabStrip(doc: Document, art: UiArt, columns: number, rect: ControlRect = TAB): HTMLElement[] {
+  private drawTabs(doc: Document, art: UiArt = this.art): void {
+    const rect = this.tabRect;
+    const columns = this.stripColumns;
     const top = (Math.trunc(rect.height / EDIT) - 2) * EDIT;
     const tile = (index: number, left: number, width = TAB_TILE): HTMLElement => {
       const element = doc.createElement('div');
@@ -528,18 +683,29 @@ export class CharacterWindow {
       element.style.backgroundSize = '100% 100%';
       return element;
     };
+    const chosen = this.chosenTab;
     const tiles = tabStripTiles(columns, TABS.length).map((index, i) => tile(index, i * TAB_TILE));
-    for (const chosen of chosenTabTiles(columns, TABS.length, CHOSEN_TAB)) tiles.push(tile(chosen.index, chosen.left, chosen.width));
+    for (const piece of chosenTabTiles(columns, TABS.length, chosen)) tiles.push(tile(piece.index, piece.left, piece.width));
     const length = Math.trunc((rect.width - TAB_RIGHT) / TABS.length);
     const titles = TABS.map((id, i) => {
-      const title = this.textAt(doc, i * length + 2, rect.height - TAB_TITLE_UP);
-      title.classList.add('hud-char-tab-title');
+      const title = doc.createElement('button');
+      title.type = 'button';
+      title.className = 'hud-char-tab-title';
       title.dataset.tab = String(i);
+      title.setAttribute('aria-pressed', String(i === chosen));
       title.textContent = this.text(id);
-      title.style.color = cssRgb(i === CHOSEN_TAB ? BLACK : WHITE);
+      title.style.color = cssRgb(i === chosen ? BLACK : WHITE);
+      // the words 2 px in and at `bottom - 17` (:4225), the button the press's rect `bottom - 18` to `bottom` (:4467-4479)
+      if (this.mobile) place(title, { left: i * length, top: top - 13, width: length, height: 46 });
+      else {
+        place(title, { left: i * length, top: rect.height - TAB_STRIP, width: length, height: TAB_STRIP });
+        title.style.paddingTop = `${TAB_STRIP - TAB_TITLE_UP}px`;
+      }
+      title.addEventListener('click', () => this.chooseTab(i));
       return title;
     });
-    return [...tiles, ...titles];
+    this.strip.replaceChildren(...tiles, ...titles);
+    this.pages.forEach((page, i) => { page.hidden = i !== chosen; });
   }
 
   private text(id: string): string {

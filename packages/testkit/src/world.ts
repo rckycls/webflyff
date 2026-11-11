@@ -1,5 +1,5 @@
 import {
-  ArWriter, AttackFlag, BUNDLE_MARKER, MAX_SHORTCUT_STRING, MAX_SKILL_JOB, MAX_SLOT_APPLET, MAX_SLOT_ITEM,
+  ArWriter, AttackFlag, BUNDLE_MARKER, MAX_HONOR_TITLE, MAX_SHORTCUT_STRING, MAX_SKILL_JOB, MAX_SLOT_APPLET, MAX_SLOT_ITEM,
   MAX_SLOT_ITEM_COUNT, MAX_SLOT_QUEUE, MessageType, NULL_ID, ObjectType, PacketType, ProtocolError, ShortcutKind, writeQuest,
 } from '@flyffweb/protocol';
 import type {
@@ -816,6 +816,8 @@ function writeBanks(w: ArWriter, banks: readonly (readonly InventoryItem[])[]): 
  *
  * 2026-11-09 (pets M0): with `own.petSlot` or `options.banks`, the script goes on with the three banks (`banks`, empty
  * by default) and `dwPetId` (`own.petSlot`, or `NULL_ID`), and ends there.
+ * 2026-11-11 (honour window): with `own.honorCounts` too, it goes on with three pockets not there, `m_dwMute` 0 and the
+ * counts, and ends there.
  */
 export function writeAddSelf(
   objectId: number, p: AddedMover,
@@ -868,9 +870,15 @@ export function writeAddSelf(
     .u8(0).u8(0).u8(0) // m_nAttackResistLeft, m_nAttackResistRight, m_nDefenseResist
     .i64(own.angelExp ?? 0n).i32(own.angelLevel ?? 0); // m_nAngelExp, m_nAngelLevel (__VER >= 8; 2026-11-10, Summon Angel)
   writeInventory(w, own.inventory, player.equipmentObjectIds);
-  if (own.petSlot !== undefined || options.banks !== undefined) {
+  if (own.petSlot !== undefined || options.banks !== undefined || own.honorCounts !== undefined) {
     writeBanks(w, options.banks ?? []);
     w.u32(own.petSlot ?? NULL_ID); // dwPetId (__VER >= 9, __PET_0410)
+  }
+  if (own.honorCounts !== undefined) {
+    // 2026-11-11 (honour window): three pockets not there, m_dwMute, the counts (ObjSerializeOpt.cpp:604-634)
+    if (own.honorCounts.length !== MAX_HONOR_TITLE) throw new Error(`the own character carries ${MAX_HONOR_TITLE} honour counts`);
+    w.u8(0).u8(0).u8(0).u32(0);
+    for (const count of own.honorCounts) w.i32(count);
   }
   return scripted(objectId, MessageType.ADD_OBJ, w);
 }

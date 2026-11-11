@@ -1,5 +1,6 @@
 import { BANK_READERS } from './bank';
 import { LORD_READERS } from './lord';
+import { HONOR_READERS } from './honor';
 import { POST_READERS } from './post';
 import type { MessageReader } from '../bundle';
 import { MessageType } from '../constants';
@@ -231,4 +232,6 @@ export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
     ...POST_READERS,
     // 2026-11-11: the Lord system (world/lord.ts)
     ...LORD_READERS,
+    // 2026-11-11: the honour titles (world/honor.ts)
+    ...HONOR_READERS,
   ]);

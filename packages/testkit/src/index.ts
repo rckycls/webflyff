@@ -61,3 +61,5 @@ export {
   writeGuildContribution, writeGuildInvite, writeGuildLogo, writeGuildNotice, writeGuildPenya, writeGuildRealPenya,
   writeSetGuild, writeSetWar,
 } from './guild';
+// 2026-11-11: the honour titles
+export { honorCounts, writeHonorChange, writeHonorList } from './honor';

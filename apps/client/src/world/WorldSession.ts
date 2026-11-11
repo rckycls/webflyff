@@ -1,7 +1,7 @@
 import {
   ArReader, CloseCode, MessageType, NULL_ID, PacketType, ProtocolError, WORLD_READERS, decodeLoginMessage, decodeWorldPacket,
   encodeAddAppletTaskBar, encodeAddItemTaskBar, encodeDestPos, encodeRemoveAppletTaskBar, encodeDoUseSkillPoint, encodeEndSkillQueue, encodeGetDestObj, encodeJoin,
-  encodeMeleeAttack, encodeModifyStatus, encodePing, encodePlayerBehavior, encodePlayerCorr, encodePlayerMoved,
+  encodeHonorTitleChange, encodeMeleeAttack, encodeModifyStatus, encodePing, encodePlayerBehavior, encodePlayerCorr, encodePlayerMoved,
   encodePlayerSetDestObj, encodePreJoin, encodeRemoveItemTaskBar, encodeRevivalToLodestar, encodeSetTarget,
   encodeSkillTaskBar, encodeUseSkill, encodeWorldKeepAlive, readBundle,
   encodeUseItem, encodeEquipItem, encodeMoveItem, encodeDropItem, encodeRevival, encodeChat,
@@ -278,6 +278,8 @@ export class WorldSession {
   sendBankMail(bytes: Uint8Array): void { this.playingCache()?.send(bytes); }
   /** 2026-11-11: a Lord system packet (world/lord.ts's encoders). */
   sendLord(bytes: Uint8Array): void { this.playingCache()?.send(bytes); }
+  /** 2026-11-11: HONOR_CHANGE_REQ (`SendReqHonorTitleChange`, DPClient.cpp:17235-17240): the title to show, -1 for none. */
+  sendHonorTitleChange(honor: number): void { this.playingCache()?.send(encodeHonorTitleChange(honor)); }
   private ownPlayerId(): number { return this.entry.character.playerId; }
   readonly stats: SessionStats = { bundles: 0, indexed: 0, skipped: 0, mismatched: 0, unknownPackets: 0, droppedEvents: 0 };
   private phase: Phase = 'opening';

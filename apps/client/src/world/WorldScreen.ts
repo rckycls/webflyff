@@ -142,6 +142,7 @@ import { TeleporterWindow } from './hud/teleporterWindow';
 import { HeavenTowerWindow } from './hud/heavenTowerWindow';
 import { LORD_ENTRIES, LordHud } from './lord/lordHud';
 import { LordBook } from './lord/lordBook';
+import { HonorBook } from './honor/honorBook';
 import { isArena } from './combat/arena';
 import { formatDefinedText } from './hud/messages';
 import { ItemUse } from './items/itemUse';
@@ -560,6 +561,8 @@ export class WorldScreen {
   private readonly guildBook = new GuildBook();
   /** 2026-11-11: the Lord system's state (lord/lordBook.ts), from the JOIN's LORD snapshot on, whatever HUD there is. */
   private readonly lordBook = new LordBook(() => this.entry.character.playerId, (id) => this.playerData.peek(id)?.name ?? '');
+  /** 2026-11-11: the earned honour titles (honor/honorBook.ts, `CTitleManager::m_vecEarned`), made with the game data. */
+  private honorBook: HonorBook | undefined;
   private readonly guildEvents: GuildEvent[] = [];
   private guildHud: GuildHud | undefined;
   private dialog: DialogWindow | undefined;
@@ -935,6 +938,8 @@ export class WorldScreen {
         this.lordHud?.notify(notices);
         if (value.type !== 'lordSkillUse') continue;
       }
+      // 2026-11-11: the own honour counts (OnHonorListAck, DPClient.cpp:17242-17278): a word for each title newly earned
+      if (value.type === 'honorList') { this.onHonorList(value.counts); continue; }
       // 2026-11-10: a `/say` line (OnSay, DPClient.cpp:11911-12074)
       if (value.type === 'say') { this.friendHud?.onSay(value); continue; }
       // 2026-11-10: the player trade's snapshots (trade/tradeState.ts), and the asked side's refusals (OnBlock gu 3, 4, 5, 8)
@@ -1101,7 +1106,15 @@ export class WorldScreen {
       // 2026-11-10: a seller's title from ADD_OBJ (DPClient.cpp:1356-1359), and its balloon gone with it
       if (value.type === 'addMover') this.personalShop?.added(value.mover);
       else if (value.type === 'delObj') this.personalShop?.removed(objectId);
+      // 2026-11-11: the own ADD_OBJ's honour counts make the earned list again, without a word (ObjSerializeOpt.cpp:612-634)
+      const honorCounts = value.type === 'addMover' && value.mover.player?.self === true ? value.mover.player.own?.honorCounts : undefined;
+      if (honorCounts !== undefined) {
+        this.honors()?.load(honorCounts);
+        this.refreshHonor();
+      }
       world.apply(objectId, value, joining);
+      // 2026-11-11: a player's title changed (OnHonorChangeAck): its name tag again
+      if (value.type === 'honorChange') this.recolorTags();
       this.skillUse?.onMessage(objectId, value, world.self());
       this.skillWindow?.onMessage(objectId, value, this.own);
       if (value.type === 'setPos' || value.type === 'setPosAngle') {
@@ -1607,6 +1620,8 @@ export class WorldScreen {
       this.hudArt!, this.data!.texts, (counts) => this.session.sendModifyStatus(counts), doc,
     );
     this.characterWindow = characterWindow;
+    // 2026-11-11: the Fame/Master page's OK (CWndHonor::OnChildNotify, WndField.cpp:4159-4165)
+    characterWindow.onHonorChange = (honor) => this.session.sendHonorTitleChange(honor);
     const reviveWindow = new ReviveWindow(this.hudArt!, this.data!.texts, () => this.session.sendRevivalToLodestar(), doc);
     this.reviveWindow = reviveWindow;
     reviveWindow.onStand = () => this.itemUse!.revive();
@@ -3451,6 +3466,38 @@ export class WorldScreen {
     if (own === undefined || characterWindow === undefined) return;
     characterWindow.toggle();
     if (characterWindow.frame.isOpen) characterWindow.update(own, this.entry, performance.now());
+    // 2026-11-11: the Fame/Master page's list, made as the window is (CWndHonor::OnInitialUpdate, WndField.cpp:4088-4095)
+    this.refreshHonor();
+  }
+
+  /** 2026-11-11: the honour book, made once the game data is there (the titles' needs and texts). */
+  private honors(): HonorBook | undefined {
+    const data = this.data;
+    if (data === undefined) return undefined;
+    this.honorBook ??= new HonorBook(data.honorNeeds, data.honorTitles);
+    return this.honorBook;
+  }
+
+  /**
+   * 2026-11-11: HONOR_LIST_ACK (`OnHonorListAck`, DPClient.cpp:17242-17278): each title newly earned says
+   * TID_GAME_GET_TITLE in its colour (`PutString`), and the open Character window's list is made again.
+   */
+  private onHonorList(counts: readonly number[]): void {
+    const book = this.honors();
+    if (book === undefined) return;
+    const entry = this.data?.texts.get('TID_GAME_GET_TITLE');
+    for (const title of book.apply(counts)) {
+      if (entry !== undefined && entry.text !== '') this.hud?.messages.add(formatText(entry.text, [title.title]), entry.color);
+    }
+    this.refreshHonor();
+  }
+
+  /** 2026-11-11: `m_wndHonor.RefreshList()` while the Character window is open: the earned titles, the own `m_nHonor`. */
+  private refreshHonor(): void {
+    const window = this.characterWindow;
+    const book = this.honorBook;
+    if (window === undefined || book === undefined || !window.frame.isOpen) return;
+    window.setHonor(book.earned, this.world?.self()?.added.player?.honor ?? -1);
   }
 
   /** Opens the revive window, unless it is open (`CWndRevival`, Escape when dead, `WndManager.cpp:3311-3318`). */

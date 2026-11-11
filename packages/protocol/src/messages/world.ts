@@ -4,6 +4,8 @@ import { readPostRequestPacket } from '../world/post';
 import type { PostRequestPacket } from '../world/post';
 import { readLordRequestPacket } from '../world/lord';
 import type { LordRequestPacket } from '../world/lord';
+import { readHonorRequestPacket } from '../world/honor';
+import type { HonorRequestPacket } from '../world/honor';
 import { ArReader } from '../ar/ArReader';
 import { DPID_UNKNOWN, MessageType, PacketType } from '../constants';
 import type { Vec3 } from '../constants';
@@ -360,6 +362,8 @@ export type WorldPacket =
   | PostRequestPacket
   // 2026-11-11: the Lord system's packets the browser sends (world/lord.ts)
   | LordRequestPacket
+  // 2026-11-11: the honour title the browser asks for (world/honor.ts)
+  | HonorRequestPacket
   | { type: 'unknown'; packetType: number };
 
 /**
@@ -734,6 +738,9 @@ function decodeClientPacket(r: ArReader): WorldPacket {
       // 2026-11-11: the Lord system's (world/lord.ts)
       const lord = readLordRequestPacket(packetType, r);
       if (lord !== null) { r.expectEnd(); return lord; }
+      // 2026-11-11: the honour window's (world/honor.ts)
+      const honor = readHonorRequestPacket(packetType, r);
+      if (honor !== null) { r.expectEnd(); return honor; }
       return { type: 'unknown', packetType };
     }
   }

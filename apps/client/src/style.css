@@ -1274,6 +1274,7 @@ fieldset:disabled .btn {
    counts and buttons, placed by the script as CWndCharInfo draws them */
 .hud-char-tab,
 .hud-char-tab > div,
+.hud-char-strip > div,
 .hud-char-page {
   position: absolute;
 }
@@ -1290,6 +1291,37 @@ fieldset:disabled .btn {
   line-height: 12px;
   white-space: nowrap;
 }
+
+/* 2026-11-11: each tab's title a button over its share of the strip (CWndTabCtrl::OnLButtonDown), and the Fame/Master
+   page (CWndHonor): the list's rows grey, orange under the mouse, the chosen one red (m_nSelectColor, WndField.cpp:4094) */
+.hud-char-tab-title {
+  position: absolute;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0 0 0 2px;
+  border: 0;
+  background: none;
+  font: inherit;
+  line-height: 12px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.hud-honor-list,
+.hud-honor-rows { position: absolute; }
+.hud-honor-rows { overflow-x: hidden; overflow-y: auto; scrollbar-width: none; }
+.hud-honor-rows::-webkit-scrollbar { display: none; }
+.hud-honor-rows > [role='option'] {
+  height: 15px;
+  line-height: 15px;
+  overflow: hidden;
+  white-space: nowrap;
+  color: rgb(64, 64, 64);
+  cursor: pointer;
+}
+.hud-honor-rows > [role='option']:hover { color: rgb(255, 128, 0); }
+.hud-honor-rows > [aria-selected='true'],
+.hud-honor-rows > [aria-selected='true']:hover { color: rgb(255, 0, 0); }
 
 /* A count's box (m_editStrCount ...): the page's picture draws the box, the count is typed over it. Not the lobby's field
    (input[type='text']): its text is 16 px, as iOS zooms the page into a field of less, drawn three quarters of its size
@@ -2111,6 +2143,23 @@ fieldset:disabled .btn {
 .hud-character-landscape .hud-char-text { height: 18px; line-height: 18px; }
 .hud-character-landscape .hud-char-rule { position: absolute; background: linear-gradient(#888, #ddd); pointer-events: none; }
 .hud-character-landscape .hud-char-count { background: linear-gradient(#aaa, #eee 45%, #ddd) !important; border-radius: 8px !important; }
+/* 2026-11-11: the phone's tabs 46 px tall, and its Fame/Master page: rows of 46 px in 16 px words, OK a plain 46 px button
+   (the 480 x 320 window is drawn at about 0.9 on a Pixel 7 held sideways: 46 px stays over 40, 16 px over 14) */
+.hud-character-landscape .hud-char-tab-title { padding: 0 0 0 10px; line-height: 46px; font-size: 16px; }
+.hud-character-landscape .hud-honor-list { border-radius: 6px; background: #fffaf6; box-shadow: inset 0 0 0 1px #d8c8b8; }
+.hud-character-landscape .hud-honor-list > :not(.hud-honor-rows) { display: none; }
+.hud-character-landscape .hud-honor-rows { touch-action: pan-y; overscroll-behavior: contain; }
+.hud-character-landscape .hud-honor-rows > [role='option'] {
+  height: 46px; line-height: 46px; padding: 0 12px; font-size: 16px; text-overflow: ellipsis; border-bottom: 1px solid #ecdccf;
+}
+.hud-character-landscape .hud-honor-rows > [aria-selected='true'] { background: rgba(240, 0, 0, 0.12); }
+.hud-character-landscape .hud-honor-empty { width: 276px; height: auto; font-size: 16px; line-height: 20px; white-space: normal; }
+.hud-character-landscape .hud-picture-button[data-button='honor-ok'] {
+  box-sizing: border-box; border: 1px solid #b07d5c; border-radius: 4px; background: linear-gradient(#fff7ef, #ecd2bd) !important;
+  color: #3a2414; font: 16px/44px Arial, sans-serif; text-align: center;
+}
+.hud-character-landscape .hud-picture-button[data-button='honor-ok']::after { content: attr(aria-label); }
+.hud-character-landscape .hud-picture-button[data-button='honor-ok']:disabled { opacity: 0.5; }
 .hud-character-landscape > .hud-window-title,
 .hud-skills-landscape > .hud-window-title { font-size: 18px; font-weight: bold; }
 .hud-skills-landscape .hud-skills-heading,

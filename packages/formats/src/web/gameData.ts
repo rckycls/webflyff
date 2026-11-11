@@ -276,6 +276,12 @@ export type WebNameColors = PkColors;
 export type WebHonorTitles = Record<string, string>;
 
 /**
+ * 2026-11-11 (honour window): honour id (a decimal string) to the count that earns the title (`honorList.txt`'s fourth
+ * column, what `CTitleManager::GetNeedCount( id, -1 )` returns, `Source/_Common/honor.cpp:314-361`).
+ */
+export type WebHonorNeeds = Record<string, number>;
+
+/**
  * World id (a decimal string, the `WI_*` value the world server names a character's world by) to the web folder name of
  * that world: `webName` of the `m_szFileName` World.inc gives it (`CWorldMng::Open`, worldmng.cpp:206, opens the folder of
  * that name under `World/`), which is the folder the worlds stage writes `worlds/<name>/manifest.json` in. It lists every
@@ -528,6 +534,12 @@ export interface WebPets {
 
 /** 2026-11-09: the raised pets' table, a `WebPets`. Optional: not one of GAME_DATA_KEYS. */
 export const PETS_KEY = 'data/pets.json';
+
+/**
+ * 2026-11-11: the honour titles' needs, a `WebHonorNeeds`. Optional: not one of GAME_DATA_KEYS, so game files converted
+ * before it still load (the honour window then lists no title).
+ */
+export const HONOR_NEEDS_KEY = 'data/honorNeeds.json';
 
 /** The logical keys of the catalogs in the asset index. */
 export const GAME_DATA_KEYS = {
