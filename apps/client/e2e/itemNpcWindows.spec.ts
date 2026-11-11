@@ -261,6 +261,8 @@ test('the GM’s /ResistItem opens its window; with an item in, "/ResistItem 1 1
   const chat = page.locator(phone ? '.hud-chat' : '.hud-neuz-chat');
   const input = chat.getByRole('textbox', { name: 'Chat message' });
   const say = async (line: string): Promise<void> => {
+    // the phone's chat closes after each line (chatWindow.ts): its Chat button opens it again
+    if (phone && !(await input.isVisible())) await page.getByRole('button', { name: 'Chat', exact: true }).tap();
     if (!(await input.isVisible()) || !(await input.evaluate((el) => el === document.activeElement))) {
       if (phone) await input.tap(); else await page.keyboard.press('Enter');
     }
