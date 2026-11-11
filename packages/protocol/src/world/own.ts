@@ -256,9 +256,10 @@ export function readInventoryItem(r: ArReader, slotId?: number): InventoryItem {
   r.u32(); // m_liSerialNumber (SERIALNUMBER, a DWORD: _Network/CmnHdr.h:88)
   r.string(ITEM_TEXT_BUFFER); // ReadString( m_szItemText, 32 )
   const count = r.i16(); // m_nItemNum (short, :92)
-  r.u8(); // m_nRepairNumber (BYTE, :93)
-  r.i32(); // m_nHitPoint (int, :94)
-  r.i32(); // m_nRepair (int, :95)
+  // 2026-11-11: kept for the Repair window (SendRepairItem's check, DPClient.cpp:14167-14169)
+  const repairNumber = r.u8(); // m_nRepairNumber (BYTE, :93)
+  const hitPoint = r.i32(); // m_nHitPoint (int, :94)
+  const repair = r.i32(); // m_nRepair (int, :95)
   const flag = r.u8(); // m_byFlag (BYTE, :96)
   const abilityOption = r.i32(); // m_nAbilityOption (int, :97)
   r.u32(); // m_idGuild (DWORD, :98)
@@ -278,6 +279,7 @@ export function readInventoryItem(r: ArReader, slotId?: number): InventoryItem {
   const transformVisPet = r.i32() !== 0; // m_bTranformVisPet (BOOL; __VER >= 15, __PETVIS, :131)
   return {
     objectId, itemId, count, ...(flag ? { flag } : {}), ...(charged ? { charged } : {}),
+    ...(repairNumber !== 0 ? { repairNumber } : {}), ...(hitPoint !== 0 ? { hitPoint } : {}), ...(repair !== 0 ? { repair } : {}),
     // what the item tooltip shows, when there is something to show (2026-11-05)
     ...(abilityOption !== 0 ? { abilityOption } : {}), ...(resist !== 0 ? { resist } : {}),
     ...(resistOption !== 0 ? { resistOption } : {}), ...(piercing.length > 0 ? { piercing } : {}),

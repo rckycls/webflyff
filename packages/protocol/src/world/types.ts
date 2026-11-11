@@ -385,6 +385,13 @@ export interface InventoryItem {
   count: number;
   flag?: number;
   charged?: number;
+  /**
+   * 2026-11-11 (the Repair window): `m_nRepairNumber`, `m_nHitPoint` (the item's endurance left) and `m_nRepair` (the
+   * times repaired), each absent when 0 (`CItemElem::Serialize`, ObjSerialize.cpp:93-95).
+   */
+  repairNumber?: number;
+  hitPoint?: number;
+  repair?: number;
   /** `m_nAbilityOption`: the upgrade, the +N after the name. */
   abilityOption?: number;
   /** `m_bItemResist`: the element, a `SAI79::ePropType` (1 fire, 2 water, 3 electricity, 4 wind, 5 earth). */

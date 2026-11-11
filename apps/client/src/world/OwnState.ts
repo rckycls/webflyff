@@ -1071,6 +1071,10 @@ export class OwnState {
 }
 
 /** `UI_*` (`_Common/Mover.h:62-80`): what an UPDATE_ITEM changes on an item. */
+/** 2026-11-11 (the Repair window): the endurance left, the repair number, the times repaired. */
+const UI_HP = 1;
+const UI_RN = 2;
+const UI_REPAIR_NUM = 12;
 const UI_AO = 3;
 const UI_RAO = 4;
 const UI_IR = 5;
@@ -1116,6 +1120,11 @@ function pierced(list: readonly number[] | undefined, value: number): number[] |
  */
 function itemUpdated(item: InventoryItem, param: number, value: number): InventoryItem {
   switch (param) {
+    // 2026-11-11: the repair's answer (`CMover::UpdateItem`, MoverParam.cpp:3886-3906): the endurance, the times repaired,
+    // and the repair number (kept at 100 once there, the value cut to 100)
+    case UI_HP: return withField(item, 'hitPoint', value | 0);
+    case UI_REPAIR_NUM: return withField(item, 'repair', value | 0);
+    case UI_RN: return (item.repairNumber ?? 0) >= 100 ? item : withField(item, 'repairNumber', Math.min(value, 100));
     case UI_AO: return withField(item, 'abilityOption', Math.min(value, MAX_UPGRADE));
     case UI_RAO: return withField(item, 'resistOption', Math.min(value, MAX_UPGRADE));
     case UI_IR: return withField(item, 'resist', value & 0xff);

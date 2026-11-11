@@ -505,14 +505,15 @@ describe('ADD_OBJ (OnAddObj)', () => {
         .toMatchObject({ type: 'addMover', mover: starter });
     }
     // The same inventory written by hand, every field as `CItemElem::Serialize` stores it, with the row's `m_apIndex`,
-    // object indexes and hit points: the reader keeps the same three values of each item.
+    // object indexes and hit points: the reader keeps the same three values of each item, and (2026-11-11, the Repair
+    // window) the endurance left, `m_nHitPoint`.
     const byHand = selfFields(newCharacter, { equipment: STARTER_EQUIPMENT, extras: STARTER_EXTRAS });
     const own = ownOf(readOne(PLAYER, byHand));
     expect(own?.inventoryError).toBeNull();
     expect(own?.inventory).toEqual([
-      { objectId: 0, itemId: 502, count: 1 }, { objectId: 1, itemId: 2801, count: 1 },
-      { objectId: 2, itemId: 4805, count: 5 }, { objectId: 42, itemId: 506, count: 1 },
-      { objectId: 43, itemId: 510, count: 1 }, { objectId: 44, itemId: 21, count: 1 },
+      { objectId: 0, itemId: 502, count: 1, hitPoint: 9000000 }, { objectId: 1, itemId: 2801, count: 1 },
+      { objectId: 2, itemId: 4805, count: 5 }, { objectId: 42, itemId: 506, count: 1, hitPoint: 5850000 },
+      { objectId: 43, itemId: 510, count: 1, hitPoint: 4500000 }, { objectId: 44, itemId: 21, count: 1, hitPoint: 7200000 },
       { objectId: 45, itemId: 2800, count: 3 },
     ]);
     // An empty inventory (`chSize` 0) is [], not null.

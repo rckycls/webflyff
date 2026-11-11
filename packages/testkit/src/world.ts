@@ -754,7 +754,7 @@ export function writeItemContainer(w: ArWriter, items: readonly InventoryItem[],
 export function writeItemElem(w: ArWriter, item: InventoryItem): void {
   w.u32(item.objectId).u32(item.itemId).u32(0).string('') // m_dwObjId, m_dwItemId, m_liSerialNumber, m_szItemText
     .i16(item.count) // m_nItemNum (short)
-    .u8(0).i32(0).i32(0) // m_nRepairNumber, m_nHitPoint, m_nRepair
+    .u8(item.repairNumber ?? 0).i32(item.hitPoint ?? 0).i32(item.repair ?? 0) // m_nRepairNumber, m_nHitPoint, m_nRepair
     // what the item tooltip shows (2026-11-05): m_byFlag, m_nAbilityOption, m_idGuild; m_bItemResist,
     // m_nResistAbilityOption, m_nResistSMItemId
     .u8(item.flag ?? 0).i32(item.abilityOption ?? 0).u32(0)

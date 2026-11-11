@@ -48,7 +48,7 @@ describe('native inventory snapshots', () => {
   it('reads a ground CItem and CREATEITEM with separate stack arrays', () => {
     const w = new ArWriter().u8(4).u32(2800).u8(4).u32(2800).u16(100).vec3([10, 2, 20]).i16(900).u32(123).bytes(item());
     expect(read(0xf0, w.toBytes())).toEqual({ type: 'addItem', item: {
-      index: 2800, scale: 1, pos: [10, 2, 20], angle: 90, item: { objectId: 6, itemId: 2800, count: 3 },
+      index: 2800, scale: 1, pos: [10, 2, 20], angle: 90, item: { objectId: 6, itemId: 2800, count: 3, hitPoint: 100 },
     } });
     expect(read(3, new ArWriter().u8(0).bytes(item()).u8(2).u8(6).u8(8).i16(2).i16(1).toBytes()))
       .toMatchObject({ type: 'createItem', stacks: [{ objectId: 6, count: 2 }, { objectId: 8, count: 1 }] });
