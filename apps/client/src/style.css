@@ -3594,7 +3594,12 @@ fieldset:disabled .btn {
   .hud-smelt-safety [data-control="WIDC_BUTTON_PLUS"] { grid-area: 2 / 4; justify-self: start; }
   .hud-smelt-safety [data-control="WIDC_EDIT_MAX_GRADE"] { grid-area: 2 / 4; justify-self: center; width: 44px !important; height: 32px !important; }
   .hud-smelt-safety [data-control="WIDC_BUTTON_MINUS"] { grid-area: 2 / 4; justify-self: end; }
-  .hud-smelt-safety :is([data-control="WIDC_BUTTON_PLUS"], [data-control="WIDC_BUTTON_MINUS"]) { width: 40px !important; height: 36px !important; }
+  .hud-smelt-safety :is([data-control="WIDC_BUTTON_PLUS"], [data-control="WIDC_BUTTON_MINUS"]) {
+    box-sizing: border-box; width: 40px !important; height: 36px !important; border: 1px solid #b07d5c; border-radius: 4px;
+    background: linear-gradient(#fff7ef, #ecd2bd) !important; color: #3a2414; font: bold 16px/34px Arial, sans-serif; text-align: center;
+  }
+  .hud-smelt-safety [data-control="WIDC_BUTTON_PLUS"]::after { content: '+'; }
+  .hud-smelt-safety [data-control="WIDC_BUTTON_MINUS"]::after { content: '\2212'; }
   .hud-smelt-safety :is([data-control^="MATERIAL"], [data-control^="SCROLL1_"], [data-control^="SCROLL2_"]) {
     grid-row: var(--safety-row); width: 44px !important; height: 44px !important; background-position: 6px 6px; border-radius: 4px;
     box-shadow: inset 0 0 0 1px #dba98c;
