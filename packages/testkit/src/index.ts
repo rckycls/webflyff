@@ -48,6 +48,12 @@ export {
 } from './bank';
 export { writeMail, writeMailBox, writeMailBoxReq, writeModifyMode, writeRemoveMail } from './post';
 export { writeAngelInfo, writeFlyffEvent, writeSetLocalEvent } from './angel'; // 2026-11-10: Summon Angel
+// 2026-11-11: the Lord system
+export {
+  STOCK_ELECTION_PROPERTY, lordElection, writeElectionAddDeposit, writeElectionBeginCandidacy, writeElectionBeginVote,
+  writeElectionEndVote, writeElectionIncVote, writeElectionSetPledge, writeLord, writeLordEventCreate, writeLordEventInitialize,
+  writeLordEventTick, writeLordSkillTick, writeLordSkillUse,
+} from './lord';
 export {
   directAddGuildMember, directChgMaster, directGuild, directGuildChat, directGuildClass, directGuildError,
   directGuildMemberLevel, directGuildMemberLogin, directGuildNickname, directGuildSetName, directRemoveGuildMember,

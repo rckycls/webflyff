@@ -23,6 +23,7 @@ import { PARTS_RIDE } from './sim/constants';
 import type { FlightRide } from './sim/flight';
 import type { SimMover } from './sim/moverRules';
 import { Dst, FISTS, NO_ADJUST, attackSpeed, maxHitPoint, monsterMaxHitPoint } from './sim/params';
+import { lordSkill } from './lord/lordData';
 
 const f32 = Math.fround;
 
@@ -495,6 +496,13 @@ export class WorldState {
       case 'createSfxObj': // OnCreateSfxObj (:4038) plays at an absolute position for an object not in view too
         this.createSfxObj(objectId, message);
         return;
+      case 'lordSkillUse': { // 2026-11-11: OnLordSkillUse (:17870-17901): the skill's effects at the Lord and at the target
+        const skill = lordSkill(message.skill);
+        const target = this.moverByPlayerId(message.targetId);
+        if (skill?.srcSfx != null && this.byId.has(objectId)) this.combat({ kind: 'sfxObj', xi: skill.srcSfx, pos: null, moverId: objectId });
+        if (skill?.dstSfx != null && target !== undefined) this.combat({ kind: 'sfxObj', xi: skill.dstSfx, pos: null, moverId: target.objectId });
+        return;
+      }
       default:
         break;
     }

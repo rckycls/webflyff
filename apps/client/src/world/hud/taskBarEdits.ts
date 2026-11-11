@@ -77,6 +77,11 @@ export type Carried =
   | { from: 'skills'; skillIndex: number }
   /** Piece 7 M4: a party skill of the party window's Skill tab (`CWndPartySkill::OnMouseMove`, `WndParty.cpp:938-965`). */
   | { from: 'partySkills'; skill: number }
+  /**
+   * 2026-11-11: a Lord skill of the Lord Skill window (`CWndLordSkill::OnMouseMove`, `WndLord.cpp:827-848`): `SHORTCUT_LORDSKILL`,
+   * `m_dwId` the skill once `OnDropIcon` takes the window's one off (`WndTaskBar.cpp:1650-1653`), its name as the text.
+   */
+  | { from: 'lordSkills'; skill: number }
   | { from: 'item'; bar: number; slot: number }
   | { from: 'queue'; slot: number }
   /**
@@ -154,6 +159,12 @@ export class TaskBarEdits {
       const skill = this.bar.data.partySkills?.get(carried.skill);
       return skill === undefined ? null : {
         kind: ShortcutKind.SKILL, id: carried.skill, type: 2, index: carried.skill, userId: 0, data: 0, text: skill.name,
+      };
+    }
+    if (carried.from === 'lordSkills') {
+      const skill = this.bar.data.lordSkills?.get(carried.skill);
+      return skill === undefined ? null : {
+        kind: ShortcutKind.LORDSKILL, id: carried.skill, type: 0, index: 0, userId: 0, data: 0, text: skill.name,
       };
     }
     if (carried.from === 'chat') {
@@ -270,6 +281,16 @@ export class TaskBarEdits {
       if (empty && queueCount > 0) this.removeSkillQueue(queueCount - 1);
       else if (!empty) this.removeSkillQueue(i);
     }
+  }
+
+  /**
+   * 2026-11-11: every shortcut of `kind` off the bars and the applet row, each with its REMOVEITEMTASKBAR or REMOVEAPPLETTASKBAR
+   * (`CCElection::DoEndVoteComplete`, `Neuz/clord.cpp:176-199`, for the Lord skills of a player no longer the Lord).
+   */
+  removeKind(kind: number): void {
+    const { bars } = this.bar;
+    bars.items.forEach((row, bar) => row.forEach((shortcut, slot) => { if (shortcut.kind === kind) this.removeItemShortcut(bar, slot); }));
+    bars.applets.forEach((shortcut, i) => { if (shortcut.kind === kind) this.rightClickApplet(i); });
   }
 
   /** A right click on applet slot `i` (`OnRButtonUp`'s RECT_APPLET, `WndTaskBar.cpp:1476-1488`): emptied, REMOVEAPPLETTASKBAR. */

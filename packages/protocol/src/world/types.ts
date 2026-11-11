@@ -18,9 +18,10 @@ import type { VendorMessage } from './vendor';
 import type { GuildDirectMessage, GuildMessage } from './guild';
 import type { BankMessage } from './bank';
 import type { PostMessage } from './post';
+import type { LordMessage } from './lord';
 
 export type WorldMessage = ChatMessage | NpcMessage | ShopMessage | QuestMessage | PetMessage | FriendMessage | TradeMessage | VendorMessage
-  | GuildMessage | GuildDirectMessage | BankMessage | PostMessage
+  | GuildMessage | GuildDirectMessage | BankMessage | PostMessage | LordMessage
   | { type: 'profileStats'; values: number[] }
   | { type: 'addItem'; item: GroundItem }
   | { type: 'createItem'; itemType: number; item: InventoryItem; stacks: Array<{ objectId: number; count: number }> }
