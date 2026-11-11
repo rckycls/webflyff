@@ -5,7 +5,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { GAME_DATA_KEYS, ITEM_ETC_KEY, PETS_KEY, QUESTS_KEY, WORLD_NO_FLY_KEY } from '@flyffweb/formats';
+import { GAME_DATA_KEYS, HONOR_NEEDS_KEY, ITEM_ETC_KEY, PETS_KEY, QUESTS_KEY, WORLD_NO_FLY_KEY } from '@flyffweb/formats';
 import type {
   ModelElem,
   WebEffectsIndex,
@@ -507,6 +507,8 @@ const CONVERTED = [
 
 /** Every catalog of GAME_DATA_KEYS: the stage writes one file for each. */
 const CATALOGS = Object.keys(GAME_DATA_KEYS).length;
+/** The catalogs and the optional honour needs (2026-11-11), written whenever honorList.txt reads. */
+const WRITTEN = CATALOGS + 1;
 
 describe('the game-data stage', () => {
   let root: string;
@@ -620,7 +622,7 @@ describe('the game-data stage', () => {
     for (const key of Object.values(GAME_DATA_KEYS)) {
       expect(run.writer.pathOf(key), key).toMatch(/^data\/[a-zA-Z]+\.[0-9a-f]{10}\.json$/);
     }
-    expect(run.report.kinds.data).toMatchObject({ ok: CATALOGS, failed: 0 });
+    expect(run.report.kinds.data).toMatchObject({ ok: WRITTEN, failed: 0 });
 
     // movers: by index; a player body has no model; the speed is the table's; the fight columns are the table's too
     expect(await catalog<WebMover[]>(run, GAME_DATA_KEYS.movers)).toEqual([
@@ -698,6 +700,8 @@ describe('the game-data stage', () => {
       '0': 'Master Collector',
       '3': 'Taiga Hunter',
     });
+    // 2026-11-11: the optional needs of the same rows (GetNeedCount( id, -1 ))
+    expect(await catalog<Record<string, number>>(run, HONOR_NEEDS_KEY)).toEqual({ '0': 1440, '3': 15000 });
 
     // worlds: the id (the WI_* value) to the web folder name, webName of the file name World.inc gives it; the SetTitle
     // block adds nothing, and two ids may share a folder
@@ -1171,7 +1175,7 @@ describe('the game-data stage', () => {
     expect(run.report.failures[0]!.message).toContain('propSkillAdd.csv');
     expect(run.writer.pathOf(GAME_DATA_KEYS.skills)).toBeUndefined();
     expect(run.writer.pathOf(GAME_DATA_KEYS.itemProps)).toBeDefined();
-    expect(run.report.kinds.data).toMatchObject({ ok: CATALOGS - 1, failed: 1 });
+    expect(run.report.kinds.data).toMatchObject({ ok: WRITTEN - 1, failed: 1 });
 
     await client({ 'propSkillAdd.csv': script('SA_CLEANHIT_L01,SI_NOT_THERE,1') });
     const unknown = await runData();
@@ -1347,7 +1351,7 @@ describe('the game-data stage', () => {
     expect(run.writer.pathOf(GAME_DATA_KEYS.nameColors)).toBeUndefined();
     const written = [GAME_DATA_KEYS.movers, GAME_DATA_KEYS.items, GAME_DATA_KEYS.npcs, GAME_DATA_KEYS.honorTitles];
     for (const key of [...written, GAME_DATA_KEYS.worlds]) expect(run.writer.pathOf(key), key).toBeDefined();
-    expect(run.report.kinds.data).toMatchObject({ ok: CATALOGS - 1, failed: 1 });
+    expect(run.report.kinds.data).toMatchObject({ ok: WRITTEN - 1, failed: 1 });
   });
 
   it('a World.inc that cannot be read fails the worlds catalog with its name, the others are written', async () => {
@@ -1357,7 +1361,7 @@ describe('the game-data stage', () => {
     expect(run.report.failures[0]).toMatchObject({ kind: 'data', source: 'World.inc' });
     expect(run.writer.pathOf(GAME_DATA_KEYS.worlds)).toBeUndefined();
     expect(run.writer.pathOf(GAME_DATA_KEYS.honorTitles)).toBeDefined();
-    expect(run.report.kinds.data).toMatchObject({ ok: CATALOGS - 1, failed: 1 });
+    expect(run.report.kinds.data).toMatchObject({ ok: WRITTEN - 1, failed: 1 });
   });
 
   it('a combat table that cannot be read fails its own catalog, with the file it came from; the others are written', async () => {
@@ -1369,7 +1373,7 @@ describe('the game-data stage', () => {
     for (const key of [GAME_DATA_KEYS.itemProps, GAME_DATA_KEYS.jobs, GAME_DATA_KEYS.texts, GAME_DATA_KEYS.effectsIndex]) {
       expect(run.writer.pathOf(key), key).toBeDefined();
     }
-    expect(run.report.kinds.data).toMatchObject({ ok: CATALOGS - 1, failed: 1 });
+    expect(run.report.kinds.data).toMatchObject({ ok: WRITTEN - 1, failed: 1 });
   });
 
   it('a file missing from the packs fails its catalog with the resource name', async () => {
@@ -1378,6 +1382,7 @@ describe('the game-data stage', () => {
     expect(run.report.failures).toHaveLength(1);
     expect(run.report.failures[0]!.message).toContain('honorList.txt');
     expect(run.writer.pathOf(GAME_DATA_KEYS.honorTitles)).toBeUndefined();
+    expect(run.writer.pathOf(HONOR_NEEDS_KEY)).toBeUndefined(); // 2026-11-11: no second failure for the needs
     expect(run.writer.pathOf(GAME_DATA_KEYS.movers)).toBeDefined();
   });
 

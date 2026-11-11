@@ -3,6 +3,8 @@ import {
   ResPacks,
   loadStrings,
   readCharacterInc,
+  readHonorList,
+  readHonorNeeds,
   readHonorTitles,
   readModelIndex,
   readPkSetting,
@@ -910,6 +912,12 @@ describe('readHonorTitles', () => {
       [2, 'Knight Master'],
       [3, 'Taiga Hunter'],
     ]);
+  });
+
+  it('2026-11-11: gives each title its need (GetNeedCount( id, -1 )), the first row of a repeated id', () => {
+    expect([...readHonorNeeds(HONOR, DEFINES, STRINGS, 'honorList.txt')]).toEqual([[0, 1440], [1, 253], [2, 1], [3, 15000]]);
+    const text = script(row('7 HI_COUNT_CHECK HS_STR 5 IDS_TITLE_TXT_0002'), row('7 HI_COUNT_CHECK HS_STR 9 IDS_TITLE_TXT_0001'));
+    expect(readHonorList(text, DEFINES, STRINGS).get(7)).toEqual({ title: 'Strongman', need: 5 });
   });
 
   it('keeps the first title of a repeated id, as map::insert does, and leaves out id -1 (GetTitle gives NULL)', () => {

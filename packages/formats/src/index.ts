@@ -43,7 +43,8 @@ export { readPropQuest } from './inc/propQuest';
 export type { CharacterDef } from './inc/character';
 export { readPkSetting } from './inc/pkSetting';
 export type { PkColors } from './inc/pkSetting';
-export { readHonorTitles } from './inc/honorTitles';
+export { readHonorList, readHonorNeeds, readHonorTitles } from './inc/honorTitles';
+export type { HonorEntry } from './inc/honorTitles';
 export { readPropJob } from './inc/propJob';
 export type { JobProp } from './inc/propJob';
 export { readEtcJobs } from './inc/etcJobs';
@@ -100,7 +101,7 @@ export type { WebEffect, WebEffectPart } from './web/effect';
 export { UI_SHEETS_KEY } from './web/ui';
 export type { WebUiSheet, WebUiSheets } from './web/ui';
 export type { ModelBoxExtras, SkeletonExtras, SkeletonGrips } from './web/modelExtras';
-export { CHAT_KEY, GAME_DATA_KEYS, ITEM_ETC_KEY, PETS_KEY, ULTIMATE_KEY, WORLD_NO_FLY_KEY } from './web/gameData';
+export { CHAT_KEY, GAME_DATA_KEYS, HONOR_NEEDS_KEY, ITEM_ETC_KEY, PETS_KEY, ULTIMATE_KEY, WORLD_NO_FLY_KEY } from './web/gameData';
 export { textureExKey, textureExName } from './web/textureEx';
 export type {
   WebChat,
@@ -110,6 +111,7 @@ export type {
   WebEffectRef,
   WebEffectsIndex,
   WebExpRow,
+  WebHonorNeeds,
   WebHonorTitles,
   WebAccessory,
   WebItemEtc,
