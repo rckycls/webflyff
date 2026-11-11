@@ -46,7 +46,7 @@ weapon in its first slot (worn: "Please unequip the item first."; a premium elem
 in, a tap on a filled slot takes it out, slots 44 px, words 14 px, buttons 36 px words. The Safe Upgrade window (all four
 modes, Safe Element among them) is now such a panel too: before, the phone's bag covered it and its Start. Its body is a
 grid (the item, NOW and the goal with +/-, then the ten rows, then Start, Stop, Reset as words); a tap on a bag item puts it
-in, a tap on a cell takes the column's last one out. The ResistItem panel is short, so the phone's Chat stays free for the
+in, a tap on a cell takes the column's last one out; the bag it opened closes with it. The ResistItem panel is short, so the phone's Chat stays free for the
 next `/ResistItem`.
 
 **Protocol** (`world/upgrade.ts`): ULTIMATE_MAKEITEM, ULTIMATE_TRANSWEAPON, ULTIMATE_REMOVEGEM, PIERCINGREMOVE,
