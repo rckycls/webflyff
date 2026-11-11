@@ -2,6 +2,8 @@ import { readBankRequestPacket } from '../world/bank';
 import type { BankRequestPacket } from '../world/bank';
 import { readPostRequestPacket } from '../world/post';
 import type { PostRequestPacket } from '../world/post';
+import { readLordRequestPacket } from '../world/lord';
+import type { LordRequestPacket } from '../world/lord';
 import { ArReader } from '../ar/ArReader';
 import { DPID_UNKNOWN, MessageType, PacketType } from '../constants';
 import type { Vec3 } from '../constants';
@@ -356,6 +358,8 @@ export type WorldPacket =
   // 2026-11-10: the bank's and the post's packets the browser sends (world/bank.ts, world/post.ts)
   | BankRequestPacket
   | PostRequestPacket
+  // 2026-11-11: the Lord system's packets the browser sends (world/lord.ts)
+  | LordRequestPacket
   | { type: 'unknown'; packetType: number };
 
 /**
@@ -727,6 +731,9 @@ function decodeClientPacket(r: ArReader): WorldPacket {
       if (bank !== null) { r.expectEnd(); return bank; }
       const post = readPostRequestPacket(packetType, r);
       if (post !== null) { r.expectEnd(); return post; }
+      // 2026-11-11: the Lord system's (world/lord.ts)
+      const lord = readLordRequestPacket(packetType, r);
+      if (lord !== null) { r.expectEnd(); return lord; }
       return { type: 'unknown', packetType };
     }
   }

@@ -73,3 +73,4 @@ export * from './world/trade';
 export * from './world/guild';
 export * from './world/bank';
 export * from './world/post';
+export * from './world/lord';
