@@ -139,7 +139,8 @@ export class LordHud {
     // Lord info
     this.info.setText('WIDC_TEXT1', LORD_INFO_TEXT);
     this.info.button('WIDC_BUTTON1').addEventListener('click', () => this.info.close());
-    this.info.button('WIDC_LORD_SKILL').addEventListener('click', () => this.openSkills());
+    // the phone's way to the Lord Skill window: in the info window's place (both are panels in the middle)
+    this.info.button('WIDC_LORD_SKILL').addEventListener('click', () => { this.info.close(); if (!this.skills.isOpen) this.openSkills(); });
 
     // Bid
     this.tender.setText('WIDC_TEXT1', LORD_CANDIDATE_TEXT);

@@ -164,9 +164,9 @@ test('the election: bid, pledge and vote; then the Lord\'s info, event and skill
   if (isPhone()) {
     await chooseEntry(page, gateway, 101);
     await lordInfo.getByRole('button', { name: 'Lord Skill' }).tap();
-    await lordInfo.locator('.hud-window-close').tap();
+    await expect(lordInfo).toBeHidden();
   } else {
-    await page.locator('canvas').first().click({ position: { x: 5, y: 5 } }).catch(() => {});
+    await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
     await page.keyboard.press('l');
   }
   const skills = page.locator('.hud-lord-skill');
