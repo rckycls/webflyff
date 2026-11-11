@@ -111,9 +111,6 @@ test('quest window: V15\'s look in the middle; on a phone the frame\'s 0.7, the 
 });
 
 test('quest window: the tree scrolls, a row a wheel step on the desktop, by finger on a phone', async ({ page, isMobile }) => {
-  // OPEN (2026-11-11): on the phone project the synthesized touch scroll left scrollTop at 0; not yet known whether the
-  // page or the gesture is at fault. Remove this line once that is settled.
-  test.fixme(isMobile, 'touch scrolling of the quest tree not yet proven');
   await enter(page, MANY.map((id) => quest(id)));
   await openQuests(page, isMobile);
   const list = page.locator('.hud-quests');
@@ -124,11 +121,18 @@ test('quest window: the tree scrolls, a row a wheel step on the desktop, by fing
   expect(await tree.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
   const box = (await tree.boundingBox())!;
   if (isMobile) {
+    // a finger dragged up over the rows (touch events, as controls.spec.ts drives the joystick; CDP's
+    // synthesizeScrollGesture does not scroll an element inside this page, so it proves nothing either way)
     const session = await page.context().newCDPSession(page);
-    await session.send('Input.synthesizeScrollGesture', {
-      x: Math.round(box.x + box.width / 2), y: Math.round(box.y + box.height * 0.75), yDistance: -120, gestureSourceType: 'touch', speed: 400,
-    });
+    const x = Math.round(box.x + box.width / 2), y = Math.round(box.y + box.height * 0.75);
+    await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y, id: 1 }] });
+    for (let i = 1; i <= 8; i++) {
+      await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: y - i * 15, id: 1 }] });
+    }
+    await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
     await expect.poll(() => tree.evaluate((el) => el.scrollTop)).toBeGreaterThan(20);
+    // a drag over the rows opens no quest
+    await expect(page.locator('.hud-quest-detail')).toBeHidden();
     // the thumb follows the words
     await expect(list.locator('.quest-page .hud-res-scroll-thumb')).toBeVisible();
   } else {
