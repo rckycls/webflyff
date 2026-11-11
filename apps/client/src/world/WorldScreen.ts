@@ -2062,7 +2062,9 @@ export class WorldScreen {
       // 2026-11-10 (bank-mail): and into the open bank, or onto the mail being written; and in the Summon Angel window, where
       // the double-click would put it
       active: () => tradeHud.windowOpen || this.jewels?.isOpen === true || bankHud.isOpen || postHud.sending ||
-        this.summonAngel?.isOpen === true || this.itemNpc?.isOpen === true,
+        this.summonAngel?.isOpen === true || this.itemNpc?.isOpen === true ||
+        // 2026-11-11: and the Upgrade Specialist's Piercing and Safe Upgrade (Safe Element among them): a tap as the double-click
+        this.upgradeNpc?.safety.isOpen === true || this.upgradeNpc?.piercing.isOpen === true,
       tapItem: (id) => {
         if (tradeHud.windowOpen) tradeHud.tapItem(id);
         else if (bankHud.isOpen) bankHud.tapItem(id);
@@ -2071,6 +2073,7 @@ export class WorldScreen {
         else if (this.jewels?.isOpen === true) { if (!this.jewels.tapItem(id)) this.sayRefusal({ kind: 'say', tid: 'TID_SBEVE_NOTUSEITEM' }); }
         // 2026-11-11: and in the open item NPC window, where a drop would put it
         else if (this.itemNpc?.isOpen === true) { if (this.itemNpc.tapItem(id) === 'refused') this.sayRefusal({ kind: 'say', tid: 'TID_SBEVE_NOTUSEITEM' }); }
+        else if (this.upgradeNpc?.safety.isOpen === true || this.upgradeNpc?.piercing.isOpen === true) this.takeIntoUpgradeWindow(id);
         else tradeHud.tapItem(id);
       },
       tapPenya: () => { if (bankHud.isOpen && !tradeHud.windowOpen) bankHud.tapPenya(); else tradeHud.tapPenya(); },
