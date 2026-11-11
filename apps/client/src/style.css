@@ -3565,6 +3565,57 @@ fieldset:disabled .btn {
 .hud-remove-piercing [data-control^="WIDC_STATIC_PIERCING"][data-unused] { box-shadow: inset 0 0 0 999px rgba(240, 0, 0, 0.235); }
 .hud-repair-cell { position: absolute; width: 32px; height: 32px; }
 
+/* 2026-11-11: the phone's Safe Upgrade (Safe Element among its modes): a panel at the left beside the bag, as the jewel
+   windows, its body a grid: the item and NOW and the goal on top, then a row each of the ten (material, protection,
+   smelting, result), then Start, Stop and Reset as words; cells 44 px, words 14 px; a tap on a cell takes its item out. */
+@media (max-width: 1000px) and (pointer: coarse) {
+  .world:has(.hud-smelt-safety:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack) { visibility: hidden; }
+  .hud-smelt-safety {
+    left: 8px !important; top: 8px !important; transform: none !important; z-index: 60 !important;
+    width: calc(100% - var(--bag-window-width, 60%) - 28px) !important; min-width: 300px;
+    height: calc(100% - var(--hud-taskbar-height, 48px) - 16px) !important;
+    border-radius: 6px; background: repeating-linear-gradient(#fdf5ee 0 2px, #f6e6dc 2px 4px); box-shadow: inset 0 0 0 2px #dba98c, 0 2px 8px #0005;
+  }
+  .hud-smelt-safety > .hud-window-frame { display: none; }
+  .hud-smelt-safety > .hud-window-title { height: 26px !important; border-radius: 6px 6px 0 0; background: linear-gradient(#f7d8c4, #e2b394); font-size: 14px; }
+  .hud-smelt-safety > .hud-window-close { left: auto !important; right: 8px; }
+  .hud-smelt-safety > .hud-window-body {
+    left: 4px !important; top: 30px !important; width: calc(100% - 8px) !important; height: calc(100% - 34px) !important;
+    display: grid; grid-template-columns: 44px 44px 44px minmax(0, 1fr); grid-auto-rows: min-content; gap: 4px;
+    align-items: center; overflow-y: auto;
+  }
+  .hud-smelt-safety > .hud-window-body > * { position: relative !important; left: auto !important; top: auto !important; }
+  .hud-smelt-safety .hud-res-static-text { position: static !important; display: block; font-size: 14px; }
+  .hud-smelt-safety [data-control="WIDC_STATIC1"] { grid-area: 1 / 1 / 3 / 2; width: 44px !important; height: 44px !important; background-position: 6px 6px; }
+  .hud-smelt-safety [data-control="WIDC_STATIC1"] .hud-res-slot { left: 6px; top: 6px; }
+  .hud-smelt-safety [data-control="WIDC_TITLE_NOW_GRADE"] { grid-area: 1 / 2 / 2 / 4; width: auto !important; height: auto !important; }
+  .hud-smelt-safety [data-control="WIDC_NOW_GRADE"] { grid-area: 2 / 2 / 3 / 4; width: auto !important; height: auto !important; }
+  .hud-smelt-safety [data-control="WIDC_TITLE_MAX_GRADE"] { grid-area: 1 / 4; width: auto !important; height: auto !important; }
+  .hud-smelt-safety [data-control="WIDC_BUTTON_PLUS"] { grid-area: 2 / 4; justify-self: start; }
+  .hud-smelt-safety [data-control="WIDC_EDIT_MAX_GRADE"] { grid-area: 2 / 4; justify-self: center; width: 44px !important; height: 32px !important; }
+  .hud-smelt-safety [data-control="WIDC_BUTTON_MINUS"] { grid-area: 2 / 4; justify-self: end; }
+  .hud-smelt-safety :is([data-control="WIDC_BUTTON_PLUS"], [data-control="WIDC_BUTTON_MINUS"]) { width: 40px !important; height: 36px !important; }
+  .hud-smelt-safety :is([data-control^="MATERIAL"], [data-control^="SCROLL1_"], [data-control^="SCROLL2_"]) {
+    grid-row: var(--safety-row); width: 44px !important; height: 44px !important; background-position: 6px 6px; border-radius: 4px;
+    box-shadow: inset 0 0 0 1px #dba98c;
+  }
+  .hud-smelt-safety :is([data-control^="MATERIAL"], [data-control^="SCROLL1_"], [data-control^="SCROLL2_"]) .hud-res-slot { left: 6px; top: 6px; }
+  .hud-smelt-safety [data-control^="MATERIAL"] { grid-column: 1; }
+  .hud-smelt-safety [data-control^="SCROLL1_"] { grid-column: 2; }
+  .hud-smelt-safety [data-control^="SCROLL2_"] { grid-column: 3; }
+  .hud-smelt-safety [data-control^="RESULT"] { grid-row: var(--safety-row); grid-column: 4; width: 100% !important; height: 32px !important; background-size: 100% 100%; }
+  .hud-smelt-safety:not(:has([data-control^="SCROLL2_"])) [data-control^="RESULT"] { grid-column: 3 / 5; }
+  .hud-smelt-safety [data-control="WIDC_BUTTON_START"] { grid-row: 13; grid-column: 1 / 3; }
+  .hud-smelt-safety [data-control="WIDC_BUTTON_STOP"] { grid-row: 13; grid-column: 3 / 5; justify-self: start; }
+  .hud-smelt-safety [data-control="WIDC_BUTTON_RESET"] { grid-row: 13; grid-column: 4; justify-self: end; }
+  .hud-smelt-safety :is([data-control="WIDC_BUTTON_START"], [data-control="WIDC_BUTTON_STOP"], [data-control="WIDC_BUTTON_RESET"]) {
+    box-sizing: border-box; width: 84px !important; height: 36px !important; border: 1px solid #b07d5c; border-radius: 4px;
+    background: linear-gradient(#fff7ef, #ecd2bd) !important; color: #3a2414; font: 14px/34px Arial, sans-serif; text-align: center;
+  }
+  .hud-smelt-safety :is([data-control="WIDC_BUTTON_START"], [data-control="WIDC_BUTTON_STOP"], [data-control="WIDC_BUTTON_RESET"])::after { content: attr(aria-label); }
+  .hud-smelt-safety .hud-picture-button:disabled { opacity: 0.55; }
+}
+
 /* The phone: each a panel beside the bag as the jewel windows (.hud-jewel), its slots 44 px, its texts, labels and buttons
    across the panel, a tap on a bag item putting it in; the confirm boxes over the panel. */
 @media (max-width: 1000px) and (pointer: coarse) {

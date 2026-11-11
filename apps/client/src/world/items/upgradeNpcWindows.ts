@@ -82,6 +82,8 @@ export interface UpgradeNpcHost {
   sendPiercingSize(itemId: number, moonstoneId: number, protectId: number): void;
   sendSmeltSafety(itemId: number, materialId: number, scrollId: number, smeltingId: number): void;
   now(): number;
+  /** 2026-11-11: a phone, where a tap on a slot takes its item out (the desktop's double-click). */
+  mobile?(): boolean;
   ui: { art: UiArt; doc: Document; layer(): HTMLElement | null };
 }
 
@@ -386,6 +388,13 @@ export class SmeltSafetyWindow {
     for (const id of ['WIDC_TITLE_NOW_GRADE', 'WIDC_TITLE_MAX_GRADE', 'WIDC_NOW_GRADE']) window.control(id).classList.add('is-centred');
     this.window = window;
     this.wire(window);
+    // 2026-11-11: each row's place in the phone's grid (style.css: the header takes the first two rows)
+    for (let i = 0; i < SMELT_MAX; i++) {
+      for (const column of ['MATERIAL', 'SCROLL1_', 'SCROLL2_', 'RESULT']) {
+        if (column === 'SCROLL2_' && !rules.wide) continue;
+        window.control(`${column}${i}`).parentElement!.style.setProperty('--safety-row', String(i + 3));
+      }
+    }
     const layer = this.host.ui.layer();
     if (layer !== null) layer.append(window.element);
     this.target = null;
@@ -515,17 +524,22 @@ export class SmeltSafetyWindow {
     takeDrops(target, (id, shift) => this.take(id, shift));
     takeDrops(window.frame.body, (id, shift) => this.take(id, shift));
     // a double-click on the target slot takes it out, the rows reset (OnLButtonDblClk, :24249-24378)
-    target.ondblclick = () => {
+    const takeOut = (): void => {
       if (this.running || this.target === null) return;
       this.host.reserve(this.target, false);
       this.target = null;
       this.resetData();
       this.refresh();
     };
+    target.ondblclick = takeOut;
+    // 2026-11-11: a phone taps it (and a column's cell) to take out what a double-click would
+    target.onclick = () => { if (this.host.mobile?.() === true) takeOut(); };
     for (let i = 0; i < SMELT_MAX; i++) {
       for (const [column, key] of [['MATERIAL', 'material'], ['SCROLL1_', 'scroll1'], ['SCROLL2_', 'scroll2']] as const) {
         if (!MODES[this.mode].wide && key === 'scroll2') continue;
-        window.control(`${column}${i}`).parentElement!.ondblclick = (event) => this.removeLast(key, event.shiftKey);
+        const box = window.control(`${column}${i}`).parentElement!;
+        box.ondblclick = (event) => this.removeLast(key, event.shiftKey);
+        box.onclick = () => { if (this.host.mobile?.() === true) this.removeLast(key); };
       }
     }
     const input = window.input('WIDC_EDIT_MAX_GRADE');
