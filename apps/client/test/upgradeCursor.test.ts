@@ -35,6 +35,29 @@ function rig(sword: { abilityOption?: number; randomOption?: bigint } = {}) {
 }
 
 describe('UpgradeCursor', () => {
+  it('2026-11-11: Shining Oricalkum on the weapon Jewel Setting holds is refused (WndField.cpp:13372-13381)', () => {
+    const ORICHALCUM02 = itemProp({ id: 2034, kind3: 119, part: -1 });
+    const ULTIMATE = itemProp({ id: 502, kind1: 1, kind2: 2, kind3: 2, part: 10, referStat1: 2 });
+    const own = newVagrant();
+    own.inventory!.set(3, { objectId: 3, itemId: 2034, count: 2 });
+    own.inventory!.set(5, { objectId: 5, itemId: 502, count: 1, abilityOption: 1 });
+    const said: string[] = [];
+    let held: number | null = 5;
+    const cursor = new UpgradeCursor({
+      own: () => own, props: new Map([[2034, ORICHALCUM02], [502, ULTIMATE]]), now: () => 0, hasItemBuff: () => true,
+      boxOpen: () => false, say: (tid) => void said.push(tid), confirm: (_tid, _args, ok) => ok(), effect: () => {},
+      send: () => {}, jewelSettingWeapon: () => held,
+    });
+    cursor.begin(3);
+    cursor.pick(5);
+    expect(said).toEqual(['TID_GAME_NOTEQUALITEM']);
+    expect(cursor.waitingTarget).toBeNull();
+    held = null; // Jewel Setting closed: the weapon takes it
+    cursor.begin(3);
+    cursor.pick(5);
+    expect(cursor.waitingTarget).toBe(5);
+  });
+
   it('Sunstone on a sword: the mode, the target, 4 s, then ENCHANT (target, material)', () => {
     const r = rig();
     expect(r.cursor.begin(3)).toBe(true);

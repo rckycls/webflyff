@@ -1554,6 +1554,7 @@ export class WorldScreen {
         else cancel();
       },
       effect: (on) => this.upgradeEffect(on),
+      jewelSettingWeapon: () => (this.jewels?.setting.isOpen === true ? this.jewels.setting.state.weapon : null),
       send: ({ packet, first, second }) => this.session.sendUpgrade(packet, first, second),
     });
     const itemActions = new ItemActions(() => this.own, () => this.world!.self()!.act.body.pos,
