@@ -972,6 +972,16 @@ fieldset:disabled .btn {
   background-repeat: no-repeat;
 }
 
+/* 2026-11-11, layered boss HP: "xN" (the bars left) right of the gauge, as the rebuilt Neuz draws it */
+.hud-target-bars {
+  position: absolute;
+  white-space: nowrap;
+  font-weight: bold;
+  font-size: 13px;
+  line-height: 1;
+  color: #ffe060;
+}
+
 /* The server messages (MessageLines), centred at 520/768 of the height, the newest at the bottom */
 .hud-messages {
   position: absolute;
@@ -1884,6 +1894,8 @@ fieldset:disabled .btn {
   .world-hud { overflow: visible; }
   /* 2026-11-10 (owner's layout): under the row of window shortcuts, which runs across the top centre */
   .hud-target { top: 48px; transform: scale(.7); transform-origin: top center; }
+  /* layered boss HP: 20 px under the bar's .7 scale is 14 px on the screen */
+  .hud-target-bars { font-size: 20px; margin-top: -4px; }
 }
 
 /* The Start menu opens where Piece 3's joystick stands, under the windows' layer: it hides while the menu is open

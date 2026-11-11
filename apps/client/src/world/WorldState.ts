@@ -121,6 +121,12 @@ export interface Mover extends SimMover {
    */
   maxHp: number | null;
   /**
+   * 2026-11-11, layered boss HP (a server addition, HP_LAYER 0x9A00, `world/hpLayer.ts`): `CMover::m_nHpBars`, the bars
+   * left with the current one, and `m_nHpBarsMax`, the bars at spawn. Set only for a monster of more than one bar;
+   * absent for every other mover (one bar, Neuz's default). The server's to change: the browser only shows it.
+   */
+  hpBars?: { left: number; max: number };
+  /**
    * 2026-11-09 (pets R1): `CMover::m_pet` (`CClientPet`, `Mover.h:424-447`) and, for a player whose numbers are not the
    * world's, its `m_dwPetId`: the raised pet it has out and the mover made for it. Made the first time it is needed.
    */
@@ -640,6 +646,9 @@ export class WorldState {
         if (this.numbersOf(m) !== undefined) this.toOwn(message, objectId);
         else if (message.param === DstParam.HP) this.setHitPoint(m, message.value);
         break;
+      case 'hpLayer': // 2026-11-11, layered boss HP (CDPClient::OnHpLayer): the bars, then SetPointParam( DST_HP )
+        this.hpLayer(m, message);
+        break;
       case 'setExperience': // OnSetExperience (:3376), OnSetGrowthLearningPoint (:3531): sent to the user about itself
       case 'setGrowthLearningPoint':
       case 'setQuest': // OnSetQuest (:8444), for the active mover
@@ -1002,6 +1011,20 @@ export class WorldState {
     let hp = Math.max(0, value);
     if (m.maxHp !== null && hp > m.maxHp) hp = m.maxHp;
     m.hp = hp;
+  }
+
+  /**
+   * 2026-11-11, layered boss HP: `CDPClient::OnHpLayer` (a server addition, `world/hpLayer.ts`). The bars are kept for a
+   * monster of more than one (`hpBars`), and dropped for any other. The server's max HP of one bar replaces the browser's
+   * (`maxHpOf` reads the catalog and the rates; the server's number is the one its bars are cut by), then the bar's HP is
+   * set as SETPOINTPARAM sets it. Never the own mover's: a player has no bars.
+   */
+  private hpLayer(m: Mover, message: MessageOf<'hpLayer'>): void {
+    if (this.numbersOf(m) !== undefined || m.added.isPlayer) return;
+    if (message.barsMax > 1) m.hpBars = { left: Math.max(1, message.bars), max: message.barsMax };
+    else delete m.hpBars;
+    if (message.barMaxHp > 0) m.maxHp = message.barMaxHp;
+    this.setHitPoint(m, message.hp);
   }
 
   /**
@@ -1720,7 +1743,8 @@ export class WorldState {
       const index = this.moverIndexOf(name);
       if (index !== undefined) this.hpRates.delete(index);
     }
-    for (const m of this.byId.values()) if (!m.added.isPlayer) m.maxHp = this.maxHpOf(m.added, m.level);
+    // a layered boss keeps the server's max HP of one bar (`hpLayer`)
+    for (const m of this.byId.values()) if (!m.added.isPlayer && m.hpBars === undefined) m.maxHp = this.maxHpOf(m.added, m.level);
   }
 
   private moverIndexOf(name: string): number | undefined {
