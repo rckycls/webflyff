@@ -179,6 +179,13 @@ export interface TaskBarData {
   itemTooltip?: (item: InventoryItem) => HTMLElement | null;
   /** 2026-11-05: the share of an item's cool-down gone (its slot's sweep, `RenderRadar`), or null. */
   cooldown?: (objectId: number) => number | null;
+  /** 2026-11-11: the Lord skills (lord/lordData.ts, by skill id): a `SHORTCUT_LORDSKILL`'s icon (a theme key) and name. */
+  lordSkills?: ReadonlyMap<number, { name: string; icon: string }>;
+  /**
+   * 2026-11-11: the share of a Lord skill's cool down gone, or null when it is ready (`RenderLordCollTime`,
+   * `WndTaskBar.cpp:2845-2853`: `RenderRadar( cooltime - tick, cooltime )` while the tick is above 0).
+   */
+  lordCooldown?: (skill: number) => number | null;
 }
 
 /** `ICON_SIZE` and `SKILL_SIZE` (`WndTaskBar.cpp:183-184`): the slots of the applet row and the bars, and the action slot's. */
@@ -534,6 +541,27 @@ export class TaskBar {
     this.gestures.press({ from: 'partySkills', skill }, event);
   }
 
+  /** 2026-11-11: a Lord skill of the Lord Skill window carried to the bar with the mouse, as `carrySkill`. */
+  carryLordSkill(skill: number, event: PointerEvent): void {
+    this.gestures.press({ from: 'lordSkills', skill }, event);
+  }
+
+  /**
+   * 2026-11-11 (the phone, a tap in place of the drag): a Lord skill onto the first empty slot of the bar shown, as a drop
+   * there; false when the bar is full.
+   */
+  placeLordSkill(skill: number): boolean {
+    const slot = this.loaded.items[this.slotIndex]!.findIndex((shortcut) => shortcut.kind === ShortcutKind.NONE);
+    if (slot < 0 || this.own === undefined) return false;
+    this.edits.dropOn({ from: 'lordSkills', skill }, { row: 'item', slot });
+    return true;
+  }
+
+  /** 2026-11-11: every shortcut of `kind` off the bars and the applet row (`TaskBarEdits.removeKind`). */
+  removeKind(kind: number): void {
+    if (this.own !== undefined) this.edits.removeKind(kind);
+  }
+
   setInventoryShortcut(objectId: number, slot: number): void {
     if (!Number.isInteger(slot) || slot < 0 || slot >= 9 || !this.own?.inventory?.has(objectId)) return;
     this.edits.dropOn({ from: 'inventory', objectId }, { row: 'item', slot });
@@ -594,7 +622,9 @@ export class TaskBar {
     const view = (row: Shortcut[], i: number): SlotView => (own === undefined ? EMPTY_VIEW : this.slotView(row, i, own, data));
     // 2026-11-05: an item shortcut's cool-down sweep (RenderRadar, WndTaskBar.cpp:848-857, 960-970)
     const cooling = (shortcut: Shortcut | undefined): number | null =>
-      own !== undefined && shortcut?.kind === ShortcutKind.ITEM ? data.cooldown?.(shortcut.id) ?? null : null;
+      own === undefined ? null
+        : shortcut?.kind === ShortcutKind.ITEM ? data.cooldown?.(shortcut.id) ?? null
+          : shortcut?.kind === ShortcutKind.LORDSKILL ? data.lordCooldown?.(shortcut.id) ?? null : null;
     this.appletSlots.forEach((slot, i) => { this.draw(slot, view(applets, i)); drawCooldown(slot.element, cooling(applets[i])); });
     const bar = items[this.slotIndex]!;
     this.itemSlots.forEach((slot, i) => { this.draw(slot, view(bar, i)); drawCooldown(slot.element, cooling(bar[i])); });
@@ -691,6 +721,11 @@ export class TaskBar {
         return this.itemView(row, i, own, data);
       case ShortcutKind.CHAT:
         return { kind: 'chat', greyed: false, icon: CHAT_ICON, count: '', hotkey: '', name: shortcut.text };
+      case ShortcutKind.LORDSKILL: {
+        // 2026-11-11: a Lord skill (`SetTaskBarTexture`, WndTaskBar.cpp:437-443: the component's icon)
+        const lord = data.lordSkills?.get(shortcut.id);
+        return lord === undefined ? PLAIN_VIEW : { kind: 'skill', greyed: false, icon: lord.icon, count: '', hotkey: '', name: lord.name };
+      }
       case ShortcutKind.SKILL: {
         if (shortcut.type === 2) {
           // Piece 7 M4: a party skill, the party catalog's (`WndTaskBar.cpp:403-476` reads `prj.GetPartySkill`)
@@ -791,7 +826,7 @@ export class TaskBar {
         queue = true;
       } else {
         item = shortcut.kind === ShortcutKind.SKILL || shortcut.kind === ShortcutKind.APPLET || shortcut.kind === ShortcutKind.ITEM ||
-          shortcut.kind === ShortcutKind.MOTION || shortcut.kind === ShortcutKind.CHAT;
+          shortcut.kind === ShortcutKind.MOTION || shortcut.kind === ShortcutKind.CHAT || shortcut.kind === ShortcutKind.LORDSKILL;
       }
     }
     const shown = `${item}|${queue}`;
@@ -1054,6 +1089,7 @@ export class TaskBar {
       const icon = APPLETS.get(shortcut.id)?.icon;
       return icon ? themeKey(icon) : null;
     }
+    if (shortcut.kind === ShortcutKind.LORDSKILL) return this.data.lordSkills?.get(shortcut.id)?.icon ?? null; // 2026-11-11
     if (shortcut.kind === ShortcutKind.ITEM) {
       const item = this.own?.inventory?.get(shortcut.id);
       return item === undefined ? null : itemIconOf(item, this.data.itemProps.get(item.itemId)); // pets R2
