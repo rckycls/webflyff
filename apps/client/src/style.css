@@ -1768,52 +1768,44 @@ fieldset:disabled .btn {
 .hud-inventory[data-mobile-window] .inventory-details { right: 12px; top: auto; bottom: 6px; width: min(320px, calc(100% - 44px)); }
 .hud-inventory[data-mobile-window] .inventory-details button { min-height: 40px; }
 
-/* The quest window and its detail (QuestWindow; APP_QUEST_EX_LIST, resdata.inc:4076, and APP_QUEST_EX_DETAIL, :2795):
-   the controls at their resdata places, the group titles in the theme's blue, the tree and the detail's areas black on
-   white, Verdana 9. The tabs are WndTabTile pictures as the shop's; a check box is a 14 px frame of ButtCheck.bmp; a
-   completed quest is grey (0xffc0c0c0, WndQuest.cpp:1422-1492). */
+/* The quest window and its detail (QuestWindow; APP_QUEST_EX_LIST, resdata.inc:4076-4126, and APP_QUEST_EX_DETAIL,
+   :2795-2858), as V15 draws them (2026-11-11; docs/2026-11-11-quest-window-research.md): the header bars' titles white and
+   centred on WndEditTile200; the tab control's tiles with its strip at the bottom, the titles centred; the trees' rows
+   ARGB(255,64,64,64), the chosen one's text blue with no bar, a completed quest 0xffc0c0c0; the condition rows black, a
+   pressed one blue; a check box is a 14 px frame of ButtCheck.bmp; the texts' words black, 6 px in. Verdana 9 (12 px). */
 .hud-quests, .hud-quest-detail { color: #000000; font: 12px/16px Verdana, Arial, sans-serif; }
-.quest-group, .quest-tabs, .quest-tree, .quest-filter, .quest-contents, .quest-conditions, .quest-rewards, .quest-confirm-text { position: absolute; box-sizing: border-box; }
-.quest-group { color: #2c5c8c; font-weight: bold; white-space: nowrap; }
-.quest-tabs { display: flex; }
-.quest-tab { flex: 1; min-width: 0; height: 20px; padding: 0 5px; border: 0; background-color: transparent; background-position: left top, right top, center top; background-size: 8px 20px, 8px 20px, calc(100% - 16px) 20px; background-repeat: no-repeat; color: #4b4666; font: 11px/20px Arial, sans-serif; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
-.quest-tab[aria-pressed=true] { color: #252039; }
-.quest-tree, .quest-contents, .quest-conditions, .quest-rewards { padding: 2px 4px; border: 1px solid #b3a59a; background: #ffffff; overflow-x: hidden; overflow-y: auto; touch-action: pan-y; overscroll-behavior: contain; scrollbar-width: thin; }
-.quest-tree > div { display: flex; align-items: center; min-height: 16px; white-space: nowrap; }
-.quest-folder, .quest-title, .quest-row { padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
-.quest-folder { display: flex; align-items: center; gap: 4px; }
-.quest-folder img { width: 8px; height: 9px; pointer-events: none; }
-.quest-check { position: relative; flex: none; width: 14px; height: 14px; margin-right: 4px; padding: 0; border: 0; background-color: transparent; background-repeat: no-repeat; cursor: pointer; }
-.quest-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.quest-leaf.completed { color: #c0c0c0; }
-.quest-leaf.selected .quest-title { background: #c8d8f0; }
-.quest-filter { padding: 0; font: 11px Verdana, Arial, sans-serif; }
-.quest-contents { white-space: pre-wrap; overflow-wrap: anywhere; }
-.quest-row { display: block; width: 100%; min-height: 16px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.quest-tabctrl, .quest-page, .quest-box, .quest-filter, .quest-confirm-text { position: absolute; }
+.hud-res-static.is-group.quest-header > .hud-res-static-text { left: 0; right: 0; text-align: center; }
+.quest-tab-strip .hud-tab-title { padding: 0 2px; overflow: hidden; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+.quest-tree, .quest-contents, .quest-conditions, .quest-rewards { touch-action: pan-y; overscroll-behavior: contain; }
+.quest-contents, .quest-rewards { white-space: pre-wrap; }
+.quest-node { display: flex; align-items: center; height: 16px; white-space: nowrap; color: rgb(64, 64, 64); }
+.quest-node.completed { color: rgb(192, 192, 192); }
+.quest-node.selected > :is(.quest-title, .quest-folder-title) { color: rgb(0, 0, 255); }
+.quest-fold, .quest-slot { position: relative; flex: none; display: flex; align-items: center; width: 16px; height: 100%; padding: 0; border: 0; background: none; cursor: pointer; }
+.quest-fold img { display: block; pointer-events: none; }
+.quest-check { position: relative; flex: none; width: 14px; height: 14px; margin-top: -2px; padding: 0; border: 0; background-color: transparent; background-repeat: no-repeat; cursor: pointer; }
+.quest-title, .quest-folder-title { flex: none; padding: 0; border: 0; background: none; color: inherit; font: inherit; line-height: inherit; text-align: left; white-space: nowrap; cursor: pointer; }
+.quest-row { display: block; width: 100%; min-height: 16px; padding: 0; border: 0; background: none; color: #000000; font: inherit; line-height: 16px; text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; cursor: pointer; }
+.quest-row.selected { color: rgb(0, 0, 255); }
+.quest-filter-field { position: absolute; left: 3px; top: 0; right: 23px; height: 16px; padding: 0; border: 0; background: none; color: #000000; font: inherit; line-height: 16px; text-align: left; white-space: nowrap; overflow: hidden; cursor: pointer; }
 .quest-confirm-text { color: #000000; line-height: 14px; white-space: normal; }
-/* On a touch phone the list and the detail are one full-screen panel, as the inventory's: the list on the left, the
-   detail on the right, each laid out in a column whose areas scroll, the text 14 px; a finger gets 32 px rows */
-:is(.hud-quests, .hud-quest-detail)[data-mobile-window] { top: 8px !important; width: calc(50% - 12px) !important; height: calc(100% - var(--hud-taskbar-height, 48px) - 16px) !important; transform: none !important; z-index: 60 !important; border-radius: 6px; background: repeating-linear-gradient(#fdf5ee 0 2px, #f6e6dc 2px 4px); box-shadow: inset 0 0 0 2px #dba98c, 0 2px 8px #0005; font-size: 14px; line-height: 18px; }
-.hud-quests[data-mobile-window] { left: 8px !important; }
-.hud-quest-detail[data-mobile-window] { left: calc(50% + 4px) !important; }
-:is(.hud-quests, .hud-quest-detail)[data-mobile-window] > .hud-window-frame { display: none; }
-:is(.hud-quests, .hud-quest-detail)[data-mobile-window] > .hud-window-title { height: 28px !important; border-radius: 6px 6px 0 0; background: linear-gradient(#f7d8c4, #e2b394); box-shadow: 0 1px 2px #795431; }
-:is(.hud-quests, .hud-quest-detail)[data-mobile-window] > .hud-window-close { left: auto !important; right: 14px; }
-:is(.hud-quests, .hud-quest-detail)[data-mobile-window] > .hud-window-body { top: 34px !important; left: 6px !important; width: calc(100% - 12px) !important; height: calc(100% - 42px) !important; display: flex; flex-direction: column; gap: 4px; overflow: hidden !important; }
-:is(.hud-quests, .hud-quest-detail)[data-mobile-window] > .hud-window-body > * { position: relative !important; left: auto !important; top: auto !important; flex: none; }
-:is(.hud-quests, .hud-quest-detail)[data-mobile-window] :is(.quest-group, .quest-tabs, .quest-tree, .quest-filter, .quest-contents, .quest-conditions, .quest-rewards) { width: auto !important; height: auto !important; }
-:is(.hud-quests, .hud-quest-detail)[data-mobile-window] :is(.quest-tree, .quest-contents, .quest-conditions, .quest-rewards) { flex: 1 1 0; min-height: 0; }
-.hud-quests[data-mobile-window] > .hud-window-body { display: grid; grid-template: auto 22px minmax(0, 1fr) 32px / auto minmax(0, 1fr) auto; }
-.hud-quests[data-mobile-window] :is(.quest-group, .quest-tabs, .quest-tree) { grid-column: 1 / -1; }
-.hud-quests[data-mobile-window] :is(.quest-remove, .quest-close, .quest-filter) { align-self: center; }
-.hud-quests[data-mobile-window] .quest-filter { order: 1; min-height: 30px; font-size: 14px; }
-.hud-quests[data-mobile-window] .quest-close { order: 2; }
-.hud-quests[data-mobile-window] :is(.quest-remove, .quest-close)::before { content: ''; position: absolute; inset: -6px -2px; }
-.hud-quests[data-mobile-window] .quest-tree > div { min-height: 32px; }
-.hud-quests[data-mobile-window] .quest-check::before { content: ''; position: absolute; inset: -9px -6px; }
-.hud-quest-detail[data-mobile-window] .quest-row { min-height: 28px; }
 @media (max-width: 1000px) and (pointer: coarse) {
-  .world:has(.hud-quests[data-mobile-window]:not([hidden])) :is(.joystick, .hud-jump, .hud-attack, .hud-quest-tracker) { visibility: hidden; }
+  /* 2026-11-11 (owner): on a phone the two windows keep V15's layout at the frame's 0.7, as the Messenger does: the list in
+     the middle above the task bar and, with a detail, the two centred together (QuestWindow.openDetail). The text is 14 px,
+     the trees and texts scroll by finger, the rows are 26 px, and the buttons' press areas are larger than their pictures. */
+  .world:has(.hud-quests:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack, .hud-quest-tracker) { visibility: hidden; }
+  :is(.hud-quests, .hud-quest-detail),
+  :is(.hud-quests, .hud-quest-detail) > .hud-window-title,
+  :is(.hud-quests, .hud-quest-detail) :is(.hud-res-static-text, .hud-res-text-body, .quest-filter-field, .hud-res-combo-rows > [role='option'], .hud-tab-title) { font-size: 14px; }
+  :is(.hud-quests, .hud-quest-detail) .hud-res-text-body { line-height: 18px; }
+  .quest-node { height: 26px; }
+  .quest-row { min-height: 26px; padding: 4px 0; line-height: 18px; }
+  .quest-filter-list .hud-res-combo-rows > [role='option'] { height: 22px; line-height: 22px; }
+  .quest-check::before { content: ''; position: absolute; inset: -6px; }
+  :is(.quest-remove, .quest-close)::before { content: ''; position: absolute; inset: -8px -4px -12px; }
+  .quest-filter-field::before { content: ''; position: absolute; inset: -4px -2px -8px; }
+  .quest-tab-strip .hud-tab-title::before { content: ''; position: absolute; inset: -6px 0 -4px; }
 }
 /* The quest tracker (QuestTracker; APP_QUEST_QUICK_INFO, resdata.inc:4055): at the right edge, 220 px down, 224 px wide
    and as tall as its rows up to 544 px; no frame until hovered (plan decision 8). Titles yellow and rows white with a
