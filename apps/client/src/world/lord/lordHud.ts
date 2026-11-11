@@ -496,13 +496,13 @@ export class LordHud {
   private drawEventIcons(): void {
     const icons = this.book.events.map((e) => {
       const icon = this.doc.createElement('div');
-      icon.className = 'hud-lord-event';
+      icon.className = 'hud-lord-event-icon';
       icon.style.backgroundImage = themeUrl(this.art, 'Skill_TroGiftbox02.dds');
       const tip = formatText(this.tid('TID_GAME_LORD_EVENT_TOOLTIP'), [this.host.player(e.playerId)?.name ?? '', e.expFactor * 100, e.dropFactor * 100]);
       icon.title = `${tip}\n${e.tick}`;
       icon.setAttribute('aria-label', tip);
       const time = this.doc.createElement('span');
-      time.className = 'hud-lord-event-time';
+      time.className = 'hud-lord-event-icon-time';
       time.textContent = `${e.tick}m`;
       icon.append(time);
       return icon;

@@ -64,6 +64,8 @@ const UPGRADE_ENTRIES: ReadonlySet<number> = new Set([
   // 2026-11-10: the Priest of Confession's Summon Angel (angel/summonAngelWindow.ts)
   MMI.SUMMON_ANGEL,
 ]);
+/** 2026-11-11: MMI_LORD_STATE 91, TENDER 92, VOTE 93, EVENT 94, INFO 101 (`Resource/defineNeuz.h:195-210`). */
+const LORD_MENU: ReadonlySet<number> = new Set([91, 92, 93, 94, 101]);
 /** ShowMoverMenu's range (`distSq < 20 * 20`, WndWorld.cpp:6520-6523). */
 export const MENU_RANGE = 20;
 /** TID_MMI_DIALOG: an entry's text is this + its id. */
@@ -92,7 +94,9 @@ export function npcMenuEntries(npc: WebNpc | undefined, texts: Texts, ownIsBaseJ
       enabled: id === MMI.DIALOG || (id === MMI.TRADE && !npc?.vendorType) || id === MMI.NPC_BUFF || UPGRADE_ENTRIES.has(id) ||
         (id === MMI.TELEPORTER && (npc?.teleports?.length ?? 0) > 0) || PET_ENTRIES.has(id) || TAMER_ENTRIES.has(id) ||
         ARENA_TOWER_ENTRIES.has(id) ||
-        id === MMI.BANKING || id === MMI.POST,
+        id === MMI.BANKING || id === MMI.POST ||
+        // 2026-11-11: the Lord Manager's (MaFl_KINGAIDE, Resource/character.inc:6903-6926; lord/lordHud.ts)
+        LORD_MENU.has(id),
     }));
 }
 

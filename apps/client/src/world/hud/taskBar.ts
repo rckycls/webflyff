@@ -56,7 +56,7 @@ import { itemIconOf } from '../pets/petStatus';
 
 /** The windows of Piece 4 a press on the task bar opens. */
 export type TaskBarWindow = 'character' | 'status' | 'skills' | 'inventory' | 'chat' | 'navigator' | 'worldmap' | 'option'
-  | 'quests' | 'party' | 'messenger' | 'vendor' | 'guild';
+  | 'quests' | 'party' | 'messenger' | 'vendor' | 'guild' | 'lordSkill';
 /** 2026-11-10: `APP_GUILD` (Resource/ResData.h:228), the guild window (guild research §3), G (FuncApplet.cpp:245). */
 const APP_GUILD = 323;
 /** `APP_QUEST_EX_LIST` (Resource/ResData.h), the quest window (Piece 7 M1), Q (FuncApplet.cpp:229). */
@@ -89,6 +89,8 @@ const WINDOWS: ReadonlyMap<number, TaskBarWindow> = new Map([
   [APP_MESSENGER_EX, 'messenger'],
   [APP_VENDOR_REVISION, 'vendor'],
   [APP_GUILD, 'guild'],
+  // 2026-11-11: APP_LORD_SKILL (Resource/ResData.h:633), the Lord Skill window, L (FuncApplet.cpp:166-171)
+  [728, 'lordSkill'],
 ]);
 
 /**

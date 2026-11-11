@@ -140,6 +140,7 @@ import { listenerAngle } from './sound/soundRules';
 import { WorldSounds } from './sound/worldSounds';
 import { TeleporterWindow } from './hud/teleporterWindow';
 import { HeavenTowerWindow } from './hud/heavenTowerWindow';
+import { LORD_ENTRIES, LordHud } from './lord/lordHud';
 import { isArena } from './combat/arena';
 import { formatDefinedText } from './hud/messages';
 import { ItemUse } from './items/itemUse';
@@ -189,7 +190,7 @@ import { ItemActions } from './items/itemActions';
 import { GroundItems } from './items/groundItems';
 import { GroundModels, loadDropModel } from './items/groundModels';
 import { NearbyItems } from './items/nearbyItems';
-import { EVE_PK, NULL_ID, STATE_BASEMOTION_MODE, ShortcutKind, isBankMessage, isGuildMessage, isPostMessage, isTradeMessage } from '@flyffweb/protocol';
+import { EVE_PK, NULL_ID, STATE_BASEMOTION_MODE, ShortcutKind, isBankMessage, isGuildMessage, isLordMessage, isPostMessage, isTradeMessage } from '@flyffweb/protocol';
 // 2026-11-10: the guild (guild/guildBook.ts, guild/guildHud.ts)
 import { GuildBook } from './guild/guildBook';
 import type { GuildContext, GuildEvent } from './guild/guildBook';
@@ -595,6 +596,8 @@ export class WorldScreen {
   private teleporter: TeleporterWindow | undefined;
   /** 2026-11-10: the Forsaken Tower's window (MMI_HEAVEN_TOWER). */
   private heavenTower: HeavenTowerWindow | undefined;
+  /** 2026-11-11: the Lord system's windows and HUD (lord/lordHud.ts). */
+  private lordHud: LordHud | undefined;
   private itemUse: ItemUse | undefined;
   /** 2026-11-05: the item windows' flows (the name change, the tickets, the summons ...). */
   private itemWindows: ItemWindowFlows | undefined;
@@ -922,6 +925,11 @@ export class WorldScreen {
         if (this.guildHud !== undefined && this.guildEvents.length > 0) this.guildHud.handle(this.guildEvents.splice(0));
         else if (this.guildEvents.some((event) => event.kind === 'tags')) this.recolorTags();
         continue;
+      }
+      // 2026-11-11: the Lord system's messages (lord/lordBook.ts); a Lord skill's use goes on to the world for its effects
+      if (isLordMessage(value)) {
+        this.lordHud?.handle(value);
+        if (value.type !== 'lordSkillUse') continue;
       }
       // 2026-11-10: a `/say` line (OnSay, DPClient.cpp:11911-12074)
       if (value.type === 'say') { this.friendHud?.onSay(value); continue; }
@@ -1808,6 +1816,26 @@ export class WorldScreen {
       confirm: (text, ok) => messageBox.open(text, 'okCancel', ok),
       send: (floor) => session.sendHeavenTowerTeleport(floor),
     }, this.hudArt!, doc);
+    // 2026-11-11: the Lord system (lord/lordHud.ts): the Lord Manager's windows, the Lord Skill window, the event icons
+    this.lordHud = new LordHud({
+      text: (tid) => this.data?.texts.get(tid),
+      ownPlayerId: () => this.entry.character.playerId,
+      ownName: () => this.entry.character.name,
+      player: (playerId) => { const p = this.playerData.get(playerId); return p.name === '' ? undefined : p; },
+      jobName: (job) => this.data?.jobs[job]?.title ?? '',
+      focusName: () => {
+        const id = this.focus?.targetId ?? null;
+        const mover = id === null ? undefined : this.world?.movers.get(id);
+        return mover === undefined ? null : mover.added.isPlayer ? mover.name : '';
+      },
+      say: (text, color) => this.hud?.messages.add(text, color),
+      caption: (text) => this.hud?.caption.show(text),
+      box: (text, ok) => messageBox.open(text, ok === undefined ? 'ok' : 'okCancel', ok ?? (() => {})),
+      send: (bytes) => session.sendLord(bytes),
+      carryLordSkill: (skill, event) => taskBar.carryLordSkill(skill, event),
+      placeLordSkill: (skill) => taskBar.placeLordSkill(skill),
+      removeLordShortcuts: () => taskBar.removeKind(ShortcutKind.LORDSKILL),
+    }, this.hudArt!, doc);
     this.moverMenu = new MoverMenu(doc);
     const partyHud = new PartyHud(this.hudArt!, this.data!.texts, () => this.partyCatalog, {
       session,
@@ -2016,7 +2044,7 @@ export class WorldScreen {
       modal.onChange = () => this.modalChanged();
     }
     this.hud!.element.append(
-      this.questTracker.element, this.teleporter.frame.element, this.heavenTower.element,
+      this.questTracker.element, this.teleporter.frame.element, this.heavenTower.element, ...this.lordHud.elements, this.lordHud.eventIcons,
       taskBar.element, this.attackButton.element, this.jumpButton.element, this.flightButtons.element, mobileTools.element,
       logOutBox.element, messageBox.element,
       selectVillage.element, characterWindow.frame.element,
@@ -3083,6 +3111,7 @@ export class WorldScreen {
     const buffNow = world.nowMs();
     // 2026-11-05: the premium timers after the item buffs, and the own level the ES scrolls' bonus depends on
     this.smTimers.tick(performance.now());
+    this.lordHud?.step(performance.now()); // 2026-11-11: the Lord windows' clock and the event icons
     this.buffStatus?.update(self?.buffs.list(buffNow) ?? [], this.data!.skills, buffNow, {
       sm: this.smTimers.list(), level: this.own?.level ?? 1, resist: this.resistElements,
     });
@@ -3220,6 +3249,8 @@ export class WorldScreen {
     if (window === 'messenger') { this.friendHud?.toggle(); return; }
     // 2026-11-10: APP_GUILD, G (FuncApplet.cpp:245): the guild window, opened even without a guild (WndGuild.cpp:115-125)
     if (window === 'guild') { this.guildHud?.toggle(); return; }
+    // 2026-11-11: APP_LORD_SKILL, L (FuncApplet.cpp:166-171): the Lord Skill window, the Lord's only
+    if (window === 'lordSkill') { this.lordHud?.openSkills(); return; }
     // 2026-11-10: APP_VENDOR_REVISION, the personal shop, refused while the Summon Angel window is open (WndManager.cpp:2685-2695)
     if (window === 'vendor') {
       if (this.summonAngel?.isOpen === true) this.say('TID_GAME_SUMMONANGELUSING');
@@ -3866,6 +3897,9 @@ export class WorldScreen {
         this.data!.itemProps.get(item.itemId), ownTooltipContext(this.own, item, 'other')),
       // 2026-11-05: an item shortcut's cool-down sweep
       cooldown: (objectId) => this.itemUse?.cooldownDone(objectId) ?? null,
+      // 2026-11-11: the Lord skills' shortcuts: icon, name and cool down
+      lordSkills: LordHud.skillCatalog(),
+      lordCooldown: (skill) => this.lordHud?.cooldown(skill) ?? null,
     };
     return this.taskBarData;
   }
@@ -4017,6 +4051,8 @@ export class WorldScreen {
       this.session.sendArenaEnter(); // 2026-11-10: SendHdr( PACKETTYPE_ARENA_ENTER ) (:5928-5930); the server REPLACEs
     } else if (entry === MMI.ARENA_EXIT) {
       this.session.sendArenaExit(); // SendHdr( PACKETTYPE_ARENA_EXIT ) (:5931-5933)
+    } else if (LORD_ENTRIES.has(entry)) {
+      this.lordHud?.openEntry(entry); // 2026-11-11: the Lord Manager's windows (WndWorld.cpp:5182-5212)
     } else if (entry === MMI.HEAVEN_TOWER) {
       this.heavenTower?.open(); // 2026-11-10: the Forsaken Tower's window (:5115-5129)
     } else if (entry === MMI.NPC_BUFF) {
@@ -4159,6 +4195,7 @@ export class WorldScreen {
     if (this.personalShop?.blocksActions === true && (shortcut.kind === ShortcutKind.ITEM || shortcut.kind === ShortcutKind.SKILL)) return;
     if (shortcut.kind === ShortcutKind.ITEM) this.itemUse!.use(shortcut.id);
     else if (shortcut.kind === ShortcutKind.CHAT) this.chatWindow?.runShortcut(shortcut.text);
+    else if (shortcut.kind === ShortcutKind.LORDSKILL) this.lordHud?.useShortcut(shortcut.id); // 2026-11-11 (WndManager.cpp:2882-2920)
     else skillUse.useShortcut(shortcut);
   }
 
@@ -4364,6 +4401,8 @@ export class WorldScreen {
     this.teleporter?.dispose();
     this.heavenTower?.dispose();
     this.heavenTower = undefined;
+    this.lordHud?.dispose();
+    this.lordHud = undefined;
     this.hud?.dispose();
     this.sheetPictures = [];
     this.stage?.dispose();
@@ -4423,6 +4462,7 @@ export class WorldScreen {
     for (const window of [this.shopWindow, this.dialog, this.teleporter, this.inventoryWindow, this.characterWindow,
       this.skillWindow, this.optionWindow, this.messageBox, this.selectVillage]) window?.frame.close();
     this.heavenTower?.close();
+    this.lordHud?.close();
     this.worldMap?.close();
     this.audio?.stopWorld();
     this.stopAsking(); // nothing is left to lose by closing the page
