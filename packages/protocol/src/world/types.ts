@@ -19,9 +19,10 @@ import type { GuildDirectMessage, GuildMessage } from './guild';
 import type { BankMessage } from './bank';
 import type { PostMessage } from './post';
 import type { LordMessage } from './lord';
+import type { HonorMessage } from './honor';
 
 export type WorldMessage = ChatMessage | NpcMessage | ShopMessage | QuestMessage | PetMessage | FriendMessage | TradeMessage | VendorMessage
-  | GuildMessage | GuildDirectMessage | BankMessage | PostMessage | LordMessage
+  | GuildMessage | GuildDirectMessage | BankMessage | PostMessage | LordMessage | HonorMessage
   | { type: 'profileStats'; values: number[] }
   | { type: 'addItem'; item: GroundItem }
   | { type: 'createItem'; itemType: number; item: InventoryItem; stacks: Array<{ objectId: number; count: number }> }
@@ -481,6 +482,12 @@ export interface OwnCharacter {
    * is absent when the banks could not be read (the inventory before them is kept).
    */
   bank?: OwnBank;
+  /**
+   * 2026-11-11 (honour window): `m_aHonorTitle`, the own count of every honour title by id (`MAX_HONOR_TITLE` of them,
+   * `ObjSerializeOpt.cpp:612-634`), from which Neuz makes its list of earned titles without a word. Absent when something
+   * before it (the inventory, the banks, the pockets) could not be read.
+   */
+  honorCounts?: number[];
 }
 
 /** 2026-11-10 (bank-mail): `m_nSlot`, `m_dwGoldBank[3]`, `m_idPlayerBank[3]`, `m_Bank[3]`. */

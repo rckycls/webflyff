@@ -1,5 +1,6 @@
 import type { ArReader } from '../ar/ArReader';
 import { ProtocolError } from '../errors';
+import { readHonorCounts } from './honor';
 import { readPet } from './pets';
 import type { InventoryItem, OwnBank, OwnCharacter, SkillSlot } from './types';
 
@@ -40,17 +41,66 @@ export function readOwnAfterEquipment(r: ArReader, numbers: OwnNumbers): OwnChar
   const petSlot = banks?.petSlot;
   // 2026-11-10 (bank-mail): the banks are kept, with the slot and penya read before the inventory
   if (bank !== undefined && banks?.containers !== undefined) bank.containers = banks.containers;
-  // The reader stops here, after the pet slot, or wherever the inventory or the banks failed. The C++ goes on with
-  // `m_Pocket.Serialize` (:606), `m_dwMute` (:610, __JEFF_9_20), the honour titles (:616-634), `m_idCampus` and
-  // `m_nCampusPoint` (:637-638), then the buffs. None of them is read yet: they are skipped, and whatever reads them next
-  // replaces this `skipRest`.
+  // 2026-11-11 (honour window): past the pockets and the mute time, the honour counts
+  const honorCounts = banks?.complete === true ? readHonorPart(r) : undefined;
+  // The reader stops here, after the honour counts, or wherever something before them failed. The C++ goes on with
+  // `m_idCampus` and `m_nCampusPoint` (:637-638), then the buffs. None of them is read yet: they are skipped, and whatever
+  // reads them next replaces this `skipRest`.
   r.skipRest();
   return {
     ...numbers, skills, inventory, inventoryError, ...(inventorySlots ? { inventorySlots } : {}),
     ...(petSlot !== undefined ? { petSlot } : {}), ...(bank !== undefined && !emptyBank(bank) ? { bank } : {}),
     // 2026-11-10 (Summon Angel): only when there is an angel's (both 0 before any summon)
     ...(angelExp !== undefined && angelLevel !== undefined && (angelExp !== 0n || angelLevel !== 0) ? { angelExp, angelLevel } : {}),
+    ...(honorCounts !== undefined ? { honorCounts } : {}),
   };
+}
+
+/** `MAX_POCKET` (`_Common/Pocket.h:31`), and each pocket's slots: `POCKET_SLOT_SIZE_0` 6, `POCKET_SLOT_SIZE_1_2` 24 (:32-33). */
+const POCKET_SLOTS = [6, 24, 24] as const;
+
+/**
+ * 2026-11-11 (honour window): from after `dwPetId` to the honour counts (`ObjSerializeOpt.cpp:604-634`).
+ * `m_Pocket.Serialize` (`__VER >= 11`, `CPocketController::Serialize`, `_Common/Pocket.cpp:303-330`): per pocket a BYTE,
+ * and when it is 1 the pocket (`CPocket::Serialize`, :28-50): its `CItemContainer`, `BOOL m_bExpired`, `time_t
+ * m_tExpirationDate` and, when that is not 0, the `time_t` left (4 bytes each: Win32 with `_USE_32BIT_TIME_T`). Then
+ * `DWORD m_dwMute` (`__JEFF_9_20`, defined in both Neuz's and the world server's VersionCommon.h) and the
+ * `MAX_HONOR_TITLE` counts. A `ProtocolError` gives no counts; any other error is a bug and propagates.
+ */
+function readHonorPart(r: ArReader): number[] | undefined {
+  try {
+    POCKET_SLOTS.forEach((max, i) => {
+      if (r.u8() === 0) return; // bExists
+      readSmallContainer(r, max, `pocket ${i}`);
+      r.i32(); // m_bExpired
+      if (r.u32() !== 0) r.u32(); // m_tExpirationDate, then the time left
+    });
+    r.u32(); // m_dwMute
+    return readHonorCounts(r);
+  } catch (error) {
+    if (!(error instanceof ProtocolError)) throw error;
+    return undefined;
+  }
+}
+
+/**
+ * One `CItemContainer<CItemElem>::Serialize` of `max` slots (a bank, a pocket) (`_Common/Item.h:923-944`): `m_apIndex`, the count, each item's
+ * slot and `CItemElem`, the object indexes. Throws a `ProtocolError` for a count or a slot out of range.
+ */
+function readSmallContainer(r: ArReader, max: number, name: string): { slots: number[]; items: InventoryItem[] } {
+  const slots = Array.from({ length: max }, () => r.u32()); // ar.Read( m_apIndex, sizeof(DWORD) * m_dwItemMax )
+  const at = r.position();
+  const count = r.u8(); // chSize
+  if (count > max) throw new ProtocolError(`${name}: ${count} items, more than its ${max} slots`, at);
+  const items = new Map<number, InventoryItem>();
+  for (let i = 0; i < count; i++) {
+    const slotAt = r.position();
+    const slot = r.u8(); // ch
+    if (slot >= max) throw new ProtocolError(`${name}: slot ${slot} outside its ${max}`, slotAt);
+    items.set(slot, readInventoryItem(r, slot)); // m_apItem[ch].Serialize( ar )
+  }
+  r.bytes(4 * max); // ar.Read( adwObjIndex, sizeof(DWORD) * m_dwItemMax )
+  return { slots, items: [...items.values()].filter((item) => item.itemId !== 0) };
 }
 
 /** A bank with nothing in it (slot 0, no penya, no player, no item) is left out, as the other optional fields are. */
@@ -64,33 +114,21 @@ function emptyBank(bank: OwnBank): boolean {
  * `m_apIndex`, the count, each item's slot and `CItemElem`, the object indexes), kept since 2026-11-10 (bank-mail), then `DWORD
  * dwPetId` (__VER >= 9, __PET_0410, :594-596): the summoned pet's bag object ID, undefined for `NULL_ID`. A `ProtocolError`
  * (the bytes run out, or a count or a slot out of range) gives neither: the inventory before it is kept. Any other error is a
- * bug and propagates.
+ * bug and propagates. `complete` says the pet's ID was read (2026-11-11: the honour counts come after it).
  */
-function readBanksAndPetSlot(r: ArReader): { containers?: Array<{ slots: number[]; items: InventoryItem[] }>; petSlot?: number } {
+function readBanksAndPetSlot(r: ArReader): {
+  containers?: Array<{ slots: number[]; items: InventoryItem[] }>; petSlot?: number; complete?: true;
+} {
   const containers: Array<{ slots: number[]; items: InventoryItem[] }> = [];
   try {
-    for (let k = 0; k < 3; k++) {
-      const slots = Array.from({ length: MAX_BANK }, () => r.u32()); // ar.Read( m_apIndex, sizeof(DWORD) * m_dwItemMax )
-      const at = r.position();
-      const count = r.u8(); // chSize
-      if (count > MAX_BANK) throw new ProtocolError(`bank ${k}: ${count} items, more than its ${MAX_BANK} slots`, at);
-      const items = new Map<number, InventoryItem>();
-      for (let i = 0; i < count; i++) {
-        const slotAt = r.position();
-        const slot = r.u8(); // ch
-        if (slot >= MAX_BANK) throw new ProtocolError(`bank ${k}: slot ${slot} outside its ${MAX_BANK}`, slotAt);
-        items.set(slot, readInventoryItem(r, slot)); // m_apItem[ch].Serialize( ar )
-      }
-      r.bytes(4 * MAX_BANK); // ar.Read( adwObjIndex, sizeof(DWORD) * m_dwItemMax )
-      containers.push({ slots, items: [...items.values()].filter((item) => item.itemId !== 0) });
-    }
+    for (let k = 0; k < 3; k++) containers.push(readSmallContainer(r, MAX_BANK, `bank ${k}`));
   } catch (error) {
     if (!(error instanceof ProtocolError)) throw error;
     return {};
   }
   try {
     const petId = r.u32(); // ar >> dwPetId; SetPetId( dwPetId )
-    return { containers, ...(petId === NULL_ID ? {} : { petSlot: petId }) };
+    return { containers, complete: true, ...(petId === NULL_ID ? {} : { petSlot: petId }) };
   } catch (error) {
     if (!(error instanceof ProtocolError)) throw error;
     return { containers };
