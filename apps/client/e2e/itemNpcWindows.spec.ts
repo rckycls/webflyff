@@ -76,7 +76,7 @@ async function bagOpen(page: Page): Promise<void> {
 /** The phone's words: at least 14 px; its slots and buttons big enough for a finger. */
 async function phoneSized(window: Locator): Promise<void> {
   if (!isPhone()) return;
-  for (const target of await window.locator('.hud-res-text-body, .hud-picture-button').all()) {
+  for (const target of await window.locator('.hud-window-body :is(.hud-res-text-body, .hud-picture-button)').all()) {
     if (!(await target.isVisible())) continue;
     expect(await target.evaluate((e) => parseFloat(getComputedStyle(e).fontSize))).toBeGreaterThanOrEqual(14);
   }
@@ -85,8 +85,10 @@ async function phoneSized(window: Locator): Promise<void> {
     const size = (await slot.boundingBox())!;
     expect(Math.min(size.width, size.height)).toBeGreaterThanOrEqual(44);
   }
-  const start = window.locator('.hud-picture-button').first();
-  expect((await start.boundingBox())!.height).toBeGreaterThanOrEqual(36);
+  for (const button of await window.locator('.hud-window-body .hud-picture-button').all()) {
+    if (!(await button.isVisible())) continue;
+    expect((await button.boundingBox())!.height).toBeGreaterThanOrEqual(36);
+  }
 }
 
 async function closeWindow(window: Locator): Promise<void> {
@@ -128,6 +130,13 @@ test('BoBoChan: Safe Element, Create Unique Weapon, Remove Jewel, Remove Element
   await bagOpen(page);
   for (const slot of [5, 6, 7]) await putIn(page, slot);
   await expect(safety.locator('[data-control="WIDC_NOW_GRADE"]')).toHaveText('2');
+  await phoneSized(safety);
+  if (isPhone()) {
+    // the phone's panel: the rows' cells 44 px, beside the bag and not under it
+    expect((await safety.locator('[data-control="MATERIAL0"]').boundingBox())!.width).toBeGreaterThanOrEqual(44);
+    const panel = (await safety.boundingBox())!, bag = (await page.locator('.hud-inventory').boundingBox())!;
+    expect(panel.x + panel.width).toBeLessThanOrEqual(bag.x + 1);
+  }
   await shot('safe-element');
   await safety.locator('[data-control="WIDC_BUTTON_START"]').click();
   await expect.poll(() => sentOf(gateway, SMELT_SAFETY).length, { timeout: 10_000 }).toBe(1);
