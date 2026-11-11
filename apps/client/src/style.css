@@ -3646,6 +3646,8 @@ fieldset:disabled .btn {
   .hud-piercing [data-control="WIDC_STATIC9"] { grid-area: 4 / 1 / 5 / 3; justify-self: stretch; width: auto !important; height: auto !important; padding-left: 30px; }
   .hud-piercing [data-control="WIDC_OK"] { grid-area: 5 / 1 / 6 / 3; }
   .hud-piercing [data-control="WIDC_CANCEL"] { grid-area: 6 / 1 / 7 / 3; }
+  /* the "Pierce Item" group frame is the desktop's box around the rows: the panel is the box */
+  .hud-piercing [data-control="WIDC_STATIC4"] { display: none; }
 }
 
 /* The phone: each a panel beside the bag as the jewel windows (.hud-jewel), its slots 44 px, its texts, labels and buttons
