@@ -1799,6 +1799,9 @@ fieldset:disabled .btn {
 .hud-inventory[data-mobile-window] .inventory-money { left: 98px; top: 232px; width: 116px; }
 .hud-inventory[data-mobile-window] .inventory-details { right: 12px; top: auto; bottom: 6px; width: min(320px, calc(100% - 44px)); }
 .hud-inventory[data-mobile-window] .inventory-details button { min-height: 40px; }
+/* 2026-11-11 (owner): the items alone while a jewel or Upgrade Specialist window is open (inventoryWindow.ts `itemsOnly`) */
+.hud-inventory.inventory-items-only[data-mobile-window] .inventory-sections { grid-template-columns: 1fr; }
+.hud-inventory.inventory-items-only[data-mobile-window] .inventory-equipment-box { display: none; }
 
 /* The quest window and its detail (QuestWindow; APP_QUEST_EX_LIST, resdata.inc:4076-4126, and APP_QUEST_EX_DETAIL,
    :2795-2858), as V15 draws them (2026-11-11; docs/2026-11-11-quest-window-research.md): the header bars' titles white and
@@ -3619,6 +3622,30 @@ fieldset:disabled .btn {
   }
   .hud-smelt-safety :is([data-control="WIDC_BUTTON_START"], [data-control="WIDC_BUTTON_STOP"], [data-control="WIDC_BUTTON_RESET"])::after { content: attr(aria-label); }
   .hud-smelt-safety .hud-picture-button:disabled { opacity: 0.55; }
+}
+
+/* 2026-11-11 (owner): the phone's Piercing (the Upgrade Specialist's MMI 23) as the jewel windows' panel: a row each of the
+   item, the Moonstone and the GProtect (its words, then its 44 px slot), the cost by its coin, then OK and Cancel as words;
+   a tap on a bag item puts it in, a tap on a slot empties it (the desktop's right click). */
+@media (max-width: 1000px) and (pointer: coarse) {
+  .hud-piercing > .hud-window-body { grid-template-columns: minmax(0, 1fr) 44px; grid-auto-rows: min-content; align-content: start; }
+  .hud-piercing .hud-res-static-text { position: static !important; display: block; font-size: 14px; }
+  .hud-piercing [data-control="WIDC_STATIC1"] { grid-area: 1 / 1; justify-self: start; width: auto !important; height: auto !important; }
+  .hud-piercing [data-control="WIDC_STATIC2"] { grid-area: 2 / 1; justify-self: start; width: auto !important; height: auto !important; }
+  .hud-piercing [data-control="WIDC_STATIC3"] { grid-area: 3 / 1; justify-self: start; width: auto !important; height: auto !important; }
+  .hud-piercing [data-slot] {
+    grid-column: 2; width: 44px !important; height: 44px !important; background-position: 6px 6px; border-radius: 4px;
+    box-shadow: inset 0 0 0 1px #dba98c;
+  }
+  .hud-piercing [data-slot] .hud-res-slot { left: 6px; top: 6px; }
+  .hud-piercing [data-slot][data-filled] { box-shadow: inset 0 0 0 2px #3d8bd6; }
+  .hud-piercing [data-control="WIDC_STATIC5"] { grid-row: 1; }
+  .hud-piercing [data-control="WIDC_STATIC6"] { grid-row: 2; }
+  .hud-piercing [data-control="WIDC_STATIC7"] { grid-row: 3; }
+  .hud-piercing [data-control="WIDC_STATIC8"] { grid-area: 4 / 1; justify-self: start; }
+  .hud-piercing [data-control="WIDC_STATIC9"] { grid-area: 4 / 1 / 5 / 3; justify-self: stretch; width: auto !important; height: auto !important; padding-left: 30px; }
+  .hud-piercing [data-control="WIDC_OK"] { grid-area: 5 / 1 / 6 / 3; }
+  .hud-piercing [data-control="WIDC_CANCEL"] { grid-area: 6 / 1 / 7 / 3; }
 }
 
 /* The phone: each a panel beside the bag as the jewel windows (.hud-jewel), its slots 44 px, its texts, labels and buttons

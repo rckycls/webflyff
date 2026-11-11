@@ -62,6 +62,11 @@ export class InventoryWindow {
    * types taken; `drop` hears the first one present and its data.
    */
   foreignDrop?: { types(): readonly string[]; drop(type: string, data: string): void };
+  /**
+   * 2026-11-11 (owner): a phone shows the bag's items alone, without the worn equipment, while a jewel or Upgrade
+   * Specialist window is open (a worn item cannot go in them): the bag is narrower and the window beside it wider.
+   */
+  itemsOnly?: () => boolean;
   private own: OwnState | undefined;
   private selected: number | null = null;
   private revision = -1;
@@ -107,9 +112,14 @@ export class InventoryWindow {
       if (mobile !== this.mobile) { this.mobile = mobile; force = true; }
       this.frame.element.classList.toggle('inventory-actions-right', !mobile && this.frame.position.x < 240);
       const layer = this.frame.element.parentElement;
+      const itemsOnly = mobile && this.itemsOnly?.() === true;
+      this.frame.element.classList.toggle('inventory-items-only', itemsOnly);
       if (mobile && layer) {
         const taskbarHeight = parseFloat(this.doc.defaultView?.getComputedStyle(layer).getPropertyValue('--hud-taskbar-height') ?? '') || 48;
-        const bagWidth = Math.max(0, Math.min(layer.clientWidth - 24, (layer.clientHeight - taskbarHeight - 16) * 1.62));
+        const height = layer.clientHeight - taskbarHeight - 16;
+        // the items alone: the bag's 228 x 252 at the scale the height allows, and the body's 12 px
+        const wanted = itemsOnly ? ((height - 42) / 252) * 228 + 12 : height * 1.62;
+        const bagWidth = Math.max(0, Math.min(layer.clientWidth - 24, wanted));
         this.frame.element.style.setProperty('--mobile-inventory-width', `${bagWidth}px`);
         layer.style.setProperty('--bag-window-width', `${bagWidth}px`);
       }
@@ -121,7 +131,8 @@ export class InventoryWindow {
         layer.style.setProperty('--bag-window-top', top + 'px');
       }
       const width = this.frame.element.clientWidth, height = this.frame.element.clientHeight;
-      const scale = mobile ? Math.max(.5, Math.min((width - 12) / 456, (height - 42) / 252)) : 1;
+      const itemsWidth = this.frame.element.classList.contains('inventory-items-only') ? 228 : 456;
+      const scale = mobile ? Math.max(.5, Math.min((width - 12) / itemsWidth, (height - 42) / 252)) : 1;
       this.frame.element.style.setProperty('--classic-inventory-scale', String(scale));
     }
     if (!this.frame.isOpen) return;

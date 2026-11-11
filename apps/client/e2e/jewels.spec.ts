@@ -131,6 +131,9 @@ test('Create Jewels breaks a weapon into Rubies; Jewel Setting sets a Ruby in th
     }
     const slotBox = (await sockets.nth(1).boundingBox())!;
     expect(slotBox.width).toBeGreaterThanOrEqual(44);
+    // 2026-11-11 (owner): the bag beside it shows its items alone, not the worn equipment
+    await expect(bag).toHaveClass(/inventory-items-only/);
+    await expect(bag.locator('.inventory-equipment-box')).toBeHidden();
   }
   await settingStart.click();
   await expect(settingStart).toBeDisabled();

@@ -135,10 +135,14 @@ export class PiercingWindow {
     return this.window?.isOpen === true;
   }
 
+  /** 2026-11-11: a phone's bag this window opened, closed again with it (as the jewel windows'). */
+  private openedBag = false;
+
   /** MMI_PIERCING: the bag opens, the window beside it, the effect on (OnInitialUpdate, WndPiercing.cpp:125-156). */
   open(): void {
     if (this.isOpen) return;
     const window = this.make();
+    this.openedBag = this.host.mobile?.() === true && this.host.bagOpen?.() === false;
     this.host.openBag();
     this.host.effect(true);
     this.draw();
@@ -196,17 +200,23 @@ export class PiercingWindow {
       return this.window;
     }
     const window = new ResWindow(PIERCING, this.host.ui.art, this.host.ui.doc);
-    window.frame.element.classList.add('hud-piercing');
+    // 2026-11-11: `hud-jewel`: a phone shows it as the jewel windows' panel beside the bag (style.css)
+    window.frame.element.classList.add('hud-piercing', 'hud-jewel');
     ['WIDC_STATIC5', 'WIDC_STATIC6', 'WIDC_STATIC7'].forEach((id, slot) => {
       const box = window.control(id).parentElement!;
+      box.dataset.slot = String(slot);
       takeDrops(box, (objectId) => this.takeAt(slot, objectId));
-      // a right click empties the slot; on the item's, all three (OnRButtonUp, :336-366)
-      box.oncontextmenu = (event) => {
-        event.preventDefault();
+      // a right click empties the slot; on the item's, all three (OnRButtonUp, :336-366); 2026-11-11 a phone's tap
+      const empty = (): void => {
         if (slot === 0) for (let i = 0; i < 3; i++) this.set(i, null);
         else this.set(slot, null);
         this.draw();
       };
+      box.oncontextmenu = (event) => {
+        event.preventDefault();
+        empty();
+      };
+      box.onclick = () => { if (this.host.mobile?.() === true) empty(); };
     });
     window.button('WIDC_OK').onclick = () => {
       const [item, moon, protect] = this.slots;
@@ -220,6 +230,10 @@ export class PiercingWindow {
     window.onClose = () => {
       for (let i = 0; i < 3; i++) this.set(i, null);
       this.host.effect(false);
+      if (this.openedBag) {
+        this.openedBag = false;
+        this.host.closeBag?.();
+      }
     };
     this.window = window;
     this.attach(window);
@@ -254,6 +268,9 @@ export class PiercingWindow {
       box.title = prop?.name ?? '';
     });
     window.setText('WIDC_STATIC9', this.slots[0] === null ? '0' : PIERCING_COST.toLocaleString('en-US'));
+    ['WIDC_STATIC5', 'WIDC_STATIC6', 'WIDC_STATIC7'].forEach((id, slot) => {
+      window.control(id).parentElement!.toggleAttribute('data-filled', this.slots[slot] !== null);
+    });
   }
 }
 

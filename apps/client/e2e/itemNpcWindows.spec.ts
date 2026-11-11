@@ -20,7 +20,7 @@ const BLUE_JADE = 57, LUSAKA = 20148, COTTON_SUIT = 502;
 const ORICHALCUM02 = 2034, SUNSTONE = 2035, MOONSTONE = 2036, RUBY = 2032, RUBY01 = 2040, RUBY02 = 2045;
 const FLAME_CARD = 3206, SPROTECT = 10464, VOLCANO_CARD = 3204;
 const SMELT_SAFETY = 0x70007000, TRANSWEAPON = 0xf000f112, REMOVEGEM = 0xf000f115, REMOVE_ATTRIBUTE = 0xf000d00b;
-const PIERCINGREMOVE = 0xf000f809, MAKEITEM = 0xf000f110, CHAT = 0x00ff0000;
+const PIERCINGREMOVE = 0xf000f809, MAKEITEM = 0xf000f110, CHAT = 0x00ff0000, PIERCING_SIZE = 0xf000d008;
 const UI_ULTIMATE_PIERCING = 14;
 
 function scriptOf(npcKey: string, items: Array<Record<string, unknown> & { objectId: number; itemId: number; count: number }>,
@@ -71,6 +71,17 @@ async function bagOpen(page: Page): Promise<void> {
   const bag = page.locator('.hud-inventory');
   if (!(await bag.isVisible())) await page.keyboard.press('i');
   await expect(bag).toBeVisible();
+}
+
+/** 2026-11-11 (owner): the phone's bag shows its items alone, not the worn equipment, beside the window. */
+async function itemsOnly(page: Page, window: Locator): Promise<void> {
+  if (!isPhone()) return;
+  const bag = page.locator('.hud-inventory');
+  await expect(bag).toHaveClass(/inventory-items-only/);
+  await expect(bag.locator('.inventory-equipment-box')).toBeHidden();
+  await expect(bag.locator('.inventory-bag')).toBeVisible();
+  const panel = (await window.boundingBox())!, box = (await bag.boundingBox())!;
+  expect(panel.x + panel.width).toBeLessThanOrEqual(box.x + 1);
 }
 
 /** The phone's words: at least 14 px; its slots and buttons big enough for a finger. */
@@ -131,6 +142,7 @@ test('BoBoChan: Safe Element, Create Unique Weapon, Remove Jewel, Remove Element
   for (const slot of [5, 6, 7]) await putIn(page, slot);
   await expect(safety.locator('[data-control="WIDC_NOW_GRADE"]')).toHaveText('2');
   await phoneSized(safety);
+  await itemsOnly(page, safety);
   if (isPhone()) {
     // the phone's panel: the rows' cells 44 px, beside the bag and not under it
     expect((await safety.locator('[data-control="MATERIAL0"]').boundingBox())!.width).toBeGreaterThanOrEqual(44);
@@ -151,6 +163,23 @@ test('BoBoChan: Safe Element, Create Unique Weapon, Remove Jewel, Remove Element
   await safety.locator('[data-control="WIDC_BUTTON_STOP"]').click();
   await closeWindow(safety);
 
+  // Piercing (23): the sword and a Moonstone; OK asks, then PIERCING_SIZE, and the window closes
+  await chooseEntry(page, gateway, 23);
+  const piercing = page.locator('.hud-piercing');
+  await expect(piercing).toBeVisible();
+  await bagOpen(page);
+  for (const slot of [3, 10]) await putIn(page, slot);
+  await expect(piercing.locator('[data-slot][data-filled]')).toHaveCount(2);
+  await phoneSized(piercing);
+  await itemsOnly(page, piercing);
+  await shot('piercing');
+  await piercing.locator('[data-control="WIDC_OK"]').click();
+  await page.locator('.hud-message:visible [data-button="ok"]').click();
+  await expect.poll(() => sentOf(gateway, PIERCING_SIZE).length).toBe(1);
+  expect(words(gateway, PIERCING_SIZE)).toEqual([3, 10, NULL_ID]);
+  await expect(piercing).toBeHidden();
+  if (isPhone()) await expect(page.locator('.hud-inventory')).toBeHidden(); // the bag it opened goes with it
+
   // Create Unique Weapon (54): the sword, Shining Oricalkum, a Ruby (its level's); START sends; a failure's box
   await chooseEntry(page, gateway, 54);
   const change = page.locator('.hud-change-weapon');
@@ -160,6 +189,7 @@ test('BoBoChan: Safe Element, Create Unique Weapon, Remove Jewel, Remove Element
   for (const slot of [3, 8, 9]) await putIn(page, slot);
   await expect(change.locator('[data-slot][data-filled]')).toHaveCount(3);
   await phoneSized(change);
+  await itemsOnly(page, change);
   await shot('change-weapon');
   await change.locator('[data-control="WIDC_START"]').click();
   await expect.poll(() => sentOf(gateway, TRANSWEAPON).length).toBe(1);
@@ -237,6 +267,7 @@ test('Peach: Create Shining Oricalkum from five Sunstones and five Moonstones', 
   }
   await expect(mix.locator('[data-slot][data-filled]')).toHaveCount(10);
   await phoneSized(mix);
+  await itemsOnly(page, mix);
   await page.screenshot({ path: info.outputPath('mix-jewel.png') });
   await mix.locator('[data-control="WIDC_START"]').click();
   await expect.poll(() => sentOf(gateway, MAKEITEM).length).toBe(1);
