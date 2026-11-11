@@ -89,7 +89,7 @@ const monster = (index: number, extra: { level?: number; activeAttack?: number; 
 };
 const gameData = () => ({
   movers: MOVERS, items: new Map(), npcs: new Map(), nameColors: { general: 0, chaotic: 0, ready: 0 },
-  honorTitles: new Map(), worlds: new Map(), itemProps: new Map(), jobs: [], exp: [], texts: TEXTS, effects: new Map(),
+  honorTitles: new Map(), honorNeeds: new Map(), worlds: new Map(), itemProps: new Map(), jobs: [], exp: [], texts: TEXTS, effects: new Map(),
   skills: new Map(), noFlyWorlds: new Set<number>(),
 });
 
@@ -1671,6 +1671,8 @@ const WINDOW_TEXTS: Texts = new Map([
   text('TID_GAME_TOOLTIP_SHOP', 3335, 'You can use a Premium item.'),
   text('TID_GAME_TITLE_CHAR_INFO', 4004, 'Character'),
   text('TID_GAME_TITLE_HONOR', 4005, 'Fame/Master'),
+  text('TID_GAME_NO_TITLE', 4087, 'No fame obtained.'),
+  text('TID_GAME_NOT_SELECTED_TITLE', 4088, 'No Title'),
   text('TID_APP_CHARACTER_BASE', 158, 'Base'),
   text('TID_APP_CHARACTER_DETAIL', 159, 'Detail'),
   text('TID_APP_CHARACTER_JOB', 160, 'Job'),
@@ -2132,6 +2134,80 @@ describe('CharacterWindow (CWndCharInfo, WndField.cpp:3012-4110; CWndStateConfir
     press('KeyH');
     expect(heard).toEqual(['KeyH']);
     window.removeEventListener('keydown', listen);
+  });
+
+  // 2026-11-11: the Fame/Master page (CWndHonor, WndField.cpp:4061-4196; APP_HONOR, resdata.inc:1241-1270)
+  const honorPage = (w: CharacterWindow) => w.frame.element.querySelector<HTMLElement>('.hud-honor-page')!;
+  const honorRows = (w: CharacterWindow) => [...w.frame.element.querySelectorAll<HTMLElement>('.hud-honor-rows [role="option"]')];
+  const tabButton = (w: CharacterWindow, tab: number) => w.frame.element.querySelector<HTMLButtonElement>(`.hud-char-tab-title[data-tab="${tab}"]`)!;
+  const TITLES = [{ id: 36, title: 'Lord' }, { id: 7, title: 'Strongman' }];
+
+  it('Fame/Master: its tab shows the page (OnLButtonDown, WndControl.cpp:4460-4490), the strip drawn with it chosen', () => {
+    const { character } = windowOn();
+    const page = character.frame.element.querySelector<HTMLElement>('.hud-char-page[data-page="0"]')!;
+    expect(page.hidden).toBe(false);
+    expect(honorPage(character).hidden).toBe(true);
+    tabButton(character, 1).click();
+    expect(character.tab).toBe(1);
+    expect(page.hidden).toBe(true);
+    expect(honorPage(character).hidden).toBe(false);
+    expect([tabButton(character, 0).style.color, tabButton(character, 1).style.color]).toEqual(['rgb(255, 255, 255)', 'rgb(0, 0, 0)']);
+    expect(tabButton(character, 1).getAttribute('aria-pressed')).toBe('true');
+    // each title a button over its share of the strip's last 18 px: (196 - 15) / 2 = 90 px, from 454 - 18
+    expect([tabButton(character, 1).style.left, tabButton(character, 1).style.top, tabButton(character, 1).style.width])
+      .toEqual(['90px', '436px', '90px']);
+    tabButton(character, 0).click();
+    expect(page.hidden).toBe(false);
+  });
+
+  it('Fame/Master: no title earned shows TID_GAME_NO_TITLE at the list\'s (5, 8) and no row (OnDraw, :4072-4086)', () => {
+    const { character } = windowOn();
+    character.setHonor([], -1);
+    const empty = character.frame.element.querySelector<HTMLElement>('.hud-honor-empty')!;
+    expect(empty.hidden).toBe(false);
+    expect(empty.textContent).toBe('No fame obtained.');
+    expect([empty.style.left, empty.style.top, empty.style.color]).toEqual(['11px', '16px', 'rgb(0, 0, 0)']);
+    expect(honorRows(character)).toEqual([]);
+    expect(button(character, 'honor-ok').disabled).toBe(true);
+  });
+
+  it('Fame/Master: "No Title" then each title; a row enables OK, which sends the pick once (RefreshList, OnChildNotify)', () => {
+    const { character } = windowOn();
+    const sent: number[] = [];
+    character.onHonorChange = (honor) => void sent.push(honor);
+    character.chooseTab(1);
+    character.setHonor(TITLES, -1);
+    expect(honorRows(character).map((row) => row.textContent)).toEqual(['No Title', 'Lord', 'Strongman']);
+    expect(character.frame.element.querySelector<HTMLElement>('.hud-honor-empty')!.hidden).toBe(true);
+    // RefreshList: no row chosen, OK disabled
+    expect(honorRows(character).map((row) => row.getAttribute('aria-selected'))).toEqual(['false', 'false', 'false']);
+    expect(button(character, 'honor-ok').disabled).toBe(true);
+    honorRows(character)[1]!.click();
+    expect(honorRows(character).map((row) => row.getAttribute('aria-selected'))).toEqual(['false', 'true', 'false']);
+    expect(button(character, 'honor-ok').disabled).toBe(false);
+    button(character, 'honor-ok').click();
+    button(character, 'honor-ok').click();
+    expect(sent).toEqual([36]);
+    expect(button(character, 'honor-ok').disabled).toBe(true);
+    // the first row takes the title off: -1
+    honorRows(character)[0]!.click();
+    button(character, 'honor-ok').click();
+    expect(sent).toEqual([36, -1]);
+    // a new list (HONOR_LIST_ACK) chooses no row again
+    honorRows(character)[2]!.click();
+    character.setHonor(TITLES, 36);
+    expect(button(character, 'honor-ok').disabled).toBe(true);
+    expect(honorRows(character).some((row) => row.getAttribute('aria-selected') === 'true')).toBe(false);
+  });
+
+  it('Fame/Master: the list, OK and scroll bar at APP_HONOR\'s places (resdata.inc:1250-1265)', () => {
+    const { character } = windowOn();
+    const list = character.frame.element.querySelector<HTMLElement>('.hud-honor-list')!;
+    expect([list.style.left, list.style.top, list.style.width, list.style.height]).toEqual(['6px', '8px', '166px', '374px']);
+    const ok = button(character, 'honor-ok');
+    expect([ok.style.left, ok.style.top, ok.style.width, ok.style.height]).toEqual(['48px', '390px', '72px', '20px']);
+    expect(ok.style.backgroundImage).toContain('ui/buttok.png');
+    expect(list.querySelector('.hud-res-scroll')).not.toBeNull();
   });
 });
 

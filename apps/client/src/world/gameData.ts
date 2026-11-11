@@ -1,5 +1,5 @@
-import { CHAT_KEY, GAME_DATA_KEYS, ITEM_ETC_KEY, PETS_KEY, ULTIMATE_KEY, WORLD_NO_FLY_KEY } from '@flyffweb/formats';
-import type { WebChat, WebUltimate } from '@flyffweb/formats';
+import { CHAT_KEY, GAME_DATA_KEYS, HONOR_NEEDS_KEY, ITEM_ETC_KEY, PETS_KEY, ULTIMATE_KEY, WORLD_NO_FLY_KEY } from '@flyffweb/formats';
+import type { WebChat, WebHonorNeeds, WebUltimate } from '@flyffweb/formats';
 import type {
   ExpRow,
   TextEntry,
@@ -50,6 +50,11 @@ export interface GameData {
   nameColors: WebNameColors;
   /** The honour titles of `honorList.txt` by honour id (`CTitleManager::GetTitle`). */
   honorTitles: Map<number, string>;
+  /**
+   * 2026-11-11: the count that earns each honour title (`CTitleManager::GetNeedCount( id, -1 )`), empty without
+   * `data/honorNeeds.json` (game files converted before it): the honour window then lists no title.
+   */
+  honorNeeds: ReadonlyMap<number, number>;
   /**
    * The web folder name of each world of `World.inc`, by world id (`WI_*`, what the world server sends in WORLD_READINFO):
    * `CWorldMng::Open` (`worldmng.cpp:206`) opens a world by that id. It lists every world, converted or not; the world is
@@ -158,12 +163,15 @@ export async function loadGameData(store: Pick<AssetStore, 'json' | 'url'>): Pro
   const chat = store.url(CHAT_KEY) === null ? undefined : await store.json<WebChat>(CHAT_KEY);
   const ultimate = store.url(ULTIMATE_KEY) === null ? undefined : await store.json<WebUltimate>(ULTIMATE_KEY);
   const pets = store.url(PETS_KEY) === null ? undefined : await store.json<WebPets>(PETS_KEY); // pets R1
+  // 2026-11-11: the honour titles' needs (the honour window); none in game files converted before it
+  const honorNeeds = store.url(HONOR_NEEDS_KEY) === null ? {} : await store.json<WebHonorNeeds>(HONOR_NEEDS_KEY);
   return {
     movers: new Map(movers.map((mover) => [mover.index, withLaterColumns(mover)])),
     items: new Map(items.map((item) => [item.id, withHides(item)])),
     npcs: new Map(npcs.map((npc) => [npc.key.toLowerCase(), npc])),
     nameColors,
     honorTitles: new Map(Object.entries(honorTitles).map(([id, title]) => [Number(id), title])),
+    honorNeeds: new Map(Object.entries(honorNeeds).map(([id, need]) => [Number(id), need])),
     worlds: new Map(Object.entries(worlds).map(([id, folder]) => [Number(id), folder])),
     itemProps: new Map(itemProps.map((prop) => [prop.id, withPackMax(prop)])),
     jobs: jobs.map(withTitle),

@@ -582,6 +582,9 @@ export class WorldState {
       case 'modifyMode': // 2026-11-10, OnModifyMode (:12278-12283): the whole m_dwMode of a player in view, the own one's too
         if (m.added.player !== undefined) m.added.player.mode = message.mode;
         break;
+      case 'honorChange': // 2026-11-11, OnHonorChangeAck (:17280-17292): m_nHonor, the title its name tag shows (SetTitle)
+        if (m.added.player !== undefined) m.added.player.honor = message.honor;
+        break;
       case 'disguise': { // 2026-11-10, OnDisguise (:13706-13730): SetIndex( dwMoverIdx ), Mover.cpp:8901-8930; the view is made again
         const prop = this.data.movers.get(message.moverIndex);
         if (prop === undefined) break; // "property not found": nothing changes
