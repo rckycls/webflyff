@@ -292,28 +292,29 @@ describe('lookOf: what the hands hold', () => {
 });
 
 describe('heldModels', () => {
-  // CMover::UpdateParts (MoverEquip.cpp:378-425): the bone each held part hangs from
+  // CMover::UpdateParts (MoverEquip.cpp:378-425): the bone each held part hangs from; `hand` the weapon part it is, for
+  // its glow (2026-11-09), null for a shield and a yoyo's copy
   it('a weapon goes to the right hand, and in the left hand to the left one', () => {
-    expect(heldModels({ right: 21, left: null }, data)).toEqual([{ model: 'models/item_weaswowooden.glb', slot: 'right' }]);
+    expect(heldModels({ right: 21, left: null }, data)).toEqual([{ model: 'models/item_weaswowooden.glb', slot: 'right', hand: 'right' }]);
     expect(heldModels({ right: 23, left: 21 }, data)).toEqual([
-      { model: 'models/item_weaswonormal.glb', slot: 'right' },
-      { model: 'models/item_weaswowooden.glb', slot: 'left' },
+      { model: 'models/item_weaswonormal.glb', slot: 'right', hand: 'right' },
+      { model: 'models/item_weaswowooden.glb', slot: 'left', hand: 'left' },
     ]);
   });
 
   it('a shield goes to the shield grip', () => {
     expect(heldModels({ right: 21, left: 2001 }, data)).toEqual([
-      { model: 'models/item_weaswowooden.glb', slot: 'right' },
-      { model: 'models/item_armshiwooden.glb', slot: 'shield' },
+      { model: 'models/item_weaswowooden.glb', slot: 'right', hand: 'right' },
+      { model: 'models/item_armshiwooden.glb', slot: 'shield', hand: null },
     ]);
   });
 
   it('a knuckle goes to the right forearm, a bow to the left hand, and a yoyo to both hands', () => {
-    expect(heldModels({ right: 331, left: null }, data)).toEqual([{ model: 'models/item_weaknucram.glb', slot: 'knuckle' }]);
-    expect(heldModels({ right: 431, left: null }, data)).toEqual([{ model: 'models/item_weabowwoode.glb', slot: 'left' }]);
+    expect(heldModels({ right: 331, left: null }, data)).toEqual([{ model: 'models/item_weaknucram.glb', slot: 'knuckle', hand: 'right' }]);
+    expect(heldModels({ right: 431, left: null }, data)).toEqual([{ model: 'models/item_weabowwoode.glb', slot: 'left', hand: 'right' }]);
     expect(heldModels({ right: 381, left: null }, data)).toEqual([
-      { model: 'models/item_weayoyiron.glb', slot: 'right' },
-      { model: 'models/item_weayoyiron.glb', slot: 'left' },
+      { model: 'models/item_weayoyiron.glb', slot: 'right', hand: 'right' },
+      { model: 'models/item_weayoyiron.glb', slot: 'left', hand: null },
     ]);
   });
 

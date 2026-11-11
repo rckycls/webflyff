@@ -1359,10 +1359,32 @@ describe('TaskBar: stackable items, names, focus and room (WndTaskBar.cpp)', () 
 
   it('on a touch screen it is up to twice its size, as the room above the bar allows: a finger\'s 40 to 44 px a line', () => {
     onTouchScreen(() => {
-      // A landscape phone leaves room for twice the 164px menu above the floating bar.
-      expect(menuOn(844, 390).menu.style.transform).toBe(`scale(${(390 - 48 * 720 / 620) / 384})`);
+      // 2026-11-12: a landscape phone's room is under the fourteen lines' 384 px in one column, so they stand in two
+      // columns of seven (232 px: 50 + 7 x 22 + the bottom edge's 28), each line at least its 22 px
+      expect(menuOn(844, 390).menu.style.transform).toBe(`scale(${(390 - 48 * 720 / 620) / 232})`);
       // The compact 620px layout fills the width between the phone's side gutters.
-      expect(menuOn(750, 342).menu.style.transform).toBe(`scale(${(342 - 48 * (718 / 620)) / 384})`);
+      expect(menuOn(750, 342).menu.style.transform).toBe(`scale(${(342 - 48 * (718 / 620)) / 232})`);
+      // a tall touch screen keeps one column
+      expect(menuOn(1024, 900).menu.style.width).toBe('192px');
+    });
+  });
+
+  it('on a short touch screen the lines stand in two columns of seven, each column on its own picture', () => {
+    onTouchScreen(() => {
+      const { menu } = menuOn(750, 342);
+      expect([menu.style.width, menu.style.height]).toEqual(['384px', '232px']);
+      const slices = [...menu.querySelectorAll<HTMLElement>('.hud-menu-slice')];
+      // after seven lines' rows (an odd number) the bottom edge is 28 px from row 468, the picture's stripes in step
+      expect(slices.map((slice) => [slice.style.left, slice.style.top, slice.style.height, slice.style.backgroundPosition])).toEqual([
+        ['0px', '0px', '50px', '0px 0px'], ['0px', '50px', '154px', '0px -50px'], ['0px', '204px', '28px', '0px -468px'],
+        ['192px', '0px', '50px', '0px 0px'], ['192px', '50px', '154px', '0px -50px'], ['192px', '204px', '28px', '0px -468px'],
+      ]);
+      const items = [...menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
+      expect(items.map((item) => [item.style.left, item.style.top])).toEqual([
+        ...[0, 1, 2, 3, 4, 5, 6].map((row) => ['10px', `${50 + 22 * row}px`]),
+        ...[0, 1, 2, 3, 4, 5, 6].map((row) => ['202px', `${50 + 22 * row}px`]),
+      ]);
+      expect(items[7]!.getAttribute('aria-label')).toBe('Navigator');
     });
   });
 

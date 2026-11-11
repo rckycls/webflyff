@@ -170,7 +170,8 @@ test('the Scroll of Return: the box, the village, RETURNSCROLL and its answer', 
   } else {
     await cell.dblclick();
   }
-  const box = page.locator('.hud-message');
+  // the shown message box (others wait hidden beside it)
+  const box = page.locator('.hud-message:visible');
   await expect(box).toBeVisible();
   await expect(box).toContainText('Do you want to use the item?');
   expect(used(gateway)).toEqual([]);

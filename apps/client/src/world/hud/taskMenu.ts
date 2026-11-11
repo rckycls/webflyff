@@ -18,6 +18,8 @@
 // lines; Piece 4 has four, and the window is the picture's top edge, those four lines' rows and its bottom edge (a 3-slice
 // of the same picture, 164 px), which a touch screen draws up to twice its size (`TaskBar`). And each line takes its whole
 // 22 px row, the 2 px between two lines included, so no press between two lines is lost; its highlight stays Neuz's 20 px.
+// A third (2026-11-12): the fourteen lines of a landscape phone, too many for one column at a finger's size above its task
+// bar, stand in two columns of seven (`setColumns`).
 
 import { APPLETS } from './applets';
 import { themeUrl } from './art';
@@ -33,9 +35,24 @@ const LINE_PITCH = 22;
 const LINE_WIDTH = MENU_WIDTH - 20 - LINE_LEFT;
 /**
  * The picture's bottom edge as drawn: the panel's rounded bottom (from its row 472) with a few rows of the panel above it,
- * 26 px from row 470, where the picture's 4 px stripes are in step with the end of an even number of lines' rows.
+ * 26 px from row 470, where the picture's 4 px stripes are in step with the end of an even number of lines' rows; after an
+ * odd number, 28 px from row 468, in step with that.
  */
-const BOTTOM_EDGE = 26;
+const BOTTOM_FROM = 470;
+
+/**
+ * 2026-11-12: the menu's height at scale 1 with `lines` lines in `columns` columns: the top edge, a column's rows and the
+ * bottom edge. A touch screen too short for the fourteen lines in one column at a finger's 22 px lays them out in two.
+ */
+export function taskMenuHeight(lines: number, columns: 1 | 2): number {
+  const rows = Math.ceil(lines / columns) * LINE_PITCH;
+  return LINE_TOP + rows + PICTURE_HEIGHT - bottomFrom(rows);
+}
+
+/** The picture's row the bottom edge starts at after `rows` px of lines (`BOTTOM_FROM`). */
+function bottomFrom(rows: number): number {
+  return (LINE_TOP + rows) % 4 === BOTTOM_FROM % 4 ? BOTTOM_FROM : BOTTOM_FROM - 2;
+}
 
 /** A line of the menu: its applet, its text, and whether it does anything in Piece 4. */
 export interface TaskMenuLine {
@@ -52,11 +69,15 @@ export interface TaskMenuLine {
  */
 export class TaskMenu {
   readonly element: HTMLElement;
-  /** The menu's height as drawn at scale 1: the picture's top edge, the lines' rows and its bottom edge. */
-  readonly height: number;
+  /** The menu's height as drawn at scale 1 (in its columns): the picture's top edge, a column's rows and its bottom edge. */
+  height = 0;
   /** Called as the menu opens (true) or closes (false). */
   onChange?: (open: boolean) => void;
   private readonly doc: Document;
+  private readonly picture: string;
+  private readonly lines: HTMLButtonElement[] = [];
+  private slices: HTMLElement[] = [];
+  private columns = 0;
 
   constructor(
     art: UiArt,
@@ -70,27 +91,8 @@ export class TaskMenu {
     element.className = 'hud-taskbar-menu';
     element.setAttribute('role', 'menu');
     element.hidden = true;
-    const rows = lines.length * LINE_PITCH;
-    this.height = LINE_TOP + rows + BOTTOM_EDGE;
-    element.style.width = `${MENU_WIDTH}px`;
-    element.style.height = `${this.height}px`;
-    // the picture's top edge (0 to 50), the lines' rows (from 50), its bottom edge (its last 26 px)
-    const picture = themeUrl(art, 'WndTaskMenu.tga');
-    const slices: Array<[name: string, top: number, height: number, from: number]> = [
-      ['top', 0, LINE_TOP, 0], ['rows', LINE_TOP, rows, LINE_TOP],
-      ['bottom', LINE_TOP + rows, BOTTOM_EDGE, PICTURE_HEIGHT - BOTTOM_EDGE],
-    ];
-    for (const [name, top, height, from] of slices) {
-      const slice = doc.createElement('div');
-      slice.className = 'hud-menu-slice';
-      slice.dataset.slice = name;
-      slice.style.top = `${top}px`;
-      slice.style.height = `${height}px`;
-      slice.style.backgroundImage = picture;
-      slice.style.backgroundPosition = `0px ${-from}px`;
-      element.append(slice);
-    }
-    lines.forEach(({ id, text, enabled }, i) => {
+    this.picture = themeUrl(art, 'WndTaskMenu.tga');
+    lines.forEach(({ id, text, enabled }) => {
       const line = doc.createElement('button');
       line.type = 'button';
       line.className = 'hud-menu-line';
@@ -100,8 +102,6 @@ export class TaskMenu {
       line.tabIndex = -1;
       // a press gives the line no focus, so Space and Enter do not press it again
       line.addEventListener('mousedown', (event) => event.preventDefault());
-      line.style.left = `${LINE_LEFT}px`;
-      line.style.top = `${LINE_TOP + i * LINE_PITCH}px`;
       line.style.width = `${LINE_WIDTH}px`;
       line.style.height = `${LINE_PITCH}px`;
       const applet = APPLETS.get(id);
@@ -121,8 +121,52 @@ export class TaskMenu {
         this.choose(id);
       });
       element.append(line);
+      this.lines.push(line);
     });
     this.element = element;
+    this.setColumns(1);
+  }
+
+  /**
+   * 2026-11-12: the lines in one column, as Neuz draws them, or in two side by side, each on its own copy of the picture,
+   * the first half in the left one (`TaskBar.relayout`: a touch screen too short for one column at a finger's size).
+   */
+  setColumns(columns: 1 | 2): void {
+    if (columns === this.columns) return;
+    this.columns = columns;
+    const perColumn = Math.ceil(this.lines.length / columns);
+    const rows = perColumn * LINE_PITCH;
+    const from = bottomFrom(rows);
+    this.height = taskMenuHeight(this.lines.length, columns);
+    this.element.style.width = `${MENU_WIDTH * columns}px`;
+    this.element.style.height = `${this.height}px`;
+    // in each column the picture's top edge (0 to 50), the lines' rows (from 50), its bottom edge (its last 26 or 28 px)
+    for (const slice of this.slices) slice.remove();
+    this.slices = [];
+    const parts: Array<[name: string, top: number, height: number, from: number]> = [
+      ['top', 0, LINE_TOP, 0], ['rows', LINE_TOP, rows, LINE_TOP], ['bottom', LINE_TOP + rows, PICTURE_HEIGHT - from, from],
+    ];
+    for (let column = 0; column < columns; column++) {
+      for (const [name, top, height, picture] of parts) {
+        const slice = this.doc.createElement('div');
+        slice.className = 'hud-menu-slice';
+        slice.dataset.slice = name;
+        if (columns > 1) {
+          slice.style.left = `${column * MENU_WIDTH}px`;
+          slice.style.width = `${MENU_WIDTH}px`;
+        }
+        slice.style.top = `${top}px`;
+        slice.style.height = `${height}px`;
+        slice.style.backgroundImage = this.picture;
+        slice.style.backgroundPosition = `0px ${-picture}px`;
+        this.slices.push(slice);
+      }
+    }
+    this.element.prepend(...this.slices);
+    this.lines.forEach((line, i) => {
+      line.style.left = `${Math.floor(i / perColumn) * MENU_WIDTH + LINE_LEFT}px`;
+      line.style.top = `${LINE_TOP + (i % perColumn) * LINE_PITCH}px`;
+    });
   }
 
   get isOpen(): boolean {

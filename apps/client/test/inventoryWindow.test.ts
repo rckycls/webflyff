@@ -145,7 +145,8 @@ describe('inventory window', () => {
     expect(ui.frame.element.querySelector('[data-bag-slot="6"]')).toBe(cell);
     expect(use).not.toHaveBeenCalled();
     cell.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
-    expect(use).toHaveBeenCalledWith(6);
+    // with Shift up (2026-11-05: Shift fills the safe upgrade's column)
+    expect(use).toHaveBeenCalledWith(6, false);
     expect(ui.frame.element.querySelector('[data-item-action]')).toBeNull();
     ui.dispose();
   });
@@ -188,7 +189,7 @@ describe('inventory window', () => {
     document.body.append(ui.frame.element); ui.toggle(own);
     // the PC: a ride's double-click in the bag uses it
     ui.frame.element.querySelector<HTMLButtonElement>('[data-bag-slot="3"]')!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
-    expect(use).toHaveBeenCalledWith(3);
+    expect(use).toHaveBeenCalledWith(3, false);
     expect(equip).not.toHaveBeenCalled();
     // worn, its equipment cell's double-click lands it
     own.equipmentObjectIds[13] = 3; own.inventoryRevision++; ui.update(own);

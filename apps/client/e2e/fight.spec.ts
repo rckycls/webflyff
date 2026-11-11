@@ -401,7 +401,9 @@ test.describe('fighting against the pretend world server', () => {
   });
 
   // The new character's Character window (spec §3.6) over the paused world: its name, job, level, server and channel,
-  // ATK 21, DEF 4, Critical 1% and A.Speed 42% with the Wooden Sword and the clothes, and the stats with no points
+  // ATK, DEF, Critical 1% and A.Speed 42% with the Wooden Sword and the clothes, and the stats with no points. ATK and DEF
+  // are the gear's: 21 and 4 with the client's own values, 49 and 24 after the gear sync puts the server's in their place
+  // (tools/sync_resource_gear_catalog.ts, 2026-11-12), so they are checked as numbers and masked in the picture
   test('a picture of the Character window', { tag: '@picture' }, async ({ page }) => {
     test.skip(test.info().project.use.hasTouch === true, "pictures are the desktop's only: one baseline a name (SwiftShader)");
     await playGateway(page, fight(), { listed: NEW_CHARACTER });
@@ -410,10 +412,11 @@ test.describe('fighting against the pretend world server', () => {
     const character = await openCharacterWindow(page);
     const value = (name: string): Locator => character.locator(`[data-value="${name}"]`);
     await expect(value('name')).toHaveText('Webby');
-    expect(await Promise.all(['atk', 'def', 'critical', 'speed'].map((name) => value(name).textContent())))
-      .toEqual(['21', '4', '1%', '42%']);
+    const shown = await Promise.all(['atk', 'def', 'critical', 'speed'].map((name) => value(name).textContent()));
+    expect(shown.slice(0, 2).map((n) => /^[1-9]\d*$/.test(n ?? ''))).toEqual([true, true]);
+    expect(shown.slice(2)).toEqual(['1%', '42%']);
     expect((await page.evaluate(() => window.__client!.stats())).errors).toEqual([]);
     // a screenshot waits on the frame loop (ON_FRAMES, as the fight's picture)
-    await expect(character).toHaveScreenshot('fight-character-window.png', ON_FRAMES);
+    await expect(character).toHaveScreenshot('fight-character-window.png', { mask: [value('atk'), value('def')], ...ON_FRAMES });
   });
 });

@@ -51,7 +51,7 @@ import { setLayoutBottom } from './frame';
 import { SlotGestures, byFinger } from './slotGestures';
 import { EMPTY, TaskBarEdits, remember, stacks } from './taskBarEdits';
 import type { Carried, DropTarget, LoadedBars, TaskBarEditActions } from './taskBarEdits';
-import { TaskMenu } from './taskMenu';
+import { TaskMenu, taskMenuHeight } from './taskMenu';
 import { itemIconOf } from '../pets/petStatus';
 
 /** The windows of Piece 4 a press on the task bar opens. */
@@ -877,7 +877,11 @@ export class TaskBar {
     strip.style.transform = layout.scale === 1 ? '' : `scale(${layout.scale})`;
     strip.dataset.layout = String(layout.width);
     const room = (parent?.clientHeight ?? 0) - height;
-    const most = this.touch() ? TOUCH_MENU_SCALE : 1;
+    const touch = this.touch();
+    const most = touch ? TOUCH_MENU_SCALE : 1;
+    // 2026-11-12: a touch screen whose room would draw one column's lines under their 22 px (a landscape phone's fourteen
+    // lines) lays them out in two columns
+    this.menu.setColumns(touch && room > 0 && room < taskMenuHeight(MENU.length, 1) ? 2 : 1);
     this.menu.place(room > 0 ? Math.min(most, room / this.menu.height) : layout.scale, height);
     if (parent !== null) {
       parent.style.setProperty('--hud-taskbar-height', `${height}px`);
