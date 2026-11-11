@@ -68,8 +68,9 @@ No server or gateway change is needed.
 
 ## Tests
 
-- Builder runs (this branch): `npm run typecheck` clean; `npx vitest run`: see the report; the new e2e spec on both
-  projects (below), and `jewels.spec.ts` on both.
+- Builder runs (this branch): `npm run typecheck` clean; `npx vitest run` 4573 passed, 9 skipped, 5 failed (only main's
+  known ones: `looks.test.ts` x3, `inventoryWindow.test.ts` x2); e2e on port 5197: `itemNpcWindows.spec.ts` and
+  `jewels.spec.ts` on both projects, `uiFixes.spec.ts` on the desktop (it skips the phone).
 - For the owner, on main after the merge:
   - `npx playwright test -c apps/client/playwright.config.ts itemNpcWindows.spec.ts jewels.spec.ts uiFixes.spec.ts --project=chromium --project=phone`:
     every test passes (uiFixes skips itself on the phone); pictures of each step in `test-results/`.
