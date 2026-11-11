@@ -7,6 +7,7 @@ import {
   ArReader, ArWriter, MessageType, NULL_ID, PacketType, WORLD_READERS, decodeWorldPacket, encodeDoUseItemTarget,
   encodeEnchant, encodePiercing, encodePiercingSize, encodeRandomScroll, encodeSmeltSafety, encodeUltimateEnchantWeapon, readBundle,
   encodeUltimateMakeGem, encodeUltimateSetGem, UltimateResult, UltimateState,
+  encodeRepairItem, encodeUltimateMakeItem, encodeUltimateRemoveGem, encodeUltimateTransWeapon,
 } from '../src';
 
 const fields = (bytes: Uint8Array): number[] => {
@@ -116,5 +117,46 @@ describe('the jewel windows\' packets (2026-11-10, jewels research §5)', () => 
   it('the states and results are MsgHdr.h:1585-1590 and UltimateWeapon.h:19', () => {
     expect(UltimateState).toEqual({ MAKEITEM: 1, TRANSWEAPON: 2, MAKEGEM: 3, SETGEM: 4, REMOVEGEM: 5, ENCHANTWEAPON: 6 });
     expect(UltimateResult).toEqual({ SUCCESS: 0, FAILED: 1, CANCEL: 2, ISULTIMATE: 3, INVENTORY: 4, ISNOTULTIMATE: 5 });
+  });
+});
+
+describe('the item NPC windows\' packets (2026-11-11, docs/superpowers/specs/2026-11-11-item-npc-windows-research.md)', () => {
+  const words = (bytes: Uint8Array): number[] => {
+    const r = new ArReader(bytes);
+    const out: number[] = [];
+    while (r.remaining() >= 4) out.push(r.u32());
+    return out;
+  };
+
+  it('ULTIMATE_MAKEITEM: the ten slots as ten object ids (SendUltimateMakeItem, DPClient.cpp:16281-16289)', () => {
+    const ids = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    expect(words(encodeUltimateMakeItem(ids))).toEqual([NULL_ID, 0xf000f110, ...ids]);
+    expect(decodeWorldPacket(encodeUltimateMakeItem(ids))).toEqual({ type: 'ultimateMakeItem', itemIds: ids });
+    expect(() => encodeUltimateMakeItem([1, 2, 3])).toThrow();
+    expect(() => encodeUltimateMakeItem([...ids.slice(0, 9), 73])).toThrow();
+  });
+
+  it('ULTIMATE_TRANSWEAPON: the weapon, then the two stones (SendUltimateTransWeapon, :16299-16306)', () => {
+    expect(words(encodeUltimateTransWeapon(12, 4, 5))).toEqual([NULL_ID, 0xf000f112, 12, 4, 5]);
+    expect(decodeWorldPacket(encodeUltimateTransWeapon(12, 4, 5)))
+      .toEqual({ type: 'ultimateTransWeapon', weaponId: 12, gem1Id: 4, gem2Id: 5 });
+    expect(() => encodeUltimateTransWeapon(12, 4, -1)).toThrow();
+  });
+
+  it('ULTIMATE_REMOVEGEM: the weapon, then the Moonstone (SendUltimateRemoveGem, :16316-16322)', () => {
+    expect(words(encodeUltimateRemoveGem(12, 4))).toEqual([NULL_ID, 0xf000f115, 12, 4]);
+    expect(decodeWorldPacket(encodeUltimateRemoveGem(12, 4))).toEqual({ type: 'ultimateRemoveGem', weaponId: 12, gemId: 4 });
+    expect([PacketType.ULTIMATE_MAKEITEM, PacketType.ULTIMATE_TRANSWEAPON, PacketType.ULTIMATE_REMOVEGEM])
+      .toEqual([0xf000f110, 0xf000f112, 0xf000f115]);
+  });
+
+  it('REPAIRITEM: a BYTE count, then each object id as a BYTE (SendRepairItem, DPClient.cpp:14150-14190)', () => {
+    const bytes = encodeRepairItem([3, 40, 72]);
+    const r = new ArReader(bytes);
+    expect([r.u32(), r.u32(), r.u8(), r.u8(), r.u8(), r.u8()]).toEqual([NULL_ID, 0x00ff00b5, 3, 3, 40, 72]);
+    r.expectEnd();
+    expect(decodeWorldPacket(bytes)).toEqual({ type: 'repairItem', objectIds: [3, 40, 72] });
+    expect(() => encodeRepairItem([])).toThrow(); // Neuz sends nothing with no item to repair
+    expect(() => encodeRepairItem(Array.from({ length: 26 }, (_, i) => i))).toThrow(); // MAX_REPAIRINGITEM 25
   });
 });
