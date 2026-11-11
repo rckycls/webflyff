@@ -49,6 +49,11 @@ grid (the item, NOW and the goal with +/-, then the ten rows, then Start, Stop, 
 in, a tap on a cell takes the column's last one out; the bag it opened closes with it. The ResistItem panel is short, so the phone's Chat stays free for the
 next `/ResistItem`.
 
+**Phone, owner's follow-up**: while any jewel or Upgrade Specialist window is open, the phone's bag shows its items alone,
+without the worn equipment (which cannot go in them): the bag is narrower and the window beside it wider. The Upgrade
+Specialist's Piercing window is now a phone panel too (the item, the Moonstone, the GProtect, the cost, OK and Cancel as
+words); a tap puts an item in, a tap on a slot empties it, and the bag it opened closes with it.
+
 **Protocol** (`world/upgrade.ts`): ULTIMATE_MAKEITEM, ULTIMATE_TRANSWEAPON, ULTIMATE_REMOVEGEM, PIERCINGREMOVE,
 REMOVE_ATTRIBUTE (both ways), REPAIRITEM; the bag item's `repairNumber`, `hitPoint`, `repair`, `resistSMItemId`.
 
@@ -105,7 +110,9 @@ On a phone (landscape):
 1. Tap BoBoChan (twice if the first only selects), then each entry: the window is a panel at the left, the bag at the right.
 2. Tap the items in the bag: they go in. Tap a filled slot: it comes out. Tap Start.
 3. Check every word is readable (14 px or more) and every button and slot is easy to hit.
-4. `/ResistItem` from the phone's chat; tap the weapon in the bag; `/ResistItem 1 10 5`.
+4. With any of these windows open, the bag shows only its items (no worn equipment), and the window is wider.
+5. "Piercing": tap a weapon or suit and a Moonstone, tap OK, then OK in the box.
+6. `/ResistItem` from the phone's chat; tap the weapon in the bag; `/ResistItem 1 10 5`.
 
 ## The convert command the main folder needs
 
