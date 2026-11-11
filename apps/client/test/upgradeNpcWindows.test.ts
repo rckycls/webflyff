@@ -201,3 +201,51 @@ describe('SmeltSafetyWindow (CWndSmeltSafety)', () => {
     expect(window.querySelector<HTMLElement>('[data-control="RESULT0"]')!.dataset.result).toBe('');
   });
 });
+
+describe('Safe Element Upgrade (2026-11-11, CWndSmeltSafety WND_ELEMENT)', () => {
+  it('a suit or weapon; the first card chooses the element; SProtect; Smelting (Elements) under 10; max 20', () => {
+    const r = rig();
+    PROPS.set(3206, itemProp({ id: 3206, kind2: 17, kind3: 37, part: -1, name: 'Flame Card', icon: 'items/flame.png' }));
+    PROPS.set(3211, itemProp({ id: 3211, kind2: 17, kind3: 37, part: -1, name: 'River Card', icon: 'items/river.png' }));
+    PROPS.set(10489, itemProp({ id: 10489, kind2: 19, kind3: 50, part: -1, name: 'Scroll of Smelting (Elements)', icon: 'items/s2.png' }));
+    r.own.inventory!.set(11, { objectId: 11, itemId: 3206, count: 3 });
+    r.own.inventory!.set(12, { objectId: 12, itemId: 3211, count: 1 });
+    r.own.inventory!.set(13, { objectId: 13, itemId: 10489, count: 2 });
+    const safety = new SmeltSafetyWindow(r.host);
+    safety.open('element');
+    const window = r.layer.querySelector<HTMLElement>('.hud-smelt-safety')!;
+    expect(window.querySelector('.hud-window-title')!.textContent).toBe('TID_GAME_SMELTSAFETY_ELEMENT');
+    expect(window.style.width).toBe('336px'); // NORMAL's wide layout
+    // SProtect's ghost shows even with no target (DrawListItem :24879-24891)
+    expect(window.querySelector('[data-control="SCROLL1_0"] img')).not.toBeNull();
+    safety.take(10); // a potion is not a suit or weapon
+    expect(r.said.at(-1)).toBe('TID_GAME_SMELT_SAFETY_ERROR01');
+    safety.take(4);
+    expect(window.querySelector<HTMLInputElement>('input')!.value).toBe('20');
+    safety.take(7); // SProtect before a card
+    expect(r.said.at(-1)).toBe('TID_GAME_SMELT_SAFETY_ERROR17');
+    safety.take(11); // the Flame Card chooses fire
+    expect(safety.elementCard).toBe(3206);
+    safety.take(12); // a River Card now: another element
+    expect(r.said.at(-1)).toBe('TID_GAME_SMELT_SAFETY_ERROR19');
+    safety.take(7);
+    safety.take(13);
+    safety.take(9); // the plain Smelting scroll is not this mode's
+    expect(r.said.at(-1)).toBe('TID_GAME_SMELT_SAFETY_ERROR06');
+    window.querySelector<HTMLElement>('[data-control="WIDC_BUTTON_START"]')!.click();
+    r.advance(2001);
+    safety.step();
+    expect(r.sent).toEqual([['smeltSafety', 4, 11, 7, 13]]);
+    // the answer: fire +1; a River Card is now refused as the item has an element
+    r.own.inventory!.set(4, { ...r.own.inventory!.get(4)!, resist: 1, resistOption: 1 });
+    safety.onResult(1);
+    expect(window.querySelector('[data-control="WIDC_NOW_GRADE"]')!.textContent).toBe('1');
+    safety.take(12); // while the run is on nothing goes in
+    expect(r.said.at(-1)).toBe('TID_GAME_SMELT_SAFETY_ERROR12');
+    window.querySelector<HTMLElement>('[data-control="WIDC_BUTTON_STOP"]')!.click();
+    safety.take(12);
+    expect(r.said.at(-1)).toBe('TID_GAME_SMELT_SAFETY_ERROR18');
+    safety.close();
+    expect(r.reserved.size).toBe(0);
+  });
+});

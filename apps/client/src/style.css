@@ -3552,3 +3552,67 @@ fieldset:disabled .btn {
     box-shadow: inset 0 0 0 1px #dba98c; background-color: #fffaf6;
   }
 }
+
+/* 2026-11-11: the item NPC windows (items/itemNpcWindows.ts; docs/superpowers/specs/2026-11-11-item-npc-windows-research.md):
+   the slots' icons at their top left (an empty one's ghost faded), Remove Jewel's stat names 10 px into their rows in their
+   family's colour (CWndRemoveJewel::OnDraw), the card rows' stats 10 and 8 px in, black, a suit's unused rows red at 60
+   (CWndRemovePiercing::OnDraw), the Repair window's cells of 32 px (CWndRepairItemCtrl). */
+.hud-npc-item .hud-res-static.is-picture { background-repeat: no-repeat; }
+.hud-remove-jewel-stat.hud-res-static-text { left: 10px; top: 10px; text-shadow: none; white-space: nowrap; }
+.hud-remove-piercing [data-control^="WIDC_STATIC_PIERCING"] .hud-res-static-text {
+  left: 10px; top: 5px; color: #000; text-shadow: none; white-space: nowrap; overflow: hidden; font-size: 11px;
+}
+.hud-remove-piercing [data-control^="WIDC_STATIC_PIERCING"][data-unused] { box-shadow: inset 0 0 0 999px rgba(240, 0, 0, 0.235); }
+.hud-repair-cell { position: absolute; width: 32px; height: 32px; }
+.hud-repair .hud-res-static-text { color: #000; text-shadow: none; }
+.hud-repair [data-control="WIDC_STATIC3"] .hud-res-static-text { right: 0; text-align: right; }
+.hud-resist-item .hud-res-static-text { color: #000; text-shadow: none; }
+
+/* The phone: each a panel beside the bag as the jewel windows (.hud-jewel), its slots 44 px, its texts, labels and buttons
+   across the panel, a tap on a bag item putting it in; the confirm boxes over the panel. */
+@media (max-width: 1000px) and (pointer: coarse) {
+  .world:has(.hud-npc-item:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack) { visibility: hidden; }
+  :is(.hud-mix-jewel-confirm, .hud-remove-attribute-confirm) { z-index: 70 !important; }
+  .hud-npc-item > .hud-window-body { grid-template-rows: none; grid-auto-rows: min-content; align-content: start; }
+  .hud-npc-item [data-slot] {
+    width: 44px !important; height: 44px !important; background-position: 6px 6px; border-radius: 4px; box-shadow: inset 0 0 0 1px #dba98c;
+  }
+  .hud-npc-item [data-slot] .hud-res-slot { left: 6px; top: 6px; }
+  .hud-npc-item [data-slot][data-filled] { box-shadow: inset 0 0 0 2px #3d8bd6; }
+  .hud-npc-item .hud-res-text {
+    grid-column: 1 / -1; align-self: stretch; width: 100% !important; height: auto !important; min-height: 72px;
+    border-radius: 4px; background: #fffaf6; box-shadow: inset 0 0 0 1px #e2cfc0;
+  }
+  .hud-npc-item .hud-res-text > :not(.hud-res-text-body) { display: none; }
+  .hud-npc-item .hud-picture-button { grid-column: 1 / -1; }
+  .hud-npc-item .hud-res-static:not(.is-picture) { grid-column: 1 / -1; width: 100% !important; height: auto !important; min-height: 20px; }
+  .hud-npc-item .hud-res-static-text { position: static !important; font-size: 14px; }
+  /* Remove Jewel: each jewel beside its stat */
+  .hud-remove-jewel [data-control^="WIDC_JEWEL_SLOT"]:not([data-control*="INFO"]) {
+    grid-column: 1; width: 44px !important; height: 44px !important; background-position: 6px 6px;
+  }
+  .hud-remove-jewel [data-control^="WIDC_JEWEL_SLOT"]:not([data-control*="INFO"]) .hud-res-slot { left: 6px; top: 6px; }
+  .hud-remove-jewel [data-control^="WIDC_JEWEL_SLOT_INFO"] {
+    grid-column: span 4; justify-self: stretch; width: auto !important; height: 44px !important; background-size: 100% 100%;
+    border-radius: 4px; display: flex; align-items: center;
+  }
+  .hud-remove-jewel .hud-remove-jewel-stat.hud-res-static-text { padding-left: 10px; }
+  /* Remove a Pierced Card: the rows across, 14 px */
+  .hud-remove-piercing [data-control^="WIDC_STATIC_PIERCING"] {
+    grid-column: 1 / -1; justify-self: stretch; width: auto !important; height: auto !important; min-height: 26px;
+    background-size: 100% 100%; border-radius: 4px;
+  }
+  .hud-remove-piercing [data-control^="WIDC_STATIC_PIERCING"] .hud-res-static-text { display: block; padding: 4px 8px; white-space: normal; font-size: 14px; }
+  /* Repair: the 25 cells in five columns; the edit frame is only the desktop's backdrop */
+  .hud-repair [data-control="WIDC_EDIT1"] { display: none; }
+  .hud-repair [data-control="WIDC_GRID"] {
+    grid-column: 1 / -1; width: auto !important; height: auto !important; display: grid; grid-template-columns: repeat(5, 44px);
+    gap: 4px; justify-content: center;
+  }
+  .hud-repair .hud-repair-cell { position: relative; left: auto !important; top: auto !important; }
+  /* ResistItem: the item's slot and the buttons; the never-finished upgrade's slots and labels are left off */
+  .hud-resist-item :is([data-control="WIDC_CUSTOM1"], [data-control="WIDC_CUSTOM2"], [data-control="WIDC_CUSTOM4"],
+    [data-control="WIDC_CUSTOM5"], [data-control="WIDC_CUSTOM6"], [data-control="WIDC_STATIC2"], [data-control="WIDC_STATIC3"],
+    [data-control="WIDC_STATIC4"], [data-control="WIDC_STATIC5"], [data-control="WIDC_STATIC6"], [data-control="WIDC_STATIC8"],
+    [data-control="WIDC_STATIC10"], [data-control="WIDC_STATIC11"]) { display: none; }
+}
