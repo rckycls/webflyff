@@ -114,9 +114,13 @@ export class LordHud {
   private confirmSkill = 0;
   private lastDraw = 0;
 
+  /**
+   * @param book the Lord state, kept by the world screen from the join on (the LORD snapshot comes in the JOIN bundle,
+   *   before the HUD is made)
+   */
   constructor(private readonly host: LordHost, private readonly art: UiArt, private readonly doc: Document = document,
-    nowSec: () => number = () => Math.floor(Date.now() / 1000)) {
-    this.book = new LordBook(() => host.ownPlayerId(), (id) => host.player(id)?.name ?? '', nowSec);
+    book: LordBook = new LordBook(() => host.ownPlayerId(), (id) => host.player(id)?.name ?? '')) {
+    this.book = book;
     const make = (layout: typeof LORD_INFO, name: string): ResWindow => {
       const window = new ResWindow(layout, art, doc);
       window.frame.element.classList.add('hud-lord', `hud-lord-${name}`);
@@ -224,9 +228,14 @@ export class LordHud {
     return [this.info, this.tender, this.state, this.pledge, this.vote, this.event, this.skills, this.skillConfirm].some((w) => w.isOpen);
   }
 
-  /** A Lord message of the server (`objectId` the bundle message's object). */
+  /** A Lord message of the server, run on the book here (the tests'; the world screen runs its book and calls `notify`). */
   handle(message: LordMessage): void {
-    for (const notice of this.book.apply(message)) this.notice(notice);
+    this.notify(this.book.apply(message));
+  }
+
+  /** What the book said of a message: the captions, lines and boxes, the windows redrawn. */
+  notify(notices: readonly LordNotice[]): void {
+    for (const notice of notices) this.notice(notice);
   }
 
   /** An entry of the Lord Manager's menu (`WndWorld.cpp:5182-5212`): any open one is made anew. */

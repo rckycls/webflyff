@@ -7,6 +7,7 @@ import type { LordCandidate } from '@flyffweb/protocol';
 import { STOCK_ELECTION_PROPERTY } from '@flyffweb/testkit';
 import type { UiArt } from '../src/world/hud/art';
 import { LordHud, MMI_LORD, ratePercent, withCommas } from '../src/world/lord/lordHud';
+import { LordBook } from '../src/world/lord/lordBook';
 import type { LordHost } from '../src/world/lord/lordHud';
 
 const art: UiArt = { url: (key) => `/assets/${key}`, sheets: null };
@@ -63,7 +64,7 @@ const click = (el: Element): void => { el.dispatchEvent(new MouseEvent('pointerd
 beforeEach(() => {
   document.body.replaceChildren();
   sent = []; boxes = []; said = []; placed = []; focus = null;
-  hud = new LordHud(host(), art, document, () => NOW);
+  hud = new LordHud(host(), art, document, new LordBook(() => OWN, (id) => PLAYERS[id]?.name ?? '', () => NOW));
   document.body.append(...hud.elements, hud.eventIcons);
 });
 

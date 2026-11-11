@@ -141,6 +141,7 @@ import { WorldSounds } from './sound/worldSounds';
 import { TeleporterWindow } from './hud/teleporterWindow';
 import { HeavenTowerWindow } from './hud/heavenTowerWindow';
 import { LORD_ENTRIES, LordHud } from './lord/lordHud';
+import { LordBook } from './lord/lordBook';
 import { isArena } from './combat/arena';
 import { formatDefinedText } from './hud/messages';
 import { ItemUse } from './items/itemUse';
@@ -557,6 +558,8 @@ export class WorldScreen {
    * (`GuildHud`) go with the world. Its events wait for the windows while a world loads.
    */
   private readonly guildBook = new GuildBook();
+  /** 2026-11-11: the Lord system's state (lord/lordBook.ts), from the JOIN's LORD snapshot on, whatever HUD there is. */
+  private readonly lordBook = new LordBook(() => this.entry.character.playerId, (id) => this.playerData.peek(id)?.name ?? '');
   private readonly guildEvents: GuildEvent[] = [];
   private guildHud: GuildHud | undefined;
   private dialog: DialogWindow | undefined;
@@ -928,7 +931,8 @@ export class WorldScreen {
       }
       // 2026-11-11: the Lord system's messages (lord/lordBook.ts); a Lord skill's use goes on to the world for its effects
       if (isLordMessage(value)) {
-        this.lordHud?.handle(value);
+        const notices = this.lordBook.apply(value);
+        this.lordHud?.notify(notices);
         if (value.type !== 'lordSkillUse') continue;
       }
       // 2026-11-10: a `/say` line (OnSay, DPClient.cpp:11911-12074)
@@ -1835,7 +1839,7 @@ export class WorldScreen {
       carryLordSkill: (skill, event) => taskBar.carryLordSkill(skill, event),
       placeLordSkill: (skill) => taskBar.placeLordSkill(skill),
       removeLordShortcuts: () => taskBar.removeKind(ShortcutKind.LORDSKILL),
-    }, this.hudArt!, doc);
+    }, this.hudArt!, doc, this.lordBook);
     this.moverMenu = new MoverMenu(doc);
     const partyHud = new PartyHud(this.hudArt!, this.data!.texts, () => this.partyCatalog, {
       session,
