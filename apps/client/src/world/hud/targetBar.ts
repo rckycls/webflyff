@@ -84,6 +84,15 @@ export function targetHpText(hp: number, max: number | null): string {
 }
 
 /**
+ * 2026-11-11, layered boss HP (a server addition): "x3" beside the gauge for a monster of more than one bar, the bars
+ * left with the current one ("x1": the last bar), as the rebuilt Neuz draws it (`RenderSelectObj`, `x%d` at
+ * `( x + 200 + 6, 30 - 2 )`); none for any other mover.
+ */
+export function targetBarsText(target: Pick<Mover, 'hpBars'>): string {
+  return target.hpBars === undefined ? '' : `x${target.hpBars.left}`;
+}
+
+/**
  * The target bar. `update` is given, each frame, the mover `RenderSelectObj` would draw (`m_pRenderTargetObj`, else the
  * focus; null for none), the player's level and whether the player is a game master. The gauge needs the mover's maximum
  * HP: one with none (no catalog row) gets the empty gauge alone. Another player's maximum leaves out its items and buffs
@@ -95,6 +104,7 @@ export class TargetBar {
   private readonly arrow: HTMLElement;
   private readonly fill: Gauge;
   private readonly info: HTMLElement;
+  private readonly bars: HTMLElement;
 
   constructor(
     private readonly art: UiArt,
@@ -126,7 +136,14 @@ export class TargetBar {
     this.info.className = 'hud-target-info';
     this.info.style.top = `${GAUGE_TOP + 12}px`;
 
-    element.append(empty.element, this.fill.element, this.arrow, this.name, this.info);
+    // layered boss HP: "xN" right of the gauge, its middle on the gauge's
+    this.bars = doc.createElement('div');
+    this.bars.className = 'hud-target-bars';
+    this.bars.hidden = true;
+    this.bars.style.left = `${GAUGE_WIDTH + 6}px`;
+    this.bars.style.top = `${GAUGE_TOP - 2}px`;
+
+    element.append(empty.element, this.fill.element, this.arrow, this.name, this.info, this.bars);
     this.element = element;
   }
 
@@ -165,5 +182,10 @@ export class TargetBar {
     // R21: the HP for every viewer, where Neuz writes a game master's line (:2913-2927)
     const info = targetHpText(target.hp, max);
     if (this.info.textContent !== info) this.info.textContent = info;
+
+    // layered boss HP: the bars left
+    const bars = targetBarsText(target);
+    if (this.bars.textContent !== bars) this.bars.textContent = bars;
+    if (this.bars.hidden !== (bars === '')) this.bars.hidden = bars === '';
   }
 }

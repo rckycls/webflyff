@@ -75,3 +75,4 @@ export * from './world/bank';
 export * from './world/post';
 export * from './world/lord';
 export * from './world/honor';
+export * from './world/hpLayer';

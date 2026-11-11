@@ -1,6 +1,7 @@
 import { BANK_READERS } from './bank';
 import { LORD_READERS } from './lord';
 import { HONOR_READERS } from './honor';
+import { HP_LAYER_READERS } from './hpLayer';
 import { POST_READERS } from './post';
 import type { MessageReader } from '../bundle';
 import { MessageType } from '../constants';
@@ -234,4 +235,6 @@ export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
     ...LORD_READERS,
     // 2026-11-11: the honour titles (world/honor.ts)
     ...HONOR_READERS,
+    // 2026-11-11: layered boss HP, a server addition (world/hpLayer.ts)
+    ...HP_LAYER_READERS,
   ]);

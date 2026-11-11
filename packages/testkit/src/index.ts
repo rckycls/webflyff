@@ -63,3 +63,5 @@ export {
 } from './guild';
 // 2026-11-11: the honour titles
 export { honorCounts, writeHonorChange, writeHonorList } from './honor';
+// 2026-11-11: layered boss HP (a server addition)
+export { writeHpLayer } from './hpLayer';
