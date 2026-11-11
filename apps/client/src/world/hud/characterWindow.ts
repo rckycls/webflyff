@@ -181,11 +181,9 @@ const HONOR_OK: ControlRect = { left: 48, top: 390, width: 72, height: 20 };
 const OK_QUARTER = 72;
 /** TID_GAME_NO_TITLE at the list's (left + 5, top + 8) (`OnDraw`, :4083). */
 const NO_TITLE_AT = { x: HONOR_LIST.left + 5, y: HONOR_LIST.top + 8 };
-/** `m_nSelectColor = D3DCOLOR_ARGB( 255, 255, 0, 0 )` (`OnInitialUpdate`, :4094). */
-const HONOR_CHOSEN = 0xffff0000;
 /** The phone's page (the tab's 448 x 240): the list on the left, OK under the words on the right. */
 const PHONE_HONOR_LIST: ControlRect = { left: 8, top: 8, width: 300, height: 224 };
-const PHONE_HONOR_OK: ControlRect = { left: 324, top: 184, width: 112, height: 40 };
+const PHONE_HONOR_OK: ControlRect = { left: 324, top: 178, width: 112, height: 46 };
 
 /** A value of the page: its element, and what it shows, kept to touch the DOM only when it changes. */
 interface Value {
@@ -698,7 +696,7 @@ export class CharacterWindow {
       title.textContent = this.text(id);
       title.style.color = cssRgb(i === chosen ? BLACK : WHITE);
       // the words 2 px in and at `bottom - 17` (:4225), the button the press's rect `bottom - 18` to `bottom` (:4467-4479)
-      if (this.mobile) place(title, { left: i * length, top: top - 10, width: length, height: 40 });
+      if (this.mobile) place(title, { left: i * length, top: top - 13, width: length, height: 46 });
       else {
         place(title, { left: i * length, top: rect.height - TAB_STRIP, width: length, height: TAB_STRIP });
         title.style.paddingTop = `${TAB_STRIP - TAB_TITLE_UP}px`;

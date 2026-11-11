@@ -1622,7 +1622,7 @@ export class WorldScreen {
     this.characterWindow = characterWindow;
     // 2026-11-11: the Fame/Master page's OK (CWndHonor::OnChildNotify, WndField.cpp:4159-4165)
     characterWindow.onHonorChange = (honor) => this.session.sendHonorTitleChange(honor);
-    const reviveWindow =new ReviveWindow(this.hudArt!, this.data!.texts, () => this.session.sendRevivalToLodestar(), doc);
+    const reviveWindow = new ReviveWindow(this.hudArt!, this.data!.texts, () => this.session.sendRevivalToLodestar(), doc);
     this.reviveWindow = reviveWindow;
     reviveWindow.onStand = () => this.itemUse!.revive();
     const inventoryWindow = new InventoryWindow(this.hudArt!, this.data!, {
