@@ -215,10 +215,10 @@ test.describe('landscape (spec §3.10)', () => {
   }
 
   // Ruling R27: the Start menu drawn for a finger, its top edge, its lines and its bottom edge at up to twice their size,
-  // each line its whole row. Nine lines since Piece 7 M1 (World Map and Option in Piece 6, Quest Diary in Piece 7): the
-  // 274 px menu fits 750 x 342's room above the bar about 1.05 times, so a line is about 23 px there, still more than
-  // Neuz's 20 (the owner's choice, 2026-11-03: every line of the Windows client kept, over the 28 px of six lines)
-  test("on a touch phone all nine Start menu entries fit with contiguous touch targets", async ({ page }) => {
+  // each line its whole row; every line of the Windows client kept (the owner's choice, 2026-11-03). Fourteen lines since
+  // 2026-11-10 (Private Shop, Chatting, Messenger, Guild ...): in one column a line would be 16 px above 750 x 342's bar,
+  // so a touch screen that short stands them in two columns of seven (2026-11-12), each line at least 22 px again
+  test('on a touch phone all fourteen Start menu entries fit, in two columns, with contiguous touch targets', async ({ page }) => {
     test.skip(!isTouch(), 'a mouse gets the menu at its size');
     await playGateway(page);
     await enterFlaris(page);
@@ -228,16 +228,22 @@ test.describe('landscape (spec §3.10)', () => {
       const menu = page.getByRole('menu');
       await expect(menu).toBeVisible();
       await expectOnScreen(menu, `the Start menu at ${size.width} x ${size.height}`, await barTop(page));
-      const lines = await page.getByRole('menuitem').evaluateAll((items) => items.map((item) => {
+      const lines = await menu.getByRole('menuitem').evaluateAll((items) => items.map((item) => {
         const box = item.getBoundingClientRect();
-        return { top: box.top, bottom: box.bottom, height: box.height };
+        return { left: box.left, top: box.top, bottom: box.bottom, height: box.height };
       }));
-      expect(lines).toHaveLength(9);
+      expect(lines).toHaveLength(14);
       for (const line of lines) {
         expect(line.height, `a line at ${size.width} x ${size.height}`).toBeGreaterThanOrEqual(22);
         expect(line.height, `a line at ${size.width} x ${size.height}`).toBeLessThanOrEqual(44.5);
       }
-      for (let i = 1; i < lines.length; i++) expect(lines[i]!.top).toBeCloseTo(lines[i - 1]!.bottom, 1);
+      // two columns of seven, side by side from the same top, each line's row against the next one's
+      const [left, right] = [lines.slice(0, 7), lines.slice(7)];
+      for (const column of [left, right]) {
+        for (let i = 1; i < column.length; i++) expect(column[i]!.top).toBeCloseTo(column[i - 1]!.bottom, 1);
+      }
+      expect(right[0]!.top).toBeCloseTo(left[0]!.top, 1);
+      expect(right[0]!.left).toBeGreaterThan(left[0]!.left + 100);
       await page.getByRole('button', { name: 'Start' }).click();
       await expect(menu).toBeHidden();
     }

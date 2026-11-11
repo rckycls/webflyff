@@ -5,8 +5,10 @@ import type { ScriptMessage } from '@flyffweb/testkit';
 import { MADRIGAL, ON_FRAMES, SELF_ID, SELF_PLAYER, SQUARE, enterFlaris, playGateway, self, sentOf } from './worldHarness';
 
 test.setTimeout(120_000);
+// UPDATE_ITEM UI_NUM (0): a new count. Not UI_COOLTIME (8), which sets the count too but starts the item's cool-down
+// (OnUpdateItem, DPClient.cpp:3226-3245; 2026-11-05), and the food's second use would then wait it out
 const update = (id: number, count: number): ScriptMessage => ({ objectId: SELF_ID, type: 0x18,
-  fields: new ArWriter().u8(0).u8(id).u8(8).u32(count).u32(0).toBytes() });
+  fields: new ArWriter().u8(0).u8(id).u8(0).u32(count).u32(0).toBytes() });
 const equip = (on: boolean): ScriptMessage => ({ objectId: SELF_ID, type: 6,
   fields: new ArWriter().u8(8).u32(0).u8(on ? 1 : 0).u32(21).i32(0).u8(0).bytes(new Uint8Array(3)).i32(-1).toBytes() });
 function groundItem(): ScriptMessage {

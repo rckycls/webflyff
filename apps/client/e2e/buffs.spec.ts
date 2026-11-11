@@ -78,7 +78,8 @@ test("Buff Pang's Get Buffed! sends its key, and its buffs show", async ({ page 
   await expect(icons).toHaveCount(4, ON_FRAMES);
   expect(await icons.locator('img').evaluateAll((imgs) => imgs.map((img) => (img as HTMLImageElement).alt)))
     .toEqual(['Quick Step (Event)', 'Haste (Event)', 'Heap Up (Event)', 'Accuracy (Event)']);
-  expect(await icons.first().getAttribute('title')).toContain('01:00:00');
+  // the hour's time as the tooltip counts it down: 01:00:00 only in the frame the buff came, then 59:59 (mm:ss under an hour)
+  expect(await icons.first().getAttribute('title')).toMatch(/\n(01:00:00|59:5\d)$/);
   expect(await errorsOf(page)).toEqual([]);
 });
 
@@ -137,7 +138,8 @@ test("the Scroll of SProtect asks first; OK uses it", async ({ page }) => {
   gateway.pushCache(script.later([bar]));
   await expect(page.locator('.hud-slot[data-row="item"][data-slot="2"]')).toHaveAttribute('data-kind', 'item', ON_FRAMES);
   await useSlot(page, 2);
-  const box = page.locator('.hud-message-text');
+  // CWndCommItemDlg, Neuz's "Use Item" window (APP_COMMITEM_DIALOG, since 2026-11-05), not the plain message box
+  const box = page.getByRole('group', { name: 'Use Item' });
   await expect(box).toContainText('consumed regardless', ON_FRAMES);
   expect(used(gateway)).toEqual([]);
   await page.getByRole('button', { name: 'OK', exact: true }).click();

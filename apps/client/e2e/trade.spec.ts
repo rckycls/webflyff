@@ -49,7 +49,8 @@ const trade = (page: Page) => page.locator('.hud-trade');
 const mySlot = (page: Page, slot: number) => trade(page).locator(`.hud-trade-grid[data-side="mine"] [data-trade-slot="${slot}"]`);
 const theirSlot = (page: Page, slot: number) => trade(page).locator(`.hud-trade-grid[data-side="theirs"] [data-trade-slot="${slot}"]`);
 const bagCell = (page: Page, slot: number) => page.locator(`.hud-inventory [data-bag-slot="${slot}"]`);
-const goldBox = (page: Page) => page.locator('.hud-trade-gold');
+// the shown amount box (the bank's Move Items boxes share its look, hidden)
+const goldBox = (page: Page) => page.locator('.hud-trade-gold:visible');
 const box = (page: Page) => page.locator('.hud-message:visible .hud-message-text');
 
 /** A sent packet's bytes after DPID_UNKNOWN and the type. */

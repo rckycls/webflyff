@@ -33,14 +33,15 @@ test('classic dialogue: menu, opening request, pages, keys, answers, quest rows 
   const gateway = await playGateway(page, script);
   await enterFlaris(page);
 
-  // 1. Julia's menu: her entries in MMI order, the guild warehouse left out, Dialog and Trade enabled
+  // 1. Julia's menu: her entries in MMI order, the guild warehouse left out, Dialog, Trade and Deposit (the bank, 2026-11-10)
+  // enabled
   await tapMover(page, NPC_ID);
   const menu = page.locator('.hud-mover-menu');
   await expect(menu).toBeVisible();
   const entries = menu.locator('[data-menu-entry]');
   await expect(entries).toHaveCount(7);
   expect(await entries.evaluateAll((els) => els.map((el) => (el as HTMLElement).dataset.menuEntry))).toEqual(['0', '2', '9', '16', '17', '18', '137']);
-  expect(await entries.evaluateAll((els) => els.map((el) => (el as HTMLButtonElement).disabled))).toEqual([false, false, true, true, true, true, true]);
+  expect(await entries.evaluateAll((els) => els.map((el) => (el as HTMLButtonElement).disabled))).toEqual([false, false, false, true, true, true, true]);
   // CWndMenu's items: 20 px on a 22 px pitch (32 on 34 for fingers)
   const [first, second] = [(await entries.nth(0).boundingBox())!, (await entries.nth(1).boundingBox())!];
   expect(Math.round(first.height)).toBe(isMobile ? 32 : 20);
