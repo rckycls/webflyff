@@ -33,6 +33,8 @@ export interface UpgradeHost {
   confirm(tid: string, args: string[], ok: () => void, cancel: () => void): void;
   /** The material's effect on the own mover, on or off. */
   effect(on: boolean): void;
+  /** 2026-11-11: the weapon in an open Jewel Setting (`CWndSmeltJewel::m_pItemElem`), or null. */
+  jewelSettingWeapon?(): number | null;
   send(packet: UpgradeSend): void;
 }
 
@@ -140,7 +142,9 @@ export class UpgradeCursor {
       this.host.say('TID_UPGRADE_CANCLE');
       return;
     }
-    const refusal = upgradeRefusal(materialProp, targetProp, target);
+    // 2026-11-11: Shining Oricalkum on the weapon Jewel Setting holds (RunUpgrade, WndField.cpp:13372-13381)
+    const held = material.kind === 'ultimate' && this.host.jewelSettingWeapon?.() === targetId;
+    const refusal = held ? 'TID_GAME_NOTEQUALITEM' : upgradeRefusal(materialProp, targetProp, target);
     if (refusal !== null) {
       this.setEffect(false);
       this.host.say(refusal);

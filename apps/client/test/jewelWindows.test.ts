@@ -189,4 +189,46 @@ describe('Jewel Setting (CWndSmeltJewel)', () => {
     expect(r.windows.setting.state).toMatchObject({ weapon: 5, jewels: [2045, 0, 0], jewel: null });
     expect(r.windows.setting.isOpen).toBe(true);
   });
+
+  it('2026-11-11: the weapon turns all the time; START turns it faster and draws the eye in, then all goes back', () => {
+    const r = rig();
+    r.windows.setting.open();
+    r.windows.setting.setWeapon(5);
+    r.windows.setting.setJewel(6);
+    r.windows.setting.step(0);
+    const at = (frame: number): number => (frame * 1000) / 60 + 0.01;
+    r.windows.setting.step(at(10)); // idle: OnDraw's m_fRotate += 2 each frame
+    expect(r.windows.setting.turn).toMatchObject({ rotate: 20, addRot: 2, eyeY: 0 });
+    start(r.layer, 'hud-jewel-setting').click();
+    let frame = 10, lowest = 0;
+    while (r.sent.length === 0 && frame < 500) {
+      r.windows.setting.step(at(++frame));
+      lowest = Math.min(lowest, r.windows.setting.turn.eyeY);
+    }
+    // the last ten of the 26 steps take 0.4 each off the eye (Process :19982-19986); the tenth puts it back in the same
+    // step, with the send, so the lowest drawn is nine steps' -3.6
+    expect(lowest).toBeCloseTo(-3.6, 5);
+    expect(r.windows.setting.turn).toMatchObject({ addRot: 2, eyeY: 0 });
+  });
+
+  it('2026-11-11: the weapon model is loaded for the weapon in, and let go when it goes', async () => {
+    const r = rig();
+    const asked: number[] = [];
+    let released = 0;
+    r.host.loadWeapon = async (itemId) => {
+      asked.push(itemId);
+      const { Object3D } = await import('three');
+      return { item: new Object3D(), release: () => { released++; } };
+    };
+    r.windows.setting.open();
+    r.windows.setting.setWeapon(5);
+    r.windows.setting.step(20);
+    expect(asked).toEqual([502]);
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(r.windows.setting.turn.model).toBe(true);
+    r.windows.setting.close();
+    expect(released).toBe(1);
+    expect(r.windows.setting.turn.model).toBe(false);
+  });
 });

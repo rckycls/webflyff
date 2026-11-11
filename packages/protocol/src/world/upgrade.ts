@@ -16,6 +16,14 @@
 //   CDPClient::SendUltimateSetGem          DPClient.cpp:16363        ULTIMATE_SETGEM 0xf000f114: weapon, jewel (Jewel Setting)
 //
 // and their answers in ULTIMATE: MAKEGEM's with the jewels' count after the result (`AddUltimateMakeGem`, User.cpp:7821).
+//
+// 2026-11-11 (docs/superpowers/specs/2026-11-11-item-npc-windows-research.md): the rest of the jewel menu and the Repair
+// window,
+//
+//   CDPClient::SendUltimateMakeItem        DPClient.cpp:16281        ULTIMATE_MAKEITEM 0xf000f110: ten ids (Shining Oricalkum)
+//   CDPClient::SendUltimateTransWeapon     DPClient.cpp:16299        ULTIMATE_TRANSWEAPON 0xf000f112: weapon, two stones
+//   CDPClient::SendUltimateRemoveGem       DPClient.cpp:16316        ULTIMATE_REMOVEGEM 0xf000f115: weapon, Moonstone
+//   CDPClient::SendRepairItem              DPClient.cpp:14150        REPAIRITEM 0x00ff00b5: a BYTE count, BYTE ids
 
 import type { ArReader } from '../ar/ArReader';
 import { PacketType } from '../constants';
@@ -55,6 +63,64 @@ export function encodeUltimateMakeGem(weaponId: number): Uint8Array {
 export const encodeUltimateSetGem = (weaponId: number, jewelId: number): Uint8Array =>
   two(PacketType.ULTIMATE_SETGEM, weaponId, jewelId);
 
+/** `MAX_JEWEL` (_Common/UltimateWeapon.h:12): Create Shining Oricalkum's ten slots. */
+export const MAX_JEWEL = 10;
+/** `MAX_REPAIRINGITEM` (_Common/ProjectCmn.h:13): the Repair window's slots. */
+export const MAX_REPAIRINGITEM = 25;
+
+/**
+ * 2026-11-11: Create Shining Oricalkum (`CDPClient::SendUltimateMakeItem`, DPClient.cpp:16281-16289): its ten slots as
+ * ten object ids, `ar.Write( pdwItemId, sizeof(OBJID) * MAX_JEWEL )`.
+ */
+export function encodeUltimateMakeItem(itemIds: readonly number[]): Uint8Array {
+  if (itemIds.length !== MAX_JEWEL) throw new RangeError(`${itemIds.length} slots, not ${MAX_JEWEL}`);
+  const w = clientPacket(PacketType.ULTIMATE_MAKEITEM);
+  for (const id of itemIds) {
+    checkId(id);
+    w.u32(id);
+  }
+  return w.toBytes();
+}
+
+/** 2026-11-11: Create Unique / Ultimate Weapon (`SendUltimateTransWeapon`, :16299-16306): the weapon, then the two stones. */
+export function encodeUltimateTransWeapon(weaponId: number, gem1Id: number, gem2Id: number): Uint8Array {
+  checkId(weaponId);
+  checkId(gem1Id);
+  checkId(gem2Id);
+  return clientPacket(PacketType.ULTIMATE_TRANSWEAPON).u32(weaponId).u32(gem1Id).u32(gem2Id).toBytes();
+}
+
+/** 2026-11-11: Remove Jewel (`SendUltimateRemoveGem`, :16316-16322): the Ultimate weapon, then the Moonstone. */
+export const encodeUltimateRemoveGem = (weaponId: number, gemId: number): Uint8Array =>
+  two(PacketType.ULTIMATE_REMOVEGEM, weaponId, gemId);
+
+/**
+ * 2026-11-11: the Repair window (`CDPClient::SendRepairItem`, DPClient.cpp:14150-14190): a BYTE count, then each item to
+ * repair as a BYTE object id. Neuz sends only the items worn below their endurance and not at their repair limit, and
+ * nothing at all when none is (TID_GAME_REPAIR_NO): the caller filters, and an empty list is an error here.
+ */
+export function encodeRepairItem(objectIds: readonly number[]): Uint8Array {
+  if (objectIds.length === 0 || objectIds.length > MAX_REPAIRINGITEM) throw new RangeError(`${objectIds.length} items to repair`);
+  const w = clientPacket(PacketType.REPAIRITEM).u8(objectIds.length);
+  for (const id of objectIds) {
+    checkId(id);
+    w.u8(id);
+  }
+  return w.toBytes();
+}
+
+/** 2026-11-11: Remove a Pierced Card (`CDPClient::SendPiercingRemove`, DPClient.cpp:14760-14765): the item. */
+export function encodePiercingRemove(itemId: number): Uint8Array {
+  checkId(itemId);
+  return clientPacket(PacketType.PIERCINGREMOVE).u32(itemId).toBytes();
+}
+
+/** 2026-11-11: Remove Element upgrading (`CDPClient::SendRemoveAttribute`, DPClient.cpp:14734-14739): the item. */
+export function encodeRemoveAttribute(itemId: number): Uint8Array {
+  checkId(itemId);
+  return clientPacket(PacketType.REMOVE_ATTRIBUTE).u32(itemId).toBytes();
+}
+
 /** ULTIMATE's states (`MsgHdr.h:1585-1590`). */
 export const UltimateState = { MAKEITEM: 1, TRANSWEAPON: 2, MAKEGEM: 3, SETGEM: 4, REMOVEGEM: 5, ENCHANTWEAPON: 6 } as const;
 /** ULTIMATE's results (`CUltimateWeapon`'s enum, `_Common/UltimateWeapon.h:19`). */
@@ -86,6 +152,11 @@ export function encodeSmeltSafety(itemId: number, materialId: number, scrollId: 
   checkId(scrollId);
   checkIdOrNull(smeltingId);
   return clientPacket(PacketType.SMELT_SAFETY).u32(itemId).u32(materialId).u32(scrollId).u32(smeltingId).toBytes();
+}
+
+/** 2026-11-11: REMOVE_ATTRIBUTE (`CDPClient::OnRemoveAttributeResult`, DPClient.cpp:6415-6423): its BOOL. */
+export function readRemoveAttribute(r: ArReader): MessageOf<'removeAttribute'> {
+  return { type: 'removeAttribute', success: r.i32() !== 0 };
 }
 
 /** SMELT_SAFETY (`CDPClient::OnSmeltSafety`, `DPClient.cpp:18748-18783`): its result byte. */

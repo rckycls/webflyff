@@ -32,6 +32,12 @@ export const MMI = {
   BANKING: 9, POST: 25,
   /** 2026-11-10: the Priest of Confession's Summon Angel (angel/summonAngelWindow.ts; defineNeuz.h:136). */
   SUMMON_ANGEL: 43,
+  /**
+   * 2026-11-11: the rest of the jewel and safe upgrade menus, and the Repair window (items/itemNpcWindows.ts;
+   * defineNeuz.h:106-299).
+   */
+  REPAIR: 14, SMELT_MIXJEWEL: 51, SMELT_CHANGEGWEAPON: 54, SMELT_CHANGEUWEAPON: 55, ATTRIBUTE: 59, SMELT_REMOVE_PIERCING: 72,
+  SMELT_REMOVE_JEWEL: 95, SMELT_SAFETY_ELEMENT: 167,
 } as const;
 /**
  * 2026-11-10: the Arena's and the Forsaken Tower's entries: Enter and Leave Arena send their header
@@ -63,6 +69,9 @@ const UPGRADE_ENTRIES: ReadonlySet<number> = new Set([
   MMI.SMELT_JEWEL, MMI.SMELT_EXTRACTION,
   // 2026-11-10: the Priest of Confession's Summon Angel (angel/summonAngelWindow.ts)
   MMI.SUMMON_ANGEL,
+  // 2026-11-11: the rest of the jewel and safe upgrade menus, and the Repair window (items/itemNpcWindows.ts)
+  MMI.REPAIR, MMI.SMELT_MIXJEWEL, MMI.SMELT_CHANGEGWEAPON, MMI.SMELT_CHANGEUWEAPON, MMI.ATTRIBUTE, MMI.SMELT_REMOVE_PIERCING,
+  MMI.SMELT_REMOVE_JEWEL, MMI.SMELT_SAFETY_ELEMENT,
 ]);
 /** 2026-11-11: MMI_LORD_STATE 91, TENDER 92, VOTE 93, EVENT 94, INFO 101 (`Resource/defineNeuz.h:195-210`). */
 const LORD_MENU: ReadonlySet<number> = new Set([91, 92, 93, 94, 101]);

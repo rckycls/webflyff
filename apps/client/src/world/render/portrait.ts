@@ -12,7 +12,7 @@
 // changes, which no Piece 4 message does).
 
 import type { AssembledCharacter, LoopedMotion } from '@flyffweb/scene';
-import type { Material, Object3D, Texture, WebGLRenderer } from 'three';
+import type { Camera, Material, Object3D, Texture, WebGLRenderer } from 'three';
 import {
   Color, Mesh, MeshBasicMaterial, OrthographicCamera, SRGBColorSpace, Scene, WebGLRenderTarget,
 } from 'three';
@@ -131,7 +131,7 @@ export function portraitCamera(cssWidth: number, cssHeight: number): Orthographi
  * `kept` target, which is used and kept; without one a target is made for this picture and let go after its read.
  */
 export async function drawPicture(
-  renderer: WebGLRenderer, scene: Scene, camera: OrthographicCamera, canvas: HTMLCanvasElement, cssWidth: number,
+  renderer: WebGLRenderer, scene: Scene, camera: Camera, canvas: HTMLCanvasElement, cssWidth: number,
   cssHeight: number, kept?: PictureTarget,
 ): Promise<void> {
   const ratio = renderer.getPixelRatio();

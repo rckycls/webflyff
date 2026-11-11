@@ -284,6 +284,12 @@ export type WorldPacket =
   /** 2026-11-10: Create Jewels and Jewel Setting (world/upgrade.ts). */
   | { type: 'ultimateMakeGem'; weaponId: number }
   | { type: 'ultimateSetGem'; weaponId: number; jewelId: number }
+  /** 2026-11-11: Shining Oricalkum, the weapon change, Remove Jewel, and the Repair window (world/upgrade.ts). */
+  | { type: 'ultimateMakeItem'; itemIds: number[] }
+  | { type: 'ultimateTransWeapon'; weaponId: number; gem1Id: number; gem2Id: number }
+  | { type: 'ultimateRemoveGem'; weaponId: number; gemId: number }
+  | { type: 'repairItem'; objectIds: number[] }
+  | { type: 'piercingRemove' | 'removeAttribute'; itemId: number }
   /** 2026-11-10: Summon Angel's START (its text and the stacks in it) and the full angel's buff icon (world/angel.ts). */
   | { type: 'createAngel'; text: string; parts: AngelStack[] }
   | { type: 'angelBuff' }
@@ -488,6 +494,27 @@ function decodeClientPacket(r: ArReader): WorldPacket {
     case PacketType.ANGELBUFF: {
       r.expectEnd();
       return { type: 'angelBuff' };
+    }
+    case PacketType.ULTIMATE_MAKEITEM: {
+      const itemIds = Array.from({ length: 10 }, () => r.u32()); r.expectEnd();
+      return { type: 'ultimateMakeItem', itemIds };
+    }
+    case PacketType.ULTIMATE_TRANSWEAPON: {
+      const weaponId = r.u32(), gem1Id = r.u32(), gem2Id = r.u32(); r.expectEnd();
+      return { type: 'ultimateTransWeapon', weaponId, gem1Id, gem2Id };
+    }
+    case PacketType.ULTIMATE_REMOVEGEM: {
+      const weaponId = r.u32(), gemId = r.u32(); r.expectEnd();
+      return { type: 'ultimateRemoveGem', weaponId, gemId };
+    }
+    case PacketType.PIERCINGREMOVE: case PacketType.REMOVE_ATTRIBUTE: {
+      const itemId = r.u32(); r.expectEnd();
+      return { type: packetType === PacketType.PIERCINGREMOVE ? 'piercingRemove' : 'removeAttribute', itemId };
+    }
+    case PacketType.REPAIRITEM: {
+      const count = r.u8();
+      const objectIds = Array.from({ length: count }, () => r.u8()); r.expectEnd();
+      return { type: 'repairItem', objectIds };
     }
     case PacketType.ULTIMATE_SETGEM: {
       const weaponId = r.u32(), jewelId = r.u32(); r.expectEnd();

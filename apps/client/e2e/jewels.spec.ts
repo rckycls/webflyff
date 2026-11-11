@@ -112,7 +112,9 @@ test('Create Jewels breaks a weapon into Rubies; Jewel Setting sets a Ruby in th
   if (!isPhone()) await expect(bag).toBeVisible();
   if (isPhone()) await bagCell(page, 4).tap();
   else await bagCell(page, 4).dragTo(setting.locator('[data-control="WIDC_CUSTOM1"]'));
-  await expect(setting.locator('.hud-jewel-weapon')).toBeVisible();
+  // 2026-11-11: the weapon's 3D model turns in the box (its icon until the first picture)
+  await expect(setting.locator('[data-control="WIDC_CUSTOM1"][data-filled]')).toHaveCount(1);
+  await expect(setting.locator('[data-control="WIDC_CUSTOM1"][data-model] canvas.hud-jewel-model')).toBeVisible(ON_FRAMES);
   const sockets = setting.locator('[data-socket]');
   await expect(sockets).toHaveCount(5);
   expect(await sockets.evaluateAll((all) => all.map((s) => (s as HTMLElement).dataset.socket))).toEqual(['set', 'usable', 'open', 'closed', 'closed']);
@@ -129,6 +131,9 @@ test('Create Jewels breaks a weapon into Rubies; Jewel Setting sets a Ruby in th
     }
     const slotBox = (await sockets.nth(1).boundingBox())!;
     expect(slotBox.width).toBeGreaterThanOrEqual(44);
+    // 2026-11-11 (owner): the bag beside it shows its items alone, not the worn equipment
+    await expect(bag).toHaveClass(/inventory-items-only/);
+    await expect(bag.locator('.inventory-equipment-box')).toBeHidden();
   }
   await settingStart.click();
   await expect(settingStart).toBeDisabled();

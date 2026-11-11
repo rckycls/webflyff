@@ -16,6 +16,11 @@ import {
 } from '@flyffweb/protocol';
 import { encodeMagicAttack, encodeRangeAttack, encodeSfxClear, encodeSfxHit, encodeSfxId } from '@flyffweb/protocol';
 import {
+  encodePiercingRemove, encodeRemoveAttribute, encodeRepairItem, encodeUltimateMakeItem, encodeUltimateRemoveGem,
+  encodeUltimateTransWeapon,
+} from '@flyffweb/protocol';
+import type { NpcWindowPacket } from './items/npcWindowKit';
+import {
   encodeAddPartyMember, encodeBlock, encodeChangeTroup, encodePartyChangeLeader, encodePartyExpMode, encodePartyItemMode,
   encodePartyMemberCancel, encodePartyMemberRequest, encodePartySkillUse, encodeQueryPlayerData, encodeRemovePartyMember,
   encodeMeleeAttack2, encodePlayerAngle, encodePlayerBehavior2, encodePlayerCorr2, encodePlayerMoved2,
@@ -144,6 +149,19 @@ export class WorldSession {
   sendCreateAngel(text: string): void { this.playingCache()?.send(encodeCreateAngel(text)); }
   sendAngelBuff(): void { this.playingCache()?.send(encodeAngelBuff()); }
   sendUltimateSetGem(weaponId: number, jewelId: number): void { this.playingCache()?.send(encodeUltimateSetGem(weaponId, jewelId)); }
+  /** 2026-11-11: the item NPC windows' packets (world/upgrade.ts in the protocol). */
+  sendItemNpc(packet: Exclude<NpcWindowPacket, { type: 'chat' }>): void {
+    const cache = this.playingCache();
+    if (cache === undefined) return;
+    switch (packet.type) {
+      case 'makeItem': cache.send(encodeUltimateMakeItem(packet.itemIds)); return;
+      case 'transWeapon': cache.send(encodeUltimateTransWeapon(packet.weaponId, packet.gem1Id, packet.gem2Id)); return;
+      case 'removeGem': cache.send(encodeUltimateRemoveGem(packet.weaponId, packet.gemId)); return;
+      case 'piercingRemove': cache.send(encodePiercingRemove(packet.itemId)); return;
+      case 'removeAttribute': cache.send(encodeRemoveAttribute(packet.itemId)); return;
+      case 'repair': cache.send(encodeRepairItem(packet.objectIds)); return;
+    }
+  }
   /** 2026-11-05: the item windows' packets (world/itemWindows.ts in the protocol). */
   sendQuerySetPlayerName(objectId: number, name: string): void { this.playingCache()?.send(encodeQuerySetPlayerName(objectId, name)); }
   sendSummonParty(objectId: number): void { this.playingCache()?.send(encodeSummonParty(objectId)); }

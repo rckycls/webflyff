@@ -92,6 +92,8 @@ export type WorldMessage = ChatMessage | NpcMessage | ShopMessage | QuestMessage
   | { type: 'flyffEvent'; events: Array<{ id: number; state: number }> }
   /** 2026-11-05: a safe upgrade's answer (`OnSmeltSafety`): 0 refused, 1 success, 2 failure, 3 at the most. */
   | { type: 'smeltSafety'; result: number }
+  /** 2026-11-11: Remove Element upgrading's answer (world/upgrade.ts). */
+  | { type: 'removeAttribute'; success: boolean }
   /** 2026-11-05: the element stones' elements (`SAI79`, 0xff none): the left and right weapons' and the defence's. */
   | { type: 'resistSmMode'; left: number; right: number; defense: number }
   /** 2026-11-05: every running premium timer, at join (`OnSMModeAll`). */
@@ -385,6 +387,15 @@ export interface InventoryItem {
   count: number;
   flag?: number;
   charged?: number;
+  /**
+   * 2026-11-11 (the Repair window): `m_nRepairNumber`, `m_nHitPoint` (the item's endurance left) and `m_nRepair` (the
+   * times repaired), each absent when 0 (`CItemElem::Serialize`, ObjSerialize.cpp:93-95).
+   */
+  repairNumber?: number;
+  hitPoint?: number;
+  repair?: number;
+  /** 2026-11-11: `m_nResistSMItemId`, a premium element stone's on the item; absent for none (the GM's ResistItem window). */
+  resistSMItemId?: number;
   /** `m_nAbilityOption`: the upgrade, the +N after the name. */
   abilityOption?: number;
   /** `m_bItemResist`: the element, a `SAI79::ePropType` (1 fire, 2 water, 3 electricity, 4 wind, 5 earth). */

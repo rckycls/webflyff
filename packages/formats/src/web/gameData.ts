@@ -468,7 +468,12 @@ export interface WebUltimate {
    * `Client/SmeltJewel.inc` and `Client/SmeltExtraction.inc` as `CScript::Load` gives them (parsing strings); 2026-11-10,
    * `Client/summonAngelQuest.inc`, the Summon Angel window's text (WndWorld.cpp:4861-4869).
    */
-  descriptions: { jewel?: string; extraction?: string; summonAngel?: string };
+  descriptions: {
+    jewel?: string; extraction?: string; summonAngel?: string;
+    /** 2026-11-11: the item NPC windows' (Client/SmeltMixJewel.inc ... SmeltRemovePiercing.inc). */
+    mixJewel?: string; changeUnique?: string; changeUltimate?: string; changeUniqueInfo?: string; changeUltimateInfo?: string;
+    removeJewel?: string; removeAttribute?: string; removePiercing?: string;
+  };
 }
 
 /** Filter_ENG.inc (__FILTER_0705): the words of letters, in lower case, and the other entries, each with its replacement. */

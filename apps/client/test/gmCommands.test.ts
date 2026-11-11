@@ -69,9 +69,20 @@ describe('the client halves of FuncTextCmd.cpp (2026-11-10)', () => {
     expect(runClientHalf('ClearPetName', '', '/cpn', ctx())).toEqual({ lines: [], clearPetName: true });
   });
 
-  it('/ResistItem and /Piercing need windows the web lacks: nothing sent', () => {
-    expect(runClientHalf('ResistItem', '1 10 5', '/ritem 1 10 5', ctx())).toEqual({ lines: [] });
+  it('/Piercing needs the item of its window: nothing sent', () => {
     expect(runClientHalf('Piercing', '3', '/pier 3', ctx())).toEqual({ lines: [] });
+  });
+
+  it('2026-11-11: /ResistItem opens its window first; open, "/ritem objid element rao ao" (FuncTextCmd.cpp:1612-1661)', () => {
+    expect(runClientHalf('ResistItem', '1 10 5', '/ritem 1 10 5', ctx())).toEqual({ lines: [], openResistItem: true });
+    const open = (slot: number | null) => ctx({ resistItemSlot: slot });
+    expect(runClientHalf('ResistItem', '1 10 5', '/ritem 1 10 5', open(7))).toEqual({ lines: [], send: '/ritem 7 1 10 5' });
+    // element 0 makes the element upgrade 0; a missing word reads 0
+    expect(runClientHalf('ResistItem', '0 10 5', '/ritem 0 10 5', open(7))).toEqual({ lines: [], send: '/ritem 7 0 0 5' });
+    expect(runClientHalf('ResistItem', '3', '/ritem 3', open(7))).toEqual({ lines: [], send: '/ritem 7 3 0 0' });
+    // out of range, or an empty slot: nothing
+    for (const args of ['6 1 1', '1 21 1', '1 1 11', '1 -1 0']) expect(runClientHalf('ResistItem', args, '', open(7))).toEqual({ lines: [] });
+    expect(runClientHalf('ResistItem', '1 10 5', '', open(null))).toEqual({ lines: [] });
   });
 
   it('lineAction runs these TCM_BOTH commands here, with the line as typed', () => {

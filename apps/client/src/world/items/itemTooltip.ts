@@ -197,6 +197,8 @@ const DST_STAT_ALLUP = 10003;
 
 /** `IsDst_Rate`: the DST's value is a percentage. */
 export const isDstRate = (dst: number): boolean => DST_RATES.has(dst);
+/** 2026-11-11: the TID of a DST's name (`GetDSTStringId`), for the item NPC windows. */
+export const dstTid = (dst: number): string | undefined => DST_NAMES.get(dst);
 
 // ---- item kinds and the rest of the constants -------------------------------------------------------------------------
 
@@ -347,7 +349,7 @@ const signed = (n: number): string => (n >= 0 ? `+${n}` : String(n));
 const withCommas = (n: number): string => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 
 /** A value as the rate formats print it: ATTACKSPEED's is `adj / 2 / 10` (C integer division). */
-const rateValue = (dst: number, adj: number): number => (dst === DST_ATTACKSPEED ? Math.trunc(Math.trunc(adj / 2) / 10) : adj);
+export const rateValue = (dst: number, adj: number): number => (dst === DST_ATTACKSPEED ? Math.trunc(Math.trunc(adj / 2) / 10) : adj);
 
 /** `CItemBase::GetCost` (Item.cpp:123-145): -1 without a cost; a refined item's goes up, in float32. */
 function itemCost(prop: WebItemProp, option: number): number {
