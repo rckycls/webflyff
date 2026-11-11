@@ -3564,9 +3564,6 @@ fieldset:disabled .btn {
 }
 .hud-remove-piercing [data-control^="WIDC_STATIC_PIERCING"][data-unused] { box-shadow: inset 0 0 0 999px rgba(240, 0, 0, 0.235); }
 .hud-repair-cell { position: absolute; width: 32px; height: 32px; }
-.hud-repair .hud-res-static-text { color: #000; text-shadow: none; }
-.hud-repair [data-control="WIDC_STATIC3"] .hud-res-static-text { right: 0; text-align: right; }
-.hud-resist-item .hud-res-static-text { color: #000; text-shadow: none; }
 
 /* The phone: each a panel beside the bag as the jewel windows (.hud-jewel), its slots 44 px, its texts, labels and buttons
    across the panel, a tap on a bag item putting it in; the confirm boxes over the panel. */
