@@ -189,7 +189,14 @@ test('the election: bid, pledge and vote; then the Lord\'s info, event and skill
   await expect(slot).toHaveAttribute('data-kind', 'skill', ON_FRAMES);
   await expect.poll(() => sentOf(gateway, PacketType.ADDITEMTASKBAR).length).toBeGreaterThan(0);
   await press(skills.locator('.hud-window-close'));
-  if (isPhone()) await slot.tap(); else await page.keyboard.press('F1');
+  const useSlot = async () => { if (isPhone()) await slot.tap(); else await page.keyboard.press('F1'); };
+  // the Lord Manager is still the focus, not a player: nothing is sent (WndManager.cpp:2908-2916)
+  await useSlot();
+  await page.waitForTimeout(500);
+  expect(sentOf(gateway, LordPacket.LORD_SKILL_USE)).toHaveLength(0);
+  // no focus (Escape clears it): the skill goes to the Lord, by name
+  await page.keyboard.press('Escape');
+  await useSlot();
   await expect.poll(() => sentOf(gateway, LordPacket.LORD_SKILL_USE).map((s) => {
     const length = s.body.readInt32LE(12);
     return [s.body.readInt32LE(8), s.body.subarray(16, 16 + length).toString('latin1')];
