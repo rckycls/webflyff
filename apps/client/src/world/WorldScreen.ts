@@ -461,6 +461,8 @@ export class WorldScreen {
   private attackButton: AttackButton | undefined;
   private cameraControls: CameraControls | undefined;
   private jumpButton: AttackButton | undefined;
+  /** 2026-11-13 (owner): the phone's fixed Action Slot button beside Jump (the action slot's run). */
+  private actionSlotButton: AttackButton | undefined;
   private jumpRequested = false;
   private releaseBrowserGestures: () => void = () => {};
   /** 2026-11-12 (owner): the text box typed in kept above a phone's keyboard (keyboardLift.ts). */
@@ -1650,6 +1652,12 @@ export class WorldScreen {
       },
     });
     this.jumpButton = new AttackButton(() => { this.jumpRequested = true; }, doc, { label: 'Jump', className: 'hud-jump' });
+    // 2026-11-13 (owner): a fixed Action Slot button beside Jump: the action slot's run, as the bar's action button and C;
+    // with nothing in it, the Action Slot window to set it up
+    this.actionSlotButton = new AttackButton(() => {
+      if (taskBar.actionSlotCount > 0) skillUse.useActionSlot();
+      else if (!taskBar.actionSlotWindow.isOpen) taskBar.actionSlotWindow.toggle();
+    }, doc, { label: 'Action Slot', className: 'hud-action-trigger' });
     // Piece 7 M5: Accelerate (held), Turbo and Land in the air (Decision 4)
     this.flightButtons = new FlightButtons(doc, {
       accelerate: (held) => { this.flightAccelerate = held; },
@@ -2136,7 +2144,8 @@ export class WorldScreen {
     this.hud!.element.append(
       this.questTracker.element, this.teleporter.frame.element, this.heavenTower.element, ...this.lordHud.elements, this.lordHud.eventIcons,
       // 2026-11-12: the phone's quick slots around Attack (bar 8's first slots; style.css shows them on a phone only)
-      taskBar.element, taskBar.quickSlots, this.attackButton.element, this.jumpButton.element, this.flightButtons.element,
+      taskBar.element, taskBar.quickSlots, taskBar.actionSlotWindow.frame.element, this.attackButton.element, this.jumpButton.element,
+      this.actionSlotButton.element, this.flightButtons.element,
       mobileTools.element, logOutBox.element, messageBox.element,
       selectVillage.element, characterWindow.frame.element,
       characterWindow.confirm.frame.element, skillWindow.frame.element, skillWindow.warning.element, reviveWindow.element,
@@ -3322,6 +3331,7 @@ export class WorldScreen {
     this.jumpButton!.update(ownMover !== undefined && !ownMover.act.isDie() &&
       (ownMover.act.state & (ObjSta.JUMP_ALL | ObjSta.DMG_ALL)) === 0 &&
       ((ownMover.act.state & ObjSta.ATK_ALL) === 0 || loop.autoAttack));
+    this.actionSlotButton!.update(ownMover !== undefined && !ownMover.act.isDie());
     if (this.own !== undefined && this.characterWindow?.frame.isOpen === true) this.characterWindow.update(this.own, this.entry, now);
     if (this.own !== undefined && this.skillWindow?.isOpen === true) this.skillWindow.update(this.own);
   }
@@ -4450,6 +4460,7 @@ export class WorldScreen {
     this.taskBar?.dispose();
     this.attackButton?.dispose();
     this.jumpButton?.dispose();
+    this.actionSlotButton?.dispose();
     this.cameraControls?.dispose();
     this.keyboard?.dispose();
     this.walkKey?.dispose();
@@ -4592,7 +4603,7 @@ export class WorldScreen {
     for (const { reject } of this.stepsDrawn.splice(0)) reject(new Error('the world changed'));
     for (const key of ['world', 'own', 'stage', 'views', 'tags', 'indicators', 'speechBubbles', 'keyboard', 'walkKey', 'autoRun', 'joystick', 'tap',
       'focus', 'attackLoop', 'skillUse', 'mark', 'effects', 'effectRenderer', 'effectTextures', 'numbers', 'marks',
-      'hud', 'hudArt', 'taskBar', 'attackButton', 'cameraControls', 'jumpButton', 'logOutBox', 'reviveWindow',
+      'hud', 'hudArt', 'taskBar', 'attackButton', 'cameraControls', 'jumpButton', 'actionSlotButton', 'logOutBox', 'reviveWindow',
       'characterWindow', 'skillWindow', 'inventoryWindow', 'moverMenu', 'dialog', 'shopWindow', 'itemUse',
       'itemActions', 'groundItems', 'nearbyItems', 'ownMover', 'simulationClock', 'minimap', 'teleporter', 'worldMap',
       'questWindow', 'questTracker', 'itemCast', 'castGauge', 'messageBox', 'selectVillage', 'returnScroll', 'partyHud'] as const) this[key] = undefined;

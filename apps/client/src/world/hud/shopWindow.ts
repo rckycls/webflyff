@@ -1,4 +1,5 @@
 import { createItemDetails, ownTooltipContext, positionItemDetails } from './itemDetails';
+import { COUNT_KEYS, CountPad, isPhone, numpad, textButton } from './numpad';
 import type { WebNpc } from '@flyffweb/formats';
 import type { InventoryItem } from '@flyffweb/protocol';
 import type { GameData } from '../gameData';
@@ -34,6 +35,12 @@ export class ShopWindow {
   private readonly quantity: HTMLInputElement;
   private readonly status: HTMLElement;
   private hoverDetails: HTMLElement | undefined;
+  /**
+   * 2026-11-13 (owner: "buying in the shop is hard without the item tooltip, and the amount is hard to enter"): on a phone,
+   * which has no hover, a tap on an item shows the desktop's tooltip by it (the item's, with its price) until the next
+   * tap; the amount is − / + and a tap on it opens the game's number pad (Min, Max, Clear) in place of the phone keyboard.
+   */
+  private pad: CountPad | null = null;
   constructor(private readonly art: UiArt, private readonly data: GameData, private readonly own: () => OwnState | undefined,
     private readonly valid: (id: number) => boolean, private readonly actions: ShopActions, private readonly doc: Document = document) {
     this.frame = new WindowFrame('Shop', art, { width: 264, height: 400, mobileScale: 1 }, doc); this.frame.element.classList.add('hud-shop');
@@ -43,7 +50,7 @@ export class ShopWindow {
     const editPieces = [0, 2, 6, 8, 1, 7, 3, 5, 4].map(index => themeUrl(art, 'WndEditTile' + String(index).padStart(2, '0') + '.tga'));
     this.quantity.style.backgroundImage = editPieces.join(','); this.quantity.classList.add('classic-shop-edit');
     this.status = doc.createElement('p'); this.status.setAttribute('role', 'status'); this.status.className = 'shop-feedback'; this.status.hidden = true;
-    this.frame.onClose = () => { this.hideDetails(); if (this.id !== null) this.actions.close(); this.id = null; this.tabs = null; this.selection = null; this.pending = null; this.onClosed?.(); };
+    this.frame.onClose = () => { this.hideDetails(); if (this.id !== null) this.actions.close(); this.id = null; this.tabs = null; this.selection = null; this.pending = null; this.pad = null; this.onClosed?.(); };
   }
   open(id: number, name: string, metadata?: WebNpc): void {
     if (!this.valid(id)) return;
@@ -53,7 +60,7 @@ export class ShopWindow {
   }
   receive(id: number, tabs: InventoryItem[][]): void {
     if (id !== this.id || !this.check()) return;
-    this.tabs = tabs; this.selection = null; this.pending = null; this.setStatus('');
+    this.tabs = tabs; this.selection = null; this.pending = null; this.pad = null; this.setStatus('');
     this.draw();
   }
   feedback(text: string): void { if (this.frame.isOpen) { this.pending = null; this.setStatus(text); } }
@@ -92,11 +99,46 @@ export class ShopWindow {
     const displayPrice = this.frame.body.querySelector('output');
     if (displayPrice) displayPrice.textContent = String(price === undefined ? 0 : kind === 'buy' ? price : Math.max(1, Math.floor(price / 4)));
     this.setStatus('');
+    // 2026-11-13: a new item's amount starts again, so a number pad open for the last one goes
+    if (this.pad !== null) { this.pad = null; this.draw(); }
+    else this.drawCount();
+  }
+
+  /** The phone's count button shows the amount (its pad aside). */
+  private drawCount(): void {
+    const count = this.frame.body.querySelector<HTMLElement>('[data-shop-amount="count"]');
+    if (count !== null) count.textContent = this.quantity.value;
+  }
+
+  /** The most of the chosen item one request takes (`transact`'s rule): a buy's stack, a sale's count. */
+  private mostCount(): number {
+    const selection = this.selection;
+    if (selection === null) return 1;
+    const item = selection.kind === 'buy'
+      ? this.tabs?.[selection.tab]?.find((entry) => entry.objectId === selection.id)
+      : this.bag().find((entry) => entry.objectId === selection.id);
+    const prop = item && this.data.itemProps.get(item.itemId);
+    if (!item || !prop) return 1;
+    return Math.max(1, Math.min(32767, item.count, selection.kind === 'buy' ? Math.max(1, prop.packMax) : item.count));
+  }
+
+  /** The phone's − and +: one less or more, from 1 to the most. */
+  private stepCount(step: number): void {
+    const next = Math.min(this.mostCount(), Math.max(1, (Number(this.quantity.value) || 0) + step));
+    this.quantity.value = String(next);
+    this.pad = null;
+    this.draw();
   }
   private setStatus(text: string): void { this.status.textContent = text; this.status.hidden = !text; }
-  private hideDetails(): void { this.hoverDetails?.remove(); this.hoverDetails = undefined; }
-  private showDetails(item: InventoryItem, anchor: HTMLElement): void {
-    if (!this.frame.isOpen || this.doc.defaultView?.matchMedia?.('(pointer: coarse)').matches) return;
+  private hideDetails(): void {
+    this.hoverDetails?.remove(); this.hoverDetails = undefined;
+    this.doc.removeEventListener('pointerdown', this.onPressAfterTip, true);
+  }
+  /** 2026-11-13: the phone's tooltip, shown by a tap, goes at the next press anywhere (the next item's tap shows its own). */
+  private readonly onPressAfterTip = (): void => { this.hideDetails(); };
+  /** The item's tooltip by `anchor`: under the mouse on a desktop; on a phone, from a tap (`tapped`). */
+  private showDetails(item: InventoryItem, anchor: HTMLElement, tapped = false): void {
+    if (!this.frame.isOpen || (!tapped && this.doc.defaultView?.matchMedia?.('(pointer: coarse)').matches)) return;
     this.hideDetails();
     // the tooltip as APP_SHOP_ asks for it: with the buy price
     const details = createItemDetails(this.doc, this.art, this.data, item, this.data.itemProps.get(item.itemId),
@@ -104,6 +146,7 @@ export class ShopWindow {
     details.classList.add('shop-item-details');
     (this.frame.element.parentElement ?? this.doc.body).append(details);
     positionItemDetails(details, anchor, this.doc); this.hoverDetails = details;
+    if (tapped) this.doc.addEventListener('pointerdown', this.onPressAfterTip, true);
   }
   private draw(): void {
     this.hideDetails();
@@ -116,7 +159,7 @@ export class ShopWindow {
     for (let i = 0; i < 4; i++) {
       const button = this.doc.createElement('button'); button.type = 'button'; button.textContent = this.metadata?.vendorTabs?.[i] ?? ''; button.setAttribute('aria-label', button.textContent || 'Stock tab ' + (i + 1));
       button.disabled = !button.textContent.trim() && (this.tabs?.[i]?.length ?? 0) === 0;
-      button.ariaPressed = String(this.tab === i); button.addEventListener('click', () => { this.tab = i; this.selection = null; this.draw(); }); tabs.append(button);
+      button.ariaPressed = String(this.tab === i); button.addEventListener('click', () => { this.tab = i; this.selection = null; this.pad = null; this.draw(); }); tabs.append(button);
     }
     const list = this.doc.createElement('div'); list.className = 'shop-items shop-stock-grid'; list.setAttribute('aria-label', 'Vendor items');
     for (const item of this.tabs?.[this.tab] ?? []) {
@@ -130,18 +173,30 @@ export class ShopWindow {
       button.addEventListener('mouseleave', () => this.hideDetails());
       button.addEventListener('focus', () => this.showDetails(item, button));
       button.addEventListener('blur', () => this.hideDetails());
-      button.addEventListener('click', () => this.select(item, 'buy')); list.append(button);
+      // 2026-11-13: a phone's tap also shows the tooltip a desktop's hover does
+      button.addEventListener('click', () => {
+        this.select(item, 'buy');
+        if (isPhone(this.doc)) this.showDetails(item, this.frame.body.querySelector<HTMLElement>(`[data-stock-id="${item.objectId}"]`) ?? button, true);
+      });
+      list.append(button);
     }
     const price = this.doc.createElement('label'); price.className = 'shop-price'; price.append('Item Price');
     const output = this.doc.createElement('output');
     const selectedCost = this.selection ? this.data.itemProps.get(this.selection.itemId)?.cost : undefined;
     output.textContent = String(selectedCost === undefined ? 0 : this.selection?.kind === 'sell' ? Math.max(1, Math.floor(selectedCost / 4)) : selectedCost); output.classList.add('classic-shop-edit'); output.style.backgroundImage = this.quantity.style.backgroundImage; output.setAttribute('aria-label', 'Base item price'); price.append(output);
-    const controls = this.doc.createElement('div'); controls.className = 'shop-controls'; controls.append(this.quantity);
+    const controls = this.doc.createElement('div'); controls.className = 'shop-controls';
+    const phone = isPhone(this.doc);
+    // 2026-11-13: the phone's amount, − count +, the count's tap opening the number pad; the desktop's the edit field
+    if (phone) controls.append(...this.phoneCount());
+    else controls.append(this.quantity);
     for (const kind of ['buy', 'sell'] as const) {
       const button = this.doc.createElement('button'); button.type = 'button'; button.textContent = kind === 'buy' ? 'Buy' : 'Sell'; button.dataset.shopAction = kind;
       button.addEventListener('click', () => this.transact(kind)); controls.append(button);
     }
-    body.append(heading, list, tabs, price, this.status, controls);
+    // 2026-11-13: on a phone the number pad, while open, in the item list's place
+    const instead = phone && this.pad !== null ? this.phonePad() : null;
+    if (instead !== null) { list.hidden = true; heading.hidden = true; }
+    body.append(heading, list, ...(instead === null ? [] : [instead]), tabs, price, this.status, controls);
     this.drawTabStrip(strip, tabs.clientWidth);
   }
 
@@ -169,6 +224,40 @@ export class ShopWindow {
       ...chosenTabTiles(columns, SHOP_TABS, this.tab).map(({ index, left, width: w }) => tile(index, left, w)),
     );
   }
+  /** The phone's amount: −, the count (a tap opens the number pad), +. */
+  private phoneCount(): HTMLElement[] {
+    const minus = textButton(this.doc, '−', () => this.stepCount(-1), 'minus', 'shopAmount');
+    minus.setAttribute('aria-label', 'One less');
+    const count = textButton(this.doc, this.quantity.value, () => {
+      if (this.pad !== null) { this.pad = null; this.draw(); return; }
+      const pad = new CountPad(this.mostCount());
+      // the count as it stands, chosen: the first key replaces it (CountPad)
+      pad.value = this.quantity.value;
+      this.pad = pad;
+      this.draw();
+    }, 'count', 'shopAmount');
+    count.setAttribute('aria-label', 'Shop quantity');
+    count.setAttribute('aria-expanded', String(this.pad !== null));
+    const plus = textButton(this.doc, '+', () => this.stepCount(1), 'plus', 'shopAmount');
+    plus.setAttribute('aria-label', 'One more');
+    return [minus, count, plus];
+  }
+
+  /** The number pad over the item list: each key sets the count; OK gives the list (or the tooltip) back. */
+  private phonePad(): HTMLElement {
+    const sheet = this.doc.createElement('div');
+    sheet.className = 'shop-phone-pad';
+    const pad = numpad(this.doc, COUNT_KEYS, 4, (key) => {
+      if (this.pad === null) return;
+      this.pad.press(key);
+      this.quantity.value = String(this.pad.count);
+      this.drawCount();
+    });
+    const ok = textButton(this.doc, 'OK', () => { this.pad = null; this.draw(); }, 'ok', 'shopAmount');
+    sheet.append(pad, ok);
+    return sheet;
+  }
+
   private transact(kind: 'buy' | 'sell'): void {
     if (!this.check()) return;
     const own = this.own(), selection = this.selection, count = Number(this.quantity.value);

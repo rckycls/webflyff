@@ -102,8 +102,8 @@ test('camera gestures, jump and phone controls share the world without stray act
     expect(jump!.y + jump!.height).toBeLessThan(attack!.y);
     const bar = await page.locator('.hud-taskbar').boundingBox();
     expect(bar!.width).toBeLessThanOrEqual(720);
-    // 2026-11-12 (owner): the bar stands at the bottom left, in from the notch
-    expect(bar!.x).toBeCloseTo(48, 0);
+    // 2026-11-12 (owner): the bar stands at the bottom left
+    expect(bar!.x).toBeCloseTo(0, 0); // 2026-11-13 (owner): at the left edge, not in by the notch's inset
     // A home-indicator safe area lifts the HUD, but must not leave a gap under the taskbar.
     const hud = (await page.locator('.world-hud').boundingBox())!;
     expect(size.height - hud.y - hud.height).toBeCloseTo(34, 0);

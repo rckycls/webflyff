@@ -158,14 +158,41 @@ test('talking: chat typing, channels, peaceful NPC dialogue and authoritative bu
   }
   expect(shopRect.x + shopRect.width).toBeLessThanOrEqual(inventoryRect.x);
   expect(Math.abs(shopRect.y - inventoryRect.y)).toBeLessThanOrEqual(1);
-  await shop.locator('[data-stock-id="1"]').click(); await shop.getByLabel('Shop quantity').fill('2');
+  // 2026-11-13 (owner): the phone has no hover: a tap shows the desktop's tooltip by the item (the item's, with its price)
+  // until the next tap; its amount is − count +, the count's tap opening the number pad (no phone keyboard)
+  const quantity = async (digit: string): Promise<void> => {
+    if (!isMobile) { await shop.getByLabel('Shop quantity').fill(digit); return; }
+    await shop.getByRole('button', { name: 'Shop quantity' }).click();
+    await shop.locator(`.shop-phone-pad [data-pad-key="${digit}"]`).click();
+    await shop.locator('[data-shop-amount="ok"]').click();
+    await expect(shop.getByRole('button', { name: 'Shop quantity' })).toHaveText(digit);
+  };
+  await shop.locator('[data-stock-id="1"]').click();
+  if (isMobile) {
+    const details = page.locator('.shop-item-details');
+    await expect(details).toContainText('Lollipop');
+    await expect(details).toContainText('Price : ');
+    await expect(shop.locator('.shop-stock-grid')).toBeVisible();
+    await page.screenshot({ path: info.outputPath('shop-phone-details.png') });
+    // the next tap puts it away
+    await shop.getByRole('button', { name: 'One more' }).click();
+    await expect(details).toHaveCount(0);
+    await expect(shop.getByRole('button', { name: 'Shop quantity' })).toHaveText('2');
+    await shop.getByRole('button', { name: 'One less' }).click();
+    await expect(shop.getByRole('button', { name: 'Shop quantity' })).toHaveText('1');
+    await shop.getByRole('button', { name: 'Shop quantity' }).click();
+    await expect(shop.locator('.shop-phone-pad')).toBeVisible();
+    await page.screenshot({ path: info.outputPath('shop-phone-pad.png') });
+    await shop.locator('[data-shop-amount="ok"]').click();
+  }
+  await quantity('2');
   await shop.getByRole('button', { name: 'Buy', exact: true }).click(); await expect.poll(() => sentOf(gateway, 0xff00b3).length).toBe(1);
   await expect(inventory.locator('.inventory-money')).toHaveText('1,000'); await expect(inventory.locator('[data-bag-slot]').filter({ hasText: '3' }).first()).toBeVisible();
   gateway.pushCache(script.later([
     message(SELF_ID, 0x18, new ArWriter().u8(0).u8(6).u8(8).u32(5).u32(0)), writeSetPointParam(SELF_ID, 10000, 980),
   ]));
   await expect(inventory.locator('.inventory-money')).toHaveText('980'); await expect(inventory.locator('[data-bag-slot]').filter({ hasText: '5' }).first()).toBeVisible();
-  await inventory.locator('[data-bag-slot]').filter({ hasText: '5' }).first().click(); await shop.getByLabel('Shop quantity').fill('2');
+  await inventory.locator('[data-bag-slot]').filter({ hasText: '5' }).first().click(); await quantity('2');
   await shop.getByRole('button', { name: 'Sell', exact: true }).click(); await expect.poll(() => sentOf(gateway, 0xff00b4).length).toBe(1);
   gateway.pushCache(script.later([
     writeSetPointParam(SELF_ID, 10000, 990), message(SELF_ID, 0x18, new ArWriter().u8(0).u8(6).u8(8).u32(3).u32(0)),

@@ -238,7 +238,8 @@ test.describe('landscape (spec §3.10)', () => {
       }));
       expect(lines).toHaveLength(14);
       for (const line of lines) {
-        expect(line.height, `a line at ${size.width} x ${size.height}`).toBeGreaterThanOrEqual(22);
+        // 2026-11-13 (owner, "make the menus smaller"): a phone draws them at most at 0.85, 22 x 0.85 = 18.7 px a line
+        expect(line.height, `a line at ${size.width} x ${size.height}`).toBeGreaterThanOrEqual(18.5);
         expect(line.height, `a line at ${size.width} x ${size.height}`).toBeLessThanOrEqual(44.5);
       }
       // two columns of seven, side by side from the same top, each line's row against the next one's
