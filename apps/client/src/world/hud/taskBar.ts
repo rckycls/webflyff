@@ -373,8 +373,11 @@ export class TaskBar {
   private dirty = true;
   /** The touch rule (`watchTouch`): the Start menu is drawn for a finger on a touch screen, from a first touch on. */
   private readonly touch: TouchWatch;
-  /** The skill a finger picked in the skill window, which the next slot tapped takes, and the window, where presses keep it. */
-  private picked: number | null = null;
+  /**
+   * What a finger picked, which the next slot tapped takes: a skill of the skill window, or (2026-11-12) an item of the
+   * bag by its Task bar button; and the window it was picked in, where presses keep it.
+   */
+  private picked: Extract<Carried, { from: 'skills' | 'inventory' }> | null = null;
   private pickedWithin: Element | null = null;
   /** The click that ends a slot's drag back onto itself, or its long press, is not a press on the slot. */
   private swallowClick = false;
@@ -522,7 +525,12 @@ export class TaskBar {
 
   /** The skill (its slot of `m_aJobSkill`) a finger picked in the skill window, or null. */
   get pickedSkill(): number | null {
-    return this.picked;
+    return this.picked?.from === 'skills' ? this.picked.skillIndex : null;
+  }
+
+  /** 2026-11-12: the bag item (its object ID) a finger picked with the bag's Task bar button, or null. */
+  get pickedItem(): number | null {
+    return this.picked?.from === 'inventory' ? this.picked.objectId : null;
   }
 
   /**
@@ -575,17 +583,36 @@ export class TaskBar {
    * never replaced by a pick the player has forgotten.
    */
   pickSkill(skillIndex: number, within: Element): void {
-    if (this.picked === skillIndex) {
+    if (this.pickedSkill === skillIndex) {
       this.dropPick();
       return;
     }
+    this.pick({ from: 'skills', skillIndex }, within);
+  }
+
+  /**
+   * 2026-11-12 (the phone, which has no drag): a bag item picked by the bag's Task bar button, as a skill is picked: the
+   * next slot of the item row tapped takes it, as the desktop's drag from the bag does (`setInventoryShortcut`,
+   * ADDITEMTASKBAR). A press anywhere else but in `within` (the bag) lets it go. Picked again, it stays picked.
+   */
+  pickItem(objectId: number, within: Element): void {
+    if (this.own?.inventory?.has(objectId) !== true) return;
+    this.pick({ from: 'inventory', objectId }, within);
+  }
+
+  /** 2026-11-12: lets go of a bag item a finger picked (the bag closed), and of nothing else. */
+  dropItemPick(): void {
+    if (this.picked?.from === 'inventory') this.dropPick();
+  }
+
+  private pick(carried: Extract<Carried, { from: 'skills' | 'inventory' }>, within: Element): void {
     if (this.picked === null) this.doc.addEventListener('pointerdown', this.onPressWhilePicked, true);
-    this.picked = skillIndex;
+    this.picked = carried;
     this.pickedWithin = within;
     this.drawLit();
   }
 
-  /** Lets go of the skill a finger picked (the skill window's buttons, a press elsewhere, the window closed, a placing). */
+  /** Lets go of what a finger picked (the skill window's buttons, a press elsewhere, the window closed, a placing). */
   dropPick(): void {
     if (this.picked === null) return;
     this.picked = null;
@@ -816,8 +843,7 @@ export class TaskBar {
    * does not edit). Nothing else lights a row.
    */
   private drawLit(): void {
-    const picked: Carried | null = this.picked === null ? null : { from: 'skills', skillIndex: this.picked };
-    const carried = this.gestures.dragged ?? picked;
+    const carried = this.gestures.dragged ?? this.picked;
     const shortcut = carried === null ? null : this.edits.carriedShortcut(carried);
     let item = false;
     let queue = false;
@@ -1036,12 +1062,12 @@ export class TaskBar {
     this.placePicked({ row: 'queue', slot: i });
   }
 
-  /** The skill a finger picked goes to `target`, as a drop there would take it, and is let go whatever came of it. */
+  /** What a finger picked goes to `target`, as a drop there would take it, and is let go whatever came of it. */
   private placePicked(target: DropTarget): boolean {
     const picked = this.picked;
     if (picked === null) return false;
     this.dropPick();
-    this.edits.dropOn({ from: 'skills', skillIndex: picked }, target);
+    this.edits.dropOn(picked, target);
     return true;
   }
 
@@ -1053,7 +1079,9 @@ export class TaskBar {
     const target = event.target as Element | null;
     if (target !== null && this.pickedWithin?.contains(target) === true) return;
     const slot = typeof target?.closest === 'function' ? target.closest<HTMLElement>('.hud-slot[data-row]') : null;
-    if (slot !== null && this.strip.contains(slot) && (slot.dataset.row === 'item' || slot.dataset.row === 'queue' || slot.dataset.row === 'applet')) return;
+    // 2026-11-12: a bag item goes on the item row only, as the desktop's drag from the bag does (InventoryWindow.onDrop)
+    const rows = this.picked?.from === 'inventory' ? ['item'] : ['item', 'queue', 'applet'];
+    if (slot !== null && this.strip.contains(slot) && rows.includes(slot.dataset.row ?? '')) return;
     this.dropPick();
   };
 

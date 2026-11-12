@@ -2185,6 +2185,14 @@ fieldset:disabled .btn {
 /* 2026-11-10: the arrows of the first and second jobs' sections (SkillWindow's phone tree), under the skills, no presses */
 .hud-skills-landscape .hud-skills-tree { position: absolute; overflow: visible; pointer-events: none; }
 .hud-skills-landscape [data-button]::before { inset: -8px !important; }
+/* 2026-11-12: the phone's Task bar button (SkillWindow.pickChosen) in the phone panels' beige and #dba98c border, pressed
+   (#ffe494, #795431) while the chosen skill is the one picked for the bar */
+.hud-skills-landscape .hud-skills-taskbar {
+  position: absolute; box-sizing: border-box; padding: 0; border: 2px solid #dba98c; border-radius: 6px; background: #fff6eb; color: #382b20;
+  font: bold 16px/25px Verdana, Arial, sans-serif; cursor: pointer;
+}
+.hud-skills-landscape .hud-skills-taskbar[aria-pressed='true'] { background: #ffe494; border-color: #795431; }
+.hud-skills-landscape .hud-skills-taskbar:disabled { opacity: 0.5; cursor: default; }
 /* + and - are 30 px apart: each reaches 8 px outward and 3 px towards the other (2026-11-04 audit: 4 px was about 20 px) */
 .hud-skills-landscape [data-button='plus']::before { inset: -8px -3px -8px -8px !important; }
 .hud-skills-landscape [data-button='minus']::before { inset: -8px -8px -8px -3px !important; }
@@ -2768,6 +2776,12 @@ fieldset:disabled .btn {
 .hud-buffpet-back { position: absolute; background-repeat: no-repeat; pointer-events: none; }
 .hud-buffpet-face { position: absolute; pointer-events: none; }
 .hud-buffpet-face canvas { display: block; }
+@media (max-width: 1000px) and (pointer: coarse) {
+  /* 2026-11-12 (owner): the pet windows drawn at the Status window's scale (STATUS_MOBILE_SCALE) keep the 12 px text their
+     rows are laid out for; the phone windows' 14 px (.hud-window[data-mobile-window]) would run them together */
+  .hud-pet-status[data-mobile-window],
+  .hud-buffpet-status[data-mobile-window] { font-size: 12px; }
+}
 
 /* 2026-11-10: the Messenger (CWndMessengerEx, hud/friends/messengerWindow.ts): the own state, name and server in 0xff606060,
    the Friend tab's rows of CWndFriendCtrlEx::OnDraw (icon_PlayerData's frames, the level and the name in black), and the

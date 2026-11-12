@@ -3066,6 +3066,114 @@ describe('the Character and Skill windows: the 2026-11-04 audit', () => {
         expect(skillOf(tree, 2).hasAttribute('data-chosen')).toBe(false);
       });
     });
+
+    it('2026-11-12: its Task bar button picks the chosen skill for the bar (never lets it go), and the next item slot tapped takes it', () => {
+      onPhone(() => {
+        const own = vagrantWithSkills(5, 0, [3, 0, 0]);
+        const { bar, sent } = editingOn(own);
+        const { tree } = skillWindowOn(own, bar);
+        const button = skillButton(tree, 'taskbar');
+        expect(button.textContent).toBe('Task bar');
+        // nothing chosen: off
+        tree.update(own);
+        expect(button.disabled).toBe(true);
+        // Clean Hit tapped: chosen and picked (the tap's own pick), the button pressed; tapped again, let go
+        const tap = () => {
+          skillOf(tree, 1).dispatchEvent(touch('pointerdown'));
+          skillOf(tree, 1).click();
+        };
+        tap();
+        expect(bar.pickedSkill).toBe(0);
+        expect(button.disabled).toBe(false);
+        expect(button.getAttribute('aria-pressed')).toBe('true');
+        tap();
+        expect(bar.pickedSkill).toBe(null);
+        tree.update(own);
+        expect(button.getAttribute('aria-pressed')).toBe('false');
+        // the button picks it, and a second press keeps it picked
+        button.dispatchEvent(touch('pointerdown'));
+        button.click();
+        expect(bar.pickedSkill).toBe(0);
+        expect(button.getAttribute('aria-pressed')).toBe('true');
+        button.dispatchEvent(touch('pointerdown'));
+        button.click();
+        expect(bar.pickedSkill).toBe(0);
+        // the slot tapped takes it: the ADDITEMTASKBAR the desktop's drag sends
+        slot(bar, 'item', 2).dispatchEvent(touch('pointerdown'));
+        slot(bar, 'item', 2).click();
+        expect(sent).toEqual([{
+          type: 'ADDITEMTASKBAR', bar: 0, slot: 2,
+          shortcut: { kind: ShortcutKind.SKILL, id: 0, type: 0, index: 2, userId: 0, data: 1, text: 'Clean Hit' },
+        }]);
+        expect(bar.pickedSkill).toBe(null);
+      });
+    });
+
+    it('2026-11-12: there is no Task bar button on a desktop, which drags', () => {
+      const own = vagrantWithSkills(5, 0, [3, 0, 0]);
+      const { tree } = skillWindowOn(own, recordingHand().hand);
+      expect(tree.frame.element.querySelector('[data-button="taskbar"]')).toBeNull();
+    });
+  });
+});
+
+describe("TaskBar: a bag item picked by a finger (2026-11-12, the phone's Task bar button)", () => {
+  const lit = (bar: TaskBar, row: string) => bar.element.querySelector<HTMLElement>(`.hud-taskbar-lit[data-row="${row}"]`)!.hidden;
+
+  it('the next item slot tapped takes it with the ADDITEMTASKBAR the desktop drag sends (setInventoryShortcut)', () => {
+    const own = vagrantWithSkills(5, 0, [3, 0, 0]);
+    const item = [...own.inventory!.values()][0]!;
+    const { bar, sent } = editingOn(own);
+    const bag = document.createElement('div');
+    document.body.append(bag);
+    bar.pickItem(item.objectId, bag);
+    expect(bar.pickedItem).toBe(item.objectId);
+    expect(bar.pickedSkill).toBe(null);
+    expect(bar.carrying).toBe(true);
+    // the item row lit, not the action slot
+    expect([lit(bar, 'item'), lit(bar, 'queue')]).toEqual([false, true]);
+    // a finger in the bag keeps it; picked again, it stays
+    bag.dispatchEvent(touch('pointerdown'));
+    bar.pickItem(item.objectId, bag);
+    expect(bar.pickedItem).toBe(item.objectId);
+    slot(bar, 'item', 6).dispatchEvent(touch('pointerdown'));
+    slot(bar, 'item', 6).click();
+    expect(bar.pickedItem).toBe(null);
+    expect([lit(bar, 'item'), lit(bar, 'queue')]).toEqual([true, true]);
+    // the desktop's drag onto the same slot of another bar makes the same packet
+    const { bar: other, sent: dragged } = editingOn(vagrantWithSkills(5, 0, [3, 0, 0]));
+    other.setInventoryShortcut(item.objectId, 6);
+    expect(sent).toEqual(dragged);
+    expect(sent).toEqual([{
+      type: 'ADDITEMTASKBAR', bar: 0, slot: 6,
+      shortcut: { kind: ShortcutKind.ITEM, id: item.objectId, type: 0, index: 6, userId: 0, data: 1, text: '' },
+    }]);
+    bag.remove();
+  });
+
+  it('the action slot, the applet row or the world let it go and take nothing; the bag closing lets it go, not a skill', () => {
+    const own = vagrantWithSkills(5, 0, [3, 0, 0]);
+    const item = [...own.inventory!.values()][0]!;
+    const { bar, sent } = editingOn(own);
+    const bag = document.createElement('div');
+    document.body.append(bag);
+    for (const target of [slot(bar, 'queue', 0), slot(bar, 'applet', 2), document.body]) {
+      bar.pickItem(item.objectId, bag);
+      target.dispatchEvent(touch('pointerdown'));
+      expect(bar.pickedItem).toBe(null);
+    }
+    expect(sent).toEqual([]);
+    bar.pickItem(item.objectId, bag);
+    bar.dropItemPick();
+    expect(bar.pickedItem).toBe(null);
+    bar.pickSkill(0, bag);
+    bar.dropItemPick();
+    expect(bar.pickedSkill).toBe(0);
+    bar.dropPick();
+    // an item no longer in the bag is not picked
+    bar.pickItem(9999, bag);
+    expect(bar.pickedItem).toBe(null);
+    bag.remove();
   });
 });
 

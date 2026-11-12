@@ -36,13 +36,17 @@ import { Gauge } from './gauge';
 import { createTooltip, positionItemDetails } from './itemDetails';
 import { ResWindow } from './resWindow';
 import type { ResLayout } from './resWindow';
-import { pointPercent } from './statusWindow';
+import { STATUS_MOBILE_SCALE, pointPercent } from './statusWindow';
 
 const f32 = Math.fround;
 
-/** APP_PET_STATUS (`resdata.inc:8798-8854`): its four custom controls; WIDC_BUTTON1 (no picture) is drawn here. */
+/**
+ * APP_PET_STATUS (`resdata.inc:8798-8854`): its four custom controls; WIDC_BUTTON1 (no picture) is drawn here. 2026-11-12
+ * (owner): on a landscape phone it is drawn at the status window's scale (`STATUS_MOBILE_SCALE`), as big as the window it
+ * opens beside (the same 112 px high, collapsed), not whole.
+ */
 export const PET_STATUS: ResLayout = {
-  title: '', width: 192, height: 160,
+  title: '', width: 192, height: 160, frame: { mobileScale: STATUS_MOBILE_SCALE, fitWhole: false },
   controls: [
     { kind: 'custom', id: 'WIDC_CUSTOM1', rect: [8, 6, 72, 74] },
     { kind: 'custom', id: 'WIDC_CUSTOM2', rect: [102, 46, 177, 54] },

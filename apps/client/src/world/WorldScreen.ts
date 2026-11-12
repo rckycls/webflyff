@@ -1653,14 +1653,18 @@ export class WorldScreen {
       land: () => this.landRide(),
     });
     // 2026-11-10 (owner): the phone's shortcuts show the Start menu's icons of the important windows (MOBILE_SHORTCUTS);
-    // Stats, the diagnostics panel, is no Neuz window and keeps its text
+    // Stats, the diagnostics panel, is no Neuz window and keeps its text; 2026-11-12: only while the overlay is shown (a
+    // build made for the players hides it unless the address has ?stats, debugOverlay.ts)
+    const overlayShown = this.page!.overlay.shown;
     const mobileTools = new MobileTools(this.hudArt!, [
       ...MOBILE_SHORTCUTS.map(({ label, applet, window, rank }) => ({ label, applet, rank, run: () => this.openWindow(window) })),
-      { label: 'Stats', applet: null, run: () => { statsButton.ariaExpanded = String(this.page!.overlay.togglePanel()); } },
+      ...(overlayShown
+        ? [{ label: 'Stats', applet: null, run: () => { statsButton!.ariaExpanded = String(this.page!.overlay.togglePanel()); } }]
+        : []),
     ], doc);
     this.mobileTools = mobileTools;
-    const statsButton = mobileTools.buttons.at(-1)!;
-    statsButton.ariaExpanded = 'false';
+    const statsButton = overlayShown ? mobileTools.buttons.at(-1)! : null;
+    if (statsButton !== null) statsButton.ariaExpanded = 'false';
     const logOutBox = new LogOutBox(this.hudArt!, this.data!.texts, () => this.leave(), doc);
     this.logOutBox = logOutBox;
     const characterWindow = new CharacterWindow(
@@ -1713,6 +1717,7 @@ export class WorldScreen {
         this.upgradeNpc?.piercing.dismiss(); this.upgradeNpc?.safety.dismiss(); this.petCare?.bagClosed(); this.jewels?.bagClosed();
         this.bankHud?.bagClosed(); this.summonAngel?.bagClosed();
         this.itemNpc?.bagClosed(); // 2026-11-11: and the item NPC windows it closes (:1015-1075)
+        taskBar.dropItemPick(); // 2026-11-12: an item the phone's Task bar button picked goes with the bag
       },
       // 2026-11-10: a stack in the trade shows the count less the traded (`m_nItemNum - GetExtra()`, WndItemCtrl.cpp:705-708)
       reservedCount: (id) => (this.bagDieFlag ? this.bagReserved.get(id) ?? 0 : 0) + this.tradeExtraShown(id),
@@ -1734,6 +1739,8 @@ export class WorldScreen {
       // 2026-11-10: no move inside the bag while trading (CWndInventory::OnDropIcon, WndField.cpp:2862-2876)
       move: (source, dest) => { if (!this.tradeLimit()) itemActions.move(source, dest); },
       shortcut: (id, slot) => taskBar.setInventoryShortcut(id, slot),
+      // 2026-11-12: the phone's Task bar button: the next item slot tapped takes the item (ADDITEMTASKBAR, as the drag)
+      pickShortcut: (id, within) => taskBar.pickItem(id, within),
     }, doc);
     this.inventoryWindow = inventoryWindow;
     // 2026-11-09 (pets R2): the raised pet's status window (CWndPetStatus) and its portrait

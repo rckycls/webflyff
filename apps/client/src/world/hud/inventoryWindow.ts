@@ -29,6 +29,11 @@ export interface InventoryActions {
   move(source: number, destination: number): void;
   shortcut(id: number, slot: number): void;
   /**
+   * 2026-11-12: the phone's Task bar button (it has no drag): the item picked for the task bar, whose next item slot
+   * tapped takes it as `shortcut` would (`TaskBar.pickItem`); a press elsewhere than in `within` (the bag) lets it go.
+   */
+  pickShortcut?(id: number, within: Element): void;
+  /**
    * 2026-11-05: the upgrade cursor (items/upgradeCursor.ts): whether it is on, the item its wait is for, a bag item
    * clicked as its target (true when taken), and its cancel (a right click, the bag closing).
    */
@@ -391,6 +396,9 @@ export class InventoryWindow {
         if (prop && prop.part >= 0 && prop.part < 31 && prop.part !== 13) button('equip', 'Equip', () => this.actions.equip(item.objectId));
         // Piece 7 M3: and the travel items; 2026-11-05: and the upgrade materials, which start the upgrade mode
         if (prop && (usableFromBag(prop) || upgradeKindOf(prop) !== null)) button('use', 'Use', () => this.actions.use(item.objectId));
+        // 2026-11-12: the desktop's drag onto an item slot, for a finger: picked here, placed by the next slot tapped
+        const pick = this.actions.pickShortcut?.bind(this.actions);
+        if (pick) button('taskbar', 'Task bar', () => pick(item.objectId, this.frame.element));
         button('drop', 'Drop', () => this.requestDrop(item.objectId));
       }
     }

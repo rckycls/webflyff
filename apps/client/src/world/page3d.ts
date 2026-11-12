@@ -8,6 +8,7 @@ import {
 } from '@flyffweb/scene';
 import type { SceneServices } from '@flyffweb/scene';
 import type { WebGLRenderer } from 'three';
+import { debugOverlayShownHere } from '../debugOverlay';
 import { pageAssets, pageGameData } from '../pageAssets';
 import type { GameData } from './gameData';
 
@@ -68,7 +69,8 @@ export function page3d(doc: Document): Page3d {
     if (!hasWebGL2(doc)) throw new NoWebGLError('this browser gives no WebGL 2 context');
     const holder = doc.createElement('div');
     holder.className = 'world-view';
-    const overlay = new Overlay(holder);
+    // 2026-11-12: hidden on a build made for the players, unless the address has ?stats (debugOverlay.ts)
+    const overlay = new Overlay(holder, { hidden: !debugOverlayShownHere(doc.defaultView?.location.search ?? '') });
     let renderer: WebGLRenderer;
     try {
       renderer = createRenderer(holder, overlay);
