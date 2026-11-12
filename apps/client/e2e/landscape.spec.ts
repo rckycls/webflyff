@@ -140,26 +140,27 @@ test.describe('landscape (spec §3.10)', () => {
     await expect(page.getByRole('heading', { name: 'Choose a channel' })).toBeVisible();
     await expectNoScroll(page, 'the channels');
     await page.getByRole('button', { name: /Channel 1/ }).click();
-    await expect(page.getByRole('heading', { name: 'Your characters' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Select Character' })).toBeVisible();
     await expectNoScroll(page, 'the characters');
 
-    await page.getByRole('button', { name: 'Empty — Create' }).first().click();
-    await expect(page.getByRole('heading', { name: 'Create a character in slot 2' })).toBeVisible();
+    await page.getByRole('button', { name: 'Select slot 2, Available' }).click();
+    await page.getByRole('button', { name: 'Create in slot 2' }).click();
+    await expect(page.getByRole('heading', { name: 'New Character' })).toBeVisible();
     await expectNoScroll(page, 'the create screen');
-    await page.getByRole('button', { name: 'Create', exact: true }).click();
+    await page.getByRole('button', { name: 'OK' }).click();
     await expect(page.getByRole('alert')).toHaveText('Enter name.');
     await expectNoScroll(page, 'the create screen with a message');
-    await expectOnScreen(page.getByRole('button', { name: 'Create', exact: true }), 'Create');
+    await expectOnScreen(page.getByRole('button', { name: 'OK' }), 'OK');
     await page.getByRole('button', { name: 'Cancel' }).click();
 
+    await page.getByRole('button', { name: 'Select Webby' }).click();
     await page.getByRole('button', { name: 'Delete Webby' }).click();
-    await expect(page.getByRole('heading', { name: 'Delete a character' })).toBeVisible();
+    await expect(page.getByRole('dialog', { name: 'Delete Character' })).toBeVisible();
     await expectNoScroll(page, 'the delete screen');
-    await page.getByLabel('Bank PIN').fill('abcd');
-    await page.getByRole('button', { name: 'Delete', exact: true }).click();
-    await expect(page.getByRole('alert')).toHaveText('The Bank PIN should be a 4 digit number.');
+    await page.getByRole('button', { name: 'OK' }).click();
+    await expect(page.getByRole('alert')).toHaveText('Please Re-enter SSN.');
     await expectNoScroll(page, 'the delete screen with a message');
-    await page.getByRole('button', { name: 'Cancel' }).click();
+    await page.getByRole('button', { name: 'CANCEL' }).click();
 
     await page.getByRole('button', { name: 'Enter Webby' }).click();
     await expect(page.getByText('Entering the world…')).toBeVisible();

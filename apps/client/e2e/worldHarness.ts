@@ -162,10 +162,13 @@ export interface Listed {
 /** Webby as the world tests list it: level 15, in the vagrant's clothes, with nothing in the hands. */
 export const LISTED_WEBBY: Listed = { level: 15, equipment: MALE_VAGRANT };
 
-/** Webby in Madrigal on Flaris' square, dressed as `listed` says (`CDPLoginClient::OnPlayerList`'s order). */
+/**
+ * Webby in Madrigal on Flaris' square, dressed as `listed` says (`CDPLoginClient::OnPlayerList`'s order). Its block flag
+ * is 1, a character that may be played (0 is a blocked one, `_Database/DbManager.cpp:571-579`).
+ */
 export function playerList(listed: Listed = LISTED_WEBBY): Buffer {
   const w = new ArWriter().u32(PacketType.PLAYER_LIST).u32(AUTH_KEY).i32(1);
-  w.i32(0).i32(0).u32(MADRIGAL).u32(MI_MALE).string('Webby').vec3(SQUARE)
+  w.i32(0).i32(1).u32(MADRIGAL).u32(MI_MALE).string('Webby').vec3(SQUARE)
     .u32(500).u32(0).u32(0).u32(0).u32(0).u32(0).u32(0xff907b6d).u32(0).u8(0).i32(0).i32(listed.level).u32(0)
     .i32(15).i32(15).i32(15).i32(15).u32(0).i32(listed.equipment.length);
   for (const id of listed.equipment) w.u32(id);

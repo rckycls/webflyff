@@ -438,17 +438,28 @@ describe('LoginFlow, creating and deleting characters', () => {
     expect(hex(login.sent.at(-1)!)).toBe(hex(encodeDeletePlayer('webtester', HASH, deleteKey('1234'), 500, 7, [])));
   });
 
-  it('refuses a delete with a bad slot, an empty slot or a bad PIN, and sends nothing', async () => {
+  it('deletes with any password of 1 to 63 characters, as V15 does for LANG_ENG', async () => {
+    const { login, flow } = await atCharacterList();
+    flow.deleteCharacter(0, 'my pass 12a4');
+    expect(hex(login.sent.at(-1)!)).toBe(hex(encodeDeletePlayer('webtester', HASH, deleteKey('my pass 12a4'), 500, 7, [900])));
+    flow.deleteCharacter(0, 'y'.repeat(63));
+    expect(hex(login.sent.at(-1)!)).toBe(hex(encodeDeletePlayer('webtester', HASH, deleteKey('y'.repeat(63)), 500, 7, [900])));
+  });
+
+  it('refuses a delete with a bad slot, an empty slot or a bad password, and sends nothing', async () => {
     const { events, login, flow } = await atCharacterList();
     const sentBefore = login.sent.length;
     flow.deleteCharacter(3, '1234');
     expect(events.at(-1)).toEqual({ type: 'error', message: 'Oops. Try again.' });
     flow.deleteCharacter(2, '1234'); // the list holds slot 0 only
     expect(events.at(-1)).toEqual({ type: 'error', message: 'Oops. Try again.' });
-    flow.deleteCharacter(0, '12a4');
-    expect(events.at(-1)).toEqual({ type: 'error', message: 'The Bank PIN should be a 4 digit number.' });
+    // V15's LANG_ENG delete window: empty or 64 and more is "Please Re-enter SSN." (sic)
     flow.deleteCharacter(0, '');
-    expect(events.at(-1)).toEqual({ type: 'error', message: 'Enter the Bank PIN to continue.' });
+    expect(events.at(-1)).toEqual({ type: 'error', message: 'Please Re-enter SSN.' });
+    flow.deleteCharacter(0, 'x'.repeat(64));
+    expect(events.at(-1)).toEqual({ type: 'error', message: 'Please Re-enter SSN.' });
+    flow.deleteCharacter(0, 'pässword');
+    expect(events.at(-1)).toEqual({ type: 'error', message: 'Please Re-enter SSN.' });
     expect(login.sent).toHaveLength(sentBefore);
   });
 });

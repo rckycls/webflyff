@@ -7,6 +7,7 @@ import type { CharacterSummary, NewCharacter, ServerEntry, SlotMessenger } from 
 import type { OpenChannel, PacketChannel } from '../net/PacketChannel';
 import { ServerClock } from '../net/serverClock';
 import { ServerError, UNEXPECTED_PROBLEM, closeText, errorText } from './errorText';
+import { validateDeletePassword } from './createRules';
 import { isCharacterSlot, isValidAppearance, validateBankPin, validateCharacterName } from './validation';
 
 /** What the lobby views are told. After `error` or `closed` from the certifier phase, every connection is already closed. */
@@ -294,11 +295,12 @@ export class LoginFlow {
   }
 
   /**
-   * Sends DEL_PLAYER for the character in `slot`, with the key made from the typed Bank PIN and the slot's messenger
-   * friends. An empty slot or a PIN the create screen's rules refuse is answered with an `error` event and nothing is
-   * sent. Does nothing without a login-server connection.
+   * Sends DEL_PLAYER for the character in `slot`, with the key made from the typed password and the slot's messenger
+   * friends. An empty slot, or a password V15's delete window refuses (LANG_ENG: 1 to 63 characters,
+   * `validateDeletePassword`), is answered with an `error` event and nothing is sent. Does nothing without a
+   * login-server connection.
    */
-  deleteCharacter(slot: number, bankPin: string): void {
+  deleteCharacter(slot: number, password: string): void {
     const loginServer = this.loginServer;
     const authKey = this.authKey;
     if (loginServer === undefined || authKey === undefined) return;
@@ -307,13 +309,13 @@ export class LoginFlow {
       this.notify({ type: 'error', message: errorText(ServerError.NO_SUCH_GROUP) });
       return;
     }
-    const problem = validateBankPin(bankPin, bankPin);
+    const problem = validateDeletePassword(password);
     if (problem !== undefined) {
       this.notify({ type: 'error', message: problem });
       return;
     }
     const friendIds = this.messengers.find((m) => m.slot === slot)?.friends.map((f) => f.id) ?? [];
-    loginServer.send(encodeDeletePlayer(this.account, this.passwordHash, deleteKey(bankPin), character.playerId, authKey, friendIds));
+    loginServer.send(encodeDeletePlayer(this.account, this.passwordHash, deleteKey(password), character.playerId, authKey, friendIds));
   }
 
   /**
