@@ -1,7 +1,8 @@
 # Closed beta fixes (2026-11-12): checkpoint
 
-Branch `beta-fixes`, from main `f6a955e`. Four fixes, and three rounds the owner asked for after (sections 5 to 7;
-section 7 changes parts of 2, 3 and 6). No convert needed (no converter or asset change).
+Branch `beta-fixes`, from main `f6a955e`. Four fixes, and four rounds the owner asked for after (sections 5 to 8;
+sections 7 and 8 change parts of the earlier ones). Up to 9404a6b merged into main as 103093e (live); section 8 on top of
+it, the branch fast-forwarded to main first. No convert needed (no converter or asset change).
 
 ## 1. The debug overlay is hidden on the live site
 
@@ -119,18 +120,47 @@ and chat 30% smaller again; then the quick slots' pictures bigger and cut round,
   higher); `landscape`, `mobileUx` (Attack's new size and place); `phoneSizes` and `taskBarFinger` (the layout, the quick
   slots).
 
+## 8. Phone round from the live site (2026-11-13, an iPhone, game area about 730 x 320)
+
+1. **Bar and chat at the left edge**: the bar's left is 0 (it was in by the notch's inset, about 47-54 px on an iPhone).
+2. **"Some skills (Keenwheel) cannot be put on the taskbar"**: Neuz's own rule, kept. Keenwheel is a *circle* combo skill
+   (`dwComboStyle` CT_CIRCLE; Flurry too; Over Cut, Blindside are *finish*): `CWndTaskBar::OnDropIcon` takes only step and
+   general skills on the F-key rows (WndTaskBar.cpp:2026-2041), silently. They go in the action slot. New: on the phone a
+   combo skill tapped onto an F slot or a quick slot says so in a line (`TaskBar.placePicked`).
+3. **Action Slot window** (`hud/actionSlotWindow.ts`, `TaskBar.actionSlotWindow`): a phone's tap on the action slot (with
+   nothing picked) opens it: the five slots, each skill with × to take it out (`RemoveSkillQueue`: the ones after it that
+   can no longer follow go too), and the player's skills, a tap adding one after the last, greyed where Neuz refuses it
+   (combo order, cool-down, five at most, chain running: `TaskBarEdits.canQueue`). SKILLTASKBAR, as the desktop's drag.
+4. **Shop**: a phone's tap on an item shows the desktop's own tooltip by it (the item's, with its price), until the next tap
+   (the owner: the same tooltip as the bag's, with the price, not a full panel). The amount is − count +; a tap on the count
+   opens the game's number pad (Min, Max, Backspace, Clear, OK) in the item list's place: no phone keyboard.
+5. **Top icons in two rows of four** (grid); every phone shows all eight now (the narrow-phone hiding is gone); Stats (test
+   builds, `?stats`) beside the first row. The target bar moved under the two rows (96 px down). The icons now lie under
+   the windows and menus (z-index 0, was 50): their second row covered a window's close button and an NPC's menu.
+6. **Navigator 30% smaller** on a phone (mobileScale 0.85 -> 0.6).
+7. **Three more quick slots** in a row left of the lowest circle, on its line, **20% smaller** than the others (owner's
+   follow-up); `QUICK_SLOTS` 7 (bar 8, slots 1-7).
+8. **Chat over the bar sometimes**: the bar now watches its layer's size (`ResizeObserver`), not only the window's resize: an
+   iPhone's toolbar showing or hiding changed the layer with no resize in time, and the chat stayed where the bar had been.
+9. **Quest tracker** at the left under the status window, 10 px text, at most 120 px tall (was 14 px at the right).
+10. **Start menu smaller** on a phone: at most 0.85 (was up to 2, 1.25 at 730 x 320). Read as the Start menu ("the
+    navigator menus"); the Navigator window itself is item 6.
+
 ## Checks run here
 
 - `npm run typecheck`: clean.
-- `npx vitest run`: 4609 passed, 9 skipped, 0 failed; new tests in `debugOverlay.test.ts`, `keyboardLift.test.ts`,
-  `overlay.test.ts`, `hud.test.ts` (task bar item pick, Skill window button, quick slots), `inventoryWindow.test.ts`,
-  `petWindow.test.ts`.
+- `npx vitest run` (after section 8): 4626 passed, 9 skipped; 3 timed out in `pageAssets.test.ts` while the machine ran
+  the e2e, 3/3 passed alone (not this branch's). New tests in `debugOverlay.test.ts`, `keyboardLift.test.ts`,
+  `overlay.test.ts`, `hud.test.ts` (task bar item pick, Skill window button, quick slots, Action Slot window, the combo
+  line, the phone menu's 0.85), `inventoryWindow.test.ts`, `petWindow.test.ts`.
 - `npm run check:public-build`: ok.
-- e2e (chromium + phone, port 5191), after section 7: `phoneSizes`, `taskBarFinger` (with the quick slots), `keyboardLift`,
-  `talking`, `mobileAudit`, `friends`, `gmCommands`, `itemNpcWindows`, `party`, `controls`, `landscape`, `questWindow`,
-  `topRightIcons`, `skills`, `mobileUx`, `flight`: all pass (the last rerun of the four that measure the layout too).
-- `style.css` braces: 1482 open, 1482 close, never below 0.
-- Not checked here: a real phone (keyboard, thumbs on the circles, the chat's small tabs at 0.56).
+- e2e (chromium + phone, port 5191), after section 8: `phoneSizes`, `taskBarFinger` (quick slots, Action Slot window),
+  `topRightIcons` (two rows, 730 x 320 too), `landscape`, `controls`, `talking` (the phone shop's tooltip and number pad),
+  `mobileAudit` (730 x 320 too), `quests`, `keyboardLift`, `friends`, `gmCommands`, `itemNpcWindows`, `party`, `skills`,
+  `mobileUx`, `flight`, `navigation`, `questWindow`: all pass (the three that failed in the first run, with the top icons
+  over windows' controls and a SKILLTASKBAR check, rerun and passing).
+- `style.css` braces balanced, never below 0.
+- Not checked here: a real phone (keyboard, thumbs on the circles, the chat's small tabs at 0.56, the menu at 0.85).
 
 ## For the owner: the full e2e
 

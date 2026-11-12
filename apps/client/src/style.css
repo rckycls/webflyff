@@ -1626,23 +1626,24 @@ fieldset:disabled .btn {
   height: var(--hud-mobile-icon, 32px);
   background: no-repeat 0 0 / 100% 100%;
 }
-/* A narrow phone keeps the shortcuts that fit between the status window (139 px) and the Navigator (122 px and its 14 px):
-   all 8 from 740 px wide, then 7, 6, 5, and 4 under 600 px (Bag, Skill, Character, Quest at 568 px) */
-@media (max-width: 739px) and (pointer: coarse) { .hud-mobile-tools > [data-rank='8'] { display: none; } }
-@media (max-width: 699px) and (pointer: coarse) { .hud-mobile-tools > [data-rank='7'] { display: none; } }
-@media (max-width: 649px) and (pointer: coarse) { .hud-mobile-tools > [data-rank='6'] { display: none; } }
-@media (max-width: 599px) and (pointer: coarse) { .hud-mobile-tools > [data-rank='5'] { display: none; } }
+/* 2026-11-13 (owner): the shortcuts in two rows of four, which every phone has room for (the narrow phones no longer drop
+   the least used, as the one row did); Stats, in a test build, under them */
 /* The floating bar's dimensions and safe-area centering come from its native layout. */
 /* The HUD is already above the home-indicator inset; cancel it for the bar alone. */
 .hud-taskbar.is-floating { bottom: calc(0px - var(--game-safe-bottom, 0px)); }
 @media (max-width: 1000px) and (pointer: coarse) {
   .hud-mobile-tools {
-    display: flex;
+    display: grid;
+    grid-template-columns: repeat(4, auto);
     position: absolute;
-    z-index: 50;
+    /* 2026-11-13: under the windows and menus (from 1), which their second row would otherwise cover: an open window's
+       close button, an NPC's menu */
+    z-index: 0;
     top: 0;
     right: calc(var(--game-safe-right, 0px) + 12px);
   }
+  /* Stats (a test build's, or ?stats) beside the first row, not a third row over the target bar */
+  .hud-mobile-tools > button:not([data-icon]) { grid-column: 5; grid-row: 1; }
   .world #overlay > button:last-child { display: none; }
   .world #overlay,
   .world:has(.hud-status:not([hidden])) #overlay {
@@ -1881,13 +1882,15 @@ fieldset:disabled .btn {
   .hud-quest-tracker:hover .tracker-title:not(.selected) { color: #a11c46; }
   .hud-quest-tracker:hover .tracker-row:not(.selected, .met) { color: #7950ff; }
 }
-/* On a touch phone: under the top-right shortcuts and the target bar under them (96 px down: the bar ends at 48 + 0.7 x 56;
-   2026-11-10, the owner's layout), left of the attack and jump buttons, at most three quests tall and scrolling, clear of
-   the task bar; moved left with the Navigator as the shortcuts are */
+/* On a touch phone (2026-11-13, owner: "on the left and a lot smaller"): at the left, under the status window (71 px high
+   on a phone), in 10 px text, at most about four quests tall and scrolling, clear of the chat docked on the bar */
 @media (max-width: 1000px) and (pointer: coarse) {
-  .hud-quest-tracker { top: calc(env(safe-area-inset-top, 0px) + 96px); right: calc(var(--game-safe-right, 0px) + 100px); width: 200px; max-height: min(162px, calc(100% - var(--hud-taskbar-height, 48px) - 112px)); font-size: 14px; line-height: 18px; scrollbar-width: thin; }
-  .tracker-title, .tracker-row { min-height: 18px; }
-  .world:has(.hud-navigator:not([hidden])) .hud-quest-tracker { right: calc(var(--game-safe-right, 0px) + 136px); }
+  .hud-quest-tracker {
+    top: calc(env(safe-area-inset-top, 0px) + 76px); left: calc(var(--game-safe-left, 0px) + 2px); right: auto; width: 150px;
+    max-height: min(120px, calc(100% - var(--hud-taskbar-height, 48px) - 160px)); padding: 2px 4px; font-size: 10px; line-height: 13px;
+    scrollbar-width: thin;
+  }
+  .tracker-title, .tracker-row { min-height: 13px; }
 }
 .world-ground-items { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
 .world-ground-items button { position: absolute; pointer-events: auto; transform: translate(-50%, -50%); display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: 0; background: none; color: #ffe59c; font-size: var(--drop-icon-size, 16px); touch-action: none; }
@@ -1906,8 +1909,9 @@ fieldset:disabled .btn {
 }
 @media (max-width: 1000px) and (pointer: coarse) {
   .world-hud { overflow: visible; }
-  /* 2026-11-10 (owner's layout): under the row of window shortcuts, which runs across the top centre */
-  .hud-target { top: 48px; transform: scale(.7); transform-origin: top center; }
+  /* 2026-11-10 (owner's layout): under the window shortcuts; 2026-11-13: under their two rows (2 x 48 px), which a narrow
+     phone's target bar would meet */
+  .hud-target { top: 96px; transform: scale(.7); transform-origin: top center; }
   /* layered boss HP: 20 px under the bar's .7 scale is 14 px on the screen */
   .hud-target-bars { font-size: 20px; margin-top: -4px; }
 }
@@ -2108,6 +2112,19 @@ fieldset:disabled .btn {
   .hud-shop .shop-search input { height: 18px; }
   .hud-shop .shop-awaken { line-height: 12px; font-size: 10px; }
   .hud-shop .shop-feedback { min-height: 18px; max-height: 24px; line-height: 12px; font-size: 10px; }
+  /* 2026-11-13 (owner): the number pad, while open, in the item list's place; the amount − count + (a tap on an item shows
+     the desktop's tooltip by it, ShopWindow.showDetails) */
+  .hud-shop .shop-phone-pad {
+    flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box;
+    padding: 4px; border: 1px solid #bbb5ab; border-radius: 9px 9px 0 0; background: #fffaf5;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+  }
+  .hud-shop .shop-phone-pad .vendor-numpad { grid-template-columns: repeat(4, 38px); grid-auto-rows: 32px; gap: 3px; }
+  .hud-shop .shop-phone-pad .vendor-numpad button { min-height: 0; padding: 0; font: 15px Arial, sans-serif; touch-action: manipulation; }
+  .hud-shop .shop-phone-pad [data-shop-amount='ok'] { min-width: 44px; min-height: 44px; }
+  .hud-shop .shop-controls [data-shop-amount] { flex: 0 0 auto; min-width: 30px; height: 26px; min-height: 26px; padding: 0 4px; font-size: 14px; }
+  .hud-shop .shop-controls [data-shop-amount='count'] { min-width: 44px; font-weight: bold; }
+  .hud-shop .shop-controls [data-shop-action] { height: 26px; min-height: 26px; font-size: 12px; }
 }
 .shop-reference-filters { flex-shrink: 0; display: grid; grid-template-columns: 1fr 1fr; font: 10px/12px Arial, sans-serif; }
 .shop-reference-filters > label:not(.shop-price) { display: flex; align-items: center; gap: 2px; grid-column: 1; }
@@ -2267,7 +2284,8 @@ fieldset:disabled .btn {
 .navigator-filters button[aria-pressed=true]::before { content: '✓ '; }
 .navigator-filters button:hover { background: #d7e1ff; }
 @media (max-width: 1000px) and (pointer: coarse) {
-  .world:has(.hud-navigator:not([hidden])) .hud-mobile-tools { right: calc(var(--game-safe-right, 0px) + 136px); }
+  /* left of the Navigator (2026-11-13: 144 px at 0.6, and 14 px) */
+  .world:has(.hud-navigator:not([hidden])) .hud-mobile-tools { right: calc(var(--game-safe-right, 0px) + 100px); }
 }
 
 .hud-teleporter > .hud-window-body { overflow: hidden; }
@@ -2644,6 +2662,18 @@ fieldset:disabled .btn {
   .hud-flight-accelerate { --qx: .707; --qy: .707; }
   .hud-quick-slot[data-slot='2'] { --qx: .5; --qy: .866; }
   .hud-quick-slot[data-slot='3'], .hud-flight-land { --qx: 0; --qy: 1; }
+  /* 2026-11-13 (owner): three more in a row with the lowest (slot 1, at Attack's left), 20% smaller than the others, centred
+     on its line, 8 px apart; --qk: how many of them are right of it */
+  .hud-quick-slot[data-slot='4'] { --qk: 0; }
+  .hud-quick-slot[data-slot='5'] { --qk: 1; }
+  .hud-quick-slot[data-slot='6'] { --qk: 2; }
+  .hud-quick-slot:is([data-slot='4'], [data-slot='5'], [data-slot='6']) {
+    --quick-small: calc(var(--quick-size) * .8);
+    width: var(--quick-small); height: var(--quick-small);
+    right: calc(var(--attack-right) + var(--attack-size) / 2 + var(--quick-radius) + var(--quick-size) / 2 + 8px
+      + (var(--quick-small) + 8px) * var(--qk));
+    bottom: calc(var(--attack-bottom) + (var(--attack-size) - var(--quick-small)) / 2);
+  }
   /* an empty circle: a dark glass disc in the buttons' beige ring; a shortcut's picture inside it */
   .hud-quick-slot {
     position: absolute; padding: 0; overflow: hidden; pointer-events: auto;
@@ -2667,6 +2697,35 @@ fieldset:disabled .btn {
   }
   .hud-quick-remove[hidden] { display: none; }
   .world:has(.hud-flight:not([hidden])) .hud-quick-slots { visibility: hidden; }
+  /* 2026-11-13 (owner): the Action Slot window (actionSlotWindow.ts): its five slots, each skill with × to take it out, a
+     line on the combo order, and the skills a tap adds after the last, greyed where Neuz's rules refuse them */
+  .hud-action-slot-window > .hud-window-body {
+    display: flex; flex-direction: column; gap: 6px; box-sizing: border-box; padding: 6px; overflow: hidden;
+    color: #382b20; font: 12px/1.3 Verdana, Geneva, Tahoma, sans-serif; background: #fff6eb;
+  }
+  .action-slot-row { flex: none; display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+  .action-slot-cell {
+    position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+    min-height: 62px; padding: 3px; border: 1px solid #d7ac8f; border-radius: 5px; background: #fffaf5; text-align: center;
+  }
+  .action-slot-cell[data-empty] { color: #b9a28f; font-size: 14px; background: #f4e8dc; }
+  .action-slot-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+  .action-slot-icon { flex: none; width: 32px; height: 32px; background: no-repeat 0 0 / 100% 100%; }
+  .action-slot-cell [data-action-slot='remove'] {
+    position: absolute; top: -6px; right: -6px; width: 26px; height: 26px; min-height: 0; padding: 0; border: 1px solid #ba9377;
+    border-radius: 50%; background: #fff1df; color: #8a2b1f; font: bold 15px/1 Arial, sans-serif;
+  }
+  .action-slot-hint { flex: none; margin: 0; font-size: 10px; color: #6b5a4c; }
+  .action-slot-skills {
+    flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 4px; align-content: start;
+  }
+  .action-slot-skill {
+    display: flex; align-items: center; gap: 6px; min-height: 38px; padding: 2px 6px; border: 1px solid #d7ac8f;
+    border-radius: 5px; background: #fffaf5; color: inherit; font: inherit; font-size: 11px; text-align: left;
+  }
+  .action-slot-skill:disabled { opacity: .45; }
+  .action-slot-skill > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* 2026-11-12 (owner): the desktop chat docked on the phone's bar (NeuzChat.dock): its 12 px text as on the desktop (not
      the phone windows' 14 px), and its small buttons answering a finger a little round them */
   .hud-neuz-chat[data-mobile-window] { font-size: 12px; }

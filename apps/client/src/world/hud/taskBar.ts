@@ -49,6 +49,8 @@ import { themeKey, themeUrl } from './art';
 import type { UiArt } from './art';
 import { setLayoutBottom } from './frame';
 import { SlotGestures, byFinger } from './slotGestures';
+import { ActionSlotWindow } from './actionSlotWindow';
+import type { ActionSlotEntry } from './actionSlotWindow';
 import { EMPTY, TaskBarEdits, remember, stacks } from './taskBarEdits';
 import type { Carried, DropTarget, LoadedBars, TaskBarEditActions } from './taskBarEdits';
 import { TaskMenu, taskMenuHeight } from './taskMenu';
@@ -217,7 +219,13 @@ const PHONE_BAR_SHARE = 0.56;
  * slots (no touch).
  */
 export const QUICK_BAR = 7;
-export const QUICK_SLOTS = 4;
+/** 2026-11-13 (owner): four on the arc, and three more in a row left of the lowest (style.css). */
+export const QUICK_SLOTS = 7;
+/**
+ * 2026-11-13 (owner, "make the menus smaller"): the most a phone draws the Start menu at (its two columns of seven a
+ * little under their size; a touch screen wider than a phone keeps `TOUCH_MENU_SCALE`).
+ */
+const PHONE_MENU_SCALE = 0.85;
 /** A finger held on a quick slot this long (ms), and moved no more than `QUICK_SLOP` px, offers to take it off. */
 const QUICK_HOLD_MS = 500;
 const QUICK_SLOP = 10;
@@ -404,6 +412,20 @@ export class TaskBar {
   private layout: TaskBarLayout = taskBarLayout(0);
   /** The window was resized (or the bar not yet laid out in a layer with a width): `update` lays it out again. */
   private dirty = true;
+  /**
+   * 2026-11-13 (owner, "chat and taskbar overlapping sometimes"): the layer's size watched, not only the window's: an
+   * iPhone's toolbar showing or hiding changes it with no resize seen in time, and the chat docked on the bar stayed where
+   * the bar had been.
+   */
+  private layerObserver: ResizeObserver | null = null;
+  private observedLayer: Element | null = null;
+  /** The bar is laid out for a phone (`relayout`'s `mobile`). */
+  private phoneLayout = false;
+  /**
+   * 2026-11-13 (owner): the phone's window that adds and takes out the action slot's skills (actionSlotWindow.ts), opened by
+   * a tap on the action slot; the HUD puts it in the windows' layer.
+   */
+  readonly actionSlotWindow: ActionSlotWindow;
   /** The touch rule (`watchTouch`): the Start menu is drawn for a finger on a touch screen, from a first touch on. */
   private readonly touch: TouchWatch;
   /**
@@ -545,6 +567,27 @@ export class TaskBar {
       if (slot >= 0 && this.own !== undefined) this.edits.takeOff(QUICK_BAR, slot);
     });
     this.quickSlots.append(...this.quick.map((slot) => slot.element), this.quickRemove);
+
+    // 2026-11-13: the phone's Action Slot window, on the bar's own edits
+    const skillEntry = (skillIndex: number): ActionSlotEntry | null => {
+      const skill = this.edits.skillOf(skillIndex);
+      return skill === undefined ? null
+        : { skillIndex, name: skill.name, icon: skill.icon === null ? null : this.art.url(skill.icon) };
+    };
+    this.actionSlotWindow = new ActionSlotWindow(art, {
+      queue: () => {
+        const { queue, queueCount } = this.loaded;
+        return queue.map((shortcut, i) => (i < queueCount && shortcut.kind === ShortcutKind.SKILL ? skillEntry(shortcut.id) : null));
+      },
+      skills: () => (this.own?.skills ?? []).flatMap((slot, skillIndex) => {
+        const entry = slot.level > 0 ? skillEntry(skillIndex) : null;
+        return entry === null ? [] : [entry];
+      }),
+      canAdd: (skillIndex) => this.own !== undefined && this.edits.canQueue(skillIndex),
+      add: (skillIndex) => { if (this.own !== undefined) this.edits.queueSkill(skillIndex); },
+      remove: (slot) => { if (this.own !== undefined) this.edits.rightClick('queue', slot); },
+      running: () => this.actions.queueRunning(),
+    }, doc);
 
     this.view.addEventListener('keydown', this.onKeyDown);
     this.view.addEventListener('keyup', this.onKeyUp);
@@ -740,6 +783,7 @@ export class TaskBar {
     this.gestures.setRemoveText(data.texts?.get(REMOVE_TEXT)?.text ?? '');
     this.drawLit();
     if (this.itemShortcutsChanged) { this.itemShortcutsChanged = false; this.commit(); }
+    this.actionSlotWindow.update();
   }
 
   /** Takes the bar off and lets go of the keys. */
@@ -750,6 +794,8 @@ export class TaskBar {
     this.cancelQuickHold();
     this.hideQuickRemove();
     this.quickSlots.remove();
+    this.actionSlotWindow.dispose();
+    this.layerObserver?.disconnect();
     this.gestures.dispose();
     this.view.removeEventListener('keydown', this.onKeyDown);
     this.view.removeEventListener('keyup', this.onKeyUp);
@@ -948,6 +994,15 @@ export class TaskBar {
    */
   private relayout(): void {
     const parent = this.element.parentElement;
+    if (parent !== this.observedLayer && typeof ResizeObserver === 'function') {
+      this.layerObserver?.disconnect();
+      this.layerObserver = null;
+      this.observedLayer = parent;
+      if (parent !== null) {
+        this.layerObserver = new ResizeObserver(() => { this.dirty = true; });
+        this.layerObserver.observe(parent);
+      }
+    }
     const style = parent === null ? null : this.view.getComputedStyle(parent);
     const safeLeft = parseFloat(style?.getPropertyValue('--game-safe-left') ?? '') || 0;
     const safeRight = parseFloat(style?.getPropertyValue('--game-safe-right') ?? '') || 0;
@@ -973,9 +1028,10 @@ export class TaskBar {
     strip.style.setProperty('--taskbar-art', themeUrl(this.art, layout.picture));
     const height = TASKBAR_HEIGHT * layout.scale;
     this.element.classList.toggle('is-floating', mobile);
-    // 2026-11-12 (owner): a phone's bar stands at the bottom left (in from a notch on the left), not centred; the right is
-    // Attack's and the quick slots'
-    const phoneLeft = Math.max(0, safeLeft);
+    this.phoneLayout = mobile;
+    // 2026-11-12 (owner): a phone's bar stands at the bottom left, not centred; the right is Attack's and the quick slots'.
+    // 2026-11-13 (owner): at the left edge itself, not in by a notch's inset (the notch is mid-height, the bar at the bottom)
+    const phoneLeft = 0;
     this.element.style.left = mobile ? `${phoneLeft}px` : '';
     this.element.style.width = mobile ? `${width}px` : '';
     this.element.style.height = mobile ? `${height}px` : '';
@@ -985,7 +1041,7 @@ export class TaskBar {
     strip.dataset.layout = String(layout.width);
     const room = (parent?.clientHeight ?? 0) - height;
     const touch = this.touch();
-    const most = touch ? TOUCH_MENU_SCALE : 1;
+    const most = mobile ? PHONE_MENU_SCALE : touch ? TOUCH_MENU_SCALE : 1;
     // 2026-11-12: a touch screen whose room would draw one column's lines under their 22 px (a landscape phone's fourteen
     // lines) lays them out in two columns
     this.menu.setColumns(touch && room > 0 && room < taskMenuHeight(MENU.length, 1) ? 2 : 1);
@@ -1144,9 +1200,14 @@ export class TaskBar {
     this.useItemSlot(i);
   }
 
-  /** A press on slot `i` of the action slot: only a picked skill goes there; a slot of it is not used (`m_dwData != 2`, :2183). */
+  /**
+   * A press on slot `i` of the action slot: only a picked skill goes there; a slot of it is not used (`m_dwData != 2`, :2183).
+   * 2026-11-13 (owner): with nothing picked, a phone's tap opens (or closes) the Action Slot window, which adds and takes out
+   * its skills.
+   */
   private pressQueueSlot(i: number): void {
-    this.placePicked({ row: 'queue', slot: i });
+    if (this.placePicked({ row: 'queue', slot: i })) return;
+    if (this.phoneLayout) this.actionSlotWindow.toggle();
   }
 
   /**
@@ -1230,6 +1291,16 @@ export class TaskBar {
     const picked = this.picked;
     if (picked === null) return false;
     this.dropPick();
+    // 2026-11-13 (owner, "some skills cannot be put in the taskbar"): Neuz's item rows take a job skill of CT_STEP or
+    // CT_GENERAL only (OnDropIcon, WndTaskBar.cpp:2026-2041), silently; a finger that tapped a circle or finish skill on
+    // them is told where it goes
+    if (picked.from === 'skills' && target !== null && target !== 'bar' && (target.row === 'item' || target.row === 'applet')) {
+      const skill = this.edits.skillOf(picked.skillIndex);
+      if (skill !== undefined && !isBarStyle(skill)) {
+        this.actions.say(`${skill.name}: a combo skill goes in the Action Slot only (tap the Action Slot to set it).`, 0xffff8040);
+        return true;
+      }
+    }
     this.edits.dropOn(picked, target);
     return true;
   }

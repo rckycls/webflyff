@@ -1357,15 +1357,18 @@ describe('TaskBar: stackable items, names, focus and room (WndTaskBar.cpp)', () 
     expect(menuOn(800, 150).menu.style.transform).toBe(`scale(${(150 - 48) / 384})`);
   });
 
-  it('on a touch screen it is up to twice its size, as the room above the bar allows: a finger\'s 40 to 44 px a line', () => {
+  it('on a touch screen it is up to twice its size as the room above the bar allows; a phone\'s at most 0.85 (2026-11-13)', () => {
     onTouchScreen(() => {
       // 2026-11-12: a landscape phone's room is under the fourteen lines' 384 px in one column, so they stand in two
-      // columns of seven (232 px: 50 + 7 x 22 + the bottom edge's 28), each line at least its 22 px
-      expect(menuOn(844, 390).menu.style.transform).toBe(`scale(${(390 - 48 * 403 / 620) / 232})`);
-      // The compact 620px layout takes 56% of the width between the phone's side gutters (2026-11-12, owner: 0.8, then 0.7).
-      expect(menuOn(750, 342).menu.style.transform).toBe(`scale(${(342 - 48 * (402 / 620)) / 232})`);
-      // a tall touch screen keeps one column
+      // columns of seven (232 px: 50 + 7 x 22 + the bottom edge's 28); 2026-11-13 (owner, "make the menus smaller"): drawn
+      // at most at 0.85 on a phone, whatever the room
+      expect(menuOn(844, 390).menu.style.transform).toBe('scale(0.85)');
+      expect(menuOn(750, 342).menu.style.transform).toBe('scale(0.85)');
+      // a phone shorter than the menu at 0.85: as the room allows
+      expect(menuOn(568, 220).menu.style.transform).toBe(`scale(${(220 - 48 * (Math.round(0.56 * (568 - 32)) / 620)) / 232})`);
+      // a tall touch screen, wider than a phone, keeps one column, up to twice its size
       expect(menuOn(1024, 900).menu.style.width).toBe('192px');
+      expect(menuOn(1024, 900).menu.style.transform).toBe('scale(2)');
     });
   });
 
@@ -1396,7 +1399,8 @@ describe('TaskBar: stackable items, names, focus and room (WndTaskBar.cpp)', () 
     Object.defineProperty(touch, 'pointerType', { value: 'touch' });
     document.body.dispatchEvent(touch);
     bar.update(newVagrantWithBar(), BAR_DATA);
-    expect(menu.style.transform).toBe(`scale(${(440 - 48 * (403 / 620)) / 384})`);
+    // a first touch makes an 844 px screen a phone's (2026-11-13: its menu at most 0.85)
+    expect(menu.style.transform).toBe('scale(0.85)');
   });
 
   it('keeps the mobile taskbar bounds while typing or clicking Send on a phone', () => {
@@ -3174,7 +3178,7 @@ describe("TaskBar: a bag item picked by a finger (2026-11-12, the phone's Task b
   });
 });
 
-describe("TaskBar: the phone's quick slots by Attack (2026-11-12, bar 8's first four)", () => {
+describe("TaskBar: the phone's quick slots by Attack (2026-11-12, bar 8's first slots; seven since 2026-11-13)", () => {
   const quick = (bar: TaskBar, i: number) => bar.quickSlots.querySelector<HTMLButtonElement>(`.hud-quick-slot[data-slot="${i}"]`)!;
   const tap = (element: HTMLElement) => {
     element.dispatchEvent(touch('pointerdown'));
@@ -3182,13 +3186,13 @@ describe("TaskBar: the phone's quick slots by Attack (2026-11-12, bar 8's first 
     element.click();
   };
 
-  it('four circles; a picked bag item or skill goes on one (ADDITEMTASKBAR for bar 8), lit while picked; a tap uses it', () => {
-    expect([QUICK_BAR, QUICK_SLOTS]).toEqual([7, 4]);
+  it('seven circles; a picked bag item or skill goes on one (ADDITEMTASKBAR for bar 8), lit while picked; a tap uses it', () => {
+    expect([QUICK_BAR, QUICK_SLOTS]).toEqual([7, 7]);
     const own = vagrantWithSkills(5, 0, [3, 0, 0]);
     const item = [...own.inventory!.values()][0]!;
     const { bar, sent, calls } = editingOn(own);
     document.body.append(bar.quickSlots);
-    expect(bar.quickSlots.querySelectorAll('.hud-quick-slot')).toHaveLength(4);
+    expect(bar.quickSlots.querySelectorAll('.hud-quick-slot')).toHaveLength(7);
     const bag = document.createElement('div');
     document.body.append(bag);
     // a bag item: the circles lit, a press on one keeps the pick, its tap places it on bar 8
@@ -3343,5 +3347,64 @@ describe('TaskBar: the applet row and the action slot (2026-11-05)', () => {
     expect(after.map((s) => s?.id ?? null)).toEqual([0, 1, null, null, null]);
     rightClick(slot(bar, 'queue', 1));
     expect((sent[1] as { queue: Array<Shortcut | null> }).queue.map((s) => s?.id ?? null)).toEqual([0, null, null, null, null]);
+  });
+});
+
+describe("TaskBar: the phone's Action Slot window and the combo skills (2026-11-13)", () => {
+  it("lists the slots and the skills; a tap adds one after the last as Neuz's rules allow (SKILLTASKBAR), × takes one out", () => {
+    const own = vagrantWithSkills(10, 0, [3, 3, 1]);
+    const { bar, sent } = editingOn(own);
+    const win = bar.actionSlotWindow;
+    document.body.append(win.frame.element);
+    win.toggle();
+    expect(win.isOpen).toBe(true);
+    const el = win.frame.element;
+    const skill = (i: number) => el.querySelector<HTMLButtonElement>(`.action-slot-skill[data-skill-index="${i}"]`)!;
+    const cells = () => [...el.querySelectorAll<HTMLElement>('.action-slot-cell')].map((cell) => cell.textContent);
+    expect([...el.querySelectorAll('.action-slot-skill')].map((b) => b.textContent)).toEqual(['Clean Hit', 'Flurry', 'Over Cut']);
+    expect(cells()).toEqual(['1', '2', '3', '4', '5']);
+    // an empty chain opens with a step skill: Clean Hit, not Flurry (circle) nor Over Cut (finish) (CheckAddSkill)
+    expect([skill(0).disabled, skill(1).disabled, skill(2).disabled]).toEqual([false, true, true]);
+    skill(0).click();
+    expect(sent.at(-1)).toMatchObject({ type: 'SKILLTASKBAR' });
+    bar.update(own, EDIT_DATA);
+    // after it, a circle or a finish skill, never a second step skill
+    expect([skill(0).disabled, skill(1).disabled, skill(2).disabled]).toEqual([true, false, false]);
+    skill(1).click();
+    bar.update(own, EDIT_DATA);
+    expect(cells()).toEqual(['Clean Hit×', 'Flurry×', '3', '4', '5']);
+    // × on Clean Hit: RemoveSkillQueue takes Flurry out too, which cannot open a chain
+    el.querySelector<HTMLButtonElement>('.action-slot-cell[data-slot="0"] [data-action-slot="remove"]')!.click();
+    bar.update(own, EDIT_DATA);
+    expect(cells()).toEqual(['1', '2', '3', '4', '5']);
+    expect(sent.filter((s) => s.type === 'SKILLTASKBAR')).toHaveLength(3);
+    win.toggle();
+    expect(win.isOpen).toBe(false);
+  });
+
+  it("a phone's tap on the action slot opens the window; a combo skill tapped onto an item slot is turned away with a line", () => {
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true, value: (query: string) => ({ matches: query === '(pointer: coarse)' }),
+    });
+    try {
+      const own = vagrantWithSkills(10, 0, [3, 3, 1]);
+      const { bar, sent, said } = editingOn(own);
+      document.body.append(bar.actionSlotWindow.frame.element);
+      bar.update(own, EDIT_DATA);
+      slot(bar, 'queue', 2).click();
+      expect(bar.actionSlotWindow.isOpen).toBe(true);
+      slot(bar, 'queue', 2).click();
+      expect(bar.actionSlotWindow.isOpen).toBe(false);
+      // Flurry (CT_CIRCLE) picked by a finger, then an item slot: nothing sent, the player told where it goes
+      bar.pickSkill(1, document.body);
+      slot(bar, 'item', 4).dispatchEvent(touch('pointerdown'));
+      slot(bar, 'item', 4).click();
+      expect(sent).toEqual([]);
+      expect(said.at(-1)?.text).toContain('Flurry');
+      expect(said.at(-1)?.text).toContain('Action Slot');
+      expect(bar.pickedSkill).toBe(null);
+    } finally {
+      delete (window as { matchMedia?: unknown }).matchMedia;
+    }
   });
 });

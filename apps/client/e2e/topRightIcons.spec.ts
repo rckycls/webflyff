@@ -1,6 +1,6 @@
 // The phone's window shortcuts at the top right (2026-11-10, owner): the Start menu's icons of the important windows, alone,
-// with no box or border, smoothed, half the space between them of the first version; one row from the status window to
-// the Navigator, the target bar and the quest list under it; a narrow phone keeps the most used. Stats keeps its text.
+// with no box or border, smoothed, half the space between them of the first version; since 2026-11-13 two rows of four
+// left of the Navigator, the target bar under them, the quest list at the left. Stats keeps its text.
 
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
@@ -32,7 +32,7 @@ async function layout(page: Page): Promise<{ labels: string[]; tools: Box; statu
   });
 }
 
-test('top-right shortcuts: the important Start-menu icons in one row on the phone, named everywhere', async ({ page, isMobile }, info) => {
+test('top-right shortcuts: the important Start-menu icons in two rows of four on the phone, named everywhere', async ({ page, isMobile }, info) => {
   await playGateway(page, createWorldScript({
     playerObjectId: SELF_ID, worldId: MADRIGAL, pos: SQUARE,
     self: writeAddSelf(SELF_ID, { ...self, player: { ...SELF_PLAYER, own: newVagrantOwn() } }),
@@ -55,6 +55,7 @@ test('top-right shortcuts: the important Start-menu icons in one row on the phon
   }
   await expect(tools).toBeVisible();
   let previous: Box | null = null;
+  const icons: Box[] = [];
   for (const [name, file] of SHORTCUTS) {
     const button = tools.getByRole('button', { name, exact: true });
     await expect(button).toHaveText('');
@@ -91,9 +92,12 @@ test('top-right shortcuts: the important Start-menu icons in one row on the phon
     expect(look.rendering).toBe('auto');
     expect(Math.abs(look.devicePixels - Math.round(look.devicePixels))).toBeLessThan(look.layoutUnit);
     expect(Math.round(look.devicePixels) % 32).toBe(0);
-    // the space between two icons is half the first version's (60 px less the icon)
-    if (previous !== null) expect(look.icon.x - (previous.x + previous.width)).toBeCloseTo((60 - look.icon.width) / 2, 1);
+    // the space between two icons of a row is half the first version's (60 px less the icon)
+    if (previous !== null && Math.abs(previous.y - look.icon.y) < 1) {
+      expect(look.icon.x - (previous.x + previous.width)).toBeCloseTo((60 - look.icon.width) / 2, 1);
+    }
     previous = look.icon;
+    icons.push(look.icon);
     expect((await button.boundingBox())!.height).toBeGreaterThanOrEqual(48);
   }
   // Stats has no Start-menu icon: its text, 14 px at least, no box either, after the icons
@@ -108,7 +112,12 @@ test('top-right shortcuts: the important Start-menu icons in one row on the phon
   expect(statsLook.border).toBe('0px');
   expect((await stats.boundingBox())!.height).toBeGreaterThanOrEqual(48);
 
-  // one row between the status window and the Navigator; the target bar under it, the quest list under the target bar
+  // 2026-11-13 (owner): two rows of four, left of the Navigator, the second 48 px under the first, column under column;
+  // the target bar under them; the quest list at the left, under the status window
+  const [first, second] = [icons.slice(0, 4), icons.slice(4)];
+  for (const row of [first, second]) for (const icon of row) expect(icon.y).toBeCloseTo(row[0]!.y, 0);
+  expect(second[0]!.y - first[0]!.y).toBeCloseTo(48, 0);
+  first.forEach((icon, i) => expect(second[i]!.x).toBeCloseTo(icon.x, 0));
   const row = await layout(page);
   expect(row.labels).toEqual(LABELS);
   expect(row.tools.x).toBeGreaterThanOrEqual(row.status.x + row.status.width);
@@ -120,8 +129,13 @@ test('top-right shortcuts: the important Start-menu icons in one row on the phon
   await expect(page.locator('.hud-target')).toBeVisible();
   const target = (await page.locator('.hud-target').boundingBox())!;
   expect(target.y).toBeGreaterThanOrEqual(row.tools.y + row.tools.height);
-  const trackerTop = await page.locator('.hud-quest-tracker').evaluate((element) => parseFloat(getComputedStyle(element).top));
-  expect(trackerTop).toBeGreaterThanOrEqual(target.y + target.height);
+  const tracker = await page.locator('.hud-quest-tracker').evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { top: parseFloat(style.top), left: parseFloat(style.left), font: parseFloat(style.fontSize) };
+  });
+  expect(tracker.top).toBeGreaterThanOrEqual(row.status.y + row.status.height);
+  expect(tracker.left).toBeLessThan(row.status.x + row.status.width);
+  expect(tracker.font).toBe(10);
   await page.screenshot({ path: info.outputPath('top-phone.png'), clip: top });
 
   // an icon's press opens its window
@@ -129,9 +143,9 @@ test('top-right shortcuts: the important Start-menu icons in one row on the phon
   await expect(page.locator('.hud-inventory')).toBeVisible();
   await page.locator('.hud-inventory .hud-window-close').tap();
 
-  // a narrower phone keeps the shortcuts that fit, the most used: all of them at 844 and 750, four at 568
+  // two rows of four fit every phone: all of them at 844, 750, an iPhone's 730 with its address bar, and 568
   for (const [width, height, labels] of [
-    [844, 390, LABELS], [750, 342, LABELS], [568, 320, ['Character', 'Bag', 'Skill', 'Quest', 'Stats']],
+    [844, 390, LABELS], [750, 342, LABELS], [730, 320, LABELS], [568, 320, LABELS],
   ] as const) {
     await page.setViewportSize({ width, height });
     await page.evaluate(() => window.__client!.step(1));

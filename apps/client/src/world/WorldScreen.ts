@@ -2136,7 +2136,7 @@ export class WorldScreen {
     this.hud!.element.append(
       this.questTracker.element, this.teleporter.frame.element, this.heavenTower.element, ...this.lordHud.elements, this.lordHud.eventIcons,
       // 2026-11-12: the phone's quick slots around Attack (bar 8's first slots; style.css shows them on a phone only)
-      taskBar.element, taskBar.quickSlots, this.attackButton.element, this.jumpButton.element, this.flightButtons.element,
+      taskBar.element, taskBar.quickSlots, taskBar.actionSlotWindow.frame.element, this.attackButton.element, this.jumpButton.element, this.flightButtons.element,
       mobileTools.element, logOutBox.element, messageBox.element,
       selectVillage.element, characterWindow.frame.element,
       characterWindow.confirm.frame.element, skillWindow.frame.element, skillWindow.warning.element, reviveWindow.element,

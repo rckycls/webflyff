@@ -45,7 +45,8 @@ export class Minimap {
   private heading = NaN;
   constructor(private readonly art: UiArt, private readonly manifest: WorldManifest, private readonly folder: string,
     private readonly url: (key: string) => string | null, private readonly doc: Document = document) {
-    this.frame = new WindowFrame('Navigator', art, { width: 144, height: 160, mobileScale: 0.85 }, doc);
+    // 2026-11-13 (owner): 30% smaller on a phone (0.85 x 0.7)
+    this.frame = new WindowFrame('Navigator', art, { width: 144, height: 160, mobileScale: 0.6 }, doc);
     this.frame.element.classList.add('hud-navigator'); this.frame.escapeCloses = false;
     this.map = doc.createElement('div'); this.map.className = 'navigator-map';
     this.map.setAttribute('aria-label', 'Local map');

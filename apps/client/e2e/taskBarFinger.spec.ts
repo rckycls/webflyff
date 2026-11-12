@@ -184,3 +184,36 @@ test('the phone: a bag item and a skill onto the quick slots by Attack (bar 8), 
   await expect.poll(() => sentOf(gateway, PacketType.REMOVEITEMTASKBAR).length).toBe(1);
   await expect(circle(0)).not.toHaveAttribute('data-kind');
 });
+
+// 2026-11-13 (owner): "create an action slot window to set up skills, to add or remove": a tap on the bar's action slot opens
+// it on the phone; a tap on a skill adds it after the last (SKILLTASKBAR, as Neuz's SetSkillQueue sends it), × takes it out
+test('the phone: the Action Slot window adds and takes out the action slot\'s skills (SKILLTASKBAR)', async ({ page, isMobile }, info) => {
+  test.skip(!isMobile, 'the desktop drags skills onto its action slot');
+  const gateway = await enter(page);
+  const skillTaskBar = () => sentOf(gateway, PacketType.SKILLTASKBAR)
+    .map((s) => decodeWorldPacket(new Uint8Array(s.body)))
+    .filter((p): p is Extract<WorldPacket, { type: 'skillTaskBar' }> => p.type === 'skillTaskBar');
+  await page.locator('.hud-slot[data-row="queue"][data-slot="0"]').tap();
+  const win = page.locator('.hud-action-slot-window');
+  await expect(win).toBeVisible();
+  await expect(win.locator('.action-slot-cell')).toHaveCount(5);
+  const cleanHit = win.getByRole('button', { name: 'Add Clean Hit' });
+  await expect(cleanHit).toBeEnabled();
+  await cleanHit.tap();
+  await expect.poll(() => skillTaskBar().length).toBe(1);
+  // the five slots named, the empty ones as NONE (CDPClient::SendSkillTaskBar)
+  expect(skillTaskBar()[0]!.entries.map((e) => [e.slot, e.shortcut.kind, e.shortcut.id])).toEqual([
+    [0, ShortcutKind.SKILL, 0], [1, ShortcutKind.NONE, 0], [2, ShortcutKind.NONE, 0], [3, ShortcutKind.NONE, 0], [4, ShortcutKind.NONE, 0],
+  ]);
+  await expect(win.locator('.action-slot-cell[data-slot="0"]')).toContainText('Clean Hit');
+  // a second step skill cannot follow: Clean Hit greyed now
+  await expect(cleanHit).toBeDisabled();
+  await expect(page.locator('.hud-slot[data-row="queue"][data-slot="0"]')).toHaveAttribute('data-kind', 'skill');
+  await page.screenshot({ path: info.outputPath('phone-action-slot.png') });
+  await win.getByRole('button', { name: 'Take Clean Hit out' }).tap();
+  await expect.poll(() => skillTaskBar().length).toBe(2);
+  expect(skillTaskBar()[1]!.entries.every((e) => e.shortcut.kind === ShortcutKind.NONE)).toBe(true);
+  await expect(win.locator('.action-slot-cell[data-slot="0"]')).not.toContainText('Clean Hit');
+  await win.locator('.hud-window-close').tap();
+  await expect(win).toBeHidden();
+});

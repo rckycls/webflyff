@@ -64,7 +64,8 @@ test('mobile audit: passive chat permits joystick and second-finger jump; active
   await input.press('Enter');
   await expect(input).not.toBeFocused();
   await page.setViewportSize(size);
-  for (const viewport of [{ width: 750, height: 342 }, { width: 568, height: 320 }]) {
+  // 2026-11-13: and an iPhone's 730 x 320 with its address bar showing
+  for (const viewport of [{ width: 750, height: 342 }, { width: 730, height: 320 }, { width: 568, height: 320 }]) {
     await page.setViewportSize(viewport);
     await page.evaluate(() => window.__client!.step(0));
     const jump = (await page.locator('.hud-jump').boundingBox())!, attack = (await page.locator('.hud-attack').boundingBox())!;

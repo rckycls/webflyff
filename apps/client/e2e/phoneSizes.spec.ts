@@ -1,6 +1,6 @@
 // 2026-11-12 (owner): a landscape phone's layout. The screen-centre texts (a level up's caption, the server messages) at
 // half their size; the task bar smaller (0.56) at the bottom left, the desktop's chat (Neuz's chat window) docked on it; Attack
-// 20% bigger in the bottom right corner with four quick slots (bar 8's first slots) round it, as a phone MOBA has its
+// 20% bigger in the bottom right corner with quick slots (bar 8's first slots: four round it, three smaller in a row), as a phone MOBA has its
 // skills. The desktop keeps Neuz's sizes. A level up from the pretend world server (SETEXPERIENCE) shows both texts:
 // "Congratulations! Level up!" and the line about the stat points.
 
@@ -36,7 +36,7 @@ const centre = (b: Box) => ({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
 /** Two round buttons that do not overlap. */
 const apart = (a: Box, b: Box) => Math.hypot(centre(a).x - centre(b).x, centre(a).y - centre(b).y) >= (a.width + b.width) / 2;
 
-test('the phone: centre texts at half size, bar and docked desktop chat at the bottom left, Attack 20% bigger with four quick slots; the desktop as Neuz', async ({ page, isMobile }, info) => {
+test('the phone: centre texts at half size, bar and docked desktop chat at the bottom left, Attack 20% bigger with seven quick slots; the desktop as Neuz', async ({ page, isMobile }, info) => {
   await levelUp(page);
   const line = page.locator('.hud-messages > div').first();
   const lineFont = await line.evaluate((element) => parseFloat(getComputedStyle(element).fontSize));
@@ -84,22 +84,27 @@ test('the phone: centre texts at half size, bar and docked desktop chat at the b
   const attack = (await page.locator('.hud-attack').boundingBox())!;
   expect(attack.width).toBeCloseTo(77, 0);
   expect(attack.x + attack.width).toBeCloseTo(width - 16, 0);
-  // the four quick slots: 44 px circles round it from its left to its top, none on another, on Attack or on Jump
+  // the quick slots: four 44 px circles round it from its left to its top, and (2026-11-13) three more 20% smaller in a row
+  // left of the lowest, on its line; none on another, on Attack or on Jump, all right of the bar and the chat
   const circles = await page.locator('.hud-quick-slot').all();
-  expect(circles).toHaveLength(4);
+  expect(circles).toHaveLength(7);
   const boxes = await Promise.all(circles.map(async (circle) => (await circle.boundingBox())!));
   const jump = (await page.locator('.hud-jump').boundingBox())!;
   for (const [i, box] of boxes.entries()) {
-    expect(box.width).toBeCloseTo(44, 0);
+    expect(box.width, `circle ${i}`).toBeCloseTo(i < 4 ? 44 : 44 * 0.8, 0);
     expect(apart(box, attack), `circle ${i} clear of Attack`).toBe(true);
     expect(apart(box, jump), `circle ${i} clear of Jump`).toBe(true);
     for (const other of boxes.slice(i + 1)) expect(apart(box, other)).toBe(true);
     expect(box.x + box.width).toBeLessThanOrEqual(width);
-    expect(box.x).toBeGreaterThan(barBox.x + barBox.width);
+    expect(box.x).toBeGreaterThan(Math.max(barBox.x + barBox.width, chatBox.x + chatBox.width));
   }
-  // the first at Attack's left, the last above it
+  // the first at Attack's left, the fourth above it; the three small ones on the first's line, each further left
   expect(centre(boxes[0]!).y).toBeCloseTo(centre(attack).y, 0);
   expect(centre(boxes[3]!).x).toBeCloseTo(centre(attack).x, 0);
+  for (const i of [4, 5, 6]) {
+    expect(centre(boxes[i]!).y).toBeCloseTo(centre(boxes[0]!).y, 0);
+    expect(boxes[i]!.x + boxes[i]!.width).toBeLessThan(boxes[i === 4 ? 0 : i - 1]!.x);
+  }
   expect(jump.y + jump.height).toBeLessThan(attack.y);
   await page.screenshot({ path: info.outputPath('phone-sizes.png') });
 });

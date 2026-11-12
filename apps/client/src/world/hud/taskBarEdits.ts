@@ -195,6 +195,22 @@ export class TaskBarEdits {
   }
 
   /**
+   * 2026-11-13: whether `queueSkill` would put the job skill of skill slot `skillIndex` after the last of the action slot
+   * (`setSkillQueue`'s rules, with no line said): the chain not running, room left, the skill open at a level, no cool-down
+   * at its level, and its combo style fitting there (`canPlaceInQueue`). For the phone's Action Slot window.
+   */
+  canQueue(skillIndex: number): boolean {
+    const bars = this.bar.bars;
+    if (this.actions.queueRunning() || bars.queueCount >= MAX_SLOT_QUEUE) return false;
+    const slot = this.bar.own?.skills[skillIndex];
+    const skill = this.skillOf(skillIndex);
+    if (slot === undefined || skill === undefined || slot.level <= 0 || !this.playerHasSkillOpen(slot.skill)) return false;
+    const cooldown = skill.levels[slot.level - 1]?.cooldown;
+    if (cooldown !== undefined && cooldown > 0) return false;
+    return canPlaceInQueue(this.queueSkills(), bars.queueCount, skill, slot.level);
+  }
+
+  /**
    * `CWndTaskBar::OnDropIcon( pShortcut, point )` (`WndTaskBar.cpp:1874-2093`): `carried` let go on `target`.
    * - From the bar, off it (`!GetClientRect().PtInRect( point )`, the bar holding the mouse since the press): the shortcut
    *   comes off its slot (REMOVEITEMTASKBAR, or `RemoveSkillQueue`).
