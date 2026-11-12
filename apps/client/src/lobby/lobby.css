@@ -41,7 +41,7 @@
 #app.classic-lobby .login-screen { min-height: 200px; }
 #app.classic-lobby .login-screen .field { display: grid; grid-template-columns: 70px 1fr; align-items: center; }
 #app.classic-lobby .login-screen .actions { margin-top: 28px; }
-#app.classic-lobby :is(.login-screen .btn, .lobby-back, .lobby-next, .lobby-create, .slot-enter, .danger-outline) {
+#app.classic-lobby :is(.login-screen .btn, .lobby-back, .lobby-next, .lobby-sprite) {
   width: 72px; border: 0; padding: 0; background-color: transparent;
   background-size: 400% 100%; background-position: 33.333% 0; background-repeat: no-repeat;
   font-size: var(--lobby-button-label-size, 12px);
@@ -49,14 +49,11 @@
 #app.classic-lobby .login-screen .btn { width: 140px; background-image: var(--lobby-buttlogin); }
 #app.classic-lobby .lobby-back { background-image: var(--lobby-buttback); }
 #app.classic-lobby .lobby-next { background-image: var(--lobby-buttnext); }
-#app.classic-lobby .lobby-create { background-image: var(--lobby-buttcreate); }
-#app.classic-lobby .slot-enter { background-image: var(--lobby-buttaccept); }
-#app.classic-lobby .danger-outline { background-image: var(--lobby-buttdelete); }
 @media (hover: hover) {
-  #app.classic-lobby :is(.login-screen .btn, .lobby-back, .lobby-next, .lobby-create, .slot-enter, .danger-outline):hover { background-position: 0 0; }
+  #app.classic-lobby :is(.login-screen .btn, .lobby-back, .lobby-next, .lobby-sprite):hover { background-position: 0 0; }
 }
-#app.classic-lobby :is(.login-screen .btn, .lobby-back, .lobby-next, .lobby-create, .slot-enter, .danger-outline):active { background-position: 66.666% 0; }
-#app.classic-lobby :is(.login-screen .btn, .lobby-back, .lobby-next, .lobby-create, .slot-enter, .danger-outline):disabled { background-position: 100% 0; }
+#app.classic-lobby :is(.login-screen .btn, .lobby-back, .lobby-next, .lobby-sprite):active { background-position: 66.666% 0; }
+#app.classic-lobby :is(.login-screen .btn, .lobby-back, .lobby-next, .lobby-sprite):disabled { background-position: 100% 0; }
 #app.classic-lobby .server-screen { width: 416px; }
 #app.classic-lobby .server-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 #app.classic-lobby .server-columns h3 { margin: 0 0 6px; font: 12px Arial, sans-serif; color: #608da4; }
@@ -77,39 +74,192 @@
 #app.classic-lobby .channel:hover:not([aria-disabled='true']) { background: #c4dfed; }
 #app.classic-lobby .channel { flex-wrap: wrap; gap: 2px 8px; }
 #app.classic-lobby .channel-state { font-size: 11px; }
-#app.classic-lobby .character-screen {
-  width: 544px; height: min(368px, calc(100dvh - 24px)); min-height: 270px; padding: 0;
-  background: #f1eee9 var(--lobby-wndselectchar) center / 100% 100% no-repeat;
-}
-#app.classic-lobby .character-screen > .lobby-frame { display: none; }
-#app.classic-lobby .character-screen > .list {
-  position: absolute; top: 11.5%; left: 3.1%; width: 93.4%; height: 62%;
-  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2.6%;
-  grid-template-rows: minmax(0, 1fr);
-}
-#app.classic-lobby .slot { display: block; min-height: 0; height: 100%; padding: 0; border: 0; border-radius: 6px; background: transparent; }
-#app.classic-lobby .slot.selected { background: #b0eac233; outline: 1px solid #84a7a6; }
-#app.classic-lobby .slot-number { position: absolute; top: -16px; font-size: 10px; color: #777; }
-#app.classic-lobby .character-select { width: 100%; height: 100%; padding: 0; border: 0; background: transparent; cursor: pointer; }
-#app.classic-lobby .character-preview { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; }
-#app.classic-lobby .character-preview canvas { max-height: 95%; max-width: 100%; object-fit: contain; }
-#app.classic-lobby .slot-row { display: contents; }
-#app.classic-lobby .slot-info { position: absolute; top: 102%; width: 31.6%; display: block; text-align: center; margin: 0; font-size: 10px; line-height: 10px; }
-#app.classic-lobby .slot-info > span { display: block; }
-#app.classic-lobby .slot.selected .slot-name { color: #6060ff; }
-#app.classic-lobby .slot-create { margin: 60% auto 0; min-width: 0; max-width: 100%; font-size: 11px; }
-#app.classic-lobby > .stage .character-screen .slot :is(.slot-enter, .danger-outline) {
-  position: absolute; top: 113%; margin: 0; width: 72px; min-width: 72px; padding: 0;
-}
-#app.classic-lobby .slot .danger-outline { left: 50%; }
-#app.classic-lobby .slot .slot-enter { left: 67%; }
-#app.classic-lobby .character-screen > .actions { position: absolute; top: 81.5%; left: 19%; margin: 0; }
-#app.classic-lobby .character-screen > .actions > :last-child { position: fixed; right: 12px; bottom: 12px; }
 #app.classic-lobby [hidden] { display: none !important; }
-#app.classic-lobby .screen:not(.login-screen, .server-screen, .character-screen) {
+#app.classic-lobby .visually-hidden {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0;
+}
+#app.classic-lobby .screen:not(.login-screen, .server-screen, .select-char, .create-char, .delete-char) {
   width: min(640px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow-y: auto;
 }
-#app.classic-lobby .screen:not(.login-screen, .server-screen, .character-screen) .label { margin-bottom: 4px; }
+#app.classic-lobby .screen:not(.login-screen, .server-screen, .select-char, .create-char, .delete-char) .label { margin-bottom: 4px; }
 @media (pointer: coarse) {
   #app.classic-lobby .btn { min-height: 28px; height: 28px; }
+}
+
+/* 2026-11-12: Select Character, New Character and Delete Character as V15 lays them out
+   (docs/superpowers/specs/2026-11-12-char-select-create-research.md). Positions are resdata.inc's, in the client area,
+   which starts 4 px in and 22 px down (18 px of caption and 4, CWndBase::SetWndRect). */
+#app.classic-lobby .lobby-sprite {
+  position: absolute; width: 72px; height: 20px; min-width: 0; min-height: 0; margin: 0; border: 0; padding: 0;
+  color: #333; font: bold var(--lobby-button-label-size, 12px)/20px Arial, sans-serif; cursor: pointer;
+}
+#app.classic-lobby:not(.lobby-skinned) .lobby-sprite { border: 1px solid #aaa; border-radius: 3px; background-color: #eee; font-size: 12px; }
+#app.classic-lobby .lobby-sprite[aria-pressed='true'] { background-position: 66.666% 0; }
+#app.classic-lobby .cs-back { background-image: var(--lobby-buttback); }
+#app.classic-lobby .cs-create { background-image: var(--lobby-buttcreate); }
+#app.classic-lobby .cs-delete { background-image: var(--lobby-buttdelete); }
+#app.classic-lobby .cs-accept { background-image: var(--lobby-buttaccept); }
+#app.classic-lobby :is(.cc-ok, .cd-ok) { background-image: var(--lobby-buttok); }
+#app.classic-lobby :is(.cc-cancel, .cd-cancel) { background-image: var(--lobby-buttcancel); }
+#app.classic-lobby .cc-male { background-image: var(--lobby-buttmale); }
+#app.classic-lobby .cc-female { background-image: var(--lobby-buttfemale); }
+#app.classic-lobby .cc-left { background-image: var(--lobby-buttleft); }
+#app.classic-lobby .cc-right { background-image: var(--lobby-buttright); }
+/* WndEditTile00 to 08 round a CWndEdit (CWndBase::AdditionalSkinTexture, WndBase.cpp:2575-2620): corners and edges of
+   8 x 10, the next row over the last 2 px */
+#app.classic-lobby .lobby-edit {
+  position: absolute; min-height: 0; height: 20px; margin: 0; border: 0; border-radius: 0; padding: 0 4px;
+  background-color: #fff; box-shadow: inset 0 0 0 1px #9a9a9a; color: #000; font: 12px Arial, sans-serif;
+}
+#app.classic-lobby .lobby-edit:focus-visible { outline: 1px dotted #6060ff; outline-offset: -3px; }
+#app.classic-lobby.lobby-skinned .lobby-edit {
+  box-shadow: none; background-repeat: no-repeat;
+  background-image: var(--lobby-wndedittile03), var(--lobby-wndedittile05), var(--lobby-wndedittile06), var(--lobby-wndedittile07),
+    var(--lobby-wndedittile08), var(--lobby-wndedittile00), var(--lobby-wndedittile01), var(--lobby-wndedittile02), var(--lobby-wndedittile04);
+  background-position: 0 8px, 100% 8px, 0 100%, 8px 100%, 100% 100%, 0 0, 8px 0, 100% 0, 8px 8px;
+  background-size: 8px calc(100% - 18px), 8px calc(100% - 18px), 8px 10px, calc(100% - 16px) 10px, 8px 10px, 8px 10px,
+    calc(100% - 16px) 10px, 8px 10px, calc(100% - 16px) calc(100% - 18px);
+}
+
+/* Select Character: APP_SELECT_CHAR, 544 x 368, its own picture */
+#app.classic-lobby .select-char {
+  width: 544px; height: 368px; padding: 0; overflow: visible;
+  background: #f1eee9 var(--lobby-wndselectchar) 0 0 / 100% 100% no-repeat;
+}
+#app.classic-lobby .select-char > .lobby-frame { display: none; }
+#app.classic-lobby .cs-slots { position: absolute; inset: 0; }
+/* m_aRect: (16, 16) to (174, 254), 170 apart */
+#app.classic-lobby .cs-slot {
+  position: absolute; top: 38px; left: 20px; width: 158px; height: 238px; min-height: 0; margin: 0; padding: 0;
+  border: 0; border-radius: 0; background: transparent; cursor: pointer;
+}
+#app.classic-lobby .cs-slot[data-slot='1'] { left: 190px; }
+#app.classic-lobby .cs-slot[data-slot='2'] { left: 360px; }
+#app.classic-lobby .cs-slot:focus-visible { outline: 1px dotted #6060ff; outline-offset: -2px; }
+/* the selected slot's fill: ARGB( 20, 80, 250, 80 ), 5 px in at the top and the bottom, moved i px right */
+#app.classic-lobby .cs-fill { position: absolute; top: 5px; bottom: 5px; left: 0; right: 0; display: none; background: rgb(80 250 80 / 0.078); }
+#app.classic-lobby .cs-slot.selected .cs-fill { display: block; }
+#app.classic-lobby .cs-slot[data-slot='1'] .cs-fill { left: 1px; right: -1px; }
+#app.classic-lobby .cs-slot[data-slot='2'] .cs-fill { left: 2px; right: -2px; }
+#app.classic-lobby .cs-portrait { position: absolute; inset: 0; display: block; }
+#app.classic-lobby .lobby-portrait { display: block; width: 100%; height: 100%; object-fit: contain; }
+/* the name at ( rect.left, rect.bottom + 10 ): blue and drawn twice for the selected one, grey for the others */
+#app.classic-lobby .cs-name {
+  position: absolute; top: 286px; left: 20px; max-width: 158px; overflow: hidden; white-space: nowrap;
+  color: #505050; font: 12px/14px Arial, sans-serif; pointer-events: none;
+}
+#app.classic-lobby .cs-name[data-slot='1'] { left: 190px; }
+#app.classic-lobby .cs-name[data-slot='2'] { left: 360px; }
+#app.classic-lobby .cs-name.selected { color: #6060ff; text-shadow: 1px 0 0 #6060ff; }
+/* Back, Create, Delete, Accept: y 300, x 104, 188, 272, 356 */
+#app.classic-lobby .cs-buttons .lobby-sprite { top: 322px; }
+#app.classic-lobby .cs-back { left: 108px; }
+#app.classic-lobby .cs-create { left: 192px; }
+#app.classic-lobby .cs-delete { left: 276px; }
+#app.classic-lobby .cs-accept { left: 360px; }
+/* PutToolTip_Character */
+#app.classic-lobby .cs-tip {
+  position: absolute; z-index: 20; display: grid; padding: 5px 7px; pointer-events: none; white-space: nowrap;
+  background: rgb(255 255 255 / 0.93); border: 1px solid #8f8f8f; border-radius: 3px; box-shadow: 1px 2px 4px #0004;
+  color: #000; font: 12px/15px Arial, sans-serif;
+}
+
+/* Delete Character: APP_DELETE_CHAR, 272 x 208, tiled, modal and centred over the select window */
+#app.classic-lobby .lobby-modal { position: absolute; inset: 0; z-index: 10; display: grid; place-items: center; }
+#app.classic-lobby .delete-char { width: 272px; height: 208px; padding: 0; }
+#app.classic-lobby .delete-char > p { position: absolute; margin: 0; font: 12px/20px Arial, sans-serif; color: #000; white-space: nowrap; }
+#app.classic-lobby .cd-line1 { left: 72px; top: 32px; }
+#app.classic-lobby .cd-line2 { left: 74px; top: 54px; }
+#app.classic-lobby .delete-char .lobby-edit { left: 74px; top: 84px; width: 108px; }
+#app.classic-lobby .cd-ok { left: 50px; top: 164px; }
+#app.classic-lobby .cd-cancel { left: 140px; top: 164px; }
+
+/* New Character: APP_CREATE_CHAR, 544 x 368, tiled */
+#app.classic-lobby .create-char { width: 544px; height: 368px; padding: 0; overflow: hidden; }
+#app.classic-lobby .cc-rows { position: absolute; left: 4px; top: 22px; width: 290px; height: 300px; }
+#app.classic-lobby .cc-row { position: absolute; left: 0; width: 290px; height: 20px; }
+#app.classic-lobby .cc-rows > :nth-child(1) { top: 48px; }
+#app.classic-lobby .cc-rows > :nth-child(2) { top: 128px; }
+#app.classic-lobby .cc-rows > :nth-child(3) { top: 152px; }
+#app.classic-lobby .cc-rows > :nth-child(4) { top: 176px; }
+#app.classic-lobby .cc-rows > :nth-child(5) { top: 200px; }
+#app.classic-lobby .cc-rows > :nth-child(6) { top: 224px; }
+#app.classic-lobby .cc-rows > :nth-child(7) { top: 248px; }
+#app.classic-lobby .cc-label { position: absolute; left: 16px; top: 0; font: 12px/20px Arial, sans-serif; color: #000; white-space: nowrap; }
+#app.classic-lobby .cc-row .lobby-sprite { top: 0; left: 118px; }
+#app.classic-lobby .cc-row .lobby-sprite + .lobby-sprite { left: 194px; }
+#app.classic-lobby .cc-row-name .lobby-edit { left: 116px; top: 0; width: 172px; height: 23px; }
+#app.classic-lobby .cc-row-pin .lobby-edit { left: 172px; top: 0; width: 96px; }
+#app.classic-lobby .cc-note { position: absolute; left: 16px; top: 272px; margin: 0; color: #ff0000; font: 12px/20px Arial, sans-serif; white-space: nowrap; }
+/* the preview's viewport: 280 to 550, 0 to 305, cut at the client area's right edge */
+#app.classic-lobby .cc-preview { position: absolute; left: 284px; top: 22px; width: 252px; height: 305px; overflow: hidden; }
+#app.classic-lobby .cc-preview .lobby-portrait { width: 270px; height: 305px; }
+#app.classic-lobby .cc-buttons .lobby-sprite { top: 322px; }
+#app.classic-lobby .cc-ok { left: 180px; }
+#app.classic-lobby .cc-cancel { left: 284px; }
+
+/* Landscape phones: the same windows, laid out for a finger (28 px controls at least) and whole at 568 x 320 */
+@media (max-width: 1000px) and (pointer: coarse) {
+  #app.classic-lobby:has(.select-char, .create-char) { padding: 8px; }
+  #app.classic-lobby :is(.select-char, .create-char) {
+    width: min(760px, calc(100vw - 16px)); height: min(420px, calc(100dvh - 16px));
+  }
+  #app.classic-lobby .screen .lobby-sprite { width: 100px; height: 28px; line-height: 28px; }
+
+  /* the picture is stretched: the slots, names and buttons follow its panels, in fractions of 544 x 368 */
+  #app.classic-lobby .cs-slot { top: 10.9%; height: 62.5%; width: 29.2%; left: 3.3%; }
+  #app.classic-lobby .cs-slot[data-slot='1'] { left: 34.9%; }
+  #app.classic-lobby .cs-slot[data-slot='2'] { left: 66.5%; }
+  #app.classic-lobby .cs-name { top: calc(73.4% + 4px); left: 3.3%; max-width: 29.2%; font-size: 13px; line-height: 16px; }
+  #app.classic-lobby .cs-name[data-slot='1'] { left: 34.9%; }
+  #app.classic-lobby .cs-name[data-slot='2'] { left: 66.5%; }
+  #app.classic-lobby .cs-buttons {
+    position: absolute; left: 0; right: 0; bottom: 8px; display: flex; justify-content: center; gap: 6px;
+  }
+  #app.classic-lobby .cs-buttons .lobby-sprite { position: static; flex: 0 1 100px; }
+
+  #app.classic-lobby .delete-char { width: min(360px, calc(100vw - 32px)); height: auto; padding: 30px 16px 14px; }
+  #app.classic-lobby .delete-char > p { position: static; font-size: 13px; }
+  #app.classic-lobby .delete-char .lobby-edit { position: static; display: block; width: 100%; height: 32px; margin: 8px 0 12px; font-size: 16px; }
+  #app.classic-lobby .cd-buttons { display: flex; justify-content: center; gap: 12px; }
+  #app.classic-lobby .cd-buttons .lobby-sprite { position: static; }
+
+  #app.classic-lobby .cc-rows {
+    left: 8px; top: 24px; bottom: 42px; width: min(352px, 62%); height: auto; overflow-y: auto;
+    display: grid; align-content: start; gap: 3px;
+  }
+  #app.classic-lobby .cc-row {
+    position: static; display: grid; grid-template-columns: minmax(0, 1fr) 100px 100px; align-items: center; gap: 4px;
+    width: auto; height: 28px;
+  }
+  #app.classic-lobby .cc-label { position: static; font-size: 13px; line-height: 15px; white-space: normal; }
+  #app.classic-lobby .cc-row .lobby-sprite { position: static; }
+  #app.classic-lobby .cc-row .lobby-edit { position: static; width: auto; height: 28px; font-size: 16px; }
+  #app.classic-lobby .cc-row-name .lobby-edit { grid-column: 2 / 4; }
+  #app.classic-lobby .cc-row-pin .lobby-edit { grid-column: 2; width: 100px; }
+  #app.classic-lobby .cc-note { position: static; font-size: 12px; line-height: 15px; white-space: normal; }
+  #app.classic-lobby .cc-preview { left: auto; right: 8px; top: 24px; bottom: 42px; height: auto; width: calc(38% - 24px); }
+  #app.classic-lobby .cc-preview .lobby-portrait { width: 100%; height: 100%; }
+  #app.classic-lobby .cc-buttons {
+    position: absolute; left: 0; right: 0; bottom: 8px; display: flex; justify-content: center; gap: 12px;
+  }
+  #app.classic-lobby .cc-buttons .lobby-sprite { position: static; }
+}
+
+/* The lobby's message and progress line next to the select, create and delete windows: compact, never over their
+   buttons, and taps pass through it. A short desktop window has it over the caption; on a phone the window makes room. */
+#app.classic-lobby:has(.select-char, .create-char) > :is(.notice, .status:not(:empty)) { pointer-events: none; }
+#app.classic-lobby:has(.select-char, .create-char) > .notice > .alert { margin: 0; padding: 6px 10px; }
+#app.classic-lobby:has(.select-char, .create-char) > .status:not(:empty) { padding: 6px 10px; }
+@media (pointer: fine) and (max-height: 480px) {
+  #app.classic-lobby:has(.select-char, .create-char) > :is(.notice, .status:not(:empty)) { top: 4px; bottom: auto; }
+}
+@media (max-width: 1000px) and (pointer: coarse) {
+  #app.classic-lobby:has(.select-char, .create-char) > :is(.notice, .status:not(:empty)) { bottom: 4px; }
+  #app.classic-lobby:has(.select-char, .create-char) > .notice > .alert,
+  #app.classic-lobby:has(.select-char, .create-char) > .status:not(:empty) { padding: 4px 8px; font-size: 12px; }
+  #app.classic-lobby:has(> .notice:not(:empty), > .status:not(:empty)) > .stage { place-self: start center; }
+  #app.classic-lobby:has(> .notice:not(:empty), > .status:not(:empty)) :is(.select-char, .create-char) {
+    height: min(420px, calc(100dvh - 52px));
+  }
 }

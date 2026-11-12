@@ -266,6 +266,9 @@ export const THEME_FILES: readonly string[] = [
   // 2026-11-11, the item NPC windows (docs/superpowers/specs/2026-11-11-item-npc-windows-research.md §4.3, §6): the card rows
   // of APP_SMELT_REMOVE_PIERCING_EX (resdata.inc:22366-22447) and APP_TEST's picture (:11414, not tiled)
   'WndSquare3.bmp', 'WndUpgradeBase.tga',
+  // 2026-11-12, the New Character window (docs/superpowers/specs/2026-11-12-char-select-create-research.md §3): its sex
+  // and arrow buttons (APP_CREATE_CHAR, resdata.inc:24551-24600); ButtOk, ButtCancel and WndEditTile00 are above
+  'ButtMale.bmp', 'ButtFemale.bmp', 'ButtLeft.bmp', 'ButtRight.bmp',
 ];
 
 /**

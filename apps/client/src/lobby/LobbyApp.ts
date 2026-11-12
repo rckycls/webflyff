@@ -6,8 +6,13 @@ import { Reconnect } from './reconnect';
 import type { DroppedWorld } from '../world/WorldScreen';
 import { alertElement, alreadyConnectedView } from './views/messageView';
 import { characterView } from './views/characterView';
+import type { CharacterView } from './views/characterView';
 import { createView } from './views/createView';
+import type { CreateView } from './views/createView';
 import { deleteView } from './views/deleteView';
+import { openingLook } from './createRules';
+import { BLOCKED_BOX, settleSelection } from './selectRules';
+import { loadParty } from '../world/party/partyCatalog';
 import { loginView } from './views/loginView';
 import { serverView } from './views/serverView';
 import { h } from './views/dom';
@@ -34,6 +39,17 @@ export class LobbyApp {
   private view: View | undefined;
   private servers: ServerEntry[] = [];
   private characters: CharacterSummary[] = [];
+  /**
+   * The Select Character window's selection (`m_nSelectCharacter`, static in Neuz): kept between visits, after Create,
+   * Cancel, Delete and Back; a blocked character's moves to the first usable one when a list comes (`settleSelection`).
+   */
+  private selectedSlot = 0;
+  /** The Select Character window while it is shown: the Delete Character window opens over it. */
+  private selectView: CharacterView | undefined;
+  /** The jobs' names for the select window's tooltip, once the game data is in. */
+  private jobTitles: string[] | null = null;
+  /** `InvalidName_ENG.inc` and `Letter_ENG.inc` (the party catalog) for the create window, once loaded. */
+  private nameRules: { invalidNames: readonly string[]; letters: string } | null = null;
   /** The selected character's world, fetched into the browser's cache while the list is shown (`WorldPrefetch`). */
   private readonly prefetch = new WorldPrefetch(pageAssets, async (worldId) => (await pageGameData()).worlds.get(worldId));
   /** The account last typed, so a player sent back to the login form does not type it again. */
@@ -140,25 +156,43 @@ export class LobbyApp {
     }));
   }
 
+  /** The Select Character window (V15's `CWndSelectChar`), the selection kept from the last visit. */
   private showCharacters(): void {
-    this.show('characters', characterView({
+    this.selectedSlot = settleSelection(this.selectedSlot, this.characters);
+    const view = characterView({
       characters: this.characters,
+      selected: this.selectedSlot,
+      jobTitle: (job) => this.jobTitles?.[job] ?? '',
       onCreate: (slot) => this.showCreate(slot),
       onEnter: (character) => this.enter(character),
       onDelete: (character) => this.showDelete(character),
-      // the selected character's world into the cache while the player looks (2026-11-04 loading audit)
-      onSelect: (character) => {
+      onBlocked: () => this.setAlert(BLOCKED_BOX.text),
+      onSelect: (slot, character) => {
+        this.selectedSlot = slot;
+        // the selected character's world into the cache while the player looks (2026-11-04 loading audit)
         if (character === undefined) this.prefetch.abort();
         else void this.prefetch.start(character.worldId, character.position);
       },
       onChangeChannel: () => this.changeChannel(),
-      onLogout: () => this.logout(),
-    }));
+    });
+    this.show('characters', view);
+    this.selectView = view;
+    if (this.jobTitles === null) {
+      pageGameData().then((data) => { this.jobTitles = data.jobs.map((job) => job.title); }, () => {});
+    }
   }
 
+  /** The New Character window (`CWndCreateChar`) for the empty `slot`: a woman, a random hair style and face. */
   private showCreate(slot: number): void {
+    if (this.nameRules === null) {
+      void pageAssets().then((store) => loadParty(store, (error) => console.warn('Name rules unavailable:', error)))
+        .then((party) => { if (party !== null) this.nameRules = { invalidNames: party.invalidNames, letters: party.letters }; })
+        .catch(() => {});
+    }
     this.show('create', createView({
       slot,
+      look: openingLook(),
+      nameRules: () => this.nameRules,
       onCreate: (character) => {
         this.setAlert(undefined);
         this.status.textContent = 'Creating the character…';
@@ -169,17 +203,49 @@ export class LobbyApp {
     }));
   }
 
+  /**
+   * The Delete Character window (`CWndDeleteChar`), modal over the Select Character window: the select window stays
+   * behind it, out of reach, and comes back as it was on Cancel. The new list after a delete replaces both.
+   */
   private showDelete(character: CharacterSummary): void {
-    this.show('delete', deleteView({
+    const host = this.selectView;
+    if (host === undefined || this.screen !== 'characters') return;
+    const view = deleteView({
       character,
-      onDelete: (bankPin) => {
+      onDelete: (password) => {
         this.setAlert(undefined);
         this.status.textContent = 'Deleting the character…';
-        this.flow.deleteCharacter(character.slot, bankPin);
+        this.flow.deleteCharacter(character.slot, password);
       },
       onInvalid: (message) => this.setAlert(message),
-      onCancel: () => this.showCharacters(),
-    }));
+      onCancel: () => this.closeDelete(),
+    });
+    frameLobby(view.element);
+    const modal = h('div', { class: 'lobby-modal' }, view.element);
+    for (const child of host.element.children) (child as HTMLElement).inert = true;
+    host.element.append(modal);
+    this.screen = 'delete';
+    this.view = view;
+    this.stage.dataset.modal = 'delete';
+    this.setAlert(undefined);
+    this.status.textContent = '';
+    // V15 puts the focus in the edit; a phone's keyboard is not opened by itself (the lobby's rule)
+    const coarse = this.root.ownerDocument.defaultView?.matchMedia('(pointer: coarse)').matches ?? false;
+    view.element.querySelector<HTMLElement>(coarse ? 'h2' : 'input')?.focus();
+  }
+
+  /** Cancel on the Delete Character window: the select window as it was. */
+  private closeDelete(): void {
+    const host = this.selectView;
+    if (host === undefined || this.screen !== 'delete') return;
+    host.element.querySelector('.lobby-modal')?.remove();
+    for (const child of host.element.children) (child as HTMLElement).inert = false;
+    this.screen = 'characters';
+    this.view = host;
+    delete this.stage.dataset.modal;
+    this.setAlert(undefined);
+    this.status.textContent = '';
+    host.element.querySelector<HTMLElement>('.cs-delete')?.focus();
   }
 
   private login(account: string, password: string): void {
@@ -218,11 +284,14 @@ export class LobbyApp {
     const entry = this.flow.handOver(character.slot);
     if (entry === undefined) {
       this.setAlert(UNEXPECTED_PROBLEM);
+      // Accept disabled itself: the player may try again
+      this.view?.idle?.();
       return;
     }
     // Nothing of the lobby is left to answer: the flow reports no more, and the screens are gone.
     this.screen = 'login';
     this.view = undefined;
+    this.selectView = undefined;
     this.setAlert(undefined);
     this.status.textContent = '';
     this.stage.replaceChildren();
@@ -310,11 +379,20 @@ export class LobbyApp {
     const first = this.view === undefined;
     this.screen = screen;
     this.view = view;
+    this.selectView = undefined;
     if (screen !== 'characters') this.prefetch.abort();
     frameLobby(view.element);
     this.stage.dataset.screen = screen;
+    delete this.stage.dataset.modal;
     this.stage.replaceChildren(view.element);
-    if (screen === 'characters') void import('./characterPreviews').then(({ characterPreviews }) => characterPreviews(view.element, this.characters));
+    // the 3D characters (lobbyPortraits.ts, with three.js, loaded on its own); they let go once the window has gone
+    if (screen === 'characters') {
+      const characters = this.characters;
+      void import('./lobbyPortraits').then(({ selectPortraits }) => selectPortraits(view.element, characters, () => this.selectedSlot));
+    } else if (screen === 'create') {
+      const create = view as CreateView;
+      void import('./lobbyPortraits').then(({ createPortrait }) => createPortrait(view.element, () => create.look()));
+    }
     this.setAlert(alert);
     this.status.textContent = status ?? '';
     // Keyboard and screen-reader users start at the top of the new screen, not on the button that has just gone. The
