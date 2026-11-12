@@ -99,7 +99,12 @@ const MOST_CHAT = 10;
  * Where a carried shortcut is let go: a slot of the item row or of the action slot, the applet row, elsewhere on the bar,
  * or off it (null).
  */
-export type DropTarget = { row: 'item' | 'queue' | 'applet'; slot: number } | 'bar' | null;
+export type DropTarget = {
+  row: 'item' | 'queue' | 'applet';
+  slot: number;
+  /** 2026-11-12: the item bar a slot of the item row is on, when not the bar shown (the phone's quick slots, bar 8). */
+  bar?: number;
+} | 'bar' | null;
 
 /** Where the edits go: the packets, the action slot's chain, and the lines they print. */
 export interface TaskBarEditActions {
@@ -246,7 +251,8 @@ export class TaskBarEdits {
       return;
     }
     if (target !== 'bar' && target.row === 'item') {
-      if (carried.from === 'item' && carried.bar === this.bar.bar && carried.slot === target.slot) return;
+      const onBar = target.bar ?? this.bar.bar;
+      if (carried.from === 'item' && carried.bar === onBar && carried.slot === target.slot) return;
       if (shortcut.kind === ShortcutKind.SKILL && shortcut.type === 2) {
         // a party skill: every row of propTroupeSkill.txt is CT_GENERAL (Piece 7 M4, [R §8.1]), so any the catalog has
         if (this.bar.data.partySkills?.has(shortcut.id) !== true) return;
@@ -256,7 +262,7 @@ export class TaskBarEdits {
       }
       // a chat line's text loses its --, ', /* and */ before it goes on the slot (:1985-1992)
       const text = shortcut.kind === ShortcutKind.CHAT ? withoutSqlMarks(shortcut.text) : shortcut.text;
-      this.setItemShortcut(target.slot, { ...shortcut, text });
+      this.setItemShortcut(target.slot, { ...shortcut, text }, onBar);
     } else if (target !== 'bar' && target.row === 'queue' && shortcut.kind === ShortcutKind.SKILL && shortcut.type === 0) {
       if (carried.from === 'queue') {
         if (this.actions.queueRunning()) return;
@@ -267,6 +273,15 @@ export class TaskBarEdits {
       this.setSkillQueue(target.slot, shortcut.id, shortcut.text);
     }
     if (fromBar) this.removeCarried(carried);
+  }
+
+  /**
+   * 2026-11-12: slot `slot` of item bar `bar` emptied (REMOVEITEMTASKBAR), as a right click empties a slot of the bar shown:
+   * the phone's quick slots, which are bar 8's. Nothing for an empty slot.
+   */
+  takeOff(bar: number, slot: number): void {
+    if (this.bar.bars.items[bar]?.[slot] === undefined || this.bar.bars.items[bar]![slot]!.kind === ShortcutKind.NONE) return;
+    this.removeItemShortcut(bar, slot);
   }
 
   /** A right click on slot `i` of `row` (`OnRButtonUp`, :1473-1512): an item slot empties; the action slot's goes out. */
@@ -332,8 +347,8 @@ export class TaskBarEdits {
    * stackable item's `m_dwItemId` (:1648-1653), then ADDITEMTASKBAR. (The 10-chat-shortcut cap, :1520-1539, is the chat's:
    * the bar moves no more chat lines than it had.)
    */
-  private setItemShortcut(slot: number, from: Shortcut): void {
-    const { bars, own, data, bar } = this.bar;
+  private setItemShortcut(slot: number, from: Shortcut, bar = this.bar.bar): void {
+    const { bars, own, data } = this.bar;
     const shortcut: Shortcut = {
       kind: from.kind, id: from.id, type: from.type, index: slot, userId: 0, data: WHERE_ITEM, text: from.text,
     };

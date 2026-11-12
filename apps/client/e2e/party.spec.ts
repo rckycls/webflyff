@@ -138,17 +138,13 @@ test('party chat: the Party view sends "/p text"; a PARTYCHAT shows its line', a
   gateway.pushCache(script.later([writePartyMember(SELF_ID, LEAD, 'Webby', 'Lead', partyOf([WEBBY, LEAD]))]));
   // the chat opened, then its Party view; on the desktop (2026-11-09) Neuz's Party tab, enabled in a party, which puts
   // "/p " in the line (WndCommunication.cpp:212-216, :708-713)
-  const chatWindow = page.locator(isMobile ? '.hud-chat' : '.hud-neuz-chat');
+  // 2026-11-12: the phone's chat is the desktop's, docked on the bar: the same Party tab, tapped
+  const chatWindow = page.locator('.hud-neuz-chat');
   const input = chatWindow.getByRole('textbox', { name: 'Chat message' });
-  if (isMobile) {
-    await chatWindow.getByRole('button', { name: 'Chat', exact: true }).click();
-    await chatWindow.locator('[data-view="party"]').click();
-    await input.fill('hello team');
-  } else {
-    await chatWindow.getByRole('radio', { name: 'Party' }).click();
-    await expect(input).toHaveValue('/p ');
-    await input.press('End'); await input.pressSequentially('hello team');
-  }
+  const party = chatWindow.getByRole('radio', { name: 'Party' });
+  if (isMobile) await party.tap(); else await party.click();
+  await expect(input).toHaveValue('/p ');
+  await input.press('End'); await input.pressSequentially('hello team');
   await input.press('Enter');
   const CHAT = 0xff0000;
   await expect.poll(() => sentOf(gateway, CHAT).length).toBe(1);

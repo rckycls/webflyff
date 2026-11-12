@@ -175,12 +175,13 @@ test('a friend request: the Confirm, Yes sends ADDFRIEND; Add Friend sends the n
 
 test('/say from the chat goes as typed; /whisperrefuse answers a whisper with BLOCK 1', async ({ page, isMobile }) => {
   const { gateway } = await withFriends(page);
-  if (isMobile) await page.getByRole('button', { name: 'Chat', exact: true }).tap(); else await page.keyboard.press('Enter');
-  const chat = page.locator(isMobile ? '.hud-chat' : '.hud-neuz-chat');
+  // 2026-11-12: the phone's chat is the desktop's, docked on the bar: a tap on its line opens it, Enter sends
+  const chat = page.locator('.hud-neuz-chat');
   const input = chat.getByRole('textbox', { name: 'Chat message' });
+  if (isMobile) await input.tap(); else await page.keyboard.press('Enter');
   const send = async (text: string): Promise<void> => {
     await input.fill(text);
-    if (isMobile) await chat.getByRole('button', { name: 'Send', exact: true }).click(); else await input.press('Enter');
+    await input.press('Enter');
   };
   await send('/say Lead hello');
   await expect.poll(() => sentOf(gateway, CHAT).length).toBe(1);
@@ -189,7 +190,7 @@ test('/say from the chat goes as typed; /whisperrefuse answers a whisper with BL
   gateway.pushCache(directSay('Webby', 'Lead', 'hello', WEBBY, LEAD));
   await expect(page.locator('.hud-message[data-player="Lead"] .hud-message-text')).toContainText('hello');
   await page.locator('.hud-message[data-player="Lead"] > .hud-window-close').click();
-  if (isMobile) await page.getByRole('button', { name: 'Chat', exact: true }).tap(); else await page.keyboard.press('Enter');
+  if (isMobile) await input.tap(); else await page.keyboard.press('Enter');
   await page.waitForTimeout(1100);
   await send('/wr');
   await expect.poll(async () => (await hudTexts(page))?.lines ?? []).toContain('Whisper refused.');

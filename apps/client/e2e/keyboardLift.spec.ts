@@ -42,9 +42,9 @@ test('the chat line and the private shop name slide above the phone keyboard whi
   }
   const height = page.viewportSize()!.height;
 
-  // the chat's line, above the task bar at the bottom: under any keyboard until lifted
-  await page.getByRole('button', { name: 'Chat', exact: true }).tap();
-  const line = page.locator('.hud-chat').getByRole('textbox', { name: 'Chat message' });
+  // the chat's line (the desktop's chat docked on the bar, 2026-11-12), above the task bar at the bottom: under any
+  // keyboard until lifted
+  const line = page.locator('.hud-neuz-chat').getByRole('textbox', { name: 'Chat message' });
   await expect(line).toBeVisible();
   const before = (await line.boundingBox())!;
   expect(before.y + before.height).toBeGreaterThan(height * 0.45);

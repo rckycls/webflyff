@@ -6,7 +6,8 @@
 //
 // Where the keyboard begins is read from the visual viewport (`visualViewport`): its height shrinks by the keyboard's on
 // Android Chrome and iOS Safari, and the browser may pan it (`offsetTop`). Until it has shrunk (the keyboard still sliding
-// in, or a browser that does not say) the keyboard is taken to cover the bottom `FALLBACK_COVER` of the layer. When it has
+// in, or a browser that does not say) the keyboard is taken to cover the bottom `FALLBACK_COVER` of the layer, when the
+// player tapped the box: a box a window focuses as it opens brings no keyboard up, and waits for one. When it has
 // shrunk and grown back with the box still focused (Android's Back closes the keyboard and keeps the focus), the layer goes
 // back down; the keyboard coming back up lifts it again.
 
@@ -20,6 +21,8 @@ export interface ViewportLike extends EventTarget {
 const MARGIN = 8;
 /** The share of the layer a keyboard is taken to cover before the visual viewport says (a landscape phone's is half or more). */
 export const FALLBACK_COVER = 0.55;
+/** A focus this soon (ms) after a press on the box is the player's tap, which brings the keyboard up. */
+const TAP_FOCUS_MS = 1000;
 /** A visual viewport at least this much shorter than the layer has a keyboard over the rest. */
 const KEYBOARD_MIN = 80;
 /** The inputs that take no typing: no keyboard comes up for them. */
@@ -45,12 +48,21 @@ export class KeyboardLift {
   /** It then grew back with the box still focused: the keyboard was closed, the layer stays down. */
   private dismissed = false;
   private scheduled = false;
+  /**
+   * The last press in the layer (its target, and when), and the box the lift last saw focused, with whether a tap on it
+   * focused it: a focus the player did not tap for (a window that focuses its box as it opens) brings no soft keyboard up,
+   * so the lift waits for the visual viewport to show one before it slides.
+   */
+  private press: { target: EventTarget | null; at: number } | null = null;
+  private field: HTMLElement | null = null;
+  private tapped = false;
 
   constructor(
     private readonly layer: HTMLElement,
     private readonly view: Window,
     private readonly viewport: ViewportLike | null = view.visualViewport ?? null,
   ) {
+    layer.addEventListener('pointerdown', this.onPress, true);
     layer.addEventListener('focusin', this.schedule);
     layer.addEventListener('focusout', this.schedule);
     viewport?.addEventListener('resize', this.schedule);
@@ -75,8 +87,14 @@ export class KeyboardLift {
     if (field === null || this.view.matchMedia?.('(pointer: coarse)').matches !== true) {
       this.shrunk = false;
       this.dismissed = false;
+      this.field = null;
       this.apply(0);
       return;
+    }
+    if (field !== this.field) {
+      this.field = field;
+      const press = this.press;
+      this.tapped = press !== null && Date.now() - press.at < TAP_FOCUS_MS && press.target instanceof Node && field.contains(press.target);
     }
     const height = this.layer.clientHeight;
     const seenHeight = this.viewport?.height ?? height;
@@ -89,7 +107,8 @@ export class KeyboardLift {
       this.shrunk = false;
       this.dismissed = true;
     }
-    if (this.dismissed) {
+    // closed again with the box focused; or not yet shown for a box focused without a tap (none may come)
+    if (this.dismissed || (!open && !this.tapped)) {
       this.apply(0);
       return;
     }
@@ -103,6 +122,7 @@ export class KeyboardLift {
   }
 
   dispose(): void {
+    this.layer.removeEventListener('pointerdown', this.onPress, true);
     this.layer.removeEventListener('focusin', this.schedule);
     this.layer.removeEventListener('focusout', this.schedule);
     this.viewport?.removeEventListener('resize', this.schedule);
@@ -110,6 +130,10 @@ export class KeyboardLift {
     this.view.removeEventListener('resize', this.schedule);
     this.apply(0);
   }
+
+  private readonly onPress = (event: Event): void => {
+    this.press = { target: event.target, at: Date.now() };
+  };
 
   /** The next frame updates (a focus that moves from one box to another is one change, not two). */
   private readonly schedule = (): void => {

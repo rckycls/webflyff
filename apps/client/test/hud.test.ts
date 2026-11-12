@@ -27,7 +27,7 @@ import type { StatCounts } from '../src/world/hud/characterWindow';
 import { ReviveWindow } from '../src/world/hud/reviveWindow';
 import { SkillWindow, skillTooltip } from '../src/world/hud/skillWindow';
 import type { SkillHand } from '../src/world/hud/skillWindow';
-import { TaskBar, actionPointLit, taskBarLayout } from '../src/world/hud/taskBar';
+import { QUICK_BAR, QUICK_SLOTS, TaskBar, actionPointLit, taskBarLayout } from '../src/world/hud/taskBar';
 import type { TaskBarActions } from '../src/world/hud/taskBar';
 import { terrainGround } from '../src/world/sim/collision';
 import { Belli, ObjSta } from '../src/world/sim/constants';
@@ -1361,9 +1361,9 @@ describe('TaskBar: stackable items, names, focus and room (WndTaskBar.cpp)', () 
     onTouchScreen(() => {
       // 2026-11-12: a landscape phone's room is under the fourteen lines' 384 px in one column, so they stand in two
       // columns of seven (232 px: 50 + 7 x 22 + the bottom edge's 28), each line at least its 22 px
-      expect(menuOn(844, 390).menu.style.transform).toBe(`scale(${(390 - 48 * 576 / 620) / 232})`);
-      // The compact 620px layout takes 80% of the width between the phone's side gutters (2026-11-12, owner).
-      expect(menuOn(750, 342).menu.style.transform).toBe(`scale(${(342 - 48 * (574 / 620)) / 232})`);
+      expect(menuOn(844, 390).menu.style.transform).toBe(`scale(${(390 - 48 * 403 / 620) / 232})`);
+      // The compact 620px layout takes 56% of the width between the phone's side gutters (2026-11-12, owner: 0.8, then 0.7).
+      expect(menuOn(750, 342).menu.style.transform).toBe(`scale(${(342 - 48 * (402 / 620)) / 232})`);
       // a tall touch screen keeps one column
       expect(menuOn(1024, 900).menu.style.width).toBe('192px');
     });
@@ -1396,7 +1396,7 @@ describe('TaskBar: stackable items, names, focus and room (WndTaskBar.cpp)', () 
     Object.defineProperty(touch, 'pointerType', { value: 'touch' });
     document.body.dispatchEvent(touch);
     bar.update(newVagrantWithBar(), BAR_DATA);
-    expect(menu.style.transform).toBe(`scale(${(440 - 48 * (576 / 620)) / 384})`);
+    expect(menu.style.transform).toBe(`scale(${(440 - 48 * (403 / 620)) / 384})`);
   });
 
   it('keeps the mobile taskbar bounds while typing or clicking Send on a phone', () => {
@@ -3067,7 +3067,7 @@ describe('the Character and Skill windows: the 2026-11-04 audit', () => {
       });
     });
 
-    it('2026-11-12: its Task bar button picks the chosen skill for the bar (never lets it go), and the next item slot tapped takes it', () => {
+    it('2026-11-12: its Task bar button picks the chosen skill for the bar and closes the window; the next item slot tapped takes it', () => {
       onPhone(() => {
         const own = vagrantWithSkills(5, 0, [3, 0, 0]);
         const { bar, sent } = editingOn(own);
@@ -3090,14 +3090,11 @@ describe('the Character and Skill windows: the 2026-11-04 audit', () => {
         expect(bar.pickedSkill).toBe(null);
         tree.update(own);
         expect(button.getAttribute('aria-pressed')).toBe('false');
-        // the button picks it, and a second press keeps it picked
+        // the button picks it and closes the window (which covers the quick slots), the pick kept
         button.dispatchEvent(touch('pointerdown'));
         button.click();
         expect(bar.pickedSkill).toBe(0);
-        expect(button.getAttribute('aria-pressed')).toBe('true');
-        button.dispatchEvent(touch('pointerdown'));
-        button.click();
-        expect(bar.pickedSkill).toBe(0);
+        expect(tree.isOpen).toBe(false);
         // the slot tapped takes it: the ADDITEMTASKBAR the desktop's drag sends
         slot(bar, 'item', 2).dispatchEvent(touch('pointerdown'));
         slot(bar, 'item', 2).click();
@@ -3174,6 +3171,93 @@ describe("TaskBar: a bag item picked by a finger (2026-11-12, the phone's Task b
     bar.pickItem(9999, bag);
     expect(bar.pickedItem).toBe(null);
     bag.remove();
+  });
+});
+
+describe("TaskBar: the phone's quick slots by Attack (2026-11-12, bar 8's first four)", () => {
+  const quick = (bar: TaskBar, i: number) => bar.quickSlots.querySelector<HTMLButtonElement>(`.hud-quick-slot[data-slot="${i}"]`)!;
+  const tap = (element: HTMLElement) => {
+    element.dispatchEvent(touch('pointerdown'));
+    window.dispatchEvent(touch('pointerup'));
+    element.click();
+  };
+
+  it('four circles; a picked bag item or skill goes on one (ADDITEMTASKBAR for bar 8), lit while picked; a tap uses it', () => {
+    expect([QUICK_BAR, QUICK_SLOTS]).toEqual([7, 4]);
+    const own = vagrantWithSkills(5, 0, [3, 0, 0]);
+    const item = [...own.inventory!.values()][0]!;
+    const { bar, sent, calls } = editingOn(own);
+    document.body.append(bar.quickSlots);
+    expect(bar.quickSlots.querySelectorAll('.hud-quick-slot')).toHaveLength(4);
+    const bag = document.createElement('div');
+    document.body.append(bag);
+    // a bag item: the circles lit, a press on one keeps the pick, its tap places it on bar 8
+    const shownBefore = shown(slot(bar, 'item', 2));
+    bar.pickItem(item.objectId, bag);
+    expect(bar.quickSlots.hasAttribute('data-lit')).toBe(true);
+    tap(quick(bar, 2));
+    expect(sent).toEqual([{
+      type: 'ADDITEMTASKBAR', bar: 7, slot: 2,
+      shortcut: { kind: ShortcutKind.ITEM, id: item.objectId, type: 0, index: 2, userId: 0, data: 1, text: '' },
+    }]);
+    expect(bar.pickedItem).toBe(null);
+    expect(bar.quickSlots.hasAttribute('data-lit')).toBe(false);
+    bar.update(own, EDIT_DATA);
+    expect(quick(bar, 2).dataset.kind).toBe('item');
+    // the bar shown (bar 1) is left as it was
+    expect(shown(slot(bar, 'item', 2))).toEqual(shownBefore);
+    // a skill picked in the skill window goes on another
+    bar.pickSkill(0, bag);
+    tap(quick(bar, 0));
+    expect(sent.at(-1)).toEqual({
+      type: 'ADDITEMTASKBAR', bar: 7, slot: 0,
+      shortcut: { kind: ShortcutKind.SKILL, id: 0, type: 0, index: 0, userId: 0, data: 1, text: 'Clean Hit' },
+    });
+    bar.update(own, EDIT_DATA);
+    // a tap with nothing picked uses the circle's shortcut, as the bar's slot (bar 8, its slot)
+    tap(quick(bar, 0));
+    tap(quick(bar, 2));
+    tap(quick(bar, 3));
+    expect(calls).toEqual(['useSlot 7 0 skill 0', 'useSlot 7 2']);
+    bag.remove();
+  });
+
+  it('a finger held on a filled circle offers Remove, which takes it off (REMOVEITEMTASKBAR for bar 8); the lift uses nothing', () => {
+    vi.useFakeTimers();
+    try {
+      const own = vagrantWithSkills(5, 0, [3, 0, 0]);
+      const item = [...own.inventory!.values()][0]!;
+      const { bar, sent, calls } = editingOn(own);
+      document.body.append(bar.quickSlots);
+      bar.pickItem(item.objectId, document.body);
+      tap(quick(bar, 1));
+      bar.update(own, EDIT_DATA);
+      const remove = bar.quickSlots.querySelector<HTMLButtonElement>('.hud-quick-remove')!;
+      // a short press: no Remove
+      quick(bar, 1).dispatchEvent(touch('pointerdown'));
+      vi.advanceTimersByTime(200);
+      window.dispatchEvent(touch('pointerup'));
+      vi.advanceTimersByTime(600);
+      expect(remove.hidden).toBe(true);
+      // held 500 ms: Remove, and the lift's click is no use of the slot
+      quick(bar, 1).dispatchEvent(touch('pointerdown'));
+      vi.advanceTimersByTime(500);
+      expect(remove.hidden).toBe(false);
+      window.dispatchEvent(touch('pointerup'));
+      quick(bar, 1).click();
+      expect(calls).toEqual([]);
+      remove.click();
+      expect(sent.at(-1)).toEqual({ type: 'REMOVEITEMTASKBAR', bar: 7, slot: 1 });
+      expect(remove.hidden).toBe(true);
+      bar.update(own, EDIT_DATA);
+      expect(quick(bar, 1).dataset.kind).toBeUndefined();
+      // an empty circle offers nothing
+      quick(bar, 1).dispatchEvent(touch('pointerdown'));
+      vi.advanceTimersByTime(600);
+      expect(remove.hidden).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

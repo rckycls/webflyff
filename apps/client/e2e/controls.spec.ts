@@ -102,7 +102,8 @@ test('camera gestures, jump and phone controls share the world without stray act
     expect(jump!.y + jump!.height).toBeLessThan(attack!.y);
     const bar = await page.locator('.hud-taskbar').boundingBox();
     expect(bar!.width).toBeLessThanOrEqual(720);
-    expect(bar!.x + bar!.width / 2).toBeCloseTo(size.width / 2, 0);
+    // 2026-11-12 (owner): the bar stands at the bottom left, in from the notch
+    expect(bar!.x).toBeCloseTo(48, 0);
     // A home-indicator safe area lifts the HUD, but must not leave a gap under the taskbar.
     const hud = (await page.locator('.world-hud').boundingBox())!;
     expect(size.height - hud.y - hud.height).toBeCloseTo(34, 0);
@@ -115,7 +116,8 @@ test('camera gestures, jump and phone controls share the world without stray act
     await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...drag, x: 1 }] });
     await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
     expect((await page.locator('.hud-status').boundingBox())!.x).toBe(0);
-    const left = { id: 1, x: 100, y: size.height * .65 };
+    // above the bar and the chat docked on it at the bottom left (2026-11-12)
+    const left = { id: 1, x: 100, y: size.height * .4 };
     const right = { id: 2, x: size.width * .65, y: size.height * .35 };
     await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [left] });
     await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ ...left, y: left.y - 60 }] });

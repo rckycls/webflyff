@@ -41,10 +41,16 @@ afterEach(() => {
   document.body.replaceChildren();
 });
 
+/** The player's tap on `field`: its press, then the focus it gives. */
+const tap = (field: HTMLElement): void => {
+  field.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+  field.focus();
+};
+
 describe('KeyboardLift (2026-11-12: the box typed in stays above a phone keyboard)', () => {
-  it('lifts the focused box over where the keyboard is taken to be before the browser says, then over the real one', () => {
+  it('lifts the tapped box over where the keyboard is taken to be before the browser says, then over the real one', () => {
     const { layer, field, viewport, lift } = setup();
-    field.focus();
+    tap(field);
     lift.update();
     // the keyboard taken to cover the bottom 55%: the box's bottom 8 px above 45% of the layer
     const fallbackTop = LAYER_HEIGHT * (1 - FALLBACK_COVER);
@@ -116,9 +122,25 @@ describe('KeyboardLift (2026-11-12: the box typed in stays above a phone keyboar
     expect(lift.lifted).toBe(0);
   });
 
+  it('leaves a box focused without a tap (a window that focuses its box as it opens) until a keyboard shows', () => {
+    const { field, viewport, lift } = setup();
+    field.focus();
+    lift.update();
+    expect(lift.lifted).toBe(0);
+    viewport.height = 150;
+    lift.update();
+    expect(field.getBoundingClientRect().bottom).toBe(142);
+    // a press elsewhere, then a focus: no tap on the box either
+    const other = setup();
+    other.other.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+    other.field.focus();
+    other.lift.update();
+    expect(other.lift.lifted).toBe(0);
+  });
+
   it('follows the focus by itself, a frame later', async () => {
     const { field, lift } = setup();
-    field.focus();
+    tap(field);
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(lift.lifted).toBeGreaterThan(0);
     lift.dispose();

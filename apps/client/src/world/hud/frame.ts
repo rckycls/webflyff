@@ -242,6 +242,13 @@ export class WindowFrame {
   private resizing: { pointerId: number; dir: number; x: number; y: number; old: WindowRect } | null = null;
   /** 2026-11-09: false while the move lock is on (`WBS_MOVE` taken away, WndCommunication.cpp:678-689); the edges still drag. */
   movable = true;
+  /** 2026-11-12: false while a window with dragged edges is docked (the phone's chat, on the task bar): its edges stay. */
+  resizable = true;
+  /**
+   * 2026-11-12: true while the window is docked (the phone's chat, on the task bar): it goes exactly where it is put, not
+   * kept within its layer above the bar's room (a floating bar may reach past the layer's bottom, by an iPhone's inset).
+   */
+  docked = false;
   /** 2026-11-09: called with the new size each time an edge is dragged to one (`OnSize`). */
   onResize?: (width: number, height: number) => void;
   /** 2026-11-09: called when a drag of the window or of an edge ends (the window's place to keep). */
@@ -331,7 +338,7 @@ export class WindowFrame {
     const target = event.target as Element | null;
     if (target?.closest?.('button, input, textarea, select, a, [data-press]') != null) return;
     const { x, y } = this.local(event);
-    const dir = this.least === undefined ? 0 : resizeDirection(x, y, this.width, this.shownHeight);
+    const dir = this.least === undefined || !this.resizable ? 0 : resizeDirection(x, y, this.width, this.shownHeight);
     if (dir !== 0) {
       const { x: left, y: top } = this.position;
       this.resizing = { pointerId: event.pointerId ?? 0, dir, x: event.clientX, y: event.clientY,
@@ -351,7 +358,7 @@ export class WindowFrame {
   private hover(event: PointerEvent): void {
     if (this.drag !== null || this.resizing !== null) return;
     const { x, y } = this.local(event);
-    const dir = resizeDirection(x, y, this.width, this.shownHeight);
+    const dir = this.resizable ? resizeDirection(x, y, this.width, this.shownHeight) : 0;
     this.element.style.cursor = RESIZE_CURSORS[dir]!;
     // 2026-11-11: on an edge, what lies on it shows the same cursor (style.css: `[data-resize] *` inherits it)
     if (dir !== 0) this.element.dataset.resize = '';
@@ -623,7 +630,7 @@ export class WindowFrame {
     const h = (this.element.offsetHeight || parseFloat(this.element.style.height) || 0) * this.scale;
     let px = Math.round(x);
     let py = Math.round(y);
-    if (right > 0 && bottom > 0) {
+    if (right > 0 && bottom > 0 && !this.docked) {
       if (cling) {
         if (px < CLING && px > 0) px = 0;
         if (py < CLING && py > 0) py = 0;

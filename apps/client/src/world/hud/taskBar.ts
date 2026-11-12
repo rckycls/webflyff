@@ -205,10 +205,22 @@ const START = { left: 26, top: 14, width: 64, height: 20 } as const;
  */
 const TOUCH_MENU_SCALE = 2;
 /**
- * 2026-11-12 (owner): a landscape phone's bar is drawn 20% smaller, across and up: this share of the width between the
- * side gutters (at most 720 px), the height following from its scale. The chat above it takes its width (style.css).
+ * 2026-11-12 (owner): a landscape phone's bar is drawn smaller, across and up (20% smaller, then 30% smaller again:
+ * 0.8 x 0.7): this share of the width between the side gutters (at most 720 px), the height following from its scale. The
+ * chat docked on it takes its width (`phoneDock`, `NeuzChat.dock`).
  */
-const PHONE_BAR_SHARE = 0.8;
+const PHONE_BAR_SHARE = 0.56;
+/**
+ * 2026-11-12 (owner, "like a phone MOBA"): the phone's quick slots, circles around the Attack button, are the first
+ * `QUICK_SLOTS` slots of item bar 8 (`QUICK_BAR`, 0-based 7): a shortcut put on one is ADDITEMTASKBAR for that bar, as
+ * any slot of the bar, so the server keeps them with the character and Neuz shows them on its bar 8. Neuz has no such
+ * slots (no touch).
+ */
+export const QUICK_BAR = 7;
+export const QUICK_SLOTS = 4;
+/** A finger held on a quick slot this long (ms), and moved no more than `QUICK_SLOP` px, offers to take it off. */
+const QUICK_HOLD_MS = 500;
+const QUICK_SLOP = 10;
 /** `LV2MAXAP` ... `LV5MAXAP` (`WndTaskBar.cpp:1037-1040`): the action points that light the 2nd to 5th action slot. */
 const AP_STEPS = [10, 25, 50, 100] as const;
 /**
@@ -363,6 +375,22 @@ export class TaskBar {
   private appletSlots: SlotElement[] = [];
   private itemSlots: SlotElement[] = [];
   private queueSlots: SlotElement[] = [];
+  /**
+   * 2026-11-12: the phone's quick slots (`QUICK_BAR`): their holder, for the HUD to put beside Attack (style.css shows it on
+   * a phone only), the slots, the long press on one, and its Remove line.
+   */
+  readonly quickSlots: HTMLElement;
+  private readonly quick: SlotElement[];
+  private quickHold: { slot: number; pointerId: number; x: number; y: number; timer: ReturnType<typeof setTimeout> } | null = null;
+  private readonly quickRemove: HTMLButtonElement;
+  private quickRemoveSlot = -1;
+  /** The slot whose click, the long press's lift, is no use of it. */
+  private quickSwallow = -1;
+  /**
+   * 2026-11-12: where a phone's bar stands in its layer (CSS px: its left, its top, its width), for the chat docked on it
+   * (`NeuzChat.dock`); null with the desktop's bar.
+   */
+  phoneDock: { left: number; top: number; width: number } | null = null;
   /** `m_nSlotIndex`: the bar shown, 0 to 7; 0 on every entry (`CWndTaskBar::CWndTaskBar`, :506). */
   private slotIndex = 0;
   /** The TASKBAR message the bars were loaded from (or the bars as the last edit put them back), and the bars. */
@@ -484,6 +512,39 @@ export class TaskBar {
     // the menus beside the bar, not in it: a bar drawn smaller is a layer of its own, which would keep them under the
     // windows
     element.append(strip, this.menu.element, this.gestures.menu);
+
+    // 2026-11-12: the phone's quick slots around Attack (QUICK_BAR's first slots), and their long press's Remove line
+    this.quickSlots = doc.createElement('div');
+    this.quickSlots.className = 'hud-quick-slots';
+    this.quickSlots.setAttribute('role', 'toolbar');
+    this.quickSlots.setAttribute('aria-label', 'Quick slots');
+    this.quick = Array.from({ length: QUICK_SLOTS }, (_, i) => {
+      const button = this.button('hud-slot hud-quick-slot', () => this.pressQuickSlot(i));
+      button.dataset.row = 'quick';
+      button.dataset.slot = String(i);
+      const icon = doc.createElement('span');
+      icon.className = 'hud-slot-icon';
+      const count = doc.createElement('span');
+      count.className = 'hud-slot-count';
+      const hotkey = doc.createElement('span');
+      hotkey.className = 'hud-slot-hotkey';
+      hotkey.setAttribute('aria-hidden', 'true');
+      button.append(icon, count, hotkey);
+      button.addEventListener('pointerdown', (event) => this.holdQuickSlot(i, event));
+      button.addEventListener('contextmenu', (event) => event.preventDefault());
+      return { element: button, icon, count, hotkey, shown: null };
+    });
+    this.quickRemove = doc.createElement('button');
+    this.quickRemove.type = 'button';
+    this.quickRemove.className = 'hud-quick-remove';
+    this.quickRemove.tabIndex = -1;
+    this.quickRemove.hidden = true;
+    this.quickRemove.addEventListener('click', () => {
+      const slot = this.quickRemoveSlot;
+      this.hideQuickRemove();
+      if (slot >= 0 && this.own !== undefined) this.edits.takeOff(QUICK_BAR, slot);
+    });
+    this.quickSlots.append(...this.quick.map((slot) => slot.element), this.quickRemove);
 
     this.view.addEventListener('keydown', this.onKeyDown);
     this.view.addEventListener('keyup', this.onKeyUp);
@@ -664,6 +725,10 @@ export class TaskBar {
     this.itemSlots.forEach((slot, i) => { this.draw(slot, view(bar, i)); drawCooldown(slot.element, cooling(bar[i])); });
     // m_nCurQueueNum slots of the action slot (:1017-1032)
     this.queueSlots.forEach((slot, i) => this.draw(slot, i < queueCount ? view(queue, i) : EMPTY_VIEW));
+    // 2026-11-12: the phone's quick slots, bar 8's first slots whatever bar is shown
+    const quickBar = items[QUICK_BAR]!;
+    this.quick.forEach((slot, i) => { this.draw(slot, view(quickBar, i)); drawCooldown(slot.element, cooling(quickBar[i])); });
+    this.quickRemove.textContent = data.texts?.get(REMOVE_TEXT)?.text || 'Remove';
     const number = String(this.slotIndex + 1);
     if (this.number.textContent !== number) this.number.textContent = number;
     this.drawActionPoints(message?.actionPoint ?? 0);
@@ -682,6 +747,9 @@ export class TaskBar {
     this.hideItemTip();
     this.menu.dispose();
     this.dropPick();
+    this.cancelQuickHold();
+    this.hideQuickRemove();
+    this.quickSlots.remove();
     this.gestures.dispose();
     this.view.removeEventListener('keydown', this.onKeyDown);
     this.view.removeEventListener('keyup', this.onKeyUp);
@@ -867,6 +935,8 @@ export class TaskBar {
     this.litShown = shown;
     this.litItem.hidden = !item;
     this.litQueue.hidden = !queue;
+    // 2026-11-12: the quick slots take what the item row takes, and light with it
+    this.quickSlots.toggleAttribute('data-lit', item);
   }
 
   /**
@@ -881,11 +951,12 @@ export class TaskBar {
     const style = parent === null ? null : this.view.getComputedStyle(parent);
     const safeLeft = parseFloat(style?.getPropertyValue('--game-safe-left') ?? '') || 0;
     const safeRight = parseFloat(style?.getPropertyValue('--game-safe-right') ?? '') || 0;
+    const safeBottom = parseFloat(style?.getPropertyValue('--game-safe-bottom') ?? '') || 0;
     const available = Math.max(0, (parent?.clientWidth ?? 0) - safeLeft - safeRight);
     // Typing and compatibility mouse events must not swap a phone's layout to the desktop bar.
     const mobile = (this.view.matchMedia?.('(pointer: coarse)').matches === true || this.touch()) &&
       (parent?.clientWidth ?? 0) <= 1000;
-    // Equal gutters keep the bar centered on the viewport even with an asymmetric notch.
+    // The width from equal gutters (as when it stood centred), even with an asymmetric notch; it stands at the left (below).
     const width = mobile
       ? Math.round(PHONE_BAR_SHARE * Math.min(720, Math.max(0, (parent?.clientWidth ?? 0) - 2 * Math.max(safeLeft, safeRight) - 32)))
       : available;
@@ -902,7 +973,10 @@ export class TaskBar {
     strip.style.setProperty('--taskbar-art', themeUrl(this.art, layout.picture));
     const height = TASKBAR_HEIGHT * layout.scale;
     this.element.classList.toggle('is-floating', mobile);
-    this.element.style.left = mobile ? `${((parent?.clientWidth ?? 0) - width) / 2}px` : '';
+    // 2026-11-12 (owner): a phone's bar stands at the bottom left (in from a notch on the left), not centred; the right is
+    // Attack's and the quick slots'
+    const phoneLeft = Math.max(0, safeLeft);
+    this.element.style.left = mobile ? `${phoneLeft}px` : '';
     this.element.style.width = mobile ? `${width}px` : '';
     this.element.style.height = mobile ? `${height}px` : '';
     strip.style.width = `${layout.width}px`;
@@ -918,11 +992,17 @@ export class TaskBar {
     this.menu.place(room > 0 ? Math.min(most, room / this.menu.height) : layout.scale, height);
     if (parent !== null) {
       parent.style.setProperty('--hud-taskbar-height', `${height}px`);
-      parent.style.setProperty('--hud-taskbar-left', mobile ? `${(parent.clientWidth - width) / 2}px` : '0px');
+      parent.style.setProperty('--hud-taskbar-left', mobile ? `${phoneLeft}px` : '0px');
       parent.style.setProperty('--hud-taskbar-width', `${layout.width * layout.scale}px`);
       parent.style.setProperty('--hud-taskbar-bottom', mobile ? '0px' : 'var(--game-safe-bottom, 0px)');
-      setLayoutBottom(parent, height);
+      // 2026-11-12: a floating bar reaches past the layer's bottom by the home indicator's inset (style.css,
+      // `.hud-taskbar.is-floating`): the windows' room ends at its top, where the docked chat stands
+      setLayoutBottom(parent, mobile ? Math.max(0, height - safeBottom) : height);
     }
+    // the bar's top where it is drawn: a floating bar reaches past the layer's bottom by the home indicator's inset
+    // (style.css, `.hud-taskbar.is-floating`)
+    this.phoneDock = mobile && parent !== null
+      ? { left: phoneLeft, top: this.element.offsetTop || parent.clientHeight - height, width: layout.width * layout.scale } : null;
     this.gestures.closeMenu();
 
     this.placeRect(this.up, layout.up);
@@ -1069,6 +1149,82 @@ export class TaskBar {
     this.placePicked({ row: 'queue', slot: i });
   }
 
+  /**
+   * 2026-11-12: a tap on quick slot `i` (bar 8's slot `i`): what a finger picked goes there (ADDITEMTASKBAR for bar 8);
+   * else its shortcut is used as the bar's slot would be; an empty slot is nothing.
+   */
+  private pressQuickSlot(i: number): void {
+    if (this.quickSwallow === i) {
+      this.quickSwallow = -1;
+      return;
+    }
+    if (this.placePicked({ row: 'item', slot: i, bar: QUICK_BAR })) return;
+    const shortcut = this.loaded.items[QUICK_BAR]![i]!;
+    if (shortcut.kind === ShortcutKind.NONE) return;
+    if (shortcut.kind === ShortcutKind.APPLET) this.execute(shortcut.id);
+    else this.actions.useSlot(QUICK_BAR, i, shortcut);
+  }
+
+  /** A finger held on a filled quick slot: after `QUICK_HOLD_MS`, without moving, its Remove line (the bar's long press). */
+  private holdQuickSlot(i: number, event: PointerEvent): void {
+    this.quickSwallow = -1;
+    this.cancelQuickHold();
+    if (event.button !== 0 || this.picked !== null || this.loaded.items[QUICK_BAR]![i]!.kind === ShortcutKind.NONE) return;
+    const timer = setTimeout(() => {
+      this.quickHold = null;
+      this.removeQuickListeners();
+      this.quickSwallow = i;
+      this.showQuickRemove(i);
+    }, QUICK_HOLD_MS);
+    this.quickHold = { slot: i, pointerId: event.pointerId, x: event.clientX, y: event.clientY, timer };
+    this.view.addEventListener('pointermove', this.onQuickMove);
+    this.view.addEventListener('pointerup', this.onQuickUp);
+    this.view.addEventListener('pointercancel', this.onQuickUp);
+  }
+
+  private readonly onQuickMove = (event: PointerEvent): void => {
+    const hold = this.quickHold;
+    if (hold === null || event.pointerId !== hold.pointerId) return;
+    if (Math.hypot(event.clientX - hold.x, event.clientY - hold.y) > QUICK_SLOP) this.cancelQuickHold();
+  };
+
+  private readonly onQuickUp = (event: PointerEvent): void => {
+    if (this.quickHold !== null && event.pointerId === this.quickHold.pointerId) this.cancelQuickHold();
+  };
+
+  private cancelQuickHold(): void {
+    if (this.quickHold !== null) clearTimeout(this.quickHold.timer);
+    this.quickHold = null;
+    this.removeQuickListeners();
+  }
+
+  private removeQuickListeners(): void {
+    this.view.removeEventListener('pointermove', this.onQuickMove);
+    this.view.removeEventListener('pointerup', this.onQuickUp);
+    this.view.removeEventListener('pointercancel', this.onQuickUp);
+  }
+
+  /** The Remove line over quick slot `i`; a press anywhere else puts it away. */
+  private showQuickRemove(i: number): void {
+    const slot = this.quick[i]!.element;
+    this.quickRemoveSlot = i;
+    this.quickRemove.hidden = false;
+    // centred over the slot, 4 px above it (style.css: translate(-50%, -100%))
+    this.quickRemove.style.left = `${slot.offsetLeft + slot.offsetWidth / 2}px`;
+    this.quickRemove.style.top = `${slot.offsetTop - 4}px`;
+    this.doc.addEventListener('pointerdown', this.onPressWhileRemove, true);
+  }
+
+  private hideQuickRemove(): void {
+    this.quickRemoveSlot = -1;
+    this.quickRemove.hidden = true;
+    this.doc.removeEventListener('pointerdown', this.onPressWhileRemove, true);
+  }
+
+  private readonly onPressWhileRemove = (event: Event): void => {
+    if (event.target !== this.quickRemove) this.hideQuickRemove();
+  };
+
   /** What a finger picked goes to `target`, as a drop there would take it, and is let go whatever came of it. */
   private placePicked(target: DropTarget): boolean {
     const picked = this.picked;
@@ -1086,6 +1242,8 @@ export class TaskBar {
     const target = event.target as Element | null;
     if (target !== null && this.pickedWithin?.contains(target) === true) return;
     const slot = typeof target?.closest === 'function' ? target.closest<HTMLElement>('.hud-slot[data-row]') : null;
+    // 2026-11-12: a quick slot takes what the item row takes
+    if (slot !== null && slot.dataset.row === 'quick' && this.quickSlots.contains(slot)) return;
     // 2026-11-12: a bag item goes on the item row only, as the desktop's drag from the bag does (InventoryWindow.onDrop)
     const rows = this.picked?.from === 'inventory' ? ['item'] : ['item', 'queue', 'applet'];
     if (slot !== null && this.strip.contains(slot) && rows.includes(slot.dataset.row ?? '')) return;
