@@ -1361,9 +1361,9 @@ describe('TaskBar: stackable items, names, focus and room (WndTaskBar.cpp)', () 
     onTouchScreen(() => {
       // 2026-11-12: a landscape phone's room is under the fourteen lines' 384 px in one column, so they stand in two
       // columns of seven (232 px: 50 + 7 x 22 + the bottom edge's 28), each line at least its 22 px
-      expect(menuOn(844, 390).menu.style.transform).toBe(`scale(${(390 - 48 * 720 / 620) / 232})`);
-      // The compact 620px layout fills the width between the phone's side gutters.
-      expect(menuOn(750, 342).menu.style.transform).toBe(`scale(${(342 - 48 * (718 / 620)) / 232})`);
+      expect(menuOn(844, 390).menu.style.transform).toBe(`scale(${(390 - 48 * 576 / 620) / 232})`);
+      // The compact 620px layout takes 80% of the width between the phone's side gutters (2026-11-12, owner).
+      expect(menuOn(750, 342).menu.style.transform).toBe(`scale(${(342 - 48 * (574 / 620)) / 232})`);
       // a tall touch screen keeps one column
       expect(menuOn(1024, 900).menu.style.width).toBe('192px');
     });
@@ -1396,7 +1396,7 @@ describe('TaskBar: stackable items, names, focus and room (WndTaskBar.cpp)', () 
     Object.defineProperty(touch, 'pointerType', { value: 'touch' });
     document.body.dispatchEvent(touch);
     bar.update(newVagrantWithBar(), BAR_DATA);
-    expect(menu.style.transform).toBe(`scale(${(440 - 48 * (720 / 620)) / 384})`);
+    expect(menu.style.transform).toBe(`scale(${(440 - 48 * (576 / 620)) / 384})`);
   });
 
   it('keeps the mobile taskbar bounds while typing or clicking Send on a phone', () => {

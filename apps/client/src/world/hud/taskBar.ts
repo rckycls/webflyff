@@ -204,6 +204,11 @@ const START = { left: 26, top: 14, width: 64, height: 20 } as const;
  * the bar allows (a landscape phone's 300 to 340 px holds the 164 px menu about twice).
  */
 const TOUCH_MENU_SCALE = 2;
+/**
+ * 2026-11-12 (owner): a landscape phone's bar is drawn 20% smaller, across and up: this share of the width between the
+ * side gutters (at most 720 px), the height following from its scale. The chat above it takes its width (style.css).
+ */
+const PHONE_BAR_SHARE = 0.8;
 /** `LV2MAXAP` ... `LV5MAXAP` (`WndTaskBar.cpp:1037-1040`): the action points that light the 2nd to 5th action slot. */
 const AP_STEPS = [10, 25, 50, 100] as const;
 /**
@@ -881,7 +886,9 @@ export class TaskBar {
     const mobile = (this.view.matchMedia?.('(pointer: coarse)').matches === true || this.touch()) &&
       (parent?.clientWidth ?? 0) <= 1000;
     // Equal gutters keep the bar centered on the viewport even with an asymmetric notch.
-    const width = mobile ? Math.min(720, Math.max(0, (parent?.clientWidth ?? 0) - 2 * Math.max(safeLeft, safeRight) - 32)) : available;
+    const width = mobile
+      ? Math.round(PHONE_BAR_SHARE * Math.min(720, Math.max(0, (parent?.clientWidth ?? 0) - 2 * Math.max(safeLeft, safeRight) - 32)))
+      : available;
     // a layer not laid out yet is tried again at the next update
     this.dirty = width === 0;
     const layout: TaskBarLayout = mobile ? {

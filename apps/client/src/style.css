@@ -1019,6 +1019,19 @@ fieldset:disabled .btn {
   transform-origin: 50% 0;
 }
 
+@media (max-width: 1000px) and (pointer: coarse) {
+  /* 2026-11-12 (owner): on a landscape phone the screen-centre texts are drawn at half their size, their outline with
+     them: the caption (a level up's) from its top at 184/768, the server messages about their centre at 520/768 */
+  .hud-caption {
+    transform: scale(.5);
+    transform-origin: 50% 0;
+  }
+
+  .hud-messages {
+    transform: translateY(-50%) scale(.5);
+  }
+}
+
 /* The task bar (TaskBar), at the bottom of the layer: the window's picture with its buttons and slots placed by the script,
    drawn smaller (from its bottom left) on a screen narrower than it; the Start menu above its left end, over the windows.
    The holder takes no press itself. */
@@ -2214,6 +2227,11 @@ fieldset:disabled .btn {
     position: absolute; bottom: calc(var(--hud-taskbar-height, 48px) - var(--game-safe-bottom, 0px));
     display: grid; grid-template-columns: minmax(0, 1fr) auto;
     pointer-events: none;
+    /* 2026-11-12 (owner): 20% smaller across and up, as the bar under it: laid out at the bar's width / .8 and drawn at .8
+       from its bottom left, so that it stands as wide as the bar, on it; the line keeps its 16 px (no zoom on iOS) */
+    width: calc(var(--hud-taskbar-width, 100%) / .8);
+    transform: scale(.8);
+    transform-origin: 0 100%;
   }
   .hud-chat form, .hud-chat .chat-toolbar,
   .hud-chat[data-expanded] .chat-transcript { pointer-events: auto; }

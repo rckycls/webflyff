@@ -1,6 +1,6 @@
 # Closed beta fixes (2026-11-12): checkpoint
 
-Branch `beta-fixes`, from main `f6a955e`. Four fixes, and a fifth the owner asked for after (section 5). No convert
+Branch `beta-fixes`, from main `f6a955e`. Four fixes, and two the owner asked for after (sections 5 and 6). No convert
 needed (no converter or asset change).
 
 ## 1. The debug overlay is hidden on the live site
@@ -59,14 +59,33 @@ The owner could not see what they typed in the chat or the private shop's name: 
 - Not checked on a real phone here (no soft keyboard in Chromium's emulation): please try the chat and the shop name on
   your phone.
 
+## 6. Phone: smaller centre texts, task bar and chat
+
+The owner found them too big on the phone. Measured before (Pixel 7 sideways, 863 x 360): the level-up caption's text
+17 px, the server message lines 12 px, the task bar 720 x 56, the chat above it 720 x 71.
+
+- Centre texts at **half size** (phone block after `.hud-caption > div` in `style.css`): `.hud-caption` `scale(.5)` from
+  its top (still at 184/768), `.hud-messages` `translateY(-50%) scale(.5)` (still centred at 520/768). The outline
+  shrinks with the text. The message lines are now drawn 6 px high: if that is too small to read, raise the `.5`.
+- Task bar **20% smaller**: `PHONE_BAR_SHARE = 0.8` in `taskBar.ts` (the phone width is 80% of what it was, at most 576
+  px; the height follows the scale: 56 -> 45 px). Everything that reads `--hud-taskbar-height` / `--hud-taskbar-width`
+  follows (bag height, Attack/Jump, chat).
+- Chat **20% smaller**: it already takes the bar's width; it is now laid out at width / 0.8 and drawn `scale(.8)` from
+  its bottom left, so it is as wide as the bar, sits on it, and is 20% lower (71 -> 57 px). The chat line keeps a real
+  16 px font, so iPhones don't zoom in when it is tapped.
+- Desktop unchanged. Slots and chat buttons are 20% smaller targets for a finger too.
+
 ## Checks run here
 
 - `npm run typecheck`: clean.
 - `npx vitest run`: 4606 passed, 9 skipped, 0 failed; new tests in `debugOverlay.test.ts`, `keyboardLift.test.ts`, `overlay.test.ts`,
   `hud.test.ts` (task bar item pick, Skill window button), `inventoryWindow.test.ts`, `petWindow.test.ts`.
 - `npm run check:public-build`: ok.
-- e2e `taskBarFinger.spec.ts`: 4/4 and `keyboardLift.spec.ts`: 2/2 (chromium + phone), port 5191. On the phone also `skills.spec.ts` "the bar", `controls.spec.ts` and `topRightIcons.spec.ts`: pass.
-- `style.css` braces: 1450 open, 1450 close, never below 0.
+- e2e (chromium + phone, port 5191): new `taskBarFinger` 4/4, `keyboardLift` 2/2, `phoneSizes` 2/2; also passing:
+  `talking`, `mobileAudit`, `controls`, `landscape`, `questWindow`, `topRightIcons`, `skills` "the bar" (phone).
+  `talking.spec.ts` was changed: its phone check that the chat line does not move when tapped now expects it to go up
+  (section 5), still on the bar.
+- `style.css` braces: 1453 open, 1453 close, never below 0.
 
 ## For the owner: the full e2e
 
@@ -75,6 +94,8 @@ $env:E2E_CLIENT_PORT='5190'; npx playwright test -c apps/client/playwright.confi
 ```
 
 Passing looks like: every test passes, or only failures that main `f6a955e` already has. The tests that touch this
-branch: `taskBarFinger`, `keyboardLift`, `skills`, `mobileUx`, `topRightIcons`, `controls`, `items`, `windows`.
+branch: `taskBarFinger`, `keyboardLift`, `phoneSizes`, `talking`, `mobileAudit`, `landscape`, `skills`, `mobileUx`,
+`topRightIcons`, `controls`, `items`, `windows`. Any phone test that measures the task bar or the chat in pixels may need
+the new sizes (section 6).
 
 Then by hand on the live site after deploy: no corner text on `/play/`; `/play/?stats` shows it.

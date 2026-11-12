@@ -35,7 +35,12 @@ test('talking: chat typing, channels, peaceful NPC dialogue and authoritative bu
   const composerBeforeFocus = (await input.boundingBox())!;
   if (isMobile) {
     await expect(input).not.toBeFocused(); await input.tap();
-    expect(await input.boundingBox()).toEqual(composerBeforeFocus);
+    // 2026-11-12 (owner): focused, the line goes up above the keyboard with the whole world (world/keyboardLift.ts): only
+    // higher, as wide and where it was across, still on the bar (below)
+    await expect(page.locator('.world')).toHaveAttribute('data-keyboard-lift', '');
+    await expect.poll(async () => (await input.boundingBox())!.y).toBeLessThan(composerBeforeFocus.y);
+    const lifted = (await input.boundingBox())!;
+    expect([lifted.x, lifted.width, lifted.height]).toEqual([composerBeforeFocus.x, composerBeforeFocus.width, composerBeforeFocus.height]);
     // A keyboard can reduce the viewport; the composer must stay attached to the taskbar.
     const viewport = page.viewportSize()!;
     await page.setViewportSize({ width: viewport.width, height: viewport.height - 80 });
@@ -44,7 +49,6 @@ test('talking: chat typing, channels, peaceful NPC dialogue and authoritative bu
       return Math.abs(composer.y + composer.height - taskbar.y);
     }).toBeLessThan(1);
     await page.setViewportSize(viewport);
-    await expect.poll(() => input.boundingBox()).toEqual(composerBeforeFocus);
   }
   await expect(input).toBeFocused();
   const chatBox = (await chat.boundingBox())!;
