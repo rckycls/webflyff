@@ -33,8 +33,9 @@ export interface ActionSlotHost {
   running(): boolean;
 }
 
-const WIDTH = 440;
-const HEIGHT = 300;
+// 2026-11-13 (owner, "smaller"): 340 x 220 (was 440 x 300), its cells and list tighter (style.css)
+const WIDTH = 340;
+const HEIGHT = 220;
 
 export class ActionSlotWindow {
   readonly frame: WindowFrame;
@@ -121,7 +122,10 @@ export class ActionSlotWindow {
       button.addEventListener('click', () => this.host.add(skill.skillIndex));
       list.append(button);
     });
-    if (skills.length === 0) list.textContent = 'No skill learned yet.';
+    if (skills.length === 0) {
+      list.textContent = 'No skill learned yet.';
+      list.dataset.empty = '';
+    }
 
     this.frame.body.replaceChildren(row, hint, list);
   }

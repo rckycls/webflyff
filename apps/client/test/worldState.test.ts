@@ -10,7 +10,7 @@ import { OwnState } from '../src/world/OwnState';
 import { HAttr, terrainGround } from '../src/world/sim/collision';
 import type { Ground } from '../src/world/sim/collision';
 import { ActMsg, AniLoop, Mop, Mti, ObjSta, ObjStaF } from '../src/world/sim/constants';
-import { attackSpeed } from '../src/world/sim/params';
+import { Dst, attackSpeed } from '../src/world/sim/params';
 import { wrapAngle } from '../src/world/sim/ActionMover';
 import { Missiles } from '../src/world/combat/missiles';
 import { WorldState, isDie, isLive } from '../src/world/WorldState';
@@ -1943,5 +1943,53 @@ describe('DISGUISE and NODISGUISE (2026-11-10, OnDisguise and OnNoDisguise, DPCl
     expect(gm.added.index).toBe(12); // MI_FEMALE
     world.apply(1, { type: 'disguise', moverIndex: 9999 }); // no such mover: CMover.SetIndex fails, nothing changes
     expect(gm.added.index).toBe(12);
+  });
+});
+
+describe('WorldState: Buff Pang (2026-11-13): the own ADD_OBJ\'s buffs and DOAPPLYUSESKILL', () => {
+  const at = (destParams: number[], adjParams: number[]) => ({ skillTime: 3_600_000, destParams, adjParams });
+  /** Buff Pang's Quick Step (Event), level 2: DST_SPEED 15; and Heap Up (Event), level 1: DST_STA 15 (propSkill, AddSkillProp). */
+  const QUICK_STEP = {
+    id: 317, name: 'Quick Step (Event)', sfxHit: 291, exeTarget: 1, levels: [at([Dst.SPEED, -1], [10, -1]), at([Dst.SPEED, -1], [15, -1])],
+  } as unknown as import('@flyffweb/formats').WebSkill;
+  const HEAP_UP = { ...QUICK_STEP, id: 319, name: 'Heap Up (Event)', levels: [at([Dst.STA, -1], [15, -1])] } as typeof QUICK_STEP;
+  const PANG_BUFFS = [{ buffType: 1, id: 317, level: 2, timeLeft: 3_000_000 }, { buffType: 1, id: 319, level: 1, timeLeft: 3_000_000 }];
+
+  function joined(buffs?: AddedMover['buffs']) {
+    const data = { ...combatData(), skills: new Map([[QUICK_STEP.id, QUICK_STEP], [HEAP_UP.id, HEAP_UP]]) };
+    const added: AddedMover = { ...ownAdded(1), pos: AT, angle: 90, state: ObjSta.STAND, ...(buffs ? { buffs } : {}) };
+    const own = new OwnState(data, added, STARTER_EQUIPMENT);
+    const { world } = newWorld(data, terrainGround(() => 0), own);
+    world.apply(OWN_ID, { type: 'addMover', mover: added }, true);
+    world.takeChanges();
+    return { world, own, self: world.self()! };
+  }
+
+  it('the buffs kept over a log-out show, and add their numbers as Neuz\'s CBuffSkill::Apply does at the JOIN', () => {
+    const plain = joined();
+    const { world, own, self } = joined(PANG_BUFFS);
+    expect(self.buffs.list(world.nowMs()).map((b) => [b.id, b.level])).toEqual([[317, 2], [319, 1]]);
+    expect(own.effective().sta).toBe(plain.own.effective().sta + 15);
+    expect(own.adj.get(Dst.SPEED)).toBe(15);
+    expect(self.act.body.speed).toBeGreaterThan(plain.self.act.body.speed);
+    // Heap Up's end takes off what it added, no more
+    own.apply({ type: 'resetDestParam', dst: Dst.STA, adj: 15 }, OWN_ID);
+    expect(own.effective().sta).toBe(plain.own.effective().sta);
+  });
+
+  it('DOAPPLYUSESKILL plays the skill\'s effect on its target, the lasting one not while the caster has the buff', () => {
+    const { world } = joined();
+    world.apply(OWN_ID, { type: 'doApplySkill', targetId: OWN_ID, skill: 318, level: 2 });
+    expect(world.takeChanges().combat).toEqual([
+      { kind: 'skillHit', casterId: OWN_ID, targetId: OWN_ID, skill: 318, level: 2, landed: false, buffOn: false },
+    ]);
+    world.apply(OWN_ID, { type: 'setSkillState', targetId: OWN_ID, buffType: 1, id: 317, level: 2, time: 3_600_000 });
+    world.apply(OWN_ID, { type: 'doApplySkill', targetId: OWN_ID, skill: 317, level: 2 });
+    expect(world.takeChanges().combat).toEqual([
+      { kind: 'skillHit', casterId: OWN_ID, targetId: OWN_ID, skill: 317, level: 2, landed: false, buffOn: true },
+    ]);
+    // a target not in view: nothing
+    world.apply(OWN_ID, { type: 'doApplySkill', targetId: 4242, skill: 317, level: 2 });
+    expect(world.takeChanges().combat).toEqual([]);
   });
 });

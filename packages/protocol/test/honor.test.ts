@@ -104,3 +104,20 @@ describe('the own honour counts, after the pockets and the mute time (ObjSeriali
     expect(own?.honorCounts).toBeUndefined();
   });
 });
+
+describe('the own buffs at the own ADD_OBJ\'s end (2026-11-13, ObjSerializeOpt.cpp:274-275, :354, :757-761)', () => {
+  it('after m_idCampus and m_nCampusPoint: the buffs kept over a log-out, on the mover and its own part', () => {
+    const buffs = [{ buffType: 1, id: 317, level: 2, timeLeft: 3_000_000 }, { buffType: 3, id: 26205, level: -5, timeLeft: 0 }];
+    const [message] = read([writeAddSelf(PLAYER, selfWith({ ...newVagrantOwn(), buffs }))]);
+    if (message?.value.type !== 'addMover') throw new Error('no ADD_OBJ');
+    expect(message.value.mover.buffs).toEqual(buffs);
+    expect(message.value.mover.player?.own?.buffs).toEqual(buffs);
+  });
+
+  it('a message that ends after the honour counts has none, its counts read', () => {
+    const counts = honorCounts({ 3: 2 });
+    const own = ownOf(writeAddSelf(PLAYER, selfWith({ ...newVagrantOwn(), honorCounts: counts })));
+    expect(own?.honorCounts).toEqual(counts);
+    expect(own?.buffs).toBeUndefined();
+  });
+});

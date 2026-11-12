@@ -220,9 +220,10 @@ export type WorldMessage = ChatMessage | NpcMessage | ShopMessage | QuestMessage
    */
   | { type: 'useSkill'; skill: number; level: number; targetId: number; useType: number; castingTime: number }
   /**
-   * 2026-11-05: the mover the message is about applied a skill to `targetId` (`OnDoApplySkill`, DPClient.cpp:15219-15243).
-   * Neuz runs the client's `DoApplySkill`, which for a buff only tests `HasBuff`; the buff comes as SETSKILLSTATE, its
-   * stats as SETDESTPARAM and its effect as CREATESFXOBJ (`CCtrl::ApplySkill`, `_Common/Ctrl.cpp:1115-1126`).
+   * 2026-11-05: the mover the message is about applied a skill to `targetId` (`OnDoApplySkill`, DPClient.cpp:15181-15205).
+   * Neuz runs the client's `DoApplySkill`, whose `CreateSkillSfx` plays the skill's effect (Ctrl.cpp:1662, :878-997); the
+   * buff comes as SETSKILLSTATE and its stats as SETDESTPARAM. Sent for Buff Pang's buffs, a trap's skill and an active
+   * skill (2026-11-13: the client plays it, `WorldState`).
    */
   | { type: 'doApplySkill'; targetId: number; skill: number; level: number }
   /** The world server refused the own USESKILL (`OnClearUseSkill`): the request is answered, and nothing begins. */
@@ -500,6 +501,11 @@ export interface OwnCharacter {
    * before it (the inventory, the banks, the pockets) could not be read.
    */
   honorCounts?: number[];
+  /**
+   * 2026-11-13: the own buffs at the message's end (`CBuffMgr::Serialize`, ObjSerializeOpt.cpp:757-761), after
+   * `m_idCampus` and `m_nCampusPoint`; absent when there are none or the reader stopped before them.
+   */
+  buffs?: AddedBuff[];
 }
 
 /** 2026-11-10 (bank-mail): `m_nSlot`, `m_dwGoldBank[3]`, `m_idPlayerBank[3]`, `m_Bank[3]`. */

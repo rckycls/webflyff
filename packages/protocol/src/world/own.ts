@@ -1,8 +1,9 @@
 import type { ArReader } from '../ar/ArReader';
 import { ProtocolError } from '../errors';
+import { readBuffs } from './buffs';
 import { readHonorCounts } from './honor';
 import { readPet } from './pets';
-import type { InventoryItem, OwnBank, OwnCharacter, SkillSlot } from './types';
+import type { AddedBuff, InventoryItem, OwnBank, OwnCharacter, SkillSlot } from './types';
 
 /**
  * `MAX_SKILL_JOB` (`_Common/Mover.h:96-100`, the `__VER >= 10` branch): `MAX_JOB_SKILL` 3 + `MAX_EXPERT_SKILL` 20 +
@@ -43,9 +44,11 @@ export function readOwnAfterEquipment(r: ArReader, numbers: OwnNumbers): OwnChar
   if (bank !== undefined && banks?.containers !== undefined) bank.containers = banks.containers;
   // 2026-11-11 (honour window): past the pockets and the mute time, the honour counts
   const honorCounts = banks?.complete === true ? readHonorPart(r) : undefined;
-  // The reader stops here, after the honour counts, or wherever something before them failed. The C++ goes on with
-  // `m_idCampus` and `m_nCampusPoint` (:637-638), then the buffs. None of them is read yet: they are skipped, and whatever
-  // reads them next replaces this `skipRest`.
+  // 2026-11-13 (owner, "logging out removes the buffs from Buff Pang"): then `m_idCampus` and `m_nCampusPoint` (:637-638),
+  // the player part's end, and the own buffs (`m_buffs.Serialize`, :757-761), which the server keeps over a log-out
+  // (SaveSkillInfluence) and Neuz shows and applies at once (`CBuffSkill::Apply`, buff.cpp:190-193)
+  const buffs = honorCounts !== undefined ? readOwnBuffs(r) : undefined;
+  // whatever follows, or wherever something before failed
   r.skipRest();
   return {
     ...numbers, skills, inventory, inventoryError, ...(inventorySlots ? { inventorySlots } : {}),
@@ -53,7 +56,20 @@ export function readOwnAfterEquipment(r: ArReader, numbers: OwnNumbers): OwnChar
     // 2026-11-10 (Summon Angel): only when there is an angel's (both 0 before any summon)
     ...(angelExp !== undefined && angelLevel !== undefined && (angelExp !== 0n || angelLevel !== 0) ? { angelExp, angelLevel } : {}),
     ...(honorCounts !== undefined ? { honorCounts } : {}),
+    ...(buffs !== undefined && buffs.length > 0 ? { buffs } : {}),
   };
+}
+
+/** `m_idCampus`, `m_nCampusPoint` (read past), then `CBuffMgr::Serialize`'s buffs; undefined if the message ends early. */
+function readOwnBuffs(r: ArReader): AddedBuff[] | undefined {
+  try {
+    r.u32(); // m_idCampus
+    r.i32(); // m_nCampusPoint
+    return readBuffs(r);
+  } catch (error) {
+    if (!(error instanceof ProtocolError)) throw error;
+    return undefined;
+  }
 }
 
 /** `MAX_POCKET` (`_Common/Pocket.h:31`), and each pocket's slots: `POCKET_SLOT_SIZE_0` 6, `POCKET_SLOT_SIZE_1_2` 24 (:32-33). */

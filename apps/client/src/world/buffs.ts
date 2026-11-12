@@ -45,6 +45,11 @@ export class MoverBuffs {
     this.buffs.set(key, { buffType, id, level, totalMs: total, since: now });
   }
 
+  /** `HasBuff( wType, wId )`: whether one of that kind and id is on. */
+  has(buffType: number, id: number): boolean {
+    return this.buffs.has(`${buffType}:${id}`);
+  }
+
   /** REMOVESKILLINFULENCE's: the buff of that kind and id goes. */
   remove(buffType: number, id: number): void {
     this.buffs.delete(`${buffType}:${id}`);
@@ -76,4 +81,47 @@ export class MoverBuffs {
         return { buffType, id, level, totalMs: total, leftMs: total > 0 ? Math.max(0, total - (now - since)) : 0 };
       });
   }
+}
+
+/** `BUFF_ITEM` and `BUFF_SKILL` (`_Common/buff.h`): the buffs whose `Apply` is `ApplyParam` (a pet's and a worn set's are not). */
+const BUFF_ITEM = 0;
+export const BUFF_SKILL = 1;
+/**
+ * What `ApplyParam` does not hand to `SetDestParam` (MoverActEvent.cpp:205-470): DST_HP, DST_MP, DST_FP (38-40, a heal's,
+ * not a buff's), DST_CLEARBUFF 49, DST_CHR_STEALHP_IMM 50, DST_CHR_STEALHP 56, DST_CURECHR 10006.
+ */
+const NOT_SET = new Set([38, 39, 40, 49, 50, 56, 10006]);
+/** DST_CHRSTATE 64 with CHS_STUN, CHS_DARK, CHS_INVISIBILITY, CHS_POISON or CHS_BLEEDING: a state of its own (SetStun...). */
+const CHRSTATE = 64;
+const STATE_BITS = 0x8 | 0x100 | 0x400 | 0x800 | 0x8000;
+
+/** A skill level's or an item's `dwDestParam` and `nAdjParamVal` (-1 for none). */
+export interface BuffParams {
+  destParams?: readonly number[];
+  adjParams?: readonly number[];
+}
+
+/**
+ * 2026-11-13 (owner, Buff Pang's buffs after a log-out): what the own ADD_OBJ's buffs add to the own numbers. Neuz applies
+ * each as it reads it (`CBuffMgr::Process` -> `CBuffSkill::Apply`, `CBuffItem::Apply`, buff.cpp:190-193, :327-330, :455-465):
+ * `ApplyParam` with no send, its first two parameters to `SetDestParam` (MoverActEvent.cpp:216-470), where the server
+ * sends no SETDESTPARAM for them. A skill's are its level's (`AddSkillProp`), an item's its own (`ItemProp`).
+ */
+export function joinBuffParams(
+  buffs: ReadonlyArray<{ buffType: number; id: number; level: number }>,
+  skill: (id: number, level: number) => BuffParams | undefined,
+  item: (id: number) => BuffParams | undefined,
+): Array<{ dst: number; adj: number }> {
+  const params: Array<{ dst: number; adj: number }> = [];
+  for (const buff of buffs) {
+    const from = buff.buffType === BUFF_SKILL ? skill(buff.id, buff.level)
+      : buff.buffType === BUFF_ITEM || buff.buffType === BUFF_ITEM2 ? item(buff.id) : undefined;
+    for (let i = 0; i < 2; i++) {
+      const dst = from?.destParams?.[i] ?? -1;
+      const adj = from?.adjParams?.[i] ?? 0;
+      if (dst < 1 || NOT_SET.has(dst) || (dst === CHRSTATE && (adj & STATE_BITS) !== 0)) continue;
+      params.push({ dst, adj });
+    }
+  }
+  return params;
 }

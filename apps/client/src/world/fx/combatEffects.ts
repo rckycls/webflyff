@@ -207,7 +207,10 @@ function playSkillHit(event: Extract<CombatEvent, { kind: 'skillHit' }>, world: 
   const lasting = skill.sfxLasting ?? NO_SFX;
   const up1 = (p: Vec3): Vec3 => [p[0], f32(p[1] + SKILL_SFX_RAISE), p[2]];
   if (time > 0 && lasting !== NO_SFX) {
-    out.effect({ xi: lasting, pos: caster.act.body.pos, followId: target.objectId, followDest: true, seconds: Math.trunc(time / 1000) });
+    // 2026-11-13: not while the caster has the buff (`HasBuff`, Ctrl.cpp:929-937): DOAPPLYUSESKILL comes after SETSKILLSTATE
+    if (event.buffOn !== true) {
+      out.effect({ xi: lasting, pos: caster.act.body.pos, followId: target.objectId, followDest: true, seconds: Math.trunc(time / 1000) });
+    }
   } else {
     if (skill.sfxHit !== NO_SFX && skill.exeTarget !== Ext.MELEEATK) {
       out.effect({ xi: skill.sfxHit, pos: up1(target.act.body.pos), followId: target.objectId, followDest: true });

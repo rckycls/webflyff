@@ -558,6 +558,16 @@ export class OwnState {
     this.adjust = this.withBuffs(equipAdjust(this.worn));
   }
 
+  /**
+   * 2026-11-13: the buff layer from the own ADD_OBJ's buffs (`joinBuffParams`), as Neuz applies them at the JOIN with no
+   * SETDESTPARAM from the server: from nothing, each as SETDESTPARAM would add it.
+   */
+  applyJoinBuffs(params: ReadonlyArray<{ dst: number; adj: number }>): void {
+    this.buffAdjust.clear();
+    this.adjust = this.withBuffs(equipAdjust(this.worn));
+    for (const { dst, adj } of params) this.buffParam(dst, (v) => (dst === Dst.CHRSTATE ? v | adj : v + adj));
+  }
+
   /** `m_adjParamAry` as the worn items fill it (`equipAdjust`): what the formulas' `GetParam` reads. */
   get adj(): ParamAdjust {
     return this.adjust;
@@ -732,8 +742,8 @@ export class OwnState {
         this.buffParam(message.dst, (v) => (message.dst === Dst.CHRSTATE ? v | message.adj : v + message.adj));
         return [];
       case 'resetDestParam':
-        // Only what the layer holds comes off: a buff from before this world's JOIN (its own ADD_OBJ's buffs are not
-        // read, plan Decisions 9) left nothing here, and its end must not take the numbers under the server's
+        // Only what the layer holds comes off (since 2026-11-13 the own ADD_OBJ's buffs are in it, `applyJoinBuffs`): what
+        // the browser did not know must not take the numbers under the server's
         this.buffParam(message.dst, (v) => {
           if (message.dst === Dst.CHRSTATE) return v & ~message.adj;
           if (Math.sign(v) !== Math.sign(message.adj)) return v;

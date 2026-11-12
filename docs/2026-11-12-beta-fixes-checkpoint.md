@@ -159,6 +159,31 @@ and chat 30% smaller again; then the quick slots' pictures bigger and cut round,
    - Neuz's own rule stays: an item with a cast (some potions) is refused while moving: "You can use it when you stand up."
      (TID_PK_STAND_LIMIT, `IsUseItemReadyTime`). The tap works; that item waits for the player to stop.
 
+## 10. Phone layout round, and Buff Pang (2026-11-13)
+
+1. **Action Slot window smaller**: 340 x 220 (was 440 x 300), cells 46 px high, 28 px icons, tighter list
+   (`actionSlotWindow.ts`, style.css). "No skill learned yet." spans the list.
+2. **Target bar back at the top centre** (monster name and HP), at .7, as Neuz's (it was 96 px down, under the icons). On
+   a phone 640 px wide or less it sits 52 px left of the centre, between the status window and the icons.
+3. **Top-right icons closer**: each press area is the icon plus 4 px (was 48 px high and the icon plus 14 px wide): two
+   rows of 36 px. Stats (test builds, `?stats`) in a third row at the left.
+4. **Action Slot button at Jump's top right**: as big as Jump, up and right of it, above the second circle and clear of
+   it, of Jump, of the top circle and of the icons (also on 730 x 320). Its picture is the bar's own action button's,
+   the S (`icon_ActionSkill.dds`, set as `--action-icon`). The chevron `icons/action.svg` is gone. A wider touch screen:
+   above Jump at the right.
+5. **Buff Pang**:
+   - **Buffs gone after a log-out**: the server keeps them (`SaveSkillInfluence`) and sends them at the end of the own
+     ADD_OBJ (`m_buffs.Serialize`, ObjSerializeOpt.cpp:274-275, :354), which the browser never read. Now
+     `readOwnAfterEquipment` reads `m_idCampus`, `m_nCampusPoint` and the buffs (packages/protocol `own.ts`, `addObj.ts`),
+     the icons show at once, and their numbers are applied as Neuz's `CBuffSkill::Apply` / `CBuffItem::Apply` do at the
+     JOIN (`joinBuffParams`, `OwnState.applyJoinBuffs`): STA, speed (the run too), attack speed and so on. The old
+     carry-over across a world change (`carriedBuffs`) is gone: the new world's ADD_OBJ brings them.
+   - **No effect and no sound**: DOAPPLYUSESKILL was read and dropped. Now `WorldState` plays the skill's effect on the
+     target as `OnDoApplySkill` → `CreateSkillSfx` does (Buff Pang's four: XI 291, with "PcSkillL-quickstep.wav"); a
+     lasting effect not while the caster has the buff (`HasBuff`). The server also sends it for traps and a skill's
+     active skill: those now show their effect too, as in Neuz. The NPC does not move in Neuz either.
+   - Not done: a pet's buff (`CBuffPet::Apply`) and a worn set's are not applied at the JOIN (Neuz's own paths).
+
 ## Checks run here
 
 - `npm run typecheck`: clean.
@@ -179,6 +204,12 @@ and chat 30% smaller again; then the quick slots' pictures bigger and cut round,
   status-window test on the phone was outdated by section 7 (Escape now closes the phone's docked chat first, as the
   desktop's): fixed, passes. `travel-items` "a refusal: not standing" (desktop, F1 while W is held 300 ms) is flaky under
   load, 2 of 3 alone; this round does not touch the keys.
+- After section 10: typecheck clean; `npx vitest run` 4636 passed, 9 skipped (new: the own ADD_OBJ's buffs in
+  `honor.test.ts`, `joinBuffParams` and `has` in `buffs.test.ts`, the JOIN's numbers and DOAPPLYUSESKILL's effect in
+  `worldState.test.ts`); `check:public-build` ok; e2e (chromium + phone) `buffs` (Buff Pang's effect XI 291 four times;
+  the buffs at the log-in), `phoneSizes` (the S button at Jump's top right, 730 x 320 too), `topRightIcons` (4 px apart,
+  the target bar at the top clear of the icons at 844, 750, 730, 568), `taskBarFinger`, `skills`, `world`, `mobileAudit`,
+  `landscape`, `controls`, `quests`, `party`, `flight`: all pass (one rerun of my own `phoneSizes` step).
 - `style.css` braces balanced, never below 0.
 - Not checked here: a real phone (keyboard, thumbs on the circles, the chat's small tabs at 0.56, the menu at 0.85).
 
@@ -191,7 +222,7 @@ $env:E2E_CLIENT_PORT='5190'; npx playwright test -c apps/client/playwright.confi
 Passing looks like: every test passes, or only failures that main `f6a955e` already has. The tests that touch this
 branch: `taskBarFinger`, `keyboardLift`, `phoneSizes`, `talking`, `mobileAudit`, `landscape`, `skills`, `mobileUx`, `friends`,
 `gmCommands`, `itemNpcWindows`, `party`, `flight`,
-`topRightIcons`, `controls`, `items`, `windows`, `world`. Any phone test that measures the task bar or the chat in pixels may need
+`topRightIcons`, `controls`, `items`, `windows`, `world`, `buffs`. Any phone test that measures the task bar or the chat in pixels may need
 the new sizes (section 6).
 
 Then by hand on the live site after deploy: no corner text on `/play/`; `/play/?stats` shows it.

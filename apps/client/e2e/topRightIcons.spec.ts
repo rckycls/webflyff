@@ -1,6 +1,7 @@
 // The phone's window shortcuts at the top right (2026-11-10, owner): the Start menu's icons of the important windows, alone,
-// with no box or border, smoothed, half the space between them of the first version; since 2026-11-13 two rows of four
-// left of the Navigator, the target bar under them, the quest list at the left. Stats keeps its text.
+// with no box or border, smoothed; since 2026-11-13 two rows of four left of the Navigator, 4 px between the icons (owner:
+// "reduce the space"), the target bar back at the top centre clear of them, the quest list at the left. Stats keeps its
+// text, in a third row.
 
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
@@ -17,9 +18,12 @@ const SHORTCUTS = [
 const LABELS = [...SHORTCUTS.map(([label]) => label), 'Stats'];
 
 type Box = { x: number; y: number; width: number; height: number };
+/** Whether two boxes share any area. */
+const overlap = (a: Box, b: Box): boolean =>
+  a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
 
-/** The boxes of the visible shortcuts, the toolbar, the status window and the Navigator. */
-async function layout(page: Page): Promise<{ labels: string[]; tools: Box; status: Box; navigator: Box }> {
+/** The boxes of the visible shortcuts, the toolbar, the icons, the status window, the Navigator and the target bar. */
+async function layout(page: Page): Promise<{ labels: string[]; tools: Box; icons: Box[]; status: Box; navigator: Box; target: Box | null }> {
   return page.evaluate(() => {
     const box = (element: Element): Box => {
       const { x, y, width, height } = element.getBoundingClientRect();
@@ -28,7 +32,12 @@ async function layout(page: Page): Promise<{ labels: string[]; tools: Box; statu
     const tools = document.querySelector('.hud-mobile-tools')!;
     const labels = [...tools.querySelectorAll('button')].filter((b) => b.getClientRects().length > 0)
       .map((b) => b.getAttribute('aria-label')!);
-    return { labels, tools: box(tools), status: box(document.querySelector('.hud-status')!), navigator: box(document.querySelector('.hud-navigator')!) };
+    const target = document.querySelector('.hud-target');
+    return {
+      labels, tools: box(tools), icons: [...tools.querySelectorAll('button[data-icon]')].map(box),
+      status: box(document.querySelector('.hud-status')!), navigator: box(document.querySelector('.hud-navigator')!),
+      target: target !== null && target.getClientRects().length > 0 ? box(target) : null,
+    };
   });
 }
 
@@ -92,13 +101,13 @@ test('top-right shortcuts: the important Start-menu icons in two rows of four on
     expect(look.rendering).toBe('auto');
     expect(Math.abs(look.devicePixels - Math.round(look.devicePixels))).toBeLessThan(look.layoutUnit);
     expect(Math.round(look.devicePixels) % 32).toBe(0);
-    // the space between two icons of a row is half the first version's (60 px less the icon)
+    // 2026-11-13 (owner, "reduce the space"): 4 px between two icons of a row, each press area the icon and 4 px
     if (previous !== null && Math.abs(previous.y - look.icon.y) < 1) {
-      expect(look.icon.x - (previous.x + previous.width)).toBeCloseTo((60 - look.icon.width) / 2, 1);
+      expect(look.icon.x - (previous.x + previous.width)).toBeCloseTo(4, 1);
     }
     previous = look.icon;
     icons.push(look.icon);
-    expect((await button.boundingBox())!.height).toBeGreaterThanOrEqual(48);
+    expect((await button.boundingBox())!.height).toBeCloseTo(look.icon.height + 4, 0);
   }
   // Stats has no Start-menu icon: its text, 14 px at least, no box either, after the icons
   const stats = tools.getByRole('button', { name: 'Stats', exact: true });
@@ -110,13 +119,14 @@ test('top-right shortcuts: the important Start-menu icons in two rows of four on
   expect(statsLook.font).toBeGreaterThanOrEqual(14);
   expect(statsLook.background).toBe('rgba(0, 0, 0, 0)');
   expect(statsLook.border).toBe('0px');
-  expect((await stats.boundingBox())!.height).toBeGreaterThanOrEqual(48);
+  expect((await stats.boundingBox())!.height).toBeGreaterThanOrEqual(32);
 
-  // 2026-11-13 (owner): two rows of four, left of the Navigator, the second 48 px under the first, column under column;
-  // the target bar under them; the quest list at the left, under the status window
+  // 2026-11-13 (owner): two rows of four, left of the Navigator, the second an icon and 4 px under the first, column under
+  // column; Stats under them; the target bar at the top centre; the quest list at the left, under the status window
   const [first, second] = [icons.slice(0, 4), icons.slice(4)];
   for (const row of [first, second]) for (const icon of row) expect(icon.y).toBeCloseTo(row[0]!.y, 0);
-  expect(second[0]!.y - first[0]!.y).toBeCloseTo(48, 0);
+  expect(second[0]!.y - first[0]!.y).toBeCloseTo(first[0]!.height + 4, 0);
+  expect((await stats.boundingBox())!.y).toBeGreaterThanOrEqual(second[0]!.y + second[0]!.height);
   first.forEach((icon, i) => expect(second[i]!.x).toBeCloseTo(icon.x, 0));
   const row = await layout(page);
   expect(row.labels).toEqual(LABELS);
@@ -128,7 +138,9 @@ test('top-right shortcuts: the important Start-menu icons in two rows of four on
   await page.evaluate(() => window.__client!.step(1));
   await expect(page.locator('.hud-target')).toBeVisible();
   const target = (await page.locator('.hud-target').boundingBox())!;
-  expect(target.y).toBeGreaterThanOrEqual(row.tools.y + row.tools.height);
+  expect(target.y).toBeCloseTo(0, 0);
+  expect(target.x + target.width / 2).toBeCloseTo(size.width / 2, 0);
+  for (const icon of row.icons) expect(overlap(target, icon), 'target over an icon').toBe(false);
   const tracker = await page.locator('.hud-quest-tracker').evaluate((element) => {
     const style = getComputedStyle(element);
     return { top: parseFloat(style.top), left: parseFloat(style.left), font: parseFloat(style.fontSize) };
@@ -153,6 +165,10 @@ test('top-right shortcuts: the important Start-menu icons in two rows of four on
     expect(narrow.labels, `${width}`).toEqual(labels);
     expect(narrow.tools.x, `${width}`).toBeGreaterThanOrEqual(narrow.status.x + narrow.status.width);
     expect(narrow.tools.x + narrow.tools.width, `${width}`).toBeLessThanOrEqual(narrow.navigator.x);
+    // the target bar at the top, clear of the icons and of the status window (left of the centre at 640 px and less)
+    expect(narrow.target, `${width}`).not.toBeNull();
+    for (const icon of narrow.icons) expect(overlap(narrow.target!, icon), `${width}: target over an icon`).toBe(false);
+    expect(narrow.target!.x, `${width}`).toBeGreaterThanOrEqual(narrow.status.x + narrow.status.width);
     if (width === 568) await page.screenshot({ path: info.outputPath('top-phone-568.png'), clip: { x: 0, y: 0, width, height: 150 } });
   }
 });

@@ -1627,7 +1627,7 @@ fieldset:disabled .btn {
   background: no-repeat 0 0 / 100% 100%;
 }
 /* 2026-11-13 (owner): the shortcuts in two rows of four, which every phone has room for (the narrow phones no longer drop
-   the least used, as the one row did); Stats, in a test build, under them */
+   the least used, as the one row did) */
 /* The floating bar's dimensions and safe-area centering come from its native layout. */
 /* The HUD is already above the home-indicator inset; cancel it for the bar alone. */
 .hud-taskbar.is-floating { bottom: calc(0px - var(--game-safe-bottom, 0px)); }
@@ -1642,8 +1642,15 @@ fieldset:disabled .btn {
     top: 0;
     right: calc(var(--game-safe-right, 0px) + 12px);
   }
-  /* Stats (a test build's, or ?stats) beside the first row, not a third row over the target bar */
-  .hud-mobile-tools > button:not([data-icon]) { grid-column: 5; grid-row: 1; }
+  /* 2026-11-13 (owner, "reduce the space of the icons"): each icon's press area the icon and 4 px (was 48 px high and the
+     icon plus 14 px wide): two rows of 36 px */
+  .hud-mobile-tools > button[data-icon] {
+    width: calc(var(--hud-mobile-icon, 32px) + 4px);
+    height: calc(var(--hud-mobile-icon, 32px) + 4px);
+  }
+  /* Stats (a test build's, or ?stats) in a third row at the left, keeping the icons' width (the target bar is at the top
+     centre now, not under them) and clear of the Action Slot button under the right of the rows */
+  .hud-mobile-tools > button:not([data-icon]) { grid-column: 1 / -1; grid-row: 3; justify-self: start; height: 32px; }
   .world #overlay > button:last-child { display: none; }
   .world #overlay,
   .world:has(.hud-status:not([hidden])) #overlay {
@@ -1689,8 +1696,9 @@ fieldset:disabled .btn {
 }
 .hud-attack::before { inset: 15px; background-image: url('./icons/attack.svg'); }
 .hud-jump::before { inset: 8px; background-image: url('./icons/jump.svg'); }
-/* 2026-11-13 (owner): the Action Slot button (the action slot's run; WorldScreen.actionSlotButton) */
-.hud-action-trigger::before { inset: 9px; background-image: url('./icons/action.svg'); }
+/* 2026-11-13 (owner): the Action Slot button (the action slot's run; WorldScreen.actionSlotButton), with the picture of the
+   bar's action button beside the action slot, the S (icon_ActionSkill.dds, set as --action-icon) */
+.hud-action-trigger::before { inset: 5px; background-image: var(--action-icon, none); }
 
 .hud-attack:active:not(:disabled), .hud-jump:active:not(:disabled), .hud-action-trigger:active:not(:disabled) {
   transform: scale(.95);
@@ -1710,12 +1718,12 @@ fieldset:disabled .btn {
   width: 52px;
   height: 52px;
 }
-/* beside Jump, at its left (a touch screen wider than a phone; a phone's is placed with the quick slots) */
+/* at Jump's top right, 8 px above it (a touch screen wider than a phone; a phone's is placed with the quick slots) */
 .hud-action-trigger {
-  right: calc(var(--game-safe-right, 0px) + 90px);
-  bottom: calc(var(--hud-taskbar-height, 48px) + 108px);
-  width: 52px;
-  height: 52px;
+  right: calc(var(--game-safe-right, 0px) + 16px);
+  bottom: calc(var(--hud-taskbar-height, 48px) + 168px);
+  width: 48px;
+  height: 48px;
 }
 .hud-attack:focus-visible, .hud-jump:focus-visible, .hud-action-trigger:focus-visible { outline: 2px solid #c2e9ff; outline-offset: 3px; }
 
@@ -1921,11 +1929,16 @@ fieldset:disabled .btn {
 }
 @media (max-width: 1000px) and (pointer: coarse) {
   .world-hud { overflow: visible; }
-  /* 2026-11-10 (owner's layout): under the window shortcuts; 2026-11-13: under their two rows (2 x 48 px), which a narrow
-     phone's target bar would meet */
-  .hud-target { top: 96px; transform: scale(.7); transform-origin: top center; }
+  /* 2026-11-13 (owner, "bring back the monster HP and name on the middle top"): at the top centre, as Neuz's, at .7 (it had
+     gone under the window shortcuts' rows) */
+  .hud-target { top: 0; transform: scale(.7); transform-origin: top center; }
   /* layered boss HP: 20 px under the bar's .7 scale is 14 px on the screen */
   .hud-target-bars { font-size: 20px; margin-top: -4px; }
+}
+/* a phone 640 px wide or less: 52 px left of the centre, between the status window and the shortcuts (from the right: the
+   Navigator's 100 px and four 36 px icons), which the centre would meet */
+@media (max-width: 640px) and (pointer: coarse) {
+  .hud-target { left: calc(50% - 52px); }
 }
 
 /* The Start menu opens where Piece 3's joystick stands, under the windows' layer: it hides while the menu is open
@@ -2651,6 +2664,9 @@ fieldset:disabled .btn {
     --quick-radius: 118px;
     --jump-size: 56px;
     --jump-out: 138px;
+    /* the Action Slot button's centre from Attack's, to the left and up: at Jump's top right, over the second circle */
+    --trigger-x: 66px;
+    --trigger-y: 164px;
   }
   .hud-attack {
     width: var(--attack-size); height: var(--attack-size);
@@ -2662,11 +2678,12 @@ fieldset:disabled .btn {
     right: calc(var(--attack-right) + (var(--attack-size) - var(--jump-size)) / 2 + var(--jump-out));
     bottom: calc(var(--attack-bottom) + (var(--attack-size) - var(--jump-size)) / 2 + var(--jump-out));
   }
-  /* 2026-11-13 (owner): the Action Slot button beside Jump, at its left, as big, 8 px apart */
+  /* 2026-11-13 (owner): the Action Slot button at Jump's top right ("move it on the right top of Jump"), as big, over the
+     second circle and clear of it, of Jump and of the top circle; under the window shortcuts on a 320 px high phone */
   .hud-action-trigger {
     width: var(--jump-size); height: var(--jump-size);
-    right: calc(var(--attack-right) + (var(--attack-size) - var(--jump-size)) / 2 + var(--jump-out) + var(--jump-size) + 8px);
-    bottom: calc(var(--attack-bottom) + (var(--attack-size) - var(--jump-size)) / 2 + var(--jump-out));
+    right: calc(var(--attack-right) + var(--attack-size) / 2 + var(--trigger-x) - var(--jump-size) / 2);
+    bottom: calc(var(--attack-bottom) + var(--attack-size) / 2 + var(--trigger-y) - var(--jump-size) / 2);
   }
   .hud-quick-slots { display: block; position: absolute; inset: 0; pointer-events: none; }
   .hud-quick-slot,
@@ -2718,30 +2735,31 @@ fieldset:disabled .btn {
   /* 2026-11-13 (owner): the Action Slot window (actionSlotWindow.ts): its five slots, each skill with × to take it out, a
      line on the combo order, and the skills a tap adds after the last, greyed where Neuz's rules refuse them */
   .hud-action-slot-window > .hud-window-body {
-    display: flex; flex-direction: column; gap: 6px; box-sizing: border-box; padding: 6px; overflow: hidden;
-    color: #382b20; font: 12px/1.3 Verdana, Geneva, Tahoma, sans-serif; background: #fff6eb;
+    display: flex; flex-direction: column; gap: 4px; box-sizing: border-box; padding: 4px; overflow: hidden;
+    color: #382b20; font: 11px/1.25 Verdana, Geneva, Tahoma, sans-serif; background: #fff6eb;
   }
-  .action-slot-row { flex: none; display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; }
+  .action-slot-row { flex: none; display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; }
   .action-slot-cell {
     position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
-    min-height: 62px; padding: 3px; border: 1px solid #d7ac8f; border-radius: 5px; background: #fffaf5; text-align: center;
+    min-height: 46px; padding: 2px; border: 1px solid #d7ac8f; border-radius: 5px; background: #fffaf5; text-align: center;
   }
   .action-slot-cell[data-empty] { color: #b9a28f; font-size: 14px; background: #f4e8dc; }
-  .action-slot-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
-  .action-slot-icon { flex: none; width: 32px; height: 32px; background: no-repeat 0 0 / 100% 100%; }
+  .action-slot-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 9px; }
+  .action-slot-icon { flex: none; width: 28px; height: 28px; background: no-repeat 0 0 / 100% 100%; }
   .action-slot-cell [data-action-slot='remove'] {
-    position: absolute; top: -6px; right: -6px; width: 26px; height: 26px; min-height: 0; padding: 0; border: 1px solid #ba9377;
-    border-radius: 50%; background: #fff1df; color: #8a2b1f; font: bold 15px/1 Arial, sans-serif;
+    position: absolute; top: -5px; right: -5px; width: 22px; height: 22px; min-height: 0; padding: 0; border: 1px solid #ba9377;
+    border-radius: 50%; background: #fff1df; color: #8a2b1f; font: bold 13px/1 Arial, sans-serif;
   }
-  .action-slot-hint { flex: none; margin: 0; font-size: 10px; color: #6b5a4c; }
+  .action-slot-hint { flex: none; margin: 0; font-size: 9px; color: #6b5a4c; }
   .action-slot-skills {
     flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y;
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(124px, 1fr)); gap: 4px; align-content: start;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 3px; align-content: start;
   }
   .action-slot-skill {
-    display: flex; align-items: center; gap: 6px; min-height: 38px; padding: 2px 6px; border: 1px solid #d7ac8f;
-    border-radius: 5px; background: #fffaf5; color: inherit; font: inherit; font-size: 11px; text-align: left;
+    display: flex; align-items: center; gap: 4px; min-height: 32px; padding: 1px 4px; border: 1px solid #d7ac8f;
+    border-radius: 5px; background: #fffaf5; color: inherit; font: inherit; font-size: 10px; text-align: left;
   }
+  .action-slot-skills[data-empty] { display: block; }
   .action-slot-skill:disabled { opacity: .45; }
   .action-slot-skill > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* 2026-11-12 (owner): the desktop chat docked on the phone's bar (NeuzChat.dock): its 12 px text as on the desktop (not
@@ -2765,6 +2783,8 @@ fieldset:disabled .btn {
     --quick-radius: 98px;
     --jump-size: 44px;
     --jump-out: 106px; /* under the Navigator on a 320 px high phone */
+    --trigger-x: 55px;
+    --trigger-y: 136px;
   }
 }
 

@@ -1,7 +1,7 @@
 // A mover's buffs as the client keeps them (Piece 7 M2, [R §10]): CBuffMgr's client part (`_Common/buff.cpp`).
 
 import { describe, expect, it } from 'vitest';
-import { MoverBuffs } from '../src/world/buffs';
+import { MoverBuffs, joinBuffParams } from '../src/world/buffs';
 
 const SKILL = 1;
 const ITEM2 = 3;
@@ -54,5 +54,28 @@ describe('MoverBuffs (CBuffMgr, buff.cpp)', () => {
     const buffs = new MoverBuffs();
     for (const id of [52, 20, 49]) buffs.add(SKILL, id, 1, 60000, 0);
     expect(buffs.list(0).map((b) => b.id)).toEqual([20, 49, 52]);
+  });
+});
+
+describe('joinBuffParams (2026-11-13: the own ADD_OBJ\'s buffs, as ApplyParam adds them at the JOIN)', () => {
+  it('a skill buff its level\'s first two parameters, an item buff its own; none for a pet\'s, a heal or a state', () => {
+    const skill = (id: number, level: number) => {
+      if (id === 317) return { destParams: [11, -1], adjParams: [level * 5 + 5, -1] }; // Quick Step (Event): DST_SPEED
+      if (id === 50) return { destParams: [64, 38], adjParams: [0x8, 100] }; // a stun (CHS_STUN) and a heal (DST_HP)
+      return undefined;
+    };
+    const item = (id: number) => (id === 26205 ? { destParams: [1, 2, 3], adjParams: [4, 5, 6] } : undefined);
+    expect(joinBuffParams([
+      { buffType: SKILL, id: 317, level: 2 }, { buffType: 0, id: 26205, level: 1 }, { buffType: ITEM2, id: 26205, level: 99 },
+      { buffType: 2, id: 317, level: 1 }, { buffType: SKILL, id: 50, level: 1 }, { buffType: SKILL, id: 999, level: 1 },
+    ], skill, item)).toEqual([
+      { dst: 11, adj: 15 }, { dst: 1, adj: 4 }, { dst: 2, adj: 5 }, { dst: 1, adj: 4 }, { dst: 2, adj: 5 },
+    ]);
+  });
+
+  it('MoverBuffs.has: HasBuff', () => {
+    const buffs = new MoverBuffs();
+    buffs.add(SKILL, 317, 2, 1000, 0);
+    expect([buffs.has(SKILL, 317), buffs.has(0, 317), buffs.has(SKILL, 318)]).toEqual([true, false, false]);
   });
 });

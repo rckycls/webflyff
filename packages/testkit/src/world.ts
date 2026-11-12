@@ -818,6 +818,8 @@ function writeBanks(w: ArWriter, banks: readonly (readonly InventoryItem[])[]): 
  * by default) and `dwPetId` (`own.petSlot`, or `NULL_ID`), and ends there.
  * 2026-11-11 (honour window): with `own.honorCounts` too, it goes on with three pockets not there, `m_dwMute` 0 and the
  * counts, and ends there.
+ * 2026-11-13: with `own.buffs` too (the honour counts then all 0 unless given), `m_idCampus` and `m_nCampusPoint` 0 and the
+ * buffs (`m_buffs.Serialize`, ObjSerializeOpt.cpp:274-275, :354): the message's end.
  */
 export function writeAddSelf(
   objectId: number, p: AddedMover,
@@ -870,15 +872,27 @@ export function writeAddSelf(
     .u8(0).u8(0).u8(0) // m_nAttackResistLeft, m_nAttackResistRight, m_nDefenseResist
     .i64(own.angelExp ?? 0n).i32(own.angelLevel ?? 0); // m_nAngelExp, m_nAngelLevel (__VER >= 8; 2026-11-10, Summon Angel)
   writeInventory(w, own.inventory, player.equipmentObjectIds);
-  if (own.petSlot !== undefined || options.banks !== undefined || own.honorCounts !== undefined) {
+  if (own.petSlot !== undefined || options.banks !== undefined || own.honorCounts !== undefined || own.buffs !== undefined) {
     writeBanks(w, options.banks ?? []);
     w.u32(own.petSlot ?? NULL_ID); // dwPetId (__VER >= 9, __PET_0410)
   }
-  if (own.honorCounts !== undefined) {
+  if (own.honorCounts !== undefined || own.buffs !== undefined) {
     // 2026-11-11 (honour window): three pockets not there, m_dwMute, the counts (ObjSerializeOpt.cpp:604-634)
-    if (own.honorCounts.length !== MAX_HONOR_TITLE) throw new Error(`the own character carries ${MAX_HONOR_TITLE} honour counts`);
+    const counts = own.honorCounts ?? new Array<number>(MAX_HONOR_TITLE).fill(0);
+    if (counts.length !== MAX_HONOR_TITLE) throw new Error(`the own character carries ${MAX_HONOR_TITLE} honour counts`);
     w.u8(0).u8(0).u8(0).u32(0);
-    for (const count of own.honorCounts) w.i32(count);
+    for (const count of counts) w.i32(count);
+  }
+  if (own.buffs !== undefined) {
+    // 2026-11-13: m_idCampus, m_nCampusPoint, then CBuffMgr::Serialize: the count, and per buff wType, wId, the level (a
+    // BUFF_ITEM2's signed seconds) and the time left (ms)
+    w.u32(0).i32(0).u32(own.buffs.length);
+    for (const b of own.buffs) {
+      w.u16(b.buffType).u16(b.id);
+      if (b.buffType === 3) w.i32(b.level);
+      else w.u32(b.level);
+      w.u32(b.timeLeft);
+    }
   }
   return scripted(objectId, MessageType.ADD_OBJ, w);
 }

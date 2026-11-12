@@ -70,9 +70,10 @@ test("Buff Pang's Get Buffed! sends its key, and its buffs show", async ({ page 
   expect(r.u32()).toBe(PacketType.NPC_BUFF);
   expect(r.string(64)).toBe('MaFl_Helper');
   r.expectEnd();
-  // CDPSrvr::OnNPCBuff: each buff, then its DOAPPLYUSESKILL
+  // CDPSrvr::OnNPCBuff: each buff, then its DOAPPLYUSESKILL (at the buff's level)
   gateway.pushCache(script.later(EVENT_BUFFS.flatMap((skill) => [
-    writeSetSkillState(SELF_ID, SELF_ID, 1, skill, skill < 319 ? 2 : 1, 3_600_000), writeDoApplySkill(SELF_ID, SELF_ID, skill, 1),
+    writeSetSkillState(SELF_ID, SELF_ID, 1, skill, skill < 319 ? 2 : 1, 3_600_000),
+    writeDoApplySkill(SELF_ID, SELF_ID, skill, skill < 319 ? 2 : 1),
   ])));
   const icons = page.locator('.hud-buffs .hud-buff');
   await expect(icons).toHaveCount(4, ON_FRAMES);
@@ -80,6 +81,27 @@ test("Buff Pang's Get Buffed! sends its key, and its buffs show", async ({ page 
     .toEqual(['Quick Step (Event)', 'Haste (Event)', 'Heap Up (Event)', 'Accuracy (Event)']);
   // the hour's time as the tooltip counts it down: 01:00:00 only in the frame the buff came, then 59:59 (mm:ss under an hour)
   expect(await icons.first().getAttribute('title')).toMatch(/\n(01:00:00|59:5\d)$/);
+  // 2026-11-13 (owner, "the animation and sound aren't there"): each DOAPPLYUSESKILL plays the skill's effect on the player
+  // (CreateSkillSfx's dwSfxObj3, XI 291, whose WAV is PcSkillL-quickstep.wav), as Neuz's OnDoApplySkill does
+  await expect.poll(async () => (await page.evaluate(() => window.__client!.played())).effects.filter((e) => e.xi === 291).length,
+    ON_FRAMES).toBe(4);
+  expect(await errorsOf(page)).toEqual([]);
+});
+
+test("2026-11-13 (owner): Buff Pang's buffs kept over a log-out show at the log-in (the own ADD_OBJ's buffs)", async ({ page }) => {
+  const own = newVagrantOwn();
+  own.buffs = [{ buffType: 1, id: 317, level: 2, timeLeft: 3_000_000 }, { buffType: 1, id: 318, level: 2, timeLeft: 2_000_000 }];
+  await playGateway(page, createWorldScript({
+    playerObjectId: SELF_ID, worldId: MADRIGAL, pos: SQUARE,
+    self: writeAddSelf(SELF_ID, { ...self, player: { ...SELF_PLAYER, own } }), others: [],
+  }));
+  await enterFlaris(page);
+  const icons = page.locator('.hud-buffs .hud-buff');
+  await expect(icons).toHaveCount(2, ON_FRAMES);
+  expect(await icons.locator('img').evaluateAll((imgs) => imgs.map((img) => (img as HTMLImageElement).alt)))
+    .toEqual(['Quick Step (Event)', 'Haste (Event)']);
+  // the time each had left: 50 minutes for Quick Step
+  expect(await icons.first().getAttribute('title')).toMatch(/\n(50:00|49:5\d)$/);
   expect(await errorsOf(page)).toEqual([]);
 });
 
