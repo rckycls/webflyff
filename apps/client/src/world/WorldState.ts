@@ -4,7 +4,7 @@ import type { AddedMover, AddedPlayer, Vec3, WorldMessage } from '@flyffweb/prot
 import type { ServerClock } from '../net/serverClock';
 import { sightBlocked } from './combat/lineOfSight';
 import type { MissileClass, MissileLaunch } from './combat/missiles';
-import { MoverBuffs } from './buffs';
+import { BUFF_SKILL, MoverBuffs, joinBuffParams } from './buffs';
 import type { OwnShots } from './combat/ownShots';
 import type { GameData } from './gameData';
 import { lodestarRate } from './OwnState';
@@ -202,7 +202,8 @@ export type CombatEvent =
   | { kind: 'levelUp'; moverId: number }
   | { kind: 'text'; textId: number; args: string | null }
   | { kind: 'spawned'; moverId: number }
-  | { kind: 'skillHit'; casterId: number; targetId: number; skill: number; landed: boolean; level?: number }
+  /** `buffOn`: the caster has the skill's buff already (`HasBuff`), which keeps a lasting effect from starting again. */
+  | { kind: 'skillHit'; casterId: number; targetId: number; skill: number; landed: boolean; level?: number; buffOn?: boolean }
   | { kind: 'sfxObj'; xi: number; pos: Vec3 | null; moverId: number | null }
   /** Piece 7 M2: a job change, the own or another's: `XI_GEN_LEVEL_UP01` on the mover (`DPClient.cpp:3637`, `:3700`). */
   | { kind: 'jobChanged'; moverId: number }
@@ -502,6 +503,21 @@ export class WorldState {
       case 'createSfxObj': // OnCreateSfxObj (:4038) plays at an absolute position for an object not in view too
         this.createSfxObj(objectId, message);
         return;
+      case 'doApplySkill': {
+        // 2026-11-13 (owner, "Buff Pang's animation and sound aren't there"): OnDoApplySkill (Neuz/DPClient.cpp:15181-15205):
+        // the caster's DoApplySkill on the target, whose CreateSkillSfx (_Common/Ctrl.cpp:1662, :878-997) plays the
+        // skill's effect, with its sound. The server sends it for Buff Pang's buffs (DPSrvr.cpp:8852), a trap's skill
+        // (CommonCtrl.cpp:584) and a skill's active skill (Ctrl.cpp:1703); a mover's own skill makes its effects here
+        // from USESKILL. The buff comes first (SETSKILLSTATE), so a lasting effect is the buff's (HasBuff)
+        const caster = this.byId.get(objectId);
+        if (caster !== undefined && this.byId.has(message.targetId)) {
+          this.combat({
+            kind: 'skillHit', casterId: objectId, targetId: message.targetId, skill: message.skill, level: message.level,
+            landed: false, buffOn: caster.buffs.has(BUFF_SKILL, message.skill),
+          });
+        }
+        return;
+      }
       case 'lordSkillUse': { // 2026-11-11: OnLordSkillUse (:17870-17901): the skill's effects at the Lord and at the target
         const skill = lordSkill(message.skill);
         const target = this.moverByPlayerId(message.targetId);
@@ -903,6 +919,12 @@ export class WorldState {
     }
     if (isSelf && numbers?.objectId === objectId) {
       mover.profileSpeed = () => numbers.profileStats ? numbers.profileStats[12]! / 1000000 : undefined;
+      // 2026-11-13 (owner, Buff Pang's buffs after a log-out): what the own buffs add, as Neuz applies them at the JOIN
+      // (CBuffSkill::Apply), and the run with their DST_SPEED
+      numbers.applyJoinBuffs(joinBuffParams(
+        added.buffs ?? [], (id, level) => this.data.skills.get(id)?.levels[level - 1], (id) => this.data.itemProps.get(id),
+      ));
+      act.body.speed = buffedSpeed(speed, numbers.adj.get(Dst.SPEED) ?? 0);
     }
     act.findMover = (id) => this.byId.get(id)?.act;
     act.hitPoint = () => mover.hp;

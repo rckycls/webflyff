@@ -76,6 +76,7 @@ import { CharacterWindow } from './hud/characterWindow';
 import { escapeWindow, refitWindows } from './hud/frame';
 import { cursorProperties, worldCursor } from './hud/cursors';
 import type { WorldHover } from './hud/cursors';
+import { themeUrl } from './hud/art';
 import type { UiArt } from './hud/art';
 import { Hud } from './hud/hud';
 import { escapeStep } from './hud/escape';
@@ -183,7 +184,6 @@ import type { ItemWindowPacket } from './items/itemWindowFlows';
 const WORLD_NAMES: ReadonlyMap<number, string> = new Map([[1, 'Madrigal'], [2, 'Azria'], [3, 'Coral Island']]);
 import { ItemCast } from './items/itemCast';
 import { MoverBuffs } from './buffs';
-import type { BuffShown } from './buffs';
 import { ReturnScroll } from './items/returnScroll';
 import type { Refusal, UseCheck } from './items/travelItems';
 import { castFill } from './items/travelItems';
@@ -420,8 +420,6 @@ export class WorldScreen {
    * window and flow; the box also shows the guild war's Blinkwing refusal.
    */
   private itemCast: ItemCast | undefined;
-  /** Piece 7 M3: the own buffs kept from the world left by a REPLACE, for the new world's own mover. */
-  private carriedBuffs: BuffShown[] = [];
   private castGauge: CastGauge | undefined;
   private messageBox: MessageBox | undefined;
   private selectVillage: SelectVillageWindow | undefined;
@@ -828,10 +826,6 @@ export class WorldScreen {
     // an ending while the waiting events are handled (the map is not available) ends the ones after it too
     if (this.over) return;
     if (event.type === 'transition') {
-      // Piece 7 M3 (final review, Important 1): the own buffs go with the player, as the new world's own ADD_OBJ carries
-      // them (CMover::Serialize's m_buffs), which the browser does not read yet (M2 Decision 9)
-      const own = this.world?.self();
-      this.carriedBuffs = own === undefined ? [] : own.buffs.list(this.world!.nowMs());
       this.disposeWorld();
       this.element.replaceChildren(h('p', { class: 'world-status', role: 'status' }, LOADING_TEXT), this.leaveButton);
       const folder = this.data!.worlds.get(event.worldId);
@@ -891,15 +885,7 @@ export class WorldScreen {
     this.apply(messages, true);
     // 2026-11-05: the server's numbers (awakenings, sets, sockets) stay over a world change, as it sends them only anew
     if (this.own !== previousOwn) this.own?.keepServerStats(previousOwn);
-    // Piece 7 M3: the buffs the player had in the world before, with the time each had left
-    const self = this.world.self();
-    const now = this.world.nowMs();
-    // (2026-11-05: a BUFF_ITEM2's level is the seconds it has left, its time the server's to end)
-    for (const b of this.carriedBuffs) {
-      if (b.buffType === 3) self?.buffs.add(b.buffType, b.id, Math.ceil(b.leftMs / 1000), 0, now);
-      else self?.buffs.add(b.buffType, b.id, b.level, b.totalMs > 0 ? b.leftMs : 0, now);
-    }
-    this.carriedBuffs = [];
+    // (2026-11-13: the own buffs come with the new world's own ADD_OBJ, read now, as at a log-in: none is carried over)
     this.loadTimer = setTimeout(() => { if (generation === this.stageGeneration) this.end(TOO_SLOW_TEXT); }, LOAD_LIMIT_MS);
     void this.openStage(folder, services, generation).catch((error: unknown) => {
       if (!this.over && generation === this.stageGeneration) {
@@ -1652,12 +1638,13 @@ export class WorldScreen {
       },
     });
     this.jumpButton = new AttackButton(() => { this.jumpRequested = true; }, doc, { label: 'Jump', className: 'hud-jump' });
-    // 2026-11-13 (owner): a fixed Action Slot button beside Jump: the action slot's run, as the bar's action button and C;
-    // with nothing in it, the Action Slot window to set it up
+    // 2026-11-13 (owner): a fixed Action Slot button at Jump's top right: the action slot's run, as the bar's action button
+    // and C; with nothing in it, the Action Slot window to set it up. Its picture is the bar's action button's, the S
     this.actionSlotButton = new AttackButton(() => {
       if (taskBar.actionSlotCount > 0) skillUse.useActionSlot();
       else if (!taskBar.actionSlotWindow.isOpen) taskBar.actionSlotWindow.toggle();
     }, doc, { label: 'Action Slot', className: 'hud-action-trigger' });
+    this.actionSlotButton.element.style.setProperty('--action-icon', themeUrl(this.hudArt!, 'icon_ActionSkill.dds'));
     // Piece 7 M5: Accelerate (held), Turbo and Land in the air (Decision 4)
     this.flightButtons = new FlightButtons(doc, {
       accelerate: (held) => { this.flightAccelerate = held; },

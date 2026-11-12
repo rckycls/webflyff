@@ -76,8 +76,12 @@ function readMover(r: ArReader, self: boolean): AddedMover {
 
   if (isPlayer) {
     mover.player = readPlayer(r, self);
-    // The own character's reader has left the message at its end, buffs included (see `readOwnAfterEquipment`).
-    if (self) return mover;
+    // The own character's reader has left the message at its end, its buffs read (2026-11-13, `readOwnAfterEquipment`)
+    if (self) {
+      const buffs = mover.player.own?.buffs;
+      if (buffs !== undefined && buffs.length > 0) mover.buffs = buffs;
+      return mover;
+    }
   } else {
     mover.npc = readNpc(r);
   }

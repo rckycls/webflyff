@@ -106,13 +106,26 @@ test('the phone: centre texts at half size, bar and docked desktop chat at the b
     expect(boxes[i]!.x + boxes[i]!.width).toBeLessThan(boxes[i === 4 ? 0 : i - 1]!.x);
   }
   expect(jump.y + jump.height).toBeLessThan(attack.y);
-  // 2026-11-13 (owner): the fixed Action Slot button beside Jump: as big, on its line, at its left 8 px apart, clear of the
-  // circles and of the bar and the chat
+  // 2026-11-13 (owner): the fixed Action Slot button at Jump's top right ("move it on the right top of Jump"): as big, up
+  // and right of it, clear of it, of the circles and of Attack, under the window shortcuts, right of the bar and the chat
+  const iconsBottom = async () => Math.max(...await page.locator('.hud-mobile-tools > button[data-icon]')
+    .evaluateAll((buttons) => buttons.map((b) => b.getBoundingClientRect().bottom)));
   const trigger = (await page.getByRole('button', { name: 'Action Slot', exact: true }).boundingBox())!;
   expect(trigger.width).toBeCloseTo(jump.width, 0);
-  expect(centre(trigger).y).toBeCloseTo(centre(jump).y, 0);
-  expect(jump.x - (trigger.x + trigger.width)).toBeCloseTo(8, 0);
-  for (const box of [...boxes, attack]) expect(apart(trigger, box)).toBe(true);
+  expect(centre(trigger).x).toBeGreaterThan(centre(jump).x);
+  expect(centre(trigger).y).toBeLessThan(centre(jump).y);
+  for (const box of [...boxes, attack, jump]) expect(apart(trigger, box)).toBe(true);
+  expect(trigger.y).toBeGreaterThanOrEqual(await iconsBottom());
   expect(trigger.x).toBeGreaterThan(Math.max(barBox.x + barBox.width, chatBox.x + chatBox.width));
+  // its picture: the bar's action button's, the S (icon_ActionSkill.dds)
+  expect(await page.locator('.hud-action-trigger').evaluate((element) => getComputedStyle(element, '::before').backgroundImage))
+    .toMatch(/actionskill/i);
   await page.screenshot({ path: info.outputPath('phone-sizes.png') });
+  // an iPhone's 730 x 320: still under the shortcuts, clear of Jump
+  await page.setViewportSize({ width: 730, height: 320 });
+  const button = page.getByRole('button', { name: 'Action Slot', exact: true });
+  await expect.poll(async () => (await button.boundingBox())!.x + (await button.boundingBox())!.width).toBeLessThan(730);
+  const small = (await button.boundingBox())!;
+  expect(small.y).toBeGreaterThanOrEqual(await iconsBottom());
+  expect(apart(small, (await page.locator('.hud-jump').boundingBox())!)).toBe(true);
 });
