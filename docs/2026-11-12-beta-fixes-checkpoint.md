@@ -1,6 +1,7 @@
 # Closed beta fixes (2026-11-12): checkpoint
 
-Branch `beta-fixes`, from main `f6a955e`. Four fixes. No convert needed (no converter or asset change).
+Branch `beta-fixes`, from main `f6a955e`. Four fixes, and a fifth the owner asked for after (section 5). No convert
+needed (no converter or asset change).
 
 ## 1. The debug overlay is hidden on the live site
 
@@ -43,13 +44,28 @@ The corner text (fps, frame, heap, `device: <user agent>`, bundles ...) is the `
 - They keep their 12 px text (new phone block in `style.css` after the `.hud-buffpet-*` rules), since the phone
   windows' 14 px would run their rows together. Desktop unchanged.
 
+## 5. Phone: the box typed in stays above the keyboard
+
+The owner could not see what they typed in the chat or the private shop's name: the soft keyboard came up over the box.
+
+- `apps/client/src/world/keyboardLift.ts` (`KeyboardLift`, made with the world's `.world` layer in `WorldScreen`): while
+  a text box inside the world has the focus on a touch screen (`(pointer: coarse)`), the layer slides up
+  (`translateY`, no relayout) so the box's bottom is 8 px above the keyboard, its top never out of sight. It slides back
+  when the focus leaves, and while the keyboard is closed with the box still focused (Android's Back).
+- The keyboard's top is read from `visualViewport` (Android Chrome, iOS Safari). Until it reports a keyboard, the
+  keyboard is taken to cover the bottom 55% (`FALLBACK_COVER`), so the box moves at once.
+- Every text box of the world gets it (chat, shop name, messenger, guild, mail ...). Boxes already high enough don't
+  move. Desktop never moves. The lobby (login, character name) is not covered: it is outside `.world`.
+- Not checked on a real phone here (no soft keyboard in Chromium's emulation): please try the chat and the shop name on
+  your phone.
+
 ## Checks run here
 
 - `npm run typecheck`: clean.
-- `npx vitest run`: 4599 passed, 9 skipped, 0 failed; new tests in `debugOverlay.test.ts`, `overlay.test.ts`,
+- `npx vitest run`: 4606 passed, 9 skipped, 0 failed; new tests in `debugOverlay.test.ts`, `keyboardLift.test.ts`, `overlay.test.ts`,
   `hud.test.ts` (task bar item pick, Skill window button), `inventoryWindow.test.ts`, `petWindow.test.ts`.
 - `npm run check:public-build`: ok.
-- e2e `taskBarFinger.spec.ts`: 4/4 (chromium + phone), port 5191. On the phone also `skills.spec.ts` "the bar", `controls.spec.ts` and `topRightIcons.spec.ts`: pass.
+- e2e `taskBarFinger.spec.ts`: 4/4 and `keyboardLift.spec.ts`: 2/2 (chromium + phone), port 5191. On the phone also `skills.spec.ts` "the bar", `controls.spec.ts` and `topRightIcons.spec.ts`: pass.
 - `style.css` braces: 1450 open, 1450 close, never below 0.
 
 ## For the owner: the full e2e
@@ -59,6 +75,6 @@ $env:E2E_CLIENT_PORT='5190'; npx playwright test -c apps/client/playwright.confi
 ```
 
 Passing looks like: every test passes, or only failures that main `f6a955e` already has. The tests that touch this
-branch: `taskBarFinger`, `skills`, `mobileUx`, `topRightIcons`, `controls`, `items`, `windows`.
+branch: `taskBarFinger`, `keyboardLift`, `skills`, `mobileUx`, `topRightIcons`, `controls`, `items`, `windows`.
 
 Then by hand on the live site after deploy: no corner text on `/play/`; `/play/?stats` shows it.
