@@ -44,38 +44,40 @@ test('mobile audit: passive chat permits joystick and second-finger jump; active
   await expect.poll(() => sentOf(gateway, PacketType.PLAYERBEHAVIOR).some(packet => (movedState(packet) & 0xf000) === 0x5000)).toBe(true);
   await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
   await session.detach();
-  const chat = page.locator('.hud-chat');
+  // 2026-11-12 (owner): the phone's chat is the desktop's (Neuz's chat window), docked on the bar at the bottom left; a
+  // tap on its line types in it, Enter sends
+  const chat = page.locator('.hud-neuz-chat');
   const input = chat.getByRole('textbox', { name: 'Chat message' });
-  await chat.getByRole('button', { name: 'Chat', exact: true }).tap();
   await expect(input).not.toBeFocused();
-  await expect(chat).toHaveAttribute('data-expanded', 'true');
-  expect(await chat.locator('.chat-transcript').evaluate(element => getComputedStyle(element).pointerEvents)).toBe('auto');
   await input.tap();
   await expect(input).toBeFocused();
   await input.press('End');
   await expect(page.locator('.hud-jump')).toBeVisible();
   await input.fill('mobile audit');
-  // A landscape software keyboard can leave very little vertical room.
+  // A landscape software keyboard can leave very little vertical room: the chat stays on the bar.
   await page.setViewportSize({ width: size.width, height: 160 });
   await page.evaluate(() => window.__client!.step(0));
-  const send = chat.getByRole('button', { name: 'Send', exact: true });
-  const sendBox = (await send.boundingBox())!;
-  expect(sendBox.y).toBeGreaterThanOrEqual(0);
-  expect(sendBox.y + sendBox.height).toBeLessThanOrEqual(160);
-  const composer = (await chat.boundingBox())!, taskbar = (await page.locator('.hud-taskbar-strip').boundingBox())!;
-  expect(Math.abs(composer.y + composer.height - taskbar.y)).toBeLessThan(1);
-  await send.tap();
+  await expect.poll(async () => {
+    const composer = (await chat.boundingBox())!, taskbar = (await page.locator('.hud-taskbar-strip').boundingBox())!;
+    return Math.abs(composer.y + composer.height - taskbar.y);
+  }).toBeLessThan(1);
+  await input.press('Enter');
   await expect(input).not.toBeFocused();
-  await expect(chat).not.toHaveAttribute('data-expanded');
   await page.setViewportSize(size);
   for (const viewport of [{ width: 750, height: 342 }, { width: 568, height: 320 }]) {
     await page.setViewportSize(viewport);
     await page.evaluate(() => window.__client!.step(0));
     const jump = (await page.locator('.hud-jump').boundingBox())!, attack = (await page.locator('.hud-attack').boundingBox())!;
-    const map = (await page.locator('.hud-navigator').boundingBox())!, rail = (await chat.locator('form').boundingBox())!;
+    const map = (await page.locator('.hud-navigator').boundingBox())!, bar = (await page.locator('.hud-taskbar-strip').boundingBox())!;
+    const chatBox = (await chat.boundingBox())!;
     expect(jump.y).toBeGreaterThanOrEqual(map.y + map.height);
     expect(jump.y + jump.height).toBeLessThanOrEqual(attack.y);
-    expect(attack.y + attack.height).toBeLessThanOrEqual(rail.y + 1);
+    // Attack, Jump and the quick slots stand right of the bar and the chat docked on it
+    for (const box of [attack, jump, ...await Promise.all((await page.locator('.hud-quick-slot').all()).map(async (c) => (await c.boundingBox())!))]) {
+      expect(box.x).toBeGreaterThanOrEqual(Math.max(bar.x + bar.width, chatBox.x + chatBox.width));
+      expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+      expect(box.y).toBeGreaterThanOrEqual(map.y + map.height);
+    }
     await page.screenshot({ path: info.outputPath(`actions-${viewport.width}.png`) });
   }
   expect(await page.evaluate(() => (window as Window & { fullscreenRequests?: number }).fullscreenRequests)).toBe(0);

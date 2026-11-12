@@ -204,7 +204,10 @@ test.describe('landscape (spec §3.10)', () => {
       await expect(page.locator('.joystick')).toBeHidden();
       const release = await holdJoystick(page);
       await expectOnScreen(page.locator('.joystick'), 'the joystick', bar);
-      await expectOnScreen(page.getByRole('button', { name: 'Attack' }), 'the attack button', bar);
+      // 2026-11-12 (owner): Attack in the bottom right corner, beside the bar (which stands at the bottom left)
+      await expectOnScreen(page.getByRole('button', { name: 'Attack' }), 'the attack button');
+      const strip = await boxOf(page.locator('.hud-taskbar-strip'), 'the task bar');
+      expect((await boxOf(page.getByRole('button', { name: 'Attack' }), 'the attack button')).x).toBeGreaterThanOrEqual(strip.x + strip.width);
       // the joystick (left) and the attack button (right) apart, and the joystick under the status window
       const joystick = await boxOf(page.locator('.joystick'), 'the joystick');
       const attack = await boxOf(page.getByRole('button', { name: 'Attack' }), 'the attack button');

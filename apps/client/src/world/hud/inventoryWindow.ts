@@ -396,9 +396,10 @@ export class InventoryWindow {
         if (prop && prop.part >= 0 && prop.part < 31 && prop.part !== 13) button('equip', 'Equip', () => this.actions.equip(item.objectId));
         // Piece 7 M3: and the travel items; 2026-11-05: and the upgrade materials, which start the upgrade mode
         if (prop && (usableFromBag(prop) || upgradeKindOf(prop) !== null)) button('use', 'Use', () => this.actions.use(item.objectId));
-        // 2026-11-12: the desktop's drag onto an item slot, for a finger: picked here, placed by the next slot tapped
+        // 2026-11-12: the desktop's drag onto an item slot, for a finger: picked here, placed by the next slot tapped (of
+        // the bar, or a quick slot by Attack, which the bag covers: it closes first, the pick kept)
         const pick = this.actions.pickShortcut?.bind(this.actions);
-        if (pick) button('taskbar', 'Task bar', () => pick(item.objectId, this.frame.element));
+        if (pick) button('taskbar', 'Task bar', () => { this.frame.close(); pick(item.objectId, this.frame.element); });
         button('drop', 'Drop', () => this.requestDrop(item.objectId));
       }
     }

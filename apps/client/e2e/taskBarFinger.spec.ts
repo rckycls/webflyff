@@ -72,7 +72,8 @@ test('a bag item onto F2: the desktop drags it, the phone taps its Task bar butt
     await expect(details).toBeVisible();
     await details.locator('[data-item-action="taskbar"]').tap();
     await expect(details).toHaveCount(0);
-    // picked: the item row lit, not the action slot; nothing sent yet
+    // picked, the bag closed (it covers the quick slots): the item row lit, not the action slot; nothing sent yet
+    await expect(bag).toBeHidden();
     await expect(lit(page, 'item')).toBeVisible();
     await expect(lit(page, 'queue')).toBeHidden();
     await page.screenshot({ path: info.outputPath('phone-bag-picked.png') });
@@ -109,9 +110,9 @@ test('a skill onto F3: the desktop drags it, the phone taps the Skill window\'s 
     await cleanHit.tap();
     await expect(button).toHaveAttribute('aria-pressed', 'false');
     await expect(lit(page, 'item')).toBeHidden();
-    // the button picks the chosen skill: the rows it may go to lit
+    // the button picks the chosen skill and closes the window (it covers the quick slots): the rows it may go to lit
     await button.tap();
-    await expect(button).toHaveAttribute('aria-pressed', 'true');
+    await expect(tree).toBeHidden();
     await expect(lit(page, 'item')).toBeVisible();
     await page.screenshot({ path: info.outputPath('phone-skill-picked.png') });
     expect(addItemTaskBar(gateway)).toEqual([]);
@@ -128,4 +129,58 @@ test('a skill onto F3: the desktop drags it, the phone taps the Skill window\'s 
   }]);
   await expect(slot).toHaveAttribute('data-kind', 'skill');
   await expect(slot).toHaveAttribute('aria-label', 'Clean Hit');
+});
+
+// 2026-11-12 (owner): the phone's quick slots round Attack are bar 8's first four (TaskBar.quickSlots): a bag item and a skill
+// put there the same way (the Task bar buttons, then a tap on a circle), ADDITEMTASKBAR for bar 8; a tap on a filled
+// circle uses it; a finger held on it offers Remove (REMOVEITEMTASKBAR for bar 8)
+test('the phone: a bag item and a skill onto the quick slots by Attack (bar 8), one used, one taken off', async ({ page, isMobile }, info) => {
+  test.skip(!isMobile, 'the quick slots are the phone\'s');
+  const gateway = await enter(page);
+  const circle = (i: number): Locator => page.locator(`.hud-quick-slot[data-slot="${i}"]`);
+  const quick = page.locator('.hud-quick-slots');
+  // the potion (bag slot 2) onto the circle at Attack's left
+  await shortcut(page, 'Bag').tap();
+  await page.locator('.hud-inventory [data-bag-slot="2"]').tap();
+  await page.locator('.hud-inventory [data-item-action="taskbar"]').tap();
+  await expect(quick).toHaveAttribute('data-lit', '');
+  await circle(0).tap();
+  await expect.poll(() => addItemTaskBar(gateway)).toEqual([{
+    type: 'addItemTaskBar', bar: 7, slot: 0,
+    shortcut: { kind: ShortcutKind.ITEM, id: 2, type: 0, index: 0, userId: 0, data: 1, text: '' },
+  }]);
+  await expect(circle(0)).toHaveAttribute('data-kind', 'item');
+  await expect(quick).not.toHaveAttribute('data-lit');
+  // Clean Hit onto the circle above Attack, from the Skill window's Task bar button
+  await shortcut(page, 'Skill').tap();
+  await page.locator('.hud-skills .hud-skill[data-skill="1"]').tap();
+  await page.locator('.hud-skills [data-button="taskbar"]').tap();
+  await circle(3).tap();
+  await expect.poll(() => addItemTaskBar(gateway).length).toBe(2);
+  expect(addItemTaskBar(gateway)[1]).toEqual({
+    type: 'addItemTaskBar', bar: 7, slot: 3,
+    shortcut: { kind: ShortcutKind.SKILL, id: 0, type: 0, index: 3, userId: 0, data: 1, text: '' },
+  });
+  await expect(circle(3)).toHaveAttribute('aria-label', 'Clean Hit');
+  // the bar shown (bar 1) is left as it was
+  await expect(itemSlot(page, 0)).not.toHaveAttribute('data-kind', 'item');
+  await page.screenshot({ path: info.outputPath('phone-quick-slots.png') });
+  // a tap on the potion's circle uses it (DOUSEITEM, as F-key on the bar would)
+  const used = () => sentOf(gateway, PacketType.DOUSEITEM).length;
+  const before = used();
+  await circle(0).tap();
+  await expect.poll(used).toBe(before + 1);
+  // held: Remove takes it off
+  const box = (await circle(0).boundingBox())!;
+  const session = await page.context().newCDPSession(page);
+  const finger = { id: 5, x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [finger] });
+  await page.waitForTimeout(700);
+  await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await expect.poll(used).toBe(before + 1);
+  const remove = page.locator('.hud-quick-remove');
+  await expect(remove).toBeVisible();
+  await remove.tap();
+  await expect.poll(() => sentOf(gateway, PacketType.REMOVEITEMTASKBAR).length).toBe(1);
+  await expect(circle(0)).not.toHaveAttribute('data-kind');
 });

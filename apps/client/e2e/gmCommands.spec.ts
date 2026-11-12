@@ -56,19 +56,19 @@ const tagOf = async (page: Page, objectId: number) =>
   (await page.evaluate(() => window.__client!.tags())).find((t) => t.objectId === objectId);
 
 async function openChat(page: Page, isMobile: boolean) {
-  if (isMobile) await page.getByRole('button', { name: 'Chat', exact: true }).tap(); else await page.keyboard.press('Enter');
-  const chat = page.locator(isMobile ? '.hud-chat' : '.hud-neuz-chat');
+  // 2026-11-12: the phone's chat is the desktop's, docked on the bar: a tap on its line opens it, Enter sends
+  const chat = page.locator('.hud-neuz-chat');
   const input = chat.getByRole('textbox', { name: 'Chat message' });
-  if (isMobile) await input.tap();
+  if (isMobile) await input.tap(); else await page.keyboard.press('Enter');
   const say = async (line: string): Promise<void> => {
     if (!(await input.isVisible()) || !(await input.evaluate((el) => el === document.activeElement))) {
       if (isMobile) await input.tap(); else await page.keyboard.press('Enter');
     }
     await input.fill(line);
-    if (isMobile) await chat.getByRole('button', { name: 'Send', exact: true }).click(); else await input.press('Enter');
+    await input.press('Enter');
   };
-  // a game line: the desktop's System window (PutString's default style), the phone's one log
-  const gameLog = isMobile ? chat.getByRole('log').first() : page.locator('.hud-neuz-chat-log .neuz-chat-text');
+  // a game line: the System window (PutString's default style)
+  const gameLog = page.locator('.hud-neuz-chat-log .neuz-chat-text');
   return { say, gameLog, chatLog: chat.getByRole('log').first() };
 }
 

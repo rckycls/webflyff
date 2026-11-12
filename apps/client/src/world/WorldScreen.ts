@@ -1822,21 +1822,22 @@ export class WorldScreen {
       tooltipContext: (item) => ownTooltipContext(this.own, item, 'other'),
       ui: { art: this.hudArt!, doc },
     }, (error) => this.reportOnce(`buff pet portrait: ${messageOf(error)}`, error));
-    // the phone keeps its chat; elsewhere Neuz's chat window (2026-11-09, docs/superpowers/specs/2026-11-09-chat-desktop-research.md)
+    // Neuz's chat window (2026-11-09, docs/superpowers/specs/2026-11-09-chat-desktop-research.md); 2026-11-12 (owner): the
+    // phone's too, docked on its task bar each frame (NeuzChat.dock), in place of the phone's own chat (chatWindow.ts)
     const phone = view.matchMedia?.('(max-width: 1000px) and (pointer: coarse)').matches === true;
-    this.chatWindow ??= phone
+    this.chatWindow ??= new NeuzChat({
+      send: (text) => this.session.sendChat('nearby', text, ''),
       // 2026-11-11: the chat takes the keys only; a walk to a clicked point, the auto-run and a flight go on (letGoOfKeys)
-      ? new ChatWindow((channel, text, target) => this.session.sendChat(channel, text, target), () => { this.letGoOfKeys(); this.joystick?.reset(); }, doc)
-      : new NeuzChat({
-        send: (text) => this.session.sendChat('nearby', text, ''), onFocus: () => this.letGoOfKeys(),
-        ownName: () => this.world?.self()?.name ?? this.entry.character.name, art: this.hudArt!, doc,
-        text: (id) => this.data?.texts.get(id),
-        carry: (text, event) => this.taskBar?.carryChat(text, event),
-        // the mouse on the chat's free parts goes to the world under it too, as Neuz hands it on (neuzChat.ts)
-        forward: (event) => this.page?.renderer.domElement.dispatchEvent(new PointerEvent(event.type, event)),
-        // Lock, the filters and the chat's place kept for the next time (regInfo.dat, neuz.ini; chatSettings.ts)
-        storage: (() => { try { return view.localStorage; } catch { return null; } })(),
-      });
+      onFocus: () => { this.letGoOfKeys(); if (phone) this.joystick?.reset(); },
+      ownName: () => this.world?.self()?.name ?? this.entry.character.name, art: this.hudArt!, doc,
+      text: (id) => this.data?.texts.get(id),
+      carry: (text, event) => this.taskBar?.carryChat(text, event),
+      // the mouse on the chat's free parts goes to the world under it too, as Neuz hands it on (neuzChat.ts); not a finger
+      // on the phone's docked chat, which would walk the player
+      forward: phone ? undefined : (event) => this.page?.renderer.domElement.dispatchEvent(new PointerEvent(event.type, event)),
+      // Lock, the filters and the chat's place kept for the next time (regInfo.dat, neuz.ini; chatSettings.ts)
+      storage: (() => { try { return view.localStorage; } catch { return null; } })(),
+    });
     // 2026-11-09: ParsingChat's rules for both chats (chatSend.ts): the texts of their red lines, the word filter of
     // data/chat.json, and the anti-spam's warnings started again on entering the world (WndManager.cpp:2149-2150)
     if (this.chatWindow instanceof ChatWindow) this.chatWindow.setTexts((id) => this.data?.texts.get(id));
@@ -2134,8 +2135,9 @@ export class WorldScreen {
     }
     this.hud!.element.append(
       this.questTracker.element, this.teleporter.frame.element, this.heavenTower.element, ...this.lordHud.elements, this.lordHud.eventIcons,
-      taskBar.element, this.attackButton.element, this.jumpButton.element, this.flightButtons.element, mobileTools.element,
-      logOutBox.element, messageBox.element,
+      // 2026-11-12: the phone's quick slots around Attack (bar 8's first slots; style.css shows them on a phone only)
+      taskBar.element, taskBar.quickSlots, this.attackButton.element, this.jumpButton.element, this.flightButtons.element,
+      mobileTools.element, logOutBox.element, messageBox.element,
       selectVillage.element, characterWindow.frame.element,
       characterWindow.confirm.frame.element, skillWindow.frame.element, skillWindow.warning.element, reviveWindow.element,
       inventoryWindow.frame.element, this.nearbyItems.element,
@@ -3219,6 +3221,8 @@ export class WorldScreen {
       this.chatWindow?.setAuthorization(authorization);
     }
     this.taskBar!.update(this.own, this.barData());
+    // 2026-11-12 (owner): a phone's chat stands on its task bar, at the bar's left and width
+    if (this.chatWindow instanceof NeuzChat) this.chatWindow.dock(this.taskBar!.phoneDock);
     this.nearbyItems?.update(world.groundItems, self?.act.body.pos ?? null);
     // 2026-11-05: the ticket in use (GetTicket), which the bag draws faded: redrawn when it changes
     const ticket = this.own?.inventory && self !== undefined ? ticketInUse(this.own.inventory.values(), this.data!.itemProps,

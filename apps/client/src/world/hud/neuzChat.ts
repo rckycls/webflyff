@@ -111,6 +111,14 @@ const FILTER_CHECKS = [
   { name: 'Guild', rect: [118, 54, 206, 70], style: CHATSTY.GUILD },
 ] as const;
 
+/**
+ * 2026-11-12 (owner: the phone's chat as the desktop's, on the task bar): on a phone this window is docked on the bar
+ * (`dock`), drawn at `PHONE_SCALE` (as the bar: 20% smaller, then 30% smaller again) and `PHONE_HEIGHT` high: four lines
+ * of messages over the tabs and the line.
+ */
+export const PHONE_SCALE = 0.56;
+export const PHONE_HEIGHT = 104;
+
 /** The chat's help key (APP_COMMUNICATION_CHAT's, resdata.inc:21607, resData.txt.txt). */
 const HELP_KEY = 'Chatting Window';
 
@@ -237,6 +245,9 @@ export class NeuzChat {
   private at = { x: 0, y: Number.MAX_SAFE_INTEGER };
   /** Whether `show` has put the chat up once. */
   private shown = false;
+  /** 2026-11-12: the phone's dock on the task bar (`dock`), null on a desktop; and the last one applied, as a string. */
+  private docked: { left: number; top: number; width: number } | null = null;
+  private dockKey = '';
 
   constructor(private readonly options: NeuzChatOptions) {
     const doc = this.doc = options.doc ?? document;
@@ -249,8 +260,9 @@ export class NeuzChat {
     this.sender = new ChatSender({ now: this.now, text: (id) => options.text?.(id), commands: this.commands, emoticons: EMOTICONS });
 
     // the window: no caption, WndTile300-311, its client area 4 4 6 6 in, its edges dragged
+    // 2026-11-12: drawn at PHONE_SCALE on a phone, where it is docked on the task bar (`dock`)
     const frame = this.frame = new WindowFrame('Chatting', art, {
-      width: WIDTH, height: HEIGHT, mobileScale: 1, caption: false, tiles: 'WndTile3', insets: INSETS, resize: LEAST,
+      width: WIDTH, height: HEIGHT, mobileScale: PHONE_SCALE, caption: false, tiles: 'WndTile3', insets: INSETS, resize: LEAST,
       closeButton: false,
     }, doc);
     frame.element.classList.add('hud-neuz-chat');
@@ -487,6 +499,32 @@ export class NeuzChat {
     this.input.focus();
   }
 
+  /**
+   * 2026-11-12 (owner): the phone's chat is this window docked on the task bar: as wide as the bar (`bar.width`, CSS px of
+   * the layer, the window drawn at the phone's scale), `PHONE_HEIGHT` high, its bottom on the bar's top (`bar.top`), its left
+   * at the bar's (`bar.left`); neither moved nor resized, and its place not kept. Null: the desktop's window, as Neuz's.
+   * Called each frame; acts on a change only. A chat closed with its X stays closed (the Start menu's Chatting opens it
+   * again, docked).
+   */
+  dock(bar: { left: number; top: number; width: number } | null): void {
+    const key = bar === null ? '' : `${bar.left}|${bar.top}|${bar.width}|${this.frame.isOpen}`;
+    if (key === this.dockKey) return;
+    this.dockKey = key;
+    this.docked = bar;
+    this.frame.resizable = bar === null;
+    this.frame.docked = bar !== null;
+    this.frame.movable = bar === null && !this.moveLock.checked;
+    // the move lock has nothing to lock on the bar
+    this.moveLock.element.hidden = bar !== null;
+    if (bar === null || bar.width <= 0) return;
+    this.frame.setSize(Math.round(bar.width / PHONE_SCALE), PHONE_HEIGHT);
+    const { width, height } = this.frame.size;
+    const scale = width > 0 ? this.frame.scaledSize.width / width : 1;
+    this.at = { x: bar.left, y: bar.top - height * scale };
+    if (this.frame.isOpen) this.frame.open(this.at);
+    this.layout();
+  }
+
   /** Leaves the line: the focus goes back to the world. */
   close(): void {
     this.suggestions.hide();
@@ -588,7 +626,7 @@ export class NeuzChat {
 
   /** The chat's place kept once it was moved or resized (`SerializeRegInfo`'s rectangle). */
   private keepPlace(): void {
-    if (!this.shown || !this.frame.isOpen) return;
+    if (!this.shown || !this.frame.isOpen || this.docked !== null) return;
     const { x, y } = this.frame.position;
     const { width, height } = this.frame.size;
     this.settings.place = { x, y, width, height };

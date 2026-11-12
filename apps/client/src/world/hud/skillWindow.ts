@@ -743,12 +743,16 @@ export class SkillWindow {
     }
   }
 
-  /** 2026-11-12: the phone's Task bar button: the chosen skill picked for the bar (kept when it is already). */
+  /**
+   * 2026-11-12: the phone's Task bar button: the chosen skill picked for the bar, and the window closed, which covers the
+   * quick slots by Attack (the pick kept: the next slot tapped, of the bar or a quick slot, takes it).
+   */
   private pickChosen(): void {
-    const { plan, focus, own } = this;
+    const { plan, focus } = this;
     if (plan === null || focus === null || !plan.active(focus)) return;
-    if (this.hand.pickedSkill !== focus) this.hand.pickSkill(focus, this.frame.element);
-    if (own !== undefined) this.update(own);
+    if (plan.changed) return; // points placed and not sent: the window stays, as its close asks first
+    this.frame.close();
+    this.hand.pickSkill(focus, this.frame.element);
   }
 
   /**

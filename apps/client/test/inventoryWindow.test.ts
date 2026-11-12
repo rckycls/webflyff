@@ -175,31 +175,37 @@ describe('inventory window', () => {
     ui.dispose();
   });
 
-  it("2026-11-12: the phone's Task bar button picks a bag item for the bar, and closes the tooltip; a worn piece has none", () => {
+  it("2026-11-12: the phone's Task bar button picks a bag item for the bar and closes the bag; a worn piece has none", () => {
     const own = newVagrant(), data = ownGameData();
     data.itemProps.set(2800, itemProp({ id: 2800, part: -1, kind2: 14 }));
     own.inventory!.set(6, { objectId: 6, itemId: 2800, count: 2 });
     own.inventory!.set(7, { objectId: 7, itemId: 21, count: 1 });
     const pickShortcut = vi.fn();
+    // the bag's closing comes before the pick (its `closed` lets an earlier pick go)
+    const closed = vi.fn(() => expect(pickShortcut).not.toHaveBeenCalled());
     const ui = new InventoryWindow({ url: () => '', sheets: null }, data, {
-      use: vi.fn(), equip: vi.fn(), drop: vi.fn(), move: vi.fn(), shortcut: vi.fn(), pickShortcut,
+      use: vi.fn(), equip: vi.fn(), drop: vi.fn(), move: vi.fn(), shortcut: vi.fn(), pickShortcut, closed,
     });
     document.body.append(ui.frame.element); ui.toggle(own);
     ui.frame.element.setAttribute('data-mobile-window', ''); ui.update(own, true);
     const actions = () => [...ui.frame.element.querySelectorAll<HTMLElement>('[data-item-action]')].map((el) => el.dataset.itemAction);
     const tap = (selector: string) => ui.frame.element.querySelector<HTMLButtonElement>(selector)!.click();
-    tap('[data-bag-slot="6"]');
-    expect(actions()).toEqual(['use', 'taskbar', 'drop']);
-    expect(ui.frame.element.querySelector('[data-item-action="taskbar"]')!.textContent).toBe('Task bar');
-    tap('[data-item-action="taskbar"]');
-    expect(pickShortcut).toHaveBeenCalledWith(6, ui.frame.element);
-    expect(ui.frame.element.querySelector('.inventory-details')).toBeNull();
     tap('[data-bag-slot="7"]');
     expect(actions()).toEqual(['equip', 'taskbar', 'drop']);
     // worn: Unequip only, as the desktop drags no worn piece to the bar (dragstart)
     own.equipmentObjectIds[10] = 7; own.inventoryRevision++; ui.update(own);
     tap('[data-equipment-part="10"]');
     expect(actions()).toEqual(['unequip']);
+    // Task bar: the item picked, the tooltip gone, and the bag closed (it covers the quick slots by Attack)
+    tap('[data-bag-slot="6"]');
+    expect(actions()).toEqual(['use', 'taskbar', 'drop']);
+    expect(ui.frame.element.querySelector('[data-item-action="taskbar"]')!.textContent).toBe('Task bar');
+    expect(closed).not.toHaveBeenCalled();
+    tap('[data-item-action="taskbar"]');
+    expect(closed).toHaveBeenCalledOnce();
+    expect(pickShortcut).toHaveBeenCalledWith(6, ui.frame.element);
+    expect(ui.frame.element.querySelector('.inventory-details')).toBeNull();
+    expect(ui.frame.isOpen).toBe(false);
     ui.dispose();
   });
 

@@ -174,7 +174,7 @@ test('the Skill window: the first and second jobs\' sections have their arrows o
   await page.screenshot({ path: info.outputPath('skills.png') });
 });
 
-test('Attack and Jump wear the windows\' colours, their size and place unchanged', async ({ page, isMobile }, info) => {
+test('Attack and Jump wear the windows\' colours; Attack 20% bigger in the corner, Jump out by the quick slots', async ({ page, isMobile }, info) => {
   await enter(page);
   const attack = page.locator('.hud-attack'), jump = page.locator('.hud-jump');
   if (!isMobile) {
@@ -186,7 +186,11 @@ test('Attack and Jump wear the windows\' colours, their size and place unchanged
   await expect(jump).toBeVisible();
   const size = page.viewportSize()!;
   const short = size.height <= 400;
-  for (const [button, width, right] of [[attack, short ? 64 : 80, 16], [jump, short ? 44 : 52, short ? 26 : 30]] as const) {
+  // 2026-11-12 (owner): Attack 20% bigger (64 -> 77, 80 -> 96) in the corner; Jump out between its left and top, past the
+  // quick slots (style.css: right = Attack's + half their difference + the way out)
+  const [attackSize, attackRight, jumpSize, jumpOut] = short ? [77, 16, 44, 106] : [96, 20, 56, 138];
+  const jumpRight = attackRight + (attackSize - jumpSize) / 2 + jumpOut;
+  for (const [button, width, right] of [[attack, attackSize, attackRight], [jump, jumpSize, jumpRight]] as const) {
     const look = await button.evaluate((element) => {
       const style = getComputedStyle(element);
       return { border: style.borderTopColor, background: style.backgroundImage, shadow: style.boxShadow };

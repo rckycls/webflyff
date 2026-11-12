@@ -288,17 +288,16 @@ test('the GM’s /ResistItem opens its window; with an item in, "/ResistItem 1 1
   const gateway = await playGateway(page, script);
   await enterFlaris(page);
   const phone = isPhone();
-  if (phone) await page.getByRole('button', { name: 'Chat', exact: true }).tap(); else await page.keyboard.press('Enter');
-  const chat = page.locator(phone ? '.hud-chat' : '.hud-neuz-chat');
+  // 2026-11-12: the phone's chat is the desktop's, docked on the bar: a tap on its line opens it, Enter sends
+  const chat = page.locator('.hud-neuz-chat');
   const input = chat.getByRole('textbox', { name: 'Chat message' });
+  if (phone) await input.tap(); else await page.keyboard.press('Enter');
   const say = async (line: string): Promise<void> => {
-    // the phone's chat closes after each line (chatWindow.ts): its Chat button opens it again
-    if (phone && !(await input.isVisible())) await page.getByRole('button', { name: 'Chat', exact: true }).tap();
     if (!(await input.isVisible()) || !(await input.evaluate((el) => el === document.activeElement))) {
       if (phone) await input.tap(); else await page.keyboard.press('Enter');
     }
     await input.fill(line);
-    if (phone) await chat.getByRole('button', { name: 'Send', exact: true }).click(); else await input.press('Enter');
+    await input.press('Enter');
   };
   await say('/ResistItem 1 10 5');
   const resist = page.locator('.hud-resist-item');

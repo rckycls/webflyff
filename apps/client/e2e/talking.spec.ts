@@ -29,9 +29,9 @@ test('talking: chat typing, channels, peaceful NPC dialogue and authoritative bu
   });
   const gateway = await playGateway(page, script); await enterFlaris(page);
   await page.evaluate(() => window.__client!.pause());
-  if (isMobile) await page.getByRole('button', { name: 'Chat', exact: true }).tap(); else await page.keyboard.press('Enter');
-  // the phone's chat, or the desktop's, Neuz's chat window (2026-11-09)
-  const chat = page.locator(isMobile ? '.hud-chat' : '.hud-neuz-chat'), input = chat.getByRole('textbox', { name: 'Chat message' });
+  // Neuz's chat window (2026-11-09); 2026-11-12 (owner): the phone's too, docked on its bar, opened by a tap on its line
+  const chat = page.locator('.hud-neuz-chat'), input = chat.getByRole('textbox', { name: 'Chat message' });
+  if (!isMobile) await page.keyboard.press('Enter');
   const composerBeforeFocus = (await input.boundingBox())!;
   if (isMobile) {
     await expect(input).not.toBeFocused(); await input.tap();
@@ -59,11 +59,10 @@ test('talking: chat typing, channels, peaceful NPC dialogue and authoritative bu
   if (!isMobile) expect(chatBox.height).toBe(128);
   expect(Math.abs(chatBox.y + chatBox.height - barBox.y)).toBeLessThan(1);
   await expect(input).not.toHaveAttribute('placeholder');
-  expect((await input.boundingBox())!.height).toBeLessThanOrEqual(isMobile ? 24 : 18);
-  const shoutBox = (await chat.getByRole(isMobile ? 'button' : 'radio', { name: 'Shout', exact: true }).boundingBox())!;
-  expect(shoutBox.height).toBeLessThanOrEqual(isMobile ? 22 : 17);
+  expect((await input.boundingBox())!.height).toBeLessThanOrEqual(18);
+  const shoutBox = (await chat.getByRole('radio', { name: 'Shout', exact: true }).boundingBox())!;
+  expect(shoutBox.height).toBeLessThanOrEqual(17);
   if (isMobile) {
-    expect(Math.abs(shoutBox.y - (await input.boundingBox())!.y)).toBeLessThanOrEqual(3);
     await expect(page.locator('.hud-taskbar-strip')).toHaveAttribute('data-layout', '620');
     await expect(page.locator('.hud-slot[data-row=applet]')).toHaveCount(0);
     expect(await page.locator('.hud-taskbar-strip').evaluate(el => getComputedStyle(el, '::after').backgroundPosition)).toBe('-280px 0px');
@@ -77,7 +76,8 @@ test('talking: chat typing, channels, peaceful NPC dialogue and authoritative bu
   await expect(page.locator('.hud-inventory')).toBeHidden();
   // the desktop has no Send button: Enter sends (CWndChat, EN_RETURN), and the focus goes back to the world
   const send = async (): Promise<void> => {
-    if (isMobile) await chat.getByRole('button', { name: 'Send', exact: true }).click(); else await input.press('Enter');
+    if (isMobile && !(await input.evaluate((el) => el === document.activeElement))) await input.tap();
+    await input.press('Enter');
   };
   await input.fill('Hello Flaris'); await send();
   await expect.poll(() => sentOf(gateway, 0xff0000).length).toBe(1);
@@ -88,21 +88,21 @@ test('talking: chat typing, channels, peaceful NPC dialogue and authoritative bu
   gateway.pushCache(script.later([message(SELF_ID, 1, new ArWriter().string('Hello Flaris'))]));
   const log = chat.getByRole('log').first();
   // the desktop writes each line as DPClient.cpp does: "Name : text", "<- [from] text", "[Name] text"
-  await expect(log).toContainText(isMobile ? '[nearby] Webby: Hello Flaris' : 'Webby : Hello Flaris');
+  await expect(log).toContainText('Webby : Hello Flaris');
   await expect(chat.locator('select')).toHaveCount(0);
   await input.fill('/w Rocky Hi'); await send();
   await expect.poll(sentText).toBe('/w Rocky Hi');
   gateway.pushCache(new ArWriter().u32(0xff00d4).string('Rocky').string('Webby').string('Hello back').u32(501).u32(500).i32(0).toBytes());
-  await expect(log).toContainText(isMobile ? '[whisper] Rocky → Webby: Hello back' : '<- [Rocky] Hello back');
+  await expect(log).toContainText('<- [Rocky] Hello back');
   gateway.pushCache(script.later([message(SELF_ID, 0xa9, new ArWriter().i32(3).string('Missing'))]));
   // a game line: on the desktop, the System window's (PutString's default style, WndManager.cpp:4166-4172)
-  await expect(isMobile ? log : page.locator('.hud-neuz-chat-log .neuz-chat-text')).toContainText('Missing does not exist.');
+  await expect(page.locator('.hud-neuz-chat-log .neuz-chat-text')).toContainText('Missing does not exist.');
   // 2026-11-09: a shout shares the anti-spam's clocks (0.7 s and 1 s after a plain line, FuncTextCmd.cpp:1946-2004)
   await page.waitForTimeout(1100);
   await input.fill('/s Anyone here?');
   await send(); await expect.poll(sentText).toBe('/s Anyone here?');
   gateway.pushCache(script.later([message(SELF_ID, 0xd0, new ArWriter().u32(SELF_ID).string('Webby').string('Anyone here?').u32(0xffff99cc))]));
-  await expect(log).toContainText(isMobile ? '[shout] Webby: Anyone here?' : '[Webby] Anyone here?');
+  await expect(log).toContainText('[Webby] Anyone here?');
   await page.screenshot({ path: info.outputPath('chat.png') });
   await input.focus(); await page.keyboard.press('Escape');
   let normalBag: { x: number; y: number; width: number; height: number } | undefined;
