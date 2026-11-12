@@ -175,6 +175,34 @@ describe('inventory window', () => {
     ui.dispose();
   });
 
+  it("2026-11-12: the phone's Task bar button picks a bag item for the bar, and closes the tooltip; a worn piece has none", () => {
+    const own = newVagrant(), data = ownGameData();
+    data.itemProps.set(2800, itemProp({ id: 2800, part: -1, kind2: 14 }));
+    own.inventory!.set(6, { objectId: 6, itemId: 2800, count: 2 });
+    own.inventory!.set(7, { objectId: 7, itemId: 21, count: 1 });
+    const pickShortcut = vi.fn();
+    const ui = new InventoryWindow({ url: () => '', sheets: null }, data, {
+      use: vi.fn(), equip: vi.fn(), drop: vi.fn(), move: vi.fn(), shortcut: vi.fn(), pickShortcut,
+    });
+    document.body.append(ui.frame.element); ui.toggle(own);
+    ui.frame.element.setAttribute('data-mobile-window', ''); ui.update(own, true);
+    const actions = () => [...ui.frame.element.querySelectorAll<HTMLElement>('[data-item-action]')].map((el) => el.dataset.itemAction);
+    const tap = (selector: string) => ui.frame.element.querySelector<HTMLButtonElement>(selector)!.click();
+    tap('[data-bag-slot="6"]');
+    expect(actions()).toEqual(['use', 'taskbar', 'drop']);
+    expect(ui.frame.element.querySelector('[data-item-action="taskbar"]')!.textContent).toBe('Task bar');
+    tap('[data-item-action="taskbar"]');
+    expect(pickShortcut).toHaveBeenCalledWith(6, ui.frame.element);
+    expect(ui.frame.element.querySelector('.inventory-details')).toBeNull();
+    tap('[data-bag-slot="7"]');
+    expect(actions()).toEqual(['equip', 'taskbar', 'drop']);
+    // worn: Unequip only, as the desktop drags no worn piece to the bar (dragstart)
+    own.equipmentObjectIds[10] = 7; own.inventoryRevision++; ui.update(own);
+    tap('[data-equipment-part="10"]');
+    expect(actions()).toEqual(['unequip']);
+    ui.dispose();
+  });
+
   it('a ride shows Use on the phone, and its equipment cell lands it (Piece 7 M5)', () => {
     const own = newVagrant(), data = ownGameData();
     data.itemProps.set(5000, itemProp({

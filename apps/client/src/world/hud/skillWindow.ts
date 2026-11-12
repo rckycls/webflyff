@@ -329,6 +329,8 @@ export class SkillWindow {
   private readonly doc: Document;
   private readonly skills: ShownSkill[] = [];
   private readonly buttons: Record<ButtonName, HTMLButtonElement>;
+  /** 2026-11-12: the phone's Task bar button (`pickChosen`); none on a desktop, which drags. */
+  private readonly taskBarButton: HTMLButtonElement | null;
   private readonly points: HTMLElement;
   private readonly chosenIcon: HTMLElement;
   private readonly chosenDigit: HTMLElement;
@@ -475,6 +477,21 @@ export class SkillWindow {
       }
       this.chosenIcon.hidden = true;
       this.chosenDigit.style.display = 'none';
+      // 2026-11-12: the desktop's drag onto the bar, for a finger, as the bag's Task bar button: the chosen skill picked,
+      // for the next slot of the bar tapped (a tap on a skill picks it too; the button says so, pressed while it is)
+      const taskBar = doc.createElement('button');
+      taskBar.type = 'button';
+      taskBar.className = 'hud-skills-taskbar';
+      taskBar.dataset.button = 'taskbar';
+      taskBar.textContent = 'Task bar';
+      taskBar.setAttribute('aria-pressed', 'false');
+      taskBar.disabled = true;
+      place(taskBar, { left: 392, top: 10, width: 132, height: 29 });
+      taskBar.addEventListener('click', () => this.pickChosen());
+      body.append(taskBar);
+      this.taskBarButton = taskBar;
+    } else {
+      this.taskBarButton = null;
     }
 
     this.tooltip = doc.createElement('div');
@@ -716,6 +733,22 @@ export class SkillWindow {
     this.buttons.minus.disabled = !minus;
     this.buttons.reset.disabled = !changed;
     this.buttons.finish.disabled = !changed;
+    const taskBar = this.taskBarButton;
+    if (taskBar !== null) {
+      // the skills a drag may carry (an open one, `listen`), the chosen one; pressed while it is the one picked
+      const off = index === null || !plan.active(index);
+      const pressed = String(!off && this.hand.pickedSkill === index);
+      if (taskBar.disabled !== off) taskBar.disabled = off;
+      if (taskBar.getAttribute('aria-pressed') !== pressed) taskBar.setAttribute('aria-pressed', pressed);
+    }
+  }
+
+  /** 2026-11-12: the phone's Task bar button: the chosen skill picked for the bar (kept when it is already). */
+  private pickChosen(): void {
+    const { plan, focus, own } = this;
+    if (plan === null || focus === null || !plan.active(focus)) return;
+    if (this.hand.pickedSkill !== focus) this.hand.pickSkill(focus, this.frame.element);
+    if (own !== undefined) this.update(own);
   }
 
   /**

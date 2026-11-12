@@ -23,6 +23,11 @@ const f32 = Math.fround;
 /** `APP_STATUS1 "WndStatus2.tga" 0 220 112` (`resdata.inc:3350`): the window's picture, drawn as it is (`bTile` 0). */
 const WIDTH = 220;
 const HEIGHT = 112;
+/**
+ * Its scale on a landscape phone (`WindowFrame`'s `mobileScale`). 2026-11-12 (owner): the pet windows that open beside it
+ * (`PetStatusWindow`, `BuffPetStatusWindow`) take the same, so that they are drawn as big as it is.
+ */
+export const STATUS_MOBILE_SCALE = 0.63;
 /** The controls' rectangles in the client area (`WIDC_CUSTOM1` to `WIDC_CUSTOM6`, `resdata.inc:3360-3405`). */
 const BAR_LEFT = 96;
 const BAR_RIGHT = 204;
@@ -108,7 +113,7 @@ export class StatusWindow {
     private readonly data: { texts: Texts; exp: readonly ExpRow[] },
     private readonly doc: Document = document,
   ) {
-    const frame = new WindowFrame('', art, { width: WIDTH, height: HEIGHT, texture: 'WndStatus2.tga', mobileScale: 0.63 }, doc);
+    const frame = new WindowFrame('', art, { width: WIDTH, height: HEIGHT, texture: 'WndStatus2.tga', mobileScale: STATUS_MOBILE_SCALE }, doc);
     frame.element.classList.add('hud-status');
     // Escape never closes it (GetWndBase, WndBase.cpp:2079-2087): T and its close button do
     frame.escapeCloses = false;

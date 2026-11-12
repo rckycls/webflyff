@@ -270,3 +270,30 @@ describe("Overlay's frame work (Piece 6 M5, part B)", () => {
     expect(root.find('pre').textContent).not.toContain('cpu');
   });
 });
+
+describe('Overlay hidden (2026-11-12, a build made for the players)', () => {
+  it('is drawn by default', () => {
+    const root = new FakeRoot();
+    const overlay = new Overlay(root as unknown as HTMLElement);
+    const box = root.find('div');
+    expect(overlay.shown).toBe(true);
+    expect(box.hidden).toBe(false);
+    expect(box.style.cssText).not.toContain('display:none');
+  });
+
+  it('puts nothing on screen when hidden, and still counts', () => {
+    vi.stubGlobal('performance', {});
+    const root = new FakeRoot();
+    const overlay = new Overlay(root as unknown as HTMLElement, { hidden: true });
+    const box = root.find('div');
+    expect(overlay.shown).toBe(false);
+    expect(box.hidden).toBe(true);
+    expect(box.style.cssText).toContain('display:none');
+    expect(root.children).toContain(box);
+
+    overlay.error('A missing file');
+    overlay.frame(0.5);
+    expect(overlay.snapshot().errors).toEqual(['A missing file']);
+    expect(overlay.snapshot().fps).toBeCloseTo(2, 5);
+  });
+});

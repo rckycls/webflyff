@@ -35,6 +35,7 @@ import { themeKey, themeUrl } from './art';
 import type { WindowFrame } from './frame';
 import { ResWindow } from './resWindow';
 import type { ResLayout, ResRect } from './resWindow';
+import { STATUS_MOBILE_SCALE } from './statusWindow';
 
 /** The bag's drag (inventoryWindow.ts) and a slot's. */
 const BAG_DRAG = 'application/x-flyff-inventory';
@@ -55,10 +56,11 @@ const FACE: ResRect = [8, 6, 72, 90];
 
 /**
  * APP_BUFFPET_STATUS (`resdata.inc:2693-2800`), its controls in the entry's order; the title is
- * `IDS_RESDATA_INC_006602`, "Buff Pet Status".
+ * `IDS_RESDATA_INC_006602`, "Buff Pet Status". 2026-11-12 (owner): on a landscape phone it is drawn at the status window's
+ * scale (`STATUS_MOBILE_SCALE`), as the raised pet's window is, not whole.
  */
 export const BUFFPET_STATUS: ResLayout = {
-  title: 'Buff Pet Status', width: 192, height: 128,
+  title: 'Buff Pet Status', width: 192, height: 128, frame: { mobileScale: STATUS_MOBILE_SCALE, fitWhole: false },
   controls: [
     { kind: 'custom', id: 'WIDC_CUSTOM1', rect: FACE },
     ...[0, 2, 1, 3, 6, 8, 4, 7, 5].map((i) => ({ kind: 'static' as const, id: slotId(i), rect: SLOTS[i]!, picture: 'WndElemItemBlank.tga' })),

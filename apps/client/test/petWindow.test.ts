@@ -13,6 +13,8 @@ import { ServerClock } from '../src/net/serverClock';
 import { WindowFrame } from '../src/world/hud/frame';
 import { MMI } from '../src/world/hud/moverMenu';
 import { PetStatusWindow } from '../src/world/hud/petStatusWindow';
+import { BuffPetStatusWindow } from '../src/world/hud/buffPetStatusWindow';
+import { STATUS_MOBILE_SCALE, StatusWindow } from '../src/world/hud/statusWindow';
 import { OwnState } from '../src/world/OwnState';
 import type { PetChange } from '../src/world/OwnState';
 import { PetWindows } from '../src/world/pets/petWindows';
@@ -294,5 +296,66 @@ describe('the portrait\'s drawing (render/petPortrait.ts, pets review)', () => {
     portrait.clear(); // SAFE_DELETE( m_pPetModel ): the window closed
     expect(dispose).toHaveBeenCalledOnce();
     noContext.mockRestore();
+  });
+});
+
+describe('the pet windows on a landscape phone (2026-11-12, owner: as big as the Status window)', () => {
+  const PHONE = '(max-width: 1000px) and (pointer: coarse)';
+  const onPhone = (phone: boolean, run: () => void) => {
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true, value: (query: string) => ({ matches: phone && (query === PHONE || query === '(pointer: coarse)') }),
+    });
+    try {
+      run();
+    } finally {
+      delete (window as { matchMedia?: unknown }).matchMedia;
+    }
+  };
+  /** The Status window (APP_STATUS1), opened at the top left as the HUD has it. */
+  const status = (): StatusWindow => {
+    const s = new StatusWindow(art, { texts: petData().texts, exp: [] }, document);
+    document.body.append(s.frame.element);
+    s.frame.open({ x: 0, y: 0 });
+    return s;
+  };
+  const buffPet = (): BuffPetStatusWindow => {
+    const w = new BuffPetStatusWindow(art, { drop: () => {}, takeOut: () => {}, hover: () => {} }, document);
+    document.body.append(w.window.element);
+    return w;
+  };
+
+  it("the raised pet's window is drawn at the Status window's scale: collapsed, just as high, and beside it", () => {
+    onPhone(true, () => {
+      const s = status();
+      const pet = openWindow(s.frame);
+      expect(STATUS_MOBILE_SCALE).toBe(0.63);
+      expect(s.frame.element.style.transform).toBe(`scale(${STATUS_MOBILE_SCALE})`);
+      expect(pet.frame.element.style.transform).toBe(`scale(${STATUS_MOBILE_SCALE})`);
+      expect(pet.frame.element.hasAttribute('data-mobile-window')).toBe(true);
+      expect(pet.frame.scaledSize.height).toBeCloseTo(s.frame.scaledSize.height, 5);
+      expect(pet.frame.scaledSize.width).toBeCloseTo(192 * STATUS_MOBILE_SCALE, 5);
+      expect(pet.frame.position).toEqual({ x: Math.round(s.frame.scaledSize.width), y: 0 });
+    });
+  });
+
+  it("the buff pet's window too", () => {
+    onPhone(true, () => {
+      const s = status();
+      const w = buffPet();
+      w.open(s.frame, 1280);
+      expect(w.frame.element.style.transform).toBe(`scale(${STATUS_MOBILE_SCALE})`);
+      expect(w.frame.scaledSize.width).toBeCloseTo(192 * STATUS_MOBILE_SCALE, 5);
+      expect(w.frame.position).toEqual({ x: Math.round(s.frame.scaledSize.width), y: 0 });
+    });
+  });
+
+  it('a desktop keeps them whole', () => {
+    onPhone(false, () => {
+      const pet = openWindow();
+      expect(pet.frame.element.style.transform).toBe('');
+      const w = buffPet();
+      w.open(null, 1280);
+      expect(w.frame.element.style.transform).toBe('');
+    });
   });
 });

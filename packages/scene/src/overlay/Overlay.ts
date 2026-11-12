@@ -88,12 +88,19 @@ export class Overlay {
   private readonly toggle: HTMLButtonElement;
   private compact = false;
   private expanded = true;
+  /**
+   * 2026-11-12: whether the box is on screen. A page built for the players makes it with `hidden` (apps/client's
+   * `debugOverlayShown`): it still counts (its `snapshot` and errors), and nothing of it is drawn.
+   */
+  readonly shown: boolean;
 
-  constructor(root: HTMLElement) {
+  constructor(root: HTMLElement, options: { hidden?: boolean } = {}) {
     const doc = root.ownerDocument;
     const box = doc.createElement('div');
     box.id = 'overlay';
-    box.style.cssText = BOX_STYLE;
+    this.shown = options.hidden !== true;
+    box.style.cssText = this.shown ? BOX_STYLE : `${BOX_STYLE}display:none;`;
+    box.hidden = !this.shown;
     this.text = doc.createElement('pre');
     this.text.style.cssText = TEXT_STYLE;
     const button = doc.createElement('button');
