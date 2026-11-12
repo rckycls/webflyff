@@ -3408,3 +3408,32 @@ describe("TaskBar: the phone's Action Slot window and the combo skills (2026-11-
     }
   });
 });
+
+describe('TaskBar: a finger\'s tap with another finger down (2026-11-13, owner: "can\'t press the bar while walking")', () => {
+  it('runs at the lift with no click (a browser makes none with the joystick\'s finger down); the late click is not a second use', () => {
+    const own = vagrantWithSkills(5, 0, [3, 0, 0]);
+    const item = [...own.inventory!.values()][0]!;
+    const { bar, calls } = editingOn(own);
+    document.body.append(bar.quickSlots);
+    bar.pickItem(item.objectId, document.body);
+    bar.quickSlots.querySelector<HTMLButtonElement>('.hud-quick-slot[data-slot="0"]')!.click();
+    bar.update(own, EDIT_DATA);
+    const lift = (element: HTMLElement, x = 10) => {
+      element.dispatchEvent(touch('pointerdown', 10, 10));
+      element.dispatchEvent(touch('pointerup', x, 10));
+    };
+    // F1 (what the new bar holds there) and the potion's circle, tapped without a click
+    lift(slot(bar, 'item', 0));
+    lift(bar.quickSlots.querySelector<HTMLButtonElement>('.hud-quick-slot[data-slot="0"]')!);
+    expect(calls).toEqual(['useSlot 0 0', 'useSlot 7 0']);
+    // the click a browser may make of the same tap afterwards: no second use
+    slot(bar, 'item', 0).click();
+    expect(calls).toHaveLength(2);
+    // a finger that slid off its press is no tap
+    lift(slot(bar, 'item', 0), 60);
+    expect(calls).toHaveLength(2);
+    // a mouse's click still uses it
+    slot(bar, 'item', 0).click();
+    expect(calls).toEqual(['useSlot 0 0', 'useSlot 7 0', 'useSlot 0 0']);
+  });
+});

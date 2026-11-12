@@ -146,6 +146,19 @@ and chat 30% smaller again; then the quick slots' pictures bigger and cut round,
 10. **Start menu smaller** on a phone: at most 0.85 (was up to 2, 1.25 at 730 x 320). Read as the Start menu ("the
     navigator menus"); the Navigator window itself is item 6.
 
+## 9. Phone: an Action Slot button beside Jump, and the bar while walking (2026-11-13)
+
+1. **Action Slot button** (`hud-action-trigger`, built as Attack and Jump are, `AttackButton`): fixed beside Jump, as big,
+   on its line, 8 px to its left, clear of the quick slots. A tap runs the action slot (as C does on the desktop:
+   `SkillUse.useActionSlot`); with the action slot empty it opens the Action Slot window instead. Hidden like Jump (flying,
+   the bag open, the landscape cover). Icon: `icons/action.svg` (three chevrons in Jump's colours). Desktop: not shown.
+2. **"Can't press the task bar or the quick slots while walking"**: a browser makes no `click` from a finger's tap while
+   another finger is down (the joystick's), so the bar's buttons never ran. Now a finger's press runs when it lifts on the
+   button (within 12 px of where it went down), and the `click` that may follow within 800 ms is not run a second time
+   (`TaskBar.button`). A mouse still uses `click`. Covers the F-key slots, the action slot, the quick slots, Start.
+   - Neuz's own rule stays: an item with a cast (some potions) is refused while moving: "You can use it when you stand up."
+     (TID_PK_STAND_LIMIT, `IsUseItemReadyTime`). The tap works; that item waits for the player to stop.
+
 ## Checks run here
 
 - `npm run typecheck`: clean.
@@ -159,6 +172,13 @@ and chat 30% smaller again; then the quick slots' pictures bigger and cut round,
   `mobileAudit` (730 x 320 too), `quests`, `keyboardLift`, `friends`, `gmCommands`, `itemNpcWindows`, `party`, `skills`,
   `mobileUx`, `flight`, `navigation`, `questWindow`: all pass (the three that failed in the first run, with the top icons
   over windows' controls and a SKILLTASKBAR check, rerun and passing).
+- After section 9: typecheck clean; `npx vitest run` 4630 passed, 9 skipped; `check:public-build` ok; e2e (chromium +
+  phone) `taskBarFinger` (a second finger's taps on a quick slot and the action slot while the joystick is held, real
+  multi-touch through CDP), `phoneSizes`, `skills`, `mobileUx`, `mobileAudit`, `controls`, `flight`, `landscape`, `items`,
+  `buffs`, `party`, `questWindow`, `quests`, `talking`, `travel-items`, `lord`, `world`: 168 passed. Two failed: `world`'s
+  status-window test on the phone was outdated by section 7 (Escape now closes the phone's docked chat first, as the
+  desktop's): fixed, passes. `travel-items` "a refusal: not standing" (desktop, F1 while W is held 300 ms) is flaky under
+  load, 2 of 3 alone; this round does not touch the keys.
 - `style.css` braces balanced, never below 0.
 - Not checked here: a real phone (keyboard, thumbs on the circles, the chat's small tabs at 0.56, the menu at 0.85).
 
@@ -171,7 +191,7 @@ $env:E2E_CLIENT_PORT='5190'; npx playwright test -c apps/client/playwright.confi
 Passing looks like: every test passes, or only failures that main `f6a955e` already has. The tests that touch this
 branch: `taskBarFinger`, `keyboardLift`, `phoneSizes`, `talking`, `mobileAudit`, `landscape`, `skills`, `mobileUx`, `friends`,
 `gmCommands`, `itemNpcWindows`, `party`, `flight`,
-`topRightIcons`, `controls`, `items`, `windows`. Any phone test that measures the task bar or the chat in pixels may need
+`topRightIcons`, `controls`, `items`, `windows`, `world`. Any phone test that measures the task bar or the chat in pixels may need
 the new sizes (section 6).
 
 Then by hand on the live site after deploy: no corner text on `/play/`; `/play/?stats` shows it.

@@ -1657,7 +1657,8 @@ fieldset:disabled .btn {
 /* 2026-11-10 (owner): Attack, Jump and the flight buttons in the windows' colours (the phone panels' beige, #dba98c
    border, #795431 shade), a dark brown ring and shadow keeping them clear of the world behind */
 .hud-attack,
-.hud-jump {
+.hud-jump,
+.hud-action-trigger {
   position: absolute;
   padding: 0;
   border: 2px solid #dba98c;
@@ -1669,7 +1670,7 @@ fieldset:disabled .btn {
   touch-action: none;
   -webkit-tap-highlight-color: transparent;
 }
-.hud-attack[hidden], .hud-jump[hidden] { display: none !important; }
+.hud-attack[hidden], .hud-jump[hidden], .hud-action-trigger[hidden] { display: none !important; }
 .hud-attack {
   right: calc(var(--game-safe-right, 0px) + 16px);
   bottom: calc(var(--hud-taskbar-height, 48px) + 16px);
@@ -1678,7 +1679,8 @@ fieldset:disabled .btn {
 }
 
 .hud-attack::before,
-.hud-jump::before {
+.hud-jump::before,
+.hud-action-trigger::before {
   content: '';
   position: absolute;
   background: no-repeat center / contain;
@@ -1687,13 +1689,15 @@ fieldset:disabled .btn {
 }
 .hud-attack::before { inset: 15px; background-image: url('./icons/attack.svg'); }
 .hud-jump::before { inset: 8px; background-image: url('./icons/jump.svg'); }
+/* 2026-11-13 (owner): the Action Slot button (the action slot's run; WorldScreen.actionSlotButton) */
+.hud-action-trigger::before { inset: 9px; background-image: url('./icons/action.svg'); }
 
-.hud-attack:active:not(:disabled), .hud-jump:active:not(:disabled) {
+.hud-attack:active:not(:disabled), .hud-jump:active:not(:disabled), .hud-action-trigger:active:not(:disabled) {
   transform: scale(.95);
   filter: brightness(.92);
 }
 
-.hud-attack:disabled, .hud-jump:disabled {
+.hud-attack:disabled, .hud-jump:disabled, .hud-action-trigger:disabled {
   /* greyed but solid enough to read over the world (a light disc at half its opacity all but vanished) */
   opacity: 0.72;
   filter: saturate(.3) brightness(.92);
@@ -1706,7 +1710,14 @@ fieldset:disabled .btn {
   width: 52px;
   height: 52px;
 }
-.hud-attack:focus-visible, .hud-jump:focus-visible { outline: 2px solid #c2e9ff; outline-offset: 3px; }
+/* beside Jump, at its left (a touch screen wider than a phone; a phone's is placed with the quick slots) */
+.hud-action-trigger {
+  right: calc(var(--game-safe-right, 0px) + 90px);
+  bottom: calc(var(--hud-taskbar-height, 48px) + 108px);
+  width: 52px;
+  height: 52px;
+}
+.hud-attack:focus-visible, .hud-jump:focus-visible, .hud-action-trigger:focus-visible { outline: 2px solid #c2e9ff; outline-offset: 3px; }
 
 /* Short landscape screens need both actions below Navigator and above the composer.
    Like the bar/composer, their anchors cancel the HUD's home-indicator inset. */
@@ -1853,7 +1864,7 @@ fieldset:disabled .btn {
   /* 2026-11-11 (owner): on a phone the two windows keep V15's layout at the frame's 0.7, as the Messenger does: the list in
      the middle above the task bar and, with a detail, the two centred together (QuestWindow.openDetail). The text is 14 px,
      the trees and texts scroll by finger, the rows are 26 px, and the buttons' press areas are larger than their pictures. */
-  .world:has(.hud-quests:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack, .hud-quick-slots, .hud-quest-tracker) { visibility: hidden; }
+  .world:has(.hud-quests:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots, .hud-quest-tracker) { visibility: hidden; }
   :is(.hud-quests, .hud-quest-detail),
   :is(.hud-quests, .hud-quest-detail) > .hud-window-title,
   :is(.hud-quests, .hud-quest-detail) :is(.hud-res-static-text, .hud-res-text-body, .quest-filter-field, .hud-res-combo-rows > [role='option'], .hud-tab-title) { font-size: 14px; }
@@ -1903,7 +1914,8 @@ fieldset:disabled .btn {
   .world:has(.hud-inventory[data-mobile-window]:not([hidden])) .joystick,
   .world:has(.hud-inventory[data-mobile-window]:not([hidden])) .hud-jump,
   .world:has(.hud-inventory[data-mobile-window]:not([hidden])) .hud-attack,
-  .world:has(.hud-inventory[data-mobile-window]:not([hidden])) .hud-quick-slots { visibility: hidden; }
+  .world:has(.hud-inventory[data-mobile-window]:not([hidden])) .hud-quick-slots,
+  .world:has(.hud-inventory[data-mobile-window]:not([hidden])) .hud-action-trigger { visibility: hidden; }
   /* 2026-11-10 (owner): the Navigator's edge and close button showed beside the bag's close button; it hides with the bag */
   .world:has(.hud-inventory[data-mobile-window]:not([hidden])) .hud-navigator { visibility: hidden; }
 }
@@ -2177,11 +2189,11 @@ fieldset:disabled .btn {
 /* Landscape mobile windows follow the classic wide Character and Skill Tree layouts. */
 .hud-character-landscape,
 .hud-skills-landscape { background: #f4ece3; border-radius: 6px; }
-.world:has(:is(.hud-character-landscape, .hud-skills-landscape):not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+.world:has(:is(.hud-character-landscape, .hud-skills-landscape):not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
 /* the party window, fitted whole to a phone: the window's buttons off it, and its 12 px text in the columns laid out for it
    (2026-11-05: the phone's 14 px cut "Distribute Item"); the fit scales it up */
 @media (max-width: 1000px) and (pointer: coarse) {
-  .world:has(.hud-party:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+  .world:has(.hud-party:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
   .hud-party[data-mobile-window] { font-size: 12px; }
 }
 .hud-character-landscape { font-size: 15px !important; }
@@ -2299,7 +2311,7 @@ fieldset:disabled .btn {
 }
 .hud-village-radio-icon { flex: none; width: 14px; height: 14px; background-repeat: no-repeat; }
 @media (max-width: 1000px) and (pointer: coarse) {
-  .world:has(.hud-select-village:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+  .world:has(.hud-select-village:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
   .hud-village-radio::before { content: ''; position: absolute; inset: -4px 0; }
   /* the window stays at its own size on a phone (mobileScale 1): its words at the phones' 14 px */
   .hud-select-village :is(.hud-select-village-prompt, .hud-village-radio) { font-size: 14px; white-space: nowrap; }
@@ -2310,7 +2322,7 @@ fieldset:disabled .btn {
 .teleporter-map button { position: absolute; width: 20px; height: 20px; min-height: 0; padding: 0; border: 0; background: center / 16px 16px no-repeat; transform: translate(-50%, -50%); cursor: pointer; }
 .teleporter-map button:hover, .teleporter-map button:focus-visible { background-size: 20px 20px; outline: 1px solid #fff8; }
 @media (max-width: 1000px) and (pointer: coarse) {
-  .world:has(.hud-teleporter:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+  .world:has(.hud-teleporter:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
   .teleporter-map button::before { content: ''; position: absolute; inset: -12px; }
 }
 
@@ -2413,7 +2425,7 @@ fieldset:disabled .btn {
   -webkit-tap-highlight-color: transparent;
 }
 .hud-worldmap-close span { width: 15px; height: 14px; background: transparent no-repeat -15px 0; }
-.world:has(.hud-worldmap:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+.world:has(.hud-worldmap:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
 
 /* The Option window's Sound Option group (Piece 6 M2, hud/optionWindow.ts): Neuz's controls at their own spacing */
 .hud-option-label { position: absolute; height: 18px; line-height: 18px; color: #000; font-size: 12px; white-space: nowrap; }
@@ -2609,7 +2621,7 @@ fieldset:disabled .btn {
   bottom: calc(var(--hud-taskbar-height, 48px) + 30px);
   width: 52px; height: 52px;
 }
-.world:has(.hud-flight:not([hidden])) .hud-jump { visibility: hidden; }
+.world:has(.hud-flight:not([hidden])) :is(.hud-jump, .hud-action-trigger) { visibility: hidden; }
 @media (max-width: 1000px) and (max-height: 400px) and (pointer: coarse) {
   .hud-flight-accelerate {
     width: 52px; height: 52px;
@@ -2648,6 +2660,12 @@ fieldset:disabled .btn {
   .hud-jump {
     width: var(--jump-size); height: var(--jump-size);
     right: calc(var(--attack-right) + (var(--attack-size) - var(--jump-size)) / 2 + var(--jump-out));
+    bottom: calc(var(--attack-bottom) + (var(--attack-size) - var(--jump-size)) / 2 + var(--jump-out));
+  }
+  /* 2026-11-13 (owner): the Action Slot button beside Jump, at its left, as big, 8 px apart */
+  .hud-action-trigger {
+    width: var(--jump-size); height: var(--jump-size);
+    right: calc(var(--attack-right) + (var(--attack-size) - var(--jump-size)) / 2 + var(--jump-out) + var(--jump-size) + 8px);
     bottom: calc(var(--attack-bottom) + (var(--attack-size) - var(--jump-size)) / 2 + var(--jump-out));
   }
   .hud-quick-slots { display: block; position: absolute; inset: 0; pointer-events: none; }
@@ -2979,7 +2997,7 @@ fieldset:disabled .btn {
 .hud-instant-text { position: absolute; padding: 2px 4px; box-sizing: border-box; overflow: hidden; line-height: 14px; white-space: pre-wrap; cursor: pointer; }
 .hud-instant-from { color: #0000ff; }
 @media (max-width: 1000px) and (pointer: coarse) {
-  .world:has(.hud-messenger:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+  .world:has(.hud-messenger:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
   :is(.hud-messenger, .hud-add-friend, .hud-friend-confirm, .hud-message, .hud-instant-message),
   :is(.hud-messenger, .hud-add-friend, .hud-friend-confirm, .hud-message, .hud-instant-message) :is(input, textarea),
   .hud-messenger .hud-messenger-tab { font-size: 14px; }
@@ -3008,7 +3026,7 @@ fieldset:disabled .btn {
 /* The phone: the trade beside the phone's bag (as the shop is), its windows' words 14 px and their buttons words, not
    pictures, tall enough for a finger; the quantity box's field 16 px (no zoom on focus) with the number keyboard. */
 @media (max-width: 1000px) and (pointer: coarse) {
-  .world:has(.hud-trade:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+  .world:has(.hud-trade:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
   /* the request and the final box open over the phone's bag and the trade panel (both z-index 60), as Neuz's open on top */
   :is(.hud-trade-request, .hud-trade-confirm) { z-index: 70 !important; }
   .hud-trade {
@@ -3152,7 +3170,7 @@ fieldset:disabled .btn {
   :is(.hud-vendor, .hud-vendor-chat)[data-mobile-window] > .hud-window-close { left: auto !important; right: 14px; }
   /* the keypad sheets over the bag (60) and the chat panel (61), which they open from */
   .hud-vendor-sell, .hud-vendor-buy { font-size: 14px; z-index: 62 !important; }
-  .world:has(.hud-vendor:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+  .world:has(.hud-vendor:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
 }
 
 /* 2026-11-10: the jewel windows (items/jewelWindows.ts; docs/superpowers/specs/2026-11-10-jewels-research.md §2-§3).
@@ -3172,7 +3190,7 @@ fieldset:disabled .btn {
 /* The phone: the window a panel at the left beside the phone's bag (as the trade and the shop), a tap putting a bag item
    in and a tap on a filled slot taking it out; the slots 44 px, the description and START's word 14 px. */
 @media (max-width: 1000px) and (pointer: coarse) {
-  .world:has(.hud-jewel:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+  .world:has(.hud-jewel:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
   .hud-jewel {
     left: 8px !important; top: 8px !important; transform: none !important; z-index: 60 !important;
     width: calc(100% - var(--bag-window-width, 60%) - 28px) !important; min-width: 300px;
@@ -3260,7 +3278,7 @@ fieldset:disabled .btn {
    words a finger can read (as the trade's and the shop's), the text fields 16 px (no zoom on focus); a tap on a member
    opens its menu (no right click). The joystick and the shortcuts hide while the guild window is open. */
 @media (max-width: 1000px) and (pointer: coarse) {
-  .world:has(.hud-guild:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+  .world:has(.hud-guild:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
   .hud-guild, .hud-guild-dialog, .hud-guild-menu,
   :is(.hud-guild, .hud-guild-dialog) :is(.hud-res-static-text, .hud-res-text-body, .hud-guild-member-text, .hud-window-title),
   .hud-guild .hud-guild-tab { font-size: 14px; }
@@ -3283,7 +3301,7 @@ fieldset:disabled .btn {
 /* The phone: a panel in the middle above the task bar, the description and the seven lines 14 px, each line 34 px tall
    for a finger (a tap is the click); the lines scroll if the screen is short. */
 @media (max-width: 1000px) and (pointer: coarse) {
-  .world:has(.hud-heaven-tower:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+  .world:has(.hud-heaven-tower:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
   .hud-heaven-tower {
     left: calc(50% - min(280px, 50% - 8px)) !important; top: 8px !important; transform: none !important;
     width: min(560px, calc(100% - 16px)) !important; height: calc(100% - var(--hud-taskbar-height, 48px) - 16px) !important;
@@ -3353,7 +3371,7 @@ fieldset:disabled .btn {
    bank's item takes it out, a tap on a bag item puts it in the bank shown, a tap on the penya moves penya (the count's box is
    the shop's number pad). The PIN windows open over the panels; their buttons are words; the PIN fields 16 px. */
 @media (max-width: 1000px) and (pointer: coarse) {
-  .world:has(.hud-bank:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+  .world:has(.hud-bank:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
   .hud-bank-pin { z-index: 70 !important; }
   .hud-bank {
     left: 8px !important; top: 8px !important; transform: none !important; z-index: 60 !important;
@@ -3458,7 +3476,7 @@ fieldset:disabled .btn {
    the shop), the inbox rows taller and scrolled by touch; a tap reads a mail, attaches the bag item tapped, takes the item or the
    penya of a mail. Every word 14 px or more, every field 16 px. */
 @media (max-width: 1000px) and (pointer: coarse) {
-  .world:has(:is(.hud-post, .hud-post-read):not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+  .world:has(:is(.hud-post, .hud-post-read):not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
   .hud-mail-notice { top: 56px; width: 32px; height: 32px; }
   :is(.hud-post, .hud-post-read) {
     left: 8px !important; top: 8px !important; transform: none !important; z-index: 60 !important;
@@ -3577,7 +3595,7 @@ fieldset:disabled .btn {
    in the first empty slot of its row and a tap on a slot taking it out; the slots 44 px in a grid of six (the stone's icon,
    then five), the text, the rates and the white angel's lines 14 px, the three buttons 36 px words. */
 @media (max-width: 1000px) and (pointer: coarse) {
-  .world:has(.hud-summon-angel:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+  .world:has(.hud-summon-angel:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
   .hud-summon-angel {
     left: 8px !important; top: 8px !important; transform: none !important; z-index: 60 !important;
     width: calc(100% - var(--bag-window-width, 60%) - 28px) !important; min-width: 300px;
@@ -3692,7 +3710,7 @@ fieldset:disabled .btn {
 /* The phone: each Lord window a panel in the middle above the task bar (as the Forsaken Tower's), its controls in a column
    that scrolls; text 14 px, lines and buttons 40 px for a finger, the pictures' buttons as words. */
 @media (max-width: 1000px) and (pointer: coarse) {
-  .world:has(.hud-lord:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+  .world:has(.hud-lord:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
   /* the event icons under the phone's row of top icons */
   .hud-lord-events { top: 56px; }
   .hud-lord {
@@ -3761,7 +3779,7 @@ fieldset:disabled .btn {
    windows, its body a grid: the item and NOW and the goal on top, then a row each of the ten (material, protection,
    smelting, result), then Start, Stop and Reset as words; cells 44 px, words 14 px; a tap on a cell takes its item out. */
 @media (max-width: 1000px) and (pointer: coarse) {
-  .world:has(.hud-smelt-safety:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+  .world:has(.hud-smelt-safety:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
   .hud-smelt-safety {
     left: 8px !important; top: 8px !important; transform: none !important; z-index: 60 !important;
     width: calc(100% - var(--bag-window-width, 60%) - 28px) !important; min-width: 300px;
@@ -3843,7 +3861,7 @@ fieldset:disabled .btn {
    across the panel, a tap on a bag item putting it in; the confirm boxes over the panel. */
 @media (max-width: 1000px) and (pointer: coarse) {
   /* (the ResistItem window keeps the phone's Chat button and line free: its next /ResistItem is typed with it open) */
-  .world:has(.hud-npc-item:not([hidden]):not(.hud-resist-item)) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+  .world:has(.hud-npc-item:not([hidden]):not(.hud-resist-item)) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
   :is(.hud-mix-jewel-confirm, .hud-remove-attribute-confirm) { z-index: 70 !important; }
   .hud-npc-item > .hud-window-body { grid-template-rows: none; grid-auto-rows: min-content; align-content: start; }
   .hud-npc-item [data-slot] {

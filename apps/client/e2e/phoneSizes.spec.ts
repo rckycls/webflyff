@@ -106,5 +106,13 @@ test('the phone: centre texts at half size, bar and docked desktop chat at the b
     expect(boxes[i]!.x + boxes[i]!.width).toBeLessThan(boxes[i === 4 ? 0 : i - 1]!.x);
   }
   expect(jump.y + jump.height).toBeLessThan(attack.y);
+  // 2026-11-13 (owner): the fixed Action Slot button beside Jump: as big, on its line, at its left 8 px apart, clear of the
+  // circles and of the bar and the chat
+  const trigger = (await page.getByRole('button', { name: 'Action Slot', exact: true }).boundingBox())!;
+  expect(trigger.width).toBeCloseTo(jump.width, 0);
+  expect(centre(trigger).y).toBeCloseTo(centre(jump).y, 0);
+  expect(jump.x - (trigger.x + trigger.width)).toBeCloseTo(8, 0);
+  for (const box of [...boxes, attack]) expect(apart(trigger, box)).toBe(true);
+  expect(trigger.x).toBeGreaterThan(Math.max(barBox.x + barBox.width, chatBox.x + chatBox.width));
   await page.screenshot({ path: info.outputPath('phone-sizes.png') });
 });

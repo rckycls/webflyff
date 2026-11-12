@@ -226,6 +226,12 @@ export const QUICK_SLOTS = 7;
  * little under their size; a touch screen wider than a phone keeps `TOUCH_MENU_SCALE`).
  */
 const PHONE_MENU_SCALE = 0.85;
+/**
+ * 2026-11-13: a finger's tap on a button of the bar runs at its lift when it moved no more than this (px); the click a
+ * browser may make of it afterwards, within `FINGER_CLICK_MS`, is the same tap.
+ */
+const FINGER_TAP_SLOP = 12;
+const FINGER_CLICK_MS = 800;
 /** A finger held on a quick slot this long (ms), and moved no more than `QUICK_SLOP` px, offers to take it off. */
 const QUICK_HOLD_MS = 500;
 const QUICK_SLOP = 10;
@@ -640,6 +646,11 @@ export class TaskBar {
   /** 2026-11-12: the bag item (its object ID) a finger picked with the bag's Task bar button, or null. */
   get pickedItem(): number | null {
     return this.picked?.from === 'inventory' ? this.picked.objectId : null;
+  }
+
+  /** 2026-11-13: how many skills the action slot holds (`m_nCurQueueNum`), for the phone's Action Slot button. */
+  get actionSlotCount(): number {
+    return this.loaded.queueCount;
   }
 
   /**
@@ -1377,7 +1388,29 @@ export class TaskBar {
     if (className !== 'hud-taskbar-start') button.dataset.silent = '';
     button.tabIndex = -1;
     button.addEventListener('mousedown', (event) => event.preventDefault());
-    button.addEventListener('click', press);
+    // 2026-11-13 (owner, "can't press the task bar or the quick slots while walking"): a browser makes no click of a finger's
+    // tap while another finger is down (the joystick's), so a finger's press runs at its lift on the button, and the click
+    // that may follow it is not run again (as Attack and Jump act on the touch, attackButton.ts)
+    let finger: { id: number; x: number; y: number } | null = null;
+    let fingerRanAt = -Infinity;
+    button.addEventListener('pointerdown', (event) => {
+      finger = byFinger(event) ? { id: event.pointerId, x: event.clientX, y: event.clientY } : null;
+    });
+    button.addEventListener('pointercancel', () => { finger = null; });
+    button.addEventListener('pointerup', (event) => {
+      const down = finger;
+      finger = null;
+      if (down === null || event.pointerId !== down.id) return;
+      if (Math.hypot(event.clientX - down.x, event.clientY - down.y) > FINGER_TAP_SLOP) return;
+      fingerRanAt = event.timeStamp;
+      press();
+    });
+    button.addEventListener('click', (event) => {
+      const after = event.timeStamp - fingerRanAt;
+      fingerRanAt = -Infinity;
+      if (after >= 0 && after < FINGER_CLICK_MS) return;
+      press();
+    });
     return button;
   }
 

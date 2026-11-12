@@ -165,19 +165,45 @@ test('the phone: a bag item and a skill onto the quick slots by Attack (bar 8), 
   // the bar shown (bar 1) is left as it was
   await expect(itemSlot(page, 0)).not.toHaveAttribute('data-kind', 'item');
   await page.screenshot({ path: info.outputPath('phone-quick-slots.png') });
-  // a tap on the potion's circle uses it (DOUSEITEM, as F-key on the bar would)
+  // 2026-11-13 (owner, "can't press the bar or the quick slots while walking"): a second finger's tap while the first holds the
+  // joystick (the player walking) reaches the circle: the potion, an item with a cast, is refused as Neuz refuses it to a
+  // mover that is not standing (TID_PK_STAND_LIMIT, IsUseItemReadyTime); one on the bar's action slot opens its window
   const used = () => sentOf(gateway, PacketType.DOUSEITEM).length;
   const before = used();
-  await circle(0).tap();
-  await expect.poll(used).toBe(before + 1);
-  // held: Remove takes it off
   const box = (await circle(0).boundingBox())!;
   const session = await page.context().newCDPSession(page);
+  const size = page.viewportSize()!;
+  const stick = { id: 1, x: 100, y: size.height * 0.4 };
+  const walking = { ...stick, y: stick.y - 50 };
+  await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [stick] });
+  await session.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [walking] });
+  await expect(page.locator('.joystick')).toBeVisible();
+  const tapWhileWalking = async (target: { x: number; y: number }) => {
+    // CDP: a touchEnd lifts the points it lists, so the joystick's finger stays down
+    await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [walking, { id: 2, ...target }] });
+    await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [{ id: 2, ...target }] });
+  };
+  await tapWhileWalking({ x: box.x + box.width / 2, y: box.y + box.height / 2 });
+  await expect(page.locator('.hud-messages')).toContainText('You can use it when you stand up.');
+  expect(used()).toBe(before);
+  const queue = (await page.locator('.hud-slot[data-row="queue"][data-slot="0"]').boundingBox())!;
+  await tapWhileWalking({ x: queue.x + queue.width / 2, y: queue.y + queue.height / 2 });
+  await expect(page.locator('.hud-action-slot-window')).toBeVisible();
+  await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [walking] });
+  await page.locator('.hud-action-slot-window .hud-window-close').tap();
+  await expect(page.locator('.hud-action-slot-window')).toBeHidden();
+  // stopped (at the step after the lift), a tap on the circle uses it (DOUSEITEM, as an F-key on the bar would)
+  await expect(async () => {
+    await circle(0).tap();
+    expect(used()).toBe(before + 1);
+  }).toPass();
+  const usedNow = used();
+  // held: Remove takes it off
   const finger = { id: 5, x: box.x + box.width / 2, y: box.y + box.height / 2 };
   await session.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [finger] });
   await page.waitForTimeout(700);
-  await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-  await expect.poll(used).toBe(before + 1);
+  await session.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [finger] });
+  await expect.poll(used).toBe(usedNow);
   const remove = page.locator('.hud-quick-remove');
   await expect(remove).toBeVisible();
   await remove.tap();
@@ -193,8 +219,16 @@ test('the phone: the Action Slot window adds and takes out the action slot\'s sk
   const skillTaskBar = () => sentOf(gateway, PacketType.SKILLTASKBAR)
     .map((s) => decodeWorldPacket(new Uint8Array(s.body)))
     .filter((p): p is Extract<WorldPacket, { type: 'skillTaskBar' }> => p.type === 'skillTaskBar');
-  await page.locator('.hud-slot[data-row="queue"][data-slot="0"]').tap();
   const win = page.locator('.hud-action-slot-window');
+  // 2026-11-13 (owner): the fixed Action Slot button beside Jump; with nothing in the action slot it opens the window
+  const trigger = page.getByRole('button', { name: 'Action Slot', exact: true });
+  await expect(trigger).toBeVisible();
+  await trigger.tap();
+  await expect(win).toBeVisible();
+  await win.locator('.hud-window-close').tap();
+  await expect(win).toBeHidden();
+  // the bar's action slot opens it too
+  await page.locator('.hud-slot[data-row="queue"][data-slot="0"]').tap();
   await expect(win).toBeVisible();
   await expect(win.locator('.action-slot-cell')).toHaveCount(5);
   const cleanHit = win.getByRole('button', { name: 'Add Clean Hit' });

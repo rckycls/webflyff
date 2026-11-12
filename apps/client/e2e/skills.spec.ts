@@ -170,9 +170,10 @@ async function useSlot(page: Page, slot: number): Promise<void> {
   else await page.keyboard.press(`F${slot + 1}`);
 }
 
-/** Uses the action slot: C on the desktop (`CWndWorld::OnKeyUp`), its button on the phone. */
+/** Uses the action slot: C on the desktop (`CWndWorld::OnKeyUp`), the Action Slot button on the phone. */
 async function useActionSlot(page: Page): Promise<void> {
-  if (isTouch()) await page.locator('.hud-taskbar-action').tap();
+  // 2026-11-13 (owner): the phone's fixed Action Slot button beside Jump, as the bar's action button
+  if (isTouch()) await page.getByRole('button', { name: 'Action Slot', exact: true }).tap();
   else await page.keyboard.press('c');
 }
 
