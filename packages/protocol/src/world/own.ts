@@ -103,7 +103,7 @@ function readHonorPart(r: ArReader): number[] | undefined {
  * One `CItemContainer<CItemElem>::Serialize` of `max` slots, a bank's or a pocket's (`_Common/Item.h:923-944`): `m_apIndex`,
  * the count, each item's slot and `CItemElem`, the object indexes. Throws a `ProtocolError` for a count or a slot out of range.
  */
-function readSmallContainer(r: ArReader, max: number, name: string): { slots: number[]; items: InventoryItem[] } {
+export function readSmallContainer(r: ArReader, max: number, name: string): { slots: number[]; items: InventoryItem[] } {
   const slots = Array.from({ length: max }, () => r.u32()); // ar.Read( m_apIndex, sizeof(DWORD) * m_dwItemMax )
   const at = r.position();
   const count = r.u8(); // chSize

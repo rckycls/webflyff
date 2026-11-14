@@ -3445,6 +3445,67 @@ fieldset:disabled .btn {
   .hud-amount-question { margin: 0; font-size: 14px; line-height: 17px; color: #000000; }
 }
 
+/* 2026-11-15: the guild bank (hud/guildBank/guildBankWindows.ts; housing-research/research-note.md §1). CWndGuildBank is
+   WndGuildBank.tga at its own size (the grid's marks, the coin bag, the penya box are in it); its grid is the bank's cells, 6 x 7
+   of 32 px over the 42 slots; the penya in money style (commas). Contribute Guild lists the bag's gems 6 a row from (3, 7) of its
+   list; the log's lines are black, 20 px apart from (4, 3), their spaces kept (OnDraw, WndGuildBank.cpp:593-620). */
+.hud-guild-bank-grid { grid-template-columns: repeat(6, 32px); }
+.hud-guild-bank .hud-res-static-text { left: 4px; top: 1px; }
+.hud-guild-merit-items {
+  position: absolute; left: 3px; top: 7px; right: 3px; bottom: 3px; display: grid; grid-template-columns: repeat(6, 32px);
+  grid-auto-rows: 32px; align-content: start; overflow-y: auto; scrollbar-width: none;
+}
+.hud-guild-bank-log-lines { position: absolute; overflow: hidden auto; scrollbar-width: none; padding-top: 3px; box-sizing: border-box; }
+.hud-guild-bank-log-lines::-webkit-scrollbar { display: none; }
+.hud-guild-bank-log-line { height: 20px; padding-left: 4px; color: #000000; font: 12px/20px Verdana, Arial, sans-serif; white-space: pre; }
+
+/* The phone: the Guild Safebox is a panel beside the bag (the bank's), its grid, the penya row and three word buttons; a tap on
+   its item takes it out, a tap on a bag item puts it in, a tap on the penya takes penya (the count's box is the number pad).
+   Contribute Guild and the log open over the panel. */
+@media (max-width: 1000px) and (pointer: coarse) {
+  .world:has(.hud-guild-bank:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+  :is(.hud-guild-merit, .hud-guild-bank-log) { z-index: 70 !important; }
+  .hud-guild-bank {
+    left: 8px !important; top: 8px !important; transform: none !important; z-index: 60 !important;
+    width: calc(100% - var(--bag-window-width, 60%) - 28px) !important; min-width: 300px;
+    height: calc(100% - var(--hud-taskbar-height, 48px) - 16px) !important;
+    border-radius: 6px; background: repeating-linear-gradient(#fdf5ee 0 2px, #f6e6dc 2px 4px); box-shadow: inset 0 0 0 2px #dba98c, 0 2px 8px #0005;
+  }
+  .hud-guild-bank > .hud-window-frame { display: none; }
+  .hud-guild-bank > .hud-window-title { height: 26px !important; border-radius: 6px 6px 0 0; background: linear-gradient(#f7d8c4, #e2b394); font-size: 14px; }
+  .hud-guild-bank > .hud-window-close { left: auto !important; right: 8px; }
+  .hud-guild-bank > .hud-window-body {
+    left: 4px !important; top: 30px !important; width: calc(100% - 8px) !important; height: calc(100% - 34px) !important;
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: minmax(0, 1fr) 34px 34px; gap: 6px; overflow: hidden;
+  }
+  .hud-guild-bank > .hud-window-body > * {
+    position: relative !important; left: auto !important; top: auto !important; width: auto !important; height: auto !important;
+  }
+  .hud-guild-bank > .hud-window-body > :is([data-control="WIDC_TABCTRL1"], .hud-guild-bank-gold) { grid-column: 1 / -1; }
+  .hud-guild-bank > .hud-window-body > [data-control="WIDC_CUSTOM1"] { display: none; }
+  .hud-guild-bank .hud-guild-bank-tab > :is(.hud-bank-scroll, .hud-tab-strip) { display: none; }
+  .hud-guild-bank .hud-guild-bank-grid {
+    position: absolute !important; inset: 0 !important; width: auto !important; height: auto !important; box-sizing: border-box;
+    padding: 4px; grid-template-columns: repeat(auto-fill, 44px); grid-auto-rows: 44px; gap: 2px; justify-content: center;
+    overflow-y: auto; scroll-snap-type: none; touch-action: pan-y; border-radius: 4px; background: #fffaf5; box-shadow: inset 0 0 0 1px #dba98c;
+  }
+  .hud-guild-bank .hud-bank-cell { width: 44px; height: 44px; border-radius: 3px; background: #f3e4d8; }
+  .hud-guild-bank .hud-bank-cell img { width: 40px; height: 40px; margin: 2px; }
+  .hud-guild-bank .hud-bank-cell span { font-size: 14px; line-height: 14px; color: #1010ff; text-shadow: 1px 1px #ffffff; }
+  .hud-guild-bank .hud-guild-bank-gold { border-radius: 4px; background: #fffaf5; box-shadow: inset 0 0 0 1px #dba98c; }
+  .hud-guild-bank .hud-guild-bank-gold .hud-res-static-text {
+    position: static; display: block; font: 14px/34px Arial, sans-serif; color: #000000; text-align: center; text-shadow: none;
+  }
+  .hud-guild-bank .hud-guild-bank-gold .hud-res-static-text::before { content: 'Penya '; color: #3b3bb5; }
+  .hud-guild-bank .hud-picture-button[data-word] {
+    box-sizing: border-box; border: 1px solid #b07d5c; border-radius: 4px; background: linear-gradient(#fff7ef, #ecd2bd) !important;
+    color: #3a2414; font: 14px/32px Arial, sans-serif; text-align: center; white-space: nowrap; overflow: hidden; padding: 0;
+  }
+  .hud-guild-bank .hud-picture-button[data-word]::after { content: attr(data-word); }
+  .hud-guild-bank .hud-picture-button[data-word]:disabled { opacity: 0.55; background: #d9c8bb !important; }
+  .hud-guild-bank-log-line { font-size: 14px; }
+}
+
 /* 2026-11-10 (bank-mail): the post (hud/post/postWindows.ts; research §2). CWndPost's two pages in its tab control, the strip at
    the bottom; the Send page's labels on WndEditTile200 (group statics, white words); the inbox drawn as CWndPostReceive::OnDraw
    draws it: WndPostTable.tga at alpha 150, rows of 40 px, the icon at (19, +2), WndNotUse.tga at alpha 110 over a read mail's, the

@@ -2,6 +2,8 @@ import { PostHud } from './post/postHud';
 import { MAIL_DRAG, MAIL_PENYA_DRAG } from './hud/post/postWindows';
 import { MailNotice } from './hud/mailNotice';
 import { BankHud } from './bank/bankHud';
+import { GuildBankHud } from './guildBank/guildBankHud';
+import { GUILD_BANK_DRAG, GUILD_BANK_PENYA_DRAG } from './hud/guildBank/guildBankWindows';
 import { BANK_DRAG, BANK_PENYA_DRAG } from './hud/bank/bankWindows';
 import { COMMON_BANK_TIMERS } from './bank/bankBook';
 import { SpeechBubbleLayer } from './render/SpeechBubbleLayer';
@@ -194,7 +196,10 @@ import { ItemActions } from './items/itemActions';
 import { GroundItems } from './items/groundItems';
 import { GroundModels, loadDropModel } from './items/groundModels';
 import { NearbyItems } from './items/nearbyItems';
-import { EVE_PK, NULL_ID, STATE_BASEMOTION_MODE, ShortcutKind, isBankMessage, isGuildMessage, isLordMessage, isPostMessage, isTradeMessage } from '@flyffweb/protocol';
+import {
+  ENABLE_GUILD_INVENTORY, EVE_PK, NULL_ID, STATE_BASEMOTION_MODE, ShortcutKind, isBankMessage, isGuildBankMessage, isGuildMessage,
+  isLordMessage, isPostMessage, isTradeMessage,
+} from '@flyffweb/protocol';
 // 2026-11-10: the guild (guild/guildBook.ts, guild/guildHud.ts)
 import { GuildBook } from './guild/guildBook';
 import type { GuildContext, GuildEvent } from './guild/guildBook';
@@ -554,6 +559,8 @@ export class WorldScreen {
   private tradeTooltip: HTMLElement | null = null;
   /** 2026-11-10 (bank-mail): the bank's windows (bank/bankHud.ts), and the tooltip over a bank's item. */
   private bankHud: BankHud | undefined;
+  /** 2026-11-15: the guild bank's windows (guildBank/guildBankHud.ts). */
+  private guildBankHud: GuildBankHud | undefined;
   /** 2026-11-10 (bank-mail): the post's windows (post/postHud.ts) and the new-mail notice (hud/mailNotice.ts). */
   private postHud: PostHud | undefined;
   private mailNotice: MailNotice | undefined;
@@ -939,6 +946,9 @@ export class WorldScreen {
       if (isTradeMessage(value)) { this.tradeHud?.handle(objectId, value); continue; }
       // 2026-11-10 (bank-mail): the bank's windows hear its snapshots; the own state (WorldState.toOwn) applies the contents
       if (isBankMessage(value) && objectId === self?.objectId) this.bankHud?.handle(value);
+      // 2026-11-15: the guild bank's (guildBank/guildBankHud.ts); no own state: the HUD keeps the bank and moves the bag, the
+      // guild book the fund. A member's take comes under its own object id, so none is filtered out
+      if (isGuildBankMessage(value)) { this.guildBankHud?.handle(value); continue; }
       // 2026-11-10 (bank-mail): the post's (no own state: its items and penya come as CREATEITEM and the penya's point)
       if (isPostMessage(value)) { if (objectId === self?.objectId) this.postHud?.handle(value); continue; }
       if (value.type === 'block') this.tradeHud?.onBlock(value);
@@ -1726,6 +1736,8 @@ export class WorldScreen {
         if (this.dialog?.frame.isOpen === true) return; // no drop while the dialogue is open (DPClient.cpp:9378-9382)
         // 2026-11-10 (bank-mail): nor while the bank is open (WndWorld.cpp:7776-7797)
         if (this.bankHud?.isOpen === true) { this.say('TID_GAME_TRADELIMITITEM'); return; }
+        // 2026-11-15: nor while the Guild Safebox or Contribute Guild is (WndWorld.cpp:7782-7784)
+        if (this.guildBankHud?.busy === true) { this.say('TID_GAME_TRADELIMITITEM'); return; }
         // 2026-11-10: nor while the Summon Angel window is (CWndWorld::OnDropIcon, WndWorld.cpp:7786-7795)
         if (this.summonAngel?.isOpen === true) { this.say('TID_GAME_TRADELIMITITEM'); return; }
         this.sounds?.drop();
@@ -1996,7 +2008,7 @@ export class WorldScreen {
       say: (text, color) => this.hud?.messages.add(text, color),
       box: (text) => { if (this.messageBox?.isOpen !== true) this.messageBox?.open(text, 'ok', () => {}); },
       openInventory: () => { if (this.own && !inventoryWindow.frame.isOpen) inventoryWindow.toggle(this.own); },
-      npcShopOpen: () => this.shopWindow?.frame.isOpen === true || this.bankHud?.isOpen === true,
+      npcShopOpen: () => this.shopWindow?.frame.isOpen === true || this.bankHud?.isOpen === true || this.guildBankHud?.isOpen === true,
       summonAngelOpen: () => this.summonAngel?.isOpen === true, // 2026-11-10
       addOwnGold: (delta) => this.own?.addGold(delta),
       consent: (mine, theirs, partner, gold) => this.own?.tradeConsent(mine, theirs, partner, gold),
@@ -2023,6 +2035,34 @@ export class WorldScreen {
       showTooltip: (item, anchor, host) => this.showBankTooltip(item, anchor, host),
     }, doc);
     this.bankHud = bankHud;
+    // 2026-11-15: the guild bank (guildBank/guildBankHud.ts); its fund is the guild book's, its windows refreshed like the guild's
+    const ownPlayer = (): number => this.entry.character.playerId;
+    const guildEvents = (events: GuildEvent[]): void => { if (events.length > 0) guildHud.handle(events); };
+    const guildBankHud = new GuildBankHud(this.hudArt!, this.data!.texts, {
+      send: (bytes) => session.sendBankMail(bytes),
+      say: (text, color) => this.hud?.messages.add(text, color),
+      box: (text) => { if (this.messageBox?.isOpen !== true) this.messageBox?.open(text, 'ok', () => {}); },
+      guild: () => this.guildBook.own(ownPlayer()),
+      ownPlayerId: ownPlayer,
+      setGuildGold: (gold) => guildEvents(this.guildBook.setBankGold(ownPlayer(), gold)),
+      takeGuildGold: (gold, playerId, cloak) => guildEvents(this.guildBook.takeBankGold(ownPlayer(), gold, playerId, cloak)),
+      removeGuildGold: (guildId, gold) => guildEvents(this.guildBook.removeBankGold(guildId, gold)),
+      bagItems: () => this.own?.inventory ?? null,
+      bagAdd: (item) => this.own?.bagAdd(item),
+      addOwnGold: (delta) => this.own?.addGold(delta),
+      worn: (objectId) => this.own?.equipmentObjectIds.includes(objectId) === true,
+      prop: (itemId) => this.data?.itemProps.get(itemId),
+      packMax: (itemId) => this.data?.itemProps.get(itemId)?.packMax ?? 1,
+      tradeOpen: () => tradeHud.windowOpen,
+      npcShopOpen: () => this.shopWindow?.frame.isOpen === true,
+      bankBusy: () => bankHud.busy,
+      vendorOpen: () => this.personalShop?.isOpen === true,
+      summonAngelOpen: () => this.summonAngel?.isOpen === true,
+      openInventory: () => { if (this.own && !inventoryWindow.frame.isOpen) inventoryWindow.toggle(this.own); },
+      inventoryFrame: () => inventoryWindow.frame,
+      showTooltip: (item, anchor, host) => this.showBankTooltip(item, anchor, host),
+    }, doc);
+    this.guildBankHud = guildBankHud;
     // 2026-11-10 (bank-mail): the post (post/postHud.ts)
     const postHud = new PostHud(this.hudArt!, this.data!.texts, {
       send: (bytes) => session.sendBankMail(bytes),
@@ -2051,9 +2091,15 @@ export class WorldScreen {
     // 2026-11-10 (bank-mail): a bank's item or penya dragged onto the bag (CWndInventory::OnChildNotify, WndField.cpp:1863-1950),
     // and a mail's (:2015-2032)
     inventoryWindow.foreignDrop = {
-      types: () => [...(bankHud.isOpen ? [BANK_DRAG, BANK_PENYA_DRAG] : []), ...(postHud.read.isOpen ? [MAIL_DRAG, MAIL_PENYA_DRAG] : [])],
+      types: () => [
+        ...(bankHud.isOpen ? [BANK_DRAG, BANK_PENYA_DRAG] : []), ...(postHud.read.isOpen ? [MAIL_DRAG, MAIL_PENYA_DRAG] : []),
+        // 2026-11-15: a guild bank item or its penya (WndField.cpp:2001-2060)
+        ...(guildBankHud.isOpen ? [GUILD_BANK_DRAG, GUILD_BANK_PENYA_DRAG] : []),
+      ],
       drop: (type, data) => {
-        if (type === MAIL_DRAG) postHud.dropOnBag('item');
+        if (type === GUILD_BANK_DRAG) guildBankHud.dropOnBag(Number(data));
+        else if (type === GUILD_BANK_PENYA_DRAG) guildBankHud.dropOnBag(undefined);
+        else if (type === MAIL_DRAG) postHud.dropOnBag('item');
         else if (type === MAIL_PENYA_DRAG) postHud.dropOnBag('gold');
         else if (type === BANK_PENYA_DRAG) bankHud.dropOnBag({ bank: Number(data) });
         else if (type === BANK_DRAG) {
@@ -2070,7 +2116,7 @@ export class WorldScreen {
       // 2026-11-10: and a tap on a bag item puts it in the open jewel window, where a drop would take it
       // 2026-11-10 (bank-mail): and into the open bank, or onto the mail being written; and in the Summon Angel window, where
       // the double-click would put it
-      active: () => tradeHud.windowOpen || this.jewels?.isOpen === true || bankHud.isOpen || postHud.sending ||
+      active: () => tradeHud.windowOpen || this.jewels?.isOpen === true || bankHud.isOpen || guildBankHud.isOpen || postHud.sending ||
         this.summonAngel?.isOpen === true || this.itemNpc?.isOpen === true ||
         // 2026-11-11: and the Upgrade Specialist's Safe Upgrade (Safe Element among them) and Piercing: a tap as the
         // double-click
@@ -2078,6 +2124,7 @@ export class WorldScreen {
       tapItem: (id) => {
         if (tradeHud.windowOpen) tradeHud.tapItem(id);
         else if (bankHud.isOpen) bankHud.tapItem(id);
+        else if (guildBankHud.isOpen) guildBankHud.dropOnBank(id); // 2026-11-15: into the guild bank
         else if (postHud.sending) postHud.tapItem(id);
         else if (this.summonAngel?.isOpen === true) this.summonAngelUse(id);
         else if (this.jewels?.isOpen === true) { if (!this.jewels.tapItem(id)) this.sayRefusal({ kind: 'say', tid: 'TID_SBEVE_NOTUSEITEM' }); }
@@ -2120,7 +2167,7 @@ export class WorldScreen {
     this.optionWindow = this.audio === null ? undefined : new OptionWindow(this.hudArt!, this.audio, doc);
     for (const modal of [
       logOutBox.modal, reviveWindow.modal, skillWindow.warning.modal, this.dialog.modal, questWindow.modal, messageBox.modal, selectVillage.modal, partyHud.messageBox.modal,
-      friendHud.messageBox.modal, tradeHud.gold.window.modal!, ...guildHud.modals, bankHud.amount.modal, ...postHud.modals,
+      friendHud.messageBox.modal, tradeHud.gold.window.modal!, ...guildHud.modals, bankHud.amount.modal, guildBankHud.amount.modal, ...postHud.modals,
     ]) {
       modal.onChange = () => this.modalChanged();
     }
@@ -2136,7 +2183,7 @@ export class WorldScreen {
       ...(this.chatWindow instanceof NeuzChat ? this.chatWindow.elements : [this.chatWindow.element]), this.shopWindow.frame.element,
       this.petWindows.element, this.buffPet.element,
       ...questWindow.elements, this.dialog.element, this.moverMenu.element, ...partyHud.elements, ...friendHud.elements,
-      ...tradeHud.elements, ...guildHud.elements, ...bankHud.elements, ...postHud.elements, this.mailNotice.element,
+      ...tradeHud.elements, ...guildHud.elements, ...bankHud.elements, ...guildBankHud.elements, ...postHud.elements, this.mailNotice.element,
       ...(this.personalShop?.elements.slice(1) ?? []),
     );
     // what the friend list said while the world loaded
@@ -2358,7 +2405,8 @@ export class WorldScreen {
    * and the window.
    */
   private openSummonAngel(): void {
-    if (this.tradeHud?.windowOpen === true || this.shopWindow?.frame.isOpen === true) {
+    // 2026-11-15: and the Guild Safebox (WndWorld.cpp:4840-4846)
+    if (this.tradeHud?.windowOpen === true || this.shopWindow?.frame.isOpen === true || this.guildBankHud?.isOpen === true) {
       this.say('TID_GAME_TRADENOTSUMMONANGEL');
       return;
     }
@@ -3244,6 +3292,7 @@ export class WorldScreen {
       this.jewels?.dismiss(); // 2026-11-10: and the jewel windows (:8198-8222)
       this.itemNpc?.dismiss(); // 2026-11-11: and the item NPC windows (:8198-8496)
       this.bankHud?.moved(); // 2026-11-10 (bank-mail): and the bank (:8313-8337)
+      this.guildBankHud?.moved(); // 2026-11-15: and the guild bank (:8351-8356)
       this.postHud?.moved(); // and the post (:8383-8394)
       this.summonAngel?.dismiss(); // 2026-11-10: and Summon Angel with the bag (:8154-8165)
     }
@@ -3287,6 +3336,7 @@ export class WorldScreen {
     this.friendHud?.update();
     this.guildHud?.update();
     this.bankHud?.update(); // 2026-11-10 (bank-mail): drawn live from the own banks
+    this.guildBankHud?.update(); // 2026-11-15: and the guild bank
     this.postHud?.update();
     // the new-mail notice follows the own MODE_MAILBOX (ADD_OBJ, MODIFYMODE)
     const mailOn = ((self?.added.player?.mode ?? 0) & Mode.MAILBOX) !== 0;
@@ -3827,7 +3877,9 @@ export class WorldScreen {
     this.stopOwnMover();
     const data = this.data!.npcs.get(npc.added.npc!.characterKey.toLowerCase());
     // the base job is the Vagrant's (CMover::IsBaseJob)
-    const entries = npcMenuEntries(data, this.data!.texts, (this.own?.job ?? 0) === 0);
+    // 2026-11-15: Guild Warehouse with a guild and the server's guild bank on (WndWorld.cpp:6669-6674)
+    const guildBank = this.guildBook.own(this.entry.character.playerId) !== null && (this.localEvents.get(ENABLE_GUILD_INVENTORY) ?? 0) !== 0;
+    const entries = npcMenuEntries(data, this.data!.texts, (this.own?.job ?? 0) === 0, guildBank);
     const sole = soleEntry(data, entries);
     if (sole !== null) {
       this.chooseNpcEntry(id, sole);
@@ -3928,7 +3980,8 @@ export class WorldScreen {
         },
       },
       // CWndVendor::Initialize (WndVendor.cpp:204-213) and SetVendor's dialogue (:67-68)
-      busy: () => this.shopWindow?.frame.isOpen === true || this.dialog?.frame.isOpen === true || this.bankHud?.isOpen === true,
+      busy: () => this.shopWindow?.frame.isOpen === true || this.dialog?.frame.isOpen === true || this.bankHud?.isOpen === true ||
+        this.guildBankHud?.isOpen === true,
       invalidNames: () => this.partyCatalog?.invalidNames ?? [],
       wordChange: (text) => wordChange(text, this.data?.chat?.filter ?? null),
       tooltip: (item, cost, anchor) => {
@@ -4162,11 +4215,19 @@ export class WorldScreen {
       if (this.personalShop?.isOpen === true) return;
       // 2026-11-10 (bank-mail): nor with the bank open (WndWorld.cpp:5253-5259)
       if (this.bankHud?.isOpen === true) { this.say('TID_GAME_BANKTRADESELF'); return; }
+      // 2026-11-15: nor with the Guild Safebox (:5278-5283)
+      if (this.guildBankHud?.isOpen === true) { this.say('TID_GAME_BANKSTILLUSING'); return; }
       this.dialog?.close();
       this.shopWindow!.open(id, npc.name, data);
     } else if (entry === MMI.BANKING) {
+      // 2026-11-15: not with the Guild Safebox open (:5496-5501)
+      if (this.guildBankHud?.isOpen === true) { this.say('TID_GAME_BANKSTILLUSING'); return; }
       this.bankHud?.request(); // 2026-11-10 (bank-mail): Deposit (:5451-5536)
+    } else if (entry === MMI.GUILDBANKING) {
+      this.guildBankHud?.request(); // 2026-11-15: Guild Warehouse (:5543-5612)
     } else if (entry === MMI.POST) {
+      // 2026-11-15: not with the Guild Safebox open (:4556-4561)
+      if (this.guildBankHud?.isOpen === true) { this.say('TID_GAME_BANKSTILLUSING'); return; }
       this.postHud?.open(); // 2026-11-10 (bank-mail): the Post Box's Mailbox (:4525-4612)
     } else if (entry === MMI.TELEPORTER && data !== undefined) {
       this.dialog?.close();
@@ -4556,6 +4617,8 @@ export class WorldScreen {
     // 2026-11-10 (bank-mail)
     this.bankHud?.reset();
     this.bankHud = undefined;
+    this.guildBankHud?.reset();
+    this.guildBankHud = undefined;
     this.postHud?.reset();
     this.postHud = undefined;
     this.mailNotice?.element.remove();

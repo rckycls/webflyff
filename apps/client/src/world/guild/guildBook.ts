@@ -112,6 +112,35 @@ export class GuildBook {
     this.war = null;
   }
 
+  /** 2026-11-15 (guild bank): OnGuildBankWindow's `m_nGoldGuild` (Neuz/DPClient.cpp:3010-3034). */
+  setBankGold(ownPlayerId: number, gold: number): GuildEvent[] {
+    const guild = this.own(ownPlayerId);
+    if (guild === null) return [];
+    guild.gold = gold;
+    return [{ kind: 'changed' }];
+  }
+
+  /**
+   * 2026-11-15 (guild bank): OnGetItemGuildBank's penya (:2853-2905): the fund less `gold` (0 when it had less), the taker's
+   * contribution less it but for a cloak's (`DecrementMemberContribution`), then UpdateGuildWnd.
+   */
+  takeBankGold(ownPlayerId: number, gold: number, playerId: number, cloak: boolean): GuildEvent[] {
+    const guild = this.own(ownPlayerId);
+    if (guild === null) return [];
+    guild.gold = guild.gold > gold ? guild.gold - gold : 0;
+    const entry = cloak ? undefined : guild.members.get(playerId);
+    if (entry !== undefined) entry.giveGold -= gold;
+    return [{ kind: 'changed' }];
+  }
+
+  /** 2026-11-15 (guild bank): OnRemoveGuildBankItem's penya (:16120-16134), a GM's removal: that guild's fund less `gold`. */
+  removeBankGold(guildId: number, gold: number): GuildEvent[] {
+    const guild = this.guilds.get(guildId);
+    if (guild === undefined) return [];
+    guild.gold = Math.max(0, guild.gold - gold);
+    return [{ kind: 'changed' }];
+  }
+
   apply(objectId: number, message: GuildMessage | GuildDirectMessage, ctx: GuildContext): GuildEvent[] {
     switch (message.type) {
       case 'allGuilds': {
