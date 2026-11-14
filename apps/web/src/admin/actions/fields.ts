@@ -21,6 +21,24 @@ export function intField(body: Record<string, unknown>, key: string, min: number
   return typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max ? value : undefined;
 }
 
+/** `yyyymmdd` of the day `days` after `ms`, in this machine's time (SQL Server's GETDATE() on the same VPS). */
+export function localDay(ms: number, days = 0): string {
+  const d = new Date(ms);
+  d.setDate(d.getDate() + days);
+  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** `yyyy-mm-dd` as `yyyymmdd`, when it is a real calendar day; else `undefined`. */
+export function dateInput(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (m === null) return undefined;
+  const [year, month, day] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const d = new Date(Date.UTC(year, month - 1, day));
+  if (d.getUTCFullYear() !== year || d.getUTCMonth() !== month - 1 || d.getUTCDate() !== day) return undefined;
+  return `${m[1]}${m[2]}${m[3]}`;
+}
+
 /** A character id as the game keeps it: 7 digits. */
 export function idPlayerField(body: Record<string, unknown>): string | undefined {
   const value = body.idPlayer;

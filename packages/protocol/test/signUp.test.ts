@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkSignUp, DEFAULT_RESERVED_NAMES, normalizeAccount } from '../src';
+import { checkSignUp, checkSignUpEmail, checkSignUpPassword, DEFAULT_RESERVED_NAMES, normalizeAccount } from '../src';
 
 describe('checkSignUp', () => {
   const ok = { account: 'Hero_01', password: 'abc12345', confirm: 'abc12345', email: '' };
@@ -53,5 +53,19 @@ describe('checkSignUp', () => {
     expect(checkSignUp({ ...ok, account: 'zzhero' }, reserved)?.message).toBe('That account name is reserved.');
     expect(checkSignUp({ ...ok, account: 'admin' }, reserved)).toBeUndefined();
     expect(DEFAULT_RESERVED_NAMES.exact).toContain('gamemaster');
+  });
+});
+
+describe('the password and email rules on their own (the admin panel resets them)', () => {
+  it('checks a password against the sign-up rules and the account name', () => {
+    expect(checkSignUpPassword('poreotix', 'abc12345')).toBeUndefined();
+    expect(checkSignUpPassword('poreotix', 'short1')?.field).toBe('password');
+    expect(checkSignUpPassword('poreotix', 'nodigitshere')?.field).toBe('password');
+    expect(checkSignUpPassword('Hero1234', 'hero1234')?.message).toBe('The password cannot be the account name.');
+  });
+  it('takes an empty email or a valid one', () => {
+    expect(checkSignUpEmail('')).toBeUndefined();
+    expect(checkSignUpEmail('a@b.co')).toBeUndefined();
+    expect(checkSignUpEmail('not an email')?.field).toBe('email');
   });
 });

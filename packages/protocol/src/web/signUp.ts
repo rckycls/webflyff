@@ -44,7 +44,16 @@ export function checkSignUp(form: SignUpForm, reserved: ReservedNames = DEFAULT_
     return problem('account', 'That account name is reserved.');
   }
 
-  const { password } = form;
+  const passwordProblem = checkSignUpPassword(account, form.password);
+  if (passwordProblem !== undefined) return passwordProblem;
+
+  if (form.confirm !== undefined && form.confirm !== form.password) return problem('confirm', 'The passwords do not match.');
+
+  return checkSignUpEmail(form.email);
+}
+
+/** The password rules alone (length, characters, a letter and a digit, not the account name, compared lower-case). */
+export function checkSignUpPassword(account: string, password: string): SignUpProblem | undefined {
   if (password.length < 8 || password.length > 31) return problem('password', 'The password must be 8 to 31 characters long.');
   if (!PASSWORD_CHARACTERS.test(password)) {
     return problem('password', 'Use only letters, numbers, spaces and common symbols in the password.');
@@ -52,11 +61,12 @@ export function checkSignUp(form: SignUpForm, reserved: ReservedNames = DEFAULT_
   if (!/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) {
     return problem('password', 'The password needs at least one letter and one number.');
   }
-  if (password.toLowerCase() === account) return problem('password', 'The password cannot be the account name.');
+  if (password.toLowerCase() === normalizeAccount(account)) return problem('password', 'The password cannot be the account name.');
+  return undefined;
+}
 
-  if (form.confirm !== undefined && form.confirm !== password) return problem('confirm', 'The passwords do not match.');
-
-  const { email } = form;
+/** The email rule alone: empty, or an address of at most 100 characters. */
+export function checkSignUpEmail(email: string): SignUpProblem | undefined {
   if (email !== '' && (email.length > 100 || !EMAIL_SHAPE.test(email))) {
     return problem('email', 'Enter a valid email address, or leave it empty.');
   }
