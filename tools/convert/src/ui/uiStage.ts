@@ -262,6 +262,8 @@ export const THEME_FILES: readonly string[] = [
   // 2026-11-15, the guild bank (housing-research/research-note.md §1): APP_GUILD_BANK's picture and its Contribute Guild,
   // Create Cloak and log buttons (resdata.inc:7058-7132)
   'WndGuildBank.tga', 'ButtSuppot.BMP', 'ButtCloak.BMP', 'ButtRecord.tga',
+  // 2026-11-15, personal housing (housing-research/A-client.md §3.2): APP_MINIROOM_LIST's Refresh (resdata.inc:2-48)
+  'ButtGWRefresh.tga',
   // 2026-11-10, Summon Angel (docs/superpowers/specs/2026-11-10-summon-angel-research.md): APP_SUMMON_ANGEL's Reset and
   // Start (resdata.inc:4647, :4656; Cancel's ButCancel2 is above) and the angel's EXP gauge over it (CNeuzApp,
   // Neuz.cpp:1642-1643; CMover::RenderAngelStatus, MoverRender.cpp:1907-1979)

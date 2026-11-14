@@ -33,6 +33,11 @@ export interface CollisionObject {
    * with `bOnlyTopPick` tests only such models, and a click passes through any other to what is behind it.
    */
   pick?: boolean;
+  /**
+   * 2026-11-15 (housing): the model's logical key (`models/<stem>.glb`), for the rules that look an object up by its model
+   * (`CWorld::GetObjByName`, the room's wall `obj_miniwall01.o3d`). Absent on objects made elsewhere.
+   */
+  model?: string;
 }
 
 /** The world around the movers, as the collision rules read it. D3D x and z throughout. */

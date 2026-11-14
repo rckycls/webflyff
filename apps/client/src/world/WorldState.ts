@@ -354,6 +354,11 @@ function hitXiOf(cls: MissileClass, sfxHit: number): number {
  */
 export class WorldState {
   readonly groundItems = new Map<number, import('@flyffweb/protocol').GroundItem>();
+  /**
+   * 2026-11-15 (housing): the controls in view (`OT_CTRL`: placed furniture, chests), by object id, as ADD_OBJ brought them;
+   * DEL_OBJ removes one. Drawn by `furniture/ctrlModels.ts`.
+   */
+  readonly ctrls = new Map<number, import('@flyffweb/protocol').AddedCtrl>();
   private itemBounds: [number, number] = [1_000_000, 1_000_000];
   setItemBounds(width: number, depth: number): void {
     this.itemBounds = [width, depth];
@@ -439,6 +444,13 @@ export class WorldState {
         }
         return;
       }
+      case 'addCtrl': { // 2026-11-15 (housing): OnAddObj's OT_CTRL (DPClient.cpp:1053-1320)
+        const { pos, scale, angle } = message.ctrl;
+        if (pos.every((n) => Number.isFinite(n) && Math.abs(n) <= 1_000_000) && Number.isFinite(scale) && Number.isFinite(angle)) {
+          this.ctrls.set(objectId, message.ctrl);
+        }
+        return;
+      }
       case 'createItem':
       case 'updateItem':
       case 'updateItemEx': // the awakening (2026-11-05)
@@ -480,6 +492,7 @@ export class WorldState {
         return;
       case 'delObj':
         this.groundItems.delete(objectId);
+        this.ctrls.delete(objectId); // 2026-11-15 (housing)
         this.remove(objectId); // OnRemoveObj (:1643): the object is deleted
         return;
       case 'monsterProp': // OnMonsterProp (:6630) names no object

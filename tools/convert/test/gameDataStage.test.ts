@@ -507,8 +507,8 @@ const CONVERTED = [
 
 /** Every catalog of GAME_DATA_KEYS: the stage writes one file for each. */
 const CATALOGS = Object.keys(GAME_DATA_KEYS).length;
-/** The catalogs and the optional honour needs (2026-11-11), written whenever honorList.txt reads. */
-const WRITTEN = CATALOGS + 1;
+/** The catalogs, the optional honour needs (2026-11-11, whenever honorList.txt reads) and controls (2026-11-15, mdlDyna.inc). */
+const WRITTEN = CATALOGS + 2;
 
 describe('the game-data stage', () => {
   let root: string;

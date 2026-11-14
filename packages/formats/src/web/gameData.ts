@@ -152,6 +152,16 @@ export interface WebItemProp {
   /** `dwLinkKindBullet`: the `IK2_*` its bullets must be (`IK2_BULLET` 25 for a bow, `CMover::IsBullet`); -1 for none. */
   linkKindBullet?: number;
   /**
+   * 2026-11-15 (housing): `dwLinkKind`, kept for the housing items only (`IK1_HOUSING`): a piece of furniture's control
+   * (`CI_*`, `CDeployManager::LoadToDeploy( pItemProp->dwLinkKind )`). Absent elsewhere and in older catalogs.
+   */
+  linkKind?: number;
+  /**
+   * 2026-11-15 (housing): `szTextFileName` of a housing item: a wallpaper's or floor's texture (`ChangeWallTex`,
+   * `ChangeTileTex`). Absent elsewhere and in older catalogs.
+   */
+  textFile?: string;
+  /**
    * Piece 7 M3: `dwSkillReadyType`, the item's cast in ms before the server uses it (a Blinkwing's 10000, the Scroll of
    * Return's 4000; `IsItemRedyTime`). Absent for an item with none, and in catalogs converted before M3.
    */
@@ -543,6 +553,20 @@ export interface WebPets {
 }
 
 /** 2026-11-09: the raised pets' table, a `WebPets`. Optional: not one of GAME_DATA_KEYS. */
+
+/**
+ * 2026-11-15 (housing): one control (`OT_CTRL`) of mdlDyna.inc whose model was converted: placed furniture, chests,
+ * triggers. `CreateObj( OT_CTRL, id )` loads `model` and `ResetScale` gives it `scale` (`MODELELEM::m_fScale`).
+ */
+export interface WebCtrl {
+  id: number;
+  /** `models/ctrl_<name>.glb`. */
+  model: string;
+  scale: number;
+}
+
+/** 2026-11-15 (housing): the controls, a `WebCtrl[]`. Optional: not one of GAME_DATA_KEYS (no control is drawn without it). */
+export const CTRLS_KEY = 'data/ctrls.json';
 export const PETS_KEY = 'data/pets.json';
 
 /**

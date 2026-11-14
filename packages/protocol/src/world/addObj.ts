@@ -7,7 +7,7 @@ import { MAX_PET_NAME } from './pets';
 import { readGroundItem } from './items';
 import { readQuest, readQuestIds } from './quest';
 import type { OwnNumbers } from './own';
-import type { AddedMover, AddedNpc, AddedPlayer, MessageOf, WornPart } from './types';
+import type { AddedCtrl, AddedMover, AddedNpc, AddedPlayer, MessageOf, WornPart } from './types';
 
 /** `MAX_HUMAN_PARTS` (`Resource/defineNeuz.h:62`): the length of `m_aEquipInfo`. */
 const MAX_HUMAN_PARTS = 31;
@@ -27,21 +27,34 @@ const NULL_ID = 0xffffffff;
  * `pObj->Serialize( ar )` on the object `CreateObj` made for that type. The world server writes the same pair
  * in front of `Serialize` (`CUser::AddAddObj`, `WORLDSERVER/User.cpp:676`), so `CObj::Serialize` reads them again.
  *
- * Movers and ground items are read; other types are `addOther`, their fields skipped. A mover's fields depend on
+ * Movers, ground items and controls are read; other types are `addOther`, their fields skipped. A mover's fields depend on
  * `CObj::GetMethod()`, which `OnAddObj` sets before reading (:1058): METHOD_NONE for the player's own character
  * (the object ID is `g_pPlayer`'s, or there is no `g_pPlayer` yet: the world server sends the own ADD_OBJ first,
  * `CUser::Open`, `User.cpp:326`), METHOD_EXCLUDE_ITEM for anything else. The world server picks the method the
  * same way (`User.cpp:677`). Here the own character is the one whose object ID is the bundle's player object ID.
  */
-export function readAddObj(r: ArReader, header: MessageHeader): MessageOf<'addMover' | 'addItem' | 'addOther'> {
+export function readAddObj(
+  r: ArReader, header: MessageHeader,
+): MessageOf<'addMover' | 'addItem' | 'addCtrl' | 'addOther'> {
   const objectType = r.u8();
   r.u32(); // dwObjIndex, which CObj::Serialize reads again
   if (objectType === ObjectType.ITEM) return { type: 'addItem', item: readGroundItem(r) };
+  if (objectType === ObjectType.CTRL) return { type: 'addCtrl', ctrl: readCtrl(r) }; // 2026-11-15 (housing)
   if (objectType !== ObjectType.MOVER) {
     r.skipRest();
     return { type: 'addOther', objectType };
   }
   return { type: 'addMover', mover: readMover(r, header.objectId === header.playerObjectId) };
+}
+
+/** 2026-11-15 (housing): `CCtrl::Serialize` of a `CCommonCtrl` (it has none of its own): `CObj::Serialize`, `m_objid`. */
+function readCtrl(r: ArReader): AddedCtrl {
+  r.u8(); // m_dwType again
+  const index = r.u32();
+  const scale = Math.fround(r.u16() / 100);
+  const pos = r.vec3();
+  const angle = Math.fround(r.i16() / 10);
+  return { index, scale, pos, angle, objectId: r.u32() };
 }
 
 /**

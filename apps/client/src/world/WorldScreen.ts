@@ -203,6 +203,7 @@ import { formatText } from './hud/format';
 import { ItemActions } from './items/itemActions';
 import { GroundItems } from './items/groundItems';
 import { GroundModels, loadDropModel } from './items/groundModels';
+import { CtrlModels } from './furniture/ctrlModels'; // 2026-11-15 (housing)
 import { NearbyItems } from './items/nearbyItems';
 import {
   ENABLE_GUILD_INVENTORY, EVE_PK, NULL_ID, STATE_BASEMOTION_MODE, ShortcutKind, isBankMessage, isGuildBankMessage, isGuildMessage,
@@ -641,6 +642,8 @@ export class WorldScreen {
   private groundItems: GroundItems | undefined;
   /** The ground items' models, which the ring of tiles waits for (`settled`). */
   private dropModels: GroundModels | undefined;
+  /** 2026-11-15 (housing): the controls in view (placed furniture), furniture/ctrlModels.ts. */
+  private ctrlModels: CtrlModels | undefined;
   private nearbyItems: NearbyItems | undefined;
   /** The own character's driving: the controls each rules step, the moves sent, the stop. */
   private ownMover: OwnMover | undefined;
@@ -1653,6 +1656,8 @@ export class WorldScreen {
       () => this.ground, message => this.page!.overlay.error(message),
       pos => this.effects?.play({ xi: 64, pos })); // XI_GEN_ITEM_SHINE01, CItem::Render
     this.dropModels = dropModels;
+    this.ctrlModels = new CtrlModels(this.stage!.scene, this.data!, loadDropModel(this.services!),
+      (message) => this.page!.overlay.error(message));
     this.groundItems = new GroundItems(this.data!, this.hudArt!, (id) => itemActions.pick(id, performance.now()), doc, dropModels);
     this.nearbyItems = new NearbyItems(this.data!, this.hudArt!, (id) => itemActions.pick(id, performance.now()), doc,
       () => itemActions.pickNearby(performance.now()));
@@ -2985,7 +2990,7 @@ export class WorldScreen {
       if (this.stageDrawn && !this.preloadStarted) {
         this.preloadStarted = true;
         const generation = this.stageGeneration;
-        const inView = Promise.all([views.settled(), this.dropModels?.settled()]);
+        const inView = Promise.all([views.settled(), this.dropModels?.settled(), this.ctrlModels?.settled()]);
         void Promise.race([inView, new Promise((resolve) => setTimeout(resolve, PRELOAD_WAIT_MS))]).then(() => {
           if (generation === this.stageGeneration && !this.over) stage.startPreloading();
         });
@@ -2996,6 +3001,7 @@ export class WorldScreen {
       stage.setCamera(view.position, view.target);
       this.cameraPlaced = true;
       this.groundItems?.update(world.groundItems, stage.camera, this.stepsRun);
+      this.ctrlModels?.update(world.ctrls); // 2026-11-15 (housing)
       this.tags!.update(stage.camera, renderer.getSize(drawingSize).y, (objectId) => views.placeOf(objectId));
       const owner = this.questOwner();
       const quests = this.own?.quests ?? new Map();
@@ -4793,6 +4799,8 @@ export class WorldScreen {
     this.element.removeEventListener('pointerdown', this.onFriendInput, true);
     this.groundItems?.dispose();
     this.dropModels = undefined; // the ground items' own, disposed with them
+    this.ctrlModels?.dispose(); // 2026-11-15 (housing)
+    this.ctrlModels = undefined;
     this.nearbyItems?.dispose();
     this.minimap?.dispose();
     if (this.worldMap !== undefined) this.worldMapMonsters = this.worldMap.monsterInfo;
