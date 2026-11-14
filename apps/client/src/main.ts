@@ -1,5 +1,6 @@
 import { watchTouch } from '@flyffweb/scene';
 import { clientConfig } from './config';
+import { installFloatingKeyboard } from './keyboard/floatingKeyboard';
 import { installLandscape } from './landscape';
 import { LobbyApp } from './lobby/LobbyApp';
 import { LoginFlow, systemClock } from './lobby/LoginFlow';
@@ -26,7 +27,12 @@ if (import.meta.env.DEV || import.meta.env.VITE_TEST_HOOKS === '1') installTestH
 // The whole game is landscape (spec §3.10): a cover over the page while it is taller than wide, and on a touch screen full
 // screen and the landscape lock asked for by the taps that log in and enter the world. A touch screen is told by the
 // one touch rule, the joystick's (`watchTouch`).
-const landscape = installLandscape(root, watchTouch(window));
+const touch = watchTouch(window);
+const landscape = installLandscape(root, touch);
+
+// 2026-11-14 (owner): on a touch screen every text box of the game, from the login to the chat, types on the game's own
+// floating keyboard, never the phone's (keyboard/floatingKeyboard.ts); a PC's page is as it was.
+installFloatingKeyboard(document, { touch, art: lobbyAssets });
 
 // The game's music and sound (Piece 6 M2), one for the lobby and the world: it starts with the first tap or key, and
 // every button under the page plays Neuz's click. The audio catalog is read from the lobby's asset store; without it the
