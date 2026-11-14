@@ -1,10 +1,15 @@
 // The web service's settings file, `web.config.json` (website spec §3.4): kept outside the repo and the served folders.
-// A bad or missing value stops the service at start, naming its key, as the gateway's settings do.
+// A bad or missing value stops the service at start, naming its key, as the gateway's settings do. The one exception is
+// the `admin` section (admin/config.ts): a bad one only keeps the panel off, so the panel never takes the site down.
 
-import { DEFAULT_RESERVED_NAMES, normalizeIPv4 } from '@flyffweb/protocol';
+import { DEFAULT_RESERVED_NAMES } from '@flyffweb/protocol';
 import type { ReservedNames } from '@flyffweb/protocol';
+import { parseAdminConfig } from './admin/config';
+import type { AdminConfig } from './admin/config';
+import { hostPort, integer, ipv4, list, object, text } from './configHelpers';
+import type { HostPort } from './configHelpers';
 
-export interface HostPort { host: string; port: number }
+export type { HostPort } from './configHelpers';
 
 export interface WebLimits {
   /** Sign-up requests of one address in any hour. */
@@ -40,40 +45,20 @@ export interface WebConfig {
   servers: { certifier: HostPort; login: HostPort };
   limits: WebLimits;
   reservedNames: ReservedNames;
+  /** The admin panel's settings; `undefined` when the section is missing or bad (then `adminProblem` says why). */
+  admin: AdminConfig | undefined;
+  /** Why a given `admin` section was not taken: the panel stays off, the site runs. */
+  adminProblem: string | undefined;
 }
 
-type JsonObject = Record<string, unknown>;
-
-function object(value: unknown, path: string): JsonObject {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error(`${path} must be an object`);
-  return value as JsonObject;
-}
-
-function text(value: unknown, path: string): string {
-  if (typeof value !== 'string' || value === '') throw new Error(`${path} must be a non-empty string`);
-  return value;
-}
-
-function integer(value: unknown, path: string, min: number, max = Number.MAX_SAFE_INTEGER): number {
-  if (typeof value !== 'number' || !Number.isInteger(value) || value < min || value > max) {
-    throw new Error(`${path} must be a whole number from ${min} to ${max}`);
+/** The `admin` section, or the reason it cannot be used. A missing section is no problem: the panel is simply off. */
+function adminSection(value: unknown): { admin: AdminConfig | undefined; adminProblem: string | undefined } {
+  if (value === undefined) return { admin: undefined, adminProblem: undefined };
+  try {
+    return { admin: parseAdminConfig(value), adminProblem: undefined };
+  } catch (error) {
+    return { admin: undefined, adminProblem: (error as Error).message };
   }
-  return value;
-}
-
-function ipv4(value: unknown, path: string): string {
-  if (typeof value !== 'string' || normalizeIPv4(value) !== value) throw new Error(`${path} must be a dotted IPv4 address`);
-  return value;
-}
-
-function list<T>(value: unknown, path: string, entry: (item: unknown, itemPath: string) => T): T[] {
-  if (!Array.isArray(value)) throw new Error(`${path} must be a list`);
-  return value.map((item, i) => entry(item, `${path}[${i}]`));
-}
-
-function hostPort(value: unknown, path: string): HostPort {
-  const at = object(value, path);
-  return { host: text(at.host, `${path}.host`), port: integer(at.port, `${path}.port`, 1, 65535) };
 }
 
 /** An http(s) origin as a browser sends it: scheme, host and port only, no path or trailing slash. */
@@ -139,5 +124,6 @@ export function parseWebConfig(json: unknown): WebConfig {
     servers: { certifier: hostPort(servers.certifier, 'servers.certifier'), login: hostPort(servers.login, 'servers.login') },
     limits: limits(root.limits),
     reservedNames: reservedNames(root.reservedNames),
+    ...adminSection(root.admin),
   };
 }
