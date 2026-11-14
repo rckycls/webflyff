@@ -2,11 +2,13 @@
 
 import type { ActionHandler } from '../adminServer';
 import { ACCOUNT_ACTIONS } from './accounts';
+import { CHARACTER_ACTIONS } from './characters';
 import { LOG_ACTIONS } from './log';
 import { STATUS_ACTIONS } from './status';
 
 export const ADMIN_ACTIONS: Record<string, ActionHandler> = {
   ...ACCOUNT_ACTIONS,
+  ...CHARACTER_ACTIONS,
   ...LOG_ACTIONS,
   ...STATUS_ACTIONS,
 };
