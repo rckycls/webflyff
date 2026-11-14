@@ -142,7 +142,8 @@ test('the election: bid, pledge and vote; then the Lord\'s info, event and skill
   await chooseEntry(page, gateway, 101);
   const lordInfo = page.locator('.hud-lord-info');
   await expect(lordInfo.locator('[data-control="WIDC_STATIC5"]')).toHaveText('Webby');
-  await expect(lordInfo.locator('[data-control="WIDC_STATIC6"]')).toContainText('Day(s)');
+  // 2026-11-14: the term's time left is short (formatDuration), as "6d23h"
+  await expect(lordInfo.locator('[data-control="WIDC_STATIC6"]')).toHaveText(/^(\d+[dhms]){1,2}$/);
   await phoneChecks(page, lordInfo);
   await shot('lord-info');
   await press(lordInfo.getByRole('button', { name: 'OK', exact: true }));

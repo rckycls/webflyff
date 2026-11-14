@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { OwnQuest } from '@flyffweb/protocol';
 import type { WebQuest } from '@flyffweb/formats';
 import {
-  conditionRows, createQuestLookup, isEndQuestCondition, petTermsMet, questPet, rewardLines, type QuestNames, type QuestOwner,
+  conditionRows, createQuestLookup, isEndQuestCondition, petTermsMet, questPet, questTimeLeft, rewardLines, type QuestNames,
+  type QuestOwner,
 } from '../src/world/quests/questRules';
 import { QuestMarkerIndex } from '../src/world/quests/questMarkers';
 
@@ -50,7 +51,14 @@ describe('isEndQuestCondition (_Common/Mover.cpp:9274-9652)', () => {
     const timed: WebQuest = { ...MERCENARY, limitTime: 30, kills: [] };
     expect(isEndQuestCondition(quest(151, 0, { time: 0 }), timed, owner())).toBe(false);
     expect(isEndQuestCondition(quest(151, 0, { time: 0x8005 }), timed, owner())).toBe(true);
-    expect(conditionRows(quest(151, 0, { time: 0x8005 }), timed, owner(), NAMES, TEXTS)[0]!.text).toContain('5 minutes');
+    expect(conditionRows(quest(151, 0, { time: 0x8005 }), timed, owner(), NAMES, TEXTS)[0]!.text).toBe('Time Left: #b5m#nb');
+  });
+
+  it("the time left's minutes are short (2026-11-14); a text with no \"%d minutes\" keeps the number", () => {
+    const limit = (text: string) => new Map([['TID_QUEST_LIMIT_TIME', { id: 'TID_QUEST_LIMIT_TIME', text, color: 0xffffffff }]]);
+    expect(questTimeLeft(90, limit('Time Left: #b%d minutes#nb'))).toBe('Time Left: #b1h30m#nb');
+    expect(questTimeLeft(1, limit('Time Left: #b%d minutes#nb'))).toBe('Time Left: #b1m#nb');
+    expect(questTimeLeft(90, limit('Reste : %d'))).toBe('Reste : 90');
   });
 
   it('an item of type 1 with no item to own (-1) applies to everyone: not ready without it, and its row shows', () => {

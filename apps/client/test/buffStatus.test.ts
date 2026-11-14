@@ -5,7 +5,7 @@ import type { WebSkill } from '@flyffweb/formats';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { BuffShown } from '../src/world/buffs';
 import type { UiArt } from '../src/world/hud/art';
-import { BuffStatus, shortTime } from '../src/world/hud/buffStatus';
+import { BuffStatus } from '../src/world/hud/buffStatus';
 import { TargetBuffs } from '../src/world/hud/targetBuffs';
 
 const art: UiArt = { url: (key) => `/assets/${key}`, sheets: null };
@@ -67,21 +67,6 @@ describe('BuffStatus (CWndBuffStatus)', () => {
     status.update([buff(49, 30_000_000)], SKILLS, 1);
     expect(status.element.querySelector('.hud-buff-seconds')!.textContent).toBe('8h20m');
     status.dispose();
-  });
-
-  it('shortTime: the largest unit and the next one down, each only when not zero, with no spaces', () => {
-    expect(shortTime(30_000_000)).toBe('8h20m');
-    expect(shortTime(29_999_000)).toBe('8h19m');
-    expect(shortTime(28_800_000)).toBe('8h');
-    expect(shortTime(3_600_000)).toBe('1h');
-    expect(shortTime(3_661_000)).toBe('1h1m');
-    expect(shortTime(1_200_000)).toBe('20m');
-    expect(shortTime(90_000)).toBe('1m30s');
-    expect(shortTime(45_500)).toBe('45s');
-    expect(shortTime(999)).toBe('0s');
-    expect(shortTime(-5)).toBe('0s');
-    expect(shortTime(2 * 86_400_000 + 5_000)).toBe('2d');
-    expect(shortTime(90_000_000)).toBe('1d1h');
   });
 
   it('the tooltip has the name, "   Lvl 3", the description, a line per param and mm:ss', () => {

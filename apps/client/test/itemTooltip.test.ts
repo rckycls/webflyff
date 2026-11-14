@@ -164,7 +164,7 @@ describe('the item tooltip: the lines before the awakening', () => {
   it('the duration of the prop, and the description (PutKeepTime, PutCommand)', () => {
     const scroll = itemProp({ id: 900, name: 'Scroll', kind1: 3, kind2: 15, kind3: 30, part: -1, circleTime: 90061, description: 'Reads well.' });
     expect(textOf(itemTooltip(item({ itemId: 900 }), scroll, DATA, OTHER))).toEqual([
-      'Scroll', 'Time Left : 1 Day(s) 1 Hr(s) 1 Min(s) 1 Sec(s)', 'Description: Reads well.',
+      'Scroll', 'Time Left : 1d1h', 'Description: Reads well.',
     ]);
   });
 

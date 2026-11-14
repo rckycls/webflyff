@@ -17,17 +17,18 @@ const at = (day: number, hour = 12, minute = 0): number => new Date(2026, 10, da
 
 describe('the post sums (CMail::GetMailInfo, CWndPostReceive::OnDraw, MailReceiveItem)', () => {
   it('days and hours left from the day of the month, wrong across a month as in Neuz', () => {
-    expect(mailInfo(at(1), at(1))).toEqual({ days: 16, hours: 360 });
-    expect(mailInfo(at(1), at(1, 13))).toEqual({ days: 15, hours: 359 });
-    expect(mailInfo(at(1), at(15, 13))).toEqual({ days: 1, hours: 23 });
+    expect(mailInfo(at(1), at(1))).toEqual({ days: 16, hours: 360, left: 1_296_000 });
+    expect(mailInfo(at(1), at(1, 13))).toEqual({ days: 15, hours: 359, left: 1_292_400 });
+    expect(mailInfo(at(1), at(15, 13))).toEqual({ days: 1, hours: 23, left: 82_800 });
     // made on the 30th, seen on the 2nd of the next month: 28 days back, as `COleDateTimeSpan` of the day numbers
     const next = new Date(2026, 11, 2, 12).getTime();
-    expect(mailInfo(new Date(2026, 10, 30, 12).getTime(), next)).toEqual({ days: 44, hours: 1032 });
+    expect(mailInfo(new Date(2026, 10, 30, 12).getTime(), next)).toEqual({ days: 44, hours: 1032, left: 3_715_200 });
   });
 
-  it('the text is days, or hours at a day or less; the colour wraps past 7 days', () => {
-    expect(timeLeftText({ days: 15, hours: 359 }, '%.1dday', '%.1dhr')).toBe('15day');
-    expect(timeLeftText({ days: 1, hours: 23 }, '%.1dday', '%.1dhr')).toBe('23hr');
+  it('the text is formatDuration of what is left (2026-11-14); the colour wraps past 7 days', () => {
+    expect(timeLeftText({ left: 1_292_400 })).toBe('14d23h');
+    expect(timeLeftText({ left: 82_800 })).toBe('23h');
+    expect(timeLeftText({ left: -5 })).toBe('0s');
     expect([0, 7, 15, -1].map(timeLeftColor)).toEqual([[255, 0, 0], [0, 150, 0], [221, 65, 0], [35, 235, 0]]);
   });
 
@@ -126,7 +127,7 @@ describe('PostHud: the flow', () => {
     expect([h.request.isOpen, h.window.frame.element.classList.contains('is-waiting')]).toEqual([false, false]);
     const row = h.window.frame.element.querySelector<HTMLElement>('.hud-post-row')!;
     expect(row.querySelector('.hud-post-row-sender')?.textContent).toBe('Alice');
-    expect(row.querySelector('.hud-post-row-time')?.textContent).toBe('15day');
+    expect(row.querySelector('.hud-post-row-time')?.textContent).toMatch(/^(15d|14d23h)$/);
     expect(row.querySelector('.hud-post-row-title')?.textContent).toBe('Potions');
   });
 

@@ -24,6 +24,7 @@
 import { isGameMaster } from '../authorization';
 import { lineAction } from './chatCommands';
 import type { ChatCommand } from './chatCommands';
+import { formatDuration } from './duration';
 import { formatText } from './format';
 
 /** Filter_ENG.inc as the converter writes it (`data/chat.json`): the words of letters (lower case) and the others. */
@@ -162,11 +163,19 @@ export class ChatSender {
     return { text: entry === undefined ? id : formatText(entry.text, args), color: entry?.color ?? RED, game };
   }
 
-  /** While blocked: `TID_GAME_ERROR_CHATTING_3` with the time left; else undefined. */
+  /**
+   * While blocked: `TID_GAME_ERROR_CHATTING_3` with the time left, its "%d minute %d second" as `formatDuration` since
+   * 2026-11-14 ("(Remaining: 1m59s)", the owner); else undefined.
+   */
   private blocked(now: number): SendNote | undefined {
     if (now >= this.banEnd) return undefined;
     const seconds = Math.trunc((this.banEnd - now) / 1000);
-    return { ...this.note('TID_GAME_ERROR_CHATTING_3', [Math.trunc(seconds / 60), seconds % 60]), color: RED };
+    const entry = this.options.text('TID_GAME_ERROR_CHATTING_3');
+    const short = entry?.text.replace(/%[0-9.]*d\s*minutes?\s*%[0-9.]*d\s*seconds?/i, formatDuration(seconds));
+    if (short === undefined || short === entry?.text) {
+      return { ...this.note('TID_GAME_ERROR_CHATTING_3', [Math.trunc(seconds / 60), seconds % 60]), color: RED };
+    }
+    return { text: short, color: RED, game: false };
   }
 
   private ban(now: number): SendNote {

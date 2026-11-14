@@ -23,6 +23,7 @@ import { ElectionState, NULL_ID, encodeElectionAddDeposit, encodeElectionIncVote
 import type { LordCandidate, LordMessage } from '@flyffweb/protocol';
 import type { UiArt } from '../hud/art';
 import { themeKey, themeUrl } from '../hud/art';
+import { formatDuration } from '../hud/duration';
 import { formatText } from '../hud/format';
 import { ResWindow } from '../hud/resWindow';
 import { isPhone } from '../hud/numpad';
@@ -439,10 +440,8 @@ export class LordHud {
     if (lord !== NO_LORD) {
       name = this.host.player(lord)?.name ?? '';
       const left = this.book.restTimeEndVote();
-      if (left >= 0) {
-        const days = Math.floor(left / 86400), hours = Math.floor(left / 3600) % 24, minutes = Math.floor(left / 60) % 60;
-        rest = formatText(this.tid('TID_TOOLTIP_DATE'), [days, hours, minutes, left % 60]);
-      }
+      // 2026-11-14 (the owner): the seconds as `formatDuration` ("1d23h"), not TID_TOOLTIP_DATE's "%d Day(s) %d Hr(s) ..."
+      if (left >= 0) rest = formatDuration(left);
     }
     const state = this.book.state;
     const status = state === ElectionState.CANDIDACY ? 'TID_GAME_LORD_STATUS_L1'
@@ -502,18 +501,19 @@ export class LordHud {
     }
   }
 
-  /** `RenderEventIcon` (:10753-10785): Skill_TroGiftbox02.dds per running event, its tip and minutes left. */
+  /** `RenderEventIcon` (:10753-10785): Skill_TroGiftbox02.dds per running event, its tip and minutes left (as `formatDuration`). */
   private drawEventIcons(): void {
     const icons = this.book.events.map((e) => {
       const icon = this.doc.createElement('div');
       icon.className = 'hud-lord-event-icon';
       icon.style.backgroundImage = themeUrl(this.art, 'Skill_TroGiftbox02.dds');
       const tip = formatText(this.tid('TID_GAME_LORD_EVENT_TOOLTIP'), [this.host.player(e.playerId)?.name ?? '', e.expFactor * 100, e.dropFactor * 100]);
-      icon.title = `${tip}\n${e.tick}`;
+      const left = formatDuration(e.tick, 'min');
+      icon.title = `${tip}\n${left}`;
       icon.setAttribute('aria-label', tip);
       const time = this.doc.createElement('span');
       time.className = 'hud-lord-event-icon-time';
-      time.textContent = `${e.tick}m`;
+      time.textContent = left;
       icon.append(time);
       return icon;
     });

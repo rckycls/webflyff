@@ -85,7 +85,8 @@ test('the post: the notice, the inbox, reading and taking, a reply sent with an 
   const rows = post.locator('.hud-post-row');
   await expect(rows).toHaveCount(2);
   await expect(rows.nth(0).locator('.hud-post-row-sender')).toHaveText('Alice');
-  await expect(rows.nth(0).locator('.hud-post-row-time')).toHaveText('15day');
+  // 2026-11-14: formatDuration of what is left of the 15 days (an hour old: 14d23h, or 14d22h a moment later)
+  await expect(rows.nth(0).locator('.hud-post-row-time')).toHaveText(/^14d2[23]h$/);
   await expect(rows.nth(0).locator('.hud-post-row-title')).toHaveText('Rubies for yo...');
   await expect(rows.nth(1).locator('.hud-post-row-sender')).toHaveText('FLYFF');
   await expect(rows.nth(1).locator('.hud-post-row-read')).toHaveCount(1);

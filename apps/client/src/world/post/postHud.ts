@@ -287,7 +287,7 @@ export class PostHud {
     return {
       id: mail.id, ...(mail.item !== undefined ? { item: mail.item, prop: this.screen.prop(mail.item.itemId) } : {}),
       penyaOnly: mail.item === undefined && mail.gold > 0, read: mail.read, sender,
-      time: timeLeftText(info, this.text('TID_PK_LIMIT_DAY', '%.1dday'), this.text('TID_PK_LIMIT_HOUR', '%.1dhr')),
+      time: timeLeftText(info),
       color: timeLeftColor(info.days), late: info.days <= 0,
       // with no sender name the title is drawn empty (:15228-15234)
       title: mail.senderId !== 0 && name === '' ? '' : titleText(mail.title),

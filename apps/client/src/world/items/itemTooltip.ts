@@ -25,6 +25,7 @@
 import type { WebItemEtc, WebItemProp, WebMover, WebPets, WebPiercingAvail, WebSetItem, WebUltimate } from '@flyffweb/formats';
 import type { InventoryItem, PetData } from '@flyffweb/protocol';
 import type { Texts } from '../gameData';
+import { formatDuration } from '../hud/duration';
 import { formatText } from '../hud/format';
 import { PetLevel } from '../pets/raisedPet';
 import {
@@ -471,15 +472,15 @@ export function itemTooltip(item: InventoryItem, prop: WebItemProp, data: Toolti
     for (const line of visPetInfo(pet, data, ctx.now ?? 0)) put(`\n${line.text}`, line.color);
   }
 
-  // 12. PutKeepTime's duration (:5846-5869); the item's own time left is not kept, but a vis's (2026-11-09, pets B1)
+  // 12. PutKeepTime's duration (:5846-5869); the item's own time left is not kept, but a vis's (2026-11-09, pets B1).
+  // 2026-11-14 (the owner): the seconds as `formatDuration` ("1d1h"), not TID_TOOLTIP_DATE's "%d Day(s) %d Hr(s) ..."
   if (prop.circleTime !== undefined) {
     put('\n', TIME);
     if (prop.circleTime === 1) {
       put(text('TID_GAME_COND_USE'), TIME);
     } else {
-      const s = prop.circleTime;
       put(`${text('TID_TOOLTIP_ITEMTIME')} : `, TIME);
-      put(format('TID_TOOLTIP_DATE', Math.trunc(s / 86400), Math.trunc((s % 86400) / 3600), Math.trunc((s % 3600) / 60), s % 60), TIME);
+      put(formatDuration(prop.circleTime), TIME);
     }
   }
   if (prop.kind3 === IK3_VIS) putVisKeepTime();
@@ -639,7 +640,8 @@ ${dstName(dst)}+${value}${ADDED_OPT_RATES.has(dst) ? '%' : ''}`, ADDED_OPT);
       t = Math.trunc(Math.fround(keep * 60));
     }
     if (keep === 0 || (flag & FLAG_EXPIRED) !== 0) return;
-    const words = t > 0 ? visKeepTimeText(t, data.texts) : '';
+    // 2026-11-14: a space between the short time and the word ("59m Period"; Neuz's "59min0secPeriod" had none)
+    const words = t > 0 ? `${visKeepTimeText(t)} ` : '';
     put('\n', GENERAL);
     put(words + text('TID_TOOLTIP_PERIOD'), TIME);
   }

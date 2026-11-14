@@ -129,14 +129,14 @@ describe('the vis rules (pets/buffPet.ts)', () => {
     expect(visPetSfxId(petOf([0, 0]), PROP_MAP)).toBe(NULL_ID);
   });
 
-  it("PutVisPetInfo's time words, CTimeSpan's parts truncated (WndManager.cpp:7562-7596)", () => {
+  it("PutVisPetInfo's time, short since 2026-11-14 (WndManager.cpp:7562-7596)", () => {
     expect(timeSpan(-90)).toEqual({ days: 0, hours: 0, minutes: -1, seconds: -30 });
-    expect(visTimeLeft(90061, TEXT_MAP)).toBe('1day1hr1min');
-    expect(visTimeLeft(3700, TEXT_MAP)).toBe('1hr1min');
-    expect(visTimeLeft(75, TEXT_MAP)).toBe('1min15sec');
-    expect(visTimeLeft(5, TEXT_MAP)).toBe('5sec');
+    expect(visTimeLeft(90061, TEXT_MAP)).toBe('1d1h');
+    expect(visTimeLeft(3700, TEXT_MAP)).toBe('1h1m');
+    expect(visTimeLeft(75, TEXT_MAP)).toBe('1m15s');
+    expect(visTimeLeft(5, TEXT_MAP)).toBe('5s');
     expect(visTimeLeft(-5, TEXT_MAP)).toBe('Expiration');
-    expect(visTimeLeft(-120, TEXT_MAP)).toBe('0sec'); // a whole minute past: `nSec >= 0`
+    expect(visTimeLeft(-120, TEXT_MAP)).toBe('0s'); // a whole minute past: `nSec >= 0`
   });
 
   it('CheckConfirm asks before a vis or the vis key with a buff pet out, and always before Pet Magic (WndManager.cpp:7646-7692)', () => {
@@ -449,13 +449,13 @@ describe('CWndBuffPetStatus in the pretend world (pets/buffPetWindows.ts, hud/bu
     const tooltip = p.windows.status.frame.element.querySelector<HTMLElement>('.hud-item-tooltip')!;
     const lines = [...tooltip.querySelectorAll('.hud-item-tooltip-line')].map((line) => line.textContent);
     expect(lines).toContain('STR+3');
-    expect(lines).toContain('59min0secPeriod');
+    expect(lines).toContain('59m Period');
     // made again each second while the pointer stays: the time counts down
     p.tick(1);
     p.windows.frame();
     const again = p.windows.status.frame.element.querySelectorAll('.hud-item-tooltip');
     expect(again).toHaveLength(1);
-    expect([...again[0]!.querySelectorAll('.hud-item-tooltip-line')].map((line) => line.textContent)).toContain('58min59secPeriod');
+    expect([...again[0]!.querySelectorAll('.hud-item-tooltip-line')].map((line) => line.textContent)).toContain('58m59s Period');
     slotsOf(p.windows)[0]!.dispatchEvent(new Event('pointerleave'));
     p.tick(1);
     p.windows.frame();
@@ -476,7 +476,7 @@ describe('the vis tooltips (PutNeededVis, PutVisPetInfo, PutKeepTime)', () => {
     expect(needs.map((line) => [line[0]!.text, line[0]!.color])).toEqual([
       ['Required Bead: : Bead of Attack', 0x000000], ['Required Bead: : Bead of Attack II', 0xff0000],
     ]);
-    expect(lineTexts(lines)).toContain('7day0hr0minPeriod');
+    expect(lineTexts(lines)).toContain('7d Period');
   });
 
   it("a buff pet's vis: their stats added up by DST, then each vis's time, red past its end (WndManager.cpp:7479-7608)", () => {
@@ -484,8 +484,8 @@ describe('the vis tooltips (PutNeededVis, PutVisPetInfo, PutKeepTime)', () => {
     expect(visPetInfo(pet, data, T0)).toEqual([
       { text: 'STR+3', color: 0xb200ff },
       { text: 'Increased HP+10%', color: 0xb200ff },
-      { text: 'Bead of HP (1hr1min)', color: 0x00c800 },
-      { text: 'Bead of STR (1min15sec)', color: 0x00c800 },
+      { text: 'Bead of HP (1h1m)', color: 0x00c800 },
+      { text: 'Bead of STR (1m15s)', color: 0x00c800 },
       { text: 'Bead of Attack (Expiration)', color: 0xff0000 },
     ]);
     const item: InventoryItem = { objectId: BAG_PET, itemId: II_PET_RACCON, count: 1, piercing: pet.piercing };
@@ -516,7 +516,7 @@ describe('BUFF_EQUIP in the buff bar (WndWorld.cpp:9209-9218, :9392-9401)', () =
   it("shows the buff pet item's icon last, with no time, and the vis in its tooltip", () => {
     const items = new Map([...PROP_MAP, [30000, itemProp({ id: 30000, name: 'Grilled Eel', kind2: 14, part: -1, icon: 'ui/item/itm_eel.png' })]]);
     const status = new BuffStatus(art, document, {
-      items, visPetTooltip: (itemId) => (itemId === II_PET_RACCON ? ['STR+3', 'Bead of STR (59min59sec)'] : null),
+      items, visPetTooltip: (itemId) => (itemId === II_PET_RACCON ? ['STR+3', 'Bead of STR (59m59s)'] : null),
     });
     document.body.append(status.element);
     const buff = (buffType: number, id: number, totalMs: number) => ({ buffType, id, level: 1, leftMs: totalMs, totalMs });
@@ -526,7 +526,7 @@ describe('BUFF_EQUIP in the buff bar (WndWorld.cpp:9209-9218, :9392-9401)', () =
       '/assets/ui/item/itm_eel.png', '/assets/ui/item/itm_petdaringraccon.png',
     ]);
     expect(icons[1]!.querySelector('.hud-buff-time, .hud-buff-seconds')).toBeNull();
-    expect(icons[1]!.title.split('\n')).toEqual(['Tiny Tanuki', 'STR+3', 'Bead of STR (59min59sec)']);
+    expect(icons[1]!.title.split('\n')).toEqual(['Tiny Tanuki', 'STR+3', 'Bead of STR (59m59s)']);
     status.dispose();
   });
 });

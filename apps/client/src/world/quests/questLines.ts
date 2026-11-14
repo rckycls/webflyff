@@ -18,6 +18,7 @@ import { QS_END, type OwnQuest } from '@flyffweb/protocol';
 import type { Texts } from '../gameData';
 import { formatText } from '../hud/format';
 import type { QuestChange } from '../OwnState';
+import { questTimeLeft } from './questRules';
 import type { QuestCatalog, QuestNames } from './questRules';
 
 export interface QuestLine {
@@ -59,7 +60,7 @@ export function questLines(change: QuestChange, catalog: QuestCatalog | null, na
       const lines: QuestLine[] = [];
       if (minutes(before.time) !== minutes(after.time)) {
         if (minutes(after.time) > 0) {
-          lines.push({ text: formatText(text('TID_QUEST_LIMIT_TIME', 'Time Left: #b%d minutes#nb'), [minutes(after.time)]) });
+          lines.push({ text: questTimeLeft(minutes(after.time), texts) });
         } else {
           lines.push({ text: text('TID_QUEST_LIMIT_TIMEOUT', '#bYou exceeded the time limit#nb') });
           lines.push({ text: text('TID_QUEST_FAILURE', 'Quest cancelled.') });

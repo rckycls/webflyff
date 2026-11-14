@@ -17,7 +17,7 @@
 //   window, so that a few icons reach any edge. Where it was put lives as long as the page (`place`, `onPlace`).
 // - On a phone it is half the size (§3, the owner).
 // - Each item buff has its time under it (`RenderOptBuffTime`, `WndWorld.cpp:9315-9336, 11197-11227`; since 2026-11-14 as
-//   `shortTime`, as the skill buffs' seconds, the owner); the ES
+//   `formatDuration`, as the skill buffs' seconds, the owner); the ES
 //   scrolls of a kind share one icon (`RenderExpBuffIcon`, :10236-10517); the premium timers (SM modes) follow the item
 //   buffs (`RenderSMBuff`, :10519-10624).
 //
@@ -34,6 +34,7 @@ import type { WebItemProp, WebSkill } from '@flyffweb/formats';
 import type { BuffShown } from '../buffs';
 import { petBuffIcon } from '../pets/petStatus';
 import type { UiArt } from './art';
+import { formatDuration } from './duration';
 import { layoutBottomOf } from './frame';
 
 /** `BUFF_SKILL` (`_Common/buff.h`): the window shows these. */
@@ -156,27 +157,6 @@ export function clock(ms: number): string {
   const days = Math.trunc(s / 86400), hours = Math.trunc(s / 3600) % 24, minutes = Math.trunc(s / 60) % 60, seconds = s % 60;
   if (days > 0) return `${pad(days)}:${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
   return hours > 0 ? `${pad(hours)}:${pad(minutes)}:${pad(seconds)}` : `${pad(minutes)}:${pad(seconds)}`;
-}
-
-/** The units of `shortTime`, largest first. */
-const SHORT_UNITS: ReadonlyArray<[string, number]> = [['d', 86400], ['h', 3600], ['m', 60], ['s', 1]];
-
-/**
- * 2026-11-14 (the owner): the time left on and under the buff icons, short and with no spaces: the largest unit of it and
- * the next one down, each only when it is not zero, in whole units (30000 s is `8h20m`, 3600 s `1h`, 90 s `1m30s`, 45 s
- * `45s`, under a second `0s`). It stands for the skill buffs' plain seconds and `RenderOptBuffTime`'s largest unit.
- */
-export function shortTime(ms: number): string {
-  let s = Math.max(0, Math.trunc(ms / 1000));
-  const first = SHORT_UNITS.findIndex(([, size]) => s >= size);
-  if (first < 0) return '0s';
-  let text = '';
-  for (const [unit, size] of SHORT_UNITS.slice(first, first + 2)) {
-    const n = Math.trunc(s / size);
-    s -= n * size;
-    if (n > 0) text += `${n}${unit}`;
-  }
-  return text;
 }
 
 /** The tooltip's lines: the name and `"   Lvl %d"`, the description, a line per parameter of the level, the time left. */
@@ -323,7 +303,7 @@ export class BuffStatus {
     return {
       key: `${buff.buffType}:${buff.id}:${buff.level}:${buff.totalMs > 0}`, name: skill.name, icon: skill.icon, copies: 0,
       harmful: skill.evildoing < 0, tooltip: () => buffTooltip(skill, buff), blink: 'under', blinkLeftMs: buff.totalMs > 0 ? buff.leftMs : Infinity,
-      blinkUnderMs: BLINK_MS, label: buff.totalMs > 0 ? { kind: 'seconds', text: shortTime(buff.leftMs) } : null,
+      blinkUnderMs: BLINK_MS, label: buff.totalMs > 0 ? { kind: 'seconds', text: formatDuration(buff.leftMs, 'ms') } : null,
       goesBack: false,
     };
   }
@@ -366,7 +346,7 @@ export class BuffStatus {
         key: `${buff.buffType}:${buff.id}:${timed}`, name: item.name, icon: item.icon, copies: 0, harmful: false,
         tooltip: () => [angel === null ? item.name : `${item.name}   ${angel}%`, ...(vis() ?? (buff.totalMs > 0 && !equip ? [clock(buff.leftMs)] : []))],
         blink: buff.id === RETURN_SCROLL || angel === 100 ? 'always' : 'under', blinkLeftMs: buff.totalMs > 0 ? buff.leftMs : Infinity,
-        blinkUnderMs: BLINK_MS, label: timed && buff.leftMs > 0 ? { kind: 'time', text: shortTime(buff.leftMs) } : null,
+        blinkUnderMs: BLINK_MS, label: timed && buff.leftMs > 0 ? { kind: 'time', text: formatDuration(buff.leftMs, 'ms') } : null,
         goesBack: buff.id === RETURN_SCROLL || buff.id === PARTY_SUMMON || buff.id === FEED_POCKET,
         ...(angel !== null ? { press: () => this.options.onAngelPress?.() } : {}),
       });
@@ -424,7 +404,7 @@ export class BuffStatus {
         key: `sm:${type}:${itemId}`, name: item.name, icon: item.icon, copies: 0, harmful: false,
         tooltip: () => [item.name, whenDying ? this.text('TID_GAME_COND_USE', 'Takes effect when player dies.') : clock(seconds * 1000)],
         blink: type === SM_REVIVAL ? 'never' : 'under', blinkLeftMs: seconds * 1000, blinkUnderMs: 60_000,
-        label: whenDying ? null : { kind: 'time', text: shortTime(seconds * 1000) }, goesBack: false,
+        label: whenDying ? null : { kind: 'time', text: formatDuration(seconds) }, goesBack: false,
       }];
     });
   }
