@@ -590,6 +590,17 @@ export class AttackLoop {
   }
 
   /**
+   * 2026-11-15 (social): the follow's walk (`m_objidTracking`, social/follow.ts): `g_pPlayer->SetDestObj( id )`, range 0,
+   * which leaves no command (`m_oaCmd = OBJACT_NONE`, MoverMsg.cpp:79) and sends only when the destination changes.
+   */
+  followTo(objectId: number): void {
+    const own = this.world.self();
+    if (own === undefined || own.act.isFlying()) return;
+    this.cmd = null;
+    this.setDestObj(own, objectId, 0);
+  }
+
+  /**
    * `m_bAutoAttack = TRUE` as a skill begins (`CDPClient::OnUseSkill`, `Neuz/DPClient.cpp:3912-3943`;
    * `CWndWorld::UseSkillToFocusObj`, `WndWorld.cpp:6280-6292`): the skill use asks it, which tests the hand and the skill.
    */

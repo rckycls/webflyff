@@ -41,7 +41,7 @@ const ENTRIES: ReadonlyArray<[number, string]> = [
   [MMI_CHEER, 'Cheer'], [MMI_INVITE_CAMPUS, 'Request Mentor-Pupil Bond'],
 ];
 /** The entries the browser acts on. */
-const ACTIVE: ReadonlySet<number> = new Set([MMI_INVITE_PARTY, MMI_ADD_MESSENGER, MMI_TRADE, MMI_INVITE_COMPANY, MMI_CHEER]);
+const ACTIVE: ReadonlySet<number> = new Set([MMI_INVITE_PARTY, MMI_ADD_MESSENGER, MMI_TRADE, MMI_INVITE_COMPANY, MMI_TRACE, MMI_CHEER]);
 
 /** 2026-11-10: MMI_QUERYEQUIP, the one line of a seller's menu (`__CSC_VER12_1`, WndWorld.cpp:6544-6547). */
 const MMI_QUERYEQUIP = 24;

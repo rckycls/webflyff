@@ -113,9 +113,10 @@ import { PlayerDataCenter } from './party/playerData';
 import { FriendHud } from './friends/friendHud';
 import { TradeHud } from './trade/tradeHud';
 import { SocialHud } from './social/socialHud'; // 2026-11-15 (social)
+import { Follow } from './social/follow'; // 2026-11-15 (social)
 import { Messenger, loadFriendOptions, saveFriendOptions } from './friends/messenger';
 import type { FriendEvent } from './friends/messenger';
-import { MMI_ADD_MESSENGER, MMI_CHEER, MMI_INVITE_COMPANY, MMI_INVITE_PARTY, MMI_TRADE, menuInReach, playerMenuEntries } from './party/playerMenu';
+import { MMI_ADD_MESSENGER, MMI_CHEER, MMI_INVITE_COMPANY, MMI_TRACE, MMI_INVITE_PARTY, MMI_TRADE, menuInReach, playerMenuEntries } from './party/playerMenu';
 import { PartyHpBars } from './render/PartyHpBars';
 import { partyEffects } from './fx/partyEffects';
 import type { PartyEffectContext, PartyMover } from './fx/partyEffects';
@@ -569,6 +570,8 @@ export class WorldScreen {
   /** 2026-11-15 (social): the couple's windows (social/socialHud.ts), and its snapshots while the world loads. */
   private social: SocialHud | undefined;
   private socialWaiting: Array<Parameters<SocialHud['onCouple']>[0]> = [];
+  /** 2026-11-15 (social): the player followed (`m_objidTracking`, social/follow.ts). */
+  private readonly tracking = new Follow();
   /** 2026-11-10 (bank-mail): the bank's windows (bank/bankHud.ts), and the tooltip over a bank's item. */
   private bankHud: BankHud | undefined;
   /** 2026-11-15: the guild bank's windows (guildBank/guildBankHud.ts). */
@@ -1153,6 +1156,7 @@ export class WorldScreen {
         if (value.type === 'moverDeath') {
           this.attackLoop?.onMoverDeath(objectId, value.attackerId);
           this.angelFollowers.died(objectId); // 2026-11-10: its angel made again (DPClient.cpp:1980-1987)
+          this.tracking.died(objectId, world.self()?.objectId); // 2026-11-15 (social): DPClient.cpp:2069-2074
         }
         else if (value.type === 'delObj') { this.attackLoop?.onRemoved(objectId); this.tradeHud?.removed(objectId); }
       }
@@ -2290,6 +2294,8 @@ export class WorldScreen {
     this.tap = new TapToWalk(
       renderer.domElement, (x, y) => this.pick(x, y), (error) => this.reportOnce(`tap: ${messageOf(error)}`, error),
       (press) => {
+        // 2026-11-15 (social): any press in the world ends the follow (m_objidTracking = NULL_ID, OnLButtonDown, WndWorld.cpp:6723)
+        this.tracking.stop();
         // 2026-11-10: a frozen player (/freeze, DONMOVE_MODE) does nothing with a press (OnLButtonDown, WndWorld.cpp:6729-6730)
         if (isFrozen(this.world?.self())) return true;
         // 2026-11-10: nor a seller with an item up, nor anyone with a shop window open (WndWorld.cpp:6721-6728)
@@ -2312,6 +2318,9 @@ export class WorldScreen {
           && this.personalShop?.press(press.mover, cameraDistance(this.stage.camera, this.views?.placeOf(press.mover)?.at ?? [1e9, 1e9, 1e9]), press.alt) === true) {
           attackLoop.stop('move');
           this.focus?.select(press.mover);
+        // 2026-11-15 (social): Z held on a player follows it, not in the air (OnLButtonDown, WndWorld.cpp:7055-7066)
+        } else if (pressed?.kind === 'player' && !pressed.isSelf && this.keyboard?.held('KeyZ') === true) {
+          if (this.world?.self()?.act.isFlying() !== true) this.startFollow(press.mover);
         } else if (pressed?.kind === 'player' && !pressed.isSelf && (press.alt || (press.touch && this.focus?.targetId === press.mover))) {
           this.pressPlayer(press.mover);
         } else attackLoop.onMoverPressed(press.mover, press.time, press.double);
@@ -3178,11 +3187,17 @@ export class WorldScreen {
       // Piece 7 M3: a walk forward or back, a jump or a tap on the ground cancels an item cast; a turn does not
       // (WndWorldControlPlayer.cpp:341, :422-433, :487-505)
       if (intent.forward !== 0 || jump || tap !== null) this.itemCast?.interrupt();
-      if (movesOrTurns(intent)) loop.stop('move');
+      // 2026-11-15 (social): a move or turn key ends the follow too (WndWorldControlPlayer.cpp:385-403)
+      if (movesOrTurns(intent)) { loop.stop('move'); this.tracking.stop(); }
       this.itemActions?.step(now);
       // the task bar's skills, then the reserved skill's branch of Process, which leaves neither the attack nor the controls
       const skillBranch = this.skillUse!.step(own, (objectId) => world.movers.get(objectId));
-      if (((jump || airborne) && !skillBranch) || loop.step(skillBranch, now)) this.ownMover!.control(own, intent, tap, walkKey, jump);
+      if (((jump || airborne) && !skillBranch) || loop.step(skillBranch, now)) {
+        this.ownMover!.control(own, intent, tap, walkKey, jump);
+        // 2026-11-15 (social): ControlGround's follow (WndWorldControlPlayer.cpp:406-417); a shop window ends it (WndVendor.cpp:63-65)
+        if (this.personalShop?.blocksWorld === true) this.tracking.stop();
+        this.tracking.step(own.act.body.pos, (objectId) => world.movers.get(objectId)?.act.body.pos, (objectId) => loop.followTo(objectId));
+      }
     }
     world.step();
     if (shopPosition !== undefined && own !== undefined &&
@@ -4024,6 +4039,11 @@ export class WorldScreen {
       this.guildHud?.inviteMover(id);
       return;
     }
+    // 2026-11-15 (social): "Follow" (MMI_TRACE, WndWorld.cpp:5673-5679): the player tracked and walked to, not while flying
+    if (entry === MMI_TRACE) {
+      if (player !== undefined && this.world?.self()?.act.isFlying() !== true) this.startFollow(id);
+      return;
+    }
     // 2026-11-15 (social): "Cheer" (MMI_CHEER, WndWorld.cpp:5680-5686): SendCheering to a player, not while flying
     if (entry === MMI_CHEER) {
       if (player !== undefined && this.world?.self()?.act.isFlying() !== true) this.session.sendCheering(id);
@@ -4031,6 +4051,12 @@ export class WorldScreen {
     }
     if (entry !== MMI_INVITE_PARTY || player === undefined || this.focus?.targetId !== id) return;
     this.inviteToParty(player.playerId);
+  }
+
+  /** 2026-11-15 (social): `m_objidTracking = id; g_pPlayer->SetDestObj( id )` (WndWorld.cpp:5673-5679, :7062-7063). */
+  private startFollow(id: number): void {
+    this.tracking.start(id);
+    this.attackLoop?.followTo(id);
   }
 
   /**
