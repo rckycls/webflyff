@@ -89,6 +89,8 @@ export type WorldMessage = ChatMessage | NpcMessage | ShopMessage | QuestMessage
   | { type: 'angel'; state: number; info?: { exp: bigint; level: number; complete: boolean } }
   /** 2026-11-10: a local event on or off (`OnSetLocalEvent`, `g_eLocal.SetState`): EVE_PK's among them. */
   | { type: 'setLocalEvent'; id: number; state: number }
+  /** 2026-11-14: the own cheer points (0-3), the ms to the next one, and whether one was just given (`OnSetCheerParam`). */
+  | { type: 'setCheerParam'; points: number; rest: number; add: boolean }
   /** 2026-11-10: every local event's state at join (`OnFlyffEvent`, `g_eLocal.Serialize`): the ones not 0. */
   | { type: 'flyffEvent'; events: Array<{ id: number; state: number }> }
   /** 2026-11-05: a safe upgrade's answer (`OnSmeltSafety`): 0 refused, 1 success, 2 failure, 3 at the most. */
@@ -477,6 +479,12 @@ export interface OwnCharacter {
    */
   angelExp?: bigint;
   angelLevel?: number;
+  /**
+   * 2026-11-14 (motion window): `m_nCheerPoint` and `m_dwTickCheer - GetTickCount()` (`ObjSerializeOpt.cpp:569`), the cheer
+   * points left (0-3) and the ms to the next; absent when both are 0 or the part before the inventory could not be read.
+   */
+  cheerPoint?: number;
+  cheerRest?: number;
   /**
    * `null` when the inventory was read. Otherwise what went wrong between the end of the skill array and the end of the
    * inventory (the bytes ran out, or a count or a field was out of range): the part being read, then the

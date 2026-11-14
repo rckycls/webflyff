@@ -264,6 +264,11 @@ export type WorldPacket =
   /** 2026-11-10: the Arena's enter and leave, and the Forsaken Tower's floor (world/arenaTower.ts). */
   | { type: 'arenaEnter' | 'arenaExit' }
   | { type: 'heavenTowerTeleport'; floor: number }
+  /** 2026-11-14: the Motion window's sit and stand (an OBJMSG), cheer, town escape and propose (world/motion.ts). */
+  | { type: 'motionRequest'; message: number }
+  | { type: 'cheering'; objectId: number }
+  | { type: 'doEscape' }
+  | { type: 'propose'; name: string }
   /** 2026-11-09 (pets R2): the own raised pet sent back (`SendPetRelease`). */
   | { type: 'petRelease' }
   /** 2026-11-09 (pets R3): the raised pet's care (world/pets.ts), by the encoders' parameter names. */
@@ -533,6 +538,21 @@ function decodeClientPacket(r: ArReader): WorldPacket {
     case PacketType.HEAVENTOWER_TELEPORT: {
       const floor = r.i32(); r.expectEnd();
       return { type: 'heavenTowerTeleport', floor };
+    }
+    case PacketType.MOTION: { // 2026-11-14 (motion window)
+      const message = r.u32(); r.expectEnd();
+      return { type: 'motionRequest', message };
+    }
+    case PacketType.CHEERING: {
+      const objectId = r.u32(); r.expectEnd();
+      return { type: 'cheering', objectId };
+    }
+    case PacketType.DO_ESCAPE:
+      r.expectEnd();
+      return { type: 'doEscape' };
+    case PacketType.PROPOSE: {
+      const name = r.string(64); r.expectEnd();
+      return { type: 'propose', name };
     }
     case PacketType.NPC_BUFF: {
       const key = r.string(64); r.expectEnd();

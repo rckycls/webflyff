@@ -527,7 +527,8 @@ test.describe('the world screen against scripted servers', () => {
     await expect(slot('item', 0)).toHaveAttribute('data-kind', 'item');
     await expect(slot('item', 0).locator('.hud-slot-count')).toHaveText('3');
     await expect(slot('item', 1).locator('.hud-slot-count')).toHaveText('1');
-    await expect(slot('item', 2)).toHaveAttribute('data-kind', 'plain');
+    // 2026-11-14: the motion Pickup, drawn with its icon (SetTaskBarTexture, WndTaskBar.cpp:445-453)
+    await expect(slot('item', 2)).toHaveAttribute('data-kind', 'skill');
     if (isMobile) await expect(page.locator('.hud-slot[data-row=applet]')).toHaveCount(0);
     else {
       // APP_COMM_ITEM (398, J) has no window here: Piece 5 greys it and draws no hotkey, as its key does nothing

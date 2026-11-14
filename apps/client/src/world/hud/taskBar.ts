@@ -40,6 +40,8 @@ import type { InventoryItem, Shortcut, TaskBar as TaskBarMessage } from '@flyffw
 import { positionItemDetails } from './itemDetails';
 import { drawCooldown } from './cooldown';
 import type { WebItemProp, WebPartySkill, WebSkill } from '@flyffweb/formats';
+import { chatEmoticonKey } from '@flyffweb/formats';
+import { EMOTICON_COUNT, emoticonLine, motionProp } from '../motion/motionTable';
 import { watchTouch } from '@flyffweb/scene';
 import type { TouchWatch } from '@flyffweb/scene';
 import type { OwnState } from '../OwnState';
@@ -58,7 +60,7 @@ import { itemIconOf } from '../pets/petStatus';
 
 /** The windows of Piece 4 a press on the task bar opens. */
 export type TaskBarWindow = 'character' | 'status' | 'skills' | 'inventory' | 'chat' | 'navigator' | 'worldmap' | 'option'
-  | 'quests' | 'party' | 'messenger' | 'vendor' | 'guild' | 'lordSkill';
+  | 'quests' | 'party' | 'messenger' | 'vendor' | 'guild' | 'lordSkill' | 'motion';
 /** 2026-11-10: `APP_GUILD` (Resource/ResData.h:228), the guild window (guild research §3), G (FuncApplet.cpp:245). */
 const APP_GUILD = 323;
 /** `APP_QUEST_EX_LIST` (Resource/ResData.h), the quest window (Piece 7 M1), Q (FuncApplet.cpp:229). */
@@ -93,6 +95,8 @@ const WINDOWS: ReadonlyMap<number, TaskBarWindow> = new Map([
   [APP_GUILD, 'guild'],
   // 2026-11-11: APP_LORD_SKILL (Resource/ResData.h:633), the Lord Skill window, L (FuncApplet.cpp:166-171)
   [728, 'lordSkill'],
+  // 2026-11-14: APP_MOTION (Resource/ResData.h), the Motion window, O (FuncApplet.cpp:198)
+  [172, 'motion'],
 ]);
 
 /**
@@ -120,6 +124,8 @@ const MENU: ReadonlyArray<{ id: number; text: string }> = [
   { id: APP_VENDOR_REVISION, text: 'Private Shop' },
   // CWndTaskMenu's APP_QUEST_EX_LIST line, 'Quest Diary' (TID_APP_QUEST, WndTaskBar.cpp:2623)
   { id: APP_QUEST_EX_LIST, text: 'Quest Diary' },
+  // 2026-11-14: CWndTaskMenu's APP_MOTION line, 'Motion' (TID_APP_MOTION), after Quest Diary (WndTaskBar.cpp:2622)
+  { id: 172, text: 'Motion' },
   // CWndTaskMenu's APP_MAP line, 'World Map' (TID_APP_MAP), just before Navigator (WndTaskBar.cpp:2734-2738)
   { id: AppId.MAP, text: 'World Map' },
   { id: AppId.NAVIGATOR, text: 'Navigator' },
@@ -190,6 +196,11 @@ export interface TaskBarData {
    * `WndTaskBar.cpp:2845-2853`: `RenderRadar( cooltime - tick, cooltime )` while the tick is above 0).
    */
   lordCooldown?: (skill: number) => number | null;
+  /**
+   * 2026-11-14: the tooltip of a motion or an emoticon shortcut (`PutTooTip`, WndTaskBar.cpp:584-587, :631-670): a motion's
+   * description (the Cheer's points with it), an emoticon's "/" and command; none without it.
+   */
+  shortcutTip?: (shortcut: Shortcut) => HTMLElement | null;
 }
 
 /** `ICON_SIZE` and `SKILL_SIZE` (`WndTaskBar.cpp:183-184`): the slots of the applet row and the bars, and the action slot's. */
@@ -340,6 +351,11 @@ const CHAT_ICON = themeKey('icon_MacroChat.dds');
 /** A shortcut Piece 4 has nothing to draw with: a plain greyed slot. */
 const PLAIN_VIEW: SlotView = { kind: 'plain', greyed: true, icon: null, count: '', hotkey: '', name: '' };
 
+/** 2026-11-14: what the Motion window carries to the bar, a motion (`MOT_BASE_*`) or an emoticon (its index). */
+export type MotionCarried = Extract<Carried, { from: 'motions' | 'emoticons' }>;
+/** What a finger may pick for the next slot tapped: a skill, a bag item (2026-11-12), a motion or an emoticon (2026-11-14). */
+type Picked = Extract<Carried, { from: 'skills' | 'inventory' | 'motions' | 'emoticons' }>;
+
 /** A slot on screen, and the view it shows (as a string, to redraw it only when it changes). */
 interface SlotElement {
   element: HTMLButtonElement;
@@ -438,7 +454,7 @@ export class TaskBar {
    * What a finger picked, which the next slot tapped takes: a skill of the skill window, or (2026-11-12) an item of the
    * bag by its Task bar button; and the window it was picked in, where presses keep it.
    */
-  private picked: Extract<Carried, { from: 'skills' | 'inventory' }> | null = null;
+  private picked: Picked | null = null;
   private pickedWithin: Element | null = null;
   /** The click that ends a slot's drag back onto itself, or its long press, is not a press on the slot. */
   private swallowClick = false;
@@ -725,7 +741,29 @@ export class TaskBar {
     if (this.picked?.from === 'inventory') this.dropPick();
   }
 
-  private pick(carried: Extract<Carried, { from: 'skills' | 'inventory' }>, within: Element): void {
+  /**
+   * 2026-11-14: a motion or an emoticon of the Motion window carried to the bar with the mouse, as `carrySkill`
+   * (`CWndMotion1::OnMouseMove`, `CWndEmoticon::OnMouseMove`).
+   */
+  carryMotion(carried: MotionCarried, event: PointerEvent): void {
+    this.gestures.press(carried, event);
+  }
+
+  /**
+   * 2026-11-14 (the phone, which has no drag): a motion or an emoticon picked by the Motion window's Task bar button, as
+   * the bag's: the next slot of the item row (or a quick slot) tapped takes it. A press anywhere else but in `within` lets
+   * it go.
+   */
+  pickMotion(carried: MotionCarried, within: Element): void {
+    this.pick(carried, within);
+  }
+
+  /** 2026-11-14: the motion or emoticon a finger picked, or null. */
+  get pickedMotion(): MotionCarried | null {
+    return this.picked?.from === 'motions' || this.picked?.from === 'emoticons' ? this.picked : null;
+  }
+
+  private pick(carried: Picked, within: Element): void {
     if (this.picked === null) this.doc.addEventListener('pointerdown', this.onPressWhilePicked, true);
     this.picked = carried;
     this.pickedWithin = within;
@@ -884,6 +922,13 @@ export class TaskBar {
         // 2026-11-11: a Lord skill (`SetTaskBarTexture`, WndTaskBar.cpp:437-443: the component's icon)
         const lord = data.lordSkills?.get(shortcut.id);
         return lord === undefined ? PLAIN_VIEW : { kind: 'skill', greyed: false, icon: lord.icon, count: '', hotkey: '', name: lord.name };
+      }
+      case ShortcutKind.MOTION:
+      case ShortcutKind.EMOTICON: {
+        // 2026-11-14: a motion's icon (Client/Icon) or an emoticon's picture (`SetTaskBarTexture`, WndTaskBar.cpp:445-467)
+        const icon = this.iconOf(shortcut);
+        const name = shortcut.kind === ShortcutKind.MOTION ? motionProp(shortcut.id)?.desc ?? '' : emoticonLine(shortcut.id);
+        return icon === null ? PLAIN_VIEW : { kind: 'skill', greyed: false, icon, count: '', hotkey: '', name };
       }
       case ShortcutKind.SKILL: {
         if (shortcut.type === 2) {
@@ -1190,9 +1235,11 @@ export class TaskBar {
     this.hideItemTip();
     if (this.carrying || this.view.matchMedia?.('(pointer: coarse)').matches === true) return;
     const shortcut = this.loaded.items[this.slotIndex]?.[i];
-    if (shortcut === undefined || shortcut.kind !== ShortcutKind.ITEM) return;
-    const item = this.own?.inventory?.get(shortcut.id);
-    const tip = item === undefined ? null : this.data.itemTooltip?.(item) ?? null;
+    // 2026-11-14: a motion's and an emoticon's tooltip too (PutTooTip, WndTaskBar.cpp:584-587, :631-670)
+    const motion = shortcut !== undefined && (shortcut.kind === ShortcutKind.MOTION || shortcut.kind === ShortcutKind.EMOTICON);
+    if (shortcut === undefined || (!motion && shortcut.kind !== ShortcutKind.ITEM)) return;
+    const item = motion ? undefined : this.own?.inventory?.get(shortcut.id);
+    const tip = motion ? this.data.shortcutTip?.(shortcut) ?? null : item === undefined ? null : this.data.itemTooltip?.(item) ?? null;
     if (tip === null) return;
     tip.classList.add('hud-taskbar-tooltip');
     this.doc.body.append(tip);
@@ -1327,7 +1374,8 @@ export class TaskBar {
     // 2026-11-12: a quick slot takes what the item row takes
     if (slot !== null && slot.dataset.row === 'quick' && this.quickSlots.contains(slot)) return;
     // 2026-11-12: a bag item goes on the item row only, as the desktop's drag from the bag does (InventoryWindow.onDrop)
-    const rows = this.picked?.from === 'inventory' ? ['item'] : ['item', 'queue', 'applet'];
+    // 2026-11-14: a motion or an emoticon on the item and applet rows, not the action slot (OnDropIcon)
+    const rows = this.picked?.from === 'inventory' ? ['item'] : this.pickedMotion !== null ? ['item', 'applet'] : ['item', 'queue', 'applet'];
     if (slot !== null && this.strip.contains(slot) && rows.includes(slot.dataset.row ?? '')) return;
     this.dropPick();
   };
@@ -1371,6 +1419,12 @@ export class TaskBar {
       return icon ? themeKey(icon) : null;
     }
     if (shortcut.kind === ShortcutKind.LORDSKILL) return this.data.lordSkills?.get(shortcut.id)?.icon ?? null; // 2026-11-11
+    // 2026-11-14: a motion's icon and an emoticon's picture (the Motion window's)
+    if (shortcut.kind === ShortcutKind.MOTION) {
+      const prop = motionProp(shortcut.id);
+      return prop === undefined ? null : themeKey(prop.icon);
+    }
+    if (shortcut.kind === ShortcutKind.EMOTICON) return shortcut.id < EMOTICON_COUNT ? chatEmoticonKey(shortcut.id) : null;
     if (shortcut.kind === ShortcutKind.ITEM) {
       const item = this.own?.inventory?.get(shortcut.id);
       return item === undefined ? null : itemIconOf(item, this.data.itemProps.get(item.itemId)); // pets R2

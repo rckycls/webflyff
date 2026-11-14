@@ -15,6 +15,7 @@ import {
   encodeRemoveVis, encodeSwapVis, encodeQuePetResurrection, encodeTransformItem, encodePickupPetAwakeningCancel,
 } from '@flyffweb/protocol';
 import { encodeMagicAttack, encodeRangeAttack, encodeSfxClear, encodeSfxHit, encodeSfxId } from '@flyffweb/protocol';
+import { encodeCheering, encodeDoEscape, encodeMotion, encodePropose } from '@flyffweb/protocol'; // 2026-11-14: the Motion window
 import {
   encodePiercingRemove, encodeRemoveAttribute, encodeRepairItem, encodeUltimateMakeItem, encodeUltimateRemoveGem,
   encodeUltimateTransWeapon,
@@ -185,6 +186,14 @@ export class WorldSession {
   sendArenaExit(): void { this.playingCache()?.send(encodeArenaExit()); }
   /** 2026-11-10: the Forsaken Tower's OK (`SendTeleportToHeavenTower( nFloor )`, `DPClient.cpp:17828-17835`), floors 1-5. */
   sendHeavenTowerTeleport(floor: number): void { this.playingCache()?.send(encodeHeavenTowerTeleport(floor)); }
+  /**
+   * 2026-11-14 (the Motion window, world/motion.ts): sit down or stand up (`SendMotion`, an OBJMSG), cheer a player
+   * (`SendCheering`), the town escape (`SendDoEscape`) and a proposal (`SendPropose`).
+   */
+  sendMotion(message: number): void { this.playingCache()?.send(encodeMotion(message)); }
+  sendCheering(objectId: number): void { this.playingCache()?.send(encodeCheering(serverIdOf(objectId))); }
+  sendDoEscape(): void { this.playingCache()?.send(encodeDoEscape()); }
+  sendPropose(name: string): void { this.playingCache()?.send(encodePropose(name)); }
   /** 2026-11-09 (pets R2): the own raised pet's menu's release (`SendPetRelease`, `DPClient.cpp:16450-16454`). */
   sendPetRelease(): void { this.playingCache()?.send(encodePetRelease()); }
   /**

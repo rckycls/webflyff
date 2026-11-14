@@ -18,7 +18,7 @@ import type { WorldSession } from './WorldSession';
 import type { Mover } from './WorldState';
 
 /** What the own mover's driving sends. */
-export type OwnMoverSession = Pick<WorldSession, 'sendMoved' | 'sendBehavior' | 'sendDestPos' | 'sendCorr'>;
+export type OwnMoverSession = Pick<WorldSession, 'sendMoved' | 'sendBehavior' | 'sendDestPos' | 'sendCorr'> & Partial<Pick<WorldSession, 'sendMotion'>>;
 
 // Ground steering reports at 10 Hz leave room for a collision correction after every report.
 // Local movement still runs at 60 Hz; counting simulation steps also bounds catch-up bursts.
@@ -103,13 +103,15 @@ export class OwnMover {
   /**
    * A tap's part of `ControlGround` (`WndWorldControlPlayer.cpp:313-361`): `SetDestPos( vRayEnd )` and
    * `m_nCorr = -1`, so that the walk there ends where it meets something or starts to fall (`stepMover`); the SNAPSHOT
-   * with DESTPOS, forward (`SendSnapshot( TRUE )`, which first stands a sitting player up: Piece 3 has no sitting);
+   * with DESTPOS, forward (`SendSnapshot( TRUE )`, which first stands a sitting player up, `SendMotion( OBJMSG_STANDUP )`,
+   * DPClient.cpp:11160-11165: 2026-11-14, the Motion window's Sit);
    * and the mark.
    */
   walkTo(own: Mover, pos: Vec3, send = true): void {
     this.pendingSteeringReport = false;
     setDestPos(own, pos, true);
     own.nCorr = -1;
+    if (send && (own.act.stateFlag & ObjStaF.SIT) !== 0) this.session.sendMotion?.(ActMsg.STANDUP);
     if (send) this.session.sendDestPos(pos, true);
     this.mark.show(pos);
   }

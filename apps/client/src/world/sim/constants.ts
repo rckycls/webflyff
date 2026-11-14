@@ -101,6 +101,8 @@ export const ActMsg = {
   JUMP: 17,
   /** Combat mode on: a player's motions become its weapon's set. */
   MODE_COMBAT: 18,
+  /** 2026-11-14 (motion window): combat mode off, the Combat Stance motion's second press (`MoverMsg.h:126`). */
+  MODE_PEACE: 19,
   MODE_WALK: 20,
   MODE_RUN: 21,
   /** Piece 7 M5: onto the ride and off it, the turbo, and the thrust (`MoverMsg.h:129-135`). */
@@ -138,6 +140,11 @@ export const ActMsg = {
   LOOKUP: 43,
   LOOKDOWN: 44,
   STOP_LOOK: 45,
+  /**
+   * 2026-11-14 (motion window): a plain motion (`MoverMsg.h:153`): the `MTI_*` in the first parameter, played the way the
+   * second says (`ANILOOP_*`), the Motion window's (`CWndMgr::ObjectExecutor`, `WndManager.cpp:3062-3090`).
+   */
+  MOTION: 46,
   /** Turn to the angle in the first parameter and run (`CMover::ProcessMove` sends it toward a destination). */
   TURNMOVE: 47,
 } as const;

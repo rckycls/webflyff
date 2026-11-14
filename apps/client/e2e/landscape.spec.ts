@@ -222,7 +222,8 @@ test.describe('landscape (spec §3.10)', () => {
   // each line its whole row; every line of the Windows client kept (the owner's choice, 2026-11-03). Fourteen lines since
   // 2026-11-10 (Private Shop, Chatting, Messenger, Guild ...): in one column a line would be 16 px above 750 x 342's bar,
   // so a touch screen that short stands them in two columns of seven (2026-11-12), each line at least 22 px again
-  test('on a touch phone all fourteen Start menu entries fit, in two columns, with contiguous touch targets', async ({ page }) => {
+  // 2026-11-14: fifteen with Motion (WndTaskBar.cpp:2622), in columns of 8 and 7
+  test('on a touch phone all fifteen Start menu entries fit, in two columns, with contiguous touch targets', async ({ page }) => {
     test.skip(!isTouch(), 'a mouse gets the menu at its size');
     await playGateway(page);
     await enterFlaris(page);
@@ -236,14 +237,14 @@ test.describe('landscape (spec §3.10)', () => {
         const box = item.getBoundingClientRect();
         return { left: box.left, top: box.top, bottom: box.bottom, height: box.height };
       }));
-      expect(lines).toHaveLength(14);
+      expect(lines).toHaveLength(15);
       for (const line of lines) {
         // 2026-11-13 (owner, "make the menus smaller"): a phone draws them at most at 0.85, 22 x 0.85 = 18.7 px a line
         expect(line.height, `a line at ${size.width} x ${size.height}`).toBeGreaterThanOrEqual(18.5);
         expect(line.height, `a line at ${size.width} x ${size.height}`).toBeLessThanOrEqual(44.5);
       }
-      // two columns of seven, side by side from the same top, each line's row against the next one's
-      const [left, right] = [lines.slice(0, 7), lines.slice(7)];
+      // two columns, 8 and 7, side by side from the same top, each line's row against the next one's
+      const [left, right] = [lines.slice(0, 8), lines.slice(8)];
       for (const column of [left, right]) {
         for (let i = 1; i < column.length; i++) expect(column[i]!.top).toBeCloseTo(column[i - 1]!.bottom, 1);
       }

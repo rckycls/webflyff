@@ -30,7 +30,7 @@
 
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { UI_SHEETS_KEY, decodeImage, decodeScript, readTexturePack, webName } from '@flyffweb/formats';
+import { UI_SHEETS_KEY, chatEmoticonKey, decodeImage, decodeScript, readTexturePack, webName } from '@flyffweb/formats';
 import type { RgbaImage, TexturePack, WebUiSheet, WebUiSheets } from '@flyffweb/formats';
 import { bareIconKeyOf, charPictureKeyOf, iconKeyOf, itemIconKeyOf } from '../output/keys';
 import type { Stage, StageContext } from '../run';
@@ -294,6 +294,8 @@ const SHEETS = [
   { field: 'targetCorners', dir: 'Icon', script: 'icon_target.inc' }, // CWndWorld, WndWorld.cpp:3511
   { field: 'questEmoticons', dir: 'Icon', script: 'icon_QuestEmoticon.inc', optional: true },
   { field: 'dialogEmoticons', dir: 'Theme/Default', script: 'texDialogEmoticon.inc', optional: true },
+  // 2026-11-14 (motion window): the chat's emoticons (CDialogMsg, DialogMsg.cpp:37), each frame its own picture too (`frames`)
+  { field: 'chatEmoticons', dir: 'Theme/Default', script: 'texChatEmoticon.inc', optional: true },
 ] as const;
 
 /**
@@ -385,6 +387,8 @@ interface Picture {
   /** The logical key the PNG is written under. */
   key: string;
   colorKey: number;
+  /** 2026-11-14: frames of it written as pictures of their own (the chat's emoticons, `chatEmoticonKey`). */
+  frames?: ReadonlyArray<{ key: string; x: number; y: number; w: number; h: number }>;
   /** The key of its frameless copy (`BARE_ICONS`), if it has one. */
   bareKey?: string;
 }
@@ -423,13 +427,27 @@ async function readSheet(ctx: StageContext, spec: (typeof SHEETS)[number]): Prom
   return { field: spec.field, script, bytes: raw.length, pack: readTexturePack(text, script, { width, height }), picture, colorKey };
 }
 
-async function convertPicture({ src, key, colorKey, bareKey }: Picture, ctx: StageContext): Promise<void> {
+async function convertPicture({ src, key, colorKey, bareKey, frames }: Picture, ctx: StageContext): Promise<void> {
   const bytes = new Uint8Array(await fs.readFile(src));
   const image = applyColorKey(decodeImage(bytes, src), colorKey);
   const png = encodePng(image, true);
   await ctx.writer.write(key, png, src);
   ctx.report.ok(KIND, src, bytes.length, png.length);
   if (bareKey !== undefined) await ctx.writer.write(bareKey, encodePng(stripIconFrame(image), true), src);
+  for (const frame of frames ?? []) await ctx.writer.write(frame.key, encodePng(cropImage(image, frame), true), src);
+}
+
+/** 2026-11-14: the part `x, y, w, h` of `image` (a frame of a sheet), clipped to the image; outside it transparent. */
+export function cropImage(image: RgbaImage, { x, y, w, h }: { x: number; y: number; w: number; h: number }): RgbaImage {
+  const data = new Uint8Array(w * h * 4);
+  for (let row = 0; row < h; row++) {
+    const sy = y + row;
+    if (sy < 0 || sy >= image.height) continue;
+    const from = Math.max(0, x), to = Math.min(image.width, x + w);
+    if (to <= from) continue;
+    data.set(image.data.subarray((sy * image.width + from) * 4, (sy * image.width + to) * 4), (row * w + (from - x)) * 4);
+  }
+  return { width: w, height: h, data };
 }
 
 export interface UiStageOptions {
@@ -492,6 +510,9 @@ export function createUiStage(options: UiStageOptions = {}): Stage {
         }
       }
       for (const sheet of sheets) add(sheet.picture, iconKeyOf);
+      const chat = sheets.find((sheet) => sheet.field === 'chatEmoticons');
+      const chatPicture = chat === undefined ? undefined : pictures.get(chat.picture);
+      if (chat !== undefined && chatPicture !== undefined) chatPicture.frames = chat.pack.frames.map((frame, i) => ({ ...frame, key: chatEmoticonKey(i) }));
       // the cursors: their mask is their transparency, so no colour key (ui/anvil.png)
       for (const name of CURSOR_FILES) {
         if (!wanted(name)) continue;

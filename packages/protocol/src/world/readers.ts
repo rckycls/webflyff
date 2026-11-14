@@ -61,6 +61,7 @@ import { GUILD_READERS } from './guild';
 import type { WorldMessage } from './types';
 import { readRemoveAttribute, readSmeltSafety, readUltimate } from './upgrade';
 import { readAngel, readFlyffEvent, readSetLocalEvent } from './angel'; // 2026-11-10: Summon Angel
+import { readSetCheerParam } from './motion'; // 2026-11-14: the Motion window
 import { readChangeFace, readSexChange, readSummon } from './itemWindows';
 import {
   readMoverChangeSfx, readPetCall, readPetFeed, readPetLevelup, readPetMill, readPetRelease, readPetResurrectionResult,
@@ -199,6 +200,7 @@ export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
     [MessageType.ANGEL, readAngel],
     [MessageType.FLYFF_EVENT, readFlyffEvent],
     [MessageType.SET_LOCAL_EVENT, readSetLocalEvent],
+    [MessageType.SETCHEERPARAM, readSetCheerParam], // 2026-11-14: the Motion window's Cheer
     [MessageType.SMELT_SAFETY, readSmeltSafety],
     [MessageType.REMOVE_ATTRIBUTE, readRemoveAttribute], // 2026-11-11
     [MessageType.SUMMON, readSummon],

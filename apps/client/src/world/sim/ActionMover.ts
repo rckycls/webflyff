@@ -361,6 +361,11 @@ export class ActionMover {
    */
   isEndFrame: () => boolean = () => true;
   /**
+   * 2026-11-14 (motion window): `IsActiveMover() && g_WndMng.m_pWndWorld->m_bLButtonDown`: the own player's mouse button (or
+   * finger) held on the world, which lets a held or looping motion go (`ActionMoverState.cpp:52-60`). False for any other.
+   */
+  lButtonDown: () => boolean = () => false;
+  /**
    * `m_pModel->IsAttrHit()` (`ModelObject.h:280-286`, `CMotion::IsAttrHit`, `Bone.h:162-169`): the hit frame that the
    * model's last frame move went past, as its index in the motion's hit frames, or -1. By default -1: no model, no hits.
    */
@@ -1175,6 +1180,22 @@ export class ActionMover {
         this.motion = NO_MOTION; // the same motion again, so that the weapon's set of it is loaded
         this.setMotion(Mti.STAND);
         return 1;
+      case ActMsg.MODE_PEACE: // :1021-1031, 2026-11-14 (motion window)
+        if ((this.stateFlag & ObjStaF.COMBAT) === 0) return 0;
+        if (this.state & (ObjSta.JUMP_ALL | ObjSta.ATK_ALL | ObjSta.DMG_ALL)) return 0;
+        if (this.stateFlag & ObjStaF.SIT) return 0;
+        if (this.state & ObjSta.ACTION_ALL) return 0;
+        this.stateFlag &= ~ObjStaF.COMBAT;
+        this.motion = NO_MOTION;
+        this.setMotion(Mti.STAND);
+        return 1;
+      case ActMsg.MOTION: // :1105-1124, 2026-11-14 (motion window); MVRF_NOMOVE and CHS_LOOT need buffs, RemoveInvisible is the server's
+        if (this.stateFlag & ObjStaF.SIT) return 0;
+        if (this.state & (ObjSta.ACTION_ALL | ObjSta.JUMP_ALL | ObjSta.ATK_ALL | ObjSta.DMG_ALL)) return 0;
+        this.stateFlag |= ObjStaF.ETC;
+        this.motionEx = param1;
+        if (param1 !== -1) this.setMotion(param1, param2, Mop.FIXED);
+        return 1;
       case ActMsg.MODE_WALK: // :1032-1037
         if (this.stateFlag & ObjStaF.SIT || this.state & ObjSta.ACTION_ALL) return 0;
         if (this.stateFlag & ObjStaF.WALK) return 0;
@@ -1358,8 +1379,9 @@ export class ActionMover {
       case ObjSta.STAND: // :41-89
         if (this.state === ObjSta.STAND) {
           if (this.stateFlag & ObjStaF.ETC) {
-            // a custom motion: a one-play one ends by itself; a looping one waits for the player's click (not copied)
-            if (this.loop === AniLoop.ONE_PLAY && this.isEndFrame()) this.stateFlag &= ~ObjStaF.ETC;
+            // a custom motion: a one-play one ends by itself; a held or looping one at the own player's click (2026-11-14,
+            // the motion window: `IsActiveMover() && m_bLButtonDown`, ActionMoverState.cpp:52-60), at its last frame
+            if (this.loop === AniLoop.ONE_PLAY ? this.isEndFrame() : this.lButtonDown() && this.isEndFrame()) this.stateFlag &= ~ObjStaF.ETC;
           } else if (this.isEndFrame()) {
             this.setMotion(Mti.STAND);
           }

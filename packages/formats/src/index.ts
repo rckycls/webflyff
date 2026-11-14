@@ -98,7 +98,7 @@ export type { AssetIndex, WorldManifest } from './web/manifest';
 export type { MotionEvents } from './web/motionEvents';
 export { sfxTextureName } from './web/effect';
 export type { WebEffect, WebEffectPart } from './web/effect';
-export { UI_SHEETS_KEY } from './web/ui';
+export { UI_SHEETS_KEY, chatEmoticonKey } from './web/ui';
 export type { WebUiSheet, WebUiSheets } from './web/ui';
 export type { ModelBoxExtras, SkeletonExtras, SkeletonGrips } from './web/modelExtras';
 export { CHAT_KEY, GAME_DATA_KEYS, HONOR_NEEDS_KEY, ITEM_ETC_KEY, PETS_KEY, ULTIMATE_KEY, WORLD_NO_FLY_KEY } from './web/gameData';
