@@ -8,6 +8,8 @@ import { readLordRequestPacket } from '../world/lord';
 import type { LordRequestPacket } from '../world/lord';
 import { readHonorRequestPacket } from '../world/honor';
 import type { HonorRequestPacket } from '../world/honor';
+import { readCoupleRequestPacket } from '../world/couple';
+import type { CoupleRequestPacket } from '../world/couple';
 import { ArReader } from '../ar/ArReader';
 import { DPID_UNKNOWN, MessageType, PacketType } from '../constants';
 import type { Vec3 } from '../constants';
@@ -379,6 +381,8 @@ export type WorldPacket =
   | LordRequestPacket
   // 2026-11-11: the honour title the browser asks for (world/honor.ts)
   | HonorRequestPacket
+  // 2026-11-15 (social): the couple's answers and break-up (world/couple.ts)
+  | CoupleRequestPacket
   | { type: 'unknown'; packetType: number };
 
 /**
@@ -795,6 +799,9 @@ function decodeClientPacket(r: ArReader): WorldPacket {
       // 2026-11-11: the honour window's (world/honor.ts)
       const honor = readHonorRequestPacket(packetType, r);
       if (honor !== null) { r.expectEnd(); return honor; }
+      // 2026-11-15 (social): the couple's (world/couple.ts)
+      const couple = readCoupleRequestPacket(packetType);
+      if (couple !== null) { r.expectEnd(); return couple; }
       return { type: 'unknown', packetType };
     }
   }

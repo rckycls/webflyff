@@ -112,6 +112,7 @@ import type { PartyEvent } from './party/partyState';
 import { PlayerDataCenter } from './party/playerData';
 import { FriendHud } from './friends/friendHud';
 import { TradeHud } from './trade/tradeHud';
+import { SocialHud } from './social/socialHud'; // 2026-11-15 (social)
 import { Messenger, loadFriendOptions, saveFriendOptions } from './friends/messenger';
 import type { FriendEvent } from './friends/messenger';
 import { MMI_ADD_MESSENGER, MMI_CHEER, MMI_INVITE_COMPANY, MMI_INVITE_PARTY, MMI_TRADE, menuInReach, playerMenuEntries } from './party/playerMenu';
@@ -206,7 +207,7 @@ import { GroundModels, loadDropModel } from './items/groundModels';
 import { NearbyItems } from './items/nearbyItems';
 import {
   ENABLE_GUILD_INVENTORY, EVE_PK, NULL_ID, STATE_BASEMOTION_MODE, ShortcutKind, isBankMessage, isGuildBankMessage, isGuildMessage,
-  isLordMessage, isPostMessage, isTradeMessage,
+  isLordMessage, isPostMessage, isTradeMessage, isCoupleMessage,
 } from '@flyffweb/protocol';
 // 2026-11-10: the guild (guild/guildBook.ts, guild/guildHud.ts)
 import { GuildBook } from './guild/guildBook';
@@ -565,6 +566,9 @@ export class WorldScreen {
   /** 2026-11-10: the player trade's windows (trade/tradeHud.ts), and the tooltip over a trade slot. */
   private tradeHud: TradeHud | undefined;
   private tradeTooltip: HTMLElement | null = null;
+  /** 2026-11-15 (social): the couple's windows (social/socialHud.ts), and its snapshots while the world loads. */
+  private social: SocialHud | undefined;
+  private socialWaiting: Array<Parameters<SocialHud['onCouple']>[0]> = [];
   /** 2026-11-10 (bank-mail): the bank's windows (bank/bankHud.ts), and the tooltip over a bank's item. */
   private bankHud: BankHud | undefined;
   /** 2026-11-15: the guild bank's windows (guildBank/guildBankHud.ts). */
@@ -963,6 +967,8 @@ export class WorldScreen {
       if (value.type === 'say') { this.friendHud?.onSay(value); continue; }
       // 2026-11-10: the player trade's snapshots (trade/tradeState.ts), and the asked side's refusals (OnBlock gu 3, 4, 5, 8)
       if (isTradeMessage(value)) { this.tradeHud?.handle(objectId, value); continue; }
+      // 2026-11-15 (social): the couple's snapshots (CCoupleHelper::On*), kept until its windows exist
+      if (isCoupleMessage(value)) { if (this.social !== undefined) this.social.onCouple(value); else this.socialWaiting.push(value); continue; }
       // 2026-11-10 (bank-mail): the bank's windows hear its snapshots; the own state (WorldState.toOwn) applies the contents
       if (isBankMessage(value) && objectId === self?.objectId) this.bankHud?.handle(value);
       // 2026-11-15: the guild bank's (guildBank/guildBankHud.ts); no own state: the HUD keeps the bank and moves the bag, the
@@ -2075,6 +2081,17 @@ export class WorldScreen {
       showTooltip: (item, anchor) => this.showTradeTooltip(item, anchor),
     }, doc);
     this.tradeHud = tradeHud;
+    // 2026-11-15 (social): the couple (social/socialHud.ts)
+    const social = new SocialHud(this.hudArt!, this.data!.texts, {
+      send: (bytes) => session.sendSocial(bytes),
+      ownPlayerId: () => this.entry.character.playerId,
+      playerData: (playerId) => this.playerData.get(playerId),
+      jobName: (job) => this.data?.jobs[job]?.title ?? '',
+      itemProp: (itemId) => this.data?.itemProps.get(itemId),
+      say: (text, color) => this.hud?.messages.add(text, color),
+    }, doc);
+    this.social = social;
+    for (const message of this.socialWaiting.splice(0)) social.onCouple(message);
     // 2026-11-10 (bank-mail): the bank (bank/bankHud.ts)
     const bankHud = new BankHud(this.hudArt!, this.data!.texts, {
       send: (bytes) => session.sendBankMail(bytes),
@@ -2230,7 +2247,7 @@ export class WorldScreen {
     this.optionWindow = this.audio === null ? undefined : new OptionWindow(this.hudArt!, this.audio, doc);
     for (const modal of [
       logOutBox.modal, reviveWindow.modal, skillWindow.warning.modal, this.dialog.modal, questWindow.modal, messageBox.modal, selectVillage.modal, partyHud.messageBox.modal,
-      friendHud.messageBox.modal, tradeHud.gold.window.modal!, ...guildHud.modals, bankHud.amount.modal, guildBankHud.amount.modal, ...postHud.modals,
+      friendHud.messageBox.modal, tradeHud.gold.window.modal!, ...social.modals, ...guildHud.modals, bankHud.amount.modal, guildBankHud.amount.modal, ...postHud.modals,
     ]) {
       modal.onChange = () => this.modalChanged();
     }
@@ -2247,7 +2264,7 @@ export class WorldScreen {
       ...(this.chatWindow instanceof NeuzChat ? this.chatWindow.elements : [this.chatWindow.element]), this.shopWindow.frame.element,
       this.petWindows.element, this.buffPet.element,
       ...questWindow.elements, this.dialog.element, this.moverMenu.element, ...partyHud.elements, ...friendHud.elements,
-      ...tradeHud.elements, ...guildHud.elements, ...bankHud.elements, ...guildBankHud.elements, ...postHud.elements, this.mailNotice.element,
+      ...tradeHud.elements, ...social.elements, ...guildHud.elements, ...bankHud.elements, ...guildBankHud.elements, ...postHud.elements, this.mailNotice.element,
       ...(this.personalShop?.elements.slice(1) ?? []),
     );
     // what the friend list said while the world loaded
@@ -3317,6 +3334,7 @@ export class WorldScreen {
     // 2026-11-05: the premium timers after the item buffs, and the own level the ES scrolls' bonus depends on
     this.smTimers.tick(performance.now());
     this.lordHud?.step(performance.now()); // 2026-11-11: the Lord windows' clock and the event icons
+    this.social?.frame(); // 2026-11-15 (social): the couple window's OnDraw
     this.buffStatus?.update(self?.buffs.list(buffNow) ?? [], this.data!.skills, buffNow, {
       sm: this.smTimers.list(), level: this.own?.level ?? 1, resist: this.resistElements,
     });
@@ -3465,6 +3483,7 @@ export class WorldScreen {
     if (window === 'lordSkill') { this.lordHud?.openSkills(); return; }
     // 2026-11-14: APP_MOTION, O (FuncApplet.cpp:198): the Motion window
     if (window === 'motion') { this.motionWindow?.toggle(); return; }
+    if (window === 'couple') { this.social?.coupleWindow.toggle(); return; } // 2026-11-15 (social)
     // 2026-11-10: APP_VENDOR_REVISION, the personal shop, refused while the Summon Angel window is open (WndManager.cpp:2685-2695)
     if (window === 'vendor') {
       if (this.summonAngel?.isOpen === true) this.say('TID_GAME_SUMMONANGELUSING');

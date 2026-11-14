@@ -237,13 +237,13 @@ test.describe('landscape (spec §3.10)', () => {
         const box = item.getBoundingClientRect();
         return { left: box.left, top: box.top, bottom: box.bottom, height: box.height };
       }));
-      expect(lines).toHaveLength(15);
+      expect(lines).toHaveLength(16); // 2026-11-15: Couple
       for (const line of lines) {
         // 2026-11-13 (owner, "make the menus smaller"): a phone draws them at most at 0.85, 22 x 0.85 = 18.7 px a line
         expect(line.height, `a line at ${size.width} x ${size.height}`).toBeGreaterThanOrEqual(18.5);
         expect(line.height, `a line at ${size.width} x ${size.height}`).toBeLessThanOrEqual(44.5);
       }
-      // two columns, 8 and 7, side by side from the same top, each line's row against the next one's
+      // two columns, 8 and 8 (2026-11-15), side by side from the same top, each line's row against the next one's
       const [left, right] = [lines.slice(0, 8), lines.slice(8)];
       for (const column of [left, right]) {
         for (let i = 1; i < column.length; i++) expect(column[i]!.top).toBeCloseTo(column[i - 1]!.bottom, 1);

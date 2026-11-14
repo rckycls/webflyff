@@ -4,6 +4,7 @@ import { LORD_READERS } from './lord';
 import { HONOR_READERS } from './honor';
 import { HP_LAYER_READERS } from './hpLayer';
 import { POST_READERS } from './post';
+import { COUPLE_READERS } from './couple'; // 2026-11-15 (social)
 import type { MessageReader } from '../bundle';
 import { MessageType } from '../constants';
 import { readAddObj } from './addObj';
@@ -243,4 +244,6 @@ export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
     ...HONOR_READERS,
     // 2026-11-11: layered boss HP, a server addition (world/hpLayer.ts)
     ...HP_LAYER_READERS,
+    // 2026-11-15 (social): the couple (world/couple.ts)
+    ...COUPLE_READERS,
   ]);

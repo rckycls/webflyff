@@ -12,6 +12,8 @@ import type { UiArt } from './art';
 /** The gauge pictures' sizes: 12 x 12 and 12 x 8 (`Theme/Default`). */
 const PICTURES = {
   'GauEmptyNormal.bmp': { width: 12, height: 12 },
+  /** 2026-11-15 (social): the couple window's EXP fill (CWndCoupleTabInfo, WndField.cpp:23168-23169). */
+  'GauFillNormal.bmp': { width: 12, height: 12 },
   'GauEmptySmall.bmp': { width: 12, height: 8 },
 } as const;
 export type GaugePicture = keyof typeof PICTURES;

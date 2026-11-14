@@ -60,7 +60,7 @@ import { itemIconOf } from '../pets/petStatus';
 
 /** The windows of Piece 4 a press on the task bar opens. */
 export type TaskBarWindow = 'character' | 'status' | 'skills' | 'inventory' | 'chat' | 'navigator' | 'worldmap' | 'option'
-  | 'quests' | 'party' | 'messenger' | 'vendor' | 'guild' | 'lordSkill' | 'motion';
+  | 'quests' | 'party' | 'messenger' | 'vendor' | 'guild' | 'lordSkill' | 'motion' | 'couple';
 /** 2026-11-10: `APP_GUILD` (Resource/ResData.h:228), the guild window (guild research §3), G (FuncApplet.cpp:245). */
 const APP_GUILD = 323;
 /** `APP_QUEST_EX_LIST` (Resource/ResData.h), the quest window (Piece 7 M1), Q (FuncApplet.cpp:229). */
@@ -74,6 +74,8 @@ const APP_MESSENGER_EX = 302;
  * research.md §2.1), with no hot key (FuncApplet.cpp:223).
  */
 const APP_VENDOR_REVISION = 591;
+/** 2026-11-15 (social): `APP_COUPLE_MAIN`, the couple window (docs/2026-11-15-social-research.md §2). */
+const APP_COUPLE_MAIN = 813;
 
 /**
  * The applets whose window Piece 4 has, which `ObjectExecutor` opens (or closes) when they are pressed: from the Start
@@ -97,6 +99,8 @@ const WINDOWS: ReadonlyMap<number, TaskBarWindow> = new Map([
   [728, 'lordSkill'],
   // 2026-11-14: APP_MOTION (Resource/ResData.h), the Motion window, O (FuncApplet.cpp:198)
   [172, 'motion'],
+  // 2026-11-15 (social): APP_COUPLE_MAIN (Resource/ResData.h), the couple window, F (FuncApplet.cpp:259-264)
+  [APP_COUPLE_MAIN, 'couple'],
 ]);
 
 /**
@@ -135,6 +139,9 @@ const MENU: ReadonlyArray<{ id: number; text: string }> = [
   // 2026-11-10: CWndTaskMenu's APP_MESSENGER_ line, 'Messenger' (TID_APP_MESSENGER), the second of its Communication
   // submenu (WndTaskBar.cpp:2661)
   { id: APP_MESSENGER_EX, text: 'Messenger' },
+  // 2026-11-15 (social): CWndTaskMenu's APP_COUPLE_MAIN line, 'Couple' (TID_GAME_COUPLE), the third of its Communication
+  // submenu (WndTaskBar.cpp:2663-2665)
+  { id: APP_COUPLE_MAIN, text: 'Couple' },
   // CWndTaskMenu's APP_PARTY line, 'Party' (TID_APP_PARTY), in its Communication submenu (WndTaskBar.cpp:2670): the
   // browser's menu is flat, so it stands before Option
   { id: APP_PARTY, text: 'Party' },

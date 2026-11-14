@@ -22,9 +22,11 @@ import type { PostMessage } from './post';
 import type { LordMessage } from './lord';
 import type { HonorMessage } from './honor';
 import type { HpLayerMessage } from './hpLayer';
+import type { CoupleMessage } from './couple'; // 2026-11-15 (social)
 
 export type WorldMessage = ChatMessage | NpcMessage | ShopMessage | QuestMessage | PetMessage | FriendMessage | TradeMessage | VendorMessage
   | GuildMessage | GuildDirectMessage | BankMessage | GuildBankMessage | PostMessage | LordMessage | HonorMessage | HpLayerMessage
+  | CoupleMessage
   | { type: 'profileStats'; values: number[] }
   | { type: 'addItem'; item: GroundItem }
   | { type: 'createItem'; itemType: number; item: InventoryItem; stacks: Array<{ objectId: number; count: number }> }

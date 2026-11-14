@@ -272,6 +272,9 @@ export const THEME_FILES: readonly string[] = [
   // 2026-11-12, the New Character window (docs/superpowers/specs/2026-11-12-char-select-create-research.md §3): its sex
   // and arrow buttons (APP_CREATE_CHAR, resdata.inc:24551-24600); ButtOk, ButtCancel and WndEditTile00 are above
   'ButtMale.bmp', 'ButtFemale.bmp', 'ButtLeft.bmp', 'ButtRight.bmp',
+  // 2026-11-15, the couple window (docs/2026-11-15-social-research.md §2): APP_COUPLE_TAB_INFO's Break Up and its EXP fill
+  // (CWndCoupleTabInfo::OnInitialUpdate, WndField.cpp:23165-23177), APP_COUPLE_TAB_SKILL's background (:23372)
+  'ButtBreakUp.bmp', 'GauFillNormal.bmp', 'Bg_Couple_Skill.tga',
 ];
 
 /**

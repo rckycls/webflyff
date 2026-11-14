@@ -4223,3 +4223,21 @@ fieldset:disabled .btn {
   .hud-motion-taskbar[aria-pressed='true'] { background: #ffe494; border-color: #795431; }
   .hud-motion-taskbar:disabled { opacity: 0.5; cursor: default; }
 }
+
+/* 2026-11-15 (social): the couple window (hud/couple/coupleWindow.ts, CWndCoupleManager): two tabs of child windows on the
+   tab control's edit tiles; the master/hero mark, the EXP gauge, the skill icons over Bg_Couple_Skill.tga */
+.hud-couple-page { position: absolute; }
+.hud-couple-page[hidden] { display: none; }
+.hud-couple-tabs { z-index: 1; }
+.hud-couple-jobtype, .hud-couple-skill-bg, .hud-couple-skill { position: absolute; background-repeat: no-repeat; }
+.hud-couple-jobtype { pointer-events: none; }
+.hud-couple-jobtype[hidden] { display: none; }
+.hud-couple-skill { background-size: 32px 32px; cursor: default; }
+.hud-couple-gauge { z-index: 1; }
+.hud-couple .hud-res-text-body span { font: inherit; }
+
+/* the phone: the same window fitted whole (WindowFrame fitWhole); its words in Verdana 12 px, the tabs' too */
+@media (max-width: 1000px) and (pointer: coarse) {
+  .hud-couple :is(.hud-res-static-text, .hud-res-text-body, .hud-tab-title) { font-family: Verdana, Tahoma, sans-serif; font-size: 12px; }
+  .hud-couple .hud-tab-title { text-align: center; }
+}
