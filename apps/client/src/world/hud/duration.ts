@@ -10,15 +10,16 @@ const PARTS: ReadonlyArray<readonly [string, number]> = [['d', 86400], ['h', 360
 /**
  * A duration, short and with no spaces: its largest unit, then the next one down when that part is not zero, in whole
  * units (truncated): 45 s is `45s`, 90 s `1m30s`, 1800 s `30m`, 3600 s `1h`, 30000 s `8h20m`, 90000 s `1d1h`; 0, less,
- * or not a number is `0s`. `unit` is what `value` counts (seconds when left out).
+ * or not a number is `0s`. `unit` is what `value` counts (seconds when left out). `parts` 1 keeps the largest unit only
+ * (`53m`, `8h`, `45s`): the labels on the buff icons, which side by side on a phone ran together as "53m53s9m6s".
  */
-export function formatDuration(value: number, unit: DurationUnit = 's'): string {
+export function formatDuration(value: number, unit: DurationUnit = 's', parts: 1 | 2 = 2): string {
   const seconds = unit === 'ms' ? value / 1000 : unit === 'min' ? value * 60 : value;
   let left = Number.isFinite(seconds) && seconds > 0 ? Math.trunc(seconds) : 0;
   const first = PARTS.findIndex(([, size]) => left >= size);
   if (first < 0) return '0s';
   let text = '';
-  for (const [name, size] of PARTS.slice(first, first + 2)) {
+  for (const [name, size] of PARTS.slice(first, first + parts)) {
     const n = Math.trunc(left / size);
     left -= n * size;
     if (n > 0) text += `${n}${name}`;
