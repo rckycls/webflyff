@@ -19,11 +19,7 @@ import { SessionBook } from '../src/admin/sessions';
 import { totpCode, totpStep } from '../src/admin/totp';
 import { testConfig } from '../test/support/adminDeps';
 import { MemoryAdminStore, memoryAccount, memoryCharacter } from '../test/support/memoryAdminStore';
-
-export const DEMO_USER = 'Poreotix';
-export const DEMO_PASSWORD = 'demo-password-1';
-/** base32 of "12345678901234567890" (RFC 6238's key): the browser check works out the code from it. */
-export const DEMO_SECRET = 'GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ';
+import { DEMO_PASSWORD, DEMO_SECRET, DEMO_USER } from './adminDemoLogin';
 
 const { values } = parseArgs({ options: { port: { type: 'string', default: '8099' }, running: { type: 'boolean', default: false }, assets: { type: 'string' } } });
 const port = Number(values.port);
