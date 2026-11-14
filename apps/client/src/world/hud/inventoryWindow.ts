@@ -58,9 +58,11 @@ export class InventoryWindow {
   onShopClose?: () => void;
   /**
    * 2026-11-10 (trade): while the trade window is open the phone, which has no drag, puts a tapped item or the tapped
-   * penya in the trade (the desktop drags them onto the own grid, CWndTradeCtrl::OnDropIcon).
+   * penya in the trade (the desktop drags them onto the own grid, CWndTradeCtrl::OnDropIcon); the same for the windows that
+   * take bag items (`active`). 2026-11-15 (owner): where `card()` says so (the trade), a tap shows the item's card with one
+   * button, Add to Trade, which puts it in.
    */
-  trade?: { active(): boolean; tapItem(id: number): void; tapPenya(): void };
+  trade?: { active(): boolean; tapItem(id: number): void; tapPenya(): void; card?(): boolean };
   /**
    * 2026-11-10 (bank-mail): drags that started in another window and land on the bag (`CWndInventory::OnChildNotify`'s
    * WIN_ITEMDROP, WndField.cpp:1863-1950, :2015-2032): a bank's item or penya, a mail's item or penya. `types` are the drag
@@ -223,7 +225,7 @@ export class InventoryWindow {
         // 2026-11-05: in the upgrade mode a click is its target's (CWndItemCtrl::OnLButtonDown); an empty cell does nothing
         if (this.actions.upgrade?.active() === true) { if (item) this.actions.upgrade.pick(id); return; }
         if (this.shopSelect) { this.selected = item ? id : null; this.actionsOpen = false; this.drawDetails(); this.shopSelect(item ? id : -1); return; }
-        if (this.mobile && item && this.trade?.active() === true) { if (!held) this.trade.tapItem(id); return; }
+        if (this.mobile && item && this.trade?.active() === true && this.trade.card?.() !== true) { if (!held) this.trade.tapItem(id); return; }
         this.selected = item ? id : null; this.actionsOpen = item !== undefined && (this.mobile || this.hoverAnchor === cell);
         this.drawDetails();
       });
@@ -390,7 +392,12 @@ export class InventoryWindow {
         el.addEventListener('click', () => { el.blur(); this.actionsOpen = false; this.drawDetails(); run(); });
         details.append(el);
       };
-      if (own.equipmentObjectIds.some((id, part) => id === item.objectId && this.itemAt(part))) {
+      // 2026-11-15 (owner, "the trade window should not add an item on a tap: the item's tooltip still, and only a button
+      // that adds it to the trade"): while a trade is open the card has that one button (a held item none)
+      if (this.trade?.active() === true && this.trade.card?.() === true) {
+        const trade = this.trade;
+        if (this.actions.held?.(item.objectId) !== true) button('trade', 'Add to Trade', () => trade.tapItem(item.objectId));
+      } else if (own.equipmentObjectIds.some((id, part) => id === item.objectId && this.itemAt(part))) {
         button('unequip', 'Unequip', () => (isRideProp(prop) ? this.actions.land?.(item.objectId) : this.actions.equip(item.objectId)));
       } else {
         if (prop && prop.part >= 0 && prop.part < 31 && prop.part !== 13) button('equip', 'Equip', () => this.actions.equip(item.objectId));

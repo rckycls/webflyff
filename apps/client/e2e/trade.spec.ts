@@ -70,10 +70,18 @@ async function openLeadMenu(page: Page, gateway: Gateway): Promise<void> {
   await expect(page.locator('.hud-mover-menu')).toBeVisible();
 }
 
-/** A bag item put on the own grid: dragged onto `slot` on the desktop, tapped on the phone (the first free slot). */
+/**
+ * A bag item put on the own grid: dragged onto `slot` on the desktop; on the phone (2026-11-15, owner) a tap shows the item's
+ * card, its tooltip with one button, Add to Trade, which puts it on the first free slot.
+ */
 async function putItem(page: Page, bagSlot: number, slot: number): Promise<void> {
-  if (isPhone()) await bagCell(page, bagSlot).tap();
-  else await bagCell(page, bagSlot).dragTo(mySlot(page, slot));
+  if (isPhone()) {
+    await bagCell(page, bagSlot).tap();
+    const card = page.locator('.hud-inventory .inventory-details');
+    await expect(card).toBeVisible();
+    await expect(card.locator('[data-item-action]')).toHaveCount(1);
+    await card.locator('[data-item-action="trade"]').tap();
+  } else await bagCell(page, bagSlot).dragTo(mySlot(page, slot));
 }
 
 /** The quantity box answered: the field typed over, then OK (Enter on the desktop, the button on the phone). */

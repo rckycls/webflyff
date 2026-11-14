@@ -78,6 +78,8 @@ import { escapeWindow, refitWindows } from './hud/frame';
 import { cursorProperties, worldCursor } from './hud/cursors';
 import type { WorldHover } from './hud/cursors';
 import { themeUrl } from './hud/art';
+import { pinScroll } from './hud/scrollPin';
+import type { ScrollPin } from './hud/scrollPin';
 import type { UiArt } from './hud/art';
 import { Hud } from './hud/hud';
 import { escapeStep } from './hud/escape';
@@ -2197,6 +2199,8 @@ export class WorldScreen {
         else tradeHud.tapItem(id);
       },
       tapPenya: () => { if (bankHud.isOpen && !tradeHud.windowOpen) bankHud.tapPenya(); else tradeHud.tapPenya(); },
+      // 2026-11-15 (owner): the trade's tap shows the item's card with Add to Trade; the other windows take the item at once
+      card: () => tradeHud.windowOpen,
     };
     // a type-2 shortcut of the task bar: the party skill's rule (ObjectExecutor, WndManager.cpp:2779-2876)
     skillUse.onPartySkill = (skill) => partyHud.useSkill(skill);
@@ -2327,6 +2331,9 @@ export class WorldScreen {
     doc.addEventListener('visibilitychange', this.onVisibility);
     view.addEventListener('blur', this.onBlur);
     view.addEventListener('resize', this.onResize);
+    // 2026-11-15: the game's screen never scrolls, a focused text box's scroll into view included (hud/scrollPin.ts)
+    this.scrollPin?.dispose();
+    this.scrollPin = pinScroll(this.element);
     view.addEventListener('keydown', this.onKeyDown);
     view.addEventListener('keyup', this.onKeyUp);
     this.lastTime = performance.now();
@@ -4597,6 +4604,9 @@ export class WorldScreen {
    * joystick or on the world may never be seen to lift, so both let go now, and the player stops at the next step as at a
    * lifted finger. The keys stay: a PC's cover leaves them to the player, and the fight goes on (Review Focus 5).
    */
+  /** 2026-11-15: keeps the page and the world's layers unscrolled (hud/scrollPin.ts). */
+  private scrollPin: ScrollPin | undefined;
+
   private readonly onResize = (): void => {
     this.resized = true;
     this.page?.overlay.setCompact(this.element.ownerDocument.defaultView?.matchMedia?.('(max-width: 1000px) and (pointer: coarse)').matches === true);
@@ -4661,6 +4671,8 @@ export class WorldScreen {
     doc.removeEventListener('visibilitychange', this.onVisibility);
     (doc.defaultView ?? window).removeEventListener('blur', this.onBlur);
     (doc.defaultView ?? window).removeEventListener('resize', this.onResize);
+    this.scrollPin?.dispose();
+    this.scrollPin = undefined;
     (doc.defaultView ?? window).removeEventListener('keydown', this.onEscape, true);
     (doc.defaultView ?? window).removeEventListener('pointerup', this.onWorldButtonUp); // 2026-11-14
     (doc.defaultView ?? window).removeEventListener('pointercancel', this.onWorldButtonUp);
