@@ -1,4 +1,5 @@
 import { BANK_READERS } from './bank';
+import { GUILD_BANK_READERS } from './guildBank';
 import { LORD_READERS } from './lord';
 import { HONOR_READERS } from './honor';
 import { HP_LAYER_READERS } from './hpLayer';
@@ -233,6 +234,8 @@ export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
     ...GUILD_READERS,
     // 2026-11-10: the bank and the post (world/bank.ts, world/post.ts)
     ...BANK_READERS,
+    // 2026-11-15: the guild bank (world/guildBank.ts)
+    ...GUILD_BANK_READERS,
     ...POST_READERS,
     // 2026-11-11: the Lord system (world/lord.ts)
     ...LORD_READERS,

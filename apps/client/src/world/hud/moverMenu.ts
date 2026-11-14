@@ -89,13 +89,16 @@ export function menuLabel(id: number, texts: Texts, fallback: string): string {
   return fallback;
 }
 
-/** The menu ShowMoverMenu shows (WndWorld.cpp:6649-6684), in ascending MMI number. */
-export function npcMenuEntries(npc: WebNpc | undefined, texts: Texts, ownIsBaseJob: boolean): MenuEntry[] {
+/**
+ * The menu ShowMoverMenu shows (WndWorld.cpp:6649-6684), in ascending MMI number. 2026-11-15: `guildBank` whether the own
+ * player has a guild and the server's ENABLE_GUILD_INVENTORY is on: Guild Warehouse shows only then (:6669-6674).
+ */
+export function npcMenuEntries(npc: WebNpc | undefined, texts: Texts, ownIsBaseJob: boolean, guildBank = false): MenuEntry[] {
   const ids = [...new Set(npc?.menus ?? [])].sort((a, b) => a - b);
   const labels = new Map([...texts.values()].map((text) => [text.textId, text.text]));
   return ids
-    // the browser has no guild (MMI_GUILDBANKING, :6663-6669); the arena is past the base job (:6671-6676)
-    .filter((id) => id !== MMI.GUILDBANKING && !(id === MMI.ARENA_ENTER && ownIsBaseJob))
+    // Guild Warehouse with a guild and the guild bank on (:6669-6674); the arena is past the base job (:6671-6676)
+    .filter((id) => !(id === MMI.GUILDBANKING && !guildBank) && !(id === MMI.ARENA_ENTER && ownIsBaseJob))
     .map((id) => ({
       id,
       label: labels.get(TID_MMI_BASE + id) ?? FALLBACK[id] ?? 'Unavailable',
@@ -103,7 +106,7 @@ export function npcMenuEntries(npc: WebNpc | undefined, texts: Texts, ownIsBaseJ
       enabled: id === MMI.DIALOG || (id === MMI.TRADE && !npc?.vendorType) || id === MMI.NPC_BUFF || UPGRADE_ENTRIES.has(id) ||
         (id === MMI.TELEPORTER && (npc?.teleports?.length ?? 0) > 0) || PET_ENTRIES.has(id) || TAMER_ENTRIES.has(id) ||
         ARENA_TOWER_ENTRIES.has(id) ||
-        id === MMI.BANKING || id === MMI.POST ||
+        id === MMI.BANKING || id === MMI.POST || id === MMI.GUILDBANKING ||
         // 2026-11-11: the Lord Manager's (MaFl_KINGAIDE, Resource/character.inc:6903-6926; lord/lordHud.ts)
         LORD_MENU.has(id),
     }));

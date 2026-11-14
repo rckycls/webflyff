@@ -46,6 +46,11 @@ export {
   writeBankIsFull, writeBankWindow, writeChangeBankPass, writeConfirmBankPass, writeGetItemBank, writePutGoldBank,
   writePutItemBank, writeUpdateBankItem,
 } from './bank';
+// 2026-11-15: the guild bank
+export {
+  writeGetGoldGuildBank, writeGetItemGuildBank, writeGuildBankLog, writeGuildBankWindow, writePutItemGuildBank,
+  writeRemoveGuildBankItem,
+} from './guildBank';
 export { writeMail, writeMailBox, writeMailBoxReq, writeModifyMode, writeRemoveMail } from './post';
 export { writeAngelInfo, writeFlyffEvent, writeSetLocalEvent } from './angel'; // 2026-11-10: Summon Angel
 // 2026-11-11: the Lord system

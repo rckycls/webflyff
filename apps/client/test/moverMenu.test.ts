@@ -15,6 +15,11 @@ describe('npcMenuEntries (CWndWorld::ShowMoverMenu, WndWorld.cpp:6649-6684)', ()
     expect(npcMenuEntries(JULIA, TEXTS, false).map((entry) => entry.id)).toEqual([0, 2, 9, 16, 17, 18, 137]);
   });
 
+  it('2026-11-15: Guild Warehouse shows, enabled, with a guild and the guild bank on (:6669-6674)', () => {
+    const entry = npcMenuEntries(JULIA, TEXTS, false, true).find((e) => e.id === MMI.GUILDBANKING);
+    expect(entry).toEqual({ id: 15, label: 'Guild Warehouse', enabled: true });
+  });
+
   it("Dialog, a shop's Trade and a teleporter's Teleport are enabled; the rest is greyed", () => {
     const enabled = (npc: WebNpc) => npcMenuEntries(npc, TEXTS, false).filter((entry) => entry.enabled).map((entry) => entry.id);
     // 2026-11-10 (bank-mail): and Deposit
