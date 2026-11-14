@@ -4090,3 +4090,46 @@ fieldset:disabled .btn {
 .vendor-phone-detail-price { flex: none; white-space: nowrap; }
 .vendor-phone-hint { margin: 0; font: 11px/14px Verdana, Tahoma, sans-serif; color: #6b5a44; }
 .vendor-phone-hint:empty, .vendor-phone-hint[hidden] { display: none; }
+
+/* 2026-11-15 (owner, "double check for windows that aren't clean or have inconsistencies"): the phone's other windows made
+   one family with the compact V15 panels (docs/2026-11-14-phone-panels.md, round three):
+   - the windows that let the world (its name tags) through their words, as Neuz's tiles do, get the panels' pale backing
+     inside their frame;
+   - the words a phone puts on a button (where the picture's word is too small, or the button is the phone's own) are drawn
+     as Neuz's picture buttons are: a silver pill, white words outlined grey, Verdana bold;
+   - the Character and Skill windows' titles Neuz's 12 px, as every other window's;
+   - the world map has one close, the map's own X (the web's second one, a pink X beside it, is now only its press area). */
+@media (max-width: 1000px) and (pointer: coarse) {
+  :is(.hud-messenger, .hud-party, .hud-guild, .hud-guild-dialog, .hud-quests, .hud-quest-detail, .hud-option, .hud-character-landscape,
+    .hud-skills-landscape, .hud-add-friend, .hud-friend-confirm, .hud-instant-message, .hud-message, .hud-trade-request,
+    .hud-trade-confirm, .hud-trade-gold, .hud-bank-pin, .hud-amount-box, .hud-select-village, .hud-teleporter)::before {
+    content: ''; position: absolute; inset: 3px 5px 7px 3px; border-radius: 4px; background: rgba(250, 238, 230, 0.92); pointer-events: none;
+  }
+  :is(.hud-guild .hud-picture-button[data-word], .hud-guild-dialog .hud-picture-button[data-word], .hud-lord-info [data-control="WIDC_LORD_SKILL"],
+    .vendor-phone button, .vendor-sheet :not(.vendor-sheet-value) > button, .vendor-chat-phone button, .hud-bank-pin .hud-picture-button,
+    .hud-character-landscape .hud-picture-button[data-button='honor-ok'], .hud-skills-landscape .hud-skills-taskbar, .hud-inventory[data-mobile-window] .inventory-details button:not(.inventory-details-close)) {
+    box-sizing: border-box; border: 1px solid #a3a3a3 !important; border-radius: 5px !important;
+    background: linear-gradient(#ffffff, #f6f6f6 45%, #e1e1e1 55%, #f3f3f3) !important;
+    box-shadow: inset 0 1px 0 #ffffff, 0 1px 1px #00000033 !important;
+    color: #ffffff !important; font-family: Verdana, Tahoma, sans-serif !important; font-weight: bold !important;
+    text-shadow: 1px 0 #7d7d7d, -1px 0 #7d7d7d, 0 1px #7d7d7d, 0 -1px #7d7d7d, 1px 1px #7d7d7d !important;
+  }
+  :is(.hud-guild .hud-picture-button[data-word], .hud-guild-dialog .hud-picture-button[data-word], .hud-lord-info [data-control="WIDC_LORD_SKILL"],
+    .vendor-phone button, .vendor-sheet :not(.vendor-sheet-value) > button, .vendor-chat-phone button, .hud-bank-pin .hud-picture-button,
+    .hud-character-landscape .hud-picture-button[data-button='honor-ok'], .hud-skills-landscape .hud-skills-taskbar, .hud-inventory[data-mobile-window] .inventory-details button:not(.inventory-details-close)):active:not(:disabled) {
+    background: linear-gradient(#e9e9e9, #dadada) !important;
+  }
+  :is(.hud-guild .hud-picture-button[data-word], .hud-guild-dialog .hud-picture-button[data-word], .vendor-phone button, .vendor-sheet :not(.vendor-sheet-value) > button,
+    .vendor-chat-phone button, .hud-bank-pin .hud-picture-button, .hud-character-landscape .hud-picture-button[data-button='honor-ok'],
+    .hud-skills-landscape .hud-skills-taskbar, .hud-inventory[data-mobile-window] .inventory-details button:not(.inventory-details-close)):disabled { opacity: 0.5; }
+  /* the Skill window's Task bar: chosen, it shows lit as the picture buttons' pressed state */
+  .hud-skills-landscape .hud-skills-taskbar[aria-pressed='true'] { background: linear-gradient(#fff4c8, #ffe28a) !important; border-color: #b08a3c !important; }
+  :is(.hud-character-landscape, .hud-skills-landscape) > .hud-window-title { font-size: 12px; }
+  /* the bag's item card: Neuz's words, its title blue, the buttons a finger's 36 px (the silver ones above) */
+  .hud-inventory[data-mobile-window] .inventory-details { font-family: Verdana, Tahoma, sans-serif; }
+  .hud-inventory[data-mobile-window] .inventory-details button:not(.inventory-details-close) { min-height: 36px; padding: 0 9px; font-size: 12px; }
+  /* the honour list's rows: Neuz's words, no taller than a finger needs */
+  .hud-character-landscape .hud-honor-rows > [role='option'] { font-family: Verdana, Tahoma, sans-serif; }
+  .hud-worldmap-close span { visibility: hidden; }
+  .hud-worldmap-close { top: calc(3% - 22px); right: calc(12.9% - 22px); }
+}

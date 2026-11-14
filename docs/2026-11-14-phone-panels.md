@@ -94,6 +94,40 @@ already did beside the item windows. None of those windows takes a worn item, an
 | The bag, the NPC shop | (unchanged: the bag's title is its own V15 picture) | — |
 | ResistItem (GM) | (its own picture, WndUpgradeBase.tga) | shown as the desktop window |
 
+## Round three: a consistency pass over every phone window (2026-11-15, owner: "double check for windows that aren't clean or have inconsistencies")
+
+How it was checked:
+- A script listed, per window, the phone rules still in the old flat style: the 14–16 px words, Arial, the beige gradient
+  buttons, words laid over picture buttons, the hidden frames, the imitation stripes, and boxes of 34–52 px.
+- Pictures of every Start-menu window (Character, Skills, Inventory, Private Shop, Quest, World Map, Messenger, Party,
+  Guild, Option) and of the windows the NPC specs open, on the phone at 863 x 360.
+
+What was off, and what changed (all in the last phone block of style.css):
+
+| Window | Off | Now |
+|---|---|---|
+| Messenger, Party, Guild, Quest, Option, Character, Skills, the friend boxes, the message box, the trade's request, confirm and penya boxes, the bank PIN, the amount box, the village and teleporter choices | The world (its name tags) showed through their words, as Neuz's tiles let it | The panels' pale backing inside the frame |
+| Guild's buttons (Name, Notice, Logo, Disband, …), the shop's Open/Cancel/Reset/Chat and keypad keys, the bank PIN's buttons, the honour list's OK, the Skill window's Task bar, the bag's item card (Use, Task bar, Drop), Lord Skill | Four different styles: beige gradient, flat beige, dark grey gradient, plain grey; Arial | One: Neuz's picture-button look (silver pill, white Verdana bold words outlined grey); a chosen Task bar lit gold. The keypad's value fields stay white fields. |
+| Character and Skills windows | 18 px bold title, larger than every other window's 12 px | 12 px |
+| World Map | Two close buttons: the map's own X and a pink web X beside it | The map's own X closes it; the web's button is only its press area, over it |
+| The bag's item card | Arial words, 40 px plain buttons | Verdana; 36 px V15 buttons in one row; its × stays a plain ×. |
+
+Left as they are, and why:
+- The 14 px words in the Quest, Messenger, Guild, message and village windows: those windows are drawn at 0.7–0.85 on a
+  phone, so they show at about 12 px, as Neuz's.
+- The chat's own size and the joystick's.
+
+Tests here after round three, phone and desktop Chromium: `dialogue`, `travel-items`, `items`, `honor`, `mobileUx`,
+`skills`, `guild`, `party`, `quests`, `worldMap`, `personalShop`, `bank`, `trade`, `windows`, `post`: 88 passed.
+- Two failed, and they failed the same way before this round. Both come from the floating keyboard merged into main
+  (0cf5a40), not from these windows:
+  - `friends` /say: the keyboard's keys lie over the message box's close button;
+  - `talking`: a keyboard key is not visible when tapped.
+- Two tests changed for this branch:
+  - `dialogue`: the phone's menu rows are 30 px on a 32 px pitch;
+  - `travel-items`: the Blinkwing's new world sends its buffs in the own ADD_OBJ, as the server does, since the carry-over
+    is gone.
+
 ## Checks
 
 - Both client typechecks are clean.
