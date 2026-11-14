@@ -128,6 +128,8 @@ const NAMES: Partial<Record<KeyAction['kind'], string>> = { shift: 'Shift', back
 const MARGIN = 4;
 /** How often an open keyboard looks whether its box is still there and focused (ms). */
 const WATCH_MS = 200;
+/** The other events of a press on the keyboard that the page never hears (touchstart is taken apart: not passive). */
+const KEPT = ['mousedown', 'click', 'dblclick', 'contextmenu'] as const;
 
 export interface FloatingKeyboardOptions {
   /** Whether the player is on a touch screen now (`watchTouch`). */
@@ -207,14 +209,12 @@ export class FloatingKeyboard {
     layer.append(element);
     (doc.body ?? doc.documentElement).append(layer);
 
-    // a press on the keyboard never takes the focus from the box (nor selects, zooms or scrolls), and is not the game's (the
-    // camera, the joystick, a window under it)
-    element.addEventListener('pointerdown', this.onPointerDown);
-    const keep = (event: Event): void => { if (event.cancelable) event.preventDefault(); event.stopPropagation(); };
-    element.addEventListener('mousedown', keep);
-    element.addEventListener('touchstart', keep, { passive: false });
-    element.addEventListener('contextmenu', keep);
-    element.addEventListener('click', (event) => event.stopPropagation());
+    // a press on the keyboard never takes the focus from the box (nor selects, zooms or scrolls), and is not the game's. It is
+    // taken on the window, first (capture): the page's "press outside" listeners sit on the document in its capture, and
+    // one of them, the phone chat's (neuzChat.ts `onOutsidePress`), left the chat's line at each key tap (2026-11-14, owner)
+    this.view.addEventListener('pointerdown', this.onPressFirst, true);
+    this.view.addEventListener('touchstart', this.onKeepFirst, { capture: true, passive: false });
+    for (const type of KEPT) this.view.addEventListener(type, this.onKeepFirst, true);
     this.view.addEventListener('pointermove', this.onPointerMove);
     this.view.addEventListener('pointerup', this.onPointerUp);
     this.view.addEventListener('pointercancel', this.onPointerUp);
@@ -262,12 +262,17 @@ export class FloatingKeyboard {
         this.edit(() => ({ value, start: value.length, end: value.length }), 'insertReplacementText', value);
       } else if (result.do === 'enter') this.enter(box);
     }
+    // what the box did with the key may have hidden, disabled or taken it out (a window closed by its Enter)
+    this.check();
     if (this.box !== null) this.draw();
   }
 
   dispose(): void {
     this.close();
     this.observer?.disconnect();
+    this.view.removeEventListener('pointerdown', this.onPressFirst, true);
+    this.view.removeEventListener('touchstart', this.onKeepFirst, true);
+    for (const type of KEPT) this.view.removeEventListener(type, this.onKeepFirst, true);
     this.view.removeEventListener('pointermove', this.onPointerMove);
     this.view.removeEventListener('pointerup', this.onPointerUp);
     this.view.removeEventListener('pointercancel', this.onPointerUp);
@@ -363,6 +368,25 @@ export class FloatingKeyboard {
     this.view.setTimeout(() => this.check(), 0);
   };
 
+  /** Whether `target` is on the keyboard. */
+  private onKeyboard(target: EventTarget | null): boolean {
+    return target !== null && typeof (target as Node).nodeType === 'number' && this.layer.contains(target as Node);
+  }
+
+  /** A press on the keyboard, before the page sees it: the keyboard's alone. */
+  private readonly onPressFirst = (event: PointerEvent): void => {
+    if (!this.onKeyboard(event.target)) return;
+    event.stopPropagation();
+    this.onPointerDown(event);
+  };
+
+  /** The touch and the mouse events of a press on the keyboard: no focus change, zoom or menu, and none for the page. */
+  private readonly onKeepFirst = (event: Event): void => {
+    if (!this.onKeyboard(event.target)) return;
+    if (event.cancelable && event.type !== 'click') event.preventDefault();
+    event.stopPropagation();
+  };
+
   /** A real keyboard typing in the box (an iPad's, a test's): this one goes away until the box is tapped again. */
   private readonly onRealKey = (event: KeyboardEvent): void => {
     if (!event.isTrusted || event.target !== this.box || this.away) return;
@@ -440,7 +464,8 @@ export class FloatingKeyboard {
   check(): void {
     const box = this.box;
     if (box === null) return;
-    const hidden = this.inLayout() && box.getClientRects().length === 0;
+    // hidden: no box drawn (a window closed over it); a page with no layout (a test's) is asked for a [hidden] around it
+    const hidden = this.inLayout() ? box.getClientRects().length === 0 : box.closest('[hidden]') !== null;
     if (!box.isConnected || this.doc.activeElement !== box || box.disabled || hidden) {
       if (box.isConnected && this.doc.activeElement === box) box.blur();
       this.close();
@@ -486,6 +511,11 @@ export class FloatingKeyboard {
       else if (!(box.getAttribute('enterkeyhint') === 'next' && this.focusNext(box))) {
         const form = (box as HTMLInputElement).form;
         if (form !== null) submitForm(form);
+        // 2026-11-14 (owner): an Enter the box takes no further (the private shop's name: its handler opens the shop and
+        // leaves the focus) is a phone's Done: the box is let go and the keyboard closes. A box whose handler takes the key
+        // (`preventDefault`: the chat, a dialog) keeps the focus it leaves it with (the chat's Lock); so does a Send (the
+        // private shop's chat room: the next line follows).
+        if (this.doc.activeElement === box && box.getAttribute('enterkeyhint') !== 'send') box.blur();
       }
     }
     box.dispatchEvent(new KeyboardEvent('keyup', init));
