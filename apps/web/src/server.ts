@@ -33,8 +33,8 @@ function send(res: ServerResponse, status: number, body: unknown, close = false)
   res.end(text);
 }
 
-/** The body, or its first `limit + 1` bytes once it is longer than `limit` (the rest is never read). */
-function readBody(req: IncomingMessage, limit: number): Promise<{ body: Buffer; whole: boolean }> {
+/** The body, or its first `limit + 1` bytes once it is longer than `limit` (the rest is never read). Also the panel's. */
+export function readBody(req: IncomingMessage, limit: number): Promise<{ body: Buffer; whole: boolean }> {
   return new Promise((resolve) => {
     const chunks: Buffer[] = [];
     let size = 0;
