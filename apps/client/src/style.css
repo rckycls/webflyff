@@ -3929,3 +3929,78 @@ fieldset:disabled .btn {
     [data-control="WIDC_STATIC4"], [data-control="WIDC_STATIC5"], [data-control="WIDC_STATIC6"], [data-control="WIDC_STATIC8"],
     [data-control="WIDC_STATIC10"], [data-control="WIDC_STATIC11"]) { display: none; }
 }
+
+/* 2026-11-14 (owner): the floating keyboard (keyboard/floatingKeyboard.ts), on a touch screen in place of the phone's, for
+   every text box of the game. A V15 window: WndTile00-11 around it (as the lobby's .lobby-frame), its title white on the
+   caption, ButtWndExit at the top right (drawn plain until the theme is in); its own line shows the text typed; its keys
+   are the phone panels' buttons (.vendor-phone button). It floats in the screen's safe area, under the landscape cover. */
+.floating-keyboard-layer {
+  position: fixed; z-index: 2147483000; pointer-events: none;
+  top: env(safe-area-inset-top, 0px); right: env(safe-area-inset-right, 0px);
+  bottom: env(safe-area-inset-bottom, 0px); left: env(safe-area-inset-left, 0px);
+}
+.floating-keyboard {
+  --kb-gap: 4px; --kb-key: 40px; --kb-columns: 10;
+  position: absolute; left: 0; top: 0; width: min(640px, 100%); box-sizing: border-box; padding: 22px 8px 8px;
+  isolation: isolate; pointer-events: auto; touch-action: none; user-select: none; -webkit-user-select: none;
+  -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; font: 16px Arial, sans-serif; color: #000000;
+  background: #f5ece2; border: 1px solid #9c8a76; border-radius: 6px; box-shadow: 1px 3px 6px #3338;
+}
+.floating-keyboard[hidden] { display: none; }
+.floating-keyboard[data-skinned] { background: none; border: 0; border-radius: 0; }
+.floating-keyboard[data-page="digits"] { width: min(260px, 100%); }
+.floating-keyboard-frame {
+  position: absolute; inset: 0; z-index: -1; display: grid; pointer-events: none;
+  grid-template-columns: 16px 1fr 16px; grid-template-rows: 16px 16px 1fr 16px;
+}
+.floating-keyboard-frame > span { background-repeat: repeat; }
+.floating-keyboard-title {
+  position: absolute; top: 0; left: 0; right: 0; height: 20px; box-sizing: border-box; padding: 4px 28px 0 10px;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font: bold 12px/14px Arial, sans-serif; color: #ffffff;
+  text-shadow: 1px 1px #000000; cursor: move;
+}
+.floating-keyboard:not([data-skinned]) .floating-keyboard-title { background: #7d96b0; border-radius: 5px 5px 0 0; }
+.floating-keyboard-close {
+  position: absolute; top: 5px; right: 7px; width: 15px; height: 14px; padding: 0; border: 0;
+  background: var(--kb-buttwndexit, none) no-repeat -15px 0; touch-action: none;
+}
+.floating-keyboard-close:active { background-position: -30px 0; }
+.floating-keyboard:not([data-skinned]) .floating-keyboard-close::after {
+  content: '\00d7'; position: absolute; inset: 0; font: bold 14px/14px Arial, sans-serif; color: #ffffff; text-align: center;
+}
+/* a finger needs more than 15 x 14 px */
+.floating-keyboard-close::before { content: ''; position: absolute; inset: -6px -7px -6px -12px; }
+.floating-keyboard-line {
+  display: flex; align-items: center; height: 32px; box-sizing: border-box; margin-bottom: var(--kb-gap); padding: 0 8px;
+  border: 1px solid #c4bdb4; border-radius: 6px; background: #fffaf6;
+}
+.floating-keyboard-text { flex: 1; min-width: 0; overflow: hidden; white-space: pre; font: 18px/30px Arial, sans-serif; color: #000000; }
+.floating-keyboard-selected { background: #3d8bd6; color: #ffffff; }
+.floating-keyboard-caret {
+  display: inline-block; width: 2px; height: 1.1em; margin: 0 -1px; vertical-align: text-bottom; background: #000000;
+  animation: floating-keyboard-blink 1s steps(1) infinite;
+}
+@keyframes floating-keyboard-blink { 50% { opacity: 0; } }
+.floating-keyboard-keys { display: flex; flex-direction: column; gap: var(--kb-gap); }
+.floating-keyboard-row { display: flex; justify-content: center; gap: var(--kb-gap); }
+.floating-keyboard-key {
+  --w: 1;
+  flex: 0 0 calc((100% - (var(--kb-columns) - 1) * var(--kb-gap)) / var(--kb-columns) * var(--w) + var(--kb-gap) * (var(--w) - 1));
+  min-width: 0; height: var(--kb-key); padding: 0; border: 1px solid #3232329b; border-radius: 4px;
+  font: 18px Arial, sans-serif; color: #ffffff; text-shadow: 1px 1px #000000; touch-action: none;
+  background: linear-gradient(#fffffffA, #969696c8, #00000032);
+}
+.floating-keyboard-key[data-wide] { font-size: 14px; }
+.floating-keyboard-key[data-key="enter"] { background: linear-gradient(#e3efffFA, #5f8fc6c8, #00000032); }
+.floating-keyboard-key[aria-pressed="true"] { box-shadow: inset 0 0 0 2px #3d8bd6; }
+.floating-keyboard-key[data-down] { background: linear-gradient(#00000032, #969696c8, #fffffffA); }
+@media (max-width: 1000px) and (pointer: coarse) {
+  /* a landscape phone (an iPhone's game is about 730 x 320): keys as low as a finger allows, the keyboard a little over half
+     the height, the number pad narrow */
+  .floating-keyboard { --kb-gap: 3px; --kb-key: 28px; width: min(560px, 100%); padding: 20px 6px 6px; }
+  .floating-keyboard[data-page="digits"] { --kb-key: 30px; width: min(220px, 100%); }
+  .floating-keyboard-line { height: 26px; }
+  .floating-keyboard-text { font-size: 16px; line-height: 24px; }
+  .floating-keyboard-key { font-size: 16px; }
+  .floating-keyboard-key[data-wide] { font-size: 13px; }
+}

@@ -71,7 +71,6 @@ import { BuffStatus } from './hud/buffStatus';
 import { TargetBuffs } from './hud/targetBuffs';
 import { CameraControls } from './cameraControls';
 import { blockBrowserGestures } from './browserGestures';
-import { KeyboardLift } from './keyboardLift';
 import { CharacterWindow } from './hud/characterWindow';
 import { escapeWindow, refitWindows } from './hud/frame';
 import { cursorProperties, worldCursor } from './hud/cursors';
@@ -463,8 +462,6 @@ export class WorldScreen {
   private actionSlotButton: AttackButton | undefined;
   private jumpRequested = false;
   private releaseBrowserGestures: () => void = () => {};
-  /** 2026-11-12 (owner): the text box typed in kept above a phone's keyboard (keyboardLift.ts). */
-  private keyboardLift: KeyboardLift | undefined;
   private logOutBox: LogOutBox | undefined;
   /**
    * The revive window (`CWndRevival`, Piece 4 §3.5), which the own death and Escape while dead open, and the Character
@@ -709,7 +706,6 @@ export class WorldScreen {
     this.element.dataset.loading = ''; // 2026-11-11: CUR_DELAY until the world is first drawn (cursors.ts)
     root.append(this.element);
     this.releaseBrowserGestures = blockBrowserGestures(this.element, this.element.ownerDocument.defaultView ?? window);
-    this.keyboardLift = new KeyboardLift(this.element, this.element.ownerDocument.defaultView ?? window);
     // from here to every ending, closing, reloading or leaving the page asks the player first; the ending lifts it
     this.stopAsking = askBeforeLeaving(this.element.ownerDocument.defaultView ?? window);
     this.unregister = registerWorld({
@@ -4608,7 +4604,6 @@ export class WorldScreen {
   private teardown(message: string | undefined): void {
     this.session.leave();
     this.releaseBrowserGestures();
-    this.keyboardLift?.dispose();
     this.stopAsking();
     this.disposeWorld();
     this.page?.holder.remove();

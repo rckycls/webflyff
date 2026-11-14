@@ -35,12 +35,20 @@ test('talking: chat typing, channels, peaceful NPC dialogue and authoritative bu
   const composerBeforeFocus = (await input.boundingBox())!;
   if (isMobile) {
     await expect(input).not.toBeFocused(); await input.tap();
-    // 2026-11-12 (owner): focused, the line goes up above the keyboard with the whole world (world/keyboardLift.ts): only
-    // higher, as wide and where it was across, still on the bar (below)
-    await expect(page.locator('.world')).toHaveAttribute('data-keyboard-lift', '');
-    await expect.poll(async () => (await input.boundingBox())!.y).toBeLessThan(composerBeforeFocus.y);
-    const lifted = (await input.boundingBox())!;
-    expect([lifted.x, lifted.width, lifted.height]).toEqual([composerBeforeFocus.x, composerBeforeFocus.width, composerBeforeFocus.height]);
+    // 2026-11-14 (owner): focused, the game's floating keyboard comes up clear of the line (keyboard/floatingKeyboard.ts),
+    // never the phone's (inputmode "none"); the line stays where it was, on the bar
+    const keyboard = page.locator('.floating-keyboard');
+    await expect(keyboard).toBeVisible();
+    await expect(input).toHaveAttribute('inputmode', 'none');
+    const keys = (await keyboard.boundingBox())!, line = (await input.boundingBox())!;
+    expect(keys.y + keys.height <= line.y || line.y + line.height <= keys.y).toBe(true);
+    expect(line).toEqual(composerBeforeFocus);
+    // its keys type in the line, and the line keeps the focus
+    await keyboard.locator('[data-key="h"]').tap(); await keyboard.locator('[data-key="i"]').tap();
+    await expect(input).toHaveValue('hi');
+    await keyboard.locator('[data-key="back"]').tap(); await keyboard.locator('[data-key="back"]').tap();
+    await expect(input).toHaveValue('');
+    await expect(input).toBeFocused();
     // A keyboard can reduce the viewport; the composer must stay attached to the taskbar.
     const viewport = page.viewportSize()!;
     await page.setViewportSize({ width: viewport.width, height: viewport.height - 80 });
