@@ -17,7 +17,8 @@ const prop = (over: Partial<WebItemProp>): WebItemProp => ({
 
 describe('useOf: what Neuz sends DOUSEITEM for', () => {
   it('the kinds the server acts on, and any with a buff time', () => {
-    for (const kind2 of [11, 12, 14, 19, 22, 23, 27, 29, 30, 31, 33, 37]) expect(useOf(prop({ kind2 })), String(kind2)).toBe('use');
+    // 2026-11-15 (housing): the furniture and papering too (34, 35)
+    for (const kind2 of [11, 12, 14, 19, 22, 23, 27, 29, 30, 31, 33, 34, 35, 37]) expect(useOf(prop({ kind2 })), String(kind2)).toBe('use');
     expect(useOf(prop({ kind2: 15, skillTime: 600000 }))).toBe('use');
     // materials, gems, quest items: nothing to use
     for (const kind2 of [16, 17, 28]) expect(useOf(prop({ kind2 })), String(kind2)).toBe('none');

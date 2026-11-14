@@ -70,6 +70,10 @@ export interface FriendHudScreen {
   ring(): void;
   /** The options changed: keep them. */
   saveOptions(options: FriendOptions): void;
+  /** 2026-11-15 (housing): the friend may enter the own house (`m_bVisitAllowed`). */
+  visitAllowed?(playerId: number): boolean;
+  /** 2026-11-15 (housing): House Entry Permissions or Cancel Entry Permissions (`SendHousingReqSetVisitAllow`). */
+  setVisitAllow?(playerId: number, allow: boolean): void;
 }
 
 const WHITE = 0xffffffff;
@@ -180,7 +184,10 @@ export class FriendHud {
 
   /** The Friend tab's rows, sorted by the last head (a refresh) or by `press`. */
   private rows(press?: SortKey): FriendRow[] {
-    const rows = friendRows(this.messenger.entries(), (id) => this.screen.playerData(id));
+    const visit = this.screen.visitAllowed;
+    const listed = friendRows(this.messenger.entries(), (id) => this.screen.playerData(id));
+    // 2026-11-15 (housing): who may enter the own house (WndMessengerCtrl.cpp:302-310)
+    const rows = visit === undefined ? listed : listed.map((row) => ({ ...row, visitAllowed: visit.call(this.screen, row.playerId) }));
     return press === undefined ? this.sort.refresh(rows) : this.sort.press(press, rows);
   }
 
@@ -238,6 +245,9 @@ export class FriendHud {
       case FriendMenu.DELETE: session.sendRemoveFriend(row.playerId); break;
       case FriendMenu.MOVE: session.sendChatLine(`/teleport "${row.name}"`); break;
       case FriendMenu.INVITE: this.screen.invite(row.playerId); break;
+      // 2026-11-15 (housing): 7 cancels the entry, 8 allows it (:795-810)
+      case FriendMenu.PROHIBIT_VISIT: this.screen.setVisitAllow?.(row.playerId, false); break;
+      case FriendMenu.ALLOW_VISIT: this.screen.setVisitAllow?.(row.playerId, true); break;
       default: break;
     }
   }

@@ -307,6 +307,8 @@ export class WorldSession {
   sendGuild(bytes: Uint8Array): void { this.playingCache()?.send(bytes); }
   /** 2026-11-10 (bank-mail): a bank or post packet the bank's or the post's windows built (bank/bankHud.ts, post/postHud.ts). */
   sendBankMail(bytes: Uint8Array): void { this.playingCache()?.send(bytes); }
+  /** 2026-11-15: a personal housing packet (world/housing.ts's encoders). */
+  sendHousing(bytes: Uint8Array): void { this.playingCache()?.send(bytes); }
   /** 2026-11-11: a Lord system packet (world/lord.ts's encoders). */
   sendLord(bytes: Uint8Array): void { this.playingCache()?.send(bytes); }
   /** 2026-11-11: HONOR_CHANGE_REQ (`SendReqHonorTitleChange`, DPClient.cpp:17235-17240): the title to show, -1 for none. */
