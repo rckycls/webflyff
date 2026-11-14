@@ -148,7 +148,7 @@ test('an ES scroll and a Full Shout from the task bar; their buff and timer show
   await expect(icons).toHaveCount(2, ON_FRAMES);
   expect(await icons.locator('img:first-child').evaluateAll((imgs) => imgs.map((img) => (img as HTMLImageElement).alt)))
     .toEqual(['Scroll of Amplification ES20', 'Full Shout 15']);
-  await expect(icons.nth(1).locator('.hud-buff-time')).toHaveText(/^(20|19)min$/);
+  await expect(icons.nth(1).locator('.hud-buff-time')).toHaveText(/^(20m|19m\d{1,2}s)$/);
   expect(await icons.first().getAttribute('title')).toContain('50%');
   expect(await errorsOf(page)).toEqual([]);
 });

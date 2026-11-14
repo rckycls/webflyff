@@ -6,7 +6,8 @@
 //                                                                  left of the one before, drawn only while mode 4 is on
 //                                                                  or the leader is in view
 //   CWndWorld::RenderBuffIcon    WndWorld.cpp:9185-9560             alpha 192, 64 to 192 in steps of 6 in its last 20 s;
-//                                                                  the seconds left in yellow (240, 240, 0); the tooltip:
+//                                                                  the seconds left in yellow (240, 240, 0), here as
+//                                                                  `shortTime` (2026-11-14, the owner); the tooltip:
 //                                                                  the name, `MM:SS` left, the description
 //
 // The icons are a `MoverBuffs` the screen keeps (cleared on a leader change, the leader's leaving and the party's end);
@@ -15,7 +16,7 @@
 import type { WebParty } from '@flyffweb/formats';
 import type { MoverBuffs } from '../../buffs';
 import type { UiArt } from '../art';
-import { blink } from '../buffStatus';
+import { blink, shortTime } from '../buffStatus';
 
 /** `BUFF_SKILL` (`_Common/buff.h`). */
 const BUFF_SKILL = 1;
@@ -65,8 +66,8 @@ export class PartyBuffRow {
       const title = `${skill.name}\n${mmss(buff.leftMs)}\n${skill.description}`;
       if (icon.title !== title) icon.title = title;
       const time = icon.querySelector<HTMLElement>('.hud-party-buff-time')!;
-      const seconds = String(Math.trunc(buff.leftMs / 1000));
-      if (time.textContent !== seconds) time.textContent = seconds;
+      const left = shortTime(buff.leftMs);
+      if (time.textContent !== left) time.textContent = left;
     });
   }
 
