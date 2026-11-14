@@ -2,23 +2,37 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#100d1c">
   <title>osflyff admin</title>
   <link rel="stylesheet" href="/panel.css">
   <script type="module" src="/panel.js"></script>
 </head>
 <body>
-  <header class="top" hidden>
-    <strong class="brand">osflyff admin</strong>
+  <aside class="sidebar" hidden aria-label="Menu">
+    <div class="brand"><span class="brand-mark" data-icon="bolt"></span>osflyff admin</div>
     <nav class="tabs" aria-label="Panel sections"></nav>
-    <span class="who"></span>
-    <button type="button" class="logout quiet">Log out</button>
-  </header>
-  <main class="sections"></main>
+    <div class="sidebar-foot">
+      <span class="avatar"></span>
+      <span class="who-box"><span class="who"></span><span class="role">Superadmin</span></span>
+      <button type="button" class="logout quiet" title="Log out" aria-label="Log out"><span data-icon="logout"></span></button>
+    </div>
+  </aside>
+  <div class="backdrop" hidden></div>
+  <div class="page" hidden>
+    <header class="topbar">
+      <button type="button" class="menu quiet" aria-label="Open the menu"><span data-icon="menu"></span></button>
+      <span class="topbar-brand"><span class="brand-mark" data-icon="bolt"></span>osflyff</span>
+      <h1 class="page-title"></h1>
+    </header>
+    <main class="sections"></main>
+  </div>
   <div class="login-cover" hidden>
     <form class="login" autocomplete="on">
-      <h1>osflyff admin</h1>
+      <div class="brand"><span class="brand-mark" data-icon="bolt"></span>osflyff admin</div>
+      <h1>Welcome back</h1>
+      <p class="sub">Log in with your panel name, password and the code from your authenticator app.</p>
       <label>Name <input name="user" autocomplete="username" required></label>
       <label>Password <input name="password" type="password" autocomplete="current-password" required></label>
       <label>Code from your authenticator app <input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="\d{6}" maxlength="6" required></label>

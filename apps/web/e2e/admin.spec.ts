@@ -6,10 +6,28 @@ import { DEMO_PASSWORD, DEMO_USER, freshCode } from './codes';
 
 const section = (page: Page, name: string) => page.locator(`section[aria-label="${name}"]`);
 
+/** Picks a tab; on a narrow screen the tabs are in the sidebar, which the menu button slides in first. */
 async function openTab(page: Page, name: string) {
+  const menu = page.locator('.menu');
+  if (await menu.isVisible()) {
+    await menu.click();
+    await expect(page.locator('body')).toHaveClass(/menu-open/);
+  }
   await page.locator('.tabs').getByRole('button', { name, exact: true }).click();
   await expect(section(page, name)).toBeVisible();
+  await expect(page.locator('body')).not.toHaveClass(/menu-open/);
 }
+
+test('on a narrow screen the menu button slides the sidebar in and out', async ({ page }) => {
+  const menu = page.locator('.menu');
+  test.skip(!(await menu.isVisible()), 'a wide screen shows the sidebar all the time');
+  await menu.click();
+  await expect(page.locator('.tabs').getByRole('button', { name: 'Log', exact: true })).toBeInViewport();
+  // a tap beside the sidebar, on the dimmed page, closes it
+  const width = page.viewportSize()!.width;
+  await page.mouse.click(width - 10, 200);
+  await expect(page.locator('body')).not.toHaveClass(/menu-open/);
+});
 
 /** `yyyy-mm-dd` `days` from today, in the browser's time. */
 function dayInput(days: number): string {
