@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import type { Server } from 'node:http';
 import { parseArgs } from 'node:util';
 import { ADMIN_ACTIONS } from './admin/actions';
+import { loadItemCatalog } from './admin/itemCatalog';
 import { sqlAdminStore } from './admin/sqlAdminStore';
 import { startAdmin } from './admin/startAdmin';
 import { parseWebConfig, type WebConfig } from './config';
@@ -69,7 +70,8 @@ let adminServer: Server | undefined;
 void startAdmin(config, consoleLogger, () => {
   adminStore = sqlAdminStore(config.sql, config.admin!.sql);
   return adminStore;
-}, [], ADMIN_ACTIONS).then((started) => { adminServer = started; });
+}, config.admin === undefined ? [] : loadItemCatalog(config.admin.assetsDir, (line) => consoleLogger.warn(line)), ADMIN_ACTIONS)
+  .then((started) => { adminServer = started; });
 
 const stop = (): void => {
   server.close();
