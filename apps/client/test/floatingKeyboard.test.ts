@@ -414,6 +414,133 @@ describe('FloatingKeyboard', () => {
     expect(kb.shown).toBe(false);
   });
 
+  /**
+   * The phone chat's line (hud/neuzChat.ts): a press anywhere outside the chat, seen first on the document (capture), leaves
+   * the line; Enter sends the line and leaves it too, unless Lock keeps it.
+   */
+  function chatLine(lock = false) {
+    const kb = setup('<div class="chat"><input aria-label="Chat message"></div>');
+    const chat = document.querySelector<HTMLElement>('.chat')!;
+    const line = chat.querySelector('input')!;
+    const sent: string[] = [];
+    const outside = (event: Event) => { if (!chat.contains(event.target as Node)) line.blur(); };
+    document.addEventListener('pointerdown', outside, true);
+    line.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      sent.push(line.value);
+      line.value = '';
+      if (!lock) line.blur();
+    });
+    return { kb, line, sent, dispose: () => document.removeEventListener('pointerdown', outside, true) };
+  }
+
+  it('2026-11-14 (owner): a key tap keeps the chat\'s line, whose outside press would leave it', async () => {
+    const { kb, line, sent, dispose } = chatLine();
+    try {
+      line.focus();
+      type('hi');
+      expect(document.activeElement).toBe(line);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      expect(kb.shown).toBe(true);
+      expect(line.value).toBe('hi');
+      // Enter sends and leaves the line (Neuz's chat); a tap on the line again types the next one
+      tapKey('enter');
+      expect(sent).toEqual(['hi']);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      expect(kb.shown).toBe(false);
+      line.focus();
+      type('yo');
+      tapKey('enter');
+      expect(sent).toEqual(['hi', 'yo']);
+    } finally {
+      dispose();
+    }
+  });
+
+  it('with the chat\'s Lock the line keeps the focus after Enter, and the keyboard stays for the next line', async () => {
+    const { kb, line, sent, dispose } = chatLine(true);
+    try {
+      line.focus();
+      type('a');
+      tapKey('enter');
+      type('b');
+      tapKey('enter');
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      expect(sent).toEqual(['a', 'b']);
+      expect(kb.shown).toBe(true);
+      expect(document.activeElement).toBe(line);
+    } finally {
+      dispose();
+    }
+  });
+
+  it('2026-11-14 (owner): Done on the private shop\'s name (its Enter not prevented) closes the keyboard', () => {
+    const kb = setup('<div class="shop"><input enterkeyhint="done" maxlength="47"><button>Open</button></div>');
+    const name = document.querySelector('input')!;
+    const opened: string[] = [];
+    name.addEventListener('keydown', (event) => { event.stopPropagation(); if (event.key === 'Enter') opened.push(name.value); });
+    name.focus();
+    type('shop');
+    expect(key('enter')!.textContent).toBe('Done');
+    tapKey('enter');
+    expect(opened).toEqual(['shop']);
+    expect(kb.shown).toBe(false);
+    expect(document.activeElement).not.toBe(name);
+  });
+
+  it('Send (the private shop\'s chat room) keeps the box for the next line', () => {
+    const kb = setup('<input enterkeyhint="send">');
+    const box = document.querySelector('input')!;
+    const sent: string[] = [];
+    box.addEventListener('keydown', (event) => { if (event.key === 'Enter') { sent.push(box.value); box.value = ''; } });
+    box.focus();
+    type('hi');
+    expect(key('enter')!.textContent).toBe('Send');
+    tapKey('enter');
+    type('yo');
+    tapKey('enter');
+    expect(sent).toEqual(['hi', 'yo']);
+    expect(kb.shown).toBe(true);
+  });
+
+  it('closes at once when its box is hidden, disabled or taken out by its own Enter', () => {
+    for (const what of ['hidden', 'disabled', 'removed'] as const) {
+      const kb = setup('<div class="window"><input></div>');
+      const box = document.querySelector('input')!;
+      const window = document.querySelector<HTMLElement>('.window')!;
+      box.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        if (what === 'hidden') window.hidden = true;
+        else if (what === 'disabled') box.disabled = true;
+        else window.remove();
+      });
+      box.focus();
+      type('x');
+      tapKey('enter');
+      expect(kb.shown, what).toBe(false);
+      expect(kb.target, what).toBeNull();
+      kb.dispose();
+      keyboard = undefined;
+    }
+  });
+
+  it('closes when its box is hidden while it is open (a window closed under it)', () => {
+    vi.useFakeTimers();
+    try {
+      const kb = setup('<div class="window"><input></div>');
+      const box = document.querySelector('input')!;
+      box.focus();
+      expect(kb.shown).toBe(true);
+      document.querySelector<HTMLElement>('.window')!.hidden = true;
+      vi.advanceTimersByTime(250);
+      expect(kb.shown).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('a press that keeps the focus (a chat suggestion) does not let the box go', () => {
     const kb = setup('<input><div id="suggestion"></div>');
     const box = document.querySelector('input')!;
