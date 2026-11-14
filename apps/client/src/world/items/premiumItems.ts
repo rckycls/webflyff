@@ -139,6 +139,13 @@ export class ItemCooldowns {
     return group === 0 || now > (this.ends.get(group) ?? -Infinity);
   }
 
+  /** 2026-11-15: the ms the group of `prop` still waits at `now` (`GetTime( group ) - g_tmCurrent`, PutCoolTime); 0 for none. */
+  left(prop: WebItemProp, now: number): number {
+    const group = cooldownGroup(prop);
+    const end = group === 0 ? undefined : this.ends.get(group);
+    return end === undefined || end <= now ? 0 : end - now;
+  }
+
   /**
    * The share of the group's wait gone at `now` (0 to 1), for the slot's sweep (`dwCur - dwBase` of `dwEnd - dwBase`,
    * `WndTaskBar.cpp:848-857`); null when the item has no group or it does not wait.

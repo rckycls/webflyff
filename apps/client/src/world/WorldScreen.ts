@@ -88,7 +88,8 @@ import { OptionWindow } from './hud/optionWindow';
 import { DropBox } from './hud/dropBox';
 import type { BoxState, KeptLogin } from '../lobby/reconnect';
 import { TaskBar } from './hud/taskBar';
-import { createItemDetails, createTooltip, ownTooltipContext, positionItemDetails } from './hud/itemDetails';
+import { createItemDetails, createTooltip, ownTooltipContext, positionItemDetails, setTooltipWorld } from './hud/itemDetails';
+import { TaxBook, tooltipTax } from './items/tax'; // 2026-11-15, item tooltip gaps
 import { InventoryWindow } from './hud/inventoryWindow';
 import { ChatWindow } from './hud/chatWindow';
 import { NeuzChat } from './hud/neuzChat';
@@ -579,6 +580,8 @@ export class WorldScreen {
    * (`GuildHud`) go with the world. Its events wait for the windows while a world loads.
    */
   private readonly guildBook = new GuildBook();
+  /** 2026-11-15: the tax rates (`CTax`, TAX_ALLINFO), for the shop prices in item tooltips. */
+  private readonly taxBook = new TaxBook();
   /** 2026-11-11: the Lord system's state (lord/lordBook.ts), from the JOIN's LORD snapshot on, whatever HUD there is. */
   private readonly lordBook = new LordBook(() => this.entry.character.playerId, (id) => this.playerData.peek(id)?.name ?? '');
   /** 2026-11-11: the earned honour titles (honor/honorBook.ts, `CTitleManager::m_vecEarned`), made with the game data. */
@@ -809,6 +812,17 @@ export class WorldScreen {
       this.services = services;
       this.data = data;
       [this.worldMapData, this.questCatalog, this.partyCatalog] = await optional;
+      // 2026-11-15 (item tooltip gaps): what the item tooltips read beyond the own player: the cool-down left, the guild
+      // and player names (a guild cloak, a couple ring), and the tax where the player stands
+      setTooltipWorld({
+        cooldownLeft: (itemId) => this.itemUse?.cooldownLeft(itemId) ?? 0,
+        guildName: (guildId) => this.guildBook.guild(guildId)?.name,
+        playerName: (playerId) => this.playerData.get(playerId).name,
+        tax: () => {
+          const view = this.mapView();
+          return tooltipTax(this.taxBook, view.worldId, { x: view.pos[0], z: view.pos[2] }, this.worldMapData?.continents);
+        },
+      });
       this.questMarkerIndex = this.questCatalog === null ? null : new QuestMarkerIndex(this.questCatalog);
       if (this.over) return;
       const audio = this.audio;
@@ -980,6 +994,8 @@ export class WorldScreen {
       // 2026-11-05: the premium timers (OnSMMode, OnSMModeAll), and an item's cool-down, before its count changes
       // (OnUpdateItem's UI_COOLTIME, DPClient.cpp:3226-3245)
       if (value.type === 'smMode') { this.smTimers.set(value.smType, value.seconds, performance.now()); continue; }
+      // 2026-11-15: the tax rates (OnTaxInfo, DPClient.cpp:17757-17762)
+      if (value.type === 'taxInfo') { this.taxBook.apply(value); continue; }
       // 2026-11-05: the summons, a name changed, a sex or a face changed (OnSummon, OnSetPlayerName, OnSexChange, OnChangeFace)
       if (value.type === 'summon') { this.itemWindows?.onSummon(value); continue; }
       if (value.type === 'smeltSafety') { this.upgradeNpc?.safety.onResult(value.result); continue; }
@@ -4831,6 +4847,7 @@ export class WorldScreen {
 
   /** Everything the screen holds, closed and taken off the page. */
   private teardown(message: string | undefined): void {
+    setTooltipWorld({}); // 2026-11-15
     this.session.leave();
     this.releaseBrowserGestures();
     this.stopAsking();

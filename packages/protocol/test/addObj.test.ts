@@ -301,6 +301,7 @@ describe('ADD_OBJ (OnAddObj)', () => {
     text?: string;
     hitPoint?: number;
     abilityOption?: number;
+    guildId?: number;
     resist?: number;
     resistOption?: number;
     piercing?: number[];
@@ -323,7 +324,7 @@ describe('ADD_OBJ (OnAddObj)', () => {
       .u32(item.objectId).u32(item.itemId).u32(x.serialNumber ?? 0).string(x.text ?? '')
       .i16(item.count) // m_nItemNum (short)
       .u8(0).i32(x.hitPoint ?? 0).i32(0) // m_nRepairNumber (BYTE), m_nHitPoint (int), m_nRepair (int)
-      .u8(0).i32(x.abilityOption ?? 0).u32(0) // m_byFlag (BYTE), m_nAbilityOption (int), m_idGuild (DWORD)
+      .u8(0).i32(x.abilityOption ?? 0).u32(x.guildId ?? 0) // m_byFlag (BYTE), m_nAbilityOption (int), m_idGuild (DWORD)
       // m_bItemResist (BYTE), m_nResistAbilityOption (int), m_nResistSMItemId (int)
       .u8(x.resist ?? 0).i32(x.resistOption ?? 0).i32(0);
     // m_piercing: the cards, the ultimate jewels (__EXT_PIERCING), the vis keep times (__PETVIS), each as its count
@@ -543,6 +544,14 @@ describe('ADD_OBJ (OnAddObj)', () => {
     expect(own?.inventory).toEqual([{
       ...sword, abilityOption: 7, resist: 2, resistOption: 5, piercing: [7001, 0, 0], ultimate: [9001], randomOption: 0x0123456789abcdefn,
     }]);
+  });
+
+  it('keeps m_idGuild, the guild of a guild cloak, as guildId; 0 leaves it out (2026-11-15, item tooltip gaps)', () => {
+    const cloak: InventoryItem = { objectId: 10, itemId: 4600, count: 1 };
+    const plain: InventoryItem = { objectId: 11, itemId: 4601, count: 1 };
+    const extras = new Map<number, ItemExtras>([[10, { guildId: 0x00012345 }]]);
+    const own = ownOf(readOne(PLAYER, selfFields({ ...newCharacter, inventory: [cloak, plain] }, { extras })));
+    expect(own?.inventory).toEqual([{ ...cloak, guildId: 0x00012345 }, plain]);
   });
 
   it('a slot listed twice holds the later item, and an item ID of 0 empties its slot, as m_apItem[ch] does', () => {

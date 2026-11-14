@@ -1825,6 +1825,27 @@ fieldset:disabled .btn {
 .hud-item-tooltip-socket { flex: 0 0 32px; width: 32px; height: 32px; background-repeat: no-repeat; }
 .hud-item-tooltip-socket img { display: block; width: 32px; height: 32px; }
 .hud-taskbar-tooltip.hud-item-tooltip { position: fixed; right: auto; z-index: 95; pointer-events: none; }
+/* 2026-11-15: the comparison tooltips (PutToolTipItemAndSubToolTip; itemDetails.ts createComparison): the item tooltip's
+   box, placed by positionItemComparison on the desktop, the Ultimate icon 24 px lower under "[ Equipped ]"
+   (tooltip.cpp:749-751). On the phone the main tooltip and these share one row along the bag's bottom, bottoms level;
+   fitPhoneComparison makes the row smaller when it is too wide, and a box too tall scrolls. */
+.inventory-compare.hud-item-tooltip {
+  position: fixed; z-index: 2; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; max-width: 228px; padding: 11px;
+  color: #000; font: 12px/15px Arial, Helvetica, sans-serif; text-align: left; isolation: isolate; pointer-events: none;
+  max-height: calc(100vh - 16px); overflow: hidden;
+}
+.hud-item-tooltip-sub .hud-item-tooltip-ultimate { top: 32px; }
+.hud-inventory[data-mobile-window] .inventory-compare-row {
+  position: absolute; right: 12px; bottom: 6px; z-index: 2; display: flex; align-items: flex-end; width: max-content;
+  transform-origin: right bottom;
+}
+.hud-inventory[data-mobile-window] .inventory-compare-row > .hud-item-tooltip {
+  position: relative; inset: auto; width: auto; flex: 0 0 auto; max-height: var(--compare-max-height, none); overflow-y: auto;
+  pointer-events: auto;
+}
+@media (max-width: 1000px) and (pointer: coarse) {
+  .hud-inventory[data-mobile-window] .inventory-compare { font-family: Verdana, Tahoma, sans-serif; }
+}
 .inventory-details input[type=number] { width: 55px; }
 .hud-inventory[data-mobile-window] { left: auto !important; right: 12px; top: 8px !important; width: var(--mobile-inventory-width, calc(100% - 24px)) !important; height: calc(100% - var(--hud-taskbar-height, 48px) - 16px) !important; transform: none !important; z-index: 60 !important; border-radius: 6px; background: repeating-linear-gradient(#fdf5ee 0 2px, #f6e6dc 2px 4px); box-shadow: inset 0 0 0 2px #dba98c, 0 2px 8px #0005; }
 .hud-inventory[data-mobile-window] > .hud-window-frame { display: none; }

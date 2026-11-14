@@ -13,9 +13,10 @@
 // left of a vis (the slot's end in the buff pet window, else the prop's minutes), from the vis the items carry (pets M0)
 // and their end times (OwnState), with `time_null()` (`TooltipContext.now`).
 //
-// Not shown, for want of the data (the rulings of the 2026-11-05 work): the cooldown (PutCoolTime), an item's own time
-// left (PutKeepTime's second half, but a vis's), the guild cloak's guild name, the couple ring's name, the sealed
-// character, the "Before tax price" line, red-chip prices, and the player's own
+// 2026-11-15 (docs/superpowers/specs/2026-11-15-item-tooltip-gaps-research.md): the cool-down (PutCoolTime), an item's
+// own time left (PutKeepTime's second half, and the feed pocket's), the guild cloak's guild name, the couple ring's
+// name, the tax ("Before tax price"), and the comparison tooltips' "[ Equipped ]" line and items (`comparisonItems`).
+// Still not shown: the sealed character (PutSealChar), the GM disguise text's skill lines, and the player's own
 // DST_ABILITY_MIN/MAX in min~max.
 //
 // 2026-11-10 (docs/superpowers/specs/2026-11-10-jewels-research.md §4): an Ultimate item's name makes room for its icon, and
@@ -34,6 +35,8 @@ import {
 import { NeedVis, isVisPet, satisfyNeedVis, visEndAt, visKeepTimeText, visTimeLeft } from '../pets/buffPet';
 import type { VisPet } from '../pets/buffPet';
 import { isUltimate, ultimateDestParams } from './ultimateRules';
+import { taxApplies } from './tax';
+import type { TooltipTax } from './tax';
 
 /** A piece of a line: its text, its colour (0xRRGGBB) and its style (`ESSTY_BOLD`, `ESSTY_STRIKETHROUGH`). */
 export interface TooltipRun {
@@ -83,9 +86,20 @@ export interface TooltipContext {
   activeVisPet?: VisPet;
   /**
    * 2026-11-09 (pets B1): the item's `m_dwKeepTime` as an end in `time_null()` seconds: the vis of a buff pet window's slot
-   * (`CWndBuffPetStatus::OnMouseWndSurface`, WndPetSys.cpp:2833-2835).
+   * (`CWndBuffPetStatus::OnMouseWndSurface`, WndPetSys.cpp:2833-2835). 2026-11-15: a bag item's own end (`OwnState`);
+   * without it an item with a time of its own counts from `now` the seconds it had left when it came.
    */
   keepEnd?: number;
+  /** 2026-11-15: the ms the item's cool-down group still waits (`PutCoolTime`); 0 or none when it does not. */
+  cooldownLeft?: number;
+  /** 2026-11-15: a guild's name (`g_GuildMng.GetGuild( id )->m_szGuild`), undefined for one not known. */
+  guildName?: (guildId: number) => string | undefined;
+  /** 2026-11-15: a player's name (`CPlayerDataCenter::GetPlayerString`), undefined or '' while not known. */
+  playerName?: (playerId: number) => string | undefined;
+  /** 2026-11-15: the tax where the own player stands (`CTax`), null or none off every continent. */
+  tax?: TooltipTax | null;
+  /** 2026-11-15: a comparison tooltip's (`PutToolTipParts` with a sub flag): it starts with "[ Equipped ]". */
+  equipped?: boolean;
 }
 
 /** The sets, socket cards and accessories (`data/itemEtc.json`), as the tooltip looks them up. */
@@ -256,6 +270,18 @@ const PET_FEED = 21037;
 const BUFF_ITEM = 0;
 /** II_SYS_SYS_SCR_SEALCHARACTER: no socket count on its name line. */
 const SEAL_CHARACTER = 26476;
+/** 2026-11-15: IK3_CLOAK, and the guild war's dragon cloaks (II_ARM_S_CLO_CLO_DRAGON1-4), which keep their own name. */
+const IK3_CLOAK = 24;
+const DRAGON_CLOAKS: ReadonlySet<number> = new Set([4703, 4704, 4705, 4706]);
+/** 2026-11-15: II_GEN_WARP_COUPLERING, II_GEN_WARP_COUPLERING01, II_GEN_WARP_WEDDING_BAND (PutCommand, :6168-6169). */
+const COUPLE_RINGS: ReadonlySet<number> = new Set([3600, 3601, 18186]);
+/** 2026-11-15: II_SYS_SYS_SCR_PERIN costs PERIN_VALUE (Resource/define.h:264) in a shop (PutItemGold, :5707-5708). */
+const PERIN = 26456;
+const PERIN_VALUE = 100000000;
+/** 2026-11-15: TID_GAME_TAX_RATE's colour (`prj.GetTextColor`, textClient.inc 0xff808080), the "Before tax price" line. */
+const TAX_LINE = 0x808080;
+/** 2026-11-15: the feed pocket's time while it is on (`D3DCOLOR_XRGB( 255, 20, 20 )`, :5479). */
+const POCKET_TIME_ON = 0xff1414;
 /** `m_bItemResist` (SAI79): the element names. */
 const ELEMENTS = new Map<number, string>([
   [1, 'TID_UPGRADE_FIRE'], [2, 'TID_UPGRADE_WATER'], [3, 'TID_UPGRADE_ELECTRICITY'], [4, 'TID_UPGRADE_WIND'], [5, 'TID_UPGRADE_EARTH'],
@@ -388,10 +414,19 @@ export function itemTooltip(item: InventoryItem, prop: WebItemProp, data: Toolti
   const option = item.abilityOption ?? 0;
   const flag = item.flag ?? 0;
   const viewer = ctx.viewer;
+  const now = ctx.now ?? 0;
+  /** 2026-11-15: `m_dwKeepTime` as an end: the one given, else `now + t` of the seconds it came with; 0 for none. */
+  const keepEnd = ctx.keepEnd ?? (item.keepTime !== undefined ? now + item.keepTime : 0);
+
+  // 2026-11-15: a comparison tooltip's first line (PutEquipItemText, :7709-7714): "[ %s ]\n", bold, black
+  if (ctx.equipped === true) put(`[ ${text('TID_GAME_EQUIPED_ITEM')} ]\n`, GENERAL, { bold: true });
 
   // 1-2. PutItemName and PutItemAbilityPiercing (:4538-4640)
   const nameColor = prop.referStat1 === 2 ? NAME3 : prop.referStat1 === 1 || prop.referStat1 === 3 ? NAME1 : NAME0;
   let name = prop.name;
+  // 2026-11-15: a cloak of a guild the guild list knows, not a dragon cloak: "<guild> Guild Cloak" (:4575-4588)
+  const guild = prop.kind3 === IK3_CLOAK && (item.guildId ?? 0) !== 0 ? ctx.guildName?.(item.guildId!) : undefined;
+  if (guild !== undefined && !DRAGON_CLOAKS.has(prop.id)) name = format('TID_GUILD_CLOAK', guild);
   if ((flag & FLAG_BINDS) !== 0 && !BIND_PREFIX_SKIPPED.has(prop.id) && prop.flag !== IP_FLAG_EQUIP_BIND) {
     name = `${text('TID_GAME_TOOLTIP_ITEM_BINDS')} ${name}`;
   }
@@ -477,7 +512,16 @@ export function itemTooltip(item: InventoryItem, prop: WebItemProp, data: Toolti
     for (const line of visPetInfo(pet, data, ctx.now ?? 0)) put(`\n${line.text}`, line.color);
   }
 
-  // 12. PutKeepTime's duration (:5846-5869); the item's own time left is not kept, but a vis's (2026-11-09, pets B1).
+  // 10. 2026-11-15: PutCoolTime (:5814-5831): while the item's group waits, its minutes and seconds, `(end - now + 500)
+  // / 1000` (`CTimeSpan::GetMinutes`, the minutes within the hour); a ticking clock, so mm:ss as V15 has it
+  if ((ctx.cooldownLeft ?? 0) > 0) {
+    const seconds = Math.trunc((ctx.cooldownLeft! + 500) / 1000);
+    const two = (n: number): string => String(n).padStart(2, '0');
+    put('\n', GENERAL);
+    put(format('TID_TOOLTIP_COOLTIME', two(Math.trunc(seconds / 60) % 60), two(seconds % 60)), GENERAL);
+  }
+
+  // 12. PutKeepTime's duration (:5846-5869), then the item's own time left (2026-11-15; a vis's since 2026-11-09).
   // 2026-11-14 (the owner): the seconds as `formatDuration` ("1d1h"), not TID_TOOLTIP_DATE's "%d Day(s) %d Hr(s) ..."
   if (prop.circleTime !== undefined) {
     put('\n', TIME);
@@ -488,7 +532,7 @@ export function itemTooltip(item: InventoryItem, prop: WebItemProp, data: Toolti
       put(formatDuration(prop.circleTime), TIME);
     }
   }
-  if (prop.kind3 === IK3_VIS) putVisKeepTime();
+  putKeepTime();
 
   // 13. PutJob (:6001-6116)
   if (prop.job !== undefined) {
@@ -509,18 +553,37 @@ export function itemTooltip(item: InventoryItem, prop: WebItemProp, data: Toolti
     if (down !== 0) put(`(${down})`, NOT_USE);
   }
 
-  // 15. PutCommand (:6172-6213)
-  if (prop.description) put(`\n${format('TID_ITEM_INFO', prop.description)}`, GENERAL);
+  // 15. PutCommand (:6160-6195): 2026-11-15, a carved couple ring names the partner its m_iRandomOptItemId holds
+  if (prop.description) {
+    const partner = COUPLE_RINGS.has(prop.id) && (item.randomOption ?? 0n) > 0n ? Number(BigInt.asUintN(32, item.randomOption!)) : 0;
+    const description = partner !== 0 ? format('TID_ITEM_COUPLERING_DESC', ctx.playerName?.(partner) ?? '') : prop.description;
+    put(`\n${format('TID_ITEM_INFO', description)}`, GENERAL);
+  }
 
-  // 16. PutItemGold (:5676-5824): m_fShopCost, m_fShopBuyRate and m_fShopSellRate are 1.0 until the server says
+  // 16. PutItemGold (:5676-5824): m_fShopCost, m_fShopBuyRate and m_fShopSellRate are 1.0 until the server says.
+  // 2026-11-15: the tax where the player stands (`CTax::IsApplyTaxRate`), and the "Before tax price" line after it
   const cost = itemCost(prop, option);
+  const taxed = ctx.tax !== undefined && ctx.tax !== null && taxApplies(prop.id) ? ctx.tax : null;
+  const beforeTax = (value: number): void => put(`\n${format('TID_GAME_TAX_RATE', withCommas(value))}`, TAX_LINE);
   if (ctx.flag === 'shop' && cost !== -1) {
     // 2026-11-15: a chip vendor's price, GetChipCost (dwReferValue1, -1 for none: then 1, as `nCost <= 0` gives)
-    const price = ctx.chipVendor === true ? (prop.referValue1 ?? -1) : cost;
-    const unit = ctx.chipVendor === true ? ` ${text('TID_GAME_REDCHIP')}` : '';
-    put(`\n${format('TID_GAME_TOOLTIP_COST2', withCommas(Math.max(1, price)))}${unit}`, GENERAL);
+    const chips = ctx.chipVendor === true;
+    let price = chips ? (prop.referValue1 ?? -1) : cost;
+    let before = price;
+    if (!chips && taxed !== null) price += Math.trunc(Math.fround(Math.fround(price) * taxed.purchase));
+    if (prop.id === PERIN) price = PERIN_VALUE;
+    if (price <= 0) price = before = 1;
+    const unit = chips ? ` ${text('TID_GAME_REDCHIP')}` : '';
+    put(`\n${format('TID_GAME_TOOLTIP_COST2', withCommas(price))}${unit}`, GENERAL);
+    if (!chips && taxed !== null) beforeTax(before);
   } else if (ctx.flag === 'inventory' && ctx.shopOpen === true && cost !== -1) {
-    put(`\n${format('TID_GAME_TOOLTIP_SHELLCOST2', withCommas(Math.max(1, Math.trunc((cost >>> 0) / 4))))}`, GENERAL);
+    // a quarter (DWORD), less the sales tax (`(DWORD)( dwCostTem * rate )`); below 1 is 1, before tax too
+    let sell = Math.trunc((cost >>> 0) / 4);
+    let before = sell;
+    if (taxed !== null) sell -= Math.trunc(Math.fround(Math.fround(sell) * taxed.sales));
+    if (sell < 1) sell = before = 1;
+    put(`\n${format('TID_GAME_TOOLTIP_SHELLCOST2', withCommas(sell))}`, GENERAL);
+    if (taxed !== null) beforeTax(before);
   } else if (ctx.flag === 'vendor' && ctx.vendorCost !== undefined) {
     // 2026-11-10: a personal shop's slot (`flag == APP_VENDOR`, WndManager.cpp:5809-5822): its own price
     put(`\n${format('TID_GAME_TOOLTIP_SHELLCOST2', withCommas(ctx.vendorCost >>> 0))}`, GENERAL);
@@ -638,12 +701,14 @@ ${dstName(dst)}+${value}${ADDED_OPT_RATES.has(dst) ? '%' : ''}`, ADDED_OPT);
     });
   }
 
-  function putVisKeepTime(): void {
-    // PutKeepTime's second half for a vis (:5866-5956): its end (`m_dwKeepTime`) less now, or, with none or one past, the
-    // prop's minutes (`dwAbilityMin`, a vis in the bag); the words of the vis branch, then TID_TOOLTIP_PERIOD
-    let keep = ctx.keepEnd ?? 0;
-    let t = keep - (ctx.now ?? 0);
-    if (t <= 0) {
+  function putKeepTime(): void {
+    // PutKeepTime's second half (:5859-5956): `t = m_dwKeepTime - time_null()`; a vis with none or one past takes the
+    // prop's minutes (`dwAbilityMin`, a vis in the bag). With an end and not expired: the time when `t > 0`, then
+    // TID_TOOLTIP_PERIOD. 2026-11-15: every item's, not a vis's alone; the ticket's TID_TOOLTIP_DATE, the vis's compound
+    // words and the others' one unit ("4day") are all `formatDuration` now (the owner's short durations)
+    let keep = keepEnd;
+    let t = keep - now;
+    if (t <= 0 && prop.kind3 === IK3_VIS) {
       keep = prop.abilityMin;
       t = Math.trunc(Math.fround(keep * 60));
     }
@@ -707,16 +772,25 @@ ${dstName(dst)}+${value}${ADDED_OPT_RATES.has(dst) ? '%' : ''}`, ADDED_OPT);
   }
 
   function putPetFeedPocket(): void {
-    // PutPetFeedPocket (:5448-5590): a used pocket (m_dwKeepTime) says whether it is on (the pocket's item buff), and when
-    // on the food in the bag (II_SYS_SYS_FEED_01); its time left is not kept (as PutKeepTime's); one not used, how to use it
+    // PutPetFeedPocket (:5448-5590): a used pocket (m_dwKeepTime) says whether it is on (the pocket's item buff), its time
+    // left (2026-11-15: red when on, green when off; `formatDuration`, not "%dday"), and when on the food in the bag
+    // (II_SYS_SYS_FEED_01); one not used, how to use it
+    const pocketTime = (color: number): void => {
+      if (keepEnd === 0 || (flag & FLAG_EXPIRED) !== 0) return;
+      const t = keepEnd - now;
+      put('\n', GENERAL);
+      put(`${t > 0 ? `${formatDuration(t)} ` : ''}${text('TID_TOOLTIP_PERIOD')}`, color);
+    };
     put(prop.name, NAME0, { bold: true });
     if ((item.keepTime ?? 0) > 0) {
       if (ctx.hasBuff?.(BUFF_ITEM, PET_FEED_POCKET) === true) {
         put(` ${text('TID_GAME_POCKETUSING')}`, 0xff0000);
+        pocketTime(POCKET_TIME_ON);
         put('\n', GENERAL);
         put(`${text('TID_GAME_PET_FEED_COUNT')} ${ctx.countOf?.(PET_FEED) ?? 0}`, 0x3232cd);
       } else {
         put(` ${text('TID_GAME_POCKET_NOTUSING')}`, 0xff0000);
+        pocketTime(TIME);
       }
       put('\n', GENERAL);
       put(text('TID_GAME_PET_FEEDPOCKET'), PIERCING);
@@ -781,6 +855,23 @@ export function visPetInfo(pet: VisPet, data: Pick<TooltipData, 'texts' | 'itemP
     lines.push({ text: `${vis.name} (${visTimeLeft(t, data.texts)})`, color: t > 0 ? TIME : RED });
   }
   return lines;
+}
+
+/** 2026-11-15: the IK2 kinds that get comparison tooltips (`PutToolTipItemAndSubToolTip`, :6419-6428). */
+const COMPARED_KINDS: ReadonlySet<number> = new Set([2, 3, 7, 8, 9, 10, 13, 20, 32]);
+/** `PARTS_RWEAPON`/`LWEAPON`, `RING1`/`2`, `EARRING1`/`2`: the parts V15 compares as a pair. */
+const PAIRED_PARTS = new Map<number, number>([[10, 9], [20, 21], [22, 23]]);
+
+/**
+ * 2026-11-15: the worn items a bag item's tooltip is compared with, sub 1 then sub 2 (`PutToolTipItemAndSubToolTip`,
+ * WndManager.cpp:6413-6497): for weapons, armour, clothes, jewellery, rides and wigs, the item worn on its `dwParts`;
+ * for the right-hand weapon, ring 1 and earring 1, both of the pair when both are worn, else the one worn.
+ */
+export function comparisonItems(prop: WebItemProp, worn: (part: number) => InventoryItem | undefined): InventoryItem[] {
+  if (!COMPARED_KINDS.has(prop.kind2) || prop.part < 0) return [];
+  const pair = PAIRED_PARTS.get(prop.part);
+  const parts = pair === undefined ? [prop.part] : [prop.part, pair];
+  return parts.map((part) => worn(part)).filter((each): each is InventoryItem => each !== undefined);
 }
 
 /** `GetATKSpeedString` (:107-121), the TID of the attack speed's word. */

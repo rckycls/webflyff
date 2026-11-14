@@ -124,9 +124,11 @@ describe('the pet item in the bag (CWndItemCtrl) and its tooltip (PutPetInfo, Pu
       .toEqual(['Pet Feed Pocket', 'Double-click to use.']);
     const used = { ...pocket, keepTime: 3600 };
     const on = { flag: 'inventory' as const, viewer: null, hasBuff: (type: number, id: number) => type === 0 && id === II_FEED_POCKET, countOf: () => 12 };
-    expect(texts(itemTooltip(used, prop, data, on))).toEqual(['Pet Feed Pocket (Active)', 'Pet food count: 12', 'Eats the food in the bag.']);
+    // 2026-11-15 (item tooltip gaps): with its time left, as `now + t` of the seconds it came with (no clock here: 0)
+    expect(texts(itemTooltip(used, prop, data, on)))
+      .toEqual(['Pet Feed Pocket (Active)', '1h Period', 'Pet food count: 12', 'Eats the food in the bag.']);
     expect(texts(itemTooltip(used, prop, data, { ...on, hasBuff: () => false })))
-      .toEqual(['Pet Feed Pocket (Inactive)', 'Eats the food in the bag.']);
+      .toEqual(['Pet Feed Pocket (Inactive)', '1h Period', 'Eats the food in the bag.']);
   });
 
   it('is not drawn again for the pet\'s numbers (PET_STATE, PET_SET_EXP, PET_FEED); its open tooltip shows them', () => {

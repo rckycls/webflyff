@@ -249,6 +249,12 @@ export class OwnState {
    * vis's time counts down; UPDATE_ITEM's `UI_PETVIS_*` change them.
    */
   private readonly visEnds = new Map<number, number[]>();
+  /**
+   * 2026-11-15 (item tooltip gaps): each bag item's own end (`m_dwKeepTime`) in `time_null()` seconds, by object id: the
+   * seconds it had left as it came, added to the clock then (`ObjSerialize.cpp:112-119`), or UI_KEEPTIME's minutes from
+   * then (`MoverParam.cpp:4027-4032`); the tooltip's time left counts down from it.
+   */
+  private readonly keepEnds = new Map<number, number>();
 
   /**
    * 2026-11-05: the server's values of the own numbers before a world change, kept unless the new world sent its own: the
@@ -319,6 +325,11 @@ export class OwnState {
     return this.visPetSlot === null ? undefined : this.inventory?.get(this.visPetSlot);
   }
 
+  /** 2026-11-15: the own end (`m_dwKeepTime`, `time_null()` seconds) of the bag item `objectId`, undefined for none. */
+  keepEndOf(objectId: number): number | undefined {
+    return this.keepEnds.get(objectId);
+  }
+
   /** 2026-11-09 (pets B1): the vis of the bag item `objectId` (its piercing list and end times), undefined for none. */
   visPetOf(objectId: number): VisPet | undefined {
     const item = this.inventory?.get(objectId);
@@ -332,6 +343,9 @@ export class OwnState {
    * sets no other, :163-169).
    */
   private keepVisEnds(item: InventoryItem): void {
+    // 2026-11-15: and the item's own end (`m_dwKeepTime = time_null() + t`)
+    if (item.keepTime === undefined) this.keepEnds.delete(item.objectId);
+    else this.keepEnds.set(item.objectId, this.clock() + item.keepTime);
     const left = item.visKeepTimes;
     if (left === undefined || left.length === 0) {
       this.visEnds.delete(item.objectId);
@@ -379,7 +393,7 @@ export class OwnState {
     const packMax = (itemId: number): number => this.data.itemProps.get(itemId)?.packMax ?? 1;
     tradeConsent({ items: this.inventory, slots: this.inventorySlots, positions: BAG_POSITIONS }, mine, partner, theirs, packMax);
     for (const [id, item] of this.inventory) if (before.get(id)?.itemId !== item.itemId) this.keepVisEnds(item);
-    for (const id of before.keys()) if (!this.inventory.has(id)) this.visEnds.delete(id);
+    for (const id of before.keys()) if (!this.inventory.has(id)) { this.visEnds.delete(id); this.keepEnds.delete(id); }
     this.inventoryRevision++;
     this.addGold(gold);
   }
@@ -669,6 +683,7 @@ export class OwnState {
             } else {
               this.inventory.delete(stack.objectId);
               this.visEnds.delete(stack.objectId);
+              this.keepEnds.delete(stack.objectId);
             }
           }
           this.inventoryRevision++;
@@ -680,6 +695,7 @@ export class OwnState {
           if ((message.value | 0) <= 0) {
             this.inventory!.delete(message.objectId);
             this.visEnds.delete(message.objectId);
+            this.keepEnds.delete(message.objectId);
           } else {
             this.inventory!.set(message.objectId, { ...item, count: message.value });
           }
@@ -689,6 +705,8 @@ export class OwnState {
           return this.updateVis(item, message.param, message.value, message.time); // 2026-11-09 (pets B1)
         } else if (message.itemType === 0 && item && objectId === this.objectId) {
           const changed = itemUpdated(item, message.param, message.value);
+          // 2026-11-15: UI_KEEPTIME, `SetKeepTime( minutes )`: its end is that many minutes from now
+          if (message.param === UI_KEEPTIME) this.keepEnds.set(message.objectId, this.clock() + (message.value >>> 0) * 60);
           if (changed !== item) {
             this.inventory!.set(message.objectId, changed);
             this.inventoryRevision++;

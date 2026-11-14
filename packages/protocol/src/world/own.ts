@@ -280,7 +280,7 @@ export function readInventoryItem(r: ArReader, slotId?: number): InventoryItem {
   const repair = r.i32(); // m_nRepair (int, :95)
   const flag = r.u8(); // m_byFlag (BYTE, :96)
   const abilityOption = r.i32(); // m_nAbilityOption (int, :97)
-  r.u32(); // m_idGuild (DWORD, :98)
+  const guildId = r.u32(); // m_idGuild (DWORD, :98); 2026-11-15 kept: a guild cloak's guild (PutItemName)
   const resist = r.u8(); // m_bItemResist (BYTE, :99)
   const resistOption = r.i32(); // m_nResistAbilityOption (int, :100)
   const resistSMItemId = r.i32(); // m_nResistSMItemId (int, :101); 2026-11-11 kept for /ResistItem's window
@@ -300,7 +300,7 @@ export function readInventoryItem(r: ArReader, slotId?: number): InventoryItem {
     ...(resistSMItemId !== 0 ? { resistSMItemId } : {}),
     ...(repairNumber !== 0 ? { repairNumber } : {}), ...(hitPoint !== 0 ? { hitPoint } : {}), ...(repair !== 0 ? { repair } : {}),
     // what the item tooltip shows, when there is something to show (2026-11-05)
-    ...(abilityOption !== 0 ? { abilityOption } : {}), ...(resist !== 0 ? { resist } : {}),
+    ...(abilityOption !== 0 ? { abilityOption } : {}), ...(guildId !== 0 ? { guildId } : {}), ...(resist !== 0 ? { resist } : {}),
     ...(resistOption !== 0 ? { resistOption } : {}), ...(piercing.length > 0 ? { piercing } : {}),
     ...(ultimate.length > 0 ? { ultimate } : {}), ...(randomOption !== 0n ? { randomOption } : {}),
     ...(keepTime !== undefined ? { keepTime } : {}),

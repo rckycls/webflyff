@@ -8,11 +8,31 @@ import type { InventoryItem } from '@flyffweb/protocol';
 import type { OwnState } from '../OwnState';
 import { itemTooltip, ultimateSockets } from '../items/itemTooltip';
 import type { TooltipContext, TooltipData, TooltipFlag, TooltipLine } from '../items/itemTooltip';
+import type { TooltipTax } from '../items/tax';
 import { themeKey, themeUrl } from './art';
 import type { UiArt } from './art';
 
 /** An empty equipment slot (`NULL_ID`). */
 const NO_ITEM = 0xffffffff;
+
+/**
+ * 2026-11-15 (item tooltip gaps): what the world knows that the item tooltip reads beyond the own player: the item's
+ * cool-down left (`CCooltimeMgr`), the guild list (`g_GuildMng`), the player names (`CPlayerDataCenter`) and the tax
+ * where the player stands (`CTax`). The world screen sets it (`setTooltipWorld`); none of it is there without one.
+ */
+export interface TooltipWorld {
+  cooldownLeft?(itemId: number): number;
+  guildName?(guildId: number): string | undefined;
+  playerName?(playerId: number): string | undefined;
+  tax?(): TooltipTax | null;
+}
+
+let world: TooltipWorld = {};
+
+/** 2026-11-15: the world the tooltips read (`{}` when the world screen goes). */
+export function setTooltipWorld(next: TooltipWorld): void {
+  world = next;
+}
 
 /**
  * The context the own player gives a tooltip: who judges the requirement colours, what is worn, whether this is; 2026-11-09
@@ -23,8 +43,17 @@ export function ownTooltipContext(
   own: OwnState | undefined, item: InventoryItem, flag: TooltipFlag, shopOpen = false,
   hasBuff?: (buffType: number, id: number) => boolean,
 ): TooltipContext {
-  if (own === undefined) return { flag, viewer: null, shopOpen };
+  // 2026-11-15: the world's cool-down, names and tax, for every window's tooltip
+  const cooldownLeft = world.cooldownLeft?.(item.itemId) ?? 0;
+  const lookups: Partial<TooltipContext> = {
+    ...(cooldownLeft > 0 ? { cooldownLeft } : {}),
+    ...(world.guildName !== undefined ? { guildName: world.guildName.bind(world) } : {}),
+    ...(world.playerName !== undefined ? { playerName: world.playerName.bind(world) } : {}),
+    ...(world.tax !== undefined ? { tax: world.tax() } : {}),
+  };
+  if (own === undefined) return { flag, viewer: null, shopOpen, ...lookups };
   const inBag = flag !== 'shop' && own.inventory?.get(item.objectId)?.itemId === item.itemId;
+  const keepEnd = inBag ? own.keepEndOf(item.objectId) : undefined;
   const visPet = inBag ? own.visPetOf(item.objectId) : undefined;
   const active = own.visPetItem();
   const activeVisPet = active === undefined ? undefined : own.visPetOf(active.objectId);
@@ -41,6 +70,7 @@ export function ownTooltipContext(
     flag, viewer: { sex: own.sex, job: own.job, level: own.level }, worn,
     isWorn: own.equipmentObjectIds.includes(item.objectId), shopOpen, countOf, ...(hasBuff !== undefined ? { hasBuff } : {}),
     now: own.clock(), ...(visPet !== undefined ? { visPet } : {}), ...(activeVisPet !== undefined ? { activeVisPet } : {}),
+    ...(keepEnd !== undefined ? { keepEnd } : {}), ...lookups,
   };
 }
 
@@ -97,9 +127,10 @@ export function createItemDetails(
   doc: Document, art: UiArt, data: TooltipData, item: InventoryItem, prop: WebItemProp | undefined, ctx: TooltipContext,
 ): HTMLElement {
   const details = doc.createElement('div');
-  details.className = 'inventory-details hud-item-tooltip';
+  // 2026-11-15: a comparison tooltip is its own kind of box, so the page's one "Item details" stays one
+  details.className = ctx.equipped === true ? 'inventory-compare hud-item-tooltip hud-item-tooltip-sub' : 'inventory-details hud-item-tooltip';
   details.setAttribute('role', 'group');
-  details.setAttribute('aria-label', 'Item details');
+  details.setAttribute('aria-label', ctx.equipped === true ? 'Equipped item details' : 'Item details');
   const lines: TooltipLine[] = prop === undefined
     ? [[{ text: `Unknown item #${item.itemId}`, color: 0x2e70a9, bold: true }]]
     : itemTooltip(item, prop, data, ctx);
@@ -136,6 +167,63 @@ function ultimateMarks(doc: Document, art: UiArt, data: TooltipData, sockets: re
     row.append(socket);
   }
   return [icon, row];
+}
+
+/**
+ * 2026-11-15: the comparison tooltips of the worn items `worn` (`PutToolTipParts` with TOOL_TIP_SWITCH_SUB1 and SUB2,
+ * WndManager.cpp:6499-6539): each the worn item's tooltip with the same flag as the main one, "[ Equipped ]" on top.
+ */
+export function createComparison(
+  doc: Document, art: UiArt, data: TooltipData, worn: readonly InventoryItem[], context: (item: InventoryItem) => TooltipContext,
+): HTMLElement[] {
+  return worn.map((item) => createItemDetails(doc, art, data, item, data.itemProps.get(item.itemId), { ...context(item), equipped: true }));
+}
+
+/**
+ * 2026-11-15: the main tooltip and its comparison tooltips on the desktop (`CToolTip`'s sub 1 and sub 2, tooltip.cpp:
+ * 432-499): each right of the one before (`left + width + 16` between the text rects, so the frames touch), each above
+ * the slot by its own height (their bottoms level), the main one pulled left when the row would leave the screen (V15's
+ * fixed 224 / 470; here the row's own width), and one with no room above put as `positionItemDetails` puts it.
+ */
+export function positionItemComparison(
+  main: HTMLElement, subs: readonly HTMLElement[], anchorElement: HTMLElement, doc: Document,
+): void {
+  const boxes = [main, ...subs];
+  for (const box of boxes) Object.assign(box.style, { left: '0px', top: '0px', right: 'auto', width: 'max-content' });
+  const anchor = anchorElement.getBoundingClientRect(), view = doc.defaultView;
+  const screenWidth = view?.innerWidth ?? 1280, screenHeight = view?.innerHeight ?? 720;
+  const sizes = boxes.map((box) => {
+    const rect = box.getBoundingClientRect();
+    return { width: rect.width || 230, height: rect.height || 80, originX: rect.left, originY: rect.top };
+  });
+  const total = sizes.reduce((sum, size) => sum + size.width, 0);
+  let x = anchor.left;
+  if (x + total + 8 > screenWidth) x = screenWidth - total - 8;
+  x = Math.max(8, x);
+  boxes.forEach((box, i) => {
+    const { width, height, originX, originY } = sizes[i]!;
+    let y = anchor.top - height - 10;
+    if (y < 8) y = Math.min(anchor.bottom + 10, screenHeight - height - 8);
+    box.style.left = x - originX + 'px';
+    box.style.top = Math.max(8, y) - originY + 'px';
+    x += width;
+  });
+}
+
+/**
+ * 2026-11-15: the phone's comparison (the landscape iPhone's game area is about 800 x 350): `row` holds the main tooltip
+ * and the comparison ones side by side along the bag's bottom, the main one first and the last at the bag's right, their
+ * bottoms level (the CSS). Here the row is made smaller when it is wider than the room left of its right edge, and each
+ * box no taller than the room above its bottom; a taller one scrolls.
+ */
+export function fitPhoneComparison(row: HTMLElement): void {
+  // the row's right and bottom stay put under its scale (`transform-origin: right bottom`) and its width is its layout's,
+  // so it is measured as it is: a box's scroll is not lost to a height taken off and put back
+  const rect = row.getBoundingClientRect();
+  const width = row.scrollWidth || rect.width;
+  const scale = width > 0 ? Math.min(1, (rect.right - 8) / width) : 1;
+  row.style.transform = scale < 1 ? `scale(${scale})` : '';
+  row.style.setProperty('--compare-max-height', `${Math.max(60, Math.floor((rect.bottom - 8) / scale))}px`);
 }
 
 /**
