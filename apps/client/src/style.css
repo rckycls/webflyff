@@ -4241,3 +4241,14 @@ fieldset:disabled .btn {
   .hud-couple :is(.hud-res-static-text, .hud-res-text-body, .hud-tab-title) { font-family: Verdana, Tahoma, sans-serif; font-size: 12px; }
   .hud-couple .hud-tab-title { text-align: center; }
 }
+
+/* 2026-11-15 (social): the duel's count (hud/duel/duelWindows.ts, CMover::RenderPVPCount): a picture of CountFight.dds over the
+   world, centred 50 px above the middle, grown and faded as it goes */
+.hud-duel-count {
+  position: absolute; left: 50%; top: calc(50% - 50px); background-repeat: no-repeat; pointer-events: none; z-index: 5;
+  transform-origin: center;
+}
+.hud-duel-count[hidden] { display: none; }
+@media (max-width: 1000px) and (pointer: coarse) {
+  :is(.hud-duel-confirm, .hud-duel-result) .hud-res-text-body { font-family: Verdana, Tahoma, sans-serif; font-size: 12px; }
+}

@@ -114,9 +114,11 @@ import { FriendHud } from './friends/friendHud';
 import { TradeHud } from './trade/tradeHud';
 import { SocialHud } from './social/socialHud'; // 2026-11-15 (social)
 import { Follow } from './social/follow'; // 2026-11-15 (social)
+import { DuelBook } from './duel/duelBook'; // 2026-11-15 (social)
+import type { DuelFlag } from './duel/duelBook';
 import { Messenger, loadFriendOptions, saveFriendOptions } from './friends/messenger';
 import type { FriendEvent } from './friends/messenger';
-import { MMI_ADD_MESSENGER, MMI_CHEER, MMI_INVITE_COMPANY, MMI_TRACE, MMI_INVITE_PARTY, MMI_TRADE, menuInReach, playerMenuEntries } from './party/playerMenu';
+import { MMI_ADD_MESSENGER, MMI_CHEER, MMI_DUEL, MMI_DUEL_PARTY, MMI_INVITE_COMPANY, MMI_TRACE, MMI_INVITE_PARTY, MMI_TRADE, menuInReach, playerMenuEntries } from './party/playerMenu';
 import { PartyHpBars } from './render/PartyHpBars';
 import { partyEffects } from './fx/partyEffects';
 import type { PartyEffectContext, PartyMover } from './fx/partyEffects';
@@ -208,7 +210,7 @@ import { GroundModels, loadDropModel } from './items/groundModels';
 import { NearbyItems } from './items/nearbyItems';
 import {
   ENABLE_GUILD_INVENTORY, EVE_PK, NULL_ID, STATE_BASEMOTION_MODE, ShortcutKind, isBankMessage, isGuildBankMessage, isGuildMessage,
-  isLordMessage, isPostMessage, isTradeMessage, isCoupleMessage,
+  isLordMessage, isPostMessage, isTradeMessage, isCoupleMessage, isDuelMessage, EVE_18,
 } from '@flyffweb/protocol';
 // 2026-11-10: the guild (guild/guildBook.ts, guild/guildHud.ts)
 import { GuildBook } from './guild/guildBook';
@@ -237,13 +239,17 @@ import { SpriteLayer } from './render/SpriteLayer';
 import { TargetMarks, attackMarks, focusRect } from './render/TargetMarks';
 import type { ScreenRect } from './render/TargetMarks';
 import { HAttr } from './sim/collision';
-import { Belli, Mti, ObjSta, ObjStaF, PARTS_RIDE } from './sim/constants';
+import { ActMsg, AniLoop, Belli, Mti, ObjSta, ObjStaF, PARTS_RIDE } from './sim/constants';
 
 /** Piece 7 M5: the ground's field of view (`WorldStage`'s 45 degrees, `fDiv` 4), which a landing gives back. */
 const GROUND_FOV = 45;
 /** 2026-11-05: the buff wings (`II_CHR_MAG_TRI_ANGELWING`, `II_SYS_SYS_EVE_WINGS`), their effect and its 1.1 s look. */
 const BUFF_WINGS: ReadonlySet<number> = new Set([10223, 6319]);
 const XI_NAT_WINGANGEL01 = 1095;
+/** 2026-11-15 (social): the duel's flag (`Resource/defineObj.h`), and the result window's motions (`Resource/defineNeuz.h:443-445`). */
+const XI_GEN_PVP_FLAG01 = 1700;
+const MTI_HIPKIDDING = 138;
+const MTI_HEAD = 140;
 /** `PARTS_LWEAPON`, `PARTS_RWEAPON`; `TRANSPARENT_MODE` (authorization.h): the glow's parts, and no glow while invisible. */
 const PARTS_LWEAPON = 9;
 const PARTS_RWEAPON = 10;
@@ -572,6 +578,16 @@ export class WorldScreen {
   private socialWaiting: Array<Parameters<SocialHud['onCouple']>[0]> = [];
   /** 2026-11-15 (social): the player followed (`m_objidTracking`, social/follow.ts). */
   private readonly tracking = new Follow();
+  /** 2026-11-15 (social): the duels' fields of the movers in view, and the regions the server added (duel/duelBook.ts). */
+  private readonly duels = new DuelBook({
+    ownObjectId: () => this.world?.self()?.objectId,
+    ownPartyId: () => this.party.partyId,
+    byPlayerId: (playerId) => {
+      const mover = [...(this.world?.movers.values() ?? [])].find((m) => m.added.player?.playerId === playerId);
+      return mover === undefined ? undefined : { objectId: mover.objectId, name: mover.name, dead: isDie(mover) };
+    },
+    mover: (objectId) => { const mover = this.world?.movers.get(objectId); return mover === undefined ? undefined : { name: mover.name }; },
+  });
   /** 2026-11-10 (bank-mail): the bank's windows (bank/bankHud.ts), and the tooltip over a bank's item. */
   private bankHud: BankHud | undefined;
   /** 2026-11-15: the guild bank's windows (guildBank/guildBankHud.ts). */
@@ -972,6 +988,8 @@ export class WorldScreen {
       if (isTradeMessage(value)) { this.tradeHud?.handle(objectId, value); continue; }
       // 2026-11-15 (social): the couple's snapshots (CCoupleHelper::On*), kept until its windows exist
       if (isCoupleMessage(value)) { if (this.social !== undefined) this.social.onCouple(value); else this.socialWaiting.push(value); continue; }
+      // 2026-11-15 (social): the duels' snapshots and ADDREGION (duel/duelBook.ts); their windows once they exist
+      if (isDuelMessage(value)) { this.social?.onDuel(this.duels.apply(value), performance.now()); continue; }
       // 2026-11-10 (bank-mail): the bank's windows hear its snapshots; the own state (WorldState.toOwn) applies the contents
       if (isBankMessage(value) && objectId === self?.objectId) this.bankHud?.handle(value);
       // 2026-11-15: the guild bank's (guildBank/guildBankHud.ts); no own state: the HUD keeps the bank and moves the bag, the
@@ -1157,12 +1175,19 @@ export class WorldScreen {
           this.attackLoop?.onMoverDeath(objectId, value.attackerId);
           this.angelFollowers.died(objectId); // 2026-11-10: its angel made again (DPClient.cpp:1980-1987)
           this.tracking.died(objectId, world.self()?.objectId); // 2026-11-15 (social): DPClient.cpp:2069-2074
+          if (objectId === world.self()?.objectId) this.social?.ownDied(); // and the duel's question (:1939)
         }
         else if (value.type === 'delObj') { this.attackLoop?.onRemoved(objectId); this.tradeHud?.removed(objectId); }
       }
       // 2026-11-10: a seller's title from ADD_OBJ (DPClient.cpp:1356-1359), and its balloon gone with it
       if (value.type === 'addMover') this.personalShop?.added(value.mover);
       else if (value.type === 'delObj') this.personalShop?.removed(objectId);
+      // 2026-11-15 (social): a player's duel fields, and the flag it wears to the own player (OnAddObj, DPClient.cpp:1347-1358),
+      // once the world has it
+      if (value.type === 'addMover' && value.mover.player !== undefined) {
+        const flags = this.duels.added(objectId, value.mover.player.duel, value.mover.player.self);
+        if (flags.length > 0) queueMicrotask(() => this.social?.onDuel(flags, performance.now()));
+      } else if (value.type === 'delObj') this.duels.removed(objectId);
       // 2026-11-11: the own ADD_OBJ's honour counts make the earned list again, without a word (ObjSerializeOpt.cpp:612-634)
       const honorCounts = value.type === 'addMover' && value.mover.player?.self === true ? value.mover.player.own?.honorCounts : undefined;
       if (honorCounts !== undefined) {
@@ -1450,6 +1475,11 @@ export class WorldScreen {
     skillUse.attack = attackLoop;
     // 2026-11-10: the Arena's rule asks the world the own mover is in (IsArenaTarget, combat/arena.ts)
     attackLoop.worldId = () => this.worldId;
+    // 2026-11-15 (social): and a duel's (IsPVPTarget, the own state 1, neither flying; duel/duelBook.ts)
+    attackLoop.duel = {
+      isTarget: (target) => this.duels.isPvpTarget(target.objectId),
+      able: (target) => this.duels.canAttack(target.objectId, this.world?.self()?.act.isFlying() === true, target.act.isFlying()),
+    };
     this.world!.onUseSkill = (casterId, message, started) => skillUse.onUseSkill(casterId, message, started);
     this.attackLoop = attackLoop;
     // Piece 7 M2: the own missiles' ids and reports, the missiles of everyone, and what the attack loop says and tests
@@ -2093,6 +2123,15 @@ export class WorldScreen {
       jobName: (job) => this.data?.jobs[job]?.title ?? '',
       itemProp: (itemId) => this.data?.itemProps.get(itemId),
       say: (text, color) => this.hud?.messages.add(text, color),
+      beforeDuelYes: () => this.closeForDuel(),
+      flag: (objectId, flag) => this.duelFlag(objectId, flag),
+      resultMotion: (win) => {
+        // CWndDuelResult::OnChildNotify (WndDuelConfirm.cpp:434-452): the motion, then PLAYERBEHAVIOR
+        const own = this.world?.self();
+        if (own !== undefined && own.act.sendActMsg(ActMsg.MOTION, win ? MTI_HIPKIDDING : MTI_HEAD, win ? AniLoop.ONE_PLAY : AniLoop.CONT)) {
+          session.sendBehavior(own.act.report(this.entry.clock.tick()));
+        }
+      },
     }, doc);
     this.social = social;
     for (const message of this.socialWaiting.splice(0)) social.onCouple(message);
@@ -4015,7 +4054,12 @@ export class WorldScreen {
     // 2026-11-10: a seller's menu is "View equipment" alone (__CSC_VER12_1, WndWorld.cpp:6544-6547)
     // 2026-11-10: "Invite to join guild" in a guild whose rank may invite (WndWorld.cpp:6556-6565)
     const guildInvite = canInvite(this.guildBook.own(this.entry.character.playerId), this.entry.character.playerId);
-    this.moverMenu!.open(playerMenuEntries(this.data!.texts, this.personalShop?.hasShop(id) === true, guildInvite), at, (entry) => this.choosePlayerEntry(id, entry));
+    // 2026-11-15 (social): the duels with EVE_18, the player alive, both in an RA_FIGHT region; the party's for its leader
+    // (WndWorld.cpp:6589-6608)
+    const duel = (this.localEvents.get(EVE_18) ?? 0) === 1 && !isDie(player) && this.duels.inFightRegion(this.worldId, own.act.body.pos) &&
+      this.duels.inFightRegion(this.worldId, player.act.body.pos);
+    const duels = { solo: duel, party: duel && this.party.isLeader(this.entry.character.playerId) };
+    this.moverMenu!.open(playerMenuEntries(this.data!.texts, this.personalShop?.hasShop(id) === true, guildInvite, duels), at, (entry) => this.choosePlayerEntry(id, entry));
   }
 
   /** Invite (`OnCommand` MMI_INVITE_PARTY, :5639-5644, `InviteParty`, :11237-11266): the focus a player, the party's rule. */
@@ -4039,6 +4083,12 @@ export class WorldScreen {
       this.guildHud?.inviteMover(id);
       return;
     }
+    // 2026-11-15 (social): the duels (MMI_DUEL, MMI_DUEL_PARTY, WndWorld.cpp:5657-5672): the request, to a live player
+    if (entry === MMI_DUEL || entry === MMI_DUEL_PARTY) {
+      const mover = this.world?.movers.get(id);
+      if (player !== undefined && mover !== undefined && !isDie(mover)) this.social?.requestDuel(player.playerId, entry === MMI_DUEL_PARTY);
+      return;
+    }
     // 2026-11-15 (social): "Follow" (MMI_TRACE, WndWorld.cpp:5673-5679): the player tracked and walked to, not while flying
     if (entry === MMI_TRACE) {
       if (player !== undefined && this.world?.self()?.act.isFlying() !== true) this.startFollow(id);
@@ -4051,6 +4101,31 @@ export class WorldScreen {
     }
     if (entry !== MMI_INVITE_PARTY || player === undefined || this.focus?.targetId !== id) return;
     this.inviteToParty(player.playerId);
+  }
+
+  /**
+   * 2026-11-15 (social): what the duel's Yes closes first (WndDuelConfirm.cpp:99-312): the dialogue, a trade (TRADECANCEL), the
+   * NPC shop, the bank, the guild bank, the post, the item NPC windows.
+   */
+  private closeForDuel(): void {
+    this.dialog?.close();
+    if (this.tradeHud?.windowOpen === true) this.session.sendTradeCancel();
+    if (this.shopWindow?.frame.isOpen === true) this.shopWindow.frame.close();
+    this.bankHud?.moved();
+    this.guildBankHud?.moved();
+    this.postHud?.moved();
+    this.itemNpc?.dismiss();
+    this.upgradeNpc?.piercing.dismiss();
+  }
+
+  /** 2026-11-15 (social): `RenderFlag( type )` (MoverRender.cpp:1720-1730): XI_GEN_PVP_FLAG01 at 1.5 on the mover, while its duel lasts. */
+  private duelFlag(objectId: number, flag: DuelFlag): void {
+    const mover = this.world?.movers.get(objectId);
+    if (mover === undefined || this.effects === undefined) return;
+    this.effects.play({
+      xi: XI_GEN_PVP_FLAG01, pos: [...mover.act.body.pos], followId: objectId, scale: 1.5,
+      whileTrue: () => this.world?.movers.has(objectId) === true && this.duels.flagShown(objectId, flag),
+    });
   }
 
   /** 2026-11-15 (social): `m_objidTracking = id; g_pPlayer->SetDestObj( id )` (WndWorld.cpp:5673-5679, :7062-7063). */

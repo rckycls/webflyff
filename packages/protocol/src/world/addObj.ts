@@ -117,9 +117,11 @@ function readPlayer(r: ArReader, self: boolean): AddedPlayer {
     warId = r.u32(); // m_idWar
   }
   const guildCloak = r.u32(); // m_idGuildCloak
+  // 2026-11-15 (social): the party and the party duel kept, and m_nDuel below, for the duel (world/duel.ts)
+  let partyId = 0, duelParty = 0;
   if (r.u8() === 1) {
-    r.u32(); // m_idparty
-    r.u32(); // m_idDuelParty
+    partyId = r.u32(); // m_idparty
+    duelParty = r.u32(); // m_idDuelParty
   }
   const authorization = r.u8(); // (char&)m_dwAuthorization: the low byte of a DWORD zeroed before
   const mode = r.u32();
@@ -133,7 +135,7 @@ function readPlayer(r: ArReader, self: boolean): AddedPlayer {
   const pkPropensity = r.u32();
   r.u32(); // m_dwPKExp
   r.i32(); // m_nFame
-  r.u8(); // (u_char&)m_nDuel
+  const duel = r.u8(); // (u_char&)m_nDuel
   const honor = r.i32(); // int nTemp (__VER >= 13, __HONORABLE_TITLE)
   // m_aEquipInfo[i].nOption (int): 2026-11-09 kept, the worn weapons' upgrade and element for their glow
   const options = Array.from({ length: MAX_HUMAN_PARTS }, () => r.i32());
@@ -142,7 +144,8 @@ function readPlayer(r: ArReader, self: boolean): AddedPlayer {
 
   const base = {
     self, name, sex, skinSet, hairMesh, hairColor, headMesh, playerId, job, sta, dex, level, authorization, mode,
-    stateMode, ...(useItemId !== 0 ? { useItemId } : {}), pkTime, pkValue, pkPropensity, honor,
+    stateMode, ...(useItemId !== 0 ? { useItemId } : {}),
+    ...(partyId !== 0 || duelParty !== 0 || duel !== 0 ? { duel: { partyId, duelParty, duel } } : {}), pkTime, pkValue, pkPropensity, honor,
     ...(fuel !== -1 ? { fuel } : {}), ...(accFuel !== 0 ? { accFuel } : {}),
     ...(guildId !== 0 ? { guildId } : {}), ...(warId !== 0 ? { warId } : {}), ...(guildCloak !== 0 ? { guildCloak } : {}),
   };

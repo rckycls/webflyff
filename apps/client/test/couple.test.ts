@@ -90,6 +90,7 @@ describe('the couple window and its boxes', () => {
       jobName: (job) => (job === 16 ? 'Knight' : ''),
       itemProp: (itemId) => ({ 26720: { name: 'Power of Love', icon: 'ui/item/skill_couple01.png' } } as Record<number, { name: string; icon: string }>)[itemId],
       say: (line, color) => said.push([line, color]),
+      beforeDuelYes: vi.fn(), flag: vi.fn(), resultMotion: vi.fn(),
     };
     const social = new SocialHud(art, TEXTS, host, document);
     document.body.append(...social.elements);

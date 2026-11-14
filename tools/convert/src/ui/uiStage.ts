@@ -294,6 +294,12 @@ export const CURSOR_FILES: readonly string[] = [
   'curHelp.cur', 'curNo.cur', 'curNPC.cur', 'curSelect.cur', 'hori.cur', 'resize_h.cur', 'cur00001.cur', 'cur00002.cur',
 ];
 
+/**
+ * 2026-11-15 (social): pictures of Client/SFX a window draws whole, with no colour key (their scripts' `texture` key is 0):
+ * the duel's count, `CountFight.inc`'s sheet (`m_TexturePackPVP`, Neuz.cpp:1718; CMover::RenderPVPCount), as `ui/countfight.png`.
+ */
+export const SFX_FILES: readonly string[] = ['CountFight.dds'];
+
 /** The two glyph sheets: the script, and the field of WebUiSheets it fills. */
 const SHEETS = [
   { field: 'damageDigits', dir: 'SFX', script: 'DmgEffect.inc' }, // CDamageNumMng::LoadTexture, 2DRender.cpp:2004
@@ -519,6 +525,13 @@ export function createUiStage(options: UiStageOptions = {}): Stage {
       const chat = sheets.find((sheet) => sheet.field === 'chatEmoticons');
       const chatPicture = chat === undefined ? undefined : pictures.get(chat.picture);
       if (chat !== undefined && chatPicture !== undefined) chatPicture.frames = chat.pack.frames.map((frame, i) => ({ ...frame, key: chatEmoticonKey(i) }));
+      // 2026-11-15 (social): the SFX pictures drawn whole (SFX_FILES), no colour key
+      for (const name of SFX_FILES) {
+        if (!wanted(name)) continue;
+        const src = ctx.client.find('SFX', name);
+        if (src === null) ctx.report.warn(KIND, `SFX/${name}`, `${name} is not in Client/SFX, so it is not converted`);
+        else pictures.set(src, { src, key: iconKeyOf(path.basename(src)), colorKey: 0 });
+      }
       // the cursors: their mask is their transparency, so no colour key (ui/anvil.png)
       for (const name of CURSOR_FILES) {
         if (!wanted(name)) continue;

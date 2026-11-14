@@ -107,6 +107,12 @@ export function objRadius({ min, max }: ModelBox, scale: number): number {
 export interface ArenaSide { worldId: number; pos: Vec3 }
 
 /**
+ * 2026-11-15 (social): the duel's part of `IsAttackAble` for a player (`Mover.cpp:6557-6565`; duel/duelBook.ts): a duel
+ * target (`IsPVPTarget`) is attackable only as `able` says (the own state 1, neither flying), and nothing else decides.
+ */
+export interface DuelRule { isTarget(target: Mover): boolean; able(target: Mover): boolean }
+
+/**
  * The verdict of `CMover::IsAttackAble( pObj )` on the client for a mover (`Mover.cpp:6469-6570`), with nothing of what it
  * does besides: a player only in a duel, a war, a school event, the Arena or PK (:6500-6525), of which the browser has the
  * Arena alone (2026-11-10, combat/arena.ts): another player is attackable only when `own` (where the own mover is) and
@@ -118,10 +124,13 @@ export interface ArenaSide { worldId: number; pos: Vec3 }
  * asks it alone (`canAttackFocus`).
  */
 export function attackAble(
-  target: Mover, moverProps: ReadonlyMap<number, Pick<WebMover, 'killable'>>, ownFlying = false, own?: ArenaSide,
+  target: Mover, moverProps: ReadonlyMap<number, Pick<WebMover, 'killable'>>, ownFlying = false, own?: ArenaSide, duel?: DuelRule,
 ): boolean {
   if (target.added.isPlayer) {
-    return own !== undefined && !target.isSelf && !isDie(target) && isArenaTarget(own.worldId, own.pos, target.act.body.pos);
+    if (own === undefined || target.isSelf || isDie(target)) return false;
+    // 2026-11-15 (social): a duel first (IsPVPTarget), then the Arena
+    if (duel !== undefined && duel.isTarget(target)) return duel.able(target);
+    return isArenaTarget(own.worldId, own.pos, target.act.body.pos);
   }
   if (isDie(target)) return false;
   const prop = moverProps.get(target.added.index);
@@ -328,6 +337,9 @@ export class AttackLoop {
     return this.cmd !== null;
   }
 
+  /** 2026-11-15 (social): the duels' rule (`attackAble`'s `duel`), which the world screen gives. */
+  duel: DuelRule | undefined;
+
   /** 2026-11-10: the own side of `IsArenaTarget` (`attackAble`'s `own`): the world and where the own mover stands. */
   private arenaSide(): ArenaSide | undefined {
     const own = this.world.self();
@@ -364,7 +376,7 @@ export class AttackLoop {
     const id = this.focus.targetId;
     const target = id === null ? undefined : this.world.movers.get(id);
     return target !== undefined &&
-      attackAble(target, this.moverProps, this.world.self()?.act.isFlying() === true, this.arenaSide());
+      attackAble(target, this.moverProps, this.world.self()?.act.isFlying() === true, this.arenaSide(), this.duel);
   }
 
   /**
@@ -911,7 +923,7 @@ export class AttackLoop {
    */
   isAttackAble(target: Mover): boolean {
     if (!target.added.isPlayer && isDie(target)) this.focus.select(null);
-    const able = attackAble(target, this.moverProps, this.world.self()?.act.isFlying() === true, this.arenaSide());
+    const able = attackAble(target, this.moverProps, this.world.self()?.act.isFlying() === true, this.arenaSide(), this.duel);
     if (!able) this.auto = false;
     return able;
   }

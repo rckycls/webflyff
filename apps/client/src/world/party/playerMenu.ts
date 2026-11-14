@@ -6,15 +6,17 @@
 //   MMI_INVITE_PARTY 6        Invite to join party        always, never greyed (:6554); the click: InviteParty
 //   MMI_INVITE_COMPANY 7      Invite to join guild        in a guild whose rank may invite (:6556-6565); 2026-11-10: the guild
 //                                                         (guild/guildHud.ts `inviteMover`)
-//   MMI_DUEL 10, _PARTY 11    the duels                   event EVE_18 and a fight area (:6583-6599): out of scope
+//   MMI_DUEL 10, _PARTY 11    "Duel - 1 vs 1", "Duel -   EVE_18, the target alive, both in an RA_FIGHT region, the party
+//                             Party vs Party"            duel for a leader (:6589-6608); 2026-11-15 (social): the duels
+//                                                         (duel/duelBook.ts `inFightRegion`, social/socialHud.ts)
 //   MMI_TRACE 12              Follow                      always (:6611); 2026-11-15 (social): the follow (social/follow.ts)
 //   MMI_QUERYEQUIP 24         View equipment              always (:6612)
 //   MMI_CHEER 31              Cheer                       always (:6613); 2026-11-15 (social): SendCheering when not flying
 //                                                         (`OnCommand` MMI_CHEER, WndWorld.cpp:5680-5686)
 //   MMI_INVITE_CAMPUS 151     Request Mentor-Pupil Bond   always, or Cancel for a pupil (:6614-6624)
 //
-// Only the invite, (2026-11-10, friends-say) "Add to my list", (2026-11-10, trade) Trade and (2026-11-15, social) Cheer and
-// Follow are the browser's; the rest are shown greyed, as the NPC menu's (plan Decisions 4).
+// Only the invite, (2026-11-10, friends-say) "Add to my list", (2026-11-10, trade) Trade and (2026-11-15, social) the duels,
+// Cheer and Follow are the browser's; the rest are shown greyed, as the NPC menu's (plan Decisions 4).
 
 import type { Vec3 } from '@flyffweb/protocol';
 import type { Texts } from '../gameData';
@@ -34,6 +36,9 @@ export const MMI_INVITE_COMPANY = 7;
 export const MMI_TRACE = 12;
 /** 2026-11-15 (social): MMI_CHEER, "Cheer" (`Resource/defineNeuz.h:123`, `OnCommand`, WndWorld.cpp:5680-5686). */
 export const MMI_CHEER = 31;
+/** 2026-11-15 (social): MMI_DUEL and MMI_DUEL_PARTY (`Resource/defineNeuz.h:102-103`), their texts written in the code. */
+export const MMI_DUEL = 10;
+export const MMI_DUEL_PARTY = 11;
 
 const ENTRIES: ReadonlyArray<[number, string]> = [
   [MMI_TRADE, 'Trade'], [5, 'Add to my list'], [MMI_INVITE_PARTY, 'Invite to join party'],
@@ -41,7 +46,7 @@ const ENTRIES: ReadonlyArray<[number, string]> = [
   [MMI_CHEER, 'Cheer'], [MMI_INVITE_CAMPUS, 'Request Mentor-Pupil Bond'],
 ];
 /** The entries the browser acts on. */
-const ACTIVE: ReadonlySet<number> = new Set([MMI_INVITE_PARTY, MMI_ADD_MESSENGER, MMI_TRADE, MMI_INVITE_COMPANY, MMI_TRACE, MMI_CHEER]);
+const ACTIVE: ReadonlySet<number> = new Set([MMI_INVITE_PARTY, MMI_ADD_MESSENGER, MMI_TRADE, MMI_INVITE_COMPANY, MMI_DUEL, MMI_DUEL_PARTY, MMI_TRACE, MMI_CHEER]);
 
 /** 2026-11-10: MMI_QUERYEQUIP, the one line of a seller's menu (`__CSC_VER12_1`, WndWorld.cpp:6544-6547). */
 const MMI_QUERYEQUIP = 24;
@@ -51,10 +56,14 @@ const MMI_QUERYEQUIP = 24;
  * `guildInvite` (2026-11-10): the viewer is in a guild whose rank may invite (`PF_INVITATION`, :6556-6565): the invite line
  * is there, enabled; otherwise it is not in the menu at all.
  */
-export function playerMenuEntries(texts: Texts, vendor = false, guildInvite = false): MenuEntry[] {
-  return ENTRIES.filter(([id]) => (!vendor || id === MMI_QUERYEQUIP) && (id !== MMI_INVITE_COMPANY || guildInvite)).map(([id, english]) => ({
+export function playerMenuEntries(texts: Texts, vendor = false, guildInvite = false, duels: { solo: boolean; party: boolean } = { solo: false, party: false }): MenuEntry[] {
+  // 2026-11-15 (social): the duels after the guild's invite, with the texts `AppendMenu` writes (:6603-6605)
+  const list = duels.solo ? [...ENTRIES.slice(0, 4), [MMI_DUEL, 'Duel - 1 vs 1'] as const,
+    ...(duels.party ? [[MMI_DUEL_PARTY, 'Duel - Party vs Party'] as const] : []), ...ENTRIES.slice(4)] : ENTRIES;
+  return list.filter(([id]) => (!vendor || id === MMI_QUERYEQUIP) && (id !== MMI_INVITE_COMPANY || guildInvite)).map(([id, english]) => ({
     id,
-    label: id === MMI_INVITE_CAMPUS ? (texts.get('TID_GAME_MENU_CAMPUS_INVITATION')?.text ?? english) : menuLabel(id, texts, english),
+    label: id === MMI_INVITE_CAMPUS ? (texts.get('TID_GAME_MENU_CAMPUS_INVITATION')?.text ?? english)
+      : id === MMI_DUEL || id === MMI_DUEL_PARTY ? english : menuLabel(id, texts, english),
     enabled: ACTIVE.has(id),
   }));
 }
