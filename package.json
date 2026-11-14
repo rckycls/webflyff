@@ -17,6 +17,7 @@
     "capture": "tsx tools/capture/src/cli.ts",
     "gateway": "tsx apps/gateway/src/main.ts --config apps/gateway/gateway.config.json",
     "web": "tsx apps/web/src/main.ts --config apps/web/web.config.json",
+    "admin:setup": "tsx apps/web/scripts/adminSetup.ts",
     "dev:viewer": "vite --config apps/viewer/vite.config.ts --host",
     "build:viewer": "vite build --config apps/viewer/vite.config.ts",
     "preview:viewer": "vite preview --config apps/viewer/vite.config.ts --host",
