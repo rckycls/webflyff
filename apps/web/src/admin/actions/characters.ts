@@ -111,6 +111,7 @@ const undelete: ActionHandler = async (body, ctx, deps) => onCharacter(body, ctx
   edit: async (c) => {
     const result = await deps.store.undeleteCharacter(c.idPlayer);
     if (result === 'slot_taken') return refused('Another character of the account now holds that slot.', { slotTaken: c.slot });
+    if (result === 'name_taken') return refused(`Another character now uses the name ${c.name}. Rename this one first, then undo the delete.`, { nameTaken: c.name });
     if (result === 'too_old') return refused('It was deleted more than 7 days ago: the game has cleared it.', { tooOld: c.deletedAt });
     if (result === 'missing') return refused('The character is not deleted.', { missing: true });
     return done({ deleted: false });

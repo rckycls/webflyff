@@ -183,7 +183,7 @@ export function sqlAdminStore(settings: WebConfig['sql'], login: AdminConfig['sq
     },
     async undeleteCharacter(idPlayer) {
       return word(await (await onCharacters()).input('idPlayer', sql.Char(7), idPlayer)
-        .execute('dbo.usp_AdminCharacterUndelete')) as 'ok' | 'slot_taken' | 'too_old' | 'missing';
+        .execute('dbo.usp_AdminCharacterUndelete')) as 'ok' | 'slot_taken' | 'name_taken' | 'too_old' | 'missing';
     },
     async sendItem(idPlayer, item, count, upgrade, billingNo) {
       const result = await (await onCharacters())

@@ -115,7 +115,7 @@ export interface AdminStore {
   setGold(idPlayer: string, gold: number): Promise<boolean>;
   moveCharacter(idPlayer: string, worldId: number, x: number, y: number, z: number): Promise<boolean>;
   deleteCharacter(idPlayer: string): Promise<'ok' | 'guild' | 'missing'>;
-  undeleteCharacter(idPlayer: string): Promise<'ok' | 'slot_taken' | 'too_old' | 'missing'>;
+  undeleteCharacter(idPlayer: string): Promise<'ok' | 'slot_taken' | 'name_taken' | 'too_old' | 'missing'>;
   /** A new ITEM_SEND_TBL row (ItemFlag 0); returns its m_nNo. */
   sendItem(idPlayer: string, item: string, count: number, upgrade: number, billingNo: string): Promise<number>;
   /** Rows with ItemFlag 0. */

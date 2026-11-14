@@ -19,6 +19,8 @@ it('makes only usp_Admin procedures', () => {
   expect(made.length).toBeGreaterThan(0);
   for (const name of made) expect(name).toMatch(/^usp_Admin\w+$/);
   for (const name of PROCEDURES) expect(made).toContain(name);
+  // undo-delete refuses while a live character has taken the name
+  expect(code).toContain("SELECT 'name_taken' AS result");
 });
 
 it('grants EXECUTE on those procedures and usp_CreateNewAccount, and nothing else', () => {

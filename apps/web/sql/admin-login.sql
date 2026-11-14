@@ -357,15 +357,17 @@ COMMIT TRANSACTION
 SELECT 'ok' AS result
 GO
 
--- Undo a delete within 7 days, while no live character of the account holds the slot. Friends stay deleted.
+-- Undo a delete within 7 days, while no live character of the account holds the slot and no live character has taken
+-- the name (the game's create checks names among live characters only, so a new one can take a deleted one's name).
+-- Friends stay deleted.
 IF OBJECT_ID(N'dbo.usp_AdminCharacterUndelete', N'P') IS NOT NULL DROP PROCEDURE dbo.usp_AdminCharacterUndelete
 GO
 CREATE PROCEDURE dbo.usp_AdminCharacterUndelete
 	@idPlayer char(7)
 AS
 SET NOCOUNT ON
-DECLARE @account varchar(32), @slot int, @end char(12)
-SELECT @account = account, @slot = playerslot, @end = End_Time
+DECLARE @account varchar(32), @slot int, @end char(12), @name varchar(32)
+SELECT @account = account, @slot = playerslot, @end = End_Time, @name = m_szName
 FROM dbo.CHARACTER_TBL WHERE m_idPlayer = @idPlayer AND serverindex = '01' AND isblock = 'D'
 IF @account IS NULL
 BEGIN
@@ -381,6 +383,12 @@ IF EXISTS (SELECT 1 FROM dbo.CHARACTER_TBL WHERE account = @account AND serverin
 	AND isblock = 'F' AND m_idPlayer <> @idPlayer)
 BEGIN
 	SELECT 'slot_taken' AS result
+	RETURN
+END
+IF EXISTS (SELECT 1 FROM dbo.CHARACTER_TBL WHERE m_szName = @name AND serverindex = '01' AND isblock = 'F'
+	AND m_idPlayer <> @idPlayer)
+BEGIN
+	SELECT 'name_taken' AS result
 	RETURN
 END
 UPDATE dbo.CHARACTER_TBL SET isblock = 'F', End_Time = NULL, BlockTime = CONVERT(char(8), GETDATE() - 1, 112)

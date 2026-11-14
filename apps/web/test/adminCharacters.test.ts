@@ -79,6 +79,24 @@ it('undoes a delete only while its slot is free', async () => {
   expect((await act('characters.undelete', { idPlayer: '0000004' }, s)).body.message).toMatch(/7 days/);
 });
 
+it('does not undo a delete while a live character has taken the name', async () => {
+  const s = setUp(false);
+  s.store.characters[3]!.slot = 1;
+  s.store.characters[1]!.inGuild = false;
+  s.store.characters[1]!.slot = 0;
+  s.store.characters[0]!.deleted = true;
+  s.store.characters[0]!.slot = 2;
+  s.store.characters[2]!.name = 'Hero';
+  s.store.characters[2]!.deleted = false;
+  s.store.characters[2]!.slot = 3;
+  // Hero (0000001) is deleted; a new live character 'Hero' (0000003) took the name
+  s.store.characters[0]!.deletedAt = `${dayText(s.deps.now(), -1)}1200`;
+  const reply = await act('characters.undelete', { idPlayer: '0000001' }, s);
+  expect(reply).toMatchObject({ status: 409, body: { error: 'refused' } });
+  expect(reply.body.message).toMatch(/name/);
+  expect(s.store.characters[0]!.deleted).toBe(true);
+});
+
 it('answers 404 for an unknown character, and 400 for a bad id', async () => {
   const s = setUp(false);
   expect((await act('characters.get', { idPlayer: '0009999' }, s)).status).toBe(404);
