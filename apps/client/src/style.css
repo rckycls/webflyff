@@ -849,13 +849,23 @@ fieldset:disabled .btn {
   inset: -8px;
 }
 
-/* fingers: 32 px items on a 34 px pitch (plan decision 6) */
+/* fingers: 30 px items on a 32 px pitch; 2026-11-14 (owner, "too big for mobile when there are too many options"): Neuz's
+   12 px words, two columns from seven entries (moverMenu.ts `data-columns`, `--menu-rows`), top to bottom then the next,
+   never past the room above the task bar (then scrolled); a pressed item greys as a hovered one does */
 @media (max-width: 1000px) and (pointer: coarse) {
   .hud-mover-menu-item {
-    height: 32px;
-    font-size: 14px;
-    line-height: 30px;
+    height: 30px;
+    margin: 0;
+    padding: 0 16px 0 12px;
+    font-size: 12px;
+    line-height: 28px;
   }
+  .hud-mover-menu-item:not(:disabled):active { border-color: #f0f0f0; background: rgba(200, 200, 200, 0.61); }
+  .hud-mover-menu {
+    display: inline-grid; grid-auto-flow: column; grid-template-rows: repeat(var(--menu-rows, 1), auto); gap: 2px 4px; padding: 2px;
+    max-height: calc(100% - var(--hud-taskbar-height, 48px) - 12px); overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y;
+  }
+  .hud-mover-menu[hidden] { display: none; }
 }
 
 /* A window taller than the room above the task bar (WindowFrame.fit): cut to that room, its client area scrolls, with a
@@ -3131,46 +3141,23 @@ fieldset:disabled .btn {
 .vendor-signs[data-phone] .vendor-sign { pointer-events: auto; cursor: pointer; }
 .vendor-signs[data-phone] .vendor-sign-text { top: 8px; font-size: 14px; line-height: 16px; }
 
-/* The phone: the shop is a panel at the left as the NPC shop's, the bag at the right; its keypads are sheets of number
-   fields for the phone keyboard; the chat room a panel over the bag. Every text 14 px or more. */
-.vendor-phone { display: flex; flex-direction: column; gap: 4px; padding: 4px; box-sizing: border-box; font-size: 14px; }
-.vendor-phone-head { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
-.vendor-phone-head label { display: flex; align-items: center; gap: 6px; font-size: 14px; color: #3d5f80; }
-.vendor-phone-head input { flex: 1; min-width: 0; height: 32px; box-sizing: border-box; font-size: 16px; padding: 2px 6px; border: 1px solid #c4bdb4; border-radius: 6px; background: #fffaf6; }
-.vendor-phone-buttons { display: flex; gap: 4px; }
-.vendor-phone button, .vendor-sheet button, .vendor-chat-phone button {
-  min-height: 36px; padding: 2px 8px; border: 1px solid #3232329b; border-radius: 4px; font: 14px Arial, sans-serif;
-  background: linear-gradient(#fffffffA, #969696c8, #00000032); color: #ffffff; text-shadow: 1px 1px #000000;
-}
-.vendor-phone-buttons button { flex: 1; }
-.vendor-phone button[hidden] { display: none; }
-.vendor-phone-hint { margin: 0; flex-shrink: 0; font-size: 14px; line-height: 16px; color: #6b5a44; }
-.vendor-phone-hint:empty { display: none; }
-.vendor-phone-slots { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
-.vendor-phone-row { display: flex; align-items: center; gap: 6px; min-height: 40px; padding: 2px 4px; border-radius: 4px; background: #fffaf6; box-shadow: inset 0 0 0 1px #e2cfc0; }
-.vendor-phone-row.is-chosen { box-shadow: inset 0 0 0 2px #3d8bd6; }
-.vendor-phone-icon { flex: 0 0 32px; width: 32px; height: 32px; }
-.vendor-phone-icon img { width: 32px; height: 32px; }
-.vendor-phone-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
-.vendor-phone-text .vendor-slot-name, .vendor-phone-text .vendor-slot-price { position: static; font-size: 14px; line-height: 17px; overflow: hidden; text-overflow: ellipsis; }
-.vendor-phone-row:not(.is-filled) .vendor-slot-name { color: #8c7b66; }
 /* 2026-11-10 (the owner): the phone's keypad sheets: the values at the left (tapped to choose the one typed into), the
    in-game numpad at the right in place of the phone keyboard; keys sized for a finger, text 14 px or more. */
-.vendor-sheet { display: flex; gap: 8px; padding: 6px; box-sizing: border-box; font-size: 14px; }
+.vendor-sheet { display: flex; gap: 6px; padding: 6px; box-sizing: border-box; font: 12px Verdana, Tahoma, sans-serif; }
 .hud-vendor-sell:focus, .hud-vendor-buy:focus { outline: none; }
 .vendor-sheet-side { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
-.vendor-sheet-value { display: flex; flex-direction: column; gap: 2px; font-size: 14px; line-height: 17px; color: #3d5f80; }
+.vendor-sheet-value { display: flex; flex-direction: column; gap: 2px; font-size: 12px; line-height: 15px; color: #2e70a9; }
 .vendor-sheet-value > :is(button, output) {
-  display: block; min-height: 34px; box-sizing: border-box; padding: 0 8px; border: 1px solid #c4bdb4; border-radius: 6px;
-  background: #fffaf6; color: #000000; font: 18px/32px Arial, sans-serif; text-align: right; text-shadow: none;
+  display: block; min-height: 26px; box-sizing: border-box; padding: 0 6px; border: 1px solid #d8b8a4; border-radius: 3px;
+  background: #ffffff; color: #000000; font: 14px/24px Verdana, Tahoma, sans-serif; text-align: right; text-shadow: none;
   white-space: nowrap; overflow: hidden;
 }
 .vendor-sheet .vendor-sheet-value > button { background: #fffaf6; color: #000000; text-shadow: none; }
 .vendor-sheet .vendor-sheet-value > button[aria-pressed='true'] { border-color: #3d8bd6; box-shadow: inset 0 0 0 2px #3d8bd6; }
 .vendor-sheet-buttons { display: flex; gap: 8px; margin-top: auto; }
-.vendor-sheet-buttons button { flex: 1; min-height: 40px; }
-.vendor-numpad { flex: 0 0 auto; display: grid; grid-template-columns: repeat(var(--numpad-columns, 4), 50px); grid-auto-rows: 50px; gap: 4px; align-content: center; }
-.vendor-sheet .vendor-numpad button { min-height: 0; padding: 0; font: 18px Arial, sans-serif; touch-action: manipulation; }
+.vendor-sheet-buttons button { flex: 1; min-height: 30px; }
+.vendor-numpad { flex: 0 0 auto; display: grid; grid-template-columns: repeat(var(--numpad-columns, 4), 42px); grid-auto-rows: 36px; gap: 4px; align-content: center; }
+.vendor-sheet .vendor-numpad button { min-height: 0; padding: 0; font: 15px Verdana, Tahoma, sans-serif; touch-action: manipulation; }
 .vendor-chat-phone { display: flex; flex-direction: column; gap: 4px; padding: 4px; box-sizing: border-box; font-size: 14px; }
 .vendor-chat-phone .vendor-chat-tabs { position: relative; flex: 1; min-height: 0; }
 .vendor-chat-phone .vendor-chat-strip { height: 32px; }
@@ -3181,18 +3168,6 @@ fieldset:disabled .btn {
 .vendor-chat-users > div:not(:last-child)::after { content: ', '; }
 .vendor-chat-line { display: flex; gap: 4px; flex-shrink: 0; }
 .vendor-chat-line input { flex: 1; min-width: 0; height: 36px; box-sizing: border-box; font-size: 16px; padding: 2px 6px; border: 1px solid #c4bdb4; border-radius: 6px; }
-@media (max-width: 1000px) and (pointer: coarse) {
-  .hud-vendor[data-mobile-window] { left: 12px !important; right: auto; top: 8px !important; transform: none !important; height: calc(100% - var(--hud-taskbar-height, 48px) - 16px) !important; width: calc(100% - var(--bag-window-width, 60%) - 36px) !important; border-radius: 6px; background: repeating-linear-gradient(#fdf5ee 0 2px, #f6e6dc 2px 4px); box-shadow: inset 0 0 0 2px #dba98c, 0 2px 8px #0005; overflow: hidden; }
-  .hud-vendor-chat[data-mobile-window] { left: auto !important; right: 12px; top: 8px !important; transform: none !important; height: calc(100% - var(--hud-taskbar-height, 48px) - 16px) !important; width: var(--bag-window-width, 50%) !important; z-index: 61 !important; border-radius: 6px; background: repeating-linear-gradient(#fdf5ee 0 2px, #f6e6dc 2px 4px); box-shadow: inset 0 0 0 2px #dba98c, 0 2px 8px #0005; overflow: hidden; }
-  :is(.hud-vendor, .hud-vendor-chat)[data-mobile-window] > .hud-window-frame { display: none; }
-  :is(.hud-vendor, .hud-vendor-chat)[data-mobile-window] > .hud-window-title { height: 28px !important; font-size: 14px; line-height: 28px; background: linear-gradient(#fdf1e6, #e6c9b4); box-shadow: 0 1px 2px #795431; }
-  :is(.hud-vendor, .hud-vendor-chat)[data-mobile-window] > .hud-window-body { left: 6px !important; top: 34px !important; width: calc(100% - 12px) !important; height: calc(100% - 42px) !important; }
-  :is(.hud-vendor, .hud-vendor-chat)[data-mobile-window] > .hud-window-close { left: auto !important; right: 14px; }
-  /* the keypad sheets over the bag (60) and the chat panel (61), which they open from */
-  .hud-vendor-sell, .hud-vendor-buy { font-size: 14px; z-index: 62 !important; }
-  .world:has(.hud-vendor:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
-}
-
 /* 2026-11-10: the jewel windows (items/jewelWindows.ts; docs/superpowers/specs/2026-11-10-jewels-research.md §2-§3).
    Jewel Setting's weapon over Window01 (its icon in place of the turning model) and the white of START's turn
    (OnDraw :20285-20297); each socket's cover, WndDisableRed/Blue/Black.bmp, under its jewel. */
@@ -3206,63 +3181,6 @@ fieldset:disabled .btn {
 .hud-jewel-model { position: absolute; left: 0; top: 0; pointer-events: none; }
 .hud-jewel-setting [data-control="WIDC_CUSTOM1"]:not([data-model]) .hud-jewel-model,
 .hud-jewel-setting [data-control="WIDC_CUSTOM1"][data-model] .hud-jewel-weapon { display: none; }
-
-/* The phone: the window a panel at the left beside the phone's bag (as the trade and the shop), a tap putting a bag item
-   in and a tap on a filled slot taking it out; the slots 44 px, the description and START's word 14 px. */
-@media (max-width: 1000px) and (pointer: coarse) {
-  .world:has(.hud-jewel:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
-  .hud-jewel {
-    left: 8px !important; top: 8px !important; transform: none !important; z-index: 60 !important;
-    width: calc(100% - var(--bag-window-width, 60%) - 28px) !important; min-width: 300px;
-    height: calc(100% - var(--hud-taskbar-height, 48px) - 16px) !important;
-    border-radius: 6px; background: repeating-linear-gradient(#fdf5ee 0 2px, #f6e6dc 2px 4px); box-shadow: inset 0 0 0 2px #dba98c, 0 2px 8px #0005;
-  }
-  .hud-jewel > .hud-window-frame { display: none; }
-  .hud-jewel > .hud-window-title { height: 26px !important; border-radius: 6px 6px 0 0; background: linear-gradient(#f7d8c4, #e2b394); font-size: 14px; }
-  .hud-jewel > .hud-window-close { left: auto !important; right: 8px; }
-  .hud-jewel > .hud-window-body {
-    left: 4px !important; top: 30px !important; width: calc(100% - 8px) !important; height: calc(100% - 34px) !important;
-    display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; justify-items: center; align-items: center; overflow-y: auto;
-  }
-  .hud-jewel > .hud-window-body > * { position: relative !important; left: auto !important; top: auto !important; }
-  .hud-jewel-extraction > .hud-window-body { grid-template-rows: 48px minmax(64px, 1fr) 40px; }
-  .hud-jewel-setting > .hud-window-body { grid-template-rows: 96px 48px minmax(64px, 1fr) 40px; }
-  .hud-jewel [data-control="WIDC_PIC_SLOT"] { grid-area: 1 / 1 / 2 / -1; }
-  .hud-jewel :is([data-control="WIDC_PIC_SLOT"], [data-socket]) {
-    width: 44px !important; height: 44px !important; background-position: 6px 6px; border-radius: 4px; box-shadow: inset 0 0 0 1px #dba98c;
-  }
-  .hud-jewel :is([data-control="WIDC_PIC_SLOT"], [data-socket]) .hud-res-slot { left: 6px; top: 6px; }
-  .hud-jewel :is([data-control="WIDC_PIC_SLOT"], [data-socket])[data-filled] { box-shadow: inset 0 0 0 2px #3d8bd6; }
-  .hud-jewel-setting :is([data-control="WIDC_STATIC6"], [data-control="WIDC_CUSTOM1"]) {
-    grid-area: 1 / 1 / 2 / -1; width: 100% !important; height: 96px !important; background-size: 100% 100%;
-  }
-  .hud-jewel-setting [data-control="WIDC_CUSTOM1"][data-filled] { box-shadow: inset 0 0 0 2px #3d8bd6; border-radius: 6px; }
-  .hud-jewel-setting [data-control="WIDC_STATIC1"] { grid-area: 2 / 1; }
-  .hud-jewel-setting [data-control="WIDC_STATIC2"] { grid-area: 2 / 2; }
-  .hud-jewel-setting [data-control="WIDC_STATIC3"] { grid-area: 2 / 3; }
-  .hud-jewel-setting [data-control="WIDC_STATIC4"] { grid-area: 2 / 4; }
-  .hud-jewel-setting [data-control="WIDC_STATIC5"] { grid-area: 2 / 5; }
-  .hud-jewel [data-control="WIDC_TEXT1"] {
-    grid-column: 1 / -1; align-self: stretch; width: 100% !important; height: auto !important; min-height: 64px;
-    border-radius: 4px; background: #fffaf6; box-shadow: inset 0 0 0 1px #e2cfc0;
-  }
-  .hud-jewel [data-control="WIDC_TEXT1"] > :not(.hud-res-text-body) { display: none; }
-  .hud-jewel .hud-res-text-body {
-    position: absolute !important; inset: 4px 6px !important; width: auto !important; height: auto !important;
-    overflow-y: auto; font-size: 14px; line-height: 17px;
-  }
-  .hud-jewel-extraction [data-control="WIDC_TEXT1"] { grid-row: 2; }
-  .hud-jewel-setting [data-control="WIDC_TEXT1"] { grid-row: 3; }
-  .hud-jewel [data-control="WIDC_START"] { grid-column: 1 / -1; }
-  .hud-jewel .hud-picture-button {
-    box-sizing: border-box; width: 50% !important; min-width: 120px; height: 36px !important; border: 1px solid #b07d5c; border-radius: 4px;
-    background: linear-gradient(#fff7ef, #ecd2bd) !important; color: #3a2414; font: 14px/34px Arial, sans-serif; text-align: center;
-  }
-  .hud-jewel .hud-picture-button::after { content: attr(aria-label); }
-  .hud-jewel .hud-picture-button:disabled { opacity: 0.55; background: #d9c8bb !important; }
-  .hud-jewel-weapon { width: 64px; height: 64px; }
-  .hud-jewel-model { left: 50%; width: auto !important; height: 100% !important; aspect-ratio: 160 / 230; transform: translateX(-50%); }
-}
 
 /* 2026-11-10: the guild (guild/guildHud.ts, hud/guild/*.ts; docs/superpowers/specs/2026-11-10-guild-research.md §3).
    CWndGuild's five tabs are their resdata.inc entries in the tab control; the member list (CWndGuildTabMember::OnDraw,
@@ -3491,116 +3409,6 @@ fieldset:disabled .btn {
 :is(.hud-mail-notice, .hud-messenger-mail) img { display: block; width: 100%; height: 100%; image-rendering: pixelated; }
 :is(.hud-mail-notice, .hud-messenger-mail)[hidden] { display: none; }
 
-/* The phone: the post and the read window are panels beside the bag (as the trade and the bank are), the tabs two big buttons on
-   top, the Send page a form a finger can fill (the receiver, title and text on the phone keyboard; the penya on the number pad of
-   the shop), the inbox rows taller and scrolled by touch; a tap reads a mail, attaches the bag item tapped, takes the item or the
-   penya of a mail. Every word 14 px or more, every field 16 px. */
-@media (max-width: 1000px) and (pointer: coarse) {
-  .world:has(:is(.hud-post, .hud-post-read):not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
-  .hud-mail-notice { top: 56px; width: 32px; height: 32px; }
-  :is(.hud-post, .hud-post-read) {
-    left: 8px !important; top: 8px !important; transform: none !important; z-index: 60 !important;
-    width: calc(100% - var(--bag-window-width, 60%) - 28px) !important; min-width: 320px;
-    height: calc(100% - var(--hud-taskbar-height, 48px) - 16px) !important;
-    border-radius: 6px; background: repeating-linear-gradient(#fdf5ee 0 2px, #f6e6dc 2px 4px); box-shadow: inset 0 0 0 2px #dba98c, 0 2px 8px #0005;
-    font-size: 14px;
-  }
-  :is(.hud-post, .hud-post-read) > .hud-window-frame { display: none; }
-  :is(.hud-post, .hud-post-read) > .hud-window-title { height: 26px !important; border-radius: 6px 6px 0 0; background: linear-gradient(#f7d8c4, #e2b394); font-size: 14px; }
-  :is(.hud-post, .hud-post-read) > .hud-window-close { left: auto !important; right: 8px; }
-  :is(.hud-post, .hud-post-read) > .hud-window-body {
-    left: 4px !important; top: 30px !important; width: calc(100% - 8px) !important; height: calc(100% - 34px) !important; overflow: hidden;
-  }
-  :is(.hud-post, .hud-post-read) .hud-edit-tiles { display: none; }
-  :is(.hud-post, .hud-post-read) :is(.hud-res-edit, .hud-res-text) { background: #ffffff; box-shadow: inset 0 0 0 1px #dba98c; border-radius: 4px; }
-  :is(.hud-post, .hud-post-read) .hud-res-static-text { position: static; display: block; font: 14px/30px Arial, sans-serif; color: #3d5f80; text-shadow: none; white-space: nowrap; }
-  :is(.hud-post, .hud-post-read) input, .hud-post-text { font-size: 16px !important; }
-  :is(.hud-post, .hud-post-read, .hud-post-question, .hud-post-request) .hud-picture-button {
-    box-sizing: border-box; height: 36px !important; border: 1px solid #b07d5c; border-radius: 4px; background: linear-gradient(#fff7ef, #ecd2bd) !important;
-    color: #3a2414; font: 14px/34px Arial, sans-serif; text-align: center; overflow: hidden; white-space: nowrap;
-  }
-  :is(.hud-post, .hud-post-read, .hud-post-question, .hud-post-request) .hud-picture-button::after { content: attr(aria-label); }
-  :is(.hud-post-question, .hud-post-request), :is(.hud-post-question, .hud-post-request) :is(.hud-res-static-text, .hud-res-text-body, .hud-window-title) { font-size: 14px; }
-  /* the tab control: the tabs on top as two buttons, the page under them */
-  .hud-post .hud-post-tabs { position: absolute !important; inset: 0 !important; width: auto !important; height: auto !important; display: flex; flex-direction: column; gap: 6px; }
-  .hud-post .hud-post-strip { position: relative !important; left: auto !important; top: auto !important; width: 100% !important; height: 36px !important; order: -1; }
-  .hud-post .hud-tab-strip { position: static; display: flex; gap: 4px; width: 100% !important; height: 36px !important; }
-  .hud-post .hud-tab-tile { display: none; }
-  .hud-post .hud-tab-title {
-    position: static !important; flex: 1; width: auto !important; height: 36px; border: 1px solid #b07d5c; border-radius: 4px;
-    background: linear-gradient(#fff7ef, #ecd2bd); color: #3a2414; font: 14px/34px Arial, sans-serif; text-align: center;
-  }
-  .hud-post .hud-tab-title[aria-pressed=true] { background: #e2a06e; color: #000000; font-weight: bold; }
-  .hud-post .hud-post-page { position: relative !important; left: auto !important; top: auto !important; width: 100% !important; height: auto !important; flex: 1 1 auto; min-height: 0; }
-  .hud-post .hud-post-page[hidden] { display: none !important; }
-  /* the Send page: Receiver, Title, the text, then the item, the penya and Send, then the fee */
-  .hud-post [data-page="send"]:not([hidden]) {
-    display: grid; grid-template-columns: 72px 1fr 96px; grid-template-rows: 32px 32px minmax(48px, 1fr) 44px 22px; gap: 4px 6px;
-    overflow-y: auto;
-  }
-  .hud-post [data-page="send"] > * { position: relative !important; left: auto !important; top: auto !important; width: auto !important; height: auto !important; }
-  .hud-post [data-page="send"] [data-control="WIDC_STATIC1"] { grid-area: 1 / 1; }
-  .hud-post [data-page="send"] [data-control="WIDC_COMBOBOX1"] { grid-area: 1 / 2 / 2 / 4; }
-  .hud-post [data-page="send"] [data-control="WIDC_STATIC5"] { grid-area: 2 / 1; }
-  .hud-post [data-page="send"] [data-control="WIDC_EDIT2"] { grid-area: 2 / 2 / 3 / 4; }
-  .hud-post [data-page="send"] [data-control="WIDC_EDIT3"] { grid-area: 3 / 1 / 4 / 4; background: #ffffff; box-shadow: inset 0 0 0 1px #dba98c; border-radius: 4px; }
-  .hud-post [data-page="send"] [data-control="WIDC_STATIC3"] { grid-area: 4 / 1; width: 44px !important; height: 44px !important; border-radius: 4px; background: #f3e4d8 !important; box-shadow: inset 0 0 0 1px #dba98c; }
-  .hud-post [data-page="send"] [data-control="WIDC_STATIC2"] { display: none; }
-  .hud-post [data-page="send"] [data-control="WIDC_EDIT4"] { grid-area: 4 / 2; }
-  .hud-post [data-page="send"] [data-control="WIDC_EDIT4"]::before { content: 'Penya'; position: absolute; left: 6px; top: 1px; font: 14px/14px Arial, sans-serif; color: #3d5f80; }
-  .hud-post [data-page="send"] [data-control="WIDC_SEND"] { grid-area: 4 / 3; width: 100% !important; height: 44px !important; }
-  .hud-post [data-page="send"] [data-control="WIDC_STATIC4"] { grid-area: 5 / 1 / 6 / 4; }
-  .hud-post [data-page="send"] [data-control="WIDC_STATIC4"] .hud-res-static-text { font: 14px/22px Arial, sans-serif; color: #000000; text-align: center; }
-  .hud-post [data-page="send"] :is(.hud-res-edit, .hud-res-combo) input { position: absolute; inset: 0; width: 100% !important; height: 100% !important; box-sizing: border-box; padding: 0 6px; }
-  .hud-post [data-page="send"] [data-control="WIDC_EDIT4"] input { padding-top: 14px; }
-  .hud-post [data-page="send"] .hud-res-combo-drop {
-    left: auto !important; right: 2px; top: 2px !important; width: 30px !important; height: calc(100% - 4px) !important; border: 0;
-    border-radius: 3px; background: #f3e4d8 !important; color: #3a2414; font: 14px/26px Arial, sans-serif; text-align: center;
-  }
-  .hud-post [data-page="send"] .hud-res-combo-drop::after { content: "▼"; }
-  .hud-post [data-page="send"] .hud-res-combo-list { width: 100% !important; z-index: 5; }
-  .hud-post [data-page="send"] .hud-res-combo-list [role=option] { min-height: 32px; padding: 0 8px; font: 14px/32px Arial, sans-serif; }
-  :is(.hud-post, .hud-post-read) .hud-res-static.is-group .hud-res-static-text { color: #3d5f80; }
-  .hud-post [data-page="send"] .hud-res-combo-list { font-size: 14px; }
-  .hud-post .hud-post-slot img { width: 40px; height: 40px; left: 2px; top: 2px; }
-  :is(.hud-post, .hud-post-read) .hud-post-slot span { font-size: 14px; line-height: 14px; color: #1010ff; text-shadow: 1px 1px #ffffff; }
-  /* the inbox: the rows taller, scrolled by a finger */
-  .hud-post .hud-post-inbox { position: absolute !important; inset: 0 !important; width: auto !important; height: auto !important; }
-  .hud-post .hud-post-table, .hud-post .hud-post-scroll { display: none; }
-  .hud-post .hud-post-list {
-    position: absolute !important; inset: 0 !important; width: auto !important; height: auto !important; overflow-y: auto; scroll-snap-type: none;
-    touch-action: pan-y; border-radius: 4px; background: #fffaf5; box-shadow: inset 0 0 0 1px #dba98c; font: 14px/17px Arial, sans-serif;
-  }
-  .hud-post .hud-post-row { height: 52px; border-bottom: 1px solid #ead2c2; }
-  .hud-post .hud-post-row-icon { left: 6px; top: 6px; width: 40px; height: 40px; }
-  .hud-post .hud-post-row-icon img, .hud-post .hud-post-row-read { width: 40px; height: 40px; background-size: 40px 40px; }
-  .hud-post .hud-post-row-icon span { font-size: 14px; line-height: 14px; color: #1010ff; text-shadow: 1px 1px #ffffff; }
-  .hud-post .hud-post-row-sender { left: 54px; top: 7px; right: 70px; overflow: hidden; text-overflow: ellipsis; font-weight: bold; }
-  .hud-post .hud-post-row-time, .hud-post .hud-post-row-time[data-late] { left: auto; right: 8px; top: 7px; }
-  .hud-post .hud-post-row-title { left: 54px; top: 27px; right: 8px; overflow: hidden; text-overflow: ellipsis; }
-  /* the read window: Sender, Title, the text, the item and the penya, the buttons */
-  .hud-post-read > .hud-window-body {
-    display: grid; grid-template-columns: 64px 1fr 1fr 1fr; grid-template-rows: 32px 32px minmax(48px, 1fr) 46px 38px; gap: 4px 6px;
-  }
-  .hud-post-read > .hud-window-body > * { position: relative !important; left: auto !important; top: auto !important; width: auto !important; height: auto !important; }
-  .hud-post-read [data-control="WIDC_STATIC1"] { grid-area: 1 / 1; }
-  .hud-post-read [data-control="WIDC_EDIT1"] { grid-area: 1 / 2 / 2 / 5; }
-  .hud-post-read [data-control="WIDC_STATIC2"] { grid-area: 2 / 1; }
-  .hud-post-read [data-control="WIDC_EDIT2"] { grid-area: 2 / 2 / 3 / 5; }
-  .hud-post-read [data-control="WIDC_TEXT1"] { grid-area: 3 / 1 / 4 / 5; }
-  .hud-post-read [data-control="WIDC_TEXT1"] .hud-res-text-body { position: absolute; inset: 4px 6px !important; width: auto !important; height: auto !important; overflow-y: auto; font-size: 14px; line-height: 17px; color: #000000; white-space: pre-wrap; }
-  .hud-post-read [data-control="WIDC_TEXT1"] .hud-res-scroll { display: none; }
-  .hud-post-read .hud-res-edit-words { font: 14px/30px Arial, sans-serif; top: 0; left: 6px; }
-  .hud-post-read [data-control="WIDC_STATIC3"] { grid-area: 4 / 1; width: 44px !important; height: 44px !important; border-radius: 4px; background: #f3e4d8 !important; box-shadow: inset 0 0 0 1px #dba98c; }
-  .hud-post-read [data-control="WIDC_STATIC3"] img { width: 40px; height: 40px; left: 2px; top: 2px; }
-  .hud-post-read [data-control="WIDC_STATIC4"] { grid-area: 4 / 2; width: 40px !important; height: 40px !important; background-position: center; border-radius: 4px; box-shadow: inset 0 0 0 1px #dba98c; }
-  .hud-post-read [data-control="WIDC_EDIT3"] { grid-area: 4 / 3 / 5 / 5; }
-  .hud-post-read [data-control="WIDC_BUTTON1"] { grid-area: 5 / 1 / 6 / 3; width: 100% !important; }
-  .hud-post-read [data-control="WIDC_BUTTON2"] { grid-area: 5 / 3; width: 100% !important; }
-  .hud-post-read [data-control="WIDC_BUTTON3"] { grid-area: 5 / 4; width: 100% !important; }
-  .hud-post-read :is([data-control="WIDC_STATIC3"], [data-control="WIDC_STATIC4"])[data-filled="true"] { box-shadow: inset 0 0 0 2px #e2a06e; }
-}
-
 /* 2026-11-10: Summon Angel's window (angel/summonAngelWindow.ts; docs/superpowers/specs/2026-11-10-summon-angel-research.md §3).
    CWndSummonAngel::OnDraw (WndSummonAngel.cpp:58-122): the two stones' icons at (30, 218) and (30, 306), a slot's stone at
    its top left, the slot under a carried item filled 0x60ffff00, and the rates' "%" at x 415 in 0xff2e70a9. The angels'
@@ -3795,141 +3603,6 @@ fieldset:disabled .btn {
 .hud-remove-piercing [data-control^="WIDC_STATIC_PIERCING"][data-unused] { box-shadow: inset 0 0 0 999px rgba(240, 0, 0, 0.235); }
 .hud-repair-cell { position: absolute; width: 32px; height: 32px; }
 
-/* 2026-11-11: the phone's Safe Upgrade (Safe Element among its modes): a panel at the left beside the bag, as the jewel
-   windows, its body a grid: the item and NOW and the goal on top, then a row each of the ten (material, protection,
-   smelting, result), then Start, Stop and Reset as words; cells 44 px, words 14 px; a tap on a cell takes its item out. */
-@media (max-width: 1000px) and (pointer: coarse) {
-  .world:has(.hud-smelt-safety:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
-  .hud-smelt-safety {
-    left: 8px !important; top: 8px !important; transform: none !important; z-index: 60 !important;
-    width: calc(100% - var(--bag-window-width, 60%) - 28px) !important; min-width: 300px;
-    height: calc(100% - var(--hud-taskbar-height, 48px) - 16px) !important;
-    border-radius: 6px; background: repeating-linear-gradient(#fdf5ee 0 2px, #f6e6dc 2px 4px); box-shadow: inset 0 0 0 2px #dba98c, 0 2px 8px #0005;
-  }
-  .hud-smelt-safety > .hud-window-frame { display: none; }
-  .hud-smelt-safety > .hud-window-title { height: 26px !important; border-radius: 6px 6px 0 0; background: linear-gradient(#f7d8c4, #e2b394); font-size: 14px; }
-  .hud-smelt-safety > .hud-window-close { left: auto !important; right: 8px; }
-  .hud-smelt-safety > .hud-window-body {
-    left: 4px !important; top: 30px !important; width: calc(100% - 8px) !important; height: calc(100% - 34px) !important;
-    display: grid; grid-template-columns: 44px 44px 44px minmax(0, 1fr); grid-auto-rows: min-content; gap: 4px;
-    align-items: center; overflow-y: auto;
-  }
-  .hud-smelt-safety > .hud-window-body > * { position: relative !important; left: auto !important; top: auto !important; }
-  .hud-smelt-safety .hud-res-static-text { position: static !important; display: block; font-size: 14px; }
-  .hud-smelt-safety [data-control="WIDC_STATIC1"] { grid-area: 1 / 1 / 3 / 2; width: 44px !important; height: 44px !important; background-position: 6px 6px; }
-  .hud-smelt-safety [data-control="WIDC_STATIC1"] .hud-res-slot { left: 6px; top: 6px; }
-  .hud-smelt-safety [data-control="WIDC_TITLE_NOW_GRADE"] { grid-area: 1 / 2 / 2 / 4; width: auto !important; height: auto !important; }
-  .hud-smelt-safety [data-control="WIDC_NOW_GRADE"] { grid-area: 2 / 2 / 3 / 4; width: auto !important; height: auto !important; }
-  .hud-smelt-safety [data-control="WIDC_TITLE_MAX_GRADE"] { grid-area: 1 / 4; width: auto !important; height: auto !important; }
-  .hud-smelt-safety [data-control="WIDC_BUTTON_PLUS"] { grid-area: 2 / 4; justify-self: start; }
-  .hud-smelt-safety [data-control="WIDC_EDIT_MAX_GRADE"] { grid-area: 2 / 4; justify-self: center; width: 44px !important; height: 32px !important; }
-  .hud-smelt-safety [data-control="WIDC_BUTTON_MINUS"] { grid-area: 2 / 4; justify-self: end; }
-  .hud-smelt-safety :is([data-control="WIDC_BUTTON_PLUS"], [data-control="WIDC_BUTTON_MINUS"]) {
-    box-sizing: border-box; width: 40px !important; height: 36px !important; border: 1px solid #b07d5c; border-radius: 4px;
-    background: linear-gradient(#fff7ef, #ecd2bd) !important; color: #3a2414; font: bold 16px/34px Arial, sans-serif; text-align: center;
-  }
-  .hud-smelt-safety [data-control="WIDC_BUTTON_PLUS"]::after { content: '+'; }
-  .hud-smelt-safety [data-control="WIDC_BUTTON_MINUS"]::after { content: '\2212'; }
-  .hud-smelt-safety :is([data-control^="MATERIAL"], [data-control^="SCROLL1_"], [data-control^="SCROLL2_"]) {
-    grid-row: var(--safety-row); width: 44px !important; height: 44px !important; background-position: 6px 6px; border-radius: 4px;
-    box-shadow: inset 0 0 0 1px #dba98c;
-  }
-  .hud-smelt-safety :is([data-control^="MATERIAL"], [data-control^="SCROLL1_"], [data-control^="SCROLL2_"]) .hud-res-slot { left: 6px; top: 6px; }
-  .hud-smelt-safety [data-control^="MATERIAL"] { grid-column: 1; }
-  .hud-smelt-safety [data-control^="SCROLL1_"] { grid-column: 2; }
-  .hud-smelt-safety [data-control^="SCROLL2_"] { grid-column: 3; }
-  .hud-smelt-safety [data-control^="RESULT"] { grid-row: var(--safety-row); grid-column: 4; width: 100% !important; height: 32px !important; background-size: 100% 100%; }
-  .hud-smelt-safety:not(:has([data-control^="SCROLL2_"])) [data-control^="RESULT"] { grid-column: 3 / 5; }
-  .hud-smelt-safety [data-control="WIDC_BUTTON_START"] { grid-row: 13; grid-column: 1 / 3; }
-  .hud-smelt-safety [data-control="WIDC_BUTTON_STOP"] { grid-row: 13; grid-column: 3 / 5; justify-self: start; }
-  .hud-smelt-safety [data-control="WIDC_BUTTON_RESET"] { grid-row: 13; grid-column: 4; justify-self: end; }
-  .hud-smelt-safety :is([data-control="WIDC_BUTTON_START"], [data-control="WIDC_BUTTON_STOP"], [data-control="WIDC_BUTTON_RESET"]) {
-    box-sizing: border-box; width: 84px !important; height: 36px !important; border: 1px solid #b07d5c; border-radius: 4px;
-    background: linear-gradient(#fff7ef, #ecd2bd) !important; color: #3a2414; font: 14px/34px Arial, sans-serif; text-align: center;
-  }
-  .hud-smelt-safety :is([data-control="WIDC_BUTTON_START"], [data-control="WIDC_BUTTON_STOP"], [data-control="WIDC_BUTTON_RESET"])::after { content: attr(aria-label); }
-  .hud-smelt-safety .hud-picture-button:disabled { opacity: 0.55; }
-}
-
-/* 2026-11-11 (owner): the phone's Piercing (the Upgrade Specialist's MMI 23) as the jewel windows' panel: a row each of the
-   item, the Moonstone and the GProtect (its words, then its 44 px slot), the cost by its coin, then OK and Cancel as words;
-   a tap on a bag item puts it in, a tap on a slot empties it (the desktop's right click). */
-@media (max-width: 1000px) and (pointer: coarse) {
-  .hud-piercing > .hud-window-body { grid-template-columns: minmax(0, 1fr) 44px; grid-auto-rows: min-content; align-content: start; }
-  .hud-piercing .hud-res-static-text { position: static !important; display: block; font-size: 14px; }
-  .hud-piercing [data-control="WIDC_STATIC1"] { grid-area: 1 / 1; justify-self: start; width: auto !important; height: auto !important; }
-  .hud-piercing [data-control="WIDC_STATIC2"] { grid-area: 2 / 1; justify-self: start; width: auto !important; height: auto !important; }
-  .hud-piercing [data-control="WIDC_STATIC3"] { grid-area: 3 / 1; justify-self: start; width: auto !important; height: auto !important; }
-  .hud-piercing [data-slot] {
-    grid-column: 2; width: 44px !important; height: 44px !important; background-position: 6px 6px; border-radius: 4px;
-    box-shadow: inset 0 0 0 1px #dba98c;
-  }
-  .hud-piercing [data-slot] .hud-res-slot { left: 6px; top: 6px; }
-  .hud-piercing [data-slot][data-filled] { box-shadow: inset 0 0 0 2px #3d8bd6; }
-  .hud-piercing [data-control="WIDC_STATIC5"] { grid-row: 1; }
-  .hud-piercing [data-control="WIDC_STATIC6"] { grid-row: 2; }
-  .hud-piercing [data-control="WIDC_STATIC7"] { grid-row: 3; }
-  .hud-piercing [data-control="WIDC_STATIC8"] { grid-area: 4 / 1; justify-self: start; }
-  .hud-piercing [data-control="WIDC_STATIC9"] { grid-area: 4 / 1 / 5 / 3; justify-self: stretch; width: auto !important; height: auto !important; padding-left: 30px; }
-  .hud-piercing [data-control="WIDC_OK"] { grid-area: 5 / 1 / 6 / 3; }
-  .hud-piercing [data-control="WIDC_CANCEL"] { grid-area: 6 / 1 / 7 / 3; }
-  /* the "Pierce Item" group frame is the desktop's box around the rows: the panel is the box */
-  .hud-piercing [data-control="WIDC_STATIC4"] { display: none; }
-}
-
-/* The phone: each a panel beside the bag as the jewel windows (.hud-jewel), its slots 44 px, its texts, labels and buttons
-   across the panel, a tap on a bag item putting it in; the confirm boxes over the panel. */
-@media (max-width: 1000px) and (pointer: coarse) {
-  /* (the ResistItem window keeps the phone's Chat button and line free: its next /ResistItem is typed with it open) */
-  .world:has(.hud-npc-item:not([hidden]):not(.hud-resist-item)) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
-  :is(.hud-mix-jewel-confirm, .hud-remove-attribute-confirm) { z-index: 70 !important; }
-  .hud-npc-item > .hud-window-body { grid-template-rows: none; grid-auto-rows: min-content; align-content: start; }
-  .hud-npc-item [data-slot] {
-    width: 44px !important; height: 44px !important; background-position: 6px 6px; border-radius: 4px; box-shadow: inset 0 0 0 1px #dba98c;
-  }
-  .hud-npc-item [data-slot] .hud-res-slot { left: 6px; top: 6px; }
-  .hud-npc-item [data-slot][data-filled] { box-shadow: inset 0 0 0 2px #3d8bd6; }
-  .hud-npc-item .hud-res-text {
-    grid-column: 1 / -1; align-self: stretch; width: 100% !important; height: auto !important; min-height: 72px;
-    border-radius: 4px; background: #fffaf6; box-shadow: inset 0 0 0 1px #e2cfc0;
-  }
-  .hud-npc-item .hud-res-text > :not(.hud-res-text-body) { display: none; }
-  .hud-npc-item .hud-picture-button { grid-column: 1 / -1; }
-  .hud-npc-item .hud-res-static:not(.is-picture) { grid-column: 1 / -1; width: 100% !important; height: auto !important; min-height: 20px; }
-  .hud-npc-item .hud-res-static-text { position: static !important; font-size: 14px; }
-  /* Remove Jewel: each jewel beside its stat */
-  .hud-remove-jewel [data-control^="WIDC_JEWEL_SLOT"]:not([data-control*="INFO"]) {
-    grid-column: 1; width: 44px !important; height: 44px !important; background-position: 6px 6px;
-  }
-  .hud-remove-jewel [data-control^="WIDC_JEWEL_SLOT"]:not([data-control*="INFO"]) .hud-res-slot { left: 6px; top: 6px; }
-  .hud-remove-jewel [data-control^="WIDC_JEWEL_SLOT_INFO"] {
-    grid-column: span 4; justify-self: stretch; width: auto !important; height: 44px !important; background-size: 100% 100%;
-    border-radius: 4px; display: flex; align-items: center;
-  }
-  .hud-remove-jewel .hud-remove-jewel-stat.hud-res-static-text { padding-left: 10px; }
-  /* Remove a Pierced Card: the rows across, 14 px */
-  .hud-remove-piercing [data-control^="WIDC_STATIC_PIERCING"] {
-    grid-column: 1 / -1; justify-self: stretch; width: auto !important; height: auto !important; min-height: 26px;
-    background-size: 100% 100%; border-radius: 4px;
-  }
-  .hud-remove-piercing [data-control^="WIDC_STATIC_PIERCING"] .hud-res-static-text { display: block; padding: 4px 8px; white-space: normal; font-size: 14px; }
-  /* Repair: the 25 cells in five columns; the edit frame is only the desktop's backdrop */
-  .hud-repair [data-control="WIDC_EDIT1"] { display: none; }
-  .hud-repair [data-control="WIDC_GRID"] {
-    grid-column: 1 / -1; width: auto !important; height: auto !important; display: grid; grid-template-columns: repeat(5, 44px);
-    gap: 4px; justify-content: center;
-  }
-  .hud-repair .hud-repair-cell { position: relative; left: auto !important; top: auto !important; }
-  /* ResistItem: the item's slot and the buttons, a short panel over the chat line; the never-finished upgrade's slots and
-     labels are left off */
-  .hud-jewel.hud-resist-item { height: 220px !important; }
-  .world:has(.hud-resist-item:not([hidden])) .hud-chat { width: min(480px, calc(100% - var(--bag-window-width, 60%) - 36px)) !important; }
-  .hud-resist-item :is([data-control="WIDC_CUSTOM1"], [data-control="WIDC_CUSTOM2"], [data-control="WIDC_CUSTOM4"],
-    [data-control="WIDC_CUSTOM5"], [data-control="WIDC_CUSTOM6"], [data-control="WIDC_STATIC2"], [data-control="WIDC_STATIC3"],
-    [data-control="WIDC_STATIC4"], [data-control="WIDC_STATIC5"], [data-control="WIDC_STATIC6"], [data-control="WIDC_STATIC8"],
-    [data-control="WIDC_STATIC10"], [data-control="WIDC_STATIC11"]) { display: none; }
-}
-
 /* 2026-11-14 (owner): the floating keyboard (keyboard/floatingKeyboard.ts), on a touch screen in place of the phone's, for
    every text box of the game. A V15 window: WndTile00-11 around it (as the lobby's .lobby-frame), its title white on the
    caption, ButtWndExit at the top right (drawn plain until the theme is in); its own line shows the text typed; its keys
@@ -4004,3 +3677,444 @@ fieldset:disabled .btn {
   .floating-keyboard-key { font-size: 16px; }
   .floating-keyboard-key[data-wide] { font-size: 13px; }
 }
+
+/* 2026-11-14 (owner, "the windows look off from the original theme ... wrong fonts and colors, shadings ... uneven spaces and
+   lots of empty spaces ... make a slight smaller version and proper sizes for mobile"): the phone's compact V15 panels.
+   docs/2026-11-14-phone-panels.md has the research and the measures. What they share:
+   - the window's own frame, WndTile00-11 (as the lobby's .lobby-frame and the floating keyboard lay it): the corners and the
+     caption at their size, the runs stretched; the white caption text; no imitation stripes, gradients or rounded boxes;
+   - Neuz's 12 px Verdana and the colours the windows give their own words, 15 px lines;
+   - the item slots WndChgElemItem / WndElemItemBlank at 40 px (32 px where a list of them must fit), the icon in the middle;
+   - the boxes of words and the edits on their WndEditTile pieces stretched to the box, the words in them scrolled by a
+     finger, never cut;
+   - the buttons their own pictures (the word is in the picture) a quarter bigger, a few px more round them to press;
+   - a panel at the left beside the phone's bag, as wide as its content needs, as high as its content, cut to the room
+     above the task bar and scrolled; on a landscape phone the slots and the button at the left, the words at the right. */
+@media (max-width: 1000px) and (pointer: coarse) {
+  :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-post, .hud-post-read, .hud-vendor, .hud-vendor-chat, .hud-trade, .hud-bank,
+    .hud-heaven-tower, .hud-summon-angel, .hud-lord) {
+    background: none !important; box-shadow: none !important; border-radius: 0 !important;
+  }
+  :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-post, .hud-post-read, .hud-vendor, .hud-vendor-chat, .hud-trade, .hud-bank,
+    .hud-heaven-tower, .hud-summon-angel, .hud-lord) > .hud-window-frame {
+    display: grid !important; grid-template-columns: 16px minmax(0, 1fr) 16px; grid-template-rows: 16px 16px minmax(0, 1fr) 16px;
+  }
+  :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-post, .hud-post-read, .hud-vendor, .hud-vendor-chat, .hud-trade, .hud-bank,
+    .hud-heaven-tower, .hud-summon-angel, .hud-lord) > .hud-window-frame > div {
+    position: static !important; width: auto !important; height: auto !important;
+  }
+  .hud-window-frame > [data-tile="0"] { grid-area: 1 / 1; }
+  .hud-window-frame > [data-tile="1"] { grid-area: 1 / 2; }
+  .hud-window-frame > [data-tile="2"] { grid-area: 1 / 3; }
+  .hud-window-frame > [data-tile="3"] { grid-area: 2 / 1; }
+  .hud-window-frame > [data-tile="4"] { grid-area: 2 / 2; }
+  .hud-window-frame > [data-tile="5"] { grid-area: 2 / 3; }
+  .hud-window-frame > [data-tile="6"] { grid-area: 3 / 1; }
+  .hud-window-frame > [data-tile="7"] { grid-area: 3 / 2; }
+  .hud-window-frame > [data-tile="8"] { grid-area: 3 / 3; }
+  .hud-window-frame > [data-tile="9"] { grid-area: 4 / 1; }
+  .hud-window-frame > [data-tile="10"] { grid-area: 4 / 2; }
+  .hud-window-frame > [data-tile="11"] { grid-area: 4 / 3; }
+  :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-post, .hud-post-read, .hud-vendor, .hud-vendor-chat, .hud-trade, .hud-bank,
+    .hud-heaven-tower, .hud-summon-angel, .hud-lord) > .hud-window-title {
+    height: 18px !important; padding-top: 3px; background: none !important; border-radius: 0 !important; box-shadow: none !important;
+    font-size: 12px !important; line-height: 14px !important;
+  }
+  :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-post, .hud-post-read, .hud-vendor, .hud-vendor-chat, .hud-trade, .hud-bank,
+    .hud-heaven-tower, .hud-summon-angel, .hud-lord) > .hud-window-close { left: auto !important; right: 7px !important; }
+  /* the tiles let the world through a little, as Neuz's do; a panel over the status window would show its numbers through
+     its words: a pale backing inside the frame's rounded edge */
+  :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-post, .hud-post-read, .hud-vendor, .hud-vendor-chat, .hud-trade, .hud-bank,
+    .hud-heaven-tower, .hud-summon-angel, .hud-lord)::before {
+    content: ''; position: absolute; inset: 3px 5px 7px 3px; border-radius: 4px; background: rgba(250, 238, 230, 0.92); pointer-events: none;
+  }
+  /* the lobby's 48 px fields are not these windows' */
+  :is(.hud-jewel, .hud-smelt-safety, .hud-post, .hud-post-read, .hud-vendor, .hud-vendor-chat) input { min-height: 0 !important; }
+  :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-post, .hud-post-read, .hud-vendor, .hud-vendor-chat) > .hud-window-close::before {
+    content: ''; position: absolute; inset: -8px -8px -10px -12px;
+  }
+
+  /* the panels at the left beside the bag; the controls hidden while one is open (the bag hides them too) */
+  .world:has(:is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-post, .hud-post-read, .hud-vendor):not([hidden]))
+    :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+  :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-post, .hud-post-read, .hud-vendor) {
+    --panel-room: calc(100% - var(--bag-window-width, 60%) - 28px);
+    left: 8px !important; top: 8px !important; transform: none !important; z-index: 60 !important; min-width: 0 !important;
+    width: min(var(--panel-width, 340px), var(--panel-room)) !important;
+    max-height: calc(100% - var(--hud-taskbar-height, 48px) - 16px); overflow: hidden;
+  }
+  /* as high as their content: the body in the flow, under the caption, inside the frame's client edges */
+  :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-vendor):not([hidden]) { height: auto !important; display: flex !important; flex-direction: column; }
+  :is(.hud-jewel, .hud-smelt-safety, .hud-vendor)[hidden] { display: none !important; }
+  :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-vendor) > .hud-window-body {
+    position: relative !important; left: auto !important; top: auto !important; width: auto !important; height: auto !important;
+    flex: 0 1 auto; min-height: 0; box-sizing: border-box; margin: 22px 8px 10px 4px; padding: 4px 6px 6px;
+    overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; scrollbar-width: thin;
+  }
+  :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-post, .hud-post-read, .hud-vendor) > .hud-window-body {
+    font: 12px/15px Verdana, Tahoma, sans-serif; color: #000000;
+  }
+  :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety) > .hud-window-body > * { position: relative !important; left: auto !important; top: auto !important; }
+
+  /* the WndEditTile pieces of a box of words or an edit, stretched to the box (the corners 8 px) */
+  :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-post, .hud-post-read) .hud-edit-tiles {
+    position: absolute !important; inset: 0 !important; display: grid !important; grid-template-columns: 8px minmax(0, 1fr) 8px;
+    grid-template-rows: 8px minmax(0, 1fr) 8px; pointer-events: none;
+  }
+  :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-post, .hud-post-read) .hud-edit-tiles:not(:has(> :nth-child(7))) {
+    grid-template-rows: minmax(0, 1fr) 8px;
+  }
+  :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-post, .hud-post-read) .hud-edit-tiles > div {
+    position: static !important; width: auto !important; height: auto !important;
+  }
+  /* a box of words: as high as its words up to --text-max, then scrolled; its desktop scroll bar left off */
+  :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety) .hud-res-text { width: auto !important; height: auto !important; min-width: 0; min-height: 30px; align-self: stretch; }
+  :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-post-read) .hud-res-text > .hud-res-scroll { display: none; }
+  :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety) .hud-res-text-body {
+    position: relative !important; left: auto !important; top: auto !important; width: auto !important; height: auto !important;
+    max-height: var(--text-max, 112px); box-sizing: border-box; padding: 5px 7px; overflow-y: auto; overscroll-behavior: contain;
+    touch-action: pan-y; scrollbar-width: thin; line-height: 15px;
+  }
+  /* more words below (resWindow.ts `data-more`): the last line fades, as a finger's list does */
+  :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-post-read) .hud-res-text-body[data-more] {
+    -webkit-mask-image: linear-gradient(#000000 calc(100% - 18px), transparent); mask-image: linear-gradient(#000000 calc(100% - 18px), transparent);
+  }
+  /* the words' labels: Neuz's own colours (inline), one line */
+  :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety) .hud-res-static:not(.is-picture) { width: auto !important; height: auto !important; }
+  :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety) .hud-res-static-text { position: static !important; display: block; white-space: nowrap; }
+  /* the item slots */
+  :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety) :is([data-picture="wndchgelemitem.bmp"], [data-picture="wndelemitemblank.tga"]) {
+    width: var(--slot, 40px) !important; height: var(--slot, 40px) !important; background-size: 100% 100% !important;
+    background-position: 0 0 !important; justify-self: center; align-self: center;
+  }
+  :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety) :is([data-picture="wndchgelemitem.bmp"], [data-picture="wndelemitemblank.tga"]) .hud-res-slot {
+    left: calc((var(--slot, 40px) - 32px) / 2) !important; top: calc((var(--slot, 40px) - 32px) / 2) !important;
+  }
+  /* the buttons: their pictures a quarter bigger, a little more room round them for a finger */
+  :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-post, .hud-post-read) .hud-window-body .hud-picture-button:not(.hud-res-combo-drop) {
+    position: relative !important; left: auto !important; top: auto !important; zoom: 1.25; justify-self: center; align-self: center;
+  }
+  :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-post, .hud-post-read) .hud-window-body .hud-picture-button:not(.hud-res-combo-drop)::before {
+    content: ''; position: absolute; inset: -5px -4px;
+  }
+
+  /* Create Jewels and Remove Element upgrading: the slot and START at the left, the words at the right */
+  :is(.hud-jewel-extraction, .hud-remove-attribute) { --panel-width: 330px; }
+  :is(.hud-jewel-extraction, .hud-remove-attribute) > .hud-window-body {
+    display: grid; grid-template-columns: 84px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); gap: 8px; align-items: start;
+  }
+  :is(.hud-jewel-extraction, .hud-remove-attribute) [data-control="WIDC_PIC_SLOT"] { grid-area: 1 / 1; }
+  :is(.hud-jewel-extraction, .hud-remove-attribute) [data-control="WIDC_START"] { grid-area: 2 / 1; align-self: start; }
+  :is(.hud-jewel-extraction, .hud-remove-attribute) [data-control="WIDC_TEXT1"] { grid-area: 1 / 2 / 3 / 3; --text-max: 104px; }
+
+  /* Create Unique / Ultimate Weapon: the weapon over the Shining Oricalkum and the jewel (as Neuz places them), START under
+     them, the jewel by level at their right; the description under them all */
+  .hud-change-weapon { --panel-width: 360px; }
+  .hud-change-weapon > .hud-window-body {
+    display: grid; grid-template-columns: repeat(3, 40px) minmax(0, 1fr); grid-template-rows: 40px 40px auto auto; gap: 6px;
+    grid-template-areas: '. w . t2' 'o . j t2' 's s s t2' 't1 t1 t1 t1'; align-items: start;
+  }
+  .hud-change-weapon [data-control="WIDC_STATIC1"] { grid-area: w; }
+  .hud-change-weapon [data-control="WIDC_STATIC2"] { grid-area: o; }
+  .hud-change-weapon [data-control="WIDC_STATIC3"] { grid-area: j; }
+  .hud-change-weapon [data-control="WIDC_TEXT2"] { grid-area: t2; --text-max: 128px; }
+  .hud-change-weapon [data-control="WIDC_TEXT1"] { grid-area: t1; --text-max: 100px; }
+  .hud-change-weapon [data-control="WIDC_START"] { grid-area: s; align-self: start; }
+
+  /* Sunstone & Moonstone: the two rows of five, the words, START */
+  .hud-mix-jewel { --panel-width: 300px; }
+  .hud-mix-jewel > .hud-window-body { display: grid; grid-template-columns: repeat(5, 40px); justify-content: center; gap: 6px; }
+  .hud-mix-jewel [data-control="WIDC_TEXT1"] { grid-column: 1 / -1; --text-max: 76px; }
+  .hud-mix-jewel [data-control="WIDC_START"] { grid-column: 1 / -1; }
+
+  /* Jewel Setting: the weapon on Window01 with its sockets beside it, the words at the right, START under them */
+  .hud-jewel-setting { --panel-width: 380px; }
+  .hud-jewel-setting > .hud-window-body {
+    display: grid; grid-template-columns: 112px 36px minmax(0, 1fr); grid-template-rows: repeat(5, 36px); gap: 4px 6px;
+  }
+  .hud-jewel-setting :is([data-control="WIDC_STATIC6"], [data-control="WIDC_CUSTOM1"]) {
+    grid-area: 1 / 1 / 6 / 2; width: 100% !important; height: 100% !important; background-size: 100% 100%;
+  }
+  .hud-jewel-setting [data-socket] { grid-column: 2; --slot: 36px; }
+  .hud-jewel-setting [data-control="WIDC_STATIC1"] { grid-row: 1; }
+  .hud-jewel-setting [data-control="WIDC_STATIC2"] { grid-row: 2; }
+  .hud-jewel-setting [data-control="WIDC_STATIC3"] { grid-row: 3; }
+  .hud-jewel-setting [data-control="WIDC_STATIC4"] { grid-row: 4; }
+  .hud-jewel-setting [data-control="WIDC_STATIC5"] { grid-row: 5; }
+  .hud-jewel-setting [data-control="WIDC_TEXT1"] { grid-area: 1 / 3 / 5 / 4; --text-max: 150px; }
+  .hud-jewel-setting [data-control="WIDC_START"] { grid-area: 5 / 3; }
+  .hud-jewel-weapon { width: 64px; height: 64px; }
+  .hud-jewel-model { left: 50%; width: auto !important; height: 100% !important; aspect-ratio: 160 / 230; transform: translateX(-50%); }
+
+  /* Remove a Pierced Card: the item and START at the left, its cards two to a row at the right (the empty and the unused
+     rows left off), the words under them */
+  .hud-remove-piercing { --panel-width: 390px; }
+  .hud-remove-piercing > .hud-window-body {
+    display: grid; grid-template-columns: 84px minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: repeat(5, auto) auto; gap: 4px 6px;
+    align-items: start;
+  }
+  .hud-remove-piercing [data-control="WIDC_PIC_SLOT"] { grid-area: 1 / 1 / 3 / 2; }
+  .hud-remove-piercing [data-control="WIDC_START"] { grid-area: 3 / 1 / 5 / 2; }
+  .hud-remove-piercing [data-control^="WIDC_STATIC_PIERCING"] {
+    width: auto !important; height: 22px !important; background-size: 100% 100%; display: flex; align-items: center; overflow: hidden;
+  }
+  .hud-remove-piercing [data-control^="WIDC_STATIC_PIERCING"]:has(> .hud-res-static-text:empty) { display: none; }
+  .hud-remove-piercing [data-control^="WIDC_STATIC_PIERCING"] .hud-res-static-text {
+    position: static !important; padding: 0 6px; overflow: hidden; text-overflow: ellipsis; font-size: 11px; line-height: 22px;
+  }
+  .hud-remove-piercing [data-control="WIDC_STATIC_PIERCING1"] { grid-area: 1 / 2; }
+  .hud-remove-piercing [data-control="WIDC_STATIC_PIERCING2"] { grid-area: 1 / 3; }
+  .hud-remove-piercing [data-control="WIDC_STATIC_PIERCING3"] { grid-area: 2 / 2; }
+  .hud-remove-piercing [data-control="WIDC_STATIC_PIERCING4"] { grid-area: 2 / 3; }
+  .hud-remove-piercing [data-control="WIDC_STATIC_PIERCING5"] { grid-area: 3 / 2; }
+  .hud-remove-piercing [data-control="WIDC_STATIC_PIERCING6"] { grid-area: 3 / 3; }
+  .hud-remove-piercing [data-control="WIDC_STATIC_PIERCING7"] { grid-area: 4 / 2; }
+  .hud-remove-piercing [data-control="WIDC_STATIC_PIERCING8"] { grid-area: 4 / 3; }
+  .hud-remove-piercing [data-control="WIDC_STATIC_PIERCING9"] { grid-area: 5 / 2; }
+  .hud-remove-piercing [data-control="WIDC_STATIC_PIERCING10"] { grid-area: 5 / 3; }
+  .hud-remove-piercing [data-control="WIDC_TEXT1"] { grid-area: 6 / 1 / 7 / 4; --text-max: 96px; }
+
+  /* Remove Jewel: the weapon and its Moonstone with START under them at the left; the five jewels, each beside its stat on
+     Window02, at the right; the words under them */
+  .hud-remove-jewel { --panel-width: 390px; }
+  .hud-remove-jewel > .hud-window-body {
+    display: grid; grid-template-columns: 40px 40px 34px minmax(0, 1fr); grid-template-rows: repeat(5, 34px) auto; gap: 4px 6px;
+  }
+  .hud-remove-jewel [data-control="WIDC_PIC_SLOT"] { grid-area: 1 / 1 / 2 / 2; }
+  .hud-remove-jewel [data-control="WIDC_PIC_SLOT1"] { grid-area: 1 / 2 / 2 / 3; }
+  .hud-remove-jewel [data-control="WIDC_START"] { grid-area: 2 / 1 / 3 / 3; }
+  .hud-remove-jewel [data-control^="WIDC_JEWEL_SLOT"]:not([data-control*="INFO"]) { grid-column: 3; --slot: 34px; }
+  .hud-remove-jewel [data-control^="WIDC_JEWEL_SLOT_INFO"] {
+    grid-column: 4; width: auto !important; height: 34px !important; background-size: 100% 100%; display: flex; align-items: center;
+    overflow: hidden;
+  }
+  .hud-remove-jewel :is([data-control="WIDC_JEWEL_SLOT1"], [data-control="WIDC_JEWEL_SLOT_INFO1"]) { grid-row: 1; }
+  .hud-remove-jewel :is([data-control="WIDC_JEWEL_SLOT2"], [data-control="WIDC_JEWEL_SLOT_INFO2"]) { grid-row: 2; }
+  .hud-remove-jewel :is([data-control="WIDC_JEWEL_SLOT3"], [data-control="WIDC_JEWEL_SLOT_INFO3"]) { grid-row: 3; }
+  .hud-remove-jewel :is([data-control="WIDC_JEWEL_SLOT4"], [data-control="WIDC_JEWEL_SLOT_INFO4"]) { grid-row: 4; }
+  .hud-remove-jewel :is([data-control="WIDC_JEWEL_SLOT5"], [data-control="WIDC_JEWEL_SLOT_INFO5"]) { grid-row: 5; }
+  .hud-remove-jewel .hud-remove-jewel-stat.hud-res-static-text { position: static !important; padding-left: 8px; }
+  .hud-remove-jewel [data-control="WIDC_TEXT1"] { grid-area: 6 / 1 / 7 / 5; --text-max: 72px; }
+
+  /* Piercing: the item, the Moonstone and the GProtect side by side, each under its word; the cost by its coin; OK and
+     Cancel (the "Pierce Item" frame is the desktop's box round the rows: the panel is the box) */
+  .hud-piercing { --panel-width: 300px; }
+  .hud-piercing > .hud-window-body { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px 6px; align-items: center; }
+  .hud-piercing [data-control="WIDC_STATIC4"] { display: none; }
+  .hud-piercing :is([data-control="WIDC_STATIC1"], [data-control="WIDC_STATIC2"], [data-control="WIDC_STATIC3"]) { justify-self: center; }
+  .hud-piercing [data-control="WIDC_STATIC1"] { grid-area: 1 / 1 / 2 / 3; }
+  .hud-piercing [data-control="WIDC_STATIC2"] { grid-area: 1 / 3 / 2 / 5; }
+  .hud-piercing [data-control="WIDC_STATIC3"] { grid-area: 1 / 5 / 2 / 7; }
+  .hud-piercing [data-control="WIDC_STATIC5"] { grid-area: 2 / 1 / 3 / 3; }
+  .hud-piercing [data-control="WIDC_STATIC6"] { grid-area: 2 / 3 / 3 / 5; }
+  .hud-piercing [data-control="WIDC_STATIC7"] { grid-area: 2 / 5 / 3 / 7; }
+  .hud-piercing [data-control="WIDC_STATIC8"] { grid-area: 3 / 1 / 4 / 3; justify-self: end; }
+  .hud-piercing [data-control="WIDC_STATIC9"] { grid-area: 3 / 3 / 4 / 7; justify-self: start; }
+  .hud-piercing [data-control="WIDC_OK"] { grid-area: 4 / 1 / 5 / 4; }
+  .hud-piercing [data-control="WIDC_CANCEL"] { grid-area: 4 / 4 / 5 / 7; }
+
+  /* Repair: the 25 cells in five columns on the edit's white, the cost, OK and Cancel */
+  .hud-repair { --panel-width: 250px; }
+  .hud-repair > .hud-window-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 6px; align-items: center; }
+  .hud-repair [data-control="WIDC_STATIC2"] { grid-area: 1 / 1 / 2 / 3; }
+  .hud-repair :is([data-control="WIDC_EDIT1"], [data-control="WIDC_GRID"]) { grid-area: 2 / 1 / 3 / 3; width: auto !important; height: auto !important; }
+  .hud-repair [data-control="WIDC_EDIT1"] { align-self: stretch; }
+  .hud-repair [data-control="WIDC_GRID"] { display: grid; grid-template-columns: repeat(5, 32px); gap: 4px; justify-content: center; padding: 6px; }
+  .hud-repair .hud-repair-cell { position: relative; left: auto !important; top: auto !important; }
+  .hud-repair [data-control="WIDC_STATIC1"] { grid-area: 3 / 1; }
+  .hud-repair [data-control="WIDC_STATIC3"] { grid-area: 3 / 2; justify-self: end; }
+  .hud-repair [data-control="WIDC_OK"] { grid-area: 4 / 1; }
+  .hud-repair [data-control="WIDC_CANCEL"] { grid-area: 4 / 2; }
+
+  /* Safe Upgrade (Normal, Accessory, Piercing, Element): the item, NOW and the goal (+, the edit, -) on top; the ten tries
+     in two columns of five, each the material, its protections and the result; Start, Stop and Reset */
+  :is(:is(.hud-mix-jewel-confirm, .hud-remove-attribute-confirm)) { z-index: 70 !important; }
+  .hud-smelt-safety { --panel-width: 440px; --slot: 32px; }
+  .hud-smelt-safety > .hud-window-body {
+    display: grid; grid-template-columns: 32px 32px 32px minmax(48px, 1fr) 32px 32px 32px minmax(48px, 1fr);
+    grid-template-rows: 40px repeat(5, 32px) auto; gap: 4px;
+  }
+  .hud-smelt-safety [data-control="WIDC_STATIC1"] { grid-area: 1 / 1 / 2 / 3; --slot: 40px; justify-self: start; }
+  .hud-smelt-safety :is([data-control="WIDC_TITLE_NOW_GRADE"], [data-control="WIDC_NOW_GRADE"]) { grid-area: 1 / 2 / 2 / 5; justify-self: center; }
+  .hud-smelt-safety [data-control="WIDC_TITLE_NOW_GRADE"] { align-self: start; }
+  .hud-smelt-safety [data-control="WIDC_NOW_GRADE"] { align-self: end; }
+  .hud-smelt-safety [data-control="WIDC_TITLE_MAX_GRADE"] { grid-area: 1 / 5 / 2 / 9; justify-self: center; align-self: start; }
+  .hud-smelt-safety [data-control="WIDC_BUTTON_PLUS"] { grid-area: 1 / 6; align-self: end; zoom: 1.4; }
+  .hud-smelt-safety [data-control="WIDC_EDIT_MAX_GRADE"] { grid-area: 1 / 7; align-self: end; justify-self: center; }
+  .hud-smelt-safety [data-control="WIDC_BUTTON_MINUS"] { grid-area: 1 / 8; align-self: end; justify-self: start; zoom: 1.4; }
+  .hud-smelt-safety [data-control="WIDC_EDIT_MAX_GRADE"] input { text-align: center; }
+  .hud-smelt-safety :is([data-control="MATERIAL0"], [data-control="SCROLL1_0"], [data-control="SCROLL2_0"], [data-control="RESULT0"],
+    [data-control="MATERIAL5"], [data-control="SCROLL1_5"], [data-control="SCROLL2_5"], [data-control="RESULT5"]) { grid-row: 2; }
+  .hud-smelt-safety :is([data-control="MATERIAL1"], [data-control="SCROLL1_1"], [data-control="SCROLL2_1"], [data-control="RESULT1"],
+    [data-control="MATERIAL6"], [data-control="SCROLL1_6"], [data-control="SCROLL2_6"], [data-control="RESULT6"]) { grid-row: 3; }
+  .hud-smelt-safety :is([data-control="MATERIAL2"], [data-control="SCROLL1_2"], [data-control="SCROLL2_2"], [data-control="RESULT2"],
+    [data-control="MATERIAL7"], [data-control="SCROLL1_7"], [data-control="SCROLL2_7"], [data-control="RESULT7"]) { grid-row: 4; }
+  .hud-smelt-safety :is([data-control="MATERIAL3"], [data-control="SCROLL1_3"], [data-control="SCROLL2_3"], [data-control="RESULT3"],
+    [data-control="MATERIAL8"], [data-control="SCROLL1_8"], [data-control="SCROLL2_8"], [data-control="RESULT8"]) { grid-row: 5; }
+  .hud-smelt-safety :is([data-control="MATERIAL4"], [data-control="SCROLL1_4"], [data-control="SCROLL2_4"], [data-control="RESULT4"],
+    [data-control="MATERIAL9"], [data-control="SCROLL1_9"], [data-control="SCROLL2_9"], [data-control="RESULT9"]) { grid-row: 6; }
+  .hud-smelt-safety [data-control^="MATERIAL"] { grid-column: 1; }
+  .hud-smelt-safety [data-control^="SCROLL1_"] { grid-column: 2; }
+  .hud-smelt-safety [data-control^="SCROLL2_"] { grid-column: 3; }
+  .hud-smelt-safety [data-control^="RESULT"] { grid-column: 4; }
+  .hud-smelt-safety :is([data-control="MATERIAL5"], [data-control="MATERIAL6"], [data-control="MATERIAL7"], [data-control="MATERIAL8"], [data-control="MATERIAL9"]) { grid-column: 5; }
+  .hud-smelt-safety :is([data-control="SCROLL1_5"], [data-control="SCROLL1_6"], [data-control="SCROLL1_7"], [data-control="SCROLL1_8"], [data-control="SCROLL1_9"]) { grid-column: 6; }
+  .hud-smelt-safety :is([data-control="SCROLL2_5"], [data-control="SCROLL2_6"], [data-control="SCROLL2_7"], [data-control="SCROLL2_8"], [data-control="SCROLL2_9"]) { grid-column: 7; }
+  .hud-smelt-safety :is([data-control="RESULT5"], [data-control="RESULT6"], [data-control="RESULT7"], [data-control="RESULT8"], [data-control="RESULT9"]) { grid-column: 8; }
+  /* the accessory's and the piercing's modes have one protection: the result takes the second's column too */
+  .hud-smelt-safety:not(:has([data-control^="SCROLL2_"])) [data-control^="RESULT"] { grid-column: 3 / 5; }
+  .hud-smelt-safety:not(:has([data-control^="SCROLL2_"])) :is([data-control="RESULT5"], [data-control="RESULT6"], [data-control="RESULT7"], [data-control="RESULT8"], [data-control="RESULT9"]) { grid-column: 7 / 9; }
+  .hud-smelt-safety [data-control^="RESULT"] { width: auto !important; height: 32px !important; background-size: 100% 100%; }
+  .hud-smelt-safety [data-control="WIDC_BUTTON_START"] { grid-area: 7 / 1 / 8 / 4; }
+  .hud-smelt-safety [data-control="WIDC_BUTTON_STOP"] { grid-area: 7 / 4 / 8 / 6; }
+  .hud-smelt-safety [data-control="WIDC_BUTTON_RESET"] { grid-area: 7 / 6 / 8 / 9; }
+
+  /* The post and its read window: a panel of a fixed height (its pages fill it), the tabs a strip on top, the Send page a
+     form: the receiver and the title on a line each, the text, then the item, the penya and Send, then the fee */
+  :is(.hud-post, .hud-post-read) { --panel-width: 330px; height: min(296px, calc(100% - var(--hud-taskbar-height, 48px) - 16px)) !important; }
+  :is(.hud-post, .hud-post-read) > .hud-window-body {
+    left: 4px !important; top: 22px !important; width: calc(100% - 12px) !important; height: calc(100% - 32px) !important;
+    box-sizing: border-box; padding: 4px 6px 6px; overflow: hidden;
+  }
+  :is(.hud-post, .hud-post-read) .hud-res-static-text { position: static; display: block; font: 12px/24px Verdana, Tahoma, sans-serif; white-space: nowrap; }
+  :is(.hud-post, .hud-post-read) .hud-res-static.is-group .hud-res-static-text { color: #2e70a9; text-shadow: none; }
+  :is(.hud-post, .hud-post-read) .hud-res-static.is-group > .hud-edit-tiles { display: none !important; }
+  :is(.hud-post, .hud-post-read) input, .hud-post-text { font: 12px Verdana, Tahoma, sans-serif !important; }
+  .hud-post .hud-post-tabs { position: absolute !important; inset: 0 !important; width: auto !important; height: auto !important; display: flex; flex-direction: column; gap: 4px; }
+  .hud-post .hud-post-strip { position: relative !important; left: auto !important; top: auto !important; width: 100% !important; height: 22px !important; order: -1; }
+  .hud-post .hud-tab-strip { position: static; display: flex; gap: 2px; width: 100% !important; height: 22px !important; }
+  .hud-post .hud-tab-tile { display: none; }
+  .hud-post .hud-tab-title {
+    position: static !important; flex: 1; width: auto !important; height: 22px; box-sizing: border-box; border: 1px solid #c8a690;
+    border-radius: 4px 4px 0 0; background: linear-gradient(#fbeee4, #ecd3c1); color: #6b5345; font: 12px/20px Verdana, Tahoma, sans-serif;
+    text-align: center;
+  }
+  .hud-post .hud-tab-title[aria-pressed=true] { background: #fffaf6; color: #000000; font-weight: bold; border-bottom-color: #fffaf6; }
+  .hud-post .hud-post-page { position: relative !important; left: auto !important; top: auto !important; width: 100% !important; height: auto !important; flex: 1 1 auto; min-height: 0; }
+  .hud-post .hud-post-page[hidden] { display: none !important; }
+  .hud-post [data-page="send"]:not([hidden]) {
+    display: grid; grid-template-columns: 56px minmax(0, 1fr) 76px; grid-template-rows: 22px 22px minmax(36px, 1fr) 40px 16px; gap: 4px 6px;
+    align-items: center;
+  }
+  .hud-post [data-page="send"] > * { position: relative !important; left: auto !important; top: auto !important; }
+  .hud-post [data-page="send"] > :where(:not(.hud-picture-button)) { width: auto !important; height: auto !important; }
+  .hud-post [data-page="send"] :is([data-control="WIDC_COMBOBOX1"], [data-control="WIDC_EDIT2"], [data-control="WIDC_EDIT4"]) { height: 22px !important; }
+  .hud-post [data-page="send"] [data-control="WIDC_STATIC1"] { grid-area: 1 / 1; }
+  .hud-post [data-page="send"] [data-control="WIDC_COMBOBOX1"] { grid-area: 1 / 2 / 2 / 4; }
+  .hud-post [data-page="send"] [data-control="WIDC_STATIC5"] { grid-area: 2 / 1; }
+  .hud-post [data-page="send"] [data-control="WIDC_EDIT2"] { grid-area: 2 / 2 / 3 / 4; }
+  .hud-post [data-page="send"] [data-control="WIDC_EDIT3"] { grid-area: 3 / 1 / 4 / 4; align-self: stretch; }
+  .hud-post [data-page="send"] [data-control="WIDC_STATIC3"] { grid-area: 4 / 1; width: 40px !important; height: 40px !important; }
+  .hud-post [data-page="send"] [data-control="WIDC_STATIC2"] { display: none; }
+  .hud-post [data-page="send"] [data-control="WIDC_EDIT4"] { grid-area: 4 / 2; }
+  .hud-post [data-page="send"] [data-control="WIDC_EDIT4"]::before {
+    content: 'Penya'; position: absolute; left: 0; bottom: 100%; font: 11px/13px Verdana, Tahoma, sans-serif; color: #2e70a9;
+  }
+  .hud-post [data-page="send"] [data-control="WIDC_SEND"] { grid-area: 4 / 3; }
+  .hud-post [data-page="send"] [data-control="WIDC_STATIC4"] { grid-area: 5 / 1 / 6 / 4; }
+  .hud-post [data-page="send"] [data-control="WIDC_STATIC4"] .hud-res-static-text { font: 11px/16px Verdana, Tahoma, sans-serif; color: #000000; text-align: center; }
+  .hud-post [data-page="send"] :is(.hud-res-edit, .hud-res-combo) input {
+    position: absolute; inset: 0; z-index: 1; width: 100% !important; height: 100% !important; box-sizing: border-box; padding: 0 6px;
+    background: transparent;
+  }
+  .hud-post [data-page="send"] .hud-res-combo input { right: 22px !important; width: calc(100% - 22px) !important; }
+  /* the drop arrow (ButtQuickListDn) inside the field at its right, as on the desktop, a little more round it to press */
+  .hud-post [data-page="send"] .hud-res-combo-drop { position: absolute !important; left: auto !important; right: 5px; top: 5px !important; z-index: 2; }
+  .hud-post [data-page="send"] .hud-res-combo-drop::before { content: ''; position: absolute; inset: -6px -6px -6px -10px; }
+  .hud-post [data-page="send"] .hud-res-combo-list { width: 100% !important; z-index: 5; }
+  .hud-post [data-page="send"] .hud-res-combo-list [role=option] { min-height: 26px; padding: 0 8px; font: 12px/26px Verdana, Tahoma, sans-serif; }
+  :is(.hud-post, .hud-post-read) .hud-post-slot img { width: 32px; height: 32px; left: 4px; top: 4px; }
+  :is(.hud-post, .hud-post-read) .hud-post-slot { background-color: #fffaf6; box-shadow: inset 0 0 0 1px #d8b8a4; border-radius: 3px; }
+  :is(.hud-post, .hud-post-read) .hud-post-slot span { font-size: 11px; line-height: 11px; color: #1010ff; text-shadow: 1px 1px #ffffff; }
+  /* the inbox: the list on its edit's white, rows of 40 px (the icon, the sender and the time, the title), scrolled by touch */
+  .hud-post .hud-post-inbox { position: absolute !important; inset: 0 !important; width: auto !important; height: auto !important; }
+  .hud-post .hud-post-table, .hud-post .hud-post-scroll { display: none; }
+  .hud-post .hud-post-list {
+    position: absolute !important; inset: 0 !important; width: auto !important; height: auto !important; overflow-y: auto; scroll-snap-type: none;
+    touch-action: pan-y; border: 1px solid #d8b8a4; border-radius: 3px; background: #fffaf6; font: 12px/15px Verdana, Tahoma, sans-serif;
+  }
+  .hud-post .hud-post-row { height: 40px; border-bottom: 1px solid #ecd9cc; }
+  .hud-post .hud-post-row-icon { left: 4px; top: 4px; width: 32px; height: 32px; }
+  .hud-post .hud-post-row-icon span { font-size: 11px; line-height: 11px; color: #1010ff; text-shadow: 1px 1px #ffffff; }
+  .hud-post .hud-post-row-sender { left: 44px; top: 4px; right: 60px; overflow: hidden; text-overflow: ellipsis; font-weight: bold; }
+  .hud-post .hud-post-row-time, .hud-post .hud-post-row-time[data-late] { left: auto; right: 6px; top: 4px; }
+  .hud-post .hud-post-row-title { left: 44px; top: 20px; right: 6px; overflow: hidden; text-overflow: ellipsis; }
+  /* the read window: Sender, Title, the text, the item and the penya, the buttons */
+  .hud-post-read > .hud-window-body {
+    display: grid; grid-template-columns: 52px minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: 22px 22px minmax(36px, 1fr) 40px 30px;
+    gap: 4px 6px; align-items: center;
+  }
+  .hud-post-read > .hud-window-body > * { position: relative !important; left: auto !important; top: auto !important; }
+  .hud-post-read > .hud-window-body > :where(:not(.hud-picture-button)) { width: auto !important; height: auto !important; }
+  .hud-post-read :is([data-control="WIDC_EDIT1"], [data-control="WIDC_EDIT2"], [data-control="WIDC_EDIT3"]) { height: 22px !important; }
+  /* its three buttons side by side: their pictures a little bigger only */
+  .hud-post-read .hud-window-body .hud-picture-button:not(.hud-res-combo-drop) { zoom: 1; }
+  .hud-post-read [data-control="WIDC_STATIC1"] { grid-area: 1 / 1; }
+  .hud-post-read [data-control="WIDC_EDIT1"] { grid-area: 1 / 2 / 2 / 5; }
+  .hud-post-read [data-control="WIDC_STATIC2"] { grid-area: 2 / 1; }
+  .hud-post-read [data-control="WIDC_EDIT2"] { grid-area: 2 / 2 / 3 / 5; }
+  .hud-post-read [data-control="WIDC_TEXT1"] { grid-area: 3 / 1 / 4 / 5; align-self: stretch; }
+  .hud-post-read [data-control="WIDC_TEXT1"] .hud-res-text-body {
+    position: absolute; inset: 4px 6px !important; width: auto !important; height: auto !important; overflow-y: auto; touch-action: pan-y;
+    font: 12px/15px Verdana, Tahoma, sans-serif; color: #000000; white-space: pre-wrap;
+  }
+  .hud-post-read .hud-res-edit-words { font: 12px/22px Verdana, Tahoma, sans-serif; top: 0; left: 6px; }
+  .hud-post-read [data-control="WIDC_STATIC3"] { grid-area: 4 / 1; width: 40px !important; height: 40px !important; }
+  .hud-post-read [data-control="WIDC_STATIC4"] { grid-area: 4 / 2; justify-self: end; width: 20px !important; height: 20px !important; background-position: center; }
+  .hud-post-read [data-control="WIDC_EDIT3"] { grid-area: 4 / 3 / 5 / 5; }
+  .hud-post-read [data-control="WIDC_BUTTON1"] { grid-area: 5 / 1 / 6 / 3; }
+  .hud-post-read [data-control="WIDC_BUTTON2"] { grid-area: 5 / 3; }
+  .hud-post-read [data-control="WIDC_BUTTON3"] { grid-area: 5 / 4; }
+  .hud-post-read :is([data-control="WIDC_STATIC3"], [data-control="WIDC_STATIC4"])[data-filled="true"] { box-shadow: inset 0 0 0 2px #e2a06e; }
+  :is(.hud-post-question, .hud-post-request), :is(.hud-post-question, .hud-post-request) :is(.hud-res-static-text, .hud-res-text-body) { font-size: 12px; }
+
+  /* The private shop: the name, a 5 x 2 grid of slots (ten a page), the page's arrows, the tapped item's whole name and
+     price, the hint, then Open, Cancel, Reset and Chat */
+  .hud-vendor { --panel-width: 300px; }
+  .hud-vendor-chat[data-mobile-window] {
+    left: auto !important; right: 12px; top: 8px !important; transform: none !important; z-index: 61 !important;
+    height: calc(100% - var(--hud-taskbar-height, 48px) - 16px) !important; width: var(--bag-window-width, 50%) !important; overflow: hidden;
+  }
+  .hud-vendor-chat[data-mobile-window] > .hud-window-body { left: 6px !important; top: 24px !important; width: calc(100% - 14px) !important; height: calc(100% - 36px) !important; }
+  .hud-vendor-sell, .hud-vendor-buy { font-size: 12px; z-index: 62 !important; }
+  .hud-vendor > .hud-window-body.vendor-phone { display: flex; flex-direction: column; gap: 5px; }
+  /* the trade beside the whole bag (its equipment shown): no wider than the room left of it */
+  .hud-trade { min-width: 320px; }
+}
+.vendor-phone-head label { display: flex; align-items: center; gap: 6px; color: #2e70a9; white-space: nowrap; }
+.vendor-phone-head input {
+  flex: 1; min-width: 0; height: 22px; box-sizing: border-box; padding: 0 5px; border: 1px solid #d8b8a4; border-radius: 3px;
+  background: #ffffff; box-shadow: inset 1px 1px 2px #0002; color: #000000; font: 12px Verdana, Tahoma, sans-serif;
+}
+.vendor-phone-head input:disabled { background: #f3ebe4; color: #555555; }
+.vendor-phone button, .vendor-sheet button, .vendor-chat-phone button {
+  min-height: 24px; padding: 0 8px; border: 1px solid #3232329b; border-radius: 3px; font: 12px Verdana, Tahoma, sans-serif;
+  background: linear-gradient(#fffffffA, #969696c8, #00000032); color: #ffffff; text-shadow: 1px 1px #000000;
+  box-shadow: inset 0 0 0 1px #c8c8c89b; touch-action: manipulation;
+}
+.vendor-phone button:disabled { opacity: 0.45; }
+.vendor-phone button[hidden] { display: none; }
+.vendor-phone-buttons { display: flex; gap: 4px; }
+.vendor-phone-buttons button { flex: 1; min-height: 26px; }
+.vendor-phone-slots { display: grid; grid-template-columns: repeat(5, 44px); gap: 4px 6px; justify-content: center; }
+.vendor-phone-row { position: relative; display: flex; flex-direction: column; align-items: center; gap: 1px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.vendor-phone-icon {
+  position: relative; width: 40px; height: 40px; box-sizing: border-box; padding: 4px; border-radius: 3px; background-size: 100% 100%;
+}
+.vendor-phone-icon img { display: block; width: 32px; height: 32px; }
+.vendor-phone-row.is-chosen .vendor-phone-icon, .vendor-phone-row.is-picked .vendor-phone-icon { box-shadow: 0 0 0 2px #3d8bd6; }
+.vendor-phone-count {
+  position: absolute; right: 4px; top: 25px; font: bold 10px/10px Verdana, Tahoma, sans-serif; color: #1010ff;
+  text-shadow: 1px 1px #ffffff, -1px -1px #ffffff; pointer-events: none;
+}
+.vendor-phone-row .vendor-slot-price { position: static; max-width: 46px; overflow: hidden; font: bold 10px/12px Verdana, Tahoma, sans-serif; white-space: nowrap; text-shadow: 0 0 2px #ffffff; }
+.vendor-phone-row .vendor-slot-name { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.vendor-phone-pager { display: flex; align-items: center; justify-content: center; gap: 8px; font: 11px Verdana, Tahoma, sans-serif; color: #6b5345; }
+.vendor-phone-pager[hidden] { display: none; }
+.vendor-phone-pager button { min-height: 20px; min-width: 32px; padding: 0 6px; font-size: 10px; }
+.vendor-phone-detail { display: flex; align-items: center; gap: 6px; min-height: 24px; padding: 0 2px; }
+.vendor-phone-detail[hidden] { display: none; }
+.vendor-phone-detail-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: bold; }
+.vendor-phone-detail-price { flex: none; white-space: nowrap; }
+.vendor-phone-hint { margin: 0; font: 11px/14px Verdana, Tahoma, sans-serif; color: #6b5a44; }
+.vendor-phone-hint:empty, .vendor-phone-hint[hidden] { display: none; }

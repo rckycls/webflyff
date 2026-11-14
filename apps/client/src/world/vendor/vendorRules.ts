@@ -57,6 +57,22 @@ export function priceColor(cost: number): number {
 export const withCommas = (n: number): string => String(Math.trunc(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 
 /**
+ * 2026-11-14 (owner): a price short enough for a phone's 5 x 2 grid cell: whole under 10,000 (with commas), then K, M and B
+ * with one decimal where it is not .0, cut, never rounded up (1,999,999 is "1.9M"). The whole price shows on a tap.
+ */
+export function shortPrice(cost: number): string {
+  const n = Math.max(0, Math.trunc(cost));
+  if (n < 10_000) return withCommas(n);
+  const unit = (size: number, mark: string): string => {
+    const tenths = Math.trunc(n / (size / 10));
+    return tenths % 10 === 0 || tenths >= 1000 ? `${Math.trunc(tenths / 10)}${mark}` : `${(tenths / 10).toFixed(1)}${mark}`;
+  };
+  if (n < 1_000_000) return unit(1_000, 'K');
+  if (n < 1_000_000_000) return unit(1_000_000, 'M');
+  return unit(1_000_000_000, 'B');
+}
+
+/**
  * A slot's name (WndVendorCtrl.cpp:82-114): "name +N" for an upgraded item, cut letter by letter once it is wider than
  * 108 px, the part that fits followed by "...".
  */

@@ -84,22 +84,30 @@ async function itemsOnly(page: Page, window: Locator): Promise<void> {
   expect(panel.x + panel.width).toBeLessThanOrEqual(box.x + 1);
 }
 
-/** The phone's words: at least 14 px; its slots and buttons big enough for a finger. */
+/**
+ * 2026-11-14 (owner, "a slight smaller version and proper sizes for mobile"): the phone's compact V15 panel: the window's own
+ * frame (WndTile00-11) shown, Neuz's 12 px words, slots of 32 px or more, the buttons' pictures at least 24 px high, the
+ * panel left of the bag and inside the room above the task bar.
+ */
 async function phoneSized(window: Locator): Promise<void> {
   if (!isPhone()) return;
-  for (const target of await window.locator('.hud-window-body :is(.hud-res-text-body, .hud-picture-button)').all()) {
+  await expect(window.locator('.hud-window-frame')).toHaveCSS('display', 'grid');
+  for (const target of await window.locator('.hud-window-body .hud-res-text-body').all()) {
     if (!(await target.isVisible())) continue;
-    expect(await target.evaluate((e) => parseFloat(getComputedStyle(e).fontSize))).toBeGreaterThanOrEqual(14);
+    expect(await target.evaluate((e) => parseFloat(getComputedStyle(e).fontSize))).toBe(12);
   }
-  for (const slot of await window.locator('[data-slot]').all()) {
+  for (const slot of await window.locator(':is([data-picture="wndchgelemitem.bmp"], [data-picture="wndelemitemblank.tga"])').all()) {
     if (!(await slot.isVisible())) continue;
     const size = (await slot.boundingBox())!;
-    expect(Math.min(size.width, size.height)).toBeGreaterThanOrEqual(44);
+    expect(Math.min(size.width, size.height)).toBeGreaterThanOrEqual(32);
   }
   for (const button of await window.locator('.hud-window-body .hud-picture-button').all()) {
     if (!(await button.isVisible())) continue;
-    expect((await button.boundingBox())!.height).toBeGreaterThanOrEqual(36);
+    expect((await button.boundingBox())!.height).toBeGreaterThanOrEqual(24);
   }
+  const panel = (await window.boundingBox())!;
+  const room = await window.evaluate((e) => e.parentElement!.clientHeight);
+  expect(panel.y + panel.height).toBeLessThanOrEqual(room);
 }
 
 async function closeWindow(window: Locator): Promise<void> {

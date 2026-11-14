@@ -155,9 +155,12 @@ test('the bank: the first PIN, then the PIN; a stack in with its count, an item 
   if (isPhone()) {
     // the phone: the bank panel's words at least 14 px, its cells big enough for a finger
     for (const target of [bank.locator('.hud-bank-phone-tabs button').first(), bank.locator('[data-bank-gold="0"] .hud-res-static-text'),
-      bank.locator('.hud-window-title'), grid0.locator('[data-item-id] span').first()]) {
+      grid0.locator('[data-item-id] span').first()]) {
       expect(await target.evaluate((e) => parseFloat(getComputedStyle(e).fontSize))).toBeGreaterThanOrEqual(14);
     }
+    // 2026-11-14 (owner): the window's own V15 frame and caption, its title Neuz's 12 px
+    await expect(bank.locator('.hud-window-frame')).toHaveCSS('display', 'grid');
+    expect(await bank.locator('.hud-window-title').evaluate((e) => parseFloat(getComputedStyle(e).fontSize))).toBe(12);
     expect((await grid0.locator('.hud-bank-cell').first().boundingBox())!.width).toBeGreaterThanOrEqual(40);
     // another bank's tab shows it covered
     await bank.locator('[data-bank-tab="1"]').tap();

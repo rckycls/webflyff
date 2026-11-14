@@ -18,7 +18,7 @@ import type { NumpadKey } from '../numpad';
 import { BUY, CHAT, PAD_KEYS, SELL, VENDOR } from './vendorLayouts';
 import { BuyPad, SellPad } from '../../vendor/vendorKeypad';
 import type { PadKey } from '../../vendor/vendorKeypad';
-import { VENDOR_SLOTS, priceColor, slotName, slotPoint, withCommas } from '../../vendor/vendorRules';
+import { VENDOR_SLOTS, priceColor, shortPrice, slotName, slotPoint, withCommas } from '../../vendor/vendorRules';
 
 /** What a slot shows: the item (its icon and name), the count up for sale and the unit price. */
 export interface SlotView {
@@ -54,6 +54,21 @@ const PHONE_SHEET = { sellWidth: 540, buyWidth: 480, height: 290 };
 /** The slot font: `m_pFontText` (Verdana 9 points, 12 px); the measure for the 108 px cut. */
 const SLOT_FONT = '12px Verdana, sans-serif';
 
+/** 2026-11-14: the phone's grid shows ten slots a page (5 x 2), each on the item windows' slot picture. */
+export const PHONE_PAGE = 10;
+const PHONE_SLOT = 'WndChgElemItem.bmp';
+
+/** The slots the phone's grid shows, in order: every one for the seller, the filled ones for a buyer. */
+export function phoneCells(slots: readonly (SlotView | null | undefined)[], own: boolean): number[] {
+  const cells: number[] = [];
+  for (let i = 0; i < VENDOR_SLOTS; i++) if (own || slots[i] != null) cells.push(i);
+  return cells;
+}
+
+/** An item's whole name on the phone: "name +N" when upgraded, " x9" when a stack is up. */
+const phoneItemName = (view: SlotView): string =>
+  `${view.name}${(view.item.abilityOption ?? 0) > 0 ? ` +${view.item.abilityOption}` : ''}${view.stacks ? ` x${view.count}` : ''}`;
+
 /** A plain button of the phone panels, found by `data-vendor-button`. */
 const textButton = (doc: Document, label: string, press: () => void, name?: string): HTMLButtonElement =>
   sharedTextButton(doc, label, press, name, 'vendorButton');
@@ -80,6 +95,14 @@ export class VendorWindow {
   chosen: number | null = null;
   private hint: HTMLElement | null = null;
   private carrying = false;
+  /** 2026-11-14: the phone's page of ten (5 x 2), its arrows, and the tapped filled slot whose name and price show. */
+  private page = 0;
+  picked: number | null = null;
+  private pager: HTMLElement | null = null;
+  private pageText: HTMLElement | null = null;
+  private pagePrev: HTMLButtonElement | null = null;
+  private pageNext: HTMLButtonElement | null = null;
+  private detail: HTMLElement | null = null;
 
   constructor(private readonly art: UiArt, private readonly actions: VendorWindowActions, private readonly doc: Document = document) {
     this.phone = isPhone(doc);
@@ -140,13 +163,25 @@ export class VendorWindow {
       this.cancelButton = textButton(doc, 'Cancel', () => this.actions.cancel(), 'cancel');
       this.resetButton = textButton(doc, 'Reset', () => this.actions.reset(), 'reset');
       buttons.append(this.okButton, this.cancelButton, this.resetButton, textButton(doc, 'Chat', () => this.actions.chat(), 'chat'));
-      head.append(label, buttons);
+      head.append(label);
       this.hint = doc.createElement('p');
       this.hint.className = 'vendor-phone-hint';
+      // 2026-11-14 (owner, "make items 5x2"): the slots a 5 x 2 grid, ten a page, the page's arrows under it, and the
+      // tapped item's whole name and price (with Remove) on the line under them
       this.slotArea = doc.createElement('div');
       this.slotArea.className = 'vendor-phone-slots';
       this.slotArea.setAttribute('role', 'list');
-      body.append(head, this.hint, this.slotArea);
+      this.pager = doc.createElement('div');
+      this.pager.className = 'vendor-phone-pager';
+      this.pageText = doc.createElement('span');
+      this.pagePrev = textButton(doc, '◀', () => this.turnPage(-1), 'page-prev');
+      this.pageNext = textButton(doc, '▶', () => this.turnPage(1), 'page-next');
+      this.pagePrev.setAttribute('aria-label', 'Previous page');
+      this.pageNext.setAttribute('aria-label', 'Next page');
+      this.pager.append(this.pagePrev, this.pageText, this.pageNext);
+      this.detail = doc.createElement('div');
+      this.detail.className = 'vendor-phone-detail';
+      body.append(head, this.slotArea, this.pager, this.detail, this.hint, buttons);
     }
     this.frame.element.classList.add('hud-vendor');
     // the close button is Cancel (WIDC_CANCEL or WTBID_CLOSE, WndVendor.cpp:380-392): it asks first while the own shop is open
@@ -293,64 +328,118 @@ export class VendorWindow {
     if (this.carrying) this.markCarried(null);
   }
 
-  /** The phone's list: a row a slot, tapped to choose a free one (seller), take one off (seller) or buy (buyer). */
+  /**
+   * 2026-11-14 (owner, "make items 5x2 and smaller spacings and boxes"): the phone's slots as a 5 x 2 grid of slot boxes, ten
+   * a page (the seller's twenty in two; a buyer's the filled ones), each the icon, its count and its price cut short in the
+   * price's colour. A tap on an empty one chooses it for the next bag item (seller); on a filled one it shows the item's
+   * whole name and price under the grid, with Remove while the own shop is shut (seller), or opens the buy pad (buyer).
+   */
   private drawPhone(): void {
     const doc = this.doc;
     const open = this.frame.element.hasAttribute('data-vendor-open');
+    const shown = phoneCells(this.slots, this.own);
+    const pages = Math.max(1, Math.ceil(shown.length / PHONE_PAGE));
+    this.page = Math.min(Math.max(0, this.page), pages - 1);
+    if (this.picked !== null && this.slots[this.picked] == null) this.picked = null;
     this.slotArea.replaceChildren();
-    for (let i = 0; i < VENDOR_SLOTS; i++) {
+    for (const i of shown.slice(this.page * PHONE_PAGE, (this.page + 1) * PHONE_PAGE)) {
       const view = this.slots[i] ?? null;
-      if (view === null && !this.own) continue;
-      const row = doc.createElement('div');
-      row.className = 'vendor-phone-row';
-      row.dataset.slot = String(i);
-      row.setAttribute('role', 'listitem');
+      const cell = doc.createElement('div');
+      cell.className = 'vendor-phone-row';
+      cell.dataset.slot = String(i);
+      cell.setAttribute('role', 'listitem');
       const icon = doc.createElement('span');
       icon.className = 'vendor-phone-icon';
+      // the item windows' slot (WndChgElemItem.bmp), the white rounded box of V15
+      icon.style.backgroundImage = themeUrl(this.art, PHONE_SLOT);
       if (view?.icon) {
         const image = doc.createElement('img');
         image.src = this.art.url(view.icon);
         image.alt = '';
         icon.append(image);
       }
-      const text = doc.createElement('span');
-      text.className = 'vendor-phone-text';
+      // the whole name, for a screen reader and the tests: the cell itself shows the icon, the count and the price
       const name = doc.createElement('span');
       name.className = 'vendor-slot-name';
       const price = doc.createElement('span');
       price.className = 'vendor-slot-price';
+      cell.append(icon);
       if (view !== null) {
-        row.classList.add('is-filled');
-        name.textContent = `${view.name}${(view.item.abilityOption ?? 0) > 0 ? ` +${view.item.abilityOption}` : ''}${view.stacks ? ` x${view.count}` : ''}`;
-        price.textContent = `${withCommas(view.cost)} penya`;
+        cell.classList.add('is-filled');
+        name.textContent = phoneItemName(view);
+        price.textContent = shortPrice(view.cost);
         price.style.color = cssRgb(priceColor(view.cost));
+        if (view.stacks) {
+          const count = doc.createElement('span');
+          count.className = 'vendor-phone-count';
+          count.textContent = String(view.count);
+          cell.append(count);
+        }
+        cell.classList.toggle('is-picked', this.picked === i);
       } else {
-        name.textContent = open ? 'Empty' : 'Empty: tap, then tap a bag item';
-        row.classList.toggle('is-chosen', this.chosen === i);
+        name.textContent = 'Empty';
+        cell.classList.toggle('is-chosen', this.chosen === i);
       }
-      text.append(name, price);
-      row.append(icon, text);
-      if (view !== null && this.own && !open) {
-        row.append(textButton(doc, 'Remove', () => this.actions.remove(i), 'remove'));
-      }
-      row.addEventListener('click', (event) => {
-        if ((event.target as Element).closest('button') !== null) return;
+      cell.append(price, name);
+      cell.addEventListener('click', () => {
         if (view !== null) {
-          if (!this.own) this.actions.buy(i);
+          if (!this.own) {
+            this.actions.buy(i);
+            return;
+          }
+          this.picked = this.picked === i ? null : i;
+          this.draw();
           return;
         }
         if (this.own && !open) {
           this.chosen = this.chosen === i ? null : i;
+          this.picked = null;
           this.draw();
         }
       });
-      this.slotArea.append(row);
+      this.slotArea.append(cell);
     }
+    if (this.pager !== null && this.pageText !== null && this.pagePrev !== null && this.pageNext !== null) {
+      this.pager.hidden = pages < 2;
+      this.pageText.textContent = `${this.page + 1}/${pages}`;
+      this.pagePrev.disabled = this.page === 0;
+      this.pageNext.disabled = this.page >= pages - 1;
+    }
+    this.drawDetail(open);
   }
 
-  /** The place the phone's bag tap goes: the chosen free slot, else the first free one. */
+  /** The line under the phone's grid: the tapped item's whole name and price (and Remove), else the hint. */
+  private drawDetail(open: boolean): void {
+    if (this.detail === null) return;
+    const doc = this.doc;
+    const i = this.picked;
+    const view = i === null ? null : this.slots[i] ?? null;
+    this.detail.replaceChildren();
+    this.detail.hidden = view === null;
+    if (this.hint !== null) this.hint.hidden = view !== null;
+    if (view === null || i === null) return;
+    const name = doc.createElement('span');
+    name.className = 'vendor-phone-detail-name';
+    name.textContent = phoneItemName(view);
+    const price = doc.createElement('span');
+    price.className = 'vendor-phone-detail-price';
+    price.textContent = `${withCommas(view.cost)} penya`;
+    price.style.color = cssRgb(priceColor(view.cost));
+    this.detail.append(name, price);
+    if (this.own && !open) this.detail.append(textButton(doc, 'Remove', () => this.actions.remove(i), 'remove'));
+  }
+
+  /** The phone's page arrows. */
+  private turnPage(by: number): void {
+    this.page += by;
+    this.draw();
+  }
+
+  /** The place the phone's bag tap goes: the chosen free slot, else the first free one of the page shown, else any. */
   freeSlot(): number | null {
     if (this.chosen !== null && this.slots[this.chosen] == null) return this.chosen;
+    const first = this.page * PHONE_PAGE;
+    for (let i = first; i < Math.min(VENDOR_SLOTS, first + PHONE_PAGE); i++) if (this.slots[i] == null) return i;
     for (let i = 0; i < VENDOR_SLOTS; i++) if (this.slots[i] == null) return i;
     return null;
   }
