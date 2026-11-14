@@ -209,7 +209,7 @@ export class MemoryAdminStore implements AdminStore {
     this.call('undeleteCharacter');
     const c = this.character(idPlayer);
     if (c === undefined || !c.deleted) return 'missing';
-    if (c.deletedAt !== null && c.deletedAt.slice(0, 8) < dayText(this.now(), -7)) return 'too_old';
+    if (c.deletedAt === null || c.deletedAt.slice(0, 8) <= dayText(this.now(), -7)) return 'too_old';
     if (this.characters.some((o) => o !== c && !o.deleted && same(o.account, c.account) && o.slot === c.slot)) return 'slot_taken';
     c.deleted = false;
     c.deletedAt = null;
