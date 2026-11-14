@@ -31,14 +31,14 @@ function partyOf(members: number[]): PartyState {
 }
 
 describe('the player\'s menu ([R §5.1])', () => {
-  it('the entries in Neuz\'s order, Invite and (2026-11-10) Add to my list and Trade enabled', () => {
+  it('the entries in Neuz\'s order, Invite, (2026-11-10) Add to my list and Trade, and (2026-11-15) Cheer enabled', () => {
     expect(playerMenuEntries(TEXTS)).toEqual([
       { id: 2, label: 'Trade', enabled: true },
       { id: 5, label: 'Add to my list', enabled: true },
       { id: 6, label: 'Invite to join party', enabled: true },
       { id: 12, label: 'Follow', enabled: false },
       { id: 24, label: 'View equipment', enabled: false },
-      { id: 31, label: 'Cheer', enabled: false },
+      { id: 31, label: 'Cheer', enabled: true },
       { id: 151, label: 'Request Mentor-Pupil Bond', enabled: false },
     ]);
   });

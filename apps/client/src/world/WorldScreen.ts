@@ -114,7 +114,7 @@ import { FriendHud } from './friends/friendHud';
 import { TradeHud } from './trade/tradeHud';
 import { Messenger, loadFriendOptions, saveFriendOptions } from './friends/messenger';
 import type { FriendEvent } from './friends/messenger';
-import { MMI_ADD_MESSENGER, MMI_INVITE_COMPANY, MMI_INVITE_PARTY, MMI_TRADE, menuInReach, playerMenuEntries } from './party/playerMenu';
+import { MMI_ADD_MESSENGER, MMI_CHEER, MMI_INVITE_COMPANY, MMI_INVITE_PARTY, MMI_TRADE, menuInReach, playerMenuEntries } from './party/playerMenu';
 import { PartyHpBars } from './render/PartyHpBars';
 import { partyEffects } from './fx/partyEffects';
 import type { PartyEffectContext, PartyMover } from './fx/partyEffects';
@@ -4003,6 +4003,11 @@ export class WorldScreen {
     // 2026-11-10: "Invite to join guild" (MMI_INVITE_COMPANY, InviteCompany, WndWorld.cpp:11268-11282): the player's object
     if (entry === MMI_INVITE_COMPANY && player !== undefined) {
       this.guildHud?.inviteMover(id);
+      return;
+    }
+    // 2026-11-15 (social): "Cheer" (MMI_CHEER, WndWorld.cpp:5680-5686): SendCheering to a player, not while flying
+    if (entry === MMI_CHEER) {
+      if (player !== undefined && this.world?.self()?.act.isFlying() !== true) this.session.sendCheering(id);
       return;
     }
     if (entry !== MMI_INVITE_PARTY || player === undefined || this.focus?.targetId !== id) return;

@@ -7,13 +7,14 @@
 //   MMI_INVITE_COMPANY 7      Invite to join guild        in a guild whose rank may invite (:6556-6565); 2026-11-10: the guild
 //                                                         (guild/guildHud.ts `inviteMover`)
 //   MMI_DUEL 10, _PARTY 11    the duels                   event EVE_18 and a fight area (:6583-6599): out of scope
-//   MMI_TRACE 12              Follow                      always (:6605)
-//   MMI_QUERYEQUIP 24         View equipment              always (:6606)
-//   MMI_CHEER 31              Cheer                       always (:6607)
-//   MMI_INVITE_CAMPUS 151     Request Mentor-Pupil Bond   always, or Cancel for a pupil (:6608-6618)
+//   MMI_TRACE 12              Follow                      always (:6611); 2026-11-15 (social): the follow (social/follow.ts)
+//   MMI_QUERYEQUIP 24         View equipment              always (:6612)
+//   MMI_CHEER 31              Cheer                       always (:6613); 2026-11-15 (social): SendCheering when not flying
+//                                                         (`OnCommand` MMI_CHEER, WndWorld.cpp:5680-5686)
+//   MMI_INVITE_CAMPUS 151     Request Mentor-Pupil Bond   always, or Cancel for a pupil (:6614-6624)
 //
-// Only the invite, (2026-11-10, friends-say) "Add to my list" and (2026-11-10, trade) Trade are the browser's; the rest are
-// shown greyed, as the NPC menu's (plan Decisions 4).
+// Only the invite, (2026-11-10, friends-say) "Add to my list", (2026-11-10, trade) Trade and (2026-11-15, social) Cheer and
+// Follow are the browser's; the rest are shown greyed, as the NPC menu's (plan Decisions 4).
 
 import type { Vec3 } from '@flyffweb/protocol';
 import type { Texts } from '../gameData';
@@ -29,12 +30,18 @@ export const MMI_ADD_MESSENGER = 5;
 const MMI_INVITE_CAMPUS = 151;
 /** 2026-11-10: MMI_INVITE_COMPANY (`Resource/defineNeuz.h:99`), "Invite to join guild" (`WndWorld.cpp:5645-5650`). */
 export const MMI_INVITE_COMPANY = 7;
+/** 2026-11-15 (social): MMI_TRACE, "Follow" (`Resource/defineNeuz.h`, `OnCommand`, WndWorld.cpp:5673-5679). */
+export const MMI_TRACE = 12;
+/** 2026-11-15 (social): MMI_CHEER, "Cheer" (`Resource/defineNeuz.h:123`, `OnCommand`, WndWorld.cpp:5680-5686). */
+export const MMI_CHEER = 31;
 
 const ENTRIES: ReadonlyArray<[number, string]> = [
   [MMI_TRADE, 'Trade'], [5, 'Add to my list'], [MMI_INVITE_PARTY, 'Invite to join party'],
-  [MMI_INVITE_COMPANY, 'Invite to join guild'], [12, 'Follow'], [24, 'View equipment'],
-  [31, 'Cheer'], [MMI_INVITE_CAMPUS, 'Request Mentor-Pupil Bond'],
+  [MMI_INVITE_COMPANY, 'Invite to join guild'], [MMI_TRACE, 'Follow'], [24, 'View equipment'],
+  [MMI_CHEER, 'Cheer'], [MMI_INVITE_CAMPUS, 'Request Mentor-Pupil Bond'],
 ];
+/** The entries the browser acts on. */
+const ACTIVE: ReadonlySet<number> = new Set([MMI_INVITE_PARTY, MMI_ADD_MESSENGER, MMI_TRADE, MMI_INVITE_COMPANY, MMI_CHEER]);
 
 /** 2026-11-10: MMI_QUERYEQUIP, the one line of a seller's menu (`__CSC_VER12_1`, WndWorld.cpp:6544-6547). */
 const MMI_QUERYEQUIP = 24;
@@ -48,7 +55,7 @@ export function playerMenuEntries(texts: Texts, vendor = false, guildInvite = fa
   return ENTRIES.filter(([id]) => (!vendor || id === MMI_QUERYEQUIP) && (id !== MMI_INVITE_COMPANY || guildInvite)).map(([id, english]) => ({
     id,
     label: id === MMI_INVITE_CAMPUS ? (texts.get('TID_GAME_MENU_CAMPUS_INVITATION')?.text ?? english) : menuLabel(id, texts, english),
-    enabled: id === MMI_INVITE_PARTY || id === MMI_ADD_MESSENGER || id === MMI_TRADE || id === MMI_INVITE_COMPANY,
+    enabled: ACTIVE.has(id),
   }));
 }
 
