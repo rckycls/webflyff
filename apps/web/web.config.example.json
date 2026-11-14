@@ -15,5 +15,11 @@
   "servers": {
     "certifier": { "host": "127.0.0.1", "port": 23000 },
     "login": { "host": "127.0.0.1", "port": 28000 }
+  },
+  "admin": {
+    "listen": { "host": "127.0.0.1", "port": 8092 },
+    "origin": "https://admin.play.example.com",
+    "sql": { "user": "flyffweb_admin", "password": "the password given to Install-AdminLogin.ps1" },
+    "credentialsFile": "C:\\flyff-web\\admin-login.json"
   }
 }

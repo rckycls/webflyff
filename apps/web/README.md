@@ -99,3 +99,28 @@ shows after the next `npm run build:client` (hosting guide, step 3b; on your PC,
 - **Screenshots** are `.webp`, `.png` or `.jpg` files in `apps/client/content/screenshots/`, shown in name order (name them
   `1-town.webp`, `2-fight.webp`, ...). Up to 6; without any, the page says "Screenshots coming soon". Keep each under
   about 300 KB (WebP at 1280 px wide is plenty).
+
+## The admin panel
+
+Your private page for accounts, characters, server status, item and penya sends, and a log of every change. The same
+service runs it on a second port, `127.0.0.1:8092`, only when `web.config.json` has an `admin` section; on the hosted
+site Caddy shows it at `admin.<your domain>` (hosting guide, step 8b; your steps: `docs/admin-panel-deploy.md`). The panel
+never stops the site: a bad `admin` section or login file writes `admin: panel off: <reason>` and leaves 8092 closed.
+
+| Setting (`admin`) | What |
+| --- | --- |
+| `listen` | `127.0.0.1`, port `8092`. Only `127.0.0.1` is allowed. |
+| `origin` | The panel's address as the browser shows it: `https://admin.play.example.com`. Test runs may use `http://127.0.0.1:<port>`. |
+| `sql` | `user` (`flyffweb_admin`) and `password` (from `sql/Install-AdminLogin.ps1`). Host, port and databases come from `sql` above. |
+| `credentialsFile` | `C:\flyff-web\admin-login.json`, written by `npm run admin:setup -- --file <path>`. |
+| `sessionIdleMinutes`, `sessionMaxHours` | Optional: 30 and 12. |
+| `serverHost`, `ports`, `gateway` | Optional: where the 7 game servers and the gateway are probed (default this machine and their usual ports). |
+| `assetsDir` | Optional: the converted game data for the item list, `dist/assets`. |
+
+- **The database login.** `sql/Install-AdminLogin.ps1` makes `flyffweb_admin`, the `usp_Admin*` procedures and the log
+  table `ACCOUNT_DBF.dbo.WEB_ADMIN_LOG`. The login may run those procedures and `usp_CreateNewAccount`, nothing else.
+  `sql/admin-check.sql`, run as `flyffweb_admin`, prints `PASS` for each check.
+- **Logging in:** name, password and the 6-digit code of your authenticator app. Each code works once. 5 wrong tries
+  from one address: it waits 15 minutes; 20 in an hour from anywhere: login closes for an hour.
+- **Try it without a database:** `npm run admin:demo` (made-up data on `http://127.0.0.1:8099`, log in as `Poreotix` /
+  `demo-password-1` with the code it prints). `npm run test:e2e:admin` runs the page's browser check against it.

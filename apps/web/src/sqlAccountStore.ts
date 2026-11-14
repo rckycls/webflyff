@@ -6,8 +6,8 @@ import sql from 'mssql';
 import type { AccountStore } from './accountStore';
 import type { WebConfig } from './config';
 
-/** A pool that connects on first use and again after a failed connect. */
-function lazyPool(settings: WebConfig['sql'], database: string): { get(): Promise<sql.ConnectionPool>; close(): Promise<void> } {
+/** A pool that connects on first use and again after a failed connect (also the admin store's). */
+export function lazyPool(settings: WebConfig['sql'], database: string): { get(): Promise<sql.ConnectionPool>; close(): Promise<void> } {
   let pool: Promise<sql.ConnectionPool> | undefined;
   return {
     get() {
@@ -36,7 +36,7 @@ function lazyPool(settings: WebConfig['sql'], database: string): { get(): Promis
 }
 
 /** The first column of the first row the procedure selected. */
-function firstValue(result: sql.IProcedureResult<Record<string, unknown>>): unknown {
+export function firstValue(result: sql.IProcedureResult<Record<string, unknown>>): unknown {
   const row = result.recordsets[0]?.[0] ?? result.recordset?.[0];
   return row === undefined ? undefined : Object.values(row)[0];
 }

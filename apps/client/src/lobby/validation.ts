@@ -2,19 +2,8 @@ import { MAX_CHARACTER_SLOTS } from '@flyffweb/protocol';
 import type { NewCharacter } from '@flyffweb/protocol';
 import { HAIR_MESH_COUNT, HEAD_MESH_COUNT, JOB_VAGRANT, Sex } from './appearance';
 
-/**
- * What the create screen checks about a name, for English (`IsValidPlayerName`), in its order. The name is judged
- * trimmed. Returns the message to show, or `undefined` when the name is fine. Piece 2 allows ASCII letters and
- * digits only, so a name always fits the ASCII-only packets.
- */
-export function validateCharacterName(name: string): string | undefined {
-  const trimmed = name.trim();
-  if (trimmed === '') return 'Enter name.';
-  if (trimmed.length < 4 || trimmed.length > 16) return 'Character Name must be 4 to 16 characters long.';
-  if (/^[0-9]/.test(trimmed)) return 'The name cannot start with a number.';
-  if (!/^[A-Za-z0-9]+$/.test(trimmed)) return 'You cannot use special characters or spaces in a name.';
-  return undefined;
-}
+/** The create screen's name rules, shared with the admin panel (packages/protocol/src/web/characterName.ts). */
+export { validateCharacterName } from '@flyffweb/protocol';
 
 /**
  * The Bank PIN (`__2ND_PASSWORD_SYSTEM`) rules of the create screen, in order. `confirm` is the second entry of

@@ -502,6 +502,78 @@ nssm status flyff-caddy
 
 Success: `SERVICE_RUNNING`.
 
+## Step 8b. The admin panel (optional)
+
+The admin panel is your private page for accounts, characters, server status, item and penya sends, and its own log of every change. It runs inside the web service of step 6b, on a second port that only this machine can reach (`127.0.0.1:8092`), and Caddy shows it at its own address, `admin.play.example.com`. It talks only to SQL Server, through its own login `flyffweb_admin`, which can run the panel's procedures and nothing else. The design is `docs/superpowers/specs/2026-11-15-admin-panel-design.md`.
+
+Skip this step and the panel stays off: nothing listens on 8092.
+
+1. **DNS.** Add a second A record, `admin`, with the same address as step 1. Check it: `nslookup admin.play.example.com` prints that address.
+2. **The SQL login.** On the machine with SQL Server, in an administrator PowerShell:
+
+```
+cd "$FlyffWeb\apps\web\sql"
+powershell -ExecutionPolicy Bypass -File .\Install-AdminLogin.ps1
+```
+
+It asks twice for a new password for `flyffweb_admin` (12 characters or more; you need it in point 4). Success: `Check passed: flyffweb_admin logged in on 127.0.0.1,1433 ...`. Then open `admin-check.sql` (same folder) in SQL Server Management Studio, connected **as `flyffweb_admin`** (SQL Server Authentication), and run it: every line it prints must start with `PASS`.
+
+3. **Your panel login.** In `$FlyffWeb`:
+
+```
+npm run admin:setup -- --file C:\flyff-web\admin-login.json
+```
+
+Choose your panel name and a password of 12 characters or more (not your game password). It shows a key: add it to an authenticator app on your phone (Google Authenticator, Microsoft Authenticator, ...) as a time-based key, then type the 6-digit code the app shows. Success: `Written: C:\flyff-web\admin-login.json`. Run it again any time to change the password or the key; the old key then stops working.
+
+4. **The settings.** Add an `admin` section to `C:\flyff-web\web.config.json` (after `"servers": {...}`, with a comma before it), with the password from point 2:
+
+```
+  "admin": {
+    "listen": { "host": "127.0.0.1", "port": 8092 },
+    "origin": "https://admin.play.example.com",
+    "sql": { "user": "flyffweb_admin", "password": "the password given to Install-AdminLogin.ps1" },
+    "credentialsFile": "C:\\flyff-web\\admin-login.json"
+  }
+```
+
+Server set up with the deploy scripts (`deploy.json`)? Set `"adminPanel": true` there and run `4-Setup-FlyffWeb` again instead: it writes this section.
+
+5. **Caddy.** Add this block at the end of `C:\caddy\Caddyfile`, below the site's block, with your own address:
+
+```
+admin.play.example.com {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy no-referrer
+		X-Robots-Tag noindex
+		Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+		-Server
+	}
+	request_body {
+		max_size 16KB
+	}
+	reverse_proxy 127.0.0.1:8092
+}
+```
+
+Then:
+
+```
+C:\caddy\caddy.exe validate --config C:\caddy\Caddyfile
+nssm restart flyff-caddy
+nssm restart flyffweb-site
+```
+
+Success: `Valid configuration`; the web service's log (`C:\flyff-logs\web.log`) gets a line ending in `admin: listening 127.0.0.1:8092`; and `curl.exe -s -o NUL -w "%{http_code}" http://127.0.0.1:8092/` prints `200`. A line `admin: panel off: <reason>` names what is wrong instead (the rest of the site keeps working).
+
+6. **Log in.** Open `https://admin.play.example.com` on your PC or phone: a login box. Log in with your panel name, password and the app's code. Success: the Status tab lists the 7 game servers. A wrong code is refused; 5 wrong tries make your address wait 15 minutes.
+
+- **What it cannot do while the game runs:** rename, set penya, move to Flarine, delete and undo delete. The Database server keeps characters in memory and would undo them: stop the servers first (the panel says when they are locked). Bans, passwords, GM levels, emails and item or penya sends work any time; a ban stops the next login, and sends arrive the next time the character enters the game.
+- **To switch the panel off at once:** remove the `admin` section from `web.config.json` (and set `"adminPanel": false` in `deploy.json` if you use it), then `nssm restart flyffweb-site`. Every panel session ends; sign-up and the game carry on.
+
 ## Step 9. Check it from outside
 
 1. On a phone **on mobile data** (Wi-Fi off), open `https://play.example.com`. You should see the home page (the game's art, **Play**, the news, and the status **Online · N players**), with the padlock showing a valid certificate. Open `https://play.example.com/no-such-page`: it shows "Page not found".
