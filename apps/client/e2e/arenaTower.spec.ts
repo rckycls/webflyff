@@ -151,11 +151,12 @@ test('the Forsaken Tower: its window, a floor\'s cost, HEAVENTOWER_TELEPORT, and
   await expect(tower.locator('[data-chosen]')).toHaveCount(0);
   await shot('tower-window');
   if (isPhone()) {
-    // the phone: every word 14 px or more, each line tall enough for a finger, the window inside the screen
+    // the phone (2026-11-14, the V15 look, compact): Neuz's 12 px words, each line 26 px for a finger, the window inside the screen
     for (const target of [tower.locator('.hud-res-text-body'), rows.nth(0), tower.locator('.hud-window-title')]) {
-      expect(await target.evaluate((e) => parseFloat(getComputedStyle(e).fontSize))).toBeGreaterThanOrEqual(14);
+      expect(await target.evaluate((e) => parseFloat(getComputedStyle(e).fontSize))).toBe(12);
     }
-    expect((await rows.nth(2).boundingBox())!.height).toBeGreaterThanOrEqual(30);
+    expect((await rows.nth(2).boundingBox())!.height).toBeGreaterThanOrEqual(26);
+    await expect(tower.locator('.hud-window-frame')).toHaveCSS('display', 'grid');
     const view = page.viewportSize()!;
     const at = (await tower.boundingBox())!;
     expect(at.x >= 0 && at.y >= 0 && at.x + at.width <= view.width && at.y + at.height <= view.height).toBe(true);

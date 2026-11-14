@@ -108,13 +108,14 @@ test('Summon Angel: the window sends CREATEANGEL; the angel follows, fills and i
   await expect(angelWindow.locator('[data-angel-slot="10"][data-filled] img')).toBeVisible();
   await expect.poll(rates).toEqual(['91.0', '6.0', '3.0']);
   if (isPhone()) {
-    // the phone's words at least 14 px, its slots 44 px and its buttons a finger's
-    for (const target of [angelWindow.locator('.hud-res-text-body'), angelWindow.locator('[data-control="WIDC_STATIC3"] .hud-res-static-text'),
-      angelWindow.locator('[data-control="WIDC_START"]')]) {
-      expect(await target.evaluate((e) => parseFloat(getComputedStyle(e).fontSize))).toBeGreaterThanOrEqual(14);
+    // the phone (2026-11-14, the V15 look, compact): Neuz's 12 px words, 34 px slots, Start its own picture, the window above
+    // the task bar
+    for (const target of [angelWindow.locator('.hud-res-text-body'), angelWindow.locator('[data-control="WIDC_STATIC3"] .hud-res-static-text')]) {
+      expect(await target.evaluate((e) => parseFloat(getComputedStyle(e).fontSize))).toBe(12);
     }
-    expect((await angelWindow.locator('[data-angel-slot="0"]').boundingBox())!.width).toBeGreaterThanOrEqual(44);
-    expect((await angelWindow.locator('[data-control="WIDC_START"]').boundingBox())!.height).toBeGreaterThanOrEqual(36);
+    expect((await angelWindow.locator('[data-angel-slot="0"]').boundingBox())!.width).toBeGreaterThanOrEqual(32);
+    expect((await angelWindow.locator('[data-control="WIDC_START"]').boundingBox())!.height).toBeGreaterThanOrEqual(20);
+    await expect(angelWindow.locator('.hud-window-frame')).toHaveCSS('display', 'grid');
     // a tap on a filled slot takes it out, and it goes back in
     await angelWindow.locator('[data-angel-slot="1"]').tap();
     await expect(angelWindow.locator('[data-angel-slot][data-filled]')).toHaveCount(2);

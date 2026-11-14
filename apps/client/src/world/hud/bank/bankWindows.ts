@@ -144,9 +144,12 @@ export class BankWindow {
   private usable: boolean[] = [true, false, false];
 
   constructor(private readonly art: UiArt, private readonly doc: Document = document) {
-    const window = new ResWindow(BANK, art, doc);
+    // 2026-11-14 (owner, compact phone panels): a phone shows one bank at a time in a narrow panel, which the three banks'
+    // one picture (WndCommonBank.tga, 528 px) cannot frame: it has Neuz's tiled frame (WndTile00-11) instead
+    const phone = isPhone(doc);
+    const window = new ResWindow(phone ? { ...BANK, texture: undefined } : BANK, art, doc);
     window.frame.element.classList.add('hud-bank');
-    this.phone = isPhone(doc);
+    this.phone = phone;
     for (let bank = 0; bank < BANK_COUNT; bank++) {
       const area = window.control(GRIDS[bank]!);
       area.classList.add('hud-bank-tab');

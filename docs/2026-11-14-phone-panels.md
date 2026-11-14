@@ -76,13 +76,23 @@ The desktop is unchanged.
 | Post: Send / Inbox / Read | 14-16 px words, 32-36 px fields and tabs | 330 x 296: 22 px tabs. 22 px fields on their edit tiles, with the combo's own drop arrow. The text box. The slot, penya and ButtSend. The fee line. Inbox rows 40 px. The read window the same way. |
 | Create Jewels, Jewel Setting, Sunstone & Moonstone, Repair (same family) | same flat panels | same skin: slot(s) and Start at the left, the words at the right (Jewel Setting: the weapon with its five sockets beside it) |
 
-## Other phone windows with the same flat-panel look
+## Round two: the other windows with the same flat-panel look (owner: "do them")
 
-| Window | What changed now | What is left |
+The rule: when the desktop window fits the room beside the bag of items (about 515 x 286 on the iPhone), the phone shows
+Neuz's own window at its own size. Only a window that does not fit gets a compact layout in the same skin.
+
+The bag beside the Trade, the Bank, the Post, the own Private Shop and the Angel window now shows its items alone, as it
+already did beside the item windows. None of those windows takes a worn item, and the window gets the room.
+
+| Window | Before | After |
 |---|---|---|
-| Trade, Bank, Heaven Tower, Summon Angel, Lord, the shop's chat | The real V15 frame and caption, the backing, no imitation stripes or gradient title. The trade no longer overlaps the full bag (min width 320). | Their contents keep the earlier 14 px words and big CSS buttons. They need the same compact relayout. |
-| The bag, the NPC shop | Not touched: the bag uses its V15 picture for its title, and every item window stands beside it. | Could get the same frame. |
-| ResistItem (GM) | Left out of the panel: its window has a texture of its own. | Shows as the desktop window. |
+| Trade | flat panel, two white boxes, Arial 14 px words, big gradient OK / Cancel; overlapped the full bag | Neuz's own window: WndTrade.tga at 352 x 288, its cells, names, penya and ButtOk / ButtCancel where the desktop has them, a bigger invisible press area round each button. The request, the final box and the penya box sit in the middle at their own size, with their pictures. |
+| Bank | flat panel, 34 px tabs, 44 px cells, 14 px words, full height | 252 px panel on the tiled V15 frame (the three banks' 528 px picture cannot frame one bank). 22 px tabs. Six 34 px cells to a row on Neuz's slot picture, 5 rows shown, then scrolled. 24 px penya line, 12 px words. The PIN windows unchanged. |
+| Forsaken Tower | 560 px white panel, 34 px rows, 14 px | Neuz's 384 px window in the middle, sized to its content: the description on its edit (up to 64 px, then scrolled), the seven floors 26 px each (Neuz's 15) on theirs, 12 px |
+| Angel Window | full-height panel, 44 px slots, big gradient buttons, the text box over the slots | 480 px across: the stones' four rows of 34 px slots with Reset, Cancel and Start (their pictures) under them at the left; the words, the three rates and the white angel's lines at the right; 12 px |
+| Lord windows (info, bid, candidates, pledge, vote, event, skill) | 560 px panels, 40 px rows and buttons, 14 px, the group headers' words missing under their tiles | 460 px wide, sized to their content (the bid window scrolls). The group headers (white words on their blue tiles), the boxes and lists on their edits, 26 px rows, 22 px edits, the buttons their pictures at 1.2x. Lord Skill (the phone's own button) is a grey V15 button with its word, since ButOk2 says "Ok". |
+| The bag, the NPC shop | (unchanged: the bag's title is its own V15 picture) | — |
+| ResistItem (GM) | (its own picture, WndUpgradeBase.tga) | shown as the desktop window |
 
 ## Checks
 
@@ -100,13 +110,23 @@ $env:E2E_CLIENT_PORT='5190'; npx playwright test -c apps/client/playwright.confi
 ```
 
 Passing means every test passes, or only failures main already has. The specs changed:
-- `itemNpcWindows` (`phoneSized`: the V15 frame shown, 12 px words, slots ≥ 32 px, buttons ≥ 24 px, inside the room);
+- `itemNpcWindows` (`phoneSized`: the V15 frame shown, 12 px words, slots ≥ 32 px, buttons ≥ 24 px, inside the room;
+  Safe Upgrade's cells ≥ 32; ResistItem keeps its own picture);
 - `personalShop` (10 cells a page, the pager, keys ≥ 36 px);
-- `bank` (the title is Neuz's 12 px).
+- `post` (12 px words, the read window's V15 frame, Send ≥ 24 px);
+- `jewels` (12 px words, START ≥ 24, sockets ≥ 36);
+- `bank` (the title, tabs and penya 12 px, cells ≥ 32);
+- `trade` (Neuz's 352 x 288 window, 12 px words);
+- `summonAngel` (12 px, slots ≥ 32, the V15 frame);
+- `lord` (words ≥ 12, buttons ≥ 24);
+- `arenaTower` (12 px, rows ≥ 26, the V15 frame).
+
+After round two these were run here and all pass, on both the phone and desktop Chromium projects: `post`,
+`itemNpcWindows`, `jewels`, `personalShop`, `bank`, `trade`, `summonAngel`, `lord`, `arenaTower`.
 
 Seen in pictures here, Chromium only:
 - the phone project at 863 x 360: the NPC menu, every BoBoChan and Peach window, the post (send, inbox, read), the shop
-  and its chosen slot;
+  and its chosen slot, the trade, the bank, the Forsaken Tower, the Angel window and the Lord's windows;
 - desktop windows unchanged.
 
 Not seen here: a real iPhone. Worth checking there:

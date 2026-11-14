@@ -91,6 +91,9 @@ async function itemsOnly(page: Page, window: Locator): Promise<void> {
  */
 async function phoneSized(window: Locator): Promise<void> {
   if (!isPhone()) return;
+  // (the GM's ResistItem keeps its own picture, WndUpgradeBase.tga, and its desktop layout)
+  const own = await window.evaluate((e) => e.classList.contains('hud-resist-item'));
+  if (own) return;
   await expect(window.locator('.hud-window-frame')).toHaveCSS('display', 'grid');
   for (const target of await window.locator('.hud-window-body .hud-res-text-body').all()) {
     if (!(await target.isVisible())) continue;
@@ -152,8 +155,8 @@ test('BoBoChan: Safe Element, Create Unique Weapon, Remove Jewel, Remove Element
   await phoneSized(safety);
   await itemsOnly(page, safety);
   if (isPhone()) {
-    // the phone's panel: the rows' cells 44 px, beside the bag and not under it
-    expect((await safety.locator('[data-control="MATERIAL0"]').boundingBox())!.width).toBeGreaterThanOrEqual(44);
+    // the phone's panel (2026-11-14, compact): the tries' cells 32 px, beside the bag and not under it
+    expect((await safety.locator('[data-control="MATERIAL0"]').boundingBox())!.width).toBeGreaterThanOrEqual(32);
     const panel = (await safety.boundingBox())!, bag = (await page.locator('.hud-inventory').boundingBox())!;
     expect(panel.x + panel.width).toBeLessThanOrEqual(bag.x + 1);
   }
