@@ -1,4 +1,5 @@
 import type { Vec3, WebUiSheets, WebUiSheet } from '@flyffweb/formats';
+import { chatEmoticonKey } from '@flyffweb/formats';
 import type { PerspectiveCamera, Scene } from 'three';
 import { CanvasTexture, LinearFilter, SRGBColorSpace, Sprite, SpriteMaterial, Vector3 } from 'three';
 import type { Mover } from '../WorldState';
@@ -12,6 +13,8 @@ interface Indicator {
   questSprite: Sprite | null;
   emoteUntil: number;
   emoteSprite: Sprite | null;
+  /** 2026-11-14: the emote's texture: 'attack' (the monsters' !0) or 'chat:<index>' (a player's emoticon). */
+  emote: string;
 }
 
 const at = new Vector3();
@@ -20,6 +23,8 @@ const at = new Vector3();
 export class WorldIndicatorLayer {
   private readonly indicators = new Map<number, Indicator>();
   private readonly textures = new Map<string, CanvasTexture>();
+  /** 2026-11-14: the emoticons' pictures being loaded. */
+  private readonly loading = new Set<string>();
 
   private disposed = false;
 
@@ -81,8 +86,8 @@ export class WorldIndicatorLayer {
           indicator.quest = marker;
         }
       }
-      if (indicator && indicator.emoteUntil > now && indicator.emoteSprite === null && this.textures.has('attack')) {
-        indicator.emoteSprite = this.sprite(this.textures.get('attack')!, `attack emote ${mover.objectId}`);
+      if (indicator && indicator.emoteUntil > now && indicator.emoteSprite === null && this.textures.has(indicator.emote)) {
+        indicator.emoteSprite = this.sprite(this.textures.get(indicator.emote)!, `${indicator.emote} emote ${mover.objectId}`);
       }
       if (indicator?.emoteSprite && indicator.emoteUntil <= now) {
         this.remove(indicator.emoteSprite);
@@ -98,6 +103,11 @@ export class WorldIndicatorLayer {
     let indicator = this.indicators.get(objectId);
     if (indicator === undefined) {
       indicator = this.make(objectId);
+    }
+    if (indicator.emote !== 'attack') {
+      this.remove(indicator.emoteSprite);
+      indicator.emoteSprite = null;
+      indicator.emote = 'attack';
     }
     if (indicator.emoteSprite === null && this.textures.has('attack')) indicator.emoteSprite = this.sprite(this.textures.get('attack')!, `attack emote ${objectId}`);
     indicator.emoteUntil = now + EMOTE_MS;
@@ -146,8 +156,49 @@ export class WorldIndicatorLayer {
     this.textures.clear();
   }
 
+  /**
+   * 2026-11-14 (motion window): a player's emoticon over its head for 5 s (`CDialogMsg::AddEmoticonUser`, `AddTexture`'s
+   * `m_timer.Set( 5000 )`, DialogMsg.cpp:779-808), in place of its attack mark or another emoticon. Its picture is loaded
+   * the first time (`chatEmoticonKey`); `urlOf` gives its URL.
+   */
+  emoticon(objectId: number, index: number, now: number, urlOf: (key: string) => string | null): void {
+    const name = `chat:${index}`;
+    if (!this.textures.has(name) && !this.loading.has(name)) {
+      const url = urlOf(chatEmoticonKey(index));
+      if (url !== null) {
+        this.loading.add(name);
+        const image = this.doc.createElement('img');
+        image.src = url;
+        image.decode().then(() => {
+          if (this.disposed) return;
+          const canvas = this.doc.createElement('canvas');
+          canvas.width = image.naturalWidth;
+          canvas.height = image.naturalHeight;
+          canvas.getContext('2d')?.drawImage(image, 0, 0);
+          this.textures.set(name, textureOf(canvas));
+        }).catch(() => { /* a picture not converted yet: no face */ }).finally(() => this.loading.delete(name));
+      }
+    }
+    const indicator = this.indicators.get(objectId) ?? this.make(objectId);
+    if (indicator.emote !== name) {
+      this.remove(indicator.emoteSprite);
+      indicator.emoteSprite = null;
+      indicator.emote = name;
+    }
+    indicator.emoteUntil = now + EMOTE_MS;
+  }
+
+  /** 2026-11-14: the face over `objectId` gone, a line of chat in its place (`AddMessage` removes it, DialogMsg.cpp:843-851). */
+  clearEmoticon(objectId: number): void {
+    const indicator = this.indicators.get(objectId);
+    if (indicator === undefined || indicator.emoteUntil === 0) return;
+    this.remove(indicator.emoteSprite);
+    indicator.emoteSprite = null;
+    indicator.emoteUntil = 0;
+  }
+
   private make(id: number): Indicator {
-    const indicator: Indicator = { quest: null, questSprite: null, emoteUntil: 0, emoteSprite: null };
+    const indicator: Indicator = { quest: null, questSprite: null, emoteUntil: 0, emoteSprite: null, emote: 'attack' };
     this.indicators.set(id, indicator);
     return indicator;
   }
@@ -170,4 +221,13 @@ export class WorldIndicatorLayer {
     (sprite.material as SpriteMaterial).dispose();
   }
 
+}
+
+/** A sprite's texture of `canvas`, drawn as the sheets' are (no mipmaps, linear). */
+function textureOf(canvas: HTMLCanvasElement): CanvasTexture {
+  const texture = new CanvasTexture(canvas);
+  texture.colorSpace = SRGBColorSpace;
+  texture.minFilter = LinearFilter;
+  texture.generateMipmaps = false;
+  return texture;
 }

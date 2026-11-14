@@ -4137,3 +4137,28 @@ fieldset:disabled .btn {
   .hud-worldmap-close span { visibility: hidden; }
   .hud-worldmap-close { top: calc(3% - 22px); right: calc(12.9% - 22px); }
 }
+
+/* 2026-11-14: the Motion window (hud/motionWindow.ts, CWndMotion): two grids of 32 px icons on the tab control's edit
+   tiles, the strip of tabs under them; the icons are drawn as they are, a click uses one and a drag carries it to the bar */
+.hud-motion-page { position: absolute; }
+.hud-motion-page[hidden] { display: none; }
+.hud-motion-tabs { z-index: 1; }
+.hud-motion-cell {
+  position: absolute; box-sizing: border-box; padding: 0; border: 0; border-radius: 0;
+  background: var(--motion-icon) center / 32px 32px no-repeat; cursor: pointer;
+}
+.hud-motion-cell:focus-visible { outline: 1px solid #2e70a9; }
+
+/* the phone: 40 px cells for a finger; the chosen icon (the last tapped) ringed, the one picked for the bar lit, and the
+   Task bar button in the phone panels' beige, pressed while the chosen icon is the one picked (as the skill window's) */
+@media (max-width: 1000px) and (pointer: coarse) {
+  .hud-motion-cell[data-chosen] { outline: 2px solid #795431; outline-offset: -2px; border-radius: 4px; }
+  .hud-motion-cell[data-picked] { background-color: #ffe494; }
+  .hud-motion .hud-tab-title { font-size: 13px; text-align: center; }
+  .hud-motion-taskbar {
+    position: absolute; box-sizing: border-box; padding: 0; border: 2px solid #dba98c; border-radius: 6px; background: #fff6eb;
+    color: #382b20; font: bold 16px/25px Verdana, Arial, sans-serif; cursor: pointer;
+  }
+  .hud-motion-taskbar[aria-pressed='true'] { background: #ffe494; border-color: #795431; }
+  .hud-motion-taskbar:disabled { opacity: 0.5; cursor: default; }
+}

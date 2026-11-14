@@ -183,6 +183,14 @@ export const PacketType = {
   QUERY_PLAYER_DATA: 0xf000f802,
   LOGIN_PROTECT_NUMPAD: 0x88100200,
   LOGIN_PROTECT_CERT: 0x88100201,
+  /**
+   * 2026-11-14 (motion window): `PACKETTYPE_MOTION` (sit down, stand up), `PACKETTYPE_CHEERING`, `PACKETTYPE_DO_ESCAPE` and
+   * `PACKETTYPE_PROPOSE` (`MsgHdr.h:142, 392, 39, 777`; world/motion.ts).
+   */
+  MOTION: 0x00ff0016,
+  CHEERING: 0xffffff7c,
+  DO_ESCAPE: 0x00000020,
+  PROPOSE: 0x8ffff000,
 } as const;
 
 /** The version string CERTIFY carries (`NEUZ_MSGVR` in `Source/_Common/ServerCommon.h`). */
@@ -336,6 +344,8 @@ export const MessageType = {
   /** 2026-11-10: every local event's state at join (`CUser::AddFlyffEvent`, `MsgHdr.h:1087`; world/angel.ts). */
   FLYFF_EVENT: 0x00b2,
   SET_LOCAL_EVENT: 0x00b3,
+  /** 2026-11-14 (motion window): the cheer points and the time to the next (`CUser::AddSetCheerParam`, `MsgHdr.h:1066`). */
+  SETCHEERPARAM: 0x00b4,
   /** 2026-11-05: the safe upgrade's answer (`CUser::AddSmeltSafety`, `MsgHdr.h:1301`): a byte. */
   SMELT_SAFETY: 0x9900,
   /** 2026-11-11: Remove Element upgrading's answer (`CUser::AddRemoveAttribute`, User.cpp:7813-7821; `MsgHdr.h:1184`): a BOOL. */

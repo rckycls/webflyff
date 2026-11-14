@@ -75,6 +75,7 @@ describe('world constants', () => {
       SM_MODE: 0x003f, SM_MODE_ALL: 0x003e, RESISTSMMODE: 0x005d, ULTIMATE: 0x0100, SMELT_SAFETY: 0x9900,
       REMOVE_ATTRIBUTE: 0x0122, // 2026-11-11
       ANGEL: 0x00b1, FLYFF_EVENT: 0x00b2, SET_LOCAL_EVENT: 0x00b3, // 2026-11-10: Summon Angel (MsgHdr.h:1185, :1088)
+      SETCHEERPARAM: 0x00b4, // 2026-11-14: the Motion window's Cheer (MsgHdr.h:1066)
       // 2026-11-05: the item windows' answers.
       SUMMON: 0x00ed, SEX_CHANGE: 0x00dc, CHANGEFACE: 0x004d,
       // Piece 7 M5: flight.

@@ -745,7 +745,7 @@ describe('TaskBar (CWndTaskBar, WndTaskBar.cpp)', () => {
     bar.update(own, BAR_DATA); bar.setInventoryShortcut(0, 3);
     expect(sent).toContainEqual({ type: 'ADDITEMTASKBAR', bar: 0, slot: 3, shortcut: expect.objectContaining({ id: 0, kind: ShortcutKind.ITEM }) });
   });
-  it("shows the new character's bar: the lollipops (3) and the biscuit (1) greyed, the motions as plain greyed slots, and the applets' icons", () => {
+  it("shows the new character's bar: the lollipops (3) and the biscuit (1), the motions' icons, and the applets' icons", () => {
     const bar = taskBarOn();
     bar.update(newVagrantWithBar(), BAR_DATA);
     // the item bar: the item's icon (CItemBase::GetTexture) and m_Inventory.GetItemCount( m_dwItemId ) (:946-956), greyed
@@ -756,8 +756,9 @@ describe('TaskBar (CWndTaskBar, WndTaskBar.cpp)', () => {
     expect(shown(slot(bar, 'item', 1))).toEqual({
       kind: 'item', greyed: false, icon: 'url("/assets/ui/item/itm_genfoobiscuit.png")', count: '1', hotkey: '',
     });
-    for (const i of [2, 8]) {
-      expect(shown(slot(bar, 'item', i))).toEqual({ kind: 'plain', greyed: true, icon: '', count: '', hotkey: '' });
+    // 2026-11-14 (motion window): the motions Pickup and Sit, their icons (SetTaskBarTexture, :445-453)
+    for (const [i, icon] of [[2, 'mot_basepickup'], [8, 'mot_basesit']] as const) {
+      expect(shown(slot(bar, 'item', i))).toEqual({ kind: 'skill', greyed: false, icon: `url("/assets/ui/${icon}.png")`, count: '', hotkey: '' });
     }
     for (const i of [3, 4, 5, 6, 7]) expect(shown(slot(bar, 'item', i)).kind).toBe('');
     // the applets: their icon from AddAllApplet's table (SetTaskBarTexture, :405-416) and their hotkey above (:889-896)
@@ -773,7 +774,8 @@ describe('TaskBar (CWndTaskBar, WndTaskBar.cpp)', () => {
     for (const i of [2, 3]) {
       expect(shown(slot(bar, 'applet', i))).toEqual({ kind: 'applet', greyed: true, icon: '', count: '', hotkey: '' });
     }
-    expect(shown(slot(bar, 'applet', 4))).toEqual({ kind: 'plain', greyed: true, icon: '', count: '', hotkey: '' });
+    // 2026-11-14: the motion Nearest Town Teleport
+    expect(shown(slot(bar, 'applet', 4))).toEqual({ kind: 'skill', greyed: false, icon: 'url("/assets/ui/mot_baseescape.png")', count: '', hotkey: '' });
   });
 
   it('with no own numbers, or before the TASKBAR, the bars are empty (InitTaskBar) and the rest of the bar is drawn', () => {
@@ -784,7 +786,7 @@ describe('TaskBar (CWndTaskBar, WndTaskBar.cpp)', () => {
     expect(bar.element.querySelectorAll('.hud-slot[data-kind]')).toHaveLength(0);
     expect(bar.element.querySelector('.hud-taskbar-number')!.textContent).toBe('1');
     bar.element.querySelector<HTMLButtonElement>('.hud-taskbar-start')!.click();
-    bar.element.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')[13]!.click();
+    bar.element.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')[14]!.click(); // Log out, after Motion (2026-11-14)
     expect(calls).toEqual(['logOut']);
     // the own numbers come with no TASKBAR yet: still empty; then it comes
     const own = newVagrant();
@@ -869,7 +871,7 @@ describe('TaskBar (CWndTaskBar, WndTaskBar.cpp)', () => {
     expect(bar.bar).toBe(1);
     expect(number()).toBe('2');
     expect(shown(slot(bar, 'item', 0)).kind).toBe('');
-    expect(shown(slot(bar, 'item', 4)).kind).toBe('plain');
+    expect(shown(slot(bar, 'item', 4)).kind).toBe('skill'); // a motion's icon (2026-11-14)
     key('keydown', 'Digit8');
     expect(bar.bar).toBe(7);
     // the down arrow goes on to the next bar, past the last to the first; the up arrow back, past the first to the last
@@ -906,22 +908,22 @@ describe('TaskBar (CWndTaskBar, WndTaskBar.cpp)', () => {
     expect(menu.hidden).toBe(false);
     expect(bar.menuOpen).toBe(true);
     const items = [...menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
-    expect(items.map((item) => item.getAttribute('aria-label'))).toEqual(['Status', 'Character', 'Skills', 'Inventory', 'Private Shop', 'Quest Diary', 'World Map', 'Navigator', 'Chatting', 'Messenger', 'Party', 'Guild', 'Option', 'Log out']);
-    expect(items.map((item) => item.querySelector('.hud-menu-text')!.textContent)).toEqual(['Status', 'Character', 'Skills', 'Inventory', 'Private Shop', 'Quest Diary', 'World Map', 'Navigator', 'Chatting', 'Messenger', 'Party', 'Guild', 'Option', 'Log out']);
+    expect(items.map((item) => item.getAttribute('aria-label'))).toEqual(['Status', 'Character', 'Skills', 'Inventory', 'Private Shop', 'Quest Diary', 'Motion', 'World Map', 'Navigator', 'Chatting', 'Messenger', 'Party', 'Guild', 'Option', 'Log out']);
+    expect(items.map((item) => item.querySelector('.hud-menu-text')!.textContent)).toEqual(['Status', 'Character', 'Skills', 'Inventory', 'Private Shop', 'Quest Diary', 'Motion', 'World Map', 'Navigator', 'Chatting', 'Messenger', 'Party', 'Guild', 'Option', 'Log out']);
     // every line has its window (the skill window's, milestone 2's, too)
-    expect(items.map((item) => item.disabled)).toEqual([false, false, false, false, false, false, false, false, false, false, false, false, false, false]);
+    expect(items.map((item) => item.disabled)).toEqual(Array.from({ length: 15 }, () => false));
     expect(items[0]!.querySelector<HTMLElement>('.hud-menu-icon')!.style.backgroundImage).toContain('/assets/ui/icon_status.png');
     // as CWndTaskMenu draws it (WndTaskBar.cpp:2646-2653), line i at (10, 50 + 22 i), 162 wide, with its applet's hotkey
     // (AppendMenu, :2746); each line takes its whole 22 px row, no gap between two (ruling R27). The picture,
     // WndTaskMenu.tga (192 x 496), is drawn in three: its top edge (0-50), the four lines' rows (50-138) and its bottom
-    // edge (the last 26 px), 384 px in all, for the fourteen lines the client has instead of Neuz's twenty (2026-11-10: Messenger,
-    // Private Shop, Guild)
+    // edge (the last 26 px), 408 px in all, for the fifteen lines the client has instead of Neuz's twenty (2026-11-10: Messenger,
+    // Private Shop, Guild; 2026-11-14: Motion)
     const slices = [...menu.querySelectorAll<HTMLElement>('.hud-menu-slice')];
     expect(slices.map((slice) => [slice.style.top, slice.style.height, slice.style.backgroundPosition])).toEqual([
-      ['0px', '50px', '0px 0px'], ['50px', '308px', '0px -50px'], ['358px', '26px', '0px -470px'],
+      ['0px', '50px', '0px 0px'], ['50px', '330px', '0px -50px'], ['380px', '28px', '0px -468px'],
     ]);
     expect(slices.every((slice) => slice.style.backgroundImage === 'url("/assets/ui/wndtaskmenu.png")')).toBe(true);
-    expect([menu.style.width, menu.style.height]).toEqual(['192px', '384px']);
+    expect([menu.style.width, menu.style.height]).toEqual(['192px', '408px']);
     expect(items.map((item) => [item.style.left, item.style.top, item.style.width, item.style.height])).toEqual([
       ['10px', '50px', '162px', '22px'], ['10px', '72px', '162px', '22px'], ['10px', '94px', '162px', '22px'],
       ['10px', '116px', '162px', '22px'], ['10px', '138px', '162px', '22px'], ['10px', '160px', '162px', '22px'],
@@ -933,11 +935,12 @@ describe('TaskBar (CWndTaskBar, WndTaskBar.cpp)', () => {
       ['10px', '292px', '162px', '22px'],
       ['10px', '314px', '162px', '22px'],
       ['10px', '336px', '162px', '22px'],
+      ['10px', '358px', '162px', '22px'],
     ]);
-    expect(items.map((item) => item.querySelector('.hud-menu-hotkey')!.textContent)).toEqual(['T', 'H', 'K', 'I', '', 'Q', 'M', 'N', '', 'E', 'P', 'G', '', '']);
+    expect(items.map((item) => item.querySelector('.hud-menu-hotkey')!.textContent)).toEqual(['T', 'H', 'K', 'I', '', 'Q', 'O', 'M', 'N', '', 'E', 'P', 'G', '', '']);
     // the menu stands on the bar, its own scale
     expect(menu.style.bottom).toBe('48px');
-    items[13]!.click();
+    items[14]!.click();
     expect(calls).toEqual(['logOut']);
     expect(menu.hidden).toBe(true);
     // Start again opens it; Status opens the status window and closes the menu; Start twice, or a press elsewhere, closes it
@@ -1310,8 +1313,8 @@ describe('TaskBar: stackable items, names, focus and room (WndTaskBar.cpp)', () 
     const name = (row: 'applet' | 'item', i: number) => slot(bar, row, i).getAttribute('aria-label');
     expect([name('item', 0), name('item', 1), name('item', 3)]).toEqual(['Lollipop', 'Biscuit', 'Wooden Sword']);
     expect([name('applet', 0), name('applet', 1)]).toEqual(['Item Mall', 'Time Items']);
-    // an applet the build lacks, a plain slot and an empty one have no name
-    expect([name('applet', 2), name('item', 2), name('item', 5)]).toEqual([null, null, null]);
+    // an applet the build lacks and an empty slot have no name; a motion its description (2026-11-14, PutTooTip :631-670)
+    expect([name('applet', 2), name('item', 2), name('item', 5)]).toEqual([null, 'Pickup Nearby Item', null]);
     expect(bar.element.querySelector('.hud-taskbar-action')!.getAttribute('aria-label')).toBe('Action Slot');
   });
 
@@ -1354,46 +1357,46 @@ describe('TaskBar: stackable items, names, focus and room (WndTaskBar.cpp)', () 
     expect(bar.element.querySelector<HTMLElement>('.hud-taskbar-strip')!.style.transform).toBe('scale(0.75)');
     expect([menu.style.transform, menu.style.bottom]).toEqual(['', '36px']);
     // 150 px high: 102 px above the bar
-    expect(menuOn(800, 150).menu.style.transform).toBe(`scale(${(150 - 48) / 384})`);
+    expect(menuOn(800, 150).menu.style.transform).toBe(`scale(${(150 - 48) / 408})`);
   });
 
   it('on a touch screen it is up to twice its size as the room above the bar allows; a phone\'s at most 0.85 (2026-11-13)', () => {
     onTouchScreen(() => {
-      // 2026-11-12: a landscape phone's room is under the fourteen lines' 384 px in one column, so they stand in two
-      // columns of seven (232 px: 50 + 7 x 22 + the bottom edge's 28); 2026-11-13 (owner, "make the menus smaller"): drawn
+      // 2026-11-12: a landscape phone's room is under the lines' height in one column, so they stand in two columns (2026-11-14:
+      // fifteen lines, 8 and 7, 252 px: 50 + 8 x 22 + the bottom edge's 26); 2026-11-13 (owner, "make the menus smaller"): drawn
       // at most at 0.85 on a phone, whatever the room
       expect(menuOn(844, 390).menu.style.transform).toBe('scale(0.85)');
       expect(menuOn(750, 342).menu.style.transform).toBe('scale(0.85)');
       // a phone shorter than the menu at 0.85: as the room allows
-      expect(menuOn(568, 220).menu.style.transform).toBe(`scale(${(220 - 48 * (Math.round(0.56 * (568 - 32)) / 620)) / 232})`);
+      expect(menuOn(568, 220).menu.style.transform).toBe(`scale(${(220 - 48 * (Math.round(0.56 * (568 - 32)) / 620)) / 252})`);
       // a tall touch screen, wider than a phone, keeps one column, up to twice its size
       expect(menuOn(1024, 900).menu.style.width).toBe('192px');
       expect(menuOn(1024, 900).menu.style.transform).toBe('scale(2)');
     });
   });
 
-  it('on a short touch screen the lines stand in two columns of seven, each column on its own picture', () => {
+  it('on a short touch screen the lines stand in two columns, 8 and 7 (2026-11-14: with Motion), each column on its own picture', () => {
     onTouchScreen(() => {
       const { menu } = menuOn(750, 342);
-      expect([menu.style.width, menu.style.height]).toEqual(['384px', '232px']);
+      expect([menu.style.width, menu.style.height]).toEqual(['384px', '252px']);
       const slices = [...menu.querySelectorAll<HTMLElement>('.hud-menu-slice')];
-      // after seven lines' rows (an odd number) the bottom edge is 28 px from row 468, the picture's stripes in step
+      // after eight lines' rows (an even number) the bottom edge is 26 px from row 470, the picture's stripes in step
       expect(slices.map((slice) => [slice.style.left, slice.style.top, slice.style.height, slice.style.backgroundPosition])).toEqual([
-        ['0px', '0px', '50px', '0px 0px'], ['0px', '50px', '154px', '0px -50px'], ['0px', '204px', '28px', '0px -468px'],
-        ['192px', '0px', '50px', '0px 0px'], ['192px', '50px', '154px', '0px -50px'], ['192px', '204px', '28px', '0px -468px'],
+        ['0px', '0px', '50px', '0px 0px'], ['0px', '50px', '176px', '0px -50px'], ['0px', '226px', '26px', '0px -470px'],
+        ['192px', '0px', '50px', '0px 0px'], ['192px', '50px', '176px', '0px -50px'], ['192px', '226px', '26px', '0px -470px'],
       ]);
       const items = [...menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
       expect(items.map((item) => [item.style.left, item.style.top])).toEqual([
-        ...[0, 1, 2, 3, 4, 5, 6].map((row) => ['10px', `${50 + 22 * row}px`]),
+        ...[0, 1, 2, 3, 4, 5, 6, 7].map((row) => ['10px', `${50 + 22 * row}px`]),
         ...[0, 1, 2, 3, 4, 5, 6].map((row) => ['202px', `${50 + 22 * row}px`]),
       ]);
-      expect(items[7]!.getAttribute('aria-label')).toBe('Navigator');
+      expect(items[8]!.getAttribute('aria-label')).toBe('Navigator');
     });
   });
 
   it('a first touch on a computer with a mouse lays the menu out for a finger', () => {
-    // 2026-11-10: 440 px high, room above the bar for the 384 px menu (Guild is its fourteenth line)
-    const { bar, menu } = menuOn(844, 440);
+    // 2026-11-10: room above the bar for the whole menu (2026-11-14: 408 px, Motion its fifteenth line), 460 px high
+    const { bar, menu } = menuOn(844, 460);
     expect(menu.style.transform).toBe('');
     const touch = pointer('pointerdown', 10, 10);
     Object.defineProperty(touch, 'pointerType', { value: 'touch' });
@@ -2780,7 +2783,7 @@ describe('TaskBar: editing the bars (CWndTaskBar::OnDropIcon, WndTaskBar.cpp:187
     // let go on the applet row, it moves there (ADDAPPLETTASKBAR, then REMOVEITEMTASKBAR; 2026-11-05)
     drag(slot(bar, 'item', 8), slot(bar, 'applet', 4));
     expect(sent.slice(4).map((p) => p.type)).toEqual(['ADDAPPLETTASKBAR', 'REMOVEITEMTASKBAR']);
-    expect([shown(slot(bar, 'item', 8)).kind, shown(slot(bar, 'applet', 4)).kind]).toEqual(['', 'plain']);
+    expect([shown(slot(bar, 'item', 8)).kind, shown(slot(bar, 'applet', 4)).kind]).toEqual(['', 'skill']); // Sit, a motion's icon (2026-11-14)
     // a press that never moved is a press
     slot(bar, 'item', 5).dispatchEvent(pointer('pointerdown', 10, 10));
     window.dispatchEvent(pointer('pointerup', 11, 11));

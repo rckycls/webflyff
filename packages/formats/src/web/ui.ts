@@ -27,3 +27,10 @@ export interface WebUiSheets {
 
 /** The logical key of the sheets catalog in the asset index. */
 export const UI_SHEETS_KEY = 'data/uiSheets.json';
+
+/**
+ * 2026-11-14 (motion window): the key of emoticon `index`'s picture, one frame of `Theme/Default/texChatEmoticon.inc` (29
+ * of 32 x 32, `CDialogMsg::m_texEmoticonUser`) cut out by the UI stage: the Motion window's Emoticon tab, its task bar
+ * shortcuts and the face over a speaker's head.
+ */
+export const chatEmoticonKey = (index: number): string => `ui/chatemoticon/${index}.png`;

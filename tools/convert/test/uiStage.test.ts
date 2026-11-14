@@ -5,7 +5,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { PNG } from 'pngjs';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { readTexturePack } from '@flyffweb/formats';
+import { chatEmoticonKey, readTexturePack } from '@flyffweb/formats';
 import type { RgbaImage, WebUiSheets } from '@flyffweb/formats';
 import { ClientFs } from '../src/ClientFs';
 import { AssetWriter } from '../src/output/AssetWriter';
@@ -395,6 +395,21 @@ describe('the UI stage on a small hand-made client', () => {
     expect([...quest.data.slice(0, 4)]).toEqual([0, 0, 0, 0]);
     const dialog = await png(run, sheets.dialogEmoticons!.image);
     expect([...dialog.data.slice(0, 4)]).toEqual([255, 125, 0, 255]);
+  });
+
+  it('2026-11-14: writes each chat emoticon of texChatEmoticon.inc as a picture of its own (ui/chatemoticon/<index>.png)', async () => {
+    const run = await runUi({
+      'Theme/Default/texChatEmoticon.inc':
+        'number 3 texture "Theme/Default/texChatEmoticon.dds" 0xffff00ff serialize 2 32 32 0 0 0 0 serialize 1 32 32 0 32 0 0',
+      'Theme/Default/texChatEmoticon.dds': solidDds(64, 64, [10, 200, 30, 255]),
+    }, 'texChatEmoticon*');
+    expect(run.report.failures).toEqual([]);
+    for (const index of [0, 1, 2]) {
+      const picture = await png(run, chatEmoticonKey(index));
+      expect([picture.width, picture.height]).toEqual([32, 32]);
+      expect([...picture.data.slice(0, 4)]).toEqual([10, 200, 30, 255]);
+    }
+    expect(run.writer.pathOf(chatEmoticonKey(3))).toBeUndefined();
   });
 
   it('reports a piece of the theme list that the client does not have as a warning, and a .jpg icon once', async () => {

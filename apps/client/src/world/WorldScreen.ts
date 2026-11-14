@@ -86,7 +86,7 @@ import { OptionWindow } from './hud/optionWindow';
 import { DropBox } from './hud/dropBox';
 import type { BoxState, KeptLogin } from '../lobby/reconnect';
 import { TaskBar } from './hud/taskBar';
-import { createItemDetails, ownTooltipContext, positionItemDetails } from './hud/itemDetails';
+import { createItemDetails, createTooltip, ownTooltipContext, positionItemDetails } from './hud/itemDetails';
 import { InventoryWindow } from './hud/inventoryWindow';
 import { ChatWindow } from './hud/chatWindow';
 import { NeuzChat } from './hud/neuzChat';
@@ -142,6 +142,13 @@ import { WorldSounds } from './sound/worldSounds';
 import { TeleporterWindow } from './hud/teleporterWindow';
 import { HeavenTowerWindow } from './hud/heavenTowerWindow';
 import { LORD_ENTRIES, LordHud } from './lord/lordHud';
+// 2026-11-14: the Motion window (docs/2026-11-14-motion-window-research.md)
+import { MotionWindow } from './hud/motionWindow';
+import { nearestDrop, useEmoticon, useMotion } from './motion/motionRules';
+import type { MotionHost } from './motion/motionRules';
+import { emoticonOfLine } from './motion/motionTable';
+import { emoticonTip, motionTip } from './motion/motionTips';
+import type { CheerView } from './motion/motionTips';
 import { LordBook } from './lord/lordBook';
 import { HonorBook } from './honor/honorBook';
 import { isArena } from './combat/arena';
@@ -609,6 +616,13 @@ export class WorldScreen {
   private heavenTower: HeavenTowerWindow | undefined;
   /** 2026-11-11: the Lord system's windows and HUD (lord/lordHud.ts). */
   private lordHud: LordHud | undefined;
+  /** 2026-11-14: the Motion window, the own cheer points (`m_nCheerPoint`, the ms of `m_dwTickCheer`), m_bLButtonDown. */
+  private motionWindow: MotionWindow | undefined;
+  private cheer: { points: number; readyAt: number } = { points: 0, readyAt: 0 };
+  private worldButtonDown = false;
+  private readonly isWorldButtonDown = (): boolean => this.worldButtonDown;
+  private readonly onWorldButtonDown = (event: PointerEvent): void => { if (event.button === 0) this.worldButtonDown = true; };
+  private readonly onWorldButtonUp = (): void => { this.worldButtonDown = false; };
   private itemUse: ItemUse | undefined;
   /** 2026-11-05: the item windows' flows (the name change, the tickets, the summons ...). */
   private itemWindows: ItemWindowFlows | undefined;
@@ -656,6 +670,8 @@ export class WorldScreen {
   /** This world's stage was told to download the ring of tiles around the visible ones (the frame after its first). */
   private preloadStarted = false;
   private loadTimer: ReturnType<typeof setTimeout> | undefined;
+  /** 2026-11-14: `m_timerChat`, a motion's line said 1 s later. */
+  private motionChatTimer: ReturnType<typeof setTimeout> | undefined;
   private lastError = '';
   /** The errors of applying a bundle said on the overlay, so that one that comes with every bundle is listed once. */
   private readonly reported = new Set<string>();
@@ -872,6 +888,8 @@ export class WorldScreen {
         (questId) => this.questCatalog?.get(questId)?.repeat === true);
       // 2026-11-10: the angel's EXP and level (ObjSerializeOpt.cpp:582-583)
       this.angelInfo = { exp: added.player?.own?.angelExp ?? 0n, level: added.player?.own?.angelLevel ?? 0 };
+      // 2026-11-14: the cheer points and the ms to the next one (ObjSerializeOpt.cpp:569-570)
+      this.cheer = { points: added.player?.own?.cheerPoint ?? 0, readyAt: performance.now() + (added.player?.own?.cheerRest ?? 0) };
     }
     const inventoryError = this.own?.inventoryError ?? null;
     if (inventoryError !== null) this.page?.overlay.error(`own inventory: ${inventoryError}`);
@@ -969,6 +987,12 @@ export class WorldScreen {
       }
       if (value.type === 'flyffEvent') { this.localEvents = new Map(value.events.map(({ id, state }) => [id, state])); continue; }
       if (value.type === 'setLocalEvent') { this.localEvents.set(value.id, value.state); continue; }
+      // 2026-11-14: the own cheer points (OnSetCheerParam, DPClient.cpp:15671-15687): TID_CHEER_MESSAGE5 when one was given
+      if (value.type === 'setCheerParam') {
+        this.cheer = { points: value.points, readyAt: performance.now() + value.rest };
+        if (value.add) this.say('TID_CHEER_MESSAGE5');
+        continue;
+      }
       // 2026-11-09 (pets R3): the food mill's answer (OnPetFoodMill, DPClient.cpp:16619-16632)
       if (value.type === 'petMill') { this.petCare?.onMill(value.result, value.count); continue; }
       // 2026-11-09 (pets R4): the pet trade's answer (OnQuePetResurrectionResult, DPClient.cpp:17423-17431)
@@ -1022,6 +1046,23 @@ export class WorldScreen {
             continue;
           }
           if (speaker?.kind !== 'player') continue;
+          // 2026-11-14 (motion window): a line that starts with / or ! goes over the head only, not in the chat (OnChat's
+          // AddMessage, DialogMsg.cpp:812-860): an emoticon's command its face for 5 s, !0 the attack mark, another / line
+          // a bubble
+          if (value.text.startsWith('/') || value.text.startsWith('!')) {
+            if (!showsBubble(speaker)) continue;
+            const emoticon = emoticonOfLine(value.text);
+            if (emoticon !== null) {
+              this.speechBubbles?.remove(objectId);
+              this.indicators?.emoticon(objectId, emoticon, performance.now(), (key) => this.services?.store.url(key) ?? null);
+            } else if (value.text === '!0') this.indicators?.attack(objectId, performance.now());
+            else if (value.text.startsWith('/')) {
+              this.indicators?.clearEmoticon(objectId);
+              this.speechBubbles?.say(objectId, value.text);
+            }
+            continue;
+          }
+          this.indicators?.clearEmoticon(objectId); // a line in its place (AddMessage removes the face)
           this.chatWindow?.append('nearby', world.movers.get(objectId)?.name ?? 'Unknown', value.text);
           // 2026-11-10: no bubble for an invisible game master (PutString, WndManager.cpp:4100-4102)
           // 2026-11-10: and none for a seller (PutString, WndManager.cpp:4097-4098)
@@ -1911,6 +1952,17 @@ export class WorldScreen {
       placeLordSkill: (skill) => taskBar.placeLordSkill(skill),
       removeLordShortcuts: () => taskBar.removeKind(ShortcutKind.LORDSKILL),
     }, this.hudArt!, doc, this.lordBook);
+    // 2026-11-14: the Motion window (O): its motions and emoticons used as ObjectExecutor uses them, carried to the bar
+    this.motionWindow = new MotionWindow(this.hudArt!, {
+      text: (tid) => this.data?.texts.get(tid)?.text ?? '',
+      useMotion: (id) => this.useMotion(id),
+      useEmoticon: (index) => this.useEmoticon(index),
+      carry: (carried, event) => taskBar.carryMotion(carried, event),
+      pick: (carried, within) => taskBar.pickMotion(carried, within),
+      picked: () => taskBar.pickedMotion,
+      tip: (carried) => (carried.from === 'motions' ? motionTip(carried.motion, this.cheerView(), (tid) => this.data?.texts.get(tid)?.text ?? '', false)
+        : emoticonTip(carried.emoticon)),
+    }, doc);
     this.moverMenu = new MoverMenu(doc);
     const partyHud = new PartyHud(this.hudArt!, this.data!.texts, () => this.partyCatalog, {
       session,
@@ -2133,6 +2185,7 @@ export class WorldScreen {
     }
     this.hud!.element.append(
       this.questTracker.element, this.teleporter.frame.element, this.heavenTower.element, ...this.lordHud.elements, this.lordHud.eventIcons,
+      this.motionWindow.frame.element, // 2026-11-14
       // 2026-11-12: the phone's quick slots around Attack (bar 8's first slots; style.css shows them on a phone only)
       taskBar.element, taskBar.quickSlots, taskBar.actionSlotWindow.frame.element, this.attackButton.element, this.jumpButton.element,
       this.actionSlotButton.element, this.flightButtons.element,
@@ -2203,6 +2256,10 @@ export class WorldScreen {
       },
       (time) => attackLoop.onReleased(time), // OnLButtonUp, at the let-go's own time
     );
+    // 2026-11-14: m_bLButtonDown, the button held on the world, which ends a held motion (ActionMoverState.cpp:52-60)
+    renderer.domElement.addEventListener('pointerdown', this.onWorldButtonDown);
+    view.addEventListener('pointerup', this.onWorldButtonUp);
+    view.addEventListener('pointercancel', this.onWorldButtonUp);
     this.cameraControls = new CameraControls(renderer.domElement, (dx, dy) => this.backCamera.rotate(dx, dy));
     // 2026-11-11: the mouse over the world, for its cursor (`updateCursor`)
     renderer.domElement.addEventListener('pointermove', this.onWorldHover);
@@ -3036,6 +3093,7 @@ export class WorldScreen {
     // 2026-11-10: and a seller with an item up does not move (ControlPlayer, WndWorldControlPlayer.cpp:30)
     if (own !== undefined && (isFrozen(own) || this.personalShop?.blocksActions === true)) this.jumpRequested = false;
     else if (own !== undefined) {
+      own.act.lButtonDown = this.isWorldButtonDown; // 2026-11-14: a held motion ends at the own player's click
       // 2026-11-11: the auto-run's stops (autoRun.ts), then its lock: W held (bUp = TRUE, WndWorldControlPlayer.cpp:192-193)
       const attacking = loop.autoAttack || loop.commanding || this.skillUse!.commanding;
       if (autoRunStops({
@@ -3324,6 +3382,7 @@ export class WorldScreen {
     this.actionSlotButton!.update(ownMover !== undefined && !ownMover.act.isDie());
     if (this.own !== undefined && this.characterWindow?.frame.isOpen === true) this.characterWindow.update(this.own, this.entry, now);
     if (this.own !== undefined && this.skillWindow?.isOpen === true) this.skillWindow.update(this.own);
+    if (this.motionWindow?.isOpen === true) this.motionWindow.refresh(); // 2026-11-14: the phone's pick marks
   }
 
   /**
@@ -3350,6 +3409,8 @@ export class WorldScreen {
     if (window === 'guild') { this.guildHud?.toggle(); return; }
     // 2026-11-11: APP_LORD_SKILL, L (FuncApplet.cpp:166-171): the Lord Skill window, the Lord's only
     if (window === 'lordSkill') { this.lordHud?.openSkills(); return; }
+    // 2026-11-14: APP_MOTION, O (FuncApplet.cpp:198): the Motion window
+    if (window === 'motion') { this.motionWindow?.toggle(); return; }
     // 2026-11-10: APP_VENDOR_REVISION, the personal shop, refused while the Summon Angel window is open (WndManager.cpp:2685-2695)
     if (window === 'vendor') {
       if (this.summonAngel?.isOpen === true) this.say('TID_GAME_SUMMONANGELUSING');
@@ -4030,6 +4091,8 @@ export class WorldScreen {
       cooldown: (objectId) => this.itemUse?.cooldownDone(objectId) ?? null,
       // 2026-11-11: the Lord skills' shortcuts: icon, name and cool down
       lordSkills: LordHud.skillCatalog(),
+      // 2026-11-14: a motion's and an emoticon's tooltip on the bar (PutTooTip, WndTaskBar.cpp:584-587, :631-670)
+      shortcutTip: (shortcut) => this.shortcutTip(shortcut),
       lordCooldown: (skill) => this.lordHud?.cooldown(skill) ?? null,
     };
     return this.taskBarData;
@@ -4372,7 +4435,95 @@ export class WorldScreen {
     if (shortcut.kind === ShortcutKind.ITEM) this.itemUse!.use(shortcut.id);
     else if (shortcut.kind === ShortcutKind.CHAT) this.chatWindow?.runShortcut(shortcut.text);
     else if (shortcut.kind === ShortcutKind.LORDSKILL) this.lordHud?.useShortcut(shortcut.id); // 2026-11-11 (WndManager.cpp:2882-2920)
+    // 2026-11-14: a motion or an emoticon (WndManager.cpp:2717-2723, :2922-3098)
+    else if (shortcut.kind === ShortcutKind.MOTION) this.useMotion(shortcut.id);
+    else if (shortcut.kind === ShortcutKind.EMOTICON) this.useEmoticon(shortcut.id);
     else skillUse.useShortcut(shortcut);
+  }
+
+  /** 2026-11-14: `ObjectExecutor( SHORTCUT_MOTION, id )` on the own character (motion/motionRules.ts). */
+  private useMotion(id: number): void {
+    const own = this.world?.self();
+    if (own === undefined || own.act.isFlying()) return;
+    useMotion(id, this.motionHost(own));
+  }
+
+  /** 2026-11-14: `ObjectExecutor( SHORTCUT_EMOTICON, index )`: "/" and its command run as a chat line. */
+  private useEmoticon(index: number): void {
+    useEmoticon(index, { runChat: (text) => this.chatWindow?.runShortcut(text) });
+  }
+
+  /** 2026-11-14: the own cheer points and the ms to the next one now (`m_nCheerPoint`, `m_dwTickCheer - GetTickCount()`). */
+  private cheerView(): CheerView {
+    return { points: this.cheer.points, restMs: Math.max(0, this.cheer.readyAt - performance.now()) };
+  }
+
+  /** 2026-11-14: the task bar's tooltip of a motion or an emoticon shortcut (`PutTooTip`): its lines in the tooltip's frame. */
+  private shortcutTip(shortcut: Shortcut): HTMLElement | null {
+    const text = (tid: string): string => this.data?.texts.get(tid)?.text ?? '';
+    const lines = shortcut.kind === ShortcutKind.MOTION ? motionTip(shortcut.id, this.cheerView(), text, true)
+      : shortcut.kind === ShortcutKind.EMOTICON ? emoticonTip(shortcut.id) : [];
+    if (lines.length === 0 || this.hudArt === undefined) return null;
+    return createTooltip(this.element.ownerDocument, this.hudArt, lines.map((line) => [{ text: line, color: 0x000000 }]));
+  }
+
+  /** 2026-11-14: what a motion asks of the screen, for the own mover `own` (`MotionHost`). */
+  private motionHost(own: Mover): MotionHost {
+    const session = this.session;
+    const focusPlayer = (): { objectId: number; name: string } | null => {
+      const id = this.focus?.targetId ?? null;
+      const mover = id === null ? undefined : this.world?.movers.get(id);
+      return mover?.kind === 'player' && !mover.isSelf ? { objectId: mover.objectId, name: mover.name } : null;
+    };
+    return {
+      act: own.act,
+      vendorOpen: () => this.personalShop?.blocksMotions === true,
+      chatLater: (text) => {
+        // m_szTimerChat: one line, 1 s after the last motion that set it (WndManager.cpp:2930-2933, :3445-3449)
+        clearTimeout(this.motionChatTimer);
+        this.motionChatTimer = setTimeout(() => {
+          this.motionChatTimer = undefined;
+          try { session.sendChat('nearby', text); } catch { /* a character the game's code page lacks */ }
+        }, 1000);
+      },
+      runChat: (text) => this.chatWindow?.runShortcut(text),
+      pickupAround: () => {
+        // DoPickupItemAround: not while attacking or dead (MoverSkill.cpp:3496-3497)
+        if ((own.act.state & ObjSta.ATK_ALL) !== 0 || own.act.isDie() || this.world === undefined) return;
+        const id = nearestDrop(this.world.groundItems, own.act.body.pos);
+        if (id !== null) this.itemActions?.pick(id, performance.now());
+      },
+      sendMotion: (message) => session.sendMotion(message),
+      setAngle: (angle) => { own.act.body.angle = angle; },
+      behave: () => {
+        own.act.clearDest();
+        session.sendBehavior(own.act.report(this.entry.clock.tick()));
+      },
+      escape: () => {
+        // WI_WORLD_GUILDWAR 202 (Resource/defineWorld.h:57): TID_GAME_GUILDCOMBAT_NO_OUTWAR in a box (DPClient.cpp:15641-15645)
+        if (this.worldId === 202) this.messageBox?.open(this.data?.texts.get('TID_GAME_GUILDCOMBAT_NO_OUTWAR')?.text ?? '', 'ok', () => {});
+        else session.sendDoEscape();
+      },
+      focusPlayer,
+      sendCheering: (objectId) => session.sendCheering(objectId),
+      autoAttack: () => {
+        // IsAttackAble( focus ): a wand casts at it, any other hand attacks it on (WndManager.cpp:3011-3036): the Attack
+        // button's press and let-go, which do the same
+        const loop = this.attackLoop;
+        const id = this.focus?.targetId ?? null;
+        const target = id === null ? undefined : this.world?.movers.get(id);
+        if (loop === undefined || target === undefined || !loop.isAttackAble(target)) return false;
+        const now = performance.now();
+        loop.attackButtonDown(now);
+        loop.attackButtonUp(now);
+        return true;
+      },
+      confirmPropose: (name) => {
+        const format = this.data?.texts.get('TID_GAME_PROPOSETO')?.text || 'Would you like to propose to %s?';
+        this.messageBox?.open(formatText(format, [name]), 'okCancel', () => session.sendPropose(name));
+      },
+      say: (tid) => this.say(tid),
+    };
   }
 
   /**
@@ -4437,6 +4588,7 @@ export class WorldScreen {
     this.itemActions?.cancel();
     this.element.classList.remove('world-modal', 'world-menu-open');
     this.element.removeEventListener('contextmenu', this.onContextMenu);
+    clearTimeout(this.motionChatTimer); // 2026-11-14
     clearTimeout(this.loadTimer);
     this.page?.renderer.setAnimationLoop(null);
     this.simulationClock?.dispose();
@@ -4445,6 +4597,9 @@ export class WorldScreen {
     (doc.defaultView ?? window).removeEventListener('blur', this.onBlur);
     (doc.defaultView ?? window).removeEventListener('resize', this.onResize);
     (doc.defaultView ?? window).removeEventListener('keydown', this.onEscape, true);
+    (doc.defaultView ?? window).removeEventListener('pointerup', this.onWorldButtonUp); // 2026-11-14
+    (doc.defaultView ?? window).removeEventListener('pointercancel', this.onWorldButtonUp);
+    this.page?.renderer.domElement.removeEventListener('pointerdown', this.onWorldButtonDown);
     (doc.defaultView ?? window).removeEventListener('keydown', this.onKeyDown);
     (doc.defaultView ?? window).removeEventListener('keyup', this.onKeyUp);
     this.taskBar?.dispose();

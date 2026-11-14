@@ -16,6 +16,7 @@ import type { WebSkill } from '@flyffweb/formats';
 import type { OwnState } from '../OwnState';
 import { canPlaceInQueue, canPlaceOnBar, checkAddSkill, checkSkill } from '../skills/skillRules';
 import { formatText } from './format';
+import { emoticonLine, motionProp } from '../motion/motionTable';
 import type { TaskBarData } from './taskBar';
 
 /** An empty shortcut (`InitTaskBar`'s `memset`, `WndTaskBar.cpp:530-532`). */
@@ -88,7 +89,14 @@ export type Carried =
    * 2026-11-09: the chat's line, carried by its macro mark (`CWndMacroChat::OnLButtonDown`, WndCommunication.cpp:100-128):
    * `SHORTCUT_CHAT`, `m_dwId` 0, the line's first `MAX_SHORTCUT_STRING - 1` (127) bytes.
    */
-  | { from: 'chat'; text: string };
+  | { from: 'chat'; text: string }
+  /**
+   * 2026-11-14: a motion of the Motion window (`CWndMotion1::OnMouseMove`, `WndMotion.cpp:301-313`): `SHORTCUT_MOTION`,
+   * `m_dwId` its `MOT_BASE_*`, no text; or an emoticon (`CWndEmoticon::OnMouseMove`, :432-452): `SHORTCUT_EMOTICON`,
+   * `m_dwId` its index, "/" and its command as the text.
+   */
+  | { from: 'motions'; motion: number }
+  | { from: 'emoticons'; emoticon: number };
 
 /** `MAX_SHORTCUT_STRING` (128): a chat shortcut's text holds 127 bytes. */
 const CHAT_TEXT = 127;
@@ -177,9 +185,22 @@ export class TaskBarEdits {
         kind: ShortcutKind.CHAT, id: 0, type: 0, index: 0, userId: 0, data: 0, text: carried.text.slice(0, CHAT_TEXT),
       };
     }
+    if (carried.from === 'motions') {
+      return motionProp(carried.motion) === undefined ? null : {
+        kind: ShortcutKind.MOTION, id: carried.motion, type: 0, index: 0, userId: 0, data: 0, text: '',
+      };
+    }
+    if (carried.from === 'emoticons') {
+      const text = emoticonLine(carried.emoticon);
+      return text === '' ? null : {
+        kind: ShortcutKind.EMOTICON, id: carried.emoticon, type: 0, index: carried.emoticon, userId: 0, data: 0, text,
+      };
+    }
     if (carried.from === 'item') {
       const shortcut = bars.items[carried.bar]![carried.slot]!;
-      return shortcut.kind === ShortcutKind.NONE ? null : shortcut;
+      if (shortcut.kind === ShortcutKind.NONE) return null;
+      // 2026-11-14: an emoticon's text, which the TASKBAR does not carry, as SetTaskBarTexture makes it (WndTaskBar.cpp:458-467)
+      return shortcut.kind === ShortcutKind.EMOTICON ? { ...shortcut, text: emoticonLine(shortcut.id) } : shortcut;
     }
     return carried.slot < bars.queueCount && bars.queue[carried.slot]!.kind !== ShortcutKind.NONE
       ? bars.queue[carried.slot]!
