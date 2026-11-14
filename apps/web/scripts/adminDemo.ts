@@ -49,7 +49,7 @@ const server = createAdminServer({
   guard: new LoginGuard(now),
   log: { info: (line) => console.log(line), warn: (line) => console.warn(line) },
   now,
-  probe: async () => values.running === true,
+  probe: async () => (values.running === true ? 'open' : 'closed'),
   catalog: loadItemCatalog(assets, (line) => console.warn(line)),
   actions: ADMIN_ACTIONS,
 });

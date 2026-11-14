@@ -6,7 +6,7 @@ import { api, el, fill, messageLine, table } from './ui.js';
 
 const REFRESH_MS = 30_000;
 
-const state = (up) => el('span', { class: up === true ? 'up' : up === false ? 'down' : up, text: up === true ? 'up' : up === false ? 'down' : up });
+const state = (up) => el('span', { class: up === true ? 'up' : up === false ? 'down' : up === 'unknown' ? 'partial' : up, text: up === true ? 'up' : up === false ? 'down' : up === 'unknown' ? 'no answer' : up });
 
 /** The lock line, shared with the Characters tab. */
 export function lockLine(open) {

@@ -1,6 +1,9 @@
+import { once } from 'node:events';
+import { createServer } from 'node:net';
+import type { AddressInfo } from 'node:net';
 import { expect, it } from 'vitest';
 import { STATUS_ACTIONS } from '../src/admin/actions/status';
-import { characterEditsOpen, readServers } from '../src/admin/serverState';
+import { characterEditsOpen, probeState, readServers } from '../src/admin/serverState';
 import { MemoryAdminStore, memoryCharacter } from './support/memoryAdminStore';
 import { allPorts, testContext, testDeps } from './support/adminDeps';
 
@@ -43,6 +46,37 @@ it('opens character edits with the Database and World stopped, and calls the onl
   expect(await characterEditsOpen(deps)).toEqual({ open: true, seen: 'Database down, World down' });
   const status = await STATUS_ACTIONS.status({}, testContext(deps), deps);
   expect(status.body).toMatchObject({ charactersOpen: true, stale: true, online: null });
+});
+
+it('keeps edits locked when a Database or World port gives no clear answer', async () => {
+  const deps = testDeps({ openPorts: without(...DATABASE_AND_WORLD), unknownPorts: new Set([24000]) });
+  const lock = await characterEditsOpen(deps);
+  expect(lock).toEqual({ open: false, seen: 'Database unknown, World down' });
+  const servers = await readServers(deps);
+  expect(servers.find((s) => s.name === 'Database')!.up).toBe('unknown');
+  const status = await STATUS_ACTIONS.status({}, testContext(deps), deps);
+  expect(status.body).toMatchObject({ charactersOpen: false, lockSeen: 'Database unknown, World down' });
+});
+
+it('tells a refused port from one that does not answer', async () => {
+  const listening = createServer();
+  listening.listen(0, '127.0.0.1');
+  await once(listening, 'listening');
+  const openPort = (listening.address() as AddressInfo).port;
+  const closing = createServer();
+  closing.listen(0, '127.0.0.1');
+  await once(closing, 'listening');
+  const closedPort = (closing.address() as AddressInfo).port;
+  closing.close();
+  await once(closing, 'close');
+  try {
+    expect(await probeState('127.0.0.1', openPort, 3000)).toBe('open');
+    expect(await probeState('127.0.0.1', closedPort, 3000)).toBe('closed');
+    // a non-routable address: no answer at all within the time given
+    expect(await probeState('10.255.255.1', 9, 200)).toBe('unknown');
+  } finally {
+    listening.close();
+  }
 });
 
 it('answers without SQL Server, with no players count', async () => {

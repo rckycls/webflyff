@@ -5,7 +5,7 @@
 import type { Server } from 'node:http';
 import type { WebConfig } from '../config';
 import type { Logger } from '../log';
-import { probePort, PROBE_TIMEOUT_MS } from '../status';
+import { LOCK_PROBE_TIMEOUT_MS, probeState } from './serverState';
 import { createAdminServer } from './adminServer';
 import type { ActionHandler } from './adminServer';
 import type { AdminStore } from './adminStore';
@@ -49,7 +49,7 @@ export async function startAdmin(
     guard: new LoginGuard(now),
     log,
     now,
-    probe: (host, port) => probePort(host, port, PROBE_TIMEOUT_MS),
+    probe: (host, port) => probeState(host, port, LOCK_PROBE_TIMEOUT_MS),
     catalog,
     actions,
   });

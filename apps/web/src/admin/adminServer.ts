@@ -27,6 +27,7 @@ import type { CatalogItem } from './itemCatalog';
 import type { LoginGuard } from './loginGuard';
 import { verifyAdminPassword } from './password';
 import type { AdminSession, SessionBook } from './sessions';
+import type { PortState } from './serverState';
 import { matchTotp } from './totp';
 
 export interface AdminContext { session: AdminSession; address: string }
@@ -41,8 +42,8 @@ export interface AdminDeps {
   guard: LoginGuard;
   log: Logger;
   now: () => number;
-  /** Whether `host:port` takes a connection (status.ts's probePort in the service). */
-  probe: (host: string, port: number) => Promise<boolean>;
+  /** How `host:port` answers: open, closed (refused) or unknown (no clear answer); serverState.ts's probeState in the service. */
+  probe: (host: string, port: number) => Promise<PortState>;
   catalog: CatalogItem[];
   actions: Record<string, ActionHandler>;
 }

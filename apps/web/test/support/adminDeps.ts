@@ -37,7 +37,10 @@ export interface TestDeps extends AdminDeps {
   code(offsetSteps?: number): string;
 }
 
-export function testDeps(options: { store?: MemoryAdminStore; actions?: Record<string, ActionHandler>; catalog?: CatalogItem[]; openPorts?: Set<number> } = {}): TestDeps {
+/** `openPorts` answer, `unknownPorts` give no clear answer (a timeout), every other port refuses. */
+export function testDeps(options: {
+  store?: MemoryAdminStore; actions?: Record<string, ActionHandler>; catalog?: CatalogItem[]; openPorts?: Set<number>; unknownPorts?: Set<number>;
+} = {}): TestDeps {
   let now = 1_763_000_000_000;
   const clock = () => now;
   const credentials: AdminCredentials = { user: 'Poreotix', passwordHash: PASSWORD_HASH, totpSecret: TEST_SECRET };
@@ -51,7 +54,7 @@ export function testDeps(options: { store?: MemoryAdminStore; actions?: Record<s
     guard: new LoginGuard(clock),
     log: { info: (line) => lines.push(line), warn: (line) => lines.push(line) },
     now: clock,
-    probe: async (_host, port) => openPorts.has(port),
+    probe: async (_host, port) => (options.unknownPorts?.has(port) ? 'unknown' : openPorts.has(port) ? 'open' : 'closed'),
     catalog: options.catalog ?? [],
     actions: options.actions ?? {},
     openPorts,

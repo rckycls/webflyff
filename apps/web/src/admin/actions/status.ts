@@ -3,7 +3,7 @@
 
 import type { ActionHandler } from '../adminServer';
 import type { CharacterRow } from '../adminStore';
-import { readServers } from '../serverState';
+import { lockFrom, readServers } from '../serverState';
 import { reply } from './fields';
 
 const status: ActionHandler = async (_body, _ctx, deps) => {
@@ -12,12 +12,13 @@ const status: ActionHandler = async (_body, _ctx, deps) => {
     deps.probe(deps.config.admin.gateway.host, deps.config.admin.gateway.port),
     deps.store.sqlAlive().catch(() => false),
   ]);
-  const databaseOrWorldUp = servers.some((s) => (s.name === 'Database' || s.name === 'World') && s.up !== 'down');
+  const lock = lockFrom(servers);
   const stale = servers.find((s) => s.name === 'World')?.up !== 'up';
   let online: CharacterRow[] | null = null;
   if (sql && !stale) online = await deps.store.onlineCharacters().catch(() => null);
   return reply(200, {
-    servers, gateway, sql, stale, online, players: online === null ? null : online.length, charactersOpen: !databaseOrWorldUp,
+    servers, gateway: gateway === 'open', sql, stale, online, players: online === null ? null : online.length,
+    charactersOpen: lock.open, lockSeen: lock.seen,
   });
 };
 
