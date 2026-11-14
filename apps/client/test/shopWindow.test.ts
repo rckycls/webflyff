@@ -116,3 +116,61 @@ it('shows shared inventory-style hover details and keeps descriptions out of the
   expect(feedback.hidden).toBe(false); expect(feedback.nextElementSibling!.className).toBe('shop-controls');
   item.dispatchEvent(new MouseEvent('mouseenter')); ui.frame.close(); expect(document.querySelector('.shop-item-details')).toBeNull(); ui.dispose();
 });
+
+it("the Red Chip merchant: chip prices, the bag's chips, BUYCHIPITEM, and V15's message (2026-11-15)", () => {
+  const own = newVagrant(), data = ownGameData(); own.gold = 0;
+  own.equipmentObjectIds.fill(0xffffffff); own.inventorySlots.fill(0xffffffff); own.inventory!.clear();
+  data.itemProps.set(26499, { ...itemProp({ id: 26499, part: -1, packMax: 99 }), name: 'Set Box', cost: 4, referValue1: 10000 });
+  data.itemProps.set(26460, { ...itemProp({ id: 26460, part: -1, packMax: 9999 }), name: 'Red Chips', cost: 200000 });
+  for (const [id, text] of [['TID_GAME_TOOLTIP_COST2', 'Price : %s'], ['TID_GAME_REDCHIP', 'Red Chip'], ['TID_GAME_CANNTBUY_REDCHIP', 'More Red Chips are needed.']]) {
+    (data.texts as Map<string, { id: string; text: string; color: number }>).set(id!, { id: id!, text: text!, color: 0xffffffff });
+  }
+  own.inventorySlots[0] = 6; own.inventory!.set(6, { objectId: 6, itemId: 26460, count: 9999 });
+  own.inventorySlots[1] = 7; own.inventory!.set(7, { objectId: 7, itemId: 26460, count: 10001 });
+  const actions = { open: vi.fn(), close: vi.fn(), buy: vi.fn(), buyChip: vi.fn(), sell: vi.fn(), alert: vi.fn() };
+  const ui = new ShopWindow({ url: () => '', sheets: null }, data, () => own, () => true, actions);
+  document.body.append(ui.frame.element);
+  ui.open(7, 'Wafor', { key: 'MaFl_Waforu', name: 'Wafor', vendorType: 1, vendorTabs: { 0: 'Mercenary' } });
+  ui.receive(7, [[{ objectId: 1, itemId: 26499, count: 99 }], [], [], []]);
+  const box = ui.frame.element.querySelector<HTMLButtonElement>('[data-stock-id="1"]')!;
+  // the tooltip's price is in Red Chips (PutItemGold)
+  box.dispatchEvent(new MouseEvent('mouseenter'));
+  expect(document.querySelector('.shop-item-details')!.textContent).toContain('Price : 10,000 Red Chip');
+  box.dispatchEvent(new MouseEvent('mouseleave'));
+  // the price box too (CWndShop::OnDraw)
+  box.click(); expect(ui.frame.element.querySelector('output')!.textContent).toBe('10000');
+  const quantity = ui.frame.element.querySelector<HTMLInputElement>('[name=quantity]')!;
+  const buy = ui.frame.element.querySelector<HTMLButtonElement>('[data-shop-action=buy]')!;
+  // three boxes need 30000 chips, the bag holds 20000: V15's message box, nothing sent
+  quantity.value = '3'; buy.click();
+  expect(actions.alert).toHaveBeenCalledWith('More Red Chips are needed.');
+  expect(actions.buyChip).not.toHaveBeenCalled(); expect(actions.buy).not.toHaveBeenCalled();
+  // two are paid in chips (no penya needed): BUYCHIPITEM, never BUYITEM
+  quantity.value = '2'; buy.click();
+  expect(actions.buyChip).toHaveBeenCalledWith(0, 1, 2, 26499); expect(actions.buy).not.toHaveBeenCalled();
+  // a sale is penya as at every vendor: a quarter of the cost
+  own.inventoryRevision++; ui.update(); ui.selectSell(6);
+  expect(ui.frame.element.querySelector('output')!.textContent).toBe('50000');
+  ui.dispose();
+});
+
+it('the Red Chip merchant with a full bag: refused unless the chips paid free a slot (OnBuyChipItem, 2026-11-15)', () => {
+  const own = newVagrant(), data = ownGameData();
+  own.equipmentObjectIds.fill(0xffffffff); own.inventorySlots.fill(0xffffffff); own.inventory!.clear();
+  data.itemProps.set(26499, { ...itemProp({ id: 26499, part: -1, packMax: 99 }), cost: 4, referValue1: 3000 });
+  data.itemProps.set(26460, { ...itemProp({ id: 26460, part: -1, packMax: 9999 }), cost: 200000 });
+  data.itemProps.set(2801, { ...itemProp({ id: 2801, part: -1, packMax: 99 }), cost: 10 });
+  own.inventorySlots[0] = 0; own.inventory!.set(0, { objectId: 0, itemId: 26460, count: 5000 });
+  for (let i = 1; i < 42; i++) { own.inventorySlots[i] = i; own.inventory!.set(i, { objectId: i, itemId: 2801, count: 99 }); }
+  const actions = { open: vi.fn(), close: vi.fn(), buy: vi.fn(), buyChip: vi.fn(), sell: vi.fn(), alert: vi.fn() };
+  const ui = new ShopWindow({ url: () => '', sheets: null }, data, () => own, () => true, actions);
+  document.body.append(ui.frame.element); ui.open(7, 'Wafor', { key: 'MaFl_Waforu', name: 'Wafor', vendorType: 1 });
+  ui.receive(7, [[{ objectId: 1, itemId: 26499, count: 99 }], [], [], []]);
+  ui.frame.element.querySelector<HTMLButtonElement>('[data-stock-id="1"]')!.click();
+  const buy = ui.frame.element.querySelector<HTMLButtonElement>('[data-shop-action=buy]')!;
+  buy.click(); expect(actions.buyChip).not.toHaveBeenCalled(); expect(ui.frame.element.textContent).toContain('inventory is full');
+  // the chip stack is used up by the price: its slot frees, so the buy goes
+  own.inventory!.set(0, { objectId: 0, itemId: 26460, count: 3000 }); own.inventoryRevision++; ui.update();
+  buy.click(); expect(actions.buyChip).toHaveBeenCalledWith(0, 1, 1, 26499);
+  ui.dispose();
+});

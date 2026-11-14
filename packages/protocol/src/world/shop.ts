@@ -32,6 +32,15 @@ export function encodeBuyItem(tab: number, id: number, count: number, itemId: nu
   integer(tab, 3); integer(id, 99); integer(count, 32767, 1); integer(itemId, 0xfffffffe, 1);
   return clientPacket(0xff00b3).u8(tab).u8(id).i16(count).u32(itemId).toBytes();
 }
+/**
+ * 2026-11-15: `CDPClient::SendBuyChipItem` (DPClient.cpp:9770-9776), a chip vendor's buy (`m_nVenderType == 1`, Waforu):
+ * PACKETTYPE_BUYCHIPITEM 0x00ff00b6 (MsgHdr.h:181), BUYITEM's body. The server takes the Red Chips (OnBuyChipItem,
+ * DPSrvr.cpp:12112) and ignores BUYITEM at such a vendor (:11988-11991).
+ */
+export function encodeBuyChipItem(tab: number, id: number, count: number, itemId: number): Uint8Array {
+  integer(tab, 3); integer(id, 99); integer(count, 32767, 1); integer(itemId, 0xfffffffe, 1);
+  return clientPacket(0xff00b6).u8(tab).u8(id).i16(count).u32(itemId).toBytes();
+}
 export function encodeSellItem(id: number, count: number): Uint8Array {
   integer(id, 72); integer(count, 32767, 1);
   return clientPacket(0xff00b4).u8(id).i16(count).toBytes();

@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { ArReader, ArWriter, WORLD_READERS } from '../src/index';
-import { encodeOpenShop, encodeCloseShop, encodeBuyItem, encodeSellItem, readShop } from '../src/world/shop';
+import { encodeOpenShop, encodeCloseShop, encodeBuyItem, encodeBuyChipItem, encodeSellItem, readShop } from '../src/world/shop';
 import { encodeNpcDialog, readNpcScript } from '../src/world/npc';
 
 it('writes native vendor and script requests with the correct field sizes', () => {
@@ -12,6 +12,14 @@ it('writes native vendor and script requests with the correct field sizes', () =
   expect([script.u32(), script.string(255), script.i32(), script.i32(), script.i32(), script.i32()]).toEqual([12, '#init', 0, 0, 12, 50]);
   expect(() => encodeBuyItem(4, 0, 1, 2800)).toThrow(); expect(() => encodeSellItem(73, 1)).toThrow();
   expect(() => encodeBuyItem(0, 0, 0, 2800)).toThrow();
+});
+it("writes a chip vendor's buy as SendBuyChipItem: BUYCHIPITEM with BUYITEM's body (2026-11-15)", () => {
+  const buy = new ArReader(encodeBuyChipItem(3, 12, 2, 26499)); buy.u32(); expect(buy.u32()).toBe(0xff00b6);
+  expect([buy.u8(), buy.u8(), buy.i16(), buy.u32()]).toEqual([3, 12, 2, 26499]); buy.expectEnd();
+  expect(encodeBuyChipItem(0, 0, 1, 1)).toHaveLength(encodeBuyItem(0, 0, 1, 1).length);
+  expect(() => encodeBuyChipItem(4, 0, 1, 2800)).toThrow(); expect(() => encodeBuyChipItem(0, 100, 1, 2800)).toThrow();
+  expect(() => encodeBuyChipItem(0, 0, 0, 2800)).toThrow(); expect(() => encodeBuyChipItem(0, 0, 32768, 2800)).toThrow();
+  expect(() => encodeBuyChipItem(0, 0, 1, 0)).toThrow();
 });
 it('reads bounded four-tab native containers and bounded dialogue replies', () => {
   const w = new ArWriter();

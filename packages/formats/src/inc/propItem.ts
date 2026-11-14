@@ -197,6 +197,11 @@ export interface ItemProp {
    */
   referTarget1: number;
   referTarget2: number;
+  /**
+   * 2026-11-15: `dwReferValue1`, -1 for `=`. Of an item a chip vendor sells, its price in Red Chips
+   * (`CItemBase::GetChipCost`, Item.cpp:147-158).
+   */
+  referValue1: number;
   /** 2026-11-09: `bPermanence`, -1 for `=`: TRUE (1) is not used up (`CItemElem::UseItem`, Item.cpp:272-276). */
   permanence: number;
   /**
@@ -284,6 +289,8 @@ const KEPT: ReadonlySet<string> = new Set([
   'dwReferTarget1',
   'dwReferTarget2',
   'bPermanence',
+  // 2026-11-15: a chip vendor's price (GetChipCost)
+  'dwReferValue1',
   // Piece 7 M3: an item's cast
   'dwSkillReadyType',
   // Piece 7 M5: a ride's level and fuel
@@ -472,6 +479,7 @@ export function readPropItem(
         referStat1: kept.dwReferStat1,
         referTarget1: kept.dwReferTarget1,
         referTarget2: kept.dwReferTarget2,
+        referValue1: kept.dwReferValue1,
         permanence: kept.bPermanence,
         // a float times 100.0f is a float (/fp:precise, SSE2), then truncated to int
         resists: RESISTS.map((column) => Math.trunc(Math.fround(floats[column]! * 100))),

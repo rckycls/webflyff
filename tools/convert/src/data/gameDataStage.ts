@@ -426,6 +426,8 @@ function buildItemProps(env: Env, read: Reading): WebItemProp[] {
         // 2026-11-09, the pets: a vis's needed vis (its minutes and grade are abilityMin and abilityMax), and permanence
         ...(prop.referTarget1 !== -1 ? { referTarget1: prop.referTarget1 } : {}),
         ...(prop.referTarget2 !== -1 ? { referTarget2: prop.referTarget2 } : {}),
+        // 2026-11-15: a chip vendor's price (GetChipCost)
+        ...(prop.referValue1 !== -1 ? { referValue1: prop.referValue1 } : {}),
         ...(prop.permanence !== -1 ? { permanence: prop.permanence } : {}),
         // PutBaseResist's order (WndManager.cpp:5641-5674): electricity, fire, water, wind, earth; the file's is
         // electricity, fire, wind, water, earth

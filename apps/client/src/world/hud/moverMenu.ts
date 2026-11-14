@@ -16,6 +16,7 @@
 
 import type { WebNpc } from '@flyffweb/formats';
 import type { Texts } from '../gameData';
+import { opensShop } from './chipShop';
 
 export interface MenuEntry { id: number; label: string; enabled: boolean }
 /** The MMI ids the browser acts on (Resource/defineNeuz.h:92-305). */
@@ -100,7 +101,8 @@ export function npcMenuEntries(npc: WebNpc | undefined, texts: Texts, ownIsBaseJ
       id,
       label: labels.get(TID_MMI_BASE + id) ?? FALLBACK[id] ?? 'Unavailable',
       // 2026-11-05: Buff Pang's entry only sends its key (MMI_NPC_BUFF, WndWorld.cpp:5131-5136)
-      enabled: id === MMI.DIALOG || (id === MMI.TRADE && !npc?.vendorType) || id === MMI.NPC_BUFF || UPGRADE_ENTRIES.has(id) ||
+      // 2026-11-15: Trade opens a penya shop and the Red Chip merchant's (chipShop.ts)
+      enabled: id === MMI.DIALOG || (id === MMI.TRADE && opensShop(npc)) || id === MMI.NPC_BUFF || UPGRADE_ENTRIES.has(id) ||
         (id === MMI.TELEPORTER && (npc?.teleports?.length ?? 0) > 0) || PET_ENTRIES.has(id) || TAMER_ENTRIES.has(id) ||
         ARENA_TOWER_ENTRIES.has(id) ||
         id === MMI.BANKING || id === MMI.POST ||

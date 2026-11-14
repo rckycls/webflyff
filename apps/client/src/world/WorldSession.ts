@@ -5,7 +5,7 @@ import {
   encodePlayerSetDestObj, encodePreJoin, encodeRemoveItemTaskBar, encodeRevivalToLodestar, encodeSetTarget,
   encodeSkillTaskBar, encodeUseSkill, encodeWorldKeepAlive, readBundle,
   encodeUseItem, encodeEquipItem, encodeMoveItem, encodeDropItem, encodeRevival, encodeChat,
-  encodeNpcDialog, encodeNpcDialogOpen, encodeOpenShop, encodeCloseShop, encodeBuyItem, encodeSellItem, encodeTeleporter,
+  encodeNpcDialog, encodeNpcDialogOpen, encodeOpenShop, encodeCloseShop, encodeBuyItem, encodeBuyChipItem, encodeSellItem, encodeTeleporter,
   encodeNpcBuff, encodeQuestCheck, encodeEnchant, encodePiercing, encodeRandomScroll, encodeDoUseItemTarget,
   encodeArenaEnter, encodeArenaExit, encodeHeavenTowerTeleport,
   encodeAngelBuff, encodeCreateAngel, encodeUltimateEnchantWeapon, encodeUltimateMakeGem, encodeUltimateSetGem, encodePiercingSize, encodeSmeltSafety, encodeQuerySetPlayerName, encodeSummonParty, encodeSummonPartyConfirm, encodeSummonFriend,
@@ -225,6 +225,10 @@ export class WorldSession {
   sendOpenShop(id: number): void { this.playingCache()?.send(encodeOpenShop(id)); }
   sendCloseShop(): void { this.playingCache()?.send(encodeCloseShop()); }
   sendBuyItem(tab: number, id: number, count: number, itemId: number): void { this.playingCache()?.send(encodeBuyItem(tab, id, count, itemId)); }
+  /** 2026-11-15: a chip vendor's buy (SendBuyChipItem): the server takes the Red Chips. */
+  sendBuyChipItem(tab: number, id: number, count: number, itemId: number): void {
+    this.playingCache()?.send(encodeBuyChipItem(tab, id, count, itemId));
+  }
   sendSellItem(id: number, count: number): void { this.playingCache()?.send(encodeSellItem(id, count)); }
   sendChat(channel: import('@flyffweb/protocol').ChatChannel, text: string, target = ''): void {
     this.playingCache()?.send(encodeChat(channel, text, target));
