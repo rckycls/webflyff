@@ -18,6 +18,8 @@
     "gateway": "tsx apps/gateway/src/main.ts --config apps/gateway/gateway.config.json",
     "web": "tsx apps/web/src/main.ts --config apps/web/web.config.json",
     "admin:setup": "tsx apps/web/scripts/adminSetup.ts",
+    "admin:demo": "tsx apps/web/scripts/adminDemo.ts",
+    "test:e2e:admin": "playwright test -c apps/web/playwright.config.ts",
     "dev:viewer": "vite --config apps/viewer/vite.config.ts --host",
     "build:viewer": "vite build --config apps/viewer/vite.config.ts",
     "preview:viewer": "vite preview --config apps/viewer/vite.config.ts --host",

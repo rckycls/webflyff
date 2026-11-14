@@ -9,6 +9,7 @@ import { searchItems } from '../itemCatalog';
 import { characterEditsOpen } from '../serverState';
 import { MAX_PANEL_GOLD } from './characters';
 import { idPlayerField, intField, invalid, okReply, reply } from './fields';
+import { namedPendingSends } from './pending';
 
 const MAX_UPGRADE = 10;
 const notFound = (): HttpAnswer => reply(404, { error: 'not_found' });
@@ -21,7 +22,7 @@ const itemsSearch: ActionHandler = async (body, _ctx, deps) => {
 const list: ActionHandler = async (body, _ctx, deps) => {
   const idPlayer = idPlayerField(body);
   if (idPlayer === undefined) return invalid('idPlayer');
-  return reply(200, { rows: await deps.store.pendingSends(idPlayer) });
+  return reply(200, { rows: await namedPendingSends(deps, idPlayer) });
 };
 
 const item: ActionHandler = async (body, ctx, deps) => {

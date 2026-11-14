@@ -10,6 +10,7 @@ import type { AuditOutcome } from '../audit';
 import { runAudited } from '../audit';
 import { characterEditsOpen } from '../serverState';
 import { idPlayerField, intField, invalid, okReply, reply, textField } from './fields';
+import { namedPendingSends } from './pending';
 
 /** The panel's ceiling for a character's penya, under the game's int limit with room to spare. */
 export const MAX_PANEL_GOLD = 2_000_000_000;
@@ -32,7 +33,7 @@ const get: ActionHandler = async (body, _ctx, deps) => {
   if (idPlayer === undefined) return invalid('idPlayer');
   const character = await deps.store.getCharacter(idPlayer);
   if (character === undefined) return notFound();
-  return reply(200, { character, pending: await deps.store.pendingSends(idPlayer) });
+  return reply(200, { character, pending: await namedPendingSends(deps, idPlayer) });
 };
 
 interface CharacterEdit {

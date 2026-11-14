@@ -73,5 +73,5 @@ it('cancels only the panel\'s own sends, and not while the character is in the g
   expect(s.store.sends.map((x) => x.no)).toEqual([game, busy]);
   expect((await act('sends.cancel', { idPlayer: '0000001', no: 12345 }, s)).status).toBe(404);
   const list = await act('sends.list', { idPlayer: '0000001' }, s);
-  expect(list.body.rows).toMatchObject([{ no: game, byPanel: false }]);
+  expect(list.body.rows).toMatchObject([{ no: game, byPanel: false, name: 'Blessing of the Goddess' }]);
 });
