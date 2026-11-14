@@ -12,8 +12,8 @@ const ACTIONS = [
 const resultCell = (result) => el('span', { class: result === 'ok' ? 'up' : result === 'started' ? 'partial' : 'down', text: result === 'started' ? 'started (not finished)' : result });
 
 /** The front page's last 10 logins. */
-export async function recentLogins() {
-  const { rows } = await api('log.logins');
+export async function recentLogins(background = false) {
+  const { rows } = await api('log.logins', {}, { background });
   return table(['When', 'IP', 'Result'], rows.map((r) => [timeText(r.at), r.address, r.action === 'login' ? resultCell('ok') : resultCell('failed')]));
 }
 

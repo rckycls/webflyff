@@ -9,8 +9,8 @@ const REFRESH_MS = 30_000;
 const state = (up) => el('span', { class: up === true ? 'up' : up === false ? 'down' : up === 'unknown' ? 'partial' : up, text: up === true ? 'up' : up === false ? 'down' : up === 'unknown' ? 'no answer' : up });
 
 /** The lock line, shared with the Characters tab. */
-export function lockLine(open) {
-  return el('p', { class: open ? 'lock open' : 'lock', text: open ? 'Database and World stopped: character edits open.' : 'Servers running: character edits locked.' });
+export function lockLine(open, seen) {
+  return el('p', { class: open ? 'lock open' : 'lock', text: open ? 'Database and World stopped: character edits open.' : `Character edits locked: ${seen ?? 'the servers are running'}. Stop the servers first.` });
 }
 
 export function statusTab(nav) {
@@ -29,11 +29,12 @@ export function statusTab(nav) {
 
   let timer = 0;
 
-  async function load() {
+  /** `background`: a timed refresh, which does not keep an idle session alive. */
+  async function load(background = false) {
     message.clear();
     try {
-      const s = await api('status');
-      fill(lock, lockLine(s.charactersOpen));
+      const s = await api('status', {}, { background });
+      fill(lock, lockLine(s.charactersOpen, s.lockSeen));
       fill(servers, table(['Server', 'Ports', 'State'], [
         ...s.servers.map((x) => [x.name, x.ports.join(', '), state(x.up)]),
         ['Gateway', '', state(s.gateway)],
@@ -46,7 +47,7 @@ export function statusTab(nav) {
           s.online.map((c) => [c.name, String(c.level), c.account, String(c.worldId)]), (i) => nav.openCharacter(s.online[i].idPlayer)));
       }
       checked.textContent = `Checked ${new Date().toLocaleTimeString()}.`;
-      fill(logins, await recentLogins());
+      fill(logins, await recentLogins(background));
     } catch (error) {
       message.problem(error.message);
     }
@@ -58,7 +59,7 @@ export function statusTab(nav) {
     node,
     show() {
       void load();
-      timer = window.setInterval(() => { void load(); }, REFRESH_MS);
+      timer = window.setInterval(() => { void load(true); }, REFRESH_MS);
     },
     hide() { window.clearInterval(timer); },
   };

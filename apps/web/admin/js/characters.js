@@ -66,7 +66,7 @@ export function charactersTab(nav) {
 
     fill(view, el('div', { class: 'card' },
       el('h3', { text: `${c.name} (${c.idPlayer})` }),
-      lockLine(editsOpen),
+      lockLine(editsOpen, status.lockSeen),
       el('dl', { class: 'facts' },
         el('dt', { text: 'Account' }), el('dd', {}, el('a', { href: '#', text: c.account, onclick: (e) => { e.preventDefault(); nav.openAccount(c.account); } })),
         el('dt', { text: 'Level' }), el('dd', { text: String(c.level) }),

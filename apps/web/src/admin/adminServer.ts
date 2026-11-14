@@ -229,7 +229,9 @@ export function createAdminServer(deps: AdminDeps): Server {
       return;
     }
     const sessionId = cookieValue(req, ADMIN_COOKIE);
-    const session = deps.sessions.get(sessionId);
+    // the page's timed refreshes say X-Admin-Background: 1 and do not count as use (the 30-minute idle logout)
+    const background = req.headers['x-admin-background'] === '1' && isReadAction(name);
+    const session = deps.sessions.get(sessionId, !background);
     if (session === undefined) {
       send(res, 401, { error: 'session' });
       return;

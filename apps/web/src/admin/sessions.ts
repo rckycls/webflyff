@@ -29,8 +29,11 @@ export class SessionBook {
     return session;
   }
 
-  /** The live session with this id, its idle time restarted; an expired one is deleted. */
-  get(id: string | undefined): AdminSession | undefined {
+  /**
+   * The live session with this id; an expired one is deleted. Its idle time restarts unless `touch` is false (the
+   * page's background refreshes, so an open Status tab does not keep an unattended session alive).
+   */
+  get(id: string | undefined, touch = true): AdminSession | undefined {
     if (id === undefined) return undefined;
     const session = this.sessions.get(id);
     if (session === undefined) return undefined;
@@ -39,7 +42,7 @@ export class SessionBook {
       this.sessions.delete(id);
       return undefined;
     }
-    session.lastSeen = now;
+    if (touch) session.lastSeen = now;
     return session;
   }
 

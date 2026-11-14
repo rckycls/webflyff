@@ -123,6 +123,19 @@ it('takes a write\'s request id once', async () => {
   expect((await call(port, 'POST', '/api/nothing.here', headers, '{}')).status).toBe(404);
 });
 
+it('lets background reads through without keeping an idle session alive', async () => {
+  const status: ActionHandler = async () => ({ status: 200, body: { ok: true } });
+  const deps = testDeps({ actions: { status } });
+  const port = await start(deps);
+  const loggedIn = await login(port, deps);
+  const headers = { ...json, Cookie: cookieOf(loggedIn), 'X-Admin-Token': loggedIn.body.csrf as string };
+  const start0 = deps.now();
+  deps.setNow(start0 + 20 * 60_000);
+  expect((await call(port, 'POST', '/api/status', { ...headers, 'X-Admin-Background': '1' }, '{}')).status).toBe(200);
+  deps.setNow(start0 + 31 * 60_000);
+  expect((await call(port, 'POST', '/api/status', { ...headers, 'X-Admin-Background': '1' }, '{}'))).toMatchObject({ status: 401, body: { error: 'session' } });
+});
+
 it('serves only its own files, with the security headers on every answer', async () => {
   const deps = testDeps();
   const port = await start(deps);

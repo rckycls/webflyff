@@ -19,6 +19,15 @@ it('keeps a session through 29 idle minutes and ends it at 31', () => {
   expect(b.get(s.id)).toBeUndefined();
 });
 
+it('does not count a background read as use, so an open Status tab still times out', () => {
+  const { b, wait } = book();
+  const s = b.create('Poreotix');
+  wait(20 * MIN);
+  expect(b.get(s.id, false)).toBeDefined();
+  wait(11 * MIN);
+  expect(b.get(s.id, false)).toBeUndefined();
+});
+
 it('ends a session in use at 12 hours', () => {
   const { b, wait } = book();
   const s = b.create('Poreotix');

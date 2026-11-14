@@ -77,15 +77,16 @@ export function problemText(status, body) {
 
 /**
  * Calls `POST /api/<name>`. A write carries a new request id, so a second click cannot act twice. A lost session
- * shows the login box (the page keeps what was typed) and throws.
+ * shows the login box (the page keeps what was typed) and throws. `background` marks a timed refresh, which does not
+ * count as use for the 30-minute idle logout.
  */
-export async function api(name, body = {}, { write = false } = {}) {
+export async function api(name, body = {}, { write = false, background = false } = {}) {
   const payload = write ? { ...body, requestId: crypto.randomUUID() } : body;
   let res;
   try {
     res = await fetch(`/api/${name}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Admin-Token': csrf },
+      headers: { 'Content-Type': 'application/json', 'X-Admin-Token': csrf, ...(background ? { 'X-Admin-Background': '1' } : {}) },
       body: JSON.stringify(payload),
       credentials: 'same-origin',
     });
