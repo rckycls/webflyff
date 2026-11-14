@@ -119,10 +119,11 @@ test('the post: the notice, the inbox, reading and taking, a reply sent with an 
   await expect(notice).toBeHidden();
 
   if (isPhone()) {
-    // the phone: the read window's words at least 14 px
-    for (const target of [read.locator('[data-control="WIDC_EDIT1"]'), read.locator('[data-control="WIDC_TEXT1"]'), read.locator('[data-control="WIDC_BUTTON2"]')]) {
-      expect(await target.evaluate((e) => parseFloat(getComputedStyle(e).fontSize))).toBeGreaterThanOrEqual(14);
+    // the phone (2026-11-14, the V15 look, compact): the read window's words Neuz's 12 px, its own frame
+    for (const target of [read.locator('[data-control="WIDC_EDIT1"] .hud-res-edit-words'), read.locator('[data-control="WIDC_TEXT1"] .hud-res-text-body')]) {
+      expect(await target.evaluate((e) => parseFloat(getComputedStyle(e).fontSize))).toBe(12);
     }
+    await expect(read.locator('.hud-window-frame')).toHaveCSS('display', 'grid');
   }
 
   // Reply: the Send page, the receiver Alice, the title "Re:" and the shown title
@@ -164,10 +165,12 @@ test('the post: the notice, the inbox, reading and taking, a reply sent with an 
   await expect(post.locator('[data-control="WIDC_COMBOBOX1"] input')).toHaveValue('Alice');
 
   if (isPhone()) {
+    // (2026-11-14, the V15 look, compact: Neuz's 12 px words; Send its own picture)
     for (const target of [post.locator('.hud-tab-title').first(), post.locator('[data-control="WIDC_STATIC1"] .hud-res-static-text'),
-      post.locator('[data-control="WIDC_SEND"]'), post.locator('.hud-post-text')]) {
-      expect(await target.evaluate((e) => parseFloat(getComputedStyle(e).fontSize))).toBeGreaterThanOrEqual(14);
+      post.locator('.hud-post-text')]) {
+      expect(await target.evaluate((e) => parseFloat(getComputedStyle(e).fontSize))).toBe(12);
     }
+    expect((await post.locator('[data-control="WIDC_SEND"]').boundingBox())!.height).toBeGreaterThanOrEqual(24);
   }
 
   // back to Inbox: the box is asked for again

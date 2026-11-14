@@ -123,6 +123,8 @@ export function soleEntry(npc: WebNpc | undefined, entries: readonly MenuEntry[]
 
 /** How far the menu stays from its layer's edges. */
 const EDGE = 4;
+/** 2026-11-14: from this many entries a phone shows the menu in two columns. */
+export const TWO_COLUMNS = 7;
 
 export class MoverMenu {
   readonly element: HTMLElement;
@@ -166,6 +168,11 @@ export class MoverMenu {
     }));
     this.choose = choose;
     this.npc = npcId;
+    // 2026-11-14 (owner, "the dialog is too big for mobile with too many options"): a long menu in two columns on a phone,
+    // top to bottom then the next column (style.css); the desktop keeps Neuz's one column
+    const columns = entries.length >= TWO_COLUMNS ? 2 : 1;
+    this.element.dataset.columns = String(columns);
+    this.element.style.setProperty('--menu-rows', String(Math.ceil(entries.length / columns)));
     this.element.hidden = false;
     // on a small screen a long menu would run off it: pushed back inside the layer, once it has a size
     const layer = this.element.parentElement;

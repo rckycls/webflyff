@@ -221,6 +221,8 @@ export class ResWindow {
         if (control.picture !== undefined) {
           element.classList.add('is-picture');
           element.style.backgroundImage = themeUrl(this.art, control.picture);
+          // 2026-11-14: which picture (a slot's, a row's, a bar's), for the phone's compact panels (style.css)
+          element.dataset.picture = control.picture.toLowerCase();
         }
         const text = doc.createElement('span');
         text.className = 'hud-res-static-text';
@@ -368,6 +370,8 @@ export function textScrollBar(doc: Document, art: UiArt, text: HTMLElement, rect
   let track = height - 2 * SCROLL;
   const draw = (): void => {
     const total = text.scrollHeight, shown = text.clientHeight;
+    // 2026-11-14: words below the box's end (the phone's compact panels fade the last line, style.css)
+    text.toggleAttribute('data-more', shown > 0 && total - shown - text.scrollTop > 1);
     thumb.hidden = total <= shown || shown <= 0;
     if (thumb.hidden) return;
     const size = Math.max(THUMB_MIN, Math.round((track * shown) / total));
@@ -377,6 +381,9 @@ export function textScrollBar(doc: Document, art: UiArt, text: HTMLElement, rect
   };
   text.classList.add('is-scrolled');
   text.addEventListener('scroll', draw);
+  // the box laid out again (a phone's panel sizes it to its words): drawn again
+  const view = doc.defaultView as (Window & { ResizeObserver?: typeof ResizeObserver }) | null;
+  if (view?.ResizeObserver !== undefined) new view.ResizeObserver(() => draw()).observe(text);
   // the thumb dragged: the words follow it
   thumb.addEventListener('pointerdown', (event) => {
     event.preventDefault();

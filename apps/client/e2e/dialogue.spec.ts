@@ -42,10 +42,11 @@ test('classic dialogue: menu, opening request, pages, keys, answers, quest rows 
   await expect(entries).toHaveCount(7);
   expect(await entries.evaluateAll((els) => els.map((el) => (el as HTMLElement).dataset.menuEntry))).toEqual(['0', '2', '9', '16', '17', '18', '137']);
   expect(await entries.evaluateAll((els) => els.map((el) => (el as HTMLButtonElement).disabled))).toEqual([false, false, false, true, true, true, true]);
-  // CWndMenu's items: 20 px on a 22 px pitch (32 on 34 for fingers)
+  // CWndMenu's items: 20 px on a 22 px pitch (2026-11-14: 30 on 32 for fingers, two columns from seven entries, the next
+  // entry under the first)
   const [first, second] = [(await entries.nth(0).boundingBox())!, (await entries.nth(1).boundingBox())!];
-  expect(Math.round(first.height)).toBe(isMobile ? 32 : 20);
-  expect(Math.round(second.y - first.y)).toBe(isMobile ? 34 : 22);
+  expect(Math.round(first.height)).toBe(isMobile ? 30 : 20);
+  expect(Math.round(second.y - first.y)).toBe(isMobile ? 32 : 22);
 
   // 2. Dialog: the opening request, an empty key and four zeros; the window on screen
   await menu.locator('[data-menu-entry="0"]').click();

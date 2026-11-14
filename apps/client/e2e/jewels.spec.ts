@@ -125,12 +125,11 @@ test('Create Jewels breaks a weapon into Rubies; Jewel Setting sets a Ruby in th
   await expect(settingStart).toBeEnabled();
   await shot('jewel-setting');
   if (isPhone()) {
-    // the phone's words: the description and START at least 14 px
-    for (const target of [setting.locator('.hud-res-text-body'), settingStart]) {
-      expect(await target.evaluate((e) => parseFloat(getComputedStyle(e).fontSize))).toBeGreaterThanOrEqual(14);
-    }
+    // the phone (2026-11-14, the V15 look, compact): the description in Neuz's 12 px, START its own picture, the sockets 36 px
+    expect(await setting.locator('.hud-res-text-body').evaluate((e) => parseFloat(getComputedStyle(e).fontSize))).toBe(12);
+    expect((await settingStart.boundingBox())!.height).toBeGreaterThanOrEqual(24);
     const slotBox = (await sockets.nth(1).boundingBox())!;
-    expect(slotBox.width).toBeGreaterThanOrEqual(44);
+    expect(slotBox.width).toBeGreaterThanOrEqual(36);
     // 2026-11-11 (owner): the bag beside it shows its items alone, not the worn equipment
     await expect(bag).toHaveClass(/inventory-items-only/);
     await expect(bag.locator('.inventory-equipment-box')).toBeHidden();

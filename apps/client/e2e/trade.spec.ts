@@ -213,10 +213,11 @@ test('the asked side: the request window, its refusal, a cancel, and the partner
   expect(tradeBox.x + tradeBox.width).toBeLessThanOrEqual(view.width + 1);
   expect(tradeBox.y + tradeBox.height).toBeLessThanOrEqual(view.height + 1);
   if (isPhone()) {
-    // the phone: the names, the penya and the buttons' words 14 px at least, the grids and the buttons in the window
-    for (const selector of ['[data-trade="their-name"] span', '[data-trade="my-penya"] span', '[data-control="WIDC_OK_I"]',
-      '[data-control="WIDC_CANCEL"]']) {
-      expect(await trade(page).locator(selector).evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(14);
+    // the phone (2026-11-14, owner: "the original theme"): Neuz's window at its own size (WndTrade.tga, 352 x 288), its names
+    // and penya in its 12 px, the grids and the buttons in it
+    expect([Math.round(tradeBox.width), Math.round(tradeBox.height)]).toEqual([352, 288]);
+    for (const selector of ['[data-trade="their-name"] span', '[data-trade="my-penya"] span']) {
+      expect(await trade(page).locator(selector).evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBe(12);
     }
     for (const selector of ['.hud-trade-grid[data-side="mine"]', '.hud-trade-grid[data-side="theirs"]', '[data-control="WIDC_OK_I"]']) {
       const part = (await trade(page).locator(selector).boundingBox())!;

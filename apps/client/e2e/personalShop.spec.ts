@@ -76,7 +76,15 @@ test('the seller: an item up with its price, the shop named and opened, a sale, 
     await expect(sell.locator('[data-control="WIDC_SELLPRI"] .hud-res-static-text')).toHaveText('1,000');
     await sell.locator('[data-control="WIDC_OK"]').click();
   } else {
-    await expect(shop.locator('.vendor-phone-row')).toHaveCount(20);
+    // 2026-11-14 (owner, "make items 5x2"): the twenty slots ten a page in a 5 x 2 grid, the page's arrows under it
+    await expect(shop.locator('.vendor-phone-row')).toHaveCount(10);
+    await expect(shop.locator('.vendor-phone-pager')).toContainText('1/2');
+    const cells = await shop.locator('.vendor-phone-row').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().top));
+    expect(new Set(cells.map((top) => Math.round(top))).size).toBe(2);
+    await shop.locator('[data-vendor-button="page-next"]').tap();
+    await expect(shop.locator('.vendor-phone-row').first()).toHaveAttribute('data-slot', '10');
+    await shop.locator('[data-vendor-button="page-prev"]').tap();
+    await expect(shop.locator('.vendor-phone-row').first()).toHaveAttribute('data-slot', '0');
     // the phone: the shop's only text field is its name (the phone keyboard comes up for it alone)
     await expect(shop.locator('input, textarea')).toHaveCount(1);
     // a tap on the potion in the bag puts it on the first free slot; the sheet has the in-game numpad and no text field
@@ -92,9 +100,9 @@ test('the seller: an item up with its price, the shop named and opened, a sale, 
     await sell.locator('[data-pad-key="1"]').tap();
     await sell.locator('[data-pad-key="000"]').tap();
     await expect(sell.locator('[data-field="price"]')).toHaveText('1,000');
-    // keys a finger can press, their text 14 px or more
+    // keys a finger can press (2026-11-14: 42 x 36, smaller), their text 14 px or more
     const key = sell.locator('[data-pad-key="5"]');
-    expect((await key.boundingBox())!.height).toBeGreaterThanOrEqual(40);
+    expect((await key.boundingBox())!.height).toBeGreaterThanOrEqual(36);
     expect(await key.evaluate((el) => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(14);
     await page.screenshot({ path: info.outputPath('seller-numpad.png') });
     await sell.locator('[data-vendor-button="ok"]').tap();

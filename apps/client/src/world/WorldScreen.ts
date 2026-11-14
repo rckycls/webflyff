@@ -1234,6 +1234,9 @@ export class WorldScreen {
     // missing picture is left to the browser's own cursor, unreported.
     for (const [name, value] of cursorProperties((key) => services.store.url(key) ?? '')) this.element.style.setProperty(name, value);
     this.element.dataset.cursors = '';
+    // 2026-11-14 (owner, compact phone panels): the item windows' slot (WndChgElemItem.bmp), for the cells style.css draws
+    // on it (the bank's and the Angel window's on a phone)
+    this.element.style.setProperty('--v15-slot', themeUrl(art, 'WndChgElemItem.bmp'));
     this.hud = new Hud(this.element.ownerDocument, art, this.data!);
     this.hud.inArena = () => isArena(this.worldId); // 2026-11-10: TID_GAME_DEATH_ARENA (DPClient.cpp:2045-2052)
     this.minimap = new Minimap(art, this.stage!.manifest, folder, key => services.store.url(key), this.element.ownerDocument);
@@ -2062,9 +2065,13 @@ export class WorldScreen {
         }
       },
     };
-    // 2026-11-11 (owner): a phone's bag shows its items alone while a jewel or Upgrade Specialist window is open
+    // 2026-11-11 (owner): a phone's bag shows its items alone while a jewel or Upgrade Specialist window is open;
+    // 2026-11-14 (owner, compact phone panels): and beside the trade, the bank, the post, the own shop and the Angel
+    // window, none of which takes a worn item: the window beside it gets the room
     inventoryWindow.itemsOnly = () => this.jewels?.isOpen === true || this.itemNpc?.isOpen === true ||
-      this.upgradeNpc?.safety.isOpen === true || this.upgradeNpc?.piercing.isOpen === true;
+      this.upgradeNpc?.safety.isOpen === true || this.upgradeNpc?.piercing.isOpen === true ||
+      this.tradeHud?.windowOpen === true || this.bankHud?.isOpen === true || this.postHud?.isOpen === true ||
+      this.personalShop?.isOpen === true || this.summonAngel?.isOpen === true;
     // the phone has no drag: a tap on a bag item or on the penya puts it in the trade
     inventoryWindow.trade = {
       // 2026-11-10: and a tap on a bag item puts it in the open jewel window, where a drop would take it

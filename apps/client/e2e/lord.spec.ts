@@ -44,15 +44,16 @@ async function chooseEntry(page: Page, gateway: Gateway, entry: number): Promise
   await press(item);
 }
 
-/** The phone's rules for a window: words 14 px or more, buttons 40 px tall, the window inside the screen. */
+/** The phone's rules for a window (2026-11-14, the V15 look, compact): Neuz's 12 px words, its buttons' pictures 24 px tall or
+ * more, the window inside the screen. */
 async function phoneChecks(page: Page, window: Locator): Promise<void> {
   if (!isPhone()) return;
   for (const words of await window.locator('.hud-res-text-body, .hud-res-static-text, .hud-window-title, [role="option"]').all()) {
     if (!await words.isVisible()) continue;
-    expect(await words.evaluate((e) => parseFloat(getComputedStyle(e).fontSize))).toBeGreaterThanOrEqual(14);
+    expect(await words.evaluate((e) => parseFloat(getComputedStyle(e).fontSize))).toBeGreaterThanOrEqual(12);
   }
   for (const button of await window.locator('.hud-picture-button').all()) {
-    if (await button.isVisible()) expect((await button.boundingBox())!.height).toBeGreaterThanOrEqual(40);
+    if (await button.isVisible()) expect((await button.boundingBox())!.height).toBeGreaterThanOrEqual(24);
   }
   const view = page.viewportSize()!, at = (await window.boundingBox())!;
   expect(at.x >= 0 && at.y >= 0 && at.x + at.width <= view.width && at.y + at.height <= view.height).toBe(true);

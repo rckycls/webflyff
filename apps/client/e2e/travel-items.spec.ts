@@ -101,15 +101,18 @@ test('a Blinkwing of Volcan to another world', async ({ page }) => {
   await expect.poll(() => used(gateway)).toEqual([3]);
   gateway.pushCache(script.later([writeStateMode(SELF_ID, 4, 0, VOLCAN_BLINKWING)]));
   await expect(page.locator('.cast-gauge')).toBeVisible(ON_FRAMES);
-  // the cast ends in another world: REPLACE, then the own ADD_OBJ there (World.cpp:1610-1671) (Review Focus 3)
+  // the cast ends in another world: REPLACE, then the own ADD_OBJ there (World.cpp:1610-1671) (Review Focus 3), its buffs at
+  // its end as the server sends them (m_buffs.Serialize; 2026-11-14 the browser reads them, as at a log-in)
+  const there = webby();
+  there.player.own.buffs = [{ buffType: 0, id: RETURN_SCROLL, level: 0, timeLeft: 14_390_000 }];
   gateway.pushCache(script.later([
     writeStateMode(SELF_ID, 0, 1), writeUpdateItem(SELF_ID, 3, 0, 1), writeReplace(NULL_ID, VOLCANE, VOLCANE_AT),
-    writeAddSelf(SELF_ID, { ...webby(), pos: VOLCANE_AT }),
+    writeAddSelf(SELF_ID, { ...there, pos: VOLCANE_AT }),
   ]));
   await expect(page.locator('.world')).toHaveAttribute('data-world-id', String(VOLCANE), ON_FRAMES);
   await expect(page.getByRole('button', { name: 'Start', exact: true })).toBeVisible(ON_FRAMES);
   await expect(page.locator('.cast-gauge')).toBeHidden();
-  // the buffs go with the player to the new world (final review, Important 1): the way back is still there
+  // the buffs come with the new world's own ADD_OBJ (final review, Important 1): the way back is still there
   await expect(scrollIcon).toBeVisible(ON_FRAMES);
   expect(await errorsOf(page)).toEqual([]);
 });
