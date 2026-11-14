@@ -61,7 +61,7 @@ describe('ChatSender: a plain line (ParsingChat)', () => {
     clock.now += 61_000;
     const blocked = s.line('later', PLAYER);
     expect(sent(blocked)).toBeUndefined();
-    expect(notes(blocked)).toEqual([['Currently your chat has been blocked.(Remaining: 1 minute 59 second)', false]]);
+    expect(notes(blocked)).toEqual([['Currently your chat has been blocked.(Remaining: 1m59s)', false]]);
     clock.now += 120_000;
     expect(sent(s.line('free', PLAYER))).toBe('free');
   });

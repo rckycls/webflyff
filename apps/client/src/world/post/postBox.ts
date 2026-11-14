@@ -13,6 +13,7 @@
 import type { Mail, InventoryItem } from '@flyffweb/protocol';
 import { RemoveMailType } from '@flyffweb/protocol';
 import type { WebItemProp } from '@flyffweb/formats';
+import { formatDuration } from '../hud/duration';
 
 /** `MAX_KEEP_MAX_DAY`, `MAX_KEEP_BASIC_DAY` (`_Common/post.h:14-22`, the main server's): kept 15 days, the first 7 free. */
 export const MAX_KEEP_MAX_DAY = 15;
@@ -68,21 +69,24 @@ export class PostBox {
 /**
  * `CMail::GetMailInfo`: the span from the mail's day of the month, hour, minute and second to now's (the month and the year
  * are not used, so it is wrong across a month change, as in Neuz, whose server sums the fee the same way), then
- * `nDay = (int)( 16 - totalDays )` and `hoursLeft = (DWORD)( 360 - totalHours )`. Local time, as `COleDateTime`.
+ * `nDay = (int)( 16 - totalDays )` and `hoursLeft = (DWORD)( 360 - totalHours )`. Local time, as `COleDateTime`. `left`
+ * (2026-11-14) is the seconds of the 15 days still to go, for the inbox's time.
  */
-export function mailInfo(created: number, now: number): { days: number; hours: number } {
+export function mailInfo(created: number, now: number): { days: number; hours: number; left: number } {
   const a = new Date(created), b = new Date(now);
   const seconds = (b.getDate() - a.getDate()) * 86400 + (b.getHours() - a.getHours()) * 3600
     + (b.getMinutes() - a.getMinutes()) * 60 + (b.getSeconds() - a.getSeconds());
   const days = Math.trunc(MAX_KEEP_MAX_DAY + 1 - seconds / 86400);
   const hours = Math.trunc(MAX_KEEP_MAX_DAY * 24 - seconds / 3600) >>> 0;
-  return { days, hours };
+  return { days, hours, left: MAX_KEEP_MAX_DAY * 86400 - seconds };
 }
 
-/** The inbox's time left (WndField.cpp:15210-15218): hours (`TID_PK_LIMIT_HOUR` "%.1dhr") at a day or less, else days. */
-export function timeLeftText(info: { days: number; hours: number }, dayFormat: string, hourFormat: string): string {
-  const value = info.days <= 1 ? info.hours | 0 : info.days;
-  return (info.days <= 1 ? hourFormat : dayFormat).replace(/%\.?\d*d/, String(value));
+/**
+ * The inbox's time left (WndField.cpp:15210-15218, which showed hours, "%.1dhr", at a day or less, else days): since
+ * 2026-11-14 `formatDuration` of what is left ("14d23h", "23h5m"; the owner).
+ */
+export function timeLeftText(info: { left: number }): string {
+  return formatDuration(info.left);
 }
 
 /**

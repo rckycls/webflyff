@@ -60,10 +60,12 @@ describe('BuffStatus (CWndBuffStatus)', () => {
     status.dispose();
   });
 
-  it('the seconds left show on the icon', () => {
+  it('the time left shows on the icon, short (2026-11-14, the owner)', () => {
     const status = new BuffStatus(art, document);
     status.update([buff(49, 45500)], SKILLS, 0);
-    expect(status.element.querySelector('.hud-buff-seconds')!.textContent).toBe('45');
+    expect(status.element.querySelector('.hud-buff-seconds')!.textContent).toBe('45s');
+    status.update([buff(49, 30_000_000)], SKILLS, 1);
+    expect(status.element.querySelector('.hud-buff-seconds')!.textContent).toBe('8h20m');
     status.dispose();
   });
 
@@ -121,7 +123,7 @@ describe('the icons from frame to frame (final review, Minor 6 graded Important)
     const first = status.element.querySelector('.hud-buff');
     status.update([buff(49, 44400)], SKILLS, 1);
     expect(status.element.querySelector('.hud-buff')).toBe(first);
-    expect(first!.querySelector('.hud-buff-seconds')!.textContent).toBe('44');
+    expect(first!.querySelector('.hud-buff-seconds')!.textContent).toBe('44s');
     status.update([buff(20, 50000), buff(49, 44000)], SKILLS, 2);
     expect(status.element.querySelectorAll('.hud-buff')).toHaveLength(2);
     status.dispose();
@@ -275,7 +277,7 @@ describe('the item buffs and the Scroll of Return (CWndWorld::RenderBuffIcon, Wn
     expect([off, back]).toEqual([1, 0]);
   });
 
-  it("an item buff's time is under it in RenderOptBuffTime's units; 999999999 ms shows none (WndWorld.cpp:9315-9330, 11197-11227)", () => {
+  it("an item buff's time is under it as shortTime (2026-11-14); 999999999 ms shows none (WndWorld.cpp:9315-9330, 11197-11227)", () => {
     const texts = (tid: string): string | undefined =>
       ({ TID_PK_LIMIT_DAY: '%.1dday', TID_PK_LIMIT_HOUR: '%.1dhr', TID_PK_LIMIT_MINUTE: '%.1dmin', TID_PK_LIMIT_SECOND: '%.1dsec' })[tid];
     const status = new BuffStatus(art, document, { items: ITEMS, texts });
@@ -283,10 +285,10 @@ describe('the item buffs and the Scroll of Return (CWndWorld::RenderBuffIcon, Wn
       status.update([{ buffType: 0, id: 10270, level: 0, leftMs, totalMs }], SKILLS, 0);
       return status.element.querySelector('.hud-buff-time')?.textContent;
     };
-    expect(time(2 * 86_400_000 + 5000, 3 * 86_400_000)).toBe('2day');
-    expect(time(3 * 3_600_000 + 1000)).toBe('3hr');
-    expect(time(59 * 60_000 + 59_000)).toBe('59min');
-    expect(time(45_500)).toBe('45sec');
+    expect(time(2 * 86_400_000 + 5000, 3 * 86_400_000)).toBe('2d');
+    expect(time(3 * 3_600_000 + 1000)).toBe('3h');
+    expect(time(59 * 60_000 + 59_000)).toBe('59m59s');
+    expect(time(45_500)).toBe('45s');
     expect(time(5_000_000, 999_999_999)).toBeUndefined();
     expect(status.element.querySelector('.hud-buff-seconds')).toBeNull();
   });
@@ -381,7 +383,7 @@ describe('the premium timers (SM modes, CWndWorld::RenderSMBuff, WndWorld.cpp:10
     const icon = status.element.querySelector<HTMLElement>('.hud-buff')!;
     expect(icon.querySelector('img')!.getAttribute('src')).toBe('/assets/ui/item/itm_shout.png');
     expect(icon.title.split('\n')).toEqual(['Full Shout 15', '30:59']);
-    expect(icon.querySelector('.hud-buff-time')!.textContent).toBe('30min');
+    expect(icon.querySelector('.hud-buff-time')!.textContent).toBe('30m59s');
     status.dispose();
   });
 

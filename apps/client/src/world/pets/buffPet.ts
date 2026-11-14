@@ -18,6 +18,7 @@
 import type { WebItemProp } from '@flyffweb/formats';
 import { MAX_VIS } from '@flyffweb/protocol';
 import type { InventoryItem } from '@flyffweb/protocol';
+import { formatDuration } from '../hud/duration';
 import { formatText } from '../hud/format';
 import type { Texts } from '../gameData';
 
@@ -151,31 +152,18 @@ export function timeSpan(t: number): { days: number; hours: number; minutes: num
 }
 
 /**
- * `PutVisPetInfo`'s time of a vis (`WndManager.cpp:7562-7596`): days, hours and minutes from a day; hours and minutes
- * from an hour; minutes and seconds from a minute; the seconds from 0; `TID_GAME_TOOLTIP_TIMEOUT` past its end (unless a
- * whole minute past: then the seconds' 0, as the C++ tests `nSec >= 0`).
+ * `PutVisPetInfo`'s time of a vis (`WndManager.cpp:7562-7596`), since 2026-11-14 as `formatDuration` (the owner; it was
+ * `TID_PK_LIMIT_*`'s words, "1hr1min"); `TID_GAME_TOOLTIP_TIMEOUT` past its end (unless a whole minute past: then `0s`,
+ * as the C++ tests `nSec >= 0`).
  */
 export function visTimeLeft(t: number, texts: Texts): string {
-  const text = (tid: string, value: number): string => formatText(texts.get(tid)?.text ?? '', [value]);
-  const { days, hours, minutes, seconds } = timeSpan(t);
-  if (days > 0) return text('TID_PK_LIMIT_DAY', days) + text('TID_PK_LIMIT_HOUR', hours) + text('TID_PK_LIMIT_MINUTE', minutes);
-  if (hours > 0) return text('TID_PK_LIMIT_HOUR', hours) + text('TID_PK_LIMIT_MINUTE', minutes);
-  if (minutes > 0) return text('TID_PK_LIMIT_MINUTE', minutes) + text('TID_PK_LIMIT_SECOND', seconds);
-  if (seconds >= 0) return text('TID_PK_LIMIT_SECOND', seconds);
-  return texts.get('TID_GAME_TOOLTIP_TIMEOUT')?.text ?? '';
+  if (t < 0 && timeSpan(t).seconds < 0) return texts.get('TID_GAME_TOOLTIP_TIMEOUT')?.text ?? '';
+  return formatDuration(t);
 }
 
-/**
- * `PutKeepTime`'s vis words (`WndManager.cpp:5896-5923`), for `t` > 0 seconds: as `visTimeLeft` but by the parts being
- * non-zero (`if( time.GetDays() )`), and the seconds at the end with no test.
- */
-export function visKeepTimeText(t: number, texts: Texts): string {
-  const text = (tid: string, value: number): string => formatText(texts.get(tid)?.text ?? '', [value]);
-  const { days, hours, minutes, seconds } = timeSpan(t);
-  if (days !== 0) return text('TID_PK_LIMIT_DAY', days) + text('TID_PK_LIMIT_HOUR', hours) + text('TID_PK_LIMIT_MINUTE', minutes);
-  if (hours !== 0) return text('TID_PK_LIMIT_HOUR', hours) + text('TID_PK_LIMIT_MINUTE', minutes);
-  if (minutes !== 0) return text('TID_PK_LIMIT_MINUTE', minutes) + text('TID_PK_LIMIT_SECOND', seconds);
-  return text('TID_PK_LIMIT_SECOND', seconds);
+/** `PutKeepTime`'s vis words (`WndManager.cpp:5896-5923`), for `t` > 0 seconds: since 2026-11-14 `formatDuration`. */
+export function visKeepTimeText(t: number): string {
+  return formatDuration(t);
 }
 
 /**

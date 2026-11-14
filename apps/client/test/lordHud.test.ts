@@ -147,8 +147,8 @@ describe('the Lord info, the event and the skills', () => {
     hud.openEntry(MMI_LORD.INFO);
     expect(hud.info.control('WIDC_STATIC4').textContent).toBe('Lord exists');
     expect(hud.info.control('WIDC_STATIC5').textContent).toBe('Aibatt');
-    // begin NOW - 90000 s, + 1 day + 2 days: 169,200 s left = 1 day 23 h 0 min 0 s
-    expect(hud.info.control('WIDC_STATIC6').textContent).toBe('1 Day(s) 23 Hr(s) 0 Min(s) 0 Sec(s)');
+    // begin NOW - 90000 s, + 1 day + 2 days: 169,200 s left = 1 day 23 h (formatDuration since 2026-11-14)
+    expect(hud.info.control('WIDC_STATIC6').textContent).toBe('1d23h');
   });
 
   it('opens the event window for the Lord only, cycles the rates and sends the rows', () => {
@@ -200,7 +200,7 @@ describe('the Lord info, the event and the skills', () => {
     expect(hud.skills.control('WIDC_CUSTOM1').getAttribute('aria-label')).toBe("Lord's Cheer");
     hud.handle({ type: 'lordEventCreate', event: { tick: 60, playerId: OWN, expFactor: 0.1, dropFactor: 0 } });
     expect(hud.eventIcons.children).toHaveLength(1);
-    expect(hud.eventIcons.textContent).toBe('60m');
+    expect(hud.eventIcons.textContent).toBe('1h');
   });
 
   it('formats the cost and the rates as OnDraw does', () => {

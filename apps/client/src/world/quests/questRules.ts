@@ -20,10 +20,21 @@ import { QS_END } from '@flyffweb/protocol';
 import { petWholeExpPercent } from '../pets/petStatus';
 import type { WebQuest, WebQuestGoal, WebQuestItem } from '@flyffweb/formats';
 import type { Texts } from '../gameData';
+import { formatDuration } from '../hud/duration';
 import { formatText } from '../hud/format';
 import type { QuestLookup } from '../hud/dialogue/dialogState';
 
 export type QuestCatalog = ReadonlyMap<number, WebQuest>;
+
+/**
+ * `TID_QUEST_LIMIT_TIME` ("Time Left: #b%d minutes#nb") with the minutes left; since 2026-11-14 its "%d minutes" is
+ * `formatDuration` ("Time Left: #b1h30m#nb", the owner). A text with no "%d minutes" in it gets the plain number.
+ */
+export function questTimeLeft(minutes: number, texts: Texts): string {
+  const format = texts.get('TID_QUEST_LIMIT_TIME')?.text ?? 'Time Left: #b%d minutes#nb';
+  const short = format.replace(/%[0-9.]*d\s*minutes?/i, '%s');
+  return formatText(short, [short === format ? minutes : formatDuration(minutes, 'min')]);
+}
 
 /** What __IsEndQuestCondition reads off the player. */
 export interface QuestOwner {
@@ -135,7 +146,7 @@ export function conditionRows(quest: OwnQuest, prop: WebQuest | undefined, owner
   };
   if (prop.limitTime !== undefined && prop.limitTime !== 0) {
     const minutes = minutesOf(quest);
-    if (minutes > 0) row(formatText(textOf(texts, 'TID_QUEST_LIMIT_TIME', 'Time Left: #b%d minutes#nb'), [minutes]), false);
+    if (minutes > 0) row(questTimeLeft(minutes, texts), false);
     else row(`#cffff0000${textOf(texts, 'TID_QUEST_LIMIT_TIMEOUT', '#bYou exceeded the time limit#nb')}#nc`, false);
   }
   for (const kill of prop.kills ?? []) {

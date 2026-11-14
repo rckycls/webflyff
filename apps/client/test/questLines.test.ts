@@ -27,7 +27,7 @@ describe("questLines (CDPClient::OnSetQuest, DPClient.cpp:8444-8573; OnRemoveQue
   it('the patrol and dialogue flags and a new time say their lines', () => {
     expect(texts(questLines(progress({ patrol: true }), CATALOG, NAMES, TEXTS))).toEqual(['Flaris Hill Search']);
     expect(texts(questLines(progress({ dialog: true }), CATALOG, NAMES, TEXTS))).toEqual(['Chat with Luda']);
-    expect(texts(questLines(progress({ time: 9 }), CATALOG, NAMES, TEXTS))).toEqual(['Time Left: #b9 minutes#nb']);
+    expect(texts(questLines(progress({ time: 9 }), CATALOG, NAMES, TEXTS))).toEqual(['Time Left: #b9m#nb']);
   });
 
   it('step 1 says the next step started; the end says Quest Complete!', () => {

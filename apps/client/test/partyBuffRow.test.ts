@@ -40,7 +40,7 @@ describe('PartyBuffRow', () => {
     const lucky = icons(row)[1]!;
     expect(lucky.querySelector('img')!.getAttribute('src')).toBe('/assets/ui/skill_trofortunecircle.png');
     expect(lucky.style.opacity).toBe(String(192 / 255));
-    expect(lucky.querySelector('.hud-party-buff-time')!.textContent).toBe('299');
+    expect(lucky.querySelector('.hud-party-buff-time')!.textContent).toBe('4m59s');
     expect(lucky.title).toBe('Lucky Drop\n04:59\nMore drops.');
     // Linked Attack has 19 s left: it blinks, 6 a frame from 192
     expect(icons(row)[0]!.style.opacity).toBe(String(186 / 255));
