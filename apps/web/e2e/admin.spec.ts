@@ -76,6 +76,28 @@ test('a double click on Send item sends once', async ({ page }) => {
   await expect(rows).toHaveCount(before + 1);
 });
 
+test('a send whose answer is lost says it may have been made, and shows the pending list', async ({ page }) => {
+  await openTab(page, 'Send');
+  const send = section(page, 'Send');
+  await send.getByPlaceholder('Character name').fill('Hero');
+  await send.getByRole('button', { name: 'Find', exact: true }).click();
+  await send.getByRole('button', { name: /^Hero — Poreotix/ }).click();
+  const rows = send.getByRole('row').filter({ hasText: 'Wooden Sword' });
+  await expect(send.getByText('Sends not yet delivered')).toBeVisible();
+  await page.waitForTimeout(300);
+  const before = await rows.count();
+  // the request reaches the panel and is done; the answer never comes back
+  await page.route('**/api/sends.item', async (route) => {
+    await route.fetch();
+    await route.abort('failed');
+  });
+  await send.getByPlaceholder('Item name or id').fill('sword');
+  await send.getByRole('button', { name: 'Wooden Sword (id 21)' }).click();
+  await send.getByRole('button', { name: 'Send item', exact: true }).click();
+  await expect(send.locator('.message.problem')).toHaveText(/may have been made/);
+  await expect(rows).toHaveCount(before + 1);
+});
+
 test('a lost session shows the login box and keeps what was typed', async ({ page, context }) => {
   await openTab(page, 'Accounts');
   const accounts = section(page, 'Accounts');

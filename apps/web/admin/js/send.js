@@ -105,17 +105,24 @@ export function sendTab() {
     }, SEARCH_DELAY_MS);
   });
 
+  /** A send, then the pending list again, also when it failed: after an unclear answer the list shows whether it went. */
+  async function sendThen(name, body) {
+    try {
+      await api(name, body, { write: true });
+    } finally {
+      await showPending().catch(() => {});
+    }
+  }
+
   sendItem.addEventListener('click', busy(sendItem, message, async () => {
     if (character === null || item === null) return undefined;
-    await api('sends.item', { idPlayer: character.idPlayer, itemId: item.id, count: Number(count.value), upgrade: item.upgradable ? Number(upgrade.value) : 0 }, { write: true });
-    await showPending();
+    await sendThen('sends.item', { idPlayer: character.idPlayer, itemId: item.id, count: Number(count.value), upgrade: item.upgradable ? Number(upgrade.value) : 0 });
     return `Sent ${numberText(Number(count.value))} × ${item.name} to ${character.name}.`;
   }));
 
   sendPenya.addEventListener('click', busy(sendPenya, message, async () => {
     if (character === null) return undefined;
-    await api('sends.penya', { idPlayer: character.idPlayer, amount: Number(penya.value) }, { write: true });
-    await showPending();
+    await sendThen('sends.penya', { idPlayer: character.idPlayer, amount: Number(penya.value) });
     return `Sent ${numberText(Number(penya.value))} penya to ${character.name}.`;
   }));
 

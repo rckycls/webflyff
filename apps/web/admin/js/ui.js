@@ -72,6 +72,8 @@ export function problemText(status, body) {
   if (error === 'session') return 'Your session ended. Log in again.';
   if (error === 'forbidden') return 'The request was refused. Reload the page.';
   if (error === 'server') return 'The server could not do it. Check the Log tab.';
+  if (error === 'unclear') return 'No clear answer from the panel: the change may have been made. Check it (the list here, or the Log tab) before trying again.';
+  if (error === 'network') return 'The panel cannot be reached. Check your connection.';
   return `Something went wrong (${status}).`;
 }
 
@@ -91,8 +93,11 @@ export async function api(name, body = {}, { write = false, background = false }
       credentials: 'same-origin',
     });
   } catch {
-    throw new ApiError(0, { error: 'network' });
+    // no answer at all: a write may have reached the panel and been done
+    throw new ApiError(0, { error: write ? 'unclear' : 'network' });
   }
+  // a gateway error from Caddy says nothing about whether the panel did it
+  if (write && (res.status === 502 || res.status === 503 || res.status === 504)) throw new ApiError(res.status, { error: 'unclear' });
   const answer = await res.json().catch(() => ({}));
   if (res.status === 401) showLogin();
   if (!res.ok) throw new ApiError(res.status, answer);
