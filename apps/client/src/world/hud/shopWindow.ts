@@ -5,6 +5,7 @@ import type { InventoryItem } from '@flyffweb/protocol';
 import type { GameData } from '../gameData';
 import type { OwnState } from '../OwnState';
 import { themeUrl } from './art';
+import { II_CHP_RED, chipCost, chipsFreeSlot, chipsHeld, isChipVendor } from './chipShop';
 import type { UiArt } from './art';
 import { WindowFrame } from './frame';
 import { TAB_TILE, chosenTabTiles, tabStripTiles } from './tiles';
@@ -15,7 +16,11 @@ const SHOP_TABS = 4;
 interface ShopActions {
   open(id: number): void; close(): void;
   buy(tab: number, id: number, count: number, itemId: number): void;
+  /** 2026-11-15: a chip vendor's buy (SendBuyChipItem); without it a chip vendor sells nothing. */
+  buyChip?(tab: number, id: number, count: number, itemId: number): void;
   sell(id: number, count: number): void;
+  /** 2026-11-15: `g_WndMng.OpenMessageBox( text )`, an OK box; the shop's status line without it. */
+  alert?(text: string): void;
 }
 type Selection = { kind: 'buy' | 'sell'; tab: number; id: number; itemId: number };
 
@@ -64,6 +69,19 @@ export class ShopWindow {
     this.draw();
   }
   feedback(text: string): void { if (this.frame.isOpen) { this.pending = null; this.setStatus(text); } }
+  /** 2026-11-15: the vendor sells for Red Chips (`m_nVenderType == 1`, Waforu). */
+  private get chipShop(): boolean { return isChipVendor(this.metadata); }
+  /**
+   * The price box's number (`CWndShop::OnDraw`, WndShop.cpp:704-766): a stock item's `GetCost()`, a chip vendor's
+   * `GetChipCost()` (:722-736, 2026-11-15); a bag item's sale price, `GetCost() / 4` at least 1, at every vendor.
+   */
+  private priceOf(selection: Selection | null): number {
+    if (selection === null) return 0;
+    const prop = this.data.itemProps.get(selection.itemId);
+    if (selection.kind === 'buy' && this.chipShop) return Math.max(0, chipCost(prop));
+    const cost = prop?.cost;
+    return cost === undefined ? 0 : selection.kind === 'buy' ? cost : Math.max(1, Math.floor(cost / 4));
+  }
   private check(): boolean {
     if (this.id === null || !this.frame.isOpen) return false;
     if (!this.valid(this.id)) { this.frame.close(); return false; }
@@ -92,12 +110,10 @@ export class ShopWindow {
     this.select(item, 'sell');
   }
   private select(item: InventoryItem, kind: 'buy' | 'sell'): void {
-    const prop = this.data.itemProps.get(item.itemId);
     this.selection = { kind, tab: this.tab, id: item.objectId, itemId: item.itemId }; this.quantity.value = '1';
     for (const cell of this.frame.body.querySelectorAll<HTMLElement>('[data-stock-id]')) cell.classList.toggle('is-selected', kind === 'buy' && Number(cell.dataset.stockId) === item.objectId);
-    const price = prop?.cost;
     const displayPrice = this.frame.body.querySelector('output');
-    if (displayPrice) displayPrice.textContent = String(price === undefined ? 0 : kind === 'buy' ? price : Math.max(1, Math.floor(price / 4)));
+    if (displayPrice) displayPrice.textContent = String(this.priceOf(this.selection));
     this.setStatus('');
     // 2026-11-13: a new item's amount starts again, so a number pad open for the last one goes
     if (this.pad !== null) { this.pad = null; this.draw(); }
@@ -141,8 +157,9 @@ export class ShopWindow {
     if (!this.frame.isOpen || (!tapped && this.doc.defaultView?.matchMedia?.('(pointer: coarse)').matches)) return;
     this.hideDetails();
     // the tooltip as APP_SHOP_ asks for it: with the buy price
-    const details = createItemDetails(this.doc, this.art, this.data, item, this.data.itemProps.get(item.itemId),
-      ownTooltipContext(this.own(), item, 'shop'));
+    // 2026-11-15: a chip vendor's price in Red Chips (PutItemGold, WndManager.cpp:5691-5692, :5724-5728)
+    const context = { ...ownTooltipContext(this.own(), item, 'shop'), ...(this.chipShop ? { chipVendor: true } : {}) };
+    const details = createItemDetails(this.doc, this.art, this.data, item, this.data.itemProps.get(item.itemId), context);
     details.classList.add('shop-item-details');
     (this.frame.element.parentElement ?? this.doc.body).append(details);
     positionItemDetails(details, anchor, this.doc); this.hoverDetails = details;
@@ -182,8 +199,7 @@ export class ShopWindow {
     }
     const price = this.doc.createElement('label'); price.className = 'shop-price'; price.append('Item Price');
     const output = this.doc.createElement('output');
-    const selectedCost = this.selection ? this.data.itemProps.get(this.selection.itemId)?.cost : undefined;
-    output.textContent = String(selectedCost === undefined ? 0 : this.selection?.kind === 'sell' ? Math.max(1, Math.floor(selectedCost / 4)) : selectedCost); output.classList.add('classic-shop-edit'); output.style.backgroundImage = this.quantity.style.backgroundImage; output.setAttribute('aria-label', 'Base item price'); price.append(output);
+    output.textContent = String(this.priceOf(this.selection)); output.classList.add('classic-shop-edit'); output.style.backgroundImage = this.quantity.style.backgroundImage; output.setAttribute('aria-label', 'Base item price'); price.append(output);
     const controls = this.doc.createElement('div'); controls.className = 'shop-controls';
     const phone = isPhone(this.doc);
     // 2026-11-13: the phone's amount, − count +, the count's tap opening the number pad; the desktop's the edit field
@@ -268,18 +284,33 @@ export class ShopWindow {
     if (!item || item.itemId !== selection.itemId || !prop) { this.feedback('This item is no longer available. Select it again.'); return; }
     const max = Math.min(32767, item.count, kind === 'buy' ? Math.max(1, prop.packMax) : item.count);
     if (!Number.isInteger(count) || count < 1 || count > max) { this.feedback(`Choose a quantity from 1 to ${max}.`); return; }
+    const chips = kind === 'buy' && this.chipShop;
     if (kind === 'buy') {
-      if (own.gold <= 0) { this.feedback('Not enough penya.'); return; }
+      // 2026-11-15: a chip vendor's price is in Red Chips (CWndConfirmBuy::OnOK, WndShop.cpp:561-576; OnBuyChipItem's
+      // own check, DPSrvr.cpp:12154-12160, says TID_GAME_LACKCHIP)
+      const cost = chipCost(prop);
+      if (chips && (cost < 1 || this.actions.buyChip === undefined)) { this.feedback('This item is no longer available. Select it again.'); return; }
+      if (chips && count * cost > chipsHeld(own.inventory.values())) { this.alert('TID_GAME_CANNTBUY_REDCHIP'); return; }
+      if (!chips && own.gold <= 0) { this.feedback('Not enough penya.'); return; }
       const pack = Math.max(1, prop.packMax), bag = this.bag();
       const free = own.inventorySlots.slice(0, 42).filter((id) => !own.inventory!.has(id)).length * pack;
       const room = bag.filter((entry) => entry.itemId === item.itemId).reduce((total, entry) => total + Math.max(0, pack - entry.count), free);
-      if (room < count) { this.feedback('Your inventory is full.'); return; }
+      // a chip buy also goes on when the chips paid free a slot (OnBuyChipItem, DPSrvr.cpp:12162-12188)
+      const chipPack = this.data.itemProps.get(II_CHP_RED)?.packMax ?? 9999;
+      if (room < count && !(chips && chipsFreeSlot(own.inventory.values(), count * cost, chipPack))) { this.feedback('Your inventory is full.'); return; }
     }
     try {
-      if (kind === 'buy') this.actions.buy(selection.tab, item.objectId, count, item.itemId);
+      if (chips) this.actions.buyChip!(selection.tab, item.objectId, count, item.itemId);
+      else if (kind === 'buy') this.actions.buy(selection.tab, item.objectId, count, item.itemId);
       else this.actions.sell(item.objectId, count);
       this.pending = performance.now(); this.setStatus('');
     } catch (error) { this.feedback(error instanceof Error ? error.message : 'Shop request failed.'); }
+  }
+  /** 2026-11-15: Neuz's `OpenMessageBox( prj.GetText( tid ) )`. */
+  private alert(tid: string): void {
+    const text = this.data.texts.get(tid)?.text ?? 'More Red Chips are needed.';
+    if (this.actions.alert === undefined) this.feedback(text);
+    else { this.setStatus(''); this.actions.alert(text); }
   }
   dispose(): void { this.hideDetails(); this.frame.close(); this.frame.element.remove(); }
 }

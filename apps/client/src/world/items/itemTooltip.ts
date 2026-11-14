@@ -64,6 +64,11 @@ export interface TooltipContext {
   isWorn?: boolean;
   /** With the inventory flag: an NPC shop is open, so the selling price shows (PutItemGold). */
   shopOpen?: boolean;
+  /**
+   * 2026-11-15: with the shop flag, the NPC sells for Red Chips (`m_nVenderType == 1`): the price is `GetChipCost()` with
+   * " Red Chip" after it (PutItemGold, WndManager.cpp:5691-5692, :5724-5728).
+   */
+  chipVendor?: boolean;
   /** 2026-11-10: with the vendor flag (`APP_VENDOR`), the personal shop's unit price (`m_nCost`, WndManager.cpp:5809-5822). */
   vendorCost?: number;
   /** 2026-11-09 (pets R2): the own player has the buff (`HasBuff( type, id )`), for PutPetFeedPocket. */
@@ -510,7 +515,10 @@ export function itemTooltip(item: InventoryItem, prop: WebItemProp, data: Toolti
   // 16. PutItemGold (:5676-5824): m_fShopCost, m_fShopBuyRate and m_fShopSellRate are 1.0 until the server says
   const cost = itemCost(prop, option);
   if (ctx.flag === 'shop' && cost !== -1) {
-    put(`\n${format('TID_GAME_TOOLTIP_COST2', withCommas(Math.max(1, cost)))}`, GENERAL);
+    // 2026-11-15: a chip vendor's price, GetChipCost (dwReferValue1, -1 for none: then 1, as `nCost <= 0` gives)
+    const price = ctx.chipVendor === true ? (prop.referValue1 ?? -1) : cost;
+    const unit = ctx.chipVendor === true ? ` ${text('TID_GAME_REDCHIP')}` : '';
+    put(`\n${format('TID_GAME_TOOLTIP_COST2', withCommas(Math.max(1, price)))}${unit}`, GENERAL);
   } else if (ctx.flag === 'inventory' && ctx.shopOpen === true && cost !== -1) {
     put(`\n${format('TID_GAME_TOOLTIP_SHELLCOST2', withCommas(Math.max(1, Math.trunc((cost >>> 0) / 4))))}`, GENERAL);
   } else if (ctx.flag === 'vendor' && ctx.vendorCost !== undefined) {

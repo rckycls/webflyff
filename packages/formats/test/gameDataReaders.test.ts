@@ -510,6 +510,7 @@ describe('readPropItem', () => {
       resists: [0, 0, 0, 0, 0],
       // 2026-11-09: no needed vis, and TRUE: not used up
       referTarget1: -1, referTarget2: -1, permanence: 1,
+      referValue1: -1, // 2026-11-15
     });
     expect(suit).toMatchObject({
       kind1: 2,

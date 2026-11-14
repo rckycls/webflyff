@@ -856,15 +856,16 @@ describe('the game-data stage', () => {
     vis[93] = '501'; // dwReferTarget1
     vis[94] = '502'; // dwReferTarget2
     vis[9] = '0'; // bPermanence
+    vis[95] = '10000'; // dwReferValue1: a chip vendor's price (2026-11-15)
     const bare = itemRow('503', 'IDS_PROPITEM_TXT_000792', 'PARTS_LOWER_BODY').split('\t');
-    for (const at of [9, 93, 94]) bare[at] = '=';
+    for (const at of [9, 93, 94, 95]) bare[at] = '=';
     await client({ 'propItem.txt': script(vis.join('\t'), bare.join('\t')) });
     const props = await catalog<WebItemProp[]>(await runData(), GAME_DATA_KEYS.itemProps);
     expect(props.find((p) => p.id === 504)).toMatchObject({
-      abilityMin: 10080, abilityMax: 3, referTarget1: 501, referTarget2: 502, permanence: 0,
+      abilityMin: 10080, abilityMax: 3, referTarget1: 501, referTarget2: 502, permanence: 0, referValue1: 10000,
     });
     const plain = props.find((p) => p.id === 503)!;
-    for (const key of ['referTarget1', 'referTarget2', 'permanence']) expect(plain, key).not.toHaveProperty(key);
+    for (const key of ['referTarget1', 'referTarget2', 'permanence', 'referValue1']) expect(plain, key).not.toHaveProperty(key);
   });
 
   it('itemEtc: the sets and the socket cards of propItemEtc.inc, when the packs hold it (2026-11-05)', async () => {

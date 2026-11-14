@@ -216,6 +216,11 @@ export interface WebItemProp {
    */
   referTarget1?: number;
   referTarget2?: number;
+  /**
+   * 2026-11-15: `dwReferValue1`, absent where the row says `=` (and in catalogs converted before). Of an item a chip
+   * vendor (`SetVenderType(1)`, Waforu) sells, its price in Red Chips (`CItemBase::GetChipCost`, Item.cpp:147-158).
+   */
+  referValue1?: number;
   /** `bPermanence`: TRUE (1) is an item that is not used up (`CItemElem::UseItem`, Item.cpp:272-276). */
   permanence?: number;
 }

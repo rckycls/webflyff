@@ -24,7 +24,7 @@ const TEXTS: Record<string, string> = {
   TID_TOOLTIP_ITEMTIME: 'Time Left', TID_TOOLTIP_DATE: '%d Day(s) %d Hr(s) %d Min(s) %d Sec(s)',
   TID_GAME_TOOLTIP_REGMERSER: 'Req Job: Mercenary', TID_GAME_TOOLTIP_KNIGHT_MASTER: 'Required Job: Master Knight',
   TID_GAME_TOOLTIP_REQLEVEL: 'Required Level : %d', TID_ITEM_INFO: 'Description: %s', TID_GAME_TOOLTIP_COST2: 'Price : %s',
-  TID_GAME_TOOLTIP_SHELLCOST2: 'Selling Price : %s', TID_TOOLTIP_SET: 'Set Effect', TID_GAME_AWAKENING: 'Awakening Available',
+  TID_GAME_TOOLTIP_SHELLCOST2: 'Selling Price : %s', TID_GAME_REDCHIP: 'Red Chip', TID_TOOLTIP_SET: 'Set Effect', TID_GAME_AWAKENING: 'Awakening Available',
   TID_GAME_BLESSING_CAPTION: 'Blessed Options',
   TID_GAME_BLESSING_WARNING: '※ Blessed items cannot be dropped, traded, or placed in a Bank.',
   TID_TOOLTIP_STR: 'STR', TID_TOOLTIP_DEX: 'DEX', TID_TOOLTIP_INT: 'INT', TID_TOOLTIP_STA: 'STA', TID_TOOLTIP_ATKSPEED: 'Attack Speed',
@@ -177,6 +177,20 @@ describe('the item tooltip: the lines before the awakening', () => {
     // a refined item costs more: (int)( 1000 + 1000 * ( 0.1f + 3 * 3 / 18.0f ) ) = 1600
     const sword = { ...WOODEN_SWORD, cost: 1000 };
     expect(textOf(itemTooltip(item({ itemId: 21, abilityOption: 3 }), sword, DATA, { flag: 'shop', viewer: null }))).toContain('Price : 1,600');
+  });
+
+  it("the Red Chip merchant's price: GetChipCost with ' Red Chip' after it, no tax (PutItemGold, 2026-11-15)", () => {
+    const box = itemProp({ id: 26499, name: 'Box', kind1: 3, kind2: 15, kind3: 30, part: -1, cost: 4, referValue1: 10000 });
+    const chip = { flag: 'shop' as const, viewer: null, chipVendor: true };
+    expect(textOf(itemTooltip(item({ itemId: 26499 }), box, DATA, chip)).at(-1)).toBe('Price : 10,000 Red Chip');
+    // the penya price at a penya vendor, as before
+    expect(textOf(itemTooltip(item({ itemId: 26499 }), box, DATA, { flag: 'shop', viewer: null })).at(-1)).toBe('Price : 4');
+    // no chip price (`=`): GetChipCost's -1 is `nCost <= 0`, so 1
+    const plain = itemProp({ id: 26498, name: 'Plain', kind1: 3, kind2: 15, kind3: 30, part: -1, cost: 4 });
+    expect(textOf(itemTooltip(item({ itemId: 26498 }), plain, DATA, chip)).at(-1)).toBe('Price : 1 Red Chip');
+    // the bag's selling price is penya at a chip vendor too
+    expect(textOf(itemTooltip(item({ itemId: 26499 }), box, DATA, { flag: 'inventory', viewer: null, shopOpen: true })).at(-1))
+      .toBe('Selling Price : 1');
   });
 
   it('a set piece: the set, the pieces worn in blue, and the effects of the pieces worn added up by DST (PutSetItemOpt)', () => {

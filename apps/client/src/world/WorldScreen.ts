@@ -93,6 +93,7 @@ import { InventoryWindow } from './hud/inventoryWindow';
 import { ChatWindow } from './hud/chatWindow';
 import { NeuzChat } from './hud/neuzChat';
 import { MENU_RANGE, MMI, MoverMenu, npcMenuEntries, soleEntry } from './hud/moverMenu';
+import { opensShop } from './hud/chipShop';
 import { DialogWindow } from './hud/dialogue/dialogWindow';
 import { parseDialogText } from './hud/dialogue/dialogText';
 import { QuestTracker } from './hud/quests/questTracker';
@@ -1919,7 +1920,10 @@ export class WorldScreen {
       open: (id) => session.sendOpenShop(id), close: () => session.sendCloseShop(),
       // the trade sound of a buy confirmed and of a sale (WndShop.cpp:655, :232-235)
       buy: (tab, id, count, itemId) => { this.sounds?.shop(); session.sendBuyItem(tab, id, count, itemId); },
+      // 2026-11-15: the Red Chip merchant's buy (SendBuyChipItem, WndShop.cpp:649-655, the same sound)
+      buyChip: (tab, id, count, itemId) => { this.sounds?.shop(); session.sendBuyChipItem(tab, id, count, itemId); },
       sell: (id, count) => { this.sounds?.shop(); session.sendSellItem(id, count); },
+      alert: (text) => { if (text !== '' && this.messageBox?.isOpen !== true) this.messageBox?.open(text, 'ok', () => {}); },
     }, doc);
     this.shopWindow.onOpen = () => {
       this.hud!.element.classList.add('shop-active');
@@ -4278,7 +4282,7 @@ export class WorldScreen {
       this.dialog!.open(id, data, this.hud!.element.clientWidth);
       this.session.sendNpcDialogOpen(id);
       this.sounds?.npcDialog(npc.added.npc!.characterKey);
-    } else if (entry === MMI.TRADE && !data?.vendorType && this.canTalk(id)) {
+    } else if (entry === MMI.TRADE && opensShop(data) && this.canTalk(id)) {
       // 2026-11-10: not with the Summon Angel window open (WndWorld.cpp:5305-5312)
       if (this.summonAngel?.isOpen === true) { this.say('TID_GAME_SUMMONANGELUSING'); return; }
       // 2026-11-10: not with a personal shop window open (CWndShop::OnInitialUpdate, WndShop.cpp:774)

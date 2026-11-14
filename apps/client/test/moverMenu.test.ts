@@ -24,7 +24,9 @@ describe('npcMenuEntries (CWndWorld::ShowMoverMenu, WndWorld.cpp:6649-6684)', ()
     const enabled = (npc: WebNpc) => npcMenuEntries(npc, TEXTS, false).filter((entry) => entry.enabled).map((entry) => entry.id);
     // 2026-11-10 (bank-mail): and Deposit
     expect(enabled(JULIA)).toEqual([MMI.DIALOG, MMI.TRADE, MMI.BANKING]);
-    expect(enabled({ ...JULIA, vendorType: 1 })).toEqual([MMI.DIALOG, MMI.BANKING]);
+    // 2026-11-15: the Red Chip merchant's (type 1) opens too; no other type is a shop (OnBuyItem / OnBuyChipItem)
+    expect(enabled({ ...JULIA, vendorType: 1 })).toEqual([MMI.DIALOG, MMI.TRADE, MMI.BANKING]);
+    expect(enabled({ ...JULIA, vendorType: 2 })).toEqual([MMI.DIALOG, MMI.BANKING]);
     expect(enabled({ key: 't', name: 'T', menus: [0, 146] })).toEqual([MMI.DIALOG]);
     expect(enabled({ key: 't', name: 'T', menus: [0, 146], teleports: [{ x: 1, z: 2 }] })).toEqual([MMI.DIALOG, MMI.TELEPORTER]);
   });
@@ -86,7 +88,8 @@ describe('npcMenuEntries (CWndWorld::ShowMoverMenu, WndWorld.cpp:6649-6684)', ()
   it('a sole entry the browser cannot open shows the menu with it greyed instead', () => {
     const sole = (npc: WebNpc) => soleEntry(npc, npcMenuEntries(npc, TEXTS, false));
     expect(sole({ key: 't', name: 'T', menus: [146] })).toBeNull(); // a teleporter with no destinations
-    expect(sole({ key: 't', name: 'T', menus: [2], vendorType: 1 })).toBeNull();
+    expect(sole({ key: 't', name: 'T', menus: [2], vendorType: 2 })).toBeNull();
+    expect(sole({ key: 't', name: 'T', menus: [2], vendorType: 1 })).toBe(MMI.TRADE); // 2026-11-15
   });
 });
 
