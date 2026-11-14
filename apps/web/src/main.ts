@@ -1,5 +1,8 @@
 import { readFileSync } from 'node:fs';
+import type { Server } from 'node:http';
 import { parseArgs } from 'node:util';
+import { sqlAdminStore } from './admin/sqlAdminStore';
+import { startAdmin } from './admin/startAdmin';
 import { parseWebConfig, type WebConfig } from './config';
 import { HourlyLimit } from './hourlyLimit';
 import { consoleLogger } from './log';
@@ -58,10 +61,21 @@ server.listen(config.listen.port, config.listen.host, () => {
   consoleLogger.info(`listening ${config.listen.host}:${config.listen.port}`);
 });
 
+// The admin panel on its own port, when web.config.json has a good admin section. It never stops the site: any problem
+// only writes "admin: panel off: ..." (admin/startAdmin.ts).
+let adminStore: ReturnType<typeof sqlAdminStore> | undefined;
+let adminServer: Server | undefined;
+void startAdmin(config, consoleLogger, () => {
+  adminStore = sqlAdminStore(config.sql, config.admin!.sql);
+  return adminStore;
+}, []).then((started) => { adminServer = started; });
+
 const stop = (): void => {
   server.close();
   server.closeAllConnections();
-  void store.close().finally(() => process.exit(0));
+  adminServer?.close();
+  adminServer?.closeAllConnections();
+  void Promise.all([store.close(), adminStore?.close()]).finally(() => process.exit(0));
 };
 process.once('SIGINT', stop);
 process.once('SIGTERM', stop);
