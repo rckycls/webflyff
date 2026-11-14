@@ -137,6 +137,16 @@ const BLINK_MS = 20000;
 const CLING = 10;
 /** The owner's phone size: half (2026-11-05). */
 const PHONE_SCALE = 0.5;
+/**
+ * 2026-11-14: on a phone the icons go 22 CSS px apart across, not half the pitch (17): the widest one-unit time ("53m",
+ * 18 px at the phone's 8 px Verdana) then ends clear of the next icon's (an iPhone showed "53m53m53m..." as one string).
+ * Down, half the pitch, as before.
+ */
+const PHONE_PITCH_X = 22;
+/** The icons' pitch across in CSS px at `scale`. */
+const pitchAcross = (scale: number): number => (scale === 1 ? PITCH : PHONE_PITCH_X);
+/** The time on an icon: one unit (2026-11-14), so two side by side never read as one; the tooltips keep their clocks. */
+const iconTime = (ms: number): string => formatDuration(ms, 'ms', 1);
 const PHONE_QUERY = '(max-width: 1000px) and (pointer: coarse)';
 /** Plain names of the first jobs' buffs' parameters (`DST_*`); the catalog's tooltip texts are not converted. */
 const PARAM_NAMES: Readonly<Record<number, string>> = {
@@ -268,10 +278,11 @@ export class BuffStatus {
       this.listed = listed;
       this.scale = scale;
       this.element.toggleAttribute('data-phone', scale !== 1);
-      Object.assign(this.element.style, { width: `${PER_ROW * PITCH * scale}px`, height: `${ROWS * PITCH * scale}px` });
+      Object.assign(this.element.style, { width: `${PER_ROW * pitchAcross(scale)}px`, height: `${ROWS * PITCH * scale}px` });
       this.element.replaceChildren(...looks.map((look, i) => this.icon(look, i)));
       const n = looks.length, cols = Math.min(n, PER_ROW), rows = Math.ceil(n / PER_ROW);
-      this.extent = n === 0 ? { w: 0, h: 0 } : { w: ((cols - 1) * PITCH + ICON_PX) * scale, h: ((rows - 1) * PITCH + ICON_PX) * scale };
+      this.extent = n === 0 ? { w: 0, h: 0 }
+        : { w: (cols - 1) * pitchAcross(scale) + ICON_PX * scale, h: ((rows - 1) * PITCH + ICON_PX) * scale };
       this.refit();
     }
     looks.forEach((look, i) => this.refresh(this.element.children[i] as HTMLElement, look));
@@ -303,7 +314,7 @@ export class BuffStatus {
     return {
       key: `${buff.buffType}:${buff.id}:${buff.level}:${buff.totalMs > 0}`, name: skill.name, icon: skill.icon, copies: 0,
       harmful: skill.evildoing < 0, tooltip: () => buffTooltip(skill, buff), blink: 'under', blinkLeftMs: buff.totalMs > 0 ? buff.leftMs : Infinity,
-      blinkUnderMs: BLINK_MS, label: buff.totalMs > 0 ? { kind: 'seconds', text: formatDuration(buff.leftMs, 'ms') } : null,
+      blinkUnderMs: BLINK_MS, label: buff.totalMs > 0 ? { kind: 'seconds', text: iconTime(buff.leftMs) } : null,
       goesBack: false,
     };
   }
@@ -346,7 +357,7 @@ export class BuffStatus {
         key: `${buff.buffType}:${buff.id}:${timed}`, name: item.name, icon: item.icon, copies: 0, harmful: false,
         tooltip: () => [angel === null ? item.name : `${item.name}   ${angel}%`, ...(vis() ?? (buff.totalMs > 0 && !equip ? [clock(buff.leftMs)] : []))],
         blink: buff.id === RETURN_SCROLL || angel === 100 ? 'always' : 'under', blinkLeftMs: buff.totalMs > 0 ? buff.leftMs : Infinity,
-        blinkUnderMs: BLINK_MS, label: timed && buff.leftMs > 0 ? { kind: 'time', text: formatDuration(buff.leftMs, 'ms') } : null,
+        blinkUnderMs: BLINK_MS, label: timed && buff.leftMs > 0 ? { kind: 'time', text: iconTime(buff.leftMs) } : null,
         goesBack: buff.id === RETURN_SCROLL || buff.id === PARTY_SUMMON || buff.id === FEED_POCKET,
         ...(angel !== null ? { press: () => this.options.onAngelPress?.() } : {}),
       });
@@ -404,7 +415,7 @@ export class BuffStatus {
         key: `sm:${type}:${itemId}`, name: item.name, icon: item.icon, copies: 0, harmful: false,
         tooltip: () => [item.name, whenDying ? this.text('TID_GAME_COND_USE', 'Takes effect when player dies.') : clock(seconds * 1000)],
         blink: type === SM_REVIVAL ? 'never' : 'under', blinkLeftMs: seconds * 1000, blinkUnderMs: 60_000,
-        label: whenDying ? null : { kind: 'time', text: formatDuration(seconds) }, goesBack: false,
+        label: whenDying ? null : { kind: 'time', text: iconTime(seconds * 1000) }, goesBack: false,
       }];
     });
   }
@@ -414,7 +425,7 @@ export class BuffStatus {
     const icon = this.doc.createElement('div');
     icon.className = 'hud-buff';
     Object.assign(icon.style, {
-      position: 'absolute', left: `${(i % PER_ROW) * PITCH * s}px`, top: `${Math.trunc(i / PER_ROW) * PITCH * s}px`,
+      position: 'absolute', left: `${(i % PER_ROW) * pitchAcross(s)}px`, top: `${Math.trunc(i / PER_ROW) * PITCH * s}px`,
       width: `${ICON_PX * s}px`, height: `${ICON_PX * s}px`,
     });
     if (look.harmful) icon.dataset.harmful = '';

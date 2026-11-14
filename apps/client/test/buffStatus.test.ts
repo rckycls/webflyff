@@ -60,12 +60,16 @@ describe('BuffStatus (CWndBuffStatus)', () => {
     status.dispose();
   });
 
-  it('the time left shows on the icon, short (2026-11-14, the owner)', () => {
+  it('the time left shows on the icon in one unit, so labels side by side never run together (2026-11-14, the owner)', () => {
     const status = new BuffStatus(art, document);
     status.update([buff(49, 45500)], SKILLS, 0);
     expect(status.element.querySelector('.hud-buff-seconds')!.textContent).toBe('45s');
-    status.update([buff(49, 30_000_000)], SKILLS, 1);
-    expect(status.element.querySelector('.hud-buff-seconds')!.textContent).toBe('8h20m');
+    status.update([buff(49, 3_233_000)], SKILLS, 1);
+    expect(status.element.querySelector('.hud-buff-seconds')!.textContent).toBe('53m');
+    status.update([buff(49, 30_000_000)], SKILLS, 2);
+    expect(status.element.querySelector('.hud-buff-seconds')!.textContent).toBe('8h');
+    // the tooltip keeps its clock
+    expect(status.element.querySelector<HTMLElement>('.hud-buff')!.title.split('\n').at(-1)).toBe('08:20:00');
     status.dispose();
   });
 
@@ -206,11 +210,12 @@ describe('moving the display (2026-11-05: CWndBuffStatus is dragged by its icons
 });
 
 describe('on a phone (2026-11-05, the owner: half size)', () => {
-  it('icons 19.2 px on a 17 px pitch, 7 a row', () => {
+  it('icons 19.2 px, 22 px apart across (room for a one-unit time, 2026-11-14) and 17 px down, 7 a row', () => {
     const status = new BuffStatus(art, document, { phone: () => true });
     status.update([20, 49, 61, 20, 49, 61, 20, 49].map((id) => buff(id, 50000)), SKILLS, 0);
     const icons = [...status.element.querySelectorAll<HTMLElement>('.hud-buff')];
-    expect([icons[1]!.style.left, icons[7]!.style.top, icons[0]!.style.width]).toEqual(['17px', '17px', '19.2px']);
+    expect([icons[1]!.style.left, icons[7]!.style.top, icons[0]!.style.width]).toEqual(['22px', '17px', '19.2px']);
+    expect(status.element.style.width).toBe('154px');
     expect(status.element.dataset.phone).toBe('');
     status.dispose();
   });
@@ -277,7 +282,7 @@ describe('the item buffs and the Scroll of Return (CWndWorld::RenderBuffIcon, Wn
     expect([off, back]).toEqual([1, 0]);
   });
 
-  it("an item buff's time is under it as shortTime (2026-11-14); 999999999 ms shows none (WndWorld.cpp:9315-9330, 11197-11227)", () => {
+  it("an item buff's time is under it in one unit (2026-11-14); 999999999 ms shows none (WndWorld.cpp:9315-9330, 11197-11227)", () => {
     const texts = (tid: string): string | undefined =>
       ({ TID_PK_LIMIT_DAY: '%.1dday', TID_PK_LIMIT_HOUR: '%.1dhr', TID_PK_LIMIT_MINUTE: '%.1dmin', TID_PK_LIMIT_SECOND: '%.1dsec' })[tid];
     const status = new BuffStatus(art, document, { items: ITEMS, texts });
@@ -287,7 +292,7 @@ describe('the item buffs and the Scroll of Return (CWndWorld::RenderBuffIcon, Wn
     };
     expect(time(2 * 86_400_000 + 5000, 3 * 86_400_000)).toBe('2d');
     expect(time(3 * 3_600_000 + 1000)).toBe('3h');
-    expect(time(59 * 60_000 + 59_000)).toBe('59m59s');
+    expect(time(59 * 60_000 + 59_000)).toBe('59m');
     expect(time(45_500)).toBe('45s');
     expect(time(5_000_000, 999_999_999)).toBeUndefined();
     expect(status.element.querySelector('.hud-buff-seconds')).toBeNull();
@@ -383,7 +388,7 @@ describe('the premium timers (SM modes, CWndWorld::RenderSMBuff, WndWorld.cpp:10
     const icon = status.element.querySelector<HTMLElement>('.hud-buff')!;
     expect(icon.querySelector('img')!.getAttribute('src')).toBe('/assets/ui/item/itm_shout.png');
     expect(icon.title.split('\n')).toEqual(['Full Shout 15', '30:59']);
-    expect(icon.querySelector('.hud-buff-time')!.textContent).toBe('30m59s');
+    expect(icon.querySelector('.hud-buff-time')!.textContent).toBe('30m');
     status.dispose();
   });
 

@@ -30,6 +30,17 @@ describe('formatDuration', () => {
     expect(formatDuration(Number.POSITIVE_INFINITY)).toBe('0s');
   });
 
+  it('one unit only when asked, for the labels on the buff icons (2026-11-14: on a phone two ran together)', () => {
+    expect(formatDuration(3233, 's', 1)).toBe('53m');
+    expect(formatDuration(546, 's', 1)).toBe('9m');
+    expect(formatDuration(2 * 3600 + 59 * 60, 's', 1)).toBe('2h');
+    expect(formatDuration(45, 's', 1)).toBe('45s');
+    expect(formatDuration(90000, 's', 1)).toBe('1d');
+    expect(formatDuration(0, 's', 1)).toBe('0s');
+    expect(formatDuration(30_000_000, 'ms', 1)).toBe('8h');
+    expect(formatDuration(299_000, 'ms', 1)).toBe('4m');
+  });
+
   it('takes milliseconds and minutes too', () => {
     expect(formatDuration(30_000_000, 'ms')).toBe('8h20m');
     expect(formatDuration(45_500, 'ms')).toBe('45s');

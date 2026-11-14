@@ -67,7 +67,7 @@ export class PartyBuffRow {
       const title = `${skill.name}\n${mmss(buff.leftMs)}\n${skill.description}`;
       if (icon.title !== title) icon.title = title;
       const time = icon.querySelector<HTMLElement>('.hud-party-buff-time')!;
-      const left = formatDuration(buff.leftMs, 'ms');
+      const left = formatDuration(buff.leftMs, 'ms', 1); // one unit, as the own buff icons' (2026-11-14)
       if (time.textContent !== left) time.textContent = left;
     });
   }

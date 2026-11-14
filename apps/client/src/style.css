@@ -2458,6 +2458,10 @@ fieldset:disabled .btn {
 .hud-buff { position: absolute; pointer-events: auto; touch-action: none; user-select: none; -webkit-user-select: none; }
 .hud-buff[data-harmful] img { filter: sepia(1) hue-rotate(250deg) saturate(3); }
 .hud-buff-seconds { position: absolute; left: 2px; top: 22px; color: #fff; font-size: 12px; text-shadow: 1px 1px 0 #000; pointer-events: none; }
+/* 2026-11-14: an icon's time over the icons of the row below (their top hid its last pixels), on one line; the box is its
+   own stack, so the times never show over a window */
+.hud-buffs { isolation: isolate; }
+.hud-buff-seconds, .hud-buff-time { z-index: 1; white-space: nowrap; }
 /* 2026-11-05: an item's cool-down over its task bar slot and bag cell (RenderRadar, WndManager.cpp:143-180, hud/cooldown.ts):
    a white wash of ARGB(120, 255, 255, 255) over the part of the sweep still to come, from 12 o'clock clockwise */
 [data-cooling]::after {
