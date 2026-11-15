@@ -1,4 +1,4 @@
-import { CloseCode } from '@flyffweb/protocol';
+import { CloseCode, PREREG_ONLY_TEXT } from '@flyffweb/protocol';
 
 /** The server error codes `LoginFlow` acts on (`MsgHdr.h`; 1319 is `ERROR_NO_SUCH_GROUP` of `winerror.h`). */
 export const ServerError = {
@@ -61,6 +61,8 @@ const CLOSE_TEXTS: ReadonlyMap<number, string> = new Map([
   [CloseCode.TOO_MANY_CONNECTIONS, 'Too many connections from your network.'],
   [CloseCode.TOO_MANY_NEW_CONNECTIONS, 'Too many connection attempts from your network. Wait a minute and try again.'],
   [CloseCode.GATEWAY_FULL, 'The game is full right now. Try again in a few minutes.'],
+  // The gateway sends the text as an ERROR_STRING first; this is for a close that comes without it.
+  [CloseCode.PREREG_ONLY, PREREG_ONLY_TEXT],
 ]);
 
 /** Shown when the lobby itself went wrong (a bug, not an answer of a server); the player starts over. */
