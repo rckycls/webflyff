@@ -4238,7 +4238,16 @@ export class WorldScreen {
       isPlayer: (objectId) => this.world?.movers.get(objectId)?.kind === 'player',
       partyIds: () => this.autoPlayParty(),
       flying: () => this.world?.self()?.act.isFlying() === true,
-      engage: (objectId) => this.attackLoop?.onMoverPressed(objectId, performance.now(), true),
+      // a double click on the monster, as a player makes it: the first press selects it (SETTARGET) and marks it, the
+      // second (OnLButtonDblClk) turns the auto attack on; another target first drops the old one's, as a press on the ground
+      engage: (objectId) => {
+        const loop = this.attackLoop;
+        if (loop === undefined) return;
+        const now = performance.now();
+        if (this.focus?.targetId !== null && this.focus?.targetId !== objectId) loop.stop('ground');
+        loop.onMoverPressed(objectId, now, false);
+        loop.onMoverPressed(objectId, now, true);
+      },
       focusId: () => this.focus?.targetId ?? null,
       walkTo: (pos) => {
         const self = this.world?.self();

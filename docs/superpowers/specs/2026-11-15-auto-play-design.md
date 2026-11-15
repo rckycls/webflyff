@@ -118,7 +118,8 @@ target → fight. At most **one** new command per step to the attack loop, skill
 - Candidates: movers that are monsters, alive, `attackAble()`, on the ground, inside the radius, not in the skip list.
 - **Always skipped**: bosses, mid-bosses and giants (`rank` RANK_BOSS 4, RANK_MIDBOSS 5, RANK_SUPER 7) unless they hit
   us first; monsters another player is fighting: their `dest.targetId` is a player who is not us or our party, or a
-  `hit` from such a player in the last 10 s, or less than full HP without any hit from us or our party.
+  `hit` from such a player in the last 10 s. (Built 2026-11-15: "less than full HP without our hit" was dropped, as section 8
+  allowed: the client's max HP is an estimate, and the e2e Aibatt, at 100 HP of more, was skipped forever.)
 - **Order**: a monster hitting us now comes first (even outside the radius, and even when it is a boss or another
   player is fighting it: fighting back is self-defence, not kill stealing); then the nearest to the player.
 - **Stuck**: a target we have not hit within 10 s of choosing it (no own swing or hit on it, and the distance has not

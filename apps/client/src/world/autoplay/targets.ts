@@ -48,21 +48,17 @@ export class OthersFighting {
 
   /**
    * Whether another player fights `m`: it follows a player who is not us or our party, or such a player hit it in the
-   * last 10 s, or it lost HP with no hit from us or our party.
+   * last 10 s. (A monster's HP below its maximum is no sign: the client's maximum is an estimate from the catalog and
+   * the rate table, so a monster that came in at less would be skipped forever; the e2e Aibatt showed it.)
    */
   busy(m: TargetMover, now: number, us: number, party: ReadonlySet<number>, isPlayer: (objectId: number) => boolean): boolean {
     const ours = (id: number) => id === us || party.has(id);
     const followed = m.dest?.targetId ?? null;
     if (followed !== null && isPlayer(followed) && !ours(followed)) return true;
     const by = this.hits.get(m.objectId);
-    let hitByUs = false;
-    if (by !== undefined) {
-      for (const [attacker, at] of by) {
-        if (ours(attacker)) hitByUs = true;
-        else if (isPlayer(attacker) && now - at <= OTHERS_HIT_MS) return true;
-      }
-    }
-    return m.maxHp !== null && m.hp < m.maxHp && !hitByUs;
+    if (by === undefined) return false;
+    for (const [attacker, at] of by) if (!ours(attacker) && isPlayer(attacker) && now - at <= OTHERS_HIT_MS) return true;
+    return false;
   }
 }
 

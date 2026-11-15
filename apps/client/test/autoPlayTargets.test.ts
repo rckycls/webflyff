@@ -44,12 +44,10 @@ describe('pickTarget (custom, owner 2026-11-15; spec 6.3)', () => {
     expect(pick([monster(10, 5, 0, { dest: { targetId: FRIEND } })])?.objectId).toBe(10);
   });
 
-  it('damaged without a hit from us or the party → skipped; damaged by us → allowed', () => {
+  it('less than full HP with no hit seen → still chosen: the client max HP is an estimate (the e2e Aibatt came in at 100 of more)', () => {
     const fighting = new OthersFighting();
     const hurt = monster(10, 5, 0, { hp: 40 });
     const busy = (m: TargetMover) => fighting.busy(m, 0, US, PARTY, (id) => PLAYERS.has(id));
-    expect(pick([hurt], { busy })).toBeNull();
-    fighting.onHit(US, 10, 0);
     expect(pick([hurt], { busy })?.objectId).toBe(10);
   });
 
