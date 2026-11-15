@@ -147,9 +147,14 @@ export class GuildCombatHud {
     }, doc);
   }
 
-  /** The windows, for the world screen's layer. */
+  /**
+   * The windows, for the world screen's layer. 2026-11-15 (consistency scan): in the order they open over one another, the
+   * Start menu's Siege Ranking first and the question boxes last: on a phone every siege panel is z 60, so the layer's order
+   * decides which shows (Apply or the start point opened under an open Siege Ranking).
+   */
   get elements(): HTMLElement[] {
-    return [this.apply, this.status, this.cancel, this.join, this.board, this.tele, this.diag, this.lineup, this.startPoint, this.result, this.ranking, this.siegeRanking].map((w) => w.element);
+    return [this.siegeRanking, this.board, this.ranking, this.result, this.status, this.apply, this.lineup, this.cancel, this.join,
+      this.tele, this.diag, this.startPoint].map((w) => w.element);
   }
 
   get isOpen(): boolean {

@@ -115,6 +115,8 @@ export class FriendHud {
     this.menu = new MoverMenu(doc);
     // its own class: the world's menu is the only .hud-mover-menu
     this.menu.element.className = 'hud-friend-menu';
+    // 2026-11-15 (consistency scan): the Messenger closed (E, the Start menu, its X, Escape), its friend or state menu goes too
+    this.window.frame.onClose = () => this.menu.close();
 
     this.window.onSort = (key, tab) => { if (tab === 1) this.guildRows(key); else this.rows(key); };
     this.window.onAdd = () => { if (!this.addWindow.frame.isOpen) this.addWindow.open(); };

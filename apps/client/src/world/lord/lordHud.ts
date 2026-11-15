@@ -341,6 +341,9 @@ export class LordHud {
 
   private reopen(window: ResWindow): void {
     window.close();
+    // 2026-11-15 (consistency scan): the newest last in its layer, so on a phone, where every Lord window is a z 60 panel and
+    // `raise` cannot order them, the one just opened is on top (Lord Info from the menu over an open Vote)
+    window.element.parentElement?.append(window.element);
     window.open('center');
     this.host.changed?.();
   }

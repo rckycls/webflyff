@@ -158,6 +158,8 @@ export class FurnitureStorageWindow {
   private readonly arrow: HTMLElement;
   private readonly combo: HTMLInputElement;
   private choices: readonly string[] = [];
+  /** What the rows show as drawn last (`draw`). */
+  private drawnRows = '';
 
   constructor(private readonly art: UiArt, private readonly doc: Document = document) {
     const window = new ResWindow(GH_STORAGE, art, doc);
@@ -209,6 +211,18 @@ export class FurnitureStorageWindow {
 
   /** The rows (the chosen one red, -1 for none), the chosen item's words, the sorted header's arrow. */
   draw(rows: readonly StorageRowView[], chosen: number, words: string, sort: StorageSort, greater: boolean): void {
+    // 2026-11-15 (consistency scan): the rows made again only when what they show changed (the once-a-second tick of the
+    // times rebuilt them every second: a press whose down and up straddled it went nowhere, and the I/R button's tooltip
+    // started over), as the bank redraws
+    const signature = JSON.stringify([rows, chosen]);
+    if (signature !== this.drawnRows) {
+      this.drawnRows = signature;
+      this.drawRows(rows, chosen);
+    }
+    this.drawHead(words, sort, greater);
+  }
+
+  private drawRows(rows: readonly StorageRowView[], chosen: number): void {
     const top = this.rows.scrollTop;
     this.rows.replaceChildren(...rows.map((row, index) => {
       const line = this.doc.createElement('div');
@@ -253,6 +267,10 @@ export class FurnitureStorageWindow {
     place(spacer, { left: 0, top: 0, width: 1, height: rows.length * ROW });
     this.rows.append(spacer);
     this.rows.scrollTop = top;
+  }
+
+  /** The chosen item's words and the sorted header's arrow. */
+  private drawHead(words: string, sort: StorageSort, greater: boolean): void {
     this.window.setText('WIDC_TEXT1', words);
     // LvUp (rising) or LvDn beside the sorted header, 18 px to its left (:775-788)
     const header = STORAGE_HEADERS.find(([, s]) => s === sort);

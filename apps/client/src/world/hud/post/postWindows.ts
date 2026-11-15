@@ -182,6 +182,8 @@ export class PostWindow {
   private readonly list: HTMLElement;
   private readonly scroll: { draw(): void };
   private selected = -1;
+  /** What the inbox's rows show as drawn last (`drawInbox`). */
+  private drawnInbox = '';
   private titles: [string, string] = ['Send Mail', 'Inbox'];
 
   constructor(private readonly art: UiArt, private readonly doc: Document = document) {
@@ -319,8 +321,16 @@ export class PostWindow {
 
   /** The inbox's rows (`CWndPostReceive::OnDraw`). */
   drawInbox(rows: readonly InboxRow[]): void {
-    const top = this.list.scrollTop;
     if (this.selected >= rows.length) this.selected = -1;
+    // 2026-11-15 (consistency scan): the rows made again only when what they show changed (the once-a-second tick rebuilt
+    // them every second: a press whose down and up straddled it went nowhere, a double-click to read was lost, the date's
+    // tooltip started over), as the bank redraws
+    // (the chosen row is marked in place by its press, so it is no part of this)
+    const signature = JSON.stringify(rows.map((row) => [row.id, row.item?.objectId, row.item?.itemId, row.item?.count,
+      row.item?.flag, row.prop?.icon, row.penyaOnly, row.read, row.sender, row.time, row.color, row.late, row.title, row.tip]));
+    if (signature === this.drawnInbox) return;
+    this.drawnInbox = signature;
+    const top = this.list.scrollTop;
     this.list.replaceChildren(...rows.map((row, i) => this.row(row, i)));
     this.list.scrollTop = top;
     this.scroll.draw();
@@ -401,10 +411,15 @@ export class PostReadWindow {
     slot.style.backgroundImage = themeUrl(art, 'WndChgElemItem.bmp');
     slot.setAttribute('role', 'button');
     slot.draggable = !this.phone;
+    // 2026-11-15 (consistency scan): while the item or the penya is dragged, the modal backdrop lets the drag through to the
+    // bag under it (V15 drops a dragged icon on the window under the mouse even with a modal window up, WndBase.cpp:995-1001)
+    const passDrags = (on: boolean): void => { window.modal?.element.classList.toggle('is-dragging', on); };
+    slot.addEventListener('dragend', () => passDrags(false));
     slot.addEventListener('dragstart', (event) => {
       if (slot.dataset.filled !== 'true') { event.preventDefault(); return; }
       this.onSlotHover(null);
       event.dataTransfer?.setData(MAIL_DRAG, '1');
+      passDrags(true);
     });
     slot.addEventListener('contextmenu', (event) => { event.preventDefault(); if (slot.dataset.filled === 'true') this.onTakeItem(); });
     slot.addEventListener('click', () => { if (this.phone && slot.dataset.filled === 'true') this.onTakeItem(); });
@@ -416,9 +431,11 @@ export class PostReadWindow {
     coin.setAttribute('role', 'button');
     coin.setAttribute('aria-label', 'Take the penya');
     coin.draggable = !this.phone;
+    coin.addEventListener('dragend', () => passDrags(false));
     coin.addEventListener('dragstart', (event) => {
       if (coin.dataset.filled !== 'true') { event.preventDefault(); return; }
       event.dataTransfer?.setData(MAIL_PENYA_DRAG, '1');
+      passDrags(true);
     });
     const takeGold = (event: Event): void => { event.preventDefault(); if (coin.dataset.filled === 'true') this.onTakeGold(); };
     coin.addEventListener('contextmenu', takeGold);

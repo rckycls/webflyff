@@ -222,8 +222,9 @@ export class VendorWindow {
     if (this.own) this.name.disabled = open;
     this.resetButton.hidden = open || !this.own;
     if (open) this.okButton.hidden = true;
-    // Escape asks too while open: the window is only shut through the box
-    this.frame.escapeCloses = !open;
+    // Escape asks too while open: the window is only shut through the box. 2026-11-15 (consistency scan): Escape takes this
+    // window and asks (Cancel's question), as the close button does; passed over, it closed the bag under it instead
+    this.frame.onEscape = open ? () => this.actions.cancel() : undefined;
     this.frame.element.toggleAttribute('data-vendor-open', open);
     this.draw();
   }

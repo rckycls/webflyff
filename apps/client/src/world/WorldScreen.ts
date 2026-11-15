@@ -4426,7 +4426,9 @@ export class WorldScreen {
     }
     if (
       this.reviveWindow?.isOpen === true || this.logOutBox?.isOpen === true || this.characterWindow?.confirm.isOpen === true ||
-      this.skillWindow?.warning.isOpen === true || this.messageBox?.isOpen === true || this.selectVillage?.isOpen === true
+      this.skillWindow?.warning.isOpen === true || this.messageBox?.isOpen === true || this.selectVillage?.isOpen === true ||
+      // 2026-11-15 (consistency scan): the couple's own question box takes every key as the main message box does
+      this.social?.coupleBox.isOpen === true
     ) {
       return;
     }

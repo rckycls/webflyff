@@ -201,7 +201,11 @@ export class CoupleWindow {
       icon.setAttribute('aria-label', name);
       icon.addEventListener('pointerenter', () => this.showTip(name, icon));
       icon.addEventListener('pointerleave', () => this.hideTip());
-      icon.addEventListener('click', () => this.showTip(name, icon));
+      icon.addEventListener('click', () => {
+        this.showTip(name, icon);
+        // 2026-11-15 (consistency scan): a tap's tooltip (a finger has no leave) goes at the next press, as the shop's
+        this.doc.addEventListener('pointerdown', () => this.hideTip(), { capture: true, once: true });
+      });
       this.pages[1]!.append(icon);
       return icon;
     });
