@@ -57,6 +57,11 @@ export type ReviveTexts = ReadonlyMap<string, { text: string }>;
 export class ReviveWindow {
   private readonly stand: HTMLButtonElement;
   onStand: () => boolean = () => false;
+  /**
+   * 2026-11-15 (Guild Siege): whether the own death sends REVIVAL_TO_LODESTAR at once and opens no window: the mover's
+   * `m_nGuildCombatState == 1` (`OnMoverDeath`, DPClient.cpp:2043-2045).
+   */
+  instantRevive: () => boolean = () => false;
   readonly frame: WindowFrame;
   readonly modal: ModalBackdrop;
 
@@ -114,7 +119,9 @@ export class ReviveWindow {
 
   /** What the own events open: the own death (`OnMoverDeath`, DPClient.cpp:2060-2072). */
   play(events: readonly OwnEvent[]): void {
-    if (events.some((event) => event.kind === 'died')) this.open();
+    if (!events.some((event) => event.kind === 'died')) return;
+    if (this.instantRevive()) this.onLodestar();
+    else this.open();
   }
 
   /** Closes it, and takes it off its layer. */

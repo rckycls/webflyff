@@ -272,6 +272,12 @@ export const THEME_FILES: readonly string[] = [
   // 2026-11-12, the New Character window (docs/superpowers/specs/2026-11-12-char-select-create-research.md §3): its sex
   // and arrow buttons (APP_CREATE_CHAR, resdata.inc:24551-24600); ButtOk, ButtCancel and WndEditTile00 are above
   'ButtMale.bmp', 'ButtFemale.bmp', 'ButtLeft.bmp', 'ButtRight.bmp',
+  // 2026-11-15, Guild Siege (docs/guild-siege/research/A-client.md): the winner's and the MVP's pictures by a name (m_TexGuildWinner /
+  // m_TexGuildBest, colour key magenta; MoverRender.cpp:1645-1688) and the siege windows' buttons. ButtGWRefresh is also in the
+  // housing branch: keep one entry when they merge.
+  'TexGuildCombatWinner.bmp', 'TexGuildCombatBest.bmp', 'ButtGW1.tga', 'ButtGW2.tga', 'ButtGW3.tga', 'ButtGW4.tga',
+  'ButtGWDefender.tga', 'ButtGWRefresh.tga', 'ButtDefenderIcon.tga', 'ButtApply.tga', 'ButtSave.tga', 'ButtUp.tga',
+  'ButtDown.tga',
 ];
 
 /**

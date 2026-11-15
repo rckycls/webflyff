@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { WebMover } from '@flyffweb/formats';
 import { Scene } from 'three';
 import type { SpriteMaterial } from 'three';
-import { NameTagLayer } from '../src/world/render/NameTagLayer';
+import { NameTagLayer, trophyPlace } from '../src/world/render/NameTagLayer';
 import { legendMark, nameTagOf, tagOpacity } from '../src/world/render/nameTags';
 import { addedNpc, addedPlayer, gameDataOf, moverFrom, webMoverOf } from './helpers/movers';
 
@@ -228,5 +228,21 @@ describe('legendMark (2026-11-09, RenderName MoverRender.cpp:1495-1563)', () => 
     expect(legendMark(16, 121, jobs)).toBeNull();
     expect(legendMark(24, 125, jobs)).toBe('ui/icon_hero.png');
     expect(legendMark(8, 100, jobs)).toBeNull();
+  });
+});
+
+describe('the siege trophy (RenderName, MoverRender.cpp:1645-1688)', () => {
+  it('is drawn one logo width + 2 left of the logo, or 30 px left of the wider line without a logo', () => {
+    // the logo is 24 px wide, 2 px left of the wider line's left half; the trophy a logo width + 2 further
+    expect(trophyPlace(80, true)).toEqual({ left: -40 - 26 - 26, top: -29, size: 24 });
+    expect(trophyPlace(81, true).left).toBe(-40 - 52);
+    // no logo: 30 px left of the wider line's left half, 30 px above the head point
+    expect(trophyPlace(80, false)).toEqual({ left: -40 - 30, top: -30, size: 24 });
+  });
+
+  it('nameTagOf carries the trophy the screen gives', () => {
+    const player = moverFrom(addedPlayer(1, { name: 'Rocky' }), data);
+    expect(nameTagOf(player, undefined, colors, titles, () => false, [], () => undefined, () => 'best')?.trophy).toBe('best');
+    expect(nameTagOf(player, undefined, colors, titles)?.trophy).toBeUndefined();
   });
 });

@@ -8,7 +8,7 @@ import { d3dColor } from '@flyffweb/scene';
 import type { PerspectiveCamera, Scene } from 'three';
 import { CanvasTexture, LinearFilter, SRGBColorSpace, Sprite, SpriteMaterial, Vector3 } from 'three';
 import type { Mover, WorldChanges } from '../WorldState';
-import { tagOpacity } from './nameTags';
+import { tagOpacity, trophyKey } from './nameTags';
 import type { NameTag } from './nameTags';
 
 /**
@@ -40,6 +40,18 @@ const GUILD_ABOVE_PX = 32;
 const LOGO_PX = 24;
 const LOGO_GAP_PX = 2;
 const LOGO_BOTTOM_PX = 5;
+/**
+ * 2026-11-15 (Guild Siege): the winner's or the MVP's picture (`RenderName`, `MoverRender.cpp:1645-1688`): with a logo, one logo
+ * width + 2 further left than the logo, on its line; without, 30 px left of the wider line's left half and 30 px above the
+ * head point. Its size is the logo's (the picture is not measured here).
+ */
+export function trophyPlace(wide: number, hasLogo: boolean): { left: number; top: number; size: number } {
+  const logoLeft = -Math.floor(wide / 2) - (LOGO_PX + LOGO_GAP_PX);
+  return hasLogo
+    ? { left: logoLeft - (LOGO_PX + LOGO_GAP_PX), top: -(LOGO_PX + LOGO_BOTTOM_PX), size: LOGO_PX }
+    : { left: -Math.floor(wide / 2) - 30, top: -30, size: LOGO_PX };
+}
+
 /** The canvas is drawn at the screen's pixel ratio, as the renderer is (at most 2: `createRenderer`). */
 const MAX_PIXEL_RATIO = 2;
 
@@ -53,6 +65,8 @@ interface Tag {
   mark: string | null;
   /** 2026-11-10: the guild line it was drawn with ('' for none), for `recolor` and the tests. */
   guild: string;
+  /** 2026-11-15: the trophy it was drawn with ('' for none). */
+  trophy: string;
   /** The canvas in CSS pixels. */
   width: number;
   height: number;
@@ -70,6 +84,7 @@ const guildKey = (tag: NameTag): string =>
   (tag.guild === undefined ? '' : `${tag.guild.text}|${tag.guild.color.toString(16)}|${tag.guild.logo ?? ''}`);
 
 export class NameTagLayer {
+
   private readonly tags = new Map<number, Tag>();
 
   constructor(
@@ -103,7 +118,7 @@ export class NameTagLayer {
         if (tag !== null && tag.text !== '') this.add(objectId, tag);
         return;
       }
-      if (tag !== null && tag.text === old.text && tag.color === old.color && (tag.mark ?? null) === old.mark && guildKey(tag) === old.guild) return;
+      if (tag !== null && tag.text === old.text && tag.color === old.color && (tag.mark ?? null) === old.mark && guildKey(tag) === old.guild && (tag.trophy ?? '') === old.trophy) return;
       this.remove(objectId);
       if (tag !== null && tag.text !== '') this.add(objectId, tag);
     });
@@ -166,10 +181,12 @@ export class NameTagLayer {
     const guildLeft = -Math.floor(guildWidth / 2) - LEFT_PX, guildTop = -GUILD_ABOVE_PX;
     const logo = guild?.logo ?? null;
     const logoLeft = -Math.floor(wide / 2) - (LOGO_PX + LOGO_GAP_PX), logoTop = -(LOGO_PX + LOGO_BOTTOM_PX);
+    const trophy = tag.trophy ?? null;
+    const trophyAt = trophyPlace(wide, logo !== null);
     const markLeft = Math.ceil(wide / 2), markTop = -(MARK_PX + MARK_BOTTOM_PX);
-    const left = Math.min(textLeft - OUTLINE_PX, guild === undefined ? Infinity : guildLeft - OUTLINE_PX, logo === null ? Infinity : logoLeft);
+    const left = Math.min(textLeft - OUTLINE_PX, guild === undefined ? Infinity : guildLeft - OUTLINE_PX, logo === null ? Infinity : logoLeft, trophy === null ? Infinity : trophyAt.left);
     const top = Math.min(textTop - OUTLINE_PX, mark === null ? Infinity : markTop, guild === undefined ? Infinity : guildTop - OUTLINE_PX,
-      logo === null ? Infinity : logoTop);
+      logo === null ? Infinity : logoTop, trophy === null ? Infinity : trophyAt.top);
     const right = Math.max(textLeft + textWidth + OUTLINE_PX, mark === null ? -Infinity : markLeft + MARK_PX,
       guild === undefined ? -Infinity : guildLeft + guildWidth + OUTLINE_PX);
     const bottom = textTop + LINE_PX + OUTLINE_PX;
@@ -209,7 +226,7 @@ export class NameTagLayer {
     sprite.visible = false;
     this.scene.add(sprite);
     this.tags.set(objectId, {
-      sprite, texture, maxDistance: tag.maxDistance, text: tag.text, color: tag.color, mark, guild: guildKey(tag), width, height,
+      sprite, texture, maxDistance: tag.maxDistance, text: tag.text, color: tag.color, mark, guild: guildKey(tag), trophy: trophy ?? '', width, height,
     });
     // the mark and the logo are drawn into the tag once their pictures are in
     const picture = (key: string | null, x: number, y: number, size: number): void => {
@@ -225,6 +242,8 @@ export class NameTagLayer {
     };
     picture(mark, markLeft, markTop, MARK_PX);
     picture(logo, logoLeft, logoTop, LOGO_PX);
+    // the picture may be missing (the converter has not run): `url` gives '' and nothing is drawn
+    picture(trophy === null ? null : trophyKey(trophy), trophyAt.left, trophyAt.top, trophyAt.size);
   }
 
   private remove(objectId: number): void {

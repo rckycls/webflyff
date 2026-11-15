@@ -227,6 +227,9 @@ import type { MoverLook } from './render/looks';
 import { MoveMark } from './render/moveMark';
 import { loadHeldItems, loadMoverModel, loadRideModel } from './render/moverModels';
 import { guildLine, nameTagOf } from './render/nameTags';
+import { GuildCombatBook } from './guildCombat/guildCombatBook';
+import { GuildCombatHud } from './guildCombat/guildCombatHud';
+import { MoverGcState, trophyOf } from './guildCombat/guildCombatRules';
 import type { GuildLine } from './render/nameTags';
 import { pickMoverAt } from './render/picking';
 import type { TapHit } from './render/picking';
@@ -579,6 +582,9 @@ export class WorldScreen {
    * (`GuildHud`) go with the world. Its events wait for the windows while a world loads.
    */
   private readonly guildBook = new GuildBook();
+  /** 2026-11-15: the Guild Siege's state (guildCombat/guildCombatBook.ts), from the JOIN's GCSTATE on, whatever HUD there is. */
+  private readonly guildCombatBook = new GuildCombatBook((objectId) => this.world?.movers.get(objectId)?.added.player?.guildCombatState ?? 0);
+  private guildCombatHud: GuildCombatHud | undefined;
   /** 2026-11-11: the Lord system's state (lord/lordBook.ts), from the JOIN's LORD snapshot on, whatever HUD there is. */
   private readonly lordBook = new LordBook(() => this.entry.character.playerId, (id) => this.playerData.peek(id)?.name ?? '');
   /** 2026-11-11: the earned honour titles (honor/honorBook.ts, `CTitleManager::m_vecEarned`), made with the game data. */
@@ -949,6 +955,20 @@ export class WorldScreen {
         this.guildEvents.push(...this.guildBook.apply(objectId, value, this.guildContext(world)));
         if (this.guildHud !== undefined && this.guildEvents.length > 0) this.guildHud.handle(this.guildEvents.splice(0));
         else if (this.guildEvents.some((event) => event.kind === 'tags')) this.recolorTags();
+        continue;
+      }
+      // 2026-11-15: the Guild Siege's messages (guildCombat/guildCombatBook.ts): the state, the winner and the best player
+      // (trophies by the names), and a mover's combat state (written on the mover: its ADD_OBJ field, `m_nGuildCombatState`)
+      if (value.type === 'guildCombat') {
+        const events = this.guildCombatBook.apply(value, performance.now());
+        for (const event of events) {
+          const player = event.kind === 'userState' ? world.movers.get(event.moverId)?.added.player : undefined;
+          if (event.kind === 'userState' && player !== undefined) {
+            if (event.state === 0) delete player.guildCombatState; else player.guildCombatState = event.state;
+          }
+        }
+        this.guildCombatHud?.handle(events);
+        if (events.some((event) => event.kind === 'tags')) this.recolorTags();
         continue;
       }
       // 2026-11-11: the Lord system's messages (lord/lordBook.ts); a Lord skill's use goes on to the world for its effects
@@ -1726,6 +1746,8 @@ export class WorldScreen {
     const reviveWindow = new ReviveWindow(this.hudArt!, this.data!.texts, () => this.session.sendRevivalToLodestar(), doc);
     this.reviveWindow = reviveWindow;
     reviveWindow.onStand = () => this.itemUse!.revive();
+    // 2026-11-15: a fighter of the siege goes to Lodestar at once, with no window (OnMoverDeath, DPClient.cpp:2043-2045)
+    reviveWindow.instantRevive = () => this.guildCombatBook.combatStateOf(this.world?.self()?.objectId ?? NULL_ID) === MoverGcState.FIGHTING;
     const inventoryWindow = new InventoryWindow(this.hudArt!, this.data!, {
       // 2026-11-05: a double-click (or Use) while the Upgrade Specialist's window is open puts the item in it (WndField.cpp:2262-2272)
       use: (id, shift) => {
@@ -2044,6 +2066,8 @@ export class WorldScreen {
       now: () => Math.floor(Date.now() / 1000),
     }, this.guildBook, (key) => this.services?.store.url(key) ?? '', doc);
     this.guildHud = guildHud;
+    // 2026-11-15: the Guild Siege's glue (guildCombat/guildCombatHud.ts); the book is the screen's
+    this.guildCombatHud = new GuildCombatHud({ send: (bytes) => session.sendGuildCombat(bytes) }, this.guildCombatBook);
     // 2026-11-10: the player trade (trade/tradeHud.ts)
     const tradeHud = new TradeHud(this.hudArt!, this.data!.texts, {
       session: {
@@ -2670,7 +2694,8 @@ export class WorldScreen {
     const changes = world.takeChanges();
     this.countDropped(changes.dropped);
     this.views!.sync(changes, world.movers);
-    this.tags!.sync(changes, world.movers, (mover) => nameTagOf(mover, world.self(), data.nameColors, data.honorTitles, this.inParty, data.jobs, this.guildTagOf));
+    for (const objectId of changes.removed) this.guildCombatBook.forget(objectId);
+    this.tags!.sync(changes, world.movers, (mover) => nameTagOf(mover, world.self(), data.nameColors, data.honorTitles, this.inParty, data.jobs, this.guildTagOf, this.trophyTagOf));
     this.play(changes);
   }
 
@@ -4175,7 +4200,7 @@ export class WorldScreen {
   private recolorTags(): void {
     const world = this.world, data = this.data;
     if (world === undefined || data === undefined) return;
-    this.tags?.recolor(world.movers, (mover) => nameTagOf(mover, world.self(), data.nameColors, data.honorTitles, this.inParty, data.jobs, this.guildTagOf));
+    this.tags?.recolor(world.movers, (mover) => nameTagOf(mover, world.self(), data.nameColors, data.honorTitles, this.inParty, data.jobs, this.guildTagOf, this.trophyTagOf));
   }
 
   /** 2026-11-10: a player's guild line (`CMover::GetGuild`, `Mover.cpp:8137-8160`): its guild's name and logo, or none. */
@@ -4185,6 +4210,12 @@ export class WorldScreen {
     const guild = this.guildBook.shownGuild(player.guildId, player.playerId, this.entry.character.playerId);
     if (guild === undefined) return undefined;
     return guildLine({ name: guild.name, logo: guild.logo, master: guild.masterId === player.playerId }, logoKey);
+  };
+
+  /** 2026-11-15: a player's trophy by the name (`RenderName`, `MoverRender.cpp:1600-1612`): the MVP's or the winning guild's. */
+  private readonly trophyTagOf = (mover: Mover): 'winner' | 'best' | null => {
+    const player = mover.added.player;
+    return player === undefined ? null : trophyOf(this.guildCombatBook, player.playerId, player.guildId ?? 0);
   };
 
   /** 2026-11-10: what the guild book reads of the world (guild/guildBook.ts `GuildContext`). */
@@ -4777,6 +4808,8 @@ export class WorldScreen {
     // 2026-11-10: the guild's windows go with the world; the guild book stays (the screen's)
     this.guildHud?.dispose();
     this.guildHud = undefined;
+    this.guildCombatHud?.dispose();
+    this.guildCombatHud = undefined;
     this.tradeHud?.reset();
     this.tradeHud = undefined;
     this.showTradeTooltip(null, null);

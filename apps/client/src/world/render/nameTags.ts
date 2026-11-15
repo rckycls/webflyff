@@ -13,6 +13,8 @@ export interface NameTag {
   mark?: string | null;
   /** 2026-11-10: the guild line above the name (`guildLine`): its text, colour and logo picture's key. */
   guild?: GuildLine;
+  /** 2026-11-15 (Guild Siege): the winner's or the MVP's picture left of the guild logo (`trophyKey`), or none. */
+  trophy?: 'winner' | 'best' | null;
 }
 
 /** The guild line of a player's tag (guild research §5). */
@@ -29,6 +31,9 @@ export interface TagGuild {
   logo: number;
   master: boolean;
 }
+
+/** 2026-11-15: a trophy's picture key (`TexGuildCombatWinner.bmp`, `TexGuildCombatBest.bmp`, `CWndWorld::m_TexGuildWinner / m_TexGuildBest`). */
+export const trophyKey = (trophy: 'winner' | 'best'): string => `ui/texguildcombat${trophy === 'winner' ? 'winner' : 'best'}.png`;
 
 /** `0xFFFFFF99`: the guild line of the guild's master (`MoverRender.cpp:1586-1588`); everyone else's is white. */
 const COLOR_GUILD_MASTER = 0xffffff99;
@@ -108,15 +113,19 @@ export function nameTagOf(
   jobs: ReadonlyArray<{ name: string }> = [],
   /** 2026-11-10: the guild line of a player, or undefined (no guild known for it). */
   guildOf: (mover: Mover) => GuildLine | undefined = () => undefined,
+  /** 2026-11-15 (Guild Siege): the trophy of a player (guildCombat/guildCombatRules.ts `trophyOf`), or none. */
+  trophyOf: (mover: Mover) => 'winner' | 'best' | null = () => null,
 ): NameTag | null {
   const player = mover.added.player;
   if (mover.kind === 'player' && player !== undefined) {
     if ((player.mode & TRANSPARENT_MODE) === TRANSPARENT_MODE && !mover.isSelf) return null;
     const mark = legendMark(player.job, player.level, jobs);
     const guild = guildOf(mover);
+    const trophy = trophyOf(mover);
     return {
       text: playerText(mover.name, player, honorTitles), color: playerColor(player, colors, inParty(player.playerId)), maxDistance: FAR_LIMIT,
       ...(mark !== null ? { mark } : {}), ...(guild !== undefined ? { guild } : {}),
+      ...(trophy !== null ? { trophy } : {}),
     };
   }
   const { belligerence } = mover.added;
