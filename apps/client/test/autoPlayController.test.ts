@@ -1,25 +1,49 @@
 import { describe, expect, it } from 'vitest';
-import type { InventoryItem } from '@flyffweb/protocol';
+import type { InventoryItem, Vec3 } from '@flyffweb/protocol';
 import { AutoPlay } from '../src/world/autoplay/controller';
 import type { AutoPlayHooks } from '../src/world/autoplay/controller';
 import type { Gauges } from '../src/world/autoplay/potions';
 import { defaultSettings } from '../src/world/autoplay/settings';
 import type { AutoPlaySettings } from '../src/world/autoplay/settings';
+import type { TargetMover } from '../src/world/autoplay/targets';
 
 const HP_POT = 1001;
+const US = 1;
+
+type Mob = { -readonly [K in keyof TargetMover]: TargetMover[K] } & { pos: Vec3 };
+
+function mob(objectId: number, x: number, z: number): Mob {
+  const pos: Vec3 = [x, 0, z];
+  return { objectId, kind: 'monster', hp: 100, maxHp: 100, flying: false, dest: null, act: { body: { pos } }, pos };
+}
 
 /** Fake hooks around a little world state the tests change. */
 function world() {
+  const selfPos: Vec3 = [0, 0, 0];
   const state = {
     now: 0,
     worldId: 1,
     inDuel: false,
     alive: true,
+    flying: false,
+    wand: false,
+    bagFull: false,
     gauges: { hp: 1000, maxHp: 1000, mp: 500, maxMp: 500, fp: 300, maxFp: 300 } as Gauges,
     inventory: new Map<number, InventoryItem>([[10, { objectId: 10, itemId: HP_POT, count: 3 }]]),
+    self: { objectId: US, kind: 'player', hp: 1000, maxHp: 1000, flying: false, dest: null, act: { body: { pos: selfPos } } } as TargetMover,
+    selfPos,
+    mobs: [] as Mob[],
+    items: new Set<number>(),
+    focus: null as number | null,
     used: [] as number[],
     said: [] as string[],
     saved: [] as AutoPlaySettings[],
+    engaged: [] as number[],
+    walks: [] as Vec3[],
+    picks: [] as number[],
+    wandHolds: [] as boolean[],
+    alerts: 0,
+    titles: [] as string[],
   };
   const hooks: AutoPlayHooks = {
     now: () => state.now,
@@ -32,6 +56,23 @@ function world() {
     useItem: (objectId) => { state.used.push(objectId); return true; },
     say: (text) => { state.said.push(text); },
     save: (s) => { state.saved.push(structuredClone(s)); },
+    self: () => state.self,
+    movers: () => state.mobs,
+    rankOf: () => 1,
+    attackable: (m) => m.hp > 0,
+    isPlayer: (id) => id === US || id >= 900,
+    partyIds: () => new Set(),
+    flying: () => state.flying,
+    engage: (id) => { state.engaged.push(id); state.focus = id; },
+    focusId: () => state.focus,
+    walkTo: (pos) => { state.walks.push([...pos] as Vec3); },
+    pick: (id) => { state.picks.push(id); return true; },
+    itemThere: (id) => state.items.has(id),
+    bagFull: () => state.bagFull,
+    holdsWand: () => state.wand,
+    wandHold: (on) => { state.wandHolds.push(on); },
+    alert: () => { state.alerts++; },
+    flashTitle: (reason) => { state.titles.push(reason); },
   };
   return { state, hooks };
 }
@@ -41,6 +82,14 @@ function potsOn(): AutoPlaySettings {
   s.pots.enabled = true;
   s.pots.rows.hp.itemIndex = HP_POT;
   return s;
+}
+
+/** Runs `steps` rules steps of 1000/60 ms. */
+function run(play: AutoPlay, state: ReturnType<typeof world>['state'], steps: number): void {
+  for (let i = 0; i < steps; i++) {
+    state.now += 1000 / 60;
+    play.step();
+  }
 }
 
 describe('AutoPlay controller: auto pots (custom, owner 2026-11-15)', () => {
@@ -116,5 +165,206 @@ describe('AutoPlay controller: auto pots (custom, owner 2026-11-15)', () => {
     play.saved();
     expect(state.saved).toHaveLength(1);
     expect(state.saved[0]!.pots.rows.hp.below).toBe(70);
+  });
+});
+
+describe('AutoPlay controller: the farm bot (spec 6.2-6.5, 6.8)', () => {
+  it('start in 208 → false, with the stop line; flying → false', () => {
+    const { state, hooks } = world();
+    const play = new AutoPlay(hooks, defaultSettings());
+    state.worldId = 208;
+    expect(play.start()).toBe(false);
+    expect(state.said).toEqual(['Auto Play stopped: not allowed here.']);
+    state.worldId = 1;
+    state.flying = true;
+    expect(play.start()).toBe(false);
+    expect(play.farm).toBe('off');
+  });
+
+  it('start engages the nearest monster', () => {
+    const { state, hooks } = world();
+    state.mobs = [mob(20, 8, 0), mob(21, 3, 0)];
+    const play = new AutoPlay(hooks, defaultSettings());
+    expect(play.start()).toBe(true);
+    expect(state.said).toEqual(['Auto Play started.']);
+    run(play, state, 1);
+    expect(state.engaged).toEqual([21]);
+    expect(play.phase).toBe('fighting');
+  });
+
+  it('a kill → engages the next', () => {
+    const { state, hooks } = world();
+    const first = mob(21, 3, 0), second = mob(20, 8, 0);
+    state.mobs = [first, second];
+    const play = new AutoPlay(hooks, defaultSettings());
+    play.start();
+    run(play, state, 1);
+    first.hp = 0;
+    state.mobs = [second];
+    play.onEvent({ kind: 'kill', targetId: 21, pos: first.pos });
+    run(play, state, 2);
+    expect(state.engaged).toEqual([21, 20]);
+  });
+
+  it('a target that leaves the radius mid-fight is still fought (Review Focus 1)', () => {
+    const { state, hooks } = world();
+    const runner = mob(21, 3, 0);
+    state.mobs = [runner, mob(22, 10, 0)];
+    const play = new AutoPlay(hooks, defaultSettings());
+    play.start();
+    run(play, state, 1);
+    runner.pos[0] = 25;
+    play.onEvent({ kind: 'hit', attackerId: US, victimId: 21 });
+    run(play, state, 60);
+    expect(new Set(state.engaged)).toEqual(new Set([21]));
+  });
+
+  it('no target and 4 m from the anchor → walks back to it', () => {
+    const { state, hooks } = world();
+    const play = new AutoPlay(hooks, defaultSettings());
+    play.start();
+    state.selfPos[0] = 4;
+    run(play, state, 40);
+    expect(state.walks[0]).toEqual([0, 0, 0]);
+    expect(play.phase).toBe('returning');
+  });
+
+  it('a cleared walk (the tab hidden: stopOwnMover) is sent again within a second (Review Focus 5)', () => {
+    const { state, hooks } = world();
+    const play = new AutoPlay(hooks, defaultSettings());
+    play.start();
+    state.selfPos[0] = 6;
+    run(play, state, 30);
+    expect(state.walks).toHaveLength(1);
+    run(play, state, 61);
+    expect(state.walks).toHaveLength(2);
+  });
+
+  it('10 s stuck → skips it and chooses another', () => {
+    const { state, hooks } = world();
+    state.mobs = [mob(21, 3, 0), mob(22, 9, 0)];
+    const play = new AutoPlay(hooks, defaultSettings());
+    play.start();
+    run(play, state, 61 * 10);
+    expect(state.engaged.at(-1)).toBe(22);
+  });
+
+  it('3 stuck in a row → walks back to the anchor', () => {
+    const { state, hooks } = world();
+    state.mobs = [mob(21, 3, 0), mob(22, 6, 0), mob(23, 9, 0), mob(24, 12, 0)];
+    const play = new AutoPlay(hooks, defaultSettings());
+    play.start();
+    state.selfPos[0] = 5;
+    run(play, state, 61 * 31);
+    expect(state.walks.length).toBeGreaterThan(0);
+    expect(state.walks[0]).toEqual([0, 0, 0]);
+  });
+
+  it('an item 2 m from our kill 1 s later is picked; one there 2 s before the kill is not', () => {
+    const { state, hooks } = world();
+    const m = mob(21, 3, 0);
+    state.mobs = [m];
+    const play = new AutoPlay(hooks, defaultSettings());
+    play.start();
+    run(play, state, 1);
+    play.onEvent({ kind: 'itemAppeared', id: 50, pos: [3, 0, 1] });
+    state.items.add(50);
+    run(play, state, 120);
+    m.hp = 0;
+    state.mobs = [];
+    play.onEvent({ kind: 'kill', targetId: 21, pos: m.pos });
+    run(play, state, 60);
+    play.onEvent({ kind: 'itemAppeared', id: 51, pos: [4, 0, 1] });
+    state.items.add(51);
+    run(play, state, 2);
+    expect(state.picks).toEqual([51]);
+    expect(play.phase).toBe('looting');
+  });
+
+  it('pickRefused → the next item', () => {
+    const { state, hooks } = world();
+    const m = mob(21, 3, 0);
+    state.mobs = [m];
+    const play = new AutoPlay(hooks, defaultSettings());
+    play.start();
+    run(play, state, 1);
+    m.hp = 0;
+    state.mobs = [];
+    play.onEvent({ kind: 'kill', targetId: 21, pos: m.pos });
+    for (const id of [51, 52]) { play.onEvent({ kind: 'itemAppeared', id, pos: [3, 0, 0] }); state.items.add(id); }
+    run(play, state, 2);
+    expect(play.lootingId).toBe(51);
+    play.onEvent({ kind: 'pickRefused', id: 51 });
+    run(play, state, 2);
+    expect(state.picks).toEqual([51, 52]);
+  });
+
+  it('bag full → no pick, still engages', () => {
+    const { state, hooks } = world();
+    const m = mob(21, 3, 0);
+    state.mobs = [m];
+    const play = new AutoPlay(hooks, defaultSettings());
+    play.start();
+    run(play, state, 1);
+    m.hp = 0;
+    play.onEvent({ kind: 'bagFull' });
+    state.bagFull = true;
+    play.onEvent({ kind: 'kill', targetId: 21, pos: m.pos });
+    play.onEvent({ kind: 'itemAppeared', id: 51, pos: [3, 0, 0] });
+    state.items.add(51);
+    state.mobs = [mob(22, 6, 0)];
+    run(play, state, 2);
+    expect(state.picks).toEqual([]);
+    expect(state.engaged).toEqual([21, 22]);
+    expect(play.bagIsFull).toBe(true);
+  });
+
+  it('died → stopped, "you died", one line, the alert and the title', () => {
+    const { state, hooks } = world();
+    const play = new AutoPlay(hooks, defaultSettings());
+    play.start();
+    play.onEvent({ kind: 'died' });
+    play.onEvent({ kind: 'died' });
+    expect(play.farm).toBe('stopped');
+    expect(play.lastStop).toBe('you died');
+    expect(state.said).toEqual(['Auto Play started.', 'Auto Play stopped: you died.']);
+    expect([state.alerts, state.titles]).toEqual([1, ['you died']]);
+  });
+
+  it('stop after 60 min → "time limit" at 60 min', () => {
+    const { state, hooks } = world();
+    const s = defaultSettings();
+    s.farm.stopAfterMin = 60;
+    const play = new AutoPlay(hooks, s);
+    play.start();
+    state.now = 59 * 60_000;
+    play.step();
+    expect(play.farm).toBe('running');
+    state.now = 60 * 60_000;
+    play.step();
+    expect(play.lastStop).toBe('time limit');
+  });
+
+  it('HP 15 % with no HP item → "low HP, no potions"; with potions on and in stock it goes on', () => {
+    const { state, hooks } = world();
+    const play = new AutoPlay(hooks, potsOn());
+    play.start();
+    state.gauges = { ...state.gauges, hp: 150 };
+    play.step();
+    expect(play.farm).toBe('running');
+    state.inventory = new Map();
+    play.step();
+    expect(play.lastStop).toBe('low HP, no potions');
+  });
+
+  it('a wand is held on a target and let go at the stop', () => {
+    const { state, hooks } = world();
+    state.wand = true;
+    state.mobs = [mob(21, 3, 0)];
+    const play = new AutoPlay(hooks, defaultSettings());
+    play.start();
+    run(play, state, 3);
+    play.stop('you took control');
+    expect(state.wandHolds).toEqual([true, false]);
   });
 });
