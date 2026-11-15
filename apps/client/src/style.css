@@ -4821,3 +4821,20 @@ fieldset:disabled .btn {
 @media (max-width: 1000px) and (pointer: coarse) {
   .auto-pot-row [data-auto-play] { min-width: 32px; height: 32px; }
 }
+
+/* custom (owner 2026-11-15): Auto Play's Farm tab */
+.auto-farm { display: flex; flex-direction: column; gap: 5px; }
+.auto-farm-line { display: flex; align-items: center; gap: 4px; min-height: 28px; }
+.auto-farm-caption { flex: none; width: 72px; font-weight: bold; }
+.auto-farm-radius, .auto-farm-stop-after { flex: none; width: 38px; text-align: center; }
+.auto-farm-go {
+  align-self: flex-start; min-width: 90px; height: 28px; padding: 0 12px; border: 1px solid #ba9377; border-radius: 4px;
+  background: #fff1df; color: #463027; font: bold 12px/1 Verdana, Arial, sans-serif;
+}
+.auto-farm-go:disabled { opacity: .45; }
+.auto-farm-state { font-weight: bold; }
+.auto-farm-stats { color: #6b5a4c; word-spacing: 4px; }
+@media (max-width: 1000px) and (pointer: coarse) {
+  .auto-farm [data-auto-play] { min-width: 32px; height: 32px; }
+  .auto-farm-go { height: 34px; }
+}

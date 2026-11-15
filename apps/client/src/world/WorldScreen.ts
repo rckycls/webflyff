@@ -54,6 +54,7 @@ import { AutoPlay } from './autoplay/controller';
 import type { AutoPlayHooks } from './autoplay/controller';
 import { loadSettings, saveSettings } from './autoplay/settings';
 import { countOf, isPotionProp } from './autoplay/potions';
+import { farmBlocked } from './autoplay/zones';
 import { AutoPlayWindow } from './hud/autoPlay/autoPlayWindow';
 import type { AutoPlayItemChoice } from './hud/autoPlay/autoPlayWindow';
 import { Missiles } from './combat/missiles';
@@ -2262,6 +2263,8 @@ export class WorldScreen {
         return prop === undefined ? null : { name: prop.name, icon: prop.icon ? this.hudArt!.url(prop.icon) : null };
       },
       count: (itemIndex) => countOf(this.own?.inventory ?? null, itemIndex),
+      farmAllowed: () => !farmBlocked(this.worldId, this.duels.own.duel !== 0),
+      now: () => this.world?.nowMs() ?? 0,
     }, doc);
     this.moverMenu = new MoverMenu(doc);
     const partyHud = new PartyHud(this.hudArt!, this.data!.texts, () => this.partyCatalog, {

@@ -8,7 +8,7 @@ import type { UiArt } from '../art';
 import { WindowFrame } from '../frame';
 import { TabPages } from '../guildCombat/tabs';
 import { textButton } from '../numpad';
-import { BELOW, GAUGE_ROWS } from '../../autoplay/settings';
+import { BELOW, GAUGE_ROWS, RADIUS, STOP_AFTER } from '../../autoplay/settings';
 import type { AutoPlaySettings, GaugeRow } from '../../autoplay/settings';
 
 /** An item a slot can take: its prop index, name, picture (a URL, or null) and how many the bag holds. */
@@ -27,12 +27,23 @@ export interface AutoPlayWindowDeps {
   item(itemIndex: number): { name: string; icon: string | null } | null;
   /** How many of the item the bag holds. */
   count(itemIndex: number): number;
+  /** Whether the farm bot may run here (the world, a duel). */
+  farmAllowed(): boolean;
+  /** The rules' clock (ms), for the counts' time. */
+  now(): number;
 }
 
-/** What the window edits: Auto Play's settings, kept after each change. */
+/** What the window edits and shows: Auto Play's settings (kept after each change) and the farm bot. */
 export interface AutoPlayWindowPlay {
   settings: AutoPlaySettings;
   saved(): void;
+  readonly farm: 'off' | 'running' | 'stopped';
+  readonly phase: string;
+  readonly lastStop: string | null;
+  readonly bagIsFull: boolean;
+  readonly stats: { lines(now: number): string[] };
+  start(): boolean;
+  stop(reason: string): void;
 }
 
 export type AutoPlayTab = 'farm' | 'potions' | 'skills';
@@ -61,8 +72,7 @@ export class AutoPlayWindow {
     holder.append(this.tabs.element);
     this.frame.body.append(holder);
     this.frame.onClose = () => { this.picking = null; this.shown = ''; };
-    // Farm and Skills come with the farm bot and the auto skills (M2, M3)
-    this.enableTab('farm', false);
+    // Skills comes with the auto skills (M3)
     this.enableTab('skills', false);
   }
 
@@ -71,7 +81,7 @@ export class AutoPlayWindow {
   }
 
   /** Opens it centred on `tab`. */
-  open(tab: AutoPlayTab = 'potions'): void {
+  open(tab: AutoPlayTab = 'farm'): void {
     if (!this.frame.isOpen) this.frame.open('center');
     this.showTab(tab);
   }
@@ -94,6 +104,7 @@ export class AutoPlayWindow {
   refresh(): void {
     if (!this.frame.isOpen) return;
     const tab = TABS[this.tabs.selected];
+    if (tab === 'farm') { this.refreshFarm(); return; }
     if (tab !== 'potions') return;
     const choices = this.picking === null ? [] : this.deps.potionChoices();
     const counts = GAUGE_ROWS.map((row) => this.deps.count(this.play.settings.pots.rows[row].itemIndex));
@@ -106,6 +117,87 @@ export class AutoPlayWindow {
   dispose(): void {
     this.frame.close();
     this.frame.element.remove();
+  }
+
+  private refreshFarm(): void {
+    const play = this.play, allowed = this.deps.farmAllowed();
+    const lines = play.farm === 'off' ? [] : play.stats.lines(this.deps.now());
+    const key = JSON.stringify(['farm', play.settings.farm, play.farm, play.phase, play.lastStop, play.bagIsFull, allowed, lines]);
+    if (key === this.shown) return;
+    this.shown = key;
+    this.tabs.pages[TABS.indexOf('farm')]!.replaceChildren(this.farmPage(allowed, lines));
+  }
+
+  private farmPage(allowed: boolean, lines: string[]): HTMLElement {
+    const doc = this.doc, play = this.play, farm = play.settings.farm;
+    const page = doc.createElement('div');
+    page.className = 'auto-farm';
+
+    const radius = doc.createElement('div');
+    radius.className = 'auto-farm-line';
+    const radiusText = doc.createElement('span');
+    radiusText.className = 'auto-farm-radius';
+    radiusText.textContent = `${farm.radius} m`;
+    radius.append(this.caption('Radius'),
+      this.stepButton('-', 'Radius smaller', () => { farm.radius = Math.max(RADIUS.min, farm.radius - RADIUS.step); }),
+      radiusText,
+      this.stepButton('+', 'Radius larger', () => { farm.radius = Math.min(RADIUS.max, farm.radius + RADIUS.step); }));
+
+    const loot = doc.createElement('label');
+    loot.className = 'auto-check';
+    const lootBox = doc.createElement('input');
+    lootBox.type = 'checkbox';
+    lootBox.name = 'auto-loot';
+    lootBox.checked = farm.loot;
+    lootBox.addEventListener('change', () => { farm.loot = lootBox.checked; this.changed(); });
+    loot.append(lootBox, doc.createTextNode(' Pick up drops'));
+
+    const after = doc.createElement('div');
+    after.className = 'auto-farm-line';
+    const afterText = doc.createElement('span');
+    afterText.className = 'auto-farm-stop-after';
+    afterText.textContent = farm.stopAfterMin === 0 ? 'off' : `${farm.stopAfterMin / 60}h`;
+    after.append(this.caption('Stop after'),
+      this.stepButton('-', 'Stop sooner', () => {
+        farm.stopAfterMin = farm.stopAfterMin <= STOP_AFTER.min ? 0 : farm.stopAfterMin - STOP_AFTER.step;
+      }),
+      afterText,
+      this.stepButton('+', 'Stop later', () => { farm.stopAfterMin = Math.min(STOP_AFTER.max, farm.stopAfterMin + STOP_AFTER.step); }));
+
+    const running = play.farm === 'running';
+    const go = textButton(doc, running ? 'Stop' : 'Start', () => {
+      if (play.farm === 'running') play.stop('you took control');
+      else play.start();
+      this.shown = '';
+      this.refresh();
+    }, 'go', 'autoPlay');
+    go.className = 'auto-farm-go';
+    go.disabled = !running && !allowed;
+
+    const state = doc.createElement('div');
+    state.className = 'auto-farm-state';
+    state.textContent = running ? `Running: ${play.phase}${play.bagIsFull ? ' (bag full)' : ''}`
+      : play.farm === 'stopped' ? `Stopped: ${play.lastStop ?? ''}` : allowed ? 'Off' : 'Not allowed here.';
+    const stats = doc.createElement('div');
+    stats.className = 'auto-farm-stats';
+    stats.textContent = lines.join('  ');
+
+    page.append(radius, loot, after, go, state, stats);
+    return page;
+  }
+
+  private caption(text: string): HTMLElement {
+    const span = this.doc.createElement('span');
+    span.className = 'auto-farm-caption';
+    span.textContent = text;
+    return span;
+  }
+
+  /** A [-] or [+] that changes a setting, then keeps and draws it. */
+  private stepButton(label: string, name: string, change: () => void): HTMLButtonElement {
+    const button = textButton(this.doc, label, () => { change(); this.changed(); }, label === '-' ? 'lower' : 'higher', 'autoPlay');
+    button.setAttribute('aria-label', name);
+    return button;
   }
 
   /** A change from the window: keep it and draw it. */
