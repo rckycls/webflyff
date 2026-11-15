@@ -2,8 +2,9 @@ import net from 'node:net';
 import type { WebSocket } from 'ws';
 import { afterEach, expect, it, vi } from 'vitest';
 import {
-  ArWriter, CloseCode, DPID_UNKNOWN, PacketType, bytesToHex, encodeCertify, encodeCloseExistingConnection, encodeErrorReply,
-  encodeGatewayClientAddr, encodeKeepAlive, encodeProtocolIdBody, encodeServerFrame, encodeWorldKeepAlive, hashPassword,
+  ArWriter, CloseCode, DPID_UNKNOWN, PREREG_ONLY_TEXT, PacketType, bytesToHex, decodeCertifierMessage, encodeCertify,
+  encodeCloseExistingConnection, encodeErrorReply, encodeGatewayClientAddr, encodeKeepAlive, encodeProtocolIdBody,
+  encodeServerFrame, encodeWorldKeepAlive, hashPassword,
 } from '@flyffweb/protocol';
 import { startFakeFlyffServer, type FakeFlyffServerOptions } from '@flyffweb/testkit';
 import { DEFAULT_LIMITS } from '../src/config';
@@ -479,4 +480,47 @@ it('passes the browser certifier packets, and the same bytes on a login route', 
   expect(bytesToHex(login.received[0]!)).toBe(bytesToHex(sqlClose));
   const result = l.close().then(() => l.result);
   await expect(result).resolves.not.toHaveProperty('refused');
+});
+
+// The pre-registration lock (docs/2026-11-15-prereg-login.md)
+const onlyOwner = (account: string) => account.toLowerCase() === 'owner';
+
+it('refuses a CERTIFY of an account the lock does not allow: ERROR_STRING, then 4010, and the certifier gets nothing', async () => {
+  const server = await fakeServer();
+  const asked: string[] = [];
+  const h = await harness(relayOptions(server.port, 'certifier', { allowAccount: (a) => { asked.push(a); return onlyOwner(a); } }));
+  h.client.send(encodeKeepAlive());
+  await server.waitForBodies(1);
+  h.client.send(encodeCertify('hero_01', hashPassword('abc12345')));
+  await expect(h.closed).resolves.toEqual({ code: CloseCode.PREREG_ONLY });
+  await expect(h.result).resolves.toMatchObject({ closeCode: 4010, preregRefused: 'hero_01' });
+  expect(h.messages.map((m) => decodeCertifierMessage(m))).toEqual([{ type: 'errorString', text: PREREG_ONLY_TEXT }]);
+  expect(server.received.map(bytesToHex)).toEqual([bytesToHex(encodeKeepAlive())]);
+  expect(asked).toEqual(['hero_01']); // the keep-alive names no account
+});
+
+it('refuses a CLOSE_EXISTING_CONNECTION of an account the lock does not allow, held before the protocol ID too', async () => {
+  const server = await fakeServer({ holdProtocolId: true });
+  const h = await harness(relayOptions(server.port, 'certifier', { allowAccount: onlyOwner }));
+  h.client.send(encodeCloseExistingConnection('hero_01', hashPassword('abc12345')));
+  await expect(h.result).resolves.toMatchObject({ closeCode: 4010, preregRefused: 'hero_01' });
+  expect(server.received).toEqual([]);
+});
+
+it('passes an allowed account in any case, and never asks the lock on a login route', async () => {
+  const certifier = await fakeServer();
+  const h = await harness(relayOptions(certifier.port, 'certifier', { allowAccount: onlyOwner }));
+  const certify = encodeCertify('Owner', hashPassword('abc12345'));
+  h.client.send(certify);
+  await certifier.waitForBodies(1);
+  expect(bytesToHex(certifier.received[0]!)).toBe(bytesToHex(certify));
+
+  const login = await fakeServer();
+  const lock = vi.fn(() => false);
+  const l = await harness(relayOptions(login.port, 'login', { allowAccount: lock }));
+  l.client.send(certify);
+  await login.waitForBodies(1);
+  expect(lock).not.toHaveBeenCalled();
+  const result = l.close().then(() => l.result);
+  await expect(result).resolves.not.toHaveProperty('preregRefused');
 });

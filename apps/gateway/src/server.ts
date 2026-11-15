@@ -69,9 +69,15 @@ const closeLine = (address: string, routeKey: string, code: number, up: number, 
  * `close <address> <routeKey> code=<code> up=<bytes> down=<bytes>`. Every refusal goes to a `RefusalLog`, which
  * writes `refused <address> <reason>` once per address and reason a minute and sums the rest. Nothing a packet
  * holds is ever logged, because the password hash is in those, and nothing else a browser sent either: not its
- * origin, path or route.
+ * origin, path or route. The one exception is the account the pre-registration lock refuses (`allowAccount`):
+ * `prereg-refused <address> account=<name>`, one line for every attempt. The certifier allow-list has checked the
+ * name before (1 to 32 printable characters, no space), so it cannot break the line.
  */
-export async function startGateway(config: GatewayConfig, log: Logger = consoleLogger): Promise<Gateway> {
+export async function startGateway(
+  config: GatewayConfig,
+  log: Logger = consoleLogger,
+  options: { allowAccount?: (account: string) => boolean } = {},
+): Promise<Gateway> {
   const { limits } = config;
   const counter = new AddressCounter(limits.maxConnectionsPerAddress);
   const rate = new AddressRate(limits.maxNewConnectionsPerAddressPerMinute, NEW_CONNECTIONS_WINDOW_MS);
@@ -114,6 +120,7 @@ export async function startGateway(config: GatewayConfig, log: Logger = consoleL
         clientAddress: address,
         sendClientAddr: config.sendClientAddr,
         limits,
+        ...(options.allowAccount !== undefined ? { allowAccount: options.allowAccount } : {}),
       });
     } catch (error) {
       // Not a case a browser can cause, but it must not leave the slots taken or throw out of the upgrade listener.
@@ -127,6 +134,7 @@ export async function startGateway(config: GatewayConfig, log: Logger = consoleL
       giveBack();
       // the certifier allow-list's reason (website spec §3.5): a word, never what the packet held
       if (result.refused !== undefined) log.info(`forbidden ${address} ${routeKey} ${result.refused}`);
+      if (result.preregRefused !== undefined) log.info(`prereg-refused ${address} account=${result.preregRefused}`);
       log.info(closeLine(address, routeKey, result.closeCode, result.bytesUp, result.bytesDown));
       relays.delete(life);
     });

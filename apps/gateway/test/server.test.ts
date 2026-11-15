@@ -2,7 +2,7 @@ import http from 'node:http';
 import net from 'node:net';
 import { afterEach, expect, it, vi } from 'vitest';
 import { WebSocket, type ClientOptions } from 'ws';
-import { bytesToHex, encodeCloseExistingConnection, encodeGatewayClientAddr } from '@flyffweb/protocol';
+import { bytesToHex, encodeCertify, encodeCloseExistingConnection, encodeGatewayClientAddr, hashPassword } from '@flyffweb/protocol';
 import { startFakeFlyffServer, type FakeFlyffServer, type FakeFlyffServerOptions } from '@flyffweb/testkit';
 import { DEFAULT_LIMITS, type GatewayConfig, type Limits } from '../src/config';
 import { startGateway, type Gateway } from '../src/server';
@@ -41,6 +41,8 @@ interface SetupOptions extends Partial<Pick<GatewayConfig, 'trustedProxies' | 's
   fake?: FakeFlyffServerOptions;
   /** Where the login route leads (default: the fake server). */
   loginPort?: number;
+  /** The pre-registration lock (default: none). */
+  allowAccount?: (account: string) => boolean;
 }
 
 /** A fake server, and a gateway whose certifier and login routes lead to it. */
@@ -61,6 +63,7 @@ async function setup(options: SetupOptions = {}): Promise<Setup> {
       limits: { ...DEFAULT_LIMITS, ...options.limits },
     },
     { info: (line) => { logs.push(line); } },
+    options.allowAccount === undefined ? {} : { allowAccount: options.allowAccount },
   );
   cleanups.push(() => gateway.close());
 
@@ -427,4 +430,24 @@ it('logs the certifier allow-list refusal, and nothing the packet held', async (
   await expect(browser.closed).resolves.toBe(4006);
   await expect.poll(() => t.logs.filter((line) => line.startsWith('forbidden '))).toEqual(['forbidden 127.0.0.1 172.31.238.55:23000 account']);
   for (const line of t.logs) expect(line).not.toContain('DROP');
+});
+
+it('logs every account the pre-registration lock refuses, with 4010, and lets a listed one through', async () => {
+  const t = await setup({ allowAccount: (account) => account.toLowerCase() === 'owner' });
+  for (let i = 0; i < 2; i++) {
+    const refused = await t.browser(CERTIFIER);
+    refused.ws.send(encodeCertify('Stranger', hashPassword('abc12345')));
+    await expect(refused.closed).resolves.toBe(4010);
+  }
+  await expect.poll(() => t.logs.filter((line) => line.startsWith('prereg-refused '))).toEqual([
+    'prereg-refused 127.0.0.1 account=Stranger', 'prereg-refused 127.0.0.1 account=Stranger',
+  ]);
+  expect(t.fake.received).toEqual([]);
+
+  const allowed = await t.browser(CERTIFIER);
+  const certify = encodeCertify('OWNER', hashPassword('abc12345'));
+  allowed.ws.send(certify);
+  await t.fake.waitForBodies(1);
+  expect(bytesToHex(t.fake.received[0]!)).toBe(bytesToHex(certify));
+  for (const line of t.logs) expect(line).not.toContain(hashPassword('abc12345'));
 });

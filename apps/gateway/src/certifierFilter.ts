@@ -40,6 +40,27 @@ const ALLOWED: ReadonlySet<number> = new Set([
   PacketType.CERTIFY, PacketType.CLOSE_EXISTING_CONNECTION, PacketType.KEEP_ALIVE, PacketType.ERROR,
 ]);
 
+/**
+ * The account a certifier body names, CERTIFY's or CLOSE_EXISTING_CONNECTION's, for the pre-registration lock;
+ * `undefined` for the other packets and for a body that cannot be read. Meant for a body `checkCertifierPacket` let
+ * through, so the name is one the certifier would take.
+ */
+export function certifierAccount(body: Uint8Array): string | undefined {
+  try {
+    const r = new ArReader(body);
+    const type = r.u32();
+    if (type === PacketType.CERTIFY) {
+      r.string(VERSION_BUFFER);
+      return r.string(ACCOUNT_BUFFER);
+    }
+    if (type === PacketType.CLOSE_EXISTING_CONNECTION) return r.string(ACCOUNT_BUFFER);
+    return undefined;
+  } catch (error) {
+    if (error instanceof ProtocolError) return undefined;
+    throw error;
+  }
+}
+
 /** Why the gateway refuses a browser body on a certifier route, or `undefined` to let it through. */
 export function checkCertifierPacket(body: Uint8Array): CertifierRefusal | undefined {
   try {
