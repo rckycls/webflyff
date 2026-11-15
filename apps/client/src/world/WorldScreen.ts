@@ -52,6 +52,9 @@ import { AttackLoop, objRadius } from './combat/attackLoop';
 import { AutoPlay } from './autoplay/controller';
 import type { AutoPlayHooks } from './autoplay/controller';
 import { loadSettings, saveSettings } from './autoplay/settings';
+import { countOf, isPotionProp } from './autoplay/potions';
+import { AutoPlayWindow } from './hud/autoPlay/autoPlayWindow';
+import type { AutoPlayItemChoice } from './hud/autoPlay/autoPlayWindow';
 import { Missiles } from './combat/missiles';
 import type { MissileWorld } from './combat/missiles';
 import { OwnShots } from './combat/ownShots';
@@ -736,6 +739,7 @@ export class WorldScreen {
   private itemUse: ItemUse | undefined;
   /** custom (owner 2026-11-15): Auto Play (autoplay/controller.ts), built with each world. */
   private autoPlay: AutoPlay | undefined;
+  private autoPlayWindow: AutoPlayWindow | undefined;
   /** 2026-11-05: the item windows' flows (the name change, the tickets, the summons ...). */
   private itemWindows: ItemWindowFlows | undefined;
   /** 2026-11-05: the upgrade cursor, and whether its effect (XI_INT_INCHANT) is on the own mover. */
@@ -2230,6 +2234,15 @@ export class WorldScreen {
       tip: (carried) => (carried.from === 'motions' ? motionTip(carried.motion, this.cheerView(), (tid) => this.data?.texts.get(tid)?.text ?? '', false)
         : emoticonTip(carried.emoticon)),
     }, doc);
+    // custom (owner 2026-11-15): the Auto Play window (Start menu)
+    this.autoPlayWindow = new AutoPlayWindow(this.hudArt!, this.autoPlay!, {
+      potionChoices: () => this.potionChoices(),
+      item: (itemIndex) => {
+        const prop = this.data?.itemProps.get(itemIndex);
+        return prop === undefined ? null : { name: prop.name, icon: prop.icon ? this.hudArt!.url(prop.icon) : null };
+      },
+      count: (itemIndex) => countOf(this.own?.inventory ?? null, itemIndex),
+    }, doc);
     this.moverMenu = new MoverMenu(doc);
     const partyHud = new PartyHud(this.hudArt!, this.data!.texts, () => this.partyCatalog, {
       session,
@@ -2597,6 +2610,7 @@ export class WorldScreen {
       this.arenaHud.element, // 2026-11-15 (B5): first, under the windows, as Neuz draws it in the world's background
       this.questTracker.element, this.teleporter.frame.element, this.heavenTower.element, ...this.lordHud.elements, this.lordHud.eventIcons, ...this.guildCombatHud.elements,
       this.motionWindow.frame.element, // 2026-11-14
+      this.autoPlayWindow.frame.element, // custom (owner 2026-11-15)
       // 2026-11-12: the phone's quick slots around Attack (bar 8's first slots; style.css shows them on a phone only)
       taskBar.element, taskBar.quickSlots, taskBar.actionSlotWindow.frame.element, this.attackButton.element, this.jumpButton.element,
       this.actionSlotButton.element, this.flightButtons.element,
@@ -3861,6 +3875,7 @@ export class WorldScreen {
     if (this.own !== undefined && this.characterWindow?.frame.isOpen === true) this.characterWindow.update(this.own, this.entry, now);
     if (this.own !== undefined && this.skillWindow?.isOpen === true) this.skillWindow.update(this.own);
     if (this.motionWindow?.isOpen === true) this.motionWindow.refresh(); // 2026-11-14: the phone's pick marks
+    if (this.autoPlayWindow?.isOpen === true) this.autoPlayWindow.refresh(); // custom (owner 2026-11-15)
   }
 
   /**
@@ -3896,6 +3911,8 @@ export class WorldScreen {
     if (window === 'couple') { this.social?.coupleWindow.toggle(); return; } // 2026-11-15 (social)
     // 2026-11-15 (owner, Guild Siege C2): the Siege Ranking window, from the Start menu and the icons
     if (window === 'siegeRanking') { this.guildCombatHud?.siegeRanking.toggle(); return; }
+    // custom (owner 2026-11-15): the Auto Play window, from the Start menu
+    if (window === 'autoPlay') { this.autoPlayWindow?.toggle(); return; }
     // 2026-11-10: APP_VENDOR_REVISION, the personal shop, refused while the Summon Angel window is open (WndManager.cpp:2685-2695)
     if (window === 'vendor') {
       if (this.summonAngel?.isOpen === true) this.say('TID_GAME_SUMMONANGELUSING');
@@ -3968,6 +3985,20 @@ export class WorldScreen {
   private say(id: string): void {
     const entry = this.data?.texts.get(id);
     if (entry !== undefined && entry.text !== '') this.hud?.messages.add(entry.text, entry.color);
+  }
+
+  /** custom (owner 2026-11-15): the bag's potions, refreshers, food and pills, one entry per item, for the Potions tab. */
+  private potionChoices(): AutoPlayItemChoice[] {
+    const inventory = this.own?.inventory ?? null, props = this.data?.itemProps;
+    if (!inventory || !props) return [];
+    const seen = new Map<number, AutoPlayItemChoice>();
+    for (const item of inventory.values()) {
+      const prop = props.get(item.itemId);
+      if (prop === undefined || !isPotionProp(prop) || item.count <= 0 || seen.has(item.itemId)) continue;
+      seen.set(item.itemId, { itemIndex: item.itemId, name: prop.name, icon: prop.icon ? this.hudArt!.url(prop.icon) : null,
+        count: countOf(inventory, item.itemId) });
+    }
+    return [...seen.values()].sort((a, b) => a.name.localeCompare(b.name));
   }
 
   /** custom (owner 2026-11-15): what Auto Play may read and do, and nothing more (autoplay/controller.ts). */

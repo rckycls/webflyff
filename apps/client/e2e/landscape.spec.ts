@@ -222,8 +222,8 @@ test.describe('landscape (spec §3.10)', () => {
   // each line its whole row; every line of the Windows client kept (the owner's choice, 2026-11-03). Fourteen lines since
   // 2026-11-10 (Private Shop, Chatting, Messenger, Guild ...): in one column a line would be 16 px above 750 x 342's bar,
   // so a touch screen that short stands them in two columns of seven (2026-11-12), each line at least 22 px again
-  // 2026-11-14: fifteen with Motion (WndTaskBar.cpp:2622); 2026-11-15: eighteen with Housing (:2603-2605), Couple and Siege Ranking, in columns of 9 and 9
-  test('on a touch phone all eighteen Start menu entries fit, in two columns, with contiguous touch targets', async ({ page }) => {
+  // 2026-11-14: fifteen with Motion (WndTaskBar.cpp:2622); 2026-11-15: eighteen with Housing (:2603-2605), Couple and Siege Ranking, in columns of 9 and 9; nineteen with Auto Play (custom, owner 2026-11-15), 10 and 9
+  test('on a touch phone all nineteen Start menu entries fit, in two columns, with contiguous touch targets', async ({ page }) => {
     test.skip(!isTouch(), 'a mouse gets the menu at its size');
     await playGateway(page);
     await enterFlaris(page);
@@ -237,7 +237,7 @@ test.describe('landscape (spec §3.10)', () => {
         const box = item.getBoundingClientRect();
         return { left: box.left, top: box.top, bottom: box.bottom, height: box.height };
       }));
-      expect(lines).toHaveLength(18); // 2026-11-15: Housing, Couple and Siege Ranking
+      expect(lines).toHaveLength(19); // 2026-11-15: Housing, Couple, Siege Ranking and Auto Play (custom)
       for (const line of lines) {
         // 2026-11-13 (owner, "make the menus smaller"): a phone draws them at most at 0.85, 22 x 0.85 = 18.7 px a line
         expect(line.height, `a line at ${size.width} x ${size.height}`).toBeGreaterThanOrEqual(18.5);

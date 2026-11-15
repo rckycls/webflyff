@@ -4781,3 +4781,43 @@ fieldset:disabled .btn {
   /* the Siege Ranking icon's text, while its picture is missing, stays inside the icon's box */
   .hud-mobile-tool-icon:not([style]) { display: flex; align-items: center; justify-content: center; font: bold 9px Verdana, Arial, sans-serif; color: #fff; text-shadow: 0 0 2px #000; }
 }
+
+/* custom (owner 2026-11-15): the Auto Play window (hud/autoPlay/autoPlayWindow.ts): Farm, Potions and Skills under Neuz's
+   tab strip (hud/guildCombat/tabs.ts), in the Action Slot window's colours */
+.hud-auto-play > .hud-window-body { box-sizing: border-box; padding: 4px; overflow: hidden; background: #fff6eb; }
+.auto-play-tabs { position: relative; width: 100%; height: 100%; }
+.auto-play-tabs .hud-gc-page {
+  box-sizing: border-box; padding: 4px 6px; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y;
+  display: flex; flex-direction: column; gap: 4px; border: 1px solid #8f8f8f; background: #fffaf5;
+  color: #382b20; font: 11px/1.25 Verdana, Geneva, Tahoma, sans-serif;
+}
+.auto-play-tabs .hud-gc-tab:disabled { color: #9a8f86; cursor: default; }
+.auto-check { display: flex; align-items: center; gap: 4px; font-weight: bold; }
+.auto-pot-row { display: flex; align-items: center; gap: 4px; min-height: 32px; }
+.auto-pot-name { flex: none; width: 22px; font-weight: bold; }
+.auto-slot {
+  flex: none; display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0;
+  border: 1px solid #d7ac8f; border-radius: 5px; background: #f4e8dc; cursor: pointer;
+}
+.auto-pot-row.is-missing .auto-slot { opacity: .5; }
+.auto-icon { flex: none; width: 26px; height: 26px; background: no-repeat 0 0 / 100% 100%; }
+.auto-pot-count { flex: none; width: 34px; }
+.auto-pot-use { flex: none; color: #6b5a4c; }
+.auto-pot-below { flex: none; width: 30px; text-align: center; }
+.auto-pot-row [data-auto-play], .auto-farm [data-auto-play] {
+  flex: none; min-width: 24px; height: 24px; padding: 0 4px; border: 1px solid #ba9377; border-radius: 4px;
+  background: #fff1df; color: #463027; font: bold 12px/1 Verdana, Arial, sans-serif;
+}
+.auto-pot-row [data-auto-play]:disabled { opacity: .45; }
+.auto-pick-list {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 3px; max-height: 84px; overflow-y: auto;
+  overscroll-behavior: contain; touch-action: pan-y;
+}
+.auto-pick-list[data-empty] { display: block; color: #6b5a4c; }
+.auto-pick {
+  display: flex; align-items: center; gap: 4px; min-height: 30px; padding: 1px 4px; border: 1px solid #d7ac8f;
+  border-radius: 5px; background: #fffaf5; color: inherit; font: inherit; font-size: 10px; text-align: left;
+}
+@media (max-width: 1000px) and (pointer: coarse) {
+  .auto-pot-row [data-auto-play] { min-width: 32px; height: 32px; }
+}

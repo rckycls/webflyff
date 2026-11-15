@@ -17,6 +17,15 @@ export const POTION_WAIT_MS = 800;
 
 type Inventory = ReadonlyMap<number, InventoryItem> | null;
 
+/** `IK2_REFRESHER` 11, `IK2_POTION` 12, `IK2_FOOD` 14 and `IK3_PILL` 59 (Resource/defineItemkind.h): what a row may take. */
+const POTION_KIND2 = new Set([11, 12, 14]);
+const IK3_PILL = 59;
+
+/** Whether an item is one the auto pots offer: a refresher, a potion, food or a pill. */
+export function isPotionProp(prop: { kind2: number; kind3: number }): boolean {
+  return POTION_KIND2.has(prop.kind2) || prop.kind3 === IK3_PILL;
+}
+
 /** The first stack of `itemIndex` in the bag with something left. */
 export function findStack(inventory: Inventory, itemIndex: number): InventoryItem | undefined {
   if (!inventory || itemIndex <= 0) return undefined;

@@ -87,3 +87,13 @@ describe('Auto pots: pacing', () => {
     expect(pickPotion(pots(), { ...full, hp: 100, mp: 10 }, ALL, ready, pacer, 100)).toEqual({ row: 'mp', objectId: 11 });
   });
 });
+
+describe('Auto pots: which items a row may take', () => {
+  it('refreshers (11), potions (12), food (14) and pills (IK3 59); not jewelry (13) or weapons', async () => {
+    const { isPotionProp } = await import('../src/world/autoplay/potions');
+    expect([11, 12, 14].map((kind2) => isPotionProp({ kind2, kind3: 0 }))).toEqual([true, true, true]);
+    expect(isPotionProp({ kind2: 0, kind3: 59 })).toBe(true);
+    expect(isPotionProp({ kind2: 13, kind3: 0 })).toBe(false);
+    expect(isPotionProp({ kind2: 1, kind3: 0 })).toBe(false);
+  });
+});
