@@ -10,6 +10,7 @@ import { HourlyLimit } from './hourlyLimit';
 import { consoleLogger } from './log';
 import { RefusalLog } from './refusalLog';
 import { createWebServer } from './server';
+import { SiegeCache } from './siege';
 import { sqlAccountStore } from './sqlAccountStore';
 import { loadStatus, StatusCache } from './status';
 import { TicketBook } from './ticket';
@@ -56,6 +57,7 @@ const server = createWebServer({
   createdInAll: new HourlyLimit(config.limits.createdPerHour, clock),
   ticketsByAddress: new HourlyLimit(config.limits.ticketsPerHourPerAddress, clock),
   status: new StatusCache(() => loadStatus(config, store), clock),
+  siege: new SiegeCache(store, clock),
 });
 
 server.once('error', (error: Error) => fail(`web: cannot listen on ${config.listen.host}:${config.listen.port}: ${error.message}`, 1));
