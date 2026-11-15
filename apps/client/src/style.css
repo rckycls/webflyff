@@ -3361,6 +3361,8 @@ fieldset:disabled .btn {
   /* 2026-11-15 (consistency scan): the Messenger's small boxes (a friend's request, Add Friend, a message) over the bag and the
      side panels (z 60), as the bank PIN and the trade's request: a request under the bag could not be answered */
   :is(.hud-friend-confirm, .hud-add-friend, .hud-message, .hud-instant-message):not([hidden]) { z-index: 70 !important; }
+  /* 2026-11-16: the Messenger opens over the bag now (`overBag`, 61 and up), so its friend menu goes over it too */
+  .hud-friend-menu:not([hidden]) { z-index: 70 !important; }
 }
 
 /* 2026-11-15: the guild bank (hud/guildBank/guildBankWindows.ts; housing-research/research-note.md §1). CWndGuildBank is

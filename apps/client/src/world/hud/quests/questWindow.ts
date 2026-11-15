@@ -171,12 +171,15 @@ export class QuestWindow {
     };
     this.list = new WindowFrame('Quest', art, { width: LIST.width, height: LIST.height }, doc);
     this.list.element.classList.add('hud-quests');
+    // 2026-11-16 (owner): above the phone's open bag (`overBag`)
+    this.list.overBag = true;
     this.list.onClose = () => {
       this.filterList.hidden = true;
       this.detail.close();
     };
     this.detail = new WindowFrame('', art, { width: DETAIL.width, height: DETAIL.height }, doc);
     this.detail.element.classList.add('hud-quest-detail');
+    this.detail.overBag = true;
     this.detail.onClose = () => {
       this.detailId = null;
       this.chosenRow = null;

@@ -83,6 +83,8 @@ export class AutoPlayWindow {
     private readonly doc: Document = document) {
     this.frame = new WindowFrame('Auto Play', art, { width: WIDTH, height: HEIGHT, mobileScale: 1, fitWhole: true }, doc);
     this.frame.element.classList.add('hud-auto-play');
+    // 2026-11-16 (owner): above the phone's open bag (`overBag`)
+    this.frame.overBag = true;
     // (merge with the consistency scan) the strip on Neuz's WndTabTile pictures, at the body's width inside its 4 px padding
     this.tabs = new TabPages(doc, art, TAB_LABELS, WIDTH - 8, () => { this.shown = ''; this.refresh(); });
     const holder = doc.createElement('div');

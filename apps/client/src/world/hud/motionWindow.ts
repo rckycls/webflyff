@@ -92,6 +92,8 @@ export class MotionWindow {
       ? { width: PHONE_WIDTH, height: PHONE_HEIGHT, mobileScale: 1, fitWhole: true }
       : { width: WIDTH, height: HEIGHT }, doc);
     this.frame.element.classList.add('hud-motion');
+    // 2026-11-16 (owner): above the phone's open bag (`overBag`)
+    this.frame.overBag = true;
     this.frame.element.toggleAttribute('data-phone', this.mobile);
     this.frame.onClose = () => this.hideTip();
     const body = this.frame.body;

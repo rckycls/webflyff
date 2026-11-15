@@ -104,6 +104,8 @@ export class HousingWindow {
   constructor(art: UiArt, private readonly doc: Document = document) {
     const window = new ResWindow(HOUSING, art, doc);
     window.frame.element.classList.add('hud-housing');
+    // 2026-11-16 (owner): above the phone's open bag (`overBag`)
+    window.frame.overBag = true;
     phoneWords(window);
     for (const [id, sort] of HEADERS) {
       const header = window.control(id).parentElement!;

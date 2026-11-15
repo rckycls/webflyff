@@ -192,6 +192,11 @@ function stackOf(doc: Document): WindowFrame[] {
 
 /** The z-index of the bottom window; each one above it is one more. */
 const BASE_Z = 1;
+/**
+ * 2026-11-16 (owner): the z-index of the lowest window that a phone opens over its open bag (`overBag`). The bag and the side
+ * panels are 60 there and the boxes over them 70 (style.css), so these go from 61, in their own order, under the boxes.
+ */
+const OVER_BAG_Z = 61;
 
 /**
  * A window in Neuz's frame. Its `element` is put in the layer of windows by its owner and stays there: `open` shows it
@@ -217,6 +222,12 @@ export class WindowFrame {
    * open own shop asks first ("Will you close your shop?"), as its close button and Cancel do. None: it closes.
    */
   onEscape?: () => void;
+  /**
+   * 2026-11-16 (owner: "windows under the bag on the phone should open above an open bag"): on a phone the window is
+   * stacked over the bag and the side panels (`OVER_BAG_Z`), and over the other windows like it in the order they were put on
+   * top. The desktop's order is as before.
+   */
+  overBag = false;
   private readonly titleText: HTMLElement;
   private readonly doc: Document;
   private open_ = false;
@@ -551,8 +562,12 @@ export class WindowFrame {
   }
 
   private restack(stack: readonly WindowFrame[]): void {
+    const phone = this.view().matchMedia?.('(max-width: 1000px) and (pointer: coarse)').matches === true;
+    let over = 0;
     stack.forEach((frame, i) => {
-      frame.element.style.zIndex = String(BASE_Z + i);
+      // over a style sheet's own level of the phone's panels too (Siege Ranking's `.hud-gc` is 60 there)
+      if (phone && frame.overBag) frame.element.style.setProperty('z-index', String(OVER_BAG_Z + over++), 'important');
+      else frame.element.style.zIndex = String(BASE_Z + i);
     });
   }
 
