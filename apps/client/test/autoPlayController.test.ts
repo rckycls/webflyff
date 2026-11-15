@@ -44,6 +44,12 @@ function world() {
     wandHolds: [] as boolean[],
     alerts: 0,
     titles: [] as string[],
+    actionSlot: true,
+    chainBusy: false,
+    slots: 0,
+    skills: [] as number[],
+    buffs: [] as Array<{ buffType: number; id: number; level: number; leftMs: number; totalMs: number }>,
+    standing: true,
   };
   const hooks: AutoPlayHooks = {
     now: () => state.now,
@@ -73,6 +79,16 @@ function world() {
     wandHold: (on) => { state.wandHolds.push(on); },
     alert: () => { state.alerts++; },
     flashTitle: (reason) => { state.titles.push(reason); },
+    actionSlotHasSkills: () => state.actionSlot,
+    chainBusy: () => state.chainBusy,
+    useActionSlot: () => { state.slots++; },
+    useSkill: (i) => { state.skills.push(i); },
+    skillKnown: (i) => i !== 99,
+    skillCostOk: () => true,
+    skillCooldownMs: () => 5000,
+    buffs: () => state.buffs,
+    standing: () => state.standing,
+    buffSkillId: (i) => 100 + i,
   };
   return { state, hooks };
 }
@@ -366,5 +382,79 @@ describe('AutoPlay controller: the farm bot (spec 6.2-6.5, 6.8)', () => {
     run(play, state, 3);
     play.stop('you took control');
     expect(state.wandHolds).toEqual([true, false]);
+  });
+});
+
+describe('AutoPlay controller: auto skills and buffs (spec 6.4, 6.7)', () => {
+  function fighting(settings = defaultSettings()) {
+    const { state, hooks } = world();
+    state.mobs = [mob(21, 3, 0)];
+    const play = new AutoPlay(hooks, settings);
+    play.start();
+    run(play, state, 1);
+    return { state, play };
+  }
+
+  it('a ready skill goes before the Action Slot; then the Action Slot', () => {
+    const s = defaultSettings();
+    s.skills.ready = [7];
+    const { state, play } = fighting(s);
+    run(play, state, 61);
+    expect(state.skills).toEqual([7]);
+    play.onEvent({ kind: 'skillOk', skillIndex: 7 });
+    run(play, state, 70);
+    expect(state.slots).toBe(1);
+  });
+
+  it('the Action Slot is not fired while the chain runs, and again 1 s after it ended', () => {
+    const { state, play } = fighting();
+    run(play, state, 61);
+    expect(state.slots).toBe(1);
+    state.chainBusy = true;
+    run(play, state, 200);
+    expect(state.slots).toBe(1);
+    state.chainBusy = false;
+    play.onEvent({ kind: 'chainEnded' });
+    run(play, state, 50);
+    expect(state.slots).toBe(1);
+    run(play, state, 20);
+    expect(state.slots).toBe(2);
+  });
+
+  it('Use Action Slot off → only auto attack', () => {
+    const s = defaultSettings();
+    s.skills.actionSlot = false;
+    const { state, play } = fighting(s);
+    run(play, state, 300);
+    expect([state.slots, state.skills]).toEqual([0, []]);
+  });
+
+  it('a buff is cast between fights, not while a monster hits us', () => {
+    const { state, hooks } = world();
+    const s = defaultSettings();
+    s.skills.buffs = [{ kind: 'skill', index: 4 }];
+    const play = new AutoPlay(hooks, s);
+    play.start();
+    play.onEvent({ kind: 'hit', attackerId: 30, victimId: US });
+    run(play, state, 2);
+    expect(state.skills).toEqual([]);
+    state.now += 6000;
+    run(play, state, 2);
+    expect(state.skills).toEqual([4]);
+    expect(play.phase).toBe('buffing');
+    state.buffs = [{ buffType: 1, id: 104, level: 1, leftMs: 60_000, totalMs: 60_000 }];
+    run(play, state, 200);
+    expect(state.skills).toEqual([4]);
+  });
+
+  it('a buff waits while the player moves', () => {
+    const { state, hooks } = world();
+    const s = defaultSettings();
+    s.skills.buffs = [{ kind: 'skill', index: 4 }];
+    const play = new AutoPlay(hooks, s);
+    play.start();
+    state.standing = false;
+    run(play, state, 10);
+    expect(state.skills).toEqual([]);
   });
 });

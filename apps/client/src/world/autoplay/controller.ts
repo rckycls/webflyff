@@ -5,10 +5,13 @@
  * hand (docs/superpowers/specs/2026-11-15-auto-play-design.md).
  */
 import type { InventoryItem, Vec3 } from '@flyffweb/protocol';
-import { PotionPacer, countOf, gaugeOf, pickPotion } from './potions';
+import { buffOf, pickBuff } from './buffs';
+import type { BuffShown } from '../buffs';
+import { PotionPacer, countOf, findStack, gaugeOf, pickPotion } from './potions';
+import { SkillTimers, pickReadySkill } from './skillTimers';
 import type { Gauges } from './potions';
 import { GAUGE_ROWS } from './settings';
-import type { AutoPlaySettings, GaugeRow } from './settings';
+import type { AutoPlaySettings, BuffEntry, GaugeRow } from './settings';
 import { AutoPlayStats } from './stats';
 import { lowHpStop, stopReason } from './stopRules';
 import type { AutoPlayEvent } from './stopRules';
@@ -57,6 +60,27 @@ export interface AutoPlayHooks {
   alert(): void;
   /** The page's title marks the stop while the tab is hidden. */
   flashTitle(reason: string): void;
+  // the auto skills and buffs (M3)
+  /** The task bar's Action Slot holds a skill. */
+  actionSlotHasSkills(): boolean;
+  /** An Action Slot chain runs, or a skill waits for the server (`execute`, `pending`). */
+  chainBusy(): boolean;
+  /** `SkillUse.useActionSlot()`, as the C key. */
+  useActionSlot(): void;
+  /** `SkillUse.useSlot(skillIndex)`: on the target, or on oneself for a skill on oneself. */
+  useSkill(skillIndex: number): void;
+  /** The skill slot holds a learned skill. */
+  skillKnown(skillIndex: number): boolean;
+  /** The own MP and FP pay for it at its level. */
+  skillCostOk(skillIndex: number): boolean;
+  /** Its cooldown at its level (ms). */
+  skillCooldownMs(skillIndex: number): number;
+  /** The own buffs now. */
+  buffs(): readonly BuffShown[];
+  /** The own player stands (no walk). */
+  standing(): boolean;
+  /** The skill id in a skill slot (what a skill's buff is keyed by). */
+  buffSkillId(skillIndex: number): number | undefined;
 }
 
 export type FarmState = 'off' | 'running' | 'stopped';
@@ -76,6 +100,10 @@ const LOOT_RANGE = 5;
 const LOOT_AFTER_KILL_MS = 3000;
 const LOOT_GIVE_UP_MS = 6000;
 const LOOT_SKIP_MS = 180_000;
+/** After a chain ends or a skill is answered, this long before the next skill (ms, spec 6.4). */
+const CAST_GAP_MS = 1000;
+/** No answer from the server: try again after this long (ms). */
+const CAST_SAFETY_MS = 5000;
 
 export class AutoPlay {
   private readonly pacer = new PotionPacer();
@@ -108,8 +136,17 @@ export class AutoPlay {
   private lastKill: { pos: Vec3; at: number } | null = null;
   private loot: Array<{ id: number; pos: Vec3 }> = [];
   private looting: { id: number; since: number } | null = null;
+  private readonly timers: SkillTimers;
+  /** No skill, chain or buff is cast before this (ms). */
+  private castWait = -Infinity;
+  /** A buff was cast and has not been answered: the bot stands. */
+  private buffing = false;
+  /** The last skill the bot cast by itself, for a refusal without a skill (CLEAR_USESKILL). */
+  private lastSkill: number | null = null;
 
-  constructor(private readonly hooks: AutoPlayHooks, public settings: AutoPlaySettings) {}
+  constructor(private readonly hooks: AutoPlayHooks, public settings: AutoPlaySettings) {
+    this.timers = new SkillTimers((i) => hooks.skillCooldownMs(i));
+  }
 
   /** The window changed `settings`: keep them. */
   saved(): void {
@@ -150,6 +187,8 @@ export class AutoPlay {
     this.lastKill = null;
     this.loot = [];
     this.looting = null;
+    this.castWait = -Infinity;
+    this.buffing = false;
     this.bagIsFull = h.bagFull();
     h.say('Auto Play started.');
     return true;
@@ -216,11 +255,28 @@ export class AutoPlay {
       case 'bagChanged':
         if (!h.bagFull()) this.bagIsFull = false;
         break;
+      case 'skillOk':
+        this.timers.ok(e.skillIndex, now);
+        this.answered(now);
+        break;
+      case 'skillRefused':
+        this.timers.refused(e.skillIndex >= 0 ? e.skillIndex : this.lastSkill ?? -1, now);
+        this.answered(now);
+        break;
+      case 'chainEnded':
+        this.answered(now);
+        break;
       default:
         break;
     }
     const reason = stopReason(e, h.partyIds());
     if (reason !== null) this.stop(reason);
+  }
+
+  /** The server answered a skill or ended a chain: the next one a second later. */
+  private answered(now: number): void {
+    this.castWait = now + CAST_GAP_MS;
+    this.buffing = false;
   }
 
   private dropLoot(id: number): void {
@@ -282,6 +338,7 @@ export class AutoPlay {
 
     if (this.target !== null && this.fight(self, now)) return;
     if (this.hittingUs.size === 0 && this.lootStep(now)) return;
+    if (this.hittingUs.size === 0 && this.buffStep(now)) return;
 
     const fromHome = groundDistance(at, this.anchor);
     if (this.hittingUs.size > 0) this.returning = false;
@@ -332,10 +389,60 @@ export class AutoPlay {
       return false;
     }
     this.phase = 'fighting';
-    if (h.focusId() !== id && now - this.lastEngage >= ENGAGE_AGAIN_MS) this.engage(id, now);
-    else if (h.holdsWand() && !this.wandHeld) {
+    if (h.focusId() !== id) {
+      if (now - this.lastEngage >= ENGAGE_AGAIN_MS) this.engage(id, now);
+      return true;
+    }
+    if (this.skillStep(now)) return true;
+    if (h.holdsWand() && !this.wandHeld && !h.chainBusy()) {
       this.wandHeld = true;
       h.wandHold(true);
+    }
+    return true;
+  }
+
+  /** A ready skill, else the Action Slot, on the target; false when none goes now. */
+  private skillStep(now: number): boolean {
+    const h = this.hooks, skills = this.settings.skills;
+    if (now < this.castWait || h.chainBusy()) return false;
+    const ready = pickReadySkill(skills.ready, this.timers, (i) => h.skillCostOk(i), (i) => h.skillKnown(i), now);
+    if (ready !== null) {
+      this.cast(now, () => h.useSkill(ready), ready);
+      return true;
+    }
+    if (skills.actionSlot && h.actionSlotHasSkills()) {
+      this.cast(now, () => h.useActionSlot(), null);
+      return true;
+    }
+    return false;
+  }
+
+  /** Casts (a wand's held press let go first: a press during a chain ends it) and waits for the server's answer. */
+  private cast(now: number, use: () => void, skill: number | null): void {
+    this.letGoWand();
+    this.lastSkill = skill;
+    this.castWait = now + CAST_SAFETY_MS;
+    use();
+  }
+
+  /** Between fights: the first buff of the list that is missing or ending, standing still; true while one is cast. */
+  private buffStep(now: number): boolean {
+    const h = this.hooks;
+    if (this.buffing && now < this.castWait) { this.phase = 'buffing'; return true; }
+    this.buffing = false;
+    const list = this.settings.skills.buffs;
+    if (list.length === 0 || now < this.castWait || h.chainBusy() || !h.standing()) return false;
+    const usable = (e: BuffEntry): boolean => (e.kind === 'skill'
+      ? h.skillKnown(e.index) && h.skillCostOk(e.index) && this.timers.ready(e.index, now)
+      : findStack(h.inventory(), e.index) !== undefined && h.cooldownLeft(e.index) === 0);
+    const entry = pickBuff(list, h.buffs(), (e) => buffOf(e, (i) => h.buffSkillId(i)), usable, now);
+    if (entry === null) return false;
+    this.phase = 'buffing';
+    this.buffing = true;
+    if (entry.kind === 'skill') this.cast(now, () => h.useSkill(entry.index), entry.index);
+    else {
+      const stack = findStack(h.inventory(), entry.index);
+      this.cast(now, () => { if (stack) h.useItem(stack.objectId); }, null);
     }
     return true;
   }

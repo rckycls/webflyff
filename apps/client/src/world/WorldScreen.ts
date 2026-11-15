@@ -347,6 +347,7 @@ const AUTO_PLAY_COLOR = 0xffffb44a;
 const TID_GAME_LACKSPACE = 626;
 const TID_GAME_REAPITEM = 628;
 const TID_GAME_PRIORITYITEMPER = 656;
+const TID_GAME_SKILLWAITTIME = 964;
 
 /** The text an entry that failed ends with: its cause, where the player or the owner can do something about it. */
 function endingOf(error: unknown): string {
@@ -1665,7 +1666,14 @@ export class WorldScreen {
     };
     // 2026-11-15 (B5): and the Guild Siege's in 202, from the book (IsGuildCombatTarget, combat/siege.ts)
     attackLoop.siege = () => siegeSideOf(this.worldId, this.world?.self(), this.guildCombatBook);
-    this.world!.onUseSkill = (casterId, message, started) => skillUse.onUseSkill(casterId, message, started);
+    this.world!.onUseSkill = (casterId, message, started) => {
+      skillUse.onUseSkill(casterId, message, started);
+      // custom (owner 2026-11-15): Auto Play's skill timers start when the server confirms the own skill
+      if (started && casterId === this.world?.self()?.objectId) {
+        const skillIndex = this.own?.skills.findIndex((slot) => slot.skill === message.skill) ?? -1;
+        if (skillIndex >= 0) this.autoPlay?.onEvent({ kind: 'skillOk', skillIndex });
+      }
+    };
     this.attackLoop = attackLoop;
     // custom (owner 2026-11-15): Auto Play, with the character's own settings
     this.autoPlay = new AutoPlay(this.autoPlayHooks(), loadSettings(autoPlayStorage(), this.entry.character.playerId));
@@ -4029,7 +4037,10 @@ export class WorldScreen {
       const speaker = this.world?.movers.get(objectId);
       if (speaker !== undefined && isGameMaster(speaker.added.player?.authorization ?? 0)) play.onEvent({ kind: 'gmTalk', from: speaker.name });
     } else if (value.type === 'replace') play.onEvent({ kind: 'replace' });
+    else if (value.type === 'clearUseSkill' && objectId === self?.objectId) play.onEvent({ kind: 'skillRefused', skillIndex: -1 });
+    else if (value.type === 'endSkillQueue') play.onEvent({ kind: 'chainEnded' });
     else if (value.type === 'definedText') {
+      if (value.textId === TID_GAME_SKILLWAITTIME) play.onEvent({ kind: 'skillRefused', skillIndex: -1 });
       const picking = play.lootingId;
       if (value.textId === TID_GAME_LACKSPACE) play.onEvent({ kind: 'bagFull' });
       else if (value.textId === TID_GAME_PRIORITYITEMPER && picking !== null) play.onEvent({ kind: 'pickRefused', id: picking });
@@ -4079,6 +4090,13 @@ export class WorldScreen {
       play.onEvent({ kind: 'itemAppeared', id, pos: [...drop.pos] as Vec3 });
     }
     this.autoPlayDrops = new Set(world.groundItems.keys());
+  }
+
+  /** custom (owner 2026-11-15): a skill slot's level row (its MP, FP and cooldown), or undefined. */
+  private autoPlaySkillLevel(skillIndex: number): { reqMp: number; reqFp: number; cooldown: number } | undefined {
+    const slot = this.own?.skills[skillIndex];
+    if (slot === undefined || slot.level <= 0) return undefined;
+    return this.data?.skills.get(slot.skill)?.levels[slot.level - 1];
   }
 
   /** custom (owner 2026-11-15): whether the own player holds a wand (V15 gives a wand no auto attack). */
@@ -4166,6 +4184,19 @@ export class WorldScreen {
       wandHold: (on) => { if (on) this.attackLoop?.attackButtonDown(performance.now()); else this.attackLoop?.attackButtonUp(performance.now()); },
       alert: () => this.autoPlayAlert(),
       flashTitle: (reason) => this.autoPlayFlashTitle(reason),
+      actionSlotHasSkills: () => (this.own?.taskBar?.queue ?? []).some((shortcut) => shortcut.kind !== 0),
+      chainBusy: () => this.skillUse !== undefined && (this.skillUse.execute !== 0 || this.skillUse.pending),
+      useActionSlot: () => this.skillUse?.useActionSlot(),
+      useSkill: (skillIndex) => this.skillUse?.useSlot(skillIndex),
+      skillKnown: (skillIndex) => (this.own?.skills[skillIndex]?.level ?? 0) > 0,
+      skillCostOk: (skillIndex) => {
+        const own = this.own, level = this.autoPlaySkillLevel(skillIndex);
+        return own !== undefined && level !== undefined && own.mp >= level.reqMp && own.fp >= level.reqFp;
+      },
+      skillCooldownMs: (skillIndex) => this.autoPlaySkillLevel(skillIndex)?.cooldown ?? 0,
+      buffs: () => this.world?.self()?.buffs.list(this.world.nowMs()) ?? [],
+      standing: () => this.useCheck().standing,
+      buffSkillId: (skillIndex) => this.own?.skills[skillIndex]?.skill,
     };
   }
 
