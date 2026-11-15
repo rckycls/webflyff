@@ -18,12 +18,14 @@
 
 import type { WebItemProp } from '@flyffweb/formats';
 import { createAngelText } from '@flyffweb/protocol';
+import type { InventoryItem } from '@flyffweb/protocol';
 import type { UiArt } from '../hud/art';
 import { parseDialogText } from '../hud/dialogue/dialogText';
 import { ResWindow } from '../hud/resWindow';
 import type { ResLayout } from '../hud/resWindow';
 import type { OwnState } from '../OwnState';
 import { AngelSlots, MAX_SLOTS, rateText, stoneRow, summonRates } from './angelRules';
+import { slotTooltip } from '../items/npcWindowKit';
 
 /** `II_GEN_MAT_ORICHALCUM01` and `II_GEN_MAT_MOONSTONE`: the icons OnDraw draws at (30, 218) and (30, 306). */
 const SUNSTONE = 2035;
@@ -65,6 +67,8 @@ export function summonAngelLayout(text: (tid: string) => string): ResLayout {
 
 export interface SummonAngelHost {
   own(): OwnState | undefined;
+  /** 2026-11-15 (consistency scan): a slot's item tooltip (`slotTooltip`, npcWindowKit.ts). */
+  tooltip?(item: InventoryItem | null, anchor: HTMLElement | null, within: HTMLElement | null): void;
   props: ReadonlyMap<number, WebItemProp>;
   /** A text by its TID. */
   text(tid: string): string;
@@ -315,7 +319,7 @@ export class SummonAngelWindow {
       const itemId = objectId === null ? undefined : this.host.own()?.inventory?.get(objectId)?.itemId;
       const prop = itemId === undefined ? undefined : this.host.props.get(itemId);
       box.toggleAttribute('data-filled', objectId !== null);
-      box.title = prop?.name ?? '';
+      slotTooltip(this.host, box, objectId);
       if (prop?.icon === undefined || prop.icon === null) return;
       const holder = doc.createElement('div');
       holder.className = 'hud-res-slot';

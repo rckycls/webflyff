@@ -16,6 +16,7 @@
 
 import type { WebItemProp, WebUltimate } from '@flyffweb/formats';
 import { UltimateResult, UltimateState } from '@flyffweb/protocol';
+import type { InventoryItem } from '@flyffweb/protocol';
 import type { UiArt } from '../hud/art';
 import { themeUrl } from '../hud/art';
 import { parseDialogText } from '../hud/dialogue/dialogText';
@@ -27,6 +28,7 @@ import type { OwnState } from '../OwnState';
 import { WeaponPortrait, smeltJewelCamera } from '../render/weaponPortrait';
 import type { WeaponModel } from '../render/weaponPortrait';
 import { canCreateJewels, gemKind, isJewel, isUltimate, usableSocket } from './ultimateRules';
+import { slotTooltip } from './npcWindowKit';
 
 /** SND_INF_UPGRADESUCCESS (Resource/defineSound.h:19), "InfUpgradeSuccess.wav". */
 const SND_INF_UPGRADESUCCESS = 14;
@@ -68,6 +70,8 @@ export const SMELT_JEWEL: ResLayout = {
 
 export interface JewelHost {
   own(): OwnState | undefined;
+  /** 2026-11-15 (consistency scan): a slot's item tooltip (`slotTooltip`, npcWindowKit.ts). */
+  tooltip?(item: InventoryItem | null, anchor: HTMLElement | null, within: HTMLElement | null): void;
   props: ReadonlyMap<number, WebItemProp>;
   /** data/ultimate.json: the jewel by level and the descriptions; none without it. */
   ultimate(): WebUltimate | undefined;
@@ -338,7 +342,7 @@ export class ExtractionWindow extends JewelWindow {
     const box = window.control('WIDC_PIC_SLOT').parentElement!;
     const prop = propOf(this.host, this.weapon);
     drawIcon(this.host, box, prop);
-    box.title = prop?.name ?? '';
+    slotTooltip(this.host, box, this.weapon);
     box.toggleAttribute('data-filled', prop !== undefined);
     window.button('WIDC_START').disabled = this.weapon === null || this.sent;
   }
@@ -608,7 +612,7 @@ export class SmeltJewelWindow extends JewelWindow {
       icon.draggable = false;
       area.append(icon);
     }
-    area.title = weaponProp?.name ?? '';
+    slotTooltip(this.host, area, this.weapon);
     area.toggleAttribute('data-filled', weaponProp !== undefined);
     SOCKET_IDS.forEach((id, socket) => {
       const box = window.control(id).parentElement!;

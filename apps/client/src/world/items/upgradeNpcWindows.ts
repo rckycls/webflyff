@@ -11,12 +11,14 @@
 // holds them (`SetExtra`): the piercing's faded and locked, the safe upgrade's counted down (its "die flag").
 
 import type { WebItemProp } from '@flyffweb/formats';
+import type { InventoryItem } from '@flyffweb/protocol';
 import type { UiArt } from '../hud/art';
 import { themeUrl } from '../hud/art';
 import { ResWindow } from '../hud/resWindow';
 import type { ResControl, ResLayout } from '../hud/resWindow';
 import type { OwnState } from '../OwnState';
 import { PIERCING } from './itemWindowLayouts';
+import { slotTooltip } from './npcWindowKit';
 
 const NULL_ID = 0xffffffff;
 /** The Moonstones (II_GEN_MAT_MOONSTONE, _1), the Sunstones (ORICHALCUM01, _1), Shining Oricalkum (ORICHALCUM02). */
@@ -64,6 +66,8 @@ export function isPierceAble(prop: WebItemProp, size: number, next: boolean): bo
 
 export interface UpgradeNpcHost {
   own(): OwnState | undefined;
+  /** 2026-11-15 (consistency scan): a slot's item tooltip (`slotTooltip`, npcWindowKit.ts). */
+  tooltip?(item: InventoryItem | null, anchor: HTMLElement | null, within: HTMLElement | null): void;
   props: ReadonlyMap<number, WebItemProp>;
   text(tid: string): string;
   say(tid: string): void;
@@ -265,7 +269,7 @@ export class PiercingWindow {
       const box = window.control(id).parentElement!;
       const prop = this.propOf(this.slots[slot] ?? null);
       drawIcon(this.host, box, prop);
-      box.title = prop?.name ?? '';
+      slotTooltip(this.host, box, this.slots[slot] ?? null);
     });
     window.setText('WIDC_STATIC9', this.slots[0] === null ? '0' : PIERCING_COST.toLocaleString('en-US'));
     ['WIDC_STATIC5', 'WIDC_STATIC6', 'WIDC_STATIC7'].forEach((id, slot) => {
@@ -801,7 +805,8 @@ export class SmeltSafetyWindow {
     if (window === null) return;
     const target = window.control('WIDC_STATIC1').parentElement!;
     drawIcon(this.host, target, this.targetProp());
-    target.title = this.targetProp()?.name ?? this.host.text('TID_GAME_TOOLTIP_SMELT_SAFETY_ITEM');
+    slotTooltip(this.host, target, this.target);
+    if (this.target === null) target.title = this.host.text('TID_GAME_TOOLTIP_SMELT_SAFETY_ITEM');
     target.toggleAttribute('data-upgrade-wait', this.running && this.timer !== null);
     window.setText('WIDC_NOW_GRADE', this.target === null ? '--' : String(this.currentValue()));
     const input = window.input('WIDC_EDIT_MAX_GRADE');

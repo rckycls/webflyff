@@ -1746,6 +1746,8 @@ export class WorldScreen {
     // 2026-11-05: the Upgrade Specialist's Piercing and Safe Upgrade windows (upgradeNpcWindows.ts)
     const upgradeNpcHost: UpgradeNpcHost = {
       own: () => this.own, props: this.data!.itemProps,
+      // 2026-11-15 (consistency scan): the slots' item tooltips, the bank's (`slotTooltip`)
+      tooltip: (item, anchor, within) => this.showBankTooltip(item, anchor, within),
       text: (tid) => this.data?.texts.get(tid)?.text ?? '',
       say: (tid) => this.sayRefusal({ kind: 'say', tid }),
       ask: (tid, ok) => {
@@ -1769,6 +1771,8 @@ export class WorldScreen {
     // 2026-11-10: Peach's Create Jewels and Jewel Setting (items/jewelWindows.ts)
     this.jewels = new JewelWindows({
       own: () => this.own, props: this.data!.itemProps, ultimate: () => this.data?.ultimate,
+      // 2026-11-15 (consistency scan): the slots' item tooltips, the bank's (`slotTooltip`)
+      tooltip: (item, anchor, within) => this.showBankTooltip(item, anchor, within),
       text: (tid) => this.data?.texts.get(tid)?.text ?? '',
       alert: (text) => { if (text !== '' && this.messageBox?.isOpen !== true) this.messageBox?.open(text, 'ok', () => {}); },
       say: (tid) => this.sayRefusal({ kind: 'say', tid }),
@@ -1790,6 +1794,8 @@ export class WorldScreen {
     // 2026-11-11: the item NPC windows (items/itemNpcWindows.ts)
     this.itemNpc = new ItemNpcWindows({
       own: () => this.own, props: this.data!.itemProps, ultimate: () => this.data?.ultimate,
+      // 2026-11-15 (consistency scan): the slots' item tooltips, the bank's (`slotTooltip`)
+      tooltip: (item, anchor, within) => this.showBankTooltip(item, anchor, within),
       text: (tid) => (this.data?.texts.get(tid)?.text ?? '').replace(/\\n/g, '\n'),
       alert: (text) => { if (text !== '' && this.messageBox?.isOpen !== true) this.messageBox?.open(text, 'ok', () => {}); },
       say: (tid, color) => {
@@ -1826,6 +1832,8 @@ export class WorldScreen {
     // 2026-11-10: the Priest of Confession's Summon Angel (angel/summonAngelWindow.ts)
     this.summonAngel = new SummonAngelWindow({
       own: () => this.own, props: this.data!.itemProps,
+      // 2026-11-15 (consistency scan): the slots' item tooltips, the bank's (`slotTooltip`)
+      tooltip: (item, anchor, within) => this.showBankTooltip(item, anchor, within),
       text: (tid) => this.data?.texts.get(tid)?.text ?? '',
       questText: () => this.data?.ultimate?.descriptions.summonAngel,
       alert: (text) => { if (text !== '' && this.messageBox?.isOpen !== true) this.messageBox?.open(text, 'ok', () => {}); },
