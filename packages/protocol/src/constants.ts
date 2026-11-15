@@ -36,6 +36,11 @@ export const PacketType = {
   HEAVENTOWER_TELEPORT: 0x70001008,
   TRANSFORM_ITEM: 0x8fff000d,
   PICKUP_PET_AWAKENING_CANCEL: 0x8fff000f,
+  /**
+   * custom (owner 2026-11-16): the loot filter's mask for the own pick-up pet (world/pets.ts). Not in V15: added by the
+   * outer repo's patches/2026-11-16-pet-loot-filter.patch (`PACKETTYPE_PET_LOOT_FILTER`, `CDPSrvr::OnPetLootFilter`).
+   */
+  PET_LOOT_FILTER: 0x8fff0100,
   /** 2026-11-05: the upgrade cursor's packets (`MsgHdr.h`; world/upgrade.ts). */
   ENCHANT: 0xf000b024,
   PIERCING: 0xf000b025,

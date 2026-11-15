@@ -181,7 +181,7 @@ import { HonorBook } from './honor/honorBook';
 import { isArena } from './combat/arena';
 import { formatDefinedText } from './hud/messages';
 import { ItemUse } from './items/itemUse';
-import { lootAllowed } from './items/lootFilter'; // custom (owner 2026-11-16): the loot filter
+import { LOOT_ALL, lootAllowed } from './items/lootFilter'; // custom (owner 2026-11-16): the loot filter
 import { SmTimers, skillPointsSpent } from './items/premiumItems';
 import { UpgradeCursor } from './items/upgradeCursor';
 import { ConfirmBoxes, boxOf } from './items/confirmBoxes';
@@ -771,6 +771,11 @@ export class WorldScreen {
   private autoPlayExp: { level: number; exp: bigint } | null = null;
   private autoPlayBagRevision = -1;
   private autoPlayDrops = new Set<number>();
+  /**
+   * custom (owner 2026-11-16): the loot filter's mask the World server holds for the own pick-up pet: every kind until the
+   * page sends another (a new player starts with every kind, `CUser::Init` in the patch).
+   */
+  private lootMaskSent = LOOT_ALL;
   /** 2026-11-05: the item windows' flows (the name change, the tickets, the summons ...). */
   private itemWindows: ItemWindowFlows | undefined;
   /** 2026-11-05: the upgrade cursor, and whether its effect (XI_INT_INCHANT) is on the own mover. */
@@ -1716,6 +1721,8 @@ export class WorldScreen {
     // custom (owner 2026-11-15): Auto Play, with the character's own settings
     this.autoPlay = new AutoPlay(this.autoPlayHooks(), loadSettings(autoPlayStorage(), this.entry.character.playerId));
     this.autoPlay.onError = (error) => this.reportOnce(`auto play: ${messageOf(error)}`, error);
+    // custom (owner 2026-11-16): the loot filter of this character to the World server, for the pick-up pet
+    this.sendLootFilter(this.autoPlay.settings.loot.mask);
     // Piece 7 M2: the own missiles' ids and reports, the missiles of everyone, and what the attack loop says and tests
     const ownShots = new OwnShots(this.session);
     const views = this.views!;
@@ -4274,7 +4281,10 @@ export class WorldScreen {
       cooldownLeft: (itemId) => this.itemUse?.cooldownLeft(itemId) ?? 0,
       useItem: (objectId) => this.itemUse?.use(objectId, 'bar') ?? false,
       say: (text) => this.hud?.messages.add(text, AUTO_PLAY_COLOR),
-      save: (s) => saveSettings(autoPlayStorage(), this.entry.character.playerId, s),
+      save: (s) => {
+        saveSettings(autoPlayStorage(), this.entry.character.playerId, s);
+        this.sendLootFilter(s.loot.mask); // custom (owner 2026-11-16): the Loot tab's change, for the pick-up pet
+      },
       self: () => this.world?.self(),
       movers: () => this.world?.movers.values() ?? [],
       rankOf: (m) => this.data?.movers.get((m as Mover).added.index)?.rank ?? 0,
@@ -4393,6 +4403,16 @@ export class WorldScreen {
   }
 
   /** 2026-11-09 (pets R4): the Pet Tamer's windows' packets, by WorldSession's senders. */
+  /**
+   * custom (owner 2026-11-16): the loot filter's mask to the World server when it differs from what the server holds. A
+   * patched World keeps it for the own pick-up pet (`CAIPet::SubItemLoot` skips the kinds left out); others ignore it.
+   */
+  private sendLootFilter(mask: number): void {
+    if (mask === this.lootMaskSent) return;
+    this.lootMaskSent = mask;
+    this.session.sendPetLootFilter(mask);
+  }
+
   private sendPetTamer(packet: PetTamerPacket): void {
     const s = this.session;
     switch (packet[0]) {

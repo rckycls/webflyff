@@ -12,7 +12,7 @@ import {
   encodeSummonFriendConfirm, encodeSummonFriendCancel, encodeDoUseItemInput, encodeChangeAttribute, encodeItemTransy,
   encodeCreateMonster, encodeRemoveQuest, encodeReturnScroll, encodeStateModeCancel, encodePetRelease,
   encodeUsePetFeed, encodeMakePetFeed, encodePetTamerMistake, encodePetTamerMiracle, encodeFeedPocketInactive, encodeClearPetName,
-  encodeRemoveVis, encodeSwapVis, encodeQuePetResurrection, encodeTransformItem, encodePickupPetAwakeningCancel,
+  encodeRemoveVis, encodeSwapVis, encodeQuePetResurrection, encodeTransformItem, encodePickupPetAwakeningCancel, encodePetLootFilter,
 } from '@flyffweb/protocol';
 import { encodeMagicAttack, encodeRangeAttack, encodeSfxClear, encodeSfxHit, encodeSfxId } from '@flyffweb/protocol';
 import { encodeCheering, encodeDoEscape, encodeMotion, encodePropose } from '@flyffweb/protocol'; // 2026-11-14: the Motion window
@@ -232,6 +232,8 @@ export class WorldSession {
     this.playingCache()?.send(encodeTransformItem(transform, parts));
   }
   sendPickupPetAwakeningCancel(itemObjectId: number): void { this.playingCache()?.send(encodePickupPetAwakeningCancel(itemObjectId)); }
+  /** custom (owner 2026-11-16): the loot filter's mask for the own pick-up pet (a patched World server; others ignore it). */
+  sendPetLootFilter(mask: number): void { this.playingCache()?.send(encodePetLootFilter(mask)); }
   sendNpcDialogOpen(id: number): void { this.playingCache()?.send(encodeNpcDialogOpen(id)); }
   sendNpcDialog(id: number, key: string, param: number, quest: number, playerId: number): void {
     this.playingCache()?.send(encodeNpcDialog(id, key, param, quest, playerId));
