@@ -44,7 +44,7 @@ export const TEXTS: Record<string, string> = {
   TID_GAME_PET_TOOLTIP_HP: 'P.Hp : %d / %d', TID_GAME_PETINFO_DEAD: '(Death)', TID_TOOLTIP_PET_REAR: '[Raised Pet]',
   TID_GAME_AWAKENNIG_PET_00: 'Awakenable', TID_GAME_POCKETUSING: '(Active)', TID_GAME_POCKET_NOTUSING: '(Inactive)',
   TID_GAME_PET_FEED_COUNT: 'Pet food count:', TID_GAME_PET_FEEDPOCKET: 'Eats the food in the bag.',
-  TID_GAME_PET_FEEDPOCKET_USE: 'Double-click to use.',
+  TID_GAME_PET_FEEDPOCKET_USE: 'Double-click to use.', TID_TOOLTIP_PERIOD: 'Period',
 };
 
 export const petItemProp = (id: number, name: string, icon: string): WebItemProp =>

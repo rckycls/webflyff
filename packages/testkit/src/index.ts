@@ -70,3 +70,4 @@ export {
 export { honorCounts, writeHonorChange, writeHonorList } from './honor';
 // 2026-11-11: layered boss HP (a server addition)
 export { writeHpLayer } from './hpLayer';
+export { writeTaxInfo } from './tax';

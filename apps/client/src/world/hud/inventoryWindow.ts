@@ -1,4 +1,7 @@
-import { createItemDetails, ownTooltipContext, positionItemDetails } from './itemDetails';
+import {
+  createComparison, createItemDetails, fitPhoneComparison, ownTooltipContext, positionItemComparison, positionItemDetails,
+} from './itemDetails';
+import { comparisonItems } from '../items/itemTooltip';
 import { drawCooldown } from './cooldown';
 import { upgradeKindOf } from '../items/upgradeItems';
 import type { OwnState } from '../OwnState';
@@ -85,6 +88,8 @@ export class InventoryWindow {
   private dragged: { id: number; itemId: number } | null = null;
   private mobile = false;
   private hoverAnchor: HTMLElement | null = null;
+  /** 2026-11-15: the second the open tooltip was last made (its cool-down and time left tick, as Neuz puts it each frame). */
+  private detailsSecond = -1;
   constructor(private readonly art: UiArt, private readonly data: GameData,
     private readonly actions: InventoryActions, private readonly doc: Document = document) {
     this.frame = new WindowFrame('Inventory', art, { width: 240, height: 464, texture: 'WndInventory3D.tga' }, doc);
@@ -346,6 +351,21 @@ export class InventoryWindow {
       const id = own.inventorySlots[Number(cell.dataset.bagSlot)];
       drawCooldown(cell, id === undefined || !own.inventory?.has(id) ? null : done(id));
     }
+    // 2026-11-15: once a second, the open tooltip made again when a line of it changed (its cool-down, its time left)
+    const second = Math.floor(own.clock());
+    if (second !== this.detailsSecond) { this.detailsSecond = second; this.tickDetails(own); }
+  }
+
+  /** 2026-11-15: the open tooltip and its comparison tooltips made again when their text is not what it was. */
+  private tickDetails(own: OwnState): void {
+    const shown = this.detailsItem;
+    const item = shown === undefined ? undefined : own.inventory?.get(shown.objectId);
+    const text = this.frame.body.querySelector('.inventory-details .hud-item-tooltip-text');
+    if (item === undefined || text === null) return;
+    const textOf = (boxes: Iterable<Element>): string => [...boxes].map((box) => box.querySelector('.hud-item-tooltip-text')?.textContent ?? '').join('|');
+    const now = [text.textContent ?? '', textOf(this.frame.body.querySelectorAll('.inventory-compare'))];
+    const fresh = [textOf([this.tooltipOf(own, item)]), textOf(this.comparisonOf(own, item))];
+    if (fresh[0] !== now[0] || fresh[1] !== now[1]) this.refreshDetails(own, true);
   }
 
   /**
@@ -374,7 +394,7 @@ export class InventoryWindow {
     for (const cell of this.frame.element.querySelectorAll<HTMLElement>('[data-bag-slot]')) {
       cell.classList.toggle('is-selected', own.inventorySlots[Number(cell.dataset.bagSlot)] === this.selected);
     }
-    this.frame.body.querySelector('.inventory-details')?.remove();
+    this.removeDetails();
     this.detailsItem = undefined;
     const item = this.selected === null ? undefined : own.inventory?.get(this.selected);
     if (!item || !this.actionsOpen || (this.shopSelect && this.mobile)) return;
@@ -410,34 +430,94 @@ export class InventoryWindow {
         button('drop', 'Drop', () => this.requestDrop(item.objectId));
       }
     }
-    this.frame.body.append(details);
+    this.showDetails(own, item, details);
+  }
+
+  /** 2026-11-15: the open tooltip and its comparison tooltips gone (the phone's row with them). */
+  private removeDetails(): void {
+    const body = this.frame.body;
+    for (const el of body.querySelectorAll('.inventory-compare-row, .inventory-compare, .inventory-details')) el.remove();
+  }
+
+  /**
+   * The tooltip on the page where Neuz puts it. 2026-11-15: with a bag item's comparison tooltips
+   * (`PutToolTipItemAndSubToolTip`, WndManager.cpp:6413-6497): the worn items it would replace, right of it on the
+   * desktop, beside it in one row on the phone. A worn item's tooltip has none (`CWndInventory`'s single tooltip).
+   */
+  private showDetails(own: OwnState, item: InventoryItem, details: HTMLElement): void {
+    const subs = this.comparisonOf(own, item);
+    if (this.mobile && subs.length > 0) {
+      const row = this.doc.createElement('div');
+      row.className = 'inventory-compare-row';
+      row.append(details, ...subs);
+      this.frame.body.append(row);
+      fitPhoneComparison(row);
+      return;
+    }
+    this.frame.body.append(details, ...subs);
     if (!this.mobile && this.hoverAnchor) {
-      positionItemDetails(details, this.hoverAnchor, this.doc);
+      if (subs.length > 0) positionItemComparison(details, subs, this.hoverAnchor, this.doc);
+      else positionItemDetails(details, this.hoverAnchor, this.doc);
     }
   }
 
   /** The tooltip as APP_INVENTORY asks for it: the selling price while a shop is open, the set +N on a worn piece. */
   private tooltipOf(own: OwnState, item: InventoryItem): HTMLElement {
-    return createItemDetails(this.doc, this.art, this.data, item, this.data.itemProps.get(item.itemId),
-      ownTooltipContext(own, item, 'inventory', this.shopSelect !== undefined, this.actions.hasBuff?.bind(this.actions)));
+    return createItemDetails(this.doc, this.art, this.data, item, this.data.itemProps.get(item.itemId), this.contextOf(own, item));
+  }
+
+  private contextOf(own: OwnState, item: InventoryItem) {
+    return ownTooltipContext(own, item, 'inventory', this.shopSelect !== undefined, this.actions.hasBuff?.bind(this.actions));
+  }
+
+  /** 2026-11-15: the comparison tooltips of a bag item; none for a worn one. */
+  private comparisonOf(own: OwnState, item: InventoryItem): HTMLElement[] {
+    const prop = this.data.itemProps.get(item.itemId);
+    const worn = prop === undefined || own.equipmentObjectIds.includes(item.objectId) ? [] : comparisonItems(prop, (part) => this.itemAt(part));
+    return createComparison(this.doc, this.art, this.data, worn, (each) => this.contextOf(own, each));
   }
 
   /**
    * 2026-11-09 (pets review): the open tooltip's text and frame made again when its item was (a pet's numbers), in place:
    * the close and Use/Equip buttons stay on the page, so a press on them is not lost.
    */
-  private refreshDetails(own: OwnState): void {
+  private refreshDetails(own: OwnState, force = false): void {
     const shown = this.detailsItem;
     const details = this.frame.body.querySelector<HTMLElement>('.inventory-details');
     if (shown === undefined || details === null) return;
     const item = own.inventory?.get(shown.objectId);
-    if (item === shown) return;
+    if (item === shown && !force) return;
     if (item === undefined || item.itemId !== shown.itemId) { this.drawDetails(); return; }
     const fresh = this.tooltipOf(own, item);
+    const mainScroll = details.scrollTop; // 2026-11-15: a phone tooltip that scrolls keeps its place
     for (const child of [...details.children]) if (child.tagName !== 'BUTTON') child.remove();
     details.prepend(...fresh.children);
+    details.scrollTop = mainScroll;
     this.detailsItem = item;
-    if (!this.mobile && this.hoverAnchor) positionItemDetails(details, this.hoverAnchor, this.doc);
+    // 2026-11-15: the comparison tooltips made again beside it; the main one stays where it is (a press on its buttons)
+    const old = [...this.frame.body.querySelectorAll<HTMLElement>('.inventory-compare')];
+    const scrolls = old.map((el) => el.scrollTop);
+    for (const el of old) el.remove();
+    const subs = this.comparisonOf(own, item);
+    const keepScroll = (): void => subs.forEach((el, i) => { el.scrollTop = scrolls[i] ?? 0; });
+    let row = details.parentElement?.classList.contains('inventory-compare-row') === true ? details.parentElement : null;
+    if (row === null && this.mobile && subs.length > 0) {
+      row = this.doc.createElement('div');
+      row.className = 'inventory-compare-row';
+      details.replaceWith(row);
+      row.append(details);
+    }
+    if (row !== null) {
+      row.append(...subs);
+      fitPhoneComparison(row);
+      keepScroll();
+      return;
+    }
+    this.frame.body.append(...subs);
+    if (!this.mobile && this.hoverAnchor) {
+      if (subs.length > 0) positionItemComparison(details, subs, this.hoverAnchor, this.doc);
+      else positionItemDetails(details, this.hoverAnchor, this.doc);
+    }
   }
 
   private requestDrop(id: number): void {

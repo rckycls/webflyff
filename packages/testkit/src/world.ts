@@ -757,7 +757,7 @@ export function writeItemElem(w: ArWriter, item: InventoryItem): void {
     .u8(item.repairNumber ?? 0).i32(item.hitPoint ?? 0).i32(item.repair ?? 0) // m_nRepairNumber, m_nHitPoint, m_nRepair
     // what the item tooltip shows (2026-11-05): m_byFlag, m_nAbilityOption, m_idGuild; m_bItemResist,
     // m_nResistAbilityOption, m_nResistSMItemId
-    .u8(item.flag ?? 0).i32(item.abilityOption ?? 0).u32(0)
+    .u8(item.flag ?? 0).i32(item.abilityOption ?? 0).u32(item.guildId ?? 0)
     .u8(item.resist ?? 0).i32(item.resistOption ?? 0).i32(item.resistSMItemId ?? 0);
   // m_piercing: the cards, the ultimate jewels, the vis keep times (piercing.cpp:38-53)
   for (const list of [item.piercing ?? [], item.ultimate ?? []]) {
@@ -767,7 +767,10 @@ export function writeItemElem(w: ArWriter, item: InventoryItem): void {
   const visKeepTimes = item.visKeepTimes ?? [];
   w.u32(visKeepTimes.length);
   for (const seconds of visKeepTimes) w.i32(seconds); // GetVisKeepTime( i ) - time_null()
-  w.i32(item.charged ?? 0).i64(item.randomOption ?? 0n).u32(0); // m_bCharged, m_iRandomOptItemId, m_dwKeepTime 0 (no time left follows)
+  w.i32(item.charged ?? 0).i64(item.randomOption ?? 0n); // m_bCharged, m_iRandomOptItemId
+  // 2026-11-15: m_dwKeepTime, then when set the seconds left (time_t; ObjSerialize.cpp:74-75)
+  if (item.keepTime === undefined) w.u32(0);
+  else w.u32(1).i32(item.keepTime);
   if (item.pet === undefined) {
     w.u8(0); // (BYTE)0x00: no pet
   } else {

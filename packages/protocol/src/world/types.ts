@@ -22,9 +22,11 @@ import type { PostMessage } from './post';
 import type { LordMessage } from './lord';
 import type { HonorMessage } from './honor';
 import type { HpLayerMessage } from './hpLayer';
+import type { TaxMessage } from './tax';
 
 export type WorldMessage = ChatMessage | NpcMessage | ShopMessage | QuestMessage | PetMessage | FriendMessage | TradeMessage | VendorMessage
   | GuildMessage | GuildDirectMessage | BankMessage | GuildBankMessage | PostMessage | LordMessage | HonorMessage | HpLayerMessage
+  | TaxMessage
   | { type: 'profileStats'; values: number[] }
   | { type: 'addItem'; item: GroundItem }
   | { type: 'createItem'; itemType: number; item: InventoryItem; stacks: Array<{ objectId: number; count: number }> }
@@ -403,6 +405,8 @@ export interface InventoryItem {
   resistSMItemId?: number;
   /** `m_nAbilityOption`: the upgrade, the +N after the name. */
   abilityOption?: number;
+  /** 2026-11-15: `m_idGuild`, the guild a guild cloak was made for (the tooltip's "%s Guild Cloak"); absent for none. */
+  guildId?: number;
   /** `m_bItemResist`: the element, a `SAI79::ePropType` (1 fire, 2 water, 3 electricity, 4 wind, 5 earth). */
   resist?: number;
   /** `m_nResistAbilityOption`: the element's upgrade. */

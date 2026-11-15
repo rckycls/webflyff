@@ -207,6 +207,12 @@ export class ItemUse {
     return prop ? this.cooldowns.progress(prop, this.now()) : null;
   }
 
+  /** 2026-11-15: the ms the cool-down group of item `itemId` still waits (the tooltip's PutCoolTime); 0 for none. */
+  cooldownLeft(itemId: number): number {
+    const prop = this.props.get(itemId);
+    return prop ? this.cooldowns.left(prop, this.now()) : 0;
+  }
+
   private now(): number {
     return this.travel?.now?.() ?? performance.now();
   }
