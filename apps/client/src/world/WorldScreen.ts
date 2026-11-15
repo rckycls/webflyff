@@ -2075,6 +2075,10 @@ export class WorldScreen {
       ownIsVagrant: () => (this.own?.job ?? this.entry.character.job) === 0,
       ownGuildName: () => this.guildBook.own(this.entry.character.playerId)?.name ?? '',
       ownIsGuildMaster: () => this.guildBook.own(this.entry.character.playerId)?.masterId === this.entry.character.playerId,
+      guildMembers: () => [...(this.guildBook.own(this.entry.character.playerId)?.members.values() ?? [])].map((m) => {
+        const data = this.playerData.get(m.playerId);
+        return { playerId: m.playerId, name: data.name, jobName: this.data?.jobs[data.job]?.title ?? '', level: data.level, online: data.login > 0, rank: m.rank };
+      }),
       ownGold: () => this.own?.gold ?? 0,
       now: () => performance.now(),
     }, this.guildCombatBook, this.hudArt!, doc);

@@ -51,6 +51,10 @@ export const GcTid = {
   REQUESTEND: 2967,
   JACKPOT: 2943, JACKPOT_CANCEL: 2944, JACKPOT_LIMIT1: 2941, JACKPOT_LIMIT2: 2942, WINNER_NOT_GUILD: 2962,
   MVP_PENYA: 2964, NOT_MVP: 2963,
+  /** The line-up window (B4): TID_GAME_GUILDCOMBAT_* of `Resource/defineText.h:1734-1801`. */
+  JOIN_MESSAGE: 2948, PLAYER_MAKEUP: 2973, REMAKE_MAKEUP: 2991, CANNOT_MAKEUP: 2992, LIMIT_LEVEL_NOTICE: 2993, NOT_GUILD_MEMBER: 2994,
+  ALREADY_ENTRY: 2995, NOT_ASSIGN_DEFENDER: 2996, HAVENOT_PLAYER: 2997, HAVENOT_MASTER: 2998, MASTER_NOT_ASSIGN_DEFENDER: 2999,
+  OFFER_INFO: 3013, SELECTION_MAX: 3014,
 } as const;
 
 /**
@@ -103,3 +107,41 @@ export function penyaNotice(kind: 'guild' | 'player', result: number, penya: num
   return null;
 }
 
+
+// --- The line-up window (2026-11-15, B4; A-client.md §2.3) ---
+
+/** A guild member as the line-up's add check sees it; null: the picked player is not in the guild. */
+export interface LineupMember { playerId: number; level: number }
+
+/**
+ * The add check (`WndField.cpp:16153-16205`): the text's number, null when the member may be added. The list stops at
+ * `maxJoin`, the server's limit (`DPSrvr.cpp:5274`); Neuz's `maxJoin < size` lets one more in (`:16161`), which the server drops.
+ */
+export function lineupAddRefusal(member: LineupMember | null, list: readonly number[], maxJoin: number): number | null {
+  if (list.length >= maxJoin) return GcTid.SELECTION_MAX;
+  if (member === null) return GcTid.NOT_GUILD_MEMBER;
+  if (member.level < SIEGE.fighterLevel) return GcTid.LIMIT_LEVEL_NOTICE;
+  if (list.includes(member.playerId)) return GcTid.ALREADY_ENTRY;
+  return null;
+}
+
+/** Complete's checks, in Neuz's order (`:16287-16345`; the state check between them is the hud's): defender 0 is none. */
+export function lineupFinishRefusal(list: readonly number[], defenderId: number, masterOrKingpinIds: readonly number[]): number | null {
+  if (defenderId === 0) return GcTid.NOT_ASSIGN_DEFENDER;
+  if (list.length === 0) return GcTid.HAVENOT_PLAYER;
+  if (!list.some((id) => masterOrKingpinIds.includes(id))) return GcTid.HAVENOT_MASTER;
+  return null;
+}
+
+/** Select Defender (`:16348-16369`): the guild master cannot defend when more than one entrant is listed. */
+export function defenderRefusal(memberId: number, masterId: number, listSize: number): number | null {
+  return memberId === masterId && listSize > 1 ? GcTid.MASTER_NOT_ASSIGN_DEFENDER : null;
+}
+
+/** The band behind an entrant's row (`:16075-16087`): the first `maxWar` rows start, the rest are reserves. */
+export function lineupBand(index: number, maxWar: number): 'blue' | 'red' {
+  return index < maxWar ? 'blue' : 'red';
+}
+
+/** The start-point window's pick sent at the time-out: 99 (random) when none was picked (`:16713-16722`). */
+export const NO_AREA = 99;

@@ -6,9 +6,11 @@
 // yet, so their loads fail in the console: the windows still work (their buttons are found by their names).
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
-import { GuildCombatPacketType } from '@flyffweb/protocol';
-import type { AddedMover, GuildCombatMessage } from '@flyffweb/protocol';
-import { createWorldScript, writeAddNpc, writeAddSelf, writeGuildCombat } from '@flyffweb/testkit';
+import { ArReader, GuildCombatPacketType, readGuildCombatRequestPacket } from '@flyffweb/protocol';
+import type { AddedMover, GuildCombatMessage, PlayerDataRecord } from '@flyffweb/protocol';
+import {
+  createWorldScript, guildMember, guildWhole, writeAddNpc, writeAddSelf, writeAllGuilds, writeGuild, writeGuildCombat, writeQueryPlayerData,
+} from '@flyffweb/testkit';
 import type { WorldScript } from '@flyffweb/testkit';
 import { NPC_ID, ON_FRAMES, SELF_ID, SQUARE, MADRIGAL, enterFlaris, julia, playGateway, self, sentOf, tapMover, tapWorld, targetsOf } from './worldHarness';
 import type { Gateway } from './worldHarness';
@@ -193,4 +195,108 @@ test('Donaris: Cancel, Jackpot, the prize and the boxes of the server', async ({
   await phoneChecks(page, diag);
   await press(diag.getByRole('button', { name: 'OK' }));
   await expect(diag).toBeHidden();
+});
+
+// B4: the line-up window and the start-point window.
+const WEBBY = 500, LEAD = 70002, MIA = 70003, ROCKY = 70004, FAR = 70005, GUILD = 77;
+const player = (level: number, login: number): PlayerDataRecord => ({ job: 6, level, sex: 0, version: 1, login });
+
+test('Entry: the line-up (add, refusals, defender, order, Complete) and the start point', async ({ page }, info) => {
+  const own = { ...self, player: { ...self.player!, guildId: GUILD } };
+  const script = createWorldScript({
+    playerObjectId: SELF_ID, worldId: MADRIGAL, pos: SQUARE, self: writeAddSelf(SELF_ID, own), others: [writeAddNpc(NPC_ID, npcOf('MaFl_GuildWar'))],
+  });
+  const gateway = await playGateway(page, script);
+  await enterFlaris(page);
+  const shot = (name: string) => page.screenshot({ path: info.outputPath(`${name}.png`) });
+  const bakers = guildWhole(GUILD, WEBBY, 'Bakers', [
+    guildMember(WEBBY, 0), guildMember(LEAD, 1), guildMember(MIA, 4), guildMember(ROCKY, 4), guildMember(FAR, 4),
+  ], { level: 3 });
+  gateway.pushCache(script.later([writeAllGuilds(SELF_ID, [bakers]), writeGuild(SELF_ID, bakers)]));
+  gateway.pushCache(script.later([
+    writeQueryPlayerData(SELF_ID, WEBBY, 'Webby', player(40, 1)), writeQueryPlayerData(SELF_ID, LEAD, 'Lead', player(60, 1)),
+    writeQueryPlayerData(SELF_ID, MIA, 'Mia', player(35, 1)), writeQueryPlayerData(SELF_ID, ROCKY, 'Rocky', player(25, 1)),
+    writeQueryPlayerData(SELF_ID, FAR, 'Far', player(50, 0)),
+  ]));
+  const request = (type: number, i: number) => {
+    const r = new ArReader(sentOf(gateway, type)[i]!.body);
+    r.bytes(8);
+    return readGuildCombatRequestPacket(type, r);
+  };
+
+  // the entries are taken while the siege waits for them (NOTENTER_COUNT_STATE 101)
+  answer(gateway, script, { sub: 'gcState', state: 1, warState: 101 });
+  await chooseEntry(page, gateway, 33);
+  await expect.poll(() => sentOf(gateway, GuildCombatPacketType.SELECTPLAYER).length).toBe(1);
+  expect(request(GuildCombatPacketType.SELECTPLAYER, 0)).toEqual({ type: 'gcLineupWindowRequest' });
+  answer(gateway, script, { sub: 'selectPlayer', maxJoin: 10, maxWar: 5, requestWar: true, window: true, defenderId: 0, playerIds: [] });
+  const lineup = page.locator('.hud-gc-lineup');
+  await expect(lineup).toBeVisible(ON_FRAMES);
+  await expect(lineup.locator('.hud-window-title')).toHaveText('Set Entry List for Guild Siege');
+  await expect(lineup).toContainText('Starting member 5 (Maximum member 10)');
+  if (!isPhone()) {
+    const at = (await lineup.boundingBox())!;
+    expect([Math.round(at.width), Math.round(at.height)]).toEqual([656, 432]);
+  }
+  // the online members, the lowest level first
+  const left = lineup.locator('[data-control="WIDC_LISTBOX1"] [role="option"]');
+  await expect(left).toHaveCount(4);
+  await expect(left.nth(0)).toContainText('Lv25');
+  await expect(left.nth(3)).toContainText('Lv60');
+  const right = lineup.locator('[data-control="WIDC_LISTBOX2"] [role="option"]');
+  const pick = async (row: Locator) => press(row);
+  // level 25: refused
+  await pick(left.nth(0));
+  await press(lineup.getByRole('button', { name: '--->' }));
+  await expect(box(page)).toContainText('level 30', ON_FRAMES);
+  await closeBox(page);
+  // Mia, Webby, Lead
+  for (const at of [1, 2, 3]) {
+    await pick(left.nth(at));
+    await press(lineup.getByRole('button', { name: '--->' }));
+  }
+  await expect(right).toHaveCount(3);
+  // one already in: refused
+  await press(lineup.getByRole('button', { name: '--->' }));
+  await expect(box(page)).toContainText('Register again', ON_FRAMES);
+  await closeBox(page);
+  // the guild master (Webby, the second row) cannot be the defender with more than one entrant
+  await pick(right.nth(1));
+  await press(lineup.getByRole('button', { name: 'Defender' }));
+  await expect(box(page)).toContainText('Guild Master cannot be a defender', ON_FRAMES);
+  await closeBox(page);
+  // Complete with no defender: refused
+  await press(lineup.getByRole('button', { name: 'Complete' }));
+  await expect(box(page)).toContainText('no defender', ON_FRAMES);
+  await closeBox(page);
+  // Mia defends; Lead moves up
+  await pick(right.nth(0));
+  await press(lineup.getByRole('button', { name: 'Defender' }));
+  await expect(right.nth(0)).toHaveClass(/is-defender/);
+  await pick(right.nth(2));
+  await press(lineup.getByRole('button', { name: 'Up' }));
+  await expect(right.nth(1)).toContainText('Lead');
+  await expect(right.nth(0)).toHaveClass(/is-blue/);
+  await phoneChecks(page, lineup);
+  await shot('lineup');
+  await press(lineup.getByRole('button', { name: 'Complete' }));
+  await expect.poll(() => sentOf(gateway, GuildCombatPacketType.SELECTPLAYER).length).toBe(2);
+  expect(request(GuildCombatPacketType.SELECTPLAYER, 1)).toEqual({ type: 'gcLineupRequest', defenderId: MIA, playerIds: [MIA, LEAD, WEBBY] });
+  await expect(lineup).toBeHidden();
+
+  // the start point: a press sends the area at once, the time-out sends the pick; no close button
+  answer(gateway, script, { sub: 'selectWarPos', map: 99, seconds: 3 });
+  const start = page.locator('.hud-gc-startpoint');
+  await expect(start).toBeVisible(ON_FRAMES);
+  await expect(start).toContainText('Select the area you wish to enter.');
+  await expect(start).toContainText('you enter Random.');
+  await expect(start.locator('.hud-window-close, [data-button="close"]')).toHaveCount(0);
+  await phoneChecks(page, start);
+  await shot('startpoint');
+  await press(start.getByRole('button', { name: '2' }));
+  await expect.poll(() => sentOf(gateway, GuildCombatPacketType.SELECTMAP).length).toBe(1);
+  expect(request(GuildCombatPacketType.SELECTMAP, 0)).toEqual({ type: 'gcSelectMapRequest', map: 1 });
+  await expect(start).toBeHidden({ timeout: 8_000 });
+  await expect.poll(() => sentOf(gateway, GuildCombatPacketType.SELECTMAP).length).toBe(2);
+  expect(request(GuildCombatPacketType.SELECTMAP, 1)).toEqual({ type: 'gcSelectMapRequest', map: 1 });
 });

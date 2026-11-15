@@ -13,7 +13,7 @@
 // The arena HUD and the line-up, ranking and result windows come on top of it in later tasks.
 
 import {
-  encodeGcApply, encodeGcCancel, encodeGcJoin, encodeGcLineupWindow, encodeGcPenyaGuild, encodeGcPlayerPoint, encodeGcStatus,
+  encodeGcApply, encodeGcCancel, encodeGcJoin, encodeGcLineup, encodeGcLineupWindow, encodeGcPenyaGuild, encodeGcPlayerPoint, encodeGcSelectMap, encodeGcStatus,
   encodeGcTele, encodeGcWindow,
 } from '@flyffweb/protocol';
 import type { GuildCombatMessage } from '@flyffweb/protocol';
@@ -24,6 +24,9 @@ import { ApplyWindow } from '../hud/guildCombat/applyWindow';
 import { BoardWindow } from '../hud/guildCombat/boardWindow';
 import { YesNoWindow, cancelLayout, joinLayout } from '../hud/guildCombat/confirmWindows';
 import { DiagBox, TeleBox } from '../hud/guildCombat/infoBoxes';
+import { LineupWindow } from '../hud/guildCombat/lineupWindow';
+import type { LineupPerson } from '../hud/guildCombat/lineupWindow';
+import { StartPointWindow } from '../hud/guildCombat/startPointWindow';
 import { StatusWindow } from '../hud/guildCombat/statusWindow';
 import type { GuildCombatBook, GuildCombatEvent } from './guildCombatBook';
 import { BOARD_OF_ENTRY } from './boardTexts';
@@ -44,6 +47,8 @@ export interface GuildCombatHost {
   ownGuildName(): string;
   /** `pGuild->IsMaster( me )`. */
   ownIsGuildMaster(): boolean;
+  /** The own guild's members, online or not, with their player data (the guild book); [] with no guild. */
+  guildMembers(): LineupPerson[];
   /** The own penya (`GetGold`). */
   ownGold(): number;
   /** The screen's clock, in ms. */
@@ -53,7 +58,7 @@ export interface GuildCombatHost {
 /** The English of a title when the catalog has none. */
 const TITLES = {
   offer: 'Guild Siege - Apply', state: 'Guild Siege - Applying Situation', cancel: 'Guild Siege - Cancel Application',
-  entrance: 'Entering Guild Siege Arena', board: 'Guild Siege - Info.', intro: 'Guild Siege Introduction',
+  lineup: 'Set Entry List for Guild Siege', entrance: 'Entering Guild Siege Arena', board: 'Guild Siege - Info.', intro: 'Guild Siege Introduction',
 } as const;
 
 export class GuildCombatHud {
@@ -66,6 +71,8 @@ export class GuildCombatHud {
   readonly board: BoardWindow;
   readonly tele: TeleBox;
   readonly diag: DiagBox;
+  readonly lineup: LineupWindow;
+  readonly startPoint: StartPointWindow;
   /** The last offer window's data (`m_dwReqGold`, the minimum). */
   private offer = { ownBid: 0, minBid: 0 };
   private lastTick = 0;
@@ -89,15 +96,23 @@ export class GuildCombatHud {
     this.tele = new TeleBox(title('TID_GAME_GUILDCOMBAT_OFFERSTATE', TITLES.state), art, doc);
     this.tele.onYes = () => this.send(encodeGcTele());
     this.diag = new DiagBox(TITLES.intro, art, doc);
+    this.lineup = new LineupWindow(title('TID_GAME_GUILDCOMBAT_SELECTION', TITLES.lineup), art, {
+      refuse: (tid, maxJoin) => host.box(formatText(host.textById(tid), [maxJoin])),
+      remake: (ok) => host.box(host.textById(GcTid.REMAKE_MAKEUP), ok),
+      stillOpen: () => this.lineupOpen(),
+      send: (defenderId, ids) => this.send(encodeGcLineup(defenderId, ids)),
+    }, doc);
+    this.startPoint = new StartPointWindow(art, doc, () => host.textById(GcTid.JOIN_MESSAGE) || 'After %d, you enter %s.');
+    this.startPoint.onSelect = (map) => this.send(encodeGcSelectMap(map));
   }
 
   /** The windows, for the world screen's layer. */
   get elements(): HTMLElement[] {
-    return [this.apply, this.status, this.cancel, this.join, this.board, this.tele, this.diag].map((w) => w.element);
+    return [this.apply, this.status, this.cancel, this.join, this.board, this.tele, this.diag, this.lineup, this.startPoint].map((w) => w.element);
   }
 
   get isOpen(): boolean {
-    return [this.apply, this.status, this.cancel, this.join, this.board, this.tele, this.diag].some((w) => w.isOpen);
+    return [this.apply, this.status, this.cancel, this.join, this.board, this.tele, this.diag, this.lineup, this.startPoint].some((w) => w.isOpen);
   }
 
   /** A siege packet the client sends (the `encodeGc*` bytes). */
@@ -140,22 +155,24 @@ export class GuildCombatHud {
     this.apply.close();
     this.status.close();
     this.join.close();
+    this.lineup.close(); // an NPC-opened siege window too (A-client.md §1.2)
   }
 
   /** Each frame: the status's count-down once a second. */
   step(nowMs: number): void {
+    if (this.startPoint.isOpen) this.startPoint.tick(this.host.now());
     if (nowMs - this.lastTick < 1000) return;
     this.lastTick = nowMs;
     if (this.status.isOpen) this.status.tick(this.host.now());
   }
 
   close(): void {
-    for (const w of [this.apply, this.status, this.cancel, this.join, this.board, this.tele, this.diag]) w.close();
+    for (const w of [this.apply, this.status, this.cancel, this.join, this.board, this.tele, this.diag, this.lineup, this.startPoint]) w.close();
   }
 
   dispose(): void {
     this.listeners.clear();
-    for (const w of [this.apply, this.status, this.cancel, this.join, this.board, this.tele, this.diag]) {
+    for (const w of [this.apply, this.status, this.cancel, this.join, this.board, this.tele, this.diag, this.lineup, this.startPoint]) {
       w.close();
       w.element.remove();
     }
@@ -176,6 +193,18 @@ export class GuildCombatHud {
           ownGuildName: this.host.ownGuildName(),
         }, this.host.now());
         break;
+      case 'selectPlayer': {
+        // GC_SELECTPLAYER (DPClient.cpp:6927-6979): the window with the saved entrants, "completed" without one, nothing for a read
+        if (!message.requestWar) break;
+        if (!message.window) { this.host.box(this.host.textById(GcTid.PLAYER_MAKEUP)); break; }
+        if (!this.lineupOpen()) break;
+        this.lineup.open({
+          maxJoin: message.maxJoin, maxWar: message.maxWar, defenderId: message.defenderId, playerIds: message.playerIds,
+          infoText: formatText(this.host.textById(GcTid.OFFER_INFO) || 'Register an entry for guild siege.   Starting member %d (Maximum member %d)', [message.maxWar, message.maxJoin]),
+        }, this.host.guildMembers());
+        break;
+      }
+      case 'selectWarPos': this.startPoint.open(message.map, message.seconds, this.host.now()); break;
       case 'diagMessage': this.diag.open(message.text); break;
       case 'tele': this.tele.open(message.text); break;
       case 'getPenyaGuild':
@@ -186,6 +215,13 @@ export class GuildCombatHud {
       }
       default:
     }
+  }
+
+  /** The line-up opens and completes only while the siege waits for entries (`m_nGCState`, WndField.cpp:16100-16115). */
+  private lineupOpen(): boolean {
+    if (this.book.warState === GcState.NOTENTER_COUNT) return true;
+    this.host.box(this.host.textById(GcTid.CANNOT_MAKEUP));
+    return false;
   }
 
   /** The offer's Accept (`WndGuildCombat1to1.cpp:670-718`). */

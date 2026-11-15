@@ -1,6 +1,8 @@
 // 2026-11-15 (Guild Siege, B3): the rules of Frankie's and Donaris's windows (guildCombat/guildCombatRules.ts).
 import { describe, expect, it } from 'vitest';
-import { GcTid, bidRefusal, joinRefusal, ownRank, penyaNotice, statusRankRed } from '../src/world/guildCombat/guildCombatRules';
+import {
+  GcTid, SIEGE, bidRefusal, defenderRefusal, joinRefusal, lineupAddRefusal, lineupBand, lineupFinishRefusal, ownRank, penyaNotice, statusRankRed,
+} from '../src/world/guildCombat/guildCombatRules';
 
 describe('bidRefusal (WndGuildCombat1to1.cpp:670-718)', () => {
   it('a guild that has bid must bid more than it has', () => {
@@ -56,5 +58,41 @@ describe('penyaNotice (DPClient.cpp:7106-7187)', () => {
     expect(penyaNotice('player', 0, 9, 0)).toEqual({ tid: GcTid.MVP_PENYA, penya: 9n });
     expect(penyaNotice('player', 1, 0, 0)).toEqual({ tid: GcTid.NOT_MVP, penya: null });
     expect(penyaNotice('player', 2, 3_000_000_000n, 0)).toEqual({ tid: GcTid.JACKPOT_LIMIT2, penya: null });
+  });
+});
+
+describe('the line-up window (WndField.cpp:16153-16369; B4)', () => {
+  const lv40 = { playerId: 7, level: 40 };
+
+  it('refuses at the server limit, not Neuz off-by-one', () => {
+    const nine = [1, 2, 3, 4, 5, 6, 8, 9, 10];
+    expect(lineupAddRefusal(lv40, nine.slice(0, 8), 10)).toBeNull();
+    expect(lineupAddRefusal(lv40, nine, 10)).toBeNull();
+    expect(lineupAddRefusal(lv40, [...nine, 11], 10)).toBe(GcTid.SELECTION_MAX);
+  });
+
+  it('refuses level 29, a non-member and one already listed', () => {
+    expect(lineupAddRefusal({ playerId: 7, level: 29 }, [], 10)).toBe(GcTid.LIMIT_LEVEL_NOTICE);
+    expect(lineupAddRefusal({ playerId: 7, level: 30 }, [], 10)).toBeNull();
+    expect(lineupAddRefusal(null, [], 10)).toBe(GcTid.NOT_GUILD_MEMBER);
+    expect(lineupAddRefusal(lv40, [3, 7], 10)).toBe(GcTid.ALREADY_ENTRY);
+  });
+
+  it('Complete: defender first, then an empty list, then a master or kingpin', () => {
+    expect(lineupFinishRefusal([1, 2], 0, [1])).toBe(GcTid.NOT_ASSIGN_DEFENDER);
+    expect(lineupFinishRefusal([], 5, [1])).toBe(GcTid.HAVENOT_PLAYER);
+    expect(lineupFinishRefusal([2, 3], 3, [1])).toBe(GcTid.HAVENOT_MASTER);
+    expect(lineupFinishRefusal([2, 1], 2, [1])).toBeNull();
+  });
+
+  it('the guild master cannot defend when more than one entrant is listed', () => {
+    expect(defenderRefusal(1, 1, 2)).toBe(GcTid.MASTER_NOT_ASSIGN_DEFENDER);
+    expect(defenderRefusal(1, 1, 1)).toBeNull();
+    expect(defenderRefusal(2, 1, 5)).toBeNull();
+  });
+
+  it('the first SIEGE.maxWarPlayers rows are drawn blue, the rest red', () => {
+    const bands = Array.from({ length: 8 }, (_, i) => lineupBand(i, SIEGE.maxWarPlayers));
+    expect(bands).toEqual(['blue', 'blue', 'blue', 'blue', 'blue', 'red', 'red', 'red']);
   });
 });

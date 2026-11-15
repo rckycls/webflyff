@@ -33,7 +33,7 @@ function make(): Made {
   const host: GuildCombatHost = {
     send: (bytes) => sent.push(bytes), text: (tid) => TEXTS[tid] ?? '', textById: (id) => BY_ID[id] ?? '',
     box: (text, ok) => boxes.push({ text, ok }), ownIsVagrant: () => state.vagrant, ownGuildName: () => 'Bravo',
-    ownIsGuildMaster: () => state.master, ownGold: () => 0, now: () => state.now,
+    ownIsGuildMaster: () => state.master, guildMembers: () => [], ownGold: () => 0, now: () => state.now,
   };
   const book = new GuildCombatBook();
   const hud = new GuildCombatHud(host, book, art);
