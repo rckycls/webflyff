@@ -37,7 +37,7 @@ export class SiegeRankingWindow {
     const window = new ResWindow(rankingLayout('Siege Ranking'), art, doc);
     window.frame.element.classList.add('hud-gc', 'hud-gc-rank', 'hud-sr');
     window.button('WIDC_CLOSE').addEventListener('click', () => window.close());
-    this.tabs = new TabPages(doc, ['Individual', 'Guild'], () => this.show());
+    this.tabs = new TabPages(doc, art, ['Individual', 'Guild'], 380, () => this.show());
     const bar = doc.createElement('div');
     bar.className = 'hud-sr-spans';
     const make = (span: RankSpan, text: string): HTMLButtonElement => {

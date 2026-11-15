@@ -155,7 +155,7 @@ export class ResultWindow {
     window.frame.element.classList.add('hud-gc', 'hud-gc-result');
     const save = window.button('WIDC_BUTTON1');
     save.addEventListener('click', () => this.save());
-    this.tabs = new TabPages(doc, [deps.text?.('TID_GAME_TOOLTIP_LOG1') || 'United Rank', deps.text?.('TID_GAME_TOOLTIP_LOG2') || 'Battle Log'], (i) => {
+    this.tabs = new TabPages(doc, art, [deps.text?.('TID_GAME_TOOLTIP_LOG1') || 'United Rank', deps.text?.('TID_GAME_TOOLTIP_LOG2') || 'Battle Log'], 544, (i) => {
       save.hidden = i !== 1;
     });
     const [rank, battle] = this.tabs.pages as [HTMLElement, HTMLElement];

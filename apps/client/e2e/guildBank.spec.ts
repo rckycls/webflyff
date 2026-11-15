@@ -129,12 +129,16 @@ test('the guild bank: Guild Warehouse, a stack in, an item and penya out, a cont
   await shot('guild-bank-penya-out');
 
   if (isPhone()) {
-    // the phone: the panel's words at least 14 px, its cells big enough for a finger
+    // the phone (2026-11-15, consistency scan): the bank's compact V15 panel: the tiled frame, Neuz's 12 px words and title,
+    // 34 px cells, the bag beside it its items alone
     for (const target of [bank.locator('.hud-guild-bank-gold .hud-res-static-text'), bank.locator('.hud-window-title'),
       bank.locator('[data-control="WIDC_BUTTON1"]')]) {
-      expect(await target.evaluate((e) => parseFloat(getComputedStyle(e).fontSize))).toBeGreaterThanOrEqual(14);
+      expect(await target.evaluate((e) => parseFloat(getComputedStyle(e).fontSize))).toBe(12);
     }
-    expect((await grid.locator('.hud-bank-cell').first().boundingBox())!.width).toBeGreaterThanOrEqual(40);
+    await expect(bank.locator('.hud-window-frame')).toHaveCSS('display', 'grid');
+    expect((await grid.locator('.hud-bank-cell').first().boundingBox())!.width).toBeGreaterThanOrEqual(32);
+    expect((await bank.locator('[data-control="WIDC_BUTTON1"]').boundingBox())!.height).toBeGreaterThanOrEqual(24);
+    await expect(page.locator('.hud-inventory')).toHaveClass(/inventory-items-only/);
   }
 
   // Contribute Guild: 1,000 penya, YES: NW_GUILDCONTRIBUTION ( 0, 1000, 0 ) and "You have Contributed to the guild."

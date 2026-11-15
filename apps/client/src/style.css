@@ -3374,22 +3374,23 @@ fieldset:disabled .btn {
 
 /* The phone: the Guild Safebox is a panel beside the bag (the bank's), its grid, the penya row and three word buttons; a tap on
    its item takes it out, a tap on a bag item puts it in, a tap on the penya takes penya (the count's box is the number pad).
-   Contribute Guild and the log open over the panel. */
+   Contribute Guild and the log open over the panel. 2026-11-15 (consistency scan): in the bank's compact V15 look (it was the
+   old flat panel: a striped box, 14 px Arial, beige buttons): Neuz's tiled frame (guildBankWindows.ts) with the panels' 12 px
+   title, six 34 px cells to a row on Neuz's slot picture, a 24 px penya line, Neuz's 12 px words, the silver word buttons of
+   the phone's other windows; the bag beside it shows its items alone, as beside the bank. */
 @media (max-width: 1000px) and (pointer: coarse) {
   .world:has(.hud-guild-bank:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
   :is(.hud-guild-merit, .hud-guild-bank-log) { z-index: 70 !important; }
-  .hud-guild-bank {
-    left: 8px !important; top: 8px !important; transform: none !important; z-index: 60 !important;
-    width: calc(100% - var(--bag-window-width, 60%) - 28px) !important; min-width: 300px;
-    height: calc(100% - var(--hud-taskbar-height, 48px) - 16px) !important;
-    border-radius: 6px; background: repeating-linear-gradient(#fdf5ee 0 2px, #f6e6dc 2px 4px); box-shadow: inset 0 0 0 2px #dba98c, 0 2px 8px #0005;
+  .hud-guild-bank:not([hidden]) {
+    left: 8px !important; top: 8px !important; transform: none !important; z-index: 60 !important; min-width: 0 !important;
+    width: min(252px, calc(100% - var(--bag-window-width, 60%) - 28px)) !important; height: auto !important;
+    max-height: calc(100% - var(--hud-taskbar-height, 48px) - 16px); display: flex !important; flex-direction: column; overflow: hidden;
   }
-  .hud-guild-bank > .hud-window-frame { display: none; }
-  .hud-guild-bank > .hud-window-title { height: 26px !important; border-radius: 6px 6px 0 0; background: linear-gradient(#f7d8c4, #e2b394); font-size: 14px; }
-  .hud-guild-bank > .hud-window-close { left: auto !important; right: 8px; }
   .hud-guild-bank > .hud-window-body {
-    left: 4px !important; top: 30px !important; width: calc(100% - 8px) !important; height: calc(100% - 34px) !important;
-    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: minmax(0, 1fr) 34px 34px; gap: 6px; overflow: hidden;
+    position: relative !important; left: auto !important; top: auto !important; width: auto !important; height: auto !important;
+    flex: 0 1 auto; min-height: 0; box-sizing: border-box; margin: 22px 8px 10px 4px; padding: 4px 6px 6px;
+    font: 12px/15px Verdana, Tahoma, sans-serif; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-rows: 186px 24px 28px; gap: 4px; overflow: hidden;
   }
   .hud-guild-bank > .hud-window-body > * {
     position: relative !important; left: auto !important; top: auto !important; width: auto !important; height: auto !important;
@@ -3399,24 +3400,21 @@ fieldset:disabled .btn {
   .hud-guild-bank .hud-guild-bank-tab > :is(.hud-bank-scroll, .hud-tab-strip) { display: none; }
   .hud-guild-bank .hud-guild-bank-grid {
     position: absolute !important; inset: 0 !important; width: auto !important; height: auto !important; box-sizing: border-box;
-    padding: 4px; grid-template-columns: repeat(auto-fill, 44px); grid-auto-rows: 44px; gap: 2px; justify-content: center;
-    overflow-y: auto; scroll-snap-type: none; touch-action: pan-y; border-radius: 4px; background: #fffaf5; box-shadow: inset 0 0 0 1px #dba98c;
+    padding: 4px; grid-template-columns: repeat(6, 34px); grid-auto-rows: 34px; gap: 2px; justify-content: center; align-content: start;
+    overflow-y: auto; scroll-snap-type: none; touch-action: pan-y; border: 1px solid #d8b8a4; border-radius: 3px; background: #fffaf6;
   }
-  .hud-guild-bank .hud-bank-cell { width: 44px; height: 44px; border-radius: 3px; background: #f3e4d8; }
-  .hud-guild-bank .hud-bank-cell img { width: 40px; height: 40px; margin: 2px; }
-  .hud-guild-bank .hud-bank-cell span { font-size: 14px; line-height: 14px; color: #1010ff; text-shadow: 1px 1px #ffffff; }
-  .hud-guild-bank .hud-guild-bank-gold { border-radius: 4px; background: #fffaf5; box-shadow: inset 0 0 0 1px #dba98c; }
+  .hud-guild-bank .hud-bank-cell { width: 34px; height: 34px; border-radius: 0; background: var(--v15-slot, #f3e4d8) 0 0 / 100% 100% no-repeat; }
+  .hud-guild-bank .hud-bank-cell img { width: 32px; height: 32px; margin: 1px; }
+  .hud-guild-bank .hud-bank-cell span { font-size: 10px; line-height: 10px; color: #1010ff; text-shadow: 1px 1px #ffffff; }
+  .hud-guild-bank .hud-guild-bank-gold { box-sizing: border-box; border: 1px solid #d8b8a4; border-radius: 3px; background: #fffaf6; }
   .hud-guild-bank .hud-guild-bank-gold .hud-res-static-text {
-    position: static; display: block; font: 14px/34px Arial, sans-serif; color: #000000; text-align: center; text-shadow: none;
+    position: static; display: block; font: 12px/22px Verdana, Tahoma, sans-serif; color: #000000; text-align: center; text-shadow: none;
   }
-  .hud-guild-bank .hud-guild-bank-gold .hud-res-static-text::before { content: 'Penya '; color: #3b3bb5; }
-  .hud-guild-bank .hud-picture-button[data-word] {
-    box-sizing: border-box; border: 1px solid #b07d5c; border-radius: 4px; background: linear-gradient(#fff7ef, #ecd2bd) !important;
-    color: #3a2414; font: 14px/32px Arial, sans-serif; text-align: center; white-space: nowrap; overflow: hidden; padding: 0;
-  }
+  .hud-guild-bank .hud-guild-bank-gold .hud-res-static-text::before { content: 'Penya '; color: #2e70a9; }
+  /* (the silver look is the shared word buttons', after the phone panels' round three) */
+  .hud-guild-bank .hud-picture-button[data-word] { padding: 0; font-size: 12px; line-height: 26px; text-align: center; white-space: nowrap; overflow: hidden; }
   .hud-guild-bank .hud-picture-button[data-word]::after { content: attr(data-word); }
-  .hud-guild-bank .hud-picture-button[data-word]:disabled { opacity: 0.55; background: #d9c8bb !important; }
-  .hud-guild-bank-log-line { font-size: 14px; }
+  .hud-guild-bank-log-line { font-size: 12px; }
 }
 
 /* 2026-11-10 (bank-mail): the post (hud/post/postWindows.ts; research §2). CWndPost's two pages in its tab control, the strip at
@@ -3751,15 +3749,15 @@ fieldset:disabled .btn {
      above the task bar and scrolled; on a landscape phone the slots and the button at the left, the words at the right. */
 @media (max-width: 1000px) and (pointer: coarse) {
   :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-post, .hud-post-read, .hud-vendor, .hud-vendor-chat, .hud-trade, .hud-bank,
-    .hud-heaven-tower, .hud-summon-angel, .hud-lord) {
+    .hud-heaven-tower, .hud-summon-angel, .hud-lord, .hud-gc, .hud-guild-bank) {
     background: none !important; box-shadow: none !important; border-radius: 0 !important;
   }
   :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-post, .hud-post-read, .hud-vendor, .hud-vendor-chat, .hud-trade, .hud-bank,
-    .hud-heaven-tower, .hud-summon-angel, .hud-lord) > .hud-window-frame {
+    .hud-heaven-tower, .hud-summon-angel, .hud-lord, .hud-gc, .hud-guild-bank) > .hud-window-frame {
     display: grid !important; grid-template-columns: 16px minmax(0, 1fr) 16px; grid-template-rows: 16px 16px minmax(0, 1fr) 16px;
   }
   :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-post, .hud-post-read, .hud-vendor, .hud-vendor-chat, .hud-trade, .hud-bank,
-    .hud-heaven-tower, .hud-summon-angel, .hud-lord) > .hud-window-frame > div {
+    .hud-heaven-tower, .hud-summon-angel, .hud-lord, .hud-gc, .hud-guild-bank) > .hud-window-frame > div {
     position: static !important; width: auto !important; height: auto !important;
   }
   .hud-window-frame > [data-tile="0"] { grid-area: 1 / 1; }
@@ -3775,16 +3773,16 @@ fieldset:disabled .btn {
   .hud-window-frame > [data-tile="10"] { grid-area: 4 / 2; }
   .hud-window-frame > [data-tile="11"] { grid-area: 4 / 3; }
   :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-post, .hud-post-read, .hud-vendor, .hud-vendor-chat, .hud-trade, .hud-bank,
-    .hud-heaven-tower, .hud-summon-angel, .hud-lord) > .hud-window-title {
+    .hud-heaven-tower, .hud-summon-angel, .hud-lord, .hud-gc, .hud-guild-bank) > .hud-window-title {
     height: 18px !important; padding-top: 3px; background: none !important; border-radius: 0 !important; box-shadow: none !important;
     font-size: 12px !important; line-height: 14px !important;
   }
   :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-post, .hud-post-read, .hud-vendor, .hud-vendor-chat, .hud-trade, .hud-bank,
-    .hud-heaven-tower, .hud-summon-angel, .hud-lord) > .hud-window-close { left: auto !important; right: 7px !important; }
+    .hud-heaven-tower, .hud-summon-angel, .hud-lord, .hud-gc, .hud-guild-bank) > .hud-window-close { left: auto !important; right: 7px !important; }
   /* the tiles let the world through a little, as Neuz's do; a panel over the status window would show its numbers through
      its words: a pale backing inside the frame's rounded edge */
   :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-post, .hud-post-read, .hud-vendor, .hud-vendor-chat, .hud-trade, .hud-bank,
-    .hud-heaven-tower, .hud-summon-angel, .hud-lord)::before {
+    .hud-heaven-tower, .hud-summon-angel, .hud-lord, .hud-gc, .hud-guild-bank)::before {
     content: ''; position: absolute; inset: 3px 5px 7px 3px; border-radius: 4px; background: rgba(250, 238, 230, 0.92); pointer-events: none;
   }
   /* the lobby's 48 px fields are not these windows' */
@@ -4193,7 +4191,7 @@ fieldset:disabled .btn {
     .hud-trade-confirm, .hud-trade-gold, .hud-bank-pin, .hud-amount-box, .hud-select-village, .hud-teleporter)::before {
     content: ''; position: absolute; inset: 3px 5px 7px 3px; border-radius: 4px; background: rgba(250, 238, 230, 0.92); pointer-events: none;
   }
-  :is(.hud-guild .hud-picture-button[data-word], .hud-guild-dialog .hud-picture-button[data-word], .hud-lord-info [data-control="WIDC_LORD_SKILL"],
+  :is(.hud-guild .hud-picture-button[data-word], .hud-guild-bank .hud-picture-button[data-word], .hud-guild-dialog .hud-picture-button[data-word], .hud-lord-info [data-control="WIDC_LORD_SKILL"],
     .vendor-phone button, .vendor-sheet :not(.vendor-sheet-value) > button, .vendor-chat-phone button, .hud-bank-pin .hud-picture-button,
     .hud-character-landscape .hud-picture-button[data-button='honor-ok'], .hud-skills-landscape .hud-skills-taskbar, .hud-inventory[data-mobile-window] .inventory-details button:not(.inventory-details-close)) {
     box-sizing: border-box; border: 1px solid #a3a3a3 !important; border-radius: 5px !important;
@@ -4202,12 +4200,12 @@ fieldset:disabled .btn {
     color: #ffffff !important; font-family: Verdana, Tahoma, sans-serif !important; font-weight: bold !important;
     text-shadow: 1px 0 #7d7d7d, -1px 0 #7d7d7d, 0 1px #7d7d7d, 0 -1px #7d7d7d, 1px 1px #7d7d7d !important;
   }
-  :is(.hud-guild .hud-picture-button[data-word], .hud-guild-dialog .hud-picture-button[data-word], .hud-lord-info [data-control="WIDC_LORD_SKILL"],
+  :is(.hud-guild .hud-picture-button[data-word], .hud-guild-bank .hud-picture-button[data-word], .hud-guild-dialog .hud-picture-button[data-word], .hud-lord-info [data-control="WIDC_LORD_SKILL"],
     .vendor-phone button, .vendor-sheet :not(.vendor-sheet-value) > button, .vendor-chat-phone button, .hud-bank-pin .hud-picture-button,
     .hud-character-landscape .hud-picture-button[data-button='honor-ok'], .hud-skills-landscape .hud-skills-taskbar, .hud-inventory[data-mobile-window] .inventory-details button:not(.inventory-details-close)):active:not(:disabled) {
     background: linear-gradient(#e9e9e9, #dadada) !important;
   }
-  :is(.hud-guild .hud-picture-button[data-word], .hud-guild-dialog .hud-picture-button[data-word], .vendor-phone button, .vendor-sheet :not(.vendor-sheet-value) > button,
+  :is(.hud-guild .hud-picture-button[data-word], .hud-guild-bank .hud-picture-button[data-word], .hud-guild-dialog .hud-picture-button[data-word], .vendor-phone button, .vendor-sheet :not(.vendor-sheet-value) > button,
     .vendor-chat-phone button, .hud-bank-pin .hud-picture-button, .hud-character-landscape .hud-picture-button[data-button='honor-ok'],
     .hud-skills-landscape .hud-skills-taskbar, .hud-inventory[data-mobile-window] .inventory-details button:not(.inventory-details-close)):disabled { opacity: 0.5; }
   /* the Skill window's Task bar: chosen, it shows lit as the picture buttons' pressed state */
@@ -4234,16 +4232,25 @@ fieldset:disabled .btn {
 .hud-motion-cell:focus-visible { outline: 1px solid #2e70a9; }
 
 /* the phone: 40 px cells for a finger; the chosen icon (the last tapped) ringed, the one picked for the bar lit, and the
-   Task bar button in the phone panels' beige, pressed while the chosen icon is the one picked (as the skill window's) */
+   Task bar button pressed while the chosen icon is the one picked (as the skill window's).
+   2026-11-15 (consistency scan): the Task bar button in the silver look of the skill window's Task bar and the phone's other
+   word buttons (it was the old beige), the tabs' words Verdana 12 px as the couple window's, and the pale backing of the
+   other phone windows */
 @media (max-width: 1000px) and (pointer: coarse) {
   .hud-motion-cell[data-chosen] { outline: 2px solid #795431; outline-offset: -2px; border-radius: 4px; }
   .hud-motion-cell[data-picked] { background-color: #ffe494; }
-  .hud-motion .hud-tab-title { font-size: 13px; text-align: center; }
-  .hud-motion-taskbar {
-    position: absolute; box-sizing: border-box; padding: 0; border: 2px solid #dba98c; border-radius: 6px; background: #fff6eb;
-    color: #382b20; font: bold 16px/25px Verdana, Arial, sans-serif; cursor: pointer;
+  .hud-motion .hud-tab-title { font-family: Verdana, Tahoma, sans-serif; font-size: 12px; text-align: center; }
+  .hud-motion::before {
+    content: ''; position: absolute; inset: 3px 5px 7px 3px; border-radius: 4px; background: rgba(250, 238, 230, 0.92); pointer-events: none;
   }
-  .hud-motion-taskbar[aria-pressed='true'] { background: #ffe494; border-color: #795431; }
+  .hud-motion-taskbar {
+    position: absolute; box-sizing: border-box; padding: 0; border: 1px solid #a3a3a3; border-radius: 5px;
+    background: linear-gradient(#ffffff, #f6f6f6 45%, #e1e1e1 55%, #f3f3f3); box-shadow: inset 0 1px 0 #ffffff, 0 1px 1px #00000033;
+    color: #ffffff; font: bold 12px/25px Verdana, Tahoma, sans-serif; cursor: pointer;
+    text-shadow: 1px 0 #7d7d7d, -1px 0 #7d7d7d, 0 1px #7d7d7d, 0 -1px #7d7d7d, 1px 1px #7d7d7d;
+  }
+  .hud-motion-taskbar:active:not(:disabled) { background: linear-gradient(#e9e9e9, #dadada); }
+  .hud-motion-taskbar[aria-pressed='true'] { background: linear-gradient(#fff4c8, #ffe28a); border-color: #b08a3c; }
   .hud-motion-taskbar:disabled { opacity: 0.5; cursor: default; }
 }
 
@@ -4252,13 +4259,13 @@ fieldset:disabled .btn {
    game's text boxes without the phone's own field look (iOS draws an inner shadow and its own rounding round an input unless
    told not to: a second box over Neuz's). */
 @media (max-width: 1000px) and (pointer: coarse) {
-  :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-post, .hud-post-read, .hud-vendor, .hud-bank, .hud-summon-angel,
+  :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-post, .hud-post-read, .hud-vendor, .hud-bank, .hud-guild-bank, .hud-summon-angel,
     .hud-trade):not([hidden]) {
     left: 8px !important; right: calc(var(--bag-window-width, 60%) + 20px) !important;
     top: 8px !important; bottom: calc(var(--hud-taskbar-height, 48px) + 8px) !important;
     margin: auto !important;
   }
-  :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-vendor, .hud-bank, .hud-summon-angel):not([hidden]) {
+  :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-vendor, .hud-bank, .hud-guild-bank, .hud-summon-angel):not([hidden]) {
     height: -webkit-fit-content !important; height: fit-content !important;
   }
   .world :is(input:not([type='checkbox'], [type='radio'], [type='range']), textarea) { -webkit-appearance: none; appearance: none; }
@@ -4433,10 +4440,15 @@ fieldset:disabled .btn {
 .hud-couple-gauge { z-index: 1; }
 .hud-couple .hud-res-text-body span { font: inherit; }
 
-/* the phone: the same window fitted whole (WindowFrame fitWhole); its words in Verdana 12 px, the tabs' too */
+/* the phone: the same window fitted whole (WindowFrame fitWhole); its words in Verdana 12 px, the tabs' too; 2026-11-15
+   (consistency scan): the pale backing of the other phone windows, here and on the duel's boxes, so the world's name tags
+   do not show through their words */
 @media (max-width: 1000px) and (pointer: coarse) {
   .hud-couple :is(.hud-res-static-text, .hud-res-text-body, .hud-tab-title) { font-family: Verdana, Tahoma, sans-serif; font-size: 12px; }
   .hud-couple .hud-tab-title { text-align: center; }
+  :is(.hud-couple, .hud-duel-confirm, .hud-duel-result)::before {
+    content: ''; position: absolute; inset: 3px 5px 7px 3px; border-radius: 4px; background: rgba(250, 238, 230, 0.92); pointer-events: none;
+  }
 }
 
 /* 2026-11-15 (social): the duel's count (hud/duel/duelWindows.ts, CMover::RenderPVPCount): a picture of CountFight.dds over the
@@ -4610,15 +4622,30 @@ fieldset:disabled .btn {
     position: relative !important; inset: auto !important; width: auto !important; height: auto !important; max-height: 96px; padding: 3px 2px; overflow-y: auto;
   }
   .hud-gc .hud-res-list-rows > [role='option'] { height: 24px !important; line-height: 24px !important; padding: 0 6px; border-bottom: 1px solid #f0e2d8; }
-  .hud-gc .hud-res-edit { height: 22px !important; }
-  .hud-gc .hud-res-edit input {
-    position: absolute; inset: 0 6px; z-index: 1; width: calc(100% - 12px); height: 100%; min-height: 0 !important; background: transparent; font-size: 16px;
+  /* 2026-11-15 (consistency scan): a one-line field Neuz's 18 px on its stretched edit tiles with 12 px words, as the Lord's
+     and the mail's (22 px repeated the tiles' top edge, the "double input" of round four) */
+  .hud-gc .hud-res-edit { height: 18px !important; }
+  .hud-gc .hud-edit-tiles {
+    position: absolute !important; inset: 0 !important; display: grid !important; grid-template-columns: 8px minmax(0, 1fr) 8px;
+    grid-template-rows: 8px minmax(0, 1fr) 10px; pointer-events: none;
   }
+  .hud-gc .hud-edit-tiles:not(:has(> :nth-child(7))) { grid-template-rows: 8px 10px; }
+  .hud-gc .hud-edit-tiles > div { position: static !important; width: auto !important; height: auto !important; }
+  .hud-gc .hud-res-edit input {
+    position: absolute; inset: -3px 6px; z-index: 1; width: calc(100% - 12px); height: calc(100% + 6px); min-height: 0 !important; background: transparent;
+    font: 12px Verdana, Tahoma, sans-serif;
+  }
+  /* 2026-11-15 (consistency scan): the silver word buttons of the phone's other windows (they were the old beige, Arial) */
   .hud-gc .hud-picture-button {
     flex: 0 0 auto; position: relative; min-width: 72px; height: 30px !important; margin: 2px 6px; box-sizing: border-box;
-    border: 1px solid #b07d5c; border-radius: 4px; background: linear-gradient(#fff7ef, #ecd2bd) !important; color: #3a2414;
-    font: 14px/28px Arial, sans-serif; text-align: center; padding: 0 8px; width: auto !important;
+    border: 1px solid #a3a3a3; border-radius: 5px; background: linear-gradient(#ffffff, #f6f6f6 45%, #e1e1e1 55%, #f3f3f3) !important;
+    box-shadow: inset 0 1px 0 #ffffff, 0 1px 1px #00000033; color: #ffffff;
+    font: bold 12px/28px Verdana, Tahoma, sans-serif; text-align: center; padding: 0 8px; width: auto !important;
+    text-shadow: 1px 0 #7d7d7d, -1px 0 #7d7d7d, 0 1px #7d7d7d, 0 -1px #7d7d7d, 1px 1px #7d7d7d;
   }
+  .hud-gc .hud-picture-button:active:not(:disabled) { background: linear-gradient(#e9e9e9, #dadada) !important; }
+  .hud-gc .hud-picture-button:disabled { opacity: 0.5; }
+  .hud-gc-startpoint .hud-picture-button.is-chosen { background: linear-gradient(#fff4c8, #ffe28a) !important; border-color: #b08a3c; }
   .hud-gc .hud-picture-button::after { content: attr(aria-label); }
   .hud-gc .hud-picture-button::before { content: ''; position: absolute; inset: -5px -4px; }
   /* B4: the line-up in a compact panel, both lists side by side (each scrolls), the buttons below in two rows. */
@@ -4632,7 +4659,7 @@ fieldset:disabled .btn {
   .hud-gc-lineup .hud-res-list-rows { max-height: 104px; }
   .hud-gc-lineup .hud-res-list-rows > [role='option'] { height: 22px !important; line-height: 22px !important; font-size: 12px; white-space: nowrap; overflow: hidden; }
   .hud-gc-lineup .hud-gc-no { width: 32px; }
-  .hud-gc-lineup .hud-picture-button { grid-column: span 2; min-width: 0; margin: 1px 0; height: 28px !important; font: 13px/26px Arial, sans-serif; padding: 0 2px; }
+  .hud-gc-lineup .hud-picture-button { grid-column: span 2; min-width: 0; margin: 1px 0; height: 28px !important; font: bold 12px/26px Verdana, Tahoma, sans-serif; padding: 0 2px; }
   .hud-gc-lineup [data-control='WIDC_BUTTON8'] { display: none !important; }
   .hud-gc-lineup [role='option'].is-defender .hud-gc-name::after { content: ' [D]'; font-weight: bold; color: #0000a0; }
   .hud-gc-startpoint > .hud-window-body { justify-content: center; }
@@ -4691,12 +4718,10 @@ fieldset:disabled .btn {
 .hud-gc-result, .hud-gc-rank { z-index: 45; }
 .hud-gc-tabctrl { position: absolute; inset: 0; }
 .hud-gc-page { position: absolute; left: 0; top: 0; right: 0; bottom: 20px; }
-.hud-gc-tabs { position: absolute; left: 0; right: 0; bottom: 0; height: 20px; display: flex; }
-.hud-gc-tab {
-  flex: 1 1 0; min-width: 0; height: 20px; padding: 0 4px; border: 1px solid #8f8f8f; border-top: 0; background: #d8d8d8;
-  color: #000; font: 12px/18px Verdana, Arial, sans-serif; cursor: pointer;
-}
-.hud-gc-tab.is-chosen { background: #f6f1ea; font-weight: bold; }
+.hud-gc-tabs { position: absolute; left: 0; right: 0; bottom: 0; height: 20px; }
+/* 2026-11-15 (consistency scan): the tabs on Neuz's WndTabTile pictures (tabs.ts, `tabStrip`), as the bank's and the mail's;
+   a long title cut with an ellipsis rather than folded onto a second line */
+.hud-gc-tabs .hud-tab-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hud-gc-result-box { position: absolute; box-sizing: border-box; overflow-y: auto; background: #f6f1ea; border: 1px solid #8f8f8f; }
 .hud-gc-result-h { position: absolute; font: 12px/16px Verdana, Arial, sans-serif; color: #2e70a9; font-weight: bold; }
 .hud-gc-result-h1 { left: 12px; top: 20px; width: 228px; }
@@ -4722,9 +4747,9 @@ fieldset:disabled .btn {
   .hud-gc-result:not([hidden]) { width: min(520px, calc(100% - 16px)) !important; left: calc(50% - min(260px, 50% - 8px)) !important; }
   .hud-gc-result .hud-res-custom, .hud-gc-rank .hud-res-custom { flex: 1 1 100%; height: 196px !important; }
   .hud-gc-rank .hud-res-custom { height: 190px !important; }
-  .hud-gc-tab { height: 28px; font-size: 13px; line-height: 26px; }
-  .hud-gc-tabs { height: 28px; }
-  .hud-gc-page { bottom: 28px; }
+  /* (consistency scan) the V15 tab strip at its 20 px, Verdana as the couple and Motion windows' tabs, a finger's press area */
+  .hud-gc-tabs .hud-tab-title { overflow: visible; padding: 0; font: 11px/20px Verdana, Tahoma, sans-serif; text-align: center; }
+  .hud-gc-tabs .hud-tab-title::before { content: ''; position: absolute; inset: -6px 0 -4px; }
   .hud-gc-result-box, .hud-gc-result-h { position: absolute; }
   .hud-gc-result-h1 { left: 4px; top: 2px; width: calc(50% - 8px); }
   .hud-gc-result-h2 { left: calc(50% + 4px); top: 2px; width: calc(50% - 8px); }
@@ -4744,11 +4769,16 @@ fieldset:disabled .btn {
    guild's rank, guild, wins, sieges, points), the first row red, the own row blue */
 .hud-sr .hud-gc-page { top: 26px; }
 .hud-sr-spans { position: absolute; left: 0; right: 0; top: 0; height: 24px; display: flex; gap: 6px; padding: 2px 8px; box-sizing: border-box; }
+/* 2026-11-15 (consistency scan): the spans as the silver word buttons of Neuz's look (the phone's word buttons), the chosen one
+   lit gold as the Skill window's Task bar; they were the web's grey boxes */
 .hud-sr-span {
-  flex: 0 0 auto; min-width: 84px; height: 20px; padding: 0 10px; border: 1px solid #8f8f8f; background: #d8d8d8; color: #000;
-  font: 12px/18px Verdana, Arial, sans-serif; cursor: pointer;
+  flex: 0 0 auto; min-width: 84px; height: 20px; padding: 0 10px; box-sizing: border-box; border: 1px solid #a3a3a3; border-radius: 5px;
+  background: linear-gradient(#ffffff, #f6f6f6 45%, #e1e1e1 55%, #f3f3f3); box-shadow: inset 0 1px 0 #ffffff, 0 1px 1px #00000033;
+  color: #ffffff; font: bold 11px/18px Verdana, Tahoma, sans-serif; cursor: pointer;
+  text-shadow: 1px 0 #7d7d7d, -1px 0 #7d7d7d, 0 1px #7d7d7d, 0 -1px #7d7d7d, 1px 1px #7d7d7d;
 }
-.hud-sr-span.is-chosen { background: #f6f1ea; font-weight: bold; }
+.hud-sr-span:active { background: linear-gradient(#e9e9e9, #dadada); }
+.hud-sr-span.is-chosen { background: linear-gradient(#fff4c8, #ffe28a); border-color: #b08a3c; }
 .hud-sr .hud-sr-head { top: 2px; }
 .hud-sr-rows { position: absolute; left: 0; right: 0; top: 24px; bottom: 0; overflow-y: auto; overscroll-behavior: contain; }
 .hud-sr .hud-sr-head, .hud-sr .hud-sr-row { padding-right: 6px; }
@@ -4759,7 +4789,7 @@ fieldset:disabled .btn {
 .hud-sr-c0, .hud-sr-c4 { white-space: pre; }
 .hud-sr-note { padding: 40px 12px; text-align: center; font: 12px/18px Verdana, Arial, sans-serif; color: #000; }
 @media (max-width: 1000px) and (pointer: coarse) {
-  .hud-sr-span { height: 24px; min-width: 76px; font-size: 13px; line-height: 22px; }
+  .hud-sr-span { height: 24px; min-width: 76px; font-size: 12px; line-height: 22px; }
   .hud-sr-spans { height: 28px; }
   .hud-sr .hud-gc-page { top: 30px; }
   .hud-sr .hud-sr-player { grid-template-columns: 28px 1fr 72px 80px 40px; }

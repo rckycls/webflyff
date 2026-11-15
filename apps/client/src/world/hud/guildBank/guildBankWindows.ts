@@ -164,7 +164,9 @@ export class GuildBankWindow {
   private readonly grid: HTMLElement;
 
   constructor(private readonly art: UiArt, private readonly doc: Document = document) {
-    const window = new ResWindow(GUILD_BANK, art, doc);
+    // 2026-11-15 (consistency scan): a phone's panel has Neuz's tiled frame, as the bank's (WndGuildBank.tga's 208 px picture
+    // cannot frame the narrow panel beside the bag)
+    const window = new ResWindow(isPhone(doc) ? { ...GUILD_BANK, texture: undefined } : GUILD_BANK, art, doc);
     window.frame.element.classList.add('hud-guild-bank');
     phoneWords(window);
     this.phone = isPhone(doc);
