@@ -255,6 +255,7 @@ export class NameTagLayer {
     picture(logo, logoLeft, logoTop, LOGO_PX);
     // the picture may be missing (the converter has not run): `url` gives '' and nothing is drawn
     picture(trophy === null ? null : trophyKey(trophy), trophyAt.left, trophyAt.top, trophyAt.size);
+    picture(badge === null ? null : badgeKey(badge), badgeAt.left, badgeAt.top, TROPHY_PX);
   }
 
   private remove(objectId: number): void {

@@ -261,3 +261,27 @@ describe('the siege trophy (RenderName, MoverRender.cpp:1645-1688)', () => {
     expect(badgeKey('weeklyMvp')).toBe('ui/texguildcombatweeklybest.png');
   });
 });
+
+describe('the weekly badge in the layer', () => {
+  it('requests the badge picture, and a trophy beside it; a changed badge redraws the tag', () => {
+    const context = {
+      font: '', textBaseline: '', lineJoin: '', lineWidth: 0, strokeStyle: '', fillStyle: '',
+      measureText: (text: string) => ({ width: text.length * 7 }),
+      scale: () => {}, strokeText: () => {}, fillText: () => {},
+    };
+    const doc = { defaultView: { devicePixelRatio: 1 }, createElement: () => ({ width: 0, height: 0, getContext: () => context }) } as unknown as Document;
+    const keys: string[] = [];
+    const layer = new NameTagLayer(new Scene(), doc, (key) => { keys.push(key); return ''; });
+    const rocky = moverFrom(addedPlayer(1, { name: 'Rocky', playerId: 501 }), data);
+    const movers = new Map([[1, rocky]]);
+    let badge: 'weeklyChampion' | 'weeklyMvp' | null = 'weeklyMvp';
+    const tagOf = (mover: typeof rocky) => nameTagOf(mover, undefined, colors, titles, () => false, [], () => undefined, () => 'winner', () => null, () => badge);
+    layer.sync({ added: [rocky], removed: [], combat: [], own: [], dropped: 0 }, movers, tagOf);
+    expect(keys).toContain(badgeKey('weeklyMvp'));
+    expect(keys).toContain('ui/texguildcombatwinner.png');
+    keys.length = 0;
+    badge = 'weeklyChampion';
+    layer.recolor(movers, tagOf);
+    expect(keys).toContain(badgeKey('weeklyChampion'));
+  });
+});

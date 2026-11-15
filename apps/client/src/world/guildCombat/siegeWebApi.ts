@@ -23,6 +23,18 @@ const expiresAtOf = (weekly: SiegeWeekly): number => {
   return Number.isNaN(at) ? Infinity : at;
 };
 
+const isId = (value: unknown): boolean => typeof value === 'number' && Number.isFinite(value);
+
+/** Whether a parsed body is a well-formed answer: anything else counts as a failed fetch. */
+export function isSiegeWeekly(body: unknown): body is SiegeWeekly {
+  if (typeof body !== 'object' || body === null) return false;
+  const { champion, mvp, expiresAt } = body as Record<string, unknown>;
+  const champion_ok = champion === null || (typeof champion === 'object' && champion !== undefined && isId((champion as Record<string, unknown>).guildId));
+  const mvp_ok = mvp === null || (typeof mvp === 'object' && mvp !== undefined && isId((mvp as Record<string, unknown>).playerId));
+  const expires_ok = expiresAt === null || (typeof expiresAt === 'string' && !Number.isNaN(Date.parse(expiresAt)));
+  return champion_ok && mvp_ok && expires_ok;
+}
+
 /** A player's mark: the weekly MVP's beats the champion guild's; nothing without an answer, or after `expiresAt`. */
 export function badgeOf(weekly: SiegeWeekly | null, playerId: number, guildId: number, now: number): WeeklyBadge | null {
   if (weekly === null || now >= expiresAtOf(weekly)) return null;
@@ -79,7 +91,8 @@ export class SiegeWeeklyFeed {
       const fetcher = this.options.fetcher ?? ((url, init) => fetch(url, init));
       const response = await fetcher(WEEKLY_URL, { signal: controller.signal });
       if (!response.ok) return;
-      const body = (await response.json()) as SiegeWeekly;
+      const body: unknown = await response.json();
+      if (!isSiegeWeekly(body)) return;
       if (!this.running) return;
       const changed = JSON.stringify(body) !== JSON.stringify(this.last);
       this.last = body;

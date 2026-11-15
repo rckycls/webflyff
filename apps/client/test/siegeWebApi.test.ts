@@ -77,6 +77,29 @@ describe('SiegeWeeklyFeed', () => {
   });
 });
 
+describe('a junk answer', () => {
+  it('a 200 with a bad body is a failed fetch: the last good answer stays, and badgeOf does not throw', async () => {
+    const junk = [{}, { champion: 1, mvp: null, expiresAt: null }, { champion: null, mvp: {}, expiresAt: null }, { champion: null, mvp: null, expiresAt: 'soon' }, 'x', null];
+    const fetcher = vi.fn().mockResolvedValueOnce(answer(weekly()));
+    for (const body of junk) fetcher.mockResolvedValueOnce(answer(body));
+    const feed = new SiegeWeeklyFeed({ fetcher: fetcher as never, now: () => Date.now() });
+    feed.start();
+    await vi.advanceTimersByTimeAsync(0);
+    for (let i = 0; i < junk.length; i++) {
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+      expect(feed.current(Date.now())?.mvp?.playerId).toBe(42);
+    }
+    expect(fetcher).toHaveBeenCalledTimes(1 + junk.length);
+    feed.stop();
+    const alone = new SiegeWeeklyFeed({ fetcher: (async () => answer({})) as never, now: () => Date.now() });
+    alone.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(alone.current(Date.now())).toBeNull();
+    expect(badgeOf(alone.current(Date.now()), 42, 7, Date.now())).toBeNull();
+    alone.stop();
+  });
+});
+
 describe('badgeOf', () => {
   const at = Date.parse('2026-11-16T00:00:00+08:00');
   it('gives the MVP its mark, the champion guild its mark, others none', () => {
