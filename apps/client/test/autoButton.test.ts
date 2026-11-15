@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // custom (owner 2026-11-15): the AUTO button and the stopped title (hud/autoPlay/autoButton.ts).
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AutoButton, flashStoppedTitle } from '../src/world/hud/autoPlay/autoButton';
 
 afterEach(() => { document.body.replaceChildren(); });
@@ -48,6 +48,31 @@ describe('AutoButton', () => {
     button.element.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
     expect(opened()).toBe(1);
     expect(play.farm).toBe('off');
+  });
+});
+
+describe('AutoButton on a phone (M4)', () => {
+  it('a long press (500 ms) opens the window and the click after it starts nothing; a short tap starts', () => {
+    vi.useFakeTimers();
+    try {
+      const { button, play, opened } = rig();
+      button.element.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+      vi.advanceTimersByTime(499);
+      expect(opened()).toBe(0);
+      vi.advanceTimersByTime(1);
+      expect(opened()).toBe(1);
+      button.element.dispatchEvent(new Event('pointerup', { bubbles: true }));
+      button.element.click();
+      expect(play.farm).toBe('off');
+      button.element.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+      vi.advanceTimersByTime(200);
+      button.element.dispatchEvent(new Event('pointerup', { bubbles: true }));
+      button.element.click();
+      expect(play.farm).toBe('running');
+      expect(opened()).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

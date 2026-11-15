@@ -4868,3 +4868,20 @@ fieldset:disabled .btn {
 @media (max-width: 1000px) and (pointer: coarse) {
   .auto-slot-clear { width: 20px; height: 20px; font-size: 12px; }
 }
+
+/* custom (owner 2026-11-15): a phone's AUTO button above the quick slot over Attack (slot 3, --qx 0 --qy 1), in Attack's
+   column; and the Auto Play window as the phone's other compact windows */
+@media (max-width: 1000px) and (pointer: coarse) {
+  .hud-auto-button {
+    min-width: 58px; height: 30px; border-radius: 15px; font-size: 12px; line-height: 28px;
+    right: calc(var(--attack-right) + var(--attack-size) / 2 - 29px);
+    bottom: calc(var(--attack-bottom) + var(--attack-size) / 2 + var(--quick-radius) + var(--quick-size) / 2 + 10px);
+    touch-action: none; -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; user-select: none;
+  }
+  .hud-auto-play .auto-play-tabs .hud-gc-page { font-size: 12px; }
+  .hud-auto-play .auto-play-tabs .hud-gc-tab { height: 28px; font-size: 13px; line-height: 26px; }
+  .hud-auto-play .auto-play-tabs .hud-gc-page { bottom: 28px; }
+  .hud-auto-play .auto-play-tabs .hud-gc-tabs { height: 28px; }
+}
+/* a phone window over the world hides the AUTO button as it hides Attack */
+.world:has(:is(.hud-quests, .hud-inventory, .hud-auto-play)[data-mobile-window]:not([hidden])) .hud-auto-button { visibility: hidden; }
