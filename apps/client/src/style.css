@@ -4759,7 +4759,8 @@ fieldset:disabled .btn {
   .hud-gc-result-log { left: 4px; top: 4px; width: calc(100% - 8px); height: calc(100% - 8px); }
   .hud-gc-result-row { font-size: 12px; tab-size: 8; }
   .hud-gc-rank-head { top: 2px; }
-  .hud-gc-rank-head, .hud-gc-rank-row, .hud-gc-rank-own { grid-template-columns: 30px 1fr 86px 34px; padding-left: 4px; padding-right: 4px; }
+  /* (consistency scan) the Rank and the last column wide enough for their heads at 12 px ("RankName" ran together) */
+  .hud-gc-rank-head, .hud-gc-rank-row, .hud-gc-rank-own { grid-template-columns: 40px 1fr 86px 44px; padding-left: 4px; padding-right: 4px; }
   .hud-gc-rank-row { height: 22px; line-height: 22px; }
   .hud-gc-rank-rows { top: 22px; height: calc(100% - 50px); }
   .hud-gc-rank-own { top: auto; bottom: 2px; }
@@ -4793,8 +4794,8 @@ fieldset:disabled .btn {
   .hud-sr-span { height: 24px; min-width: 76px; font-size: 12px; line-height: 22px; }
   .hud-sr-spans { height: 28px; }
   .hud-sr .hud-gc-page { top: 30px; }
-  .hud-sr .hud-sr-player { grid-template-columns: 28px 1fr 72px 80px 40px; }
-  .hud-sr .hud-sr-guild { grid-template-columns: 28px 1fr 40px 50px 44px; }
+  .hud-sr .hud-sr-player { grid-template-columns: 40px 1fr 72px 80px 46px; }
+  .hud-sr .hud-sr-guild { grid-template-columns: 40px 1fr 40px 54px 46px; }
   .hud-sr .hud-sr-rows { top: 22px; height: auto; }
   .hud-sr .hud-sr-row { height: 22px; line-height: 22px; }
 }
