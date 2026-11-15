@@ -29,6 +29,8 @@ function ndcOf(canvas: HTMLElement, event: { clientX: number; clientY: number })
 export class PlacementControls {
   /** The phone's bar (shown while placing on a touch screen). */
   readonly bar: HTMLElement;
+  /** 2026-11-15 (guild house): the last press on the drawing: its page point and its normalized device point. */
+  lastPress: { x: number; y: number; ndc: [number, number] } | null = null;
   private finger: number | null = null;
 
   constructor(
@@ -95,6 +97,8 @@ export class PlacementControls {
   }
 
   private readonly down = (event: PointerEvent): void => {
+    const at = ndcOf(this.canvas, event);
+    if (at !== null && event.isPrimary) this.lastPress = { x: event.clientX, y: event.clientY, ndc: at };
     if (!this.take(event)) return;
     if (this.finger !== null) return; // a second finger does nothing
     this.finger = event.pointerId;

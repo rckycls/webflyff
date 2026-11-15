@@ -27,6 +27,7 @@ import type { GameData } from '../gameData';
 import type { DropLoader, DropModel } from '../items/groundModels';
 import { pickRay } from '../render/picking';
 import { clientPointToVector } from '../sim/pick';
+import { HAttr } from '../sim/collision';
 import { boxOf, ctrlModelOf, webTurn } from './ctrlModels';
 import {
   ROOM_WALL_MODEL, collides, keptAngle, obbOf, obbTriangles, placedMatrix, worldTriangles,
@@ -53,9 +54,27 @@ export interface PlacementHost {
   /** The red texture (`red.tga`); its release. */
   red(): Promise<Texture | null>;
   releaseRed(): void;
-  /** The other controls' boxes (`m_OBB`), the one being moved left out. */
-  others(): Iterable<Obb>;
+  /** The other controls' boxes (`m_OBB`), `except` (the piece being moved: the guild house's reinstall) left out. */
+  others(except?: number): Iterable<Obb>;
+  /**
+   * 2026-11-15 (guild house): the land's attribute at a point (`GetHeightAttribute`); `CGuildDeployManager::CheckCollision`
+   * (Housing.cpp:1157-1167) turns red on HATTR_NOWALK, NOMOVE and NOFLY. None: never.
+   */
+  landAttr?(x: number, z: number): number;
 }
+
+/** What a piece is placed with besides its control: `CGuildDeployManager`'s (the guild house) differs from the room's. */
+export interface PlacementOptions {
+  /** The copy's first angle (`SetAngle( m_pItem->m_fAngle )`: a reinstall keeps the piece's); 0 by default. */
+  angle?: number;
+  /** The placed piece this one moves (`m_dwSelectedObjID`, left out of the boxes). */
+  ignore?: number;
+  /** The land's attributes count (the guild house). */
+  land?: boolean;
+}
+
+/** `HATTR_NOWALK`, `HATTR_NOMOVE`, `HATTR_NOFLY`: no piece stands there in a guild house. */
+const BLOCKING_LAND: ReadonlySet<number> = new Set([HAttr.NOWALK, HAttr.NOMOVE, HAttr.NOFLY]);
 
 /** What a press on a free spot places: the item and the copy's point and angle (`EndDeploy`). */
 export interface Placed {
@@ -80,6 +99,7 @@ interface Piece {
   /** The materials' own maps, for the free look. */
   maps: Map<Material, Texture | null>;
   red: boolean;
+  options: PlacementOptions;
 }
 
 /** The wheel's step (`AddAngle( 2.5f )`) and the Page keys' (45). */
@@ -117,7 +137,7 @@ export class FurniturePlacement {
   }
 
   /** `LoadToDeploy( ctrlIndex, info )`: false when the control has no model. A piece already placing ends first. */
-  start(itemId: number, ctrlIndex: number): boolean {
+  start(itemId: number, ctrlIndex: number, options: PlacementOptions = {}): boolean {
     this.cancel();
     const ctrl = ctrlModelOf(this.host.data, ctrlIndex);
     if (ctrl === null) return false;
@@ -126,7 +146,8 @@ export class FurniturePlacement {
     root.scale.setScalar(ctrl.scale);
     this.host.scene.add(root);
     const piece: Piece = {
-      itemId, root, mesh: null, scale: ctrl.scale, stepAngle: 0, angle: 0, pos: null, colliding: false, maps: new Map(), red: false,
+      itemId, root, mesh: null, scale: ctrl.scale, stepAngle: 0, angle: keptAngle(options.angle ?? 0), pos: null, colliding: false,
+      maps: new Map(), red: false, options,
     };
     this.piece = piece;
     void this.host.load(ctrl.model).then((model) => {
@@ -194,10 +215,13 @@ export class FurniturePlacement {
   /** `CheckCollision`: false until the piece's box is known, and without the room's wall. */
   private check(piece: Piece): boolean {
     if (piece.box === undefined || piece.pos === null) return false;
+    const wall = this.roomWall(piece.pos);
+    if (wall === null) return false; // m_pWallObj NULL: never
+    if (piece.options.land === true && BLOCKING_LAND.has(this.host.landAttr?.(piece.pos[0], piece.pos[2]) ?? 0)) return true;
     const matrix = placedMatrix(piece.scale, piece.angle, piece.pos);
     const obb = obbOf(piece.box, matrix);
     const shape: PlacedShape = { obb, triangles: piece.mesh === null ? obbTriangles(obb) : worldTriangles(piece.mesh, matrix) };
-    return collides(shape, this.roomWall(piece.pos), this.host.others());
+    return collides(shape, wall, this.host.others(piece.options.ignore));
   }
 
   /** `GetObjByName("obj_miniwall01.o3d")` near the piece, once a world: its box and triangles in the world. */

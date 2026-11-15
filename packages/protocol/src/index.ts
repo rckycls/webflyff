@@ -75,6 +75,7 @@ export * from './world/guild';
 export * from './world/bank';
 export * from './world/guildBank'; // 2026-11-15
 export * from './world/housing'; // 2026-11-15
+export * from './world/guildHouse'; // 2026-11-15
 export * from './world/post';
 export * from './world/lord';
 export * from './world/honor';

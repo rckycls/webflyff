@@ -4304,3 +4304,79 @@ fieldset:disabled .btn {
   }
   .hud-placement-bar button { min-width: 64px; height: 36px; padding: 0 10px; line-height: 34px !important; touch-action: manipulation; }
 }
+
+/* 2026-11-15: the guild house (hud/guildHouse/guildHouseWindows.ts; side-session-notes housing-research/A-client.md §2.4-2.5).
+   Furniture Storage's rows of 40 px: the icon at +16, the name at +80 and the time at +260 in black, the placed ones blue
+   (0xff0000ff), the chosen one under a red fill (0x55ff0000) from +5 to 28 px short of the right; LvUp / LvDn beside the sorted
+   header. The "Installed" strip's red box blinks every 600 ms. */
+.hud-gh-storage-head { cursor: pointer; }
+.hud-gh-storage-arrow { position: absolute; background-repeat: no-repeat; pointer-events: none; }
+.hud-gh-storage-rows { position: absolute; overflow: hidden auto; scrollbar-width: thin; overscroll-behavior: contain; }
+.hud-gh-storage-row { position: absolute; color: #000000; cursor: pointer; }
+.hud-gh-storage-row[data-placed='true'] { color: rgb(0, 0, 255); }
+.hud-gh-storage-row[aria-selected='true']::before {
+  content: ''; position: absolute; left: 5px; right: 28px; top: 0; height: 40px; background: rgba(255, 0, 0, 0.333); pointer-events: none;
+}
+.hud-gh-storage-row > :is(span, img) { position: absolute; }
+.hud-gh-storage-row > span { white-space: nowrap; overflow: hidden; text-overflow: clip; line-height: 15px; }
+.hud-gh-showone-item > :is(span, img) { position: absolute; }
+.hud-gh-showone-item > span { color: #000000; white-space: nowrap; overflow: hidden; line-height: 15px; }
+.hud-gh-showone-blink {
+  position: absolute; inset: -2px; border: 2px solid rgb(255, 0, 0); pointer-events: none; animation: hud-gh-blink 1.2s steps(1) infinite;
+}
+@keyframes hud-gh-blink { 50% { visibility: hidden; } }
+
+/* The phone: the Guild House menu at the left under the status window; Furniture Storage as the Housing window's sheet in its
+   448 px frame, its 40 px rows a finger's size; the fee's buttons as words; the placing bar below the "Installed" strip. */
+@media (max-width: 1000px) and (pointer: coarse) {
+  .hud-guild-house:not([hidden]) { left: 4px !important; top: 86px !important; transform: none !important; }
+  .world:has(.hud-gh-storage:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+  :is(.hud-gh-storage, .hud-gh-upkeep, .hud-guild-house, .hud-gh-showone)::before {
+    content: ''; position: absolute; inset: 3px 5px 7px 3px; border-radius: 4px; background: rgba(250, 238, 230, 0.92); pointer-events: none;
+  }
+  .hud-gh-storage:not([hidden]) {
+    left: calc(50% - min(224px, 50% - 8px)) !important; top: 8px !important; transform: none !important;
+    width: min(448px, calc(100% - 16px)) !important; height: auto !important;
+    max-height: calc(100% - var(--hud-taskbar-height, 48px) - 16px); display: flex !important; flex-direction: column; overflow: hidden;
+  }
+  .hud-gh-storage > .hud-window-body {
+    position: relative !important; left: auto !important; top: auto !important; width: auto !important; height: auto !important;
+    flex: 0 1 auto; min-height: 0; box-sizing: border-box; margin: 22px 8px 10px 4px; padding: 4px 6px 6px;
+    display: grid; grid-template-columns: 1fr 70px 50px; gap: 4px; align-items: center; font: 12px/15px Verdana, Tahoma, sans-serif;
+  }
+  .hud-gh-storage > .hud-window-body > * {
+    position: relative !important; left: auto !important; top: auto !important; width: auto !important; height: auto !important;
+  }
+  .hud-gh-storage .hud-edit-tiles, .hud-gh-storage .hud-res-scroll, .hud-gh-storage-arrow { display: none; }
+  .hud-gh-storage [data-control='WIDC_COMBOBOX1'] { grid-column: 1 / -1; justify-self: end; width: 140px !important; height: 18px !important; }
+  .hud-gh-storage [data-control='WIDC_COMBOBOX1'] input { font: 12px/18px Verdana, Tahoma, sans-serif !important; }
+  .hud-gh-storage .hud-gh-storage-head { height: 22px !important; border-radius: 3px; background: #e9d2c0; }
+  .hud-gh-storage .hud-gh-storage-head .hud-res-static-text {
+    position: static; display: block; padding: 0 4px; color: #3a2414; font: bold 10px/22px Verdana, Tahoma, sans-serif; text-shadow: none;
+  }
+  .hud-gh-storage [data-control='WIDC_LISTBOX1'], .hud-gh-storage .hud-res-text { grid-column: 1 / -1; }
+  .hud-gh-storage [data-control='WIDC_LISTBOX1'] { border: 1px solid #e1cbbb; border-radius: 3px; background: #fffaf5; }
+  .hud-gh-storage .hud-gh-storage-rows {
+    position: relative !important; inset: auto !important; width: auto !important; height: auto !important;
+    max-height: 164px; min-height: 40px; touch-action: pan-y;
+  }
+  .hud-gh-storage .hud-gh-storage-row { position: relative !important; left: auto !important; top: auto !important; width: auto !important; }
+  .hud-gh-storage .hud-gh-storage-rows > div:not(.hud-gh-storage-row) { display: none; }
+  .hud-gh-storage .hud-gh-storage-row [data-column='name'] { right: 132px; width: auto !important; text-overflow: ellipsis; }
+  .hud-gh-storage .hud-gh-storage-row [data-column='time'] { left: auto !important; right: 50px; width: 80px !important; }
+  .hud-gh-storage .hud-gh-storage-ir { left: auto !important; right: 8px; }
+  .hud-gh-storage .hud-res-text { border: 1px solid #e1cbbb; border-radius: 3px; background: #fffaf5; }
+  .hud-gh-storage .hud-res-text-body {
+    position: relative !important; left: auto !important; top: auto !important; width: auto !important; height: auto !important;
+    max-height: 30px; min-height: 15px; box-sizing: border-box; padding: 3px 6px; overflow-y: auto;
+  }
+  .hud-gh-upkeep .hud-picture-button[data-word] {
+    box-sizing: border-box; border: 1px solid #a3a3a3 !important; border-radius: 5px !important;
+    background: linear-gradient(#ffffff, #f6f6f6 45%, #e1e1e1 55%, #f3f3f3) !important; padding: 0;
+    color: #ffffff !important; font: bold 11px/18px Verdana, Tahoma, sans-serif !important; text-align: center;
+    text-shadow: 1px 0 #7d7d7d, -1px 0 #7d7d7d, 0 1px #7d7d7d, 0 -1px #7d7d7d !important;
+  }
+  .hud-gh-upkeep .hud-picture-button[data-word]::after { content: attr(data-word); }
+  .hud-gh-upkeep input { font-size: 16px; }
+  .world:has(.hud-gh-showone:not([hidden])) .hud-placement-bar { top: 84px; }
+}

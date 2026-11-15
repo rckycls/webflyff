@@ -19,13 +19,14 @@ import type { GuildDirectMessage, GuildMessage } from './guild';
 import type { BankMessage } from './bank';
 import type { GuildBankMessage } from './guildBank';
 import type { HousingMessage } from './housing';
+import type { GuildHouseMessage } from './guildHouse';
 import type { PostMessage } from './post';
 import type { LordMessage } from './lord';
 import type { HonorMessage } from './honor';
 import type { HpLayerMessage } from './hpLayer';
 
 export type WorldMessage = ChatMessage | NpcMessage | ShopMessage | QuestMessage | PetMessage | FriendMessage | TradeMessage | VendorMessage
-  | GuildMessage | GuildDirectMessage | BankMessage | GuildBankMessage | HousingMessage | PostMessage | LordMessage | HonorMessage | HpLayerMessage
+  | GuildMessage | GuildDirectMessage | BankMessage | GuildBankMessage | HousingMessage | GuildHouseMessage | PostMessage | LordMessage | HonorMessage | HpLayerMessage
   | { type: 'profileStats'; values: number[] }
   | { type: 'addItem'; item: GroundItem }
   | { type: 'createItem'; itemType: number; item: InventoryItem; stacks: Array<{ objectId: number; count: number }> }

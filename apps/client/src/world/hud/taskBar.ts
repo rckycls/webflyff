@@ -60,7 +60,7 @@ import { itemIconOf } from '../pets/petStatus';
 
 /** The windows of Piece 4 a press on the task bar opens. */
 export type TaskBarWindow = 'character' | 'status' | 'skills' | 'inventory' | 'chat' | 'navigator' | 'worldmap' | 'option'
-  | 'quests' | 'party' | 'messenger' | 'vendor' | 'guild' | 'lordSkill' | 'motion' | 'housing';
+  | 'quests' | 'party' | 'messenger' | 'vendor' | 'guild' | 'lordSkill' | 'motion' | 'housing' | 'guildFurniture';
 /** 2026-11-10: `APP_GUILD` (Resource/ResData.h:228), the guild window (guild research §3), G (FuncApplet.cpp:245). */
 const APP_GUILD = 323;
 /** `APP_QUEST_EX_LIST` (Resource/ResData.h), the quest window (Piece 7 M1), Q (FuncApplet.cpp:229). */
@@ -99,6 +99,8 @@ const WINDOWS: ReadonlyMap<number, TaskBarWindow> = new Map([
   [172, 'motion'],
   // 2026-11-15: APP_HOUSING (Resource/ResData.h:716), the Housing window, Y (FuncApplet.cpp:176)
   [811, 'housing'],
+  // 2026-11-15: APP_GH_FURNITURE_STORAGE (Resource/ResData.h:758), the guild's Furniture Storage, R (FuncApplet.cpp:180)
+  [853, 'guildFurniture'],
 ]);
 
 /**
