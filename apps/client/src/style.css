@@ -4424,7 +4424,8 @@ fieldset:disabled .btn {
     text-shadow: 1px 0 #7d7d7d, -1px 0 #7d7d7d, 0 1px #7d7d7d, 0 -1px #7d7d7d !important;
   }
   .hud-gh-upkeep .hud-picture-button[data-word]::after { content: attr(data-word); }
-  .hud-gh-upkeep input { font-size: 16px; }
+  /* (consistency scan) the field's words Neuz's 12 px, as the Lord's, the mail's and the siege's fields (16 px was larger than its labels) */
+  .hud-gh-upkeep input { font: 12px Verdana, Tahoma, sans-serif; }
   .world:has(.hud-gh-showone:not([hidden])) .hud-placement-bar { top: 84px; }
 }
 
