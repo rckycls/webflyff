@@ -4,15 +4,26 @@
 // show the owner's rules; Donaris's Cancel asks first, Jackpot stays silent for a player who is not the guild master, and the
 // server's GC_GETPENYAGUILD, GC_TELE and GC_DIAGMESSAGE become their boxes. The siege's button pictures are not converted
 // yet, so their loads fail in the console: the windows still work (their buttons are found by their names).
+// B5: in the arena (world 202), logged in during the war: the HUD and the PvP rule from GC_GCSTATE, GC_USERSTATE and the
+// boards alone; the phone's boards clear of Attack, the quick slots, Jump, the Action Slot button and the task bar.
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { expect, test } from '@playwright/test';
 import type { Locator, Page } from '@playwright/test';
-import { ArReader, GuildCombatPacketType, readGuildCombatRequestPacket } from '@flyffweb/protocol';
-import type { AddedMover, GuildCombatMessage, PlayerDataRecord } from '@flyffweb/protocol';
+import type { AssetIndex, WorldManifest } from '@flyffweb/formats';
+import { decodeTileBin } from '@flyffweb/formats';
+import { sampleHeight } from '@flyffweb/scene';
+import { ArReader, GuildCombatPacketType, PacketType, readGuildCombatRequestPacket } from '@flyffweb/protocol';
+import type { AddedMover, GuildCombatMessage, PlayerDataRecord, Vec3 } from '@flyffweb/protocol';
 import {
-  createWorldScript, guildMember, guildWhole, writeAddNpc, writeAddSelf, writeAllGuilds, writeGuild, writeGuildCombat, writeQueryPlayerData,
+  createWorldScript, guildMember, guildWhole, newVagrantOwn, writeAddNpc, writeAddPlayer, writeAddSelf, writeAllGuilds, writeGuild, writeGuildCombat,
+  writeQueryPlayerData,
 } from '@flyffweb/testkit';
 import type { WorldScript } from '@flyffweb/testkit';
-import { NPC_ID, ON_FRAMES, SELF_ID, SQUARE, MADRIGAL, enterFlaris, julia, playGateway, self, sentOf, tapMover, tapWorld, targetsOf } from './worldHarness';
+import {
+  ASSETS, BASE, MALE_VAGRANT, MI_MALE, NPC_ID, ON_FRAMES, SELF_ID, SELF_PLAYER, SQUARE, MADRIGAL, enterFlaris, julia, playGateway, self, sentOf,
+  tapMover, tapWorld, targetsOf,
+} from './worldHarness';
 import type { Gateway } from './worldHarness';
 
 test.setTimeout(180_000);
@@ -299,4 +310,159 @@ test('Entry: the line-up (add, refusals, defender, order, Complete) and the star
   await expect(start).toBeHidden({ timeout: 8_000 });
   await expect.poll(() => sentOf(gateway, GuildCombatPacketType.SELECTMAP).length).toBe(2);
   expect(request(GuildCombatPacketType.SELECTMAP, 1)).toEqual({ type: 'gcSelectMapRequest', map: 1 });
+});
+
+// B5: in the arena. Webby logs in to world 202 during the war: the JOIN carries GC_GCSTATE (WAR, WAR_WAR), the USERSTATEs,
+// the count-down and the boards, before any HUD exists (DPDatabaseClient.cpp:1109-1120).
+const SIEGE_WORLD = 202, RIVAL_ID = 9301, RIVAL = 70101, ALPHA = 78;
+const siegeIndex: AssetIndex = JSON.parse(readFileSync(path.join(ASSETS, 'index.json'), 'utf8'));
+/** The land's height at (x, z) in the converted world `folder` (as arenaTower.spec.ts reads it). */
+function groundOf(folder: string, x: number, z: number): Vec3 {
+  const manifest: WorldManifest = JSON.parse(readFileSync(path.join(ASSETS, siegeIndex.files[`worlds/${folder}/manifest.json`]!), 'utf8'));
+  const side = manifest.mapSize * manifest.mpu;
+  const tx = Math.floor(x / side), tz = Math.floor(z / side);
+  const file = path.join(ASSETS, manifest.tiles[`${tx}_${tz}`]!);
+  const tile = decodeTileBin(new Uint8Array(readFileSync(file)), file);
+  return [x, sampleHeight(tile, x - tx * side, z - tz * side, manifest.mpu), z];
+}
+const GUILD_NAMES = ['Alpha', 'Charlie', 'Delta', 'Echo', 'Foxtrot', 'Golf', 'Hotel', 'Bakers', 'India', 'Juliet', 'Kilo', 'Lima'];
+
+test('In the arena: logged in during the war, the count-down, the boards, the own list, PvP, the kill line; the phone fit', async ({ page }, info) => {
+  // at the third start point (1258, 1252; the mask's ③, A-client.md §4.2); the centre (1291, 1279) is the monument, and a
+  // statue's stone basin stands east of the start point: the rival 2 m west, on open ground
+  const at = groundOf('wdguildwar', 1257, 1252);
+  const webby: AddedMover = { ...self, pos: at, hitPoint: 230, player: { ...SELF_PLAYER, job: 1, guildId: GUILD, own: newVagrantOwn() } };
+  const rival: AddedMover = {
+    ...BASE, index: MI_MALE, pos: groundOf('wdguildwar', 1255, 1252), angle: 90, objectId: RIVAL_ID, isPlayer: true,
+    player: {
+      ...SELF_PLAYER, self: false, name: 'Rival', playerId: RIVAL, job: 1, guildId: ALPHA, equipmentObjectIds: [],
+      worn: MALE_VAGRANT.map((itemId, part) => ({ part: [2, 4, 5][part]!, itemId, flag: 0 })),
+    },
+  };
+  const gc = (m: Body) => writeGuildCombat(SELF_ID, { type: T, ...m } as GuildCombatMessage);
+  const script = createWorldScript({
+    playerObjectId: SELF_ID, worldId: SIEGE_WORLD, pos: at, self: writeAddSelf(SELF_ID, webby),
+    others: [
+      writeAddPlayer(RIVAL_ID, rival),
+      gc({ sub: 'isRequest', requested: true }),
+      gc({ sub: 'gcState', state: 2, warState: 104 }),
+      gc({ sub: 'nextTimeState', msLeft: 1_800_000, nextState: 105 }),
+      gc({ sub: 'userState', moverId: SELF_ID, state: 1 }),
+      gc({ sub: 'userState', moverId: RIVAL_ID, state: 1 }),
+      gc({ sub: 'warPlayerList', guilds: [
+        { defenderId: LEAD, members: [{ playerId: WEBBY, status: 1 }, { playerId: LEAD, status: 1 }, { playerId: MIA, status: 0 }] },
+        { defenderId: RIVAL, members: [{ playerId: RIVAL, status: 1 }] },
+      ] }),
+      gc({ sub: 'guildStatus', joinIndex: 2, players: [{ playerId: WEBBY, lives: 6 }, { playerId: LEAD, lives: 4 }, { playerId: MIA, lives: 6 }] }),
+      gc({ sub: 'guildPrecedence', guilds: GUILD_NAMES.map((name, i) => ({ has: true as const, name, points: 120 - i * 10 })) }),
+      // 15 players, Webby 12th
+      gc({ sub: 'playerPrecedence', guilds: [
+        Array.from({ length: 11 }, (_, i) => ({ playerId: 71000 + i, points: 50 - i * 3 })),
+        [{ playerId: WEBBY, points: 2 }, { playerId: RIVAL, points: 1 }, { playerId: 72001, points: 0 }, { playerId: 72002, points: 0 }],
+      ] }),
+    ],
+  });
+  const gateway = await playGateway(page, script);
+  await enterFlaris(page);
+  await expect(page.locator('.world')).toHaveAttribute('data-world-id', String(SIEGE_WORLD));
+  const shot = (name: string) => page.screenshot({ path: info.outputPath(`${name}.png`) });
+  const bakers = guildWhole(GUILD, WEBBY, 'Bakers', [guildMember(WEBBY, 0), guildMember(LEAD, 1), guildMember(MIA, 4)], { level: 50 });
+  const alpha = guildWhole(ALPHA, RIVAL, 'Alpha', [guildMember(RIVAL, 0)], { level: 50 });
+  gateway.pushCache(script.later([writeAllGuilds(SELF_ID, [bakers, alpha]), writeGuild(SELF_ID, bakers)]));
+  gateway.pushCache(script.later([
+    writeQueryPlayerData(SELF_ID, WEBBY, 'Webby', player(40, 1)), writeQueryPlayerData(SELF_ID, LEAD, 'Lead', player(60, 1)),
+    writeQueryPlayerData(SELF_ID, MIA, 'Mia', player(35, 1)), writeQueryPlayerData(SELF_ID, RIVAL, 'Rival', player(45, 1)),
+  ]));
+
+  // the count-down of the war's end, centred, ticking hh:mm:ss
+  const clock = page.locator('.hud-siege-clock');
+  await expect(clock).toHaveText(/^End combat 00:(29|30):\d\d$/, ON_FRAMES);
+  const guildRows = page.locator('[data-board="guild"] .hud-siege-row');
+  const playerRows = page.locator('[data-board="player"] .hud-siege-row');
+  const list = page.locator('.hud-siege-guild');
+  await expect(list.locator('.hud-siege-title')).toHaveText('Bakers', ON_FRAMES);
+  // the own guild's list: lives max(n - 1, 0), Mia next in (green), Lead the defender
+  await expect(list.locator('.hud-siege-member')).toHaveCount(3);
+  await expect(list.locator('.hud-siege-lives')).toHaveText(['5', '3', '5']);
+  await expect(list.locator('.hud-siege-member').nth(1).locator('.hud-siege-defender')).toHaveText('D');
+  await expect(list.locator('.hud-siege-member').nth(2)).toHaveCSS('color', 'rgb(0, 203, 0)');
+  // the minimap mask is not converted yet: no mask, the map's tile still drawn
+  await expect(page.locator('.navigator-map img[src*="wdguildwar"]').first()).toBeAttached(ON_FRAMES);
+  await expect(page.locator('.navigator-mask')).toHaveCount(0);
+
+  if (!isPhone()) {
+    // Neuz's boards: every guild, the top 10 players and Webby's own row, at (width - 150, 200)
+    await expect(guildRows).toHaveCount(12);
+    await expect(playerRows).toHaveCount(11);
+    await expect(playerRows.nth(10)).toHaveText(/12\s*Webby\.\.\.\s*2/);
+    const board = (await page.locator('[data-board="guild"]').boundingBox())!;
+    const hud = (await page.locator('.world-hud').boundingBox())!;
+    expect([Math.round(board.x + board.width), Math.round(board.y)]).toEqual([Math.round(hud.x + hud.width - 10), Math.round(hud.y + 190)]);
+    await shot('arena-desktop');
+  } else {
+    // the phone: the top 5 and the own row on each board; clear of Attack, the quick slots, Jump, Action Slot and the task bar
+    await expect(guildRows).toHaveCount(6, ON_FRAMES);
+    await expect(guildRows.nth(5)).toHaveText(/8\s*Baker\.\.\.\s*50/);
+    await expect(playerRows).toHaveCount(6);
+    await expect(page.locator('.hud-quick-slot')).toHaveCount(7);
+    const clashes = () => page.evaluate(() => {
+      const boxes = (selector: string) => [...document.querySelectorAll(selector)]
+        .map((element) => ({ name: `${element.className}`, box: element.getBoundingClientRect() }))
+        .filter(({ box }) => box.width > 0 && box.height > 0);
+      const boards = boxes('.hud-siege-board');
+      const controls = boxes('.hud-attack, .hud-quick-slot, .hud-jump, .hud-action-trigger, .hud-taskbar-strip');
+      const found: string[] = [];
+      if (boards.length !== 2) found.push(`${boards.length} boards`);
+      if (controls.length < 10) found.push(`${controls.length} controls`);
+      const [a, b] = boards.map(({ box }) => box);
+      if (a !== undefined && b !== undefined && a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom) found.push('the boards overlap');
+      for (const { box: b } of boards) {
+        if (b.left < 0 || b.top < 0 || b.right > innerWidth || b.bottom > innerHeight) found.push('a board off the screen');
+        for (const { name, box: c } of controls) {
+          if (b.left < c.right && c.left < b.right && b.top < c.bottom && c.top < b.bottom) found.push(`a board over ${name}`);
+        }
+      }
+      return found;
+    });
+    for (const size of [null, { width: 568, height: 320 }, { width: 730, height: 320 }]) {
+      if (size !== null) await page.setViewportSize(size);
+      await page.waitForTimeout(800);
+      await expect.poll(clashes, ON_FRAMES).toEqual([]);
+      await shot(`arena-phone-${size?.width ?? 'pixel7'}`);
+    }
+    // a tap on a board's title folds it, another unfolds it
+    const title = page.locator('[data-board="guild"] .hud-siege-title');
+    await title.tap();
+    await expect(title).toHaveAttribute('aria-expanded', 'false');
+    await expect(guildRows.first()).toBeHidden();
+    await title.tap();
+    await expect(guildRows.first()).toBeVisible();
+  }
+
+  // PvP: the rival of another guild, both fighting at WAR_WAR, is attacked (a second click, the Attack button on the phone):
+  // the attack command walks to it (PLAYERSETDESTOBJ at it, CMD_SetMeleeAttack's SetDestObj) and swings once in range. The
+  // command alone proves the rule (IsAttackAble); the swing also needs the walk, which the arena's props may stop.
+  const swings = () => sentOf(gateway, PacketType.MELEE_ATTACK).filter((s) => s.body.readUInt32LE(12) === RIVAL_ID);
+  const approaches = () => sentOf(gateway, PacketType.PLAYERSETDESTOBJ).filter((s) => s.body.readUInt32LE(8) === RIVAL_ID);
+  await tapMover(page, RIVAL_ID);
+  await expect.poll(() => targetsOf(gateway).some(([t]) => t === RIVAL_ID), ON_FRAMES).toBe(true);
+  if (isPhone()) {
+    const attack = page.locator('.hud-attack');
+    await expect(attack).toBeEnabled(ON_FRAMES);
+    await attack.tap();
+  } else {
+    await tapMover(page, RIVAL_ID);
+  }
+  await expect.poll(() => approaches().length + swings().length, ON_FRAMES).toBeGreaterThan(0);
+
+  // a kill: one white line in the chat, Neuz's English format
+  answer(gateway, script, {
+    sub: 'logRealtime', atkGuildId: GUILD, defGuildId: ALPHA, atkName: 'Webby', defName: 'Rival', atkPlayerId: WEBBY, defPlayerId: RIVAL,
+    point: 3, diffGuild: true, master: true, defender: false, lastLife: false,
+  });
+  await expect(page.locator('.hud-neuz-chat')).toContainText('[Bakers][Webby] has killed [Alpha][Rival] and has gained 3 points.', ON_FRAMES);
+  // the war's end: its caption
+  answer(gateway, script, { sub: 'gcState', state: 3, warState: 105 });
+  await expect(page.locator('.hud-caption')).toContainText('End combat', ON_FRAMES);
+  await shot('arena-end');
 });

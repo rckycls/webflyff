@@ -9,6 +9,8 @@
 //   ui/char/<web name>.png every picture of Client/Char, the NPCs' dialogue pictures (charPictureKeyOf), which the data
 //                          stage names in `npcs.image`
 //   data/uiSheets.json     the frames of SFX/DmgEffect.inc and Icon/icon_target.inc (WebUiSheets)
+//   minimaps/wdguildwar/mask.png  2026-11-15 (Guild Siege): World/WdGuildWar/WdGuildWar_Mask.dds, the Navigator's mask over
+//                          world 202 (CWndNavigator, WndField.cpp:9903), its alpha as it is
 //
 // Neuz loads these pictures through D3DX with a colour key: the icons, theme pieces and target corners with 0xffff00ff
 // (CWndBase::m_textureMng.AddTexture, 2DRender.cpp:1815; the DDS branch of CTexture::LoadTexture, :1206), a sheet with the key
@@ -494,7 +496,10 @@ export function createUiStage(options: UiStageOptions = {}): Stage {
         if (match !== null && wanted(src)) pictures.set(src, { src,
           key: `minimaps/${webName(match[1]!)}/${Number(match[2])}_${Number(match[3])}.png`, colorKey: 0 });
       }
-      const add = (src: string, keyOf: (file: string) => string): void => {
+      // 2026-11-15 (Guild Siege, B5): the Navigator's mask over world 202, loaded with no colour key (WndField.cpp:9903)
+      const siegeMask = ctx.client.find('World/WdGuildWar', 'WdGuildWar_Mask.dds');
+      if (siegeMask !== null && wanted(siegeMask)) pictures.set(siegeMask, { src: siegeMask, key: 'minimaps/wdguildwar/mask.png', colorKey: 0 });
+      const add =(src: string, keyOf: (file: string) => string): void => {
         if (wanted(src)) {
           pictures.set(src, { src, key: keyOf(path.basename(src)), colorKey: sheetKeys.get(src) ??
             (/^world_/i.test(path.basename(src)) ? 0xff000000 : /^imgnavpos\./i.test(path.basename(src)) ? 0

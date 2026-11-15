@@ -334,6 +334,13 @@ describe('the UI stage on a small hand-made client', () => {
     expect(pixel(map, 1, 0)).toEqual([4, 5, 6, 255]);
   });
 
+  it("writes the Guild Siege's minimap mask with its alpha as it is (CWndNavigator, WndField.cpp:9903) (2026-11-15)", async () => {
+    const run = await runUi({ 'World/WdGuildWar/WdGuildWar_Mask.dds': dds(2, 1, [MAGENTA, [255, 255, 0, 128]]) });
+    const mask = await png(run, 'minimaps/wdguildwar/mask.png');
+    expect(pixel(mask, 0, 0)).toEqual(MAGENTA);
+    expect(pixel(mask, 1, 0)).toEqual([255, 255, 0, 128]);
+  });
+
   it('makes magenta transparent, in a DDS, a TGA and a BMP', async () => {
     const run = await runUi();
 

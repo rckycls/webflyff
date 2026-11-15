@@ -61,8 +61,8 @@ describeClient('the UI stage on the real client', () => {
     expect(logos).toBe(27);
     expect(client.list('Icon', /\.jpe?g$/i).length).toBe(logos);
     // every picture of Client/Icon, Client/Item and Client/Char, the minimaps, every piece of the theme list,
-    // DmgEffect.dds, the sheets catalog and the logos
-    expect(reportJson.kinds.ui!.ok).toBe(pictures + itemPictures + charPictures + minimaps + THEME_FILES.length + 1 + 1 + logos);
+    // DmgEffect.dds, the sheets catalog, the logos and (2026-11-15) the Guild Siege's minimap mask
+    expect(reportJson.kinds.ui!.ok).toBe(pictures + itemPictures + charPictures + minimaps + THEME_FILES.length + 1 + 1 + logos + 1);
     expect(reportJson.warnings.filter((w) => w.kind === 'ui')).toHaveLength(0);
   });
 

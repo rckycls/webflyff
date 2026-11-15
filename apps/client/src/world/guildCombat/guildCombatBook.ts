@@ -5,7 +5,7 @@
 //
 //   OnGuildCombat dispatcher  Neuz/DPClient.cpp:6745-6821 and the handlers it calls
 //
-// The siege's chat lines and captions belong to the siege HUD (guildCombatHud.ts, later), not here.
+// The siege's chat lines, captions and count-down label belong to the arena's HUD (hud/guildCombat/arenaHud.ts), not here.
 
 import type { GcInt64, GuildCombatLogEntry, GuildCombatMessage } from '@flyffweb/protocol';
 import { GcState } from './guildCombatRules';
@@ -62,6 +62,14 @@ export class GuildCombatBook {
     this.states.delete(objectId);
   }
 
+  /**
+   * 2026-11-15 (B5): the world changed: every mover is made anew from its ADD_OBJ (`m_nGuildCombatState` is a mover's), so
+   * no USERSTATE of the last world is kept (a stale 1 would send the instant revive or allow the siege's PvP).
+   */
+  forgetMovers(): void {
+    this.states.clear();
+  }
+
   apply(message: GuildCombatMessage, now: number): GuildCombatEvent[] {
     switch (message.sub) {
       case 'gcState':
@@ -89,7 +97,8 @@ export class GuildCombatBook {
         return [{ kind: 'changed' }];
       case 'warPlayerList':
         this.warPlayers = new Map(message.guilds.map((g) => [g.defenderId, g.members.map((m) => ({ id: m.playerId, status: m.status }))]));
-        return [{ kind: 'changed' }];
+        // B5: the tags too: a defender's guild line is pink (MoverRender.cpp:1590-1596)
+        return [{ kind: 'tags' }, { kind: 'changed' }];
       case 'guildStatus':
         this.guildStatus = { joinIndex: message.joinIndex, players: message.players };
         return [{ kind: 'changed' }];

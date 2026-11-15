@@ -4303,3 +4303,46 @@ fieldset:disabled .btn {
   .hud-gc-startpoint > .hud-window-body { justify-content: center; }
   .hud-gc-startpoint .hud-picture-button { min-width: 56px; }
 }
+
+/* 2026-11-15 (Guild Siege, B5): the arena's HUD (hud/guildCombat/arenaHud.ts; docs/guild-siege/research/A-client.md §4.1-4.3),
+   drawn under the windows as Neuz draws it in the world's background (CWndWorld::OnEraseBkgnd): the count-down centred at
+   y 110 (Verdana 13, white outlined 0xff990099), the guild and player boards at (width - 150, 200) and the own guild's list
+   at (5, 120) in boxes of ARGB(30, 0, 0, 0), their words outlined black, the "be ready" lines yellow at the centre. It takes
+   no press, but for the phone's board titles (they fold). */
+.hud-siege { position: absolute; inset: 0; pointer-events: none; font: 12px/1 Verdana, Geneva, Tahoma, sans-serif; color: #ffffff; }
+.hud-siege {
+  --siege-outline: -1px 0 #000, 1px 0 #000, 0 -1px #000, 0 1px #000, -1px -1px #000, 1px -1px #000, -1px 1px #000, 1px 1px #000;
+}
+.hud-siege-clock {
+  position: absolute; left: 0; right: 0; top: 110px; text-align: center; white-space: pre;
+  font: 13px/1 Verdana, Geneva, Tahoma, sans-serif; color: #ffffff;
+  text-shadow: -1px 0 #990099, 1px 0 #990099, 0 -1px #990099, 0 1px #990099, -1px -1px #990099, 1px -1px #990099, -1px 1px #990099, 1px 1px #990099;
+}
+.hud-siege-board, .hud-siege-guild { position: absolute; box-sizing: border-box; background: rgba(0, 0, 0, 0.118); }
+.hud-siege-title, .hud-siege-row > span, .hud-siege-member > span {
+  position: absolute; white-space: pre; line-height: 12px; text-shadow: var(--siege-outline);
+}
+.hud-siege-title {
+  margin: 0; padding: 0; border: 0; background: none; font: inherit; line-height: 12px; text-align: left; cursor: default; pointer-events: none;
+}
+.hud-siege-title:disabled { opacity: 1; }
+.hud-siege-row, .hud-siege-member { position: absolute; left: 0; right: 0; height: 12px; }
+.hud-siege-hp { width: 60px; height: 11px; background: rgba(0, 0, 0, 0.392); text-shadow: none; }
+.hud-siege-hp > span { position: absolute; left: 1px; top: 1px; height: 9px; background: rgba(0, 255, 0, 0.392); }
+.hud-siege-ready {
+  position: absolute; left: 0; right: 0; top: calc(50% - 150px); text-align: center; white-space: pre;
+  font: 13px/16px Verdana, Geneva, Tahoma, sans-serif; color: #ffff00; text-shadow: var(--siege-outline);
+}
+.hud-siege-ready-line + .hud-siege-ready-line { margin-top: 2px; }
+/* the phone's (data-compact, the owner's layout): 14 px rows, a column under the Navigator clear of Attack and the quick
+   slots (arenaHud.ts layoutCompact), the count-down and the "be ready" lines right-aligned at its top; a board's title
+   folds it on a tap */
+.hud-siege[data-compact] :is(.hud-siege-clock, .hud-siege-ready) { text-align: right; }
+.hud-siege[data-compact] .hud-siege-board .hud-siege-title { pointer-events: auto; cursor: pointer; touch-action: manipulation; }
+.hud-siege[data-compact] .hud-siege-board .hud-siege-title::before { content: ''; position: absolute; inset: -6px -8px; }
+.hud-siege[data-compact] .hud-siege-board .hud-siege-title::after { content: ' \25BE'; }
+.hud-siege[data-compact] .hud-siege-board .hud-siege-title[aria-expanded='false']::after { content: ' \25B8'; }
+
+/* B5: the Navigator's mask over world 202's map (WdGuildWar_Mask.dds at alpha 200), over the tiles, under the markers */
+.navigator-masks { position: absolute; inset: 0; pointer-events: none; }
+.navigator-masks > img { position: absolute; max-width: none; pointer-events: none; }

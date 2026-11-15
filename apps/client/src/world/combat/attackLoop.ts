@@ -23,6 +23,8 @@ import type { WorldSession } from '../WorldSession';
 import { isDie } from '../WorldState';
 import type { Mover, WorldState } from '../WorldState';
 import { isArenaTarget } from './arena';
+import { siegeAllows } from './siege';
+import type { SiegeSide } from './siege';
 import type { Focus } from './focus';
 import { sightBlocked } from './lineOfSight';
 import type { OwnShots } from './ownShots';
@@ -103,14 +105,18 @@ export function objRadius({ min, max }: ModelBox, scale: number): number {
   return f32(radius * f32(scale));
 }
 
-/** 2026-11-10: the own side of `IsArenaTarget`: the world the own mover is in and where it stands. */
-export interface ArenaSide { worldId: number; pos: Vec3 }
+/**
+ * 2026-11-10: the own side of `IsArenaTarget`: the world the own mover is in and where it stands; 2026-11-15, in the Guild
+ * Siege's world, the own side of `IsGuildCombatTarget` too (combat/siege.ts).
+ */
+export interface ArenaSide { worldId: number; pos: Vec3; siege?: SiegeSide }
 
 /**
  * The verdict of `CMover::IsAttackAble( pObj )` on the client for a mover (`Mover.cpp:6469-6570`), with nothing of what it
  * does besides: a player only in a duel, a war, a school event, the Arena or PK (:6500-6525), of which the browser has the
  * Arena alone (2026-11-10, combat/arena.ts): another player is attackable only when `own` (where the own mover is) and
- * the player are both in the Arena's circle (`IsArenaTarget`, `MoverAttack.cpp:1953-1972`), and not dead (Neuz lets the
+ * the player are both in the Arena's circle (`IsArenaTarget`, `MoverAttack.cpp:1953-1972`), or (2026-11-15) in world 202
+ * both fight for two guilds in the war (`IsGuildCombatTarget`, `Mover.cpp:6590-6596`, combat/siege.ts), and not dead (Neuz lets the
  * swing go and the server drops it, `GetHitType`'s `IsDie`, `MoverAttack.cpp:1824-1825`: the browser refuses at once).
  * A monster or NPC as `IsAttackAbleNPC` (:6572-6626) says: not dead (`IsDie`: its dead state, or no HP left), killable
  * (`bKillable`, and a row in the catalog), not peaceful (`IsPeaceful`, the ADD_OBJ's `m_dwBelligerence`) and, the player
@@ -121,7 +127,8 @@ export function attackAble(
   target: Mover, moverProps: ReadonlyMap<number, Pick<WebMover, 'killable'>>, ownFlying = false, own?: ArenaSide,
 ): boolean {
   if (target.added.isPlayer) {
-    return own !== undefined && !target.isSelf && !isDie(target) && isArenaTarget(own.worldId, own.pos, target.act.body.pos);
+    if (own === undefined || target.isSelf || isDie(target)) return false;
+    return isArenaTarget(own.worldId, own.pos, target.act.body.pos) || siegeAllows(own.worldId, own.siege, target);
   }
   if (isDie(target)) return false;
   const prop = moverProps.get(target.added.index);
@@ -317,6 +324,8 @@ export class AttackLoop {
 
   /** 2026-11-10: the world the own mover is in (the world screen's), for the Arena's rule (`IsArena`, combat/arena.ts). */
   worldId: () => number = () => 0;
+  /** 2026-11-15: the own side of the Guild Siege's rule in world 202 (combat/siege.ts `siegeSideOf`); none elsewhere. */
+  siege: () => SiegeSide | undefined = () => undefined;
 
   /** `m_bAutoAttack`. */
   get autoAttack(): boolean {
@@ -331,7 +340,9 @@ export class AttackLoop {
   /** 2026-11-10: the own side of `IsArenaTarget` (`attackAble`'s `own`): the world and where the own mover stands. */
   private arenaSide(): ArenaSide | undefined {
     const own = this.world.self();
-    return own === undefined ? undefined : { worldId: this.worldId(), pos: own.act.body.pos };
+    if (own === undefined) return undefined;
+    const siege = this.siege();
+    return siege === undefined ? { worldId: this.worldId(), pos: own.act.body.pos } : { worldId: this.worldId(), pos: own.act.body.pos, siege };
   }
 
   /**
