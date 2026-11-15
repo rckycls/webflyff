@@ -65,6 +65,12 @@ export interface Ground {
    */
   objectsNear(x: number, z: number, range: number): readonly CollisionObject[];
   /**
+   * 2026-11-15 (post-merge): the controls (`OT_CTRL`, `CObj::linkDynamic`) the movers collide with around (x, z), which
+   * `ProcessCollision` (`WorldIntersect.cpp:515-556`) and, in a housing world, `ProcessUnderCollision` (:1249-1281) test
+   * before the world's objects. Optional: a Ground without it has none (its world gives them only in the housing worlds).
+   */
+  controlsNear?(x: number, z: number): readonly CollisionObject[];
+  /**
    * `CWorld::GetLandTri` (`World.cpp:1251-1353`): the land's triangle under (x, z), its three corners (9 floats, world
    * coordinates) into `out`, as `landTriangle` makes it from the tiles' heights; false where no land is loaded
    * (nothing written). Optional: a Ground without it stands movers on `terrainHeight`, and no land slides them.

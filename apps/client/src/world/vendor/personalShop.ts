@@ -66,7 +66,7 @@ export interface ShopHost {
   };
   /**
    * A window that keeps the shop from opening (`CWndVendor::Initialize`, WndVendor.cpp:204-213, and `SetVendor`'s dialogue,
-   * :67-68): a trade, an NPC shop, a bank or guild bank, an NPC dialogue.
+   * :67-68): a trade, an NPC shop, a bank or guild bank, an NPC dialogue, a duel.
    */
   busy(): boolean;
   /** `InvalidName_ENG.inc` in lower case. */

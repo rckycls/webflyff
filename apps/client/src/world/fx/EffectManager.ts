@@ -202,6 +202,11 @@ export interface EffectRequest {
    * be had), for a caller that keeps a fixed number of them, as `CPartsFire` keeps its slots.
    */
   ended?: () => void;
+  /**
+   * 2026-11-15 (post-merge): not drawn while this holds, still stepped: the duel flag's `CSfxDuelParty::Render` skips a mover
+   * with Dark Illusion or in TRANSPARENT_MODE (`Sfx.cpp:2860-2870`).
+   */
+  hidden?: () => boolean;
 }
 
 /** One effect in the world: a `CSfx`. */
@@ -218,6 +223,8 @@ interface Playing {
   frame: number;
   /** Piece 7 M3: a `CSfxReady`'s test, or null. */
   whileTrue: (() => boolean) | null;
+  /** 2026-11-15 (post-merge): `EffectRequest.hidden`, or null. */
+  hidden: (() => boolean) | null;
   /** `GetAngle()`, degrees, as `SetAngle` stores it. */
   angle: number;
   /** `GetScale()`. */
@@ -364,6 +371,7 @@ export class EffectManager {
     const invView = toWebMatrix(Float32Array.from(camera.matrixWorld.elements));
     this.renderer.begin();
     for (const effect of this.effects) {
+      if (effect.hidden?.() === true) continue;
       const list = effect.model.drawList(effect.angle, effect.scale, invView);
       if (list.length === 0) continue;
       this.renderer.draw(list, [effect.pos[0], f32(effect.pos[1] + effect.lift), effect.pos[2]], camera);
@@ -485,6 +493,7 @@ export class EffectManager {
         seconds: request.seconds !== undefined && request.seconds > 0 ? request.seconds : null,
         frame: 0,
         whileTrue: request.whileTrue ?? null,
+        hidden: request.hidden ?? null,
         angle: request.angle === undefined ? headingOf(request.xi, request.sourceAngle) : wrapAngle(f32(request.angle)),
         scale: [scale, scale, scale],
         lift: request.place !== undefined ? 0 : request.lift ?? (plain ? DRAWN_LIFT : 0),

@@ -86,6 +86,5 @@ The Start menu has 16 lines now: `landscape.spec.ts`'s two-column test was updat
 6. The door: Exit.
 
 ## Not done
-- Movers walk through furniture (Neuz collides with it).
-- Leaving the guild does not clear the client's guild house data yet (DPClient.cpp:12672-12674).
-- The rooms' indoor light is still the outdoor noon light.
+- Done on branch `post-merge-leftovers` (docs/2026-11-15-post-merge-leftovers.md): movers collide with placed furniture,
+  leaving the guild clears the guild house furniture list, the rooms' indoor light (needs a world convert).

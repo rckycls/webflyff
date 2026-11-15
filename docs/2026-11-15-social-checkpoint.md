@@ -69,7 +69,5 @@ npx playwright test -c apps/client/playwright.config.ts apps/client/e2e/social.s
 
 ## Left
 - The duel menu shows only in a /ctd Duel Zone, as V15 on our data. Duels everywhere would change V15: the owner's call.
-- Party rules during a party duel (no leave, no leader change, no invite: TID_GAME_PPVP_LEAVE etc.) are not copied on the
-  client; the server refuses them anyway.
-- The flag is not hidden under Dark Illusion or a transparent GM (V15 hides it).
-- The /ctd zone is not cleared on a world change in the browser (V15 reloads the world's regions).
+- Done on branch `post-merge-leftovers` (docs/2026-11-15-post-merge-leftovers.md): the party duel's client blocks, the
+  flag hidden under Dark Illusion or a transparent GM, the /ctd zone cleared on a teleport.

@@ -24,6 +24,13 @@ export interface WorldManifest {
   mapSize: 128;
   /** `WorldInfo.ambient`: D3DCOLOR 0xAARRGGBB. */
   ambient: number;
+  /**
+   * 2026-11-15 (post-merge): `WorldInfo.diffuse` (D3DCOLOR 0xAARRGGBB) and `lightDir` (D3D), which only an indoor world's
+   * light reads (`CWorld::SetLight`, World3D.cpp:1837-1893). Written for indoor worlds only; missing in a manifest written
+   * before it existed.
+   */
+  diffuse?: number;
+  lightDir?: Vec3;
   /** `WorldInfo.bgColor`: D3DCOLOR 0xAARRGGBB. */
   bgColor: number;
   /** `WorldInfo.fog`: start and end distance, and density. */

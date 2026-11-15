@@ -60,6 +60,8 @@ export interface PartyHudScreen {
   now(): number;
   /** A party skill of the Skill tab carried to the task bar. */
   carryPartySkill(skill: number, event: PointerEvent): void;
+  /** 2026-11-15 (post-merge): the own player is in a party duel (`g_pPlayer->m_nDuel == 2`); none when not given. */
+  partyDuel?(): boolean;
 }
 
 const WHITE = 0xffffffff;
@@ -99,6 +101,7 @@ export class PartyHud {
     this.window.onTarget = (playerId) => screen.target(playerId);
     this.window.onLeave = (leaveId, kick) => this.boxes.leave(leaveId, kick);
     this.window.onHandOver = (playerId) => session.sendPartyChangeLeader(playerId);
+    this.window.partyDuel = () => screen.partyDuel?.() === true;
     this.window.onChangeTroup = () => this.boxes.changeTroup(party.savedName);
     this.window.onQuick = () => this.toggleQuick();
     this.window.onItemMode = (mode) => session.sendPartyItemMode(mode);

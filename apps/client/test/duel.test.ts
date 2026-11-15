@@ -104,6 +104,14 @@ describe('the duel book', () => {
     book.apply({ type: 'addRegion', worldId: 1, attribute: 0x10, rect: [0, 0, 1000, 1000], title: '', movers: [] });
     expect(book.inFightRegion(1, [50, 0, 50])).toBe(false);
   });
+
+  it('a world opened again (OnReplace, 2026-11-15 post-merge) has no Duel Zone', () => {
+    const book = new DuelBook(world());
+    book.apply({ type: 'addRegion', worldId: 1, attribute: 0x40 | 0x400, rect: [100, 200, 300, 400], title: 'Duel Zone', movers: [] });
+    expect(book.inFightRegion(1, [150, 0, 250])).toBe(true);
+    book.enterWorld();
+    expect(book.inFightRegion(1, [150, 0, 250])).toBe(false);
+  });
 });
 
 describe('the duel count (RenderPVPCount)', () => {
