@@ -49,6 +49,9 @@ import { askBeforeLeaving } from './askBeforeLeaving';
 import { BackCamera } from './backCamera';
 import type { ChaseView } from './backCamera';
 import { AttackLoop, objRadius } from './combat/attackLoop';
+import { AutoPlay } from './autoplay/controller';
+import type { AutoPlayHooks } from './autoplay/controller';
+import { loadSettings, saveSettings } from './autoplay/settings';
 import { Missiles } from './combat/missiles';
 import type { MissileWorld } from './combat/missiles';
 import { OwnShots } from './combat/ownShots';
@@ -329,6 +332,11 @@ function keep<T>(list: T[], entry: T): void {
 }
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+/** custom (owner 2026-11-15): the page's localStorage for Auto Play's settings, or null where the browser blocks it. */
+const autoPlayStorage = (): Storage | null => { try { return globalThis.localStorage ?? null; } catch { return null; } };
+/** custom (owner 2026-11-15): Auto Play's chat lines (V15 has no colour of its own for them): a light orange. */
+const AUTO_PLAY_COLOR = 0xffffb44a;
 
 /** The text an entry that failed ends with: its cause, where the player or the owner can do something about it. */
 function endingOf(error: unknown): string {
@@ -726,6 +734,8 @@ export class WorldScreen {
   private readonly onWorldButtonDown = (event: PointerEvent): void => { if (event.button === 0) this.worldButtonDown = true; };
   private readonly onWorldButtonUp = (): void => { this.worldButtonDown = false; };
   private itemUse: ItemUse | undefined;
+  /** custom (owner 2026-11-15): Auto Play (autoplay/controller.ts), built with each world. */
+  private autoPlay: AutoPlay | undefined;
   /** 2026-11-05: the item windows' flows (the name change, the tickets, the summons ...). */
   private itemWindows: ItemWindowFlows | undefined;
   /** 2026-11-05: the upgrade cursor, and whether its effect (XI_INT_INCHANT) is on the own mover. */
@@ -1632,6 +1642,8 @@ export class WorldScreen {
     attackLoop.siege = () => siegeSideOf(this.worldId, this.world?.self(), this.guildCombatBook);
     this.world!.onUseSkill = (casterId, message, started) => skillUse.onUseSkill(casterId, message, started);
     this.attackLoop = attackLoop;
+    // custom (owner 2026-11-15): Auto Play, with the character's own settings
+    this.autoPlay = new AutoPlay(this.autoPlayHooks(), loadSettings(autoPlayStorage(), this.entry.character.playerId));
     // Piece 7 M2: the own missiles' ids and reports, the missiles of everyone, and what the attack loop says and tests
     const ownShots = new OwnShots(this.session);
     const views = this.views!;
@@ -3525,6 +3537,7 @@ export class WorldScreen {
     else loop.onMoverHeld(held.mover, now - held.time);
     const tap = this.tap!.take();
     const walkKey = this.walkKey!.held();
+    this.autoPlay?.step(); // custom (owner 2026-11-15): Auto Play, before the loop and the controls read their commands
     // Piece 7 M5: the world's fly (CWorld::m_bFly) from the worlds without flight
     world.worldFly = !(this.data?.noFlyWorlds.has(this.worldId) ?? false);
     if (own !== undefined && own.act.isFlying()) {
@@ -3955,6 +3968,27 @@ export class WorldScreen {
   private say(id: string): void {
     const entry = this.data?.texts.get(id);
     if (entry !== undefined && entry.text !== '') this.hud?.messages.add(entry.text, entry.color);
+  }
+
+  /** custom (owner 2026-11-15): what Auto Play may read and do, and nothing more (autoplay/controller.ts). */
+  private autoPlayHooks(): AutoPlayHooks {
+    const own = (): OwnState | undefined => this.own;
+    return {
+      now: () => this.world?.nowMs() ?? 0, // the rules' own clock: steps, so a paused or hidden page stays consistent
+      worldId: () => this.worldId,
+      inDuel: () => this.duels.own.duel !== 0,
+      alive: () => { const self = this.world?.self(); return self !== undefined && !self.act.isDie(); },
+      gauges: () => {
+        const o = own();
+        return o ? { hp: o.hp, maxHp: o.maxHp(), mp: o.mp, maxMp: o.maxMp(), fp: o.fp, maxFp: o.maxFp() }
+          : { hp: 0, maxHp: 0, mp: 0, maxMp: 0, fp: 0, maxFp: 0 };
+      },
+      inventory: () => own()?.inventory ?? null,
+      cooldownLeft: (itemId) => this.itemUse?.cooldownLeft(itemId) ?? 0,
+      useItem: (objectId) => this.itemUse?.use(objectId, 'bar') ?? false,
+      say: (text) => this.hud?.messages.add(text, AUTO_PLAY_COLOR),
+      save: (s) => saveSettings(autoPlayStorage(), this.entry.character.playerId, s),
+    };
   }
 
   /**
