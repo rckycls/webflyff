@@ -60,6 +60,7 @@ import { AutoPlayWindow } from './hud/autoPlay/autoPlayWindow';
 import type { AutoPlayItemChoice, AutoPlaySkillChoice } from './hud/autoPlay/autoPlayWindow';
 import { AutoButton, flashStoppedTitle } from './hud/autoPlay/autoButton';
 import { ScreenAwake } from './wakeLock';
+import { SaverScreen } from './hud/autoPlay/saverScreen';
 import { Missiles } from './combat/missiles';
 import type { MissileWorld } from './combat/missiles';
 import { OwnShots } from './combat/ownShots';
@@ -753,6 +754,8 @@ export class WorldScreen {
   private autoButton: AutoButton | undefined;
   /** custom (owner 2026-11-15): the screen kept on while the farm bot runs; the phone's tip, once a page. */
   private screenAwake: ScreenAwake | undefined;
+  /** custom (owner 2026-11-15): the battery saver screen (world drawing stops while it shows). */
+  private saverScreen: SaverScreen | undefined;
   private phoneTipSaid = false;
   /** custom (owner 2026-11-15): what Auto Play last saw of the own EXP, the bag and the drops. */
   private autoPlayExp: { level: number; exp: bigint } | null = null;
@@ -2284,10 +2287,24 @@ export class WorldScreen {
       }),
       skill: (skillIndex) => this.autoPlaySkillChoice(skillIndex),
       buffItemChoices: () => this.itemChoices(isBuffItemProp),
+      showSaver: () => { this.autoPlayWindow?.frame.close(); this.saverScreen?.show(); },
     }, doc);
     this.autoButton = new AutoButton(this.autoPlay!, () => {
       if (this.autoPlayWindow?.isOpen !== true) this.autoPlayWindow?.open('farm');
     }, doc);
+    this.saverScreen = new SaverScreen(this.autoPlay!, {
+      isPhone: () => isPhone(doc),
+      gauges: () => {
+        const o = this.own;
+        return o ? { hp: o.hp, maxHp: o.maxHp(), mp: o.mp, maxMp: o.maxMp(), fp: o.fp, maxFp: o.maxFp() }
+          : { hp: 0, maxHp: 0, mp: 0, maxMp: 0, fp: 0, maxFp: 0 };
+      },
+      onShow: (shown) => this.onSaverShown(shown),
+    }, doc);
+    // a touch or a key anywhere on the game holds the saver off
+    const touched = (): void => this.saverScreen?.touched(this.world?.nowMs() ?? 0);
+    this.element.addEventListener('pointerdown', touched, true);
+    this.element.addEventListener('keydown', touched, true);
     this.moverMenu = new MoverMenu(doc);
     const partyHud = new PartyHud(this.hudArt!, this.data!.texts, () => this.partyCatalog, {
       session,
@@ -2655,7 +2672,7 @@ export class WorldScreen {
       this.arenaHud.element, // 2026-11-15 (B5): first, under the windows, as Neuz draws it in the world's background
       this.questTracker.element, this.teleporter.frame.element, this.heavenTower.element, ...this.lordHud.elements, this.lordHud.eventIcons, ...this.guildCombatHud.elements,
       this.motionWindow.frame.element, // 2026-11-14
-      this.autoPlayWindow.frame.element, this.autoButton.element, // custom (owner 2026-11-15)
+      this.autoPlayWindow.frame.element, this.autoButton.element, this.saverScreen.element, // custom (owner 2026-11-15)
       // 2026-11-12: the phone's quick slots around Attack (bar 8's first slots; style.css shows them on a phone only)
       taskBar.element, taskBar.quickSlots, taskBar.actionSlotWindow.frame.element, this.attackButton.element, this.jumpButton.element,
       this.actionSlotButton.element, this.flightButtons.element,
@@ -3599,6 +3616,7 @@ export class WorldScreen {
     const tap = this.tap!.take();
     const walkKey = this.walkKey!.held();
     this.autoPlay?.step(); // custom (owner 2026-11-15): Auto Play, before the loop and the controls read their commands
+    this.saverScreen?.step(world.nowMs()); // custom (owner 2026-11-15): the battery saver's own clock
     // Piece 7 M5: the world's fly (CWorld::m_bFly) from the worlds without flight
     world.worldFly = !(this.data?.noFlyWorlds.has(this.worldId) ?? false);
     if (own !== undefined && own.act.isFlying()) {
@@ -4115,6 +4133,17 @@ export class WorldScreen {
     if (!this.phoneTipSaid && isPhone(doc)) {
       this.phoneTipSaid = true;
       this.hud?.messages.add('Keep the game open and the screen on. Locking the phone stops Auto Play.', AUTO_PLAY_COLOR);
+    }
+  }
+
+  /** custom (owner 2026-11-15): the battery saver opened (the world is no longer drawn) or closed (drawn again). */
+  private onSaverShown(shown: boolean): void {
+    const renderer = this.page?.renderer;
+    if (renderer === undefined || this.over) return;
+    if (shown) renderer.setAnimationLoop(null);
+    else {
+      this.lastTime = performance.now();
+      renderer.setAnimationLoop((now) => this.frame(now));
     }
   }
 

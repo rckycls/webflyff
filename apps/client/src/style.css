@@ -4885,3 +4885,22 @@ fieldset:disabled .btn {
 }
 /* a phone window over the world hides the AUTO button as it hides Attack */
 .world:has(:is(.hud-quests, .hud-inventory, .hud-auto-play)[data-mobile-window]:not([hidden])) .hud-auto-button { visibility: hidden; }
+
+/* custom (owner 2026-11-15): Auto Play's battery saver (hud/autoPlay/saverScreen.ts): black, dim text, the world not drawn */
+.hud-auto-saver {
+  position: fixed; inset: 0; z-index: 10000; pointer-events: auto; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 14px; background: #000; color: #7d7d7d;
+  font: 14px/1.5 Verdana, Geneva, Tahoma, sans-serif; text-align: center; cursor: pointer; touch-action: manipulation;
+}
+.hud-auto-saver[hidden] { display: none; }
+.saver-text { white-space: pre-line; }
+.saver-gauges { display: flex; flex-direction: column; gap: 6px; width: min(260px, 70vw); }
+.saver-gauge { display: flex; align-items: center; gap: 8px; font-size: 11px; }
+.saver-gauge > span:first-child { width: 22px; text-align: right; }
+.saver-track { flex: 1; height: 6px; border-radius: 3px; background: #1d1d1d; overflow: hidden; }
+.saver-fill { display: block; height: 100%; width: 0; background: #5a5a5a; }
+.saver-gauge[data-gauge='hp'] .saver-fill { background: #7a2f2f; }
+.saver-gauge[data-gauge='mp'] .saver-fill { background: #2f4a7a; }
+.saver-gauge[data-gauge='fp'] .saver-fill { background: #2f6a3a; }
+.saver-hint { font-size: 11px; color: #4a4a4a; }
+.auto-farm-buttons { display: flex; gap: 6px; }

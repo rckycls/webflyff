@@ -24,7 +24,7 @@ const CHOICES: AutoPlayItemChoice[] = [
 ];
 
 function rig(settings: AutoPlaySettings = defaultSettings(), allowed = true) {
-  let saves = 0;
+  let saves = 0, savers = 0;
   const play = {
     settings, saved: () => { saves++; },
     farm: 'off' as 'off' | 'running' | 'stopped', phase: 'seeking' as const, lastStop: null as string | null, bagIsFull: false,
@@ -41,12 +41,13 @@ function rig(settings: AutoPlaySettings = defaultSettings(), allowed = true) {
     skillChoices: () => SKILLS,
     skill: (skillIndex) => SKILLS.find((c) => c.skillIndex === skillIndex) ?? null,
     buffItemChoices: () => [{ itemIndex: 3001, name: 'Strength Scroll', icon: null, count: 2 }],
+    showSaver: () => { savers++; },
   }, document);
   document.body.append(w.frame.element);
   const row = (name: 'hp' | 'mp' | 'fp') => w.frame.element.querySelector<HTMLElement>(`.auto-pot-row[data-row="${name}"]`)!;
   const press = (within: HTMLElement, label: string) =>
     [...within.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.getAttribute('aria-label') === label || b.textContent === label)!.click();
-  return { w, play, saves: () => saves, row, press };
+  return { w, play, saves: () => saves, savers: () => savers, row, press };
 }
 
 describe('AutoPlayWindow: Potions tab', () => {
@@ -161,6 +162,15 @@ describe('AutoPlayWindow: Farm tab', () => {
     w.refresh();
     press(farm(w), 'Stop');
     expect(play.lastStop).toBe('you took control');
+  });
+
+  it('while it runs, Battery saver opens the saver screen', () => {
+    const { w, press, savers } = rig();
+    w.open();
+    expect([...farm(w).querySelectorAll('button')].some((b) => b.textContent === 'Battery saver')).toBe(false);
+    press(farm(w), 'Start');
+    press(farm(w), 'Battery saver');
+    expect(savers()).toBe(1);
   });
 
   it('Start is greyed where farming is not allowed', () => {

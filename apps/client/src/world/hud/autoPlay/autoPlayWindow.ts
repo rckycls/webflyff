@@ -44,6 +44,8 @@ export interface AutoPlayWindowDeps {
   skill(skillIndex: number): AutoPlaySkillChoice | null;
   /** The bag's buff items (not worn, with an effect that is not a heal), one entry per item index. */
   buffItemChoices(): AutoPlayItemChoice[];
+  /** Opens the battery saver screen (M4). */
+  showSaver?(): void;
 }
 
 /** What the window edits and shows: Auto Play's settings (kept after each change) and the farm bot. */
@@ -313,7 +315,15 @@ export class AutoPlayWindow {
     stats.className = 'auto-farm-stats';
     stats.textContent = lines.join('  ');
 
-    page.append(radius, loot, after, go, state, stats);
+    const buttons = doc.createElement('div');
+    buttons.className = 'auto-farm-buttons';
+    buttons.append(go);
+    if (running && this.deps.showSaver !== undefined) {
+      const saver = textButton(doc, 'Battery saver', () => this.deps.showSaver?.(), 'saver', 'autoPlay');
+      saver.className = 'auto-farm-go';
+      buttons.append(saver);
+    }
+    page.append(radius, loot, after, buttons, state, stats);
     return page;
   }
 
