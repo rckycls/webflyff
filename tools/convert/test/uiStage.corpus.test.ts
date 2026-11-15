@@ -14,7 +14,7 @@ import { gameDataStage } from '../src/data/gameDataStage';
 import { AssetWriter } from '../src/output/AssetWriter';
 import { iconKeyOf, itemIconKeyOf } from '../src/output/keys';
 import { Report } from '../src/output/Report';
-import { THEME_FILES, uiStage } from '../src/ui/uiStage';
+import { THEME_FILES, WEEKLY_PICTURES, uiStage } from '../src/ui/uiStage';
 import { makeTempDir } from './helpers/fakeClient';
 import type { ReportJson } from './helpers/worldRun';
 
@@ -61,8 +61,8 @@ describeClient('the UI stage on the real client', () => {
     expect(logos).toBe(27);
     expect(client.list('Icon', /\.jpe?g$/i).length).toBe(logos);
     // every picture of Client/Icon, Client/Item and Client/Char, the minimaps, every piece of the theme list,
-    // DmgEffect.dds, the sheets catalog, the logos and (2026-11-15) the Guild Siege's minimap mask
-    expect(reportJson.kinds.ui!.ok).toBe(pictures + itemPictures + charPictures + minimaps + THEME_FILES.length + 1 + 1 + logos + 1);
+    // DmgEffect.dds, the sheets catalog, the logos and (2026-11-15) the Guild Siege's minimap mask and its two weekly marks
+    expect(reportJson.kinds.ui!.ok).toBe(pictures + itemPictures + charPictures + minimaps + THEME_FILES.length + 1 + 1 + logos + 1 + WEEKLY_PICTURES.length);
     expect(reportJson.warnings.filter((w) => w.kind === 'ui')).toHaveLength(0);
   });
 

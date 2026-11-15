@@ -5,7 +5,8 @@
 // server's GC_GETPENYAGUILD, GC_TELE and GC_DIAGMESSAGE become their boxes. The siege's button pictures are not converted
 // yet, so their loads fail in the console: the windows still work (their buttons are found by their names).
 // B5: in the arena (world 202), logged in during the war: the HUD and the PvP rule from GC_GCSTATE, GC_USERSTATE and the
-// boards alone; the phone's boards clear of Attack, the quick slots, Jump, the Action Slot button and the task bar.
+// boards alone; the phone's boards clear of Attack, the quick slots, Jump, the Action Slot button and the task bar, and the
+// own guild's list of a full line-up clear of them, the chat and the boards (final review).
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, test } from '@playwright/test';
@@ -38,8 +39,8 @@ async function closeBox(page: Page): Promise<void> {
 }
 
 const npcOf = (characterKey: string): AddedMover => ({ ...julia, objectId: NPC_ID, npc: { ...julia.npc!, characterKey } });
-const worldWith = (characterKey: string): WorldScript => createWorldScript({
-  playerObjectId: SELF_ID, worldId: MADRIGAL, pos: SQUARE, self: writeAddSelf(SELF_ID, self), others: [writeAddNpc(NPC_ID, npcOf(characterKey))],
+const worldWith = (characterKey: string, me: AddedMover = self): WorldScript => createWorldScript({
+  playerObjectId: SELF_ID, worldId: MADRIGAL, pos: SQUARE, self: writeAddSelf(SELF_ID, me), others: [writeAddNpc(NPC_ID, npcOf(characterKey))],
 });
 /** The server's answer: a siege snapshot of `message`. */
 type Body = GuildCombatMessage extends infer M ? (M extends { type: string } ? Omit<M, 'type'> : never) : never;
@@ -76,7 +77,8 @@ async function phoneChecks(page: Page, window: Locator): Promise<void> {
 }
 
 test('Frankie: Apply, Status, walking away and the boards', async ({ page }, info) => {
-  const script = worldWith('MaFl_GuildWar');
+  // the penya for the minimum bid: a bid over the own penya is refused before the confirm box (final review, Important 1)
+  const script = worldWith('MaFl_GuildWar', { ...self, player: { ...SELF_PLAYER, own: { ...newVagrantOwn(), gold: 150_000_000 } } });
   const gateway = await playGateway(page, script);
   await enterFlaris(page);
   const shot = (name: string) => page.screenshot({ path: info.outputPath(`${name}.png`) });
@@ -405,22 +407,41 @@ test('In the arena: logged in during the war, the count-down, the boards, the ow
     await expect(guildRows.nth(5)).toHaveText(/8\s*Baker\.\.\.\s*50/);
     await expect(playerRows).toHaveCount(6);
     await expect(page.locator('.hud-quick-slot')).toHaveCount(7);
+    // final review, Important 2: a full line-up of 10 with Webby waiting 8th: the phone's list shows the five inside, the
+    // next in and Webby's own row, under the status window, clear of Attack, the quick slots, the chat and the task bar
+    answer(gateway, script, {
+      sub: 'guildStatus', joinIndex: 5, players: [
+        ...[LEAD, MIA, 73001, 73002, 73003, 73004, 73005].map((playerId) => ({ playerId, lives: 6 })),
+        { playerId: WEBBY, lives: 3 }, { playerId: 73006, lives: 0 }, { playerId: 73007, lives: 0 },
+      ],
+    });
+    await expect(list.locator('.hud-siege-member')).toHaveCount(7, ON_FRAMES);
+    await expect(list.locator('.hud-siege-member').nth(5)).toHaveCSS('color', 'rgb(0, 203, 0)');
+    await expect(list.locator('.hud-siege-member').last().locator('.hud-siege-number')).toHaveText(/^\s*8$/);
+    await expect(list.locator('.hud-siege-member').last().locator('.hud-siege-name')).toHaveText('Webby...');
     const clashes = () => page.evaluate(() => {
       const boxes = (selector: string) => [...document.querySelectorAll(selector)]
         .map((element) => ({ name: `${element.className}`, box: element.getBoundingClientRect() }))
         .filter(({ box }) => box.width > 0 && box.height > 0);
+      const meets = (a: DOMRect, c: DOMRect): boolean => a.left < c.right && c.left < a.right && a.top < c.bottom && c.top < a.bottom;
       const boards = boxes('.hud-siege-board');
       const controls = boxes('.hud-attack, .hud-quick-slot, .hud-jump, .hud-action-trigger, .hud-taskbar-strip');
+      const lists = boxes('.hud-siege-guild');
+      const chats = boxes('.hud-neuz-chat');
       const found: string[] = [];
       if (boards.length !== 2) found.push(`${boards.length} boards`);
       if (controls.length < 10) found.push(`${controls.length} controls`);
+      if (lists.length !== 1) found.push(`${lists.length} own lists`);
+      if (chats.length !== 1) found.push(`${chats.length} chats`);
       const [a, b] = boards.map(({ box }) => box);
-      if (a !== undefined && b !== undefined && a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom) found.push('the boards overlap');
+      if (a !== undefined && b !== undefined && meets(a, b)) found.push('the boards overlap');
       for (const { box: b } of boards) {
         if (b.left < 0 || b.top < 0 || b.right > innerWidth || b.bottom > innerHeight) found.push('a board off the screen');
-        for (const { name, box: c } of controls) {
-          if (b.left < c.right && c.left < b.right && b.top < c.bottom && c.top < b.bottom) found.push(`a board over ${name}`);
-        }
+        for (const { name, box: c } of controls) if (meets(b, c)) found.push(`a board over ${name}`);
+      }
+      for (const { box: l } of lists) {
+        if (l.left < 0 || l.top < 0 || l.right > innerWidth || l.bottom > innerHeight) found.push('the own list off the screen');
+        for (const { name, box: c } of [...controls, ...chats, ...boards]) if (meets(l, c)) found.push(`the own list over ${name}`);
       }
       return found;
     });

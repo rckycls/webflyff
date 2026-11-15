@@ -230,7 +230,7 @@ import { guildLine, nameTagOf } from './render/nameTags';
 import { GuildCombatBook } from './guildCombat/guildCombatBook';
 import { GuildCombatHud } from './guildCombat/guildCombatHud';
 import { MoverGcState, trophyOf } from './guildCombat/guildCombatRules';
-import { SiegeWeeklyFeed, badgeOf } from './guildCombat/siegeWebApi';
+import { SiegeRankingCache, SiegeWeeklyFeed, badgeOf } from './guildCombat/siegeWebApi';
 import { siegeDefenderLine, siegeHides, siegeNameColor, siegeSideOf } from './combat/siege';
 import { ArenaHud, ArenaState } from './hud/guildCombat/arenaHud';
 import { saveTextFile } from './hud/guildCombat/download';
@@ -592,8 +592,13 @@ export class WorldScreen {
   /** 2026-11-15: the Guild Siege's state (guildCombat/guildCombatBook.ts), from the JOIN's GCSTATE on, whatever HUD there is. */
   private readonly guildCombatBook = new GuildCombatBook((objectId) => this.world?.movers.get(objectId)?.added.player?.guildCombatState ?? 0);
   private guildCombatHud: GuildCombatHud | undefined;
-  /** 2026-11-15 (C1): the website's weekly champion and MVP, for the marks by the names; started with the world, stopped on teardown. */
+  /**
+   * 2026-11-15 (C1): the website's weekly champion and MVP, for the marks by the names; started with the world, stopped on
+   * teardown; the screen's, so a teleport within 5 min of its last call asks nothing (final review, Minor 4).
+   */
   private readonly weeklyFeed = new SiegeWeeklyFeed({ onChange: () => this.recolorTags() });
+  /** 2026-11-15 (C2): the Siege Ranking window's answers, the screen's so that their 60 s reuse outlives a teleport (final review, Minor 5). */
+  private readonly siegeRankingCache = new SiegeRankingCache();
   /** 2026-11-15 (B5): the arena's lines, captions, music and count-down (hud/guildCombat/arenaHud.ts), for the session. */
   private readonly siegeArena = new ArenaState(this.guildCombatBook, {
     worldId: () => this.worldId,
@@ -2115,6 +2120,8 @@ export class WorldScreen {
         return { playerId: m.playerId, name: data.name, jobName: this.data?.jobs[data.job]?.title ?? '', level: data.level, online: data.login > 0, rank: m.rank };
       }),
       nameOf: (playerId) => this.playerData.get(playerId).name,
+      ownName: () => this.world?.self()?.name ?? this.entry.character.name,
+      rankingCache: this.siegeRankingCache,
       guildName: (guildId) => this.guildBook.guild(guildId)?.name ?? '',
       guildMasterId: (guildId) => this.guildBook.guild(guildId)?.masterId ?? 0,
       ownPlayerId: () => this.entry.character.playerId,
@@ -2132,8 +2139,8 @@ export class WorldScreen {
       ownGuildName: () => this.guildBook.own(this.entry.character.playerId)?.name ?? '',
       nameOf: (playerId) => this.playerData.get(playerId).name,
       hpOf: (playerId) => {
-        for (const m of this.world?.movers.values() ?? []) if (m.added.player?.playerId === playerId) return m.maxHp ? m.hp / m.maxHp : null;
-        return null;
+        const m = this.world?.moverByPlayerId(playerId);
+        return m?.maxHp ? m.hp / m.maxHp : null;
       },
       compact: () => isPhone(doc), // the phone's layout, whose Attack and quick slots the full boards would cover
       text: (tid) => this.data?.texts.get(tid)?.text ?? '',

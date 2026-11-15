@@ -4342,6 +4342,9 @@ fieldset:disabled .btn {
 .hud-siege[data-compact] .hud-siege-board .hud-siege-title::before { content: ''; position: absolute; inset: -6px -8px; }
 .hud-siege[data-compact] .hud-siege-board .hud-siege-title::after { content: ' \25BE'; }
 .hud-siege[data-compact] .hud-siege-board .hud-siege-title[aria-expanded='false']::after { content: ' \25B8'; }
+/* final review (Important 2, Minor 2): the quest tracker goes in world 202, where the boards (right 10, top 190) and the own
+   guild's list stand, and on the phone wherever the list shows, at the tracker's place under the status window */
+.world[data-world-id='202'] .hud-quest-tracker, .world:has(.hud-siege[data-compact] .hud-siege-guild:not([hidden])) .hud-quest-tracker { display: none; }
 
 /* B5: the Navigator's mask over world 202's map (WdGuildWar_Mask.dds at alpha 200), over the tiles, under the markers */
 .navigator-masks { position: absolute; inset: 0; pointer-events: none; }

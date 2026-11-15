@@ -12,6 +12,7 @@ import type { UiArt } from '../art';
 import { ResWindow } from '../resWindow';
 import type { ResLayout } from '../resWindow';
 import { RED_CHIP_INFO } from '../../guildCombat/boardTexts';
+import { parseBid } from '../../guildCombat/guildCombatRules';
 import { setDescription } from '../../items/npcWindowKit';
 
 const EDIT = 'WndEditTile00.tga';
@@ -32,7 +33,7 @@ export function applyLayout(title: string): ResLayout {
 
 export class ApplyWindow {
   readonly window: ResWindow;
-  /** Accept: the typed fee (`atoi`: the digits at the start, 0 for none). */
+  /** Accept: the typed fee (`parseBid`: every digit, so "1,000,000" is a million; 0 for none). */
   onAccept: (fee: number) => void = () => {};
   private readonly field: HTMLInputElement;
 
@@ -76,6 +77,6 @@ export class ApplyWindow {
   }
 
   private accept(): void {
-    this.onAccept(Number.parseInt(this.field.value, 10) || 0);
+    this.onAccept(parseBid(this.field.value));
   }
 }

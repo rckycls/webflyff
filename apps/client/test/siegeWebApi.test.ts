@@ -68,6 +68,33 @@ describe('SiegeWeeklyFeed', () => {
     feed.stop();
   });
 
+  // final review, Minor 4: the screen stops and starts the feed at each world change (a teleport); at most one call per 5 min
+  it('a start within 5 min of the last fetch does not fetch again; the answer and its expiry stay; the 5 min go on from that fetch', async () => {
+    const onChange = vi.fn();
+    const soon = weekly({ expiresAt: new Date(T0 + 4 * 60_000).toISOString() });
+    const fetcher = vi.fn(async () => answer(soon));
+    const feed = new SiegeWeeklyFeed({ fetcher: fetcher as never, now: () => Date.now(), onChange });
+    feed.start();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(2 * 60_000);
+    feed.stop();
+    feed.start(); // a teleport 2 min after the fetch
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(feed.current(Date.now())?.mvp?.playerId).toBe(42);
+    await vi.advanceTimersByTimeAsync(2 * 60_000 + 1000); // the answer runs out at 4 min: the tags are drawn again
+    expect(onChange).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(59_000); // 5 min after the first fetch
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    feed.stop();
+    await vi.advanceTimersByTimeAsync(5 * 60_000 + 1);
+    feed.start(); // more than 5 min since the last one: at once
+    expect(fetcher).toHaveBeenCalledTimes(3);
+    feed.stop();
+  });
+
   it('a network error or a throwing fetch is no answer', async () => {
     const feed = new SiegeWeeklyFeed({ fetcher: (async () => { throw new Error('down'); }) as never, now: () => Date.now() });
     feed.start();

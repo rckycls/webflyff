@@ -23,6 +23,7 @@ GO
 -- The latest siege that ended on a Saturday between 20:00 and 21:59 within the last 7 days (the weekly winner):
 -- its winning guild (StraightWin > 0), its MVP (Reward > 0) and when it ended. The times are sent as text with the PH
 -- offset: a datetime would be read as UTC by the driver and shifted by 8 hours. The weekday does not depend on DATEFIRST.
+-- A deleted MVP (CHARACTER_TBL.isblock = 'D', CHARACTER_STR's soft delete 'D1') has no name, so no mark.
 IF OBJECT_ID(N'dbo.usp_WebSiegeWeekly', N'P') IS NULL EXEC (N'CREATE PROCEDURE dbo.usp_WebSiegeWeekly AS RETURN 0')
 GO
 ALTER PROCEDURE dbo.usp_WebSiegeWeekly
@@ -42,13 +43,14 @@ SELECT
 		WHERE g.CombatID = @combat AND g.serverindex = '01' AND g.StraightWin > 0) AS guildName,
 	(SELECT TOP 1 p.PlayerID FROM dbo.tblCombatJoinPlayer p WHERE p.CombatID = @combat AND p.serverindex = '01' AND p.Reward > 0) AS playerId,
 	(SELECT TOP 1 c.m_szName FROM dbo.tblCombatJoinPlayer p INNER JOIN dbo.CHARACTER_TBL c ON c.m_idPlayer = p.PlayerID AND c.serverindex = p.serverindex
+		AND ISNULL(c.isblock, '') <> 'D'
 		WHERE p.CombatID = @combat AND p.serverindex = '01' AND p.Reward > 0) AS playerName,
 	CONVERT(varchar(19), @ended, 126) + '+08:00' AS endedAt
 WHERE @combat IS NOT NULL
 GO
 
 -- The top 100 players by siege points (only above 0), each with the guild of the player's latest siege. @week = 1:
--- only sieges that ended since this Sunday 00:00.
+-- only sieges that ended since this Sunday 00:00. Deleted characters (isblock = 'D') are left out.
 IF OBJECT_ID(N'dbo.usp_WebSiegeRankingPlayer', N'P') IS NULL EXEC (N'CREATE PROCEDURE dbo.usp_WebSiegeRankingPlayer AS RETURN 0')
 GO
 ALTER PROCEDURE dbo.usp_WebSiegeRankingPlayer @week bit
@@ -73,7 +75,7 @@ FROM (
 	GROUP BY p.PlayerID
 	HAVING SUM(p.Point) > 0
 ) x
-INNER JOIN dbo.CHARACTER_TBL c ON c.m_idPlayer = x.PlayerID AND c.serverindex = '01'
+INNER JOIN dbo.CHARACTER_TBL c ON c.m_idPlayer = x.PlayerID AND c.serverindex = '01' AND ISNULL(c.isblock, '') <> 'D'
 ORDER BY x.points DESC, c.m_szName
 GO
 

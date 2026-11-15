@@ -51,10 +51,17 @@ export interface SiegeWeeklyFeedOptions {
   timeoutMs?: number;
 }
 
-/** Asks for the weekly answer at start and every 5 min, one call in flight, 3 s each; a failure keeps the last good answer. */
+/**
+ * Asks for the weekly answer at start and every 5 min, one call in flight, 3 s each; a failure keeps the last good answer.
+ * The screen stops and starts it at each world change: a start within 5 min of the last call waits for the rest of them
+ * (the answer and its expiry kept), so a teleport asks nothing (final review, Minor 4).
+ */
 export class SiegeWeeklyFeed {
   private last: SiegeWeekly | null = null;
+  /** When the last call went out, on `now`'s clock. */
+  private lastFetchAt = -Infinity;
   private interval: ReturnType<typeof setInterval> | undefined;
+  private wait: ReturnType<typeof setTimeout> | undefined;
   private expiry: ReturnType<typeof setTimeout> | undefined;
   private running = false;
   private inFlight = false;
@@ -66,15 +73,22 @@ export class SiegeWeeklyFeed {
   start(): void {
     if (this.running) return;
     this.running = true;
-    void this.fetchOnce();
-    this.interval = setInterval(() => { void this.fetchOnce(); }, WEEKLY_EVERY_MS);
+    const every = (): void => {
+      void this.fetchOnce();
+      this.interval = setInterval(() => { void this.fetchOnce(); }, WEEKLY_EVERY_MS);
+    };
+    const since = this.now() - this.lastFetchAt;
+    if (since >= WEEKLY_EVERY_MS) every();
+    else this.wait = setTimeout(() => { this.wait = undefined; every(); }, WEEKLY_EVERY_MS - since);
+    this.armExpiry();
   }
 
   stop(): void {
     this.running = false;
     if (this.interval !== undefined) clearInterval(this.interval);
+    if (this.wait !== undefined) clearTimeout(this.wait);
     if (this.expiry !== undefined) clearTimeout(this.expiry);
-    this.interval = this.expiry = undefined;
+    this.interval = this.wait = this.expiry = undefined;
   }
 
   /** The last good answer, null when there is none or it has expired. */
@@ -85,6 +99,7 @@ export class SiegeWeeklyFeed {
   private async fetchOnce(): Promise<void> {
     if (this.inFlight) return;
     this.inFlight = true;
+    this.lastFetchAt = this.now();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.options.timeoutMs ?? WEEKLY_TIMEOUT_MS);
     try {

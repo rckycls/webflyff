@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { GuildCombatMessage } from '@flyffweb/protocol';
 import {
-  ArenaHud, ArenaState, cutName, guildBoardRows, ownGuildRows, playerBoardRows, siegeClockText,
+  ArenaHud, ArenaState, compactOwnRows, cutName, guildBoardRows, ownGuildRows, playerBoardRows, siegeClockText,
 } from '../src/world/hud/guildCombat/arenaHud';
 import type { ArenaHudHost, ArenaStateHost } from '../src/world/hud/guildCombat/arenaHud';
 import { attackAble } from '../src/world/combat/attackLoop';
@@ -230,6 +230,54 @@ describe('the own-guild list (WndWorld.cpp:1461-1618)', () => {
     hud.update(1000);
     expect(ready.hidden).toBe(true);
   });
+  // final review, Important 2: the phone's list of a full line-up of 10 (5 inside, 5 waiting or out)
+  const ten = (ownAt: number, joinIndex = 5, lives = [6, 6, 6, 6, 6, 6, 4, 3, 0, 0]) => {
+    const ids = [501, 502, 503, 504, 505, 506, 507, 508, 509];
+    ids.splice(ownAt, 0, OWN_ID);
+    return { joinIndex, players: ids.map((playerId, i) => ({ playerId, lives: lives[i]! })) };
+  };
+  const numbers = (status: ReturnType<typeof ten>) =>
+    compactOwnRows(ownGuildRows(status, new Map(), OWN_ID, () => 'Mate', () => null).rows).map((r) => r.number);
+
+  it('on the phone: the five inside, the next in and the own row after a gap; the box as tall as its rows and gaps, under the status window', () => {
+    const book = new GuildCombatBook();
+    const status = ten(7);
+    book.apply(msg({ sub: 'warPlayerList', guilds: [{ defenderId: 501, members: status.players.map(({ playerId }) => ({ playerId, status: 1 })) }] }), 0);
+    book.apply(msg({ sub: 'guildStatus', ...status }), 0);
+    const hud = make(book, new ArenaState(book, stateHost({ id: 202, rank: 4 }, said())), hudHost(true));
+    hud.update(0);
+    const list = hud.element.querySelector('.hud-siege-guild') as HTMLElement;
+    const members = [...list.querySelectorAll('.hud-siege-member')] as HTMLElement[];
+    expect(members.map((m) => m.querySelector('.hud-siege-number')!.textContent)).toEqual([' 1', ' 2', ' 3', ' 4', ' 5', ' 6', ' 8']);
+    expect(members.at(-1)!.querySelector('.hud-siege-name')!.textContent).toBe('Webby...');
+    // rows of 14 px from y 19, a 7 px gap before the next in and before the own row; the box ends 3 px under the last row
+    expect(members.map((m) => m.style.top)).toEqual(['19px', '33px', '47px', '61px', '75px', '96px', '117px']);
+    expect(list.style.height).toBe(`${117 + 14 + 3}px`);
+    expect([list.style.left, list.style.top]).toEqual(['5px', '76px']);
+  });
+
+  it('on the phone the own row is not repeated when shown; with nobody waiting the five inside, then the own row', () => {
+    expect(numbers(ten(2))).toEqual([' 1', ' 2', ' 3', ' 4', ' 5', ' 6']);
+    expect(numbers(ten(5))).toEqual([' 1', ' 2', ' 3', ' 4', ' 5', ' 6']);
+    // the own player out of lives: after the dead's gap
+    expect(numbers(ten(9))).toEqual([' 1', ' 2', ' 3', ' 4', ' 5', ' 6', '10']);
+    // joinIndex 0: nobody waits; before the war all ten may be listed alive: the first five and the own row
+    expect(numbers(ten(8, 0, [6, 6, 6, 6, 6, 6, 6, 6, 6, 6]))).toEqual([' 1', ' 2', ' 3', ' 4', ' 5', ' 9']);
+    expect(numbers(ten(1, 0, [6, 6, 6, 0, 0, 0, 0, 0, 0, 0]))).toEqual([' 1', ' 2', ' 3']);
+  });
+
+  it('the desktop keeps Neuz\'s whole list and its (n + 2) x 16 box', () => {
+    const book = new GuildCombatBook();
+    const status = ten(7);
+    book.apply(msg({ sub: 'warPlayerList', guilds: [{ defenderId: 501, members: status.players.map(({ playerId }) => ({ playerId, status: 1 })) }] }), 0);
+    book.apply(msg({ sub: 'guildStatus', ...status }), 0);
+    const hud = make(book, new ArenaState(book, stateHost({ id: 202, rank: 4 }, said())));
+    hud.update(0);
+    const list = hud.element.querySelector('.hud-siege-guild') as HTMLElement;
+    expect(list.querySelectorAll('.hud-siege-member')).toHaveLength(10);
+    expect([list.style.top, list.style.height]).toEqual(['120px', `${12 * 16}px`]);
+  });
+
   it('is drawn in any world, but only for a player on a line-up', () => {
     const book = new GuildCombatBook();
     book.apply(msg({ sub: 'guildStatus', joinIndex: 0, players: [{ playerId: OWN_ID, lives: 6 }] }), 0);
@@ -241,6 +289,31 @@ describe('the own-guild list (WndWorld.cpp:1461-1618)', () => {
     book.apply(msg({ sub: 'warPlayerList', guilds: [{ defenderId: 9, members: [{ playerId: OWN_ID, status: 0 }] }] }), 0);
     hud.update(1000);
     expect(list.hidden).toBe(false);
+  });
+});
+
+describe('the quest tracker and the siege (final review, Important 2 and Minor 2)', () => {
+  it('style.css hides the tracker in world 202 (the boards and the list stand there), and on the phone while the own list shows', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { resolve } = await import('node:path');
+    // the tests run from the repository's root (jsdom's import.meta.url is no file URL)
+    const css = readFileSync(resolve('apps/client/src/style.css'), 'utf8');
+    const line = css.split('\n').find((l) => l.includes('.hud-quest-tracker') && l.includes("data-world-id='202'")) ?? '';
+    expect(line).toMatch(/\{ display: none; \}/);
+    const selectors = line.slice(0, line.indexOf('{')).split(/,(?![^(]*\))/).map((s) => s.trim());
+    expect(selectors).toContain(".world:has(.hud-siege[data-compact] .hud-siege-guild:not([hidden])) .hud-quest-tracker");
+    // the 202 one matches the tracker of a world screen in 202, and only there
+    const world = document.createElement('div');
+    world.className = 'world';
+    world.dataset.worldId = '202';
+    const tracker = document.createElement('div');
+    tracker.className = 'hud-quest-tracker';
+    world.append(tracker);
+    document.body.append(world);
+    const in202 = selectors.find((s) => s.includes('202'))!;
+    expect(tracker.matches(in202)).toBe(true);
+    world.dataset.worldId = '1';
+    expect(tracker.matches(in202)).toBe(false);
   });
 });
 

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // 2026-11-15 (Guild Siege, B3): Frankie's and Donaris's windows (guildCombat/guildCombatHud.ts, hud/guildCombat/*.ts).
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   encodeGcApply, encodeGcCancel, encodeGcJoin, encodeGcPenyaGuild, encodeGcStatus, encodeGcTele, encodeGcWindow,
 } from '@flyffweb/protocol';
@@ -12,6 +12,7 @@ import { GuildCombatHud } from '../src/world/guildCombat/guildCombatHud';
 import type { GuildCombatHost } from '../src/world/guildCombat/guildCombatHud';
 import { BOARD1, BOARD2, BOARD3, BOARD_FEE, BOARD_PRIZE } from '../src/world/guildCombat/boardTexts';
 import { GcState, GcTid } from '../src/world/guildCombat/guildCombatRules';
+import { SiegeRankingCache } from '../src/world/guildCombat/siegeWebApi';
 
 const art: UiArt = { url: () => '', sheets: null };
 const T = 'guildCombat' as const;
@@ -22,19 +23,21 @@ const BY_ID: Record<number, string> = {
   [GcTid.MORE_CURRENT_REQUEST]: 'You require more Penya to apply.', [GcTid.LIMIT_MIN]: 'Apply with the minimum Application Fee or higher.',
   [GcTid.MORE_REQUEST]: 'You have applied with %d Penya. Do you wish to add %d Penya?', [GcTid.REQUESTEND]: 'Guild Siege is closed.',
   [GcTid.NOTENTER_VAGRANT]: 'A vagrant is not eligible.', [GcTid.JACKPOT]: 'You received %I64d penya as prize money.',
+  [GcTid.REQUEST_NOTPENYA]: 'You can apply to the guild siege if you have the required Penya.',
 };
 
-interface Made { hud: GuildCombatHud; book: GuildCombatBook; sent: Uint8Array[]; boxes: Array<{ text: string; ok?: () => void }>; host: GuildCombatHost; state: { master: boolean; vagrant: boolean; now: number } }
+interface Made { hud: GuildCombatHud; book: GuildCombatBook; sent: Uint8Array[]; boxes: Array<{ text: string; ok?: () => void }>; host: GuildCombatHost; state: { master: boolean; vagrant: boolean; now: number; gold: number } }
 
-function make(): Made {
+function make(extra: Partial<GuildCombatHost> = {}): Made {
   const sent: Uint8Array[] = [];
   const boxes: Made['boxes'] = [];
-  const state = { master: true, vagrant: false, now: 1000 };
+  const state = { master: true, vagrant: false, now: 1000, gold: 2_000_000_000 };
   const host: GuildCombatHost = {
     send: (bytes) => sent.push(bytes), text: (tid) => TEXTS[tid] ?? '', textById: (id) => BY_ID[id] ?? '',
     box: (text, ok) => boxes.push({ text, ok }), ownIsVagrant: () => state.vagrant, ownGuildName: () => 'Bravo',
-    ownIsGuildMaster: () => state.master, guildMembers: () => [], ownGold: () => 0, now: () => state.now,
-    nameOf: () => '', guildName: () => '', guildMasterId: () => 0, ownPlayerId: () => 1, ownGuildId: () => 0, jobs: () => ({}), save: () => {},
+    ownIsGuildMaster: () => state.master, guildMembers: () => [], ownGold: () => state.gold, now: () => state.now,
+    nameOf: () => '', ownName: () => 'Rocky', guildName: () => '', guildMasterId: () => 0, ownPlayerId: () => 1, ownGuildId: () => 0, jobs: () => ({}),
+    save: () => {}, ...extra,
   };
   const book = new GuildCombatBook();
   const hud = new GuildCombatHud(host, book, art);
@@ -135,6 +138,84 @@ describe('Apply (GC_IN_WINDOW)', () => {
     click(h.hud.apply.element, 'WIDC_ACCEPT');
     expect(h.boxes.at(-1)!.text).toBe('You have applied with 300000000 Penya. Do you wish to add 50000000 Penya?');
     expect(h.sent).toHaveLength(0);
+  });
+
+  // final review, Important 1: what the box asks is what is sent; a bid the u32 would wrap, or the master cannot pay, is refused
+  const type = (value: string): void => { h.hud.apply.window.input('WIDC_EDIT1').value = value; click(h.hud.apply.element, 'WIDC_ACCEPT'); };
+  const NOT_PENYA = { text: 'You can apply to the guild siege if you have the required Penya.', ok: undefined };
+
+  it('reads a bid typed with commas as the whole number', () => {
+    open(0, 100_000_000);
+    type('150,000,000');
+    expect(h.boxes.at(-1)!.text).toBe('You have applied with 0 Penya. Do you wish to add 150000000 Penya?');
+    h.boxes.at(-1)!.ok!();
+    expect(h.sent).toEqual([encodeGcApply(150_000_000)]);
+  });
+
+  it('refuses 5,000,000,000 (over INT_MAX) and a bid over the own penya and bid: the box, no confirm, no packet', () => {
+    open(0, 100_000_000);
+    type('5,000,000,000');
+    expect(h.boxes.at(-1)).toEqual(NOT_PENYA);
+    type('5000000000');
+    expect(h.boxes.at(-1)).toEqual(NOT_PENYA);
+    h.hud.apply.close();
+    h.state.gold = 49_999_999;
+    open(300_000_000, 100_000_000);
+    type('350000000');
+    expect(h.boxes.at(-1)).toEqual(NOT_PENYA);
+    type('349999999');
+    expect(h.boxes.at(-1)!.text).toBe('You have applied with 300000000 Penya. Do you wish to add 49999999 Penya?');
+    expect(h.sent).toHaveLength(0);
+  });
+
+  it('INT_MAX itself is asked and sent when the master has it', () => {
+    h.state.gold = 2_147_483_647;
+    open(0, 100_000_000);
+    type('2147483647');
+    h.boxes.at(-1)!.ok!();
+    expect(h.sent).toEqual([encodeGcApply(2_147_483_647)]);
+  });
+});
+
+describe('the Siege Ranking window (final review, Minors 1, 3 and 5)', () => {
+  const rows = [{ rank: 1, name: 'Zed', job: 1, guild: 'Alpha', points: 9 }, { rank: 2, name: 'Rocky', job: 1, guild: 'Bravo', points: 5 }];
+  const answer = () => ({ ok: true, json: async () => ({ rows, checkedAt: '2026-11-15T12:00:00+08:00' }) }) as Response;
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  it('close() and dispose() close it too (no frame left in the Escape stack)', () => {
+    h.hud.siegeRanking.open();
+    expect(h.hud.siegeRanking.isOpen).toBe(true);
+    h.hud.close();
+    expect(h.hud.siegeRanking.isOpen).toBe(false);
+    h.hud.siegeRanking.open();
+    h.hud.dispose();
+    expect(h.hud.siegeRanking.isOpen).toBe(false);
+    expect(h.hud.siegeRanking.element.isConnected).toBe(false);
+  });
+
+  it('the own row is blue from the own character\'s name, before the player data has it', async () => {
+    const fetcher = vi.fn(async () => answer());
+    const mine = make({ rankingCache: new SiegeRankingCache({ fetcher: fetcher as never }) });
+    mine.hud.siegeRanking.open();
+    await flush();
+    const own = [...mine.hud.siegeRanking.element.querySelectorAll('.hud-sr-row')].map((r) => r.classList.contains('is-own'));
+    expect(own).toEqual([false, true]);
+    mine.hud.dispose();
+  });
+
+  it('the screen\'s cache outlives a world change: a new hud within 60 s asks the website nothing', async () => {
+    const fetcher = vi.fn(async () => answer());
+    const rankingCache = new SiegeRankingCache({ fetcher: fetcher as never });
+    const first = make({ rankingCache });
+    first.hud.siegeRanking.open();
+    await flush();
+    first.hud.dispose();
+    const second = make({ rankingCache });
+    second.hud.siegeRanking.open();
+    await flush();
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(second.hud.siegeRanking.element.querySelectorAll('.hud-sr-row')).toHaveLength(2);
+    second.hud.dispose();
   });
 });
 

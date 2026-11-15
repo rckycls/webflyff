@@ -49,6 +49,11 @@ export const GcTid = {
   NOTENTER_VAGRANT: 3000,
   /** TID_GAME_GUILDCOMBAT_REQUESTEND "Guild Siege is closed." */
   REQUESTEND: 2967,
+  /**
+   * TID_GAME_GUILDCOMBAT_REQUEST_NOTPENYA "You can apply to the guild siege if you have the required Penya.": the world
+   * server's answer to a bid the master cannot pay (`GuildCombatRequest`, eveschool.cpp:877-882).
+   */
+  REQUEST_NOTPENYA: 2972,
   JACKPOT: 2943, JACKPOT_CANCEL: 2944, JACKPOT_LIMIT1: 2941, JACKPOT_LIMIT2: 2942, WINNER_NOT_GUILD: 2962,
   MVP_PENYA: 2964, NOT_MVP: 2963,
   /** The line-up window (B4): TID_GAME_GUILDCOMBAT_* of `Resource/defineText.h:1734-1801`. */
@@ -57,14 +62,27 @@ export const GcTid = {
   OFFER_INFO: 3013, SELECTION_MAX: 3014,
 } as const;
 
+/** The highest bid the world server takes (`if( dwPenya > INT_MAX ) return;`, eveschool.cpp:853-855). */
+const BID_MAX = 2_147_483_647;
+
 /**
  * The refusal of an offer (`CWndGuildCombat1to1Offer::OnChildNotify`, `WndGuildCombat1to1.cpp:670-718`): a guild that has
  * bid must bid more than it has; one that has not must bid the minimum. null: the bid is fine (the confirm box follows).
+ * 2026-11-15 (final review): then the server's own checks, which Neuz leaves to it, so that the box never asks about a bid
+ * the wire's u32 would wrap or the server would drop: over INT_MAX, or more than the own penya adds to the own bid
+ * (eveschool.cpp:853-882), the server's not-enough-penya text.
  */
-export function bidRefusal(bid: number, ownBid: number, minBid: number): number | null {
+export function bidRefusal(bid: number, ownBid: number, minBid: number, ownGold: number): number | null {
   if (ownBid !== 0 && bid <= ownBid) return GcTid.MORE_CURRENT_REQUEST;
   if (ownBid === 0 && bid < minBid) return GcTid.LIMIT_MIN;
+  if (bid > BID_MAX || bid - ownBid > ownGold) return GcTid.REQUEST_NOTPENYA;
   return null;
+}
+
+/** The offer's field as a number: its digits, commas and any other marks skipped ("1,000,000" is 1000000); none is 0. */
+export function parseBid(text: string): number {
+  const digits = text.replace(/\D/g, '');
+  return digits === '' ? 0 : Number(digits);
 }
 
 /** `WIDC_STATIC5`: the own place is red when it is past the guilds that fight (`8 < nRate`, here 12, `WndField.cpp:16562-16575`). */

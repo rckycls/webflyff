@@ -57,6 +57,10 @@ export interface GuildCombatHost {
   ownGold(): number;
   /** A player's name, '' while unknown (the player data asks for it once, `SendQueryPlayerData`). */
   nameOf(playerId: number): string;
+  /** The own character's name (the own mover's, else the character list's): known from the start, unlike `nameOf`'s. */
+  ownName(): string;
+  /** The screen's ranking cache, kept across worlds so that its 60 s reuse outlives a teleport (a new one without). */
+  rankingCache?: SiegeRankingCache;
   /** A guild's name, '' when the client does not know the guild. */
   guildName(guildId: number): string;
   /** A guild's master's player id, 0 when unknown. */
@@ -136,9 +140,9 @@ export class GuildCombatHud {
     this.ranking = new RankingWindow('Guild Member Ranking', art, {
       playerName: (id) => host.nameOf(id), ownPlayerId: () => host.ownPlayerId(), jobs: () => host.jobs(), text: (tid) => host.text(tid),
     }, doc);
-    const rankingCache = new SiegeRankingCache();
+    const rankingCache = host.rankingCache ?? new SiegeRankingCache();
     this.siegeRanking = new SiegeRankingWindow(art, {
-      load: (board, span) => rankingCache.load(board, span), ownName: () => host.nameOf(host.ownPlayerId()),
+      load: (board, span) => rankingCache.load(board, span), ownName: () => host.ownName(),
       ownGuildName: () => host.ownGuildName(), jobs: () => host.jobs(),
     }, doc);
   }
@@ -208,12 +212,12 @@ export class GuildCombatHud {
   }
 
   close(): void {
-    for (const w of [this.apply, this.status, this.cancel, this.join, this.board, this.tele, this.diag, this.lineup, this.startPoint, this.result, this.ranking]) w.close();
+    for (const w of [this.apply, this.status, this.cancel, this.join, this.board, this.tele, this.diag, this.lineup, this.startPoint, this.result, this.ranking, this.siegeRanking]) w.close();
   }
 
   dispose(): void {
     this.listeners.clear();
-    for (const w of [this.apply, this.status, this.cancel, this.join, this.board, this.tele, this.diag, this.lineup, this.startPoint, this.result, this.ranking]) {
+    for (const w of [this.apply, this.status, this.cancel, this.join, this.board, this.tele, this.diag, this.lineup, this.startPoint, this.result, this.ranking, this.siegeRanking]) {
       w.close();
       w.element.remove();
     }
@@ -268,9 +272,9 @@ export class GuildCombatHud {
     return false;
   }
 
-  /** The offer's Accept (`WndGuildCombat1to1.cpp:670-718`). */
+  /** The offer's Accept (`WndGuildCombat1to1.cpp:670-718`, and the server's INT_MAX and penya checks: `bidRefusal`). */
   private accept(fee: number): void {
-    const refusal = bidRefusal(fee, this.offer.ownBid, this.offer.minBid);
+    const refusal = bidRefusal(fee, this.offer.ownBid, this.offer.minBid, this.host.ownGold());
     if (refusal !== null) { this.host.box(this.host.textById(refusal)); return; }
     const old = this.offer.ownBid;
     const question = formatText(this.host.textById(GcTid.MORE_REQUEST), old === 0 ? [0, fee] : [old, fee - old]);

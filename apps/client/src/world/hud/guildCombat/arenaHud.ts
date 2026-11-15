@@ -24,7 +24,8 @@
 // On a phone (`compact`: the phone layout of style.css, whose game area is about 350 px tall) the boards show the top 5
 // and the own row, fold on a tap of their title, and stand in a column under the Navigator, with the count-down and the
 // "be ready" lines at its top, as far right as the attack button, the quick slots and the other controls leave room for
-// (`layoutCompact`); the own guild's list is narrower: the owner's phone layout, not Neuz's.
+// (`layoutCompact`); the own guild's list is narrower, stands under the status window and shows the fighters inside, the
+// next in and the own row (`compactOwnRows`): the owner's phone layout, not Neuz's.
 
 import type { GuildCombatMessage } from '@flyffweb/protocol';
 import { BGM_BA_CRISIS } from '../../../audio/soundIds';
@@ -152,6 +153,8 @@ export interface OwnRow {
   number: string; name: string; lives: string; color: number; gapBefore: boolean; defender: boolean;
   /** The HP bar's green, in px of the 60 px bar: its fill rect `DeflateRect( 1, 1, ( 60 - fDraw ) + 1, 1 )`. */
   hp: number;
+  /** The own player's row; the next to go in (green). */
+  own: boolean; next: boolean;
 }
 
 /**
@@ -177,10 +180,25 @@ export function ownGuildRows(
     const draw = 60 * Math.min(1, Math.max(0, hpOf(playerId) ?? 0));
     return {
       number: rankText(i + 1), name: cutName(nameOf(playerId)), lives: String(Math.max(lives - 1, 0)), color, gapBefore,
-      defender: warPlayers.has(playerId), hp: Math.max(0, 59 - Math.trunc(61 - draw)),
+      defender: warPlayers.has(playerId), hp: Math.max(0, 59 - Math.trunc(61 - draw)), own: mine, next: ready,
     };
   });
   return { rows, ownNext };
+}
+
+/**
+ * 2026-11-15 (final review, Important 2): the phone's cut of the own guild's list, which a full line-up of 10 would run
+ * down over the chat and the task bar: the fighters inside (the rows before the first gap, `maxWarPlayers` at most), the
+ * next to go in, and the own row after a gap of its own when it is not among them. The owner's phone layout, not Neuz's.
+ */
+export function compactOwnRows(rows: readonly OwnRow[]): OwnRow[] {
+  const firstGap = rows.findIndex((row) => row.gapBefore);
+  const shown = rows.slice(0, Math.min(firstGap === -1 ? rows.length : firstGap, SIEGE.maxWarPlayers));
+  const next = rows.find((row) => row.next);
+  if (next !== undefined) shown.push(next);
+  const own = rows.find((row) => row.own);
+  if (own !== undefined && !shown.includes(own)) shown.push({ ...own, gapBefore: true });
+  return shown;
 }
 
 // --- What the messages say at once, and the count-down ---
@@ -319,10 +337,17 @@ export interface ArenaHudHost {
 interface Metrics { width: number; titleX: number; titleY: number; firstRow: number; row: number; rankX: number; nameX: number; pointsX: number; ownGap: number }
 const DESKTOP: Metrics = { width: 150, titleX: 20, titleY: 10, firstRow: 34, row: 16, rankX: 10, nameX: 35, pointsX: 120, ownGap: 16 };
 const COMPACT: Metrics = { width: 120, titleX: 4, titleY: 3, firstRow: 19, row: 13, rankX: 3, nameX: 21, pointsX: 90, ownGap: 3 };
-/** The own guild's list: its row, the columns (the "D", number, name, lives) and its HP bar (WndWorld.cpp:1476-1595); the phone's narrower. */
-interface ListMetrics { width: number; row: number; numberX: number; nameX: number; livesX: number; barX: number; bar: number }
-const LIST_DESKTOP: ListMetrics = { width: 135, row: 16, numberX: 5, nameX: 30, livesX: 115, barX: 145, bar: 60 };
-const LIST_COMPACT: ListMetrics = { width: 104, row: 14, numberX: 4, nameX: 21, livesX: 78, barX: 88, bar: 30 };
+/**
+ * The own guild's list: its place, its title, its first row, its row and gap, the columns (the "D", number, name, lives)
+ * and its HP bar (WndWorld.cpp:1476-1595); the phone's narrower and shorter (final review, Important 2: under the status
+ * window, where the quest tracker would stand, which style.css hides while the list shows, and above the docked chat).
+ */
+interface ListMetrics {
+  top: number; titleY: number; firstRow: number; width: number; row: number; gap: number; numberX: number; nameX: number; livesX: number;
+  barX: number; bar: number;
+}
+const LIST_DESKTOP: ListMetrics = { top: 120, titleY: 9, firstRow: 30, width: 135, row: 16, gap: 16, numberX: 5, nameX: 30, livesX: 115, barX: 145, bar: 60 };
+const LIST_COMPACT: ListMetrics = { top: 76, titleY: 3, firstRow: 19, width: 104, row: 14, gap: 7, numberX: 4, nameX: 21, livesX: 78, barX: 88, bar: 30 };
 /** A folded board's height on the phone: its title. */
 const FOLDED_HEIGHT = 19;
 /** The bottom padding of the phone's board. */
@@ -514,12 +539,13 @@ export class ArenaHud {
     const shown = guildName !== '' && (status === 0 || status === 1);
     if (this.list.hidden === shown) this.list.hidden = !shown;
     const nameOf = (id: number): string => this.host.nameOf(id) || (id === ownId ? this.host.ownName() : UNKNOWN_NAME);
-    const { rows, ownNext } = shown ? ownGuildRows(this.book.guildStatus, this.book.warPlayers, ownId, nameOf, (id) => this.host.hpOf(id))
+    const { rows: all, ownNext } = shown ? ownGuildRows(this.book.guildStatus, this.book.warPlayers, ownId, nameOf, (id) => this.host.hpOf(id))
       : { rows: [], ownNext: false };
     // the two lines while the war is on (`m_nState == WAR_STATE`, WndWorld.cpp:1601-1616)
     const ready = ownNext && this.book.state === GcState.WAR;
     if (this.ready.hidden === ready) { this.ready.hidden = !ready; this.lastLayout = -Infinity; }
     if (!shown) return;
+    const rows = compact ? compactOwnRows(all) : all;
     const signature = `${compact}|${guildName}|${JSON.stringify(rows)}`;
     if (signature === this.listDrawn) return;
     this.listDrawn = signature;
@@ -527,15 +553,15 @@ export class ArenaHud {
     const step = m.row;
     this.listTitle.textContent = guildName;
     this.listTitle.style.color = cssRgb(COLOR_TITLE);
-    // the box: x 5 to 140 from y 120, (n + 2) rows high; the title at (10, 129), the rows from y 150 (WndWorld.cpp:1476-1492)
-    this.place(this.list, { left: 5, top: 120 });
+    // the box: x 5 to 140 from y 120, (n + 2) rows high; the title at (10, 129), the rows from y 150 (WndWorld.cpp:1476-1492);
+    // the phone's from y 76, as tall as its rows and gaps
+    this.place(this.list, { left: 5, top: m.top });
     this.list.style.width = `${m.width}px`;
-    this.list.style.height = `${(rows.length + 2) * step}px`;
     this.listTitle.style.left = '5px';
-    this.listTitle.style.top = '9px';
-    let y = 30;
+    this.listTitle.style.top = `${m.titleY}px`;
+    let y = m.firstRow;
     const elements = rows.map((row) => {
-      if (row.gapBefore) y += step;
+      if (row.gapBefore) y += m.gap;
       const element = this.doc.createElement('div');
       element.className = 'hud-siege-member';
       element.style.top = `${y}px`;
@@ -563,6 +589,7 @@ export class ArenaHud {
       y += step;
       return element;
     });
+    this.list.style.height = `${compact ? y + COMPACT_PAD : (rows.length + 2) * step}px`;
     this.listRows.replaceChildren(...elements);
   }
 

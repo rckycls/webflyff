@@ -1,20 +1,49 @@
 // 2026-11-15 (Guild Siege, B3): the rules of Frankie's and Donaris's windows (guildCombat/guildCombatRules.ts).
 import { describe, expect, it } from 'vitest';
 import {
-  GcTid, SIEGE, bidRefusal, defenderRefusal, joinRefusal, lineupAddRefusal, lineupBand, lineupFinishRefusal, ownRank, penyaNotice, statusRankRed,
+  GcTid, SIEGE, bidRefusal, defenderRefusal, joinRefusal, lineupAddRefusal, lineupBand, lineupFinishRefusal, ownRank, parseBid, penyaNotice,
+  statusRankRed,
 } from '../src/world/guildCombat/guildCombatRules';
+
+const RICH = 2_147_483_647;
 
 describe('bidRefusal (WndGuildCombat1to1.cpp:670-718)', () => {
   it('a guild that has bid must bid more than it has', () => {
-    expect(bidRefusal(200, 200, 100)).toBe(GcTid.MORE_CURRENT_REQUEST);
-    expect(bidRefusal(150, 200, 100)).toBe(GcTid.MORE_CURRENT_REQUEST);
-    expect(bidRefusal(201, 200, 100)).toBeNull();
+    expect(bidRefusal(200, 200, 100, RICH)).toBe(GcTid.MORE_CURRENT_REQUEST);
+    expect(bidRefusal(150, 200, 100, RICH)).toBe(GcTid.MORE_CURRENT_REQUEST);
+    expect(bidRefusal(201, 200, 100, RICH)).toBeNull();
   });
 
   it('a first bid must reach the minimum', () => {
-    expect(bidRefusal(99, 0, 100)).toBe(GcTid.LIMIT_MIN);
-    expect(bidRefusal(100, 0, 100)).toBeNull();
-    expect(bidRefusal(0, 0, 100)).toBe(GcTid.LIMIT_MIN);
+    expect(bidRefusal(99, 0, 100, RICH)).toBe(GcTid.LIMIT_MIN);
+    expect(bidRefusal(100, 0, 100, RICH)).toBeNull();
+    expect(bidRefusal(0, 0, 100, RICH)).toBe(GcTid.LIMIT_MIN);
+  });
+
+  // final review, Important 1: the u32 on the wire would wrap a bid over 2^32, and the server drops one over INT_MAX
+  it('a bid over INT_MAX is refused with the siege\'s not-enough-penya text (eveschool.cpp:853-881)', () => {
+    expect(bidRefusal(5_000_000_000, 0, 100_000_000, RICH)).toBe(GcTid.REQUEST_NOTPENYA);
+    expect(bidRefusal(2_147_483_648, 0, 100_000_000, RICH)).toBe(GcTid.REQUEST_NOTPENYA);
+    expect(bidRefusal(4_000_000_000, 2_000_000_000, 100_000_000, 2_000_000_000)).toBe(GcTid.REQUEST_NOTPENYA);
+  });
+
+  it('a bid over the own penya and the own current bid is refused; INT_MAX itself is fine when affordable', () => {
+    expect(bidRefusal(300, 100, 50, 199)).toBe(GcTid.REQUEST_NOTPENYA);
+    expect(bidRefusal(299, 100, 50, 199)).toBeNull();
+    expect(bidRefusal(150_000_000, 0, 100_000_000, 149_999_999)).toBe(GcTid.REQUEST_NOTPENYA);
+    expect(bidRefusal(2_147_483_647, 0, 100_000_000, 2_147_483_647)).toBeNull();
+    expect(bidRefusal(2_147_483_647, 1_000_000_000, 100_000_000, 1_147_483_647)).toBeNull();
+  });
+});
+
+describe('parseBid (the offer\'s field)', () => {
+  it('reads every digit, the commas and other marks skipped; none is 0', () => {
+    expect(parseBid('1,000,000')).toBe(1_000_000);
+    expect(parseBid('100000000')).toBe(100_000_000);
+    expect(parseBid(' 5 000 ')).toBe(5000);
+    expect(parseBid('5,000,000,000')).toBe(5_000_000_000);
+    expect(parseBid('')).toBe(0);
+    expect(parseBid('abc')).toBe(0);
   });
 });
 
