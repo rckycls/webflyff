@@ -230,6 +230,7 @@ import { guildLine, nameTagOf } from './render/nameTags';
 import { GuildCombatBook } from './guildCombat/guildCombatBook';
 import { GuildCombatHud } from './guildCombat/guildCombatHud';
 import { MoverGcState, trophyOf } from './guildCombat/guildCombatRules';
+import { SiegeWeeklyFeed, badgeOf } from './guildCombat/siegeWebApi';
 import { siegeDefenderLine, siegeHides, siegeNameColor, siegeSideOf } from './combat/siege';
 import { ArenaHud, ArenaState } from './hud/guildCombat/arenaHud';
 import { saveTextFile } from './hud/guildCombat/download';
@@ -589,6 +590,8 @@ export class WorldScreen {
   /** 2026-11-15: the Guild Siege's state (guildCombat/guildCombatBook.ts), from the JOIN's GCSTATE on, whatever HUD there is. */
   private readonly guildCombatBook = new GuildCombatBook((objectId) => this.world?.movers.get(objectId)?.added.player?.guildCombatState ?? 0);
   private guildCombatHud: GuildCombatHud | undefined;
+  /** 2026-11-15 (C1): the website's weekly champion and MVP, for the marks by the names; started with the world, stopped on teardown. */
+  private readonly weeklyFeed = new SiegeWeeklyFeed({ onChange: () => this.recolorTags() });
   /** 2026-11-15 (B5): the arena's lines, captions, music and count-down (hud/guildCombat/arenaHud.ts), for the session. */
   private readonly siegeArena = new ArenaState(this.guildCombatBook, {
     worldId: () => this.worldId,
@@ -2093,6 +2096,7 @@ export class WorldScreen {
     }, this.guildBook, (key) => this.services?.store.url(key) ?? '', doc);
     this.guildHud = guildHud;
     // 2026-11-15: the Guild Siege's glue (guildCombat/guildCombatHud.ts); the book is the screen's
+    this.weeklyFeed.start();
     this.guildCombatHud = new GuildCombatHud({
       send: (bytes) => session.sendGuildCombat(bytes),
       text: (tid) => this.data?.texts.get(tid)?.text ?? '',
@@ -2757,7 +2761,7 @@ export class WorldScreen {
     this.countDropped(changes.dropped);
     this.views!.sync(changes, world.movers);
     for (const objectId of changes.removed) this.guildCombatBook.forget(objectId);
-    this.tags!.sync(changes, world.movers, (mover) => nameTagOf(mover, world.self(), data.nameColors, data.honorTitles, this.inParty, data.jobs, this.guildTagOf, this.trophyTagOf, this.siegeColorOf));
+    this.tags!.sync(changes, world.movers, (mover) => nameTagOf(mover, world.self(), data.nameColors, data.honorTitles, this.inParty, data.jobs, this.guildTagOf, this.trophyTagOf, this.siegeColorOf, this.badgeTagOf));
     this.play(changes);
   }
 
@@ -4268,7 +4272,7 @@ export class WorldScreen {
   private recolorTags(): void {
     const world = this.world, data = this.data;
     if (world === undefined || data === undefined) return;
-    this.tags?.recolor(world.movers, (mover) => nameTagOf(mover, world.self(), data.nameColors, data.honorTitles, this.inParty, data.jobs, this.guildTagOf, this.trophyTagOf, this.siegeColorOf));
+    this.tags?.recolor(world.movers, (mover) => nameTagOf(mover, world.self(), data.nameColors, data.honorTitles, this.inParty, data.jobs, this.guildTagOf, this.trophyTagOf, this.siegeColorOf, this.badgeTagOf));
   }
 
   /** 2026-11-10: a player's guild line (`CMover::GetGuild`, `Mover.cpp:8137-8160`): its guild's name and logo, or none. */
@@ -4297,6 +4301,12 @@ export class WorldScreen {
   private readonly trophyTagOf = (mover: Mover): 'winner' | 'best' | null => {
     const player = mover.added.player;
     return player === undefined ? null : trophyOf(this.guildCombatBook, player.playerId, player.guildId ?? 0);
+  };
+
+  /** 2026-11-15 (C1): a player's weekly champion or MVP mark, from the website's answer. */
+  private readonly badgeTagOf = (mover: Mover): 'weeklyChampion' | 'weeklyMvp' | null => {
+    const player = mover.added.player;
+    return player === undefined ? null : badgeOf(this.weeklyFeed.current(Date.now()), player.playerId, player.guildId ?? 0, Date.now());
   };
 
   /** 2026-11-10: what the guild book reads of the world (guild/guildBook.ts `GuildContext`). */
@@ -4796,6 +4806,7 @@ export class WorldScreen {
     this.hoverAt = null;
     this.mark?.dispose();
     this.views?.dispose();
+    this.weeklyFeed.stop();
     this.tags?.dispose();
     this.indicators?.dispose();
     this.pendingAttackEmotes.clear();

@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { WebMover } from '@flyffweb/formats';
 import { Scene } from 'three';
 import type { SpriteMaterial } from 'three';
-import { NameTagLayer, trophyPlace } from '../src/world/render/NameTagLayer';
-import { legendMark, nameTagOf, tagOpacity } from '../src/world/render/nameTags';
+import { NameTagLayer, badgePlace, trophyPlace } from '../src/world/render/NameTagLayer';
+import { badgeKey, legendMark, nameTagOf, tagOpacity } from '../src/world/render/nameTags';
 import { addedNpc, addedPlayer, gameDataOf, moverFrom, webMoverOf } from './helpers/movers';
 
 // The colours of PKSetting.inc are not all the code has: a different set shows the tag takes them from `nameColors`
@@ -234,15 +234,30 @@ describe('legendMark (2026-11-09, RenderName MoverRender.cpp:1495-1563)', () => 
 describe('the siege trophy (RenderName, MoverRender.cpp:1645-1688)', () => {
   it('is drawn one logo width + 2 left of the logo, or 30 px left of the wider line without a logo', () => {
     // the logo is 24 px wide, 2 px left of the wider line's left half; the trophy a logo width + 2 further
-    expect(trophyPlace(80, true)).toEqual({ left: -40 - 26 - 26, top: -29, size: 24 });
+    expect(trophyPlace(80, true)).toEqual({ left: -40 - 26 - 26, top: -29, size: 25 });
     expect(trophyPlace(81, true).left).toBe(-40 - 52);
     // no logo: 30 px left of the wider line's left half, 30 px above the head point
-    expect(trophyPlace(80, false)).toEqual({ left: -40 - 30, top: -30, size: 24 });
+    expect(trophyPlace(80, false)).toEqual({ left: -40 - 30, top: -30, size: 25 });
   });
 
   it('nameTagOf carries the trophy the screen gives', () => {
     const player = moverFrom(addedPlayer(1, { name: 'Rocky' }), data);
     expect(nameTagOf(player, undefined, colors, titles, () => false, [], () => undefined, () => 'best')?.trophy).toBe('best');
     expect(nameTagOf(player, undefined, colors, titles)?.trophy).toBeUndefined();
+  });
+  it('the weekly badge is one slot (25 + 2) left of the trophy, or in its place without one', () => {
+    expect(badgePlace(80, true, true)).toEqual({ left: -40 - 26 - 26 - 27, top: -29, size: 25 });
+    expect(badgePlace(80, true, false)).toEqual(trophyPlace(80, true));
+    expect(badgePlace(80, false, true).left).toBe(-40 - 30 - 27);
+    expect(badgePlace(80, false, false)).toEqual(trophyPlace(80, false));
+  });
+
+  it('nameTagOf carries the weekly badge the screen gives, and the keys are the gold pictures', () => {
+    const player = moverFrom(addedPlayer(1, { name: 'Rocky' }), data);
+    const tag = nameTagOf(player, undefined, colors, titles, () => false, [], () => undefined, () => null, () => null, () => 'weeklyMvp');
+    expect(tag?.badge).toBe('weeklyMvp');
+    expect(nameTagOf(player, undefined, colors, titles)?.badge).toBeUndefined();
+    expect(badgeKey('weeklyChampion')).toBe('ui/texguildcombatweeklywinner.png');
+    expect(badgeKey('weeklyMvp')).toBe('ui/texguildcombatweeklybest.png');
   });
 });

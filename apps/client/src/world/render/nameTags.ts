@@ -15,6 +15,8 @@ export interface NameTag {
   guild?: GuildLine;
   /** 2026-11-15 (Guild Siege): the winner's or the MVP's picture left of the guild logo (`trophyKey`), or none. */
   trophy?: 'winner' | 'best' | null;
+  /** 2026-11-15 (C1, the owner's custom mark): the weekly champion's or the weekly MVP's picture, one slot left of the trophy. */
+  badge?: 'weeklyChampion' | 'weeklyMvp' | null;
 }
 
 /** The guild line of a player's tag (guild research §5). */
@@ -34,6 +36,9 @@ export interface TagGuild {
 
 /** 2026-11-15: a trophy's picture key (`TexGuildCombatWinner.bmp`, `TexGuildCombatBest.bmp`, `CWndWorld::m_TexGuildWinner / m_TexGuildBest`). */
 export const trophyKey = (trophy: 'winner' | 'best'): string => `ui/texguildcombat${trophy === 'winner' ? 'winner' : 'best'}.png`;
+
+/** 2026-11-15 (C1): a weekly badge's picture key: the gold copies the converter makes of the two trophies (tools/convert uiStage). */
+export const badgeKey = (badge: 'weeklyChampion' | 'weeklyMvp'): string => `ui/texguildcombatweekly${badge === 'weeklyChampion' ? 'winner' : 'best'}.png`;
 
 /** `0xFFFFFF99`: the guild line of the guild's master (`MoverRender.cpp:1586-1588`); everyone else's is white. */
 const COLOR_GUILD_MASTER = 0xffffff99;
@@ -126,6 +131,8 @@ export function nameTagOf(
   trophyOf: (mover: Mover) => 'winner' | 'best' | null = () => null,
   /** 2026-11-15 (Guild Siege, B5): a player's name colour in world 202 (combat/siege.ts `siegeNameColor`), or none. */
   siegeColorOf: (mover: Mover) => number | null = () => null,
+  /** 2026-11-15 (C1): a player's weekly badge from the website (guildCombat/siegeWebApi.ts `badgeOf`), or none. */
+  badgeOf: (mover: Mover) => 'weeklyChampion' | 'weeklyMvp' | null = () => null,
 ): NameTag | null {
   const player = mover.added.player;
   if (mover.kind === 'player' && player !== undefined) {
@@ -133,12 +140,13 @@ export function nameTagOf(
     const mark = legendMark(player.job, player.level, jobs);
     const guild = guildOf(mover);
     const trophy = trophyOf(mover);
+    const badge = badgeOf(mover);
     // 2026-11-15: the siege's colour last, over the PK and party ones (`bOtherColor`, MoverRender.cpp:1405-1406)
     const color = siegeColorOf(mover) ?? playerColor(player, colors, inParty(player.playerId));
     return {
       text: playerText(mover.name, player, honorTitles), color, maxDistance: FAR_LIMIT,
       ...(mark !== null ? { mark } : {}), ...(guild !== undefined ? { guild } : {}),
-      ...(trophy !== null ? { trophy } : {}),
+      ...(trophy !== null ? { trophy } : {}), ...(badge !== null ? { badge } : {}),
     };
   }
   const { belligerence } = mover.added;

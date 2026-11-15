@@ -8,7 +8,7 @@ import { d3dColor } from '@flyffweb/scene';
 import type { PerspectiveCamera, Scene } from 'three';
 import { CanvasTexture, LinearFilter, SRGBColorSpace, Sprite, SpriteMaterial, Vector3 } from 'three';
 import type { Mover, WorldChanges } from '../WorldState';
-import { tagOpacity, trophyKey } from './nameTags';
+import { badgeKey, tagOpacity, trophyKey } from './nameTags';
 import type { NameTag } from './nameTags';
 
 /**
@@ -43,13 +43,20 @@ const LOGO_BOTTOM_PX = 5;
 /**
  * 2026-11-15 (Guild Siege): the winner's or the MVP's picture (`RenderName`, `MoverRender.cpp:1645-1688`): with a logo, one logo
  * width + 2 further left than the logo, on its line; without, 30 px left of the wider line's left half and 30 px above the
- * head point. Its size is the logo's (the picture is not measured here).
+ * head point. 2026-11-15 (controller ruling): drawn at the picture's own size, 25 x 25 (`Render()` at the texture size).
  */
+export const TROPHY_PX = 25;
 export function trophyPlace(wide: number, hasLogo: boolean): { left: number; top: number; size: number } {
   const logoLeft = -Math.floor(wide / 2) - (LOGO_PX + LOGO_GAP_PX);
   return hasLogo
-    ? { left: logoLeft - (LOGO_PX + LOGO_GAP_PX), top: -(LOGO_PX + LOGO_BOTTOM_PX), size: LOGO_PX }
-    : { left: -Math.floor(wide / 2) - 30, top: -30, size: LOGO_PX };
+    ? { left: logoLeft - (LOGO_PX + LOGO_GAP_PX), top: -(LOGO_PX + LOGO_BOTTOM_PX), size: TROPHY_PX }
+    : { left: -Math.floor(wide / 2) - 30, top: -30, size: TROPHY_PX };
+}
+
+/** 2026-11-15 (C1): the weekly badge: one slot (25 + 2 px) left of the trophy, or in the trophy's place when there is none. */
+export function badgePlace(wide: number, hasLogo: boolean, hasTrophy: boolean): { left: number; top: number; size: number } {
+  const at = trophyPlace(wide, hasLogo);
+  return hasTrophy ? { ...at, left: at.left - (TROPHY_PX + LOGO_GAP_PX) } : at;
 }
 
 /** The canvas is drawn at the screen's pixel ratio, as the renderer is (at most 2: `createRenderer`). */
@@ -67,6 +74,8 @@ interface Tag {
   guild: string;
   /** 2026-11-15: the trophy it was drawn with ('' for none). */
   trophy: string;
+  /** 2026-11-15 (C1): the weekly badge it was drawn with ('' for none). */
+  badge: string;
   /** The canvas in CSS pixels. */
   width: number;
   height: number;
@@ -118,7 +127,7 @@ export class NameTagLayer {
         if (tag !== null && tag.text !== '') this.add(objectId, tag);
         return;
       }
-      if (tag !== null && tag.text === old.text && tag.color === old.color && (tag.mark ?? null) === old.mark && guildKey(tag) === old.guild && (tag.trophy ?? '') === old.trophy) return;
+      if (tag !== null && tag.text === old.text && tag.color === old.color && (tag.mark ?? null) === old.mark && guildKey(tag) === old.guild && (tag.trophy ?? '') === old.trophy && (tag.badge ?? '') === old.badge) return;
       this.remove(objectId);
       if (tag !== null && tag.text !== '') this.add(objectId, tag);
     });
@@ -183,10 +192,12 @@ export class NameTagLayer {
     const logoLeft = -Math.floor(wide / 2) - (LOGO_PX + LOGO_GAP_PX), logoTop = -(LOGO_PX + LOGO_BOTTOM_PX);
     const trophy = tag.trophy ?? null;
     const trophyAt = trophyPlace(wide, logo !== null);
+    const badge = tag.badge ?? null;
+    const badgeAt = badgePlace(wide, logo !== null, trophy !== null);
     const markLeft = Math.ceil(wide / 2), markTop = -(MARK_PX + MARK_BOTTOM_PX);
-    const left = Math.min(textLeft - OUTLINE_PX, guild === undefined ? Infinity : guildLeft - OUTLINE_PX, logo === null ? Infinity : logoLeft, trophy === null ? Infinity : trophyAt.left);
+    const left = Math.min(textLeft - OUTLINE_PX, guild === undefined ? Infinity : guildLeft - OUTLINE_PX, logo === null ? Infinity : logoLeft, trophy === null ? Infinity : trophyAt.left, badge === null ? Infinity : badgeAt.left);
     const top = Math.min(textTop - OUTLINE_PX, mark === null ? Infinity : markTop, guild === undefined ? Infinity : guildTop - OUTLINE_PX,
-      logo === null ? Infinity : logoTop, trophy === null ? Infinity : trophyAt.top);
+      logo === null ? Infinity : logoTop, trophy === null ? Infinity : trophyAt.top, badge === null ? Infinity : badgeAt.top);
     const right = Math.max(textLeft + textWidth + OUTLINE_PX, mark === null ? -Infinity : markLeft + MARK_PX,
       guild === undefined ? -Infinity : guildLeft + guildWidth + OUTLINE_PX);
     const bottom = textTop + LINE_PX + OUTLINE_PX;
@@ -226,7 +237,7 @@ export class NameTagLayer {
     sprite.visible = false;
     this.scene.add(sprite);
     this.tags.set(objectId, {
-      sprite, texture, maxDistance: tag.maxDistance, text: tag.text, color: tag.color, mark, guild: guildKey(tag), trophy: trophy ?? '', width, height,
+      sprite, texture, maxDistance: tag.maxDistance, text: tag.text, color: tag.color, mark, guild: guildKey(tag), trophy: trophy ?? '', badge: badge ?? '', width, height,
     });
     // the mark and the logo are drawn into the tag once their pictures are in
     const picture = (key: string | null, x: number, y: number, size: number): void => {

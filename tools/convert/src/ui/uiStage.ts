@@ -448,6 +448,28 @@ async function convertPicture({ src, key, colorKey, bareKey, frames }: Picture, 
   for (const frame of frames ?? []) await ctx.writer.write(frame.key, encodePng(cropImage(image, frame), true), src);
 }
 
+/** The multiplier of the weekly champion's and MVP's pictures (C1): gold, #FFD24A. */
+export const WEEKLY_TINT = 0xffd24a;
+
+/** 2026-11-15 (C1): a copy of `image` with each pixel's RGB multiplied by `rgb` (0xRRGGBB, as a fraction of 255), alpha kept. */
+export function tintImage(image: RgbaImage, rgb: number): RgbaImage {
+  const mul = [(rgb >>> 16) & 0xff, (rgb >>> 8) & 0xff, rgb & 0xff];
+  const data = new Uint8Array(image.data);
+  for (let i = 0; i < data.length; i += 4) {
+    for (let c = 0; c < 3; c++) data[i + c] = Math.round((data[i + c]! * mul[c]!) / 255);
+  }
+  return { width: image.width, height: image.height, data };
+}
+
+/** The gold copy of a trophy picture: the magenta colour key first (transparent black stays black), then the tint. */
+export const weeklyTrophy = (image: RgbaImage): RgbaImage => tintImage(applyColorKey(image, MAGENTA_KEY), WEEKLY_TINT);
+
+/** 2026-11-15 (C1): the weekly marks' pictures: the V15 trophy they are made of, and the key they are written under. */
+export const WEEKLY_PICTURES: readonly { file: string; key: string }[] = [
+  { file: 'TexGuildCombatWinner.bmp', key: 'ui/texguildcombatweeklywinner.png' },
+  { file: 'TexGuildCombatBest.bmp', key: 'ui/texguildcombatweeklybest.png' },
+];
+
 /** 2026-11-14: the part `x, y, w, h` of `image` (a frame of a sheet), clipped to the image; outside it transparent. */
 export function cropImage(image: RgbaImage, { x, y, w, h }: { x: number; y: number; w: number; h: number }): RgbaImage {
   const data = new Uint8Array(w * h * 4);
@@ -564,6 +586,21 @@ export function createUiStage(options: UiStageOptions = {}): Stage {
           ctx.report.fail(KIND, picture.src, error);
         }
       });
+
+      // 2026-11-15 (C1): the owner's weekly champion and MVP marks: the two trophies in gold
+      for (const { file, key } of WEEKLY_PICTURES) {
+        if (!wanted(file)) continue;
+        const src = ctx.client.find(THEME_DIR, file);
+        if (src === null) { ctx.report.warn(KIND, `${THEME_DIR}/${file}`, `${file} is not in Client/${THEME_DIR}, so ${key} is not made`); continue; }
+        try {
+          const bytes = new Uint8Array(await fs.readFile(src));
+          const png = encodePng(weeklyTrophy(decodeImage(bytes, src)), true);
+          await ctx.writer.write(key, png, src);
+          ctx.report.ok(KIND, src, bytes.length, png.length);
+        } catch (error) {
+          ctx.report.fail(KIND, src, error);
+        }
+      }
 
       // The catalog needs both sheets; it is written when a sheet's picture was let through.
       if (['damageDigits', 'targetCorners'].every((field) => sheets.some((sheet) => sheet.field === field)) && sheets.some((sheet) => pictures.has(sheet.picture))) {

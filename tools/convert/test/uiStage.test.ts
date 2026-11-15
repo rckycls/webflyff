@@ -12,7 +12,7 @@ import { AssetWriter } from '../src/output/AssetWriter';
 import { Report } from '../src/output/Report';
 import { DEFAULT_STAGES } from '../src/run';
 import type { StageContext } from '../src/run';
-import { BARE_ICONS, THEME_FILES, applyColorKey, createUiStage, stripIconFrame } from '../src/ui/uiStage';
+import { BARE_ICONS, THEME_FILES, applyColorKey, createUiStage, stripIconFrame, tintImage, weeklyTrophy } from '../src/ui/uiStage';
 import { makeTempDir, writeFakeClient } from './helpers/fakeClient';
 import { MAGENTA, bmp24, dds, solidDds, tga32 } from './helpers/images';
 import type { ReportJson, Run } from './helpers/worldRun';
@@ -492,5 +492,25 @@ describe('the UI stage on a small hand-made client', () => {
       expect(run.report.kinds.ui).toBeUndefined();
       expect(run.writer.pathOf('data/uiSheets.json')).toBeUndefined();
     });
+  });
+});
+
+describe('tintImage (the weekly champion and MVP pictures, C1)', () => {
+  const image = (pixels: number[][]): RgbaImage => ({ width: pixels.length, height: 1, data: Uint8Array.from(pixels.flat()) });
+
+  it('multiplies RGB by #FFD24A and keeps alpha', () => {
+    const out = tintImage(image([[255, 255, 255, 255], [100, 100, 100, 200], [0, 0, 0, 255]]), 0xffd24a);
+    expect(Array.from(out.data)).toEqual([255, 210, 74, 255, 100, 82, 29, 200, 0, 0, 0, 255]);
+  });
+
+  it('does not change its source', () => {
+    const source = image([[255, 255, 255, 255]]);
+    tintImage(source, 0xffd24a);
+    expect(Array.from(source.data)).toEqual([255, 255, 255, 255]);
+  });
+
+  it('weeklyTrophy keys out the magenta first, so it stays transparent black', () => {
+    const out = weeklyTrophy(image([MAGENTA, [200, 100, 50, 255]]));
+    expect(Array.from(out.data)).toEqual([0, 0, 0, 0, 200, 82, 15, 255]);
   });
 });
