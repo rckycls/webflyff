@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 import { ArWriter, NULL_ID, ShortcutKind } from '@flyffweb/protocol';
 import { createWorldScript, newVagrantOwn, writeAddSelf, writeDelObj, writeMoverDeath, writeRevival, writeSetPointParam, writeTaskBar } from '@flyffweb/testkit';
 import type { ScriptMessage } from '@flyffweb/testkit';
-import { MADRIGAL, ON_FRAMES, SELF_ID, SELF_PLAYER, SQUARE, enterFlaris, playGateway, self, sentOf } from './worldHarness';
+import { MADRIGAL, ON_FRAMES, SELF_ID, SELF_PLAYER, SQUARE, enterFlaris, playGateway, self, sentOf, typeAmount } from './worldHarness';
 
 test.setTimeout(120_000);
 // UPDATE_ITEM UI_NUM (0): a new count. Not UI_COOLTIME (8), which sets the count too but starts the item's cool-down
@@ -187,7 +187,7 @@ test('inventory, item requests, ground pickup and scroll revival wait for server
   else await cell(7).dragTo(page.locator('.world-view canvas'), { targetPosition: { x: 300, y: 400 } });
   const dropDialog = page.getByRole('dialog', { name: 'Drop item', exact: true });
   await expect(dropDialog).toBeVisible();
-  await dropDialog.getByLabel('Drop quantity').fill('1'); await dropDialog.getByRole('button', { name: 'Drop', exact: true }).click();
+  await typeAmount(page, dropDialog.getByLabel('Drop quantity'), '1'); await dropDialog.getByRole('button', { name: 'Drop', exact: true }).click();
   await expect.poll(() => sentOf(gateway, 0xff0007).length).toBe(1);
   await expect(cell(7)).toContainText('2');
   await closeBag();

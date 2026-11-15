@@ -11,7 +11,7 @@ import {
   writeUpdateItem,
 } from '@flyffweb/testkit';
 import type { WorldScript } from '@flyffweb/testkit';
-import { MADRIGAL, NPC_ID, ON_FRAMES, SELF_ID, SELF_PLAYER, SQUARE, enterFlaris, julia, playGateway, self, sentOf, tapMover, targetsOf } from './worldHarness';
+import { MADRIGAL, NPC_ID, ON_FRAMES, SELF_ID, SELF_PLAYER, SQUARE, enterFlaris, julia, playGateway, self, sentOf, tapMover, targetsOf, typeAmount } from './worldHarness';
 import type { Gateway } from './worldHarness';
 
 test.setTimeout(150_000);
@@ -145,7 +145,7 @@ test('the guild bank: Guild Warehouse, a stack in, an item and penya out, a cont
   await bank.locator('[data-control="WIDC_BUTTON1"]').click();
   const merit = page.locator('.hud-guild-merit');
   await expect(merit).toBeVisible();
-  await merit.locator('input').fill('1000');
+  await typeAmount(page, merit.locator('input'), '1000');
   await shot('guild-bank-contribute');
   await merit.locator('[data-control="WIDC_BUTTON1"]').dispatchEvent('click');
   await expect.poll(() => sentOf(gateway, GuildPacket.NW_GUILDCONTRIBUTION).length).toBe(1);

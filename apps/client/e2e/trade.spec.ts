@@ -50,7 +50,14 @@ const mySlot = (page: Page, slot: number) => trade(page).locator(`.hud-trade-gri
 const theirSlot = (page: Page, slot: number) => trade(page).locator(`.hud-trade-grid[data-side="theirs"] [data-trade-slot="${slot}"]`);
 const bagCell = (page: Page, slot: number) => page.locator(`.hud-inventory [data-bag-slot="${slot}"]`);
 // the shown amount box (the bank's Move Items boxes share its look, hidden)
-const goldBox = (page: Page) => page.locator('.hud-trade-gold:visible');
+// 2026-11-16 (owner): the phone's is the bank's and the mail's number pad
+const goldBox = (page: Page) => page.locator(isPhone() ? '.hud-amount-box:visible' : '.hud-trade-gold:visible');
+
+/** The box's amount as it opens: the desktop's field, or the phone pad's number (with commas). */
+async function expectAmount(page: Page, value: string): Promise<void> {
+  if (isPhone()) await expect(goldBox(page).locator('[data-field="amount"]')).toHaveText(Number(value).toLocaleString('en-US'));
+  else await expect(goldBox(page).locator('input')).toHaveValue(value);
+}
 const box = (page: Page) => page.locator('.hud-message:visible .hud-message-text');
 
 /** A sent packet's bytes after DPID_UNKNOWN and the type. */
@@ -84,12 +91,18 @@ async function putItem(page: Page, bagSlot: number, slot: number): Promise<void>
   } else await bagCell(page, bagSlot).dragTo(mySlot(page, slot));
 }
 
-/** The quantity box answered: the field typed over, then OK (Enter on the desktop, the button on the phone). */
+/** The quantity box answered: the desktop's field typed over and Enter; the phone's pad cleared, the digits tapped, OK. */
 async function answerAmount(page: Page, amount: string): Promise<void> {
-  const field = goldBox(page).locator('input');
-  await field.fill(amount);
-  if (isPhone()) await goldBox(page).locator('[data-control="WIDC_OK"]').tap();
-  else await field.press('Enter');
+  if (isPhone()) {
+    const sheet = goldBox(page);
+    await sheet.locator('[data-pad-key="escape"]').tap();
+    for (const key of amount) await sheet.locator(`[data-pad-key="${key}"]`).tap();
+    await sheet.locator('[data-button="ok"]').tap();
+  } else {
+    const field = goldBox(page).locator('input');
+    await field.fill(amount);
+    await field.press('Enter');
+  }
   await expect(goldBox(page)).toBeHidden();
 }
 
@@ -131,7 +144,7 @@ test('the asker: Trade from the menu, items, a stack, the penya, both OKs, the f
   await putItem(page, 6, 1);
   await expect(goldBox(page)).toBeVisible();
   await expect(goldBox(page).locator('.hud-window-title')).toHaveText('Item');
-  await expect(goldBox(page).locator('input')).toHaveValue('5');
+  await expectAmount(page, '5');
   await answerAmount(page, '3');
   await expect.poll(() => sentOf(gateway, TradePacket.TRADEPUT).length).toBe(2);
   expect([...bodyOf(gateway, TradePacket.TRADEPUT, 1)]).toEqual([1, 0, 6, 3, 0]);
@@ -143,7 +156,7 @@ test('the asker: Trade from the menu, items, a stack, the penya, both OKs, the f
   else await page.locator('.hud-inventory .inventory-money').dragTo(mySlot(page, 4));
   await expect(goldBox(page)).toBeVisible();
   await expect(goldBox(page).locator('.hud-window-title')).toHaveText('Penya');
-  await expect(goldBox(page).locator('input')).toHaveValue('5000');
+  await expectAmount(page, '5000');
   await answerAmount(page, '1200');
   await expect.poll(() => sentOf(gateway, TradePacket.TRADEPUTGOLD).length).toBe(1);
   expect(bodyOf(gateway, TradePacket.TRADEPUTGOLD).readUInt32LE(0)).toBe(1200);

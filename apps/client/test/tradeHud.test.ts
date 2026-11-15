@@ -101,7 +101,7 @@ describe('TradeHud', () => {
     expect(sent.at(-1)).toEqual(['put', 0, 0, 8, 1]);
     t.drop(1, { objectId: 6 });
     expect(t.gold.isOpen).toBe(true);
-    const input = t.gold.window.input('WIDC_EDIT');
+    const input = t.gold.element.querySelector<HTMLInputElement>('input')!;
     expect(input.value).toBe('5');
     expect(input.inputMode).toBe('numeric');
     input.value = '3';
@@ -110,9 +110,9 @@ describe('TradeHud', () => {
     expect(sent.at(-1)).toEqual(['put', 1, 0, 6, 3]);
     expect(t.gold.isOpen).toBe(false);
     t.drop(2, { gold: true });
-    expect(t.gold.window.frame.element.textContent).toContain('Penya');
-    t.gold.window.input('WIDC_EDIT').value = '99999';
-    click(t.gold.window.button('WIDC_OK'));
+    expect(t.gold.element.textContent).toContain('Penya');
+    t.gold.element.querySelector<HTMLInputElement>('input')!.value = '99999';
+    click(t.gold.element.querySelector('[data-control="WIDC_OK"]'));
     expect(sent.at(-1)).toEqual(['gold', 5000]);
     // the server's echoes: the own penya comes off the bag's
     t.handle(OWN_ID, { type: 'tradePutGold', gold: 5000 });

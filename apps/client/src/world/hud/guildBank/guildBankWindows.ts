@@ -27,6 +27,7 @@ import { ResWindow, textScrollBar } from '../resWindow';
 import type { ResControl, ResLayout } from '../resWindow';
 import { tabStrip } from '../tiles';
 import { isPhone } from '../numpad';
+import { padField } from '../amountBox';
 import { sixFrameButton } from '../radio';
 import type { RadioButton } from '../radio';
 import { BAG_DRAG } from '../trade/tradeWindows';
@@ -253,6 +254,8 @@ export class GuildMeritWindow {
   onCheck: (on: boolean) => void = () => {};
   /** A gem pointed at or pressed: its tooltip at `anchor`, null to hide it. */
   onHover: (item: InventoryItem | null, anchor: HTMLElement | null) => void = () => {};
+  /** The most penya the phone's number pad takes: the own penya. */
+  penyaMax: () => number = () => 0;
   private readonly input: HTMLInputElement;
   private readonly check: RadioButton;
   private readonly list: HTMLElement;
@@ -277,6 +280,8 @@ export class GuildMeritWindow {
     input.inputMode = 'numeric';
     input.enterKeyHint = 'done';
     input.setAttribute('aria-label', 'Penya');
+    // 2026-11-16 (owner): the phone's number pad, as the bank's and the mail's amounts (`padField`)
+    padField(input, art, doc, () => ({ max: this.penyaMax() }));
     // EN_RETURN is YES (:166-169)
     input.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') { event.preventDefault(); this.onOk(input.value, check.checked); }

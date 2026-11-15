@@ -2296,6 +2296,7 @@ export class WorldScreen {
       caption: (text) => this.hud?.caption.show(text),
       box: (text, ok) => messageBox.open(text, ok === undefined ? 'ok' : 'okCancel', ok ?? (() => {})),
       send: (bytes) => session.sendLord(bytes),
+      ownGold: () => this.own?.gold ?? 0,
       carryLordSkill: (skill, event) => taskBar.carryLordSkill(skill, event),
       placeLordSkill: (skill) => taskBar.placeLordSkill(skill),
       removeLordShortcuts: () => taskBar.removeKind(ShortcutKind.LORDSKILL),
@@ -2543,6 +2544,7 @@ export class WorldScreen {
       prop: (itemId) => this.data?.itemProps.get(itemId),
       packMax: (itemId) => this.data?.itemProps.get(itemId)?.packMax ?? 1,
       tradeOpen: () => tradeHud.windowOpen,
+      ownGold: () => this.own?.gold ?? 0,
       npcShopOpen: () => this.shopWindow?.frame.isOpen === true,
       bankBusy: () => bankHud.busy,
       vendorOpen: () => this.personalShop?.isOpen === true,
@@ -2706,7 +2708,7 @@ export class WorldScreen {
     this.optionWindow = this.audio === null ? undefined : new OptionWindow(this.hudArt!, this.audio, doc);
     for (const modal of [
       logOutBox.modal, reviveWindow.modal, skillWindow.warning.modal, this.dialog.modal, questWindow.modal, messageBox.modal, selectVillage.modal, partyHud.messageBox.modal,
-      friendHud.messageBox.modal, tradeHud.gold.window.modal!, ...social.modals, ...guildHud.modals, bankHud.amount.modal, guildBankHud.amount.modal, ...postHud.modals,
+      friendHud.messageBox.modal, tradeHud.gold.modal, ...social.modals, ...guildHud.modals, bankHud.amount.modal, guildBankHud.amount.modal, ...postHud.modals,
     ]) {
       modal.onChange = () => this.modalChanged();
     }

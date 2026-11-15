@@ -12,14 +12,15 @@ import {
   writeElectionBeginVote, writeElectionEndVote, writeElectionIncVote, writeElectionSetPledge, writeLord, writeLordEventCreate,
   writeQueryPlayerData,
 } from '@flyffweb/testkit';
-import { NPC_ID, ON_FRAMES, SELF_ID, SELF_PLAYER, SQUARE, MADRIGAL, enterFlaris, julia, playGateway, self, sentOf, tapMover, targetsOf } from './worldHarness';
+import { NPC_ID, ON_FRAMES, SELF_ID, SELF_PLAYER, SQUARE, MADRIGAL, enterFlaris, julia, playGateway, self, sentOf, tapMover, targetsOf, typeAmount } from './worldHarness';
 import type { Gateway } from './worldHarness';
 
 test.setTimeout(180_000);
 
 const OWN = SELF_PLAYER.playerId; // 500, Webby
 const AIBATT = 501;
-const webby: AddedMover = { ...self, hitPoint: 230, player: { ...SELF_PLAYER, own: newVagrantOwn() } };
+// 2026-11-16: penya for the bid (the phone's number pad takes the own penya at most)
+const webby: AddedMover = { ...self, hitPoint: 230, player: { ...SELF_PLAYER, own: { ...newVagrantOwn(), gold: 500_000_000 } } };
 const lordManager: AddedMover = { ...julia, objectId: NPC_ID, npc: { ...julia.npc!, characterKey: 'MaFl_KINGAIDE' } };
 const record = (job: number, level: number) => ({ job, level, sex: 0, version: 1, login: 1 });
 
@@ -91,7 +92,7 @@ test('the election: bid, pledge and vote; then the Lord\'s info, event and skill
   await expect(tender.locator('.hud-window-title')).toHaveText('Bid');
   await expect(tender).toContainText('Minimum bid is 100,000,000 Penya');
   await phoneChecks(page, tender);
-  await tender.getByLabel('Current application fee').fill('200000000');
+  await typeAmount(page, tender.getByLabel('Current application fee'), '200000000');
   await press(tender.getByRole('button', { name: 'Accept' }));
   await expect.poll(() => sentOf(gateway, LordPacket.ELECTION_ADD_DEPOSIT).map((s) => Number(s.body.readBigInt64LE(8)))).toEqual([200_000_000]);
   await expect(box(page)).toContainText('200000000');

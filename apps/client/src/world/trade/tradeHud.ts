@@ -20,10 +20,11 @@ import type { WebItemProp } from '@flyffweb/formats';
 import type { Texts } from '../gameData';
 import type { UiArt } from '../hud/art';
 import { formatText } from '../hud/format';
-import { ConfirmTradeWindow, TradeConfirmWindow, TradeGoldWindow, TradeWindow } from '../hud/trade/tradeWindows';
+import { AmountBox } from '../hud/amountBox';
+import { ConfirmTradeWindow, TradeConfirmWindow, TradeWindow } from '../hud/trade/tradeWindows';
 import type { TradeCell } from '../hud/trade/tradeWindows';
 import type { ItemContainer, TradeSlot } from './itemContainer';
-import { TradeState, blockLine, dropAction, penyaText, quantityOf } from './tradeState';
+import { TradeState, blockLine, dropAction, penyaText } from './tradeState';
 import type { TradeEvent } from './tradeState';
 
 /** What the trade sends (`WorldSession`'s). */
@@ -81,7 +82,8 @@ export class TradeHud {
   readonly window: TradeWindow;
   readonly request: ConfirmTradeWindow;
   readonly confirm: TradeConfirmWindow;
-  readonly gold: TradeGoldWindow;
+  /** CWndTradeGold; 2026-11-16 (owner): on a phone the bank's and the mail's number pad (`AmountBox`), not the keyboard. */
+  readonly gold: AmountBox;
   private askerId: number | null = null;
   private goldTarget: GoldTarget | null = null;
   /** The world left: the window closes with no TRADECANCEL (the session is gone). */
@@ -91,7 +93,7 @@ export class TradeHud {
     this.window = new TradeWindow(art, doc);
     this.request = new ConfirmTradeWindow(art, doc);
     this.confirm = new TradeConfirmWindow(art, doc);
-    this.gold = new TradeGoldWindow(art, doc);
+    this.gold = new AmountBox(art, doc);
 
     this.window.onDrop = (slot, what) => this.drop(slot, what);
     this.window.onOk = () => { if (!this.confirm.isOpen) screen.session.sendTradeOk(); };
@@ -122,8 +124,8 @@ export class TradeHud {
     this.confirm.onNo = () => { if (!this.state.waiting) screen.session.sendTradeCancel(); };
     this.confirm.onClosed = () => { if (!this.state.waiting) screen.session.sendTradeCancel(); };
 
-    this.gold.onOk = (text) => this.goldOk(text);
-    this.gold.window.onClose = () => { this.goldTarget = null; };
+    this.gold.onOk = (amount) => this.goldOk(amount);
+    this.gold.onClose = () => { this.goldTarget = null; };
   }
 
   /** The elements for the windows' layer. */
@@ -314,18 +316,18 @@ export class TradeHud {
     this.drop(slot < 0 ? 0 : slot, { gold: true });
   }
 
-  /** The quantity box's OK (:8513-8541). */
-  private goldOk(text: string): void {
+  /** The quantity box's OK (:8513-8541), with its amount (`atoi`, kept to 1..the most it opened with). */
+  private goldOk(amount: number): void {
     const target = this.goldTarget;
     this.goldTarget = null;
     if (target === null || !this.state.open) return;
     if (target.kind === 'gold') {
-      const n = quantityOf(text, this.screen.ownGold());
+      const n = Math.min(amount, this.screen.ownGold());
       if (n > 0) this.screen.session.sendTradePutGold(n);
       return;
     }
     const item = this.screen.ownItems()?.get(target.objectId);
     if (item === undefined) return;
-    this.screen.session.sendTradePut(target.slot, 0, target.objectId, quantityOf(text, item.count));
+    this.screen.session.sendTradePut(target.slot, 0, target.objectId, Math.min(amount, item.count));
   }
 }

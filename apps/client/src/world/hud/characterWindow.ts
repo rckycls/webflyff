@@ -51,6 +51,7 @@ import { cssRgb, themeUrl } from './art';
 import type { UiArt } from './art';
 import { pictureButton, place } from './button';
 import type { ControlRect } from './button';
+import { padField } from './amountBox';
 import { WindowFrame } from './frame';
 import { textScrollBar } from './resWindow';
 import type { TextScrollBar } from './resWindow';
@@ -357,6 +358,12 @@ export class CharacterWindow {
       place(input, { ...rect, width: rect.width / COUNT_SCALE, height: rect.height / COUNT_SCALE });
       input.style.lineHeight = `${rect.height / COUNT_SCALE}px`;
       input.addEventListener('input', () => this.typed(stat));
+      // 2026-11-16 (owner): the phone's number pad, as the bank's and the mail's amounts (`padField`): the count, at most the
+      // points left beside the other three counts (`typed`)
+      padField(input, art, doc, () => ({
+        max: (this.own?.remainGP ?? 0) - STATS.reduce((sum, s) => (s === stat ? sum : sum + this.countsNow[s]), 0),
+        label: 'Number:', title: this.text(STAT_LABELS[stat]),
+      }));
       // a box typed in keeps its keys from the game (the moves' keys, the task bar's digits), as the task bar and the
       // status window already pass over a field; Escape still reaches the windows
       for (const type of ['keydown', 'keyup'] as const) {

@@ -15,6 +15,7 @@
 
 import type { UiArt } from '../art';
 import { place } from '../button';
+import { padField } from '../amountBox';
 import { ResWindow } from '../resWindow';
 import type { ResLayout } from '../resWindow';
 import { PLAYER_LOGOS, logoCell, logoKey } from '../../guild/guildRules';
@@ -168,6 +169,8 @@ export class GuildFieldWindow {
     if (numeric) {
       this.field.inputMode = 'numeric';
       this.field.pattern = '[0-9]*';
+      // 2026-11-16 (owner): the phone's number pad, as the bank's and the mail's amounts (`padField`): the salary, at most 999,999 (`payCheck`)
+      padField(this.field, art, doc, () => ({ max: 999_999 }));
     }
     const ok = (): void => { if (this.onOk(this.field.value)) window.close(); };
     window.button(okId).addEventListener('click', ok);

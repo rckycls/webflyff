@@ -7,7 +7,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { expect, test } from '@playwright/test';
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import { MAP_SIZE, decodeTileBin } from '@flyffweb/formats';
 import type { AssetIndex, WorldManifest } from '@flyffweb/formats';
 import { ArReader, ArWriter, NULL_ID, PacketType, Port } from '@flyffweb/protocol';
@@ -26,6 +26,26 @@ export const ASSETS = path.resolve(path.dirname(fileURLToPath(import.meta.url)),
  * the frames (ruling R28). The waits on what the page does as a press or a message comes keep the default.
  */
 export const ON_FRAMES = { timeout: 60_000 };
+
+/**
+ * 2026-11-16 (owner: every amount on the game's number pad): an amount put in a field. The desktop's field is typed; on a
+ * phone the field is tapped and its pad (`padField`, the bank's and the mail's) cleared, the digits pressed and OK.
+ */
+export async function typeAmount(page: Page, field: Locator, value: string): Promise<void> {
+  if (test.info().project.use.hasTouch !== true) {
+    await field.fill(value);
+    return;
+  }
+  await expect(field).toHaveAttribute('readonly', '');
+  await field.tap();
+  const sheet = page.locator('.hud-amount-box:visible');
+  await expect(sheet).toBeVisible();
+  await sheet.locator('[data-pad-key="escape"]').click();
+  for (const key of value) await sheet.locator(`[data-pad-key="${key}"]`).click();
+  await sheet.locator('[data-button="ok"]').click();
+  await expect(sheet).toBeHidden();
+  await expect(field).toHaveValue(value);
+}
 
 /** `WI_WORLD_MADRIGAL` (`Resource/defineWorld.h`): Flaris is in Madrigal. */
 export const MADRIGAL = 1;
