@@ -4402,7 +4402,6 @@ export class WorldScreen {
     }
   }
 
-  /** 2026-11-09 (pets R4): the Pet Tamer's windows' packets, by WorldSession's senders. */
   /**
    * custom (owner 2026-11-16): the loot filter's mask to the World server when it differs from what the server holds. A
    * patched World keeps it for the own pick-up pet (`CAIPet::SubItemLoot` skips the kinds left out); others ignore it.
@@ -4413,6 +4412,7 @@ export class WorldScreen {
     this.session.sendPetLootFilter(mask);
   }
 
+  /** 2026-11-09 (pets R4): the Pet Tamer's windows' packets, by WorldSession's senders. */
   private sendPetTamer(packet: PetTamerPacket): void {
     const s = this.session;
     switch (packet[0]) {
