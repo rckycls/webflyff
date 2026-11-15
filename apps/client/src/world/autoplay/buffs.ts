@@ -10,6 +10,14 @@ import type { BuffEntry } from './settings';
 /** Recast under this much left (ms). */
 export const BUFF_RECAST_MS = 10_000;
 
+/** `DST_HP`, `DST_MP`, `DST_FP` (Resource/defineAttribute.h): a heal's effects, not a buff's (buffs.ts `NOT_SET`). */
+const HEALS = new Set([38, 39, 40]);
+
+/** Whether an item is one the buff list offers: not worn (`dwParts` none) and with an effect that is not a heal. */
+export function isBuffItemProp(prop: { part: number; destParams: readonly number[] }): boolean {
+  return prop.part < 0 && prop.destParams.some((dst) => dst > 0 && !HEALS.has(dst));
+}
+
 /** The buff an entry gives: a skill slot's by its skill id (`skillIdOf`), an item's by its index; null when unknown. */
 export function buffOf(e: BuffEntry, skillIdOf: (skillIndex: number) => number | undefined): { buffType: number; id: number } | null {
   if (e.kind === 'item') return { buffType: BUFF_ITEM, id: e.index };

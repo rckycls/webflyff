@@ -55,8 +55,9 @@ import type { AutoPlayHooks } from './autoplay/controller';
 import { loadSettings, saveSettings } from './autoplay/settings';
 import { countOf, isPotionProp } from './autoplay/potions';
 import { farmBlocked } from './autoplay/zones';
+import { isBuffItemProp } from './autoplay/buffs';
 import { AutoPlayWindow } from './hud/autoPlay/autoPlayWindow';
-import type { AutoPlayItemChoice } from './hud/autoPlay/autoPlayWindow';
+import type { AutoPlayItemChoice, AutoPlaySkillChoice } from './hud/autoPlay/autoPlayWindow';
 import { AutoButton, flashStoppedTitle } from './hud/autoPlay/autoButton';
 import { Missiles } from './combat/missiles';
 import type { MissileWorld } from './combat/missiles';
@@ -118,7 +119,7 @@ import { QuestWindow } from './hud/quests/questWindow';
 import type { QuestWindowState } from './hud/quests/questWindow';
 import { loadQuests } from './quests/questCatalog';
 import { pageAssets } from '../pageAssets';
-import type { WebParty } from '@flyffweb/formats';
+import type { WebItemProp, WebParty } from '@flyffweb/formats';
 import type { MemberView, PartyView } from './hud/party/memberList';
 import { loadParty } from './party/partyCatalog';
 import { PartyHud } from './party/partyHud';
@@ -2273,6 +2274,12 @@ export class WorldScreen {
       count: (itemIndex) => countOf(this.own?.inventory ?? null, itemIndex),
       farmAllowed: () => !farmBlocked(this.worldId, this.duels.own.duel !== 0),
       now: () => this.world?.nowMs() ?? 0,
+      skillChoices: () => (this.own?.skills ?? []).flatMap((_, skillIndex) => {
+        const choice = this.autoPlaySkillChoice(skillIndex);
+        return choice === null ? [] : [choice];
+      }),
+      skill: (skillIndex) => this.autoPlaySkillChoice(skillIndex),
+      buffItemChoices: () => this.itemChoices(isBuffItemProp),
     }, doc);
     this.autoButton = new AutoButton(this.autoPlay!, () => {
       if (this.autoPlayWindow?.isOpen !== true) this.autoPlayWindow?.open('farm');
@@ -4131,12 +4138,24 @@ export class WorldScreen {
 
   /** custom (owner 2026-11-15): the bag's potions, refreshers, food and pills, one entry per item, for the Potions tab. */
   private potionChoices(): AutoPlayItemChoice[] {
+    return this.itemChoices(isPotionProp);
+  }
+
+  /** custom (owner 2026-11-15): a learned skill slot as the Skills tab shows it, or null. */
+  private autoPlaySkillChoice(skillIndex: number): AutoPlaySkillChoice | null {
+    const slot = this.own?.skills[skillIndex];
+    const skill = slot === undefined || slot.level <= 0 ? undefined : this.data?.skills.get(slot.skill);
+    return skill === undefined ? null : { skillIndex, name: skill.name, icon: skill.icon ? this.hudArt!.url(skill.icon) : null };
+  }
+
+  /** custom (owner 2026-11-15): the bag's items that `keep` takes, one entry per item, sorted by name. */
+  private itemChoices(keep: (prop: WebItemProp) => boolean): AutoPlayItemChoice[] {
     const inventory = this.own?.inventory ?? null, props = this.data?.itemProps;
     if (!inventory || !props) return [];
     const seen = new Map<number, AutoPlayItemChoice>();
     for (const item of inventory.values()) {
       const prop = props.get(item.itemId);
-      if (prop === undefined || !isPotionProp(prop) || item.count <= 0 || seen.has(item.itemId)) continue;
+      if (prop === undefined || !keep(prop) || item.count <= 0 || seen.has(item.itemId)) continue;
       seen.set(item.itemId, { itemIndex: item.itemId, name: prop.name, icon: prop.icon ? this.hudArt!.url(prop.icon) : null,
         count: countOf(inventory, item.itemId) });
     }

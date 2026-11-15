@@ -4853,3 +4853,18 @@ fieldset:disabled .btn {
 .hud-auto-mark { margin-left: 3px; color: #c0201a; }
 @keyframes hud-auto-pulse { 50% { box-shadow: 0 0 9px #ffcf4a; } }
 @media (prefers-reduced-motion: reduce) { .hud-auto-button[data-state='running'] { animation: none; } }
+
+/* custom (owner 2026-11-15): Auto Play's Skills tab: the ready skills' 4 slots and the buffs' 8, each with × */
+.auto-skills { display: flex; flex-direction: column; gap: 5px; }
+.auto-slot-row { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; }
+.auto-slot-row .auto-farm-caption { width: 84px; }
+.auto-slot-cell { position: relative; flex: none; }
+.auto-slot.is-missing { opacity: .45; }
+.auto-slot:disabled { opacity: .3; cursor: default; }
+.auto-slot-clear {
+  position: absolute; top: -5px; right: -5px; width: 16px; height: 16px; min-height: 0; padding: 0; border: 1px solid #ba9377;
+  border-radius: 50%; background: #fff1df; color: #8a2b1f; font: bold 10px/1 Arial, sans-serif;
+}
+@media (max-width: 1000px) and (pointer: coarse) {
+  .auto-slot-clear { width: 20px; height: 20px; font-size: 12px; }
+}

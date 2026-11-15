@@ -8,7 +8,7 @@ import type { UiArt } from '../art';
 import { WindowFrame } from '../frame';
 import { TabPages } from '../guildCombat/tabs';
 import { textButton } from '../numpad';
-import { BELOW, GAUGE_ROWS, RADIUS, STOP_AFTER } from '../../autoplay/settings';
+import { BELOW, GAUGE_ROWS, MAX_BUFFS, MAX_READY, RADIUS, STOP_AFTER } from '../../autoplay/settings';
 import type { AutoPlaySettings, GaugeRow } from '../../autoplay/settings';
 
 /** An item a slot can take: its prop index, name, picture (a URL, or null) and how many the bag holds. */
@@ -17,6 +17,13 @@ export interface AutoPlayItemChoice {
   name: string;
   icon: string | null;
   count: number;
+}
+
+/** A learned skill a slot can take: its skill slot (`m_aJobSkill`), name and picture. */
+export interface AutoPlaySkillChoice {
+  skillIndex: number;
+  name: string;
+  icon: string | null;
 }
 
 /** What the window reads of the game. */
@@ -31,6 +38,12 @@ export interface AutoPlayWindowDeps {
   farmAllowed(): boolean;
   /** The rules' clock (ms), for the counts' time. */
   now(): number;
+  /** The player's learned skills, in skill slot order. */
+  skillChoices(): AutoPlaySkillChoice[];
+  /** A skill slot's name and picture, or null when the character has no skill there now. */
+  skill(skillIndex: number): AutoPlaySkillChoice | null;
+  /** The bag's buff items (not worn, with an effect that is not a heal), one entry per item index. */
+  buffItemChoices(): AutoPlayItemChoice[];
 }
 
 /** What the window edits and shows: Auto Play's settings (kept after each change) and the farm bot. */
@@ -59,6 +72,8 @@ export class AutoPlayWindow {
   private readonly tabs: TabPages;
   /** The potion row whose pick list is open. */
   private picking: GaugeRow | null = null;
+  /** The Skills tab's slot whose pick list is open. */
+  private pickingSkill: { list: 'ready' | 'buffs'; slot: number } | null = null;
   /** What was drawn, as a string, to draw only what changed. */
   private shown = '';
 
@@ -71,9 +86,7 @@ export class AutoPlayWindow {
     holder.className = 'auto-play-tabs';
     holder.append(this.tabs.element);
     this.frame.body.append(holder);
-    this.frame.onClose = () => { this.picking = null; this.shown = ''; };
-    // Skills comes with the auto skills (M3)
-    this.enableTab('skills', false);
+    this.frame.onClose = () => { this.picking = null; this.pickingSkill = null; this.shown = ''; };
   }
 
   get isOpen(): boolean {
@@ -105,6 +118,7 @@ export class AutoPlayWindow {
     if (!this.frame.isOpen) return;
     const tab = TABS[this.tabs.selected];
     if (tab === 'farm') { this.refreshFarm(); return; }
+    if (tab === 'skills') { this.refreshSkills(); return; }
     if (tab !== 'potions') return;
     const choices = this.picking === null ? [] : this.deps.potionChoices();
     const counts = GAUGE_ROWS.map((row) => this.deps.count(this.play.settings.pots.rows[row].itemIndex));
@@ -117,6 +131,123 @@ export class AutoPlayWindow {
   dispose(): void {
     this.frame.close();
     this.frame.element.remove();
+  }
+
+  private refreshSkills(): void {
+    const skills = this.play.settings.skills, picking = this.pickingSkill;
+    const named = [...skills.ready.map((i) => this.deps.skill(i)), ...skills.buffs.map((e) => (e.kind === 'skill' ? this.deps.skill(e.index) : this.deps.item(e.index)))];
+    const counts = skills.buffs.map((e) => (e.kind === 'item' ? this.deps.count(e.index) : 0));
+    const choices = picking === null ? null : [this.deps.skillChoices(), picking.list === 'buffs' ? this.deps.buffItemChoices() : []];
+    const key = JSON.stringify(['skills', skills, picking, named, counts, choices]);
+    if (key === this.shown) return;
+    this.shown = key;
+    this.tabs.pages[TABS.indexOf('skills')]!.replaceChildren(this.skillsPage());
+  }
+
+  private skillsPage(): HTMLElement {
+    const doc = this.doc, skills = this.play.settings.skills;
+    const page = doc.createElement('div');
+    page.className = 'auto-skills';
+    const slot = doc.createElement('label');
+    slot.className = 'auto-check';
+    const box = doc.createElement('input');
+    box.type = 'checkbox';
+    box.name = 'auto-action-slot';
+    box.checked = skills.actionSlot;
+    box.addEventListener('change', () => { skills.actionSlot = box.checked; this.changed(); });
+    slot.append(box, doc.createTextNode(' Use Action Slot'));
+    page.append(slot,
+      this.slotRow('ready', 'Ready skills', MAX_READY, 'ready skill'),
+      this.slotRow('buffs', 'Buffs', MAX_BUFFS, 'buff'));
+    if (this.pickingSkill !== null) page.append(this.skillPickList(this.pickingSkill));
+    return page;
+  }
+
+  /** A row of `size` slots for the ready skills or the buffs: filled ones first, then the next empty one, greyed after. */
+  private slotRow(list: 'ready' | 'buffs', caption: string, size: number, name: string): HTMLElement {
+    const doc = this.doc, skills = this.play.settings.skills;
+    const row = doc.createElement('div');
+    row.className = `auto-slot-row auto-${list}`;
+    row.append(this.caption(caption));
+    const filled = list === 'ready' ? skills.ready.length : skills.buffs.length;
+    for (let i = 0; i < size; i++) {
+      const cell = doc.createElement('span');
+      cell.className = 'auto-slot-cell';
+      const button = doc.createElement('button');
+      button.type = 'button';
+      button.className = 'auto-slot';
+      button.setAttribute('aria-label', `Choose ${name} ${i + 1}`);
+      button.disabled = i > filled;
+      let shown: { name: string; icon: string | null } | null = null;
+      if (i < filled) {
+        if (list === 'ready') shown = this.deps.skill(skills.ready[i]!);
+        else {
+          const entry = skills.buffs[i]!;
+          shown = entry.kind === 'skill' ? this.deps.skill(entry.index) : this.deps.item(entry.index);
+          if (entry.kind === 'item' && this.deps.count(entry.index) === 0) button.classList.add('is-missing');
+        }
+        if (shown === null) button.classList.add('is-missing');
+      }
+      button.append(this.picture(shown?.icon ?? null));
+      button.title = shown?.name ?? (i < filled ? '?' : 'Choose');
+      button.addEventListener('click', () => {
+        const same = this.pickingSkill?.list === list && this.pickingSkill.slot === i;
+        this.pickingSkill = same ? null : { list, slot: i };
+        this.shown = '';
+        this.refresh();
+      });
+      cell.append(button);
+      if (i < filled) {
+        const clear = textButton(doc, '×', () => {
+          if (list === 'ready') skills.ready.splice(i, 1);
+          else skills.buffs.splice(i, 1);
+          this.pickingSkill = null;
+          this.changed();
+        }, 'clear', 'autoPlay');
+        clear.className = 'auto-slot-clear';
+        clear.setAttribute('aria-label', `Clear ${name} ${i + 1}`);
+        cell.append(clear);
+      }
+      row.append(cell);
+    }
+    return row;
+  }
+
+  private skillPickList(at: { list: 'ready' | 'buffs'; slot: number }): HTMLElement {
+    const doc = this.doc, skills = this.play.settings.skills;
+    const list = doc.createElement('div');
+    list.className = 'auto-pick-list';
+    const put = (choose: () => void) => {
+      choose();
+      this.pickingSkill = null;
+      this.changed();
+    };
+    for (const skill of this.deps.skillChoices()) {
+      const button = doc.createElement('button');
+      button.type = 'button';
+      button.className = 'auto-pick';
+      button.append(this.picture(skill.icon), doc.createTextNode(skill.name));
+      button.addEventListener('click', () => put(() => {
+        if (at.list === 'ready') skills.ready[at.slot] = skill.skillIndex;
+        else skills.buffs[at.slot] = { kind: 'skill', index: skill.skillIndex };
+      }));
+      list.append(button);
+    }
+    if (at.list === 'buffs') {
+      for (const item of this.deps.buffItemChoices()) {
+        const button = doc.createElement('button');
+        button.type = 'button';
+        button.className = 'auto-pick';
+        button.append(this.picture(item.icon), doc.createTextNode(`${item.name} ×${item.count}`));
+        button.addEventListener('click', () => put(() => { skills.buffs[at.slot] = { kind: 'item', index: item.itemIndex }; }));
+        list.append(button);
+      }
+    }
+    if (list.childElementCount === 0) {
+      list.textContent = 'No skill learned yet.';
+      list.dataset.empty = '';
+    }
+    return list;
   }
 
   private refreshFarm(): void {

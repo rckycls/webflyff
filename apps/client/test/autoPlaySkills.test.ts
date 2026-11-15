@@ -63,3 +63,13 @@ describe('pickBuff (spec 6.7)', () => {
     expect(of({ kind: 'skill', index: 6 })).toBeNull();
   });
 });
+
+describe('isBuffItemProp', () => {
+  it('a non-worn item with a stat effect is a buff item; a heal, a worn item or one with no effect is not', async () => {
+    const { isBuffItemProp } = await import('../src/world/autoplay/buffs');
+    expect(isBuffItemProp({ part: -1, destParams: [1, -1, -1] })).toBe(true);
+    expect(isBuffItemProp({ part: -1, destParams: [38, -1, -1] })).toBe(false);
+    expect(isBuffItemProp({ part: 2, destParams: [1, -1, -1] })).toBe(false);
+    expect(isBuffItemProp({ part: -1, destParams: [-1, -1, -1] })).toBe(false);
+  });
+});

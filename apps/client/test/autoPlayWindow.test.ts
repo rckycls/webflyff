@@ -11,6 +11,13 @@ const art: UiArt = { url: () => '', sheets: null };
 afterEach(() => { document.body.replaceChildren(); });
 
 const RED = 1001, BLUE = 1002;
+const SKILLS = [
+  { skillIndex: 3, name: 'Slash', icon: null },
+  { skillIndex: 4, name: 'Keenwheel', icon: null },
+  { skillIndex: 5, name: 'Protect', icon: null },
+  { skillIndex: 6, name: 'Blitz', icon: null },
+  { skillIndex: 7, name: 'Sneaker', icon: null },
+];
 const CHOICES: AutoPlayItemChoice[] = [
   { itemIndex: RED, name: 'Red Potion', icon: null, count: 12 },
   { itemIndex: BLUE, name: 'Blue Refresher', icon: null, count: 4 },
@@ -31,6 +38,9 @@ function rig(settings: AutoPlaySettings = defaultSettings(), allowed = true) {
     count: (itemIndex) => CHOICES.find((c) => c.itemIndex === itemIndex)?.count ?? 0,
     farmAllowed: () => allowed,
     now: () => 0,
+    skillChoices: () => SKILLS,
+    skill: (skillIndex) => SKILLS.find((c) => c.skillIndex === skillIndex) ?? null,
+    buffItemChoices: () => [{ itemIndex: 3001, name: 'Strength Scroll', icon: null, count: 2 }],
   }, document);
   document.body.append(w.frame.element);
   const row = (name: 'hp' | 'mp' | 'fp') => w.frame.element.querySelector<HTMLElement>(`.auto-pot-row[data-row="${name}"]`)!;
@@ -40,13 +50,13 @@ function rig(settings: AutoPlaySettings = defaultSettings(), allowed = true) {
 }
 
 describe('AutoPlayWindow: Potions tab', () => {
-  it('opens on the Farm tab; Skills is there but greyed until M3; Potions has its three rows', () => {
+  it('opens on the Farm tab; Potions has its three rows', () => {
     const { w } = rig();
     w.open();
     const tabs = [...w.frame.element.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
     expect(tabs.map((t) => t.textContent)).toEqual(['Farm', 'Potions', 'Skills']);
     expect(tabs.map((t) => t.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false']);
-    expect(tabs.map((t) => t.disabled)).toEqual([false, false, true]);
+    expect(tabs.map((t) => t.disabled)).toEqual([false, false, false]);
     w.showTab('potions');
     expect(w.frame.element.querySelectorAll('.auto-pot-row')).toHaveLength(3);
   });
@@ -168,5 +178,50 @@ describe('AutoPlayWindow: Farm tab', () => {
     w.open();
     expect(farm(w).querySelector('.auto-farm-state')!.textContent).toBe('Stopped: you died');
     expect(farm(w).querySelector('.auto-farm-stats')!.textContent).toContain('Kills 0');
+  });
+});
+
+describe('AutoPlayWindow: Skills tab', () => {
+  const page = (w: AutoPlayWindow) => w.frame.element.querySelector<HTMLElement>('.auto-skills')!;
+
+  it('choosing a skill for ready slot 1 saves it; the Action Slot box', () => {
+    const { w, play, saves, press } = rig();
+    w.open('skills');
+    press(page(w), 'Choose ready skill 1');
+    press(page(w).querySelector<HTMLElement>('.auto-pick-list')!, 'Keenwheel');
+    expect(play.settings.skills.ready).toEqual([4]);
+    expect(saves()).toBe(1);
+    page(w).querySelector<HTMLInputElement>('input[name="auto-action-slot"]')!.click();
+    expect(play.settings.skills.actionSlot).toBe(false);
+  });
+
+  it('four ready slots: a fifth skill has no slot', () => {
+    const s = defaultSettings();
+    s.skills.ready = [3, 4, 5, 6];
+    const { w } = rig(s);
+    w.open('skills');
+    expect(page(w).querySelectorAll('.auto-ready .auto-slot')).toHaveLength(4);
+  });
+
+  it('an item on a buff slot saves kind "item"; a skill saves kind "skill"', () => {
+    const { w, play, press } = rig();
+    w.open('skills');
+    press(page(w), 'Choose buff 1');
+    press(page(w).querySelector<HTMLElement>('.auto-pick-list')!, 'Strength Scroll ×2');
+    press(page(w), 'Choose buff 2');
+    press(page(w).querySelector<HTMLElement>('.auto-pick-list')!, 'Protect');
+    expect(play.settings.skills.buffs).toEqual([{ kind: 'item', index: 3001 }, { kind: 'skill', index: 5 }]);
+    expect(page(w).querySelectorAll('.auto-buffs .auto-slot')).toHaveLength(8);
+  });
+
+  it('a skill the character no longer has shows greyed; × clears it', () => {
+    const s = defaultSettings();
+    s.skills.ready = [42];
+    const { w, play, press } = rig(s);
+    w.open('skills');
+    const first = page(w).querySelector<HTMLElement>('.auto-ready .auto-slot')!;
+    expect(first.classList.contains('is-missing')).toBe(true);
+    press(page(w), 'Clear ready skill 1');
+    expect(play.settings.skills.ready).toEqual([]);
   });
 });
