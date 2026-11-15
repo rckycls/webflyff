@@ -16,6 +16,7 @@
 //   data/worldNoFly.json   (optional, Piece 7 M5) the ids of the worlds whose .wld says fly 0 (number[])
 //   data/pets.json         (optional, 2026-11-09) the raised pets' table of pet.inc (WebPets)
 //   data/honorNeeds.json   (optional, 2026-11-11) honour id to the count that earns the title, of honorList.txt (WebHonorNeeds)
+//   data/ctrls.json        (optional, 2026-11-15) every OT_CTRL of mdlDyna.inc with a converted model: its model and scale (WebCtrl[])
 //
 // It runs after the models stage, and after the effects and UI stages whose files the effects index and the item icons
 // name (`effects/<web name>.json`, `ui/item/<web name>.png`, the keys of output/keys.ts; this stage does not check that
@@ -33,6 +34,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import {
   AUDIO_KEY,
+  CTRLS_KEY,
   FormatError,
   GAME_DATA_KEYS,
   HONOR_NEEDS_KEY,
@@ -69,6 +71,7 @@ import {
 import type {
   ItemProp,
   ModelElem,
+  WebCtrl,
   WebEffectsIndex,
   WebExpRow,
   WebHonorNeeds,
@@ -399,6 +402,9 @@ function buildItemProps(env: Env, read: Reading): WebItemProp[] {
         sfxHit: prop.sfxObj3,
         sfxMissile: prop.sfxObj2,
         linkKindBullet: prop.linkKindBullet,
+        // 2026-11-15 (housing): a housing item's control and wallpaper/floor texture (IK1_HOUSING 7)
+        ...(prop.kind1 === IK1_HOUSING && prop.linkKind !== -1 ? { linkKind: prop.linkKind } : {}),
+        ...(prop.kind1 === IK1_HOUSING && prop.textFileName !== '' ? { textFile: prop.textFileName } : {}),
         // Piece 7 M3: the cast, and its ready effect (made at STATEMODE ON only, so kept only with a cast)
         ...(prop.skillReadyType !== undefined
           ? { castMs: prop.skillReadyType, ...(prop.sfxObj > 0 ? { sfxReady: prop.sfxObj } : {}) }
@@ -500,6 +506,29 @@ function buildTexts(env: Env, read: Reading): WebTexts {
  * (SfxObj.cpp:77, which CreateSfx calls) loads the entry with SetTypeIndex(..., TRUE), and CObj::ResetScale (Obj.cpp:390)
  * scales the effect by it.
  */
+/** `IK1_HOUSING` (`Resource/defineItemkind.h:16`): the housing items, whose `dwLinkKind` names a control. */
+const IK1_HOUSING = 7;
+
+/**
+ * 2026-11-15 (housing): every OT_CTRL entry of mdlDyna.inc whose model was converted (`ctrl_<name>.o3d`, MakeModelName),
+ * with `MODELELEM::m_fScale` (the entry's fourth number after the part, `ResetScale`). By id; a later entry wins.
+ */
+function buildCtrls(env: Env, read: Reading): WebCtrl[] {
+  const index = env.models();
+  read.bytes += index.bytes;
+  const ctrls: WebCtrl[] = [];
+  for (const elem of index.entries.values()) {
+    if (elem.type !== OT.CTRL) continue;
+    const file = modelFileName(elem);
+    if (!file.toLowerCase().endsWith('.o3d')) continue;
+    const model = converted(env, modelKeyOf(file));
+    if (model === null) continue;
+    const scale = elem.extra[3];
+    ctrls.push({ id: elem.id, model, scale: scale !== undefined && Number.isFinite(scale) && scale > 0 ? scale : 1 });
+  }
+  return ctrls.sort((a, b) => a.id - b.id);
+}
+
 function buildEffectsIndex(env: Env, read: Reading): WebEffectsIndex {
   const index = env.models();
   read.bytes += index.bytes;
@@ -671,6 +700,25 @@ export const gameDataStage: Stage = {
       } catch (error) {
         ctx.report.fail(KIND, 'honorList.txt', error);
       }
+    }
+
+    // The controls (2026-11-15, housing), optional: CTRLS_KEY is not one of GAME_DATA_KEYS, so game files converted before it
+    // still load (no control is drawn). A mdlDyna.inc that cannot be read has already failed the effects index.
+    try {
+      const read = new Reading(ctx.client);
+      let ctrls: WebCtrl[] | null = null;
+      try {
+        ctrls = buildCtrls(env, read);
+      } catch (error) {
+        if (!(error instanceof FormatError)) throw error;
+      }
+      if (ctrls !== null) {
+        const bytes = new TextEncoder().encode(JSON.stringify(ctrls));
+        await ctx.writer.write(CTRLS_KEY, bytes, 'mdlDyna.inc');
+        ctx.report.ok(KIND, 'mdlDyna.inc', read.bytes, bytes.length);
+      }
+    } catch (error) {
+      ctx.report.fail(KIND, 'mdlDyna.inc', error);
     }
 
     // The worlds without flight (Piece 7 M5), optional: written when some world's .wld is in the client. A World.inc that

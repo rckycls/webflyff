@@ -287,6 +287,8 @@ export class MessengerWindow {
     level.className = 'hud-messenger-text';
     level.dataset.column = 'level';
     level.textContent = String(row.level);
+    // 2026-11-15 (housing): a friend allowed into the own house has the level in green (`0xff00ff00`, :410-415)
+    if (row.visitAllowed === true) level.style.color = 'rgb(0, 255, 0)';
     place(level, { left: 127, top: 3, width: 46, height: 14 });
     element.append(level);
     const jobs = jobFrames(row.job, row.level);

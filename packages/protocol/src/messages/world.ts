@@ -2,6 +2,10 @@ import { readBankRequestPacket } from '../world/bank';
 import type { BankRequestPacket } from '../world/bank';
 import { readGuildBankRequestPacket } from '../world/guildBank';
 import type { GuildBankRequestPacket } from '../world/guildBank';
+import { readHousingRequestPacket } from '../world/housing';
+import type { HousingRequestPacket } from '../world/housing';
+import { readGuildHouseRequestPacket } from '../world/guildHouse';
+import type { GuildHouseRequestPacket } from '../world/guildHouse';
 import { readPostRequestPacket } from '../world/post';
 import type { PostRequestPacket } from '../world/post';
 import { readLordRequestPacket } from '../world/lord';
@@ -375,6 +379,10 @@ export type WorldPacket =
   | PostRequestPacket
   // 2026-11-15: the guild bank's packets the browser sends (world/guildBank.ts)
   | GuildBankRequestPacket
+  // 2026-11-15: personal housing's packets the browser sends (world/housing.ts)
+  | HousingRequestPacket
+  // 2026-11-15: the guild house's packets the browser sends (world/guildHouse.ts)
+  | GuildHouseRequestPacket
   // 2026-11-11: the Lord system's packets the browser sends (world/lord.ts)
   | LordRequestPacket
   // 2026-11-11: the honour title the browser asks for (world/honor.ts)
@@ -789,6 +797,12 @@ function decodeClientPacket(r: ArReader): WorldPacket {
       // 2026-11-15: the guild bank's (world/guildBank.ts)
       const guildBank = readGuildBankRequestPacket(packetType, r);
       if (guildBank !== null) { r.expectEnd(); return guildBank; }
+      // 2026-11-15: personal housing's (world/housing.ts)
+      const housing = readHousingRequestPacket(packetType, r);
+      if (housing !== null) { r.expectEnd(); return housing; }
+      // 2026-11-15: the guild house's (world/guildHouse.ts)
+      const guildHouse = readGuildHouseRequestPacket(packetType, r);
+      if (guildHouse !== null) { r.expectEnd(); return guildHouse; }
       // 2026-11-11: the Lord system's (world/lord.ts)
       const lord = readLordRequestPacket(packetType, r);
       if (lord !== null) { r.expectEnd(); return lord; }

@@ -3,6 +3,11 @@ import { MAIL_DRAG, MAIL_PENYA_DRAG } from './hud/post/postWindows';
 import { MailNotice } from './hud/mailNotice';
 import { BankHud } from './bank/bankHud';
 import { GuildBankHud } from './guildBank/guildBankHud';
+import { HousingHud } from './housing/housingHud'; // 2026-11-15 (housing)
+import { HousingBook } from './housing/housingBook';
+import { GuildHouseHud } from './guildHouse/guildHouseHud'; // 2026-11-15 (guild house)
+import { GuildHouseBook } from './guildHouse/guildHouseBook';
+import type { Placed, PlacementOptions } from './furniture/placement';
 import { GUILD_BANK_DRAG, GUILD_BANK_PENYA_DRAG } from './hud/guildBank/guildBankWindows';
 import { BANK_DRAG, BANK_PENYA_DRAG } from './hud/bank/bankWindows';
 import { COMMON_BANK_TIMERS } from './bank/bankBook';
@@ -206,9 +211,18 @@ import { formatText } from './hud/format';
 import { ItemActions } from './items/itemActions';
 import { GroundItems } from './items/groundItems';
 import { GroundModels, loadDropModel } from './items/groundModels';
+import { CtrlModels } from './furniture/ctrlModels'; // 2026-11-15 (housing)
+import { FurniturePlacement, RED_TEXTURE, loadCollisionMesh } from './furniture/placement';
+import { PlacementControls } from './furniture/placementBar';
+import { RoomPapering } from './furniture/roomPapering';
+import { isPhone } from './hud/numpad';
+import type { HousingEvent } from './housing/housingBook';
+/** 2026-11-15 (housing): CM_MYROOM's lowest `m_fCurRoty`, 10 degrees (`Camera.cpp:340-349`). */
+const ROOM_MIN_PITCH = (10 * Math.PI) / 180;
 import { NearbyItems } from './items/nearbyItems';
 import {
   ENABLE_GUILD_INVENTORY, EVE_PK, NULL_ID, STATE_BASEMOTION_MODE, ShortcutKind, isBankMessage, isGuildBankMessage, isGuildMessage,
+  WI_WORLD_MINIROOM, isHousingMessage, GuildHouseKind, isGuildHouseMessage, isGuildHouseWorld,
   isLordMessage, isPostMessage, isTradeMessage,
 } from '@flyffweb/protocol';
 // 2026-11-10: the guild (guild/guildBook.ts, guild/guildHud.ts)
@@ -231,7 +245,7 @@ import { MoveMark } from './render/moveMark';
 import { loadHeldItems, loadMoverModel, loadRideModel } from './render/moverModels';
 import { guildLine, nameTagOf } from './render/nameTags';
 import type { GuildLine } from './render/nameTags';
-import { pickMoverAt } from './render/picking';
+import { pickMoverAt, pickRay } from './render/picking';
 import type { TapHit } from './render/picking';
 import { latestOnly, renderPortrait, renderPreview } from './render/portrait';
 import { SpriteLayer } from './render/SpriteLayer';
@@ -552,6 +566,18 @@ export class WorldScreen {
     defaultName: () => this.data?.texts.get('TID_GAME_PARTY_NAME')?.text ?? 'Advance Party',
   });
   private readonly playerData = new PlayerDataCenter((playerId) => this.session.sendQueryPlayerData(playerId));
+  /**
+   * 2026-11-15 (housing): `CHousing`, the own furniture list and allow list (housing/housingBook.ts): it comes at login only,
+   * so it outlives the HUD a world change builds anew.
+   */
+  private readonly housingBook = new HousingBook((itemId) => this.data?.itemProps.get(itemId),
+    (playerId) => this.playerData.peek(playerId)?.name ?? '');
+  private housingHud: HousingHud | undefined;
+  /** 2026-11-15 (guild house): `CGuildHouseBase` (guildHouse/guildHouseBook.ts), which outlives the HUD as the housing's does. */
+  private readonly guildHouseBook = new GuildHouseBook((itemId) => this.data?.itemProps.get(itemId));
+  private guildHouseHud: GuildHouseHud | undefined;
+  /** 2026-11-15: the request a placed piece makes (personal housing's SETUPFURNITURE, the guild house's SETUP or RESET). */
+  private placementDone: ((placed: Placed) => void) | null = null;
   private partyCatalog: WebParty | null = null;
   /** The party skills' mode icons, the screen's as the party is (final review: a world change kept the mode, not its icon). */
   private readonly partyModeIcons = new MoverBuffs();
@@ -646,6 +672,16 @@ export class WorldScreen {
   private groundItems: GroundItems | undefined;
   /** The ground items' models, which the ring of tiles waits for (`settled`). */
   private dropModels: GroundModels | undefined;
+  /** 2026-11-15 (housing): the controls in view (placed furniture), furniture/ctrlModels.ts. */
+  private ctrlModels: CtrlModels | undefined;
+  /** 2026-11-15 (housing): a piece being placed (furniture/placement.ts), its input, and the room's papers. */
+  private placement: FurniturePlacement | undefined;
+  private placementControls: PlacementControls | undefined;
+  private papering: RoomPapering | undefined;
+  /** The papers HOUSING_PAPERINGINFO put on in this world (before its stage, too); none on a world change. */
+  private paperingState: { wall: string | null; floor: string | null } = { wall: null, floor: null };
+  /** The phone's Housing window, put away while a piece is placed, comes back after. */
+  private housingAway = false;
   private nearbyItems: NearbyItems | undefined;
   /** The own character's driving: the controls each rules step, the moves sent, the stop. */
   private ownMover: OwnMover | undefined;
@@ -893,6 +929,10 @@ export class WorldScreen {
     const generation = ++this.stageGeneration;
     this.element.dataset.worldId = String(worldId);
     this.worldId = worldId;
+    // 2026-11-15 (housing): the room's camera (CM_MYROOM), and out of a room it is no longer the own (DPClient.cpp:2392-2401)
+    this.backCamera.minPitch = worldId === WI_WORLD_MINIROOM ? ROOM_MIN_PITCH : -Math.PI * 0.4;
+    this.backCamera.pitch = Math.max(this.backCamera.pitch, this.backCamera.minPitch);
+    if (worldId !== WI_WORLD_MINIROOM) this.housingBook.myRoom = false;
     // OpenField and OnReplace: the music stops, and the world's rules start afresh (WndManager.cpp:2153, DPClient.cpp:2422-2427)
     this.audio?.music.stop();
     this.music?.enterWorld(worldId);
@@ -984,6 +1024,18 @@ export class WorldScreen {
       // 2026-11-15: the guild bank's (guildBank/guildBankHud.ts); no own state: the HUD keeps the bank and moves the bag, the
       // guild book the fund. A member's take comes under its own object id, so none is filtered out
       if (isGuildBankMessage(value)) { this.guildBankHud?.handle(value); continue; }
+      // 2026-11-15: personal housing's (housing/housingHud.ts); its list is the screen's book, kept while no HUD is up
+      if (isHousingMessage(value)) {
+        if (this.housingHud !== undefined) this.housingHud.handle(value);
+        else for (const event of this.housingBook.apply(value, Math.floor(Date.now() / 1000))) if (event.kind === 'papering') this.roomPapering(event);
+        continue;
+      }
+      // 2026-11-15: the guild house's (guildHouse/guildHouseHud.ts); its book outlives the HUD
+      if (isGuildHouseMessage(value)) {
+        if (this.guildHouseHud !== undefined) this.guildHouseHud.handle(value);
+        else this.guildHouseBook.apply(value, Math.floor(Date.now() / 1000));
+        continue;
+      }
       // 2026-11-10 (bank-mail): the post's (no own state: its items and penya come as CREATEITEM and the penya's point)
       if (isPostMessage(value)) { if (objectId === self?.objectId) this.postHud?.handle(value); continue; }
       if (value.type === 'block') this.tradeHud?.onBlock(value);
@@ -1671,6 +1723,12 @@ export class WorldScreen {
       () => this.ground, message => this.page!.overlay.error(message),
       pos => this.effects?.play({ xi: 64, pos })); // XI_GEN_ITEM_SHINE01, CItem::Render
     this.dropModels = dropModels;
+    this.ctrlModels = new CtrlModels(this.stage!.scene, this.data!, loadDropModel(this.services!),
+      (message) => this.page!.overlay.error(message));
+    // 2026-11-15 (guild house): the guild furniture's controls loop their animation (DPClient.cpp:1302-1315)
+    const guildCtrls = new Set([...this.data!.itemProps.values()]
+      .filter((p) => p.kind2 === GuildHouseKind.IK2_GUILDHOUSE_FURNITURE && p.linkKind !== undefined).map((p) => p.linkKind!));
+    this.ctrlModels.looping = (index) => guildCtrls.has(index);
     this.groundItems = new GroundItems(this.data!, this.hudArt!, (id) => itemActions.pick(id, performance.now()), doc, dropModels);
     this.nearbyItems = new NearbyItems(this.data!, this.hudArt!, (id) => itemActions.pick(id, performance.now()), doc,
       () => itemActions.pickNearby(performance.now()));
@@ -2044,6 +2102,9 @@ export class WorldScreen {
       now: () => performance.now(),
       // SND_INF_MESSENGERRING (Resource/defineSound.h:17)
       ring: () => this.sounds?.serverSound(12),
+      // 2026-11-15 (housing): House Entry Permissions (housing/housingHud.ts)
+      visitAllowed: (playerId) => this.housingBook.isAllowed(playerId),
+      setVisitAllow: (playerId, allow) => this.housingHud?.setVisitAllow(playerId, allow),
       saveOptions: (options) => saveFriendOptions((() => { try { return globalThis.localStorage ?? null; } catch { return null; } })(), options),
     }, this.messenger, this.friendOptions, doc);
     this.friendHud = friendHud;
@@ -2140,6 +2201,49 @@ export class WorldScreen {
       showTooltip: (item, anchor, host) => this.showBankTooltip(item, anchor, host),
     }, doc);
     this.guildBankHud = guildBankHud;
+    // 2026-11-15: personal housing (housing/housingHud.ts): the Housing window, the House List and the House box
+    const housingHud = new HousingHud(this.hudArt!, this.data!.texts, {
+      send: (bytes) => session.sendHousing(bytes),
+      say: (text, color) => this.hud?.messages.add(text, color),
+      prop: (itemId) => this.data?.itemProps.get(itemId),
+      ownPlayerId: ownPlayer,
+      worldId: () => this.worldId,
+      nowSeconds: () => Math.floor(Date.now() / 1000),
+      playerName: (playerId) => this.playerData.get(playerId).name,
+      refreshFriends: () => {}, // the Messenger redraws when its rows change (friendHud.update)
+      papering: (event) => this.roomPapering(event),
+      startPlacement: (itemId, ctrlIndex) => this.startPlacement(itemId, ctrlIndex, {}, (placed) => housingHud.place(placed.itemId, placed.pos, placed.angle)),
+      placing: () => this.placement?.active === true,
+      endPlacement: () => this.placement?.cancel(),
+    }, this.housingBook, doc);
+    this.housingHud = housingHud;
+    // 2026-11-15: the guild house (guildHouse/guildHouseHud.ts): its menu, Furniture Storage, the fee, the strip
+    const guildHouseHud = new GuildHouseHud(this.hudArt!, this.data!.texts, {
+      send: (bytes) => session.sendHousing(bytes),
+      say: (text, color) => this.hud?.messages.add(text, color),
+      prop: (itemId) => this.data?.itemProps.get(itemId),
+      ownPlayerId: ownPlayer,
+      worldId: () => this.worldId,
+      nowSeconds: () => Math.floor(Date.now() / 1000),
+      guild: () => this.guildBook.own(ownPlayer()),
+      ownPos: () => this.world?.self()?.act.body.pos ?? null,
+      togglePermissions: () => {
+        if (guildHud.window.isOpen) { guildHud.window.frame.close(); return; }
+        guildHud.toggle();
+        guildHud.window.showTab(4); // the Permissions tab (SetCurTab( 4 ))
+      },
+      toggleGuildBank: () => { if (guildBankHud.isOpen) guildBankHud.moved(); else guildBankHud.request(); },
+      papers: (wall, floor) => this.roomPapering({ kind: 'papering', wall, floor }),
+      rest: (percent) => this.hud?.status.setRest(percent),
+      startPlacement: (itemId, ctrlIndex, options, placed) => this.startPlacement(itemId, ctrlIndex, options, (p) => placed(p.pos, p.angle)),
+      placing: () => this.placement?.active === true,
+      menuAt: () => ({ x: Math.max(0, (this.hud?.element.clientWidth ?? 800) - 288 - 8), y: 180 }),
+      stripAt: (width) => ({ x: Math.max(0, Math.round(((this.hud?.element.clientWidth ?? 800) - width) / 2)), y: 0 }),
+    }, this.guildHouseBook, doc);
+    this.guildHouseHud = guildHouseHud;
+    this.hud!.status.setRest(this.guildHouseBook.restPercent);
+    // CWorld::InProcessing: in a guild house the menu opens by itself, with the papers (WorldEnvironment.cpp:51-68)
+    guildHouseHud.enteredWorld(this.worldId);
     // 2026-11-10 (bank-mail): the post (post/postHud.ts)
     const postHud = new PostHud(this.hudArt!, this.data!.texts, {
       send: (bytes) => session.sendBankMail(bytes),
@@ -2267,7 +2371,7 @@ export class WorldScreen {
       ...(this.chatWindow instanceof NeuzChat ? this.chatWindow.elements : [this.chatWindow.element]), this.shopWindow.frame.element,
       this.petWindows.element, this.buffPet.element,
       ...questWindow.elements, this.dialog.element, this.moverMenu.element, ...partyHud.elements, ...friendHud.elements,
-      ...tradeHud.elements, ...guildHud.elements, ...bankHud.elements, ...guildBankHud.elements, ...postHud.elements, this.mailNotice.element,
+      ...tradeHud.elements, ...guildHud.elements, ...bankHud.elements, ...guildBankHud.elements, ...housingHud.elements, ...guildHouseHud.elements, ...postHud.elements, this.mailNotice.element,
       ...(this.personalShop?.elements.slice(1) ?? []),
     );
     // what the friend list said while the world loaded
@@ -2293,6 +2397,13 @@ export class WorldScreen {
     this.tap = new TapToWalk(
       renderer.domElement, (x, y) => this.pick(x, y), (error) => this.reportOnce(`tap: ${messageOf(error)}`, error),
       (press) => {
+        // 2026-11-15 (housing): a piece being placed takes the press (WndWorld.cpp:6814-6826); a finger's goes to its bar
+        if (this.placement?.active === true) {
+          if (!press.touch) this.confirmPlacement();
+          return true;
+        }
+        // 2026-11-15 (guild house): a placed piece of the house pressed: selected, and its menu (WndWorld.cpp:7108-7114)
+        if (press.mover === null && this.pressGuildPiece()) return true;
         // 2026-11-10: a frozen player (/freeze, DONMOVE_MODE) does nothing with a press (OnLButtonDown, WndWorld.cpp:6729-6730)
         if (isFrozen(this.world?.self())) return true;
         // 2026-11-10: nor a seller with an item up, nor anyone with a shop window open (WndWorld.cpp:6721-6728)
@@ -2332,6 +2443,29 @@ export class WorldScreen {
     view.addEventListener('pointerup', this.onWorldButtonUp);
     view.addEventListener('pointercancel', this.onWorldButtonUp);
     this.cameraControls = new CameraControls(renderer.domElement, (dx, dy) => this.backCamera.rotate(dx, dy));
+    // 2026-11-15 (housing): the furniture core's placing and its input (a finger's touches are its own while it runs)
+    const services = this.services!;
+    const placement = new FurniturePlacement({
+      scene: this.stage!.scene,
+      camera: () => this.stage?.camera,
+      ground: () => this.stage?.ground(),
+      mpu: () => this.stage?.manifest.mpu ?? 4,
+      data: this.data!,
+      load: loadDropModel(services),
+      collision: (model) => loadCollisionMesh(services.store, model),
+      red: () => services.textures.acquire(RED_TEXTURE).catch(() => null),
+      releaseRed: () => services.textures.release(RED_TEXTURE),
+      others: (except) => this.ctrlModels?.boxes(except) ?? [],
+      landAttr: (x, z) => this.ground.landAttr(x, z),
+    });
+    this.placement = placement;
+    this.placementControls = new PlacementControls(placement, renderer.domElement, doc.defaultView ?? window, {
+      confirm: () => this.confirmPlacement(),
+      cancel: () => this.endPlacement(),
+    }, () => isPhone(doc), doc);
+    this.hud!.element.append(this.placementControls.bar);
+    this.papering = new RoomPapering(this.stage!.scene, services.textures);
+    this.papering.set(this.paperingState);
     // 2026-11-11: the mouse over the world, for its cursor (`updateCursor`)
     renderer.domElement.addEventListener('pointermove', this.onWorldHover);
     renderer.domElement.addEventListener('pointerleave', this.onWorldLeave);
@@ -3008,7 +3142,7 @@ export class WorldScreen {
       if (this.stageDrawn && !this.preloadStarted) {
         this.preloadStarted = true;
         const generation = this.stageGeneration;
-        const inView = Promise.all([views.settled(), this.dropModels?.settled()]);
+        const inView = Promise.all([views.settled(), this.dropModels?.settled(), this.ctrlModels?.settled()]);
         void Promise.race([inView, new Promise((resolve) => setTimeout(resolve, PRELOAD_WAIT_MS))]).then(() => {
           if (generation === this.stageGeneration && !this.over) stage.startPreloading();
         });
@@ -3019,6 +3153,12 @@ export class WorldScreen {
       stage.setCamera(view.position, view.target);
       this.cameraPlaced = true;
       this.groundItems?.update(world.groundItems, stage.camera, this.stepsRun);
+      this.ctrlModels?.update(world.ctrls, now / 1000); // 2026-11-15 (housing)
+      // the guild house's selected piece in its red box (WndWorld.cpp:3033-3045)
+      this.ctrlModels?.select(isGuildHouseWorld(this.worldId) && this.guildHouseBook.selected !== NULL_ID ? this.guildHouseBook.selected : null);
+      this.placement?.frame();
+      this.placementControls?.update();
+      this.papering?.update(now / 1000);
       this.tags!.update(stage.camera, renderer.getSize(drawingSize).y, (objectId) => views.placeOf(objectId));
       const owner = this.questOwner();
       const quests = this.own?.quests ?? new Map();
@@ -3429,6 +3569,8 @@ export class WorldScreen {
     this.guildHud?.update();
     this.bankHud?.update(); // 2026-11-10 (bank-mail): drawn live from the own banks
     this.guildBankHud?.update(); // 2026-11-15: and the guild bank
+    this.housingHud?.update(); // 2026-11-15: and the Housing list's times
+    this.guildHouseHud?.update(); // 2026-11-15: the guild house's time left, its storage and strip
     this.postHud?.update();
     // the new-mail notice follows the own MODE_MAILBOX (ADD_OBJ, MODIFYMODE)
     const mailOn = ((self?.added.player?.mode ?? 0) & Mode.MAILBOX) !== 0;
@@ -3488,6 +3630,10 @@ export class WorldScreen {
     if (window === 'lordSkill') { this.lordHud?.openSkills(); return; }
     // 2026-11-14: APP_MOTION, O (FuncApplet.cpp:198): the Motion window
     if (window === 'motion') { this.motionWindow?.toggle(); return; }
+    // 2026-11-15: APP_HOUSING, Y (FuncApplet.cpp:176): the Housing window
+    if (window === 'housing') { this.housingHud?.toggle(); return; }
+    // 2026-11-15: APP_GH_FURNITURE_STORAGE, R (FuncApplet.cpp:180): the guild's Furniture Storage
+    if (window === 'guildFurniture') { this.guildHouseHud?.toggleStorage(); return; }
     // 2026-11-10: APP_VENDOR_REVISION, the personal shop, refused while the Summon Angel window is open (WndManager.cpp:2685-2695)
     if (window === 'vendor') {
       if (this.summonAngel?.isOpen === true) this.say('TID_GAME_SUMMONANGELUSING');
@@ -3508,6 +3654,52 @@ export class WorldScreen {
     } else if (this.own !== undefined) {
       this.skillWindow?.toggle(this.own);
     }
+  }
+
+  /**
+   * 2026-11-15 (housing): Install of a piece (`LoadToDeploy`, WndHousing.cpp:500-505): its copy follows the pointer. On a
+   * phone the Housing window steps aside meanwhile (it would cover the room) and comes back when the piece ends.
+   */
+  private startPlacement(itemId: number, ctrlIndex: number, options: PlacementOptions, done: (placed: Placed) => void): boolean {
+    const started = this.placement?.start(itemId, ctrlIndex, options) ?? false;
+    this.placementDone = started ? done : null;
+    const doc = this.element.ownerDocument;
+    if (started && isPhone(doc) && this.housingHud?.housing.isOpen === true) {
+      this.housingHud.housing.window.close();
+      this.housingAway = true;
+    }
+    return started;
+  }
+
+  /** A left press or the phone's OK while placing (WndWorld.cpp:6814-6826): red says so and stays, else the request goes. */
+  private confirmPlacement(): void {
+    const result = this.placement?.confirm() ?? null;
+    if (result === 'collide') { this.say('TID_GAME_HOUSING_INSTALL_FAIL01'); return; }
+    if (result === null) return;
+    const done = this.placementDone;
+    this.placementDone = null;
+    done?.(result);
+    this.placementEnded();
+  }
+
+  /** Escape or the phone's Cancel: `EndDeploy` with no request. */
+  private endPlacement(): void {
+    this.placement?.cancel();
+    this.placementDone = null;
+    this.placementEnded();
+  }
+
+  private placementEnded(): void {
+    if (this.housingAway && this.housingHud?.housing.isOpen === false) this.housingHud.toggle();
+    this.housingAway = false;
+  }
+
+  /** 2026-11-15 (housing): HOUSING_PAPERINGINFO's papers (`ChangeWallTex`, `ChangeTileTex`), kept for this world's stage. */
+  private roomPapering(event: Extract<HousingEvent, { kind: 'papering' }>): void {
+    if (event.reset === true) this.paperingState = { wall: null, floor: null };
+    if (event.wall !== undefined) this.paperingState.wall = event.wall;
+    if (event.floor !== undefined) this.paperingState.floor = event.floor;
+    this.papering?.set(event);
   }
 
   /** A line of the messages window, `PutString( prj.GetText( id ), NULL, prj.GetTextColor( id ) )`: the skill use's texts. */
@@ -3837,6 +4029,15 @@ export class WorldScreen {
    * (`if( CWndBase::m_GlobalShortcut.IsEmpty() )`, `WndManager.cpp:3383`).
    */
   private readonly onEscape = (event: KeyboardEvent): void => {
+    // 2026-11-15 (housing): Escape ends the placing first (Neuz.cpp:1343-1352)
+    if (event.key === 'Escape' && this.placement?.active === true) {
+      event.preventDefault();
+      event.stopPropagation();
+      this.endPlacement();
+      return;
+    }
+    // 2026-11-15 (guild house): Escape lets the selected piece go (Neuz.cpp:1353)
+    if (event.key === 'Escape') this.guildHouseBook.selected = NULL_ID;
     // 2026-11-09: the desktop chat's line passes Escape on to the game (Neuz.cpp:1222-1231); the phone's keeps it
     if ((this.chatWindow?.typing === true && this.chatWindow instanceof ChatWindow) || this.dropBox !== undefined) return;
     if (this.worldMap?.isOpen === true) return; // the map's own key hold closes it, and Escape does nothing else
@@ -4279,6 +4480,25 @@ export class WorldScreen {
   }
 
   /** The right and top of the NPC's bound rect (`GetBoundRect`, WndWorld.cpp:2661-2701), in the HUD layer's pixels. */
+  /**
+   * 2026-11-15 (guild house): the last press, on a placed piece of the guild house (its box, the nearest): it is selected and
+   * its menu opens there (`SetObjFocus`, `ShowCCtrlMenu`); false for none, and outside a guild house.
+   */
+  private pressGuildPiece(): boolean {
+    const hud = this.guildHouseHud, stage = this.stage, press = this.placementControls?.lastPress;
+    if (!isGuildHouseWorld(this.worldId) || hud === undefined || stage === undefined || press == null || this.hud === undefined) return false;
+    const ray = pickRay(stage.camera, press.ndc[0], press.ndc[1]);
+    if (ray === null) return false;
+    const id = this.ctrlModels?.pick(ray.orig, ray.dir, (objectId) => this.guildHouseBook.find(objectId) !== null) ?? null;
+    if (id === null) return false;
+    const entries = hud.pressPiece(id);
+    if (entries.length === 0) return false;
+    const layer = this.hud.element.getBoundingClientRect();
+    this.moverMenu?.open(entries.map((e) => ({ ...e, enabled: true })), { x: press.x - layer.left, y: press.y - layer.top },
+      (entry) => hud.choosePiece(entry));
+    return true;
+  }
+
   private menuPoint(id: number): { x: number; y: number } | null {
     const mover = this.world?.movers.get(id), candidate = this.views?.pickCandidate(id), stage = this.stage;
     if (mover === undefined || candidate == null || stage === undefined || this.page === undefined || this.hud === undefined) return null;
@@ -4320,6 +4540,20 @@ export class WorldScreen {
       // 2026-11-15: not with the Guild Safebox open (:5496-5501)
       if (this.guildBankHud?.isOpen === true) { this.say('TID_GAME_BANKSTILLUSING'); return; }
       this.bankHud?.request(); // 2026-11-10 (bank-mail): Deposit (:5451-5536)
+    } else if (entry === MMI.GUILDHOUSE_SALE) {
+      this.guildHouseHud?.buy(); // 2026-11-15: Purchase Guild House, no box (:6129-6133)
+    } else if (entry === MMI.GUILDHOUSE_CHARGE) {
+      this.guildHouseHud?.openUpkeep(); // Pay Maintenance Fee (:6091-6115)
+    } else if (entry === MMI.GUILDHOUSE_ENTER) {
+      this.guildHouseHud?.enter(); // Enter your Guild House (:6117-6121)
+    } else if (entry === MMI.GUILDHOUSE_OUT) {
+      this.guildHouseHud?.goOut(); // Exit Your Guild House (:6122-6126)
+    } else if (entry === MMI.VISIT_MYROOM) {
+      this.housingHud?.visitOwnRoom(); // 2026-11-15: Enter House (:5231-5234)
+    } else if (entry === MMI.VISIT_FRIEND) {
+      this.housingHud?.openRoomList(); // Enter Friend's House (:5221-5225)
+    } else if (entry === MMI.RETURNTO_WORLD) {
+      this.housingHud?.openQuitRoom(); // Exit House (:5226-5230)
     } else if (entry === MMI.GUILDBANKING) {
       this.guildBankHud?.request(); // 2026-11-15: Guild Warehouse (:5543-5612)
     } else if (entry === MMI.POST) {
@@ -4700,6 +4934,15 @@ export class WorldScreen {
     this.jumpButton?.dispose();
     this.actionSlotButton?.dispose();
     this.cameraControls?.dispose();
+    // 2026-11-15 (housing): the placing, its input and the papers go with the world
+    this.placementControls?.dispose();
+    this.placementControls = undefined;
+    this.placement?.dispose();
+    this.placement = undefined;
+    this.papering?.dispose();
+    this.papering = undefined;
+    this.paperingState = { wall: null, floor: null };
+    this.housingAway = false;
     this.keyboard?.dispose();
     this.walkKey?.dispose();
     this.autoRun?.dispose();
@@ -4812,6 +5055,10 @@ export class WorldScreen {
     this.bankHud?.reset();
     this.bankHud = undefined;
     this.guildBankHud?.reset();
+    this.housingHud?.reset(); // 2026-11-15 (housing)
+    this.housingHud = undefined;
+    this.guildHouseHud?.reset(); // 2026-11-15 (guild house)
+    this.guildHouseHud = undefined;
     this.guildBankHud = undefined;
     this.postHud?.reset();
     this.postHud = undefined;
@@ -4821,6 +5068,8 @@ export class WorldScreen {
     this.element.removeEventListener('pointerdown', this.onFriendInput, true);
     this.groundItems?.dispose();
     this.dropModels = undefined; // the ground items' own, disposed with them
+    this.ctrlModels?.dispose(); // 2026-11-15 (housing)
+    this.ctrlModels = undefined;
     this.nearbyItems?.dispose();
     this.minimap?.dispose();
     if (this.worldMap !== undefined) this.worldMapMonsters = this.worldMap.monsterInfo;

@@ -1,8 +1,9 @@
-import { CHAT_KEY, GAME_DATA_KEYS, HONOR_NEEDS_KEY, ITEM_ETC_KEY, PETS_KEY, ULTIMATE_KEY, WORLD_NO_FLY_KEY } from '@flyffweb/formats';
+import { CHAT_KEY, CTRLS_KEY, GAME_DATA_KEYS, HONOR_NEEDS_KEY, ITEM_ETC_KEY, PETS_KEY, ULTIMATE_KEY, WORLD_NO_FLY_KEY } from '@flyffweb/formats';
 import type { WebChat, WebHonorNeeds, WebUltimate } from '@flyffweb/formats';
 import type {
   ExpRow,
   TextEntry,
+  WebCtrl,
   WebEffectRef,
   WebEffectsIndex,
   WebExpRow,
@@ -84,6 +85,11 @@ export interface GameData {
    * `data/worldNoFly.json`: every world then allows flight, the `.wld`'s default.
    */
   noFlyWorlds: ReadonlySet<number>;
+  /**
+   * 2026-11-15 (housing): the controls (`OT_CTRL`) whose model was converted, by `CI_*` id (an ADD_OBJ's index, a housing
+   * item's `linkKind`). Empty without the optional `data/ctrls.json`: no control is drawn.
+   */
+  ctrls: ReadonlyMap<number, WebCtrl>;
   /** 2026-11-05: the sets, socket cards and accessories the item tooltip shows; absent without `data/itemEtc.json`. */
   itemEtc?: ItemEtc;
   /** 2026-11-09: the chat's word filter and help texts; absent without `data/chat.json` (the converter's `chat` stage). */
@@ -163,6 +169,7 @@ export async function loadGameData(store: Pick<AssetStore, 'json' | 'url'>): Pro
   const chat = store.url(CHAT_KEY) === null ? undefined : await store.json<WebChat>(CHAT_KEY);
   const ultimate = store.url(ULTIMATE_KEY) === null ? undefined : await store.json<WebUltimate>(ULTIMATE_KEY);
   const pets = store.url(PETS_KEY) === null ? undefined : await store.json<WebPets>(PETS_KEY); // pets R1
+  const ctrls = store.url(CTRLS_KEY) === null ? [] : await store.json<WebCtrl[]>(CTRLS_KEY); // 2026-11-15 (housing)
   // 2026-11-11: the honour titles' needs (the honour window); none in game files converted before it
   const honorNeeds = store.url(HONOR_NEEDS_KEY) === null ? {} : await store.json<WebHonorNeeds>(HONOR_NEEDS_KEY);
   return {
@@ -184,6 +191,7 @@ export async function loadGameData(store: Pick<AssetStore, 'json' | 'url'>): Pro
     effects: new Map(Object.entries(effects).map(([id, effect]) => [Number(id), effect])),
     skills: new Map(skills.map((skill) => [skill.id, skill])),
     noFlyWorlds: new Set(noFly),
+    ctrls: new Map(ctrls.map((ctrl) => [ctrl.id, ctrl])),
     ...(itemEtc !== undefined ? { itemEtc } : {}),
     ...(chat !== undefined ? { chat } : {}),
     ...(ultimate !== undefined ? { ultimate } : {}),

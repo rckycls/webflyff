@@ -39,7 +39,17 @@ export const MMI = {
    */
   REPAIR: 14, SMELT_MIXJEWEL: 51, SMELT_CHANGEGWEAPON: 54, SMELT_CHANGEUWEAPON: 55, ATTRIBUTE: 59, SMELT_REMOVE_PIERCING: 72,
   SMELT_REMOVE_JEWEL: 95, SMELT_SAFETY_ELEMENT: 167,
+  /** 2026-11-15: Enter House, Enter Friend's House (Charlie, the room's door) and Exit House (housing/housingHud.ts). */
+  VISIT_MYROOM: 122, VISIT_FRIEND: 123, RETURNTO_WORLD: 124,
+  /** 2026-11-15: Bertha's Purchase Guild House, Pay Maintenance Fee, Enter your Guild House; the door's Exit (guildHouse/guildHouseHud.ts). */
+  GUILDHOUSE_SALE: 147, GUILDHOUSE_CHARGE: 148, GUILDHOUSE_ENTER: 149, GUILDHOUSE_OUT: 150,
 } as const;
+/** 2026-11-15: personal housing's entries (`WndWorld.cpp:5221-5234`). */
+const HOUSING_ENTRIES: ReadonlySet<number> = new Set([
+  MMI.VISIT_MYROOM, MMI.VISIT_FRIEND, MMI.RETURNTO_WORLD,
+  // 2026-11-15: the guild house's (`WndWorld.cpp:6091-6133`)
+  MMI.GUILDHOUSE_SALE, MMI.GUILDHOUSE_CHARGE, MMI.GUILDHOUSE_ENTER, MMI.GUILDHOUSE_OUT,
+]);
 /**
  * 2026-11-10: the Arena's and the Forsaken Tower's entries: Enter and Leave Arena send their header
  * (`WndWorld.cpp:5927-5934`), the tower opens its window (`:5115-5129`).
@@ -110,7 +120,9 @@ export function npcMenuEntries(npc: WebNpc | undefined, texts: Texts, ownIsBaseJ
         ARENA_TOWER_ENTRIES.has(id) ||
         id === MMI.BANKING || id === MMI.POST || id === MMI.GUILDBANKING ||
         // 2026-11-11: the Lord Manager's (MaFl_KINGAIDE, Resource/character.inc:6903-6926; lord/lordHud.ts)
-        LORD_MENU.has(id),
+        LORD_MENU.has(id) ||
+        // 2026-11-15: Charlie's and the room door's (housing/housingHud.ts)
+        HOUSING_ENTRIES.has(id),
     }));
 }
 

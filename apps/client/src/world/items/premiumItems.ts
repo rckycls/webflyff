@@ -21,9 +21,10 @@ import { IK3_VIS, II_SYS_SYS_SCR_PET_MAGIC, II_SYS_SYS_VIS_KEY01 } from '../pets
 /**
  * The `IK2_*` the server uses (`DoUseItem`): REFRESHER 11, POTION 12, FOOD 14, SYSTEM 19, BLINKWING 22, AIRFUEL 23,
  * GMTEXT 27, BUFF 29, WARP 30, SKILL 31, BUFF2 33, TOCASH 36 (the Funny Coin, after its box), BUFF_TOGIFT 37
- * (`Resource/defineItemkind.h:29-55`).
+ * (`Resource/defineItemkind.h:29-55`); 2026-11-15 (housing): FURNITURE 34 and PAPERING 35, which the server lists in the
+ * Housing window from anywhere (`MoverSkill.cpp:1372-1392`).
  */
-const USE_KINDS: ReadonlySet<number> = new Set([11, 12, 14, 19, 22, 23, 27, 29, 30, 31, 33, 36, 37]);
+const USE_KINDS: ReadonlySet<number> = new Set([11, 12, 14, 19, 22, 23, 27, 29, 30, 31, 33, 34, 35, 36, 37]);
 /** `IK2_TOCASH`: the Funny Coin (`__FUNNY_COIN`, DPClient.cpp:10543-10552). */
 const IK2_TOCASH = 36;
 /**

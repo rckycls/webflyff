@@ -135,6 +135,10 @@ describe('the Friend tab', () => {
     expect(ids(row({}), true, true)).toEqual([FriendMenu.MESSAGE, FriendMenu.BLOCK, FriendMenu.DELETE, FriendMenu.MOVE, FriendMenu.ALLOW_VISIT]);
     expect(ids(row({ state: FRS.OFFLINE }))).toEqual([FriendMenu.BLOCK, FriendMenu.DELETE, FriendMenu.MEMO, FriendMenu.ALLOW_VISIT]);
     expect(friendMenuEntries(row({ blocked: true }), false, false).find((e) => e.id === FriendMenu.BLOCK)?.tid).toBe('TID_FRS_BLOCKRESTORE');
+    // 2026-11-15 (housing): an allowed friend gets Cancel Entry Permissions instead; both work
+    expect(ids(row({ visitAllowed: true }))).toEqual([FriendMenu.MESSAGE, FriendMenu.BLOCK, FriendMenu.DELETE, FriendMenu.INVITE, FriendMenu.PROHIBIT_VISIT]);
+    expect(friendMenuEntries(row({}), false, false).at(-1)).toEqual({ id: FriendMenu.ALLOW_VISIT, tid: 'TID_GAME_ALLOW_VISIT', enabled: true });
+    expect(friendMenuEntries(row({ visitAllowed: true }), false, false).at(-1)?.enabled).toBe(true);
     expect(doubleClickAction(row({ name: 'Lead' }))).toEqual({ open: 'Lead' });
     expect(doubleClickAction(row({ state: FRS.OFFLINE }))).toEqual({ line: 'TID_GAME_NOTLOGIN', args: [] });
     expect(doubleClickAction(row({ name: 'Lead', blocked: true }))).toEqual({ line: 'TID_GAME_MSGBLOCKCHR', args: ['Lead'] });

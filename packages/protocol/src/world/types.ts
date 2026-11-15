@@ -18,6 +18,8 @@ import type { VendorMessage } from './vendor';
 import type { GuildDirectMessage, GuildMessage } from './guild';
 import type { BankMessage } from './bank';
 import type { GuildBankMessage } from './guildBank';
+import type { HousingMessage } from './housing';
+import type { GuildHouseMessage } from './guildHouse';
 import type { PostMessage } from './post';
 import type { LordMessage } from './lord';
 import type { HonorMessage } from './honor';
@@ -25,7 +27,7 @@ import type { HpLayerMessage } from './hpLayer';
 import type { TaxMessage } from './tax';
 
 export type WorldMessage = ChatMessage | NpcMessage | ShopMessage | QuestMessage | PetMessage | FriendMessage | TradeMessage | VendorMessage
-  | GuildMessage | GuildDirectMessage | BankMessage | GuildBankMessage | PostMessage | LordMessage | HonorMessage | HpLayerMessage
+  | GuildMessage | GuildDirectMessage | BankMessage | GuildBankMessage | HousingMessage | GuildHouseMessage | PostMessage | LordMessage | HonorMessage | HpLayerMessage
   | TaxMessage
   | { type: 'profileStats'; values: number[] }
   | { type: 'addItem'; item: GroundItem }
@@ -37,7 +39,9 @@ export type WorldMessage = ChatMessage | NpcMessage | ShopMessage | QuestMessage
   | { type: 'equipItem'; objectId: number; equip: boolean; itemId: number; option: number; flag: number; part: number }
   /** ADD_OBJ of a mover (`OT_MOVER`): a player, a monster or an NPC came into view. */
   | { type: 'addMover'; mover: AddedMover }
-  /** ADD_OBJ of any other object (`OT_CTRL`, ...), which the browser does not read past its type. */
+  /** 2026-11-15 (housing): ADD_OBJ of a control (`OT_CTRL`): a placed piece of furniture, a chest, a trigger. */
+  | { type: 'addCtrl'; ctrl: AddedCtrl }
+  /** ADD_OBJ of any other object (`OT_SFX`, ...), which the browser does not read past its type. */
   | { type: 'addOther'; objectType: number }
   | { type: 'delObj' }
   /** The season (`SEASON_*`, `Resource/define.h:269-274`), from which Neuz picks some trees' models; the browser keeps it nowhere. */
@@ -622,6 +626,21 @@ export interface AddedNpc {
   moveEventCount: number;
   /** `m_fSpeedFactor`, which `CMover::GetSpeed` multiplies the mover's speed by. */
   speedFactor: number;
+}
+
+/**
+ * 2026-11-15 (housing): a control as ADD_OBJ brings it: `CCommonCtrl` has no Serialize of its own, so its body is
+ * `CCtrl::Serialize` (`_Common/ObjSerialize.cpp:15-27`): `CObj::Serialize` (`ObjSerializeOpt.cpp:18-60`) and `m_objid`.
+ */
+export interface AddedCtrl {
+  /** `m_dwIndex`: the control's id (`CI_*`), its entry in propCtrl.txt and mdlDyna.inc. */
+  index: number;
+  /** `(float)u2 / 100.0f` of every axis. */
+  scale: number;
+  pos: Vec3;
+  /** `(float)i2 / 10.0f`, degrees. */
+  angle: number;
+  objectId: number;
 }
 
 /** A mover as ADD_OBJ brings it (`CDPClient::OnAddObj`, `Neuz/DPClient.cpp:1053`). */

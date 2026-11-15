@@ -60,7 +60,7 @@ import { itemIconOf } from '../pets/petStatus';
 
 /** The windows of Piece 4 a press on the task bar opens. */
 export type TaskBarWindow = 'character' | 'status' | 'skills' | 'inventory' | 'chat' | 'navigator' | 'worldmap' | 'option'
-  | 'quests' | 'party' | 'messenger' | 'vendor' | 'guild' | 'lordSkill' | 'motion';
+  | 'quests' | 'party' | 'messenger' | 'vendor' | 'guild' | 'lordSkill' | 'motion' | 'housing' | 'guildFurniture';
 /** 2026-11-10: `APP_GUILD` (Resource/ResData.h:228), the guild window (guild research §3), G (FuncApplet.cpp:245). */
 const APP_GUILD = 323;
 /** `APP_QUEST_EX_LIST` (Resource/ResData.h), the quest window (Piece 7 M1), Q (FuncApplet.cpp:229). */
@@ -97,6 +97,10 @@ const WINDOWS: ReadonlyMap<number, TaskBarWindow> = new Map([
   [728, 'lordSkill'],
   // 2026-11-14: APP_MOTION (Resource/ResData.h), the Motion window, O (FuncApplet.cpp:198)
   [172, 'motion'],
+  // 2026-11-15: APP_HOUSING (Resource/ResData.h:716), the Housing window, Y (FuncApplet.cpp:176)
+  [811, 'housing'],
+  // 2026-11-15: APP_GH_FURNITURE_STORAGE (Resource/ResData.h:758), the guild's Furniture Storage, R (FuncApplet.cpp:180)
+  [853, 'guildFurniture'],
 ]);
 
 /**
@@ -119,6 +123,8 @@ const MENU: ReadonlyArray<{ id: number; text: string }> = [
   { id: AppId.CHARACTER3, text: 'Character' },
   { id: AppId.SKILL3, text: 'Skills' },
   { id: 1003, text: 'Inventory' },
+  // 2026-11-15: CWndTaskMenu's APP_HOUSING line, 'Housing' (TID_GAME_HOUSING_BOX), after Inventory (WndTaskBar.cpp:2603-2605)
+  { id: 811, text: 'Housing' },
   // 2026-11-10: CWndTaskMenu's APP_VENDOR_REVISION line, 'Private Shop' (TID_APP_VENDOR), after Inventory and before Skill
   // (WndTaskBar.cpp:2612-2613)
   { id: APP_VENDOR_REVISION, text: 'Private Shop' },

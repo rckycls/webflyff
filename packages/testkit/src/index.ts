@@ -51,6 +51,13 @@ export {
   writeGetGoldGuildBank, writeGetItemGuildBank, writeGuildBankLog, writeGuildBankWindow, writePutItemGuildBank,
   writeRemoveGuildBankItem,
 } from './guildBank';
+// 2026-11-15: personal housing, and the ADD_OBJ of a control
+export {
+  writeAddCtrl, writeHousingAllInfo, writeHousingFurnitureList, writeHousingPapering, writeHousingSetupFurniture,
+  writeHousingSetVisitAllow, writeHousingVisitableList,
+} from './housing';
+// 2026-11-15: the guild house
+export { writeGuildHouseAllInfo, writeGuildHousePacket, writeGuildHouseRemove, writeGuildHouseRestPoint } from './guildHouse';
 export { writeMail, writeMailBox, writeMailBoxReq, writeModifyMode, writeRemoveMail } from './post';
 export { writeAngelInfo, writeFlyffEvent, writeSetLocalEvent } from './angel'; // 2026-11-10: Summon Angel
 // 2026-11-11: the Lord system

@@ -159,6 +159,14 @@ export class StatusWindow {
    * Draws `own`'s numbers, `name` and level in the title. Opens the window at the top left the first time. The EXP bar and
    * text are empty for a level the EXP table has no next row for (`GetMaxExp1` would read past it): the rest is drawn.
    */
+  /** 2026-11-15 (guild house): `m_nExtraExp`, the rest gauge's percent (`OnRestPoint`, DPClient.cpp:19037-19049). */
+  private restPercent = 0;
+
+  /** 2026-11-15 (guild house): GUILDHOUSE_RESTPOINT's percent, drawn at the next update. */
+  setRest(percent: number): void {
+    this.restPercent = Math.max(0, Math.min(100, Math.trunc(percent)));
+  }
+
   update(own: OwnState, name: string): void {
     if (!this.shown) {
       this.shown = true;
@@ -187,9 +195,9 @@ export class StatusWindow {
     }
     this.gauges.exp.set(needed === null ? 0 : expBarWidth(own.exp, needed));
     this.write(this.rows.exp, this.display === 0 || needed === null ? [] : [expPercentText(own.exp, needed)]);
-    // the guild-house rest bar (`__VER >= 15`): m_nExtraExp, 0 outside a guild house (no message sets it in Piece 4)
-    this.gauges.rest.set(0);
-    this.write(this.rows.rest, this.display === 0 ? [] : ['0%']);
+    // the guild-house rest bar (`__VER >= 15`): m_nExtraExp, GUILDHOUSE_RESTPOINT's percent (2026-11-15, `setRest`)
+    this.gauges.rest.set(Math.trunc((BAR_WIDTH * this.restPercent) / 100));
+    this.write(this.rows.rest, this.display === 0 ? [] : [`${this.restPercent}%`]);
   }
 
   /** The face of the own character, drawn in the face box (the window's 3D head, `OnDraw`'s viewport, `:10655-10931`). */

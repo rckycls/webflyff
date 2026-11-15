@@ -27,6 +27,8 @@ export interface FriendRow {
   blocked: boolean;
   /** The player data's `uLogin`, or 100 for an offline friend. */
   channel: number;
+  /** 2026-11-15 (housing): `m_bVisitAllowed`, the friend may enter the own house (the level in green). */
+  visitAllowed?: boolean;
 }
 
 /** `JTYPE_*` (`Resource/defineJob.h:4-10`), by the job's line of `Resource/etc.inc` (`JOB_*`, `defineJob.h:40-80`). */
@@ -176,7 +178,7 @@ export const FriendMenu = {
 export interface FriendMenuEntry {
   id: number;
   tid: string;
-  /** The browser carries this entry out (the memo and the house's entries have no window here). */
+  /** The browser carries this entry out (the memo has no window here). */
   enabled: boolean;
 }
 
@@ -191,8 +193,9 @@ export function friendMenuEntries(row: FriendRow, gameMaster: boolean, inParty: 
     if (!inParty) entries.push({ id: FriendMenu.INVITE, tid: 'TID_MMI_INVITE_PARTY', enabled: true });
   }
   if (away) entries.push({ id: FriendMenu.MEMO, tid: 'TID_GAME_TAGSEND', enabled: false });
-  // housing (`__VER >= 13`, :882-898): no one is allowed in a house the browser knows of
-  entries.push({ id: FriendMenu.ALLOW_VISIT, tid: 'TID_GAME_ALLOW_VISIT', enabled: false });
+  // housing (`__VER >= 13`, :882-898): Cancel Entry Permissions for an allowed friend, else House Entry Permissions
+  if (row.visitAllowed === true) entries.push({ id: FriendMenu.PROHIBIT_VISIT, tid: 'TID_GAME_PROHIBIT_VISIT', enabled: true });
+  else entries.push({ id: FriendMenu.ALLOW_VISIT, tid: 'TID_GAME_ALLOW_VISIT', enabled: true });
   return entries;
 }
 

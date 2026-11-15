@@ -47,7 +47,7 @@ export {
   encodeAddAppletTaskBar, encodeAddItemTaskBar, encodeRemoveAppletTaskBar, encodeRemoveItemTaskBar, encodeSkillTaskBar,
 } from './world/taskBar';
 export type {
-  AddedMover, AddedNpc, AddedPlayer, GroundItem, InventoryItem, MonsterRate, OwnBank, OwnCharacter, Shortcut, SkillSlot, TaskBar,
+  AddedCtrl, AddedMover, AddedNpc, AddedPlayer, GroundItem, InventoryItem, MonsterRate, OwnBank, OwnCharacter, Shortcut, SkillSlot, TaskBar,
   WorldMessage, WornPart, MessageOf, PartyBlock, PartyRequestSide, PlayerDataRecord,
 } from './world/types';
 export { CloseCode } from './gatewayCloseCodes';
@@ -75,6 +75,8 @@ export * from './world/trade';
 export * from './world/guild';
 export * from './world/bank';
 export * from './world/guildBank'; // 2026-11-15
+export * from './world/housing'; // 2026-11-15
+export * from './world/guildHouse'; // 2026-11-15
 export * from './world/post';
 export * from './world/lord';
 export * from './world/honor';

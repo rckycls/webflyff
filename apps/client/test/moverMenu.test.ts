@@ -15,6 +15,13 @@ describe('npcMenuEntries (CWndWorld::ShowMoverMenu, WndWorld.cpp:6649-6684)', ()
     expect(npcMenuEntries(JULIA, TEXTS, false).map((entry) => entry.id)).toEqual([0, 2, 9, 16, 17, 18, 137]);
   });
 
+  it("2026-11-15: the Housing Specialist's Enter House and Enter Friend's House, and the door's Exit House, work (:5221-5234)", () => {
+    const charlie = { key: 'Mafl_Charlie', name: 'Charlie', menus: [0, 2, 122, 123] } as unknown as Parameters<typeof npcMenuEntries>[0];
+    const door = { key: 'NPC_Door', name: '', menus: [124, 123] } as unknown as Parameters<typeof npcMenuEntries>[0];
+    expect(npcMenuEntries(charlie, TEXTS, false).filter((e) => e.id >= 122).map((e) => [e.id, e.enabled])).toEqual([[122, true], [123, true]]);
+    expect(npcMenuEntries(door, TEXTS, false).map((e) => [e.id, e.enabled])).toEqual([[123, true], [124, true]]);
+  });
+
   it('2026-11-15: Guild Warehouse shows, enabled, with a guild and the guild bank on (:6669-6674)', () => {
     const entry = npcMenuEntries(JULIA, TEXTS, false, true).find((e) => e.id === MMI.GUILDBANKING);
     expect(entry).toEqual({ id: 15, label: 'Guild Warehouse', enabled: true });

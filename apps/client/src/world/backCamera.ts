@@ -43,6 +43,11 @@ export class BackCamera {
   /** Independent web heading: character turns and tap-to-walk never rotate the view. */
   heading: number | null = null;
   pitch = CHASE_PITCH;
+  /**
+   * 2026-11-15 (housing): the lowest pitch a drag reaches: CM_MYROOM keeps `m_fCurRoty` at 10 degrees or more in the room
+   * (`Camera.cpp:340-349`, set on REPLACE to WI_WORLD_MINIROOM, `DPClient.cpp:2392-2401`); elsewhere the browser's own.
+   */
+  minPitch = -Math.PI * 0.4;
   private relocatePending = false;
   private offset: Vec3 = [0, 0, 0];
   private easeSteps = 0;
@@ -56,7 +61,7 @@ export class BackCamera {
       return;
     }
     this.heading = (this.heading ?? 0) + dx * 0.005;
-    this.pitch = Math.max(-Math.PI * 0.4, Math.min(Math.PI * 0.4, this.pitch - dy * 0.005));
+    this.pitch = Math.max(this.minPitch, Math.min(Math.PI * 0.4, this.pitch - dy * 0.005));
   }
 
   /** The camera follows a teleport/revival over 30 rules steps (half a second). */

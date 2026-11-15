@@ -1,5 +1,7 @@
 import { BANK_READERS } from './bank';
 import { GUILD_BANK_READERS } from './guildBank';
+import { HOUSING_READERS } from './housing';
+import { GUILD_HOUSE_READERS } from './guildHouse';
 import { LORD_READERS } from './lord';
 import { HONOR_READERS } from './honor';
 import { HP_LAYER_READERS } from './hpLayer';
@@ -237,6 +239,10 @@ export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
     ...BANK_READERS,
     // 2026-11-15: the guild bank (world/guildBank.ts)
     ...GUILD_BANK_READERS,
+    // 2026-11-15: personal housing (world/housing.ts)
+    ...HOUSING_READERS,
+    // 2026-11-15: the guild house (world/guildHouse.ts)
+    ...GUILD_HOUSE_READERS,
     ...POST_READERS,
     // 2026-11-11: the Lord system (world/lord.ts)
     ...LORD_READERS,
