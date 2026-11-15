@@ -78,6 +78,8 @@ describe('world constants', () => {
       SETCHEERPARAM: 0x00b4, // 2026-11-14: the Motion window's Cheer (MsgHdr.h:1066)
       // 2026-11-05: the item windows' answers.
       SUMMON: 0x00ed, SEX_CHANGE: 0x00dc, CHANGEFACE: 0x004d,
+      // 2026-11-15: the beauty shop's hair answer (MsgHdr.h:945)
+      SET_HAIR: 0x0048,
       // Piece 7 M5: flight.
       MOVERMOVED2: 0x00cc, MOVERBEHAVIOR2: 0x00cd, MOVERCORR2: 0x00c9, SETFUEL: 0x004b, MELEE_ATTACK2: 0x00e4, SENDACTMSG: 0x005c,
     });

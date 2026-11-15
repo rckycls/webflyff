@@ -43,6 +43,8 @@ export const MMI = {
   VISIT_MYROOM: 122, VISIT_FRIEND: 123, RETURNTO_WORLD: 124,
   /** 2026-11-15: Bertha's Purchase Guild House, Pay Maintenance Fee, Enter your Guild House; the door's Exit (guildHouse/guildHouseHud.ts). */
   GUILDHOUSE_SALE: 147, GUILDHOUSE_CHARGE: 148, GUILDHOUSE_ENTER: 149, GUILDHOUSE_OUT: 150,
+  /** 2026-11-15: the Hair Designer's Beauty Shop and the Makeup Artist's Cosmetic Upgrades (beauty/beautyWindows.ts). */
+  BEAUTYSHOP: 13, BEAUTYSHOP_SKIN: 42,
 } as const;
 /** 2026-11-15: personal housing's entries (`WndWorld.cpp:5221-5234`). */
 const HOUSING_ENTRIES: ReadonlySet<number> = new Set([
@@ -119,6 +121,8 @@ export function npcMenuEntries(npc: WebNpc | undefined, texts: Texts, ownIsBaseJ
         (id === MMI.TELEPORTER && (npc?.teleports?.length ?? 0) > 0) || PET_ENTRIES.has(id) || TAMER_ENTRIES.has(id) ||
         ARENA_TOWER_ENTRIES.has(id) ||
         id === MMI.BANKING || id === MMI.POST || id === MMI.GUILDBANKING ||
+        // 2026-11-15: the hair and face windows (WndWorld.cpp:4619-4786)
+        id === MMI.BEAUTYSHOP || id === MMI.BEAUTYSHOP_SKIN ||
         // 2026-11-11: the Lord Manager's (MaFl_KINGAIDE, Resource/character.inc:6903-6926; lord/lordHud.ts)
         LORD_MENU.has(id) ||
         // 2026-11-15: Charlie's and the room door's (housing/housingHud.ts)

@@ -49,7 +49,8 @@ const IK3_PET = 100;
 const IK3_EGG = 120;
 /**
  * The items whose use opens a window the browser lacks (`SendDoUseItem`, `CWndInventory`): class change 10425 (whose
- * server handler is off), hair 26410 and face 26411 coupons, the character seal 26475 and 26476.
+ * server handler is off), the character seal 26475 and 26476. (2026-11-15: the hair 26410 and face 26411 coupons ask,
+ * then open the beauty shop's windows: `windowOf` of itemWindows.ts.)
  * (2026-11-05: the maps, the batteries and Awakening Protection are used, with their boxes; the name change, the
  * sex change, the transmute, the party summon, the element change, the tickets and the monster summon have their
  * windows, `windowOf` of itemWindows.ts. 2026-11-09, pets R3: pet naming 20039, the pet tamer's 21030 and 21031, pet
@@ -58,7 +59,7 @@ const IK3_EGG = 120;
  * Custody 15083 opens the bank, bank/bankHud.ts `useScroll`.)
  */
 const WINDOW_IDS: ReadonlySet<number> = new Set([
-  10425, 26410, 26411, 26475, 26476,
+  10425, 26475, 26476,
 ]);
 /** The collector's batteries: the normal one (`TID_GAME_BETTERY_DESC`) and the cash ones (`TID_GAME_CACHE_BETTERY_DESC`). */
 const NORMAL_BATTERY = 26453;

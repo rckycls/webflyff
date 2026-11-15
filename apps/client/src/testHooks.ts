@@ -111,6 +111,8 @@ export interface ClientHooks {
    * (D3D) and whether its model is drawn.
    */
   angels?(): Array<{ ownerId: number; itemId: number; pos: Vec3; drawn: boolean }>;
+  /** 2026-11-15 (beauty shop): each player's hair style, hair colour (as held) and face, 0-based. */
+  looks?(): Array<{ objectId: number; hairMesh: number; hairColor: number; headMesh: number }>;
 }
 
 declare global {
@@ -146,6 +148,7 @@ export function createClientHooks(): ClientHooks {
     screenOf: (objectId) => current().screenOf(objectId),
     tags: () => current().tags(),
     angels: () => current().angels?.() ?? [],
+    looks: () => current().looks?.() ?? [], // 2026-11-15
   };
 }
 

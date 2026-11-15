@@ -69,6 +69,7 @@ import { readRemoveAttribute, readSmeltSafety, readUltimate } from './upgrade';
 import { readAngel, readFlyffEvent, readSetLocalEvent } from './angel'; // 2026-11-10: Summon Angel
 import { readSetCheerParam } from './motion'; // 2026-11-14: the Motion window
 import { readChangeFace, readSexChange, readSummon } from './itemWindows';
+import { readSetHair } from './beauty'; // 2026-11-15: the beauty shop
 import {
   readMoverChangeSfx, readPetCall, readPetFeed, readPetLevelup, readPetMill, readPetRelease, readPetResurrectionResult,
   readPetSetExp, readPetState, readPetWhole, readSetPetName, readVisPetActivate,
@@ -212,6 +213,7 @@ export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
     [MessageType.SUMMON, readSummon],
     [MessageType.SEX_CHANGE, readSexChange],
     [MessageType.CHANGEFACE, readChangeFace],
+    [MessageType.SET_HAIR, readSetHair],
     [MessageType.CLEAR_USESKILL, readClearUseSkill],
     [MessageType.DOUSESKILLPOINT, readDoUseSkillPoint],
     [MessageType.INITSKILLPOINT, readInitSkillPoint],

@@ -50,6 +50,8 @@ export interface ItemWindowHost {
   openGuildName?(objectId: number): void;
   /** 2026-11-10 (bank-mail): the Custody scroll's use, OPENBANKWND with its object and item ids (bank/bankHud.ts). */
   openBank?(objectId: number, itemId: number): void;
+  /** 2026-11-15: a hair or face coupon's question (beauty/beautyWindows.ts `useCoupon`); no DOUSEITEM goes. */
+  useCoupon?(kind: 'hair' | 'face'): void;
   /** The set pieces' item ids (propItemEtc.inc), which the transmute's twin must match. */
   setItems: ReadonlySet<number>;
   worldId(): number;
@@ -147,6 +149,10 @@ export class ItemWindowFlows {
         return true;
       case 'custody':
         this.host.openBank?.(objectId, prop.id);
+        return true;
+      case 'hairCoupon':
+      case 'faceCoupon':
+        this.host.useCoupon?.(kind === 'hairCoupon' ? 'hair' : 'face');
         return true;
       case 'ticket': {
         const use = ticketUse(prop, item, this.host.worldId());

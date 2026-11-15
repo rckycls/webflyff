@@ -7,7 +7,7 @@ import {
   encodeUseItem, encodeEquipItem, encodeMoveItem, encodeDropItem, encodeRevival, encodeChat,
   encodeNpcDialog, encodeNpcDialogOpen, encodeOpenShop, encodeCloseShop, encodeBuyItem, encodeBuyChipItem, encodeSellItem, encodeTeleporter,
   encodeNpcBuff, encodeQuestCheck, encodeEnchant, encodePiercing, encodeRandomScroll, encodeDoUseItemTarget,
-  encodeArenaEnter, encodeArenaExit, encodeHeavenTowerTeleport,
+  encodeArenaEnter, encodeArenaExit, encodeHeavenTowerTeleport, encodeSetHair, encodeChangeFace,
   encodeAngelBuff, encodeCreateAngel, encodeUltimateEnchantWeapon, encodeUltimateMakeGem, encodeUltimateSetGem, encodePiercingSize, encodeSmeltSafety, encodeQuerySetPlayerName, encodeSummonParty, encodeSummonPartyConfirm, encodeSummonFriend,
   encodeSummonFriendConfirm, encodeSummonFriendCancel, encodeDoUseItemInput, encodeChangeAttribute, encodeItemTransy,
   encodeCreateMonster, encodeRemoveQuest, encodeReturnScroll, encodeStateModeCancel, encodePetRelease,
@@ -149,6 +149,13 @@ export class WorldSession {
   /** 2026-11-10: Summon Angel's START (CREATEANGEL) and the full angel's buff icon (ANGELBUFF). */
   sendCreateAngel(text: string): void { this.playingCache()?.send(encodeCreateAngel(text)); }
   sendAngelBuff(): void { this.playingCache()?.send(encodeAngelBuff()); }
+  /** 2026-11-15: the beauty shop's hair and face OK (SET_HAIR, CHANGEFACE). */
+  sendSetHair(hair: number, r: number, g: number, b: number, useCoupon: boolean): void {
+    this.playingCache()?.send(encodeSetHair(hair, r, g, b, useCoupon));
+  }
+  sendChangeFace(playerId: number, face: number, cost: number, useCoupon: boolean): void {
+    this.playingCache()?.send(encodeChangeFace(playerId, face, cost, useCoupon));
+  }
   sendUltimateSetGem(weaponId: number, jewelId: number): void { this.playingCache()?.send(encodeUltimateSetGem(weaponId, jewelId)); }
   /** 2026-11-11: the item NPC windows' packets (world/upgrade.ts in the protocol). */
   sendItemNpc(packet: Exclude<NpcWindowPacket, { type: 'chat' }>): void {

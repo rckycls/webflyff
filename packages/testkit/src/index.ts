@@ -60,6 +60,7 @@ export {
 export { writeGuildHouseAllInfo, writeGuildHousePacket, writeGuildHouseRemove, writeGuildHouseRestPoint } from './guildHouse';
 export { writeMail, writeMailBox, writeMailBoxReq, writeModifyMode, writeRemoveMail } from './post';
 export { writeAngelInfo, writeFlyffEvent, writeSetLocalEvent } from './angel'; // 2026-11-10: Summon Angel
+export { writeChangeFace, writeSetHair } from './beauty'; // 2026-11-15: the beauty shop
 // 2026-11-11: the Lord system
 export {
   STOCK_ELECTION_PROPERTY, lordElection, writeElectionAddDeposit, writeElectionBeginCandidacy, writeElectionBeginVote,

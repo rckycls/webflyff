@@ -73,6 +73,9 @@ export const PacketType = {
   CHANGE_ATTRIBUTE: 0xf000d00e,
   ITEMTRANSY: 0xf000d00c,
   CREATEMONSTER: 0x0000002a,
+  /** 2026-11-15: the beauty shop's hair and face OK (`MsgHdr.h:172, 216`; world/beauty.ts). */
+  SET_HAIR: 0x00ff00af,
+  CHANGEFACE: 0x00ff00ee,
   QUERYTICKCOUNT: 0x0b,
   PING: 0x14,
   CLOSE_EXISTING_CONNECTION: 0x16,
@@ -354,6 +357,8 @@ export const MessageType = {
   SUMMON: 0x00ed,
   SEX_CHANGE: 0x00dc,
   CHANGEFACE: 0x004d,
+  /** 2026-11-15: a player's new hair style and colour, the hair window's answer (`CUserMng::AddSetHair`, `MsgHdr.h:945`). */
+  SET_HAIR: 0x0048,
   /** Piece 7 M3: the Scroll of Return's village taken, no body (`CUser::AddReturnScroll`, `User.cpp:6636-6645`). */
   RETURNSCORLL: 0x00ad,
   /** Piece 7 M5: another flier's move, state and correction (`User.cpp:4937-5035`); its angle is MOVERANGLE. */

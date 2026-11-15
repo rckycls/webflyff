@@ -308,6 +308,9 @@ export type WorldPacket =
   /** 2026-11-10: Summon Angel's START (its text and the stacks in it) and the full angel's buff icon (world/angel.ts). */
   | { type: 'createAngel'; text: string; parts: AngelStack[] }
   | { type: 'angelBuff' }
+  /** 2026-11-15: the beauty shop's hair and face OK (world/beauty.ts). */
+  | { type: 'setHairRequest'; hair: number; r: number; g: number; b: number; useCoupon: boolean }
+  | { type: 'changeFaceRequest'; playerId: number; face: number; cost: number; useCoupon: boolean }
   | { type: 'removeQuest'; questId: number }
   | { type: 'questCheck'; questId: number; check: boolean }
   | ReturnType<typeof readDefinedText>
@@ -519,6 +522,14 @@ function decodeClientPacket(r: ArReader): WorldPacket {
     case PacketType.ANGELBUFF: {
       r.expectEnd();
       return { type: 'angelBuff' };
+    }
+    case PacketType.SET_HAIR: { // 2026-11-15: the beauty shop
+      const hair = r.u8(), red = r.u8(), green = r.u8(), blue = r.u8(), useCoupon = r.i32() !== 0; r.expectEnd();
+      return { type: 'setHairRequest', hair, r: red, g: green, b: blue, useCoupon };
+    }
+    case PacketType.CHANGEFACE: {
+      const playerId = r.u32(), face = r.u32(), cost = r.i32(), useCoupon = r.i32() !== 0; r.expectEnd();
+      return { type: 'changeFaceRequest', playerId, face, cost, useCoupon };
     }
     case PacketType.ULTIMATE_MAKEITEM: {
       const itemIds = Array.from({ length: 10 }, () => r.u32()); r.expectEnd();

@@ -31,8 +31,8 @@ const SCALE = 6;
 const TURN = (20 * Math.PI) / 180;
 const DROP = -7.8;
 /** Where the camera is and what it looks at (D3D (0, 0.7, -3.5) and (0, 0, 3), Z mirrored). */
-const EYE = [0, 0.7, 3.5] as const;
-const LOOK_AT = [0, 0, -3] as const;
+export const EYE = [0, 0.7, 3.5] as const; // 2026-11-15: exported for the beauty shop's pictures
+export const LOOK_AT = [0, 0, -3] as const;
 
 /**
  * Each part's material made unlit: its texture as it is (`SetLight( FALSE )`), the hair's tint (already unlit) kept.
