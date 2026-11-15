@@ -48,7 +48,8 @@ import type { ClientPlayed } from '../testHooks';
 import { askBeforeLeaving } from './askBeforeLeaving';
 import { BackCamera } from './backCamera';
 import type { ChaseView } from './backCamera';
-import { AttackLoop, objRadius } from './combat/attackLoop';
+import { AttackLoop, attackAble, objRadius } from './combat/attackLoop';
+import { bagIsFull } from './autoplay/bag';
 import { AutoPlay } from './autoplay/controller';
 import type { AutoPlayHooks } from './autoplay/controller';
 import { loadSettings, saveSettings } from './autoplay/settings';
@@ -275,7 +276,7 @@ import { SpriteLayer } from './render/SpriteLayer';
 import { TargetMarks, attackMarks, focusRect } from './render/TargetMarks';
 import type { ScreenRect } from './render/TargetMarks';
 import { HAttr } from './sim/collision';
-import { ActMsg, AniLoop, Belli, Mti, ObjSta, ObjStaF, PARTS_RIDE } from './sim/constants';
+import { ActMsg, AniLoop, Belli, Ik3, Mti, ObjSta, ObjStaF, PARTS_RIDE } from './sim/constants';
 
 /** Piece 7 M5: the ground's field of view (`WorldStage`'s 45 degrees, `fDiv` 4), which a landing gives back. */
 const GROUND_FOV = 45;
@@ -340,6 +341,12 @@ const messageOf = (error: unknown): string => (error instanceof Error ? error.me
 const autoPlayStorage = (): Storage | null => { try { return globalThis.localStorage ?? null; } catch { return null; } };
 /** custom (owner 2026-11-15): Auto Play's chat lines (V15 has no colour of its own for them): a light orange. */
 const AUTO_PLAY_COLOR = 0xffffb44a;
+/** custom (owner 2026-11-15): the start of the page's title while Auto Play stopped in a hidden tab. */
+const STOPPED_TITLE = '(!) Stopped - ';
+/** custom (owner 2026-11-15): the pickup lines Auto Play reads (Resource/defineText.h:244-274). */
+const TID_GAME_LACKSPACE = 626;
+const TID_GAME_REAPITEM = 628;
+const TID_GAME_PRIORITYITEMPER = 656;
 
 /** The text an entry that failed ends with: its cause, where the player or the owner can do something about it. */
 function endingOf(error: unknown): string {
@@ -740,6 +747,10 @@ export class WorldScreen {
   /** custom (owner 2026-11-15): Auto Play (autoplay/controller.ts), built with each world. */
   private autoPlay: AutoPlay | undefined;
   private autoPlayWindow: AutoPlayWindow | undefined;
+  /** custom (owner 2026-11-15): what Auto Play last saw of the own EXP, the bag and the drops. */
+  private autoPlayExp: { level: number; exp: bigint } | null = null;
+  private autoPlayBagRevision = -1;
+  private autoPlayDrops = new Set<number>();
   /** 2026-11-05: the item windows' flows (the name change, the tickets, the summons ...). */
   private itemWindows: ItemWindowFlows | undefined;
   /** 2026-11-05: the upgrade cursor, and whether its effect (XI_INT_INCHANT) is on the own mover. */
@@ -971,6 +982,7 @@ export class WorldScreen {
   private onEvent(event: WorldEvent): void {
     if (this.over) return;
     if (event.type === 'ended') {
+      this.autoPlay?.onEvent({ kind: 'disconnect' }); // custom (owner 2026-11-15)
       if (this.endingsAreDrops && this.onDrop !== undefined) this.drop(event.message);
       else this.end(event.message);
     }
@@ -982,6 +994,7 @@ export class WorldScreen {
     // an ending while the waiting events are handled (the map is not available) ends the ones after it too
     if (this.over) return;
     if (event.type === 'transition') {
+      this.autoPlay?.onEvent({ kind: 'worldChange' }); // custom (owner 2026-11-15): before the world (and Auto Play) goes
       this.disposeWorld();
       this.element.replaceChildren(h('p', { class: 'world-status', role: 'status' }, LOADING_TEXT), this.leaveButton);
       const folder = this.data!.worlds.get(event.worldId);
@@ -1074,6 +1087,7 @@ export class WorldScreen {
     const world = this.world!;
     for (const { objectId, value } of messages) {
       const self = world.self();
+      if (!joining) this.autoPlayMessage(objectId, value, self); // custom (owner 2026-11-15)
       // Piece 7 M4: the player data and the party first (they ignore what is not theirs); their events to the windows
       this.playerData.apply(value);
       const partyEvents = this.party.apply(value);
@@ -1123,7 +1137,13 @@ export class WorldScreen {
       // 2026-11-15 (social): the couple's snapshots (CCoupleHelper::On*), kept until its windows exist
       if (isCoupleMessage(value)) { if (this.social !== undefined) this.social.onCouple(value); else this.socialWaiting.push(value); continue; }
       // 2026-11-15 (social): the duels' snapshots and ADDREGION (duel/duelBook.ts); their windows once they exist
-      if (isDuelMessage(value)) { this.social?.onDuel(this.duels.apply(value), performance.now()); continue; }
+      if (isDuelMessage(value)) {
+        const duelEvents = this.duels.apply(value);
+        // custom (owner 2026-11-15): a duel asked for or counting down stops Auto Play's farm bot
+        if (duelEvents.some((e) => e.kind === 'confirm' || e.kind === 'count')) this.autoPlay?.onEvent({ kind: 'duelStart' });
+        this.social?.onDuel(duelEvents, performance.now());
+        continue;
+      }
       // 2026-11-10 (bank-mail): the bank's windows hear its snapshots; the own state (WorldState.toOwn) applies the contents
       if (isBankMessage(value) && objectId === self?.objectId) this.bankHud?.handle(value);
       // 2026-11-15: the guild bank's (guildBank/guildBankHud.ts); no own state: the HUD keeps the bank and moves the bag, the
@@ -2668,6 +2688,7 @@ export class WorldScreen {
           return true;
         }
         const pressed = press.mover === null ? undefined : this.world?.movers.get(press.mover);
+        this.autoPlay?.onEvent({ kind: 'manualControl' }); // custom (owner 2026-11-15): the player's own press
         // 2026-11-11: a press on a mover (a target, an NPC, a player) ends the auto-run (autoRun.ts)
         if (press.mover !== null) this.autoRun?.stop();
         if (press.mover === null) attackLoop.onGroundPressed(press.double);
@@ -3114,6 +3135,7 @@ export class WorldScreen {
    */
   private play(changes: WorldChanges): void {
     this.hud?.play(changes.combat, changes.own, this.own);
+    this.autoPlayChanges(changes); // custom (owner 2026-11-15)
     this.playPets(changes); // pets R1
     for (const event of changes.own) {
       if (event.kind === 'quest') this.playQuest(event.change);
@@ -3586,7 +3608,7 @@ export class WorldScreen {
       // (WndWorldControlPlayer.cpp:341, :422-433, :487-505)
       if (intent.forward !== 0 || jump || tap !== null) this.itemCast?.interrupt();
       // 2026-11-15 (social): a move or turn key ends the follow too (WndWorldControlPlayer.cpp:385-403)
-      if (movesOrTurns(intent)) { loop.stop('move'); this.tracking.stop(); }
+      if (movesOrTurns(intent)) { loop.stop('move'); this.tracking.stop(); this.autoPlay?.onEvent({ kind: 'manualControl' }); }
       this.itemActions?.step(now);
       // the task bar's skills, then the reserved skill's branch of Process, which leaves neither the attack nor the controls
       const skillBranch = this.skillUse!.step(own, (objectId) => world.movers.get(objectId));
@@ -3987,6 +4009,110 @@ export class WorldScreen {
     if (entry !== undefined && entry.text !== '') this.hud?.messages.add(entry.text, entry.color);
   }
 
+  /**
+   * custom (owner 2026-11-15): the messages Auto Play stops on or loots by: any whisper to us, normal chat from a GM in
+   * view (never a broadcast: GM chat, /system, shouts reach everyone), a teleport (REPLACE), and the pickup lines.
+   */
+  private autoPlayMessage(objectId: number, value: WorldMessage, self: Mover | undefined): void {
+    const play = this.autoPlay;
+    if (play === undefined) return;
+    if (value.type === 'whisper' && value.search === 0 && value.fromId !== self?.objectId && value.sender !== self?.name) {
+      play.onEvent({ kind: 'whisper', from: value.sender });
+    } else if (value.type === 'chat' && objectId !== self?.objectId) {
+      const speaker = this.world?.movers.get(objectId);
+      if (speaker !== undefined && isGameMaster(speaker.added.player?.authorization ?? 0)) play.onEvent({ kind: 'gmTalk', from: speaker.name });
+    } else if (value.type === 'replace') play.onEvent({ kind: 'replace' });
+    else if (value.type === 'definedText') {
+      const picking = play.lootingId;
+      if (value.textId === TID_GAME_LACKSPACE) play.onEvent({ kind: 'bagFull' });
+      else if (value.textId === TID_GAME_PRIORITYITEMPER && picking !== null) play.onEvent({ kind: 'pickRefused', id: picking });
+      else if (value.textId === TID_GAME_REAPITEM && picking !== null) play.onEvent({ kind: 'picked', id: picking });
+    }
+  }
+
+  /** custom (owner 2026-11-15): the step's hits, deaths, flight, own death, EXP, bag and new drops, for Auto Play. */
+  private autoPlayChanges(changes: WorldChanges): void {
+    const play = this.autoPlay, world = this.world;
+    if (play === undefined || world === undefined) return;
+    const self = world.self();
+    const party = this.autoPlayParty();
+    for (const event of changes.combat) {
+      if (event.kind === 'hit') {
+        play.onEvent({ kind: 'hit', attackerId: event.attackerId, victimId: event.victimId });
+        if (self !== undefined && event.victimId === self.objectId && event.attackerId !== self.objectId) {
+          const attacker = world.movers.get(event.attackerId);
+          play.onEvent({ kind: 'hitBy', attackerId: event.attackerId, attackerIsPlayer: attacker?.kind === 'player', name: attacker?.name ?? '' });
+        }
+      } else if (event.kind === 'death' && self !== undefined && (event.attackerId === self.objectId || party.has(event.attackerId))) {
+        const victim = world.movers.get(event.victimId);
+        if (victim !== undefined && victim.kind === 'monster') {
+          play.onEvent({ kind: 'kill', targetId: event.victimId, pos: [...victim.act.body.pos] as Vec3 });
+        }
+      } else if (event.kind === 'flight' && event.flying && event.moverId === self?.objectId) play.onEvent({ kind: 'flying' });
+    }
+    for (const event of changes.own) {
+      if (event.kind === 'died' || event.kind === 'revived') play.onEvent({ kind: event.kind });
+    }
+    // the own EXP gained (SETEXP has no event of its own): the rise since the last step, at the same level
+    const own = this.own;
+    if (own !== undefined) {
+      const level = own.level, exp = own.exp;
+      if (this.autoPlayExp !== null && this.autoPlayExp.level === level && exp > this.autoPlayExp.exp) {
+        play.onEvent({ kind: 'exp', gained: Number(exp - this.autoPlayExp.exp) });
+      }
+      this.autoPlayExp = { level, exp };
+      if (own.inventoryRevision !== this.autoPlayBagRevision) {
+        this.autoPlayBagRevision = own.inventoryRevision;
+        play.onEvent({ kind: 'bagChanged' });
+      }
+    }
+    // the drops that came since the last step
+    for (const [id, drop] of world.groundItems) {
+      if (this.autoPlayDrops.has(id)) continue;
+      play.onEvent({ kind: 'itemAppeared', id, pos: [...drop.pos] as Vec3 });
+    }
+    this.autoPlayDrops = new Set(world.groundItems.keys());
+  }
+
+  /** custom (owner 2026-11-15): whether the own player holds a wand (V15 gives a wand no auto attack). */
+  private autoPlayHoldsWand(): boolean {
+    const self = this.world?.self();
+    const hand = self === undefined ? null : this.world!.handItem(self);
+    return hand !== null && this.data?.itemProps.get(hand)?.kind3 === Ik3.WAND;
+  }
+
+  /** custom (owner 2026-11-15): Auto Play stopped: a short sound (WorldSounds keeps the sound settings). */
+  private autoPlayAlert(): void {
+    this.sounds?.infOpen();
+  }
+
+  /** custom (owner 2026-11-15): while the tab is hidden, the title says Auto Play stopped, until the tab is seen again. */
+  private autoPlayFlashTitle(_reason: string): void {
+    const doc = this.element.ownerDocument;
+    if (doc.visibilityState !== 'hidden' || doc.title.startsWith(STOPPED_TITLE)) return;
+    const title = doc.title;
+    doc.title = STOPPED_TITLE + title;
+    const back = (): void => {
+      if (doc.visibilityState === 'hidden') return;
+      if (doc.title.startsWith(STOPPED_TITLE)) doc.title = title;
+      doc.removeEventListener('visibilitychange', back);
+    };
+    doc.addEventListener('visibilitychange', back);
+  }
+
+  /** custom (owner 2026-11-15): the party members' object ids in view. */
+  private autoPlayParty(): ReadonlySet<number> {
+    const ids = new Set<number>();
+    const world = this.world;
+    if (world === undefined) return ids;
+    for (const member of this.party.members) {
+      if (member.removed) continue;
+      const mover = world.moverByPlayerId(member.playerId);
+      if (mover !== undefined && !mover.isSelf) ids.add(mover.objectId);
+    }
+    return ids;
+  }
+
   /** custom (owner 2026-11-15): the bag's potions, refreshers, food and pills, one entry per item, for the Potions tab. */
   private potionChoices(): AutoPlayItemChoice[] {
     const inventory = this.own?.inventory ?? null, props = this.data?.itemProps;
@@ -4019,6 +4145,29 @@ export class WorldScreen {
       useItem: (objectId) => this.itemUse?.use(objectId, 'bar') ?? false,
       say: (text) => this.hud?.messages.add(text, AUTO_PLAY_COLOR),
       save: (s) => saveSettings(autoPlayStorage(), this.entry.character.playerId, s),
+      self: () => this.world?.self(),
+      movers: () => this.world?.movers.values() ?? [],
+      rankOf: (m) => this.data?.movers.get((m as Mover).added.index)?.rank ?? 0,
+      attackable: (m) => {
+        const self = this.world?.self();
+        return self !== undefined && attackAble(m as Mover, this.data!.movers, self.act.isFlying());
+      },
+      isPlayer: (objectId) => this.world?.movers.get(objectId)?.kind === 'player',
+      partyIds: () => this.autoPlayParty(),
+      flying: () => this.world?.self()?.act.isFlying() === true,
+      engage: (objectId) => this.attackLoop?.onMoverPressed(objectId, performance.now(), true),
+      focusId: () => this.focus?.targetId ?? null,
+      walkTo: (pos) => {
+        const self = this.world?.self();
+        if (self !== undefined) this.ownMover?.walkTo(self, pos, false);
+      },
+      pick: (objectId) => this.itemActions?.pick(objectId, performance.now()) ?? false,
+      itemThere: (objectId) => this.world?.groundItems.has(objectId) === true,
+      bagFull: () => bagIsFull(this.own?.inventory ?? null, this.own?.inventorySlots ?? []),
+      holdsWand: () => this.autoPlayHoldsWand(),
+      wandHold: (on) => { if (on) this.attackLoop?.attackButtonDown(performance.now()); else this.attackLoop?.attackButtonUp(performance.now()); },
+      alert: () => this.autoPlayAlert(),
+      flashTitle: (reason) => this.autoPlayFlashTitle(reason),
     };
   }
 
