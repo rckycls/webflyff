@@ -29,6 +29,8 @@ import type { LineupPerson } from '../hud/guildCombat/lineupWindow';
 import { StartPointWindow } from '../hud/guildCombat/startPointWindow';
 import { RankingWindow } from '../hud/guildCombat/rankingWindow';
 import { ResultWindow } from '../hud/guildCombat/resultWindow';
+import { SiegeRankingWindow } from '../hud/guildCombat/siegeRankingWindow';
+import { SiegeRankingCache } from './siegeWebApi';
 import { StatusWindow } from '../hud/guildCombat/statusWindow';
 import type { GuildCombatBook, GuildCombatEvent } from './guildCombatBook';
 import { BOARD_OF_ENTRY } from './boardTexts';
@@ -89,6 +91,8 @@ export class GuildCombatHud {
   readonly startPoint: StartPointWindow;
   readonly result: ResultWindow;
   readonly ranking: RankingWindow;
+  /** 2026-11-15 (C2): the owner's Siege Ranking window, from the website (the Start menu, the icons). */
+  readonly siegeRanking: SiegeRankingWindow;
   /** The last offer window's data (`m_dwReqGold`, the minimum). */
   private offer = { ownBid: 0, minBid: 0 };
   private lastTick = 0;
@@ -132,11 +136,16 @@ export class GuildCombatHud {
     this.ranking = new RankingWindow('Guild Member Ranking', art, {
       playerName: (id) => host.nameOf(id), ownPlayerId: () => host.ownPlayerId(), jobs: () => host.jobs(), text: (tid) => host.text(tid),
     }, doc);
+    const rankingCache = new SiegeRankingCache();
+    this.siegeRanking = new SiegeRankingWindow(art, {
+      load: (board, span) => rankingCache.load(board, span), ownName: () => host.nameOf(host.ownPlayerId()),
+      ownGuildName: () => host.ownGuildName(), jobs: () => host.jobs(),
+    }, doc);
   }
 
   /** The windows, for the world screen's layer. */
   get elements(): HTMLElement[] {
-    return [this.apply, this.status, this.cancel, this.join, this.board, this.tele, this.diag, this.lineup, this.startPoint, this.result, this.ranking].map((w) => w.element);
+    return [this.apply, this.status, this.cancel, this.join, this.board, this.tele, this.diag, this.lineup, this.startPoint, this.result, this.ranking, this.siegeRanking].map((w) => w.element);
   }
 
   get isOpen(): boolean {

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { SiegeWeeklyFeed, badgeOf } from '../src/world/guildCombat/siegeWebApi';
+import { SiegeRankingCache, SiegeWeeklyFeed, badgeOf } from '../src/world/guildCombat/siegeWebApi';
 import type { SiegeWeekly } from '../src/world/guildCombat/siegeWebApi';
 
 const T0 = Date.parse('2026-11-15T12:00:00+08:00');
@@ -116,5 +116,41 @@ describe('badgeOf', () => {
     expect(badgeOf(weekly(), 42, 7, after)).toBeNull();
     expect(badgeOf(null, 42, 7, at)).toBeNull();
     expect(badgeOf(weekly({ champion: null, mvp: null }), 42, 7, at)).toBeNull();
+  });
+});
+
+describe('SiegeRankingCache (C2)', () => {
+  const rows = [{ rank: 1, name: 'Rocky', job: 1, guild: 'Alpha', points: 9 }];
+  const body = { rows, checkedAt: '2026-11-15T12:00:00+08:00' };
+
+  it('asks /api/siege/ranking once per board and span and reuses the answer for 60 s', async () => {
+    const fetcher = vi.fn(async () => answer(body));
+    const cache = new SiegeRankingCache({ fetcher: fetcher as never });
+    expect(await cache.load('player', 'week')).toEqual(rows);
+    expect(await cache.load('player', 'week')).toEqual(rows);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect((fetcher.mock.calls[0] as unknown[])[0]).toBe('/api/siege/ranking?board=player&span=week');
+    await cache.load('guild', 'all');
+    expect((fetcher.mock.calls[1] as unknown[])[0]).toBe('/api/siege/ranking?board=guild&span=all');
+    await vi.advanceTimersByTimeAsync(59_000);
+    await cache.load('player', 'week');
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(2000);
+    await cache.load('player', 'week');
+    expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+
+  it('a 503, a bad body or a time-out is null, and is not kept', async () => {
+    const fetcher = vi.fn(async (..._a: unknown[]) => answer({ error: 'unavailable' }, false));
+    const cache = new SiegeRankingCache({ fetcher: fetcher as never });
+    expect(await cache.load('player', 'all')).toBeNull();
+    fetcher.mockImplementation(async () => answer({ rows: 'x' }));
+    expect(await cache.load('player', 'all')).toBeNull();
+    fetcher.mockImplementation((_url: unknown, init?: unknown) => new Promise<Response>((_, reject) => (init as RequestInit).signal!.addEventListener('abort', () => reject(new Error('aborted')))));
+    const pending = cache.load('player', 'all');
+    await vi.advanceTimersByTimeAsync(3100);
+    expect(await pending).toBeNull();
+    fetcher.mockImplementation(async () => answer(body));
+    expect(await cache.load('player', 'all')).toEqual(rows);
   });
 });

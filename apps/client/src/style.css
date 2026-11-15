@@ -4400,3 +4400,46 @@ fieldset:disabled .btn {
   .hud-gc-rank-rows { top: 22px; height: calc(100% - 50px); }
   .hud-gc-rank-own { top: auto; bottom: 2px; }
 }
+
+/* 2026-11-15 (Guild Siege, C2): the Siege Ranking window, in the look of Donaris's ranking window above: a bar of the two spans
+   (This week, All time) over the page, the head and rows under it (5 columns: a player's rank, name, job, guild, points; a
+   guild's rank, guild, wins, sieges, points), the first row red, the own row blue */
+.hud-sr .hud-gc-page { top: 26px; }
+.hud-sr-spans { position: absolute; left: 0; right: 0; top: 0; height: 24px; display: flex; gap: 6px; padding: 2px 8px; box-sizing: border-box; }
+.hud-sr-span {
+  flex: 0 0 auto; min-width: 84px; height: 20px; padding: 0 10px; border: 1px solid #8f8f8f; background: #d8d8d8; color: #000;
+  font: 12px/18px Verdana, Arial, sans-serif; cursor: pointer;
+}
+.hud-sr-span.is-chosen { background: #f6f1ea; font-weight: bold; }
+.hud-sr .hud-sr-head { top: 2px; }
+.hud-sr-rows { position: absolute; left: 0; right: 0; top: 24px; bottom: 0; overflow-y: auto; overscroll-behavior: contain; }
+.hud-sr .hud-sr-head, .hud-sr .hud-sr-row { padding-right: 6px; }
+.hud-sr .hud-sr-player { grid-template-columns: 36px 1fr 90px 100px 54px; }
+.hud-sr .hud-sr-guild { grid-template-columns: 36px 1fr 54px 64px 64px; }
+.hud-sr .hud-sr-row.is-own { color: #0000ff; }
+.hud-sr :is(.hud-sr-c1, .hud-sr-c2, .hud-sr-c3) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hud-sr-c0, .hud-sr-c4 { white-space: pre; }
+.hud-sr-note { padding: 40px 12px; text-align: center; font: 12px/18px Verdana, Arial, sans-serif; color: #000; }
+@media (max-width: 1000px) and (pointer: coarse) {
+  .hud-sr-span { height: 24px; min-width: 76px; font-size: 13px; line-height: 22px; }
+  .hud-sr-spans { height: 28px; }
+  .hud-sr .hud-gc-page { top: 30px; }
+  .hud-sr .hud-sr-player { grid-template-columns: 28px 1fr 72px 80px 40px; }
+  .hud-sr .hud-sr-guild { grid-template-columns: 28px 1fr 40px 50px 44px; }
+  .hud-sr .hud-sr-rows { top: 22px; height: auto; }
+  .hud-sr .hud-sr-row { height: 22px; line-height: 22px; }
+}
+
+/* 2026-11-15 (owner, Guild Siege C2): the desktop's Siege Ranking button, the V15 winner trophy, left of the Navigator (144 px
+   wide at the right edge; the mail notice sits 140 px in); the phone has the icon among its shortcuts instead */
+.hud-siege-button {
+  position: absolute; z-index: 20; top: 4px; right: calc(var(--game-safe-right, 0px) + 176px); width: 32px; height: 32px; padding: 0;
+  pointer-events: auto; border: 0; background: transparent no-repeat center / contain; color: #fff; font: bold 10px Verdana, Arial, sans-serif;
+  text-shadow: 0 0 3px #000, 0 0 3px #000; cursor: pointer;
+}
+.hud-siege-button:active { filter: brightness(1.4); }
+@media (max-width: 1000px) and (pointer: coarse) {
+  .hud-siege-button { display: none; }
+  /* the Siege Ranking icon's text, while its picture is missing, stays inside the icon's box */
+  .hud-mobile-tool-icon:not([style]) { display: flex; align-items: center; justify-content: center; font: bold 9px Verdana, Arial, sans-serif; color: #fff; text-shadow: 0 0 2px #000; }
+}

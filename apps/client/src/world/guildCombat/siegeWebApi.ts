@@ -116,3 +116,86 @@ export class SiegeWeeklyFeed {
     this.expiry = setTimeout(() => { this.expiry = undefined; this.options.onChange?.(); }, Math.min(wait + 1, MAX_TIMER_MS));
   }
 }
+
+// 2026-11-15 (Guild Siege, C2): the website's ranking (`GET /api/siege/ranking?board=player|guild&span=week|all`) for the
+// owner's Siege Ranking window.
+
+export type RankBoard = 'player' | 'guild';
+export type RankSpan = 'week' | 'all';
+
+/** A row of the website's ranking: a player (name, job, guild) or a guild (wins, sieges). */
+export interface SiegeRankRow {
+  rank: number;
+  name: string;
+  job?: number;
+  guild?: string;
+  wins?: number;
+  sieges?: number;
+  points: number;
+}
+
+export const RANKING_URL = '/api/siege/ranking';
+export const RANKING_TIMEOUT_MS = 3000;
+export const RANKING_REUSE_MS = 60_000;
+
+const optionalNumber = (value: unknown): boolean => value === undefined || (typeof value === 'number' && Number.isFinite(value));
+
+/** Whether a parsed body is a well-formed answer: anything else counts as unavailable. */
+export function isSiegeRanking(body: unknown): body is { rows: SiegeRankRow[]; checkedAt: string } {
+  if (typeof body !== 'object' || body === null) return false;
+  const { rows, checkedAt } = body as Record<string, unknown>;
+  if (typeof checkedAt !== 'string' || !Array.isArray(rows)) return false;
+  return rows.every((row) => {
+    if (typeof row !== 'object' || row === null) return false;
+    const r = row as Record<string, unknown>;
+    return typeof r.rank === 'number' && typeof r.name === 'string' && typeof r.points === 'number'
+      && optionalNumber(r.job) && optionalNumber(r.wins) && optionalNumber(r.sieges)
+      && (r.guild === undefined || typeof r.guild === 'string');
+  });
+}
+
+export interface SiegeRankingCacheOptions {
+  fetcher?: (url: string, init?: RequestInit) => Promise<Response>;
+  now?: () => number;
+  timeoutMs?: number;
+}
+
+/** Asks for a ranking board when it is opened, 3 s at most, and reuses each board+span's answer for 60 s. */
+export class SiegeRankingCache {
+  private readonly kept = new Map<string, { at: number; rows: SiegeRankRow[] }>();
+  private readonly inFlight = new Map<string, Promise<SiegeRankRow[] | null>>();
+
+  constructor(private readonly options: SiegeRankingCacheOptions = {}) {}
+
+  /** The rows, or null when the website is unavailable (a bad answer, an error status, a time-out). */
+  load(board: RankBoard, span: RankSpan): Promise<SiegeRankRow[] | null> {
+    const key = `${board}|${span}`;
+    const now = (this.options.now ?? Date.now)();
+    const kept = this.kept.get(key);
+    if (kept !== undefined && now - kept.at < RANKING_REUSE_MS) return Promise.resolve(kept.rows);
+    const pending = this.inFlight.get(key);
+    if (pending !== undefined) return pending;
+    const call = this.fetchRows(board, span).then((rows) => {
+      if (rows !== null) this.kept.set(key, { at: now, rows });
+      return rows;
+    }).finally(() => { this.inFlight.delete(key); });
+    this.inFlight.set(key, call);
+    return call;
+  }
+
+  private async fetchRows(board: RankBoard, span: RankSpan): Promise<SiegeRankRow[] | null> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.options.timeoutMs ?? RANKING_TIMEOUT_MS);
+    try {
+      const fetcher = this.options.fetcher ?? ((url, init) => fetch(url, init));
+      const response = await fetcher(`${RANKING_URL}?board=${board}&span=${span}`, { signal: controller.signal });
+      if (!response.ok) return null;
+      const body: unknown = await response.json();
+      return isSiegeRanking(body) ? body.rows : null;
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+}

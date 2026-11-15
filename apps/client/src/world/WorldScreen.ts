@@ -54,7 +54,7 @@ import type { FlightStick } from './controls';
 import { FlightControl } from './flightControl';
 import type { FlightInput } from './flightControl';
 import { FlightButtons } from './hud/flightButtons';
-import { MOBILE_SHORTCUTS, MobileTools } from './hud/mobileTools';
+import { MOBILE_SHORTCUTS, MobileTools, SIEGE_SHORTCUT, siegeButton } from './hud/mobileTools';
 import { TurboGauge } from './render/TurboGauge';
 import { isGameMaster } from './authorization';
 import { Mode, bodyAlpha, isFrozen, isInvisible, modeLine, showsBubble } from './gmModes';
@@ -383,6 +383,8 @@ export class WorldScreen {
   private flightButtons: FlightButtons | undefined;
   /** The phone's window shortcuts at the top right. */
   private mobileTools: MobileTools | undefined;
+  /** 2026-11-15: the desktop's Siege Ranking button, left of the Navigator. */
+  private siegeButton: HTMLButtonElement | undefined;
   private turboGauge: TurboGauge | undefined;
   /** Piece 7 M5: the right drag's steering since the last step, the phone's buttons, and the stick's flight keys. */
   private flightMouse = { dx: 0, dy: 0 };
@@ -1756,12 +1758,15 @@ export class WorldScreen {
     // build made for the players hides it unless the address has ?stats, debugOverlay.ts)
     const overlayShown = this.page!.overlay.shown;
     const mobileTools = new MobileTools(this.hudArt!, [
+      // 2026-11-15 (owner, C2): the Siege Ranking icon, in Status's place (the rows stay two of four, style.css)
+      { label: SIEGE_SHORTCUT.label, applet: null, picture: SIEGE_SHORTCUT.picture, rank: SIEGE_SHORTCUT.rank, run: () => this.openWindow(SIEGE_SHORTCUT.window) },
       ...MOBILE_SHORTCUTS.map(({ label, applet, window, rank }) => ({ label, applet, rank, run: () => this.openWindow(window) })),
       ...(overlayShown
         ? [{ label: 'Stats', applet: null, run: () => { statsButton!.ariaExpanded = String(this.page!.overlay.togglePanel()); } }]
         : []),
     ], doc);
     this.mobileTools = mobileTools;
+    this.siegeButton = siegeButton(this.hudArt!, () => this.openWindow('siegeRanking'), doc);
     const statsButton = overlayShown ? mobileTools.buttons.at(-1)! : null;
     if (statsButton !== null) statsButton.ariaExpanded = 'false';
     const logOutBox = new LogOutBox(this.hudArt!, this.data!.texts, () => this.leave(), doc);
@@ -2330,7 +2335,7 @@ export class WorldScreen {
       // 2026-11-12: the phone's quick slots around Attack (bar 8's first slots; style.css shows them on a phone only)
       taskBar.element, taskBar.quickSlots, taskBar.actionSlotWindow.frame.element, this.attackButton.element, this.jumpButton.element,
       this.actionSlotButton.element, this.flightButtons.element,
-      mobileTools.element, logOutBox.element, messageBox.element,
+      mobileTools.element, this.siegeButton, logOutBox.element, messageBox.element,
       selectVillage.element, characterWindow.frame.element,
       characterWindow.confirm.frame.element, skillWindow.frame.element, skillWindow.warning.element, reviveWindow.element,
       inventoryWindow.frame.element, this.nearbyItems.element,
@@ -3562,6 +3567,8 @@ export class WorldScreen {
     if (window === 'lordSkill') { this.lordHud?.openSkills(); return; }
     // 2026-11-14: APP_MOTION, O (FuncApplet.cpp:198): the Motion window
     if (window === 'motion') { this.motionWindow?.toggle(); return; }
+    // 2026-11-15 (owner, Guild Siege C2): the Siege Ranking window, from the Start menu and the icons
+    if (window === 'siegeRanking') { this.guildCombatHud?.siegeRanking.toggle(); return; }
     // 2026-11-10: APP_VENDOR_REVISION, the personal shop, refused while the Summon Angel window is open (WndManager.cpp:2685-2695)
     if (window === 'vendor') {
       if (this.summonAngel?.isOpen === true) this.say('TID_GAME_SUMMONANGELUSING');
@@ -4840,6 +4847,8 @@ export class WorldScreen {
     this.turboGauge = undefined;
     this.flightButtons?.dispose();
     this.flightButtons = undefined;
+    this.siegeButton?.remove();
+    this.siegeButton = undefined;
     this.mobileTools?.dispose();
     this.mobileTools = undefined;
     this.flightAccelerate = undefined;
