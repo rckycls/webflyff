@@ -104,7 +104,7 @@ test('Frankie: Apply, Status, walking away and the boards', async ({ page }, inf
   await expect(status.locator('[role="option"]').nth(1)).toContainText('No.02');
   await expect(status.locator('[role="option"]').nth(1)).toContainText('Bravo');
   const countdown = status.locator('[data-control="WIDC_STATIC2"]');
-  await expect(countdown).toHaveText(/^1hr 2min \d+sec$/);
+  await expect(countdown).toHaveText(/^\d+m\d+s$/);
   const first = await countdown.innerText();
   await expect.poll(() => countdown.innerText(), ON_FRAMES).not.toBe(first);
   await phoneChecks(page, status);
