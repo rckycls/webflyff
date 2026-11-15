@@ -243,7 +243,7 @@ Stop it with `Ctrl` + `C`. The next step runs it as a service instead.
 ```
 New-Item -ItemType Directory -Force C:\flyff-logs
 nssm install flyff-gateway "C:\Program Files\nodejs\node.exe"
-nssm set flyff-gateway AppParameters "--import tsx apps\gateway\src\main.ts --config apps\gateway\gateway.config.json"
+nssm set flyff-gateway AppParameters "--import tsx apps\gateway\src\main.ts --config apps\gateway\gateway.config.json --env C:\flyff-web\.env"
 nssm set flyff-gateway AppDirectory "$FlyffWeb"
 nssm set flyff-gateway AppStdout C:\flyff-logs\gateway.log
 nssm set flyff-gateway AppStderr C:\flyff-logs\gateway.log
@@ -252,6 +252,8 @@ nssm set flyff-gateway AppRotateOnline 1
 nssm set flyff-gateway AppRotateBytes 10000000
 nssm start flyff-gateway
 ```
+
+`--env C:\flyff-web\.env` is the pre-registration lock's file ([2026-11-15-prereg-login.md](2026-11-15-prereg-login.md)). Without that file the lock is off and everyone may log in.
 
 4. Check it:
 
