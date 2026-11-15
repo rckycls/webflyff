@@ -4223,3 +4223,112 @@ fieldset:disabled .btn {
   .hud-motion-taskbar[aria-pressed='true'] { background: #ffe494; border-color: #795431; }
   .hud-motion-taskbar:disabled { opacity: 0.5; cursor: default; }
 }
+
+/* 2026-11-15: the beauty shop (world/beauty/beautyWindows.ts, docs/2026-11-15-beauty-shop-research.md §3): the hair
+   window (APP_BEAUTY_SHOP_EX) and the face window (APP_BEAUTY_SHOP_SKIN) on their pictures, their 3D boxes, the chosen box
+   under 0x60ffff00 (DrawHairKind, DrawFaces), the colour bars' knob yellowbuttten.tga and its faded copy (alpha 160), the
+   price labels drawn from their right (WSS_ALIGNHRIGHT), and the coupon's red warning. */
+.hud-beauty .hud-beauty-box { cursor: pointer; }
+.hud-beauty .hud-beauty-box[data-chosen]::after {
+  content: ''; position: absolute; inset: 0; background: rgba(255, 255, 0, 0.376); pointer-events: none;
+}
+.hud-beauty .hud-beauty-model { position: absolute; left: 0; top: 0; pointer-events: none; }
+.hud-beauty [data-beauty-bar] { cursor: pointer; touch-action: none; }
+.hud-beauty .hud-beauty-knob { position: absolute; width: 11px; height: 11px; pointer-events: none; }
+.hud-beauty .hud-beauty-knob.is-original { opacity: 0.627; }
+.hud-beauty .is-right > .hud-res-static-text { left: 2px; right: 4px; text-align: right; }
+.hud-beauty-confirm .hud-beauty-warning { color: #ff0000; }
+
+/* the phone's beauty windows (2026-11-15): the 464 px windows do not fit a landscape phone (about 800 x 350), so the
+   panel lays them across, in the middle, on the tiled V15 frame: the two models and the prices with Reset, OK and Cancel
+   at the left, the styles (or the two rows of faces) and the colour bars at the right. Every box keeps its size and its
+   piece of the window's picture (beautyWindows.ts, crop), so the models, styles, faces and bars are Neuz's own. */
+@media (max-width: 1000px) and (pointer: coarse) {
+  .world:has(.hud-beauty:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+  :is(.hud-beauty, .hud-beauty-confirm) { background: none !important; box-shadow: none !important; border-radius: 0 !important; }
+  :is(.hud-beauty, .hud-beauty-confirm) > .hud-window-frame {
+    display: grid !important; grid-template-columns: 16px minmax(0, 1fr) 16px; grid-template-rows: 16px 16px minmax(0, 1fr) 16px;
+  }
+  :is(.hud-beauty, .hud-beauty-confirm) > .hud-window-frame > div { position: static !important; width: auto !important; height: auto !important; }
+  :is(.hud-beauty, .hud-beauty-confirm) > .hud-window-title {
+    height: 18px !important; padding-top: 3px; background: none !important; border-radius: 0 !important; box-shadow: none !important;
+    font-size: 12px !important; line-height: 14px !important;
+  }
+  :is(.hud-beauty, .hud-beauty-confirm) > .hud-window-close { left: auto !important; right: 7px !important; }
+  :is(.hud-beauty, .hud-beauty-confirm) > .hud-window-close::before { content: ''; position: absolute; inset: -8px -8px -10px -12px; }
+  :is(.hud-beauty, .hud-beauty-confirm)::before {
+    content: ''; position: absolute; inset: 3px 5px 7px 3px; border-radius: 4px; background: rgba(250, 238, 230, 0.92); pointer-events: none;
+  }
+  .hud-beauty:not([hidden]) {
+    left: max(8px, calc(50% - 349px)) !important; top: 8px !important; transform: none !important;
+    width: 698px !important; height: 255px !important; z-index: 60 !important;
+  }
+  .hud-beauty > .hud-window-body { width: 686px !important; height: 223px !important; font: 12px/15px Verdana, Tahoma, sans-serif; }
+  .hud-beauty :is(input, textarea) { min-height: 0 !important; }
+  /* the edits' WndEditTile pieces stretched to the box */
+  .hud-beauty .hud-edit-tiles {
+    position: absolute !important; inset: 0 !important; display: grid !important; grid-template-columns: 8px minmax(0, 1fr) 8px;
+    grid-template-rows: minmax(0, 1fr) 8px; pointer-events: none;
+  }
+  .hud-beauty .hud-edit-tiles > div { position: static !important; width: auto !important; height: auto !important; }
+  /* the buttons their pictures a quarter bigger, a few px more round them to press */
+  .hud-beauty .hud-picture-button:not([data-control$="_LEFT"]):not([data-control$="_RIGHT"]) {
+    transform: scale(1.25); transform-origin: 0 0;
+  }
+  .hud-beauty .hud-picture-button::before { content: ''; position: absolute; inset: -4px; }
+  /* the colour bars: a taller press area round the 16 px bar */
+  .hud-beauty [data-beauty-bar]::before { content: ''; position: absolute; inset: -5px -4px; }
+
+  /* the left: the two models, the prices, Reset / OK / Cancel */
+  .hud-beauty [data-control="WIDC_CUSTOM5"] { left: 4px !important; top: 4px !important; }
+  .hud-beauty [data-control="WIDC_CUSTOM6"] { left: 162px !important; top: 4px !important; }
+  .hud-beauty-hair [data-control="WIDC_STATIC5"] { left: 4px !important; top: 132px !important; width: 100px !important; }
+  .hud-beauty-hair [data-control="WIDC_STATIC6"] { left: 4px !important; top: 150px !important; width: 100px !important; }
+  .hud-beauty-hair [data-control="WIDC_STATIC7"] { left: 4px !important; top: 168px !important; width: 100px !important; }
+  .hud-beauty-hair [data-control="WIDC_STATIC1"] { left: 108px !important; top: 132px !important; width: 120px !important; }
+  .hud-beauty-hair [data-control="WIDC_STATIC2"] { left: 108px !important; top: 150px !important; width: 120px !important; }
+  .hud-beauty-hair [data-control="WIDC_COST"] { left: 108px !important; top: 168px !important; width: 120px !important; }
+  .hud-beauty :is([data-control="WIDC_BUTTON1"], [data-control="WIDC_BTN_RESET"]) { left: 4px !important; top: 194px !important; }
+  .hud-beauty :is([data-control="WIDC_OK"], [data-control="WIDC_BTN_OK"]) { left: 130px !important; top: 194px !important; }
+  .hud-beauty :is([data-control="WIDC_CANCEL"], [data-control="WIDC_BTN_CANCEL"]) { left: 224px !important; top: 194px !important; }
+
+  /* the right: the hair styles, then the colours */
+  .hud-beauty-hair [data-control="WIDC_STATIC4"] { left: 326px !important; top: 4px !important; }
+  .hud-beauty-hair [data-control="WIDC_HAIRSTYLE_LEFT"] { left: 326px !important; top: 40px !important; }
+  .hud-beauty-hair [data-control="WIDC_CUSTOM1"] { left: 350px !important; top: 22px !important; }
+  .hud-beauty-hair [data-control="WIDC_CUSTOM2"] { left: 428px !important; top: 22px !important; }
+  .hud-beauty-hair [data-control="WIDC_CUSTOM3"] { left: 506px !important; top: 22px !important; }
+  .hud-beauty-hair [data-control="WIDC_CUSTOM4"] { left: 584px !important; top: 22px !important; }
+  .hud-beauty-hair [data-control="WIDC_HAIRSTYLE_RIGHT"] { left: 662px !important; top: 40px !important; }
+  .hud-beauty-hair [data-control="WIDC_STATIC3"] { left: 326px !important; top: 104px !important; }
+  .hud-beauty-hair [data-control="WIDC_CUSTOM_R"] { left: 330px !important; top: 126px !important; }
+  .hud-beauty-hair [data-control="WIDC_CUSTOM_G"] { left: 330px !important; top: 152px !important; }
+  .hud-beauty-hair [data-control="WIDC_CUSTOM_B"] { left: 330px !important; top: 178px !important; }
+  .hud-beauty-hair [data-control="WIDC_EDIT1"] { left: 462px !important; top: 125px !important; width: 36px !important; height: 18px !important; }
+  .hud-beauty-hair [data-control="WIDC_EDIT2"] { left: 462px !important; top: 151px !important; width: 36px !important; height: 18px !important; }
+  .hud-beauty-hair [data-control="WIDC_EDIT3"] { left: 462px !important; top: 177px !important; width: 36px !important; height: 18px !important; }
+
+  /* the right: the friendly faces, then the new faces */
+  .hud-beauty-face [data-control="WIDC_STATIC1"] { left: 326px !important; top: 4px !important; }
+  .hud-beauty-face [data-control="WIDC_FRIENDSHIPFACE_LEFT"] { left: 326px !important; top: 40px !important; }
+  .hud-beauty-face [data-control="WIDC_CUSTOM1"] { left: 350px !important; top: 22px !important; }
+  .hud-beauty-face [data-control="WIDC_CUSTOM2"] { left: 428px !important; top: 22px !important; }
+  .hud-beauty-face [data-control="WIDC_CUSTOM3"] { left: 506px !important; top: 22px !important; }
+  .hud-beauty-face [data-control="WIDC_CUSTOM4"] { left: 584px !important; top: 22px !important; }
+  .hud-beauty-face [data-control="WIDC_FRIENDSHIPFACE_RIGHT"] { left: 662px !important; top: 40px !important; }
+  .hud-beauty-face [data-control="WIDC_STATIC2"] { left: 326px !important; top: 104px !important; }
+  .hud-beauty-face [data-control="WIDC_NEWFACE_LEFT"] { left: 326px !important; top: 140px !important; }
+  .hud-beauty-face [data-control="WIDC_CUSTOM7"] { left: 350px !important; top: 122px !important; }
+  .hud-beauty-face [data-control="WIDC_CUSTOM8"] { left: 428px !important; top: 122px !important; }
+  .hud-beauty-face [data-control="WIDC_CUSTOM9"] { left: 506px !important; top: 122px !important; }
+  .hud-beauty-face [data-control="WIDC_CUSTOM10"] { left: 584px !important; top: 122px !important; }
+  .hud-beauty-face [data-control="WIDC_NEWFACE_RIGHT"] { left: 662px !important; top: 140px !important; }
+
+  /* the question box: Neuz's 288 x 128 box, over the panel */
+  .hud-beauty-confirm:not([hidden]) { z-index: 61 !important; }
+  .hud-beauty-confirm > .hud-window-body { font: 12px/15px Verdana, Tahoma, sans-serif; }
+}
+/* a narrower phone: the whole panel a little smaller (the bars' drag takes the zoom out, beautyWindows.ts) */
+@media (max-width: 730px) and (pointer: coarse) {
+  .hud-beauty:not([hidden]) { zoom: 0.9; left: 4px !important; }
+}

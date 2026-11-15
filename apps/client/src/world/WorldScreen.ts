@@ -168,6 +168,12 @@ import type { NpcWindowPacket } from './items/npcWindowKit';
 // 2026-11-10: Summon Angel (docs/superpowers/specs/2026-11-10-summon-angel-research.md)
 import { SummonAngelWindow } from './angel/summonAngelWindow';
 import { AngelFollowers, createAngelParticle } from './angel/angelFollow';
+// 2026-11-15: the beauty shop (docs/2026-11-15-beauty-shop-research.md)
+import { BeautyShop } from './beauty/beautyWindows';
+import type { BeautyKind } from './beauty/beautyWindows';
+import { MTI_STAND2 as BEAUTY_POSE } from './beauty/beautyPictures';
+import type { LookChange, PosedModel } from './beauty/beautyPictures';
+import { PARTS_CAP, PARTS_HAT, setHairColor, setHairMesh } from './beauty/beautyRules';
 import { ANGELS, angelPercent, angelTarget, isAngelBuff } from './angel/angelRules';
 import { AngelGauges, AngelLayer } from './render/AngelLayer';
 import type { AngelModel, AngelShown } from './render/AngelLayer';
@@ -222,7 +228,7 @@ import { DamageNumbers, screenProjector } from './render/DamageNumbers';
 import { MoverViews } from './render/MoverViews';
 import { NameTagLayer } from './render/NameTagLayer';
 import { WorldIndicatorLayer } from './render/WorldIndicatorLayer';
-import { lookOf, ownWorn, sexChangeLook } from './render/looks';
+import { beautyLook, drawnHair, lookOf, ownWorn, sexChangeLook } from './render/looks';
 import type { MoverLook } from './render/looks';
 import { MoveMark } from './render/moveMark';
 import { loadHeldItems, loadMoverModel, loadRideModel } from './render/moverModels';
@@ -506,6 +512,8 @@ export class WorldScreen {
    * `g_eLocal`'s states (EVE_PK).
    */
   private summonAngel: SummonAngelWindow | undefined;
+  /** 2026-11-15: the Hair Designer's and the Makeup Artist's windows, and the coupons' question (beauty/beautyWindows.ts). */
+  private beautyShop: BeautyShop | undefined;
   private readonly angelFollowers = new AngelFollowers();
   private angelLayer: AngelLayer | undefined;
   private angelGauges: AngelGauges | undefined;
@@ -775,6 +783,13 @@ export class WorldScreen {
       angels: () => [...this.angelFollowers.all()].map(([ownerId, angel]) => ({
         ownerId, itemId: angel.itemId, pos: [...angel.pos] as Vec3, drawn: this.angelLayer?.drawn().includes(ownerId) === true,
       })),
+      // 2026-11-15 (beauty shop): the players' hair and faces
+      looks: () => [...(this.world?.movers.values() ?? [])].flatMap((m) => {
+        const player = m.added.player;
+        return player === undefined ? [] : [{
+          objectId: m.objectId, hairMesh: player.hairMesh, hairColor: player.hairColor, headMesh: player.headMesh,
+        }];
+      }),
     });
     void this.start();
   }
@@ -1012,6 +1027,16 @@ export class WorldScreen {
       if (value.type === 'sexChange') { this.changeLook(world.movers.get(objectId), { index: value.index }); continue; }
       if (value.type === 'changeFace') {
         this.changeLook([...world.movers.values()].find((m) => m.added.player?.playerId === value.playerId), { face: value.face });
+        continue;
+      }
+      // 2026-11-15: a player's new hair (OnSetHair, DPClient.cpp:14085-14116): the style if 0-9, the colour as SetHairColor
+      if (value.type === 'setHair') {
+        const player = world.movers.get(objectId)?.added.player;
+        if (player !== undefined) {
+          this.changeLook(world.movers.get(objectId), {
+            hairMesh: setHairMesh(player.hairMesh, value.hair), hairColor: setHairColor(value.r, value.g, value.b),
+          });
+        }
         continue;
       }
       if (value.type === 'resistSmMode') {
@@ -1509,6 +1534,7 @@ export class WorldScreen {
       openGuildName: (objectId) => this.guildHud?.openRename(objectId),
       // 2026-11-10 (bank-mail): the Scroll of Private Custody (bank/bankHud.ts `useScroll`)
       openBank: (objectId, itemId) => this.bankHud?.useScroll(objectId, itemId),
+      useCoupon: (kind) => this.beautyShop?.useCoupon(kind), // 2026-11-15: the hair and face coupons
       worldId: () => this.worldId, worldName: () => WORLD_NAMES.get(this.worldId) ?? '', partyName: () => this.party.name,
       isLeader: () => this.party.isLeader(this.entry.character.playerId), focusId: () => this.focus?.targetId ?? NULL_ID,
       ownName: () => this.world?.self()?.name ?? this.entry.character.name,
@@ -1597,6 +1623,9 @@ export class WorldScreen {
       repairBusy: () => this.bankHud?.isOpen === true ? 'TID_GAME_REPAIR_TAKEBANK'
         : this.tradeHud?.windowOpen === true ? 'TID_GAME_REPAIR_TAKETRADE'
           : this.shopWindow?.frame.isOpen === true ? 'TID_GAME_REPAIR_TAKESHOP'
+            // 2026-11-15: the beauty windows (:5415-5430)
+            : this.beautyShop?.face.isOpen === true ? 'TID_GAME_FACESHOPUSING'
+            : this.beautyShop?.hair.isOpen === true ? 'TID_GAME_REPAIR_TAKEBEAUTY'
             : this.summonAngel?.isOpen === true ? 'TID_GAME_SUMMONANGELUSING'
               : this.personalShop?.blocksWorld === true ? 'TID_GAME_REPAIR_TRADEING' : null,
     });
@@ -1620,6 +1649,38 @@ export class WorldScreen {
         return { x: bag.left - at.left, y: bag.top - at.top, width: bag.width };
       },
       mobile: () => doc.defaultView?.matchMedia?.('(max-width: 1000px) and (pointer: coarse)').matches === true,
+      ui: { art: this.hudArt!, doc, layer: () => this.hud?.element ?? null },
+    });
+    // 2026-11-15: the beauty shop's hair and face windows (beauty/beautyWindows.ts)
+    this.beautyShop = new BeautyShop({
+      text: (tid) => this.data?.texts.get(tid)?.text ?? '',
+      player: () => {
+        const player = this.world?.self()?.added.player;
+        if (player === undefined) return null;
+        return {
+          playerId: player.playerId, hairMesh: player.hairMesh, headMesh: player.headMesh,
+          hairColor: drawnHair(player.sex, player.hairMesh, player.hairColor),
+        };
+      },
+      disguised: () => this.useCheck().disguised === true,
+      say: (tid) => this.say(tid),
+      sendSetHair: (hair, r, g, b, coupon) => this.session.sendSetHair(hair, r, g, b, coupon),
+      sendChangeFace: (playerId, face, cost, coupon) => this.session.sendChangeFace(playerId, face, cost, coupon),
+      openBag: () => { if (this.inventoryWindow?.frame.isOpen !== true) this.openWindow('inventory'); },
+      bagRect: () => {
+        const frame = this.inventoryWindow?.frame, layer = this.hud?.element;
+        if (frame?.isOpen !== true || layer === undefined) return null;
+        const bag = frame.element.getBoundingClientRect(), at = layer.getBoundingClientRect();
+        return { x: bag.left - at.left, y: bag.top - at.top, width: bag.width };
+      },
+      mobile: () => doc.defaultView?.matchMedia?.('(max-width: 1000px) and (pointer: coarse)').matches === true,
+      pictures: {
+        look: (change, held) => this.beautyLookOf(change, held),
+        male: () => this.world?.self()?.added.player?.sex === 0,
+        load: (look, held) => this.beautyModel(look, held),
+        renderer: () => this.page?.renderer ?? null,
+        report: (error) => this.reportOnce(`beauty shop: ${messageOf(error)}`, error),
+      },
       ui: { art: this.hudArt!, doc, layer: () => this.hud?.element ?? null },
     });
     // 2026-11-05: the upgrade cursor: Sunstone, Moonstone, the cards, the random and awakening scrolls, the Ultimate gem
@@ -1732,6 +1793,7 @@ export class WorldScreen {
         // 2026-11-10: no use while trading (CWndInventory::OnChildNotify, WndField.cpp:2541-2547)
         if (this.tradeLimit()) return;
         if (this.summonAngelUse(id)) return; // 2026-11-10: the Summon Angel window open
+        if (this.beautyRefusesItem(id)) return; // 2026-11-15: a hat or cap with a beauty window open
         // 2026-11-09 (pets R4): with a Pet Tamer window open its clicks took the item; the double-click does no more (the
         // egg exchange's bag path returns at once, WndField.cpp:2237-2259)
         if (this.petTamer?.picking === true) return;
@@ -1741,7 +1803,8 @@ export class WorldScreen {
         else this.itemUse!.use(id, 'bag');
       },
       equip: (id, shift) => {
-        if (!this.tradeLimit() && !this.summonAngelUse(id) && !this.takeIntoUpgradeWindow(id, shift === true)) itemActions.equip(id);
+        if (!this.tradeLimit() && !this.summonAngelUse(id) && !this.beautyRefusesItem(id) &&
+          !this.takeIntoUpgradeWindow(id, shift === true)) itemActions.equip(id);
       },
       land: (id) => { this.itemUse!.land(id); }, // Piece 7 M5: the worn ride's equipment cell
       // 2026-11-05: the upgrade cursor's target, its wait and its cancel
@@ -2474,7 +2537,9 @@ export class WorldScreen {
    */
   private openSummonAngel(): void {
     // 2026-11-15: and the Guild Safebox (WndWorld.cpp:4840-4846)
-    if (this.tradeHud?.windowOpen === true || this.shopWindow?.frame.isOpen === true || this.guildBankHud?.isOpen === true) {
+    // 2026-11-15: and the beauty windows (:4808-4819)
+    if (this.tradeHud?.windowOpen === true || this.shopWindow?.frame.isOpen === true || this.guildBankHud?.isOpen === true ||
+      this.beautyShop?.isOpen === true) {
       this.say('TID_GAME_TRADENOTSUMMONANGEL');
       return;
     }
@@ -3379,6 +3444,7 @@ export class WorldScreen {
     }
     this.upgradeNpc?.safety.step();
     this.jewels?.setting.step(performance.now()); // 2026-11-10: Jewel Setting's turn (Process, WndField.cpp:19993-20050)
+    this.beautyShop?.frame(performance.now()); // 2026-11-15: the beauty windows' turning model (OnDraw, WndShop.cpp:1212-1290)
     this.inventoryWindow?.drawUpgrade();
     // the dialogue and the menu go with their NPC or when the player moves (WndWorld.cpp:8052-8081)
     const dialogNpc = this.dialog?.npcId ?? null;
@@ -3600,9 +3666,10 @@ export class WorldScreen {
 
   /**
    * 2026-11-05: a player's sex (its mover's index, MI_MALE 11 or MI_FEMALE 12: `OnSexChange`, DPClient.cpp:14961-14990) or
-   * face (`OnChangeFace`, :6722-6750) changed: its model is made again.
+   * face (`OnChangeFace`, :6722-6750) changed: its model is made again. 2026-11-15: or its hair (`OnSetHair`,
+   * :14085-14116); the own one's status face too (`g_pBipedMesh`, both handlers).
    */
-  private changeLook(mover: Mover | undefined, change: { index?: number; face?: number }): void {
+  private changeLook(mover: Mover | undefined, change: { index?: number; face?: number; hairMesh?: number; hairColor?: number }): void {
     const player = mover?.added.player;
     if (mover === undefined || player === undefined) return;
     if (change.index !== undefined) {
@@ -3610,8 +3677,100 @@ export class WorldScreen {
       player.sex = change.index === 11 ? 0 : 1;
     }
     if (change.face !== undefined) player.headMesh = change.face;
+    if (change.hairMesh !== undefined) player.hairMesh = change.hairMesh;
+    if (change.hairColor !== undefined) player.hairColor = change.hairColor;
     this.views?.refresh(mover);
-    if (mover.isSelf && this.inventoryWindow?.frame.isOpen === true) void this.makePortrait(true);
+    if (!mover.isSelf) return;
+    if (this.inventoryWindow?.frame.isOpen === true) void this.makePortrait(true);
+    if (change.face !== undefined || change.hairMesh !== undefined) void this.makePortrait();
+  }
+
+  /** 2026-11-15: the beauty shop's look of the own player with `change` (beauty/beautyPictures.ts); null without one. */
+  private beautyLookOf(change: LookChange, held: boolean): MoverLook | null {
+    const player = this.world?.self()?.added.player, data = this.data, own = this.own;
+    if (player === undefined || data === undefined) return null;
+    const equipment = own?.inventory ? own.equipmentObjectIds.map((id) => own.inventory!.get(id)?.itemId ?? 0) : this.entry.character.equipment;
+    return beautyLook(player.sex, {
+      hairMesh: change.hairMesh ?? player.hairMesh, hairColor: change.hairColor ?? player.hairColor,
+      headMesh: change.headMesh ?? player.headMesh,
+    }, ownWorn(equipment, data), held, data);
+  }
+
+  /**
+   * 2026-11-15: a beauty shop model: `look` loaded for its picture alone, the hands' items hung when `held`, in MTI_STAND2
+   * (its stand where the body lacks it); null when it cannot be had, said once.
+   */
+  private async beautyModel(look: MoverLook, held: boolean): Promise<PosedModel | null> {
+    const services = this.services, data = this.data;
+    if (services === undefined || data === undefined) return null;
+    const report = (message: string): void => this.reportOnce(`beauty shop: ${message}`, new Error(message));
+    try {
+      const model = await loadMoverModel(services)(look, report);
+      const items = held ? await loadHeldItems(services, data)(look, report) : [];
+      for (const item of items) attachHeld(model, item.item, item.slot);
+      const release = (): void => {
+        for (const item of items) { item.item.removeFromParent(); item.release(); }
+        model.release();
+      };
+      let motion: LoopedMotion | null = null;
+      const key = look.motion(BEAUTY_POSE);
+      try {
+        motion = key === null ? null : await loadMotion(services, key);
+      } catch (error) {
+        report(messageOf(error)); // the model still stands, in its first pose
+      }
+      if (this.over) {
+        release();
+        return null;
+      }
+      return { model, motion, release };
+    } catch (error) {
+      if (!this.over) report(messageOf(error));
+      return null;
+    }
+  }
+
+  /**
+   * 2026-11-15: MMI_BEAUTYSHOP and MMI_BEAUTYSHOP_SKIN (WndWorld.cpp:4619-4786): refused while the trade, the Repair window
+   * or an NPC shop is open, while either beauty window or Summon Angel is, and with anything worn on the head (PARTS_HAT,
+   * PARTS_CAP: TID_GAME_NOTREADY_USESHOP); else the bag and the window.
+   */
+  private openBeautyShop(kind: BeautyKind): void {
+    const shop = this.beautyShop;
+    if (shop === undefined) return;
+    const hair = kind === 'hair';
+    const busy = hair ? 'TID_GAME_TRADENOTBEAUTYSHOP' : 'TID_GAME_TRADENOTFACESHOP';
+    if (this.tradeHud?.windowOpen === true) { this.say(busy); return; }
+    if (this.itemNpc?.repair.isOpen === true) { this.say(hair ? 'TID_GAME_REPAIR_NOACTION' : busy); return; }
+    if (this.shopWindow?.frame.isOpen === true) { this.say(busy); return; }
+    if (hair) {
+      if (shop.face.isOpen) { this.say('TID_GAME_FACESHOPUSING'); return; }
+      if (shop.hair.isOpen) { this.say('TID_GAME_BEAUTYSHOPUSING'); return; }
+      if (this.summonAngel?.isOpen === true) { this.say('TID_GAME_SUMMONANGELUSING'); return; }
+    } else {
+      if (shop.hair.isOpen) { this.say('TID_GAME_BEAUTYSHOPUSING'); return; }
+      if (shop.face.isOpen || this.summonAngel?.isOpen === true) { this.say('TID_GAME_FACESHOPUSING'); return; }
+    }
+    const worn = this.own?.equipmentObjectIds;
+    if (worn !== undefined && ((worn[PARTS_HAT] ?? NULL_ID) !== NULL_ID || (worn[PARTS_CAP] ?? NULL_ID) !== NULL_ID)) {
+      this.say('TID_GAME_NOTREADY_USESHOP');
+      return;
+    }
+    this.dialog?.close();
+    shop.open(kind);
+  }
+
+  /**
+   * 2026-11-15: a hat or cap item used or worn while a beauty window is open: TID_GAME_DONOTUSE_SHOP and nothing more
+   * (`SendDoUseItem`, DPClient.cpp:9274-9282, :10241-10250). False for any other item, or with the windows shut.
+   */
+  private beautyRefusesItem(objectId: number): boolean {
+    if (this.beautyShop?.isOpen !== true) return false;
+    const item = this.own?.inventory?.get(objectId);
+    const part = item === undefined ? undefined : this.data?.itemProps.get(item.itemId)?.part;
+    if (part !== PARTS_HAT && part !== PARTS_CAP) return false;
+    this.say('TID_GAME_DONOTUSE_SHOP');
+    return true;
   }
 
   /**
@@ -4283,6 +4442,9 @@ export class WorldScreen {
       this.session.sendNpcDialogOpen(id);
       this.sounds?.npcDialog(npc.added.npc!.characterKey);
     } else if (entry === MMI.TRADE && opensShop(data) && this.canTalk(id)) {
+      // 2026-11-15: not with a beauty window open (WndWorld.cpp:5290-5304)
+      if (this.beautyShop?.face.isOpen === true) { this.say('TID_GAME_FACESHOPUSING'); return; }
+      if (this.beautyShop?.hair.isOpen === true) { this.say('TID_GAME_BEAUTYSHOPUSING'); return; }
       // 2026-11-10: not with the Summon Angel window open (WndWorld.cpp:5305-5312)
       if (this.summonAngel?.isOpen === true) { this.say('TID_GAME_SUMMONANGELUSING'); return; }
       // 2026-11-10: not with a personal shop window open (CWndShop::OnInitialUpdate, WndShop.cpp:774)
@@ -4296,12 +4458,17 @@ export class WorldScreen {
     } else if (entry === MMI.BANKING) {
       // 2026-11-15: not with the Guild Safebox open (:5496-5501)
       if (this.guildBankHud?.isOpen === true) { this.say('TID_GAME_BANKSTILLUSING'); return; }
+      // 2026-11-15: nor a beauty window (:5504-5519)
+      if (this.beautyShop?.isOpen === true) { this.say('TID_GAME_BEAUTYSHOPUSING'); return; }
       this.bankHud?.request(); // 2026-11-10 (bank-mail): Deposit (:5451-5536)
     } else if (entry === MMI.GUILDBANKING) {
       this.guildBankHud?.request(); // 2026-11-15: Guild Warehouse (:5543-5612)
     } else if (entry === MMI.POST) {
       // 2026-11-15: not with the Guild Safebox open (:4556-4561)
       if (this.guildBankHud?.isOpen === true) { this.say('TID_GAME_BANKSTILLUSING'); return; }
+      // 2026-11-15: nor a beauty window (:4584-4598)
+      if (this.beautyShop?.face.isOpen === true) { this.say('TID_GAME_FACESHOPUSING'); return; }
+      if (this.beautyShop?.hair.isOpen === true) { this.say('TID_GAME_BEAUTYSHOPUSING'); return; }
       this.postHud?.open(); // 2026-11-10 (bank-mail): the Post Box's Mailbox (:4525-4612)
     } else if (entry === MMI.TELEPORTER && data !== undefined) {
       this.dialog?.close();
@@ -4317,8 +4484,9 @@ export class WorldScreen {
     } else if (entry === MMI.NPC_BUFF) {
       this.session.sendNpcBuff(npc.added.npc!.characterKey);
     } else if (entry === MMI.PIERCING) {
-      // 2026-11-05: the Upgrade Specialist (:5681-5733): Piercing, nothing while a shop is open
-      if (this.shopWindow?.frame.isOpen !== true) this.upgradeNpc?.piercing.open();
+      // 2026-11-05: the Upgrade Specialist (:5681-5733): Piercing, nothing while a shop is open; 2026-11-15 or a beauty
+      // window (:5703-5714)
+      if (this.shopWindow?.frame.isOpen !== true && this.beautyShop?.isOpen !== true) this.upgradeNpc?.piercing.open();
     } else if (entry === MMI.SMELT_SAFETY_GENERAL || entry === MMI.SMELT_SAFETY_ACCESSORY || entry === MMI.SMELT_SAFETY_PIERCING ||
       entry === MMI.SMELT_SAFETY_ELEMENT) {
       // :5989-6050: the safe upgrade in its mode, any open one deleted first; 2026-11-11 refused in a trade or one's own shop
@@ -4349,6 +4517,8 @@ export class WorldScreen {
       this.jewels?.extraction.open(); // 2026-11-10: Create Jewels (:4972-4985)
     } else if (entry === MMI.SUMMON_ANGEL) {
       this.openSummonAngel(); // 2026-11-10: the Priest of Confession's Summon Angel (:4783-4872)
+    } else if (entry === MMI.BEAUTYSHOP || entry === MMI.BEAUTYSHOP_SKIN) {
+      this.openBeautyShop(entry === MMI.BEAUTYSHOP ? 'hair' : 'face'); // 2026-11-15: the beauty shop (:4619-4786)
     } else if (entry === MMI.PET_STATUS || entry === MMI.PET_RELEASE) {
       this.choosePetEntry(entry);
     } else if (entry === MMI.BUFFPET_STATUS || entry === MMI.BUFFPET_RELEASE) {
@@ -4740,6 +4910,8 @@ export class WorldScreen {
     // 2026-11-10: Summon Angel
     this.summonAngel?.close();
     this.summonAngel = undefined;
+    this.beautyShop?.close(); // 2026-11-15
+    this.beautyShop = undefined;
     this.angelLayer?.dispose();
     this.angelLayer = undefined;
     this.angelGauges?.dispose();

@@ -272,6 +272,10 @@ export const THEME_FILES: readonly string[] = [
   // 2026-11-12, the New Character window (docs/superpowers/specs/2026-11-12-char-select-create-research.md §3): its sex
   // and arrow buttons (APP_CREATE_CHAR, resdata.inc:24551-24600); ButtOk, ButtCancel and WndEditTile00 are above
   'ButtMale.bmp', 'ButtFemale.bmp', 'ButtLeft.bmp', 'ButtRight.bmp',
+  // 2026-11-15, the beauty shop (docs/2026-11-15-beauty-shop-research.md §3): APP_BEAUTY_SHOP_EX's and
+  // APP_BEAUTY_SHOP_SKIN's pictures (resdata.inc:6125, :6362, not tiled), their arrows (:6180-6190, :6420-6440) and the
+  // colour bars' knob (CWndBeautyShop::Initialize, WndShop.cpp:1716); reset, ButOk2, ButCancel2, ButtYes and ButtNo are above
+  'WndBeautyShop_EX.tga', 'WndBeautyShopSkin_EX.tga', 'ButtLeftH.tga', 'ButtRightH.tga', 'yellowbuttten.tga',
 ];
 
 /**

@@ -70,6 +70,7 @@ export * from './world/upgrade';
 export * from './world/angel'; // 2026-11-10: Summon Angel
 export * from './world/motion'; // 2026-11-14: the Motion window
 export * from './world/itemWindows';
+export * from './world/beauty'; // 2026-11-15: the beauty shop
 export * from './world/pets';
 export * from './world/trade';
 export * from './world/guild';

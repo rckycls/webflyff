@@ -79,6 +79,8 @@ export type WorldMessage = ChatMessage | NpcMessage | ShopMessage | QuestMessage
   | { type: 'sexChange'; index: number }
   /** 2026-11-05: a player's new face (`OnChangeFace`). */
   | { type: 'changeFace'; playerId: number; face: number }
+  /** 2026-11-15: a player's new hair style (0-based) and colour bytes, the hair window's answer (`OnSetHair`). */
+  | { type: 'setHair'; hair: number; r: number; g: number; b: number }
   /** 2026-11-05: a player's new name, the name change's answer to every client (`OnSetPlayerName`). */
   | { type: 'setPlayerName'; playerId: number; name: string }
   /** 2026-11-05: the Ultimate gem's answer (`OnUltimate`): its state and result. */

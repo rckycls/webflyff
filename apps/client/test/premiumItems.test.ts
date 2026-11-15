@@ -32,9 +32,11 @@ describe('useOf: what Neuz sends DOUSEITEM for', () => {
     // 2026-11-10: the guild name scroll 10463 has its window now (guild/guildHud.ts `openRename`), and (bank-mail) the Custody
     // scroll 15083 opens the bank
     expect(useOf(prop({ id: 15083, kind2: 19 }))).toBe('window');
-    for (const id of [26410, 26411, 26475, 26476, 10425]) {
+    for (const id of [26475, 26476, 10425]) {
       expect(useOf(prop({ id, kind2: 19 })), String(id)).toBe('noWindow');
     }
+    // 2026-11-15: the hair and face coupons ask, then open the beauty shop's windows (beauty/beautyWindows.ts)
+    for (const id of [26410, 26411]) expect(useOf(prop({ id, kind2: 19 })), String(id)).toBe('window');
     // 2026-11-09 (pets B1): the vis (IK3_VIS 138) is used, CheckConfirm's box first with a buff pet out
     expect(useOf(prop({ kind2: 19, kind3: 138 }))).toBe('use');
     // 2026-11-05: the windows the browser has (itemWindows.ts)

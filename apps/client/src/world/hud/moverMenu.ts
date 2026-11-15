@@ -39,6 +39,8 @@ export const MMI = {
    */
   REPAIR: 14, SMELT_MIXJEWEL: 51, SMELT_CHANGEGWEAPON: 54, SMELT_CHANGEUWEAPON: 55, ATTRIBUTE: 59, SMELT_REMOVE_PIERCING: 72,
   SMELT_REMOVE_JEWEL: 95, SMELT_SAFETY_ELEMENT: 167,
+  /** 2026-11-15: the Hair Designer's Beauty Shop and the Makeup Artist's Cosmetic Upgrades (beauty/beautyWindows.ts). */
+  BEAUTYSHOP: 13, BEAUTYSHOP_SKIN: 42,
 } as const;
 /**
  * 2026-11-10: the Arena's and the Forsaken Tower's entries: Enter and Leave Arena send their header
@@ -109,6 +111,8 @@ export function npcMenuEntries(npc: WebNpc | undefined, texts: Texts, ownIsBaseJ
         (id === MMI.TELEPORTER && (npc?.teleports?.length ?? 0) > 0) || PET_ENTRIES.has(id) || TAMER_ENTRIES.has(id) ||
         ARENA_TOWER_ENTRIES.has(id) ||
         id === MMI.BANKING || id === MMI.POST || id === MMI.GUILDBANKING ||
+        // 2026-11-15: the hair and face windows (WndWorld.cpp:4619-4786)
+        id === MMI.BEAUTYSHOP || id === MMI.BEAUTYSHOP_SKIN ||
         // 2026-11-11: the Lord Manager's (MaFl_KINGAIDE, Resource/character.inc:6903-6926; lord/lordHud.ts)
         LORD_MENU.has(id),
     }));

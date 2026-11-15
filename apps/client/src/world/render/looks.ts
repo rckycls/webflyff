@@ -331,3 +331,24 @@ export function sexChangeLook(sex: number, hairMesh: number, face: number, worn:
   }, data);
   return { ...look, hairColor: null };
 }
+
+/**
+ * 2026-11-15: the beauty shop's models (`CWndBeautyShop`, `CWndFaceShop`): the body of the player's sex (whatever mover it
+ * is disguised as) dressed as the player, with another hair style, hair colour or face when given. `worn` is the own
+ * equipment (`ownWorn`); `held` false takes the hands' items out (the small boxes' close-ups).
+ */
+export function beautyLook(
+  sex: number, look: { hairMesh: number; hairColor: number; headMesh: number }, worn: readonly WornPart[], held: boolean,
+  data: GameData,
+): MoverLook {
+  const hands = new Set<number>([Parts.LWEAPON, Parts.RWEAPON, Parts.SHIELD]);
+  return humanLook({
+    gender: sex === Sex.MALE ? 'male' : 'female', hairMesh: look.hairMesh, headMesh: look.headMesh, hairColor: look.hairColor,
+    worn: held ? worn : worn.filter((w) => !hands.has(w.part)),
+  }, data);
+}
+
+/** 2026-11-15: the hair colour a mover's look draws (`drawnHairColor`: white is its style's default), for the beauty shop. */
+export function drawnHair(sex: number, hairMesh: number, hairColor: number): number {
+  return drawnHairColor(sex === Sex.MALE ? 'male' : 'female', hairMesh, hairColor);
+}
