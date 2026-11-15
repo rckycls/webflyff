@@ -169,8 +169,9 @@ describe('the tooltips', () => {
     expect(motionTip(4, null, text, false)).toEqual(['Shake Hands']);
     expect(motionTip(MotId.CHEER, { points: 3, restMs: 0 }, text, false)).toEqual(['Cheer up another character', 'Cheer Message Point(s): 3/3']);
     expect(motionTip(MotId.CHEER, { points: 1, restMs: 25 * 60_000 + 5000 }, text, true))
-      .toEqual(['Cheer up another character', '', 'Cheer Message Point(s): 1/3', 'Time left until the next point25min']);
-    expect(motionTip(MotId.CHEER, { points: 2, restMs: 42_500 }, text, false)[2]).toBe('Time left until the next point42sec');
+      .toEqual(['Cheer up another character', '', 'Cheer Message Point(s): 1/3', 'Time left until the next point25m']);
+    // 2026-11-15 (consistency scan): the short durations' one unit (formatDuration), as every other time shown
+    expect(motionTip(MotId.CHEER, { points: 2, restMs: 42_500 }, text, false)[2]).toBe('Time left until the next point42s');
     expect(emoticonTip(1)).toEqual(['/sad']);
   });
 });

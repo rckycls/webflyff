@@ -68,9 +68,11 @@ export function createView(options: CreateViewOptions): CreateView {
   const { slot, onCreate, onInvalid, onCancel } = options;
   const look: CreateLook = { ...options.look };
 
+  // 2026-11-15 (consistency scan): at most 16 letters, as its tip and the check say, as the PIN, password and Lord fields have
+  // their limits (the floating keyboard keeps to it too)
   const name = h('input', {
     type: 'text', name: 'name', id: 'cc-name', title: NAME_TIP, autocomplete: 'off', autocapitalize: 'none',
-    autocorrect: 'off', spellcheck: 'false', enterkeyhint: 'next', class: 'lobby-edit',
+    autocorrect: 'off', spellcheck: 'false', enterkeyhint: 'next', class: 'lobby-edit', maxlength: 16,
   });
   const male = spriteButton('Male', 'cc-male', { 'aria-pressed': 'false' });
   const female = spriteButton('Female', 'cc-female', { 'aria-pressed': 'false' });

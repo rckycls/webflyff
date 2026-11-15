@@ -63,8 +63,9 @@ test('red chips: Waforu opens his shop, prices in Red Chips, BUYCHIPITEM, and V1
   // three boxes are 30000 chips, the bag holds 20000: V15's message box, nothing sent
   await quantity('3');
   await shop.getByRole('button', { name: 'Buy', exact: true }).click();
-  const box = page.locator('.hud-message');
-  await expect(box).toContainText('More Red Chips are needed.');
+  // (2026-11-15: the one box with these words: the couple's and the guild's own boxes are .hud-message windows too)
+  const box = page.locator('.hud-message').filter({ hasText: 'More Red Chips are needed.' });
+  await expect(box).toBeVisible();
   await page.screenshot({ path: info.outputPath('red-chips-not-enough.png') });
   await box.getByRole('button', { name: 'OK' }).click(); await expect(box).toBeHidden();
   expect(sentOf(gateway, 0xff00b6)).toHaveLength(0); expect(sentOf(gateway, 0xff00b3)).toHaveLength(0);

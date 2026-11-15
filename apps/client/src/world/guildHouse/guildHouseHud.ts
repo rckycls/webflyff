@@ -81,6 +81,8 @@ export class GuildHouseHud {
   /** The row a SETUP placing is for (`m_nWndDeployingIndex`), null when none. */
   private deploying: StorageRow | null = null;
   private storageAway = false;
+  /** 2026-11-15 (consistency scan): where the storage was while it stepped aside for a placing, to come back there. */
+  private storageAt: { x: number; y: number } | 'center' = 'center';
   private drawnAt = -1;
 
   constructor(art: UiArt, private readonly texts: Texts, private readonly screen: GuildHouseHudScreen,
@@ -329,14 +331,15 @@ export class GuildHouseHud {
       this.menu.setTime(left < 0 ? this.text('TID_GAME_GUILDHOUSE_EXPIRATION', 'Your Guild House has expired.').text : formatDuration(left, 's'));
     }
     if (this.deploying !== null && this.screen.placing()) {
-      if (this.storage.isOpen) { this.storage.window.close(); this.storageAway = true; }
+      // (V15 only hides and shows the window, WndHousing.cpp:1348, :1366: it comes back where it was)
+      if (this.storage.isOpen) { this.storageAt = this.storage.window.frame.position; this.storage.window.close(); this.storageAway = true; }
       const row = this.deploying;
       const time = formatDuration(row.fresh ? row.time : Math.max(0, row.time - now), 's', 1) + (row.fresh ? ' (NEW)' : ' (▶)');
       if (!this.strip.isOpen) this.strip.show(row.icon, row.name, time, this.screen.stripAt(304));
     } else if (this.deploying !== null || this.strip.isOpen) {
       this.deploying = null;
       this.strip.window.close();
-      if (this.storageAway && !this.storage.isOpen) { this.storage.window.open(); this.refresh(); }
+      if (this.storageAway && !this.storage.isOpen) { this.storage.window.open(this.storageAt); this.refresh(); }
       this.storageAway = false;
     }
     if (this.storage.isOpen && now !== this.drawnAt) this.draw();

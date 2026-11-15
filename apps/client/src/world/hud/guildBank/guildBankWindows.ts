@@ -164,7 +164,9 @@ export class GuildBankWindow {
   private readonly grid: HTMLElement;
 
   constructor(private readonly art: UiArt, private readonly doc: Document = document) {
-    const window = new ResWindow(GUILD_BANK, art, doc);
+    // 2026-11-15 (consistency scan): a phone's panel has Neuz's tiled frame, as the bank's (WndGuildBank.tga's 208 px picture
+    // cannot frame the narrow panel beside the bag)
+    const window = new ResWindow(isPhone(doc) ? { ...GUILD_BANK, texture: undefined } : GUILD_BANK, art, doc);
     window.frame.element.classList.add('hud-guild-bank');
     phoneWords(window);
     this.phone = isPhone(doc);
@@ -249,6 +251,8 @@ export class GuildMeritWindow {
   onOk: (penya: string, items: boolean) => void = () => {};
   /** Quest Items checked or cleared: the window asks for the bag's gems (`m_wndctrlMerit.AddItem`). */
   onCheck: (on: boolean) => void = () => {};
+  /** A gem pointed at or pressed: its tooltip at `anchor`, null to hide it. */
+  onHover: (item: InventoryItem | null, anchor: HTMLElement | null) => void = () => {};
   private readonly input: HTMLInputElement;
   private readonly check: RadioButton;
   private readonly list: HTMLElement;
@@ -305,7 +309,16 @@ export class GuildMeritWindow {
 
   /** The gems listed with Quest Items checked (`AddItem`), each with its count when it stacks. */
   showItems(items: readonly InventoryItem[], prop: (itemId: number) => WebItemProp | undefined): void {
-    this.list.replaceChildren(...items.map((item) => itemCell(this.doc, this.art, item, prop)));
+    this.onHover(null, null);
+    this.list.replaceChildren(...items.map((item) => {
+      const cell = itemCell(this.doc, this.art, item, prop);
+      // 2026-11-15 (consistency scan): a gem's item tooltip (`PutToolTip_Item`, WndGuildMerit.cpp:275-283), as the Guild
+      // Safebox's cells show theirs: on the pointer, or on a press (a phone's tap)
+      cell.addEventListener('mouseenter', () => this.onHover(item, cell));
+      cell.addEventListener('mouseleave', () => this.onHover(null, null));
+      cell.addEventListener('click', () => this.onHover(item, cell));
+      return cell;
+    }));
   }
 }
 

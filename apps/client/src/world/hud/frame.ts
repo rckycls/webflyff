@@ -212,6 +212,11 @@ export class WindowFrame {
    * APP_STATUS1, APP_NAVIGATOR, APP_REVIVAL and APP_BUFF_STATUS (`WndBase.cpp:2048-2095`): those windows set it false.
    */
   escapeCloses = true;
+  /**
+   * 2026-11-15 (consistency scan): what Escape does to this window when it is the one Escape takes, in place of `close`: the
+   * open own shop asks first ("Will you close your shop?"), as its close button and Cancel do. None: it closes.
+   */
+  onEscape?: () => void;
   private readonly titleText: HTMLElement;
   private readonly doc: Document;
   private open_ = false;
@@ -674,5 +679,6 @@ function onKeyDown(this: Window, event: KeyboardEvent): void {
   const top = escapeWindow(this.document);
   if (top === undefined) return;
   event.preventDefault();
-  top.close();
+  if (top.onEscape !== undefined) top.onEscape();
+  else top.close();
 }

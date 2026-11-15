@@ -98,6 +98,8 @@ export class HousingWindow {
   onInstall: () => void = () => {};
   onRemove: () => void = () => {};
   private readonly rows: HTMLElement;
+  /** What the rows show as drawn last (`draw`). */
+  private drawnRows = '';
 
   constructor(art: UiArt, private readonly doc: Document = document) {
     const window = new ResWindow(HOUSING, art, doc);
@@ -127,6 +129,19 @@ export class HousingWindow {
 
   /** The rows (the chosen one blue, -1 for none), the chosen item's words and the two buttons. */
   draw(rows: readonly HousingRowView[], chosen: number, words: string, buttons: { install: boolean; remove: boolean }): void {
+    // 2026-11-15 (consistency scan): the rows made again only when what they show changed (the once-a-second tick of the
+    // times rebuilt them every second, and a press whose down and up straddled it went nowhere), as the bank redraws
+    const signature = JSON.stringify([rows, chosen]);
+    if (signature !== this.drawnRows) {
+      this.drawnRows = signature;
+      this.drawRows(rows, chosen);
+    }
+    this.window.setText('WIDC_TEXT1', words);
+    this.window.button('WIDC_BUTTON1').disabled = !buttons.install;
+    this.window.button('WIDC_BUTTON2').disabled = !buttons.remove;
+  }
+
+  private drawRows(rows: readonly HousingRowView[], chosen: number): void {
     const top = this.rows.scrollTop;
     this.rows.replaceChildren(...rows.map((row, index) => {
       const line = this.doc.createElement('div');
@@ -146,9 +161,6 @@ export class HousingWindow {
       return line;
     }));
     this.rows.scrollTop = top;
-    this.window.setText('WIDC_TEXT1', words);
-    this.window.button('WIDC_BUTTON1').disabled = !buttons.install;
-    this.window.button('WIDC_BUTTON2').disabled = !buttons.remove;
   }
 }
 

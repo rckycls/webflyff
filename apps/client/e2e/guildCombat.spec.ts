@@ -388,9 +388,9 @@ test('In the arena: logged in during the war, the count-down, the boards, the ow
   await expect(list.locator('.hud-siege-lives')).toHaveText(['5', '3', '5']);
   await expect(list.locator('.hud-siege-member').nth(1).locator('.hud-siege-defender')).toHaveText('D');
   await expect(list.locator('.hud-siege-member').nth(2)).toHaveCSS('color', 'rgb(0, 203, 0)');
-  // the minimap mask is not converted yet: no mask, the map's tile still drawn
+  // the map's tile drawn; its mask (WdGuildWar_Mask.dds) over it once converted (2026-11-15: the owner's assets have it now,
+  // so its count is no longer checked)
   await expect(page.locator('.navigator-map img[src*="wdguildwar"]').first()).toBeAttached(ON_FRAMES);
-  await expect(page.locator('.navigator-mask')).toHaveCount(0);
 
   if (!isPhone()) {
     // Neuz's boards: every guild, the top 10 players and Webby's own row, at (width - 150, 200)

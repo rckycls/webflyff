@@ -8,7 +8,7 @@
 
 import type { ResControl, ResLayout } from '../hud/resWindow';
 import type { ResWindow } from '../hud/resWindow';
-import { NpcWindow, drawSlotIcon, propOf, slotBox, takeDrops } from './npcWindowKit';
+import { NpcWindow, drawSlotIcon, propOf, slotBox, slotTooltip, takeDrops } from './npcWindowKit';
 import type { BagPress } from './npcWindowKit';
 
 const label = (id: string, rect: ResControl['rect'], text = ''): ResControl => ({ kind: 'static', id, rect, text });
@@ -108,7 +108,7 @@ export class ResistItemWindow extends NpcWindow {
     const box = slotBox(window, 'WIDC_CUSTOM3');
     const prop = propOf(this.host, this.item);
     drawSlotIcon(this.host, box, prop);
-    box.title = prop?.name ?? '';
+    slotTooltip(this.host, box, this.item);
     box.toggleAttribute('data-filled', prop !== undefined);
   }
 

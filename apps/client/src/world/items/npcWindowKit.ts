@@ -8,6 +8,7 @@
 // px, its words 14 px, its buttons words a finger can hit.
 
 import type { WebItemProp, WebUltimate } from '@flyffweb/formats';
+import type { InventoryItem } from '@flyffweb/protocol';
 import type { UiArt } from '../hud/art';
 import { themeUrl } from '../hud/art';
 import { parseDialogText } from '../hud/dialogue/dialogText';
@@ -25,9 +26,40 @@ export type NpcWindowPacket =
   | { type: 'repair'; objectIds: number[] }
   | { type: 'chat'; text: string };
 
+/**
+ * 2026-11-15 (consistency scan): an item slot's tooltip host: the item's own tooltip (`createItemDetails`, as the bank's,
+ * the trade's and the mail's slots show it) by `anchor` in `within` (the window), or none (nulls).
+ */
+export interface SlotTipHost {
+  own(): OwnState | undefined;
+  tooltip?(item: InventoryItem | null, anchor: HTMLElement | null, within: HTMLElement | null): void;
+}
+
+/**
+ * 2026-11-15 (consistency scan): `box` shows bag item `objectId`'s tooltip under the desktop's pointer (`PutToolTip_Item`), in
+ * place of the browser's title of its name, which had no stats and showed nothing on a phone; a finger's tap keeps the slot's
+ * own action. Called at each draw with what the slot holds (null: nothing).
+ */
+export function slotTooltip(host: SlotTipHost, box: HTMLElement, objectId: number | null): void {
+  box.removeAttribute('title');
+  if (objectId === null) delete box.dataset.tipObject;
+  else box.dataset.tipObject = String(objectId);
+  if (box.dataset.tipWired !== undefined) return;
+  box.dataset.tipWired = '';
+  box.addEventListener('pointerenter', (event) => {
+    if (event.pointerType !== 'mouse') return;
+    const id = box.dataset.tipObject;
+    const item = id === undefined ? undefined : host.own()?.inventory?.get(Number(id));
+    if (item !== undefined) host.tooltip?.(item, box, box.closest<HTMLElement>('.hud-window'));
+  });
+  box.addEventListener('pointerleave', () => host.tooltip?.(null, null, null));
+}
+
 export interface NpcWindowHost {
   own(): OwnState | undefined;
   props: ReadonlyMap<number, WebItemProp>;
+  /** 2026-11-15 (consistency scan): a slot's item tooltip (`slotTooltip`). */
+  tooltip?(item: InventoryItem | null, anchor: HTMLElement | null, within: HTMLElement | null): void;
   /** data/ultimate.json: the jewel by level, the jewels' stats and the windows' descriptions. */
   ultimate(): WebUltimate | undefined;
   /** A TID's text ('' when unknown). */

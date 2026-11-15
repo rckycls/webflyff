@@ -61,7 +61,8 @@ test('the Motion window: O or Start > Motion, a motion and an emoticon used, Sit
   await window.getByRole('button', { name: 'Motion', exact: true }).click();
   const target = page.locator('.hud-slot[data-row="item"][data-slot="4"]');
   if (isPhone()) {
-    await cell(page, 'Shake Hands').click();
+    // a finger's tap chooses the icon (a mouse click only uses it), and the Task bar button picks the chosen one
+    await cell(page, 'Shake Hands').tap();
     await window.getByRole('button', { name: 'Task bar', exact: true }).click();
     await target.click();
   } else {

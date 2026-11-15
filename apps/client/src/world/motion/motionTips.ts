@@ -7,6 +7,7 @@
 //   CWndTaskBar::PutTooTip          _Interface/WndTaskBar.cpp:584-587, :631-670  the same on the bar, the Cheer's points
 //                                                                     after "\n\n"
 
+import { formatDuration } from '../hud/duration';
 import { formatText } from '../hud/format';
 import { MotId, emoticonLine, motionProp } from './motionTable';
 
@@ -20,15 +21,12 @@ export interface CheerView {
 }
 
 /**
- * The time to the next point as `CTimeSpan` gives it: its minutes (`GetMinutes`, 0-59) with `TID_PK_LIMIT_MINUTE`
- * ("%.1dmin"), or under a minute its seconds with `TID_PK_LIMIT_SECOND` ("%.1dsec").
+ * The time to the next point in one unit, as `CTimeSpan` gives it (its minutes, or under a minute its seconds); 2026-11-15
+ * (consistency scan) as `formatDuration`, as every other duration since 2026-11-14 (the owner): "25m", "42s". It was
+ * `TID_PK_LIMIT_MINUTE` / `TID_PK_LIMIT_SECOND`'s words ("25min", "42sec").
  */
-function restText(restMs: number, text: (tid: string) => string): string {
-  const seconds = Math.max(0, Math.trunc(restMs / 1000));
-  const minutes = Math.trunc(seconds / 60) % 60;
-  return minutes <= 0
-    ? formatText(text('TID_PK_LIMIT_SECOND') || '%dsec', [seconds % 60])
-    : formatText(text('TID_PK_LIMIT_MINUTE') || '%dmin', [minutes]);
+function restText(restMs: number): string {
+  return formatDuration(Math.max(0, Math.trunc(restMs / 1000)), 's', 1);
 }
 
 /**
@@ -44,7 +42,7 @@ export function motionTip(id: number, cheer: CheerView | null, text: (tid: strin
   if (bar) lines.push('');
   lines.push(formatText(text('TID_CHEER_MESSAGE1') || 'Cheer Message Point(s): %d/3', [cheer.points]));
   if (cheer.points < MAX_CHEER_POINT) {
-    lines.push((text('TID_CHEER_MESSAGE2') || 'Time left until the next point') + restText(cheer.restMs, text));
+    lines.push((text('TID_CHEER_MESSAGE2') || 'Time left until the next point') + restText(cheer.restMs));
   }
   return lines;
 }

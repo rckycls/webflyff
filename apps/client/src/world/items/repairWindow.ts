@@ -8,7 +8,7 @@
 
 import type { ResControl, ResLayout } from '../hud/resWindow';
 import type { ResWindow } from '../hud/resWindow';
-import { NpcWindow, drawSlotIcon, propOf, takeDrops } from './npcWindowKit';
+import { NpcWindow, drawSlotIcon, propOf, slotTooltip, takeDrops } from './npcWindowKit';
 import type { BagPress, NpcWindowHost } from './npcWindowKit';
 
 /** `MAX_REPAIRINGITEM` (_Common/ProjectCmn.h:13): 5 x 5 cells of 32 px. */
@@ -167,7 +167,7 @@ export class RepairWindow extends NpcWindow {
     window.control('WIDC_GRID').querySelectorAll<HTMLElement>('.hud-repair-cell').forEach((cell, i) => {
       const prop = propOf(this.host, this.cells[i] ?? null);
       drawSlotIcon(this.host, cell, prop);
-      cell.title = prop?.name ?? '';
+      slotTooltip(this.host, cell, this.cells[i] ?? null);
       cell.toggleAttribute('data-filled', prop !== undefined);
     });
     window.setText('WIDC_STATIC3', String(this.cost));

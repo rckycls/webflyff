@@ -95,7 +95,7 @@ export class RankingWindow {
     const window = new ResWindow(rankingLayout(title), art, doc);
     window.frame.element.classList.add('hud-gc', 'hud-gc-rank');
     window.button('WIDC_CLOSE').addEventListener('click', () => window.close());
-    this.tabs = new TabPages(doc, ['United Rank', ...TAB_NAMES], () => { this.selectedRow = -1; this.signature = ''; this.refresh(); });
+    this.tabs = new TabPages(doc, art, ['United Rank', ...TAB_NAMES], 380, () => { this.selectedRow = -1; this.signature = ''; this.refresh(); });
     window.control('WIDC_TABCTRL1').append(this.tabs.element);
     this.window = window;
   }

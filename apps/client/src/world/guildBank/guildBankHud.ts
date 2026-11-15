@@ -276,6 +276,9 @@ export class GuildBankHud {
       if (!this.quiet) screen.send(encodeCloseGuildBankWnd());
     };
 
+    // 2026-11-15 (consistency scan): the gems' tooltips, in the merit window, gone with it
+    this.merit.onHover = (item, anchor) => screen.showTooltip(item, anchor, this.merit.window.frame.element);
+    this.merit.window.onClose = () => screen.showTooltip(null, null, this.merit.window.frame.element);
     this.merit.onCheck = (on) => {
       this.merit.showItems(on ? meritItems(screen.bagItems(), (id) => screen.prop(id)) : [], (id) => screen.prop(id));
     };
