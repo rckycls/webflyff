@@ -468,3 +468,33 @@ describe('AutoPlay controller: auto skills and buffs (spec 6.4, 6.7)', () => {
     expect(state.skills).toEqual([]);
   });
 });
+
+describe('AutoPlay in a hidden tab (spec 6.10): the rules step from the worker clock, not from frames', () => {
+  it('worker pulses alone (no frame) keep the farm bot engaging, kill after kill; the saver stops only the drawing', async () => {
+    const { SimulationClock } = await import('../src/world/simulationClock');
+    const { SaverScreen } = await import('../src/world/hud/autoPlay/saverScreen');
+    const { state, hooks } = world();
+    const first = mob(21, 3, 0), second = mob(22, 6, 0);
+    state.mobs = [first, second];
+    const play = new AutoPlay(hooks, defaultSettings());
+    let pulse: (() => void) | null = null, clockNow = 0, drawing = true;
+    const saver = new SaverScreen(play, { isPhone: () => false, gauges: () => state.gauges, onShow: (shown) => { drawing = !shown; } }, {
+      createElement: () => ({ append() {}, addEventListener() {}, setAttribute() {}, style: {}, dataset: {}, className: '', hidden: true, textContent: '' }),
+    } as unknown as Document);
+    const clock = new SimulationClock((steps) => {
+      for (let i = 0; i < steps; i++) { state.now += 1000 / 60; play.step(); saver.step(state.now); }
+    }, () => false, () => ({ addEventListener: (_type, listener) => { pulse = listener; }, terminate: () => {} }), () => clockNow);
+    play.start();
+    saver.show();
+    expect(drawing).toBe(false);
+    for (let i = 0; i < 10; i++) { clockNow += 50; pulse!(); }
+    expect(state.engaged).toEqual([21]);
+    first.hp = 0;
+    state.mobs = [second];
+    play.onEvent({ kind: 'kill', targetId: 21, pos: first.pos });
+    for (let i = 0; i < 10; i++) { clockNow += 50; pulse!(); }
+    expect(state.engaged).toEqual([21, 22]);
+    expect(play.farm).toBe('running');
+    clock.dispose();
+  });
+});
