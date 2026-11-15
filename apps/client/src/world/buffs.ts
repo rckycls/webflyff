@@ -11,7 +11,7 @@
 /** `BUFF_ITEM` 0 and `BUFF_SKILL` 1 (`_Common/buff.h`): the common buffs a death removes. */
 const COMMON: ReadonlySet<number> = new Set([0, 1]);
 /** `BUFF_ITEM2`: an item's buff whose level is its end (on the wire, the seconds it has left). */
-const BUFF_ITEM2 = 3;
+export const BUFF_ITEM2 = 3;
 /** `if( ( m_nCount & 63 ) == 0 )`: how often the times are looked at. */
 const CHECK_FRAMES = 64;
 
@@ -84,7 +84,7 @@ export class MoverBuffs {
 }
 
 /** `BUFF_ITEM` and `BUFF_SKILL` (`_Common/buff.h`): the buffs whose `Apply` is `ApplyParam` (a pet's and a worn set's are not). */
-const BUFF_ITEM = 0;
+export const BUFF_ITEM = 0;
 export const BUFF_SKILL = 1;
 /**
  * What `ApplyParam` does not hand to `SetDestParam` (MoverActEvent.cpp:205-470): DST_HP, DST_MP, DST_FP (38-40, a heal's,

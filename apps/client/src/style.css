@@ -4781,3 +4781,126 @@ fieldset:disabled .btn {
   /* the Siege Ranking icon's text, while its picture is missing, stays inside the icon's box */
   .hud-mobile-tool-icon:not([style]) { display: flex; align-items: center; justify-content: center; font: bold 9px Verdana, Arial, sans-serif; color: #fff; text-shadow: 0 0 2px #000; }
 }
+
+/* custom (owner 2026-11-15): the Auto Play window (hud/autoPlay/autoPlayWindow.ts): Farm, Potions and Skills under Neuz's
+   tab strip (hud/guildCombat/tabs.ts), in the Action Slot window's colours */
+.hud-auto-play > .hud-window-body { box-sizing: border-box; padding: 4px; overflow: hidden; background: #fff6eb; }
+.auto-play-tabs { position: relative; width: 100%; height: 100%; }
+.auto-play-tabs .hud-gc-page {
+  box-sizing: border-box; padding: 4px 6px; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y;
+  display: flex; flex-direction: column; gap: 4px; border: 1px solid #8f8f8f; background: #fffaf5;
+  color: #382b20; font: 11px/1.25 Verdana, Geneva, Tahoma, sans-serif;
+}
+.auto-play-tabs .hud-gc-tab:disabled { color: #9a8f86; cursor: default; }
+.auto-check { display: flex; align-items: center; gap: 4px; font-weight: bold; }
+.auto-pot-row { display: flex; align-items: center; gap: 4px; min-height: 32px; }
+.auto-pot-name { flex: none; width: 22px; font-weight: bold; }
+.auto-slot {
+  flex: none; display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; padding: 0;
+  border: 1px solid #d7ac8f; border-radius: 5px; background: #f4e8dc; cursor: pointer;
+}
+.auto-pot-row.is-missing .auto-slot { opacity: .5; }
+.auto-icon { flex: none; width: 26px; height: 26px; background: no-repeat 0 0 / 100% 100%; }
+.auto-pot-count { flex: none; width: 34px; }
+.auto-pot-use { flex: none; color: #6b5a4c; }
+.auto-pot-below { flex: none; width: 30px; text-align: center; }
+.auto-pot-row [data-auto-play], .auto-farm [data-auto-play] {
+  flex: none; min-width: 24px; height: 24px; padding: 0 4px; border: 1px solid #ba9377; border-radius: 4px;
+  background: #fff1df; color: #463027; font: bold 12px/1 Verdana, Arial, sans-serif;
+}
+.auto-pot-row [data-auto-play]:disabled { opacity: .45; }
+.auto-pick-list {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 3px; max-height: 84px; overflow-y: auto;
+  overscroll-behavior: contain; touch-action: pan-y;
+}
+.auto-pick-list[data-empty] { display: block; color: #6b5a4c; }
+.auto-pick {
+  display: flex; align-items: center; gap: 4px; min-height: 30px; padding: 1px 4px; border: 1px solid #d7ac8f;
+  border-radius: 5px; background: #fffaf5; color: inherit; font: inherit; font-size: 10px; text-align: left;
+}
+@media (max-width: 1000px) and (pointer: coarse) {
+  .auto-pot-row [data-auto-play] { min-width: 32px; height: 32px; }
+}
+
+/* custom (owner 2026-11-15): Auto Play's Farm tab */
+.auto-farm { display: flex; flex-direction: column; gap: 5px; }
+.auto-farm-line { display: flex; align-items: center; gap: 4px; min-height: 28px; }
+.auto-farm-caption { flex: none; width: 72px; font-weight: bold; }
+.auto-farm-radius, .auto-farm-stop-after { flex: none; width: 38px; text-align: center; }
+.auto-farm-go {
+  align-self: flex-start; min-width: 90px; height: 28px; padding: 0 12px; border: 1px solid #ba9377; border-radius: 4px;
+  background: #fff1df; color: #463027; font: bold 12px/1 Verdana, Arial, sans-serif;
+}
+.auto-farm-go:disabled { opacity: .45; }
+.auto-farm-state { font-weight: bold; }
+.auto-farm-stats { color: #6b5a4c; word-spacing: 4px; }
+@media (max-width: 1000px) and (pointer: coarse) {
+  .auto-farm [data-auto-play] { min-width: 32px; height: 32px; }
+  .auto-farm-go { height: 34px; }
+}
+
+/* custom (owner 2026-11-15): Auto Play's AUTO button (hud/autoPlay/autoButton.ts): desktop, at the right end above the task
+   bar; grey while off, gold and pulsing while it runs, a red "!" after a stop */
+.hud-auto-button {
+  position: absolute; right: 8px; bottom: calc(var(--hud-taskbar-height, 48px) + 8px); z-index: 30; pointer-events: auto;
+  min-width: 54px; height: 26px; padding: 0 8px; border: 1px solid #8f8f8f; border-radius: 13px;
+  background: linear-gradient(#e9e9e9, #b9b9b9); color: #3a3a3a; font: bold 11px/24px Verdana, Arial, sans-serif;
+  box-shadow: 0 1px 3px #0007; cursor: pointer;
+}
+.hud-auto-button[data-state='running'] {
+  border-color: #a8791c; background: linear-gradient(#ffe48a, #e0a526); color: #4a2f00; animation: hud-auto-pulse 1.6s ease-in-out infinite;
+}
+.hud-auto-mark { margin-left: 3px; color: #c0201a; }
+@keyframes hud-auto-pulse { 50% { box-shadow: 0 0 9px #ffcf4a; } }
+@media (prefers-reduced-motion: reduce) { .hud-auto-button[data-state='running'] { animation: none; } }
+
+/* custom (owner 2026-11-15): Auto Play's Skills tab: the ready skills' 4 slots and the buffs' 8, each with × */
+.auto-skills { display: flex; flex-direction: column; gap: 5px; }
+.auto-slot-row { display: flex; align-items: center; gap: 3px; flex-wrap: wrap; }
+.auto-slot-row .auto-farm-caption { width: 84px; }
+.auto-slot-cell { position: relative; flex: none; }
+.auto-slot.is-missing { opacity: .45; }
+.auto-slot:disabled { opacity: .3; cursor: default; }
+.auto-slot-clear {
+  position: absolute; top: -5px; right: -5px; width: 16px; height: 16px; min-height: 0; padding: 0; border: 1px solid #ba9377;
+  border-radius: 50%; background: #fff1df; color: #8a2b1f; font: bold 10px/1 Arial, sans-serif;
+}
+@media (max-width: 1000px) and (pointer: coarse) {
+  .auto-slot-clear { width: 20px; height: 20px; font-size: 12px; }
+}
+
+/* custom (owner 2026-11-15): a phone's AUTO button above the quick slot over Attack (slot 3, --qx 0 --qy 1), in Attack's
+   column; and the Auto Play window as the phone's other compact windows */
+@media (max-width: 1000px) and (pointer: coarse) {
+  .hud-auto-button {
+    min-width: 58px; height: 30px; border-radius: 15px; font-size: 12px; line-height: 28px;
+    right: calc(var(--attack-right) + var(--attack-size) / 2 - 29px);
+    bottom: calc(var(--attack-bottom) + var(--attack-size) / 2 + var(--quick-radius) + var(--quick-size) / 2 + 10px);
+    touch-action: none; -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; user-select: none;
+  }
+  .hud-auto-play .auto-play-tabs .hud-gc-page { font-size: 12px; }
+  .hud-auto-play .auto-play-tabs .hud-gc-tab { height: 28px; font-size: 13px; line-height: 26px; }
+  .hud-auto-play .auto-play-tabs .hud-gc-page { bottom: 28px; }
+  .hud-auto-play .auto-play-tabs .hud-gc-tabs { height: 28px; }
+}
+/* a phone window over the world hides the AUTO button as it hides Attack */
+.world:has(:is(.hud-quests, .hud-inventory, .hud-auto-play)[data-mobile-window]:not([hidden])) .hud-auto-button { visibility: hidden; }
+
+/* custom (owner 2026-11-15): Auto Play's battery saver (hud/autoPlay/saverScreen.ts): black, dim text, the world not drawn */
+.hud-auto-saver {
+  position: fixed; inset: 0; z-index: 10000; pointer-events: auto; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 14px; background: #000; color: #7d7d7d;
+  font: 14px/1.5 Verdana, Geneva, Tahoma, sans-serif; text-align: center; cursor: pointer; touch-action: manipulation;
+}
+.hud-auto-saver[hidden] { display: none; }
+.saver-text { white-space: pre-line; }
+.saver-gauges { display: flex; flex-direction: column; gap: 6px; width: min(260px, 70vw); }
+.saver-gauge { display: flex; align-items: center; gap: 8px; font-size: 11px; }
+.saver-gauge > span:first-child { width: 22px; text-align: right; }
+.saver-track { flex: 1; height: 6px; border-radius: 3px; background: #1d1d1d; overflow: hidden; }
+.saver-fill { display: block; height: 100%; width: 0; background: #5a5a5a; }
+.saver-gauge[data-gauge='hp'] .saver-fill { background: #7a2f2f; }
+.saver-gauge[data-gauge='mp'] .saver-fill { background: #2f4a7a; }
+.saver-gauge[data-gauge='fp'] .saver-fill { background: #2f6a3a; }
+.saver-hint { font-size: 11px; color: #4a4a4a; }
+.auto-farm-buttons { display: flex; gap: 6px; }
