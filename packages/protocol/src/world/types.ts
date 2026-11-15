@@ -22,9 +22,10 @@ import type { PostMessage } from './post';
 import type { LordMessage } from './lord';
 import type { HonorMessage } from './honor';
 import type { HpLayerMessage } from './hpLayer';
+import type { GuildCombatMessage } from './guildCombat';
 
 export type WorldMessage = ChatMessage | NpcMessage | ShopMessage | QuestMessage | PetMessage | FriendMessage | TradeMessage | VendorMessage
-  | GuildMessage | GuildDirectMessage | BankMessage | GuildBankMessage | PostMessage | LordMessage | HonorMessage | HpLayerMessage
+  | GuildMessage | GuildDirectMessage | BankMessage | GuildBankMessage | PostMessage | LordMessage | HonorMessage | HpLayerMessage | GuildCombatMessage
   | { type: 'profileStats'; values: number[] }
   | { type: 'addItem'; item: GroundItem }
   | { type: 'createItem'; itemType: number; item: InventoryItem; stacks: Array<{ objectId: number; count: number }> }
@@ -574,6 +575,8 @@ export interface AddedPlayer {
   guildId?: number;
   warId?: number;
   guildCloak?: number;
+  /** `m_nGuildCombatState` (2026-11-15, Guild Siege): 1 fighting, 2 waiting/observer-entrant; present only when not 0. */
+  guildCombatState?: number;
   /** `m_dwPKTime`: the milliseconds of pink state left (the world server sends `m_dwPKTime - GetTickCount()`), or 0. */
   pkTime: number;
   pkValue: number;

@@ -86,7 +86,7 @@ function objectHead(index: number, scaleTimes100: number, angleTimes10: number, 
  */
 function playerCommon(
   w: ArWriter, name: string, guild: boolean, party: boolean, stats: readonly number[] = [15, 16, 17, 18], useItemId = 0,
-  fuel: readonly [number, number] = [-1, 0],
+  fuel: readonly [number, number] = [-1, 0], guildCombatState = 0,
 ): ArWriter {
   w.string(name).u8(1).u8(2).u8(3).u32(0xff112233).u8(4) // name, sex, skin set, hair mesh, hair colour, head mesh
     .u32(777).u8(9) // m_idPlayer, m_nJob
@@ -99,7 +99,7 @@ function playerCommon(
     .u32(5000).i32(3).u32(100).u32(7) // m_dwPKTime, m_nPKValue, m_dwPKPropensity, m_dwPKExp
     .i32(12).u8(0).i32(6); // m_nFame, m_nDuel, m_nHonor
   repeat(w, MAX_HUMAN_PARTS, (x, i) => x.i32(i)); // m_aEquipInfo[i].nOption
-  w.i32(0); // m_nGuildCombatState
+  w.i32(guildCombatState); // m_nGuildCombatState
   return repeat(w, SM_MAX, (x, i) => x.u32(i * 1000)); // m_dwSMTime
 }
 
@@ -114,11 +114,11 @@ const playerBase = {
 };
 
 /** Another player (METHOD_EXCLUDE_ITEM): `OnAddObj` sees an object ID that is not `g_pPlayer`'s. */
-function otherPlayerFields(useItemId = 0, fuel: readonly [number, number] = [-1, 0]): ArWriter {
+function otherPlayerFields(useItemId = 0, fuel: readonly [number, number] = [-1, 0], guildCombatState = 0): ArWriter {
   const w = objectHead(11, 100, 905, OTHER)
     // m_dwMotion, m_bPlayer, m_nHitPoint, state, state flag, m_dwBelligerence, m_dwMoverSfxId
     .u16(0x15).u8(1).i32(1234).u32(0x11).u32(0x2).u8(0).u32(NULL_ID);
-  playerCommon(w, 'Hero', true, true, undefined, useItemId, fuel)
+  playerCommon(w, 'Hero', true, true, undefined, useItemId, fuel, guildCombatState)
     .string('Cheap swords') // m_vtInfo.GetTitle()
     .u8(3) // uSize, then uParts, (u_short)m_dwItemId and m_byFlag for each
     .u8(2).u16(500).u8(0)
@@ -129,6 +129,13 @@ function otherPlayerFields(useItemId = 0, fuel: readonly [number, number] = [-1,
 }
 
 describe('ADD_OBJ (OnAddObj)', () => {
+  it('guildCombatState 1 is kept (2026-11-15, Guild Siege: m_nGuildCombatState), and 0 leaves it out', () => {
+    const fighting = readOne(OTHER, otherPlayerFields(0, [-1, 0], 1).toBytes());
+    expect(fighting).toMatchObject({ type: 'addMover', mover: { player: { guildCombatState: 1 } } });
+    const none = readOne(OTHER, otherPlayerFields().toBytes());
+    expect((none as { mover: { player: object } }).mover.player).not.toHaveProperty('guildCombatState');
+  });
+
   it('reads another player', () => {
     expect(readOne(OTHER, otherPlayerFields().toBytes())).toEqual({
       type: 'addMover',

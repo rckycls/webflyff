@@ -1,6 +1,8 @@
 import { readBankRequestPacket } from '../world/bank';
 import type { BankRequestPacket } from '../world/bank';
 import { readGuildBankRequestPacket } from '../world/guildBank';
+import { readGuildCombatRequestPacket } from '../world/guildCombat';
+import type { GuildCombatRequestPacket } from '../world/guildCombat';
 import type { GuildBankRequestPacket } from '../world/guildBank';
 import { readPostRequestPacket } from '../world/post';
 import type { PostRequestPacket } from '../world/post';
@@ -375,6 +377,7 @@ export type WorldPacket =
   | PostRequestPacket
   // 2026-11-15: the guild bank's packets the browser sends (world/guildBank.ts)
   | GuildBankRequestPacket
+  | GuildCombatRequestPacket
   // 2026-11-11: the Lord system's packets the browser sends (world/lord.ts)
   | LordRequestPacket
   // 2026-11-11: the honour title the browser asks for (world/honor.ts)
@@ -792,6 +795,9 @@ function decodeClientPacket(r: ArReader): WorldPacket {
       // 2026-11-11: the Lord system's (world/lord.ts)
       const lord = readLordRequestPacket(packetType, r);
       if (lord !== null) { r.expectEnd(); return lord; }
+      // 2026-11-15: the siege's (world/guildCombat.ts)
+      const guildCombat = readGuildCombatRequestPacket(packetType, r);
+      if (guildCombat !== null) { r.expectEnd(); return guildCombat; }
       // 2026-11-11: the honour window's (world/honor.ts)
       const honor = readHonorRequestPacket(packetType, r);
       if (honor !== null) { r.expectEnd(); return honor; }

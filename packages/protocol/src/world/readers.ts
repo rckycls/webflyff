@@ -3,6 +3,7 @@ import { GUILD_BANK_READERS } from './guildBank';
 import { LORD_READERS } from './lord';
 import { HONOR_READERS } from './honor';
 import { HP_LAYER_READERS } from './hpLayer';
+import { GUILD_COMBAT_READERS } from './guildCombat';
 import { POST_READERS } from './post';
 import type { MessageReader } from '../bundle';
 import { MessageType } from '../constants';
@@ -243,4 +244,6 @@ export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
     ...HONOR_READERS,
     // 2026-11-11: layered boss HP, a server addition (world/hpLayer.ts)
     ...HP_LAYER_READERS,
+    // 2026-11-15: the Guild Siege snapshot (world/guildCombat.ts)
+    ...GUILD_COMBAT_READERS,
   ]);
