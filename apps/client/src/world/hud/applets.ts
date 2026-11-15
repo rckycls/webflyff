@@ -38,7 +38,9 @@ export const AppId = {
  * `CWndMgr::AddAllApplet` (`FuncApplet.cpp:175-302`) for `__VER` 15 and `__MAINSERVER`, in a language other than French
  * (`APP_LORD_SKILL` 'L', `APP_COUPLE_MAIN` 'F', the quest key 'Q', `NeuzMsgProc.cpp:174-181`). `__IMPROVE_MAP_SYSTEM` and
  * `__GUILDVOTE` are in the dead internal and test sections of `Neuz/VersionCommon.h` (`APP_MAP`, no `APP_GUILD_VOTE`),
- * `__TMP_POCKET`, `__NEW_WEB_BOX` and `__Y_INTERFACE_VER3` are commented out, and the `__BB_*` windows are on (:210-214).
+ * `__TMP_POCKET`, `__NEW_WEB_BOX` and `__Y_INTERFACE_VER3` are commented out. 2026-11-16 (owner): the `__BB_*` windows'
+ * rows (Teleporter, 3v3 Arena, Dungeon Status, Dungeon Entry, :210-214) are gone with the custom features (2026-11-11);
+ * Dungeon Entry's Y was Housing's too.
  * `APP_MESSENGER_` is `APP_MESSENGER_EX` (`AppDefine.h:9-10`). Later registrations of an id replace earlier ones
  * (`m_mapAppletFunc.SetAt`); there are none here.
  */
@@ -59,10 +61,6 @@ export const APPLETS: ReadonlyMap<number, Applet> = new Map([
   [591, applet('APP_VENDOR_REVISION', 'Icon_Applet.dds', 'TID_TIP_VENDOR')],
   [859, applet('APP_QUEST_EX_LIST', 'Icon_Quest.dds', 'TID_TIP_QUEST', 'Q')],
   [195, applet('APP_PARTY', 'Icon_Troupe.dds', 'TID_TIP_PARTY', 'P')],
-  [2023, applet('APP_TELEPORTER', 'Icon_Applet.dds', 'Teleporter', 'U')],
-  [2024, applet('APP_ARENA_3V3', 'Icon_Applet.dds', '3v3 Arena', 'Z')],
-  [2026, applet('APP_DUNGEON_STATUS', 'Icon_Applet.dds', 'Dungeon Status')],
-  [2025, applet('APP_DUNGEON_UI', 'Icon_Applet.dds', 'Dungeon Entry', 'Y')], // BB_DUNGEON_UI_HOTKEY, _Common/DungeonUiInfo.h:6
   [323, applet('APP_GUILD', 'Icon_Troupe.dds', 'TID_TIP_COMPANY', 'G')],
   [689, applet('APP_BAG_EX', 'Icon_BagBag.tga', 'TID_APP_BAG_EX', 'B')],
   [398, applet('APP_COMM_ITEM', 'Icon_CItemTime.dds', 'TID_TIP_ITEMTIME', 'J')],

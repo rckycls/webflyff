@@ -143,6 +143,16 @@ test('the seller: an item up with its price, the shop named and opened, a sale, 
   await expect(chat.locator('.vendor-chat-pane').nth(1)).toContainText('Character: Buyer has purchased');
   await expect(chat.locator('.vendor-chat-pane').nth(1)).toContainText('2000 penya');
 
+  // 2026-11-16 (owner): the Start menu's line asks too while the shop is open; Cancel keeps it open
+  await page.getByRole('button', { name: 'Start', exact: true }).click();
+  await page.getByRole('menuitem', { name: 'Private Shop', exact: true }).click();
+  const ask = page.locator('.hud-message:not([hidden])');
+  await expect(ask.locator('.hud-message-text')).toHaveText('Will you close your shop?');
+  await ask.locator('[data-button="cancel"]').click();
+  await expect(ask).toBeHidden();
+  await expect(shop).toBeVisible();
+  expect(sent(gateway, VendorPacket.PVENDOR_CLOSE)).toHaveLength(0);
+
   // Cancel asks; OK shuts the window and sends PVENDOR_CLOSE with the own id
   if (isMobile) await shop.locator('[data-vendor-button="cancel"]').tap();
   else await shop.locator('[data-control="WIDC_CANCEL"]').click();
