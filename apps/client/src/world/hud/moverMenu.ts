@@ -45,12 +45,29 @@ export const MMI = {
   GUILDHOUSE_SALE: 147, GUILDHOUSE_CHARGE: 148, GUILDHOUSE_ENTER: 149, GUILDHOUSE_OUT: 150,
   /** 2026-11-15: the Hair Designer's Beauty Shop and the Makeup Artist's Cosmetic Upgrades (beauty/beautyWindows.ts). */
   BEAUTYSHOP: 13, BEAUTYSHOP_SKIN: 42,
+  /**
+   * 2026-11-15 (Guild Siege, B3): Frankie's and Donaris's entries (defineNeuz.h:118-134; WndWorld.cpp:3941-4159). Frankie:
+   * Apply, Status, Join, Entry, the boards 1-3; Donaris: Cancel, Ranking, Jackpot, Jackpot2, Info.
+   */
+  GUILDWAR_APP: 26, GUILDWAR_STATE: 27, GUILDWAR_CANCEL: 28, GUILDWAR_JOIN: 29, GUILDCOMBAT_RANKING: 30,
+  GUILDCOMBAT_SELECTION: 33, GUILDCOMBAT_JACKPOT: 34, GUILDCOMBAT_JACKPOT2: 35, GUILDCOMBAT_BESTPLAYER: 36,
+  GUILDCOMBAT_INFO_BOARD1: 37, GUILDCOMBAT_INFO_BOARD2: 38, GUILDCOMBAT_INFO_BOARD3: 39, GUILDCOMBAT_INFO_TEX: 40,
+  GUILDCOMBAT_PENYA_RETURN: 41,
 } as const;
 /** 2026-11-15: personal housing's entries (`WndWorld.cpp:5221-5234`). */
 const HOUSING_ENTRIES: ReadonlySet<number> = new Set([
   MMI.VISIT_MYROOM, MMI.VISIT_FRIEND, MMI.RETURNTO_WORLD,
   // 2026-11-15: the guild house's (`WndWorld.cpp:6091-6133`)
   MMI.GUILDHOUSE_SALE, MMI.GUILDHOUSE_CHARGE, MMI.GUILDHOUSE_ENTER, MMI.GUILDHOUSE_OUT,
+]);
+/**
+ * 2026-11-15 (Guild Siege, B3): the siege NPCs' entries the browser opens. BESTPLAYER (36) and PENYA_RETURN (41) are on no
+ * NPC (character.inc), so they stay out and greyed.
+ */
+export const GUILD_COMBAT_ENTRIES: ReadonlySet<number> = new Set([
+  MMI.GUILDWAR_APP, MMI.GUILDWAR_STATE, MMI.GUILDWAR_CANCEL, MMI.GUILDWAR_JOIN, MMI.GUILDCOMBAT_RANKING, MMI.GUILDCOMBAT_SELECTION,
+  MMI.GUILDCOMBAT_JACKPOT, MMI.GUILDCOMBAT_JACKPOT2, MMI.GUILDCOMBAT_INFO_BOARD1, MMI.GUILDCOMBAT_INFO_BOARD2,
+  MMI.GUILDCOMBAT_INFO_BOARD3, MMI.GUILDCOMBAT_INFO_TEX,
 ]);
 /**
  * 2026-11-10: the Arena's and the Forsaken Tower's entries: Enter and Leave Arena send their header
@@ -126,7 +143,9 @@ export function npcMenuEntries(npc: WebNpc | undefined, texts: Texts, ownIsBaseJ
         // 2026-11-11: the Lord Manager's (MaFl_KINGAIDE, Resource/character.inc:6903-6926; lord/lordHud.ts)
         LORD_MENU.has(id) ||
         // 2026-11-15: Charlie's and the room door's (housing/housingHud.ts)
-        HOUSING_ENTRIES.has(id),
+        HOUSING_ENTRIES.has(id) ||
+        // 2026-11-15: Frankie's and Donaris's (guildCombat/guildCombatHud.ts)
+        GUILD_COMBAT_ENTRIES.has(id),
     }));
 }
 

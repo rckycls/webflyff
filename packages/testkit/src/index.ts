@@ -84,3 +84,4 @@ export {
   writeAddCoupleExperience, writeAddRegion, writeCouple, writeCoupleResult, writeDecoupleResult, writeDuelCount, writeDuelNo,
   writeDuelRequest, writeDuelStart, writeProposeResult, writeSetDuel,
 } from './social';
+export { writeGuildCombat } from './guildCombat'; // 2026-11-15

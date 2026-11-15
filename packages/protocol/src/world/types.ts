@@ -27,11 +27,12 @@ import type { HpLayerMessage } from './hpLayer';
 import type { TaxMessage } from './tax';
 import type { CoupleMessage } from './couple'; // 2026-11-15 (social)
 import type { DuelMessage } from './duel'; // 2026-11-15 (social)
+import type { GuildCombatMessage } from './guildCombat';
 
 export type WorldMessage = ChatMessage | NpcMessage | ShopMessage | QuestMessage | PetMessage | FriendMessage | TradeMessage | VendorMessage
   | GuildMessage | GuildDirectMessage | BankMessage | GuildBankMessage | HousingMessage | GuildHouseMessage | PostMessage | LordMessage | HonorMessage | HpLayerMessage
   | TaxMessage
-  | CoupleMessage | DuelMessage
+  | CoupleMessage | DuelMessage | GuildCombatMessage
   | { type: 'profileStats'; values: number[] }
   | { type: 'addItem'; item: GroundItem }
   | { type: 'createItem'; itemType: number; item: InventoryItem; stacks: Array<{ objectId: number; count: number }> }
@@ -592,6 +593,8 @@ export interface AddedPlayer {
   guildId?: number;
   warId?: number;
   guildCloak?: number;
+  /** `m_nGuildCombatState` (2026-11-15, Guild Siege): 1 fighting, 2 waiting/observer-entrant; present only when not 0. */
+  guildCombatState?: number;
   /** `m_dwPKTime`: the milliseconds of pink state left (the world server sends `m_dwPKTime - GetTickCount()`), or 0. */
   pkTime: number;
   pkValue: number;

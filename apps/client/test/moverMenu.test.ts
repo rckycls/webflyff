@@ -170,3 +170,27 @@ describe('MoverMenu (CWndMenu, WndControl.cpp:3337-3630)', () => {
     add.mockRestore(); remove.mockRestore();
   });
 });
+
+describe('2026-11-15 (Guild Siege, B3): Frankie and Donaris (Resource/character.inc:3763-3810; WndWorld.cpp:3941-4159)', () => {
+  const siegeTexts = new Map([...TEXTS, ...[26, 27, 28, 29, 30, 33, 34, 35, 36, 37, 38, 39, 40, 41].map((id) => text(`TID_MMI_${id}`, 7000 + id, `Entry ${id}`))]);
+  const FRANKIE: WebNpc = { key: 'MaFl_GuildWar', name: 'Frankie', menus: [0, 26, 27, 29, 33, 37, 38, 39] };
+  const DONARIS: WebNpc = { key: 'MaFl_Donaris', name: 'Donaris', menus: [0, 28, 30, 34, 35, 40] };
+  const enabled = (npc: WebNpc) => npcMenuEntries(npc, siegeTexts, false).filter((entry) => entry.enabled).map((entry) => entry.id);
+
+  it('Frankie lists Apply, Status, Join, Entry and boards 1-3, all enabled', () => {
+    expect(npcMenuEntries(FRANKIE, siegeTexts, false).map((entry) => entry.id)).toEqual([0, 26, 27, 29, 33, 37, 38, 39]);
+    expect(enabled(FRANKIE)).toEqual([0, 26, 27, 29, 33, 37, 38, 39]);
+  });
+
+  it('Donaris lists Cancel, Ranking, Jackpot, Jackpot2 and Info, all enabled', () => {
+    expect(npcMenuEntries(DONARIS, siegeTexts, false).map((entry) => entry.id)).toEqual([0, 28, 30, 34, 35, 40]);
+    expect(enabled(DONARIS)).toEqual([0, 28, 30, 34, 35, 40]);
+  });
+
+  it('the numbers are the defineNeuz.h ones; BESTPLAYER 36 and PENYA_RETURN 41 stay greyed (no NPC carries them)', () => {
+    expect([MMI.GUILDWAR_APP, MMI.GUILDWAR_STATE, MMI.GUILDWAR_CANCEL, MMI.GUILDWAR_JOIN, MMI.GUILDCOMBAT_RANKING]).toEqual([26, 27, 28, 29, 30]);
+    expect([MMI.GUILDCOMBAT_SELECTION, MMI.GUILDCOMBAT_JACKPOT, MMI.GUILDCOMBAT_JACKPOT2, MMI.GUILDCOMBAT_BESTPLAYER]).toEqual([33, 34, 35, 36]);
+    expect([MMI.GUILDCOMBAT_INFO_BOARD1, MMI.GUILDCOMBAT_INFO_BOARD2, MMI.GUILDCOMBAT_INFO_BOARD3, MMI.GUILDCOMBAT_INFO_TEX, MMI.GUILDCOMBAT_PENYA_RETURN]).toEqual([37, 38, 39, 40, 41]);
+    expect(enabled({ key: 'x', name: 'x', menus: [0, 36, 41] })).toEqual([0]);
+  });
+});

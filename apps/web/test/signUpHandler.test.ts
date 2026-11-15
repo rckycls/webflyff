@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { hashPassword } from '@flyffweb/protocol';
 import { beforeEach, expect, it } from 'vitest';
 import type { AccountStore } from '../src/accountStore';
+import type { SiegeRankRow, SiegeWeekly } from '../src/siege';
 import { parseWebConfig } from '../src/config';
 import { HourlyLimit } from '../src/hourlyLimit';
 import { RefusalLog } from '../src/refusalLog';
@@ -26,6 +27,8 @@ class FakeStore implements AccountStore {
     return this.answer;
   }
   async onlineCount(): Promise<number> { return 0; }
+  async siegeWeekly(): Promise<SiegeWeekly> { return { champion: null, mvp: null, endedAt: null, expiresAt: null }; }
+  async siegeRanking(): Promise<SiegeRankRow[]> { return []; }
 }
 
 let now: number;

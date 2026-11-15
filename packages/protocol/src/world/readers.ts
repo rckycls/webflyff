@@ -6,6 +6,7 @@ import { LORD_READERS } from './lord';
 import { HONOR_READERS } from './honor';
 import { HP_LAYER_READERS } from './hpLayer';
 import { TAX_READERS } from './tax';
+import { GUILD_COMBAT_READERS } from './guildCombat';
 import { POST_READERS } from './post';
 import { COUPLE_READERS } from './couple'; // 2026-11-15 (social)
 import { DUEL_READERS } from './duel'; // 2026-11-15 (social)
@@ -260,4 +261,6 @@ export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
     ...COUPLE_READERS,
     // 2026-11-15 (social): the duels and ADDREGION (world/duel.ts)
     ...DUEL_READERS,
+    // 2026-11-15: the Guild Siege snapshot (world/guildCombat.ts)
+    ...GUILD_COMBAT_READERS,
   ]);

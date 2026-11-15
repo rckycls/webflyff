@@ -5,6 +5,8 @@
 import sql from 'mssql';
 import type { AccountStore } from './accountStore';
 import type { WebConfig } from './config';
+import { weekAfter } from './siege';
+import type { SiegeRankRow, SiegeWeekly } from './siege';
 
 /** A pool that connects on first use and again after a failed connect (also the admin store's). */
 export function lazyPool(settings: WebConfig['sql'], database: string): { get(): Promise<sql.ConnectionPool>; close(): Promise<void> } {
@@ -60,6 +62,35 @@ export function sqlAccountStore(settings: WebConfig['sql']): AccountStore & { cl
       const count = Number(firstValue(result));
       if (!Number.isInteger(count) || count < 0) throw new Error('usp_WebOnlineCount gave no count');
       return count;
+    },
+    async siegeWeekly(): Promise<SiegeWeekly> {
+      const result = await (await characters.get()).request().execute('dbo.usp_WebSiegeWeekly');
+      const row = result.recordset?.[0] as Record<string, unknown> | undefined;
+      if (row === undefined || typeof row.endedAt !== 'string') return { champion: null, mvp: null, endedAt: null, expiresAt: null };
+      const guildId = Number.parseInt(String(row.guildId), 10);
+      const playerId = Number.parseInt(String(row.playerId), 10);
+      return {
+        champion: Number.isInteger(guildId) && typeof row.guildName === 'string' ? { guildId, name: row.guildName } : null,
+        mvp: Number.isInteger(playerId) && typeof row.playerName === 'string' ? { playerId, name: row.playerName } : null,
+        endedAt: row.endedAt,
+        expiresAt: weekAfter(row.endedAt),
+      };
+    },
+    async siegeRanking(board, week): Promise<SiegeRankRow[]> {
+      const result = await (await characters.get()).request()
+        .input('week', sql.Bit, week)
+        .execute(board === 'player' ? 'dbo.usp_WebSiegeRankingPlayer' : 'dbo.usp_WebSiegeRankingGuild');
+      return (result.recordset ?? []).map((row: Record<string, unknown>, index): SiegeRankRow => {
+        const out: SiegeRankRow = { rank: index + 1, name: String(row.name), points: Number(row.points) };
+        if (board === 'player') {
+          out.job = Number(row.job);
+          if (typeof row.guild === 'string') out.guild = row.guild;
+        } else {
+          out.wins = Number(row.wins);
+          out.sieges = Number(row.sieges);
+        }
+        return out;
+      });
     },
     async close() {
       await Promise.all([accounts.close(), characters.close()]);

@@ -23,6 +23,8 @@ export const BGM_TITLE = 1; // :1899
 export const BGM_TH_GENERAL = 8; // :1911
 /** Piece 7 M5: the first flight's music, and every later one's (defineSound.h:1916, :1922; MoverEquip.cpp:1804-1821). */
 export const BGM_TH_FLYING = 13;
+/** 2026-11-15: the Guild Siege's war, forever (`PlayMusic( BGM_BA_CRISIS, 0 )`, DPClient.cpp:7685; defineSound.h:1920). */
+export const BGM_BA_CRISIS = 16;
 export const BGM_EV_LIGHTWING = 17;
 export const BGM_EV_START = 19; // :1924, a quest begins (CMover::SetQuest, MoverParam.cpp:3475-3577)
 export const BGM_EV_END = 20; // :1925, a quest ends or is removed

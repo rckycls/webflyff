@@ -32,7 +32,7 @@ afterEach(async () => {
 
 const configWith = (certifier: number, login: number) =>
   ({ servers: { certifier: { host: '127.0.0.1', port: certifier }, login: { host: '127.0.0.1', port: login } } }) as WebConfig;
-const storeCounting = (onlineCount: () => Promise<number>): AccountStore => ({ create: async () => 1, onlineCount });
+const storeCounting = (onlineCount: () => Promise<number>): AccountStore => ({ create: async () => 1, onlineCount, siegeWeekly: async () => ({ champion: null, mvp: null, endedAt: null, expiresAt: null }), siegeRanking: async () => [] });
 
 it('is online with the count when both ports answer', async () => {
   const answer = await loadStatus(configWith(await listening(), await listening()), storeCounting(async () => 7));

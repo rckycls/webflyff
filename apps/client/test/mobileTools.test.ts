@@ -5,7 +5,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppId } from '../src/world/hud/applets';
 import type { UiArt } from '../src/world/hud/art';
-import { MOBILE_SHORTCUTS, MobileTools, iconCssSize } from '../src/world/hud/mobileTools';
+import { MOBILE_SHORTCUTS, MobileTools, SIEGE_SHORTCUT, iconCssSize } from '../src/world/hud/mobileTools';
 
 const art = (have: (key: string) => boolean = () => true): UiArt => ({
   url: (key) => (have(key) ? `/assets/${key}` : ''),
@@ -30,9 +30,8 @@ function rig(uiArt = art()) {
 }
 
 describe('MOBILE_SHORTCUTS (2026-11-10, owner: the important windows of the Start menu)', () => {
-  it("lists eight Start-menu windows in CWndTaskMenu's order (WndTaskBar.cpp:2595-2734), each with its applet's icon", () => {
+  it("lists seven Start-menu windows (Status's place is the Siege Ranking icon's, C2) in CWndTaskMenu's order (WndTaskBar.cpp:2595-2734), each with its applet's icon", () => {
     expect(MOBILE_SHORTCUTS.map(({ label, applet, window }) => [label, applet, window])).toEqual([
-      ['Status', AppId.STATUS1, 'status'],
       ['Character', AppId.CHARACTER3, 'character'],
       ['Bag', AppId.INVENTORY, 'inventory'],
       ['Skill', AppId.SKILL3, 'skills'],
@@ -45,7 +44,7 @@ describe('MOBILE_SHORTCUTS (2026-11-10, owner: the important windows of the Star
 
   it('ranks them for a narrow phone: Bag, Skill, Character and Quest stay longest, Status goes first', () => {
     const byRank = [...MOBILE_SHORTCUTS].sort((a, b) => a.rank - b.rank).map(({ label }) => label);
-    expect(byRank).toEqual(['Bag', 'Skill', 'Character', 'Quest', 'Party', 'World Map', 'Messenger', 'Status']);
+    expect(byRank).toEqual(['Bag', 'Skill', 'Character', 'Quest', 'Party', 'World Map', 'Messenger']);
   });
 
   it('marks each button with its rank', () => {
@@ -147,5 +146,27 @@ describe('iconCssSize', () => {
   it('is 32 for a ratio it cannot read', () => {
     expect(iconCssSize(Number.NaN)).toBe(32);
     expect(iconCssSize(0)).toBe(32);
+  });
+});
+
+describe('the Siege Ranking icon (C2)', () => {
+  it('has no applet and a picture of its own', () => {
+    expect(SIEGE_SHORTCUT).toMatchObject({ label: 'Siege Ranking', picture: 'ui/texguildcombatwinner.png', window: 'siegeRanking' });
+  });
+
+  it('a tool with a picture shows it; with the picture missing it keeps a short text in an icon-sized button', () => {
+    const run = vi.fn();
+    const have = new MobileTools(art(), [{ label: 'Siege Ranking', applet: null, picture: 'ui/texguildcombatwinner.png', run }], document);
+    const b = have.buttons[0]!;
+    expect(b.dataset.icon).toBe('');
+    expect(b.querySelector<HTMLElement>('.hud-mobile-tool-icon')!.style.backgroundImage).toBe('url("/assets/ui/texguildcombatwinner.png")');
+    b.click();
+    expect(run).toHaveBeenCalledTimes(1);
+    const none = new MobileTools(art(() => false), [{ label: 'Siege Ranking', applet: null, picture: 'ui/texguildcombatwinner.png', run }], document);
+    const n = none.buttons[0]!;
+    expect(n.dataset.icon).toBe('');
+    expect(n.getAttribute('aria-label')).toBe('Siege Ranking');
+    expect(n.textContent).toBe('Siege');
+    have.dispose(); none.dispose();
   });
 });

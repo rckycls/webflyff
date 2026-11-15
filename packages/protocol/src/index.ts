@@ -85,3 +85,4 @@ export * from './world/couple'; // 2026-11-15 (social)
 export * from './world/duel'; // 2026-11-15 (social)
 export * from './world/hpLayer';
 export * from './world/tax'; // 2026-11-15
+export * from './world/guildCombat'; // 2026-11-15: the Guild Siege

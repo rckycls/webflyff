@@ -4558,3 +4558,226 @@ fieldset:disabled .btn {
 @media (max-width: 730px) and (pointer: coarse) {
   .hud-beauty:not([hidden]) { zoom: 0.9; left: 4px !important; }
 }
+
+/* 2026-11-15 (Guild Siege, B3): Frankie's and Donaris's windows (hud/guildCombat/*.ts; docs/guild-siege/research/A-client.md §2.1-2.8):
+   the offer, the application status (its rows "No.01  name", 16 px), the cancel and join confirms, the info boards and the
+   two boxes. Neuz's black 12 px words; a board's text keeps its line breaks. */
+.hud-gc { color: #000000; font: 12px/16px Verdana, Arial, sans-serif; }
+.hud-gc .hud-res-text-body { white-space: pre-wrap; color: #000000; }
+.hud-gc .hud-res-list-rows > [role='option'] { position: relative; height: 16px; line-height: 16px; white-space: pre; }
+.hud-gc .hud-gc-no { display: inline-block; width: 52px; }
+.hud-gc .hud-res-edit input { font: 12px Verdana, Arial, sans-serif; }
+.hud-gc-join, .hud-gc-tele, .hud-gc-diag { z-index: 45; }
+/* B4: the line-up (rows 17 px, blue behind the first fighters, red behind the reserves, Neuz's ARGB 40 bands) and the start point. */
+.hud-gc-startpoint, .hud-gc-lineup { z-index: 45; }
+.hud-gc-lineup .hud-res-list-rows > [role='option'] { height: 17px; line-height: 17px; cursor: default; }
+.hud-gc-lineup .hud-gc-no { width: 38px; }
+.hud-gc-lineup [role='option'].is-blue { background: rgba(0, 0, 220, 0.16); }
+.hud-gc-lineup [role='option'].is-red { background: rgba(220, 0, 0, 0.16); }
+.hud-gc-lineup [role='option'].is-selected { outline: 1px solid #2e70a9; background-color: rgba(46, 112, 169, 0.3); }
+.hud-gc-lineup .hud-res-static.is-picture { background-repeat: no-repeat; pointer-events: none; z-index: 2; }
+.hud-gc-startpoint .hud-window-title { visibility: hidden; }
+.hud-gc-startpoint .hud-picture-button.is-chosen { box-shadow: inset 0 0 0 1px #0000ff; outline: 1px solid #0000ff; outline-offset: -1px; }
+/* The phone: each window a panel in the middle above the task bar (the screen is about 800 x 350 and the status window is
+   480 high), its controls in a column that scrolls, Neuz's 12 px words, the picture buttons as silver pills with their words
+   (the pictures are 72 x 20: too small for a finger). */
+@media (max-width: 1000px) and (pointer: coarse) {
+  .world:has(.hud-gc:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+  .hud-gc:not([hidden]) {
+    left: calc(50% - min(230px, 50% - 8px)) !important; top: 8px !important; transform: none !important; z-index: 60 !important;
+    width: min(460px, calc(100% - 16px)) !important; height: auto !important;
+    max-height: calc(100% - var(--hud-taskbar-height, 48px) - 16px); display: flex !important; flex-direction: column; overflow: hidden;
+  }
+  .hud-gc::before { content: ''; position: absolute; inset: 3px 5px 7px 3px; border-radius: 4px; background: rgba(250, 238, 230, 0.92); pointer-events: none; }
+  .hud-gc > .hud-window-body {
+    position: relative !important; left: auto !important; top: auto !important; width: auto !important; height: auto !important;
+    flex: 0 1 auto; min-height: 0; box-sizing: border-box; margin: 22px 8px 10px 4px; padding: 4px 6px 6px;
+    display: flex; flex-wrap: wrap; align-content: flex-start; align-items: center; gap: 5px 8px; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y;
+  }
+  .hud-gc > .hud-window-body > * { position: relative !important; left: auto !important; top: auto !important; }
+  .hud-gc .hud-res-scroll { display: none; }
+  .hud-gc .hud-res-static { flex: 1 1 40%; width: auto !important; height: auto !important; min-height: 18px; line-height: 18px; }
+  .hud-gc .hud-res-static-text { position: relative !important; z-index: 1; white-space: normal; text-shadow: none; }
+  .hud-gc :is(.hud-res-text, .hud-res-list, .hud-res-edit) { flex: 1 1 100%; width: 100% !important; }
+  .hud-gc .hud-res-text { height: auto !important; min-height: 30px; }
+  .hud-gc .hud-res-text-body {
+    position: relative !important; left: auto !important; top: auto !important; width: auto !important; height: auto !important;
+    max-height: 120px; box-sizing: border-box; overflow-y: auto; padding: 5px 7px; line-height: 15px;
+  }
+  .hud-gc-board .hud-res-text-body { max-height: 150px; }
+  .hud-gc .hud-res-list { height: auto !important; min-height: 60px; }
+  .hud-gc .hud-res-list-rows {
+    position: relative !important; inset: auto !important; width: auto !important; height: auto !important; max-height: 96px; padding: 3px 2px; overflow-y: auto;
+  }
+  .hud-gc .hud-res-list-rows > [role='option'] { height: 24px !important; line-height: 24px !important; padding: 0 6px; border-bottom: 1px solid #f0e2d8; }
+  .hud-gc .hud-res-edit { height: 22px !important; }
+  .hud-gc .hud-res-edit input {
+    position: absolute; inset: 0 6px; z-index: 1; width: calc(100% - 12px); height: 100%; min-height: 0 !important; background: transparent; font-size: 16px;
+  }
+  .hud-gc .hud-picture-button {
+    flex: 0 0 auto; position: relative; min-width: 72px; height: 30px !important; margin: 2px 6px; box-sizing: border-box;
+    border: 1px solid #b07d5c; border-radius: 4px; background: linear-gradient(#fff7ef, #ecd2bd) !important; color: #3a2414;
+    font: 14px/28px Arial, sans-serif; text-align: center; padding: 0 8px; width: auto !important;
+  }
+  .hud-gc .hud-picture-button::after { content: attr(aria-label); }
+  .hud-gc .hud-picture-button::before { content: ''; position: absolute; inset: -5px -4px; }
+  /* B4: the line-up in a compact panel, both lists side by side (each scrolls), the buttons below in two rows. */
+  .hud-gc-lineup:not([hidden]) { width: min(560px, calc(100% - 16px)) !important; left: calc(50% - min(280px, 50% - 8px)) !important; }
+  .hud-gc-lineup > .hud-window-body { display: grid; grid-template-columns: repeat(8, 1fr); gap: 3px 4px; align-items: center; }
+  .hud-gc-lineup [data-control='WIDC_STATIC3'] { grid-column: 1 / -1; grid-row: 1; flex: none; }
+  .hud-gc-lineup [data-control='WIDC_STATIC1'] { grid-column: 1 / 5; grid-row: 2; }
+  .hud-gc-lineup [data-control='WIDC_STATIC2'] { grid-column: 5 / 9; grid-row: 2; }
+  .hud-gc-lineup [data-control='WIDC_LISTBOX1'] { grid-column: 1 / 5; grid-row: 3; min-width: 0; }
+  .hud-gc-lineup [data-control='WIDC_LISTBOX2'] { grid-column: 5 / 9; grid-row: 3; min-width: 0; }
+  .hud-gc-lineup .hud-res-list-rows { max-height: 104px; }
+  .hud-gc-lineup .hud-res-list-rows > [role='option'] { height: 22px !important; line-height: 22px !important; font-size: 12px; white-space: nowrap; overflow: hidden; }
+  .hud-gc-lineup .hud-gc-no { width: 32px; }
+  .hud-gc-lineup .hud-picture-button { grid-column: span 2; min-width: 0; margin: 1px 0; height: 28px !important; font: 13px/26px Arial, sans-serif; padding: 0 2px; }
+  .hud-gc-lineup [data-control='WIDC_BUTTON8'] { display: none !important; }
+  .hud-gc-lineup [role='option'].is-defender .hud-gc-name::after { content: ' [D]'; font-weight: bold; color: #0000a0; }
+  .hud-gc-startpoint > .hud-window-body { justify-content: center; }
+  .hud-gc-startpoint .hud-picture-button { min-width: 56px; }
+}
+
+/* 2026-11-15 (Guild Siege, B5): the arena's HUD (hud/guildCombat/arenaHud.ts; docs/guild-siege/research/A-client.md §4.1-4.3),
+   drawn under the windows as Neuz draws it in the world's background (CWndWorld::OnEraseBkgnd): the count-down centred at
+   y 110 (Verdana 13, white outlined 0xff990099), the guild and player boards at (width - 150, 200) and the own guild's list
+   at (5, 120) in boxes of ARGB(30, 0, 0, 0), their words outlined black, the "be ready" lines yellow at the centre. It takes
+   no press, but for the phone's board titles (they fold). */
+.hud-siege { position: absolute; inset: 0; pointer-events: none; font: 12px/1 Verdana, Geneva, Tahoma, sans-serif; color: #ffffff; }
+.hud-siege {
+  --siege-outline: -1px 0 #000, 1px 0 #000, 0 -1px #000, 0 1px #000, -1px -1px #000, 1px -1px #000, -1px 1px #000, 1px 1px #000;
+}
+.hud-siege-clock {
+  position: absolute; left: 0; right: 0; top: 110px; text-align: center; white-space: pre;
+  font: 13px/1 Verdana, Geneva, Tahoma, sans-serif; color: #ffffff;
+  text-shadow: -1px 0 #990099, 1px 0 #990099, 0 -1px #990099, 0 1px #990099, -1px -1px #990099, 1px -1px #990099, -1px 1px #990099, 1px 1px #990099;
+}
+.hud-siege-board, .hud-siege-guild { position: absolute; box-sizing: border-box; background: rgba(0, 0, 0, 0.118); }
+.hud-siege-title, .hud-siege-row > span, .hud-siege-member > span {
+  position: absolute; white-space: pre; line-height: 12px; text-shadow: var(--siege-outline);
+}
+.hud-siege-title {
+  margin: 0; padding: 0; border: 0; background: none; font: inherit; line-height: 12px; text-align: left; cursor: default; pointer-events: none;
+}
+.hud-siege-title:disabled { opacity: 1; }
+.hud-siege-row, .hud-siege-member { position: absolute; left: 0; right: 0; height: 12px; }
+.hud-siege-hp { width: 60px; height: 11px; background: rgba(0, 0, 0, 0.392); text-shadow: none; }
+.hud-siege-hp > span { position: absolute; left: 1px; top: 1px; height: 9px; background: rgba(0, 255, 0, 0.392); }
+.hud-siege-ready {
+  position: absolute; left: 0; right: 0; top: calc(50% - 150px); text-align: center; white-space: pre;
+  font: 13px/16px Verdana, Geneva, Tahoma, sans-serif; color: #ffff00; text-shadow: var(--siege-outline);
+}
+.hud-siege-ready-line + .hud-siege-ready-line { margin-top: 2px; }
+/* the phone's (data-compact, the owner's layout): 14 px rows, a column under the Navigator clear of Attack and the quick
+   slots (arenaHud.ts layoutCompact), the count-down and the "be ready" lines right-aligned at its top; a board's title
+   folds it on a tap */
+.hud-siege[data-compact] :is(.hud-siege-clock, .hud-siege-ready) { text-align: right; }
+.hud-siege[data-compact] .hud-siege-board .hud-siege-title { pointer-events: auto; cursor: pointer; touch-action: manipulation; }
+.hud-siege[data-compact] .hud-siege-board .hud-siege-title::before { content: ''; position: absolute; inset: -6px -8px; }
+.hud-siege[data-compact] .hud-siege-board .hud-siege-title::after { content: ' \25BE'; }
+.hud-siege[data-compact] .hud-siege-board .hud-siege-title[aria-expanded='false']::after { content: ' \25B8'; }
+/* final review (Important 2, Minor 2): the quest tracker goes in world 202, where the boards (right 10, top 190) and the own
+   guild's list stand, and on the phone wherever the list shows, at the tracker's place under the status window */
+.world[data-world-id='202'] .hud-quest-tracker, .world:has(.hud-siege[data-compact] .hud-siege-guild:not([hidden])) .hud-quest-tracker { display: none; }
+
+/* B5: the Navigator's mask over world 202's map (WdGuildWar_Mask.dds at alpha 200), over the tiles, under the markers */
+.navigator-masks { position: absolute; inset: 0; pointer-events: none; }
+.navigator-masks > img { position: absolute; max-width: none; pointer-events: none; }
+
+/* 2026-11-15 (Guild Siege, B6): the result window (560 x 320; two tabs: the guild and member lists, the battle log with Save) and
+   Donaris's ranking window (400 x 384; five tabs of rows 18 px, 11 to a page, the first red, the own row again in blue). The
+   tabs sit under their pages as Neuz's tab control draws them (hud/guildCombat/tabs.ts). */
+.hud-gc-result, .hud-gc-rank { z-index: 45; }
+.hud-gc-tabctrl { position: absolute; inset: 0; }
+.hud-gc-page { position: absolute; left: 0; top: 0; right: 0; bottom: 20px; }
+.hud-gc-tabs { position: absolute; left: 0; right: 0; bottom: 0; height: 20px; display: flex; }
+.hud-gc-tab {
+  flex: 1 1 0; min-width: 0; height: 20px; padding: 0 4px; border: 1px solid #8f8f8f; border-top: 0; background: #d8d8d8;
+  color: #000; font: 12px/18px Verdana, Arial, sans-serif; cursor: pointer;
+}
+.hud-gc-tab.is-chosen { background: #f6f1ea; font-weight: bold; }
+.hud-gc-result-box { position: absolute; box-sizing: border-box; overflow-y: auto; background: #f6f1ea; border: 1px solid #8f8f8f; }
+.hud-gc-result-h { position: absolute; font: 12px/16px Verdana, Arial, sans-serif; color: #2e70a9; font-weight: bold; }
+.hud-gc-result-h1 { left: 12px; top: 20px; width: 228px; }
+.hud-gc-result-h2 { left: 272px; top: 20px; width: 232px; }
+.hud-gc-result-guilds { left: 12px; top: 56px; width: 230px; height: 162px; }
+.hud-gc-result-members { left: 276px; top: 56px; width: 230px; height: 162px; }
+.hud-gc-result-log { left: 8px; top: 8px; width: 506px; height: 202px; padding: 4px 6px; }
+.hud-gc-result-row { white-space: pre; tab-size: 18; font: 12px/16px Verdana, Arial, sans-serif; color: #000; height: 16px; }
+.hud-gc-log-line { white-space: pre-wrap; min-height: 16px; font: 12px/16px Verdana, Arial, sans-serif; color: #000; }
+.hud-gc-rank-head, .hud-gc-rank-row, .hud-gc-rank-own {
+  display: grid; grid-template-columns: 36px 140px 95px 1fr; padding-left: 12px; box-sizing: border-box; height: 18px; line-height: 18px;
+  font: 12px/18px Verdana, Arial, sans-serif; color: #000; white-space: pre;
+}
+.hud-gc-rank-head { position: absolute; left: 0; right: 0; top: 7px; height: 18px; border-bottom: 2px solid rgba(0, 0, 0, 0.5); }
+.hud-gc-rank-rows { position: absolute; left: 0; right: 0; top: 30px; height: 198px; overflow-y: auto; overscroll-behavior: contain; }
+.hud-gc-rank-row { cursor: default; }
+.hud-gc-rank-row.is-first { color: #c80000; }
+.hud-gc-rank-row.is-selected { background: rgba(0, 0, 0, 0.25); }
+.hud-gc-rank-own { position: absolute; left: 0; right: 0; top: 240px; color: #0000ff; }
+.hud-gc-rank-c0, .hud-gc-rank-c3 { white-space: pre; }
+.hud-gc-rank-c1, .hud-gc-rank-c2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 1000px) and (pointer: coarse) {
+  .hud-gc-result:not([hidden]) { width: min(520px, calc(100% - 16px)) !important; left: calc(50% - min(260px, 50% - 8px)) !important; }
+  .hud-gc-result .hud-res-custom, .hud-gc-rank .hud-res-custom { flex: 1 1 100%; height: 196px !important; }
+  .hud-gc-rank .hud-res-custom { height: 190px !important; }
+  .hud-gc-tab { height: 28px; font-size: 13px; line-height: 26px; }
+  .hud-gc-tabs { height: 28px; }
+  .hud-gc-page { bottom: 28px; }
+  .hud-gc-result-box, .hud-gc-result-h { position: absolute; }
+  .hud-gc-result-h1 { left: 4px; top: 2px; width: calc(50% - 8px); }
+  .hud-gc-result-h2 { left: calc(50% + 4px); top: 2px; width: calc(50% - 8px); }
+  .hud-gc-result-guilds { left: 4px; top: 20px; width: calc(50% - 8px); height: calc(100% - 24px); }
+  .hud-gc-result-members { left: calc(50% + 4px); top: 20px; width: calc(50% - 8px); height: calc(100% - 24px); }
+  .hud-gc-result-log { left: 4px; top: 4px; width: calc(100% - 8px); height: calc(100% - 8px); }
+  .hud-gc-result-row { font-size: 12px; tab-size: 8; }
+  .hud-gc-rank-head { top: 2px; }
+  .hud-gc-rank-head, .hud-gc-rank-row, .hud-gc-rank-own { grid-template-columns: 30px 1fr 86px 34px; padding-left: 4px; padding-right: 4px; }
+  .hud-gc-rank-row { height: 22px; line-height: 22px; }
+  .hud-gc-rank-rows { top: 22px; height: calc(100% - 50px); }
+  .hud-gc-rank-own { top: auto; bottom: 2px; }
+}
+
+/* 2026-11-15 (Guild Siege, C2): the Siege Ranking window, in the look of Donaris's ranking window above: a bar of the two spans
+   (This week, All time) over the page, the head and rows under it (5 columns: a player's rank, name, job, guild, points; a
+   guild's rank, guild, wins, sieges, points), the first row red, the own row blue */
+.hud-sr .hud-gc-page { top: 26px; }
+.hud-sr-spans { position: absolute; left: 0; right: 0; top: 0; height: 24px; display: flex; gap: 6px; padding: 2px 8px; box-sizing: border-box; }
+.hud-sr-span {
+  flex: 0 0 auto; min-width: 84px; height: 20px; padding: 0 10px; border: 1px solid #8f8f8f; background: #d8d8d8; color: #000;
+  font: 12px/18px Verdana, Arial, sans-serif; cursor: pointer;
+}
+.hud-sr-span.is-chosen { background: #f6f1ea; font-weight: bold; }
+.hud-sr .hud-sr-head { top: 2px; }
+.hud-sr-rows { position: absolute; left: 0; right: 0; top: 24px; bottom: 0; overflow-y: auto; overscroll-behavior: contain; }
+.hud-sr .hud-sr-head, .hud-sr .hud-sr-row { padding-right: 6px; }
+.hud-sr .hud-sr-player { grid-template-columns: 36px 1fr 90px 100px 54px; }
+.hud-sr .hud-sr-guild { grid-template-columns: 36px 1fr 54px 64px 64px; }
+.hud-sr .hud-sr-row.is-own { color: #0000ff; }
+.hud-sr :is(.hud-sr-c1, .hud-sr-c2, .hud-sr-c3) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hud-sr-c0, .hud-sr-c4 { white-space: pre; }
+.hud-sr-note { padding: 40px 12px; text-align: center; font: 12px/18px Verdana, Arial, sans-serif; color: #000; }
+@media (max-width: 1000px) and (pointer: coarse) {
+  .hud-sr-span { height: 24px; min-width: 76px; font-size: 13px; line-height: 22px; }
+  .hud-sr-spans { height: 28px; }
+  .hud-sr .hud-gc-page { top: 30px; }
+  .hud-sr .hud-sr-player { grid-template-columns: 28px 1fr 72px 80px 40px; }
+  .hud-sr .hud-sr-guild { grid-template-columns: 28px 1fr 40px 50px 44px; }
+  .hud-sr .hud-sr-rows { top: 22px; height: auto; }
+  .hud-sr .hud-sr-row { height: 22px; line-height: 22px; }
+}
+
+/* 2026-11-15 (owner, Guild Siege C2): the desktop's Siege Ranking button, the V15 winner trophy, left of the Navigator (144 px
+   wide at the right edge; the mail notice sits 140 px in); the phone has the icon among its shortcuts instead */
+.hud-siege-button {
+  position: absolute; z-index: 20; top: 4px; right: calc(var(--game-safe-right, 0px) + 176px); width: 32px; height: 32px; padding: 0;
+  pointer-events: auto; border: 0; background: transparent no-repeat center / contain; color: #fff; font: bold 10px Verdana, Arial, sans-serif;
+  text-shadow: 0 0 3px #000, 0 0 3px #000; cursor: pointer;
+}
+.hud-siege-button:active { filter: brightness(1.4); }
+@media (max-width: 1000px) and (pointer: coarse) {
+  .hud-siege-button { display: none; }
+  /* the Siege Ranking icon's text, while its picture is missing, stays inside the icon's box */
+  .hud-mobile-tool-icon:not([style]) { display: flex; align-items: center; justify-content: center; font: bold 9px Verdana, Arial, sans-serif; color: #fff; text-shadow: 0 0 2px #000; }
+}

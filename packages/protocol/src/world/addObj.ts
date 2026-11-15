@@ -152,7 +152,7 @@ function readPlayer(r: ArReader, self: boolean): AddedPlayer {
   const honor = r.i32(); // int nTemp (__VER >= 13, __HONORABLE_TITLE)
   // m_aEquipInfo[i].nOption (int): 2026-11-09 kept, the worn weapons' upgrade and element for their glow
   const options = Array.from({ length: MAX_HUMAN_PARTS }, () => r.i32());
-  r.i32(); // m_nGuildCombatState
+  const guildCombatState = r.i32(); // m_nGuildCombatState
   r.bytes(4 * SM_MAX); // m_dwSMTime[j] (DWORD)
 
   const base = {
@@ -161,6 +161,7 @@ function readPlayer(r: ArReader, self: boolean): AddedPlayer {
     ...(partyId !== 0 || duelParty !== 0 || duel !== 0 ? { duel: { partyId, duelParty, duel } } : {}), pkTime, pkValue, pkPropensity, honor,
     ...(fuel !== -1 ? { fuel } : {}), ...(accFuel !== 0 ? { accFuel } : {}),
     ...(guildId !== 0 ? { guildId } : {}), ...(warId !== 0 ? { warId } : {}), ...(guildCloak !== 0 ? { guildCloak } : {}),
+    ...(guildCombatState !== 0 ? { guildCombatState } : {}),
   };
   if (self) {
     const { equipmentObjectIds, numbers } = readOwnEquipment(r, { str, sta, dex, int });

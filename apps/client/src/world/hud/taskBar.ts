@@ -60,7 +60,13 @@ import { itemIconOf } from '../pets/petStatus';
 
 /** The windows of Piece 4 a press on the task bar opens. */
 export type TaskBarWindow = 'character' | 'status' | 'skills' | 'inventory' | 'chat' | 'navigator' | 'worldmap' | 'option'
-  | 'quests' | 'party' | 'messenger' | 'vendor' | 'guild' | 'lordSkill' | 'motion' | 'housing' | 'guildFurniture' | 'couple';
+  | 'quests' | 'party' | 'messenger' | 'vendor' | 'guild' | 'lordSkill' | 'motion' | 'housing' | 'guildFurniture' | 'couple'
+  | 'siegeRanking';
+/**
+ * 2026-11-15 (owner, Guild Siege C2): the Siege Ranking window's own id: it is no applet of Neuz's (none in `APPLETS`, so no
+ * icon or hotkey); its Start menu line and the icons open it.
+ */
+const APP_SIEGE_RANKING = 9001;
 /** 2026-11-10: `APP_GUILD` (Resource/ResData.h:228), the guild window (guild research §3), G (FuncApplet.cpp:245). */
 const APP_GUILD = 323;
 /** `APP_QUEST_EX_LIST` (Resource/ResData.h), the quest window (Piece 7 M1), Q (FuncApplet.cpp:229). */
@@ -105,6 +111,7 @@ const WINDOWS: ReadonlyMap<number, TaskBarWindow> = new Map([
   [853, 'guildFurniture'],
   // 2026-11-15 (social): APP_COUPLE_MAIN (Resource/ResData.h), the couple window, F (FuncApplet.cpp:259-264)
   [APP_COUPLE_MAIN, 'couple'],
+  [APP_SIEGE_RANKING, 'siegeRanking'],
 ]);
 
 /**
@@ -154,6 +161,8 @@ const MENU: ReadonlyArray<{ id: number; text: string }> = [
   // 2026-11-10: CWndTaskMenu's APP_GUILD line, 'Guild' (TID_APP_COMPANY), right after Party in its Communication submenu
   // (WndTaskBar.cpp:2670-2671)
   { id: APP_GUILD, text: 'Guild' },
+  // 2026-11-15 (owner, Guild Siege C2): the Siege Ranking line, with no counterpart in Neuz, after Guild
+  { id: APP_SIEGE_RANKING, text: 'Siege Ranking' },
   // CWndTaskMenu's APP_OPTIONEX line, 'Option' (TID_APP_OPTION), just before Log out (WndTaskBar.cpp:2638)
   { id: AppId.OPTIONEX, text: 'Option' },
   { id: AppId.LOGOUT, text: 'Log out' },

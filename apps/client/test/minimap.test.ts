@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { expect, it } from 'vitest';
-import { Minimap, navigatorPoint } from '../src/world/hud/minimap';
+import { Minimap, minimapMaskKey, navigatorPoint } from '../src/world/hud/minimap';
 import type { WorldManifest } from '@flyffweb/formats';
 const manifest = { name: 'WdTest', size: [30, 30], mapSize: 128, mpu: 4 } as WorldManifest;
 it('maps native positive-z north, player center, offset and negative positions', () => {
@@ -57,4 +57,32 @@ it('uses dungeon fog and suppresses outdoor markers indoors', () => {
   expect(ui.frame.element.querySelector<HTMLButtonElement>('[data-nav=filter]')!.disabled).toBe(true);
   expect(ui.frame.element.querySelector('.navigator-player')!.hasAttribute('hidden')).toBe(false);
   ui.dispose();
+});
+
+// 2026-11-15 (Guild Siege, B5): WI_WORLD_GUILDWAR's mask (WdGuildWar_Mask.dds) over each landscape tile, as big, at alpha
+// 200 (CWndNavigator, WndField.cpp:9214-9246, :9903); none elsewhere, none when the converter has not written it.
+it('draws the siege mask over every tile in world 202 at 200/255, and nothing when the picture is missing', () => {
+  expect(minimapMaskKey(202)).toBe('minimaps/wdguildwar/mask.png');
+  expect(minimapMaskKey(1)).toBeNull();
+  const siege = { name: 'WdGuildWar', size: [5, 5], mapSize: 128, mpu: 4 } as WorldManifest;
+  const ui = new Minimap({ url: key => key, sheets: null }, siege, 'wdguildwar', key => key, document, minimapMaskKey(202));
+  document.body.append(ui.frame.element); ui.open();
+  ui.update([1291, 0, 1279], 0, []);
+  const tile = ui.frame.element.querySelector<HTMLImageElement>('img[src="minimaps/wdguildwar/2_2.png"]')!;
+  const masks = ui.frame.element.querySelectorAll<HTMLImageElement>('img[src="minimaps/wdguildwar/mask.png"]');
+  expect(masks).toHaveLength(ui.frame.element.querySelectorAll('img:not(.navigator-mask)').length);
+  const mask = [...masks].find((m) => m.style.left === tile.style.left && m.style.top === tile.style.top)!;
+  expect(mask).toBeDefined();
+  expect(mask.style.width).toBe(tile.style.width);
+  expect(Number(mask.style.opacity)).toBeCloseTo(200 / 255, 5);
+  ui.update([1300, 0, 1279], 0, []);
+  expect(mask.style.left).toBe(tile.style.left);
+  ui.dispose();
+  // the picture not converted (its key not in the index): no mask, no error
+  const bare = new Minimap({ url: key => key, sheets: null }, siege, 'wdguildwar', key => (key.endsWith('mask.png') ? null : key), document, minimapMaskKey(202));
+  document.body.append(bare.frame.element); bare.open();
+  bare.update([1291, 0, 1279], 0, []);
+  expect(bare.frame.element.querySelectorAll('.navigator-mask')).toHaveLength(0);
+  expect(bare.frame.element.querySelector('img[src="minimaps/wdguildwar/2_2.png"]')).not.toBeNull();
+  bare.dispose();
 });

@@ -59,7 +59,7 @@ import type { FlightStick } from './controls';
 import { FlightControl } from './flightControl';
 import type { FlightInput } from './flightControl';
 import { FlightButtons } from './hud/flightButtons';
-import { MOBILE_SHORTCUTS, MobileTools } from './hud/mobileTools';
+import { MOBILE_SHORTCUTS, MobileTools, SIEGE_SHORTCUT, siegeButton } from './hud/mobileTools';
 import { TurboGauge } from './render/TurboGauge';
 import { isGameMaster } from './authorization';
 import { Mode, bodyAlpha, isFrozen, isInvisible, modeLine, showsBubble } from './gmModes';
@@ -100,7 +100,7 @@ import { TaxBook, tooltipTax } from './items/tax'; // 2026-11-15, item tooltip g
 import { InventoryWindow } from './hud/inventoryWindow';
 import { ChatWindow } from './hud/chatWindow';
 import { NeuzChat } from './hud/neuzChat';
-import { MENU_RANGE, MMI, MoverMenu, npcMenuEntries, soleEntry } from './hud/moverMenu';
+import { GUILD_COMBAT_ENTRIES, MENU_RANGE, MMI, MoverMenu, npcMenuEntries, soleEntry } from './hud/moverMenu';
 import { opensShop } from './hud/chipShop';
 import { DialogWindow } from './hud/dialogue/dialogWindow';
 import { parseDialogText } from './hud/dialogue/dialogText';
@@ -145,7 +145,7 @@ import {
   encodeBuyPVendorItem, encodeChatting, encodeCloseChattingRoom, encodeEnterChattingRoom, encodeOpenChattingRoom, encodePVendorClose,
   encodePVendorOpen, encodeQueryPVendorItem, encodeRegisterPVendorItem, encodeUnregisterPVendorItem,
 } from '@flyffweb/protocol';
-import { Minimap } from './hud/minimap';
+import { Minimap, minimapMaskKey } from './hud/minimap';
 import { MAP_PASSED_KEYS, WorldMap } from './hud/worldMap';
 import type { MapView } from './hud/worldMap';
 import { loadWorldMap } from './worldMapData';
@@ -254,6 +254,13 @@ import type { MoverLook } from './render/looks';
 import { MoveMark } from './render/moveMark';
 import { loadHeldItems, loadMoverModel, loadRideModel } from './render/moverModels';
 import { guildLine, nameTagOf } from './render/nameTags';
+import { GuildCombatBook } from './guildCombat/guildCombatBook';
+import { GuildCombatHud } from './guildCombat/guildCombatHud';
+import { MoverGcState, trophyOf } from './guildCombat/guildCombatRules';
+import { SiegeRankingCache, SiegeWeeklyFeed, badgeOf } from './guildCombat/siegeWebApi';
+import { siegeDefenderLine, siegeHides, siegeNameColor, siegeSideOf } from './combat/siege';
+import { ArenaHud, ArenaState } from './hud/guildCombat/arenaHud';
+import { saveTextFile } from './hud/guildCombat/download';
 import type { GuildLine } from './render/nameTags';
 import { pickMoverAt, pickRay } from './render/picking';
 import type { TapHit } from './render/picking';
@@ -406,6 +413,8 @@ export class WorldScreen {
   private flightButtons: FlightButtons | undefined;
   /** The phone's window shortcuts at the top right. */
   private mobileTools: MobileTools | undefined;
+  /** 2026-11-15: the desktop's Siege Ranking button, left of the Navigator. */
+  private siegeButton: HTMLButtonElement | undefined;
   private turboGauge: TurboGauge | undefined;
   /** Piece 7 M5: the right drag's steering since the last step, the phone's buttons, and the stick's flight keys. */
   private flightMouse = { dx: 0, dy: 0 };
@@ -641,6 +650,29 @@ export class WorldScreen {
   private readonly guildBook = new GuildBook();
   /** 2026-11-15: the tax rates (`CTax`, TAX_ALLINFO), for the shop prices in item tooltips. */
   private readonly taxBook = new TaxBook();
+  /** 2026-11-15: the Guild Siege's state (guildCombat/guildCombatBook.ts), from the JOIN's GCSTATE on, whatever HUD there is. */
+  private readonly guildCombatBook = new GuildCombatBook((objectId) => this.world?.movers.get(objectId)?.added.player?.guildCombatState ?? 0);
+  private guildCombatHud: GuildCombatHud | undefined;
+  /**
+   * 2026-11-15 (C1): the website's weekly champion and MVP, for the marks by the names; started with the world, stopped on
+   * teardown; the screen's, so a teleport within 5 min of its last call asks nothing (final review, Minor 4).
+   */
+  private readonly weeklyFeed = new SiegeWeeklyFeed({ onChange: () => this.recolorTags() });
+  /** 2026-11-15 (C2): the Siege Ranking window's answers, the screen's so that their 60 s reuse outlives a teleport (final review, Minor 5). */
+  private readonly siegeRankingCache = new SiegeRankingCache();
+  /** 2026-11-15 (B5): the arena's lines, captions, music and count-down (hud/guildCombat/arenaHud.ts), for the session. */
+  private readonly siegeArena = new ArenaState(this.guildCombatBook, {
+    worldId: () => this.worldId,
+    ownGuildRank: () => this.guildBook.own(this.entry.character.playerId)?.members.get(this.entry.character.playerId)?.rank ?? null,
+    text: (tid) => this.data?.texts.get(tid)?.text ?? '',
+    line: (text, color) => this.hud?.messages.add(text, color),
+    chat: (text, color) => this.chatWindow?.append('system', '', text, undefined, color, CHATSTY.GENERAL),
+    caption: (text) => this.hud?.caption.show(text),
+    music: (id, loops) => this.music?.play(id, loops),
+    guildName: (guildId) => this.guildBook.guild(guildId)?.name,
+  });
+  /** 2026-11-15 (B5): the arena's boards, the own guild's list and the count-down, with the world's windows. */
+  private arenaHud: ArenaHud | undefined;
   /** 2026-11-11: the Lord system's state (lord/lordBook.ts), from the JOIN's LORD snapshot on, whatever HUD there is. */
   private readonly lordBook = new LordBook(() => this.entry.character.playerId, (id) => this.playerData.peek(id)?.name ?? '');
   /** 2026-11-11: the earned honour titles (honor/honorBook.ts, `CTitleManager::m_vecEarned`), made with the game data. */
@@ -974,6 +1006,8 @@ export class WorldScreen {
     // OpenField and OnReplace: the music stops, and the world's rules start afresh (WndManager.cpp:2153, DPClient.cpp:2422-2427)
     this.audio?.music.stop();
     this.music?.enterWorld(worldId);
+    // 2026-11-15 (B5): the siege's movers anew (no stale USERSTATE), and the count-down kept only into 202
+    this.siegeArena.enterWorld(worldId);
     const services = this.services!;
     const folder = this.data!.worlds.get(worldId);
     if (folder === undefined || services.store.url(`worlds/${folder}/manifest.json`) === null) {
@@ -1043,6 +1077,21 @@ export class WorldScreen {
         this.guildEvents.push(...this.guildBook.apply(objectId, value, this.guildContext(world)));
         if (this.guildHud !== undefined && this.guildEvents.length > 0) this.guildHud.handle(this.guildEvents.splice(0));
         else if (this.guildEvents.some((event) => event.kind === 'tags')) this.recolorTags();
+        continue;
+      }
+      // 2026-11-15: the Guild Siege's messages (guildCombat/guildCombatBook.ts): the state, the winner and the best player
+      // (trophies by the names), and a mover's combat state (written on the mover: its ADD_OBJ field, `m_nGuildCombatState`)
+      if (value.type === 'guildCombat') {
+        const events = this.guildCombatBook.apply(value, performance.now());
+        for (const event of events) {
+          const player = event.kind === 'userState' ? world.movers.get(event.moverId)?.added.player : undefined;
+          if (event.kind === 'userState' && player !== undefined) {
+            if (event.state === 0) delete player.guildCombatState; else player.guildCombatState = event.state;
+          }
+        }
+        this.guildCombatHud?.handle(events);
+        this.siegeArena.apply(value, performance.now()); // B5: the arena's lines, captions, music and count-down
+        if (events.some((event) => event.kind === 'tags')) this.recolorTags();
         continue;
       }
       // 2026-11-11: the Lord system's messages (lord/lordBook.ts); a Lord skill's use goes on to the world for its effects
@@ -1167,6 +1216,8 @@ export class WorldScreen {
         continue;
       }
       if (value.type === 'chat' || value.type === 'shout' || value.type === 'whisper' || value.type === 'party' || value.type === 'guild' || value.type === 'system' || value.type === 'announcement') {
+        // 2026-11-15 (B5): a player the siege hides says nothing, nor shouts (OnChat, OnShout: DPClient.cpp:1460-1465, :11681-11686)
+        if ((value.type === 'chat' || value.type === 'shout') && this.siegeHidden(world.movers.get(objectId))) continue;
         if (value.type === 'chat') {
           const speaker = world.movers.get(objectId);
           // CUserMng::AddDlgEmoticon sends `!<index>` through AddChat; v15 DLGEMOT_ATTACK is index 0.
@@ -1334,8 +1385,9 @@ export class WorldScreen {
         sounds: { motion: (at, id) => this.sounds?.motion(at, id), footstep: (at) => this.sounds?.footstep(at) },
         // 2026-11-10: an invisible player: the own body faint, another seen faint by a game master only, and never clicked
         // (MoverRender.cpp:517-531, WndWorld.cpp:6372)
-        alphaOf: (mover) => bodyAlpha(mover, this.world?.self()?.added.player?.authorization ?? 0),
-        unpickable: isInvisible,
+        // 2026-11-15 (B5): and in the siege's arena a player its line-ups hide: not drawn, not clicked (Mover.cpp:3321-3368)
+        alphaOf: (mover) => (this.siegeHidden(mover) ? 0 : bodyAlpha(mover, this.world?.self()?.added.player?.authorization ?? 0)),
+        unpickable: (mover) => isInvisible(mover) || this.siegeHidden(mover),
       },
     );
     this.world!.onEquipmentChange = (mover) => {
@@ -1421,7 +1473,8 @@ export class WorldScreen {
     this.element.style.setProperty('--v15-slot', themeUrl(art, 'WndChgElemItem.bmp'));
     this.hud = new Hud(this.element.ownerDocument, art, this.data!);
     this.hud.inArena = () => isArena(this.worldId); // 2026-11-10: TID_GAME_DEATH_ARENA (DPClient.cpp:2045-2052)
-    this.minimap = new Minimap(art, this.stage!.manifest, folder, key => services.store.url(key), this.element.ownerDocument);
+    // 2026-11-15 (B5): WdGuildWar_Mask over world 202's map (WndField.cpp:9214-9246); nothing when it is not converted
+    this.minimap = new Minimap(art, this.stage!.manifest, folder, key => services.store.url(key), this.element.ownerDocument, minimapMaskKey(this.worldId));
     this.hud.element.append(this.minimap.frame.element);
     this.worldMap = new WorldMap(art, this.worldMapData, this.data!, (id) => this.say(id), this.element.ownerDocument);
     this.worldMap.monsterInfo = this.worldMapMonsters;
@@ -1575,6 +1628,8 @@ export class WorldScreen {
       isTarget: (target) => this.duels.isPvpTarget(target.objectId),
       able: (target) => this.duels.canAttack(target.objectId, this.world?.self()?.act.isFlying() === true, target.act.isFlying()),
     };
+    // 2026-11-15 (B5): and the Guild Siege's in 202, from the book (IsGuildCombatTarget, combat/siege.ts)
+    attackLoop.siege = () => siegeSideOf(this.worldId, this.world?.self(), this.guildCombatBook);
     this.world!.onUseSkill = (casterId, message, started) => skillUse.onUseSkill(casterId, message, started);
     this.attackLoop = attackLoop;
     // Piece 7 M2: the own missiles' ids and reports, the missiles of everyone, and what the attack loop says and tests
@@ -1884,12 +1939,15 @@ export class WorldScreen {
     // build made for the players hides it unless the address has ?stats, debugOverlay.ts)
     const overlayShown = this.page!.overlay.shown;
     const mobileTools = new MobileTools(this.hudArt!, [
+      // 2026-11-15 (owner, C2): the Siege Ranking icon, in Status's place (the rows stay two of four, style.css)
+      { label: SIEGE_SHORTCUT.label, applet: null, picture: SIEGE_SHORTCUT.picture, rank: SIEGE_SHORTCUT.rank, run: () => this.openWindow(SIEGE_SHORTCUT.window) },
       ...MOBILE_SHORTCUTS.map(({ label, applet, window, rank }) => ({ label, applet, rank, run: () => this.openWindow(window) })),
       ...(overlayShown
         ? [{ label: 'Stats', applet: null, run: () => { statsButton!.ariaExpanded = String(this.page!.overlay.togglePanel()); } }]
         : []),
     ], doc);
     this.mobileTools = mobileTools;
+    this.siegeButton = siegeButton(this.hudArt!, () => this.openWindow('siegeRanking'), doc);
     const statsButton = overlayShown ? mobileTools.buttons.at(-1)! : null;
     if (statsButton !== null) statsButton.ariaExpanded = 'false';
     const logOutBox = new LogOutBox(this.hudArt!, this.data!.texts, () => this.leave(), doc);
@@ -1903,6 +1961,8 @@ export class WorldScreen {
     const reviveWindow = new ReviveWindow(this.hudArt!, this.data!.texts, () => this.session.sendRevivalToLodestar(), doc);
     this.reviveWindow = reviveWindow;
     reviveWindow.onStand = () => this.itemUse!.revive();
+    // 2026-11-15: a fighter of the siege goes to Lodestar at once, with no window (OnMoverDeath, DPClient.cpp:2043-2045)
+    reviveWindow.instantRevive = () => this.guildCombatBook.combatStateOf(this.world?.self()?.objectId ?? NULL_ID) === MoverGcState.FIGHTING;
     const inventoryWindow = new InventoryWindow(this.hudArt!, this.data!, {
       // 2026-11-05: a double-click (or Use) while the Upgrade Specialist's window is open puts the item in it (WndField.cpp:2262-2272)
       use: (id, shift) => {
@@ -2226,6 +2286,46 @@ export class WorldScreen {
       now: () => Math.floor(Date.now() / 1000),
     }, this.guildBook, (key) => this.services?.store.url(key) ?? '', doc);
     this.guildHud = guildHud;
+    // 2026-11-15: the Guild Siege's glue (guildCombat/guildCombatHud.ts); the book is the screen's
+    this.weeklyFeed.start();
+    this.guildCombatHud = new GuildCombatHud({
+      send: (bytes) => session.sendGuildCombat(bytes),
+      text: (tid) => this.data?.texts.get(tid)?.text ?? '',
+      textById: (textId) => { for (const text of this.data?.texts.values() ?? []) if (text.textId === textId) return text.text; return ''; },
+      box: (text, ok) => messageBox.open(text, ok === undefined ? 'ok' : 'okCancel', ok ?? (() => {})),
+      ownIsVagrant: () => (this.own?.job ?? this.entry.character.job) === 0,
+      ownGuildName: () => this.guildBook.own(this.entry.character.playerId)?.name ?? '',
+      ownIsGuildMaster: () => this.guildBook.own(this.entry.character.playerId)?.masterId === this.entry.character.playerId,
+      guildMembers: () => [...(this.guildBook.own(this.entry.character.playerId)?.members.values() ?? [])].map((m) => {
+        const data = this.playerData.get(m.playerId);
+        return { playerId: m.playerId, name: data.name, jobName: this.data?.jobs[data.job]?.title ?? '', level: data.level, online: data.login > 0, rank: m.rank };
+      }),
+      nameOf: (playerId) => this.playerData.get(playerId).name,
+      ownName: () => this.world?.self()?.name ?? this.entry.character.name,
+      rankingCache: this.siegeRankingCache,
+      guildName: (guildId) => this.guildBook.guild(guildId)?.name ?? '',
+      guildMasterId: (guildId) => this.guildBook.guild(guildId)?.masterId ?? 0,
+      ownPlayerId: () => this.entry.character.playerId,
+      ownGuildId: () => this.guildBook.ownGuild,
+      jobs: () => this.data?.jobs ?? {},
+      save: (filename, text) => saveTextFile(doc, filename, text),
+      ownGold: () => this.own?.gold ?? 0,
+      now: () => performance.now(),
+    }, this.guildCombatBook, this.hudArt!, doc);
+    // 2026-11-15 (B5): the arena's HUD, drawn from the book and the session's arena state (hud/guildCombat/arenaHud.ts)
+    this.arenaHud = new ArenaHud({
+      worldId: () => this.worldId,
+      ownPlayerId: () => this.entry.character.playerId,
+      ownName: () => this.world?.self()?.name ?? this.entry.character.name,
+      ownGuildName: () => this.guildBook.own(this.entry.character.playerId)?.name ?? '',
+      nameOf: (playerId) => this.playerData.get(playerId).name,
+      hpOf: (playerId) => {
+        const m = this.world?.moverByPlayerId(playerId);
+        return m?.maxHp ? m.hp / m.maxHp : null;
+      },
+      compact: () => isPhone(doc), // the phone's layout, whose Attack and quick slots the full boards would cover
+      text: (tid) => this.data?.texts.get(tid)?.text ?? '',
+    }, this.guildCombatBook, this.siegeArena, doc);
     // 2026-11-10: the player trade (trade/tradeHud.ts)
     const tradeHud = new TradeHud(this.hudArt!, this.data!.texts, {
       session: {
@@ -2482,12 +2582,13 @@ export class WorldScreen {
       modal.onChange = () => this.modalChanged();
     }
     this.hud!.element.append(
-      this.questTracker.element, this.teleporter.frame.element, this.heavenTower.element, ...this.lordHud.elements, this.lordHud.eventIcons,
+      this.arenaHud.element, // 2026-11-15 (B5): first, under the windows, as Neuz draws it in the world's background
+      this.questTracker.element, this.teleporter.frame.element, this.heavenTower.element, ...this.lordHud.elements, this.lordHud.eventIcons, ...this.guildCombatHud.elements,
       this.motionWindow.frame.element, // 2026-11-14
       // 2026-11-12: the phone's quick slots around Attack (bar 8's first slots; style.css shows them on a phone only)
       taskBar.element, taskBar.quickSlots, taskBar.actionSlotWindow.frame.element, this.attackButton.element, this.jumpButton.element,
       this.actionSlotButton.element, this.flightButtons.element,
-      mobileTools.element, logOutBox.element, messageBox.element,
+      mobileTools.element, this.siegeButton, logOutBox.element, messageBox.element,
       selectVillage.element, characterWindow.frame.element,
       characterWindow.confirm.frame.element, skillWindow.frame.element, skillWindow.warning.element, reviveWindow.element,
       inventoryWindow.frame.element, this.nearbyItems.element,
@@ -2957,7 +3058,8 @@ export class WorldScreen {
     const changes = world.takeChanges();
     this.countDropped(changes.dropped);
     this.views!.sync(changes, world.movers);
-    this.tags!.sync(changes, world.movers, (mover) => nameTagOf(mover, world.self(), data.nameColors, data.honorTitles, this.inParty, data.jobs, this.guildTagOf));
+    for (const objectId of changes.removed) this.guildCombatBook.forget(objectId);
+    this.tags!.sync(changes, world.movers, (mover) => nameTagOf(mover, world.self(), data.nameColors, data.honorTitles, this.inParty, data.jobs, this.guildTagOf, this.trophyTagOf, this.siegeColorOf, this.badgeTagOf));
     this.play(changes);
   }
 
@@ -3289,7 +3391,9 @@ export class WorldScreen {
       this.placement?.frame();
       this.placementControls?.update();
       this.papering?.update(now / 1000);
-      this.tags!.update(stage.camera, renderer.getSize(drawingSize).y, (objectId) => views.placeOf(objectId));
+      // 2026-11-15 (B5): a player the siege hides has no name either (render skip, World3D.cpp:655-662)
+      this.tags!.update(stage.camera, renderer.getSize(drawingSize).y,
+        (objectId) => (this.siegeHidden(world.movers.get(objectId)) ? null : views.placeOf(objectId)));
       const owner = this.questOwner();
       const quests = this.own?.quests ?? new Map();
       const completed = this.own?.completedQuests ?? [];
@@ -3617,6 +3721,8 @@ export class WorldScreen {
     this.smTimers.tick(performance.now());
     this.lordHud?.step(performance.now()); // 2026-11-11: the Lord windows' clock and the event icons
     this.social?.frame(); // 2026-11-15 (social): the couple window's OnDraw
+    this.guildCombatHud?.step(performance.now()); // 2026-11-15: the siege status's count-down
+    this.arenaHud?.update(performance.now()); // B5: the arena's count-down, boards and own guild's list
     this.buffStatus?.update(self?.buffs.list(buffNow) ?? [], this.data!.skills, buffNow, {
       sm: this.smTimers.list(), level: this.own?.level ?? 1, resist: this.resistElements,
     });
@@ -3687,6 +3793,8 @@ export class WorldScreen {
     const menuNpc = this.moverMenu?.npcId ?? null;
     if (this.moverMenu?.isOpen === true &&
       (menuNpc === null ? !ownStands(self) : !dialogueStays(world.movers.get(menuNpc), self))) this.moverMenu.close();
+    // 2026-11-15: the siege's NPC windows go when the player moves (WndWorld.cpp:8402-8436)
+    if (this.guildCombatHud?.isOpen === true && !ownStands(self)) this.guildCombatHud.closeForMove();
     this.shopWindow?.update();
     // 2026-11-10: the personal shop's slots follow the bag (the names and counts of the own items)
     if (this.own !== undefined && this.own.inventoryRevision !== this.vendorRevision) {
@@ -3773,6 +3881,8 @@ export class WorldScreen {
     // 2026-11-15: APP_GH_FURNITURE_STORAGE, R (FuncApplet.cpp:180): the guild's Furniture Storage
     if (window === 'guildFurniture') { this.guildHouseHud?.toggleStorage(); return; }
     if (window === 'couple') { this.social?.coupleWindow.toggle(); return; } // 2026-11-15 (social)
+    // 2026-11-15 (owner, Guild Siege C2): the Siege Ranking window, from the Start menu and the icons
+    if (window === 'siegeRanking') { this.guildCombatHud?.siegeRanking.toggle(); return; }
     // 2026-11-10: APP_VENDOR_REVISION, the personal shop, refused while the Summon Angel window is open (WndManager.cpp:2685-2695)
     if (window === 'vendor') {
       if (this.summonAngel?.isOpen === true) this.say('TID_GAME_SUMMONANGELUSING');
@@ -4683,7 +4793,7 @@ export class WorldScreen {
   private recolorTags(): void {
     const world = this.world, data = this.data;
     if (world === undefined || data === undefined) return;
-    this.tags?.recolor(world.movers, (mover) => nameTagOf(mover, world.self(), data.nameColors, data.honorTitles, this.inParty, data.jobs, this.guildTagOf));
+    this.tags?.recolor(world.movers, (mover) => nameTagOf(mover, world.self(), data.nameColors, data.honorTitles, this.inParty, data.jobs, this.guildTagOf, this.trophyTagOf, this.siegeColorOf, this.badgeTagOf));
   }
 
   /** 2026-11-10: a player's guild line (`CMover::GetGuild`, `Mover.cpp:8137-8160`): its guild's name and logo, or none. */
@@ -4692,7 +4802,32 @@ export class WorldScreen {
     if (player === undefined) return undefined;
     const guild = this.guildBook.shownGuild(player.guildId, player.playerId, this.entry.character.playerId);
     if (guild === undefined) return undefined;
-    return guildLine({ name: guild.name, logo: guild.logo, master: guild.masterId === player.playerId }, logoKey);
+    // 2026-11-15 (B5): the siege's colours (MoverRender.cpp:1580-1596): its own in 202, a defender's pink in any world
+    const defender = siegeDefenderLine(this.guildCombatBook.warPlayers.has(player.playerId), this.guildCombatBook.warState);
+    return guildLine({ name: guild.name, logo: guild.logo, master: guild.masterId === player.playerId }, logoKey, { name: this.siegeColorOf(mover), defender });
+  };
+
+  /** 2026-11-15 (B5): a player's name colour in the siege's world (`bOtherColor`, MoverRender.cpp:1236-1245), or none. */
+  private readonly siegeColorOf = (mover: Mover): number | null =>
+    siegeNameColor(this.world?.self()?.added.player?.guildId ?? 0, mover.added.player?.guildId ?? 0, this.worldId);
+
+  /** 2026-11-15 (B5): a player its line-ups hide from the own player in 202 (`GCWAR_RENDER_SKIP_MODE`, Mover.cpp:3321-3368). */
+  private siegeHidden(mover: Mover | undefined): boolean {
+    const player = mover?.added.player;
+    return player !== undefined && !mover!.isSelf
+      && siegeHides(this.worldId, this.guildCombatBook.warPlayers, this.entry.character.playerId, player.playerId);
+  }
+
+  /** 2026-11-15: a player's trophy by the name (`RenderName`, `MoverRender.cpp:1600-1612`): the MVP's or the winning guild's. */
+  private readonly trophyTagOf = (mover: Mover): 'winner' | 'best' | null => {
+    const player = mover.added.player;
+    return player === undefined ? null : trophyOf(this.guildCombatBook, player.playerId, player.guildId ?? 0);
+  };
+
+  /** 2026-11-15 (C1): a player's weekly champion or MVP mark, from the website's answer. */
+  private readonly badgeTagOf = (mover: Mover): 'weeklyChampion' | 'weeklyMvp' | null => {
+    const player = mover.added.player;
+    return player === undefined ? null : badgeOf(this.weeklyFeed.current(Date.now()), player.playerId, player.guildId ?? 0, Date.now());
   };
 
   /** 2026-11-10: what the guild book reads of the world (guild/guildBook.ts `GuildContext`). */
@@ -4859,6 +4994,8 @@ export class WorldScreen {
       this.session.sendArenaEnter(); // 2026-11-10: SendHdr( PACKETTYPE_ARENA_ENTER ) (:5928-5930); the server REPLACEs
     } else if (entry === MMI.ARENA_EXIT) {
       this.session.sendArenaExit(); // SendHdr( PACKETTYPE_ARENA_EXIT ) (:5931-5933)
+    } else if (GUILD_COMBAT_ENTRIES.has(entry)) {
+      this.guildCombatHud?.openEntry(entry); // 2026-11-15: Frankie's and Donaris's windows (WndWorld.cpp:3941-4159)
     } else if (LORD_ENTRIES.has(entry)) {
       this.lordHud?.openEntry(entry); // 2026-11-11: the Lord Manager's windows (WndWorld.cpp:5182-5212)
     } else if (entry === MMI.HEAVEN_TOWER) {
@@ -5248,6 +5385,7 @@ export class WorldScreen {
     this.hoverAt = null;
     this.mark?.dispose();
     this.views?.dispose();
+    this.weeklyFeed.stop();
     this.tags?.dispose();
     this.indicators?.dispose();
     this.pendingAttackEmotes.clear();
@@ -5281,6 +5419,8 @@ export class WorldScreen {
     this.turboGauge = undefined;
     this.flightButtons?.dispose();
     this.flightButtons = undefined;
+    this.siegeButton?.remove();
+    this.siegeButton = undefined;
     this.mobileTools?.dispose();
     this.mobileTools = undefined;
     this.flightAccelerate = undefined;
@@ -5345,6 +5485,10 @@ export class WorldScreen {
     // 2026-11-10: the guild's windows go with the world; the guild book stays (the screen's)
     this.guildHud?.dispose();
     this.guildHud = undefined;
+    this.guildCombatHud?.dispose();
+    this.guildCombatHud = undefined;
+    this.arenaHud?.dispose();
+    this.arenaHud = undefined;
     this.tradeHud?.reset();
     this.tradeHud = undefined;
     this.showTradeTooltip(null, null);
@@ -5439,6 +5583,7 @@ export class WorldScreen {
       this.skillWindow, this.optionWindow, this.messageBox, this.selectVillage]) window?.frame.close();
     this.heavenTower?.close();
     this.lordHud?.close();
+    this.guildCombatHud?.close();
     this.worldMap?.close();
     this.audio?.stopWorld();
     this.stopAsking(); // nothing is left to lose by closing the page

@@ -11,8 +11,9 @@ import { MADRIGAL, SELF_ID, SELF_PLAYER, SQUARE, aibatt, enterFlaris, playGatewa
 test.setTimeout(120_000);
 
 /** The shortcuts in the Start menu's order, and the Client/Icon picture of each. */
+// 2026-11-15 (owner, Guild Siege C2): the Siege Ranking icon (no Start-menu picture: the winner trophy, `null` here) first, in Status's place (nine icons in rows of five and four failed at 730 px: the target bar over an icon)
 const SHORTCUTS = [
-  ['Status', 'icon_status'], ['Character', 'icon_character'], ['Bag', 'icon_inventory'], ['Skill', 'icon_skill'],
+  ['Siege Ranking', null], ['Character', 'icon_character'], ['Bag', 'icon_inventory'], ['Skill', 'icon_skill'],
   ['Quest', 'icon_quest'], ['World Map', 'icon_applet'], ['Messenger', 'icon_messenger'], ['Party', 'icon_troupe'],
 ] as const;
 const LABELS = [...SHORTCUTS.map(([label]) => label), 'Stats'];
@@ -59,6 +60,22 @@ test('top-right shortcuts: the important Start-menu icons in two rows of four on
   if (!isMobile) {
     // the desktop has the task bar's Start menu and hotkeys: no shortcuts at the top right
     await expect(tools).toBeHidden();
+    // 2026-11-15 (owner, C2): but the Siege Ranking button, left of the Navigator, opens its window (the website's answer
+    // stands in for the route; the Start menu has the line too)
+    await page.route('**/api/siege/ranking*', (route) => route.fulfill({
+      json: { rows: [{ rank: 1, name: 'Zed', job: 1, guild: 'Alpha', points: 9 }], checkedAt: '2026-11-15T12:00:00+08:00' },
+    }));
+    const siege = page.locator('.hud-siege-button');
+    await expect(siege).toBeVisible();
+    const [siegeBox, navigatorBox] = [(await siege.boundingBox())!, (await page.locator('.hud-navigator').boundingBox())!];
+    expect(siegeBox.x + siegeBox.width).toBeLessThanOrEqual(navigatorBox.x);
+    await siege.click();
+    await expect(page.locator('.hud-sr')).toBeVisible();
+    await expect(page.locator('.hud-sr .hud-sr-row')).toContainText('Zed');
+    await page.locator('.hud-sr .hud-window-close').click();
+    await page.getByRole('button', { name: 'Start' }).click();
+    await page.getByRole('menuitem', { name: 'Siege Ranking' }).click();
+    await expect(page.locator('.hud-sr')).toBeVisible();
     await page.screenshot({ path: info.outputPath('top-desktop.png'), clip: top });
     return;
   }
@@ -67,6 +84,14 @@ test('top-right shortcuts: the important Start-menu icons in two rows of four on
   const icons: Box[] = [];
   for (const [name, file] of SHORTCUTS) {
     const button = tools.getByRole('button', { name, exact: true });
+    if (file === null) {
+      // the trophy's picture is converted only by the owner: before that its short text sits in an icon-sized button
+      const box = (await button.locator('.hud-mobile-tool-icon').boundingBox())!;
+      icons.push(box);
+      expect((await button.boundingBox())!.height).toBeCloseTo(box.height + 4, 0);
+      previous = box;
+      continue;
+    }
     await expect(button).toHaveText('');
     const look = await button.evaluate(async (element) => {
       const style = getComputedStyle(element);
@@ -127,7 +152,7 @@ test('top-right shortcuts: the important Start-menu icons in two rows of four on
   for (const row of [first, second]) for (const icon of row) expect(icon.y).toBeCloseTo(row[0]!.y, 0);
   expect(second[0]!.y - first[0]!.y).toBeCloseTo(first[0]!.height + 4, 0);
   expect((await stats.boundingBox())!.y).toBeGreaterThanOrEqual(second[0]!.y + second[0]!.height);
-  first.forEach((icon, i) => expect(second[i]!.x).toBeCloseTo(icon.x, 0));
+  second.forEach((icon, i) => expect(icon.x).toBeCloseTo(first[i]!.x, 0));
   const row = await layout(page);
   expect(row.labels).toEqual(LABELS);
   expect(row.tools.x).toBeGreaterThanOrEqual(row.status.x + row.status.width);
@@ -154,6 +179,9 @@ test('top-right shortcuts: the important Start-menu icons in two rows of four on
   await tools.getByRole('button', { name: 'Bag', exact: true }).tap();
   await expect(page.locator('.hud-inventory')).toBeVisible();
   await page.locator('.hud-inventory .hud-window-close').tap();
+  await tools.getByRole('button', { name: 'Siege Ranking', exact: true }).tap();
+  await expect(page.locator('.hud-sr')).toBeVisible();
+  await page.locator('.hud-sr .hud-window-close').tap();
 
   // two rows of four fit every phone: all of them at 844, 750, an iPhone's 730 with its address bar, and 568
   for (const [width, height, labels] of [

@@ -19,11 +19,24 @@ function pointInto(out: { x: number; y: number }, pos: Vec3, center: Vec3, zoom:
   return out;
 }
 
+/** 2026-11-15 (Guild Siege, B5): `m_GuildCombatTextureMask`, `World\WdGuildWar\WdGuildWar_Mask.dds` (WndField.cpp:9903). */
+export const SIEGE_MASK_KEY = 'minimaps/wdguildwar/mask.png';
+/** The mask CWndNavigator draws over each tile in the world `worldId`: WI_WORLD_GUILDWAR 202's only (WndField.cpp:9214-9218). */
+export function minimapMaskKey(worldId: number): string | null {
+  return worldId === 202 ? SIEGE_MASK_KEY : null;
+}
+/** The mask's alpha (`m_GuildCombatTextureMask.Render( p2DRender, point, 200 )`, WndField.cpp:9242-9246). */
+const MASK_ALPHA = 200 / 255;
+
 /** APP_NAVIGATOR: resdata.inc:18741; WndField.cpp:9191-10230. Native art and per-landscape DDS tiles. */
 export class Minimap {
   readonly frame: WindowFrame;
   private readonly map: HTMLElement;
   private readonly images = new Map<string, HTMLImageElement>();
+  /** 2026-11-15: the siege's mask over each tile drawn, by the tile's key, and its picture's URL (null: none). */
+  private readonly masks = new Map<string, HTMLImageElement>();
+  private readonly maskSrc: string | null;
+  private readonly maskLayer: HTMLElement;
   private readonly dots = new Map<number, HTMLElement>();
   private readonly arrow: HTMLElement;
   private readonly filterButton: HTMLButtonElement;
@@ -44,7 +57,9 @@ export class Minimap {
   private readonly placedAt = new WeakMap<HTMLElement, [number, number, number]>();
   private heading = NaN;
   constructor(private readonly art: UiArt, private readonly manifest: WorldManifest, private readonly folder: string,
-    private readonly url: (key: string) => string | null, private readonly doc: Document = document) {
+    private readonly url: (key: string) => string | null, private readonly doc: Document = document,
+    /** 2026-11-15: the mask over each tile (`minimapMaskKey`), or none; a key the index lacks is drawn as nothing. */
+    maskKey: string | null = null) {
     // 2026-11-13 (owner): 30% smaller on a phone (0.85 x 0.7)
     this.frame = new WindowFrame('Navigator', art, { width: 144, height: 160, mobileScale: 0.6 }, doc);
     this.frame.element.classList.add('hud-navigator'); this.frame.escapeCloses = false;
@@ -70,12 +85,15 @@ export class Minimap {
       this.frame.body.append(button); return button;
     };
     this.frame.body.append(this.map);
+    // over the tiles (prepended to the map) and under the markers (z-index 1)
+    this.maskSrc = maskKey === null ? null : url(maskKey);
+    this.maskLayer = doc.createElement('div'); this.maskLayer.className = 'navigator-masks';
     this.filterButton = control('filter', 'Navigator filters', 'ButtNavLeft.tga', 1, () => { this.filterMenu.hidden = !this.filterMenu.hidden; });
     this.filterButton.disabled = manifest.indoor === true;
     control('zoom-in', 'Zoom in', 'ButtNavZoomIn.tga', 54, () => { this.zoomNow = Math.min(352, this.zoomNow + 32); });
     control('zoom-out', 'Zoom out', 'ButtNavZoomOut.tga', 70, () => { this.zoomNow = Math.max(128, this.zoomNow - 32); });
     this.frame.body.append(this.filterMenu);
-    this.map.append(this.destination, this.arrow);
+    this.map.append(this.maskLayer, this.destination, this.arrow);
     this.frame.body.addEventListener('pointerdown', event => event.stopPropagation());
     this.map.addEventListener('click', event => {
       if (this.center === undefined) return;
@@ -109,11 +127,18 @@ export class Minimap {
         const left = WIDTH / 2 + (tx * meters - center[0]) * ratio, top = HEIGHT / 2 - ((tz + 1) * meters - center[2]) * ratio;
         if (this.moved(image, left, top, this.zoom)) {
           image.style.cssText = `left:${left}px;top:${top}px;width:${this.zoom}px;height:${this.zoom}px`;
+          // 2026-11-15: the siege's mask over the tile, as big (m_size), at alpha 200 (WndField.cpp:9240-9246)
+          if (this.maskSrc !== null) {
+            const mask = this.maskOf(key);
+            mask.style.cssText = image.style.cssText;
+            mask.style.opacity = String(MASK_ALPHA);
+          }
         }
       }
     }
     // forEach, not for...of: no [key, value] pair a frame per image and marker
     this.images.forEach((image, key) => { if (!visible.has(key)) { image.remove(); this.images.delete(key); } });
+    this.masks.forEach((mask, key) => { if (!visible.has(key)) { mask.remove(); this.masks.delete(key); } });
     const shown = this.shown; shown.clear();
     if (!this.manifest.indoor) for (const marker of markers) {
       if (!this.filters.has(marker.kind)) continue;
@@ -144,6 +169,15 @@ export class Minimap {
       this.destination.style.backgroundPosition = `${-(Math.floor(performance.now() / 120) % 4) * 16}px 0`;
     }
   }
+  /** 2026-11-15: the mask over the tile `key`, made once it is drawn. */
+  private maskOf(key: string): HTMLImageElement {
+    let mask = this.masks.get(key);
+    if (mask === undefined) {
+      mask = this.doc.createElement('img'); mask.className = 'navigator-mask'; mask.src = this.maskSrc!; mask.alt = ''; mask.draggable = false;
+      this.masks.set(key, mask); this.maskLayer.append(mask);
+    }
+    return mask;
+  }
   /** Tile (tx, tz)'s key and picture URL, made once. */
   private tileSource(tx: number, tz: number): { key: string; src: string | null } {
     const index = tz * this.manifest.size[0] + tx;
@@ -162,5 +196,5 @@ export class Minimap {
     if (at === undefined) this.placedAt.set(element, [a, b, c]); else { at[0] = a; at[1] = b; at[2] = c; }
     return true;
   }
-  dispose(): void { this.frame.close(); this.frame.element.remove(); this.images.clear(); this.dots.clear(); }
+  dispose(): void { this.frame.close(); this.frame.element.remove(); this.images.clear(); this.masks.clear(); this.dots.clear(); }
 }

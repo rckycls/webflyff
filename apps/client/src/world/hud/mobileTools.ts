@@ -34,11 +34,14 @@ export const bareIconKey = (file: string): string => themeKey(file).replace(/^ui
 
 /**
  * A shortcut: its name (label and tooltip), the applet whose Start-menu icon it shows (null: none, its text shows), its
- * action, and its rank (`data-rank`): a narrow phone hides the highest ranks first (style.css).
+ * action, and its rank (`data-rank`): a narrow phone hides the highest ranks first (style.css). 2026-11-15 (Guild Siege, C2): a
+ * tool with no applet may have a `picture` (a UI art key) instead; while the picture is missing its short text shows in the
+ * icon's place, in a button of the icons' size.
  */
 export interface MobileTool {
   label: string;
   applet: number | null;
+  picture?: string;
   run: () => void;
   rank?: number;
 }
@@ -46,11 +49,10 @@ export interface MobileTool {
 /**
  * The windows of the Start menu the phone's shortcuts open (2026-11-10, owner: "the important icons from the Start menu"),
  * in CWndTaskMenu's order (see the top of this file), and their rank: Bag, Skill, Character and Quest stay on the narrowest
- * phone (568 px); Status goes first, as its window shows from the start. Stats, the diagnostics panel, follows them, with
+ * phone (568 px). Status has no shortcut since 2026-11-15 (its window shows from the start; the Siege Ranking icon took its place). Stats, the diagnostics panel, follows them, with
  * no icon (WorldScreen).
  */
 export const MOBILE_SHORTCUTS: ReadonlyArray<{ label: string; applet: number; window: TaskBarWindow; rank: number }> = [
-  { label: 'Status', applet: AppId.STATUS1, window: 'status', rank: 8 },
   { label: 'Character', applet: AppId.CHARACTER3, window: 'character', rank: 3 },
   { label: 'Bag', applet: AppId.INVENTORY, window: 'inventory', rank: 1 },
   { label: 'Skill', applet: AppId.SKILL3, window: 'skills', rank: 2 },
@@ -59,6 +61,15 @@ export const MOBILE_SHORTCUTS: ReadonlyArray<{ label: string; applet: number; wi
   { label: 'Messenger', applet: AppId.MESSENGER_EX, window: 'messenger', rank: 7 },
   { label: 'Party', applet: AppId.PARTY, window: 'party', rank: 5 },
 ];
+
+/**
+ * 2026-11-15 (owner, Guild Siege C2): the Siege Ranking icon, the V15 winner trophy (`ui/texguildcombatwinner.png`, converted
+ * with the siege's pictures), first of the first row, in the place of Status (2026-11-15: nine icons in rows of five and four did not fit the 730 px
+ * phone beside the target bar, so the icon takes Status's place and the rows stay two of four). It is no window of Neuz's Start menu: the Start menu has its own line.
+ */
+export const SIEGE_SHORTCUT = { label: 'Siege Ranking', picture: 'ui/texguildcombatwinner.png', window: 'siegeRanking', rank: 9 } as const;
+/** What the Siege Ranking icon shows while its picture is missing. */
+const PICTURE_TEXT = 'Siege';
 
 /**
  * The icons' size in CSS px at a device pixel ratio: 32 device px times the ratio rounded to a whole number (at least 1), so
@@ -80,22 +91,23 @@ export class MobileTools {
     element.className = 'hud-mobile-tools';
     element.setAttribute('role', 'toolbar');
     element.setAttribute('aria-label', 'Window shortcuts');
-    this.buttons = tools.map(({ label, applet, run, rank }) => {
+    this.buttons = tools.map(({ label, applet, picture, run, rank }) => {
       const button = doc.createElement('button');
       button.type = 'button';
       button.setAttribute('aria-label', label);
       button.title = label;
       if (rank !== undefined) button.dataset.rank = String(rank);
       const file = applet === null ? null : APPLETS.get(applet)?.icon ?? null;
-      const url = file === null ? '' : art.url(bareIconKey(file)) || art.url(themeKey(file));
-      if (url === '') {
+      const url = picture !== undefined ? art.url(picture) : file === null ? '' : art.url(bareIconKey(file)) || art.url(themeKey(file));
+      if (url === '' && picture === undefined) {
         button.textContent = label;
       } else {
         button.dataset.icon = '';
         const icon = doc.createElement('span');
         icon.className = 'hud-mobile-tool-icon';
         icon.setAttribute('aria-hidden', 'true');
-        icon.style.backgroundImage = `url(${JSON.stringify(url)})`;
+        if (url === '') icon.textContent = PICTURE_TEXT;
+        else icon.style.backgroundImage = `url(${JSON.stringify(url)})`;
         button.append(icon);
       }
       button.addEventListener('click', () => { run(); button.blur(); });
@@ -117,4 +129,21 @@ export class MobileTools {
   private readonly relayout = (): void => {
     this.element.style.setProperty('--hud-mobile-icon', `${iconCssSize(this.view?.devicePixelRatio ?? 1)}px`);
   };
+}
+
+/**
+ * 2026-11-15 (owner): the desktop's Siege Ranking button, left of the Navigator (style.css `.hud-siege-button`; the phone has
+ * the icon in its shortcuts instead). Its picture is `SIEGE_SHORTCUT.picture`; while that is missing its text shows.
+ */
+export function siegeButton(art: UiArt, run: () => void, doc: Document = document): HTMLButtonElement {
+  const button = doc.createElement('button');
+  button.type = 'button';
+  button.className = 'hud-siege-button';
+  button.setAttribute('aria-label', SIEGE_SHORTCUT.label);
+  button.title = SIEGE_SHORTCUT.label;
+  const url = art.url(SIEGE_SHORTCUT.picture);
+  if (url === '') button.textContent = PICTURE_TEXT;
+  else button.style.backgroundImage = `url(${JSON.stringify(url)})`;
+  button.addEventListener('click', () => { run(); button.blur(); });
+  return button;
 }

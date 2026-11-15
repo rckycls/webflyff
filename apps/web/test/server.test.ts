@@ -11,6 +11,7 @@ import type { WebConfig } from '../src/config';
 import { HourlyLimit } from '../src/hourlyLimit';
 import { RefusalLog } from '../src/refusalLog';
 import { createWebServer } from '../src/server';
+import { SiegeCache } from '../src/siege';
 import { StatusCache } from '../src/status';
 import { TicketBook } from '../src/ticket';
 
@@ -33,6 +34,8 @@ async function start(config: WebConfig = baseConfig): Promise<Started> {
   const store: AccountStore = {
     create: async (...args) => { calls.push(args); return 1; },
     onlineCount: async () => 4,
+    siegeWeekly: async () => ({ champion: { guildId: 12, name: 'Bakbak' }, mvp: null, endedAt: '2026-11-14T20:41:09+08:00', expiresAt: null }),
+    siegeRanking: async () => [{ rank: 1, name: 'Bakbak', wins: 1, sieges: 1, points: 5 }],
   };
   const server = createWebServer({
     config, store,
@@ -41,6 +44,7 @@ async function start(config: WebConfig = baseConfig): Promise<Started> {
     createdByAddress: new HourlyLimit(config.limits.createdPerHourPerAddress, clock),
     createdInAll: new HourlyLimit(config.limits.createdPerHour, clock),
     ticketsByAddress: new HourlyLimit(config.limits.ticketsPerHourPerAddress, clock),
+    siege: new SiegeCache(store, clock),
     status: new StatusCache(async () => ({ online: true, players: 4, checkedAt: '2026-11-11T00:00:00.000Z' }), clock),
     log: { info: (line) => lines.push(line), warn: (line) => lines.push(line) },
     refusals: new RefusalLog({ info: (line) => lines.push(line), warn: (line) => lines.push(line) }),
@@ -87,6 +91,15 @@ it('serves a ticket, a sign-up and the status', async () => {
     expect(reply.headers['cache-control']).toBe('no-store');
     expect(reply.headers['content-type']).toMatch(/^application\/json/);
   }
+});
+
+it('serves the siege weekly winner and rankings, and 400 on a bad ranking query', async () => {
+  const site = await start(baseConfig);
+  expect(await call(site.port, 'GET', '/api/siege/weekly')).toMatchObject({
+    status: 200, body: { champion: { guildId: 12, name: 'Bakbak' }, endedAt: '2026-11-14T20:41:09+08:00', expiresAt: '2026-11-21T20:41:09+08:00' },
+  });
+  expect(await call(site.port, 'GET', '/api/siege/ranking?board=guild&span=all')).toMatchObject({ status: 200, body: { rows: [{ rank: 1, name: 'Bakbak' }] } });
+  expect(await call(site.port, 'GET', '/api/siege/ranking?board=x&span=all')).toMatchObject({ status: 400, body: { error: 'bad_request' } });
 });
 
 it('takes the address from X-Forwarded-For only from a trusted proxy', async () => {

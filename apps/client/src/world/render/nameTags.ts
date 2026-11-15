@@ -13,6 +13,10 @@ export interface NameTag {
   mark?: string | null;
   /** 2026-11-10: the guild line above the name (`guildLine`): its text, colour and logo picture's key. */
   guild?: GuildLine;
+  /** 2026-11-15 (Guild Siege): the winner's or the MVP's picture left of the guild logo (`trophyKey`), or none. */
+  trophy?: 'winner' | 'best' | null;
+  /** 2026-11-15 (C1, the owner's custom mark): the weekly champion's or the weekly MVP's picture, one slot left of the trophy. */
+  badge?: 'weeklyChampion' | 'weeklyMvp' | null;
 }
 
 /** The guild line of a player's tag (guild research §5). */
@@ -30,16 +34,30 @@ export interface TagGuild {
   master: boolean;
 }
 
+/** 2026-11-15: a trophy's picture key (`TexGuildCombatWinner.bmp`, `TexGuildCombatBest.bmp`, `CWndWorld::m_TexGuildWinner / m_TexGuildBest`). */
+export const trophyKey = (trophy: 'winner' | 'best'): string => `ui/texguildcombat${trophy === 'winner' ? 'winner' : 'best'}.png`;
+
+/** 2026-11-15 (C1): a weekly badge's picture key: the gold copies the converter makes of the two trophies (tools/convert uiStage). */
+export const badgeKey = (badge: 'weeklyChampion' | 'weeklyMvp'): string => `ui/texguildcombatweekly${badge === 'weeklyChampion' ? 'winner' : 'best'}.png`;
+
 /** `0xFFFFFF99`: the guild line of the guild's master (`MoverRender.cpp:1586-1588`); everyone else's is white. */
 const COLOR_GUILD_MASTER = 0xffffff99;
 const COLOR_GUILD = 0xffffffff;
 
 /**
- * 2026-11-10: the guild line (`RenderName`, `MoverRender.cpp:1484-1660`): the guild's name, no brackets, white, the
- * master's light yellow; the 24 x 24 logo when it has one. (The Guild Siege's colours are the siege's, not here.)
+ * 2026-11-15: the Guild Siege's colours of a tag (combat/siege.ts): the name's in world 202 (`siegeNameColor`), and a
+ * defender's guild line (`siegeDefenderLine`); null where the siege has none.
  */
-export function guildLine(guild: TagGuild, logoKey: (logo: number) => string): GuildLine {
-  return { text: guild.name, color: guild.master ? COLOR_GUILD_MASTER : COLOR_GUILD, logo: guild.logo === 0 ? null : logoKey(guild.logo) };
+export interface SiegeColors { name: number | null; defender: number | null }
+
+/**
+ * 2026-11-10: the guild line (`RenderName`, `MoverRender.cpp:1484-1660`): the guild's name, no brackets, white, the
+ * master's light yellow; the 24 x 24 logo when it has one. 2026-11-15 (`:1580-1596`): in the siege's world the siege
+ * colour in place of the white (the master's stays yellow), and a defender's pink over both.
+ */
+export function guildLine(guild: TagGuild, logoKey: (logo: number) => string, siege?: SiegeColors): GuildLine {
+  const color = siege?.defender ?? (guild.master ? COLOR_GUILD_MASTER : siege?.name ?? COLOR_GUILD);
+  return { text: guild.name, color, logo: guild.logo === 0 ? null : logoKey(guild.logo) };
 }
 
 /**
@@ -96,7 +114,8 @@ const FADE_METRES = 10;
  *
  * `viewer` changes nothing, as in Neuz: `CWorld::Render` picks a colour by the ranks of the viewer and the mover
  * (`World3D.cpp:1283-1298`), but `RenderName` sets a player's colour in every branch and an NPC's is fixed, so it is never used.
- * Not copied, for want of the data: the guild-war colours (`:1238-1245`, they need the guild ids), the structure line above an NPC of `character.inc` (`:1426-1437`) and the invisibility buff
+ * 2026-11-15: the Guild Siege's colours of world 202 (`:1238-1245`) come from `siegeColorOf`, and win over every other.
+ * Not copied, for want of the data: the structure line above an NPC of `character.inc` (`:1426-1437`) and the invisibility buff
  * (`IsMode`, `Mover.h:1704`).
  */
 export function nameTagOf(
@@ -108,15 +127,26 @@ export function nameTagOf(
   jobs: ReadonlyArray<{ name: string }> = [],
   /** 2026-11-10: the guild line of a player, or undefined (no guild known for it). */
   guildOf: (mover: Mover) => GuildLine | undefined = () => undefined,
+  /** 2026-11-15 (Guild Siege): the trophy of a player (guildCombat/guildCombatRules.ts `trophyOf`), or none. */
+  trophyOf: (mover: Mover) => 'winner' | 'best' | null = () => null,
+  /** 2026-11-15 (Guild Siege, B5): a player's name colour in world 202 (combat/siege.ts `siegeNameColor`), or none. */
+  siegeColorOf: (mover: Mover) => number | null = () => null,
+  /** 2026-11-15 (C1): a player's weekly badge from the website (guildCombat/siegeWebApi.ts `badgeOf`), or none. */
+  badgeOf: (mover: Mover) => 'weeklyChampion' | 'weeklyMvp' | null = () => null,
 ): NameTag | null {
   const player = mover.added.player;
   if (mover.kind === 'player' && player !== undefined) {
     if ((player.mode & TRANSPARENT_MODE) === TRANSPARENT_MODE && !mover.isSelf) return null;
     const mark = legendMark(player.job, player.level, jobs);
     const guild = guildOf(mover);
+    const trophy = trophyOf(mover);
+    const badge = badgeOf(mover);
+    // 2026-11-15: the siege's colour last, over the PK and party ones (`bOtherColor`, MoverRender.cpp:1405-1406)
+    const color = siegeColorOf(mover) ?? playerColor(player, colors, inParty(player.playerId));
     return {
-      text: playerText(mover.name, player, honorTitles), color: playerColor(player, colors, inParty(player.playerId)), maxDistance: FAR_LIMIT,
+      text: playerText(mover.name, player, honorTitles), color, maxDistance: FAR_LIMIT,
       ...(mark !== null ? { mark } : {}), ...(guild !== undefined ? { guild } : {}),
+      ...(trophy !== null ? { trophy } : {}), ...(badge !== null ? { badge } : {}),
     };
   }
   const { belligerence } = mover.added;

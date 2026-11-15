@@ -4,6 +4,7 @@
 // - `POST /api/sign-up`: `handleSignUp`, with at most 1025 bytes of the body read (more is a 413, answered without
 //   reading the rest);
 // - `GET /api/status`: the shared status;
+// - `GET /api/siege/weekly` and `GET /api/siege/ranking?board=&span=`: the Guild Siege answers (siege.ts);
 // - anything else: `404 {error:'not_found'}`.
 //
 // Every answer is JSON with `Cache-Control: no-store`, and no CORS headers: only the site's own pages may call it.
@@ -14,9 +15,11 @@ import { resolveClientAddress } from '@flyffweb/protocol';
 import type { HourlyLimit } from './hourlyLimit';
 import { handleSignUp, MAX_BODY_BYTES } from './signUpHandler';
 import type { SignUpDeps } from './signUpHandler';
+import { handleSiegeRanking, handleSiegeWeekly } from './siege';
+import type { SiegeCache } from './siege';
 import type { StatusCache } from './status';
 
-export type WebServerDeps = SignUpDeps & { status: StatusCache; ticketsByAddress: HourlyLimit };
+export type WebServerDeps = SignUpDeps & { status: StatusCache; siege: SiegeCache; ticketsByAddress: HourlyLimit };
 
 /** Slow clients get this long to send a request (Caddy sends it at once). */
 const REQUEST_TIMEOUT_MS = 10_000;
@@ -87,6 +90,16 @@ export function createWebServer(deps: WebServerDeps): Server {
     }
     if (path === '/api/status' && req.method === 'GET') {
       send(res, 200, await deps.status.get());
+      return;
+    }
+    if (path === '/api/siege/weekly' && req.method === 'GET') {
+      const answer = await handleSiegeWeekly(deps);
+      send(res, answer.status, answer.body);
+      return;
+    }
+    if (path === '/api/siege/ranking' && req.method === 'GET') {
+      const answer = await handleSiegeRanking(new URL(req.url ?? '/', 'http://localhost').searchParams, deps);
+      send(res, answer.status, answer.body);
       return;
     }
     send(res, 404, { error: 'not_found' });

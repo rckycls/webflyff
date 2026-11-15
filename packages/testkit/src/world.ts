@@ -654,7 +654,7 @@ function playerStart(m: AddedMover, p: AddedPlayer, stats: readonly number[] = [
     .i32(0).u8(0) // m_nFame, m_nDuel
     .i32(p.honor);
   for (let i = 0; i < MAX_HUMAN_PARTS; i++) w.i32(0); // m_aEquipInfo[i].nOption
-  w.i32(0); // m_nGuildCombatState
+  w.i32(p.guildCombatState ?? 0); // m_nGuildCombatState
   for (let i = 0; i < SM_MAX; i++) w.u32(0); // m_dwSMTime
   return w;
 }

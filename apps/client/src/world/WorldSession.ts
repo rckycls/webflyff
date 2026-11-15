@@ -314,6 +314,8 @@ export class WorldSession {
   sendGuild(bytes: Uint8Array): void { this.playingCache()?.send(bytes); }
   /** 2026-11-15 (social): the couple's and the duel's packets (world/couple.ts, world/duel.ts). */
   sendSocial(bytes: Uint8Array): void { this.playingCache()?.send(bytes); }
+  /** 2026-11-15: a Guild Siege packet (world/guildCombat.ts's `encodeGc*`). */
+  sendGuildCombat(bytes: Uint8Array): void { this.playingCache()?.send(bytes); }
   /** 2026-11-10 (bank-mail): a bank or post packet the bank's or the post's windows built (bank/bankHud.ts, post/postHud.ts). */
   sendBankMail(bytes: Uint8Array): void { this.playingCache()?.send(bytes); }
   /** 2026-11-15: a personal housing packet (world/housing.ts's encoders). */
