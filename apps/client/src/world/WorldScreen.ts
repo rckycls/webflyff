@@ -1685,6 +1685,7 @@ export class WorldScreen {
     this.attackLoop = attackLoop;
     // custom (owner 2026-11-15): Auto Play, with the character's own settings
     this.autoPlay = new AutoPlay(this.autoPlayHooks(), loadSettings(autoPlayStorage(), this.entry.character.playerId));
+    this.autoPlay.onError = (error) => this.reportOnce(`auto play: ${messageOf(error)}`, error);
     // Piece 7 M2: the own missiles' ids and reports, the missiles of everyone, and what the attack loop says and tests
     const ownShots = new OwnShots(this.session);
     const views = this.views!;
@@ -4261,7 +4262,9 @@ export class WorldScreen {
       alert: () => this.autoPlayAlert(),
       flashTitle: (reason) => this.autoPlayFlashTitle(reason),
       actionSlotHasSkills: () => (this.own?.taskBar?.queue ?? []).some((shortcut) => shortcut.kind !== 0),
-      chainBusy: () => this.skillUse !== undefined && (this.skillUse.execute !== 0 || this.skillUse.pending),
+      // a chain running, a skill sent and not answered, or one asked for and not yet sent (reserved, commanding)
+      chainBusy: () => this.skillUse !== undefined && (this.skillUse.execute !== 0 || this.skillUse.pending
+        || this.skillUse.reserved || this.skillUse.commanding),
       useActionSlot: () => this.skillUse?.useActionSlot(),
       useSkill: (skillIndex) => this.skillUse?.useSlot(skillIndex),
       skillKnown: (skillIndex) => (this.own?.skills[skillIndex]?.level ?? 0) > 0,
@@ -4274,6 +4277,11 @@ export class WorldScreen {
       standing: () => this.useCheck().standing,
       buffSkillId: (skillIndex) => this.own?.skills[skillIndex]?.skill,
       keepAwake: (on) => this.autoPlayKeepAwake(on),
+      disengage: () => {
+        this.attackLoop?.stop('ground');
+        this.focus?.select(null);
+        this.world?.self()?.act.clearDest();
+      },
     };
   }
 
@@ -5653,6 +5661,9 @@ export class WorldScreen {
 
   /** Dispose world-owned resources while leaving the cache session and page renderer available. */
   private disposeWorld(): void {
+    // custom (owner 2026-11-15): Auto Play ends with its world; the screen may sleep again
+    this.autoPlay?.dispose();
+    this.screenAwake?.release();
     this.audio?.stopWorld(); // travel and leaving stop the world's sounds (Piece 6 design §3.3)
     this.optionWindow?.dispose();
     this.optionWindow = undefined;
@@ -5870,6 +5881,8 @@ export class WorldScreen {
   /** Everything the screen holds, closed and taken off the page. */
   private teardown(message: string | undefined): void {
     setTooltipWorld({}); // 2026-11-15
+    this.autoPlay?.dispose(); // custom (owner 2026-11-15): log out, a failure: the screen may sleep again
+    this.screenAwake?.release();
     this.session.leave();
     this.releaseBrowserGestures();
     this.stopAsking();

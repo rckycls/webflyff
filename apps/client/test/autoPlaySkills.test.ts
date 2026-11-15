@@ -73,3 +73,11 @@ describe('isBuffItemProp', () => {
     expect(isBuffItemProp({ part: -1, destParams: [-1, -1, -1] })).toBe(false);
   });
 });
+
+describe('pickBuff: BUFF_ITEM2 (review fix 2026-11-15)', () => {
+  it('an item whose buff is kept as BUFF_ITEM2 (3) counts as on', () => {
+    const list: BuffEntry[] = [{ kind: 'item', index: 2001 }];
+    const of = (e: BuffEntry) => buffOf(e, () => undefined);
+    expect(pickBuff(list, [{ buffType: 3, id: 2001, level: 1, leftMs: 60_000, totalMs: 60_000 }], of, () => true, 0)).toBeNull();
+  });
+});

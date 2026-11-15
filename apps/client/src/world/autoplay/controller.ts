@@ -5,7 +5,7 @@
  * hand (docs/superpowers/specs/2026-11-15-auto-play-design.md).
  */
 import type { InventoryItem, Vec3 } from '@flyffweb/protocol';
-import { buffOf, pickBuff } from './buffs';
+import { buffOf, itemBuffOn, pickBuff } from './buffs';
 import type { BuffShown } from '../buffs';
 import { PotionPacer, countOf, findStack, gaugeOf, pickPotion } from './potions';
 import { SkillTimers, pickReadySkill } from './skillTimers';
@@ -84,6 +84,8 @@ export interface AutoPlayHooks {
   // phone and AFK (M4)
   /** Keep the screen on (Wake Lock) while the farm bot runs. */
   keepAwake(on: boolean): void;
+  /** Lets go of the attack loop's target and its auto attack (as Escape: the focus, the walk to it). */
+  disengage(): void;
 }
 
 export type FarmState = 'off' | 'running' | 'stopped';
@@ -107,6 +109,8 @@ const LOOT_SKIP_MS = 180_000;
 const CAST_GAP_MS = 1000;
 /** No answer from the server: try again after this long (ms). */
 const CAST_SAFETY_MS = 5000;
+/** A buff item's buff is looked for this long after its use; none: the entry is skipped (ms). */
+const ITEM_BUFF_SEEN_MS = 3000;
 
 export class AutoPlay {
   private readonly pacer = new PotionPacer();
@@ -146,6 +150,12 @@ export class AutoPlay {
   private buffing = false;
   /** The last skill the bot cast by itself, for a refusal without a skill (CLEAR_USESKILL). */
   private lastSkill: number | null = null;
+  /** A buff item used, whose buff should show by `at` + ITEM_BUFF_SEEN_MS. */
+  private itemBuff: { index: number; at: number } | null = null;
+  /** Buff items that showed no buff: skipped while this controller lives. */
+  private readonly noBuffItems = new Set<number>();
+  /** An error inside Auto Play (WorldScreen reports it once). */
+  onError: (error: unknown) => void = () => {};
 
   constructor(private readonly hooks: AutoPlayHooks, public settings: AutoPlaySettings) {
     this.timers = new SkillTimers((i) => hooks.skillCooldownMs(i));
@@ -213,13 +223,45 @@ export class AutoPlay {
     h.flashTitle(reason);
   }
 
-  /** Once per rules step. */
+  /** The world goes (log out, travel): the screen may sleep again; nothing is said. */
+  dispose(): void {
+    if (this.farm !== 'running') return;
+    this.farm = 'off';
+    this.target = null;
+    this.looting = null;
+    this.letGoWand();
+    this.hooks.keepAwake(false);
+  }
+
+  /** Once per rules step. An error inside stops Auto Play, never the game's step. */
   step(): void {
-    this.stepPots();
-    if (this.farm === 'running') this.stepFarm();
+    try {
+      this.stepPots();
+      if (this.farm === 'running') this.stepFarm();
+    } catch (error) {
+      this.failed(error);
+    }
   }
 
   onEvent(e: AutoPlayEvent): void {
+    try {
+      this.handle(e);
+    } catch (error) {
+      this.failed(error);
+    }
+  }
+
+  private failed(error: unknown): void {
+    this.onError(error);
+    try {
+      this.stop('error');
+    } catch {
+      this.farm = 'stopped';
+      this.lastStop = 'error';
+    }
+  }
+
+  private handle(e: AutoPlayEvent): void {
     const h = this.hooks, now = h.now();
     if (e.kind === 'hit') {
       this.fighting.onHit(e.attackerId, e.victimId, now);
@@ -387,6 +429,7 @@ export class AutoPlay {
       this.target = null;
       this.stuck.clear();
       this.letGoWand();
+      h.disengage(); // else V15's auto attack goes on chasing it
       if (++this.stuckInRow >= STUCK_IN_ROW) {
         this.stuckInRow = 0;
         this.returning = true;
@@ -399,7 +442,8 @@ export class AutoPlay {
       return true;
     }
     if (this.skillStep(now)) return true;
-    if (h.holdsWand() && !this.wandHeld && !h.chainBusy()) {
+    // not while a fired skill waits for its answer: the press would drop it (clearCmd, worldPressed)
+    if (h.holdsWand() && !this.wandHeld && !h.chainBusy() && now >= this.castWait) {
       this.wandHeld = true;
       h.wandHold(true);
     }
@@ -435,20 +479,33 @@ export class AutoPlay {
     const h = this.hooks;
     if (this.buffing && now < this.castWait) { this.phase = 'buffing'; return true; }
     this.buffing = false;
+    const item = this.itemBuff;
+    if (item !== null && now - item.at >= ITEM_BUFF_SEEN_MS) {
+      this.itemBuff = null;
+      if (!itemBuffOn(h.buffs(), item.index)) {
+        this.noBuffItems.add(item.index);
+        h.say('Auto Play: a buff item showed no buff, so it is skipped.');
+      }
+    }
     const list = this.settings.skills.buffs;
     if (list.length === 0 || now < this.castWait || h.chainBusy() || !h.standing()) return false;
     const usable = (e: BuffEntry): boolean => (e.kind === 'skill'
       ? h.skillKnown(e.index) && h.skillCostOk(e.index) && this.timers.ready(e.index, now)
-      : findStack(h.inventory(), e.index) !== undefined && h.cooldownLeft(e.index) === 0);
+      : !this.noBuffItems.has(e.index) && this.itemBuff === null && findStack(h.inventory(), e.index) !== undefined
+        && h.cooldownLeft(e.index) === 0);
     const entry = pickBuff(list, h.buffs(), (e) => buffOf(e, (i) => h.buffSkillId(i)), usable, now);
     if (entry === null) return false;
-    this.phase = 'buffing';
-    this.buffing = true;
-    if (entry.kind === 'skill') this.cast(now, () => h.useSkill(entry.index), entry.index);
-    else {
-      const stack = findStack(h.inventory(), entry.index);
-      this.cast(now, () => { if (stack) h.useItem(stack.objectId); }, null);
+    if (entry.kind === 'skill') {
+      this.phase = 'buffing';
+      this.buffing = true;
+      this.cast(now, () => h.useSkill(entry.index), entry.index);
+      return true;
     }
+    // an item: used at once (nothing answers it), its buff looked for 3 s later; the bot does not stand for it
+    const stack = findStack(h.inventory(), entry.index);
+    if (stack) h.useItem(stack.objectId);
+    this.itemBuff = { index: entry.index, at: now };
+    this.castWait = now + CAST_GAP_MS;
     return true;
   }
 
@@ -462,6 +519,7 @@ export class AutoPlay {
     this.phase = 'returning';
     if (now - this.lastWalk < WALK_AGAIN_MS) return;
     this.lastWalk = now;
+    if (this.hooks.focusId() !== null) this.hooks.disengage(); // the auto attack would walk the other way each step
     this.hooks.walkTo(this.anchor);
   }
 

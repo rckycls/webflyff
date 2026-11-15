@@ -51,6 +51,8 @@ function world() {
     buffs: [] as Array<{ buffType: number; id: number; level: number; leftMs: number; totalMs: number }>,
     standing: true,
     awake: [] as boolean[],
+    disengages: 0,
+    throwMovers: false,
   };
   const hooks: AutoPlayHooks = {
     now: () => state.now,
@@ -64,7 +66,7 @@ function world() {
     say: (text) => { state.said.push(text); },
     save: (s) => { state.saved.push(structuredClone(s)); },
     self: () => state.self,
-    movers: () => state.mobs,
+    movers: () => { if (state.throwMovers) throw new Error('boom'); return state.mobs; },
     rankOf: () => 1,
     attackable: (m) => m.hp > 0,
     isPlayer: (id) => id === US || id >= 900,
@@ -91,6 +93,7 @@ function world() {
     standing: () => state.standing,
     buffSkillId: (i) => 100 + i,
     keepAwake: (on) => { state.awake.push(on); },
+    disengage: () => { state.disengages++; state.focus = null; },
   };
   return { state, hooks };
 }
@@ -386,6 +389,7 @@ describe('AutoPlay controller: the farm bot (spec 6.2-6.5, 6.8)', () => {
   it('a wand is held on a target and let go at the stop', () => {
     const { state, hooks } = world();
     state.wand = true;
+    state.actionSlot = false;
     state.mobs = [mob(21, 3, 0)];
     const play = new AutoPlay(hooks, defaultSettings());
     play.start();
@@ -496,5 +500,91 @@ describe('AutoPlay in a hidden tab (spec 6.10): the rules step from the worker c
     expect(state.engaged).toEqual([21, 22]);
     expect(play.farm).toBe('running');
     clock.dispose();
+  });
+});
+
+describe('AutoPlay controller: the review fixes (2026-11-15)', () => {
+  it('dispose (log out, a world gone) lets the screen sleep again, without a chat line', () => {
+    const { state, hooks } = world();
+    const play = new AutoPlay(hooks, defaultSettings());
+    play.start();
+    play.dispose();
+    expect(state.awake).toEqual([true, false]);
+    expect(state.said).toEqual(['Auto Play started.']);
+    expect(play.farm).toBe('off');
+  });
+
+  it('a stuck target is let go (the V15 auto attack no longer chases it), and so before walking home', () => {
+    const { state, hooks } = world();
+    state.mobs = [mob(21, 3, 0)];
+    const play = new AutoPlay(hooks, defaultSettings());
+    play.start();
+    run(play, state, 61 * 10);
+    expect(state.disengages).toBe(1);
+    expect(play.phase).not.toBe('fighting');
+    state.focus = 21;
+    state.selfPos[0] = 30;
+    run(play, state, 2);
+    expect(state.disengages).toBe(2);
+    expect(state.walks.at(-1)).toEqual([0, 0, 0]);
+  });
+
+  it('a wand is not held again while a fired Action Slot waits for its answer (a press would drop it)', () => {
+    const { state, hooks } = world();
+    state.wand = true;
+    state.mobs = [mob(21, 3, 0)];
+    const play = new AutoPlay(hooks, defaultSettings());
+    play.start();
+    run(play, state, 3);
+    expect(state.slots).toBe(1);
+    run(play, state, 120);
+    expect(state.wandHolds).toEqual([]);
+    play.onEvent({ kind: 'chainEnded' });
+    run(play, state, 30);
+    expect(state.wandHolds).toEqual([]);
+    state.chainBusy = true;
+    run(play, state, 60);
+    expect(state.wandHolds).toEqual([]);
+  });
+
+  it('a buff item is used once, the bot does not stand for it, and one whose buff never shows is skipped with a line', () => {
+    const { state, hooks } = world();
+    const s = defaultSettings();
+    s.skills.buffs = [{ kind: 'item', index: 2001 }];
+    state.inventory = new Map([[40, { objectId: 40, itemId: 2001, count: 5 }]]);
+    const play = new AutoPlay(hooks, s);
+    play.start();
+    run(play, state, 2);
+    expect(state.used).toEqual([40]);
+    run(play, state, 30);
+    expect(play.phase).not.toBe('buffing');
+    run(play, state, 200);
+    expect(state.said).toContain('Auto Play: a buff item showed no buff, so it is skipped.');
+    run(play, state, 1200);
+    expect(state.used).toEqual([40]);
+  });
+
+  it('a buff item whose buff shows is used again only when it runs low', () => {
+    const { state, hooks } = world();
+    const s = defaultSettings();
+    s.skills.buffs = [{ kind: 'item', index: 2001 }];
+    state.inventory = new Map([[40, { objectId: 40, itemId: 2001, count: 5 }]]);
+    const play = new AutoPlay(hooks, s);
+    play.start();
+    run(play, state, 2);
+    state.buffs = [{ buffType: 3, id: 2001, level: 1, leftMs: 600_000, totalMs: 600_000 }];
+    run(play, state, 600);
+    expect(state.used).toEqual([40]);
+    expect(state.said.some((line) => line.includes('skipped'))).toBe(false);
+  });
+
+  it('an error inside Auto Play stops it ("error") and never reaches the game\'s rules step', () => {
+    const { state, hooks } = world();
+    const play = new AutoPlay(hooks, defaultSettings());
+    play.start();
+    state.throwMovers = true;
+    expect(() => play.step()).not.toThrow();
+    expect(play.lastStop).toBe('error');
+    expect(() => play.step()).not.toThrow();
   });
 });

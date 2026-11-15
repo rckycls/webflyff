@@ -11,7 +11,7 @@
 /** `BUFF_ITEM` 0 and `BUFF_SKILL` 1 (`_Common/buff.h`): the common buffs a death removes. */
 const COMMON: ReadonlySet<number> = new Set([0, 1]);
 /** `BUFF_ITEM2`: an item's buff whose level is its end (on the wire, the seconds it has left). */
-const BUFF_ITEM2 = 3;
+export const BUFF_ITEM2 = 3;
 /** `if( ( m_nCount & 63 ) == 0 )`: how often the times are looked at. */
 const CHECK_FRAMES = 64;
 

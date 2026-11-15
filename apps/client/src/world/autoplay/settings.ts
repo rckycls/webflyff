@@ -56,6 +56,8 @@ export function defaultSettings(): AutoPlaySettings {
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
 const isNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const isIndex = (v: unknown): v is number => isNumber(v) && Number.isInteger(v) && v > 0;
+/** A job-skill slot (`m_aJobSkill`): 0 is the first. */
+const isSlot = (v: unknown): v is number => isNumber(v) && Number.isInteger(v) && v >= 0;
 
 /** `value` to the nearest `step` within `min`..`max`, or `fallback` when it is not a number. */
 function stepped(value: unknown, min: number, max: number, step: number, fallback: number): number {
@@ -84,10 +86,10 @@ export function clampSettings(raw: unknown): AutoPlaySettings {
   }
   const skills = isObject(raw.skills) ? raw.skills : {};
   if (typeof skills.actionSlot === 'boolean') s.skills.actionSlot = skills.actionSlot;
-  if (Array.isArray(skills.ready)) s.skills.ready = skills.ready.filter(isIndex).slice(0, MAX_READY);
+  if (Array.isArray(skills.ready)) s.skills.ready = skills.ready.filter(isSlot).slice(0, MAX_READY);
   if (Array.isArray(skills.buffs)) {
     s.skills.buffs = skills.buffs
-      .filter((b): b is BuffEntry => isObject(b) && (b.kind === 'skill' || b.kind === 'item') && isIndex(b.index))
+      .filter((b): b is BuffEntry => isObject(b) && ((b.kind === 'skill' && isSlot(b.index)) || (b.kind === 'item' && isIndex(b.index))))
       .map((b) => ({ kind: b.kind, index: b.index }))
       .slice(0, MAX_BUFFS);
   }

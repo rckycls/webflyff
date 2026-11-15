@@ -100,3 +100,14 @@ describe('Auto Play settings (custom, owner 2026-11-15)', () => {
     expect(clampSettings(null)).toEqual(defaultSettings());
   });
 });
+
+describe('Auto Play settings: skill slot 0 (review fix 2026-11-15)', () => {
+  it('a ready skill or a buff skill in job-skill slot 0 is kept; an item index 0 is not', () => {
+    const raw = defaultSettings() as unknown as { skills: { ready: unknown[]; buffs: unknown[] } };
+    raw.skills.ready = [0, 3];
+    raw.skills.buffs = [{ kind: 'skill', index: 0 }, { kind: 'item', index: 0 }, { kind: 'item', index: 2001 }];
+    const s = clampSettings(raw);
+    expect(s.skills.ready).toEqual([0, 3]);
+    expect(s.skills.buffs).toEqual([{ kind: 'skill', index: 0 }, { kind: 'item', index: 2001 }]);
+  });
+});
