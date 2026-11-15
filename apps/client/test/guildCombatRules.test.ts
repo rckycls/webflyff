@@ -1,6 +1,6 @@
 // 2026-11-15 (Guild Siege, B3): the rules of Frankie's and Donaris's windows (guildCombat/guildCombatRules.ts).
 import { describe, expect, it } from 'vitest';
-import { GcTid, bidRefusal, countdownParts, joinRefusal, ownRank, penyaNotice, statusRankRed } from '../src/world/guildCombat/guildCombatRules';
+import { GcTid, bidRefusal, joinRefusal, ownRank, penyaNotice, statusRankRed } from '../src/world/guildCombat/guildCombatRules';
 
 describe('bidRefusal (WndGuildCombat1to1.cpp:670-718)', () => {
   it('a guild that has bid must bid more than it has', () => {
@@ -56,13 +56,5 @@ describe('penyaNotice (DPClient.cpp:7106-7187)', () => {
     expect(penyaNotice('player', 0, 9, 0)).toEqual({ tid: GcTid.MVP_PENYA, penya: 9n });
     expect(penyaNotice('player', 1, 0, 0)).toEqual({ tid: GcTid.NOT_MVP, penya: null });
     expect(penyaNotice('player', 2, 3_000_000_000n, 0)).toEqual({ tid: GcTid.JACKPOT_LIMIT2, penya: null });
-  });
-});
-
-describe('countdownParts', () => {
-  it('splits seconds into days, hours, minutes and seconds', () => {
-    expect(countdownParts(90_061)).toEqual({ day: 1, hour: 1, minute: 1, second: 1 });
-    expect(countdownParts(59)).toEqual({ day: 0, hour: 0, minute: 0, second: 59 });
-    expect(countdownParts(-5)).toEqual({ day: 0, hour: 0, minute: 0, second: 0 });
   });
 });

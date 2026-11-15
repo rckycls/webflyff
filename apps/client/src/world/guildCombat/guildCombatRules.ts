@@ -103,11 +103,3 @@ export function penyaNotice(kind: 'guild' | 'player', result: number, penya: num
   return null;
 }
 
-/**
- * `%dday %dhr %dmin %dsec` of the application status's count-down (`WndField.cpp:16540-16560`; the texts TID_PK_LIMIT_*): a
- * part only from the first that is not zero on, the seconds always.
- */
-export function countdownParts(seconds: number): { day: number; hour: number; minute: number; second: number } {
-  const left = Math.max(0, Math.trunc(Number.isFinite(seconds) ? seconds : 0));
-  return { day: Math.trunc(left / 86400), hour: Math.trunc(left / 3600) % 24, minute: Math.trunc(left / 60) % 60, second: left % 60 };
-}

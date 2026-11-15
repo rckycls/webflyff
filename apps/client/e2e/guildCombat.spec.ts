@@ -95,7 +95,7 @@ test('Frankie: Apply, Status, walking away and the boards', async ({ page }, inf
   // Status: GC_REQUEST_STATUS; the list, the count-down that runs
   await chooseEntry(page, gateway, 27);
   await expect.poll(() => sentOf(gateway, GuildCombatPacketType.REQUEST_STATUS).length).toBe(1);
-  answer(gateway, script, { sub: 'requestStatus', secondsToNext: 3725, prize: 0, guildNames: ['Alpha', 'Bravo', 'Charlie'], ownBid: 0 });
+  answer(gateway, script, { sub: 'requestStatus', secondsToNext: 125, prize: 0, guildNames: ['Alpha', 'Bravo', 'Charlie'], ownBid: 0 });
   const status = page.locator('.hud-gc-status');
   await expect(status).toBeVisible(ON_FRAMES);
   await expect(status.locator('[role="option"]')).toHaveCount(3);

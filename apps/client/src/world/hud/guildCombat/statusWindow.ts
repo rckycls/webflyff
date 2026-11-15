@@ -3,7 +3,7 @@
 //
 //   CWndGuildCombatState   _Interface/WndField.cpp:16406-16610   APP_GUILDCOMBAT_1TO1_OFFERSTATE, resdata.inc:11960,
 //                                                                304 x 480, "Guild Siege - Applying Situation"
-//   WIDC_STATIC2           the count-down to the next siege, redrawn every frame (:16540-16560, :16577-16587)
+//   WIDC_STATIC2           the count-down to the next siege (the owner's short duration, formatDuration: "1h2m"), redrawn every frame (:16540-16560, :16577-16587)
 //   WIDC_LISTBOX1          one row per applying guild, "No.%.2d\t\t%s" in bid order (:16531-16538)
 //   WIDC_STATIC5           the own place, red past the guilds that fight (:16562-16575)
 //   WIDC_STATIC6           the own bid
@@ -12,8 +12,8 @@
 import type { UiArt } from '../art';
 import { ResWindow } from '../resWindow';
 import type { ResLayout } from '../resWindow';
-import { formatText } from '../format';
-import { countdownParts, ownRank, statusRankRed } from '../../guildCombat/guildCombatRules';
+import { formatDuration } from '../duration';
+import { ownRank, statusRankRed } from '../../guildCombat/guildCombatRules';
 
 const EDIT = 'WndEditTile00.tga';
 
@@ -44,17 +44,6 @@ export interface StatusData {
   ownGuildName: string;
 }
 
-/** The count-down's words: the parts from the first that is not zero, each with its text (`TID_PK_LIMIT_*`). */
-export function countdownText(seconds: number, text: (tid: string) => string): string {
-  const { day, hour, minute, second } = countdownParts(seconds);
-  const parts: string[] = [];
-  if (day > 0) parts.push(formatText(text('TID_PK_LIMIT_DAY'), [day]));
-  if (day > 0 || hour > 0) parts.push(formatText(text('TID_PK_LIMIT_HOUR'), [hour]));
-  if (day > 0 || hour > 0 || minute > 0) parts.push(formatText(text('TID_PK_LIMIT_MINUTE'), [minute]));
-  parts.push(formatText(text('TID_PK_LIMIT_SECOND'), [second]));
-  return parts.join(' ');
-}
-
 export class StatusWindow {
   readonly window: ResWindow;
   /** Apply: close, then ask for the offer window. Refresh: ask again. */
@@ -62,7 +51,7 @@ export class StatusWindow {
   onRefresh: () => void = () => {};
   private data: StatusData | null = null;
 
-  constructor(title: string, private readonly text: (tid: string) => string, art: UiArt, private readonly doc: Document = document) {
+  constructor(title: string, art: UiArt, private readonly doc: Document = document) {
     const window = new ResWindow(statusLayout(title), art, doc);
     window.frame.element.classList.add('hud-gc', 'hud-gc-status');
     window.button('WIDC_BUTTON1').addEventListener('click', () => { window.close(); this.onApply(); });
@@ -111,7 +100,7 @@ export class StatusWindow {
   /** The count-down, from the screen's clock; called once a second. */
   tick(now: number): void {
     if (this.data === null) return;
-    this.window.setText('WIDC_STATIC2', countdownText(Math.ceil((this.data.endsAt - now) / 1000), this.text));
+    this.window.setText('WIDC_STATIC2', formatDuration(Math.ceil((this.data.endsAt - now) / 1000)));
   }
 
   close(): void {

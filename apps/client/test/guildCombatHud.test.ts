@@ -12,12 +12,10 @@ import { GuildCombatHud } from '../src/world/guildCombat/guildCombatHud';
 import type { GuildCombatHost } from '../src/world/guildCombat/guildCombatHud';
 import { BOARD1, BOARD2, BOARD3, BOARD_FEE, BOARD_PRIZE } from '../src/world/guildCombat/boardTexts';
 import { GcState, GcTid } from '../src/world/guildCombat/guildCombatRules';
-import { countdownText } from '../src/world/hud/guildCombat/statusWindow';
 
 const art: UiArt = { url: () => '', sheets: null };
 const T = 'guildCombat' as const;
 const TEXTS: Record<string, string> = {
-  TID_PK_LIMIT_DAY: '%.1dday', TID_PK_LIMIT_HOUR: '%.1dhr', TID_PK_LIMIT_MINUTE: '%.1dmin', TID_PK_LIMIT_SECOND: '%.1dsec',
   TID_GAME_GUILDWAR_CANCEL: 'Do you want to withdraw from the Guild Siege?', TID_GAME_GUILDWAR_JOIN: 'Do you join the Guild Siege?',
 };
 const BY_ID: Record<number, string> = {
@@ -148,10 +146,10 @@ describe('Status (GC_REQUEST_STATUS)', () => {
     expect(rows).toEqual(['No.01Alpha', 'No.02Bravo', 'No.03Charlie']);
     expect(win.querySelector('[data-control="WIDC_STATIC5"]')!.textContent).toBe('2');
     expect(win.querySelector('[data-control="WIDC_STATIC6"]')!.textContent).toBe('150,000,000');
-    expect(win.querySelector('[data-control="WIDC_STATIC2"]')!.textContent).toBe('1hr 2min 5sec');
-    h.state.now += 5_000;
+    expect(win.querySelector('[data-control="WIDC_STATIC2"]')!.textContent).toBe('1h2m');
+    h.state.now += 125_000;
     h.hud.step(h.state.now);
-    expect(win.querySelector('[data-control="WIDC_STATIC2"]')!.textContent).toBe('1hr 2min 0sec');
+    expect(win.querySelector('[data-control="WIDC_STATIC2"]')!.textContent).toBe('1h');
   });
 
   it('the own place is red past the 12th', () => {
@@ -168,10 +166,9 @@ describe('Status (GC_REQUEST_STATUS)', () => {
     expect(h.hud.status.isOpen).toBe(false);
   });
 
-  it('countdownText leaves out the parts above the first that is not zero', () => {
-    const text = (tid: string) => TEXTS[tid]!;
-    expect(countdownText(90_061, text)).toBe('1day 1hr 1min 1sec');
-    expect(countdownText(59, text)).toBe('59sec');
+  it('at 0 seconds the count-down is what formatDuration gives', () => {
+    feed(h, message({ sub: 'requestStatus', secondsToNext: 0, prize: 0, guildNames: [], ownBid: 0 }));
+    expect(h.hud.status.element.querySelector('[data-control="WIDC_STATIC2"]')!.textContent).toBe('0s');
   });
 });
 

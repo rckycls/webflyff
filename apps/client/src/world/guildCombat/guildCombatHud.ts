@@ -74,7 +74,7 @@ export class GuildCombatHud {
     const title = (tid: string, fallback: string): string => host.text(tid) || fallback;
     this.apply = new ApplyWindow(title('TID_GAME_GUILDCOMBAT_OFFER', TITLES.offer), art, doc);
     this.apply.onAccept = (fee) => this.accept(fee);
-    this.status = new StatusWindow(title('TID_GAME_GUILDCOMBAT_OFFERSTATE', TITLES.state), (tid) => host.text(tid), art, doc);
+    this.status = new StatusWindow(title('TID_GAME_GUILDCOMBAT_OFFERSTATE', TITLES.state), art, doc);
     this.status.onApply = () => this.send(encodeGcWindow());
     this.status.onRefresh = () => this.send(encodeGcStatus());
     this.cancel = new YesNoWindow(
