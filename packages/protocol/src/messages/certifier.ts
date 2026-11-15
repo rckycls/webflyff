@@ -19,6 +19,14 @@ export function encodeErrorReply(): Uint8Array {
   return new ArWriter().u32(PacketType.ERROR).toBytes();
 }
 
+/**
+ * ERROR_STRING, as the certifier sends it: a text the client shows in its login error box. The gateway sends it
+ * itself when the pre-registration lock refuses an account. The text must stay under the 256 bytes the client reads.
+ */
+export function encodeErrorString(text: string): Uint8Array {
+  return new ArWriter().u32(PacketType.ERROR_STRING).string(text).toBytes();
+}
+
 /** Asks the certifier to drop an existing session of the account (account, then the password hash). */
 export function encodeCloseExistingConnection(account: string, passwordHash: string): Uint8Array {
   return new ArWriter().u32(PacketType.CLOSE_EXISTING_CONNECTION).string(account).string(passwordHash).toBytes();
