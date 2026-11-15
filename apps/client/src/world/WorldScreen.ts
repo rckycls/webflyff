@@ -232,6 +232,7 @@ import { GuildCombatHud } from './guildCombat/guildCombatHud';
 import { MoverGcState, trophyOf } from './guildCombat/guildCombatRules';
 import { siegeDefenderLine, siegeHides, siegeNameColor, siegeSideOf } from './combat/siege';
 import { ArenaHud, ArenaState } from './hud/guildCombat/arenaHud';
+import { saveTextFile } from './hud/guildCombat/download';
 import { isPhone } from './hud/numpad';
 import type { GuildLine } from './render/nameTags';
 import { pickMoverAt } from './render/picking';
@@ -2104,6 +2105,13 @@ export class WorldScreen {
         const data = this.playerData.get(m.playerId);
         return { playerId: m.playerId, name: data.name, jobName: this.data?.jobs[data.job]?.title ?? '', level: data.level, online: data.login > 0, rank: m.rank };
       }),
+      nameOf: (playerId) => this.playerData.get(playerId).name,
+      guildName: (guildId) => this.guildBook.guild(guildId)?.name ?? '',
+      guildMasterId: (guildId) => this.guildBook.guild(guildId)?.masterId ?? 0,
+      ownPlayerId: () => this.entry.character.playerId,
+      ownGuildId: () => this.guildBook.ownGuild,
+      jobs: () => this.data?.jobs ?? {},
+      save: (filename, text) => saveTextFile(doc, filename, text),
       ownGold: () => this.own?.gold ?? 0,
       now: () => performance.now(),
     }, this.guildCombatBook, this.hudArt!, doc);

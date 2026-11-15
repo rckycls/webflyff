@@ -92,7 +92,7 @@ export interface Board { rows: BoardRow[]; own: BoardRow | null }
  * The multimap's reverse walk (`m_mmapGuildCombat_*Precedence`, `rbegin` to `rend`): the most points first, of equal points
  * the one inserted later first; the rank counts each new number of points (`nOldPoint != nPoint`).
  */
-function ranked<T extends { points: number }>(entries: readonly T[]): Array<{ entry: T; rank: number; first: boolean }> {
+export function ranked<T extends { points: number }>(entries: readonly T[]): Array<{ entry: T; rank: number; first: boolean }> {
   const order = entries.map((entry, i) => ({ entry, i })).sort((a, b) => b.entry.points - a.entry.points || b.i - a.i);
   let rank = 0;
   let last: number | null = null;

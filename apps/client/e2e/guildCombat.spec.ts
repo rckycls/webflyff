@@ -466,3 +466,70 @@ test('In the arena: logged in during the war, the count-down, the boards, the ow
   await expect(page.locator('.hud-caption')).toContainText('End combat', ON_FRAMES);
   await shot('arena-end');
 });
+
+// B6: Donaris's ranking window and the result window.
+test('Ranking and result: the tabs, the rows, the own row, the battle log and Save', async ({ page }, info) => {
+  const script = worldWith('MaFl_Donaris');
+  const gateway = await playGateway(page, script);
+  await enterFlaris(page);
+  const shot = (name: string) => page.screenshot({ path: info.outputPath(`${name}.png`) });
+  gateway.pushCache(script.later([
+    writeQueryPlayerData(SELF_ID, WEBBY, 'Webby', player(40, 1)), writeQueryPlayerData(SELF_ID, LEAD, 'Lead', player(60, 1)),
+    writeQueryPlayerData(SELF_ID, MIA, 'Mia', player(35, 1)),
+  ]));
+
+  // Donaris's Ranking asks, the answer opens the window: the own player is Webby's character (SELF_PLAYER's id)
+  await chooseEntry(page, gateway, 30);
+  await expect.poll(() => sentOf(gateway, GuildCombatPacketType.PLAYERPOINT).length).toBe(1);
+  answer(gateway, script, { sub: 'playerPoint', players: [
+    { playerId: LEAD, job: 6, point: 9 }, { playerId: MIA, job: 8, point: 9 }, { playerId: WEBBY, job: 12, point: 4 },
+    { playerId: 99999, job: 6, point: 3 }, { playerId: 88888, job: 0, point: 50 },
+  ] });
+  const rank = page.locator('.hud-gc-rank');
+  await expect(rank).toBeVisible(ON_FRAMES);
+  await expect(rank.locator('.hud-window-title')).toHaveText('Guild Member Ranking');
+  await expect(rank.locator('[role="tab"]')).toHaveText(['United Rank', 'Mercenary', 'Magician', 'Acrobat', 'Assist']);
+  const rows = rank.locator('.hud-gc-rank-row:visible');
+  await expect(rows).toHaveCount(4); // the vagrant is left out
+  await expect(rows.first()).toContainText('Mia'); // of equal points the later entry first
+  await expect(rows.first()).toHaveCSS('color', 'rgb(200, 0, 0)');
+  await expect(rows.nth(1).locator('.hud-gc-rank-c0')).toHaveText('');
+  await expect(rows.nth(3)).toContainText('?'); // a name that never came
+  await phoneChecks(page, rank);
+  await shot('ranking');
+  await press(rank.getByRole('tab', { name: 'Magician' }));
+  await expect(rank.locator('.hud-gc-rank-row:visible')).toHaveCount(1);
+  await expect(rank.locator('.hud-gc-rank-own:visible')).toContainText('Webby');
+  await press(rank.getByRole('button', { name: 'Close' }));
+  await expect(rank).toBeHidden();
+
+  // GC_LOG opens the result window: the boards first, the battle log on its tab
+  answer(gateway, script, { sub: 'guildPrecedence', guilds: [{ has: true, name: 'Bakers', points: 7 }, { has: true, name: 'Alpha', points: 3 }] });
+  answer(gateway, script, { sub: 'playerPrecedence', guilds: [[{ playerId: LEAD, points: 5 }, { playerId: MIA, points: 2 }]] });
+  answer(gateway, script, { sub: 'bestPlayer', playerId: LEAD });
+  answer(gateway, script, { sub: 'log', entries: [
+    { atkGuildId: 4001, defGuildId: 4002, atkPlayerId: LEAD, defPlayerId: MIA, point: 3, diffGuild: true, master: false, defender: false, lastLife: true },
+  ] });
+  const result = page.locator('.hud-gc-result');
+  await expect(result).toBeVisible(ON_FRAMES);
+  await expect(result.locator('.hud-window-title')).toHaveText('Guild & Member Ranking');
+  await expect(result.locator('.hud-gc-result-guilds')).toContainText('WINNER');
+  await expect(result.locator('.hud-gc-result-members')).toContainText('MVP');
+  await phoneChecks(page, result);
+  await shot('result');
+  await press(result.getByRole('tab', { name: 'Battle Log' }));
+  const log = result.locator('.hud-gc-result-log');
+  await expect(log).toContainText('[?]'); // guilds the client does not know
+  await expect(log).toContainText('Lead(3 grade)');
+  await expect(log).toContainText('Kill bonus +1');
+  await shot('result-log');
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    press(result.getByRole('button', { name: 'Save' })),
+  ]);
+  expect(download.suggestedFilename()).toMatch(/^GuildLog_\d{8}\.txt$/);
+  await expect(box(page)).toContainText('GuildLog_', ON_FRAMES);
+  await closeBox(page);
+  await press(result.locator('.hud-window-close, [data-button="close"]').first());
+  await expect(result).toBeHidden();
+});

@@ -4346,3 +4346,57 @@ fieldset:disabled .btn {
 /* B5: the Navigator's mask over world 202's map (WdGuildWar_Mask.dds at alpha 200), over the tiles, under the markers */
 .navigator-masks { position: absolute; inset: 0; pointer-events: none; }
 .navigator-masks > img { position: absolute; max-width: none; pointer-events: none; }
+
+/* 2026-11-15 (Guild Siege, B6): the result window (560 x 320; two tabs: the guild and member lists, the battle log with Save) and
+   Donaris's ranking window (400 x 384; five tabs of rows 18 px, 11 to a page, the first red, the own row again in blue). The
+   tabs sit under their pages as Neuz's tab control draws them (hud/guildCombat/tabs.ts). */
+.hud-gc-result, .hud-gc-rank { z-index: 45; }
+.hud-gc-tabctrl { position: absolute; inset: 0; }
+.hud-gc-page { position: absolute; left: 0; top: 0; right: 0; bottom: 20px; }
+.hud-gc-tabs { position: absolute; left: 0; right: 0; bottom: 0; height: 20px; display: flex; }
+.hud-gc-tab {
+  flex: 1 1 0; min-width: 0; height: 20px; padding: 0 4px; border: 1px solid #8f8f8f; border-top: 0; background: #d8d8d8;
+  color: #000; font: 12px/18px Verdana, Arial, sans-serif; cursor: pointer;
+}
+.hud-gc-tab.is-chosen { background: #f6f1ea; font-weight: bold; }
+.hud-gc-result-box { position: absolute; box-sizing: border-box; overflow-y: auto; background: #f6f1ea; border: 1px solid #8f8f8f; }
+.hud-gc-result-h { position: absolute; font: 12px/16px Verdana, Arial, sans-serif; color: #2e70a9; font-weight: bold; }
+.hud-gc-result-h1 { left: 12px; top: 20px; width: 228px; }
+.hud-gc-result-h2 { left: 272px; top: 20px; width: 232px; }
+.hud-gc-result-guilds { left: 12px; top: 56px; width: 230px; height: 162px; }
+.hud-gc-result-members { left: 276px; top: 56px; width: 230px; height: 162px; }
+.hud-gc-result-log { left: 8px; top: 8px; width: 506px; height: 202px; padding: 4px 6px; }
+.hud-gc-result-row { white-space: pre; tab-size: 18; font: 12px/16px Verdana, Arial, sans-serif; color: #000; height: 16px; }
+.hud-gc-log-line { white-space: pre-wrap; min-height: 16px; font: 12px/16px Verdana, Arial, sans-serif; color: #000; }
+.hud-gc-rank-head, .hud-gc-rank-row, .hud-gc-rank-own {
+  display: grid; grid-template-columns: 36px 140px 95px 1fr; padding-left: 12px; box-sizing: border-box; height: 18px; line-height: 18px;
+  font: 12px/18px Verdana, Arial, sans-serif; color: #000; white-space: pre;
+}
+.hud-gc-rank-head { position: absolute; left: 0; right: 0; top: 7px; height: 18px; border-bottom: 2px solid rgba(0, 0, 0, 0.5); }
+.hud-gc-rank-rows { position: absolute; left: 0; right: 0; top: 30px; height: 198px; overflow-y: auto; overscroll-behavior: contain; }
+.hud-gc-rank-row { cursor: default; }
+.hud-gc-rank-row.is-first { color: #c80000; }
+.hud-gc-rank-row.is-selected { background: rgba(0, 0, 0, 0.25); }
+.hud-gc-rank-own { position: absolute; left: 0; right: 0; top: 240px; color: #0000ff; }
+.hud-gc-rank-c0, .hud-gc-rank-c3 { white-space: pre; }
+.hud-gc-rank-c1, .hud-gc-rank-c2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 1000px) and (pointer: coarse) {
+  .hud-gc-result:not([hidden]) { width: min(520px, calc(100% - 16px)) !important; left: calc(50% - min(260px, 50% - 8px)) !important; }
+  .hud-gc-result .hud-res-custom, .hud-gc-rank .hud-res-custom { flex: 1 1 100%; height: 196px !important; }
+  .hud-gc-rank .hud-res-custom { height: 190px !important; }
+  .hud-gc-tab { height: 28px; font-size: 13px; line-height: 26px; }
+  .hud-gc-tabs { height: 28px; }
+  .hud-gc-page { bottom: 28px; }
+  .hud-gc-result-box, .hud-gc-result-h { position: absolute; }
+  .hud-gc-result-h1 { left: 4px; top: 2px; width: calc(50% - 8px); }
+  .hud-gc-result-h2 { left: calc(50% + 4px); top: 2px; width: calc(50% - 8px); }
+  .hud-gc-result-guilds { left: 4px; top: 20px; width: calc(50% - 8px); height: calc(100% - 24px); }
+  .hud-gc-result-members { left: calc(50% + 4px); top: 20px; width: calc(50% - 8px); height: calc(100% - 24px); }
+  .hud-gc-result-log { left: 4px; top: 4px; width: calc(100% - 8px); height: calc(100% - 8px); }
+  .hud-gc-result-row { font-size: 12px; tab-size: 8; }
+  .hud-gc-rank-head { top: 2px; }
+  .hud-gc-rank-head, .hud-gc-rank-row, .hud-gc-rank-own { grid-template-columns: 30px 1fr 86px 34px; padding-left: 4px; padding-right: 4px; }
+  .hud-gc-rank-row { height: 22px; line-height: 22px; }
+  .hud-gc-rank-rows { top: 22px; height: calc(100% - 50px); }
+  .hud-gc-rank-own { top: auto; bottom: 2px; }
+}

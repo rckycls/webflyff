@@ -27,6 +27,8 @@ import { DiagBox, TeleBox } from '../hud/guildCombat/infoBoxes';
 import { LineupWindow } from '../hud/guildCombat/lineupWindow';
 import type { LineupPerson } from '../hud/guildCombat/lineupWindow';
 import { StartPointWindow } from '../hud/guildCombat/startPointWindow';
+import { RankingWindow } from '../hud/guildCombat/rankingWindow';
+import { ResultWindow } from '../hud/guildCombat/resultWindow';
 import { StatusWindow } from '../hud/guildCombat/statusWindow';
 import type { GuildCombatBook, GuildCombatEvent } from './guildCombatBook';
 import { BOARD_OF_ENTRY } from './boardTexts';
@@ -51,6 +53,18 @@ export interface GuildCombatHost {
   guildMembers(): LineupPerson[];
   /** The own penya (`GetGold`). */
   ownGold(): number;
+  /** A player's name, '' while unknown (the player data asks for it once, `SendQueryPlayerData`). */
+  nameOf(playerId: number): string;
+  /** A guild's name, '' when the client does not know the guild. */
+  guildName(guildId: number): string;
+  /** A guild's master's player id, 0 when unknown. */
+  guildMasterId(guildId: number): number;
+  ownPlayerId(): number;
+  ownGuildId(): number;
+  /** The jobs of the game data by id. */
+  jobs(): Readonly<Record<number, { title: string } | undefined>>;
+  /** A download of a text file (the result window's Save). */
+  save(filename: string, text: string): void;
   /** The screen's clock, in ms. */
   now(): number;
 }
@@ -73,6 +87,8 @@ export class GuildCombatHud {
   readonly diag: DiagBox;
   readonly lineup: LineupWindow;
   readonly startPoint: StartPointWindow;
+  readonly result: ResultWindow;
+  readonly ranking: RankingWindow;
   /** The last offer window's data (`m_dwReqGold`, the minimum). */
   private offer = { ownBid: 0, minBid: 0 };
   private lastTick = 0;
@@ -104,15 +120,27 @@ export class GuildCombatHud {
     }, doc);
     this.startPoint = new StartPointWindow(art, doc, () => host.textById(GcTid.JOIN_MESSAGE) || 'After %d, you enter %s.');
     this.startPoint.onSelect = (map) => this.send(encodeGcSelectMap(map));
+    this.result = new ResultWindow('Guild & Member Ranking', art, {
+      book,
+      context: () => ({
+        playerName: (id) => host.nameOf(id), guildName: (id) => host.guildName(id), guildMasterId: (id) => host.guildMasterId(id),
+        ownPlayerId: host.ownPlayerId(), text: (tid) => host.text(tid),
+      }),
+      ownGuildId: () => host.ownGuildId(), save: (name, text) => host.save(name, text), box: (text) => host.box(text),
+      saveText: () => host.text('TID_GAME_GUILDCOMBAT_LOG_SAVE'), now: () => new Date(), text: (tid) => host.text(tid),
+    }, doc);
+    this.ranking = new RankingWindow('Guild Member Ranking', art, {
+      playerName: (id) => host.nameOf(id), ownPlayerId: () => host.ownPlayerId(), jobs: () => host.jobs(), text: (tid) => host.text(tid),
+    }, doc);
   }
 
   /** The windows, for the world screen's layer. */
   get elements(): HTMLElement[] {
-    return [this.apply, this.status, this.cancel, this.join, this.board, this.tele, this.diag, this.lineup, this.startPoint].map((w) => w.element);
+    return [this.apply, this.status, this.cancel, this.join, this.board, this.tele, this.diag, this.lineup, this.startPoint, this.result, this.ranking].map((w) => w.element);
   }
 
   get isOpen(): boolean {
-    return [this.apply, this.status, this.cancel, this.join, this.board, this.tele, this.diag, this.lineup, this.startPoint].some((w) => w.isOpen);
+    return [this.apply, this.status, this.cancel, this.join, this.board, this.tele, this.diag, this.lineup, this.startPoint, this.result, this.ranking].some((w) => w.isOpen);
   }
 
   /** A siege packet the client sends (the `encodeGc*` bytes). */
@@ -164,15 +192,18 @@ export class GuildCombatHud {
     if (nowMs - this.lastTick < 1000) return;
     this.lastTick = nowMs;
     if (this.status.isOpen) this.status.tick(this.host.now());
+    // the names that came since (the player data answers later)
+    this.result.refresh();
+    this.ranking.refresh();
   }
 
   close(): void {
-    for (const w of [this.apply, this.status, this.cancel, this.join, this.board, this.tele, this.diag, this.lineup, this.startPoint]) w.close();
+    for (const w of [this.apply, this.status, this.cancel, this.join, this.board, this.tele, this.diag, this.lineup, this.startPoint, this.result, this.ranking]) w.close();
   }
 
   dispose(): void {
     this.listeners.clear();
-    for (const w of [this.apply, this.status, this.cancel, this.join, this.board, this.tele, this.diag, this.lineup, this.startPoint]) {
+    for (const w of [this.apply, this.status, this.cancel, this.join, this.board, this.tele, this.diag, this.lineup, this.startPoint, this.result, this.ranking]) {
       w.close();
       w.element.remove();
     }
@@ -207,6 +238,9 @@ export class GuildCombatHud {
       case 'selectWarPos': this.startPoint.open(message.map, message.seconds, this.host.now()); break;
       case 'diagMessage': this.diag.open(message.text); break;
       case 'tele': this.tele.open(message.text); break;
+      // B6: GC_LOG opens the result window, GC_PLAYERPOINT (Donaris's Ranking) the ranking window
+      case 'log': this.result.open(); break;
+      case 'playerPoint': this.ranking.open(message.players); break;
       case 'getPenyaGuild':
       case 'getPenyaPlayer': {
         const notice = penyaNotice(message.sub === 'getPenyaGuild' ? 'guild' : 'player', message.result, message.penya, this.host.ownGold());

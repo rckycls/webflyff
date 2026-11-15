@@ -110,10 +110,10 @@ export class GuildCombatBook {
         return [{ kind: 'changed' }];
       case 'playerPoint':
         this.playerPoints = message.players;
-        return [{ kind: 'changed' }];
+        return [{ kind: 'changed' }, { kind: 'message', message }]; // B6: a window opens on it
       case 'log':
         this.log = message.entries;
-        return [{ kind: 'changed' }];
+        return [{ kind: 'changed' }, { kind: 'message', message }]; // B6: a window opens on it
       case 'logRealtime':
         this.log = [...this.log, {
           atkGuildId: message.atkGuildId, defGuildId: message.defGuildId, atkPlayerId: message.atkPlayerId,
