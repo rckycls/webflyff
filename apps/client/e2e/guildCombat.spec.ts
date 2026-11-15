@@ -506,7 +506,8 @@ test('Ranking and result: the tabs, the rows, the own row, the battle log and Sa
     { playerId: LEAD, job: 6, point: 9 }, { playerId: MIA, job: 8, point: 9 }, { playerId: WEBBY, job: 12, point: 4 },
     { playerId: 99999, job: 6, point: 3 }, { playerId: 88888, job: 0, point: 50 },
   ] });
-  const rank = page.locator('.hud-gc-rank');
+  // Donaris's window, not the owner's Siege Ranking window (C2), which shares its look and class (hud-sr besides)
+  const rank = page.locator('.hud-gc-rank:not(.hud-sr)');
   await expect(rank).toBeVisible(ON_FRAMES);
   await expect(rank.locator('.hud-window-title')).toHaveText('Guild Member Ranking');
   await expect(rank.locator('[role="tab"]')).toHaveText(['United Rank', 'Mercenary', 'Magician', 'Acrobat', 'Assist']);
