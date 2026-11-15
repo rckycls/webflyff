@@ -638,3 +638,34 @@ describe('collision: the camera (CWorld::CheckBound)', () => {
     expect(cameraBound([10, 1, 10], [6, 1, 10], ground([farWall, nearWall]))).toEqual([7, 1, 10]);
   });
 });
+
+// ---- the housing controls (2026-11-15 post-merge) -------------------------------------------------------------------
+
+describe('the controls the movers collide with (Ground.controlsNear)', () => {
+  const knee: Vec3 = [f32(0.6), f32(0.4), 0];
+  const dir: Vec3 = [f32(0.65), 0, f32(0.65)];
+
+  it('processCollision slides off a control, tested before the world objects (ProcessCollision\'s linkDynamic loop)', () => {
+    const out: Vec3 = [9, 9, 9];
+    const piece = object(wallX(1, 0, 3, -5, 5));
+    expect(processCollision(out, knee, dir, { ...ground([]), controlsNear: () => [piece] })).toBe(true);
+    expect(out[0]).toBe(0);
+    near(out[2], 0.65 * (1 - 0.4 / 0.65));
+    // the control's slide is tested again against both loops: a world wall across it makes it nothing
+    const across = object(wallZ(0.1, -5, 5, 0, 3, -1));
+    expect(processCollision(out, knee, dir, { ...ground([across]), controlsNear: () => [piece] })).toBe(true);
+    expect(out).toEqual([0, 0, 0]);
+    // no controls: as before
+    expect(processCollision(out, knee, dir, { ...ground([]), controlsNear: () => [] })).toBe(false);
+    expect(out).toEqual(dir);
+  });
+
+  it('processUnderCollision stands a mover on a control (the housing worlds\' loop) and keeps the higher of it and the world', () => {
+    const slide: Vec3 = [0, 0, 0];
+    const bed = object(slopeX(4, 1, 8, 1, -2, 2));
+    expect(processUnderCollision(slide, [6, 2, 0], { ...ground([]), controlsNear: () => [bed] })).toBe(1);
+    expect(processUnderCollision(slide, [6, 2, 0], ground([]))).toBe(0);
+    const deck = object(slopeX(4, 1.2, 8, 1.2, -2, 2));
+    expect(processUnderCollision(slide, [6, 2, 0], { ...ground([deck]), controlsNear: () => [bed] })).toBe(f32(1.2));
+  });
+});

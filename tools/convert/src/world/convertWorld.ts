@@ -396,6 +396,8 @@ export async function convertWorld(
     indoor: info.indoor,
     mapSize: MAP_SIZE,
     ambient: info.ambient,
+    // 2026-11-15 (post-merge): an indoor world's own light (World3D.cpp:1837-1893); outdoor manifests stay as they were
+    ...(info.indoor ? { diffuse: info.diffuse, lightDir: info.lightDir } : {}),
     bgColor: info.bgColor,
     fog: info.fog,
     camera: { position: toWebPosition(info.camera.position), angle: info.camera.angle, angleX: info.camera.angleX },

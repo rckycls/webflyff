@@ -16,8 +16,8 @@ import { findTouchTriLine, slideVectorUnder, slideVectorXZ2, touchedBy, touchesB
  * floats as the C++ keeps them (`f32` at every store).
  *
  * Left out (see each function): the model's own box, for which the collision mesh's bounds stand in; the world's
- * edge; water. The controls (`OT_CTRL`: chests, doors) are not in `Ground`, which holds the tiles' world objects
- * (`OT_OBJ`) only, so the C++'s loops over them are left out.
+ * edge; water. The controls (`OT_CTRL`) are `Ground.controlsNear` (2026-11-15 post-merge): the world screen gives the
+ * placed furniture of the housing worlds there (furniture/ctrlCollision.ts), and no control elsewhere (chests, doors).
  *
  * The world they read, `Ground` and its `CollisionObject`s, and `landTriangle` (`CWorld::GetLandTri`) are
  * `packages/scene`'s (`world/ground.ts`), where the world screen's stage makes them from its tiles.
@@ -124,12 +124,14 @@ function findTouchLandTri(tris: Float32Array, pos: Vec3, dir: Vec3): number | nu
 // ---- the rules ----------------------------------------------------------------------------------------------------
 
 /**
- * `CWorld::ProcessCollision` (`WorldIntersect.cpp:498-622`): the move `dir` from `pos`, tested against the world's
- * objects around `pos` (`linkStatic`), into `out`. The first object it meets gives the slide (`SlideVectorXZ2`), which
- * is tested once more from `pos`; if that meets something too, the move is nothing (:539-550, :573-597, whose two
- * `__FIX_COLLISION` branches both test again on the first slide). True when something was met; `out` is `dir` when
- * nothing was. `out` may be `dir`, as in `ProcessCollisionGround`'s call. (The controls' loop, `linkDynamic` objects
- * of type `OT_CTRL` tested with their render meshes, :515-556, is left out: see the module's comment.)
+ * `CWorld::ProcessCollision` (`WorldIntersect.cpp:498-622`): the move `dir` from `pos`, tested against the controls
+ * (`Ground.controlsNear`, the `linkDynamic` loop of :515-556, 2026-11-15 post-merge) and then the world's objects around
+ * `pos` (`linkStatic`), into `out`. The first object it meets gives the slide (`SlideVectorXZ2`), which is tested once
+ * more from `pos`; if that meets something too, the move is nothing (:539-550, :573-597, whose two `__FIX_COLLISION`
+ * branches both test again on the first slide). True when something was met; `out` is `dir` when nothing was. `out` may
+ * be `dir`, as in `ProcessCollisionGround`'s call. A control slides on its collision mesh, as a room's does
+ * (`WI_WORLD_MINIROOM`, :524-525); elsewhere Neuz slides on its render mesh (`bCollObj` 0), for which the collision mesh
+ * stands in.
  */
 export function processCollision(out: Vec3, pos: Vec3, dir: Vec3, ground: Ground): boolean {
   return collide(out, toFloats(pos), toFloats(dir), ground, 0);
@@ -138,7 +140,13 @@ export function processCollision(out: Vec3, pos: Vec3, dir: Vec3, ground: Ground
 function collide(out: Vec3, pos: Vec3, dir: Vec3, ground: Ground, slideCount: number): boolean {
   const end = add(pos, dir);
   set(out, dir);
-  const objects = ground.objectsNear(pos[0], pos[2], MOVER_LINK_RANGE);
+  const controls = ground.controlsNear?.(pos[0], pos[2]);
+  if (controls !== undefined && slideOnFirst(out, controls, pos, end, ground, slideCount)) return true;
+  return slideOnFirst(out, ground.objectsNear(pos[0], pos[2], MOVER_LINK_RANGE), pos, end, ground, slideCount);
+}
+
+/** One FOR_LINKMAP loop of `ProcessCollision`: the first of `objects` the line meets slides it, tested once more. */
+function slideOnFirst(out: Vec3, objects: readonly CollisionObject[], pos: Vec3, end: Vec3, ground: Ground, slideCount: number): boolean {
   for (let k = 0; k < objects.length; k++) {
     const obj = objects[k]!;
     const inv = touchedBy(obj, pos, end);
@@ -194,7 +202,8 @@ function blocks(ground: Ground | undefined, x: number, z: number): boolean {
  * land steeper than about 68 degrees `vOut` becomes the point a fall of 0.2f slides to along it, or where that slide
  * first meets the land around (`GetLandTris`, `FindTouchLandTri`). Without `landTri` (or should the line miss the
  * triangle, where the C++ would read a stale distance): `terrainHeight`, and no slide. Where no land is loaded only
- * the objects count (`NO_FLOOR`, -65535, without any). Housing rooms' controls (:1249-1281) and ships (`linkAirShip`,
+ * the objects count (`NO_FLOOR`, -65535, without any). The housing worlds' controls (`Ground.controlsNear`, :1249-1281,
+ * 2026-11-15 post-merge) are tested first, the same way, so a mover stands on placed furniture. Ships (`linkAirShip`,
  * :1303-1322) are left out.
  */
 export function processUnderCollision(out: Vec3, pos: Vec3, ground: Ground): number {
@@ -202,17 +211,9 @@ export function processUnderCollision(out: Vec3, pos: Vec3, ground: Ground): num
   const end = add(from, UNDER);
   const slide: Vec3 = [0, 0, 0];
   let maxY = NO_FLOOR;
-  const objects = ground.objectsNear(from[0], from[2], MOVER_LINK_RANGE);
-  for (let k = 0; k < objects.length; k++) {
-    const obj = objects[k]!;
-    const inv = touchedBy(obj, from, end);
-    if (inv === null) continue;
-    const y = slideVectorUnder(slide, obj, inv, from, end);
-    if (y !== null && y > maxY) {
-      maxY = y;
-      set(out, slide);
-    }
-  }
+  const controls = ground.controlsNear?.(from[0], from[2]);
+  if (controls !== undefined) maxY = highestUnder(out, slide, controls, from, end, maxY);
+  maxY = highestUnder(out, slide, ground.objectsNear(from[0], from[2], MOVER_LINK_RANGE), from, end, maxY);
   let land: number | null;
   const tri = landTri;
   const t = ground.landTri?.(from[0], from[2], tri) ? touchRayTri(tri, 0, from, UNDER) : null;
@@ -233,6 +234,24 @@ export function processUnderCollision(out: Vec3, pos: Vec3, ground: Ground): num
   if (land !== null && land > maxY) {
     maxY = land;
     set(out, slide);
+  }
+  return maxY;
+}
+
+/**
+ * One FOR_LINKMAP loop of `ProcessUnderCollision`: the highest face of `objects` under the line above `maxY` (the slide
+ * vector `slide` shared by every loop, `vOut`), into `out`; the new highest.
+ */
+function highestUnder(out: Vec3, slide: Vec3, objects: readonly CollisionObject[], from: Vec3, end: Vec3, maxY: number): number {
+  for (let k = 0; k < objects.length; k++) {
+    const obj = objects[k]!;
+    const inv = touchedBy(obj, from, end);
+    if (inv === null) continue;
+    const y = slideVectorUnder(slide, obj, inv, from, end);
+    if (y !== null && y > maxY) {
+      maxY = y;
+      set(out, slide);
+    }
   }
   return maxY;
 }

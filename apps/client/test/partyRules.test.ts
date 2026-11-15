@@ -6,7 +6,7 @@ import {
   PARTY_MODE_SKILL, cutName, fullPartyTid, levelMark, memberBoxColor, memberTextColor, partyExpNeed, partyExpText,
 } from '../src/world/party/partyRules';
 import type { WebPartySkill } from '@flyffweb/formats';
-import { handOverCheck, leaveTarget, modeChoice, partySkillCheck, partyToggle, troupNameCheck } from '../src/world/party/partyRules';
+import { handOverCheck, inviteCheck, leaveTarget, modeChoice, partySkillCheck, partyToggle, troupNameCheck } from '../src/world/party/partyRules';
 import { PartyState } from '../src/world/party/partyState';
 
 /** `expParty` as shipped (Resource/expTable.inc:438-454). */
@@ -79,6 +79,18 @@ describe('the party window\'s rules (Piece 7 M4, [R §6])', () => {
     expect(handOverCheck(lead, OWN, OWN)).toEqual({ line: 'TID_GAME_PARTY_ALREADYMASTER' });
     expect(handOverCheck(party([[2, false], [OWN, false]]), OWN, 2)).toEqual({ line: 'TID_GAME_PARTY_ISNOTMASTER' });
     expect(handOverCheck(party([]), OWN, null)).toBeNull();
+  });
+
+  it('a party duel (2026-11-15 post-merge): no hand-over once it would be sent, no invite at all', () => {
+    const lead = party([[OWN, false], [2, false], [3, true]]);
+    expect(handOverCheck(lead, OWN, 2, true)).toEqual({ line: 'TID_PK_NOCHANGE_PARTYLEADER' });
+    // the earlier lines come first (WndParty.cpp:357-385)
+    expect(handOverCheck(lead, OWN, 3, true)).toEqual({ line: 'TID_GAME_MASTER_AWAY' });
+    expect(handOverCheck(lead, OWN, OWN, true)).toEqual({ line: 'TID_GAME_PARTY_ALREADYMASTER' });
+    // InviteParty checks the duel first (WndWorld.cpp:11233-11237)
+    expect(inviteCheck(lead, OWN, true)).toEqual({ line: 'TID_GAME_PPVP_ADDPARTY' });
+    expect(inviteCheck(party([[2, false], [OWN, false]]), OWN, true)).toEqual({ line: 'TID_GAME_PPVP_ADDPARTY' });
+    expect(inviteCheck(lead, OWN)).toEqual({ send: true });
   });
 
   it('the name rules in order', () => {

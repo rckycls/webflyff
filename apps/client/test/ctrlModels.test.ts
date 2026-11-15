@@ -6,6 +6,10 @@ import { ServerClock } from '../src/net/serverClock';
 import { WorldState } from '../src/world/WorldState';
 import { terrainGround } from '../src/world/sim/collision';
 import { CtrlModels, ctrlModelOf } from '../src/world/furniture/ctrlModels';
+import { CtrlCollision } from '../src/world/furniture/ctrlCollision';
+import type { ShapeStore } from '../src/world/furniture/ctrlCollision';
+import { placedMatrix } from '../src/world/furniture/placementRules';
+import { encodeCollisionBin } from '@flyffweb/formats';
 import type { DropLoader } from '../src/world/items/groundModels';
 import { gameDataOf } from './helpers/movers';
 
@@ -67,5 +71,50 @@ describe('CtrlModels', () => {
     layer.update(new Map());
     expect(scene.children.length).toBe(0);
     expect(released).toEqual(['models/ctrl_houfurbedbasic01.glb']);
+  });
+});
+
+describe('CtrlCollision (2026-11-15 post-merge: the movers collide with placed furniture)', () => {
+  const data = gameDataOf({ ctrls: new Map([
+    [47, { id: 47, model: 'models/ctrl_houfurbedbasic01.glb', scale: 0.7 }],
+    [48, { id: 48, model: 'models/ctrl_nocollision.glb', scale: 1 }],
+  ]) });
+  const triangles = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]);
+  function store(): ShapeStore & { asked: string[] } {
+    const asked: string[] = [];
+    return {
+      asked,
+      url: (key) => (key === 'collision/ctrl_houfurbedbasic01.bin' ? 'hashed' : null),
+      bytes: async (key) => { asked.push(key); return encodeCollisionBin(triangles); },
+    };
+  }
+
+  it('a control with a collision mesh is an object at its matrix once the shape is in; one without has none', async () => {
+    const shapes = store();
+    const layer = new CtrlCollision(data, shapes);
+    const other: AddedCtrl = { ...BED, index: 48, objectId: 0x7002 };
+    layer.update(new Map([[BED.objectId, BED], [other.objectId, other]]));
+    expect(layer.objects).toEqual([]);
+    await layer.settled();
+    expect(layer.objects).toHaveLength(1);
+    const object = layer.objects[0]!;
+    expect(object.triangles).toEqual(triangles);
+    expect(object.matrix).toEqual(placedMatrix(BED.scale, BED.angle, BED.pos));
+    // a second one of the same model takes the shape it already has
+    const twin: AddedCtrl = { ...BED, objectId: 0x7003, pos: [260, 100, 241] };
+    layer.update(new Map([[BED.objectId, BED], [other.objectId, other], [twin.objectId, twin]]));
+    expect(layer.objects).toHaveLength(2);
+    expect(shapes.asked).toEqual(['collision/ctrl_houfurbedbasic01.bin']);
+  });
+
+  it('a control gone, or changed (placed again), loses or remakes its object', async () => {
+    const layer = new CtrlCollision(data, store());
+    layer.update(new Map([[BED.objectId, BED]]));
+    await layer.settled();
+    const moved: AddedCtrl = { ...BED, angle: 180 };
+    layer.update(new Map([[BED.objectId, moved]]));
+    expect(layer.objects[0]!.matrix).toEqual(placedMatrix(moved.scale, moved.angle, moved.pos));
+    layer.update(new Map());
+    expect(layer.objects).toEqual([]);
   });
 });

@@ -30,12 +30,12 @@ import { SpeechBubbleLayer } from './render/SpeechBubbleLayer';
 
 import { UI_SHEETS_KEY, toWebPosition } from '@flyffweb/formats';
 import type { Vec3, WebEffect, WebUiSheet, WebUiSheets, WebWorldMap } from '@flyffweb/formats';
-import type { AddedMover, BundleMessage, InventoryItem, NpcAction, Shortcut, WorldMessage } from '@flyffweb/protocol';
+import type { AddedCtrl, AddedMover, BundleMessage, InventoryItem, NpcAction, Shortcut, WorldMessage } from '@flyffweb/protocol';
 import {
   EffectRenderer, Joystick, KeyboardInput, WorldStage, effectTextureProvider, loadGltf, loopMotion, neuzRandom, attachHeld,
   rendererCounts,
 } from '@flyffweb/scene';
-import type { AssembledCharacter, EffectTextureProvider, Ground, LoopedMotion, SceneServices } from '@flyffweb/scene';
+import type { AssembledCharacter, CollisionObject, EffectTextureProvider, Ground, LoopedMotion, SceneServices } from '@flyffweb/scene';
 import type { Object3D, WebGLRenderer } from 'three';
 import { Vector2, Vector3 } from 'three';
 import { isUpright } from '../landscape';
@@ -210,7 +210,7 @@ import type { ItemWindowPacket } from './items/itemWindowFlows';
 /** 2026-11-05: the worlds' titles a party summon's box names (World.inc's `SetTitle` through world.txt.txt). */
 const WORLD_NAMES: ReadonlyMap<number, string> = new Map([[1, 'Madrigal'], [2, 'Azria'], [3, 'Coral Island']]);
 import { ItemCast } from './items/itemCast';
-import { MoverBuffs } from './buffs';
+import { BUFF_SKILL, MoverBuffs } from './buffs';
 import { ReturnScroll } from './items/returnScroll';
 import type { Refusal, UseCheck } from './items/travelItems';
 import { castFill } from './items/travelItems';
@@ -222,6 +222,7 @@ import { ItemActions } from './items/itemActions';
 import { GroundItems } from './items/groundItems';
 import { GroundModels, loadDropModel } from './items/groundModels';
 import { CtrlModels } from './furniture/ctrlModels'; // 2026-11-15 (housing)
+import { CtrlCollision } from './furniture/ctrlCollision'; // 2026-11-15 (post-merge)
 import { FurniturePlacement, RED_TEXTURE, loadCollisionMesh } from './furniture/placement';
 import { PlacementControls } from './furniture/placementBar';
 import { RoomPapering } from './furniture/roomPapering';
@@ -278,6 +279,11 @@ const BUFF_WINGS: ReadonlySet<number> = new Set([10223, 6319]);
 const XI_NAT_WINGANGEL01 = 1095;
 /** 2026-11-15 (social): the duel's flag (`Resource/defineObj.h`), and the result window's motions (`Resource/defineNeuz.h:443-445`). */
 const XI_GEN_PVP_FLAG01 = 1700;
+/** 2026-11-15 (post-merge): `Ground.controlsNear` outside the housing worlds, and the controls the collision follows there. */
+const NO_CONTROLS: readonly CollisionObject[] = Object.freeze([]);
+const NO_CTRLS: ReadonlyMap<number, AddedCtrl> = new Map();
+/** 2026-11-15 (post-merge): `SI_ACR_SUP_DARKILLUSION` (`Resource/defineSkill.h:157`): no duel flag is drawn under it. */
+const SI_ACR_SUP_DARKILLUSION = 193;
 const MTI_HIPKIDDING = 138;
 const MTI_HEAD = 140;
 /** `PARTS_LWEAPON`, `PARTS_RWEAPON`; `TRANSPARENT_MODE` (authorization.h): the glow's parts, and no glow while invisible. */
@@ -404,6 +410,9 @@ export class WorldScreen {
     terrainHeight: (x, z) => this.stage?.ground().terrainHeight(x, z) ?? null,
     landAttr: (x, z) => this.stage?.ground().landAttr(x, z) ?? HAttr.NONE,
     objectsNear: (x, z, range) => this.stage?.ground().objectsNear(x, z, range) ?? [],
+    // 2026-11-15 (post-merge): the placed furniture of a room or a guild house (furniture/ctrlCollision.ts); elsewhere the
+    // controls (chests, doors) are still left out
+    controlsNear: () => (this.inHousingWorld ? this.ctrlCollision?.objects : undefined) ?? NO_CONTROLS,
     landTri: (x, z, out) => this.stage?.ground().landTri?.(x, z, out) ?? false,
     // Piece 7 M5: the water (the 85 m floor over cloud) and the world's size (ClipX, ClipZ) of the flight collision
     waterTexture: (x, z) => this.stage?.ground().waterTexture?.(x, z) ?? null,
@@ -737,6 +746,13 @@ export class WorldScreen {
   private dropModels: GroundModels | undefined;
   /** 2026-11-15 (housing): the controls in view (placed furniture), furniture/ctrlModels.ts. */
   private ctrlModels: CtrlModels | undefined;
+  /** 2026-11-15 (post-merge): their collision objects, which the movers hit in the housing worlds (furniture/ctrlCollision.ts). */
+  private ctrlCollision: CtrlCollision | undefined;
+
+  /** 2026-11-15 (post-merge): a personal room or a guild house (`WI_WORLD_MINIROOM`, `IsWorldGuildHouse`). */
+  private get inHousingWorld(): boolean {
+    return this.worldId === WI_WORLD_MINIROOM || isGuildHouseWorld(this.worldId);
+  }
   /** 2026-11-15 (housing): a piece being placed (furniture/placement.ts), its input, and the room's papers. */
   private placement: FurniturePlacement | undefined;
   private placementControls: PlacementControls | undefined;
@@ -1008,6 +1024,8 @@ export class WorldScreen {
     this.music?.enterWorld(worldId);
     // 2026-11-15 (B5): the siege's movers anew (no stale USERSTATE), and the count-down kept only into 202
     this.siegeArena.enterWorld(worldId);
+    // 2026-11-15 (post-merge): the world's regions read afresh, so a /ctd Duel Zone is gone (CWorldMng::Open, worldmng.cpp:261-298)
+    this.duels.enterWorld();
     const services = this.services!;
     const folder = this.data!.worlds.get(worldId);
     if (folder === undefined || services.store.url(`worlds/${folder}/manifest.json`) === null) {
@@ -1074,7 +1092,15 @@ export class WorldScreen {
       if (this.friendHud !== undefined && this.friendEvents.length > 0) this.friendHud.handle(this.friendEvents.splice(0));
       // 2026-11-10: the guild's messages (guild/guildBook.ts); their events to the windows once they exist
       if (isGuildMessage(value)) {
-        this.guildEvents.push(...this.guildBook.apply(objectId, value, this.guildContext(world)));
+        const guildEvents = this.guildBook.apply(objectId, value, this.guildContext(world));
+        this.guildEvents.push(...guildEvents);
+        // 2026-11-15 (post-merge): the own player left the guild: its house's furniture list goes (`GuildHouse->Clear()`,
+        // OnSetGuild, DPClient.cpp:12672-12674), as GUILDHOUSE_REMOVE clears it
+        if (guildEvents.some((event) => event.kind === 'left')) {
+          const remove = { type: 'guildHouseRemove' } as const;
+          if (this.guildHouseHud !== undefined) this.guildHouseHud.handle(remove);
+          else this.guildHouseBook.apply(remove, Math.floor(Date.now() / 1000));
+        }
         if (this.guildHud !== undefined && this.guildEvents.length > 0) this.guildHud.handle(this.guildEvents.splice(0));
         else if (this.guildEvents.some((event) => event.kind === 'tags')) this.recolorTags();
         continue;
@@ -1301,6 +1327,7 @@ export class WorldScreen {
       if (value.type === 'replace') {
         if (self === undefined) continue;
         this.music?.enterWorld(this.worldId); // OnReplace reopens the world: its music starts afresh (DPClient.cpp:2422-2427)
+        this.duels.enterWorld(); // 2026-11-15 (post-merge): and its regions (g_WorldMng.Open, :2378): no /ctd Duel Zone
         world.apply(self.objectId, { type: 'setPos', pos: value.pos });
         this.views?.snap(self.objectId);
         this.backCamera.relocate();
@@ -1361,7 +1388,9 @@ export class WorldScreen {
   }
 
   private async openStage(folder: string, services: SceneServices, generation: number): Promise<void> {
-    const stage = await WorldStage.open(folder, services, RADIUS);
+    // 2026-11-15 (post-merge): a room or a guild house in its own indoor light (World3D.cpp:1837-1893), once its world is
+    // converted with it; the other indoor worlds keep the noon light for now
+    const stage = await WorldStage.open(folder, services, RADIUS, { indoorLight: this.inHousingWorld });
     if (this.over || generation !== this.stageGeneration) {
       stage.dispose();
       return;
@@ -1881,6 +1910,8 @@ export class WorldScreen {
     this.dropModels = dropModels;
     this.ctrlModels = new CtrlModels(this.stage!.scene, this.data!, loadDropModel(this.services!),
       (message) => this.page!.overlay.error(message));
+    // 2026-11-15 (post-merge): and their collision meshes, for the movers in the housing worlds (furniture/ctrlCollision.ts)
+    this.ctrlCollision ??= new CtrlCollision(this.data!, this.services!.store, (message) => this.page!.overlay.error(message));
     // 2026-11-15 (guild house): the guild furniture's controls loop their animation (DPClient.cpp:1302-1315)
     const guildCtrls = new Set([...this.data!.itemProps.values()]
       .filter((p) => p.kind2 === GuildHouseKind.IK2_GUILDHOUSE_FURNITURE && p.linkKind !== undefined).map((p) => p.linkKind!));
@@ -2232,6 +2263,7 @@ export class WorldScreen {
       ownPlayerId: () => this.entry.character.playerId,
       now: () => this.world?.nowMs() ?? 0,
       carryPartySkill: (skill, event) => taskBar.carryPartySkill(skill, event),
+      partyDuel: () => this.duels.own.duel === 2, // 2026-11-15 (post-merge): WndParty.cpp:309, :365
     }, this.party, this.partyModeIcons, doc);
     this.partyHud = partyHud;
     // 2026-11-10: the Messenger and the private messages (friends/friendHud.ts)
@@ -3386,6 +3418,8 @@ export class WorldScreen {
       this.cameraPlaced = true;
       this.groundItems?.update(world.groundItems, stage.camera, this.stepsRun);
       this.ctrlModels?.update(world.ctrls, now / 1000); // 2026-11-15 (housing)
+      // 2026-11-15 (post-merge): their collision objects, fetched only where the movers collide with them
+      this.ctrlCollision?.update(this.inHousingWorld ? world.ctrls : NO_CTRLS);
       // the guild house's selected piece in its red box (WndWorld.cpp:3033-3045)
       this.ctrlModels?.select(isGuildHouseWorld(this.worldId) && this.guildHouseBook.selected !== NULL_ID ? this.guildHouseBook.selected : null);
       this.placement?.frame();
@@ -4598,12 +4632,18 @@ export class WorldScreen {
 
   /**
    * 2026-11-15 (social): what the duel's Yes closes first (WndDuelConfirm.cpp:99-312): the dialogue, a trade (TRADECANCEL), the
-   * NPC shop, the bank, the guild bank, the post, the item NPC windows.
+   * NPC shop, the face and hair windows with the bag, the bank, the guild bank, the post, the item NPC windows.
    */
   private closeForDuel(): void {
     this.dialog?.close();
     if (this.tradeHud?.windowOpen === true) this.session.sendTradeCancel();
     if (this.shopWindow?.frame.isOpen === true) this.shopWindow.frame.close();
+    // 2026-11-15 (post-merge): APP_BEAUTY_SHOP_SKIN, then APP_BEAUTY_SHOP_EX, each destroyed with the bag (:153-175)
+    for (const beauty of [this.beautyShop?.face, this.beautyShop?.hair]) {
+      if (beauty?.isOpen !== true) continue;
+      beauty.close();
+      this.inventoryWindow?.frame.close();
+    }
     this.bankHud?.moved();
     this.guildBankHud?.moved();
     this.postHud?.moved();
@@ -4611,13 +4651,22 @@ export class WorldScreen {
     this.upgradeNpc?.piercing.dismiss();
   }
 
-  /** 2026-11-15 (social): `RenderFlag( type )` (MoverRender.cpp:1720-1730): XI_GEN_PVP_FLAG01 at 1.5 on the mover, while its duel lasts. */
+  /**
+   * 2026-11-15 (social): `RenderFlag( type )` (MoverRender.cpp:1720-1730): XI_GEN_PVP_FLAG01 at 1.5 on the mover, while its duel
+   * lasts. 2026-11-15 (post-merge): not drawn while the mover has Dark Illusion or is a transparent GM (`CSfxDuelParty::Render`,
+   * Sfx.cpp:2860-2870); it is kept meanwhile.
+   */
   private duelFlag(objectId: number, flag: DuelFlag): void {
     const mover = this.world?.movers.get(objectId);
     if (mover === undefined || this.effects === undefined) return;
     this.effects.play({
       xi: XI_GEN_PVP_FLAG01, pos: [...mover.act.body.pos], followId: objectId, scale: 1.5,
       whileTrue: () => this.world?.movers.has(objectId) === true && this.duels.flagShown(objectId, flag),
+      hidden: () => {
+        const m = this.world?.movers.get(objectId);
+        return m !== undefined && (m.buffs.has(BUFF_SKILL, SI_ACR_SUP_DARKILLUSION) ||
+          ((m.added.player?.mode ?? 0) & TRANSPARENT_MODE) !== 0);
+      },
     });
   }
 
@@ -4669,9 +4718,10 @@ export class WorldScreen {
           if (this.own) inventoryWindow.update(this.own, true);
         },
       },
-      // CWndVendor::Initialize (WndVendor.cpp:204-213) and SetVendor's dialogue (:67-68)
+      // CWndVendor::Initialize (WndVendor.cpp:204-213) and SetVendor's dialogue (:67-68); 2026-11-15 (post-merge): and a duel
+      // of either kind (`m_nDuel`, :209-212)
       busy: () => this.shopWindow?.frame.isOpen === true || this.dialog?.frame.isOpen === true || this.bankHud?.isOpen === true ||
-        this.guildBankHud?.isOpen === true,
+        this.guildBankHud?.isOpen === true || this.duels.own.duel !== 0,
       invalidNames: () => this.partyCatalog?.invalidNames ?? [],
       wordChange: (text) => wordChange(text, this.data?.chat?.filter ?? null),
       tooltip: (item, cost, anchor) => {
@@ -4691,11 +4741,15 @@ export class WorldScreen {
     return shop;
   }
 
-  /** `CWndWorld::InviteParty` (:11237-11266) for a player id: the party's rule, then MEMBERREQUEST, a box or a line. */
+  /**
+   * `CWndWorld::InviteParty` (:11231-11266) for a player id: the party's rule, then MEMBERREQUEST, a box or a line; a party
+   * duel's line in its own colour (2026-11-15 post-merge, :11233-11237).
+   */
   private inviteToParty(playerId: number): void {
-    const check = inviteCheck(this.party, this.entry.character.playerId);
+    const check = inviteCheck(this.party, this.entry.character.playerId, this.duels.own.duel === 2);
     if ('send' in check) this.session.sendPartyMemberRequest(playerId);
     else if ('box' in check) this.partyHud?.handle([{ kind: 'box', tid: check.box }]);
+    else if (check.line === 'TID_GAME_PPVP_ADDPARTY') this.partyHud?.handle([{ kind: 'line', tid: check.line, args: [], color: null }]);
     // in FULLPARTY1's colour (WndWorld.cpp:11255-11258)
     else this.partyHud?.handle([{ kind: 'line', tid: check.line, args: [], color: this.data?.texts.get('TID_GAME_FULLPARTY1')?.color ?? null }]);
   }
@@ -5511,6 +5565,8 @@ export class WorldScreen {
     this.dropModels = undefined; // the ground items' own, disposed with them
     this.ctrlModels?.dispose(); // 2026-11-15 (housing)
     this.ctrlModels = undefined;
+    this.ctrlCollision?.dispose(); // 2026-11-15 (post-merge)
+    this.ctrlCollision = undefined;
     this.nearbyItems?.dispose();
     this.minimap?.dispose();
     if (this.worldMap !== undefined) this.worldMapMonsters = this.worldMap.monsterInfo;

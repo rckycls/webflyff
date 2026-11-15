@@ -91,6 +91,8 @@ export class PartyWindow {
   /** Leave: the member to remove (`leaveTarget`) and whether that is a kick; the screen opens the leave box. */
   onLeave: (leaveId: number, kick: boolean) => void = () => {};
   onHandOver: (playerId: number) => void = () => {};
+  /** 2026-11-15 (post-merge): the own player is in a party duel (`g_pPlayer->m_nDuel == 2`): no leave, no hand-over. */
+  partyDuel: () => boolean = () => false;
   /** Change, for a normal party: the screen opens the convert box. */
   onChangeTroup: () => void = () => {};
   /** The small button: the quick view on or off. */
@@ -184,12 +186,14 @@ export class PartyWindow {
     const party = view.party;
     const own = view.ownPlayerId;
     if (name === 'leave') {
+      // 2026-11-15 (post-merge): not during a party duel (WndParty.cpp:309-313); the selection stays
+      if (this.partyDuel()) { this.onLine('TID_GAME_PPVP_LEAVE'); return; }
       const leaveId = leaveTarget(party, own, this.selected);
       this.selected = null;
       this.onLeave(leaveId, leaveId !== own);
       this.update(view);
     } else if (name === 'handOver') {
-      const result = handOverCheck(party, own, this.selected);
+      const result = handOverCheck(party, own, this.selected, this.partyDuel());
       if (result !== null && 'line' in result) this.onLine(result.line);
       else if (result !== null) this.onHandOver(result.send);
     } else if (name === 'change') {

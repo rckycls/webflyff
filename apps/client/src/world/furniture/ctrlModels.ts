@@ -4,7 +4,7 @@
 // loader (items/groundModels.ts). Each drawn control keeps its box in the world (`m_OBB`) for the placement's collision.
 //
 // Simplified: a personal room's controls do not move (`m_bAniPlay` FALSE); the guild house's looping ones (`IsGuildHousingObj`,
-// :1302-1315) come with the guild house. Movers walk through them (sim/collision.ts leaves the housing controls out).
+// :1302-1315) come with the guild house. The movers' collision with them is furniture/ctrlCollision.ts (2026-11-15 post-merge).
 
 import type { AddedCtrl } from '@flyffweb/protocol';
 import { toWebPosition } from '@flyffweb/formats';

@@ -5,9 +5,10 @@
 // also read the world from it (`ground`: the land of the tiles that are in and their objects' collision shapes,
 // ground.ts and collision.ts), which the viewer never asks for.
 //
-// The light is the client's at noon (lighting.ts). The terrain is lit by its own shader in D3D's numbers
-// (`TerrainLighting`); three.js lights do the models. Intensity pi undoes three's 1 / pi Lambert factor, so a light of
-// level 1 gives the texture as it is, as in D3D.
+// The light is the client's at noon (lighting.ts), or (2026-11-15 post-merge) an indoor world's own when asked for
+// (`stageLight`: the housing rooms). The terrain is lit by its own shader in D3D's numbers (`TerrainLighting`); three.js
+// lights do the models, in colour as D3D stores it (0 to 1, more for an overbright light; three.js' working colour space).
+// Intensity pi undoes three's 1 / pi Lambert factor, so a light of level 1 gives the texture as it is, as in D3D.
 //
 // The sky and the fog are the manifest's `bgColor`, a D3DCOLOR (0xAARRGGBB), and the fog is linear from `fog.start` to
 // `fog.end`; nothing past the fog's end can be seen, so the camera's far plane is there.
@@ -30,7 +31,7 @@ import { TerrainLighting } from './TerrainTile';
 import { CollisionShapes } from './collision';
 import { tileLand } from './ground';
 import type { Ground } from './ground';
-import { d3dColor, noonLight } from './lighting';
+import { d3dColor, stageLight } from './lighting';
 import { ObjectPool } from './objects';
 import { TileStreamer } from './tileStreamer';
 
@@ -39,11 +40,6 @@ const FOV_DEGREES = 45;
 const NEAR = 0.5;
 /** The far plane of a world whose fog does not end beyond the near plane (the fog's end is the far plane otherwise). */
 const FAR = 1000;
-
-/** A grey of `level` as D3D stores it (0 to 1, more for an overbright light), in three.js' working colour space. */
-function grey(level: number): Color {
-  return new Color().setRGB(level, level, level, SRGBColorSpace);
-}
 
 const drawingSize = new Vector2();
 
@@ -90,9 +86,10 @@ export class WorldStage {
   /**
    * The stage of the world with the web name `world`, showing the tiles within `radius` of the focus (1: 3 x 3; the
    * ring outside them is loaded too). Rejects when the world's manifest cannot be had. `services` are borrowed, not
-   * owned: `dispose` leaves them alone.
+   * owned: `dispose` leaves them alone. 2026-11-15 (post-merge): `indoorLight` lights an indoor world with its own light
+   * (`stageLight`), when its manifest carries it; else every world has the noon light.
    */
-  static async open(world: string, services: SceneServices, radius: number): Promise<WorldStage> {
+  static async open(world: string, services: SceneServices, radius: number, options: { indoorLight?: boolean } = {}): Promise<WorldStage> {
     const manifest = await services.store.manifest(world);
     if (manifest === null || typeof manifest !== 'object' || typeof manifest.name !== 'string' ||
       !Array.isArray(manifest.size) || manifest.size.length !== 2 || !manifest.size.every(n => Number.isInteger(n) && n > 0) ||
@@ -102,7 +99,7 @@ export class WorldStage {
       !manifest.tiles || typeof manifest.tiles !== 'object' || Array.isArray(manifest.tiles)) {
       throw new Error(`Invalid world manifest: ${world}`);
     }
-    return new WorldStage(world, manifest, services, radius);
+    return new WorldStage(world, manifest, services, radius, options.indoorLight === true);
   }
 
   private constructor(
@@ -110,6 +107,7 @@ export class WorldStage {
     readonly manifest: WorldManifest,
     services: SceneServices,
     radius: number,
+    indoorLight: boolean,
   ) {
     const { renderer, store, loaders, textures, overlay } = services;
     this.renderer = renderer;
@@ -121,13 +119,13 @@ export class WorldStage {
     this.scene.background = sky;
     this.scene.fog = new Fog(sky, manifest.fog.start, manifest.fog.end);
 
-    const light = noonLight();
+    const light = stageLight(manifest, indoorLight);
     const lighting = new TerrainLighting();
-    lighting.ambient.setScalar(light.ambient);
-    lighting.sunColor.setScalar(light.sunColor);
+    lighting.ambient.set(...light.ambient);
+    lighting.sunColor.set(...light.sunColor);
     lighting.sunDirection.set(...light.sunDirection);
-    this.ambient = new AmbientLight(grey(light.ambient), Math.PI);
-    this.sun = new DirectionalLight(grey(light.sunColor), Math.PI);
+    this.ambient = new AmbientLight(new Color().setRGB(...light.ambient, SRGBColorSpace), Math.PI);
+    this.sun = new DirectionalLight(new Color().setRGB(...light.sunColor, SRGBColorSpace), Math.PI);
     this.sun.position.set(...light.sunDirection);
     this.scene.add(this.ambient, this.sun);
 

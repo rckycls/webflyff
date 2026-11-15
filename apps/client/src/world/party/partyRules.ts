@@ -61,12 +61,14 @@ export function fullPartyTid(level: number): string {
 const MAX_MEMBERS = 8;
 
 /**
- * `CWndWorld::InviteParty` (`WndWorld.cpp:11237-11266`), the duel's check left out (duels are out of scope): with a party,
- * only its leader invites, else the box TID_DIAG_0007; a full party gives the FULLPARTY3 line; else MEMBERREQUEST.
+ * `CWndWorld::InviteParty` (`WndWorld.cpp:11231-11266`): in a party duel (`m_nDuel == 2`, 2026-11-15 post-merge) the
+ * PPVP_ADDPARTY line; with a party, only its leader invites, else the box TID_DIAG_0007; a full party gives the FULLPARTY3
+ * line; else MEMBERREQUEST.
  */
 export function inviteCheck(
-  party: { size(): number; isLeader(playerId: number): boolean }, ownPlayerId: number,
-): { send: true } | { box: 'TID_DIAG_0007' } | { line: 'TID_GAME_FULLPARTY3' } {
+  party: { size(): number; isLeader(playerId: number): boolean }, ownPlayerId: number, partyDuel = false,
+): { send: true } | { box: 'TID_DIAG_0007' } | { line: 'TID_GAME_FULLPARTY3' | 'TID_GAME_PPVP_ADDPARTY' } {
+  if (partyDuel) return { line: 'TID_GAME_PPVP_ADDPARTY' };
   if (party.size() > 0 && !party.isLeader(ownPlayerId)) return { box: 'TID_DIAG_0007' };
   if (party.size() + 1 > MAX_MEMBERS) return { line: 'TID_GAME_FULLPARTY3' };
   return { send: true };
@@ -90,13 +92,19 @@ export function leaveTarget(party: PartyLike, ownPlayerId: number, selected: num
   return selected !== null && party.isLeader(ownPlayerId) ? selected : ownPlayerId;
 }
 
-/** Hand Over (`WndParty.cpp:354-385`), the duel's check left out: its line, or the member to send; null with no party. */
-export function handOverCheck(party: PartyLike, ownPlayerId: number, selected: number | null): { send: number } | { line: string } | null {
+/**
+ * Hand Over (`WndParty.cpp:354-385`): its line, or the member to send; null with no party. In a party duel (`m_nDuel == 2`,
+ * 2026-11-15 post-merge) a hand-over that would be sent gives TID_PK_NOCHANGE_PARTYLEADER instead (:365-366).
+ */
+export function handOverCheck(
+  party: PartyLike, ownPlayerId: number, selected: number | null, partyDuel = false,
+): { send: number } | { line: string } | null {
   if (party.size() === 0) return null;
   const member = selected === null ? undefined : party.members.find((m) => m.playerId === selected);
   if (!party.isLeader(ownPlayerId) || member === undefined) return { line: 'TID_GAME_PARTY_ISNOTMASTER' };
   if (member.removed) return { line: 'TID_GAME_MASTER_AWAY' };
   if (member.playerId === ownPlayerId) return { line: 'TID_GAME_PARTY_ALREADYMASTER' };
+  if (partyDuel) return { line: 'TID_PK_NOCHANGE_PARTYLEADER' };
   return { send: member.playerId };
 }
 
