@@ -4842,7 +4842,7 @@ fieldset:disabled .btn {
   display: flex; flex-direction: column; gap: 4px; border: 1px solid #8f8f8f; background: #fffaf5;
   color: #382b20; font: 11px/1.25 Verdana, Geneva, Tahoma, sans-serif;
 }
-.auto-play-tabs .hud-gc-tab:disabled { color: #9a8f86; cursor: default; }
+.auto-play-tabs .hud-tab-title:disabled { color: #9a8f86; cursor: default; }
 .auto-check { display: flex; align-items: center; gap: 4px; font-weight: bold; }
 .auto-pot-row { display: flex; align-items: center; gap: 4px; min-height: 32px; }
 .auto-pot-name { flex: none; width: 22px; font-weight: bold; }
@@ -4930,9 +4930,7 @@ fieldset:disabled .btn {
     touch-action: none; -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; user-select: none;
   }
   .hud-auto-play .auto-play-tabs .hud-gc-page { font-size: 12px; }
-  .hud-auto-play .auto-play-tabs .hud-gc-tab { height: 28px; font-size: 13px; line-height: 26px; }
-  .hud-auto-play .auto-play-tabs .hud-gc-page { bottom: 28px; }
-  .hud-auto-play .auto-play-tabs .hud-gc-tabs { height: 28px; }
+  /* (merge with the consistency scan) the tabs are the shared 20 px picture strip, with its larger press area (.hud-gc-tabs) */
 }
 /* a phone window over the world hides the AUTO button as it hides Attack */
 .world:has(:is(.hud-quests, .hud-inventory, .hud-auto-play)[data-mobile-window]:not([hidden])) .hud-auto-button { visibility: hidden; }
