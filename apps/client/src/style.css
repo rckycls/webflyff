@@ -3606,9 +3606,9 @@ fieldset:disabled .btn {
   }
   .hud-lord .hud-lord-cell { position: static; overflow: hidden; text-overflow: ellipsis; }
   .hud-lord .hud-lord-cell.is-name { flex: 1 1 auto; }
-  .hud-lord .hud-res-edit { height: 22px !important; }
+  .hud-lord .hud-res-edit { height: 18px !important; }
   .hud-lord .hud-res-edit input {
-    position: absolute; inset: 0 6px; z-index: 1; width: calc(100% - 12px); height: 100%; min-height: 0 !important; background: transparent;
+    position: absolute; inset: -3px 6px; z-index: 1; width: calc(100% - 12px); height: calc(100% + 6px); min-height: 0 !important; background: transparent;
     font: 12px Verdana, Tahoma, sans-serif;
   }
   .hud-lord-pledge [data-control="WIDC_EDIT1"] { height: 30vh !important; }
@@ -3798,10 +3798,11 @@ fieldset:disabled .btn {
   /* the WndEditTile pieces of a box of words or an edit, stretched to the box (the corners 8 px) */
   :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-post, .hud-post-read, .hud-heaven-tower, .hud-lord, .hud-summon-angel) .hud-edit-tiles {
     position: absolute !important; inset: 0 !important; display: grid !important; grid-template-columns: 8px minmax(0, 1fr) 8px;
-    grid-template-rows: 8px minmax(0, 1fr) 8px; pointer-events: none;
+    grid-template-rows: 8px minmax(0, 1fr) 10px; pointer-events: none;
   }
   :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-post, .hud-post-read, .hud-heaven-tower, .hud-lord, .hud-summon-angel) .hud-edit-tiles:not(:has(> :nth-child(7))) {
-    grid-template-rows: minmax(0, 1fr) 8px;
+    /* (a one-line box, two rows of tiles: 18 px, Neuz's own height; a taller one would repeat its top row's edge) */
+    grid-template-rows: 8px 10px;
   }
   :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-post, .hud-post-read, .hud-heaven-tower, .hud-lord, .hud-summon-angel) .hud-edit-tiles > div {
     position: static !important; width: auto !important; height: auto !important;
@@ -4037,7 +4038,8 @@ fieldset:disabled .btn {
   }
   .hud-post [data-page="send"] > * { position: relative !important; left: auto !important; top: auto !important; }
   .hud-post [data-page="send"] > :where(:not(.hud-picture-button)) { width: auto !important; height: auto !important; }
-  .hud-post [data-page="send"] :is([data-control="WIDC_COMBOBOX1"], [data-control="WIDC_EDIT2"], [data-control="WIDC_EDIT4"]) { height: 22px !important; }
+  /* (one-line boxes at Neuz's 18 px: two rows of edit tiles; their fields 3 px more above and below for a finger) */
+  .hud-post [data-page="send"] :is([data-control="WIDC_COMBOBOX1"], [data-control="WIDC_EDIT2"], [data-control="WIDC_EDIT4"]) { height: 18px !important; }
   .hud-post [data-page="send"] [data-control="WIDC_STATIC1"] { grid-area: 1 / 1; }
   .hud-post [data-page="send"] [data-control="WIDC_COMBOBOX1"] { grid-area: 1 / 2 / 2 / 4; }
   .hud-post [data-page="send"] [data-control="WIDC_STATIC5"] { grid-area: 2 / 1; }
@@ -4053,12 +4055,12 @@ fieldset:disabled .btn {
   .hud-post [data-page="send"] [data-control="WIDC_STATIC4"] { grid-area: 5 / 1 / 6 / 4; }
   .hud-post [data-page="send"] [data-control="WIDC_STATIC4"] .hud-res-static-text { font: 11px/16px Verdana, Tahoma, sans-serif; color: #000000; text-align: center; }
   .hud-post [data-page="send"] :is(.hud-res-edit, .hud-res-combo) input {
-    position: absolute; inset: 0; z-index: 1; width: 100% !important; height: 100% !important; box-sizing: border-box; padding: 0 6px;
+    position: absolute; inset: -3px 0; z-index: 1; width: 100% !important; height: calc(100% + 6px) !important; box-sizing: border-box; padding: 0 6px;
     background: transparent;
   }
   .hud-post [data-page="send"] .hud-res-combo input { right: 22px !important; width: calc(100% - 22px) !important; }
   /* the drop arrow (ButtQuickListDn) inside the field at its right, as on the desktop, a little more round it to press */
-  .hud-post [data-page="send"] .hud-res-combo-drop { position: absolute !important; left: auto !important; right: 5px; top: 5px !important; z-index: 2; }
+  .hud-post [data-page="send"] .hud-res-combo-drop { position: absolute !important; left: auto !important; right: 5px; top: 3px !important; z-index: 2; }
   .hud-post [data-page="send"] .hud-res-combo-drop::before { content: ''; position: absolute; inset: -6px -6px -6px -10px; }
   .hud-post [data-page="send"] .hud-res-combo-list { width: 100% !important; z-index: 5; }
   .hud-post [data-page="send"] .hud-res-combo-list [role=option] { min-height: 26px; padding: 0 8px; font: 12px/26px Verdana, Tahoma, sans-serif; }
@@ -4085,7 +4087,7 @@ fieldset:disabled .btn {
   }
   .hud-post-read > .hud-window-body > * { position: relative !important; left: auto !important; top: auto !important; }
   .hud-post-read > .hud-window-body > :where(:not(.hud-picture-button)) { width: auto !important; height: auto !important; }
-  .hud-post-read :is([data-control="WIDC_EDIT1"], [data-control="WIDC_EDIT2"], [data-control="WIDC_EDIT3"]) { height: 22px !important; }
+  .hud-post-read :is([data-control="WIDC_EDIT1"], [data-control="WIDC_EDIT2"], [data-control="WIDC_EDIT3"]) { height: 18px !important; }
   /* its three buttons side by side: their pictures a little bigger only */
   .hud-post-read .hud-window-body .hud-picture-button:not(.hud-res-combo-drop) { zoom: 1; }
   .hud-post-read [data-control="WIDC_STATIC1"] { grid-area: 1 / 1; }
@@ -4097,7 +4099,7 @@ fieldset:disabled .btn {
     position: absolute; inset: 4px 6px !important; width: auto !important; height: auto !important; overflow-y: auto; touch-action: pan-y;
     font: 12px/15px Verdana, Tahoma, sans-serif; color: #000000; white-space: pre-wrap;
   }
-  .hud-post-read .hud-res-edit-words { font: 12px/22px Verdana, Tahoma, sans-serif; top: 0; left: 6px; }
+  .hud-post-read .hud-res-edit-words { font: 12px/18px Verdana, Tahoma, sans-serif; top: 0; left: 6px; }
   .hud-post-read [data-control="WIDC_STATIC3"] { grid-area: 4 / 1; width: 40px !important; height: 40px !important; }
   .hud-post-read [data-control="WIDC_STATIC4"] { grid-area: 4 / 2; justify-self: end; width: 20px !important; height: 20px !important; background-position: center; }
   .hud-post-read [data-control="WIDC_EDIT3"] { grid-area: 4 / 3 / 5 / 5; }
@@ -4222,4 +4224,21 @@ fieldset:disabled .btn {
   }
   .hud-motion-taskbar[aria-pressed='true'] { background: #ffe494; border-color: #795431; }
   .hud-motion-taskbar:disabled { opacity: 0.5; cursor: default; }
+}
+
+/* 2026-11-15 (owner): "the jewel windows and upgrade windows should be centred on the available space": the panels beside the
+   phone's bag centred in the room left of it, across and up and down (above the task bar), each as big as it is; and the
+   game's text boxes without the phone's own field look (iOS draws an inner shadow and its own rounding round an input unless
+   told not to: a second box over Neuz's). */
+@media (max-width: 1000px) and (pointer: coarse) {
+  :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-post, .hud-post-read, .hud-vendor, .hud-bank, .hud-summon-angel,
+    .hud-trade):not([hidden]) {
+    left: 8px !important; right: calc(var(--bag-window-width, 60%) + 20px) !important;
+    top: 8px !important; bottom: calc(var(--hud-taskbar-height, 48px) + 8px) !important;
+    margin: auto !important;
+  }
+  :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-vendor, .hud-bank, .hud-summon-angel):not([hidden]) {
+    height: -webkit-fit-content !important; height: fit-content !important;
+  }
+  .world :is(input:not([type='checkbox'], [type='radio'], [type='range']), textarea) { -webkit-appearance: none; appearance: none; }
 }

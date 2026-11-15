@@ -128,6 +128,32 @@ Tests here after round three, phone and desktop Chromium: `dialogue`, `travel-it
   - `travel-items`: the Blinkwing's new world sends its buffs in the own ADD_OBJ, as the server does, since the carry-over
     is gone.
 
+## Round four (2026-11-15, the owner's list)
+
+1. **"The jewel and upgrade windows should be centred in the available space."**
+   - Every panel beside the bag is now centred in the room left of the bag, across and up and down above the task bar:
+     the jewel and item NPC windows, Safe Upgrade, Piercing, Post and its read window, Private Shop, Bank, Angel window and
+     Trade.
+   - Each stays its own size (`left`/`right`/`top`/`bottom` with `margin: auto`, `height: fit-content`).
+2. **"The screen moves to the right with a margin when opening a keyboard."**
+   - A browser scrolls the page, and every ancestor that can scroll, to show a focused text box. The world's
+     `overflow: hidden` layers can scroll that way too, which leaves a band at one side.
+   - New `hud/scrollPin.ts` (from WorldScreen): the page, `.world`, `.world-view` and `.world-hud` are put back at 0 whenever
+     they scroll, on any focus and on the visual viewport's scroll. A window's own lists keep their scroll.
+   - Chromium does not do this for these boxes, so it is not seen here. Check it on the iPhone.
+3. **"The Lord windows and Send Mail have double overlapping inputs."**
+   - A one-line V15 field is two rows of edit tiles: 8 px on top, 10 px below, 18 px in all. The phone made these fields
+     22 px, so the top row's 8 px tile repeated and drew the field's top edge twice.
+   - These fields are now Neuz's 18 px, with their text box 3 px bigger above and below for a finger.
+   - The bigger boxes' bottom tile row is 10 px (it was cut to 8).
+   - iOS's own field look (inner shadow, rounding) is off for the game's text boxes (`appearance: none`).
+4. **"The trade should not add an item on a tap."**
+   - A tap on a bag item while trading shows its card (the tooltip) with one button, **Add to Trade**, which puts it in
+     (a held item has none).
+   - The penya sack still opens the amount box with a tap.
+
+Tests changed: `trade` (the card and its one button). New: `test/scrollPin.test.ts`.
+
 ## Checks
 
 - Both client typechecks are clean.
