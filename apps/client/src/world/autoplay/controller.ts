@@ -81,6 +81,9 @@ export interface AutoPlayHooks {
   standing(): boolean;
   /** The skill id in a skill slot (what a skill's buff is keyed by). */
   buffSkillId(skillIndex: number): number | undefined;
+  // phone and AFK (M4)
+  /** Keep the screen on (Wake Lock) while the farm bot runs. */
+  keepAwake(on: boolean): void;
 }
 
 export type FarmState = 'off' | 'running' | 'stopped';
@@ -191,6 +194,7 @@ export class AutoPlay {
     this.buffing = false;
     this.bagIsFull = h.bagFull();
     h.say('Auto Play started.');
+    h.keepAwake(true);
     return true;
   }
 
@@ -203,6 +207,7 @@ export class AutoPlay {
     this.target = null;
     this.looting = null;
     this.letGoWand();
+    h.keepAwake(false);
     h.say(`Auto Play stopped: ${reason}.`);
     h.alert();
     h.flashTitle(reason);

@@ -59,6 +59,7 @@ import { isBuffItemProp } from './autoplay/buffs';
 import { AutoPlayWindow } from './hud/autoPlay/autoPlayWindow';
 import type { AutoPlayItemChoice, AutoPlaySkillChoice } from './hud/autoPlay/autoPlayWindow';
 import { AutoButton, flashStoppedTitle } from './hud/autoPlay/autoButton';
+import { ScreenAwake } from './wakeLock';
 import { Missiles } from './combat/missiles';
 import type { MissileWorld } from './combat/missiles';
 import { OwnShots } from './combat/ownShots';
@@ -750,6 +751,9 @@ export class WorldScreen {
   private autoPlay: AutoPlay | undefined;
   private autoPlayWindow: AutoPlayWindow | undefined;
   private autoButton: AutoButton | undefined;
+  /** custom (owner 2026-11-15): the screen kept on while the farm bot runs; the phone's tip, once a page. */
+  private screenAwake: ScreenAwake | undefined;
+  private phoneTipSaid = false;
   /** custom (owner 2026-11-15): what Auto Play last saw of the own EXP, the bag and the drops. */
   private autoPlayExp: { level: number; exp: bigint } | null = null;
   private autoPlayBagRevision = -1;
@@ -4099,6 +4103,21 @@ export class WorldScreen {
     this.autoPlayDrops = new Set(world.groundItems.keys());
   }
 
+  /**
+   * custom (owner 2026-11-15): the screen kept on while the farm bot runs; on a phone, the first start of the page says
+   * that locking the phone stops it (a web page cannot run while the phone is locked).
+   */
+  private autoPlayKeepAwake(on: boolean): void {
+    const doc = this.element.ownerDocument;
+    this.screenAwake ??= new ScreenAwake(doc.defaultView?.navigator ?? {}, doc);
+    if (!on) { this.screenAwake.release(); return; }
+    this.screenAwake.hold();
+    if (!this.phoneTipSaid && isPhone(doc)) {
+      this.phoneTipSaid = true;
+      this.hud?.messages.add('Keep the game open and the screen on. Locking the phone stops Auto Play.', AUTO_PLAY_COLOR);
+    }
+  }
+
   /** custom (owner 2026-11-15): a skill slot's level row (its MP, FP and cooldown), or undefined. */
   private autoPlaySkillLevel(skillIndex: number): { reqMp: number; reqFp: number; cooldown: number } | undefined {
     const slot = this.own?.skills[skillIndex];
@@ -4216,6 +4235,7 @@ export class WorldScreen {
       buffs: () => this.world?.self()?.buffs.list(this.world.nowMs()) ?? [],
       standing: () => this.useCheck().standing,
       buffSkillId: (skillIndex) => this.own?.skills[skillIndex]?.skill,
+      keepAwake: (on) => this.autoPlayKeepAwake(on),
     };
   }
 

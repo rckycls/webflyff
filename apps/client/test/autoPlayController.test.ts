@@ -50,6 +50,7 @@ function world() {
     skills: [] as number[],
     buffs: [] as Array<{ buffType: number; id: number; level: number; leftMs: number; totalMs: number }>,
     standing: true,
+    awake: [] as boolean[],
   };
   const hooks: AutoPlayHooks = {
     now: () => state.now,
@@ -89,6 +90,7 @@ function world() {
     buffs: () => state.buffs,
     standing: () => state.standing,
     buffSkillId: (i) => 100 + i,
+    keepAwake: (on) => { state.awake.push(on); },
   };
   return { state, hooks };
 }
@@ -371,6 +373,14 @@ describe('AutoPlay controller: the farm bot (spec 6.2-6.5, 6.8)', () => {
     state.inventory = new Map();
     play.step();
     expect(play.lastStop).toBe('low HP, no potions');
+  });
+
+  it('the screen is kept on while the farm bot runs (spec 6.10)', () => {
+    const { state, hooks } = world();
+    const play = new AutoPlay(hooks, defaultSettings());
+    play.start();
+    play.stop('time limit');
+    expect(state.awake).toEqual([true, false]);
   });
 
   it('a wand is held on a target and let go at the stop', () => {
