@@ -4838,3 +4838,18 @@ fieldset:disabled .btn {
   .auto-farm [data-auto-play] { min-width: 32px; height: 32px; }
   .auto-farm-go { height: 34px; }
 }
+
+/* custom (owner 2026-11-15): Auto Play's AUTO button (hud/autoPlay/autoButton.ts): desktop, at the right end above the task
+   bar; grey while off, gold and pulsing while it runs, a red "!" after a stop */
+.hud-auto-button {
+  position: absolute; right: 8px; bottom: calc(var(--hud-taskbar-height, 48px) + 8px); z-index: 30; pointer-events: auto;
+  min-width: 54px; height: 26px; padding: 0 8px; border: 1px solid #8f8f8f; border-radius: 13px;
+  background: linear-gradient(#e9e9e9, #b9b9b9); color: #3a3a3a; font: bold 11px/24px Verdana, Arial, sans-serif;
+  box-shadow: 0 1px 3px #0007; cursor: pointer;
+}
+.hud-auto-button[data-state='running'] {
+  border-color: #a8791c; background: linear-gradient(#ffe48a, #e0a526); color: #4a2f00; animation: hud-auto-pulse 1.6s ease-in-out infinite;
+}
+.hud-auto-mark { margin-left: 3px; color: #c0201a; }
+@keyframes hud-auto-pulse { 50% { box-shadow: 0 0 9px #ffcf4a; } }
+@media (prefers-reduced-motion: reduce) { .hud-auto-button[data-state='running'] { animation: none; } }

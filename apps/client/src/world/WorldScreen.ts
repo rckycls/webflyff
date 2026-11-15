@@ -57,6 +57,7 @@ import { countOf, isPotionProp } from './autoplay/potions';
 import { farmBlocked } from './autoplay/zones';
 import { AutoPlayWindow } from './hud/autoPlay/autoPlayWindow';
 import type { AutoPlayItemChoice } from './hud/autoPlay/autoPlayWindow';
+import { AutoButton, flashStoppedTitle } from './hud/autoPlay/autoButton';
 import { Missiles } from './combat/missiles';
 import type { MissileWorld } from './combat/missiles';
 import { OwnShots } from './combat/ownShots';
@@ -342,8 +343,6 @@ const messageOf = (error: unknown): string => (error instanceof Error ? error.me
 const autoPlayStorage = (): Storage | null => { try { return globalThis.localStorage ?? null; } catch { return null; } };
 /** custom (owner 2026-11-15): Auto Play's chat lines (V15 has no colour of its own for them): a light orange. */
 const AUTO_PLAY_COLOR = 0xffffb44a;
-/** custom (owner 2026-11-15): the start of the page's title while Auto Play stopped in a hidden tab. */
-const STOPPED_TITLE = '(!) Stopped - ';
 /** custom (owner 2026-11-15): the pickup lines Auto Play reads (Resource/defineText.h:244-274). */
 const TID_GAME_LACKSPACE = 626;
 const TID_GAME_REAPITEM = 628;
@@ -748,6 +747,7 @@ export class WorldScreen {
   /** custom (owner 2026-11-15): Auto Play (autoplay/controller.ts), built with each world. */
   private autoPlay: AutoPlay | undefined;
   private autoPlayWindow: AutoPlayWindow | undefined;
+  private autoButton: AutoButton | undefined;
   /** custom (owner 2026-11-15): what Auto Play last saw of the own EXP, the bag and the drops. */
   private autoPlayExp: { level: number; exp: bigint } | null = null;
   private autoPlayBagRevision = -1;
@@ -2266,6 +2266,9 @@ export class WorldScreen {
       farmAllowed: () => !farmBlocked(this.worldId, this.duels.own.duel !== 0),
       now: () => this.world?.nowMs() ?? 0,
     }, doc);
+    this.autoButton = new AutoButton(this.autoPlay!, () => {
+      if (this.autoPlayWindow?.isOpen !== true) this.autoPlayWindow?.open('farm');
+    }, doc);
     this.moverMenu = new MoverMenu(doc);
     const partyHud = new PartyHud(this.hudArt!, this.data!.texts, () => this.partyCatalog, {
       session,
@@ -2633,7 +2636,7 @@ export class WorldScreen {
       this.arenaHud.element, // 2026-11-15 (B5): first, under the windows, as Neuz draws it in the world's background
       this.questTracker.element, this.teleporter.frame.element, this.heavenTower.element, ...this.lordHud.elements, this.lordHud.eventIcons, ...this.guildCombatHud.elements,
       this.motionWindow.frame.element, // 2026-11-14
-      this.autoPlayWindow.frame.element, // custom (owner 2026-11-15)
+      this.autoPlayWindow.frame.element, this.autoButton.element, // custom (owner 2026-11-15)
       // 2026-11-12: the phone's quick slots around Attack (bar 8's first slots; style.css shows them on a phone only)
       taskBar.element, taskBar.quickSlots, taskBar.actionSlotWindow.frame.element, this.attackButton.element, this.jumpButton.element,
       this.actionSlotButton.element, this.flightButtons.element,
@@ -3901,6 +3904,7 @@ export class WorldScreen {
     if (this.own !== undefined && this.skillWindow?.isOpen === true) this.skillWindow.update(this.own);
     if (this.motionWindow?.isOpen === true) this.motionWindow.refresh(); // 2026-11-14: the phone's pick marks
     if (this.autoPlayWindow?.isOpen === true) this.autoPlayWindow.refresh(); // custom (owner 2026-11-15)
+    this.autoButton?.refresh(); // custom (owner 2026-11-15)
   }
 
   /**
@@ -4091,16 +4095,7 @@ export class WorldScreen {
 
   /** custom (owner 2026-11-15): while the tab is hidden, the title says Auto Play stopped, until the tab is seen again. */
   private autoPlayFlashTitle(_reason: string): void {
-    const doc = this.element.ownerDocument;
-    if (doc.visibilityState !== 'hidden' || doc.title.startsWith(STOPPED_TITLE)) return;
-    const title = doc.title;
-    doc.title = STOPPED_TITLE + title;
-    const back = (): void => {
-      if (doc.visibilityState === 'hidden') return;
-      if (doc.title.startsWith(STOPPED_TITLE)) doc.title = title;
-      doc.removeEventListener('visibilitychange', back);
-    };
-    doc.addEventListener('visibilitychange', back);
+    flashStoppedTitle(this.element.ownerDocument);
   }
 
   /** custom (owner 2026-11-15): the party members' object ids in view. */
