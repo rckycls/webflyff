@@ -278,6 +278,9 @@ export const THEME_FILES: readonly string[] = [
   // 2026-11-12, the New Character window (docs/superpowers/specs/2026-11-12-char-select-create-research.md §3): its sex
   // and arrow buttons (APP_CREATE_CHAR, resdata.inc:24551-24600); ButtOk, ButtCancel and WndEditTile00 are above
   'ButtMale.bmp', 'ButtFemale.bmp', 'ButtLeft.bmp', 'ButtRight.bmp',
+  // 2026-11-15, the couple window (docs/2026-11-15-social-research.md §2): APP_COUPLE_TAB_INFO's Break Up and its EXP fill
+  // (CWndCoupleTabInfo::OnInitialUpdate, WndField.cpp:23165-23177), APP_COUPLE_TAB_SKILL's background (:23372)
+  'ButtBreakUp.bmp', 'GauFillNormal.bmp', 'Bg_Couple_Skill.tga',
 ];
 
 /**
@@ -296,6 +299,12 @@ export const CURSOR_FILES: readonly string[] = [
   'anvil.cur', 'curAttack.cur', 'curBase.cur', 'curCamera.cur', 'curControl.cur', 'curDelay.cur', 'edit.cur', 'curGetItem.cur',
   'curHelp.cur', 'curNo.cur', 'curNPC.cur', 'curSelect.cur', 'hori.cur', 'resize_h.cur', 'cur00001.cur', 'cur00002.cur',
 ];
+
+/**
+ * 2026-11-15 (social): pictures of Client/SFX a window draws whole, with no colour key (their scripts' `texture` key is 0):
+ * the duel's count, `CountFight.inc`'s sheet (`m_TexturePackPVP`, Neuz.cpp:1718; CMover::RenderPVPCount), as `ui/countfight.png`.
+ */
+export const SFX_FILES: readonly string[] = ['CountFight.dds'];
 
 /** The two glyph sheets: the script, and the field of WebUiSheets it fills. */
 const SHEETS = [
@@ -522,6 +531,13 @@ export function createUiStage(options: UiStageOptions = {}): Stage {
       const chat = sheets.find((sheet) => sheet.field === 'chatEmoticons');
       const chatPicture = chat === undefined ? undefined : pictures.get(chat.picture);
       if (chat !== undefined && chatPicture !== undefined) chatPicture.frames = chat.pack.frames.map((frame, i) => ({ ...frame, key: chatEmoticonKey(i) }));
+      // 2026-11-15 (social): the SFX pictures drawn whole (SFX_FILES), no colour key
+      for (const name of SFX_FILES) {
+        if (!wanted(name)) continue;
+        const src = ctx.client.find('SFX', name);
+        if (src === null) ctx.report.warn(KIND, `SFX/${name}`, `${name} is not in Client/SFX, so it is not converted`);
+        else pictures.set(src, { src, key: iconKeyOf(path.basename(src)), colorKey: 0 });
+      }
       // the cursors: their mask is their transparency, so no colour key (ui/anvil.png)
       for (const name of CURSOR_FILES) {
         if (!wanted(name)) continue;

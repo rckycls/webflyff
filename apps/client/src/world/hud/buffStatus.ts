@@ -35,6 +35,7 @@ import type { BuffShown } from '../buffs';
 import { petBuffIcon } from '../pets/petStatus';
 import type { UiArt } from './art';
 import { formatDuration } from './duration';
+import { IK3_COUPLE_BUFF } from '../couple/coupleBook';
 import { layoutBottomOf } from './frame';
 
 /** `BUFF_SKILL` (`_Common/buff.h`): the window shows these. */
@@ -355,7 +356,9 @@ export class BuffStatus {
       const angel = this.options.angelPercent?.(buff.id) ?? null;
       looks.push({
         key: `${buff.buffType}:${buff.id}:${timed}`, name: item.name, icon: item.icon, copies: 0, harmful: false,
-        tooltip: () => [angel === null ? item.name : `${item.name}   ${angel}%`, ...(vis() ?? (buff.totalMs > 0 && !equip ? [clock(buff.leftMs)] : []))],
+        // 2026-11-15 (social): a couple skill's tooltip has no time either (IK3_COUPLE_BUFF, WndWorld.cpp:9386-9390, :9512-9514)
+        tooltip: () => [angel === null ? item.name : `${item.name}   ${angel}%`,
+          ...(vis() ?? (buff.totalMs > 0 && !equip && item.kind3 !== IK3_COUPLE_BUFF ? [clock(buff.leftMs)] : []))],
         blink: buff.id === RETURN_SCROLL || angel === 100 ? 'always' : 'under', blinkLeftMs: buff.totalMs > 0 ? buff.leftMs : Infinity,
         blinkUnderMs: BLINK_MS, label: timed && buff.leftMs > 0 ? { kind: 'time', text: iconTime(buff.leftMs) } : null,
         goesBack: buff.id === RETURN_SCROLL || buff.id === PARTY_SUMMON || buff.id === FEED_POCKET,

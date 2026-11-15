@@ -80,5 +80,7 @@ export * from './world/guildHouse'; // 2026-11-15
 export * from './world/post';
 export * from './world/lord';
 export * from './world/honor';
+export * from './world/couple'; // 2026-11-15 (social)
+export * from './world/duel'; // 2026-11-15 (social)
 export * from './world/hpLayer';
 export * from './world/tax'; // 2026-11-15

@@ -786,7 +786,7 @@ describe('TaskBar (CWndTaskBar, WndTaskBar.cpp)', () => {
     expect(bar.element.querySelectorAll('.hud-slot[data-kind]')).toHaveLength(0);
     expect(bar.element.querySelector('.hud-taskbar-number')!.textContent).toBe('1');
     bar.element.querySelector<HTMLButtonElement>('.hud-taskbar-start')!.click();
-    bar.element.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')[15]!.click(); // Log out (2026-11-15: after Housing too)
+    bar.element.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')[16]!.click(); // Log out (2026-11-15: after Housing and Couple too)
     expect(calls).toEqual(['logOut']);
     // the own numbers come with no TASKBAR yet: still empty; then it comes
     const own = newVagrant();
@@ -908,22 +908,22 @@ describe('TaskBar (CWndTaskBar, WndTaskBar.cpp)', () => {
     expect(menu.hidden).toBe(false);
     expect(bar.menuOpen).toBe(true);
     const items = [...menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
-    expect(items.map((item) => item.getAttribute('aria-label'))).toEqual(['Status', 'Character', 'Skills', 'Inventory', 'Housing', 'Private Shop', 'Quest Diary', 'Motion', 'World Map', 'Navigator', 'Chatting', 'Messenger', 'Party', 'Guild', 'Option', 'Log out']);
-    expect(items.map((item) => item.querySelector('.hud-menu-text')!.textContent)).toEqual(['Status', 'Character', 'Skills', 'Inventory', 'Housing', 'Private Shop', 'Quest Diary', 'Motion', 'World Map', 'Navigator', 'Chatting', 'Messenger', 'Party', 'Guild', 'Option', 'Log out']);
+    expect(items.map((item) => item.getAttribute('aria-label'))).toEqual(['Status', 'Character', 'Skills', 'Inventory', 'Housing', 'Private Shop', 'Quest Diary', 'Motion', 'World Map', 'Navigator', 'Chatting', 'Messenger', 'Couple', 'Party', 'Guild', 'Option', 'Log out']);
+    expect(items.map((item) => item.querySelector('.hud-menu-text')!.textContent)).toEqual(['Status', 'Character', 'Skills', 'Inventory', 'Housing', 'Private Shop', 'Quest Diary', 'Motion', 'World Map', 'Navigator', 'Chatting', 'Messenger', 'Couple', 'Party', 'Guild', 'Option', 'Log out']);
     // every line has its window (the skill window's, milestone 2's, too)
-    expect(items.map((item) => item.disabled)).toEqual(Array.from({ length: 16 }, () => false));
+    expect(items.map((item) => item.disabled)).toEqual(Array.from({ length: 17 }, () => false));
     expect(items[0]!.querySelector<HTMLElement>('.hud-menu-icon')!.style.backgroundImage).toContain('/assets/ui/icon_status.png');
     // as CWndTaskMenu draws it (WndTaskBar.cpp:2646-2653), line i at (10, 50 + 22 i), 162 wide, with its applet's hotkey
     // (AppendMenu, :2746); each line takes its whole 22 px row, no gap between two (ruling R27). The picture,
     // WndTaskMenu.tga (192 x 496), is drawn in three: its top edge (0-50), the four lines' rows (50-138) and its bottom
-    // edge (the last 26 px), 408 px in all, for the fifteen lines the client has instead of Neuz's twenty (2026-11-10: Messenger,
-    // Private Shop, Guild; 2026-11-14: Motion)
+    // edge (the last 26 px), 452 px in all, for the seventeen lines the client has instead of Neuz's twenty (2026-11-10: Messenger,
+    // Private Shop, Guild; 2026-11-14: Motion; 2026-11-15: Housing, Couple)
     const slices = [...menu.querySelectorAll<HTMLElement>('.hud-menu-slice')];
     expect(slices.map((slice) => [slice.style.top, slice.style.height, slice.style.backgroundPosition])).toEqual([
-      ['0px', '50px', '0px 0px'], ['50px', '352px', '0px -50px'], ['402px', '26px', '0px -470px'],
+      ['0px', '50px', '0px 0px'], ['50px', '374px', '0px -50px'], ['424px', '28px', '0px -468px'],
     ]);
     expect(slices.every((slice) => slice.style.backgroundImage === 'url("/assets/ui/wndtaskmenu.png")')).toBe(true);
-    expect([menu.style.width, menu.style.height]).toEqual(['192px', '428px']);
+    expect([menu.style.width, menu.style.height]).toEqual(['192px', '452px']);
     expect(items.map((item) => [item.style.left, item.style.top, item.style.width, item.style.height])).toEqual([
       ['10px', '50px', '162px', '22px'], ['10px', '72px', '162px', '22px'], ['10px', '94px', '162px', '22px'],
       ['10px', '116px', '162px', '22px'], ['10px', '138px', '162px', '22px'], ['10px', '160px', '162px', '22px'],
@@ -937,11 +937,12 @@ describe('TaskBar (CWndTaskBar, WndTaskBar.cpp)', () => {
       ['10px', '336px', '162px', '22px'],
       ['10px', '358px', '162px', '22px'],
       ['10px', '380px', '162px', '22px'],
+      ['10px', '402px', '162px', '22px'],
     ]);
-    expect(items.map((item) => item.querySelector('.hud-menu-hotkey')!.textContent)).toEqual(['T', 'H', 'K', 'I', 'Y', '', 'Q', 'O', 'M', 'N', '', 'E', 'P', 'G', '', '']);
+    expect(items.map((item) => item.querySelector('.hud-menu-hotkey')!.textContent)).toEqual(['T', 'H', 'K', 'I', 'Y', '', 'Q', 'O', 'M', 'N', '', 'E', 'F', 'P', 'G', '', '']);
     // the menu stands on the bar, its own scale
     expect(menu.style.bottom).toBe('48px');
-    items[15]!.click();
+    items[16]!.click();
     expect(calls).toEqual(['logOut']);
     expect(menu.hidden).toBe(true);
     // Start again opens it; Status opens the status window and closes the menu; Start twice, or a press elsewhere, closes it
@@ -1050,8 +1051,8 @@ describe('taskBarLayout (CWndTaskBar::Initialize, WndTaskBar.cpp:1264-1306; resd
     small.update(newVagrantWithBar(), BAR_DATA);
     expect(strip(small).style.transform).toBe('scale(0.5)');
     const menu = small.element.querySelector<HTMLElement>('.hud-taskbar-menu')!;
-    // (2026-11-15: 428 px with Housing, 2 px more than the 426 above a 450 px layer's bar)
-    expect([menu.style.transform, menu.style.bottom]).toEqual([`scale(${(450 - 24) / 428})`, '24px']);
+    // (2026-11-15: 452 px with Housing and Couple, more than the 426 above a 450 px layer's bar)
+    expect([menu.style.transform, menu.style.bottom]).toEqual([`scale(${(450 - 24) / 452})`, '24px']);
     expect(small.element.parentElement!.style.getPropertyValue('--hud-taskbar-height')).toBe('24px');
   });
 });
@@ -1359,7 +1360,7 @@ describe('TaskBar: stackable items, names, focus and room (WndTaskBar.cpp)', () 
     expect(bar.element.querySelector<HTMLElement>('.hud-taskbar-strip')!.style.transform).toBe('scale(0.75)');
     expect([menu.style.transform, menu.style.bottom]).toEqual(['', '36px']);
     // 150 px high: 102 px above the bar
-    expect(menuOn(800, 150).menu.style.transform).toBe(`scale(${(150 - 48) / 428})`);
+    expect(menuOn(800, 150).menu.style.transform).toBe(`scale(${(150 - 48) / 452})`);
   });
 
   it('on a touch screen it is up to twice its size as the room above the bar allows; a phone\'s at most 0.85 (2026-11-13)', () => {
@@ -1370,36 +1371,36 @@ describe('TaskBar: stackable items, names, focus and room (WndTaskBar.cpp)', () 
       expect(menuOn(844, 390).menu.style.transform).toBe('scale(0.85)');
       expect(menuOn(750, 342).menu.style.transform).toBe('scale(0.85)');
       // a phone shorter than the menu at 0.85: as the room allows
-      expect(menuOn(568, 220).menu.style.transform).toBe(`scale(${(220 - 48 * (Math.round(0.56 * (568 - 32)) / 620)) / 252})`);
+      expect(menuOn(568, 220).menu.style.transform).toBe(`scale(${(220 - 48 * (Math.round(0.56 * (568 - 32)) / 620)) / 276})`);
       // a tall touch screen, wider than a phone, keeps one column, up to twice its size
       expect(menuOn(1024, 900).menu.style.width).toBe('192px');
-      // (2026-11-15: 428 px with Housing, a little under twice in 852 px)
-      expect(menuOn(1024, 900).menu.style.transform).toBe(`scale(${(900 - 48) / 428})`);
+      // (2026-11-15: 452 px with Housing and Couple, a little under twice in 852 px)
+      expect(menuOn(1024, 900).menu.style.transform).toBe(`scale(${(900 - 48) / 452})`);
     });
   });
 
-  it('on a short touch screen the lines stand in two columns, 8 and 8 (2026-11-15: with Housing), each column on its own picture', () => {
+  it('on a short touch screen the lines stand in two columns, 9 and 8 (2026-11-15: with Housing and Couple), each column on its own picture', () => {
     onTouchScreen(() => {
       const { menu } = menuOn(750, 342);
-      expect([menu.style.width, menu.style.height]).toEqual(['384px', '252px']);
+      expect([menu.style.width, menu.style.height]).toEqual(['384px', '276px']);
       const slices = [...menu.querySelectorAll<HTMLElement>('.hud-menu-slice')];
-      // after eight lines' rows (an even number) the bottom edge is 26 px from row 470, the picture's stripes in step
+      // after nine lines' rows (an odd number) the bottom edge is 28 px from row 468, the picture's stripes in step
       expect(slices.map((slice) => [slice.style.left, slice.style.top, slice.style.height, slice.style.backgroundPosition])).toEqual([
-        ['0px', '0px', '50px', '0px 0px'], ['0px', '50px', '176px', '0px -50px'], ['0px', '226px', '26px', '0px -470px'],
-        ['192px', '0px', '50px', '0px 0px'], ['192px', '50px', '176px', '0px -50px'], ['192px', '226px', '26px', '0px -470px'],
+        ['0px', '0px', '50px', '0px 0px'], ['0px', '50px', '198px', '0px -50px'], ['0px', '248px', '28px', '0px -468px'],
+        ['192px', '0px', '50px', '0px 0px'], ['192px', '50px', '198px', '0px -50px'], ['192px', '248px', '28px', '0px -468px'],
       ]);
       const items = [...menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')];
       expect(items.map((item) => [item.style.left, item.style.top])).toEqual([
-        ...[0, 1, 2, 3, 4, 5, 6, 7].map((row) => ['10px', `${50 + 22 * row}px`]),
+        ...[0, 1, 2, 3, 4, 5, 6, 7, 8].map((row) => ['10px', `${50 + 22 * row}px`]),
         ...[0, 1, 2, 3, 4, 5, 6, 7].map((row) => ['202px', `${50 + 22 * row}px`]),
       ]);
-      expect(items[8]!.getAttribute('aria-label')).toBe('World Map');
+      expect(items[9]!.getAttribute('aria-label')).toBe('Navigator');
     });
   });
 
   it('a first touch on a computer with a mouse lays the menu out for a finger', () => {
     // 2026-11-10: room above the bar for the whole menu (2026-11-14: 408 px, Motion its fifteenth line), 460 px high
-    const { bar, menu } = menuOn(844, 480); // 2026-11-15: 428 px with Housing
+    const { bar, menu } = menuOn(844, 504); // 2026-11-15: 452 px with Housing and Couple
     expect(menu.style.transform).toBe('');
     const touch = pointer('pointerdown', 10, 10);
     Object.defineProperty(touch, 'pointerType', { value: 'touch' });

@@ -4420,3 +4420,32 @@ fieldset:disabled .btn {
   .hud-gh-upkeep input { font-size: 16px; }
   .world:has(.hud-gh-showone:not([hidden])) .hud-placement-bar { top: 84px; }
 }
+
+/* 2026-11-15 (social): the couple window (hud/couple/coupleWindow.ts, CWndCoupleManager): two tabs of child windows on the
+   tab control's edit tiles; the master/hero mark, the EXP gauge, the skill icons over Bg_Couple_Skill.tga */
+.hud-couple-page { position: absolute; }
+.hud-couple-page[hidden] { display: none; }
+.hud-couple-tabs { z-index: 1; }
+.hud-couple-jobtype, .hud-couple-skill-bg, .hud-couple-skill { position: absolute; background-repeat: no-repeat; }
+.hud-couple-jobtype { pointer-events: none; }
+.hud-couple-jobtype[hidden] { display: none; }
+.hud-couple-skill { background-size: 32px 32px; cursor: default; }
+.hud-couple-gauge { z-index: 1; }
+.hud-couple .hud-res-text-body span { font: inherit; }
+
+/* the phone: the same window fitted whole (WindowFrame fitWhole); its words in Verdana 12 px, the tabs' too */
+@media (max-width: 1000px) and (pointer: coarse) {
+  .hud-couple :is(.hud-res-static-text, .hud-res-text-body, .hud-tab-title) { font-family: Verdana, Tahoma, sans-serif; font-size: 12px; }
+  .hud-couple .hud-tab-title { text-align: center; }
+}
+
+/* 2026-11-15 (social): the duel's count (hud/duel/duelWindows.ts, CMover::RenderPVPCount): a picture of CountFight.dds over the
+   world, centred 50 px above the middle, grown and faded as it goes */
+.hud-duel-count {
+  position: absolute; left: 50%; top: calc(50% - 50px); background-repeat: no-repeat; pointer-events: none; z-index: 5;
+  transform-origin: center;
+}
+.hud-duel-count[hidden] { display: none; }
+@media (max-width: 1000px) and (pointer: coarse) {
+  :is(.hud-duel-confirm, .hud-duel-result) .hud-res-text-body { font-family: Verdana, Tahoma, sans-serif; font-size: 12px; }
+}

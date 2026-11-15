@@ -78,3 +78,8 @@ export { honorCounts, writeHonorChange, writeHonorList } from './honor';
 // 2026-11-11: layered boss HP (a server addition)
 export { writeHpLayer } from './hpLayer';
 export { writeTaxInfo } from './tax';
+// 2026-11-15 (social): the couple and the duels
+export {
+  writeAddCoupleExperience, writeAddRegion, writeCouple, writeCoupleResult, writeDecoupleResult, writeDuelCount, writeDuelNo,
+  writeDuelRequest, writeDuelStart, writeProposeResult, writeSetDuel,
+} from './social';

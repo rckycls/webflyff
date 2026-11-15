@@ -25,10 +25,13 @@ import type { LordMessage } from './lord';
 import type { HonorMessage } from './honor';
 import type { HpLayerMessage } from './hpLayer';
 import type { TaxMessage } from './tax';
+import type { CoupleMessage } from './couple'; // 2026-11-15 (social)
+import type { DuelMessage } from './duel'; // 2026-11-15 (social)
 
 export type WorldMessage = ChatMessage | NpcMessage | ShopMessage | QuestMessage | PetMessage | FriendMessage | TradeMessage | VendorMessage
   | GuildMessage | GuildDirectMessage | BankMessage | GuildBankMessage | HousingMessage | GuildHouseMessage | PostMessage | LordMessage | HonorMessage | HpLayerMessage
   | TaxMessage
+  | CoupleMessage | DuelMessage
   | { type: 'profileStats'; values: number[] }
   | { type: 'addItem'; item: GroundItem }
   | { type: 'createItem'; itemType: number; item: InventoryItem; stacks: Array<{ objectId: number; count: number }> }
@@ -569,6 +572,11 @@ export interface AddedPlayer {
    * (`ObjSerializeOpt.cpp:155-163`); present only when it is not 0.
    */
   useItemId?: number;
+  /**
+   * 2026-11-15 (social): `m_idparty`, `m_idDuelParty` and `m_nDuel` (`ObjSerializeOpt.cpp:142-147`, :182), present only when
+   * not 0: what the duel's flag and attack test read (`CDPClient::OnAddObj`, `DPClient.cpp:1347-1358`).
+   */
+  duel?: { partyId: number; duelParty: number; duel: number };
   /**
    * Piece 7 M5: `m_nFuel` and `m_tmAccFuel` (`ObjSerializeOpt.cpp:128-129`), present only when not the defaults −1 and
    * 0: the flight fuel and the turbo's milliseconds.

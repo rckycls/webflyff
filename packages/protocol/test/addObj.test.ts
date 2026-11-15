@@ -139,6 +139,8 @@ describe('ADD_OBJ (OnAddObj)', () => {
           ...playerBase, self: false, own: null, shopTitle: 'Cheap swords', equipmentObjectIds: [],
           // 2026-11-10 (guild): m_idGuild, m_idWar and m_idGuildCloak, kept
           guildId: 42, warId: 3, guildCloak: 42,
+          // 2026-11-15 (social): m_idparty, m_idDuelParty and m_nDuel, kept when one is not 0
+          duel: { partyId: 9, duelParty: 0, duel: 0 },
           // 2026-11-09 (pets M0): MAKELONG( 3, 5 ) and the pet's name, kept
           pet: { modelIndex: 3, level: 5, name: 'Rex' },
           worn: [

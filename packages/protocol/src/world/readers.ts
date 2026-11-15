@@ -7,6 +7,8 @@ import { HONOR_READERS } from './honor';
 import { HP_LAYER_READERS } from './hpLayer';
 import { TAX_READERS } from './tax';
 import { POST_READERS } from './post';
+import { COUPLE_READERS } from './couple'; // 2026-11-15 (social)
+import { DUEL_READERS } from './duel'; // 2026-11-15 (social)
 import type { MessageReader } from '../bundle';
 import { MessageType } from '../constants';
 import { readAddObj } from './addObj';
@@ -252,4 +254,8 @@ export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
     ...HP_LAYER_READERS,
     // 2026-11-15: the tax rates, for the shop prices in item tooltips (world/tax.ts)
     ...TAX_READERS,
+    // 2026-11-15 (social): the couple (world/couple.ts)
+    ...COUPLE_READERS,
+    // 2026-11-15 (social): the duels and ADDREGION (world/duel.ts)
+    ...DUEL_READERS,
   ]);

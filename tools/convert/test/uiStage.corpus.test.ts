@@ -14,7 +14,7 @@ import { gameDataStage } from '../src/data/gameDataStage';
 import { AssetWriter } from '../src/output/AssetWriter';
 import { iconKeyOf, itemIconKeyOf } from '../src/output/keys';
 import { Report } from '../src/output/Report';
-import { THEME_FILES, uiStage } from '../src/ui/uiStage';
+import { SFX_FILES, THEME_FILES, uiStage } from '../src/ui/uiStage';
 import { makeTempDir } from './helpers/fakeClient';
 import type { ReportJson } from './helpers/worldRun';
 
@@ -62,7 +62,7 @@ describeClient('the UI stage on the real client', () => {
     expect(client.list('Icon', /\.jpe?g$/i).length).toBe(logos);
     // every picture of Client/Icon, Client/Item and Client/Char, the minimaps, every piece of the theme list,
     // DmgEffect.dds, the sheets catalog and the logos
-    expect(reportJson.kinds.ui!.ok).toBe(pictures + itemPictures + charPictures + minimaps + THEME_FILES.length + 1 + 1 + logos);
+    expect(reportJson.kinds.ui!.ok).toBe(pictures + itemPictures + charPictures + minimaps + THEME_FILES.length + SFX_FILES.length + 1 + 1 + logos);
     expect(reportJson.warnings.filter((w) => w.kind === 'ui')).toHaveLength(0);
   });
 
