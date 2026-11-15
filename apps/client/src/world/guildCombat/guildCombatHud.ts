@@ -184,6 +184,7 @@ export class GuildCombatHud {
     this.status.close();
     this.join.close();
     this.lineup.close(); // an NPC-opened siege window too (A-client.md §1.2)
+    this.ranking.close(); // Donaris's ranking (B6; the result window stays)
   }
 
   /** Each frame: the status's count-down once a second. */

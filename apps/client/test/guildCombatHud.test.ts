@@ -235,4 +235,13 @@ describe('walking away', () => {
     expect([h.hud.apply.isOpen, h.hud.status.isOpen, h.hud.join.isOpen]).toEqual([false, false, false]);
     expect([h.hud.cancel.isOpen, h.hud.board.isOpen]).toEqual([true, true]);
   });
+
+  it('moving closes the ranking window and leaves the result window open', () => {
+    const h = make();
+    feed(h, message({ sub: 'playerPoint', players: [{ playerId: 1, job: 6, point: 3 }] }));
+    feed(h, message({ sub: 'log', entries: [] }));
+    expect([h.hud.ranking.isOpen, h.hud.result.isOpen]).toEqual([true, true]);
+    h.hud.closeForMove();
+    expect([h.hud.ranking.isOpen, h.hud.result.isOpen]).toEqual([false, true]);
+  });
 });
