@@ -243,8 +243,8 @@ test.describe('landscape (spec §3.10)', () => {
         expect(line.height, `a line at ${size.width} x ${size.height}`).toBeGreaterThanOrEqual(18.5);
         expect(line.height, `a line at ${size.width} x ${size.height}`).toBeLessThanOrEqual(44.5);
       }
-      // two columns, 9 and 9 (2026-11-15), side by side from the same top, each line's row against the next one's
-      const [left, right] = [lines.slice(0, 9), lines.slice(9)];
+      // two columns, 10 and 9 (2026-11-15, with the custom Auto Play), side by side from the same top, each line's row against the next one's
+      const [left, right] = [lines.slice(0, 10), lines.slice(10)];
       for (const column of [left, right]) {
         for (let i = 1; i < column.length; i++) expect(column[i]!.top).toBeCloseTo(column[i - 1]!.bottom, 1);
       }
