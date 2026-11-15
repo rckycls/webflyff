@@ -181,6 +181,7 @@ import { HonorBook } from './honor/honorBook';
 import { isArena } from './combat/arena';
 import { formatDefinedText } from './hud/messages';
 import { ItemUse } from './items/itemUse';
+import { lootAllowed } from './items/lootFilter'; // custom (owner 2026-11-16): the loot filter
 import { SmTimers, skillPointsSpent } from './items/premiumItems';
 import { UpgradeCursor } from './items/upgradeCursor';
 import { ConfirmBoxes, boxOf } from './items/confirmBoxes';
@@ -4157,9 +4158,11 @@ export class WorldScreen {
         play.onEvent({ kind: 'bagChanged' });
       }
     }
-    // the drops that came since the last step
+    // the drops that came since the last step; custom (owner 2026-11-16): only the kinds the loot filter lets through
+    const lootMask = play.settings.loot.mask;
     for (const [id, drop] of world.groundItems) {
       if (this.autoPlayDrops.has(id)) continue;
+      if (!lootAllowed(lootMask, this.data?.itemProps.get(drop.item.itemId))) continue;
       play.onEvent({ kind: 'itemAppeared', id, pos: [...drop.pos] as Vec3 });
     }
     this.autoPlayDrops = new Set(world.groundItems.keys());

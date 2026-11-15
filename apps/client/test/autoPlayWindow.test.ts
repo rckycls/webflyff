@@ -55,9 +55,9 @@ describe('AutoPlayWindow: Potions tab', () => {
     const { w } = rig();
     w.open();
     const tabs = [...w.frame.element.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
-    expect(tabs.map((t) => t.textContent)).toEqual(['Farm', 'Potions', 'Skills']);
-    expect(tabs.map((t) => t.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false']);
-    expect(tabs.map((t) => t.disabled)).toEqual([false, false, false]);
+    expect(tabs.map((t) => t.textContent)).toEqual(['Farm', 'Potions', 'Skills', 'Loot']);
+    expect(tabs.map((t) => t.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false', 'false']);
+    expect(tabs.map((t) => t.disabled)).toEqual([false, false, false, false]);
     w.showTab('potions');
     expect(w.frame.element.querySelectorAll('.auto-pot-row')).toHaveLength(3);
   });
@@ -233,5 +233,43 @@ describe('AutoPlayWindow: Skills tab', () => {
     expect(first.classList.contains('is-missing')).toBe(true);
     press(page(w), 'Clear ready skill 1');
     expect(play.settings.skills.ready).toEqual([]);
+  });
+});
+
+// custom (owner 2026-11-16): the loot filter
+describe('AutoPlayWindow: Loot tab', () => {
+  const page = (w: AutoPlayWindow) => w.frame.element.querySelector<HTMLElement>('.auto-loot')!;
+  const box = (w: AutoPlayWindow, kind: string) => page(w).querySelector<HTMLInputElement>(`input[name="auto-loot-${kind}"]`)!;
+
+  it('shows the 8 kinds, all checked by default, with All greyed', () => {
+    const { w } = rig();
+    w.open('loot');
+    const labels = [...page(w).querySelectorAll('.auto-loot-kinds label')].map((l) => l.textContent!.trim());
+    expect(labels).toEqual(['Penya', 'Potions and food', 'Weapons', 'Armour', 'Jewellery', 'Upgrade materials', 'Quest items', 'Other']);
+    expect([...page(w).querySelectorAll<HTMLInputElement>('input')].every((b) => b.checked)).toBe(true);
+    expect([...page(w).querySelectorAll<HTMLButtonElement>('button')].map((b) => [b.textContent, b.disabled]))
+      .toEqual([['All', true], ['None', false]]);
+  });
+
+  it('unchecking Jewellery clears its bit (16) and saves', () => {
+    const { w, play, saves } = rig();
+    w.open('loot');
+    box(w, 'jewellery').click();
+    expect(play.settings.loot.mask).toBe(0xff & ~16);
+    expect(saves()).toBe(1);
+    expect(box(w, 'jewellery').checked).toBe(false);
+    box(w, 'jewellery').click();
+    expect(play.settings.loot.mask).toBe(0xff);
+  });
+
+  it('None clears every kind; All checks them again', () => {
+    const { w, play, press } = rig();
+    w.open('loot');
+    press(page(w), 'None');
+    expect(play.settings.loot.mask).toBe(0);
+    expect(box(w, 'penya').checked).toBe(false);
+    press(page(w), 'All');
+    expect(play.settings.loot.mask).toBe(0xff);
+    expect(box(w, 'other').checked).toBe(true);
   });
 });
