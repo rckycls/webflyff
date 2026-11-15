@@ -58,6 +58,8 @@ const COLOR_OUT = 0xffcbcbcb;
 const PLAYER_ROWS = 10;
 /** The phone's rows of each board, the own row besides. */
 const COMPACT_ROWS = 5;
+/** A player whose name never came (no player data): "?" in the boards and the list, as the siege's other unknowns. */
+const UNKNOWN_NAME = '?';
 
 // --- The texts ---
 
@@ -301,7 +303,7 @@ export interface ArenaHudHost {
   ownName(): string;
   /** The own guild's name, '' with none (`g_pPlayer->GetGuild()`). */
   ownGuildName(): string;
-  /** A player's name (`CPlayerDataCenter::GetPlayerString`), '' when unknown. */
+  /** A player's name (`CPlayerDataCenter::GetPlayerString`), '' when unknown (the HUD then shows `UNKNOWN_NAME`, "?"). */
   nameOf(playerId: number): string;
   /** A player's HP, 0 to 1, when in view (`prj.GetUserByID`); null otherwise. */
   hpOf(playerId: number): number | null;
@@ -453,7 +455,7 @@ export class ArenaHud {
     const limit = compact ? COMPACT_ROWS : undefined;
     const guild = guildBoardRows(this.book.guildRanks, this.host.ownGuildName(), limit);
     const ownId = this.host.ownPlayerId();
-    const nameOf = (id: number): string => this.host.nameOf(id) || (id === ownId ? this.host.ownName() : '');
+    const nameOf = (id: number): string => this.host.nameOf(id) || (id === ownId ? this.host.ownName() : UNKNOWN_NAME);
     const players = playerBoardRows(this.book.playerRanks, ownId, nameOf, this.host.ownName(), limit);
     const metrics = compact ? COMPACT : DESKTOP;
     // Neuz's boxes: (n + 3) x 16 of every entry, the player board's too though it draws 10 (WndWorld.cpp:1257-1263, :1332-1339)
@@ -511,7 +513,7 @@ export class ArenaHud {
     const status = warStatusOf(this.book.warPlayers, ownId);
     const shown = guildName !== '' && (status === 0 || status === 1);
     if (this.list.hidden === shown) this.list.hidden = !shown;
-    const nameOf = (id: number): string => this.host.nameOf(id) || (id === ownId ? this.host.ownName() : '');
+    const nameOf = (id: number): string => this.host.nameOf(id) || (id === ownId ? this.host.ownName() : UNKNOWN_NAME);
     const { rows, ownNext } = shown ? ownGuildRows(this.book.guildStatus, this.book.warPlayers, ownId, nameOf, (id) => this.host.hpOf(id))
       : { rows: [], ownNext: false };
     // the two lines while the war is on (`m_nState == WAR_STATE`, WndWorld.cpp:1601-1616)

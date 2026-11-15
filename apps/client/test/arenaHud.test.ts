@@ -180,6 +180,19 @@ describe('the boards (WndWorld.cpp:1248-1458)', () => {
     hud.update(0);
     expect((hud.element.querySelector('[data-board="guild"]') as HTMLElement).hidden).toBe(true);
   });
+  it('a player whose name never came shows "?" on the player board and in the own guild\'s list; the own player its own name', () => {
+    const book = new GuildCombatBook();
+    book.apply(msg({ sub: 'playerPrecedence', guilds: [[{ playerId: 999, points: 9 }, { playerId: 701, points: 5 }, { playerId: OWN_ID, points: 1 }]] }), 0);
+    book.apply(msg({ sub: 'warPlayerList', guilds: [{ defenderId: OWN_ID, members: [{ playerId: OWN_ID, status: 1 }, { playerId: 998, status: 1 }] }] }), 0);
+    book.apply(msg({ sub: 'guildStatus', joinIndex: 0, players: [{ playerId: OWN_ID, lives: 6 }, { playerId: 998, lives: 6 }] }), 0);
+    // the player data center's placeholder ('') for everyone, the own player included
+    const host = { ...hudHost(), nameOf: (id: number) => (id === 701 ? 'Rival' : '') };
+    const hud = make(book, new ArenaState(book, stateHost({ id: 202, rank: 4 }, said())), host);
+    hud.update(0);
+    expect(rows(hud, 'player').map(textOf)).toEqual([' 1|?|9', ' 2|Rival...|5', ' 3|Webby...|1']);
+    const members = [...hud.element.querySelectorAll('.hud-siege-guild .hud-siege-member .hud-siege-name')].map((e) => e.textContent);
+    expect(members).toEqual(['Webby...', '?']);
+  });
 });
 
 describe('the own-guild list (WndWorld.cpp:1461-1618)', () => {
