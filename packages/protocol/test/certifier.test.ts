@@ -1,8 +1,8 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
   ArReader, ArWriter, DPID_UNKNOWN, PacketType, Port, PROTOCOL_VERSION, aes128CbcDecrypt, bytesToHex, decodeCertifierMessage,
-  encodeCertify, encodeCloseExistingConnection, encodeErrorReply, encodeGatewayClientAddr, encodeKeepAlive,
-  encodeProtocolIdBody, hashPassword, hexToBytes,
+  encodeCertify, encodeCloseExistingConnection, encodeErrorReply, encodeErrorString, encodeGatewayClientAddr, encodeKeepAlive,
+  encodeProtocolIdBody, hashPassword, hexToBytes, PREREG_ONLY_TEXT,
 } from '../src';
 import type { Recording } from '../src';
 import { hasRecording, loadRecording, packetsFor, typeOf } from './helpers/fixtures';
@@ -75,6 +75,11 @@ describe('certifier encoders', () => {
     expect(r.string(42)).toBe('webtester');
     expect(r.string(33)).toBe(hashPassword('password1'));
     r.expectEnd();
+  });
+  it('writes ERROR_STRING as type, text, which the certifier decoder reads back (the pre-registration refusal)', () => {
+    const body = encodeErrorString(PREREG_ONLY_TEXT);
+    expect(new ArReader(body).u32()).toBe(PacketType.ERROR_STRING);
+    expect(decodeCertifierMessage(body)).toEqual({ type: 'errorString', text: "Pre-registration only: the server isn't open yet." });
   });
   it('writes GATEWAY_CLIENT_ADDR as type, address', () => {
     const r = new ArReader(encodeGatewayClientAddr('10.0.0.5'));

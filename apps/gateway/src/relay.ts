@@ -1,10 +1,10 @@
 import net from 'node:net';
 import type { WebSocket } from 'ws';
 import {
-  ArWriter, CloseCode, DPID_UNKNOWN, PacketType, ProtocolError, ServerFrameReader, encodeClientFrame,
-  encodeGatewayClientAddr, encodePing, encodeWorldKeepAlive, readProtocolId,
+  ArWriter, CloseCode, DPID_UNKNOWN, PREREG_ONLY_TEXT, PacketType, ProtocolError, ServerFrameReader, encodeClientFrame,
+  encodeErrorString, encodeGatewayClientAddr, encodePing, encodeWorldKeepAlive, readProtocolId,
 } from '@flyffweb/protocol';
-import { checkCertifierPacket, type CertifierRefusal } from './certifierFilter';
+import { certifierAccount, checkCertifierPacket, type CertifierRefusal } from './certifierFilter';
 import { normalizeIPv4 } from './clientAddress';
 import type { Limits, RouteTarget } from './config';
 import { RateWindow } from './limits';
@@ -21,6 +21,11 @@ export interface RelayOptions {
   clientAddress: string;
   sendClientAddr: boolean;
   limits: Limits;
+  /**
+   * The pre-registration lock: whether an account may log in. Asked on a certifier route for the account of each
+   * CERTIFY and CLOSE_EXISTING_CONNECTION; without it every account may.
+   */
+  allowAccount?: (account: string) => boolean;
 }
 
 export interface RelayResult {
@@ -36,6 +41,8 @@ export interface RelayResult {
   bytesDown: number;
   /** Why the certifier allow-list ended the connection (website spec §3.5), when it did. */
   refused?: CertifierRefusal;
+  /** The account the pre-registration lock refused, when it did (the connection then ends with 4010). */
+  preregRefused?: string;
 }
 
 /**
@@ -89,6 +96,8 @@ function closeCodeOfWsError(error: Error): number {
  *   (4005), or the browser sends a text message or a client-address packet (4006), a packet over `maxPacketBytes`,
  *   more than `maxPacketsPerSecond` packets, or too many before the protocol ID (4004). When the browser leaves
  *   first, the TCP connection is destroyed.
+ * - On a certifier route with `allowAccount`, a CERTIFY or CLOSE_EXISTING_CONNECTION whose account it refuses is
+ *   never passed on: the browser gets an ERROR_STRING with `PREREG_ONLY_TEXT`, and the connection ends with 4010.
  * - A browser that sleeps leaves a WebSocket that never closes: every `pingIntervalMs` the relay pings it, and if no
  *   pong comes within `pongTimeoutMs` of the first unanswered ping, the WebSocket is terminated and, with it, the
  *   TCP connection, so the server does not keep the session.
@@ -117,6 +126,7 @@ export function startRelay(ws: WebSocket, opts: RelayOptions): { done: Promise<R
   let bytesUp = 0;
   let bytesDown = 0;
   let refused: CertifierRefusal | undefined;
+  let preregRefused: string | undefined;
 
   ws.binaryType = 'nodebuffer';
   const tcp = net.connect({ host: route.host, port: route.port });
@@ -156,6 +166,14 @@ export function startRelay(ws: WebSocket, opts: RelayOptions): { done: Promise<R
     held.length = 0;
     tcp.destroy();
     if (closeWebSocket && ws.readyState === ws.OPEN) ws.close(code);
+  };
+
+  /** True, with the account kept for the log, when the pre-registration lock refuses the account this body names. */
+  const refusedByLock = (body: Uint8Array): boolean => {
+    const account = certifierAccount(body);
+    if (account === undefined || opts.allowAccount!(account)) return false;
+    preregRefused = account;
+    return true;
   };
 
   /** Passes a browser body to the server. Only once the protocol ID is known. */
@@ -215,7 +233,11 @@ export function startRelay(ws: WebSocket, opts: RelayOptions): { done: Promise<R
   tcp.on('error', () => finish(connected ? CloseCode.SERVER_CLOSED : CloseCode.SERVER_UNREACHABLE));
   tcp.on('close', () => {
     finish(CloseCode.SERVER_CLOSED);
-    resolveDone({ closeCode, bytesUp, bytesDown, ...(refused !== undefined ? { refused } : {}) });
+    resolveDone({
+      closeCode, bytesUp, bytesDown,
+      ...(refused !== undefined ? { refused } : {}),
+      ...(preregRefused !== undefined ? { preregRefused } : {}),
+    });
   });
 
   ws.on('message', (data, isBinary) => {
@@ -236,6 +258,10 @@ export function startRelay(ws: WebSocket, opts: RelayOptions): { done: Promise<R
     } else if (route.role === 'certifier' && (refused = checkCertifierPacket(body)) !== undefined) {
       // the certifier allow-list (website spec §3.5): only the browser's four packets, with checked names and hashes
       finish(CloseCode.FORBIDDEN_PACKET);
+    } else if (route.role === 'certifier' && opts.allowAccount !== undefined && refusedByLock(body)) {
+      // the pre-registration lock: the certifier never sees the account; the player reads why in the login box
+      if (ws.readyState === ws.OPEN) ws.send(encodeErrorString(PREREG_ONLY_TEXT), { binary: true });
+      finish(CloseCode.PREREG_ONLY);
     } else if (protocolId !== undefined) {
       forward(body);
     } else if (held.length < limits.maxHeldPackets) {

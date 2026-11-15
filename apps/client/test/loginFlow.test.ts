@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  ArReader, ArWriter, NULL_ID, PacketType, bytesToHex, deleteKey, encodeCertify, encodeCloseExistingConnection, encodeCreatePlayer,
-  encodeDeletePlayer, encodeErrorReply, encodeGetPlayerList, encodeKeepAlive, encodePing, encodeQueryTickCount, hashPassword,
+  ArReader, ArWriter, CloseCode, NULL_ID, PREREG_ONLY_TEXT, PacketType, bytesToHex, deleteKey, encodeCertify,
+  encodeCloseExistingConnection, encodeCreatePlayer, encodeDeletePlayer, encodeErrorReply, encodeErrorString, encodeGetPlayerList,
+  encodeKeepAlive, encodePing, encodeQueryTickCount, hashPassword,
 } from '@flyffweb/protocol';
 import type { NewCharacter, ServerEntry } from '@flyffweb/protocol';
 import { LoginFlow, TIMEOUT_TEXT } from '../src/lobby/LoginFlow';
@@ -243,6 +244,23 @@ describe('LoginFlow, failures while logging in', () => {
     expect(hex(cert.sent.at(-1)!)).toBe(hex(encodeErrorReply()));
     expect(events).toEqual([{ type: 'error', message: 'Down for maintenance.' }]);
     expect(cert.closed).toBe(true);
+  });
+
+  it('shows the pre-registration refusal once: the gateway\'s ERROR_STRING, then its close 4010', async () => {
+    const { events, flow, net } = start();
+    await flow.login('stranger', 'password1');
+    const cert = net.channel(CERTIFIER);
+    cert.push(encodeErrorString(PREREG_ONLY_TEXT));
+    cert.drop(CloseCode.PREREG_ONLY);
+    await Promise.resolve();
+    expect(events).toEqual([{ type: 'error', message: "Pre-registration only: the server isn't open yet." }]);
+  });
+
+  it('shows the pre-registration text for a close 4010 that comes alone', async () => {
+    const { events, flow, net } = start();
+    await flow.login('stranger', 'password1');
+    net.channel(CERTIFIER).drop(CloseCode.PREREG_ONLY);
+    expect(events).toEqual([{ type: 'closed', message: PREREG_ONLY_TEXT }]);
   });
 
   it('ignores a packet type it has no handler for, and says so on the console', async () => {

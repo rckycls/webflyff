@@ -21,6 +21,11 @@ export const CloseCode = {
   TOO_MANY_NEW_CONNECTIONS: 4008,
   /** The gateway already has as many open connections as it takes in all. */
   GATEWAY_FULL: 4009,
+  /** The pre-registration lock is on and the account is not on its list. The gateway sends `PREREG_ONLY_TEXT` first. */
+  PREREG_ONLY: 4010,
 } as const;
 
 export type CloseCode = (typeof CloseCode)[keyof typeof CloseCode];
+
+/** What a player the pre-registration lock refuses is told in the login error box (ERROR_STRING, then close 4010). */
+export const PREREG_ONLY_TEXT = "Pre-registration only: the server isn't open yet.";

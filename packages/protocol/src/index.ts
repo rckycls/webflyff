@@ -23,8 +23,8 @@ export {
 } from './constants';
 export type { Vec3 } from './constants';
 export {
-  decodeCertifierMessage, encodeCertify, encodeCloseExistingConnection, encodeErrorReply, encodeGatewayClientAddr,
-  encodeKeepAlive,
+  decodeCertifierMessage, encodeCertify, encodeCloseExistingConnection, encodeErrorReply, encodeErrorString,
+  encodeGatewayClientAddr, encodeKeepAlive,
 } from './messages/certifier';
 export type { CertifierMessage, ServerEntry } from './messages/certifier';
 export {
@@ -50,7 +50,7 @@ export type {
   AddedCtrl, AddedMover, AddedNpc, AddedPlayer, GroundItem, InventoryItem, MonsterRate, OwnBank, OwnCharacter, Shortcut, SkillSlot, TaskBar,
   WorldMessage, WornPart, MessageOf, PartyBlock, PartyRequestSide, PlayerDataRecord,
 } from './world/types';
-export { CloseCode } from './gatewayCloseCodes';
+export { CloseCode, PREREG_ONLY_TEXT } from './gatewayCloseCodes';
 export { parseRecording } from './recording';
 export type { RecordedPacket, Recording } from './recording';
 export * from './world/chat';

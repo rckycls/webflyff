@@ -55,6 +55,7 @@ describe('closeText', () => {
     expect(closeText(4007)).toBe('Too many connections from your network.');
     expect(closeText(4008)).toBe('Too many connection attempts from your network. Wait a minute and try again.');
     expect(closeText(4009)).toBe('The game is full right now. Try again in a few minutes.');
+    expect(closeText(4010)).toBe("Pre-registration only: the server isn't open yet.");
   });
 
   it('gives the message of 4004 to 1009, the code ws closes a message over the packet limit with', () => {
@@ -62,6 +63,6 @@ describe('closeText', () => {
   });
 
   it('says the gateway cannot be reached for any other code', () => {
-    for (const code of [1000, 1001, 1006, 1011, 4000, 4010, 0]) expect(closeText(code), `code ${code}`).toBe('Cannot reach the game gateway.');
+    for (const code of [1000, 1001, 1006, 1011, 4000, 4011, 0]) expect(closeText(code), `code ${code}`).toBe('Cannot reach the game gateway.');
   });
 });

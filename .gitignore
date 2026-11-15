@@ -7,5 +7,6 @@ test-results/
 playwright-report/
 .superpowers/
 apps/gateway/gateway.config.json
+.env
 apps/web/web.config.json
 apps/client/test/live.config.json

@@ -3,7 +3,7 @@ import {
   ArWriter, PacketType, PROTOCOL_VERSION, encodeCertify, encodeCloseExistingConnection, encodeErrorReply, encodeKeepAlive,
   encryptCertifyPassword, hashPassword,
 } from '@flyffweb/protocol';
-import { checkCertifierPacket } from '../src/certifierFilter';
+import { certifierAccount, checkCertifierPacket } from '../src/certifierFilter';
 
 describe('checkCertifierPacket (website spec §3.5)', () => {
   it('passes what the browser sends', () => {
@@ -72,5 +72,18 @@ describe('the CERTIFY password block', () => {
   });
   it('passes the block the browser sends', () => {
     expect(checkCertifierPacket(certifyWith(encryptCertifyPassword(hashPassword('abc12345'))))).toBeUndefined();
+  });
+});
+
+describe('certifierAccount (the pre-registration lock)', () => {
+  it('reads the account of CERTIFY and CLOSE_EXISTING_CONNECTION as sent', () => {
+    expect(certifierAccount(encodeCertify('Hero_01', hashPassword('abc12345')))).toBe('Hero_01');
+    expect(certifierAccount(encodeCloseExistingConnection('hero_01', hashPassword('abc12345')))).toBe('hero_01');
+  });
+  it('names no account for the other packets or a body cut short', () => {
+    expect(certifierAccount(encodeKeepAlive())).toBeUndefined();
+    expect(certifierAccount(encodeErrorReply())).toBeUndefined();
+    expect(certifierAccount(new ArWriter().u32(PacketType.CERTIFY).toBytes())).toBeUndefined();
+    expect(certifierAccount(new Uint8Array([1]))).toBeUndefined();
   });
 });
