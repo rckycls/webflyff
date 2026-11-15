@@ -34,3 +34,80 @@ export function trophyOf(book: Pick<GuildCombatBook, 'state' | 'bestPlayerId' | 
   if (book.winGuildId === guildId) return 'winner';
   return null;
 }
+
+// --- Frankie's and Donaris's windows (2026-11-15, B3; A-client.md §2.1-2.8, §3.2) ---
+
+/** The texts' numbers (`textId` of the TID_*, `Resource/textClient.inc`) the siege's windows refuse and answer with. */
+export const GcTid = {
+  /** TID_GAME_GUILDCOMBAT1TO1_MORE_CURRENT_REQUEST "You require more Penya to apply." */
+  MORE_CURRENT_REQUEST: 3424,
+  /** TID_GAME_GUILDCOMBAT1TO1_LIMIT_MIN "Apply with the minimum Application Fee or higher." */
+  LIMIT_MIN: 3425,
+  /** TID_GAME_GUILDCOMBAT1TO1_MORE_REQUEST "You have applied with %d Penya. Do you wish to add %d Penya?" */
+  MORE_REQUEST: 3426,
+  /** TID_GAME_GUILDCOMBAT_NOTENTER_VAGRANT */
+  NOTENTER_VAGRANT: 3000,
+  /** TID_GAME_GUILDCOMBAT_REQUESTEND "Guild Siege is closed." */
+  REQUESTEND: 2967,
+  JACKPOT: 2943, JACKPOT_CANCEL: 2944, JACKPOT_LIMIT1: 2941, JACKPOT_LIMIT2: 2942, WINNER_NOT_GUILD: 2962,
+  MVP_PENYA: 2964, NOT_MVP: 2963,
+} as const;
+
+/**
+ * The refusal of an offer (`CWndGuildCombat1to1Offer::OnChildNotify`, `WndGuildCombat1to1.cpp:670-718`): a guild that has
+ * bid must bid more than it has; one that has not must bid the minimum. null: the bid is fine (the confirm box follows).
+ */
+export function bidRefusal(bid: number, ownBid: number, minBid: number): number | null {
+  if (ownBid !== 0 && bid <= ownBid) return GcTid.MORE_CURRENT_REQUEST;
+  if (ownBid === 0 && bid < minBid) return GcTid.LIMIT_MIN;
+  return null;
+}
+
+/** `WIDC_STATIC5`: the own place is red when it is past the guilds that fight (`8 < nRate`, here 12, `WndField.cpp:16562-16575`). */
+export function statusRankRed(rank: number): boolean {
+  return rank > SIEGE.maxGuilds;
+}
+
+/** The join confirm's Yes (`WndField.cpp:17031-17065`): a vagrant (`IsBaseJob`) is refused. */
+export function joinRefusal(jobIsVagrant: boolean): number | null {
+  return jobIsVagrant ? GcTid.NOTENTER_VAGRANT : null;
+}
+
+/**
+ * The own place in the application list (`DPClient.cpp:6904-6910`): 1-based, by the guild's name compared without case;
+ * 0 when the guild has not applied or has no name.
+ */
+export function ownRank(guildNames: readonly string[], ownGuildName: string): number {
+  if (ownGuildName === '') return 0;
+  const at = guildNames.findIndex((name) => name.toLowerCase() === ownGuildName.toLowerCase());
+  return at + 1;
+}
+
+/** `INT_MAX`, the limit of the own penya. */
+const INT_MAX = 2_147_483_647n;
+
+/** What GC_GETPENYAGUILD / GC_GETPENYAPLAYER answer with (`DPClient.cpp:7106-7187`): the text's number and its `%I64d` argument. */
+export function penyaNotice(kind: 'guild' | 'player', result: number, penya: number | bigint, ownGold: number): { tid: number; penya: bigint | null } | null {
+  const amount = BigInt(penya);
+  if (kind === 'guild') {
+    if (result === 0) return { tid: GcTid.JACKPOT, penya: amount };
+    if (result === 1) return { tid: GcTid.JACKPOT_CANCEL, penya: amount };
+    if (result === 2) return { tid: GcTid.WINNER_NOT_GUILD, penya: null };
+  } else {
+    if (result === 0) return { tid: GcTid.MVP_PENYA, penya: amount };
+    if (result === 1) return { tid: GcTid.NOT_MVP, penya: null };
+  }
+  // the overflow: the prize is more than an int, or more than the own penya can hold
+  if (amount > INT_MAX) return { tid: GcTid.JACKPOT_LIMIT2, penya: null };
+  if (BigInt(ownGold) + amount > INT_MAX) return { tid: GcTid.JACKPOT_LIMIT1, penya: null };
+  return null;
+}
+
+/**
+ * `%dday %dhr %dmin %dsec` of the application status's count-down (`WndField.cpp:16540-16560`; the texts TID_PK_LIMIT_*): a
+ * part only from the first that is not zero on, the seconds always.
+ */
+export function countdownParts(seconds: number): { day: number; hour: number; minute: number; second: number } {
+  const left = Math.max(0, Math.trunc(Number.isFinite(seconds) ? seconds : 0));
+  return { day: Math.trunc(left / 86400), hour: Math.trunc(left / 3600) % 24, minute: Math.trunc(left / 60) % 60, second: left % 60 };
+}

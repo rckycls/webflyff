@@ -92,7 +92,7 @@ import { createItemDetails, createTooltip, ownTooltipContext, positionItemDetail
 import { InventoryWindow } from './hud/inventoryWindow';
 import { ChatWindow } from './hud/chatWindow';
 import { NeuzChat } from './hud/neuzChat';
-import { MENU_RANGE, MMI, MoverMenu, npcMenuEntries, soleEntry } from './hud/moverMenu';
+import { GUILD_COMBAT_ENTRIES, MENU_RANGE, MMI, MoverMenu, npcMenuEntries, soleEntry } from './hud/moverMenu';
 import { opensShop } from './hud/chipShop';
 import { DialogWindow } from './hud/dialogue/dialogWindow';
 import { parseDialogText } from './hud/dialogue/dialogText';
@@ -2067,7 +2067,17 @@ export class WorldScreen {
     }, this.guildBook, (key) => this.services?.store.url(key) ?? '', doc);
     this.guildHud = guildHud;
     // 2026-11-15: the Guild Siege's glue (guildCombat/guildCombatHud.ts); the book is the screen's
-    this.guildCombatHud = new GuildCombatHud({ send: (bytes) => session.sendGuildCombat(bytes) }, this.guildCombatBook);
+    this.guildCombatHud = new GuildCombatHud({
+      send: (bytes) => session.sendGuildCombat(bytes),
+      text: (tid) => this.data?.texts.get(tid)?.text ?? '',
+      textById: (textId) => { for (const text of this.data?.texts.values() ?? []) if (text.textId === textId) return text.text; return ''; },
+      box: (text, ok) => messageBox.open(text, ok === undefined ? 'ok' : 'okCancel', ok ?? (() => {})),
+      ownIsVagrant: () => (this.own?.job ?? this.entry.character.job) === 0,
+      ownGuildName: () => this.guildBook.own(this.entry.character.playerId)?.name ?? '',
+      ownIsGuildMaster: () => this.guildBook.own(this.entry.character.playerId)?.masterId === this.entry.character.playerId,
+      ownGold: () => this.own?.gold ?? 0,
+      now: () => performance.now(),
+    }, this.guildCombatBook, this.hudArt!, doc);
     // 2026-11-10: the player trade (trade/tradeHud.ts)
     const tradeHud = new TradeHud(this.hudArt!, this.data!.texts, {
       session: {
@@ -2259,7 +2269,7 @@ export class WorldScreen {
       modal.onChange = () => this.modalChanged();
     }
     this.hud!.element.append(
-      this.questTracker.element, this.teleporter.frame.element, this.heavenTower.element, ...this.lordHud.elements, this.lordHud.eventIcons,
+      this.questTracker.element, this.teleporter.frame.element, this.heavenTower.element, ...this.lordHud.elements, this.lordHud.eventIcons, ...this.guildCombatHud.elements,
       this.motionWindow.frame.element, // 2026-11-14
       // 2026-11-12: the phone's quick slots around Attack (bar 8's first slots; style.css shows them on a phone only)
       taskBar.element, taskBar.quickSlots, taskBar.actionSlotWindow.frame.element, this.attackButton.element, this.jumpButton.element,
@@ -3342,6 +3352,7 @@ export class WorldScreen {
     // 2026-11-05: the premium timers after the item buffs, and the own level the ES scrolls' bonus depends on
     this.smTimers.tick(performance.now());
     this.lordHud?.step(performance.now()); // 2026-11-11: the Lord windows' clock and the event icons
+    this.guildCombatHud?.step(performance.now()); // 2026-11-15: the siege status's count-down
     this.buffStatus?.update(self?.buffs.list(buffNow) ?? [], this.data!.skills, buffNow, {
       sm: this.smTimers.list(), level: this.own?.level ?? 1, resist: this.resistElements,
     });
@@ -3411,6 +3422,8 @@ export class WorldScreen {
     const menuNpc = this.moverMenu?.npcId ?? null;
     if (this.moverMenu?.isOpen === true &&
       (menuNpc === null ? !ownStands(self) : !dialogueStays(world.movers.get(menuNpc), self))) this.moverMenu.close();
+    // 2026-11-15: the siege's NPC windows go when the player moves (WndWorld.cpp:8402-8436)
+    if (this.guildCombatHud?.isOpen === true && !ownStands(self)) this.guildCombatHud.closeForMove();
     this.shopWindow?.update();
     // 2026-11-10: the personal shop's slots follow the bag (the names and counts of the own items)
     if (this.own !== undefined && this.own.inventoryRevision !== this.vendorRevision) {
@@ -4341,6 +4354,8 @@ export class WorldScreen {
       this.session.sendArenaEnter(); // 2026-11-10: SendHdr( PACKETTYPE_ARENA_ENTER ) (:5928-5930); the server REPLACEs
     } else if (entry === MMI.ARENA_EXIT) {
       this.session.sendArenaExit(); // SendHdr( PACKETTYPE_ARENA_EXIT ) (:5931-5933)
+    } else if (GUILD_COMBAT_ENTRIES.has(entry)) {
+      this.guildCombatHud?.openEntry(entry); // 2026-11-15: Frankie's and Donaris's windows (WndWorld.cpp:3941-4159)
     } else if (LORD_ENTRIES.has(entry)) {
       this.lordHud?.openEntry(entry); // 2026-11-11: the Lord Manager's windows (WndWorld.cpp:5182-5212)
     } else if (entry === MMI.HEAVEN_TOWER) {
@@ -4897,6 +4912,7 @@ export class WorldScreen {
       this.skillWindow, this.optionWindow, this.messageBox, this.selectVillage]) window?.frame.close();
     this.heavenTower?.close();
     this.lordHud?.close();
+    this.guildCombatHud?.close();
     this.worldMap?.close();
     this.audio?.stopWorld();
     this.stopAsking(); // nothing is left to lose by closing the page

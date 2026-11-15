@@ -4223,3 +4223,57 @@ fieldset:disabled .btn {
   .hud-motion-taskbar[aria-pressed='true'] { background: #ffe494; border-color: #795431; }
   .hud-motion-taskbar:disabled { opacity: 0.5; cursor: default; }
 }
+
+/* 2026-11-15 (Guild Siege, B3): Frankie's and Donaris's windows (hud/guildCombat/*.ts; docs/guild-siege/research/A-client.md §2.1-2.8):
+   the offer, the application status (its rows "No.01  name", 16 px), the cancel and join confirms, the info boards and the
+   two boxes. Neuz's black 12 px words; a board's text keeps its line breaks. */
+.hud-gc { color: #000000; font: 12px/16px Verdana, Arial, sans-serif; }
+.hud-gc .hud-res-text-body { white-space: pre-wrap; color: #000000; }
+.hud-gc .hud-res-list-rows > [role='option'] { position: relative; height: 16px; line-height: 16px; white-space: pre; }
+.hud-gc .hud-gc-no { display: inline-block; width: 52px; }
+.hud-gc .hud-res-edit input { font: 12px Verdana, Arial, sans-serif; }
+.hud-gc-join, .hud-gc-tele, .hud-gc-diag { z-index: 45; }
+/* The phone: each window a panel in the middle above the task bar (the screen is about 800 x 350 and the status window is
+   480 high), its controls in a column that scrolls, Neuz's 12 px words, the picture buttons as silver pills with their words
+   (the pictures are 72 x 20: too small for a finger). */
+@media (max-width: 1000px) and (pointer: coarse) {
+  .world:has(.hud-gc:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+  .hud-gc:not([hidden]) {
+    left: calc(50% - min(230px, 50% - 8px)) !important; top: 8px !important; transform: none !important; z-index: 60 !important;
+    width: min(460px, calc(100% - 16px)) !important; height: auto !important;
+    max-height: calc(100% - var(--hud-taskbar-height, 48px) - 16px); display: flex !important; flex-direction: column; overflow: hidden;
+  }
+  .hud-gc::before { content: ''; position: absolute; inset: 3px 5px 7px 3px; border-radius: 4px; background: rgba(250, 238, 230, 0.92); pointer-events: none; }
+  .hud-gc > .hud-window-body {
+    position: relative !important; left: auto !important; top: auto !important; width: auto !important; height: auto !important;
+    flex: 0 1 auto; min-height: 0; box-sizing: border-box; margin: 22px 8px 10px 4px; padding: 4px 6px 6px;
+    display: flex; flex-wrap: wrap; align-content: flex-start; align-items: center; gap: 5px 8px; overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y;
+  }
+  .hud-gc > .hud-window-body > * { position: relative !important; left: auto !important; top: auto !important; }
+  .hud-gc .hud-res-scroll { display: none; }
+  .hud-gc .hud-res-static { flex: 1 1 40%; width: auto !important; height: auto !important; min-height: 18px; line-height: 18px; }
+  .hud-gc .hud-res-static-text { position: relative !important; z-index: 1; white-space: normal; text-shadow: none; }
+  .hud-gc :is(.hud-res-text, .hud-res-list, .hud-res-edit) { flex: 1 1 100%; width: 100% !important; }
+  .hud-gc .hud-res-text { height: auto !important; min-height: 30px; }
+  .hud-gc .hud-res-text-body {
+    position: relative !important; left: auto !important; top: auto !important; width: auto !important; height: auto !important;
+    max-height: 120px; box-sizing: border-box; overflow-y: auto; padding: 5px 7px; line-height: 15px;
+  }
+  .hud-gc-board .hud-res-text-body { max-height: 150px; }
+  .hud-gc .hud-res-list { height: auto !important; min-height: 60px; }
+  .hud-gc .hud-res-list-rows {
+    position: relative !important; inset: auto !important; width: auto !important; height: auto !important; max-height: 96px; padding: 3px 2px; overflow-y: auto;
+  }
+  .hud-gc .hud-res-list-rows > [role='option'] { height: 24px !important; line-height: 24px !important; padding: 0 6px; border-bottom: 1px solid #f0e2d8; }
+  .hud-gc .hud-res-edit { height: 22px !important; }
+  .hud-gc .hud-res-edit input {
+    position: absolute; inset: 0 6px; z-index: 1; width: calc(100% - 12px); height: 100%; min-height: 0 !important; background: transparent; font-size: 16px;
+  }
+  .hud-gc .hud-picture-button {
+    flex: 0 0 auto; position: relative; min-width: 72px; height: 30px !important; margin: 2px 6px; box-sizing: border-box;
+    border: 1px solid #b07d5c; border-radius: 4px; background: linear-gradient(#fff7ef, #ecd2bd) !important; color: #3a2414;
+    font: 14px/28px Arial, sans-serif; text-align: center; padding: 0 8px; width: auto !important;
+  }
+  .hud-gc .hud-picture-button::after { content: attr(aria-label); }
+  .hud-gc .hud-picture-button::before { content: ''; position: absolute; inset: -5px -4px; }
+}
