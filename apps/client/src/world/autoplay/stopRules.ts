@@ -12,6 +12,8 @@ export type AutoPlayEvent =
   | { kind: 'hitBy'; attackerId: number; attackerIsPlayer: boolean; name: string }
   /** Any hit seen (who fights what: kill stealing, and the monsters hitting us). */
   | { kind: 'hit'; attackerId: number; victimId: number }
+  /** 2026-11-17: a swing seen (ours on the target is an attack, for the 5 s rule). */
+  | { kind: 'swing'; attackerId: number; targetId: number }
   /** `gmTalk`: normal chat from a GM in view; never a broadcast. */
   | { kind: 'whisper' | 'gmTalk'; from: string }
   | { kind: 'duelStart' } | { kind: 'worldChange' } | { kind: 'replace' } | { kind: 'disconnect' }

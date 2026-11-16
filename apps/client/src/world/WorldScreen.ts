@@ -49,6 +49,7 @@ import { askBeforeLeaving } from './askBeforeLeaving';
 import { BackCamera } from './backCamera';
 import type { ChaseView } from './backCamera';
 import { AttackLoop, attackAble, objRadius } from './combat/attackLoop';
+import { sightBlocked } from './combat/lineOfSight';
 import { bagIsFull } from './autoplay/bag';
 import { AutoPlay } from './autoplay/controller';
 import type { AutoPlayHooks } from './autoplay/controller';
@@ -4150,6 +4151,8 @@ export class WorldScreen {
           play.onEvent({ kind: 'kill', targetId: event.victimId, pos: [...victim.act.body.pos] as Vec3 });
         }
       } else if (event.kind === 'flight' && event.flying && event.moverId === self?.objectId) play.onEvent({ kind: 'flying' });
+      // 2026-11-17: our own swings, an attack for the 5 s rule
+      else if (event.kind === 'swing' && event.attackerId === self?.objectId) play.onEvent({ kind: 'swing', attackerId: event.attackerId, targetId: event.targetId });
     }
     for (const event of changes.own) {
       if (event.kind === 'died' || event.kind === 'revived') play.onEvent({ kind: event.kind });
@@ -4335,6 +4338,12 @@ export class WorldScreen {
       standing: () => this.useCheck().standing,
       buffSkillId: (skillIndex) => this.own?.skills[skillIndex]?.skill,
       keepAwake: (on) => this.autoPlayKeepAwake(on),
+      // 2026-11-17 (owner): the chosen kinds, and an object on the straight line to a monster (an obstacle)
+      indexOf: (m) => (m as Mover).added.index,
+      lineBlocked: (m) => {
+        const self = this.world?.self();
+        return self !== undefined && sightBlocked(this.ground, self.act.body.pos, m.act.body.pos);
+      },
       disengage: () => {
         this.attackLoop?.stop('ground');
         this.focus?.select(null);

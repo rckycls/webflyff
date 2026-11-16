@@ -17,14 +17,15 @@ export interface TargetMover {
   readonly act: { readonly body: { readonly pos: Vec3 } };
 }
 
-/** `RANK_BOSS`, `RANK_MIDBOSS`, `RANK_SUPER` (Resource/defineAttribute.h): never chosen unless they hit us first. */
+/**
+ * `RANK_BOSS`, `RANK_MIDBOSS`, `RANK_SUPER` (Resource/defineAttribute.h), the giants and bosses: not chosen while "Avoid
+ * giants" is on (owner 2026-11-17: an option, on by default), unless they hit us first.
+ */
 export const NEVER_CHOSEN_RANKS: ReadonlySet<number> = new Set([4, 5, 7]);
 /** How long another player's hit makes a monster theirs (ms). */
 export const OTHERS_HIT_MS = 10_000;
-/** No hit and no step closer for this long: the target cannot be reached (ms). */
-export const STUCK_MS = 10_000;
-/** A step closer counts from this much (m). */
-const CLOSER_BY = 0.5;
+/** No attack of ours on the target for this long: another target (owner 2026-11-17: "hasn't attacked for 5 seconds") (ms). */
+export const STUCK_MS = 5_000;
 
 /** The distance on the ground (x and z), as the bot measures its radius. */
 export function groundDistance(a: Vec3, b: Vec3): number {
@@ -95,14 +96,27 @@ export interface TargetInput {
   busy: (m: TargetMover) => boolean;
   skip: SkipList;
   now: number;
+  /** Bosses, mid-bosses and giants left alone (default true). */
+  avoidGiants?: boolean;
+  /** The monster kinds (`added.index`) to fight; empty or absent: every kind. */
+  only?: ReadonlySet<number>;
+  /** A mover's kind (`added.index`), for `only`. */
+  indexOf?: (m: TargetMover) => number;
+  /** Whether an object stands on the straight line to the monster (`sightBlocked`): such a one comes after the clear ones. */
+  blocked?: (m: TargetMover) => boolean;
 }
 
-/** The next monster to fight, or null. */
+/**
+ * The next monster to fight, or null: one hitting us first (any distance, any kind); else, of the monsters inside the
+ * radius that may be chosen, the nearest whose straight line is clear of objects, or the nearest of all when every line
+ * is blocked (the side step and the 5 s rule then deal with it).
+ */
 export function pickTarget(input: TargetInput): TargetMover | null {
   const { self, anchor, radius, rankOf, hittingUs, attackable, busy, skip, now } = input;
+  const avoidGiants = input.avoidGiants ?? true, only = input.only, indexOf = input.indexOf;
   const at = self.act.body.pos;
   let attacker: TargetMover | null = null, attackerDist = Infinity;
-  let best: TargetMover | null = null, bestDist = Infinity;
+  const candidates: Array<{ m: TargetMover; dist: number }> = [];
   for (const m of input.movers) {
     if (m.objectId === self.objectId || m.kind !== 'monster' || !attackable(m)) continue;
     const dist = groundDistance(at, m.act.body.pos);
@@ -110,42 +124,43 @@ export function pickTarget(input: TargetInput): TargetMover | null {
       if (dist < attackerDist) { attacker = m; attackerDist = dist; }
       continue;
     }
-    if (dist >= bestDist || m.flying || skip.has(m.objectId, now)) continue;
-    if (groundDistance(anchor, m.act.body.pos) > radius || NEVER_CHOSEN_RANKS.has(rankOf(m)) || busy(m)) continue;
-    best = m;
-    bestDist = dist;
+    if (m.flying || skip.has(m.objectId, now) || groundDistance(anchor, m.act.body.pos) > radius) continue;
+    if (avoidGiants && NEVER_CHOSEN_RANKS.has(rankOf(m))) continue;
+    if (only !== undefined && only.size > 0 && (indexOf === undefined || !only.has(indexOf(m)))) continue;
+    if (busy(m)) continue;
+    candidates.push({ m, dist });
   }
-  return attacker ?? best;
+  if (attacker !== null) return attacker;
+  candidates.sort((a, b) => a.dist - b.dist);
+  const clear = input.blocked === undefined ? candidates[0] : candidates.find(({ m }) => !input.blocked!(m));
+  return (clear ?? candidates[0])?.m ?? null;
 }
 
-/** Whether the chosen target can be reached: no hit or swing on it and no step closer for 10 s means stuck. */
+/** Whether the chosen target is still worth it: 5 s with no attack of ours on it (since the choice or the last one) is not. */
 export class StuckWatch {
   private target: number | null = null;
-  private since = 0;
-  private best = Infinity;
-  private engaged = false;
+  private last = 0;
 
-  choose(objectId: number, dist: number, now: number): void {
+  choose(objectId: number, now: number): void {
     this.target = objectId;
-    this.since = now;
-    this.best = dist;
-    this.engaged = false;
+    this.last = now;
   }
 
-  progress(dist: number, hitOrSwing: boolean, now: number): void {
-    if (hitOrSwing) this.engaged = true;
-    if (dist <= this.best - CLOSER_BY) {
-      this.best = dist;
-      this.since = now;
-    }
+  /** Our swing, hit or skill landed on the target. */
+  attacked(now: number): void {
+    if (this.target !== null) this.last = now;
+  }
+
+  /** The time of the choice or of the last attack. */
+  get lastAttack(): number {
+    return this.last;
   }
 
   stuck(now: number): boolean {
-    return this.target !== null && !this.engaged && now - this.since >= STUCK_MS;
+    return this.target !== null && now - this.last >= STUCK_MS;
   }
 
   clear(): void {
     this.target = null;
-    this.engaged = false;
   }
 }

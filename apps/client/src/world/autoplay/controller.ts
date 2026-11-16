@@ -86,6 +86,11 @@ export interface AutoPlayHooks {
   keepAwake(on: boolean): void;
   /** Lets go of the attack loop's target and its auto attack (as Escape: the focus, the walk to it). */
   disengage(): void;
+  // 2026-11-17 (owner): smarter farming
+  /** A monster's kind (`added.index`), for the chosen kinds. */
+  indexOf(m: TargetMover): number;
+  /** Whether an object stands on the straight line from the own player to the monster (`sightBlocked`). */
+  lineBlocked(m: TargetMover): boolean;
 }
 
 export type FarmState = 'off' | 'running' | 'stopped';
@@ -111,6 +116,16 @@ const CAST_GAP_MS = 1000;
 const CAST_SAFETY_MS = 5000;
 /** A buff item's buff is looked for this long after its use; none: the entry is skipped (ms). */
 const ITEM_BUFF_SEEN_MS = 3000;
+/** 2026-11-17 (owner, "avoid obstacles"): no step closer and no attack for this long, still farther than SIDE_FAR: blocked (ms). */
+const BLOCKED_MS = 1500;
+/** Farther than this from the target the bot walks; nearer, a standstill is a fight, not an obstacle (m). */
+const SIDE_FAR = 4;
+/** A side step: this far across the line to the target (m), for this long (ms), at most SIDE_STEPS times a target. */
+const SIDE_STEP = 4;
+const SIDE_STEP_MS = 1200;
+const SIDE_STEPS = 2;
+/** A move of this much is a step closer (or away): the bot is not blocked (m). */
+const MOVED = 0.3;
 
 export class AutoPlay {
   private readonly pacer = new PotionPacer();
@@ -130,6 +145,11 @@ export class AutoPlay {
   private startedAt = 0;
   private target: number | null = null;
   private lastEngage = -Infinity;
+  /** 2026-11-17: the side steps around an obstacle: where the bot last moved from, when, how many for this target. */
+  private stillAt: Vec3 = [0, 0, 0];
+  private stillSince = 0;
+  private sideSteps = 0;
+  private sideUntil = 0;
   private lastWalk = -Infinity;
   private nextScan = 0;
   private stuckInRow = 0;
@@ -267,7 +287,11 @@ export class AutoPlay {
       this.fighting.onHit(e.attackerId, e.victimId, now);
       const self = h.self();
       if (self !== undefined && e.victimId === self.objectId && !h.isPlayer(e.attackerId)) this.hittingUs.set(e.attackerId, now);
-      if (self !== undefined && e.attackerId === self.objectId && e.victimId === this.target) this.stuck.progress(Infinity, true, now);
+      if (self !== undefined && e.attackerId === self.objectId && e.victimId === this.target) this.stuck.attacked(now);
+    }
+    if (e.kind === 'swing') {
+      const self = h.self();
+      if (self !== undefined && e.attackerId === self.objectId && e.targetId === this.target) this.stuck.attacked(now);
     }
     if (this.farm !== 'running') return;
     this.stats.onEvent(e);
@@ -303,6 +327,7 @@ export class AutoPlay {
         if (!h.bagFull()) this.bagIsFull = false;
         break;
       case 'skillOk':
+        if (this.target !== null) this.stuck.attacked(now);
         this.timers.ok(e.skillIndex, now);
         this.answered(now);
         break;
@@ -400,6 +425,8 @@ export class AutoPlay {
       self, anchor: this.anchor, radius: this.settings.farm.radius, movers: h.movers(), rankOf: (m) => h.rankOf(m),
       hittingUs: new Set(this.hittingUs.keys()), attackable: (m) => h.attackable(m),
       busy: (m) => this.fighting.busy(m, now, self.objectId, party, (id) => h.isPlayer(id)), skip: this.skip, now,
+      avoidGiants: this.settings.farm.avoidGiants, only: new Set(this.settings.farm.only), indexOf: (m) => h.indexOf(m),
+      blocked: (m) => h.lineBlocked(m),
     });
     if (next === null) {
       this.nextScan = now + SCAN_MS;
@@ -408,7 +435,11 @@ export class AutoPlay {
       return;
     }
     this.target = next.objectId;
-    this.stuck.choose(next.objectId, groundDistance(at, next.act.body.pos), now);
+    this.stuck.choose(next.objectId, now);
+    this.stillAt = [...at] as Vec3;
+    this.stillSince = now;
+    this.sideSteps = 0;
+    this.sideUntil = 0;
     this.engage(next.objectId, now);
   }
 
@@ -423,7 +454,6 @@ export class AutoPlay {
       this.letGoWand();
       return false;
     }
-    this.stuck.progress(groundDistance(self.act.body.pos, target.act.body.pos), false, now);
     if (this.stuck.stuck(now)) {
       this.skip.add(id, now, STUCK_SKIP_MS);
       this.target = null;
@@ -437,6 +467,7 @@ export class AutoPlay {
       return false;
     }
     this.phase = 'fighting';
+    if (this.sideStep(self, target, now)) return true;
     if (h.focusId() !== id) {
       if (now - this.lastEngage >= ENGAGE_AGAIN_MS) this.engage(id, now);
       return true;
@@ -506,6 +537,40 @@ export class AutoPlay {
     if (stack) h.useItem(stack.objectId);
     this.itemBuff = { index: entry.index, at: now };
     this.castWait = now + CAST_GAP_MS;
+    return true;
+  }
+
+  /**
+   * 2026-11-17 (owner, "avoid obstacles"): FlyffWeb walks in straight lines, so an object between the bot and its target
+   * stops it. Still farther than 4 m, with no step and no attack for 1.5 s, it lets the target go, steps 4 m across the
+   * line (one side, then the other), and after 1.2 s goes at it again; at most twice a target, then the 5 s rule
+   * chooses another. True while a side step runs.
+   */
+  private sideStep(self: TargetMover, target: TargetMover, now: number): boolean {
+    const h = this.hooks, at = self.act.body.pos, to = target.act.body.pos;
+    if (this.sideUntil > 0) {
+      if (now < this.sideUntil) return true;
+      this.sideUntil = 0;
+      this.stillAt = [...at] as Vec3;
+      this.stillSince = now;
+      this.engage(target.objectId, now);
+      return true;
+    }
+    if (groundDistance(at, this.stillAt) > MOVED) {
+      this.stillAt = [...at] as Vec3;
+      this.stillSince = now;
+      return false;
+    }
+    const dist = groundDistance(at, to);
+    if (dist <= SIDE_FAR || this.sideSteps >= SIDE_STEPS || now - this.stillSince < BLOCKED_MS
+      || now - this.stuck.lastAttack < BLOCKED_MS) return false;
+    this.sideSteps++;
+    const side = this.sideSteps % 2 === 1 ? 1 : -1;
+    const dx = (to[0] - at[0]) / dist, dz = (to[2] - at[2]) / dist;
+    this.letGoWand();
+    h.disengage();
+    h.walkTo([at[0] - dz * SIDE_STEP * side, at[1], at[2] + dx * SIDE_STEP * side]);
+    this.sideUntil = now + SIDE_STEP_MS;
     return true;
   }
 

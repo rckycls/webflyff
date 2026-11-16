@@ -21,7 +21,13 @@ export interface PotionRow {
 
 export interface AutoPlaySettings {
   version: 1;
-  farm: { radius: number; loot: boolean; stopAfterMin: number /* 0 = off */ };
+  farm: {
+    radius: number; loot: boolean; stopAfterMin: number /* 0 = off */;
+    /** 2026-11-17 (owner): bosses, mid-bosses and giants left alone. */
+    avoidGiants: boolean;
+    /** 2026-11-17 (owner): the monster kinds (`added.index`) to fight, max 16; empty: every kind. */
+    only: number[];
+  };
   pots: { enabled: boolean; rows: Record<GaugeRow, PotionRow> };
   skills: {
     actionSlot: boolean;
@@ -41,12 +47,13 @@ export const BELOW = { min: 10, max: 90, step: 5 } as const;
 export const STOP_AFTER = { min: 60, max: 720, step: 60 } as const;
 export const MAX_READY = 4;
 export const MAX_BUFFS = 8;
+export const MAX_ONLY = 16;
 const STORE_KEY = 'flyffweb.autoPlay.';
 
 export function defaultSettings(): AutoPlaySettings {
   return {
     version: 1,
-    farm: { radius: RADIUS.initial, loot: true, stopAfterMin: 0 },
+    farm: { radius: RADIUS.initial, loot: true, stopAfterMin: 0, avoidGiants: true, only: [] },
     pots: {
       enabled: false,
       rows: {
@@ -79,6 +86,8 @@ export function clampSettings(raw: unknown): AutoPlaySettings {
   const farm = isObject(raw.farm) ? raw.farm : {};
   s.farm.radius = stepped(farm.radius, RADIUS.min, RADIUS.max, RADIUS.step, RADIUS.initial);
   if (typeof farm.loot === 'boolean') s.farm.loot = farm.loot;
+  if (typeof farm.avoidGiants === 'boolean') s.farm.avoidGiants = farm.avoidGiants;
+  if (Array.isArray(farm.only)) s.farm.only = [...new Set(farm.only.filter(isIndex))].slice(0, MAX_ONLY);
   s.farm.stopAfterMin = isNumber(farm.stopAfterMin) && farm.stopAfterMin > 0
     ? stepped(farm.stopAfterMin, STOP_AFTER.min, STOP_AFTER.max, STOP_AFTER.step, 0) : 0;
   const pots = isObject(raw.pots) ? raw.pots : {};
