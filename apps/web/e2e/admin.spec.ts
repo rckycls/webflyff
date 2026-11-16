@@ -74,7 +74,8 @@ test('shows an email that looks like HTML as plain text', async ({ page }) => {
   await expect(accounts.getByRole('cell', { name: '<img src=x onerror=alert(1)>', exact: true })).toBeVisible();
   await accounts.getByRole('cell', { name: 'tester1', exact: true }).click();
   await expect(accounts.locator('dl.facts')).toContainText('<img src=x onerror=alert(1)>');
-  await expect(page.locator('section img')).toHaveCount(0);
+  // no picture made from the email (the VIP tab's own receipt and QR pictures are elsewhere on the page)
+  await expect(accounts.locator('img')).toHaveCount(0);
 });
 
 test('a double click on Send item sends once', async ({ page }) => {

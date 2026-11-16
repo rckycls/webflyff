@@ -18,7 +18,7 @@ phone --https (port 443)--> Caddy --+--> the site's pages and the game files (re
 ```
 
 - **Caddy** is a small web server. It holds the HTTPS certificate (it gets one from Let's Encrypt by itself), serves the site's pages and the game's files, passes everything under `/connect/` on to the gateway and everything under `/api/` on to the web service, and adds the security headers to every answer.
-- **The site** has three pages: the home page at `/` (news, the server status, a **Play** button), account creation at `/sign-up/`, and the game at `/play/`. Any other address gets a "Page not found" page.
+- **The site** has four pages: the home page at `/` (news, the server status, a **Play** button), account creation at `/sign-up/`, Support / VIP at `/vip/` (manual QR payments, step 8c), and the game at `/play/`. Any other address gets a "Page not found" page.
 - **The web service** (`apps/web`) makes accounts for the sign-up page and tells the home page whether the game is online. It is the only part that talks to SQL Server, with a login that may run two procedures and nothing else (step 6b). It only listens on this machine (`127.0.0.1`).
 - **The gateway** turns the browser's WebSocket into the plain connection the game servers expect. It only listens on this machine (`127.0.0.1`), so the internet can reach it only through Caddy.
 - **The game servers** (the 7 programs in `Program\`) stay as they are. Their ports are **closed** to the internet: only the gateway, on the same machine, talks to them.
@@ -127,7 +127,7 @@ The last line clears them again. Do not skip it: the variables stay set in that 
 
 (Command Prompt: `set "VITE_GATEWAY_URL=wss://play.example.com" && set "VITE_CERTIFIER_ADDRESS=172.31.238.55:23000" && npm run build:client`, and close the window afterwards.)
 
-Success: it ends with `built in` and a time, and `$FlyffWeb\apps\client\dist` holds `index.html` (home), `sign-up\index.html`, `play\index.html` (the game), `404.html` and a folder `client` with the pages' `.js` and `.css` files. Check that the address is inside the build:
+Success: it ends with `built in` and a time, and `$FlyffWeb\apps\client\dist` holds `index.html` (home), `sign-up\index.html`, `vip\index.html`, `play\index.html` (the game), `404.html` and a folder `client` with the pages' `.js` and `.css` files. Check that the address is inside the build:
 
 ```
 Select-String -Path "$FlyffWeb\apps\client\dist\client\*.js" -Pattern 'wss://play.example.com' -SimpleMatch -List | Select-Object Filename
@@ -145,7 +145,7 @@ You must **build again whenever the domain or `NEUZ_IPSET` changes**, after ever
 npm run check:public-build
 ```
 
-Success: it ends with `check:public-build: ok (no test hooks; home and sign-up load no game code)`. Anything else names what is wrong in the code: test hooks that a public build would keep, or a home or sign-up page that loads the game's code. Do not put such a build on the internet; ask Claude.
+Success: it ends with `check:public-build: ok (no test hooks; home, sign-up and vip load no game code)`. Anything else names what is wrong in the code: test hooks that a public build would keep, or a home, sign-up or vip page that loads the game's code. Do not put such a build on the internet; ask Claude.
 
 Then check the build you made above has no test hooks either (they are only for the automated tests, and a window where `VITE_TEST_HOOKS` was set would build them in):
 
@@ -433,6 +433,14 @@ play.example.com {
 	handle /connect/* {
 		reverse_proxy 127.0.0.1:8090
 	}
+	handle /api/vip/requests {
+		request_body {
+			max_size 8MB
+		}
+		reverse_proxy 127.0.0.1:8091 {
+			request_buffers 8MB
+		}
+	}
 	handle /api/* {
 		request_body {
 			max_size 4KB
@@ -470,7 +478,7 @@ What it does:
 - `/connect/*` goes to the gateway. Caddy passes WebSocket connections through by itself and adds the player's address in the `X-Forwarded-For` header, which is what the gateway reads (because of `trustedProxies`).
 - `/assets/*` is read from `FlyffWeb\dist`, so `/assets/x` is the file `FlyffWeb\dist\assets\x`: where `npm run convert` writes.
 - The `respond /assets/report.json 404` line keeps one file private. `npm run convert` leaves a `report.json` in that folder, and it holds the folder paths of the computer that did the converting. Everything else in `dist\assets` is meant to be public, so only this file is blocked: a visitor who asks for it gets "not found". The line sits inside the `/assets/*` block, before `file_server`, so it takes effect before the file is served. Step 9 checks it.
-- `/api/*` goes to the web service (step 6b), with bodies of at most 4 KB (a sign-up is a few hundred bytes; the service itself takes at most 1 KB).
+- `/api/*` goes to the web service (step 6b), with bodies of at most 4 KB (a sign-up is a few hundred bytes; the service itself takes at most 1 KB). The one exception is `/api/vip/requests`, a player's payment receipt (step 8c): up to 8 MB (a 5 MB picture sent as text), and Caddy reads it whole before passing it on (`request_buffers`), so a slow phone upload does not run out the service's 10-second limit. Caddy puts the more exact `handle /api/vip/requests` before `handle /api/*` by itself.
 - Everything else is read from `FlyffWeb\apps\client\dist`: the home page, `/sign-up/`, the game at `/play/`, and their files under `/client/`. `/play` and `/sign-up` without the slash find their page too (`try_files {path} {path}/index.html`). A path with no page or file behind it gets the "Page not found" page, `404.html`, with the status 404 (`handle_errors 404`; it needs Caddy 2.8 or newer). Old bookmarks of the game at `/` now land on the home page, whose **Play** button leads to `/play/`.
 - `(site-headers)` is the set of security headers every answer gets, error pages included (`import site-headers`). They are the same as `apps/client/siteHeaders.ts`, which the automated tests run the game under; a test checks this guide carries them word for word:
   - `Strict-Transport-Security`: browsers use only HTTPS for the site for a year (Caddy already sends `http://` to `https://`).
@@ -554,8 +562,12 @@ admin.play.example.com {
 		Content-Security-Policy "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
 		-Server
 	}
-	request_body {
+	@notQrUpload not path /api/vip.qrAdd
+	request_body @notQrUpload {
 		max_size 16KB
+	}
+	request_body /api/vip.qrAdd {
+		max_size 8MB
 	}
 	reverse_proxy 127.0.0.1:8092
 }
@@ -575,6 +587,38 @@ Success: `Valid configuration`; the web service's log (`C:\flyff-logs\web.log`) 
 
 - **What it cannot do while the game runs:** rename, set penya, move to Flarine, delete and undo delete. The Database server keeps characters in memory and would undo them: stop the servers first (the panel says when they are locked). Bans, passwords, GM levels, emails and item or penya sends work any time; a ban stops the next login, and sends arrive the next time the character enters the game.
 - **To switch the panel off at once:** remove the `admin` section from `web.config.json` (and set `"adminPanel": false` in `deploy.json` if you use it), then `nssm restart flyffweb-site`. Every panel session ends; sign-up and the game carry on.
+
+## Step 8c. Support / VIP: manual QR payments (optional)
+
+Players pick VIP 1 to 4 ($2, $4, $6, $10 a month) on `/vip/`, pay you outside the site by one of your payment QRs (GCash, Maya, a bank...), then send the receipt picture and the payment's reference number. The request shows **Processing** until you check it in the admin panel's **VIP** tab: **Approve** turns the account's VIP on for one month, **Reject** sends back the reason you write. No payment company is involved: nothing is charged or credited by itself. It needs the admin panel (step 8b).
+
+What a player's VIP gives in the game is not part of it yet: the site only keeps each account's VIP level and end date (`ACCOUNT_DBF.dbo.WEB_VIP`), and VIP ends by itself at that date.
+
+1. **The tables.** On the machine with SQL Server, in an administrator PowerShell, after steps 6b and 8b:
+
+```
+cd "$FlyffWeb\apps\web\sql"
+powershell -ExecutionPolicy Bypass -File .\Install-Vip.ps1
+```
+
+It uses your Windows login and asks for no password. Success: `Check passed: 4 VIP tier(s) in WEB_VIP_TIER.` and `Both logins may run their VIP procedures.` Run it again after any FlyffWeb update: your prices, QRs and requests stay.
+
+2. **The settings.** Add a `vip` section to `C:\flyff-web\web.config.json` (after the `admin` section, with a comma before it):
+
+```
+  "vip": { "uploadsDir": "C:\\flyff-web\\vip-uploads" }
+```
+
+The receipts and QR pictures go in that folder (`receipts\` and `qr\`, made by the service), outside every folder Caddy serves. A receipt can be seen only by you (in the panel) and the player who sent it; the QRs you switch on are shown to everyone on `/vip/`. Each receipt is at most 5 MB and usually 0.2-0.8 MB (the page makes phone photos smaller first): 1,000 requests take about 0.5 GB. `"maxPendingPerAccount": 3` is the default number of requests one account may have processing at once.
+
+3. **Restart and look.** `nssm restart flyffweb-site`. Success: `C:\flyff-logs\web.log` gets `vip: on, pictures in C:\flyff-web\vip-uploads`; `https://play.example.com/vip/` shows the four tiers and "Payments are not open yet." A line `vip: off: <reason>` names what is wrong (the rest of the site keeps working).
+
+4. **Your QRs.** In the panel's **VIP** tab, **Payment QRs**: add each QR picture with its label (GCash, Maya...) and the account name players should see. Only the ones marked **Show to players** appear on `/vip/`, in their order. **Tiers** changes names and prices; a new price counts for new requests only.
+
+- **Approve rule:** the same tier while it still runs adds one month to its end; a different tier (or none running) starts now, for one month, and the old tier's days left end. The page tells the player this before they send.
+- **Each reference number counts once:** one already on a processing or approved request is refused (spaces, dashes and capitals do not make it new). A rejected one can be sent again, with a better picture say.
+- **Player login:** the page logs in with the game account and password, as the game does. 10 wrong passwords in an hour, from one address or for one account, make it wait. A banned account cannot log in.
+- **The log:** every approve, reject and QR or tier change is in the panel's **Log** tab, with who did it and when; each request also keeps who decided it and when.
 
 ## Step 9. Check it from outside
 

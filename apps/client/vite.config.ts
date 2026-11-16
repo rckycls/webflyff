@@ -21,7 +21,8 @@ export default defineConfig(({ command }) => {
   const gateway = command === 'serve' ? devGatewayProxy(process.env, DEV_PORT) : undefined;
   return {
     root: clientRoot,
-    // The website (website spec §3.1): home at /, sign-up at /sign-up/, the game at /play/, and 404.html for the rest.
+    // The website (website spec §3.1): home at /, sign-up at /sign-up/, Support / VIP at /vip/, the game at /play/, and
+    // 404.html for the rest.
     appType: 'mpa',
     // No publicDir: dist/assets is ~1 GB and a build would copy it. serveDist serves the world's assets in place, as for the viewer.
     publicDir: false,
@@ -51,6 +52,7 @@ export default defineConfig(({ command }) => {
         input: {
           home: path.join(clientRoot, 'index.html'),
           signUp: path.join(clientRoot, 'sign-up/index.html'),
+          vip: path.join(clientRoot, 'vip/index.html'),
           play: path.join(clientRoot, 'play/index.html'),
           notFound: path.join(clientRoot, '404.html'),
         },

@@ -9,6 +9,8 @@ import { defineConfig, devices } from '@playwright/test';
 
 const flyffwebRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 export const ADMIN_E2E_PORT = Number(process.env.E2E_ADMIN_PORT ?? '8099');
+/** The demo's site Support / VIP API listens on the port below the panel's and takes POSTs from this origin (vip.spec.ts). */
+export const SITE_E2E_ORIGIN = 'http://site.e2e.test';
 const URL = `http://127.0.0.1:${ADMIN_E2E_PORT}`;
 const STATE = path.join(flyffwebRoot, 'node_modules/.cache/admin-e2e/state.json');
 
@@ -25,7 +27,7 @@ export default defineConfig({
     { name: 'phone', testMatch: /\.spec\.ts/, dependencies: ['setup'], use: { ...devices['Pixel 7 landscape'], storageState: STATE } },
   ],
   webServer: {
-    command: `node --import tsx apps/web/scripts/adminDemo.ts --port ${ADMIN_E2E_PORT}`,
+    command: `node --import tsx apps/web/scripts/adminDemo.ts --port ${ADMIN_E2E_PORT} --site-port ${ADMIN_E2E_PORT - 1} --site-origin ${SITE_E2E_ORIGIN}`,
     cwd: flyffwebRoot,
     url: `${URL}/`,
     reuseExistingServer: false,

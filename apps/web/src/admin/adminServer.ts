@@ -4,9 +4,10 @@
 //   start (nothing else is served, so no path can reach another file);
 // - `GET /api/session`: `{user, csrf}` for the cookie's live session, or 401 `session`;
 // - `POST /api/login` `{user, password, code}`; `POST /api/logout`;
-// - `POST /api/<action>` for the names in `deps.actions` (status, accounts.*, characters.*, items.*, sends.*, log.*).
+// - `POST /api/<action>` for the names in `deps.actions` (status, accounts.*, characters.*, items.*, sends.*, log.*, vip.*);
+// - `GET /vip/receipt/<id>`, `/vip/qr/<id>`: a VIP request's receipt or a payment QR, for a live session only.
 //
-// Every POST: JSON (415), at most 16 KB (413), Origin = admin.origin (403). Every POST but login: a live session from the
+// Every POST: JSON (415), at most 16 KB (413; `vip.qrAdd` with a live session: a 5 MB picture), Origin = admin.origin (403). Every POST but login: a live session from the
 // `__Host-admin` cookie (401) and X-Admin-Token = its CSRF token (403). Every write also carries a `requestId` taken
 // once per session (400 without one, 409 `repeat` for a second time), so a double click cannot act twice.
 // Every answer has the panel's security headers and `Cache-Control: no-store`.
@@ -29,6 +30,9 @@ import { verifyAdminPassword } from './password';
 import type { AdminSession, SessionBook } from './sessions';
 import type { PortState } from './serverState';
 import { matchTotp } from './totp';
+import { MAX_IMAGE_BODY_BYTES } from '../vip/images';
+import type { VipFiles } from '../vip/vipFiles';
+import type { VipAdminStore } from '../vip/vipStore';
 
 export interface AdminContext { session: AdminSession; address: string }
 
@@ -46,6 +50,8 @@ export interface AdminDeps {
   probe: (host: string, port: number) => Promise<PortState>;
   catalog: CatalogItem[];
   actions: Record<string, ActionHandler>;
+  /** Support / VIP's store and pictures; `undefined` while it is off (web.config.json has no good vip section). */
+  vip?: { store: VipAdminStore; files: VipFiles };
 }
 
 export const ADMIN_BODY_LIMIT = 16 * 1024;
@@ -63,7 +69,11 @@ const SECURITY_HEADERS = {
 };
 
 /** Actions that only read: they need no request id. Everything else is a write. */
-const READ_ACTIONS = ['status', 'accounts.search', 'accounts.get', 'characters.search', 'characters.get', 'sends.list'];
+const READ_ACTIONS = [
+  'status', 'accounts.search', 'accounts.get', 'characters.search', 'characters.get', 'sends.list', 'vip.requests', 'vip.tiers', 'vip.qrs',
+];
+/** The one action that carries a picture: a bigger body, read only with a live session. */
+const UPLOAD_ACTION = 'vip.qrAdd';
 const READ_PREFIXES = ['items.', 'log.'];
 
 export function isReadAction(name: string): boolean {
@@ -173,6 +183,26 @@ export function createAdminServer(deps: AdminDeps): Server {
     });
   };
 
+  /** A receipt or a QR picture, for a live session; 404 for anything that is not there. */
+  const sendPicture = async (req: IncomingMessage, res: ServerResponse, kind: 'receipt' | 'qr', id: number): Promise<void> => {
+    if (deps.sessions.get(cookieValue(req, ADMIN_COOKIE)) === undefined) {
+      send(res, 401, { error: 'session' });
+      return;
+    }
+    const vip = deps.vip;
+    let file: { bytes: Buffer; mime: string } | undefined;
+    if (vip !== undefined && id <= 2_147_483_647) {
+      const name = kind === 'receipt' ? (await vip.store.request(id))?.receiptFile : (await vip.store.qrList()).find((q) => q.id === id)?.imageFile;
+      if (name !== undefined) file = await vip.files.read(kind === 'receipt' ? 'receipts' : 'qr', name);
+    }
+    if (file === undefined) {
+      send(res, 404, { error: 'not_found' });
+      return;
+    }
+    res.writeHead(200, { ...SECURITY_HEADERS, 'Content-Type': file.mime, 'Content-Length': file.bytes.length, 'Content-Disposition': 'inline' });
+    res.end(file.bytes);
+  };
+
   const route = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const path = (req.url ?? '/').split('?')[0]!;
     const address = resolveClientAddress(req.socket.remoteAddress, req.headers['x-forwarded-for'], config.trustedProxies) ?? 'unknown';
@@ -182,6 +212,11 @@ export function createAdminServer(deps: AdminDeps): Server {
         const session = deps.sessions.get(cookieValue(req, ADMIN_COOKIE));
         if (session === undefined) send(res, 401, { error: 'session' });
         else send(res, 200, { user: session.user, csrf: session.csrf });
+        return;
+      }
+      const picture = /^\/vip\/(receipt|qr)\/([1-9]\d{0,9})$/.exec(path);
+      if (picture !== null) {
+        await sendPicture(req, res, picture[1] as 'receipt' | 'qr', Number(picture[2]));
         return;
       }
       const file = page.get(path);
@@ -204,8 +239,10 @@ export function createAdminServer(deps: AdminDeps): Server {
       send(res, 415, { error: 'type' });
       return;
     }
-    const { body: raw, whole } = await readBody(req, ADMIN_BODY_LIMIT);
-    if (!whole || raw.length > ADMIN_BODY_LIMIT) {
+    const upload = name === UPLOAD_ACTION && deps.sessions.get(cookieValue(req, ADMIN_COOKIE), false) !== undefined;
+    const limit = upload ? MAX_IMAGE_BODY_BYTES : ADMIN_BODY_LIMIT;
+    const { body: raw, whole } = await readBody(req, limit);
+    if (!whole || raw.length > limit) {
       send(res, 413, { error: 'size' }, {}, true);
       res.once('finish', () => req.socket.destroy());
       return;

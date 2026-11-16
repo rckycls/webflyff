@@ -124,3 +124,29 @@ never stops the site: a bad `admin` section or login file writes `admin: panel o
   from one address: it waits 15 minutes; 20 in an hour from anywhere: login closes for an hour.
 - **Try it without a database:** `npm run admin:demo` (made-up data on `http://127.0.0.1:8099`, log in as `Poreotix` /
   `demo-password-1` with the code it prints). `npm run test:e2e:admin` runs the page's browser check against it.
+
+## Support / VIP (manual QR payments)
+
+Players pick VIP 1-4 on `/vip/`, pay outside the site by one of the admin's payment QRs, then send the receipt picture
+and the payment's reference number. The admin approves or rejects each request in the panel's **VIP** tab. No payment
+company, no webhooks, nothing credited by itself. Set-up: docs/hosting.md step 8c.
+
+- **Settings:** `"vip": { "uploadsDir": "C:\flyff-web\vip-uploads", "maxPendingPerAccount": 3 }` in `web.config.json`.
+  Without it the API answers `503 off` and the page says "Support / VIP is not open yet."; a bad one only writes
+  `vip: off: <reason>`. The panel's VIP tab needs the `admin` section too.
+- **Database:** `sql/vip.sql`, run by `sql/Install-Vip.ps1` (Windows login, no password asked): `ACCOUNT_DBF.dbo.WEB_VIP_TIER`
+  (seeded VIP 1-4 at $2/$4/$6/$10), `WEB_PAY_QR`, `WEB_VIP_REQUEST`, `WEB_VIP` (level and end time, UTC). VIP ends by
+  itself: every read compares the end time with now.
+- **Pictures:** PNG, JPEG or WebP, 5 MB at most, told apart by their first bytes; random names in `uploadsDir\receipts`
+  and `uploadsDir\qr`. A receipt is served only to its player (`/api/vip/receipt/<id>`) and to a panel session
+  (`/vip/receipt/<id>`).
+- **Approve rule:** the same tier while it runs adds one month to its end; anything else starts the new tier now for one
+  month (the old tier's days left end). A reference already on a processing or approved request is refused.
+- **Limits:** player login 10 failures an hour per address and per account, 20 logins an hour per account; 6 requests an
+  hour per account; 3 processing at once (`maxPendingPerAccount`).
+- **Log lines:** `vip <address> <account> login ok|wrong|banned|too_many`, `vip <address> <account> request <id> tier <n>`,
+  `vip <address> <account> request refused:<why>`. Approvals, rejections and QR/tier changes are in the panel's Log tab.
+- **Try it without a database:** `node --import tsx apps/web/scripts/adminDemo.ts --site-port 8098 --site-origin http://localhost:5175`,
+  then in a second window `$env:WEB_API='http://127.0.0.1:8098'; npm run dev:client -- --port 5175 --strictPort` and open
+  `http://localhost:5175/vip/` (players `tester1` / `demo-password-1`, `tester2` / `demo-password-2`; the panel on
+  `http://127.0.0.1:8099`).

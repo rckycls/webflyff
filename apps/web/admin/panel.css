@@ -271,6 +271,24 @@ td.empty { color: var(--muted); }
 .login button { margin-top: 4px; min-height: 44px; }
 
 /* ---- phones and small windows ----------------------------------------------------------------------------------- */
+/* The VIP tab: requests and QRs as cards with their picture beside them (above them on a phone). */
+.vip-views button[aria-pressed="true"], .vip-filter button[aria-pressed="true"] { background: var(--gradient); color: #fff; border-color: transparent; }
+.vip-views { margin-bottom: 16px; }
+.vip-list { display: grid; gap: 14px; }
+.vip-card { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 18px; align-items: start; margin: 0; }
+.vip-receipt { display: block; overflow: hidden; border: 1px solid var(--line-2); border-radius: 12px; background: #fff; }
+.vip-receipt img { display: block; width: 100%; height: 220px; object-fit: contain; }
+.vip-body { display: grid; gap: 8px; min-width: 0; }
+.vip-body .facts { margin: 0; }
+.vip-body code { overflow-wrap: anywhere; font-size: 15px; }
+.vip-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.vip-head strong { font-size: 17px; }
+.vip-head .chip { padding: 3px 10px; border-radius: 999px; background: var(--info-bg); color: var(--info); font-size: 12px; font-weight: 700; }
+.vip-actions, .vip-ask { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.vip-ask[hidden] { display: none; }
+.vip-preview { display: block; max-width: 200px; max-height: 200px; margin: 0 0 10px; border-radius: 12px; background: #fff; }
+.row > label.check { flex-direction: row; align-items: center; gap: 8px; min-height: 40px; color: var(--text); font-size: 14px; }
+
 @media (max-width: 1000px) {
   .sidebar { transform: translateX(-105%); transition: transform 0.2s ease; box-shadow: 20px 0 40px rgba(0, 0, 0, 0.4); }
   body.menu-open .sidebar { transform: none; }
@@ -292,6 +310,10 @@ td.empty { color: var(--muted); }
   .hero { padding: 20px; }
   .hero h2 { font-size: 21px; }
   .card { padding: 16px; }
+}
+@media (max-width: 640px) {
+  .vip-card { grid-template-columns: 1fr; }
+  .vip-receipt img { height: 260px; }
 }
 @media (max-width: 520px) {
   .facts { grid-template-columns: 1fr; gap: 2px; }

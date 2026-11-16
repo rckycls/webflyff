@@ -5,6 +5,8 @@
 //   reading the rest);
 // - `GET /api/status`: the shared status;
 // - `GET /api/siege/weekly` and `GET /api/siege/ranking?board=&span=`: the Guild Siege answers (siege.ts);
+// - `/api/account/*` and `/api/vip*`: Support / VIP (vip/siteVip.ts), or `503 {error:'off'}` without web.config.json's
+//   `vip` section;
 // - anything else: `404 {error:'not_found'}`.
 //
 // Every answer is JSON with `Cache-Control: no-store`, and no CORS headers: only the site's own pages may call it.
@@ -19,7 +21,10 @@ import { handleSiegeRanking, handleSiegeWeekly } from './siege';
 import type { SiegeCache } from './siege';
 import type { StatusCache } from './status';
 
-export type WebServerDeps = SignUpDeps & { status: StatusCache; siege: SiegeCache; ticketsByAddress: HourlyLimit };
+/** Support / VIP's routes (vip/siteVip.ts): true when it answered. */
+export type VipRoutes = (req: IncomingMessage, res: ServerResponse, path: string, address: string) => Promise<boolean>;
+
+export type WebServerDeps = SignUpDeps & { status: StatusCache; siege: SiegeCache; ticketsByAddress: HourlyLimit; vip?: VipRoutes };
 
 /** Slow clients get this long to send a request (Caddy sends it at once). */
 const REQUEST_TIMEOUT_MS = 10_000;
@@ -101,6 +106,13 @@ export function createWebServer(deps: WebServerDeps): Server {
       const answer = await handleSiegeRanking(new URL(req.url ?? '/', 'http://localhost').searchParams, deps);
       send(res, answer.status, answer.body);
       return;
+    }
+    if (path.startsWith('/api/account/') || path === '/api/vip' || path.startsWith('/api/vip/')) {
+      if (deps.vip === undefined) {
+        send(res, 503, { error: 'off' });
+        return;
+      }
+      if (await deps.vip(req, res, path, address)) return;
     }
     send(res, 404, { error: 'not_found' });
   };

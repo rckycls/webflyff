@@ -7,6 +7,7 @@ import { icon, placeIcons } from './js/icons.js';
 import { logTab } from './js/log.js';
 import { sendTab } from './js/send.js';
 import { statusTab } from './js/status.js';
+import { vipTab } from './js/vip.js';
 import { api, el, onSessionLost, setSession } from './js/ui.js';
 
 const sidebar = /** @type {HTMLElement} */ (document.querySelector('.sidebar'));
@@ -38,7 +39,7 @@ const nav = {
 /** The tabs, in the sidebar's groups, with their icons. */
 const GROUPS = [
   { title: 'Overview', tabs: [['Status', 'status', statusTab]] },
-  { title: 'Manage', tabs: [['Accounts', 'user', accountsTab], ['Characters', 'characters', charactersTab], ['Send', 'send', sendTab]] },
+  { title: 'Manage', tabs: [['Accounts', 'user', accountsTab], ['Characters', 'characters', charactersTab], ['Send', 'send', sendTab], ['VIP', 'vip', vipTab]] },
   { title: 'Records', tabs: [['Log', 'log', logTab]] },
 ];
 
