@@ -30,6 +30,17 @@ describe('Auto Play settings (custom, owner 2026-11-15)', () => {
     expect(s.pots.rows.mp).toEqual({ itemIndex: 0, below: 30, on: true });
     expect(s.pots.rows.fp).toEqual({ itemIndex: 0, below: 30, on: true });
     expect(s.skills).toEqual({ actionSlot: true, ready: [], buffs: [] });
+    expect(s.loot).toEqual({ mask: 0xff }); // custom (owner 2026-11-16): the loot filter, every kind
+  });
+
+  it('the loot filter: a store from before it reads as every kind; a bad mask too', () => {
+    const old = defaultSettings() as unknown as Record<string, unknown>;
+    delete old.loot;
+    expect(clampSettings(old).loot.mask).toBe(0xff);
+    expect(clampSettings({ ...defaultSettings(), loot: { mask: 0x15 } }).loot.mask).toBe(0x15);
+    expect(clampSettings({ ...defaultSettings(), loot: { mask: 0 } }).loot.mask).toBe(0);
+    expect(clampSettings({ ...defaultSettings(), loot: { mask: 999 } }).loot.mask).toBe(0xff);
+    expect(clampSettings({ ...defaultSettings(), loot: 'x' }).loot.mask).toBe(0xff);
   });
 
   it('round-trips through a fake store under flyffweb.autoPlay.<id>', () => {

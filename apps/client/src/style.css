@@ -4922,6 +4922,16 @@ fieldset:disabled .btn {
   .auto-slot-clear { width: 20px; height: 20px; font-size: 12px; }
 }
 
+/* custom (owner 2026-11-16): Auto Play's Loot tab, the loot filter (items/lootFilter.ts): the 8 kinds in two columns */
+.auto-loot { display: flex; flex-direction: column; gap: 5px; }
+.auto-loot-head { font-weight: bold; }
+.auto-loot-kinds { display: grid; grid-template-columns: 1fr 1fr; gap: 1px 8px; }
+.auto-loot-kinds .auto-check { min-height: 22px; font-weight: normal; }
+@media (max-width: 1000px) and (pointer: coarse) {
+  .auto-loot-kinds .auto-check { min-height: 28px; }
+  .auto-loot-kinds input[type='checkbox'] { width: 18px; height: 18px; }
+}
+
 /* custom (owner 2026-11-15): a phone's AUTO button above the quick slot over Attack (slot 3, --qx 0 --qy 1), in Attack's
    column; and the Auto Play window as the phone's other compact windows */
 @media (max-width: 1000px) and (pointer: coarse) {
