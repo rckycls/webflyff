@@ -2584,6 +2584,32 @@ describe('SkillWindow (CWndSkillTreeEx, WndField.cpp:6649-8393)', () => {
     expect(['plus', 'minus', 'reset', 'finish'].map((name) => skillButton(tree, name).disabled)).toEqual([true, true, true, true]);
   });
 
+  it('a master\'s or hero\'s skill greys +, -, Reset and Finish out (__CSC_VER9_1, :7516-7525; the World refuses them, 2026-11-17)', () => {
+    const buttons = (tree: SkillWindow) => ['plus', 'minus', 'reset', 'finish'].map((name) => skillButton(tree, name).disabled);
+    // JTYPE_MASTER 5 and JTYPE_HERO 6 (defineJob.h:9-10): Flurry made one, by its dwItemKind1 only
+    for (const jobType of [5, 6]) {
+      const own = vagrantWithSkills(15, 6, [3, 0, 0]);
+      const skills = new Map(SKILLS).set(2, { ...SKILLS.get(2)!, jobType });
+      const tree = new SkillWindow(art, { ...SKILL_DATA, skills }, () => {}, recordingHand().hand);
+      skillWindows.push(tree);
+      layer(800, 600).append(tree.frame.element, tree.warning.element);
+      tree.toggle(own);
+      // Clean Hit raised by one: all four on
+      choose(tree, 1);
+      skillButton(tree, 'plus').click();
+      expect(buttons(tree)).toEqual([false, false, false, false]);
+      // Flurry chosen: all four off, and a press on + raises nothing
+      choose(tree, 2);
+      expect(tree.chosen).toBe(1);
+      expect(buttons(tree), `jobType ${jobType}`).toEqual([true, true, true, true]);
+      skillButton(tree, 'plus').click();
+      expect(levelsOf(tree.skillPlan!.result())).toEqual([4, 0, 0]);
+      // back on Clean Hit: on again
+      choose(tree, 1);
+      expect(buttons(tree)).toEqual([false, false, false, false]);
+    }
+  });
+
   it('loads the skills anew, dropping the points placed, on DOUSESKILLPOINT, INITSKILLPOINT and a SETEXPERIENCE that changed the points', () => {
     const own = vagrantWithSkills(5, 4);
     const { tree } = skillWindowOn(own, recordingHand().hand);

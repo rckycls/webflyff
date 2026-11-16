@@ -517,8 +517,8 @@ test.describe('the lobby against scripted servers', () => {
     await page.getByRole('button', { name: 'Delete Webby' }).click();
     const dialog = page.getByRole('dialog', { name: 'Delete Character' });
     await expect(dialog).toBeVisible();
-    await expect(dialog).toContainText('Password for deleting character');
-    await expect(dialog).toContainText('Enter The Password');
+    await expect(dialog).toContainText("Enter this character's bank PIN");
+    await expect(dialog).toContainText('(0000 if you never set one)');
     // the select window stays behind it, out of reach
     await expect(page.getByRole('heading', { name: 'Select Character' })).toBeAttached();
     await expect(page.locator('.cs-slots')).toHaveAttribute('inert', '');
@@ -530,17 +530,17 @@ test.describe('the lobby against scripted servers', () => {
     await expect(page.getByRole('button', { name: 'Select Webby' })).toHaveAttribute('aria-pressed', 'true');
 
     await page.getByRole('button', { name: 'Delete Webby' }).click();
-    const password = dialog.getByLabel('Password for deleting character');
+    const password = dialog.getByLabel('Bank PIN');
     const ok = dialog.getByRole('button', { name: 'OK' });
     // V15's LANG_ENG rule: nothing typed is "Please Re-enter SSN." (sic), and nothing is sent
     await ok.click();
     await expect(page.getByRole('alert')).toHaveText('Please Re-enter SSN.');
     await expect(ok).toBeEnabled();
 
-    // any password goes; the server's refusal keeps the window, with OK and CANCEL on again
+    // any password goes; the server's refusal (a wrong bank PIN, 2026-11-17) keeps the window, with OK and CANCEL on again
     await password.fill('wrong one');
     await ok.click();
-    await expect(page.getByRole('alert')).toHaveText('Oops. Try again.');
+    await expect(page.getByRole('alert')).toHaveText('Wrong bank PIN.');
     await expect(dialog).toBeVisible();
     await expect(ok).toBeEnabled();
     await password.fill('my pass 12');

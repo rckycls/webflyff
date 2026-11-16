@@ -79,6 +79,10 @@ export interface SkillHand {
   queueSkill(skillIndex: number): void;
 }
 
+/** `JTYPE_MASTER` and `JTYPE_HERO` (`Resource/defineJob.h:9-10`): the `dwItemKind1` of the skills that points can't raise. */
+const JTYPE_MASTER = 5;
+const JTYPE_HERO = 6;
+
 // ---- APP_SKILL3 (resdata.inc:6665): the window and its controls, in its client area ----------------------------------
 
 /** `APP_SKILL3 "WndTile03.tga" 1 256 624`, less the 100 px of the hero section a Vagrant has not (`rect.bottom -= 100`, :8020). */
@@ -713,6 +717,8 @@ export class SkillWindow {
    * and the player having that skill: + while the chosen skill is below its maximum level and its cost is left (and it is
    * still open: `SkillPlan.plus` refuses one whose prerequisite was lowered, which Neuz would raise, the server not
    * checking), - while its level is above the player's, Reset and Finish while the points left differ from the player's.
+   * On a master's or hero's skill (`dwItemKind1` JTYPE_MASTER or JTYPE_HERO) all four stay off (`__CSC_VER9_1`,
+   * :7516-7525): those are learnt from an NPC, and the World refuses them in a plan (TID_RESKILLPOINT_ERROR, 2026-11-17).
    */
   private process(own: OwnState, plan: SkillPlan): void {
     let plus = false;
@@ -723,7 +729,8 @@ export class SkillWindow {
       const slot = plan.result()[index];
       const skill = slot === undefined ? undefined : this.data.skills.get(slot.skill);
       const mine = slot === undefined ? undefined : own.skills.find((s) => s.skill === slot.skill);
-      if (slot !== undefined && skill !== undefined && mine !== undefined) {
+      if (slot !== undefined && skill !== undefined && mine !== undefined
+        && skill.jobType !== JTYPE_MASTER && skill.jobType !== JTYPE_HERO) {
         plus = slot.level < skill.maxLevel && skillPointCost(skill) <= plan.points && plan.active(index);
         minus = slot.level !== mine.level;
         changed = plan.changed;
