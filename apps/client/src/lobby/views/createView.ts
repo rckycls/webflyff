@@ -8,7 +8,7 @@ import type { NewCharacter } from '@flyffweb/protocol';
 import { HAIR_MESH_COUNT, HEAD_MESH_COUNT, JOB_VAGRANT, Sex, hairColorFor } from '../appearance';
 import { nameNotAllowed, pinDigits, stepChoice } from '../createRules';
 import { validateBankPin, validateCharacterName } from '../validation';
-import { h } from './dom';
+import { focusEdit, h } from './dom';
 import type { View } from './dom';
 
 /** The look the window shows and sends. */
@@ -137,21 +137,21 @@ export function createView(options: CreateViewOptions): CreateView {
     const nameProblem = validateCharacterName(name.value);
     if (nameProblem !== undefined) {
       onInvalid(nameProblem);
-      name.focus();
+      focusEdit(name);
       return;
     }
     const rules = options.nameRules?.() ?? null;
     const banned = rules === null ? undefined : nameNotAllowed(name.value, rules.invalidNames, rules.letters);
     if (banned !== undefined) {
       onInvalid(banned);
-      name.focus();
+      focusEdit(name);
       return;
     }
     const pinProblem = validateBankPin(pin.value, confirm.value);
     if (pinProblem !== undefined) {
       onInvalid(pinProblem);
       // the PIN alone decides which edit is wrong; when it passes, the fault is in the confirmation
-      (validateBankPin(pin.value, pin.value) === undefined ? confirm : pin).focus();
+      focusEdit(validateBankPin(pin.value, pin.value) === undefined ? confirm : pin);
       return;
     }
     // OK and Cancel are disabled while the answer is awaited (`:2903-2906`); `idle` frees them after an error
