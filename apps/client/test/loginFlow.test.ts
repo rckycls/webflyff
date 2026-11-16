@@ -480,6 +480,29 @@ describe('LoginFlow, creating and deleting characters', () => {
     expect(events.at(-1)).toEqual({ type: 'error', message: 'Please Re-enter SSN.' });
     expect(login.sent).toHaveLength(sentBefore);
   });
+
+  it('answers ERROR_NO_SUCH_GROUP after a delete with "Wrong bank PIN." (2026-11-17: the server checks the PIN); elsewhere "Oops"', async () => {
+    const { events, login, flow } = await atCharacterList();
+    const noSuchGroup = () => login.push(new ArWriter().u32(PacketType.ERROR).i32(1319).toBytes());
+    // not after a delete: Neuz's text
+    noSuchGroup();
+    expect(events.at(-1)).toEqual({ type: 'error', message: 'Oops. Try again.' });
+    // the answer to a delete
+    flow.deleteCharacter(0, '1234');
+    noSuchGroup();
+    expect(events.at(-1)).toEqual({ type: 'error', message: 'Wrong bank PIN.' });
+    // one answer only: the next 1319 is Neuz's again
+    noSuchGroup();
+    expect(events.at(-1)).toEqual({ type: 'error', message: 'Oops. Try again.' });
+    // another error to a delete keeps its own text, and so does a 1319 after the new list
+    flow.deleteCharacter(0, '1234');
+    login.push(new ArWriter().u32(PacketType.ERROR).i32(1316).toBytes());
+    expect(events.at(-1)).toEqual({ type: 'error', message: 'That character name is already in use.' });
+    flow.deleteCharacter(0, '0000');
+    login.push(playerListFor(7));
+    noSuchGroup();
+    expect(events.at(-1)).toEqual({ type: 'error', message: 'Oops. Try again.' });
+  });
 });
 
 describe('LoginFlow, keeping the login server connection', () => {

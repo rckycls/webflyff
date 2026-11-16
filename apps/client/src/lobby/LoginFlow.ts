@@ -6,7 +6,7 @@ import {
 import type { CharacterSummary, NewCharacter, ServerEntry, SlotMessenger } from '@flyffweb/protocol';
 import type { OpenChannel, PacketChannel } from '../net/PacketChannel';
 import { ServerClock } from '../net/serverClock';
-import { ServerError, UNEXPECTED_PROBLEM, closeText, errorText } from './errorText';
+import { ServerError, UNEXPECTED_PROBLEM, WRONG_DELETE_PIN, closeText, errorText } from './errorText';
 import { validateDeletePassword } from './createRules';
 import { isCharacterSlot, isValidAppearance, validateBankPin, validateCharacterName } from './validation';
 
@@ -150,6 +150,8 @@ export class LoginFlow {
   private timer: ReturnType<typeof setTimeout> | undefined;
   /** The next PING, set while a login-server connection is attached. */
   private pingTimer: ReturnType<typeof setTimeout> | undefined;
+  /** True from a DEL_PLAYER sent until the server answers it (a new list or an error). */
+  private deleting = false;
   /** Bumped whenever the work in flight is given up, so a channel that finishes opening later is closed, not used. */
   private epoch = 0;
 
@@ -298,7 +300,8 @@ export class LoginFlow {
    * Sends DEL_PLAYER for the character in `slot`, with the key made from the typed password and the slot's messenger
    * friends. An empty slot, or a password V15's delete window refuses (LANG_ENG: 1 to 63 characters,
    * `validateDeletePassword`), is answered with an `error` event and nothing is sent. Does nothing without a
-   * login-server connection.
+   * login-server connection. The password is the character's bank PIN (0000 if never set): since 2026-11-17 the Database
+   * server checks the key against it and answers a wrong one with ERROR_NO_SUCH_GROUP, shown as `WRONG_DELETE_PIN`.
    */
   deleteCharacter(slot: number, password: string): void {
     const loginServer = this.loginServer;
@@ -316,6 +319,7 @@ export class LoginFlow {
     }
     const friendIds = this.messengers.find((m) => m.slot === slot)?.friends.map((f) => f.id) ?? [];
     loginServer.send(encodeDeletePlayer(this.account, this.passwordHash, deleteKey(password), character.playerId, authKey, friendIds));
+    this.deleting = true;
   }
 
   /**
@@ -453,6 +457,7 @@ export class LoginFlow {
           break;
         }
         this.stopTimer();
+        this.deleting = false;
         this.characters = message.characters;
         this.messengers = message.messengers;
         // The certifier is closed once the character list is in. The recording that shows when Neuz does it is not
@@ -464,7 +469,12 @@ export class LoginFlow {
         // Not the end of the session: a name in use or a wrong Bank PIN is answered the same way, and Neuz stays on its screen.
         // An answer while the list is awaited is an answer too, so the list's 20 s stop (Piece 6 M3).
         this.stopTimer();
-        this.notify({ type: 'error', message: errorText(message.code) });
+        {
+          // the answer to a delete: ERROR_NO_SUCH_GROUP there is a wrong delete code, the bank PIN (2026-11-17)
+          const wrongPin = this.deleting && message.code === ServerError.NO_SUCH_GROUP;
+          this.deleting = false;
+          this.notify({ type: 'error', message: wrongPin ? WRONG_DELETE_PIN : errorText(message.code) });
+        }
         break;
       case 'unknown':
         this.warnUnknown(message.packetType);
@@ -584,6 +594,7 @@ export class LoginFlow {
 
   /** Forgets what belongs to a login-server connection: the characters, the cache address, the clock and the channel. */
   private forgetChannel(): void {
+    this.deleting = false;
     this.characters = [];
     this.messengers = [];
     this.cacheAddress = undefined;
