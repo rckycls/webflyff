@@ -8,9 +8,9 @@ import path from 'node:path';
 import type { Connect, Plugin } from 'vite';
 
 /** The pages, by their address. */
-const PAGES = new Set(['/', '/play/', '/sign-up/']);
+const PAGES = new Set(['/', '/play/', '/sign-up/', '/vip/']);
 /** The same pages without the slash. */
-const REDIRECTS = new Map([['/play', '/play/'], ['/sign-up', '/sign-up/']]);
+const REDIRECTS = new Map([['/play', '/play/'], ['/sign-up', '/sign-up/'], ['/vip', '/vip/']]);
 /** Vite's own addresses, the converter's assets, the build's files, the web service and the test pages. */
 const LEFT_TO_VITE = ['/assets/', '/client/', '/src/', '/api/', '/@', '/node_modules/', '/e2e/', '/site/'];
 

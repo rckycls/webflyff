@@ -7,6 +7,8 @@ import type { ReservedNames } from '@flyffweb/protocol';
 import { parseAdminConfig } from './admin/config';
 import type { AdminConfig } from './admin/config';
 import { hostPort, integer, ipv4, list, object, text } from './configHelpers';
+import { parseVipConfig } from './vip/vipConfig';
+import type { VipConfig } from './vip/vipConfig';
 import type { HostPort } from './configHelpers';
 
 export type { HostPort } from './configHelpers';
@@ -49,6 +51,10 @@ export interface WebConfig {
   admin: AdminConfig | undefined;
   /** Why a given `admin` section was not taken: the panel stays off, the site runs. */
   adminProblem: string | undefined;
+  /** Support / VIP's settings; `undefined` when the section is missing or bad (then `vipProblem` says why). */
+  vip: VipConfig | undefined;
+  /** Why a given `vip` section was not taken: Support / VIP stays off, the site runs. */
+  vipProblem: string | undefined;
 }
 
 /** The `admin` section, or the reason it cannot be used. A missing section is no problem: the panel is simply off. */
@@ -58,6 +64,16 @@ function adminSection(value: unknown): { admin: AdminConfig | undefined; adminPr
     return { admin: parseAdminConfig(value), adminProblem: undefined };
   } catch (error) {
     return { admin: undefined, adminProblem: (error as Error).message };
+  }
+}
+
+/** The `vip` section, or the reason it cannot be used; a missing one keeps Support / VIP off. */
+function vipSection(value: unknown): { vip: VipConfig | undefined; vipProblem: string | undefined } {
+  if (value === undefined) return { vip: undefined, vipProblem: undefined };
+  try {
+    return { vip: parseVipConfig(value), vipProblem: undefined };
+  } catch (error) {
+    return { vip: undefined, vipProblem: (error as Error).message };
   }
 }
 
@@ -125,5 +141,6 @@ export function parseWebConfig(json: unknown): WebConfig {
     limits: limits(root.limits),
     reservedNames: reservedNames(root.reservedNames),
     ...adminSection(root.admin),
+    ...vipSection(root.vip),
   };
 }

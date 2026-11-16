@@ -15,6 +15,7 @@ import { PreregSettings, SignUpBook } from './signUpBook';
 import { sqlAccountStore } from './sqlAccountStore';
 import { loadStatus, StatusCache } from './status';
 import { TicketBook } from './ticket';
+import { startVip } from './vip/startVip';
 
 const USAGE = [
   'Usage: npm run web',
@@ -62,6 +63,8 @@ prereg.rule(); // its state in the log from the start
 
 const clock = () => Date.now();
 const store = sqlAccountStore(config.sql);
+// Support / VIP (vip/startVip.ts): off without web.config.json's vip section, never stops the site
+const vip = startVip(config, consoleLogger, clock);
 const server = createWebServer({
   config,
   store,
@@ -76,6 +79,7 @@ const server = createWebServer({
   prereg: () => prereg.rule(),
   status: new StatusCache(() => loadStatus(config, store), clock),
   siege: new SiegeCache(store, clock),
+  vip: vip.routes,
 });
 
 server.once('error', (error: Error) => fail(`web: cannot listen on ${config.listen.host}:${config.listen.port}: ${error.message}`, 1));
@@ -90,7 +94,7 @@ let adminServer: Server | undefined;
 void startAdmin(config, consoleLogger, () => {
   adminStore = sqlAdminStore(config.sql, config.admin!.sql);
   return adminStore;
-}, config.admin === undefined ? [] : loadItemCatalog(config.admin.assetsDir, (line) => consoleLogger.warn(line)), ADMIN_ACTIONS)
+}, config.admin === undefined ? [] : loadItemCatalog(config.admin.assetsDir, (line) => consoleLogger.warn(line)), ADMIN_ACTIONS, vip.admin)
   .then((started) => { adminServer = started; });
 
 const stop = (): void => {
@@ -98,7 +102,7 @@ const stop = (): void => {
   server.closeAllConnections();
   adminServer?.close();
   adminServer?.closeAllConnections();
-  void Promise.all([store.close(), adminStore?.close()]).finally(() => process.exit(0));
+  void Promise.all([store.close(), adminStore?.close(), vip.close()]).finally(() => process.exit(0));
 };
 process.once('SIGINT', stop);
 process.once('SIGTERM', stop);

@@ -6,6 +6,7 @@ import { CHARACTER_ACTIONS } from './characters';
 import { LOG_ACTIONS } from './log';
 import { SEND_ACTIONS } from './sends';
 import { STATUS_ACTIONS } from './status';
+import { VIP_ACTIONS } from './vip';
 
 export const ADMIN_ACTIONS: Record<string, ActionHandler> = {
   ...ACCOUNT_ACTIONS,
@@ -13,4 +14,5 @@ export const ADMIN_ACTIONS: Record<string, ActionHandler> = {
   ...LOG_ACTIONS,
   ...SEND_ACTIONS,
   ...STATUS_ACTIONS,
+  ...VIP_ACTIONS,
 };
