@@ -590,7 +590,7 @@ Success: `Valid configuration`; the web service's log (`C:\flyff-logs\web.log`) 
 
 ## Step 8c. Support / VIP: manual QR payments (optional)
 
-Players pick VIP 1 to 4 ($2, $4, $6, $10 a month) on `/vip/`, pay you outside the site by one of your payment QRs (GCash, Maya, a bank...), then send the receipt picture and the payment's reference number. The request shows **Processing** until you check it in the admin panel's **VIP** tab: **Approve** turns the account's VIP on for one month, **Reject** sends back the reason you write. No payment company is involved: nothing is charged or credited by itself. It needs the admin panel (step 8b).
+Players pick VIP 1 to 4 ($2, $4, $6, $10 a month; ₱115, ₱230, ₱345, ₱575 for players in the Philippines, found by their browser's time zone or language, with a switch on the page) on `/vip/`, pay you outside the site by one of your payment QRs (GCash, Maya, a bank...), then send the receipt picture and the payment's reference number. The request shows **Processing** until you check it in the admin panel's **VIP** tab: **Approve** turns the account's VIP on for one month, **Reject** sends back the reason you write. No payment company is involved: nothing is charged or credited by itself. It needs the admin panel (step 8b).
 
 What a player's VIP gives in the game is not part of it yet: the site only keeps each account's VIP level and end date (`ACCOUNT_DBF.dbo.WEB_VIP`), and VIP ends by itself at that date.
 
@@ -609,11 +609,11 @@ It uses your Windows login and asks for no password. Success: `Check passed: 4 V
   "vip": { "uploadsDir": "C:\\flyff-web\\vip-uploads" }
 ```
 
-The receipts and QR pictures go in that folder (`receipts\` and `qr\`, made by the service), outside every folder Caddy serves. A receipt can be seen only by you (in the panel) and the player who sent it; the QRs you switch on are shown to everyone on `/vip/`. Each receipt is at most 5 MB and usually 0.2-0.8 MB (the page makes phone photos smaller first): 1,000 requests take about 0.5 GB. `"maxPendingPerAccount": 3` is the default number of requests one account may have processing at once.
+The receipts and QR pictures go in that folder (`receipts\` and `qr\`, made by the service), outside every folder Caddy serves. A receipt can be seen only by you (in the panel) and the player who sent it; the QRs you switch on are shown to everyone on `/vip/`. Each receipt is at most 5 MB and usually 0.2-0.8 MB (the page makes phone photos smaller first): 1,000 requests take about 0.5 GB. A rejected request's receipt picture is deleted 30 days after the rejection (the request stays, without its picture; approved ones keep theirs). Two settings you may add to the section: `"maxPendingPerAccount": 3`, the number of requests one account may have processing at once, and `"deleteRejectedAfterDays": 30` (0 keeps rejected receipts for ever).
 
 3. **Restart and look.** `nssm restart flyffweb-site`. Success: `C:\flyff-logs\web.log` gets `vip: on, pictures in C:\flyff-web\vip-uploads`; `https://play.example.com/vip/` shows the four tiers and "Payments are not open yet." A line `vip: off: <reason>` names what is wrong (the rest of the site keeps working).
 
-4. **Your QRs.** In the panel's **VIP** tab, **Payment QRs**: add each QR picture with its label (GCash, Maya...) and the account name players should see. Only the ones marked **Show to players** appear on `/vip/`, in their order. **Tiers** changes names and prices; a new price counts for new requests only.
+4. **Your QRs.** In the panel's **VIP** tab, **Payment QRs**: add each QR picture with its label (GCash, Maya...) and the account name players should see. Only the ones marked **Show to players** appear on `/vip/`, in their order. **Tiers** changes names and prices (US$ and pesos; an empty peso price shows that tier in US$ to everyone); a new price counts for new requests only. Each request shows the currency the player was asked to pay in: check that amount.
 
 - **Approve rule:** the same tier while it still runs adds one month to its end; a different tier (or none running) starts now, for one month, and the old tier's days left end. The page tells the player this before they send.
 - **Each reference number counts once:** one already on a processing or approved request is refused (spaces, dashes and capitals do not make it new). A rejected one can be sent again, with a better picture say.

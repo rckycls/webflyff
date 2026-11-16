@@ -6,7 +6,8 @@
 //   `POST /api/account/logout`;
 // - `GET /api/vip`: the tiers and QRs that are on, and `me` (the live VIP and the last 20 requests) when logged in;
 // - `GET /api/vip/qr/<id>`: a QR picture (only one that is on);
-// - `POST /api/vip/requests` `{tier, reference, receipt, requestId}`: a new request (receipt = base64 picture);
+// - `POST /api/vip/requests` `{tier, currency, reference, receipt, requestId}`: a new request (currency USD or PHP, USD
+//   when missing; receipt = base64 picture);
 // - `GET /api/vip/receipt/<id>`: the receipt of one of the player's own requests.
 //
 // Every POST: Origin = siteOrigin (403), JSON (415), a size limit (413). Every POST but login: a live session from the
@@ -29,7 +30,8 @@ import { readBody } from '../server';
 import { MAX_IMAGE_BODY_BYTES, readImageField } from './images';
 import type { VipConfig } from './vipConfig';
 import type { VipFiles } from './vipFiles';
-import type { VipSiteStore } from './vipStore';
+import { VIP_CURRENCIES } from './vipStore';
+import type { VipCurrency, VipSiteStore } from './vipStore';
 
 export const SITE_COOKIE = '__Host-flyff';
 export const SITE_TOKEN_HEADER = 'x-site-token';
@@ -199,6 +201,8 @@ export function siteVipRoutes(deps: SiteVipDeps): (req: IncomingMessage, res: Se
     if (!sessions.claimRequest(session, requestId)) return send(res, 409, { error: 'repeat' });
     const tier = body.tier;
     if (typeof tier !== 'number' || !Number.isInteger(tier) || tier < 1 || tier > 9) return send(res, 400, { error: 'invalid', field: 'tier' });
+    const currency = body.currency ?? 'USD';
+    if (!VIP_CURRENCIES.includes(currency as VipCurrency)) return send(res, 400, { error: 'invalid', field: 'currency' });
     const reference = readReference(body.reference);
     if (reference === undefined) return send(res, 400, { error: 'invalid', field: 'reference' });
     const image = readImageField(body.receipt);
@@ -213,7 +217,7 @@ export function siteVipRoutes(deps: SiteVipDeps): (req: IncomingMessage, res: Se
     let added;
     try {
       added = await store.addRequest({
-        account, level: tier, reference: reference.reference, referenceKey: reference.key, receiptFile, address,
+        account, level: tier, currency: currency as VipCurrency, reference: reference.reference, referenceKey: reference.key, receiptFile, address,
         maxPending: deps.vip.maxPendingPerAccount,
       });
     } catch (error) {
@@ -223,10 +227,10 @@ export function siteVipRoutes(deps: SiteVipDeps): (req: IncomingMessage, res: Se
     if ('refused' in added) {
       await files.remove('receipts', receiptFile);
       log.info(`vip ${address} ${logWord(account)} request refused:${added.refused}`);
-      if (added.refused === 'tier') return send(res, 400, { error: 'invalid', field: 'tier' });
+      if (added.refused === 'tier' || added.refused === 'currency') return send(res, 400, { error: 'invalid', field: added.refused });
       return send(res, 409, { error: added.refused === 'too_many' ? 'too_many' : 'reference', max: deps.vip.maxPendingPerAccount });
     }
-    log.info(`vip ${address} ${logWord(account)} request ${added.id} tier ${tier}`);
+    log.info(`vip ${address} ${logWord(account)} request ${added.id} tier ${tier} ${currency as VipCurrency}`);
     send(res, 201, { id: added.id });
   };
 
@@ -246,7 +250,10 @@ export function siteVipRoutes(deps: SiteVipDeps): (req: IncomingMessage, res: Se
           qrs: qrs.map((qr) => ({ ...qr, image: `/api/vip/qr/${qr.id}` })),
           maxPending: deps.vip.maxPendingPerAccount,
           ...(session === undefined || me === undefined ? {} : {
-            me: { account: session.user, vip: me.vip, requests: me.requests.map((r) => ({ ...r, receipt: `/api/vip/receipt/${r.id}` })) },
+            me: {
+              account: session.user, vip: me.vip,
+              requests: me.requests.map(({ hasReceipt, ...r }) => ({ ...r, receipt: hasReceipt ? `/api/vip/receipt/${r.id}` : null })),
+            },
           }),
         });
         return true;

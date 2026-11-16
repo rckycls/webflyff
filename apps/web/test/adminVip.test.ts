@@ -38,9 +38,9 @@ function setUp(withVip = true) {
 type S = ReturnType<typeof setUp>;
 const act = async (name: keyof typeof VIP_ACTIONS, body: Record<string, unknown>, s: S): Promise<{ status: number; body: any }> => VIP_ACTIONS[name](body, s.ctx, s.deps);
 
-async function pending(s: S, account = 'tester1', level = 2, reference = `REF-${Math.random().toString(36).slice(2, 10)}`) {
+async function pending(s: S, account = 'tester1', level = 2, reference = `REF-${Math.random().toString(36).slice(2, 10)}`, currency: 'USD' | 'PHP' = 'USD') {
   const receiptFile = await s.files.save('receipts', Buffer.from(PNG_BASE64, 'base64'), 'png');
-  const added = await s.vipStore.addRequest({ account, level, reference, referenceKey: reference.replace(/-/g, '').toUpperCase(), receiptFile, address: '203.0.113.9', maxPending: 3 });
+  const added = await s.vipStore.addRequest({ account, level, currency, reference, referenceKey: reference.replace(/-/g, '').toUpperCase(), receiptFile, address: '203.0.113.9', maxPending: 3 });
   if (!('id' in added)) throw new Error('not added');
   return added.id;
 }
@@ -55,11 +55,13 @@ it('answers 503 off while Support / VIP is off', async () => {
 it('lists the queue oldest first with the receipt address, and approves: VIP for one month from now, logged', async () => {
   const s = setUp();
   const first = await pending(s, 'tester1', 2);
-  await pending(s, 'tester2', 4);
+  await pending(s, 'tester2', 4, 'GC-0042', 'PHP');
   const queue = await act('vip.requests', { status: 'P' }, s);
   expect(queue.body.rows.map((r: { account: string }) => r.account)).toEqual(['tester1', 'tester2']);
-  expect(queue.body.rows[0]).toMatchObject({ id: first, level: 2, priceCents: 400, status: 'P', receipt: `/vip/receipt/${first}`, vipLevel: null });
+  expect(queue.body.rows[0]).toMatchObject({ id: first, level: 2, currency: 'USD', priceCents: 400, status: 'P', receipt: `/vip/receipt/${first}`, vipLevel: null });
+  expect(queue.body.rows[1]).toMatchObject({ level: 4, currency: 'PHP', priceCents: 57500 });
   expect(queue.body.rows[0].receiptFile).toBeUndefined();
+  expect(queue.body.rows[0].hasReceipt).toBeUndefined();
 
   const done = await act('vip.approve', { id: first }, s);
   expect(done).toMatchObject({ status: 200, body: { ok: true, level: 2, endsAt: '2025-12-13T02:13:20Z' } });
@@ -95,6 +97,10 @@ it('rejects only with a reason the player sees, and logs it', async () => {
   expect(s.deps.store.log.at(-1)).toMatchObject({ action: 'vip.reject', account: 'tester1', result: 'ok' });
   expect((await act('vip.approve', { id }, s)).status).toBe(409);
   expect((await act('vip.approve', { id: 999 }, s)).status).toBe(404);
+  // once its picture was deleted (30 days later) the list has no receipt address and the picture is gone
+  s.deps.setNow(s.deps.now() + 31 * DAY);
+  await s.vipStore.forgetReceipts(30);
+  expect((await act('vip.requests', { status: 'R' }, s)).body.rows[0]).toMatchObject({ id, receipt: null });
 });
 
 it('adds a QR with its picture, changes it, and deletes it with its file', async () => {
@@ -116,10 +122,13 @@ it('adds a QR with its picture, changes it, and deletes it with its file', async
   expect(s.deps.store.log.map((r) => r.action)).toEqual(['vip.qrAdd', 'vip.qrSave', 'vip.qrDelete']);
 });
 
-it('changes a tier\'s name, price and on/off; prices are dollars to the cent', async () => {
+it('changes a tier\'s name, prices and on/off; prices are dollars and pesos to the cent, no peso price is US$ only', async () => {
   const s = setUp();
-  expect((await act('vip.tierSave', { level: 1, name: 'VIP 1', price: '2.5', on: false }, s)).status).toBe(200);
-  expect(s.vipStore.tierRows[0]).toEqual({ level: 1, name: 'VIP 1', priceCents: 250, on: false });
+  expect((await act('vip.tierSave', { level: 1, name: 'VIP 1', price: '2.5', pricePhp: '120', on: false }, s)).status).toBe(200);
+  expect(s.vipStore.tierRows[0]).toEqual({ level: 1, name: 'VIP 1', priceCents: 250, pricePhpCents: 12000, on: false });
+  expect((await act('vip.tierSave', { level: 1, name: 'VIP 1', price: '2.5', pricePhp: '', on: true }, s)).status).toBe(200);
+  expect(s.vipStore.tierRows[0]!.pricePhpCents).toBeNull();
+  expect((await act('vip.tierSave', { level: 1, name: 'VIP 1', price: '2.5', pricePhp: 'abc', on: true }, s)).body.field).toBe('pricePhp');
   expect((await act('vip.tierSave', { level: 1, name: 'VIP 1', price: '-1', on: true }, s)).body.field).toBe('price');
   expect((await act('vip.tierSave', { level: 8, name: 'VIP 8', price: 1, on: true }, s)).status).toBe(404);
   expect([priceCents(2), priceCents('10.00'), priceCents('4.50'), priceCents('0'), priceCents('1.234'), priceCents('abc')]).toEqual([200, 1000, 450, undefined, undefined, undefined]);

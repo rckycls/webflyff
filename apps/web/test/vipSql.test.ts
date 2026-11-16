@@ -22,8 +22,8 @@ it('builds no SQL from text', () => {
   expect(sql).not.toMatch(/sp_executesql|EXEC\s*\(|EXECUTE\s*\(/i);
 });
 
-it('seeds VIP 1-4 at $2, $4, $6 and $10 only where a level is missing', () => {
-  expect(sql).toContain("(VALUES (1, N'VIP 1', 200), (2, N'VIP 2', 400), (3, N'VIP 3', 600), (4, N'VIP 4', 1000))");
+it('seeds VIP 1-4 at $2, $4, $6 and $10 (P115, P230, P345, P575) only where a level is missing', () => {
+  expect(sql).toContain("(VALUES (1, N'VIP 1', 200, 11500), (2, N'VIP 2', 400, 23000), (3, N'VIP 3', 600, 34500), (4, N'VIP 4', 1000, 57500))");
   expect(sql).toContain('WHERE NOT EXISTS (SELECT 1 FROM dbo.WEB_VIP_TIER t WHERE t.level = v.level)');
 });
 
@@ -32,4 +32,11 @@ it('checks the pending limit and the used reference under key locks in the inser
   expect(add).toContain('BEGIN TRANSACTION');
   expect(add.match(/WITH \(UPDLOCK, HOLDLOCK\)/g)).toHaveLength(2);
   expect(add).toContain("status IN ('P', 'A')");
+});
+
+it('forgets only the receipts of requests rejected over @days ago, giving their files', () => {
+  const at = sql.indexOf('CREATE PROCEDURE dbo.usp_AdminVipForgetReceipts');
+  const forget = sql.slice(at, sql.indexOf('\nGO', at));
+  expect(forget).toContain('OUTPUT deleted.receiptFile');
+  expect(forget).toContain("WHERE status = 'R' AND receiptFile IS NOT NULL AND decidedAt < DATEADD(day, -@days, SYSUTCDATETIME())");
 });

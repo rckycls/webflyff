@@ -73,9 +73,9 @@ const vipStore = new MemoryVipStore([
 ], now);
 const vipFiles = new VipFiles(mkdtempSync(path.join(os.tmpdir(), 'flyffweb-admin-demo-vip-')));
 const picture = Buffer.from(PNG_BASE64, 'base64');
-for (const [account, level, reference] of [['tester1', 2, 'GC-1001-2002'], ['tester2', 4, 'MAYA 7788 9900']] as const) {
+for (const [account, level, reference, currency] of [['tester1', 2, 'GC-1001-2002', 'PHP'], ['tester2', 4, 'MAYA 7788 9900', 'USD']] as const) {
   await vipStore.addRequest({
-    account, level, reference, referenceKey: reference.replace(/[^A-Za-z0-9]/g, '').toUpperCase(),
+    account, level, currency, reference, referenceKey: reference.replace(/[^A-Za-z0-9]/g, '').toUpperCase(),
     receiptFile: await vipFiles.save('receipts', picture, 'png'), address: '203.0.113.5', maxPending: 3,
   });
 }
@@ -117,7 +117,7 @@ if (values['site-port'] !== undefined) {
     createdInAll: new HourlyLimit(60, now), ticketsByAddress: new HourlyLimit(60, now), siege: new SiegeCache(accounts, now),
     status: new StatusCache(async () => ({ online: true, players: 0, checkedAt: new Date().toISOString() }), now),
     vip: siteVipRoutes({
-      config: siteConfig, vip: { uploadsDir: '', maxPendingPerAccount: 3 }, store: siteView(vipStore), files: vipFiles, log,
+      config: siteConfig, vip: { uploadsDir: '', maxPendingPerAccount: 3, deleteRejectedAfterDays: 30 }, store: siteView(vipStore), files: vipFiles, log,
       sessions: new SessionBook(now, PLAYER_SESSION_IDLE_MS, PLAYER_SESSION_MAX_MS),
       loginFailsByAddress: new HourlyLimit(LOGIN_FAILS_PER_HOUR, now), loginFailsByAccount: new HourlyLimit(LOGIN_FAILS_PER_HOUR, now),
       loginsByAccount: new HourlyLimit(LOGINS_PER_HOUR, now),

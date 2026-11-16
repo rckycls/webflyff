@@ -29,7 +29,15 @@ with perks is a purchase, not a donation.
   The same tier adds a month to its end. The page says this before sending.
 - **Used reference:** one key per payment (letters and digits, capitals): refused while on a Processing or Approved
   request; a rejected one frees it (a player can resend with a clearer picture).
-- **Prices** are US cents in `WEB_VIP_TIER`; a request keeps the price of when it was sent.
+- **Prices** are US cents in `WEB_VIP_TIER`, plus a peso price in centavos (seeded P115/P230/P345/P575, about 57.5 pesos
+  a dollar; empty = US$ only for that tier). A request keeps its currency and the price in it of when it was sent.
+- **Currency by country** (owner, 2026-11-16: "depends on the user country"): pesos when the browser's time zone is
+  Asia/Manila or one of its languages ends in -PH; US$ for everyone else. No IP lookup. A "Prices in: Pesos / US$"
+  switch over the tiers changes it, remembered in that browser. The panel shows each request in its own currency.
+- **Old receipts** (owner: yes, delete them): a rejected request's receipt picture is deleted 30 days after the
+  rejection (`vip.deleteRejectedAfterDays`, 0 = keep), checked a minute after start and every 6 hours; the request stays,
+  without its picture. Approved receipts stay.
+- **Who may send** (owner: all users): any game account that is not banned, not only the pre-registered ones.
 - **Off by default:** without web.config.json's `vip` section the API answers `503 off`; a bad section only logs
   `vip: off: <reason>` (as the admin section).
 - **No re-encoding on the server** (no image library): pictures are checked by their first bytes, served with their own
@@ -64,12 +72,14 @@ npm run test:e2e:admin
 npm run test:e2e:client -- apps/client/e2e/vip.spec.ts apps/client/e2e/home.spec.ts apps/client/e2e/site.spec.ts
 ```
 
-Pass: every test `ok`; the admin run has the 4 VIP tests on chromium and phone; the client run has the 5 VIP tests on
-chromium and phone.
+Pass: every test `ok`; the admin run has the 4 VIP tests on chromium and phone; the client run has the 7 VIP tests on
+chromium and phone (two of them as a player in Manila).
 
-## Open questions for the owner
+## Owner's answers (2026-11-16) and what is left
 
-- What VIP 1-4 give in the game (none yet: only the level and end date are kept, `ACCOUNT_DBF.dbo.WEB_VIP`).
-- Prices in pesos too (only US$ now)?
-- Should only pre-registered (beta) accounts be able to send requests?
-- Should rejected receipts be deleted after some time (they stay now)?
+- What VIP 1-4 give in the game: nothing yet; the owner plans it soon. Only the level and end date are kept
+  (`ACCOUNT_DBF.dbo.WEB_VIP`), ready for the game to read.
+- Prices in pesos: yes, by the player's country (built, see Rulings). The seeded peso prices are a guess: set yours in
+  the panel's VIP tab, Tiers.
+- Only pre-registered accounts: no, all users (as built).
+- Delete old rejected receipts: yes (built, 30 days).

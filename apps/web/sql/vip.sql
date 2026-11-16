@@ -2,10 +2,12 @@
 -- login; it can be run again (tables and the owner's changes stay, procedures are made again).
 --
 -- It makes, in ACCOUNT_DBF:
---   dbo.WEB_VIP_TIER     the tiers players can pick (level, name, price in US cents, on/off); VIP 1-4 at $2/$4/$6/$10 a
---                        month are put in once, and a run again never changes them;
+--   dbo.WEB_VIP_TIER     the tiers players can pick (level, name, price in US cents, price in peso centavos or none,
+--                        on/off); VIP 1-4 at $2/$4/$6/$10 (P115/P230/P345/P575) a month are put in once, and a run
+--                        again never changes them;
 --   dbo.WEB_PAY_QR       the payment QR codes the admin uploads (label, account name, note, picture file, on/off, order);
---   dbo.WEB_VIP_REQUEST  each player's request: tier, price, reference number, receipt picture file, status
+--   dbo.WEB_VIP_REQUEST  each player's request: tier, currency (USD or PHP) and the price in it, reference number,
+--                        receipt picture file (none once a rejected request's picture was deleted), status
 --                        P (processing), A (approved) or R (rejected, with the reason), who decided and when;
 --   dbo.WEB_VIP          each account's VIP level and end time (UTC). VIP ends by itself: every read checks the time;
 --   the usp_WebVip* / usp_WebPayQr* / usp_WebPlayerLogin procedures for the site's login flyffweb_site, and the
@@ -24,15 +26,19 @@ IF OBJECT_ID(N'dbo.WEB_VIP_TIER', N'U') IS NULL
 		level tinyint NOT NULL CONSTRAINT PK_WEB_VIP_TIER PRIMARY KEY,
 		name nvarchar(32) NOT NULL,
 		priceCents int NOT NULL,
+		-- what players in the Philippines see and pay, in centavos; none: US$ only for this tier
+		pricePhpCents int NULL,
 		isOn bit NOT NULL CONSTRAINT DF_WEB_VIP_TIER_isOn DEFAULT 1,
 		CONSTRAINT CK_WEB_VIP_TIER_level CHECK (level BETWEEN 1 AND 9),
-		CONSTRAINT CK_WEB_VIP_TIER_price CHECK (priceCents BETWEEN 1 AND 1000000)
+		CONSTRAINT CK_WEB_VIP_TIER_price CHECK (priceCents BETWEEN 1 AND 1000000),
+		CONSTRAINT CK_WEB_VIP_TIER_pricePhp CHECK (pricePhpCents BETWEEN 1 AND 1000000)
 	)
 GO
--- the defaults, only for levels not there yet: a run again keeps the owner's prices and names
-INSERT dbo.WEB_VIP_TIER (level, name, priceCents)
-SELECT v.level, v.name, v.priceCents
-FROM (VALUES (1, N'VIP 1', 200), (2, N'VIP 2', 400), (3, N'VIP 3', 600), (4, N'VIP 4', 1000)) AS v(level, name, priceCents)
+-- the defaults, only for levels not there yet: a run again keeps the owner's prices and names. The peso prices are about
+-- the dollar ones at 57.5 pesos a dollar; the owner sets their own in the panel's VIP tab, Tiers.
+INSERT dbo.WEB_VIP_TIER (level, name, priceCents, pricePhpCents)
+SELECT v.level, v.name, v.priceCents, v.pricePhpCents
+FROM (VALUES (1, N'VIP 1', 200, 11500), (2, N'VIP 2', 400, 23000), (3, N'VIP 3', 600, 34500), (4, N'VIP 4', 1000, 57500)) AS v(level, name, priceCents, pricePhpCents)
 WHERE NOT EXISTS (SELECT 1 FROM dbo.WEB_VIP_TIER t WHERE t.level = v.level)
 GO
 
@@ -54,11 +60,14 @@ IF OBJECT_ID(N'dbo.WEB_VIP_REQUEST', N'U') IS NULL
 		id int IDENTITY(1,1) NOT NULL CONSTRAINT PK_WEB_VIP_REQUEST PRIMARY KEY,
 		account varchar(32) NOT NULL,
 		level tinyint NOT NULL,
+		-- what the player was asked to pay: USD in cents or PHP in centavos, the tier's price when the request was sent
+		currency char(3) NOT NULL CONSTRAINT DF_WEB_VIP_REQUEST_currency DEFAULT 'USD',
 		priceCents int NOT NULL,
 		reference varchar(40) NOT NULL,
 		-- the reference in capitals with only its letters and digits: the same payment typed two ways is one key
 		referenceKey varchar(40) NOT NULL,
-		receiptFile varchar(40) NOT NULL,
+		-- none once the request was rejected long enough ago (usp_AdminVipForgetReceipts)
+		receiptFile varchar(40) NULL,
 		status char(1) NOT NULL CONSTRAINT DF_WEB_VIP_REQUEST_status DEFAULT 'P',
 		reason nvarchar(200) NULL,
 		address varchar(45) NOT NULL,
@@ -67,7 +76,8 @@ IF OBJECT_ID(N'dbo.WEB_VIP_REQUEST', N'U') IS NULL
 		decidedBy varchar(32) NULL,
 		-- the VIP end time an approval gave
 		vipEndsAt datetime2(0) NULL,
-		CONSTRAINT CK_WEB_VIP_REQUEST_status CHECK (status IN ('P', 'A', 'R'))
+		CONSTRAINT CK_WEB_VIP_REQUEST_status CHECK (status IN ('P', 'A', 'R')),
+		CONSTRAINT CK_WEB_VIP_REQUEST_currency CHECK (currency IN ('USD', 'PHP'))
 	)
 GO
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'IX_WEB_VIP_REQUEST_account' AND object_id = OBJECT_ID(N'dbo.WEB_VIP_REQUEST'))
@@ -118,7 +128,7 @@ GO
 CREATE PROCEDURE dbo.usp_WebVipTiers
 AS
 SET NOCOUNT ON
-SELECT level, name, priceCents FROM dbo.WEB_VIP_TIER WHERE isOn = 1 ORDER BY level
+SELECT level, name, priceCents, pricePhpCents FROM dbo.WEB_VIP_TIER WHERE isOn = 1 ORDER BY level
 GO
 
 IF OBJECT_ID(N'dbo.usp_WebPayQrList', N'P') IS NOT NULL DROP PROCEDURE dbo.usp_WebPayQrList
@@ -149,7 +159,8 @@ SET NOCOUNT ON
 SELECT v.level, t.name, CONVERT(varchar(19), v.endsAt, 126) + 'Z' AS endsAt
 FROM dbo.WEB_VIP v LEFT JOIN dbo.WEB_VIP_TIER t ON t.level = v.level
 WHERE v.account = @account AND v.endsAt > SYSUTCDATETIME()
-SELECT TOP 20 r.id, r.level, t.name, r.priceCents, r.reference, r.status, r.reason,
+SELECT TOP 20 r.id, r.level, t.name, r.currency, r.priceCents, r.reference, r.status, r.reason,
+	CAST(CASE WHEN r.receiptFile IS NULL THEN 0 ELSE 1 END AS bit) AS hasReceipt,
 	CONVERT(varchar(19), r.createdAt, 126) + 'Z' AS createdAt,
 	CONVERT(varchar(19), r.decidedAt, 126) + 'Z' AS decidedAt,
 	CONVERT(varchar(19), r.vipEndsAt, 126) + 'Z' AS vipEndsAt
@@ -159,23 +170,31 @@ ORDER BY r.id DESC
 GO
 
 -- A new request: the new id, or -1 the tier is missing or off, -2 the account has @maxPending requests processing,
--- -3 the reference is on a request that is processing or approved (a rejected one frees it). The price is the
--- tier's now. The checks and the insert are one transaction under key locks, so requests sent at once cannot pass them.
+-- -3 the reference is on a request that is processing or approved (a rejected one frees it), -4 the tier has no price
+-- in @currency (PHP without a peso price). The price is the tier's now, in @currency. The checks and the insert are one
+-- transaction under key locks, so requests sent at once cannot pass them.
 IF OBJECT_ID(N'dbo.usp_WebVipRequestAdd', N'P') IS NOT NULL DROP PROCEDURE dbo.usp_WebVipRequestAdd
 GO
 CREATE PROCEDURE dbo.usp_WebVipRequestAdd
-	@account varchar(32), @level tinyint, @reference varchar(40), @referenceKey varchar(40), @receiptFile varchar(40),
-	@address varchar(45), @maxPending int
+	@account varchar(32), @level tinyint, @currency char(3), @reference varchar(40), @referenceKey varchar(40),
+	@receiptFile varchar(40), @address varchar(45), @maxPending int
 AS
 SET NOCOUNT ON
 SET XACT_ABORT ON
-DECLARE @price int, @id int
+DECLARE @found bit, @price int, @id int
 BEGIN TRANSACTION
-SELECT @price = priceCents FROM dbo.WEB_VIP_TIER WHERE level = @level AND isOn = 1
-IF @price IS NULL
+SELECT @found = 1, @price = CASE @currency WHEN 'USD' THEN priceCents WHEN 'PHP' THEN pricePhpCents END
+FROM dbo.WEB_VIP_TIER WHERE level = @level AND isOn = 1
+IF @found IS NULL
 BEGIN
 	ROLLBACK
 	SELECT -1 AS id
+	RETURN
+END
+IF @price IS NULL
+BEGIN
+	ROLLBACK
+	SELECT -4 AS id
 	RETURN
 END
 IF (SELECT COUNT(*) FROM dbo.WEB_VIP_REQUEST WITH (UPDLOCK, HOLDLOCK) WHERE account = @account AND status = 'P') >= @maxPending
@@ -190,14 +209,14 @@ BEGIN
 	SELECT -3 AS id
 	RETURN
 END
-INSERT dbo.WEB_VIP_REQUEST (account, level, priceCents, reference, referenceKey, receiptFile, address)
-VALUES (@account, @level, @price, @reference, @referenceKey, @receiptFile, @address)
+INSERT dbo.WEB_VIP_REQUEST (account, level, currency, priceCents, reference, referenceKey, receiptFile, address)
+VALUES (@account, @level, @currency, @price, @reference, @referenceKey, @receiptFile, @address)
 SET @id = CAST(SCOPE_IDENTITY() AS int)
 COMMIT
 SELECT @id AS id
 GO
 
--- The receipt file of one of the account's own requests (nothing for anyone else's).
+-- The receipt file of one of the account's own requests (nothing for anyone else's, NULL once it was deleted).
 IF OBJECT_ID(N'dbo.usp_WebVipReceipt', N'P') IS NOT NULL DROP PROCEDURE dbo.usp_WebVipReceipt
 GO
 CREATE PROCEDURE dbo.usp_WebVipReceipt
@@ -218,7 +237,8 @@ CREATE PROCEDURE dbo.usp_AdminVipRequests
 	@status char(1)
 AS
 SET NOCOUNT ON
-SELECT TOP 100 r.id, r.account, r.level, t.name, r.priceCents, r.reference, r.status, r.reason, r.address, r.decidedBy,
+SELECT TOP 100 r.id, r.account, r.level, t.name, r.currency, r.priceCents, r.reference, r.status, r.reason, r.address, r.decidedBy,
+	CAST(CASE WHEN r.receiptFile IS NULL THEN 0 ELSE 1 END AS bit) AS hasReceipt,
 	CONVERT(varchar(19), r.createdAt, 126) + 'Z' AS createdAt,
 	CONVERT(varchar(19), r.decidedAt, 126) + 'Z' AS decidedAt,
 	CONVERT(varchar(19), r.vipEndsAt, 126) + 'Z' AS vipEndsAt,
@@ -237,7 +257,8 @@ CREATE PROCEDURE dbo.usp_AdminVipRequestGet
 	@id int
 AS
 SET NOCOUNT ON
-SELECT r.id, r.account, r.level, t.name, r.priceCents, r.reference, r.status, r.reason, r.address, r.decidedBy, r.receiptFile,
+SELECT r.id, r.account, r.level, t.name, r.currency, r.priceCents, r.reference, r.status, r.reason, r.address, r.decidedBy, r.receiptFile,
+	CAST(CASE WHEN r.receiptFile IS NULL THEN 0 ELSE 1 END AS bit) AS hasReceipt,
 	CONVERT(varchar(19), r.createdAt, 126) + 'Z' AS createdAt,
 	CONVERT(varchar(19), r.decidedAt, 126) + 'Z' AS decidedAt,
 	CONVERT(varchar(19), r.vipEndsAt, 126) + 'Z' AS vipEndsAt,
@@ -293,21 +314,34 @@ WHERE id = @id AND status = 'P'
 SELECT @@ROWCOUNT AS changed
 GO
 
+-- Forgets the receipt pictures of requests rejected more than @days days ago and gives their files, so the service deletes
+-- them (the requests stay, without a picture). Run by the web service every few hours (startVip.ts).
+IF OBJECT_ID(N'dbo.usp_AdminVipForgetReceipts', N'P') IS NOT NULL DROP PROCEDURE dbo.usp_AdminVipForgetReceipts
+GO
+CREATE PROCEDURE dbo.usp_AdminVipForgetReceipts
+	@days int
+AS
+SET NOCOUNT ON
+UPDATE dbo.WEB_VIP_REQUEST SET receiptFile = NULL
+OUTPUT deleted.receiptFile
+WHERE status = 'R' AND receiptFile IS NOT NULL AND decidedAt < DATEADD(day, -@days, SYSUTCDATETIME())
+GO
+
 IF OBJECT_ID(N'dbo.usp_AdminVipTiers', N'P') IS NOT NULL DROP PROCEDURE dbo.usp_AdminVipTiers
 GO
 CREATE PROCEDURE dbo.usp_AdminVipTiers
 AS
 SET NOCOUNT ON
-SELECT level, name, priceCents, isOn FROM dbo.WEB_VIP_TIER ORDER BY level
+SELECT level, name, priceCents, pricePhpCents, isOn FROM dbo.WEB_VIP_TIER ORDER BY level
 GO
 
 IF OBJECT_ID(N'dbo.usp_AdminVipTierSave', N'P') IS NOT NULL DROP PROCEDURE dbo.usp_AdminVipTierSave
 GO
 CREATE PROCEDURE dbo.usp_AdminVipTierSave
-	@level tinyint, @name nvarchar(32), @priceCents int, @isOn bit
+	@level tinyint, @name nvarchar(32), @priceCents int, @pricePhpCents int, @isOn bit
 AS
 SET NOCOUNT ON
-UPDATE dbo.WEB_VIP_TIER SET name = @name, priceCents = @priceCents, isOn = @isOn WHERE level = @level
+UPDATE dbo.WEB_VIP_TIER SET name = @name, priceCents = @priceCents, pricePhpCents = @pricePhpCents, isOn = @isOn WHERE level = @level
 SELECT @@ROWCOUNT AS changed
 GO
 
@@ -372,6 +406,7 @@ BEGIN
 	GRANT EXECUTE ON OBJECT::dbo.usp_AdminVipRequestGet TO [flyffweb_admin]
 	GRANT EXECUTE ON OBJECT::dbo.usp_AdminVipApprove TO [flyffweb_admin]
 	GRANT EXECUTE ON OBJECT::dbo.usp_AdminVipReject TO [flyffweb_admin]
+	GRANT EXECUTE ON OBJECT::dbo.usp_AdminVipForgetReceipts TO [flyffweb_admin]
 	GRANT EXECUTE ON OBJECT::dbo.usp_AdminVipTiers TO [flyffweb_admin]
 	GRANT EXECUTE ON OBJECT::dbo.usp_AdminVipTierSave TO [flyffweb_admin]
 	GRANT EXECUTE ON OBJECT::dbo.usp_AdminPayQrList TO [flyffweb_admin]

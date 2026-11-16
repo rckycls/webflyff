@@ -139,6 +139,14 @@ html.has-art .site-top .site-logo { height: 100%; }
 .vip-who { color: var(--muted); }
 .vip-now { margin-top: 4px; color: var(--gold-1); font-weight: 700; }
 .vip-link { padding: 0; border: 0; background: none; color: var(--gold-1); cursor: pointer; font: inherit; text-decoration: underline; }
+.vip-currency { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: -4px 0 12px; color: var(--quiet); font-size: 14px; }
+.vip-currency[hidden] { display: none; }
+.vip-currency button {
+  min-height: 32px; padding: 4px 12px; border: 1px solid var(--line); border-radius: 999px; background: none;
+  color: var(--muted); cursor: pointer; font: 600 14px/1 var(--font);
+}
+.vip-currency button[aria-pressed="true"] { border-color: var(--gold-1); background: rgba(255, 229, 138, 0.12); color: var(--gold-1); }
+.vip-currency button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 .vip-tiers { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
 .vip-tier {
   position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 16px 10px;

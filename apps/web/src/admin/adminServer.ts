@@ -193,7 +193,8 @@ export function createAdminServer(deps: AdminDeps): Server {
     let file: { bytes: Buffer; mime: string } | undefined;
     if (vip !== undefined && id <= 2_147_483_647) {
       const name = kind === 'receipt' ? (await vip.store.request(id))?.receiptFile : (await vip.store.qrList()).find((q) => q.id === id)?.imageFile;
-      if (name !== undefined) file = await vip.files.read(kind === 'receipt' ? 'receipts' : 'qr', name);
+      // a rejected request's picture may be deleted already (null)
+      if (name !== undefined && name !== null) file = await vip.files.read(kind === 'receipt' ? 'receipts' : 'qr', name);
     }
     if (file === undefined) {
       send(res, 404, { error: 'not_found' });

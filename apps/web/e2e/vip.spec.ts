@@ -23,7 +23,7 @@ async function openTab(page: Page, name: string) {
 }
 
 /** A player (one of the demo's e2e players, by chance) sends a request for `tier`: its id, account and reference. */
-async function playerSends(request: APIRequestContext, tier: number): Promise<{ id: number; account: string; reference: string }> {
+async function playerSends(request: APIRequestContext, tier: number, currency = 'USD'): Promise<{ id: number; account: string; reference: string }> {
   const account = `e2e${1 + Math.floor(Math.random() * 6)}`;
   const login = await request.post(`${SITE}/api/account/login`, { headers: { Origin: SITE_E2E_ORIGIN }, data: { account, password: 'demo-password-e2e' } });
   expect(login.status()).toBe(200);
@@ -32,7 +32,7 @@ async function playerSends(request: APIRequestContext, tier: number): Promise<{ 
   const reference = `E2E-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
   const sent = await request.post(`${SITE}/api/vip/requests`, {
     headers: { Origin: SITE_E2E_ORIGIN, Cookie: cookie, 'X-Site-Token': csrf },
-    data: { tier, reference, receipt: PNG, requestId: reference },
+    data: { tier, currency, reference, receipt: PNG, requestId: reference },
   });
   expect(sent.status()).toBe(201);
   return { id: ((await sent.json()) as { id: number }).id, account, reference };
@@ -68,9 +68,11 @@ test('approves a request after asking once more: VIP for one month, and the Log 
 });
 
 test('rejects a request only with a reason, which the player then sees', async ({ page, request }) => {
-  const sent = await playerSends(request, 4);
+  // a player in the Philippines: the card shows the peso price they were asked to pay
+  const sent = await playerSends(request, 4, 'PHP');
   await openTab(page, 'VIP');
   const card = section(page).locator(`article[data-request="${sent.id}"]`);
+  await expect(card).toContainText('VIP 4 · ₱575 / month');
   await card.getByRole('button', { name: 'Reject' }).click();
   await card.locator('.vip-ask').getByRole('button', { name: 'Reject' }).click();
   await expect(card.locator('.message.problem')).toHaveText('Write the reason the player will see.');
@@ -107,17 +109,24 @@ test('adds a payment QR players see, hides it, and deletes it', async ({ page, r
   await expect(section(page).locator('article[data-qr]', { hasText: label })).toHaveCount(0);
 });
 
-test('changes a tier price that players then see, and puts it back', async ({ page, request }) => {
+test('changes a tier\'s dollar and peso prices that players then see, and puts them back', async ({ page, request }) => {
   await openTab(page, 'VIP');
   await section(page).getByRole('button', { name: 'Tiers', exact: true }).click();
-  const price = section(page).getByLabel('Price of level 1');
-  const priceOnSite = async () => ((await (await request.get(`${SITE}/api/vip`)).json()) as { tiers: { level: number; priceCents: number }[] }).tiers[0]!.priceCents;
+  const price = section(page).getByLabel('US$ price of level 1');
+  const pricePhp = section(page).getByLabel('Peso price of level 1');
+  await expect(pricePhp).toHaveValue('115.00');
+  const pricesOnSite = async () => {
+    const tier = ((await (await request.get(`${SITE}/api/vip`)).json()) as { tiers: { priceCents: number; pricePhpCents: number | null }[] }).tiers[0]!;
+    return [tier.priceCents, tier.pricePhpCents];
+  };
   const save = section(page).getByRole('button', { name: 'Save level 1' });
   await price.fill('2.50');
+  await pricePhp.fill('');
   await save.click();
   await expect(section(page).locator('.vip-view:not([hidden]) .message.ok')).toHaveText('Saved level 1.');
-  expect(await priceOnSite()).toBe(250);
+  expect(await pricesOnSite()).toEqual([250, null]);
   await price.fill('2');
+  await pricePhp.fill('115');
   await save.click();
-  await expect.poll(priceOnSite).toBe(200);
+  await expect.poll(pricesOnSite).toEqual([200, 11500]);
 });

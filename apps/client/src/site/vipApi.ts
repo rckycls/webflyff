@@ -1,12 +1,16 @@
 // The Support / VIP page's calls to the web service (apps/web/src/vip/siteVip.ts): the player's session, the page's
 // data, the login, and a request with its receipt. Every POST carries the session's CSRF token in X-Site-Token.
 
-export interface VipTier { level: number; name: string; priceCents: number }
+/** USD for everyone; PHP (pesos) for players in the Philippines, on tiers that have a peso price. */
+export type Currency = 'USD' | 'PHP';
+/** `pricePhpCents`: the peso price in centavos, or `null` for US$ only. */
+export interface VipTier { level: number; name: string; priceCents: number; pricePhpCents: number | null }
 export interface PayQr { id: number; label: string; accountName: string; note: string; image: string }
 export type VipStatus = 'P' | 'A' | 'R';
+/** `priceCents` is in `currency`; `receipt` is `null` once a rejected request's picture was deleted. */
 export interface MyRequest {
-  id: number; level: number; name: string | null; priceCents: number; reference: string; status: VipStatus; reason: string | null;
-  createdAt: string; decidedAt: string | null; vipEndsAt: string | null; receipt: string;
+  id: number; level: number; name: string | null; currency: Currency; priceCents: number; reference: string; status: VipStatus;
+  reason: string | null; createdAt: string; decidedAt: string | null; vipEndsAt: string | null; receipt: string | null;
 }
 export interface VipNow { level: number; name: string | null; endsAt: string }
 export interface Me { account: string; vip: VipNow | null; requests: MyRequest[] }
@@ -39,9 +43,24 @@ async function refusal(response: Response): Promise<{ ok: false; error: VipError
   };
 }
 
-/** Dollars as the page shows them: $2, $4.50. */
-export function priceText(cents: number): string {
-  return `$${(cents / 100).toFixed(cents % 100 === 0 ? 0 : 2)}`;
+/** A price as the page shows it: $2, $4.50, ₱115, ₱1,150. */
+export function priceText(cents: number, currency: Currency = 'USD'): string {
+  const amount = (cents / 100).toLocaleString('en-US', { minimumFractionDigits: cents % 100 === 0 ? 0 : 2, maximumFractionDigits: 2 });
+  return `${currency === 'PHP' ? '₱' : '$'}${amount}`;
+}
+
+/**
+ * The currency of the player's country, as the browser tells it without asking: the Philippines' time zone, or a
+ * language of the Philippines (en-PH, fil-PH...), gives pesos; anywhere else, US dollars.
+ */
+export function countryCurrency(timeZone: string | undefined, languages: readonly string[]): Currency {
+  if (timeZone === 'Asia/Manila') return 'PHP';
+  return languages.some((language) => /-PH$/i.test(language)) ? 'PHP' : 'USD';
+}
+
+/** What a tier costs in `currency`: its peso price when it has one, else its dollar price. */
+export function tierPrice(tier: VipTier, currency: Currency): { cents: number; currency: Currency } {
+  return currency === 'PHP' && tier.pricePhpCents !== null ? { cents: tier.pricePhpCents, currency: 'PHP' } : { cents: tier.priceCents, currency: 'USD' };
 }
 
 export class VipApi {
@@ -90,8 +109,8 @@ export class VipApi {
     this.csrf = '';
   }
 
-  /** A request: the tier, the reference number, the receipt as base64. A new request id each time. */
-  send(request: { tier: number; reference: string; receipt: string }): Promise<Answer<number>> {
+  /** A request: the tier, the currency paid in, the reference number, the receipt as base64. A new request id each time. */
+  send(request: { tier: number; currency: Currency; reference: string; receipt: string }): Promise<Answer<number>> {
     return this.post('/api/vip/requests', { ...request, requestId: this.newId() }, (b) => Number(b.id));
   }
 }

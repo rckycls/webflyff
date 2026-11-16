@@ -1,14 +1,15 @@
 // Support / VIP's stores in memory, for the tests and the demo (scripts/adminDemo.ts): both sides on one set of rows,
-// with the rules of apps/web/sql/vip.sql (the tiers seeded at $2/$4/$6/$10, the pending limit, used references, the
-// approve rule, VIP ending by itself at its end time).
+// with the rules of apps/web/sql/vip.sql (the tiers seeded at $2/$4/$6/$10 and P115/P230/P345/P575, the pending limit,
+// used references, the approve rule, VIP ending by itself at its end time, old rejected receipts forgotten).
 
 import type {
   AddVipRequestResult, AdminVipRequest, AdminVipRequestDetail, ApproveResult, MyVipRequest, NewVipRequest, PayQr, PayQrRow,
   PlayerLoginResult, VipAdminStore, VipNow, VipRequestStatus, VipSiteStore, VipTier, VipTierRow,
 } from '../../src/vip/vipStore';
 
-interface RequestRow extends NewVipRequest {
+interface RequestRow extends Omit<NewVipRequest, 'receiptFile'> {
   id: number;
+  receiptFile: string | null;
   priceCents: number;
   status: VipRequestStatus;
   reason: string | null;
@@ -36,10 +37,10 @@ export function monthAfter(ms: number): number {
 
 export class MemoryVipStore implements VipSiteStore, VipAdminStore {
   readonly tierRows: VipTierRow[] = [
-    { level: 1, name: 'VIP 1', priceCents: 200, on: true },
-    { level: 2, name: 'VIP 2', priceCents: 400, on: true },
-    { level: 3, name: 'VIP 3', priceCents: 600, on: true },
-    { level: 4, name: 'VIP 4', priceCents: 1000, on: true },
+    { level: 1, name: 'VIP 1', priceCents: 200, pricePhpCents: 11500, on: true },
+    { level: 2, name: 'VIP 2', priceCents: 400, pricePhpCents: 23000, on: true },
+    { level: 3, name: 'VIP 3', priceCents: 600, pricePhpCents: 34500, on: true },
+    { level: 4, name: 'VIP 4', priceCents: 1000, pricePhpCents: 57500, on: true },
   ];
   readonly qrRows: PayQrRow[] = [];
   readonly requestRows: RequestRow[] = [];
@@ -64,8 +65,9 @@ export class MemoryVipStore implements VipSiteStore, VipAdminStore {
 
   private mineRow(r: RequestRow): MyVipRequest {
     return {
-      id: r.id, level: r.level, name: this.tierName(r.level), priceCents: r.priceCents, reference: r.reference, status: r.status,
-      reason: r.reason, createdAt: iso(r.createdAt), decidedAt: isoOrNull(r.decidedAt), vipEndsAt: isoOrNull(r.vipEndsAt),
+      id: r.id, level: r.level, name: this.tierName(r.level), currency: r.currency, priceCents: r.priceCents, reference: r.reference,
+      status: r.status, reason: r.reason, createdAt: iso(r.createdAt), decidedAt: isoOrNull(r.decidedAt), vipEndsAt: isoOrNull(r.vipEndsAt),
+      hasReceipt: r.receiptFile !== null,
     };
   }
 
@@ -91,7 +93,7 @@ export class MemoryVipStore implements VipSiteStore, VipAdminStore {
 
   /** The site's tiers: only those that are on, without the flag. */
   async siteTiers(): Promise<VipTier[]> {
-    return this.tierRows.filter((t) => t.on).map(({ level, name, priceCents }) => ({ level, name, priceCents }));
+    return this.tierRows.filter((t) => t.on).map(({ level, name, priceCents, pricePhpCents }) => ({ level, name, priceCents, pricePhpCents }));
   }
 
   async qrs(): Promise<PayQr[]> {
@@ -114,10 +116,12 @@ export class MemoryVipStore implements VipSiteStore, VipAdminStore {
   async addRequest(request: NewVipRequest): Promise<AddVipRequestResult> {
     const tier = this.tierRows.find((t) => t.level === request.level && t.on);
     if (tier === undefined) return { refused: 'tier' };
+    const price = request.currency === 'PHP' ? tier.pricePhpCents : tier.priceCents;
+    if (price === null) return { refused: 'currency' };
     if (this.requestRows.filter((r) => r.account === request.account && r.status === 'P').length >= request.maxPending) return { refused: 'too_many' };
     if (this.requestRows.some((r) => r.referenceKey === request.referenceKey && r.status !== 'R')) return { refused: 'reference' };
     const row: RequestRow = {
-      ...request, id: this.nextRequest++, priceCents: tier.priceCents, status: 'P', reason: null, createdAt: this.now(), decidedAt: null,
+      ...request, id: this.nextRequest++, priceCents: price, status: 'P', reason: null, createdAt: this.now(), decidedAt: null,
       decidedBy: null, vipEndsAt: null,
     };
     this.requestRows.push(row);
@@ -125,7 +129,7 @@ export class MemoryVipStore implements VipSiteStore, VipAdminStore {
   }
 
   async receipt(id: number, account: string): Promise<string | undefined> {
-    return this.requestRows.find((r) => r.id === id && r.account === account)?.receiptFile;
+    return this.requestRows.find((r) => r.id === id && r.account === account)?.receiptFile ?? undefined;
   }
 
   // --- the panel's side ---------------------------------------------------------------------------------------------
@@ -161,6 +165,16 @@ export class MemoryVipStore implements VipSiteStore, VipAdminStore {
     if (row === undefined) return false;
     Object.assign(row, { status: 'R', reason, decidedAt: this.now(), decidedBy: admin });
     return true;
+  }
+
+  async forgetReceipts(days: number): Promise<string[]> {
+    const before = this.now() - days * 86_400_000;
+    const old = this.requestRows.filter((r) => r.status === 'R' && r.receiptFile !== null && r.decidedAt !== null && r.decidedAt < before);
+    return old.map((r) => {
+      const file = r.receiptFile!;
+      r.receiptFile = null;
+      return file;
+    });
   }
 
   async saveTier(tier: VipTierRow): Promise<boolean> {

@@ -30,7 +30,7 @@ function optionalText(body: Record<string, unknown>, key: string, max: number): 
 
 const boolField = (body: Record<string, unknown>, key: string): boolean | undefined => (typeof body[key] === 'boolean' ? (body[key] as boolean) : undefined);
 
-/** Dollars as the panel sends them (2, 4.5, "10.00") in cents, from $0.01 to $10,000. */
+/** Dollars (or pesos) as the panel sends them (2, 4.5, "10.00") in cents, from 0.01 to 10,000. */
 export function priceCents(value: unknown): number | undefined {
   const text = typeof value === 'number' ? String(value) : typeof value === 'string' ? value.trim() : '';
   if (!/^\d{1,5}(\.\d{1,2})?$/.test(text)) return undefined;
@@ -42,7 +42,7 @@ const requests = withVip(async (body, _ctx, _deps, vip) => {
   const status = body.status;
   if (typeof status !== 'string' || !VIP_REQUEST_STATUSES.includes(status as VipRequestStatus)) return invalid('status');
   const rows = await vip.store.requests(status as VipRequestStatus);
-  return reply(200, { rows: rows.map((r) => ({ ...r, receipt: `/vip/receipt/${r.id}` })) });
+  return reply(200, { rows: rows.map(({ hasReceipt, ...r }) => ({ ...r, receipt: hasReceipt ? `/vip/receipt/${r.id}` : null })) });
 });
 
 const approve = withVip(async (body, ctx, deps, vip) => {
@@ -53,7 +53,7 @@ const approve = withVip(async (body, ctx, deps, vip) => {
   if (request.status !== 'P') return reply(409, { error: 'refused', message: 'This request was already approved or rejected.' });
   return runAudited(deps, ctx, {
     action: 'vip.approve', account: request.account,
-    before: { id, level: request.level, priceCents: request.priceCents, reference: request.reference, vipLevel: request.vipLevel, vipEndsAt: request.vipNowEndsAt },
+    before: { id, level: request.level, currency: request.currency, priceCents: request.priceCents, reference: request.reference, vipLevel: request.vipLevel, vipEndsAt: request.vipNowEndsAt },
   }, async () => {
     const done = await vip.store.approve(id, ctx.session.user);
     if (done.result === 'ok') return { answer: okReply({ level: done.level, endsAt: done.endsAt }), result: 'ok', after: { level: done.level, endsAt: done.endsAt } };
@@ -85,12 +85,16 @@ const tierSave = withVip(async (body, ctx, deps, vip) => {
   if (name === undefined) return invalid('name', 'Give the tier a name (at most 32 characters).');
   const cents = priceCents(body.price);
   if (cents === undefined) return invalid('price', 'The price is in US dollars, like 2 or 4.50.');
+  // the peso price: empty for US$ only (players in the Philippines then see dollars for this tier)
+  const php = body.pricePhp === undefined || body.pricePhp === null || body.pricePhp === '' ? null : priceCents(body.pricePhp) ?? false;
+  if (php === false) return invalid('pricePhp', 'The peso price is like 115 or 230.50 (empty: US$ only).');
   const on = boolField(body, 'on');
   if (on === undefined) return invalid('on');
   const before = (await vip.store.tiers()).find((t) => t.level === level);
   if (before === undefined) return notFound();
-  return runAudited(deps, ctx, { action: 'vip.tierSave', before }, async () => ((await vip.store.saveTier({ level, name, priceCents: cents, on }))
-    ? { answer: okReply(), result: 'ok', after: { level, name, priceCents: cents, on } }
+  const tier = { level, name, priceCents: cents, pricePhpCents: php, on };
+  return runAudited(deps, ctx, { action: 'vip.tierSave', before }, async () => ((await vip.store.saveTier(tier))
+    ? { answer: okReply(), result: 'ok', after: tier }
     : { answer: notFound(), result: 'refused', after: { missing: level } }));
 });
 

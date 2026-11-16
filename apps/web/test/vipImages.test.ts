@@ -64,8 +64,10 @@ it('takes a vip section, and a bad one only turns Support / VIP off', () => {
     listen: base.listen, siteOrigin: base.siteOrigin, trustedProxies: base.trustedProxies, sql: base.sql, ticketSecret: base.ticketSecret,
     servers: base.servers, vip,
   });
-  expect(parseWebConfig(json({ uploadsDir: 'C:\\flyff-web\\vip-uploads' })).vip).toEqual({ uploadsDir: 'C:\\flyff-web\\vip-uploads', maxPendingPerAccount: 3 });
+  expect(parseWebConfig(json({ uploadsDir: 'C:\\flyff-web\\vip-uploads' })).vip).toEqual({ uploadsDir: 'C:\\flyff-web\\vip-uploads', maxPendingPerAccount: 3, deleteRejectedAfterDays: 30 });
   expect(parseWebConfig(json({ uploadsDir: 'x', maxPendingPerAccount: 5 })).vip?.maxPendingPerAccount).toBe(5);
+  expect(parseWebConfig(json({ uploadsDir: 'x', deleteRejectedAfterDays: 0 })).vip?.deleteRejectedAfterDays).toBe(0);
+  expect(parseWebConfig(json({ uploadsDir: 'x', deleteRejectedAfterDays: -1 })).vip).toBeUndefined();
   expect(parseWebConfig(json(undefined))).toMatchObject({ vip: undefined, vipProblem: undefined });
   expect(parseWebConfig(json({ uploadsDir: '' }))).toMatchObject({ vip: undefined, vipProblem: 'vip.uploadsDir must be a non-empty string' });
   expect(parseWebConfig(json({ uploadsDir: 'x', maxPending: 3 })).vipProblem).toBe('vip.maxPending is not a setting');
@@ -80,14 +82,58 @@ it('starts Support / VIP with a good section, and only warns (off) with a bad on
   const log = { info: (line: string) => lines.push(line), warn: (line: string) => lines.push(line) };
   const store = new MemoryVipStore();
   const stores = { site: () => siteView(store), admin: () => store };
-  const on = startVip({ ...testConfig, vip: { uploadsDir: path.join(dir, 'up'), maxPendingPerAccount: 3 }, vipProblem: undefined }, log, Date.now, stores);
+  const on = startVip({ ...testConfig, vip: { uploadsDir: path.join(dir, 'up'), maxPendingPerAccount: 3, deleteRejectedAfterDays: 30 }, vipProblem: undefined }, log, Date.now, stores);
   expect(on.routes).toBeDefined();
   expect(on.admin?.store).toBe(store);
   expect(readdirSync(path.join(dir, 'up')).sort()).toEqual(['qr', 'receipts']);
   expect(startVip({ ...testConfig, vip: undefined, vipProblem: 'vip.uploadsDir must be a non-empty string' }, log, Date.now, stores).routes).toBeUndefined();
   writeFileSync(path.join(dir, 'file'), 'x');
-  expect(startVip({ ...testConfig, vip: { uploadsDir: path.join(dir, 'file', 'up'), maxPendingPerAccount: 3 }, vipProblem: undefined }, log, Date.now, stores).routes).toBeUndefined();
+  expect(startVip({ ...testConfig, vip: { uploadsDir: path.join(dir, 'file', 'up'), maxPendingPerAccount: 3, deleteRejectedAfterDays: 30 }, vipProblem: undefined }, log, Date.now, stores).routes).toBeUndefined();
   expect(lines[0]).toMatch(/^vip: on, pictures in /);
   expect(lines[1]).toBe('vip: off: vip.uploadsDir must be a non-empty string');
   expect(lines[2]).toMatch(/^vip: off: cannot make /);
+  await on.close();
+});
+
+it('deletes the receipt pictures of requests rejected over the set days ago, and keeps the others', async () => {
+  const { forgetOldReceipts } = await import('../src/vip/startVip');
+  const { MemoryVipStore } = await import('./support/memoryVipStore');
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'vip-forget-'));
+  dirs.push(dir);
+  let now = 1_763_000_000_000;
+  const store = new MemoryVipStore([], () => now);
+  const files = new VipFiles(dir);
+  const lines: string[] = [];
+  const log = { info: (line: string) => lines.push(line), warn: (line: string) => lines.push(line) };
+  const add = async (reference: string) => {
+    const receiptFile = await files.save('receipts', png, 'png');
+    const added = await store.addRequest({ account: 'tester1', level: 1, currency: 'USD', reference, referenceKey: reference, receiptFile, address: '203.0.113.9', maxPending: 9 });
+    if (!('id' in added)) throw new Error('not added');
+    return { id: added.id, receiptFile };
+  };
+  const old = await add('OLD1');
+  const kept = await add('KEPT1');
+  const approved = await add('PAID1');
+  await store.reject(old.id, 'admin', 'no payment');
+  await store.approve(approved.id, 'admin');
+  now += 10 * 86_400_000;
+  await store.reject(kept.id, 'admin', 'no payment');
+  now += 25 * 86_400_000;
+  const vip = { uploadsDir: dir, maxPendingPerAccount: 3, deleteRejectedAfterDays: 30 };
+
+  // rejected 35 days ago: gone; rejected 25 days ago and approved: kept
+  expect(await forgetOldReceipts(vip, store, files, log)).toBe(1);
+  expect(readdirSync(path.join(dir, 'receipts')).sort()).toEqual([kept.receiptFile, approved.receiptFile].sort());
+  expect((await store.request(old.id))?.receiptFile).toBeNull();
+  expect((await store.mine('tester1')).requests.find((r) => r.id === old.id)).toMatchObject({ status: 'R', hasReceipt: false });
+  expect(lines).toEqual(['vip: deleted 1 receipt picture(s) of requests rejected over 30 days ago']);
+  // a second sweep finds nothing; 0 days keeps them all
+  expect(await forgetOldReceipts(vip, store, files, log)).toBe(0);
+  now += 10 * 86_400_000;
+  expect(await forgetOldReceipts({ ...vip, deleteRejectedAfterDays: 0 }, store, files, log)).toBe(0);
+  expect(readdirSync(path.join(dir, 'receipts'))).toHaveLength(2);
+  // a database that fails: one warning, nothing thrown
+  const broken = Object.assign(Object.create(store) as typeof store, { forgetReceipts: async () => { throw new Error('down\nnow'); } });
+  expect(await forgetOldReceipts(vip, broken, files, log)).toBe(0);
+  expect(lines.at(-1)).toBe('vip: old receipts not deleted: down now');
 });

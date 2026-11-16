@@ -1,20 +1,25 @@
 // The VIP tab (Support / VIP): players pay outside the site by one of the payment QRs shown here, then send the receipt
 // and the reference number. Requests: check the payment came in, then Approve (the account's VIP for one month) or
 // Reject with a reason the player sees. Payment QRs: what players see, on or off, in their order. Tiers: names and
-// prices. Every change goes in the Log tab. No pop-up boxes: each risky button asks again in place.
+// prices (US$ for everyone, pesos for players in the Philippines). Every change goes in the Log tab. No pop-up boxes:
+// each risky button asks again in place.
 
 import { api, busy, el, fill, messageLine, timeText } from './ui.js';
 
 const STATUS_NAMES = { P: 'Processing', A: 'Approved', R: 'Rejected' };
 const MAX_PICTURE_BYTES = 5 * 1024 * 1024;
 
-export function dollars(cents) {
-  return `$${(cents / 100).toFixed(cents % 100 === 0 ? 0 : 2)}`;
+/** A price as players see it: $2, $4.50, ₱115, ₱1,150. */
+export function money(cents, currency = 'USD') {
+  const amount = (cents / 100).toLocaleString('en-US', { minimumFractionDigits: cents % 100 === 0 ? 0 : 2, maximumFractionDigits: 2 });
+  return `${currency === 'PHP' ? '₱' : '$'}${amount}`;
 }
 
 function tierText(row) {
-  return `${row.name ?? `VIP ${row.level}`} · ${dollars(row.priceCents)} / month`;
+  return `${row.name ?? `VIP ${row.level}`} · ${money(row.priceCents, row.currency)} / month`;
 }
+
+const priceInput = (cents) => (cents === null || cents === undefined ? '' : (cents / 100).toFixed(2));
 
 function vipNowText(row) {
   return row.vipLevel ? `Has VIP ${row.vipLevel} until ${timeText(row.vipNowEndsAt)}` : 'No VIP now';
@@ -54,8 +59,11 @@ function requestsView() {
   const list = el('div', { class: 'vip-list' });
 
   function card(row) {
-    const receipt = el('a', { class: 'vip-receipt', href: row.receipt, target: '_blank', rel: 'noopener', title: 'Open the receipt' },
-      el('img', { src: row.receipt, alt: `Receipt of request ${row.id}`, loading: 'lazy' }));
+    // a rejected request's picture is deleted after some days (web.config.json vip.deleteRejectedAfterDays)
+    const receipt = row.receipt === null
+      ? el('div', { class: 'vip-receipt vip-receipt-gone small', text: 'Receipt picture deleted (old rejected request).' })
+      : el('a', { class: 'vip-receipt', href: row.receipt, target: '_blank', rel: 'noopener', title: 'Open the receipt' },
+        el('img', { src: row.receipt, alt: `Receipt of request ${row.id}`, loading: 'lazy' }));
     const head = el('div', { class: 'vip-head' },
       el('strong', { text: row.account }), el('span', { class: 'chip', text: tierText(row) }), el('span', { class: 'small', text: timeText(row.createdAt) }));
     const facts = el('dl', { class: 'facts' },
@@ -104,7 +112,7 @@ function requestsView() {
 
   const node = el('div', { class: 'vip-view' },
     el('div', { class: 'card' },
-      el('p', { class: 'small', text: 'Check that the payment came in (amount and reference number) before you approve. Approve gives one month of VIP: the same tier while it runs adds a month to its end; another tier starts now and the old one ends.' }),
+      el('p', { class: 'small', text: 'Check that the payment came in (the amount in the currency shown, and the reference number) before you approve. Approve gives one month of VIP: the same tier while it runs adds a month to its end; another tier starts now and the old one ends. Rejected requests lose their receipt picture after 30 days (web.config.json vip.deleteRejectedAfterDays).' }),
       el('div', { class: 'row vip-filter' }, filters, refresh), message.node),
     list);
   return { node, show: load };
@@ -199,17 +207,18 @@ function tiersView() {
     try {
       const { rows } = await api('vip.tiers', {});
       fill(list, el('div', { class: 'table-box' }, el('table', {},
-        el('thead', {}, el('tr', {}, ['Level', 'Name', 'Price a month (US$)', 'On', ''].map((h) => el('th', { text: h })))),
+        el('thead', {}, el('tr', {}, ['Level', 'Name', 'Price a month (US$)', 'Price a month (₱)', 'On', ''].map((h) => el('th', { text: h })))),
         el('tbody', {}, rows.map((t) => {
           const name = el('input', { value: t.name, maxlength: '32', 'aria-label': `Name of level ${t.level}` });
-          const price = el('input', { value: (t.priceCents / 100).toFixed(2), inputmode: 'decimal', size: 8, 'aria-label': `Price of level ${t.level}` });
+          const price = el('input', { value: priceInput(t.priceCents), inputmode: 'decimal', size: 8, 'aria-label': `US$ price of level ${t.level}` });
+          const pricePhp = el('input', { value: priceInput(t.pricePhpCents), inputmode: 'decimal', size: 8, placeholder: 'US$ only', 'aria-label': `Peso price of level ${t.level}` });
           const on = el('input', { type: 'checkbox', checked: t.on, 'aria-label': `Level ${t.level} on` });
           const save = el('button', { type: 'button', class: 'quiet', text: 'Save', 'aria-label': `Save level ${t.level}` });
           save.addEventListener('click', busy(save, message, async () => {
-            await api('vip.tierSave', { level: t.level, name: name.value, price: price.value, on: on.checked }, { write: true });
+            await api('vip.tierSave', { level: t.level, name: name.value, price: price.value, pricePhp: pricePhp.value.trim(), on: on.checked }, { write: true });
             return `Saved level ${t.level}.`;
           }));
-          return el('tr', {}, el('td', { text: String(t.level) }), el('td', {}, name), el('td', {}, price), el('td', {}, on), el('td', {}, save));
+          return el('tr', {}, el('td', { text: String(t.level) }), el('td', {}, name), el('td', {}, price), el('td', {}, pricePhp), el('td', {}, on), el('td', {}, save));
         })))));
     } catch (error) {
       message.problem(error.message);
@@ -218,7 +227,7 @@ function tiersView() {
 
   return {
     node: el('div', { class: 'vip-view' }, el('div', { class: 'card' },
-      el('p', { class: 'small', text: 'The tiers players can pick. A new price counts for new requests; requests already sent keep theirs.' }),
+      el('p', { class: 'small', text: 'The tiers players can pick. Players in the Philippines see the peso price (empty: they see US$); everyone else sees US$. A new price counts for new requests; requests already sent keep theirs.' }),
       list, message.node)),
     show: load,
   };

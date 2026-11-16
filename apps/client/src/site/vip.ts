@@ -2,16 +2,29 @@
 // receipt and the reference number. An admin checks each payment by hand in the panel; the request shows Processing
 // until then, then Approved (with the VIP's end date) or Rejected (with the reason). The game account's login is the
 // web service's (apps/web/src/vip/siteVip.ts). No game code: `npm run check:public-build` checks it. Everything from the
-// service is shown as text.
+// service is shown as text. Prices: pesos for players in the Philippines (by the browser's time zone or language), US$
+// for everyone else; a switch changes it, remembered in this browser.
 
 import { el, showLobbyArt, siteLogo, siteRoot } from './page';
 import { ReceiptError, receiptBase64 } from './receiptPicture';
-import { priceText, VipApi } from './vipApi';
-import type { Answer, Me, MyRequest, VipPageData, VipTier } from './vipApi';
+import { countryCurrency, priceText, tierPrice, VipApi } from './vipApi';
+import type { Answer, Currency, Me, MyRequest, VipPageData, VipTier } from './vipApi';
 import './site.css';
 
 const api = new VipApi(fetch.bind(window));
 const root = siteRoot('site-page vip-page');
+
+const CURRENCY_KEY = 'flyff-vip-currency';
+function firstCurrency(): Currency {
+  try {
+    const saved = localStorage.getItem(CURRENCY_KEY);
+    if (saved === 'USD' || saved === 'PHP') return saved;
+  } catch { /* no storage: the country decides */ }
+  let timeZone: string | undefined;
+  try { timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch { timeZone = undefined; }
+  return countryCurrency(timeZone, navigator.languages ?? [navigator.language]);
+}
+let currency: Currency = firstCurrency();
 
 const STATUS = { P: 'Processing', A: 'Approved', R: 'Rejected' } as const;
 
@@ -53,7 +66,8 @@ const intro = el('section', { class: 'site-panel', 'aria-labelledby': 'vip-title
 const account = el('div', { class: 'vip-account' });
 
 const tiersBox = el('div', { class: 'vip-tiers', role: 'radiogroup', 'aria-label': 'VIP tier' });
-const tiersPanel = el('section', { class: 'site-panel', 'aria-labelledby': 'vip-step-1' }, el('h2', { id: 'vip-step-1' }, '1. Pick a tier'), tiersBox);
+const currencyBox = el('div', { class: 'vip-currency', role: 'group', 'aria-label': 'Prices in' });
+const tiersPanel = el('section', { class: 'site-panel', 'aria-labelledby': 'vip-step-1' }, el('h2', { id: 'vip-step-1' }, '1. Pick a tier'), currencyBox, tiersBox);
 
 const qrBox = el('div', { class: 'vip-qrs' });
 const payLine = el('p', { class: 'site-quiet vip-pay-line' });
@@ -87,6 +101,32 @@ function pickedTier(): VipTier | undefined {
   return data?.tiers.find((t) => t.level === picked);
 }
 
+/** A tier's price in the currency picked (US$ when it has no peso price). */
+function shownPrice(tier: VipTier): string {
+  const price = tierPrice(tier, currency);
+  return priceText(price.cents, price.currency);
+}
+
+/** The US$ / pesos switch, only while a tier has a peso price. */
+function renderCurrency(): void {
+  const tiers = data?.tiers ?? [];
+  currencyBox.hidden = !tiers.some((t) => t.pricePhpCents !== null);
+  const choice = (value: Currency, label: string) => {
+    const button = el('button', { type: 'button', 'aria-pressed': String(currency === value) }, label);
+    button.addEventListener('click', () => {
+      if (currency === value) return;
+      currency = value;
+      try { localStorage.setItem(CURRENCY_KEY, value); } catch { /* only for this visit */ }
+      renderCurrency();
+      renderTiers();
+      renderPay();
+      renderSend();
+    });
+    return button;
+  };
+  currencyBox.replaceChildren(el('span', {}, 'Prices in'), choice('PHP', '₱ Pesos'), choice('USD', 'US$'));
+}
+
 function renderTiers(): void {
   const tiers = data?.tiers ?? [];
   if (picked === undefined || !tiers.some((t) => t.level === picked)) picked = tiers[0]?.level;
@@ -96,7 +136,7 @@ function renderTiers(): void {
     input.addEventListener('change', () => { picked = tier.level; renderPay(); renderSend(); });
     return el('label', { class: 'vip-tier', for: input.id }, input,
       el('span', { class: 'vip-tier-name' }, tier.name),
-      el('span', { class: 'vip-tier-price' }, priceText(tier.priceCents)),
+      el('span', { class: 'vip-tier-price' }, shownPrice(tier)),
       el('span', { class: 'vip-tier-month' }, 'a month'));
   }));
   if (tiers.length === 0) tiersBox.replaceChildren(el('p', { class: 'site-quiet' }, 'No tiers are open now.'));
@@ -106,7 +146,7 @@ function renderPay(): void {
   const tier = pickedTier();
   const qrs = data?.qrs ?? [];
   payLine.textContent = qrs.length === 0 ? '' : tier === undefined ? 'Pay with any of these, then keep the receipt.'
-    : `Pay ${priceText(tier.priceCents)} for ${tier.name} with any of these, then keep the receipt and its reference number.`;
+    : `Pay ${shownPrice(tier)} for ${tier.name} with any of these, then keep the receipt and its reference number.`;
   qrBox.replaceChildren(...(qrs.length === 0 ? [el('p', { class: 'site-quiet' }, 'Payments are not open yet. Please check back soon.')]
     : qrs.map((qr) => el('figure', { class: 'vip-qr' },
       el('img', { src: qr.image, alt: `${qr.label} QR code`, loading: 'lazy', width: '240', height: '240' }),
@@ -211,7 +251,7 @@ function sendForm(me: Me): HTMLElement {
             ? 'The picture is too big (5 MB at most).' : 'That file is not a picture we can take. Send a PNG, JPEG or WebP picture of the receipt.';
           return;
         }
-        const answer = await api.send({ tier: tierNow.level, reference: reference.value.trim(), receipt });
+        const answer = await api.send({ tier: tierNow.level, currency: tierPrice(tierNow, currency).currency, reference: reference.value.trim(), receipt });
         if (!answer.ok) {
           alert.textContent = problemText(answer);
           if (answer.error === 'session') await load();
@@ -237,13 +277,15 @@ function renderSend(): void {
 function requestLine(r: MyRequest): HTMLElement {
   const status = el('span', { class: `vip-status vip-status-${r.status}` }, STATUS[r.status]);
   const lines: (HTMLElement | string)[] = [
-    el('div', { class: 'vip-request-head' }, el('strong', {}, `${tierName(r)} · ${priceText(r.priceCents)}`), status),
+    el('div', { class: 'vip-request-head' }, el('strong', {}, `${tierName(r)} · ${priceText(r.priceCents, r.currency)}`), status),
     el('p', { class: 'site-quiet' }, `Reference ${r.reference} · sent ${dateText(r.createdAt)}`),
   ];
   if (r.status === 'A' && r.vipEndsAt !== null) lines.push(el('p', {}, `VIP until ${dateText(r.vipEndsAt)}.`));
   if (r.status === 'R') lines.push(el('p', { class: 'vip-reason' }, `Reason: ${r.reason ?? ''}`));
   if (r.status === 'P') lines.push(el('p', { class: 'site-quiet' }, 'We check the payment by hand, usually within a day.'));
-  lines.push(el('p', {}, el('a', { href: r.receipt, target: '_blank', rel: 'noopener' }, 'See the receipt you sent')));
+  lines.push(r.receipt === null
+    ? el('p', { class: 'site-quiet' }, 'The receipt picture was deleted (rejected requests keep it for a while only).')
+    : el('p', {}, el('a', { href: r.receipt, target: '_blank', rel: 'noopener' }, 'See the receipt you sent')));
   return el('article', { class: 'vip-request', tabindex: '-1', 'data-status': r.status }, ...lines);
 }
 
@@ -275,6 +317,7 @@ async function load(): Promise<void> {
   pageAlert.textContent = '';
   for (const panel of [tiersPanel, payPanel, sendPanel]) panel.hidden = false;
   data = answer.value;
+  renderCurrency();
   renderTiers();
   renderPay();
   renderSend();

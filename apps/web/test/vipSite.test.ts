@@ -51,7 +51,7 @@ async function start(options: { vip?: boolean; maxPending?: number } = {}) {
   dirs.push(dir);
   const files = new VipFiles(dir);
   const routes = options.vip === false ? undefined : siteVipRoutes({
-    config: testConfig, vip: { uploadsDir: dir, maxPendingPerAccount: options.maxPending ?? 3 }, store: siteView(store), files, log,
+    config: testConfig, vip: { uploadsDir: dir, maxPendingPerAccount: options.maxPending ?? 3, deleteRejectedAfterDays: 30 }, store: siteView(store), files, log,
     sessions: new SessionBook(clock, 60 * 60_000, 12 * 3_600_000),
     loginFailsByAddress: new HourlyLimit(10, clock), loginFailsByAccount: new HourlyLimit(10, clock), loginsByAccount: new HourlyLimit(20, clock), requestsByAccount: new HourlyLimit(6, clock),
   });
@@ -151,7 +151,8 @@ it('gives the tiers and the QRs that are on to everyone, and "me" only with a se
   await store.addQr({ label: 'Hidden', accountName: 'x', note: '', imageFile: 'b'.repeat(32) + '.png', on: false, order: 1 });
   const open = await call(port, 'GET', '/api/vip');
   expect(open.body.tiers).toEqual([
-    { level: 1, name: 'VIP 1', priceCents: 200 }, { level: 2, name: 'VIP 2', priceCents: 400 }, { level: 3, name: 'VIP 3', priceCents: 600 },
+    { level: 1, name: 'VIP 1', priceCents: 200, pricePhpCents: 11500 }, { level: 2, name: 'VIP 2', priceCents: 400, pricePhpCents: 23000 },
+    { level: 3, name: 'VIP 3', priceCents: 600, pricePhpCents: 34500 },
   ]);
   expect(open.body.qrs).toEqual([{ id: 1, label: 'GCash', accountName: 'R. C.', note: 'Send the exact amount', image: '/api/vip/qr/1' }]);
   expect(open.body.me).toBeUndefined();
@@ -173,8 +174,9 @@ it('takes a request with a receipt: Processing, the picture stored under a rando
   expect(stored[0]).toMatch(/^[0-9a-f]{32}\.png$/);
   const mine = await call(port, 'GET', '/api/vip', { Cookie: headers.Cookie });
   expect(mine.body.me.requests).toEqual([expect.objectContaining({
-    id: 1, level: 2, name: 'VIP 2', priceCents: 400, reference: 'GC 1234 5678', status: 'P', reason: null, receipt: '/api/vip/receipt/1',
+    id: 1, level: 2, name: 'VIP 2', currency: 'USD', priceCents: 400, reference: 'GC 1234 5678', status: 'P', reason: null, receipt: '/api/vip/receipt/1',
   })]);
+  expect(mine.body.me.requests[0].hasReceipt).toBeUndefined();
   const own = await call(port, 'GET', '/api/vip/receipt/1', { Cookie: headers.Cookie });
   expect(own.status).toBe(200);
   expect(own.headers['content-type']).toBe('image/png');
@@ -184,7 +186,34 @@ it('takes a request with a receipt: Processing, the picture stored under a rando
   const other = await logIn(port, 'tester2', 'password-two');
   expect((await call(port, 'GET', '/api/vip/receipt/1', { Cookie: other.cookie })).status).toBe(404);
   expect((await call(port, 'GET', '/api/vip/receipt/1')).status).toBe(401);
-  expect(lines).toContain('vip 127.0.0.1 tester1 request 1 tier 2');
+  expect(lines).toContain('vip 127.0.0.1 tester1 request 1 tier 2 USD');
+});
+
+it('takes a request in pesos at the tier\'s peso price; refuses pesos on a tier without one, and other currencies', async () => {
+  const { port, store, lines } = await start();
+  const { headers } = await logIn(port);
+  expect((await sendRequest(port, headers, { currency: 'PHP', reference: 'GC-0001' })).status).toBe(201);
+  store.tierRows[1]!.pricePhpCents = null;
+  expect((await sendRequest(port, headers, { currency: 'PHP', reference: 'GC-0002' })).body).toEqual({ error: 'invalid', field: 'currency' });
+  expect((await sendRequest(port, headers, { currency: 'EUR', reference: 'GC-0003' })).body).toEqual({ error: 'invalid', field: 'currency' });
+  expect((await sendRequest(port, headers, { currency: 'USD', reference: 'GC-0004' })).status).toBe(201);
+  const mine = await call(port, 'GET', '/api/vip', { Cookie: headers.Cookie });
+  expect(mine.body.tiers[1]).toEqual({ level: 2, name: 'VIP 2', priceCents: 400, pricePhpCents: null });
+  expect(mine.body.me.requests.map((r: { currency: string; priceCents: number }) => [r.currency, r.priceCents])).toEqual([['USD', 400], ['PHP', 23000]]);
+  expect(lines).toContain('vip 127.0.0.1 tester1 request 1 tier 2 PHP');
+});
+
+it('shows no receipt link once a rejected request\'s picture was deleted, and serves it no more', async () => {
+  const { port, store, setNow } = await start();
+  const { headers } = await logIn(port);
+  await sendRequest(port, headers);
+  await store.reject(1, 'Poreotix', 'Blurry picture');
+  setNow(1_763_000_000_000 + 31 * 86_400_000);
+  expect(await store.forgetReceipts(30)).toHaveLength(1);
+  const again = await logIn(port);
+  const mine = await call(port, 'GET', '/api/vip', { Cookie: again.cookie });
+  expect(mine.body.me.requests[0]).toMatchObject({ id: 1, status: 'R', receipt: null });
+  expect((await call(port, 'GET', '/api/vip/receipt/1', { Cookie: again.cookie })).status).toBe(404);
 });
 
 it('refuses a request without a session, without the token, or from another site, before reading its body', async () => {

@@ -131,12 +131,17 @@ Players pick VIP 1-4 on `/vip/`, pay outside the site by one of the admin's paym
 and the payment's reference number. The admin approves or rejects each request in the panel's **VIP** tab. No payment
 company, no webhooks, nothing credited by itself. Set-up: docs/hosting.md step 8c.
 
-- **Settings:** `"vip": { "uploadsDir": "C:\flyff-web\vip-uploads", "maxPendingPerAccount": 3 }` in `web.config.json`.
-  Without it the API answers `503 off` and the page says "Support / VIP is not open yet."; a bad one only writes
-  `vip: off: <reason>`. The panel's VIP tab needs the `admin` section too.
+- **Settings:** `"vip": { "uploadsDir": "C:\flyff-web\vip-uploads", "maxPendingPerAccount": 3, "deleteRejectedAfterDays": 30 }`
+  in `web.config.json` (only `uploadsDir` is needed). Without it the API answers `503 off` and the page says "Support /
+  VIP is not open yet."; a bad one only writes `vip: off: <reason>`. The panel's VIP tab needs the `admin` section too.
 - **Database:** `sql/vip.sql`, run by `sql/Install-Vip.ps1` (Windows login, no password asked): `ACCOUNT_DBF.dbo.WEB_VIP_TIER`
-  (seeded VIP 1-4 at $2/$4/$6/$10), `WEB_PAY_QR`, `WEB_VIP_REQUEST`, `WEB_VIP` (level and end time, UTC). VIP ends by
-  itself: every read compares the end time with now.
+  (seeded VIP 1-4 at $2/$4/$6/$10 and ₱115/₱230/₱345/₱575), `WEB_PAY_QR`, `WEB_VIP_REQUEST`, `WEB_VIP` (level and end
+  time, UTC). VIP ends by itself: every read compares the end time with now.
+- **Currency:** the page shows pesos when the browser's time zone is `Asia/Manila` or a language ends in `-PH`, US$
+  otherwise, with a switch (kept in `localStorage`). A request keeps its currency and the tier's price in it then
+  (`currency` USD/PHP, `priceCents` in cents or centavos); a tier without a peso price is US$ for everyone.
+- **Old receipts:** every 6 hours (and a minute after start) the service deletes the receipt pictures of requests rejected
+  over `deleteRejectedAfterDays` days ago (`usp_AdminVipForgetReceipts`; 0 keeps them). Approved receipts stay.
 - **Pictures:** PNG, JPEG or WebP, 5 MB at most, told apart by their first bytes; random names in `uploadsDir\receipts`
   and `uploadsDir\qr`. A receipt is served only to its player (`/api/vip/receipt/<id>`) and to a panel session
   (`/vip/receipt/<id>`).
@@ -144,8 +149,8 @@ company, no webhooks, nothing credited by itself. Set-up: docs/hosting.md step 8
   month (the old tier's days left end). A reference already on a processing or approved request is refused.
 - **Limits:** player login 10 failures an hour per address and per account, 20 logins an hour per account; 6 requests an
   hour per account; 3 processing at once (`maxPendingPerAccount`).
-- **Log lines:** `vip <address> <account> login ok|wrong|banned|too_many`, `vip <address> <account> request <id> tier <n>`,
-  `vip <address> <account> request refused:<why>`. Approvals, rejections and QR/tier changes are in the panel's Log tab.
+- **Log lines:** `vip <address> <account> login ok|wrong|banned|too_many`, `vip <address> <account> request <id> tier <n> USD|PHP`,
+  `vip <address> <account> request refused:<why>`, `vip: deleted <n> receipt picture(s) of requests rejected over <d> days ago`. Approvals, rejections and QR/tier changes are in the panel's Log tab.
 - **Try it without a database:** `node --import tsx apps/web/scripts/adminDemo.ts --site-port 8098 --site-origin http://localhost:5175`,
   then in a second window `$env:WEB_API='http://127.0.0.1:8098'; npm run dev:client -- --port 5175 --strictPort` and open
   `http://localhost:5175/vip/` (players `tester1` / `demo-password-1`, `tester2` / `demo-password-2`; the panel on

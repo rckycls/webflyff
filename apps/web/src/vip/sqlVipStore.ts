@@ -7,8 +7,8 @@ import type { AdminConfig } from '../admin/config';
 import type { WebConfig } from '../config';
 import { firstValue, lazyPool } from '../sqlAccountStore';
 import type {
-  AdminVipRequest, AdminVipRequestDetail, MyVipRequest, PayQr, PayQrRow, VipAdminStore, VipNow, VipRequestStatus, VipSiteStore,
-  VipTier, VipTierRow,
+  AdminVipRequest, AdminVipRequestDetail, MyVipRequest, PayQr, PayQrRow, VipAdminStore, VipNow, VipRequestStatus,
+  VipSiteStore, VipTier, VipTierRow,
 } from './vipStore';
 
 type Row = Record<string, unknown>;
@@ -23,14 +23,14 @@ function rowsOf(result: sql.IProcedureResult<Row>, index = 0): Row[] {
   return (result.recordsets[index] ?? (index === 0 ? result.recordset : undefined) ?? []) as Row[];
 }
 
-const tier = (r: Row): VipTier => ({ level: num(r.level), name: text(r.name), priceCents: num(r.priceCents) });
+const tier = (r: Row): VipTier => ({ level: num(r.level), name: text(r.name), priceCents: num(r.priceCents), pricePhpCents: numOrNull(r.pricePhpCents) });
 const qr = (r: Row): PayQr => ({ id: num(r.id), label: text(r.label), accountName: text(r.accountName), note: text(r.note) });
 
 function myRequest(r: Row): MyVipRequest {
   return {
-    id: num(r.id), level: num(r.level), name: textOrNull(r.name), priceCents: num(r.priceCents), reference: text(r.reference),
-    status: text(r.status) as VipRequestStatus, reason: textOrNull(r.reason), createdAt: text(r.createdAt),
-    decidedAt: textOrNull(r.decidedAt), vipEndsAt: textOrNull(r.vipEndsAt),
+    id: num(r.id), level: num(r.level), name: textOrNull(r.name), currency: text(r.currency) === 'PHP' ? 'PHP' : 'USD',
+    priceCents: num(r.priceCents), reference: text(r.reference), status: text(r.status) as VipRequestStatus, reason: textOrNull(r.reason),
+    createdAt: text(r.createdAt), decidedAt: textOrNull(r.decidedAt), vipEndsAt: textOrNull(r.vipEndsAt), hasReceipt: bool(r.hasReceipt),
   };
 }
 
@@ -72,6 +72,7 @@ export function sqlVipSiteStore(settings: WebConfig['sql']): VipSiteStore & { cl
       const id = Number(firstValue(await run('usp_WebVipRequestAdd', (r) => r
         .input('account', sql.VarChar(32), request.account)
         .input('level', sql.TinyInt, request.level)
+        .input('currency', sql.Char(3), request.currency)
         .input('reference', sql.VarChar(40), request.reference)
         .input('referenceKey', sql.VarChar(40), request.referenceKey)
         .input('receiptFile', sql.VarChar(40), request.receiptFile)
@@ -81,6 +82,7 @@ export function sqlVipSiteStore(settings: WebConfig['sql']): VipSiteStore & { cl
       if (id === -1) return { refused: 'tier' };
       if (id === -2) return { refused: 'too_many' };
       if (id === -3) return { refused: 'reference' };
+      if (id === -4) return { refused: 'currency' };
       throw new Error(`usp_WebVipRequestAdd gave ${id}`);
     },
     async receipt(id, account) {
@@ -101,7 +103,7 @@ export function sqlVipAdminStore(settings: WebConfig['sql'], login: AdminConfig[
     },
     async request(id) {
       const row = rowsOf(await run('usp_AdminVipRequestGet', (r) => r.input('id', sql.Int, id)))[0];
-      return row === undefined ? undefined : { ...adminRequest(row), receiptFile: text(row.receiptFile) } satisfies AdminVipRequestDetail;
+      return row === undefined ? undefined : { ...adminRequest(row), receiptFile: textOrNull(row.receiptFile) } satisfies AdminVipRequestDetail;
     },
     async approve(id, admin) {
       const row = rowsOf(await run('usp_AdminVipApprove', (r) => r.input('id', sql.Int, id).input('admin', sql.VarChar(32), admin)))[0];
@@ -112,12 +114,16 @@ export function sqlVipAdminStore(settings: WebConfig['sql'], login: AdminConfig[
     async reject(id, admin, reason) {
       return changed(await run('usp_AdminVipReject', (r) => r.input('id', sql.Int, id).input('admin', sql.VarChar(32), admin).input('reason', sql.NVarChar(200), reason)));
     },
+    async forgetReceipts(days) {
+      return rowsOf(await run('usp_AdminVipForgetReceipts', (r) => r.input('days', sql.Int, days))).map((r) => text(r.receiptFile)).filter((f) => f !== '');
+    },
     async tiers() {
       return rowsOf(await run('usp_AdminVipTiers')).map((r): VipTierRow => ({ ...tier(r), on: bool(r.isOn) }));
     },
     async saveTier(t) {
       return changed(await run('usp_AdminVipTierSave', (r) => r
-        .input('level', sql.TinyInt, t.level).input('name', sql.NVarChar(32), t.name).input('priceCents', sql.Int, t.priceCents).input('isOn', sql.Bit, t.on)));
+        .input('level', sql.TinyInt, t.level).input('name', sql.NVarChar(32), t.name).input('priceCents', sql.Int, t.priceCents)
+        .input('pricePhpCents', sql.Int, t.pricePhpCents).input('isOn', sql.Bit, t.on)));
     },
     async qrList() {
       return rowsOf(await run('usp_AdminPayQrList')).map((r): PayQrRow => ({
