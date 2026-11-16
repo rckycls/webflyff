@@ -5,7 +5,7 @@ import { checkSignUp, normalizeAccount } from '@flyffweb/protocol';
 import type { SignUpField, SignUpProblem } from '@flyffweb/protocol';
 import { pageSessionStorage, putSignUpAccount } from './handoff';
 import { el, showLobbyArt, siteLogo, siteRoot } from './page';
-import { SignUpApi } from './signUpApi';
+import { preregLimitText, SignUpApi } from './signUpApi';
 import type { SignUpAnswer } from './signUpApi';
 import './site.css';
 
@@ -138,6 +138,7 @@ function refused(answer: Exclude<SignUpAnswer, { ok: true }>): void {
   fields.password.input.value = '';
   fields.confirm.input.value = '';
   if (problem !== undefined) showProblem(problem);
+  else if (answer.error === 'prereg_limit') alert.textContent = preregLimitText(answer.max);
   else alert.textContent = answer.error === 'too_many' ? MESSAGES.too_many : answer.error === 'paused' ? MESSAGES.paused : MESSAGES.failed;
 }
 
