@@ -27,3 +27,16 @@ it('step 8b has the admin site in its own block, with the panel\'s own headers',
   expect(guide).toContain('Install-AdminLogin.ps1');
   expect(guide).toContain('npm run admin:setup -- --file C:\\flyff-web\\admin-login.json');
 });
+
+it('Support / VIP: the receipt route and the QR upload get 8 MB, and the rest keeps its small limits', () => {
+  const site = blocksStarting('(site-headers) {')[0]!;
+  const receipt = site.slice(site.indexOf('handle /api/vip/requests {'), site.indexOf('handle /api/* {'));
+  expect(receipt).toContain('max_size 8MB');
+  expect(receipt).toContain('request_buffers 8MB');
+  expect(site).toContain('max_size 4KB');
+  const admin = blocksStarting('admin.play.example.com {')[0]!;
+  expect(admin).toContain('@notQrUpload not path /api/vip.qrAdd\n\trequest_body @notQrUpload {\n\t\tmax_size 16KB');
+  expect(admin).toContain('request_body /api/vip.qrAdd {\n\t\tmax_size 8MB');
+  expect(guide).toContain('Install-Vip.ps1');
+  expect(guide).toContain('"vip": { "uploadsDir": "C:\\\\flyff-web\\\\vip-uploads" }');
+});

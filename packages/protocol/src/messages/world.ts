@@ -1,5 +1,7 @@
 import { readBankRequestPacket } from '../world/bank';
 import type { BankRequestPacket } from '../world/bank';
+import { readPocketRequestPacket } from '../world/pocket';
+import type { PocketRequestPacket } from '../world/pocket';
 import { readGuildBankRequestPacket } from '../world/guildBank';
 import { readGuildCombatRequestPacket } from '../world/guildCombat';
 import type { GuildCombatRequestPacket } from '../world/guildCombat';
@@ -388,6 +390,8 @@ export type WorldPacket =
   // 2026-11-10: the bank's and the post's packets the browser sends (world/bank.ts, world/post.ts)
   | BankRequestPacket
   | PostRequestPacket
+  // 2026-11-17: the extra bag's packets the browser sends (world/pocket.ts)
+  | PocketRequestPacket
   // 2026-11-15: the guild bank's packets the browser sends (world/guildBank.ts)
   | GuildBankRequestPacket
   // 2026-11-15: personal housing's packets the browser sends (world/housing.ts)
@@ -822,6 +826,9 @@ function decodeClientPacket(r: ArReader): WorldPacket {
       if (bank !== null) { r.expectEnd(); return bank; }
       const post = readPostRequestPacket(packetType, r);
       if (post !== null) { r.expectEnd(); return post; }
+      // 2026-11-17: the extra bag's (world/pocket.ts)
+      const pocket = readPocketRequestPacket(packetType, r);
+      if (pocket !== null) { r.expectEnd(); return pocket; }
       // 2026-11-15: the guild bank's (world/guildBank.ts)
       const guildBank = readGuildBankRequestPacket(packetType, r);
       if (guildBank !== null) { r.expectEnd(); return guildBank; }

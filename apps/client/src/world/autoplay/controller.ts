@@ -18,6 +18,8 @@ import type { AutoPlayEvent } from './stopRules';
 import { OthersFighting, SkipList, StuckWatch, groundDistance, pickTarget } from './targets';
 import type { TargetMover } from './targets';
 import { farmBlocked, potsBlocked } from './zones';
+import { pickSupportAction, supportBlocked } from './support';
+import type { SupportInput } from './support';
 
 export interface AutoPlayHooks {
   now(): number;
@@ -86,10 +88,26 @@ export interface AutoPlayHooks {
   keepAwake(on: boolean): void;
   /** Lets go of the attack loop's target and its auto attack (as Escape: the focus, the walk to it). */
   disengage(): void;
+  // 2026-11-17 (owner): smarter farming
+  /** A monster's kind (`added.index`), for the chosen kinds. */
+  indexOf(m: TargetMover): number;
+  /** Whether an object stands on the straight line from the own player to the monster (`sightBlocked`). */
+  lineBlocked(m: TargetMover): boolean;
+  // 2026-11-17 (owner): Support mode
+  /** The partner (by player id) in view: its HP, place, death and buffs; null when out of view. */
+  partner(playerId: number): SupportInput['partner'];
+  /** A skill slot cast on a mover (the partner, or oneself): the focus set to it, then `SkillUse.useSlot`. */
+  castOn(skillIndex: number, objectId: number): void;
+  /** V15's walk to a mover, with no attack (`AttackLoop.followTo`). */
+  follow(objectId: number): void;
+  /** The slot of the resurrection skill, or null when not learned. */
+  resurrectSkill(): number | null;
 }
 
 export type FarmState = 'off' | 'running' | 'stopped';
-export type FarmPhase = 'seeking' | 'fighting' | 'looting' | 'buffing' | 'returning';
+export type FarmPhase = 'seeking' | 'fighting' | 'looting' | 'buffing' | 'returning' | 'supporting' | 'healing' | 'following';
+/** 2026-11-17 (owner): the partner out of view this long stops Support mode (ms). */
+const PARTNER_GONE_MS = 10_000;
 
 const ROW_NAMES: Record<GaugeRow, string> = { hp: 'HP', mp: 'MP', fp: 'FP' };
 /** The values of the spec (6.3, 6.5). */
@@ -111,6 +129,16 @@ const CAST_GAP_MS = 1000;
 const CAST_SAFETY_MS = 5000;
 /** A buff item's buff is looked for this long after its use; none: the entry is skipped (ms). */
 const ITEM_BUFF_SEEN_MS = 3000;
+/** 2026-11-17 (owner, "avoid obstacles"): no step closer and no attack for this long, still farther than SIDE_FAR: blocked (ms). */
+const BLOCKED_MS = 1500;
+/** Farther than this from the target the bot walks; nearer, a standstill is a fight, not an obstacle (m). */
+const SIDE_FAR = 4;
+/** A side step: this far across the line to the target (m), for this long (ms), at most SIDE_STEPS times a target. */
+const SIDE_STEP = 4;
+const SIDE_STEP_MS = 1200;
+const SIDE_STEPS = 2;
+/** A move of this much is a step closer (or away): the bot is not blocked (m). */
+const MOVED = 0.3;
 
 export class AutoPlay {
   private readonly pacer = new PotionPacer();
@@ -120,6 +148,10 @@ export class AutoPlay {
   potionsUsed = 0;
 
   farm: FarmState = 'off';
+  /** Which mode runs (or ran last): the farm bot or Support mode (2026-11-17). */
+  mode: 'farm' | 'support' = 'farm';
+  /** Since when the partner is out of view, or null. */
+  private partnerLostSince: number | null = null;
   phase: FarmPhase = 'seeking';
   lastStop: string | null = null;
   stats = new AutoPlayStats(0);
@@ -130,6 +162,11 @@ export class AutoPlay {
   private startedAt = 0;
   private target: number | null = null;
   private lastEngage = -Infinity;
+  /** 2026-11-17: the side steps around an obstacle: where the bot last moved from, when, how many for this target. */
+  private stillAt: Vec3 = [0, 0, 0];
+  private stillSince = 0;
+  private sideSteps = 0;
+  private sideUntil = 0;
   private lastWalk = -Infinity;
   private nextScan = 0;
   private stuckInRow = 0;
@@ -166,6 +203,11 @@ export class AutoPlay {
     this.hooks.save(this.settings);
   }
 
+  /** Where Start was pressed (the radius is around it) while the farm bot runs; null otherwise. */
+  get anchorAt(): Vec3 | null {
+    return this.farm === 'running' ? this.anchor : null;
+  }
+
   /** The ground item the farm bot is walking to, or null. */
   get lootingId(): number | null {
     return this.looting?.id ?? null;
@@ -174,14 +216,55 @@ export class AutoPlay {
   /** Starts the farm bot where the player stands; false, with the reason said, where it may not run. */
   start(): boolean {
     const h = this.hooks;
-    if (this.farm === 'running') return true;
+    if (this.farm === 'running' && this.mode === 'farm') return true;
     const refused = farmBlocked(h.worldId(), h.inDuel()) ? 'not allowed here' : h.flying() ? 'flying' : !h.alive() ? 'you died' : null;
     const self = h.self();
     if (refused !== null || self === undefined) {
       h.say(`Auto Play stopped: ${refused ?? 'not allowed here'}.`);
       return false;
     }
-    const now = h.now();
+    if (this.farm === 'running') this.dispose(); // the other mode ends quietly
+    this.begin('farm', self);
+    h.say('Auto Play started.');
+    h.keepAwake(true);
+    return true;
+  }
+
+  /**
+   * 2026-11-17 (owner): Support mode: follow the partner, heal and buff them, raise them; never attack. Refused with no
+   * partner, in PvP places and in a duel; dungeons allow it.
+   */
+  startSupport(): boolean {
+    const h = this.hooks;
+    if (this.farm === 'running' && this.mode === 'support') return true;
+    const refused = supportBlocked(h.worldId(), h.inDuel()) ? 'not allowed here' : h.flying() ? 'flying' : !h.alive() ? 'you died'
+      : this.settings.support.partnerPlayerId === 0 ? 'no partner' : null;
+    const self = h.self();
+    if (refused !== null || self === undefined) {
+      h.say(`Auto Play stopped: ${refused ?? 'not allowed here'}.`);
+      return false;
+    }
+    if (this.farm === 'running') this.dispose();
+    this.begin('support', self);
+    this.phase = 'supporting';
+    h.say('Support started.');
+    h.keepAwake(true);
+    return true;
+  }
+
+  /** The AUTO button: the mode last started (the settings keep it). */
+  startMode(): boolean {
+    return this.settings.mode === 'support' ? this.startSupport() : this.start();
+  }
+
+  private begin(mode: 'farm' | 'support', self: TargetMover): void {
+    const h = this.hooks, now = h.now();
+    this.mode = mode;
+    if (this.settings.mode !== mode) {
+      this.settings.mode = mode;
+      this.saved();
+    }
+    this.partnerLostSince = null;
     this.farm = 'running';
     this.phase = 'seeking';
     this.lastStop = null;
@@ -203,9 +286,6 @@ export class AutoPlay {
     this.castWait = -Infinity;
     this.buffing = false;
     this.bagIsFull = h.bagFull();
-    h.say('Auto Play started.');
-    h.keepAwake(true);
-    return true;
   }
 
   /** Stops the farm bot and says why (once). */
@@ -237,7 +317,10 @@ export class AutoPlay {
   step(): void {
     try {
       this.stepPots();
-      if (this.farm === 'running') this.stepFarm();
+      if (this.farm === 'running') {
+        if (this.mode === 'support') this.stepSupport();
+        else this.stepFarm();
+      }
     } catch (error) {
       this.failed(error);
     }
@@ -267,7 +350,11 @@ export class AutoPlay {
       this.fighting.onHit(e.attackerId, e.victimId, now);
       const self = h.self();
       if (self !== undefined && e.victimId === self.objectId && !h.isPlayer(e.attackerId)) this.hittingUs.set(e.attackerId, now);
-      if (self !== undefined && e.attackerId === self.objectId && e.victimId === this.target) this.stuck.progress(Infinity, true, now);
+      if (self !== undefined && e.attackerId === self.objectId && e.victimId === this.target) this.stuck.attacked(now);
+    }
+    if (e.kind === 'swing') {
+      const self = h.self();
+      if (self !== undefined && e.attackerId === self.objectId && e.targetId === this.target) this.stuck.attacked(now);
     }
     if (this.farm !== 'running') return;
     this.stats.onEvent(e);
@@ -303,6 +390,7 @@ export class AutoPlay {
         if (!h.bagFull()) this.bagIsFull = false;
         break;
       case 'skillOk':
+        if (this.target !== null) this.stuck.attacked(now);
         this.timers.ok(e.skillIndex, now);
         this.answered(now);
         break;
@@ -316,6 +404,8 @@ export class AutoPlay {
       default:
         break;
     }
+    // Support mode: the partner's whispers are talk between the two, not a check
+    if (this.mode === 'support' && e.kind === 'whisper' && e.from === this.settings.support.partnerName) return;
     const reason = stopReason(e, h.partyIds());
     if (reason !== null) this.stop(reason);
   }
@@ -400,6 +490,8 @@ export class AutoPlay {
       self, anchor: this.anchor, radius: this.settings.farm.radius, movers: h.movers(), rankOf: (m) => h.rankOf(m),
       hittingUs: new Set(this.hittingUs.keys()), attackable: (m) => h.attackable(m),
       busy: (m) => this.fighting.busy(m, now, self.objectId, party, (id) => h.isPlayer(id)), skip: this.skip, now,
+      avoidGiants: this.settings.farm.avoidGiants, only: new Set(this.settings.farm.only), indexOf: (m) => h.indexOf(m),
+      blocked: (m) => h.lineBlocked(m),
     });
     if (next === null) {
       this.nextScan = now + SCAN_MS;
@@ -408,8 +500,61 @@ export class AutoPlay {
       return;
     }
     this.target = next.objectId;
-    this.stuck.choose(next.objectId, groundDistance(at, next.act.body.pos), now);
+    this.stuck.choose(next.objectId, now);
+    this.stillAt = [...at] as Vec3;
+    this.stillSince = now;
+    this.sideSteps = 0;
+    this.sideUntil = 0;
     this.engage(next.objectId, now);
+  }
+
+  /**
+   * 2026-11-17 (owner): a Support step: the urgent casts first (raise the partner, heal them, heal oneself), then the own
+   * buffs of the Skills tab, then the partner's buffs, then the follow; one cast at a time, each waiting for its answer.
+   */
+  private stepSupport(): void {
+    const h = this.hooks, now = h.now();
+    if (supportBlocked(h.worldId(), h.inDuel())) { this.stop('not allowed here'); return; }
+    if (!h.alive()) return;
+    const stopAfter = this.settings.farm.stopAfterMin;
+    if (stopAfter > 0 && now - this.startedAt >= stopAfter * 60_000) { this.stop('time limit'); return; }
+    const self = h.self();
+    if (self === undefined) return;
+    const partner = h.partner(this.settings.support.partnerPlayerId);
+    if (partner === null) {
+      this.partnerLostSince ??= now;
+      if (now - this.partnerLostSince >= PARTNER_GONE_MS) this.stop('partner gone');
+      else this.phase = 'supporting';
+      return;
+    }
+    this.partnerLostSince = null;
+    const g = h.gauges();
+    const action = pickSupportAction({
+      self: { objectId: self.objectId, hp: g.hp, maxHp: g.maxHp, pos: self.act.body.pos }, partner, settings: this.settings.support,
+      ready: (i) => h.skillKnown(i) && h.skillCostOk(i) && this.timers.ready(i, now),
+      resurrectSkill: h.resurrectSkill(), buffSkillId: (i) => h.buffSkillId(i),
+    });
+    const canCast = now >= this.castWait && !h.chainBusy();
+    if (action.kind === 'cast' && action.why !== 'buff') {
+      this.phase = 'healing';
+      if (canCast) this.cast(now, () => h.castOn(action.skillIndex, action.targetId), action.skillIndex);
+      return;
+    }
+    if (this.buffStep(now)) return;
+    if (action.kind === 'cast') {
+      this.phase = 'buffing';
+      if (canCast) this.cast(now, () => h.castOn(action.skillIndex, action.targetId), action.skillIndex);
+      return;
+    }
+    if (action.kind === 'follow') {
+      this.phase = 'following';
+      if (now - this.lastWalk >= WALK_AGAIN_MS) {
+        this.lastWalk = now;
+        h.follow(action.targetId);
+      }
+      return;
+    }
+    this.phase = 'supporting';
   }
 
   /** The current target: keep at it; false when it is gone or given up. */
@@ -423,7 +568,6 @@ export class AutoPlay {
       this.letGoWand();
       return false;
     }
-    this.stuck.progress(groundDistance(self.act.body.pos, target.act.body.pos), false, now);
     if (this.stuck.stuck(now)) {
       this.skip.add(id, now, STUCK_SKIP_MS);
       this.target = null;
@@ -437,6 +581,7 @@ export class AutoPlay {
       return false;
     }
     this.phase = 'fighting';
+    if (this.sideStep(self, target, now)) return true;
     if (h.focusId() !== id) {
       if (now - this.lastEngage >= ENGAGE_AGAIN_MS) this.engage(id, now);
       return true;
@@ -506,6 +651,40 @@ export class AutoPlay {
     if (stack) h.useItem(stack.objectId);
     this.itemBuff = { index: entry.index, at: now };
     this.castWait = now + CAST_GAP_MS;
+    return true;
+  }
+
+  /**
+   * 2026-11-17 (owner, "avoid obstacles"): FlyffWeb walks in straight lines, so an object between the bot and its target
+   * stops it. Still farther than 4 m, with no step and no attack for 1.5 s, it lets the target go, steps 4 m across the
+   * line (one side, then the other), and after 1.2 s goes at it again; at most twice a target, then the 5 s rule
+   * chooses another. True while a side step runs.
+   */
+  private sideStep(self: TargetMover, target: TargetMover, now: number): boolean {
+    const h = this.hooks, at = self.act.body.pos, to = target.act.body.pos;
+    if (this.sideUntil > 0) {
+      if (now < this.sideUntil) return true;
+      this.sideUntil = 0;
+      this.stillAt = [...at] as Vec3;
+      this.stillSince = now;
+      this.engage(target.objectId, now);
+      return true;
+    }
+    if (groundDistance(at, this.stillAt) > MOVED) {
+      this.stillAt = [...at] as Vec3;
+      this.stillSince = now;
+      return false;
+    }
+    const dist = groundDistance(at, to);
+    if (dist <= SIDE_FAR || this.sideSteps >= SIDE_STEPS || now - this.stillSince < BLOCKED_MS
+      || now - this.stuck.lastAttack < BLOCKED_MS) return false;
+    this.sideSteps++;
+    const side = this.sideSteps % 2 === 1 ? 1 : -1;
+    const dx = (to[0] - at[0]) / dist, dz = (to[2] - at[2]) / dist;
+    this.letGoWand();
+    h.disengage();
+    h.walkTo([at[0] - dz * SIDE_STEP * side, at[1], at[2] + dx * SIDE_STEP * side]);
+    this.sideUntil = now + SIDE_STEP_MS;
     return true;
   }
 

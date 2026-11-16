@@ -2,7 +2,8 @@
 // unit test cannot see. The owner runs it before every deploy (docs/hosting.md step 3).
 //
 // 1. A public build (no `VITE_TEST_HOOKS`) has no test hooks: no output script holds `__client` (src/testHooks.ts).
-// 2. Home and sign-up load no game code: no chunk that `index.html` or `sign-up/index.html` loads at start was made from
+// 2. Home, sign-up and Support / VIP load no game code: no chunk that `index.html`, `sign-up/index.html` or
+//    `vip/index.html` loads at start was made from
 //    three.js, the scene package or the world code (spec §3.1). The build's own list of the modules in each chunk is
 //    read, not a text marker: a tree-shaken import of three.js keeps no marker. /play's chunks are checked to hold
 //    three.js, so a check that stopped seeing it fails instead of passing by accident.
@@ -78,7 +79,7 @@ async function main(): Promise<number> {
     }
     const manifest = JSON.parse(await readFile(path.join(outDir, '.vite/manifest.json'), 'utf8')) as Manifest;
     const gameCodeIn = (file: string) => GAME_CODE.filter(([, pattern]) => (modules.get(file) ?? []).some((id) => pattern.test(id)));
-    for (const page of ['index.html', 'sign-up/index.html']) {
+    for (const page of ['index.html', 'sign-up/index.html', 'vip/index.html']) {
       for (const file of startFiles(manifest, page)) {
         for (const [name] of gameCodeIn(file)) problems.push(`${page} loads ${file}, which holds ${name}`);
       }
@@ -92,7 +93,7 @@ async function main(): Promise<number> {
     for (const problem of problems) console.error(`check:public-build: ${problem}`);
     return 1;
   }
-  console.log('check:public-build: ok (no test hooks; home and sign-up load no game code)');
+  console.log('check:public-build: ok (no test hooks; home, sign-up and vip load no game code)');
   return 0;
 }
 

@@ -1,6 +1,7 @@
 import {
   ArWriter, AttackFlag, BUNDLE_MARKER, MAX_HONOR_TITLE, MAX_SHORTCUT_STRING, MAX_SKILL_JOB, MAX_SLOT_APPLET, MAX_SLOT_ITEM,
-  MAX_SLOT_ITEM_COUNT, MAX_SLOT_QUEUE, MessageType, NULL_ID, ObjectType, PacketType, ProtocolError, ShortcutKind, writeQuest,
+  MAX_SLOT_ITEM_COUNT, MAX_SLOT_QUEUE, MessageType, NULL_ID, ObjectType, PacketType, POCKET_SLOTS, ProtocolError, ShortcutKind,
+  writeQuest,
 } from '@flyffweb/protocol';
 import type {
   AddedMover, AddedNpc, AddedPlayer, FlightReport, InventoryItem, MonsterRate, MoveReport, OwnCharacter, OwnQuest, PartyBlock, PetData,
@@ -791,6 +792,31 @@ const MAX_BANK = 42;
  * 42 slots: `m_apIndex` as a fresh container has it, the count, each item's slot and `CItemElem`, the object indexes.
  * `banks` lists each bank's items in rising slot order (`objectId` 0 to 41).
  */
+/**
+ * 2026-11-17 (extra bag): the three pockets (`CPocketController::Serialize`, `_Common/pocket.cpp:303-330`): per pocket a BYTE,
+ * and when it is 1 its container (identity `m_apIndex`, items by `objectId`), `m_bExpired`, the date (1 when it expires, 0
+ * when not) and, with a date, the seconds left.
+ */
+function writePockets(w: ArWriter, pockets: OwnCharacter['pockets']): void {
+  for (let pocket = 0; pocket < POCKET_SLOTS.length; pocket++) {
+    const it = pockets?.find((p) => p.pocket === pocket);
+    if (it === undefined) { w.u8(0); continue; }
+    const max = POCKET_SLOTS[pocket]!;
+    w.u8(1);
+    for (let i = 0; i < max; i++) w.u32(it.slots[i] ?? i); // m_apIndex
+    w.u8(it.items.length);
+    for (const item of it.items) {
+      if (item.objectId < 0 || item.objectId >= max) throw new Error(`pocket slot ${item.objectId} is not one of ${max}`);
+      w.u8(item.objectId);
+      writeItemElem(w, item);
+    }
+    for (let i = 0; i < max; i++) w.u32(NULL_ID); // adwObjIndex
+    w.i32(it.expired ? 1 : 0);
+    if (it.secondsLeft === null) w.u32(0);
+    else w.u32(1).i32(it.secondsLeft);
+  }
+}
+
 function writeBanks(w: ArWriter, banks: readonly (readonly InventoryItem[])[]): void {
   for (let k = 0; k < 3; k++) {
     const items = banks[k] ?? [];
@@ -875,15 +901,18 @@ export function writeAddSelf(
     .u8(0).u8(0).u8(0) // m_nAttackResistLeft, m_nAttackResistRight, m_nDefenseResist
     .i64(own.angelExp ?? 0n).i32(own.angelLevel ?? 0); // m_nAngelExp, m_nAngelLevel (__VER >= 8; 2026-11-10, Summon Angel)
   writeInventory(w, own.inventory, player.equipmentObjectIds);
-  if (own.petSlot !== undefined || options.banks !== undefined || own.honorCounts !== undefined || own.buffs !== undefined) {
+  if (own.petSlot !== undefined || options.banks !== undefined || own.honorCounts !== undefined || own.buffs !== undefined ||
+    own.pockets !== undefined) {
     writeBanks(w, options.banks ?? []);
     w.u32(own.petSlot ?? NULL_ID); // dwPetId (__VER >= 9, __PET_0410)
   }
-  if (own.honorCounts !== undefined || own.buffs !== undefined) {
-    // 2026-11-11 (honour window): three pockets not there, m_dwMute, the counts (ObjSerializeOpt.cpp:604-634)
+  if (own.honorCounts !== undefined || own.buffs !== undefined || own.pockets !== undefined) {
+    // 2026-11-11 (honour window): three pockets not there, m_dwMute, the counts (ObjSerializeOpt.cpp:604-634);
+    // 2026-11-17 (extra bag): `own.pockets` when given
     const counts = own.honorCounts ?? new Array<number>(MAX_HONOR_TITLE).fill(0);
     if (counts.length !== MAX_HONOR_TITLE) throw new Error(`the own character carries ${MAX_HONOR_TITLE} honour counts`);
-    w.u8(0).u8(0).u8(0).u32(0);
+    writePockets(w, own.pockets);
+    w.u32(0);
     for (const count of counts) w.i32(count);
   }
   if (own.buffs !== undefined) {

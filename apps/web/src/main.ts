@@ -11,17 +11,21 @@ import { consoleLogger } from './log';
 import { RefusalLog } from './refusalLog';
 import { createWebServer } from './server';
 import { SiegeCache } from './siege';
+import { PreregSettings, SignUpBook } from './signUpBook';
 import { sqlAccountStore } from './sqlAccountStore';
 import { loadStatus, StatusCache } from './status';
 import { TicketBook } from './ticket';
+import { startVip } from './vip/startVip';
 
 const USAGE = [
   'Usage: npm run web',
-  '       tsx apps/web/src/main.ts --config <path to a web.config.json>',
+  '       tsx apps/web/src/main.ts --config <path to a web.config.json> [--env <.env>] [--signups <signups.jsonl>]',
   '',
   'Needs a web.config.json, which stays out of git and out of the served folders: copy web.config.example.json and set',
   'the site origin, the SQL login and the ticket secret (apps/web/README.md). Exit code: 0 stopped, 1 could not start,',
   '2 bad command line.',
+  '--env: the pre-registration settings (apps/gateway/.env.example). --signups: where every account made is kept, one',
+  'line each (time, account, IP, browser), for the pre-registration cap and the VIP list (docs/2026-11-15-prereg-login.md).',
 ].join('\n');
 
 function fail(message: string, exitCode: number): never {
@@ -30,8 +34,12 @@ function fail(message: string, exitCode: number): never {
 }
 
 let configPath: string | undefined;
+let envPath: string | undefined;
+let signUpsPath: string | undefined;
 try {
-  configPath = parseArgs({ options: { config: { type: 'string' } } }).values.config;
+  ({ config: configPath, env: envPath, signups: signUpsPath } = parseArgs({
+    options: { config: { type: 'string' }, env: { type: 'string' }, signups: { type: 'string' } },
+  }).values);
 } catch (error) {
   fail(`${(error as Error).message}\n\n${USAGE}`, 2);
 }
@@ -44,8 +52,19 @@ try {
   fail(`web: cannot use ${configPath}: ${(error as Error).message}`, 1);
 }
 
+let signUps: SignUpBook;
+try {
+  signUps = SignUpBook.open(signUpsPath, consoleLogger);
+} catch (error) {
+  fail(`web: cannot read ${signUpsPath}: ${(error as Error).message}`, 1);
+}
+const prereg = new PreregSettings(envPath, consoleLogger);
+prereg.rule(); // its state in the log from the start
+
 const clock = () => Date.now();
 const store = sqlAccountStore(config.sql);
+// Support / VIP (vip/startVip.ts): off without web.config.json's vip section, never stops the site
+const vip = startVip(config, consoleLogger, clock);
 const server = createWebServer({
   config,
   store,
@@ -56,8 +75,11 @@ const server = createWebServer({
   createdByAddress: new HourlyLimit(config.limits.createdPerHourPerAddress, clock),
   createdInAll: new HourlyLimit(config.limits.createdPerHour, clock),
   ticketsByAddress: new HourlyLimit(config.limits.ticketsPerHourPerAddress, clock),
+  signUps,
+  prereg: () => prereg.rule(),
   status: new StatusCache(() => loadStatus(config, store), clock),
   siege: new SiegeCache(store, clock),
+  vip: vip.routes,
 });
 
 server.once('error', (error: Error) => fail(`web: cannot listen on ${config.listen.host}:${config.listen.port}: ${error.message}`, 1));
@@ -72,7 +94,7 @@ let adminServer: Server | undefined;
 void startAdmin(config, consoleLogger, () => {
   adminStore = sqlAdminStore(config.sql, config.admin!.sql);
   return adminStore;
-}, config.admin === undefined ? [] : loadItemCatalog(config.admin.assetsDir, (line) => consoleLogger.warn(line)), ADMIN_ACTIONS)
+}, config.admin === undefined ? [] : loadItemCatalog(config.admin.assetsDir, (line) => consoleLogger.warn(line)), ADMIN_ACTIONS, vip.admin)
   .then((started) => { adminServer = started; });
 
 const stop = (): void => {
@@ -80,7 +102,7 @@ const stop = (): void => {
   server.closeAllConnections();
   adminServer?.close();
   adminServer?.closeAllConnections();
-  void Promise.all([store.close(), adminStore?.close()]).finally(() => process.exit(0));
+  void Promise.all([store.close(), adminStore?.close(), vip.close()]).finally(() => process.exit(0));
 };
 process.once('SIGINT', stop);
 process.once('SIGTERM', stop);

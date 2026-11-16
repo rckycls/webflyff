@@ -23,6 +23,7 @@ const SHAPES = {
   unlock: [['rect', { x: '4', y: '11', width: '16', height: '10', rx: '2' }], ['path', { d: 'M8 11V7a4 4 0 0 1 7.8-1.2' }]],
   gateway: [['path', { d: 'M5 12h14M13 6l6 6-6 6' }]],
   refresh: [['path', { d: 'M20 11a8 8 0 1 0-2.3 5.7' }], ['path', { d: 'M20 4v7h-7' }]],
+  vip: [['path', { d: 'M3 8l4.5 4L12 5l4.5 7L21 8l-2 11H5z' }]],
 };
 
 /** An inline SVG icon by name (hidden from screen readers: the text next to it says what it is). */

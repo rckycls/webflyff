@@ -6,7 +6,7 @@ import { api, el, fill, messageLine, table, timeText } from './ui.js';
 const ACTIONS = [
   '', 'login', 'login_failed', 'accounts.create', 'accounts.password', 'accounts.email', 'accounts.authority', 'accounts.ban',
   'accounts.unban', 'characters.rename', 'characters.gold', 'characters.move', 'characters.delete', 'characters.undelete',
-  'sends.item', 'sends.penya', 'sends.cancel',
+  'sends.item', 'sends.penya', 'sends.cancel', 'vip.approve', 'vip.reject', 'vip.qrAdd', 'vip.qrSave', 'vip.qrDelete', 'vip.tierSave',
 ];
 
 const resultCell = (result) => el('span', { class: result === 'ok' ? 'up' : result === 'started' ? 'partial' : 'down', text: result === 'started' ? 'started (not finished)' : result });

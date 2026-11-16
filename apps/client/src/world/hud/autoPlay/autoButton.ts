@@ -9,6 +9,8 @@ export interface AutoButtonPlay {
   readonly lastStop: string | null;
   start(): boolean;
   stop(reason: string): void;
+  /** 2026-11-17: the mode last started (the farm bot or Support mode). */
+  startMode?(): boolean;
 }
 
 export class AutoButton {
@@ -33,6 +35,7 @@ export class AutoButton {
     button.addEventListener('click', () => {
       if (this.longPressed) { this.longPressed = false; return; }
       if (this.play.farm === 'running') this.play.stop('you took control');
+      else if (this.play.startMode !== undefined) this.play.startMode();
       else this.play.start();
       this.refresh();
     });

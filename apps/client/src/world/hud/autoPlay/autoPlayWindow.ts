@@ -5,11 +5,13 @@
 // list to pick from, so desktop and phone work the same way. Numbers move with [-] and [+], so no keyboard is needed.
 // custom (owner 2026-11-16): the farm bot's looting skips what the Pet Filter leaves behind (hud/petFilterWindow.ts, U).
 
+import { themeUrl } from '../art';
 import type { UiArt } from '../art';
+import { radioFrame } from '../radio';
 import { WindowFrame } from '../frame';
 import { TabPages } from '../guildCombat/tabs';
 import { textButton } from '../numpad';
-import { BELOW, GAUGE_ROWS, MAX_BUFFS, MAX_READY, RADIUS, STOP_AFTER } from '../../autoplay/settings';
+import { BELOW, GAUGE_ROWS, MAX_BUFFS, MAX_HEALS, MAX_PARTNER_BUFFS, MAX_READY, RADIUS, STOP_AFTER } from '../../autoplay/settings';
 import type { AutoPlaySettings, GaugeRow } from '../../autoplay/settings';
 
 /** An item a slot can take: its prop index, name, picture (a URL, or null) and how many the bag holds. */
@@ -47,6 +49,12 @@ export interface AutoPlayWindowDeps {
   buffItemChoices(): AutoPlayItemChoice[];
   /** Opens the battery saver screen (M4). */
   showSaver?(): void;
+  /** 2026-11-17 (owner): the monster kinds inside the radius now (around the start point while farming), nearest first. */
+  monstersNear?(): Array<{ index: number; name: string; level: number; count: number }>;
+  /** A monster kind's name, for a chosen kind no longer near. */
+  monsterName?(index: number): string;
+  /** 2026-11-17 (owner): the player targeted now (Support mode's partner), or null. */
+  targetPlayer?(): { playerId: number; name: string } | null;
 }
 
 /** What the window edits and shows: Auto Play's settings (kept after each change) and the farm bot. */
@@ -60,15 +68,23 @@ export interface AutoPlayWindowPlay {
   readonly stats: { lines(now: number): string[] };
   start(): boolean;
   stop(reason: string): void;
+  /** 2026-11-17: Support mode, and which mode runs. */
+  startSupport?(): boolean;
+  readonly mode?: 'farm' | 'support';
 }
 
-export type AutoPlayTab = 'farm' | 'potions' | 'skills';
-const TABS: readonly AutoPlayTab[] = ['farm', 'potions', 'skills'];
-const TAB_LABELS = ['Farm', 'Potions', 'Skills'];
+export type AutoPlayTab = 'farm' | 'potions' | 'skills' | 'support';
+const TABS: readonly AutoPlayTab[] = ['farm', 'potions', 'skills', 'support'];
+const TAB_LABELS = ['Farm', 'Potions', 'Skills', 'Support'];
+/** The slot rows: the Skills tab's ready skills and buffs, and (2026-11-17) the Support tab's heals and partner buffs. */
+type SlotList = 'ready' | 'buffs' | 'heals' | 'partnerBuffs';
+type SlotEntry = { kind: 'skill' | 'item'; index: number };
 const ROW_NAMES: Record<GaugeRow, string> = { hp: 'HP', mp: 'MP', fp: 'FP' };
 
 const WIDTH = 360;
-const HEIGHT = 250;
+// 2026-11-17: 290 for the Farm tab's monster options (was 250); the Support tab scrolls. (330 made the phone take it for a
+// full phone window, which hides the AUTO button.)
+const HEIGHT = 290;
 
 export class AutoPlayWindow {
   readonly frame: WindowFrame;
@@ -76,11 +92,15 @@ export class AutoPlayWindow {
   /** The potion row whose pick list is open. */
   private picking: GaugeRow | null = null;
   /** The Skills tab's slot whose pick list is open. */
-  private pickingSkill: { list: 'ready' | 'buffs'; slot: number } | null = null;
+  private pickingSkill: { list: SlotList; slot: number } | null = null;
+  /** The Support tab's partner line says this after "Use target" with nobody targeted. */
+  private partnerNote = '';
+  /** The Farm tab's list of monster kinds is open. */
+  private choosingKinds = false;
   /** What was drawn, as a string, to draw only what changed. */
   private shown = '';
 
-  constructor(art: UiArt, private readonly play: AutoPlayWindowPlay, private readonly deps: AutoPlayWindowDeps,
+  constructor(private readonly art: UiArt, private readonly play: AutoPlayWindowPlay, private readonly deps: AutoPlayWindowDeps,
     private readonly doc: Document = document) {
     this.frame = new WindowFrame('Auto Play', art, { width: WIDTH, height: HEIGHT, mobileScale: 1, fitWhole: true }, doc);
     this.frame.element.classList.add('hud-auto-play');
@@ -92,7 +112,7 @@ export class AutoPlayWindow {
     holder.className = 'auto-play-tabs';
     holder.append(this.tabs.element);
     this.frame.body.append(holder);
-    this.frame.onClose = () => { this.picking = null; this.pickingSkill = null; this.shown = ''; };
+    this.frame.onClose = () => { this.picking = null; this.pickingSkill = null; this.choosingKinds = false; this.shown = ''; };
   }
 
   get isOpen(): boolean {
@@ -125,6 +145,7 @@ export class AutoPlayWindow {
     const tab = TABS[this.tabs.selected];
     if (tab === 'farm') { this.refreshFarm(); return; }
     if (tab === 'skills') { this.refreshSkills(); return; }
+    if (tab === 'support') { this.refreshSupport(); return; }
     if (tab !== 'potions') return;
     const choices = this.picking === null ? [] : this.deps.potionChoices();
     const counts = GAUGE_ROWS.map((row) => this.deps.count(this.play.settings.pots.rows[row].itemIndex));
@@ -154,28 +175,43 @@ export class AutoPlayWindow {
     const doc = this.doc, skills = this.play.settings.skills;
     const page = doc.createElement('div');
     page.className = 'auto-skills';
-    const slot = doc.createElement('label');
-    slot.className = 'auto-check';
-    const box = doc.createElement('input');
-    box.type = 'checkbox';
-    box.name = 'auto-action-slot';
-    box.checked = skills.actionSlot;
-    box.addEventListener('change', () => { skills.actionSlot = box.checked; this.changed(); });
-    slot.append(box, doc.createTextNode(' Use Action Slot'));
+    const slot = this.check('auto-action-slot', 'Use Action Slot', skills.actionSlot, (on) => { skills.actionSlot = on; });
     page.append(slot,
       this.slotRow('ready', 'Ready skills', MAX_READY, 'ready skill'),
       this.slotRow('buffs', 'Buffs', MAX_BUFFS, 'buff'));
-    if (this.pickingSkill !== null) page.append(this.skillPickList(this.pickingSkill));
+    if (this.pickingSkill !== null && (this.pickingSkill.list === 'ready' || this.pickingSkill.list === 'buffs')) {
+      page.append(this.skillPickList(this.pickingSkill));
+    }
     return page;
   }
 
   /** A row of `size` slots for the ready skills or the buffs: filled ones first, then the next empty one, greyed after. */
-  private slotRow(list: 'ready' | 'buffs', caption: string, size: number, name: string): HTMLElement {
-    const doc = this.doc, skills = this.play.settings.skills;
+  /** A slot list's entries, skills and (the buffs) items. */
+  private entries(list: SlotList): SlotEntry[] {
+    const { skills, support } = this.play.settings;
+    const asSkills = (indexes: number[]): SlotEntry[] => indexes.map((index) => ({ kind: 'skill', index }));
+    return list === 'ready' ? asSkills(skills.ready) : list === 'buffs' ? skills.buffs
+      : list === 'heals' ? asSkills(support.heals) : asSkills(support.buffs);
+  }
+
+  private setEntry(list: SlotList, slot: number, entry: SlotEntry): void {
+    const { skills, support } = this.play.settings;
+    if (list === 'buffs') skills.buffs[slot] = entry;
+    else if (entry.kind === 'skill') (list === 'ready' ? skills.ready : list === 'heals' ? support.heals : support.buffs)[slot] = entry.index;
+  }
+
+  private removeEntry(list: SlotList, slot: number): void {
+    const { skills, support } = this.play.settings;
+    (list === 'ready' ? skills.ready : list === 'buffs' ? skills.buffs : list === 'heals' ? support.heals : support.buffs).splice(slot, 1);
+  }
+
+  private slotRow(list: SlotList, caption: string, size: number, name: string): HTMLElement {
+    const doc = this.doc;
     const row = doc.createElement('div');
     row.className = `auto-slot-row auto-${list}`;
     row.append(this.caption(caption));
-    const filled = list === 'ready' ? skills.ready.length : skills.buffs.length;
+    const entries = this.entries(list);
+    const filled = entries.length;
     for (let i = 0; i < size; i++) {
       const cell = doc.createElement('span');
       cell.className = 'auto-slot-cell';
@@ -186,12 +222,9 @@ export class AutoPlayWindow {
       button.disabled = i > filled;
       let shown: { name: string; icon: string | null } | null = null;
       if (i < filled) {
-        if (list === 'ready') shown = this.deps.skill(skills.ready[i]!);
-        else {
-          const entry = skills.buffs[i]!;
-          shown = entry.kind === 'skill' ? this.deps.skill(entry.index) : this.deps.item(entry.index);
-          if (entry.kind === 'item' && this.deps.count(entry.index) === 0) button.classList.add('is-missing');
-        }
+        const entry = entries[i]!;
+        shown = entry.kind === 'skill' ? this.deps.skill(entry.index) : this.deps.item(entry.index);
+        if (entry.kind === 'item' && this.deps.count(entry.index) === 0) button.classList.add('is-missing');
         if (shown === null) button.classList.add('is-missing');
       }
       button.append(this.picture(shown?.icon ?? null));
@@ -204,13 +237,12 @@ export class AutoPlayWindow {
       });
       cell.append(button);
       if (i < filled) {
-        const clear = textButton(doc, '×', () => {
-          if (list === 'ready') skills.ready.splice(i, 1);
-          else skills.buffs.splice(i, 1);
+        const clear = this.word('×', () => {
+          this.removeEntry(list, i);
           this.pickingSkill = null;
           this.changed();
         }, 'clear', 'autoPlay');
-        clear.className = 'auto-slot-clear';
+        clear.classList.add('auto-slot-clear');
         clear.setAttribute('aria-label', `Clear ${name} ${i + 1}`);
         cell.append(clear);
       }
@@ -219,8 +251,8 @@ export class AutoPlayWindow {
     return row;
   }
 
-  private skillPickList(at: { list: 'ready' | 'buffs'; slot: number }): HTMLElement {
-    const doc = this.doc, skills = this.play.settings.skills;
+  private skillPickList(at: { list: SlotList; slot: number }): HTMLElement {
+    const doc = this.doc;
     const list = doc.createElement('div');
     list.className = 'auto-pick-list';
     const put = (choose: () => void) => {
@@ -233,10 +265,7 @@ export class AutoPlayWindow {
       button.type = 'button';
       button.className = 'auto-pick';
       button.append(this.picture(skill.icon), doc.createTextNode(skill.name));
-      button.addEventListener('click', () => put(() => {
-        if (at.list === 'ready') skills.ready[at.slot] = skill.skillIndex;
-        else skills.buffs[at.slot] = { kind: 'skill', index: skill.skillIndex };
-      }));
+      button.addEventListener('click', () => put(() => this.setEntry(at.list, at.slot, { kind: 'skill', index: skill.skillIndex })));
       list.append(button);
     }
     if (at.list === 'buffs') {
@@ -245,7 +274,7 @@ export class AutoPlayWindow {
         button.type = 'button';
         button.className = 'auto-pick';
         button.append(this.picture(item.icon), doc.createTextNode(`${item.name} ×${item.count}`));
-        button.addEventListener('click', () => put(() => { skills.buffs[at.slot] = { kind: 'item', index: item.itemIndex }; }));
+        button.addEventListener('click', () => put(() => this.setEntry('buffs', at.slot, { kind: 'item', index: item.itemIndex })));
         list.append(button);
       }
     }
@@ -256,10 +285,97 @@ export class AutoPlayWindow {
     return list;
   }
 
+  private refreshSupport(): void {
+    const play = this.play, support = play.settings.support;
+    const named = [...support.heals, ...support.buffs].map((i) => this.deps.skill(i));
+    const choices = this.pickingSkill !== null && (this.pickingSkill.list === 'heals' || this.pickingSkill.list === 'partnerBuffs')
+      ? this.deps.skillChoices() : null;
+    const key = JSON.stringify(['support', support, play.farm, play.mode, play.phase, play.lastStop, this.pickingSkill, named, choices,
+      this.partnerNote]);
+    if (key === this.shown) return;
+    this.shown = key;
+    this.tabs.pages[TABS.indexOf('support')]!.replaceChildren(this.supportPage());
+  }
+
+  /**
+   * 2026-11-17 (owner, "another tab solely for buffers"): Support mode: the partner (the player targeted), the heals and
+   * the percents they are used under, the buffs kept on the partner, raising them, and Start / Stop.
+   */
+  private supportPage(): HTMLElement {
+    const doc = this.doc, play = this.play, support = play.settings.support;
+    const page = doc.createElement('div');
+    page.className = 'auto-support';
+
+    const partner = doc.createElement('div');
+    partner.className = 'auto-farm-line';
+    const name = doc.createElement('span');
+    name.className = 'auto-support-partner';
+    name.textContent = this.partnerNote !== '' ? this.partnerNote : support.partnerPlayerId === 0 ? 'None' : support.partnerName;
+    const use = this.word('Use target', () => {
+      const target = this.deps.targetPlayer?.() ?? null;
+      this.partnerNote = target === null ? 'Target a player first' : '';
+      if (target !== null) {
+        support.partnerPlayerId = target.playerId;
+        support.partnerName = target.name;
+      }
+      this.changed();
+    }, 'partner-use');
+    const clear = this.word('Clear', () => {
+      support.partnerPlayerId = 0;
+      support.partnerName = '';
+      this.partnerNote = '';
+      this.changed();
+    }, 'partner-clear');
+    clear.disabled = support.partnerPlayerId === 0;
+    partner.append(this.caption('Partner'), name, use, clear);
+
+    const percent = (caption: string, label: string, get: () => number, set: (value: number) => void): HTMLElement => {
+      const line = doc.createElement('div');
+      line.className = 'auto-farm-line';
+      const value = doc.createElement('span');
+      value.className = 'auto-pot-below';
+      value.textContent = `${get()}%`;
+      line.append(this.caption(caption),
+        this.stepButton('-', `${label} lower`, () => set(Math.max(BELOW.min, get() - BELOW.step))),
+        value,
+        this.stepButton('+', `${label} higher`, () => set(Math.min(BELOW.max, get() + BELOW.step))));
+      return line;
+    };
+
+    const running = play.farm === 'running' && play.mode === 'support';
+    const go = this.word(running ? 'Stop' : 'Start', () => {
+      if (running) play.stop('you took control');
+      else play.startSupport?.();
+      this.shown = '';
+      this.refresh();
+    }, 'support-go');
+    go.classList.add('auto-farm-go');
+    go.disabled = !running && support.partnerPlayerId === 0;
+    const state = doc.createElement('div');
+    state.className = 'auto-farm-state';
+    state.textContent = running ? `Running: ${play.phase}` : play.mode === 'support' && play.farm === 'stopped' ? `Stopped: ${play.lastStop ?? ''}` : 'Off';
+
+    const parts: HTMLElement[] = [
+      partner,
+      this.slotRow('heals', 'Heals', MAX_HEALS, 'heal'),
+      percent('Heal partner', 'Partner HP', () => support.partnerBelow, (v) => { support.partnerBelow = v; }),
+      percent('Heal me', 'My HP', () => support.selfBelow, (v) => { support.selfBelow = v; }),
+      this.slotRow('partnerBuffs', 'Partner buffs', MAX_PARTNER_BUFFS, 'partner buff'),
+      this.check('auto-resurrect', 'Resurrect partner', support.resurrect, (on) => { support.resurrect = on; }),
+    ];
+    if (this.pickingSkill !== null && (this.pickingSkill.list === 'heals' || this.pickingSkill.list === 'partnerBuffs')) {
+      parts.push(this.skillPickList(this.pickingSkill));
+    }
+    page.append(...parts, go, state);
+    return page;
+  }
+
   private refreshFarm(): void {
     const play = this.play, allowed = this.deps.farmAllowed();
     const lines = play.farm === 'off' ? [] : play.stats.lines(this.deps.now());
-    const key = JSON.stringify(['farm', play.settings.farm, play.farm, play.phase, play.lastStop, play.bagIsFull, allowed, lines]);
+    const near = this.choosingKinds ? this.deps.monstersNear?.() ?? [] : [];
+    const key = JSON.stringify(['farm', play.settings.farm, play.farm, play.phase, play.lastStop, play.bagIsFull, allowed, lines,
+      this.choosingKinds, near]);
     if (key === this.shown) return;
     this.shown = key;
     this.tabs.pages[TABS.indexOf('farm')]!.replaceChildren(this.farmPage(allowed, lines));
@@ -280,14 +396,7 @@ export class AutoPlayWindow {
       radiusText,
       this.stepButton('+', 'Radius larger', () => { farm.radius = Math.min(RADIUS.max, farm.radius + RADIUS.step); }));
 
-    const loot = doc.createElement('label');
-    loot.className = 'auto-check';
-    const lootBox = doc.createElement('input');
-    lootBox.type = 'checkbox';
-    lootBox.name = 'auto-loot';
-    lootBox.checked = farm.loot;
-    lootBox.addEventListener('change', () => { farm.loot = lootBox.checked; this.changed(); });
-    loot.append(lootBox, doc.createTextNode(' Pick up drops'));
+    const loot = this.check('auto-loot', 'Pick up drops', farm.loot, (on) => { farm.loot = on; });
     // custom (owner 2026-11-16)
     loot.title = 'Leaves on the ground what the Pet Filter (U) leaves.';
 
@@ -304,13 +413,13 @@ export class AutoPlayWindow {
       this.stepButton('+', 'Stop later', () => { farm.stopAfterMin = Math.min(STOP_AFTER.max, farm.stopAfterMin + STOP_AFTER.step); }));
 
     const running = play.farm === 'running';
-    const go = textButton(doc, running ? 'Stop' : 'Start', () => {
+    const go = this.word(running ? 'Stop' : 'Start', () => {
       if (play.farm === 'running') play.stop('you took control');
       else play.start();
       this.shown = '';
       this.refresh();
     }, 'go', 'autoPlay');
-    go.className = 'auto-farm-go';
+    go.classList.add('auto-farm-go');
     go.disabled = !running && !allowed;
 
     const state = doc.createElement('div');
@@ -325,12 +434,52 @@ export class AutoPlayWindow {
     buttons.className = 'auto-farm-buttons';
     buttons.append(go);
     if (running && this.deps.showSaver !== undefined) {
-      const saver = textButton(doc, 'Battery saver', () => this.deps.showSaver?.(), 'saver', 'autoPlay');
-      saver.className = 'auto-farm-go';
+      const saver = this.word('Battery saver', () => this.deps.showSaver?.(), 'saver', 'autoPlay');
+      saver.classList.add('auto-farm-go');
       buttons.append(saver);
     }
-    page.append(radius, loot, after, buttons, state, stats);
+    // 2026-11-17 (owner): "avoid giants, select specific monster on the said radius and only attack that mob"
+    const giants = this.check('auto-avoid-giants', 'Avoid giants and bosses', farm.avoidGiants, (on) => { farm.avoidGiants = on; });
+    const kinds = doc.createElement('div');
+    kinds.className = 'auto-farm-line';
+    const chosen = doc.createElement('span');
+    chosen.className = 'auto-farm-only';
+    chosen.textContent = farm.only.length === 0 ? 'All' : farm.only.map((index) => this.deps.monsterName?.(index) ?? String(index)).join(', ');
+    const choose = this.word(this.choosingKinds ? 'Done' : 'Choose', () => { this.choosingKinds = !this.choosingKinds; this.shown = ''; this.refresh(); },
+      'only-choose');
+    choose.setAttribute('aria-label', 'Choose');
+    kinds.append(this.caption('Monsters'), chosen, choose);
+    const parts: HTMLElement[] = [radius, loot, giants, kinds];
+    if (this.choosingKinds) parts.push(this.kindList());
+    page.append(...parts, after, buttons, state, stats);
     return page;
+  }
+
+  /** The monster kinds in the radius, and the chosen ones no longer near, each a V15 check box; "All kinds" clears them. */
+  private kindList(): HTMLElement {
+    const doc = this.doc, farm = this.play.settings.farm;
+    const list = doc.createElement('div');
+    list.className = 'auto-only-list';
+    const near = this.deps.monstersNear?.() ?? [];
+    const rows = near.map((m) => ({ index: m.index, text: `${m.name} Lv ${m.level} ×${m.count}` }));
+    for (const index of farm.only) {
+      if (!near.some((m) => m.index === index)) rows.push({ index, text: this.deps.monsterName?.(index) ?? String(index) });
+    }
+    for (const row of rows) {
+      list.append(this.check(`auto-only-${row.index}`, row.text, farm.only.includes(row.index), (on) => {
+        farm.only = on ? [...farm.only, row.index] : farm.only.filter((index) => index !== row.index);
+      }));
+    }
+    if (rows.length === 0) {
+      const none = doc.createElement('span');
+      none.className = 'auto-only-none';
+      none.textContent = 'No monster in the radius.';
+      list.append(none);
+    }
+    const all = this.word('All kinds', () => { farm.only = []; this.changed(); }, 'only-all');
+    all.disabled = farm.only.length === 0;
+    list.append(all);
+    return list;
   }
 
   private caption(text: string): HTMLElement {
@@ -342,8 +491,44 @@ export class AutoPlayWindow {
 
   /** A [-] or [+] that changes a setting, then keeps and draws it. */
   private stepButton(label: string, name: string, change: () => void): HTMLButtonElement {
-    const button = textButton(this.doc, label, () => { change(); this.changed(); }, label === '-' ? 'lower' : 'higher', 'autoPlay');
+    const button = this.word(label, () => { change(); this.changed(); }, label === '-' ? 'lower' : 'higher', 'autoPlay');
     button.setAttribute('aria-label', name);
+    return button;
+  }
+
+  /**
+   * 2026-11-17 (owner, "follow the v15 theme"): a check box as Neuz draws one (`CTheme::RenderWndButtonCheck`):
+   * ButtCheck.bmp's six 14 px frames, `radioFrame`'s 1 unticked and 3 ticked, its title beside it. The whole line is
+   * the press area (a finger's 28 px on a phone, style.css).
+   */
+  private check(name: string, label: string, checked: boolean, change: (on: boolean) => void): HTMLButtonElement {
+    const doc = this.doc;
+    const button = doc.createElement('button');
+    button.type = 'button';
+    button.className = 'auto-check';
+    button.setAttribute('role', 'checkbox');
+    button.setAttribute('aria-checked', String(checked));
+    button.dataset.name = name;
+    button.addEventListener('mousedown', (event) => event.preventDefault());
+    const box = doc.createElement('span');
+    box.className = 'auto-v15-check';
+    box.style.backgroundImage = themeUrl(this.art, 'ButtCheck.bmp');
+    box.dataset.frame = String(radioFrame({ checked, disabled: false, highlighted: false, pressed: false }));
+    button.append(box);
+    if (label !== '') {
+      const text = doc.createElement('span');
+      text.className = 'auto-check-label';
+      text.textContent = label;
+      button.append(text);
+    }
+    button.addEventListener('click', () => { change(!checked); this.changed(); });
+    return button;
+  }
+
+  /** 2026-11-17 (owner, V15 theme): a word button, in the silver look of Neuz's word buttons (style.css `.auto-word`). */
+  private word(label: string, press: () => void, name?: string, attribute = 'autoPlay'): HTMLButtonElement {
+    const button = textButton(this.doc, label, press, name, attribute);
+    button.classList.add('auto-word');
     return button;
   }
 
@@ -356,14 +541,8 @@ export class AutoPlayWindow {
 
   private potionsPage(choices: AutoPlayItemChoice[], counts: number[]): HTMLElement[] {
     const doc = this.doc, pots = this.play.settings.pots;
-    const head = doc.createElement('label');
-    head.className = 'auto-check auto-pots-on';
-    const box = doc.createElement('input');
-    box.type = 'checkbox';
-    box.name = 'auto-pots';
-    box.checked = pots.enabled;
-    box.addEventListener('change', () => { pots.enabled = box.checked; this.changed(); });
-    head.append(box, doc.createTextNode(' Auto pots'));
+    const head = this.check('auto-pots', 'Auto pots', pots.enabled, (on) => { pots.enabled = on; });
+    head.classList.add('auto-pots-on');
 
     const rows = GAUGE_ROWS.map((row, i) => this.potionRow(row, counts[i]!));
     const out: HTMLElement[] = [head, ...rows];
@@ -394,22 +573,18 @@ export class AutoPlayWindow {
     amount.className = 'auto-pot-count';
     amount.textContent = set.itemIndex > 0 ? `×${count}` : '';
 
-    const lower = textButton(doc, '-', () => { set.below = Math.max(BELOW.min, set.below - BELOW.step); this.changed(); }, 'lower', 'autoPlay');
+    const lower = this.word('-', () => { set.below = Math.max(BELOW.min, set.below - BELOW.step); this.changed(); }, 'lower', 'autoPlay');
     lower.setAttribute('aria-label', `${name} lower`);
     const below = doc.createElement('span');
     below.className = 'auto-pot-below';
     below.textContent = `${set.below}%`;
-    const higher = textButton(doc, '+', () => { set.below = Math.min(BELOW.max, set.below + BELOW.step); this.changed(); }, 'higher', 'autoPlay');
+    const higher = this.word('+', () => { set.below = Math.min(BELOW.max, set.below + BELOW.step); this.changed(); }, 'higher', 'autoPlay');
     higher.setAttribute('aria-label', `${name} higher`);
 
-    const on = doc.createElement('input');
-    on.type = 'checkbox';
-    on.name = `auto-pot-on-${row}`;
-    on.checked = set.on;
+    const on = this.check(`auto-pot-on-${row}`, '', set.on, (value) => { set.on = value; });
     on.setAttribute('aria-label', `Use the ${name} item`);
-    on.addEventListener('change', () => { set.on = on.checked; this.changed(); });
 
-    const clear = textButton(doc, '×', () => { set.itemIndex = 0; this.changed(); }, 'clear', 'autoPlay');
+    const clear = this.word('×', () => { set.itemIndex = 0; this.changed(); }, 'clear', 'autoPlay');
     clear.setAttribute('aria-label', `Clear the ${name} item`);
     clear.disabled = set.itemIndex <= 0;
 

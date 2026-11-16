@@ -2,6 +2,7 @@
  * custom (owner 2026-11-15): Auto Play. The farm bot's, the auto pots' and the auto skills' settings, one set per
  * character (skills and items differ by job), kept in localStorage under `flyffweb.autoPlay.<playerId>`. V15 has no
  * such feature (docs/superpowers/specs/2026-11-15-auto-play-design.md, 6.12).
+ * (2026-11-16: the farm bot's looting follows the Pet Filter, items/petFilter.ts, a setting of its own.)
  */
 
 export type GaugeRow = 'hp' | 'mp' | 'fp';
@@ -17,7 +18,13 @@ export interface PotionRow {
 
 export interface AutoPlaySettings {
   version: 1;
-  farm: { radius: number; loot: boolean; stopAfterMin: number /* 0 = off */ };
+  farm: {
+    radius: number; loot: boolean; stopAfterMin: number /* 0 = off */;
+    /** 2026-11-17 (owner): bosses, mid-bosses and giants left alone. */
+    avoidGiants: boolean;
+    /** 2026-11-17 (owner): the monster kinds (`added.index`) to fight, max 16; empty: every kind. */
+    only: number[];
+  };
   pots: { enabled: boolean; rows: Record<GaugeRow, PotionRow> };
   skills: {
     actionSlot: boolean;
@@ -26,6 +33,18 @@ export interface AutoPlaySettings {
     /** Max 8. */
     buffs: Array<{ kind: 'skill' | 'item'; index: number }>;
   };
+  /** 2026-11-17 (owner): Support mode, for a buffer: the partner (any player targeted), heals, buffs on them, raising them. */
+  support: {
+    partnerPlayerId: number; partnerName: string;
+    /** Heal skill slots, max 2. */
+    heals: number[];
+    partnerBelow: number; selfBelow: number;
+    /** Buff skill slots cast on the partner, max 8. */
+    buffs: number[];
+    resurrect: boolean;
+  };
+  /** Which mode the AUTO button starts: the one last started. */
+  mode: 'farm' | 'support';
 }
 
 export type BuffEntry = AutoPlaySettings['skills']['buffs'][number];
@@ -35,12 +54,15 @@ export const BELOW = { min: 10, max: 90, step: 5 } as const;
 export const STOP_AFTER = { min: 60, max: 720, step: 60 } as const;
 export const MAX_READY = 4;
 export const MAX_BUFFS = 8;
+export const MAX_ONLY = 16;
+export const MAX_HEALS = 2;
+export const MAX_PARTNER_BUFFS = 8;
 const STORE_KEY = 'flyffweb.autoPlay.';
 
 export function defaultSettings(): AutoPlaySettings {
   return {
     version: 1,
-    farm: { radius: RADIUS.initial, loot: true, stopAfterMin: 0 },
+    farm: { radius: RADIUS.initial, loot: true, stopAfterMin: 0, avoidGiants: true, only: [] },
     pots: {
       enabled: false,
       rows: {
@@ -50,6 +72,8 @@ export function defaultSettings(): AutoPlaySettings {
       },
     },
     skills: { actionSlot: true, ready: [], buffs: [] },
+    support: { partnerPlayerId: 0, partnerName: '', heals: [], partnerBelow: 70, selfBelow: 50, buffs: [], resurrect: true },
+    mode: 'farm',
   };
 }
 
@@ -72,6 +96,8 @@ export function clampSettings(raw: unknown): AutoPlaySettings {
   const farm = isObject(raw.farm) ? raw.farm : {};
   s.farm.radius = stepped(farm.radius, RADIUS.min, RADIUS.max, RADIUS.step, RADIUS.initial);
   if (typeof farm.loot === 'boolean') s.farm.loot = farm.loot;
+  if (typeof farm.avoidGiants === 'boolean') s.farm.avoidGiants = farm.avoidGiants;
+  if (Array.isArray(farm.only)) s.farm.only = [...new Set(farm.only.filter(isIndex))].slice(0, MAX_ONLY);
   s.farm.stopAfterMin = isNumber(farm.stopAfterMin) && farm.stopAfterMin > 0
     ? stepped(farm.stopAfterMin, STOP_AFTER.min, STOP_AFTER.max, STOP_AFTER.step, 0) : 0;
   const pots = isObject(raw.pots) ? raw.pots : {};
@@ -93,6 +119,16 @@ export function clampSettings(raw: unknown): AutoPlaySettings {
       .map((b) => ({ kind: b.kind, index: b.index }))
       .slice(0, MAX_BUFFS);
   }
+  const support = isObject(raw.support) ? raw.support : {};
+  const out = s.support;
+  if (isIndex(support.partnerPlayerId)) out.partnerPlayerId = support.partnerPlayerId;
+  if (typeof support.partnerName === 'string') out.partnerName = support.partnerName.slice(0, 32);
+  if (Array.isArray(support.heals)) out.heals = support.heals.filter(isSlot).slice(0, MAX_HEALS);
+  if (Array.isArray(support.buffs)) out.buffs = support.buffs.filter(isSlot).slice(0, MAX_PARTNER_BUFFS);
+  out.partnerBelow = stepped(support.partnerBelow, BELOW.min, BELOW.max, BELOW.step, out.partnerBelow);
+  out.selfBelow = stepped(support.selfBelow, BELOW.min, BELOW.max, BELOW.step, out.selfBelow);
+  if (typeof support.resurrect === 'boolean') out.resurrect = support.resurrect;
+  if (raw.mode === 'support') s.mode = 'support';
   return s;
 }
 

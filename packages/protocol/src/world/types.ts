@@ -28,11 +28,12 @@ import type { TaxMessage } from './tax';
 import type { CoupleMessage } from './couple'; // 2026-11-15 (social)
 import type { DuelMessage } from './duel'; // 2026-11-15 (social)
 import type { GuildCombatMessage } from './guildCombat';
+import type { PocketMessage } from './pocket'; // 2026-11-17 (extra bag)
 
 export type WorldMessage = ChatMessage | NpcMessage | ShopMessage | QuestMessage | PetMessage | FriendMessage | TradeMessage | VendorMessage
   | GuildMessage | GuildDirectMessage | BankMessage | GuildBankMessage | HousingMessage | GuildHouseMessage | PostMessage | LordMessage | HonorMessage | HpLayerMessage
   | TaxMessage
-  | CoupleMessage | DuelMessage | GuildCombatMessage
+  | CoupleMessage | DuelMessage | GuildCombatMessage | PocketMessage
   | { type: 'profileStats'; values: number[] }
   | { type: 'addItem'; item: GroundItem }
   | { type: 'createItem'; itemType: number; item: InventoryItem; stacks: Array<{ objectId: number; count: number }> }
@@ -525,10 +526,29 @@ export interface OwnCharacter {
    */
   honorCounts?: number[];
   /**
+   * 2026-11-17 (extra bag): the pockets the own ADD_OBJ carries (`m_Pocket.Serialize`, ObjSerializeOpt.cpp:604-606), only
+   * those that exist; absent when something before them (the inventory, the banks) could not be read.
+   */
+  pockets?: OwnPocket[];
+  /**
    * 2026-11-13: the own buffs at the message's end (`CBuffMgr::Serialize`, ObjSerializeOpt.cpp:757-761), after
    * `m_idCampus` and `m_nCampusPoint`; absent when there are none or the reader stopped before them.
    */
   buffs?: AddedBuff[];
+}
+
+/** 2026-11-17 (extra bag): a pocket of the own ADD_OBJ (`CPocket::Serialize`, `_Common/pocket.cpp:28-50`). */
+export interface OwnPocket {
+  /** 0, 1 or 2. */
+  pocket: number;
+  /** `m_bExpired`. */
+  expired: boolean;
+  /** The seconds left when it was sent (`m_tExpirationDate - time_null()`); null for a pocket that never expires (date 0). */
+  secondsLeft: number | null;
+  /** `m_apIndex`: positions to object ids. */
+  slots: number[];
+  /** The items, `objectId` = the storage index. */
+  items: InventoryItem[];
 }
 
 /** 2026-11-10 (bank-mail): `m_nSlot`, `m_dwGoldBank[3]`, `m_idPlayerBank[3]`, `m_Bank[3]`. */

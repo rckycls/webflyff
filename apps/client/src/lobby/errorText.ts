@@ -42,6 +42,12 @@ const SERVER_ERRORS: ReadonlyMap<number, string> = new Map([
   [ServerError.NO_SUCH_GROUP, 'Oops. Try again.'],
 ]);
 
+/**
+ * ERROR_NO_SUCH_GROUP as the answer to a delete (2026-11-17): the Database server checks the delete code against the
+ * character's bank PIN and answers a wrong one with that code. Neuz shows "Oops. Try again." for it.
+ */
+export const WRONG_DELETE_PIN = 'Wrong bank PIN.';
+
 /** The message for a server error code; a code the table does not have shows its number. */
 export function errorText(code: number): string {
   return SERVER_ERRORS.get(code) ?? `Error ${code}`;

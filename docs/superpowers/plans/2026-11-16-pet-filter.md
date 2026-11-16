@@ -47,10 +47,12 @@ cards stay outside every check, as in the post.
   - No text fields or amounts, so no keyboard or number pad.
 - **Opening it:**
   - A Start menu line "Pet Filter" after Auto Play, so the menu has 20 lines; the phone shows them in two columns of 10.
+    After the 2026-11-17 merge with main's Backpack line it has 21 (540 px), and the phone shows 11 and 10.
   - Hotkey U, free since the Teleporter went.
   - The applet id is 9003, because the post's 2022 is APP_MAP_EX in this ResData.h.
 - **Saved setting:** `localStorage['flyffweb.petFilter']`, one per browser for every character, as Neuz.ini was.
 - **Auto Play:** its looting skips the same items. The Loot tab, its 8 kinds and Auto Play's `loot.mask` are removed.
+  After the merge with Auto Play round 2 (2026-11-17), its tabs are Farm, Potions, Skills and Support, in the round-2 look.
 - **Packet:** `PET_FILTER` 0x8fff0101, one DWORD.
   - Sent on world entry when the setting is not empty, and after an Apply that changes it.
   - It replaces 0x8fff0100. A World server without the new patch ignores the new packet, so the pet takes everything.

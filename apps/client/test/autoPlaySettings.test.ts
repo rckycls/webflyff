@@ -24,7 +24,7 @@ describe('Auto Play settings (custom, owner 2026-11-15)', () => {
   it('defaults match the spec', () => {
     const s = defaultSettings();
     expect(s.version).toBe(1);
-    expect(s.farm).toEqual({ radius: 15, loot: true, stopAfterMin: 0 });
+    expect(s.farm).toEqual({ radius: 15, loot: true, stopAfterMin: 0, avoidGiants: true, only: [] });
     expect(s.pots.enabled).toBe(false);
     expect(s.pots.rows.hp).toEqual({ itemIndex: 0, below: 50, on: true });
     expect(s.pots.rows.mp).toEqual({ itemIndex: 0, below: 30, on: true });
@@ -109,5 +109,47 @@ describe('Auto Play settings: skill slot 0 (review fix 2026-11-15)', () => {
     const s = clampSettings(raw);
     expect(s.skills.ready).toEqual([0, 3]);
     expect(s.skills.buffs).toEqual([{ kind: 'skill', index: 0 }, { kind: 'item', index: 2001 }]);
+  });
+});
+
+describe('Auto Play settings: avoid giants, chosen monsters (owner 2026-11-17)', () => {
+  it('avoidGiants is a boolean (default true); only keeps up to 16 monster indexes', () => {
+    const raw = defaultSettings() as unknown as { farm: Record<string, unknown> };
+    raw.farm.avoidGiants = false;
+    raw.farm.only = [20, 'x', -1, 21, ...Array.from({ length: 20 }, (_, i) => 100 + i)];
+    const s = clampSettings(raw);
+    expect(s.farm.avoidGiants).toBe(false);
+    expect(s.farm.only.slice(0, 3)).toEqual([20, 21, 100]);
+    expect(s.farm.only).toHaveLength(16);
+    const old = defaultSettings() as unknown as { farm: Record<string, unknown> };
+    delete old.farm.avoidGiants;
+    delete old.farm.only;
+    expect(clampSettings(old).farm).toMatchObject({ avoidGiants: true, only: [] });
+  });
+});
+
+describe('Auto Play settings: Support mode (owner 2026-11-17)', () => {
+  it('defaults: no partner, heal the partner below 70 and myself below 50, resurrect on, farm mode', () => {
+    const s = defaultSettings();
+    expect(s.support).toEqual({ partnerPlayerId: 0, partnerName: '', heals: [], partnerBelow: 70, selfBelow: 50, buffs: [], resurrect: true });
+    expect(s.mode).toBe('farm');
+  });
+
+  it('clamps: 2 heals, 8 buffs, percents in steps of 5, a mode of farm or support', () => {
+    const raw = defaultSettings() as unknown as Record<string, unknown> & { support: Record<string, unknown> };
+    raw.support.heals = [0, 3, 4, 5];
+    raw.support.buffs = Array.from({ length: 10 }, (_, i) => i);
+    raw.support.partnerBelow = 73;
+    raw.support.selfBelow = 5;
+    raw.support.partnerPlayerId = 501;
+    raw.support.partnerName = 'Rocky';
+    raw.mode = 'support';
+    const s = clampSettings(raw);
+    expect(s.support.heals).toEqual([0, 3]);
+    expect(s.support.buffs).toHaveLength(8);
+    expect([s.support.partnerBelow, s.support.selfBelow]).toEqual([75, 10]);
+    expect([s.support.partnerPlayerId, s.support.partnerName, s.mode]).toEqual([501, 'Rocky', 'support']);
+    raw.mode = 'other';
+    expect(clampSettings(raw).mode).toBe('farm');
   });
 });

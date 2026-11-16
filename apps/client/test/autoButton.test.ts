@@ -12,10 +12,12 @@ function rig() {
     lastStop: null as string | null,
     start: () => { play.farm = 'running'; play.lastStop = null; return true; },
     stop: (reason: string) => { play.farm = 'stopped'; play.lastStop = reason; },
+    startMode: () => { play.farm = 'running'; play.lastStop = null; modeStarts++; return true; },
   };
+  let modeStarts = 0;
   const button = new AutoButton(play, () => { opened++; }, document);
   document.body.append(button.element);
-  return { button, play, opened: () => opened };
+  return { button, play, opened: () => opened, modeStarts: () => modeStarts };
 }
 
 describe('AutoButton', () => {
@@ -93,5 +95,13 @@ describe('flashStoppedTitle', () => {
     expect(document.title).toBe('(!) Stopped - FlyffWeb');
     setHidden(false);
     expect(document.title).toBe('FlyffWeb');
+  });
+});
+
+describe('AutoButton: the mode last started (2026-11-17)', () => {
+  it('a click starts the mode last started (startMode), farm or Support', () => {
+    const { button, modeStarts } = rig();
+    button.element.click();
+    expect(modeStarts()).toBe(1);
   });
 });

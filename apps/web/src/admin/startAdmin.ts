@@ -7,7 +7,7 @@ import type { WebConfig } from '../config';
 import type { Logger } from '../log';
 import { LOCK_PROBE_TIMEOUT_MS, probeState } from './serverState';
 import { createAdminServer } from './adminServer';
-import type { ActionHandler } from './adminServer';
+import type { ActionHandler, AdminDeps } from './adminServer';
 import type { AdminStore } from './adminStore';
 import { readCredentials } from './credentials';
 import type { AdminCredentials } from './credentials';
@@ -24,6 +24,7 @@ export async function startAdmin(
   makeStore: () => AdminStore,
   catalog: CatalogItem[],
   actions: Record<string, ActionHandler> = {},
+  vip?: AdminDeps['vip'],
 ): Promise<Server | undefined> {
   const off = (reason: string): undefined => {
     log.warn(`admin: panel off: ${reason}`);
@@ -52,6 +53,7 @@ export async function startAdmin(
     probe: (host, port) => probeState(host, port, LOCK_PROBE_TIMEOUT_MS),
     catalog,
     actions,
+    vip,
   });
   const listened = await new Promise<boolean>((resolve) => {
     server.once('error', (error: Error) => {

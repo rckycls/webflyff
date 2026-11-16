@@ -4,53 +4,11 @@
 // the certifier ever sees the account. Without the certifier's auth key the login and cache servers take nothing.
 
 import { readFileSync, statSync } from 'node:fs';
+import { PREREG_OFF, parsePreregEnv, type PreregRule } from '@flyffweb/protocol';
 import type { Logger } from './log';
 
-/** What the `.env` file says. `allowed` holds the names in lower case: account names are not case-sensitive. */
-export interface PreregRule {
-  on: boolean;
-  allowed: ReadonlySet<string>;
-  /** Problems worth a line in the log, for example a PREREG_ONLY that is neither true nor false. */
-  warnings: string[];
-}
-
-export const PREREG_OFF: PreregRule = Object.freeze({ on: false, allowed: new Set<string>(), warnings: [] });
-
-const ON = new Set(['true', '1', 'yes', 'on']);
-const OFF = new Set(['false', '0', 'no', 'off', '']);
-
-/** The value of one `KEY=VALUE` line: quotes taken off, or a ` #` comment after an unquoted value. */
-function value(raw: string): string {
-  const text = raw.trim();
-  const quote = text[0];
-  if ((quote === '"' || quote === "'") && text.length >= 2 && text.endsWith(quote)) return text.slice(1, -1).trim();
-  return text.replace(/\s+#.*$/, '').trim();
-}
-
-/**
- * Reads the text of a `.env` file: `KEY=VALUE` lines, `#` comments and blank lines; keys in any case; the last line
- * of a key wins. `PREREG_ONLY` true, 1, yes or on turns the lock on; false, 0, no, off, empty or no line leaves it
- * off; anything else turns it on too, with a warning, so a typo never opens the game. `PREREG_ALLOWED_ACCOUNTS` is a
- * list of account names split at commas (spaces and semicolons work too), trimmed and in lower case.
- */
-export function parsePreregEnv(text: string): PreregRule {
-  const values = new Map<string, string>();
-  for (const line of text.replace(/^﻿/, '').split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (trimmed === '' || trimmed.startsWith('#')) continue;
-    const eq = trimmed.indexOf('=');
-    if (eq <= 0) continue;
-    values.set(trimmed.slice(0, eq).trim().replace(/^export\s+/i, '').toUpperCase(), value(trimmed.slice(eq + 1)));
-  }
-  const warnings: string[] = [];
-  const only = (values.get('PREREG_ONLY') ?? '').toLowerCase();
-  const on = !OFF.has(only);
-  if (on && !ON.has(only)) warnings.push(`PREREG_ONLY=${only} is neither true nor false: the lock is on`);
-  const allowed = new Set(
-    (values.get('PREREG_ALLOWED_ACCOUNTS') ?? '').split(/[\s,;]+/).map((name) => name.toLowerCase()).filter((name) => name !== ''),
-  );
-  return { on, allowed, warnings };
-}
+// The .env reader is shared with the web service (packages/protocol/src/web/prereg.ts)
+export { PREREG_OFF, parsePreregEnv, type PreregRule };
 
 /** The log line for a rule read from `path`. */
 export function describeRule(rule: PreregRule, path: string): string {
