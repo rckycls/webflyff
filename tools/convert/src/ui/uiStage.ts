@@ -293,6 +293,9 @@ export const THEME_FILES: readonly string[] = [
   'TexGuildCombatWinner.bmp', 'TexGuildCombatBest.bmp', 'ButtGW1.tga', 'ButtGW2.tga', 'ButtGW3.tga', 'ButtGW4.tga',
   'ButtGWDefender.tga', 'ButtDefenderIcon.tga', 'ButtApply.tga', 'ButtSave.tga', 'ButtUp.tga',
   'ButtDown.tga',
+  // 2026-11-17, the extra bag (docs/2026-11-17-extra-bag-research.md §3): APP_BAG_EX's picture (resdata.inc:13938), the
+  // cover over a pocket not in use and the two bag icons, in use and empty (CWndBagEx::OnInitialUpdate, WndBagEx.cpp:173-175)
+  'InventoryBag.tga', 'InventoryBagEff.tga', 'Itm_SysSysScrBagBag01.bmp', 'Itm_SysSysScrBagBag02.bmp',
 ];
 
 /**

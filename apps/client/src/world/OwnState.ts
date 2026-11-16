@@ -8,6 +8,7 @@ import { MAX_VIS } from './pets/buffPet';
 import type { VisPet } from './pets/buffPet';
 import { BAG_POSITIONS, containerAdd, tradeConsent } from './trade/itemContainer';
 import { BankBook } from './bank/bankBook';
+import { PocketBook } from './pocket/pocketBook';
 import type { ItemContainer, TradeSlot } from './trade/itemContainer';
 import type { GameData } from './gameData';
 import { Parts, ownWorn } from './render/looks';
@@ -236,6 +237,8 @@ export class OwnState {
   petSlot: number | null;
   /** 2026-11-10 (bank-mail): the account's three banks (`m_Bank`, `m_dwGoldBank`, `m_idPlayerBank`, `m_nSlot`). */
   readonly bank: BankBook;
+  /** 2026-11-17 (extra bag): the own three pockets (`m_Pocket`). */
+  readonly pockets: PocketBook;
   /**
    * 2026-11-09 (pets B1): `m_objIdVisPet` and `m_oiEatPet` as VISPET_ACTIVATE sets them (`SetVisPetItem`, `SetEatPetId`,
    * `DPClient.cpp:19008-19009`): the bag object id of the buff pet item out and the server id of its mover; null for
@@ -314,6 +317,7 @@ export class OwnState {
     this.adjust = equipAdjust(this.worn);
     this.petSlot = own.petSlot ?? null;
     this.bank = new BankBook(own.bank);
+    this.pockets = new PocketBook(own.pockets, this.clock());
     for (const item of this.inventory?.values() ?? []) this.keepVisEnds(item);
   }
 
@@ -665,6 +669,17 @@ export class OwnState {
         return [{ kind: 'quest', change: { kind: 'listsChanged' } }];
       case 'questTextTime': // party quests; drawn only on internal servers (WndWorld.cpp:1137-1160)
       case 'questHelperNpcPos': // the answer to a request V15 never sends
+        return [];
+      // 2026-11-17 (extra bag): the pockets' snapshots, which name no object (`m_Snapshot.ar << NULL_ID`, User.cpp:3588-3640),
+      // as Neuz's handlers change the active mover's (DPClient.cpp:17313-17346)
+      case 'pocketAttribute':
+        this.pockets.attribute(message.attribute, message.pocket, message.data, this.clock());
+        return [];
+      case 'pocketAddItem':
+        this.pockets.add(message.pocket, message.item, this.packMax);
+        return [];
+      case 'pocketRemoveItem':
+        this.pockets.remove(message.pocket, message.objectId, message.count);
         return [];
       default:
         break;

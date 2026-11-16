@@ -1,5 +1,6 @@
 import { BANK_READERS } from './bank';
 import { GUILD_BANK_READERS } from './guildBank';
+import { POCKET_READERS } from './pocket'; // 2026-11-17 (extra bag)
 import { HOUSING_READERS } from './housing';
 import { GUILD_HOUSE_READERS } from './guildHouse';
 import { LORD_READERS } from './lord';
@@ -242,6 +243,7 @@ export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
     ...GUILD_READERS,
     // 2026-11-10: the bank and the post (world/bank.ts, world/post.ts)
     ...BANK_READERS,
+    ...POCKET_READERS,
     // 2026-11-15: the guild bank (world/guildBank.ts)
     ...GUILD_BANK_READERS,
     // 2026-11-15: personal housing (world/housing.ts)

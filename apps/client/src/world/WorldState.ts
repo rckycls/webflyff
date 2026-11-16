@@ -460,6 +460,10 @@ export class WorldState {
       case 'getItemBank':
       case 'updateBankItem':
       case 'putGoldBank':
+      // 2026-11-17 (extra bag): the pockets' changes
+      case 'pocketAttribute':
+      case 'pocketAddItem':
+      case 'pocketRemoveItem':
         this.toOwn(message, objectId);
         return;
       case 'equipItem': {

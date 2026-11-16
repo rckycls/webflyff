@@ -46,6 +46,8 @@ export {
   writeBankIsFull, writeBankWindow, writeChangeBankPass, writeConfirmBankPass, writeGetItemBank, writePutGoldBank,
   writePutItemBank, writeUpdateBankItem,
 } from './bank';
+// 2026-11-17: the extra bag
+export { writePocketAddItem, writePocketAttribute, writePocketRemoveItem } from './pocket';
 // 2026-11-15: the guild bank
 export {
   writeGetGoldGuildBank, writeGetItemGuildBank, writeGuildBankLog, writeGuildBankWindow, writePutItemGuildBank,

@@ -77,6 +77,7 @@ export * from './world/pets';
 export * from './world/trade';
 export * from './world/guild';
 export * from './world/bank';
+export * from './world/pocket'; // 2026-11-17 (extra bag)
 export * from './world/guildBank'; // 2026-11-15
 export * from './world/housing'; // 2026-11-15
 export * from './world/guildHouse'; // 2026-11-15

@@ -3758,15 +3758,15 @@ fieldset:disabled .btn {
      above the task bar and scrolled; on a landscape phone the slots and the button at the left, the words at the right. */
 @media (max-width: 1000px) and (pointer: coarse) {
   :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-post, .hud-post-read, .hud-vendor, .hud-vendor-chat, .hud-trade, .hud-bank,
-    .hud-heaven-tower, .hud-summon-angel, .hud-lord, .hud-gc, .hud-guild-bank) {
+    .hud-heaven-tower, .hud-summon-angel, .hud-lord, .hud-gc, .hud-guild-bank, .hud-bagex) {
     background: none !important; box-shadow: none !important; border-radius: 0 !important;
   }
   :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-post, .hud-post-read, .hud-vendor, .hud-vendor-chat, .hud-trade, .hud-bank,
-    .hud-heaven-tower, .hud-summon-angel, .hud-lord, .hud-gc, .hud-guild-bank) > .hud-window-frame {
+    .hud-heaven-tower, .hud-summon-angel, .hud-lord, .hud-gc, .hud-guild-bank, .hud-bagex) > .hud-window-frame {
     display: grid !important; grid-template-columns: 16px minmax(0, 1fr) 16px; grid-template-rows: 16px 16px minmax(0, 1fr) 16px;
   }
   :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-post, .hud-post-read, .hud-vendor, .hud-vendor-chat, .hud-trade, .hud-bank,
-    .hud-heaven-tower, .hud-summon-angel, .hud-lord, .hud-gc, .hud-guild-bank) > .hud-window-frame > div {
+    .hud-heaven-tower, .hud-summon-angel, .hud-lord, .hud-gc, .hud-guild-bank, .hud-bagex) > .hud-window-frame > div {
     position: static !important; width: auto !important; height: auto !important;
   }
   .hud-window-frame > [data-tile="0"] { grid-area: 1 / 1; }
@@ -3782,16 +3782,16 @@ fieldset:disabled .btn {
   .hud-window-frame > [data-tile="10"] { grid-area: 4 / 2; }
   .hud-window-frame > [data-tile="11"] { grid-area: 4 / 3; }
   :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-post, .hud-post-read, .hud-vendor, .hud-vendor-chat, .hud-trade, .hud-bank,
-    .hud-heaven-tower, .hud-summon-angel, .hud-lord, .hud-gc, .hud-guild-bank) > .hud-window-title {
+    .hud-heaven-tower, .hud-summon-angel, .hud-lord, .hud-gc, .hud-guild-bank, .hud-bagex) > .hud-window-title {
     height: 18px !important; padding-top: 3px; background: none !important; border-radius: 0 !important; box-shadow: none !important;
     font-size: 12px !important; line-height: 14px !important;
   }
   :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-post, .hud-post-read, .hud-vendor, .hud-vendor-chat, .hud-trade, .hud-bank,
-    .hud-heaven-tower, .hud-summon-angel, .hud-lord, .hud-gc, .hud-guild-bank) > .hud-window-close { left: auto !important; right: 7px !important; }
+    .hud-heaven-tower, .hud-summon-angel, .hud-lord, .hud-gc, .hud-guild-bank, .hud-bagex) > .hud-window-close { left: auto !important; right: 7px !important; }
   /* the tiles let the world through a little, as Neuz's do; a panel over the status window would show its numbers through
      its words: a pale backing inside the frame's rounded edge */
   :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-post, .hud-post-read, .hud-vendor, .hud-vendor-chat, .hud-trade, .hud-bank,
-    .hud-heaven-tower, .hud-summon-angel, .hud-lord, .hud-gc, .hud-guild-bank)::before {
+    .hud-heaven-tower, .hud-summon-angel, .hud-lord, .hud-gc, .hud-guild-bank, .hud-bagex)::before {
     content: ''; position: absolute; inset: 3px 5px 7px 3px; border-radius: 4px; background: rgba(250, 238, 230, 0.92); pointer-events: none;
   }
   /* the lobby's 48 px fields are not these windows' */
@@ -4268,13 +4268,13 @@ fieldset:disabled .btn {
    game's text boxes without the phone's own field look (iOS draws an inner shadow and its own rounding round an input unless
    told not to: a second box over Neuz's). */
 @media (max-width: 1000px) and (pointer: coarse) {
-  :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-post, .hud-post-read, .hud-vendor, .hud-bank, .hud-guild-bank, .hud-summon-angel,
+  :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-post, .hud-post-read, .hud-vendor, .hud-bank, .hud-guild-bank, .hud-summon-angel, .hud-bagex,
     .hud-trade):not([hidden]) {
     left: 8px !important; right: calc(var(--bag-window-width, 60%) + 20px) !important;
     top: 8px !important; bottom: calc(var(--hud-taskbar-height, 48px) + 8px) !important;
     margin: auto !important;
   }
-  :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-vendor, .hud-bank, .hud-guild-bank, .hud-summon-angel):not([hidden]) {
+  :is(.hud-jewel:not(.hud-resist-item), .hud-smelt-safety, .hud-vendor, .hud-bank, .hud-guild-bank, .hud-summon-angel, .hud-bagex):not([hidden]) {
     height: -webkit-fit-content !important; height: fit-content !important;
   }
   .world :is(input:not([type='checkbox'], [type='radio'], [type='range']), textarea) { -webkit-appearance: none; appearance: none; }
@@ -5024,3 +5024,81 @@ fieldset:disabled .btn {
 .hud-auto-play .auto-support { display: flex; flex-direction: column; gap: 5px; }
 .hud-auto-play .auto-support-partner { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hud-auto-play .auto-support .auto-farm-caption { width: 84px; }
+/* 2026-11-17: the Backpack (hud/pocket/bagExWindow.ts; docs/2026-11-17-extra-bag-research.md §3). CWndBagEx is
+   InventoryBag.tga (the boxes and the "Bag.1" "Bag.2" words are in it); each grid is CWndItemCtrl's cells of 32 px, 6 across,
+   by position, the hovered item 4 px larger, a stack's count at the bottom right; InventoryBagEff.tga at alpha 150 over a
+   pocket not in use, the bag icons at alpha 200. */
+.hud-bagex-grid {
+  position: absolute; display: grid; grid-template-columns: repeat(6, 32px); grid-auto-rows: 32px; overflow: hidden scroll;
+  scrollbar-width: none; scroll-snap-type: y mandatory;
+}
+.hud-bagex-grid::-webkit-scrollbar { display: none; }
+.hud-bagex-cell { position: relative; width: 32px; height: 32px; scroll-snap-align: start; }
+.hud-bagex-cell img { width: 32px; height: 32px; object-fit: contain; pointer-events: none; }
+.hud-bagex-cell[data-object-id]:hover img { transform: scale(1.125); }
+.hud-bagex-cell span {
+  position: absolute; right: 1px; bottom: 0; color: #b0b0f0; text-shadow: 1px 1px #0000ff; font: bold 10px/11px Arial, sans-serif;
+  pointer-events: none;
+}
+.hud-bagex-cell .hud-trade-expired {
+  position: absolute; left: 0; top: 0; width: 32px; height: 32px; pointer-events: none;
+  background: rgb(255, 100, 100); mix-blend-mode: multiply;
+  -webkit-mask-size: 32px 32px; mask-size: 32px 32px; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+}
+.hud-bagex-icon > i { position: absolute; left: 0; top: 0; width: 32px; height: 32px; background-repeat: no-repeat; pointer-events: none; }
+.hud-bagex-cover { overflow: visible !important; pointer-events: none; }
+.hud-bagex-cover > i { position: absolute; left: 0; top: 0; background-repeat: no-repeat; }
+.hud-bagex-cover[hidden] { display: none; }
+.hud-bagex-phone-tabs, .hud-bagex-phone-line { display: none; }
+.hud-bagex-tooltip .hud-item-tooltip-text { white-space: nowrap; }
+
+/* The phone: the Backpack beside the phone's bag (its items alone), one pocket at a time chosen by its tabs (Basic, Bag 1,
+   Bag 2); the shown bag's icon and line (its time left, or "Place the Extra Bag icon here.") under the tabs, as no finger
+   hovers. A tap on a pocket's item takes it out, a tap on a bag item puts it in the pocket shown, or opens a closed pocket
+   with an Extra Bag; counts on the number pad. The bank's compact V15 panel: the frame, 22 px tabs, the cells on Neuz's slot
+   picture, six 34 px cells to a row, 12 px words. */
+@media (max-width: 1000px) and (pointer: coarse) {
+  .world:has(.hud-bagex:not([hidden])) :is(.hud-mobile-tools, .joystick, .hud-jump, .hud-action-trigger, .hud-attack, .hud-quick-slots) { visibility: hidden; }
+  .hud-bagex:not([hidden]) {
+    transform: none !important; min-width: 0 !important;
+    width: min(252px, calc(100% - var(--bag-window-width, 60%) - 28px)) !important;
+    max-height: calc(100% - var(--hud-taskbar-height, 48px) - 16px); display: flex !important; flex-direction: column; overflow: hidden;
+  }
+  .hud-bagex > .hud-window-body {
+    position: relative !important; left: auto !important; top: auto !important; width: auto !important; height: auto !important;
+    flex: 0 1 auto; min-height: 0; box-sizing: border-box; margin: 22px 8px 10px 4px; padding: 4px 6px 6px;
+    font: 12px/15px Verdana, Tahoma, sans-serif; display: flex; flex-direction: column; gap: 4px; overflow: hidden;
+  }
+  .hud-bagex > .hud-window-body > * { position: relative !important; left: auto !important; top: auto !important; }
+  .hud-bagex .hud-bagex-phone-tabs { display: flex; gap: 2px; flex: 0 0 auto; }
+  .hud-bagex-phone-tabs button {
+    flex: 1; height: 22px; padding: 0; box-sizing: border-box; border: 1px solid #c8a690; border-radius: 4px 4px 0 0;
+    background: linear-gradient(#fbeee4, #ecd3c1); color: #6b5345; font: 12px/20px Verdana, Tahoma, sans-serif;
+  }
+  .hud-bagex-phone-tabs button[aria-selected=true] { background: #fffaf6; color: #000000; font-weight: bold; }
+  .hud-bagex .hud-bagex-phone-line:not([hidden]) {
+    display: flex; align-items: center; gap: 6px; flex: 0 0 auto; min-height: 34px; box-sizing: border-box; padding: 1px 4px;
+    border: 1px solid #d8b8a4; border-radius: 3px; background: #fffaf6; color: #000000;
+  }
+  .hud-bagex-phone-line > i { flex: 0 0 32px; height: 32px; background-repeat: no-repeat; opacity: 0.78; }
+  .hud-bagex-phone-line > span { flex: 1; min-width: 0; font: 12px/15px Verdana, Tahoma, sans-serif; }
+  .hud-bagex-phone-line[data-usable=true] > span { color: #2e70a9; }
+  .hud-bagex :is(.hud-bagex-tab, .hud-bagex-icon, .hud-bagex-cover) { display: none !important; }
+  .hud-bagex[data-shown-pocket="0"] .hud-bagex-tab[data-pocket="0"],
+  .hud-bagex[data-shown-pocket="1"] .hud-bagex-tab[data-pocket="1"],
+  .hud-bagex[data-shown-pocket="2"] .hud-bagex-tab[data-pocket="2"] { display: block !important; }
+  .hud-bagex .hud-bagex-tab { flex: 0 0 auto; width: 100% !important; height: 150px !important; }
+  .hud-bagex .hud-bagex-tab[data-pocket="0"] { height: 44px !important; }
+  .hud-bagex .hud-bagex-tab > :is(.hud-bagex-scroll, .hud-tab-strip) { display: none; }
+  .hud-bagex .hud-bagex-grid {
+    position: absolute !important; inset: 0 !important; width: auto !important; height: auto !important; box-sizing: border-box;
+    padding: 4px; grid-template-columns: repeat(6, 34px); grid-auto-rows: 34px; gap: 2px; justify-content: center; align-content: start;
+    overflow-y: auto; scroll-snap-type: none; touch-action: pan-y; border: 1px solid #d8b8a4; border-radius: 3px; background: #fffaf6;
+  }
+  .hud-bagex .hud-bagex-cell { width: 34px; height: 34px; border-radius: 0; background: var(--v15-slot, #f3e4d8) 0 0 / 100% 100% no-repeat; }
+  .hud-bagex .hud-bagex-cell img { width: 32px; height: 32px; margin: 1px; }
+  .hud-bagex .hud-bagex-cell span { font-size: 10px; line-height: 10px; color: #1010ff; text-shadow: 1px 1px #ffffff; }
+  .hud-bagex .hud-bagex-tab[data-usable=false]::after {
+    content: ''; position: absolute; inset: 0; border-radius: 3px; background: #80808066; pointer-events: none;
+  }
+}
