@@ -15,6 +15,8 @@ export {
 export { normalizeIPv4, resolveClientAddress } from './net/clientAddress';
 export { checkSignUp, checkSignUpEmail, checkSignUpPassword, DEFAULT_RESERVED_NAMES, normalizeAccount } from './web/signUp';
 export { validateCharacterName } from './web/characterName';
+export { DEFAULT_PREREG_MAX_ACCOUNTS, PREREG_OFF, parsePreregEnv } from './web/prereg';
+export type { PreregRule } from './web/prereg';
 export type { ReservedNames, SignUpField, SignUpForm, SignUpProblem } from './web/signUp';
 export {
   AttackFlag, BUNDLE_MARKER, DPID_UNKNOWN, DstParam, MAX_CHARACTER_SLOTS, MAX_SHORTCUT_STRING, MAX_SLOT_APPLET,

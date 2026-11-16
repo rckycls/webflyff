@@ -340,7 +340,7 @@ Success: it prints a line ending in `listening 127.0.0.1:8091` and stays running
 ```
 nssm install flyffweb-site "C:\Program Files\nodejs\node.exe"
 nssm set flyffweb-site DisplayName "FlyffWeb Site"
-nssm set flyffweb-site AppParameters "--import tsx apps\web\src\main.ts --config C:\flyff-web\web.config.json"
+nssm set flyffweb-site AppParameters "--import tsx apps\web\src\main.ts --config C:\flyff-web\web.config.json --env C:\flyff-web\.env --signups C:\flyff-web\signups.jsonl"
 nssm set flyffweb-site AppDirectory "$FlyffWeb"
 nssm set flyffweb-site AppStdout C:\flyff-logs\web.log
 nssm set flyffweb-site AppStderr C:\flyff-logs\web.log
@@ -352,7 +352,7 @@ nssm status flyffweb-site
 curl.exe -s http://127.0.0.1:8091/api/status
 ```
 
-Success: `SERVICE_RUNNING`, and the last line prints something like `{"online":true,"players":0,"checkedAt":"2026-..."}`. `"players":null` means the database did not answer: read `C:\flyff-logs\web.log`. After a change to the settings file, run `nssm restart flyffweb-site`.
+Success: `SERVICE_RUNNING`, and the last line prints something like `{"online":true,"players":0,"checkedAt":"2026-..."}`. `"players":null` means the database did not answer: read `C:\flyff-logs\web.log`. After a change to the settings file, run `nssm restart flyffweb-site`. `--env` and `--signups` are the pre-registration cap's settings and the record of every account made ([2026-11-15-prereg-login.md](2026-11-15-prereg-login.md)).
 
 If the web service stops, the game keeps working: only sign-up and the home page's status are missing ("Status unavailable"), and NSSM starts it again.
 

@@ -9,4 +9,5 @@ playwright-report/
 apps/gateway/gateway.config.json
 .env
 apps/web/web.config.json
+apps/web/signups.jsonl
 apps/client/test/live.config.json

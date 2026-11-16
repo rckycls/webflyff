@@ -2,13 +2,21 @@
 
 import type { SignUpField } from '@flyffweb/protocol';
 
-export type SignUpError = 'invalid' | 'taken' | 'too_many' | 'paused' | 'ticket' | 'server' | 'forbidden' | 'unreachable';
-export type SignUpAnswer = { ok: true } | { ok: false; error: SignUpError; field?: SignUpField };
+export type SignUpError =
+  'invalid' | 'taken' | 'too_many' | 'paused' | 'prereg_limit' | 'ticket' | 'server' | 'forbidden' | 'unreachable';
+/** `max`: with `prereg_limit`, the accounts one connection or browser may make during pre-registration. */
+export type SignUpAnswer = { ok: true } | { ok: false; error: SignUpError; field?: SignUpField; max?: number };
 
 export interface SignUpRequestBody { account: string; password: string; email: string; website: string; ticket: string }
 
 /** The errors the service names in its body; any other answer is `server`. */
-const NAMED: readonly SignUpError[] = ['invalid', 'taken', 'too_many', 'paused', 'ticket', 'forbidden', 'server'];
+const NAMED: readonly SignUpError[] = ['invalid', 'taken', 'too_many', 'paused', 'prereg_limit', 'ticket', 'forbidden', 'server'];
+
+/** The sign-up page's message for `prereg_limit` (docs/2026-11-15-prereg-login.md). */
+export function preregLimitText(max: number | undefined): string {
+  const most = max === undefined ? 'the most accounts' : `${max} account${max === 1 ? '' : 's'}, the most`;
+  return `This internet connection or browser already has ${most} allowed during pre-registration.`;
+}
 const FIELDS: readonly SignUpField[] = ['account', 'password', 'confirm', 'email'];
 
 async function bodyOf(response: Response): Promise<Record<string, unknown>> {
@@ -49,9 +57,12 @@ export class SignUpApi {
       return { ok: false, error: 'unreachable' };
     }
     if (response.status === 201) return { ok: true };
-    const { error, field } = await bodyOf(response);
+    const { error, field, max } = await bodyOf(response);
     const named = NAMED.find((e) => e === error);
     if (named === undefined) return { ok: false, error: response.status === 403 ? 'forbidden' : 'server' };
+    if (named === 'prereg_limit') {
+      return typeof max === 'number' && Number.isInteger(max) && max > 0 ? { ok: false, error: named, max } : { ok: false, error: named };
+    }
     const known = FIELDS.find((f) => f === field);
     return named === 'invalid' && known !== undefined ? { ok: false, error: named, field: known } : { ok: false, error: named };
   }

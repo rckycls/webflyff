@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest';
-import { SignUpApi } from '../src/site/signUpApi';
+import { preregLimitText, SignUpApi } from '../src/site/signUpApi';
 
 const form = { account: 'hero_01', password: 'abc12345', email: '', website: '', ticket: 't1' };
 const answering = (status: number, body: unknown) =>
@@ -13,6 +13,8 @@ it.each([
   [400, { error: 'ticket' }, { ok: false, error: 'ticket' }],
   [429, { error: 'too_many' }, { ok: false, error: 'too_many' }],
   [429, { error: 'paused' }, { ok: false, error: 'paused' }],
+  [429, { error: 'prereg_limit', max: 3 }, { ok: false, error: 'prereg_limit', max: 3 }],
+  [429, { error: 'prereg_limit', max: 'x' }, { ok: false, error: 'prereg_limit' }],
   [403, { error: 'forbidden' }, { ok: false, error: 'forbidden' }],
   [500, { error: 'server' }, { ok: false, error: 'server' }],
   [500, {}, { ok: false, error: 'server' }],
@@ -46,4 +48,10 @@ it('gets a ticket, or none', async () => {
   await expect(new SignUpApi(answering(200, { ticket: 7 }) as unknown as typeof fetch).ticket()).resolves.toBeUndefined();
   const down = vi.fn(async () => { throw new TypeError('Failed to fetch'); });
   await expect(new SignUpApi(down as unknown as typeof fetch).ticket()).resolves.toBeUndefined();
+});
+
+it('words the pre-registration cap with its number, or without one', () => {
+  expect(preregLimitText(3)).toBe('This internet connection or browser already has 3 accounts, the most allowed during pre-registration.');
+  expect(preregLimitText(1)).toBe('This internet connection or browser already has 1 account, the most allowed during pre-registration.');
+  expect(preregLimitText(undefined)).toBe('This internet connection or browser already has the most accounts allowed during pre-registration.');
 });

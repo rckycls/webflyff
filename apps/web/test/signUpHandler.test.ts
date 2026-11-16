@@ -1,7 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { hashPassword } from '@flyffweb/protocol';
-import { beforeEach, expect, it } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { hashPassword, PREREG_OFF } from '@flyffweb/protocol';
+import type { PreregRule } from '@flyffweb/protocol';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { PreregSettings, readSignUps, SignUpBook } from '../src/signUpBook';
 import type { AccountStore } from '../src/accountStore';
 import type { SiegeRankRow, SiegeWeekly } from '../src/siege';
 import { parseWebConfig } from '../src/config';
@@ -49,6 +54,8 @@ beforeEach(() => {
     createdInAll: new HourlyLimit(config.limits.createdPerHour, clock),
     log: { info: (line) => lines.push(line), warn: (line) => lines.push(line) },
     refusals: new RefusalLog({ info: (line) => lines.push(line), warn: (line) => lines.push(line) }),
+    signUps: new SignUpBook(undefined, { info: (line) => lines.push(line), warn: (line) => lines.push(line) }),
+    prereg: () => PREREG_OFF,
   };
 });
 
@@ -63,7 +70,7 @@ function goodTicket(): string {
 
 function post(body: unknown, overrides: Partial<SignUpRequest> = {}): SignUpRequest {
   return {
-    address: '203.0.113.7', origin: config.siteOrigin, contentType: 'application/json',
+    address: '203.0.113.7', origin: config.siteOrigin, contentType: 'application/json', browser: '',
     body: Buffer.from(typeof body === 'string' ? body : JSON.stringify(body)), ...overrides,
   };
 }
@@ -269,4 +276,117 @@ it('does not let a flood of refused requests fill the log', async () => {
   deps.refusals.flush();
   expect(lines).toContain('signup 203.0.113.7 forbidden x199 more in the last minute');
   expect(lines).toContain('signup 203.0.113.7 too_many x19 more in the last minute');
+});
+
+describe('the pre-registration cap (docs/2026-11-15-prereg-login.md)', () => {
+  const dirs: string[] = [];
+  afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
+  const log = { info: (line: string) => lines.push(line), warn: (line: string) => lines.push(line) };
+  const on = (maxAccounts = 3): PreregRule => ({ ...PREREG_OFF, on: true, maxAccounts });
+  const BROWSER_A = 'a'.repeat(22);
+  const BROWSER_B = 'b'.repeat(22);
+
+  function tempFile(): string {
+    const dir = mkdtempSync(join(tmpdir(), 'signups-'));
+    dirs.push(dir);
+    return join(dir, 'signups.jsonl');
+  }
+
+  /** A sign-up of `account` from `address` and `browser`, past the hourly limits (a new hour each time). */
+  async function signUp(account: string, address: string, browser = '') {
+    now += 3_600_001;
+    return handleSignUp(post(form({ account }), { address, browser }), deps);
+  }
+
+  it('lets one IP make the cap and refuses the next with 429 prereg_limit and the cap, over hours', async () => {
+    deps.prereg = () => on(3);
+    for (const name of ['acct_01', 'acct_02', 'acct_03']) expect((await signUp(name, '198.51.100.4')).status).toBe(201);
+    expect(await signUp('acct_04', '198.51.100.4')).toEqual({ status: 429, body: { error: 'prereg_limit', max: 3 } });
+    expect(lines.at(-1)).toBe('signup 198.51.100.4 acct_04 prereg_limit:ip');
+    expect((await signUp('acct_05', '198.51.100.5')).status).toBe(201);
+    expect(store.calls.map((c) => c[0])).toEqual(['acct_01', 'acct_02', 'acct_03', 'acct_05']);
+  });
+
+  it('counts the browser cookie too: a new IP does not help a browser at the cap', async () => {
+    deps.prereg = () => on(2);
+    expect((await signUp('acct_01', '198.51.100.1', BROWSER_A)).status).toBe(201);
+    expect((await signUp('acct_02', '198.51.100.2', BROWSER_A)).status).toBe(201);
+    expect(await signUp('acct_03', '198.51.100.3', BROWSER_A)).toMatchObject({ status: 429, body: { error: 'prereg_limit' } });
+    expect(lines.at(-1)).toBe('signup 198.51.100.3 acct_03 prereg_limit:browser');
+    expect((await signUp('acct_04', '198.51.100.3', BROWSER_B)).status).toBe(201);
+  });
+
+  it('gives the place back when no account is made (name taken, database error)', async () => {
+    deps.prereg = () => on(1);
+    store.answer = 0;
+    expect((await signUp('taken_01', '198.51.100.9')).status).toBe(409);
+    store.answer = new Error('down');
+    expect((await signUp('acct_01', '198.51.100.9')).status).toBe(500);
+    store.answer = 1;
+    expect((await signUp('acct_02', '198.51.100.9')).status).toBe(201);
+  });
+
+  it('caps nothing with the lock off or PREREG_MAX_ACCOUNTS_PER_IP=0', async () => {
+    for (const rule of [PREREG_OFF, on(0)]) {
+      deps.prereg = () => rule;
+      for (let i = 0; i < 4; i++) expect((await signUp(`acct_${rule.on ? 'b' : 'a'}${i}`, '198.51.100.7')).status).toBe(201);
+    }
+  });
+
+  it('keeps every account made in the file, and counts the pre-registration ones again after a restart', async () => {
+    const file = tempFile();
+    deps.signUps = SignUpBook.open(file, log);
+    deps.prereg = () => PREREG_OFF;
+    expect((await signUp('before_01', '198.51.100.4', BROWSER_A)).status).toBe(201);
+    deps.prereg = () => on(2);
+    expect((await signUp('acct_01', '198.51.100.4', BROWSER_A)).status).toBe(201);
+    expect((await signUp('acct_02', '198.51.100.4', BROWSER_A)).status).toBe(201);
+
+    const records = readSignUps(readFileSync(file, 'utf8'));
+    expect(records.map(({ account, ip, browser, prereg }) => ({ account, ip, browser, prereg }))).toEqual([
+      { account: 'before_01', ip: '198.51.100.4', browser: BROWSER_A, prereg: false },
+      { account: 'acct_01', ip: '198.51.100.4', browser: BROWSER_A, prereg: true },
+      { account: 'acct_02', ip: '198.51.100.4', browser: BROWSER_A, prereg: true },
+    ]);
+    expect(records[0]!.time).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/);
+
+    // a restart: the account made before pre-registration does not count, the two others do
+    deps.signUps = SignUpBook.open(file, log);
+    expect(lines.at(-1)).toBe(`signups: 3 kept in ${file}, 2 of them during pre-registration`);
+    expect((await signUp('acct_03', '198.51.100.4')).status).toBe(429);
+    expect((await signUp('acct_04', '198.51.100.8', BROWSER_A)).status).toBe(429);
+  });
+
+  it('skips a line cut short in the file', () => {
+    const text = '{"time":"t","account":"a","ip":"1.2.3.4","browser":"","prereg":true}\n{"time":"t","acc\n\n';
+    expect(readSignUps(text)).toEqual([{ time: 't', account: 'a', ip: '1.2.3.4', browser: '', prereg: true }]);
+  });
+});
+
+describe('PreregSettings', () => {
+  const dirs: string[] = [];
+  afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }); });
+
+  it('reads the file at every call, logs each change once, and is off with no file', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'prereg-'));
+    dirs.push(dir);
+    const path = join(dir, '.env');
+    const logged: string[] = [];
+    const settings = new PreregSettings(path, { info: (l) => logged.push(l), warn: (l) => logged.push(l) });
+    expect(settings.rule().on).toBe(false);
+    writeFileSync(path, 'PREREG_ONLY=true\n');
+    expect(settings.rule()).toMatchObject({ on: true, maxAccounts: 3 });
+    expect(settings.rule()).toMatchObject({ on: true, maxAccounts: 3 });
+    writeFileSync(path, 'PREREG_ONLY=true\nPREREG_MAX_ACCOUNTS_PER_IP=0\n');
+    expect(settings.rule()).toMatchObject({ on: true, maxAccounts: 0 });
+    expect(logged).toEqual([
+      `prereg: off, no sign-up cap (no file at ${path})`,
+      `prereg: on, at most 3 account(s) per IP and per browser (${path})`,
+      `prereg: on, no sign-up cap: PREREG_MAX_ACCOUNTS_PER_IP is 0 (${path})`,
+    ]);
+  });
+
+  it('is off with no --env file', () => {
+    expect(new PreregSettings(undefined, { info: () => {}, warn: () => {} }).rule().on).toBe(false);
+  });
 });
