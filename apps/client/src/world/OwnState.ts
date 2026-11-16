@@ -670,6 +670,17 @@ export class OwnState {
       case 'questTextTime': // party quests; drawn only on internal servers (WndWorld.cpp:1137-1160)
       case 'questHelperNpcPos': // the answer to a request V15 never sends
         return [];
+      // 2026-11-17 (extra bag): the pockets' snapshots, which name no object (`m_Snapshot.ar << NULL_ID`, User.cpp:3588-3640),
+      // as Neuz's handlers change the active mover's (DPClient.cpp:17313-17346)
+      case 'pocketAttribute':
+        this.pockets.attribute(message.attribute, message.pocket, message.data, this.clock());
+        return [];
+      case 'pocketAddItem':
+        this.pockets.add(message.pocket, message.item, this.packMax);
+        return [];
+      case 'pocketRemoveItem':
+        this.pockets.remove(message.pocket, message.objectId, message.count);
+        return [];
       default:
         break;
     }
@@ -745,16 +756,6 @@ export class OwnState {
         this.bank.setGold(message.bank, message.bankGold);
         this.gold = message.gold;
         this.inventoryRevision++;
-        return [];
-      // 2026-11-17 (extra bag): the pockets' snapshots (DPClient.cpp:17313-17346)
-      case 'pocketAttribute':
-        this.pockets.attribute(message.attribute, message.pocket, message.data, this.clock());
-        return [];
-      case 'pocketAddItem':
-        this.pockets.add(message.pocket, message.item, this.packMax);
-        return [];
-      case 'pocketRemoveItem':
-        this.pockets.remove(message.pocket, message.objectId, message.count);
         return [];
       case 'equipItem': {
         const prop = this.data.itemProps.get(message.itemId);
