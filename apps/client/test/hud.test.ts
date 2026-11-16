@@ -1070,9 +1070,12 @@ describe('APPLETS (CWndMgr::AddAllApplet, FuncApplet.cpp:178-301)', () => {
     expect(APPLETS.get(228)).toEqual({ name: 'APP_MAP', icon: 'Icon_Applet.dds', desc: tid('TID_TIP_MAP'), hotkey: 'M' });
     expect(APPLETS.get(302)).toEqual({ name: 'APP_MESSENGER_EX', icon: 'Icon_Messenger.dds', desc: tid('TID_TIP_MESSENGER'), hotkey: 'E' });
     expect(APPLETS.get(593)).toEqual({ name: 'APP_PARTY_QUICK', icon: null, desc: tid('TID_TIP_DIALOG'), hotkey: null });
-    // the BB windows name themselves (_T( "Teleporter" ), FuncApplet.cpp:238)
-    expect(APPLETS.get(2023)!.desc).toEqual({ text: 'Teleporter' });
-    expect(appletText(APPLETS.get(2023)!.desc, new Map())).toBe('Teleporter');
+    // a text the C++ writes as it is (`_T( "..." )`) is shown as it is
+    expect(appletText({ text: 'Teleporter' }, new Map())).toBe('Teleporter');
+    // 2026-11-16 (owner): the custom BB windows' rows are gone (Teleporter, 3v3 Arena, Dungeon Entry, Dungeon Status), and
+    // Y is Housing's alone
+    for (const id of [2023, 2024, 2025, 2026]) expect(APPLETS.has(id)).toBe(false);
+    expect([...APPLETS.values()].filter((a) => a.hotkey === 'Y').map((a) => a.name)).toEqual(['APP_HOUSING']);
     expect(appletText(APPLETS.get(400)!.desc, new Map([['TID_TIP_ITEMMALL', { text: 'Item Mall' }]]))).toBe('Item Mall');
     // the earlier versions' windows are not registered, nor the dead flags' ones (APP_GUILD_VOTE, APP_MAP_EX)
     for (const id of [2010, 581, 321, 2022]) expect(APPLETS.has(id)).toBe(false);

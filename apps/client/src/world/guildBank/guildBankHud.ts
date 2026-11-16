@@ -80,6 +80,8 @@ export interface GuildBankHudScreen {
   /** The guild with id `guildId` loses `gold` (a GM's REMOVE_GUILD_BANK_ITEM). */
   removeGuildGold(guildId: number, gold: number): void;
   bagItems(): ReadonlyMap<number, InventoryItem> | null;
+  /** The own penya (2026-11-16: the most the phone's number pad takes for Contribute Guild). */
+  ownGold?(): number;
   /** `m_Inventory.Add( &itemElem )` and `AddGold( n, FALSE )`: the own bag. */
   bagAdd(item: InventoryItem): void;
   addOwnGold(delta: number): void;
@@ -283,6 +285,7 @@ export class GuildBankHud {
       this.merit.showItems(on ? meritItems(screen.bagItems(), (id) => screen.prop(id)) : [], (id) => screen.prop(id));
     };
     this.merit.onOk = (typed, items) => this.giveMerit(typed, items);
+    this.merit.penyaMax = () => screen.ownGold?.() ?? 0;
     this.log.onTab = (logType) => screen.send(encodeGuildBankLogView(logType));
 
     this.amount.onOk = (amount) => {

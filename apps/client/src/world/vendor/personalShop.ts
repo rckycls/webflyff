@@ -177,7 +177,9 @@ export class PersonalShop {
 
   /** The Start menu's "Private Shop" (`APP_VENDOR_REVISION`): opens the own shop, or shuts the window (`ObjectExecutor`). */
   toggle(): void {
-    if (this.window.isOpen) { this.window.close(); return; }
+    // 2026-11-16 (owner): the Start menu's line asks first while the own shop is open ("Will you close your shop?"), as the
+    // close button, Cancel and Escape do; else it closes the window
+    if (this.window.isOpen) { this.cancel(); return; }
     this.openOwn('');
   }
 

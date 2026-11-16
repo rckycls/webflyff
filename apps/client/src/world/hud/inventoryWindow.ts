@@ -8,6 +8,7 @@ import type { OwnState } from '../OwnState';
 import type { GameData } from '../gameData';
 import { themeUrl } from './art';
 import type { UiArt } from './art';
+import { padField } from './amountBox';
 import { WindowFrame } from './frame';
 import { fitsEquipmentSlot } from '../items/equipment';
 import { usableFromBag } from '../items/travelItems';
@@ -530,6 +531,8 @@ export class InventoryWindow {
     const title = this.doc.createElement('strong'); title.textContent = `Drop ${this.data.itemProps.get(item.itemId)?.name ?? 'item'}?`;
     const quantity = this.doc.createElement('input'); quantity.type = 'number'; quantity.min = '1'; quantity.max = String(item.count); quantity.value = '1';
     quantity.setAttribute('aria-label', 'Drop quantity');
+    // 2026-11-16 (owner): the phone's number pad, as the bank's and the mail's amounts (`padField`)
+    padField(quantity, this.art, this.doc, () => ({ max: this.own?.inventory?.get(id)?.count ?? 0, min: 1, label: 'Number:', title: 'Drop' }));
     const confirm = this.doc.createElement('button'); confirm.type = 'button'; confirm.textContent = 'Drop';
     confirm.addEventListener('click', () => {
       const count = Number(quantity.value), current = this.own?.inventory?.get(id);

@@ -27,6 +27,7 @@ import { formatDuration } from '../hud/duration';
 import { formatText } from '../hud/format';
 import { ResWindow } from '../hud/resWindow';
 import { isPhone } from '../hud/numpad';
+import { padField } from '../hud/amountBox';
 import {
   LORD_EVENT, LORD_INFO, LORD_PLEDGE, LORD_SKILL, LORD_SKILL_CONFIRM, LORD_STATE, LORD_TENDER, LORD_VOTE,
 } from '../hud/lord/lordLayouts';
@@ -70,6 +71,8 @@ export interface LordHost {
   removeLordShortcuts(): void;
   /** A window of the Lord system opened or closed (the phone hides its own controls). */
   changed?(): void;
+  /** The own penya (2026-11-16: the most the phone's number pad takes for the deposit). */
+  ownGold?(): number;
 }
 
 /** "1,234,567": `CWndLordEvent::OnDraw`'s commas (:668-677). */
@@ -148,6 +151,8 @@ export class LordHud {
     const total = this.tender.input('WIDC_EDIT1');
     total.inputMode = 'numeric';
     total.setAttribute('aria-label', 'Current application fee');
+    // 2026-11-16 (owner): the phone's number pad, as the bank's and the mail's amounts (`padField`)
+    padField(total, art, doc, () => ({ max: this.host.ownGold?.() ?? 0 }));
     this.tender.button('WIDC_BUTTON1').addEventListener('click', () => this.bid());
     this.tender.button('WIDC_BUTTON2').addEventListener('click', () => this.tender.close());
 

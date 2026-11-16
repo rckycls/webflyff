@@ -23,6 +23,7 @@
 
 import type { UiArt } from '../art';
 import { place } from '../button';
+import { padField } from '../amountBox';
 import { ResWindow } from '../resWindow';
 import type { ResControl, ResLayout } from '../resWindow';
 import type { StorageSort } from '../../guildHouse/guildHouseBook';
@@ -164,6 +165,8 @@ export class FurnitureStorageWindow {
   constructor(private readonly art: UiArt, private readonly doc: Document = document) {
     const window = new ResWindow(GH_STORAGE, art, doc);
     window.frame.element.classList.add('hud-gh-storage');
+    // 2026-11-16 (owner): above the phone's open bag (`overBag`)
+    window.frame.overBag = true;
     for (const [id, sort] of STORAGE_HEADERS) {
       const header = window.control(id).parentElement!;
       header.classList.add('hud-gh-storage-head');
@@ -305,6 +308,8 @@ export class UpkeepWindow {
     const input = window.input('WIDC_CONTROL2');
     input.inputMode = 'numeric';
     input.setAttribute('aria-label', 'Duration');
+    // 2026-11-16 (owner): the phone's number pad, as the bank's and the mail's amounts (`padField`): the days, 1 to the most
+    padField(input, art, doc, () => ({ max: maxDays, min: 1, label: 'Duration' }));
     // EN_CHANGE (:741-757): the count typed, clamped 0..200, the amount again (a count past the most is not taken)
     input.addEventListener('input', () => this.change(Math.min(Math.max(Number.parseInt(input.value, 10) || 0, 0), 200), false));
     window.button('WIDC_PLUS').addEventListener('click', () => this.change(Math.min(this.read() + 1, maxDays)));

@@ -36,6 +36,8 @@ export class SiegeRankingWindow {
   constructor(art: UiArt, private readonly deps: SiegeRankingDeps, private readonly doc: Document = document) {
     const window = new ResWindow(rankingLayout('Siege Ranking'), art, doc);
     window.frame.element.classList.add('hud-gc', 'hud-gc-rank', 'hud-sr');
+    // 2026-11-16 (owner): above the phone's open bag (`overBag`)
+    window.frame.overBag = true;
     window.button('WIDC_CLOSE').addEventListener('click', () => window.close());
     this.tabs = new TabPages(doc, art, ['Individual', 'Guild'], 380, () => this.show());
     const bar = doc.createElement('div');

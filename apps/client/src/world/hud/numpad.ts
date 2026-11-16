@@ -89,8 +89,9 @@ export class CountPad {
   value: string;
   private fresh = true;
 
-  constructor(readonly max: number) {
-    this.value = String(max);
+  /** `start`: what it opens with (all of it by default; 2026-11-16: a field's pad opens with what the field holds). */
+  constructor(readonly max: number, start = max) {
+    this.value = String(Math.max(0, Math.min(start, max)));
   }
 
   press(key: PadKey): void {

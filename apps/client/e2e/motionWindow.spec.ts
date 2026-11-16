@@ -72,3 +72,17 @@ test('the Motion window: O or Start > Motion, a motion and an emoticon used, Sit
     .toContainEqual(expect.objectContaining({ type: 'addItemTaskBar', slot: 4, shortcut: expect.objectContaining({ kind: 3, id: 4 }) }));
   await expect(target).toHaveAttribute('data-kind', 'skill');
 });
+
+test('the phone: Motion opens over the open bag (2026-11-16, the owner)', async ({ page }) => {
+  test.skip(!isPhone(), "the phone's bag");
+  await playGateway(page);
+  await enterFlaris(page);
+  await page.getByRole('button', { name: 'Bag', exact: true }).tap();
+  await expect(page.locator('.hud-inventory')).toBeVisible();
+  await openMotion(page);
+  const z = (selector: string) => page.locator(selector).evaluate((e) => Number(getComputedStyle(e).zIndex));
+  // over the bag and the side panels (60), under the boxes over them (70)
+  expect(await z('.hud-motion')).toBeGreaterThan(await z('.hud-inventory'));
+  expect(await z('.hud-motion')).toBeLessThan(70);
+  await page.screenshot({ path: test.info().outputPath('motion-over-bag.png') });
+});

@@ -298,7 +298,8 @@ test('Entry: the line-up (add, refusals, defender, order, Complete) and the star
   await expect(lineup).toBeHidden();
 
   // the start point: a press sends the area at once, the time-out sends the pick; no close button
-  answer(gateway, script, { sub: 'selectWarPos', map: 99, seconds: 3 });
+  // 2026-11-16: 8 s, not 3: the phone's checks and picture took longer than 3 s on a slow machine, and the box was gone
+  answer(gateway, script, { sub: 'selectWarPos', map: 99, seconds: 8 });
   const start = page.locator('.hud-gc-startpoint');
   await expect(start).toBeVisible(ON_FRAMES);
   await expect(start).toContainText('Select the area you wish to enter.');
@@ -309,7 +310,7 @@ test('Entry: the line-up (add, refusals, defender, order, Complete) and the star
   await press(start.getByRole('button', { name: '2' }));
   await expect.poll(() => sentOf(gateway, GuildCombatPacketType.SELECTMAP).length).toBe(1);
   expect(request(GuildCombatPacketType.SELECTMAP, 0)).toEqual({ type: 'gcSelectMapRequest', map: 1 });
-  await expect(start).toBeHidden({ timeout: 8_000 });
+  await expect(start).toBeHidden({ timeout: 15_000 });
   await expect.poll(() => sentOf(gateway, GuildCombatPacketType.SELECTMAP).length).toBe(2);
   expect(request(GuildCombatPacketType.SELECTMAP, 1)).toEqual({ type: 'gcSelectMapRequest', map: 1 });
 });

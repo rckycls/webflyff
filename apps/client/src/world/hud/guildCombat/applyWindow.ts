@@ -9,6 +9,7 @@
 //   WIDC_ACCEPT                the refusals and the confirm box are the hud's (guildCombatHud.ts, `bidRefusal`)
 
 import type { UiArt } from '../art';
+import { padField } from '../amountBox';
 import { ResWindow } from '../resWindow';
 import type { ResLayout } from '../resWindow';
 import { RED_CHIP_INFO } from '../../guildCombat/boardTexts';
@@ -35,6 +36,8 @@ export class ApplyWindow {
   readonly window: ResWindow;
   /** Accept: the typed fee (`parseBid`: every digit, so "1,000,000" is a million; 0 for none). */
   onAccept: (fee: number) => void = () => {};
+  /** The most fee the phone's number pad takes (the own bid and the own penya, `bidRefusal`). */
+  maxFee: () => number = () => 0;
   private readonly field: HTMLInputElement;
 
   constructor(title: string, art: UiArt, doc: Document = document) {
@@ -45,6 +48,8 @@ export class ApplyWindow {
     this.field.pattern = '[0-9]*';
     this.field.enterKeyHint = 'done';
     this.field.setAttribute('aria-label', 'Current application fee');
+    // 2026-11-16 (owner): the phone's number pad, as the bank's and the mail's amounts (`padField`)
+    padField(this.field, art, doc, () => ({ max: this.maxFee() }));
     this.field.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') { event.preventDefault(); this.accept(); }
     });

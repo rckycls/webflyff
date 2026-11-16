@@ -105,6 +105,8 @@ export class GuildCombatHud {
     const title = (tid: string, fallback: string): string => host.text(tid) || fallback;
     this.apply = new ApplyWindow(title('TID_GAME_GUILDCOMBAT_OFFER', TITLES.offer), art, doc);
     this.apply.onAccept = (fee) => this.accept(fee);
+    // 2026-11-16 (owner): the phone's number pad, as the bank's and the mail's amounts (`padField`): the own bid and the own penya at most (`bidRefusal`)
+    this.apply.maxFee = () => Math.min(0x7fffffff, this.offer.ownBid + this.host.ownGold());
     this.status = new StatusWindow(title('TID_GAME_GUILDCOMBAT_OFFERSTATE', TITLES.state), art, doc);
     this.status.onApply = () => this.send(encodeGcWindow());
     this.status.onRefresh = () => this.send(encodeGcStatus());
