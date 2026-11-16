@@ -42,3 +42,29 @@ Not merged, not pushed. No convert (every picture used is already converted), no
 ## Note for merging
 The unmerged `pet-filter` branch replaces the Loot tab. This branch changed the Loot tab's check boxes, so merging both
 will need the Loot part of `autoPlayWindow.ts` resolved by hand (keep pet-filter's removal).
+
+## Round 2b: Support mode (2026-11-17, owner)
+Asked: "is the skills tab applicable to all jobs? can we add another tab solely for buffers (Ringmaster)? Someone who
+follows another player and just heals/buffs it whenever". Owner's answers: **any player you target**; **fields and
+dungeons**; **heal and buff only** (no attack).
+
+- The Skills tab works for every job (it lists the character's learned skills), but its ready skills go on the monster
+  and its buffs on yourself; so a fifth tab, **Support**:
+  - **Partner:** target a player, press "Use target" (Clear empties it).
+  - **Heals:** 2 heal skills; "Heal partner" below 70 %, "Heal me" below 50 % (steps of 5).
+  - **Partner buffs:** 8 skills, recast on the partner when missing or under 10 s.
+  - **Resurrect partner:** on by default (needs Resurrection learned).
+  - **Start/Stop** for Support. The AUTO button starts the mode last started (farm or Support).
+- In Support mode the bot never attacks. Its order: raise the dead partner, heal them, heal yourself, your own buffs (Skills
+  tab), the partner's buffs, then follow within 4 m (V15's walk to a mover). One cast at a time, each waiting for the
+  server's answer.
+- Allowed in the fields and in instance dungeons and secret rooms; off in the Arena, siege, 1:1 guild war and duels.
+- Stops as the farm bot does (a player's hit, a GM in view, a teleport, your own move...), plus the partner out of sight
+  for 10 s ("partner gone"). A whisper from the partner does not stop it; anyone else's does.
+- The partner's HP percent uses the client's estimate of their maximum (as the target bar), so it may be a little off.
+
+Owner's test (two accounts, one an Assist/Ringmaster):
+1. On the buffer, target the other player, Support tab → Use target; put Heal in Heals and a buff in Partner buffs; Start.
+2. Walk the other player around. **Pass:** the buffer follows, keeps the buff on them, heals them under 70 %.
+3. Let the other player die (with Resurrection learned). **Pass:** the buffer raises them.
+4. Whisper the buffer from the other player: it keeps going. From a third account: it stops.

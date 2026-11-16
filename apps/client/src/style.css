@@ -5019,3 +5019,8 @@ fieldset:disabled .btn {
 .hud-auto-play .auto-only-list .auto-check-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hud-auto-play .auto-only-list > .auto-word { grid-column: 1 / -1; justify-self: start; }
 .hud-auto-play .auto-only-none { grid-column: 1 / -1; color: #4b4b4b; }
+
+/* 2026-11-17 (owner): the Support tab (Support mode for a buffer), laid out as the Farm tab */
+.hud-auto-play .auto-support { display: flex; flex-direction: column; gap: 5px; }
+.hud-auto-play .auto-support-partner { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hud-auto-play .auto-support .auto-farm-caption { width: 84px; }

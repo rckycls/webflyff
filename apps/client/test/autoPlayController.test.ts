@@ -55,6 +55,9 @@ function world() {
     throwMovers: false,
     kinds: new Map<number, number>(),
     blockedIds: new Set<number>(),
+    partner: null as null | { objectId: number; hp: number; maxHp: number; pos: Vec3; dead: boolean; buffs: Array<{ buffType: number; id: number; level: number; leftMs: number; totalMs: number }> },
+    casts: [] as Array<[number, number]>,
+    follows: [] as number[],
   };
   const hooks: AutoPlayHooks = {
     now: () => state.now,
@@ -98,6 +101,10 @@ function world() {
     disengage: () => { state.disengages++; state.focus = null; },
     indexOf: (m) => state.kinds.get(m.objectId) ?? 0,
     lineBlocked: (m) => state.blockedIds.has(m.objectId),
+    partner: (playerId) => (playerId === 501 ? state.partner : null),
+    castOn: (skillIndex, objectId) => { state.casts.push([skillIndex, objectId]); },
+    follow: (objectId) => { state.follows.push(objectId); },
+    resurrectSkill: () => 9,
   };
   return { state, hooks };
 }
@@ -684,5 +691,99 @@ describe('AutoPlay: the farm centre (2026-11-17)', () => {
     expect(play.anchorAt).toEqual([7, 0, 0]);
     play.stop('time limit');
     expect(play.anchorAt).toBeNull();
+  });
+});
+
+describe('AutoPlay controller: Support mode (owner 2026-11-17)', () => {
+  const PAL = 77, HEAL = 3, BLESS = 6;
+  function support() {
+    const w = world();
+    w.state.partner = { objectId: PAL, hp: 1000, maxHp: 1000, pos: [2, 0, 0], dead: false, buffs: [{ buffType: 1, id: 106, level: 1, leftMs: 600_000, totalMs: 600_000 }] };
+    const s = defaultSettings();
+    s.support.partnerPlayerId = 501;
+    s.support.partnerName = 'Rocky';
+    s.support.heals = [HEAL];
+    s.support.buffs = [BLESS];
+    const play = new AutoPlay(w.hooks, s);
+    return { ...w, play };
+  }
+
+  it('refused with no partner, and in the Arena; allowed in an instance dungeon (121)', () => {
+    const { state, play } = support();
+    play.settings.support.partnerPlayerId = 0;
+    expect(play.startSupport()).toBe(false);
+    expect(state.said.at(-1)).toBe('Auto Play stopped: no partner.');
+    play.settings.support.partnerPlayerId = 501;
+    state.worldId = 208;
+    expect(play.startSupport()).toBe(false);
+    state.worldId = 121;
+    expect(play.startSupport()).toBe(true);
+    expect(state.said.at(-1)).toBe('Support started.');
+    expect(play.mode).toBe('support');
+    expect(play.settings.mode).toBe('support');
+  });
+
+  it('the partner under 70 % → one heal on them (then waits for the answer)', () => {
+    const { state, play } = support();
+    play.startSupport();
+    state.partner!.hp = 600;
+    run(play, state, 30);
+    expect(state.casts).toEqual([[HEAL, PAL]]);
+  });
+
+  it('a partner buff gone → recast on them; far partner → follow, again each second', () => {
+    const { state, play } = support();
+    play.startSupport();
+    state.partner!.buffs = [];
+    run(play, state, 2);
+    expect(state.casts).toEqual([[BLESS, PAL]]);
+    play.onEvent({ kind: 'skillOk', skillIndex: BLESS });
+    state.partner!.buffs = [{ buffType: 1, id: 106, level: 1, leftMs: 600_000, totalMs: 600_000 }];
+    state.partner!.pos = [20, 0, 0];
+    run(play, state, 120);
+    expect(state.follows.length).toBeGreaterThanOrEqual(1);
+    expect(state.follows.every((id) => id === PAL)).toBe(true);
+    expect(play.phase).toBe('following');
+  });
+
+  it('never attacks: a monster near is left alone', () => {
+    const { state, play } = support();
+    state.mobs = [mob(21, 3, 0)];
+    play.startSupport();
+    run(play, state, 120);
+    expect(state.engaged).toEqual([]);
+  });
+
+  it('the partner out of sight 10 s → "partner gone"', () => {
+    const { state, play } = support();
+    play.startSupport();
+    state.partner = null;
+    run(play, state, 595);
+    expect(play.farm).toBe('running');
+    run(play, state, 10);
+    expect(play.lastStop).toBe('partner gone');
+  });
+
+  it('a whisper from the partner does not stop it; from anyone else it does', () => {
+    const { play } = support();
+    play.startSupport();
+    play.onEvent({ kind: 'whisper', from: 'Rocky' });
+    expect(play.farm).toBe('running');
+    play.onEvent({ kind: 'whisper', from: 'GM_Ann' });
+    expect(play.lastStop).toBe('message from GM_Ann');
+  });
+
+  it('startMode: the AUTO button starts the mode last started', () => {
+    const { state, play } = support();
+    play.startSupport();
+    play.stop('you took control');
+    expect(play.startMode()).toBe(true);
+    expect(play.mode).toBe('support');
+    play.stop('you took control');
+    state.mobs = [mob(21, 3, 0)];
+    play.start();
+    play.stop('you took control');
+    play.startMode();
+    expect(play.mode).toBe('farm');
   });
 });

@@ -138,3 +138,29 @@ describe('Auto Play settings: avoid giants, chosen monsters (owner 2026-11-17)',
     expect(clampSettings(old).farm).toMatchObject({ avoidGiants: true, only: [] });
   });
 });
+
+describe('Auto Play settings: Support mode (owner 2026-11-17)', () => {
+  it('defaults: no partner, heal the partner below 70 and myself below 50, resurrect on, farm mode', () => {
+    const s = defaultSettings();
+    expect(s.support).toEqual({ partnerPlayerId: 0, partnerName: '', heals: [], partnerBelow: 70, selfBelow: 50, buffs: [], resurrect: true });
+    expect(s.mode).toBe('farm');
+  });
+
+  it('clamps: 2 heals, 8 buffs, percents in steps of 5, a mode of farm or support', () => {
+    const raw = defaultSettings() as unknown as Record<string, unknown> & { support: Record<string, unknown> };
+    raw.support.heals = [0, 3, 4, 5];
+    raw.support.buffs = Array.from({ length: 10 }, (_, i) => i);
+    raw.support.partnerBelow = 73;
+    raw.support.selfBelow = 5;
+    raw.support.partnerPlayerId = 501;
+    raw.support.partnerName = 'Rocky';
+    raw.mode = 'support';
+    const s = clampSettings(raw);
+    expect(s.support.heals).toEqual([0, 3]);
+    expect(s.support.buffs).toHaveLength(8);
+    expect([s.support.partnerBelow, s.support.selfBelow]).toEqual([75, 10]);
+    expect([s.support.partnerPlayerId, s.support.partnerName, s.mode]).toEqual([501, 'Rocky', 'support']);
+    raw.mode = 'other';
+    expect(clampSettings(raw).mode).toBe('farm');
+  });
+});

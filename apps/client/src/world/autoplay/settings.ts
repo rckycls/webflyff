@@ -38,6 +38,18 @@ export interface AutoPlaySettings {
   };
   /** The loot filter: one bit per `LOOT_KINDS` group, `LOOT_ALL` for every kind. */
   loot: { mask: number };
+  /** 2026-11-17 (owner): Support mode, for a buffer: the partner (any player targeted), heals, buffs on them, raising them. */
+  support: {
+    partnerPlayerId: number; partnerName: string;
+    /** Heal skill slots, max 2. */
+    heals: number[];
+    partnerBelow: number; selfBelow: number;
+    /** Buff skill slots cast on the partner, max 8. */
+    buffs: number[];
+    resurrect: boolean;
+  };
+  /** Which mode the AUTO button starts: the one last started. */
+  mode: 'farm' | 'support';
 }
 
 export type BuffEntry = AutoPlaySettings['skills']['buffs'][number];
@@ -48,6 +60,8 @@ export const STOP_AFTER = { min: 60, max: 720, step: 60 } as const;
 export const MAX_READY = 4;
 export const MAX_BUFFS = 8;
 export const MAX_ONLY = 16;
+export const MAX_HEALS = 2;
+export const MAX_PARTNER_BUFFS = 8;
 const STORE_KEY = 'flyffweb.autoPlay.';
 
 export function defaultSettings(): AutoPlaySettings {
@@ -64,6 +78,8 @@ export function defaultSettings(): AutoPlaySettings {
     },
     skills: { actionSlot: true, ready: [], buffs: [] },
     loot: { mask: LOOT_ALL },
+    support: { partnerPlayerId: 0, partnerName: '', heals: [], partnerBelow: 70, selfBelow: 50, buffs: [], resurrect: true },
+    mode: 'farm',
   };
 }
 
@@ -110,6 +126,16 @@ export function clampSettings(raw: unknown): AutoPlaySettings {
       .slice(0, MAX_BUFFS);
   }
   if (isObject(raw.loot)) s.loot.mask = clampLootMask(raw.loot.mask);
+  const support = isObject(raw.support) ? raw.support : {};
+  const out = s.support;
+  if (isIndex(support.partnerPlayerId)) out.partnerPlayerId = support.partnerPlayerId;
+  if (typeof support.partnerName === 'string') out.partnerName = support.partnerName.slice(0, 32);
+  if (Array.isArray(support.heals)) out.heals = support.heals.filter(isSlot).slice(0, MAX_HEALS);
+  if (Array.isArray(support.buffs)) out.buffs = support.buffs.filter(isSlot).slice(0, MAX_PARTNER_BUFFS);
+  out.partnerBelow = stepped(support.partnerBelow, BELOW.min, BELOW.max, BELOW.step, out.partnerBelow);
+  out.selfBelow = stepped(support.selfBelow, BELOW.min, BELOW.max, BELOW.step, out.selfBelow);
+  if (typeof support.resurrect === 'boolean') out.resurrect = support.resurrect;
+  if (raw.mode === 'support') s.mode = 'support';
   return s;
 }
 

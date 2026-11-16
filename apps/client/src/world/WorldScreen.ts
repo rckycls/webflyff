@@ -284,7 +284,7 @@ import { SpriteLayer } from './render/SpriteLayer';
 import { TargetMarks, attackMarks, focusRect } from './render/TargetMarks';
 import type { ScreenRect } from './render/TargetMarks';
 import { HAttr } from './sim/collision';
-import { ActMsg, AniLoop, Belli, Ik3, Mti, ObjSta, ObjStaF, PARTS_RIDE } from './sim/constants';
+import { ActMsg, AniLoop, Belli, Ik3, Mti, ObjSta, ObjStaF, PARTS_RIDE, Si } from './sim/constants';
 
 /** Piece 7 M5: the ground's field of view (`WorldStage`'s 45 degrees, `fDiv` 4), which a landing gives back. */
 const GROUND_FOV = 45;
@@ -2340,6 +2340,11 @@ export class WorldScreen {
       showSaver: () => { this.autoPlayWindow?.frame.close(); this.saverScreen?.show(); },
       monstersNear: () => this.autoPlayMonstersNear(),
       monsterName: (index) => this.data?.movers.get(index)?.name ?? String(index),
+      // 2026-11-17 (owner): Support mode's partner, the player targeted now (not oneself)
+      targetPlayer: () => {
+        const id = this.focus?.targetId ?? null, m = id === null ? undefined : this.world?.movers.get(id);
+        return m === undefined || m.isSelf || m.added.player === undefined ? null : { playerId: m.added.player.playerId, name: m.name };
+      },
     }, doc);
     this.autoButton = new AutoButton(this.autoPlay!, () => {
       if (this.autoPlayWindow?.isOpen !== true) this.autoPlayWindow?.open('farm');
@@ -4362,6 +4367,23 @@ export class WorldScreen {
       keepAwake: (on) => this.autoPlayKeepAwake(on),
       // 2026-11-17 (owner): the chosen kinds, and an object on the straight line to a monster (an obstacle)
       indexOf: (m) => (m as Mover).added.index,
+      // 2026-11-17 (owner): Support mode: the partner as the client sees it, a skill cast on a mover, the follow
+      partner: (playerId) => {
+        const world = this.world, m = world?.moverByPlayerId(playerId);
+        if (world === undefined || m === undefined || m.isSelf) return null;
+        return { objectId: m.objectId, hp: m.hp, maxHp: m.maxHp ?? m.hp, pos: m.act.body.pos, dead: isDie(m), buffs: m.buffs.list(world.nowMs()) };
+      },
+      castOn: (skillIndex, objectId) => {
+        const self = this.world?.self();
+        // the skill takes the focus as its target; none for oneself (a skill on another with no target lands on oneself)
+        this.focus?.select(self !== undefined && objectId === self.objectId ? null : objectId);
+        this.skillUse?.useSlot(skillIndex);
+      },
+      follow: (objectId) => this.attackLoop?.followTo(objectId),
+      resurrectSkill: () => {
+        const index = this.own?.skills.findIndex((slot) => slot.skill === Si.ASS_HEAL_RESURRECTION && slot.level > 0) ?? -1;
+        return index >= 0 ? index : null;
+      },
       lineBlocked: (m) => {
         const self = this.world?.self();
         return self !== undefined && sightBlocked(this.ground, self.act.body.pos, m.act.body.pos);

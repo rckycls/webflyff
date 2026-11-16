@@ -13,7 +13,7 @@ import { WindowFrame } from '../frame';
 import { TabPages } from '../guildCombat/tabs';
 import { textButton } from '../numpad';
 import { LOOT_ALL, LOOT_KINDS, LOOT_KIND_LABELS, lootBit } from '../../items/lootFilter';
-import { BELOW, GAUGE_ROWS, MAX_BUFFS, MAX_READY, RADIUS, STOP_AFTER } from '../../autoplay/settings';
+import { BELOW, GAUGE_ROWS, MAX_BUFFS, MAX_HEALS, MAX_PARTNER_BUFFS, MAX_READY, RADIUS, STOP_AFTER } from '../../autoplay/settings';
 import type { AutoPlaySettings, GaugeRow } from '../../autoplay/settings';
 
 /** An item a slot can take: its prop index, name, picture (a URL, or null) and how many the bag holds. */
@@ -55,6 +55,8 @@ export interface AutoPlayWindowDeps {
   monstersNear?(): Array<{ index: number; name: string; level: number; count: number }>;
   /** A monster kind's name, for a chosen kind no longer near. */
   monsterName?(index: number): string;
+  /** 2026-11-17 (owner): the player targeted now (Support mode's partner), or null. */
+  targetPlayer?(): { playerId: number; name: string } | null;
 }
 
 /** What the window edits and shows: Auto Play's settings (kept after each change) and the farm bot. */
@@ -68,15 +70,23 @@ export interface AutoPlayWindowPlay {
   readonly stats: { lines(now: number): string[] };
   start(): boolean;
   stop(reason: string): void;
+  /** 2026-11-17: Support mode, and which mode runs. */
+  startSupport?(): boolean;
+  readonly mode?: 'farm' | 'support';
 }
 
-export type AutoPlayTab = 'farm' | 'potions' | 'skills' | 'loot';
-const TABS: readonly AutoPlayTab[] = ['farm', 'potions', 'skills', 'loot'];
-const TAB_LABELS = ['Farm', 'Potions', 'Skills', 'Loot'];
+export type AutoPlayTab = 'farm' | 'potions' | 'skills' | 'loot' | 'support';
+const TABS: readonly AutoPlayTab[] = ['farm', 'potions', 'skills', 'loot', 'support'];
+const TAB_LABELS = ['Farm', 'Potions', 'Skills', 'Loot', 'Support'];
+/** The slot rows: the Skills tab's ready skills and buffs, and (2026-11-17) the Support tab's heals and partner buffs. */
+type SlotList = 'ready' | 'buffs' | 'heals' | 'partnerBuffs';
+type SlotEntry = { kind: 'skill' | 'item'; index: number };
 const ROW_NAMES: Record<GaugeRow, string> = { hp: 'HP', mp: 'MP', fp: 'FP' };
 
 const WIDTH = 360;
-const HEIGHT = 290; // 2026-11-17: the Farm tab's monster options (was 250)
+// 2026-11-17: 290 for the Farm tab's monster options (was 250); the Support tab scrolls. (330 made the phone take it for a
+// full phone window, which hides the AUTO button.)
+const HEIGHT = 290;
 
 export class AutoPlayWindow {
   readonly frame: WindowFrame;
@@ -84,7 +94,9 @@ export class AutoPlayWindow {
   /** The potion row whose pick list is open. */
   private picking: GaugeRow | null = null;
   /** The Skills tab's slot whose pick list is open. */
-  private pickingSkill: { list: 'ready' | 'buffs'; slot: number } | null = null;
+  private pickingSkill: { list: SlotList; slot: number } | null = null;
+  /** The Support tab's partner line says this after "Use target" with nobody targeted. */
+  private partnerNote = '';
   /** The Farm tab's list of monster kinds is open. */
   private choosingKinds = false;
   /** What was drawn, as a string, to draw only what changed. */
@@ -136,6 +148,7 @@ export class AutoPlayWindow {
     if (tab === 'farm') { this.refreshFarm(); return; }
     if (tab === 'skills') { this.refreshSkills(); return; }
     if (tab === 'loot') { this.refreshLoot(); return; }
+    if (tab === 'support') { this.refreshSupport(); return; }
     if (tab !== 'potions') return;
     const choices = this.picking === null ? [] : this.deps.potionChoices();
     const counts = GAUGE_ROWS.map((row) => this.deps.count(this.play.settings.pots.rows[row].itemIndex));
@@ -169,17 +182,39 @@ export class AutoPlayWindow {
     page.append(slot,
       this.slotRow('ready', 'Ready skills', MAX_READY, 'ready skill'),
       this.slotRow('buffs', 'Buffs', MAX_BUFFS, 'buff'));
-    if (this.pickingSkill !== null) page.append(this.skillPickList(this.pickingSkill));
+    if (this.pickingSkill !== null && (this.pickingSkill.list === 'ready' || this.pickingSkill.list === 'buffs')) {
+      page.append(this.skillPickList(this.pickingSkill));
+    }
     return page;
   }
 
   /** A row of `size` slots for the ready skills or the buffs: filled ones first, then the next empty one, greyed after. */
-  private slotRow(list: 'ready' | 'buffs', caption: string, size: number, name: string): HTMLElement {
-    const doc = this.doc, skills = this.play.settings.skills;
+  /** A slot list's entries, skills and (the buffs) items. */
+  private entries(list: SlotList): SlotEntry[] {
+    const { skills, support } = this.play.settings;
+    const asSkills = (indexes: number[]): SlotEntry[] => indexes.map((index) => ({ kind: 'skill', index }));
+    return list === 'ready' ? asSkills(skills.ready) : list === 'buffs' ? skills.buffs
+      : list === 'heals' ? asSkills(support.heals) : asSkills(support.buffs);
+  }
+
+  private setEntry(list: SlotList, slot: number, entry: SlotEntry): void {
+    const { skills, support } = this.play.settings;
+    if (list === 'buffs') skills.buffs[slot] = entry;
+    else if (entry.kind === 'skill') (list === 'ready' ? skills.ready : list === 'heals' ? support.heals : support.buffs)[slot] = entry.index;
+  }
+
+  private removeEntry(list: SlotList, slot: number): void {
+    const { skills, support } = this.play.settings;
+    (list === 'ready' ? skills.ready : list === 'buffs' ? skills.buffs : list === 'heals' ? support.heals : support.buffs).splice(slot, 1);
+  }
+
+  private slotRow(list: SlotList, caption: string, size: number, name: string): HTMLElement {
+    const doc = this.doc;
     const row = doc.createElement('div');
     row.className = `auto-slot-row auto-${list}`;
     row.append(this.caption(caption));
-    const filled = list === 'ready' ? skills.ready.length : skills.buffs.length;
+    const entries = this.entries(list);
+    const filled = entries.length;
     for (let i = 0; i < size; i++) {
       const cell = doc.createElement('span');
       cell.className = 'auto-slot-cell';
@@ -190,12 +225,9 @@ export class AutoPlayWindow {
       button.disabled = i > filled;
       let shown: { name: string; icon: string | null } | null = null;
       if (i < filled) {
-        if (list === 'ready') shown = this.deps.skill(skills.ready[i]!);
-        else {
-          const entry = skills.buffs[i]!;
-          shown = entry.kind === 'skill' ? this.deps.skill(entry.index) : this.deps.item(entry.index);
-          if (entry.kind === 'item' && this.deps.count(entry.index) === 0) button.classList.add('is-missing');
-        }
+        const entry = entries[i]!;
+        shown = entry.kind === 'skill' ? this.deps.skill(entry.index) : this.deps.item(entry.index);
+        if (entry.kind === 'item' && this.deps.count(entry.index) === 0) button.classList.add('is-missing');
         if (shown === null) button.classList.add('is-missing');
       }
       button.append(this.picture(shown?.icon ?? null));
@@ -209,8 +241,7 @@ export class AutoPlayWindow {
       cell.append(button);
       if (i < filled) {
         const clear = this.word('×', () => {
-          if (list === 'ready') skills.ready.splice(i, 1);
-          else skills.buffs.splice(i, 1);
+          this.removeEntry(list, i);
           this.pickingSkill = null;
           this.changed();
         }, 'clear', 'autoPlay');
@@ -223,8 +254,8 @@ export class AutoPlayWindow {
     return row;
   }
 
-  private skillPickList(at: { list: 'ready' | 'buffs'; slot: number }): HTMLElement {
-    const doc = this.doc, skills = this.play.settings.skills;
+  private skillPickList(at: { list: SlotList; slot: number }): HTMLElement {
+    const doc = this.doc;
     const list = doc.createElement('div');
     list.className = 'auto-pick-list';
     const put = (choose: () => void) => {
@@ -237,10 +268,7 @@ export class AutoPlayWindow {
       button.type = 'button';
       button.className = 'auto-pick';
       button.append(this.picture(skill.icon), doc.createTextNode(skill.name));
-      button.addEventListener('click', () => put(() => {
-        if (at.list === 'ready') skills.ready[at.slot] = skill.skillIndex;
-        else skills.buffs[at.slot] = { kind: 'skill', index: skill.skillIndex };
-      }));
+      button.addEventListener('click', () => put(() => this.setEntry(at.list, at.slot, { kind: 'skill', index: skill.skillIndex })));
       list.append(button);
     }
     if (at.list === 'buffs') {
@@ -249,7 +277,7 @@ export class AutoPlayWindow {
         button.type = 'button';
         button.className = 'auto-pick';
         button.append(this.picture(item.icon), doc.createTextNode(`${item.name} ×${item.count}`));
-        button.addEventListener('click', () => put(() => { skills.buffs[at.slot] = { kind: 'item', index: item.itemIndex }; }));
+        button.addEventListener('click', () => put(() => this.setEntry('buffs', at.slot, { kind: 'item', index: item.itemIndex })));
         list.append(button);
       }
     }
@@ -258,6 +286,91 @@ export class AutoPlayWindow {
       list.dataset.empty = '';
     }
     return list;
+  }
+
+  private refreshSupport(): void {
+    const play = this.play, support = play.settings.support;
+    const named = [...support.heals, ...support.buffs].map((i) => this.deps.skill(i));
+    const choices = this.pickingSkill !== null && (this.pickingSkill.list === 'heals' || this.pickingSkill.list === 'partnerBuffs')
+      ? this.deps.skillChoices() : null;
+    const key = JSON.stringify(['support', support, play.farm, play.mode, play.phase, play.lastStop, this.pickingSkill, named, choices,
+      this.partnerNote]);
+    if (key === this.shown) return;
+    this.shown = key;
+    this.tabs.pages[TABS.indexOf('support')]!.replaceChildren(this.supportPage());
+  }
+
+  /**
+   * 2026-11-17 (owner, "another tab solely for buffers"): Support mode: the partner (the player targeted), the heals and
+   * the percents they are used under, the buffs kept on the partner, raising them, and Start / Stop.
+   */
+  private supportPage(): HTMLElement {
+    const doc = this.doc, play = this.play, support = play.settings.support;
+    const page = doc.createElement('div');
+    page.className = 'auto-support';
+
+    const partner = doc.createElement('div');
+    partner.className = 'auto-farm-line';
+    const name = doc.createElement('span');
+    name.className = 'auto-support-partner';
+    name.textContent = this.partnerNote !== '' ? this.partnerNote : support.partnerPlayerId === 0 ? 'None' : support.partnerName;
+    const use = this.word('Use target', () => {
+      const target = this.deps.targetPlayer?.() ?? null;
+      this.partnerNote = target === null ? 'Target a player first' : '';
+      if (target !== null) {
+        support.partnerPlayerId = target.playerId;
+        support.partnerName = target.name;
+      }
+      this.changed();
+    }, 'partner-use');
+    const clear = this.word('Clear', () => {
+      support.partnerPlayerId = 0;
+      support.partnerName = '';
+      this.partnerNote = '';
+      this.changed();
+    }, 'partner-clear');
+    clear.disabled = support.partnerPlayerId === 0;
+    partner.append(this.caption('Partner'), name, use, clear);
+
+    const percent = (caption: string, label: string, get: () => number, set: (value: number) => void): HTMLElement => {
+      const line = doc.createElement('div');
+      line.className = 'auto-farm-line';
+      const value = doc.createElement('span');
+      value.className = 'auto-pot-below';
+      value.textContent = `${get()}%`;
+      line.append(this.caption(caption),
+        this.stepButton('-', `${label} lower`, () => set(Math.max(BELOW.min, get() - BELOW.step))),
+        value,
+        this.stepButton('+', `${label} higher`, () => set(Math.min(BELOW.max, get() + BELOW.step))));
+      return line;
+    };
+
+    const running = play.farm === 'running' && play.mode === 'support';
+    const go = this.word(running ? 'Stop' : 'Start', () => {
+      if (running) play.stop('you took control');
+      else play.startSupport?.();
+      this.shown = '';
+      this.refresh();
+    }, 'support-go');
+    go.classList.add('auto-farm-go');
+    go.disabled = !running && support.partnerPlayerId === 0;
+    const state = doc.createElement('div');
+    state.className = 'auto-farm-state';
+    state.textContent = running ? `Running: ${play.phase}` : play.mode === 'support' && play.farm === 'stopped' ? `Stopped: ${play.lastStop ?? ''}` : 'Off';
+
+    const parts: HTMLElement[] = [
+      partner,
+      this.slotRow('heals', 'Heals', MAX_HEALS, 'heal'),
+      percent('Heal partner', 'Partner HP', () => support.partnerBelow, (v) => { support.partnerBelow = v; }),
+      percent('Heal me', 'My HP', () => support.selfBelow, (v) => { support.selfBelow = v; }),
+      this.slotRow('partnerBuffs', 'Partner buffs', MAX_PARTNER_BUFFS, 'partner buff'),
+      this.check('auto-resurrect', 'Resurrect partner', support.resurrect, (on) => { support.resurrect = on; }),
+    ];
+    if (this.pickingSkill !== null && (this.pickingSkill.list === 'heals' || this.pickingSkill.list === 'partnerBuffs')) {
+      parts.push(this.skillPickList(this.pickingSkill));
+    }
+    page.append(...parts, go, state);
+    return page;
   }
 
   private refreshLoot(): void {

@@ -25,13 +25,16 @@ const CHOICES: AutoPlayItemChoice[] = [
   { itemIndex: BLUE, name: 'Blue Refresher', icon: null, count: 4 },
 ];
 
+let target: { playerId: number; name: string } | null = { playerId: 501, name: 'Rocky' };
 function rig(settings: AutoPlaySettings = defaultSettings(), allowed = true) {
   let saves = 0, savers = 0;
   const play = {
     settings, saved: () => { saves++; },
     farm: 'off' as 'off' | 'running' | 'stopped', phase: 'seeking' as const, lastStop: null as string | null, bagIsFull: false,
     stats: { lines: () => ['Time 0s', 'Kills 0'] },
-    start: () => { play.farm = 'running'; return true; },
+    start: () => { play.farm = 'running'; play.mode = 'farm'; return true; },
+    startSupport: () => { play.farm = 'running'; play.mode = 'support'; return true; },
+    mode: 'farm' as 'farm' | 'support',
     stop: (reason: string) => { play.farm = 'stopped'; play.lastStop = reason; },
   };
   const w = new AutoPlayWindow(art, play, {
@@ -46,6 +49,7 @@ function rig(settings: AutoPlaySettings = defaultSettings(), allowed = true) {
     showSaver: () => { savers++; },
     monstersNear: () => NEAR,
     monsterName: (index) => NAMES.get(index) ?? '?',
+    targetPlayer: () => target,
   }, document);
   document.body.append(w.frame.element);
   const row = (name: 'hp' | 'mp' | 'fp') => w.frame.element.querySelector<HTMLElement>(`.auto-pot-row[data-row="${name}"]`)!;
@@ -59,9 +63,9 @@ describe('AutoPlayWindow: Potions tab', () => {
     const { w } = rig();
     w.open();
     const tabs = [...w.frame.element.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
-    expect(tabs.map((t) => t.textContent)).toEqual(['Farm', 'Potions', 'Skills', 'Loot']);
-    expect(tabs.map((t) => t.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false', 'false']);
-    expect(tabs.map((t) => t.disabled)).toEqual([false, false, false, false]);
+    expect(tabs.map((t) => t.textContent)).toEqual(['Farm', 'Potions', 'Skills', 'Loot', 'Support']);
+    expect(tabs.map((t) => t.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false', 'false', 'false']);
+    expect(tabs.map((t) => t.disabled)).toEqual([false, false, false, false, false]);
     w.showTab('potions');
     expect(w.frame.element.querySelectorAll('.auto-pot-row')).toHaveLength(3);
   });
@@ -353,5 +357,64 @@ describe('AutoPlayWindow: Farm tab, the monster options', () => {
     expect(ticked(mia)).toBe(true);
     mia.click();
     expect(play.settings.farm.only).toEqual([]);
+  });
+});
+
+// 2026-11-17 (owner): "another tab solely for buffers (Ringmaster): follows another player and just heals/buffs it"
+describe('AutoPlayWindow: Support tab', () => {
+  const page = (w: AutoPlayWindow) => w.frame.element.querySelector<HTMLElement>('.auto-support')!;
+
+  it('Use target makes the targeted player the partner; Clear empties it; nobody targeted says so', () => {
+    const { w, play, press } = rig();
+    w.open('support');
+    expect(page(w).querySelector('.auto-support-partner')!.textContent).toBe('None');
+    press(page(w), 'Use target');
+    expect([play.settings.support.partnerPlayerId, play.settings.support.partnerName]).toEqual([501, 'Rocky']);
+    expect(page(w).querySelector('.auto-support-partner')!.textContent).toBe('Rocky');
+    press(page(w), 'Clear');
+    expect(play.settings.support.partnerPlayerId).toBe(0);
+    target = null;
+    press(page(w), 'Use target');
+    expect(page(w).querySelector('.auto-support-partner')!.textContent).toBe('Target a player first');
+    target = { playerId: 501, name: 'Rocky' };
+  });
+
+  it('Heals: 2 slots taking a learned skill; Partner buffs: 8 slots', () => {
+    const { w, play, press } = rig();
+    w.open('support');
+    expect(page(w).querySelectorAll('.auto-heals .auto-slot')).toHaveLength(2);
+    expect(page(w).querySelectorAll('.auto-partnerBuffs .auto-slot')).toHaveLength(8);
+    press(page(w), 'Choose heal 1');
+    press(page(w).querySelector<HTMLElement>('.auto-pick-list')!, 'Slash');
+    expect(play.settings.support.heals).toEqual([3]);
+    press(page(w), 'Choose partner buff 1');
+    press(page(w).querySelector<HTMLElement>('.auto-pick-list')!, 'Protect');
+    expect(play.settings.support.buffs).toEqual([5]);
+  });
+
+  it('heal percents step by 5; Resurrect partner is a V15 box, on by default', () => {
+    const { w, play, press } = rig();
+    w.open('support');
+    press(page(w), 'Partner HP higher');
+    press(page(w), 'My HP lower');
+    expect([play.settings.support.partnerBelow, play.settings.support.selfBelow]).toEqual([75, 45]);
+    const res = page(w).querySelector<HTMLButtonElement>('[data-name="auto-resurrect"]')!;
+    expect(res.getAttribute('aria-checked')).toBe('true');
+    res.click();
+    expect(play.settings.support.resurrect).toBe(false);
+  });
+
+  it('Start runs Support mode; while it runs the button says Stop; Start is greyed with no partner', () => {
+    const s = defaultSettings();
+    const { w, play, press } = rig(s);
+    w.open('support');
+    const start = () => [...page(w).querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Start')!;
+    expect(start().disabled).toBe(true);
+    press(page(w), 'Use target');
+    press(page(w), 'Start');
+    expect([play.farm, play.mode]).toEqual(['running', 'support']);
+    w.refresh();
+    press(page(w), 'Stop');
+    expect(play.lastStop).toBe('you took control');
   });
 });
