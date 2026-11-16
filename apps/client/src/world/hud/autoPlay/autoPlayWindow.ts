@@ -6,7 +6,9 @@
 // custom (owner 2026-11-16): a fourth tab, Loot, the loot filter (items/lootFilter.ts): the kinds of item the pick-up pet
 // and the farm bot may pick up (docs/superpowers/plans/2026-11-16-pet-loot-filter.md).
 
+import { themeUrl } from '../art';
 import type { UiArt } from '../art';
+import { radioFrame } from '../radio';
 import { WindowFrame } from '../frame';
 import { TabPages } from '../guildCombat/tabs';
 import { textButton } from '../numpad';
@@ -82,7 +84,7 @@ export class AutoPlayWindow {
   /** What was drawn, as a string, to draw only what changed. */
   private shown = '';
 
-  constructor(art: UiArt, private readonly play: AutoPlayWindowPlay, private readonly deps: AutoPlayWindowDeps,
+  constructor(private readonly art: UiArt, private readonly play: AutoPlayWindowPlay, private readonly deps: AutoPlayWindowDeps,
     private readonly doc: Document = document) {
     this.frame = new WindowFrame('Auto Play', art, { width: WIDTH, height: HEIGHT, mobileScale: 1, fitWhole: true }, doc);
     this.frame.element.classList.add('hud-auto-play');
@@ -157,14 +159,7 @@ export class AutoPlayWindow {
     const doc = this.doc, skills = this.play.settings.skills;
     const page = doc.createElement('div');
     page.className = 'auto-skills';
-    const slot = doc.createElement('label');
-    slot.className = 'auto-check';
-    const box = doc.createElement('input');
-    box.type = 'checkbox';
-    box.name = 'auto-action-slot';
-    box.checked = skills.actionSlot;
-    box.addEventListener('change', () => { skills.actionSlot = box.checked; this.changed(); });
-    slot.append(box, doc.createTextNode(' Use Action Slot'));
+    const slot = this.check('auto-action-slot', 'Use Action Slot', skills.actionSlot, (on) => { skills.actionSlot = on; });
     page.append(slot,
       this.slotRow('ready', 'Ready skills', MAX_READY, 'ready skill'),
       this.slotRow('buffs', 'Buffs', MAX_BUFFS, 'buff'));
@@ -207,13 +202,13 @@ export class AutoPlayWindow {
       });
       cell.append(button);
       if (i < filled) {
-        const clear = textButton(doc, '×', () => {
+        const clear = this.word('×', () => {
           if (list === 'ready') skills.ready.splice(i, 1);
           else skills.buffs.splice(i, 1);
           this.pickingSkill = null;
           this.changed();
         }, 'clear', 'autoPlay');
-        clear.className = 'auto-slot-clear';
+        clear.classList.add('auto-slot-clear');
         clear.setAttribute('aria-label', `Clear ${name} ${i + 1}`);
         cell.append(clear);
       }
@@ -277,24 +272,15 @@ export class AutoPlayWindow {
     const grid = doc.createElement('div');
     grid.className = 'auto-loot-kinds';
     for (const kind of LOOT_KINDS) {
-      const label = doc.createElement('label');
-      label.className = 'auto-check';
-      const box = doc.createElement('input');
-      box.type = 'checkbox';
-      box.name = `auto-loot-${kind}`;
-      box.checked = (loot.mask & lootBit(kind)) !== 0;
-      box.addEventListener('change', () => {
-        loot.mask = box.checked ? loot.mask | lootBit(kind) : loot.mask & ~lootBit(kind);
-        this.changed();
-      });
-      label.append(box, doc.createTextNode(` ${LOOT_KIND_LABELS[kind]}`));
-      grid.append(label);
+      grid.append(this.check(`auto-loot-${kind}`, LOOT_KIND_LABELS[kind], (loot.mask & lootBit(kind)) !== 0, (on) => {
+        loot.mask = on ? loot.mask | lootBit(kind) : loot.mask & ~lootBit(kind);
+      }));
     }
-    const all = textButton(doc, 'All', () => { loot.mask = LOOT_ALL; this.changed(); }, 'loot-all', 'autoPlay');
-    all.className = 'auto-farm-go';
+    const all = this.word('All', () => { loot.mask = LOOT_ALL; this.changed(); }, 'loot-all', 'autoPlay');
+    all.classList.add('auto-farm-go');
     all.disabled = loot.mask === LOOT_ALL;
-    const none = textButton(doc, 'None', () => { loot.mask = 0; this.changed(); }, 'loot-none', 'autoPlay');
-    none.className = 'auto-farm-go';
+    const none = this.word('None', () => { loot.mask = 0; this.changed(); }, 'loot-none', 'autoPlay');
+    none.classList.add('auto-farm-go');
     none.disabled = loot.mask === 0;
     const buttons = doc.createElement('div');
     buttons.className = 'auto-farm-buttons';
@@ -327,14 +313,7 @@ export class AutoPlayWindow {
       radiusText,
       this.stepButton('+', 'Radius larger', () => { farm.radius = Math.min(RADIUS.max, farm.radius + RADIUS.step); }));
 
-    const loot = doc.createElement('label');
-    loot.className = 'auto-check';
-    const lootBox = doc.createElement('input');
-    lootBox.type = 'checkbox';
-    lootBox.name = 'auto-loot';
-    lootBox.checked = farm.loot;
-    lootBox.addEventListener('change', () => { farm.loot = lootBox.checked; this.changed(); });
-    loot.append(lootBox, doc.createTextNode(' Pick up drops'));
+    const loot = this.check('auto-loot', 'Pick up drops', farm.loot, (on) => { farm.loot = on; });
 
     const after = doc.createElement('div');
     after.className = 'auto-farm-line';
@@ -349,13 +328,13 @@ export class AutoPlayWindow {
       this.stepButton('+', 'Stop later', () => { farm.stopAfterMin = Math.min(STOP_AFTER.max, farm.stopAfterMin + STOP_AFTER.step); }));
 
     const running = play.farm === 'running';
-    const go = textButton(doc, running ? 'Stop' : 'Start', () => {
+    const go = this.word(running ? 'Stop' : 'Start', () => {
       if (play.farm === 'running') play.stop('you took control');
       else play.start();
       this.shown = '';
       this.refresh();
     }, 'go', 'autoPlay');
-    go.className = 'auto-farm-go';
+    go.classList.add('auto-farm-go');
     go.disabled = !running && !allowed;
 
     const state = doc.createElement('div');
@@ -370,8 +349,8 @@ export class AutoPlayWindow {
     buttons.className = 'auto-farm-buttons';
     buttons.append(go);
     if (running && this.deps.showSaver !== undefined) {
-      const saver = textButton(doc, 'Battery saver', () => this.deps.showSaver?.(), 'saver', 'autoPlay');
-      saver.className = 'auto-farm-go';
+      const saver = this.word('Battery saver', () => this.deps.showSaver?.(), 'saver', 'autoPlay');
+      saver.classList.add('auto-farm-go');
       buttons.append(saver);
     }
     page.append(radius, loot, after, buttons, state, stats);
@@ -387,8 +366,44 @@ export class AutoPlayWindow {
 
   /** A [-] or [+] that changes a setting, then keeps and draws it. */
   private stepButton(label: string, name: string, change: () => void): HTMLButtonElement {
-    const button = textButton(this.doc, label, () => { change(); this.changed(); }, label === '-' ? 'lower' : 'higher', 'autoPlay');
+    const button = this.word(label, () => { change(); this.changed(); }, label === '-' ? 'lower' : 'higher', 'autoPlay');
     button.setAttribute('aria-label', name);
+    return button;
+  }
+
+  /**
+   * 2026-11-17 (owner, "follow the v15 theme"): a check box as Neuz draws one (`CTheme::RenderWndButtonCheck`):
+   * ButtCheck.bmp's six 14 px frames, `radioFrame`'s 1 unticked and 3 ticked, its title beside it. The whole line is
+   * the press area (a finger's 28 px on a phone, style.css).
+   */
+  private check(name: string, label: string, checked: boolean, change: (on: boolean) => void): HTMLButtonElement {
+    const doc = this.doc;
+    const button = doc.createElement('button');
+    button.type = 'button';
+    button.className = 'auto-check';
+    button.setAttribute('role', 'checkbox');
+    button.setAttribute('aria-checked', String(checked));
+    button.dataset.name = name;
+    button.addEventListener('mousedown', (event) => event.preventDefault());
+    const box = doc.createElement('span');
+    box.className = 'auto-v15-check';
+    box.style.backgroundImage = themeUrl(this.art, 'ButtCheck.bmp');
+    box.dataset.frame = String(radioFrame({ checked, disabled: false, highlighted: false, pressed: false }));
+    button.append(box);
+    if (label !== '') {
+      const text = doc.createElement('span');
+      text.className = 'auto-check-label';
+      text.textContent = label;
+      button.append(text);
+    }
+    button.addEventListener('click', () => { change(!checked); this.changed(); });
+    return button;
+  }
+
+  /** 2026-11-17 (owner, V15 theme): a word button, in the silver look of Neuz's word buttons (style.css `.auto-word`). */
+  private word(label: string, press: () => void, name?: string, attribute = 'autoPlay'): HTMLButtonElement {
+    const button = textButton(this.doc, label, press, name, attribute);
+    button.classList.add('auto-word');
     return button;
   }
 
@@ -401,14 +416,8 @@ export class AutoPlayWindow {
 
   private potionsPage(choices: AutoPlayItemChoice[], counts: number[]): HTMLElement[] {
     const doc = this.doc, pots = this.play.settings.pots;
-    const head = doc.createElement('label');
-    head.className = 'auto-check auto-pots-on';
-    const box = doc.createElement('input');
-    box.type = 'checkbox';
-    box.name = 'auto-pots';
-    box.checked = pots.enabled;
-    box.addEventListener('change', () => { pots.enabled = box.checked; this.changed(); });
-    head.append(box, doc.createTextNode(' Auto pots'));
+    const head = this.check('auto-pots', 'Auto pots', pots.enabled, (on) => { pots.enabled = on; });
+    head.classList.add('auto-pots-on');
 
     const rows = GAUGE_ROWS.map((row, i) => this.potionRow(row, counts[i]!));
     const out: HTMLElement[] = [head, ...rows];
@@ -439,22 +448,18 @@ export class AutoPlayWindow {
     amount.className = 'auto-pot-count';
     amount.textContent = set.itemIndex > 0 ? `×${count}` : '';
 
-    const lower = textButton(doc, '-', () => { set.below = Math.max(BELOW.min, set.below - BELOW.step); this.changed(); }, 'lower', 'autoPlay');
+    const lower = this.word('-', () => { set.below = Math.max(BELOW.min, set.below - BELOW.step); this.changed(); }, 'lower', 'autoPlay');
     lower.setAttribute('aria-label', `${name} lower`);
     const below = doc.createElement('span');
     below.className = 'auto-pot-below';
     below.textContent = `${set.below}%`;
-    const higher = textButton(doc, '+', () => { set.below = Math.min(BELOW.max, set.below + BELOW.step); this.changed(); }, 'higher', 'autoPlay');
+    const higher = this.word('+', () => { set.below = Math.min(BELOW.max, set.below + BELOW.step); this.changed(); }, 'higher', 'autoPlay');
     higher.setAttribute('aria-label', `${name} higher`);
 
-    const on = doc.createElement('input');
-    on.type = 'checkbox';
-    on.name = `auto-pot-on-${row}`;
-    on.checked = set.on;
+    const on = this.check(`auto-pot-on-${row}`, '', set.on, (value) => { set.on = value; });
     on.setAttribute('aria-label', `Use the ${name} item`);
-    on.addEventListener('change', () => { set.on = on.checked; this.changed(); });
 
-    const clear = textButton(doc, '×', () => { set.itemIndex = 0; this.changed(); }, 'clear', 'autoPlay');
+    const clear = this.word('×', () => { set.itemIndex = 0; this.changed(); }, 'clear', 'autoPlay');
     clear.setAttribute('aria-label', `Clear the ${name} item`);
     clear.disabled = set.itemIndex <= 0;
 

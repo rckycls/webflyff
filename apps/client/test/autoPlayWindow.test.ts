@@ -102,7 +102,7 @@ describe('AutoPlayWindow: Potions tab', () => {
     w.open('potions');
     press(row('hp'), 'Clear the HP item');
     expect(play.settings.pots.rows.hp.itemIndex).toBe(0);
-    const box = w.frame.element.querySelector<HTMLInputElement>('input[name="auto-pots"]')!;
+    const box = w.frame.element.querySelector<HTMLButtonElement>('[data-name="auto-pots"]')!;
     box.click();
     expect(play.settings.pots.enabled).toBe(true);
   });
@@ -150,7 +150,7 @@ describe('AutoPlayWindow: Farm tab', () => {
   it('the Pick up drops box', () => {
     const { w, play } = rig();
     w.open();
-    farm(w).querySelector<HTMLInputElement>('input[name="auto-loot"]')!.click();
+    farm(w).querySelector<HTMLButtonElement>('[data-name="auto-loot"]')!.click();
     expect(play.settings.farm.loot).toBe(false);
   });
 
@@ -201,7 +201,7 @@ describe('AutoPlayWindow: Skills tab', () => {
     press(page(w).querySelector<HTMLElement>('.auto-pick-list')!, 'Keenwheel');
     expect(play.settings.skills.ready).toEqual([4]);
     expect(saves()).toBe(1);
-    page(w).querySelector<HTMLInputElement>('input[name="auto-action-slot"]')!.click();
+    page(w).querySelector<HTMLButtonElement>('[data-name="auto-action-slot"]')!.click();
     expect(play.settings.skills.actionSlot).toBe(false);
   });
 
@@ -239,15 +239,16 @@ describe('AutoPlayWindow: Skills tab', () => {
 // custom (owner 2026-11-16): the loot filter
 describe('AutoPlayWindow: Loot tab', () => {
   const page = (w: AutoPlayWindow) => w.frame.element.querySelector<HTMLElement>('.auto-loot')!;
-  const box = (w: AutoPlayWindow, kind: string) => page(w).querySelector<HTMLInputElement>(`input[name="auto-loot-${kind}"]`)!;
+  const box = (w: AutoPlayWindow, kind: string) => page(w).querySelector<HTMLButtonElement>(`[data-name="auto-loot-${kind}"]`)!;
+  const ticked = (b: HTMLElement) => b.getAttribute('aria-checked') === 'true';
 
   it('shows the 8 kinds, all checked by default, with All greyed', () => {
     const { w } = rig();
     w.open('loot');
-    const labels = [...page(w).querySelectorAll('.auto-loot-kinds label')].map((l) => l.textContent!.trim());
+    const labels = [...page(w).querySelectorAll('.auto-loot-kinds [role="checkbox"]')].map((l) => l.textContent!.trim());
     expect(labels).toEqual(['Penya', 'Potions and food', 'Weapons', 'Armour', 'Jewellery', 'Upgrade materials', 'Quest items', 'Other']);
-    expect([...page(w).querySelectorAll<HTMLInputElement>('input')].every((b) => b.checked)).toBe(true);
-    expect([...page(w).querySelectorAll<HTMLButtonElement>('button')].map((b) => [b.textContent, b.disabled]))
+    expect([...page(w).querySelectorAll<HTMLElement>('[role="checkbox"]')].every(ticked)).toBe(true);
+    expect([...page(w).querySelectorAll<HTMLButtonElement>('button:not([role="checkbox"])')].map((b) => [b.textContent, b.disabled]))
       .toEqual([['All', true], ['None', false]]);
   });
 
@@ -257,7 +258,7 @@ describe('AutoPlayWindow: Loot tab', () => {
     box(w, 'jewellery').click();
     expect(play.settings.loot.mask).toBe(0xff & ~16);
     expect(saves()).toBe(1);
-    expect(box(w, 'jewellery').checked).toBe(false);
+    expect(ticked(box(w, 'jewellery'))).toBe(false);
     box(w, 'jewellery').click();
     expect(play.settings.loot.mask).toBe(0xff);
   });
@@ -267,9 +268,33 @@ describe('AutoPlayWindow: Loot tab', () => {
     w.open('loot');
     press(page(w), 'None');
     expect(play.settings.loot.mask).toBe(0);
-    expect(box(w, 'penya').checked).toBe(false);
+    expect(ticked(box(w, 'penya'))).toBe(false);
     press(page(w), 'All');
     expect(play.settings.loot.mask).toBe(0xff);
-    expect(box(w, 'other').checked).toBe(true);
+    expect(ticked(box(w, 'other'))).toBe(true);
+  });
+});
+
+// 2026-11-17 (owner, "make the whole auto play window follow the v15 theme")
+describe('AutoPlayWindow: the V15 look', () => {
+  it('every check box is Neuz\'s ButtCheck.bmp: frame 1 unticked, frame 3 ticked', () => {
+    const { w } = rig();
+    w.open('potions');
+    const box = w.frame.element.querySelector<HTMLElement>('[data-name="auto-pots"]')!;
+    expect(box.querySelector<HTMLElement>('.auto-v15-check')!.dataset.frame).toBe('1');
+    box.click();
+    expect(w.frame.element.querySelector<HTMLElement>('[data-name="auto-pots"] .auto-v15-check')!.dataset.frame).toBe('3');
+    expect(w.frame.element.querySelectorAll('input')).toHaveLength(0);
+  });
+
+  it('every word button of every tab is a silver word button (no browser checkbox anywhere)', () => {
+    const { w } = rig();
+    for (const tab of ['farm', 'potions', 'skills', 'loot'] as const) {
+      w.open(tab);
+      const page = w.frame.element.querySelector<HTMLElement>('.hud-gc-page:not([hidden])')!;
+      expect(page.querySelectorAll('input')).toHaveLength(0);
+      const words = [...page.querySelectorAll<HTMLButtonElement>('button')].filter((b) => !b.classList.contains('auto-slot') && b.getAttribute('role') !== 'checkbox' && !b.classList.contains('auto-pick'));
+      expect(words.every((b) => b.classList.contains('auto-word')), tab).toBe(true);
+    }
   });
 });
