@@ -1,6 +1,7 @@
 // The web service's HTTP server (website spec §3.4), behind Caddy's `/api/*` on 127.0.0.1:8091:
 //
 // - `GET /api/sign-up/ticket`: `200 {ticket}`, or `429 {error:'too_many'}` past the tickets an address may have an hour;
+//   with the browser's `fw_id` cookie when it has none yet (a random ID, for the pre-registration cap, signUpBook.ts);
 // - `POST /api/sign-up`: `handleSignUp`, with at most 1025 bytes of the body read (more is a 413, answered without
 //   reading the rest);
 // - `GET /api/status`: the shared status;
@@ -9,10 +10,12 @@
 //
 // Every answer is JSON with `Cache-Control: no-store`, and no CORS headers: only the site's own pages may call it.
 
+import { randomBytes } from 'node:crypto';
 import { createServer } from 'node:http';
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
 import { resolveClientAddress } from '@flyffweb/protocol';
 import type { HourlyLimit } from './hourlyLimit';
+import { BROWSER_COOKIE, BROWSER_ID } from './signUpBook';
 import { handleSignUp, MAX_BODY_BYTES } from './signUpHandler';
 import type { SignUpDeps } from './signUpHandler';
 import { handleSiegeRanking, handleSiegeWeekly } from './siege';
@@ -23,10 +26,24 @@ export type WebServerDeps = SignUpDeps & { status: StatusCache; siege: SiegeCach
 
 /** Slow clients get this long to send a request (Caddy sends it at once). */
 const REQUEST_TIMEOUT_MS = 10_000;
+/** How long a browser keeps its `fw_id`: 400 days, the most browsers keep a cookie. */
+const BROWSER_COOKIE_SECONDS = 400 * 24 * 3600;
 
-function send(res: ServerResponse, status: number, body: unknown, close = false): void {
+/** The browser's `fw_id` cookie, or '' when it sent none (or one the service never gives). */
+export function browserIdOf(cookieHeader: string | undefined): string {
+  for (const part of (cookieHeader ?? '').split(';')) {
+    const eq = part.indexOf('=');
+    if (eq < 0 || part.slice(0, eq).trim() !== BROWSER_COOKIE) continue;
+    const value = part.slice(eq + 1).trim();
+    if (BROWSER_ID.test(value)) return value;
+  }
+  return '';
+}
+
+function send(res: ServerResponse, status: number, body: unknown, close = false, headers: Record<string, string> = {}): void {
   const text = JSON.stringify(body);
   res.writeHead(status, {
+    ...headers,
     'Content-Type': 'application/json; charset=utf-8',
     'Content-Length': Buffer.byteLength(text),
     'Cache-Control': 'no-store',
@@ -77,12 +94,19 @@ export function createWebServer(deps: WebServerDeps): Server {
         return;
       }
       deps.ticketsByAddress.add(address);
-      send(res, 200, { ticket: deps.tickets.issue() });
+      // Only the sign-up paths get it back; HttpOnly, so no page script can read or change it
+      const cookie: Record<string, string> = browserIdOf(req.headers.cookie) !== '' ? {} : {
+        'Set-Cookie': `${BROWSER_COOKIE}=${randomBytes(16).toString('base64url')}; Path=/api/sign-up; Max-Age=${BROWSER_COOKIE_SECONDS}; ` +
+          `HttpOnly; SameSite=Strict${config.siteOrigin.startsWith('https:') ? '; Secure' : ''}`,
+      };
+      send(res, 200, { ticket: deps.tickets.issue() }, false, cookie);
       return;
     }
     if (path === '/api/sign-up' && req.method === 'POST') {
       const { body, whole } = await readBody(req, MAX_BODY_BYTES);
-      const answer = await handleSignUp({ address, origin: req.headers.origin, contentType: req.headers['content-type'], body }, deps);
+      const answer = await handleSignUp({
+        address, origin: req.headers.origin, contentType: req.headers['content-type'], body, browser: browserIdOf(req.headers.cookie),
+      }, deps);
       // a body left unread: the connection closes after the answer, so its rest is never taken
       send(res, answer.status, answer.body, !whole);
       if (!whole) res.once('finish', () => req.socket.destroy());

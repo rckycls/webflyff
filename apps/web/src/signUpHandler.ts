@@ -7,7 +7,9 @@
 // 3. the ticket: signed, 3 s to 30 min old, used once (400 ticket);
 // 4. the trap field: filled, answer 201 as if made, make nothing (logged as a bot);
 // 5. the rules and the reserved names (400 invalid, with the field);
-// 6. the accounts made: 3 an hour from the address (429 too_many), 60 an hour in all (429 paused);
+// 6. the accounts made: 3 an hour from the address (429 too_many), 60 an hour in all (429 paused); while the
+//    pre-registration lock is on, PREREG_MAX_ACCOUNTS_PER_IP in all from the address and from the browser's `fw_id`
+//    cookie, kept across restarts (429 prereg_limit, with `max`; signUpBook.ts);
 // 7. `usp_CreateNewAccount` with the password as the login sends it, `hashPassword`: 1 → 201, 0 → 409 taken, anything
 //    else or a database error → 500 server.
 //
@@ -16,11 +18,13 @@
 // RefusalLog: the first of a kind each minute, then a count.
 
 import { checkSignUp, hashPassword, normalizeAccount } from '@flyffweb/protocol';
+import type { PreregRule } from '@flyffweb/protocol';
 import type { AccountStore } from './accountStore';
 import type { WebConfig } from './config';
 import type { HourlyLimit } from './hourlyLimit';
 import type { Logger } from './log';
 import type { RefusalLog } from './refusalLog';
+import type { SignUpBook } from './signUpBook';
 import type { TicketBook } from './ticket';
 
 export const MAX_BODY_BYTES = 1024;
@@ -28,7 +32,11 @@ export const MAX_BODY_BYTES = 1024;
 const ALL = 'all';
 
 export interface HttpAnswer { status: number; body: Record<string, unknown> }
-export interface SignUpRequest { address: string; origin: string | undefined; contentType: string | undefined; body: Buffer }
+export interface SignUpRequest {
+  address: string; origin: string | undefined; contentType: string | undefined; body: Buffer;
+  /** The browser's `fw_id` cookie, empty when it sent none. */
+  browser: string;
+}
 export interface SignUpDeps {
   config: WebConfig;
   store: AccountStore;
@@ -39,6 +47,10 @@ export interface SignUpDeps {
   log: Logger;
   /** Where the refusals a flood can repeat go, so that they cannot fill the log. */
   refusals: RefusalLog;
+  /** The accounts made, kept on disk, and the pre-registration counts by IP and browser. */
+  signUps: SignUpBook;
+  /** The pre-registration settings now (the `.env` file). */
+  prereg: () => PreregRule;
 }
 
 const FIELDS = ['account', 'password', 'email', 'website', 'ticket'] as const;
@@ -101,15 +113,23 @@ export async function handleSignUp(req: SignUpRequest, deps: SignUpDeps): Promis
 
   if (!deps.createdByAddress.allows(address)) return answer(429, { error: 'too_many' }, 'too_many');
   if (!deps.createdInAll.allows(ALL)) return answer(429, { error: 'paused' }, 'paused');
+  const { browser } = req;
+  const prereg = deps.prereg();
+  if (prereg.on && prereg.maxAccounts > 0) {
+    const full = deps.signUps.full(address, browser, prereg.maxAccounts);
+    if (full !== undefined) return answer(429, { error: 'prereg_limit', max: prereg.maxAccounts }, `prereg_limit:${full}`);
+  }
 
   // The places are taken now, before the database answers: requests sent at once all pass the checks above before
   // any of them is made, so a place counted only afterwards would let every one of them through. One that is not
   // made after all gives its places back.
   deps.createdByAddress.add(address);
   deps.createdInAll.add(ALL);
+  if (prereg.on) deps.signUps.reserve(address, browser);
   const giveBack = () => {
     deps.createdByAddress.release(address);
     deps.createdInAll.release(ALL);
+    if (prereg.on) deps.signUps.release(address, browser);
   };
 
   let made: number;
@@ -123,7 +143,11 @@ export async function handleSignUp(req: SignUpRequest, deps: SignUpDeps): Promis
     deps.log.warn(`signup database error: ${message}`);
     return answer(500, { error: 'server' }, 'error');
   }
-  if (made === 1) return answer(201, { ok: true }, 'created');
+  if (made === 1) {
+    const account = normalizeAccount(form.account);
+    deps.signUps.keep({ time: new Date().toISOString(), account, ip: address, browser, prereg: prereg.on });
+    return answer(201, { ok: true }, 'created');
+  }
   giveBack();
   if (made === 0) return answer(409, { error: 'taken' }, 'taken');
   return answer(500, { error: 'server' }, 'error');

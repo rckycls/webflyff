@@ -12,8 +12,10 @@ import { HourlyLimit } from '../src/hourlyLimit';
 import { RefusalLog } from '../src/refusalLog';
 import { createWebServer } from '../src/server';
 import { SiegeCache } from '../src/siege';
+import { SignUpBook } from '../src/signUpBook';
 import { StatusCache } from '../src/status';
 import { TicketBook } from '../src/ticket';
+import { PREREG_OFF, type PreregRule } from '@flyffweb/protocol';
 
 const baseConfig = parseWebConfig({
   ...JSON.parse(readFileSync(fileURLToPath(new URL('../web.config.example.json', import.meta.url)), 'utf8')),
@@ -26,7 +28,7 @@ afterEach(() => { for (const server of servers.splice(0)) server.close(); });
 
 interface Started { port: number; lines: string[]; store: { calls: string[][] }; setNow(t: number): void }
 
-async function start(config: WebConfig = baseConfig): Promise<Started> {
+async function start(config: WebConfig = baseConfig, prereg: PreregRule = PREREG_OFF): Promise<Started> {
   let now = 1_000_000;
   const clock = () => now;
   const lines: string[] = [];
@@ -48,6 +50,8 @@ async function start(config: WebConfig = baseConfig): Promise<Started> {
     status: new StatusCache(async () => ({ online: true, players: 4, checkedAt: '2026-11-11T00:00:00.000Z' }), clock),
     log: { info: (line) => lines.push(line), warn: (line) => lines.push(line) },
     refusals: new RefusalLog({ info: (line) => lines.push(line), warn: (line) => lines.push(line) }),
+    signUps: new SignUpBook(undefined, { info: (line) => lines.push(line), warn: (line) => lines.push(line) }),
+    prereg: () => prereg,
   });
   servers.push(server);
   server.listen(0, '127.0.0.1');
@@ -91,6 +95,34 @@ it('serves a ticket, a sign-up and the status', async () => {
     expect(reply.headers['cache-control']).toBe('no-store');
     expect(reply.headers['content-type']).toMatch(/^application\/json/);
   }
+});
+
+it('gives a ticket the browser cookie once: HttpOnly, SameSite=Strict, Secure, on the sign-up paths only', async () => {
+  const site = await start();
+  const first = await call(site.port, 'GET', '/api/sign-up/ticket');
+  const cookie = first.headers['set-cookie']?.[0] ?? '';
+  expect(cookie).toMatch(/^fw_id=[A-Za-z0-9_-]{22}; Path=\/api\/sign-up; Max-Age=34560000; HttpOnly; SameSite=Strict; Secure$/);
+  const id = cookie.split(';')[0]!;
+  const again = await call(site.port, 'GET', '/api/sign-up/ticket', { Cookie: `theme=dark; ${id}` });
+  expect(again.headers['set-cookie']).toBeUndefined();
+  const bad = await call(site.port, 'GET', '/api/sign-up/ticket', { Cookie: 'fw_id=made-up' });
+  expect(bad.headers['set-cookie']?.[0]).toMatch(/^fw_id=[A-Za-z0-9_-]{22};/);
+  expect((await call(site.port, 'GET', '/api/status')).headers['set-cookie']).toBeUndefined();
+});
+
+it('refuses the account past the pre-registration cap of an IP with 429 prereg_limit and the cap', async () => {
+  const site = await start(baseConfig, { ...PREREG_OFF, on: true, maxAccounts: 1 });
+  const signUp = async (account: string) => {
+    site.setNow(1_000_000);
+    const { ticket } = (await call(site.port, 'GET', '/api/sign-up/ticket')).body as { ticket: string };
+    site.setNow(1_005_000);
+    return call(site.port, 'POST', '/api/sign-up', signUpHeaders,
+      JSON.stringify({ account, password: 'abc12345', email: '', website: '', ticket }));
+  };
+  expect(await signUp('hero_01')).toMatchObject({ status: 201 });
+  expect(await signUp('hero_02')).toMatchObject({ status: 429, body: { error: 'prereg_limit', max: 1 } });
+  expect(site.store.calls.map((c) => c[0])).toEqual(['hero_01']);
+  expect(site.lines).toContain('signup 127.0.0.1 hero_02 prereg_limit:ip');
 });
 
 it('serves the siege weekly winner and rankings, and 400 on a bad ranking query', async () => {
