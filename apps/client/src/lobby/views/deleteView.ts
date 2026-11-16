@@ -5,7 +5,7 @@
 
 import type { CharacterSummary } from '@flyffweb/protocol';
 import { validateDeletePassword } from '../createRules';
-import { h } from './dom';
+import { focusEdit, h } from './dom';
 import type { View } from './dom';
 
 export interface DeleteViewOptions {
@@ -41,7 +41,7 @@ export function deleteView({ character, onDelete, onInvalid, onCancel }: DeleteV
       // `pWndEdit->SetString( "" )` and the message box
       password.value = '';
       onInvalid(problem);
-      password.focus();
+      focusEdit(password);
       return;
     }
     // OK and CANCEL are disabled while the answer is awaited (`DeletePlayer`, :1261-1268); `idle` frees them after an error

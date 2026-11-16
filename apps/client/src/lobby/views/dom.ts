@@ -15,6 +15,16 @@ export function h<K extends keyof HTMLElementTagNameMap>(tag: K, attrs: Attrs = 
   return element;
 }
 
+/**
+ * V15 puts the focus back in the edit at fault after its message. On a touch screen a phone's keyboard is not opened by
+ * itself (the lobby's rule, as LobbyApp's Delete Character window opens): the floating keyboard would open over the
+ * window's other edits and its OK and Cancel. There the focus stays where it was, and the player taps the edit to type.
+ */
+export function focusEdit(box: HTMLElement): void {
+  const coarse = box.ownerDocument.defaultView?.matchMedia('(pointer: coarse)').matches ?? false;
+  if (!coarse) box.focus();
+}
+
 /** One screen of the lobby. */
 export interface View {
   element: HTMLElement;
