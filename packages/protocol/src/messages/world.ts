@@ -293,8 +293,8 @@ export type WorldPacket =
   | { type: 'swapVis'; slot1: number; slot2: number }
   /** 2026-11-09 (pets R4): the Pet Tamer's pet trade, egg exchange and awakening cancel (world/pets.ts). */
   | { type: 'quePetResurrection' | 'pickupPetAwakeningCancel'; itemObjectId: number }
-  /** custom (owner 2026-11-16): the loot filter's mask (world/pets.ts `encodePetLootFilter`). */
-  | { type: 'petLootFilter'; mask: number }
+  /** custom (owner 2026-11-16): the Pet Filter's mask (world/pets.ts `encodePetFilter`). */
+  | { type: 'petFilter'; mask: number }
   | { type: 'transformItem'; transform: number; parts: Array<{ objectId: number; count: number }> }
   | { type: 'setPlayerName'; playerId: number; name: string }
   | { type: 'enchant' | 'piercing' | 'randomScroll'; targetId: number; materialId: number }
@@ -625,9 +625,9 @@ function decodeClientPacket(r: ArReader): WorldPacket {
       const itemObjectId = r.u32(); r.expectEnd();
       return { type: packetType === PacketType.QUE_PETRESURRECTION ? 'quePetResurrection' : 'pickupPetAwakeningCancel', itemObjectId };
     }
-    case PacketType.PET_LOOT_FILTER: { // custom (owner 2026-11-16)
+    case PacketType.PET_FILTER: { // custom (owner 2026-11-16)
       const mask = r.u32(); r.expectEnd();
-      return { type: 'petLootFilter', mask };
+      return { type: 'petFilter', mask };
     }
     case PacketType.TRANSFORM_ITEM: { // CTransformStuff::Serialize's loading side (pet.cpp:705-718), each part 8 bytes
       const transform = r.i32(), size = r.u32();

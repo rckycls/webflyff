@@ -181,7 +181,9 @@ import { HonorBook } from './honor/honorBook';
 import { isArena } from './combat/arena';
 import { formatDefinedText } from './hud/messages';
 import { ItemUse } from './items/itemUse';
-import { LOOT_ALL, lootAllowed } from './items/lootFilter'; // custom (owner 2026-11-16): the loot filter
+// custom (owner 2026-11-16): the Pet Filter (the Wakazaki pet filter)
+import { PET_FILTER_NONE, loadPetFilter, petFilterBlocks, savePetFilter } from './items/petFilter';
+import { PetFilterWindow } from './hud/petFilterWindow';
 import { SmTimers, skillPointsSpent } from './items/premiumItems';
 import { UpgradeCursor } from './items/upgradeCursor';
 import { ConfirmBoxes, boxOf } from './items/confirmBoxes';
@@ -772,10 +774,13 @@ export class WorldScreen {
   private autoPlayBagRevision = -1;
   private autoPlayDrops = new Set<number>();
   /**
-   * custom (owner 2026-11-16): the loot filter's mask the World server holds for the own pick-up pet: every kind until the
-   * page sends another (a new player starts with every kind, `CUser::Init` in the patch).
+   * custom (owner 2026-11-16): the Pet Filter (items/petFilter.ts): the kept mask (the browser's, for every character, as
+   * the Wakazaki one keeps it in Neuz.ini), its window, and the mask the World server holds for the own pick-up pet:
+   * nothing left behind until the page sends another (a new player starts so, `CUser::Init` in the patch).
    */
-  private lootMaskSent = LOOT_ALL;
+  private petFilter = PET_FILTER_NONE;
+  private petFilterWindow: PetFilterWindow | undefined;
+  private petFilterSent = PET_FILTER_NONE;
   /** 2026-11-05: the item windows' flows (the name change, the tickets, the summons ...). */
   private itemWindows: ItemWindowFlows | undefined;
   /** 2026-11-05: the upgrade cursor, and whether its effect (XI_INT_INCHANT) is on the own mover. */
@@ -1721,8 +1726,10 @@ export class WorldScreen {
     // custom (owner 2026-11-15): Auto Play, with the character's own settings
     this.autoPlay = new AutoPlay(this.autoPlayHooks(), loadSettings(autoPlayStorage(), this.entry.character.playerId));
     this.autoPlay.onError = (error) => this.reportOnce(`auto play: ${messageOf(error)}`, error);
-    // custom (owner 2026-11-16): the loot filter of this character to the World server, for the pick-up pet
-    this.sendLootFilter(this.autoPlay.settings.loot.mask);
+    // custom (owner 2026-11-16): the kept Pet Filter to the World server, for the pick-up pet (the Wakazaki one sends it as
+    // the character connects, `SendPlayerPetfilter`)
+    this.petFilter = loadPetFilter(autoPlayStorage());
+    this.sendPetFilter(this.petFilter);
     // Piece 7 M2: the own missiles' ids and reports, the missiles of everyone, and what the attack loop says and tests
     const ownShots = new OwnShots(this.session);
     const views = this.views!;
@@ -2338,6 +2345,13 @@ export class WorldScreen {
       buffItemChoices: () => this.itemChoices(isBuffItemProp),
       showSaver: () => { this.autoPlayWindow?.frame.close(); this.saverScreen?.show(); },
     }, doc);
+    // custom (owner 2026-11-16): the Pet Filter window (Start menu, U): Apply keeps the filter and tells the World server
+    this.petFilterWindow = new PetFilterWindow(this.hudArt!, doc);
+    this.petFilterWindow.onApply = (mask) => {
+      this.petFilter = mask;
+      savePetFilter(autoPlayStorage(), mask);
+      this.sendPetFilter(mask);
+    };
     this.autoButton = new AutoButton(this.autoPlay!, () => {
       if (this.autoPlayWindow?.isOpen !== true) this.autoPlayWindow?.open('farm');
     }, doc);
@@ -2725,6 +2739,7 @@ export class WorldScreen {
       this.questTracker.element, this.teleporter.frame.element, this.heavenTower.element, ...this.lordHud.elements, this.lordHud.eventIcons, ...this.guildCombatHud.elements,
       this.motionWindow.frame.element, // 2026-11-14
       this.autoPlayWindow.frame.element, this.autoButton.element, this.saverScreen.element, // custom (owner 2026-11-15)
+      this.petFilterWindow.element, // custom (owner 2026-11-16)
       // 2026-11-12: the phone's quick slots around Attack (bar 8's first slots; style.css shows them on a phone only)
       taskBar.element, taskBar.quickSlots, taskBar.actionSlotWindow.frame.element, this.attackButton.element, this.jumpButton.element,
       this.actionSlotButton.element, this.flightButtons.element,
@@ -4033,6 +4048,8 @@ export class WorldScreen {
     if (window === 'siegeRanking') { this.guildCombatHud?.siegeRanking.toggle(); return; }
     // custom (owner 2026-11-15): the Auto Play window, from the Start menu
     if (window === 'autoPlay') { this.autoPlayWindow?.toggle(); return; }
+    // custom (owner 2026-11-16): the Pet Filter window, from the Start menu and U
+    if (window === 'petFilter') { this.petFilterWindow?.toggle(this.petFilter); return; }
     // 2026-11-10: APP_VENDOR_REVISION, the personal shop, refused while the Summon Angel window is open (WndManager.cpp:2685-2695)
     if (window === 'vendor') {
       if (this.summonAngel?.isOpen === true) this.say('TID_GAME_SUMMONANGELUSING');
@@ -4167,11 +4184,10 @@ export class WorldScreen {
         play.onEvent({ kind: 'bagChanged' });
       }
     }
-    // the drops that came since the last step; custom (owner 2026-11-16): only the kinds the loot filter lets through
-    const lootMask = play.settings.loot.mask;
+    // the drops that came since the last step; custom (owner 2026-11-16): not the items the Pet Filter leaves behind
     for (const [id, drop] of world.groundItems) {
       if (this.autoPlayDrops.has(id)) continue;
-      if (!lootAllowed(lootMask, this.data?.itemProps.get(drop.item.itemId))) continue;
+      if (petFilterBlocks(this.petFilter, this.data?.itemProps.get(drop.item.itemId))) continue;
       play.onEvent({ kind: 'itemAppeared', id, pos: [...drop.pos] as Vec3 });
     }
     this.autoPlayDrops = new Set(world.groundItems.keys());
@@ -4283,10 +4299,7 @@ export class WorldScreen {
       cooldownLeft: (itemId) => this.itemUse?.cooldownLeft(itemId) ?? 0,
       useItem: (objectId) => this.itemUse?.use(objectId, 'bar') ?? false,
       say: (text) => this.hud?.messages.add(text, AUTO_PLAY_COLOR),
-      save: (s) => {
-        saveSettings(autoPlayStorage(), this.entry.character.playerId, s);
-        this.sendLootFilter(s.loot.mask); // custom (owner 2026-11-16): the Loot tab's change, for the pick-up pet
-      },
+      save: (s) => saveSettings(autoPlayStorage(), this.entry.character.playerId, s),
       self: () => this.world?.self(),
       movers: () => this.world?.movers.values() ?? [],
       rankOf: (m) => this.data?.movers.get((m as Mover).added.index)?.rank ?? 0,
@@ -4405,13 +4418,13 @@ export class WorldScreen {
   }
 
   /**
-   * custom (owner 2026-11-16): the loot filter's mask to the World server when it differs from what the server holds. A
-   * patched World keeps it for the own pick-up pet (`CAIPet::SubItemLoot` skips the kinds left out); others ignore it.
+   * custom (owner 2026-11-16): the Pet Filter's mask to the World server when it differs from what the server holds. A
+   * patched World keeps it for the own pick-up pet (`CAIPet::SubItemLoot` skips those items); others ignore it.
    */
-  private sendLootFilter(mask: number): void {
-    if (mask === this.lootMaskSent) return;
-    this.lootMaskSent = mask;
-    this.session.sendPetLootFilter(mask);
+  private sendPetFilter(mask: number): void {
+    if (mask === this.petFilterSent) return;
+    this.petFilterSent = mask;
+    this.session.sendPetFilter(mask);
   }
 
   /** 2026-11-09 (pets R4): the Pet Tamer's windows' packets, by WorldSession's senders. */

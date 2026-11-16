@@ -61,7 +61,7 @@ import { itemIconOf } from '../pets/petStatus';
 /** The windows of Piece 4 a press on the task bar opens. */
 export type TaskBarWindow = 'character' | 'status' | 'skills' | 'inventory' | 'chat' | 'navigator' | 'worldmap' | 'option'
   | 'quests' | 'party' | 'messenger' | 'vendor' | 'guild' | 'lordSkill' | 'motion' | 'housing' | 'guildFurniture' | 'couple'
-  | 'siegeRanking' | 'autoPlay';
+  | 'siegeRanking' | 'autoPlay' | 'petFilter';
 /**
  * 2026-11-15 (owner, Guild Siege C2): the Siege Ranking window's own id: it is no applet of Neuz's (none in `APPLETS`, so no
  * icon or hotkey); its Start menu line and the icons open it.
@@ -69,6 +69,8 @@ export type TaskBarWindow = 'character' | 'status' | 'skills' | 'inventory' | 'c
 const APP_SIEGE_RANKING = 9001;
 /** custom (owner 2026-11-15): the Auto Play window's own id, no applet of Neuz's either (no icon, no hotkey). */
 const APP_AUTO_PLAY = 9002;
+/** custom (owner 2026-11-16): the Pet Filter window's own id (the post's 2022 is APP_MAP_EX here), U (applets.ts). */
+const APP_PETFILTER = 9003;
 /** 2026-11-10: `APP_GUILD` (Resource/ResData.h:228), the guild window (guild research §3), G (FuncApplet.cpp:245). */
 const APP_GUILD = 323;
 /** `APP_QUEST_EX_LIST` (Resource/ResData.h), the quest window (Piece 7 M1), Q (FuncApplet.cpp:229). */
@@ -115,6 +117,7 @@ const WINDOWS: ReadonlyMap<number, TaskBarWindow> = new Map([
   [APP_COUPLE_MAIN, 'couple'],
   [APP_SIEGE_RANKING, 'siegeRanking'],
   [APP_AUTO_PLAY, 'autoPlay'],
+  [APP_PETFILTER, 'petFilter'],
 ]);
 
 /**
@@ -168,6 +171,8 @@ const MENU: ReadonlyArray<{ id: number; text: string }> = [
   { id: APP_SIEGE_RANKING, text: 'Siege Ranking' },
   // custom (owner 2026-11-15): Auto Play (the farm bot, auto pots and auto skills), with no counterpart in Neuz, after Siege Ranking
   { id: APP_AUTO_PLAY, text: 'Auto Play' },
+  // custom (owner 2026-11-16): the Pet Filter, as the Wakazaki pet filter's Start menu line, after Auto Play
+  { id: APP_PETFILTER, text: 'Pet Filter' },
   // CWndTaskMenu's APP_OPTIONEX line, 'Option' (TID_APP_OPTION), just before Log out (WndTaskBar.cpp:2638)
   { id: AppId.OPTIONEX, text: 'Option' },
   { id: AppId.LOGOUT, text: 'Log out' },

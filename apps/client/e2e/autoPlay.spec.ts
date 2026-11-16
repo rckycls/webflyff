@@ -72,31 +72,3 @@ test('Auto Play: the AUTO button starts it; Battery saver covers the game and a 
   }
   expect((await page.evaluate(() => window.__client!.stats())).errors).toEqual([]);
 });
-
-// custom (owner 2026-11-16): the loot filter, Auto Play's Loot tab (docs/superpowers/plans/2026-11-16-pet-loot-filter.md)
-test('Auto Play: the Loot tab shows the 8 kinds, all on; unchecking Jewellery keeps it and tells the World server', async ({ page }, info) => {
-  const script = createWorldScript({ playerObjectId: SELF_ID, worldId: MADRIGAL, pos: SQUARE, self: writeAddSelf(SELF_ID, self), others: [] });
-  const gateway = await playGateway(page, script);
-  await enterFlaris(page);
-  await openAutoPlay(page);
-  await page.locator('.hud-auto-play').getByRole('tab', { name: 'Loot' }).click();
-  const loot = page.locator('.auto-loot');
-  await expect(loot.locator('input[type="checkbox"]')).toHaveCount(8);
-  for (const box of await loot.locator('input[type="checkbox"]').all()) await expect(box).toBeChecked();
-  // every box and button inside the window, none cut off
-  const win = (await page.locator('.hud-auto-play').boundingBox())!;
-  for (const el of await loot.locator('label, button').all()) {
-    const b = (await el.boundingBox())!;
-    expect(b.y + b.height).toBeLessThanOrEqual(win.y + win.height + 0.5);
-    expect(b.x + b.width).toBeLessThanOrEqual(win.x + win.width + 0.5);
-  }
-  await page.screenshot({ path: info.outputPath('loot-tab.png') });
-  // every kind is what the server starts with: nothing sent on entering
-  expect(sentOf(gateway, PacketType.PET_LOOT_FILTER)).toHaveLength(0);
-  await loot.getByLabel('Jewellery').uncheck();
-  // PET_LOOT_FILTER: DPID_UNKNOWN, the type, the mask (penya 1 ... jewellery 16 ... other 128)
-  await expect.poll(() => sentOf(gateway, PacketType.PET_LOOT_FILTER).map((s) => s.body.readUInt32LE(8)), ON_FRAMES).toEqual([0xef]);
-  const stored = await page.evaluate(() => Object.entries(localStorage).find(([k]) => k.startsWith('flyffweb.autoPlay.'))?.[1] ?? '');
-  expect(JSON.parse(stored).loot.mask).toBe(0xff & ~16);
-  expect((await page.evaluate(() => window.__client!.stats())).errors).toEqual([]);
-});
