@@ -37,6 +37,19 @@ with perks is a purchase, not a donation.
 - **Existing test changed:** admin.spec's "email that looks like HTML" now checks for no `<img>` in the Accounts section
   only (the VIP tab has real receipt and QR pictures).
 
+## On the VPS
+
+The server repo's branch `vip-donate` (9fa9675, deploy/ only) runs `Install-Vip.ps1` from `2-Setup-Database` and
+`Update-FlyffWeb`, and writes the `vip` section from `4-Setup-FlyffWeb`, when deploy.json has `"adminPanel": true`.
+
+1. Copy the new `deploy\` to `C:\FlyFF\deploy` first, then `run.bat Update-FlyffWeb -From <new FlyffWeb folder>`
+   (builds /vip/, makes the tables).
+2. `run.bat 4-Setup-FlyffWeb -SkipBuild` (the `vip` section in web.config.json, the new Caddyfile, Caddy restarted).
+3. `nssm restart flyffweb-site`; web.log says `vip: on, pictures in C:\flyff-web\vip-uploads`.
+4. Panel, VIP tab, Payment QRs: add your QRs.
+
+Without the scripts: hosting.md step 8c.
+
 ## Checks run
 
 Typecheck apps/web, apps/client, apps/client/tsconfig.node.json; vitest apps/web (all) and the touched client tests;
