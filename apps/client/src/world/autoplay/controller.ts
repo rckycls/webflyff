@@ -186,6 +186,11 @@ export class AutoPlay {
     this.hooks.save(this.settings);
   }
 
+  /** Where Start was pressed (the radius is around it) while the farm bot runs; null otherwise. */
+  get anchorAt(): Vec3 | null {
+    return this.farm === 'running' ? this.anchor : null;
+  }
+
   /** The ground item the farm bot is walking to, or null. */
   get lootingId(): number | null {
     return this.looting?.id ?? null;

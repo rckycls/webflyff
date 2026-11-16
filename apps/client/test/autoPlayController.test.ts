@@ -672,3 +672,17 @@ describe('AutoPlay controller: obstacles and the owner\'s options (2026-11-17)',
     expect(giants.state.engaged).toEqual([30]);
   });
 });
+
+describe('AutoPlay: the farm centre (2026-11-17)', () => {
+  it('anchorAt: where Start was pressed while it runs, null otherwise', () => {
+    const { state, hooks } = world();
+    const play = new AutoPlay(hooks, defaultSettings());
+    expect(play.anchorAt).toBeNull();
+    state.selfPos[0] = 7;
+    play.start();
+    state.selfPos[0] = 9;
+    expect(play.anchorAt).toEqual([7, 0, 0]);
+    play.stop('time limit');
+    expect(play.anchorAt).toBeNull();
+  });
+});

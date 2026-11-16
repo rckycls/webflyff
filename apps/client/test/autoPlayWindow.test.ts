@@ -11,6 +11,8 @@ const art: UiArt = { url: () => '', sheets: null };
 afterEach(() => { document.body.replaceChildren(); });
 
 const RED = 1001, BLUE = 1002;
+const NEAR = [{ index: 20, name: 'Small Aibatt', level: 1, count: 3 }, { index: 21, name: 'Aibatt', level: 3, count: 1 }];
+const NAMES = new Map([[20, 'Small Aibatt'], [21, 'Aibatt'], [55, 'Mia']]);
 const SKILLS = [
   { skillIndex: 3, name: 'Slash', icon: null },
   { skillIndex: 4, name: 'Keenwheel', icon: null },
@@ -42,6 +44,8 @@ function rig(settings: AutoPlaySettings = defaultSettings(), allowed = true) {
     skill: (skillIndex) => SKILLS.find((c) => c.skillIndex === skillIndex) ?? null,
     buffItemChoices: () => [{ itemIndex: 3001, name: 'Strength Scroll', icon: null, count: 2 }],
     showSaver: () => { savers++; },
+    monstersNear: () => NEAR,
+    monsterName: (index) => NAMES.get(index) ?? '?',
   }, document);
   document.body.append(w.frame.element);
   const row = (name: 'hp' | 'mp' | 'fp') => w.frame.element.querySelector<HTMLElement>(`.auto-pot-row[data-row="${name}"]`)!;
@@ -296,5 +300,58 @@ describe('AutoPlayWindow: the V15 look', () => {
       const words = [...page.querySelectorAll<HTMLButtonElement>('button')].filter((b) => !b.classList.contains('auto-slot') && b.getAttribute('role') !== 'checkbox' && !b.classList.contains('auto-pick'));
       expect(words.every((b) => b.classList.contains('auto-word')), tab).toBe(true);
     }
+  });
+});
+
+// 2026-11-17 (owner): "avoid giants, select specific monster on the said radius and only attack that mob"
+describe('AutoPlayWindow: Farm tab, the monster options', () => {
+  const farm = (w: AutoPlayWindow) => w.frame.element.querySelector<HTMLElement>('.auto-farm')!;
+  const ticked = (b: HTMLElement) => b.getAttribute('aria-checked') === 'true';
+
+  it('Avoid giants and bosses: on by default; a press turns it off and saves', () => {
+    const { w, play, saves } = rig();
+    w.open();
+    const box = farm(w).querySelector<HTMLButtonElement>('[data-name="auto-avoid-giants"]')!;
+    expect(box.textContent).toContain('Avoid giants and bosses');
+    expect(ticked(box)).toBe(true);
+    box.click();
+    expect(play.settings.farm.avoidGiants).toBe(false);
+    expect(saves()).toBe(1);
+  });
+
+  it('Monsters: All by default; Choose lists the kinds in the radius (name, level, how many)', () => {
+    const { w, press } = rig();
+    w.open();
+    expect(farm(w).querySelector('.auto-farm-only')!.textContent).toBe('All');
+    press(farm(w), 'Choose');
+    const rows = [...farm(w).querySelectorAll<HTMLElement>('.auto-only-list [role="checkbox"]')];
+    expect(rows.map((r) => r.textContent)).toEqual(['Small Aibatt Lv 1 ×3', 'Aibatt Lv 3 ×1']);
+    expect(rows.every((r) => !ticked(r))).toBe(true);
+  });
+
+  it('ticking a kind keeps the bot to it; the line names it; All lets every kind again', () => {
+    const { w, play, press } = rig();
+    w.open();
+    press(farm(w), 'Choose');
+    farm(w).querySelector<HTMLButtonElement>('[data-name="auto-only-21"]')!.click();
+    expect(play.settings.farm.only).toEqual([21]);
+    expect(farm(w).querySelector('.auto-farm-only')!.textContent).toBe('Aibatt');
+    expect(ticked(farm(w).querySelector<HTMLButtonElement>('[data-name="auto-only-21"]')!)).toBe(true);
+    press(farm(w), 'All kinds');
+    expect(play.settings.farm.only).toEqual([]);
+  });
+
+  it('a chosen kind no longer in the radius is still listed, ticked, to be taken off', () => {
+    const s = defaultSettings();
+    s.farm.only = [55];
+    const { w, play, press } = rig(s);
+    w.open();
+    expect(farm(w).querySelector('.auto-farm-only')!.textContent).toBe('Mia');
+    press(farm(w), 'Choose');
+    const mia = farm(w).querySelector<HTMLButtonElement>('[data-name="auto-only-55"]')!;
+    expect(mia.textContent).toBe('Mia');
+    expect(ticked(mia)).toBe(true);
+    mia.click();
+    expect(play.settings.farm.only).toEqual([]);
   });
 });

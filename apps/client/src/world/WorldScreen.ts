@@ -2338,6 +2338,8 @@ export class WorldScreen {
       skill: (skillIndex) => this.autoPlaySkillChoice(skillIndex),
       buffItemChoices: () => this.itemChoices(isBuffItemProp),
       showSaver: () => { this.autoPlayWindow?.frame.close(); this.saverScreen?.show(); },
+      monstersNear: () => this.autoPlayMonstersNear(),
+      monsterName: (index) => this.data?.movers.get(index)?.name ?? String(index),
     }, doc);
     this.autoButton = new AutoButton(this.autoPlay!, () => {
       if (this.autoPlayWindow?.isOpen !== true) this.autoPlayWindow?.open('farm');
@@ -4228,6 +4230,26 @@ export class WorldScreen {
   /** custom (owner 2026-11-15): while the tab is hidden, the title says Auto Play stopped, until the tab is seen again. */
   private autoPlayFlashTitle(_reason: string): void {
     flashStoppedTitle(this.element.ownerDocument);
+  }
+
+  /**
+   * 2026-11-17 (owner, "select specific monster on the said radius"): the attackable monster kinds inside the farm radius,
+   * around the start point while the farm bot runs, else around the player; nearest first, with how many of each.
+   */
+  private autoPlayMonstersNear(): Array<{ index: number; name: string; level: number; count: number }> {
+    const world = this.world, self = world?.self(), play = this.autoPlay;
+    if (world === undefined || self === undefined || play === undefined || this.data === undefined) return [];
+    const center = play.anchorAt ?? self.act.body.pos, radius = play.settings.farm.radius;
+    const kinds = new Map<number, { index: number; name: string; level: number; count: number; dist: number }>();
+    for (const m of world.movers.values()) {
+      if (m.kind !== 'monster' || !attackAble(m, this.data.movers, false)) continue;
+      const pos = m.act.body.pos, dist = Math.hypot(pos[0] - center[0], pos[2] - center[2]);
+      if (dist > radius) continue;
+      const kind = kinds.get(m.added.index);
+      if (kind !== undefined) { kind.count++; kind.dist = Math.min(kind.dist, dist); continue; }
+      kinds.set(m.added.index, { index: m.added.index, name: m.name || (this.data.movers.get(m.added.index)?.name ?? '?'), level: m.level, count: 1, dist });
+    }
+    return [...kinds.values()].sort((a, b) => a.dist - b.dist).map(({ index, name, level, count }) => ({ index, name, level, count }));
   }
 
   /** custom (owner 2026-11-15): the party members' object ids in view. */

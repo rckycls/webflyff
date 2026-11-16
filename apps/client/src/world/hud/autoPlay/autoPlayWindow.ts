@@ -51,6 +51,10 @@ export interface AutoPlayWindowDeps {
   buffItemChoices(): AutoPlayItemChoice[];
   /** Opens the battery saver screen (M4). */
   showSaver?(): void;
+  /** 2026-11-17 (owner): the monster kinds inside the radius now (around the start point while farming), nearest first. */
+  monstersNear?(): Array<{ index: number; name: string; level: number; count: number }>;
+  /** A monster kind's name, for a chosen kind no longer near. */
+  monsterName?(index: number): string;
 }
 
 /** What the window edits and shows: Auto Play's settings (kept after each change) and the farm bot. */
@@ -72,7 +76,7 @@ const TAB_LABELS = ['Farm', 'Potions', 'Skills', 'Loot'];
 const ROW_NAMES: Record<GaugeRow, string> = { hp: 'HP', mp: 'MP', fp: 'FP' };
 
 const WIDTH = 360;
-const HEIGHT = 250;
+const HEIGHT = 290; // 2026-11-17: the Farm tab's monster options (was 250)
 
 export class AutoPlayWindow {
   readonly frame: WindowFrame;
@@ -81,6 +85,8 @@ export class AutoPlayWindow {
   private picking: GaugeRow | null = null;
   /** The Skills tab's slot whose pick list is open. */
   private pickingSkill: { list: 'ready' | 'buffs'; slot: number } | null = null;
+  /** The Farm tab's list of monster kinds is open. */
+  private choosingKinds = false;
   /** What was drawn, as a string, to draw only what changed. */
   private shown = '';
 
@@ -96,7 +102,7 @@ export class AutoPlayWindow {
     holder.className = 'auto-play-tabs';
     holder.append(this.tabs.element);
     this.frame.body.append(holder);
-    this.frame.onClose = () => { this.picking = null; this.pickingSkill = null; this.shown = ''; };
+    this.frame.onClose = () => { this.picking = null; this.pickingSkill = null; this.choosingKinds = false; this.shown = ''; };
   }
 
   get isOpen(): boolean {
@@ -292,7 +298,9 @@ export class AutoPlayWindow {
   private refreshFarm(): void {
     const play = this.play, allowed = this.deps.farmAllowed();
     const lines = play.farm === 'off' ? [] : play.stats.lines(this.deps.now());
-    const key = JSON.stringify(['farm', play.settings.farm, play.farm, play.phase, play.lastStop, play.bagIsFull, allowed, lines]);
+    const near = this.choosingKinds ? this.deps.monstersNear?.() ?? [] : [];
+    const key = JSON.stringify(['farm', play.settings.farm, play.farm, play.phase, play.lastStop, play.bagIsFull, allowed, lines,
+      this.choosingKinds, near]);
     if (key === this.shown) return;
     this.shown = key;
     this.tabs.pages[TABS.indexOf('farm')]!.replaceChildren(this.farmPage(allowed, lines));
@@ -353,8 +361,48 @@ export class AutoPlayWindow {
       saver.classList.add('auto-farm-go');
       buttons.append(saver);
     }
-    page.append(radius, loot, after, buttons, state, stats);
+    // 2026-11-17 (owner): "avoid giants, select specific monster on the said radius and only attack that mob"
+    const giants = this.check('auto-avoid-giants', 'Avoid giants and bosses', farm.avoidGiants, (on) => { farm.avoidGiants = on; });
+    const kinds = doc.createElement('div');
+    kinds.className = 'auto-farm-line';
+    const chosen = doc.createElement('span');
+    chosen.className = 'auto-farm-only';
+    chosen.textContent = farm.only.length === 0 ? 'All' : farm.only.map((index) => this.deps.monsterName?.(index) ?? String(index)).join(', ');
+    const choose = this.word(this.choosingKinds ? 'Done' : 'Choose', () => { this.choosingKinds = !this.choosingKinds; this.shown = ''; this.refresh(); },
+      'only-choose');
+    choose.setAttribute('aria-label', 'Choose');
+    kinds.append(this.caption('Monsters'), chosen, choose);
+    const parts: HTMLElement[] = [radius, loot, giants, kinds];
+    if (this.choosingKinds) parts.push(this.kindList());
+    page.append(...parts, after, buttons, state, stats);
     return page;
+  }
+
+  /** The monster kinds in the radius, and the chosen ones no longer near, each a V15 check box; "All kinds" clears them. */
+  private kindList(): HTMLElement {
+    const doc = this.doc, farm = this.play.settings.farm;
+    const list = doc.createElement('div');
+    list.className = 'auto-only-list';
+    const near = this.deps.monstersNear?.() ?? [];
+    const rows = near.map((m) => ({ index: m.index, text: `${m.name} Lv ${m.level} ×${m.count}` }));
+    for (const index of farm.only) {
+      if (!near.some((m) => m.index === index)) rows.push({ index, text: this.deps.monsterName?.(index) ?? String(index) });
+    }
+    for (const row of rows) {
+      list.append(this.check(`auto-only-${row.index}`, row.text, farm.only.includes(row.index), (on) => {
+        farm.only = on ? [...farm.only, row.index] : farm.only.filter((index) => index !== row.index);
+      }));
+    }
+    if (rows.length === 0) {
+      const none = doc.createElement('span');
+      none.className = 'auto-only-none';
+      none.textContent = 'No monster in the radius.';
+      list.append(none);
+    }
+    const all = this.word('All kinds', () => { farm.only = []; this.changed(); }, 'only-all');
+    all.disabled = farm.only.length === 0;
+    list.append(all);
+    return list;
   }
 
   private caption(text: string): HTMLElement {

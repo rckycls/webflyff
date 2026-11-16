@@ -5009,3 +5009,13 @@ fieldset:disabled .btn {
   .hud-auto-play .auto-farm-go { height: 32px; line-height: 30px; }
   .hud-auto-play .auto-slot-clear { width: 20px; height: 20px; font-size: 12px; line-height: 18px; }
 }
+
+/* 2026-11-17 (owner): the Farm tab's monster options: the chosen kinds on one line, their list as V15 check boxes */
+.hud-auto-play .auto-farm-only { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hud-auto-play .auto-only-list {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 1px 8px; max-height: 96px; overflow-y: auto; overscroll-behavior: contain;
+  touch-action: pan-y; padding: 3px 4px; border: 1px solid #d8b8a4; border-radius: 3px; background: #ffffff;
+}
+.hud-auto-play .auto-only-list .auto-check-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hud-auto-play .auto-only-list > .auto-word { grid-column: 1 / -1; justify-self: start; }
+.hud-auto-play .auto-only-none { grid-column: 1 / -1; color: #4b4b4b; }
