@@ -61,7 +61,7 @@ import { itemIconOf } from '../pets/petStatus';
 /** The windows of Piece 4 a press on the task bar opens. */
 export type TaskBarWindow = 'character' | 'status' | 'skills' | 'inventory' | 'chat' | 'navigator' | 'worldmap' | 'option'
   | 'quests' | 'party' | 'messenger' | 'vendor' | 'guild' | 'lordSkill' | 'motion' | 'housing' | 'guildFurniture' | 'couple'
-  | 'siegeRanking' | 'autoPlay';
+  | 'siegeRanking' | 'autoPlay' | 'bagEx';
 /**
  * 2026-11-15 (owner, Guild Siege C2): the Siege Ranking window's own id: it is no applet of Neuz's (none in `APPLETS`, so no
  * icon or hotkey); its Start menu line and the icons open it.
@@ -94,6 +94,8 @@ const WINDOWS: ReadonlyMap<number, TaskBarWindow> = new Map([
   [AppId.MAP, 'worldmap'],
   [1014, 'chat'],
   [1003, 'inventory'],
+  // 2026-11-17: APP_BAG_EX (Resource/ResData.h), the Backpack, B (FuncApplet.cpp:222)
+  [689, 'bagEx'],
   [AppId.STATUS1, 'status'],
   [AppId.CHARACTER3, 'character'],
   [AppId.SKILL3, 'skills'],
@@ -137,6 +139,8 @@ const MENU: ReadonlyArray<{ id: number; text: string }> = [
   { id: AppId.CHARACTER3, text: 'Character' },
   { id: AppId.SKILL3, text: 'Skills' },
   { id: 1003, text: 'Inventory' },
+  // 2026-11-17: CWndTaskMenu's APP_BAG_EX line, 'Backpack' (TID_APP_BAG_EX), after Inventory (WndTaskBar.cpp:2599-2602)
+  { id: 689, text: 'Backpack' },
   // 2026-11-15: CWndTaskMenu's APP_HOUSING line, 'Housing' (TID_GAME_HOUSING_BOX), after Inventory (WndTaskBar.cpp:2603-2605)
   { id: 811, text: 'Housing' },
   // 2026-11-10: CWndTaskMenu's APP_VENDOR_REVISION line, 'Private Shop' (TID_APP_VENDOR), after Inventory and before Skill

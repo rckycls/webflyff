@@ -320,6 +320,8 @@ export class WorldSession {
   sendGuildCombat(bytes: Uint8Array): void { this.playingCache()?.send(bytes); }
   /** 2026-11-10 (bank-mail): a bank or post packet the bank's or the post's windows built (bank/bankHud.ts, post/postHud.ts). */
   sendBankMail(bytes: Uint8Array): void { this.playingCache()?.send(bytes); }
+  /** 2026-11-17: an extra bag packet (world/pocket.ts's encoders, pocket/pocketHud.ts). */
+  sendPocket(bytes: Uint8Array): void { this.playingCache()?.send(bytes); }
   /** 2026-11-15: a personal housing packet (world/housing.ts's encoders). */
   sendHousing(bytes: Uint8Array): void { this.playingCache()?.send(bytes); }
   /** 2026-11-11: a Lord system packet (world/lord.ts's encoders). */

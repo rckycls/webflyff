@@ -3,7 +3,7 @@ import { ProtocolError } from '../errors';
 import { readBuffs } from './buffs';
 import { readHonorCounts } from './honor';
 import { readPet } from './pets';
-import type { AddedBuff, InventoryItem, OwnBank, OwnCharacter, SkillSlot } from './types';
+import type { AddedBuff, InventoryItem, OwnBank, OwnCharacter, OwnPocket, SkillSlot } from './types';
 
 /**
  * `MAX_SKILL_JOB` (`_Common/Mover.h:96-100`, the `__VER >= 10` branch): `MAX_JOB_SKILL` 3 + `MAX_EXPERT_SKILL` 20 +
@@ -42,8 +42,8 @@ export function readOwnAfterEquipment(r: ArReader, numbers: OwnNumbers): OwnChar
   const petSlot = banks?.petSlot;
   // 2026-11-10 (bank-mail): the banks are kept, with the slot and penya read before the inventory
   if (bank !== undefined && banks?.containers !== undefined) bank.containers = banks.containers;
-  // 2026-11-11 (honour window): past the pockets and the mute time, the honour counts
-  const honorCounts = banks?.complete === true ? readHonorPart(r) : undefined;
+  // 2026-11-11 (honour window): past the pockets and the mute time, the honour counts; 2026-11-17 (extra bag): the pockets kept
+  const { pockets, honorCounts } = banks?.complete === true ? readHonorPart(r) : { pockets: undefined, honorCounts: undefined };
   // 2026-11-13 (owner, "logging out removes the buffs from Buff Pang"): then `m_idCampus` and `m_nCampusPoint` (:637-638),
   // the player part's end, and the own buffs (`m_buffs.Serialize`, :757-761), which the server keeps over a log-out
   // (SaveSkillInfluence) and Neuz shows and applies at once (`CBuffSkill::Apply`, buff.cpp:190-193)
@@ -58,6 +58,7 @@ export function readOwnAfterEquipment(r: ArReader, numbers: OwnNumbers): OwnChar
     // 2026-11-14 (motion window): the cheer points and the ms to the next one, when not both 0
     ...(cheerPoint !== undefined && cheerRest !== undefined && (cheerPoint !== 0 || cheerRest !== 0) ? { cheerPoint, cheerRest } : {}),
     ...(honorCounts !== undefined ? { honorCounts } : {}),
+    ...(pockets !== undefined && pockets.length > 0 ? { pockets } : {}),
     ...(buffs !== undefined && buffs.length > 0 ? { buffs } : {}),
   };
 }
@@ -85,19 +86,24 @@ const POCKET_SLOTS = [6, 24, 24] as const;
  * `DWORD m_dwMute` (`__JEFF_9_20`, defined in both Neuz's and the world server's VersionCommon.h) and the
  * `MAX_HONOR_TITLE` counts. A `ProtocolError` gives no counts; any other error is a bug and propagates.
  */
-function readHonorPart(r: ArReader): number[] | undefined {
+function readHonorPart(r: ArReader): { pockets?: OwnPocket[]; honorCounts?: number[] } {
+  let pockets: OwnPocket[] | undefined;
   try {
-    POCKET_SLOTS.forEach((max, i) => {
+    const read: OwnPocket[] = [];
+    POCKET_SLOTS.forEach((max, pocket) => {
       if (r.u8() === 0) return; // bExists
-      readSmallContainer(r, max, `pocket ${i}`);
-      r.i32(); // m_bExpired
-      if (r.u32() !== 0) r.u32(); // m_tExpirationDate, then the time left
+      const { slots, items } = readSmallContainer(r, max, `pocket ${pocket}`);
+      const expired = r.i32() !== 0; // m_bExpired
+      // m_tExpirationDate, then (when not 0) the time left, which Neuz adds to its own clock (2026-11-17: kept)
+      const secondsLeft = r.u32() !== 0 ? r.i32() : null;
+      read.push({ pocket, expired, secondsLeft, slots, items });
     });
+    pockets = read;
     r.u32(); // m_dwMute
-    return readHonorCounts(r);
+    return { pockets, honorCounts: readHonorCounts(r) };
   } catch (error) {
     if (!(error instanceof ProtocolError)) throw error;
-    return undefined;
+    return pockets !== undefined ? { pockets } : {};
   }
 }
 

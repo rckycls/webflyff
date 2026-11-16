@@ -10,6 +10,8 @@ import { GuildHouseBook } from './guildHouse/guildHouseBook';
 import type { Placed, PlacementOptions } from './furniture/placement';
 import { GUILD_BANK_DRAG, GUILD_BANK_PENYA_DRAG } from './hud/guildBank/guildBankWindows';
 import { BANK_DRAG, BANK_PENYA_DRAG } from './hud/bank/bankWindows';
+import { POCKET_DRAG } from './hud/pocket/bagExWindow'; // 2026-11-17 (extra bag)
+import { PocketHud } from './pocket/pocketHud';
 import { COMMON_BANK_TIMERS } from './bank/bankBook';
 import { SpeechBubbleLayer } from './render/SpeechBubbleLayer';
 // The world screen (spec §3.2, §3.5): "Entering the world…" with a Leave button while the session enters, then the world in
@@ -670,6 +672,10 @@ export class WorldScreen {
   private bankHud: BankHud | undefined;
   /** 2026-11-15: the guild bank's windows (guildBank/guildBankHud.ts). */
   private guildBankHud: GuildBankHud | undefined;
+  /** 2026-11-17: the Backpack (pocket/pocketHud.ts), and the windows whose opening closes it, as they were last frame. */
+  private pocketHud: PocketHud | undefined;
+  private pocketClosers: boolean[] = [];
+  private pocketTooltip: HTMLElement | null = null;
   /** 2026-11-10 (bank-mail): the post's windows (post/postHud.ts) and the new-mail notice (hud/mailNotice.ts). */
   private postHud: PostHud | undefined;
   private mailNotice: MailNotice | undefined;
@@ -2562,6 +2568,25 @@ export class WorldScreen {
       showTooltip: (item, anchor, host) => this.showBankTooltip(item, anchor, host),
     }, doc);
     this.guildBankHud = guildBankHud;
+    // 2026-11-17: the Backpack (pocket/pocketHud.ts)
+    const pocketHud = new PocketHud(this.hudArt!, this.data!.texts, {
+      send: (bytes) => session.sendPocket(bytes),
+      say: (text, color) => this.hud?.messages.add(text, color),
+      box: (text) => { if (this.messageBox?.isOpen !== true) this.messageBox?.open(text, 'ok', () => {}); },
+      pockets: () => this.own?.pockets ?? null,
+      bagItems: () => this.own?.inventory ?? null,
+      worn: (objectId) => this.own?.equipmentObjectIds.includes(objectId) === true,
+      prop: (itemId) => this.data?.itemProps.get(itemId),
+      reserved: (objectId) => this.bagReserved.get(objectId) ?? 0,
+      now: () => this.own?.clock() ?? Math.floor(Date.now() / 1000),
+      // CWndBagEx::OnInitialUpdate (WndBagEx.cpp:148-152): the trade, a mail read, an NPC shop, the guild bank, a private shop
+      refused: () => tradeHud.windowOpen || this.postHud?.read.isOpen === true || this.shopWindow?.frame.isOpen === true ||
+        guildBankHud.isOpen || this.personalShop?.isOpen === true,
+      openInventory: () => { if (this.own && !inventoryWindow.frame.isOpen) inventoryWindow.toggle(this.own); },
+      showTooltip: (item, anchor, host) => this.showBankTooltip(item, anchor, host),
+      showText: (text, anchor, host) => this.showPocketText(text, anchor, host),
+    }, doc);
+    this.pocketHud = pocketHud;
     // 2026-11-15: personal housing (housing/housingHud.ts): the Housing window, the House List and the House box
     const housingHud = new HousingHud(this.hudArt!, this.data!.texts, {
       send: (bytes) => session.sendHousing(bytes),
@@ -2637,11 +2662,17 @@ export class WorldScreen {
         ...(bankHud.isOpen ? [BANK_DRAG, BANK_PENYA_DRAG] : []), ...(postHud.read.isOpen ? [MAIL_DRAG, MAIL_PENYA_DRAG] : []),
         // 2026-11-15: a guild bank item or its penya (WndField.cpp:2001-2060)
         ...(guildBankHud.isOpen ? [GUILD_BANK_DRAG, GUILD_BANK_PENYA_DRAG] : []),
+        // 2026-11-17: a Backpack item (WndField.cpp:1918-1977)
+        ...(pocketHud.isOpen ? [POCKET_DRAG] : []),
       ],
       drop: (type, data) => {
         if (type === GUILD_BANK_DRAG) guildBankHud.dropOnBag(Number(data));
         else if (type === GUILD_BANK_PENYA_DRAG) guildBankHud.dropOnBag(undefined);
         else if (type === MAIL_DRAG) postHud.dropOnBag('item');
+        else if (type === POCKET_DRAG) {
+          const [pocket, objectId] = data.split(':').map(Number);
+          pocketHud.dropOnBag(pocket ?? -1, objectId ?? -1);
+        }
         else if (type === MAIL_PENYA_DRAG) postHud.dropOnBag('gold');
         else if (type === BANK_PENYA_DRAG) bankHud.dropOnBag({ bank: Number(data) });
         else if (type === BANK_DRAG) {
@@ -2657,13 +2688,16 @@ export class WorldScreen {
     inventoryWindow.itemsOnly = () => this.jewels?.isOpen === true || this.itemNpc?.isOpen === true ||
       this.upgradeNpc?.safety.isOpen === true || this.upgradeNpc?.piercing.isOpen === true ||
       this.tradeHud?.windowOpen === true || this.bankHud?.isOpen === true || this.postHud?.isOpen === true ||
-      this.personalShop?.isOpen === true || this.summonAngel?.isOpen === true || this.guildBankHud?.isOpen === true;
+      this.personalShop?.isOpen === true || this.summonAngel?.isOpen === true || this.guildBankHud?.isOpen === true ||
+      // 2026-11-17: and beside the Backpack, whose taps go to and from the bag
+      this.pocketHud?.isOpen === true;
     // the phone has no drag: a tap on a bag item or on the penya puts it in the trade
     inventoryWindow.trade = {
       // 2026-11-10: and a tap on a bag item puts it in the open jewel window, where a drop would take it
       // 2026-11-10 (bank-mail): and into the open bank, or onto the mail being written; and in the Summon Angel window, where
       // the double-click would put it
       active: () => tradeHud.windowOpen || this.jewels?.isOpen === true || bankHud.isOpen || guildBankHud.isOpen || postHud.sending ||
+        pocketHud.isOpen || // 2026-11-17: into the Backpack's pocket shown
         this.summonAngel?.isOpen === true || this.itemNpc?.isOpen === true ||
         // 2026-11-11: and the Upgrade Specialist's Safe Upgrade (Safe Element among them) and Piercing: a tap as the
         // double-click
@@ -2678,6 +2712,7 @@ export class WorldScreen {
         // 2026-11-11: and in the open item NPC window, where a drop would put it
         else if (this.itemNpc?.isOpen === true) { if (this.itemNpc.tapItem(id) === 'refused') this.sayRefusal({ kind: 'say', tid: 'TID_SBEVE_NOTUSEITEM' }); }
         else if (this.upgradeNpc?.safety.isOpen === true || this.upgradeNpc?.piercing.isOpen === true) this.takeIntoUpgradeWindow(id);
+        else if (pocketHud.isOpen) pocketHud.tapBagItem(id); // 2026-11-17: into the pocket shown, or an Extra Bag opening it
         else tradeHud.tapItem(id);
       },
       tapPenya: () => { if (bankHud.isOpen && !tradeHud.windowOpen) bankHud.tapPenya(); else tradeHud.tapPenya(); },
@@ -2717,6 +2752,7 @@ export class WorldScreen {
     for (const modal of [
       logOutBox.modal, reviveWindow.modal, skillWindow.warning.modal, this.dialog.modal, questWindow.modal, messageBox.modal, selectVillage.modal, partyHud.messageBox.modal,
       friendHud.messageBox.modal, tradeHud.gold.modal, ...social.modals, ...guildHud.modals, bankHud.amount.modal, guildBankHud.amount.modal, ...postHud.modals,
+      pocketHud.amount.modal, // 2026-11-17 (extra bag)
     ]) {
       modal.onChange = () => this.modalChanged();
     }
@@ -2736,6 +2772,7 @@ export class WorldScreen {
       this.petWindows.element, this.buffPet.element,
       ...questWindow.elements, this.dialog.element, this.moverMenu.element, ...partyHud.elements, ...friendHud.elements,
       ...tradeHud.elements, ...social.elements, ...guildHud.elements, ...bankHud.elements, ...guildBankHud.elements, ...housingHud.elements, ...guildHouseHud.elements, ...postHud.elements, this.mailNotice.element,
+      ...pocketHud.elements, // 2026-11-17 (extra bag)
       ...(this.personalShop?.elements.slice(1) ?? []),
     );
     // what the friend list said while the world loaded
@@ -3178,6 +3215,36 @@ export class WorldScreen {
     host.append(tooltip);
     positionItemDetails(tooltip, anchor, doc);
     this.bankTooltip = tooltip;
+  }
+
+  /** 2026-11-17: a bag icon's tooltip of words over `anchor` (`g_toolTip.PutToolTip`), or none. */
+  private showPocketText(text: string | null, anchor: HTMLElement | null, host: HTMLElement | null): void {
+    this.pocketTooltip?.remove();
+    this.pocketTooltip = null;
+    if (text === null || anchor === null || host === null || this.hudArt === undefined) return;
+    const doc = this.element.ownerDocument;
+    const tooltip = createTooltip(doc, this.hudArt, [[{ text, color: 0x000000 }]]);
+    tooltip.classList.add('hud-trade-tooltip', 'hud-bagex-tooltip');
+    host.append(tooltip);
+    positionItemDetails(tooltip, anchor, doc);
+    this.pocketTooltip = tooltip;
+  }
+
+  /**
+   * 2026-11-17: the Backpack each frame: drawn live, and closed as one of the windows whose `OnInitialUpdate` destroys it opens
+   * (the bank, an NPC shop, a private shop, the guild bank, the trade, the post: WndBank.cpp:50, WndShop.cpp:771,
+   * WndVendor.cpp:95, WndGuildBank.cpp:92, WndField.cpp:9000, :13822).
+   */
+  private updatePocket(): void {
+    const pocketHud = this.pocketHud;
+    if (pocketHud === undefined) return;
+    const closers = [
+      this.bankHud?.isOpen === true, this.shopWindow?.frame.isOpen === true, this.personalShop?.isOpen === true,
+      this.guildBankHud?.isOpen === true, this.tradeHud?.windowOpen === true, this.postHud?.isOpen === true,
+    ];
+    if (closers.some((open, i) => open && this.pocketClosers[i] !== true)) pocketHud.close();
+    this.pocketClosers = closers;
+    pocketHud.update();
   }
 
   /** 2026-11-05: a window holds a bag item, or lets it go (`SetExtra`): the bag draws it faded and keeps it put. */
@@ -3961,6 +4028,7 @@ export class WorldScreen {
     this.guildHud?.update();
     this.bankHud?.update(); // 2026-11-10 (bank-mail): drawn live from the own banks
     this.guildBankHud?.update(); // 2026-11-15: and the guild bank
+    this.updatePocket(); // 2026-11-17: and the Backpack
     this.housingHud?.update(); // 2026-11-15: and the Housing list's times
     this.guildHouseHud?.update(); // 2026-11-15: the guild house's time left, its storage and strip
     this.postHud?.update();
@@ -4022,6 +4090,8 @@ export class WorldScreen {
     if (window === 'guild') { this.guildHud?.toggle(); return; }
     // 2026-11-11: APP_LORD_SKILL, L (FuncApplet.cpp:166-171): the Lord Skill window, the Lord's only
     if (window === 'lordSkill') { this.lordHud?.openSkills(); return; }
+    // 2026-11-17: APP_BAG_EX, B (FuncApplet.cpp:222): the Backpack
+    if (window === 'bagEx') { this.pocketHud?.toggle(); return; }
     // 2026-11-14: APP_MOTION, O (FuncApplet.cpp:198): the Motion window
     if (window === 'motion') { this.motionWindow?.toggle(); return; }
     // 2026-11-15: APP_HOUSING, Y (FuncApplet.cpp:176): the Housing window
@@ -5922,6 +5992,10 @@ export class WorldScreen {
     this.guildHouseHud?.reset(); // 2026-11-15 (guild house)
     this.guildHouseHud = undefined;
     this.guildBankHud = undefined;
+    this.pocketHud?.reset(); // 2026-11-17 (extra bag)
+    this.pocketHud = undefined;
+    this.pocketClosers = [];
+    this.showPocketText(null, null, null);
     this.postHud?.reset();
     this.postHud = undefined;
     this.mailNotice?.element.remove();
