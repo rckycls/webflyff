@@ -4965,3 +4965,62 @@ fieldset:disabled .btn {
 .saver-gauge[data-gauge='fp'] .saver-fill { background: #2f6a3a; }
 .saver-hint { font-size: 11px; color: #4a4a4a; }
 .auto-farm-buttons { display: flex; gap: 6px; }
+
+/* 2026-11-17 (owner, "make the whole auto play window follow the v15 theme"): the Auto Play window in the V15 family of
+   the other windows (docs/2026-11-15-consistency-scan.md): Neuz's tiled frame showing around the pages, each page a pale
+   group box with Neuz's 12 px Verdana words (captions in the statics' blue), check boxes on ButtCheck.bmp's frames
+   (autoPlayWindow.ts `check`), the silver word buttons, and item and skill slots on Neuz's slot picture (--v15-slot). */
+.hud-auto-play > .hud-window-body { background: none; }
+.hud-auto-play .auto-play-tabs .hud-gc-page {
+  border: 1px solid #d8b8a4; border-radius: 3px; background: #fffaf6; color: #000000;
+  font: 12px/15px Verdana, Tahoma, sans-serif;
+}
+.hud-auto-play :is(.auto-farm-caption, .auto-pot-name, .auto-loot-head) { color: #2e70a9; font-weight: normal; }
+.hud-auto-play :is(.auto-pot-use, .auto-farm-stats, .auto-pick-list[data-empty]) { color: #4b4b4b; }
+.hud-auto-play .auto-farm-state { color: #000000; font-weight: bold; }
+.hud-auto-play .auto-check {
+  display: flex; align-items: center; gap: 4px; min-height: 18px; padding: 0; border: 0; background: none;
+  color: #000000; font: inherit; font-weight: normal; text-align: left; cursor: pointer;
+}
+.hud-auto-play .auto-v15-check { flex: none; width: 14px; height: 14px; background-repeat: no-repeat; background-position: -14px 0; }
+.hud-auto-play .auto-v15-check[data-frame='3'] { background-position: -42px 0; }
+.hud-auto-play .auto-check:hover .auto-v15-check[data-frame='1'] { background-position: 0 0; }
+.hud-auto-play .auto-check:hover .auto-v15-check[data-frame='3'] { background-position: -28px 0; }
+.hud-auto-play .auto-word {
+  box-sizing: border-box; min-width: 22px; height: 22px; padding: 0 6px; border: 1px solid #a3a3a3; border-radius: 5px;
+  background: linear-gradient(#ffffff, #f6f6f6 45%, #e1e1e1 55%, #f3f3f3); box-shadow: inset 0 1px 0 #ffffff, 0 1px 1px #00000033;
+  color: #ffffff; font: bold 11px/20px Verdana, Tahoma, sans-serif; white-space: nowrap; cursor: pointer;
+  text-shadow: 1px 0 #7d7d7d, -1px 0 #7d7d7d, 0 1px #7d7d7d, 0 -1px #7d7d7d, 1px 1px #7d7d7d;
+}
+.hud-auto-play .auto-word:active:not(:disabled) { background: linear-gradient(#e9e9e9, #dadada); }
+.hud-auto-play .auto-word:disabled { opacity: 0.5; cursor: default; }
+.hud-auto-play .auto-farm-go { min-width: 70px; height: 24px; padding: 0 10px; font-size: 12px; line-height: 22px; animation: none; }
+.hud-auto-play .auto-slot {
+  width: 34px; height: 34px; padding: 1px; border: 0; border-radius: 0;
+  background: var(--v15-slot, #f3e4d8) 0 0 / 100% 100% no-repeat;
+}
+.hud-auto-play .auto-slot .auto-icon { width: 32px; height: 32px; }
+.hud-auto-play .auto-slot-clear { top: -4px; right: -4px; width: 16px; min-width: 0; height: 16px; padding: 0; font-size: 10px; line-height: 14px; }
+.hud-auto-play .auto-pick { border: 1px solid #d8b8a4; border-radius: 3px; background: #ffffff; color: #000000; font: 11px Verdana, Tahoma, sans-serif; }
+.hud-auto-play .auto-pick .auto-icon { width: 24px; height: 24px; }
+@media (max-width: 1000px) and (pointer: coarse) {
+  .hud-auto-play .auto-check { min-height: 28px; }
+  .hud-auto-play .auto-word { min-width: 30px; height: 30px; font-size: 12px; line-height: 28px; }
+  .hud-auto-play .auto-farm-go { height: 32px; line-height: 30px; }
+  .hud-auto-play .auto-slot-clear { width: 20px; height: 20px; font-size: 12px; line-height: 18px; }
+}
+
+/* 2026-11-17 (owner): the Farm tab's monster options: the chosen kinds on one line, their list as V15 check boxes */
+.hud-auto-play .auto-farm-only { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hud-auto-play .auto-only-list {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 1px 8px; max-height: 96px; overflow-y: auto; overscroll-behavior: contain;
+  touch-action: pan-y; padding: 3px 4px; border: 1px solid #d8b8a4; border-radius: 3px; background: #ffffff;
+}
+.hud-auto-play .auto-only-list .auto-check-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hud-auto-play .auto-only-list > .auto-word { grid-column: 1 / -1; justify-self: start; }
+.hud-auto-play .auto-only-none { grid-column: 1 / -1; color: #4b4b4b; }
+
+/* 2026-11-17 (owner): the Support tab (Support mode for a buffer), laid out as the Farm tab */
+.hud-auto-play .auto-support { display: flex; flex-direction: column; gap: 5px; }
+.hud-auto-play .auto-support-partner { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hud-auto-play .auto-support .auto-farm-caption { width: 84px; }

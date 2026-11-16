@@ -81,11 +81,12 @@ test('Auto Play: the Loot tab shows the 8 kinds, all on; unchecking Jewellery ke
   await openAutoPlay(page);
   await page.locator('.hud-auto-play').getByRole('tab', { name: 'Loot' }).click();
   const loot = page.locator('.auto-loot');
-  await expect(loot.locator('input[type="checkbox"]')).toHaveCount(8);
-  for (const box of await loot.locator('input[type="checkbox"]').all()) await expect(box).toBeChecked();
+  // 2026-11-17: Neuz's ButtCheck.bmp boxes (role checkbox), not the browser's
+  await expect(loot.getByRole('checkbox')).toHaveCount(8);
+  for (const box of await loot.getByRole('checkbox').all()) await expect(box).toHaveAttribute('aria-checked', 'true');
   // every box and button inside the window, none cut off
   const win = (await page.locator('.hud-auto-play').boundingBox())!;
-  for (const el of await loot.locator('label, button').all()) {
+  for (const el of await loot.locator('button').all()) {
     const b = (await el.boundingBox())!;
     expect(b.y + b.height).toBeLessThanOrEqual(win.y + win.height + 0.5);
     expect(b.x + b.width).toBeLessThanOrEqual(win.x + win.width + 0.5);
@@ -93,7 +94,7 @@ test('Auto Play: the Loot tab shows the 8 kinds, all on; unchecking Jewellery ke
   await page.screenshot({ path: info.outputPath('loot-tab.png') });
   // every kind is what the server starts with: nothing sent on entering
   expect(sentOf(gateway, PacketType.PET_LOOT_FILTER)).toHaveLength(0);
-  await loot.getByLabel('Jewellery').uncheck();
+  await loot.getByRole('checkbox', { name: 'Jewellery' }).click();
   // PET_LOOT_FILTER: DPID_UNKNOWN, the type, the mask (penya 1 ... jewellery 16 ... other 128)
   await expect.poll(() => sentOf(gateway, PacketType.PET_LOOT_FILTER).map((s) => s.body.readUInt32LE(8)), ON_FRAMES).toEqual([0xef]);
   const stored = await page.evaluate(() => Object.entries(localStorage).find(([k]) => k.startsWith('flyffweb.autoPlay.'))?.[1] ?? '');

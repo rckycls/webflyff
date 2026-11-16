@@ -86,19 +86,54 @@ describe('OthersFighting', () => {
   });
 });
 
-describe('StuckWatch', () => {
-  it('stuck after 10 s with no progress; not when the distance shrank or we hit it', () => {
+describe('StuckWatch: 5 s without an attack (owner 2026-11-17)', () => {
+  it('stuck 5 s after the choice with no attack; an attack starts the 5 s again; walking closer does not', () => {
     const watch = new StuckWatch();
-    watch.choose(10, 12, 0);
-    watch.progress(12, false, 9_000);
-    expect(watch.stuck(9_999)).toBe(false);
-    expect(watch.stuck(10_000)).toBe(true);
-    watch.choose(11, 12, 0);
-    watch.progress(8, false, 6_000);
-    expect(watch.stuck(10_000)).toBe(false);
-    expect(watch.stuck(16_000)).toBe(true);
-    watch.choose(12, 12, 0);
-    watch.progress(1, true, 2_000);
+    watch.choose(10, 0);
+    expect(watch.stuck(4_999)).toBe(false);
+    expect(watch.stuck(5_000)).toBe(true);
+    watch.choose(11, 0);
+    watch.attacked(3_000);
+    expect(watch.stuck(7_999)).toBe(false);
+    expect(watch.stuck(8_000)).toBe(true);
+    watch.clear();
     expect(watch.stuck(60_000)).toBe(false);
+  });
+
+  it('lastAttack: the time of the choice or of the last attack', () => {
+    const watch = new StuckWatch();
+    watch.choose(10, 100);
+    expect(watch.lastAttack).toBe(100);
+    watch.attacked(900);
+    expect(watch.lastAttack).toBe(900);
+  });
+});
+
+describe('pickTarget: the owner\'s options (2026-11-17)', () => {
+  it('Avoid giants off → a giant or a boss in the radius may be chosen', () => {
+    const giant = monster(10, 5, 0);
+    expect(pick([giant], { rankOf: () => 7 })).toBeNull();
+    expect(pick([giant], { rankOf: () => 7, avoidGiants: false })?.objectId).toBe(10);
+    expect(pick([giant], { rankOf: () => 4, avoidGiants: false })?.objectId).toBe(10);
+  });
+
+  it('only some kinds: the others are skipped; an empty list takes every kind', () => {
+    const kinds = new Map([[10, 21], [11, 22]]);
+    const indexOf = (m: TargetMover) => kinds.get(m.objectId) ?? 0;
+    const near = monster(10, 3, 0), far = monster(11, 9, 0);
+    expect(pick([near, far], { only: new Set([22]), indexOf })?.objectId).toBe(11);
+    expect(pick([near, far], { only: new Set([99]), indexOf })).toBeNull();
+    expect(pick([near, far], { only: new Set(), indexOf })?.objectId).toBe(10);
+  });
+
+  it('a monster behind an obstacle gives way to a clear one farther off; all blocked → the nearest anyway', () => {
+    const near = monster(10, 3, 0), far = monster(11, 9, 0);
+    expect(pick([near, far], { blocked: (m) => m.objectId === 10 })?.objectId).toBe(11);
+    expect(pick([near, far], { blocked: () => true })?.objectId).toBe(10);
+  });
+
+  it('a monster hitting us is fought back even when it is not of the chosen kinds or a giant', () => {
+    const kinds = new Map([[10, 21]]);
+    expect(pick([monster(10, 3, 0)], { only: new Set([22]), indexOf: (m) => kinds.get(m.objectId) ?? 0, hittingUs: new Set([10]) })?.objectId).toBe(10);
   });
 });

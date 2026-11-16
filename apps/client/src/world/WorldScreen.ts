@@ -49,6 +49,7 @@ import { askBeforeLeaving } from './askBeforeLeaving';
 import { BackCamera } from './backCamera';
 import type { ChaseView } from './backCamera';
 import { AttackLoop, attackAble, objRadius } from './combat/attackLoop';
+import { sightBlocked } from './combat/lineOfSight';
 import { bagIsFull } from './autoplay/bag';
 import { AutoPlay } from './autoplay/controller';
 import type { AutoPlayHooks } from './autoplay/controller';
@@ -283,7 +284,7 @@ import { SpriteLayer } from './render/SpriteLayer';
 import { TargetMarks, attackMarks, focusRect } from './render/TargetMarks';
 import type { ScreenRect } from './render/TargetMarks';
 import { HAttr } from './sim/collision';
-import { ActMsg, AniLoop, Belli, Ik3, Mti, ObjSta, ObjStaF, PARTS_RIDE } from './sim/constants';
+import { ActMsg, AniLoop, Belli, Ik3, Mti, ObjSta, ObjStaF, PARTS_RIDE, Si } from './sim/constants';
 
 /** Piece 7 M5: the ground's field of view (`WorldStage`'s 45 degrees, `fDiv` 4), which a landing gives back. */
 const GROUND_FOV = 45;
@@ -2337,6 +2338,13 @@ export class WorldScreen {
       skill: (skillIndex) => this.autoPlaySkillChoice(skillIndex),
       buffItemChoices: () => this.itemChoices(isBuffItemProp),
       showSaver: () => { this.autoPlayWindow?.frame.close(); this.saverScreen?.show(); },
+      monstersNear: () => this.autoPlayMonstersNear(),
+      monsterName: (index) => this.data?.movers.get(index)?.name ?? String(index),
+      // 2026-11-17 (owner): Support mode's partner, the player targeted now (not oneself)
+      targetPlayer: () => {
+        const id = this.focus?.targetId ?? null, m = id === null ? undefined : this.world?.movers.get(id);
+        return m === undefined || m.isSelf || m.added.player === undefined ? null : { playerId: m.added.player.playerId, name: m.name };
+      },
     }, doc);
     this.autoButton = new AutoButton(this.autoPlay!, () => {
       if (this.autoPlayWindow?.isOpen !== true) this.autoPlayWindow?.open('farm');
@@ -4150,6 +4158,8 @@ export class WorldScreen {
           play.onEvent({ kind: 'kill', targetId: event.victimId, pos: [...victim.act.body.pos] as Vec3 });
         }
       } else if (event.kind === 'flight' && event.flying && event.moverId === self?.objectId) play.onEvent({ kind: 'flying' });
+      // 2026-11-17: our own swings, an attack for the 5 s rule
+      else if (event.kind === 'swing' && event.attackerId === self?.objectId) play.onEvent({ kind: 'swing', attackerId: event.attackerId, targetId: event.targetId });
     }
     for (const event of changes.own) {
       if (event.kind === 'died' || event.kind === 'revived') play.onEvent({ kind: event.kind });
@@ -4225,6 +4235,26 @@ export class WorldScreen {
   /** custom (owner 2026-11-15): while the tab is hidden, the title says Auto Play stopped, until the tab is seen again. */
   private autoPlayFlashTitle(_reason: string): void {
     flashStoppedTitle(this.element.ownerDocument);
+  }
+
+  /**
+   * 2026-11-17 (owner, "select specific monster on the said radius"): the attackable monster kinds inside the farm radius,
+   * around the start point while the farm bot runs, else around the player; nearest first, with how many of each.
+   */
+  private autoPlayMonstersNear(): Array<{ index: number; name: string; level: number; count: number }> {
+    const world = this.world, self = world?.self(), play = this.autoPlay;
+    if (world === undefined || self === undefined || play === undefined || this.data === undefined) return [];
+    const center = play.anchorAt ?? self.act.body.pos, radius = play.settings.farm.radius;
+    const kinds = new Map<number, { index: number; name: string; level: number; count: number; dist: number }>();
+    for (const m of world.movers.values()) {
+      if (m.kind !== 'monster' || !attackAble(m, this.data.movers, false)) continue;
+      const pos = m.act.body.pos, dist = Math.hypot(pos[0] - center[0], pos[2] - center[2]);
+      if (dist > radius) continue;
+      const kind = kinds.get(m.added.index);
+      if (kind !== undefined) { kind.count++; kind.dist = Math.min(kind.dist, dist); continue; }
+      kinds.set(m.added.index, { index: m.added.index, name: m.name || (this.data.movers.get(m.added.index)?.name ?? '?'), level: m.level, count: 1, dist });
+    }
+    return [...kinds.values()].sort((a, b) => a.dist - b.dist).map(({ index, name, level, count }) => ({ index, name, level, count }));
   }
 
   /** custom (owner 2026-11-15): the party members' object ids in view. */
@@ -4335,6 +4365,29 @@ export class WorldScreen {
       standing: () => this.useCheck().standing,
       buffSkillId: (skillIndex) => this.own?.skills[skillIndex]?.skill,
       keepAwake: (on) => this.autoPlayKeepAwake(on),
+      // 2026-11-17 (owner): the chosen kinds, and an object on the straight line to a monster (an obstacle)
+      indexOf: (m) => (m as Mover).added.index,
+      // 2026-11-17 (owner): Support mode: the partner as the client sees it, a skill cast on a mover, the follow
+      partner: (playerId) => {
+        const world = this.world, m = world?.moverByPlayerId(playerId);
+        if (world === undefined || m === undefined || m.isSelf) return null;
+        return { objectId: m.objectId, hp: m.hp, maxHp: m.maxHp ?? m.hp, pos: m.act.body.pos, dead: isDie(m), buffs: m.buffs.list(world.nowMs()) };
+      },
+      castOn: (skillIndex, objectId) => {
+        const self = this.world?.self();
+        // the skill takes the focus as its target; none for oneself (a skill on another with no target lands on oneself)
+        this.focus?.select(self !== undefined && objectId === self.objectId ? null : objectId);
+        this.skillUse?.useSlot(skillIndex);
+      },
+      follow: (objectId) => this.attackLoop?.followTo(objectId),
+      resurrectSkill: () => {
+        const index = this.own?.skills.findIndex((slot) => slot.skill === Si.ASS_HEAL_RESURRECTION && slot.level > 0) ?? -1;
+        return index >= 0 ? index : null;
+      },
+      lineBlocked: (m) => {
+        const self = this.world?.self();
+        return self !== undefined && sightBlocked(this.ground, self.act.body.pos, m.act.body.pos);
+      },
       disengage: () => {
         this.attackLoop?.stop('ground');
         this.focus?.select(null);
