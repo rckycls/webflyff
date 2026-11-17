@@ -10,7 +10,11 @@ camera still works. It stops on:
 - a press of W or S;
 - a click on the ground (the character walks to that point and stops there);
 - a press on a monster, an NPC or a player, or an attack or skill that starts;
-- sitting, death, a take-off, a world change, and the page losing focus or being hidden.
+- sitting, death, a take-off and a world change.
+
+2026-11-18 (the owner's request): alt-tab, another window or another tab no longer stops the auto-walk, a click-walk or a
+flight, as in Neuz (`goesOnUnfocused` in `autoRun.ts`, `WorldScreen.unfocused`). Only what is held lets go; a walk with W held
+still stops at once, since W's let-go may never come. A hidden tab's rules keep stepping (`SimulationClock`'s worker).
 
 **Neuz has this.** It is `g_WndMng.m_bAutoRun` in `CWndWorld::ControlGround`
 (`Source/_Interface/WndWorldControlPlayer.cpp:157-193`). The rules are:

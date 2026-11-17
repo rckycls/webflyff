@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AUTO_RUN_MS, AutoRun, AutoRunKeys, autoRunStops } from '../src/world/autoRun';
+import { AUTO_RUN_MS, AutoRun, AutoRunKeys, autoRunStops, goesOnUnfocused } from '../src/world/autoRun';
 
 /** W pressed at `down` and let go at `up` (ms). */
 function tap(rule: AutoRun, down: number, up: number): void {
@@ -90,6 +90,18 @@ describe('autoRunStops', () => {
     for (const key of Object.keys(none) as Array<keyof typeof none>) {
       expect(autoRunStops({ ...none, [key]: true })).toBe(true);
     }
+  });
+});
+
+describe('goesOnUnfocused (2026-11-18: alt-tab, another window or tab)', () => {
+  const none = { autoRun: false, walkingToDest: false, flying: false };
+  it('the auto-run, a walk to a clicked point and a flight go on', () => {
+    expect(goesOnUnfocused({ ...none, autoRun: true })).toBe(true);
+    expect(goesOnUnfocused({ ...none, walkingToDest: true })).toBe(true);
+    expect(goesOnUnfocused({ ...none, flying: true })).toBe(true);
+  });
+  it('a move of held keys or the stick stops at once: their let-go may never come', () => {
+    expect(goesOnUnfocused(none)).toBe(false);
   });
 });
 
