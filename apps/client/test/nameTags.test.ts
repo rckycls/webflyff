@@ -296,9 +296,12 @@ describe('the VIP star (2026-11-17, owner: "like the mvp medal but smaller", "ma
     expect([1, 2, 3, 4].map((tier) => vipKey(tier as 1 | 2 | 3 | 4))).toEqual(['ui/vipstar1.png', 'ui/vipstar2.png', 'ui/vipstar3.png', 'ui/vipstar4.png']);
   });
 
-  it('is 18 x 18 just left of the name, centred on its line (owner: "center it to name")', () => {
-    // the name is written from 3 px left of centred and 20 px above the head point, outlined 2 px
-    expect(vipPlace(80)).toEqual({ left: -40 - 3 - 2 - 18, top: -21, size: 18 });
+  it('is 18 x 18 just left of the name, its middle on the capitals\' middle (owner: "center it to name")', () => {
+    // the name is written from 3 px left of centred and 20 px above the head point, outlined 2 px; the star's middle (8.5)
+    // on the capitals' middle: 5 px below the text's top by default (Verdana 12 px), or what the font gives
+    expect(vipPlace(80)).toEqual({ left: -40 - 3 - 2 - 18, top: Math.round(-20 + 5 - 8.5), size: 18 });
+    expect(vipPlace(80, 4.95).top).toBe(Math.round(-20 + 4.95 - 8.5));
+    expect(vipPlace(80, 6).top).toBe(-23 + 1);
     expect(vipPlace(81).left).toBe(-40 - 3 - 2 - 18);
     // the logo, the trophy and the badge make room: one star and 2 px further left
     expect(VIP_SHIFT_PX).toBe(20);

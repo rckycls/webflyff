@@ -61,14 +61,26 @@ export function badgePlace(wide: number, hasLogo: boolean, hasTrophy: boolean): 
 
 /**
  * 2026-11-17 (owner, "like the mvp medal but smaller ... on the side of the character", "make it a star", "center it to
- * name"): the VIP star, 18 x 18, just left of the name's outline and centred on its line (the star's middle on the capitals'
- * middle). The guild logo, the trophy and the badge, left of the lines, then move one star (`VIP_SHIFT_PX`) further left.
+ * name", "doesn't look like its vertically centered"): the VIP star, 18 x 18, just left of the name's outline, the star's
+ * middle on the middle of the name's capitals: `capMiddle` px below the text's top, which the font gives (`capMiddleOf`).
+ * The guild logo, the trophy and the badge, left of the lines, then move one star (`VIP_SHIFT_PX`) further left.
  */
 export const VIP_PX = 18;
 export const VIP_SHIFT_PX = VIP_PX + LOGO_GAP_PX;
-export function vipPlace(textWidth: number): { left: number; top: number; size: number } {
+/** The middle of the star in its picture (its points from row 1.2 to 15.7: scripts/drawWindowIcons.ts). */
+const STAR_MIDDLE_PX = 8.5;
+/** The capitals' middle below the text's top when the font cannot say: Verdana 12 px's "H" is from 0.5 to 9.5 px (Chromium). */
+const CAP_MIDDLE_PX = 5;
+export function vipPlace(textWidth: number, capMiddle = CAP_MIDDLE_PX): { left: number; top: number; size: number } {
   const textLeft = -Math.floor(textWidth / 2) - LEFT_PX;
-  return { left: textLeft - OUTLINE_PX - VIP_PX, top: -ABOVE_PX - 1, size: VIP_PX };
+  return { left: textLeft - OUTLINE_PX - VIP_PX, top: Math.round(-ABOVE_PX + capMiddle - STAR_MIDDLE_PX), size: VIP_PX };
+}
+
+/** How far below the text's top the middle of a capital "H" is in the context's font (text baseline 'top'), or the fallback. */
+function capMiddleOf(context: CanvasRenderingContext2D): number {
+  context.textBaseline = 'top';
+  const { actualBoundingBoxAscent: ascent, actualBoundingBoxDescent: descent } = context.measureText('H');
+  return Number.isFinite(ascent) && Number.isFinite(descent) ? (descent - ascent) / 2 : CAP_MIDDLE_PX;
 }
 
 /** The canvas is drawn at the screen's pixel ratio, as the renderer is (at most 2: `createRenderer`). */
@@ -205,7 +217,7 @@ export class NameTagLayer {
     const logo = guild?.logo ?? null;
     // 2026-11-17: a VIP star beside the name moves the marks left of the lines one star further left
     const vip = tag.vip ?? null;
-    const vipAt = vipPlace(textWidth);
+    const vipAt = vipPlace(textWidth, vip === null ? CAP_MIDDLE_PX : capMiddleOf(context));
     const shift = vip === null ? 0 : VIP_SHIFT_PX;
     const logoLeft = -Math.floor(wide / 2) - (LOGO_PX + LOGO_GAP_PX) - shift, logoTop = -(LOGO_PX + LOGO_BOTTOM_PX);
     const trophy = tag.trophy ?? null;
