@@ -5,6 +5,29 @@ They added: "Exclude the box and borders. Make it just the icon without backgrou
 Round 2: "Lessen the icon spaces by 50%. Add more icons. Include important icons from start menu for quick use. Smoothen
 the icons." For the layout they chose: one row, with the target bar under it.
 
+## Update 2026-11-18: two rows of five
+
+The owner: "Make mobile icon rows 2 rows of 5 include pet filter and autoplay up there". (Between round 2 and this, other
+work changed the layout: two rows of four from 2026-11-13, 4 px between icons, the target bar back at the top centre, the
+Siege Ranking icon in Status's place from 2026-11-15. The sections below describe round 2 and are partly out of date.)
+
+- The phone's shortcuts are two rows of five: Siege Ranking, Character, Bag, Skill, Quest; World Map, Messenger, Party,
+  Pet Filter, Auto Play. Stats (test builds, or `?stats`) stays in a third row. The desktop is unchanged.
+- Pet Filter and Auto Play open their windows (`petFilter`, `autoPlay`), as their Start-menu lines do. Their icons are
+  FlyffWeb's own frameless ones (`src/icons/bare/icon_petfilter.png`, `icon_autoplay.png`, `ownIcons.ts`), shipped with
+  the build: **no convert is needed**.
+- The target bar stays at the top centre while that is clear of the rows; where the centre would meet them it steps left
+  just enough (8 px clear), never over the status window (`.hud-target` `left: max(..., min(50%, ...))` in `style.css`). It
+  reads the icons' size from `--hud-mobile-icon`, which `MobileTools` now sets on the page's root element. This replaces the
+  old rule "52 px left of the centre at 640 px and less".
+- Under 600 px wide the icons are drawn at 28 px (cells of 32) so the rows, the target bar and the status window share
+  the top.
+- Checked (e2e `topRightIcons.spec.ts`, phone): no icon over the target bar, the buffs, the AUTO button or the Action Slot
+  button, and the rows between the status window and the Navigator, at 915, 844, 750, 730, 667 and 568 px (a 2.625
+  screen), and on iPhone-like pages: 844 x 390 at 3x with the notch's 47 px either side, and 667 x 375 at 2x.
+- Where the target bar steps left on a narrow phone (667 px: about 24 px left of the centre), it can sit over the buff
+  icons' row (x 147-301 px), as it already did at 640 px and less. The icons themselves stay clear of the buffs.
+
 ## What changed
 
 - The top-right shortcuts are a phone-only toolbar, `Window shortcuts`. They are not shown on the desktop: `.hud-mobile-tools`
