@@ -296,6 +296,9 @@ export const THEME_FILES: readonly string[] = [
   // 2026-11-17, the extra bag (docs/2026-11-17-extra-bag-research.md §3): APP_BAG_EX's picture (resdata.inc:13938), the
   // cover over a pocket not in use and the two bag icons, in use and empty (CWndBagEx::OnInitialUpdate, WndBagEx.cpp:173-175)
   'InventoryBag.tga', 'InventoryBagEff.tga', 'Itm_SysSysScrBagBag01.bmp', 'Itm_SysSysScrBagBag02.bmp',
+  // 2026-11-17, a shout's balloon over the shouter: one of eight pictures by the text's length (CDialogMsg::Render,
+  // DialogMsg.cpp:478-516)
+  ...numbered('texDialogBoxShout', 0, 7, '.bmp'),
 ];
 
 /**

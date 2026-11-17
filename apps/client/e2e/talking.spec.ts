@@ -109,8 +109,12 @@ test('talking: chat typing, channels, peaceful NPC dialogue and authoritative bu
   await page.waitForTimeout(1100);
   await input.fill('/s Anyone here?');
   await send(); await expect.poll(sentText).toBe('/s Anyone here?');
-  gateway.pushCache(script.later([message(SELF_ID, 0xd0, new ArWriter().u32(SELF_ID).string('Webby').string('Anyone here?').u32(0xffff99cc))]));
+  // the block's object is NULL_ID, the shouter the one it names (TextCmd_shout, FuncTextCmd.cpp:1830-1833)
+  gateway.pushCache(script.later([message(NULL_ID, 0xd0, new ArWriter().u32(SELF_ID).string('Webby').string('Anyone here?').u32(0xffff99cc))]));
   await expect(log).toContainText('[Webby] Anyone here?');
+  // 2026-11-17: and the shout's balloon over the shouter (OnShout, DPClient.cpp:11696-11700)
+  await expect.poll(() => page.evaluate(() => window.__client!.bubbles!().map(({ objectId, kind }) => ({ objectId, kind }))))
+    .toContainEqual({ objectId: SELF_ID, kind: 'shout' });
   await page.screenshot({ path: info.outputPath('chat.png') });
   await input.focus(); await page.keyboard.press('Escape');
   let normalBag: { x: number; y: number; width: number; height: number } | undefined;
