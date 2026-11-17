@@ -526,7 +526,7 @@ cd "$FlyffWeb\apps\web\sql"
 powershell -ExecutionPolicy Bypass -File .\Install-AdminLogin.ps1
 ```
 
-It asks twice for a new password for `flyffweb_admin` (12 characters or more; you need it in point 4). Success: `Check passed: flyffweb_admin logged in on 127.0.0.1,1433 ...`. Then open `admin-check.sql` (same folder) in SQL Server Management Studio, connected **as `flyffweb_admin`** (SQL Server Authentication), and run it: every line it prints must start with `PASS`.
+It asks twice for a new password for `flyffweb_admin` (12 characters or more; you need it in point 4). Success: `Check passed: flyffweb_admin logged in on 127.0.0.1,1433 ...`. Then open `admin-check.sql` (same folder) in SQL Server Management Studio, connected **as `flyffweb_admin`** (SQL Server Authentication), and run it: it prints 10 lines, and every one must start with `PASS`.
 
 3. **Your panel login.** In `$FlyffWeb`:
 
@@ -585,7 +585,7 @@ Success: `Valid configuration`; the web service's log (`C:\flyff-logs\web.log`) 
 
 6. **Log in.** Open `https://admin.play.example.com` on your PC or phone: a login box. Log in with your panel name, password and the app's code. Success: the Status tab lists the 7 game servers. A wrong code is refused; 5 wrong tries make your address wait 15 minutes.
 
-- **What it cannot do while the game runs:** rename, set penya, move to Flarine, delete and undo delete. The Database server keeps characters in memory and would undo them: stop the servers first (the panel says when they are locked). Bans, passwords, GM levels, emails and item or penya sends work any time; a ban stops the next login, and sends arrive the next time the character enters the game.
+- **What it cannot do while the game runs:** rename, set penya, move to Flarine, delete and undo delete. The Database server keeps characters in memory and would undo them: stop the servers first (the panel says when they are locked). Bans, passwords, levels (an account's and a character's, VIP 1-4 among them), emails and item or penya sends work any time; a ban stops the next login, and sends arrive the next time the character enters the game.
 - **To switch the panel off at once:** remove the `admin` section from `web.config.json` (and set `"adminPanel": false` in `deploy.json` if you use it), then `nssm restart flyffweb-site`. Every panel session ends; sign-up and the game carry on.
 
 ## Step 8c. Support / VIP: manual QR payments (optional)

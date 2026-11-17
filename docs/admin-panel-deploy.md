@@ -15,7 +15,7 @@ Hyper-V VM, then on the live server. The full how-to of each step is `docs/hosti
 
    Pass: it ends with `Check passed: flyffweb_admin logged in ...`.
 3. **The check script.** In SQL Server Management Studio, connect **as `flyffweb_admin`** (SQL Server Authentication) and
-   run `apps\web\sql\admin-check.sql`. Pass: 6 lines, every one starting with `PASS`.
+   run `apps\web\sql\admin-check.sql`. Pass: 10 lines, every one starting with `PASS`.
 4. **Your panel login.** In `<FlyffWeb>`: `npm run admin:setup -- --file C:\flyff-web\admin-login.json` (add the key to
    your authenticator app; type its code). Pass: `Written: ...`.
 5. **The settings.** Add the `admin` section of hosting step 8b, point 4, to the VM's `web.config.json`, but with
@@ -58,5 +58,5 @@ npm run test:e2e:admin
 ```
 
 Pass: `npm test` all green (the old known failures in `inventoryWindow` and `looks`, if any, are not the panel's);
-`test:e2e:admin` prints `11 passed`. `npm run admin:demo` starts the panel on `http://127.0.0.1:8099` with made-up data
+`test:e2e:admin` prints `26 passed` and `1 skipped` (2026-11-17). `npm run admin:demo` starts the panel on `http://127.0.0.1:8099` with made-up data
 (log in as `Poreotix` / `demo-password-1` with the code it prints).

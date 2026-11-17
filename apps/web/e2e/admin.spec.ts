@@ -22,7 +22,11 @@ test('on a narrow screen the menu button slides the sidebar in and out', async (
   const menu = page.locator('.menu');
   test.skip(!(await menu.isVisible()), 'a wide screen shows the sidebar all the time');
   await menu.click();
-  await expect(page.locator('.tabs').getByRole('button', { name: 'Log', exact: true })).toBeInViewport();
+  // the first tab shows at once; since the VIP tab, Log is below the fold of a phone held sideways: the sidebar scrolls
+  await expect(page.locator('.tabs').getByRole('button', { name: 'Status', exact: true })).toBeInViewport();
+  const log = page.locator('.tabs').getByRole('button', { name: 'Log', exact: true });
+  await log.scrollIntoViewIfNeeded();
+  await expect(log).toBeInViewport();
   // a tap beside the sidebar, on the dimmed page, closes it
   const width = page.viewportSize()!.width;
   await page.mouse.click(width - 10, 200);
@@ -132,4 +136,61 @@ test('a lost session shows the login box and keeps what was typed', async ({ pag
   await form.getByRole('button', { name: 'Log in' }).click();
   await expect(form).toBeHidden();
   await expect(query).toHaveValue('tester');
+});
+
+test('2026-11-17: the account list opens at once, 10 a page; a page seen before needs no new read; Refresh reads it again', async ({ page }) => {
+  const reads: string[] = [];
+  page.on('request', (request) => { if (request.url().endsWith('/api/accounts.page')) reads.push(request.postData() ?? ''); });
+  await openTab(page, 'Accounts');
+  const accounts = section(page, 'Accounts');
+  await expect(accounts.locator('.list-info')).toHaveText(/^Showing 1-10 of 33 · read at /);
+  await expect(accounts.getByRole('cell', { name: 'player01', exact: true })).toBeVisible();
+  await accounts.getByRole('button', { name: 'Page 2', exact: true }).click();
+  await expect(accounts.locator('.list-info')).toHaveText(/^Showing 11-20 of 33/);
+  await expect(accounts.getByRole('cell', { name: 'player11', exact: true })).toBeVisible();
+  const afterTwo = reads.length;
+  // back to page 1, and to another tab and back: no new read
+  await accounts.getByRole('button', { name: 'Page 1', exact: true }).click();
+  await expect(accounts.getByRole('cell', { name: 'player01', exact: true })).toBeVisible();
+  await openTab(page, 'Status');
+  await openTab(page, 'Accounts');
+  await expect(accounts.getByRole('cell', { name: 'player01', exact: true })).toBeVisible();
+  expect(reads.length).toBe(afterTwo);
+  await accounts.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await expect.poll(() => reads.length).toBe(afterTwo + 1);
+  expect(JSON.parse(reads.at(-1)!)).toMatchObject({ page: 1, fresh: true });
+  // the search filters the same list
+  await accounts.getByPlaceholder('Account, email or character name').fill('player2');
+  await accounts.getByRole('button', { name: 'Find', exact: true }).click();
+  await expect(accounts.locator('.list-info')).toHaveText(/^Showing 1-10 of 10 /);
+});
+
+test('2026-11-17: sets a character\'s own level and an account\'s VIP level, each in the log', async ({ page }) => {
+  page.removeAllListeners('dialog');
+  page.on('dialog', (dialog) => { void dialog.accept(); });
+  await openTab(page, 'Characters');
+  const characters = section(page, 'Characters');
+  await characters.getByPlaceholder('Character name or account').fill('Walker05');
+  await characters.getByRole('button', { name: 'Find', exact: true }).click();
+  await characters.getByRole('cell', { name: 'Walker05', exact: true }).click();
+  await characters.locator('label', { hasText: 'Own level' }).locator('select').selectOption('B');
+  await characters.getByRole('button', { name: 'Set character level', exact: true }).click();
+  await expect(characters.locator('dd.level')).toHaveText('VIP 2 (B)');
+  await expect(characters.locator('dd.plays-as')).toHaveText('VIP 2 (B)');
+  // the list row shows it too (the edit dropped that page)
+  await expect(characters.getByRole('row').filter({ hasText: 'Walker05' }).first()).toContainText('VIP 2 (B)');
+
+  await characters.getByRole('link', { name: 'player05', exact: true }).click();
+  const accounts = section(page, 'Accounts');
+  await expect(accounts.getByRole('heading', { name: 'player05', exact: true })).toBeVisible();
+  await accounts.locator('label', { hasText: 'Account level' }).locator('select').selectOption('E');
+  await accounts.getByLabel('Also its characters').uncheck();
+  await accounts.getByRole('button', { name: 'Set account level', exact: true }).click();
+  await expect(accounts.locator('dd.level')).toHaveText('VIP 4 (E)');
+  await expect(accounts.getByRole('row').filter({ hasText: 'Walker05' })).toContainText('VIP 2 (B)');
+
+  await openTab(page, 'Log');
+  const log = section(page, 'Log');
+  await expect(log.getByRole('cell', { name: 'characters.authority', exact: true }).first()).toBeVisible();
+  await expect(log.getByRole('cell', { name: 'accounts.authority', exact: true }).first()).toBeVisible();
 });

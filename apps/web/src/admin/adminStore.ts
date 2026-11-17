@@ -1,11 +1,17 @@
 // What the admin panel asks of the database (admin panel spec §5.4). sqlAdminStore.ts is the SQL Server one, run as
 // the login `flyffweb_admin` through the `usp_Admin*` procedures; the tests and the demo use test/support/memoryAdminStore.
 
-export type Authority = 'F' | 'J' | 'L' | 'M' | 'N' | 'O' | 'P';
-export const AUTHORITIES: readonly Authority[] = ['F', 'J', 'L', 'M', 'N', 'O', 'P'];
-export const AUTHORITY_NAMES: Readonly<Record<Authority, string>> = Object.freeze({
-  F: 'Player', J: 'Helper', L: 'GM 1', M: 'GM 2', N: 'GM 3', O: 'Operator', P: 'Admin',
-});
+import { AUTHORITY_TITLES, SETTABLE_AUTHORITIES } from '@flyffweb/protocol';
+
+/** The letters the panel gives an account or a character: player, VIP 1-4 (vip-auth), helper, GM 1-3, operator, admin. */
+export type Authority = 'F' | 'A' | 'B' | 'C' | 'E' | 'J' | 'L' | 'M' | 'N' | 'O' | 'P';
+export const AUTHORITIES: readonly Authority[] = SETTABLE_AUTHORITIES as readonly Authority[];
+export const AUTHORITY_NAMES: Readonly<Record<Authority, string>> = Object.freeze(
+  Object.fromEntries(AUTHORITIES.map((letter) => [letter, AUTHORITY_TITLES[letter]])) as Record<Authority, string>,
+);
+
+/** A page of a list (2026-11-17: Accounts and Characters open on their list, 10 rows a page). */
+export interface Page<T> { rows: T[]; total: number }
 
 export type LogResult = 'ok' | 'failed' | 'refused';
 
@@ -60,6 +66,8 @@ export interface CharacterRow {
   /** MultiServer > 0 (stale while the World server is stopped). */
   online: boolean;
   worldId: number;
+  /** m_chAuthority: the character's own letter (the account's counts instead unless it is 'F' or a VIP letter). */
+  authority: string;
 }
 
 export interface CharacterDetail extends CharacterRow {
@@ -96,6 +104,8 @@ export interface AdminStore {
   recentLogins(): Promise<LogRow[]>;
   /** Account name prefix, or an exact email; 50 rows. */
   searchAccounts(q: { account?: string; email?: string }): Promise<AccountRow[]>;
+  /** Every account, or those of a name prefix or an exact email, by name: `count` rows from `offset`, and how many in all. */
+  accountPage(q: { account?: string; email?: string }, offset: number, count: number): Promise<Page<AccountRow>>;
   /** Case-insensitive; returns the name as stored. */
   getAccount(account: string): Promise<AccountRow | undefined>;
   /** usp_CreateNewAccount: 1 made, 0 taken, -1 error. */
@@ -103,12 +113,16 @@ export interface AdminStore {
   setPassword(account: string, passwordHash: string): Promise<boolean>;
   setEmail(account: string, email: string): Promise<boolean>;
   setLoginAuthority(account: string, authority: Authority): Promise<boolean>;
-  /** The characters changed. */
+  /** Every character of the account; the characters changed. */
   setCharacterAuthority(account: string, authority: Authority): Promise<number>;
+  /** One character's own letter. */
+  setOneCharacterAuthority(idPlayer: string, authority: Authority): Promise<boolean>;
   /** `yyyymmdd`, or null for yesterday by SQL Server's clock (unban). */
   setBlockTime(account: string, blockTime: string | null): Promise<boolean>;
   /** Name prefix, or an exact account; 50 rows. */
   searchCharacters(q: { name?: string; account?: string }): Promise<CharacterRow[]>;
+  /** Every character (deleted ones too), or those of a name prefix or an exact account, by name: a page, and the total. */
+  characterPage(q: { name?: string; account?: string }, offset: number, count: number): Promise<Page<CharacterRow>>;
   getCharacter(idPlayer: string): Promise<CharacterDetail | undefined>;
   onlineCharacters(): Promise<CharacterRow[]>;
   renameCharacter(idPlayer: string, name: string): Promise<'ok' | 'taken' | 'missing'>;

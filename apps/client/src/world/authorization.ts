@@ -2,6 +2,8 @@
 // is shown (the hits on its focus, `fx/combatEffects.ts`) and what is hidden from the others (the target bar of a game
 // master, `hud/targetBar.ts`).
 
+import { authorityLevel } from '@flyffweb/protocol';
+
 /** `AUTH_GAMEMASTER` (`_Common/authorization.h:23`), the letter `'L'`. */
 export const AUTH_GAMEMASTER = 0x4c;
 
@@ -26,11 +28,13 @@ const RANKS: ReadonlyMap<string, number> = new Map([
 
 /**
  * `IsAuthorizationHigher` (`authorization.h:93-102`): the ranks compared, or the letters when either has none (2026-11-05:
- * the chat's commands, `hud/chatCommands.ts`).
+ * the chat's commands, `hud/chatCommands.ts`). A VIP letter counts as a player's 'F' first (`GetAuthLevel`, vip-auth
+ * 2026-11-17): VIP1-VIP4 are titles only.
  */
 export function isAuthorizationHigher(current: number, required: number): boolean {
-  const have = RANKS.get(String.fromCharCode(current)) ?? -1;
+  const level = authorityLevel(current);
+  const have = RANKS.get(String.fromCharCode(level)) ?? -1;
   const need = RANKS.get(String.fromCharCode(required)) ?? -1;
-  if (have < 0 || need < 0) return required <= current;
+  if (have < 0 || need < 0) return required <= level;
   return have >= need;
 }

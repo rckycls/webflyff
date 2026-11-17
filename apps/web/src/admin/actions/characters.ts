@@ -1,15 +1,20 @@
-// The Characters tab (admin panel spec §5.5): search and view at any time; rename, penya, move to Flarine, delete and
-// undo only while the Database and World servers are stopped (§4.3: the Database server's memory would undo them).
-// The lock is checked inside the audited step, right before the change, so the row says what the probe saw.
+// The Characters tab (admin panel spec §5.5): the list, 10 a page (2026-11-17), search and view at any time; rename,
+// penya, move to Flarine, delete and undo only while the Database and World servers are stopped (§4.3: the Database
+// server's memory would undo them). The lock is checked inside the audited step, right before the change, so the row
+// says what the probe saw. The authority letter needs no stop: the Database server reads it from SQL Server each time
+// the character enters the game (DbManagerJoin.cpp:237; CMover::Copy, Obj.cpp:726, copies it even onto its memory).
 
-import { validateCharacterName } from '@flyffweb/protocol';
+import { gameAuthority, validateCharacterName } from '@flyffweb/protocol';
 import type { HttpAnswer } from '../../signUpHandler';
 import type { ActionHandler, AdminContext, AdminDeps } from '../adminServer';
-import type { CharacterDetail } from '../adminStore';
+import { AUTHORITIES } from '../adminStore';
+import type { Authority, CharacterDetail } from '../adminStore';
 import type { AuditOutcome } from '../audit';
 import { runAudited } from '../audit';
+import { PAGE_SIZE, withStale } from '../pageCache';
+import type { CharacterFilter, Stale } from '../pageCache';
 import { characterEditsOpen } from '../serverState';
-import { idPlayerField, intField, invalid, okReply, reply, textField } from './fields';
+import { idPlayerField, intField, invalid, okReply, pageField, reply, textField } from './fields';
 import { namedPendingSends } from './pending';
 
 /** The panel's ceiling for a character's penya, under the game's int limit with room to spare. */
@@ -28,19 +33,45 @@ const search: ActionHandler = async (body, _ctx, deps) => {
   return reply(200, { rows: await deps.store.searchCharacters({ name, account }) });
 };
 
+/** One page of the character list: every character, or those of a name prefix or an exact account. Kept a short time. */
+const page: ActionHandler = async (body, _ctx, deps) => {
+  const number = pageField(body);
+  if (number === undefined) return invalid('page');
+  const filter: CharacterFilter = { name: textField(body, 'name', 32), account: textField(body, 'account', 32) };
+  if (body.fresh === true) deps.pages.clear('characters');
+  const kept = deps.pages.get('characters', filter, number);
+  if (kept !== undefined) return reply(200, { ...kept, page: number, pageSize: PAGE_SIZE, kept: true });
+  const result = await deps.store.characterPage(filter, (number - 1) * PAGE_SIZE, PAGE_SIZE);
+  return reply(200, { ...deps.pages.set('characters', filter, number, result), page: number, pageSize: PAGE_SIZE, kept: false });
+};
+
+/**
+ * A character, its sends not yet delivered, its account's letter and the letter it plays with (`gameAuthority`: the
+ * account's, unless the account is a player or a VIP).
+ */
 const get: ActionHandler = async (body, _ctx, deps) => {
   const idPlayer = idPlayerField(body);
   if (idPlayer === undefined) return invalid('idPlayer');
   const character = await deps.store.getCharacter(idPlayer);
   if (character === undefined) return notFound();
-  return reply(200, { character, pending: await namedPendingSends(deps, idPlayer) });
+  const account = await deps.store.getAccount(character.account);
+  const accountAuthority = account?.authority ?? null;
+  return reply(200, {
+    character, pending: await namedPendingSends(deps, idPlayer), accountAuthority,
+    gameAuthority: accountAuthority === null ? character.authority : gameAuthority(accountAuthority, character.authority),
+  });
 };
 
 interface CharacterEdit {
   action: string;
   before: (c: CharacterDetail) => unknown;
   edit: (c: CharacterDetail) => Promise<AuditOutcome>;
+  /** The list pages the edit makes old; by default the pages that show the character. */
+  stale?: (c: CharacterDetail) => Stale;
 }
+
+/** The pages that show this character. */
+const shown = (c: CharacterDetail): Stale => ({ characters: { ids: [c.idPlayer] } });
 
 /** An edit on one existing character, made only while the edit lock is open. */
 async function onCharacter(body: Record<string, unknown>, ctx: AdminContext, deps: AdminDeps, e: CharacterEdit): Promise<HttpAnswer> {
@@ -48,7 +79,7 @@ async function onCharacter(body: Record<string, unknown>, ctx: AdminContext, dep
   if (idPlayer === undefined) return invalid('idPlayer');
   const character = await deps.store.getCharacter(idPlayer);
   if (character === undefined) return notFound();
-  return runAudited(deps, ctx, { action: e.action, account: character.account, characterName: character.name, before: e.before(character) }, async () => {
+  const answer = await runAudited(deps, ctx, { action: e.action, account: character.account, characterName: character.name, before: e.before(character) }, async () => {
     const lock = await characterEditsOpen(deps);
     if (!lock.open) {
       return {
@@ -59,6 +90,7 @@ async function onCharacter(body: Record<string, unknown>, ctx: AdminContext, dep
     }
     return e.edit(character);
   });
+  return withStale(deps, answer, (e.stale ?? shown)(character));
 }
 
 const rename: ActionHandler = async (body, ctx, deps) => {
@@ -74,6 +106,8 @@ const rename: ActionHandler = async (body, ctx, deps) => {
       if (result === 'missing') return { answer: notFound(), result: 'refused', after: { missing: true } };
       return done({ name });
     },
+    // a new name moves the character in the name order, and changes which accounts a character-name search finds
+    stale: () => ({ characters: { all: true }, accounts: { byCharacterName: true } }),
   });
 };
 
@@ -118,9 +152,28 @@ const undelete: ActionHandler = async (body, ctx, deps) => onCharacter(body, ctx
   },
 });
 
+/**
+ * One character's own authority letter. No stop needed (read fresh at each entry into the game); it counts in the game
+ * only while the account's letter is a player's or a VIP's (`gameAuthority`).
+ */
+const authority: ActionHandler = async (body, ctx, deps) => {
+  const idPlayer = idPlayerField(body);
+  if (idPlayer === undefined) return invalid('idPlayer');
+  const letter = body.authority;
+  if (typeof letter !== 'string' || !(AUTHORITIES as readonly string[]).includes(letter)) return invalid('authority');
+  const c = await deps.store.getCharacter(idPlayer);
+  if (c === undefined) return notFound();
+  const answer = await runAudited(deps, ctx, { action: 'characters.authority', account: c.account, characterName: c.name, before: { authority: c.authority } },
+    async () => ((await deps.store.setOneCharacterAuthority(c.idPlayer, letter as Authority))
+      ? done({ authority: letter }) : refused('The database did not change it.', {})));
+  return withStale(deps, answer, shown(c));
+};
+
 export const CHARACTER_ACTIONS = {
   'characters.search': search,
+  'characters.page': page,
   'characters.get': get,
+  'characters.authority': authority,
   'characters.rename': rename,
   'characters.gold': gold,
   'characters.move': move,

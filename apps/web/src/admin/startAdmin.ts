@@ -13,6 +13,7 @@ import { readCredentials } from './credentials';
 import type { AdminCredentials } from './credentials';
 import type { CatalogItem } from './itemCatalog';
 import { LoginGuard } from './loginGuard';
+import { PageCache } from './pageCache';
 import { SessionBook } from './sessions';
 
 const oneLine = (error: unknown) => String((error as Error)?.message ?? error).replace(/[\r\n]+/g, ' ');
@@ -53,6 +54,7 @@ export async function startAdmin(
     probe: (host, port) => probeState(host, port, LOCK_PROBE_TIMEOUT_MS),
     catalog,
     actions,
+    pages: new PageCache(now),
     vip,
   });
   const listened = await new Promise<boolean>((resolve) => {

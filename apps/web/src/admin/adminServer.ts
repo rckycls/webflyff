@@ -26,6 +26,7 @@ import type { AdminCredentials } from './credentials';
 import type { AdminStore, LogEntry, LogResult } from './adminStore';
 import type { CatalogItem } from './itemCatalog';
 import type { LoginGuard } from './loginGuard';
+import type { PageCache } from './pageCache';
 import { verifyAdminPassword } from './password';
 import type { AdminSession, SessionBook } from './sessions';
 import type { PortState } from './serverState';
@@ -50,6 +51,8 @@ export interface AdminDeps {
   probe: (host: string, port: number) => Promise<PortState>;
   catalog: CatalogItem[];
   actions: Record<string, ActionHandler>;
+  /** The Accounts and Characters lists' pages, kept a short time (pageCache.ts). */
+  pages: PageCache;
   /** Support / VIP's store and pictures; `undefined` while it is off (web.config.json has no good vip section). */
   vip?: { store: VipAdminStore; files: VipFiles };
 }
@@ -70,7 +73,8 @@ const SECURITY_HEADERS = {
 
 /** Actions that only read: they need no request id. Everything else is a write. */
 const READ_ACTIONS = [
-  'status', 'accounts.search', 'accounts.get', 'characters.search', 'characters.get', 'sends.list', 'vip.requests', 'vip.tiers', 'vip.qrs',
+  'status', 'accounts.search', 'accounts.page', 'accounts.get', 'characters.search', 'characters.page', 'characters.get',
+  'sends.list', 'vip.requests', 'vip.tiers', 'vip.qrs',
 ];
 /** The one action that carries a picture: a bigger body, read only with a live session. */
 const UPLOAD_ACTION = 'vip.qrAdd';

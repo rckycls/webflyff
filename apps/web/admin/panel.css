@@ -177,6 +177,13 @@ details.card[open] > summary { margin-bottom: 12px; }
 
 .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin-bottom: 10px; }
 .row > label { display: flex; flex-direction: column; gap: 5px; color: var(--muted); font-size: 12px; font-weight: 600; }
+.row > label.inline { flex-direction: row; align-items: center; gap: 8px; min-height: 40px; }
+
+/* 2026-11-17: the paged lists */
+.list-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; margin: 4px 0 10px; }
+.list-head .list-info { margin: 0; }
+.pager { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.pager button { min-width: 40px; padding: 6px 10px; }
 .facts { display: grid; grid-template-columns: max-content 1fr; gap: 6px 20px; margin: 4px 0 16px; }
 .facts dt { color: var(--muted); }
 .facts dd { margin: 0; font-weight: 600; }

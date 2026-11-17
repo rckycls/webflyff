@@ -22,6 +22,7 @@ import { ADMIN_ACTIONS } from '../src/admin/actions';
 import { createAdminServer } from '../src/admin/adminServer';
 import { loadItemCatalog } from '../src/admin/itemCatalog';
 import { LoginGuard } from '../src/admin/loginGuard';
+import { PageCache } from '../src/admin/pageCache';
 import { hashAdminPassword } from '../src/admin/password';
 import { SessionBook } from '../src/admin/sessions';
 import { totpCode, totpStep } from '../src/admin/totp';
@@ -52,16 +53,24 @@ const origin = `http://127.0.0.1:${port}`;
 const assets = values.assets ?? fileURLToPath(new URL('../test/fixtures/assets', import.meta.url));
 
 const now = () => Date.now();
+// 2026-11-17: 30 more players, so that the lists have pages (VIP 1-4 and a GM among them). Their names start with
+// "player" and "Walker", which no e2e search for Poreotix, tester, Alt or Hero also finds.
+const VIP_LETTERS = ['A', 'B', 'C', 'E'];
+const players = Array.from({ length: 30 }, (_, i) => `player${String(i + 1).padStart(2, '0')}`);
 const store = new MemoryAdminStore({
   accounts: [
     memoryAccount('Poreotix', { email: 'owner@example.com', authority: 'P' }),
     memoryAccount('tester1', { email: '<img src=x onerror=alert(1)>' }),
     memoryAccount('tester2'),
+    ...players.map((name, i) => memoryAccount(name, { email: `${name}@example.com`, authority: i % 7 === 3 ? VIP_LETTERS[(i / 7) | 0]! : i === 12 ? 'L' : 'F' })),
   ],
   characters: [
     memoryCharacter('0000001', 'Hero', 'Poreotix', { level: 60, gold: 1_500_000 }),
     memoryCharacter('0000002', 'Alt', 'tester1', { slot: 0 }),
     memoryCharacter('0000003', 'Busy', 'tester2', { online: true, level: 33 }),
+    ...players.map((name, i) => memoryCharacter(String(i + 10).padStart(7, '0'), `Walker${String(i + 1).padStart(2, '0')}`, name, {
+      level: 1 + ((i * 7) % 120), job: i % 9, online: i % 5 === 0, authority: i === 20 ? 'B' : 'F',
+    })),
   ],
 }, now);
 
@@ -95,6 +104,7 @@ const server = createAdminServer({
   probe: async () => (values.running === true ? 'open' : 'closed'),
   catalog: loadItemCatalog(assets, (line) => console.warn(line)),
   actions: ADMIN_ACTIONS,
+  pages: new PageCache(now),
   vip: { store: vipStore, files: vipFiles },
 });
 

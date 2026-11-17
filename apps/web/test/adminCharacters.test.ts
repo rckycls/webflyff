@@ -115,3 +115,44 @@ it('finds characters by name prefix or account, and shows one with its pending s
   const one = await act('characters.get', { idPlayer: '0000001' }, s);
   expect(one.body).toMatchObject({ character: { name: 'Hero', gold: 1000 }, pending: [{ item: '500', byPanel: true }] });
 });
+
+it('pages the character list 10 at a time, deleted ones too, and a rename drops every page', async () => {
+  const s = setUp(false);
+  for (let i = 1; i <= 12; i++) s.store.characters.push(memoryCharacter(String(100 + i).padStart(7, '0'), `Walker${String(i).padStart(2, '0')}`, 'tester1'));
+  const first = await act('characters.page', {}, s);
+  expect(first.body).toMatchObject({ total: 16, page: 1, pageSize: 10, kept: false });
+  expect((first.body.rows as { name: string }[]).map((c) => c.name)).toEqual(
+    ['Gone', 'Guildy', 'Hero', 'Taker', 'Walker01', 'Walker02', 'Walker03', 'Walker04', 'Walker05', 'Walker06']);
+  expect((await act('characters.page', { page: 2 }, s)).body).toMatchObject({ total: 16, rows: [{ name: 'Walker07' }, {}, {}, {}, {}, { name: 'Walker12' }] });
+  expect((await act('characters.page', { name: 'walker1' }, s)).body).toMatchObject({ total: 3 });
+  expect((await act('characters.page', { account: 'nobody' }, s)).body).toMatchObject({ total: 0, rows: [] });
+  expect((await act('characters.page', { page: 1 }, s)).body.kept).toBe(true);
+
+  // penya: only the pages that show Hero go
+  expect((await act('characters.page', { page: 2 }, s)).body.kept).toBe(true);
+  const gold = await act('characters.gold', { idPlayer: '0000001', gold: 5 }, s);
+  expect(gold.body.stale).toEqual({ characters: { ids: ['0000001'] } });
+  expect((await act('characters.page', { page: 2 }, s)).body.kept).toBe(true);
+  expect((await act('characters.page', { page: 1 }, s)).body.kept).toBe(false);
+  // a rename moves names in the order: every page goes
+  await act('characters.rename', { idPlayer: '0000001', name: 'Zeddy' }, s);
+  expect((await act('characters.page', { page: 2 }, s)).body).toMatchObject({ kept: false, rows: expect.arrayContaining([expect.objectContaining({ name: 'Zeddy' })]) });
+});
+
+it('sets one character\'s level while the servers run, and shows the level it plays with', async () => {
+  const s = setUp(true);
+  expect((await act('characters.authority', { idPlayer: '0000001', authority: 'Q' }, s)).body.field).toBe('authority');
+  expect((await act('characters.authority', { idPlayer: '0009999', authority: 'L' }, s)).status).toBe(404);
+  const set = await act('characters.authority', { idPlayer: '0000001', authority: 'L' }, s);
+  expect(set).toMatchObject({ status: 200, body: { ok: true, stale: { characters: { ids: ['0000001'] } } } });
+  expect(s.store.characters[0]!.authority).toBe('L');
+  expect(s.store.log.at(-1)).toMatchObject({ action: 'characters.authority', account: 'tester1', characterName: 'Hero', result: 'ok', before: '{"authority":"F"}', after: '{"authority":"L"}' });
+  // a player account: the character's own letter counts
+  expect((await act('characters.get', { idPlayer: '0000001' }, s)).body).toMatchObject({ character: { authority: 'L' }, accountAuthority: 'F', gameAuthority: 'L' });
+  // a VIP account is a player account too; a GM account's letter wins
+  s.store.accounts[0]!.authority = 'B';
+  expect((await act('characters.get', { idPlayer: '0000001' }, s)).body).toMatchObject({ gameAuthority: 'L' });
+  expect((await act('characters.get', { idPlayer: '0000004' }, s)).body).toMatchObject({ gameAuthority: 'B' });
+  s.store.accounts[0]!.authority = 'P';
+  expect((await act('characters.get', { idPlayer: '0000001' }, s)).body).toMatchObject({ gameAuthority: 'P' });
+});

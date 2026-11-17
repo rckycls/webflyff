@@ -12,7 +12,47 @@ const PROCEDURES = [
   'usp_AdminSetCharacterAuthority', 'usp_AdminCharacterSearch', 'usp_AdminCharacterGet', 'usp_AdminOnlineList',
   'usp_AdminCharacterRename', 'usp_AdminCharacterSetGold', 'usp_AdminCharacterMove', 'usp_AdminCharacterDelete',
   'usp_AdminCharacterUndelete', 'usp_AdminItemSend', 'usp_AdminItemSendList', 'usp_AdminItemSendCancel',
+  // 2026-11-17: the paged lists and one character's authority letter
+  'usp_AdminAccountPage', 'usp_AdminCharacterPage', 'usp_AdminCharacterAuthority',
 ];
+
+/** A procedure's text in admin-login.sql, comments taken out. */
+function procedure(name: string): string {
+  const at = code.search(new RegExp(`CREATE\\s+PROCEDURE\\s+dbo\\.${name}\\b`, 'i'));
+  expect(at).toBeGreaterThanOrEqual(0);
+  return code.slice(at, code.indexOf('\nGO', at));
+}
+
+it('takes the VIP letters and refuses every other letter, compared as bytes (a lower-case one would be past P)', () => {
+  for (const name of ['usp_AdminSetLoginAuthority', 'usp_AdminSetCharacterAuthority', 'usp_AdminCharacterAuthority']) {
+    const text = procedure(name);
+    expect(text).toContain('CAST(@authority AS binary(1)) NOT IN (0x46, 0x41, 0x42, 0x43, 0x45, 0x4A, 0x4C, 0x4D, 0x4E, 0x4F, 0x50)');
+    expect(text).toContain('SELECT -1 AS changed');
+  }
+  expect(procedure('usp_AdminCharacterAuthority')).toMatch(/WHERE m_idPlayer = @idPlayer AND serverindex = '01'/);
+});
+
+it('pages with OFFSET / FETCH and gives the total, in both lists', () => {
+  for (const name of ['usp_AdminAccountPage', 'usp_AdminCharacterPage']) {
+    const text = procedure(name);
+    expect(text).toMatch(/@total int OUTPUT/);
+    expect(text).toMatch(/SELECT @total = COUNT\(\*\)/);
+    expect(text).toMatch(/OFFSET @offset ROWS FETCH NEXT @count ROWS ONLY/);
+    expect(text).toMatch(/IF @count IS NULL OR @count < 1 OR @count > 50 SET @count = 10/);
+  }
+  // the character lists carry each character's own letter
+  for (const name of ['usp_AdminCharacterPage', 'usp_AdminCharacterSearch', 'usp_AdminCharacterGet', 'usp_AdminOnlineList']) {
+    expect(procedure(name)).toMatch(/m_chAuthority AS authority/);
+  }
+});
+
+it('checks the new procedures in admin-check.sql, 10 PASS lines', () => {
+  const check = readFileSync(fileURLToPath(new URL('../sql/admin-check.sql', import.meta.url)), 'utf8');
+  for (const name of ['usp_AdminAccountPage', 'usp_AdminCharacterPage', 'usp_AdminCharacterAuthority', 'usp_AdminSetLoginAuthority', 'usp_AdminSetCharacterAuthority']) {
+    expect(check).toContain(name);
+  }
+  expect([...check.matchAll(/PRINT 'PASS (\d+):/g)].map((m) => Number(m[1]))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+});
 
 it('makes only usp_Admin procedures', () => {
   const made = [...code.matchAll(/\b(?:CREATE|ALTER)\s+PROCEDURE\s+dbo\.(\w+)/gi)].map((m) => m[1]!);

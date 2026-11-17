@@ -7,6 +7,7 @@ import type { AdminConfig } from '../../src/admin/config';
 import type { AdminCredentials } from '../../src/admin/credentials';
 import type { CatalogItem } from '../../src/admin/itemCatalog';
 import { LoginGuard } from '../../src/admin/loginGuard';
+import { PageCache } from '../../src/admin/pageCache';
 import { hashAdminPassword } from '../../src/admin/password';
 import { SessionBook } from '../../src/admin/sessions';
 import type { AdminSession } from '../../src/admin/sessions';
@@ -57,6 +58,7 @@ export function testDeps(options: {
     probe: async (_host, port) => (options.unknownPorts?.has(port) ? 'unknown' : openPorts.has(port) ? 'open' : 'closed'),
     catalog: options.catalog ?? [],
     actions: options.actions ?? {},
+    pages: new PageCache(clock),
     openPorts,
     lines,
     setNow: (ms) => { now = ms; },
