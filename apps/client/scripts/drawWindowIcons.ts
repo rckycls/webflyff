@@ -183,44 +183,48 @@ function medal(tier: number): string {
 }
 
 // 2026-11-17 (owner, "the icon for weekly champs and mvp should be a longer icon on top of the name", then a few rounds,
-// "I want it to look cooler, like a warrior something, no skies or anything", their pick of four options, "A: Shield &
-// swords", then "make it wider version and add a little more details"): the weekly crests over the name
-// (render/NameTagLayer.ts `BANNER_SIZE`, `bannerPlace`), with no words. Two long swords crossed flat behind a heater shield:
-// steel blades with a fuller and a bright edge, gold guards curved towards the blade with a gem, wrapped leather grips,
-// gold pommels with a gem and a tassel hanging from each; the shield with a gold rim and a thin steel one inside it, studs
-// round the rim, a gem at its top, its field red (champion) or blue (MVP) with a lighter band across it and a darker
-// middle, and on it a jewelled gold crown (champion) or a faceted gold star (MVP). All outlined thick and dark. Drawn at
-// twice their size (BANNER_SCALE), so that a phone's tag, drawn at a pixel ratio of 2, keeps them sharp.
+// "like a warrior something, no skies", their pick "A: Shield & swords", "wider, a little more details", then "make the
+// shield subtle and go heavy on crown and star ... with a lot of texture and details"): the weekly crests over the name
+// (render/NameTagLayer.ts `BANNER_SIZE`, `bannerPlace`), with no words. Two long swords crossed flat behind a small, dark
+// heater shield, and over the shield the crest's emblem, large:
+// - champion: a gold crown: a red velvet cap, five points with pearls and a gold orb on the middle one, faceted rubies on
+//   the points, a curved band beaded with pearls along both edges, set with a ruby, emeralds and sapphires in gold bezels,
+//   engraved scrolls between them;
+// - MVP: a gold star, 12 out from its centre: a silver-blue eight-point burst behind it, faceted points, an engraved inner bevel, lines from the
+//   centre to the points, a round cut sapphire in a gold bezel in the middle.
+// The gold, the velvet and the burst have a fine metal grain (feTurbulence) and white glints. All outlined thick and dark.
+// Drawn at twice their size (BANNER_SCALE), so that a phone's tag, drawn at a pixel ratio of 2, keeps them sharp.
 
 /** The crests' size (`BANNER_SIZE` in NameTagLayer.ts) and scale. */
 const BANNER_WIDTH = 88;
 const BANNER_HEIGHT = 36;
 const BANNER_SCALE = 2;
 interface Crest {
-  /** The shield's field, light to dark. */
-  field: [string, string, string];
-  /** The gem in the guards, the pommels and the shield's top; the tassels' colour. */
+  /** The shield's field, lighter to darker (kept dark: the emblem is the crest). */
+  field: [string, string];
+  /** The gem in the swords' guards and pommels; the tassels' colour. */
   gem: 'sapphire' | 'ruby';
   tassel: string;
   emblem: 'crown' | 'star';
 }
 const BANNERS: Record<string, Crest> = {
-  weeklychampion: { field: ['#ff5a5a', '#c81a2e', '#5a0616'], gem: 'sapphire', tassel: '#d8283a', emblem: 'crown' },
-  weeklymvp: { field: ['#7ab0ff', '#2a5ad8', '#0e1a5a'], gem: 'ruby', tassel: '#2a6ae0', emblem: 'star' },
+  weeklychampion: { field: ['#5a1a24', '#24080e'], gem: 'sapphire', tassel: '#a8202e', emblem: 'crown' },
+  weeklymvp: { field: ['#1e2a5a', '#0a0e26'], gem: 'ruby', tassel: '#2450b8', emblem: 'star' },
 };
 
 /** A crest's SVG, BANNER_WIDTH x BANNER_HEIGHT drawn at BANNER_SCALE. */
 function banner({ field, gem, tassel, emblem }: Crest): string {
   const ink = '#160a1e';
-  const cx = BANNER_WIDTH / 2, cy = 17;
+  const cx = BANNER_WIDTH / 2, cy = 21;
   const p2 = (n: number): string => n.toFixed(2);
-  const jewel = (x: number, y: number, r: number): string =>
-    `<path d="M${p2(x)} ${p2(y - r)} L${p2(x + r * 0.8)} ${p2(y)} L${p2(x)} ${p2(y + r)} L${p2(x - r * 0.8)} ${p2(y)} Z" fill="url(#${gem})" stroke="${ink}" stroke-width=".45"/>`;
+  const jewel = (x: number, y: number, r: number, fill = `url(#${gem})`): string =>
+    `<path d="M${p2(x)} ${p2(y - r)} L${p2(x + r * 0.8)} ${p2(y)} L${p2(x)} ${p2(y + r)} L${p2(x - r * 0.8)} ${p2(y)} Z" fill="${fill}" stroke="${ink}" stroke-width=".45"/>
+<path d="M${p2(x)} ${p2(y - r)} L${p2(x + r * 0.8)} ${p2(y)} L${p2(x)} ${p2(y)} Z" fill="#fff" opacity=".35"/>`;
+  const glint = (x: number, y: number, r: number): string => `<path d="${starPath(x, y, r, r * 0.22, 4)}" fill="#fff"/>`;
   // a sword along +x from its guard at the origin: a 36-unit blade, a curved guard, a wrapped grip, a pommel
   const sword = `
 <path d="M0 -1.7 L33 -1.7 L37.6 0 L33 1.7 L0 1.7 Z" fill="url(#steel)" stroke="${ink}" stroke-width=".7" stroke-linejoin="round"/>
 <path d="M1.6 0 L32 0" stroke="#7a86a0" stroke-width=".7"/><path d="M1 -1.1 L33 -1.1" stroke="#fff" stroke-width=".45" opacity=".85"/>
-<path d="M2.4 .9 H4.4 M5.4 .9 H6.6" stroke="#9aa8c0" stroke-width=".35"/>
 <path d="M-1.2 -5.6 C1.2 -5.4 2 -4 2 -2.2 L1.2 -1.2 L1.2 1.2 L2 2.2 C2 4 1.2 5.4 -1.2 5.6 C-.4 3.6 -.6 2.2 -1.3 1.2 V-1.2 C-.6 -2.2 -.4 -3.6 -1.2 -5.6 Z" fill="url(#gold)" stroke="${ink}" stroke-width=".6" stroke-linejoin="round"/>
 ${jewel(0.2, 0, 1)}
 <rect x="-7.4" y="-1.15" width="6.1" height="2.3" fill="url(#wood)" stroke="${ink}" stroke-width=".5"/>
@@ -236,56 +240,115 @@ ${jewel(-8.8, 0, 0.8)}`;
     const a = (deg * Math.PI) / 180, gx = cx - mid * scale * Math.cos(a), gy = cy - mid * scale * Math.sin(a);
     swords.push(`<g transform="translate(${p2(gx)} ${p2(gy)}) rotate(${deg}) scale(${scale})">${sword}</g>`);
     const px = gx - 10.4 * scale * Math.cos(a), py = gy - 10.4 * scale * Math.sin(a);
-    tassels.push(`<path d="M${p2(px)} ${p2(py)} C${p2(px - 0.6)} ${p2(py + 1.6)} ${p2(px + 0.6)} ${p2(py + 2.4)} ${p2(px)} ${p2(py + 3.4)}" stroke="${ink}" stroke-width="1.1" fill="none"/>
-<path d="M${p2(px)} ${p2(py)} C${p2(px - 0.6)} ${p2(py + 1.6)} ${p2(px + 0.6)} ${p2(py + 2.4)} ${p2(px)} ${p2(py + 3.4)}" stroke="#ffd860" stroke-width=".5" fill="none"/>
-<path d="M${p2(px - 1.2)} ${p2(py + 3.6)} H${p2(px + 1.2)} L${p2(px + 1.7)} ${p2(py + 7.6)} H${p2(px - 1.7)} Z" fill="${tassel}" stroke="${ink}" stroke-width=".55" stroke-linejoin="round"/>
-<path d="M${p2(px - 0.8)} ${p2(py + 4.6)} L${p2(px - 1)} ${p2(py + 7.3)} M${p2(px)} ${p2(py + 4.6)} V${p2(py + 7.3)} M${p2(px + 0.8)} ${p2(py + 4.6)} L${p2(px + 1)} ${p2(py + 7.3)}" stroke="#000" stroke-opacity=".3" stroke-width=".35"/>
-<rect x="${p2(px - 1.5)}" y="${p2(py + 3.1)}" width="3" height="1.3" rx=".4" fill="url(#gold)" stroke="${ink}" stroke-width=".45"/>`);
+    const cord = `M${p2(px)} ${p2(py)} C${p2(px - 0.6)} ${p2(py + 1.4)} ${p2(px + 0.6)} ${p2(py + 2)} ${p2(px)} ${p2(py + 2.8)}`;
+    tassels.push(`<path d="${cord}" stroke="${ink}" stroke-width="1.1" fill="none"/><path d="${cord}" stroke="#ffd860" stroke-width=".5" fill="none"/>
+<path d="M${p2(px - 1.1)} ${p2(py + 3)} H${p2(px + 1.1)} L${p2(px + 1.6)} ${p2(py + 6.4)} H${p2(px - 1.6)} Z" fill="${tassel}" stroke="${ink}" stroke-width=".55" stroke-linejoin="round"/>
+<rect x="${p2(px - 1.4)}" y="${p2(py + 2.5)}" width="2.8" height="1.2" rx=".4" fill="url(#gold)" stroke="${ink}" stroke-width=".45"/>`);
   }
-  // the shield, its steel inner rim and its field, all centred on cx
+  // the small dark shield under the emblem
   const s = (d: string): string => d.replace(/X(-?[\d.]+)/g, (_, dx: string) => p2(cx + Number(dx)));
-  const shield = s('MX-9.6 5.2 HX9.6 V15.6 CX9.6 24 X4.8 29.8 X0 32.8 CX-4.8 29.8 X-9.6 24 X-9.6 15.6 Z');
-  const steelRim = s('MX-8.2 6.6 HX8.2 V15.6 CX8.2 23 X4 28.4 X0 31.2 CX-4 28.4 X-8.2 23 X-8.2 15.6 Z');
-  const fieldPath = s('MX-7.4 7.4 HX7.4 V15.6 CX7.4 22.4 X3.6 27.6 X0 30.2 CX-3.6 27.6 X-7.4 22.4 X-7.4 15.6 Z');
-  const band = s('MX-7.4 18.6 LX7.4 11.4 V14.4 LX-7.4 21.6 Z');
-  const studs = [[-8.9, 6], [8.9, 6], [-8.9, 11.4], [8.9, 11.4], [-8.9, 16.8], [8.9, 16.8], [-6.8, 25], [6.8, 25]]
-    .map(([dx, y]) => `<circle cx="${p2(cx + dx!)}" cy="${y}" r=".55" fill="#fff6c0" stroke="${ink}" stroke-width=".3"/>`).join('');
-  const crown = `<path d="${s('MX-5.4 21.2 LX-6.4 14.6 LX-2.8 17.4 LX0 12.8 LX2.8 17.4 LX6.4 14.6 LX5.4 21.2 Z')}" fill="url(#gold)" stroke="${ink}" stroke-width=".8" stroke-linejoin="round"/>
-<rect x="${p2(cx - 5.4)}" y="19.4" width="10.8" height="1.8" rx=".4" fill="url(#goldDeep)" stroke="${ink}" stroke-width=".5"/>
-${[[-6.4, 14.6], [0, 12.8], [6.4, 14.6]].map(([dx, y]) => `<circle cx="${p2(cx + dx!)}" cy="${y}" r=".7" fill="#fff6c0" stroke="${ink}" stroke-width=".3"/>`).join('')}
-<circle cx="${p2(cx - 3)}" cy="20.3" r=".55" fill="url(#ruby)"/><circle cx="${p2(cx)}" cy="20.3" r=".65" fill="url(#sapphire)"/><circle cx="${p2(cx + 3)}" cy="20.3" r=".55" fill="url(#ruby)"/>`;
-  const points = [...Array(10)].map((_, i) => {
-    const r = i % 2 === 0 ? 5 : 2.1;
-    const a = ((i * 36 - 90) * Math.PI) / 180;
-    return [cx + r * Math.cos(a), 17.6 + r * Math.sin(a)] as const;
-  });
-  const facets = points.map(([x, y], i) => {
-    const [x2, y2] = points[(i + 1) % 10]!;
-    return `<path d="M${p2(cx)} 17.6 L${p2(x)} ${p2(y)} L${p2(x2)} ${p2(y2)} Z" fill="${i % 2 === 0 ? '#fff6b0' : '#e09a14'}"/>`;
+  const shield = s('MX-8.6 12.4 HX8.6 V20.4 CX8.6 27 X4.4 31.4 X0 34.2 CX-4.4 31.4 X-8.6 27 X-8.6 20.4 Z');
+  const fieldPath = s('MX-7.4 13.6 HX7.4 V20.4 CX7.4 26.4 X3.8 30.4 X0 32.8 CX-3.8 30.4 X-7.4 26.4 X-7.4 20.4 Z');
+  const shieldSvg = `<path d="${shield}" fill="url(#rimDark)" stroke="${ink}" stroke-width="1.1" stroke-linejoin="round"/>
+<path d="${fieldPath}" fill="url(#field)" stroke="${ink}" stroke-width=".4"/>
+<path d="M${p2(cx)} 13.8 V32.6" stroke="#000" stroke-opacity=".3" stroke-width="2"/>
+<path d="${s('MX-6.4 14.6 HX-3 CX-3.6 20 X-3.6 25 X-3 29.6 CX-5.4 27.4 X-6.4 24 X-6.4 20.4 Z')}" fill="#fff" opacity=".08"/>
+${[[-7.9, 23.4], [7.9, 23.4], [-5.6, 29.4], [5.6, 29.4]].map(([dx, y]) => `<circle cx="${p2(cx + dx!)}" cy="${y}" r=".5" fill="#c8a050" stroke="${ink}" stroke-width=".25"/>`).join('')}`;
+  // a grain over the shapes in `clip`: fine noise in the light and the dark, blended over the gold
+  const grain = (clip: string): string => `<g clip-path="url(#${clip})"><rect width="${BANNER_WIDTH}" height="${BANNER_HEIGHT}" filter="url(#grain)" opacity=".22" style="mix-blend-mode:overlay"/></g>`;
+  // the crown, about 27 wide and 21 tall over the shield
+  const points = s('MX-13.4 16.6 LX-12.6 7.4 CX-11.2 9.8 X-9.6 11.2 X-7.6 11.8 LX-6.2 4.2 CX-5 7.4 X-3.6 9.4 X-1.8 10.2 LX0 2.8 LX1.8 10.2 CX3.6 9.4 X5 7.4 X6.2 4.2 LX7.6 11.8 CX9.6 11.2 X11.2 9.8 X12.6 7.4 LX13.4 16.6 Z');
+  const cap = s('MX-11 15 CX-11 6.6 X-6 4.6 X0 4.6 CX6 4.6 X11 6.6 X11 15 Z');
+  const band = s('MX-14 15.6 QX0 18.2 X14 15.6 LX14.4 21.6 QX0 24.6 X-14.4 21.6 Z');
+  const beads = (y0: number, y1: number, n: number): string => [...Array(n)].map((_, i) => {
+    const t = i / (n - 1), x = cx - 13.4 + 26.8 * t, y = y0 + (y1 - y0) * (1 - (2 * t - 1) ** 2);
+    return `<circle cx="${p2(x)}" cy="${p2(y)}" r=".55" fill="url(#pearl)" stroke="${ink}" stroke-width=".22"/>`;
   }).join('');
-  const star = `${facets}<path d="${starPath(cx, 17.6, 5, 2.1)}" fill="none" stroke="${ink}" stroke-width=".8" stroke-linejoin="round"/>`;
+  const bezel = (x: number, y: number, rx: number, ry: number, fill: string): string =>
+    `<ellipse cx="${p2(x)}" cy="${p2(y)}" rx="${rx + 0.6}" ry="${ry + 0.6}" fill="url(#goldDeep)" stroke="${ink}" stroke-width=".45"/>
+<ellipse cx="${p2(x)}" cy="${p2(y)}" rx="${rx}" ry="${ry}" fill="url(#${fill})" stroke="${ink}" stroke-width=".3"/>
+<ellipse cx="${p2(x - rx * 0.35)}" cy="${p2(y - ry * 0.4)}" rx="${p2(rx * 0.35)}" ry="${p2(ry * 0.25)}" fill="#fff" opacity=".75"/>`;
+  const crown = `
+<path d="${cap}" fill="url(#velvet)" stroke="${ink}" stroke-width=".8"/>
+<path d="${s('MX-8 8.6 CX-6 7 X-3 6.4 X0 6.4')}" stroke="#ff9aa8" stroke-width=".6" opacity=".6" fill="none"/>
+${grain('capClip')}
+<path d="${points}" fill="url(#crownGold)" stroke="${ink}" stroke-width="1" stroke-linejoin="round"/>
+<path d="${s('MX-11.8 14.8 LX-11.4 10.4 MX-5.2 13 LX-5.6 8.4 MX5.2 13 LX5.6 8.4 MX11.8 14.8 LX11.4 10.4 MX0 13.4 LX0 6.6')}" stroke="#fff6c0" stroke-width=".5" opacity=".8"/>
+<path d="${s('MX-11 15.4 LX-10.6 11.2 MX-4.4 14 LX-4.8 10 MX4.4 14 LX4.8 10 MX11 15.4 LX10.6 11.2')}" stroke="#8a4a04" stroke-width=".45" opacity=".8"/>
+${jewel(cx - 6.4, 9.2, 1.3, 'url(#ruby)')}${jewel(cx + 6.4, 9.2, 1.3, 'url(#ruby)')}${jewel(cx, 7.8, 1.6, 'url(#emerald)')}
+${jewel(cx - 12, 12.2, 0.95, 'url(#sapphire)')}${jewel(cx + 12, 12.2, 0.95, 'url(#sapphire)')}
+${[[-12.6, 7.2], [-6.2, 4], [6.2, 4], [12.6, 7.2]].map(([dx, y]) => `<circle cx="${p2(cx + dx!)}" cy="${y}" r="1.05" fill="url(#pearl)" stroke="${ink}" stroke-width=".35"/>`).join('')}
+<circle cx="${cx}" cy="1.9" r="1.5" fill="url(#crownGold)" stroke="${ink}" stroke-width=".6"/>
+<path d="M${p2(cx - 1.5)} 1.9 H${p2(cx + 1.5)}" stroke="#8a4a04" stroke-width=".35"/>
+<circle cx="${p2(cx - 0.55)}" cy="1.35" r=".42" fill="#fff" opacity=".85"/>
+<path d="${band}" fill="url(#crownGold)" stroke="${ink}" stroke-width="1" stroke-linejoin="round"/>
+<path d="${s('MX-13.6 17.2 QX0 19.8 X13.6 17.2')}" stroke="#fff6c0" stroke-width=".45" opacity=".7" fill="none"/>
+<path d="${s('MX-13.8 21 QX0 23.8 X13.8 21')}" stroke="#7a3a04" stroke-width=".45" opacity=".8" fill="none"/>
+${beads(16.3, 17.6, 15)}${beads(22.1, 23.6, 15)}
+<path d="${s('MX-9.2 20.2 CX-8.6 19 X-7.6 19 X-7.4 20 MX-4.6 20.8 CX-4.2 19.8 X-3.4 19.8 X-3.2 20.6 MX9.2 20.2 CX8.6 19 X7.6 19 X7.4 20 MX4.6 20.8 CX4.2 19.8 X3.4 19.8 X3.2 20.6')}" stroke="#7a3a04" stroke-width=".4" fill="none" opacity=".8"/>
+${bezel(cx, 20.4, 2.1, 1.6, 'ruby')}${bezel(cx - 6.2, 20.1, 1.3, 1.05, 'emerald')}${bezel(cx + 6.2, 20.1, 1.3, 1.05, 'emerald')}
+${bezel(cx - 11.2, 19.4, 0.95, 0.85, 'sapphire')}${bezel(cx + 11.2, 19.4, 0.95, 0.85, 'sapphire')}
+${grain('crownClip')}
+${glint(cx - 6.2, 4, 1.4)}${glint(cx + 2.4, 19.6, 1.2)}${glint(cx + 12.4, 8, 1)}${glint(cx - 13, 16.8, 0.9)}`;
+  // the star, 12.2 out from its centre, over a burst of eight
+  const sc = [cx, 13] as const;
+  const tips = [...Array(10)].map((_, i) => {
+    const r = i % 2 === 0 ? 12.2 : 5.2, a = ((i * 36 - 90) * Math.PI) / 180;
+    return [sc[0] + r * Math.cos(a), sc[1] + r * Math.sin(a)] as const;
+  });
+  const facets = tips.map(([x, y], i) => {
+    const [x2, y2] = tips[(i + 1) % 10]!;
+    return `<path d="M${p2(sc[0])} ${p2(sc[1])} L${p2(x)} ${p2(y)} L${p2(x2)} ${p2(y2)} Z" fill="url(#${i % 2 === 0 ? 'facetLight' : 'facetDark'})"/>`;
+  }).join('');
+  const starOutline = starPath(sc[0], sc[1], 12.2, 5.2);
+  const inner = starPath(sc[0], sc[1], 8.2, 3.5);
+  const gemFacets = [...Array(8)].map((_, i) => {
+    const a = (i * 45 * Math.PI) / 180, b = ((i + 1) * 45 * Math.PI) / 180, r = 2.9;
+    return `<path d="M${p2(sc[0])} ${p2(sc[1])} L${p2(sc[0] + r * Math.cos(a))} ${p2(sc[1] + r * Math.sin(a))} L${p2(sc[0] + r * Math.cos(b))} ${p2(sc[1] + r * Math.sin(b))} Z" fill="${['#7ae0ff', '#1a6ad8', '#3aa8ff', '#0a3a9a'][i % 4]}"/>`;
+  }).join('');
+  const rays = tips.filter((_, i) => i % 2 === 0).map(([x, y]) => `M${p2(sc[0])} ${p2(sc[1])} L${p2(x)} ${p2(y)}`).join(' ');
+  const star = `
+<path d="${starPath(sc[0], sc[1], 13.6, 5.6, 8)}" transform="rotate(22.5 ${sc[0]} ${sc[1]})" fill="url(#burst)" stroke="${ink}" stroke-width=".6" stroke-linejoin="round"/>
+<path d="${starPath(sc[0], sc[1], 11.8, 5.6, 8)}" transform="rotate(22.5 ${sc[0]} ${sc[1]})" fill="none" stroke="#fff" stroke-width=".35" opacity=".6"/>
+${grain('burstClip')}
+<path d="${starOutline}" transform="translate(.8 .9)" fill="${ink}" opacity=".45"/>
+${facets}
+<path d="${rays}" stroke="#8a4a04" stroke-width=".35" opacity=".5"/>
+<path d="${inner}" fill="none" stroke="#8a4a04" stroke-width=".55" stroke-linejoin="round"/>
+<path d="${inner}" transform="translate(.35 .35)" fill="none" stroke="#fff6c0" stroke-width=".35" stroke-linejoin="round" opacity=".8"/>
+${grain('starClip')}
+<path d="${starOutline}" fill="none" stroke="${ink}" stroke-width="1" stroke-linejoin="round"/>
+<circle cx="${sc[0]}" cy="${sc[1]}" r="3.7" fill="url(#goldDeep)" stroke="${ink}" stroke-width=".5"/>
+${gemFacets}
+<circle cx="${sc[0]}" cy="${sc[1]}" r="2.9" fill="none" stroke="${ink}" stroke-width=".4"/>
+<circle cx="${p2(sc[0] - 0.9)}" cy="${p2(sc[1] - 0.9)}" r=".7" fill="#fff" opacity=".9"/>
+${glint(sc[0] - 6.2, sc[1] - 4.8, 1.5)}${glint(sc[0] + 10.6, sc[1] - 2.8, 1.2)}${glint(sc[0], sc[1] - 11, 1)}${glint(sc[0] + 4.6, sc[1] + 8.4, 0.9)}`;
+  const clips = emblem === 'crown'
+    ? `<clipPath id="capClip"><path d="${cap}"/></clipPath><clipPath id="crownClip"><path d="${points}"/><path d="${band}"/><circle cx="${cx}" cy="1.9" r="1.5"/></clipPath>`
+    : `<clipPath id="burstClip"><path d="${starPath(sc[0], sc[1], 13.6, 5.6, 8)}" transform="rotate(22.5 ${sc[0]} ${sc[1]})"/></clipPath><clipPath id="starClip"><path d="${starOutline}"/></clipPath>`;
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${BANNER_WIDTH * BANNER_SCALE}" height="${BANNER_HEIGHT * BANNER_SCALE}" viewBox="0 0 ${BANNER_WIDTH} ${BANNER_HEIGHT}">
 <defs>
+  <filter id="grain" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="2.4" numOctaves="2" seed="7"/><feColorMatrix type="saturate" values="0"/></filter>
   <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fffde0"/><stop offset=".35" stop-color="#ffe066"/><stop offset=".7" stop-color="#f0a818"/><stop offset="1" stop-color="#a85e06"/></linearGradient>
+  <linearGradient id="crownGold" x1="0" y1="1" x2="0" y2="25" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#fffbe0"/><stop offset=".25" stop-color="#ffe680"/><stop offset=".5" stop-color="#f6b424"/><stop offset=".62" stop-color="#fff0a0"/><stop offset=".8" stop-color="#e09a14"/><stop offset="1" stop-color="#8a4a04"/></linearGradient>
   <linearGradient id="goldDeep" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffd860"/><stop offset="1" stop-color="#a85e06"/></linearGradient>
-  <linearGradient id="rim" x1="0" y1="5" x2="0" y2="33" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#fff6c0"/><stop offset=".4" stop-color="#ffc83a"/><stop offset="1" stop-color="#8a4a04"/></linearGradient>
+  <linearGradient id="facetLight" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fffde8"/><stop offset="1" stop-color="#ffd84a"/></linearGradient>
+  <linearGradient id="facetDark" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f6b424"/><stop offset="1" stop-color="#9a5604"/></linearGradient>
+  <linearGradient id="burst" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f4faff"/><stop offset=".5" stop-color="#8ab4e8"/><stop offset="1" stop-color="#2a4a8a"/></linearGradient>
+  <radialGradient id="velvet" cx=".4" cy=".3" r=".8"><stop offset="0" stop-color="#ff5a6a"/><stop offset=".5" stop-color="#b0102a"/><stop offset="1" stop-color="#40000e"/></radialGradient>
+  <linearGradient id="rimDark" x1="0" y1="12" x2="0" y2="34" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#c8a050"/><stop offset="1" stop-color="#5a3a10"/></linearGradient>
+  <linearGradient id="field" x1="0" y1="13" x2="0" y2="33" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="${field[0]}"/><stop offset="1" stop-color="${field[1]}"/></linearGradient>
   <linearGradient id="steel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff"/><stop offset=".45" stop-color="#c8d2e2"/><stop offset="1" stop-color="#5a6680"/></linearGradient>
-  <linearGradient id="steelRim" x1="0" y1="6" x2="0" y2="31" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#fff"/><stop offset=".5" stop-color="#b8c4d8"/><stop offset="1" stop-color="#4a5468"/></linearGradient>
-  <linearGradient id="field" x1="0" y1="7" x2="0" y2="30" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="${field[0]}"/><stop offset=".5" stop-color="${field[1]}"/><stop offset="1" stop-color="${field[2]}"/></linearGradient>
   <linearGradient id="wood" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#b87a44"/><stop offset="1" stop-color="#5a2e12"/></linearGradient>
   <radialGradient id="ruby" cx=".35" cy=".35" r=".8"><stop offset="0" stop-color="#ffd0d8"/><stop offset=".4" stop-color="#ff2a4a"/><stop offset="1" stop-color="#7a0018"/></radialGradient>
   <radialGradient id="sapphire" cx=".35" cy=".35" r=".8"><stop offset="0" stop-color="#d8f6ff"/><stop offset=".4" stop-color="#2ab0ff"/><stop offset="1" stop-color="#0a3a8a"/></radialGradient>
+  <radialGradient id="emerald" cx=".35" cy=".35" r=".8"><stop offset="0" stop-color="#d8ffe0"/><stop offset=".4" stop-color="#2ad86a"/><stop offset="1" stop-color="#065a2a"/></radialGradient>
+  <radialGradient id="pearl" cx=".35" cy=".35" r=".8"><stop offset="0" stop-color="#fff"/><stop offset=".6" stop-color="#f4ecd8"/><stop offset="1" stop-color="#b8a070"/></radialGradient>
+  ${clips}
 </defs>
 ${tassels.join('')}
 ${swords.join('')}
-<path d="${shield}" fill="url(#rim)" stroke="${ink}" stroke-width="1.3" stroke-linejoin="round"/>
-<path d="${steelRim}" fill="url(#steelRim)" stroke="#5a2a04" stroke-width=".4"/>
-<path d="${fieldPath}" fill="url(#field)" stroke="${ink}" stroke-width=".5"/>
-<path d="${band}" fill="#fff" opacity=".14"/>
-<path d="M${p2(cx)} 7.6 V29.8" stroke="#000" stroke-opacity=".22" stroke-width="2.6"/>
-<path d="${s('MX-6.4 8.4 HX-2.4 CX-3.2 13 X-3.6 19 X-3 25.4 CX-5.2 22.6 X-6.4 19 X-6.4 15.4 Z')}" fill="#fff" opacity=".22"/>
-${studs}
-${jewel(cx, 5.4, 1.5)}
+${shieldSvg}
 ${emblem === 'crown' ? crown : star}
 </svg>`;
 }

@@ -57,9 +57,9 @@ export const trophyKey = (trophy: 'winner' | 'best'): string => `ui/texguildcomb
 
 /**
  * 2026-11-15 (C1): a weekly badge's picture key. 2026-11-17 (owner, "should be a longer icon on top of the name", "something
- * like this and not too much text", "like a warrior something", their pick "A: Shield & swords"): FlyffWeb's own crests, a
- * shield over two crossed swords, red with a gold crown (champion) or blue with a gold star (MVP) (hud/ownIcons.ts), in the
- * place of the gold trophies the converter makes (`ui/texguildcombatweekly*.png`, no longer drawn).
+ * like this and not too much text", "like a warrior something", their pick "A: Shield & swords", "heavy on crown and star"):
+ * FlyffWeb's own crests, a large jewelled gold crown (champion) or star (MVP) over a small dark shield and two crossed swords
+ * (hud/ownIcons.ts), in the place of the gold trophies the converter makes (`ui/texguildcombatweekly*.png`, no longer drawn).
  */
 export const badgeKey = (badge: 'weeklyChampion' | 'weeklyMvp'): string => `ui/${badge === 'weeklyChampion' ? 'weeklychampion' : 'weeklymvp'}.png`;
 
