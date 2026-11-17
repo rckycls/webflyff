@@ -9,6 +9,9 @@
 // - `POST /api/vip/requests` `{tier, currency, reference, receipt, requestId}`: a new request (currency USD or PHP, USD
 //   when missing; receipt = base64 picture);
 // - `GET /api/vip/receipt/<id>`: the receipt of one of the player's own requests.
+// - custom (owner 2026-11-17): `GET /api/autoplay` and `POST /api/autoplay/tick`: Auto Play's weekly hours of the
+//   session's account, `{usedMin, limitMin, resetsAt}` (limitMin null: no limit), by its live VIP level
+//   (vip/autoPlayUsage.ts); `{error: 'off'}` (404) without the usage book.
 //
 // Every POST: Origin = siteOrigin (403), JSON (415), a size limit (413). Every POST but login: a live session from the
 // `__Host-flyff` cookie (401) and X-Site-Token = its CSRF token (403); these are checked from the headers before a
@@ -27,6 +30,8 @@ import type { WebConfig } from '../config';
 import type { HourlyLimit } from '../hourlyLimit';
 import type { Logger } from '../log';
 import { readBody } from '../server';
+import { limitMinutes } from './autoPlayUsage';
+import type { AutoPlayUsage, UsageStatus } from './autoPlayUsage';
 import { MAX_IMAGE_BODY_BYTES, readImageField } from './images';
 import type { VipConfig } from './vipConfig';
 import type { VipFiles } from './vipFiles';
@@ -51,7 +56,12 @@ export interface SiteVipDeps {
   /** Requests sent by one account in an hour. */
   requestsByAccount: HourlyLimit;
   log: Logger;
+  /** custom (owner 2026-11-17): Auto Play's weekly hours; absent: the routes answer off. */
+  autoPlay?: AutoPlayUsage;
 }
+
+/** An account's VIP level is read again after this long (ms): a tick a minute does not ask the database each time. */
+const VIP_LEVEL_KEEP_MS = 5 * 60_000;
 
 const JSON_HEADERS = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' };
 
@@ -135,6 +145,20 @@ const idFrom = (path: string, prefix: string): number | undefined => {
 export function siteVipRoutes(deps: SiteVipDeps): (req: IncomingMessage, res: ServerResponse, path: string, address: string) => Promise<boolean> {
   const { config, store, files, sessions, log } = deps;
   const sessionOf = (req: IncomingMessage) => sessions.get(cookieValue(req, SITE_COOKIE));
+
+  // custom (owner 2026-11-17): Auto Play's weekly hours
+  const vipLevels = new Map<string, { level: number; at: number }>();
+  const vipLevelOf = async (account: string): Promise<number> => {
+    const key = account.toLowerCase(), kept = vipLevels.get(key), now = Date.now();
+    if (kept !== undefined && now - kept.at < VIP_LEVEL_KEEP_MS) return kept.level;
+    const level = (await store.mine(account)).vip?.level ?? 0;
+    vipLevels.set(key, { level, at: now });
+    return level;
+  };
+  const usageAnswer = async (account: string, status: UsageStatus) => ({
+    usedMin: Math.floor(status.usedMs / 60_000), limitMin: limitMinutes(await vipLevelOf(account)),
+    resetsAt: new Date(status.resetsAt).toISOString(),
+  });
 
   const login = async (req: IncomingMessage, res: ServerResponse, address: string): Promise<void> => {
     if (req.headers.origin !== config.siteOrigin) return refuseUnread(req, res, 403, { error: 'forbidden' });
@@ -266,6 +290,13 @@ export function siteVipRoutes(deps: SiteVipDeps): (req: IncomingMessage, res: Se
         else sendImage(res, file);
         return true;
       }
+      if (path === '/api/autoplay') {
+        const session = sessionOf(req);
+        if (deps.autoPlay === undefined) send(res, 404, { error: 'off' });
+        else if (session === undefined) send(res, 401, { error: 'session' });
+        else send(res, 200, await usageAnswer(session.user, deps.autoPlay.status(session.user)));
+        return true;
+      }
       if (path.startsWith('/api/vip/receipt/')) {
         const session = sessionOf(req);
         if (session === undefined) {
@@ -295,6 +326,16 @@ export function siteVipRoutes(deps: SiteVipDeps): (req: IncomingMessage, res: Se
     }
     if (path === '/api/vip/requests') {
       await sendRequest(req, res, address);
+      return true;
+    }
+    if (path === '/api/autoplay/tick') {
+      const session = postSession(req, res);
+      if (session === undefined) return true;
+      if (deps.autoPlay === undefined) {
+        send(res, 404, { error: 'off' });
+        return true;
+      }
+      send(res, 200, await usageAnswer(session.user, deps.autoPlay.tick(session.user)));
       return true;
     }
     return false;
