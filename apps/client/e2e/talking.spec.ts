@@ -372,6 +372,8 @@ test('the desktop chat: the chat window of Neuz V15 (tabs, Lock, filter, System,
   await page.keyboard.press('Escape');
   await expect(chat).toBeHidden();
   await page.getByRole('button', { name: 'Start', exact: true }).click();
+  // 2026-11-18: in V15's Communication folder (WndTaskBar.cpp:2632-2677)
+  await page.getByRole('menuitem', { name: 'Communication', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Chatting', exact: true }).click();
   await expect(chat).toBeVisible(); await expect(input).toBeFocused();
   expect((await chat.boundingBox())!.x).toBeCloseTo(closedAt.x, 0);

@@ -59,6 +59,8 @@ const fieldsOf = (body: Buffer, count: number): number[] =>
 /** Start → Party: the party window (and with 2 members the quick view), as P does. */
 async function openParty(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Start', exact: true }).click();
+  // 2026-11-18: in V15's Community folder (WndTaskBar.cpp:2632-2677)
+  await page.getByRole('menuitem', { name: 'Community', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Party', exact: true }).click();
   await expect(page.locator('.hud-party')).toBeVisible();
 }

@@ -57,6 +57,8 @@ function scriptOf(webbyInGuild: boolean): WorldScript {
 /** Start → Guild (CWndTaskMenu's APP_GUILD line). */
 async function openGuild(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Start', exact: true }).click();
+  // 2026-11-18: in V15's Community folder (WndTaskBar.cpp:2632-2677)
+  await page.getByRole('menuitem', { name: 'Community', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Guild', exact: true }).click();
   await expect(guildWindow(page)).toBeVisible();
 }
@@ -179,6 +181,8 @@ test('the master: the guild at log-in, the line above heads, the window and its 
   // the Messenger's Guild tab: the two members
   await guildWindow(page).locator('.hud-window-close').click();
   await page.getByRole('button', { name: 'Start', exact: true }).click();
+  // 2026-11-18: in V15's Communication folder (WndTaskBar.cpp:2632-2677)
+  await page.getByRole('menuitem', { name: 'Communication', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Messenger', exact: true }).click();
   await page.locator('.hud-messenger .hud-messenger-tab[data-tab="1"]').click();
   await expect(page.locator('.hud-messenger .hud-messenger-list[data-tab="1"] .hud-messenger-row')).toHaveCount(2);

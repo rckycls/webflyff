@@ -89,6 +89,8 @@ test('the couple: a proposal answered, the window (F or Start > Couple), Break U
   await expect.poll(() => lines(page), ON_FRAMES).toContain('You and Lead are now a couple!');
   if (isPhone()) {
     await page.getByRole('button', { name: 'Start', exact: true }).click();
+    // 2026-11-18: in V15's Communication folder (WndTaskBar.cpp:2659-2667)
+    await page.getByRole('menuitem', { name: 'Communication', exact: true }).click();
     await page.getByRole('menuitem', { name: 'Couple', exact: true }).click();
   } else {
     await page.keyboard.press('KeyF');

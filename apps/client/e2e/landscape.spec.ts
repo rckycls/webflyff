@@ -223,8 +223,9 @@ test.describe('landscape (spec §3.10)', () => {
   // 2026-11-10 (Private Shop, Chatting, Messenger, Guild ...): in one column a line would be 16 px above 750 x 342's bar,
   // so a touch screen that short stands them in two columns of seven (2026-11-12), each line at least 22 px again
   // 2026-11-14: fifteen with Motion (WndTaskBar.cpp:2622); 2026-11-15: eighteen with Housing (:2603-2605), Couple and Siege Ranking, in columns of 9 and 9; nineteen with Auto Play (custom, owner 2026-11-15), 10 and 9; 2026-11-17: twenty with Backpack (:2599-2602), 10 and 10;
-  // twenty-one with the Pet Filter (custom, owner 2026-11-16), 11 and 10
-  test('on a touch phone all twenty-one Start menu entries fit, in two columns, with contiguous touch targets', async ({ page }, info) => {
+  // twenty-one with the Pet Filter (custom, owner 2026-11-16), 11 and 10; 2026-11-18 (owner, "Start menu is overflowing"): eighteen,
+  // with V15's Communication and Community folders (:2632-2677), 9 and 9, a folder's tap showing its sub-menu
+  test('on a touch phone all eighteen Start menu entries fit, in two columns, with contiguous touch targets; a folder\'s sub-menu too', async ({ page }, info) => {
     test.skip(!isTouch(), 'a mouse gets the menu at its size');
     await playGateway(page);
     await enterFlaris(page);
@@ -238,14 +239,14 @@ test.describe('landscape (spec §3.10)', () => {
         const box = item.getBoundingClientRect();
         return { left: box.left, top: box.top, bottom: box.bottom, height: box.height };
       }));
-      expect(lines).toHaveLength(21); // 2026-11-15: Housing, Couple, Siege Ranking and Auto Play (custom); 2026-11-17: Backpack, Pet Filter (custom)
+      expect(lines).toHaveLength(18); // 2026-11-15: Housing, Couple, Siege Ranking and Auto Play (custom); 2026-11-17: Backpack, Pet Filter (custom); 2026-11-18: folders
       for (const line of lines) {
         // 2026-11-13 (owner, "make the menus smaller"): a phone draws them at most at 0.85, 22 x 0.85 = 18.7 px a line
         expect(line.height, `a line at ${size.width} x ${size.height}`).toBeGreaterThanOrEqual(18.5);
         expect(line.height, `a line at ${size.width} x ${size.height}`).toBeLessThanOrEqual(44.5);
       }
-      // two columns, 11 and 10 (2026-11-15, with the custom Auto Play; 2026-11-17, with Backpack and the custom Pet Filter), side by side from the same top, each line's row against the next one's
-      const [left, right] = [lines.slice(0, 11), lines.slice(11)];
+      // two columns, 9 and 9 (2026-11-18, with V15's folders), side by side from the same top, each line's row against the next one's
+      const [left, right] = [lines.slice(0, 9), lines.slice(9)];
       for (const column of [left, right]) {
         for (let i = 1; i < column.length; i++) expect(column[i]!.top).toBeCloseTo(column[i - 1]!.bottom, 1);
       }
@@ -256,6 +257,13 @@ test.describe('landscape (spec §3.10)', () => {
         await expect(menu.getByRole('menuitem', { name }).locator('.hud-menu-icon')).toHaveCSS('background-image', new RegExp(`/icons/${file}\\.png`));
       }
       await menu.screenshot({ path: info.outputPath(`start-menu-${size.width}x${size.height}.png`) });
+      // 2026-11-18: a tap on the Communication folder shows its sub-menu beside it, on the screen, its three lines a finger's
+      await menu.getByRole('menuitem', { name: 'Communication', exact: true }).click();
+      const submenu = page.getByRole('menu', { name: 'Communication' });
+      await expect(submenu).toBeVisible();
+      await expectOnScreen(submenu, `the Communication sub-menu at ${size.width} x ${size.height}`, await barTop(page));
+      await expect(submenu.getByRole('menuitem')).toHaveText(['Chatting', 'Messenger', 'Couple'].map((name) => new RegExp(name)));
+      await page.screenshot({ path: info.outputPath(`start-menu-communication-${size.width}x${size.height}.png`) });
       await page.getByRole('button', { name: 'Start' }).click();
       await expect(menu).toBeHidden();
     }
