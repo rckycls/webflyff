@@ -119,7 +119,7 @@ never stops the site: a bad `admin` section or login file writes `admin: panel o
 
 - **The database login.** `sql/Install-AdminLogin.ps1` makes `flyffweb_admin`, the `usp_Admin*` procedures and the log
   table `ACCOUNT_DBF.dbo.WEB_ADMIN_LOG`. The login may run those procedures and `usp_CreateNewAccount`, nothing else.
-  `sql/admin-check.sql`, run as `flyffweb_admin`, prints `PASS` for each check.
+  `sql/admin-check.sql`, run as `flyffweb_admin`, prints `PASS` for each of its 10 checks.
 - **Logging in:** name, password and the 6-digit code of your authenticator app. Each code works once. 5 wrong tries
   from one address: it waits 15 minutes; 20 in an hour from anywhere: login closes for an hour.
 - **Try it without a database:** `npm run admin:demo` (made-up data on `http://127.0.0.1:8099`, log in as `Poreotix` /

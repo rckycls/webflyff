@@ -21,6 +21,14 @@ export function intField(body: Record<string, unknown>, key: string, min: number
   return typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max ? value : undefined;
 }
 
+/** The highest list page number taken. */
+export const MAX_PAGE = 1_000_000;
+
+/** `page` of a list request: 1 when it is not given; `undefined` when it is not a whole number from 1. */
+export function pageField(body: Record<string, unknown>): number | undefined {
+  return body.page === undefined ? 1 : intField(body, 'page', 1, MAX_PAGE);
+}
+
 /** `yyyymmdd` of the day `days` after `ms`, in this machine's time (SQL Server's GETDATE() on the same VPS). */
 export function localDay(ms: number, days = 0): string {
   const d = new Date(ms);

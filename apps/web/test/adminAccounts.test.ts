@@ -47,16 +47,73 @@ it('searches by account prefix, email or character name', async () => {
   expect((await act('accounts.search', {}, s)).status).toBe(400);
 });
 
-it('sets the GM level on the account and its characters, and refuses other letters', async () => {
+it('sets the level on the account and its characters, one audit row each, and refuses other letters', async () => {
   const s = setUp();
   expect((await act('accounts.authority', { account: 'tester1', authority: 'X', requestId: 'r' }, s)).status).toBe(400);
+  // a lower-case letter would be past 'P' in the game: refused
+  expect((await act('accounts.authority', { account: 'tester1', authority: 'p' }, s)).status).toBe(400);
+  expect((await act('accounts.authority', { account: 'tester1', authority: 'L', characters: 'yes' }, s)).body.field).toBe('characters');
   const set = await act('accounts.authority', { account: 'tester1', authority: 'L' }, s);
-  expect(set.status).toBe(200);
+  expect(set).toMatchObject({ status: 200, body: { ok: true, characters: 1 } });
   expect(s.store.calls.filter((c) => c.startsWith('set'))).toEqual(['setLoginAuthority', 'setCharacterAuthority']);
   expect(s.store.accounts[1]!.authority).toBe('L');
   expect(s.store.characters[1]!.authority).toBe('L');
-  expect(s.store.log.filter((r) => r.action === 'accounts.authority')).toHaveLength(1);
-  expect(s.store.log.at(-1)).toMatchObject({ result: 'ok', before: '{"authority":"F"}' });
+  const rows = s.store.log.filter((r) => r.account === 'tester1');
+  expect(rows.map((r) => [r.action, r.result])).toEqual([['accounts.authority', 'ok'], ['accounts.charactersAuthority', 'ok']]);
+  expect(rows[0]).toMatchObject({ before: '{"authority":"F"}', after: '{"authority":"L"}' });
+  expect(rows[1]).toMatchObject({ before: '{"characters":[{"name":"Alt","authority":"F"}]}', after: '{"authority":"L","characters":1}' });
+  // the answer says which list pages are old now
+  expect(set.body.stale).toEqual({ accounts: { names: ['tester1'] }, characters: { accounts: ['tester1'] } });
+});
+
+it('sets a VIP level on the account alone when asked, and says when the characters\' part failed', async () => {
+  const s = setUp();
+  const vip = await act('accounts.authority', { account: 'tester1', authority: 'C', characters: false }, s);
+  expect(vip).toMatchObject({ status: 200, body: { ok: true, characters: 0 } });
+  expect(s.store.accounts[1]!.authority).toBe('C');
+  expect(s.store.characters[1]!.authority).toBe('F');
+  expect(s.store.log.map((r) => r.action)).toEqual(['accounts.authority']);
+
+  // the account's letter changes, its characters' do not: the log says so, and so does the answer
+  s.store.failing.add('setCharacterAuthority');
+  const half = await act('accounts.authority', { account: 'tester1', authority: 'E' }, s);
+  expect(half.status).toBe(500);
+  expect(half.body.message).toMatch(/account's level was changed, but its characters' levels were not/);
+  expect(s.store.accounts[1]!.authority).toBe('E');
+  expect(s.store.log.slice(1).map((r) => [r.action, r.result])).toEqual([['accounts.authority', 'ok'], ['accounts.charactersAuthority', 'failed']]);
+});
+
+it('pages the account list 10 at a time with the total, filters it, and keeps pages until an edit drops them', async () => {
+  const s = setUp();
+  for (let i = 1; i <= 23; i++) s.store.accounts.push(memoryAccount(`player${String(i).padStart(2, '0')}`, { email: i === 5 ? 'five@example.com' : null }));
+  const first = await act('accounts.page', {}, s);
+  expect(first.body).toMatchObject({ total: 25, page: 1, pageSize: 10, kept: false });
+  expect((first.body.rows as { account: string }[]).map((a) => a.account)).toEqual(
+    ['player01', 'player02', 'player03', 'player04', 'player05', 'player06', 'player07', 'player08', 'player09', 'player10']);
+  const third = await act('accounts.page', { page: 3 }, s);
+  expect((third.body.rows as { account: string }[]).map((a) => a.account)).toEqual(['player21', 'player22', 'player23', 'Poreotix', 'tester1']);
+  expect((await act('accounts.page', { page: 0 }, s)).body.field).toBe('page');
+  expect((await act('accounts.page', { account: 'PLAYER1' }, s)).body).toMatchObject({ total: 10 });
+  expect((await act('accounts.page', { email: 'FIVE@example.com' }, s)).body).toMatchObject({ total: 1, rows: [{ account: 'player05' }] });
+  expect((await act('accounts.page', { characterName: 'al' }, s)).body).toMatchObject({ total: 1, rows: [{ account: 'tester1' }] });
+
+  // asked again: kept, no SQL
+  const reads = () => s.store.calls.filter((c) => c === 'accountPage').length;
+  const before = reads();
+  expect((await act('accounts.page', { page: 1 }, s)).body.kept).toBe(true);
+  expect(reads()).toBe(before);
+  // a ban on tester1 drops only the page that shows tester1
+  await act('accounts.ban', { account: 'tester1', until: 'forever', reason: 'x' }, s);
+  expect((await act('accounts.page', { page: 1 }, s)).body.kept).toBe(true);
+  expect((await act('accounts.page', { page: 3 }, s)).body).toMatchObject({ kept: false, rows: expect.arrayContaining([expect.objectContaining({ account: 'tester1', blockTime: '99991231' })]) });
+  // a new account drops every page (the totals change); Refresh too
+  await act('accounts.create', { account: 'newone', password: 'abc12345', email: '' }, s);
+  expect((await act('accounts.page', { page: 1 }, s)).body).toMatchObject({ kept: false, total: 26 });
+  expect((await act('accounts.page', { page: 1 }, s)).body.kept).toBe(true);
+  expect((await act('accounts.page', { page: 1, fresh: true }, s)).body.kept).toBe(false);
+  // kept 30 seconds at most
+  s.deps.setNow(s.deps.now() + 31_000);
+  expect((await act('accounts.page', { page: 1 }, s)).body.kept).toBe(false);
 });
 
 it('bans forever, refuses a past date, and unbans with SQL Server\'s yesterday', async () => {

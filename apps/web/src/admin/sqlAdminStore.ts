@@ -7,7 +7,7 @@ import type { WebConfig } from '../config';
 import { firstValue, lazyPool } from '../sqlAccountStore';
 import type { AdminConfig } from './config';
 import type {
-  AccountRow, AdminStore, CharacterDetail, CharacterRow, LogFilter, LogRow, PendingSend,
+  AccountRow, AdminStore, CharacterDetail, CharacterRow, LogFilter, LogRow, Page, PendingSend,
 } from './adminStore';
 
 type Row = Record<string, unknown>;
@@ -42,8 +42,13 @@ function characterRow(r: Row): CharacterRow {
   return {
     idPlayer: trimmed(r.idPlayer), name: trimmed(r.name), account: trimmed(r.account), level: num(r.level), job: num(r.job),
     slot: num(r.slot), deleted: r.deleted === true || r.deleted === 1, online: r.online === true || r.online === 1,
-    worldId: num(r.worldId),
+    worldId: num(r.worldId), authority: trimmed(r.authority),
   };
+}
+
+/** A page procedure's rows and its `@total` OUTPUT. */
+function page<T>(result: sql.IProcedureResult<Row>, map: (r: Row) => T): Page<T> {
+  return { rows: rows(result).map(map), total: num((result.output as Record<string, unknown> | undefined)?.total) };
 }
 
 function characterDetail(r: Row): CharacterDetail {
@@ -106,6 +111,13 @@ export function sqlAdminStore(settings: WebConfig['sql'], login: AdminConfig['sq
         .execute('dbo.usp_AdminAccountSearch');
       return rows(result).map(accountRow);
     },
+    async accountPage(q, offset, count) {
+      return page(await (await onAccounts())
+        .input('offset', sql.Int, offset).input('count', sql.Int, count)
+        .input('account', sql.VarChar(32), q.account ?? null).input('email', sql.VarChar(100), q.email ?? null)
+        .output('total', sql.Int)
+        .execute('dbo.usp_AdminAccountPage'), accountRow);
+    },
     async getAccount(account) {
       const result = await (await onAccounts()).input('account', sql.VarChar(32), account).execute('dbo.usp_AdminAccountGet');
       const row = rows(result)[0];
@@ -142,6 +154,11 @@ export function sqlAdminStore(settings: WebConfig['sql'], login: AdminConfig['sq
         .execute('dbo.usp_AdminSetCharacterAuthority');
       return Math.max(0, Number(firstValue(result)));
     },
+    async setOneCharacterAuthority(idPlayer, authority) {
+      return changed(await (await onCharacters())
+        .input('idPlayer', sql.Char(7), idPlayer).input('authority', sql.Char(1), authority)
+        .execute('dbo.usp_AdminCharacterAuthority'));
+    },
     async setBlockTime(account, blockTime) {
       return changed(await (await onAccounts())
         .input('account', sql.VarChar(32), account).input('blockTime', sql.Char(8), blockTime)
@@ -152,6 +169,13 @@ export function sqlAdminStore(settings: WebConfig['sql'], login: AdminConfig['sq
         .input('name', sql.VarChar(32), q.name ?? null).input('account', sql.VarChar(32), q.account ?? null)
         .execute('dbo.usp_AdminCharacterSearch');
       return rows(result).map(characterRow);
+    },
+    async characterPage(q, offset, count) {
+      return page(await (await onCharacters())
+        .input('offset', sql.Int, offset).input('count', sql.Int, count)
+        .input('name', sql.VarChar(32), q.name ?? null).input('account', sql.VarChar(32), q.account ?? null)
+        .output('total', sql.Int)
+        .execute('dbo.usp_AdminCharacterPage'), characterRow);
     },
     async getCharacter(idPlayer) {
       const result = await (await onCharacters()).input('idPlayer', sql.Char(7), idPlayer).execute('dbo.usp_AdminCharacterGet');

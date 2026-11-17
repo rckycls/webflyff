@@ -107,6 +107,30 @@ WHERE (@account IS NULL OR a.account LIKE @pattern)
 ORDER BY a.account
 GO
 
+-- One page of the account list (2026-11-17): every account, or those of a name prefix or an exact email, by name;
+-- @count rows (1 to 50) from row @offset, and @total, how many match in all.
+IF OBJECT_ID(N'dbo.usp_AdminAccountPage', N'P') IS NOT NULL DROP PROCEDURE dbo.usp_AdminAccountPage
+GO
+CREATE PROCEDURE dbo.usp_AdminAccountPage
+	@offset int, @count int, @account varchar(32) = NULL, @email varchar(100) = NULL, @total int OUTPUT
+AS
+SET NOCOUNT ON
+IF @offset IS NULL OR @offset < 0 SET @offset = 0
+IF @count IS NULL OR @count < 1 OR @count > 50 SET @count = 10
+DECLARE @pattern varchar(130)
+SET @pattern = REPLACE(REPLACE(REPLACE(ISNULL(@account, ''), '[', '[[]'), '%', '[%]'), '_', '[_]') + '%'
+SELECT @total = COUNT(*)
+FROM dbo.ACCOUNT_TBL a INNER JOIN dbo.ACCOUNT_TBL_DETAIL d ON d.account = a.account
+WHERE (@account IS NULL OR a.account LIKE @pattern)
+	AND (@email IS NULL OR d.email = @email)
+SELECT a.account, d.email, d.m_chLoginAuthority AS authority, d.BlockTime AS blockTime, d.regdate AS created
+FROM dbo.ACCOUNT_TBL a INNER JOIN dbo.ACCOUNT_TBL_DETAIL d ON d.account = a.account
+WHERE (@account IS NULL OR a.account LIKE @pattern)
+	AND (@email IS NULL OR d.email = @email)
+ORDER BY a.account
+OFFSET @offset ROWS FETCH NEXT @count ROWS ONLY
+GO
+
 IF OBJECT_ID(N'dbo.usp_AdminAccountGet', N'P') IS NOT NULL DROP PROCEDURE dbo.usp_AdminAccountGet
 GO
 CREATE PROCEDURE dbo.usp_AdminAccountGet
@@ -138,14 +162,16 @@ UPDATE dbo.ACCOUNT_TBL_DETAIL SET email = @email WHERE account = @account
 SELECT @@ROWCOUNT AS changed
 GO
 
--- F player, J helper, L/M/N GM 1-3, O operator, P administrator (Source/_Common/authorization.h).
+-- F player, A/B/C/E VIP 1-4 (vip-auth: titles only, the servers take them as F), J helper, L/M/N GM 1-3,
+-- O operator, P administrator (Source/_Common/authorization.h). The letters are compared as written (BINARY), so a
+-- lower-case one is refused.
 IF OBJECT_ID(N'dbo.usp_AdminSetLoginAuthority', N'P') IS NOT NULL DROP PROCEDURE dbo.usp_AdminSetLoginAuthority
 GO
 CREATE PROCEDURE dbo.usp_AdminSetLoginAuthority
 	@account varchar(32), @authority char(1)
 AS
 SET NOCOUNT ON
-IF @authority IS NULL OR @authority NOT IN ('F', 'J', 'L', 'M', 'N', 'O', 'P')
+IF @authority IS NULL OR CAST(@authority AS binary(1)) NOT IN (0x46, 0x41, 0x42, 0x43, 0x45, 0x4A, 0x4C, 0x4D, 0x4E, 0x4F, 0x50)
 BEGIN
 	SELECT -1 AS changed
 	RETURN
@@ -197,6 +223,7 @@ GRANT EXECUTE ON OBJECT::dbo.usp_AdminLogEnd TO [flyffweb_admin]
 GRANT EXECUTE ON OBJECT::dbo.usp_AdminLogRead TO [flyffweb_admin]
 GRANT EXECUTE ON OBJECT::dbo.usp_AdminRecentLogins TO [flyffweb_admin]
 GRANT EXECUTE ON OBJECT::dbo.usp_AdminAccountSearch TO [flyffweb_admin]
+GRANT EXECUTE ON OBJECT::dbo.usp_AdminAccountPage TO [flyffweb_admin]
 GRANT EXECUTE ON OBJECT::dbo.usp_AdminAccountGet TO [flyffweb_admin]
 GRANT EXECUTE ON OBJECT::dbo.usp_AdminSetPassword TO [flyffweb_admin]
 GRANT EXECUTE ON OBJECT::dbo.usp_AdminSetEmail TO [flyffweb_admin]
@@ -216,12 +243,29 @@ CREATE PROCEDURE dbo.usp_AdminSetCharacterAuthority
 	@account varchar(32), @authority char(1)
 AS
 SET NOCOUNT ON
-IF @authority IS NULL OR @authority NOT IN ('F', 'J', 'L', 'M', 'N', 'O', 'P')
+IF @authority IS NULL OR CAST(@authority AS binary(1)) NOT IN (0x46, 0x41, 0x42, 0x43, 0x45, 0x4A, 0x4C, 0x4D, 0x4E, 0x4F, 0x50)
 BEGIN
 	SELECT -1 AS changed
 	RETURN
 END
 UPDATE dbo.CHARACTER_TBL SET m_chAuthority = @authority WHERE account = @account AND serverindex = '01'
+SELECT @@ROWCOUNT AS changed
+GO
+
+-- One character's own letter (2026-11-17), the same letters. The Database server reads it fresh each time the
+-- character enters the game (DbManagerJoin.cpp:237; CMover::Copy copies it even from its memory), so it needs no stop.
+IF OBJECT_ID(N'dbo.usp_AdminCharacterAuthority', N'P') IS NOT NULL DROP PROCEDURE dbo.usp_AdminCharacterAuthority
+GO
+CREATE PROCEDURE dbo.usp_AdminCharacterAuthority
+	@idPlayer char(7), @authority char(1)
+AS
+SET NOCOUNT ON
+IF @authority IS NULL OR CAST(@authority AS binary(1)) NOT IN (0x46, 0x41, 0x42, 0x43, 0x45, 0x4A, 0x4C, 0x4D, 0x4E, 0x4F, 0x50)
+BEGIN
+	SELECT -1 AS changed
+	RETURN
+END
+UPDATE dbo.CHARACTER_TBL SET m_chAuthority = @authority WHERE m_idPlayer = @idPlayer AND serverindex = '01'
 SELECT @@ROWCOUNT AS changed
 GO
 
@@ -235,12 +279,40 @@ DECLARE @pattern varchar(130)
 SET @pattern = REPLACE(REPLACE(REPLACE(ISNULL(@name, ''), '[', '[[]'), '%', '[%]'), '_', '[_]') + '%'
 SELECT TOP 50 m_idPlayer AS idPlayer, m_szName AS name, account, m_nLevel AS level, m_nJob AS job, playerslot AS slot,
 	CAST(CASE WHEN isblock = 'D' THEN 1 ELSE 0 END AS bit) AS deleted,
-	CAST(CASE WHEN MultiServer > 0 THEN 1 ELSE 0 END AS bit) AS online, dwWorldID AS worldId
+	CAST(CASE WHEN MultiServer > 0 THEN 1 ELSE 0 END AS bit) AS online, dwWorldID AS worldId, m_chAuthority AS authority
 FROM dbo.CHARACTER_TBL
 WHERE serverindex = '01'
 	AND (@name IS NULL OR m_szName LIKE @pattern)
 	AND (@account IS NULL OR account = @account)
 ORDER BY m_szName
+GO
+
+-- One page of the character list (2026-11-17): every character (deleted ones too), or those of a name prefix or an exact
+-- account, by name; @count rows (1 to 50) from row @offset, and @total, how many match in all.
+IF OBJECT_ID(N'dbo.usp_AdminCharacterPage', N'P') IS NOT NULL DROP PROCEDURE dbo.usp_AdminCharacterPage
+GO
+CREATE PROCEDURE dbo.usp_AdminCharacterPage
+	@offset int, @count int, @name varchar(32) = NULL, @account varchar(32) = NULL, @total int OUTPUT
+AS
+SET NOCOUNT ON
+IF @offset IS NULL OR @offset < 0 SET @offset = 0
+IF @count IS NULL OR @count < 1 OR @count > 50 SET @count = 10
+DECLARE @pattern varchar(130)
+SET @pattern = REPLACE(REPLACE(REPLACE(ISNULL(@name, ''), '[', '[[]'), '%', '[%]'), '_', '[_]') + '%'
+SELECT @total = COUNT(*)
+FROM dbo.CHARACTER_TBL
+WHERE serverindex = '01'
+	AND (@name IS NULL OR m_szName LIKE @pattern)
+	AND (@account IS NULL OR account = @account)
+SELECT m_idPlayer AS idPlayer, m_szName AS name, account, m_nLevel AS level, m_nJob AS job, playerslot AS slot,
+	CAST(CASE WHEN isblock = 'D' THEN 1 ELSE 0 END AS bit) AS deleted,
+	CAST(CASE WHEN MultiServer > 0 THEN 1 ELSE 0 END AS bit) AS online, dwWorldID AS worldId, m_chAuthority AS authority
+FROM dbo.CHARACTER_TBL
+WHERE serverindex = '01'
+	AND (@name IS NULL OR m_szName LIKE @pattern)
+	AND (@account IS NULL OR account = @account)
+ORDER BY m_szName, m_idPlayer
+OFFSET @offset ROWS FETCH NEXT @count ROWS ONLY
 GO
 
 IF OBJECT_ID(N'dbo.usp_AdminCharacterGet', N'P') IS NOT NULL DROP PROCEDURE dbo.usp_AdminCharacterGet
@@ -251,7 +323,7 @@ AS
 SET NOCOUNT ON
 SELECT c.m_idPlayer AS idPlayer, c.m_szName AS name, c.account, c.m_nLevel AS level, c.m_nJob AS job, c.playerslot AS slot,
 	CAST(CASE WHEN c.isblock = 'D' THEN 1 ELSE 0 END AS bit) AS deleted,
-	CAST(CASE WHEN c.MultiServer > 0 THEN 1 ELSE 0 END AS bit) AS online, c.dwWorldID AS worldId,
+	CAST(CASE WHEN c.MultiServer > 0 THEN 1 ELSE 0 END AS bit) AS online, c.dwWorldID AS worldId, c.m_chAuthority AS authority,
 	c.m_dwGold AS gold, c.m_vPos_x AS x, c.m_vPos_y AS y, c.m_vPos_z AS z, c.CreateTime AS created,
 	c.TotalPlayTime AS playTimeSeconds, CASE WHEN c.isblock = 'D' THEN c.End_Time END AS deletedAt,
 	CAST(CASE WHEN EXISTS (SELECT 1 FROM dbo.GUILD_MEMBER_TBL g WHERE g.m_idPlayer = c.m_idPlayer AND g.serverindex = c.serverindex)
@@ -266,7 +338,8 @@ CREATE PROCEDURE dbo.usp_AdminOnlineList
 AS
 SET NOCOUNT ON
 SELECT m_idPlayer AS idPlayer, m_szName AS name, account, m_nLevel AS level, m_nJob AS job, playerslot AS slot,
-	CAST(CASE WHEN isblock = 'D' THEN 1 ELSE 0 END AS bit) AS deleted, CAST(1 AS bit) AS online, dwWorldID AS worldId
+	CAST(CASE WHEN isblock = 'D' THEN 1 ELSE 0 END AS bit) AS deleted, CAST(1 AS bit) AS online, dwWorldID AS worldId,
+	m_chAuthority AS authority
 FROM dbo.CHARACTER_TBL
 WHERE serverindex = '01' AND MultiServer > 0
 ORDER BY m_szName
@@ -454,7 +527,9 @@ IF NOT EXISTS (SELECT 1 FROM sys.database_principals WHERE name = N'flyffweb_adm
 	CREATE USER [flyffweb_admin] FOR LOGIN [flyffweb_admin]
 GO
 GRANT EXECUTE ON OBJECT::dbo.usp_AdminSetCharacterAuthority TO [flyffweb_admin]
+GRANT EXECUTE ON OBJECT::dbo.usp_AdminCharacterAuthority TO [flyffweb_admin]
 GRANT EXECUTE ON OBJECT::dbo.usp_AdminCharacterSearch TO [flyffweb_admin]
+GRANT EXECUTE ON OBJECT::dbo.usp_AdminCharacterPage TO [flyffweb_admin]
 GRANT EXECUTE ON OBJECT::dbo.usp_AdminCharacterGet TO [flyffweb_admin]
 GRANT EXECUTE ON OBJECT::dbo.usp_AdminOnlineList TO [flyffweb_admin]
 GRANT EXECUTE ON OBJECT::dbo.usp_AdminCharacterRename TO [flyffweb_admin]

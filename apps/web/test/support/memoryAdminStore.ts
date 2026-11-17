@@ -2,11 +2,14 @@
 // case-insensitively (as SQL Server's collation does), and records each call's name in `calls`.
 
 import type {
-  AccountRow, AdminStore, Authority, CharacterDetail, CharacterRow, LogEntry, LogFilter, LogResult, LogRow, PendingSend,
+  AccountRow, AdminStore, Authority, CharacterDetail, CharacterRow, LogEntry, LogFilter, LogResult, LogRow, Page, PendingSend,
 } from '../../src/admin/adminStore';
 
 export interface MemoryAccount extends AccountRow { passwordHash: string }
-export interface MemoryCharacter extends CharacterDetail { authority: string }
+export type MemoryCharacter = CharacterDetail;
+
+/** SQL Server's order for these names (a case-insensitive collation). */
+const byText = (a: string, b: string) => a.toLowerCase().localeCompare(b.toLowerCase());
 export interface MemorySend extends PendingSend { idPlayer: string; billingNo: string | null; delivered: boolean }
 
 export interface MemorySeed { accounts?: MemoryAccount[]; characters?: MemoryCharacter[]; sends?: MemorySend[] }
@@ -67,7 +70,10 @@ export class MemoryAdminStore implements AdminStore {
   }
 
   private static characterRow(c: MemoryCharacter): CharacterRow {
-    return { idPlayer: c.idPlayer, name: c.name, account: c.account, level: c.level, job: c.job, slot: c.slot, deleted: c.deleted, online: c.online, worldId: c.worldId };
+    return {
+      idPlayer: c.idPlayer, name: c.name, account: c.account, level: c.level, job: c.job, slot: c.slot, deleted: c.deleted,
+      online: c.online, worldId: c.worldId, authority: c.authority,
+    };
   }
 
   async logBegin(entry: LogEntry): Promise<number> {
@@ -103,6 +109,13 @@ export class MemoryAdminStore implements AdminStore {
     this.call('searchAccounts');
     return this.accounts.filter((a) => (q.account === undefined || a.account.toLowerCase().startsWith(q.account.toLowerCase()))
       && (q.email === undefined || (a.email !== null && same(a.email, q.email)))).slice(0, 50).map(MemoryAdminStore.row);
+  }
+
+  async accountPage(q: { account?: string; email?: string }, offset: number, count: number): Promise<Page<AccountRow>> {
+    this.call('accountPage');
+    const all = this.accounts.filter((a) => (q.account === undefined || a.account.toLowerCase().startsWith(q.account.toLowerCase()))
+      && (q.email === undefined || (a.email !== null && same(a.email, q.email)))).sort((x, y) => byText(x.account, y.account));
+    return { rows: all.slice(offset, offset + count).map(MemoryAdminStore.row), total: all.length };
   }
 
   async getAccount(account: string): Promise<AccountRow | undefined> {
@@ -146,6 +159,13 @@ export class MemoryAdminStore implements AdminStore {
     return mine.length;
   }
 
+  async setOneCharacterAuthority(idPlayer: string, authority: Authority): Promise<boolean> {
+    this.call('setOneCharacterAuthority');
+    const c = this.character(idPlayer);
+    if (c !== undefined) c.authority = authority;
+    return c !== undefined;
+  }
+
   async setBlockTime(account: string, blockTime: string | null): Promise<boolean> {
     this.call('setBlockTime');
     const a = this.account(account);
@@ -159,12 +179,18 @@ export class MemoryAdminStore implements AdminStore {
       && (q.account === undefined || same(c.account, q.account))).slice(0, 50).map(MemoryAdminStore.characterRow);
   }
 
+  async characterPage(q: { name?: string; account?: string }, offset: number, count: number): Promise<Page<CharacterRow>> {
+    this.call('characterPage');
+    const all = this.characters.filter((c) => (q.name === undefined || c.name.toLowerCase().startsWith(q.name.toLowerCase()))
+      && (q.account === undefined || same(c.account, q.account)))
+      .sort((x, y) => byText(x.name, y.name) || x.idPlayer.localeCompare(y.idPlayer));
+    return { rows: all.slice(offset, offset + count).map(MemoryAdminStore.characterRow), total: all.length };
+  }
+
   async getCharacter(idPlayer: string): Promise<CharacterDetail | undefined> {
     this.call('getCharacter');
     const c = this.character(idPlayer);
-    if (c === undefined) return undefined;
-    const { authority: _, ...detail } = c;
-    return detail;
+    return c === undefined ? undefined : { ...c };
   }
 
   async onlineCharacters(): Promise<CharacterRow[]> {

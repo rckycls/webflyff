@@ -47,9 +47,13 @@ export function table(headers, rows, onRow) {
 let csrf = '';
 /** @type {() => void} */
 let showLogin = () => {};
+/** @type {((stale: any) => void)[]} */
+const staleListeners = [];
 
 export function setSession(token) { csrf = token; }
 export function onSessionLost(fn) { showLogin = fn; }
+/** `fn(stale)` after each write whose answer names list pages it made old (2026-11-17, pages.js). */
+export function onStale(fn) { staleListeners.push(fn); }
 
 export class ApiError extends Error {
   constructor(status, body) {
@@ -71,7 +75,7 @@ export function problemText(status, body) {
   if (error === 'too_many') return 'Too many tries. Wait and try again.';
   if (error === 'session') return 'Your session ended. Log in again.';
   if (error === 'forbidden') return 'The request was refused. Reload the page.';
-  if (error === 'server') return 'The server could not do it. Check the Log tab.';
+  if (error === 'server') return body.message ?? 'The server could not do it. Check the Log tab.';
   if (error === 'unclear') return 'No clear answer from the panel: the change may have been made. Check it (the list here, or the Log tab) before trying again.';
   if (error === 'network') return 'The panel cannot be reached. Check your connection.';
   return `Something went wrong (${status}).`;
@@ -99,6 +103,8 @@ export async function api(name, body = {}, { write = false, background = false }
   // a gateway error from Caddy says nothing about whether the panel did it
   if (write && (res.status === 502 || res.status === 503 || res.status === 504)) throw new ApiError(res.status, { error: 'unclear' });
   const answer = await res.json().catch(() => ({}));
+  // refused or done, the answer says which list pages the try made old
+  if (write && answer && typeof answer.stale === 'object') for (const fn of staleListeners) fn(answer.stale);
   if (res.status === 401) showLogin();
   if (!res.ok) throw new ApiError(res.status, answer);
   return answer;
@@ -159,10 +165,26 @@ export function banText(blockTime) {
   return 'Not banned';
 }
 
-export const AUTHORITY_NAMES = { F: 'Player', J: 'Helper', L: 'GM 1', M: 'GM 2', N: 'GM 3', O: 'Operator', P: 'Admin' };
+/**
+ * The levels the panel gives, in its order: packages/protocol's SETTABLE_AUTHORITIES and AUTHORITY_TITLES (a test
+ * keeps the two the same). VIP 1-4 (A, B, C, E) are titles only: in the game they play exactly as a Player.
+ */
+export const AUTHORITY_NAMES = {
+  F: 'Player', A: 'VIP 1', B: 'VIP 2', C: 'VIP 3', E: 'VIP 4', J: 'Helper', L: 'GM 1', M: 'GM 2', N: 'GM 3', O: 'Operator', P: 'Admin',
+};
 
 export function authorityName(letter) {
   return AUTHORITY_NAMES[letter] ? `${AUTHORITY_NAMES[letter]} (${letter})` : `Other (${letter})`;
+}
+
+/** A Player or VIP letter: an account with one lets each character's own level count. */
+export function isPlayerLevel(letter) {
+  return letter === 'F' || letter === 'A' || letter === 'B' || letter === 'C' || letter === 'E';
+}
+
+/** A select of the levels, `current` picked. */
+export function levelSelect(current) {
+  return el('select', {}, Object.entries(AUTHORITY_NAMES).map(([letter, name]) => el('option', { value: letter, text: `${name} (${letter})`, selected: letter === current })));
 }
 
 /** An ISO time as the browser's local date and time. */
