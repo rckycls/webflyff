@@ -63,6 +63,11 @@ export function tierPrice(tier: VipTier, currency: Currency): { cents: number; c
   return currency === 'PHP' && tier.pricePhpCents !== null ? { cents: tier.pricePhpCents, currency: 'PHP' } : { cents: tier.priceCents, currency: 'USD' };
 }
 
+/** custom (owner 2026-11-17): the answer of /api/autoplay. */
+function readUsage(b: Record<string, unknown>): { usedMin: number; limitMin: number | null; resetsAt: string } {
+  return { usedMin: Number(b.usedMin ?? 0), limitMin: b.limitMin === null || b.limitMin === undefined ? null : Number(b.limitMin), resetsAt: String(b.resetsAt ?? '') };
+}
+
 export class VipApi {
   private csrf = '';
 
@@ -102,6 +107,18 @@ export class VipApi {
     if (!answer.ok) return answer;
     this.csrf = answer.value.csrf;
     return { ok: true, value: answer.value.account };
+  }
+
+  /** custom (owner 2026-11-17): Auto Play's weekly hours of the session's account, or null (no session, off, unreachable). */
+  async autoPlayStatus(): Promise<{ usedMin: number; limitMin: number | null; resetsAt: string } | null> {
+    const answer = await this.call('/api/autoplay', {}, readUsage);
+    return answer.ok ? answer.value : null;
+  }
+
+  /** custom (owner 2026-11-17): one running minute of Auto Play; the new count, or null. */
+  async autoPlayTick(): Promise<{ usedMin: number; limitMin: number | null; resetsAt: string } | null> {
+    const answer = await this.post('/api/autoplay/tick', {}, readUsage);
+    return answer.ok ? answer.value : null;
   }
 
   async logout(): Promise<void> {

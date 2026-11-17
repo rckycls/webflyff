@@ -2,6 +2,7 @@ import { watchTouch } from '@flyffweb/scene';
 import { clientConfig } from './config';
 import { installFloatingKeyboard } from './keyboard/floatingKeyboard';
 import { installLandscape } from './landscape';
+import { autoPlayLimit } from './world/autoplay/usageLimit';
 import { LobbyApp } from './lobby/LobbyApp';
 import { LoginFlow, systemClock } from './lobby/LoginFlow';
 import { openWebSocketChannel } from './net/webSocketChannel';
@@ -63,4 +64,6 @@ const flow = new LoginFlow(openChannel, clientConfig.certifierAddress, (event) =
 // The name just made at /sign-up fills the login form once (website spec §3.3).
 app = new LobbyApp(root, flow, (entry, done, onDrop, reconnected) => {
   WorldScreen.open(root, entry, openChannel, done, audio, onDrop, reconnected);
-}, () => void landscape.requestLock(), audio, systemClock, takeSignUpAccount(pageSessionStorage()));
+}, () => void landscape.requestLock(), audio, systemClock, takeSignUpAccount(pageSessionStorage()),
+  // custom (owner 2026-11-17): Auto Play's weekly hours: the site session with the login the game accepted
+  (account, password) => void autoPlayLimit.signIn(account, password));

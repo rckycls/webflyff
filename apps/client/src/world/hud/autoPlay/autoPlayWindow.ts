@@ -11,6 +11,7 @@ import { radioFrame } from '../radio';
 import { WindowFrame } from '../frame';
 import { TabPages } from '../guildCombat/tabs';
 import { textButton } from '../numpad';
+import { formatDuration } from '../duration';
 import { BELOW, GAUGE_ROWS, MAX_BUFFS, MAX_HEALS, MAX_PARTNER_BUFFS, MAX_READY, RADIUS, STOP_AFTER } from '../../autoplay/settings';
 import type { AutoPlaySettings, GaugeRow } from '../../autoplay/settings';
 
@@ -55,6 +56,8 @@ export interface AutoPlayWindowDeps {
   monsterName?(index: number): string;
   /** 2026-11-17 (owner): the player targeted now (Support mode's partner), or null. */
   targetPlayer?(): { playerId: number; name: string } | null;
+  /** 2026-11-17 (owner): the weekly hours the web service counted, or null while unknown. */
+  usage?(): { usedMin: number; limitMin: number | null; resetsAt: string } | null;
 }
 
 /** What the window edits and shows: Auto Play's settings (kept after each change) and the farm bot. */
@@ -291,7 +294,7 @@ export class AutoPlayWindow {
     const choices = this.pickingSkill !== null && (this.pickingSkill.list === 'heals' || this.pickingSkill.list === 'partnerBuffs')
       ? this.deps.skillChoices() : null;
     const key = JSON.stringify(['support', support, play.farm, play.mode, play.phase, play.lastStop, this.pickingSkill, named, choices,
-      this.partnerNote]);
+      this.partnerNote, this.deps.usage?.() ?? null]);
     if (key === this.shown) return;
     this.shown = key;
     this.tabs.pages[TABS.indexOf('support')]!.replaceChildren(this.supportPage());
@@ -350,7 +353,7 @@ export class AutoPlayWindow {
       this.refresh();
     }, 'support-go');
     go.classList.add('auto-farm-go');
-    go.disabled = !running && support.partnerPlayerId === 0;
+    go.disabled = !running && (support.partnerPlayerId === 0 || this.outOfHours());
     const state = doc.createElement('div');
     state.className = 'auto-farm-state';
     state.textContent = running ? `Running: ${play.phase}` : play.mode === 'support' && play.farm === 'stopped' ? `Stopped: ${play.lastStop ?? ''}` : 'Off';
@@ -366,7 +369,7 @@ export class AutoPlayWindow {
     if (this.pickingSkill !== null && (this.pickingSkill.list === 'heals' || this.pickingSkill.list === 'partnerBuffs')) {
       parts.push(this.skillPickList(this.pickingSkill));
     }
-    page.append(...parts, go, state);
+    page.append(...parts, go, state, ...this.weekLine());
     return page;
   }
 
@@ -375,7 +378,7 @@ export class AutoPlayWindow {
     const lines = play.farm === 'off' ? [] : play.stats.lines(this.deps.now());
     const near = this.choosingKinds ? this.deps.monstersNear?.() ?? [] : [];
     const key = JSON.stringify(['farm', play.settings.farm, play.farm, play.phase, play.lastStop, play.bagIsFull, allowed, lines,
-      this.choosingKinds, near]);
+      this.choosingKinds, near, this.deps.usage?.() ?? null]);
     if (key === this.shown) return;
     this.shown = key;
     this.tabs.pages[TABS.indexOf('farm')]!.replaceChildren(this.farmPage(allowed, lines));
@@ -420,7 +423,7 @@ export class AutoPlayWindow {
       this.refresh();
     }, 'go', 'autoPlay');
     go.classList.add('auto-farm-go');
-    go.disabled = !running && !allowed;
+    go.disabled = !running && (!allowed || this.outOfHours());
 
     const state = doc.createElement('div');
     state.className = 'auto-farm-state';
@@ -451,7 +454,7 @@ export class AutoPlayWindow {
     kinds.append(this.caption('Monsters'), chosen, choose);
     const parts: HTMLElement[] = [radius, loot, giants, kinds];
     if (this.choosingKinds) parts.push(this.kindList());
-    page.append(...parts, after, buttons, state, stats);
+    page.append(...parts, after, buttons, state, stats, ...this.weekLine());
     return page;
   }
 
@@ -480,6 +483,23 @@ export class AutoPlayWindow {
     all.disabled = farm.only.length === 0;
     list.append(all);
     return list;
+  }
+
+  /** 2026-11-17 (owner): "This week: 13h10m left of 14h", or "no limit" (VIP4); nothing while the count is unknown. */
+  private weekLine(): HTMLElement[] {
+    const usage = this.deps.usage?.() ?? null;
+    if (usage === null) return [];
+    const line = this.doc.createElement('div');
+    line.className = 'auto-week';
+    line.textContent = usage.limitMin === null ? 'This week: no limit'
+      : `This week: ${formatDuration(Math.max(0, usage.limitMin - usage.usedMin), 'min')} left of ${formatDuration(usage.limitMin, 'min')}`;
+    return [line];
+  }
+
+  /** The week's hours are used up (a known limit). */
+  private outOfHours(): boolean {
+    const usage = this.deps.usage?.() ?? null;
+    return usage !== null && usage.limitMin !== null && usage.usedMin >= usage.limitMin;
   }
 
   private caption(text: string): HTMLElement {

@@ -87,8 +87,9 @@ export function startVip(config: WebConfig, log: Logger, now: () => number, stor
     loginFailsByAccount: new HourlyLimit(LOGIN_FAILS_PER_HOUR, now),
     loginsByAccount: new HourlyLimit(LOGINS_PER_HOUR, now),
     requestsByAccount: new HourlyLimit(REQUESTS_PER_HOUR, now),
-    // custom (owner 2026-11-17): Auto Play's weekly hours, beside the VIP uploads (C:\flyff-web\autoplay-usage.json)
-    autoPlay: new AutoPlayUsage(path.join(path.dirname(vip.uploadsDir), 'autoplay-usage.json'), now),
+    // custom (owner 2026-11-17): Auto Play's weekly hours, in the VIP uploads folder the service already writes to
+    // (C:\flyff-web\vip-uploads\autoplay-usage.json on the VPS)
+    autoPlay: new AutoPlayUsage(path.join(vip.uploadsDir, 'autoplay-usage.json'), now),
   });
   log.info(`vip: on, pictures in ${vip.uploadsDir}${admin === undefined ? ' (no admin section: nobody can approve)' : ''}`);
   const timers: NodeJS.Timeout[] = [];

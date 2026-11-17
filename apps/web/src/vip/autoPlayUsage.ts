@@ -3,7 +3,7 @@
 // bot or Support mode runs (`POST /api/autoplay/tick`, siteVip.ts); each tick adds the time since the account's last tick,
 // at most 70 s (two tabs ticking in turn count the time once), and a first tick a minute. The week starts on Monday 00:00
 // of the server's own clock. The hours by VIP level: normal 14, VIP1 24, VIP2 36, VIP3 48, VIP4 no limit (owner).
-// Kept in one small JSON file beside the VIP uploads (`C:\flyff-web\autoplay-usage.json` on the VPS), rewritten whole on
+// Kept in one small JSON file in the VIP uploads folder (`C:\flyff-web\vip-uploads\autoplay-usage.json` on the VPS), rewritten whole on
 // each tick (a temporary file, then a rename). Nobody's password, only account names and milliseconds.
 
 import { readFileSync, renameSync, writeFileSync } from 'node:fs';
