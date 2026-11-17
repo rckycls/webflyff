@@ -223,6 +223,9 @@ describe('FloatingKeyboard', () => {
     window.dispatchEvent(new MouseEvent('pointerup', { bubbles: true }));
   };
   const type = (text: string) => { for (const c of text) tapKey(c === ' ' ? 'space' : c); };
+  /** A finger on an element of the page: its press, then what the press gives (the focus of a box). */
+  const press = (element: Element) => element.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }));
+  const tapBox = (box: HTMLElement) => { press(box); box.focus(); };
 
   it('comes up for a focused box on a touch screen, with "none" in its inputmode, and types in it', () => {
     const kb = setup('<input aria-label="Chat message" maxlength="8">');
@@ -231,7 +234,7 @@ describe('FloatingKeyboard', () => {
     expect(box.getAttribute('inputmode')).toBe('none');
     const typed: string[] = [];
     box.addEventListener('input', () => typed.push(box.value));
-    box.focus();
+    tapBox(box);
     expect(kb.shown).toBe(true);
     expect(kb.target).toBe(box);
     expect(kb.element.querySelector('.floating-keyboard-title')!.textContent).toBe('Chat message');
@@ -259,7 +262,7 @@ describe('FloatingKeyboard', () => {
   it('Shift and Caps write the keys big', () => {
     const kb = setup('<input>');
     const box = document.querySelector('input')!;
-    box.focus();
+    tapBox(box);
     tapKey('shift');
     expect(key('shift')!.getAttribute('aria-pressed')).toBe('true');
     expect(key('a')!.textContent).toBe('A');
@@ -278,7 +281,7 @@ describe('FloatingKeyboard', () => {
   it('a password box shows dots on the keyboard\'s line, its text in the box', () => {
     const kb = setup('<input type="password" aria-label="Password">');
     const box = document.querySelector('input')!;
-    box.focus();
+    tapBox(box);
     type('abc');
     expect(box.value).toBe('abc');
     expect(kb.element.querySelector('.floating-keyboard-text')!.textContent).toBe('•••');
@@ -289,7 +292,7 @@ describe('FloatingKeyboard', () => {
     try {
       setup('<input value="abcdefgh">');
       const box = document.querySelector('input')!;
-      box.focus();
+      tapBox(box);
       box.setSelectionRange(8, 8);
       key('back')!.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }));
       expect(box.value).toBe('abcdefg');
@@ -310,7 +313,7 @@ describe('FloatingKeyboard', () => {
     box.addEventListener('keydown', (event) => {
       if (event.key === 'Enter') { event.preventDefault(); sent.push(box.value); box.value = ''; }
     });
-    box.focus();
+    tapBox(box);
     type('hello');
     expect(key('enter')!.textContent).toBe('Enter');
     tapKey('enter');
@@ -327,7 +330,7 @@ describe('FloatingKeyboard', () => {
       event.preventDefault();
       submitted.push(`${account!.value}/${password!.value}`);
     });
-    account!.focus();
+    tapBox(account!);
     type('rocky');
     expect(key('enter')!.textContent).toBe('Next');
     tapKey('enter');
@@ -342,7 +345,7 @@ describe('FloatingKeyboard', () => {
   it('Enter writes a new line in a textarea that does nothing with it', () => {
     setup('<textarea></textarea>');
     const box = document.querySelector('textarea')!;
-    box.focus();
+    tapBox(box);
     type('a');
     tapKey('enter');
     type('b');
@@ -352,7 +355,7 @@ describe('FloatingKeyboard', () => {
   it('a number box gets the number pad: digits, Max, C', () => {
     const kb = setup('<input type="number" min="1" max="250" value="1">');
     const box = document.querySelector('input')!;
-    box.focus();
+    tapBox(box);
     expect(kb.page).toBe('digits');
     expect(key('q')).toBeNull();
     tapKey('clear');
@@ -371,7 +374,7 @@ describe('FloatingKeyboard', () => {
   it('a PIN box gets the number pad without Max, four digits at most', () => {
     const kb = setup('<input type="password" inputmode="numeric" maxlength="4">');
     const box = document.querySelector('input')!;
-    box.focus();
+    tapBox(box);
     expect(kb.page).toBe('digits');
     expect(key('max')).toBeNull();
     type('12345');
@@ -383,18 +386,18 @@ describe('FloatingKeyboard', () => {
     const box = document.querySelector('input')!;
     let changes = 0;
     box.addEventListener('change', () => { changes += 1; });
-    box.focus();
+    tapBox(box);
     type('a');
     (document.querySelector('button') as HTMLButtonElement).focus();
     expect(kb.shown).toBe(false);
     expect(changes).toBe(1);
-    box.focus();
+    tapBox(box);
     expect(kb.shown).toBe(true);
     kb.element.querySelector('.floating-keyboard-close')!.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }));
     expect(kb.shown).toBe(false);
     expect(document.activeElement).not.toBe(box);
     // a blur to nothing closes it too (after the focus has had its chance to go to another box)
-    box.focus();
+    tapBox(box);
     box.blur();
     await new Promise((resolve) => setTimeout(resolve, 5));
     expect(kb.shown).toBe(false);
@@ -406,7 +409,7 @@ describe('FloatingKeyboard', () => {
     document.getElementById('window')!.append(box);
     await Promise.resolve();
     expect(box.getAttribute('inputmode')).toBe('none');
-    box.focus();
+    tapBox(box);
     expect(kb.shown).toBe(true);
     document.getElementById('world')!.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }));
     expect(document.activeElement).not.toBe(box);
@@ -438,7 +441,7 @@ describe('FloatingKeyboard', () => {
   it('2026-11-14 (owner): a key tap keeps the chat\'s line, whose outside press would leave it', async () => {
     const { kb, line, sent, dispose } = chatLine();
     try {
-      line.focus();
+      tapBox(line);
       type('hi');
       expect(document.activeElement).toBe(line);
       await new Promise((resolve) => setTimeout(resolve, 5));
@@ -449,7 +452,7 @@ describe('FloatingKeyboard', () => {
       expect(sent).toEqual(['hi']);
       await new Promise((resolve) => setTimeout(resolve, 5));
       expect(kb.shown).toBe(false);
-      line.focus();
+      tapBox(line);
       type('yo');
       tapKey('enter');
       expect(sent).toEqual(['hi', 'yo']);
@@ -461,7 +464,7 @@ describe('FloatingKeyboard', () => {
   it('with the chat\'s Lock the line keeps the focus after Enter, and the keyboard stays for the next line', async () => {
     const { kb, line, sent, dispose } = chatLine(true);
     try {
-      line.focus();
+      tapBox(line);
       type('a');
       tapKey('enter');
       type('b');
@@ -480,7 +483,7 @@ describe('FloatingKeyboard', () => {
     const name = document.querySelector('input')!;
     const opened: string[] = [];
     name.addEventListener('keydown', (event) => { event.stopPropagation(); if (event.key === 'Enter') opened.push(name.value); });
-    name.focus();
+    tapBox(name);
     type('shop');
     expect(key('enter')!.textContent).toBe('Done');
     tapKey('enter');
@@ -494,7 +497,7 @@ describe('FloatingKeyboard', () => {
     const box = document.querySelector('input')!;
     const sent: string[] = [];
     box.addEventListener('keydown', (event) => { if (event.key === 'Enter') { sent.push(box.value); box.value = ''; } });
-    box.focus();
+    tapBox(box);
     type('hi');
     expect(key('enter')!.textContent).toBe('Send');
     tapKey('enter');
@@ -516,7 +519,7 @@ describe('FloatingKeyboard', () => {
         else if (what === 'disabled') box.disabled = true;
         else window.remove();
       });
-      box.focus();
+      tapBox(box);
       type('x');
       tapKey('enter');
       expect(kb.shown, what).toBe(false);
@@ -531,7 +534,7 @@ describe('FloatingKeyboard', () => {
     try {
       const kb = setup('<div class="window"><input></div>');
       const box = document.querySelector('input')!;
-      box.focus();
+      tapBox(box);
       expect(kb.shown).toBe(true);
       document.querySelector<HTMLElement>('.window')!.hidden = true;
       vi.advanceTimersByTime(250);
@@ -546,9 +549,69 @@ describe('FloatingKeyboard', () => {
     const box = document.querySelector('input')!;
     const row = document.getElementById('suggestion')!;
     row.addEventListener('pointerdown', (event) => event.preventDefault());
-    box.focus();
+    tapBox(box);
     row.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true }));
     expect(document.activeElement).toBe(box);
+    expect(kb.shown).toBe(true);
+  });
+
+  it('2026-11-17: a box the page focuses by itself (a window a server packet opened) keeps the focus; the keyboard waits for a tap on it', () => {
+    const kb = setup('<div class="hud-window"><input aria-label="Message to Lead"><button class="hud-window-close"></button></div>');
+    const box = document.querySelector('input')!;
+    // V15's SetFocus on the window's edit (friendHud.ts openMessage): its X, OK and Cancel stay uncovered
+    box.focus();
+    expect(document.activeElement).toBe(box);
+    expect(box.getAttribute('inputmode')).toBe('none');
+    expect(kb.target).toBe(box);
+    expect(kb.shown).toBe(false);
+    // a tap on the box brings it up
+    tapBox(box);
+    expect(kb.shown).toBe(true);
+    type('hi');
+    expect(box.value).toBe('hi');
+    // so does a tap on a box's label
+    box.blur();
+    document.body.insertAdjacentHTML('beforeend', '<label>Name : <input id="name"></label>');
+    const name = document.getElementById('name') as HTMLInputElement;
+    press(document.querySelector('label')!);
+    name.focus();
+    expect(kb.target).toBe(name);
+    expect(kb.shown).toBe(true);
+  });
+
+  it('2026-11-17: a press in the box\'s own window that focuses it brings it up (a chat tab); one in another window does not (the Messenger\'s row)', () => {
+    const kb = setup('<div class="hud-window"><button id="tab">Party</button><input aria-label="Chat message"></div>' +
+      '<div class="hud-window"><div id="row">Lead</div></div><div class="hud-window" id="message" hidden><input aria-label="Message to Lead"></div>');
+    const [line, edit] = [...document.querySelectorAll('input')] as [HTMLInputElement, HTMLInputElement];
+    const tab = document.getElementById('tab')!, row = document.getElementById('row')!;
+    tab.addEventListener('click', () => line.focus());
+    press(tab);
+    tab.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    expect(document.activeElement).toBe(line);
+    expect(kb.shown).toBe(true);
+    // the row's double press opens the Message window with its edit focused: the keyboard waits for a tap on it
+    row.addEventListener('dblclick', () => { document.getElementById('message')!.hidden = false; edit.focus(); });
+    press(row);
+    row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    expect(document.activeElement).toBe(edit);
+    expect(kb.target).toBe(edit);
+    expect(kb.shown).toBe(false);
+    // a focus the page gives once the press is over is its own too, even for the line the player let go
+    line.focus();
+    expect(kb.target).toBe(line);
+    expect(kb.shown).toBe(false);
+  });
+
+  it('2026-11-17: the box it was up for, given the focus back by the page, keeps it (the chat with Lock after its /say)', () => {
+    const kb = setup('<div class="hud-window"><input aria-label="Chat message"></div><div class="hud-window"><input aria-label="Message to Lead"></div>');
+    const [line, edit] = [...document.querySelectorAll('input')] as [HTMLInputElement, HTMLInputElement];
+    tapBox(line);
+    expect(kb.shown).toBe(true);
+    // the own line's Message window, opened quietly (friendHud.ts openMessageQuiet): its edit focused, the focus given back
+    edit.focus();
+    expect(kb.shown).toBe(false);
+    line.focus();
+    expect(kb.target).toBe(line);
     expect(kb.shown).toBe(true);
   });
 });
