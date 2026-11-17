@@ -60,16 +60,15 @@ export function badgePlace(wide: number, hasLogo: boolean, hasTrophy: boolean): 
 }
 
 /**
- * 2026-11-17 (owner, "like the mvp medal but smaller ... on the side of the character", "make it a star"): the VIP star,
- * 18 x 18, in the next slot of the trophy's row (the trophy's own place without a trophy or badge, else one slot left of the
- * last of them), at that slot's right and its middle: nearest the name, never over the other marks.
+ * 2026-11-17 (owner, "like the mvp medal but smaller ... on the side of the character", "make it a star", "center it to
+ * name"): the VIP star, 18 x 18, just left of the name's outline and centred on its line (the star's middle on the capitals'
+ * middle). The guild logo, the trophy and the badge, left of the lines, then move one star (`VIP_SHIFT_PX`) further left.
  */
 export const VIP_PX = 18;
-export function vipPlace(wide: number, hasLogo: boolean, hasTrophy: boolean, hasBadge: boolean): { left: number; top: number; size: number } {
-  const at = trophyPlace(wide, hasLogo);
-  const slots = (hasTrophy ? 1 : 0) + (hasBadge ? 1 : 0);
-  const left = at.left - slots * (TROPHY_PX + LOGO_GAP_PX) + (TROPHY_PX - VIP_PX);
-  return { left, top: at.top + Math.floor((TROPHY_PX - VIP_PX) / 2), size: VIP_PX };
+export const VIP_SHIFT_PX = VIP_PX + LOGO_GAP_PX;
+export function vipPlace(textWidth: number): { left: number; top: number; size: number } {
+  const textLeft = -Math.floor(textWidth / 2) - LEFT_PX;
+  return { left: textLeft - OUTLINE_PX - VIP_PX, top: -ABOVE_PX - 1, size: VIP_PX };
 }
 
 /** The canvas is drawn at the screen's pixel ratio, as the renderer is (at most 2: `createRenderer`). */
@@ -204,13 +203,17 @@ export class NameTagLayer {
     const textLeft = -Math.floor(textWidth / 2) - LEFT_PX, textTop = -ABOVE_PX;
     const guildLeft = -Math.floor(guildWidth / 2) - LEFT_PX, guildTop = -GUILD_ABOVE_PX;
     const logo = guild?.logo ?? null;
-    const logoLeft = -Math.floor(wide / 2) - (LOGO_PX + LOGO_GAP_PX), logoTop = -(LOGO_PX + LOGO_BOTTOM_PX);
-    const trophy = tag.trophy ?? null;
-    const trophyAt = trophyPlace(wide, logo !== null);
-    const badge = tag.badge ?? null;
-    const badgeAt = badgePlace(wide, logo !== null, trophy !== null);
+    // 2026-11-17: a VIP star beside the name moves the marks left of the lines one star further left
     const vip = tag.vip ?? null;
-    const vipAt = vipPlace(wide, logo !== null, trophy !== null, badge !== null);
+    const vipAt = vipPlace(textWidth);
+    const shift = vip === null ? 0 : VIP_SHIFT_PX;
+    const logoLeft = -Math.floor(wide / 2) - (LOGO_PX + LOGO_GAP_PX) - shift, logoTop = -(LOGO_PX + LOGO_BOTTOM_PX);
+    const trophy = tag.trophy ?? null;
+    const trophyPlaced = trophyPlace(wide, logo !== null);
+    const trophyAt = { ...trophyPlaced, left: trophyPlaced.left - shift };
+    const badge = tag.badge ?? null;
+    const badgePlaced = badgePlace(wide, logo !== null, trophy !== null);
+    const badgeAt = { ...badgePlaced, left: badgePlaced.left - shift };
     const markLeft = Math.ceil(wide / 2), markTop = -(MARK_PX + MARK_BOTTOM_PX);
     const left = Math.min(textLeft - OUTLINE_PX, guild === undefined ? Infinity : guildLeft - OUTLINE_PX, logo === null ? Infinity : logoLeft, trophy === null ? Infinity : trophyAt.left, badge === null ? Infinity : badgeAt.left, vip === null ? Infinity : vipAt.left);
     const top = Math.min(textTop - OUTLINE_PX, mark === null ? Infinity : markTop, guild === undefined ? Infinity : guildTop - OUTLINE_PX,

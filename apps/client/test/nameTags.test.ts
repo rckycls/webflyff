@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { WebMover } from '@flyffweb/formats';
 import { Scene } from 'three';
 import type { SpriteMaterial } from 'three';
-import { NameTagLayer, badgePlace, trophyPlace, vipPlace } from '../src/world/render/NameTagLayer';
+import { NameTagLayer, VIP_SHIFT_PX, badgePlace, trophyPlace, vipPlace } from '../src/world/render/NameTagLayer';
 import { badgeKey, legendMark, nameTagOf, tagOpacity, vipKey, vipTier } from '../src/world/render/nameTags';
 import { addedNpc, addedPlayer, gameDataOf, moverFrom, webMoverOf } from './helpers/movers';
 
@@ -296,12 +296,12 @@ describe('the VIP star (2026-11-17, owner: "like the mvp medal but smaller", "ma
     expect([1, 2, 3, 4].map((tier) => vipKey(tier as 1 | 2 | 3 | 4))).toEqual(['ui/vipstar1.png', 'ui/vipstar2.png', 'ui/vipstar3.png', 'ui/vipstar4.png']);
   });
 
-  it("is 18 x 18 in the trophy row's next slot, at its right and middle", () => {
-    // alone: in the trophy's own place (no logo: 30 px left of the line's left half, 30 px above), 7 px in, 3 px down
-    expect(vipPlace(80, false, false, false)).toEqual({ left: -40 - 30 + 7, top: -30 + 3, size: 18 });
-    // with a logo, a trophy and a badge: two slots (25 + 2) further left
-    expect(vipPlace(80, true, true, true)).toEqual({ left: trophyPlace(80, true).left - 54 + 7, top: -29 + 3, size: 18 });
-    expect(vipPlace(80, false, true, false).left).toBe(-40 - 30 - 27 + 7);
+  it('is 18 x 18 just left of the name, centred on its line (owner: "center it to name")', () => {
+    // the name is written from 3 px left of centred and 20 px above the head point, outlined 2 px
+    expect(vipPlace(80)).toEqual({ left: -40 - 3 - 2 - 18, top: -21, size: 18 });
+    expect(vipPlace(81).left).toBe(-40 - 3 - 2 - 18);
+    // the logo, the trophy and the badge make room: one star and 2 px further left
+    expect(VIP_SHIFT_PX).toBe(20);
   });
 
   it('the layer requests the star of the tier and draws the tag again when the tier changes', () => {
