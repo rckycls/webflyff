@@ -15,6 +15,12 @@
 // form's submit (the login). The box losing the focus, or the keyboard's X, closes it. A real keyboard typing in the box
 // (an iPad's, or a test's) puts it away until the box is tapped again.
 //
+// 2026-11-17: it comes up for the player's own touch only, as the lobby's rule (`focusEdit`): a tap on the box (or its label),
+// a press in the box's own window that gives it the focus (a chat tab, the keyboard's Next), or the box it was up for given
+// the focus back. A focus the page gives by itself (a window that opens with its edit focused, as V15's do: the Message
+// window a /say opens, the bank's PIN windows a server packet opens, a window opened from another window) stays in the box,
+// and the keyboard waits put away for a tap on it: it no longer opens over the new window's X, OK and Cancel.
+//
 // `?keyboard=readonly` on the page's address makes the boxes read-only as well (for a browser that would still bring its
 // own keyboard or bar up for `inputmode="none"`: then the box draws no caret, the keyboard's line does); `?keyboard=off`
 // leaves the phone's keyboard as it was.
@@ -130,6 +136,12 @@ const MARGIN = 4;
 const WATCH_MS = 200;
 /** The other events of a press on the keyboard that the page never hears (touchstart is taken apart: not passive). */
 const KEPT = ['mousedown', 'click', 'dblclick', 'contextmenu'] as const;
+/** The events of a finger's or a mouse's press: a box focused while one of them is handled may be the player's asking. */
+const PRESSES = ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'click', 'dblclick', 'contextmenu'] as const;
+/** What a box's own window is (focusNext's scope too): a press in it that focuses the box asks for the keyboard. */
+const WINDOWS = '.hud-window, .screen, [role="dialog"]';
+/** `Event.NONE`: the phase of an event no longer being handled. */
+const HANDLED = 0;
 
 export interface FloatingKeyboardOptions {
   /** Whether the player is on a touch screen now (`watchTouch`). */
@@ -158,8 +170,17 @@ export class FloatingKeyboard {
   private drawn = '';
   /** The keyboard has typed in the box since it took the focus: a `change` goes to it as it leaves. */
   private changed = false;
-  /** Put away by a real keyboard typing in the box: until the box is tapped again or another box is focused. */
+  /**
+   * Put away: by a real keyboard typing in the box, or for a focus the page gave by itself (`asked`); until the box is
+   * tapped again or another box is focused.
+   */
   private away = false;
+  /** The box the keyboard was last up for (not put away by a real keyboard): given the focus back, it comes up again. */
+  private upFor: TextBox | null = null;
+  /** The box (or the box of the label) the last press of the page was on: the focus that follows it is the player's. */
+  private pressed: TextBox | null = null;
+  /** The last press and the window it was in (the keyboard's own: its box's), to tell a focus given while it is handled. */
+  private pressing: { event: Event; scope: ParentNode } | null = null;
   /** Where the player dragged the keyboard to (layer px), kept while it stays open. */
   private dragged: { left: number; top: number } | null = null;
   private drag: { pointerId: number; dx: number; dy: number } | null = null;
@@ -211,7 +232,9 @@ export class FloatingKeyboard {
 
     // a press on the keyboard never takes the focus from the box (nor selects, zooms or scrolls), and is not the game's. It is
     // taken on the window, first (capture): the page's "press outside" listeners sit on the document in its capture, and
-    // one of them, the phone chat's (neuzChat.ts `onOutsidePress`), left the chat's line at each key tap (2026-11-14, owner)
+    // one of them, the phone chat's (neuzChat.ts `onOutsidePress`), left the chat's line at each key tap (2026-11-14, owner).
+    // Every press is noted before that (the keyboard's own presses stop there): what a focus comes with (`asked`).
+    for (const type of PRESSES) this.view.addEventListener(type, this.onAnyPress, { capture: true, passive: true });
     this.view.addEventListener('pointerdown', this.onPressFirst, true);
     this.view.addEventListener('touchstart', this.onKeepFirst, { capture: true, passive: false });
     for (const type of KEPT) this.view.addEventListener(type, this.onKeepFirst, true);
@@ -270,6 +293,7 @@ export class FloatingKeyboard {
   dispose(): void {
     this.close();
     this.observer?.disconnect();
+    for (const type of PRESSES) this.view.removeEventListener(type, this.onAnyPress, true);
     this.view.removeEventListener('pointerdown', this.onPressFirst, true);
     this.view.removeEventListener('touchstart', this.onKeepFirst, true);
     for (const type of KEPT) this.view.removeEventListener(type, this.onKeepFirst, true);
@@ -343,6 +367,8 @@ export class FloatingKeyboard {
       return;
     }
     if (event.defaultPrevented || isTypedBox(target)) return;
+    // let go by the player: not brought back by a focus the page gives it later
+    this.upFor = null;
     box.blur();
   };
 
@@ -359,8 +385,41 @@ export class FloatingKeyboard {
     }
     keepAway(target, this.how);
     this.watchBoxes();
-    this.open(target);
+    this.open(target, this.asked(target));
   };
+
+  /** A press on the page or the keyboard, before anything else hears it: noted for `asked`. */
+  private readonly onAnyPress = (event: Event): void => {
+    const onKeys = this.onKeyboard(event.target);
+    this.pressing = { event, scope: onKeys && this.box !== null ? this.scopeOf(this.box) : this.scopeOf(event.target) };
+    if (event.type !== 'pointerdown' || onKeys) return;
+    const target = event.target as Element | null;
+    const control = target !== null && typeof target.closest === 'function' ? target.closest('label')?.control ?? null : null;
+    this.pressed = isTypedBox(target) ? target : isTypedBox(control) ? control : null;
+  };
+
+  /** The window `target` is in (WINDOWS), else the page. */
+  private scopeOf(target: EventTarget | null): ParentNode {
+    const element = target !== null && typeof (target as Element).closest === 'function' ? target as Element : null;
+    return element?.closest(WINDOWS) ?? this.doc;
+  }
+
+  /**
+   * Whether the player asked for the keyboard in `box`, now that it has the focus: they tapped it (or its label: the focus
+   * follows the press), a press in its own window is being handled (a chat tab, the keyboard's Enter going to the next
+   * box), or the keyboard was up for it (the page gave the focus back, as the Message window opened quietly does). Else the
+   * page gave the focus by itself: a window that opened with its edit focused (V15's `SetFocus`), by a server packet or
+   * from another window.
+   */
+  private asked(box: TextBox): boolean {
+    if (this.pressed === box) {
+      this.pressed = null;
+      return true;
+    }
+    if (box === this.upFor) return true;
+    const pressing = this.pressing;
+    return pressing !== null && pressing.event.eventPhase !== HANDLED && pressing.scope === this.scopeOf(box);
+  }
 
   private readonly onFocusOut = (event: FocusEvent): void => {
     if (event.target !== this.box) return;
@@ -409,8 +468,11 @@ export class FloatingKeyboard {
     if (this.box !== null && this.shown) this.place();
   };
 
-  /** The keyboard for `box`: its page, its title and Enter's face, placed clear of it. */
-  private open(box: TextBox): void {
+  /**
+   * The keyboard for `box`: its page, its title and Enter's face, placed clear of it; put away until the box is tapped when
+   * the player did not ask for it (`asked`).
+   */
+  private open(box: TextBox, asked: boolean): void {
     if (this.box !== box) {
       this.leave();
       this.box = box;
@@ -419,13 +481,19 @@ export class FloatingKeyboard {
       this.changed = false;
       this.drawn = '';
     }
-    this.away = false;
-    this.show();
+    if (asked) {
+      this.away = false;
+      this.show();
+    } else {
+      this.hide();
+      if (this.watchId === null) this.watch();
+    }
   }
 
   private show(): void {
     const box = this.box;
     if (box === null) return;
+    this.upFor = box;
     this.title.textContent = labelOf(box) || 'Keyboard';
     this.element.hidden = false;
     this.draw();
@@ -433,16 +501,24 @@ export class FloatingKeyboard {
     if (this.watchId === null) this.watch();
   }
 
-  private putAway(): void {
+  /** Hidden until the box is tapped (the box it was up for is still that). */
+  private hide(): void {
     this.away = true;
     this.element.hidden = true;
     this.repeat.stop();
+  }
+
+  /** Put away by a real keyboard: it is not wanted back for that box until a tap. */
+  private putAway(): void {
+    this.upFor = null;
+    this.hide();
   }
 
   /** Closed: the box typed in forgotten (it hears its `change`). */
   close(): void {
     this.leave();
     this.box = null;
+    this.upFor = null;
     this.away = false;
     this.dragged = null;
     this.drag = null;
