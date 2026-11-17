@@ -9,7 +9,7 @@ import {
 import type { ScriptMessage } from '@flyffweb/testkit';
 import {
   ArReader, ArWriter, MAX_VIS, MessageType, NULL_ID, PacketType, WORLD_READERS, decodeWorldPacket, encodeClearPetName,
-  encodeFeedPocketInactive, encodeMakePetFeed, encodePetLootFilter, encodePetRelease, encodePetTamerMiracle, encodePetTamerMistake, encodeRemoveVis,
+  encodeFeedPocketInactive, encodeMakePetFeed, encodePetFilter, encodePetRelease, encodePetTamerMiracle, encodePetTamerMistake, encodeRemoveVis,
   encodeSwapVis, encodeUsePetFeed, encodePickupPetAwakeningCancel, encodeQuePetResurrection, encodeTransformItem,
   readBundle,
 } from '../src';
@@ -273,13 +273,15 @@ describe("the Pet Tamer's rare packets (DPClient.cpp:17416-17421, :17996-18009; 
     expect(decodeWorldPacket(encodePickupPetAwakeningCancel(6))).toEqual({ type: 'pickupPetAwakeningCancel', itemObjectId: 6 });
   });
 
-  it('PET_LOOT_FILTER 0x8fff0100 (custom, owner 2026-11-16): one DWORD mask; out of 0..255 is refused', () => {
-    const r = body(encodePetLootFilter(0xef), 0x8fff0100);
-    expect(r.u32()).toBe(0xef);
+  it('PET_FILTER 0x8fff0101 (custom, owner 2026-11-16): one DWORD mask of the 19 checks; anything else is refused', () => {
+    const r = body(encodePetFilter(0x200 | 0x8000), 0x8fff0101);
+    expect(r.u32()).toBe(0x8200);
     r.expectEnd();
-    expect(decodeWorldPacket(encodePetLootFilter(0))).toEqual({ type: 'petLootFilter', mask: 0 });
-    expect(() => encodePetLootFilter(256)).toThrow(RangeError);
-    expect(() => encodePetLootFilter(-1)).toThrow(RangeError);
+    expect(decodeWorldPacket(encodePetFilter(0))).toEqual({ type: 'petFilter', mask: 0 });
+    expect(decodeWorldPacket(encodePetFilter(0x7ffff))).toEqual({ type: 'petFilter', mask: 0x7ffff });
+    expect(() => encodePetFilter(0x80000)).toThrow(RangeError);
+    expect(() => encodePetFilter(-1)).toThrow(RangeError);
+    expect(() => encodePetFilter(1.5)).toThrow(RangeError);
   });
 
   it('TRANSFORM_ITEM 0x8fff000d: CTransformStuff::Serialize, each part 8 bytes (int nItem, short nNum, 2 bytes of padding)', () => {

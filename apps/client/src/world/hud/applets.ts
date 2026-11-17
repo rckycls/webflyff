@@ -89,6 +89,10 @@ export const APPLETS: ReadonlyMap<number, Applet> = new Map([
   [597, applet('APP_BUFF_STATUS', null, 'TID_TIP_DIALOG')],
   [813, applet('APP_COUPLE_MAIN', 'Icon_Couple.dds', 'TID_GAME_COUPLE', 'F')],
   [875, applet('APP_2ND_PASSWORD_NUMBERPAD', 'Icon_Applet.dds', 'TID_2ND_PASSWORD_WINDOW_OPEN')],
+  // custom (owner 2026-11-16): the Pet Filter, as RaGEZONE's Wakazaki pet filter registers it (`AddAppletFunc(
+  // AppMain_WndPetfilter, APP_PETFILTER, ..., "Icon_Applet.dds", "PetFilter", 'U' )`); U is free since the Teleporter went.
+  // The post's id, 2022, is APP_MAP_EX in this ResData.h, so it takes the client's own 9003 (after Auto Play's 9002).
+  [9003, applet('APP_PETFILTER', 'Icon_Applet.dds', 'Pet Filter', 'U')],
 ]);
 
 /** The text `text` names: the catalog's for a TID (`texts`, '' for one it lacks), the C++'s own otherwise. */

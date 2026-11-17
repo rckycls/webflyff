@@ -222,8 +222,9 @@ test.describe('landscape (spec §3.10)', () => {
   // each line its whole row; every line of the Windows client kept (the owner's choice, 2026-11-03). Fourteen lines since
   // 2026-11-10 (Private Shop, Chatting, Messenger, Guild ...): in one column a line would be 16 px above 750 x 342's bar,
   // so a touch screen that short stands them in two columns of seven (2026-11-12), each line at least 22 px again
-  // 2026-11-14: fifteen with Motion (WndTaskBar.cpp:2622); 2026-11-15: eighteen with Housing (:2603-2605), Couple and Siege Ranking, in columns of 9 and 9; nineteen with Auto Play (custom, owner 2026-11-15), 10 and 9; 2026-11-17: twenty with Backpack (:2599-2602), 10 and 10
-  test('on a touch phone all twenty Start menu entries fit, in two columns, with contiguous touch targets', async ({ page }) => {
+  // 2026-11-14: fifteen with Motion (WndTaskBar.cpp:2622); 2026-11-15: eighteen with Housing (:2603-2605), Couple and Siege Ranking, in columns of 9 and 9; nineteen with Auto Play (custom, owner 2026-11-15), 10 and 9; 2026-11-17: twenty with Backpack (:2599-2602), 10 and 10;
+  // twenty-one with the Pet Filter (custom, owner 2026-11-16), 11 and 10
+  test('on a touch phone all twenty-one Start menu entries fit, in two columns, with contiguous touch targets', async ({ page }) => {
     test.skip(!isTouch(), 'a mouse gets the menu at its size');
     await playGateway(page);
     await enterFlaris(page);
@@ -237,14 +238,14 @@ test.describe('landscape (spec §3.10)', () => {
         const box = item.getBoundingClientRect();
         return { left: box.left, top: box.top, bottom: box.bottom, height: box.height };
       }));
-      expect(lines).toHaveLength(20); // 2026-11-15: Housing, Couple, Siege Ranking and Auto Play (custom); 2026-11-17: Backpack
+      expect(lines).toHaveLength(21); // 2026-11-15: Housing, Couple, Siege Ranking and Auto Play (custom); 2026-11-17: Backpack, Pet Filter (custom)
       for (const line of lines) {
         // 2026-11-13 (owner, "make the menus smaller"): a phone draws them at most at 0.85, 22 x 0.85 = 18.7 px a line
         expect(line.height, `a line at ${size.width} x ${size.height}`).toBeGreaterThanOrEqual(18.5);
         expect(line.height, `a line at ${size.width} x ${size.height}`).toBeLessThanOrEqual(44.5);
       }
-      // two columns, 10 and 10 (2026-11-15, with the custom Auto Play; 2026-11-17, with Backpack), side by side from the same top, each line's row against the next one's
-      const [left, right] = [lines.slice(0, 10), lines.slice(10)];
+      // two columns, 11 and 10 (2026-11-15, with the custom Auto Play; 2026-11-17, with Backpack and the custom Pet Filter), side by side from the same top, each line's row against the next one's
+      const [left, right] = [lines.slice(0, 11), lines.slice(11)];
       for (const column of [left, right]) {
         for (let i = 1; i < column.length; i++) expect(column[i]!.top).toBeCloseTo(column[i - 1]!.bottom, 1);
       }

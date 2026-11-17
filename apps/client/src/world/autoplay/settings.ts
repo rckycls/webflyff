@@ -2,11 +2,8 @@
  * custom (owner 2026-11-15): Auto Play. The farm bot's, the auto pots' and the auto skills' settings, one set per
  * character (skills and items differ by job), kept in localStorage under `flyffweb.autoPlay.<playerId>`. V15 has no
  * such feature (docs/superpowers/specs/2026-11-15-auto-play-design.md, 6.12).
- *
- * custom (owner 2026-11-16): `loot.mask`, the loot filter (items/lootFilter.ts): the kinds of item the pick-up pet and
- * the farm bot may pick up. A store kept before it existed reads as every kind.
+ * (2026-11-16: the farm bot's looting follows the Pet Filter, items/petFilter.ts, a setting of its own.)
  */
-import { LOOT_ALL, clampLootMask } from '../items/lootFilter';
 
 export type GaugeRow = 'hp' | 'mp' | 'fp';
 export const GAUGE_ROWS: readonly GaugeRow[] = ['hp', 'mp', 'fp'];
@@ -36,8 +33,6 @@ export interface AutoPlaySettings {
     /** Max 8. */
     buffs: Array<{ kind: 'skill' | 'item'; index: number }>;
   };
-  /** The loot filter: one bit per `LOOT_KINDS` group, `LOOT_ALL` for every kind. */
-  loot: { mask: number };
   /** 2026-11-17 (owner): Support mode, for a buffer: the partner (any player targeted), heals, buffs on them, raising them. */
   support: {
     partnerPlayerId: number; partnerName: string;
@@ -77,7 +72,6 @@ export function defaultSettings(): AutoPlaySettings {
       },
     },
     skills: { actionSlot: true, ready: [], buffs: [] },
-    loot: { mask: LOOT_ALL },
     support: { partnerPlayerId: 0, partnerName: '', heals: [], partnerBelow: 70, selfBelow: 50, buffs: [], resurrect: true },
     mode: 'farm',
   };
@@ -125,7 +119,6 @@ export function clampSettings(raw: unknown): AutoPlaySettings {
       .map((b) => ({ kind: b.kind, index: b.index }))
       .slice(0, MAX_BUFFS);
   }
-  if (isObject(raw.loot)) s.loot.mask = clampLootMask(raw.loot.mask);
   const support = isObject(raw.support) ? raw.support : {};
   const out = s.support;
   if (isIndex(support.partnerPlayerId)) out.partnerPlayerId = support.partnerPlayerId;

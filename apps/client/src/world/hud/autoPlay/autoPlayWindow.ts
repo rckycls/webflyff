@@ -3,8 +3,7 @@
 // look of the HUD's other windows: the frame of WindowFrame and the tab strip under the pages of Neuz's CWndTabCtrl
 // (hud/guildCombat/tabs.ts). Slots are filled as the phone's Action Slot window fills its own: a tap on the slot opens a
 // list to pick from, so desktop and phone work the same way. Numbers move with [-] and [+], so no keyboard is needed.
-// custom (owner 2026-11-16): a fourth tab, Loot, the loot filter (items/lootFilter.ts): the kinds of item the pick-up pet
-// and the farm bot may pick up (docs/superpowers/plans/2026-11-16-pet-loot-filter.md).
+// custom (owner 2026-11-16): the farm bot's looting skips what the Pet Filter leaves behind (hud/petFilterWindow.ts, U).
 
 import { themeUrl } from '../art';
 import type { UiArt } from '../art';
@@ -12,7 +11,6 @@ import { radioFrame } from '../radio';
 import { WindowFrame } from '../frame';
 import { TabPages } from '../guildCombat/tabs';
 import { textButton } from '../numpad';
-import { LOOT_ALL, LOOT_KINDS, LOOT_KIND_LABELS, lootBit } from '../../items/lootFilter';
 import { BELOW, GAUGE_ROWS, MAX_BUFFS, MAX_HEALS, MAX_PARTNER_BUFFS, MAX_READY, RADIUS, STOP_AFTER } from '../../autoplay/settings';
 import type { AutoPlaySettings, GaugeRow } from '../../autoplay/settings';
 
@@ -75,9 +73,9 @@ export interface AutoPlayWindowPlay {
   readonly mode?: 'farm' | 'support';
 }
 
-export type AutoPlayTab = 'farm' | 'potions' | 'skills' | 'loot' | 'support';
-const TABS: readonly AutoPlayTab[] = ['farm', 'potions', 'skills', 'loot', 'support'];
-const TAB_LABELS = ['Farm', 'Potions', 'Skills', 'Loot', 'Support'];
+export type AutoPlayTab = 'farm' | 'potions' | 'skills' | 'support';
+const TABS: readonly AutoPlayTab[] = ['farm', 'potions', 'skills', 'support'];
+const TAB_LABELS = ['Farm', 'Potions', 'Skills', 'Support'];
 /** The slot rows: the Skills tab's ready skills and buffs, and (2026-11-17) the Support tab's heals and partner buffs. */
 type SlotList = 'ready' | 'buffs' | 'heals' | 'partnerBuffs';
 type SlotEntry = { kind: 'skill' | 'item'; index: number };
@@ -147,7 +145,6 @@ export class AutoPlayWindow {
     const tab = TABS[this.tabs.selected];
     if (tab === 'farm') { this.refreshFarm(); return; }
     if (tab === 'skills') { this.refreshSkills(); return; }
-    if (tab === 'loot') { this.refreshLoot(); return; }
     if (tab === 'support') { this.refreshSupport(); return; }
     if (tab !== 'potions') return;
     const choices = this.picking === null ? [] : this.deps.potionChoices();
@@ -373,41 +370,6 @@ export class AutoPlayWindow {
     return page;
   }
 
-  private refreshLoot(): void {
-    const key = JSON.stringify(['loot', this.play.settings.loot]);
-    if (key === this.shown) return;
-    this.shown = key;
-    this.tabs.pages[TABS.indexOf('loot')]!.replaceChildren(this.lootPage());
-  }
-
-  /** The loot filter: a box per kind of item, in two columns, then All and None. */
-  private lootPage(): HTMLElement {
-    const doc = this.doc, loot = this.play.settings.loot;
-    const page = doc.createElement('div');
-    page.className = 'auto-loot';
-    const head = doc.createElement('div');
-    head.className = 'auto-loot-head';
-    head.textContent = 'Your pick-up pet and Auto Play pick up:';
-    const grid = doc.createElement('div');
-    grid.className = 'auto-loot-kinds';
-    for (const kind of LOOT_KINDS) {
-      grid.append(this.check(`auto-loot-${kind}`, LOOT_KIND_LABELS[kind], (loot.mask & lootBit(kind)) !== 0, (on) => {
-        loot.mask = on ? loot.mask | lootBit(kind) : loot.mask & ~lootBit(kind);
-      }));
-    }
-    const all = this.word('All', () => { loot.mask = LOOT_ALL; this.changed(); }, 'loot-all', 'autoPlay');
-    all.classList.add('auto-farm-go');
-    all.disabled = loot.mask === LOOT_ALL;
-    const none = this.word('None', () => { loot.mask = 0; this.changed(); }, 'loot-none', 'autoPlay');
-    none.classList.add('auto-farm-go');
-    none.disabled = loot.mask === 0;
-    const buttons = doc.createElement('div');
-    buttons.className = 'auto-farm-buttons';
-    buttons.append(all, none);
-    page.append(head, grid, buttons);
-    return page;
-  }
-
   private refreshFarm(): void {
     const play = this.play, allowed = this.deps.farmAllowed();
     const lines = play.farm === 'off' ? [] : play.stats.lines(this.deps.now());
@@ -435,6 +397,8 @@ export class AutoPlayWindow {
       this.stepButton('+', 'Radius larger', () => { farm.radius = Math.min(RADIUS.max, farm.radius + RADIUS.step); }));
 
     const loot = this.check('auto-loot', 'Pick up drops', farm.loot, (on) => { farm.loot = on; });
+    // custom (owner 2026-11-16)
+    loot.title = 'Leaves on the ground what the Pet Filter (U) leaves.';
 
     const after = doc.createElement('div');
     after.className = 'auto-farm-line';

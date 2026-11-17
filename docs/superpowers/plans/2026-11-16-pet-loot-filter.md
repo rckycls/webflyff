@@ -1,5 +1,8 @@
 # Pet loot filter (2026-11-16)
 
+> **Replaced the same day** by the Wakazaki-style Pet Filter (`2026-11-16-pet-filter.md`): the Loot tab, its 8 kinds and
+> packet 0x8fff0100 are gone. Kept for the history.
+
 Owner: "plan and implement pet loot filter". A pick-up pet picks up only the kinds of item the player chooses.
 
 ## What V15 does

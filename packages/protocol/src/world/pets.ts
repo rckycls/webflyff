@@ -228,15 +228,18 @@ export function encodePickupPetAwakeningCancel(itemObjectId: number): Uint8Array
   return clientPacket(PacketType.PICKUP_PET_AWAKENING_CANCEL).u32(itemObjectId).toBytes();
 }
 
+/** The Pet Filter's 19 checks' bits (apps/client/src/world/items/petFilter.ts). */
+const PET_FILTER_BITS = 0x7ffff;
+
 /**
- * custom (owner 2026-11-16): the loot filter (apps/client/src/world/items/lootFilter.ts): one DWORD, a bit per kind of item
- * the own pick-up pet may pick up (penya 1 ... other 128). Not in V15: the World server's patch
- * (patches/2026-11-16-pet-loot-filter.patch in the outer repo) keeps it on the player (`CUser::m_dwPetLootFilter`) and
- * `CAIPet::SubItemLoot` skips the kinds left out. A World server without the patch ignores it.
+ * custom (owner 2026-11-16): the Pet Filter (apps/client/src/world/items/petFilter.ts, the Wakazaki pet filter's
+ * `SendPlayerPetfilter`): one DWORD, a bit per kind of item the own pick-up pet leaves on the ground (HP Food 1 ... A Cards
+ * 262144). Not in V15: the World server's patch (patches/2026-11-16-pet-filter.patch in the outer repo) keeps it on the
+ * player (`CUser::m_dwPetfilter`) and `CAIPet::SubItemLoot` skips those items. A World server without the patch ignores it.
  */
-export function encodePetLootFilter(mask: number): Uint8Array {
-  if (!Number.isInteger(mask) || mask < 0 || mask > 0xff) throw new RangeError(`Invalid loot filter mask ${mask}`);
-  return clientPacket(PacketType.PET_LOOT_FILTER).u32(mask).toBytes();
+export function encodePetFilter(mask: number): Uint8Array {
+  if (!Number.isInteger(mask) || mask < 0 || mask > PET_FILTER_BITS) throw new RangeError(`Invalid pet filter mask ${mask}`);
+  return clientPacket(PacketType.PET_FILTER).u32(mask).toBytes();
 }
 
 /** PET_RELEASE: `OnPetRelease` (`DPClient.cpp:16420-16448`): nothing more. */

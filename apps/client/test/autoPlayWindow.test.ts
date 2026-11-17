@@ -63,9 +63,10 @@ describe('AutoPlayWindow: Potions tab', () => {
     const { w } = rig();
     w.open();
     const tabs = [...w.frame.element.querySelectorAll<HTMLButtonElement>('[role="tab"]')];
-    expect(tabs.map((t) => t.textContent)).toEqual(['Farm', 'Potions', 'Skills', 'Loot', 'Support']);
-    expect(tabs.map((t) => t.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false', 'false', 'false']);
-    expect(tabs.map((t) => t.disabled)).toEqual([false, false, false, false, false]);
+    // (2026-11-16: no Loot tab: the Pet Filter window, U, took its place)
+    expect(tabs.map((t) => t.textContent)).toEqual(['Farm', 'Potions', 'Skills', 'Support']);
+    expect(tabs.map((t) => t.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false', 'false']);
+    expect(tabs.map((t) => t.disabled)).toEqual([false, false, false, false]);
     w.showTab('potions');
     expect(w.frame.element.querySelectorAll('.auto-pot-row')).toHaveLength(3);
   });
@@ -244,45 +245,6 @@ describe('AutoPlayWindow: Skills tab', () => {
   });
 });
 
-// custom (owner 2026-11-16): the loot filter
-describe('AutoPlayWindow: Loot tab', () => {
-  const page = (w: AutoPlayWindow) => w.frame.element.querySelector<HTMLElement>('.auto-loot')!;
-  const box = (w: AutoPlayWindow, kind: string) => page(w).querySelector<HTMLButtonElement>(`[data-name="auto-loot-${kind}"]`)!;
-  const ticked = (b: HTMLElement) => b.getAttribute('aria-checked') === 'true';
-
-  it('shows the 8 kinds, all checked by default, with All greyed', () => {
-    const { w } = rig();
-    w.open('loot');
-    const labels = [...page(w).querySelectorAll('.auto-loot-kinds [role="checkbox"]')].map((l) => l.textContent!.trim());
-    expect(labels).toEqual(['Penya', 'Potions and food', 'Weapons', 'Armour', 'Jewellery', 'Upgrade materials', 'Quest items', 'Other']);
-    expect([...page(w).querySelectorAll<HTMLElement>('[role="checkbox"]')].every(ticked)).toBe(true);
-    expect([...page(w).querySelectorAll<HTMLButtonElement>('button:not([role="checkbox"])')].map((b) => [b.textContent, b.disabled]))
-      .toEqual([['All', true], ['None', false]]);
-  });
-
-  it('unchecking Jewellery clears its bit (16) and saves', () => {
-    const { w, play, saves } = rig();
-    w.open('loot');
-    box(w, 'jewellery').click();
-    expect(play.settings.loot.mask).toBe(0xff & ~16);
-    expect(saves()).toBe(1);
-    expect(ticked(box(w, 'jewellery'))).toBe(false);
-    box(w, 'jewellery').click();
-    expect(play.settings.loot.mask).toBe(0xff);
-  });
-
-  it('None clears every kind; All checks them again', () => {
-    const { w, play, press } = rig();
-    w.open('loot');
-    press(page(w), 'None');
-    expect(play.settings.loot.mask).toBe(0);
-    expect(ticked(box(w, 'penya'))).toBe(false);
-    press(page(w), 'All');
-    expect(play.settings.loot.mask).toBe(0xff);
-    expect(ticked(box(w, 'other'))).toBe(true);
-  });
-});
-
 // 2026-11-17 (owner, "make the whole auto play window follow the v15 theme")
 describe('AutoPlayWindow: the V15 look', () => {
   it('every check box is Neuz\'s ButtCheck.bmp: frame 1 unticked, frame 3 ticked', () => {
@@ -297,7 +259,7 @@ describe('AutoPlayWindow: the V15 look', () => {
 
   it('every word button of every tab is a silver word button (no browser checkbox anywhere)', () => {
     const { w } = rig();
-    for (const tab of ['farm', 'potions', 'skills', 'loot'] as const) {
+    for (const tab of ['farm', 'potions', 'skills'] as const) {
       w.open(tab);
       const page = w.frame.element.querySelector<HTMLElement>('.hud-gc-page:not([hidden])')!;
       expect(page.querySelectorAll('input')).toHaveLength(0);

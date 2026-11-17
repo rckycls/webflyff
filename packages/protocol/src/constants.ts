@@ -37,10 +37,11 @@ export const PacketType = {
   TRANSFORM_ITEM: 0x8fff000d,
   PICKUP_PET_AWAKENING_CANCEL: 0x8fff000f,
   /**
-   * custom (owner 2026-11-16): the loot filter's mask for the own pick-up pet (world/pets.ts). Not in V15: added by the
-   * outer repo's patches/2026-11-16-pet-loot-filter.patch (`PACKETTYPE_PET_LOOT_FILTER`, `CDPSrvr::OnPetLootFilter`).
+   * custom (owner 2026-11-16): the Pet Filter's mask for the own pick-up pet (world/pets.ts). Not in V15: added by the outer
+   * repo's patches/2026-11-16-pet-filter.patch (`PACKETTYPE_PETFILTER`, `CDPSrvr::OnSetPetfilter`). It took the place of the
+   * Loot tab's 0x8fff0100, which no client sends now.
    */
-  PET_LOOT_FILTER: 0x8fff0100,
+  PET_FILTER: 0x8fff0101,
   /** 2026-11-05: the upgrade cursor's packets (`MsgHdr.h`; world/upgrade.ts). */
   ENCHANT: 0xf000b024,
   PIERCING: 0xf000b025,
