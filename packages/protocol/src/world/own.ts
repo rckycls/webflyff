@@ -320,7 +320,7 @@ export function readInventoryItem(r: ArReader, slotId?: number): InventoryItem {
  * `size_t` count (4 bytes on x86) and then that many 4-byte entries. The C++ reads as many entries as the count says,
  * even past the `MAX_PIERCING_*` that `SetPiercingSize` caps the list at.
  */
-function readPiercing(r: ArReader): { piercing: number[]; ultimate: number[]; visKeepTimes: number[] } {
+export function readPiercing(r: ArReader): { piercing: number[]; ultimate: number[]; visKeepTimes: number[] } {
   const list = (): number[] => Array.from({ length: r.u32() }, () => r.u32());
   const piercing = list(); // nSize, then DWORD dwItem each: the cards (:57-65)
   const ultimate = list(); // nSize, then DWORD dwItem each: the ultimate jewels (__VER >= 12, __EXT_PIERCING, :66-76)

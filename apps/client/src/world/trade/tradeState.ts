@@ -63,6 +63,8 @@ export interface TradeContext {
   requestOpen(): boolean;
   /** 2026-11-10: the Summon Angel window is open (BLOCK 8, DPClient.cpp:2589-2595). */
   summonAngelOpen?(): boolean;
+  /** 2026-11-17: the Option window's Trading is Refuse (`g_Option.m_bTrade == FALSE`, BLOCK 3, DPClient.cpp:2508-2512). */
+  tradeRefused?(): boolean;
 }
 
 const emptySide = (): TradeSide => ({ slots: Array.from({ length: MAX_TRADE }, () => null), gold: 0, ok: false });
@@ -122,6 +124,8 @@ export class TradeState {
       case 'confirmTrade': {
         const name = ctx.nameOf(objectId);
         if (name === '') return []; // `prj.GetMover( objid )` not in view
+        // 2026-11-17: trades refused in the Option window: BLOCK 3, before any other check
+        if (ctx.tradeRefused?.() === true) return [{ kind: 'refuse', gu: 3, askerName: name }];
         // a trade or a request already open: BLOCK 5 (:2569-2581)
         if (this.open || ctx.requestOpen()) return [{ kind: 'refuse', gu: 5, askerName: name }];
         // 2026-11-10: the Summon Angel window open: BLOCK 8 (:2589-2595)

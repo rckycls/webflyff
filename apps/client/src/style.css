@@ -2477,7 +2477,43 @@ fieldset:disabled .btn {
 .hud-option-label { position: absolute; height: 18px; line-height: 18px; color: #000; font-size: 12px; white-space: nowrap; }
 .hud-option-bar { position: absolute; background-size: 100% 100%; cursor: pointer; touch-action: none; outline: none; }
 .hud-option-bar:focus-visible { box-shadow: 0 0 0 1px #fff, 0 0 0 2px #000; }
+.hud-option-bar[aria-disabled='true'] { cursor: default; opacity: 0.5; }
 .hud-option-knob { position: absolute; top: 0; background-size: 100% 100%; pointer-events: none; }
+/* 2026-11-17 (view-equip-options): the whole Game / Audio page (hud/optionWindow.ts): the tab control's edit tiles under
+   the page, its statics blue (hud-res-static), its radios' and checks' words black at 12 px; the Video tab greyed. On a
+   phone a radio or a check takes a press a few px around it */
+.hud-option-tiles { pointer-events: none; }
+.hud-option-page { position: absolute; left: 0; top: 0; }
+.hud-option :is(.hud-radio, .hud-six-frame) { color: #000000; font-size: 12px; }
+.hud-option .hud-six-frame:disabled { color: #8c8c8c; }
+.hud-option-tabs .hud-tab-title:disabled { color: #b8b8b8; cursor: default; }
+@media (max-width: 1000px) and (pointer: coarse) {
+  .hud-option[data-phone] :is(.hud-radio, .hud-six-frame)::after { content: ''; position: absolute; inset: -2px -2px; }
+  .hud-option[data-phone] .hud-res-static-text { font-family: Verdana, Tahoma, sans-serif; font-size: 12px; }
+  .hud-option[data-phone] .hud-tab-title { font-family: Verdana, Tahoma, sans-serif; font-size: 12px; text-align: center; }
+}
+/* 2026-11-17 (view-equip-options): Translucency (`CWndBase::m_nAlpha` 128): the windows' own pictures at 128 of 255, their
+   words and controls as they are (WndBase.cpp:661-690, RenderWnd) */
+.world-hud[data-translucent] .hud-window-frame { opacity: 0.502; }
+/* 2026-11-17 (view-equip-options): View Equipment (hud/queryEquipWindow.ts, CWndQueryEquip): WndQueryEquip.tga's slots,
+   each worn part's icon placed and scaled as OnDraw draws it, an expired one tinted (255, 100, 100), the model drawn once */
+.hud-query-equip-model, .hud-query-equip-slots { position: absolute; }
+.hud-query-equip-slots { left: 0; top: 0; }
+.hud-query-equip-model { pointer-events: none; }
+.hud-query-equip-model canvas { display: block; width: 100% !important; height: 100% !important; }
+.hud-query-equip-slot { position: absolute; padding: 0; border: 0; background: none; cursor: pointer; }
+.hud-query-equip-slot:disabled { cursor: default; }
+.hud-query-equip-slot:not(:disabled):hover { outline: 1px solid #e6a380; }
+.hud-query-equip-icon { position: absolute; background-size: 100% 100%; background-repeat: no-repeat; pointer-events: none; }
+.hud-query-equip-expired {
+  position: absolute; inset: 0; pointer-events: none; background: rgb(255, 100, 100); mix-blend-mode: multiply;
+  -webkit-mask-size: 100% 100%; mask-size: 100% 100%; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+}
+@media (max-width: 1000px) and (pointer: coarse) {
+  .hud-query-equip-slot:not(:disabled)::after { content: ''; position: absolute; inset: -2px; }
+  /* the card's close button clear of the name line */
+  .hud-query-equip-tooltip .hud-item-tooltip-text { padding-right: 16px; }
+}
 
 /* The box of a dropped world (Piece 6 M3, hud/dropBox.ts): Neuz's message box with the web's two buttons */
 .hud-dropbox-text { position: absolute; color: #000; font-size: 12px; line-height: 16px; text-align: center; overflow-wrap: anywhere; }

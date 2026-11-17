@@ -31,13 +31,13 @@ function partyOf(members: number[]): PartyState {
 }
 
 describe('the player\'s menu ([R §5.1])', () => {
-  it('the entries in Neuz\'s order, Invite, (2026-11-10) Add to my list and Trade, and (2026-11-15) Follow and Cheer enabled', () => {
+  it('the entries in Neuz\'s order, Invite, (2026-11-10) Add to my list and Trade, (2026-11-15) Follow and Cheer and (2026-11-17) View equipment enabled', () => {
     expect(playerMenuEntries(TEXTS)).toEqual([
       { id: 2, label: 'Trade', enabled: true },
       { id: 5, label: 'Add to my list', enabled: true },
       { id: 6, label: 'Invite to join party', enabled: true },
       { id: 12, label: 'Follow', enabled: true },
-      { id: 24, label: 'View equipment', enabled: false },
+      { id: 24, label: 'View equipment', enabled: true },
       { id: 31, label: 'Cheer', enabled: true },
       { id: 151, label: 'Request Mentor-Pupil Bond', enabled: false },
     ]);
@@ -47,7 +47,7 @@ describe('the player\'s menu ([R §5.1])', () => {
     const entries = playerMenuEntries(TEXTS, false, true);
     expect(entries.map((entry) => entry.id)).toEqual([2, 5, 6, 7, 12, 24, 31, 151]);
     expect(entries[3]).toEqual({ id: 7, label: 'Invite to join guild', enabled: true });
-    expect(playerMenuEntries(TEXTS, true, true).map((entry) => entry.id)).toEqual([24]);
+    expect(playerMenuEntries(TEXTS, true, true)).toEqual([{ id: 24, label: 'View equipment', enabled: true }]);
   });
 
   it('the menu is in reach under 20 m', () => {

@@ -10,13 +10,14 @@
 //                             Party vs Party"            duel for a leader (:6589-6608); 2026-11-15 (social): the duels
 //                                                         (duel/duelBook.ts `inFightRegion`, social/socialHud.ts)
 //   MMI_TRACE 12              Follow                      always (:6611); 2026-11-15 (social): the follow (social/follow.ts)
-//   MMI_QUERYEQUIP 24         View equipment              always (:6612)
+//   MMI_QUERYEQUIP 24         View equipment              always (:6612); 2026-11-17: the View window (queryEquipWindow.ts)
 //   MMI_CHEER 31              Cheer                       always (:6613); 2026-11-15 (social): SendCheering when not flying
 //                                                         (`OnCommand` MMI_CHEER, WndWorld.cpp:5680-5686)
 //   MMI_INVITE_CAMPUS 151     Request Mentor-Pupil Bond   always, or Cancel for a pupil (:6614-6624)
 //
-// Only the invite, (2026-11-10, friends-say) "Add to my list", (2026-11-10, trade) Trade and (2026-11-15, social) the duels,
-// Cheer and Follow are the browser's; the rest are shown greyed, as the NPC menu's (plan Decisions 4).
+// Only the invite, (2026-11-10, friends-say) "Add to my list", (2026-11-10, trade) Trade, (2026-11-15, social) the duels,
+// Cheer and Follow, and (2026-11-17) View equipment are the browser's; the rest are shown greyed, as the NPC menu's (plan
+// Decisions 4).
 
 import type { Vec3 } from '@flyffweb/protocol';
 import type { Texts } from '../gameData';
@@ -45,11 +46,16 @@ const ENTRIES: ReadonlyArray<[number, string]> = [
   [MMI_INVITE_COMPANY, 'Invite to join guild'], [MMI_TRACE, 'Follow'], [24, 'View equipment'],
   [MMI_CHEER, 'Cheer'], [MMI_INVITE_CAMPUS, 'Request Mentor-Pupil Bond'],
 ];
-/** The entries the browser acts on. */
-const ACTIVE: ReadonlySet<number> = new Set([MMI_INVITE_PARTY, MMI_ADD_MESSENGER, MMI_TRADE, MMI_INVITE_COMPANY, MMI_DUEL, MMI_DUEL_PARTY, MMI_TRACE, MMI_CHEER]);
+/**
+ * 2026-11-10: MMI_QUERYEQUIP, the one line of a seller's menu (`__CSC_VER12_1`, WndWorld.cpp:6544-6547). 2026-11-17
+ * (view-equip-options): `SendQueryEquip` to the player (`OnCommand`, WndWorld.cpp:5248-5255), hud/queryEquipWindow.ts.
+ */
+export const MMI_QUERYEQUIP = 24;
 
-/** 2026-11-10: MMI_QUERYEQUIP, the one line of a seller's menu (`__CSC_VER12_1`, WndWorld.cpp:6544-6547). */
-const MMI_QUERYEQUIP = 24;
+/** The entries the browser acts on. */
+const ACTIVE: ReadonlySet<number> = new Set([
+  MMI_INVITE_PARTY, MMI_ADD_MESSENGER, MMI_TRADE, MMI_INVITE_COMPANY, MMI_DUEL, MMI_DUEL_PARTY, MMI_TRACE, MMI_CHEER, MMI_QUERYEQUIP,
+]);
 
 /**
  * `vendor`: the player has an open personal shop, and its menu is "View equipment" alone (greyed here, as before).

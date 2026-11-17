@@ -654,7 +654,8 @@ function playerStart(m: AddedMover, p: AddedPlayer, stats: readonly number[] = [
     .u32(p.pkTime).i32(p.pkValue).u32(p.pkPropensity).u32(0) // m_dwPKExp
     .i32(0).u8(0) // m_nFame, m_nDuel
     .i32(p.honor);
-  for (let i = 0; i < MAX_HUMAN_PARTS; i++) w.i32(0); // m_aEquipInfo[i].nOption
+  // m_aEquipInfo[i].nOption: 2026-11-17 (view-equip-options) each worn part's own (its upgrade, View Equipment's +N), else 0
+  for (let i = 0; i < MAX_HUMAN_PARTS; i++) w.i32(p.worn.find((worn) => worn.part === i)?.option ?? 0);
   w.i32(p.guildCombatState ?? 0); // m_nGuildCombatState
   for (let i = 0; i < SM_MAX; i++) w.u32(0); // m_dwSMTime
   return w;

@@ -62,6 +62,8 @@ export interface TradeHudScreen {
   npcShopOpen(): boolean;
   /** 2026-11-10: the Summon Angel window is open: a request is refused with BLOCK 8, and the own one too. */
   summonAngelOpen?(): boolean;
+  /** 2026-11-17: the Option window's Trading is Refuse: a request is answered BLOCK 3. */
+  tradeRefused?(): boolean;
   /** The own penya changed by the trade (`AddGold( n, FALSE )`). */
   addOwnGold(delta: number): void;
   /** TRADECONSENT's moves on the own bag (`CVTInfo::TradeConsent`). */
@@ -176,6 +178,7 @@ export class TradeHud {
       ownObjectId: this.screen.ownObjectId(), ownPlayerId: this.screen.ownPlayerId(),
       nameOf: (id) => this.screen.nameOf(id), requestOpen: () => this.request.isOpen,
       summonAngelOpen: () => this.screen.summonAngelOpen?.() === true,
+      tradeRefused: () => this.screen.tradeRefused?.() === true,
     });
     this.run(events);
   }

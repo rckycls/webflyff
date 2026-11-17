@@ -87,3 +87,6 @@ export {
   writeDuelRequest, writeDuelStart, writeProposeResult, writeSetDuel,
 } from './social';
 export { writeGuildCombat } from './guildCombat'; // 2026-11-15
+// 2026-11-17 (view-equip-options): View Equipment's answer
+export { writeQueryEquip } from './queryEquip';
+export type { QueryEquipPartScript } from './queryEquip';
