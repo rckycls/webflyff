@@ -7,6 +7,7 @@ import {
   assembleCharacter,
   d3dColor,
   loadGltf,
+  loopMotion,
   modelBoxOf,
   modelEventsOf,
   noonLight,
@@ -217,6 +218,43 @@ async function wingCape(
   item.add(scene);
   const release = releaser(item, keys, services.textures);
   return { item, slot: 'back', hand: null, wing, release: () => { wing.mixer.stopAllAction(); release(); } };
+}
+
+/**
+ * 2026-11-18 (ground mount, `mount/groundMount.ts`): the mount's creature, FlyFF's Lawolf (`mvr_lawolf`), assembled on
+ * its skeleton as a monster is, a new one each call, with its stand, idle1 and walk motions looped as the client loops
+ * them; a motion that cannot be had is null (the wolf then holds its pose). A model that cannot be had rejects (no mount
+ * is then drawn).
+ */
+export function loadMountModel(
+  services: Pick<SceneServices, 'store' | 'loaders' | 'textures'>, name = 'mvr_lawolf',
+): () => Promise<MountModel> {
+  const load = loadMoverModel(services);
+  const { store, loaders } = services;
+  const clip = async (motion: string): Promise<AnimationClip | null> => {
+    try {
+      const raw = (await loadGltf(store, loaders.gltf, `motions/${name}/${name}_${motion}.glb`)).animations[0];
+      return raw === undefined ? null : loopMotion(raw).clip;
+    } catch {
+      return null;
+    }
+  };
+  return async () => {
+    const character = await load({
+      skeleton: `skeletons/${name}.glb`, parts: [`models/${name}.glb`], motion: () => null, hairColor: null,
+      held: { right: null, left: null },
+    }, () => {});
+    const [stand, idle, walk] = await Promise.all([clip('stand'), clip('idle1'), clip('walk')]);
+    return { object: character.root, mixer: character.mixer, motions: { stand, idle, walk }, release: () => character.release() };
+  };
+}
+
+/** 2026-11-18: the ground mount's creature: its model, its mixer and its motions. */
+export interface MountModel {
+  object: Object3D;
+  mixer: AnimationMixer;
+  motions: { stand: AnimationClip | null; idle: AnimationClip | null; walk: AnimationClip | null };
+  release: () => void;
 }
 
 /** A ride's model: a broom's or a board's mesh; a wing's with its skeleton, its mixer and its stand and walk motions. */

@@ -17,6 +17,17 @@ const at = (over: Partial<UseCheck> = {}): UseCheck => ({
   prop: TOWN, worldId: 1, casting: false, standing: true, flying: false, returnBuff: false, ...over,
 });
 
+describe('the ground mount\'s item (2026-11-18)', () => {
+  const MOUNT = prop({ id: 20270, kind2: 29, kind3: 50, castMs: 1000, sfxReady: 117 });
+  it('mounting has a ride\'s cast refusals; getting off has none, moving or not', () => {
+    expect(useRefusal(at({ prop: MOUNT, standing: false }))).toEqual({ kind: 'say', tid: 'TID_PK_STAND_LIMIT' });
+    expect(useRefusal(at({ prop: MOUNT, flying: true }))).toEqual({ kind: 'say', tid: 'TID_PK_FLIGHT_NOUSE' });
+    expect(useRefusal(at({ prop: MOUNT, standing: false, mounted: true }))).toBeNull();
+    expect(useRefusal(at({ prop: MOUNT, casting: true, mounted: true }))).toBeNull();
+    expect(usableFromBag(MOUNT)).toBe(true);
+  });
+});
+
 describe('the travel items (Piece 7 M3)', () => {
   it("each refusal in Neuz's order (SendDoUseItem, IsUseItemReadyTime)", () => {
     expect(useRefusal(at())).toBeNull();

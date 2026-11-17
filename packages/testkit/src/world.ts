@@ -278,6 +278,11 @@ export function writeSetSkillState(objectId: number, targetId: number, buffType:
   return scripted(objectId, MessageType.SETSKILLSTATE, new ArWriter().u32(targetId).u16(buffType).u16(id).u32(level).u32(time));
 }
 
+/** 2026-11-18: REMOVESKILLINFULENCE (`CUserMng::AddRemoveSkillInfluence`): the buff `buffType`/`id` off `objectId`. */
+export function writeRemoveSkillInfluence(objectId: number, buffType: number, id: number): ScriptMessage {
+  return scripted(objectId, MessageType.REMOVESKILLINFULENCE, new ArWriter().u16(buffType).u16(id));
+}
+
 /** 2026-11-05: DOAPPLYUSESKILL (`CUserMng::AddDoApplySkill`): `objectId` applied `skill` at `level` to `targetId`. */
 export function writeDoApplySkill(objectId: number, targetId: number, skill: number, level: number): ScriptMessage {
   return scripted(objectId, MessageType.DOAPPLYUSESKILL, new ArWriter().u32(targetId).u32(skill).u32(level));

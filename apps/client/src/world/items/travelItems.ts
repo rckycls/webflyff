@@ -9,6 +9,7 @@
 
 import type { WebItemProp } from '@flyffweb/formats';
 import { useOf } from './premiumItems';
+import { GROUND_MOUNT_ITEM } from '../mount/groundMount';
 
 /** `IK2_BLINKWING` (`Resource/defineItemkind.h:40`): the Town and place Blinkwings, and the Escape Blinkwing. */
 export const IK2_BLINKWING = 22;
@@ -54,6 +55,8 @@ export interface UseCheck {
   flying: boolean;
   /** The own mover has the Scroll of Return's buff (`HasBuff( BUFF_ITEM, II_SYS_SYS_SCR_RETURN )`). */
   returnBuff: boolean;
+  /** 2026-11-18: the own mover rides the ground mount (has its buff, `groundMount.ts`). */
+  mounted?: boolean;
   /** Piece 7 M5, for a ride: the level, the world's `fly`, the land under the mover, a disguise, and sitting. */
   level?: number;
   worldFly?: boolean;
@@ -77,6 +80,8 @@ export type Refusal = { kind: 'say'; tid: string; args?: string } | { kind: 'box
 /** The first refusal of `SendDoUseItem` for this use, or null to go on (the Scroll's box, or the send). */
 export function useRefusal(check: UseCheck): Refusal | null {
   const { prop } = check;
+  // 2026-11-18: on the ground mount its item gets off at once, moving or not, with no cast (CUser::DoUseGroundMount)
+  if (prop.id === GROUND_MOUNT_ITEM && check.mounted === true) return null;
   // IsUseItemReadyTime, for an item with a cast (DPClient.cpp:10326; Mover.cpp:2809-2824); one's own shop is not in
   // the browser
   if (prop.castMs !== undefined) {

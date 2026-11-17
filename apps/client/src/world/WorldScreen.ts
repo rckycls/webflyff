@@ -279,7 +279,8 @@ import { WorldIndicatorLayer } from './render/WorldIndicatorLayer';
 import { beautyLook, drawnHair, lookOf, ownWorn, sexChangeLook } from './render/looks';
 import type { MoverLook } from './render/looks';
 import { MoveMark } from './render/moveMark';
-import { loadHeldItems, loadMoverModel, loadRideModel } from './render/moverModels';
+import { loadHeldItems, loadMountModel, loadMoverModel, loadRideModel } from './render/moverModels';
+import { GROUND_MOUNT_ITEM, isGroundMounted } from './mount/groundMount';
 import { guildLine, nameTagOf } from './render/nameTags';
 import { GuildCombatBook } from './guildCombat/guildCombatBook';
 import { GuildCombatHud } from './guildCombat/guildCombatHud';
@@ -973,6 +974,10 @@ export class WorldScreen {
       // 2026-11-17 (shout bubble): the balloons over the heads
       bubbles: () => this.speechBubbles?.list() ?? [],
       wingCapes: () => this.views?.wingCapes() ?? [], // 2026-11-17
+      // 2026-11-18 (ground mount): the mounted players, their wolves drawn or not, and their run
+      mounts: () => [...(this.world?.movers.values() ?? [])].flatMap((m) => (m.buffs.has(0, GROUND_MOUNT_ITEM) ? [{
+        objectId: m.objectId, drawn: this.views?.mounted().includes(m.objectId) === true, speed: m.act.body.speed,
+      }] : [])),
     });
     void this.start();
   }
@@ -1514,6 +1519,9 @@ export class WorldScreen {
         // 2026-11-15 (B5): and in the siege's arena a player its line-ups hide: not drawn, not clicked (Mover.cpp:3321-3368)
         alphaOf: (mover) => (this.siegeHidden(mover) ? 0 : bodyAlpha(mover, this.world?.self()?.added.player?.authorization ?? 0)),
         unpickable: (mover) => isInvisible(mover) || this.siegeHidden(mover),
+        // 2026-11-18 (ground mount): a mounted player's wolf, with its rider seated on it
+        mountedOf: (mover) => isGroundMounted(mover),
+        loadMount: loadMountModel(services),
       },
     );
     this.world!.onEquipmentChange = (mover) => {
@@ -4651,6 +4659,8 @@ this.follow(world, stage);
       // Piece 7 M5: flying, and what a ride's use and landing look at
       flying: own !== undefined && (own.act.stateFlag & ObjStaF.FLY) !== 0,
       returnBuff: own?.buffs.list(now).some((b) => b.buffType === 0 && b.id === 10469) === true,
+      // 2026-11-18: on the ground mount (its item then gets off at once, with no cast)
+      mounted: own?.buffs.has(0, GROUND_MOUNT_ITEM) === true,
       level: this.own?.level ?? own?.level ?? 1,
       worldFly: !(this.data?.noFlyWorlds.has(this.worldId) ?? false),
       landAttr: at === undefined ? HAttr.NONE : this.ground.landAttr(at[0], at[2]),

@@ -6,6 +6,7 @@ export {
   writeDoUseSkillPoint, writeEndSkillQueue, writeEnvironmentSetting, writeGameTimer, writeInitSkillPoint,
   writeMeleeAttack, writeMonsterProp, writeMotion, writeMoverAngle, writeMoverBehavior, writeMoverCorr,
   writeCreateSfxAllow, writeDoEquip, writeMagicAttack, writeSetDestParam, writeSetJobSkill, writeSetSkillState, // Piece 7 M2
+  writeRemoveSkillInfluence, // 2026-11-18: a buff taken off (the ground mount)
   writeMoverDeath, writeMoverMoved, writePlayMusic, writePlaySound, writePlaySoundFile, writeQueryGetDestObj, writeReplace, writeRevival, writeRevivalToLodestar,
   writeQuestChecked, writeRemoveQuest, writeSetQuest,
   writeReturnScrollAck, writeStateMode, writeUpdateItem, // Piece 7 M3

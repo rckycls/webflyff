@@ -27,7 +27,9 @@ import { isDie } from '../WorldState';
 import type { Mover, WorldChanges } from '../WorldState';
 import { MI_FEMALE, MI_MALE, Parts } from './looks';
 import type { MoverLook } from './looks';
-import type { HeldItem, RideModel } from './moverModels';
+import type { HeldItem, MountModel, RideModel } from './moverModels';
+import { MOUNT_FITS, WOLF_IDLE_AFTER_SECONDS, isMoving, riderMotion, wolfTimeScale } from '../mount/groundMount';
+import type { MountFit, WolfMotion } from '../mount/groundMount';
 import { moverMatrix } from './picking';
 import type { PickCandidate } from './picking';
 import {
@@ -187,7 +189,17 @@ interface View {
   swap: object | null;
   /** 2026-11-10: how opaque the body was last drawn (`alphaOf`): 1 whole, 0 not drawn, else an invisible one's blend. */
   alpha: number;
+  /**
+   * 2026-11-18 (ground mount, `mount/groundMount.ts`): the wolf under a mounted player (`mountedOf`), its model once
+   * loaded, the motion it plays and how long it has stood still; the rider sits on it once it is in.
+   */
+  mount: { model: MountModel | null; playing: WolfMotion | null; still: number } | null;
 }
+
+/** 2026-11-18: the wolf's blend between its motions, seconds. */
+const MOUNT_BLEND = 0.25;
+/** 2026-11-18: the ground mount's fit for a view's body. */
+const fitOf = (view: View): MountFit => (view.mover.added.index === MI_FEMALE ? MOUNT_FITS.female : MOUNT_FITS.male);
 
 /** Piece 7 M5: `IK3_STICK` (`defineItemkind.h:116`): a broom or a stick, drawn at the rider's root bone's height. */
 const IK3_STICK = 41;
@@ -229,6 +241,12 @@ export interface MoverViewsOptions {
   alphaOf?: (mover: Mover) => number;
   /** 2026-11-10: a mover that cannot be clicked (an invisible one, `WndWorld.cpp:6372`). */
   unpickable?: (mover: Mover) => boolean;
+  /**
+   * 2026-11-18 (ground mount): whether a player rides the ground mount (`isGroundMounted`), and the model of its creature
+   * (a new one each call, `loadMountModel`); without both no mount is drawn.
+   */
+  mountedOf?: (mover: Mover) => boolean;
+  loadMount?: () => Promise<MountModel>;
 }
 
 /**
@@ -359,6 +377,7 @@ export class MoverViews {
       if (movers.get(view.mover.objectId) !== view.mover) continue;
       interpolate(view);
       this.syncRide(view);
+      this.syncMount(view);
       if (view.dmgCnt > 0) view.dmgCnt--;
       // Piece 7 M2: a cast lights its caster cyan from behind at each of its steps (ProcessStateMagicCasting, :714-724)
       const atk = view.mover.act.state & ObjSta.ATK_ALL;
@@ -397,6 +416,7 @@ export class MoverViews {
       // 2026-11-05: a wing flaps: its stand motion, its walk while the thrust is on (WingMotionSetting, Mover.cpp:10704-10738)
       this.flapWing(view, dt);
       this.flapWingCape(view, dt);
+      this.drawMount(view, dt); // 2026-11-18 (ground mount)
       // after the frame's pose: CModelObject::Render animates m_mUpdateBone before the ride is drawn (MoverRender.cpp:572, :651)
       this.raiseRide(view);
       // 2026-11-10: an invisible player's body (MoverRender.cpp:517-531), again each frame while it is not whole, for the
@@ -481,11 +501,18 @@ export class MoverViews {
     }
   }
 
+  /** 2026-11-18 (ground mount): the movers whose wolf is drawn under them (the test hooks' `mounts`). */
+  mounted(): number[] {
+    return [...this.views.values()].flatMap((view) => (view.mount?.model ? [view.mover.objectId] : []));
+  }
+
   placeOf(objectId: number): { at: Vec3; head: Vec3 } | null {
     const view = this.views.get(objectId);
     if (view === undefined || view.head === null) return null;
     const at = toWebPosition(view.scrPos);
-    return { at, head: [at[0], at[1] + view.head * view.mover.added.scale, at[2]] };
+    // 2026-11-18: a rider's name over its raised head (the seated pose is lower than the standing box by about half the seat)
+    const seat = view.mount?.model ? fitOf(view).seat / 2 : 0;
+    return { at, head: [at[0], at[1] + (view.head + seat) * view.mover.added.scale, at[2]] };
   }
 
   /**
@@ -606,6 +633,120 @@ export class MoverViews {
     );
     this.pending.add(task);
     void task.finally(() => this.pending.delete(task));
+  }
+
+  /**
+   * 2026-11-18 (ground mount): a mounted player of the two bodies gets its wolf, loaded into its holder; a player that got
+   * off (or flies, swings, dies: `isGroundMounted`) loses it, and its rider stands on its feet again.
+   */
+  private syncMount(view: View): void {
+    const { mover } = view;
+    const load = this.options.loadMount;
+    const want = load !== undefined && (mover.added.index === MI_MALE || mover.added.index === MI_FEMALE)
+      && (this.options.mountedOf?.(mover) ?? false);
+    if (want === (view.mount !== null)) return;
+    if (!want) {
+      this.dropMount(view);
+      return;
+    }
+    const mount: NonNullable<View['mount']> = { model: null, playing: null, still: 0 };
+    view.mount = mount;
+    const task = load!().then(
+      (model) => {
+        if (view.mount !== mount || view.gone || this.disposed) {
+          model.release(); // got off, gone or disposed while it loaded
+          return;
+        }
+        mount.model = model;
+        view.holder.add(model.object);
+      },
+      (error: unknown) => this.report(`ground mount: ${messageOf(error)}`),
+    );
+    this.pending.add(task);
+    void task.finally(() => this.pending.delete(task));
+  }
+
+  /** 2026-11-18: the wolf taken out of the holder and let go; the rider back on its feet. */
+  private dropMount(view: View): void {
+    const mount = view.mount;
+    view.mount = null;
+    if (mount?.model) {
+      mount.model.object.removeFromParent();
+      mount.model.release();
+    }
+    view.model?.root.position.set(0, 0, 0);
+  }
+
+  /**
+   * 2026-11-18: the rider's pose on the wolf, the `-c` ride pose (`riderMotion`), looped and blended in as the rules'
+   * motions are. Only what is drawn: the rules' frames go on with their own motion, and once off the mount the motion
+   * they set plays again from its frame.
+   */
+  private playRider(view: View): void {
+    const model = view.model;
+    const key = view.look?.motion(riderMotion(view.mover.act.state)) ?? null;
+    if (model === null || key === null) return;
+    const motion = this.clip(key).motion;
+    if (motion === null) return; // loading: the last pose plays on
+    const action = model.mixer.clipAction(motion.clip);
+    if (action !== view.action) {
+      action.setLoop(LoopRepeat, Infinity);
+      action.reset().play();
+      const last = view.action;
+      if (last !== null) {
+        action.fadeIn(BLEND_SECONDS);
+        last.fadeOut(BLEND_SECONDS);
+      }
+      view.action = action;
+    }
+    view.played = -1;
+    action.timeScale = 1;
+  }
+
+  /**
+   * 2026-11-18: each frame, the wolf at its scale and the rider on its back (`MOUNT_FITS`); the wolf stands, walks while
+   * the feet move (faster with the run, `wolfTimeScale`), and after a while standing plays its idle once.
+   */
+  private drawMount(view: View, dt: number): void {
+    const mount = view.mount;
+    const model = mount?.model;
+    if (!mount || !model) return;
+    const fit = fitOf(view);
+    model.object.scale.setScalar(fit.wolfScale);
+    view.model?.root.position.set(0, fit.seat, fit.forward);
+    const act = view.mover.act;
+    const moving = isMoving(act.state);
+    mount.still = moving ? 0 : mount.still + dt;
+    let want: WolfMotion = moving ? 'walk' : 'stand';
+    const idle = model.motions.idle === null ? null : model.mixer.clipAction(model.motions.idle);
+    if (!moving && idle !== null) {
+      if (mount.playing === 'idle' && idle.isRunning()) want = 'idle';
+      else if (mount.playing === 'idle') mount.still = 0;
+      else if (mount.still >= WOLF_IDLE_AFTER_SECONDS) want = 'idle';
+    }
+    if (want !== mount.playing) {
+      const clip = model.motions[want];
+      if (clip !== null) {
+        const action = model.mixer.clipAction(clip);
+        action.reset();
+        if (want === 'idle') {
+          action.setLoop(LoopOnce, 1);
+          action.clampWhenFinished = false;
+        } else {
+          action.setLoop(LoopRepeat, Infinity);
+        }
+        action.play();
+        const previous = mount.playing === null ? null : model.motions[mount.playing];
+        if (previous !== null) model.mixer.clipAction(previous).crossFadeTo(action, MOUNT_BLEND, false);
+        mount.playing = want;
+      }
+    }
+    if (model.motions.walk !== null) {
+      const speed = view.mover.profileSpeed?.() ?? act.body.speed;
+      model.mixer.clipAction(model.motions.walk).timeScale = moving
+        ? wolfTimeScale(speed, act.state, act.stateFlag, fit.wolfScale) : 1;
+    }
+    model.mixer.update(dt);
   }
 
   /** Piece 7 M5: the ride drawn is taken out of the holder and its model let go. */
@@ -751,7 +892,7 @@ export class MoverViews {
       // ADD_OBJ ends with InitInterpolation (ObjSerializeOpt.cpp:764): a new mover is drawn where it is
       scrPos: copy(mover.act.body.pos), scrAngle: mover.act.body.angle, frame: startFrame(mover.act.motionSets),
       action: null, played: -1, gone: false, spark: idleSpark(), sparkUniforms: sparkUniforms(), dmgCnt: 0,
-      scrAngleX: mover.act.angleX, ride: null, swap: null, alpha: 1,
+      scrAngleX: mover.act.angleX, ride: null, swap: null, alpha: 1, mount: null,
     };
     this.views.set(mover.objectId, view);
     const { look } = view;
@@ -882,6 +1023,7 @@ export class MoverViews {
   private drop(view: View): void {
     view.gone = true;
     this.dropRide(view);
+    this.dropMount(view);
     this.views.delete(view.mover.objectId);
     view.holder.removeFromParent();
     if (view.model !== null) {
@@ -1101,6 +1243,10 @@ export class MoverViews {
    * the last one playing.
    */
   private play(view: View): void {
+    if (view.mount?.model) {
+      this.playRider(view);
+      return;
+    }
     const model = view.model;
     const key = this.keyOf(view);
     if (model === null || key === null) return;

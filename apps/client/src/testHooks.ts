@@ -120,6 +120,11 @@ export interface ClientHooks {
    * while flying), and the motion its wings play.
    */
   wingCapes?(): Array<{ objectId: number; itemId: number; drawn: boolean; playing: 'stand' | 'walk' | null }>;
+  /**
+   * 2026-11-18 (ground mount): each player with the mount's buff: whether its wolf is drawn under it, and its run a step
+   * (the rules' `body.speed`).
+   */
+  mounts?(): Array<{ objectId: number; drawn: boolean; speed: number }>;
 }
 
 declare global {
@@ -158,6 +163,7 @@ export function createClientHooks(): ClientHooks {
     looks: () => current().looks?.() ?? [], // 2026-11-15
     bubbles: () => current().bubbles?.() ?? [], // 2026-11-17
     wingCapes: () => current().wingCapes?.() ?? [], // 2026-11-17
+    mounts: () => current().mounts?.() ?? [], // 2026-11-18
   };
 }
 
