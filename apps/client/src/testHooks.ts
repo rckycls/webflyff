@@ -113,6 +113,8 @@ export interface ClientHooks {
   angels?(): Array<{ ownerId: number; itemId: number; pos: Vec3; drawn: boolean }>;
   /** 2026-11-15 (beauty shop): each player's hair style, hair colour (as held) and face, 0-based. */
   looks?(): Array<{ objectId: number; hairMesh: number; hairColor: number; headMesh: number }>;
+  /** 2026-11-17 (shout bubble): the balloons over the heads: the speaker, the look asked for and whether the picture drew it. */
+  bubbles?(): Array<{ objectId: number; kind: 'say' | 'shout'; picture: boolean }>;
 }
 
 declare global {
@@ -149,6 +151,7 @@ export function createClientHooks(): ClientHooks {
     tags: () => current().tags(),
     angels: () => current().angels?.() ?? [],
     looks: () => current().looks?.() ?? [], // 2026-11-15
+    bubbles: () => current().bubbles?.() ?? [], // 2026-11-17
   };
 }
 

@@ -955,6 +955,8 @@ export class WorldScreen {
           objectId: m.objectId, hairMesh: player.hairMesh, hairColor: player.hairColor, headMesh: player.headMesh,
         }];
       }),
+      // 2026-11-17 (shout bubble): the balloons over the heads
+      bubbles: () => this.speechBubbles?.list() ?? [],
     });
     void this.start();
   }
@@ -1305,7 +1307,9 @@ export class WorldScreen {
       }
       if (value.type === 'chat' || value.type === 'shout' || value.type === 'whisper' || value.type === 'party' || value.type === 'guild' || value.type === 'system' || value.type === 'announcement') {
         // 2026-11-15 (B5): a player the siege hides says nothing, nor shouts (OnChat, OnShout: DPClient.cpp:1460-1465, :11681-11686)
-        if ((value.type === 'chat' || value.type === 'shout') && this.siegeHidden(world.movers.get(objectId))) continue;
+        // 2026-11-17: a shout's block has no object (NULL_ID): the shouter is the one it names (`objid`, DPClient.cpp:11661-11670)
+        if (value.type === 'chat' && this.siegeHidden(world.movers.get(objectId))) continue;
+        if (value.type === 'shout' && this.siegeHidden(world.movers.get(value.objectId))) continue;
         if (value.type === 'chat') {
           const speaker = world.movers.get(objectId);
           // CUserMng::AddDlgEmoticon sends `!<index>` through AddChat; v15 DLGEMOT_ATTACK is index 0.
@@ -1342,6 +1346,19 @@ export class WorldScreen {
         }
         else this.chatWindow?.append(value.type, value.sender, value.text, value.type === 'whisper' ? value.recipient : undefined,
           value.type === 'shout' ? value.color : undefined);
+        // 2026-11-17: and a shout's over the shouter in view, with the shout's own picture (OnShout's AddMessage( pMover, ...,
+        // CHAT_SHOUT ), DPClient.cpp:11696-11700; DialogMsg.cpp:478-516). AddMessage's "/" and "!" lines as a line said nearby.
+        if (value.type === 'shout' && value.text !== '' && world.movers.has(value.objectId)) {
+          const shouter = value.objectId, emoticon = emoticonOfLine(value.text);
+          if (emoticon !== null) {
+            this.speechBubbles?.remove(shouter);
+            this.indicators?.emoticon(shouter, emoticon, performance.now(), (key) => this.services?.store.url(key) ?? null);
+          } else if (value.text === '!0') this.indicators?.attack(shouter, performance.now());
+          else if (!value.text.startsWith('!')) {
+            this.indicators?.clearEmoticon(shouter);
+            this.speechBubbles?.say(shouter, value.text, 'shout');
+          }
+        }
         // 2026-11-10: and the guild's, over the speaker in view (OnGuildChat, DPClient.cpp:12870-12875; Neuz's guild skin
         // `texDialogBoxGuild` is not drawn: the bubble is the one of every chat)
         if ((value.type === 'party' || value.type === 'guild') && value.speakerId !== undefined && value.text !== '' && world.movers.has(value.speakerId)) {
@@ -1491,7 +1508,9 @@ export class WorldScreen {
     const now = performance.now();
     for (const [id, until] of this.pendingAttackEmotes) if (until > now) this.indicators.attack(id, until - 5000);
     this.pendingAttackEmotes.clear();
-    this.speechBubbles = new SpeechBubbleLayer(stage.scene, this.element.ownerDocument);
+    // 2026-11-17: the shout's pictures from the store
+    this.speechBubbles = new SpeechBubbleLayer(stage.scene, this.element.ownerDocument, () => performance.now(),
+      (key) => this.services?.store.url(key) ?? '');
     this.startEffects(stage, services);
     this.startHud(services, folder);
     this.syncViews();
