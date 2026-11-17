@@ -116,8 +116,8 @@ export class VipApi {
   }
 
   /** custom (owner 2026-11-17): one running minute of Auto Play; the new count, or null. */
-  async autoPlayTick(): Promise<{ usedMin: number; limitMin: number | null; resetsAt: string } | null> {
-    const answer = await this.post('/api/autoplay/tick', {}, readUsage);
+  async autoPlayTick(ms: number): Promise<{ usedMin: number; limitMin: number | null; resetsAt: string } | null> {
+    const answer = await this.post('/api/autoplay/tick', { ms: Math.round(ms) }, readUsage);
     return answer.ok ? answer.value : null;
   }
 

@@ -12,7 +12,8 @@ export interface UsageState { usedMin: number; limitMin: number | null; resetsAt
 export interface UsageApi {
   login(account: string, password: string): Promise<boolean>;
   status(): Promise<UsageState | null>;
-  tick(): Promise<UsageState | null>;
+  /** `ms`: the running time since the last tick (2026-11-18). */
+  tick(ms: number): Promise<UsageState | null>;
 }
 
 export class AutoPlayLimit {
@@ -27,9 +28,9 @@ export class AutoPlayLimit {
     this.state = await this.api.status();
   }
 
-  /** One running minute; the server answers with the new count. */
-  async tick(): Promise<void> {
-    const next = await this.api.tick();
+  /** Running time (a minute, or the part-minute at a stop); the server answers with the new count. */
+  async tick(ms: number): Promise<void> {
+    const next = await this.api.tick(ms);
     if (next !== null) this.state = next;
   }
 
@@ -47,7 +48,7 @@ export function siteUsageApi(fetchFn: typeof fetch): UsageApi {
   return {
     login: async (account, password) => (await site.login(account, password)).ok,
     status: () => site.autoPlayStatus(),
-    tick: () => site.autoPlayTick(),
+    tick: (ms) => site.autoPlayTick(ms),
   };
 }
 

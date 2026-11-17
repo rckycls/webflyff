@@ -68,13 +68,18 @@ export class AutoPlayUsage {
     return this.answer(this.accounts.get(account.toLowerCase())?.usedMs ?? 0);
   }
 
-  /** One minute of Auto Play (more or less: the time since the last tick, at most 70 s). */
-  tick(account: string): UsageStatus {
+  /**
+   * Running time of Auto Play: `ms`, what the game measured since its last tick (a minute, or the part-minute at a stop,
+   * 2026-11-18), at most a minute, and never more than the real time since the account's last tick when that was within
+   * 70 s (two tabs count the time once). An old game sends none, or a bad one: a minute, as before.
+   */
+  tick(account: string, ms?: number): UsageStatus {
     this.roll();
     const now = this.now(), key = account.toLowerCase();
     const entry = this.accounts.get(key);
     const since = entry === undefined ? Infinity : now - entry.lastTick;
-    const add = since >= 0 && since <= TICK_MAX_MS ? since : TICK_MS;
+    const carried = ms !== undefined && Number.isFinite(ms) && ms >= 0 ? Math.min(ms, TICK_MS) : TICK_MS;
+    const add = since >= 0 && since <= TICK_MAX_MS ? Math.min(carried, since) : carried;
     const next = { usedMs: (entry?.usedMs ?? 0) + add, lastTick: now };
     this.accounts.set(key, next);
     this.save();

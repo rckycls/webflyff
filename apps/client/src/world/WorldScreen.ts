@@ -4627,7 +4627,7 @@ this.follow(world, stage);
       follow: (objectId) => this.attackLoop?.followTo(objectId),
       // custom (owner 2026-11-17): the weekly hours, counted by the web service (autoplay/usageLimit.ts)
       usageLeftMin: () => autoPlayLimit.leftMin(),
-      usageTick: () => void autoPlayLimit.tick(),
+      usageTick: (ms) => void autoPlayLimit.tick(ms),
       resurrectSkill: () => {
         const index = this.own?.skills.findIndex((slot) => slot.skill === Si.ASS_HEAL_RESURRECTION && slot.level > 0) ?? -1;
         return index >= 0 ? index : null;

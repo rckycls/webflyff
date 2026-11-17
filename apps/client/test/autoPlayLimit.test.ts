@@ -37,7 +37,7 @@ describe('AutoPlayLimit (owner 2026-11-17)', () => {
     const { fake } = api({ usedMin: 839, limitMin: 840, resetsAt: '2026-11-23T00:00:00.000Z' });
     const limit = new AutoPlayLimit(fake);
     await limit.signIn('webby', 'pw');
-    await limit.tick();
+    await limit.tick(60_000);
     expect(limit.leftMin()).toBe(0);
   });
 

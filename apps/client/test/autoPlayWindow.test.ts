@@ -265,7 +265,7 @@ describe('AutoPlayWindow: the V15 look', () => {
       w.open(tab);
       const page = w.frame.element.querySelector<HTMLElement>('.hud-gc-page:not([hidden])')!;
       expect(page.querySelectorAll('input')).toHaveLength(0);
-      const words = [...page.querySelectorAll<HTMLButtonElement>('button')].filter((b) => !b.classList.contains('auto-slot') && b.getAttribute('role') !== 'checkbox' && !b.classList.contains('auto-pick'));
+      const words = [...page.querySelectorAll<HTMLButtonElement>('button')].filter((b) => !b.classList.contains('auto-slot') && b.getAttribute('role') !== 'checkbox' && b.getAttribute('role') !== 'radio' && !b.classList.contains('auto-pick'));
       expect(words.every((b) => b.classList.contains('auto-word')), tab).toBe(true);
     }
   });
@@ -409,5 +409,23 @@ describe('AutoPlayWindow: the hours of this week', () => {
     usage = null;
     w.refresh();
     expect(line(w, '.auto-farm')).toBeNull();
+  });
+});
+
+// 2026-11-18 (owner): the hunting area's centre
+describe('AutoPlayWindow: the hunting centre', () => {
+  it('Centre: Last kill chosen by default; Start point chooses the start, as V15 radio buttons, saved', () => {
+    const { w, play, saves } = rig();
+    w.open('farm');
+    const farm = w.frame.element.querySelector<HTMLElement>('.auto-farm')!;
+    const last = farm.querySelector<HTMLButtonElement>('[data-name="auto-center-lastKill"]')!;
+    const start = farm.querySelector<HTMLButtonElement>('[data-name="auto-center-start"]')!;
+    expect([last.getAttribute('role'), last.getAttribute('aria-checked'), start.getAttribute('aria-checked')]).toEqual(['radio', 'true', 'false']);
+    start.click();
+    expect(play.settings.farm.center).toBe('start');
+    expect(saves()).toBe(1);
+    const now = w.frame.element.querySelector<HTMLElement>('.auto-farm')!;
+    expect(now.querySelector('[data-name="auto-center-start"]')!.getAttribute('aria-checked')).toBe('true');
+    expect(now.querySelector('[data-name="auto-center-lastKill"]')!.getAttribute('aria-checked')).toBe('false');
   });
 });

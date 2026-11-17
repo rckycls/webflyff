@@ -8,7 +8,15 @@ export class AutoPlayStats {
   picked = 0;
   potions = 0;
 
+  /** 2026-11-18 (owner bug "still counting even when stopped"): when the run ended; the time stops there. */
+  private ended: number | null = null;
+
   constructor(readonly started: number) {}
+
+  /** The run ended at `now` (the first end counts). */
+  end(now: number): void {
+    this.ended ??= now;
+  }
 
   onEvent(e: AutoPlayEvent): void {
     if (e.kind === 'kill') this.kills++;
@@ -22,7 +30,7 @@ export class AutoPlayStats {
 
   lines(now: number): string[] {
     return [
-      `Time ${formatDuration(now - this.started, 'ms')}`,
+      `Time ${formatDuration((this.ended ?? now) - this.started, 'ms')}`,
       `Kills ${this.kills.toLocaleString('en-US')}`,
       `EXP +${this.exp.toLocaleString('en-US')}`,
       `Items ${this.picked.toLocaleString('en-US')}`,
