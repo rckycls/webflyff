@@ -117,6 +117,42 @@ test('a walk to a clicked point goes on as the chat takes the keys and as the ma
   await page.keyboard.press('KeyM');
 });
 
+/** The page loses the focus and is hidden, as alt-tab or another tab does (world.spec.ts' hiding, both at once). */
+async function hide(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+    window.dispatchEvent(new Event('blur'));
+  });
+}
+
+test('2026-11-18: alt-tab or another tab leaves the auto-run and a click-walk going', async ({ page }) => {
+  test.skip(isTouch(), "the PC's keys");
+  await playGateway(page);
+  await enterFlaris(page);
+  await page.waitForTimeout(1000);
+  await doubleW(page);
+  await expect.poll(() => moveOf(page), ON_FRAMES).toBe(OBJSTA_FMOVE);
+  await hide(page);
+  expect(await goes(page)).toBeGreaterThan(0.5);
+  expect(await moveOf(page)).toBe(OBJSTA_FMOVE);
+  // a real tab in front: the hidden page's rules keep stepping (SimulationClock), and the auto-run goes on
+  const other = await page.context().newPage();
+  await other.goto('about:blank');
+  await other.bringToFront();
+  expect(await goes(page, 1000)).toBeGreaterThan(0.5);
+  await page.bringToFront();
+  await other.close();
+  await page.keyboard.press('KeyS');
+  await expect.poll(() => moveOf(page), ON_FRAMES).toBe(OBJSTA_STAND);
+  // a walk to a clicked point
+  await page.evaluate(() => { delete (document as { visibilityState?: unknown }).visibilityState; });
+  await tapWorld(page, 0.5, 0.45);
+  await expect.poll(() => moveOf(page), ON_FRAMES).toBe(OBJSTA_FMOVE);
+  await hide(page);
+  expect(await goes(page, 400)).toBeGreaterThan(0.3);
+});
+
 const PARTS_RIDE = 13;
 /** Webby flying 12 m over the square on the Magic Broom. */
 function flyingScript() {

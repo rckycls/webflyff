@@ -6,7 +6,8 @@
 // Neuz reads its key table once a frame; here the presses are the key events, with their own times, so that a quick press
 // between two slow frames still counts (as `WalkKey` keeps a press made between two reads). Neuz also stops it on a take-off
 // (`CMover::EquipItem` with a ride, `_Common/MoverEquip.cpp:1820`) and on entering the world (`CWndMgr::OpenField`,
-// `WndManager.cpp:2142`). The browser adds the stops below (`autoRunStops`, the world screen's `stopOwnMover`): Neuz goes on
+// `WndManager.cpp:2142`). The browser adds the stops below (`autoRunStops`, and the world screen's `stopOwnMover` for an
+// NPC's or a player's menu and a world change): Neuz goes on
 // walking through them, a click on the ground walking there and on, and an attack cleared at each frame (`ClearCmd`, :382).
 
 /** `m_timerAutoRun`, `m_timerAutoRunPush` and `m_timerAutoRunBlock`, each `Set( 200 )` (`WndWorld.cpp:624-626`). */
@@ -70,6 +71,27 @@ export function autoRunStops(s: AutoRunStops): boolean {
   return s.dead || s.sitting || s.flying || s.tapped || s.attacking;
 }
 
+/** What the own player is doing as the page loses the focus or is hidden (2026-11-18). */
+export interface UnfocusedMove {
+  /** The auto-run is on. */
+  autoRun: boolean;
+  /** It walks to a clicked point or to a mover (`!IsEmptyDest()`). */
+  walkingToDest: boolean;
+  /** It flies: the thrust is a toggle (Space), held by no key. */
+  flying: boolean;
+}
+
+/**
+ * Whether the own player goes on as the page loses the focus (alt-tab, another window) or is hidden (another tab), the
+ * owner's request of 2026-11-18. Neuz, no longer the active window, clears only the moves' keys (`m_bActiveNeuz`,
+ * `WndWorldControlPlayer.cpp:142-150`): `m_bAutoRun` and the destination stay, so the auto-run, a walk to a clicked point
+ * and a flight's thrust go on (a hidden tab's rules keep stepping, `SimulationClock`). A move of held keys or the stick
+ * stops at once instead, since their let-go may never come and the server's copy would run on.
+ */
+export function goesOnUnfocused(s: UnfocusedMove): boolean {
+  return s.autoRun || s.walkingToDest || s.flying;
+}
+
 type Listen = Pick<EventTarget, 'addEventListener' | 'removeEventListener'>;
 
 const FORWARD = 'KeyW';
@@ -77,8 +99,8 @@ const BACKWARD = 'KeyS';
 
 /**
  * W and S, by their place on the keyboard, as `AutoRun` reads them. Keys typed in a field are the field's. A window's key
- * hold (the modal backdrop's) keeps them from here, and a lost focus does not stop the lock: the world screen does that
- * (`stopOwnMover`). `target` is usually `window`.
+ * hold (the modal backdrop's) keeps them from here, and a lost focus does not stop the lock (`goesOnUnfocused`). `target`
+ * is usually `window`.
  */
 export class AutoRunKeys {
   private readonly rule = new AutoRun();

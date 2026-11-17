@@ -70,7 +70,7 @@ import type { MissileWorld } from './combat/missiles';
 import { OwnShots } from './combat/ownShots';
 import { Focus } from './combat/focus';
 import { NO_FLIGHT_STICK, TapToWalk, WalkKey, controlIntent, flightKeys, flightStick, movesOrTurns } from './controls';
-import { AutoRunKeys, autoRunStops } from './autoRun';
+import { AutoRunKeys, autoRunStops, goesOnUnfocused } from './autoRun';
 import type { FlightStick } from './controls';
 import { FlightControl } from './flightControl';
 import type { FlightInput } from './flightControl';
@@ -322,6 +322,7 @@ const WING_CHECK_MS = 1100;
 const MTI_STAND2 = 199;
 import { BLINKPOOL_NOT_YET, SkillUse } from './skills/skillUse';
 import { transformCoord } from './sim/d3dx';
+import { isEmptyDest } from './sim/moverRules';
 import { STEPS_PER_SECOND, catchUp } from './sim/stepper';
 import { SimulationClock } from './simulationClock';
 import { WorldSession } from './WorldSession';
@@ -5874,10 +5875,34 @@ this.follow(world, stage);
   /** Release held controls when hidden; the simulation clock keeps toggled combat running. */
   private readonly onVisibility = (): void => {
     if (this.element.ownerDocument.visibilityState !== 'hidden') return;
-    this.stopOwnMover();
+    this.unfocused();
   };
 
-  private readonly onBlur = (): void => this.stopOwnMover();
+  private readonly onBlur = (): void => this.unfocused();
+
+  /**
+   * 2026-11-18 (the owner's request): the page lost the focus (alt-tab, another window) or is hidden (another tab). The auto-run,
+   * a walk to a clicked point and a flight go on (`goesOnUnfocused`, as Neuz keeps `m_bAutoRun` and the destination while it
+   * is not the active window, `WndWorldControlPlayer.cpp:142-150`): only what is held lets go, since its let-go may never
+   * come, and the rules' next step stops a turn the keys were making. Anything else stops at once (`stopOwnMover`), so the
+   * server's copy of a walk with W held does not run on.
+   */
+  private unfocused(): void {
+    const own = this.world?.self();
+    const goesOn = own !== undefined && goesOnUnfocused({
+      autoRun: this.autoRun?.on === true, walkingToDest: !isEmptyDest(own), flying: own.act.isFlying(),
+    });
+    if (!goesOn) {
+      this.stopOwnMover();
+      return;
+    }
+    this.keyboard?.reset();
+    this.walkKey?.reset();
+    this.joystick?.reset();
+    this.tap?.reset();
+    this.cameraControls?.reset();
+    this.jumpRequested = false;
+  }
 
   private readonly onContextMenu = (event: Event): void => {
     const target = event.target as HTMLElement | null;
@@ -6026,9 +6051,10 @@ this.follow(world, stage);
   };
 
   /**
-   * Release controls immediately on blur: key/finger releases may never arrive. This prevents stuck movement,
-   * including if the browser later freezes the page. A walk to a tapped point ends too; toggled combat stays enabled
-   * and continues through the simulation clock.
+   * Release controls and stop the own player at once: key/finger releases may never arrive. This prevents stuck movement,
+   * including if the browser later freezes the page. A walk to a tapped point and the auto-run end too; toggled combat
+   * stays enabled and continues through the simulation clock. 2026-11-18: a lost focus or a hidden page comes here only for
+   * a move of held keys or the stick (`unfocused`); an NPC's or a player's menu and a world change always do.
    */
   private stopOwnMover(): void {
     this.autoRun?.stop(); // 2026-11-11
