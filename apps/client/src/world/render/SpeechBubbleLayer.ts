@@ -42,6 +42,37 @@ function wrap(context: CanvasRenderingContext2D, text: string, maxWidth: number,
   return lines;
 }
 
+/** Where Neuz may break an English line: after one of these (`CEditString::Align`, EditString.cpp:742). */
+const BREAKS = ' +-*^/%=;(),\':{}.';
+
+/**
+ * 2026-11-17: a shout's lines as Neuz breaks them in English (`CEditString::Align`, EditString.cpp:681-805, word alignment
+ * on: :6-9, :719-728). A line takes characters while they fit in `maxWidth`, a space never ending it; at the first that
+ * does not fit, it ends after the last break point it has (that one kept, even past the width), else before that
+ * character. A '\n' ends a line too.
+ */
+export function neuzLines(context: Pick<CanvasRenderingContext2D, 'measureText'>, text: string, maxWidth: number): string[] {
+  const chars = [...text], lines: string[] = [];
+  let offset = 0;
+  while (offset < chars.length) {
+    const start = offset;
+    let after = 0, end = -1;
+    while (offset < chars.length) {
+      const character = chars[offset]!;
+      if (BREAKS.includes(character)) after = offset + 1;
+      if (character === '\n') { end = offset; offset++; break; }
+      const width = context.measureText(chars.slice(start, offset + 1).join('')).width;
+      if (character !== ' ' && width > maxWidth && offset > start) {
+        if (after > start) offset = after;
+        break;
+      }
+      offset++;
+    }
+    lines.push(chars.slice(start, end < 0 ? offset : end).join(''));
+  }
+  return lines;
+}
+
 /** Native CDialogMsg uses a 5000ms lifetime. Messages enter only from server echoes. */
 export class SpeechBubbleLayer {
   private readonly bubbles = new Map<number, Bubble>();
@@ -94,7 +125,7 @@ export class SpeechBubbleLayer {
     context.font = FONT;
     const measured = Math.ceil(context.measureText(text).width);
     const cx = measured >= 160 ? 160 : upTo16(measured + 16);
-    const lines = wrap(context, text, cx - 16, Infinity);
+    const lines = neuzLines(context, text, cx - 16);
     const cy = upTo16(lines.length * LINE_PX + 16);
     const pictureWidth = (cx / 8 <= 5 ? cx * 0.7 : cx * 0.9) + 50, pictureHeight = cy * 0.75 + 40;
     const width = Math.ceil(pictureWidth), height = Math.ceil(Math.max(pictureHeight, 28 + lines.length * LINE_PX));

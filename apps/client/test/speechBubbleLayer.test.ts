@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { expect, it, vi } from 'vitest';
 import { PerspectiveCamera, Scene, Sprite, SpriteMaterial } from 'three';
-import { SpeechBubbleLayer, shoutPicture } from '../src/world/render/SpeechBubbleLayer';
+import { SpeechBubbleLayer, neuzLines, shoutPicture } from '../src/world/render/SpeechBubbleLayer';
 
 it('replaces each speaker bubble, follows the head, fades, and releases expired or removed messages', () => {
   const context = { font: '', measureText: (text: string) => ({ width: text.length * 6 }), scale: vi.fn(), beginPath: vi.fn(), roundRect: vi.fn(), fill: vi.fn(), stroke: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), fillText: vi.fn() };
@@ -81,4 +81,16 @@ it('draws a shout over the shouter with the shout picture, sized as Neuz does, a
     expect(context.roundRect).toHaveBeenCalledOnce(); expect(context.fillText).toHaveBeenLastCalledWith('Hello', 8, 6);
     plainLayer.dispose();
   } finally { layer.dispose(); made.mockRestore(); mock.mockRestore(); }
+});
+
+// 2026-11-17: a shout's lines as CEditString::Align breaks them in English (EditString.cpp:681-805)
+it('breaks a shout after its last space or mark that fits, as Neuz does in English', () => {
+  const sixEach = { measureText: (text: string) => ({ width: text.length * 6 }) } as Pick<CanvasRenderingContext2D, 'measureText'>;
+  // 24 characters fit in 144 px; the comma that does not fit is a break point, so it stays on the line
+  expect(neuzLines(sixEach, 'WTS Stam Sword +10 cheap, pm me now!', 144)).toEqual(['WTS Stam Sword +10 cheap,', ' pm me now!']);
+  expect(neuzLines(sixEach, 'Anyone want to party at the Flaris fountain?', 144)).toEqual(['Anyone want to party at ', 'the Flaris fountain?']);
+  // a space never ends a line; a word with no break point is cut where it stops fitting
+  expect(neuzLines(sixEach, 'abcd    ', 24)).toEqual(['abcd    ']);
+  expect(neuzLines(sixEach, 'a'.repeat(30), 144)).toEqual(['a'.repeat(24), 'a'.repeat(6)]);
+  expect(neuzLines(sixEach, 'one\ntwo', 144)).toEqual(['one', 'two']);
 });
