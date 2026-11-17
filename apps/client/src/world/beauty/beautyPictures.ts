@@ -170,7 +170,7 @@ export interface BeautyPicturesHost {
 
 /** What makes a look's picture: its parts, hair colour and held items. */
 function keyOf(look: MoverLook): string {
-  return `${look.parts.join(',')}|${look.hairColor}|${look.held.right}|${look.held.left}`;
+  return `${look.parts.join(',')}|${look.hairColor}|${look.held.right}|${look.held.left}|${look.held.back ?? null}`;
 }
 
 export interface LookChange {

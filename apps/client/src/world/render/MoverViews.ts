@@ -34,6 +34,7 @@ import {
   DAMAGE_SHAKE_TICKS, SPARK_CAST, idleSpark, lightWithSpark, setSparkUniforms, shakeOffset, sparkUniforms, startSpark, stepSpark,
 } from './sparks';
 import type { SparkInfo, SparkUniforms } from './sparks';
+import { playWing } from './wingCapes';
 
 /** `m_fBlendWeight += 0.05f` a frame move (`CModelObject::FrameMove`, `ModelObject.cpp:1749-1754`): 20 steps of blending. */
 const BLEND_SECONDS = 20 / STEPS_PER_SECOND;
@@ -395,6 +396,7 @@ export class MoverViews {
       }
       // 2026-11-05: a wing flaps: its stand motion, its walk while the thrust is on (WingMotionSetting, Mover.cpp:10704-10738)
       this.flapWing(view, dt);
+      this.flapWingCape(view, dt);
       // after the frame's pose: CModelObject::Render animates m_mUpdateBone before the ride is drawn (MoverRender.cpp:572, :651)
       this.raiseRide(view);
       // 2026-11-10: an invisible player's body (MoverRender.cpp:517-531), again each frame while it is not whole, for the
@@ -657,6 +659,23 @@ export class MoverViews {
   }
 
   /**
+   * 2026-11-17 (wing capes, a custom item): the wings worn in the cape slot flap as a flier's do (`playWing`): their stand
+   * motion, their walk while the wearer walks or runs (OBJSTA_FMOVE, OBJSTA_BMOVE). While the wearer flies they are not
+   * drawn (the owner's rule: a flier's own ride is on the back then).
+   */
+  private flapWingCape(view: View, dt: number): void {
+    const act = view.mover.act;
+    const flying = (act.stateFlag & ObjStaF.FLY) !== 0;
+    const move = act.state & ObjSta.MOVE_ALL;
+    const want = move === ObjSta.FMOVE || move === ObjSta.BMOVE ? 'walk' : 'stand';
+    for (const held of view.held) {
+      if (held.slot !== 'back') continue;
+      held.item.visible = !flying;
+      if (!flying && held.wing !== undefined) playWing(held.wing, want, dt);
+    }
+  }
+
+  /**
    * 2026-11-05: a wing on its rider's back (`MoverRender.cpp:610-646`): turned as the rider's Spine2 (bone 4) by
    * `RotZ( -90 ) RotX( 180 )`, at the rider's Neck (bone 5); the feather wings nudged 0.02 down and 0.1 back.
    */
@@ -692,6 +711,14 @@ export class MoverViews {
     const view = this.views.get(objectId);
     if (view === undefined || view.model === null) return [];
     return view.held.flatMap((held) => (held.hand && held.item.parent !== null ? [{ hand: held.hand, object: held.item }] : []));
+  }
+
+  /** 2026-11-17 (wing capes, for the tests): the wing capes on the movers' backs, whether drawn, and their motion. */
+  wingCapes(): Array<{ objectId: number; itemId: number; drawn: boolean; playing: 'stand' | 'walk' | null }> {
+    return [...this.views.values()].flatMap((view) => view.held.flatMap((held) =>
+      held.slot === 'back' && held.item.parent !== null
+        ? [{ objectId: view.mover.objectId, itemId: view.look?.held.back ?? -1, drawn: held.item.visible, playing: held.wing?.playing ?? null }]
+        : []));
   }
 
   /** The movers with views, by object id. */

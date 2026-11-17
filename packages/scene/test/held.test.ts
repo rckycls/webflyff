@@ -38,6 +38,8 @@ const MALE_GRIPS: SkeletonGrips = {
 
 /** The bone names of the male skeleton where the grips are; the others are numbered. */
 const NAMED: Record<number, string> = {
+  5: 'Bip02 Spine2',
+  6: 'Bip02 Neck',
   12: 'Bip02 L ForeArm',
   13: 'Bip02 L Hand',
   16: 'Bip02 R ForeArm',
@@ -264,5 +266,45 @@ describe('attachHeld', () => {
     holder.updateMatrixWorld(true);
 
     expectAt(worldOf(sword, [0, 0, 0]), heldAt(hand, MALE_GRIPS.localRH, [0, 0, 0]));
+  });
+});
+
+describe("attachHeld 'back' (2026-11-17, wing capes)", () => {
+  /** `RotZ( -90 ) * RotX( 180 )` (MoverRender.cpp:622-628): the wings' (x, y, z) is Spine2's (y, x, -z). */
+  const TURN = new Matrix4().set(0, 1, 0, 0, 1, 0, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1);
+
+  /** Where the flier's wings put `point` (web, in the wings' space): turned as Spine2, at the Neck. */
+  function wingAt(spine: Object3D, neck: Object3D, point: Vec3): Vector3 {
+    const m = new Matrix4().copy(spine.matrixWorld).setPosition(new Vector3().setFromMatrixPosition(neck.matrixWorld));
+    return new Vector3(...point).applyMatrix4(m.multiply(TURN));
+  }
+
+  it('hangs wings where a flier wears them: turned as Spine2, at the Neck, and they follow the back', async () => {
+    const { character, holder, bone } = await man();
+    const wings = item(null);
+    attachHeld(character, wings, 'back');
+    holder.updateMatrixWorld(true);
+    for (const point of [[0, 0, 0], [0.5, 0, 0], [0, 0.4, 0], [0, 0, 0.3]] as Vec3[]) {
+      expectAt(new Vector3(...point).applyMatrix4(wings.matrixWorld), wingAt(bone('Bip02 Spine2'), bone('Bip02 Neck'), point));
+    }
+    bone('Bip02 Spine2').rotation.z += 0.7; // the motion bends the back
+    holder.updateMatrixWorld(true);
+    expectAt(new Vector3(0, 0.4, 0).applyMatrix4(wings.matrixWorld), wingAt(bone('Bip02 Spine2'), bone('Bip02 Neck'), [0, 0.4, 0]));
+  });
+
+  it("adds nothing to the character's box, and needs no grips", async () => {
+    const plain = await assembleCharacter(joints(BONES), [part(BONES, { min: [-0.5, 0, -0.25], max: [0.5, 1.8, 0.25] })], cache());
+    const wings = item();
+    attachHeld(plain, wings, 'back');
+    expect(wings.parent).not.toBeNull();
+    expect(plain.box()).toEqual({ min: [-0.5, 0, -0.25], max: [0.5, 1.8, 0.25] });
+  });
+
+  it('refuses a skeleton without a Spine2 and a Neck, hanging nothing', async () => {
+    const names = BONES.map((name) => name.replace('Spine2', 'Spine9'));
+    const { character } = await man(MALE_GRIPS, names);
+    const wings = item();
+    expect(() => attachHeld(character, wings, 'back')).toThrow(/Spine2 and Neck/);
+    expect(wings.parent).toBeNull();
   });
 });

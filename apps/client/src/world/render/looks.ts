@@ -1,3 +1,4 @@
+import type { WebItemProp } from '@flyffweb/formats';
 import type { CharacterSummary, WornPart } from '@flyffweb/protocol';
 import { DEFAULT_MOTION, motionKey, partKey, skeletonKey } from '@flyffweb/scene';
 import type { Gender, HeldSlot } from '@flyffweb/scene';
@@ -29,8 +30,10 @@ export interface MoverLook {
    * PARTS_LWEAPON or the PARTS_SHIELD slot's (CMover::DoEquip never fills both: a left-hand weapon goes there only
    * without a shield, and a shield takes it off, `MoverEquip.cpp:505-506`, `:573-600`). Null for an empty hand, and for
    * every hand of a mover that is not dressed. `heldModels` says what is drawn there.
+   *
+   * 2026-11-17 (wing capes): `back` is the wing cape drawn on the back (`wingCapeShown`); absent or null for none.
    */
-  held: { right: number | null; left: number | null };
+  held: { right: number | null; left: number | null; back?: number | null };
   /**
    * 2026-11-09 (pets R1): the model's extra texture set (`WebMover.textureEx`, `m_nTextureEx`, 1 to 7), which every
    * material draws with in place of its own texture (`CMover::Render`, `MoverRender.cpp:388-391`); absent for none. A
@@ -52,6 +55,17 @@ export const Parts = {
 } as const;
 /** `IK3_KNUCKLEHAMMER`, `IK3_YOYO` and `IK3_BOW` (`Resource/defineItemkind.h:71,77,78`): the weapons held elsewhere. */
 const Ik3 = { KNUCKLEHAMMER: 5, YOYO: 11, BOW: 12 } as const;
+/** `IK3_CLOAK` (`Resource/defineItemkind.h:92`). */
+const IK3_CLOAK = 24;
+
+/**
+ * 2026-11-17 (wing capes, a custom item of this server): a cloak drawn as wings on the back. Every other cloak's OT_ITEM
+ * entry names a worn part, so it has no `model` of its own; a wing cape's entry is a flier's wings
+ * (`"RidRidWinAngel01" II_ARM_S_CLO_WING_ANGEL01 MODELTYPE_ANIMATED_MESH ""`, Resource/mdlDyna.inc), so it has.
+ */
+export function isWingCape(prop: Pick<WebItemProp, 'kind3' | 'model'> | undefined): boolean {
+  return prop !== undefined && prop.kind3 === IK3_CLOAK && !!prop.model;
+}
 
 /** What a slot shows with no item: `PARTSMESH_UPPER`, `_LOWER`, `_HAND` and `_FOOT` (`MoverEquip.cpp:75-78`, used at :426-445). */
 const BARE_BODY = [
@@ -181,7 +195,9 @@ function humanLook({ gender, hairMesh, headMesh, hairColor, worn }: Dressing, da
     if (!taken.has(slot) && !slots.has(slot)) slots.set(slot, partKey(`part_${gender}${name}`));
   }
   for (const [armour, overcoat] of OVERCOATS) if (slots.has(overcoat)) slots.delete(armour);
-  for (const slot of hiddenSlots(equipped)) slots.delete(slot);
+  const hidden = hiddenSlots(equipped);
+  for (const slot of hidden) slots.delete(slot);
+  const back = slots.has(Parts.CLOAK2) || hidden.has(Parts.CLOAK) ? null : wingCapeShown(worn, data);
 
   const parts = [...slots].sort(([a], [b]) => a - b).map(([, key]) => key);
   // the body mover's motions are the gender's; the viewer's standing motion stands in where the game data lacks them
@@ -191,8 +207,19 @@ function humanLook({ gender, hairMesh, headMesh, hairColor, worn }: Dressing, da
     parts,
     motion: motionOf(body?.motions ?? {}, motionKey(gender, DEFAULT_MOTION[gender])),
     hairColor: drawnHairColor(gender, hairMesh, hairColor),
-    held: heldBy(worn),
+    held: back === null ? heldBy(worn) : { ...heldBy(worn), back },
   };
+}
+
+/**
+ * 2026-11-17 (wing capes): the wing cape worn in PARTS_CLOAK (`isWingCape`), unless it is expired; null for none. It has
+ * no part model (`data.items`), so the slot shows no cloth; the caller drops it where a fashion cloak covers the slot
+ * or a hat hides it, as for any cloak.
+ */
+function wingCapeShown(worn: readonly WornPart[], data: GameData): number | null {
+  const cloak = worn.find((w) => w.part === Parts.CLOAK);
+  if (cloak === undefined || (cloak.flag & ITEM_EXPIRED) !== 0) return null;
+  return isWingCape(data.itemProps.get(cloak.itemId)) ? cloak.itemId : null;
 }
 
 /**
@@ -241,6 +268,9 @@ export function heldModels(held: MoverLook['held'], data: GameData): HeldModel[]
     const shield = left.part === Parts.SHIELD;
     out.push({ model: left.model, slot: shield ? 'shield' : 'left', hand: shield ? null : 'left' });
   }
+  // 2026-11-17 (wing capes): the wings on the back, the cape's own model
+  const back = held.back == null ? undefined : data.itemProps.get(held.back);
+  if (back?.model) out.push({ model: back.model, slot: 'back', hand: null });
   return out;
 }
 

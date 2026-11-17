@@ -29,6 +29,7 @@ import type { Page3d } from '../world/page3d';
 import { characterLook } from '../world/render/looks';
 import { loadHeldItems, loadMoverModel } from '../world/render/moverModels';
 import { PictureTarget, drawPicture, portraitCamera, unlit } from '../world/render/portrait';
+import type { WingMotions } from '../world/render/wingCapes';
 
 /** A slot's viewport (`m_aRect[ i ]`, 158 x 238) and the create window's (280 to 550, 0 to 305). */
 export const SLOT_BOX = { width: 158, height: 238 } as const;
@@ -38,8 +39,13 @@ export const CREATE_BOX = { width: 270, height: 305 } as const;
 interface Dressed {
   model: AssembledCharacter;
   motions: Map<number, LoopedMotion | null>;
+  /** 2026-11-17: the wing cape's wings, flapping their stand motion. */
+  wings: WingMotions[];
   release(): void;
 }
+
+/** The ticks a second (`ticksIn`): a wing cape's stand motion runs on them. */
+const TICKS_PER_SECOND = 60;
 
 const warn = (message: string): void => console.warn(`Lobby character: ${message}`);
 
@@ -65,7 +71,7 @@ async function dress(
       }
     }));
     return {
-      model, motions,
+      model, motions, wings: held.flatMap((item) => (item.wing === undefined ? [] : [item.wing])),
       release() {
         for (const item of held) { item.item.removeFromParent(); item.release(); }
         model.release();
@@ -87,6 +93,8 @@ class Portrait {
   private dressed: Dressed | null = null;
   private clip: LoopedMotion | null = null;
   private clock: MotionClock | null = null;
+  /** 2026-11-17: the ticks since the model came, for a wing cape's flap. */
+  private ticks = 0;
   state: MotionState = { id: LobbyMti.STAND, loop: true, ended: false };
   private drawnFrame = -1;
   private reading = false;
@@ -132,6 +140,7 @@ class Portrait {
     const clock = this.clock;
     if (clock === null) return;
     clock.tick();
+    this.ticks++;
     this.state = { ...this.state, ended: clock.ended };
   }
 
@@ -144,6 +153,7 @@ class Portrait {
     const { dressed, clock } = this;
     if (dressed === null || clock === null || this.reading || clock.frame === this.drawnFrame) return;
     if (this.clip !== null) dressed.model.mixer.setTime(timeOf(this.clip, clock.frame));
+    for (const wing of dressed.wings) wing.mixer.setTime(this.ticks / TICKS_PER_SECOND);
     this.drawnFrame = clock.frame;
     this.reading = true;
     const generation = this.generation;

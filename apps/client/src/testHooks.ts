@@ -115,6 +115,11 @@ export interface ClientHooks {
   looks?(): Array<{ objectId: number; hairMesh: number; hairColor: number; headMesh: number }>;
   /** 2026-11-17 (shout bubble): the balloons over the heads: the speaker, the look asked for and whether the picture drew it. */
   bubbles?(): Array<{ objectId: number; kind: 'say' | 'shout'; picture: boolean }>;
+  /**
+   * 2026-11-17 (wing capes): the wing capes hung on the movers' backs: the mover, the cape's item, whether it is drawn (not
+   * while flying), and the motion its wings play.
+   */
+  wingCapes?(): Array<{ objectId: number; itemId: number; drawn: boolean; playing: 'stand' | 'walk' | null }>;
 }
 
 declare global {
@@ -152,6 +157,7 @@ export function createClientHooks(): ClientHooks {
     angels: () => current().angels?.() ?? [],
     looks: () => current().looks?.() ?? [], // 2026-11-15
     bubbles: () => current().bubbles?.() ?? [], // 2026-11-17
+    wingCapes: () => current().wingCapes?.() ?? [], // 2026-11-17
   };
 }
 

@@ -4,14 +4,14 @@ import { GAME_DATA_KEYS } from '@flyffweb/formats';
 import type { WebItemModel, WebItemProp, WebMover } from '@flyffweb/formats';
 import { DEFAULT_MALE, partKey } from '@flyffweb/scene';
 import { loadGameData } from '../src/world/gameData';
-import { heldModels, lookOf } from '../src/world/render/looks';
+import { heldModels, isWingCape, lookOf } from '../src/world/render/looks';
 import { catalogFiles } from './helpers/gameDataFiles';
 import { MI_FEMALE, MI_MALE, addedNpc, addedPlayer, gameDataOf, moverFrom, webMoverOf } from './helpers/movers';
 
 /** `PARTS_*` (`Resource/defineNeuz.h:24-61`). */
-const PARTS = { HEAD: 0, HAIR: 1, UPPER: 2, LOWER: 3, HAND: 4, FOOT: 5, CAP: 6, LWEAPON: 9, RWEAPON: 10, SHIELD: 11, HAT: 26, CLOTH: 27 };
+const PARTS = { HEAD: 0, HAIR: 1, UPPER: 2, LOWER: 3, HAND: 4, FOOT: 5, CAP: 6, CLOAK: 8, LWEAPON: 9, RWEAPON: 10, SHIELD: 11, HAT: 26, CLOTH: 27, CLOAK2: 30 };
 /** `IK3_*` (`Resource/defineItemkind.h`): a sword, a knuckle, a yoyo, a bow and a shield. */
-const IK3 = { SWD: 2, KNUCKLEHAMMER: 5, YOYO: 11, BOW: 12, SHIELD: 16 };
+const IK3 = { SWD: 2, KNUCKLEHAMMER: 5, YOYO: 11, BOW: 12, SHIELD: 16, CLOAK: 24 };
 /** NULL_ID, `=` in propItem.txt: no `dwExclusive` or `dwBasePartsIgnore`. */
 const NONE = -1;
 
@@ -68,6 +68,8 @@ const data = gameDataOf({
     [780, item(780, PARTS.UPPER, null, 'models/part_fsuit01upper.glb', { exclusive: PARTS.LOWER })],
     [781, item(781, PARTS.CAP, null, 'models/part_fhelm01cap.glb', { baseIgnore: PARTS.HAIR })],
     [790, item(790, -1, 'models/part_mnowhere.glb')], // an item that is worn nowhere (dwParts is NULL_ID)
+    [4761, item(4761, PARTS.CLOAK, 'models/part_mcloakmonkey.glb')], // the Cloak of the Monkey: a cloth part
+    [800, item(800, PARTS.CLOAK2, 'models/part_mfascloak01.glb')], // a fashion cloak over the cloak slot
   ]),
   itemProps: new Map([
     // the starter weapon (II_WEA_SWO_WOODEN) and the Long Sword, both one-handed: dwParts PARTS_RWEAPON
@@ -78,6 +80,10 @@ const data = gameDataOf({
     [431, held(431, 'Woodness Bow', IK3.BOW, PARTS.RWEAPON, 'models/item_weabowwoode.glb')],
     [2001, held(2001, 'Green Shield', IK3.SHIELD, PARTS.SHIELD, 'models/item_armshiwooden.glb')],
     [24, held(24, 'Unseen Sword', IK3.SWD, PARTS.RWEAPON, null)], // no model was converted
+    // 2026-11-17: II_ARM_S_CLO_WING_ANGEL01, a wing cape: its OT_ITEM entry is a flier's wings, so it has a model; the
+    // Cloak of the Monkey's entry names a part, so it has none
+    [20252, held(20252, 'Angelic Wings Cape', IK3.CLOAK, PARTS.CLOAK, 'models/item_ridridwinangel01.glb')],
+    [4761, held(4761, 'Cloak of the Monkey', IK3.CLOAK, PARTS.CLOAK, null)],
   ]),
 });
 
@@ -478,5 +484,38 @@ describe('lookOf: motions', () => {
     expect(man?.motion(5)).toBe('motions/mvr_male/mvr_male_genstand.glb');
     const woman = lookOf(moverFrom(addedPlayer(2, { sex: 1 }, { index: MI_FEMALE }), bare), bare);
     expect(woman?.motion(0)).toBe('motions/mvr_female/mvr_female_genstand.glb');
+  });
+});
+
+describe('wing capes (2026-11-17)', () => {
+  const vagrant = [worn(PARTS.UPPER, 502), worn(PARTS.HAND, 506), worn(PARTS.FOOT, 510)];
+
+  it('a cloak with a model of its own is a wing cape; a cloth cloak and a weapon are not', () => {
+    expect(isWingCape(data.itemProps.get(20252))).toBe(true);
+    expect(isWingCape(data.itemProps.get(4761))).toBe(false);
+    expect(isWingCape(data.itemProps.get(21))).toBe(false);
+    expect(isWingCape(undefined)).toBe(false);
+  });
+
+  it('another player in a wing cape has it on the back and no cloth in the cloak slot', () => {
+    const look = lookOf(player([...vagrant, worn(PARTS.CLOAK, 20252)]), data);
+    expect(look?.held).toEqual({ right: null, left: null, back: 20252 });
+    expect(look?.parts).toEqual(lookOf(player(vagrant), data)?.parts);
+    expect(heldModels(look!.held, data)).toEqual([{ model: 'models/item_ridridwinangel01.glb', slot: 'back', hand: null }]);
+  });
+
+  it('the own look takes the wing cape from the character list, a woman too', () => {
+    const own = moverFrom(addedPlayer(7, { self: true }), data);
+    expect(lookOf(own, data, [502, 506, 510, 20252])?.held.back).toBe(20252);
+    const woman = moverFrom(addedPlayer(8, { sex: 1, worn: [worn(PARTS.CLOAK, 20252)] }, { index: MI_FEMALE }), data);
+    expect(lookOf(woman, data)?.held.back).toBe(20252);
+  });
+
+  it('an expired wing cape, one under a fashion cloak, and a cloth cloak put nothing on the back', () => {
+    expect(lookOf(player([worn(PARTS.CLOAK, 20252, 0x01)]), data)?.held.back).toBeUndefined();
+    expect(lookOf(player([worn(PARTS.CLOAK, 20252), worn(PARTS.CLOAK2, 800)]), data)?.held.back).toBeUndefined();
+    const cloth = lookOf(player([worn(PARTS.CLOAK, 4761)]), data);
+    expect(cloth?.held.back).toBeUndefined();
+    expect(cloth?.parts).toContain('models/part_mcloakmonkey.glb');
   });
 });

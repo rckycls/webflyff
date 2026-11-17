@@ -11,6 +11,7 @@ import {
   modelEventsOf,
   noonLight,
   partSlot,
+  skeletonKey,
   unionModelBoxes,
 } from '@flyffweb/scene';
 import type { AssembledCharacter, HeldSlot, SceneServices } from '@flyffweb/scene';
@@ -21,6 +22,8 @@ import type { GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import type { GameData } from '../gameData';
 import { heldModels } from './looks';
 import type { MoverLook } from './looks';
+import { applyWingFit, playWing, wingFit } from './wingCapes';
+import type { WingMotions } from './wingCapes';
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
@@ -167,20 +170,53 @@ export function loadRideModel(
     // ActionMoverMsg.cpp:1092-1102; `GetMotionFileName`, ModelObject.cpp:374-386)
     const keys = await applyTextures(lod, textures);
     lod.traverse((object) => { object.frustumCulled = false; });
-    const name = key.replace(/^models\//, '').replace(/\.glb$/, '');
-    const clip = async (motion: string): Promise<AnimationClip | null> => {
-      try {
-        return (await loadGltf(store, loaders.gltf, `motions/${name}/${name}_${motion}.glb`)).animations[0] ?? null;
-      } catch {
-        return null;
-      }
-    };
-    const [stand, walk] = await Promise.all([clip('stand'), clip('walk')]);
+    const { stand, walk } = await wingClips(services, key);
     return {
       object: gltf.scene, release: releaser(gltf.scene, keys, textures), mixer: new AnimationMixer(gltf.scene),
       motions: { stand, walk },
     };
   };
+}
+
+/** A boned wing model's stand and walk motions (`motions/<name>/<name>_stand.glb`), null for one it lacks. */
+async function wingClips(
+  { store, loaders }: Pick<SceneServices, 'store' | 'loaders'>, key: string,
+): Promise<{ stand: AnimationClip | null; walk: AnimationClip | null }> {
+  const name = key.replace(/^models\//, '').replace(/\.glb$/, '');
+  const clip = async (motion: string): Promise<AnimationClip | null> => {
+    try {
+      return (await loadGltf(store, loaders.gltf, `motions/${name}/${name}_${motion}.glb`)).animations[0] ?? null;
+    } catch {
+      return null;
+    }
+  };
+  const [stand, walk] = await Promise.all([clip('stand'), clip('walk')]);
+  return { stand, walk };
+}
+
+/**
+ * 2026-11-17 (wing capes): a wing cape's wings (`scene`, its glb's, `lod` its mesh), loaded as a flier's (`loadRideModel`):
+ * the skin keeps its own skeleton, renamed so that the body's `skeleton` node is still the one found by name; the stand
+ * and walk motions come along, the stand posed at its first frame (what a picture drawn once shows). The wings sit in a
+ * holder with their fit for the look's body (`wingFit`), and `attachHeld` hangs the holder on the back.
+ */
+async function wingCape(
+  services: Pick<SceneServices, 'store' | 'loaders' | 'textures'>, scene: Object3D, lod: Object3D, model: string,
+  look: MoverLook,
+): Promise<HeldItem> {
+  const keys = await applyTextures(lod, services.textures);
+  lod.traverse((object) => { object.frustumCulled = false; });
+  const skeleton = scene.getObjectByName('skeleton');
+  if (skeleton !== undefined) skeleton.name = 'wing skeleton';
+  const { stand, walk } = await wingClips(services, model);
+  const wing: WingMotions = { mixer: new AnimationMixer(scene), stand, walk, playing: null };
+  playWing(wing, 'stand', 0);
+  applyWingFit(scene, wingFit(model, look.skeleton === skeletonKey('female') ? 'female' : 'male'));
+  const item = new Group();
+  item.name = 'wing cape';
+  item.add(scene);
+  const release = releaser(item, keys, services.textures);
+  return { item, slot: 'back', hand: null, wing, release: () => { wing.mixer.stopAllAction(); release(); } };
 }
 
 /** A ride's model: a broom's or a board's mesh; a wing's with its skeleton, its mixer and its stand and walk motions. */
@@ -212,6 +248,8 @@ export interface HeldItem {
   slot: HeldSlot;
   /** 2026-11-09: the weapon part it is, for its glow (`HeldModel.hand`). */
   hand?: 'right' | 'left' | null;
+  /** 2026-11-17: a wing cape's (slot `back`) motions, posed at its stand's first frame; `playWing` flaps it. */
+  wing?: WingMotions;
   /** Gives the textures back to the cache and disposes the geometry and materials. Safe to call twice. */
   release(): void;
 }
@@ -234,6 +272,7 @@ export function loadHeldItems(
         const gltf = await loadGltf(store, loaders.gltf, model);
         const lod = gltf.scene.getObjectByName('lod0');
         if (lod === undefined) throw new Error('the model has no "lod0" node');
+        if (slot === 'back') return [await wingCape(services, gltf.scene, lod, model, look)];
         // the character view draws lod0 (assemble.ts), and so does the hand
         for (const child of [...gltf.scene.children]) if (child !== lod) child.removeFromParent();
         const keys = await applyTextures(lod, textures);

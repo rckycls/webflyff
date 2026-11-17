@@ -972,6 +972,7 @@ export class WorldScreen {
       }),
       // 2026-11-17 (shout bubble): the balloons over the heads
       bubbles: () => this.speechBubbles?.list() ?? [],
+      wingCapes: () => this.views?.wingCapes() ?? [], // 2026-11-17
     });
     void this.start();
   }
