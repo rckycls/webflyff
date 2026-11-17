@@ -28,8 +28,13 @@ import type { Mover, WorldChanges } from '../WorldState';
 import { MI_FEMALE, MI_MALE, Parts } from './looks';
 import type { MoverLook } from './looks';
 import type { HeldItem, MountModel, RideModel } from './moverModels';
-import { MOUNT_FITS, WOLF_IDLE_AFTER_SECONDS, isMoving, riderMotion, wolfTimeScale } from '../mount/groundMount';
+import {
+  MOUNT_FEEL, MOUNT_FITS, WOLF_IDLE_AFTER_SECONDS, angleDelta, bankFor, ease, easeAngle, gallop, gallopStrength, isMoving,
+  leanFor, riderMotion, riseCurve, wolfTimeScale,
+} from '../mount/groundMount';
 import type { MountFit, WolfMotion } from '../mount/groundMount';
+import { findMountBones, holdWolf, saddleOf, seatRider, straddle, unstraddle } from '../mount/mountRig';
+import type { MountBones } from '../mount/mountRig';
 import { moverMatrix } from './picking';
 import type { PickCandidate } from './picking';
 import {
@@ -191,13 +196,23 @@ interface View {
   alpha: number;
   /**
    * 2026-11-18 (ground mount, `mount/groundMount.ts`): the wolf under a mounted player (`mountedOf`), its model once
-   * loaded, the motion it plays and how long it has stood still; the rider sits on it once it is in.
+   * loaded, the motion it plays and how long it has stood still; the rider sits on it once it is in. Round 2 (how the
+   * pair moves, `MOUNT_FEEL`): the facing drawn (degrees, eased; null until the first frame), the bank and the rider's
+   * lean (degrees), how far getting on has gone (0 to 1), the saddle (eased), and the bones the rider is posed by.
    */
-  mount: { model: MountModel | null; playing: WolfMotion | null; still: number } | null;
+  mount: {
+    model: MountModel | null; playing: WolfMotion | null; still: number;
+    yaw: number | null; bank: number; lean: number; rise: number; gallop: number; back: number | null;
+    saddle: Vector3 | null; bones: MountBones | null;
+  } | null;
 }
 
 /** 2026-11-18: the wolf's blend between its motions, seconds. */
 const MOUNT_BLEND = 0.25;
+/** 2026-11-18, round 2: how much lower a seated rider's head is than a standing one's (the `-c` pose's). */
+const SEATED_HEAD_DROP = 0.45;
+const RAD = Math.PI / 180;
+const saddleAt = new Vector3();
 /** 2026-11-18: the ground mount's fit for a view's body. */
 const fitOf = (view: View): MountFit => (view.mover.added.index === MI_FEMALE ? MOUNT_FITS.female : MOUNT_FITS.male);
 
@@ -510,8 +525,8 @@ export class MoverViews {
     const view = this.views.get(objectId);
     if (view === undefined || view.head === null) return null;
     const at = toWebPosition(view.scrPos);
-    // 2026-11-18: a rider's name over its raised head (the seated pose is lower than the standing box by about half the seat)
-    const seat = view.mount?.model ? fitOf(view).seat / 2 : 0;
+    // 2026-11-18: a rider's name over its raised head (the seated pose's head is lower than a standing one's)
+    const seat = view.mount?.model && view.model !== null ? view.model.root.position.y - SEATED_HEAD_DROP : 0;
     return { at, head: [at[0], at[1] + (view.head + seat) * view.mover.added.scale, at[2]] };
   }
 
@@ -649,7 +664,10 @@ export class MoverViews {
       this.dropMount(view);
       return;
     }
-    const mount: NonNullable<View['mount']> = { model: null, playing: null, still: 0 };
+    const mount: NonNullable<View['mount']> = {
+      model: null, playing: null, still: 0, yaw: null, bank: 0, lean: 0, rise: 0, gallop: 0, back: null, saddle: null,
+      bones: null,
+    };
     view.mount = mount;
     const task = load!().then(
       (model) => {
@@ -666,15 +684,18 @@ export class MoverViews {
     void task.finally(() => this.pending.delete(task));
   }
 
-  /** 2026-11-18: the wolf taken out of the holder and let go; the rider back on its feet. */
+  /** 2026-11-18: the wolf taken out of the holder and let go; the rider back on its feet, upright, its legs its motion's. */
   private dropMount(view: View): void {
     const mount = view.mount;
     view.mount = null;
+    if (mount?.bones) unstraddle(mount.bones);
     if (mount?.model) {
       mount.model.object.removeFromParent();
       mount.model.release();
     }
     view.model?.root.position.set(0, 0, 0);
+    view.model?.root.quaternion.identity();
+    view.holder.rotation.z = 0;
   }
 
   /**
@@ -704,16 +725,18 @@ export class MoverViews {
   }
 
   /**
-   * 2026-11-18: each frame, the wolf at its scale and the rider on its back (`MOUNT_FITS`); the wolf stands, walks while
+   * 2026-11-18: each frame, the wolf at its scale and the rider on its back (`MOUNT_FITS`). The wolf stands, walks while
    * the feet move (faster with the run, `wolfTimeScale`), and after a while standing plays its idle once.
+   *
+   * Round 2 (`MOUNT_FEEL`, after the owner found the first one stiff): the pair turns toward the facing over a moment and
+   * banks into the turn; the rider sits on the saddle of the wolf's moving back (`saddleOf`), leans forward running and
+   * rocks with the back, and its legs straddle the wolf (`straddle`); getting on, the wolf grows in and the rider rises.
    */
   private drawMount(view: View, dt: number): void {
     const mount = view.mount;
     const model = mount?.model;
     if (!mount || !model) return;
     const fit = fitOf(view);
-    model.object.scale.setScalar(fit.wolfScale);
-    view.model?.root.position.set(0, fit.seat, fit.forward);
     const act = view.mover.act;
     const moving = isMoving(act.state);
     mount.still = moving ? 0 : mount.still + dt;
@@ -747,6 +770,59 @@ export class MoverViews {
         ? wolfTimeScale(speed, act.state, act.stateFlag, fit.wolfScale) : 1;
     }
     model.mixer.update(dt);
+    this.seatMount(view, mount, model, fit, dt);
+  }
+
+  /**
+   * 2026-11-18, round 2 (`MOUNT_FEEL`): the pair turned toward the facing and banked, the wolf grown in, and the rider
+   * seated on the saddle, leaning and rocking, its legs astride. After both mixers' frames.
+   */
+  private seatMount(view: View, mount: NonNullable<View['mount']>, model: MountModel, fit: MountFit, dt: number): void {
+    const act = view.mover.act;
+    const facing = view.scrAngle;
+    const yaw = mount.yaw === null ? facing : easeAngle(mount.yaw, facing, dt, MOUNT_FEEL.turnSeconds);
+    const rate = mount.yaw === null || dt <= 0 ? 0 : angleDelta(mount.yaw, yaw) / dt;
+    mount.yaw = yaw;
+    mount.bank = ease(mount.bank, bankFor(rate), dt, MOUNT_FEEL.bankSeconds);
+    view.holder.rotation.y = yaw * RAD;
+    view.holder.rotation.z = -mount.bank * RAD; // into the turn: a left turn (the facing growing) tips toward +x, the left
+    mount.rise = Math.min(1, mount.rise + dt / MOUNT_FEEL.riseSeconds);
+    const grown = MOUNT_FEEL.riseFrom + (1 - MOUNT_FEEL.riseFrom) * riseCurve(mount.rise);
+    model.object.scale.setScalar(fit.wolfScale * grown);
+    const rider = view.model;
+    if (rider === null) return;
+    if (mount.bones === null || mount.bones.rider !== rider.root || mount.bones.wolf !== model.object) {
+      mount.bones = findMountBones(model.object, rider.root);
+    }
+    // the gallop, at the walk's stride
+    const walk = model.motions.walk === null ? null : model.mixer.clipAction(model.motions.walk);
+    const running = walk !== null && mount.playing === 'walk' ? gallopStrength(walk.timeScale) : 0;
+    mount.gallop = ease(mount.gallop, running, dt, MOUNT_FEEL.gallopSeconds);
+    const stride = walk === null ? { pitch: 0, lift: 0 } : gallop(walk.time / walk.getClip().duration, mount.gallop);
+    view.holder.updateMatrixWorld(true);
+    holdWolf(mount.bones, fit.wolfScale * grown, fit.wolfBack * grown, stride.lift, stride.pitch * RAD);
+    let back = saddleOf(mount.bones, view.holder, fit.along, saddleAt);
+    if (back === null) { // a wolf without those bones: a fixed seat
+      saddleAt.set(0, 0.6 * fit.wolfScale * grown, 0);
+      back = 0;
+    }
+    mount.back = mount.back === null ? back : ease(mount.back, back, dt, MOUNT_FEEL.backSeconds);
+    saddleAt.y += fit.seat;
+    saddleAt.z += fit.forward;
+    if (mount.saddle === null) {
+      mount.saddle = saddleAt.clone();
+    } else {
+      mount.saddle.set(
+        ease(mount.saddle.x, saddleAt.x, dt, MOUNT_FEEL.bobSeconds),
+        ease(mount.saddle.y, saddleAt.y, dt, MOUNT_FEEL.bobSeconds),
+        ease(mount.saddle.z, saddleAt.z, dt, MOUNT_FEEL.bobSeconds),
+      );
+    }
+    mount.lean = ease(mount.lean, leanFor(act.state, act.stateFlag), dt, MOUNT_FEEL.leanSeconds);
+    const pitch = mount.lean - MOUNT_FEEL.backFollow * ((back - mount.back) / RAD);
+    seatRider(rider.root, mount.saddle, pitch * RAD, -mount.bank * MOUNT_FEEL.riderBank * RAD, fit.hip);
+    rider.root.updateMatrixWorld(true);
+    straddle(mount.bones, fit.legs);
   }
 
   /** Piece 7 M5: the ride drawn is taken out of the holder and its model let go. */

@@ -47,12 +47,44 @@ Not merged, not pushed. The server side is the outer repo's branch `ground-mount
   - `genfdmg1-c` (100) when hit.
 
   `playRider` plays only what is drawn. The rules keep their own motion and frames, so nothing else changes.
-- **Fit:** the rider is raised onto the wolf's back (`MOUNT_FITS`): wolf scale 1.5, rider up 0.9, 0.12 toward the tail,
-  the same for men and women. It was tuned from close-ups from the side and from behind, standing and running. The hands
-  rest on the mane and the legs go down the flanks; the legs pass into the fur a little. The name tag goes up by half the
-  seat.
+- **Fit:** round 2 below replaced the first fit (wolf scale 1.5, rider fixed 0.9 up and 0.12 toward the tail).
 - **Others:** every player of the two bodies with the buff is drawn the same way, on the desktop and on the phone.
   An invisible GM's wolf fades with its body (`fade` covers the holder). A disguised player is not drawn on a wolf.
+
+## Round 2: the rider's seat and movement (branch `mount-feel`, 2026-11-18)
+
+The owner found the first version's rider "very stiff and awkward". There were three causes:
+
+- The wolf's walk carries its body 0.57 forward of its stand (its root bone, `Bip01`, at 0 against the stand's
+  -0.382, times the scale). At each start the wolf slid forward from under the rider, who ran sitting on its hips; at
+  each stop it slid back.
+- The rider was fixed in the holder: no bob or rocking with the wolf, and the pair snapped round at each turn.
+- The `-c` pose holds the knees together (a hoverbike's seat), so the legs sank into the wolf's back.
+
+All of round 2 is drawing only (`mount/mountRig.ts`, the numbers in `MOUNT_FITS` and `MOUNT_FEEL` in
+`mount/groundMount.ts`, `seatMount` in `render/MoverViews.ts`):
+
+- **The wolf stays put** (`holdWolf`): it is drawn back by as far as its walk carries its root bone forward, and 0.26
+  further, so the saddle is over the mover's place standing and running alike.
+- **The saddle follows the wolf's back** (`saddleOf`): 30% of the way from its back bone (`Bip01 Spine1`) to its
+  shoulders (`Bip01 Neck`), plus 0.25 up, eased over 0.04 s. The rider rises and dips with the wolf's steps.
+- **The legs straddle** (`straddle`): after the motion's frame, each thigh is lowered 45°, turned out 10° and swung out
+  30°, and each shin is turned back 50°, so the legs go down both flanks. A bone the motion did not write again is put
+  back first, so the turns never add up. Getting off gives the motion's pose back.
+- **Leaning** (`seatRider`, about the hips): 10° forward running, 4° walking, 4° back stepping back. The rider also takes
+  40% of the back's rocking: the tilt from the wolf's hips to its shoulders, against its average of the last 0.8 s.
+- **Turning:** the pair turns toward the facing over 0.1 s instead of at once. It banks into the turn, 0.03° per degree
+  a second, at most 9°, and the rider leans 60% further.
+- **Galloping:** the wolf's walk keeps its back level, so at a run (the walk played 1.2 to 2 times as fast, and more)
+  the wolf rocks 3.5° nose down and up and lifts 0.06 once each stride, in time with the walk.
+- **Getting on:** the wolf grows from half its size and the rider rises onto it over 0.3 s.
+- **Name tag:** over the seated head (the rider's raise less 0.45).
+
+Pictures and a film are in the notes folder (`ground-mount/round2`). Checks:
+
+- typecheck: passes;
+- `mountFeel.test.ts` (new, 13 tests) and `groundMount.test.ts`: pass;
+- `groundMount.spec.ts` on `chromium` and `phone`: 2 passed.
 
 ## Controls
 
@@ -87,8 +119,8 @@ Nothing to convert. Deploy FlyffWeb with the server's World exe and four Resourc
 ## What a nicer version would need
 
 - **A real riding pose:** a new rider motion (legs bent round a body), made in a 3D tool and converted like the others.
-  The ride pose is a hoverbike's, so the legs pass a little into the fur.
-- **A run motion for the wolf:** the walk sped up stands in for it now.
+  For now the hoverbike pose's legs are bent astride in code (round 2).
+- **A run motion for the wolf:** for now the walk is sped up, with a gallop's rock and lift added in code (round 2).
 - **Its own look:** a mount model of its own, or the wolf re-coloured (a texture set).
 - **More mounts:** a table of creature, scale and seat per item (`MOUNT_FITS` by item), and the same server code keyed by
   an item list or an IK3 of its own.
