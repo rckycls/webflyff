@@ -12,7 +12,9 @@
 //
 // Drawn: FlyFF's Lawolf (mvr_lawolf: stand, idle1, walk) under the rider, scaled up, and the rider in V15's sitting-astride
 // ride pose, the `-c` set the Wooden Rocking Horse and the hoverbikes use (MTI_FSTAND1 91, MTI_FRUNNING1 98, MTI_FDMG1
-// 100), raised onto the wolf's back. Nothing is taken from another game.
+// 100), raised onto the wolf's back. Nothing is taken from another game. Round 2 (the owner found the first one stiff
+// and awkward): the rider sits on the wolf's moving back with its legs astride, leans and banks, the wolf stays put
+// under it, turns over a moment and gallops at a run (`MOUNT_FEEL`, `mountRig.ts`).
 
 import type { WebItemProp } from '@flyffweb/formats';
 import { buffedSpeed } from '../sim/moverRules';
@@ -118,21 +120,126 @@ export type WolfMotion = 'stand' | 'idle' | 'walk';
 export const WOLF_IDLE_AFTER_SECONDS = 8;
 
 /**
- * The fit (tuned from close-ups of both bodies from the side and from behind, standing and running): the wolf's scale,
- * how far the rider is raised and how far forward it sits (back toward the tail when negative), in the mover's own units
- * (scale 1). The `-c` pose sits a rider on a seat about knee-high; the wolf's back, at 1.5 times its size, is higher,
- * so the rider is raised to sit just behind its shoulders, the hands on its mane and the legs down its flanks.
+ * The fit (tuned from close-ups of both bodies from the side, from behind and from the front, standing and running;
+ * round 2, 2026-11-18, after the owner found the first one stiff and awkward). In the holder's units (scale 1):
+ *
+ *   - `wolfScale`: the wolf's size;
+ *   - `wolfBack`: how far back the wolf is drawn, so that the saddle is over the mover's place;
+ *   - `along`: where the saddle is, from the wolf's back bone (0) to its shoulders (1); just behind the shoulders;
+ *   - `seat`, `forward`: how far above and ahead of the saddle the rider's root sits;
+ *   - `hip`: how high the rider's hips are above its root, the pivot its lean turns it about;
+ *   - `legs`: the legs astride (`straddle`, degrees). The `-c` pose's thighs are lowered (`drop`), turned out (`spread`)
+ *     and swung out (`splay`) around the wolf's flanks; the shins are turned back under (`knee`).
  */
 export interface MountFit {
   wolfScale: number;
+  wolfBack: number;
+  along: number;
   seat: number;
   forward: number;
+  hip: number;
+  legs: { drop: number; spread: number; splay: number; knee: number };
 }
 
-export const MOUNT_FITS: Readonly<Record<'male' | 'female', MountFit>> = {
-  male: { wolfScale: 1.5, seat: 0.9, forward: -0.12 },
-  female: { wolfScale: 1.5, seat: 0.9, forward: -0.12 },
+const FIT: MountFit = {
+  wolfScale: 1.5, wolfBack: 0.26, along: 0.3, seat: 0.25, forward: 0, hip: 0.45,
+  legs: { drop: 45, spread: 10, splay: 30, knee: 50 },
 };
+
+export const MOUNT_FITS: Readonly<Record<'male' | 'female', MountFit>> = { male: FIT, female: FIT };
+
+/**
+ * How the pair moves (round 2, 2026-11-18). Each value is eased (`ease`): it gets about two thirds of the way in the time
+ * given.
+ *
+ *   - Turning: the wolf turns toward the facing over `turnSeconds` instead of at once. The pair banks into a turn by
+ *     `bankPerTurn` degrees per degree a second of turning, at most `bankMax`. The rider leans `riderBank` times as far
+ *     again.
+ *   - Leaning: the rider leans forward `leanRun` degrees while running, `leanWalk` walking and `leanBack` stepping back.
+ *     It also takes `backFollow` of the rocking of the wolf's back: how far it tilts from its tilt of the last
+ *     `backSeconds` or so.
+ *   - Bobbing: the saddle rises and dips with the wolf's back, smoothed over `bobSeconds`.
+ *   - Galloping: the wolf's walk, played faster for the run, keeps its back level. At a run the wolf rocks
+ *     `gallopPitch` degrees nose up and down and lifts `gallopLift` once each stride. It starts once the walk plays
+ *     `gallopFrom` times as fast and is full at `gallopFull`, coming and going over `gallopSeconds`.
+ *   - Getting on: the wolf grows from `riseFrom` of its size, and the rider rises onto it, over `riseSeconds`.
+ */
+export const MOUNT_FEEL = {
+  turnSeconds: 0.1,
+  bankPerTurn: 0.03,
+  bankMax: 9,
+  bankSeconds: 0.15,
+  riderBank: 0.6,
+  leanRun: 10,
+  leanWalk: 4,
+  leanBack: -4,
+  leanSeconds: 0.25,
+  backFollow: 0.4,
+  backSeconds: 0.8,
+  bobSeconds: 0.04,
+  gallopPitch: 3.5,
+  gallopLift: 0.06,
+  gallopFrom: 1.2,
+  gallopFull: 2,
+  gallopSeconds: 0.2,
+  riseFrom: 0.5,
+  riseSeconds: 0.3,
+} as const;
+
+/** How much of the gallop the walk at `timeScale` (`wolfTimeScale`) has: 0 up to `gallopFrom`, 1 from `gallopFull`. */
+export function gallopStrength(timeScale: number): number {
+  const { gallopFrom, gallopFull } = MOUNT_FEEL;
+  return Math.min(1, Math.max(0, (timeScale - gallopFrom) / (gallopFull - gallopFrom)));
+}
+
+/**
+ * The gallop at `phase` of the walk's stride (0 to 1) and `strength` (0 to 1): the wolf's pitch, degrees, nose down
+ * positive (down at the start of the stride, up halfway), and its lift off the ground (the holder's units; up in the
+ * first half of the stride, on the ground in the second).
+ */
+export function gallop(phase: number, strength: number): { pitch: number; lift: number } {
+  const turn = 2 * Math.PI * phase;
+  return {
+    pitch: MOUNT_FEEL.gallopPitch * strength * Math.cos(turn),
+    lift: MOUNT_FEEL.gallopLift * strength * Math.max(0, Math.sin(turn)),
+  };
+}
+
+/** `current` moved toward `target` over `dt` seconds: about two thirds of the way in `seconds`. */
+export function ease(current: number, target: number, dt: number, seconds: number): number {
+  if (seconds <= 0) return target;
+  return current + (target - current) * (1 - Math.exp(-Math.max(0, dt) / seconds));
+}
+
+/** The shortest turn from `from` to `to`, degrees, from -180 to 180. */
+export function angleDelta(from: number, to: number): number {
+  return ((((to - from) % 360) + 540) % 360) - 180;
+}
+
+/** An angle in degrees, eased the short way round (`ease`). */
+export function easeAngle(current: number, target: number, dt: number, seconds: number): number {
+  return current + ease(0, angleDelta(current, target), dt, seconds);
+}
+
+/** The bank for a turn of `degreesPerSecond` (left positive), degrees into the turn (left positive), at most `bankMax`. */
+export function bankFor(degreesPerSecond: number): number {
+  const bank = degreesPerSecond * MOUNT_FEEL.bankPerTurn;
+  return Math.min(MOUNT_FEEL.bankMax, Math.max(-MOUNT_FEEL.bankMax, bank));
+}
+
+/** The rider's forward lean for the feet's state, degrees: running, walking (`OBJSTAF_WALK`), stepping back or still. */
+export function leanFor(state: number, stateFlag: number): number {
+  const move = state & ObjSta.MOVE_ALL;
+  if (move === ObjSta.BMOVE) return MOUNT_FEEL.leanBack;
+  if (move !== ObjSta.FMOVE) return 0;
+  return stateFlag & ObjStaF.WALK ? MOUNT_FEEL.leanWalk : MOUNT_FEEL.leanRun;
+}
+
+/** Getting on, `progress` 0 to 1: how far the wolf has grown and the rider risen, 0 to 1, fast then settling. */
+export function riseCurve(progress: number): number {
+  const p = Math.min(1, Math.max(0, progress));
+  return 1 - (1 - p) ** 3;
+}
 
 /** The Lawolf's own walk: `MI_LAWOLF1`'s table speed (0.075 a step) at scale 1, which its walk motion's stride matches. */
 const WOLF_WALK_SPEED = 0.075;
