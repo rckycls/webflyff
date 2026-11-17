@@ -27,12 +27,14 @@ import { modelBoxOf } from './assemble';
  *   - `left`: the left hand, a left-hand weapon (PARTS_LWEAPON, :410-414), a bow (:390-391), a yoyo's second copy
  *     (:395-396);
  *   - `shield`: the left forearm, a shield (PARTS_SHIELD, :419-422);
- *   - `knuckle`: the right forearm, a knuckle weapon (IK3_KNUCKLEHAMMER, :386-387).
+ *   - `knuckle`: the right forearm, a knuckle weapon (IK3_KNUCKLEHAMMER, :386-387);
+ *   - `back`: 2026-11-17 (wing capes, a custom item, no Neuz rule): wings worn in the cape slot, on the back where a
+ *     flier's wings ride (`attachBack`).
  */
-export type HeldSlot = 'right' | 'left' | 'shield' | 'knuckle';
+export type HeldSlot = 'right' | 'left' | 'shield' | 'knuckle' | 'back';
 
 /** The bone of each slot, as UpdateParts names it: GetRHandIdx, GetLHandIdx, GetLArmIdx, GetRArmIdx. */
-const BONE_OF: Record<HeldSlot, 'rHand' | 'lHand' | 'lArm' | 'rArm'> = {
+const BONE_OF: Record<Exclude<HeldSlot, 'back'>, 'rHand' | 'lHand' | 'lArm' | 'rArm'> = {
   right: 'rHand',
   left: 'lHand',
   shield: 'lArm',
@@ -63,6 +65,10 @@ const GRIP = 'grip';
  * no such bone, or the item's box is not in the shape the converter writes.
  */
 export function attachHeld(character: AssembledCharacter, item: Object3D, slot: HeldSlot): void {
+  if (slot === 'back') {
+    attachBack(character, item);
+    return;
+  }
   const { grips } = character;
   if (grips === null) throw new Error('the skeleton has no grips (a conversion older than the held items)');
   const bone = grips[BONE_OF[slot]];
@@ -76,6 +82,32 @@ export function attachHeld(character: AssembledCharacter, item: Object3D, slot: 
   grip.add(item);
   joint.add(grip);
   if (box !== null) character.addBox(box);
+}
+
+/** `RotZ( -90 ) * RotX( 180 )` (MoverRender.cpp:622-628): a wing's (x, y, z) to (y, x, -z) in Spine2's space. */
+const WING_TURN = new Matrix4().set(0, 1, 0, 0, 1, 0, 0, 0, 0, 0, -1, 0, 0, 0, 0, 1);
+
+/**
+ * 2026-11-17 (wing capes): hangs `item` on the back as CMover::Render places a flier's wings (`MoverRender.cpp:610-646`):
+ * turned as Spine2 by `RotZ( -90 ) RotX( 180 )`, at the Neck. It hangs under Spine2, at the Neck's place in Spine2's
+ * space as it is now (the Neck is Spine2's child in both bodies, so the place holds as the motion plays), and follows
+ * the back as the body moves. Its box is not added: a cape leaves the name tag where it was. Throws, with nothing hung,
+ * when the skeleton has no Spine2 or Neck.
+ */
+function attachBack(character: AssembledCharacter, item: Object3D): void {
+  const bones = bodyMesh(character.root)?.skeleton.bones ?? [];
+  const spine = bones.find((bone) => /Spine2$/.test(bone.name));
+  const neck = bones.find((bone) => /Neck$/.test(bone.name));
+  if (spine === undefined || neck === undefined) throw new Error('the skeleton has no Spine2 and Neck to wear wings on');
+  spine.updateWorldMatrix(true, false);
+  neck.updateWorldMatrix(false, false);
+  const at = new Vector3().setFromMatrixPosition(neck.matrixWorld).applyMatrix4(spine.matrixWorld.clone().invert());
+  const grip = new Group();
+  grip.name = GRIP;
+  grip.matrix.copy(WING_TURN).setPosition(at);
+  grip.matrixAutoUpdate = false;
+  grip.add(item);
+  spine.add(grip);
 }
 
 /**

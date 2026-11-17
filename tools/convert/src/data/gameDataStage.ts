@@ -367,80 +367,9 @@ function buildItemProps(env: Env, read: Reading): WebItemProp[] {
   const itemProps = [...props.values()]
     .sort((a, b) => a.id - b.id)
     .map((prop): WebItemProp => {
-      let model: string | null = null;
-      const elem = index.entries.get(`${OT.ITEM}:${prop.id}`);
-      // GetModelElem falls back to II_ARM_M_VAG_HELMET02, whose ground model is the suit box.
-      const dropElem = elem ?? index.entries.get(`${OT.ITEM}:500`);
-      const dropFile = dropElem === undefined ? '' : modelFileName(dropElem);
-      const dropModel = /\.o3d$/i.test(dropFile) ? converted(env, modelKeyOf(dropFile)) : null;
-      if (elem !== undefined && elem.part === '') {
-        const file = modelFileName(elem);
-        if (/\.o3d$/i.test(file)) {
-          const key = modelKeyOf(file);
-          model = converted(env, key);
-          if (model === null) noModel.push(`${prop.id} "${prop.name}" (${key})`);
-        }
-      }
-      return {
-        id: prop.id,
-        name: prop.name,
-        ...(prop.command ? { description: prop.command } : {}),
-        ...(prop.cost !== undefined ? { cost: prop.cost } : {}),
-        packMax: prop.packMax,
-        kind1: prop.kind1,
-        kind2: prop.kind2,
-        kind3: prop.kind3,
-        handed: prop.handed,
-        part: prop.parts,
-        abilityMin: prop.abilityMin,
-        abilityMax: prop.abilityMax,
-        weaponType: prop.weaponType,
-        attackSpeed: prop.attackSpeed,
-        attackRange: prop.attackRange,
-        destParams: [...prop.destParams],
-        adjParams: [...prop.adjParams],
-        sfxHit: prop.sfxObj3,
-        sfxMissile: prop.sfxObj2,
-        linkKindBullet: prop.linkKindBullet,
-        // 2026-11-15 (housing): a housing item's control and wallpaper/floor texture (IK1_HOUSING 7)
-        ...(prop.kind1 === IK1_HOUSING && prop.linkKind !== -1 ? { linkKind: prop.linkKind } : {}),
-        ...(prop.kind1 === IK1_HOUSING && prop.textFileName !== '' ? { textFile: prop.textFileName } : {}),
-        // Piece 7 M3: the cast, and its ready effect (made at STATEMODE ON only, so kept only with a cast)
-        ...(prop.skillReadyType !== undefined
-          ? { castMs: prop.skillReadyType, ...(prop.sfxObj > 0 ? { sfxReady: prop.sfxObj } : {}) }
-          : {}),
-        // Piece 7 M5: a ride's flight columns
-        ...(prop.flight !== undefined ? { flight: { ...prop.flight } } : {}),
-        model,
-        dropModel,
-        ...(prop.reflect ? { reflect: prop.reflect } : {}),
-        icon: prop.icon === '' ? null : itemIconKeyOf(prop.icon),
-        // 2026-11-05: the tooltip's columns, each only when the row gives it
-        ...(prop.itemJob !== -1 ? { job: prop.itemJob } : {}),
-        ...(prop.itemSex !== -1 ? { sex: prop.itemSex } : {}),
-        ...(prop.endurance !== -1 ? { endurance: prop.endurance } : {}),
-        ...(prop.flag > 0 ? { flag: prop.flag } : {}),
-        ...(prop.itemLevel !== -1 ? { itemLevel: prop.itemLevel } : {}),
-        ...(prop.limitLevel !== -1 ? { limitLevel: prop.limitLevel } : {}),
-        ...(prop.circleTime !== -1 ? { circleTime: prop.circleTime } : {}),
-        // 2026-11-05, the premium items: the cool-down (`dwSkillReady`, CCooltimeMgr::GetGroup takes > 0), the buff's
-        // time and how the item finds its target (EXT_ITEM 21 needs an item: Neuz's upgrade cursor)
-        ...(prop.skillReady > 0 ? { cooldownMs: prop.skillReady } : {}),
-        ...(prop.skillTime !== -1 ? { skillTime: prop.skillTime } : {}),
-        ...(prop.exeTarget !== -1 ? { exeTarget: prop.exeTarget } : {}),
-        ...(prop.referStat1 !== -1 ? { referStat1: prop.referStat1 } : {}),
-        // 2026-11-09, the pets: a vis's needed vis (its minutes and grade are abilityMin and abilityMax), and permanence
-        ...(prop.referTarget1 !== -1 ? { referTarget1: prop.referTarget1 } : {}),
-        ...(prop.referTarget2 !== -1 ? { referTarget2: prop.referTarget2 } : {}),
-        // 2026-11-15: a chip vendor's price (GetChipCost)
-        ...(prop.referValue1 !== -1 ? { referValue1: prop.referValue1 } : {}),
-        ...(prop.permanence !== -1 ? { permanence: prop.permanence } : {}),
-        // PutBaseResist's order (WndManager.cpp:5641-5674): electricity, fire, water, wind, earth; the file's is
-        // electricity, fire, wind, water, earth
-        ...(prop.resists.some((value) => value !== 0)
-          ? { resists: [prop.resists[0]!, prop.resists[1]!, prop.resists[3]!, prop.resists[2]!, prop.resists[4]!] }
-          : {}),
-      };
+      const { item, unconverted } = webItemPropOf(prop, index.entries, (key) => converted(env, key));
+      if (unconverted !== null) noModel.push(`${prop.id} "${prop.name}" (${unconverted})`);
+      return item;
     });
 
   if (noModel.length > 0) {
@@ -454,6 +383,95 @@ function buildItemProps(env: Env, read: Reading): WebItemProp[] {
     );
   }
   return itemProps;
+}
+
+/**
+ * One row of propItem.txt as `buildItemProps` writes it: `entries` is the model index (`<type>:<id>`), and `converted`
+ * gives a model key back when its file was converted (else null). `unconverted` names the held model that was not.
+ * 2026-11-17 (wing capes): exported for the gear sync (`tools/sync_resource_gear_catalog.ts`), which adds the gear rows
+ * only the server's Resource has.
+ */
+export function webItemPropOf(
+  prop: ItemProp,
+  entries: ReadonlyMap<string, ModelElem>,
+  converted: (key: string) => string | null,
+): { item: WebItemProp; unconverted: string | null } {
+  let model: string | null = null;
+  let unconverted: string | null = null;
+  const elem = entries.get(`${OT.ITEM}:${prop.id}`);
+  // GetModelElem falls back to II_ARM_M_VAG_HELMET02, whose ground model is the suit box.
+  const dropElem = elem ?? entries.get(`${OT.ITEM}:500`);
+  const dropFile = dropElem === undefined ? '' : modelFileName(dropElem);
+  const dropModel = /\.o3d$/i.test(dropFile) ? converted(modelKeyOf(dropFile)) : null;
+  if (elem !== undefined && elem.part === '') {
+    const file = modelFileName(elem);
+    if (/\.o3d$/i.test(file)) {
+      const key = modelKeyOf(file);
+      model = converted(key);
+      if (model === null) unconverted = key;
+    }
+  }
+  const item: WebItemProp = {
+    id: prop.id,
+    name: prop.name,
+    ...(prop.command ? { description: prop.command } : {}),
+    ...(prop.cost !== undefined ? { cost: prop.cost } : {}),
+    packMax: prop.packMax,
+    kind1: prop.kind1,
+    kind2: prop.kind2,
+    kind3: prop.kind3,
+    handed: prop.handed,
+    part: prop.parts,
+    abilityMin: prop.abilityMin,
+    abilityMax: prop.abilityMax,
+    weaponType: prop.weaponType,
+    attackSpeed: prop.attackSpeed,
+    attackRange: prop.attackRange,
+    destParams: [...prop.destParams],
+    adjParams: [...prop.adjParams],
+    sfxHit: prop.sfxObj3,
+    sfxMissile: prop.sfxObj2,
+    linkKindBullet: prop.linkKindBullet,
+    // 2026-11-15 (housing): a housing item's control and wallpaper/floor texture (IK1_HOUSING 7)
+    ...(prop.kind1 === IK1_HOUSING && prop.linkKind !== -1 ? { linkKind: prop.linkKind } : {}),
+    ...(prop.kind1 === IK1_HOUSING && prop.textFileName !== '' ? { textFile: prop.textFileName } : {}),
+    // Piece 7 M3: the cast, and its ready effect (made at STATEMODE ON only, so kept only with a cast)
+    ...(prop.skillReadyType !== undefined
+      ? { castMs: prop.skillReadyType, ...(prop.sfxObj > 0 ? { sfxReady: prop.sfxObj } : {}) }
+      : {}),
+    // Piece 7 M5: a ride's flight columns
+    ...(prop.flight !== undefined ? { flight: { ...prop.flight } } : {}),
+    model,
+    dropModel,
+    ...(prop.reflect ? { reflect: prop.reflect } : {}),
+    icon: prop.icon === '' ? null : itemIconKeyOf(prop.icon),
+    // 2026-11-05: the tooltip's columns, each only when the row gives it
+    ...(prop.itemJob !== -1 ? { job: prop.itemJob } : {}),
+    ...(prop.itemSex !== -1 ? { sex: prop.itemSex } : {}),
+    ...(prop.endurance !== -1 ? { endurance: prop.endurance } : {}),
+    ...(prop.flag > 0 ? { flag: prop.flag } : {}),
+    ...(prop.itemLevel !== -1 ? { itemLevel: prop.itemLevel } : {}),
+    ...(prop.limitLevel !== -1 ? { limitLevel: prop.limitLevel } : {}),
+    ...(prop.circleTime !== -1 ? { circleTime: prop.circleTime } : {}),
+    // 2026-11-05, the premium items: the cool-down (`dwSkillReady`, CCooltimeMgr::GetGroup takes > 0), the buff's
+    // time and how the item finds its target (EXT_ITEM 21 needs an item: Neuz's upgrade cursor)
+    ...(prop.skillReady > 0 ? { cooldownMs: prop.skillReady } : {}),
+    ...(prop.skillTime !== -1 ? { skillTime: prop.skillTime } : {}),
+    ...(prop.exeTarget !== -1 ? { exeTarget: prop.exeTarget } : {}),
+    ...(prop.referStat1 !== -1 ? { referStat1: prop.referStat1 } : {}),
+    // 2026-11-09, the pets: a vis's needed vis (its minutes and grade are abilityMin and abilityMax), and permanence
+    ...(prop.referTarget1 !== -1 ? { referTarget1: prop.referTarget1 } : {}),
+    ...(prop.referTarget2 !== -1 ? { referTarget2: prop.referTarget2 } : {}),
+    // 2026-11-15: a chip vendor's price (GetChipCost)
+    ...(prop.referValue1 !== -1 ? { referValue1: prop.referValue1 } : {}),
+    ...(prop.permanence !== -1 ? { permanence: prop.permanence } : {}),
+    // PutBaseResist's order (WndManager.cpp:5641-5674): electricity, fire, water, wind, earth; the file's is
+    // electricity, fire, wind, water, earth
+    ...(prop.resists.some((value) => value !== 0)
+      ? { resists: [prop.resists[0]!, prop.resists[1]!, prop.resists[3]!, prop.resists[2]!, prop.resists[4]!] }
+      : {}),
+  };
+  return { item, unconverted };
 }
 
 /**

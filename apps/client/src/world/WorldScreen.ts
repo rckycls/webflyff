@@ -955,6 +955,7 @@ export class WorldScreen {
           objectId: m.objectId, hairMesh: player.hairMesh, hairColor: player.hairColor, headMesh: player.headMesh,
         }];
       }),
+      wingCapes: () => this.views?.wingCapes() ?? [], // 2026-11-17
     });
     void this.start();
   }

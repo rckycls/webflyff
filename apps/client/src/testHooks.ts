@@ -113,6 +113,11 @@ export interface ClientHooks {
   angels?(): Array<{ ownerId: number; itemId: number; pos: Vec3; drawn: boolean }>;
   /** 2026-11-15 (beauty shop): each player's hair style, hair colour (as held) and face, 0-based. */
   looks?(): Array<{ objectId: number; hairMesh: number; hairColor: number; headMesh: number }>;
+  /**
+   * 2026-11-17 (wing capes): the wing capes hung on the movers' backs: the mover, the cape's item, whether it is drawn (not
+   * while flying), and the motion its wings play.
+   */
+  wingCapes?(): Array<{ objectId: number; itemId: number; drawn: boolean; playing: 'stand' | 'walk' | null }>;
 }
 
 declare global {
@@ -149,6 +154,7 @@ export function createClientHooks(): ClientHooks {
     tags: () => current().tags(),
     angels: () => current().angels?.() ?? [],
     looks: () => current().looks?.() ?? [], // 2026-11-15
+    wingCapes: () => current().wingCapes?.() ?? [], // 2026-11-17
   };
 }
 
