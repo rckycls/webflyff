@@ -182,163 +182,225 @@ function medal(tier: number): string {
 <g shape-rendering="crispEdges">${number}</g>`;
 }
 
-// 2026-11-17 (owner, "the icon for weekly champs and mvp should be a longer icon on top of the name", then a few rounds,
-// "like a warrior something, no skies", their pick "A: Shield & swords", "wider, a little more details", "make the shield
-// subtle and go heavy on crown and star", then "the crown looks awful and they are not centered, make another take"): the
-// weekly crests over the name (render/NameTagLayer.ts `BANNER_SIZE`, `bannerPlace`), with no words. Everything is centred
-// on one point (CREST_MIDDLE): two long swords crossed flat there, a small dark heater shield centred on it, and on the
-// shield the crest's emblem, large:
-// - champion: a gold crown: five points, each in a light and a dark half like a cut gem, gold balls on their tips, a ruby
-//   on the middle one, a dark inside between them; a beveled band (a light lip, the face, a dark lip) set with a large cut
-//   ruby, two sapphires and two small diamonds;
-// - MVP: a gold star over a silver-blue eight-point burst: faceted points, an engraved inner bevel, lines from the centre
-//   to the points, a round cut sapphire in a gold bezel.
-// White glints on both. All outlined thick and dark. Drawn at twice their size (BANNER_SCALE), so that a phone's tag, drawn
-// at a pixel ratio of 2, keeps them sharp.
+// 2026-11-17/18 (owner, "the icon for weekly champs and mvp should be a longer icon on top of the name", a few rounds of
+// crests, then "let's just go back to these [the winged CHAMP / MVP crests] but instead of text in the middle just use
+// aibatt eyes", "make the eye fiery with lots of details", "lessen the full circle to consistent edges, a little more
+// artistic"): the weekly crests over the name (render/NameTagLayer.ts `BANNER_SIZE`, `bannerPlace`), with no words.
+// A soft glow and rays behind; two bat wings each side (a big front one with its bones, a darker one under it); on top the
+// emblem (champion: a jewelled gold crown; MVP: a faceted gold star); in the middle a gold-rimmed plaque (red for the
+// champion, blue for the MVP) holding Aibatt (Mvr_Aibatt-01.dds: a purple ball, one big eye) with its eye on fire: one
+// mirrored flame rising from behind the ball in bands of even width, the eye bloodshot with a ring of fire for an iris
+// (details below). Sapphires on the plaque's sides, a ruby at its point, confetti and sparkles round it. All outlined dark. Drawn at
+// twice their size (BANNER_SCALE), so that a phone's tag, drawn at a pixel ratio of 2, keeps them sharp.
 
 /** The crests' size (`BANNER_SIZE` in NameTagLayer.ts) and scale. */
-const BANNER_WIDTH = 88;
+const BANNER_WIDTH = 72;
 const BANNER_HEIGHT = 36;
 const BANNER_SCALE = 2;
-/** Where the swords cross and the shield and the emblem are centred. */
-const CREST_MIDDLE: readonly [number, number] = [BANNER_WIDTH / 2, 18];
+/** The crests' middle line, where the wings mirror. */
+const CREST_X = BANNER_WIDTH / 2;
 interface Crest {
-  /** The shield's field, lighter to darker (kept dark: the emblem is the crest). */
-  field: [string, string];
-  /** The gem in the swords' guards and pommels; the tassels' colour. */
-  gem: 'sapphire' | 'ruby';
-  tassel: string;
   emblem: 'crown' | 'star';
+  /** The front wings' colours from the tip to the shoulder; the back wings' from the tip in. */
+  wing: [string, string, string, string, string];
+  wingBack: [string, string, string];
+  /** The plaque, lighter to darker; the glow behind; the confetti. */
+  plaque: [string, string, string];
+  glow: string;
+  confetti: [string, string, string, string];
 }
 const BANNERS: Record<string, Crest> = {
-  weeklychampion: { field: ['#5a1a24', '#24080e'], gem: 'sapphire', tassel: '#a8202e', emblem: 'crown' },
-  weeklymvp: { field: ['#1e2a5a', '#0a0e26'], gem: 'ruby', tassel: '#2450b8', emblem: 'star' },
+  weeklychampion: {
+    emblem: 'crown',
+    wing: ['#fff7b0', '#ffd23a', '#ff8a2a', '#ff3a5a', '#a81c78'], wingBack: ['#ffb04a', '#c8284a', '#5a0c3a'],
+    plaque: ['#ff5a6a', '#c8183a', '#5a0620'], glow: '#ffe08a', confetti: ['#ffd23a', '#ff4a6a', '#3ad0ff', '#ffffff'],
+  },
+  weeklymvp: {
+    emblem: 'star',
+    wing: ['#e6fdff', '#6ad8ff', '#3a8cff', '#7a4af0', '#b03ad8'], wingBack: ['#4ac0ff', '#4a3ad0', '#24105a'],
+    plaque: ['#7a9aff', '#2a3ad0', '#140a5a'], glow: '#a8ecff', confetti: ['#ffd23a', '#6ad8ff', '#c87aff', '#ffffff'],
+  },
 };
 
 /** A crest's SVG, BANNER_WIDTH x BANNER_HEIGHT drawn at BANNER_SCALE. */
-function banner({ field, gem, tassel, emblem }: Crest): string {
-  const ink = '#160a1e';
-  const [cx, cy] = CREST_MIDDLE;
+function banner({ emblem, wing, wingBack, plaque, glow, confetti }: Crest): string {
+  const ink = '#1a0a28';
+  const cx = CREST_X;
   const p2 = (n: number): string => n.toFixed(2);
-  const poly = (points: ReadonlyArray<readonly [number, number]>): string => `M${points.map(([x, y]) => `${p2(x)} ${p2(y)}`).join(' L')} Z`;
-  const jewel = (x: number, y: number, r: number, fill = `url(#${gem})`): string =>
-    `<path d="M${p2(x)} ${p2(y - r)} L${p2(x + r * 0.8)} ${p2(y)} L${p2(x)} ${p2(y + r)} L${p2(x - r * 0.8)} ${p2(y)} Z" fill="${fill}" stroke="${ink}" stroke-width=".45"/>
-<path d="M${p2(x)} ${p2(y - r)} L${p2(x + r * 0.8)} ${p2(y)} L${p2(x)} ${p2(y)} Z" fill="#fff" opacity=".4"/>`;
-  const glint = (x: number, y: number, r: number): string => `<path d="${starPath(x, y, r, r * 0.22, 4)}" fill="#fff"/>`;
-  // a sword along +x from its guard at the origin: a 36-unit blade, a curved guard, a wrapped grip, a pommel
-  const sword = `
-<path d="M0 -1.7 L33 -1.7 L37.6 0 L33 1.7 L0 1.7 Z" fill="url(#steel)" stroke="${ink}" stroke-width=".7" stroke-linejoin="round"/>
-<path d="M1.6 0 L32 0" stroke="#7a86a0" stroke-width=".7"/><path d="M1 -1.1 L33 -1.1" stroke="#fff" stroke-width=".45" opacity=".85"/>
-<path d="M-1.2 -5.6 C1.2 -5.4 2 -4 2 -2.2 L1.2 -1.2 L1.2 1.2 L2 2.2 C2 4 1.2 5.4 -1.2 5.6 C-.4 3.6 -.6 2.2 -1.3 1.2 V-1.2 C-.6 -2.2 -.4 -3.6 -1.2 -5.6 Z" fill="url(#gold)" stroke="${ink}" stroke-width=".6" stroke-linejoin="round"/>
-${jewel(0.2, 0, 1)}
-<rect x="-7.4" y="-1.15" width="6.1" height="2.3" fill="url(#wood)" stroke="${ink}" stroke-width=".5"/>
-<path d="M-6.6 -1.1 L-5.8 1.1 M-5 -1.1 L-4.2 1.1 M-3.4 -1.1 L-2.6 1.1" stroke="#2a1006" stroke-width=".4"/>
-<circle cx="-8.8" cy="0" r="1.7" fill="url(#gold)" stroke="${ink}" stroke-width=".6"/>
-${jewel(-8.8, 0, 0.8)}`;
-  // two of them crossed at the middle, 13 degrees from the horizontal, each 14 units past its guard there, 1.45 times
-  // bigger; from each pommel a tassel hangs straight down
-  const scale = 1.45, mid = 14;
-  const swords: string[] = [];
-  const tassels: string[] = [];
-  for (const deg of [-13, 193]) {
-    const a = (deg * Math.PI) / 180, gx = cx - mid * scale * Math.cos(a), gy = cy - mid * scale * Math.sin(a);
-    swords.push(`<g transform="translate(${p2(gx)} ${p2(gy)}) rotate(${deg}) scale(${scale})">${sword}</g>`);
-    const px = gx - 10.4 * scale * Math.cos(a), py = gy - 10.4 * scale * Math.sin(a);
-    const cord = `M${p2(px)} ${p2(py)} C${p2(px - 0.6)} ${p2(py + 1.4)} ${p2(px + 0.6)} ${p2(py + 2)} ${p2(px)} ${p2(py + 2.8)}`;
-    tassels.push(`<path d="${cord}" stroke="${ink}" stroke-width="1.1" fill="none"/><path d="${cord}" stroke="#ffd860" stroke-width=".5" fill="none"/>
-<path d="M${p2(px - 1.1)} ${p2(py + 3)} H${p2(px + 1.1)} L${p2(px + 1.6)} ${p2(py + 6.4)} H${p2(px - 1.6)} Z" fill="${tassel}" stroke="${ink}" stroke-width=".55" stroke-linejoin="round"/>
-<rect x="${p2(px - 1.4)}" y="${p2(py + 2.5)}" width="2.8" height="1.2" rx=".4" fill="url(#gold)" stroke="${ink}" stroke-width=".45"/>`);
-  }
-  // the small dark shield, centred on the middle: x and y below are from it
-  const at = (d: string): string => d.replace(/X(-?[\d.]+) Y(-?[\d.]+)/g, (_, dx: string, dy: string) => `${p2(cx + Number(dx))} ${p2(cy + Number(dy))}`);
-  const shield = at('MX-10 Y-13.4 LX10 Y-13.4 LX10 Y-2 CX10 Y6.6 X5.2 Y12 X0 Y15.6 CX-5.2 Y12 X-10 Y6.6 X-10 Y-2 Z');
-  const fieldPath = at('MX-8.8 Y-12.2 LX8.8 Y-12.2 LX8.8 Y-2 CX8.8 Y6 X4.6 Y11 X0 Y14.2 CX-4.6 Y11 X-8.8 Y6 X-8.8 Y-2 Z');
-  const shieldSvg = `<path d="${shield}" fill="url(#rimDark)" stroke="${ink}" stroke-width="1.1" stroke-linejoin="round"/>
-<path d="${fieldPath}" fill="url(#field)" stroke="${ink}" stroke-width=".4"/>
-<path d="M${p2(cx)} ${p2(cy - 12)} V${p2(cy + 14)}" stroke="#000" stroke-opacity=".3" stroke-width="2.2"/>`;
-  // the crown, 26 wide and 22 tall, centred on the middle: its band from y + 2.6 to y + 9.6, its points up to y - 10.4
-  const bandTop = cy + 3, base = cy + 3.4;
-  const tips: ReadonlyArray<readonly [number, number]> = [[cx - 12.4, cy - 5.4], [cx - 6.4, cy - 8], [cx, cy - 10.4], [cx + 6.4, cy - 8], [cx + 12.4, cy - 5.4]];
-  const valleys: ReadonlyArray<readonly [number, number]> = [[cx - 13, base], [cx - 9, cy], [cx - 3, cy - 0.6], [cx + 3, cy - 0.6], [cx + 9, cy], [cx + 13, base]];
-  const outline = poly([valleys[0]!, ...tips.flatMap((t, i) => (i < 4 ? [t, valleys[i + 1]!] : [t])), valleys[5]!]);
-  const facets = tips.map((t, i) => {
-    const l = valleys[i]!, r = valleys[i + 1]!;
-    return `<path d="${poly([[l[0], base], l, t, [t[0], base]])}" fill="url(#facetLight)"/><path d="${poly([[t[0], base], t, r, [r[0], base]])}" fill="url(#facetDark)"/>`;
+  const mirror = `transform="translate(${BANNER_WIDTH} 0) scale(-1 1)"`;
+  const rays = [...Array(12)].map((_, i) => {
+    const a = ((i * 30 + 15) * Math.PI) / 180, b = a + 0.12, r = 30;
+    return `M${cx} 19 L${p2(cx + r * Math.cos(a))} ${p2(19 + r * Math.sin(a) * 0.6)} L${p2(cx + r * Math.cos(b))} ${p2(19 + r * Math.sin(b) * 0.6)}Z`;
   }).join('');
-  const band = `M${p2(cx - 13.4)} ${p2(bandTop)} Q${p2(cx)} ${p2(bandTop + 2)} ${p2(cx + 13.4)} ${p2(bandTop)} L${p2(cx + 13.4)} ${p2(cy + 9.4)} Q${p2(cx)} ${p2(cy + 11.6)} ${p2(cx - 13.4)} ${p2(cy + 9.4)} Z`;
-  const lip = (y0: number, y1: number, fill: string): string =>
-    `<path d="M${p2(cx - 13.4)} ${p2(y0)} Q${p2(cx)} ${p2(y0 + 2)} ${p2(cx + 13.4)} ${p2(y0)} L${p2(cx + 13.4)} ${p2(y1)} Q${p2(cx)} ${p2(y1 + 2)} ${p2(cx - 13.4)} ${p2(y1)} Z" fill="${fill}"/>`;
-  const cutGem = (x: number, y: number, w: number, h: number, fill: string): string => {
-    const pts = [[x - w, y - h * 0.4], [x - w * 0.55, y - h], [x + w * 0.55, y - h], [x + w, y - h * 0.4], [x + w, y + h * 0.4], [x + w * 0.55, y + h], [x - w * 0.55, y + h], [x - w, y + h * 0.4]] as const;
-    return `<path d="${poly([[x - w - 0.6, y - h * 0.45], [x - w * 0.55 - 0.3, y - h - 0.6], [x + w * 0.55 + 0.3, y - h - 0.6], [x + w + 0.6, y - h * 0.45], [x + w + 0.6, y + h * 0.45], [x + w * 0.55 + 0.3, y + h + 0.6], [x - w * 0.55 - 0.3, y + h + 0.6], [x - w - 0.6, y + h * 0.45]])}" fill="url(#goldDeep)" stroke="${ink}" stroke-width=".45"/>
-<path d="${poly(pts)}" fill="url(#${fill})" stroke="${ink}" stroke-width=".35"/>
-<path d="${poly([[x - w * 0.5, y - h * 0.45], [x + w * 0.5, y - h * 0.45], [x + w * 0.5, y + h * 0.45], [x - w * 0.5, y + h * 0.45]])}" fill="#fff" opacity=".18"/>
-<path d="M${p2(x - w)} ${p2(y - h * 0.4)} L${p2(x - w * 0.5)} ${p2(y - h * 0.45)} M${p2(x + w)} ${p2(y - h * 0.4)} L${p2(x + w * 0.5)} ${p2(y - h * 0.45)} M${p2(x - w)} ${p2(y + h * 0.4)} L${p2(x - w * 0.5)} ${p2(y + h * 0.45)} M${p2(x + w)} ${p2(y + h * 0.4)} L${p2(x + w * 0.5)} ${p2(y + h * 0.45)}" stroke="#fff" stroke-width=".25" opacity=".5"/>
-<path d="${poly([[x - w * 0.55, y - h], [x - w * 0.1, y - h], [x - w * 0.5, y - h * 0.45], [x - w, y - h * 0.4]])}" fill="#fff" opacity=".55"/>`;
-  };
+  // the left wings (the right ones mirrored): the front one from behind the plaque up to the top corner, its lower edge
+  // in five fingers; a back one, lower and darker
+  const front = 'M27 23 C24 12 15 4.4 1.4 1.6 C3.4 4.6 4 7.6 3.2 10.8 C6.2 10 8.4 11 9.4 13.6 C11.8 12.8 14 13.8 15 16.4 C17.4 16 19.4 17.2 20.4 19.8 C22.4 19.8 24 21 24.6 23.6 Z';
+  const membrane = 'M25.6 22.4 C22 14 15 8.6 3.6 4.4 C4.6 7 4.8 8.6 4.4 10.2 C7.2 9.8 9.2 10.8 10.2 12.8 C12.4 12.2 14.4 13.2 15.4 15.4 C17.6 15.2 19.6 16.4 20.6 18.6 C22.2 18.8 23.8 20 24.6 22 Z';
+  const back = 'M27 25 C22 18 14 14.6 4.6 15 C6.4 16.6 7 18.2 6.6 20 C9 19.6 11 20.4 12 22.4 C14.4 21.8 16.6 22.8 17.6 25 C20.6 24.4 23.4 25.4 24.6 27.4 Z';
+  const bones = 'M26 22.4 C22.6 12.8 14.6 6 2.2 2.2 M7.6 5 L9.4 13.4 M12.6 7.6 L15 16.2 M17.2 11 L20.4 19.6';
+  const plaqueRim = 'M21 16.4 H51 L55.4 22.4 L51 28.8 L36 33.8 L21 28.8 L16.6 22.4 Z';
+  const plaqueFace = 'M22.2 18 H49.8 L53.2 22.4 L49.8 27.6 L36 32.2 L22.2 27.6 L18.8 22.4 Z';
   const crown = `
-<path d="M${p2(cx - 12)} ${p2(base)} Q${p2(cx)} ${p2(cy - 6)} ${p2(cx + 12)} ${p2(base)} Z" fill="#4a0a14"/>
-<path d="${outline}" fill="none" stroke="${ink}" stroke-width="2" stroke-linejoin="round"/>
-${facets}
-<path d="${outline}" fill="none" stroke="#8a4a04" stroke-width=".5" stroke-linejoin="round"/>
-${tips.map(([x, y], i) => `<circle cx="${p2(x)}" cy="${p2(y - (i === 2 ? 1.5 : 1.1))}" r="${i === 2 ? 1.75 : 1.3}" fill="url(#ball)" stroke="${ink}" stroke-width=".55"/>
-<circle cx="${p2(x - 0.45)}" cy="${p2(y - (i === 2 ? 2.1 : 1.6))}" r="${i === 2 ? 0.55 : 0.4}" fill="#fff"/>`).join('')}
-${jewel(cx, cy - 3.6, 1.7, 'url(#ruby)')}${jewel(cx - 6.4, cy - 2.2, 1.2, 'url(#sapphire)')}${jewel(cx + 6.4, cy - 2.2, 1.2, 'url(#sapphire)')}
-<path d="${band}" fill="url(#bandFace)" stroke="${ink}" stroke-width="1.1" stroke-linejoin="round"/>
-${lip(bandTop + 0.4, bandTop + 1.6, '#fff4b8')}${lip(cy + 8.2, cy + 9, '#8a4a04')}
-<path d="M${p2(cx - 13)} ${p2(cy + 5.6)} Q${p2(cx)} ${p2(cy + 7.6)} ${p2(cx + 13)} ${p2(cy + 5.6)}" stroke="#b86a08" stroke-width=".35" fill="none" opacity=".6"/>
-${cutGem(cx, cy + 6.2, 2.6, 2.2, 'ruby')}${cutGem(cx - 7, cy + 5.9, 1.5, 1.5, 'sapphire')}${cutGem(cx + 7, cy + 5.9, 1.5, 1.5, 'sapphire')}
-${[-11.2, 11.2].map((dx) => `<circle cx="${p2(cx + dx)}" cy="${p2(cy + 5.6)}" r=".9" fill="url(#diamond)" stroke="${ink}" stroke-width=".35"/>`).join('')}
-${glint(cx - 1, cy + 5, 1.2)}${glint(cx - 6.8, cy - 9.4, 1.1)}${glint(cx + 12.6, cy + 2.6, 0.9)}`;
-  // the star, 12.2 out from the middle, over a burst of eight
+<path d="M27.4 14.6 L26 6.2 L30.2 9.6 L33.4 4.4 L36 8.6 L38.6 4.4 L41.8 9.6 L46 6.2 L44.6 14.6 Z" fill="url(#gold)" stroke="${ink}" stroke-width=".9" stroke-linejoin="round"/>
+<path d="M28.2 13.4 L27.4 8.4 L30.4 10.8 L33.4 6.4 L36 10.2 L38.6 6.4 L41.6 10.8 L44.6 8.4 L43.8 13.4 Z" fill="#c84a1a" opacity=".35"/>
+<rect x="27.2" y="12.4" width="17.6" height="2.8" rx=".6" fill="url(#goldDeep)" stroke="${ink}" stroke-width=".7"/>
+${[[26, 6.2], [33.4, 4.4], [38.6, 4.4], [46, 6.2]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="1" fill="url(#pearl)" stroke="${ink}" stroke-width=".4"/>`).join('')}
+<path d="M36 6.4 L37.4 8.8 L36 11.2 L34.6 8.8 Z" fill="url(#ruby)" stroke="${ink}" stroke-width=".4"/>
+<ellipse cx="31" cy="13.8" rx="1.2" ry=".8" fill="url(#sapphire)"/><ellipse cx="36" cy="13.8" rx="1.3" ry=".9" fill="url(#ruby)"/><ellipse cx="41" cy="13.8" rx="1.2" ry=".8" fill="url(#sapphire)"/>
+<path d="M29.2 9 L30.2 12.2 M42.8 9 L41.8 12.2" stroke="#fff" stroke-width=".5" opacity=".7"/>`;
+  // the star: each point in a light and a dark half
   const starTips = [...Array(10)].map((_, i) => {
-    const r = i % 2 === 0 ? 12.2 : 5.2, a = ((i * 36 - 90) * Math.PI) / 180;
-    return [cx + r * Math.cos(a), cy + r * Math.sin(a)] as const;
+    const r = i % 2 === 0 ? 7.4 : 3.1, a = ((i * 36 - 90) * Math.PI) / 180;
+    return [cx + r * Math.cos(a), 10 + r * Math.sin(a)] as const;
   });
-  const starFacets = starTips.map((p, i) => `<path d="${poly([[cx, cy], p, starTips[(i + 1) % 10]!])}" fill="url(#${i % 2 === 0 ? 'facetLight' : 'facetDark'})"/>`).join('');
-  const starOutline = starPath(cx, cy, 12.2, 5.2);
-  const inner = starPath(cx, cy, 8.2, 3.5);
-  const burst = starPath(cx, cy, 13.6, 5.6, 8);
-  const gemFacets = [...Array(8)].map((_, i) => {
-    const a = (i * 45 * Math.PI) / 180, b = ((i + 1) * 45 * Math.PI) / 180, r = 2.9;
-    return `<path d="${poly([[cx, cy], [cx + r * Math.cos(a), cy + r * Math.sin(a)], [cx + r * Math.cos(b), cy + r * Math.sin(b)]])}" fill="${['#7ae0ff', '#1a6ad8', '#3aa8ff', '#0a3a9a'][i % 4]}"/>`;
+  const facets = starTips.map(([x, y], i) => {
+    const [x2, y2] = starTips[(i + 1) % 10]!;
+    return `<path d="M${cx} 10 L${p2(x)} ${p2(y)} L${p2(x2)} ${p2(y2)} Z" fill="${i % 2 === 0 ? '#fff6b0' : '#e09a14'}"/>`;
   }).join('');
-  const rays = starTips.filter((_, i) => i % 2 === 0).map(([x, y]) => `M${p2(cx)} ${p2(cy)} L${p2(x)} ${p2(y)}`).join(' ');
   const star = `
-<path d="${burst}" transform="rotate(22.5 ${cx} ${cy})" fill="url(#burst)" stroke="${ink}" stroke-width=".6" stroke-linejoin="round"/>
-<path d="${starPath(cx, cy, 11.8, 5.6, 8)}" transform="rotate(22.5 ${cx} ${cy})" fill="none" stroke="#fff" stroke-width=".35" opacity=".6"/>
-<path d="${starOutline}" transform="translate(.8 .9)" fill="${ink}" opacity=".45"/>
-${starFacets}
-<path d="${rays}" stroke="#8a4a04" stroke-width=".35" opacity=".5"/>
-<path d="${inner}" fill="none" stroke="#8a4a04" stroke-width=".55" stroke-linejoin="round"/>
-<path d="${inner}" transform="translate(.35 .35)" fill="none" stroke="#fff6c0" stroke-width=".35" stroke-linejoin="round" opacity=".8"/>
-<path d="${starOutline}" fill="none" stroke="${ink}" stroke-width="1" stroke-linejoin="round"/>
-<circle cx="${cx}" cy="${cy}" r="3.7" fill="url(#goldDeep)" stroke="${ink}" stroke-width=".5"/>
-${gemFacets}
-<circle cx="${cx}" cy="${cy}" r="2.9" fill="none" stroke="${ink}" stroke-width=".4"/>
-<circle cx="${p2(cx - 0.9)}" cy="${p2(cy - 0.9)}" r=".7" fill="#fff" opacity=".9"/>
-${glint(cx - 6.2, cy - 4.8, 1.5)}${glint(cx + 10.6, cy - 2.8, 1.2)}${glint(cx, cy - 11, 1)}${glint(cx + 4.6, cy + 8.4, 0.9)}`;
+<circle cx="${cx}" cy="10" r="8.6" fill="url(#halo)"/>
+<path d="${starPath(cx, 10, 7.4, 3.1)}" fill="url(#gold)" stroke="${ink}" stroke-width="1" stroke-linejoin="round"/>
+${facets}
+<path d="${starPath(cx, 10, 7.4, 3.1)}" fill="none" stroke="${ink}" stroke-width="1" stroke-linejoin="round"/>
+<circle cx="${cx}" cy="10" r="1.1" fill="#fff"/>`;
+  // Aibatt in the plaque, its eye on fire: a hot glow, one flame rising from behind its purple ball (mirrored: a long
+  // tongue sweeping out to each side, a shorter one above it, a tall tip in the middle; three layers, one even outline),
+  // embers; the eye (radius r) warm-lit and bloodshot, its iris a ring of fire (white-hot at the pupil, through yellow and
+  // orange to a dark red rim) streaked with wisps of flame, a hot ring round the pupil, its purple lid lowered to a frown
+  const ey = 24.6, r = 5.4, ir = r * 0.6, pr = r * 0.24;
+  /**
+   * A flame tongue from (x, y) towards `deg` (0 right, 90 down), `len` long, `wid` either side at the base, bending
+   * `bend` to its left (negative: to its right) as it goes, so that its tip curls.
+   */
+  const tongue = (x: number, y: number, deg: number, len: number, wid: number, bend: number): string => {
+    const a = (deg * Math.PI) / 180, ux = Math.cos(a), uy = Math.sin(a), nx = -uy, ny = ux;
+    const pt = (t: number, s: number): string => {
+      const side = s + bend * t * t;
+      return `${p2(x + ux * len * t + nx * side)} ${p2(y + uy * len * t + ny * side)}`;
+    };
+    return `M${pt(0, wid)} C${pt(0.4, wid * 1.15)} ${pt(0.78, wid * 0.45)} ${pt(1, 0)} C${pt(0.72, -wid * 0.25)} ${pt(0.38, -wid)} ${pt(0, -wid)} Z`;
+  };
+  /**
+   * The flame's left half from the eye's middle, as curves (two controls and an end): from under the ball out along the
+   * long side tongue to its tip, back in, up the upper tongue, in again, and up to the middle tip.
+   */
+  type Point = readonly [number, number];
+  const FLAME_LEFT: ReadonlyArray<readonly [Point, Point, Point]> = [
+    [[-4.4, 6.6], [-9.6, 4.4], [-12.2, -2.8]],
+    [[-10.6, -0.8], [-9.4, 0.2], [-7.8, -0.4]],
+    [[-9.2, -3], [-9.4, -5.6], [-8.2, -8]],
+    [[-7.2, -6.6], [-5.8, -6.2], [-4.2, -6.6]],
+    [[-4, -8], [-1.4, -8.2], [0, -9.8]],
+  ];
+  const FLAME_START: Point = [0, 6.2];
+  /** The whole flame: the left half, then the same curves backwards and mirrored. */
+  const flamePath = ((): string => {
+    const at = ([x, y]: Point): string => `${p2(cx + x)} ${p2(ey + y)}`;
+    const mirrored = ([x, y]: Point): Point => [-x, y];
+    const starts = [FLAME_START, ...FLAME_LEFT.map((curve) => curve[2])];
+    const left = FLAME_LEFT.map(([a, b, end]) => `C${at(a)} ${at(b)} ${at(end)}`);
+    const right = FLAME_LEFT.map(([a, b], i) => `C${at(mirrored(b))} ${at(mirrored(a))} ${at(mirrored(starts[i]!))}`).reverse();
+    return `M${at(FLAME_START)} ${left.join(' ')} ${right.join(' ')} Z`;
+  })();
+  /**
+   * The flame in bands of even width all along its edge: a yellow core, then an orange band and a red rim drawn as
+   * strokes kept inside it, then its dark outline; a light line just inside the rim.
+   */
+  const band = (width: number, colour: string, extra = ''): string =>
+    `<path d="${flamePath}" fill="none" stroke="${colour}" stroke-width="${width}" stroke-linejoin="round"${extra}/>`;
+  const flame = `<path d="${flamePath}" fill="url(#flameCore)"/>
+<g clip-path="url(#flameInside)">${band(3.6, '#ff8a1a')}${band(2.6, '#ffd060', ' opacity=".6"')}${band(1.8, '#d01e0c')}</g>
+${band(0.6, ink)}`;
+  const embers = ([[-11, -7.6, 0.45], [11.2, -7.2, 0.45], [-14.2, 1.2, 0.4], [14.4, 0.8, 0.4], [-6.6, -9.8, 0.35], [6.8, -9.6, 0.35]] as const)
+    .map(([x, y, s]) => `<circle cx="${p2(cx + x)}" cy="${p2(ey + y)}" r="${s}" fill="#fff2a0" stroke="#ff6a1a" stroke-width=".3"/>`).join('');
+  // red veins from the eyeball's sides and bottom towards the iris, each with a twig
+  const veins = [160, 195, 125, 20, 345, 55, 92].map((deg, i) => {
+    const a = (deg * Math.PI) / 180, b = a + (i % 2 ? 0.35 : -0.35);
+    const [x0, y0] = [cx + Math.cos(a) * r, ey + Math.sin(a) * r], [x1, y1] = [cx + Math.cos(b) * (ir + 0.5), ey + 0.3 + Math.sin(b) * (ir + 0.5)];
+    const [mx, my] = [(x0 + x1) / 2 + Math.sin(a) * 0.5, (y0 + y1) / 2 - Math.cos(a) * 0.5];
+    return `M${p2(x0)} ${p2(y0)} Q${p2(mx)} ${p2(my)} ${p2(x1)} ${p2(y1)} M${p2(mx)} ${p2(my)} L${p2(mx + Math.cos(a + 1.2) * 0.9)} ${p2(my + Math.sin(a + 1.2) * 0.9)}`;
+  }).join(' ');
+  // flame streaks in the iris, from the pupil out: light and dark by turns
+  const streaks = [...Array(18)].map((_, i) => {
+    const deg = i * 20 + (i % 2) * 7;
+    const a = (deg * Math.PI) / 180;
+    const d = tongue(cx + Math.cos(a) * pr * 1.1, ey + 0.3 + Math.sin(a) * pr * 1.1, deg, (ir - pr) * (i % 2 ? 0.8 : 1), 0.3, i % 3 === 0 ? 0.4 : -0.4);
+    return `<path d="${d}" fill="${i % 2 ? '#8a0a04' : '#fff0a0'}" opacity="${i % 2 ? 0.6 : 0.85}"/>`;
+  }).join('');
+  const lidSide = ey - r * 0.86, lidMiddle = ey - r * 0.24;
+  const lidEdge = `M${p2(cx - r - 1)} ${p2(lidSide)} Q${p2(cx - r * 0.5)} ${p2(lidSide + r * 0.1)} ${cx} ${p2(lidMiddle)} Q${p2(cx + r * 0.5)} ${p2(lidSide + r * 0.1)} ${p2(cx + r + 1)} ${p2(lidSide)}`;
+  const rimLight = (from: number, to: number, radius: number): string => {
+    const [a, b] = [(from * Math.PI) / 180, (to * Math.PI) / 180];
+    return `M${p2(cx + Math.cos(a) * radius)} ${p2(ey + Math.sin(a) * radius)} A${radius} ${radius} 0 0 1 ${p2(cx + Math.cos(b) * radius)} ${p2(ey + Math.sin(b) * radius)}`;
+  };
+  const aibatt = `
+<circle cx="${cx}" cy="${ey}" r="12" fill="url(#heat)"/>
+${flame}
+${embers}
+<circle cx="${cx}" cy="${ey}" r="${p2(r + 1.1)}" fill="url(#body)" stroke="${ink}" stroke-width=".8"/>
+<path d="${rimLight(200, 285, r + 1)}" stroke="#d8d0ff" stroke-width=".6" fill="none" opacity=".8" stroke-linecap="round"/>
+<path d="${rimLight(5, 115, r + 1.15)}" stroke="#ff9a3a" stroke-width=".7" fill="none" opacity=".85" stroke-linecap="round"/>
+<circle cx="${p2(cx + 0.4)}" cy="${p2(ey + 0.6)}" r="${r}" fill="${ink}" opacity=".55"/>
+<g clip-path="url(#eyeball)">
+  <circle cx="${cx}" cy="${ey}" r="${r}" fill="url(#sclera)"/>
+  <path d="${veins}" stroke="#d01e1e" stroke-width=".22" fill="none" opacity=".75" stroke-linecap="round"/>
+  <circle cx="${cx}" cy="${p2(ey + 0.3)}" r="${p2(ir + 0.45)}" fill="none" stroke="#ffcf6a" stroke-width=".35" opacity=".6"/>
+  <circle cx="${cx}" cy="${p2(ey + 0.3)}" r="${p2(ir)}" fill="url(#iris)"/>
+  ${streaks}
+  <circle cx="${cx}" cy="${p2(ey + 0.3)}" r="${p2(ir)}" fill="none" stroke="#4a0604" stroke-width=".55"/>
+  <circle cx="${cx}" cy="${p2(ey + 0.3)}" r="${p2(pr + 0.3)}" fill="none" stroke="#fff6c0" stroke-width=".4" opacity=".9"/>
+  <circle cx="${cx}" cy="${p2(ey + 0.3)}" r="${p2(pr)}" fill="#160202"/>
+  <ellipse cx="${p2(cx - ir * 0.45)}" cy="${p2(ey - ir * 0.05)}" rx="${p2(ir * 0.28)}" ry="${p2(ir * 0.2)}" fill="#fff" opacity=".95"/>
+  <circle cx="${p2(cx + ir * 0.45)}" cy="${p2(ey + ir * 0.6)}" r="${p2(ir * 0.12)}" fill="#fff" opacity=".8"/>
+  <path d="${lidEdge}" transform="translate(0 .55)" stroke="${ink}" stroke-width="1.1" fill="none" opacity=".35"/>
+  <path d="M${p2(cx - r - 1)} ${p2(ey - r - 1)} H${p2(cx + r + 1)} V${p2(lidSide)} Q${p2(cx + r * 0.5)} ${p2(lidSide + r * 0.1)} ${cx} ${p2(lidMiddle)} Q${p2(cx - r * 0.5)} ${p2(lidSide + r * 0.1)} ${p2(cx - r - 1)} ${p2(lidSide)} Z" fill="url(#lid)"/>
+  <path d="${lidEdge}" stroke="${ink}" stroke-width=".8" fill="none"/>
+  <path d="M${p2(cx - r * 0.75)} ${p2(ey - r * 0.86)} Q${cx} ${p2(ey - r * 1.04)} ${p2(cx + r * 0.55)} ${p2(ey - r * 0.9)}" stroke="#e8e0ff" stroke-width=".5" fill="none" opacity=".75" stroke-linecap="round"/>
+</g>
+<circle cx="${cx}" cy="${ey}" r="${r}" fill="none" stroke="${ink}" stroke-width=".9"/>`;
+  const sparkle = (x: number, y: number, s: number): string => `<path d="${starPath(x, y, s, s * 0.26, 4)}" fill="#fffbe0" stroke="${ink}" stroke-width=".3"/>`;
+  const bits = ([[6, 30, 20, 0], [64, 31, -25, 1], [12, 34, 40, 2], [59, 4, 10, 3], [14, 1.6, -30, 1], [67, 21, 35, 0], [3, 22, -15, 2]] as const)
+    .map(([x, y, deg, c]) => `<rect x="${x}" y="${y}" width="2" height="1.1" rx=".3" fill="${confetti[c]}" stroke="${ink}" stroke-width=".25" transform="rotate(${deg} ${x + 1} ${y + 0.5})"/>`).join('');
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${BANNER_WIDTH * BANNER_SCALE}" height="${BANNER_HEIGHT * BANNER_SCALE}" viewBox="0 0 ${BANNER_WIDTH} ${BANNER_HEIGHT}">
 <defs>
+  <radialGradient id="glow" cx="${cx}" cy="19" r="26" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="${glow}" stop-opacity=".9"/><stop offset=".55" stop-color="${glow}" stop-opacity=".35"/><stop offset="1" stop-color="${glow}" stop-opacity="0"/></radialGradient>
+  <linearGradient id="wing" x1="2" y1="1" x2="25" y2="23" gradientUnits="userSpaceOnUse">${wing.map((c, i) => `<stop offset="${i / 4}" stop-color="${c}"/>`).join('')}</linearGradient>
+  <linearGradient id="membrane" x1="0" y1="4" x2="0" y2="23" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset="1" stop-color="${ink}" stop-opacity=".35"/></linearGradient>
+  <linearGradient id="wingBack" x1="4" y1="15" x2="26" y2="27" gradientUnits="userSpaceOnUse">${wingBack.map((c, i) => `<stop offset="${i / 2}" stop-color="${c}"/>`).join('')}</linearGradient>
   <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fffde0"/><stop offset=".35" stop-color="#ffe066"/><stop offset=".7" stop-color="#f0a818"/><stop offset="1" stop-color="#a85e06"/></linearGradient>
-  <linearGradient id="goldDeep" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffd860"/><stop offset="1" stop-color="#a85e06"/></linearGradient>
-  <linearGradient id="facetLight" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fffde8"/><stop offset="1" stop-color="#ffd84a"/></linearGradient>
-  <linearGradient id="facetDark" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f6b424"/><stop offset="1" stop-color="#9a5604"/></linearGradient>
-  <linearGradient id="bandFace" x1="0" y1="${cy + 3}" x2="0" y2="${cy + 11}" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#ffe680"/><stop offset=".5" stop-color="#f0a818"/><stop offset="1" stop-color="#b8700a"/></linearGradient>
-  <radialGradient id="ball" cx=".35" cy=".3" r=".8"><stop offset="0" stop-color="#fffde8"/><stop offset=".5" stop-color="#ffd24a"/><stop offset="1" stop-color="#9a5604"/></radialGradient>
-  <linearGradient id="burst" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f4faff"/><stop offset=".5" stop-color="#8ab4e8"/><stop offset="1" stop-color="#2a4a8a"/></linearGradient>
-  <linearGradient id="rimDark" x1="0" y1="4" x2="0" y2="34" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#c8a050"/><stop offset="1" stop-color="#5a3a10"/></linearGradient>
-  <linearGradient id="field" x1="0" y1="5" x2="0" y2="33" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="${field[0]}"/><stop offset="1" stop-color="${field[1]}"/></linearGradient>
-  <linearGradient id="steel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff"/><stop offset=".45" stop-color="#c8d2e2"/><stop offset="1" stop-color="#5a6680"/></linearGradient>
-  <linearGradient id="wood" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#b87a44"/><stop offset="1" stop-color="#5a2e12"/></linearGradient>
+  <linearGradient id="goldDeep" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffe680"/><stop offset="1" stop-color="#b86a08"/></linearGradient>
+  <linearGradient id="rim" x1="0" y1="16" x2="0" y2="34" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#fff6c0"/><stop offset=".4" stop-color="#ffc83a"/><stop offset="1" stop-color="#9a5404"/></linearGradient>
+  <linearGradient id="plaque" x1="0" y1="18" x2="0" y2="32" gradientUnits="userSpaceOnUse">${plaque.map((c, i) => `<stop offset="${i / 2}" stop-color="${c}"/>`).join('')}</linearGradient>
+  <linearGradient id="gloss" x1="0" y1="18" x2="0" y2="23" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#fff" stop-opacity=".55"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
   <radialGradient id="ruby" cx=".35" cy=".35" r=".8"><stop offset="0" stop-color="#ffd0d8"/><stop offset=".4" stop-color="#ff2a4a"/><stop offset="1" stop-color="#7a0018"/></radialGradient>
   <radialGradient id="sapphire" cx=".35" cy=".35" r=".8"><stop offset="0" stop-color="#d8f6ff"/><stop offset=".4" stop-color="#2ab0ff"/><stop offset="1" stop-color="#0a3a8a"/></radialGradient>
-  <radialGradient id="diamond" cx=".35" cy=".35" r=".8"><stop offset="0" stop-color="#fff"/><stop offset=".6" stop-color="#e0f4ff"/><stop offset="1" stop-color="#8ab0d0"/></radialGradient>
+  <radialGradient id="pearl" cx=".35" cy=".35" r=".8"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#e0b84a"/></radialGradient>
+  <radialGradient id="halo" cx="${cx}" cy="10" r="8.6" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#fff" stop-opacity=".9"/><stop offset="1" stop-color="${glow}" stop-opacity="0"/></radialGradient>
+  <radialGradient id="sclera" cx=".42" cy=".42" r=".62"><stop offset="0" stop-color="#fff"/><stop offset=".55" stop-color="#fff6e0"/><stop offset=".82" stop-color="#ffc890"/><stop offset="1" stop-color="#c8603a"/></radialGradient>
+  <radialGradient id="iris" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#fffbe0"/><stop offset=".3" stop-color="#ffe24a"/><stop offset=".55" stop-color="#ff8a1a"/><stop offset=".78" stop-color="#c8180a"/><stop offset="1" stop-color="#3a0402"/></radialGradient>
+  <radialGradient id="heat" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#ffb04a" stop-opacity=".9"/><stop offset=".6" stop-color="#ff6a1a" stop-opacity=".45"/><stop offset="1" stop-color="#ff4a0a" stop-opacity="0"/></radialGradient>
+  <radialGradient id="flameCore" cx="${cx}" cy="${ey + 2}" r="12" gradientUnits="userSpaceOnUse"><stop offset=".4" stop-color="#fffbd0"/><stop offset="1" stop-color="#ffd23a"/></radialGradient>
+  <linearGradient id="lid" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#b0a4f0"/><stop offset=".6" stop-color="#7a6ac8"/><stop offset="1" stop-color="#4a3a8a"/></linearGradient>
+  <radialGradient id="body" cx=".38" cy=".32" r=".7"><stop offset="0" stop-color="#c4baff"/><stop offset=".5" stop-color="#7a6ac8"/><stop offset="1" stop-color="#3a2a6a"/></radialGradient>
+  <clipPath id="flameInside"><path d="${flamePath}"/></clipPath>
+  <clipPath id="eyeball"><circle cx="${cx}" cy="${ey}" r="${r}"/></clipPath>
 </defs>
-${tassels.join('')}
-${swords.join('')}
-${shieldSvg}
+<ellipse cx="${cx}" cy="19" rx="30" ry="17" fill="url(#glow)"/>
+<path d="${rays}" fill="#fff" opacity=".35"/>
+<g stroke="${ink}" stroke-width=".9" stroke-linejoin="round"><path d="${back}" fill="url(#wingBack)"/><path d="${back}" fill="url(#wingBack)" ${mirror}/></g>
+<g stroke="${ink}" stroke-width="1.1" stroke-linejoin="round"><path d="${front}" fill="url(#wing)"/><path d="${front}" fill="url(#wing)" ${mirror}/></g>
+<path d="${membrane}" fill="url(#membrane)"/><path d="${membrane}" fill="url(#membrane)" ${mirror}/>
+<g stroke="#fff" stroke-opacity=".6" stroke-width=".45" fill="none" stroke-linecap="round"><path d="${bones}"/><path d="${bones}" ${mirror}/></g>
+<g stroke="#fff" stroke-opacity=".85" stroke-width=".6" fill="none" stroke-linecap="round"><path d="M24.6 13.4 C21.4 8.6 14 4.4 4.4 2.6"/><path d="M24.6 13.4 C21.4 8.6 14 4.4 4.4 2.6" ${mirror}/></g>
 ${emblem === 'crown' ? crown : star}
+<path d="${plaqueRim}" fill="url(#rim)" stroke="${ink}" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="${plaqueFace}" fill="url(#plaque)" stroke="#5a2a04" stroke-width=".5" stroke-linejoin="round"/>
+<path d="M22.2 18 H49.8 L52.2 21.2 C45 22.6 27 22.6 19.8 21.2 Z" fill="url(#gloss)"/>
+<path d="M17.4 22.4 L18.8 20.6 L20.2 22.4 L18.8 24.2 Z M54.6 22.4 L53.2 20.6 L51.8 22.4 L53.2 24.2 Z" fill="url(#sapphire)" stroke="${ink}" stroke-width=".4"/>
+<path d="M36 30.6 L37.2 32 L36 33.4 L34.8 32 Z" fill="url(#ruby)" stroke="${ink}" stroke-width=".35"/>
+${aibatt}
+${bits}
+${sparkle(8, 26, 2.2)}${sparkle(63.6, 26.6, 2.6)}${sparkle(53.4, 6.4, 1.8)}${sparkle(19.4, 5.6, 1.3)}${sparkle(66, 12, 1.2)}
 </svg>`;
 }
 

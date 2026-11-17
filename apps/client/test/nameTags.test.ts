@@ -248,8 +248,8 @@ describe('the siege trophy (RenderName, MoverRender.cpp:1645-1688)', () => {
   });
   it('the weekly badge is a crest over the name (2026-11-17, owner: "on top of the name"), centred like it, 1 px over the rest', () => {
     // the name is written 3 px left of centred; the crest's bottom 1 px above the top of everything else
-    expect(bannerPlace('weeklyChampion', -22)).toEqual({ left: -44 - 3, top: -22 - 1 - 36, width: 88, height: 36 });
-    expect(bannerPlace('weeklyMvp', -34)).toEqual({ left: -44 - 3, top: -34 - 1 - 36, width: 88, height: 36 });
+    expect(bannerPlace('weeklyChampion', -22)).toEqual({ left: -36 - 3, top: -22 - 1 - 36, width: 72, height: 36 });
+    expect(bannerPlace('weeklyMvp', -34)).toEqual({ left: -36 - 3, top: -34 - 1 - 36, width: 72, height: 36 });
   });
 
   it('the crests are drawn at twice the size the tag draws them', () => {

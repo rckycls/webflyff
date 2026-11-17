@@ -56,14 +56,15 @@ export function trophyPlace(wide: number, hasLogo: boolean): { left: number; top
 
 /**
  * 2026-11-15 (C1): the weekly badge. 2026-11-17 (owner, "should be a longer icon on top of the name", "something like this
- * and not too much text", "like a warrior something", "wider", "heavy on crown and star"): a crest, a large gold crown
- * (champion) or star (MVP) over a small dark shield and two crossed swords (`badgeKey`, drawn by scripts/drawWindowIcons.ts at twice these sizes), centred over
+ * and not too much text", a few rounds, then 2026-11-18 "go back to these [the winged CHAMP / MVP crests] but instead of
+ * text in the middle just use aibatt eyes", "make the eye fiery"): a winged crest, a gold crown (champion) or star (MVP)
+ * over a plaque holding Aibatt's fiery eye (`badgeKey`, drawn by scripts/drawWindowIcons.ts at twice these sizes), centred over
  * the name like the text, 1 px above `below`: the top of everything else on the tag (the name, the guild line, the marks,
  * the logo, the trophy, the VIP star).
  */
 export const BANNER_SIZE: Readonly<Record<WeeklyBadge, { width: number; height: number }>> = {
-  weeklyChampion: { width: 88, height: 36 },
-  weeklyMvp: { width: 88, height: 36 },
+  weeklyChampion: { width: 72, height: 36 },
+  weeklyMvp: { width: 72, height: 36 },
 };
 export function bannerPlace(badge: WeeklyBadge, below: number): { left: number; top: number; width: number; height: number } {
   const { width, height } = BANNER_SIZE[badge];

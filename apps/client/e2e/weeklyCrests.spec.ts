@@ -1,5 +1,5 @@
 // 2026-11-17 (owner: the weekly champion's and MVP's marks "a longer icon on top of the name", then "like a warrior
-// something", their pick "A: Shield & swords", "wider"): the website's weekly answer (`/api/siege/weekly`) puts the
+// something", ..., 2026-11-18 "go back to these [winged] but ... aibatt eyes"): the website's weekly answer (`/api/siege/weekly`) puts the
 // champion guild's crest over its members' names and the MVP's crest over the MVP's (render/NameTagLayer.ts `bannerPlace`).
 
 import { expect, test } from '@playwright/test';
