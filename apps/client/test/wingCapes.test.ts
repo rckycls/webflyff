@@ -42,6 +42,7 @@ describe('wingFit', () => {
         expect(fit.scale).toBeGreaterThan(0.5);
         expect(fit.scale).toBeLessThanOrEqual(1);
         expect(fit.back).toBeGreaterThanOrEqual(0);
+        expect(fit.up).toBeLessThan(-0.1); // 2026-11-18: on the shoulder blades, below the Neck
       }
     }
     expect(wingFit('models/item_ridridstimagic.glb', 'male')).toEqual({ back: 0, up: 0, scale: 1 });
