@@ -17,7 +17,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { hashPassword } from '@flyffweb/protocol';
+import { hashPassword, PREREG_OFF } from '@flyffweb/protocol';
 import { ADMIN_ACTIONS } from '../src/admin/actions';
 import { createAdminServer } from '../src/admin/adminServer';
 import { loadItemCatalog } from '../src/admin/itemCatalog';
@@ -29,6 +29,7 @@ import { HourlyLimit } from '../src/hourlyLimit';
 import { RefusalLog } from '../src/refusalLog';
 import { createWebServer } from '../src/server';
 import { SiegeCache } from '../src/siege';
+import { SignUpBook } from '../src/signUpBook';
 import { StatusCache } from '../src/status';
 import { TicketBook } from '../src/ticket';
 import { siteVipRoutes } from '../src/vip/siteVip';
@@ -116,6 +117,7 @@ if (values['site-port'] !== undefined) {
     tickets: new TicketBook(siteConfig.ticketSecret, now), attempts: new HourlyLimit(20, now), createdByAddress: new HourlyLimit(3, now),
     createdInAll: new HourlyLimit(60, now), ticketsByAddress: new HourlyLimit(60, now), siege: new SiegeCache(accounts, now),
     status: new StatusCache(async () => ({ online: true, players: 0, checkedAt: new Date().toISOString() }), now),
+    signUps: new SignUpBook(undefined, log), prereg: () => PREREG_OFF,
     vip: siteVipRoutes({
       config: siteConfig, vip: { uploadsDir: '', maxPendingPerAccount: 3, deleteRejectedAfterDays: 30 }, store: siteView(vipStore), files: vipFiles, log,
       sessions: new SessionBook(now, PLAYER_SESSION_IDLE_MS, PLAYER_SESSION_MAX_MS),

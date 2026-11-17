@@ -9,13 +9,14 @@ import type { AddressInfo } from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, expect, it } from 'vitest';
-import { hashPassword } from '@flyffweb/protocol';
+import { hashPassword, PREREG_OFF } from '@flyffweb/protocol';
 import type { AccountStore } from '../src/accountStore';
 import { SessionBook } from '../src/admin/sessions';
 import { HourlyLimit } from '../src/hourlyLimit';
 import { RefusalLog } from '../src/refusalLog';
 import { createWebServer } from '../src/server';
 import { SiegeCache } from '../src/siege';
+import { SignUpBook } from '../src/signUpBook';
 import { StatusCache } from '../src/status';
 import { TicketBook } from '../src/ticket';
 import { readReference, siteVipRoutes } from '../src/vip/siteVip';
@@ -61,6 +62,7 @@ async function start(options: { vip?: boolean; maxPending?: number } = {}) {
     attempts: new HourlyLimit(20, clock), createdByAddress: new HourlyLimit(3, clock), createdInAll: new HourlyLimit(60, clock),
     ticketsByAddress: new HourlyLimit(60, clock), siege: new SiegeCache(accountStore, clock),
     status: new StatusCache(async () => ({ online: true, players: 0, checkedAt: '2026-11-16T00:00:00.000Z' }), clock),
+    signUps: new SignUpBook(undefined, log), prereg: () => PREREG_OFF,
     vip: routes,
   });
   servers.push(server);
