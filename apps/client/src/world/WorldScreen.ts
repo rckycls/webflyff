@@ -1486,8 +1486,8 @@ export class WorldScreen {
       this.views?.refresh(mover);
       if (mover.isSelf && this.inventoryWindow?.frame.isOpen) void this.makePortrait(true);
     };
-    // 2026-11-09: the Master and Hero marks' pictures from the store
-    this.tags = new NameTagLayer(stage.scene, this.element.ownerDocument, (key) => this.services?.store.url(key) ?? '');
+    // 2026-11-09: the Master and Hero marks' pictures from the store; 2026-11-17: the VIP stars, FlyffWeb's own (ownIcons.ts)
+    this.tags = new NameTagLayer(stage.scene, this.element.ownerDocument, (key) => OWN_ICONS.get(key) ?? this.services?.store.url(key) ?? '');
     this.indicators = new WorldIndicatorLayer(stage.scene, this.element.ownerDocument);
     const now = performance.now();
     for (const [id, until] of this.pendingAttackEmotes) if (until > now) this.indicators.attack(id, until - 5000);

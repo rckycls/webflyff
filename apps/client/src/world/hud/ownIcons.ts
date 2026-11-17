@@ -4,6 +4,8 @@
 // make them. The HUD's art finds them under the keys the converter would give them (WorldScreen.startHud): framed
 // `ui/<web name>.png` (`themeKey`) for the Start menu and the task bar, frameless `ui/bare/<web name>.png` (`bareIconKey`)
 // for the phone's shortcuts and the desktop's Siege Ranking button.
+// 2026-11-17 (owner): also the VIP1-VIP4 stars beside a VIP player's name (render/nameTags.ts `vipKey`), which the name
+// tags find the same way (WorldScreen's NameTagLayer).
 
 import autoPlay from '../../icons/icon_autoplay.png';
 import petFilter from '../../icons/icon_petfilter.png';
@@ -11,6 +13,10 @@ import siegeRanking from '../../icons/icon_siegeranking.png';
 import autoPlayBare from '../../icons/bare/icon_autoplay.png';
 import petFilterBare from '../../icons/bare/icon_petfilter.png';
 import siegeRankingBare from '../../icons/bare/icon_siegeranking.png';
+import vipStar1 from '../../icons/vipstar1.png';
+import vipStar2 from '../../icons/vipstar2.png';
+import vipStar3 from '../../icons/vipstar3.png';
+import vipStar4 from '../../icons/vipstar4.png';
 
 /** The applets' icon names in `APPLETS` (applets.ts) of the own icons. */
 export const OWN_ICON_FILES = {
@@ -27,4 +33,8 @@ export const OWN_ICONS: ReadonlyMap<string, string> = new Map([
   ['ui/bare/icon_autoplay.png', autoPlayBare],
   ['ui/icon_petfilter.png', petFilter],
   ['ui/bare/icon_petfilter.png', petFilterBare],
+  ['ui/vipstar1.png', vipStar1],
+  ['ui/vipstar2.png', vipStar2],
+  ['ui/vipstar3.png', vipStar3],
+  ['ui/vipstar4.png', vipStar4],
 ]);

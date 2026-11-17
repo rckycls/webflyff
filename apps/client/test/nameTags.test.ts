@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import type { WebMover } from '@flyffweb/formats';
 import { Scene } from 'three';
 import type { SpriteMaterial } from 'three';
-import { NameTagLayer, badgePlace, trophyPlace } from '../src/world/render/NameTagLayer';
-import { badgeKey, legendMark, nameTagOf, tagOpacity } from '../src/world/render/nameTags';
+import { NameTagLayer, badgePlace, trophyPlace, vipPlace } from '../src/world/render/NameTagLayer';
+import { badgeKey, legendMark, nameTagOf, tagOpacity, vipKey, vipTier } from '../src/world/render/nameTags';
 import { addedNpc, addedPlayer, gameDataOf, moverFrom, webMoverOf } from './helpers/movers';
 
 // The colours of PKSetting.inc are not all the code has: a different set shows the tag takes them from `nameColors`
@@ -283,5 +283,44 @@ describe('the weekly badge in the layer', () => {
     badge = 'weeklyChampion';
     layer.recolor(movers, tagOf);
     expect(keys).toContain(badgeKey('weeklyChampion'));
+  });
+});
+
+describe('the VIP star (2026-11-17, owner: "like the mvp medal but smaller", "make it a star")', () => {
+  it('VIP1 to VIP4 are the letters A, B, C and E; no other letter has a star', () => {
+    expect(['A', 'B', 'C', 'E'].map((letter) => vipTier(auth(letter)))).toEqual([1, 2, 3, 4]);
+    for (const letter of ['D', 'F', 'J', 'L', 'P', '1', '2', '3']) expect(vipTier(auth(letter))).toBeNull();
+    expect(tagOfPlayer({ authorization: auth('C') })?.vip).toBe(3);
+    expect(tagOfPlayer({ authorization: auth('E') })?.vip).toBe(4);
+    expect(tagOfPlayer({})?.vip).toBeUndefined();
+    expect([1, 2, 3, 4].map((tier) => vipKey(tier as 1 | 2 | 3 | 4))).toEqual(['ui/vipstar1.png', 'ui/vipstar2.png', 'ui/vipstar3.png', 'ui/vipstar4.png']);
+  });
+
+  it("is 18 x 18 in the trophy row's next slot, at its right and middle", () => {
+    // alone: in the trophy's own place (no logo: 30 px left of the line's left half, 30 px above), 7 px in, 3 px down
+    expect(vipPlace(80, false, false, false)).toEqual({ left: -40 - 30 + 7, top: -30 + 3, size: 18 });
+    // with a logo, a trophy and a badge: two slots (25 + 2) further left
+    expect(vipPlace(80, true, true, true)).toEqual({ left: trophyPlace(80, true).left - 54 + 7, top: -29 + 3, size: 18 });
+    expect(vipPlace(80, false, true, false).left).toBe(-40 - 30 - 27 + 7);
+  });
+
+  it('the layer requests the star of the tier and draws the tag again when the tier changes', () => {
+    const context = {
+      font: '', textBaseline: '', lineJoin: '', lineWidth: 0, strokeStyle: '', fillStyle: '',
+      measureText: (text: string) => ({ width: text.length * 7 }),
+      scale: () => {}, strokeText: () => {}, fillText: () => {},
+    };
+    const doc = { defaultView: { devicePixelRatio: 1 }, createElement: () => ({ width: 0, height: 0, getContext: () => context }) } as unknown as Document;
+    const keys: string[] = [];
+    const layer = new NameTagLayer(new Scene(), doc, (key) => { keys.push(key); return ''; });
+    const rocky = moverFrom(addedPlayer(1, { name: 'Rocky', playerId: 501, authorization: auth('B') }), data);
+    const movers = new Map([[1, rocky]]);
+    const tagOf = (mover: typeof rocky) => nameTagOf(mover, undefined, colors, titles);
+    layer.sync({ added: [rocky], removed: [], combat: [], own: [], dropped: 0 }, movers, tagOf);
+    expect(keys).toContain('ui/vipstar2.png');
+    keys.length = 0;
+    rocky.added.player!.authorization = auth('E');
+    layer.recolor(movers, tagOf);
+    expect(keys).toContain('ui/vipstar4.png');
   });
 });

@@ -1099,7 +1099,7 @@ describe('APPLETS (CWndMgr::AddAllApplet, FuncApplet.cpp:178-301)', () => {
         expect(OWN_ICONS.get(key)!.includes('/bare/')).toBe(key.startsWith('ui/bare/'));
       }
     }
-    expect(OWN_ICONS.size).toBe(6);
+    expect(OWN_ICONS.size).toBe(10); // and the four VIP stars (render/nameTags.ts vipKey)
   });
 });
 

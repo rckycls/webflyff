@@ -1,3 +1,4 @@
+import { VIP_AUTHORITIES } from '@flyffweb/protocol';
 import type { AddedPlayer } from '@flyffweb/protocol';
 import type { WebNameColors } from '@flyffweb/formats';
 import { Belli } from '../sim/constants';
@@ -17,7 +18,24 @@ export interface NameTag {
   trophy?: 'winner' | 'best' | null;
   /** 2026-11-15 (C1, the owner's custom mark): the weekly champion's or the weekly MVP's picture, one slot left of the trophy. */
   badge?: 'weeklyChampion' | 'weeklyMvp' | null;
+  /** 2026-11-17 (owner): a VIP player's tier, 1 to 4, whose star shows beside the name (`vipKey`), or none. */
+  vip?: VipTier | null;
 }
+
+/** 2026-11-17: a VIP tier, VIP1 to VIP4 (the authority letters A, B, C, E: `Authority.VIP1`... in the protocol). */
+export type VipTier = 1 | 2 | 3 | 4;
+
+/** 2026-11-17: the tier of an authority letter (ADD_OBJ's char code), or null for one that is no VIP's. */
+export function vipTier(authorization: number): VipTier | null {
+  const index = VIP_AUTHORITIES.findIndex((letter) => letter.charCodeAt(0) === authorization);
+  return index < 0 ? null : ((index + 1) as VipTier);
+}
+
+/**
+ * 2026-11-17 (owner, "like the mvp medal but smaller", "make it a star"): a VIP tier's star, FlyffWeb's own picture
+ * (hud/ownIcons.ts, drawn in the frame of the siege MVP medal by scripts/drawWindowIcons.ts).
+ */
+export const vipKey = (tier: VipTier): string => `ui/vipstar${tier}.png`;
 
 /** The guild line of a player's tag (guild research §5). */
 export interface GuildLine {
@@ -141,12 +159,13 @@ export function nameTagOf(
     const guild = guildOf(mover);
     const trophy = trophyOf(mover);
     const badge = badgeOf(mover);
+    const vip = vipTier(player.authorization); // 2026-11-17 (owner): the VIP star
     // 2026-11-15: the siege's colour last, over the PK and party ones (`bOtherColor`, MoverRender.cpp:1405-1406)
     const color = siegeColorOf(mover) ?? playerColor(player, colors, inParty(player.playerId));
     return {
       text: playerText(mover.name, player, honorTitles), color, maxDistance: FAR_LIMIT,
       ...(mark !== null ? { mark } : {}), ...(guild !== undefined ? { guild } : {}),
-      ...(trophy !== null ? { trophy } : {}), ...(badge !== null ? { badge } : {}),
+      ...(trophy !== null ? { trophy } : {}), ...(badge !== null ? { badge } : {}), ...(vip !== null ? { vip } : {}),
     };
   }
   const { belligerence } = mover.added;

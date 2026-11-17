@@ -134,6 +134,71 @@ const PICTURES: Record<string, string> = {
 const svg = (picture: string, framed: boolean): string => `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
 ${framed ? RIM : ''}<clipPath id="panel"><rect x="2" y="3" width="28" height="27"/></clipPath><g clip-path="url(#panel)">${ORB}${picture}</g></svg>`;
 
+// 2026-11-17 (owner, "4 icons that is like the mvp medal but smaller ... for VIP1 to VIP4", then "make it a star"): the VIP
+// stars beside a VIP player's name (render/nameTags.ts `vipKey`). They copy the siege MVP medal (Theme/Default/
+// TexGuildCombatBest.bmp, 25 x 25) at MEDAL_SIZE: its gold frame (gold top and sides fading to pale yellow, a dark line
+// inside the top and outside the bottom, nothing inside) and its dark drop shadow 1 px right and down, with a star in the
+// place of the ribbon and medal. Each tier has its metal and its number on the star: VIP1 bronze, VIP2 silver, VIP3 gold,
+// VIP4 purple.
+
+/** The pictures' size: smaller than the MVP medal's 25. */
+const MEDAL_SIZE = 18;
+
+/** TexGuildCombatBest.bmp's frame, pixel by pixel, at `n` x `n`. */
+function medalFrame(n: number): string {
+  const r = (x: number, y: number, w: number, h: number, fill: string): string => `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fill}"/>`;
+  const dark = '#59300b';
+  return `<defs><linearGradient id="side" x1="0" y1="2" x2="0" y2="${n - 3}" gradientUnits="userSpaceOnUse">
+  <stop offset="0" stop-color="#e4a622"/><stop offset="1" stop-color="#ffffba"/></linearGradient></defs>
+<g shape-rendering="crispEdges">
+  ${r(2, 0, n - 4, 1, '#e1a21c')}${r(1, 1, 1, 1, '#e3a51d')}${r(2, 1, n - 4, 1, dark)}${r(n - 2, 1, 1, 1, '#e3a41e')}
+  ${r(0, 2, 1, n - 5, 'url(#side)')}${r(n - 1, 2, 1, n - 5, 'url(#side)')}${r(1, 2, 1, 1, dark)}${r(n - 2, 2, 1, 1, dark)}
+  ${r(0, n - 3, 1, 1, dark)}${r(1, n - 3, 1, 1, '#ffffb7')}${r(n - 2, n - 3, 1, 1, '#ffffb7')}${r(n - 1, n - 3, 1, 1, dark)}
+  ${r(1, n - 2, 1, 1, dark)}${r(2, n - 2, n - 4, 1, '#ffffb4')}${r(n - 2, n - 2, 1, 1, dark)}
+  ${r(2, n - 1, n - 4, 1, dark)}
+</g>`;
+}
+
+/** The numbers on the stars, 3 x 5 pixels. */
+const DIGITS: Record<number, readonly string[]> = {
+  1: ['.#.', '##.', '.#.', '.#.', '###'],
+  2: ['##.', '..#', '.#.', '#..', '###'],
+  3: ['##.', '..#', '.#.', '..#', '##.'],
+  4: ['#.#', '#.#', '###', '..#', '..#'],
+};
+
+/** A tier's colours: the star's light, middle and dark metal, its outline and its number. */
+interface StarColors { metal: [string, string, string]; outline: string; digit: string }
+const STARS: Record<number, StarColors> = {
+  1: { metal: ['#ffe2c2', '#dd9058', '#8a4a22'], outline: '#5a2a10', digit: '#4a1e08' },
+  2: { metal: ['#ffffff', '#cdd5e2', '#7c879a'], outline: '#3e4658', digit: '#262c3a' },
+  3: { metal: ['#fffbb0', '#ffc644', '#c07a20'], outline: '#79472a', digit: '#5a2a08' },
+  4: { metal: ['#ffffff', '#d9b8ff', '#8a52d8'], outline: '#4a1a80', digit: '#34105e' },
+};
+
+/** A five-pointed star's outline round (cx, cy): points `outer` out, notches `inner` in, one point up. */
+function starPath(cx: number, cy: number, outer: number, inner: number): string {
+  const points = [...Array(10)].map((_, i) => {
+    const r = i % 2 === 0 ? outer : inner;
+    const a = ((i * 36 - 90) * Math.PI) / 180;
+    return `${(cx + r * Math.cos(a)).toFixed(2)},${(cy + r * Math.sin(a)).toFixed(2)}`;
+  });
+  return `M${points.join('L')}Z`;
+}
+
+/** A VIP star of `n` x `n`: the frame, the star's shadow, the star and its number (x 8..10, y 7..11). */
+function medal(tier: number, n: number): string {
+  const { metal: [light, middle, deep], outline, digit } = STARS[tier]!;
+  const star = starPath(9.5, 9.6, 6.9, 3.4);
+  const number = DIGITS[tier]!.flatMap((row, y) => [...row].map((c, x) => c === '#' ? `<rect x="${8 + x}" y="${7 + y}" width="1" height="1" fill="${digit}"/>` : '')).join('');
+  return `${medalFrame(n)}
+<defs><radialGradient id="metal" cx="8" cy="7" r="7.5" gradientUnits="userSpaceOnUse">
+  <stop offset="0" stop-color="${light}"/><stop offset=".55" stop-color="${middle}"/><stop offset="1" stop-color="${deep}"/></radialGradient></defs>
+<path d="${star}" transform="translate(1 1)" fill="#483a17"/>
+<path d="${star}" fill="url(#metal)" stroke="${outline}" stroke-width=".8" stroke-linejoin="round"/>
+<g shape-rendering="crispEdges">${number}</g>`;
+}
+
 const browser = await chromium.launch();
 try {
   const page = await browser.newPage({ viewport: { width: 32, height: 32 }, deviceScaleFactor: 1 });
@@ -146,6 +211,14 @@ try {
       await writeFile(file, png);
       console.log(path.relative(process.cwd(), file));
     }
+  }
+  for (const tier of [1, 2, 3, 4]) {
+    const n = MEDAL_SIZE;
+    await page.setContent(`<html><body style="margin:0;background:transparent"><svg xmlns="http://www.w3.org/2000/svg" width="${n}" height="${n}" viewBox="0 0 ${n} ${n}">${medal(tier, n)}</svg></body></html>`);
+    const png = await page.screenshot({ omitBackground: true, clip: { x: 0, y: 0, width: n, height: n } });
+    const file = path.join(icons, `vipstar${tier}.png`);
+    await writeFile(file, png);
+    console.log(path.relative(process.cwd(), file));
   }
 } finally {
   await browser.close();

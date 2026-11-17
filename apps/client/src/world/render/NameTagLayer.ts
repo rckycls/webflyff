@@ -8,7 +8,7 @@ import { d3dColor } from '@flyffweb/scene';
 import type { PerspectiveCamera, Scene } from 'three';
 import { CanvasTexture, LinearFilter, SRGBColorSpace, Sprite, SpriteMaterial, Vector3 } from 'three';
 import type { Mover, WorldChanges } from '../WorldState';
-import { badgeKey, tagOpacity, trophyKey } from './nameTags';
+import { badgeKey, tagOpacity, trophyKey, vipKey } from './nameTags';
 import type { NameTag } from './nameTags';
 
 /**
@@ -59,6 +59,19 @@ export function badgePlace(wide: number, hasLogo: boolean, hasTrophy: boolean): 
   return hasTrophy ? { ...at, left: at.left - (TROPHY_PX + LOGO_GAP_PX) } : at;
 }
 
+/**
+ * 2026-11-17 (owner, "like the mvp medal but smaller ... on the side of the character", "make it a star"): the VIP star,
+ * 18 x 18, in the next slot of the trophy's row (the trophy's own place without a trophy or badge, else one slot left of the
+ * last of them), at that slot's right and its middle: nearest the name, never over the other marks.
+ */
+export const VIP_PX = 18;
+export function vipPlace(wide: number, hasLogo: boolean, hasTrophy: boolean, hasBadge: boolean): { left: number; top: number; size: number } {
+  const at = trophyPlace(wide, hasLogo);
+  const slots = (hasTrophy ? 1 : 0) + (hasBadge ? 1 : 0);
+  const left = at.left - slots * (TROPHY_PX + LOGO_GAP_PX) + (TROPHY_PX - VIP_PX);
+  return { left, top: at.top + Math.floor((TROPHY_PX - VIP_PX) / 2), size: VIP_PX };
+}
+
 /** The canvas is drawn at the screen's pixel ratio, as the renderer is (at most 2: `createRenderer`). */
 const MAX_PIXEL_RATIO = 2;
 
@@ -76,6 +89,8 @@ interface Tag {
   trophy: string;
   /** 2026-11-15 (C1): the weekly badge it was drawn with ('' for none). */
   badge: string;
+  /** 2026-11-17: the VIP tier it was drawn with (0 for none). */
+  vip: number;
   /** The canvas in CSS pixels. */
   width: number;
   height: number;
@@ -127,7 +142,7 @@ export class NameTagLayer {
         if (tag !== null && tag.text !== '') this.add(objectId, tag);
         return;
       }
-      if (tag !== null && tag.text === old.text && tag.color === old.color && (tag.mark ?? null) === old.mark && guildKey(tag) === old.guild && (tag.trophy ?? '') === old.trophy && (tag.badge ?? '') === old.badge) return;
+      if (tag !== null && tag.text === old.text && tag.color === old.color && (tag.mark ?? null) === old.mark && guildKey(tag) === old.guild && (tag.trophy ?? '') === old.trophy && (tag.badge ?? '') === old.badge && (tag.vip ?? 0) === old.vip) return;
       this.remove(objectId);
       if (tag !== null && tag.text !== '') this.add(objectId, tag);
     });
@@ -194,10 +209,12 @@ export class NameTagLayer {
     const trophyAt = trophyPlace(wide, logo !== null);
     const badge = tag.badge ?? null;
     const badgeAt = badgePlace(wide, logo !== null, trophy !== null);
+    const vip = tag.vip ?? null;
+    const vipAt = vipPlace(wide, logo !== null, trophy !== null, badge !== null);
     const markLeft = Math.ceil(wide / 2), markTop = -(MARK_PX + MARK_BOTTOM_PX);
-    const left = Math.min(textLeft - OUTLINE_PX, guild === undefined ? Infinity : guildLeft - OUTLINE_PX, logo === null ? Infinity : logoLeft, trophy === null ? Infinity : trophyAt.left, badge === null ? Infinity : badgeAt.left);
+    const left = Math.min(textLeft - OUTLINE_PX, guild === undefined ? Infinity : guildLeft - OUTLINE_PX, logo === null ? Infinity : logoLeft, trophy === null ? Infinity : trophyAt.left, badge === null ? Infinity : badgeAt.left, vip === null ? Infinity : vipAt.left);
     const top = Math.min(textTop - OUTLINE_PX, mark === null ? Infinity : markTop, guild === undefined ? Infinity : guildTop - OUTLINE_PX,
-      logo === null ? Infinity : logoTop, trophy === null ? Infinity : trophyAt.top, badge === null ? Infinity : badgeAt.top);
+      logo === null ? Infinity : logoTop, trophy === null ? Infinity : trophyAt.top, badge === null ? Infinity : badgeAt.top, vip === null ? Infinity : vipAt.top);
     const right = Math.max(textLeft + textWidth + OUTLINE_PX, mark === null ? -Infinity : markLeft + MARK_PX,
       guild === undefined ? -Infinity : guildLeft + guildWidth + OUTLINE_PX);
     const bottom = textTop + LINE_PX + OUTLINE_PX;
@@ -237,7 +254,7 @@ export class NameTagLayer {
     sprite.visible = false;
     this.scene.add(sprite);
     this.tags.set(objectId, {
-      sprite, texture, maxDistance: tag.maxDistance, text: tag.text, color: tag.color, mark, guild: guildKey(tag), trophy: trophy ?? '', badge: badge ?? '', width, height,
+      sprite, texture, maxDistance: tag.maxDistance, text: tag.text, color: tag.color, mark, guild: guildKey(tag), trophy: trophy ?? '', badge: badge ?? '', vip: vip ?? 0, width, height,
     });
     // the mark and the logo are drawn into the tag once their pictures are in
     const picture = (key: string | null, x: number, y: number, size: number): void => {
@@ -256,6 +273,7 @@ export class NameTagLayer {
     // the picture may be missing (the converter has not run): `url` gives '' and nothing is drawn
     picture(trophy === null ? null : trophyKey(trophy), trophyAt.left, trophyAt.top, trophyAt.size);
     picture(badge === null ? null : badgeKey(badge), badgeAt.left, badgeAt.top, TROPHY_PX);
+    picture(vip === null ? null : vipKey(vip), vipAt.left, vipAt.top, vipAt.size); // 2026-11-17
   }
 
   private remove(objectId: number): void {
