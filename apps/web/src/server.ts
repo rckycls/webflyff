@@ -131,7 +131,7 @@ export function createWebServer(deps: WebServerDeps): Server {
       send(res, answer.status, answer.body);
       return;
     }
-    if (path.startsWith('/api/account/') || path === '/api/vip' || path.startsWith('/api/vip/')) {
+    if (path.startsWith('/api/account/') || path === '/api/vip' || path.startsWith('/api/vip/') || path === '/api/autoplay' || path.startsWith('/api/autoplay/')) {
       if (deps.vip === undefined) {
         send(res, 503, { error: 'off' });
         return;

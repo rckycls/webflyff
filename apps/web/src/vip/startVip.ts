@@ -3,12 +3,14 @@
 // section nothing is said: it is off. The panel's VIP tab needs the admin section too. With it, rejected requests' receipt
 // pictures are deleted `deleteRejectedAfterDays` days after the rejection (checked a minute after start, then every 6 hours).
 
+import path from 'node:path';
 import { SessionBook } from '../admin/sessions';
 import type { AdminConfig } from '../admin/config';
 import type { WebConfig } from '../config';
 import { HourlyLimit } from '../hourlyLimit';
 import type { Logger } from '../log';
 import type { VipRoutes } from '../server';
+import { AutoPlayUsage } from './autoPlayUsage';
 import { siteVipRoutes } from './siteVip';
 import { sqlVipAdminStore, sqlVipSiteStore } from './sqlVipStore';
 import { VipFiles } from './vipFiles';
@@ -85,6 +87,9 @@ export function startVip(config: WebConfig, log: Logger, now: () => number, stor
     loginFailsByAccount: new HourlyLimit(LOGIN_FAILS_PER_HOUR, now),
     loginsByAccount: new HourlyLimit(LOGINS_PER_HOUR, now),
     requestsByAccount: new HourlyLimit(REQUESTS_PER_HOUR, now),
+    // custom (owner 2026-11-17): Auto Play's weekly hours, in the VIP uploads folder the service already writes to
+    // (C:\flyff-web\vip-uploads\autoplay-usage.json on the VPS)
+    autoPlay: new AutoPlayUsage(path.join(vip.uploadsDir, 'autoplay-usage.json'), now),
   });
   log.info(`vip: on, pictures in ${vip.uploadsDir}${admin === undefined ? ' (no admin section: nobody can approve)' : ''}`);
   const timers: NodeJS.Timeout[] = [];

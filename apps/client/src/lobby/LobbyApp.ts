@@ -54,6 +54,8 @@ export class LobbyApp {
   private readonly prefetch = new WorldPrefetch(pageAssets, async (worldId) => (await pageGameData()).worlds.get(worldId));
   /** The account last typed, so a player sent back to the login form does not type it again. */
   private account = '';
+  /** custom (owner 2026-11-17): the password just typed, until the server list (then onLoggedIn has it), else ''. */
+  private typedPassword = '';
   /** Holds at most one `role="alert"` element. */
   private readonly notice = h('div', { class: 'notice' });
   /** Progress text for a screen reader and the eye ("Logging in…"); empty when there is none. */
@@ -93,6 +95,11 @@ export class LobbyApp {
     private readonly clock: FlowClock = systemClock,
     /** The account the login form starts with: the name just made at /sign-up (website spec §3.3), or none. */
     initialAccount = '',
+    /**
+     * custom (owner 2026-11-17): the game accepted the login (the server list came): the typed account and password, once,
+     * for the site's session (Auto Play's weekly hours, world/autoplay/usageLimit.ts). Then the lobby forgets the password.
+     */
+    private readonly onLoggedIn: (account: string, password: string) => void = () => {},
   ) {
     this.account = initialAccount.trim();
     this.mount();
@@ -111,6 +118,11 @@ export class LobbyApp {
     if (this.reconnect?.handle(event) === true) return;
     switch (event.type) {
       case 'serverList':
+        if (this.typedPassword !== '') {
+          const password = this.typedPassword;
+          this.typedPassword = '';
+          this.onLoggedIn(this.account, password);
+        }
         this.servers = event.servers;
         this.showServers();
         break;
@@ -251,6 +263,7 @@ export class LobbyApp {
   private login(account: string, password: string): void {
     this.onPlayTap();
     this.account = account.trim();
+    this.typedPassword = password; // custom (owner 2026-11-17): for onLoggedIn, forgotten at the server list
     this.setAlert(undefined);
     this.status.textContent = 'Logging in…';
     this.run(this.flow.login(account, password));

@@ -58,6 +58,8 @@ function world() {
     partner: null as null | { objectId: number; hp: number; maxHp: number; pos: Vec3; dead: boolean; buffs: Array<{ buffType: number; id: number; level: number; leftMs: number; totalMs: number }> },
     casts: [] as Array<[number, number]>,
     follows: [] as number[],
+    left: null as number | null,
+    usageTicks: 0,
   };
   const hooks: AutoPlayHooks = {
     now: () => state.now,
@@ -105,6 +107,8 @@ function world() {
     castOn: (skillIndex, objectId) => { state.casts.push([skillIndex, objectId]); },
     follow: (objectId) => { state.follows.push(objectId); },
     resurrectSkill: () => 9,
+    usageLeftMin: () => state.left,
+    usageTick: () => { state.usageTicks++; },
   };
   return { state, hooks };
 }
@@ -785,5 +789,51 @@ describe('AutoPlay controller: Support mode (owner 2026-11-17)', () => {
     play.stop('you took control');
     play.startMode();
     expect(play.mode).toBe('farm');
+  });
+});
+
+describe('AutoPlay controller: the weekly hours (owner 2026-11-17)', () => {
+  it('no hours left this week: the farm bot and Support mode refuse to start', () => {
+    const { state, hooks } = world();
+    state.left = 0;
+    const play = new AutoPlay(hooks, defaultSettings());
+    expect(play.start()).toBe(false);
+    expect(state.said.at(-1)).toBe('Auto Play stopped: weekly limit reached.');
+    play.settings.support.partnerPlayerId = 501;
+    expect(play.startSupport()).toBe(false);
+  });
+
+  it('a tick a minute while it runs (none while off, none with auto pots alone)', () => {
+    const { state, hooks } = world();
+    state.left = 600;
+    const s = defaultSettings();
+    s.pots.enabled = true;
+    const play = new AutoPlay(hooks, s);
+    run(play, state, 60 * 60 * 3);
+    expect(state.usageTicks).toBe(0);
+    play.start();
+    run(play, state, 60 * 60 * 3 + 2);
+    expect(state.usageTicks).toBe(3);
+  });
+
+  it('the hours running out mid-run stop it: "weekly limit reached"', () => {
+    const { state, hooks } = world();
+    state.left = 1;
+    const play = new AutoPlay(hooks, defaultSettings());
+    play.start();
+    run(play, state, 30);
+    expect(play.farm).toBe('running');
+    state.left = 0;
+    run(play, state, 1);
+    expect(play.lastStop).toBe('weekly limit reached');
+  });
+
+  it('unknown or no limit (null): never held back', () => {
+    const { state, hooks } = world();
+    state.left = null;
+    const play = new AutoPlay(hooks, defaultSettings());
+    expect(play.start()).toBe(true);
+    run(play, state, 120);
+    expect(play.farm).toBe('running');
   });
 });

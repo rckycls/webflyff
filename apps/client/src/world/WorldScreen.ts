@@ -53,6 +53,7 @@ import type { ChaseView } from './backCamera';
 import { AttackLoop, attackAble, objRadius } from './combat/attackLoop';
 import { sightBlocked } from './combat/lineOfSight';
 import { bagIsFull } from './autoplay/bag';
+import { autoPlayLimit } from './autoplay/usageLimit';
 import { AutoPlay } from './autoplay/controller';
 import type { AutoPlayHooks } from './autoplay/controller';
 import { loadSettings, saveSettings } from './autoplay/settings';
@@ -2403,6 +2404,7 @@ export class WorldScreen {
       buffItemChoices: () => this.itemChoices(isBuffItemProp),
       showSaver: () => { this.autoPlayWindow?.frame.close(); this.saverScreen?.show(); },
       monstersNear: () => this.autoPlayMonstersNear(),
+      usage: () => autoPlayLimit.state, // custom (owner 2026-11-17): the weekly hours
       monsterName: (index) => this.data?.movers.get(index)?.name ?? String(index),
       // 2026-11-17 (owner): Support mode's partner, the player targeted now (not oneself)
       targetPlayer: () => {
@@ -4613,6 +4615,9 @@ this.follow(world, stage);
         this.skillUse?.useSlot(skillIndex);
       },
       follow: (objectId) => this.attackLoop?.followTo(objectId),
+      // custom (owner 2026-11-17): the weekly hours, counted by the web service (autoplay/usageLimit.ts)
+      usageLeftMin: () => autoPlayLimit.leftMin(),
+      usageTick: () => void autoPlayLimit.tick(),
       resurrectSkill: () => {
         const index = this.own?.skills.findIndex((slot) => slot.skill === Si.ASS_HEAL_RESURRECTION && slot.level > 0) ?? -1;
         return index >= 0 ? index : null;

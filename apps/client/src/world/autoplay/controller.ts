@@ -102,12 +102,19 @@ export interface AutoPlayHooks {
   follow(objectId: number): void;
   /** The slot of the resurrection skill, or null when not learned. */
   resurrectSkill(): number | null;
+  // 2026-11-17 (owner): the weekly hours, counted by the web service (usageLimit.ts)
+  /** Minutes left this week; null: no limit, or not known (nothing held back). */
+  usageLeftMin(): number | null;
+  /** One running minute, for the server's count. */
+  usageTick(): void;
 }
 
 export type FarmState = 'off' | 'running' | 'stopped';
 export type FarmPhase = 'seeking' | 'fighting' | 'looting' | 'buffing' | 'returning' | 'supporting' | 'healing' | 'following';
 /** 2026-11-17 (owner): the partner out of view this long stops Support mode (ms). */
 const PARTNER_GONE_MS = 10_000;
+/** 2026-11-17 (owner): the weekly hours are ticked once a minute while the farm bot or Support mode runs (ms). */
+const USAGE_TICK_MS = 60_000;
 
 const ROW_NAMES: Record<GaugeRow, string> = { hp: 'HP', mp: 'MP', fp: 'FP' };
 /** The values of the spec (6.3, 6.5). */
@@ -152,6 +159,8 @@ export class AutoPlay {
   mode: 'farm' | 'support' = 'farm';
   /** Since when the partner is out of view, or null. */
   private partnerLostSince: number | null = null;
+  /** The last weekly-hours tick (2026-11-17). */
+  private lastUsageTick = 0;
   phase: FarmPhase = 'seeking';
   lastStop: string | null = null;
   stats = new AutoPlayStats(0);
@@ -217,7 +226,8 @@ export class AutoPlay {
   start(): boolean {
     const h = this.hooks;
     if (this.farm === 'running' && this.mode === 'farm') return true;
-    const refused = farmBlocked(h.worldId(), h.inDuel()) ? 'not allowed here' : h.flying() ? 'flying' : !h.alive() ? 'you died' : null;
+    const refused = farmBlocked(h.worldId(), h.inDuel()) ? 'not allowed here' : h.flying() ? 'flying' : !h.alive() ? 'you died'
+      : this.outOfHours() ? 'weekly limit reached' : null;
     const self = h.self();
     if (refused !== null || self === undefined) {
       h.say(`Auto Play stopped: ${refused ?? 'not allowed here'}.`);
@@ -238,7 +248,7 @@ export class AutoPlay {
     const h = this.hooks;
     if (this.farm === 'running' && this.mode === 'support') return true;
     const refused = supportBlocked(h.worldId(), h.inDuel()) ? 'not allowed here' : h.flying() ? 'flying' : !h.alive() ? 'you died'
-      : this.settings.support.partnerPlayerId === 0 ? 'no partner' : null;
+      : this.outOfHours() ? 'weekly limit reached' : this.settings.support.partnerPlayerId === 0 ? 'no partner' : null;
     const self = h.self();
     if (refused !== null || self === undefined) {
       h.say(`Auto Play stopped: ${refused ?? 'not allowed here'}.`);
@@ -250,6 +260,24 @@ export class AutoPlay {
     h.say('Support started.');
     h.keepAwake(true);
     return true;
+  }
+
+  /** No minutes left this week (a known limit). */
+  private outOfHours(): boolean {
+    const left = this.hooks.usageLeftMin();
+    return left !== null && left <= 0;
+  }
+
+  /** 2026-11-17 (owner): the weekly hours: a tick a minute; none left stops it. False when it stopped. */
+  private stepUsage(): boolean {
+    const h = this.hooks, now = h.now();
+    if (now - this.lastUsageTick >= USAGE_TICK_MS) {
+      this.lastUsageTick = now;
+      h.usageTick();
+    }
+    if (!this.outOfHours()) return true;
+    this.stop('weekly limit reached');
+    return false;
   }
 
   /** The AUTO button: the mode last started (the settings keep it). */
@@ -265,6 +293,7 @@ export class AutoPlay {
       this.saved();
     }
     this.partnerLostSince = null;
+    this.lastUsageTick = h.now();
     this.farm = 'running';
     this.phase = 'seeking';
     this.lastStop = null;
@@ -317,7 +346,7 @@ export class AutoPlay {
   step(): void {
     try {
       this.stepPots();
-      if (this.farm === 'running') {
+      if (this.farm === 'running' && this.stepUsage()) {
         if (this.mode === 'support') this.stepSupport();
         else this.stepFarm();
       }

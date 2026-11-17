@@ -26,6 +26,7 @@ const CHOICES: AutoPlayItemChoice[] = [
 ];
 
 let target: { playerId: number; name: string } | null = { playerId: 501, name: 'Rocky' };
+let usage: { usedMin: number; limitMin: number | null; resetsAt: string } | null = null;
 function rig(settings: AutoPlaySettings = defaultSettings(), allowed = true) {
   let saves = 0, savers = 0;
   const play = {
@@ -50,6 +51,7 @@ function rig(settings: AutoPlaySettings = defaultSettings(), allowed = true) {
     monstersNear: () => NEAR,
     monsterName: (index) => NAMES.get(index) ?? '?',
     targetPlayer: () => target,
+    usage: () => usage,
   }, document);
   document.body.append(w.frame.element);
   const row = (name: 'hp' | 'mp' | 'fp') => w.frame.element.querySelector<HTMLElement>(`.auto-pot-row[data-row="${name}"]`)!;
@@ -378,5 +380,34 @@ describe('AutoPlayWindow: Support tab', () => {
     w.refresh();
     press(page(w), 'Stop');
     expect(play.lastStop).toBe('you took control');
+  });
+});
+
+// 2026-11-17 (owner): the weekly hours by VIP level
+describe('AutoPlayWindow: the hours of this week', () => {
+  afterEach(() => { usage = null; });
+  const line = (w: AutoPlayWindow, page: string) => w.frame.element.querySelector<HTMLElement>(`${page} .auto-week`);
+
+  it('Farm and Support show the time left of the hours of the week', () => {
+    usage = { usedMin: 50, limitMin: 840, resetsAt: '2026-11-23T00:00:00.000Z' };
+    const { w } = rig();
+    w.open('farm');
+    expect(line(w, '.auto-farm')!.textContent).toBe('This week: 13h10m left of 14h');
+    w.open('support');
+    expect(line(w, '.auto-support')!.textContent).toBe('This week: 13h10m left of 14h');
+  });
+
+  it('used up: 0 left, and Start greyed; VIP4: no limit; unknown: no line', () => {
+    usage = { usedMin: 840, limitMin: 840, resetsAt: '' };
+    const { w } = rig();
+    w.open('farm');
+    expect(line(w, '.auto-farm')!.textContent).toBe('This week: 0s left of 14h');
+    expect([...w.frame.element.querySelectorAll<HTMLButtonElement>('.auto-farm button')].find((b) => b.textContent === 'Start')!.disabled).toBe(true);
+    usage = { usedMin: 9000, limitMin: null, resetsAt: '' };
+    w.refresh();
+    expect(line(w, '.auto-farm')!.textContent).toBe('This week: no limit');
+    usage = null;
+    w.refresh();
+    expect(line(w, '.auto-farm')).toBeNull();
   });
 });
