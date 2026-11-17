@@ -160,11 +160,11 @@ const STARS: Record<number, StarColors> = {
   4: { metal: ['#ffffff', '#d9b8ff', '#8a52d8'], outline: '#4a1a80', digit: '#34105e' },
 };
 
-/** A five-pointed star's outline round (cx, cy): points `outer` out, notches `inner` in, one point up. */
-function starPath(cx: number, cy: number, outer: number, inner: number): string {
-  const points = [...Array(10)].map((_, i) => {
+/** A star's outline round (cx, cy): `n` points (five by default) `outer` out, notches `inner` in, one point up. */
+function starPath(cx: number, cy: number, outer: number, inner: number, n = 5): string {
+  const points = [...Array(2 * n)].map((_, i) => {
     const r = i % 2 === 0 ? outer : inner;
-    const a = ((i * 36 - 90) * Math.PI) / 180;
+    const a = ((i * (180 / n) - 90) * Math.PI) / 180;
     return `${(cx + r * Math.cos(a)).toFixed(2)},${(cy + r * Math.sin(a)).toFixed(2)}`;
   });
   return `M${points.join('L')}Z`;
@@ -182,9 +182,117 @@ function medal(tier: number): string {
 <g shape-rendering="crispEdges">${number}</g>`;
 }
 
+// 2026-11-17 (owner, "the icon for weekly champs and mvp should be a longer icon on top of the name", then a few rounds,
+// "I want it to look cooler, like a warrior something, no skies or anything", their pick of four options, "A: Shield &
+// swords", then "make it wider version and add a little more details"): the weekly crests over the name
+// (render/NameTagLayer.ts `BANNER_SIZE`, `bannerPlace`), with no words. Two long swords crossed flat behind a heater shield:
+// steel blades with a fuller and a bright edge, gold guards curved towards the blade with a gem, wrapped leather grips,
+// gold pommels with a gem and a tassel hanging from each; the shield with a gold rim and a thin steel one inside it, studs
+// round the rim, a gem at its top, its field red (champion) or blue (MVP) with a lighter band across it and a darker
+// middle, and on it a jewelled gold crown (champion) or a faceted gold star (MVP). All outlined thick and dark. Drawn at
+// twice their size (BANNER_SCALE), so that a phone's tag, drawn at a pixel ratio of 2, keeps them sharp.
+
+/** The crests' size (`BANNER_SIZE` in NameTagLayer.ts) and scale. */
+const BANNER_WIDTH = 88;
+const BANNER_HEIGHT = 36;
+const BANNER_SCALE = 2;
+interface Crest {
+  /** The shield's field, light to dark. */
+  field: [string, string, string];
+  /** The gem in the guards, the pommels and the shield's top; the tassels' colour. */
+  gem: 'sapphire' | 'ruby';
+  tassel: string;
+  emblem: 'crown' | 'star';
+}
+const BANNERS: Record<string, Crest> = {
+  weeklychampion: { field: ['#ff5a5a', '#c81a2e', '#5a0616'], gem: 'sapphire', tassel: '#d8283a', emblem: 'crown' },
+  weeklymvp: { field: ['#7ab0ff', '#2a5ad8', '#0e1a5a'], gem: 'ruby', tassel: '#2a6ae0', emblem: 'star' },
+};
+
+/** A crest's SVG, BANNER_WIDTH x BANNER_HEIGHT drawn at BANNER_SCALE. */
+function banner({ field, gem, tassel, emblem }: Crest): string {
+  const ink = '#160a1e';
+  const cx = BANNER_WIDTH / 2, cy = 17;
+  const p2 = (n: number): string => n.toFixed(2);
+  const jewel = (x: number, y: number, r: number): string =>
+    `<path d="M${p2(x)} ${p2(y - r)} L${p2(x + r * 0.8)} ${p2(y)} L${p2(x)} ${p2(y + r)} L${p2(x - r * 0.8)} ${p2(y)} Z" fill="url(#${gem})" stroke="${ink}" stroke-width=".45"/>`;
+  // a sword along +x from its guard at the origin: a 36-unit blade, a curved guard, a wrapped grip, a pommel
+  const sword = `
+<path d="M0 -1.7 L33 -1.7 L37.6 0 L33 1.7 L0 1.7 Z" fill="url(#steel)" stroke="${ink}" stroke-width=".7" stroke-linejoin="round"/>
+<path d="M1.6 0 L32 0" stroke="#7a86a0" stroke-width=".7"/><path d="M1 -1.1 L33 -1.1" stroke="#fff" stroke-width=".45" opacity=".85"/>
+<path d="M2.4 .9 H4.4 M5.4 .9 H6.6" stroke="#9aa8c0" stroke-width=".35"/>
+<path d="M-1.2 -5.6 C1.2 -5.4 2 -4 2 -2.2 L1.2 -1.2 L1.2 1.2 L2 2.2 C2 4 1.2 5.4 -1.2 5.6 C-.4 3.6 -.6 2.2 -1.3 1.2 V-1.2 C-.6 -2.2 -.4 -3.6 -1.2 -5.6 Z" fill="url(#gold)" stroke="${ink}" stroke-width=".6" stroke-linejoin="round"/>
+${jewel(0.2, 0, 1)}
+<rect x="-7.4" y="-1.15" width="6.1" height="2.3" fill="url(#wood)" stroke="${ink}" stroke-width=".5"/>
+<path d="M-6.6 -1.1 L-5.8 1.1 M-5 -1.1 L-4.2 1.1 M-3.4 -1.1 L-2.6 1.1" stroke="#2a1006" stroke-width=".4"/>
+<circle cx="-8.8" cy="0" r="1.7" fill="url(#gold)" stroke="${ink}" stroke-width=".6"/>
+${jewel(-8.8, 0, 0.8)}`;
+  // two of them crossed at (cx, cy), 13 degrees from the horizontal, each 14 units past its guard there, 1.45 times bigger;
+  // from each pommel a tassel hangs straight down
+  const scale = 1.45, mid = 14;
+  const swords: string[] = [];
+  const tassels: string[] = [];
+  for (const deg of [-13, 193]) {
+    const a = (deg * Math.PI) / 180, gx = cx - mid * scale * Math.cos(a), gy = cy - mid * scale * Math.sin(a);
+    swords.push(`<g transform="translate(${p2(gx)} ${p2(gy)}) rotate(${deg}) scale(${scale})">${sword}</g>`);
+    const px = gx - 10.4 * scale * Math.cos(a), py = gy - 10.4 * scale * Math.sin(a);
+    tassels.push(`<path d="M${p2(px)} ${p2(py)} C${p2(px - 0.6)} ${p2(py + 1.6)} ${p2(px + 0.6)} ${p2(py + 2.4)} ${p2(px)} ${p2(py + 3.4)}" stroke="${ink}" stroke-width="1.1" fill="none"/>
+<path d="M${p2(px)} ${p2(py)} C${p2(px - 0.6)} ${p2(py + 1.6)} ${p2(px + 0.6)} ${p2(py + 2.4)} ${p2(px)} ${p2(py + 3.4)}" stroke="#ffd860" stroke-width=".5" fill="none"/>
+<path d="M${p2(px - 1.2)} ${p2(py + 3.6)} H${p2(px + 1.2)} L${p2(px + 1.7)} ${p2(py + 7.6)} H${p2(px - 1.7)} Z" fill="${tassel}" stroke="${ink}" stroke-width=".55" stroke-linejoin="round"/>
+<path d="M${p2(px - 0.8)} ${p2(py + 4.6)} L${p2(px - 1)} ${p2(py + 7.3)} M${p2(px)} ${p2(py + 4.6)} V${p2(py + 7.3)} M${p2(px + 0.8)} ${p2(py + 4.6)} L${p2(px + 1)} ${p2(py + 7.3)}" stroke="#000" stroke-opacity=".3" stroke-width=".35"/>
+<rect x="${p2(px - 1.5)}" y="${p2(py + 3.1)}" width="3" height="1.3" rx=".4" fill="url(#gold)" stroke="${ink}" stroke-width=".45"/>`);
+  }
+  // the shield, its steel inner rim and its field, all centred on cx
+  const s = (d: string): string => d.replace(/X(-?[\d.]+)/g, (_, dx: string) => p2(cx + Number(dx)));
+  const shield = s('MX-9.6 5.2 HX9.6 V15.6 CX9.6 24 X4.8 29.8 X0 32.8 CX-4.8 29.8 X-9.6 24 X-9.6 15.6 Z');
+  const steelRim = s('MX-8.2 6.6 HX8.2 V15.6 CX8.2 23 X4 28.4 X0 31.2 CX-4 28.4 X-8.2 23 X-8.2 15.6 Z');
+  const fieldPath = s('MX-7.4 7.4 HX7.4 V15.6 CX7.4 22.4 X3.6 27.6 X0 30.2 CX-3.6 27.6 X-7.4 22.4 X-7.4 15.6 Z');
+  const band = s('MX-7.4 18.6 LX7.4 11.4 V14.4 LX-7.4 21.6 Z');
+  const studs = [[-8.9, 6], [8.9, 6], [-8.9, 11.4], [8.9, 11.4], [-8.9, 16.8], [8.9, 16.8], [-6.8, 25], [6.8, 25]]
+    .map(([dx, y]) => `<circle cx="${p2(cx + dx!)}" cy="${y}" r=".55" fill="#fff6c0" stroke="${ink}" stroke-width=".3"/>`).join('');
+  const crown = `<path d="${s('MX-5.4 21.2 LX-6.4 14.6 LX-2.8 17.4 LX0 12.8 LX2.8 17.4 LX6.4 14.6 LX5.4 21.2 Z')}" fill="url(#gold)" stroke="${ink}" stroke-width=".8" stroke-linejoin="round"/>
+<rect x="${p2(cx - 5.4)}" y="19.4" width="10.8" height="1.8" rx=".4" fill="url(#goldDeep)" stroke="${ink}" stroke-width=".5"/>
+${[[-6.4, 14.6], [0, 12.8], [6.4, 14.6]].map(([dx, y]) => `<circle cx="${p2(cx + dx!)}" cy="${y}" r=".7" fill="#fff6c0" stroke="${ink}" stroke-width=".3"/>`).join('')}
+<circle cx="${p2(cx - 3)}" cy="20.3" r=".55" fill="url(#ruby)"/><circle cx="${p2(cx)}" cy="20.3" r=".65" fill="url(#sapphire)"/><circle cx="${p2(cx + 3)}" cy="20.3" r=".55" fill="url(#ruby)"/>`;
+  const points = [...Array(10)].map((_, i) => {
+    const r = i % 2 === 0 ? 5 : 2.1;
+    const a = ((i * 36 - 90) * Math.PI) / 180;
+    return [cx + r * Math.cos(a), 17.6 + r * Math.sin(a)] as const;
+  });
+  const facets = points.map(([x, y], i) => {
+    const [x2, y2] = points[(i + 1) % 10]!;
+    return `<path d="M${p2(cx)} 17.6 L${p2(x)} ${p2(y)} L${p2(x2)} ${p2(y2)} Z" fill="${i % 2 === 0 ? '#fff6b0' : '#e09a14'}"/>`;
+  }).join('');
+  const star = `${facets}<path d="${starPath(cx, 17.6, 5, 2.1)}" fill="none" stroke="${ink}" stroke-width=".8" stroke-linejoin="round"/>`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${BANNER_WIDTH * BANNER_SCALE}" height="${BANNER_HEIGHT * BANNER_SCALE}" viewBox="0 0 ${BANNER_WIDTH} ${BANNER_HEIGHT}">
+<defs>
+  <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fffde0"/><stop offset=".35" stop-color="#ffe066"/><stop offset=".7" stop-color="#f0a818"/><stop offset="1" stop-color="#a85e06"/></linearGradient>
+  <linearGradient id="goldDeep" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffd860"/><stop offset="1" stop-color="#a85e06"/></linearGradient>
+  <linearGradient id="rim" x1="0" y1="5" x2="0" y2="33" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#fff6c0"/><stop offset=".4" stop-color="#ffc83a"/><stop offset="1" stop-color="#8a4a04"/></linearGradient>
+  <linearGradient id="steel" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff"/><stop offset=".45" stop-color="#c8d2e2"/><stop offset="1" stop-color="#5a6680"/></linearGradient>
+  <linearGradient id="steelRim" x1="0" y1="6" x2="0" y2="31" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#fff"/><stop offset=".5" stop-color="#b8c4d8"/><stop offset="1" stop-color="#4a5468"/></linearGradient>
+  <linearGradient id="field" x1="0" y1="7" x2="0" y2="30" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="${field[0]}"/><stop offset=".5" stop-color="${field[1]}"/><stop offset="1" stop-color="${field[2]}"/></linearGradient>
+  <linearGradient id="wood" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#b87a44"/><stop offset="1" stop-color="#5a2e12"/></linearGradient>
+  <radialGradient id="ruby" cx=".35" cy=".35" r=".8"><stop offset="0" stop-color="#ffd0d8"/><stop offset=".4" stop-color="#ff2a4a"/><stop offset="1" stop-color="#7a0018"/></radialGradient>
+  <radialGradient id="sapphire" cx=".35" cy=".35" r=".8"><stop offset="0" stop-color="#d8f6ff"/><stop offset=".4" stop-color="#2ab0ff"/><stop offset="1" stop-color="#0a3a8a"/></radialGradient>
+</defs>
+${tassels.join('')}
+${swords.join('')}
+<path d="${shield}" fill="url(#rim)" stroke="${ink}" stroke-width="1.3" stroke-linejoin="round"/>
+<path d="${steelRim}" fill="url(#steelRim)" stroke="#5a2a04" stroke-width=".4"/>
+<path d="${fieldPath}" fill="url(#field)" stroke="${ink}" stroke-width=".5"/>
+<path d="${band}" fill="#fff" opacity=".14"/>
+<path d="M${p2(cx)} 7.6 V29.8" stroke="#000" stroke-opacity=".22" stroke-width="2.6"/>
+<path d="${s('MX-6.4 8.4 HX-2.4 CX-3.2 13 X-3.6 19 X-3 25.4 CX-5.2 22.6 X-6.4 19 X-6.4 15.4 Z')}" fill="#fff" opacity=".22"/>
+${studs}
+${jewel(cx, 5.4, 1.5)}
+${emblem === 'crown' ? crown : star}
+</svg>`;
+}
+
 const browser = await chromium.launch();
 try {
-  const page = await browser.newPage({ viewport: { width: 32, height: 32 }, deviceScaleFactor: 1 });
+  const page = await browser.newPage({ viewport: { width: 400, height: 100 }, deviceScaleFactor: 1 });
   await mkdir(path.join(icons, 'bare'), { recursive: true });
   for (const [name, picture] of Object.entries(PICTURES)) {
     for (const framed of [true, false]) {
@@ -200,6 +308,13 @@ try {
     await page.setContent(`<html><body style="margin:0;background:transparent"><svg xmlns="http://www.w3.org/2000/svg" width="${n}" height="${n}" viewBox="0 0 ${n} ${n}">${medal(tier)}</svg></body></html>`);
     const png = await page.screenshot({ omitBackground: true, clip: { x: 0, y: 0, width: n, height: n } });
     const file = path.join(icons, `vipstar${tier}.png`);
+    await writeFile(file, png);
+    console.log(path.relative(process.cwd(), file));
+  }
+  for (const [name, spec] of Object.entries(BANNERS)) {
+    await page.setContent(`<html><body style="margin:0;background:transparent">${banner(spec)}</body></html>`);
+    const png = await page.screenshot({ omitBackground: true, clip: { x: 0, y: 0, width: BANNER_WIDTH * BANNER_SCALE, height: BANNER_HEIGHT * BANNER_SCALE } });
+    const file = path.join(icons, `${name}.png`);
     await writeFile(file, png);
     console.log(path.relative(process.cwd(), file));
   }

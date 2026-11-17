@@ -7,6 +7,7 @@ import type { Vec3 } from '@flyffweb/formats';
 import { d3dColor } from '@flyffweb/scene';
 import type { PerspectiveCamera, Scene } from 'three';
 import { CanvasTexture, LinearFilter, SRGBColorSpace, Sprite, SpriteMaterial, Vector3 } from 'three';
+import type { WeeklyBadge } from '../guildCombat/siegeWebApi';
 import type { Mover, WorldChanges } from '../WorldState';
 import { badgeKey, tagOpacity, trophyKey, vipKey } from './nameTags';
 import type { NameTag } from './nameTags';
@@ -53,17 +54,27 @@ export function trophyPlace(wide: number, hasLogo: boolean): { left: number; top
     : { left: -Math.floor(wide / 2) - 30, top: -30, size: TROPHY_PX };
 }
 
-/** 2026-11-15 (C1): the weekly badge: one slot (25 + 2 px) left of the trophy, or in the trophy's place when there is none. */
-export function badgePlace(wide: number, hasLogo: boolean, hasTrophy: boolean): { left: number; top: number; size: number } {
-  const at = trophyPlace(wide, hasLogo);
-  return hasTrophy ? { ...at, left: at.left - (TROPHY_PX + LOGO_GAP_PX) } : at;
+/**
+ * 2026-11-15 (C1): the weekly badge. 2026-11-17 (owner, "should be a longer icon on top of the name", "something like this
+ * and not too much text", "like a warrior something", "wider"): a crest, a shield over two crossed swords with a crown
+ * (champion) or a star (MVP) on it (`badgeKey`, drawn by scripts/drawWindowIcons.ts at twice these sizes), centred over
+ * the name like the text, 1 px above `below`: the top of everything else on the tag (the name, the guild line, the marks,
+ * the logo, the trophy, the VIP star).
+ */
+export const BANNER_SIZE: Readonly<Record<WeeklyBadge, { width: number; height: number }>> = {
+  weeklyChampion: { width: 88, height: 36 },
+  weeklyMvp: { width: 88, height: 36 },
+};
+export function bannerPlace(badge: WeeklyBadge, below: number): { left: number; top: number; width: number; height: number } {
+  const { width, height } = BANNER_SIZE[badge];
+  return { left: -Math.floor(width / 2) - LEFT_PX, top: below - 1 - height, width, height };
 }
 
 /**
  * 2026-11-17 (owner, "like the mvp medal but smaller ... on the side of the character", "make it a star", "center it to
  * name", "doesn't look like its vertically centered"): the VIP star, 18 x 18, just left of the name's outline, the star's
  * middle on the middle of the name's capitals: `capMiddle` px below the text's top, which the font gives (`capMiddleOf`).
- * The guild logo, the trophy and the badge, left of the lines, then move one star (`VIP_SHIFT_PX`) further left.
+ * The guild logo and the trophy, left of the lines, then move one star (`VIP_SHIFT_PX`) further left.
  */
 export const VIP_PX = 18;
 export const VIP_SHIFT_PX = VIP_PX + LOGO_GAP_PX;
@@ -223,15 +234,17 @@ export class NameTagLayer {
     const trophy = tag.trophy ?? null;
     const trophyPlaced = trophyPlace(wide, logo !== null);
     const trophyAt = { ...trophyPlaced, left: trophyPlaced.left - shift };
-    const badge = tag.badge ?? null;
-    const badgePlaced = badgePlace(wide, logo !== null, trophy !== null);
-    const badgeAt = { ...badgePlaced, left: badgePlaced.left - shift };
     const markLeft = Math.ceil(wide / 2), markTop = -(MARK_PX + MARK_BOTTOM_PX);
-    const left = Math.min(textLeft - OUTLINE_PX, guild === undefined ? Infinity : guildLeft - OUTLINE_PX, logo === null ? Infinity : logoLeft, trophy === null ? Infinity : trophyAt.left, badge === null ? Infinity : badgeAt.left, vip === null ? Infinity : vipAt.left);
-    const top = Math.min(textTop - OUTLINE_PX, mark === null ? Infinity : markTop, guild === undefined ? Infinity : guildTop - OUTLINE_PX,
-      logo === null ? Infinity : logoTop, trophy === null ? Infinity : trophyAt.top, badge === null ? Infinity : badgeAt.top, vip === null ? Infinity : vipAt.top);
+    // 2026-11-17 (owner): the weekly banner over all the rest
+    const below = Math.min(textTop - OUTLINE_PX, mark === null ? Infinity : markTop, guild === undefined ? Infinity : guildTop - OUTLINE_PX,
+      logo === null ? Infinity : logoTop, trophy === null ? Infinity : trophyAt.top, vip === null ? Infinity : vipAt.top);
+    const badge = tag.badge ?? null;
+    const bannerAt = badge === null ? null : bannerPlace(badge, below);
+    const left = Math.min(textLeft - OUTLINE_PX, guild === undefined ? Infinity : guildLeft - OUTLINE_PX, logo === null ? Infinity : logoLeft,
+      trophy === null ? Infinity : trophyAt.left, vip === null ? Infinity : vipAt.left, bannerAt?.left ?? Infinity);
+    const top = Math.min(below, bannerAt?.top ?? Infinity);
     const right = Math.max(textLeft + textWidth + OUTLINE_PX, mark === null ? -Infinity : markLeft + MARK_PX,
-      guild === undefined ? -Infinity : guildLeft + guildWidth + OUTLINE_PX);
+      guild === undefined ? -Infinity : guildLeft + guildWidth + OUTLINE_PX, bannerAt === null ? -Infinity : bannerAt.left + bannerAt.width);
     const bottom = textTop + LINE_PX + OUTLINE_PX;
     const width = right - left;
     const height = bottom - top;
@@ -272,13 +285,13 @@ export class NameTagLayer {
       sprite, texture, maxDistance: tag.maxDistance, text: tag.text, color: tag.color, mark, guild: guildKey(tag), trophy: trophy ?? '', badge: badge ?? '', vip: vip ?? 0, width, height,
     });
     // the mark and the logo are drawn into the tag once their pictures are in
-    const picture = (key: string | null, x: number, y: number, size: number): void => {
+    const picture = (key: string | null, x: number, y: number, size: number, height = size): void => {
       const src = key === null ? '' : this.url(key);
       if (src === '') return;
       const image = new Image();
       image.onload = () => {
         if (this.tags.get(objectId)?.texture !== texture) return; // the tag was drawn again or dropped meanwhile
-        context.drawImage(image, x - left, y - top, size, size);
+        context.drawImage(image, x - left, y - top, size, height);
         texture.needsUpdate = true;
       };
       image.src = src;
@@ -287,7 +300,7 @@ export class NameTagLayer {
     picture(logo, logoLeft, logoTop, LOGO_PX);
     // the picture may be missing (the converter has not run): `url` gives '' and nothing is drawn
     picture(trophy === null ? null : trophyKey(trophy), trophyAt.left, trophyAt.top, trophyAt.size);
-    picture(badge === null ? null : badgeKey(badge), badgeAt.left, badgeAt.top, TROPHY_PX);
+    if (badge !== null && bannerAt !== null) picture(badgeKey(badge), bannerAt.left, bannerAt.top, bannerAt.width, bannerAt.height);
     picture(vip === null ? null : vipKey(vip), vipAt.left, vipAt.top, vipAt.size); // 2026-11-17
   }
 

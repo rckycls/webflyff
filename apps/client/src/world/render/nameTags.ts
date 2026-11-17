@@ -16,7 +16,7 @@ export interface NameTag {
   guild?: GuildLine;
   /** 2026-11-15 (Guild Siege): the winner's or the MVP's picture left of the guild logo (`trophyKey`), or none. */
   trophy?: 'winner' | 'best' | null;
-  /** 2026-11-15 (C1, the owner's custom mark): the weekly champion's or the weekly MVP's picture, one slot left of the trophy. */
+  /** 2026-11-15 (C1, the owner's custom mark): the weekly champion's or the weekly MVP's banner, over the name (2026-11-17). */
   badge?: 'weeklyChampion' | 'weeklyMvp' | null;
   /** 2026-11-17 (owner): a VIP player's tier, 1 to 4, whose star shows beside the name (`vipKey`), or none. */
   vip?: VipTier | null;
@@ -55,8 +55,13 @@ export interface TagGuild {
 /** 2026-11-15: a trophy's picture key (`TexGuildCombatWinner.bmp`, `TexGuildCombatBest.bmp`, `CWndWorld::m_TexGuildWinner / m_TexGuildBest`). */
 export const trophyKey = (trophy: 'winner' | 'best'): string => `ui/texguildcombat${trophy === 'winner' ? 'winner' : 'best'}.png`;
 
-/** 2026-11-15 (C1): a weekly badge's picture key: the gold copies the converter makes of the two trophies (tools/convert uiStage). */
-export const badgeKey = (badge: 'weeklyChampion' | 'weeklyMvp'): string => `ui/texguildcombatweekly${badge === 'weeklyChampion' ? 'winner' : 'best'}.png`;
+/**
+ * 2026-11-15 (C1): a weekly badge's picture key. 2026-11-17 (owner, "should be a longer icon on top of the name", "something
+ * like this and not too much text", "like a warrior something", their pick "A: Shield & swords"): FlyffWeb's own crests, a
+ * shield over two crossed swords, red with a gold crown (champion) or blue with a gold star (MVP) (hud/ownIcons.ts), in the
+ * place of the gold trophies the converter makes (`ui/texguildcombatweekly*.png`, no longer drawn).
+ */
+export const badgeKey = (badge: 'weeklyChampion' | 'weeklyMvp'): string => `ui/${badge === 'weeklyChampion' ? 'weeklychampion' : 'weeklymvp'}.png`;
 
 /** `0xFFFFFF99`: the guild line of the guild's master (`MoverRender.cpp:1586-1588`); everyone else's is white. */
 const COLOR_GUILD_MASTER = 0xffffff99;
