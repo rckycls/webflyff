@@ -219,6 +219,9 @@ describe('the item tooltip: the lines before the awakening', () => {
     expect(textOf(lines)).toEqual(expect.arrayContaining(['Hit+50%', 'Block+15%', 'Increased HP+25%', 'Add Magical Power+25', 'All Stat+5']));
     // not on a suit in the bag
     expect(textOf(itemTooltip(item({ abilityOption: 7 }), { ...SUIT, endurance: 100 }, DATA, { ...ctx, isWorn: false }))).not.toContain('Hit+50%');
+    // 2026-11-17: another player's, in View Equipment (APP_QUERYEQUIP, WndManager.cpp:4903-4907); never with another flag
+    expect(textOf(itemTooltip(item({ abilityOption: 7 }), { ...SUIT, endurance: 100 }, DATA, { ...ctx, flag: 'queryEquip' }))).toContain('Hit+50%');
+    expect(textOf(itemTooltip(item({ abilityOption: 7 }), { ...SUIT, endurance: 100 }, DATA, { ...ctx, flag: 'other' }))).not.toContain('Hit+50%');
   });
 
   it('the equip-bind line in red, before and after (IP_FLAG_EQUIP_BIND)', () => {

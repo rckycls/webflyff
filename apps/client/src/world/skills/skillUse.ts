@@ -323,8 +323,8 @@ export class SkillUse implements OwnSkills {
    * being its `bSuccess` (`WorldState.onUseSkill`). For the own mover: the request is answered (`REQ_USESKILL` off);
    * begun, the action slot's first skill becomes its running chain (`m_nExecute` 1 → 2, `MoverSkill.cpp:896-903`), and the
    * auto-attack goes on, unless the hand holds a staff, a cheer stick or a wand (`__CSC_VER11_2`), the skill is one on
-   * oneself (`EXT_SELFCHGPARAMET`) or the hero Knight's recall (`SI_KNT_HERO_DRAWING`); `g_Option.m_bAutoAttack` is on
-   * (`HwOption.cpp:246`, and the browser has no options).
+   * oneself (`EXT_SELFCHGPARAMET`) or the hero Knight's recall (`SI_KNT_HERO_DRAWING`), and only with
+   * `g_Option.m_bAutoAttack` on (2026-11-17: the Option window's Automatic Attack, which `startAutoAttack` asks).
    *
    * Not Neuz's: a queue start's answer that comes after the 2 s guard gave it up finds the action slot idle (the guard,
    * not the server, set `m_nExecute` to 0); begun, the server runs its chain all the same, so the action slot runs too,

@@ -20,6 +20,8 @@ import { readCoupleRequestPacket } from '../world/couple';
 import type { CoupleRequestPacket } from '../world/couple';
 import { readDuelRequestPacket } from '../world/duel';
 import type { DuelRequestPacket } from '../world/duel';
+import { readQueryEquipRequestPacket } from '../world/queryEquip';
+import type { QueryEquipRequestPacket } from '../world/queryEquip';
 import { ArReader } from '../ar/ArReader';
 import { DPID_UNKNOWN, MessageType, PacketType } from '../constants';
 import type { Vec3 } from '../constants';
@@ -407,6 +409,8 @@ export type WorldPacket =
   | CoupleRequestPacket
   // 2026-11-15 (social): the duels' requests and answers (world/duel.ts)
   | DuelRequestPacket
+  // 2026-11-17 (view-equip-options): View Equipment and the two mode options (world/queryEquip.ts)
+  | QueryEquipRequestPacket
   | { type: 'unknown'; packetType: number };
 
 /**
@@ -852,6 +856,8 @@ function decodeClientPacket(r: ArReader): WorldPacket {
       if (couple !== null) { r.expectEnd(); return couple; }
       const duel = readDuelRequestPacket(packetType, r);
       if (duel !== null) { r.expectEnd(); return duel; }
+      const queryEquip = readQueryEquipRequestPacket(packetType, r);
+      if (queryEquip !== null) { r.expectEnd(); return queryEquip; }
       return { type: 'unknown', packetType };
     }
   }

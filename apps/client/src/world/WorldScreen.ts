@@ -142,6 +142,12 @@ import type { DuelFlag } from './duel/duelBook';
 import { Messenger, loadFriendOptions, saveFriendOptions } from './friends/messenger';
 import type { FriendEvent } from './friends/messenger';
 import { MMI_ADD_MESSENGER, MMI_CHEER, MMI_DUEL, MMI_DUEL_PARTY, MMI_INVITE_COMPANY, MMI_TRACE, MMI_INVITE_PARTY, MMI_TRADE, menuInReach, playerMenuEntries } from './party/playerMenu';
+// 2026-11-17 (view-equip-options): View Equipment and the Option window's other game options
+import { MMI_QUERYEQUIP } from './party/playerMenu';
+import { QueryEquipWindow } from './hud/queryEquipWindow';
+import type { QueryEquipTarget } from './hud/queryEquipWindow';
+import { combatMusicOf, gameOptionCommand, loadGameOptions, saveGameOptions } from './options/gameOptions';
+import type { QueryEquipPart } from '@flyffweb/protocol';
 import { PartyHpBars } from './render/PartyHpBars';
 import { partyEffects } from './fx/partyEffects';
 import type { PartyEffectContext, PartyMover } from './fx/partyEffects';
@@ -652,6 +658,13 @@ export class WorldScreen {
    */
   private readonly messenger = new Messenger();
   private readonly friendOptions = loadFriendOptions((() => { try { return globalThis.localStorage ?? null; } catch { return null; } })());
+  /**
+   * 2026-11-17 (view-equip-options): the other `g_Option` settings of the Option window (options/gameOptions.ts): Trading,
+   * Party Invites, Automatic Attack, Translucency and Battle Music, kept in the browser's storage.
+   */
+  private readonly gameOptions = loadGameOptions(autoPlayStorage());
+  /** 2026-11-17 (view-equip-options): the View Equipment window (hud/queryEquipWindow.ts). */
+  private queryEquipWindow: QueryEquipWindow | undefined;
   private friendHud: FriendHud | undefined;
   /** 2026-11-10: the player trade's windows (trade/tradeHud.ts), and the tooltip over a trade slot. */
   private tradeHud: TradeHud | undefined;
@@ -1198,6 +1211,8 @@ export class WorldScreen {
         this.social?.onDuel(duelEvents, performance.now());
         continue;
       }
+      // 2026-11-17 (view-equip-options): View Equipment's answer about a player (OnQueryEquip, DPClient.cpp:15706-15736)
+      if (value.type === 'queryEquip') { this.openQueryEquip(objectId, value.parts); continue; }
       // 2026-11-10 (bank-mail): the bank's windows hear its snapshots; the own state (WorldState.toOwn) applies the contents
       if (isBankMessage(value) && objectId === self?.objectId) this.bankHud?.handle(value);
       // 2026-11-15: the guild bank's (guildBank/guildBankHud.ts); no own state: the HUD keeps the bank and moves the bag, the
@@ -1484,6 +1499,8 @@ export class WorldScreen {
     this.world!.onEquipmentChange = (mover) => {
       this.views?.refresh(mover);
       if (mover.isSelf && this.inventoryWindow?.frame.isOpen) void this.makePortrait(true);
+      // 2026-11-17 (view-equip-options): the player shown in View Equipment dressed again (OnDraw reads m_aEquipInfo)
+      if (mover.objectId === this.queryEquipWindow?.objectId) this.refreshQueryEquip(true);
     };
     // 2026-11-09: the Master and Hero marks' pictures from the store
     this.tags = new NameTagLayer(stage.scene, this.element.ownerDocument, (key) => this.services?.store.url(key) ?? '');
@@ -1712,6 +1729,9 @@ export class WorldScreen {
       (mover, motion) => this.views!.motionReady(mover, motion), interruptCast,
     );
     skillUse.attack = attackLoop;
+    // 2026-11-17 (view-equip-options): the Option window's Automatic Attack, and its Battle Music at each own attack
+    attackLoop.autoAttackOption = () => this.gameOptions.autoAttack;
+    this.session.onOwnAttack = () => this.playCombatMusic();
     // 2026-11-10: the Arena's rule asks the world the own mover is in (IsArenaTarget, combat/arena.ts)
     attackLoop.worldId = () => this.worldId;
     // 2026-11-15 (social): and a duel's (IsPVPTarget, the own state 1, neither flying; duel/duelBook.ts)
@@ -2251,6 +2271,14 @@ export class WorldScreen {
     this.chatWindow.onClientCommand = (command, args, line) => {
       // 2026-11-10 (friends-say): /wa /wr /ma /mr /ca /cr (FuncTextCmd.cpp:3776-3823)
       if (this.friendHud?.clientCommand(command) === true) return;
+      // 2026-11-17 (view-equip-options): /ta /tr /ga /gr, the Option window's Trading and Party Invites (:3764-3811)
+      const option = gameOptionCommand(command);
+      if (option !== null) {
+        this.gameOptions[option.option] = option.on;
+        saveGameOptions(autoPlayStorage(), this.gameOptions);
+        this.say(option.tid);
+        return;
+      }
       const world = this.world, data = this.data;
       if (world === undefined || data === undefined) return;
       const targetId = this.focus?.targetId ?? null;
@@ -2397,6 +2425,7 @@ export class WorldScreen {
       now: () => this.world?.nowMs() ?? 0,
       carryPartySkill: (skill, event) => taskBar.carryPartySkill(skill, event),
       partyDuel: () => this.duels.own.duel === 2, // 2026-11-15 (post-merge): WndParty.cpp:309, :365
+      partyRefused: () => !this.gameOptions.party, // 2026-11-17: the Option window's Party Invites
     }, this.party, this.partyModeIcons, doc);
     this.partyHud = partyHud;
     // 2026-11-10: the Messenger and the private messages (friends/friendHud.ts)
@@ -2516,6 +2545,7 @@ export class WorldScreen {
       openInventory: () => { if (this.own && !inventoryWindow.frame.isOpen) inventoryWindow.toggle(this.own); },
       npcShopOpen: () => this.shopWindow?.frame.isOpen === true || this.bankHud?.isOpen === true || this.guildBankHud?.isOpen === true,
       summonAngelOpen: () => this.summonAngel?.isOpen === true, // 2026-11-10
+      tradeRefused: () => !this.gameOptions.trade, // 2026-11-17: the Option window's Trading
       addOwnGold: (delta) => this.own?.addGold(delta),
       consent: (mine, theirs, partner, gold) => this.own?.tradeConsent(mine, theirs, partner, gold),
       refreshBag: () => { if (this.own) inventoryWindow.update(this.own, true); },
@@ -2770,7 +2800,21 @@ export class WorldScreen {
     // Finish sends DOUSESKILLPOINT through the skill use, which also ends a spend the server leaves unanswered
     const skillWindow = new SkillWindow(this.hudArt!, this.data!, (skills) => void skillUse.spendSkillPoints(skills), taskBar, doc);
     this.skillWindow = skillWindow;
-    this.optionWindow = this.audio === null ? undefined : new OptionWindow(this.hudArt!, this.audio, doc);
+    // 2026-11-17 (view-equip-options): the Option window's whole Game / Audio page; without sound its sliders are greyed
+    const storage = autoPlayStorage();
+    this.optionWindow = new OptionWindow(this.hudArt!, {
+      audio: this.audio,
+      game: this.gameOptions,
+      friend: this.friendOptions,
+      saveGame: () => saveGameOptions(storage, this.gameOptions),
+      saveFriend: () => saveFriendOptions(storage, this.friendOptions),
+      ownMode: () => this.world?.self()?.added.player?.mode ?? null,
+      sendEquipSetting: (allow) => this.session.sendQueryEquipSetting(allow),
+      sendDuelRequests: (accept) => this.session.sendDuelRequests(accept),
+      translucent: (on) => this.applyWindowAlpha(on),
+    }, doc);
+    this.applyWindowAlpha(this.gameOptions.translucent);
+    this.queryEquipWindow = new QueryEquipWindow(this.hudArt!, this.data!, doc);
     for (const modal of [
       logOutBox.modal, reviveWindow.modal, skillWindow.warning.modal, this.dialog.modal, questWindow.modal, messageBox.modal, selectVillage.modal, partyHud.messageBox.modal,
       friendHud.messageBox.modal, tradeHud.gold.modal, ...social.modals, ...guildHud.modals, bankHud.amount.modal, guildBankHud.amount.modal, ...postHud.modals,
@@ -2814,6 +2858,7 @@ export class WorldScreen {
     // what the party said while the world loaded
     if (this.partyEvents.length > 0) partyHud.handle(this.partyEvents.splice(0));
     if (this.optionWindow !== undefined) this.hud!.element.append(this.optionWindow.frame.element);
+    if (this.queryEquipWindow !== undefined) this.hud!.element.append(this.queryEquipWindow.frame.element);
     // before the windows' own Escape (frame.ts), which closes a window only if this one leaves the key to it
     view.addEventListener('keydown', this.onEscape, true);
     // on the canvas: the joystick is an element of its own over it, and its touches never reach it; each press goes to
@@ -3830,7 +3875,8 @@ export class WorldScreen {
     this.petWindows?.step(); // pets R2: the pet window's portrait, CWndPetStatus::Process
     this.petCare?.step(); // pets R3: the tamer's miracle's spins, CWndPetMiracle::Process
     this.buffPet?.step(); // pets B1: the buff pet window's portrait
-    this.follow(world, stage);
+    this.refreshQueryEquip(); // 2026-11-17: View Equipment's player, CWndQueryEquip::Process
+this.follow(world, stage);
   }
 
   /**
@@ -3900,7 +3946,8 @@ export class WorldScreen {
     this.petWindows?.step(); // pets R2: the pet window's portrait, CWndPetStatus::Process
     this.petCare?.step(); // pets R3: the tamer's miracle's spins, CWndPetMiracle::Process
     this.buffPet?.step(); // pets B1: the buff pet window's portrait
-    this.follow(world, stage);
+    this.refreshQueryEquip(); // 2026-11-17: View Equipment's player, CWndQueryEquip::Process
+this.follow(world, stage);
   }
 
   /** Piece 7 M5: the Land button: the worn ride used again (`ItemUse`), which lands. */
@@ -4200,6 +4247,86 @@ export class WorldScreen {
   private say(id: string): void {
     const entry = this.data?.texts.get(id);
     if (entry !== undefined && entry.text !== '') this.hud?.messages.add(entry.text, entry.color);
+  }
+
+  /**
+   * 2026-11-17 (view-equip-options): `CDPClient::OnQueryEquip` (DPClient.cpp:15706-15736): for a player in view, the View
+   * window made again with its parts' extras, and its model drawn.
+   */
+  private openQueryEquip(objectId: number, parts: readonly QueryEquipPart[]): void {
+    const target = this.queryEquipTarget(objectId);
+    if (target === null || this.queryEquipWindow === undefined) return;
+    this.queryEquipWindow.open(target, parts);
+    void this.makeQueryEquipPreview(objectId);
+  }
+
+  /** The player View Equipment shows, as the world has it now; null for one not in view. */
+  private queryEquipTarget(objectId: number): QueryEquipTarget | null {
+    const mover = this.world?.movers.get(objectId);
+    const player = mover?.added.player;
+    if (mover === undefined || player === undefined || mover.kind !== 'player') return null;
+    return { objectId, name: mover.name, viewer: { sex: player.sex, job: player.job, level: player.level }, worn: player.worn };
+  }
+
+  /**
+   * The View window's player (`CWndQueryEquip::Process`, WndField.cpp:524-549): the window closed once it is gone, its slots
+   * drawn again when its parts changed, and with `dressed` its model too.
+   */
+  private refreshQueryEquip(dressed = false): void {
+    const window = this.queryEquipWindow, id = window?.objectId ?? null;
+    if (window === undefined || id === null) return;
+    const target = this.queryEquipTarget(id);
+    if (target === null) { window.close(); return; }
+    window.update(target);
+    if (dressed) void this.makeQueryEquipPreview(id);
+  }
+
+  private readonly newestQueryPreview = latestOnly<HTMLCanvasElement>();
+
+  /** The View window's model (WIDC_CUSTOM20): the player dressed as it is, drawn once as the bag's (`renderPortrait`). */
+  private async makeQueryEquipPreview(objectId: number): Promise<void> {
+    const stageGeneration = this.stageGeneration;
+    const mover = this.world?.movers.get(objectId);
+    const services = this.services, data = this.data, page = this.page;
+    if (mover === undefined || services === undefined || data === undefined || page === undefined) return;
+    const look = lookOf(mover, data);
+    if (look === null) return;
+    const report = (message: string): void => this.reportOnce(`view equipment: ${message}`, new Error(message));
+    const gone = (): boolean => this.over || stageGeneration !== this.stageGeneration || this.queryEquipWindow?.objectId !== objectId;
+    try {
+      const model = await loadMoverModel(services)(look, report);
+      const held = await loadHeldItems(services, data)(look, report);
+      try {
+        for (const item of held) attachHeld(model, item.item, item.slot);
+        const key = look.motion(Mti.STAND);
+        const motion = key === null ? null : await loadMotion(services, key);
+        if (gone()) return;
+        const canvas = await this.newestQueryPreview(renderPortrait(page.renderer, model, motion, this.element.ownerDocument, true));
+        if (canvas !== null && !gone()) this.queryEquipWindow?.setPreview(canvas);
+      } finally {
+        for (const item of held) { item.item.removeFromParent(); item.release(); }
+        model.release();
+      }
+    } catch (error) {
+      if (!this.over) report(messageOf(error));
+    }
+  }
+
+  /**
+   * 2026-11-17 (view-equip-options): `CMover::PlayCombatMusic` (MoverMove.cpp:31-61) as the own player attacks: with the
+   * Option window's Battle Music on, the battle track of where the player stands, once.
+   */
+  private playCombatMusic(): void {
+    const own = this.world?.self();
+    if (own === undefined) return;
+    const [x, , z] = own.act.body.pos;
+    const id = combatMusicOf(this.gameOptions.battleMusic, this.worldId, this.stage?.manifest.indoor === true, x, z);
+    if (id !== null) this.sounds?.serverMusic(id);
+  }
+
+  /** 2026-11-17 (view-equip-options): Translucency, `CWndBase::m_nAlpha` 128 or 255: the windows' pictures (style.css). */
+  private applyWindowAlpha(translucent: boolean): void {
+    this.hud?.element.toggleAttribute('data-translucent', translucent);
   }
 
   /**
@@ -5121,6 +5248,12 @@ export class WorldScreen {
       if (player !== undefined && this.world?.self()?.act.isFlying() !== true) this.startFollow(id);
       return;
     }
+    // 2026-11-17 (view-equip-options): "View equipment" (MMI_QUERYEQUIP, WndWorld.cpp:5248-5255): SendQueryEquip to a player;
+    // the window opens on the world server's answer (openQueryEquip), or its TID_DIAG_0088 says no
+    if (entry === MMI_QUERYEQUIP) {
+      if (player !== undefined) this.session.sendQueryEquip(id);
+      return;
+    }
     // 2026-11-15 (social): "Cheer" (MMI_CHEER, WndWorld.cpp:5680-5686): SendCheering to a player, not while flying
     if (entry === MMI_CHEER) {
       if (player !== undefined && this.world?.self()?.act.isFlying() !== true) this.session.sendCheering(id);
@@ -5893,6 +6026,8 @@ export class WorldScreen {
     this.audio?.stopWorld(); // travel and leaving stop the world's sounds (Piece 6 design §3.3)
     this.optionWindow?.dispose();
     this.optionWindow = undefined;
+    this.queryEquipWindow?.dispose(); // 2026-11-17 (view-equip-options)
+    this.queryEquipWindow = undefined;
     this.stageGeneration++;
     this.portraitGeneration++;
     // the next world's stage is drawn anew and starts its own ring (`onScreenAt` stays the first world's)
@@ -6145,7 +6280,7 @@ export class WorldScreen {
     this.releaseControls();
     this.moverMenu?.close();
     for (const window of [this.shopWindow, this.dialog, this.teleporter, this.inventoryWindow, this.characterWindow,
-      this.skillWindow, this.optionWindow, this.messageBox, this.selectVillage]) window?.frame.close();
+      this.skillWindow, this.optionWindow, this.queryEquipWindow, this.messageBox, this.selectVillage]) window?.frame.close();
     this.heavenTower?.close();
     this.lordHud?.close();
     this.guildCombatHud?.close();

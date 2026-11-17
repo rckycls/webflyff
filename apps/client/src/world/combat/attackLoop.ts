@@ -283,6 +283,12 @@ export class AttackLoop {
   /** `m_bAutoAttack`. */
   private auto = false;
   /**
+   * 2026-11-17 (view-equip-options): `g_Option.m_bAutoAttack`, the Option window's Automatic Attack: the target pressed
+   * again (WndWorld.cpp:6905-6913) and a skill begun (`startAutoAttack`) start the auto-attack only when it is on. A double
+   * click and the phone's Attack button do not ask it (`OnLButtonDblClk`, :7248-7260).
+   */
+  autoAttackOption: () => boolean = () => true;
+  /**
    * `m_bLButtonDown` while a press on a mover is held, which is also the `CTRLMSG_LDOWN` the combo reads: `ControlGround`
    * sets `m_dwCtrlMsg` from it as the press goes down and as it is let go (`WndWorldControlPlayer.cpp:235-238`), and not
    * in between, while `Process` runs the attack branch. (A press on the ground held down is the controls' tap.)
@@ -436,7 +442,7 @@ export class AttackLoop {
     if (old !== null && old === objectId) {
       this.auto = false;
       this.focus.next = null;
-      if (!this.holdsWand()) this.auto = true;
+      if (!this.holdsWand() && this.autoAttackOption()) this.auto = true;
     } else if (old !== null && this.auto && old !== objectId) {
       this.focus.next = objectId;
     } else {
@@ -627,7 +633,7 @@ export class AttackLoop {
    * `CWndWorld::UseSkillToFocusObj`, `WndWorld.cpp:6280-6292`): the skill use asks it, which tests the hand and the skill.
    */
   startAutoAttack(): void {
-    this.auto = true;
+    if (this.autoAttackOption()) this.auto = true; // 2026-11-17: `if( g_Option.m_bAutoAttack )`
   }
 
   /**

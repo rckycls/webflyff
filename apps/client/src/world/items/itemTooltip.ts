@@ -48,8 +48,11 @@ export interface TooltipRun {
 
 export type TooltipLine = TooltipRun[];
 
-/** The window that asks (the C++ `flag`): the inventory (`APP_INVENTORY`), the NPC shop (`APP_SHOP_`), or another (0). */
-export type TooltipFlag = 'inventory' | 'shop' | 'other' | 'vendor';
+/**
+ * The window that asks (the C++ `flag`): the inventory (`APP_INVENTORY`), the NPC shop (`APP_SHOP_`), or another (0);
+ * 2026-11-17 (view-equip-options) View Equipment (`APP_QUERYEQUIP`), whose `viewer` and `worn` are the player shown.
+ */
+export type TooltipFlag = 'inventory' | 'shop' | 'other' | 'vendor' | 'queryEquip';
 
 /** The player the "can you use it" colours are judged for (`pMover`, :6563-6569). */
 export interface TooltipViewer {
@@ -664,8 +667,10 @@ ${dstName(dst)}+${value}${ADDED_OPT_RATES.has(dst) ? '%' : ''}`, ADDED_OPT);
   }
 
   function putEnchantOpt(): void {
-    // PutEnchantOpt (:4889-4939): the lowest refine of the four worn parts, shown on a worn one of them
-    if (ctx.flag !== 'inventory' || ctx.isWorn !== true || !(SET_ENCHANT_PARTS as readonly number[]).includes(prop.part)) return;
+    // PutEnchantOpt (:4889-4939): the lowest refine of the four worn parts, shown on a worn one of them; 2026-11-17: for
+    // another player, with APP_QUERYEQUIP (:4903-4907)
+    if ((ctx.flag !== 'inventory' && ctx.flag !== 'queryEquip') || ctx.isWorn !== true
+      || !(SET_ENCHANT_PARTS as readonly number[]).includes(prop.part)) return;
     let n = Infinity;
     for (const part of SET_ENCHANT_PARTS) n = Math.min(n, ctx.worn?.(part)?.abilityOption ?? 0);
     if (!(n > 0 && n <= 10)) return;

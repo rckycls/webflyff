@@ -62,6 +62,8 @@ export interface PartyHudScreen {
   carryPartySkill(skill: number, event: PointerEvent): void;
   /** 2026-11-15 (post-merge): the own player is in a party duel (`g_pPlayer->m_nDuel == 2`); none when not given. */
   partyDuel?(): boolean;
+  /** 2026-11-17: the Option window's Party Invites is Disapprove (`g_Option.m_bParty == FALSE`). */
+  partyRefused?(): boolean;
 }
 
 const WHITE = 0xffffffff;
@@ -197,6 +199,11 @@ export class PartyHud {
   }
 
   private invited(request: MessageOf<'partyRequest'>): void {
+    // 2026-11-17: invites refused in the Option window: PARTYMEMBERCANCEL mode 3 (OnPartyRequest, DPClient.cpp:4526-4530)
+    if (this.screen.partyRefused?.() === true) {
+      this.screen.session.sendPartyMemberCancel(request.leader.id, request.member.id, 3);
+      return;
+    }
     if (this.confirm.isOpen) {
       this.screen.session.sendBlock(request.leaderName);
       return;

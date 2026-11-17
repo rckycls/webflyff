@@ -29,11 +29,12 @@ import type { CoupleMessage } from './couple'; // 2026-11-15 (social)
 import type { DuelMessage } from './duel'; // 2026-11-15 (social)
 import type { GuildCombatMessage } from './guildCombat';
 import type { PocketMessage } from './pocket'; // 2026-11-17 (extra bag)
+import type { QueryEquipMessage } from './queryEquip'; // 2026-11-17 (view-equip-options)
 
 export type WorldMessage = ChatMessage | NpcMessage | ShopMessage | QuestMessage | PetMessage | FriendMessage | TradeMessage | VendorMessage
   | GuildMessage | GuildDirectMessage | BankMessage | GuildBankMessage | HousingMessage | GuildHouseMessage | PostMessage | LordMessage | HonorMessage | HpLayerMessage
   | TaxMessage
-  | CoupleMessage | DuelMessage | GuildCombatMessage | PocketMessage
+  | CoupleMessage | DuelMessage | GuildCombatMessage | PocketMessage | QueryEquipMessage
   | { type: 'profileStats'; values: number[] }
   | { type: 'addItem'; item: GroundItem }
   | { type: 'createItem'; itemType: number; item: InventoryItem; stacks: Array<{ objectId: number; count: number }> }

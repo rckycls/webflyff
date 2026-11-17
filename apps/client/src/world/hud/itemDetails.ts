@@ -7,7 +7,7 @@ import type { WebItemProp } from '@flyffweb/formats';
 import type { InventoryItem } from '@flyffweb/protocol';
 import type { OwnState } from '../OwnState';
 import { itemTooltip, ultimateSockets } from '../items/itemTooltip';
-import type { TooltipContext, TooltipData, TooltipFlag, TooltipLine } from '../items/itemTooltip';
+import type { TooltipContext, TooltipData, TooltipFlag, TooltipLine, TooltipViewer } from '../items/itemTooltip';
 import type { TooltipTax } from '../items/tax';
 import { themeKey, themeUrl } from './art';
 import type { UiArt } from './art';
@@ -71,6 +71,20 @@ export function ownTooltipContext(
     isWorn: own.equipmentObjectIds.includes(item.objectId), shopOpen, countOf, ...(hasBuff !== undefined ? { hasBuff } : {}),
     now: own.clock(), ...(visPet !== undefined ? { visPet } : {}), ...(activeVisPet !== undefined ? { activeVisPet } : {}),
     ...(keepEnd !== undefined ? { keepEnd } : {}), ...lookups,
+  };
+}
+
+/**
+ * 2026-11-17 (view-equip-options): the context of a View Equipment tooltip (`PutToolTip_Item( ..., APP_QUERYEQUIP )`,
+ * WndManager.cpp:6226-6232): the player shown judges the requirement colours, its worn parts count its set pieces and give
+ * its set +N, and the item is worn. The world's names are read as for any tooltip; the cool-down is the own player's, not
+ * asked here.
+ */
+export function queryEquipTooltipContext(viewer: TooltipViewer, worn: (part: number) => InventoryItem | undefined): TooltipContext {
+  return {
+    flag: 'queryEquip', viewer, worn, isWorn: true,
+    ...(world.guildName !== undefined ? { guildName: world.guildName.bind(world) } : {}),
+    ...(world.playerName !== undefined ? { playerName: world.playerName.bind(world) } : {}),
   };
 }
 

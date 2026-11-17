@@ -93,6 +93,8 @@ export const THEME_FILES: readonly string[] = [
   // V15 inventory: APP_INVENTORY (resdata.inc), CWndInventory::OnInitialUpdate (WndField.cpp).
   'WndInventory3D.tga',
   'WndInventoryGarbage.dds',
+  // 2026-11-17 (view-equip-options): View Equipment's picture, APP_QUERYEQUIP "WndQueryEquip.tga" (resdata.inc:24102)
+  'WndQueryEquip.tga',
   // The frame and title bar of every window: CWndNeuz::AdditionalSkinTexture (WndNeuz.cpp:269-290) paints a window whose
   // resdata.inc entry is tiled (APP_REVIVAL "WndTile07.tga", APP_SKILL3 "WndTile03.tga", APP_CHARACTER3 "Wndtile00.tga" ...)
   // from 12 pieces of 16 x 16, the file name without its last 6 characters, a two-digit number 0 to 11 and ".tga". Whatever

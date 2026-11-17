@@ -16,6 +16,8 @@ import {
 } from '@flyffweb/protocol';
 import { encodeMagicAttack, encodeRangeAttack, encodeSfxClear, encodeSfxHit, encodeSfxId } from '@flyffweb/protocol';
 import { encodeCheering, encodeDoEscape, encodeMotion, encodePropose } from '@flyffweb/protocol'; // 2026-11-14: the Motion window
+// 2026-11-17 (view-equip-options): View Equipment and the Option window's mode options
+import { PVPCONFIRM_MODE, PVP_ACCEPT, PVP_REFUSE, encodeChangeMode, encodeQueryEquip, encodeQueryEquipSetting } from '@flyffweb/protocol';
 import {
   encodePiercingRemove, encodeRemoveAttribute, encodeRepairItem, encodeUltimateMakeItem, encodeUltimateRemoveGem,
   encodeUltimateTransWeapon,
@@ -234,6 +236,16 @@ export class WorldSession {
   sendPickupPetAwakeningCancel(itemObjectId: number): void { this.playingCache()?.send(encodePickupPetAwakeningCancel(itemObjectId)); }
   /** custom (owner 2026-11-16): the loot filter's mask for the own pick-up pet (a patched World server; others ignore it). */
   sendPetFilter(mask: number): void { this.playingCache()?.send(encodePetFilter(mask)); }
+  /**
+   * 2026-11-17 (view-equip-options): the player menu's View equipment (`SendQueryEquip`), and the Option window's two
+   * server-kept options: Allow Inventory View (`SendQueryEquipSetting`) and Duel Requests (`SendChangePKPVPMode(
+   * PVPCONFIRM_MODE, 3 or 2 )`, WndOptionGame.cpp:374-387).
+   */
+  sendQueryEquip(objectId: number): void { this.playingCache()?.send(encodeQueryEquip(serverIdOf(objectId))); }
+  sendQueryEquipSetting(allow: boolean): void { this.playingCache()?.send(encodeQueryEquipSetting(allow)); }
+  sendDuelRequests(accept: boolean): void {
+    this.playingCache()?.send(encodeChangeMode(PVPCONFIRM_MODE, accept ? PVP_ACCEPT : PVP_REFUSE));
+  }
   sendNpcDialogOpen(id: number): void { this.playingCache()?.send(encodeNpcDialogOpen(id)); }
   sendNpcDialog(id: number, key: string, param: number, quest: number, playerId: number): void {
     this.playingCache()?.send(encodeNpcDialog(id, key, param, quest, playerId));
@@ -487,18 +499,27 @@ export class WorldSession {
    * item's `fAttackSpeed` as the server compares it. Sent only while playing.
    */
   sendMeleeAttack(message: number, targetId: number, attackSpeed: number): void {
+    this.onOwnAttack?.();
     this.playingCache()?.send(encodeMeleeAttack(message, serverIdOf(targetId), attackSpeed));
   }
 
   /** MAGIC_ATTACK (`CDPClient::SendMagicAttack`, `DPClient.cpp:9841`): the wand's shot. Sent only while playing. */
   sendMagicAttack(targetId: number, power: number, sfxHitId: number): void {
+    this.onOwnAttack?.();
     this.playingCache()?.send(encodeMagicAttack(serverIdOf(targetId), power, sfxHitId));
   }
 
   /** RANGE_ATTACK (`CDPClient::SendRangeAttack`, `DPClient.cpp:9848`): the bow's shot. Sent only while playing. */
   sendRangeAttack(targetId: number, power: number, sfxHitId: number): void {
+    this.onOwnAttack?.();
     this.playingCache()?.send(encodeRangeAttack(serverIdOf(targetId), power, sfxHitId));
   }
+
+  /**
+   * 2026-11-17 (view-equip-options): the own player's melee, wand or bow attack or skill is being sent, where Neuz calls
+   * `PlayCombatMusic` (MoverMove.cpp:94, :210, :226; MoverSkill.cpp:3470): the Option window's Battle Music.
+   */
+  onOwnAttack?: () => void;
 
   /** SFX_ID (`CDPClient::SendSfxID`, `DPClient.cpp:9876`): a missile of the own player's. Sent only while playing. */
   sendSfxId(targetId: number, sfxHitId: number, type: number, skill?: number, maxDmgCnt?: number): void {
@@ -547,6 +568,7 @@ export class WorldSession {
    * target, `SUT_NORMAL` 0 (a bar slot) or `SUT_QUEUESTART` 1 (the action slot), and the Ctrl key. Sent only while playing.
    */
   sendUseSkill(index: number, targetId: number, useType: 0 | 1, control = false): void {
+    this.onOwnAttack?.();
     this.playingCache()?.send(encodeUseSkill(index, serverIdOf(targetId), useType, control));
   }
 
