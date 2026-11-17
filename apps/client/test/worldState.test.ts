@@ -279,6 +279,21 @@ describe('flight in the world (Piece 7 M5)', () => {
     expect(other.act.motionOption).toBe(Mop.FIXED | Mop.NO_TRANS);
   });
 
+  it('2026-11-18: another player on the ground mount runs 50% faster, from its ADD_OBJ or its buff, and not once off', () => {
+    const { world } = newWorld(ownGameData());
+    add(world, playerOf(1, 'Other'));
+    const other = world.movers.get(1)!;
+    const base = other.act.body.speed;
+    world.apply(1, { type: 'setSkillState', targetId: 1, buffType: 0, id: 20270, level: 1, time: 999_999_999 });
+    expect(other.act.body.speed).toBe(Math.fround(Math.fround(base) * Math.fround(1.5)));
+    world.apply(1, { type: 'removeSkillInfluence', buffType: 0, id: 20270 });
+    expect(other.act.body.speed).toBe(base);
+    add(world, playerOf(2, 'Rider', { buffs: [{ buffType: 0, id: 20270, level: 1, timeLeft: 999_999_999 }] }));
+    expect(world.movers.get(2)!.act.body.speed).toBe(Math.fround(Math.fround(base) * Math.fround(1.5)));
+    world.apply(2, { type: 'removeAllSkillInfluence' });
+    expect(world.movers.get(2)!.act.body.speed).toBe(base);
+  });
+
   it('another player taking off and landing (DOEQUIP part 13) flies and lands it', () => {
     const { world } = newWorld(flightData());
     add(world, playerOf(1, 'Other', { pos: [100, 0, 100] }));

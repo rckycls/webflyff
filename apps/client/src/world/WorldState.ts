@@ -24,8 +24,19 @@ import type { FlightRide } from './sim/flight';
 import type { SimMover } from './sim/moverRules';
 import { Dst, FISTS, NO_ADJUST, attackSpeed, maxHitPoint, monsterMaxHitPoint } from './sim/params';
 import { lordSkill } from './lord/lordData';
+import { GROUND_MOUNT_ITEM, mountedSpeed } from './mount/groundMount';
 
 const f32 = Math.fround;
+
+/**
+ * 2026-11-18 (ground mount, `mount/groundMount.ts`): another player's run, with the mount's DST_SPEED while it has the
+ * mount's buff, as Neuz's `GetSpeed` counts a buff's parameters for every mover. The own run is the server's
+ * (SETDESTPARAM and the profile's speed).
+ */
+function syncMountSpeed(m: Mover): void {
+  if (m.isSelf || m.added.player === undefined) return;
+  m.act.body.speed = mountedSpeed(m.baseSpeed, m.buffs.has(0, GROUND_MOUNT_ITEM));
+}
 
 /** `AII_MONSTER` (`Resource/defineNeuz.h:6`): the `dwAI` of a monster in `propMover.txt`. */
 const AII_MONSTER = 2;
@@ -604,10 +615,12 @@ export class WorldState {
       case 'setSkillState': { // OnSetSkillState (:14158-14181): AddBuff on the target, its stats the server's to send
         const target = this.byId.get(message.targetId);
         target?.buffs.add(message.buffType, message.id, message.level, message.time, this.nowMs());
+        if (target !== undefined) syncMountSpeed(target); // 2026-11-18 (ground mount)
         break;
       }
       case 'removeSkillInfluence': // :14993-15003
         m.buffs.remove(message.buffType, message.id);
+        syncMountSpeed(m); // 2026-11-18 (ground mount)
         break;
       case 'stateMode': // Piece 7 M3, OnStateMode (:12381-12440): the mode, and ON's ready effect
         m.stateMode = message.mode;
@@ -638,6 +651,7 @@ export class WorldState {
         break;
       case 'removeAllSkillInfluence': // :15005-15010
         m.buffs.removeCommon();
+        syncMountSpeed(m); // 2026-11-18 (ground mount)
         break;
       case 'setDestParam': // :3271-3305: the own numbers' buff layer; DST_SPEED the own run
       case 'resetDestParam':
@@ -943,6 +957,7 @@ export class WorldState {
       ));
       act.body.speed = buffedSpeed(speed, numbers.adj.get(Dst.SPEED) ?? 0);
     }
+    syncMountSpeed(mover); // 2026-11-18 (ground mount): another player that comes in mounted
     act.findMover = (id) => this.byId.get(id)?.act;
     act.hitPoint = () => mover.hp;
     if (isSelf) act.jumpBonus = () => this.numbers?.profileStats?.[13] ?? this.numbers?.adj.get(Dst.JUMPING) ?? 0;

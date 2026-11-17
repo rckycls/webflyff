@@ -113,6 +113,11 @@ export interface ClientHooks {
   angels?(): Array<{ ownerId: number; itemId: number; pos: Vec3; drawn: boolean }>;
   /** 2026-11-15 (beauty shop): each player's hair style, hair colour (as held) and face, 0-based. */
   looks?(): Array<{ objectId: number; hairMesh: number; hairColor: number; headMesh: number }>;
+  /**
+   * 2026-11-18 (ground mount): each player with the mount's buff: whether its wolf is drawn under it, and its run a step
+   * (the rules' `body.speed`).
+   */
+  mounts?(): Array<{ objectId: number; drawn: boolean; speed: number }>;
 }
 
 declare global {
@@ -149,6 +154,7 @@ export function createClientHooks(): ClientHooks {
     tags: () => current().tags(),
     angels: () => current().angels?.() ?? [],
     looks: () => current().looks?.() ?? [], // 2026-11-15
+    mounts: () => current().mounts?.() ?? [], // 2026-11-18
   };
 }
 
