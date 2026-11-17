@@ -14,6 +14,9 @@ import { Focus } from '../src/world/combat/focus';
 import type { Texts } from '../src/world/gameData';
 import { AttackButton } from '../src/world/hud/attackButton';
 import { APPLETS, appletText } from '../src/world/hud/applets';
+import { themeKey } from '../src/world/hud/art';
+import { bareIconKey } from '../src/world/hud/mobileTools';
+import { OWN_ICONS } from '../src/world/hud/ownIcons';
 import { escapeStep } from '../src/world/hud/escape';
 import { WindowFrame, escapeWindow, refitWindows, setLayoutBottom } from '../src/world/hud/frame';
 import type { UiArt } from '../src/world/hud/art';
@@ -1083,6 +1086,20 @@ describe('APPLETS (CWndMgr::AddAllApplet, FuncApplet.cpp:178-301)', () => {
     expect(appletText(APPLETS.get(400)!.desc, new Map([['TID_TIP_ITEMMALL', { text: 'Item Mall' }]]))).toBe('Item Mall');
     // the earlier versions' windows are not registered, nor the dead flags' ones (APP_GUILD_VOTE, APP_MAP_EX)
     for (const id of [2010, 581, 321, 2022]) expect(APPLETS.has(id)).toBe(false);
+  });
+
+  it("gives the client's own windows FlyffWeb's own icons (2026-11-17, owner), shipped with the build, framed and not", () => {
+    expect(APPLETS.get(9001)).toEqual({ name: 'APP_SIEGE_RANKING', icon: 'Icon_SiegeRanking.png', desc: { text: 'Siege Ranking' }, hotkey: null });
+    expect(APPLETS.get(9002)).toEqual({ name: 'APP_AUTO_PLAY', icon: 'Icon_AutoPlay.png', desc: { text: 'Auto Play' }, hotkey: null });
+    expect(APPLETS.get(9003)).toEqual({ name: 'APP_PETFILTER', icon: 'Icon_PetFilter.png', desc: { text: 'Pet Filter' }, hotkey: 'U' });
+    for (const id of [9001, 9002, 9003]) {
+      const file = APPLETS.get(id)!.icon!;
+      for (const key of [themeKey(file), bareIconKey(file)]) {
+        expect(OWN_ICONS.get(key), key).toMatch(/icon_(siegeranking|autoplay|petfilter)\.png$/);
+        expect(OWN_ICONS.get(key)!.includes('/bare/')).toBe(key.startsWith('ui/bare/'));
+      }
+    }
+    expect(OWN_ICONS.size).toBe(6);
   });
 });
 

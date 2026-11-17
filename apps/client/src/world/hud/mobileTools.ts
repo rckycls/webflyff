@@ -34,14 +34,11 @@ export const bareIconKey = (file: string): string => themeKey(file).replace(/^ui
 
 /**
  * A shortcut: its name (label and tooltip), the applet whose Start-menu icon it shows (null: none, its text shows), its
- * action, and its rank (`data-rank`): a narrow phone hides the highest ranks first (style.css). 2026-11-15 (Guild Siege, C2): a
- * tool with no applet may have a `picture` (a UI art key) instead; while the picture is missing its short text shows in the
- * icon's place, in a button of the icons' size.
+ * action, and its rank (`data-rank`): a narrow phone hides the highest ranks first (style.css).
  */
 export interface MobileTool {
   label: string;
   applet: number | null;
-  picture?: string;
   run: () => void;
   rank?: number;
 }
@@ -63,13 +60,21 @@ export const MOBILE_SHORTCUTS: ReadonlyArray<{ label: string; applet: number; wi
 ];
 
 /**
- * 2026-11-15 (owner, Guild Siege C2): the Siege Ranking icon, the V15 winner trophy (`ui/texguildcombatwinner.png`, converted
- * with the siege's pictures), first of the first row, in the place of Status (2026-11-15: nine icons in rows of five and four did not fit the 730 px
- * phone beside the target bar, so the icon takes Status's place and the rows stay two of four). It is no window of Neuz's Start menu: the Start menu has its own line.
+ * 2026-11-15 (owner, Guild Siege C2): the Siege Ranking icon, first of the first row, in the place of Status (2026-11-15: nine
+ * icons in rows of five and four did not fit the 730 px phone beside the target bar, so the icon takes Status's place and the
+ * rows stay two of four). It is no window of Neuz's Start menu: the Start menu has its own line. 2026-11-17 (owner, "create
+ * icons that matches the other windows"): its Start-menu icon, FlyffWeb's own (ownIcons.ts), in the place of the V15 winner
+ * trophy.
  */
-export const SIEGE_SHORTCUT = { label: 'Siege Ranking', picture: 'ui/texguildcombatwinner.png', window: 'siegeRanking', rank: 9 } as const;
-/** What the Siege Ranking icon shows while its picture is missing. */
-const PICTURE_TEXT = 'Siege';
+export const SIEGE_SHORTCUT = { label: 'Siege Ranking', applet: AppId.SIEGE_RANKING, window: 'siegeRanking', rank: 9 } as const;
+/** What the desktop's Siege Ranking button shows while its icon is missing. */
+const SIEGE_TEXT = 'Siege';
+
+/** The URL of an applet's icon without its frame, or with it before that convert; '' for none. */
+function appletIconUrl(art: UiArt, applet: number): string {
+  const file = APPLETS.get(applet)?.icon ?? null;
+  return file === null ? '' : art.url(bareIconKey(file)) || art.url(themeKey(file));
+}
 
 /**
  * The icons' size in CSS px at a device pixel ratio: 32 device px times the ratio rounded to a whole number (at least 1), so
@@ -91,23 +96,21 @@ export class MobileTools {
     element.className = 'hud-mobile-tools';
     element.setAttribute('role', 'toolbar');
     element.setAttribute('aria-label', 'Window shortcuts');
-    this.buttons = tools.map(({ label, applet, picture, run, rank }) => {
+    this.buttons = tools.map(({ label, applet, run, rank }) => {
       const button = doc.createElement('button');
       button.type = 'button';
       button.setAttribute('aria-label', label);
       button.title = label;
       if (rank !== undefined) button.dataset.rank = String(rank);
-      const file = applet === null ? null : APPLETS.get(applet)?.icon ?? null;
-      const url = picture !== undefined ? art.url(picture) : file === null ? '' : art.url(bareIconKey(file)) || art.url(themeKey(file));
-      if (url === '' && picture === undefined) {
+      const url = applet === null ? '' : appletIconUrl(art, applet);
+      if (url === '') {
         button.textContent = label;
       } else {
         button.dataset.icon = '';
         const icon = doc.createElement('span');
         icon.className = 'hud-mobile-tool-icon';
         icon.setAttribute('aria-hidden', 'true');
-        if (url === '') icon.textContent = PICTURE_TEXT;
-        else icon.style.backgroundImage = `url(${JSON.stringify(url)})`;
+        icon.style.backgroundImage = `url(${JSON.stringify(url)})`;
         button.append(icon);
       }
       button.addEventListener('click', () => { run(); button.blur(); });
@@ -133,7 +136,8 @@ export class MobileTools {
 
 /**
  * 2026-11-15 (owner): the desktop's Siege Ranking button, left of the Navigator (style.css `.hud-siege-button`; the phone has
- * the icon in its shortcuts instead). Its picture is `SIEGE_SHORTCUT.picture`; while that is missing its text shows.
+ * the icon in its shortcuts instead). 2026-11-17 (owner): it shows the same icon as the phone's, Siege Ranking's own without
+ * its frame; while that is missing its text shows.
  */
 export function siegeButton(art: UiArt, run: () => void, doc: Document = document): HTMLButtonElement {
   const button = doc.createElement('button');
@@ -141,8 +145,8 @@ export function siegeButton(art: UiArt, run: () => void, doc: Document = documen
   button.className = 'hud-siege-button';
   button.setAttribute('aria-label', SIEGE_SHORTCUT.label);
   button.title = SIEGE_SHORTCUT.label;
-  const url = art.url(SIEGE_SHORTCUT.picture);
-  if (url === '') button.textContent = PICTURE_TEXT;
+  const url = appletIconUrl(art, SIEGE_SHORTCUT.applet);
+  if (url === '') button.textContent = SIEGE_TEXT;
   else button.style.backgroundImage = `url(${JSON.stringify(url)})`;
   button.addEventListener('click', () => { run(); button.blur(); });
   return button;

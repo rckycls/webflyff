@@ -224,7 +224,7 @@ test.describe('landscape (spec §3.10)', () => {
   // so a touch screen that short stands them in two columns of seven (2026-11-12), each line at least 22 px again
   // 2026-11-14: fifteen with Motion (WndTaskBar.cpp:2622); 2026-11-15: eighteen with Housing (:2603-2605), Couple and Siege Ranking, in columns of 9 and 9; nineteen with Auto Play (custom, owner 2026-11-15), 10 and 9; 2026-11-17: twenty with Backpack (:2599-2602), 10 and 10;
   // twenty-one with the Pet Filter (custom, owner 2026-11-16), 11 and 10
-  test('on a touch phone all twenty-one Start menu entries fit, in two columns, with contiguous touch targets', async ({ page }) => {
+  test('on a touch phone all twenty-one Start menu entries fit, in two columns, with contiguous touch targets', async ({ page }, info) => {
     test.skip(!isTouch(), 'a mouse gets the menu at its size');
     await playGateway(page);
     await enterFlaris(page);
@@ -251,6 +251,11 @@ test.describe('landscape (spec §3.10)', () => {
       }
       expect(right[0]!.top).toBeCloseTo(left[0]!.top, 1);
       expect(right[0]!.left).toBeGreaterThan(left[0]!.left + 100);
+      // 2026-11-17 (owner): the client's own windows show FlyffWeb's own icons (src/icons/), framed as Client/Icon's
+      for (const [name, file] of [['Siege Ranking', 'icon_siegeranking'], ['Auto Play', 'icon_autoplay'], ['Pet Filter', 'icon_petfilter']]) {
+        await expect(menu.getByRole('menuitem', { name }).locator('.hud-menu-icon')).toHaveCSS('background-image', new RegExp(`/icons/${file}\\.png`));
+      }
+      await menu.screenshot({ path: info.outputPath(`start-menu-${size.width}x${size.height}.png`) });
       await page.getByRole('button', { name: 'Start' }).click();
       await expect(menu).toBeHidden();
     }
