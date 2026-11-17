@@ -34,6 +34,8 @@ const lastChat = (gateway: Awaited<ReturnType<typeof playGateway>>): string => {
 
 async function openMessenger(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Start', exact: true }).click();
+  // 2026-11-18: in V15's Communication folder (WndTaskBar.cpp:2632-2677)
+  await page.getByRole('menuitem', { name: 'Communication', exact: true }).click();
   await page.getByRole('menuitem', { name: 'Messenger', exact: true }).click();
   await expect(page.locator('.hud-messenger')).toBeVisible();
 }

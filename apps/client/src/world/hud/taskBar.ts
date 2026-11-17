@@ -137,7 +137,7 @@ const HOTKEYS: ReadonlyMap<string, number> = new Map(
  * are `TID_APP_STATUS`, `TID_APP_CHARACTER`, `TID_APP_SKILL` and `TID_APP_LOGOUT`). A line whose window Piece 4 lacks is
  * greyed.
  */
-const MENU: ReadonlyArray<{ id: number; text: string }> = [
+const MENU: ReadonlyArray<{ id: number; text: string } | { folder: string; items: ReadonlyArray<{ id: number; text: string }> }> = [
   { id: AppId.STATUS1, text: 'Status' },
   { id: AppId.CHARACTER3, text: 'Character' },
   { id: AppId.SKILL3, text: 'Skills' },
@@ -156,22 +156,17 @@ const MENU: ReadonlyArray<{ id: number; text: string }> = [
   // CWndTaskMenu's APP_MAP line, 'World Map' (TID_APP_MAP), just before Navigator (WndTaskBar.cpp:2734-2738)
   { id: AppId.MAP, text: 'World Map' },
   { id: AppId.NAVIGATOR, text: 'Navigator' },
-  // 2026-11-09: CWndTaskMenu's APP_COMMUNICATION_CHAT line, 'Chatting' (TID_APP_COMMUNICATION_CHAT), the first of its
-  // Communication submenu (WndTaskBar.cpp:2658-2660): it opens the chat again once it was closed
-  { id: 1014, text: 'Chatting' },
-  // 2026-11-10: CWndTaskMenu's APP_MESSENGER_ line, 'Messenger' (TID_APP_MESSENGER), the second of its Communication
-  // submenu (WndTaskBar.cpp:2661)
-  { id: APP_MESSENGER_EX, text: 'Messenger' },
-  // 2026-11-15 (social): CWndTaskMenu's APP_COUPLE_MAIN line, 'Couple' (TID_GAME_COUPLE), the third of its Communication
-  // submenu (WndTaskBar.cpp:2663-2665)
-  { id: APP_COUPLE_MAIN, text: 'Couple' },
-  // CWndTaskMenu's APP_PARTY line, 'Party' (TID_APP_PARTY), in its Communication submenu (WndTaskBar.cpp:2670): the
-  // browser's menu is flat, so it stands before Option
-  { id: APP_PARTY, text: 'Party' },
-  // 2026-11-10: CWndTaskMenu's APP_GUILD line, 'Guild' (TID_APP_COMPANY), right after Party in its Communication submenu
-  // (WndTaskBar.cpp:2670-2671)
-  { id: APP_GUILD, text: 'Guild' },
-  // 2026-11-15 (owner, Guild Siege C2): the Siege Ranking line, with no counterpart in Neuz, after Guild
+  // 2026-11-18 (owner, "Start menu is overflowing"): V15's folders, each line a sub-menu beside it (WndTaskBar.cpp:2632-2638,
+  // the folder's icon icon_Folder.dds): the Communication folder (TID_APP_COMMUNICATION) holds 'Chatting'
+  // (TID_APP_COMMUNICATION_CHAT; it opens the chat again once it was closed), 'Messenger' (TID_APP_MESSENGER) and 'Couple'
+  // (TID_GAME_COUPLE) (:2659-2667); the Community folder (TID_APP_COMMUNITY) 'Party' (TID_APP_PARTY) and 'Guild'
+  // (TID_APP_COMPANY) (:2669-2677). V15's Item Shop, Information and Helper folders hold no window the browser has.
+  {
+    folder: 'Communication',
+    items: [{ id: 1014, text: 'Chatting' }, { id: APP_MESSENGER_EX, text: 'Messenger' }, { id: APP_COUPLE_MAIN, text: 'Couple' }],
+  },
+  { folder: 'Community', items: [{ id: APP_PARTY, text: 'Party' }, { id: APP_GUILD, text: 'Guild' }] },
+  // 2026-11-15 (owner, Guild Siege C2): the Siege Ranking line, with no counterpart in Neuz, after the folders
   { id: APP_SIEGE_RANKING, text: 'Siege Ranking' },
   // custom (owner 2026-11-15): Auto Play (the farm bot, auto pots and auto skills), with no counterpart in Neuz, after Siege Ranking
   { id: APP_AUTO_PLAY, text: 'Auto Play' },
@@ -543,7 +538,8 @@ export class TaskBar {
       lit.hidden = true;
     }
 
-    const lines = MENU.map(({ id, text }) => ({ id, text, enabled: id === AppId.LOGOUT || WINDOWS.has(id) }));
+    const line = ({ id, text }: { id: number; text: string }) => ({ id, text, enabled: id === AppId.LOGOUT || WINDOWS.has(id) });
+    const lines = MENU.map((entry) => ('folder' in entry ? { folder: entry.folder, items: entry.items.map(line) } : line(entry)));
     this.menu = new TaskMenu(art, lines, (id) => this.execute(id), () => this.start, doc);
     this.menu.onChange = (open) => {
       this.start.setAttribute('aria-expanded', String(open));

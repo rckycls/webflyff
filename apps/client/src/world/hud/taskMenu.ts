@@ -3,13 +3,24 @@
 //
 //   CWndTaskMenu::OnInitialUpdate  WndTaskBar.cpp:2584-2653             the lines, the picture WndTaskMenu.tga (:2646), line i
 //                                                                       at (10, 50 + 22 i) to (cx - 20, 70 + 22 i) (:2648-2652),
-//                                                                       the window the picture's size (:2653)
+//                                                                       the window the picture's size (:2653); the folders'
+//                                                                       lines (:2632-2638, icon_Folder.dds) and their
+//                                                                       sub-menus (CWndMenu, :2659-2700)
+//   CWndTaskMenu::Process          WndTaskBar.cpp:2522-2572             the pointer on a folder's line shows its sub-menu at
+//                                                                       the line's right, top to top; left of the line where
+//                                                                       it would pass the screen's right, up where its bottom
+//                                                                       would; on another line the sub-menus hide
 //   CWndTaskMenu::AppendMenu       WndTaskBar.cpp:2740-2759             an applet's line: its icon (:2579-2582), its hotkey
 //   CWndButton::PaintFrame         _Interface/WndControl.cpp:438-546    a line (WBS_MENUITEM | WBS_HIGHLIGHT): under the
 //                                                                       pointer filled ARGB(155, 200, 200, 200) and edged
 //                                                                       ARGB(200, 240, 240, 240); the icon 20 x 20 at (0, 0),
 //                                                                       the title in black at (24, 4), the hotkey in black 32 px
-//                                                                       from the right
+//                                                                       from the right; a folder's line its triangle
+//                                                                       0xffa0a0ff 5 px from the right, filled while its
+//                                                                       sub-menu shows (:447-500)
+//   CWndMenu                       WndControl.cpp:3337-3630             a sub-menu: the frame ARGB(255,226,198,181), white
+//                                                                       inside, items 20 px on a 22 px pitch from (2, 2), as
+//                                                                       wide as the widest text + 60
 //   CWndMgr::OpenMenu              _Interface/WndManager.cpp:2302-2322  shows the menu, or hides it if it shows
 //   CWndTaskMenu::OnKillFocus      WndTaskBar.cpp:2795-2799             a press elsewhere hides it
 //   CWndTaskMenu::OnChildNotify    WndTaskBar.cpp:2806-2811             a line pressed runs its applet
@@ -19,7 +30,8 @@
 // of the same picture, 164 px), which a touch screen draws up to twice its size (`TaskBar`). And each line takes its whole
 // 22 px row, the 2 px between two lines included, so no press between two lines is lost; its highlight stays Neuz's 20 px.
 // A third (2026-11-12): the fourteen lines of a landscape phone, too many for one column at a finger's size above its task
-// bar, stand in two columns of seven (`setColumns`).
+// bar, stand in two columns of seven (`setColumns`). A fourth (2026-11-18): a finger has no pointer to rest on a folder, so
+// a tap on its line shows its sub-menu.
 
 import { APPLETS } from './applets';
 import { themeUrl } from './art';
@@ -33,12 +45,16 @@ const LINE_LEFT = 10;
 const LINE_TOP = 50;
 const LINE_PITCH = 22;
 const LINE_WIDTH = MENU_WIDTH - 20 - LINE_LEFT;
+/** 2026-11-18: the most lines one column of the picture holds, its rows from 50 to its bottom edge (V15's nineteen). */
+export const MENU_MAX_LINES = 19;
 /**
  * The picture's bottom edge as drawn: the panel's rounded bottom (from its row 472) with a few rows of the panel above it,
  * 26 px from row 470, where the picture's 4 px stripes are in step with the end of an even number of lines' rows; after an
  * odd number, 28 px from row 468, in step with that.
  */
 const BOTTOM_FROM = 470;
+/** The folders' icon (`MakePath( DIR_ICON, "icon_Folder.dds" )`, :2632-2638). */
+const FOLDER_ICON = 'icon_Folder.dds';
 
 /**
  * 2026-11-12: the menu's height at scale 1 with `lines` lines in `columns` columns: the top edge, a column's rows and the
@@ -61,6 +77,20 @@ export interface TaskMenuLine {
   enabled: boolean;
 }
 
+/** 2026-11-18: a folder's line (V15's Communication, Community ...) and the lines of its sub-menu. */
+export interface TaskMenuFolder {
+  folder: string;
+  items: readonly TaskMenuLine[];
+}
+
+export type TaskMenuEntry = TaskMenuLine | TaskMenuFolder;
+
+/** A folder's line, its sub-menu and the sub-menu's lines. */
+interface Folder {
+  line: HTMLButtonElement;
+  menu: HTMLElement;
+}
+
 /**
  * The Start menu. Its `element` goes beside the task bar, over the windows; `place` puts it above the bar's left end
  * (`OnChildNotify`, :1392-1394). It opens and closes with `toggle` (the Start button), `open` (Escape with nothing else to
@@ -76,12 +106,13 @@ export class TaskMenu {
   private readonly doc: Document;
   private readonly picture: string;
   private readonly lines: HTMLButtonElement[] = [];
+  private readonly folders: Folder[] = [];
   private slices: HTMLElement[] = [];
   private columns = 0;
 
   constructor(
-    art: UiArt,
-    lines: readonly TaskMenuLine[],
+    private readonly art: UiArt,
+    entries: readonly TaskMenuEntry[],
     private readonly choose: (id: number) => void,
     private readonly outside: () => Element | null,
     doc: Document = document,
@@ -92,39 +123,103 @@ export class TaskMenu {
     element.setAttribute('role', 'menu');
     element.hidden = true;
     this.picture = themeUrl(art, 'WndTaskMenu.tga');
-    lines.forEach(({ id, text, enabled }) => {
-      const line = doc.createElement('button');
-      line.type = 'button';
-      line.className = 'hud-menu-line';
-      line.setAttribute('role', 'menuitem');
-      line.setAttribute('aria-label', text);
-      line.disabled = !enabled;
-      line.tabIndex = -1;
-      // a press gives the line no focus, so Space and Enter do not press it again
-      line.addEventListener('mousedown', (event) => event.preventDefault());
-      line.style.width = `${LINE_WIDTH}px`;
-      line.style.height = `${LINE_PITCH}px`;
-      const applet = APPLETS.get(id);
-      const icon = doc.createElement('span');
-      icon.className = 'hud-menu-icon';
-      if (applet?.icon) icon.style.backgroundImage = themeUrl(art, applet.icon);
-      const title = doc.createElement('span');
-      title.className = 'hud-menu-text';
-      title.textContent = text;
-      const hotkey = doc.createElement('span');
-      hotkey.className = 'hud-menu-hotkey';
-      hotkey.setAttribute('aria-hidden', 'true');
-      hotkey.textContent = applet?.hotkey ?? '';
-      line.append(icon, title, hotkey);
-      line.addEventListener('click', () => {
-        this.close();
-        this.choose(id);
-      });
-      element.append(line);
-      this.lines.push(line);
-    });
+    const submenus: HTMLElement[] = [];
+    for (const entry of entries) {
+      if ('folder' in entry) {
+        const line = this.line(entry.folder, FOLDER_ICON, '', true);
+        line.classList.add('hud-menu-folder');
+        line.setAttribute('aria-haspopup', 'menu');
+        line.setAttribute('aria-expanded', 'false');
+        const menu = doc.createElement('div');
+        menu.className = 'hud-taskbar-submenu';
+        menu.setAttribute('role', 'menu');
+        menu.setAttribute('aria-label', entry.folder);
+        menu.hidden = true;
+        for (const item of entry.items) menu.append(this.appletLine(item));
+        const folder = { line, menu };
+        // the pointer resting on the line shows its sub-menu (Process); a finger's tap does (2026-11-18)
+        line.addEventListener('pointerenter', (event) => { if (event.pointerType === 'mouse') this.showFolder(folder); });
+        line.addEventListener('click', () => this.showFolder(folder));
+        this.folders.push(folder);
+        submenus.push(menu);
+        element.append(line);
+        this.lines.push(line);
+      } else {
+        const line = this.appletLine(entry);
+        // on another line the sub-menus hide (Process)
+        line.addEventListener('pointerenter', (event) => { if (event.pointerType === 'mouse') this.hideFolders(); });
+        element.append(line);
+        this.lines.push(line);
+      }
+    }
+    element.append(...submenus);
     this.element = element;
     this.setColumns(1);
+  }
+
+  /** A line with its icon (a theme file name or none), its title and its hotkey. */
+  private line(text: string, icon: string | null, hotkey: string, enabled: boolean): HTMLButtonElement {
+    const line = this.doc.createElement('button');
+    line.type = 'button';
+    line.className = 'hud-menu-line';
+    line.setAttribute('role', 'menuitem');
+    line.setAttribute('aria-label', text);
+    line.disabled = !enabled;
+    line.tabIndex = -1;
+    // a press gives the line no focus, so Space and Enter do not press it again
+    line.addEventListener('mousedown', (event) => event.preventDefault());
+    const iconElement = this.doc.createElement('span');
+    iconElement.className = 'hud-menu-icon';
+    if (icon) iconElement.style.backgroundImage = themeUrl(this.art, icon);
+    const title = this.doc.createElement('span');
+    title.className = 'hud-menu-text';
+    title.textContent = text;
+    const key = this.doc.createElement('span');
+    key.className = 'hud-menu-hotkey';
+    key.setAttribute('aria-hidden', 'true');
+    key.textContent = hotkey;
+    line.append(iconElement, title, key);
+    return line;
+  }
+
+  /** An applet's line (`AppendMenu`): its icon and hotkey; a press closes the menu and runs it. */
+  private appletLine({ id, text, enabled }: TaskMenuLine): HTMLButtonElement {
+    const applet = APPLETS.get(id);
+    const line = this.line(text, applet?.icon ?? null, applet?.hotkey ?? '', enabled);
+    line.addEventListener('click', () => {
+      this.close();
+      this.choose(id);
+    });
+    return line;
+  }
+
+  /**
+   * 2026-11-18: `folder`'s sub-menu shown at its line's right, top to top, the others hidden (`Process`, :2522-2572): left
+   * of the line where it would pass the layer's right, up where its bottom would pass the menu's (the bar's top).
+   */
+  private showFolder(folder: Folder): void {
+    for (const other of this.folders) if (other !== folder) this.setFolder(other, false);
+    this.setFolder(folder, true);
+    const { line, menu } = folder;
+    const left = parseFloat(line.style.left) || 0, top = parseFloat(line.style.top) || 0;
+    menu.style.left = `${left + LINE_WIDTH}px`;
+    menu.style.top = `${top}px`;
+    // the screen's right (`m_pWndRoot->GetLayoutRect()`); the menu's parent is the task bar's box, not the screen
+    const screenRight = this.doc.documentElement.clientWidth || this.doc.defaultView?.innerWidth || Infinity;
+    const scale = this.element.getBoundingClientRect().height / (this.element.offsetHeight || 1) || 1;
+    const box = menu.getBoundingClientRect(), own = this.element.getBoundingClientRect();
+    if (box.right > screenRight) menu.style.left = `${left - menu.offsetWidth}px`;
+    if (box.bottom > own.bottom) menu.style.top = `${top - (box.bottom - own.bottom) / scale}px`;
+  }
+
+  private setFolder(folder: Folder, shown: boolean): void {
+    folder.menu.hidden = !shown;
+    folder.line.setAttribute('aria-expanded', String(shown));
+    folder.line.classList.toggle('is-open', shown);
+  }
+
+  private hideFolders(): void {
+    for (const folder of this.folders) this.setFolder(folder, false);
   }
 
   /**
@@ -134,6 +229,7 @@ export class TaskMenu {
   setColumns(columns: 1 | 2): void {
     if (columns === this.columns) return;
     this.columns = columns;
+    this.hideFolders();
     const perColumn = Math.ceil(this.lines.length / columns);
     const rows = perColumn * LINE_PITCH;
     const from = bottomFrom(rows);
@@ -166,6 +262,8 @@ export class TaskMenu {
     this.lines.forEach((line, i) => {
       line.style.left = `${Math.floor(i / perColumn) * MENU_WIDTH + LINE_LEFT}px`;
       line.style.top = `${LINE_TOP + (i % perColumn) * LINE_PITCH}px`;
+      line.style.width = `${LINE_WIDTH}px`;
+      line.style.height = `${LINE_PITCH}px`;
     });
   }
 
@@ -181,9 +279,10 @@ export class TaskMenu {
     this.onChange?.(true);
   }
 
-  /** Hides the menu (`SetVisible( FALSE )`). */
+  /** Hides the menu (`SetVisible( FALSE )`), its sub-menus with it (`SetVisibleAllMenu`). */
   close(): void {
     if (!this.isOpen) return;
+    this.hideFolders();
     this.element.hidden = true;
     this.doc.removeEventListener('pointerdown', this.onPressOutside, true);
     this.onChange?.(false);

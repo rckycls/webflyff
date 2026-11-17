@@ -1239,6 +1239,54 @@ fieldset:disabled .btn {
   line-height: 12px;
 }
 
+/* 2026-11-18 (owner, "Start menu is overflowing"): V15's folders (Communication, Community) and their sub-menus
+   (CWndTaskMenu::OnInitialUpdate, WndTaskBar.cpp:2632-2700; CWndButton::PaintFrame, WndControl.cpp:447-500): a folder's line
+   has a triangle 0xffa0a0ff from 10 to 5 px off its right, 4 px in from its top and bottom, and is filled
+   ARGB(155, 200, 200, 200) while its sub-menu shows. The sub-menu is a CWndMenu (WndControl.cpp:3337-3630): the frame
+   ARGB(255, 226, 198, 181), white inside, its lines 20 px on a 22 px pitch from (2, 2), as wide as the widest title + 60. */
+.hud-menu-folder::after {
+  content: '';
+  position: absolute;
+  top: 4px;
+  right: 5px;
+  border-style: solid;
+  border-width: 6px 0 6px 5px;
+  border-color: transparent transparent transparent #a0a0ff;
+}
+
+.hud-menu-folder.is-open::before {
+  background: rgba(200, 200, 200, 0.608);
+}
+
+.hud-taskbar-submenu {
+  position: absolute;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  box-sizing: border-box;
+  width: max-content;
+  border: 3px solid #e2c6b5;
+  padding: 2px 2px 3px;
+  background: #ffffff;
+}
+
+.hud-taskbar-submenu[hidden] {
+  display: none;
+}
+
+.hud-taskbar-submenu .hud-menu-line {
+  position: relative;
+  height: 22px;
+}
+
+/* the title at 24 px, room after it for the hotkey (32 px from the right) */
+.hud-taskbar-submenu .hud-menu-text {
+  position: static;
+  display: block;
+  padding: 4px 48px 0 24px;
+}
+
 /* The box that asks before logging out (LogOutBox, CWndLogOut over CWndMessageBox): the text in black; OK and Cancel are
    picture buttons (ButtOk.tga, ButtCancel.tga, 72 px a state) */
 .hud-logout-text,
