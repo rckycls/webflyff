@@ -54,11 +54,16 @@ flier's place left the butterfly tails on the floor and the prophet feathers acr
 
 | Wings | back | up | scale |
 |---|---|---|---|
-| Feather 01/02 | 0.04 | 0.04 | 0.9 |
-| Angel 01/02 | 0.05 | 0.06 | 0.85 |
-| Prophet 01/02 | 0.1 | 0.3 | 0.7 |
-| Butterfly 01-04 | 0.06 | 0.2 | 0.75 |
-| Dragonfly | 0.05 | 0.12 | 0.85 |
+| Feather 01/02 | 0.1 | -0.18 | 0.9 |
+| Angel 01/02 | 0.11 | -0.18 | 0.85 |
+| Prophet 01/02 | 0.14 | -0.14 | 0.55 |
+| Butterfly 01-04 | 0.08 | -0.16 | 0.58 |
+| Dragonfly | 0.06 | -0.16 | 0.8 |
+
+2026-11-18 (branch `wing-capes-lower`): the owner found them "way too high, almost at the back of the neck". The table
+above is the lowered fit: the wing roots sit 0.14 to 0.18 below the Neck (the Neck is 0.205 above Spine2), on the shoulder
+blades; the bigger wings sit further off the back and smaller, so their lower parts stay off the legs. Before, every
+family was raised 0.04 to 0.3 above the Neck. No convert or gear sync is needed for this change.
 
 The same for men and women. The tuning page was temporary and is not in the repo (the session notes folder has a copy).
 

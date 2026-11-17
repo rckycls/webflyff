@@ -39,8 +39,10 @@ export function playWing(wing: WingMotions, want: 'stand' | 'walk', dt: number):
 
 /**
  * How a wing cape sits, on top of a flier's place (`attachBack`), in the wings' own space: `back` moves them away from
- * the back (+) and `up` up the back (+), in the model's units (a body is about 1.8 high), and `scale` sizes them. Tuned by
- * eye on both bodies standing and running, so that the arms, the hair and the armour do not go through them.
+ * the back (+) and `up` up the back (+), in the model's units (a body is about 1.8 high; the Neck is 0.205 above Spine2),
+ * and `scale` sizes them. Tuned by eye on both bodies standing and running, so that the arms, the hair and the armour do
+ * not go through them. 2026-11-18 (owner: "way too high, almost at the back of the neck"): every family sits 0.14 to 0.18
+ * below the Neck, on the shoulder blades, a little further off the back and smaller where the lower wings reach the legs.
  */
 export interface WingFit {
   back: number;
@@ -52,10 +54,10 @@ const NO_FIT: WingFit = { back: 0, up: 0, scale: 1 };
 
 /** One fit for both bodies. */
 const both = (fit: WingFit): Record<Gender, WingFit> => ({ male: fit, female: fit });
-const FEATHER = both({ back: 0.04, up: 0.04, scale: 0.9 });
-const ANGEL = both({ back: 0.05, up: 0.06, scale: 0.85 });
-const PROPHET = both({ back: 0.1, up: 0.3, scale: 0.7 });
-const BUTTERFLY = both({ back: 0.06, up: 0.2, scale: 0.75 });
+const FEATHER = both({ back: 0.1, up: -0.18, scale: 0.9 });
+const ANGEL = both({ back: 0.11, up: -0.18, scale: 0.85 });
+const PROPHET = both({ back: 0.14, up: -0.14, scale: 0.55 });
+const BUTTERFLY = both({ back: 0.08, up: -0.16, scale: 0.58 });
 
 /** The fit of each wing model (its key's name), by body; a model or body not listed sits as a flier's wings. */
 const FITS: Readonly<Record<string, Partial<Record<Gender, WingFit>>>> = {
@@ -64,7 +66,7 @@ const FITS: Readonly<Record<string, Partial<Record<Gender, WingFit>>>> = {
   item_ridridwinprophet01: PROPHET, item_ridridwinprophet02: PROPHET,
   item_ridridbutterpeacock01: BUTTERFLY, item_ridridbutterbujun01: BUTTERFLY, item_ridridbuttermolpo01: BUTTERFLY,
   item_ridridbuttertrans01: BUTTERFLY,
-  item_ridriddragonfly01: both({ back: 0.05, up: 0.12, scale: 0.85 }),
+  item_ridriddragonfly01: both({ back: 0.06, up: -0.16, scale: 0.8 }),
 };
 
 /** The fit of the wings of `modelKey` (`models/item_ridridwinangel01.glb`) on a `gender` body. */
