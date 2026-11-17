@@ -62,6 +62,8 @@ export interface SiteVipDeps {
 
 /** An account's VIP level is read again after this long (ms): a tick a minute does not ask the database each time. */
 const VIP_LEVEL_KEEP_MS = 5 * 60_000;
+/** A tick's body is `{ms}` (2026-11-18). */
+const TICK_BODY_LIMIT = 256;
 
 const JSON_HEADERS = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' };
 
@@ -335,7 +337,10 @@ export function siteVipRoutes(deps: SiteVipDeps): (req: IncomingMessage, res: Se
         send(res, 404, { error: 'off' });
         return true;
       }
-      send(res, 200, await usageAnswer(session.user, deps.autoPlay.tick(session.user)));
+      // 2026-11-18: `{ms}`, the running time the game measured since its last tick
+      const { body: raw, whole } = await readBody(req, TICK_BODY_LIMIT);
+      const ms = whole ? parseObject(raw)?.ms : undefined;
+      send(res, 200, await usageAnswer(session.user, deps.autoPlay.tick(session.user, typeof ms === 'number' ? ms : undefined)));
       return true;
     }
     return false;

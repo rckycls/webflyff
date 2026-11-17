@@ -24,7 +24,7 @@ describe('Auto Play settings (custom, owner 2026-11-15)', () => {
   it('defaults match the spec', () => {
     const s = defaultSettings();
     expect(s.version).toBe(1);
-    expect(s.farm).toEqual({ radius: 15, loot: true, stopAfterMin: 0, avoidGiants: true, only: [] });
+    expect(s.farm).toEqual({ radius: 15, loot: true, stopAfterMin: 0, avoidGiants: true, only: [], center: 'lastKill' });
     expect(s.pots.enabled).toBe(false);
     expect(s.pots.rows.hp).toEqual({ itemIndex: 0, below: 50, on: true });
     expect(s.pots.rows.mp).toEqual({ itemIndex: 0, below: 30, on: true });
@@ -151,5 +151,17 @@ describe('Auto Play settings: Support mode (owner 2026-11-17)', () => {
     expect([s.support.partnerPlayerId, s.support.partnerName, s.mode]).toEqual([501, 'Rocky', 'support']);
     raw.mode = 'other';
     expect(clampSettings(raw).mode).toBe('farm');
+  });
+});
+
+describe('Auto Play settings: the hunting centre (owner 2026-11-18)', () => {
+  it('Last kill by default; Start point kept; anything else Last kill', () => {
+    const raw = defaultSettings() as unknown as { farm: Record<string, unknown> };
+    raw.farm.center = 'start';
+    expect(clampSettings(raw).farm.center).toBe('start');
+    raw.farm.center = 'moon';
+    expect(clampSettings(raw).farm.center).toBe('lastKill');
+    delete raw.farm.center;
+    expect(clampSettings(raw).farm.center).toBe('lastKill');
   });
 });

@@ -24,6 +24,11 @@ export interface AutoPlaySettings {
     avoidGiants: boolean;
     /** 2026-11-17 (owner): the monster kinds (`added.index`) to fight, max 16; empty: every kind. */
     only: number[];
+    /**
+     * 2026-11-18 (owner): the hunting area's centre: where the last monster died ('lastKill', the default: the area moves
+     * with the bot, which never walks back) or where Start was pressed ('start', the first behaviour: it walks back there).
+     */
+    center: 'lastKill' | 'start';
   };
   pots: { enabled: boolean; rows: Record<GaugeRow, PotionRow> };
   skills: {
@@ -62,7 +67,7 @@ const STORE_KEY = 'flyffweb.autoPlay.';
 export function defaultSettings(): AutoPlaySettings {
   return {
     version: 1,
-    farm: { radius: RADIUS.initial, loot: true, stopAfterMin: 0, avoidGiants: true, only: [] },
+    farm: { radius: RADIUS.initial, loot: true, stopAfterMin: 0, avoidGiants: true, only: [], center: 'lastKill' },
     pots: {
       enabled: false,
       rows: {
@@ -97,6 +102,7 @@ export function clampSettings(raw: unknown): AutoPlaySettings {
   s.farm.radius = stepped(farm.radius, RADIUS.min, RADIUS.max, RADIUS.step, RADIUS.initial);
   if (typeof farm.loot === 'boolean') s.farm.loot = farm.loot;
   if (typeof farm.avoidGiants === 'boolean') s.farm.avoidGiants = farm.avoidGiants;
+  if (farm.center === 'start') s.farm.center = 'start';
   if (Array.isArray(farm.only)) s.farm.only = [...new Set(farm.only.filter(isIndex))].slice(0, MAX_ONLY);
   s.farm.stopAfterMin = isNumber(farm.stopAfterMin) && farm.stopAfterMin > 0
     ? stepped(farm.stopAfterMin, STOP_AFTER.min, STOP_AFTER.max, STOP_AFTER.step, 0) : 0;

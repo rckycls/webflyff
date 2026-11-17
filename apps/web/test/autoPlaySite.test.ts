@@ -146,3 +146,11 @@ it('without the usage book (an old set-up): 404 off, so the game plays on withou
   const headers = await session(port);
   expect((await call(port, 'GET', '/api/autoplay', { Cookie: headers.Cookie! })).body).toEqual({ error: 'off' });
 });
+
+it('a tick carries the running time: two 30 s parts make one minute (owner bug 2026-11-18)', async () => {
+  const { port, later } = await start();
+  const headers = await session(port);
+  expect((await post(port, '/api/autoplay/tick', { ms: 30_000 }, headers)).body.usedMin).toBe(0);
+  later(30_000);
+  expect((await post(port, '/api/autoplay/tick', { ms: 30_000 }, headers)).body.usedMin).toBe(1);
+});

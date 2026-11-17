@@ -105,8 +105,8 @@ export interface AutoPlayHooks {
   // 2026-11-17 (owner): the weekly hours, counted by the web service (usageLimit.ts)
   /** Minutes left this week; null: no limit, or not known (nothing held back). */
   usageLeftMin(): number | null;
-  /** One running minute, for the server's count. */
-  usageTick(): void;
+  /** Running time for the server's count: `ms` ran since the last tick (a minute, or the part-minute at a stop). */
+  usageTick(ms: number): void;
 }
 
 export type FarmState = 'off' | 'running' | 'stopped';
@@ -268,12 +268,24 @@ export class AutoPlay {
     return left !== null && left <= 0;
   }
 
-  /** 2026-11-17 (owner): the weekly hours: a tick a minute; none left stops it. False when it stopped. */
+  /**
+   * 2026-11-18 (owner bug "still counting even when stopped"): the run ends: the stats' time stops, and the part-minute
+   * since the last weekly tick is sent (nothing for under a second), so the server counts only time that really ran.
+   */
+  private endRun(): void {
+    const h = this.hooks, now = h.now();
+    this.stats.end(now);
+    const ran = now - this.lastUsageTick;
+    this.lastUsageTick = now;
+    if (ran >= 1000) h.usageTick(Math.min(ran, USAGE_TICK_MS));
+  }
+
+  /** 2026-11-17 (owner): the weekly hours: a tick a minute (the time it ran); none left stops it. False when it stopped. */
   private stepUsage(): boolean {
     const h = this.hooks, now = h.now();
     if (now - this.lastUsageTick >= USAGE_TICK_MS) {
+      h.usageTick(Math.min(now - this.lastUsageTick, USAGE_TICK_MS));
       this.lastUsageTick = now;
-      h.usageTick();
     }
     if (!this.outOfHours()) return true;
     this.stop('weekly limit reached');
@@ -321,6 +333,7 @@ export class AutoPlay {
   stop(reason: string): void {
     if (this.farm !== 'running') return;
     const h = this.hooks;
+    this.endRun();
     this.farm = 'stopped';
     this.lastStop = reason;
     this.target = null;
@@ -335,6 +348,7 @@ export class AutoPlay {
   /** The world goes (log out, travel): the screen may sleep again; nothing is said. */
   dispose(): void {
     if (this.farm !== 'running') return;
+    this.endRun();
     this.farm = 'off';
     this.target = null;
     this.looting = null;
@@ -397,6 +411,8 @@ export class AutoPlay {
           this.stuckInRow = 0;
           this.lastKill = { pos: [...e.pos] as Vec3, at: now };
           this.letGoWand();
+          // 2026-11-18 (owner): "extend radius from where the player kills the last monster"
+          if (this.settings.farm.center === 'lastKill') this.anchor = [...e.pos] as Vec3;
         }
         break;
       case 'itemAppeared':
@@ -507,7 +523,9 @@ export class AutoPlay {
     if (this.hittingUs.size === 0 && this.buffStep(now)) return;
 
     const fromHome = groundDistance(at, this.anchor);
-    if (this.hittingUs.size > 0) this.returning = false;
+    // 2026-11-18 (owner): with the centre at the last kill the bot never walks back ("not go back to original position")
+    const walksBack = this.settings.farm.center === 'start';
+    if (this.hittingUs.size > 0 || !walksBack) this.returning = false;
     else if (this.returning || fromHome > this.settings.farm.radius + LEASH_EXTRA) {
       if (fromHome <= HOME_RANGE) this.returning = false;
       else { this.walkHome(now); return; }
@@ -524,7 +542,7 @@ export class AutoPlay {
     });
     if (next === null) {
       this.nextScan = now + SCAN_MS;
-      if (fromHome > HOME_RANGE) this.walkHome(now);
+      if (walksBack && fromHome > HOME_RANGE) this.walkHome(now);
       else this.phase = 'seeking';
       return;
     }

@@ -62,3 +62,13 @@ describe('AutoPlayStats', () => {
     expect(stats.lines(1000 + 3_900_000)).toEqual(['Time 1h5m', 'Kills 2', 'EXP +1,750', 'Items 1', 'Potions 1']);
   });
 });
+
+describe('AutoPlayStats: the time stops with the bot (owner bug 2026-11-18)', () => {
+  it('end(now) freezes Time; later lines show the run, not the time since it began', () => {
+    const stats = new AutoPlayStats(1000);
+    stats.end(1000 + 125_000);
+    expect(stats.lines(1000 + 3_600_000)[0]).toBe('Time 2m5s');
+    stats.end(1000 + 999_000);
+    expect(stats.lines(1000 + 3_600_000)[0]).toBe('Time 2m5s');
+  });
+});

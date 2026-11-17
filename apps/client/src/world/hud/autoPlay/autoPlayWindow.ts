@@ -443,6 +443,12 @@ export class AutoPlayWindow {
     }
     // 2026-11-17 (owner): "avoid giants, select specific monster on the said radius and only attack that mob"
     const giants = this.check('auto-avoid-giants', 'Avoid giants and bosses', farm.avoidGiants, (on) => { farm.avoidGiants = on; });
+    // 2026-11-18 (owner): the hunting area's centre: the last kill (the area moves; never walks back) or the start point
+    const center = doc.createElement('div');
+    center.className = 'auto-farm-line auto-center';
+    center.append(this.caption('Centre'),
+      this.check('auto-center-lastKill', 'Last kill', farm.center === 'lastKill', () => { farm.center = 'lastKill'; }, 'radio'),
+      this.check('auto-center-start', 'Start point', farm.center === 'start', () => { farm.center = 'start'; }, 'radio'));
     const kinds = doc.createElement('div');
     kinds.className = 'auto-farm-line';
     const chosen = doc.createElement('span');
@@ -452,7 +458,7 @@ export class AutoPlayWindow {
       'only-choose');
     choose.setAttribute('aria-label', 'Choose');
     kinds.append(this.caption('Monsters'), chosen, choose);
-    const parts: HTMLElement[] = [radius, loot, giants, kinds];
+    const parts: HTMLElement[] = [radius, center, loot, giants, kinds];
     if (this.choosingKinds) parts.push(this.kindList());
     page.append(...parts, after, buttons, state, stats, ...this.weekLine());
     return page;
@@ -521,18 +527,19 @@ export class AutoPlayWindow {
    * ButtCheck.bmp's six 14 px frames, `radioFrame`'s 1 unticked and 3 ticked, its title beside it. The whole line is
    * the press area (a finger's 28 px on a phone, style.css).
    */
-  private check(name: string, label: string, checked: boolean, change: (on: boolean) => void): HTMLButtonElement {
+  private check(name: string, label: string, checked: boolean, change: (on: boolean) => void, kind: 'checkbox' | 'radio' = 'checkbox'): HTMLButtonElement {
     const doc = this.doc;
     const button = doc.createElement('button');
     button.type = 'button';
     button.className = 'auto-check';
-    button.setAttribute('role', 'checkbox');
+    button.setAttribute('role', kind);
     button.setAttribute('aria-checked', String(checked));
     button.dataset.name = name;
     button.addEventListener('mousedown', (event) => event.preventDefault());
     const box = doc.createElement('span');
     box.className = 'auto-v15-check';
-    box.style.backgroundImage = themeUrl(this.art, 'ButtCheck.bmp');
+    // a radio button on ButtRadio.bmp, its six 14 px frames as ButtCheck's (radio.ts)
+    box.style.backgroundImage = themeUrl(this.art, kind === 'radio' ? 'ButtRadio.bmp' : 'ButtCheck.bmp');
     box.dataset.frame = String(radioFrame({ checked, disabled: false, highlighted: false, pressed: false }));
     button.append(box);
     if (label !== '') {

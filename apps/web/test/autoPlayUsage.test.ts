@@ -90,3 +90,32 @@ describe('AutoPlayUsage', () => {
     expect(memory.tick('x').usedMs).toBe(60_000);
   });
 });
+
+describe('AutoPlayUsage: the running time the game measured (owner bug 2026-11-18)', () => {
+  function book(start: number) {
+    let now = start;
+    const usage = new AutoPlayUsage(undefined, () => now);
+    return { usage, later: (ms: number) => { now += ms; } };
+  }
+
+  it('a tick counts the time it carries (at most a minute): a 20 s part-minute at a stop counts 20 s', () => {
+    const { usage, later } = book(new Date(2026, 10, 18, 10).getTime());
+    expect(usage.tick('tester1', 60_000).usedMs).toBe(60_000);
+    later(20_000);
+    expect(usage.tick('tester1', 20_000).usedMs).toBe(80_000);
+    later(60_000);
+    expect(usage.tick('tester1', 90_000).usedMs).toBe(140_000);
+  });
+
+  it('never more than the real time since the last tick: two tabs, or a claim too big, count once', () => {
+    const { usage, later } = book(new Date(2026, 10, 18, 10).getTime());
+    usage.tick('tester1', 60_000);
+    later(30_000);
+    expect(usage.tick('tester1', 60_000).usedMs).toBe(90_000);
+  });
+
+  it('a bad time (not a number, below 0) counts as an old game\'s minute', () => {
+    const { usage } = book(new Date(2026, 10, 18, 10).getTime());
+    expect(usage.tick('tester1', Number.NaN).usedMs).toBe(60_000);
+  });
+});

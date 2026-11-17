@@ -60,6 +60,7 @@ function world() {
     follows: [] as number[],
     left: null as number | null,
     usageTicks: 0,
+    usageMs: [] as number[],
   };
   const hooks: AutoPlayHooks = {
     now: () => state.now,
@@ -108,9 +109,16 @@ function world() {
     follow: (objectId) => { state.follows.push(objectId); },
     resurrectSkill: () => 9,
     usageLeftMin: () => state.left,
-    usageTick: () => { state.usageTicks++; },
+    usageTick: (ms) => { state.usageTicks++; state.usageMs.push(ms); },
   };
   return { state, hooks };
+}
+
+/** The hunting area centred where Start was pressed (the bot walks back to it), as before 2026-11-18. */
+function startPoint(): AutoPlaySettings {
+  const s = defaultSettings();
+  s.farm.center = 'start';
+  return s;
 }
 
 function potsOn(): AutoPlaySettings {
@@ -257,7 +265,7 @@ describe('AutoPlay controller: the farm bot (spec 6.2-6.5, 6.8)', () => {
 
   it('no target and 4 m from the anchor → walks back to it', () => {
     const { state, hooks } = world();
-    const play = new AutoPlay(hooks, defaultSettings());
+    const play = new AutoPlay(hooks, startPoint());
     play.start();
     state.selfPos[0] = 4;
     run(play, state, 40);
@@ -267,7 +275,7 @@ describe('AutoPlay controller: the farm bot (spec 6.2-6.5, 6.8)', () => {
 
   it('a cleared walk (the tab hidden: stopOwnMover) is sent again within a second (Review Focus 5)', () => {
     const { state, hooks } = world();
-    const play = new AutoPlay(hooks, defaultSettings());
+    const play = new AutoPlay(hooks, startPoint());
     play.start();
     state.selfPos[0] = 6;
     run(play, state, 30);
@@ -307,7 +315,7 @@ describe('AutoPlay controller: the farm bot (spec 6.2-6.5, 6.8)', () => {
   it('3 stuck in a row → walks back to the anchor', () => {
     const { state, hooks } = world();
     state.mobs = [mob(21, 3, 0), mob(22, 6, 0), mob(23, 9, 0), mob(24, 12, 0)];
-    const play = new AutoPlay(hooks, defaultSettings());
+    const play = new AutoPlay(hooks, startPoint());
     play.start();
     state.selfPos[0] = 5;
     run(play, state, 61 * 16);
@@ -551,7 +559,7 @@ describe('AutoPlay controller: the review fixes (2026-11-15)', () => {
   it('a stuck target is let go (the V15 auto attack no longer chases it), and so before walking home', () => {
     const { state, hooks } = world();
     state.mobs = [mob(21, 3, 0)];
-    const play = new AutoPlay(hooks, defaultSettings());
+    const play = new AutoPlay(hooks, startPoint());
     play.start();
     run(play, state, 61 * 10);
     expect(state.disengages).toBe(1);
@@ -835,5 +843,88 @@ describe('AutoPlay controller: the weekly hours (owner 2026-11-17)', () => {
     expect(play.start()).toBe(true);
     run(play, state, 120);
     expect(play.farm).toBe('running');
+  });
+});
+
+describe('AutoPlay controller: owner bugs of 2026-11-18', () => {
+  it('each weekly tick carries the minute it ran; a stop sends the part-minute; nothing for under a second', () => {
+    const { state, hooks } = world();
+    state.left = 600;
+    const play = new AutoPlay(hooks, defaultSettings());
+    play.start();
+    run(play, state, 60 * 90);
+    play.stop('you took control');
+    expect(state.usageMs.map((ms) => Math.round(ms / 1000))).toEqual([60, 30]);
+    run(play, state, 60 * 120);
+    expect(state.usageTicks).toBe(2);
+    play.start();
+    play.stop('you took control');
+    expect(state.usageTicks).toBe(2);
+  });
+
+  it('the world going (log out, travel) sends the part-minute too', () => {
+    const { state, hooks } = world();
+    state.left = 600;
+    const play = new AutoPlay(hooks, defaultSettings());
+    play.start();
+    run(play, state, 60 * 20);
+    play.dispose();
+    expect(state.usageMs.map((ms) => Math.round(ms / 1000))).toEqual([20]);
+  });
+
+  it('the Time line stops with the bot ("still counting even when stopped")', () => {
+    const { state, hooks } = world();
+    const play = new AutoPlay(hooks, defaultSettings());
+    play.start();
+    run(play, state, 60 * 5);
+    play.stop('you took control');
+    run(play, state, 60 * 60);
+    expect(play.stats.lines(state.now)[0]).toBe('Time 5s');
+  });
+
+  it('Last kill (the default): the radius moves to where the last monster died', () => {
+    const { state, hooks } = world();
+    const first = mob(21, 3, 0), far = mob(22, 26, 0);
+    state.mobs = [first, far];
+    const play = new AutoPlay(hooks, defaultSettings());
+    expect(play.settings.farm.center).toBe('lastKill');
+    play.start();
+    run(play, state, 1);
+    expect(state.engaged).toEqual([21]);
+    first.hp = 0;
+    state.mobs = [far];
+    play.onEvent({ kind: 'kill', targetId: 21, pos: [14, 0, 0] });
+    run(play, state, 2);
+    expect(state.engaged).toEqual([21, 22]);
+    expect(play.anchorAt).toEqual([14, 0, 0]);
+  });
+
+  it('Start point: the radius stays where Start was pressed', () => {
+    const { state, hooks } = world();
+    const first = mob(21, 3, 0), far = mob(22, 26, 0);
+    state.mobs = [first, far];
+    const play = new AutoPlay(hooks, startPoint());
+    play.start();
+    run(play, state, 1);
+    first.hp = 0;
+    state.mobs = [far];
+    play.onEvent({ kind: 'kill', targetId: 21, pos: [14, 0, 0] });
+    run(play, state, 2);
+    expect(state.engaged).toEqual([21]);
+  });
+
+  it('Last kill never walks back: idle far from where it began, it stays; Start point walks back', () => {
+    const lastKill = world();
+    const play = new AutoPlay(lastKill.hooks, defaultSettings());
+    play.start();
+    lastKill.state.selfPos[0] = 40;
+    run(play, lastKill.state, 120);
+    expect(lastKill.state.walks).toEqual([]);
+    const start = world();
+    const back = new AutoPlay(start.hooks, startPoint());
+    back.start();
+    start.state.selfPos[0] = 40;
+    run(back, start.state, 120);
+    expect(start.state.walks.length).toBeGreaterThan(0);
   });
 });
