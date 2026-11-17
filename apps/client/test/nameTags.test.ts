@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import type { WebMover } from '@flyffweb/formats';
 import { Scene } from 'three';
 import type { SpriteMaterial } from 'three';
-import { NameTagLayer, badgePlace, trophyPlace } from '../src/world/render/NameTagLayer';
-import { badgeKey, legendMark, nameTagOf, tagOpacity } from '../src/world/render/nameTags';
+import { readFileSync } from 'node:fs';
+import { BANNER_SIZE, NameTagLayer, VIP_SHIFT_PX, bannerPlace, trophyPlace, vipPlace } from '../src/world/render/NameTagLayer';
+import { badgeKey, legendMark, nameTagOf, tagOpacity, vipKey, vipTier } from '../src/world/render/nameTags';
 import { addedNpc, addedPlayer, gameDataOf, moverFrom, webMoverOf } from './helpers/movers';
 
 // The colours of PKSetting.inc are not all the code has: a different set shows the tag takes them from `nameColors`
@@ -245,20 +246,27 @@ describe('the siege trophy (RenderName, MoverRender.cpp:1645-1688)', () => {
     expect(nameTagOf(player, undefined, colors, titles, () => false, [], () => undefined, () => 'best')?.trophy).toBe('best');
     expect(nameTagOf(player, undefined, colors, titles)?.trophy).toBeUndefined();
   });
-  it('the weekly badge is one slot (25 + 2) left of the trophy, or in its place without one', () => {
-    expect(badgePlace(80, true, true)).toEqual({ left: -40 - 26 - 26 - 27, top: -29, size: 25 });
-    expect(badgePlace(80, true, false)).toEqual(trophyPlace(80, true));
-    expect(badgePlace(80, false, true).left).toBe(-40 - 30 - 27);
-    expect(badgePlace(80, false, false)).toEqual(trophyPlace(80, false));
+  it('the weekly badge is a crest over the name (2026-11-17, owner: "on top of the name"), centred like it, 1 px over the rest', () => {
+    // the name is written 3 px left of centred; the crest's bottom 1 px above the top of everything else
+    expect(bannerPlace('weeklyChampion', -22)).toEqual({ left: -36 - 3, top: -22 - 1 - 36, width: 72, height: 36 });
+    expect(bannerPlace('weeklyMvp', -34)).toEqual({ left: -36 - 3, top: -34 - 1 - 36, width: 72, height: 36 });
   });
 
-  it('nameTagOf carries the weekly badge the screen gives, and the keys are the gold pictures', () => {
+  it('the crests are drawn at twice the size the tag draws them', () => {
+    // a PNG's width and height are the big-endian words at bytes 16 and 20
+    for (const [badge, file] of [['weeklyChampion', 'weeklychampion'], ['weeklyMvp', 'weeklymvp']] as const) {
+      const png = readFileSync(new URL(`../src/icons/${file}.png`, import.meta.url));
+      expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([BANNER_SIZE[badge].width * 2, BANNER_SIZE[badge].height * 2]);
+    }
+  });
+
+  it('nameTagOf carries the weekly badge the screen gives, and the keys are the own banners', () => {
     const player = moverFrom(addedPlayer(1, { name: 'Rocky' }), data);
     const tag = nameTagOf(player, undefined, colors, titles, () => false, [], () => undefined, () => null, () => null, () => 'weeklyMvp');
     expect(tag?.badge).toBe('weeklyMvp');
     expect(nameTagOf(player, undefined, colors, titles)?.badge).toBeUndefined();
-    expect(badgeKey('weeklyChampion')).toBe('ui/texguildcombatweeklywinner.png');
-    expect(badgeKey('weeklyMvp')).toBe('ui/texguildcombatweeklybest.png');
+    expect(badgeKey('weeklyChampion')).toBe('ui/weeklychampion.png');
+    expect(badgeKey('weeklyMvp')).toBe('ui/weeklymvp.png');
   });
 });
 
@@ -283,5 +291,47 @@ describe('the weekly badge in the layer', () => {
     badge = 'weeklyChampion';
     layer.recolor(movers, tagOf);
     expect(keys).toContain(badgeKey('weeklyChampion'));
+  });
+});
+
+describe('the VIP star (2026-11-17, owner: "like the mvp medal but smaller", "make it a star")', () => {
+  it('VIP1 to VIP4 are the letters A, B, C and E; no other letter has a star', () => {
+    expect(['A', 'B', 'C', 'E'].map((letter) => vipTier(auth(letter)))).toEqual([1, 2, 3, 4]);
+    for (const letter of ['D', 'F', 'J', 'L', 'P', '1', '2', '3']) expect(vipTier(auth(letter))).toBeNull();
+    expect(tagOfPlayer({ authorization: auth('C') })?.vip).toBe(3);
+    expect(tagOfPlayer({ authorization: auth('E') })?.vip).toBe(4);
+    expect(tagOfPlayer({})?.vip).toBeUndefined();
+    expect([1, 2, 3, 4].map((tier) => vipKey(tier as 1 | 2 | 3 | 4))).toEqual(['ui/vipstar1.png', 'ui/vipstar2.png', 'ui/vipstar3.png', 'ui/vipstar4.png']);
+  });
+
+  it('is 18 x 18 just left of the name, its middle on the capitals\' middle (owner: "center it to name")', () => {
+    // the name is written from 3 px left of centred and 20 px above the head point, outlined 2 px; the star's middle (8.5)
+    // on the capitals' middle: 5 px below the text's top by default (Verdana 12 px), or what the font gives
+    expect(vipPlace(80)).toEqual({ left: -40 - 3 - 2 - 18, top: Math.round(-20 + 5 - 8.5), size: 18 });
+    expect(vipPlace(80, 4.95).top).toBe(Math.round(-20 + 4.95 - 8.5));
+    expect(vipPlace(80, 6).top).toBe(-23 + 1);
+    expect(vipPlace(81).left).toBe(-40 - 3 - 2 - 18);
+    // the logo, the trophy and the badge make room: one star and 2 px further left
+    expect(VIP_SHIFT_PX).toBe(20);
+  });
+
+  it('the layer requests the star of the tier and draws the tag again when the tier changes', () => {
+    const context = {
+      font: '', textBaseline: '', lineJoin: '', lineWidth: 0, strokeStyle: '', fillStyle: '',
+      measureText: (text: string) => ({ width: text.length * 7 }),
+      scale: () => {}, strokeText: () => {}, fillText: () => {},
+    };
+    const doc = { defaultView: { devicePixelRatio: 1 }, createElement: () => ({ width: 0, height: 0, getContext: () => context }) } as unknown as Document;
+    const keys: string[] = [];
+    const layer = new NameTagLayer(new Scene(), doc, (key) => { keys.push(key); return ''; });
+    const rocky = moverFrom(addedPlayer(1, { name: 'Rocky', playerId: 501, authorization: auth('B') }), data);
+    const movers = new Map([[1, rocky]]);
+    const tagOf = (mover: typeof rocky) => nameTagOf(mover, undefined, colors, titles);
+    layer.sync({ added: [rocky], removed: [], combat: [], own: [], dropped: 0 }, movers, tagOf);
+    expect(keys).toContain('ui/vipstar2.png');
+    keys.length = 0;
+    rocky.added.player!.authorization = auth('E');
+    layer.recolor(movers, tagOf);
+    expect(keys).toContain('ui/vipstar4.png');
   });
 });

@@ -63,14 +63,14 @@ export type TaskBarWindow = 'character' | 'status' | 'skills' | 'inventory' | 'c
   | 'quests' | 'party' | 'messenger' | 'vendor' | 'guild' | 'lordSkill' | 'motion' | 'housing' | 'guildFurniture' | 'couple'
   | 'siegeRanking' | 'autoPlay' | 'bagEx' | 'petFilter';
 /**
- * 2026-11-15 (owner, Guild Siege C2): the Siege Ranking window's own id: it is no applet of Neuz's (none in `APPLETS`, so no
- * icon or hotkey); its Start menu line and the icons open it.
+ * 2026-11-15 (owner, Guild Siege C2): the Siege Ranking window's own id: it is no applet of Neuz's (no hotkey); its Start menu
+ * line and the icons open it. 2026-11-17 (owner): it, Auto Play and the Pet Filter have FlyffWeb's own icons (`APPLETS`).
  */
-const APP_SIEGE_RANKING = 9001;
-/** custom (owner 2026-11-15): the Auto Play window's own id, no applet of Neuz's either (no icon, no hotkey). */
-const APP_AUTO_PLAY = 9002;
+const APP_SIEGE_RANKING = AppId.SIEGE_RANKING;
+/** custom (owner 2026-11-15): the Auto Play window's own id, no applet of Neuz's either (no hotkey). */
+const APP_AUTO_PLAY = AppId.AUTO_PLAY;
 /** custom (owner 2026-11-16): the Pet Filter window's own id (the post's 2022 is APP_MAP_EX here), U (applets.ts). */
-const APP_PETFILTER = 9003;
+const APP_PETFILTER = AppId.PETFILTER;
 /** 2026-11-10: `APP_GUILD` (Resource/ResData.h:228), the guild window (guild research §3), G (FuncApplet.cpp:245). */
 const APP_GUILD = 323;
 /** `APP_QUEST_EX_LIST` (Resource/ResData.h), the quest window (Piece 7 M1), Q (FuncApplet.cpp:229). */

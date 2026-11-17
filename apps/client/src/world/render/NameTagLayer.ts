@@ -7,8 +7,9 @@ import type { Vec3 } from '@flyffweb/formats';
 import { d3dColor } from '@flyffweb/scene';
 import type { PerspectiveCamera, Scene } from 'three';
 import { CanvasTexture, LinearFilter, SRGBColorSpace, Sprite, SpriteMaterial, Vector3 } from 'three';
+import type { WeeklyBadge } from '../guildCombat/siegeWebApi';
 import type { Mover, WorldChanges } from '../WorldState';
-import { badgeKey, tagOpacity, trophyKey } from './nameTags';
+import { badgeKey, tagOpacity, trophyKey, vipKey } from './nameTags';
 import type { NameTag } from './nameTags';
 
 /**
@@ -53,10 +54,45 @@ export function trophyPlace(wide: number, hasLogo: boolean): { left: number; top
     : { left: -Math.floor(wide / 2) - 30, top: -30, size: TROPHY_PX };
 }
 
-/** 2026-11-15 (C1): the weekly badge: one slot (25 + 2 px) left of the trophy, or in the trophy's place when there is none. */
-export function badgePlace(wide: number, hasLogo: boolean, hasTrophy: boolean): { left: number; top: number; size: number } {
-  const at = trophyPlace(wide, hasLogo);
-  return hasTrophy ? { ...at, left: at.left - (TROPHY_PX + LOGO_GAP_PX) } : at;
+/**
+ * 2026-11-15 (C1): the weekly badge. 2026-11-17 (owner, "should be a longer icon on top of the name", "something like this
+ * and not too much text", a few rounds, then 2026-11-18 "go back to these [the winged CHAMP / MVP crests] but instead of
+ * text in the middle just use aibatt eyes", "make the eye fiery"): a winged crest, a gold crown (champion) or star (MVP)
+ * over a plaque holding Aibatt's fiery eye (`badgeKey`, drawn by scripts/drawWindowIcons.ts at twice these sizes), centred over
+ * the name like the text, 1 px above `below`: the top of everything else on the tag (the name, the guild line, the marks,
+ * the logo, the trophy, the VIP star).
+ */
+export const BANNER_SIZE: Readonly<Record<WeeklyBadge, { width: number; height: number }>> = {
+  weeklyChampion: { width: 72, height: 36 },
+  weeklyMvp: { width: 72, height: 36 },
+};
+export function bannerPlace(badge: WeeklyBadge, below: number): { left: number; top: number; width: number; height: number } {
+  const { width, height } = BANNER_SIZE[badge];
+  return { left: -Math.floor(width / 2) - LEFT_PX, top: below - 1 - height, width, height };
+}
+
+/**
+ * 2026-11-17 (owner, "like the mvp medal but smaller ... on the side of the character", "make it a star", "center it to
+ * name", "doesn't look like its vertically centered"): the VIP star, 18 x 18, just left of the name's outline, the star's
+ * middle on the middle of the name's capitals: `capMiddle` px below the text's top, which the font gives (`capMiddleOf`).
+ * The guild logo and the trophy, left of the lines, then move one star (`VIP_SHIFT_PX`) further left.
+ */
+export const VIP_PX = 18;
+export const VIP_SHIFT_PX = VIP_PX + LOGO_GAP_PX;
+/** The middle of the star in its picture (its points from row 1.2 to 15.7: scripts/drawWindowIcons.ts). */
+const STAR_MIDDLE_PX = 8.5;
+/** The capitals' middle below the text's top when the font cannot say: Verdana 12 px's "H" is from 0.5 to 9.5 px (Chromium). */
+const CAP_MIDDLE_PX = 5;
+export function vipPlace(textWidth: number, capMiddle = CAP_MIDDLE_PX): { left: number; top: number; size: number } {
+  const textLeft = -Math.floor(textWidth / 2) - LEFT_PX;
+  return { left: textLeft - OUTLINE_PX - VIP_PX, top: Math.round(-ABOVE_PX + capMiddle - STAR_MIDDLE_PX), size: VIP_PX };
+}
+
+/** How far below the text's top the middle of a capital "H" is in the context's font (text baseline 'top'), or the fallback. */
+function capMiddleOf(context: CanvasRenderingContext2D): number {
+  context.textBaseline = 'top';
+  const { actualBoundingBoxAscent: ascent, actualBoundingBoxDescent: descent } = context.measureText('H');
+  return Number.isFinite(ascent) && Number.isFinite(descent) ? (descent - ascent) / 2 : CAP_MIDDLE_PX;
 }
 
 /** The canvas is drawn at the screen's pixel ratio, as the renderer is (at most 2: `createRenderer`). */
@@ -76,6 +112,8 @@ interface Tag {
   trophy: string;
   /** 2026-11-15 (C1): the weekly badge it was drawn with ('' for none). */
   badge: string;
+  /** 2026-11-17: the VIP tier it was drawn with (0 for none). */
+  vip: number;
   /** The canvas in CSS pixels. */
   width: number;
   height: number;
@@ -127,7 +165,7 @@ export class NameTagLayer {
         if (tag !== null && tag.text !== '') this.add(objectId, tag);
         return;
       }
-      if (tag !== null && tag.text === old.text && tag.color === old.color && (tag.mark ?? null) === old.mark && guildKey(tag) === old.guild && (tag.trophy ?? '') === old.trophy && (tag.badge ?? '') === old.badge) return;
+      if (tag !== null && tag.text === old.text && tag.color === old.color && (tag.mark ?? null) === old.mark && guildKey(tag) === old.guild && (tag.trophy ?? '') === old.trophy && (tag.badge ?? '') === old.badge && (tag.vip ?? 0) === old.vip) return;
       this.remove(objectId);
       if (tag !== null && tag.text !== '') this.add(objectId, tag);
     });
@@ -189,17 +227,25 @@ export class NameTagLayer {
     const textLeft = -Math.floor(textWidth / 2) - LEFT_PX, textTop = -ABOVE_PX;
     const guildLeft = -Math.floor(guildWidth / 2) - LEFT_PX, guildTop = -GUILD_ABOVE_PX;
     const logo = guild?.logo ?? null;
-    const logoLeft = -Math.floor(wide / 2) - (LOGO_PX + LOGO_GAP_PX), logoTop = -(LOGO_PX + LOGO_BOTTOM_PX);
+    // 2026-11-17: a VIP star beside the name moves the marks left of the lines one star further left
+    const vip = tag.vip ?? null;
+    const vipAt = vipPlace(textWidth, vip === null ? CAP_MIDDLE_PX : capMiddleOf(context));
+    const shift = vip === null ? 0 : VIP_SHIFT_PX;
+    const logoLeft = -Math.floor(wide / 2) - (LOGO_PX + LOGO_GAP_PX) - shift, logoTop = -(LOGO_PX + LOGO_BOTTOM_PX);
     const trophy = tag.trophy ?? null;
-    const trophyAt = trophyPlace(wide, logo !== null);
-    const badge = tag.badge ?? null;
-    const badgeAt = badgePlace(wide, logo !== null, trophy !== null);
+    const trophyPlaced = trophyPlace(wide, logo !== null);
+    const trophyAt = { ...trophyPlaced, left: trophyPlaced.left - shift };
     const markLeft = Math.ceil(wide / 2), markTop = -(MARK_PX + MARK_BOTTOM_PX);
-    const left = Math.min(textLeft - OUTLINE_PX, guild === undefined ? Infinity : guildLeft - OUTLINE_PX, logo === null ? Infinity : logoLeft, trophy === null ? Infinity : trophyAt.left, badge === null ? Infinity : badgeAt.left);
-    const top = Math.min(textTop - OUTLINE_PX, mark === null ? Infinity : markTop, guild === undefined ? Infinity : guildTop - OUTLINE_PX,
-      logo === null ? Infinity : logoTop, trophy === null ? Infinity : trophyAt.top, badge === null ? Infinity : badgeAt.top);
+    // 2026-11-17 (owner): the weekly banner over all the rest
+    const below = Math.min(textTop - OUTLINE_PX, mark === null ? Infinity : markTop, guild === undefined ? Infinity : guildTop - OUTLINE_PX,
+      logo === null ? Infinity : logoTop, trophy === null ? Infinity : trophyAt.top, vip === null ? Infinity : vipAt.top);
+    const badge = tag.badge ?? null;
+    const bannerAt = badge === null ? null : bannerPlace(badge, below);
+    const left = Math.min(textLeft - OUTLINE_PX, guild === undefined ? Infinity : guildLeft - OUTLINE_PX, logo === null ? Infinity : logoLeft,
+      trophy === null ? Infinity : trophyAt.left, vip === null ? Infinity : vipAt.left, bannerAt?.left ?? Infinity);
+    const top = Math.min(below, bannerAt?.top ?? Infinity);
     const right = Math.max(textLeft + textWidth + OUTLINE_PX, mark === null ? -Infinity : markLeft + MARK_PX,
-      guild === undefined ? -Infinity : guildLeft + guildWidth + OUTLINE_PX);
+      guild === undefined ? -Infinity : guildLeft + guildWidth + OUTLINE_PX, bannerAt === null ? -Infinity : bannerAt.left + bannerAt.width);
     const bottom = textTop + LINE_PX + OUTLINE_PX;
     const width = right - left;
     const height = bottom - top;
@@ -237,16 +283,16 @@ export class NameTagLayer {
     sprite.visible = false;
     this.scene.add(sprite);
     this.tags.set(objectId, {
-      sprite, texture, maxDistance: tag.maxDistance, text: tag.text, color: tag.color, mark, guild: guildKey(tag), trophy: trophy ?? '', badge: badge ?? '', width, height,
+      sprite, texture, maxDistance: tag.maxDistance, text: tag.text, color: tag.color, mark, guild: guildKey(tag), trophy: trophy ?? '', badge: badge ?? '', vip: vip ?? 0, width, height,
     });
     // the mark and the logo are drawn into the tag once their pictures are in
-    const picture = (key: string | null, x: number, y: number, size: number): void => {
+    const picture = (key: string | null, x: number, y: number, size: number, height = size): void => {
       const src = key === null ? '' : this.url(key);
       if (src === '') return;
       const image = new Image();
       image.onload = () => {
         if (this.tags.get(objectId)?.texture !== texture) return; // the tag was drawn again or dropped meanwhile
-        context.drawImage(image, x - left, y - top, size, size);
+        context.drawImage(image, x - left, y - top, size, height);
         texture.needsUpdate = true;
       };
       image.src = src;
@@ -255,7 +301,8 @@ export class NameTagLayer {
     picture(logo, logoLeft, logoTop, LOGO_PX);
     // the picture may be missing (the converter has not run): `url` gives '' and nothing is drawn
     picture(trophy === null ? null : trophyKey(trophy), trophyAt.left, trophyAt.top, trophyAt.size);
-    picture(badge === null ? null : badgeKey(badge), badgeAt.left, badgeAt.top, TROPHY_PX);
+    if (badge !== null && bannerAt !== null) picture(badgeKey(badge), bannerAt.left, bannerAt.top, bannerAt.width, bannerAt.height);
+    picture(vip === null ? null : vipKey(vip), vipAt.left, vipAt.top, vipAt.size); // 2026-11-17
   }
 
   private remove(objectId: number): void {

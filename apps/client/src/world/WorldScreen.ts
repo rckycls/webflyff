@@ -75,6 +75,7 @@ import { FlightControl } from './flightControl';
 import type { FlightInput } from './flightControl';
 import { FlightButtons } from './hud/flightButtons';
 import { MOBILE_SHORTCUTS, MobileTools, SIEGE_SHORTCUT, siegeButton } from './hud/mobileTools';
+import { OWN_ICONS } from './hud/ownIcons';
 import { TurboGauge } from './render/TurboGauge';
 import { isGameMaster } from './authorization';
 import { Mode, bodyAlpha, isFrozen, isInvisible, modeLine, showsBubble } from './gmModes';
@@ -1485,8 +1486,8 @@ export class WorldScreen {
       this.views?.refresh(mover);
       if (mover.isSelf && this.inventoryWindow?.frame.isOpen) void this.makePortrait(true);
     };
-    // 2026-11-09: the Master and Hero marks' pictures from the store
-    this.tags = new NameTagLayer(stage.scene, this.element.ownerDocument, (key) => this.services?.store.url(key) ?? '');
+    // 2026-11-09: the Master and Hero marks' pictures from the store; 2026-11-17: the VIP stars, FlyffWeb's own (ownIcons.ts)
+    this.tags = new NameTagLayer(stage.scene, this.element.ownerDocument, (key) => OWN_ICONS.get(key) ?? this.services?.store.url(key) ?? '');
     this.indicators = new WorldIndicatorLayer(stage.scene, this.element.ownerDocument);
     const now = performance.now();
     for (const [id, until] of this.pendingAttackEmotes) if (until > now) this.indicators.attack(id, until - 5000);
@@ -1548,6 +1549,9 @@ export class WorldScreen {
   private startHud(services: SceneServices, folder: string): void {
     const art: UiArt = {
       url: (key) => {
+        // 2026-11-17 (owner): FlyffWeb's own icons, which come with the build and not the converter (ownIcons.ts)
+        const own = OWN_ICONS.get(key);
+        if (own !== undefined) return own;
         const url = services.store.url(key);
         if (url === null) this.reportOnce(`ui: ${key}`, new Error(`${key} is not in the asset index`));
         return url ?? '';
@@ -2055,7 +2059,7 @@ export class WorldScreen {
     const overlayShown = this.page!.overlay.shown;
     const mobileTools = new MobileTools(this.hudArt!, [
       // 2026-11-15 (owner, C2): the Siege Ranking icon, in Status's place (the rows stay two of four, style.css)
-      { label: SIEGE_SHORTCUT.label, applet: null, picture: SIEGE_SHORTCUT.picture, rank: SIEGE_SHORTCUT.rank, run: () => this.openWindow(SIEGE_SHORTCUT.window) },
+      { label: SIEGE_SHORTCUT.label, applet: SIEGE_SHORTCUT.applet, rank: SIEGE_SHORTCUT.rank, run: () => this.openWindow(SIEGE_SHORTCUT.window) },
       ...MOBILE_SHORTCUTS.map(({ label, applet, window, rank }) => ({ label, applet, rank, run: () => this.openWindow(window) })),
       ...(overlayShown
         ? [{ label: 'Stats', applet: null, run: () => { statsButton!.ariaExpanded = String(this.page!.overlay.togglePanel()); } }]

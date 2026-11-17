@@ -4831,8 +4831,6 @@ fieldset:disabled .btn {
 .hud-siege-button:active { filter: brightness(1.4); }
 @media (max-width: 1000px) and (pointer: coarse) {
   .hud-siege-button { display: none; }
-  /* the Siege Ranking icon's text, while its picture is missing, stays inside the icon's box */
-  .hud-mobile-tool-icon:not([style]) { display: flex; align-items: center; justify-content: center; font: bold 9px Verdana, Arial, sans-serif; color: #fff; text-shadow: 0 0 2px #000; }
 }
 
 /* custom (owner 2026-11-15): the Auto Play window (hud/autoPlay/autoPlayWindow.ts): Farm, Potions and Skills under Neuz's

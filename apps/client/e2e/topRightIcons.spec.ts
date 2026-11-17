@@ -11,12 +11,15 @@ import { MADRIGAL, SELF_ID, SELF_PLAYER, SQUARE, aibatt, enterFlaris, playGatewa
 test.setTimeout(120_000);
 
 /** The shortcuts in the Start menu's order, and the Client/Icon picture of each. */
-// 2026-11-15 (owner, Guild Siege C2): the Siege Ranking icon (no Start-menu picture: the winner trophy, `null` here) first, in Status's place (nine icons in rows of five and four failed at 730 px: the target bar over an icon)
+// 2026-11-15 (owner, Guild Siege C2): the Siege Ranking icon first, in Status's place (nine icons in rows of five and four
+// failed at 730 px: the target bar over an icon); 2026-11-17 (owner): FlyffWeb's own Start-menu icon (src/icons/), no longer the trophy
 const SHORTCUTS = [
-  ['Siege Ranking', null], ['Character', 'icon_character'], ['Bag', 'icon_inventory'], ['Skill', 'icon_skill'],
+  ['Siege Ranking', 'icon_siegeranking'], ['Character', 'icon_character'], ['Bag', 'icon_inventory'], ['Skill', 'icon_skill'],
   ['Quest', 'icon_quest'], ['World Map', 'icon_applet'], ['Messenger', 'icon_messenger'], ['Party', 'icon_troupe'],
 ] as const;
 const LABELS = [...SHORTCUTS.map(([label]) => label), 'Stats'];
+/** 2026-11-17 (owner): the Start-menu lines of the client's own windows and their own icons (src/icons/). */
+const OWN_ICON_LINES =[['Siege Ranking', 'icon_siegeranking'], ['Auto Play', 'icon_autoplay'], ['Pet Filter', 'icon_petfilter']] as const;
 
 type Box = { x: number; y: number; width: number; height: number };
 /** Whether two boxes share any area. */
@@ -67,6 +70,9 @@ test('top-right shortcuts: the important Start-menu icons in two rows of four on
     }));
     const siege = page.locator('.hud-siege-button');
     await expect(siege).toBeVisible();
+    // 2026-11-17 (owner): the same own icon as the phone's, without its frame
+    await expect(siege).toHaveCSS('background-image', /\/bare\/icon_siegeranking\./);
+    await expect(siege).toHaveText('');
     const [siegeBox, navigatorBox] = [(await siege.boundingBox())!, (await page.locator('.hud-navigator').boundingBox())!];
     expect(siegeBox.x + siegeBox.width).toBeLessThanOrEqual(navigatorBox.x);
     await siege.click();
@@ -74,6 +80,11 @@ test('top-right shortcuts: the important Start-menu icons in two rows of four on
     await expect(page.locator('.hud-sr .hud-sr-row')).toContainText('Zed');
     await page.locator('.hud-sr .hud-window-close').click();
     await page.getByRole('button', { name: 'Start' }).click();
+    // 2026-11-17 (owner): the client's own windows' Start-menu lines show FlyffWeb's own icons, framed as Client/Icon's
+    for (const [name, file] of OWN_ICON_LINES) {
+      await expect(page.getByRole('menuitem', { name }).locator('.hud-menu-icon')).toHaveCSS('background-image', new RegExp(`/icons/${file}\\.png`));
+    }
+    await page.getByRole('menu').screenshot({ path: info.outputPath('start-menu-desktop.png') });
     await page.getByRole('menuitem', { name: 'Siege Ranking' }).click();
     await expect(page.locator('.hud-sr')).toBeVisible();
     await page.screenshot({ path: info.outputPath('top-desktop.png'), clip: top });
@@ -84,14 +95,6 @@ test('top-right shortcuts: the important Start-menu icons in two rows of four on
   const icons: Box[] = [];
   for (const [name, file] of SHORTCUTS) {
     const button = tools.getByRole('button', { name, exact: true });
-    if (file === null) {
-      // the trophy's picture is converted only by the owner: before that its short text sits in an icon-sized button
-      const box = (await button.locator('.hud-mobile-tool-icon').boundingBox())!;
-      icons.push(box);
-      expect((await button.boundingBox())!.height).toBeCloseTo(box.height + 4, 0);
-      previous = box;
-      continue;
-    }
     await expect(button).toHaveText('');
     const look = await button.evaluate(async (element) => {
       const style = getComputedStyle(element);

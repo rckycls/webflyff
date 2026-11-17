@@ -2,10 +2,15 @@
 // hotkeys run (`CWndMgr::ObjectExecutor`). The table copies `CWndMgr::AddAllApplet` (`_Interface/FuncApplet.cpp:175-302`),
 // which registers each applet's icon, its description (the tooltip, `m_pAppletDesc`) and its hotkey.
 
+import { OWN_ICON_FILES } from './ownIcons';
+
 /** A text an applet names: a TID of the texts catalog (`GETTEXT`), or one the C++ writes as it is (`_T( "..." )`). */
 export type AppletText = { tid: string } | { text: string };
 
-/** An applet of `CWndMgr::AddAllApplet`: its `APP_*` name, its icon in Client/Icon (none for two), description, hotkey. */
+/**
+ * An applet of `CWndMgr::AddAllApplet`: its `APP_*` name, its icon in Client/Icon (none for two; FlyffWeb's own for the
+ * client's own windows, ownIcons.ts), description, hotkey.
+ */
 export interface Applet {
   name: string;
   icon: string | null;
@@ -31,6 +36,12 @@ export const AppId = {
   LOGOUT: 1100,
   /** The Option window (Piece 6 M2: its sound sliders only). */
   OPTIONEX: 412,
+  /** 2026-11-15 (owner, Guild Siege C2): the Siege Ranking window, the client's own id (no applet of Neuz's). */
+  SIEGE_RANKING: 9001,
+  /** custom (owner 2026-11-15): the Auto Play window, the client's own id. */
+  AUTO_PLAY: 9002,
+  /** custom (owner 2026-11-16): the Pet Filter window, the client's own id (the post's 2022 is APP_MAP_EX here). */
+  PETFILTER: 9003,
 } as const;
 
 /**
@@ -89,10 +100,15 @@ export const APPLETS: ReadonlyMap<number, Applet> = new Map([
   [597, applet('APP_BUFF_STATUS', null, 'TID_TIP_DIALOG')],
   [813, applet('APP_COUPLE_MAIN', 'Icon_Couple.dds', 'TID_GAME_COUPLE', 'F')],
   [875, applet('APP_2ND_PASSWORD_NUMBERPAD', 'Icon_Applet.dds', 'TID_2ND_PASSWORD_WINDOW_OPEN')],
+  // 2026-11-17 (owner, "create icons that matches the other windows"): the client's own windows, with FlyffWeb's own icons
+  // in Client/Icon's look (ownIcons.ts) and no hotkey: Siege Ranking (Guild Siege C2) and Auto Play (custom)
+  [AppId.SIEGE_RANKING, applet('APP_SIEGE_RANKING', OWN_ICON_FILES.siegeRanking, 'Siege Ranking')],
+  [AppId.AUTO_PLAY, applet('APP_AUTO_PLAY', OWN_ICON_FILES.autoPlay, 'Auto Play')],
   // custom (owner 2026-11-16): the Pet Filter, as RaGEZONE's Wakazaki pet filter registers it (`AddAppletFunc(
   // AppMain_WndPetfilter, APP_PETFILTER, ..., "Icon_Applet.dds", "PetFilter", 'U' )`); U is free since the Teleporter went.
   // The post's id, 2022, is APP_MAP_EX in this ResData.h, so it takes the client's own 9003 (after Auto Play's 9002).
-  [9003, applet('APP_PETFILTER', 'Icon_Applet.dds', 'Pet Filter', 'U')],
+  // 2026-11-17 (owner): its own icon (ownIcons.ts) in the place of the post's generic Icon_Applet.dds.
+  [AppId.PETFILTER, applet('APP_PETFILTER', OWN_ICON_FILES.petFilter, 'Pet Filter', 'U')],
 ]);
 
 /** The text `text` names: the catalog's for a TID (`texts`, '' for one it lacks), the C++'s own otherwise. */

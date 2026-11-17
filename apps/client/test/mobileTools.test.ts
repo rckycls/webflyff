@@ -5,7 +5,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AppId } from '../src/world/hud/applets';
 import type { UiArt } from '../src/world/hud/art';
-import { MOBILE_SHORTCUTS, MobileTools, SIEGE_SHORTCUT, iconCssSize } from '../src/world/hud/mobileTools';
+import { MOBILE_SHORTCUTS, MobileTools, SIEGE_SHORTCUT, iconCssSize, siegeButton } from '../src/world/hud/mobileTools';
 
 const art = (have: (key: string) => boolean = () => true): UiArt => ({
   url: (key) => (have(key) ? `/assets/${key}` : ''),
@@ -150,23 +150,31 @@ describe('iconCssSize', () => {
 });
 
 describe('the Siege Ranking icon (C2)', () => {
-  it('has no applet and a picture of its own', () => {
-    expect(SIEGE_SHORTCUT).toMatchObject({ label: 'Siege Ranking', picture: 'ui/texguildcombatwinner.png', window: 'siegeRanking' });
+  it("is the Siege Ranking applet's (2026-11-17, owner: FlyffWeb's own icon, no longer the winner trophy)", () => {
+    expect(SIEGE_SHORTCUT).toMatchObject({ label: 'Siege Ranking', applet: AppId.SIEGE_RANKING, window: 'siegeRanking' });
   });
 
-  it('a tool with a picture shows it; with the picture missing it keeps a short text in an icon-sized button', () => {
+  it('shows its own icon without its frame, as the other shortcuts do', () => {
     const run = vi.fn();
-    const have = new MobileTools(art(), [{ label: 'Siege Ranking', applet: null, picture: 'ui/texguildcombatwinner.png', run }], document);
-    const b = have.buttons[0]!;
+    const tools = new MobileTools(art(), [{ label: SIEGE_SHORTCUT.label, applet: SIEGE_SHORTCUT.applet, run }], document);
+    const b = tools.buttons[0]!;
     expect(b.dataset.icon).toBe('');
-    expect(b.querySelector<HTMLElement>('.hud-mobile-tool-icon')!.style.backgroundImage).toBe('url("/assets/ui/texguildcombatwinner.png")');
+    expect(b.querySelector<HTMLElement>('.hud-mobile-tool-icon')!.style.backgroundImage).toBe('url("/assets/ui/bare/icon_siegeranking.png")');
     b.click();
     expect(run).toHaveBeenCalledTimes(1);
-    const none = new MobileTools(art(() => false), [{ label: 'Siege Ranking', applet: null, picture: 'ui/texguildcombatwinner.png', run }], document);
-    const n = none.buttons[0]!;
-    expect(n.dataset.icon).toBe('');
-    expect(n.getAttribute('aria-label')).toBe('Siege Ranking');
-    expect(n.textContent).toBe('Siege');
-    have.dispose(); none.dispose();
+    tools.dispose();
+  });
+
+  it("the desktop's button shows the same icon; its short text while the icon is missing", () => {
+    const run = vi.fn();
+    const have = siegeButton(art(), run, document);
+    expect(have.style.backgroundImage).toBe('url("/assets/ui/bare/icon_siegeranking.png")');
+    expect(have.textContent).toBe('');
+    have.click();
+    expect(run).toHaveBeenCalledTimes(1);
+    const none = siegeButton(art(() => false), run, document);
+    expect(none.style.backgroundImage).toBe('');
+    expect(none.textContent).toBe('Siege');
+    expect(none.getAttribute('aria-label')).toBe('Siege Ranking');
   });
 });
