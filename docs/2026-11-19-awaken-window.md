@@ -59,3 +59,15 @@ the client e2e with no new failures (`dist` must be copied from main first).
 ## In the game
 
 See the outer `docs/2026-11-19-awaken-window-deploy.md`, "In-game checks".
+
+## Final review (one fresh reviewer)
+
+- Fixed: the server counted a waiting protected roll (which the web client cannot see) as "awakened", so an item with no
+  options left was refused on every press until relog. Only options and the protection flag count now (World exe
+  `A2088164…`).
+- Left as they are (minor, for the owner to pick):
+  1. a scroll put in before the item is ignored without a message (Piercing does the same);
+  2. the server's quiet refusals (trading, own shop open, item held) send no message: the button just works again after 2 s;
+  3. the server log line reads `GetWorld()->GetID()` without a null check (as V15's own scroll code does);
+  4. each scroll's item log records the whole stack count (as V15's `OnDoUseItemTarget` does), not 1;
+  5. the Awaken word button can take keyboard focus (harmless today: the window's key handlers stop Space and Enter).
