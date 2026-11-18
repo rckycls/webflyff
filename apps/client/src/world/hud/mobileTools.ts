@@ -57,6 +57,10 @@ export const MOBILE_SHORTCUTS: ReadonlyArray<{ label: string; applet: number; wi
   { label: 'World Map', applet: AppId.MAP, window: 'worldmap', rank: 6 },
   { label: 'Messenger', applet: AppId.MESSENGER_EX, window: 'messenger', rank: 7 },
   { label: 'Party', applet: AppId.PARTY, window: 'party', rank: 5 },
+  // 2026-11-18 (owner, "2 rows of 5 include pet filter and autoplay"): the client's own windows, after the Start menu's,
+  // with their own icons (ownIcons.ts); with the Siege Ranking icon first, two rows of five (style.css)
+  { label: 'Pet Filter', applet: AppId.PETFILTER, window: 'petFilter', rank: 10 },
+  { label: 'Auto Play', applet: AppId.AUTO_PLAY, window: 'autoPlay', rank: 11 },
 ];
 
 /**
@@ -85,11 +89,16 @@ export function iconCssSize(devicePixelRatio: number): number {
   return (ICON_SIZE * Math.max(1, Math.round(ratio))) / ratio;
 }
 
-/** The toolbar of the shortcuts: `element` goes in the HUD; `dispose` stops following the pixel ratio. */
+/**
+ * The toolbar of the shortcuts: `element` goes in the HUD; `dispose` stops following the pixel ratio. The icons' size is the
+ * page's `--hud-mobile-icon` (on the root element, 2026-11-18), which the target bar reads too, to step left of the rows
+ * (style.css).
+ */
 export class MobileTools {
   readonly element: HTMLElement;
   readonly buttons: readonly HTMLButtonElement[];
   private readonly view: Window | null;
+  private readonly root: HTMLElement;
 
   constructor(art: UiArt, tools: readonly MobileTool[], doc: Document = document) {
     const element = doc.createElement('div');
@@ -119,18 +128,20 @@ export class MobileTools {
     element.append(...this.buttons);
     this.element = element;
     this.view = doc.defaultView;
+    this.root = doc.documentElement;
     this.relayout();
     this.view?.addEventListener('resize', this.relayout);
   }
 
   dispose(): void {
     this.view?.removeEventListener('resize', this.relayout);
+    this.root.style.removeProperty('--hud-mobile-icon');
     this.element.remove();
   }
 
   /** Sizes the icons for the window's pixel ratio (a zoom or a move to another screen changes it, with a resize). */
   private readonly relayout = (): void => {
-    this.element.style.setProperty('--hud-mobile-icon', `${iconCssSize(this.view?.devicePixelRatio ?? 1)}px`);
+    this.root.style.setProperty('--hud-mobile-icon', `${iconCssSize(this.view?.devicePixelRatio ?? 1)}px`);
   };
 }
 

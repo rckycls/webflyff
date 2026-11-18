@@ -39,12 +39,24 @@ describe('MOBILE_SHORTCUTS (2026-11-10, owner: the important windows of the Star
       ['World Map', AppId.MAP, 'worldmap'],
       ['Messenger', AppId.MESSENGER_EX, 'messenger'],
       ['Party', AppId.PARTY, 'party'],
+      // 2026-11-18 (owner, "2 rows of 5 include pet filter and autoplay"): the client's own windows, after the Start menu's
+      ['Pet Filter', AppId.PETFILTER, 'petFilter'],
+      ['Auto Play', AppId.AUTO_PLAY, 'autoPlay'],
     ]);
   });
 
   it('ranks them for a narrow phone: Bag, Skill, Character and Quest stay longest, Status goes first', () => {
     const byRank = [...MOBILE_SHORTCUTS].sort((a, b) => a.rank - b.rank).map(({ label }) => label);
-    expect(byRank).toEqual(['Bag', 'Skill', 'Character', 'Quest', 'Party', 'World Map', 'Messenger']);
+    expect(byRank).toEqual(['Bag', 'Skill', 'Character', 'Quest', 'Party', 'World Map', 'Messenger', 'Pet Filter', 'Auto Play']);
+  });
+
+  it("shows Pet Filter's and Auto Play's own icons without their frame (src/icons/bare, ownIcons.ts)", () => {
+    const tools = new MobileTools(art(), MOBILE_SHORTCUTS.map((shortcut) => ({ ...shortcut, run: () => {} })), document);
+    const icon = (label: string) => tools.buttons.find((b) => b.getAttribute('aria-label') === label)!
+      .querySelector<HTMLElement>('.hud-mobile-tool-icon')!.style.backgroundImage;
+    expect(icon('Pet Filter')).toBe('url("/assets/ui/bare/icon_petfilter.png")');
+    expect(icon('Auto Play')).toBe('url("/assets/ui/bare/icon_autoplay.png")');
+    tools.dispose();
   });
 
   it('marks each button with its rank', () => {
@@ -116,15 +128,17 @@ describe('MobileTools', () => {
     tools.dispose();
   });
 
-  it('sizes the icons to a whole multiple of their 32 px in device pixels', () => {
+  it('sizes the icons to a whole multiple of their 32 px in device pixels, for the whole page (the target bar steps aside)', () => {
     Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 2.625 });
     const { tools, button } = rig();
-    expect(tools.element.style.getPropertyValue('--hud-mobile-icon')).toBe(`${(32 * 3) / 2.625}px`);
+    const root = document.documentElement.style;
+    expect(root.getPropertyValue('--hud-mobile-icon')).toBe(`${(32 * 3) / 2.625}px`);
     Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 2 });
     window.dispatchEvent(new Event('resize'));
-    expect(tools.element.style.getPropertyValue('--hud-mobile-icon')).toBe('32px');
+    expect(root.getPropertyValue('--hud-mobile-icon')).toBe('32px');
     expect(button('Skill')).toBeDefined();
     tools.dispose();
+    expect(root.getPropertyValue('--hud-mobile-icon')).toBe('');
     Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 1 });
   });
 });

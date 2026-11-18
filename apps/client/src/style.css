@@ -1687,14 +1687,15 @@ fieldset:disabled .btn {
   background: no-repeat 0 0 / 100% 100%;
 }
 /* 2026-11-13 (owner): the shortcuts in two rows of four, which every phone has room for (the narrow phones no longer drop
-   the least used, as the one row did) */
+   the least used, as the one row did); 2026-11-18 (owner, "2 rows of 5 include pet filter and autoplay"): two rows of five,
+   the target bar stepping left of them where the centre would meet them (below) */
 /* The floating bar's dimensions and safe-area centering come from its native layout. */
 /* The HUD is already above the home-indicator inset; cancel it for the bar alone. */
 .hud-taskbar.is-floating { bottom: calc(0px - var(--game-safe-bottom, 0px)); }
 @media (max-width: 1000px) and (pointer: coarse) {
   .hud-mobile-tools {
     display: grid;
-    grid-template-columns: repeat(4, auto);
+    grid-template-columns: repeat(5, auto);
     position: absolute;
     /* 2026-11-13: under the windows and menus (from 1), which their second row would otherwise cover: an open window's
        close button, an NPC's menu */
@@ -1720,6 +1721,11 @@ fieldset:disabled .btn {
     padding: 6px 8px !important;
   }
   .world #overlay:has(pre[hidden]) { background: none !important; padding: 0 !important; }
+}
+/* 2026-11-18: a phone under 600 px wide draws the icons at 28 px (cells of 32), so the two rows of five, the target bar and
+   the status window share its top (at 568 px the 36 px cells of a 2.625 screen left the bar no room) */
+@media (max-width: 599px) and (pointer: coarse) {
+  .world { --hud-mobile-icon: 28px; }
 }
 /* 2026-11-10 (owner): Attack, Jump and the flight buttons in the windows' colours (the phone panels' beige, #dba98c
    border, #795431 shade), a dark brown ring and shadow keeping them clear of the world behind */
@@ -2013,13 +2019,17 @@ fieldset:disabled .btn {
   /* 2026-11-13 (owner, "bring back the monster HP and name on the middle top"): at the top centre, as Neuz's, at .7 (it had
      gone under the window shortcuts' rows) */
   .hud-target { top: 0; transform: scale(.7); transform-origin: top center; }
+  /* 2026-11-18 (two rows of five shortcuts): at the centre while that is clear of the shortcuts, else just left of them, and
+     never over the status window. The bar is 140 px at .7, so its centre (`left`, with its -100 px margin) is at most 78 px
+     (70 and 8) left of the rows, which end 100 px from the right (the Navigator) and are five icons and their 4 px wide;
+     and at least 217 px (the status window's 139, 8 and 70) from the left. (Was: 52 px left of the centre at 640 px and
+     less, for four icons a row.) */
+  .hud-target {
+    left: max(calc(var(--game-safe-left, 0px) + 217px),
+      min(50%, calc(100% - var(--game-safe-right, 0px) - 100px - 5 * (var(--hud-mobile-icon, 32px) + 4px) - 78px)));
+  }
   /* layered boss HP: 20 px under the bar's .7 scale is 14 px on the screen */
   .hud-target-bars { font-size: 20px; margin-top: -4px; }
-}
-/* a phone 640 px wide or less: 52 px left of the centre, between the status window and the shortcuts (from the right: the
-   Navigator's 100 px and four 36 px icons), which the centre would meet */
-@media (max-width: 640px) and (pointer: coarse) {
-  .hud-target { left: calc(50% - 52px); }
 }
 
 /* The Start menu opens where Piece 3's joystick stands, under the windows' layer: it hides while the menu is open

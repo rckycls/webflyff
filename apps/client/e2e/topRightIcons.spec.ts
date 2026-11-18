@@ -1,9 +1,10 @@
 // The phone's window shortcuts at the top right (2026-11-10, owner): the Start menu's icons of the important windows, alone,
-// with no box or border, smoothed; since 2026-11-13 two rows of four left of the Navigator, 4 px between the icons (owner:
-// "reduce the space"), the target bar back at the top centre clear of them, the quest list at the left. Stats keeps its
-// text, in a third row.
+// with no box or border, smoothed; since 2026-11-13 two rows left of the Navigator, 4 px between the icons (owner:
+// "reduce the space"), the target bar back at the top centre clear of them, the quest list at the left; since 2026-11-18
+// (owner, "2 rows of 5 include pet filter and autoplay") two rows of five, the target bar stepping left of them where the
+// centre would meet them. Stats keeps its text, in a third row.
 
-import { expect, test } from '@playwright/test';
+import { devices, expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import { createWorldScript, newVagrantOwn, writeAddMonster, writeAddSelf } from '@flyffweb/testkit';
 import { MADRIGAL, SELF_ID, SELF_PLAYER, SQUARE, aibatt, enterFlaris, playGateway, self } from './worldHarness';
@@ -16,6 +17,8 @@ test.setTimeout(120_000);
 const SHORTCUTS = [
   ['Siege Ranking', 'icon_siegeranking'], ['Character', 'icon_character'], ['Bag', 'icon_inventory'], ['Skill', 'icon_skill'],
   ['Quest', 'icon_quest'], ['World Map', 'icon_applet'], ['Messenger', 'icon_messenger'], ['Party', 'icon_troupe'],
+  // 2026-11-18 (owner): the client's own Pet Filter and Auto Play, with their own icons (src/icons/bare)
+  ['Pet Filter', 'icon_petfilter'], ['Auto Play', 'icon_autoplay'],
 ] as const;
 const LABELS = [...SHORTCUTS.map(([label]) => label), 'Stats'];
 /** 2026-11-17 (owner): the Start-menu lines of the client's own windows and their own icons (src/icons/). */
@@ -26,8 +29,14 @@ type Box = { x: number; y: number; width: number; height: number };
 const overlap = (a: Box, b: Box): boolean =>
   a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
 
-/** The boxes of the visible shortcuts, the toolbar, the icons, the status window, the Navigator and the target bar. */
-async function layout(page: Page): Promise<{ labels: string[]; tools: Box; icons: Box[]; status: Box; navigator: Box; target: Box | null }> {
+/**
+ * The boxes of the visible shortcuts, the toolbar, the icons, the status window, the Navigator and the target bar; and of
+ * the other things at the top or under the rows that the icons must leave clear (2026-11-18): the buffs, Auto Play's AUTO
+ * button and the Action Slot button, where shown.
+ */
+async function layout(page: Page): Promise<{
+  labels: string[]; tools: Box; icons: Box[]; status: Box; navigator: Box; target: Box | null; others: Record<string, Box>;
+}> {
   return page.evaluate(() => {
     const box = (element: Element): Box => {
       const { x, y, width, height } = element.getBoundingClientRect();
@@ -37,7 +46,15 @@ async function layout(page: Page): Promise<{ labels: string[]; tools: Box; icons
     const labels = [...tools.querySelectorAll('button')].filter((b) => b.getClientRects().length > 0)
       .map((b) => b.getAttribute('aria-label')!);
     const target = document.querySelector('.hud-target');
+    const others: Record<string, Box> = {};
+    for (const selector of ['.hud-buffs', '.hud-auto-button', '.hud-action-trigger']) {
+      const element = document.querySelector(selector);
+      if (element !== null && element.getClientRects().length > 0 && getComputedStyle(element).visibility !== 'hidden') {
+        others[selector] = box(element);
+      }
+    }
     return {
+      others,
       labels, tools: box(tools), icons: [...tools.querySelectorAll('button[data-icon]')].map(box),
       status: box(document.querySelector('.hud-status')!), navigator: box(document.querySelector('.hud-navigator')!),
       target: target !== null && target.getClientRects().length > 0 ? box(target) : null,
@@ -45,7 +62,7 @@ async function layout(page: Page): Promise<{ labels: string[]; tools: Box; icons
   });
 }
 
-test('top-right shortcuts: the important Start-menu icons in two rows of four on the phone, named everywhere', async ({ page, isMobile }, info) => {
+test('top-right shortcuts: the important Start-menu icons in two rows of five on the phone, named everywhere', async ({ page, isMobile }, info) => {
   await playGateway(page, createWorldScript({
     playerObjectId: SELF_ID, worldId: MADRIGAL, pos: SQUARE,
     self: writeAddSelf(SELF_ID, { ...self, player: { ...SELF_PLAYER, own: newVagrantOwn() } }),
@@ -149,9 +166,11 @@ test('top-right shortcuts: the important Start-menu icons in two rows of four on
   expect(statsLook.border).toBe('0px');
   expect((await stats.boundingBox())!.height).toBeGreaterThanOrEqual(32);
 
-  // 2026-11-13 (owner): two rows of four, left of the Navigator, the second an icon and 4 px under the first, column under
-  // column; Stats under them; the target bar at the top centre; the quest list at the left, under the status window
-  const [first, second] = [icons.slice(0, 4), icons.slice(4)];
+  // 2026-11-13 (owner): two rows left of the Navigator, the second an icon and 4 px under the first, column under column;
+  // Stats under them; the target bar at the top centre; the quest list at the left, under the status window. 2026-11-18
+  // (owner): two rows of five.
+  const [first, second] = [icons.slice(0, 5), icons.slice(5)];
+  expect([first.length, second.length]).toEqual([5, 5]);
   for (const row of [first, second]) for (const icon of row) expect(icon.y).toBeCloseTo(row[0]!.y, 0);
   expect(second[0]!.y - first[0]!.y).toBeCloseTo(first[0]!.height + 4, 0);
   expect((await stats.boundingBox())!.y).toBeGreaterThanOrEqual(second[0]!.y + second[0]!.height);
@@ -185,21 +204,80 @@ test('top-right shortcuts: the important Start-menu icons in two rows of four on
   await tools.getByRole('button', { name: 'Siege Ranking', exact: true }).tap();
   await expect(page.locator('.hud-sr')).toBeVisible();
   await page.locator('.hud-sr .hud-window-close').tap();
+  // 2026-11-18 (owner): Pet Filter's and Auto Play's icons open their windows, as the Start menu's lines do
+  for (const [name, selector] of [['Pet Filter', '.hud-pet-filter'], ['Auto Play', '.hud-auto-play']] as const) {
+    await tools.getByRole('button', { name, exact: true }).tap();
+    await expect(page.locator(selector), name).toBeVisible();
+    await page.locator(`${selector} .hud-window-close`).tap();
+    await expect(page.locator(selector), name).toBeHidden();
+  }
 
-  // two rows of four fit every phone: all of them at 844, 750, an iPhone's 730 with its address bar, and 568
-  for (const [width, height, labels] of [
-    [844, 390, LABELS], [750, 342, LABELS], [730, 320, LABELS], [568, 320, LABELS],
-  ] as const) {
+  // two rows of five fit every phone: all of them at 844, 750, an iPhone's 730 with its address bar, 667 and 568
+  for (const [width, height] of [[844, 390], [750, 342], [730, 320], [667, 375], [568, 320]] as const) {
     await page.setViewportSize({ width, height });
     await page.evaluate(() => window.__client!.step(1));
-    const narrow = await layout(page);
-    expect(narrow.labels, `${width}`).toEqual(labels);
-    expect(narrow.tools.x, `${width}`).toBeGreaterThanOrEqual(narrow.status.x + narrow.status.width);
-    expect(narrow.tools.x + narrow.tools.width, `${width}`).toBeLessThanOrEqual(narrow.navigator.x);
-    // the target bar at the top, clear of the icons and of the status window (left of the centre at 640 px and less)
-    expect(narrow.target, `${width}`).not.toBeNull();
-    for (const icon of narrow.icons) expect(overlap(narrow.target!, icon), `${width}: target over an icon`).toBe(false);
-    expect(narrow.target!.x, `${width}`).toBeGreaterThanOrEqual(narrow.status.x + narrow.status.width);
-    if (width === 568) await page.screenshot({ path: info.outputPath('top-phone-568.png'), clip: { x: 0, y: 0, width, height: 150 } });
+    await expectClearTop(page, `${width} x ${height}`);
+    if (width === 568 || width === 667) {
+      await page.screenshot({ path: info.outputPath(`top-phone-${width}.png`), clip: { x: 0, y: 0, width, height: 150 } });
+    }
   }
 });
+
+/**
+ * All the shortcuts shown, in one block between the status window and the Navigator, and no icon over the target bar, the
+ * buffs, the AUTO button or the Action Slot button; the target bar at the top, right of the status window.
+ */
+async function expectClearTop(page: Page, at: string): Promise<void> {
+  const top = await layout(page);
+  expect(top.labels, at).toEqual(LABELS);
+  expect(top.tools.x, at).toBeGreaterThanOrEqual(top.status.x + top.status.width);
+  expect(top.tools.x + top.tools.width, at).toBeLessThanOrEqual(top.navigator.x);
+  expect(top.target, at).not.toBeNull();
+  expect(top.target!.y, at).toBeCloseTo(0, 0);
+  expect(top.target!.x, at).toBeGreaterThanOrEqual(top.status.x + top.status.width);
+  for (const icon of top.icons) {
+    expect(overlap(top.target!, icon), `${at}: target over an icon`).toBe(false);
+    for (const [name, other] of Object.entries(top.others)) expect(overlap(other, icon), `${at}: an icon over ${name}`).toBe(false);
+  }
+}
+
+// 2026-11-18 (owner): an iPhone held on its side, at its own pixel ratio: 844 x 390 at 3 with the notch's 47 px either side
+// and the home bar's 21 px (an iPhone 12 to 14), and 667 x 375 at 2 with none (an iPhone 8 or SE)
+for (const { width, height, scale, safe } of [
+  { width: 844, height: 390, scale: 3, safe: { left: 47, right: 47, bottom: 21 } },
+  { width: 667, height: 375, scale: 2, safe: { left: 0, right: 0, bottom: 0 } },
+]) {
+  test(`top-right shortcuts on an iPhone of ${width} x ${height} at ${scale}x: two rows of five, clear of the top`, async ({ browser, baseURL, isMobile }, info) => {
+    test.skip(!isMobile, 'the phone project only');
+    const context = await browser.newContext({
+      ...devices['Pixel 7 landscape'], viewport: { width, height }, deviceScaleFactor: scale, baseURL,
+    });
+    const page = await context.newPage();
+    await playGateway(page, createWorldScript({
+      playerObjectId: SELF_ID, worldId: MADRIGAL, pos: SQUARE,
+      self: writeAddSelf(SELF_ID, { ...self, player: { ...SELF_PLAYER, own: newVagrantOwn() } }),
+      others: [writeAddMonster(aibatt.objectId, aibatt)],
+    }));
+    await enterFlaris(page);
+    await page.evaluate(() => window.__client!.pause());
+    await page.locator('.world').evaluate((element, insets) => {
+      const style = (element as HTMLElement).style;
+      style.setProperty('--game-safe-left', `${insets.left}px`);
+      style.setProperty('--game-safe-right', `${insets.right}px`);
+      style.setProperty('--game-safe-bottom', `${insets.bottom}px`);
+      window.dispatchEvent(new Event('resize'));
+    }, safe);
+    await page.evaluate(() => window.__client!.step(1));
+    const point = (await page.evaluate((id) => window.__client!.screenOf(id), aibatt.objectId))!;
+    const canvas = (await page.locator('.world-view canvas').boundingBox())!;
+    await page.touchscreen.tap(canvas.x + point[0] * canvas.width, canvas.y + point[1] * canvas.height);
+    await page.evaluate(() => window.__client!.step(1));
+    await expect(page.locator('.hud-target')).toBeVisible();
+    // the icons at 32 px, 4 px apart: an iPhone's whole pixel ratio draws them at their own size
+    const icon = (await page.locator('.hud-mobile-tool-icon').first().boundingBox())!;
+    expect(icon.width).toBeCloseTo(32, 1);
+    await expectClearTop(page, `iPhone ${width} x ${height}`);
+    await page.screenshot({ path: info.outputPath(`top-iphone-${width}.png`), clip: { x: 0, y: 0, width, height: 150 } });
+    await context.close();
+  });
+}
