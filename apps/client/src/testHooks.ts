@@ -125,6 +125,8 @@ export interface ClientHooks {
    * (the rules' `body.speed`).
    */
   mounts?(): Array<{ objectId: number; drawn: boolean; speed: number }>;
+  /** 2026-11-19 (water): the water and cloud meshes in the scene, by name (`water 13_6 list 0`, `cloud 13_6`). */
+  water?(): string[];
 }
 
 declare global {
@@ -164,6 +166,7 @@ export function createClientHooks(): ClientHooks {
     bubbles: () => current().bubbles?.() ?? [], // 2026-11-17
     wingCapes: () => current().wingCapes?.() ?? [], // 2026-11-17
     mounts: () => current().mounts?.() ?? [], // 2026-11-18
+    water: () => current().water?.() ?? [], // 2026-11-19
   };
 }
 

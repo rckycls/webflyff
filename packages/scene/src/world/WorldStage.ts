@@ -12,8 +12,12 @@
 //
 // The sky and the fog are the manifest's `bgColor`, a D3DCOLOR (0xAARRGGBB), and the fog is linear from `fog.start` to
 // `fog.end`; nothing past the fog's end can be seen, so the camera's far plane is there.
+//
+// 2026-11-19: the tiles' water and cloud sea (water.ts) come from the water catalog (`data/terrainWater.json`); a dist
+// converted before it has none, and the world then shows no water. `render` steps their animation.
 
-import type { Vec3, WorldManifest } from '@flyffweb/formats';
+import { TERRAIN_WATER_KEY } from '@flyffweb/formats';
+import type { Vec3, WebTerrainWater, WorldManifest } from '@flyffweb/formats';
 import {
   AmbientLight,
   Color,
@@ -34,6 +38,7 @@ import type { Ground } from './ground';
 import { d3dColor, stageLight } from './lighting';
 import { ObjectPool } from './objects';
 import { TileStreamer } from './tileStreamer';
+import { WaterSurfaces } from './water';
 
 /** The client's field of view, pi / 4 at zoom level 0 (CWorld::Projection, World3D.cpp:64), and near plane (:51). */
 const FOV_DEGREES = 45;
@@ -46,6 +51,20 @@ const drawingSize = new Vector2();
 function aspectOf(renderer: WebGLRenderer): number {
   const size = renderer.getSize(drawingSize);
   return size.y > 0 ? size.x / size.y : 1;
+}
+
+/**
+ * The water catalog, or null when the dist has none or it cannot be read (the world then shows no water). Never
+ * rejects: a world opens with or without its water.
+ */
+async function loadWaterCatalog(store: SceneServices['store']): Promise<WebTerrainWater | null> {
+  try {
+    if (store.url(TERRAIN_WATER_KEY) === null) return null;
+    const catalog = await store.json<WebTerrainWater>(TERRAIN_WATER_KEY);
+    return catalog !== null && typeof catalog === 'object' && Array.isArray(catalog.water) ? catalog : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -80,6 +99,7 @@ export class WorldStage {
   private readonly pool: ObjectPool;
   private readonly shapes: CollisionShapes;
   private readonly streamer: TileStreamer;
+  private readonly water: WaterSurfaces;
   /** What `ground` gives, once asked for. */
   private world: Ground | undefined;
 
@@ -90,6 +110,8 @@ export class WorldStage {
    * (`stageLight`), when its manifest carries it; else every world has the noon light.
    */
   static async open(world: string, services: SceneServices, radius: number, options: { indoorLight?: boolean } = {}): Promise<WorldStage> {
+    // fetched beside the manifest, so it adds no wait; it never rejects
+    const waterCatalog = loadWaterCatalog(services.store);
     const manifest = await services.store.manifest(world);
     if (manifest === null || typeof manifest !== 'object' || typeof manifest.name !== 'string' ||
       !Array.isArray(manifest.size) || manifest.size.length !== 2 || !manifest.size.every(n => Number.isInteger(n) && n > 0) ||
@@ -99,7 +121,7 @@ export class WorldStage {
       !manifest.tiles || typeof manifest.tiles !== 'object' || Array.isArray(manifest.tiles)) {
       throw new Error(`Invalid world manifest: ${world}`);
     }
-    return new WorldStage(world, manifest, services, radius, options.indoorLight === true);
+    return new WorldStage(world, manifest, services, radius, options.indoorLight === true, await waterCatalog);
   }
 
   private constructor(
@@ -108,6 +130,7 @@ export class WorldStage {
     services: SceneServices,
     radius: number,
     indoorLight: boolean,
+    waterCatalog: WebTerrainWater | null,
   ) {
     const { renderer, store, loaders, textures, overlay } = services;
     this.renderer = renderer;
@@ -131,12 +154,14 @@ export class WorldStage {
 
     this.pool = new ObjectPool(store, loaders, textures, overlay);
     this.shapes = new CollisionShapes(store, manifest, overlay);
+    this.water = new WaterSurfaces(waterCatalog, textures, (texture) => this.renderer.initTexture(texture));
     this.streamer = new TileStreamer(world, manifest, store, this.scene, {
       textures,
       objects: this.pool,
       shapes: this.shapes,
       overlay,
       lighting,
+      water: this.water,
       radius,
       prepare: (object) => uploadTextures(this.renderer, object),
     });
@@ -200,6 +225,7 @@ export class WorldStage {
       this.camera.aspect = aspect;
       this.camera.updateProjectionMatrix();
     }
+    this.water.update(performance.now(), this.camera);
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -213,9 +239,19 @@ export class WorldStage {
     return this.streamer.loaded();
   }
 
+  /** 2026-11-19: the water and cloud meshes in the scene, by name (`water 13_6 list 0`, `cloud 13_6`), for the tests. */
+  waterMeshes(): string[] {
+    const names: string[] = [];
+    this.scene.traverse((object) => {
+      if (/^(water|cloud) /.test(object.name)) names.push(object.name);
+    });
+    return names;
+  }
+
   /** Gives back the tiles, the objects' models and their textures. Whatever was added to `scene` is the caller's to remove. */
   dispose(): void {
     this.streamer.dispose();
+    this.water.dispose();
     this.shapes.dispose();
     this.pool.dispose();
     this.sun.dispose();

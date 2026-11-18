@@ -979,6 +979,7 @@ export class WorldScreen {
       mounts: () => [...(this.world?.movers.values() ?? [])].flatMap((m) => (m.buffs.has(0, GROUND_MOUNT_ITEM) ? [{
         objectId: m.objectId, drawn: this.views?.mounted().includes(m.objectId) === true, speed: m.act.body.speed,
       }] : [])),
+      water: () => this.stage?.waterMeshes() ?? [], // 2026-11-19 (water)
     });
     void this.start();
   }
