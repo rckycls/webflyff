@@ -25,6 +25,7 @@
 
 import type { WebItemEtc, WebItemProp, WebMover, WebPets, WebPiercingAvail, WebSetItem, WebUltimate } from '@flyffweb/formats';
 import type { InventoryItem, PetData } from '@flyffweb/protocol';
+import { vipShopPrice } from '@flyffweb/protocol';
 import type { Texts } from '../gameData';
 import { formatDuration } from '../hud/duration';
 import { formatText } from '../hud/format';
@@ -101,6 +102,8 @@ export interface TooltipContext {
   playerName?: (playerId: number) => string | undefined;
   /** 2026-11-15: the tax where the own player stands (`CTax`), null or none off every continent. */
   tax?: TooltipTax | null;
+  /** 2026-11-19 (VIP perks): the own player's VIP level (0-4), for an NPC shop's VIP price (`vipShopPrice`). */
+  vipLevel?: number;
   /** 2026-11-15: a comparison tooltip's (`PutToolTipParts` with a sub flag): it starts with "[ Equipped ]". */
   equipped?: boolean;
 }
@@ -571,9 +574,10 @@ export function itemTooltip(item: InventoryItem, prop: WebItemProp, data: Toolti
   if (ctx.flag === 'shop' && cost !== -1) {
     // 2026-11-15: a chip vendor's price, GetChipCost (dwReferValue1, -1 for none: then 1, as `nCost <= 0` gives)
     const chips = ctx.chipVendor === true;
-    let price = chips ? (prop.referValue1 ?? -1) : cost;
+    // 2026-11-19 (VIP perks): a VIP's penya price (OnBuyItem with patch 2026-11-19-vip-perks); the tax stays on the full one
+    let price = chips ? (prop.referValue1 ?? -1) : vipShopPrice(cost, Math.max(1, Math.trunc((cost >>> 0) / 4)), prop.id, ctx.vipLevel ?? 0);
     let before = price;
-    if (!chips && taxed !== null) price += Math.trunc(Math.fround(Math.fround(price) * taxed.purchase));
+    if (!chips && taxed !== null) price += Math.trunc(Math.fround(Math.fround(cost) * taxed.purchase));
     if (prop.id === PERIN) price = PERIN_VALUE;
     if (price <= 0) price = before = 1;
     const unit = chips ? ` ${text('TID_GAME_REDCHIP')}` : '';

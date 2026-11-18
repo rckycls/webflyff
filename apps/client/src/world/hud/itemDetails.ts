@@ -25,6 +25,8 @@ export interface TooltipWorld {
   guildName?(guildId: number): string | undefined;
   playerName?(playerId: number): string | undefined;
   tax?(): TooltipTax | null;
+  /** 2026-11-19 (VIP perks): the own player's VIP level (0-4), for the NPC shop's VIP price. */
+  vipLevel?(): number;
 }
 
 let world: TooltipWorld = {};
@@ -32,6 +34,11 @@ let world: TooltipWorld = {};
 /** 2026-11-15: the world the tooltips read (`{}` when the world screen goes). */
 export function setTooltipWorld(next: TooltipWorld): void {
   world = next;
+}
+
+/** 2026-11-19 (VIP perks): the own player's VIP level, 0 without a world screen. */
+export function ownVipLevel(): number {
+  return world.vipLevel?.() ?? 0;
 }
 
 /**
@@ -50,6 +57,7 @@ export function ownTooltipContext(
     ...(world.guildName !== undefined ? { guildName: world.guildName.bind(world) } : {}),
     ...(world.playerName !== undefined ? { playerName: world.playerName.bind(world) } : {}),
     ...(world.tax !== undefined ? { tax: world.tax() } : {}),
+    ...(world.vipLevel !== undefined ? { vipLevel: world.vipLevel() } : {}),
   };
   if (own === undefined) return { flag, viewer: null, shopOpen, ...lookups };
   const inBag = flag !== 'shop' && own.inventory?.get(item.objectId)?.itemId === item.itemId;

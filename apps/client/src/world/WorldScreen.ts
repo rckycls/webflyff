@@ -150,6 +150,7 @@ import { QueryEquipWindow } from './hud/queryEquipWindow';
 import type { QueryEquipTarget } from './hud/queryEquipWindow';
 import { combatMusicOf, gameOptionCommand, loadGameOptions, saveGameOptions } from './options/gameOptions';
 import type { QueryEquipPart } from '@flyffweb/protocol';
+import { vipLevelOf } from '@flyffweb/protocol';
 import { PartyHpBars } from './render/PartyHpBars';
 import { partyEffects } from './fx/partyEffects';
 import type { PartyEffectContext, PartyMover } from './fx/partyEffects';
@@ -1023,6 +1024,8 @@ export class WorldScreen {
           const view = this.mapView();
           return tooltipTax(this.taxBook, view.worldId, { x: view.pos[0], z: view.pos[2] }, this.worldMapData?.continents);
         },
+        // 2026-11-19 (VIP perks): the own VIP level, for the NPC shop's VIP price
+        vipLevel: () => vipLevelOf(this.world?.self()?.added.player?.authorization ?? 0),
       });
       this.questMarkerIndex = this.questCatalog === null ? null : new QuestMarkerIndex(this.questCatalog);
       if (this.over) return;
