@@ -74,7 +74,7 @@ const SECURITY_HEADERS = {
 /** Actions that only read: they need no request id. Everything else is a write. */
 const READ_ACTIONS = [
   'status', 'accounts.search', 'accounts.page', 'accounts.get', 'characters.search', 'characters.page', 'characters.get',
-  'sends.list', 'vip.requests', 'vip.tiers', 'vip.qrs',
+  'sends.list', 'vip.requests', 'vip.tiers', 'vip.qrs', 'vip.giftItems', 'vip.giftLog',
 ];
 /** The one action that carries a picture: a bigger body, read only with a live session. */
 const UPLOAD_ACTION = 'vip.qrAdd';

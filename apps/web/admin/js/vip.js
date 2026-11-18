@@ -233,8 +233,104 @@ function tiersView() {
   };
 }
 
+// --- 2026-11-19 (VIP perks): Give VIP, the gift box contents and the gift log -------------------------------------------
+
+/** VIP without a payment (testers, prizes): it starts or extends the account's VIP, gives the star, and queues a box. */
+function giveView() {
+  const message = messageLine();
+  const account = el('input', { maxlength: '32', autocomplete: 'off', 'aria-label': 'Account' });
+  const level = el('select', { 'aria-label': 'VIP level' }, [1, 2, 3, 4].map((n) => el('option', { value: String(n), text: `VIP ${n}` })));
+  const days = el('input', { type: 'number', min: '1', max: '366', value: '30', 'aria-label': 'Days' });
+  const gift = el('input', { type: 'checkbox', checked: true, 'aria-label': 'Send the gift box' });
+  const go = el('button', { type: 'submit', text: 'Give VIP' });
+  const form = el('form', { class: 'card' },
+    el('p', { class: 'small', text: 'The same VIP level while it runs gets the days added to its end; anything else starts that level now. The star shows from the player\'s next login. The gift box goes to their character within 5 minutes.' }),
+    el('label', {}, 'Account ', account), el('label', {}, ' Level ', level), el('label', {}, ' Days ', days),
+    el('label', {}, ' ', gift, ' Send the gift box'), ' ', go, message.node);
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    void busy(go, message, async () => {
+      const done = await api('vip.give', { account: account.value.trim(), level: Number(level.value), days: Number(days.value), gift: gift.checked }, { write: true });
+      return `Gave ${account.value.trim()} VIP ${done.level} until ${timeText(done.endsAt)}.`;
+    })();
+  });
+  return { node: el('div', { class: 'vip-view' }, form), show: async () => {} };
+}
+
+/** What each tier's box holds: up to 6 item stacks, searched in the item list as in the Send tab. */
+function giftBoxView() {
+  const message = messageLine();
+  const list = el('div');
+
+  function slotRow(level, slot, row) {
+    const query = el('input', { autocomplete: 'off', placeholder: 'Search an item', value: row ? (row.name ?? `id ${row.itemId}`) : '', 'aria-label': `VIP ${level} slot ${slot} item` });
+    const count = el('input', { type: 'number', min: '0', max: '9999', size: 6, value: row ? String(row.count) : '0', 'aria-label': `VIP ${level} slot ${slot} count` });
+    const picks = el('div', { class: 'picks' });
+    let itemId = row ? row.itemId : 0;
+    let timer = 0;
+    query.addEventListener('input', () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        const text = query.value.trim();
+        if (text === '') { fill(picks); return; }
+        api('items.search', { query: text }).then(({ rows }) => {
+          fill(picks, rows.length === 0 ? el('p', { class: 'small', text: 'No item found.' })
+            : rows.map((i) => el('button', { type: 'button', text: `${i.name} (id ${i.id}, stacks to ${i.packMax})`, onclick: () => {
+              itemId = i.id; query.value = i.name; count.max = String(i.packMax); if (Number(count.value) < 1) count.value = '1'; fill(picks);
+            } })));
+        }).catch((error) => message.problem(error.message));
+      }, 300);
+    });
+    const save = el('button', { type: 'button', class: 'quiet', text: 'Save', 'aria-label': `Save VIP ${level} slot ${slot}` });
+    save.addEventListener('click', busy(save, message, async () => {
+      await api('vip.giftItemSave', { level, slot, itemId, count: Number(count.value) }, { write: true });
+      return Number(count.value) === 0 ? `Emptied VIP ${level} slot ${slot}.` : `Saved VIP ${level} slot ${slot}.`;
+    }));
+    return el('tr', {}, el('td', { text: String(slot) }), el('td', {}, query, picks), el('td', {}, count), el('td', {}, save));
+  }
+
+  async function load() {
+    try {
+      const { rows } = await api('vip.giftItems', {});
+      fill(list, [1, 2, 3, 4].map((level) => el('div', { class: 'table-box' }, el('h3', { text: `VIP ${level} box` }), el('table', {},
+        el('thead', {}, el('tr', {}, ['Slot', 'Item', 'Count (0 empties it)', ''].map((h) => el('th', { text: h })))),
+        el('tbody', {}, [1, 2, 3, 4, 5, 6].map((slot) => slotRow(level, slot, rows.find((r) => r.level === level && r.slot === slot))))))));
+    } catch (error) {
+      message.problem(error.message);
+    }
+  }
+
+  return {
+    node: el('div', { class: 'vip-view' }, el('div', { class: 'card' },
+      el('p', { class: 'small', text: 'Each approved month (and each Give VIP with the box ticked) sends that tier\'s box by in-game mail: one mail per item stack. A change counts for boxes not sent yet.' }),
+      list, message.node)),
+    show: load,
+  };
+}
+
+/** The latest gift boxes: queued, then sent to a character. */
+function giftsView() {
+  const message = messageLine();
+  const list = el('div');
+  async function load() {
+    try {
+      const { rows } = await api('vip.giftLog', {});
+      fill(list, rows.length === 0 ? el('p', { class: 'small', text: 'No gift boxes yet.' }) : el('div', { class: 'table-box' }, el('table', {},
+        el('thead', {}, el('tr', {}, ['Queued', 'Account', 'Level', 'From', 'Sent', 'Character', 'Items'].map((h) => el('th', { text: h })))),
+        el('tbody', {}, rows.map((g) => el('tr', {},
+          el('td', { text: timeText(g.createdAt) }), el('td', { text: g.account }), el('td', { text: `VIP ${g.level}` }),
+          el('td', { text: g.requestId === null ? `Give VIP (${g.createdBy})` : `Request ${g.requestId}` }),
+          el('td', { text: g.sentAt ? timeText(g.sentAt) : 'Waiting (no character yet, or the box is empty)' }),
+          el('td', { text: g.characterName ?? '' }), el('td', { text: g.items ?? '' })))))));
+    } catch (error) {
+      message.problem(error.message);
+    }
+  }
+  return { node: el('div', { class: 'vip-view' }, el('div', { class: 'card' }, list, message.node)), show: load };
+}
+
 export function vipTab() {
-  const views = { Requests: requestsView(), 'Payment QRs': qrsView(), Tiers: tiersView() };
+  const views = { Requests: requestsView(), 'Payment QRs': qrsView(), Tiers: tiersView(), 'Give VIP': giveView(), 'Gift box': giftBoxView(), Gifts: giftsView() };
   let current = 'Requests';
   const buttons = Object.keys(views).map((name) => el('button', { type: 'button', class: 'quiet', text: name, 'aria-pressed': String(name === current), onclick: () => pick(name) }));
   const box = el('div');
