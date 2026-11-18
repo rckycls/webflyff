@@ -162,8 +162,8 @@ UPDATE dbo.ACCOUNT_TBL_DETAIL SET email = @email WHERE account = @account
 SELECT @@ROWCOUNT AS changed
 GO
 
--- F player, A/B/C/E VIP 1-4 (vip-auth: titles only, the servers take them as F), J helper, L/M/N GM 1-3,
--- O operator, P administrator (Source/_Common/authorization.h). The letters are compared as written (BINARY), so a
+-- F player, J helper, L/M/N GM 1-3, (2026-11-19: no VIP 1-4 letters A/B/C/E here: the website gives and takes them from
+-- the VIP list, vip.sql) O operator, P administrator (Source/_Common/authorization.h). The letters are compared as written (BINARY), so a
 -- lower-case one is refused.
 IF OBJECT_ID(N'dbo.usp_AdminSetLoginAuthority', N'P') IS NOT NULL DROP PROCEDURE dbo.usp_AdminSetLoginAuthority
 GO
@@ -171,7 +171,7 @@ CREATE PROCEDURE dbo.usp_AdminSetLoginAuthority
 	@account varchar(32), @authority char(1)
 AS
 SET NOCOUNT ON
-IF @authority IS NULL OR CAST(@authority AS binary(1)) NOT IN (0x46, 0x41, 0x42, 0x43, 0x45, 0x4A, 0x4C, 0x4D, 0x4E, 0x4F, 0x50)
+IF @authority IS NULL OR CAST(@authority AS binary(1)) NOT IN (0x46, 0x4A, 0x4C, 0x4D, 0x4E, 0x4F, 0x50)
 BEGIN
 	SELECT -1 AS changed
 	RETURN
@@ -243,7 +243,7 @@ CREATE PROCEDURE dbo.usp_AdminSetCharacterAuthority
 	@account varchar(32), @authority char(1)
 AS
 SET NOCOUNT ON
-IF @authority IS NULL OR CAST(@authority AS binary(1)) NOT IN (0x46, 0x41, 0x42, 0x43, 0x45, 0x4A, 0x4C, 0x4D, 0x4E, 0x4F, 0x50)
+IF @authority IS NULL OR CAST(@authority AS binary(1)) NOT IN (0x46, 0x4A, 0x4C, 0x4D, 0x4E, 0x4F, 0x50)
 BEGIN
 	SELECT -1 AS changed
 	RETURN
@@ -260,7 +260,7 @@ CREATE PROCEDURE dbo.usp_AdminCharacterAuthority
 	@idPlayer char(7), @authority char(1)
 AS
 SET NOCOUNT ON
-IF @authority IS NULL OR CAST(@authority AS binary(1)) NOT IN (0x46, 0x41, 0x42, 0x43, 0x45, 0x4A, 0x4C, 0x4D, 0x4E, 0x4F, 0x50)
+IF @authority IS NULL OR CAST(@authority AS binary(1)) NOT IN (0x46, 0x4A, 0x4C, 0x4D, 0x4E, 0x4F, 0x50)
 BEGIN
 	SELECT -1 AS changed
 	RETURN

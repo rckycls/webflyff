@@ -23,10 +23,11 @@ function procedure(name: string): string {
   return code.slice(at, code.indexOf('\nGO', at));
 }
 
-it('takes the VIP letters and refuses every other letter, compared as bytes (a lower-case one would be past P)', () => {
+it('takes the panel\'s letters, not the VIP ones (2026-11-19: they come from the VIP list), compared as bytes (a lower-case one would be past P)', () => {
   for (const name of ['usp_AdminSetLoginAuthority', 'usp_AdminSetCharacterAuthority', 'usp_AdminCharacterAuthority']) {
     const text = procedure(name);
-    expect(text).toContain('CAST(@authority AS binary(1)) NOT IN (0x46, 0x41, 0x42, 0x43, 0x45, 0x4A, 0x4C, 0x4D, 0x4E, 0x4F, 0x50)');
+    expect(text).toContain('CAST(@authority AS binary(1)) NOT IN (0x46, 0x4A, 0x4C, 0x4D, 0x4E, 0x4F, 0x50)');
+    expect(text).not.toMatch(/0x41|0x42|0x43|0x45/);
     expect(text).toContain('SELECT -1 AS changed');
   }
   expect(procedure('usp_AdminCharacterAuthority')).toMatch(/WHERE m_idPlayer = @idPlayer AND serverindex = '01'/);

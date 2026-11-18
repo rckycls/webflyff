@@ -62,6 +62,14 @@ try {
 	$command = $connection.CreateCommand()
 	$command.CommandText = "SELECT COUNT(*) FROM ACCOUNT_DBF.dbo.WEB_VIP_TIER"
 	$tiers = $command.ExecuteScalar()
+	# 2026-11-19 (VIP perks): the gift boxes, and the game's mail procedure they are written with
+	$command = $connection.CreateCommand()
+	$command.CommandText = "SELECT (SELECT COUNT(*) FROM ACCOUNT_DBF.dbo.WEB_VIP_GIFT_ITEM), CASE WHEN OBJECT_ID(N'CHARACTER_01_DBF.dbo.MAIL_STR', N'P') IS NULL THEN 0 ELSE 1 END"
+	$reader = $command.ExecuteReader()
+	[void]$reader.Read()
+	$giftItems = $reader.GetInt32(0)
+	$hasMail = $reader.GetInt32(1) -gt 0
+	$reader.Close()
 	$command = $connection.CreateCommand()
 	$command.CommandText = "SELECT (SELECT COUNT(*) FROM ACCOUNT_DBF.sys.database_principals WHERE name = N'flyffweb_site'), (SELECT COUNT(*) FROM ACCOUNT_DBF.sys.database_principals WHERE name = N'flyffweb_admin')"
 	$reader = $command.ExecuteReader()
@@ -73,7 +81,9 @@ try {
 	$connection.Close()
 }
 
-Write-Host 'Made: ACCOUNT_DBF.dbo.WEB_VIP_TIER, WEB_PAY_QR, WEB_VIP_REQUEST, WEB_VIP and their procedures.'
+Write-Host 'Made: ACCOUNT_DBF.dbo.WEB_VIP_TIER, WEB_PAY_QR, WEB_VIP_REQUEST, WEB_VIP, WEB_VIP_GIFT, WEB_VIP_GIFT_ITEM, CHARACTER_01_DBF.dbo.WEB_VIP_GIFT_SENT and their procedures.'
+if (-not $hasMail) { Write-Warning 'CHARACTER_01_DBF.dbo.MAIL_STR is missing: the VIP gift boxes cannot be sent. Ask Claude.' }
+Write-Host "Gift boxes: $giftItems item stack(s) across the tiers (change them in the panel's VIP tab)."
 if ($tiers -lt 1) { Write-Warning 'There are no VIP tiers: something is wrong. Ask Claude.'; exit 1 }
 Write-Host "Check passed: $tiers VIP tier(s) in WEB_VIP_TIER."
 if (-not $hasSite) { Write-Warning 'flyffweb_site has no user in ACCOUNT_DBF yet: run Install-WebLogin.ps1 first, then this script again.' }
