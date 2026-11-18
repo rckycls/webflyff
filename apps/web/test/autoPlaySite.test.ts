@@ -48,7 +48,7 @@ async function start(options: { autoPlay?: boolean } = {}) {
   const view = siteView(memory);
   // tester2 is VIP4 (no limit); everyone else normal
   const store = { ...view, mine: async (account: string) => ({
-    vip: account === 'tester2' ? { level: 4, name: 'VIP4', endsAt: '2026-12-31T00:00:00.000Z' } : null, requests: [],
+    vip: account === 'tester2' ? { level: 4, name: 'VIP4', endsAt: '2026-12-31T00:00:00.000Z' } : null, requests: [], gift: null,
   }) };
   const dir = mkdtempSync(path.join(os.tmpdir(), 'autoplay-site-'));
   dirs.push(dir);

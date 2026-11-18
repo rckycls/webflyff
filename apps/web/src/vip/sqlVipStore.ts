@@ -7,8 +7,8 @@ import type { AdminConfig } from '../admin/config';
 import type { WebConfig } from '../config';
 import { firstValue, lazyPool } from '../sqlAccountStore';
 import type {
-  AdminVipRequest, AdminVipRequestDetail, MyVipRequest, PayQr, PayQrRow, VipAdminStore, VipNow, VipRequestStatus,
-  VipSiteStore, VipTier, VipTierRow,
+  AdminVipRequest, AdminVipRequestDetail, MyVipRequest, PayQr, PayQrRow, VipAdminStore, VipGift, VipGiftStatus, VipNow,
+  VipRequestStatus, VipSiteStore, VipTier, VipTierRow,
 } from './vipStore';
 
 type Row = Record<string, unknown>;
@@ -66,7 +66,10 @@ export function sqlVipSiteStore(settings: WebConfig['sql']): VipSiteStore & { cl
       const result = await run('usp_WebVipMine', (r) => r.input('account', sql.VarChar(32), account));
       const live = rowsOf(result, 0)[0];
       const vip: VipNow | null = live === undefined ? null : { level: num(live.level), name: textOrNull(live.name), endsAt: text(live.endsAt) };
-      return { vip, requests: rowsOf(result, 1).map(myRequest) };
+      const latest = rowsOf(result, 2)[0]; // 2026-11-19 (VIP perks): the latest gift box
+      const gift: VipGiftStatus | null = latest === undefined ? null
+        : { level: num(latest.level), createdAt: text(latest.createdAt), sentAt: textOrNull(latest.sentAt), characterName: textOrNull(latest.characterName) };
+      return { vip, requests: rowsOf(result, 1).map(myRequest), gift };
     },
     async addRequest(request) {
       const id = Number(firstValue(await run('usp_WebVipRequestAdd', (r) => r
@@ -144,6 +147,50 @@ export function sqlVipAdminStore(settings: WebConfig['sql'], login: AdminConfig[
       const file = firstValue(await run('usp_AdminPayQrDelete', (r) => r.input('id', sql.Int, id)));
       return file === undefined || file === null ? undefined : text(file);
     },
+    // --- 2026-11-19 (VIP perks) ---------------------------------------------------------------------------------------
+    async give(account, level, days, gift, admin) {
+      const row = rowsOf(await run('usp_AdminVipGive', (r) => r
+        .input('account', sql.VarChar(32), account).input('level', sql.TinyInt, level).input('days', sql.Int, days)
+        .input('gift', sql.Bit, gift).input('admin', sql.VarChar(32), admin)))[0];
+      const result = num(row?.result);
+      if (result === 1) return { result: 'ok', level: num(row?.level), endsAt: text(row?.endsAt) };
+      return { result: result === -1 ? 'unknown' : 'invalid' };
+    },
+    async letterAccounts() {
+      return rowsOf(await run('usp_AdminVipLetterAccounts')).map((r) => ({ account: text(r.account), letter: text(r.letter) }));
+    },
+    async adopt(account, level) {
+      return bool(firstValue(await run('usp_AdminVipAdopt', (r) => r.input('account', sql.VarChar(32), account).input('level', sql.TinyInt, level))));
+    },
+    async syncLetters() {
+      return rowsOf(await run('usp_AdminVipSyncLetters')).map((r) => ({ account: text(r.account), before: text(r.before), after: text(r.after) }));
+    },
+    async pendingGifts(max) {
+      return rowsOf(await run('usp_AdminVipGiftsPending', (r) => r.input('max', sql.Int, max))).map(giftOf);
+    },
+    async markGiftSent(id, idPlayer, characterName, items) {
+      return changed(await run('usp_AdminVipGiftMarkSent', (r) => r
+        .input('id', sql.Int, id).input('idPlayer', sql.Char(7), idPlayer).input('characterName', sql.VarChar(32), characterName)
+        .input('items', sql.VarChar(400), items.slice(0, 400))));
+    },
+    async giftItems() {
+      return rowsOf(await run('usp_AdminVipGiftItems')).map((r) => ({ level: num(r.level), slot: num(r.slot), itemId: num(r.itemId), count: num(r.count) }));
+    },
+    async saveGiftItem(item) {
+      return changed(await run('usp_AdminVipGiftItemSet', (r) => r
+        .input('level', sql.TinyInt, item.level).input('slot', sql.TinyInt, item.slot).input('itemId', sql.Int, item.itemId)
+        .input('count', sql.Int, item.count)));
+    },
+    async giftLog(max) {
+      return rowsOf(await run('usp_AdminVipGiftLog', (r) => r.input('max', sql.Int, max))).map((r) => ({
+        ...giftOf(r), createdBy: text(r.createdBy), sentAt: textOrNull(r.sentAt), idPlayer: textOrNull(r.idPlayer),
+        characterName: textOrNull(r.characterName), items: textOrNull(r.items),
+      }));
+    },
     close: () => accounts.close(),
   };
 }
+
+const giftOf = (r: Row): VipGift => ({
+  id: num(r.id), account: text(r.account), level: num(r.level), requestId: numOrNull(r.requestId), createdAt: text(r.createdAt),
+});
