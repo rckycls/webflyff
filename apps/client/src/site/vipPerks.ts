@@ -17,6 +17,8 @@ export function tierPerks(level: number, autoPlayHours: number | null): string[]
     'Gift box every month',
     ...(percent > 0 ? [`${percent}% off NPC shops`] : []),
     ...(death === 0 ? ['No EXP lost on death'] : death < 1 ? ['Half EXP lost on death'] : []),
+    // custom (owner 2026-11-19): the bag's two VIP buttons (hud/inventoryWindow.ts vipTools)
+    'Bag sort and Penya to Perin buttons',
   ];
 }
 

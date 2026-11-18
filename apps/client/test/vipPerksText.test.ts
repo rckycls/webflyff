@@ -6,6 +6,7 @@ describe('tierPerks', () => {
   it('lists the star, the Auto Play hours, the gift box, the shop discount and the death rule', () => {
     expect(tierPerks(1, 24)).toEqual([
       'Bronze star by your name', 'Auto Play 24 h a week', 'Gift box every month', '5% off NPC shops', 'Half EXP lost on death',
+      'Bag sort and Penya to Perin buttons',
     ]);
     const four = tierPerks(4, null).join(' | ');
     expect(four).toContain('20% off NPC shops');
