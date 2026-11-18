@@ -47,8 +47,14 @@ pieces in place makes a re-roll one click, and the 50,000 penya per click is a p
 - **Awaken click:**
   - Missing pieces are said in the chat and nothing is sent: no item, no Scroll of Awakening, an awakened item without a
     Reversion scroll ("Item has already been awakened."), or under 50,000 penya ("You do not have enough Penya.").
-  - Otherwise it sends at once, with no Yes/No box (my call: a box on every re-roll would slow it down; the owner can ask
-    for one).
+  - Otherwise a Yes/No box asks first (owner). Its text names the cost: "Awaken this item? It uses 1 Scroll of Awakening
+    and 50,000 Penya." or, on an awakened item, "Replace this item's awakening? It uses 1 Scroll of Reversion, 1 Scroll
+    of Awakening and 50,000 Penya. The current awakening is lost.". Under the text, a "Don't ask again" checkbox,
+    unchecked by default (owner). Yes sends; No sends nothing.
+  - Ticked and Yes: later clicks send at once, until the window closes (my call: each opening asks again, so the
+    checkbox is unchecked by default every time and a player is never stuck without the box).
+  - The box is the V15 Yes/No confirm box (WndTile00, ButtYes / ButtNo, the text in an edit tile, like
+    APP_SMELT_SAFETY_CONFIRM) with the V15 check box (ButtCheck) added.
   - The button is locked until the answer comes, or 2 s pass, so a double-click cannot roll twice.
 - **After Awaken:** the window stays open and the item stays in. The panel shows the new awakening and the chat says
   "Item has been awakened.". A scroll slot stays filled while its stack has more; when the stack is gone, the slot
