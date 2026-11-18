@@ -8,7 +8,7 @@
 // px, its words 14 px, its buttons words a finger can hit.
 
 import type { WebItemProp, WebUltimate } from '@flyffweb/formats';
-import type { InventoryItem } from '@flyffweb/protocol';
+import type { CraftCardRequest, InventoryItem } from '@flyffweb/protocol';
 import type { UiArt } from '../hud/art';
 import { themeUrl } from '../hud/art';
 import { parseDialogText } from '../hud/dialogue/dialogText';
@@ -24,7 +24,9 @@ export type NpcWindowPacket =
   | { type: 'piercingRemove'; itemId: number }
   | { type: 'removeAttribute'; itemId: number }
   | { type: 'repair'; objectIds: number[] }
-  | { type: 'chat'; text: string };
+  | { type: 'chat'; text: string }
+  /** custom (owner 2026-11-19): Bozman's Craft Card (craftCardWindow.ts). */
+  | ({ type: 'craftCard' } & CraftCardRequest);
 
 /**
  * 2026-11-15 (consistency scan): an item slot's tooltip host: the item's own tooltip (`createItemDetails`, as the bank's,
