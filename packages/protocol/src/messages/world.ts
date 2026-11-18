@@ -22,6 +22,8 @@ import { readDuelRequestPacket } from '../world/duel';
 import type { DuelRequestPacket } from '../world/duel';
 import { readQueryEquipRequestPacket } from '../world/queryEquip';
 import type { QueryEquipRequestPacket } from '../world/queryEquip';
+import { readCraftCardPacket } from '../world/craftCard';
+import type { CraftCardRequest } from '../world/craftCard';
 import { ArReader } from '../ar/ArReader';
 import { DPID_UNKNOWN, MessageType, PacketType } from '../constants';
 import type { Vec3 } from '../constants';
@@ -411,6 +413,8 @@ export type WorldPacket =
   | DuelRequestPacket
   // 2026-11-17 (view-equip-options): View Equipment and the two mode options (world/queryEquip.ts)
   | QueryEquipRequestPacket
+  // custom (owner 2026-11-19): Bozman's Craft Card (world/craftCard.ts)
+  | ({ type: 'craftCard' } & CraftCardRequest)
   | { type: 'unknown'; packetType: number };
 
 /**
@@ -637,6 +641,8 @@ function decodeClientPacket(r: ArReader): WorldPacket {
       const mask = r.u32(); r.expectEnd();
       return { type: 'petFilter', mask };
     }
+    case PacketType.CRAFT_CARD: // custom (owner 2026-11-19)
+      return readCraftCardPacket(r);
     case PacketType.TRANSFORM_ITEM: { // CTransformStuff::Serialize's loading side (pet.cpp:705-718), each part 8 bytes
       const transform = r.i32(), size = r.u32();
       if (size * 8 !== r.remaining()) throw new ProtocolError('Invalid TRANSFORM_ITEM size');

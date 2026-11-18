@@ -6,6 +6,7 @@ import { GUILD_HOUSE_READERS } from './guildHouse';
 import { LORD_READERS } from './lord';
 import { HONOR_READERS } from './honor';
 import { HP_LAYER_READERS } from './hpLayer';
+import { CRAFT_CARD_READERS } from './craftCard'; // custom (owner 2026-11-19)
 import { TAX_READERS } from './tax';
 import { GUILD_COMBAT_READERS } from './guildCombat';
 import { POST_READERS } from './post';
@@ -258,6 +259,8 @@ export const WORLD_READERS: ReadonlyMap<number, MessageReader<WorldMessage>> =
     ...HONOR_READERS,
     // 2026-11-11: layered boss HP, a server addition (world/hpLayer.ts)
     ...HP_LAYER_READERS,
+    // custom (owner 2026-11-19): Bozman's Craft Card's answer (world/craftCard.ts)
+    ...CRAFT_CARD_READERS,
     // 2026-11-15: the tax rates, for the shop prices in item tooltips (world/tax.ts)
     ...TAX_READERS,
     // 2026-11-15 (social): the couple (world/couple.ts)

@@ -81,6 +81,8 @@ export {
 export { honorCounts, writeHonorChange, writeHonorList } from './honor';
 // 2026-11-11: layered boss HP (a server addition)
 export { writeHpLayer } from './hpLayer';
+// custom (owner 2026-11-19): Bozman's Craft Card's answer
+export { writeCraftCard } from './craftCard';
 export { writeTaxInfo } from './tax';
 // 2026-11-15 (social): the couple and the duels
 export {
