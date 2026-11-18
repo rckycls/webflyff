@@ -71,8 +71,9 @@ pieces in place makes a re-roll one click, and the 50,000 penya per click is a p
   - the player is trading or has a personal shop open;
   - the item is missing, unusable, worn, expired, or not an awakening kind (`GetRandomOptionKind != eAwakening`);
   - the Awakening slot is not a usable Scroll of Awakening (26461);
-  - the item is awakened and the Reversion slot is not a usable 26462 or 26563. "Awakened" counts the stat bits, the
-    Awakening Protection flag, and a pending protected roll, so nothing slips through as "not awakened";
+  - the item is awakened and the Reversion slot is not a usable 26462 or 26563. "Awakened" counts the stat bits and the
+    Awakening Protection flag, as the client does. (2026-11-19, final review: a pending protected roll the client cannot see
+    is not counted: with no options left it would have refused every press; it is thrown away by the roll instead);
   - the player has under 50,000 penya.
 - Then, in one step:
   1. clear the awakening (`InitializeRandomOption`, which keeps the level-down bits and the random-scroll byte as the
