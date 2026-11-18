@@ -92,3 +92,4 @@ export * from './world/tax'; // 2026-11-15
 export * from './world/guildCombat'; // 2026-11-15: the Guild Siege
 export * from './world/authority'; // 2026-11-17: the authority letters, VIP1-VIP4 (vip-auth)
 export * from './world/vipPerks'; // 2026-11-19: the VIP perks' numbers (shop discount, death EXP)
+export * from './world/vipBag'; // 2026-11-19: the VIP bag buttons (sort, penya to Perins)

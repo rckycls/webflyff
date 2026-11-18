@@ -1927,6 +1927,16 @@ fieldset:disabled .btn {
 .inventory-mobile-bag-footer { position: absolute; left: 0; top: 216px; width: 228px; height: 36px; background-image: var(--classic-inventory-art); background-position: -4px -410px; }
 .hud-inventory[data-mobile-window] .inventory-bag-scroll { left: 14px; top: 6px; width: 204px; height: 192px; }
 .hud-inventory[data-mobile-window] .inventory-money { left: 98px; top: 232px; width: 116px; }
+/* custom (owner 2026-11-19, VIP perks): the bag's VIP icon buttons (sort, Penya -> Perin) left of the penya sack, VIP1-VIP4 only */
+.inventory-vip-tools { position: absolute; left: 26px; top: 154px; display: flex; gap: 2px; z-index: 2; }
+.hud-inventory[data-mobile-window] .inventory-vip-tools { left: 36px; top: 232px; }
+.inventory-vip-tool { width: 18px; height: 18px; min-height: 18px; padding: 0; display: grid; place-items: center; border: 1px solid #b07b4c; border-radius: 3px; background: linear-gradient(#fff8e6, #f0d6a8); cursor: pointer; }
+.inventory-vip-tool:hover { background: linear-gradient(#fffbf0, #f6e2bd); border-color: #8a5a2e; }
+.inventory-vip-tool:focus-visible { outline: 2px solid #2376ad; outline-offset: 1px; }
+.inventory-vip-tool img { width: 16px; height: 16px; pointer-events: none; }
+.inventory-vip-ask { position: absolute; left: 0; bottom: 22px; width: 196px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px; border: 2px solid #d5a188; border-radius: 4px; background: #fff6eb; box-shadow: 0 2px 5px #0005; color: #382b20; font-size: 11px; line-height: 1.35; }
+.inventory-vip-ask span { width: 100%; }
+.inventory-vip-ask button { min-height: 20px; padding: 0 10px; }
 .hud-inventory[data-mobile-window] .inventory-details { right: 12px; top: auto; bottom: 6px; width: min(320px, calc(100% - 44px)); }
 .hud-inventory[data-mobile-window] .inventory-details button { min-height: 40px; }
 /* 2026-11-11 (owner): the items alone while a jewel or Upgrade Specialist window is open (inventoryWindow.ts `itemsOnly`) */

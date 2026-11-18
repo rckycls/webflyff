@@ -16,6 +16,11 @@ import { isRide } from '../items/rideItems';
 import { itemIconOf, itemName } from '../pets/petStatus';
 import type { WebItemProp } from '@flyffweb/formats';
 import type { InventoryItem } from '@flyffweb/protocol';
+import vipPerinIcon from '../../icons/vip_perin.svg';
+import vipSortIcon from '../../icons/vip_sort.svg';
+
+/** What one Perin costs in penya (`PERIN_VALUE`, Resource/define.h:263). */
+const PERIN_PENYA = 100_000_000;
 
 /** `CItemElem::expired` (`m_byFlag`, `_Common/Item.h:119`). */
 const ITEM_EXPIRED = 0x01;
@@ -52,6 +57,11 @@ export interface InventoryActions {
   closed?(): void;
   /** 2026-11-05: the hammer over the bag: the upgrade mode's (`m_bIsUpgradeMode`), not a window's pick. */
   hammer?(): boolean;
+  /**
+   * custom (owner 2026-11-19, VIP perks): the own VIP level (0 none: the buttons are not there), the bag sort and the
+   * Penya -> Perin convert (protocol world/vipBag.ts; the World server checks the VIP letter itself).
+   */
+  vip?: { level(): number; sort(): void; perin(): void };
   /** 2026-11-09 (pets R2): the own player has the buff, for the tooltips that ask (PutPetFeedPocket). */
   hasBuff?(buffType: number, id: number): boolean;
 }
@@ -311,10 +321,53 @@ export class InventoryWindow {
     });
     footer.addEventListener('click', () => { if (this.mobile && this.trade?.active() === true) this.trade.tapPenya(); });
     bag.append(scroll, footer);
+    // custom (owner 2026-11-19, VIP perks): sort and Penya -> Perin beside the penya, for VIP1-VIP4 only
+    if ((this.actions.vip?.level() ?? 0) > 0) bag.append(this.vipTools(own));
     bagBox.append(bag); equipmentBox.append(equipment); sections.append(equipmentBox, bagBox);
     body.append(sections);
     scroll.scrollTop = Math.round(scrollTop / 32) * 32;
     this.drawDetails();
+  }
+
+  /**
+   * custom (owner 2026-11-19, VIP perks): the two VIP icon buttons left of the penya sack. Sort sends at once; Penya ->
+   * Perin asks first in place, with the Perins the penya buys and the penya they take (100,000,000 each), or says a Perin
+   * takes 100,000,000 penya. The server checks the VIP letter, the penya and the bag room again.
+   */
+  private vipTools(own: OwnState): HTMLElement {
+    const tools = this.doc.createElement('div'); tools.className = 'inventory-vip-tools';
+    const tool = (name: string, label: string, icon: string, press: () => void): HTMLButtonElement => {
+      const button = this.doc.createElement('button');
+      button.type = 'button'; button.className = 'inventory-vip-tool'; button.dataset.vipTool = name;
+      button.setAttribute('aria-label', label); button.title = label;
+      const image = this.doc.createElement('img'); image.src = icon; image.alt = ''; image.draggable = false;
+      button.append(image);
+      button.addEventListener('click', (event) => { event.stopPropagation(); press(); });
+      return button;
+    };
+    const ask = (text: string, yes?: () => void): void => {
+      tools.querySelector('.inventory-vip-ask')?.remove();
+      const box = this.doc.createElement('div'); box.className = 'inventory-vip-ask'; box.setAttribute('role', 'alertdialog');
+      const line = this.doc.createElement('span'); line.textContent = text; box.append(line);
+      const answer = (name: 'yes' | 'no', label: string, then?: () => void): void => {
+        const button = this.doc.createElement('button'); button.type = 'button'; button.dataset.vipAnswer = name; button.textContent = label;
+        button.addEventListener('click', (event) => { event.stopPropagation(); box.remove(); then?.(); });
+        box.append(button);
+      };
+      if (yes !== undefined) answer('yes', 'Yes', yes);
+      answer('no', yes === undefined ? 'OK' : 'Cancel');
+      tools.append(box);
+    };
+    tools.append(
+      tool('sort', 'Sort the bag', vipSortIcon, () => this.actions.vip?.sort()),
+      tool('perin', 'Turn penya into Perins', vipPerinIcon, () => {
+        const count = Math.floor(own.gold / PERIN_PENYA);
+        if (count < 1) { ask(`A Perin takes ${PERIN_PENYA.toLocaleString('en-US')} penya.`); return; }
+        const plural = count === 1 ? 'Perin' : 'Perins';
+        ask(`Turn ${(count * PERIN_PENYA).toLocaleString('en-US')} penya into ${count} ${plural}?`, () => this.actions.vip?.perin());
+      }),
+    );
+    return tools;
   }
 
   /**

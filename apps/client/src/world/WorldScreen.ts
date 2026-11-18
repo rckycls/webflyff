@@ -2188,6 +2188,12 @@ export class WorldScreen {
       // 2026-11-09 (pets R2): the own buffs, for the feed pocket's tooltip (PutPetFeedPocket)
       hasBuff: (buffType, id) => this.world?.self()?.buffs.list(this.world.nowMs())
         .some((buff) => buff.buffType === buffType && buff.id === id) === true,
+      // custom (owner 2026-11-19, VIP perks): the bag's VIP buttons, for VIP1-VIP4 only; no sort while trading
+      vip: {
+        level: () => vipLevelOf(this.world?.self()?.added.player?.authorization ?? 0),
+        sort: () => { if (!this.tradeLimit()) this.session.sendVipSortInventory(); },
+        perin: () => { if (!this.tradeLimit()) this.session.sendVipPerinConvert(); },
+      },
       drop: (id, count) => {
         if (this.dialog?.frame.isOpen === true) return; // no drop while the dialogue is open (DPClient.cpp:9378-9382)
         // 2026-11-10 (bank-mail): nor while the bank is open (WndWorld.cpp:7776-7797)
