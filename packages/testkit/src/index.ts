@@ -10,6 +10,7 @@ export {
   writeMoverDeath, writeMoverMoved, writePlayMusic, writePlaySound, writePlaySoundFile, writeQueryGetDestObj, writeReplace, writeRevival, writeRevivalToLodestar,
   writeQuestChecked, writeRemoveQuest, writeSetQuest,
   writeReturnScrollAck, writeStateMode, writeUpdateItem, // Piece 7 M3
+  writeUpdateItemEx, // 2026-11-19 (Awaken window)
   writeDoApplySkill, writeSmMode, // 2026-11-05: Buff Pang and the premium timers
   writeMeleeAttack2, writeMoverBehavior2, writeMoverCorr2, writeMoverMoved2, writeSendActMsg, writeSetFuel, // Piece 7 M5
   writeSetActionPoint, writeSetDestObj, writeSetExperience, writeSetGrowthLearningPoint, writeSetLevel,

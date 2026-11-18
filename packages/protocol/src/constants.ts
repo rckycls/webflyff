@@ -42,6 +42,11 @@ export const PacketType = {
    * Loot tab's 0x8fff0100, which no client sends now.
    */
   PET_FILTER: 0x8fff0101,
+  /**
+   * custom (owner 2026-11-19): the Awaken window's press (world/upgrade.ts `encodeAwakenWindow`). Not in V15: added by the
+   * outer repo's patches/2026-11-19-awaken-window.patch (`PACKETTYPE_AWAKEN_WINDOW`, `CDPSrvr::OnAwakenWindow`).
+   */
+  AWAKEN_WINDOW: 0x8fff0102,
   /** 2026-11-05: the upgrade cursor's packets (`MsgHdr.h`; world/upgrade.ts). */
   ENCHANT: 0xf000b024,
   PIERCING: 0xf000b025,
