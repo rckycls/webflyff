@@ -2,6 +2,8 @@
 // folder that cannot be made only writes `vip: off: <reason>`, and /api/vip answers 503 `off`. Without a `vip`
 // section nothing is said: it is off. The panel's VIP tab needs the admin section too. With it, rejected requests' receipt
 // pictures are deleted `deleteRejectedAfterDays` days after the rejection (checked a minute after start, then every 6 hours).
+// 2026-11-19 (VIP perks): with the admin section, the VIP job (vipPerksJob.ts) runs a minute after start, then every
+// 5 minutes: the in-game VIP letters follow the VIP list, and the gift boxes go out by in-game mail.
 
 import path from 'node:path';
 import { SessionBook } from '../admin/sessions';
@@ -12,9 +14,11 @@ import type { Logger } from '../log';
 import type { VipRoutes } from '../server';
 import { AutoPlayUsage } from './autoPlayUsage';
 import { siteVipRoutes } from './siteVip';
+import { sqlVipCharacterStore } from './sqlVipCharacterStore';
 import { sqlVipAdminStore, sqlVipSiteStore } from './sqlVipStore';
 import { VipFiles } from './vipFiles';
-import type { VipAdminStore, VipSiteStore } from './vipStore';
+import { VipPerksJob } from './vipPerksJob';
+import type { VipAdminStore, VipCharacterStore, VipSiteStore } from './vipStore';
 import type { VipConfig } from './vipConfig';
 
 /** A player's site session: 60 minutes without a request, 12 hours at most. */
@@ -41,6 +45,8 @@ export interface StartedVip {
 export interface VipStores {
   site(): Closable<VipSiteStore>;
   admin(login: AdminConfig['sql']): Closable<VipAdminStore>;
+  /** 2026-11-19: the VIP job's CHARACTER_01_DBF side (the SQL one when not given). */
+  characters?(login: AdminConfig['sql']): Closable<VipCharacterStore>;
 }
 
 /**
@@ -97,12 +103,22 @@ export function startVip(config: WebConfig, log: Logger, now: () => number, stor
     const sweep = () => { void forgetOldReceipts(vip, admin, files, log); };
     timers.push(setTimeout(sweep, RECEIPT_SWEEP_FIRST_MS).unref(), setInterval(sweep, RECEIPT_SWEEP_EVERY_MS).unref());
   }
+  // 2026-11-19 (VIP perks): the VIP job, with the panel's login (it reaches CHARACTER_01_DBF too)
+  let characters: Closable<VipCharacterStore> | undefined;
+  let job: VipPerksJob | undefined;
+  if (admin !== undefined && config.admin !== undefined) {
+    const login = config.admin.sql;
+    characters = stores.characters?.(login) ?? sqlVipCharacterStore(config.sql, login);
+    job = new VipPerksJob({ admin, characters }, log);
+    job.start();
+  }
   return {
     routes,
     admin: admin === undefined ? undefined : { store: admin, files },
     close: async () => {
       for (const timer of timers) clearTimeout(timer);
-      await Promise.all([site.close(), admin?.close()]);
+      job?.stop();
+      await Promise.all([site.close(), admin?.close(), characters?.close()]);
     },
   };
 }
