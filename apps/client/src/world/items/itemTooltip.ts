@@ -344,6 +344,36 @@ export function levelDown(raw: bigint | undefined): number {
   return 0;
 }
 
+/** One option as `PutAwakeningBlessing` words it (:4719-4830); Attack Speed's ends in a space, as Neuz's. */
+function awakeningLine(opt: { dst: number; adj: number }, dstName: (dst: number) => string): string {
+  const sign = opt.adj > 0 ? '+' : '-';
+  return isDstRate(opt.dst)
+    ? `${dstName(opt.dst)} ${sign}${Math.abs(rateValue(opt.dst, opt.adj))}%${opt.dst === DST_ATTACKSPEED ? ' ' : ''}`
+    : `${dstName(opt.dst)} ${sign}${Math.abs(opt.adj)}`;
+}
+
+/**
+ * custom (owner 2026-11-19, the Awaken window): the item's awakening options, a trimmed line each, worded as the tooltip's
+ * (the options under the Awakening Protection flag included, as the tooltip shows them struck through).
+ */
+export function awakeningLines(raw: bigint | undefined, texts: TooltipData['texts']): string[] {
+  if (raw === undefined) return [];
+  const dstName = (dst: number): string => texts.get(DST_NAMES.get(dst) ?? '')?.text ?? '';
+  const lines: string[] = [];
+  for (let i = 0; i < viewOptionCount(raw); i++) {
+    const opt = awakeningOption(raw, i);
+    if (opt !== null) lines.push(awakeningLine(opt, dstName).trim());
+  }
+  return lines;
+}
+
+/** custom (owner 2026-11-19): `GetRandomOptionKind( item ) == eAwakening`: a suit, weapon, shield, gloves, boots or helmet. */
+export const isAwakenable = (prop: Pick<WebItemProp, 'part'>): boolean => AWAKENING_PARTS.has(prop.part);
+
+/** custom (owner 2026-11-19): the item has awakening options, or the Awakening Protection flag (the server counts both). */
+export const isAwakened = (raw: bigint | undefined): boolean =>
+  raw !== undefined && (viewOptionCount(raw) > 0 || (unsigned(raw) & AWAKE_SAFE_FLAG) !== 0n);
+
 // ---- jobs (CMover::IsInteriorityJob, MoverParam.cpp:409-458; JTYPE_*) --------------------------------------------------
 
 const MAX_EXPERT = 6;
@@ -820,11 +850,7 @@ ${dstName(dst)}+${value}${ADDED_OPT_RATES.has(dst) ? '%' : ''}`, ADDED_OPT);
     for (let i = 0; i < size; i++) {
       const opt = awakeningOption(raw, i);
       if (opt === null) continue;
-      const sign = opt.adj > 0 ? '+' : '-';
-      const line = isDstRate(opt.dst)
-        ? `\n${dstName(opt.dst)} ${sign}${Math.abs(rateValue(opt.dst, opt.adj))}%${opt.dst === DST_ATTACKSPEED ? ' ' : ''}`
-        : `\n${dstName(opt.dst)} ${sign}${Math.abs(opt.adj)}`;
-      put(line, kind === 0 ? AWAKENING : BLESSING, { strike: kind === 0 && safe });
+      put(`\n${awakeningLine(opt, dstName)}`, kind === 0 ? AWAKENING : BLESSING, { strike: kind === 0 && safe });
     }
     if (kind === 1 && size > 0) put(`\n${text('TID_GAME_BLESSING_WARNING')}`, RED);
   }

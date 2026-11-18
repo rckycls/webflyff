@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { InventoryItem } from '@flyffweb/protocol';
 import type { ClientText } from '../src/world/gameData';
-import { itemEtcOf, itemTooltip } from '../src/world/items/itemTooltip';
+import { awakeningLines, isAwakenable, isAwakened, itemEtcOf, itemTooltip } from '../src/world/items/itemTooltip';
 import type { ItemEtc, TooltipContext, TooltipLine } from '../src/world/items/itemTooltip';
 import { SUIT, WOODEN_SWORD, itemProp } from './helpers/ownState';
 
@@ -104,6 +104,27 @@ describe('the item tooltip: the awakening (PutAwakeningBlessing, WndManager.cpp:
     expect(textOf(itemTooltip(item({ itemId: 801 }), hat, DATA, OTHER))).not.toContain('Blessed Options');
     const potion = itemProp({ id: 802, name: 'Potion', kind1: 3, kind2: 12, kind3: 30, part: -1 });
     expect(textOf(itemTooltip(item({ itemId: 802 }), potion, DATA, OTHER)).join('|')).not.toMatch(/Awakening/);
+  });
+});
+
+describe('the awakening helpers the Awaken window shares (custom 2026-11-19)', () => {
+  it('awakeningLines: one trimmed line per option, as the tooltip words them; none without options', () => {
+    expect(awakeningLines(0x08cfa184b0041400n, texts)).toEqual(['STR +20', 'Attack Speed +15%', 'Max. HP +250']);
+    expect(awakeningLines(0n, texts)).toEqual([]);
+    expect(awakeningLines(undefined, texts)).toEqual([]);
+  });
+
+  it('isAwakened: options or the Awakening Protection flag', () => {
+    expect(isAwakened(0n)).toBe(false);
+    expect(isAwakened(undefined)).toBe(false);
+    expect(isAwakened(0x08cfa184b0041400n)).toBe(true);
+    expect(isAwakened(1n << 61n)).toBe(true);
+    expect(isAwakened(0x12n)).toBe(false); // a random scroll's low byte is no awakening
+  });
+
+  it('isAwakenable: suit, weapon, shield, gloves, boots, helmet; not fashion or the rest', () => {
+    for (const part of [2, 10, 11, 4, 5, 6]) expect(isAwakenable(itemProp({ part }))).toBe(true);
+    for (const part of [8, 27, -1]) expect(isAwakenable(itemProp({ part }))).toBe(false);
   });
 });
 
