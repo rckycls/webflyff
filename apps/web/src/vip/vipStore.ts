@@ -90,8 +90,11 @@ export interface VipGiftLogRow extends VipGift {
   items: string | null;
 }
 
-/** The account's latest gift box, as the VIP page shows it. */
-export interface VipGiftStatus { level: number; createdAt: string; sentAt: string | null; characterName: string | null }
+/** The account's latest gift box, as the VIP page shows it; `cancelled` by End VIP. */
+export interface VipGiftStatus { level: number; createdAt: string; sentAt: string | null; characterName: string | null; cancelled: boolean }
+
+/** End VIP's answer: ended now (with the unsent boxes it cancelled), no live VIP, or no such account. */
+export interface EndVipResult { result: 'ok' | 'none' | 'unknown'; cancelled: number }
 
 /** An account (or one of its characters) and the VIP letter it holds. */
 export interface VipLetter { account: string; letter: string }
@@ -147,12 +150,17 @@ export interface VipAdminStore {
   give(account: string, level: number, days: number, gift: boolean, admin: string): Promise<GiveResult>;
   /** The accounts whose own letter is a VIP letter. */
   letterAccounts(): Promise<VipLetter[]>;
-  /** A hand-set VIP letter with no WEB_VIP row at all becomes 30 days of VIP (no gift); false when a row exists. */
+  /**
+   * A hand-set VIP letter with no WEB_VIP row becomes 30 days of VIP (no gift), once per account ever (WEB_VIP_ADOPTED):
+   * false when the account has a row or was seen before, so a row the owner deletes is never brought back.
+   */
   adopt(account: string, level: number): Promise<boolean>;
   /** Puts every player or VIP account letter right; staff letters never change. */
   syncLetters(): Promise<VipLetterChange[]>;
-  /** The gift boxes not sent yet, oldest first. */
-  pendingGifts(max: number): Promise<VipGift[]>;
+  /** The gift boxes not sent yet, oldest first, after the gift `afterId` (0: from the start). */
+  pendingGifts(max: number, afterId?: number): Promise<VipGift[]>;
+  /** Ends a live VIP now: the letter back to F (a player's or VIP's only), its unsent boxes cancelled. */
+  endVip(account: string, admin: string): Promise<EndVipResult>;
   /** Marks a box sent; false when it was already. */
   markGiftSent(id: number, idPlayer: string, characterName: string | null, items: string): Promise<boolean>;
   giftItems(): Promise<VipGiftItem[]>;

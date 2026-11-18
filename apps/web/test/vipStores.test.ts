@@ -107,7 +107,40 @@ describe('gift boxes', () => {
     expect(await store.markGiftSent(gift!.id, '0000002', 'Main', '10206x20')).toBe(true);
     expect(await store.markGiftSent(gift!.id, '0000002', 'Main', '10206x20')).toBe(false);
     expect(await store.pendingGifts(50)).toEqual([]);
-    expect((await store.mine('tester1')).gift).toEqual({ level: 2, createdAt: '2026-11-19T12:00:00Z', sentAt: '2026-11-19T12:00:00Z', characterName: 'Main' });
+    expect((await store.mine('tester1')).gift).toEqual({ level: 2, createdAt: '2026-11-19T12:00:00Z', sentAt: '2026-11-19T12:00:00Z', characterName: 'Main', cancelled: false });
     expect((await store.giftLog(10))[0]).toMatchObject({ account: 'tester1', characterName: 'Main', items: '10206x20', createdBy: 'owner' });
+  });
+});
+
+describe('the final review\'s fixes (2026-11-19)', () => {
+  it('End VIP: ends a live VIP now, takes the letter back, cancels its unsent boxes; unknown and none', async () => {
+    const store = setUp();
+    await store.give('tester1', 2, 30, true, 'owner');
+    expect(await store.endVip('tester1', 'owner')).toEqual({ result: 'ok', cancelled: 1 });
+    expect(store.vips.get('tester1')!.endsAt).toBe(NOW);
+    expect(store.accountLetters.get('tester1')).toBe('F');
+    expect(await store.pendingGifts(50)).toEqual([]);
+    expect((await store.giftLog(10))[0]).toMatchObject({ items: 'cancelled', idPlayer: null });
+    expect(await store.endVip('tester1', 'owner')).toEqual({ result: 'none', cancelled: 0 });
+    expect(await store.endVip('nobody', 'owner')).toEqual({ result: 'unknown', cancelled: 0 });
+  });
+
+  it('End VIP keeps a staff letter', async () => {
+    const store = setUp();
+    await store.give('gm1', 4, 30, false, 'owner');
+    await store.endVip('gm1', 'owner');
+    expect(store.accountLetters.get('gm1')).toBe('P');
+  });
+
+  it('adopts an account once, ever', async () => {
+    const store = setUp();
+    expect(await store.adopt('tester1', 3)).toBe(true);
+    store.vips.delete('tester1');
+    expect(await store.adopt('tester1', 3)).toBe(false);
+    // an account the job saw with a row (paid) is marked too: deleting the row later brings nothing back
+    await store.give('gm1', 1, 30, false, 'owner');
+    expect(await store.adopt('gm1', 1)).toBe(false);
+    store.vips.delete('gm1');
+    expect(await store.adopt('gm1', 1)).toBe(false);
   });
 });

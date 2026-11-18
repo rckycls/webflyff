@@ -68,7 +68,10 @@ export function sqlVipSiteStore(settings: WebConfig['sql']): VipSiteStore & { cl
       const vip: VipNow | null = live === undefined ? null : { level: num(live.level), name: textOrNull(live.name), endsAt: text(live.endsAt) };
       const latest = rowsOf(result, 2)[0]; // 2026-11-19 (VIP perks): the latest gift box
       const gift: VipGiftStatus | null = latest === undefined ? null
-        : { level: num(latest.level), createdAt: text(latest.createdAt), sentAt: textOrNull(latest.sentAt), characterName: textOrNull(latest.characterName) };
+        : {
+          level: num(latest.level), createdAt: text(latest.createdAt), sentAt: textOrNull(latest.sentAt),
+          characterName: textOrNull(latest.characterName), cancelled: bool(latest.cancelled),
+        };
       return { vip, requests: rowsOf(result, 1).map(myRequest), gift };
     },
     async addRequest(request) {
@@ -165,8 +168,13 @@ export function sqlVipAdminStore(settings: WebConfig['sql'], login: AdminConfig[
     async syncLetters() {
       return rowsOf(await run('usp_AdminVipSyncLetters')).map((r) => ({ account: text(r.account), before: text(r.before), after: text(r.after) }));
     },
-    async pendingGifts(max) {
-      return rowsOf(await run('usp_AdminVipGiftsPending', (r) => r.input('max', sql.Int, max))).map(giftOf);
+    async pendingGifts(max, afterId = 0) {
+      return rowsOf(await run('usp_AdminVipGiftsPending', (r) => r.input('max', sql.Int, max).input('afterId', sql.Int, afterId))).map(giftOf);
+    },
+    async endVip(account) {
+      const row = rowsOf(await run('usp_AdminVipEnd', (r) => r.input('account', sql.VarChar(32), account)))[0];
+      const result = num(row?.result);
+      return { result: result === 1 ? 'ok' : result === -1 ? 'unknown' : 'none', cancelled: num(row?.cancelled) };
     },
     async markGiftSent(id, idPlayer, characterName, items) {
       return changed(await run('usp_AdminVipGiftMarkSent', (r) => r

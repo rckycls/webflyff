@@ -248,3 +248,12 @@ it('gift log: the latest boxes with the character they went to', async () => {
   const log = await act('vip.giftLog', {}, s);
   expect(log.body.rows[0]).toMatchObject({ account: 'tester1', level: 1, characterName: 'Main', items: '10206x10' });
 });
+
+it('End VIP: refuses an unknown account, ends a live VIP now (logged), and says when there was none', async () => {
+  const s = perksSetUp();
+  expect(await act('vip.end', { account: 'nobody' }, s)).toMatchObject({ status: 404 });
+  await act('vip.give', { account: 'tester1', level: 1, days: 30, gift: true }, s);
+  expect(await act('vip.end', { account: 'tester1' }, s)).toMatchObject({ status: 200, body: { ok: true, cancelled: 1 } });
+  expect(await act('vip.end', { account: 'tester1' }, s)).toMatchObject({ status: 409 });
+  expect(s.deps.store.log.filter((r) => r.action === 'vip.end').map((r) => r.result)).toEqual(['refused', 'ok', 'refused']);
+});

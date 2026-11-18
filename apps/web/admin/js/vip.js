@@ -254,7 +254,18 @@ function giveView() {
       return `Gave ${account.value.trim()} VIP ${done.level} until ${timeText(done.endsAt)}.`;
     })();
   });
-  return { node: el('div', { class: 'vip-view' }, form), show: async () => {} };
+  // End VIP (a wrongly approved payment, say): asks again in place, then ends it now and cancels the unsent boxes
+  const endMessage = messageLine();
+  const endAccount = el('input', { maxlength: '32', autocomplete: 'off', 'aria-label': 'Account to end VIP for' });
+  const endButton = askFirst('End VIP', 'End this account\'s VIP now? The star goes at their next login and their unsent gift boxes are cancelled.', 'Yes, end it', endMessage, async () => {
+    const who = endAccount.value.trim();
+    const done = await api('vip.end', { account: who }, { write: true });
+    return `Ended ${who}'s VIP${done.cancelled > 0 ? `, ${done.cancelled} unsent gift box(es) cancelled` : ''}.`;
+  }, { danger: true });
+  const endCard = el('div', { class: 'card' },
+    el('p', { class: 'small', text: 'End VIP stops an account\'s VIP now (for a payment approved by mistake, say).' }),
+    el('label', {}, 'Account ', endAccount), ' ', endButton, endMessage.node);
+  return { node: el('div', { class: 'vip-view' }, form, endCard), show: async () => {} };
 }
 
 /** What each tier's box holds: up to 6 item stacks, searched in the item list as in the Send tab. */
@@ -269,6 +280,7 @@ function giftBoxView() {
     let itemId = row ? row.itemId : 0;
     let timer = 0;
     query.addEventListener('input', () => {
+      itemId = 0; // typing forgets the item: Save then asks for one picked from the search, never keeps the old one
       window.clearTimeout(timer);
       timer = window.setTimeout(() => {
         const text = query.value.trim();
@@ -320,7 +332,7 @@ function giftsView() {
         el('tbody', {}, rows.map((g) => el('tr', {},
           el('td', { text: timeText(g.createdAt) }), el('td', { text: g.account }), el('td', { text: `VIP ${g.level}` }),
           el('td', { text: g.requestId === null ? `Give VIP (${g.createdBy})` : `Request ${g.requestId}` }),
-          el('td', { text: g.sentAt ? timeText(g.sentAt) : 'Waiting (no character yet, or the box is empty)' }),
+          el('td', { text: g.items === 'cancelled' ? `Cancelled ${timeText(g.sentAt)}` : g.sentAt ? timeText(g.sentAt) : 'Waiting (no character yet, or the box is empty)' }),
           el('td', { text: g.characterName ?? '' }), el('td', { text: g.items ?? '' })))))));
     } catch (error) {
       message.problem(error.message);

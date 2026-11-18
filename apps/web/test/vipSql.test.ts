@@ -109,3 +109,15 @@ it('sends a gift once: the sent mark is checked first and written with the mails
 it('lets the site read the latest gift', () => {
   expect(body('usp_WebVipMine')).toContain('FROM dbo.WEB_VIP_GIFT');
 });
+
+it('final review fixes: pages the pending gifts, ends a VIP, adopts once, and the sync takes no update lock first', () => {
+  expect(body('usp_AdminVipGiftsPending')).toContain('AND id > @afterId');
+  const end = body('usp_AdminVipEnd');
+  expect(end).toContain(VIP_OR_PLAYER);
+  expect(end).toContain("items = 'cancelled'");
+  expect(grants).toContainEqual(['usp_AdminVipEnd', 'flyffweb_admin']);
+  expect(sql).toContain('CREATE TABLE dbo.WEB_VIP_ADOPTED (');
+  const adopt = body('usp_AdminVipAdopt');
+  expect(adopt).toContain('IF NOT EXISTS (SELECT 1 FROM dbo.WEB_VIP_ADOPTED WITH (UPDLOCK, HOLDLOCK) WHERE account = @account)');
+  expect(body('usp_AdminVipSyncLetters')).not.toContain('UPDLOCK');
+});

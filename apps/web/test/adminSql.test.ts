@@ -53,6 +53,11 @@ it('checks the new procedures in admin-check.sql, 10 PASS lines', () => {
     expect(check).toContain(name);
   }
   expect([...check.matchAll(/PRINT 'PASS (\d+):/g)].map((m) => Number(m[1]))).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  // 2026-11-19 (VIP perks): check 10 expects the VIP letters refused, a panel letter taken
+  const ten = check.slice(check.indexOf('-- 10.'), check.indexOf('DROP TABLE #auth'));
+  expect(ten).toContain("@authority = 'J'");
+  expect(ten).toContain("@authority = 'L'");
+  expect(ten).toContain('PASS 10: the panel\'\'s letters are taken; VIP, lower-case and unknown letters are refused');
 });
 
 it('makes only usp_Admin procedures', () => {

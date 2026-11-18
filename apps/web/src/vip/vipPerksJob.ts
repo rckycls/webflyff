@@ -11,13 +11,14 @@
 // a character enters the world, so a change counts from the player's next entry.
 
 import type { Logger } from '../log';
-import type { VipAdminStore, VipCharacterStore, VipGiftItem } from './vipStore';
+import type { VipAdminStore, VipCharacterStore, VipGift, VipGiftItem } from './vipStore';
 
 /** The first run a minute after start, then every 5 minutes. */
 export const VIP_JOB_FIRST_MS = 60_000;
 export const VIP_JOB_EVERY_MS = 5 * 60_000;
-/** The most gift boxes one run sends. */
+/** The unsent gift boxes read at a time, and the most pages one run reads (2,000 boxes). */
 export const GIFTS_PER_RUN = 50;
+export const MAX_GIFT_PAGES = 40;
 export const GIFT_TEXT = 'Thank you for supporting osflyff.online!';
 
 export interface VipJobStores { admin: VipAdminStore; characters: VipCharacterStore }
@@ -33,34 +34,49 @@ export function itemsText(items: VipGiftItem[]): string {
 
 export async function runVipPerksJob(stores: VipJobStores, log: Logger): Promise<VipJobReport> {
   const report: VipJobReport = { adopted: 0, letters: 0, cleared: 0, sent: 0, waiting: 0 };
-  const step = async (name: string, act: () => Promise<void>): Promise<void> => {
+  const step = async (name: string, act: () => Promise<void>): Promise<boolean> => {
     try {
       await act();
+      return true;
     } catch (error) {
       log.warn(`vip job: ${name} failed: ${message(error)}`);
+      return false;
     }
   };
 
-  // 1. adopt the hand-set letters: the highest VIP level found on the account or any of its characters
-  const handSet = new Map<string, number>();
+  // 1. adopt the hand-set letters: the highest VIP level found on the account or any of its characters (the account's
+  // own spelling kept). Each account is adopted at most once ever (WEB_VIP_ADOPTED).
+  const handSet = new Map<string, { account: string; level: number }>();
   const note = (account: string, letter: string): void => {
     const level = VIP_LETTERS.indexOf(letter) + 1;
     const key = account.toLowerCase();
-    if (level > 0 && level > (handSet.get(key) ?? 0)) handSet.set(key, level);
+    const seen = handSet.get(key);
+    if (level > 0 && level > (seen?.level ?? 0)) handSet.set(key, { account: seen?.account ?? account, level });
   };
-  await step('letterAccounts', async () => { for (const l of await stores.admin.letterAccounts()) note(l.account, l.letter); });
-  await step('characterLetters', async () => { for (const l of await stores.characters.characterLetters()) note(l.account, l.letter); });
-  for (const [account, level] of handSet) {
-    await step(`adopt ${account}`, async () => { if (await stores.admin.adopt(account, level)) report.adopted++; });
+  let adoptionOk = await step('letterAccounts', async () => { for (const l of await stores.admin.letterAccounts()) note(l.account, l.letter); });
+  adoptionOk = (await step('characterLetters', async () => { for (const l of await stores.characters.characterLetters()) note(l.account, l.letter); })) && adoptionOk;
+  for (const { account, level } of handSet.values()) {
+    adoptionOk = (await step(`adopt ${account}`, async () => { if (await stores.admin.adopt(account, level)) report.adopted++; })) && adoptionOk;
   }
 
-  // 2. and 3. the letters
-  await step('syncLetters', async () => { report.letters = (await stores.admin.syncLetters()).length; });
-  await step('clearCharacterLetters', async () => { report.cleared = await stores.characters.clearCharacterLetters(); });
+  // 2. and 3. the letters; not in a run whose adoption step failed: a hand-set star it missed would be cleared for good
+  if (adoptionOk) {
+    await step('syncLetters', async () => { report.letters = (await stores.admin.syncLetters()).length; });
+    await step('clearCharacterLetters', async () => { report.cleared = await stores.characters.clearCharacterLetters(); });
+  } else {
+    log.warn('vip job: the letters are left as they are this run (finding the hand-set ones failed); the next run tries again');
+  }
 
-  // 4. the gift boxes
+  // 4. the gift boxes: every unsent one, a page at a time, so boxes that wait (no character yet, an empty tier) never
+  // hold back the ones behind them
   await step('gifts', async () => {
-    const pending = await stores.admin.pendingGifts(GIFTS_PER_RUN);
+    const pending: VipGift[] = [];
+    for (let afterId = 0, page = 0; page < MAX_GIFT_PAGES; page++) {
+      const rows = await stores.admin.pendingGifts(GIFTS_PER_RUN, afterId);
+      pending.push(...rows);
+      if (rows.length < GIFTS_PER_RUN) break;
+      afterId = rows[rows.length - 1]!.id;
+    }
     if (pending.length === 0) return;
     const allItems = await stores.admin.giftItems();
     const emptyTiers = new Set<number>();

@@ -216,6 +216,18 @@ const giftItemSave = withVip(async (body, ctx, deps, vip) => {
 
 const giftLog = withVip(async (_body, _ctx, _deps, vip) => reply(200, { rows: await vip.store.giftLog(GIFT_LOG_ROWS) }));
 
+/** Ends an account's live VIP now (a wrongly approved payment, say): the star goes, and its unsent boxes are cancelled. */
+const end = withVip(async (body, ctx, deps, vip) => {
+  const account = textField(body, 'account', 32);
+  if (account === undefined) return invalid('account', 'Type the account name.');
+  return runAudited(deps, ctx, { action: 'vip.end', account, before: { account } }, async () => {
+    const done = await vip.store.endVip(account, ctx.session.user);
+    if (done.result === 'ok') return { answer: okReply({ cancelled: done.cancelled }), result: 'ok', after: { ended: true, cancelled: done.cancelled } };
+    if (done.result === 'unknown') return { answer: reply(404, { error: 'not_found', message: 'There is no such account.' }), result: 'refused', after: { unknown: account } };
+    return { answer: reply(409, { error: 'refused', message: 'This account has no VIP running now.' }), result: 'refused', after: { none: account } };
+  });
+});
+
 export const VIP_ACTIONS = {
   'vip.requests': requests,
   'vip.approve': approve,
@@ -230,4 +242,5 @@ export const VIP_ACTIONS = {
   'vip.giftItems': giftItems,
   'vip.giftItemSave': giftItemSave,
   'vip.giftLog': giftLog,
+  'vip.end': end,
 } satisfies Record<string, ActionHandler>;

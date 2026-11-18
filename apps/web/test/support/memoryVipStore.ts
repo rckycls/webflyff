@@ -5,7 +5,7 @@
 // contents, and MemoryVipCharacters for the CHARACTER_01_DBF side (the characters' letters and the gift mails).
 
 import type {
-  AddVipRequestResult, AdminVipRequest, AdminVipRequestDetail, ApproveResult, GiftSendResult, GiveResult, MyVipRequest,
+  AddVipRequestResult, AdminVipRequest, AdminVipRequestDetail, ApproveResult, EndVipResult, GiftSendResult, GiveResult, MyVipRequest,
   NewVipRequest, PayQr, PayQrRow, PlayerLoginResult, VipAdminStore, VipCharacterStore, VipGift, VipGiftItem, VipGiftLogRow,
   VipGiftStatus, VipLetter, VipLetterChange, VipNow, VipRequestStatus, VipSiteStore, VipTier, VipTierRow,
 } from '../../src/vip/vipStore';
@@ -134,7 +134,9 @@ export class MemoryVipStore implements VipSiteStore, VipAdminStore {
     return {
       vip: live === undefined ? null : { level: live.level, name: this.tierName(live.level), endsAt: iso(live.endsAt) },
       requests: this.requestRows.filter((r) => r.account.toLowerCase() === account.toLowerCase()).sort((a, b) => b.id - a.id).slice(0, 20).map((r) => this.mineRow(r)),
-      gift: latest === undefined ? null : { level: latest.level, createdAt: latest.createdAt, sentAt: latest.sentAt, characterName: latest.characterName },
+      gift: latest === undefined ? null : {
+        level: latest.level, createdAt: latest.createdAt, sentAt: latest.sentAt, characterName: latest.characterName, cancelled: latest.items === 'cancelled',
+      },
     };
   }
 
@@ -274,15 +276,39 @@ export class MemoryVipStore implements VipSiteStore, VipAdminStore {
 
   async letterAccounts(): Promise<VipLetter[]> {
     this.fail('letterAccounts');
-    return [...this.accountLetters].filter(([, letter]) => VIP_LETTERS.includes(letter)).map(([account, letter]) => ({ account, letter }));
+    // the account as stored (its own spelling), as the SQL gives it
+    return [...this.accountLetters].filter(([, letter]) => VIP_LETTERS.includes(letter))
+      .map(([key, letter]) => ({ account: this.find(key)?.account ?? key, letter }));
   }
+
+  /** WEB_VIP_ADOPTED: the accounts the adoption step has seen (lower-case). */
+  readonly adopted = new Set<string>();
 
   async adopt(account: string, level: number): Promise<boolean> {
     this.fail('adopt');
-    if (level < 1 || level > 4 || this.vips.has(account.toLowerCase())) return false;
-    this.vips.set(account.toLowerCase(), { level, endsAt: this.now() + 30 * 86_400_000 });
+    if (level < 1 || level > 4) return false;
+    const key = account.toLowerCase();
+    const seen = this.adopted.has(key);
+    this.adopted.add(key);
+    if (seen || this.vips.has(key)) return false;
+    this.vips.set(key, { level, endsAt: this.now() + 30 * 86_400_000 });
     this.auditRows.push({ action: 'vip.adopt', account, before: '{"letter":"set by hand"}', after: `{"level":${level},"days":30}` });
     return true;
+  }
+
+  async endVip(account: string, admin: string): Promise<EndVipResult> {
+    const player = this.find(account);
+    if (player === undefined) return { result: 'unknown', cancelled: 0 };
+    const key = player.account.toLowerCase();
+    const live = this.liveVip(key);
+    if (live === undefined) return { result: 'none', cancelled: 0 };
+    const now = this.now();
+    this.vips.set(key, { level: live.level, endsAt: now });
+    if (playerOrVip(this.letterOf(key))) this.accountLetters.set(key, 'F');
+    const unsent = this.giftRows.filter((g) => g.account.toLowerCase() === key && g.sentAt === null);
+    for (const g of unsent) Object.assign(g, { sentAt: iso(now), sentMs: now, items: 'cancelled' });
+    this.auditRows.push({ action: 'vip.end', account: player.account, before: `{"level":${live.level}}`, after: `{"by":"${admin}"}` });
+    return { result: 'ok', cancelled: unsent.length };
   }
 
   async syncLetters(): Promise<VipLetterChange[]> {
@@ -301,9 +327,9 @@ export class MemoryVipStore implements VipSiteStore, VipAdminStore {
     return changes;
   }
 
-  async pendingGifts(max: number): Promise<VipGift[]> {
+  async pendingGifts(max: number, afterId = 0): Promise<VipGift[]> {
     this.fail('pendingGifts');
-    return this.giftRows.filter((g) => g.sentAt === null).slice(0, max)
+    return this.giftRows.filter((g) => g.sentAt === null && g.id > afterId).slice(0, max)
       .map(({ id, account, level, requestId, createdAt }) => ({ id, account, level, requestId, createdAt }));
   }
 

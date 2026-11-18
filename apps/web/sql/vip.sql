@@ -137,6 +137,14 @@ IF OBJECT_ID(N'dbo.WEB_VIP_GIFT_ITEM', N'U') IS NULL
 		CONSTRAINT CK_WEB_VIP_GIFT_ITEM CHECK (level BETWEEN 1 AND 4 AND slot BETWEEN 1 AND 6 AND count BETWEEN 1 AND 9999 AND itemId > 0)
 	)
 GO
+-- The accounts the VIP job's adoption step has seen: each is adopted at most once, ever, so a WEB_VIP row the owner
+-- deletes is never brought back by a letter set by hand long ago (the final review, 2026-11-19).
+IF OBJECT_ID(N'dbo.WEB_VIP_ADOPTED', N'U') IS NULL
+	CREATE TABLE dbo.WEB_VIP_ADOPTED (
+		account varchar(32) NOT NULL CONSTRAINT PK_WEB_VIP_ADOPTED PRIMARY KEY,
+		seenAt datetime2(0) NOT NULL CONSTRAINT DF_WEB_VIP_ADOPTED_seenAt DEFAULT SYSUTCDATETIME()
+	)
+GO
 -- The starting boxes, put in only while the table is empty (the owner changes them in the panel's VIP tab): Remantis
 -- Laccotte (HP, 10206), Refresher Hold (MP, 10207), Vital Drink X (FP, 10208), Town Blinkwing (4805) and Scroll of
 -- Resurrection (10431), all stacking to 99.
@@ -221,7 +229,8 @@ FROM dbo.WEB_VIP_REQUEST r LEFT JOIN dbo.WEB_VIP_TIER t ON t.level = r.level
 WHERE r.account = @account
 ORDER BY r.id DESC
 SELECT TOP 1 g.level, CONVERT(varchar(19), g.createdAt, 126) + 'Z' AS createdAt,
-	CONVERT(varchar(19), g.sentAt, 126) + 'Z' AS sentAt, g.characterName
+	CONVERT(varchar(19), g.sentAt, 126) + 'Z' AS sentAt, g.characterName,
+	CAST(CASE WHEN g.items = 'cancelled' THEN 1 ELSE 0 END AS bit) AS cancelled
 FROM dbo.WEB_VIP_GIFT g
 WHERE g.account = @account
 ORDER BY g.id DESC
@@ -502,9 +511,10 @@ SELECT account, m_chLoginAuthority AS letter FROM dbo.ACCOUNT_TBL_DETAIL
 WHERE CAST(m_chLoginAuthority AS binary(1)) IN (0x41, 0x42, 0x43, 0x45)
 GO
 
--- A VIP letter set by hand before the VIP perks (an account or a character with one, and no WEB_VIP row at all, ever)
--- becomes a 30-day VIP at that level, with no gift box, in the audit log as vip-job. 1 adopted, 0 the account already
--- has a row (paid, given or ended: the letter then follows that row).
+-- A VIP letter set by hand before the VIP perks (an account or a character with one, and no WEB_VIP row at all)
+-- becomes a 30-day VIP at that level, with no gift box, in the audit log as vip-job. Once per account, ever: the account
+-- is marked in WEB_VIP_ADOPTED whatever the answer. 1 adopted, 0 the account has a row (paid, given or ended: the letter
+-- then follows that row) or was seen before.
 IF OBJECT_ID(N'dbo.usp_AdminVipAdopt', N'P') IS NOT NULL DROP PROCEDURE dbo.usp_AdminVipAdopt
 GO
 CREATE PROCEDURE dbo.usp_AdminVipAdopt
@@ -520,14 +530,18 @@ BEGIN
 END
 SET @now = SYSUTCDATETIME()
 BEGIN TRANSACTION
-IF NOT EXISTS (SELECT 1 FROM dbo.WEB_VIP WITH (UPDLOCK, HOLDLOCK) WHERE account = @account)
+IF NOT EXISTS (SELECT 1 FROM dbo.WEB_VIP_ADOPTED WITH (UPDLOCK, HOLDLOCK) WHERE account = @account)
 BEGIN
-	INSERT dbo.WEB_VIP (account, level, endsAt) VALUES (@account, @level, DATEADD(day, 30, @now))
-	INSERT dbo.WEB_ADMIN_LOG (admin, address, action, account, result, before, after, endedAt)
-	VALUES ('vip-job', '', 'vip.adopt', @account, 'ok', N'{"letter":"set by hand"}', N'{"level":' + CAST(@level AS nvarchar(2)) + N',"days":30}', @now)
-	COMMIT
-	SELECT CAST(1 AS bit) AS adopted
-	RETURN
+	INSERT dbo.WEB_VIP_ADOPTED (account) VALUES (@account)
+	IF NOT EXISTS (SELECT 1 FROM dbo.WEB_VIP WITH (UPDLOCK, HOLDLOCK) WHERE account = @account)
+	BEGIN
+		INSERT dbo.WEB_VIP (account, level, endsAt) VALUES (@account, @level, DATEADD(day, 30, @now))
+		INSERT dbo.WEB_ADMIN_LOG (admin, address, action, account, result, before, after, endedAt)
+		VALUES ('vip-job', '', 'vip.adopt', @account, 'ok', N'{"letter":"set by hand"}', N'{"level":' + CAST(@level AS nvarchar(2)) + N',"days":30}', @now)
+		COMMIT
+		SELECT CAST(1 AS bit) AS adopted
+		RETURN
+	END
 END
 COMMIT
 SELECT CAST(0 AS bit) AS adopted
@@ -549,7 +563,7 @@ BEGIN TRANSACTION
 	SELECT d.account, d.m_chLoginAuthority,
 		CASE (SELECT v.level FROM dbo.WEB_VIP v WHERE v.account = d.account AND v.endsAt > @now)
 			WHEN 1 THEN 'A' WHEN 2 THEN 'B' WHEN 3 THEN 'C' WHEN 4 THEN 'E' ELSE 'F' END AS letter
-	FROM dbo.ACCOUNT_TBL_DETAIL d WITH (UPDLOCK)
+	FROM dbo.ACCOUNT_TBL_DETAIL d
 	WHERE CAST(d.m_chLoginAuthority AS binary(1)) IN (0x41, 0x42, 0x43, 0x45)
 		OR (CAST(d.m_chLoginAuthority AS binary(1)) IN (0x46) AND EXISTS (SELECT 1 FROM dbo.WEB_VIP v WHERE v.account = d.account AND v.endsAt > @now))
 )
@@ -562,17 +576,53 @@ COMMIT
 SELECT account, before, after FROM @changes
 GO
 
--- The gift boxes not sent yet, oldest first.
+-- The gift boxes not sent yet, oldest first, after the box @afterId (0: from the start): the job reads them a page at a
+-- time, so boxes that wait never hold back the ones behind them.
 IF OBJECT_ID(N'dbo.usp_AdminVipGiftsPending', N'P') IS NOT NULL DROP PROCEDURE dbo.usp_AdminVipGiftsPending
 GO
 CREATE PROCEDURE dbo.usp_AdminVipGiftsPending
-	@max int
+	@max int, @afterId int = 0
 AS
 SET NOCOUNT ON
 SELECT TOP (@max) id, account, level, requestId, CONVERT(varchar(19), createdAt, 126) + 'Z' AS createdAt
 FROM dbo.WEB_VIP_GIFT
-WHERE sentAt IS NULL
+WHERE sentAt IS NULL AND id > @afterId
 ORDER BY id
+GO
+
+-- Ends an account's live VIP now (the final review, 2026-11-19: a wrongly approved payment, say): its end time becomes
+-- now, the account's letter goes back to F (only over a player or VIP letter), and its gift boxes not sent yet are
+-- cancelled (marked sent with items 'cancelled', no character). 1 with the boxes cancelled, 0 no live VIP, -1 no such
+-- account. One transaction, in the audit log through the panel's action.
+IF OBJECT_ID(N'dbo.usp_AdminVipEnd', N'P') IS NOT NULL DROP PROCEDURE dbo.usp_AdminVipEnd
+GO
+CREATE PROCEDURE dbo.usp_AdminVipEnd
+	@account varchar(32)
+AS
+SET NOCOUNT ON
+SET XACT_ABORT ON
+DECLARE @stored varchar(32), @now datetime2(0), @cancelled int
+SELECT @stored = account FROM dbo.ACCOUNT_TBL_DETAIL WHERE account = @account
+IF @stored IS NULL
+BEGIN
+	SELECT -1 AS result, 0 AS cancelled
+	RETURN
+END
+SET @now = SYSUTCDATETIME()
+BEGIN TRANSACTION
+UPDATE dbo.WEB_VIP WITH (UPDLOCK, HOLDLOCK) SET endsAt = @now, updatedAt = @now WHERE account = @stored AND endsAt > @now
+IF @@ROWCOUNT = 0
+BEGIN
+	COMMIT
+	SELECT 0 AS result, 0 AS cancelled
+	RETURN
+END
+UPDATE dbo.ACCOUNT_TBL_DETAIL SET m_chLoginAuthority = 'F'
+WHERE account = @stored AND CAST(m_chLoginAuthority AS binary(1)) IN (0x46, 0x41, 0x42, 0x43, 0x45)
+UPDATE dbo.WEB_VIP_GIFT SET sentAt = @now, items = 'cancelled' WHERE account = @stored AND sentAt IS NULL
+SET @cancelled = @@ROWCOUNT
+COMMIT
+SELECT 1 AS result, @cancelled AS cancelled
 GO
 
 -- Marks a gift box sent (once): to whom, and what it held. 1 marked, 0 it was marked already.
@@ -672,6 +722,7 @@ BEGIN
 	GRANT EXECUTE ON OBJECT::dbo.usp_AdminVipGiftItems TO [flyffweb_admin]
 	GRANT EXECUTE ON OBJECT::dbo.usp_AdminVipGiftItemSet TO [flyffweb_admin]
 	GRANT EXECUTE ON OBJECT::dbo.usp_AdminVipGiftLog TO [flyffweb_admin]
+	GRANT EXECUTE ON OBJECT::dbo.usp_AdminVipEnd TO [flyffweb_admin]
 END
 GO
 

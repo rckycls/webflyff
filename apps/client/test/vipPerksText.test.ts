@@ -16,11 +16,14 @@ describe('tierPerks', () => {
 });
 
 describe('giftLine', () => {
-  it('says where the latest box went, or that it is on its way', () => {
+  it('says where the latest box went (and that mail is kept 15 days), or that it is waiting', () => {
     expect(giftLine(null)).toBeNull();
-    expect(giftLine({ level: 2, createdAt: '2026-11-19T12:00:00Z', sentAt: '2026-11-19T12:03:00Z', characterName: 'Main' }))
-      .toMatch(/^Your VIP 2 gift box was sent to Main on /);
+    const sent = giftLine({ level: 2, createdAt: '2026-11-19T12:00:00Z', sentAt: '2026-11-19T12:03:00Z', characterName: 'Main' })!;
+    expect(sent).toMatch(/^Your VIP 2 gift box was sent to Main on /);
+    expect(sent).toMatch(/collect it from your in-game mail within 15 days\.$/);
     expect(giftLine({ level: 2, createdAt: '2026-11-19T12:00:00Z', sentAt: null, characterName: null }))
-      .toBe('Your VIP 2 gift box is on its way: it goes to your character within 5 minutes (check your in-game mail).');
+      .toBe('Your VIP 2 gift box is waiting: it goes by in-game mail to your character within 5 minutes once you have one.');
+    expect(giftLine({ level: 2, createdAt: '2026-11-19T12:00:00Z', sentAt: '2026-11-19T12:03:00Z', characterName: null, cancelled: true }))
+      .toBe('Your VIP 2 gift box was cancelled.');
   });
 });

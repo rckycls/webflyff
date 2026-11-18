@@ -20,13 +20,17 @@ export function tierPerks(level: number, autoPlayHours: number | null): string[]
   ];
 }
 
-export interface GiftStatus { level: number; createdAt: string; sentAt: string | null; characterName: string | null }
+export interface GiftStatus { level: number; createdAt: string; sentAt: string | null; characterName: string | null; cancelled?: boolean }
 
-/** The "Your VIP" panel's gift line, or null without any box. */
+/**
+ * The "Your VIP" panel's gift line, or null without any box. The game deletes a mail 15 days after it was sent
+ * (`post.cpp`), so a sent box says to collect it in time.
+ */
 export function giftLine(gift: GiftStatus | null | undefined): string | null {
   if (gift === null || gift === undefined) return null;
-  if (gift.sentAt === null) return `Your VIP ${gift.level} gift box is on its way: it goes to your character within 5 minutes (check your in-game mail).`;
+  if (gift.cancelled === true) return `Your VIP ${gift.level} gift box was cancelled.`;
+  if (gift.sentAt === null) return `Your VIP ${gift.level} gift box is waiting: it goes by in-game mail to your character within 5 minutes once you have one.`;
   const when = new Date(gift.sentAt);
   const day = Number.isNaN(when.getTime()) ? gift.sentAt : when.toLocaleDateString();
-  return `Your VIP ${gift.level} gift box was sent to ${gift.characterName ?? 'your character'} on ${day} (check your in-game mail).`;
+  return `Your VIP ${gift.level} gift box was sent to ${gift.characterName ?? 'your character'} on ${day}: collect it from your in-game mail within 15 days.`;
 }

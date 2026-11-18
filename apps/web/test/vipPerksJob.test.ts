@@ -67,7 +67,7 @@ describe('runVipPerksJob', () => {
     expect(admin.giftRows[0]).toMatchObject({ idPlayer: '0000001', characterName: 'Main' });
   });
 
-  it('leaves a gift unsent when its tier has no items, and still runs the other steps when one fails', async () => {
+  it('leaves a gift unsent when its tier has no items, and still sends the others when a letter step fails', async () => {
     const admin = new MemoryVipStore([{ account: 'tester1', passwordHash: 'x' }], () => NOW);
     admin.giftItemRows = admin.giftItemRows.filter((i) => i.level !== 3);
     await admin.give('tester1', 3, 30, true, 'owner');
@@ -75,9 +75,42 @@ describe('runVipPerksJob', () => {
     const characters = new MemoryVipCharacters([char({})]);
     characters.failing.add('characterLetters');
     const report = await runVipPerksJob({ admin, characters }, log);
-    expect(report).toMatchObject({ sent: 0, waiting: 1, letters: 1 });
+    expect(report).toMatchObject({ sent: 0, waiting: 1 });
     expect(characters.mails).toEqual([]);
     expect(log.lines.some((l) => l.startsWith('warn: vip job: characterLetters'))).toBe(true);
+  });
+
+  // --- the final review's fixes (2026-11-19) ---------------------------------------------------------------------------
+
+  it('never stalls behind gifts that wait: one run reaches a gift after more than a page of waiting ones', async () => {
+    const players = Array.from({ length: 56 }, (_, i) => ({ account: i === 55 ? 'tester1' : `wait${i}`, passwordHash: 'x' }));
+    const admin = new MemoryVipStore(players, () => NOW);
+    for (const p of players) await admin.give(p.account, 1, 30, true, 'owner');
+    const characters = new MemoryVipCharacters([char({ account: 'tester1' })]);
+    expect(await runVipPerksJob({ admin, characters }, log)).toMatchObject({ sent: 1, waiting: 55 });
+    expect(characters.mails).toHaveLength(5);
+  });
+
+  it('skips the letter changes in a run where finding the hand-set letters failed, so no star is lost', async () => {
+    const admin = new MemoryVipStore([{ account: 'tester1', passwordHash: 'x' }], () => NOW);
+    const characters = new MemoryVipCharacters([char({ letter: 'C' })]);
+    characters.failing.add('characterLetters');
+    expect(await runVipPerksJob({ admin, characters }, log)).toMatchObject({ adopted: 0, letters: 0, cleared: 0 });
+    expect(characters.rows[0]!.letter).toBe('C');
+    characters.failing.delete('characterLetters');
+    expect(await runVipPerksJob({ admin, characters }, log)).toMatchObject({ adopted: 1, letters: 1, cleared: 1 });
+    expect(admin.letterOf('tester1')).toBe('C');
+  });
+
+  it('adopts a hand-set letter once: a VIP row the owner deletes is not brought back', async () => {
+    const admin = new MemoryVipStore([{ account: 'Tester1', passwordHash: 'x' }], () => NOW);
+    admin.accountLetters.set('tester1', 'B');
+    const characters = new MemoryVipCharacters([]);
+    expect(await runVipPerksJob({ admin, characters }, log)).toMatchObject({ adopted: 1 });
+    expect(admin.auditRows.find((r) => r.action === 'vip.adopt')?.account).toBe('Tester1');
+    admin.vips.delete('tester1');
+    expect(await runVipPerksJob({ admin, characters }, log)).toMatchObject({ adopted: 0, letters: 1 });
+    expect(admin.letterOf('tester1')).toBe('F');
   });
 });
 
