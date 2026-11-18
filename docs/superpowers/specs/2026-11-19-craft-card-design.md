@@ -8,7 +8,11 @@ The chance gets bigger the more they add cards." With three examples: 1 stone + 
 one 4% = 20%; a 4% + a 3% = 35%.
 
 Settled with the owner in the planning talk (2026-11-19): the odds table below; the stone drops from monsters at a very
-low chance; a failed craft uses up the stone and every card; build way A (new window + one new World packet).
+low chance; a failed craft uses up the stone and every card; build way A (new window + one new World packet); weapon
+cards work like suit cards (D, C, B in place of 2%, 3%, 4%).
+
+Added by the owner the same day: "an icon button for bulk ... repeat this combination for a n number of times ... only
+for VIP1-VIP4. VIP1: MAX 5 repeats, VIP2: MAX 10, VIP3: MAX 15, VIP4: MAX 20." See "Bulk craft (VIP)" below.
 
 V15 has nothing like it. V15's Card Master (`MaFl_CardMaster`, `Exchange_Script.txt` MMI_EXCHANGE_ARMORCARD/WEAPONCARD)
 trades 10 cards of one kind for a chance at the next tier of that kind (4% to 7% is a 4% chance). It stays as it is.
@@ -110,6 +114,34 @@ three 2% = 25; five 2% = 45; three 3% = 40; two 4% = 45; three 4% = 70; four 4% 
   - Refused by the server: the chat says why ("You are too far from Bozman.", "Not enough space in the inventory.",
     or "Cannot be done." for anything else), the slots stay, Craft unlocks.
 - **Closing:** Cancel, the X, closing the bag, or walking out of Bozman's menu range (as the other NPC windows).
+
+## Bulk craft (VIP)
+
+The same combination, rolled again and again in one press. Owner's limits, by the character's VIP letter
+(`_Common/authorization.h`): VIP1 'A' up to 5 tries, VIP2 'B' 10, VIP3 'C' 15, VIP4 'E' 20. Everyone else: 1 (no bulk).
+My call: game masters (letter 'L' and up) get 20 too, so the owner can test it with a GM character.
+
+```
+|  Chance: 35%    Makes: one random 7% suit card    |  Result               |
+|                                                 |  10 tries: 3 made     |
+|      [Craft]  [(x)]  [Cancel]                   |  [ ] Lightning 7% x2  |
+|                                                 |  [ ] Ocean 7% x1      |
+```
+
+- **The button:** a small icon button beside Craft (a repeat icon), shown only to VIP characters (and GMs). Hidden for
+  everyone else, as the VIP bag buttons are.
+- **Press:** a box asks "Repeat how many times?" with the number (desktop: typed; phone: the number pad), from 2 up to
+  the most allowed: the VIP limit, cut down to what the stone and card stacks in the window can pay for (a stack used in
+  two slots pays half as many tries). A tick box "Stop at the first success", unticked by default (my call: a player
+  who only wants one card does not lose the rest).
+- **Then the Yes/No box,** naming the total: "Craft 10 times with a 35% chance each? It uses up to 10 Craft Stones and
+  30 cards. Every fail loses its stone and cards."
+- **The server runs the tries one by one,** each one exactly a single craft (same checks, same take-then-roll). It stops
+  early when a stone or card runs out, the bag has no room for a success, or (if ticked) after the first success. Tries
+  not run cost nothing.
+- **The answer** lists every try's result. The Result part shows "10 tries: 3 made" and each card made with its count;
+  the chat says the same in one line. One success sound if any try succeeded, else the fail sound.
+- **After it:** the slots empty, as after a single craft.
 - **Phone (landscape):** the same window; the result part sits under the slots instead of beside them, as the Awaken
   window does. Taps instead of drags.
 
@@ -117,11 +149,14 @@ three 2% = 25; five 2% = 45; three 3% = 40; two 4% = 45; three 4% = 70; four 4% 
 
 - New packet `PACKETTYPE_CRAFT_CARD` `0x8FFF0110`, web client to World. (0x8FFF0102/0103 are taken by the unmerged
   vip-perks branch, and awaken-window also uses 0x8FFF0102: that clash is theirs to settle; 0x8FFF0110 keeps clear of
-  both.) Body: seven DWORDs: Bozman's object id, the stone's item object id, then five card item object ids (`NULL_ID`
-  for an empty slot). The Cache server passes it on unchanged, as it does the Pet Filter's 0x8FFF0101.
+  both.) Body: eight DWORDs and a BYTE: Bozman's object id, the stone's item object id, five card item object ids
+  (`NULL_ID` for an empty slot), the number of tries (1-20), and "stop at the first success" (0 or 1). The Cache
+  server passes it on unchanged, as it does the Pet Filter's 0x8FFF0101.
 - New snapshot `SNAPSHOTTYPE_CRAFT_CARD` `0x9A01`, World to web client (after the layered boss HP's 0x9A00): a BYTE
-  result (0 failed, 1 success, 2 refused: not near Bozman, 3 refused: bag full, 4 refused: anything else) and a DWORD
-  item id made (0 unless success).
+  code (0 ran, 2 refused: not near Bozman, 3 refused: bag full, 4 refused: anything else), a BYTE number of tries run
+  (0 when refused), then one DWORD per try run: the item id made, 0 for a fail.
+- Tries allowed: 1 for everyone; up to 5 / 10 / 15 / 20 for the VIP letters 'A' / 'B' / 'C' / 'E', and 20 for game
+  masters ('L' and up), read from the character's letter at the press. More than allowed: refused (4), nothing spent.
 - `CDPSrvr::OnCraftCard` never trusts the client. It refuses (answer 2-4, nothing spent) when:
   - the player is dead, trading, or has a personal shop open;
   - the NPC id is not a mover with key `MaSa_Bozman` in the player's world and layer within `MAX_LEN_MOVER_MENU` (as
@@ -130,13 +165,14 @@ three 2% = 25; five 2% = 45; three 3% = 40; two 4% = 45; three 4% = 70; four 4% 
   - there are no cards, or a card is missing, unusable, not in the input table, or of the other kind;
   - one item object id is used more times than its stack holds (stone included);
   - a success would not fit in the bag (checked before anything is taken).
-- Then, in one step:
-  1. work out the chance from the server's own table (the client's number is never sent);
-  2. take 1 stone and 1 of each card (grouped per stack), with item logs;
-  3. roll `xRandom(100) < chance`;
-  4. success: make one random top card of the kind (5 families, equal), put it in the bag, log it, the success sound and
-     effect; fail: the fail sound and effect;
-  5. send the answer snapshot.
+- Then, for each try (one try for a single craft), in one step each:
+  1. check the stone and cards are still there and a success still fits (else stop: later tries cost nothing);
+  2. work out the chance from the server's own table (the client's number is never sent);
+  3. take 1 stone and 1 of each card (grouped per stack), with item logs;
+  4. roll `xRandom(100) < chance`;
+  5. success: make one random top card of the kind (5 families, equal), put it in the bag, log it; stop here if "stop
+     at the first success" is set.
+- After the tries: the success sound and effect if any try succeeded, else the fail ones; then the answer snapshot.
 - The input table, points, the +5, the cap 90 and the stone id are constants in one place in the patch, so later
   crafting can reuse the stone id.
 - Patch `patches/2026-11-19-craft-card.patch` goes after the 13 patches already on main `Source` (last
@@ -172,3 +208,4 @@ three 2% = 25; five 2% = 45; three 3% = 40; two 4% = 45; three 4% = 70; four 4% 
 - The window's exact size and slot positions, on desktop and phone, checked to fit.
 - The stone's `propItem.txt` row details (copy a general material row such as the Moonstone's: cost, level, rarity).
 - The exact V15 sound and effect ids for success and fail (as Piercing's).
+- The bulk button's icon (an own picture in `src/icons`, as the window icons are) and the number box's look.
