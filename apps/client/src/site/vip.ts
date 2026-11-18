@@ -9,6 +9,7 @@ import { el, showLobbyArt, siteLogo, siteRoot } from './page';
 import { ReceiptError, receiptBase64 } from './receiptPicture';
 import { countryCurrency, priceText, tierPrice, VipApi } from './vipApi';
 import type { Answer, Currency, Me, MyRequest, VipPageData, VipTier } from './vipApi';
+import { giftLine, tierPerks } from './vipPerks';
 import './site.css';
 
 const api = new VipApi(fetch.bind(window));
@@ -137,7 +138,9 @@ function renderTiers(): void {
     return el('label', { class: 'vip-tier', for: input.id }, input,
       el('span', { class: 'vip-tier-name' }, tier.name),
       el('span', { class: 'vip-tier-price' }, shownPrice(tier)),
-      el('span', { class: 'vip-tier-month' }, 'a month'));
+      el('span', { class: 'vip-tier-month' }, 'a month'),
+      // 2026-11-19 (VIP perks): what the tier gives
+      el('ul', { class: 'vip-tier-perks' }, ...tierPerks(tier.level, tier.autoPlayHours ?? null).map((line) => el('li', {}, line))));
   }));
   if (tiers.length === 0) tiersBox.replaceChildren(el('p', { class: 'site-quiet' }, 'No tiers are open now.'));
 }
@@ -301,6 +304,8 @@ function renderMe(): void {
   account.replaceChildren(
     el('p', { class: 'vip-who' }, 'Logged in as ', el('strong', {}, me.account), ' · ', logout),
     el('p', { class: 'vip-now' }, me.vip === null ? 'No VIP now.' : `Your VIP: ${tierName(me.vip)} until ${dateText(me.vip.endsAt)}.`));
+  const gift = giftLine(me.gift); // 2026-11-19 (VIP perks)
+  if (gift !== null) account.append(el('p', { class: 'vip-gift' }, gift));
   requestsPanel.hidden = false;
   requestsBox.replaceChildren(...(me.requests.length === 0 ? [el('p', { class: 'site-quiet' }, 'No requests yet.')] : me.requests.map(requestLine)));
 }

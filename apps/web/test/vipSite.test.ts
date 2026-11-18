@@ -153,15 +153,15 @@ it('gives the tiers and the QRs that are on to everyone, and "me" only with a se
   await store.addQr({ label: 'Hidden', accountName: 'x', note: '', imageFile: 'b'.repeat(32) + '.png', on: false, order: 1 });
   const open = await call(port, 'GET', '/api/vip');
   expect(open.body.tiers).toEqual([
-    { level: 1, name: 'VIP 1', priceCents: 200, pricePhpCents: 11500 }, { level: 2, name: 'VIP 2', priceCents: 400, pricePhpCents: 23000 },
-    { level: 3, name: 'VIP 3', priceCents: 600, pricePhpCents: 34500 },
+    { level: 1, name: 'VIP 1', priceCents: 200, pricePhpCents: 11500, autoPlayHours: 24 }, { level: 2, name: 'VIP 2', priceCents: 400, pricePhpCents: 23000, autoPlayHours: 36 },
+    { level: 3, name: 'VIP 3', priceCents: 600, pricePhpCents: 34500, autoPlayHours: 48 },
   ]);
   expect(open.body.qrs).toEqual([{ id: 1, label: 'GCash', accountName: 'R. C.', note: 'Send the exact amount', image: '/api/vip/qr/1' }]);
   expect(open.body.me).toBeUndefined();
   expect(open.headers['cache-control']).toBe('no-store');
   const { headers } = await logIn(port);
   const mine = await call(port, 'GET', '/api/vip', { Cookie: headers.Cookie });
-  expect(mine.body.me).toEqual({ account: 'tester1', vip: null, requests: [] });
+  expect(mine.body.me).toEqual({ account: 'tester1', vip: null, requests: [], gift: null });
   // an off QR's picture is never served
   expect((await call(port, 'GET', '/api/vip/qr/2')).status).toBe(404);
 });
@@ -200,7 +200,7 @@ it('takes a request in pesos at the tier\'s peso price; refuses pesos on a tier 
   expect((await sendRequest(port, headers, { currency: 'EUR', reference: 'GC-0003' })).body).toEqual({ error: 'invalid', field: 'currency' });
   expect((await sendRequest(port, headers, { currency: 'USD', reference: 'GC-0004' })).status).toBe(201);
   const mine = await call(port, 'GET', '/api/vip', { Cookie: headers.Cookie });
-  expect(mine.body.tiers[1]).toEqual({ level: 2, name: 'VIP 2', priceCents: 400, pricePhpCents: null });
+  expect(mine.body.tiers[1]).toEqual({ level: 2, name: 'VIP 2', priceCents: 400, pricePhpCents: null, autoPlayHours: 36 });
   expect(mine.body.me.requests.map((r: { currency: string; priceCents: number }) => [r.currency, r.priceCents])).toEqual([['USD', 400], ['PHP', 23000]]);
   expect(lines).toContain('vip 127.0.0.1 tester1 request 1 tier 2 PHP');
 });
@@ -284,4 +284,16 @@ it('logs out: the session ends', async () => {
 it('reads a reference as the receipt shows it, with a key of its letters and digits in capitals', () => {
   expect(readReference('  gc  1234-5678 ')).toEqual({ reference: 'gc 1234-5678', key: 'GC12345678' });
   for (const bad of ['', 'abc', '--1234', 'a'.repeat(41), 'abc<1234>', 'abc_1234', 42]) expect(readReference(bad)).toBeUndefined();
+});
+
+it('2026-11-19 (VIP perks): gives each tier its Auto Play hours, and a logged-in player their latest gift box', async () => {
+  const { port, store } = await start();
+  const open = await call(port, 'GET', '/api/vip');
+  expect(open.body.tiers.map((t: { autoPlayHours: number | null }) => t.autoPlayHours)).toEqual([24, 36, 48, null]);
+  const { headers } = await logIn(port);
+  expect((await call(port, 'GET', '/api/vip', { Cookie: headers.Cookie })).body.me.gift).toBeNull();
+  await store.give('tester1', 2, 30, true, 'owner');
+  const [gift] = await store.pendingGifts(10);
+  await store.markGiftSent(gift!.id, '0000002', 'Main', '10206x20');
+  expect((await call(port, 'GET', '/api/vip', { Cookie: headers.Cookie })).body.me.gift).toMatchObject({ level: 2, characterName: 'Main' });
 });
