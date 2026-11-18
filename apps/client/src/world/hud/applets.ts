@@ -42,6 +42,8 @@ export const AppId = {
   AUTO_PLAY: 9002,
   /** custom (owner 2026-11-16): the Pet Filter window, the client's own id (the post's 2022 is APP_MAP_EX here). */
   PETFILTER: 9003,
+  /** custom (owner 2026-11-19): the Awaken window, the client's own id. */
+  AWAKEN: 9004,
 } as const;
 
 /**
@@ -109,6 +111,9 @@ export const APPLETS: ReadonlyMap<number, Applet> = new Map([
   // The post's id, 2022, is APP_MAP_EX in this ResData.h, so it takes the client's own 9003 (after Auto Play's 9002).
   // 2026-11-17 (owner): its own icon (ownIcons.ts) in the place of the post's generic Icon_Applet.dds.
   [AppId.PETFILTER, applet('APP_PETFILTER', OWN_ICON_FILES.petFilter, 'Pet Filter', 'U')],
+  // custom (owner 2026-11-19): the Awaken window, from the Start menu, no hotkey; its icon the Scroll of Awakening's own
+  // (Itm_SysSysScrAwake.dds, already converted: an asset key `themeKey` passes through)
+  [AppId.AWAKEN, applet('APP_AWAKEN', 'ui/item/itm_syssysscrawake.png', 'Awaken')],
 ]);
 
 /** The text `text` names: the catalog's for a TID (`texts`, '' for one it lacks), the C++'s own otherwise. */

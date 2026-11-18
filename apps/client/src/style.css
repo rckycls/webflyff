@@ -5121,7 +5121,10 @@ fieldset:disabled .btn {
 :is(.hud-auto-play, .hud-awaken) .auto-word:disabled { opacity: 0.5; cursor: default; }
 /* custom (owner 2026-11-19): the Awaken window (items/awakenWindow.ts): Awaken as wide as Cancel's picture, the awakening's
    lines in the tooltip's blue on the box of words, "Not awakened" in black, the box's check box in its words' font */
-.hud-awaken [data-control="WIDC_AWAKEN"] .auto-word { width: 72px; height: 20px; line-height: 18px; }
+.hud-awaken [data-control="WIDC_AWAKEN"] .auto-word {
+  width: 72px; height: 20px; border-color: #8c8c8c; background: linear-gradient(#fafafa, #e4e4e4 45%, #c8c8c8 55%, #dcdcdc);
+  font-size: 12px; line-height: 18px; text-shadow: 1px 0 #5c5c5c, -1px 0 #5c5c5c, 0 1px #5c5c5c, 0 -1px #5c5c5c, 1px 1px #5c5c5c;
+}
 .hud-awaken-lines {
   position: absolute; inset: 6px; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
   font: 12px/16px Verdana, Tahoma, sans-serif; color: #0000ff;
