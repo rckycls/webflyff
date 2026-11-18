@@ -24,6 +24,7 @@ import type { AssetStore } from '@flyffweb/scene';
 import { itemEtcOf } from './items/itemTooltip';
 import type { ItemEtc } from './items/itemTooltip';
 import { withGroundMount } from './mount/groundMount';
+import { withCraftStone } from './items/craftCardRules';
 
 /** NULL_ID, written `=` in `propItem.txt`: the `exclusive` and `baseIgnore` of an item that takes off and hides nothing. */
 export const NO_PART = -1;
@@ -181,8 +182,9 @@ export async function loadGameData(store: Pick<AssetStore, 'json' | 'url'>): Pro
     honorTitles: new Map(Object.entries(honorTitles).map(([id, title]) => [Number(id), title])),
     honorNeeds: new Map(Object.entries(honorNeeds).map(([id, need]) => [Number(id), need])),
     worlds: new Map(Object.entries(worlds).map(([id, folder]) => [Number(id), folder])),
-    // 2026-11-18: with the ground mount's item, a custom item the client's packs never had (`groundMount.ts`)
-    itemProps: withGroundMount(new Map(itemProps.map((prop) => [prop.id, withPackMax(prop)]))),
+    // 2026-11-18: with the ground mount's item, a custom item the client's packs never had (`groundMount.ts`); 2026-11-19
+    // with the Craft Stone too (`items/craftCardRules.ts`)
+    itemProps: withCraftStone(withGroundMount(new Map(itemProps.map((prop) => [prop.id, withPackMax(prop)])))),
     jobs: jobs.map(withTitle),
     exp: exp.map((row) => ({
       exp1: BigInt(row.exp1), exp2: BigInt(row.exp2), lpPoint: row.lpPoint, limitExp: BigInt(row.limitExp),
