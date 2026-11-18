@@ -66,20 +66,23 @@ it('sets the level on the account and its characters, one audit row each, and re
   expect(set.body.stale).toEqual({ accounts: { names: ['tester1'] }, characters: { accounts: ['tester1'] } });
 });
 
-it('sets a VIP level on the account alone when asked, and says when the characters\' part failed', async () => {
+it('refuses VIP letters (2026-11-19: they come from the VIP tab), sets a level on the account alone when asked, and says when the characters\' part failed', async () => {
   const s = setUp();
-  const vip = await act('accounts.authority', { account: 'tester1', authority: 'C', characters: false }, s);
-  expect(vip).toMatchObject({ status: 200, body: { ok: true, characters: 0 } });
-  expect(s.store.accounts[1]!.authority).toBe('C');
+  for (const letter of ['A', 'B', 'C', 'E']) {
+    expect(await act('accounts.authority', { account: 'tester1', authority: letter, characters: false }, s)).toMatchObject({ status: 400, body: { field: 'authority' } });
+  }
+  const helper = await act('accounts.authority', { account: 'tester1', authority: 'J', characters: false }, s);
+  expect(helper).toMatchObject({ status: 200, body: { ok: true, characters: 0 } });
+  expect(s.store.accounts[1]!.authority).toBe('J');
   expect(s.store.characters[1]!.authority).toBe('F');
   expect(s.store.log.map((r) => r.action)).toEqual(['accounts.authority']);
 
   // the account's letter changes, its characters' do not: the log says so, and so does the answer
   s.store.failing.add('setCharacterAuthority');
-  const half = await act('accounts.authority', { account: 'tester1', authority: 'E' }, s);
+  const half = await act('accounts.authority', { account: 'tester1', authority: 'L' }, s);
   expect(half.status).toBe(500);
   expect(half.body.message).toMatch(/account's level was changed, but its characters' levels were not/);
-  expect(s.store.accounts[1]!.authority).toBe('E');
+  expect(s.store.accounts[1]!.authority).toBe('L');
   expect(s.store.log.slice(1).map((r) => [r.action, r.result])).toEqual([['accounts.authority', 'ok'], ['accounts.charactersAuthority', 'failed']]);
 });
 
