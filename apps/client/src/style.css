@@ -5278,14 +5278,14 @@ fieldset:disabled .btn {
 :is(.hud-auto-play, .hud-awaken-confirm) .auto-v15-check[data-frame='3'] { background-position: -42px 0; }
 :is(.hud-auto-play, .hud-awaken-confirm) .auto-check:hover .auto-v15-check[data-frame='1'] { background-position: 0 0; }
 :is(.hud-auto-play, .hud-awaken-confirm) .auto-check:hover .auto-v15-check[data-frame='3'] { background-position: -28px 0; }
-:is(.hud-auto-play, .hud-awaken) .auto-word {
+:is(.hud-auto-play, .hud-awaken, .hud-redeem) .auto-word {
   box-sizing: border-box; min-width: 22px; height: 22px; padding: 0 6px; border: 1px solid #a3a3a3; border-radius: 5px;
   background: linear-gradient(#ffffff, #f6f6f6 45%, #e1e1e1 55%, #f3f3f3); box-shadow: inset 0 1px 0 #ffffff, 0 1px 1px #00000033;
   color: #ffffff; font: bold 11px/20px Verdana, Tahoma, sans-serif; white-space: nowrap; cursor: pointer;
   text-shadow: 1px 0 #7d7d7d, -1px 0 #7d7d7d, 0 1px #7d7d7d, 0 -1px #7d7d7d, 1px 1px #7d7d7d;
 }
-:is(.hud-auto-play, .hud-awaken) .auto-word:active:not(:disabled) { background: linear-gradient(#e9e9e9, #dadada); }
-:is(.hud-auto-play, .hud-awaken) .auto-word:disabled { opacity: 0.5; cursor: default; }
+:is(.hud-auto-play, .hud-awaken, .hud-redeem) .auto-word:active:not(:disabled) { background: linear-gradient(#e9e9e9, #dadada); }
+:is(.hud-auto-play, .hud-awaken, .hud-redeem) .auto-word:disabled { opacity: 0.5; cursor: default; }
 /* custom (owner 2026-11-19): the Awaken window (items/awakenWindow.ts): Awaken as wide as Cancel's picture, the awakening's
    lines in the tooltip's blue on the box of words, "Not awakened" in black, the box's check box in its words' font */
 .hud-awaken [data-control="WIDC_AWAKEN"] .auto-word {
@@ -5405,4 +5405,30 @@ fieldset:disabled .btn {
   .hud-bagex .hud-bagex-tab[data-usable=false]::after {
     content: ''; position: absolute; inset: 0; border-radius: 3px; background: #80808066; pointer-events: none;
   }
+}
+
+/* custom (owner 2026-11-20, redeem codes): the Redeem Code window (world/codes/redeemCodeWindow.ts): the word buttons in
+   Auto Play's silver V15 look (above), the offer's lines on the box of words (the gifts in the item tooltip's blue, a
+   shortfall and the replace warning in red), the refusal line in V15's red, the inputs selectable so phones can paste */
+.hud-redeem [data-control="WIDC_STATIC1"] .hud-res-static-text, .hud-redeem [data-control="WIDC_STATIC2"] .hud-res-static-text { color: #000000; }
+.hud-redeem :is([data-control="WIDC_CODE_BUTTONS"], [data-control="WIDC_PASSWORD_OK"], [data-control="WIDC_BUTTONS"]) {
+  display: flex; align-items: center; gap: 6px;
+}
+.hud-redeem [data-control="WIDC_BUTTONS"] { justify-content: center; gap: 12px; }
+.hud-redeem [data-control="WIDC_BUTTONS"] .auto-word { min-width: 80px; }
+.hud-redeem [data-control][hidden] { display: none !important; }
+.hud-redeem .redeem-offer {
+  position: absolute; inset: 6px; display: flex; flex-direction: column; gap: 3px; overflow-y: auto; overscroll-behavior: contain;
+  scrollbar-width: thin; font: 12px/16px Verdana, Tahoma, sans-serif; color: #000000;
+}
+.hud-redeem .redeem-line.is-quiet { color: #5a5a5a; }
+.hud-redeem .redeem-gift { display: flex; align-items: center; gap: 6px; color: #2e70a9; font-weight: bold; }
+.hud-redeem .redeem-icon { flex: none; width: 24px; height: 24px; background: no-repeat center / contain; }
+.hud-redeem .redeem-line:is(.is-short, .is-warning) { color: #c00000; }
+.hud-redeem .redeem-message { overflow: hidden; font: bold 12px/15px Verdana, Tahoma, sans-serif; color: #d00000; }
+.hud-redeem input { -webkit-user-select: text; user-select: text; }
+/* the phone: finger-sized buttons; the window keeps its size (it fits over the open bag above the task bar) */
+@media (max-width: 1000px) and (pointer: coarse) {
+  .hud-redeem .auto-word { min-width: 44px; height: 28px; font-size: 12px; line-height: 26px; }
+  .hud-redeem [data-control="WIDC_BUTTONS"] .auto-word { min-width: 96px; }
 }
