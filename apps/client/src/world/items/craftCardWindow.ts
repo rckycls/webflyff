@@ -44,8 +44,12 @@ const GHOST = 50 / 255;
 const slot = (id: string, rect: ResControl['rect']): ResControl => ({ kind: 'static', id, rect, picture: SLOT_PICTURE });
 
 /** The window (desktop): the items at the left, the Result part at the right. On a phone, CSS puts the Result under them. */
+/**
+ * 2026-11-20 (owner's picture): the window is 448 x 272, so its client area (less the caption and borders, 436 x 240) holds
+ * every control; at 440 x 236 Cancel and the Result went 18 px past the frame's bottom.
+ */
 export const CRAFT_CARD: ResLayout = {
-  title: 'Craft Card', width: 440, height: 236,
+  title: 'Craft Card', width: 448, height: 272,
   controls: [
     { kind: 'static', id: 'WIDC_ST_STONE', rect: [16, 36, 110, 52], text: 'Craft Stone' },
     slot(STONE_SLOT, [116, 28, 148, 60]),
@@ -53,8 +57,8 @@ export const CRAFT_CARD: ResLayout = {
     ...CARD_SLOTS.map((id, i) => slot(id, [66 + i * 40, 76, 98 + i * 40, 108] as const)),
     { kind: 'custom', id: 'WIDC_INFO', rect: [16, 118, 266, 160] },
     { kind: 'custom', id: 'WIDC_ACTIONS', rect: [16, 166, 266, 196] },
-    { kind: 'button', id: 'WIDC_CANCEL', rect: [194, 202, 266, 222], picture: 'ButtCancel.tga', label: 'Cancel', quarter: 72 },
-    { kind: 'custom', id: 'WIDC_RESULT', rect: [280, 28, 426, 222], tile: 'WndEditTile00.tga' },
+    { kind: 'button', id: 'WIDC_CANCEL', rect: [194, 210, 266, 230], picture: 'ButtCancel.tga', label: 'Cancel', quarter: 72 },
+    { kind: 'custom', id: 'WIDC_RESULT', rect: [280, 28, 428, 230], tile: 'WndEditTile00.tga' },
   ],
 };
 
